@@ -24243,6 +24243,27 @@ type DiscreteChoiceColumns = (
   Vec<Vec<LabelRun>>,
 );
 
+/// Evaluate a choice label that refers to a user symbol. Returns `None` when
+/// the label has no free symbol to resolve, or evaluating it fails or leaves
+/// it unchanged, so the caller keeps the label as written.
+fn resolve_choice_label(label: &Expr) -> Option<Expr> {
+  fn has_user_symbol(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(s) => !crate::evaluator::is_builtin_symbol(s),
+      Expr::List(items) => items.iter().any(has_user_symbol),
+      Expr::FunctionCall { args, .. } => args.iter().any(has_user_symbol),
+      _ => false,
+    }
+  }
+  if !has_user_symbol(label) {
+    return None;
+  }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(label).ok()?;
+  (crate::syntax::expr_to_string(&evaluated)
+    != crate::syntax::expr_to_string(label))
+  .then_some(evaluated)
+}
+
 fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
   let mut values = Vec::with_capacity(items.len());
   let mut labels = Vec::with_capacity(items.len());
@@ -24258,6 +24279,11 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       continue;
     }
     if let Some((value, label)) = discrete_choice_rule(item) {
+      // The choice list comes from a held `Manipulate` argument, so a label
+      // naming a notebook variable (`1 -> Row[{"name", exprName}]`) is still
+      // unevaluated here; resolve it against the current definitions.
+      let resolved_label = resolve_choice_label(label);
+      let label = resolved_label.as_ref().unwrap_or(label);
       values.push(crate::syntax::expr_to_source_form(value));
       // A rule label that is itself a graphic (the crosshair icons of
       // the Demonstrations site) renders as an SVG icon; its text column
@@ -25120,7 +25146,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // alignment wrapper `control_group_items` already unwraps to look for
       // a nested control layout — it carries no text of its own either.
       "Text" | "Item" | "DisplayForm" | "TraditionalForm" | "Tooltip"
-      | "Framed" | "Dynamic" => args
+      | "Framed" | "Dynamic" | "HoldForm" => args
         .first()
         .map(|a| manipulate_label_runs(a, italic))
         .unwrap_or_default(),
@@ -30661,6 +30687,41 @@ mod manipulate_traditional_form_choice_svg_tests {
           value_label_svgs.iter().all(Option::is_none),
           "plain string labels must not grow icons: {value_label_svgs:?}"
         );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A choice label naming a notebook variable (`1 -> Row[{"a", label1}]`)
+  /// must show that variable's value, not its name.
+  #[test]
+  fn choice_labels_resolve_notebook_variables() {
+    crate::interpret("choiceLabelNorth = Style[\"north pole\", Blue]").unwrap();
+    let control = discrete_control(
+      "Manipulate[side, \
+       {{side, 1, \"side\"}, \
+        {1 -> Row[{\"to the \", choiceLabelNorth}], -1 -> \"south\"}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels, &["to the north pole", "south"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// `HoldForm` only suppresses evaluation; a choice label wrapping a
+  /// layout in it shows that layout's text, not the `HoldForm[…]` source.
+  #[test]
+  fn choice_labels_see_through_hold_form() {
+    let control = discrete_control(
+      "Manipulate[side, \
+       {{side, 1, \"side\"}, \
+        {1 -> HoldForm[Row[{\"left\", \" side\"}]], -1 -> \"right\"}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels, &["left side", "right"]);
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
