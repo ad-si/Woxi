@@ -93,6 +93,7 @@ pub mod resolve_ast;
 pub mod resource_function_ast;
 pub mod root_ast;
 pub mod rsolve_ast;
+pub mod rule_plot;
 pub mod scoping;
 pub mod socket_ast;
 pub mod sound;

@@ -130,11 +130,16 @@ pub fn dispatch_plotting(
     "Plot" if args.len() >= 2 => {
       Some(quiet_plot(|| crate::functions::plot::plot_ast(args)))
     }
-    // RulePlot[obj] — currently produces a Graphics placeholder so the
-    // expected `-Graphics-` output renders, matching wolframscript.
-    // Full visual rendering of substitution rules, CellularAutomaton
-    // rules, etc. isn't implemented.
+    // RulePlot[CellularAutomaton[rule]] draws each neighborhood and its
+    // result. Other objects (substitution rules, …) still produce an empty
+    // Graphics placeholder so the expected `-Graphics-` output renders,
+    // matching wolframscript.
     "RulePlot" if !args.is_empty() => Some(quiet_plot(|| {
+      if let Some(result) =
+        crate::functions::rule_plot::rule_plot_graphics(args)
+      {
+        return result;
+      }
       crate::functions::graphics::show_ast(&[call1(
         "Graphics",
         Expr::List(vec![].into()),
