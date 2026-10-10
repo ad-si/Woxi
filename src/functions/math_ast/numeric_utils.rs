@@ -1150,9 +1150,7 @@ pub fn multiply_scalar_by_expr(
   match scalar {
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     Expr::Integer(1) => Ok(expr.clone()),
-    Expr::Integer(-1) => {
-      Ok(call("Times", vec![Expr::Integer(-1), expr.clone()]))
-    }
+    Expr::Integer(-1) => Ok(times(vec![Expr::Integer(-1), expr.clone()])),
     _ => Ok(times2(scalar.clone(), expr.clone())),
   }
 }

@@ -56,27 +56,15 @@ fn polylog_at_neg1_symbolic(s: &Expr) -> Result<Expr, InterpreterError> {
   // 2^(1 - s)
   let pow = pow(
     Expr::Integer(2),
-    call(
-      "Plus",
-      vec![
-        Expr::Integer(1),
-        call("Times", vec![Expr::Integer(-1), s.clone()]),
-      ],
-    ),
+    plus(vec![
+      Expr::Integer(1),
+      times(vec![Expr::Integer(-1), s.clone()]),
+    ]),
   );
   // 1 - 2^(1 - s)
-  let inner = call(
-    "Plus",
-    vec![
-      Expr::Integer(1),
-      call("Times", vec![Expr::Integer(-1), pow]),
-    ],
-  );
+  let inner = plus(vec![Expr::Integer(1), times(vec![Expr::Integer(-1), pow])]);
   // -(1 - 2^(1 - s)) Zeta[s]
-  let result = call(
-    "Times",
-    vec![Expr::Integer(-1), inner, call1("Zeta", s.clone())],
-  );
+  let result = times(vec![Expr::Integer(-1), inner, call1("Zeta", s.clone())]);
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
@@ -254,7 +242,7 @@ fn polylog_negative_s(
   let numerator = if terms.len() == 1 {
     terms.into_iter().next().unwrap()
   } else {
-    call("Plus", terms)
+    plus(terms)
   };
 
   // Denominator: (1 - x)^{n+1}
@@ -390,14 +378,14 @@ fn polylog_at_half(s: i128) -> Option<Expr> {
     // (-2*Pi^2*Log[2] + 4*Log[2]^3 + 21*Zeta[3])/24
     let pi2 = pow2(pi, Expr::Integer(2));
     // -2*Pi^2*Log[2]
-    let term1 = call("Times", vec![Expr::Integer(-2), pi2, log2.clone()]);
+    let term1 = times(vec![Expr::Integer(-2), pi2, log2.clone()]);
     // 4*Log[2]^3
     let log2_cubed = pow2(log2, Expr::Integer(3));
     let term2 = times2(Expr::Integer(4), log2_cubed);
     // 21*Zeta[3]
     let zeta3 = call1("Zeta", Expr::Integer(3));
     let term3 = times2(Expr::Integer(21), zeta3);
-    let numer = call("Plus", vec![term1, term2, term3]);
+    let numer = plus(vec![term1, term2, term3]);
     return Some(div2(numer, Expr::Integer(24)));
   }
 
