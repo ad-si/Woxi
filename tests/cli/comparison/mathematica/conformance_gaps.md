@@ -765,8 +765,22 @@ rational approximations. Real outputs differ in the last 1–2 digits for small
 
 ### `BesselI` and `BesselJ` differ by 1–2 ULP
 
-`BesselI[0, 3]` is `…5025` in Woxi and `…50235` in WL. `BesselK` and `BesselY`
-are bit-exact. Affects e.g. `PDF[VonMisesDistribution[2, 3], 2.5]`'s last digit.
+`BesselI[0, 3]` is `…5025` in Woxi and `…50235` in WL. `BesselK` is
+bit-exact on the probed values; `BesselY` mostly is, but `BesselY[0, 2.4]` is
+`…7438` in Woxi and `…7439` in WL (the true value is `…743774`, so Woxi's is
+the nearer one). Affects e.g. `PDF[VonMisesDistribution[2, 3], 2.5]`'s last
+digit.
+
+### Machine special-function values differ in the last digits
+
+Woxi's machine `LogGamma` is msun's `lgamma` (accurate to an ulp); it matches
+wolframscript on most arguments but not all — `LogGamma[1.5]` is `…4522` (the
+correctly rounded value) against WL's `…4526`, `LogGamma[10.3]` `…355` against
+`…359`. The same 1–3 ULP class: `InverseErf[0.5]` (`…698` vs `…6993`, Woxi
+nearer), `LogIntegral[0.3]` (`…894` vs `…8946`, WL nearer) and
+`ExpIntegralE[2, 0.2]` (`…033` vs `…031`, WL nearer). **Not reproducible**
+without WL's own approximations; the last two are worth a more accurate
+algorithm.
 
 Also missing from Woxi's numeric folding: `Gamma[rational]`, so
 `2. + Gamma[1/3]` stays symbolic where WL gives `5.357877069415496`.
@@ -973,6 +987,70 @@ last bit and never a formula to correct.
 
 
 ## Algebra and calculus
+
+### `FullSimplify` of a polynomial: WL's search is not cost-minimal
+
+FullSimplify of a univariate integer polynomial is decoded as a greedy search
+by SimplifyCount (`fs_univariate` in `polynomial_ast/simplify.rs`): a genuine
+factorization when no more expensive, else the content times the simplified
+primitive part, or the low-order terms plus the simplified remainder (nested
+Horner form). It matches wolframscript on 175 of 181 probed polynomials. In
+the rest wolframscript returns a form that its own `Simplify`SimplifyCount`
+rates *more* expensive than the one Woxi finds, so the choice comes from the
+order of its transformation search, not from the cost:
+
+```sh
+wolframscript -code 'FullSimplify[-6 + 2 x - 3 x^2 - 6 x^3 - 5 x^4]'
+# -6 - x*(-2 + x*(3 + x*(6 + 5*x)))      (SimplifyCount 21)
+woxi eval 'FullSimplify[-6 + 2 x - 3 x^2 - 6 x^3 - 5 x^4]'
+# -6 + x*(2 - x*(3 + x*(6 + 5*x)))       (SimplifyCount 20)
+
+wolframscript -code 'FullSimplify[1 - 5 x - 8 x^2 - x^3 + 6 x^5]'
+# 1 + x*(-5 + x*(-8 - x + 6*x^3))        (21)
+woxi eval 'FullSimplify[1 - 5 x - 8 x^2 - x^3 + 6 x^5]'
+# 1 - x*(5 + x*(8 + x - 6*x^3))          (19)
+```
+
+The others: `3x - 5x^2 - 2x^3 - 3x^5`, `-8 - 8x - x^2 + 9x^4`,
+`2 - 8x + 5x^3 + 2x^4 - 3x^5` (WL keeps it expanded) and
+`-5 + 3x + 4x^2 + 9x^4 - 9x^5` (WL does not split off `9x^3(-1 + x)`). The
+sign WL leaves on a split-off remainder follows neither the cost nor the
+remainder's leading coefficient consistently; **not reproducible** from
+outputs alone. Multivariate and rational-coefficient polynomials still go
+through the older candidate pipeline.
+
+### `FactorSquareFreeList` order of a lower-degree non-monic factor
+
+The factors are ordered by leading coefficient, then constant term, which
+matches 24 of 25 probes. The exception: `FactorSquareFreeList[(x^2 + 3)
+(2x - 1)^2]` lists `{-1 + 2*x, 2}` before `{3 + x^2, 1}` in wolframscript.
+Ordering by degree first fixes it but breaks `x` against `-1 + x^2` (WL puts
+the latter first), and no single total order fits all 25 — the factor `x`
+seems to be placed separately.
+
+### `(-1)^r b^(-r)` does not merge in a product
+
+```sh
+wolframscript -code '(-1)^(2/3)*5^(-2/3)'   # (-1/5)^(2/3)
+woxi eval '(-1)^(2/3)*5^(-2/3)'             # (-1)^(2/3)/5^(2/3)
+```
+
+`Times` merges `a^r b^r` but not a sign radical against a reciprocal one.
+Wolframscript skips the merge when another radical is present
+(`((-1)^(2/3)*2^(1/3))/5^(2/3)` stays), which the negative-base `Power` rule
+mirrors (`(-8/5)^(2/3)` → `4*(-1/5)^(2/3)`).
+
+### `Simplify` does not simplify function arguments
+
+```sh
+wolframscript -code 'Simplify[Sin[x^2 + 2 x + 1]]'   # Sin[(1 + x)^2]
+woxi eval 'Simplify[Sin[x^2 + 2 x + 1]]'             # Sin[1 + 2*x + x^2]
+```
+
+`FullSimplify` does (`simplify_call_arguments`): every compound argument is
+simplified and kept when the re-evaluated call gets strictly cheaper, so a
+tie such as `f[6 - 5x + x^2]` keeps its argument, as in wolframscript.
+`Simplify` has not been switched over.
 
 ### `Together` ignores an inexact exponent's sign
 
@@ -2134,6 +2212,17 @@ woxi eval 'LinearSolve[{{2, 1}, {1, 3}}, Method -> "Cholesky"]'
 
 ## Expression structure and evaluation
 
+### A held `Infinity` is not the symbol
+
+```sh
+wolframscript -code 'ToString[FullForm[Hold[-Infinity]]]'   # Hold[Times[-1, Infinity]]
+woxi eval 'ToString[FullForm[Hold[-Infinity]]]'             # Hold[DirectedInfinity[-1]]
+```
+
+Woxi stores `Infinity` as one identifier whether or not it has evaluated, so
+FullForm always shows the evaluated `DirectedInfinity[1]` (and `-Infinity`
+the evaluated `DirectedInfinity[-1]`). Unheld, both agree.
+
 ### A package symbol answers before its package has been loaded
 
 ```sh
@@ -2996,6 +3085,31 @@ woxi eval 'F[x_]=G[x]; N[F[x_]]=x^2; ClearAll[F]; {N[F[2]], N[G[2]]}'
 
 
 ## Messages and error handling
+
+### `RealDigits` of an arbitrary-precision number: the last digit
+
+`RealDigits[N[Pi, 30]]` ends in `…3, 2, 8` in wolframscript, `…3, 2, 7` in
+Woxi (Pi's 30th digit is 7, followed by 9); `RealDigits[N[999999/1000000, 3]]`
+is `{{1, 0, 0}, 1}` against Woxi's `{{9, 9, 9}, 0}`. But `RealDigits[N[E, 20]]`
+truncates in both (…3, followed by 6), so wolframscript neither always
+rounds nor always truncates — the digit comes from its binary mantissa and
+guard bits. **Not reproducible**; Woxi truncates, which agrees on most probes.
+
+### `Min`/`Max` `::nord` count for nested lists and real infinities
+
+`Min`/`Max` emit one `::nord` per evaluation that compares `ComplexInfinity`
+(the call itself unless it is a lone list, plus the re-evaluation of a
+changed result), which matches wolframscript on every flat probe. Two shapes
+still differ:
+
+```sh
+# one extra pass for a list nested two deep:
+wolframscript -code 'Min[{x, y}, {3, {ComplexInfinity}}]'   # 3 messages
+woxi eval 'Min[{x, y}, {3, {ComplexInfinity}}]'             # 2 messages
+# one fewer when a real infinity absorbs the numbers:
+wolframscript -code 'Max[1, ComplexInfinity, Infinity]'      # 1 message
+woxi eval 'Max[1, ComplexInfinity, Infinity]'                # 2 messages
+```
 
 ### `Partition` reports `ilsmp` where the padded forms allow a zero block
 
