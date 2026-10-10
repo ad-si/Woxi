@@ -4234,6 +4234,41 @@ fn match_key_value_pattern(
   Some(bindings)
 }
 
+/// Match `expr_args` against the longer `pat_args` by letting a subset of the
+/// `Optional` slots take their defaults. The arguments fill the slots from the
+/// left, so the optionals that fall back on their defaults are the *rightmost*
+/// ones: `g[1]` against `g[x_ : 0, y_ : 0]` gives x = 1, y = 0.
+fn match_with_omitted_optionals(
+  pat_args: &[Expr],
+  expr_args: &[Expr],
+  pat_name: &str,
+) -> Option<Vec<(String, Expr)>> {
+  if pat_args.len() <= expr_args.len() {
+    return None;
+  }
+  let missing = pat_args.len() - expr_args.len();
+  let opt_positions: Vec<usize> = pat_args
+    .iter()
+    .enumerate()
+    .filter(|(_, p)| is_optional_slot(p))
+    .map(|(i, _)| i)
+    .rev()
+    .collect();
+  if opt_positions.len() < missing {
+    return None;
+  }
+  let mut skip_buf: Vec<usize> = Vec::with_capacity(missing);
+  try_skip_optional_subsets(
+    pat_args,
+    expr_args,
+    &opt_positions,
+    missing,
+    0,
+    &mut skip_buf,
+    pat_name,
+  )
+}
+
 /// Try every way of choosing `missing` positions from `opt_positions` to
 /// skip (take default value for); align the remaining pattern positions to
 /// the expression args in order. Returns bindings on first successful match.
@@ -4608,7 +4643,8 @@ fn match_pattern_impl(
           match_args_with_sequences(expr_items, pat_items)
         } else {
           if pat_items.len() != expr_items.len() {
-            return None;
+            // `{x_, y_:0}` matches `{1}` just like `f[x_, y_:0]` matches `f[1]`.
+            return match_with_omitted_optionals(pat_items, expr_items, "List");
           }
           let mut bindings = Vec::new();
           for (p, e) in pat_items.iter().zip(expr_items.iter()) {
@@ -4891,34 +4927,10 @@ fn match_pattern_impl(
             // defaults when the expression has fewer args than the pattern.
             // Example: F[x] matches F[x_:0, y_] with x = 0 (default) and
             // y = x, or f[a] matches f[x_, y_:3] with y = 3.
-            if pat_args.len() > expr_args.len() {
-              let missing = pat_args.len() - expr_args.len();
-              let opt_positions: Vec<usize> = pat_args
-                .iter()
-                .enumerate()
-                .filter(|(_, p)| is_optional_slot(p))
-                .map(|(i, _)| i)
-                .collect();
-              if opt_positions.len() >= missing {
-                // The arguments fill the slots from the left, so the optionals
-                // that fall back on their defaults are the *rightmost* ones:
-                // `g[1]` against `g[x_ : 0, y_ : 0]` gives x = 1, y = 0. The
-                // candidate skip sets are therefore enumerated from the right.
-                let opt_positions: Vec<usize> =
-                  opt_positions.into_iter().rev().collect();
-                let mut skip_buf: Vec<usize> = Vec::with_capacity(missing);
-                if let Some(b) = try_skip_optional_subsets(
-                  pat_args,
-                  expr_args,
-                  &opt_positions,
-                  missing,
-                  0,
-                  &mut skip_buf,
-                  pat_name,
-                ) {
-                  return Some(b);
-                }
-              }
+            if let Some(b) =
+              match_with_omitted_optionals(pat_args, expr_args, pat_name)
+            {
+              return Some(b);
             }
             // Flat pattern matching: when the function is Flat and the pattern
             // has fewer args than the expression, partition expr_args into
