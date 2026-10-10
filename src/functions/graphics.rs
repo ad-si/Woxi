@@ -13468,14 +13468,39 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         Some(f) => call1("PointSize", Expr::Real(f)),
         None => call1("PointSize", Expr::Real(0.012)),
       });
-      let coords: Vec<Expr> = sd
-        .points
-        .iter()
-        .filter(|(_, y)| y.is_finite())
-        .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
-        .collect();
-      if !coords.is_empty() {
-        series_prims.push(call1("Point", Expr::List(coords.into())));
+      // `ColorFunction -> f` colors every dot on its own.
+      if let Some(colors) = crate::functions::plot::scatter_point_colors(
+        &ps.options,
+        &sd.points,
+        ps.y_range,
+      ) {
+        for (&(x, y), (r, g, b)) in sd.points.iter().zip(colors) {
+          if !y.is_finite() {
+            continue;
+          }
+          series_prims.push(call(
+            "RGBColor",
+            vec![
+              Expr::Real(r as f64 / 255.0),
+              Expr::Real(g as f64 / 255.0),
+              Expr::Real(b as f64 / 255.0),
+            ],
+          ));
+          series_prims.push(call1(
+            "Point",
+            Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+          ));
+        }
+      } else {
+        let coords: Vec<Expr> = sd
+          .points
+          .iter()
+          .filter(|(_, y)| y.is_finite())
+          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+          .collect();
+        if !coords.is_empty() {
+          series_prims.push(call1("Point", Expr::List(coords.into())));
+        }
       }
     } else {
       series_prims.push(call1(

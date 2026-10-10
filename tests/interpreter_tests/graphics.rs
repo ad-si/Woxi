@@ -33489,4 +33489,30 @@ mod grid_text_in_graphics {
     .unwrap();
     assert_eq!(clipped, "1", "{clipped}");
   }
+
+  #[test]
+  fn list_plot_color_function_colors_each_point() {
+    let colored = |expr: &str| {
+      let svg = export_svg(expr);
+      let mut fills: Vec<&str> = svg
+        .split("fill=\"")
+        .skip(1)
+        .filter_map(|t| t.split('"').next())
+        .filter(|f| f.starts_with("rgb(") || f.starts_with('#'))
+        .collect();
+      fills.sort_unstable();
+      fills.dedup();
+      fills.len()
+    };
+    let plain = colored("ListPlot[Table[Sin[i/30.], {i, 100}]]");
+    let ranged = colored(
+      "ListPlot[Table[Sin[i/30.], {i, 100}], ColorFunction -> \"DarkRainbow\"]",
+    );
+    assert!(ranged > plain + 5, "{plain} vs {ranged}");
+    // The per-point colors survive layering the plot with other graphics.
+    let shown = colored(
+      "Show[ListPlot[Table[Sin[i/30.], {i, 100}], ColorFunction -> \"DarkRainbow\"], Graphics[{Red, Line[{{40, 0}, {40, 2}}]}]]",
+    );
+    assert!(shown > plain + 5, "{plain} vs {shown}");
+  }
 }
