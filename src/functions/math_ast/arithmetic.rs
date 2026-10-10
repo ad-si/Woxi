@@ -5975,6 +5975,27 @@ fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
             Expr::Identifier(_) | Expr::Constant(_)
           )
       };
+      // A positive power of a sum against a bare sum orders by the two sums,
+      // the power's exponent breaking a tie: `(-1 + x)*(1 + x)^2` and
+      // `(1 + x)*(2 + x)^2` (wolframscript-verified).
+      if sa == 0 && sb == 1 && plus_call_args(b).is_some()
+        && let Some(base) = power_additive_base(a)
+      {
+        let ord =
+          crate::functions::list_helpers_ast::sorting::canonical_cmp(base, b);
+        if ord != std::cmp::Ordering::Equal {
+          return ord;
+        }
+      }
+      if sa == 1 && sb == 0 && plus_call_args(a).is_some()
+        && let Some(base) = power_additive_base(b)
+      {
+        let ord =
+          crate::functions::list_helpers_ast::sorting::canonical_cmp(a, base);
+        if ord != std::cmp::Ordering::Equal {
+          return ord;
+        }
+      }
       if sa == 0 && sb == 1
         && let Some(pargs) = plus_call_args(b)
         && ident_base_factor(a)

@@ -473,12 +473,6 @@ part, so `a + 0.5 (b - a) + {{0., 0.5}, {-0.5, 0.}} . (b - a)` with symbolic
 needs it as the real part of a `Complex` (`1. + 0. I`). The `LinearModelFit`
 `BestFit` entry below is one symptom.
 
-### Nested sum-versus-sum factor order
-
-`(-1 + x)*(1 + (-2 + x)/2)` — WL emits the more-nested factor first. Value
-identical, display only. Surfaced through `InterpolatingPolynomial`'s Newton
-form.
-
 ### Mixed sharing/non-sharing numerators over a shared denominator
 
 `(5 + x)/(3 + x) + b/(3 + x)^2` — WL puts the `b` term first, Woxi keeps the

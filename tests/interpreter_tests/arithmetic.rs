@@ -10082,6 +10082,36 @@ mod negative_half_times_sum_display {
 mod times_factor_vs_sum_ordering {
   use super::*;
 
+  // A positive power of a sum orders against a bare sum by the two sums.
+  // Verified against wolframscript.
+  #[test]
+  fn power_of_sum_vs_sum() {
+    assert_eq!(
+      interpret("(1 + x)^2 (-1 + x)").unwrap(),
+      "(-1 + x)*(1 + x)^2"
+    );
+    assert_eq!(interpret("(2 + x)^2 (1 + x)").unwrap(), "(1 + x)*(2 + x)^2");
+    assert_eq!(
+      interpret("(1 + x)^3 (-2 + x)").unwrap(),
+      "(-2 + x)*(1 + x)^3"
+    );
+    assert_eq!(
+      interpret("(x - 1)^2 (x + 1)").unwrap(),
+      "(-1 + x)^2*(1 + x)"
+    );
+    assert_eq!(interpret("(b + x) (a + x)^2").unwrap(), "(a + x)^2*(b + x)");
+  }
+
+  // Two sum factors order by the Sort comparator, which compares sums
+  // termwise from the greatest term (InterpolatingPolynomial's Newton form).
+  #[test]
+  fn nested_sum_factor_first() {
+    assert_eq!(
+      interpret("(-1 + x)*(1 + (-2 + x)/2)").unwrap(),
+      "(1 + (-2 + x)/2)*(-1 + x)"
+    );
+  }
+
   // A power of a sum orders against a monomial by the sum's top term, the
   // same way a bare sum does: `x*Sqrt[1 + x]` but `Sqrt[1 - x]*x`.
   #[test]

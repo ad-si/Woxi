@@ -3345,6 +3345,46 @@ mod sort_atomic_normal {
 mod sort_canonical {
   use super::*;
 
+  // A sum whose greatest term is linear orders against a monomial by
+  // variable, then by coefficient (wolframscript-verified).
+  #[test]
+  fn linear_sum_against_monomial() {
+    for (input, expected) in [
+      ("Sort[{x, -5 + 2x}]", "{x, -5 + 2*x}"),
+      ("Sort[{x, -1 + x}]", "{-1 + x, x}"),
+      ("Sort[{x, 1 + x/2}]", "{1 + x/2, x}"),
+      ("Sort[{x^3, -1 + 2x}]", "{x^3, -1 + 2*x}"),
+      ("Sort[{a, -1 + 2x}]", "{a, -1 + 2*x}"),
+      ("Sort[{z, -1 + 2x}]", "{-1 + 2*x, z}"),
+      ("Sort[{x, -1 + 2x + y}]", "{x, -1 + 2*x + y}"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // Two sums compare termwise from their greatest term; the early/late
+  // class only places a sum among non-sums. Verified against wolframscript.
+  #[test]
+  fn sums_compare_termwise() {
+    assert_eq!(
+      interpret("Sort[{x - y z^3, 1 + x y z}]").unwrap(),
+      "{1 + x*y*z, x - y*z^3}"
+    );
+    assert_eq!(
+      interpret("Sort[{-3 + x, 8 - (x - 3)^2}]").unwrap(),
+      "{8 - (-3 + x)^2, -3 + x}"
+    );
+    assert_eq!(
+      interpret(
+        "Sort[{1 - x, 1 + x, 1 - x^2, 1 + x^2, -1 + x, x - x^2, 1/x + 1, \
+         Sqrt[x] + 1, 2 + x, 1 + 2 x, x + x^2}]"
+      )
+      .unwrap(),
+      "{1 + x^(-1), 1 + Sqrt[x], 1 - x, -1 + x, 1 + x, 2 + x, 1 + 2*x, \
+       1 - x^2, x - x^2, 1 + x^2, x + x^2}"
+    );
+  }
+
   // Compatible Quantities sort by their physical value, not structurally.
   #[test]
   fn sort_quantities_by_value() {

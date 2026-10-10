@@ -414,19 +414,25 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           || matches!(b, Expr::List(_) | Expr::Pattern { .. });
         if !skip {
           match (&a_terms, &b_terms) {
+            // The early/late class only places a sum among non-sums; two
+            // sums compare termwise (Sort[{x - y z^3, 1 + x y z}] and
+            // Sort[{-3 + x, 8 - (-3 + x)^2}] put the second sum first,
+            // wolframscript-verified).
             (Some(ta), Some(tb)) => {
-              let (ca, cb) = (sum_sorts_early(ta), sum_sorts_early(tb));
-              if ca != cb {
-                return if ca {
-                  std::cmp::Ordering::Less
-                } else {
-                  std::cmp::Ordering::Greater
-                };
-              }
               let ord = cmp_sum_terms(ta, tb);
               if ord != std::cmp::Ordering::Equal {
                 return ord;
               }
+            }
+            (Some(ta), None)
+              if let Some(ord) = linear_sum_vs_monomial(ta, b) =>
+            {
+              return ord;
+            }
+            (None, Some(tb))
+              if let Some(ord) = linear_sum_vs_monomial(tb, a) =>
+            {
+              return ord.reverse();
             }
             (Some(ta), None) => {
               return if sum_sorts_early(ta) || is_plain_call_non_power(b) {
@@ -2008,6 +2014,51 @@ fn term_is_negative(t: &Expr) -> bool {
   }
   let ((cre, cim), r) = numeric_coeff_and_rest_expr(t);
   r.is_some() && cim == 0.0 && cre < 0.0
+}
+
+/// A sum whose greatest term is linear, `c*v`, against a monomial `k*u^e`:
+/// the variables order first (`Sort[{a, -1 + 2x}]` puts `a` first, but
+/// `-1 + 2x` precedes `z`); for the same variable the coefficients compare,
+/// whatever the monomial's exponent, and on a tie a negative lower term puts
+/// the sum first. wolframscript-verified: `{-1 + x/2, x}`, `{1 + x/2, x}`,
+/// `{x, -5 + 2x}`, `{x^3, -1 + 2x}`, `{-1 + x, x}`, `{x, 1 + x}`,
+/// `{x^2, 1 + x}`. `None` for any other shape.
+fn linear_sum_vs_monomial(
+  terms: &[Expr],
+  monomial: &Expr,
+) -> Option<std::cmp::Ordering> {
+  let lead = terms.last()?;
+  let ((c, c_im), lead_rest) = numeric_coeff_and_rest_expr(lead);
+  let lead_var = lead_rest.unwrap_or_else(|| lead.clone());
+  if c_im != 0.0 || !matches!(lead_var, Expr::Identifier(_)) {
+    return None;
+  }
+  let ((k, k_im), mono_rest) = numeric_coeff_and_rest_expr(monomial);
+  let mono_core = mono_rest.unwrap_or_else(|| monomial.clone());
+  let mono_var = match power_parts(&mono_core) {
+    Some((base, exp)) => {
+      crate::functions::math_ast::try_eval_to_f64(&exp)?;
+      base
+    }
+    None => mono_core,
+  };
+  if k_im != 0.0 || !matches!(mono_var, Expr::Identifier(_)) {
+    return None;
+  }
+  let ord = canonical_cmp(&lead_var, &mono_var);
+  if ord != std::cmp::Ordering::Equal {
+    return Some(ord);
+  }
+  Some(match c.partial_cmp(&k)? {
+    std::cmp::Ordering::Equal => {
+      if terms[..terms.len() - 1].iter().any(term_is_negative) {
+        std::cmp::Ordering::Less
+      } else {
+        std::cmp::Ordering::Greater
+      }
+    }
+    other => other,
+  })
 }
 
 /// Whether a sum sorts in the EARLY class — before monomials and atoms —
