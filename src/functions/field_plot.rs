@@ -205,6 +205,7 @@ enum ContourSpec {
 }
 
 /// Options shared by the density / contour plot family.
+#[allow(clippy::struct_excessive_bools)]
 struct DensityContourOptions {
   svg_width: u32,
   svg_height: u32,
