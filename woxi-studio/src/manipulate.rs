@@ -1614,6 +1614,38 @@ mod tests {
     assert_eq!(labels, vec!["A\u{2082}", "C\u{2083}\u{207A}", "B\u{00B2}"]);
   }
 
+  /// A choice label whose box code typesets a lone closing parenthesis
+  /// (`\!\(\*SubscriptBox[\()\), \(4\)]\)`, as in a chemical formula
+  /// `C(CH3)4`) must fold into a subscript like any other script, not leak
+  /// the raw `SubscriptBox[), 4]` source.
+  #[test]
+  fn setter_labels_keep_lone_paren_box_atoms() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[
+        d,
+        {{d, 1, ""}, {
+          1 -> "C(\!\(\*SubscriptBox[\(CH\), \(3\)]\)\!\(\*SubscriptBox[\()\), \(4\)]\)"
+        }, ControlType -> SetterBar}
+      ]"#,
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let labels = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        ControlState::Discrete { value_labels, .. } => {
+          Some(value_labels.clone())
+        }
+        _ => None,
+      })
+      .expect("setter control");
+    assert_eq!(labels.len(), 1);
+    assert!(!labels[0].contains("SubscriptBox"), "{}", labels[0]);
+    assert!(labels[0].starts_with("C(CH\u{2083}"), "{}", labels[0]);
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
   /// ("Selective Resizing of Images") whose paired sliders each bound the
   /// other through a `Dynamic[…]` limit and one of them counts *down*:
