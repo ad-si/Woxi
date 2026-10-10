@@ -9120,6 +9120,22 @@ fn strip_box_markup(chars: &[char]) -> String {
   let mut i = 0;
   while i < chars.len() {
     match chars[i] {
+      // A group holding only bracket punctuation (`\()\)`, a closing
+      // parenthesis typeset on its own) is a text atom, not box source:
+      // stripped bare it would unbalance the surrounding box expression,
+      // so it keeps quotes.
+      BOX_OPEN
+        if !in_box_text
+          && let Some(close) = matching_box_close(chars, i)
+          && close > i + 1
+          && chars[i + 1..close].iter().all(|c| "()[]{},".contains(*c)) =>
+      {
+        out.push('"');
+        out.extend(&chars[i + 1..close]);
+        out.push('"');
+        i = close + 1;
+        continue;
+      }
       BOX_OPEN | BOX_CLOSE | BOX_SEP | BOX_START => {}
       '"' => in_box_text = !in_box_text,
       '\\' if matches!(chars.get(i + 1), Some('"' | '\\')) => {

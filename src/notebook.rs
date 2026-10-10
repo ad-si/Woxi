@@ -942,6 +942,13 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           } else {
             format!("\"{}\"", escape_string(&sub))
           };
+          // A base that is bare punctuation (the lone `)` of a typeset
+          // `C(CH₃)₄`) is likewise display text, not code.
+          let base = if crate::parse_to_expr(&base).is_ok() {
+            base
+          } else {
+            format!("\"{}\"", escape_string(&base))
+          };
           // Prefix subscript, as above — keep an explicit empty string
           // so the result still parses.
           if draws_nothing(&base) {
