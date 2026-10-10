@@ -6247,6 +6247,100 @@ mod complex_division {
 mod min_max_identity {
   use super::*;
 
+  /// Evaluate `code` from a clean state and return its result together with
+  /// the number of `::nord` messages it emitted.
+  fn with_nord_count(code: &str) -> (String, usize) {
+    clear_state();
+    let result = interpret(code).unwrap();
+    let count = woxi::get_captured_messages_raw()
+      .iter()
+      .filter(|m| m.contains("::nord"))
+      .count();
+    (result, count)
+  }
+
+  // ComplexInfinity stays beside the real extremum, with one ::nord per
+  // evaluation that compares it: the given call (unless it is a lone list),
+  // and the re-evaluation of a changed result. All wolframscript-verified
+  // (differential fuzzer, seed 20261010).
+  #[test]
+  fn complex_infinity_nord_count() {
+    for (code, result, count) in [
+      (
+        "Min[-76.5, ComplexInfinity]",
+        "Min[-76.5, ComplexInfinity]",
+        1,
+      ),
+      ("Min[ComplexInfinity, 1]", "Min[1, ComplexInfinity]", 1),
+      ("Min[1, 2, ComplexInfinity]", "Min[1, ComplexInfinity]", 2),
+      ("Min[{1}, ComplexInfinity]", "Min[1, ComplexInfinity]", 2),
+      (
+        "Min[x, y, 3, ComplexInfinity]",
+        "Min[3, x, y, ComplexInfinity]",
+        1,
+      ),
+      ("Min[ComplexInfinity, x, x]", "Min[x, ComplexInfinity]", 2),
+      (
+        "Min[ComplexInfinity, ComplexInfinity, ComplexInfinity]",
+        "ComplexInfinity",
+        1,
+      ),
+      ("Max[{ComplexInfinity, 1, 2}]", "Max[2, ComplexInfinity]", 1),
+      ("Min[{ComplexInfinity}]", "ComplexInfinity", 0),
+      ("Min[1, Indeterminate, ComplexInfinity]", "Indeterminate", 0),
+    ] {
+      assert_eq!(with_nord_count(code), (result.to_string(), count), "{code}");
+    }
+  }
+
+  // A non-real number cannot be ordered: the call stays unevaluated (lists
+  // unflattened) with one ::nord per such item.
+  #[test]
+  fn non_real_numbers_stay_unevaluated() {
+    for (code, result, count) in [
+      ("Min[I, 1]", "Min[I, 1]", 1),
+      ("Min[I, 2, 1]", "Min[I, 1, 2]", 1),
+      ("Min[{I, 2, 1}]", "Min[{I, 2, 1}]", 1),
+      ("Min[1 + I, 2 - I]", "Min[1 + I, 2 - I]", 2),
+      ("Min[Sqrt[-2], 1]", "Min[1, I*Sqrt[2]]", 1),
+      (
+        "Min[DirectedInfinity[I], 1]",
+        "Min[1, DirectedInfinity[I]]",
+        1,
+      ),
+      (
+        "Min[1, 2, ComplexInfinity, I]",
+        "Min[I, 1, 2, ComplexInfinity]",
+        2,
+      ),
+    ] {
+      assert_eq!(with_nord_count(code), (result.to_string(), count), "{code}");
+    }
+  }
+
+  #[test]
+  fn nord_message_text() {
+    clear_state();
+    interpret("Min[DirectedInfinity[I], 1]").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.iter().any(|m| {
+      m.contains("Min::nord: Invalid comparison with I Infinity attempted.")
+    }));
+  }
+
+  // The kept arguments are in canonical order; a real infinity is not
+  // compared away against a symbol.
+  #[test]
+  fn kept_arguments_canonical_order() {
+    assert_eq!(
+      interpret("Max[y, x, Infinity]").unwrap(),
+      "Max[x, y, Infinity]"
+    );
+    assert_eq!(interpret("Min[x, -Infinity]").unwrap(), "Min[x, -Infinity]");
+    assert_eq!(interpret("Max[x, -Infinity]").unwrap(), "Max[x, -Infinity]");
+    assert_eq!(interpret("Max[-Infinity, 1, x]").unwrap(), "Max[1, x]");
+  }
+
   #[test]
   fn min_zero_args() {
     // Min[] is the identity element: Infinity

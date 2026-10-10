@@ -15843,6 +15843,7 @@ pub fn format_message_with_expr(
 }
 
 /// A run of message text or an expression embedded in it.
+#[derive(Clone)]
 pub enum MessagePiece<'a> {
   Text(String),
   Expr(&'a Expr),

@@ -13423,7 +13423,6 @@ pub fn try_eval_to_f64_with_infinity(expr: &Expr) -> Option<f64> {
   try_eval_to_f64(expr)
 }
 
-/// Max[args...] or Max[list] - Maximum value
 /// If any argument is a SparseArray, return the argument list with every
 /// SparseArray replaced by its dense form (so Max/Min compare over the
 /// expanded elements). Returns `None` when no argument is a SparseArray.
@@ -13456,123 +13455,158 @@ fn contains_indeterminate(expr: &Expr) -> bool {
   }
 }
 
+/// Max[args...] or Max[list] - Maximum value
 pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // An Indeterminate argument (at any depth, since lists are flattened)
-  // makes the extremum Indeterminate: it cannot be ordered against anything.
-  if args.iter().any(contains_indeterminate) {
-    return Ok(id_expr("Indeterminate"));
-  }
-  if args.is_empty() {
-    return Ok(id_expr("-Infinity"));
-  }
-
-  // Any SparseArray argument is compared over its dense elements.
-  if let Some(dense) = densify_sparse_args(args) {
-    return max_ast(&dense);
-  }
-
-  // Handle Interval in Max
-  if let Some(result) = crate::functions::interval_ast::try_interval_max(args) {
-    return result;
-  }
-
-  // Flatten all nested lists
-  let items = flatten_lists(args);
-  if items.is_empty() {
-    return Ok(id_expr("-Infinity"));
-  }
-
-  // All-Quantity case: compare magnitudes after unit conversion and return the
-  // larger quantity in its original unit.
-  if let Some(result) =
-    crate::functions::quantity_ast::try_quantity_extreme(&items, true)
-  {
-    return Ok(result);
-  }
-
-  // Separate numeric and symbolic arguments
-  let mut best_val: Option<f64> = None;
-  let mut best_expr: Option<&Expr> = None;
-  let mut symbolic: Vec<Expr> = Vec::new();
-  for item in &items {
-    if let Some(n) = try_eval_to_f64_with_infinity(item) {
-      match best_val {
-        Some(m) if n > m => {
-          best_val = Some(n);
-          best_expr = Some(item);
-        }
-        None => {
-          best_val = Some(n);
-          best_expr = Some(item);
-        }
-        _ => {}
-      }
-    } else {
-      symbolic.push((*item).clone());
-    }
-  }
-
-  // Max is idempotent: Max[a, a] == a. Drop duplicate symbolic arguments
-  // (numeric duplicates already collapse into the single best value).
-  {
-    let mut seen = std::collections::HashSet::new();
-    symbolic.retain(|e| seen.insert(expr_to_string(e)));
-  }
-
-  if symbolic.is_empty() {
-    // All numeric
-    match best_expr {
-      Some(expr) => Ok((*expr).clone()),
-      None => Ok(num_to_expr(f64::NEG_INFINITY)),
-    }
-  } else {
-    // Mixed: keep max numeric and all symbolic args
-    let mut result_args: Vec<Expr> = Vec::new();
-    if let Some(expr) = best_expr {
-      result_args.push((*expr).clone());
-    }
-    result_args.extend(symbolic);
-    if result_args.len() == 1 {
-      Ok(result_args.remove(0))
-    } else {
-      Ok(call("Max", result_args))
-    }
-  }
+  extremum_ast(args, true)
 }
 
 /// Min[args...] or Min[list] - Minimum value
 pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  extremum_ast(args, false)
+}
+
+/// The text `::nord` shows for an item Max/Min cannot order, or `None` when
+/// the item is a real number or a symbolic quantity that may still become
+/// one. ComplexInfinity and the non-real DirectedInfinity[z] read as
+/// `ComplexInfinity` / `z Infinity`; other non-real numbers (`I`, `1 + I`,
+/// `I Sqrt[2]`) are shown as expressions.
+fn unorderable_display(e: &Expr) -> Option<crate::syntax::MessagePiece<'_>> {
+  use crate::syntax::MessagePiece;
+  match e {
+    Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity" => {
+      return Some(MessagePiece::Text("ComplexInfinity".to_string()));
+    }
+    Expr::FunctionCall { name, args } if name == "DirectedInfinity" => {
+      return match args.as_slice() {
+        [] => Some(MessagePiece::Text("ComplexInfinity".to_string())),
+        [dir]
+          if crate::functions::predicate_ast::is_numeric_q(dir)
+            && try_eval_to_f64(dir).is_none() =>
+        {
+          Some(MessagePiece::Text(format!(
+            "{} Infinity",
+            expr_to_string(dir)
+          )))
+        }
+        _ => None,
+      };
+    }
+    _ => {}
+  }
+  if crate::functions::predicate_ast::is_complex_number(e) {
+    return Some(MessagePiece::Expr(e));
+  }
+  // A numeric quantity with a non-zero imaginary part (I Sqrt[2]).
+  if try_eval_to_f64(e).is_none()
+    && crate::functions::predicate_ast::is_numeric_q(e)
+    && let Ok(n) =
+      crate::evaluator::evaluate_expr_to_expr(&call1("N", e.clone()))
+    && crate::functions::predicate_ast::is_complex_number(&n)
+  {
+    return Some(MessagePiece::Expr(e));
+  }
+  None
+}
+
+/// Shared implementation of Max (`is_max`) and Min.
+fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
+  let head = if is_max { "Max" } else { "Min" };
+  let identity = || {
+    if is_max {
+      id_expr("-Infinity")
+    } else {
+      id_expr("Infinity")
+    }
+  };
   // An Indeterminate argument (at any depth, since lists are flattened)
   // makes the extremum Indeterminate: it cannot be ordered against anything.
   if args.iter().any(contains_indeterminate) {
     return Ok(id_expr("Indeterminate"));
   }
   if args.is_empty() {
-    return Ok(id_expr("Infinity"));
+    return Ok(identity());
   }
 
   // Any SparseArray argument is compared over its dense elements.
   if let Some(dense) = densify_sparse_args(args) {
-    return min_ast(&dense);
+    return extremum_ast(&dense, is_max);
   }
 
-  // Handle Interval in Min
-  if let Some(result) = crate::functions::interval_ast::try_interval_min(args) {
+  let interval = if is_max {
+    crate::functions::interval_ast::try_interval_max(args)
+  } else {
+    crate::functions::interval_ast::try_interval_min(args)
+  };
+  if let Some(result) = interval {
     return result;
   }
 
   // Flatten all nested lists
   let items = flatten_lists(args);
   if items.is_empty() {
-    return Ok(id_expr("Infinity"));
+    return Ok(identity());
   }
 
   // All-Quantity case: compare magnitudes after unit conversion and return the
-  // smaller quantity in its original unit.
+  // extreme quantity in its original unit.
   if let Some(result) =
-    crate::functions::quantity_ast::try_quantity_extreme(&items, false)
+    crate::functions::quantity_ast::try_quantity_extreme(&items, is_max)
   {
     return Ok(result);
+  }
+
+  let emit_nord = |display: crate::syntax::MessagePiece| {
+    crate::emit_message(&crate::syntax::format_message_pieces(&[
+      crate::syntax::MessagePiece::Text(format!(
+        "{head}::nord: Invalid comparison with "
+      )),
+      display,
+      crate::syntax::MessagePiece::Text(" attempted.".to_string()),
+    ]));
+  };
+  let is_complex_infinity = |e: &Expr| {
+    matches!(
+      unorderable_display(e),
+      Some(crate::syntax::MessagePiece::Text(t)) if t == "ComplexInfinity"
+    )
+  };
+  let canonical = |v: &mut Vec<Expr>| {
+    v.sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
+  };
+
+  // A non-real number (I, 1 + I, I Sqrt[2], DirectedInfinity[I]) cannot be
+  // ordered: the whole call stays unevaluated, lists unflattened, with one
+  // ::nord per unorderable item in reverse canonical order
+  // (wolframscript-verified).
+  if items.len() >= 2 {
+    let mut sorted: Vec<&Expr> = items.clone();
+    sorted.sort_by(|a, b| {
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b)
+    });
+    let unorderable: Vec<crate::syntax::MessagePiece> = sorted
+      .iter()
+      .rev()
+      .filter_map(|e| unorderable_display(e))
+      .collect();
+    let has_non_real = unorderable.iter().any(|d| {
+      !matches!(d, crate::syntax::MessagePiece::Text(t) if t == "ComplexInfinity")
+    });
+    if has_non_real {
+      let mut ci_reported = false;
+      for display in unorderable {
+        if matches!(&display, crate::syntax::MessagePiece::Text(t) if t == "ComplexInfinity")
+        {
+          if ci_reported {
+            continue;
+          }
+          ci_reported = true;
+        }
+        emit_nord(display);
+      }
+      let mut kept = args.to_vec();
+      canonical(&mut kept);
+      return Ok(call(head, kept));
+    }
   }
 
   // Separate numeric and symbolic arguments
@@ -13581,46 +13615,69 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut symbolic: Vec<Expr> = Vec::new();
   for item in &items {
     if let Some(n) = try_eval_to_f64_with_infinity(item) {
-      match best_val {
-        Some(m) if n < m => {
-          best_val = Some(n);
-          best_expr = Some(item);
+      let better = match best_val {
+        Some(m) => {
+          if is_max {
+            n > m
+          } else {
+            n < m
+          }
         }
-        None => {
-          best_val = Some(n);
-          best_expr = Some(item);
-        }
-        _ => {}
+        None => true,
+      };
+      if better {
+        best_val = Some(n);
+        best_expr = Some(item);
       }
     } else {
       symbolic.push((*item).clone());
     }
   }
 
-  // Min is idempotent: Min[a, a] == a. Drop duplicate symbolic arguments.
+  // Max/Min are idempotent: Max[a, a] == a. Drop duplicate symbolic
+  // arguments (numeric duplicates already collapse into the single best
+  // value).
   {
     let mut seen = std::collections::HashSet::new();
     symbolic.retain(|e| seen.insert(expr_to_string(e)));
   }
 
-  if symbolic.is_empty() {
-    // All numeric
-    match best_expr {
-      Some(expr) => Ok((*expr).clone()),
-      None => Ok(num_to_expr(f64::INFINITY)),
+  let mut result_args: Vec<Expr> = Vec::new();
+  if let Some(expr) = best_expr {
+    result_args.push((*expr).clone());
+  }
+  result_args.extend(symbolic);
+  // Orderless: the kept arguments are in canonical order, so a real
+  // infinity sorts after the symbols (Max[x, y, Infinity]).
+  canonical(&mut result_args);
+
+  // ComplexInfinity stays beside the real extremum. wolframscript reports
+  // one ::nord for every evaluation of a call that compares it: the given
+  // call (unless it is a lone list, which is only flattened), and once more
+  // when a changed result is re-evaluated — Min[1, ComplexInfinity] warns
+  // once, Min[1, 2, ComplexInfinity] twice.
+  if items.len() >= 2 && items.iter().any(|e| is_complex_infinity(e)) {
+    let mut given = args.to_vec();
+    canonical(&mut given);
+    let reevaluated = result_args.len() >= 2
+      && result_args.iter().any(is_complex_infinity)
+      && (given.len() != result_args.len()
+        || given
+          .iter()
+          .zip(&result_args)
+          .any(|(a, b)| expr_to_string(a) != expr_to_string(b)));
+    let count = usize::from(args.len() >= 2) + usize::from(reevaluated);
+    for _ in 0..count {
+      emit_nord(crate::syntax::MessagePiece::Text(
+        "ComplexInfinity".to_string(),
+      ));
     }
-  } else {
-    // Mixed: keep min numeric and all symbolic args
-    let mut result_args: Vec<Expr> = Vec::new();
-    if let Some(expr) = best_expr {
-      result_args.push((*expr).clone());
-    }
-    result_args.extend(symbolic);
-    if result_args.len() == 1 {
-      Ok(result_args.remove(0))
-    } else {
-      Ok(call("Min", result_args))
-    }
+  }
+
+  match result_args.len() {
+    0 => Ok(identity()),
+    1 => Ok(result_args.remove(0)),
+    _ => Ok(call(head, result_args)),
   }
 }
 
