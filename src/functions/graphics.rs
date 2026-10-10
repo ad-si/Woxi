@@ -1879,7 +1879,7 @@ fn is_font_face_directive(d: &Expr) -> bool {
 /// leaves a constant as either `Constant("Pi")` or `Identifier("Pi")`
 /// depending on which side of a product it started on, so callers must try
 /// both spellings.
-fn typeset_constant_glyph(name: &str) -> Option<&'static str> {
+pub(crate) fn typeset_constant_glyph(name: &str) -> Option<&'static str> {
   Some(match name {
     "Infinity" => "\u{221E}",    // ∞
     "Pi" => "\u{03C0}",          // π

@@ -688,6 +688,27 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
       let parts: Vec<String> = items.iter().filter_map(expr_to_label).collect();
       Some(parts.join("\n"))
     }
+    // A mathematical constant is set as its glyph (`π`), the way a graphic's
+    // text does.
+    Expr::Constant(name) => Some(
+      crate::functions::graphics::typeset_constant_glyph(name)
+        .map_or_else(|| name.clone(), str::to_string),
+    ),
+    // Products, quotients and sums are typeset as the expression itself —
+    // `FrameLabel -> {p, Subscript[k, n] a/Pi}` reads `a kₙ/π`.
+    Expr::BinaryOp {
+      op:
+        BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::Plus
+        | BinaryOperator::Minus,
+      ..
+    } => arithmetic_label(e),
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Times" | "Plus") && args.len() >= 2 =>
+    {
+      arithmetic_label(e)
+    }
     // A label written as a function of the plot's variable — a Demonstration
     // writes `AxesLabel -> {t, y[t]}` and `FrameLabel -> {y[t], y'[t]}` —
     // typesets the way a graphic's labels do, with the argument in
@@ -696,6 +717,155 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     // branches above (or the caller) make of it.
     _ => applied_label(e),
   }
+}
+
+/// The text of a sum, product or quotient label: factors side by side, a
+/// negative power as a denominator (`a kₙ/π`), terms joined by `+`/`-`, and
+/// a sum parenthesized where it is a factor. `None` if any part has no text.
+fn arithmetic_label(e: &Expr) -> Option<String> {
+  fn terms<'a>(e: &'a Expr, out: &mut Vec<(bool, &'a Expr)>, negated: bool) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        right,
+      } => {
+        terms(left, out, negated);
+        terms(right, out, negated);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left,
+        right,
+      } => {
+        terms(left, out, negated);
+        terms(right, out, !negated);
+      }
+      Expr::FunctionCall { name, args } if name == "Plus" => {
+        args.iter().for_each(|a| terms(a, out, negated));
+      }
+      other => out.push((negated, other)),
+    }
+  }
+  fn is_sum(e: &Expr) -> bool {
+    let mut t = Vec::new();
+    terms(e, &mut t, false);
+    t.len() > 1
+  }
+  // Split a product into numerator and denominator factors.
+  fn factors(
+    e: &Expr,
+    num: &mut Vec<Expr>,
+    den: &mut Vec<Expr>,
+    inverted: bool,
+  ) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        factors(left, num, den, inverted);
+        factors(right, num, den, inverted);
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args {
+          factors(a, num, den, inverted);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        factors(left, num, den, inverted);
+        factors(right, num, den, !inverted);
+      }
+      other => match crate::functions::graphics::as_power(other) {
+        Some((base, Expr::Integer(n))) if *n < 0 => {
+          let positive = if *n == -1 {
+            base.clone()
+          } else {
+            Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(base.clone()),
+              right: Box::new(Expr::Integer(-n)),
+            }
+          };
+          factors(&positive, num, den, !inverted);
+        }
+        _ => {
+          if inverted {
+            den.push(other.clone());
+          } else {
+            num.push(other.clone());
+          }
+        }
+      },
+    }
+  }
+
+  let mut sum = Vec::new();
+  terms(e, &mut sum, false);
+  if sum.len() > 1 {
+    let mut out = String::new();
+    for (i, (neg, t)) in sum.iter().enumerate() {
+      let mut text = expr_to_label(t)?;
+      let mut neg = *neg;
+      // A term carrying a negative coefficient (`2 a - b` evaluates to
+      // `2 a + (-1) b`) is subtracted instead.
+      if let Some(rest) = text.strip_prefix('-') {
+        neg = !neg;
+        text = rest.strip_prefix("1 ").unwrap_or(rest).to_string();
+      }
+      match (i, neg) {
+        (0, false) => {}
+        (0, true) => out.push('-'),
+        (_, false) => out.push_str(" + "),
+        (_, true) => out.push_str(" - "),
+      }
+      out.push_str(&text);
+    }
+    return Some(out);
+  }
+
+  let (mut num, mut den) = (Vec::new(), Vec::new());
+  factors(e, &mut num, &mut den, false);
+  let join = |parts: &[Expr]| -> Option<String> {
+    let texts = parts
+      .iter()
+      .map(|p| {
+        let t = expr_to_label(p)?;
+        Some(if parts.len() > 1 && is_sum(p) {
+          format!("({t})")
+        } else {
+          t
+        })
+      })
+      .collect::<Option<Vec<_>>>()?;
+    Some(texts.join(" "))
+  };
+  let numerator = if num.is_empty() {
+    "1".to_string()
+  } else {
+    join(&num)?
+  };
+  if den.is_empty() {
+    return Some(numerator);
+  }
+  let denominator = join(&den)?;
+  let wrap = |s: String, parts: &[Expr], force: bool| {
+    if (force && parts.len() > 1) || parts.iter().any(is_sum) {
+      format!("({s})")
+    } else {
+      s
+    }
+  };
+  Some(format!(
+    "{}/{}",
+    wrap(numerator, &num, false),
+    wrap(denominator, &den, true)
+  ))
 }
 
 /// A label for a function application of an unknown head: `y[t]` → `y(t)`,
