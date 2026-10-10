@@ -5904,6 +5904,18 @@ fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
     match (is_number_base_power(a), is_number_base_power(b)) {
       (true, false) if !is_number(b) => return std::cmp::Ordering::Less,
       (false, true) if !is_number(a) => return std::cmp::Ordering::Greater,
+      // Two radicals of numbers order by base, then exponent, as in Sort:
+      // `(3/5)^(1/3)*2^(2/3)`, `(-1/2)^(1/3)*3^(2/3)`.
+      (true, true) => {
+        if let Some(ord) =
+          crate::functions::list_helpers_ast::sorting::numeric_base_power_cmp(
+            a, b,
+          )
+          && ord != std::cmp::Ordering::Equal
+        {
+          return ord;
+        }
+      }
       _ => {}
     }
     if let (Some((ba, (pa, qa))), Some((bb, (pb, qb)))) =
@@ -12375,6 +12387,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     if *p < 0 {
       return negative_base_rational_power(&make_rational(-*p, *q), *n, *d);
     }
+    if *p > 0
+      && *d > 2
+      && let Some(result) = rational_base_radical(*p, *q, *n, *d)
+    {
+      return result;
+    }
     // For a negative exponent, flip the base: (p/q)^(-n/d) = (q/p)^(n/d).
     // Only do this flip when p > 0 so the flipped base is still a plain
     // positive rational (handling signs of p is tricky and uncommon).
@@ -13294,6 +13312,124 @@ fn negative_number_magnitude(expr: &Expr) -> Option<Expr> {
 /// `2 (-1)^(1/3)` because the positive part is exact, `(-12)^(1/3)` becomes
 /// `(-3)^(1/3) 2^(2/3)` because only the leftover cube root can absorb the
 /// sign, and `(-2)^(5/3)` becomes `-2 (-2)^(2/3)`.
+/// `(p/q)^(n/d)` for a positive fraction, the way wolframscript writes it:
+/// each prime's exponent splits into an integer part (truncated toward zero)
+/// and a fractional part, and the primes whose fractional exponents agree in
+/// magnitude share one radical — `(4/5)^(1/3)` is `2^(2/3)/5^(1/3)`,
+/// `(12/5)^(1/3)` is `(3/5)^(1/3)*2^(2/3)`, `(2/3)^(1/3)` stays and
+/// `(3/4)^(2/3)` is `3^(2/3)/(2*2^(1/3))`. `None` for factors too large to
+/// split by trial division.
+fn rational_base_radical(
+  p: i128,
+  q: i128,
+  n: i128,
+  d: i128,
+) -> Option<Result<Expr, InterpreterError>> {
+  const TRIAL_DIVISION_BOUND: i128 = 1_000_000;
+  fn factor(mut m: i128) -> Option<Vec<(i128, i128)>> {
+    let mut out = Vec::new();
+    let mut f = 2i128;
+    while f * f <= m {
+      if f > TRIAL_DIVISION_BOUND {
+        return None;
+      }
+      let mut k = 0;
+      while m % f == 0 {
+        m /= f;
+        k += 1;
+      }
+      if k > 0 {
+        out.push((f, k));
+      }
+      f += 1;
+    }
+    if m > 1 {
+      out.push((m, 1));
+    }
+    Some(out)
+  }
+  let mut primes: Vec<(i128, i128)> = factor(p)?;
+  primes.extend(factor(q)?.into_iter().map(|(f, k)| (f, -k)));
+
+  // The integer parts form an exact rational; the fractional parts group by
+  // magnitude into (numerator, denominator) radicands.
+  let mut outside_num = BigInt::from(1);
+  let mut outside_den = BigInt::from(1);
+  let mut groups: Vec<((i128, i128), i128, i128)> = Vec::new();
+  for (prime, k) in primes {
+    let total = k.checked_mul(n)?;
+    let whole = total / d; // truncates toward zero
+    let (fn_, fd) = rat_reduce(total - whole * d, d);
+    if whole.unsigned_abs() > 10_000 {
+      return None;
+    }
+    let factor = BigInt::from(prime).pow(whole.unsigned_abs() as u32);
+    if whole > 0 {
+      outside_num *= factor;
+    } else {
+      outside_den *= factor;
+    }
+    if fn_ == 0 {
+      continue;
+    }
+    let key = (fn_.abs(), fd);
+    let idx = if let Some(i) = groups.iter().position(|(k, _, _)| *k == key) {
+      i
+    } else {
+      groups.push((key, 1, 1));
+      groups.len() - 1
+    };
+    if fn_ > 0 {
+      groups[idx].1 = groups[idx].1.checked_mul(prime)?;
+    } else {
+      groups[idx].2 = groups[idx].2.checked_mul(prime)?;
+    }
+  }
+  // A single radical with nothing outside is the input itself.
+  if groups.len() == 1
+    && outside_num == BigInt::from(1)
+    && outside_den == BigInt::from(1)
+  {
+    let ((en, ed), num, den) = groups[0];
+    if num == p && den == q && en == n && ed == d {
+      return Some(Ok(pow2(make_rational(p, q), make_rational(n, d))));
+    }
+  }
+  let mut factors: Vec<Expr> = Vec::new();
+  if outside_num != outside_den {
+    factors.push(Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![bigint_to_expr(outside_num), bigint_to_expr(outside_den)]
+        .into(),
+    });
+  }
+  for ((en, ed), num, den) in groups {
+    let e = make_rational(en, ed);
+    factors.push(if den == 1 {
+      pow2(Expr::Integer(num), e)
+    } else if num == 1 {
+      pow2(Expr::Integer(den), make_rational(-en, ed))
+    } else {
+      pow2(make_rational(num, den), e)
+    });
+  }
+  let factors: Vec<Expr> = factors
+    .into_iter()
+    .map(|f| match &f {
+      // Normalize an exact outside factor to Integer/Rational.
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        divide_ast(&[args[0].clone(), args[1].clone()]).unwrap_or(f)
+      }
+      _ => f,
+    })
+    .collect();
+  Some(match factors.len() {
+    0 => Ok(Expr::Integer(1)),
+    1 => Ok(factors.into_iter().next().unwrap()),
+    _ => times_ast(&factors),
+  })
+}
+
 fn negative_base_rational_power(
   magnitude: &Expr,
   p: i128,
@@ -13345,6 +13481,22 @@ fn negative_base_rational_power(
       let root_exp = make_rational(rp, rq);
       let root_key = expr_to_string(&root_exp);
       let mut merged = false;
+      // The sign joins a radical with the same exponent: a positive integer
+      // or fraction radicand (`(-2/9)^(1/3)` is `(-2)^(1/3)/3^(2/3)`,
+      // `(-12/5)^(1/3)` is `(-3/5)^(1/3)*2^(2/3)`), or — for a positive
+      // unit exponent or as the only radical — a reciprocal one read as a
+      // fraction (`(-9/2)^(1/3)` is `(-1/2)^(1/3)*3^(2/3)`, `(-8/5)^(2/3)`
+      // is `4*(-1/5)^(2/3)`). wolframscript keeps `(-4/5)^(-1/3)` as
+      // `-(((-1)^(2/3)*5^(1/3))/2^(2/3))` and `(-4/5)^(2/3)` as
+      // `(2*(-1)^(2/3)*2^(1/3))/5^(2/3)`.
+      let neg_root_key = expr_to_string(&make_rational(-rp, rq));
+      let radical_count = factors
+        .iter()
+        .filter(|f| {
+          let (_, e) = extract_base_exponent(f);
+          matches!(&e, Expr::FunctionCall { name, .. } if name == "Rational")
+        })
+        .count();
       for factor in &mut factors {
         let (fbase, fexp) = extract_base_exponent(factor);
         let positive_int = match &fbase {
@@ -13352,8 +13504,22 @@ fn negative_base_rational_power(
           Expr::BigInteger(n) => *n > BigInt::from(1),
           _ => false,
         };
-        if positive_int && expr_to_string(&fexp) == root_key {
+        let positive_fraction = matches!(&fbase,
+          Expr::FunctionCall { name, args } if name == "Rational"
+            && matches!(args[0], Expr::Integer(a) if a > 0));
+        let fexp_key = expr_to_string(&fexp);
+        if (positive_int || positive_fraction) && fexp_key == root_key {
           *factor = pow(negate_expr(fbase), root_exp.clone());
+          merged = true;
+          break;
+        }
+        if p > 0
+          && (rp == 1 || radical_count == 1)
+          && positive_int
+          && fexp_key == neg_root_key
+        {
+          let reciprocal = divide_ast(&[Expr::Integer(-1), fbase.clone()])?;
+          *factor = pow(reciprocal, root_exp.clone());
           merged = true;
           break;
         }

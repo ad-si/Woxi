@@ -6851,6 +6851,17 @@ pub fn singularize_unit_if_one(mag: &Expr, unit_str: &str) -> String {
 /// Check if an expression is Power[base, negative_integer] where base is symbolic
 /// (contains variables, not a purely numeric expression like Sqrt[2]).
 /// Symbols and Plus/Times expressions containing identifiers are considered symbolic.
+/// A negative fractional radical of an integer other than a square root:
+/// wolframscript keeps its exponent under a minus (`-5^(-1/3)`), but writes
+/// `-(1/Sqrt[5])`.
+fn is_integer_neg_fractional_radical(base: &Expr, exp: &Expr) -> bool {
+  matches!(base, Expr::Integer(b) if *b > 1)
+    && matches!(exp, Expr::FunctionCall { name, args: r }
+      if name == "Rational"
+        && matches!((&r[0], &r[1]), (Expr::Integer(n), Expr::Integer(d))
+          if *n < 0 && *d > 2))
+}
+
 fn is_symbolic_neg_int_power(expr: &Expr) -> bool {
   // A negative exponent that is not a literal — `-x`, `-2 x`, `-y/2` — keeps
   // the power form whatever the base is: wolframscript writes `-2^(-x)` and
@@ -6885,7 +6896,9 @@ fn is_symbolic_neg_int_power(expr: &Expr) -> bool {
       left,
       right,
     } => {
-      if symbolic_negative(right.as_ref()) {
+      if symbolic_negative(right.as_ref())
+        || is_integer_neg_fractional_radical(left, right)
+      {
         return true;
       }
       (
@@ -6895,6 +6908,9 @@ fn is_symbolic_neg_int_power(expr: &Expr) -> bool {
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       if symbolic_negative(&args[1]) {
+        return true;
+      }
+      if is_integer_neg_fractional_radical(&args[0], &args[1]) {
         return true;
       }
       (&args[0], matches!(&args[1], Expr::Integer(n) if *n < 0))
@@ -9942,6 +9958,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             }
           )
           || matches!(&args[0], Expr::Integer(n) if *n < 0)
+          // A fraction prints as `p/q`, so `(-6/5)^(1/3)` needs its parens.
+          || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Rational")
           || prints_as_negation(&args[0])
           || matches!(
             &args[0],

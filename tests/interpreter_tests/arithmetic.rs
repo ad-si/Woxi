@@ -10082,6 +10082,37 @@ mod negative_half_times_sum_display {
 mod times_factor_vs_sum_ordering {
   use super::*;
 
+  // Rational radicals split their primes by exponent; a negative base no
+  // longer recurses (stack overflow on (-4/5)^(1/3); differential fuzzer,
+  // seed 20261011; wolframscript-verified).
+  #[test]
+  fn rational_base_radicals() {
+    for (input, expected) in [
+      ("(4/5)^(1/3)", "2^(2/3)/5^(1/3)"),
+      ("(12/5)^(1/3)", "(3/5)^(1/3)*2^(2/3)"),
+      ("(2/3)^(1/3)", "(2/3)^(1/3)"),
+      ("(4/9)^(1/3)", "(2/3)^(2/3)"),
+      ("(3/4)^(2/3)", "3^(2/3)/(2*2^(1/3))"),
+      ("(2/3)^(5/3)", "(2*(2/3)^(2/3))/3"),
+      ("(4/5)^(-1/3)", "5^(1/3)/2^(2/3)"),
+      ("CubeRoot[-4/5]", "-(2^(2/3)/5^(1/3))"),
+      ("(-4/5)^(1/3)", "(-1/5)^(1/3)*2^(2/3)"),
+      ("(-6/5)^(1/3)", "(-6/5)^(1/3)"),
+      ("(-2/3)^(1/3)", "(-2/3)^(1/3)"),
+      ("(-9/2)^(1/3)", "(-1/2)^(1/3)*3^(2/3)"),
+      ("(-12/5)^(1/3)", "(-3/5)^(1/3)*2^(2/3)"),
+      ("(-4/5)^(1/5)", "(-1/5)^(1/5)*2^(2/5)"),
+      ("(-4/5)^(2/3)", "(2*(-1)^(2/3)*2^(1/3))/5^(2/3)"),
+      ("(-8/5)^(2/3)", "4*(-1/5)^(2/3)"),
+      ("(-4/5)^(-1/3)", "-(((-1)^(2/3)*5^(1/3))/2^(2/3))"),
+      ("CubeRoot[-1/5]", "-5^(-1/3)"),
+      ("-2^(-1/3)", "-2^(-1/3)"),
+      ("-1/Sqrt[5]", "-(1/Sqrt[5])"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   // A positive power of a sum orders against a bare sum by the two sums.
   // Verified against wolframscript.
   #[test]
