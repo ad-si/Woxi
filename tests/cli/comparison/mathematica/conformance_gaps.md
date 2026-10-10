@@ -678,8 +678,7 @@ reason.
 `N[base, p]` produces numbers but with a **different precision tag**
 (`20.30` against WL's `20.46`, which accounts for the base magnitude) and a
 last mantissa digit off by one — an arbitrary-precision rounding problem rather
-than a dispatch one. `N[Zeta[3], 25]` is a separate gap: there is no
-arbitrary-precision `Zeta`.
+than a dispatch one.
 
 ### `N[I]` stays exact
 
@@ -932,6 +931,34 @@ report its own algorithm's error, not the conditioning — at `x = 1/2` it
 claims 19.02 digits and its 21st digit onward is already wrong, where Woxi's
 value is correct to the last digit shown. `Gamma`/`LogGamma` differ in the
 third decimal of the tag for the same reason. **Not reproducible.**
+
+`PolyGamma`, `Zeta` and `HurwitzZeta` at an arbitrary-precision argument
+differ in more than the third decimal. Woxi tags `PolyGamma` with the
+condition number `|z ψ⁽ⁿ⁺¹⁾(z)/ψ⁽ⁿ⁾(z)|` and `Zeta` with the lowest input
+precision. WL's digamma tag even *exceeds* the input's, capped near
+`p + log10(1024)`: `PolyGamma[1.9`20]` is tagged `22.45` (Woxi `19.44`), and
+`Zeta[0.5`20]` is tagged `18.35` (Woxi `20.`). The values agree.
+
+### Machine `PolyGamma` and `Zeta` are not correctly rounded in WL
+
+Woxi rounds machine `PolyGamma`, `Zeta`, `HurwitzZeta` and `HarmonicNumber`
+values from an arbitrary-precision evaluation, so they are correctly rounded.
+Wolframscript's are not, and no f64 recurrence/series variant reproduces its
+digits (best fit: 34% of 385 probes). Correct rounding matches it on about
+half of the `PolyGamma` probes (`PolyGamma[5.5]` is `…751` in WL, `…7512`
+correctly rounded) and on 50 of 80 `Zeta[s]` probes. Its machine Hurwitz
+zeta is worse: `Zeta[3.5, 0.3]` is 40 ulps off and at negative `s` it loses
+whole digits (`Zeta[-5.817415911509695, 0.1295065568974257]` is
+`-0.0033354…` in WL, `-0.0033395…` in Woxi and mpmath). WL's machine
+`Zeta[s]` at a negative `s` also returns a complex number with an imaginary
+part of about `1e-18`, an artifact of its complex reflection formula.
+**Not reproducible.**
+
+### Fractional-order `PolyGamma`
+
+`PolyGamma[0.5, 1.9]` is `0.7474244588681002` in WL (its fractional-calculus
+continuation of the order) and unevaluated in Woxi. Only integral orders,
+exact or inexact, are implemented.
 
 ### Display digits past the claimed precision differ
 

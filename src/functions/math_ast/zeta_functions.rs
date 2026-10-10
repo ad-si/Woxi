@@ -18,7 +18,13 @@ fn contains_float(expr: &Expr) -> bool {
 /// Zeta[s] - Riemann zeta function
 /// Zeta[s, a] - Hurwitz zeta function
 pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(r) = zeta_bigfloat_args("Zeta", args) {
+    return Ok(r);
+  }
   if args.len() == 2 {
+    if let Some(r) = zeta_negative_a(&args[0], &args[1], false, args) {
+      return r;
+    }
     return hurwitz_zeta_ast_inner(&args[0], &args[1], args);
   }
 
@@ -87,9 +93,7 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if *f == 1.0 {
         return Ok(id_expr("ComplexInfinity"));
       }
-      // Numeric evaluation
-      let result = zeta_numeric(*f);
-      Ok(Expr::Real(result))
+      Ok(Expr::Real(zeta_real_f64(*f)))
     }
     _ => {
       // Only evaluate numerically if the argument contains float components
@@ -98,7 +102,7 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && let Some((re, im)) = try_extract_complex_float(&args[0])
       {
         if im == 0.0 {
-          return Ok(Expr::Real(zeta_numeric(re)));
+          return Ok(Expr::Real(zeta_real_f64(re)));
         }
         let (res_re, res_im) = zeta_numeric_complex(re, im);
         return Ok(build_complex_float_expr(res_re, res_im));
@@ -107,6 +111,122 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(unevaluated("Zeta", args))
     }
   }
+}
+
+/// An explicit real number: Integer, Rational, Real or BigFloat.
+fn is_number_literal(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..) => true,
+    Expr::FunctionCall { name, args } => name == "Rational" && args.len() == 2,
+    _ => false,
+  }
+}
+
+/// Whether `e` still contains an unevaluated `Zeta[s, a]` or `HurwitzZeta`.
+fn contains_two_arg_zeta(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      (name == "Zeta" && args.len() == 2)
+        || name == "HurwitzZeta"
+        || args.iter().any(contains_two_arg_zeta)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_two_arg_zeta(left) || contains_two_arg_zeta(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_two_arg_zeta(operand),
+    _ => false,
+  }
+}
+
+/// `Zeta[…]`/`HurwitzZeta[…]` with an arbitrary-precision argument: the
+/// value at the lowest precision among the arguments, which is also the tag
+/// (wolframscript's own tags follow no rule we could pin down).
+fn zeta_bigfloat_args(head: &str, args: &[Expr]) -> Option<Expr> {
+  let prec = args
+    .iter()
+    .filter_map(|a| match a {
+      Expr::BigFloat(_, p) => Some(*p),
+      _ => None,
+    })
+    .reduce(f64::min)?;
+  if !args.iter().all(is_number_literal) {
+    return None;
+  }
+  let result = crate::functions::math_ast::n_eval_arbitrary(
+    &unevaluated(head, args),
+    prec,
+  )
+  .ok()?;
+  match &result {
+    Expr::BigFloat(digits, _) => Some(Expr::BigFloat(digits.clone(), prec)),
+    _ => None,
+  }
+}
+
+/// `Zeta[s, a]` (`signed = false`) or `HurwitzZeta[s, a]` (`signed = true`)
+/// at a negative `a`: shift `a` up to `a + m ∈ (0, 1]` and add the `m`
+/// terms in front — `((a + k)²)^(-s/2)` for `Zeta`, `(a + k)^(-s)` for
+/// `HurwitzZeta`; a `k + a = 0` term is left out, except that it is 1 at
+/// `s = 0`. An exact argument expands
+/// only onto a closed-form base and only for a numeric `s`, like
+/// wolframscript (`Zeta[3, -5/2]` → `28216/3375 + 7*Zeta[3]`,
+/// `Zeta[3, -7/3]` stays). `None` when `a` is not a negative number.
+fn zeta_negative_a(
+  s: &Expr,
+  a: &Expr,
+  signed: bool,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let head = if signed { "HurwitzZeta" } else { "Zeta" };
+  let a_val = expr_to_f64(a)?;
+  if a_val >= 0.0 {
+    return None;
+  }
+  let keep = || Some(Ok(unevaluated(head, args)));
+  let exact = !contains_float(s) && !contains_float(a);
+  let m = (-a_val).floor() as i128 + 1;
+  if (exact && !is_number_literal(s)) || m > 100_000 {
+    return keep();
+  }
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let base_a = match eval(&plus2(a.clone(), Expr::Integer(m))) {
+    Ok(v) => v,
+    Err(e) => return Some(Err(e)),
+  };
+  let base = match zeta_ast(&[s.clone(), base_a]) {
+    Ok(v) => v,
+    Err(e) => return Some(Err(e)),
+  };
+  if exact && contains_two_arg_zeta(&base) {
+    return keep();
+  }
+  let mut terms = vec![base];
+  for k in 0..m {
+    let x = match eval(&plus2(a.clone(), Expr::Integer(k))) {
+      Ok(v) => v,
+      Err(e) => return Some(Err(e)),
+    };
+    // The k = -a term is 0^(-s): 0 for s < 0 and, as wolframscript takes
+    // it, 1 for s = 0 (Zeta[0, -3] = 1/2 - a = 7/2).
+    if try_eval_to_f64(&x) == Some(0.0) {
+      if expr_to_f64(s) == Some(0.0) {
+        terms.push(Expr::Integer(1));
+      }
+      continue;
+    }
+    terms.push(if signed {
+      pow2(x, times2(Expr::Integer(-1), s.clone()))
+    } else {
+      pow2(
+        pow2(x, Expr::Integer(2)),
+        times2(make_rational(-1, 2), s.clone()),
+      )
+    });
+  }
+  Some(eval(&plus(terms)))
 }
 
 /// Hurwitz zeta function Zeta[s, a]
@@ -134,6 +254,13 @@ pub fn hurwitz_zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && s_val > 0.0
   {
     return Ok(id_expr("ComplexInfinity"));
+  }
+
+  if let Some(r) = zeta_bigfloat_args("HurwitzZeta", args) {
+    return Ok(r);
+  }
+  if let Some(r) = zeta_negative_a(s, a, true, args) {
+    return r;
   }
 
   // Otherwise HurwitzZeta agrees with the two-argument Zeta. Reuse it.
@@ -216,6 +343,11 @@ fn hurwitz_zeta_ast_inner(
       &[s_expr.clone(), reduced_a.clone()],
     )?;
     let neg_s = times2(Expr::Integer(-1), s_expr.clone());
+    // Like wolframscript, only expand onto a closed-form base, and never for
+    // a symbolic s: Zeta[3, 7/3] and Zeta[s, 5/2] stay as they are.
+    if !is_number_literal(s_expr) || contains_two_arg_zeta(&base) {
+      return Ok(unevaluated("Zeta", args));
+    }
     // base - sum_{j=0}^{m-1} ((r_p + j*q)/q)^(-s)
     let mut terms = vec![base];
     for j in 0..m {
@@ -247,8 +379,10 @@ fn hurwitz_zeta_ast_inner(
 
       // Zeta[-n, a] for non-negative integer n: uses Bernoulli polynomials
       // Zeta[-n, a] = -B_{n+1}(a) / (n+1)
+      // wolframscript evaluates these only at integer and half-integer a:
+      // Zeta[-1, 1/3] stays unevaluated.
       if s < 0 {
-        if let Some((p, q)) = a_rational {
+        if let Some((p, q)) = a_rational.filter(|&(_, q)| q <= 2) {
           let abs_n = (-s) as usize;
           if let Some((num, den)) =
             bernoulli_polynomial_rational(abs_n + 1, p, q)
@@ -398,6 +532,9 @@ fn bernoulli_polynomial_rational(
 fn hurwitz_zeta_numeric(s: f64, a: f64) -> f64 {
   if (s - 1.0).abs() < 1e-15 {
     return f64::INFINITY;
+  }
+  if let Some(v) = crate::functions::math_ast::hurwitz_zeta_f64(s, a, false) {
+    return v;
   }
 
   // For s < 0.5, use the series representation directly with more terms
@@ -588,6 +725,13 @@ fn zeta_negative_odd(abs_n: usize) -> Option<Expr> {
 }
 
 /// Compute Zeta(s) numerically for real s using Euler-Maclaurin formula.
+/// Machine `Zeta[s]` at a real `s`: rounded from the arbitrary-precision
+/// Euler–Maclaurin sum, falling back to [`zeta_numeric`].
+fn zeta_real_f64(s: f64) -> f64 {
+  crate::functions::math_ast::hurwitz_zeta_f64(s, 1.0, false)
+    .unwrap_or_else(|| zeta_numeric(s))
+}
+
 pub fn zeta_numeric(s: f64) -> f64 {
   use std::f64::consts::PI;
 
@@ -864,12 +1008,15 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     1 => (0_i128, &args[0]),
     2 => match &args[0] {
       Expr::Integer(n) => (*n, &args[1]),
-      Expr::Real(f) => {
-        // Real n: evaluate numerically if z is also numeric
-        if let Some(z) = extract_f64(z_expr_from_args(&args[1])) {
-          return Ok(Expr::Real(polygamma_numeric(*f as usize, z)));
-        }
-        return Ok(unevaluated("PolyGamma", args));
+      Expr::Real(_) | Expr::BigFloat(..) => {
+        // An inexact order evaluates numerically when it is integral. A
+        // non-integral order (WL's fractional-calculus continuation) is not
+        // implemented and stays unevaluated.
+        return Ok(
+          polygamma_order(&args[0])
+            .and_then(|n| polygamma_inexact(n, &args[0], &args[1]))
+            .unwrap_or_else(|| unevaluated("PolyGamma", args)),
+        );
       }
       _ => {
         return Ok(unevaluated("PolyGamma", args));
@@ -913,14 +1060,20 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vec![Expr::Integer(n as i128), Expr::Integer(z as i128)],
       ))
     }
-    Expr::Real(f) => {
-      // PolyGamma has poles at the non-positive integers (z = 0, -1, -2, ...);
-      // there it is ComplexInfinity, not the real +/-Infinity the numeric
-      // series would diverge to. (A non-integer negative z is finite.)
-      if *f <= 0.0 && f.fract() == 0.0 {
-        return Ok(id_expr("ComplexInfinity"));
-      }
-      Ok(Expr::Real(polygamma_numeric(n, *f)))
+    Expr::Real(_) | Expr::BigFloat(..) => Ok(
+      polygamma_inexact(n, &Expr::Integer(n as i128), z_expr)
+        .unwrap_or_else(|| unevaluated("PolyGamma", args)),
+    ),
+    // Negative rational z with n >= 1: the reflection formula
+    // ψ⁽ⁿ⁾(z) = (-1)ⁿ ψ⁽ⁿ⁾(1 - z) - π dⁿ/dzⁿ cot(πz), as wolframscript does
+    // (PolyGamma[1, -1/3] -> (4*Pi^2)/3 - PolyGamma[1, 4/3]). It leaves
+    // the digamma function itself alone (PolyGamma[0, -1/2] stays).
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational"
+        && n >= 1
+        && matches!(&rargs[0], Expr::Integer(p) if *p < 0) =>
+    {
+      polygamma_reflection(n, z_expr)
     }
     // Half-integer z (Rational[odd, 2]) with odd n >= 1: use the
     // polygamma-Hurwitz relation PolyGamma[n, z] = (-1)^(n+1) n! Zeta[n+1, z].
@@ -957,16 +1110,80 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-fn extract_f64(expr: &Expr) -> Option<f64> {
-  match expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    _ => None,
-  }
+/// `(-1)ⁿ PolyGamma[n, 1 - z] - π dⁿ/dzⁿ cot(πz)` for `n ≥ 1`. The
+/// derivative is taken symbolically at a fresh variable and then evaluated
+/// at `z`, so its form follows `D` and `Csc`/`Cot` at rational multiples of
+/// π, as wolframscript's does (`Pi^2/(5/8 - Sqrt[5]/8)` for `z = -1/5`).
+fn polygamma_reflection(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let t = crate::functions::scoping::unique_symbol("t");
+  let derivative = eval(&call(
+    "D",
+    vec![
+      call1("Cot", times2(id_expr("Pi"), id_expr(&t))),
+      Expr::List(vec![id_expr(&t), Expr::Integer(n as i128)].into()),
+    ],
+  ))?;
+  let at_z = crate::syntax::substitute_variable(&derivative, &t, z);
+  let constant = times2(times2(Expr::Integer(-1), id_expr("Pi")), at_z);
+  let sign = if n.is_multiple_of(2) { 1 } else { -1 };
+  let reflected = times2(
+    Expr::Integer(sign),
+    call(
+      "PolyGamma",
+      vec![
+        Expr::Integer(n as i128),
+        plus2(Expr::Integer(1), times2(Expr::Integer(-1), z.clone())),
+      ],
+    ),
+  );
+  eval(&plus2(constant, reflected))
 }
 
-fn z_expr_from_args(expr: &Expr) -> &Expr {
-  expr
+/// `PolyGamma[n, z]` when the order or the argument is inexact: an
+/// arbitrary-precision result when either is a `BigFloat` (at the lower of
+/// their precisions, the argument's tag reduced by the condition number
+/// `|z ψ⁽ⁿ⁺¹⁾(z) / ψ⁽ⁿ⁾(z)|`), a machine real otherwise. The non-positive
+/// integers are poles, where it is `ComplexInfinity` rather than the real
+/// infinity the series would diverge to.
+fn polygamma_inexact(n: usize, order: &Expr, z: &Expr) -> Option<Expr> {
+  let zf = crate::functions::math_ast::try_eval_to_f64(z)?;
+  if zf <= 0.0 && zf.fract() == 0.0 {
+    return Some(id_expr("ComplexInfinity"));
+  }
+  let prec_of = |e: &Expr| match e {
+    Expr::BigFloat(_, p) => Some(*p),
+    _ => None,
+  };
+  match (prec_of(order), prec_of(z)) {
+    (None, None) => polygamma_f64(n, zf).map(Expr::Real),
+    (order_prec, z_prec) => {
+      let prec = order_prec
+        .into_iter()
+        .chain(z_prec)
+        .fold(f64::INFINITY, f64::min);
+      let call_expr =
+        call("PolyGamma", vec![Expr::Integer(n as i128), z.clone()]);
+      let result =
+        crate::functions::math_ast::n_eval_arbitrary(&call_expr, prec).ok()?;
+      let Expr::BigFloat(digits, _) = &result else {
+        return None;
+      };
+      let prec_out = match z_prec {
+        Some(p) if p <= prec => {
+          let cond =
+            (zf * polygamma_f64(n + 1, zf)? / polygamma_f64(n, zf)?).abs();
+          if cond > 0.0 && cond.is_finite() {
+            prec - cond.log10()
+          } else {
+            prec
+          }
+        }
+        _ => prec,
+      };
+      Some(Expr::BigFloat(digits.clone(), prec_out))
+    }
+  }
 }
 
 /// Build digamma at positive integer: H_{z-1} - EulerGamma
@@ -1079,57 +1296,6 @@ fn partial_sum_powers(n: usize, power: usize) -> Option<(i128, i128)> {
     (sum_n, sum_d) = rat_reduce(new_n, new_d);
   }
   Some((sum_n, sum_d))
-}
-
-/// Compute polygamma function numerically
-fn polygamma_numeric(n: usize, mut z: f64) -> f64 {
-  if n == 0 {
-    return digamma(z);
-  }
-
-  let sign = if n.is_multiple_of(2) { -1.0 } else { 1.0 }; // (-1)^{n+1}
-  let mut nfact = 1.0_f64;
-  for i in 2..=n {
-    nfact *= i as f64;
-  }
-
-  // Use recurrence to shift z to a large value
-  let mut shift_sum = 0.0;
-  while z < 20.0 {
-    shift_sum += 1.0 / z.powi((n + 1) as i32);
-    z += 1.0;
-  }
-
-  // Asymptotic expansion for ψ^(n)(z) at large z
-  // ψ^(n)(z) = (-1)^{n-1} * [(n-1)!/z^n + n!/(2z^{n+1})
-  //             + Σ_k B_{2k}/(2k) * prod_{j=0}^{n-1}(2k+j) / z^{n+2k}]
-  let sign_asymp = if n.is_multiple_of(2) { -1.0 } else { 1.0 }; // (-1)^{n-1}
-  let nm1_fact = nfact / n as f64;
-
-  let mut asymp = nm1_fact / z.powi(n as i32);
-  asymp += nfact / (2.0 * z.powi((n + 1) as i32));
-
-  let bernoulli = [
-    1.0 / 6.0,
-    -1.0 / 30.0,
-    1.0 / 42.0,
-    -1.0 / 30.0,
-    5.0 / 66.0,
-    -691.0 / 2730.0,
-    7.0 / 6.0,
-  ];
-  for (ki, &b2k) in bernoulli.iter().enumerate() {
-    let k = ki + 1;
-    let two_k = 2 * k;
-    let mut prod = 1.0;
-    for j in 0..n {
-      prod *= (two_k + j) as f64;
-    }
-    asymp += b2k / (two_k as f64) * prod / z.powi((n + two_k) as i32);
-  }
-
-  asymp *= sign_asymp;
-  asymp + sign * nfact * shift_sum
 }
 
 // ─── Number Theory Functions ─────────────────────────────────────

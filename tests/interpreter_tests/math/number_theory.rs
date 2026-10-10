@@ -1271,6 +1271,20 @@ mod harmonic_number {
   use super::*;
 
   #[test]
+  fn machine_real() {
+    assert_eq!(
+      interpret("HarmonicNumber[2.5]").unwrap(),
+      "1.680372305546776"
+    );
+    assert_eq!(
+      interpret("HarmonicNumber[0.9]").unwrap(),
+      "0.9333998260655925"
+    );
+    // The negative integers are poles.
+    assert_eq!(interpret("HarmonicNumber[-2.]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
   fn basic() {
     assert_eq!(interpret("HarmonicNumber[5]").unwrap(), "137/60");
     assert_eq!(interpret("HarmonicNumber[10]").unwrap(), "7381/2520");

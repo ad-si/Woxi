@@ -561,6 +561,429 @@ pub fn bigfloat_log(
   }
 }
 
+/// Arbitrary-precision `PolyGamma[n, z]` for an integer order `n ≥ 0` and a
+/// real `z` that is not a pole, accurate to about `bits` bits.
+///
+/// Shifts `z` up to `x = z + m ≥ N` with `ψ⁽ⁿ⁾(z) = ψ⁽ⁿ⁾(z + m) +
+/// (-1)ⁿ⁺¹ n! Σ 1/(z + k)ⁿ⁺¹` and sums the asymptotic series there:
+/// `ψ(x) ~ ln x − 1/(2x) − Σ B₂ₖ/(2k x²ᵏ)` and, for `n ≥ 1`,
+/// `ψ⁽ⁿ⁾(x) ~ (-1)ⁿ⁺¹ [(n−1)!/xⁿ + n!/(2xⁿ⁺¹) + Σ B₂ₖ (2k+n−1)!/((2k)! x²ᵏ⁺ⁿ)]`.
+/// Returns `None` at a pole and for `z` so negative that the shift would
+/// take too long.
+pub fn polygamma_bigfloat(
+  n: usize,
+  z: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Option<astro_float::BigFloat> {
+  use astro_float::BigFloat;
+  let z_f64 = bigfloat_to_f64_approx(z)?;
+  if !z_f64.is_finite() {
+    return None;
+  }
+  // Far left of the origin the upward shift would take too many steps;
+  // reflect ψ(z) = ψ(1 − z) − π cot(πz) instead (higher orders would need
+  // the n-th derivative of the cotangent).
+  if z_f64 < -1.0e3 {
+    if n != 0 || z.fract().is_zero() {
+      return None;
+    }
+    let wp = bits + 64;
+    let one = BigFloat::from_i32(1, wp);
+    let pi_z = cc.pi(wp, rm).mul(z, wp, rm);
+    let cot = pi_z.cos(wp, rm, cc).div(&pi_z.sin(wp, rm, cc), wp, rm);
+    let reflected = polygamma_bigfloat(0, &one.sub(z, wp, rm), wp, rm, cc)?;
+    let mut r = reflected.sub(&cc.pi(wp, rm).mul(&cot, wp, rm), wp, rm);
+    r.set_precision(bits, rm).ok()?;
+    return Some(r);
+  }
+  // Guard bits absorb the cancellation between the shift sum and the
+  // asymptotic value (ψ's roots, the large terms next to a pole).
+  let wp = bits + 64;
+  let one = BigFloat::from_i32(1, wp);
+  let shift_target = asymptotic_shift(wp) + n;
+
+  // A non-positive integer is a pole.
+  if z_f64 <= 0.0 {
+    let frac = z.fract();
+    if frac.is_zero() {
+      return None;
+    }
+  }
+
+  let int = |k: usize| BigFloat::from_u64(k as u64, wp);
+  let factorial =
+    |k: usize| (2..=k).fold(one.clone(), |f, j| f.mul(&int(j), wp, rm));
+  let half = BigFloat::from_f64(0.5, wp);
+
+  // Σ 1/(z+k)ⁿ⁺¹ kept as one fraction, so the loop only multiplies.
+  let mut x = z.clone();
+  let mut shift_num = BigFloat::from_i32(0, wp);
+  let mut shift_den = one.clone();
+  let target = int(shift_target);
+  while x.cmp(&target).is_some_and(|o| o < 0) {
+    let p = bigfloat_powi(&x, (n + 1) as i128, wp, rm);
+    shift_num = shift_num.mul(&p, wp, rm).add(&shift_den, wp, rm);
+    shift_den = shift_den.mul(&p, wp, rm);
+    x = x.add(&one, wp, rm);
+  }
+  let shift_sum = shift_num.div(&shift_den, wp, rm);
+
+  let inv_x = one.div(&x, wp, rm);
+  let inv_x2 = inv_x.mul(&inv_x, wp, rm);
+  // Leading terms and the power x^-(2k+n) of the first Bernoulli term.
+  let (mut asym, mut x_pow) = if n == 0 {
+    let lead =
+      ln_above_integer(&x, wp, rm, cc).sub(&inv_x.mul(&half, wp, rm), wp, rm);
+    (lead, inv_x2.clone())
+  } else {
+    let x_n = bigfloat_powi(&inv_x, n as i128, wp, rm);
+    let lead = factorial(n - 1).mul(&x_n, wp, rm).add(
+      &factorial(n)
+        .mul(&x_n, wp, rm)
+        .mul(&inv_x, wp, rm)
+        .mul(&half, wp, rm),
+      wp,
+      rm,
+    );
+    (lead, x_n.mul(&inv_x2, wp, rm))
+  };
+  let eps_exp = asym.exponent().unwrap_or(0) as i64 - wp as i64;
+  let mut prev_mag = i64::MAX;
+  for k in 1..=(4 * wp) {
+    // Coefficient B₂ₖ/(2k) for ψ, B₂ₖ (2k+n−1)!/(2k)! = B₂ₖ/(2k) ·
+    // (2k)(2k+1)…(2k+n−1) otherwise.
+    let coeff = (0..n).fold(bernoulli_over_index(k, wp, rm, cc), |c, j| {
+      c.mul(&int(2 * k + j), wp, rm)
+    });
+    let term = coeff.mul(&x_pow, wp, rm);
+    let mag = term.exponent().map_or(i64::MIN, |e| e as i64);
+    // The series is asymptotic: stop once the terms are negligible, or
+    // once they start growing again.
+    if mag < eps_exp || mag > prev_mag {
+      break;
+    }
+    prev_mag = mag;
+    asym = if n == 0 {
+      asym.sub(&term, wp, rm)
+    } else {
+      asym.add(&term, wp, rm)
+    };
+    x_pow = x_pow.mul(&inv_x2, wp, rm);
+  }
+
+  // ψ⁽ⁿ⁾(z) = (-1)ⁿ⁺¹ [inner(x) + n! Σ 1/(z+k)ⁿ⁺¹], with inner(x) = -ψ(x)
+  // for n = 0.
+  let result = if n == 0 {
+    asym.sub(&shift_sum, wp, rm)
+  } else {
+    let total = asym.add(&factorial(n).mul(&shift_sum, wp, rm), wp, rm);
+    if n.is_multiple_of(2) {
+      total.neg()
+    } else {
+      total
+    }
+  };
+  let mut result = result;
+  result.set_precision(bits, rm).ok()?;
+  Some(result)
+}
+
+/// How far up to shift the argument of an asymptotic (Bernoulli) series so
+/// that it reaches `wp` bits: its smallest term is about `e^(-2πx)`, and the
+/// shifted argument must stay ≥ 16 for [`ln_above_integer`].
+fn asymptotic_shift(wp: usize) -> usize {
+  ((wp as f64 * std::f64::consts::LN_2 / std::f64::consts::TAU).ceil() as usize
+    + 4)
+    .max(16)
+}
+
+/// Arbitrary-precision `Zeta[s, a]` (`signed = false`) or
+/// `HurwitzZeta[s, a]` (`signed = true`) for real `s ≠ 1`, accurate to about
+/// `bits` bits. The two differ only in the terms with `k + a < 0`:
+/// `Zeta` sums `((k + a)²)^(-s/2)`, `HurwitzZeta` `(k + a)^(-s)` (complex
+/// unless `s` is an integer, which gives `None`). A term with `k + a = 0` is
+/// left out. `Zeta[s] = Zeta[s, 1]`.
+///
+/// Euler–Maclaurin at `x = a + N`: `Σₖ₌₀ᴺ⁻¹ (a + k)^(-s) + x^(1−s)/(s − 1) +
+/// x^(-s)/2 + Σⱼ B₂ⱼ/(2j)! · s(s+1)…(s+2j−2) · x^(1−s−2j)`.
+pub fn hurwitz_zeta_bigfloat(
+  s: &astro_float::BigFloat,
+  a: &astro_float::BigFloat,
+  signed: bool,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Option<astro_float::BigFloat> {
+  use astro_float::BigFloat;
+  let s_f64 = bigfloat_to_f64_approx(s)?;
+  let a_f64 = bigfloat_to_f64_approx(a)?;
+  if !s_f64.is_finite() || !a_f64.is_finite() || a_f64 < -1.0e5 {
+    return None;
+  }
+  let wp = bits + 64;
+  let one = BigFloat::from_i32(1, wp);
+  if s.sub(&one, wp, rm).is_zero() {
+    return None;
+  }
+  let s_int = s.fract().is_zero().then_some(s_f64 as i128);
+  let neg_s = s.neg();
+  // x^(-s), exact repeated multiplication for an integer `s`.
+  let pow_neg_s = |x: &BigFloat, cc: &mut astro_float::Consts| match s_int {
+    Some(n) => bigfloat_powi(x, -n, wp, rm),
+    None if x.is_positive() => neg_s
+      .mul(&ln_above_integer(x, wp, rm, cc), wp, rm)
+      .exp(wp, rm, cc),
+    None => x.pow(&neg_s, wp, rm, cc),
+  };
+
+  let target = BigFloat::from_u64(
+    (asymptotic_shift(wp) as f64 + s_f64.abs()).ceil() as u64,
+    wp,
+  );
+  let mut sum = BigFloat::from_i32(0, wp);
+  let mut x = a.clone();
+  while x.cmp(&target).is_some_and(|o| o < 0) {
+    if !x.is_zero() {
+      let term = match (x.is_negative(), signed, s_int) {
+        (false, _, _) => pow_neg_s(&x, cc),
+        (true, false, _) => pow_neg_s(&x.abs(), cc),
+        (true, true, Some(_)) => pow_neg_s(&x, cc),
+        (true, true, None) => return None,
+      };
+      sum = sum.add(&term, wp, rm);
+    }
+    x = x.add(&one, wp, rm);
+  }
+
+  let x_neg_s = pow_neg_s(&x, cc);
+  let s_minus_1 = s.sub(&one, wp, rm);
+  sum = sum
+    .add(&x_neg_s.mul(&x, wp, rm).div(&s_minus_1, wp, rm), wp, rm)
+    .add(&x_neg_s.mul(&BigFloat::from_f64(0.5, wp), wp, rm), wp, rm);
+
+  let inv_x = one.div(&x, wp, rm);
+  let inv_x2 = inv_x.mul(&inv_x, wp, rm);
+  // T_j = s(s+1)…(s+2j−2)/(2j−1)! · x^(1−s−2j); T_1 = s x^(-s-1).
+  let mut t = s.mul(&x_neg_s, wp, rm).mul(&inv_x, wp, rm);
+  let eps_exp = sum.exponent().unwrap_or(0) as i64 - wp as i64;
+  let mut prev_mag = i64::MAX;
+  for j in 1..=(4 * wp) {
+    if t.is_zero() {
+      break;
+    }
+    // B₂ⱼ/(2j)! · (s)₂ⱼ₋₁ x^(1−s−2j) = B₂ⱼ/(2j) · T_j.
+    let term = bernoulli_over_index(j, wp, rm, cc).mul(&t, wp, rm);
+    let mag = term.exponent().map_or(i64::MIN, |e| e as i64);
+    if mag < eps_exp || mag > prev_mag {
+      break;
+    }
+    prev_mag = mag;
+    sum = sum.add(&term, wp, rm);
+    let twoj = (2 * j) as i64;
+    let rise = s.add(&BigFloat::from_i64(twoj - 1, wp), wp, rm).mul(
+      &s.add(&BigFloat::from_i64(twoj, wp), wp, rm),
+      wp,
+      rm,
+    );
+    t = t.mul(&rise, wp, rm).mul(&inv_x2, wp, rm).div(
+      &BigFloat::from_i64(twoj * (twoj + 1), wp),
+      wp,
+      rm,
+    );
+  }
+  sum.set_precision(bits, rm).ok()?;
+  Some(sum)
+}
+
+/// The order of `PolyGamma[n, z]` as a non-negative integer — also from an
+/// integral `Real`/`BigFloat`, which is what `N` turns the order into.
+pub fn polygamma_order(n: &Expr) -> Option<usize> {
+  match n {
+    Expr::Integer(k) if *k >= 0 => usize::try_from(*k).ok(),
+    Expr::Real(f) if *f >= 0.0 && f.fract() == 0.0 && *f < 1.0e6 => {
+      Some(*f as usize)
+    }
+    Expr::BigFloat(digits, _) => {
+      let f: f64 = digits.parse().ok()?;
+      (f >= 0.0 && f.fract() == 0.0 && f < 1.0e6).then_some(f as usize)
+    }
+    _ => None,
+  }
+}
+
+/// Machine `PolyGamma[n, x]`, rounded from a 64-bit result (worked out with
+/// 64 guard bits) so it is accurate to the last bit (the f64 recurrence-plus-series loses up to ~40
+/// ulps to cancellation). `None` at a pole.
+pub fn polygamma_f64(n: usize, x: f64) -> Option<f64> {
+  use astro_float::{BigFloat, Consts, RoundingMode};
+  thread_local! {
+    static CONSTS: std::cell::RefCell<Option<Consts>> =
+      const { std::cell::RefCell::new(None) };
+  }
+  CONSTS.with(|slot| {
+    let mut slot = slot.borrow_mut();
+    if slot.is_none() {
+      *slot = Some(Consts::new().ok()?);
+    }
+    let cc = slot.as_mut()?;
+    let z = BigFloat::from_f64(x, 64);
+    let r = polygamma_bigfloat(n, &z, 64, RoundingMode::ToEven, cc)?;
+    bigfloat_to_f64_approx(&r)
+  })
+}
+
+/// `ln x` for `x > 0`, as `ln N + 2 atanh(δ/(2N + δ))` with `N = ⌊x⌋ ≥ 16`
+/// and `δ = x − N` (a smaller `x` is first scaled by an exact power of two):
+/// `ln N` is cached and the atanh series needs only multiplications, which
+/// makes it several times faster than a general `BigFloat::ln` for the
+/// series arguments of PolyGamma and Zeta.
+fn ln_above_integer(
+  x: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+  thread_local! {
+    static LN_CACHE: std::cell::RefCell<std::collections::HashMap<(usize, u64), BigFloat>> =
+      std::cell::RefCell::new(std::collections::HashMap::new());
+    static ODD_RECIPROCALS: std::cell::RefCell<std::collections::HashMap<usize, Vec<BigFloat>>> =
+      std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  let n = match bigfloat_to_f64_approx(x) {
+    Some(v) if (16.0..1.0e6).contains(&v) => v.floor() as u64,
+    // Scale by an exact power of two into [16, 32): ln x = ln(2ᵏ x) − k ln 2.
+    Some(v) if v > 0.0 && v.is_finite() => {
+      let k = 4 - v.log2().floor() as i64;
+      let mut scaled = x.clone();
+      scaled
+        .set_exponent(x.exponent().unwrap_or(0) + k as astro_float::Exponent);
+      if bigfloat_to_f64_approx(&scaled)
+        .is_none_or(|w| !(16.0..32.0).contains(&w))
+      {
+        return x.ln(bits, rm, cc);
+      }
+      let ln2 = cc.ln_2(bits, rm);
+      return ln_above_integer(&scaled, bits, rm, cc).sub(
+        &ln2.mul(&BigFloat::from_i64(k, bits), bits, rm),
+        bits,
+        rm,
+      );
+    }
+    _ => return x.ln(bits, rm, cc),
+  };
+  let n_bf = BigFloat::from_u64(n, bits);
+  let ln_n = LN_CACHE.with(|cache| {
+    cache
+      .borrow_mut()
+      .entry((bits, n))
+      .or_insert_with(|| n_bf.ln(bits, rm, cc))
+      .clone()
+  });
+  let delta = x.sub(&n_bf, bits, rm);
+  if delta.is_zero() {
+    return ln_n;
+  }
+  // u = δ/(2N + δ) < 1/33, so each term gains more than 10 bits.
+  let u = delta.div(&n_bf.add(&n_bf, bits, rm).add(&delta, bits, rm), bits, rm);
+  let u2 = u.mul(&u, bits, rm);
+  let terms = bits / 10 + 2;
+  let atanh = ODD_RECIPROCALS.with(|cache| {
+    let mut cache = cache.borrow_mut();
+    let recips = cache.entry(bits).or_default();
+    while recips.len() < terms {
+      let k = recips.len() as i32;
+      let one = BigFloat::from_i32(1, bits);
+      recips.push(one.div(&BigFloat::from_i32(2 * k + 1, bits), bits, rm));
+    }
+    // Horner: u (1 + u²/3 + u⁴/5 + …)
+    let mut sum = BigFloat::from_i32(0, bits);
+    for r in recips[..terms].iter().rev() {
+      sum = sum.mul(&u2, bits, rm).add(r, bits, rm);
+    }
+    sum.mul(&u, bits, rm)
+  });
+  ln_n.add(&atanh.add(&atanh, bits, rm), bits, rm)
+}
+
+/// Machine `Zeta[s, a]`/`HurwitzZeta[s, a]` (see [`hurwitz_zeta_bigfloat`])
+/// rounded from a 64-bit result, accurate to the last bit where the f64
+/// Euler–Maclaurin sum loses digits — badly so for negative `s`, whose
+/// terms grow and cancel. `None` at a pole or for a complex value.
+pub fn hurwitz_zeta_f64(s: f64, a: f64, signed: bool) -> Option<f64> {
+  use astro_float::{BigFloat, Consts, RoundingMode};
+  thread_local! {
+    static CONSTS: std::cell::RefCell<Option<Consts>> =
+      const { std::cell::RefCell::new(None) };
+  }
+  CONSTS.with(|slot| {
+    let mut slot = slot.borrow_mut();
+    if slot.is_none() {
+      *slot = Some(Consts::new().ok()?);
+    }
+    let cc = slot.as_mut()?;
+    let (sb, ab) = (BigFloat::from_f64(s, 64), BigFloat::from_f64(a, 64));
+    let r =
+      hurwitz_zeta_bigfloat(&sb, &ab, signed, 64, RoundingMode::ToEven, cc)?;
+    bigfloat_to_f64_approx(&r)
+  })
+}
+
+/// B₂ₖ/(2k) as a BigFloat of `bits` bits, cached per precision.
+fn bernoulli_over_index(
+  k: usize,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+  thread_local! {
+    static CACHE: std::cell::RefCell<std::collections::HashMap<usize, Vec<BigFloat>>> =
+      std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  CACHE.with(|cache| {
+    let mut cache = cache.borrow_mut();
+    let values = cache.entry(bits).or_default();
+    while values.len() <= k {
+      // Index 0 is an unused placeholder, so that index k holds B₂ₖ/(2k).
+      let k = values.len();
+      if k == 0 {
+        values.push(BigFloat::from_i32(0, bits));
+        continue;
+      }
+      let (num, den) = crate::functions::math_ast::bernoulli_big(2 * k);
+      let den = den * num_bigint::BigInt::from(2 * k);
+      let parse = |v: &num_bigint::BigInt, cc: &mut astro_float::Consts| {
+        BigFloat::parse(&v.to_string(), astro_float::Radix::Dec, bits, rm, cc)
+      };
+      let b = parse(&num, cc).div(&parse(&den, cc), bits, rm);
+      values.push(b);
+    }
+    values[k].clone()
+  })
+}
+
+/// A BigFloat's value rounded to the nearest `f64` (normal range only).
+fn bigfloat_to_f64_approx(bf: &astro_float::BigFloat) -> Option<f64> {
+  if bf.is_zero() {
+    return Some(0.0);
+  }
+  let (words, _, sign, exp, _) = bf.as_raw_parts()?;
+  // The mantissa is 0.1… in little-endian 64-bit words. Its top word holds
+  // the leading 64 bits; any set bit below it only matters as a sticky bit
+  // for round-to-nearest of the u64 → f64 conversion.
+  let (&top, rest) = words.split_last()?;
+  let sticky = u64::from(rest.iter().any(|&w| w != 0));
+  let v = (top | sticky) as f64 * 2f64.powi(exp - 64);
+  Some(if sign == astro_float::Sign::Neg {
+    -v
+  } else {
+    v
+  })
+}
+
 /// Arbitrary-precision Gamma via Spouge's approximation.
 ///
 /// `Γ(z+1) = (z+a)^(z+1/2) · e^{−(z+a)} · √(2π) · (c₀ + Σ_{k=1}^{a−1} c_k/(z+k))`
@@ -1602,6 +2025,51 @@ pub fn expr_to_bigfloat(
             "ArcSech" => r.acosh(bits, rm, cc),
             _ => r.asinh(bits, rm, cc),
           })
+        }
+        "Zeta" | "HurwitzZeta" if !args.is_empty() && args.len() <= 2 => {
+          let sv = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          let av = match args.get(1) {
+            Some(a) => expr_to_bigfloat(a, bits, rm, cc)?,
+            None => BigFloat::from_i32(1, bits),
+          };
+          // HurwitzZeta has a pole at every non-positive integer a when
+          // s > 0 (the k = -a term); Zeta leaves that term out.
+          let hurwitz_pole = name == "HurwitzZeta"
+            && av.fract().is_zero()
+            && !av.is_positive()
+            && sv.is_positive();
+          (!hurwitz_pole)
+            .then(|| {
+              hurwitz_zeta_bigfloat(
+                &sv,
+                &av,
+                name == "HurwitzZeta",
+                bits,
+                rm,
+                cc,
+              )
+            })
+            .flatten()
+            .ok_or_else(|| {
+              InterpreterError::EvaluationError(format!(
+                "N: cannot evaluate {name}[...] to arbitrary precision"
+              ))
+            })
+        }
+        "PolyGamma" if !args.is_empty() && args.len() <= 2 => {
+          let (n, z) = match &args[..] {
+            [z] => (Some(0), z),
+            [n, z] => (polygamma_order(n), z),
+            _ => unreachable!(),
+          };
+          let z = expr_to_bigfloat(z, bits, rm, cc)?;
+          n.and_then(|n| polygamma_bigfloat(n, &z, bits, rm, cc))
+            .ok_or_else(|| {
+              InterpreterError::EvaluationError(
+                "N: cannot evaluate PolyGamma[...] to arbitrary precision"
+                  .into(),
+              )
+            })
         }
         "LogGamma" if args.len() == 1 => {
           let z = expr_to_bigfloat(&args[0], bits, rm, cc)?;
