@@ -849,7 +849,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
       let reduced = if remaining.len() == 1 {
         remaining.into_iter().next().unwrap()
       } else {
-        call("Plus", remaining)
+        plus(remaining)
       };
       return element_ast(&reduced, domain);
     }

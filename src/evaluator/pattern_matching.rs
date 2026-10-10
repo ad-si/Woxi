@@ -2761,7 +2761,7 @@ pub fn apply_replace_all_ast(
           &source.options,
         ) {
           opts.push(rule_expr(
-            Expr::Identifier("AspectRatio".to_string()),
+            id_expr("AspectRatio"),
             Expr::Real(crate::functions::graphics::plot_source_aspect_ratio(
               source.image_size,
             )),

@@ -81,7 +81,7 @@ fn root_of_unity_q(z: &Expr) -> bool {
     if (pr - 1.0).abs() < 1e-9 && pi.abs() < 1e-9 {
       // Candidate order n found; confirm exactly with PossibleZeroQ[z^n - 1].
       let zn = pow(z.clone(), Expr::Integer(n as i128));
-      let diff = call("Plus", vec![zn, Expr::Integer(-1)]);
+      let diff = plus(vec![zn, Expr::Integer(-1)]);
       if let Ok(result) = crate::functions::predicate_ast::possible_zero_q_ast(
         std::slice::from_ref(&diff),
       ) && matches!(&result, Expr::Identifier(s) if s == "True")

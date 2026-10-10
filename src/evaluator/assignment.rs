@@ -3452,7 +3452,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     for factor in &factors {
       evaluated.push(evaluate_expr_to_expr(factor)?);
     }
-    let shown = call("Times", evaluated);
+    let shown = times(evaluated);
     let shown = evaluate_expr_to_expr(&shown).unwrap_or(shown);
     crate::emit_message(&format!(
       "Set::write: Tag Times in {} is Protected.",
@@ -5445,7 +5445,7 @@ fn normalize_lhs_for_upset(lhs: &Expr) -> Expr {
       };
       let right_expr = match op {
         BinaryOperator::Minus => {
-          call("Times", vec![Expr::Integer(-1), (**right).clone()])
+          times(vec![Expr::Integer(-1), (**right).clone()])
         }
         BinaryOperator::Divide => pow((**right).clone(), Expr::Integer(-1)),
         _ => (**right).clone(),

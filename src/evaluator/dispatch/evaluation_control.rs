@@ -898,10 +898,7 @@ pub fn dispatch_evaluation_control(
       if orig_str == eval_str {
         return Some(Ok(Expr::List(vec![].into())));
       }
-      let wrap = |e: Expr| Expr::FunctionCall {
-        name: "HoldForm".into(),
-        args: vec![e].into(),
-      };
+      let wrap = |e: Expr| call1("HoldForm", e);
       return Some(Ok(Expr::List(
         vec![wrap(original), wrap(evaluated)].into(),
       )));

@@ -3230,12 +3230,11 @@ fn apply_transformation_function(
       });
     };
     // Dot product of row with homogeneous vector
-    let dot = call(
-      "Plus",
+    let dot = plus(
       row
         .iter()
         .zip(hom.iter())
-        .map(|(a, b)| call("Times", vec![a.clone(), b.clone()]))
+        .map(|(a, b)| times(vec![a.clone(), b.clone()]))
         .collect(),
     );
     result.push(evaluate_expr_to_expr(&dot)?);
@@ -3249,12 +3248,11 @@ fn apply_transformation_function(
     && let Expr::List(last) = &rows[n]
     && last.len() == hom.len()
   {
-    let h = evaluate_expr_to_expr(&call(
-      "Plus",
+    let h = evaluate_expr_to_expr(&plus(
       last
         .iter()
         .zip(hom.iter())
-        .map(|(a, b)| call("Times", vec![a.clone(), b.clone()]))
+        .map(|(a, b)| times(vec![a.clone(), b.clone()]))
         .collect(),
     ))?;
     // Only rescale when the homogeneous coordinate is not the constant 1.
