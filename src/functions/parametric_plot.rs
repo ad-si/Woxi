@@ -397,7 +397,7 @@ fn exclusion_roots(
         } else if a.signum() != b.signum() && b != 0.0 {
           let (mut lo, mut hi, mut flo) = (prev.0, cur.0, a);
           for _ in 0..60 {
-            let mid = 0.5 * (lo + hi);
+            let mid = f64::midpoint(lo, hi);
             match diff(mid) {
               Some(f) if f.signum() == flo.signum() => {
                 lo = mid;
@@ -407,7 +407,7 @@ fn exclusion_roots(
               None => break,
             }
           }
-          let root = 0.5 * (lo + hi);
+          let root = f64::midpoint(lo, hi);
           if diff(root)
             .is_some_and(|f| f.abs() < 1e-6 * (1.0 + a.abs().max(b.abs())))
           {
