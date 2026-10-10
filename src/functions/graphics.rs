@@ -3771,6 +3771,53 @@ fn graphics_text_content(expr: &Expr) -> String {
       crate::functions::chart::expr_to_label(expr)
         .unwrap_or_else(|| expr_to_string(expr))
     }
+    // `ScientificForm`/`EngineeringForm` typeset as `mantissa×10ⁿ` on one
+    // line, with the exponent as a superscript — not the two-line OutputForm
+    // box `ToString` gives, which would split a label across two rows.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "ScientificForm" | "EngineeringForm")
+        && !args.is_empty() =>
+    {
+      let n = format_precision_arg(args.get(1), 6);
+      let parts = if name == "ScientificForm" {
+        crate::functions::string_ast::scientific_form_parts(&args[0], n)
+      } else {
+        crate::functions::string_ast::engineering_form_parts(&args[0], n)
+      };
+      match parts {
+        Some((mantissa, Some(exp))) => {
+          format!("{mantissa}×10{}", to_unicode_script_digits(&exp.to_string(), true))
+        }
+        Some((mantissa, None)) => mantissa,
+        None => graphics_text_content(&args[0]),
+      }
+    }
+    // A product with a string factor (`" = " NumberForm[x, 3]`) is the
+    // factors set side by side, each typeset on its own — the wrappers
+    // inside it still apply instead of printing as `NumberForm[…]` source.
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.iter().any(|a| matches!(a, Expr::String(_))) =>
+    {
+      args
+        .iter()
+        .map(graphics_text_content)
+        .collect::<Vec<_>>()
+        .join(" ")
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::String(_))
+      || matches!(right.as_ref(), Expr::String(_)) =>
+    {
+      format!(
+        "{} {}",
+        graphics_text_content(left),
+        graphics_text_content(right)
+      )
+    }
     _ => {
       let text = match crate::functions::string_ast::to_string_ast(
         std::slice::from_ref(expr),
@@ -21413,7 +21460,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // A `PaneSelector` argument shows one pane's controls at a time; the
     // flattened list holds every pane's, so each pane's controls also pick
     // up the condition under which they are on screen.
-    collect_pane_visibility(spec, &place_map, &mut control_visible);
+    collect_pane_visibility(spec, &place_map, &mut control_visible, None);
     if let Some(items) = named_control_group_items(spec) {
       arg_items.extend(items);
       continue;
@@ -23857,6 +23904,7 @@ fn collect_pane_visibility(
   spec: &Expr,
   place_map: &[Option<String>],
   out: &mut Vec<(String, String)>,
+  outer: Option<&str>,
 ) {
   // A `PaneSelector` may sit inside a `Grid`'s row list (the Demonstrations
   // idiom of a custom Grid-based control panel) — descend into a bare list
@@ -23864,7 +23912,7 @@ fn collect_pane_visibility(
   // `PaneSelector` nested that way is never found.
   if let Expr::List(items) = spec {
     for item in items {
-      collect_pane_visibility(item, place_map, out);
+      collect_pane_visibility(item, place_map, out, outer);
     }
     return;
   }
@@ -23874,7 +23922,7 @@ fn collect_pane_visibility(
   if name != "PaneSelector" {
     // The `PaneSelector` may sit inside a layout container.
     for arg in args {
-      collect_pane_visibility(arg, place_map, out);
+      collect_pane_visibility(arg, place_map, out, outer);
     }
     return;
   }
@@ -23896,11 +23944,24 @@ fn collect_pane_visibility(
     else {
       continue;
     };
-    let cond = format!(
+    let own = format!(
       "({}) == ({})",
       selector,
       crate::syntax::expr_to_source_form(pattern)
     );
+    // A pane nested inside another pane's content (`PaneSelector[{True ->
+    // PaneSelector[{1 -> control}, Dynamic[w]]}, Dynamic[p]]`) is only on
+    // screen while the outer pane is too, so its condition is the
+    // conjunction of both.
+    let cond = match outer {
+      Some(o) => format!("({o}) && ({own})"),
+      None => own,
+    };
+    if matches!(replacement.as_ref(), Expr::FunctionCall { name, .. } if name == "PaneSelector")
+    {
+      collect_pane_visibility(replacement, place_map, out, Some(&cond));
+      continue;
+    }
     for var in pane_control_variables(replacement, place_map) {
       match out.iter_mut().find(|(n, _)| *n == var) {
         Some((_, existing)) => *existing = format!("{existing} || {cond}"),

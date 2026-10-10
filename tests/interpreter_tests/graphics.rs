@@ -33520,4 +33520,38 @@ mod grid_text_in_graphics {
     .unwrap();
     assert_eq!(clipped, "1", "{clipped}");
   }
+
+  #[test]
+  fn text_label_formats_number_wrappers_inside_row_and_product() {
+    // `" = " NumberForm[x, 3]` is a product with a string factor: the
+    // wrapper must still apply, and `ScientificForm` stays on one line.
+    let svg = interpret(
+      r#"ExportString[Graphics[{Text[Row[{"a" " = " NumberForm[3.53678, 3], ScientificForm[362.2, 3]}], {0, 0}]}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("3.54"), "{svg}");
+    assert!(!svg.contains("NumberForm"), "{svg}");
+    assert!(svg.contains("3.62×10²"), "{svg}");
+    assert!(!svg.contains("<tspan"), "{svg}");
+  }
+
+  #[test]
+  fn spec_nested_pane_selector_conjoins_visibility_conditions() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[a + b, {{a, 1}, 0, 5}, {{b, 2}, 0, 5}, {{p, True}, {True, False}}, \
+       {{w, 1}, {1, 2}}, \
+       Grid[{{PaneSelector[{True -> PaneSelector[{1 -> Control[{{b, 2}, 0, 5}]}, \
+       Dynamic[w]]}, Dynamic[p]]}}]]",
+    )
+    .unwrap();
+    let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("well-formed Manipulate");
+    let cond = spec
+      .control_visible
+      .iter()
+      .find(|(n, _)| n == "b")
+      .map(|(_, c)| c.clone())
+      .expect("b is gated");
+    assert_eq!(cond, "((p) == (True)) && ((w) == (1))");
+  }
 }
