@@ -2041,13 +2041,16 @@ fn render_text_element(s: &str) -> String {
           .unwrap_or_default()
       }
       // An unstyled wrapper around another cell (`Cell[BoxData[Cell[…]]]`)
-      // is just the FrontEnd's nesting, not chrome: render what it holds.
+      // or around typeset math (`Cell[BoxData[FormBox[…]]]`, as produced for
+      // short inline formulas like `k = 3`) is just the FrontEnd's nesting,
+      // not chrome: render what it holds.
       None => parts
         .first()
         .filter(|c| {
-          c.trim()
-            .strip_prefix("BoxData[")
-            .is_some_and(|r| r.trim_start().starts_with("Cell["))
+          c.trim().strip_prefix("BoxData[").is_some_and(|r| {
+            let r = r.trim_start();
+            r.starts_with("Cell[") || r.starts_with("FormBox[")
+          })
         })
         .map(|c| render_inline_math_content(c.trim()))
         .unwrap_or_default(),
@@ -5756,6 +5759,30 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(
       extract_cell_content(s),
       "The triangle ABC is limited to the range [-9,9]. Drag the point A."
+    );
+  }
+
+  #[test]
+  fn test_extract_textdata_unstyled_inline_formula_cell() {
+    // Short inline formulas are written as unstyled `Cell[BoxData[FormBox[…]]]`
+    // elements (no "InlineMath" style); they must still contribute their
+    // content instead of leaving holes in the sentence.
+    let s = r#"TextData[{
+ "Rules with ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"k", "=", "3"}], TraditionalForm]],ExpressionUUID->
+  "8e2c93cc-7427-4e4c-804d-674333ce53be"],
+ " colors and radius ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"r", "=", "1"}], TraditionalForm]],ExpressionUUID->
+  "701fcd97-4426-1943-9c77-f63aa139034d"],
+ " are counted."
+}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Rules with k=3 colors and radius r=1 are counted."
     );
   }
 
