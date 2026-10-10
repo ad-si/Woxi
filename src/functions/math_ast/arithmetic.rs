@@ -159,7 +159,7 @@ fn polynomial_term_to_series_data(
     } else if coeff_factors.len() == 1 {
       coeff_factors.remove(0)
     } else {
-      call("Times", coeff_factors)
+      times(coeff_factors)
     };
     return Some(make_sd(coeff, n));
   }
@@ -1010,10 +1010,10 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let opposite = directions.len() == 2
         && matches!(
-          crate::evaluator::evaluate_expr_to_expr(&call(
-            "Plus",
-            vec![directions[0].clone(), directions[1].clone()]
-          )),
+          crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+            directions[0].clone(),
+            directions[1].clone()
+          ])),
           Ok(Expr::Integer(0))
         );
       if complex_inf || opposite {
@@ -1105,7 +1105,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if final_args.len() == 1 {
       return Ok(final_args.remove(0));
     }
-    return Ok(call("Plus", final_args));
+    return Ok(plus(final_args));
   }
 
   // Classify arguments: exact (Integer/Rational), real (Real), bigfloat, or symbolic
@@ -1369,7 +1369,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else if final_args.len() == 1 {
       Ok(final_args.remove(0))
     } else {
-      Ok(call("Plus", final_args))
+      Ok(plus(final_args))
     }
   }
 }
@@ -1447,7 +1447,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
     }
   };
   if matches!(&e, Expr::Identifier(s) if s == "I") {
-    return call("Times", vec![Expr::Real(1.0), id_expr("I")]);
+    return times(vec![Expr::Real(1.0), id_expr("I")]);
   }
   if let Expr::FunctionCall { name, args } = &e
     && name == "Times"
@@ -1460,7 +1460,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
         new_args.push(a.clone());
       }
     }
-    return call("Times", new_args);
+    return times(new_args);
   }
   if let Expr::BinaryOp {
     op: BinaryOperator::Times,
@@ -1470,7 +1470,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
   {
     let left_new = to_real(left).unwrap_or((**left).clone());
     let right_new = to_real(right).unwrap_or((**right).clone());
-    return call("Times", vec![left_new, right_new]);
+    return times(vec![left_new, right_new]);
   }
   // Complex[a, b] → Times[Real(b), I] is an oversimplification when a != 0;
   // for the simple `Complex[0, n]` case we expand to `Times[Real(n), I]`,
@@ -1504,9 +1504,9 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
     let zero_re = matches!(&re, Expr::Real(f) if *f == 0.0)
       || matches!(&re, Expr::Integer(0));
     if zero_re {
-      return call("Times", vec![im, id_expr("I")]);
+      return times(vec![im, id_expr("I")]);
     }
-    return call("Plus", vec![re, call("Times", vec![im, id_expr("I")])]);
+    return plus(vec![re, times(vec![im, id_expr("I")])]);
   }
   e
 }
@@ -1699,7 +1699,7 @@ fn decompose_term(e: &Expr) -> (Coeff, Expr) {
         if args.len() == 2 {
           args[1].clone()
         } else {
-          call("Times", args[1..].to_vec())
+          times(args[1..].to_vec())
         }
       };
       // Check if first arg is a numeric coefficient (integer/rational)
@@ -1809,7 +1809,7 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
         && matches!(&c, Coeff::Real(_))
         && matches!(&base, Expr::Identifier(s) if s == "I")
       {
-        result.push(call("Times", vec![c.to_expr(), base]));
+        result.push(times(vec![c.to_expr(), base]));
       }
       continue;
     }
@@ -1831,7 +1831,7 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
     // reason). Without this, `0. + 1. I` would collapse to `I` instead
     // of `Complex[0., 1.]` ≡ `0. + 1.*I`.
     if matches!(&c, Coeff::Real(_)) && c.is_one() {
-      result.push(call("Times", vec![c.to_expr(), base]));
+      result.push(times(vec![c.to_expr(), base]));
       continue;
     }
     if c.is_one() {
@@ -1849,7 +1849,7 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
           times_args.push(base);
         }
       }
-      result.push(call("Times", times_args));
+      result.push(times(times_args));
     }
   }
   result
@@ -2408,7 +2408,7 @@ fn strip_imaginary_literal_coeff(e: &Expr) -> Option<Expr> {
   Some(if rest.len() == 1 {
     rest.into_iter().next().unwrap()
   } else {
-    call("Times", rest)
+    times(rest)
   })
 }
 
@@ -3089,7 +3089,7 @@ fn strip_complex_literal_coeff(e: &Expr) -> Option<Expr> {
     return Some(if rest.len() == 1 {
       rest[0].clone()
     } else {
-      call("Times", rest.to_vec())
+      times(rest.to_vec())
     });
   }
   None
@@ -3641,7 +3641,7 @@ fn split_last_call_factor(base: &Expr) -> Option<((Expr, Expr), Option<Expr>)> {
   let rest = match rest.len() {
     0 => None,
     1 => rest.into_iter().next(),
-    _ => Some(call("Times", rest)),
+    _ => Some(times(rest)),
   };
   Some((parts, rest))
 }
@@ -5650,7 +5650,7 @@ fn order_factor_vs_additive(
   if let Some(v) = sym_var_name(&fb)
     && fe.is_some_and(|e| e > 0.0)
   {
-    let sum_expr = call("Plus", plus_args.to_vec());
+    let sum_expr = plus(plus_args.to_vec());
     if let Some((sv, coeffs)) = univar_rat_coeffs(&sum_expr)
       && sv == v
     {
@@ -6723,7 +6723,7 @@ fn combine_reciprocal_trig(
   let negate_exp = |e: &Expr| -> Expr {
     match e {
       Expr::Integer(n) => Expr::Integer(-n),
-      _ => call("Times", vec![Expr::Integer(-1), e.clone()]),
+      _ => times(vec![Expr::Integer(-1), e.clone()]),
     }
   };
 
@@ -8967,7 +8967,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       sort_symbolic_factors(&mut symbolic_args);
       let mut final_args: Vec<Expr> = vec![numeric];
       final_args.extend(symbolic_args);
-      return Ok(call("Times", final_args));
+      return Ok(times(final_args));
     }
 
     if symbolic_args.is_empty() {
@@ -8989,7 +8989,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if final_args.len() == 1 {
       return Ok(final_args.remove(0));
     }
-    return Ok(call("Times", final_args));
+    return Ok(times(final_args));
   }
 
   // Separate into: integers, rationals, reals, and symbolic arguments.
@@ -9137,7 +9137,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if final_args.len() == 1 {
       return Ok(final_args.remove(0));
     }
-    return Ok(call("Times", final_args));
+    return Ok(times(final_args));
   }
 
   // If any Real, try to convert symbolic constants (Pi, E, etc.) to floats.
@@ -9202,7 +9202,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return if final_args.len() == 1 {
       Ok(final_args.remove(0))
     } else {
-      Ok(call("Times", final_args))
+      Ok(times(final_args))
     };
   }
 
@@ -9231,7 +9231,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if final_args.len() == 1 {
       return Ok(final_args.remove(0));
     }
-    return Ok(call("Times", final_args));
+    return Ok(times(final_args));
   };
   let combined_denom = rat_denom;
   let mut coeff = if has_rational || (has_int && combined_denom != 1) {
@@ -9639,7 +9639,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if final_args.len() == 1 {
     Ok(final_args.remove(0))
   } else {
-    Ok(call("Times", final_args))
+    Ok(times(final_args))
   }
 }
 
@@ -10257,7 +10257,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
           if rest.len() == 1 {
             return multiply_scalar_by_expr(&coeff, &rest.remove(0));
           }
-          let rest_expr = call("Times", rest);
+          let rest_expr = times(rest);
           return multiply_scalar_by_expr(&coeff, &rest_expr);
         }
       }
@@ -10643,7 +10643,7 @@ fn flip_unit_negative_rational_product(expr: Expr) -> Expr {
   if !is_additive(&negated) {
     return expr;
   }
-  call("Times", vec![make_rational(1, *cd), negated])
+  times(vec![make_rational(1, *cd), negated])
 }
 
 /// Build the canonical form of `a / b` structurally (without evaluation).
@@ -10681,7 +10681,7 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
         let rest_expr = if rest.len() == 1 {
           rest.remove(0)
         } else {
-          call("Times", rest)
+          times(rest)
         };
         let rest_inv = pow(rest_expr, Expr::Integer(-1));
         // Sign is carried on the rational's numerator (Rational[-1, |c|]).
@@ -10692,7 +10692,7 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
             Expr::Integer(int_prod.abs()),
           ],
         );
-        return call("Times", vec![coeff, rest_inv]);
+        return times(vec![coeff, rest_inv]);
       }
     }
     return pow(b, Expr::Integer(-1));
@@ -10709,7 +10709,7 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
       args: new_args,
     };
   }
-  call("Times", vec![a, b_inv])
+  times(vec![a, b_inv])
 }
 
 /// True iff `exp` is a numeric constant whose absolute value is strictly
@@ -11105,7 +11105,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
     let copies: Vec<Expr> =
       std::iter::repeat_n(base.clone(), *n as usize).collect();
-    let product = call("Times", copies);
+    let product = times(copies);
     return crate::evaluator::evaluate_expr_to_expr(&product);
   }
 
@@ -11303,14 +11303,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let rest_sum = if rest.len() == 1 {
           rest.into_iter().next().unwrap()
         } else {
-          call("Plus", rest)
+          plus(rest)
         };
         factors.push(power_two(&e, &rest_sum)?);
       }
       let result = if factors.len() == 1 {
         factors.into_iter().next().unwrap()
       } else {
-        call("Times", factors)
+        times(factors)
       };
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
@@ -11364,10 +11364,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let coeff = if coeff_factors.len() == 1 {
           coeff_factors[0].clone()
         } else {
-          call(
-            "Times",
-            coeff_factors.iter().map(|e| (*e).clone()).collect(),
-          )
+          times(coeff_factors.iter().map(|e| (*e).clone()).collect())
         };
         return power_two(x, &coeff);
       }
@@ -11702,7 +11699,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           let radicand = if radicand_factors.len() == 1 {
             radicand_factors.into_iter().next().unwrap()
           } else {
-            call("Times", radicand_factors)
+            times(radicand_factors)
           };
           return times_ast(&[Expr::Integer(s), call1("Sqrt", radicand)]);
         }
@@ -11728,7 +11725,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           let rest_expr = if rest.len() == 1 {
             rest.into_iter().next().unwrap()
           } else {
-            call("Times", rest)
+            times(rest)
           };
           let pow_rest = power_two(&rest_expr, exp)?;
           return times_ast(&[pow_numeric, pow_rest]);
@@ -12047,12 +12044,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     } else if matches!(&sin_val, Expr::Integer(-1)) {
       negate_expr(i_expr)
     } else {
-      call("Times", vec![sin_val, i_expr])
+      times(vec![sin_val, i_expr])
     };
     if cos_is_zero {
       return Ok(imag_term);
     }
-    return Ok(call("Plus", vec![cos_val, imag_term]));
+    return Ok(plus(vec![cos_val, imag_term]));
   }
 
   // E^(a + k*I*Pi) → E^a * E^(k*I*Pi), when k*I*Pi appears as a Plus term
@@ -12097,7 +12094,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let rest_exp = if other_terms.len() == 1 {
           other_terms[0].clone()
         } else {
-          call("Plus", other_terms.into_iter().cloned().collect())
+          plus(other_terms.into_iter().cloned().collect())
         };
         let e_sym = base.clone();
         let e_rest = power_two(&e_sym, &rest_exp)?;
@@ -12294,7 +12291,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let rest = if eargs.len() == 2 {
       eargs[1].clone()
     } else {
-      call("Times", eargs[1..].to_vec())
+      times(eargs[1..].to_vec())
     };
     return power_two(&make_rational(*q, *p), &rest);
   }
@@ -12718,14 +12715,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let im_part = if im == 1.0 {
           id_expr("I")
         } else if im == -1.0 {
-          call("Times", vec![Expr::Integer(-1), id_expr("I")])
+          times(vec![Expr::Integer(-1), id_expr("I")])
         } else {
-          call("Times", vec![Expr::Real(im), id_expr("I")])
+          times(vec![Expr::Real(im), id_expr("I")])
         };
         if re == 0.0 {
           Ok(im_part)
         } else {
-          Ok(call("Plus", vec![Expr::Real(re), im_part]))
+          Ok(plus(vec![Expr::Real(re), im_part]))
         }
       }
     } else if has_real {

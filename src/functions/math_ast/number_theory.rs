@@ -687,10 +687,7 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut prev: Expr = Expr::Integer(2);
     let mut curr: Expr = x.clone();
     for _ in 2..=n {
-      let next = call(
-        "Plus",
-        vec![call("Times", vec![x.clone(), curr.clone()]), prev],
-      );
+      let next = plus(vec![times(vec![x.clone(), curr.clone()]), prev]);
       let expanded =
         crate::evaluator::evaluate_function_call_ast("Expand", &[next])?;
       prev = curr;
@@ -1712,15 +1709,14 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if i == 1 {
             terms.push(Expr::Integer(1));
           } else {
-            let neg_order =
-              call("Times", vec![Expr::Integer(-1), order.clone()]);
+            let neg_order = times(vec![Expr::Integer(-1), order.clone()]);
             terms.push(pow2(Expr::Integer(i), neg_order));
           }
         }
         let sum = match terms.len() {
           0 => Expr::Integer(0),
           1 => terms.pop().unwrap(),
-          _ => call("Plus", terms),
+          _ => plus(terms),
         };
         return crate::evaluator::evaluate_expr_to_expr(&sum);
       }
@@ -1836,7 +1832,7 @@ pub fn multiple_harmonic_number_ast(
   if terms.is_empty() {
     return Ok(Expr::Integer(0));
   }
-  crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
+  crate::evaluator::evaluate_expr_to_expr(&plus(terms))
 }
 
 /// AlternatingHarmonicNumber[n] - Sum[(-1)^(k+1)/k, {k,1,n}].
@@ -1884,10 +1880,10 @@ pub fn alternating_harmonic_number_ast(
       terms.push(if factors.len() == 1 {
         factors.pop().unwrap()
       } else {
-        call("Times", factors)
+        times(factors)
       });
     }
-    call("Plus", terms)
+    plus(terms)
   }
 
   let is_exact_order = |r: &Expr| {
@@ -1913,31 +1909,25 @@ pub fn alternating_harmonic_number_ast(
         }
         // Eta[r] in wolframscript's form: ((-2 + 2^r) Zeta[r])/2^r
         let two_pow_r = |exp: Expr| pow2(Expr::Integer(2), exp);
-        let eta = call(
-          "Times",
-          vec![
-            call("Plus", vec![Expr::Integer(-2), two_pow_r(r.clone())]),
-            call1("Zeta", r.clone()),
-            two_pow_r(call("Times", vec![Expr::Integer(-1), r.clone()])),
-          ],
-        );
+        let eta = times(vec![
+          plus(vec![Expr::Integer(-2), two_pow_r(r.clone())]),
+          call1("Zeta", r.clone()),
+          two_pow_r(times(vec![Expr::Integer(-1), r.clone()])),
+        ]);
         return crate::evaluator::evaluate_expr_to_expr(&eta);
       }
       _ => {
         // Sum[(-1)^(k+1) x^k/k^r, {k,1,Infinity}] = -PolyLog[r, -x]
-        let poly_log = call(
-          "Times",
-          vec![
-            Expr::Integer(-1),
-            call(
-              "PolyLog",
-              vec![
-                args[1].clone(),
-                call("Times", vec![Expr::Integer(-1), args[2].clone()]),
-              ],
-            ),
-          ],
-        );
+        let poly_log = times(vec![
+          Expr::Integer(-1),
+          call(
+            "PolyLog",
+            vec![
+              args[1].clone(),
+              times(vec![Expr::Integer(-1), args[2].clone()]),
+            ],
+          ),
+        ]);
         return crate::evaluator::evaluate_expr_to_expr(&poly_log);
       }
     }
@@ -2093,7 +2083,7 @@ pub fn hyper_harmonic_number_ast(
   let neg_s = |s: &Expr| -> Expr {
     match s {
       Expr::Integer(p) => Expr::Integer(-p),
-      _ => call("Times", vec![Expr::Integer(-1), s.clone()]),
+      _ => times(vec![Expr::Integer(-1), s.clone()]),
     }
   };
 
@@ -2102,7 +2092,7 @@ pub fn hyper_harmonic_number_ast(
   if r == 0 {
     let n_pow = pow2(Expr::Integer(n), neg_s(&s));
     let term = match x {
-      Some(x) => call("Times", vec![pow2(x.clone(), Expr::Integer(n)), n_pow]),
+      Some(x) => times(vec![pow2(x.clone(), Expr::Integer(n)), n_pow]),
       None => n_pow,
     };
     return crate::evaluator::evaluate_expr_to_expr(&term);
@@ -2141,9 +2131,9 @@ pub fn hyper_harmonic_number_ast(
       factors.push(pow2(x.clone(), Expr::Integer(k)));
     }
     factors.push(k_pow);
-    terms.push(call("Times", factors));
+    terms.push(times(factors));
   }
-  let sum = call("Plus", terms);
+  let sum = plus(terms);
   crate::evaluator::evaluate_expr_to_expr(&sum)
 }
 
@@ -4506,7 +4496,7 @@ pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 2-arg symbolic case keeps a single Binomial form for backward
   // compatibility with the existing convention.
   if args.len() == 2 && symbolic_indices.len() >= 2 {
-    let sum = call("Plus", vec![args[0].clone(), args[1].clone()]);
+    let sum = plus(vec![args[0].clone(), args[1].clone()]);
     let binom = call("Binomial", vec![sum, args[1].clone()]);
     return crate::evaluator::evaluate_expr_to_expr(&binom);
   }
@@ -4537,10 +4527,9 @@ pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut sum_args = Vec::with_capacity(args.len());
     sum_args.push(sym.clone());
     sum_args.extend(rest.iter().cloned());
-    let sum_total =
-      crate::evaluator::evaluate_expr_to_expr(&call("Plus", sum_args))?;
+    let sum_total = crate::evaluator::evaluate_expr_to_expr(&plus(sum_args))?;
     let binom = call("Binomial", vec![sum_total, sym]);
-    let product = call("Times", vec![binom, multi_rest]);
+    let product = times(vec![binom, multi_rest]);
     return crate::evaluator::evaluate_expr_to_expr(&product);
   }
 
@@ -4553,18 +4542,15 @@ pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut remaining: Vec<Expr> = sorted;
   while remaining.len() > 1 {
     let first = remaining[0].clone();
-    let sum_expr = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Plus",
-      remaining.clone(),
-    ))?;
+    let sum_expr =
+      crate::evaluator::evaluate_expr_to_expr(&plus(remaining.clone()))?;
     let binom_expr = crate::evaluator::evaluate_expr_to_expr(&call(
       "Binomial",
       vec![sum_expr, first],
     ))?;
-    result = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Times",
-      vec![result, binom_expr],
-    ))?;
+    result = crate::evaluator::evaluate_expr_to_expr(&times(vec![
+      result, binom_expr,
+    ]))?;
     remaining.remove(0);
   }
   Ok(result)
@@ -5717,10 +5703,11 @@ pub fn arithmetic_geometric_mean_ast(
   // and purely symbolic negations (e.g. AGM[x, -x]). Detect it structurally by
   // testing whether a + b evaluates to zero, and preserve exactness (a
   // machine-real argument yields 0. rather than 0), matching wolframscript.
-  if let Ok(sum) = crate::evaluator::evaluate_expr_to_expr(&call(
-    "Plus",
-    vec![args[0].clone(), args[1].clone()],
-  )) && is_zero(&sum)
+  if let Ok(sum) = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+    args[0].clone(),
+    args[1].clone(),
+  ]))
+    && is_zero(&sum)
   {
     return Ok(if inexact {
       Expr::Real(0.0)
@@ -6167,10 +6154,7 @@ fn bell_y_enumerate(
           if j_i == 1 {
             factors.push(xs[i - 1].clone());
           } else {
-            factors.push(call(
-              "Power",
-              vec![xs[i - 1].clone(), Expr::Integer(j_i as i128)],
-            ));
+            factors.push(pow(xs[i - 1].clone(), Expr::Integer(j_i as i128)));
           }
         }
       }
@@ -6180,14 +6164,14 @@ fn bell_y_enumerate(
         if factors.len() == 1 {
           factors[0].clone()
         } else {
-          call("Times", factors)
+          times(factors)
         }
       } else if factors.is_empty() {
         coeff_expr
       } else {
         let mut all = vec![coeff_expr];
         all.extend(factors);
-        call("Times", all)
+        times(all)
       };
       let evaluated =
         crate::evaluator::evaluate_function_call_ast("Times", &[term])?;

@@ -400,7 +400,7 @@ fn try_trig_pi_phase(
   let rest_expr = if rest.len() == 1 {
     rest.pop().unwrap()
   } else {
-    call("Plus", rest)
+    plus(rest)
   };
   // Re-evaluate the rebuilt argument so the sum re-canonicalizes before
   // the (possibly different) trig head sees it.
@@ -883,7 +883,7 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
       }
       if n == -1 {
         let rest: Vec<Expr> = args[1..].to_vec();
-        return call("Times", rest);
+        return times(rest);
       }
       let mut new_args = std::mem::take(args);
       new_args[0] = Expr::Integer(-n);
@@ -930,20 +930,14 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
       }
       let name = std::mem::take(name);
       let args = std::mem::take(args);
-      return call(
-        "Times",
-        vec![Expr::Integer(-1), Expr::FunctionCall { name, args }],
-      );
+      return times(vec![Expr::Integer(-1), Expr::FunctionCall { name, args }]);
     }
     // Canonical (evaluated) sums distribute the sign over every term, just
     // like the BinaryOp arm below, so -Plus[2, Sqrt[3]] stays the additive
     // "-2 - Sqrt[3]" instead of the factored "-(2 + Sqrt[3])".
     Expr::FunctionCall { name, args } if name == "Plus" => {
       let args = std::mem::take(args);
-      return call(
-        "Plus",
-        args.iter().map(|a| negate_expr(a.clone())).collect(),
-      );
+      return plus(args.iter().map(|a| negate_expr(a.clone())).collect());
     }
     // -(a + b) => (-a) + (-b): distribute over a sum so the result keeps the
     // flattened additive form Wolfram displays (e.g. -(-1 + Sqrt[5]) => 1 - Sqrt[5]).
@@ -981,14 +975,14 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
         if let Some(rest) = rest {
           factors.push(pow2(rest, Expr::Integer(-1)));
         }
-        return call("Times", factors);
+        return times(factors);
       }
       // fall through to default
     }
     _ => {}
   }
   // Default: wrap in Times[-1, expr]
-  call("Times", vec![Expr::Integer(-1), expr])
+  times(vec![Expr::Integer(-1), expr])
 }
 
 /// Split a denominator into `(k, rest)` where `k > 1` is its leading positive
@@ -1006,7 +1000,7 @@ fn denom_integer_factor(denom: &Expr) -> Option<(i128, Option<Expr>)> {
         let rest_expr = if rest.len() == 1 {
           rest.into_iter().next().unwrap()
         } else {
-          call("Times", rest)
+          times(rest)
         };
         Some((*n, Some(rest_expr)))
       } else {
@@ -1206,7 +1200,7 @@ fn extract_imaginary_pi_shift(arg: &Expr) -> Option<((i128, i128), Expr)> {
   let rest_expr = if rest.len() == 1 {
     rest.into_iter().next().unwrap()
   } else {
-    call("Plus", rest)
+    plus(rest)
   };
   Some(((num, den), rest_expr))
 }
@@ -1247,8 +1241,8 @@ fn hyperbolic_imaginary_period(
   let with_phase = match phase {
     0 => reduced,
     1 => negate_expr(reduced),
-    2 => call("Times", vec![id_expr("I"), reduced]),
-    _ => call("Times", vec![Expr::Integer(-1), id_expr("I"), reduced]),
+    2 => times(vec![id_expr("I"), reduced]),
+    _ => times(vec![Expr::Integer(-1), id_expr("I"), reduced]),
   };
   Some(crate::evaluator::evaluate_expr_to_expr(&with_phase))
 }
@@ -1280,7 +1274,7 @@ fn hyperbolic_rational_pi_shift(
   }
   let c_pi = mk_times(vec![mk_rational(num, den), id_expr("Pi")]);
   let minus_i_rest = mk_times(vec![Expr::Integer(-1), id_expr("I"), rest]);
-  let inner = call("Plus", vec![c_pi, minus_i_rest]);
+  let inner = plus(vec![c_pi, minus_i_rest]);
   let inner = match crate::evaluator::evaluate_expr_to_expr(&inner) {
     Ok(v) => v,
     Err(e) => return Some(Err(e)),
@@ -1303,7 +1297,7 @@ fn mk_times(factors: Vec<Expr>) -> Expr {
   if factors.len() == 1 {
     factors.into_iter().next().unwrap()
   } else {
-    call("Times", factors)
+    times(factors)
   }
 }
 
@@ -1336,7 +1330,7 @@ fn extract_imaginary_factor(arg: &Expr) -> Option<Expr> {
       return Some(match other.len() {
         0 => Expr::Integer(1),
         1 => other.into_iter().next().unwrap(),
-        _ => call("Times", other),
+        _ => times(other),
       });
     }
   }
@@ -1376,8 +1370,8 @@ fn imaginary_arg_reduction(
   };
   let result = match factor {
     0 => inner,
-    1 => call("Times", vec![id_expr("I"), inner]),
-    _ => call("Times", vec![Expr::Integer(-1), id_expr("I"), inner]),
+    1 => times(vec![id_expr("I"), inner]),
+    _ => times(vec![Expr::Integer(-1), id_expr("I"), inner]),
   };
   Some(crate::evaluator::evaluate_expr_to_expr(&result))
 }
@@ -1462,7 +1456,7 @@ fn arccosh_branch_form(x: &Expr) -> Expr {
   let one_plus = plus2(Expr::Integer(1), x.clone());
   let minus_one_plus = plus2(Expr::Integer(-1), x.clone());
   let sqrt = call1("Sqrt", div2(minus_one_plus, one_plus.clone()));
-  call("Times", vec![sqrt, one_plus])
+  times(vec![sqrt, one_plus])
 }
 
 /// Hyperbolic (Sinh/Cosh/Tanh) of an inverse-hyperbolic function, collapsed to
@@ -2401,7 +2395,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::Integer(n) = &fargs[0]
         && *n < 0
       {
-        let pos_arg = call("Times", vec![Expr::Integer(-*n), fargs[1].clone()]);
+        let pos_arg = times(vec![Expr::Integer(-*n), fargs[1].clone()]);
         return Ok(negate_erf(pos_arg));
       }
       Ok(unevaluated("Erf", args))
@@ -2515,7 +2509,7 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::Integer(n) = &fargs[0]
         && *n < 0
       {
-        let pos_arg = call("Times", vec![Expr::Integer(-*n), fargs[1].clone()]);
+        let pos_arg = times(vec![Expr::Integer(-*n), fargs[1].clone()]);
         return negate_erfi(pos_arg);
       }
       Ok(unevaluated("Erfi", args))
@@ -2586,7 +2580,7 @@ pub fn dawson_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::Integer(n) = &fargs[0]
         && *n < 0
       {
-        let pos_arg = call("Times", vec![Expr::Integer(-*n), fargs[1].clone()]);
+        let pos_arg = times(vec![Expr::Integer(-*n), fargs[1].clone()]);
         return negate(pos_arg);
       }
       Ok(unevaluated("DawsonF", args))
@@ -2854,11 +2848,12 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if k == 0 {
               return Ok(z.clone());
             }
-            let correction = call(
-              "Times",
-              vec![Expr::Integer(-2 * k), const_expr("Pi"), id_expr("I")],
-            );
-            let result = call("Plus", vec![z.clone(), correction]);
+            let correction = times(vec![
+              Expr::Integer(-2 * k),
+              const_expr("Pi"),
+              id_expr("I"),
+            ]);
+            let result = plus(vec![z.clone(), correction]);
             return crate::evaluator::evaluate_expr_to_expr(&result);
           }
         }
@@ -2964,21 +2959,15 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if is_exact_real {
           // Log[Abs[c]] + Sign[c]*I*Pi/2, evaluated as a whole so Abs/Sign/Log
           // and the product all reduce (e.g. Log[1/2] → -Log[2], 1*… → …).
-          let result = call(
-            "Plus",
-            vec![
-              call1("Log", call1("Abs", coeff.clone())),
-              call(
-                "Times",
-                vec![
-                  call1("Sign", coeff.clone()),
-                  make_rational(1, 2),
-                  id_expr("I"),
-                  const_expr("Pi"),
-                ],
-              ),
-            ],
-          );
+          let result = plus(vec![
+            call1("Log", call1("Abs", coeff.clone())),
+            times(vec![
+              call1("Sign", coeff.clone()),
+              make_rational(1, 2),
+              id_expr("I"),
+              const_expr("Pi"),
+            ]),
+          ]);
           return crate::evaluator::evaluate_expr_to_expr(&result);
         }
       }
@@ -2989,13 +2978,10 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1])
         && (*p < 0) ^ (*q < 0)
       {
-        let result = call(
-          "Plus",
-          vec![
-            times2(id_expr("I"), const_expr("Pi")),
-            call1("Log", make_rational(p.abs(), q.abs())),
-          ],
-        );
+        let result = plus(vec![
+          times2(id_expr("I"), const_expr("Pi")),
+          call1("Log", make_rational(p.abs(), q.abs())),
+        ]);
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
       // Log[-n] for negative integers: Log[-1] = I*Pi, Log[-n] = I*Pi + Log[n]
@@ -3760,13 +3746,10 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // ArcTan[-Infinity] = -Pi/2
   if is_neg_infinity(&args[0]) {
-    return Ok(call(
-      "Times",
-      vec![
-        call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
-        const_expr("Pi"),
-      ],
-    ));
+    return Ok(times(vec![
+      call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
+      const_expr("Pi"),
+    ]));
   }
 
   // Additional exact values: ArcTan[Sqrt[3]] = Pi/3, ArcTan[1/Sqrt[3]] = Pi/6
@@ -3780,13 +3763,10 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     if (val + sqrt3).abs() < eps {
       // ArcTan[-Sqrt[3]] = -Pi/3
-      return Ok(call(
-        "Times",
-        vec![
-          call("Rational", vec![Expr::Integer(-1), Expr::Integer(3)]),
-          const_expr("Pi"),
-        ],
-      ));
+      return Ok(times(vec![
+        call("Rational", vec![Expr::Integer(-1), Expr::Integer(3)]),
+        const_expr("Pi"),
+      ]));
     }
     let inv_sqrt3 = 1.0 / sqrt3;
     if (val - inv_sqrt3).abs() < eps {
@@ -3795,13 +3775,10 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     if (val + inv_sqrt3).abs() < eps {
       // ArcTan[-1/Sqrt[3]] = -Pi/6
-      return Ok(call(
-        "Times",
-        vec![
-          call("Rational", vec![Expr::Integer(-1), Expr::Integer(6)]),
-          const_expr("Pi"),
-        ],
-      ));
+      return Ok(times(vec![
+        call("Rational", vec![Expr::Integer(-1), Expr::Integer(6)]),
+        const_expr("Pi"),
+      ]));
     }
     // Twelfth-angle values (inverse of Tan[Pi/12] = 2 - Sqrt[3] and
     // Tan[5 Pi/12] = 2 + Sqrt[3]). `k_over_12_pi(k)` builds k*Pi/12.
@@ -3809,13 +3786,10 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if k == 1 {
         div2(const_expr("Pi"), Expr::Integer(12))
       } else {
-        call(
-          "Times",
-          vec![
-            call("Rational", vec![Expr::Integer(k), Expr::Integer(12)]),
-            const_expr("Pi"),
-          ],
-        )
+        times(vec![
+          call("Rational", vec![Expr::Integer(k), Expr::Integer(12)]),
+          const_expr("Pi"),
+        ])
       }
     };
     let two_minus = 2.0 - sqrt3;
@@ -4058,7 +4032,7 @@ fn try_split_real_imag(expr: &Expr) -> Option<(Expr, (i128, i128))> {
           let real_part = if remaining.len() == 1 {
             remaining.into_iter().next().unwrap()
           } else {
-            call("Plus", remaining)
+            plus(remaining)
           };
           return Some((real_part, im));
         }
@@ -4126,7 +4100,7 @@ fn try_extract_negated(expr: &Expr) -> Option<Expr> {
         }
         let mut new_args = vec![negated_first];
         new_args.extend_from_slice(&args[1..]);
-        Some(call("Times", new_args))
+        Some(times(new_args))
       } else {
         None
       }
@@ -4691,13 +4665,10 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let pi_half = crate::evaluator::evaluate_function_call_ast(
         "N",
         &[
-          call(
-            "Times",
-            vec![
-              call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-              const_expr("Pi"),
-            ],
-          ),
+          times(vec![
+            call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+            const_expr("Pi"),
+          ]),
           Expr::Real(*prec),
         ],
       )?;
@@ -4767,13 +4738,10 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let denom = one_minus_re_sq + im * im;
     let result_re = 0.25 * (4.0 * re / denom).ln_1p();
     let result_im = 0.5 * (2.0 * im).atan2((1.0 - re) * (1.0 + re) - im * im);
-    return Ok(call(
-      "Plus",
-      vec![
-        Expr::Real(result_re),
-        call("Times", vec![Expr::Real(result_im), id_expr("I")]),
-      ],
-    ));
+    return Ok(plus(vec![
+      Expr::Real(result_re),
+      times(vec![Expr::Real(result_im), id_expr("I")]),
+    ]));
   }
   // Odd function: ArcTanh[-x] → -ArcTanh[x] (negative integers/rationals and
   // negated symbolic arguments; reals are handled numerically above).
@@ -4853,13 +4821,10 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let pi_half = crate::evaluator::evaluate_function_call_ast(
         "N",
         &[
-          call(
-            "Times",
-            vec![
-              call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-              const_expr("Pi"),
-            ],
-          ),
+          times(vec![
+            call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+            const_expr("Pi"),
+          ]),
           Expr::Real(*prec),
         ],
       )?;
@@ -5224,13 +5189,13 @@ pub fn strip_negation(e: &Expr) -> Option<Expr> {
         return Some(if args.len() == 2 {
           args[1].clone()
         } else {
-          call("Times", args[1..].to_vec())
+          times(args[1..].to_vec())
         });
       }
       let pos = negate_negative_coeff(&args[0])?;
       let mut new_args = args.to_vec();
       new_args[0] = pos;
-      Some(call("Times", new_args))
+      Some(times(new_args))
     }
     _ => negate_negative_coeff(e),
   }
@@ -5399,13 +5364,10 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mag2 = denom_re * denom_re + denom_im * denom_im;
     let result_re = denom_re / mag2;
     let result_im = -denom_im / mag2;
-    return Ok(call(
-      "Plus",
-      vec![
-        Expr::Real(result_re),
-        call("Times", vec![Expr::Real(result_im), id_expr("I")]),
-      ],
-    ));
+    return Ok(plus(vec![
+      Expr::Real(result_re),
+      times(vec![Expr::Real(result_im), id_expr("I")]),
+    ]));
   }
   Ok(unevaluated("LogisticSigmoid", args))
 }
@@ -5935,22 +5897,19 @@ fn make_fn(name: &str, args: &[Expr]) -> Expr {
 }
 
 fn make_times(a: &Expr, b: &Expr) -> Expr {
-  call("Times", vec![a.clone(), b.clone()])
+  times(vec![a.clone(), b.clone()])
 }
 
 fn make_plus(a: &Expr, b: &Expr) -> Expr {
-  call("Plus", vec![a.clone(), b.clone()])
+  plus(vec![a.clone(), b.clone()])
 }
 
 fn make_minus(a: &Expr, b: &Expr) -> Expr {
-  call(
-    "Plus",
-    vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
-  )
+  plus(vec![a.clone(), times(vec![Expr::Integer(-1), b.clone()])])
 }
 
 fn make_divide(a: &Expr, b: &Expr) -> Expr {
-  call("Times", vec![a.clone(), pow(b.clone(), Expr::Integer(-1))])
+  times(vec![a.clone(), pow(b.clone(), Expr::Integer(-1))])
 }
 
 fn make_power(base: &Expr, exp: i128) -> Expr {
@@ -6099,7 +6058,7 @@ fn trig_reduce_product(factors: &[Expr]) -> Expr {
   if reduced.len() == 1 {
     reduced.pop().unwrap()
   } else {
-    call("Times", reduced)
+    times(reduced)
   }
 }
 
@@ -6282,7 +6241,7 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
   let numerator = if terms.len() == 1 {
     terms.pop().unwrap()
   } else {
-    call("Plus", terms)
+    plus(terms)
   };
 
   if reduced_denom == 1 {
