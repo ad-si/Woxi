@@ -7432,6 +7432,24 @@ mod plot3d {
       assert!(svg.contains(">fl</text>"), "{svg}");
     }
 
+    /// A `FrameLabel` that is a product, quotient or sum of symbols (a
+    /// Demonstration labels an axis `Subscript[k, n] a/Pi`) is typeset as
+    /// that expression instead of being dropped.
+    #[test]
+    fn contour_plot_frame_label_typesets_compound_expressions() {
+      let label = |expr: &str| {
+        export_svg(&format!(
+          "ContourPlot[x^2 + y^2 == 1, {{x, -1, 1}}, {{y, -1, 1}}, \
+           FrameLabel -> {{\"p\", {expr}}}]"
+        ))
+      };
+      assert!(label("a/c^2").contains(">a/c\u{b2}</text>"));
+      assert!(label("(a + b)/c").contains(">(a + b)/c</text>"));
+      assert!(label("2 a - b").contains(">2 a - b</text>"));
+      assert!(label("Pi").contains(">\u{3c0}</text>"));
+      assert!(label("Subscript[k, n] a/Pi").contains("/\u{3c0}</text>"));
+    }
+
     /// The rotated left `FrameLabel` is anchored by its baseline, whose
     /// glyphs rise ~0.75em to the left of it; with a narrow `ImagePadding`
     /// the baseline used to be clamped to half an em, so the label was cut
