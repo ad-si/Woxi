@@ -1075,8 +1075,7 @@ fn extract_part_ast_rest(
         BinaryOperator::Plus => ("Plus", vec![*left.clone(), *right.clone()]),
         BinaryOperator::Minus => {
           // a - b = Plus[a, Times[-1, b]]
-          let neg_right =
-            call("Times", vec![Expr::Integer(-1), *right.clone()]);
+          let neg_right = times(vec![Expr::Integer(-1), *right.clone()]);
           ("Plus", vec![*left.clone(), neg_right])
         }
         BinaryOperator::Times => ("Times", vec![*left.clone(), *right.clone()]),

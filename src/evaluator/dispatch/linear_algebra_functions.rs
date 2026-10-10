@@ -790,10 +790,7 @@ pub fn dispatch_linear_algebra_functions(
         }
         // Build the Hermitian part: (m + ConjugateTranspose[m]) / 2.
         let conj_t = call1("ConjugateTranspose", args[0].clone());
-        let herm = div(
-          call("Plus", vec![args[0].clone(), conj_t]),
-          Expr::Integer(2),
-        );
+        let herm = div(plus(vec![args[0].clone(), conj_t]), Expr::Integer(2));
         let herm_eval =
           evaluate_expr_to_expr(&herm).unwrap_or_else(|_| herm.clone());
         if let Ok(Expr::List(ref eigenvals)) =
@@ -966,13 +963,10 @@ pub fn dispatch_linear_algebra_functions(
               for (j, elem) in cols.iter().enumerate() {
                 if i == j {
                   // a_ij - x
-                  let entry = call(
-                    "Plus",
-                    vec![
-                      elem.clone(),
-                      call("Times", vec![Expr::Integer(-1), x.clone()]),
-                    ],
-                  );
+                  let entry = plus(vec![
+                    elem.clone(),
+                    times(vec![Expr::Integer(-1), x.clone()]),
+                  ]);
                   new_cols.push(entry);
                 } else {
                   new_cols.push(elem.clone());
@@ -1280,8 +1274,8 @@ pub fn dispatch_linear_algebra_functions(
         && u.len() == 2
         && v.len() == 2
       {
-        let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
-        let plus = |a: Expr, b: Expr| call("Plus", vec![a, b]);
+        let times = |a: Expr, b: Expr| times(vec![a, b]);
+        let plus = |a: Expr, b: Expr| plus(vec![a, b]);
         let sq = |a: Expr| pow(a, Expr::Integer(2));
         let neg = |a: Expr| times(Expr::Integer(-1), a);
         let (ux, uy, vx, vy) =
@@ -1322,7 +1316,7 @@ pub fn dispatch_linear_algebra_functions(
       let theta = &args[0];
       let cos = call1("Cos", theta.clone());
       let sin = call1("Sin", theta.clone());
-      let neg_sin = call("Times", vec![Expr::Integer(-1), sin.clone()]);
+      let neg_sin = times(vec![Expr::Integer(-1), sin.clone()]);
       let mat = Expr::List(
         vec![
           Expr::List(vec![cos.clone(), neg_sin].into()),
@@ -1479,10 +1473,8 @@ pub fn dispatch_linear_algebra_functions(
         let den = call("Subtract", vec![max_i.clone(), min_i.clone()]);
         let scale = div(num, den);
         // translate = ymin - min * scale
-        let translate = call(
-          "Subtract",
-          vec![ymin_i, call("Times", vec![min_i, scale.clone()])],
-        );
+        let translate =
+          call("Subtract", vec![ymin_i, times(vec![min_i, scale.clone()])]);
         scales.push(scale);
         translates.push(translate);
       }
@@ -1577,8 +1569,8 @@ pub fn dispatch_linear_algebra_functions(
         && u.len() == 2
         && v.len() == 2
       {
-        let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
-        let plus = |a: Expr, b: Expr| call("Plus", vec![a, b]);
+        let times = |a: Expr, b: Expr| times(vec![a, b]);
+        let plus = |a: Expr, b: Expr| plus(vec![a, b]);
         let sq = |e: &Expr| pow(e.clone(), Expr::Integer(2));
         let sqrt = |e: Expr| call1("Sqrt", e);
         let dot = plus(
@@ -1645,7 +1637,7 @@ pub fn dispatch_linear_algebra_functions(
       let theta = &args[0];
       let cos_t = call1("Cos", theta.clone());
       let sin_t = call1("Sin", theta.clone());
-      let neg_sin_t = call("Times", vec![Expr::Integer(-1), sin_t.clone()]);
+      let neg_sin_t = times(vec![Expr::Integer(-1), sin_t.clone()]);
       // Default last column is the zero translation
       let (tx, ty) = if args.len() == 2 {
         if let Expr::List(center) = &args[1]
@@ -1657,14 +1649,14 @@ pub fn dispatch_linear_algebra_functions(
           // tx = cx - cx*cos + cy*sin
           // ty = cy - cx*sin - cy*cos
           let neg_cx_cos =
-            call("Times", vec![Expr::Integer(-1), cx.clone(), cos_t.clone()]);
-          let cy_sin = call("Times", vec![cy.clone(), sin_t.clone()]);
-          let tx_e = call("Plus", vec![cx.clone(), neg_cx_cos, cy_sin]);
+            times(vec![Expr::Integer(-1), cx.clone(), cos_t.clone()]);
+          let cy_sin = times(vec![cy.clone(), sin_t.clone()]);
+          let tx_e = plus(vec![cx.clone(), neg_cx_cos, cy_sin]);
           let neg_cx_sin =
-            call("Times", vec![Expr::Integer(-1), cx.clone(), sin_t.clone()]);
+            times(vec![Expr::Integer(-1), cx.clone(), sin_t.clone()]);
           let neg_cy_cos =
-            call("Times", vec![Expr::Integer(-1), cy.clone(), cos_t.clone()]);
-          let ty_e = call("Plus", vec![cy.clone(), neg_cx_sin, neg_cy_cos]);
+            times(vec![Expr::Integer(-1), cy.clone(), cos_t.clone()]);
+          let ty_e = plus(vec![cy.clone(), neg_cx_sin, neg_cy_cos]);
           (tx_e, ty_e)
         } else {
           // Non-list or wrong-dim center: leave unevaluated.
@@ -1894,8 +1886,6 @@ pub fn dispatch_linear_algebra_functions(
         Some(_) => return uneval(),
       };
       let power = |b: Expr, e: i128| pow(b, Expr::Integer(e));
-      let times = |terms: Vec<Expr>| call("Times", terms);
-      let plus = |terms: Vec<Expr>| call("Plus", terms);
       let vv = plus(v.iter().map(|vi| power(vi.clone(), 2)).collect());
       let s_minus_1 = plus(vec![args[0].clone(), Expr::Integer(-1)]);
       let m_entry = |i: usize, j: usize| {
@@ -1960,8 +1950,6 @@ pub fn dispatch_linear_algebra_functions(
         return unevaluated();
       }
       let power = |b: Expr, e: i128| pow(b, Expr::Integer(e));
-      let times = |terms: Vec<Expr>| call("Times", terms);
-      let plus = |terms: Vec<Expr>| call("Plus", terms);
       // v·v
       let vv = plus(v.iter().map(|vi| power(vi.clone(), 2)).collect());
       // Linear part M[i][j] = delta_ij - 2 v_i v_j / (v·v).
@@ -2031,9 +2019,8 @@ pub fn dispatch_linear_algebra_functions(
         let norm = |v: &[Expr]| -> Expr {
           let squares: Vec<Expr> =
             v.iter().map(|c| pow(c.clone(), Expr::Integer(2))).collect();
-          call1("Sqrt", call("Plus", squares))
+          call1("Sqrt", plus(squares))
         };
-        let times = |terms: Vec<Expr>| call("Times", terms);
         let recip = |x: Expr| pow(x, Expr::Integer(-1));
         // nhat = n / Norm[n]
         let norm_n = norm(n);
@@ -2042,8 +2029,7 @@ pub fn dispatch_linear_algebra_functions(
           .map(|c| times(vec![c.clone(), recip(norm_n.clone())]))
           .collect();
         // e·nhat
-        let e_dot_nhat = call(
-          "Plus",
+        let e_dot_nhat = plus(
           e.iter()
             .zip(nhat.iter())
             .map(|(ei, ni)| times(vec![ei.clone(), ni.clone()]))
@@ -2054,13 +2040,10 @@ pub fn dispatch_linear_algebra_functions(
           .iter()
           .zip(nhat.iter())
           .map(|(ei, ni)| {
-            call(
-              "Plus",
-              vec![
-                ei.clone(),
-                times(vec![Expr::Integer(-1), e_dot_nhat.clone(), ni.clone()]),
-              ],
-            )
+            plus(vec![
+              ei.clone(),
+              times(vec![Expr::Integer(-1), e_dot_nhat.clone(), ni.clone()]),
+            ])
           })
           .collect();
         let norm_eperp = norm(&eperp);
@@ -2075,7 +2058,7 @@ pub fn dispatch_linear_algebra_functions(
           let off =
             times(vec![tan_phi.clone(), ep[i].clone(), nhat[j].clone()]);
           if i == j {
-            call("Plus", vec![Expr::Integer(1), off])
+            plus(vec![Expr::Integer(1), off])
           } else {
             off
           }
@@ -2091,8 +2074,7 @@ pub fn dispatch_linear_algebra_functions(
           }
           // Translation column p - M·p, zero when there is no centre.
           row.push(match &center {
-            Some(c) => simplify(call(
-              "Plus",
+            Some(c) => simplify(plus(
               std::iter::once(c[i].clone())
                 .chain(c.iter().enumerate().map(|(j, cj)| {
                   times(vec![Expr::Integer(-1), m_entry(i, j), cj.clone()])
@@ -2683,8 +2665,7 @@ pub fn dispatch_linear_algebra_functions(
             for j in 0..n {
               if let Expr::List(row_j) = &rows[j] {
                 // Check m[i][j] + m[j][i] == 0
-                let sum =
-                  call("Plus", vec![row_i[j].clone(), row_j[i].clone()]);
+                let sum = plus(vec![row_i[j].clone(), row_j[i].clone()]);
                 let evaluated = evaluate_expr_to_expr(&sum).unwrap_or(sum);
                 if !matches!(evaluated, Expr::Integer(0)) {
                   is_antisymmetric = false;
@@ -2797,10 +2778,8 @@ pub fn dispatch_linear_algebra_functions(
                       inv_sqrt_n.clone()
                     } else if v == -1 {
                       // Use Times[-1, inv_sqrt_n] so display matches -(1/Sqrt[n])
-                      let entry = call(
-                        "Times",
-                        vec![Expr::Integer(-1), inv_sqrt_n.clone()],
-                      );
+                      let entry =
+                        times(vec![Expr::Integer(-1), inv_sqrt_n.clone()]);
                       evaluate_expr_to_expr(&entry).unwrap_or(entry)
                     } else {
                       // v / Sqrt[n]
@@ -2835,8 +2814,6 @@ pub fn dispatch_linear_algebra_functions(
       if let Expr::List(v) = &args[1]
         && !v.is_empty()
       {
-        let times = |terms: Vec<Expr>| call("Times", terms);
-        let plus = |terms: Vec<Expr>| call("Plus", terms);
         let sq = |a: Expr| pow(a, Expr::Integer(2));
         let vdotv = plus(v.iter().cloned().map(sq).collect());
         let s_minus_1 = plus(vec![args[0].clone(), Expr::Integer(-1)]);
@@ -2908,11 +2885,10 @@ pub fn dispatch_linear_algebra_functions(
         {
           use crate::functions::math_ast::make_rational;
           let cos_pi = |num: i128, den: i128| -> Expr {
-            let angle =
-              call("Times", vec![make_rational(num, den), id_expr("Pi")]);
+            let angle = times(vec![make_rational(num, den), id_expr("Pi")]);
             call1("Cos", angle)
           };
-          let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
+          let times = |a: Expr, b: Expr| times(vec![a, b]);
           let mut rows = Vec::with_capacity(n as usize);
           for i in 1..=n {
             let mut row = Vec::with_capacity(n as usize);
@@ -2990,17 +2966,16 @@ pub fn dispatch_linear_algebra_functions(
               // Simplify the fraction 2*exp/n
               let (snum, sden) = rat_reduce(2 * exp, n as i128);
               let angle = if sden == 1 {
-                call("Times", vec![int(snum), id_expr("Pi")])
+                times(vec![int(snum), id_expr("Pi")])
               } else {
                 let frac = call("Rational", vec![int(snum), int(sden)]);
-                call("Times", vec![frac, id_expr("Pi")])
+                times(vec![frac, id_expr("Pi")])
               };
               // Build (Cos[angle] + I*Sin[angle]) / Sqrt[n]
               let cos_part = call1("Cos", angle.clone());
-              let sin_part =
-                call("Times", vec![id_expr("I"), call1("Sin", angle)]);
-              let omega = call("Plus", vec![cos_part, sin_part]);
-              let entry = call("Times", vec![omega, inv_sqrt_n.clone()]);
+              let sin_part = times(vec![id_expr("I"), call1("Sin", angle)]);
+              let omega = plus(vec![cos_part, sin_part]);
+              let entry = times(vec![omega, inv_sqrt_n.clone()]);
               row.push(entry);
             }
           }
@@ -3314,30 +3289,24 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
 
     for i in (k + 1)..n {
       // L[i][k] = A[i][k] / A[k][k]
-      let l_ik = evaluate_expr_to_expr(&call(
-        "Times",
-        vec![
-          matrix[i][k].clone(),
-          pow(pivot_val.clone(), Expr::Integer(-1)),
-        ],
-      ))
+      let l_ik = evaluate_expr_to_expr(&times(vec![
+        matrix[i][k].clone(),
+        pow(pivot_val.clone(), Expr::Integer(-1)),
+      ]))
       .unwrap_or(matrix[i][k].clone());
 
       // Update row i: A[i][j] -= L[i][k] * A[k][j] for j > k
       for j in (k + 1)..n {
-        let product = evaluate_expr_to_expr(&call(
-          "Times",
-          vec![l_ik.clone(), matrix[k][j].clone()],
-        ))
-        .unwrap_or(call("Times", vec![l_ik.clone(), matrix[k][j].clone()]));
+        let product = evaluate_expr_to_expr(&times(vec![
+          l_ik.clone(),
+          matrix[k][j].clone(),
+        ]))
+        .unwrap_or(times(vec![l_ik.clone(), matrix[k][j].clone()]));
 
-        let new_val = evaluate_expr_to_expr(&call(
-          "Plus",
-          vec![
-            matrix[i][j].clone(),
-            call("Times", vec![Expr::Integer(-1), product]),
-          ],
-        ))
+        let new_val = evaluate_expr_to_expr(&plus(vec![
+          matrix[i][j].clone(),
+          times(vec![Expr::Integer(-1), product]),
+        ]))
         .unwrap_or(matrix[i][j].clone());
 
         matrix[i][j] = new_val;
@@ -3817,11 +3786,11 @@ fn matrix_minimal_polynomial(
           } else {
             pow(x.clone(), Expr::Integer(i as i128))
           };
-          call("Times", vec![coeff, xpow])
+          times(vec![coeff, xpow])
         };
         terms.push(term);
       }
-      let poly = call("Plus", terms);
+      let poly = plus(terms);
       // Expand so a matrix with symbolic entries flattens to the wolframscript
       // term form (e.g. -(b c) + a d - a x - d x + x^2 rather than the factored
       // -(b c) + a d + (-a - d) x + x^2); harmless for numeric entries.
@@ -4049,7 +4018,7 @@ fn matrix_power_2x2_symbolic_block(
     let c2_num_raw = if is_diag {
       minus2(lambda_1.clone(), entry.clone())
     } else {
-      call("Times", vec![Expr::Integer(-1), entry.clone()])
+      times(vec![Expr::Integer(-1), entry.clone()])
     };
     let c1 = eval(&div2(c1_num_raw, lambda_diff.clone())).ok()?;
     let c2 = eval(&div2(c2_num_raw, lambda_diff.clone())).ok()?;
@@ -4060,21 +4029,21 @@ fn matrix_power_2x2_symbolic_block(
     } else if matches!(&c1, Expr::Integer(0)) {
       Expr::Integer(0)
     } else {
-      call("Times", vec![c1, lam1_n.clone()])
+      times(vec![c1, lam1_n.clone()])
     };
     let t2 = if matches!(&c2, Expr::Integer(1)) {
       lam2_n.clone()
     } else if matches!(&c2, Expr::Integer(0)) {
       Expr::Integer(0)
     } else {
-      call("Times", vec![c2, lam2_n.clone()])
+      times(vec![c2, lam2_n.clone()])
     };
     let sum = if matches!(&t1, Expr::Integer(0)) {
       t2
     } else if matches!(&t2, Expr::Integer(0)) {
       t1
     } else {
-      call("Plus", vec![t1, t2])
+      plus(vec![t1, t2])
     };
     eval(&sum).ok()
   };
@@ -4091,7 +4060,7 @@ fn matrix_power_2x2_symbolic_block(
 fn elementary_rotation(axis: i128, angle: &Expr) -> Expr {
   let c = call1("Cos", angle.clone());
   let s = call1("Sin", angle.clone());
-  let neg_s = call("Times", vec![Expr::Integer(-1), s.clone()]);
+  let neg_s = times(vec![Expr::Integer(-1), s.clone()]);
   let zero = Expr::Integer(0);
   let one = Expr::Integer(1);
   let rows: [[Expr; 3]; 3] = match axis {
@@ -4232,8 +4201,7 @@ fn rotation_transform_3d_axis(
     return None;
   }
   let int = Expr::Integer;
-  let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
-  let plus = |xs: Vec<Expr>| call("Plus", xs);
+  let times = |a: Expr, b: Expr| times(vec![a, b]);
   let neg = |e: Expr| times(int(-1), e);
   let sq = |e: &Expr| pow(e.clone(), int(2));
 
@@ -4322,7 +4290,7 @@ fn rotation_matrix_plane(
   // Orthonormal frame {e1, e2} spanning the rotation plane.
   let e1 = evaluate_expr_to_expr(&call1("Normalize", u.clone()))?;
   let vdot = evaluate_expr_to_expr(&call("Dot", vec![v.clone(), e1.clone()]))?;
-  let proj = call("Times", vec![vdot, e1.clone()]);
+  let proj = times(vec![vdot, e1.clone()]);
   let w = evaluate_expr_to_expr(&call("Subtract", vec![v.clone(), proj]))?;
   let e2 = evaluate_expr_to_expr(&call1("Normalize", w))?;
 
@@ -4330,19 +4298,11 @@ fn rotation_matrix_plane(
     call("Outer", vec![id_expr("Times"), a.clone(), b.clone()])
   };
   let sin = call1("Sin", theta.clone());
-  let cos_m1 =
-    call("Plus", vec![call1("Cos", theta.clone()), Expr::Integer(-1)]);
+  let cos_m1 = plus(vec![call1("Cos", theta.clone()), Expr::Integer(-1)]);
   let anti = call("Subtract", vec![outer(&e2, &e1), outer(&e1, &e2)]);
-  let sym = call("Plus", vec![outer(&e1, &e1), outer(&e2, &e2)]);
+  let sym = plus(vec![outer(&e1, &e1), outer(&e2, &e2)]);
   let id = call1("IdentityMatrix", Expr::Integer(n as i128));
-  let r = call(
-    "Plus",
-    vec![
-      id,
-      call("Times", vec![sin, anti]),
-      call("Times", vec![cos_m1, sym]),
-    ],
-  );
+  let r = plus(vec![id, times(vec![sin, anti]), times(vec![cos_m1, sym])]);
   evaluate_expr_to_expr(&r)
 }
 
@@ -4716,15 +4676,9 @@ fn lyapunov_symbolic_diagonal(
     for (j, cij) in ccells.iter().enumerate() {
       let conj = call1("Conjugate", diag[j].clone());
       let denom = if discrete {
-        call(
-          "Plus",
-          vec![
-            Expr::Integer(-1),
-            call("Times", vec![diag[i].clone(), conj]),
-          ],
-        )
+        plus(vec![Expr::Integer(-1), times(vec![diag[i].clone(), conj])])
       } else {
-        call("Plus", vec![diag[i].clone(), conj])
+        plus(vec![diag[i].clone(), conj])
       };
       let denom = match crate::evaluator::evaluate_expr_to_expr(&denom) {
         Ok(d) => d,
@@ -4736,8 +4690,7 @@ fn lyapunov_symbolic_diagonal(
         ));
         return Some(Ok(unevaluated(name, args)));
       }
-      let entry =
-        call("Times", vec![cij.clone(), pow(denom, Expr::Integer(-1))]);
+      let entry = times(vec![cij.clone(), pow(denom, Expr::Integer(-1))]);
       match crate::evaluator::evaluate_expr_to_expr(&entry) {
         Ok(e) => out_cells.push(e),
         Err(e) => return Some(Err(e)),
