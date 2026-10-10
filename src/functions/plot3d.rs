@@ -2738,6 +2738,63 @@ impl Default for StyleState3D {
   }
 }
 
+/// The parts of the polyline `pts` that lie inside the axis-aligned box
+/// `range` (Liang–Barsky per segment). A polyline that leaves and re-enters
+/// the box comes back as several pieces; consecutive inside segments stay
+/// joined.
+fn clip_polyline_to_box(
+  pts: &[Point3D],
+  range: &[(f64, f64); 3],
+) -> Vec<Vec<Point3D>> {
+  let mut pieces: Vec<Vec<Point3D>> = Vec::new();
+  let mut current: Vec<Point3D> = Vec::new();
+  for w in pts.windows(2) {
+    let (a, b) = (w[0], w[1]);
+    let (p0, d) = ([a.x, a.y, a.z], [b.x - a.x, b.y - a.y, b.z - a.z]);
+    let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
+    let mut inside = true;
+    for i in 0..3 {
+      let (lo, hi) = (range[i].0.min(range[i].1), range[i].0.max(range[i].1));
+      if d[i] == 0.0 {
+        if p0[i] < lo || p0[i] > hi {
+          inside = false;
+          break;
+        }
+      } else {
+        let (ta, tb) = ((lo - p0[i]) / d[i], (hi - p0[i]) / d[i]);
+        t0 = t0.max(ta.min(tb));
+        t1 = t1.min(ta.max(tb));
+      }
+    }
+    if !inside || t0 > t1 {
+      if current.len() > 1 {
+        pieces.push(std::mem::take(&mut current));
+      }
+      current.clear();
+      continue;
+    }
+    let at = |t: f64| Point3D {
+      x: p0[0] + t * d[0],
+      y: p0[1] + t * d[1],
+      z: p0[2] + t * d[2],
+    };
+    if t0 > 0.0 && current.len() > 1 {
+      pieces.push(std::mem::take(&mut current));
+    }
+    if current.is_empty() {
+      current.push(if t0 > 0.0 { at(t0) } else { a });
+    }
+    current.push(if t1 < 1.0 { at(t1) } else { b });
+    if t1 < 1.0 {
+      pieces.push(std::mem::take(&mut current));
+    }
+  }
+  if current.len() > 1 {
+    pieces.push(current);
+  }
+  pieces
+}
+
 #[derive(Clone)]
 enum Primitive3D {
   Sphere {
@@ -5783,6 +5840,22 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prims.clear();
     style3d = StyleState3D::default();
     collect_3d_primitives(&expanded, &mut style3d, &mut prims);
+  }
+
+  // An explicit `PlotRange` cuts lines off at the box, so a curve running
+  // beyond it shows only its inner part instead of stretching the picture.
+  if let Some(range) = plot_range {
+    for prim in &mut prims {
+      if let Primitive3D::Line3D { segments, .. } = prim {
+        *segments = segments
+          .iter()
+          .flat_map(|poly| clip_polyline_to_box(poly, &range))
+          .collect();
+      }
+    }
+    prims.retain(|p| {
+      !matches!(p, Primitive3D::Line3D { segments, .. } if segments.is_empty())
+    });
   }
 
   // The symbolic form carried on the rendered result so that Part can

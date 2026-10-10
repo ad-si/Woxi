@@ -15001,6 +15001,33 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   mod graphics3d_primitives {
     use super::*;
 
+    // A `Line` leaving an explicit `PlotRange` is cut off at the box, so it
+    // draws exactly like the same line given only its inner part (and does
+    // not stretch the picture to fit the part outside).
+    #[test]
+    fn line_is_clipped_to_plot_range() {
+      let clipped = export_svg(
+        "Graphics3D[{Red, Line[{{0, 0, 0}, {3, 3, 3}}]}, \
+         PlotRange -> {{0, 1}, {0, 1}, {0, 1}}]",
+      );
+      let inner = export_svg(
+        "Graphics3D[{Red, Line[{{0, 0, 0}, {1, 1, 1}}]}, \
+         PlotRange -> {{0, 1}, {0, 1}, {0, 1}}]",
+      );
+      assert_eq!(clipped, inner);
+    }
+
+    #[test]
+    fn line_outside_plot_range_is_dropped() {
+      let outside = export_svg(
+        "Graphics3D[{Red, Line[{{5, 5, 5}, {6, 6, 6}}]}, \
+         PlotRange -> {{0, 1}, {0, 1}, {0, 1}}]",
+      );
+      let empty =
+        export_svg("Graphics3D[{}, PlotRange -> {{0, 1}, {0, 1}, {0, 1}}]");
+      assert_eq!(outside, empty);
+    }
+
     #[test]
     fn graphics3d_sphere() {
       insta::assert_snapshot!(export_svg("Graphics3D[Sphere[]]"));
