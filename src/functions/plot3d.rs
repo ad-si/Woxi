@@ -5840,6 +5840,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect();
       }
     }
+    prims.retain(|p| {
+      !matches!(p, Primitive3D::Line3D { segments, .. } if segments.is_empty())
+    });
   }
 
   // The symbolic form carried on the rendered result so that Part can
