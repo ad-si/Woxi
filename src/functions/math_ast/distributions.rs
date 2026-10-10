@@ -15676,10 +15676,16 @@ fn triangular_mean_variance(
       "TriangularDistribution expects {min, max} and an optional mode".into(),
     ));
   };
-  // The general (3-parameter) formulas; Simplify collapses the symmetric
-  // 2-argument form TriangularDistribution[{a, b}] (mode c = (a+b)/2) to
-  // wolframscript's Mean (a+b)/2 and Variance (b-a)^2/24, while leaving the
-  // genuine 3-parameter forms unchanged.
+  // The symmetric 2-argument form TriangularDistribution[{a, b}] (mode
+  // c = (a+b)/2) has wolframscript's closed forms Mean (a+b)/2 and
+  // Variance (b-a)^2/24 — written directly, since Simplify of the general
+  // formula picks the (a - b)^2 orientation.
+  if dargs.len() == 1 {
+    let mean = eval(&div2(plus2(a.clone(), b.clone()), int(2)))?;
+    let var = eval(&div2(pow2(plus2(b, times2(int(-1), a)), int(2)), int(24)))?;
+    return Ok((mean, var));
+  }
+  // The general (3-parameter) formulas, simplified.
   let mean = eval(&call1(
     "Simplify",
     div2(plus2(plus2(a.clone(), b.clone()), c.clone()), int(3)),

@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- `Factor` now factors multivariate polynomials completely, e.g.
+    `Factor[Expand[(a + b + c + d)^3]]` gives `(a + b + c + d)^3` instead of
+    the expanded sum (#1157). The Kronecker-substitution path is replaced by
+    a new engine: multivariate gcds (heuristic GCDHEU with a primitive-PRS
+    fallback), Yun square-free decomposition, and Wang-style Hensel lifting
+    of univariate images. Non-polynomial atoms such as `Sin[x]` are treated
+    as variables (`Factor[2 a x + 2 a Sin[x]]` gives `2*a*(x + Sin[x])`).
 - `FindRoot` failed with `FindRoot::nlnum` when its residual evaluated to a
     one-element list, e.g. `D[f[x] /. NDSolve[...], x] /. x -> 4` (a list of
     solution rules yields `{value}`). The singleton list is now treated as

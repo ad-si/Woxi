@@ -240,6 +240,27 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_exclusions_break_curve_at_equation_roots() {
+      // `Exclusions -> {t == c}` removes that parameter value, so the line
+      // is split there instead of being drawn across the gap.
+      let svg = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+           Exclusions -> {t == Pi}, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 2);
+      let svg = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+           Exclusions -> {Sin[2 t] == 0}, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 4);
+      let svg = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+           Exclusions -> None, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 1);
+    }
+
+    #[test]
     fn parametric_plot_ignores_global_value_of_plot_variable() {
       // A stale global value for the plot variable (a notebook saved with
       // `SaveDefinitions -> True` carries one) must not freeze the curves:
@@ -7430,6 +7451,24 @@ mod plot3d {
       );
       assert!(svg.contains(">fb</text>"), "{svg}");
       assert!(svg.contains(">fl</text>"), "{svg}");
+    }
+
+    /// A `FrameLabel` that is a product, quotient or sum of symbols (a
+    /// Demonstration labels an axis `Subscript[k, n] a/Pi`) is typeset as
+    /// that expression instead of being dropped.
+    #[test]
+    fn contour_plot_frame_label_typesets_compound_expressions() {
+      let label = |expr: &str| {
+        export_svg(&format!(
+          "ContourPlot[x^2 + y^2 == 1, {{x, -1, 1}}, {{y, -1, 1}}, \
+           FrameLabel -> {{\"p\", {expr}}}]"
+        ))
+      };
+      assert!(label("a/c^2").contains(">a/c\u{b2}</text>"));
+      assert!(label("(a + b)/c").contains(">(a + b)/c</text>"));
+      assert!(label("2 a - b").contains(">2 a - b</text>"));
+      assert!(label("Pi").contains(">\u{3c0}</text>"));
+      assert!(label("Subscript[k, n] a/Pi").contains("/\u{3c0}</text>"));
     }
 
     /// The rotated left `FrameLabel` is anchored by its baseline, whose
@@ -33431,5 +33470,23 @@ mod grid_text_in_graphics {
     assert_eq!(ys.len(), 2, "{svg}");
     assert!(ys[0] >= 10.0, "{svg}");
     assert!(ys[1] - ys[0] >= 20.0, "{svg}");
+  }
+
+  #[test]
+  fn parametric_plot3d_curve_has_axes_and_clips_to_plot_range() {
+    let svg = interpret(
+      r#"ExportString[ParametricPlot3D[{t, 2 t, t^2}, {t, 0, 1}, PlotRange -> {{0, 0.5}, {0, 2}, {0, 1}}, AxesLabel -> {"x", "y", "z"}], "SVG"]"#,
+    )
+    .unwrap();
+    // Axes (tick labels and the axis names) are drawn by default.
+    assert!(svg.contains("<text"), "{svg}");
+    assert!(svg.contains(">x<"), "{svg}");
+    // The curve stops at the PlotRange boundary x = 0.5 instead of
+    // running on to x = 1: a clipped line is shorter than an unclipped one.
+    let clipped = interpret(
+      r#"Length[ParametricPlot3D[{t, 0, 0}, {t, 0, 1}, PlotRange -> {{0, 0.5}, {-1, 1}, {-1, 1}}][[1]]]"#,
+    )
+    .unwrap();
+    assert_eq!(clipped, "1", "{clipped}");
   }
 }
