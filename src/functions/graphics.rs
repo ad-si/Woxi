@@ -26024,10 +26024,26 @@ fn parse_manipulate_control(
       .or_else(|| {
         items[1..]
           .iter()
-          .find(|it| !is_control_type_rule(it))
+          .find(|it| {
+            !is_control_type_rule(it)
+              && !matches!(it, Expr::Identifier(s) if s == "None")
+          })
           .cloned()
       })
-      .unwrap_or(null_expr());
+      // `{v, None}` names no domain and no initial value, only the bare
+      // control-type marker; Wolfram starts such a variable at `0` (its
+      // saved `DynamicModule` dump shows `v$$ = 0`), so a body that counts
+      // it up (`v++`) or seeds from it (`SeedRandom[v]`) works at once.
+      .unwrap_or_else(|| {
+        if items[1..]
+          .iter()
+          .any(|it| matches!(it, Expr::Identifier(s) if s == "None"))
+        {
+          Expr::Integer(0)
+        } else {
+          null_expr()
+        }
+      });
     if is_hidden {
       // A `ControlType -> None` variable stays a live, mutable binding so
       // an interactive display can rewrite it. Without an explicit initial
