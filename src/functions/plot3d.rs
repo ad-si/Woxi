@@ -2315,6 +2315,51 @@ fn clip_line_to_box(
   Some((lo, hi))
 }
 
+/// Clip a polyline to the box an explicit `PlotRange` pins, splitting it
+/// where it leaves and re-enters — Wolfram draws nothing outside the range.
+fn clip_polyline_to_box(
+  seg: &[Point3D],
+  bounds: &[(f64, f64); 3],
+) -> Vec<Vec<Point3D>> {
+  let mut out: Vec<Vec<Point3D>> = Vec::new();
+  let mut cur: Vec<Point3D> = Vec::new();
+  for w in seg.windows(2) {
+    let (a, b) = (w[0], w[1]);
+    let p = [a.x, a.y, a.z];
+    let v = [b.x - a.x, b.y - a.y, b.z - a.z];
+    match clip_line_to_box(p, v, bounds, 0.0) {
+      Some((lo, hi)) if lo <= 1.0 => {
+        let hi = hi.min(1.0);
+        let at = |t: f64| Point3D {
+          x: a.x + t * v[0],
+          y: a.y + t * v[1],
+          z: a.z + t * v[2],
+        };
+        if lo > 0.0 && !cur.is_empty() {
+          out.push(std::mem::take(&mut cur));
+        }
+        if cur.is_empty() {
+          cur.push(at(lo));
+        }
+        cur.push(at(hi));
+        if hi < 1.0 {
+          out.push(std::mem::take(&mut cur));
+        }
+      }
+      _ => {
+        if !cur.is_empty() {
+          out.push(std::mem::take(&mut cur));
+        }
+      }
+    }
+  }
+  if !cur.is_empty() {
+    out.push(cur);
+  }
+  out.retain(|s| s.len() >= 2);
+  out
+}
+
 /// Clip a convex polygon against the half space `n · x <= d`
 /// (Sutherland–Hodgman).
 fn clip_polygon_to_halfspace(
@@ -5783,6 +5828,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prims.clear();
     style3d = StyleState3D::default();
     collect_3d_primitives(&expanded, &mut style3d, &mut prims);
+  }
+
+  // An explicit `PlotRange` cuts off whatever of a line lies outside it.
+  if let Some(bounds) = plot_range {
+    for prim in &mut prims {
+      if let Primitive3D::Line3D { segments, .. } = prim {
+        *segments = segments
+          .iter()
+          .flat_map(|seg| clip_polyline_to_box(seg, &bounds))
+          .collect();
+      }
+    }
   }
 
   // The symbolic form carried on the rendered result so that Part can
@@ -10848,7 +10905,18 @@ fn parametric_plot3d_curve_ast(
   // dispatches it to `graphics3d_ast`.
   let content = Expr::List(prim_items.into());
   let mut g3d_args = vec![content];
+  // `ParametricPlot3D` draws its axes by default, unlike `Graphics3D`.
+  let has_axes = forwarded_opts.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes"))
+  });
   g3d_args.extend(forwarded_opts);
+  if !has_axes {
+    g3d_args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("Axes".to_string())),
+      replacement: Box::new(Expr::Identifier("True".to_string())),
+    });
+  }
 
   Ok(call("Graphics3D", g3d_args))
 }

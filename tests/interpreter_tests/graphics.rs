@@ -33405,4 +33405,22 @@ mod grid_text_in_graphics {
     assert!(ys[0] >= 10.0, "{svg}");
     assert!(ys[1] - ys[0] >= 20.0, "{svg}");
   }
+
+  #[test]
+  fn parametric_plot3d_curve_has_axes_and_clips_to_plot_range() {
+    let svg = interpret(
+      r#"ExportString[ParametricPlot3D[{t, 2 t, t^2}, {t, 0, 1}, PlotRange -> {{0, 0.5}, {0, 2}, {0, 1}}, AxesLabel -> {"x", "y", "z"}], "SVG"]"#,
+    )
+    .unwrap();
+    // Axes (tick labels and the axis names) are drawn by default.
+    assert!(svg.contains("<text"), "{svg}");
+    assert!(svg.contains(">x<"), "{svg}");
+    // The curve stops at the PlotRange boundary x = 0.5 instead of
+    // running on to x = 1: a clipped line is shorter than an unclipped one.
+    let clipped = interpret(
+      r#"Length[ParametricPlot3D[{t, 0, 0}, {t, 0, 1}, PlotRange -> {{0, 0.5}, {-1, 1}, {-1, 1}}][[1]]]"#,
+    )
+    .unwrap();
+    assert_eq!(clipped, "1", "{clipped}");
+  }
 }
