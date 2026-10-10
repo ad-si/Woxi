@@ -15040,6 +15040,37 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   mod graphics3d_primitives {
     use super::*;
 
+    // Faces used to be ordered by centroid depth alone, so a large tilted
+    // face whose centroid is nearer than a small face lying wholly in front
+    // of it was painted over that face. Looking down the z axis, the tilted
+    // triangle passes below the small one at z = 3 (or above the one at
+    // z = -3) although its centroid is at z = 10/3.
+    #[test]
+    fn a_face_in_front_of_a_larger_tilted_face_is_drawn_after_it() {
+      let svg = interpret(
+        "ExportString[Graphics3D[{Red, Polygon[{{-10,-10,-10},{10,-10,-10},\
+         {0,10,30}}], Blue, Polygon[{{-1,-6,3},{1,-6,3},{0,-4,3}}]}, \
+         ViewPoint -> {0, 0, 10}, Boxed -> False], \"SVG\"]",
+      )
+      .unwrap();
+      let red = svg.find("rgb(221,0,0)").expect("red face drawn");
+      let blue = svg.find("rgb(0,0,216)").expect("blue face drawn");
+      assert!(red < blue, "the front face must be painted last: {svg}");
+    }
+
+    #[test]
+    fn a_face_behind_a_larger_tilted_face_is_drawn_before_it() {
+      let svg = interpret(
+        "ExportString[Graphics3D[{Red, Polygon[{{-10,-10,-10},{10,-10,-10},\
+         {0,10,30}}], Blue, Polygon[{{-1,-6,-3},{1,-6,-3},{0,-4,-3}}]}, \
+         ViewPoint -> {0, 0, 10}, Boxed -> False], \"SVG\"]",
+      )
+      .unwrap();
+      let red = svg.find("rgb(221,0,0)").expect("red face drawn");
+      let blue = svg.find("rgb(0,0,216)").expect("blue face drawn");
+      assert!(blue < red, "the rear face must be painted first: {svg}");
+    }
+
     // A `Line` leaving an explicit `PlotRange` is cut off at the box, so it
     // draws exactly like the same line given only its inner part (and does
     // not stretch the picture to fit the part outside).

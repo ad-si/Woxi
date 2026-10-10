@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 16046
 expression: "export_svg(\"Graphics3D[{Sphere[{0,0,0}, 0.5], Cuboid[{1,1,1}, {2,2,2}]}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
@@ -487,7 +488,6 @@ expression: "export_svg(\"Graphics3D[{Sphere[{0,0,0}, 0.5], Cuboid[{1,1,1}, {2,2
 <polygon points="74.4,267.1 78.5,270.4 82.9,273.6" fill="rgb(48,65,92)" stroke="rgb(48,65,92)" stroke-width="0.5"/>
 <polygon points="132.9,262.0 132.8,261.8 136.2,256.9" fill="rgb(37,50,71)" stroke="rgb(37,50,71)" stroke-width="0.5"/>
 <polygon points="73.7,213.8 70.6,218.2 67.2,223.3" fill="rgb(37,50,71)" stroke="rgb(37,50,71)" stroke-width="0.5"/>
-<polygon points="88.7,276.1 91.5,277.0 96.7,278.2" fill="rgb(47,65,91)" stroke="rgb(47,65,91)" stroke-width="0.5"/>
 <polygon points="124.9,209.8 129.0,213.0 123.8,209.2" fill="rgb(48,65,92)" stroke="rgb(48,65,92)" stroke-width="0.5"/>
 <polygon points="106.8,202.0 101.1,202.1 101.2,201.7" fill="rgb(45,61,86)" stroke="rgb(45,61,86)" stroke-width="0.5"/>
 <polygon points="206.1,160.0 243.0,120.2 243.0,58.1" fill="rgb(57,79,111)" stroke="rgb(57,79,111)" stroke-width="0.5"/>
@@ -500,6 +500,7 @@ expression: "export_svg(\"Graphics3D[{Sphere[{0,0,0}, 0.5], Cuboid[{1,1,1}, {2,2
 <polygon points="101.2,201.7 94.1,202.8 95.7,202.2" fill="rgb(44,60,84)" stroke="rgb(44,60,84)" stroke-width="0.5"/>
 <polygon points="124.8,270.4 121.4,273.1 125.6,269.8" fill="rgb(40,55,78)" stroke="rgb(40,55,78)" stroke-width="0.5"/>
 <polygon points="82.9,273.6 91.5,277.0 88.7,276.1" fill="rgb(52,71,99)" stroke="rgb(52,71,99)" stroke-width="0.5"/>
+<polygon points="88.7,276.1 91.5,277.0 96.7,278.2" fill="rgb(47,65,91)" stroke="rgb(47,65,91)" stroke-width="0.5"/>
 <polygon points="124.8,270.4 125.6,269.8 129.8,266.4" fill="rgb(40,55,78)" stroke="rgb(40,55,78)" stroke-width="0.5"/>
 <polygon points="132.4,217.5 135.8,222.3 132.1,217.3" fill="rgb(46,64,89)" stroke="rgb(46,64,89)" stroke-width="0.5"/>
 <polygon points="64.0,246.7 67.6,257.9 65.5,252.4" fill="rgb(47,65,91)" stroke="rgb(47,65,91)" stroke-width="0.5"/>
@@ -508,11 +509,11 @@ expression: "export_svg(\"Graphics3D[{Sphere[{0,0,0}, 0.5], Cuboid[{1,1,1}, {2,2
 <polygon points="139.1,245.5 139.4,245.7 140.2,239.6" fill="rgb(39,54,76)" stroke="rgb(39,54,76)" stroke-width="0.5"/>
 <polygon points="95.3,277.6 96.7,278.2 102.2,278.5" fill="rgb(45,61,86)" stroke="rgb(45,61,86)" stroke-width="0.5"/>
 <polygon points="102.3,278.1 102.2,278.5 107.7,278.0" fill="rgb(44,60,84)" stroke="rgb(44,60,84)" stroke-width="0.5"/>
-<polygon points="90.6,203.5 87.6,204.4 82.1,207.1" fill="rgb(47,64,90)" stroke="rgb(47,64,90)" stroke-width="0.5"/>
 <line x1="221.5" y1="36.9" x2="230.8" y2="39.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <polygon points="65.1,228.8 63.3,240.6 64.0,234.5" fill="rgb(39,54,76)" stroke="rgb(39,54,76)" stroke-width="0.5"/>
 <polygon points="116.5,205.2 120.5,206.5 114.8,204.1" fill="rgb(52,71,99)" stroke="rgb(52,71,99)" stroke-width="0.5"/>
 <polygon points="95.7,202.2 87.6,204.4 90.6,203.5" fill="rgb(45,61,86)" stroke="rgb(45,61,86)" stroke-width="0.5"/>
+<polygon points="90.6,203.5 87.6,204.4 82.1,207.1" fill="rgb(47,64,90)" stroke="rgb(47,64,90)" stroke-width="0.5"/>
 <polygon points="109.3,277.4 112.8,276.7 115.8,275.8" fill="rgb(45,61,86)" stroke="rgb(45,61,86)" stroke-width="0.5"/>
 <polygon points="67.2,223.3 65.1,228.8 64.0,234.5" fill="rgb(36,49,69)" stroke="rgb(36,49,69)" stroke-width="0.5"/>
 <line x1="64.3" y1="299.2" x2="73.6" y2="302.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>

@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 16095
 expression: "export_svg(\"Graphics3D[Sphere[], Boxed -> False]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
@@ -378,7 +379,6 @@ expression: "export_svg(\"Graphics3D[Sphere[], Boxed -> False]\")"
 <polygon points="59.2,299.6 77.3,314.0 96.9,328.4" fill="rgb(48,65,92)" stroke="rgb(48,65,92)" stroke-width="0.5"/>
 <polygon points="317.8,277.0 317.4,276.1 332.6,254.5" fill="rgb(37,50,71)" stroke="rgb(37,50,71)" stroke-width="0.5"/>
 <polygon points="56.0,63.7 42.2,83.0 27.4,105.5" fill="rgb(37,50,71)" stroke="rgb(37,50,71)" stroke-width="0.5"/>
-<polygon points="122.3,339.3 134.6,343.1 157.6,348.3" fill="rgb(47,65,91)" stroke="rgb(47,65,91)" stroke-width="0.5"/>
 <polygon points="282.7,46.0 300.8,60.4 277.7,43.4" fill="rgb(48,65,92)" stroke="rgb(48,65,92)" stroke-width="0.5"/>
 <polygon points="202.4,11.7 177.3,12.0 177.8,10.1" fill="rgb(45,61,86)" stroke="rgb(45,61,86)" stroke-width="0.5"/>
 <polygon points="315.7,80.3 314.2,79.3 300.8,60.4" fill="rgb(46,64,89)" stroke="rgb(46,64,89)" stroke-width="0.5"/>
@@ -388,6 +388,7 @@ expression: "export_svg(\"Graphics3D[Sphere[], Boxed -> False]\")"
 <polygon points="177.8,10.1 146.2,14.9 153.5,12.3" fill="rgb(44,60,84)" stroke="rgb(44,60,84)" stroke-width="0.5"/>
 <polygon points="282.2,313.9 266.9,326.1 285.5,311.2" fill="rgb(40,55,78)" stroke="rgb(40,55,78)" stroke-width="0.5"/>
 <polygon points="96.9,328.4 134.6,343.1 122.3,339.3" fill="rgb(52,71,99)" stroke="rgb(52,71,99)" stroke-width="0.5"/>
+<polygon points="122.3,339.3 134.6,343.1 157.6,348.3" fill="rgb(47,65,91)" stroke="rgb(47,65,91)" stroke-width="0.5"/>
 <polygon points="282.2,313.9 285.5,311.2 304.0,296.3" fill="rgb(40,55,78)" stroke="rgb(40,55,78)" stroke-width="0.5"/>
 <polygon points="315.7,80.3 330.8,101.4 314.2,79.3" fill="rgb(46,64,89)" stroke="rgb(46,64,89)" stroke-width="0.5"/>
 <polygon points="13.3,209.0 29.2,258.6 19.9,234.4" fill="rgb(47,65,91)" stroke="rgb(47,65,91)" stroke-width="0.5"/>
@@ -396,10 +397,10 @@ expression: "export_svg(\"Graphics3D[Sphere[], Boxed -> False]\")"
 <polygon points="345.2,203.7 346.7,204.6 350.0,177.7" fill="rgb(39,54,76)" stroke="rgb(39,54,76)" stroke-width="0.5"/>
 <polygon points="151.5,346.0 157.6,348.3 182.2,349.9" fill="rgb(45,61,86)" stroke="rgb(45,61,86)" stroke-width="0.5"/>
 <polygon points="182.7,348.0 182.2,349.9 206.5,347.7" fill="rgb(44,60,84)" stroke="rgb(44,60,84)" stroke-width="0.5"/>
-<polygon points="130.9,18.2 117.5,22.3 93.1,33.9" fill="rgb(47,64,90)" stroke="rgb(47,64,90)" stroke-width="0.5"/>
 <polygon points="18.0,129.9 10.0,182.3 13.3,155.4" fill="rgb(39,54,76)" stroke="rgb(39,54,76)" stroke-width="0.5"/>
 <polygon points="245.3,25.5 263.1,31.6 237.7,20.7" fill="rgb(52,71,99)" stroke="rgb(52,71,99)" stroke-width="0.5"/>
 <polygon points="153.5,12.3 117.5,22.3 130.9,18.2" fill="rgb(45,61,86)" stroke="rgb(45,61,86)" stroke-width="0.5"/>
+<polygon points="130.9,18.2 117.5,22.3 93.1,33.9" fill="rgb(47,64,90)" stroke="rgb(47,64,90)" stroke-width="0.5"/>
 <polygon points="213.8,345.1 229.1,341.8 242.5,337.7" fill="rgb(45,61,86)" stroke="rgb(45,61,86)" stroke-width="0.5"/>
 <polygon points="27.4,105.5 18.0,129.9 13.3,155.4" fill="rgb(36,49,69)" stroke="rgb(36,49,69)" stroke-width="0.5"/>
 <polygon points="337.1,125.3 340.1,125.6 330.8,101.4" fill="rgb(47,65,91)" stroke="rgb(47,65,91)" stroke-width="0.5"/>
