@@ -710,6 +710,28 @@ mod angle_vector {
 mod inverse_trig_identities {
   use super::*;
 
+  // Odd inverse functions pull the sign out of an exact negative argument
+  // (differential fuzzer, seed 20261011; wolframscript-verified).
+  #[test]
+  fn odd_functions_pull_the_sign() {
+    for (input, expected) in [
+      ("ArcCsc[-5]", "-ArcCsc[5]"),
+      ("ArcCsc[-x]", "-ArcCsc[x]"),
+      ("ArcCsc[-2]", "-1/6*Pi"),
+      ("ArcCsc[-Pi]", "-ArcCsc[Pi]"),
+      ("ArcSin[-1/3]", "-ArcSin[1/3]"),
+      ("ArcSin[-2]", "-ArcSin[2]"),
+      ("ArcSin[-Sqrt[2]/3]", "-ArcSin[Sqrt[2]/3]"),
+      ("InverseErf[-1/6]", "-InverseErf[1/6]"),
+      // InverseErf only on its domain, and not for symbols.
+      ("InverseErf[-3/2]", "InverseErf[-3/2]"),
+      ("InverseErf[-x]", "InverseErf[-x]"),
+      ("ArcSec[-3]", "ArcSec[-3]"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   #[test]
   fn sin_arcsin() {
     assert_eq!(interpret("Sin[ArcSin[x]]").unwrap(), "x");

@@ -9521,20 +9521,7 @@ fn contains_var(expr: &Expr, var_name: &str) -> bool {
   !is_constant_wrt(expr, var_name)
 }
 
-/// Whether any `FunctionCall` inside `expr` has the given head name.
-fn expr_contains_head(expr: &Expr, head: &str) -> bool {
-  match expr {
-    Expr::FunctionCall { name, args } => {
-      name == head || args.iter().any(|a| expr_contains_head(a, head))
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      expr_contains_head(left, head) || expr_contains_head(right, head)
-    }
-    Expr::UnaryOp { operand, .. } => expr_contains_head(operand, head),
-    Expr::List(items) => items.iter().any(|i| expr_contains_head(i, head)),
-    _ => false,
-  }
-}
+use crate::functions::math_ast::expr_contains_head;
 
 /// Whether `expr` is a finite real number literal (integer, rational, or real).
 fn is_finite_real_number(expr: &Expr) -> bool {

@@ -3979,20 +3979,7 @@ fn try_symbolic_expectation(
   Some(result)
 }
 
-/// Whether `expr` contains a `FunctionCall` with the given head anywhere.
-fn expr_contains_head(expr: &Expr, head: &str) -> bool {
-  match expr {
-    Expr::FunctionCall { name, args } => {
-      name == head || args.iter().any(|a| expr_contains_head(a, head))
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      expr_contains_head(left, head) || expr_contains_head(right, head)
-    }
-    Expr::UnaryOp { operand, .. } => expr_contains_head(operand, head),
-    Expr::List(items) => items.iter().any(|a| expr_contains_head(a, head)),
-    _ => false,
-  }
-}
+use crate::functions::math_ast::expr_contains_head;
 
 /// Match expressions of the form `c · Exp[t·x]` (with `c`, `t`
 /// constant w.r.t. `x`) and return `(c, t)`. Handles bare `Exp[x]`

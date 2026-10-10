@@ -2627,6 +2627,19 @@ pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(1) => Ok(id_expr("Infinity")),
     // InverseErf[-1] = -Infinity
     Expr::Integer(-1) => Ok(neg1(id_expr("Infinity"))),
+    // Odd on its domain: a negative rational in (-1, 0) pulls the sign out
+    // (InverseErf[-1/6] is -InverseErf[1/6]); outside the domain, and for
+    // symbolic arguments, it stays (wolframscript-verified).
+    Expr::FunctionCall { name, args: r }
+      if name == "Rational"
+        && matches!((&r[0], &r[1]), (Expr::Integer(p), Expr::Integer(q))
+          if *p < 0 && -*p < *q) =>
+    {
+      let (Expr::Integer(p), Expr::Integer(q)) = (&r[0], &r[1]) else {
+        unreachable!()
+      };
+      Ok(neg1(unevaluated("InverseErf", &[make_rational(-p, *q)])))
+    }
     // Numeric evaluation for Real arguments
     Expr::Real(f) => {
       if *f > -1.0 && *f < 1.0 {
@@ -3415,19 +3428,12 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(r);
   }
-  // ArcSin[-x] → -ArcSin[x] (odd function)
-  // Only apply for symbolic (non-numeric) arguments; for numeric arguments
-  // the existing Exact/Real paths below produce the canonical form.
-  if !matches!(
-    &args[0],
-    Expr::Integer(_)
-      | Expr::Real(_)
-      | Expr::BigInteger(_)
-      | Expr::BigFloat(_, _)
-  ) && !matches!(
-    &args[0],
-    Expr::FunctionCall { name, .. } if name == "Rational"
-  ) && let Some(neg) = try_extract_negated(&args[0])
+  // ArcSin[-x] → -ArcSin[x] (odd function), for exact numbers too:
+  // ArcSin[-1/3] is -ArcSin[1/3] and ArcSin[-1/2] is -Pi/6. Inexact
+  // arguments evaluate numerically below.
+  if !matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
+    && !matches!(&args[0], Expr::Integer(-1))
+    && let Some(neg) = try_extract_negated(&args[0])
   {
     let inner = crate::evaluator::evaluate_function_call_ast("ArcSin", &[neg])?;
     // Build -inner and let the evaluator simplify
@@ -4937,6 +4943,18 @@ pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(folded) = fold_inverse_of_forward("ArcCsc", &args[0]) {
     return Ok(folded);
   }
+  // ArcCsc is odd: ArcCsc[-x] → -ArcCsc[x] (ArcCsc[-5] is -ArcCsc[5],
+  // ArcCsc[-2] is -Pi/6). Inexact arguments evaluate numerically below.
+  if !matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
+    && !matches!(&args[0], Expr::Integer(-1))
+    && let Some(neg) = try_extract_negated(&args[0])
+  {
+    let inner = crate::evaluator::evaluate_function_call_ast("ArcCsc", &[neg])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), inner],
+    );
+  }
   match &args[0] {
     // ArcCsc[0] = ArcSin[1/0] = ComplexInfinity.
     Expr::Integer(0) => {
@@ -4954,8 +4972,9 @@ pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )?;
     let result =
       crate::evaluator::evaluate_function_call_ast("ArcSin", &[reciprocal])?;
-    // If ArcSin returned an exact result (not unevaluated), return it
-    if !matches!(&result, Expr::FunctionCall { name, .. } if name == "ArcSin") {
+    // Only a closed form is kept; an ArcSin that stayed symbolic leaves
+    // ArcCsc unevaluated.
+    if !expr_contains_head(&result, "ArcSin") {
       return Ok(result);
     }
   }

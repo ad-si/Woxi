@@ -1741,3 +1741,18 @@ pub fn expr_to_f64(expr: &Expr) -> Option<f64> {
     _ => None,
   }
 }
+
+/// Whether `expr` contains a `FunctionCall` with the given head anywhere.
+pub fn expr_contains_head(expr: &Expr, head: &str) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == head || args.iter().any(|a| expr_contains_head(a, head))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_head(left, head) || expr_contains_head(right, head)
+    }
+    Expr::UnaryOp { operand, .. } => expr_contains_head(operand, head),
+    Expr::List(items) => items.iter().any(|a| expr_contains_head(a, head)),
+    _ => false,
+  }
+}
