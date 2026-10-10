@@ -2304,6 +2304,29 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return sum_ast(&[body.clone(), new_iter]);
       }
 
+      // Non-integer bounds or step, e.g. {k, 0.5, 2, 0.5} or {k, 0, 1, 1/4}:
+      // the iterator values are exactly those of `Range`.
+      if items.len() == 4
+        && (expr_to_i128(&items[1]).is_none()
+          || expr_to_i128(&items[2]).is_none()
+          || expr_to_i128(&items[3]).is_none())
+        && let Ok(range) = super::range_ast(&[
+          items[1].clone(),
+          items[2].clone(),
+          items[3].clone(),
+        ])
+        && let Expr::List(values) = &range
+      {
+        let mut acc = Expr::Integer(0);
+        for value in values {
+          let substituted =
+            crate::syntax::substitute_variable(body, &var_name, value);
+          let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+          acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
+        }
+        return Ok(acc);
+      }
+
       // Check for infinite sum: {i, min, Infinity}
       if items.len() == 3
         && let Expr::Identifier(s) = &items[2]

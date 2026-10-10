@@ -12101,3 +12101,34 @@ mod an_n_ary_times_regroups_after_a_product_base_splits {
     );
   }
 }
+
+mod sum_non_integer_step {
+  use super::*;
+
+  #[test]
+  fn real_step() {
+    assert_eq!(interpret("Sum[k, {k, 1, 2, 0.5}]").unwrap(), "4.5");
+  }
+
+  #[test]
+  fn real_bounds_and_step() {
+    assert_eq!(interpret("Sum[k, {k, 1.5, 3.5, 0.5}]").unwrap(), "12.5");
+  }
+
+  #[test]
+  fn rational_step() {
+    assert_eq!(interpret("Sum[k^2, {k, 0, 1, 1/4}]").unwrap(), "15/8");
+  }
+
+  #[test]
+  fn matches_total_of_table() {
+    assert_eq!(
+      interpret(
+        "Sum[Exp[-2 (k - 3)^2], {k, 2, 4, 0.5}] == \
+         Total[Table[Exp[-2 (k - 3)^2], {k, 2, 4, 0.5}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
