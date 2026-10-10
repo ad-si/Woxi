@@ -24,6 +24,7 @@ mod helpers;
 pub mod horner;
 mod interpolating_polynomial;
 mod linear_programming;
+mod mfactor;
 mod minimal_polynomial;
 mod polynomial_division;
 mod polynomial_extended_gcd;

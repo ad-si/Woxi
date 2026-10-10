@@ -1873,6 +1873,71 @@ mod factor {
       "-((1 + x)*(-4 + 2*x + 3*x^2)*(5 - 2*x + x^2 + x^3))"
     );
   }
+
+  // Multivariate factorization (square-free decomposition + Hensel
+  // lifting); https://github.com/ad-si/Woxi/issues/1157.
+  #[test]
+  fn multivariate_power_of_sum() {
+    assert_eq!(
+      interpret("Factor[Expand[(a + b + c + d)^3]]").unwrap(),
+      "(a + b + c + d)^3"
+    );
+    assert_eq!(
+      interpret("Factor[Expand[(a + b + c + d)^5]]").unwrap(),
+      "(a + b + c + d)^5"
+    );
+  }
+
+  #[test]
+  fn multivariate_repeated_and_distinct_factors() {
+    assert_eq!(
+      interpret("Factor[Expand[(x + 2 y - 3 z)^2 (x y + z)]]").unwrap(),
+      "(x + 2*y - 3*z)^2*(x*y + z)"
+    );
+    assert_eq!(
+      interpret("Factor[Expand[(1 + x y z + x^2 y)^2 (x - y z^3)]]").unwrap(),
+      "(1 + x^2*y + x*y*z)^2*(x - y*z^3)"
+    );
+  }
+
+  #[test]
+  fn multivariate_nonmonic_factors() {
+    assert_eq!(
+      interpret("Factor[Expand[(x^2 + y z + 1) (x y - z^3 + 2)]]").unwrap(),
+      "(1 + x^2 + y*z)*(2 + x*y - z^3)"
+    );
+    assert_eq!(
+      interpret("Factor[Expand[(2 x y - 3) (5 x^2 - y)]]").unwrap(),
+      "(5*x^2 - y)*(-3 + 2*x*y)"
+    );
+  }
+
+  #[test]
+  fn multivariate_irreducible_cubic() {
+    assert_eq!(
+      interpret("Factor[a^3 + b^3 + c^3 - 3 a b c]").unwrap(),
+      "(a + b + c)*(a^2 - a*b + b^2 - a*c - b*c + c^2)"
+    );
+    // Irreducible input stays unchanged.
+    assert_eq!(interpret("Factor[x^4 + y^4]").unwrap(), "x^4 + y^4");
+  }
+
+  #[test]
+  fn multivariate_square_has_lex_positive_factor() {
+    assert_eq!(interpret("Factor[a^2 - 2 a b + b^2]").unwrap(), "(a - b)^2");
+  }
+
+  #[test]
+  fn non_polynomial_atoms_are_generators() {
+    assert_eq!(
+      interpret("Factor[2 a x + 2 a Sin[x]]").unwrap(),
+      "2*a*(x + Sin[x])"
+    );
+    assert_eq!(
+      interpret("Factor[Sin[x]^2 - Cos[x]^2]").unwrap(),
+      "-((Cos[x] - Sin[x])*(Cos[x] + Sin[x]))"
+    );
+  }
 }
 
 mod factor_multivariate {
