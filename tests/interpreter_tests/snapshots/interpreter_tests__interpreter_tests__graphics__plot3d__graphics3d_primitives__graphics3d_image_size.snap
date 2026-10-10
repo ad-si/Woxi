@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 16053
 expression: "export_svg(\"Graphics3D[Sphere[], ImageSize -> 200]\")"
 ---
 <svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
@@ -496,7 +497,6 @@ expression: "export_svg(\"Graphics3D[Sphere[], ImageSize -> 200]\")"
 <polygon points="62.9,65.2 58.8,71.0 54.3,77.7" fill="rgb(37,50,71)" stroke="rgb(37,50,71)" stroke-width="0.5"/>
 <line x1="141.0" y1="169.7" x2="143.7" y2="166.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="136.7" y1="29.0" x2="141.6" y2="30.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="82.7,147.7 86.4,148.8 93.3,150.4" fill="rgb(47,65,91)" stroke="rgb(47,65,91)" stroke-width="0.5"/>
 <polygon points="130.7,59.9 136.2,64.2 129.2,59.1" fill="rgb(48,65,92)" stroke="rgb(48,65,92)" stroke-width="0.5"/>
 <polygon points="106.7,49.6 99.2,49.7 99.4,49.2" fill="rgb(45,61,86)" stroke="rgb(45,61,86)" stroke-width="0.5"/>
 <line x1="53.5" y1="167.8" x2="58.4" y2="169.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
@@ -507,6 +507,7 @@ expression: "export_svg(\"Graphics3D[Sphere[], ImageSize -> 200]\")"
 <polygon points="99.4,49.2 89.9,50.6 92.1,49.8" fill="rgb(44,60,84)" stroke="rgb(44,60,84)" stroke-width="0.5"/>
 <polygon points="130.6,140.1 126.0,143.7 131.6,139.3" fill="rgb(40,55,78)" stroke="rgb(40,55,78)" stroke-width="0.5"/>
 <polygon points="75.1,144.4 86.4,148.8 82.7,147.7" fill="rgb(52,71,99)" stroke="rgb(52,71,99)" stroke-width="0.5"/>
+<polygon points="82.7,147.7 86.4,148.8 93.3,150.4" fill="rgb(47,65,91)" stroke="rgb(47,65,91)" stroke-width="0.5"/>
 <line x1="24.0" y1="140.2" x2="24.0" y2="135.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <polygon points="130.6,140.1 131.6,139.3 137.1,134.8" fill="rgb(40,55,78)" stroke="rgb(40,55,78)" stroke-width="0.5"/>
 <polygon points="140.6,70.2 145.1,76.5 140.2,69.9" fill="rgb(46,64,89)" stroke="rgb(46,64,89)" stroke-width="0.5"/>
@@ -518,12 +519,12 @@ expression: "export_svg(\"Graphics3D[Sphere[], ImageSize -> 200]\")"
 <polygon points="91.5,149.7 93.3,150.4 100.6,150.8" fill="rgb(45,61,86)" stroke="rgb(45,61,86)" stroke-width="0.5"/>
 <line x1="141.6" y1="30.6" x2="146.5" y2="32.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <polygon points="100.8,150.3 100.6,150.8 107.9,150.2" fill="rgb(44,60,84)" stroke="rgb(44,60,84)" stroke-width="0.5"/>
-<polygon points="85.3,51.6 81.3,52.8 74.0,56.3" fill="rgb(47,64,90)" stroke="rgb(47,64,90)" stroke-width="0.5"/>
 <line x1="58.4" y1="169.4" x2="63.3" y2="171.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <polygon points="51.5,85.0 49.1,100.7 50.1,92.6" fill="rgb(39,54,76)" stroke="rgb(39,54,76)" stroke-width="0.5"/>
 <line x1="56.3" y1="33.1" x2="59.0" y2="30.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <polygon points="119.5,53.8 124.9,55.6 117.3,52.3" fill="rgb(52,71,99)" stroke="rgb(52,71,99)" stroke-width="0.5"/>
 <polygon points="92.1,49.8 81.3,52.8 85.3,51.6" fill="rgb(45,61,86)" stroke="rgb(45,61,86)" stroke-width="0.5"/>
+<polygon points="85.3,51.6 81.3,52.8 74.0,56.3" fill="rgb(47,64,90)" stroke="rgb(47,64,90)" stroke-width="0.5"/>
 <polygon points="110.1,149.4 114.7,148.4 118.7,147.2" fill="rgb(45,61,86)" stroke="rgb(45,61,86)" stroke-width="0.5"/>
 <polygon points="54.3,77.7 51.5,85.0 50.1,92.6" fill="rgb(36,49,69)" stroke="rgb(36,49,69)" stroke-width="0.5"/>
 <polygon points="147.0,83.6 147.9,83.7 145.1,76.5" fill="rgb(47,65,91)" stroke="rgb(47,65,91)" stroke-width="0.5"/>
