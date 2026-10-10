@@ -1078,8 +1078,13 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
   // is the same four entries — so this precedes the `is_quiet` check too.
   let mut stop_line: Option<String> = None;
   let mut past_the_limit = false;
+  // `Off[General::stop]` switches the suppression off along with its
+  // notice: every repetition prints and joins `$MessageList`
+  // (wolframscript-verified).
+  let suppression_off = message_is_off("General::stop: ");
   if let Some(name) = message_name(msg)
     && name != "General::stop"
+    && !suppression_off
   {
     let count = MESSAGE_STOP_COUNTS.with(|m| {
       let mut m = m.borrow_mut();
@@ -1094,11 +1099,7 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
       let stop = format!(
         "General::stop: Further output of {name} will be suppressed during this calculation."
       );
-      // `Off[General::stop]` silences the notice itself, leaving only the
-      // suppression it announces.
-      if !message_is_off(&stop) {
-        stop_line = Some(stop);
-      }
+      stop_line = Some(stop);
     }
   }
   // `Check` watches generation, so it is told before the limit is applied.

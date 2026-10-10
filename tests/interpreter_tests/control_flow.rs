@@ -4535,7 +4535,8 @@ mod off_for_the_general_symbol {
     );
   }
 
-  // Switching it off leaves only the suppression it announces.
+  // Switching it off switches the suppression off too: all five
+  // repetitions are reported (wolframscript-verified).
   #[test]
   fn the_repetition_notice_can_be_switched_off() {
     clear_state();
@@ -4549,10 +4550,10 @@ mod off_for_the_general_symbol {
       !msgs.iter().any(|m| m.contains("General::stop")),
       "the notice should be off: {msgs:?}"
     );
-    // The message itself is still generated — only the notice is gone.
-    assert!(
-      msgs.iter().any(|m| m.contains("f::mymsg: boom")),
-      "the message should still be reported: {msgs:?}"
+    assert_eq!(
+      msgs.iter().filter(|m| m.contains("f::mymsg: boom")).count(),
+      5,
+      "every repetition should be reported: {msgs:?}"
     );
   }
 }
