@@ -13374,6 +13374,35 @@ mod root_reduce {
 mod minimal_polynomial {
   use super::*;
 
+  // Only a number that is not explicitly algebraic reports ::nalg; one
+  // Woxi cannot reduce stays quiet (wolframscript-verified).
+  #[test]
+  fn non_algebraic_input_reports_nalg() {
+    for (input, shown) in [
+      ("ComplexInfinity", "ComplexInfinity"),
+      ("Pi", "Pi"),
+      ("1.5", "1.5"),
+      ("Log[2]", "Log[2]"),
+      ("Sqrt[y]", "Sqrt[y]"),
+    ] {
+      clear_state();
+      assert_eq!(
+        interpret(&format!("MinimalPolynomial[{input}, x]")).unwrap(),
+        format!("MinimalPolynomial[{shown}, x]")
+      );
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(&format!(
+          "MinimalPolynomial::nalg: {shown} is not an explicit algebraic number."
+        ))),
+        "{input}: {msgs:?}"
+      );
+    }
+    clear_state();
+    interpret("MinimalPolynomial[Sin[Pi/7], x]").unwrap();
+    assert!(woxi::get_captured_messages_raw().is_empty());
+  }
+
   #[test]
   fn integer() {
     assert_eq!(interpret("MinimalPolynomial[3, x]").unwrap(), "-3 + x");
