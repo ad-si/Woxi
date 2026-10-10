@@ -1431,17 +1431,18 @@ pub fn build_complex_float_expr(re: f64, im: f64) -> Expr {
     return num_to_expr(re);
   }
 
-  let im_term = if im_abs == 1.0 {
-    i_expr
-  } else {
-    times2(Expr::Real(im_abs), i_expr)
-  };
-
   if re == 0.0 {
+    let im_term = if im_abs == 1.0 {
+      i_expr
+    } else {
+      times2(Expr::Real(im_abs), i_expr)
+    };
     if im > 0.0 { im_term } else { neg1(im_term) }
   } else {
     // A machine-complex result keeps its Real head even for an integral real
-    // part: wolframscript prints (1.5 + 2.5 I)^2 as -4. + 7.5*I, not -4 + 7.5*I.
+    // part: wolframscript prints (1.5 + 2.5 I)^2 as -4. + 7.5*I, not -4 + 7.5*I,
+    // and a unit imaginary part as 2.5 - 1.*I, not 2.5 - I.
+    let im_term = times2(Expr::Real(im_abs), i_expr);
     let re_expr = Expr::Real(re);
     if im > 0.0 {
       plus2(re_expr, im_term)

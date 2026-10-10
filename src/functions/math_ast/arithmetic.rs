@@ -1419,6 +1419,10 @@ fn is_integer_times_i(e: &Expr) -> bool {
     {
       exact_numeric(&args[0]) && exact_numeric(&args[1])
     }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_integer_times_i(operand),
     _ => false,
   }
 }
@@ -1507,6 +1511,21 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
       return times(vec![im, id_expr("I")]);
     }
     return plus(vec![re, times(vec![im, id_expr("I")])]);
+  }
+  // `-I` (and `-(k I)`) is stored as a unary minus: promote the operand and
+  // fold the sign into its Real coefficient, so 2.5 - I reads 2.5 - 1.*I.
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = &e
+    && let promoted = promote_integer_times_i_to_real((**operand).clone())
+    && let Expr::FunctionCall { name, args } = &promoted
+    && name == "Times"
+    && let [Expr::Real(c), rest @ ..] = args.as_slice()
+  {
+    let mut negated = vec![Expr::Real(-c)];
+    negated.extend(rest.iter().cloned());
+    return call("Times", negated);
   }
   e
 }

@@ -1205,6 +1205,16 @@ mod real_number_formatting {
 mod plus_numeric_contagion {
   use super::*;
 
+  // `-I` is stored as a unary minus; it must turn machine-complex next to a
+  // Real like any other imaginary term.
+  #[test]
+  fn real_minus_unit_imaginary() {
+    assert_eq!(interpret("2.5 - I").unwrap(), "2.5 - 1.*I");
+    assert_eq!(interpret("-I + 3.").unwrap(), "3. - 1.*I");
+    assert_eq!(interpret("2.5 + Times[-1, I]").unwrap(), "2.5 - 1.*I");
+    assert_eq!(interpret("Im[2.5 - I]").unwrap(), "-1.");
+  }
+
   // Regression (mathics test_comparison.py:570): a machine Real among
   // the Plus terms numerifies named numeric constants (Pi, E, ...) and
   // any numeric constants embedded inside otherwise-symbolic summands
