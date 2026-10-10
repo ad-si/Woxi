@@ -1565,6 +1565,29 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_contour_plot_equations_use_per_contour_styles() {
+    // Regression: `ContourStyle -> {{Black, Thick}, {Red, Thick}}` on an
+    // equation-form ContourPlot styled every curve alike (the last entry);
+    // each entry must instead style its own equation's curve.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "ContourPlot[{x == y, x^2 + y^2 == 1}, {x, -1, 1}, {y, -1, 1}, \
+       ContourStyle -> {{Black, Thick}, {Red, Thick}}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("ContourPlot should produce a graphics SVG");
+    assert!(
+      svg.contains("stroke=\"rgb(0,0,0)\" stroke-width=\"20.0\""),
+      "first equation must be black:\n{svg}"
+    );
+    assert!(
+      svg.contains("stroke=\"rgb(255,0,0)\" stroke-width=\"20.0\""),
+      "second equation must be red:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_column_with_nested_tableform_renders_as_graphics() {
     // In visual mode (playground / woxi-studio), a Column containing a
     // TableForm must pre-render the table as a sub-SVG instead of falling

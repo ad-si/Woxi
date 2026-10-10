@@ -228,6 +228,10 @@ struct DensityContourOptions {
   /// `ContourStyle -> {Thick, Blue}`: how the contour lines are drawn.
   /// `None` keeps the default thin dark-grey line.
   contour_style: Option<crate::functions::plot::SeriesStyle>,
+  /// `ContourStyle -> {{Black, Thick}, {Red, Thick}}`: one style per
+  /// contour function, cycled when there are more functions than styles.
+  /// Empty unless every entry of the option is itself a list.
+  contour_styles: Vec<Option<crate::functions::plot::SeriesStyle>>,
   /// `FrameLabel -> {bottom, left}`: the labels along the frame edges.
   frame_labels: crate::functions::plot::FrameLabels,
   /// `Epilog -> {…}`: graphics primitives drawn over the finished plot,
@@ -242,7 +246,41 @@ struct DensityContourOptions {
   region_function: Option<Expr>,
 }
 
+/// The per-contour styles of a `ContourStyle` value whose entries are all
+/// lists (`{{Black, Thick}, {Red, Thick}}`); empty for a single directive
+/// list such as `{Thick, Blue}`.
+fn per_contour_styles(
+  value: &Expr,
+) -> Vec<Option<crate::functions::plot::SeriesStyle>> {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  match &val {
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|i| matches!(i, Expr::List(_))) =>
+    {
+      items
+        .iter()
+        .map(crate::functions::plot::parse_style_directives)
+        .collect()
+    }
+    _ => Vec::new(),
+  }
+}
+
 impl DensityContourOptions {
+  /// The style of the `index`-th contour function: its own entry of a
+  /// per-contour `ContourStyle` (cycled), else the single shared style.
+  fn style_for_contour(
+    &self,
+    index: usize,
+  ) -> Option<&crate::functions::plot::SeriesStyle> {
+    if self.contour_styles.is_empty() {
+      self.contour_style.as_ref()
+    } else {
+      self.contour_styles[index % self.contour_styles.len()].as_ref()
+    }
+  }
+
   /// `(expr, scaling)` for `scaled_color`/`band_color`, when `ColorFunction`
   /// was given a pure function or symbol rather than a named gradient.
   fn cf_expr(&self) -> Option<(&Expr, bool)> {
@@ -266,6 +304,7 @@ fn parse_density_contour_options(
   let mut mesh: Option<usize> = None;
   let mut mesh_functions: Vec<Expr> = Vec::new();
   let mut contour_style = None;
+  let mut contour_styles = Vec::new();
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
   let mut epilog: Vec<Expr> = Vec::new();
   let mut region_function: Option<Expr> = None;
@@ -349,6 +388,7 @@ fn parse_density_contour_options(
         "ContourStyle" => {
           contour_style =
             crate::functions::plot::parse_style_directives(replacement);
+          contour_styles = per_contour_styles(replacement);
         }
         "FrameLabel" => {
           frame_labels = crate::functions::plot::parse_frame_label(replacement);
@@ -384,6 +424,7 @@ fn parse_density_contour_options(
     mesh,
     mesh_functions,
     contour_style,
+    contour_styles,
     frame_labels,
     epilog,
     plot_label: parse_field_plot_label(args, start),
@@ -420,7 +461,14 @@ impl DensityContourOptions {
   /// `render_width / 1000`, so a thickness given in display pixels
   /// converts by the picture's own width.
   fn contour_stroke(&self) -> (String, f64) {
-    let Some(style) = &self.contour_style else {
+    self.contour_stroke_for(self.contour_style.as_ref())
+  }
+
+  fn contour_stroke_for(
+    &self,
+    style: Option<&crate::functions::plot::SeriesStyle>,
+  ) -> (String, f64) {
+    let Some(style) = style else {
       return (CONTOUR_LINE_COLOR.to_string(), CONTOUR_LINE_WEIGHT);
     };
     let color = style.color.map_or_else(
@@ -1888,18 +1936,6 @@ fn contour_plot_equations(
 
   let cell_w = area.plot_w / FIELD_GRID as f64;
   let cell_h = area.plot_h / FIELD_GRID as f64;
-  let (contour_color, contour_weight) = opts.contour_stroke();
-  let series_color = opts.contour_style.as_ref().and_then(|s| s.color).map_or(
-    (0x40, 0x40, 0x40),
-    |c| {
-      (
-        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-      )
-    },
-  );
-  let series_thickness = opts.contour_style.as_ref().and_then(|s| s.thickness);
 
   // Alongside the standalone SVG, collect every contour chain in *data*
   // coordinates as a line series, so `Show[{ContourPlot[…], Graphics[…]}]`
@@ -1907,8 +1943,21 @@ fn contour_plot_equations(
   // scaled 0‥1000 space — `chain_segments` keys points on a 1/16 grid,
   // which would glue distinct points together in small data ranges.
   let mut series: Vec<crate::syntax::PlotSeriesData> = Vec::new();
+  let mut series_per_body: Vec<std::ops::Range<usize>> = Vec::new();
 
-  for body in bodies {
+  for (body_index, body) in bodies.iter().enumerate() {
+    let style = opts.style_for_contour(body_index);
+    let (contour_color, contour_weight) = opts.contour_stroke_for(style);
+    let series_color =
+      style.and_then(|s| s.color).map_or((0x40, 0x40, 0x40), |c| {
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      });
+    let series_thickness = style.and_then(|s| s.thickness);
+    let first_series = series.len();
     let mut grid = vec![vec![f64::NAN; n]; n];
     let mut any_finite = false;
     for (i, row) in grid.iter_mut().enumerate() {
@@ -1928,6 +1977,7 @@ fn contour_plot_equations(
       }
     }
     if !any_finite {
+      series_per_body.push(first_series..first_series);
       continue;
     }
     render_contour_lines_styled(
@@ -1972,6 +2022,7 @@ fn contour_plot_equations(
         });
       }
     }
+    series_per_body.push(first_series..series.len());
   }
 
   push_frame(
@@ -1988,14 +2039,25 @@ fn contour_plot_equations(
   // the curves — the ContourStyle directives plus one `Line[…]` per chain —
   // so `ContourPlot[…][[1]]` yields primitives that can be re-embedded in
   // an outer `Graphics[…]` (the Demonstrations Tooltip-stripping idiom).
-  let mut structure_items: Vec<Expr> = contour_style_directives(args, 3);
-  for s in &series {
-    let points: Vec<Expr> = s
-      .points
-      .iter()
-      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
-      .collect();
-    structure_items.push(call1("Line", Expr::List(points.into())));
+  let directives = contour_style_directives(args, 3);
+  let mut structure_items: Vec<Expr> = if opts.contour_styles.is_empty() {
+    directives.clone()
+  } else {
+    Vec::new()
+  };
+  for (body_index, range) in series_per_body.iter().enumerate() {
+    // A per-contour style precedes just its own function's curves.
+    if !opts.contour_styles.is_empty() {
+      structure_items.push(directives[body_index % directives.len()].clone());
+    }
+    for s in &series[range.clone()] {
+      let points: Vec<Expr> = s
+        .points
+        .iter()
+        .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
+        .collect();
+      structure_items.push(call1("Line", Expr::List(points.into())));
+    }
   }
   let structure = call1("Graphics", Expr::List(structure_items.into()));
   let source = crate::syntax::PlotSource {
