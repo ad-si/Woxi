@@ -435,6 +435,27 @@ pub fn nominal_bits(precision: usize) -> usize {
   bits.max(128)
 }
 
+/// Number of decimal digits after the point that wolframscript shows for an
+/// arbitrary-precision number `bf` of precision `precision`.
+///
+/// WL keeps `ceil(p·log2 10) + 33` bits below the leading bit, in 64-bit
+/// limbs aligned to the binary point, and displays every decimal digit the
+/// fraction limbs resolve: `floor((64k + 1)·log10 2)` digits for `k` limbs
+/// (19, 38, 58, 77, …). The digit count therefore depends on the magnitude
+/// as well as on the precision — `N[4/3, 9]` shows 19 fraction digits,
+/// `N[1/7, 9]` 38 — and turns negative when even the units limb lies below
+/// the precision: `N[10^40/7, 3]` rounds away 19 integer digits.
+pub fn wl_fraction_digits(bf: &astro_float::BigFloat, precision: f64) -> i64 {
+  // `bf` is `0.1… × 2^e` (leading mantissa bit set), so it has `e` bits
+  // above the binary point.
+  let int_bits = bf.exponent().map_or(0, |e| e as i64);
+  let kept_bits =
+    (precision.max(0.0) * std::f64::consts::LOG2_10).ceil() as i64 + 33;
+  let fraction_limbs = (kept_bits - int_bits).div_euclid(64)
+    + i64::from((kept_bits - int_bits).rem_euclid(64) != 0);
+  ((64 * fraction_limbs + 1) as f64 * std::f64::consts::LOG10_2).floor() as i64
+}
+
 /// Extract an integer value from an Expr, if it is one.
 fn try_as_integer(expr: &Expr) -> Option<i128> {
   match expr {
@@ -501,9 +522,8 @@ pub fn bigfloat_exp(
   let x = BigFloat::parse(digits, Radix::Dec, bits, rm, &mut cc);
   let result = x.exp(bits, rm, &mut cc);
   let result_prec = prec - x_val.abs().log10();
-  let max_fraction_digits =
-    ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
-  match bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc) {
+  let digits = wl_fraction_digits(&result, result_prec);
+  match bigfloat_to_string(&result, Some(digits), rm, &mut cc) {
     Ok(s) => Some(Ok(Expr::BigFloat(s, result_prec))),
     Err(e) => Some(Err(e)),
   }
@@ -534,9 +554,8 @@ pub fn bigfloat_log(
   let x = BigFloat::parse(digits, Radix::Dec, bits, rm, &mut cc);
   let result = x.ln(bits, rm, &mut cc);
   let result_prec = prec + x_val.ln().abs().log10();
-  let max_fraction_digits =
-    ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
-  match bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc) {
+  let digits = wl_fraction_digits(&result, result_prec);
+  match bigfloat_to_string(&result, Some(digits), rm, &mut cc) {
     Ok(s) => Some(Ok(Expr::BigFloat(s, result_prec))),
     Err(e) => Some(Err(e)),
   }
@@ -623,14 +642,14 @@ fn gamma_bigfloat(
 }
 
 /// Convert a BigFloat to a decimal string.
-/// If `max_fraction_digits` is Some(n), keep at most `n` digits AFTER the
-/// decimal point. The integer part (when |x| ≥ 1) is preserved in full, so
-/// e.g. with `n = 58`, Sqrt[2] (exp = 1) yields 1 + 58 = 59 total digits
-/// while Sin[1] (exp = 0) yields 0 + 58 = 58 total digits — matching how
-/// Wolfram caps display digits relative to the decimal point.
+/// If `max_fraction_digits` is Some(n), round to `n` digits AFTER the
+/// decimal point (a negative `n` rounds off integer digits), so e.g. with
+/// `n = 58`, Sqrt[2] yields 1 + 58 = 59 significant digits, Sin[1] 58 and
+/// 1/30 (0.0333…) 57 — matching how Wolfram caps display digits relative to
+/// the decimal point (see [`wl_fraction_digits`]).
 pub fn bigfloat_to_string(
   bf: &astro_float::BigFloat,
-  max_fraction_digits: Option<usize>,
+  max_fraction_digits: Option<i64>,
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> Result<String, InterpreterError> {
@@ -654,20 +673,14 @@ pub fn bigfloat_to_string(
   // Convert digit values to ASCII string
   let digit_str: String = digits.iter().map(|&d| (b'0' + d) as char).collect();
 
-  // Round to (fraction_cap + max(exp, 0)) total digits if requested. This
-  // gives Wolfram's display: a fixed number of digits AFTER the dot,
-  // independent of the value's magnitude. Rounding (not truncation) the
-  // last shown digit matches Wolfram. Carries that ripple past the leading
-  // digit increment the decimal exponent.
+  // Round to `max_frac` digits after the dot if requested. The value is
+  // 0.d₁d₂… × 10^exp, so that is `max_frac + exp` significant digits.
+  // Rounding (not truncation) the last shown digit matches Wolfram. Carries
+  // that ripple past the leading digit increment the decimal exponent.
   let (digit_str, decimal_exp) = if let Some(max_frac) = max_fraction_digits {
     let exp_i64 = exponent as i64;
-    // total_keep = max_frac + max(exp, 0). For exp ≤ 0 the number is < 1
-    // and all digit_str entries are fractional, so we just keep max_frac.
-    // (Leading zeros from a negative exponent come from the format step
-    // and don't draw from digit_str.) For exp > 0 the integer part needs
-    // `exp` extra digits on top of the fraction cap.
-    let total_keep = (max_frac as i64 + exp_i64.max(0)) as usize;
-    if digit_str.len() > total_keep && total_keep > 0 {
+    let total_keep = (max_frac + exp_i64).max(1) as usize;
+    if digit_str.len() > total_keep {
       let kept = &digit_str[..total_keep];
       let next_digit = digit_str.as_bytes()[total_keep] - b'0';
       let mut bytes: Vec<u8> = kept.bytes().collect();
@@ -781,23 +794,7 @@ pub fn set_precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let prec_usize = precision_f64.floor().max(1.0) as usize;
   let bits = nominal_bits(prec_usize) + 64;
 
-  // Truncate the displayed decimal to the digit count wolframscript uses
-  // for this precision tier (matches N's existing logic).
-  let display_bits = {
-    let b = (precision_f64 * std::f64::consts::LOG2_10).ceil() as usize + 36;
-    ((b + 63) & !63).max(64)
-  };
-  let max_fraction_digits =
-    ((display_bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
-
-  let rewritten = set_precision_walk(
-    expr,
-    precision_f64,
-    bits,
-    Some(max_fraction_digits),
-    rm,
-    &mut cc,
-  )?;
+  let rewritten = set_precision_walk(expr, precision_f64, bits, rm, &mut cc)?;
   // Re-evaluate only when the walk actually changed something, so an
   // expression with no numeric leaf to convert cannot loop.
   if crate::evaluator::pattern_matching::expr_equal(&rewritten, expr) {
@@ -811,7 +808,6 @@ fn set_precision_walk(
   expr: &Expr,
   precision: f64,
   bits: usize,
-  max_fraction_digits: Option<usize>,
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> Result<Expr, InterpreterError> {
@@ -819,39 +815,23 @@ fn set_precision_walk(
     Expr::Integer(_)
     | Expr::BigInteger(_)
     | Expr::Real(_)
-    | Expr::BigFloat(_, _) => {
-      leaf_to_bigfloat(expr, precision, bits, max_fraction_digits, rm, cc)
-    }
+    | Expr::BigFloat(_, _) => leaf_to_bigfloat(expr, precision, bits, rm, cc),
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
-      leaf_to_bigfloat(expr, precision, bits, max_fraction_digits, rm, cc)
+      leaf_to_bigfloat(expr, precision, bits, rm, cc)
     }
     Expr::List(items) => {
       let mut out = Vec::with_capacity(items.len());
       for item in items {
-        out.push(set_precision_walk(
-          item,
-          precision,
-          bits,
-          max_fraction_digits,
-          rm,
-          cc,
-        )?);
+        out.push(set_precision_walk(item, precision, bits, rm, cc)?);
       }
       Ok(Expr::List(out.into()))
     }
     Expr::FunctionCall { name, args } => {
       let mut out = Vec::with_capacity(args.len());
       for a in args {
-        out.push(set_precision_walk(
-          a,
-          precision,
-          bits,
-          max_fraction_digits,
-          rm,
-          cc,
-        )?);
+        out.push(set_precision_walk(a, precision, bits, rm, cc)?);
       }
       Ok(Expr::FunctionCall {
         name: name.clone(),
@@ -859,16 +839,8 @@ fn set_precision_walk(
       })
     }
     Expr::BinaryOp { op, left, right } => {
-      let l =
-        set_precision_walk(left, precision, bits, max_fraction_digits, rm, cc)?;
-      let r = set_precision_walk(
-        right,
-        precision,
-        bits,
-        max_fraction_digits,
-        rm,
-        cc,
-      )?;
+      let l = set_precision_walk(left, precision, bits, rm, cc)?;
+      let r = set_precision_walk(right, precision, bits, rm, cc)?;
       Ok(Expr::BinaryOp {
         op: *op,
         left: Box::new(l),
@@ -876,14 +848,7 @@ fn set_precision_walk(
       })
     }
     Expr::UnaryOp { op, operand } => {
-      let o = set_precision_walk(
-        operand,
-        precision,
-        bits,
-        max_fraction_digits,
-        rm,
-        cc,
-      )?;
+      let o = set_precision_walk(operand, precision, bits, rm, cc)?;
       Ok(Expr::UnaryOp {
         op: *op,
         operand: Box::new(o),
@@ -894,7 +859,7 @@ fn set_precision_walk(
     // SetPrecision[Pi, 5] -> 3.1415926535897932385`5.. expr_to_bigfloat
     // errors for a bare symbol (e.g. x), so those pass through unchanged.
     Expr::Constant(_) | Expr::Identifier(_) => {
-      leaf_to_bigfloat(expr, precision, bits, max_fraction_digits, rm, cc)
+      leaf_to_bigfloat(expr, precision, bits, rm, cc)
         .or_else(|_| Ok(expr.clone()))
     }
     _ => Ok(expr.clone()),
@@ -906,12 +871,12 @@ fn leaf_to_bigfloat(
   expr: &Expr,
   precision: f64,
   bits: usize,
-  max_fraction_digits: Option<usize>,
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> Result<Expr, InterpreterError> {
   let bf = expr_to_bigfloat(expr, bits, rm, cc)?;
-  let decimal = bigfloat_to_string(&bf, max_fraction_digits, rm, cc)?;
+  let digits = wl_fraction_digits(&bf, precision);
+  let decimal = bigfloat_to_string(&bf, Some(digits), rm, cc)?;
   Ok(Expr::BigFloat(decimal, precision))
 }
 
@@ -1013,13 +978,7 @@ fn leaf_to_bigfloat_at_accuracy(
   let precision = accuracy + v.abs().log10();
   let prec_usize = precision.floor().max(1.0) as usize;
   let bits = nominal_bits(prec_usize) + 64;
-  let display_bits = {
-    let b = (precision * std::f64::consts::LOG2_10).ceil() as usize + 36;
-    ((b + 63) & !63).max(64)
-  };
-  let max_fraction_digits =
-    ((display_bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
-  leaf_to_bigfloat(expr, precision, bits, Some(max_fraction_digits), rm, cc)
+  leaf_to_bigfloat(expr, precision, bits, rm, cc)
 }
 
 /// SetPrecision[..., MachinePrecision] — walk the tree and demote numeric
@@ -1134,32 +1093,10 @@ pub fn n_eval_arbitrary(
   // digit short of Wolfram's 59-digit display.
   let bits = nominal_bits(prec_usize) + 64;
 
-  // Wolfram displays digit counts that match a 64-bit-aligned bit count
-  // computed from precision plus a ~36-bit guard. We always evaluate with
-  // at least 128 bits internally for stability, but truncate the displayed
-  // decimal string so the digit count tracks Wolfram's:
-  //   p ≤ 8        → 20 digits  (64-bit-equivalent)
-  //   9 ≤ p ≤ 28   → 39 digits  (128-bit)
-  //   29 ≤ p ≤ 47  → 59 digits  (192-bit)
-  //   etc.
-  let display_bits = {
-    let b = (precision * std::f64::consts::LOG2_10).ceil() as usize + 36;
-    ((b + 63) & !63).max(64)
-  };
-  // Match Wolfram's display digit counts. The number of fractional digits
-  // shown is fixed per bit budget (e.g. 58 for 192 bits), regardless of
-  // the value's magnitude. `bigfloat_to_string` adds the integer-part
-  // digits on top when the exponent is positive, so e.g. N[Sqrt[2], 40]
-  // displays 1 integer digit + 58 fractional digits = 59 total, while
-  // N[Sin[1], 40] displays "0.<58 digits>".
-  //   64 → 19, 128 → 38, 192 → 58, 256 → 77, 320 → 96, 384 → 115, ...
-  let max_fraction_digits =
-    ((display_bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
-
   // Try full conversion to BigFloat first (fast path for purely numeric expressions)
   if let Ok(result) = expr_to_bigfloat(expr, bits, rm, &mut cc) {
-    let decimal =
-      bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc)?;
+    let digits = wl_fraction_digits(&result, precision);
+    let decimal = bigfloat_to_string(&result, Some(digits), rm, &mut cc)?;
     Ok(Expr::BigFloat(decimal, precision))
   } else {
     // Try complex BigFloat evaluation (handles expressions with I)
@@ -1243,7 +1180,8 @@ fn n_eval_arbitrary_partial(
   }
   // If the whole expression can be converted to BigFloat, do it
   if let Ok(result) = expr_to_bigfloat(expr, bits, rm, cc) {
-    let decimal = bigfloat_to_string(&result, None, rm, cc)?;
+    let digits = wl_fraction_digits(&result, precision);
+    let decimal = bigfloat_to_string(&result, Some(digits), rm, cc)?;
     return Ok(Expr::BigFloat(decimal, precision));
   }
 
@@ -2014,7 +1952,7 @@ fn build_complex_bigfloat_result(
   cc: &mut astro_float::Consts,
 ) -> Result<Expr, InterpreterError> {
   let i_expr = id_expr("I");
-  let max_digits: Option<usize> = None;
+  let max_digits: Option<i64> = None;
 
   if im.is_zero() {
     let re_str = bigfloat_to_string(re, None, rm, cc)?;

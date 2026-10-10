@@ -6402,10 +6402,10 @@ pub fn format_bigfloat(digits: &str, prec: f64) -> String {
     ""
   };
 
-  // Check if integer part has 6+ digits (value >= 1e6) → scientific notation
+  // Check if integer part has 7+ digits (value >= 1e6) → scientific notation
   // But skip if integer part is all zeros (like "0" or "00")
   let int_nonzero_len = int_part.trim_start_matches('0').len();
-  if int_part.len() >= 6 && int_nonzero_len > 0 {
+  if int_part.len() >= 7 && int_nonzero_len > 0 {
     // Collect all significant digits (integer + fractional)
     let all_digits: String =
       int_part.chars().chain(frac_part.chars()).collect();

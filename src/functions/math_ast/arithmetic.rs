@@ -13973,11 +13973,8 @@ fn bigfloat_plus(args: &[Expr]) -> Expr {
         }
       }
       if ok {
-        let max_fraction_digits =
-          ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
-        if let Ok(s) =
-          bigfloat_to_string(&sum, Some(max_fraction_digits), rm, &mut cc)
-        {
+        let digits = wl_fraction_digits(&sum, result_prec);
+        if let Ok(s) = bigfloat_to_string(&sum, Some(digits), rm, &mut cc) {
           return Expr::BigFloat(s, result_prec);
         }
       }
@@ -14164,13 +14161,12 @@ fn try_bigfloat_power(
   };
 
   let result_prec = base_prec - exp_val.abs().log10();
-  let max_fraction_digits =
-    ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
-  let result_str =
-    match bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc) {
-      Ok(s) => s,
-      Err(e) => return Some(Err(e)),
-    };
+  let digits = wl_fraction_digits(&result, result_prec);
+  let result_str = match bigfloat_to_string(&result, Some(digits), rm, &mut cc)
+  {
+    Ok(s) => s,
+    Err(e) => return Some(Err(e)),
+  };
   Some(Ok(Expr::BigFloat(result_str, result_prec)))
 }
 
@@ -14216,10 +14212,8 @@ fn bigfloat_times(args: &[Expr]) -> Result<Expr, InterpreterError> {
     product = product.mul(&factor, bits, rm);
   }
 
-  let max_fraction_digits =
-    ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
-  let result_str =
-    bigfloat_to_string(&product, Some(max_fraction_digits), rm, &mut cc)?;
+  let digits = wl_fraction_digits(&product, result_prec);
+  let result_str = bigfloat_to_string(&product, Some(digits), rm, &mut cc)?;
   Ok(Expr::BigFloat(result_str, result_prec))
 }
 
