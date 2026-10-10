@@ -1048,9 +1048,11 @@ through the older candidate pipeline.
 
 ### `FactorSquareFreeList` order of a lower-degree non-monic factor
 
-The factors are ordered by leading coefficient, then constant term, which
-matches 24 of 25 probes. The exception: `FactorSquareFreeList[(x^2 + 3)
-(2x - 1)^2]` lists `{-1 + 2*x, 2}` before `{3 + x^2, 1}` in wolframscript.
+An explicit product takes its factor order from `FactorSquareFree`, which
+matches wolframscript. For an expanded polynomial the factors are ordered by
+leading coefficient, then constant term, which matches 24 of 25 probes. The
+exception: `FactorSquareFreeList[Expand[(x^2 + 3)(2x - 1)^2]]` lists
+`{-1 + 2*x, 2}` before `{3 + x^2, 1}` in wolframscript.
 Ordering by degree first fixes it but breaks `x` against `-1 + x^2` (WL puts
 the latter first), and no single total order fits all 25 — the factor `x`
 seems to be placed separately.
