@@ -1082,21 +1082,6 @@ fn incomplete_beta_ast(
   Ok(call("Beta", vec![z.clone(), a.clone(), b.clone()]))
 }
 
-/// Stirling's series for log(gamma(z)) when z is large and positive.
-/// log(gamma(z)) = (z - 1/2)*log(z) - z + (1/2)*log(2π)
-///                 + 1/(12z) - 1/(360z³) + 1/(1260z⁵) - ...
-fn log_gamma_stirling(z: f64) -> f64 {
-  use std::f64::consts::PI;
-  let log_2pi = (2.0 * PI).ln();
-  let z2 = z * z;
-  let z3 = z2 * z;
-  let z5 = z3 * z2;
-  let z7 = z5 * z2;
-  (z - 0.5) * z.ln() - z + 0.5 * log_2pi + 1.0 / (12.0 * z) - 1.0 / (360.0 * z3)
-    + 1.0 / (1260.0 * z5)
-    - 1.0 / (1680.0 * z7)
-}
-
 /// LogGamma[z] — logarithm of the gamma function.
 pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -1152,13 +1137,10 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(id_expr("Infinity"));
     }
     if matches!(z, Expr::Real(_)) {
-      // Compute log(|gamma(f)|) directly to avoid overflow for large f.
-      // Use Stirling series for f > 12, and Log[Gamma[f]] for smaller.
-      let result = if f >= 12.0 {
-        log_gamma_stirling(f)
-      } else {
-        gamma_fn(f).abs().ln()
-      };
+      // log|Gamma(f)| from msun's lgamma, accurate to an ulp everywhere —
+      // Log[Gamma[f]] loses most of its digits near the zeros at 1 and 2
+      // (LogGamma[2.2] was off by 2e-15).
+      let (result, _) = libm::lgamma_r(f);
       return Ok(Expr::Real(result));
     }
   }

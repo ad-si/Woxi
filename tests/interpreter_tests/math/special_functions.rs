@@ -6540,6 +6540,24 @@ mod spherical_bessel_j {
 mod log_gamma {
   use super::*;
 
+  // Machine LogGamma keeps its digits near the zeros at 1 and 2, where
+  // Log[Gamma[x]] cancels (LogGamma[2.2] was off by 2e-15).
+  #[test]
+  fn accurate_near_one_and_two() {
+    for (input, expected) in [
+      ("LogGamma[2.2]", 0.09694746679063887_f64),
+      ("LogGamma[1.1]", -0.049872441259839764),
+      ("LogGamma[2.9]", 0.6028696102493114),
+      ("LogGamma[0.3]", 1.0957979948180756),
+    ] {
+      let v: f64 = interpret(input).unwrap().parse().unwrap();
+      assert!(
+        (v - expected).abs() <= 2.0 * f64::EPSILON * expected.abs(),
+        "{input}: {v}"
+      );
+    }
+  }
+
   #[test]
   fn at_one() {
     assert_eq!(interpret("LogGamma[1]").unwrap(), "0");
