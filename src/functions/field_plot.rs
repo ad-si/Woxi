@@ -205,6 +205,7 @@ enum ContourSpec {
 }
 
 /// Options shared by the density / contour plot family.
+#[allow(clippy::struct_excessive_bools)]
 struct DensityContourOptions {
   svg_width: u32,
   svg_height: u32,
@@ -240,6 +241,12 @@ struct DensityContourOptions {
   /// plotted value `z`) is `True`; other cells are left blank, matching
   /// `Plot3D`/`ContourPlot3D`'s `RegionFunction`.
   region_function: Option<Expr>,
+  /// `ContourLabels -> True` (or a function): label each contour line with
+  /// its level.
+  contour_labels: bool,
+  /// `PlotLegends -> Automatic`: a colour bar right of the plot with one
+  /// swatch per shaded band, labelled at the contour levels.
+  bar_legend: bool,
 }
 
 impl DensityContourOptions {
@@ -271,6 +278,8 @@ fn parse_density_contour_options(
   let mut region_function: Option<Expr> = None;
   let mut color_function_expr: Option<Expr> = None;
   let mut color_function_scaling = true;
+  let mut contour_labels = false;
+  let mut bar_legend = false;
   for opt in &args[start..] {
     if let Expr::Rule {
       pattern,
@@ -368,6 +377,14 @@ fn parse_density_contour_options(
         "RegionFunction" => {
           region_function = Some(replacement.clone());
         }
+        "ContourLabels" => {
+          contour_labels = !matches!(replacement, Expr::Identifier(v)
+            if v == "False" || v == "None");
+        }
+        "PlotLegends" => {
+          bar_legend = matches!(replacement, Expr::Identifier(v)
+            if v == "Automatic");
+        }
         _ => {}
       }
     }
@@ -388,6 +405,8 @@ fn parse_density_contour_options(
     epilog,
     plot_label: parse_field_plot_label(args, start),
     region_function,
+    contour_labels,
+    bar_legend,
   }
 }
 
@@ -498,6 +517,124 @@ fn push_field_plot_overlays(
     ));
   }
   push_frame_labels(svg, area, &opts.frame_labels);
+}
+
+/// `ContourLabels -> True`: write each contour's level on its longest
+/// line, centred on the line with a light halo so it stays legible over
+/// the shading.
+fn push_contour_labels(
+  svg: &mut String,
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  area: &crate::functions::plot::PlotArea,
+) {
+  let (.., label_fill, _) = plot_theme();
+  let cell_w = area.plot_w / FIELD_GRID as f64;
+  let cell_h = area.plot_h / FIELD_GRID as f64;
+  let font = 11.0 * RESOLUTION_SCALE as f64;
+  for &level in levels {
+    let segments = marching_squares_segments(
+      grid,
+      level,
+      area.plot_x0,
+      area.plot_y0,
+      cell_w,
+      cell_h,
+    );
+    let chains = chain_segments(&segments);
+    let Some(chain) = chains.iter().max_by_key(|c| c.len()) else {
+      continue;
+    };
+    if chain.len() < 4 {
+      continue;
+    }
+    let (x, y) = chain[chain.len() / 2];
+    svg.push_str(&format!(
+      "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\" stroke=\"white\" stroke-width=\"{:.1}\" stroke-opacity=\"0.8\" paint-order=\"stroke\">{}</text>\n",
+      3.0 * RESOLUTION_SCALE as f64,
+      crate::functions::plot::format_tick(level)
+    ));
+  }
+}
+
+/// Extra display-pixel width a bar legend adds right of the plot.
+const BAR_LEGEND_STRIP: u32 = 53;
+
+/// `PlotLegends -> Automatic`: widen the picture and draw a vertical colour
+/// bar with one swatch per contour band (lowest at the bottom), labelled at
+/// the contour levels — Wolfram's `BarLegend`.
+fn push_bar_legend(
+  svg: &mut String,
+  area: &crate::functions::plot::PlotArea,
+  opts: &DensityContourOptions,
+  levels: &[f64],
+  (v_min, v_max): (f64, f64),
+) {
+  let sf = RESOLUTION_SCALE as f64;
+  let new_w = opts.svg_width + BAR_LEGEND_STRIP;
+  let new_render_w = new_w * RESOLUTION_SCALE;
+  let render_h = opts.svg_height * RESOLUTION_SCALE;
+  // The background rectangle spans the old canvas; stretch it first.
+  let old_bg = format!("width=\"{}\" height=\"{render_h}\"", area.render_width);
+  let new_bg = format!("width=\"{new_render_w}\" height=\"{render_h}\"");
+  *svg = svg.replacen(&old_bg, &new_bg, 1);
+  rewrite_svg_header(
+    svg,
+    new_w,
+    opts.svg_height,
+    new_render_w,
+    render_h,
+    opts.full_width,
+  );
+
+  let (.., label_fill, _) = plot_theme();
+  let bar_w = 13.0 * sf;
+  let bar_h = area.plot_h * 0.625;
+  let bar_x = area.plot_x0 + area.plot_w + 27.0 * sf;
+  let bar_y = area.plot_y0 + (area.plot_h - bar_h) / 2.0;
+  let span = v_max - v_min;
+  let frac = |v: f64| {
+    if span > 0.0 {
+      ((v - v_min) / span).clamp(0.0, 1.0)
+    } else {
+      0.5
+    }
+  };
+  let mut bounds = Vec::with_capacity(levels.len() + 2);
+  bounds.push(v_min);
+  bounds.extend_from_slice(levels);
+  bounds.push(v_max);
+  for band in 0..bounds.len() - 1 {
+    let (r, g, b) = band_color(
+      band,
+      levels,
+      v_min,
+      v_max,
+      opts.color_function.as_deref(),
+      opts.cf_expr(),
+    );
+    let y_top = bar_y + bar_h * (1.0 - frac(bounds[band + 1]));
+    let y_bot = bar_y + bar_h * (1.0 - frac(bounds[band]));
+    svg.push_str(&format!(
+      "<rect x=\"{bar_x:.1}\" y=\"{y_top:.1}\" width=\"{bar_w:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\"/>\n",
+      y_bot - y_top
+    ));
+  }
+  svg.push_str(&format!(
+    "<rect x=\"{bar_x:.1}\" y=\"{bar_y:.1}\" width=\"{bar_w:.1}\" height=\"{bar_h:.1}\" fill=\"none\" stroke=\"rgb(110,110,110)\" stroke-width=\"{:.1}\"/>\n",
+    0.8 * sf
+  ));
+  // Label every other level once there are too many to fit.
+  let stride = levels.len().div_ceil(8).max(1);
+  for &level in levels.iter().step_by(stride) {
+    svg.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{:.0}\" fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
+      bar_x + bar_w + 6.0 * sf,
+      bar_y + bar_h * (1.0 - frac(level)),
+      sf * 14.0,
+      crate::functions::plot::format_tick(level)
+    ));
+  }
 }
 
 /// Write a plot's `FrameLabel` text along the frame edges it names.
@@ -1836,6 +1973,12 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.plot_h,
   );
   push_field_plot_overlays(&mut svg, &area, &opts);
+  if opts.contour_labels {
+    push_contour_labels(&mut svg, &grid, &levels, &area);
+  }
+  if opts.bar_legend && opts.contour_shading {
+    push_bar_legend(&mut svg, &area, &opts, &levels, (v_min, v_max));
+  }
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result_with_structure(svg, structure))
