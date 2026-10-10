@@ -260,6 +260,8 @@ pub(crate) fn named_color(name: &str) -> Option<Color> {
     "Green" => Color::new(0.0, 1.0, 0.0),
     "Blue" => Color::new(0.0, 0.0, 1.0),
     "Black" => Color::new(0.0, 0.0, 0.0),
+    // `Transparent` is `GrayLevel[0, 0]`: black with zero alpha.
+    "Transparent" => Color::new(0.0, 0.0, 0.0).with_alpha(0.0),
     "White" => Color::new(1.0, 1.0, 1.0),
     "Gray" => Color::new(0.5, 0.5, 0.5),
     "Cyan" => Color::new(0.0, 1.0, 1.0),
@@ -17978,6 +17980,23 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
         item.clone()
       } else {
         evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone())
+      };
+      // `Button[Graphics[…], action]` in a graphics grid (a board game's
+      // clickable squares) shows the picture it wraps; the action is inert
+      // in a static rendering.
+      let target = match &target {
+        Expr::FunctionCall { name, args }
+          if name == "Button"
+            && args.len() >= 2
+            && matches!(
+              &args[0],
+              Expr::FunctionCall { name: inner, .. }
+                if inner == "Graphics" || inner == "Graphics3D"
+            ) =>
+        {
+          args[0].clone()
+        }
+        _ => target,
       };
       let rewritten = with_default_image_size(&target, per_cell_w);
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
