@@ -1015,6 +1015,19 @@ last bit and never a formula to correct.
 
 ## Algebra and calculus
 
+### `FullSimplify` nests a sum of radicals under one root
+
+```sh
+wolframscript -code 'FullSimplify[(Sqrt[14] + Sqrt[22])*2*Sqrt[8]*2*Sqrt[26]]'
+# 32*Sqrt[13*(9 + Sqrt[77])]
+woxi eval 'FullSimplify[(Sqrt[14] + Sqrt[22])*2*Sqrt[8]*2*Sqrt[26]]'
+# 16*(Sqrt[182] + Sqrt[286])
+```
+
+WL rewrites `√7 + √11` as `√(2(9 + √77))` (squaring the sum) and merges it
+with the other radicals. Woxi has no such denesting-in-reverse transformation;
+part of the open radical-canonicalization class.
+
 ### `FullSimplify` of a polynomial: WL's search is not cost-minimal
 
 FullSimplify of a univariate integer polynomial is decoded as a greedy search
