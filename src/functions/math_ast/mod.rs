@@ -17,6 +17,7 @@ use num_bigint::{BigInt, Sign};
 mod airy;
 mod arithmetic;
 mod bessel;
+pub(crate) mod canonical_polynomial;
 mod carlson;
 pub mod complex;
 mod coordinate_arrays;

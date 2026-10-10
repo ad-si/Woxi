@@ -461,6 +461,44 @@ mod coefficient {
 mod expand {
   use super::*;
 
+  // Large polynomial powers are multiplied out on exponent vectors; this one
+  // has 4368 terms and used to take seconds.
+  #[test]
+  fn large_multivariate_power() {
+    assert_eq!(
+      interpret(
+        "t = Expand[(a + b + c + d - e - f)^11]; \
+         {Length[t], t /. {a -> 1, b -> 2, c -> 3, d -> 4, e -> 5, f -> 6}, \
+         Coefficient[t, a^2 b^2 c^2 d^2 e^2 f]}"
+      )
+      .unwrap(),
+      "{4368, -1, -1247400}"
+    );
+  }
+
+  #[test]
+  fn rational_coefficients() {
+    assert_eq!(
+      interpret("Expand[(x - 2 y/3)^3]").unwrap(),
+      "x^3 - 2*x^2*y + (4*x*y^2)/3 - (8*y^3)/27"
+    );
+  }
+
+  // Symbols sort in canonical order — `a` before `B`, `x` before `x1` —
+  // both between the terms and inside each term.
+  #[test]
+  fn canonical_symbol_order() {
+    assert_eq!(interpret("Expand[(a + B)^2]").unwrap(), "a^2 + 2*a*B + B^2");
+    assert_eq!(
+      interpret("Expand[x^3 x1^2 (1 + x)]").unwrap(),
+      "x^3*x1^2 + x^4*x1^2"
+    );
+    assert_eq!(
+      interpret("Plus[Zz^2, 2 a Zz, a^2]").unwrap(),
+      "a^2 + 2*a*Zz + Zz^2"
+    );
+  }
+
   #[test]
   fn simple_product() {
     assert_eq!(
@@ -1942,6 +1980,24 @@ mod factor {
 
 mod factor_multivariate {
   use super::*;
+
+  // A high power in many variables: its square-free decomposition needs the
+  // gcd with its derivative, which used to take many seconds.
+  #[test]
+  fn power_of_a_six_term_sum() {
+    assert_eq!(
+      interpret("Factor[Expand[(a + b + c + d - e - f)^11]]").unwrap(),
+      "(a + b + c + d - e - f)^11"
+    );
+  }
+
+  #[test]
+  fn repeated_factors_in_several_variables() {
+    assert_eq!(
+      interpret("Factor[Expand[(x + y - 2 z)^3 (x - y)^2]]").unwrap(),
+      "(x - y)^2*(x + y - 2*z)^3"
+    );
+  }
 
   #[test]
   fn bivariate_perfect_square() {

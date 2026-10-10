@@ -26,6 +26,7 @@ mod interpolating_polynomial;
 mod linear_programming;
 mod mfactor;
 mod minimal_polynomial;
+mod poly_expand;
 mod polynomial_division;
 mod polynomial_extended_gcd;
 mod polynomial_gcd;

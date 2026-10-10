@@ -69,7 +69,11 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
-  let mut expanded = fold_term_numerics(&expand_and_combine(&args[0]));
+  let mut expanded = match super::poly_expand::expand_polynomial(&args[0]) {
+    // Exact rational coefficients only: no radicals or numeric factors to fold.
+    Some(polynomial) => polynomial,
+    None => fold_term_numerics(&expand_and_combine(&args[0])),
+  };
   if trig {
     // Apply trig expansion: Sin[a+b] → Sin[a]Cos[b] + Cos[a]Sin[b], etc.
     expanded = crate::functions::math_ast::trig_expand_ast(&[expanded])
@@ -576,6 +580,9 @@ fn build_mod_sum(terms: Vec<Expr>) -> Expr {
 
 /// Expand an expression and combine like terms.
 pub fn expand_and_combine(expr: &Expr) -> Expr {
+  if let Some(result) = super::poly_expand::expand_polynomial(expr) {
+    return result;
+  }
   let expanded = expand_expr(expr);
   let terms = collect_additive_terms(&expanded);
   combine_and_build(&terms)
@@ -1150,6 +1157,11 @@ fn expand_power(base: &Expr, n: i128) -> Expr {
   }
   if n == 1 {
     return base.clone();
+  }
+  if let Some(result) =
+    super::poly_expand::expand_polynomial(&pow2(base.clone(), Expr::Integer(n)))
+  {
+    return result;
   }
   // Repeated multiplication
   let mut result = base.clone();

@@ -32,19 +32,19 @@ fn big_gcd(a: &BigInt, b: &BigInt) -> BigInt {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Q {
-  n: BigInt,
-  d: BigInt,
+pub(super) struct Q {
+  pub(super) n: BigInt,
+  pub(super) d: BigInt,
 }
 
 impl Q {
-  fn int(n: BigInt) -> Q {
+  pub(super) fn int(n: BigInt) -> Q {
     Q {
       n,
       d: BigInt::one(),
     }
   }
-  fn new(n: BigInt, d: BigInt) -> Q {
+  pub(super) fn new(n: BigInt, d: BigInt) -> Q {
     let g = big_gcd(&n, &d);
     let (mut n, mut d) = if g.is_one() || g.is_zero() {
       (n, d)
@@ -60,22 +60,22 @@ impl Q {
     }
     Q { n, d }
   }
-  fn zero() -> Q {
+  pub(super) fn zero() -> Q {
     Q::int(BigInt::zero())
   }
-  fn one() -> Q {
+  pub(super) fn one() -> Q {
     Q::int(BigInt::one())
   }
-  fn is_zero(&self) -> bool {
+  pub(super) fn is_zero(&self) -> bool {
     self.n.is_zero()
   }
-  fn add(&self, o: &Q) -> Q {
+  pub(super) fn add(&self, o: &Q) -> Q {
     if self.d == o.d {
       return Q::new(&self.n + &o.n, self.d.clone());
     }
     Q::new(&self.n * &o.d + &o.n * &self.d, &self.d * &o.d)
   }
-  fn neg(&self) -> Q {
+  pub(super) fn neg(&self) -> Q {
     Q {
       n: -&self.n,
       d: self.d.clone(),
@@ -84,41 +84,41 @@ impl Q {
   fn sub(&self, o: &Q) -> Q {
     self.add(&o.neg())
   }
-  fn mul(&self, o: &Q) -> Q {
+  pub(super) fn mul(&self, o: &Q) -> Q {
     Q::new(&self.n * &o.n, &self.d * &o.d)
   }
-  fn div(&self, o: &Q) -> Q {
+  pub(super) fn div(&self, o: &Q) -> Q {
     Q::new(&self.n * &o.d, &self.d * &o.n)
   }
 }
 
 // ─── sparse multivariate polynomials ─────────────────────────────────
 
-type Mono = Vec<u32>;
+pub(super) type Mono = Vec<u32>;
 
 /// Terms keyed by exponent vector; the lexicographically largest key (the
 /// first variable most significant) is the leading term.
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Poly {
-  nv: usize,
-  t: BTreeMap<Mono, Q>,
+pub(super) struct Poly {
+  pub(super) nv: usize,
+  pub(super) t: BTreeMap<Mono, Q>,
 }
 
 impl Poly {
-  fn zero(nv: usize) -> Poly {
+  pub(super) fn zero(nv: usize) -> Poly {
     Poly {
       nv,
       t: BTreeMap::new(),
     }
   }
-  fn constant(nv: usize, c: Q) -> Poly {
+  pub(super) fn constant(nv: usize, c: Q) -> Poly {
     let mut p = Poly::zero(nv);
     if !c.is_zero() {
       p.t.insert(vec![0; nv], c);
     }
     p
   }
-  fn one(nv: usize) -> Poly {
+  pub(super) fn one(nv: usize) -> Poly {
     Poly::constant(nv, Q::one())
   }
   /// `var^k`
@@ -129,13 +129,13 @@ impl Poly {
     p.t.insert(m, Q::one());
     p
   }
-  fn is_zero(&self) -> bool {
+  pub(super) fn is_zero(&self) -> bool {
     self.t.is_empty()
   }
   fn is_const(&self) -> bool {
     self.t.keys().all(|m| m.iter().all(|&e| e == 0))
   }
-  fn add_term(&mut self, m: Mono, c: Q) {
+  pub(super) fn add_term(&mut self, m: Mono, c: Q) {
     if c.is_zero() {
       return;
     }
@@ -151,7 +151,7 @@ impl Poly {
       }
     }
   }
-  fn add(&self, o: &Poly) -> Poly {
+  pub(super) fn add(&self, o: &Poly) -> Poly {
     let mut r = self.clone();
     for (m, c) in &o.t {
       r.add_term(m.clone(), c.clone());
@@ -165,7 +165,7 @@ impl Poly {
     }
     r
   }
-  fn mul(&self, o: &Poly) -> Poly {
+  pub(super) fn mul(&self, o: &Poly) -> Poly {
     let mut r = Poly::zero(self.nv);
     for (ma, ca) in &self.t {
       for (mb, cb) in &o.t {
@@ -175,7 +175,7 @@ impl Poly {
     }
     r
   }
-  fn scale(&self, c: &Q) -> Poly {
+  pub(super) fn scale(&self, c: &Q) -> Poly {
     if c.is_zero() {
       return Poly::zero(self.nv);
     }
@@ -224,6 +224,22 @@ impl Poly {
     }
     r
   }
+  /// Substitute the numbers `point` for the variables `vars`.
+  fn substitute(&self, vars: &[usize], point: &[BigInt]) -> Poly {
+    let mut r = Poly::zero(self.nv);
+    for (m, c) in &self.t {
+      let mut m2 = m.clone();
+      let mut factor = BigInt::one();
+      for (&v, x) in vars.iter().zip(point) {
+        if m2[v] > 0 {
+          factor *= x.pow(m2[v]);
+          m2[v] = 0;
+        }
+      }
+      r.add_term(m2, c.mul(&Q::int(factor)));
+    }
+    r
+  }
   /// Substitute `var -> var + a`.
   fn shift(&self, var: usize, a: &BigInt) -> Poly {
     if a.is_zero() || self.deg(var) == 0 {
@@ -248,9 +264,12 @@ impl Poly {
       }
       let m: Mono = rm.iter().zip(bm).map(|(a, b)| a - b).collect();
       let c = rc.div(bc);
-      let mut t = Poly::zero(self.nv);
-      t.t.insert(m.clone(), c.clone());
-      r = r.sub(&t.mul(b));
+      // Subtract c * m * b in place: copying the remainder for every
+      // quotient term made the division quadratic in the dividend's size.
+      for (tm, tc) in &b.t {
+        let shifted: Mono = tm.iter().zip(&m).map(|(a, b)| a + b).collect();
+        r.add_term(shifted, tc.mul(&c).neg());
+      }
       q.add_term(m, c);
     }
     Some(q)
@@ -297,13 +316,17 @@ fn prem(a: &Poly, b: &Poly, var: usize) -> Poly {
 
 /// Content of `p` with respect to `var` (gcd of its coefficients).
 fn content(p: &Poly, var: usize) -> Poly {
+  // Smallest coefficients first: the content is usually trivial, and a
+  // short (often constant) coefficient shows that after one cheap gcd
+  // instead of a chain of gcds of the largest ones.
+  let mut coeffs: Vec<Poly> = (0..=p.deg(var))
+    .map(|k| p.coeff(var, k))
+    .filter(|c| !c.is_zero())
+    .collect();
+  coeffs.sort_by_key(|c| c.t.len());
   let mut g = Poly::zero(p.nv);
-  for k in 0..=p.deg(var) {
-    let c = p.coeff(var, k);
-    if c.is_zero() {
-      continue;
-    }
-    g = gcd(&g, &c);
+  for c in &coeffs {
+    g = gcd(&g, c);
     if g.is_const() {
       return Poly::one(p.nv);
     }
@@ -322,10 +345,21 @@ fn gcd(a: &Poly, b: &Poly) -> Poly {
   if a.is_const() || b.is_const() {
     return Poly::one(a.nv);
   }
+  let var = (0..a.nv).find(|&v| a.deg(v) > 0 || b.deg(v) > 0).unwrap();
+  // Several variables: the heuristic gcd's evaluation images grow by a
+  // factor ξ^deg per variable and soon exceed its size cap, after which only
+  // the (slow) primitive remainder sequence below is left. Lifting a
+  // univariate image gcd stays polynomial in the size of the inputs.
+  if a.vars().len() + b.vars().len() > 2
+    && a.deg(var) > 0
+    && b.deg(var) > 0
+    && let Some(g) = gcd_by_lifting(a, b, var)
+  {
+    return g;
+  }
   if let Some(g) = gcd_heu(&a.prim(), &b.prim(), 0) {
     return g;
   }
-  let var = (0..a.nv).find(|&v| a.deg(v) > 0 || b.deg(v) > 0).unwrap();
   if a.deg(var) == 0 {
     return gcd(a, &content(b, var));
   }
@@ -351,6 +385,113 @@ fn gcd(a: &Poly, b: &Poly) -> Poly {
     pb = r.div_exact(&content(&r, var)).unwrap().prim();
   }
   g.mul(&pb.div_exact(&content(&pb, var)).unwrap()).prim()
+}
+
+/// Monic gcd of two univariate polynomials over Q.
+fn u_gcd(a: &UPoly, b: &UPoly) -> UPoly {
+  let (mut r0, mut r1) = (a.clone(), b.clone());
+  while !r1.is_empty() {
+    let (_, r) = u_divrem(&r0, &r1);
+    r0 = std::mem::replace(&mut r1, r);
+  }
+  match r0.last().cloned() {
+    Some(lc) => r0.iter().map(|c| c.div(&lc)).collect(),
+    None => r0,
+  }
+}
+
+/// gcd via a univariate image and Hensel lifting (EZ-GCD): the other
+/// variables are fixed at a point keeping both leading coefficients in
+/// `main` nonzero, the univariate gcd `g0` of the images is computed, and
+/// one input `f = G * H` is lifted from `g0` and its coprime cofactor. A
+/// lifted `G` whose primitive part divides both inputs and has the minimal
+/// image degree is the gcd of their primitive parts; the gcd of their
+/// contents is multiplied back in. None = inconclusive.
+fn gcd_by_lifting(a: &Poly, b: &Poly, main: usize) -> Option<Poly> {
+  let (ca, cb) = (content(a, main), content(b, main));
+  let content_gcd = gcd(&ca, &cb);
+  let a = a.div_exact(&ca)?.prim();
+  let b = b.div_exact(&cb)?.prim();
+  let others: Vec<usize> = (0..a.nv)
+    .filter(|&v| v != main && (a.deg(v) > 0 || b.deg(v) > 0))
+    .collect();
+  if others.is_empty() {
+    return None;
+  }
+  let (la, lb) = (a.lc(main), b.lc(main));
+  let shift_to = |q: &Poly, point: &[BigInt]| {
+    others
+      .iter()
+      .zip(point)
+      .fold(q.clone(), |acc, (&v, x)| acc.shift(v, x))
+  };
+
+  // Image gcds at a few points; an unlucky point only raises the degree.
+  let mut best: Option<(Vec<BigInt>, UPoly)> = None;
+  let mut good = 0;
+  let mut seed = 0x51_7cc1_b727_220au64;
+  for attempt in 0..20 {
+    let point = eval_point(attempt, others.len(), &mut seed);
+    let eval = |q: &Poly| q.substitute(&others, &point);
+    if eval(&la).is_zero() || eval(&lb).is_zero() {
+      continue;
+    }
+    let ua = u_from(&eval(&a), main);
+    let ub = u_from(&eval(&b), main);
+    let g0 = u_gcd(&ua, &ub);
+    if g0.len() == 1 {
+      return Some(content_gcd);
+    }
+    if best.as_ref().is_none_or(|(_, g)| g0.len() < g.len()) {
+      best = Some((point, g0));
+    }
+    good += 1;
+    if good >= 2 {
+      break;
+    }
+  }
+  let (point, g0) = best?;
+  let accept = |g: Poly| -> Option<Poly> {
+    let g = g.div_exact(&content(&g, main))?.prim();
+    (g.deg(main) as usize + 1 == g0.len()
+      && a.div_exact(&g).is_some()
+      && b.div_exact(&g).is_some())
+    .then(|| content_gcd.mul(&g).prim())
+  };
+  let unshift = |q: &Poly| {
+    others
+      .iter()
+      .zip(&point)
+      .fold(q.clone(), |acc, (&v, x)| acc.shift(v, &-x))
+  };
+  // Lift from whichever of a, b, a + b has a cofactor coprime to g0.
+  for f in [a.clone(), b.clone(), a.add(&b)] {
+    let uf = u_from(&f.substitute(&others, &point), main);
+    if uf.len() != f.deg(main) as usize + 1 {
+      continue;
+    }
+    if uf.len() == g0.len() {
+      if let Some(g) = accept(f.clone()) {
+        return Some(g);
+      }
+      continue;
+    }
+    let (cofactor, rem) = u_divrem(&uf, &g0);
+    if !rem.is_empty() || u_ext_gcd(&g0, &cofactor).is_none() {
+      continue;
+    }
+    let l = f.lc(main);
+    let lifter = Lifter {
+      nv: f.nv,
+      main,
+      max_deg: (0..f.nv).map(|v| f.deg(v) + l.deg(v)).max().unwrap_or(0),
+    };
+    let shifted = shift_to(&f, &point);
+    if let Some((g, _)) = lifter.lift(&shifted, &others, &g0, &cofactor) {
+      return accept(unshift(&g));
+    }
+  }
+  None
 }
 
 /// Heuristic gcd (Char–Geddes–Gonnet) of integer-primitive polynomials:
@@ -435,12 +576,7 @@ fn is_square_free_by_image(p: &Poly, var: usize) -> Option<bool> {
   let mut seed = 0x2545f4914f6cdd1du64;
   for attempt in 0..8 {
     let point = eval_point(attempt, others.len(), &mut seed);
-    let eval = |q: &Poly| {
-      others
-        .iter()
-        .zip(&point)
-        .fold(q.clone(), |acc, (&v, a)| acc.shift(v, a).at_zero(v))
-    };
+    let eval = |q: &Poly| q.substitute(&others, &point);
     if eval(&lc).is_zero() {
       continue;
     }
@@ -781,12 +917,7 @@ fn factor_square_free(p: &Poly, main: usize) -> Option<Vec<Poly>> {
   let mut seed = 0x9e3779b97f4a7c15u64;
   for attempt in 0..60 {
     let point = eval_point(attempt, others.len(), &mut seed);
-    let eval = |q: &Poly| {
-      others
-        .iter()
-        .zip(&point)
-        .fold(q.clone(), |acc, (&v, a)| acc.shift(v, a).at_zero(v))
-    };
+    let eval = |q: &Poly| q.substitute(&others, &point);
     if eval(&lc).is_zero() {
       continue;
     }
@@ -986,6 +1117,11 @@ fn generator_power(f: &Expr) -> (Expr, u32) {
 /// Expanded expression → polynomial over its generators, which are
 /// returned sorted by their printed form (alphabetical for symbols).
 fn expr_to_poly(expr: &Expr) -> Option<(Poly, Vec<Expr>)> {
+  // Plain symbols, the common case: read the exponent vectors directly
+  // instead of keying every factor of every term by its printed form.
+  if let Some((p, names)) = super::poly_expand::polynomial_in_symbols(expr) {
+    return Some((p, names.into_iter().map(Expr::Identifier).collect()));
+  }
   let mut terms: Vec<(Q, Vec<(String, Expr, u32)>)> = Vec::new();
   let mut gens: BTreeMap<String, Expr> = BTreeMap::new();
   for term in collect_additive_terms(expr) {
@@ -1020,7 +1156,7 @@ fn big_to_expr(n: &BigInt) -> Expr {
   }
 }
 
-fn q_to_expr(q: &Q) -> Expr {
+pub(super) fn q_to_expr(q: &Q) -> Expr {
   if q.d.is_one() {
     big_to_expr(&q.n)
   } else {
