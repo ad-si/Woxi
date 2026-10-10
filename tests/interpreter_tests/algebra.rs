@@ -9925,6 +9925,28 @@ mod polynomial_remainder {
 mod polynomial_lcm {
   use super::*;
 
+  // Coprime inputs have GCD 1 and an unscaled LCM; rational contents
+  // combine (differential fuzzer, seed 20261011; wolframscript-verified).
+  #[test]
+  fn coprime_and_rational_content() {
+    assert_eq!(interpret("PolynomialGCD[x^2, 1 - 4x^2]").unwrap(), "1");
+    assert_eq!(
+      interpret("PolynomialGCD[4 + x + 3x^2, -3 - 4x^2]").unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("PolynomialGCD[x/2, x/3]").unwrap(), "x/6");
+    assert_eq!(interpret("PolynomialGCD[x/2, x]").unwrap(), "x/2");
+    assert_eq!(
+      interpret("PolynomialLCM[x^2, 1 - 4x^2]").unwrap(),
+      "x^2*(1 - 4*x^2)"
+    );
+    assert_eq!(
+      interpret("PolynomialLCM[-3 - 2x - 4x^2, -3 - 4x]").unwrap(),
+      "(-3 - 4*x)*(-3 - 2*x - 4*x^2)"
+    );
+    assert_eq!(interpret("PolynomialLCM[x/2, x]").unwrap(), "x");
+  }
+
   // PolynomialLCM[a, b] = (a / gcd) * b, displayed as an unexpanded product
   // matching Wolfram's factored form rather than the expanded polynomial.
   #[test]
