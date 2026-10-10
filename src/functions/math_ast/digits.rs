@@ -2035,12 +2035,46 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // is used instead.
     let ratio = 53.0_f64 / (base as f64).log2();
     (ratio.ceil() as usize).max(1)
+  } else if let Expr::BigFloat(_, prec) = &args[0] {
+    // An arbitrary-precision number returns as many digits as it carries,
+    // in the target base: RealDigits[N[Pi, 20]] lists 20, and a 25-digit
+    // number has 83 binary or 21 hexadecimal digits.
+    ((prec * 10f64.ln() / (base as f64).ln()).round() as usize).max(1)
   } else {
     // Default: use machine-precision (~16 digits)
     16
   };
 
   let expr = &args[0];
+
+  if crate::functions::predicate_ast::is_complex_number(expr) {
+    crate::emit_message(&crate::syntax::format_message_with_expr(
+      "RealDigits::realx: The value ",
+      expr,
+      " is not a real number.",
+    ));
+    return Ok(unevaluated("RealDigits", args));
+  }
+
+  // An exact irrational (Pi, Sqrt[2], Log[2]) has no natural digit count:
+  // without an explicit length wolframscript reports ::ndig and leaves the
+  // call unevaluated.
+  if !explicit_num_digits
+    && !matches!(
+      expr,
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+    )
+    && expr_to_rational(expr).is_none()
+    && crate::functions::predicate_ast::is_numeric_q(expr)
+  {
+    crate::emit_message(
+      "RealDigits::ndig: The number of digits to return cannot be determined.",
+    );
+    return Ok(unevaluated("RealDigits", args));
+  }
 
   // Determine sign and work with absolute value
   let is_negative = match expr {
@@ -2293,6 +2327,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vec![Expr::List(digit_exprs.into()), Expr::Integer(p + 1)].into(),
       ));
     }
+    let base_exp = base_exp as i128;
     while digits.len() < num_digits {
       digits.push(0);
     }
@@ -2300,11 +2335,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let digit_exprs: Vec<Expr> =
       digits.iter().map(|&d| Expr::Integer(d)).collect();
     return Ok(Expr::List(
-      vec![
-        Expr::List(digit_exprs.into()),
-        Expr::Integer(base_exp as i128),
-      ]
-      .into(),
+      vec![Expr::List(digit_exprs.into()), Expr::Integer(base_exp)].into(),
     ));
   }
 
@@ -2348,6 +2379,8 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  let decimal_exp = decimal_exp as i128;
+
   // Pad with zeros if we don't have enough digits
   while digits.len() < num_digits {
     digits.push(0);
@@ -2360,11 +2393,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     digits.iter().map(|&d| Expr::Integer(d)).collect();
 
   Ok(Expr::List(
-    vec![
-      Expr::List(digit_exprs.into()),
-      Expr::Integer(decimal_exp as i128),
-    ]
-    .into(),
+    vec![Expr::List(digit_exprs.into()), Expr::Integer(decimal_exp)].into(),
   ))
 }
 

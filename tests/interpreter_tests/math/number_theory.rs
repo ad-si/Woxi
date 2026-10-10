@@ -3046,6 +3046,50 @@ mod jacobi_symbol {
 mod real_digits {
   use super::*;
 
+  // An exact irrational has no natural digit count; a complex number is not
+  // real (wolframscript-verified).
+  #[test]
+  fn exact_irrational_reports_ndig() {
+    for input in [
+      "RealDigits[Pi]",
+      "RealDigits[Sqrt[2], 2]",
+      "RealDigits[1 + Pi]",
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), input);
+      assert!(woxi::get_captured_messages_raw().iter().any(|m| m.contains(
+        "RealDigits::ndig: The number of digits to return cannot be determined."
+      )));
+    }
+    assert_eq!(
+      interpret("RealDigits[Pi, 10, 5]").unwrap(),
+      "{{3, 1, 4, 1, 5}, 1}"
+    );
+    clear_state();
+    assert_eq!(interpret("RealDigits[1 + I]").unwrap(), "RealDigits[1 + I]");
+    assert!(woxi::get_captured_messages_raw().iter().any(|m| {
+      m.contains("RealDigits::realx: The value 1 + I is not a real number.")
+    }));
+  }
+
+  // An arbitrary-precision number lists as many digits as it carries, in
+  // the target base.
+  #[test]
+  fn bigfloat_digit_count_follows_precision() {
+    assert_eq!(
+      interpret("RealDigits[N[Pi, 20]]").unwrap(),
+      "{{3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4}, 1}"
+    );
+    assert_eq!(
+      interpret("Length[First[RealDigits[N[E, 25], 2]]]").unwrap(),
+      "83"
+    );
+    assert_eq!(
+      interpret("Length[First[RealDigits[N[E, 25], 16]]]").unwrap(),
+      "21"
+    );
+  }
+
   #[test]
   fn pi_20_digits() {
     assert_eq!(
