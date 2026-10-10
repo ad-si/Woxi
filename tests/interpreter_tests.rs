@@ -4372,6 +4372,37 @@ mod interpreter_tests {
     assert_eq!(interpret("{a, b} /. <||>").unwrap(), "{a, b}");
   }
 
+  // A literal left side replaces only what structurally equals it: negative
+  // numbers are atomic, so their digits are not a match (the textual fallback
+  // turned `-3 /. 3 -> 2` into `-2`).
+  #[test]
+  fn test_replace_all_literal_does_not_match_inside_negative_numbers() {
+    assert_eq!(interpret("-3 /. 3 -> 2").unwrap(), "-3");
+    assert_eq!(
+      interpret("{4, -5, -5, -3} /. 3 -> 2").unwrap(),
+      "{4, -5, -5, -3}"
+    );
+    assert_eq!(interpret("{-3, 3} /. 3 -> 2").unwrap(), "{-3, 2}");
+    assert_eq!(interpret("-3.5 /. 3.5 -> 7").unwrap(), "-3.5");
+    assert_eq!(interpret("-1/2 /. 1/2 -> 7").unwrap(), "-1/2");
+    assert_eq!(interpret("Hold[-3] /. 3 -> 2").unwrap(), "Hold[-3]");
+  }
+
+  // `Derivative[1][y]` matches inside its application `y'[t]`, whichever way
+  // it is stored.
+  #[test]
+  fn test_replace_all_literal_derivative_inside_its_application() {
+    assert_eq!(interpret("y'[2] /. Derivative[1][y] -> f").unwrap(), "f[2]");
+    assert_eq!(
+      interpret("y''[t] + y'[t] /. Derivative[1][y] -> g").unwrap(),
+      "g[t] + Derivative[2][y][t]"
+    );
+    assert_eq!(
+      interpret("y'[2] /. Derivative[1][y] -> (#^2 &)").unwrap(),
+      "4"
+    );
+  }
+
   #[test]
   fn test_replace_all_rewrites_head_symbol() {
     // ReplaceAll treats a compound's head as an ordinary subexpression, so a
