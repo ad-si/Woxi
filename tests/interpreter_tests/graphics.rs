@@ -240,6 +240,27 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_exclusions_break_curve_at_equation_roots() {
+      // `Exclusions -> {t == c}` removes that parameter value, so the line
+      // is split there instead of being drawn across the gap.
+      let svg = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+           Exclusions -> {t == Pi}, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 2);
+      let svg = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+           Exclusions -> {Sin[2 t] == 0}, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 4);
+      let svg = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+           Exclusions -> None, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 1);
+    }
+
+    #[test]
     fn parametric_plot_ignores_global_value_of_plot_variable() {
       // A stale global value for the plot variable (a notebook saved with
       // `SaveDefinitions -> True` carries one) must not freeze the curves:

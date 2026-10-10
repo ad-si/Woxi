@@ -339,6 +339,98 @@ fn is_iterator_spec(arg: &Expr) -> bool {
     if items.len() == 3 && matches!(items[0], Expr::Identifier(_)))
 }
 
+/// Parameter values at which an `Exclusions` equation (`lhs == rhs`) holds.
+/// Wolfram removes these points from the curve, so the plotted line breaks
+/// there instead of being drawn straight across the gap. Roots are located
+/// as sign changes of `lhs - rhs` on a fine grid and pinned down by
+/// bisection; sign changes through a pole (where the difference does not
+/// actually vanish) are not exclusions and are left to the discontinuity
+/// handling of the sampler.
+fn exclusion_roots(
+  options: &[Expr],
+  var: &str,
+  t_min: f64,
+  t_max: f64,
+) -> Vec<f64> {
+  let Some(spec) = options.iter().find_map(|opt| {
+    match crate::functions::graphics::option_name_value(opt) {
+      Some(("Exclusions", value)) => Some(value.into_owned()),
+      _ => None,
+    }
+  }) else {
+    return Vec::new();
+  };
+  let conditions: Vec<Expr> = match spec {
+    Expr::List(ref items) => items.iter().cloned().collect(),
+    other => vec![other],
+  };
+  let mut roots = Vec::new();
+  for condition in &conditions {
+    let (lhs, rhs) = match condition {
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operands.len() == 2
+        && matches!(operators[0], crate::syntax::ComparisonOp::Equal) =>
+      {
+        (&operands[0], &operands[1])
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Equal" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => continue,
+    };
+    let diff = |t: f64| -> Option<f64> {
+      Some(evaluate_at_point(lhs, var, t)? - evaluate_at_point(rhs, var, t)?)
+    };
+    const GRID: usize = 2000;
+    let step = (t_max - t_min) / GRID as f64;
+    let mut prev = (t_min, diff(t_min));
+    for i in 1..=GRID {
+      let t = t_min + i as f64 * step;
+      let cur = (t, diff(t));
+      if let (Some(a), Some(b)) = (prev.1, cur.1) {
+        if a == 0.0 {
+          roots.push(prev.0);
+        } else if a.signum() != b.signum() && b != 0.0 {
+          let (mut lo, mut hi, mut flo) = (prev.0, cur.0, a);
+          for _ in 0..60 {
+            let mid = 0.5 * (lo + hi);
+            match diff(mid) {
+              Some(f) if f.signum() == flo.signum() => {
+                lo = mid;
+                flo = f;
+              }
+              Some(_) => hi = mid,
+              None => break,
+            }
+          }
+          let root = 0.5 * (lo + hi);
+          if diff(root)
+            .is_some_and(|f| f.abs() < 1e-6 * (1.0 + a.abs().max(b.abs())))
+          {
+            roots.push(root);
+          }
+        }
+      }
+      prev = cur;
+    }
+  }
+  roots
+}
+
+/// Break the sampled curves at the excluded parameter values by inserting an
+/// empty sample at each one.
+fn insert_exclusion_gaps(samples: &mut Vec<Sample>, roots: &[f64]) {
+  if roots.is_empty() {
+    return;
+  }
+  samples.extend(roots.iter().map(|&t| (t, None)));
+  samples.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+}
+
 /// ParametricPlot[{fx[t], fy[t]}, {t, tmin, tmax}]
 pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
@@ -464,11 +556,12 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let num_samples = plot_opts.plot_points.max(NUM_SAMPLES);
   let max_total = num_samples.saturating_mul(2);
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(curves.len());
+  let excluded = exclusion_roots(&args[2..], &var_name, t_min, t_max);
 
   for curve in &curves {
     // Each sample yields one coordinate pair, or one pair per curve when
     // the whole body is sampled (e.g. `ReIm[{c1, c2, c3}]`).
-    let samples = match curve {
+    let mut samples = match curve {
       CurveSrc::Pair(fx, fy) => {
         // ParametricPlot is HoldFirst-like, so a curve component passed as
         // a bare symbol or a `Part` extraction (e.g. `s[[1, 1, 2]]` off a
@@ -524,6 +617,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         max_total,
       ),
     };
+    insert_exclusion_gaps(&mut samples, &excluded);
     all_points.extend(samples_to_series(samples));
   }
 
