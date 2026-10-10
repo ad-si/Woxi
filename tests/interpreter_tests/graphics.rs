@@ -33520,4 +33520,23 @@ mod grid_text_in_graphics {
     .unwrap();
     assert_eq!(clipped, "1", "{clipped}");
   }
+
+  #[test]
+  fn transparent_directive_draws_nothing_visible() {
+    let svg = export_svg("Graphics[{Transparent, Disk[]}]");
+    assert!(svg.contains("fill-opacity=\"0\""), "{svg}");
+    let svg3d =
+      export_svg("Graphics3D[{Transparent, Sphere[{1, 1, 1}, 0.25]}]");
+    assert!(svg3d.contains("opacity=\"0\""), "{svg3d}");
+  }
+
+  #[test]
+  fn graphics_grid_draws_button_wrapped_graphics() {
+    let svg = export_svg(
+      "GraphicsGrid[{{Button[Graphics[Disk[]], x = 1], Button[Graphics[Rectangle[]], x = 2]}}]",
+    );
+    assert!(svg.contains("<ellipse"), "{svg}");
+    assert!(svg.contains("<rect"), "{svg}");
+    assert!(!svg.contains("Button"), "{svg}");
+  }
 }
