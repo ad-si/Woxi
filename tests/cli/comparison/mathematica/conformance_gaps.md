@@ -4684,3 +4684,12 @@ numericize correctly, so only the printed form differs.
 
 `ParametricPlot[…, AxesLabel -> {Re[z], Im[z]}]` omits the axis labels (seen
 in the `Logarithmic Integral on the Critical Line` Demonstration).
+
+### `WordData` and `ExampleData[{"Text", …}]` are not available
+
+`WordData[word]` (parts of speech, definitions) and the `"Text"` collection of
+`ExampleData` (public-domain books) ship no data in Woxi, so they stay
+unevaluated / report `ExampleData::notcoll`. The `Oulipo: Wordshift + 7`
+Demonstration needs both (its `Manipulate` is initialised from them), so
+only its static content and stored output render. `DictionaryLookup` works
+against the bundled word list, which may differ from Wolfram's dictionary.

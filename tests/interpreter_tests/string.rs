@@ -7982,6 +7982,48 @@ mod template_apply {
   }
 }
 
+mod dictionary_lookup {
+  use super::*;
+
+  #[test]
+  fn prefix_wildcard_with_limit() {
+    assert_eq!(
+      interpret(r#"DictionaryLookup["zyg*", 2]"#).unwrap(),
+      interpret(r#"Take[DictionaryLookup["zyg*"], 2]"#).unwrap()
+    );
+  }
+
+  #[test]
+  fn exact_word() {
+    assert_eq!(
+      interpret(r#"DictionaryLookup["dolphin"]"#).unwrap(),
+      "{dolphin}"
+    );
+  }
+
+  #[test]
+  fn all_matches_are_dictionary_words() {
+    assert_eq!(
+      interpret(r#"AllTrue[DictionaryLookup["wor*d"], DictionaryWordQ]"#)
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn no_match() {
+    assert_eq!(interpret(r#"DictionaryLookup["qqqzzz*"]"#).unwrap(), "{}");
+  }
+
+  #[test]
+  fn whole_list_contains_pattern_result() {
+    assert_eq!(
+      interpret(r#"Length[DictionaryLookup["*"]] > 50000"#).unwrap(),
+      "True"
+    );
+  }
+}
+
 mod dictionary_word_q {
   use super::*;
 

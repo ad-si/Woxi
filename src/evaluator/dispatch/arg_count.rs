@@ -368,6 +368,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DiceDissimilarity" => Some((2, 2)),
     "DiagonalMatrixQ" => Some((1, 2)),
     "DiamondMatrix" => Some((1, 2)),
+    "DictionaryLookup" => Some((0, 2)),
     "DictionaryWordQ" => Some((1, 1)),
     "Differences" => Some((1, 3)),
     "DigitCount" => Some((1, 3)),

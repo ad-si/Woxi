@@ -14851,20 +14851,62 @@ pub fn string_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 use std::sync::LazyLock;
 
+/// The bundled word list in its original case and dictionary order.
+static DICTIONARY_LIST: LazyLock<Vec<String>> = LazyLock::new(|| {
+  use flate2::read::GzDecoder;
+  use std::io::Read;
+
+  let compressed = include_bytes!("../../resources/dictionary_words.txt.gz");
+  let mut decoder = GzDecoder::new(&compressed[..]);
+  let mut text = String::new();
+  decoder
+    .read_to_string(&mut text)
+    .expect("Failed to decompress dictionary");
+
+  text.lines().map(str::to_string).collect()
+});
+
 static DICTIONARY_WORDS: LazyLock<std::collections::HashSet<String>> =
-  LazyLock::new(|| {
-    use flate2::read::GzDecoder;
-    use std::io::Read;
+  LazyLock::new(|| DICTIONARY_LIST.iter().map(|w| w.to_lowercase()).collect());
 
-    let compressed = include_bytes!("../../resources/dictionary_words.txt.gz");
-    let mut decoder = GzDecoder::new(&compressed[..]);
-    let mut text = String::new();
-    decoder
-      .read_to_string(&mut text)
-      .expect("Failed to decompress dictionary");
-
-    text.lines().map(str::to_lowercase).collect()
-  });
+/// DictionaryLookup[patt] - all dictionary words matching the string pattern
+/// DictionaryLookup[patt, n] - at most the first n matches
+/// DictionaryLookup[] - the whole word list
+pub fn dictionary_lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // An optional {"English", patt} wrapper selects the (only) English list.
+  let patt = match args.first() {
+    Some(Expr::List(items))
+      if items.len() == 2
+        && matches!(&items[0], Expr::String(l) if l == "English") =>
+    {
+      Some(items[1].clone())
+    }
+    Some(p) => Some(p.clone()),
+    None => None,
+  };
+  let limit = match args.get(1) {
+    None => None,
+    Some(Expr::Integer(n)) if *n >= 0 => Some(*n as usize),
+    Some(_) => return Ok(unevaluated("DictionaryLookup", args)),
+  };
+  let mut out = Vec::new();
+  for word in DICTIONARY_LIST.iter() {
+    if limit.is_some_and(|n| out.len() >= n) {
+      break;
+    }
+    let keep = match &patt {
+      None => true,
+      Some(p) => matches!(
+        string_match_q_ast(&[Expr::String(word.clone()), p.clone()])?,
+        Expr::Identifier(ref t) if t == "True"
+      ),
+    };
+    if keep {
+      out.push(Expr::String(word.clone()));
+    }
+  }
+  Ok(Expr::List(out.into()))
+}
 
 /// DictionaryWordQ[string] - True if string is a dictionary word
 pub fn dictionary_word_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
