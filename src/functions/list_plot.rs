@@ -887,7 +887,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         // Epilog primitives and the axes origin are read by the shared
         // plot-option reader, so the list plots and `Plot` cannot drift on
         // what they accept.
-        "Epilog" | "AxesOrigin" => {
+        "Epilog" | "AxesOrigin" | "ColorFunction" | "ColorFunctionScaling" => {
           let mut overrides =
             crate::functions::plot::PlotRangeOverrides::default();
           crate::functions::plot::apply_common_plot_option(

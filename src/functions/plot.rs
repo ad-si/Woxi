@@ -4261,6 +4261,44 @@ fn color_function_rgb(
   Some((ch(c.r), ch(c.g), ch(c.b)))
 }
 
+/// Per-point colors for a scatter series drawn with `ColorFunction -> f` in
+/// `options` (the plot's own option rules), or `None` when it has none.
+/// `x` is rescaled over the series' own extent, as the plot renderer does.
+pub(crate) fn scatter_point_colors(
+  options: &[Expr],
+  points: &[(f64, f64)],
+  y_range: (f64, f64),
+) -> Option<Vec<(u8, u8, u8)>> {
+  let mut opts = PlotOptions::default();
+  let mut overrides = PlotRangeOverrides::default();
+  for opt in options {
+    if let Some((name, value)) =
+      crate::functions::graphics::option_name_value(opt)
+      && matches!(name, "ColorFunction" | "ColorFunctionScaling")
+    {
+      apply_common_plot_option(name, &value, &mut opts, &mut overrides);
+    }
+  }
+  let cf = opts.color_function.as_ref()?;
+  let (x_min, x_max) = points
+    .iter()
+    .filter(|(x, y)| x.is_finite() && y.is_finite())
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(x, _)| {
+      (lo.min(x), hi.max(x))
+    });
+  points
+    .iter()
+    .map(|&p| {
+      color_function_rgb(
+        cf,
+        opts.color_function_scaling,
+        p,
+        (x_min, x_max, y_range.0, y_range.1),
+      )
+    })
+    .collect()
+}
+
 /// Split a curve segment into maximal runs of consecutive points whose
 /// `ColorFunction` color agrees. Each run is colored by the function at the
 /// midpoint of every step, and consecutive runs share their boundary point
@@ -8314,35 +8352,49 @@ where
 
   // `PlotMarkers` replaces the round dot with its glyph, drawn
   // centred on the point at the size the marker spec asks for.
-  match series_marker(&opts.plot_markers, series_idx) {
-    Some(marker) => {
-      let (mr, mg, mb) = marker.color.unwrap_or((r, g, b));
-      let style = ("sans-serif", marker.size * RESOLUTION_SCALE as f64)
-        .into_font()
-        .color(&RGBColor(mr, mg, mb))
-        .pos(plotters::style::text_anchor::Pos::new(
-          plotters::style::text_anchor::HPos::Center,
-          plotters::style::text_anchor::VPos::Center,
-        ));
-      chart
-        .draw_series(finite_pts.iter().map(|&(x, y)| {
-          plotters::element::Text::new(
-            marker.glyph.clone(),
-            (x, y),
-            style.clone(),
-          )
-        }))
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-    }
-    None => {
-      chart
-        .draw_series(
-          finite_pts
-            .iter()
-            .map(|&(x, y)| Circle::new((x, y), marker_size, color.filled())),
+  if let Some(marker) = series_marker(&opts.plot_markers, series_idx) {
+    let (mr, mg, mb) = marker.color.unwrap_or((r, g, b));
+    let style = ("sans-serif", marker.size * RESOLUTION_SCALE as f64)
+      .into_font()
+      .color(&RGBColor(mr, mg, mb))
+      .pos(plotters::style::text_anchor::Pos::new(
+        plotters::style::text_anchor::HPos::Center,
+        plotters::style::text_anchor::VPos::Center,
+      ));
+    chart
+      .draw_series(finite_pts.iter().map(|&(x, y)| {
+        plotters::element::Text::new(
+          marker.glyph.clone(),
+          (x, y),
+          style.clone(),
         )
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-    }
+      }))
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+  } else {
+    // `ColorFunction -> f` colors each dot by `f` at its own position
+    // (rescaled over the plotted data when `ColorFunctionScaling` is on).
+    let x_range = all_series
+      .iter()
+      .flatten()
+      .filter(|(x, y)| x.is_finite() && y.is_finite())
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(x, _)| {
+        (lo.min(x), hi.max(x))
+      });
+    let dot_color = |p: (f64, f64)| match &opts.color_function {
+      Some(cf) => color_function_rgb(
+        cf,
+        opts.color_function_scaling,
+        p,
+        (x_range.0, x_range.1, y_min, y_max),
+      )
+      .map_or(color, |(r, g, b)| RGBColor(r, g, b)),
+      None => color,
+    };
+    chart
+      .draw_series(finite_pts.iter().map(|&(x, y)| {
+        Circle::new((x, y), marker_size, dot_color((x, y)).filled())
+      }))
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
   }
   Ok(())
 }
