@@ -80,7 +80,10 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(m) = modulus {
     Ok(reduce_coefficients_mod(&expanded, m))
   } else {
-    Ok(expanded)
+    // The distributed terms are assembled in multiplication order; one
+    // evaluation pass puts every product and the sum in canonical order:
+    // `c*Sin[2*x] + Sin[x]*Sin[2*x]`, not `… + Sin[2*x]*Sin[x]`.
+    Ok(crate::evaluator::evaluate_expr_to_expr(&expanded).unwrap_or(expanded))
   }
 }
 

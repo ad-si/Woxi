@@ -6101,6 +6101,106 @@ fn abs_complex_expand_rewrite(arg: &Expr) -> Option<Expr> {
   None
 }
 
+/// Real and imaginary parts of the quotient trigonometric and hyperbolic
+/// functions at `a + I b`, written over the shared denominator Wolfram's
+/// ComplexExpand uses (`Tan[a + I b]` has `Cos[2a] + Cosh[2b]` under
+/// `Sin[2a]` and `Sinh[2b]`). `None` for any other head.
+fn reciprocal_trig_parts(
+  name: &str,
+  a: &Expr,
+  b: &Expr,
+) -> Option<(Expr, Expr)> {
+  let two = |e: &Expr| times2(Expr::Integer(2), e.clone());
+  let f = |h: &str, e: Expr| call1(h, e);
+  let neg = |e: Expr| times2(Expr::Integer(-1), e);
+  Some(match name {
+    "Tan" | "Cot" | "Sec" | "Csc" => {
+      // Circular functions: denominators in Cos[2a] and Cosh[2b].
+      let (cos2a, cosh2b) = (f("Cos", two(a)), f("Cosh", two(b)));
+      match name {
+        "Tan" => {
+          let den = plus2(cos2a, cosh2b);
+          (
+            div2(f("Sin", two(a)), den.clone()),
+            div2(f("Sinh", two(b)), den),
+          )
+        }
+        "Cot" => {
+          let den = minus2(cos2a, cosh2b);
+          (
+            neg(div2(f("Sin", two(a)), den.clone())),
+            div2(f("Sinh", two(b)), den),
+          )
+        }
+        "Sec" => {
+          let den = plus2(cos2a, cosh2b);
+          (
+            div2(
+              two(&times2(f("Cos", a.clone()), f("Cosh", b.clone()))),
+              den.clone(),
+            ),
+            div2(two(&times2(f("Sin", a.clone()), f("Sinh", b.clone()))), den),
+          )
+        }
+        _ => {
+          let den = minus2(cos2a, cosh2b);
+          (
+            div2(
+              neg(two(&times2(f("Sin", a.clone()), f("Cosh", b.clone())))),
+              den.clone(),
+            ),
+            div2(two(&times2(f("Cos", a.clone()), f("Sinh", b.clone()))), den),
+          )
+        }
+      }
+    }
+    "Tanh" | "Coth" | "Sech" | "Csch" => {
+      // Hyperbolic functions: denominators in Cos[2b] and Cosh[2a].
+      let (cos2b, cosh2a) = (f("Cos", two(b)), f("Cosh", two(a)));
+      match name {
+        "Tanh" => {
+          let den = plus2(cos2b, cosh2a);
+          (
+            div2(f("Sinh", two(a)), den.clone()),
+            div2(f("Sin", two(b)), den),
+          )
+        }
+        "Coth" => {
+          let den = minus2(cos2b, cosh2a);
+          (
+            neg(div2(f("Sinh", two(a)), den.clone())),
+            div2(f("Sin", two(b)), den),
+          )
+        }
+        "Sech" => {
+          let den = plus2(cos2b, cosh2a);
+          (
+            div2(
+              two(&times2(f("Cosh", a.clone()), f("Cos", b.clone()))),
+              den.clone(),
+            ),
+            div2(
+              neg(two(&times2(f("Sinh", a.clone()), f("Sin", b.clone())))),
+              den,
+            ),
+          )
+        }
+        _ => {
+          let den = minus2(cos2b, cosh2a);
+          (
+            div2(
+              neg(two(&times2(f("Sinh", a.clone()), f("Cos", b.clone())))),
+              den.clone(),
+            ),
+            div2(two(&times2(f("Cosh", a.clone()), f("Sin", b.clone()))), den),
+          )
+        }
+      }
+    }
+    _ => return None,
+  })
+}
+
 fn complex_expand_recursive(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } if args.len() == 1 => {
@@ -6119,6 +6219,17 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
       }
       // Try to split the argument into real + I*imag parts
       if let Some((re, im)) = split_real_imag(arg) {
+        // The quotient functions expand even for a real argument, which is
+        // the b = 0 case of the same formulas: ComplexExpand[Tan[x]] is
+        // Sin[2*x]/(1 + Cos[2*x]) (wolframscript-verified).
+        if let Some((real_part, imag_part)) =
+          reciprocal_trig_parts(name, &re, &im)
+        {
+          return ce_simplify(plus2(
+            real_part,
+            times2(id_expr("I"), imag_part),
+          ));
+        }
         // Check if imaginary part is zero
         let im_is_zero = matches!(&im, Expr::Integer(0));
         if !im_is_zero {
@@ -6154,25 +6265,6 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
               return ce_simplify(plus2(
                 times2(sinh_a, cos_b),
                 times2(id_expr("I"), times2(cosh_a, sin_b)),
-              ));
-            }
-            // Tanh[a + I*b] = (Sinh[2a] + I*Sin[2b]) / (Cos[2b] + Cosh[2a]).
-            // The split-into-real-and-imag form Wolfram emits keeps the
-            // shared denominator Cos[2b] + Cosh[2a] under both numerators
-            // — emit it the same way so display matches `ComplexExpand`'s.
-            "Tanh" => {
-              let two_a = times2(Expr::Integer(2), re.clone());
-              let two_b = times2(Expr::Integer(2), im.clone());
-              let sinh_2a = call1("Sinh", two_a.clone());
-              let sin_2b = call1("Sin", two_b.clone());
-              let cos_2b = call1("Cos", two_b);
-              let cosh_2a = call1("Cosh", two_a);
-              let denom = plus2(cos_2b, cosh_2a);
-              let real_part = div2(sinh_2a, denom.clone());
-              let imag_part = div2(sin_2b, denom);
-              return ce_simplify(plus2(
-                real_part,
-                times2(id_expr("I"), imag_part),
               ));
             }
             // Cosh[a + I*b] = Cosh[a]*Cos[b] + I*Sinh[a]*Sin[b]

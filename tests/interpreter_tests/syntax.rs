@@ -9019,6 +9019,33 @@ mod reim {
 mod complex_expand {
   use super::*;
 
+  // The quotient trig and hyperbolic functions expand for real arguments
+  // too (differential fuzzer, seed 20261011; wolframscript-verified).
+  #[test]
+  fn reciprocal_trig_functions() {
+    for (input, expected) in [
+      ("Tan[x]", "Sin[2*x]/(1 + Cos[2*x])"),
+      ("Cot[x]", "-(Sin[2*x]/(-1 + Cos[2*x]))"),
+      ("Sec[x]", "(2*Cos[x])/(1 + Cos[2*x])"),
+      ("Csc[x]", "(-2*Sin[x])/(-1 + Cos[2*x])"),
+      ("Tanh[x]", "Sinh[2*x]/(1 + Cosh[2*x])"),
+      ("Coth[x]", "-(Sinh[2*x]/(1 - Cosh[2*x]))"),
+      ("Sech[x]", "(2*Cosh[x])/(1 + Cosh[2*x])"),
+      ("Csch[x]", "(-2*Sinh[x])/(1 - Cosh[2*x])"),
+      ("Tan[x]^2", "Sin[2*x]^2/(1 + Cos[2*x])^2"),
+      (
+        "Tan[x + I y]",
+        "Sin[2*x]/(Cos[2*x] + Cosh[2*y]) + (I*Sinh[2*y])/(Cos[2*x] + Cosh[2*y])",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("ComplexExpand[{input}]")).unwrap(),
+        expected,
+        "{input}"
+      );
+    }
+  }
+
   // ComplexExpand assumes every symbol is real, so Re/Im/Conjugate of a bare
   // symbol (and of a symbolic complex) collapse. Verified against wolframscript.
   #[test]

@@ -461,6 +461,23 @@ mod coefficient {
 mod expand {
   use super::*;
 
+  // The distributed result is in canonical order like any evaluated sum.
+  #[test]
+  fn result_is_canonically_ordered() {
+    assert_eq!(
+      interpret("Expand[(Sin[x] + c) Sin[2 x]]").unwrap(),
+      "c*Sin[2*x] + Sin[x]*Sin[2*x]"
+    );
+    assert_eq!(
+      interpret("Expand[(I Sin[2 y] + Sinh[2 x])/d]").unwrap(),
+      "(I*Sin[2*y])/d + Sinh[2*x]/d"
+    );
+    assert_eq!(
+      interpret("Expand[2 I Sin[x] Sinh[y]/d]").unwrap(),
+      "((2*I)*Sin[x]*Sinh[y])/d"
+    );
+  }
+
   #[test]
   fn simple_product() {
     assert_eq!(

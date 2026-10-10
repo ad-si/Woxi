@@ -5182,7 +5182,11 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
           })
           .collect();
         if let Ok(divided) = divided {
+          // The cofactor is a sum in its own right: evaluate it so its terms
+          // take canonical order (-1 + x^(-1) + x).
           let inner = call("Plus", divided);
+          let inner =
+            crate::evaluator::evaluate_expr_to_expr(&inner).unwrap_or(inner);
           let product = call("Times", vec![content_expr, inner]);
           let candidate = if g_den == 1 {
             product
