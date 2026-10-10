@@ -1074,8 +1074,11 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Likewise a machine Real forces the general machine fold (which is
   // BigInt-aware via expr_to_coeff): Plus[2^60, 1, -2^60, 0.5] is 0.
   // because every term converts to f64 individually — the fast path
-  // would sum the integers exactly and leave `1 + 0.5` uncombined.
-  let has_real_arg = flat_args.iter().any(|a| matches!(a, Expr::Real(_)));
+  // would sum the integers exactly and leave `1 + 0.5` uncombined. An
+  // arbitrary-precision number goes to `bigfloat_plus` the same way.
+  let has_real_arg = flat_args
+    .iter()
+    .any(|a| matches!(a, Expr::Real(_) | Expr::BigFloat(..)));
 
   if has_bigint && !has_rational && !has_real_arg {
     let mut big_sum = BigInt::from(0);
@@ -13890,76 +13893,66 @@ fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
 /// Sum BigFloat (precision-tagged) numbers with precision tracking.
 /// Handles BigFloat + BigFloat and BigFloat + Integer/Rational.
 fn bigfloat_plus(args: &[Expr]) -> Expr {
-  // Extract (f64_value, precision) for each argument
-  // BigFloat: use stored precision; Integer/Rational: infinite precision
+  // Absolute error of the sum: each BigFloat contributes |v|·10^-p; exact
+  // summands (Integer, BigInteger, Rational) contribute none.
   let mut sum_val: f64 = 0.0;
   let mut sum_error: f64 = 0.0;
-
   for arg in args {
     match arg {
       Expr::BigFloat(digits, prec) => {
         let v: f64 = digits.parse().unwrap_or(0.0);
-        let p = *prec;
         sum_val += v;
-        sum_error += v.abs() * 10f64.powf(-p);
+        sum_error += v.abs() * 10f64.powf(-*prec);
       }
-      Expr::Integer(n) => {
-        sum_val += *n as f64;
-        // Integer has infinite precision, contributes 0 error
-      }
-      Expr::FunctionCall { name, args: rargs }
-        if name == "Rational" && rargs.len() == 2 =>
-      {
-        if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1]) {
-          sum_val += *n as f64 / *d as f64;
-        }
-      }
-      _ => {}
+      other => sum_val += try_eval_to_f64(other).unwrap_or(0.0),
     }
   }
-
-  // Compute result precision
-  let result_prec: f64 = if sum_val.abs() < 1e-300 || sum_error <= 0.0 {
-    // Fallback: use min finite precision among BigFloat args
+  let min_prec = || {
     args
       .iter()
-      .filter_map(|a| {
-        if let Expr::BigFloat(_, p) = a {
-          Some(*p)
-        } else {
-          None
-        }
+      .filter_map(|a| match a {
+        Expr::BigFloat(_, p) => Some(*p),
+        _ => None,
       })
-      .fold(None, |acc: Option<f64>, p| {
-        Some(acc.map_or(p, |a: f64| a.min(p)))
-      })
+      .reduce(f64::min)
       .unwrap_or(1.0)
-  } else {
-    let p = sum_val.abs().log10() - sum_error.log10();
-    p.max(1.0)
+  };
+  // Precision of a sum of value `v`: the digits of `v` its error leaves.
+  let precision_of = |v: f64| {
+    if v.abs() < 1e-300 || sum_error <= 0.0 {
+      min_prec()
+    } else {
+      (v.abs().log10() - sum_error.log10()).max(1.0)
+    }
   };
 
   // Compute the value itself. When every summand can be evaluated to an
   // astro-float BigFloat (numeric literals, exact constants), sum in
   // arbitrary precision so digits past the machine-double limit are correct
-  // (e.g. N[Pi,30] - 3 keeps ~28 accurate digits, not just 16). Otherwise fall
-  // back to the f64 approximation.
+  // (e.g. N[Pi,30] - 3 keeps ~28 accurate digits, not just 16) — and so the
+  // precision comes from the true sum, which the f64 one loses to
+  // cancellation (N[Pi,30]*10^25 - 31415926535897932384626433). Otherwise
+  // fall back to the f64 approximation.
   if args.iter().all(is_bigfloat_evaluable_factor) {
     use astro_float::{BigFloat, Consts, RoundingMode};
     let rm = RoundingMode::ToEven;
-    // Use enough bits to represent the least-precise summand's digits with
-    // margin, and at least the result precision.
+    // Enough bits for the most precise summand at its magnitude, so the
+    // exact parts of a cancelling sum survive.
+    let max_mag = args
+      .iter()
+      .filter_map(try_eval_to_f64)
+      .fold(0.0f64, |m, v| m.max(v.abs()))
+      .max(1.0)
+      .log10();
     let max_prec = args
       .iter()
-      .filter_map(|a| {
-        if let Expr::BigFloat(_, p) = a {
-          Some(*p)
-        } else {
-          None
-        }
+      .filter_map(|a| match a {
+        Expr::BigFloat(_, p) => Some(*p),
+        _ => None,
       })
       .fold(0.0f64, f64::max)
-      .max(result_prec);
+      .max(precision_of(sum_val))
+      + max_mag.max(0.0);
     let bits = nominal_bits(max_prec.ceil() as usize);
     if let Ok(mut cc) = Consts::new() {
       let mut sum = BigFloat::from_i32(0, bits);
@@ -13973,15 +13966,26 @@ fn bigfloat_plus(args: &[Expr]) -> Expr {
         }
       }
       if ok {
+        let mut sum_str =
+          bigfloat_to_string(&sum, None, rm, &mut cc).unwrap_or_default();
+        let value: f64 = sum_str.parse().unwrap_or(sum_val);
+        // A sum below its own error is a zero of that accuracy:
+        // N[Pi, 30] - N[Pi, 20] is 0``19.5.
+        if sum_error > 0.0 && value.abs() <= sum_error {
+          return Expr::BigFloat("0".to_string(), -sum_error.log10());
+        }
+        let result_prec = precision_of(value);
         let digits = wl_fraction_digits(&sum, result_prec);
         if let Ok(s) = bigfloat_to_string(&sum, Some(digits), rm, &mut cc) {
-          return Expr::BigFloat(s, result_prec);
+          sum_str = s;
+          return Expr::BigFloat(sum_str, result_prec);
         }
       }
     }
   }
 
   // Fallback: format the f64 approximation to the result precision.
+  let result_prec = precision_of(sum_val);
   let display_prec = (result_prec.round() as usize).max(1);
   let result_str = format_bigfloat_value(sum_val, display_prec);
   Expr::BigFloat(result_str, result_prec)
