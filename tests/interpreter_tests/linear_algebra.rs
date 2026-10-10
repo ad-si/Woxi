@@ -10069,3 +10069,97 @@ mod normalize {
     );
   }
 }
+
+mod sparse_array_negative_positions {
+  use super::*;
+
+  #[test]
+  fn negative_coordinates_count_from_the_end() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{{-1, 1} -> s, {1, 1} -> 2}, {3, 3}]]")
+        .unwrap(),
+      "{{2, 0, 0}, {0, 0, 0}, {s, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{-1 -> a, -3 -> b}, 3]]").unwrap(),
+      "{b, 0, a}"
+    );
+  }
+
+  #[test]
+  fn negative_coordinates_mixed_with_pattern_rules() {
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{{i_, i_} -> -s, {i_, j_} /; j - i == 1 -> s, \
+         {-1, 1} -> s}, {3, 3}]]"
+      )
+      .unwrap(),
+      "{{-s, s, 0}, {0, -s, s}, {s, 0, -s}}"
+    );
+  }
+}
+
+mod matrix_exp_sparse {
+  use super::*;
+
+  #[test]
+  fn sparse_matrix_acting_on_vector() {
+    assert_eq!(
+      interpret("MatrixExp[0 SparseArray[{{1, 1} -> 2}, {2, 2}], {1, 2}]")
+        .unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "MatrixExp[SparseArray[{{1, 1} -> 0, {2, 2} -> 0}, {2, 2}], {3, 4}]"
+      )
+      .unwrap(),
+      "{3, 4}"
+    );
+  }
+}
+
+mod matrix_exp_numeric {
+  use super::*;
+
+  #[test]
+  fn real_matrix_acting_on_vector() {
+    // Compare against the exact closed form of the cyclic generator.
+    assert_eq!(
+      interpret(
+        "v = MatrixExp[{{-0.2, 0.2, 0}, {0, -0.2, 0.2}, {0.2, 0, -0.2}}, \
+         {1, 3, 5}]; Max[Abs[v - {1.3931086630724865, 3.2948478726991794, \
+         4.312043464228334}]] < 10^-9"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn real_matrix_exponential() {
+    assert_eq!(
+      interpret(
+        "m = MatrixExp[{{1., 0, 0}, {0, 2., 1}, {0, 0, 3}}]; \
+         Max[Abs[Flatten[m - N[{{E, 0, 0}, {0, E^2, E^3 - E^2}, \
+         {0, 0, E^3}}]]]] < 10^-9"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod dollar_pattern_names {
+  use super::*;
+
+  #[test]
+  fn named_blank_with_dollar_in_name() {
+    assert_eq!(interpret("{1, 2} /. {a$_, b$_} -> a$ + b$").unwrap(), "3");
+    assert_eq!(interpret("MatchQ[{1, 1}, {i$_, i$_}]").unwrap(), "True");
+    assert_eq!(
+      interpret("Normal[SparseArray[{{i$_, i$_} -> 1}, {2, 2}]]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+  }
+}

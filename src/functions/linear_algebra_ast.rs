@@ -9579,6 +9579,13 @@ pub fn matrix_function_ast(
       return Ok(Expr::List(new_rows.into()));
     }
   }
+  // Machine-precision real matrix larger than 2x2: numeric exponential.
+  if func == "Exp"
+    && n > 2
+    && let Some(result) = numeric_matrix_exp(&mat)
+  {
+    return Ok(result);
+  }
   if n != 2 {
     return Ok(unevaluated(args));
   }
@@ -9681,6 +9688,83 @@ pub fn matrix_function_ast(
     }
   }
   Ok(result)
+}
+
+/// Matrix exponential of a square matrix whose entries are real numbers (at
+/// least one of them inexact), via scaling and squaring of a Taylor series.
+/// Returns None for any other kind of entry so exact input stays symbolic.
+fn numeric_matrix_exp(mat: &Expr) -> Option<Expr> {
+  let Expr::List(rows) = mat else { return None };
+  let n = rows.len();
+  let mut a = vec![vec![0.0f64; n]; n];
+  let mut inexact = false;
+  for (i, r) in rows.iter().enumerate() {
+    let Expr::List(cs) = r else { return None };
+    for (j, c) in cs.iter().enumerate() {
+      a[i][j] = match c {
+        Expr::Real(x) => {
+          inexact = true;
+          *x
+        }
+        Expr::Integer(k) => *k as f64,
+        _ => return None,
+      };
+    }
+  }
+  if !inexact || a.iter().flatten().any(|x| !x.is_finite()) {
+    return None;
+  }
+  let mul = |x: &Vec<Vec<f64>>, y: &Vec<Vec<f64>>| {
+    let mut z = vec![vec![0.0f64; n]; n];
+    for i in 0..n {
+      for k in 0..n {
+        let xik = x[i][k];
+        for j in 0..n {
+          z[i][j] += xik * y[k][j];
+        }
+      }
+    }
+    z
+  };
+  let norm = a
+    .iter()
+    .map(|r| r.iter().map(|x| x.abs()).sum::<f64>())
+    .fold(0.0, f64::max);
+  let squarings = if norm > 0.5 {
+    (norm / 0.5).log2().ceil() as i32
+  } else {
+    0
+  };
+  let scale = 2f64.powi(-squarings);
+  for x in a.iter_mut().flatten() {
+    *x *= scale;
+  }
+  let mut result = vec![vec![0.0f64; n]; n];
+  let mut term = vec![vec![0.0f64; n]; n];
+  for i in 0..n {
+    result[i][i] = 1.0;
+    term[i][i] = 1.0;
+  }
+  for k in 1..=24 {
+    term = mul(&term, &a);
+    for x in term.iter_mut().flatten() {
+      *x /= k as f64;
+    }
+    for i in 0..n {
+      for j in 0..n {
+        result[i][j] += term[i][j];
+      }
+    }
+  }
+  for _ in 0..squarings {
+    result = mul(&result, &result);
+  }
+  Some(Expr::List(
+    result
+      .into_iter()
+      .map(|r| Expr::List(r.into_iter().map(Expr::Real).collect()))
+      .collect(),
+  ))
 }
 
 /// True if the expression structurally contains the imaginary unit — the bare
