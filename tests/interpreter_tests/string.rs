@@ -3201,6 +3201,74 @@ mod string_take_drop {
 mod hamming_distance {
   use super::*;
 
+  // Lists compare element by element with SameQ; before this the lists were
+  // stringified and their characters compared (differential fuzzer, seed
+  // 20261010). Verified against wolframscript.
+  #[test]
+  fn vectors_compare_elements() {
+    assert_eq!(
+      interpret("HammingDistance[{4, -5, -2}, {-2, 5, 6}]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("HammingDistance[{1, 2, 3}, {1, 5, 3}]").unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("HammingDistance[{a, b}, {a, c}]").unwrap(), "1");
+    assert_eq!(interpret("HammingDistance[{1, 1.}, {1., 1}]").unwrap(), "2");
+    assert_eq!(interpret("HammingDistance[{}, {}]").unwrap(), "0");
+    // IgnoreCase only applies to two strings, not to string elements.
+    assert_eq!(
+      interpret(
+        r#"HammingDistance[{"A", "b"}, {"a", "B"}, IgnoreCase -> True]"#
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn unequal_vectors_emit_idim() {
+    clear_state();
+    assert_eq!(
+      interpret("HammingDistance[{1, 2}, {1, 2, 3}]").unwrap(),
+      "HammingDistance[{1, 2}, {1, 2, 3}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.iter().any(|m| m.contains(
+      "HammingDistance::idim: {1, 2} and {1, 2, 3} must have the same length."
+    )));
+  }
+
+  #[test]
+  fn other_argument_kinds_stay_unevaluated() {
+    assert_eq!(
+      interpret("HammingDistance[12, 13]").unwrap(),
+      "HammingDistance[12, 13]"
+    );
+    assert_eq!(
+      interpret(r#"HammingDistance[{1, 2}, "ab"]"#).unwrap(),
+      "HammingDistance[{1, 2}, ab]"
+    );
+    assert_eq!(
+      interpret("HammingDistance[{{1, 2}, {3, 4}}, {{1, 2}, {3, 5}}]").unwrap(),
+      "HammingDistance[{{1, 2}, {3, 4}}, {{1, 2}, {3, 5}}]"
+    );
+  }
+
+  #[test]
+  fn non_option_third_argument_emits_nonopt() {
+    clear_state();
+    assert_eq!(
+      interpret("HammingDistance[{1, 2}, {1, 3}, foo]").unwrap(),
+      "HammingDistance[{1, 2}, {1, 3}, foo]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.iter().any(|m| m.contains(
+      "HammingDistance::nonopt: Options expected (instead of foo) beyond position 2"
+    )));
+  }
+
   #[test]
   fn basic() {
     assert_eq!(
