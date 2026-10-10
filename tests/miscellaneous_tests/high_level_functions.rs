@@ -2169,6 +2169,29 @@ mod high_level_functions {
   mod factor_square_free_list_tests {
     use super::*;
 
+    // Factors order by leading coefficient, then constant term
+    // (differential fuzzer, seed 20261011; wolframscript-verified).
+    #[test]
+    fn factor_order() {
+      assert_eq!(
+        interpret("FactorSquareFreeList[4x(-5 - 4x - 5x^2 + 2x^3)]").unwrap(),
+        "{{4, 1}, {x, 1}, {-5 - 4*x - 5*x^2 + 2*x^3, 1}}"
+      );
+      assert_eq!(
+        interpret("FactorSquareFreeList[-5x^2 + 2x^3]").unwrap(),
+        "{{1, 1}, {x, 2}, {-5 + 2*x, 1}}"
+      );
+      assert_eq!(
+        interpret("FactorSquareFreeList[(x - 3)^2 (x + 5)^3 (2x - 1)]")
+          .unwrap(),
+        "{{1, 1}, {-3 + x, 2}, {5 + x, 3}, {-1 + 2*x, 1}}"
+      );
+      assert_eq!(
+        interpret("FactorSquareFreeList[(3x^2 + 1)^2 (x + 2)]").unwrap(),
+        "{{1, 1}, {2 + x, 1}, {1 + 3*x^2, 2}}"
+      );
+    }
+
     #[test]
     fn test_zero() {
       assert_eq!(interpret("FactorSquareFreeList[0]").unwrap(), "{{0, 1}}");
