@@ -549,6 +549,9 @@ pub fn atom_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       | Expr::String(_)
       | Expr::Identifier(_)
       | Expr::Constant(_) => true,
+      // Associations are atoms for AtomQ, even though Length, Depth,
+      // LeafCount and FreeQ still see their values.
+      Expr::Association(_) => true,
       // Rational[n, d] and Complex[re, im] are atoms in Mathematica; the packed
       // array objects (ByteArray, NumericArray, SparseArray) are atoms too.
       Expr::FunctionCall { name, .. }
@@ -2544,43 +2547,34 @@ pub fn leaf_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
     }
     match expr {
-      // Atoms: count as 1
-      Expr::Integer(_)
-      | Expr::BigInteger(_)
-      | Expr::Real(_)
-      | Expr::BigFloat(_, _)
-      | Expr::String(_)
-      | Expr::Identifier(_)
-      | Expr::Constant(_) => 1,
-      // List: 1 for the List head + sum of all elements
-      Expr::List(items) => 1 + items.iter().map(count_leaves).sum::<i128>(),
-      // FunctionCall: 1 for the head + sum of all args
-      Expr::FunctionCall { args, .. } => {
-        1 + args.iter().map(count_leaves).sum::<i128>()
-      }
       // CurriedCall f[a,b][x,y]: head expression contributes its own leaves; no extra 1
       Expr::CurriedCall { func, args } => {
         count_leaves(func) + args.iter().map(count_leaves).sum::<i128>()
       }
-      // BinaryOp: 1 for the operator head + left + right
-      Expr::BinaryOp { left, right, .. } => {
-        1 + count_leaves(left) + count_leaves(right)
-      }
-      // UnaryOp: 1 for the operator head + operand
-      Expr::UnaryOp { operand, .. } => 1 + count_leaves(operand),
-      // Comparison: 1 for each operator + each operand
-      Expr::Comparison { operands, .. } => {
-        operands.iter().map(count_leaves).sum::<i128>()
-      }
-      // Association: 1 for head + entries
+      // Association: 1 for the head plus the values' leaves — the keys and
+      // the Rule wrappers are not parts of an association.
       Expr::Association(items) => {
         1 + items
           .iter()
-          .map(|(k, v)| 1 + count_leaves(k) + count_leaves(v))
+          .map(|(_, v)| match v {
+            // A delayed entry stores the whole `k :> v` as its value.
+            Expr::RuleDelayed { replacement, .. } => count_leaves(replacement),
+            _ => count_leaves(v),
+          })
           .sum::<i128>()
       }
-      // Anything else: treat as atom
-      _ => 1,
+      // Everything else counts its canonical FullForm tree: `a - b` is
+      // Plus[a, Times[-1, b]], `a == b` is Equal[a, b], `x_` is
+      // Pattern[x, Blank[]] — one leaf for the head plus the parts' leaves.
+      _ => {
+        use crate::functions::expr_form::{ExprForm, decompose_expr};
+        match decompose_expr(expr) {
+          ExprForm::Atom(_) => 1,
+          ExprForm::Composite { children, .. } => {
+            1 + children.iter().map(count_leaves).sum::<i128>()
+          }
+        }
+      }
     }
   }
 

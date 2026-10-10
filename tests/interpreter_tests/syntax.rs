@@ -1435,6 +1435,23 @@ mod full_form {
   use super::*;
 
   #[test]
+  fn full_form_negative_infinity() {
+    assert_eq!(
+      interpret("ToString[FullForm[-Infinity]]").unwrap(),
+      "DirectedInfinity[-1]"
+    );
+  }
+
+  // A delayed association entry is a RuleDelayed, not the value of a Rule.
+  #[test]
+  fn full_form_association_rule_delayed() {
+    assert_eq!(
+      interpret("ToString[FullForm[<|a :> 1 + x, b -> 2|>]]").unwrap(),
+      "Association[RuleDelayed[a, Plus[1, x]], Rule[b, 2]]"
+    );
+  }
+
+  #[test]
   fn full_form_plus() {
     // wolframscript's REPL keeps the `FullForm[…]` wrapper around `Plus`
     // expressions; the bare head form is reachable via `ToString[…]`.

@@ -196,6 +196,34 @@ fn stationary_distribution_with_markov() {
 mod leaf_count {
   use super::*;
 
+  // An association counts its head plus its values' leaves; keys and rule
+  // wrappers are not parts. Verified against wolframscript.
+  #[test]
+  fn leaf_count_association() {
+    assert_eq!(interpret("LeafCount[<|a -> 1|>]").unwrap(), "2");
+    assert_eq!(interpret("LeafCount[<|a -> 1, b -> 2|>]").unwrap(), "3");
+    assert_eq!(interpret("LeafCount[<||>]").unwrap(), "1");
+    assert_eq!(interpret(r#"LeafCount[<|"a" -> {1, 2}|>]"#).unwrap(), "4");
+    assert_eq!(interpret("LeafCount[<|a :> 1 + x|>]").unwrap(), "4");
+    assert_eq!(interpret("LeafCount[<|a -> <|b -> 1|>|>]").unwrap(), "3");
+  }
+
+  // Operator forms count their FullForm tree.
+  #[test]
+  fn leaf_count_operator_forms() {
+    assert_eq!(interpret("LeafCount[a -> b]").unwrap(), "3");
+    assert_eq!(interpret("LeafCount[a :> 1 + x]").unwrap(), "5");
+    assert_eq!(interpret("LeafCount[f[x] &]").unwrap(), "3");
+    assert_eq!(interpret("LeafCount[x_]").unwrap(), "3");
+    assert_eq!(interpret("LeafCount[x__Integer]").unwrap(), "4");
+    assert_eq!(interpret("LeafCount[a == b]").unwrap(), "3");
+    assert_eq!(interpret("LeafCount[1 < x <= 2]").unwrap(), "6");
+    assert_eq!(interpret("LeafCount[Hold[a - b]]").unwrap(), "6");
+    assert_eq!(interpret("LeafCount[Hold[a/b]]").unwrap(), "6");
+    assert_eq!(interpret("LeafCount[Hold[-a]]").unwrap(), "4");
+    assert_eq!(interpret("LeafCount[-Infinity]").unwrap(), "2");
+  }
+
   #[test]
   fn leaf_count_sum_expr() {
     assert_eq!(interpret("LeafCount[1 + x + y^a]").unwrap(), "6");

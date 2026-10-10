@@ -1025,6 +1025,13 @@ mod unsame_q_multi {
 mod atom_q {
   use super::*;
 
+  // Associations are atoms for AtomQ (differential fuzzer, seed 20261010).
+  #[test]
+  fn atom_q_association() {
+    assert_eq!(interpret(r#"AtomQ[<|"a" -> -1|>]"#).unwrap(), "True");
+    assert_eq!(interpret("AtomQ[<||>]").unwrap(), "True");
+  }
+
   #[test]
   fn atom_q_rational() {
     assert_eq!(interpret("AtomQ[1/2]").unwrap(), "True");
