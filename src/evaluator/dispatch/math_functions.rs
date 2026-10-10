@@ -2104,19 +2104,27 @@ pub fn dispatch_math_functions(
         let expr = pow2(sin_expr, Expr::Integer(2));
         return Some(crate::evaluator::evaluate_expr_to_expr(&expr));
       }
-      // Exact args: Haversine[x] = (1 - Cos[x])/2. wolframscript evaluates the
-      // nice-angle cases (Pi/3 -> 1/4, 2 Pi -> 0, 2 Pi/3 -> 3/4, ...). Return
-      // the computed value only when it reduces to a rational number — radical
-      // results (e.g. Pi/4, Pi/5) are left unevaluated to avoid a canonical
-      // radical-form divergence from wolframscript.
-      let cos_x = call1("Cos", args[0].clone());
-      let half = div2(minus2(Expr::Integer(1), cos_x), Expr::Integer(2));
-      if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&half) {
-        let is_rational = matches!(&result, Expr::Integer(_))
-          || matches!(&result, Expr::FunctionCall { name, args }
-            if name == "Rational" && args.len() == 2);
-        if is_rational {
-          return Some(Ok(result));
+      // Exact args: wolframscript rewrites Haversine[x] to (1 - Cos[x])/2
+      // only for rational multiples of Pi whose Cos evaluates in closed form
+      // (Pi/3 -> 1/4, Pi/6 -> (1 - Sqrt[3]/2)/2, but Haversine[Pi/8],
+      // Haversine[I Pi/3] and Haversine[ArcCos[1/3]] stay unevaluated).
+      let pi_ratio = crate::evaluator::evaluate_expr_to_expr(&div2(
+        args[0].clone(),
+        Expr::Constant("Pi".to_string()),
+      ));
+      let is_pi_multiple = match &pi_ratio {
+        Ok(Expr::Integer(_)) => true,
+        Ok(Expr::FunctionCall { name, .. }) => name == "Rational",
+        _ => false,
+      };
+      if is_pi_multiple {
+        let cos_x = call1("Cos", args[0].clone());
+        if let Ok(cos_val) = crate::evaluator::evaluate_expr_to_expr(&cos_x)
+          && !crate::functions::math_ast::expr_contains_head(&cos_val, "Cos")
+          && !crate::functions::math_ast::expr_contains_head(&cos_val, "Sin")
+        {
+          let half = div2(minus2(Expr::Integer(1), cos_val), Expr::Integer(2));
+          return Some(crate::evaluator::evaluate_expr_to_expr(&half));
         }
       }
     }
