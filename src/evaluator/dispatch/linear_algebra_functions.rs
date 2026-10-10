@@ -1121,8 +1121,12 @@ pub fn dispatch_linear_algebra_functions(
         ));
         return Some(Ok(unevaluated("MatrixExp", args)));
       }
+      // A SparseArray matrix acts on the vector like its dense form.
+      let matrix =
+        crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+          .unwrap_or_else(|| args[0].clone());
       let exp = match crate::functions::linear_algebra_ast::matrix_function_ast(
-        std::slice::from_ref(&args[0]),
+        std::slice::from_ref(&matrix),
         "MatrixExp",
         "Exp",
       ) {
