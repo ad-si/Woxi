@@ -775,7 +775,7 @@ digit.
 Woxi's machine `LogGamma` is msun's `lgamma` (accurate to an ulp); it matches
 wolframscript on most arguments but not all — `LogGamma[1.5]` is `…4522` (the
 correctly rounded value) against WL's `…4526`, `LogGamma[10.3]` `…355` against
-`…359`. The same 1–3 ULP class: `InverseErf[0.5]` (`…698` vs `…6993`, Woxi
+`…359`, `LogGamma[4.0]` `…055` (`Log[6.]`, correctly rounded) against `…0552`. The same 1–3 ULP class: `InverseErf[0.5]` (`…698` vs `…6993`, Woxi
 nearer), `LogIntegral[0.3]` (`…894` vs `…8946`, WL nearer) and
 `ExpIntegralE[2, 0.2]` (`…033` vs `…031`, WL nearer). **Not reproducible**
 without WL's own approximations; the last two are worth a more accurate

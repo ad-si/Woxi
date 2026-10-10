@@ -583,6 +583,42 @@ mod hypergeometric2f1 {
 mod hypergeometric_1f1 {
   use super::*;
 
+  // 1 ≤ a < b at a rational z: A*E^z + C with the content pulled out so the
+  // E^|z| coefficient inside is positive, over E^|z| for a negative z.
+  #[test]
+  fn integer_a_lt_b_rational_z() {
+    assert_eq!(
+      interpret("Hypergeometric1F1[1, 2, 1/2]").unwrap(),
+      "2*(-1 + Sqrt[E])"
+    );
+    assert_eq!(
+      interpret("Hypergeometric1F1[2, 3, 1/2]").unwrap(),
+      "-4*(-2 + Sqrt[E])"
+    );
+    assert_eq!(
+      interpret("Hypergeometric1F1[1, 4, 3/2]").unwrap(),
+      "(2*(-29 + 8*E^(3/2)))/9"
+    );
+    assert_eq!(
+      interpret("Hypergeometric1F1[1, 3, 1]").unwrap(),
+      "2*(-2 + E)"
+    );
+    assert_eq!(
+      interpret("Hypergeometric1F1[1, 2, -1]").unwrap(),
+      "(-1 + E)/E"
+    );
+    assert_eq!(
+      interpret("Hypergeometric1F1[1, 2, -2]").unwrap(),
+      "(-1 + E^2)/(2*E^2)"
+    );
+    assert_eq!(
+      interpret("Hypergeometric1F1[1, 3, -1/2]").unwrap(),
+      "(-4*(-2 + Sqrt[E]))/Sqrt[E]"
+    );
+    assert_eq!(interpret("Hypergeometric1F1[1, 3, -1]").unwrap(), "2/E");
+    assert_eq!(interpret("Hypergeometric1F1[2, 4, 2]").unwrap(), "3");
+  }
+
   #[test]
   fn at_z_zero() {
     assert_eq!(interpret("Hypergeometric1F1[2, 3, 0]").unwrap(), "1");
