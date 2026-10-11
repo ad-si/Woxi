@@ -1356,6 +1356,12 @@ fn promote_result_graphics(expr: &syntax::Expr) {
         return;
       }
     }
+    // A pane that is a `LocatorPane`/`ClickPane` shows the picture it wraps.
+    let pane = render_interactive_pane_if_needed(content.clone());
+    if let syntax::Expr::Graphics { svg, .. } = &pane {
+      capture_graphics(svg);
+      return;
+    }
     promote_result_graphics(content);
   }
 }

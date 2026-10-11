@@ -1094,6 +1094,19 @@ mod interpreter_tests {
     assert!(svg.starts_with("<svg width=\"320\""));
   }
 
+  /// A `TabView` tab holding a `LocatorPane` shows the picture it wraps.
+  #[test]
+  fn test_tabview_locator_pane_tab_is_drawn() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "TabView[<|\"a\" -> LocatorPane[{{0, 0}}, \
+       Graphics[Circle[], ImageSize -> 300]], \"b\" -> 2|>, 1]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(svg.starts_with("<svg"));
+  }
+
   /// A `TabView` pane can also be given in the front end's own `{key,
   /// label -> content}` "Tabs" layout-tool form — a 2-element `List`
   /// pairing an explicit numeric key with a `label -> content` rule —
