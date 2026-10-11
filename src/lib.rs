@@ -1326,12 +1326,13 @@ fn promote_result_graphics(expr: &syntax::Expr) {
   }
   if let syntax::Expr::FunctionCall { name, args } = expr
     && name == "TabView"
-    && let Some(syntax::Expr::List(items)) = args.first()
+    && let Some(items) =
+      args.first().and_then(functions::graphics::tabview_panes)
     && !items.is_empty()
   {
     let selected = args
       .get(1)
-      .and_then(|sel| selected_tabview_pane(items, sel))
+      .and_then(|sel| selected_tabview_pane(&items, sel))
       .unwrap_or(&items[0]);
     let (_, _, content) = functions::graphics::tabview_pane_parts(selected);
     // A pane laid out as a table/column/row (`Text@Grid[…]`, the common

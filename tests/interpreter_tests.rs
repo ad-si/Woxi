@@ -1080,6 +1080,20 @@ mod interpreter_tests {
     );
   }
 
+  /// `TabView[<|label1 -> pane1, …|>]` (tabs given as an Association) is
+  /// the same view as the list-of-rules form and shows its first tab.
+  #[test]
+  fn test_tabview_association_shows_first_tab() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "TabView[<|\"first\" -> Plot[Sin[x], {x, 0, 4}, ImageSize -> 320], \
+       \"second\" -> Plot[Cos[x], {x, 0, 4}, ImageSize -> 480]|>]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(svg.starts_with("<svg width=\"320\""));
+  }
+
   /// A `TabView` pane can also be given in the front end's own `{key,
   /// label -> content}` "Tabs" layout-tool form — a 2-element `List`
   /// pairing an explicit numeric key with a `label -> content` rule —
