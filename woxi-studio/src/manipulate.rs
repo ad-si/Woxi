@@ -2691,4 +2691,23 @@ mod tests {
       other => panic!("expected a Discrete popup, got {other:?}"),
     }
   }
+
+  /// `Control[{reset, None}]` states neither a domain nor an initial value,
+  /// only the bare control-type marker; the variable starts at `0`, so a
+  /// body seeding the random generator from it renders.
+  #[test]
+  fn bare_none_control_starts_at_zero() {
+    let code = r#"Manipulate[
+      SeedRandom[reset]; Row[{reset, RandomInteger[{1, 5}] > 0}],
+      {reset, None}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+    assert_eq!(state.error, None);
+    assert!(
+      state.state.iter().any(|(n, v)| n == "reset" && v == "0"),
+      "state: {:?}",
+      state.state
+    );
+  }
 }

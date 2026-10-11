@@ -18155,7 +18155,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = -5}, \"\\[Ellipsis]\"]"], "Ou
     };
     let above = render(">");
     // The region is shaded, not an empty frame.
-    assert!(above.matches("<rect").count() > 100, "region not shaded");
+    assert!(above.contains("<polygon"), "region not shaded");
     // Flipping the inequality shades the complement.
     assert_ne!(above, render("<"), "the inequality control must matter");
   }
