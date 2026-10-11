@@ -67,7 +67,6 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let unit_step_y = || call1("UnitStep", y.clone());
-  let times = |factors: Vec<Expr>| call("Times", factors);
   let e_sym = || id_expr("E");
 
   // UnitStep[x] ⊛ UnitStep[x] → y*UnitStep[y]
@@ -83,7 +82,7 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let s = frac(a.0 * b.1 + b.0 * a.1, a.1 * b.1); // a + b
     let q = frac(a.0 * b.0 * s.1, a.1 * b.1 * s.0); // a*b/(a + b)
     let sqrt_part = call1("Sqrt", div2(const_expr("Pi"), frac_to_expr(s)));
-    let shift = call("Plus", vec![shift_f, shift_g]);
+    let shift = plus(vec![shift_f, shift_g]);
     let y_shifted = simplest_signed_difference(&y, &shift);
     let y_sq = pow2(y_shifted, Expr::Integer(2));
     let exponent = match q {
@@ -193,19 +192,18 @@ fn gaussian_shape(expr: &Expr, x_var: &str) -> Option<(Frac, Expr, Expr)> {
     return None;
   }
   let coeff2 =
-    crate::evaluator::evaluate_expr_to_expr(&call("Plus", coeff2_terms))
-      .ok()?;
+    crate::evaluator::evaluate_expr_to_expr(&plus(coeff2_terms)).ok()?;
   let a = negative_frac(&coeff2)?;
 
   let coeff1 = if coeff1_terms.is_empty() {
     Expr::Integer(0)
   } else {
-    call("Plus", coeff1_terms)
+    plus(coeff1_terms)
   };
   let coeff0 = if coeff0_terms.is_empty() {
     Expr::Integer(0)
   } else {
-    call("Plus", coeff0_terms)
+    plus(coeff0_terms)
   };
 
   // shift = coeff1 / (2a)
@@ -224,7 +222,7 @@ fn gaussian_shape(expr: &Expr, x_var: &str) -> Option<(Frac, Expr, Expr)> {
     times2(frac_to_expr(a), pow2(shift.clone(), Expr::Integer(2)));
   let log_k = crate::evaluator::evaluate_expr_to_expr(&call1(
     "Expand",
-    call("Plus", vec![coeff0, correction]),
+    plus(vec![coeff0, correction]),
   ))
   .ok()?;
   let k =

@@ -71,7 +71,7 @@ pub fn dispatch_plotting(
     // RevolutionPlot3D gives up with `$Failed` rather than staying
     // unevaluated.
     if name == "RevolutionPlot3D" {
-      return Some(Ok(id_expr("$Failed")));
+      return Some(Ok(fail_expr()));
     }
     return Some(Ok(call(name, args.to_vec())));
   }
@@ -81,18 +81,15 @@ pub fn dispatch_plotting(
     && items.len() == 2
     && matches!(&items[0], Expr::Identifier(_))
   {
-    let half = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Times",
-      vec![
-        call1("Abs", items[1].clone()),
-        call("Plus", vec![Expr::Integer(1), id_expr("I")]),
-      ],
-    ))
+    let half = crate::evaluator::evaluate_expr_to_expr(&times(vec![
+      call1("Abs", items[1].clone()),
+      plus(vec![Expr::Integer(1), id_expr("I")]),
+    ]))
     .ok()?;
-    let low = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Times",
-      vec![Expr::Integer(-1), half.clone()],
-    ))
+    let low = crate::evaluator::evaluate_expr_to_expr(&times(vec![
+      Expr::Integer(-1),
+      half.clone(),
+    ]))
     .ok()?;
     let mut expanded = args.to_vec();
     expanded[1] = Expr::List(vec![items[0].clone(), low, half].into());

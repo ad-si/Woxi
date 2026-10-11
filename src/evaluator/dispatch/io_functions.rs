@@ -5505,10 +5505,7 @@ fn unquoted_display_string(expr: &Expr) -> Expr {
     Expr::String(s) => {
       crate::functions::graphics::inline_box_string_to_box_expr(s).map_or_else(
         || Expr::Identifier(s.clone()),
-        |boxes| Expr::FunctionCall {
-          name: "DisplayForm".to_string(),
-          args: vec![boxes].into(),
-        },
+        |boxes| call1("DisplayForm", boxes),
       )
     }
     Expr::FunctionCall { name, args }
@@ -5687,10 +5684,7 @@ fn wrap_pane_text(content: &Expr, width: f64, font_size: f64) -> Option<Expr> {
       let inner = wrap_pane_text(&args[0], width, size)?;
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
-      Some(Expr::FunctionCall {
-        name: "Style".to_string(),
-        args: new_args.into(),
-      })
+      Some(call("Style", new_args))
     }
     "Text" if args.len() == 1 => wrap_pane_text(&args[0], width, font_size),
     "Row" if args.len() == 1 => {
@@ -5714,10 +5708,7 @@ fn wrap_pane_text(content: &Expr, width: f64, font_size: f64) -> Option<Expr> {
         .chunks(per_line)
         .map(|c| Expr::String(c.iter().collect()))
         .collect();
-      Some(Expr::FunctionCall {
-        name: "Column".to_string(),
-        args: vec![Expr::List(lines.into())].into(),
-      })
+      Some(call1("Column", Expr::List(lines.into())))
     }
     _ => None,
   }

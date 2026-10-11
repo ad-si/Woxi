@@ -170,7 +170,7 @@ pub fn extract_var_power_factor(
     let factor = match const_factors.len() {
       0 => Expr::Integer(1),
       1 => const_factors.into_iter().next().unwrap(),
-      _ => call("Times", const_factors),
+      _ => times(const_factors),
     };
     return Some((factor, p));
   }
@@ -1010,10 +1010,7 @@ fn laplace_unit_step(arg: &Expr, t: &str, s: &Expr) -> Option<Expr> {
 fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
   // L[constant, t, s] = constant/s (if expr doesn't depend on t)
   if !depends_on(expr, t) {
-    return Some(call(
-      "Times",
-      vec![expr.clone(), pow(s.clone(), Expr::Integer(-1))],
-    ));
+    return Some(times(vec![expr.clone(), pow(s.clone(), Expr::Integer(-1))]));
   }
 
   // L[t, t, s] = 1/s^2
@@ -1044,32 +1041,23 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       {
         // t^n → Gamma[n+1] * s^(-n-1)
         let n = fargs[1];
-        return Some(call(
-          "Times",
-          vec![
-            call1("Gamma", call("Plus", vec![n.clone(), Expr::Integer(1)])),
-            pow(
-              s.clone(),
-              call(
-                "Plus",
-                vec![
-                  Expr::Integer(-1),
-                  call("Times", vec![Expr::Integer(-1), n.clone()]),
-                ],
-              ),
-            ),
-          ],
-        ));
+        return Some(times(vec![
+          call1("Gamma", plus(vec![n.clone(), Expr::Integer(1)])),
+          pow(
+            s.clone(),
+            plus(vec![
+              Expr::Integer(-1),
+              times(vec![Expr::Integer(-1), n.clone()]),
+            ]),
+          ),
+        ]));
       }
       // L[E^(a*t), t, s] = 1/(s - a)  — E can be Identifier("E") or Constant("E")
       let is_e = matches!(fargs[0], Expr::Identifier(b) if b == "E")
         || matches!(fargs[0], Expr::Constant(b) if b == "E");
       if is_e && let Some(a) = extract_linear_coeff(fargs[1], t) {
         return Some(pow(
-          call(
-            "Plus",
-            vec![s.clone(), call("Times", vec![Expr::Integer(-1), a])],
-          ),
+          plus(vec![s.clone(), times(vec![Expr::Integer(-1), a])]),
           Expr::Integer(-1),
         ));
       }
@@ -1080,19 +1068,16 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       && fargs.len() == 1
       && let Some(a) = extract_linear_coeff(fargs[0], t)
     {
-      return Some(call(
-        "Times",
-        vec![
-          a.clone(),
-          pow(
-            call(
-              "Plus",
-              vec![pow(s.clone(), Expr::Integer(2)), pow(a, Expr::Integer(2))],
-            ),
-            Expr::Integer(-1),
-          ),
-        ],
-      ));
+      return Some(times(vec![
+        a.clone(),
+        pow(
+          plus(vec![
+            pow(s.clone(), Expr::Integer(2)),
+            pow(a, Expr::Integer(2)),
+          ]),
+          Expr::Integer(-1),
+        ),
+      ]));
     }
 
     // L[Cos[a*t], t, s] = s/(s^2 + a^2)
@@ -1100,19 +1085,16 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       && fargs.len() == 1
       && let Some(a) = extract_linear_coeff(fargs[0], t)
     {
-      return Some(call(
-        "Times",
-        vec![
-          s.clone(),
-          pow(
-            call(
-              "Plus",
-              vec![pow(s.clone(), Expr::Integer(2)), pow(a, Expr::Integer(2))],
-            ),
-            Expr::Integer(-1),
-          ),
-        ],
-      ));
+      return Some(times(vec![
+        s.clone(),
+        pow(
+          plus(vec![
+            pow(s.clone(), Expr::Integer(2)),
+            pow(a, Expr::Integer(2)),
+          ]),
+          Expr::Integer(-1),
+        ),
+      ]));
     }
 
     // L[DiracDelta[t], t, s] = 1
@@ -1129,21 +1111,12 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       && let Some(a) = extract_linear_coeff(fargs[0], t)
     {
       // denom = s^2 - a^2  (Wolfram prints this as `-a^2 + s^2`)
-      let denom = call(
-        "Plus",
-        vec![
-          pow(s.clone(), Expr::Integer(2)),
-          call(
-            "Times",
-            vec![Expr::Integer(-1), pow(a.clone(), Expr::Integer(2))],
-          ),
-        ],
-      );
+      let denom = plus(vec![
+        pow(s.clone(), Expr::Integer(2)),
+        times(vec![Expr::Integer(-1), pow(a.clone(), Expr::Integer(2))]),
+      ]);
       let numerator = if fname == "Cosh" { s.clone() } else { a };
-      return Some(call(
-        "Times",
-        vec![numerator, pow(denom, Expr::Integer(-1))],
-      ));
+      return Some(times(vec![numerator, pow(denom, Expr::Integer(-1))]));
     }
 
     // L[BesselJ[n, a*t], t, s] = a^n / (Sqrt[a^2 + s^2] * (s + Sqrt[a^2 + s^2])^n)
@@ -1155,28 +1128,22 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       let n = fargs[0];
       // sqrt_term = Sqrt[a^2 + s^2]
       let sqrt_term = pow(
-        call(
-          "Plus",
-          vec![
-            pow(a.clone(), Expr::Integer(2)),
-            pow(s.clone(), Expr::Integer(2)),
-          ],
-        ),
+        plus(vec![
+          pow(a.clone(), Expr::Integer(2)),
+          pow(s.clone(), Expr::Integer(2)),
+        ]),
         call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
       );
       // result = a^n / (sqrt_term * (s + sqrt_term)^n)
       //        = Times[Power[a, n], Power[sqrt_term, -1], Power[Plus[s, sqrt_term], Times[-1, n]]]
-      return Some(call(
-        "Times",
-        vec![
-          pow(a, n.clone()),
-          pow(sqrt_term.clone(), Expr::Integer(-1)),
-          pow(
-            call("Plus", vec![s.clone(), sqrt_term]),
-            call("Times", vec![Expr::Integer(-1), n.clone()]),
-          ),
-        ],
-      ));
+      return Some(times(vec![
+        pow(a, n.clone()),
+        pow(sqrt_term.clone(), Expr::Integer(-1)),
+        pow(
+          plus(vec![s.clone(), sqrt_term]),
+          times(vec![Expr::Integer(-1), n.clone()]),
+        ),
+      ]));
     }
 
     // Linearity: L[a + b, t, s] = L[a, t, s] + L[b, t, s]
@@ -1185,7 +1152,7 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       for arg in &fargs {
         terms.push(laplace_transform_inner(arg, t, s)?);
       }
-      return Some(call("Plus", terms));
+      return Some(plus(terms));
     }
 
     // s-shifting theorem: L[E^(c t) g(t), t, s] = (L[g, t, s])(s - c). Because
@@ -1217,16 +1184,14 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
         let c_sum = if exp_coeffs.len() == 1 {
           exp_coeffs.remove(0)
         } else {
-          call("Plus", exp_coeffs)
+          plus(exp_coeffs)
         };
-        let s_shifted = call(
-          "Plus",
-          vec![s.clone(), call("Times", vec![Expr::Integer(-1), c_sum])],
-        );
+        let s_shifted =
+          plus(vec![s.clone(), times(vec![Expr::Integer(-1), c_sum])]);
         let g = if rest.len() == 1 {
           rest.remove(0)
         } else {
-          call("Times", rest)
+          times(rest)
         };
         if let Some(res) = laplace_transform_inner(&g, t, &s_shifted) {
           return Some(res);
@@ -1249,11 +1214,11 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
         let t_part = if t_dependent.len() == 1 {
           t_dependent[0].clone()
         } else {
-          call("Times", t_dependent)
+          times(t_dependent)
         };
         if let Some(lt) = laplace_transform_inner(&t_part, t, s) {
           constants.push(lt);
-          return Some(call("Times", constants));
+          return Some(times(constants));
         }
       }
     }
@@ -1302,7 +1267,7 @@ fn extract_exp_coeff(factor: &Expr, t: &str) -> Option<Expr> {
     && is_e(inner[0])
   {
     let a = extract_linear_coeff(inner[1], t)?;
-    return Some(call("Times", vec![Expr::Integer(-1), a]));
+    return Some(times(vec![Expr::Integer(-1), a]));
   }
   None
 }
@@ -1347,7 +1312,7 @@ fn extract_linear_coeff(expr: &Expr, t: &str) -> Option<Expr> {
           return Some(if rest.len() == 1 {
             rest.remove(0)
           } else {
-            call("Times", rest)
+            times(rest)
           });
         }
       }
@@ -1560,16 +1525,10 @@ fn inverse_laplace_2d(
   if matches!(&num, Expr::Integer(1)) && is_sum_pq(&den) {
     return Some(call1(
       "DiracDelta",
-      call(
-        "Plus",
-        vec![
-          call(
-            "Times",
-            vec![Expr::Integer(-1), Expr::Identifier(x.to_string())],
-          ),
-          Expr::Identifier(y.to_string()),
-        ],
-      ),
+      plus(vec![
+        times(vec![Expr::Integer(-1), Expr::Identifier(x.to_string())]),
+        Expr::Identifier(y.to_string()),
+      ]),
     ));
   }
 
@@ -1579,7 +1538,7 @@ fn inverse_laplace_2d(
       "BesselJ",
       vec![
         Expr::Integer(0),
-        call("Times", vec![Expr::Integer(2), sqrt_x(), sqrt_y()]),
+        times(vec![Expr::Integer(2), sqrt_x(), sqrt_y()]),
       ],
     ));
   }
@@ -1609,17 +1568,14 @@ fn inverse_laplace_2d(
     false
   };
   if matches!(&num, Expr::Integer(1)) && is_sqrt_one_plus_pq(&den) {
-    let neg_xy = call(
-      "Times",
-      vec![
-        Expr::Integer(-1),
-        Expr::Identifier(x.to_string()),
-        Expr::Identifier(y.to_string()),
-      ],
-    );
-    let cosh_arg = call("Times", vec![Expr::Integer(2), call1("Sqrt", neg_xy)]);
+    let neg_xy = times(vec![
+      Expr::Integer(-1),
+      Expr::Identifier(x.to_string()),
+      Expr::Identifier(y.to_string()),
+    ]);
+    let cosh_arg = times(vec![Expr::Integer(2), call1("Sqrt", neg_xy)]);
     let cosh = call1("Cosh", cosh_arg);
-    let pi_sqrt_xy = call("Times", vec![const_expr("Pi"), sqrt_x(), sqrt_y()]);
+    let pi_sqrt_xy = times(vec![const_expr("Pi"), sqrt_x(), sqrt_y()]);
     return Some(div2(cosh, pi_sqrt_xy));
   }
 
@@ -1634,7 +1590,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
     if matches!(expr, Expr::Integer(1)) {
       return Some(dirac);
     }
-    return Some(call("Times", vec![expr.clone(), dirac]));
+    return Some(times(vec![expr.clone(), dirac]));
   }
 
   if let Some((fname, fargs)) = as_func_args(expr) {
@@ -1654,13 +1610,10 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
             return Some(Expr::Integer(1));
           }
           // s^(-n) → t^(n-1) / (n-1)!
-          return Some(call(
-            "Times",
-            vec![
-              pow(Expr::Identifier(t.to_string()), Expr::Integer(n - 1)),
-              pow(call1("Gamma", Expr::Integer(n)), Expr::Integer(-1)),
-            ],
-          ));
+          return Some(times(vec![
+            pow(Expr::Identifier(t.to_string()), Expr::Integer(n - 1)),
+            pow(call1("Gamma", Expr::Integer(n)), Expr::Integer(-1)),
+          ]));
         }
       }
 
@@ -1683,7 +1636,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
       {
         return Some(call(
           "DiracDelta",
-          vec![call("Plus", vec![Expr::Identifier(t.to_string()), k])],
+          vec![plus(vec![Expr::Identifier(t.to_string()), k])],
         ));
       }
 
@@ -1696,16 +1649,10 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
           Some(c) => (sqrt_of_expr(&c), "Sinh"),
           None => (sqrt_of_expr(&a_squared), "Sin"),
         };
-        return Some(call(
-          "Times",
-          vec![
-            pow(a.clone(), Expr::Integer(-1)),
-            call(
-              func,
-              vec![call("Times", vec![a, Expr::Identifier(t.to_string())])],
-            ),
-          ],
-        ));
+        return Some(times(vec![
+          pow(a.clone(), Expr::Integer(-1)),
+          call(func, vec![times(vec![a, Expr::Identifier(t.to_string())])]),
+        ]));
       }
 
       // L^-1[(s^2 + a^2)^(-1/2)] = BesselJ[0, a*t], and the hyperbolic
@@ -1722,7 +1669,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
           func,
           vec![
             Expr::Integer(0),
-            call("Times", vec![a, Expr::Identifier(t.to_string())]),
+            times(vec![a, Expr::Identifier(t.to_string())]),
           ],
         ));
       }
@@ -1732,10 +1679,11 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         // Check if fargs[0] is (s + something) or (s - something)
         if let Some(neg_a) = extract_linear_s_offset(fargs[0], s) {
           // (s + neg_a)^(-1) → E^(-neg_a * t)
-          let exponent = call(
-            "Times",
-            vec![Expr::Integer(-1), neg_a, Expr::Identifier(t.to_string())],
-          );
+          let exponent = times(vec![
+            Expr::Integer(-1),
+            neg_a,
+            Expr::Identifier(t.to_string()),
+          ]);
           return Some(pow(const_expr("E"), exponent));
         }
       }
@@ -1768,22 +1716,19 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
             // s / (s^2 + a^2) → Cos[a t]  (or Cosh[a t])
             return Some(call(
               cos_name,
-              vec![call("Times", vec![a, Expr::Identifier(t.to_string())])],
+              vec![times(vec![a, Expr::Identifier(t.to_string())])],
             ));
           }
           // For numerator/(s^2 + a^2) → (numerator/a) * Sin[a*t]
           if !depends_on(numerator, s) {
-            return Some(call(
-              "Times",
-              vec![
-                numerator.clone(),
-                pow(a.clone(), Expr::Integer(-1)),
-                call(
-                  sin_name,
-                  vec![call("Times", vec![a, Expr::Identifier(t.to_string())])],
-                ),
-              ],
-            ));
+            return Some(times(vec![
+              numerator.clone(),
+              pow(a.clone(), Expr::Integer(-1)),
+              call(
+                sin_name,
+                vec![times(vec![a, Expr::Identifier(t.to_string())])],
+              ),
+            ]));
           }
         }
       }
@@ -1795,7 +1740,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
       for arg in &fargs {
         terms.push(inverse_laplace_inner(arg, s, t)?);
       }
-      return Some(call("Plus", terms));
+      return Some(plus(terms));
     }
 
     // Linearity: L^-1[c * F(s)] = c * L^-1[F(s)] where c doesn't depend on s
@@ -1813,11 +1758,11 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         let s_part = if s_dependent.len() == 1 {
           s_dependent[0].clone()
         } else {
-          call("Times", s_dependent)
+          times(s_dependent)
         };
         if let Some(inv) = inverse_laplace_inner(&s_part, s, t) {
           constants.push(inv);
-          return Some(call("Times", constants));
+          return Some(times(constants));
         }
       }
     }
@@ -1888,8 +1833,7 @@ fn inverse_laplace_exact_rational(
   for term in &terms {
     inverted.push(inverse_laplace_exact_term(term, s, t)?);
   }
-  let sum =
-    crate::evaluator::evaluate_expr_to_expr(&call("Plus", inverted)).ok()?;
+  let sum = crate::evaluator::evaluate_expr_to_expr(&plus(inverted)).ok()?;
   // wolframscript simplifies the residue sum before returning it, which
   // for distinct poles means collecting the exponentials:
   // `E^(-t)/2 - E^(-2 t) + E^(-3 t)/2` comes back as
@@ -1946,30 +1890,26 @@ fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
   let coeff = if coeff.is_empty() {
     Expr::Integer(1)
   } else {
-    call("Times", coeff)
+    times(coeff)
   };
   let num = if numerator.is_empty() {
     Expr::Integer(1)
   } else {
-    call("Times", numerator)
+    times(numerator)
   };
 
   // No pole at all: the polynomial part of an improper fraction, whose
   // inverse is the matching sum of DiracDelta derivatives.
   let Some((den, k)) = pole else {
-    let coeffs =
-      polynomial_exact_coeffs(&call("Times", vec![coeff, num]), &s_id)?;
+    let coeffs = polynomial_exact_coeffs(&times(vec![coeff, num]), &s_id)?;
     let terms: Vec<Expr> = coeffs
       .iter()
       .enumerate()
       .map(|(degree, c)| {
-        call(
-          "Times",
-          vec![c.clone(), dirac_delta_derivative(degree as i128, t)],
-        )
+        times(vec![c.clone(), dirac_delta_derivative(degree as i128, t)])
       })
       .collect();
-    return Some(call("Plus", terms));
+    return Some(plus(terms));
   };
 
   let den_coeffs = polynomial_exact_coeffs(&den, &s_id)?;
@@ -1982,25 +1922,22 @@ fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
         return None;
       }
       let (c0, c1) = (&den_coeffs[0], &den_coeffs[1]);
-      let root = call(
-        "Times",
-        vec![
-          Expr::Integer(-1),
-          c0.clone(),
-          pow(c1.clone(), Expr::Integer(-1)),
-        ],
-      );
+      let root = times(vec![
+        Expr::Integer(-1),
+        c0.clone(),
+        pow(c1.clone(), Expr::Integer(-1)),
+      ]);
       let mut parts = vec![
         coeff,
         num,
         pow(c1.clone(), Expr::Integer(-k)),
         pow(call1("Factorial", Expr::Integer(k - 1)), Expr::Integer(-1)),
-        pow(const_expr("E"), call("Times", vec![root, t_id.clone()])),
+        pow(const_expr("E"), times(vec![root, t_id.clone()])),
       ];
       if k > 1 {
         parts.push(pow(t_id, Expr::Integer(k - 1)));
       }
-      Some(call("Times", parts))
+      Some(times(parts))
     }
     // Irreducible quadratic `c2 s^2 + c1 s + c0`, first power only.
     3 => {
@@ -2009,35 +1946,25 @@ fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
       }
       let c2 = &den_coeffs[2];
       let inv_c2 = pow(c2.clone(), Expr::Integer(-1));
-      let monic = |c: &Expr| call("Times", vec![c.clone(), inv_c2.clone()]);
+      let monic = |c: &Expr| times(vec![c.clone(), inv_c2.clone()]);
       let p = monic(&den_coeffs[1]);
       let q = monic(&den_coeffs[0]);
       // a = -p/2, and the pole pair sits at a ± Sqrt[a^2 - q].
-      let a = call(
-        "Times",
-        vec![
-          call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
-          p,
-        ],
-      );
+      let a = times(vec![
+        call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
+        p,
+      ]);
       let a = crate::evaluator::evaluate_expr_to_expr(&a).ok()?;
-      let disc = call(
-        "Plus",
-        vec![
-          pow(a.clone(), Expr::Integer(2)),
-          call("Times", vec![Expr::Integer(-1), q.clone()]),
-        ],
-      );
+      let disc = plus(vec![
+        pow(a.clone(), Expr::Integer(2)),
+        times(vec![Expr::Integer(-1), q.clone()]),
+      ]);
       let disc = crate::evaluator::evaluate_expr_to_expr(&disc).ok()?;
       let disc_value = expr_to_f64(&disc)?;
       // A pair of complex poles oscillates, a pair of real (irrational)
       // ones grows hyperbolically.
       let (w2, cos_name, sin_name) = if disc_value < 0.0 {
-        (
-          call("Times", vec![Expr::Integer(-1), disc.clone()]),
-          "Cos",
-          "Sin",
-        )
+        (times(vec![Expr::Integer(-1), disc.clone()]), "Cos", "Sin")
       } else {
         (disc.clone(), "Cosh", "Sinh")
       };
@@ -2047,33 +1974,21 @@ fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
       let big_b = num_coeffs.first().cloned().unwrap_or(Expr::Integer(0));
       // (A s + B)/((s - a)^2 + w^2)
       //   = A E^(a t) Cos[w t] + ((B + A a)/w) E^(a t) Sin[w t]
-      let sin_coeff = call(
-        "Times",
-        vec![
-          call(
-            "Plus",
-            vec![big_b, call("Times", vec![big_a.clone(), a.clone()])],
-          ),
-          pow(w.clone(), Expr::Integer(-1)),
-        ],
-      );
-      let wt = call("Times", vec![w, t_id.clone()]);
-      let oscillation = call(
-        "Plus",
-        vec![
-          call("Times", vec![big_a, call1(cos_name, wt.clone())]),
-          call("Times", vec![sin_coeff, call1(sin_name, wt)]),
-        ],
-      );
-      Some(call(
-        "Times",
-        vec![
-          coeff,
-          inv_c2,
-          pow(const_expr("E"), call("Times", vec![a, t_id])),
-          oscillation,
-        ],
-      ))
+      let sin_coeff = times(vec![
+        plus(vec![big_b, times(vec![big_a.clone(), a.clone()])]),
+        pow(w.clone(), Expr::Integer(-1)),
+      ]);
+      let wt = times(vec![w, t_id.clone()]);
+      let oscillation = plus(vec![
+        times(vec![big_a, call1(cos_name, wt.clone())]),
+        times(vec![sin_coeff, call1(sin_name, wt)]),
+      ]);
+      Some(times(vec![
+        coeff,
+        inv_c2,
+        pow(const_expr("E"), times(vec![a, t_id])),
+        oscillation,
+      ]))
     }
     _ => None,
   }
@@ -2204,10 +2119,10 @@ fn inverse_laplace_partial_fractions(
     .enumerate()
     .filter(|&(_, &c)| c != 0.0)
     .map(|(degree, &c)| {
-      call(
-        "Times",
-        vec![Expr::Real(c), dirac_delta_derivative(degree as i128, t)],
-      )
+      times(vec![
+        Expr::Real(c),
+        dirac_delta_derivative(degree as i128, t),
+      ])
     })
     .collect();
   let mut consumed = vec![false; roots.len()];
@@ -2222,9 +2137,9 @@ fn inverse_laplace_partial_fractions(
       return None;
     }
     let (rr, ri) = complex_div(pr, pi, qr, qi);
-    let exp_part = pow(e_const(), call("Times", vec![Expr::Real(re), t_id()]));
+    let exp_part = pow(e_const(), times(vec![Expr::Real(re), t_id()]));
     if im.abs() < 1e-9 * scale.max(1.0) {
-      terms.push(call("Times", vec![Expr::Real(rr), exp_part]));
+      terms.push(times(vec![Expr::Real(rr), exp_part]));
       continue;
     }
     let j = ((i + 1)..roots.len()).find(|&j| {
@@ -2234,21 +2149,16 @@ fn inverse_laplace_partial_fractions(
         && (bi + im).abs() < 1e-6 * scale
     })?;
     consumed[j] = true;
-    let cos_part =
-      call("Cos", vec![call("Times", vec![Expr::Real(im), t_id()])]);
-    let sin_part =
-      call("Sin", vec![call("Times", vec![Expr::Real(im), t_id()])]);
-    let oscillation = call(
-      "Plus",
-      vec![
-        call("Times", vec![Expr::Real(2.0 * rr), cos_part]),
-        call("Times", vec![Expr::Real(-2.0 * ri), sin_part]),
-      ],
-    );
-    terms.push(call("Times", vec![exp_part, oscillation]));
+    let cos_part = call("Cos", vec![times(vec![Expr::Real(im), t_id()])]);
+    let sin_part = call("Sin", vec![times(vec![Expr::Real(im), t_id()])]);
+    let oscillation = plus(vec![
+      times(vec![Expr::Real(2.0 * rr), cos_part]),
+      times(vec![Expr::Real(-2.0 * ri), sin_part]),
+    ]);
+    terms.push(times(vec![exp_part, oscillation]));
   }
 
-  Some(call("Plus", terms))
+  Some(plus(terms))
 }
 
 /// `CoefficientList[poly, var]`, converted to `f64`s from lowest to highest
@@ -2449,14 +2359,13 @@ fn normalize_to_func_calls(expr: &Expr) -> Expr {
       let left = normalize_to_func_calls(left);
       let right = normalize_to_func_calls(right);
       match op {
-        BinaryOperator::Plus => call("Plus", vec![left, right]),
-        BinaryOperator::Minus => call(
-          "Plus",
-          vec![left, call("Times", vec![Expr::Integer(-1), right])],
-        ),
-        BinaryOperator::Times => call("Times", vec![left, right]),
+        BinaryOperator::Plus => plus(vec![left, right]),
+        BinaryOperator::Minus => {
+          plus(vec![left, times(vec![Expr::Integer(-1), right])])
+        }
+        BinaryOperator::Times => times(vec![left, right]),
         BinaryOperator::Divide => {
-          call("Times", vec![left, pow(right, Expr::Integer(-1))])
+          times(vec![left, pow(right, Expr::Integer(-1))])
         }
         BinaryOperator::Power => pow(left, right),
         _ => expr.clone(),
@@ -2467,7 +2376,7 @@ fn normalize_to_func_calls(expr: &Expr) -> Expr {
       operand,
     } => {
       let inner = normalize_to_func_calls(operand);
-      call("Times", vec![Expr::Integer(-1), inner])
+      times(vec![Expr::Integer(-1), inner])
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -2508,7 +2417,7 @@ fn make_times(args: Vec<Expr>) -> Expr {
   if args.len() == 1 {
     args.into_iter().next().unwrap()
   } else {
-    call("Times", args)
+    times(args)
   }
 }
 
@@ -2517,7 +2426,7 @@ fn make_plus(args: Vec<Expr>) -> Expr {
   if args.len() == 1 {
     args.into_iter().next().unwrap()
   } else {
-    call("Plus", args)
+    plus(args)
   }
 }
 
@@ -3976,7 +3885,7 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
         let t_part = if t_dependent.len() == 1 {
           t_dependent[0].clone()
         } else {
-          call("Times", t_dependent)
+          times(t_dependent)
         };
         if let Some(ft) = fourier_transform_inner(&t_part, t, w) {
           constants.push(ft);
@@ -4032,7 +3941,7 @@ fn match_neg_a_t_squared(exp: &Expr, t: &str) -> Option<Expr> {
         let coeff = if rest.len() == 1 {
           rest[0].clone()
         } else {
-          call("Times", rest)
+          times(rest)
         };
         // a = -coeff (negate)
         return Some(make_times(vec![Expr::Integer(-1), coeff]));
@@ -4070,7 +3979,7 @@ fn match_neg_a_abs_t(exp: &Expr, t: &str) -> Option<Expr> {
         let coeff = if rest.len() == 1 {
           rest[0].clone()
         } else {
-          call("Times", rest)
+          times(rest)
         };
         return Some(make_times(vec![Expr::Integer(-1), coeff]));
       }
@@ -4219,7 +4128,7 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
         let w_part = if w_dependent.len() == 1 {
           w_dependent[0].clone()
         } else {
-          call("Times", w_dependent)
+          times(w_dependent)
         };
         if let Some(inv) = inverse_fourier_inner(&w_part, w, t) {
           constants.push(inv);
@@ -4720,7 +4629,7 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
         return None;
       }
       let neg_a = coeff(base, 1)?; // = -a
-      let a = ev(call("Times", vec![Expr::Integer(-1), neg_a]))?;
+      let a = ev(times(vec![Expr::Integer(-1), neg_a]))?;
       let residual = ev(call1(
         "Expand",
         minus2(
@@ -5538,7 +5447,7 @@ fn egf_poly_part(
         let sum = if poly_parts.len() == 1 {
           poly_parts.remove(0)
         } else {
-          call("Plus", poly_parts)
+          plus(poly_parts)
         };
         return Ok(Some(sum));
       }
@@ -5889,7 +5798,7 @@ fn egf_stirling_polynomial(k: usize, x: &Expr) -> Expr {
   let inner = if inner_terms.len() == 1 {
     inner_terms.remove(0)
   } else {
-    call("Plus", inner_terms)
+    plus(inner_terms)
   };
 
   // x * inner (or just x if inner is 1)
