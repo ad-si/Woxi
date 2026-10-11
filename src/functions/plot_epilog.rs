@@ -329,13 +329,16 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
         }
       }
       "Dashing" if args.len() == 1 => {
+        // Named sizes (`Small`, …) are absolute lengths, stored negative;
+        // `Dashed`/`Dotted` evaluate to `Dashing[{Small, Small}]` /
+        // `Dashing[{0, Small}]`, so they must be understood here too.
+        let dash_len = |e: &Expr| {
+          crate::functions::graphics::dash_size_to_f64(e)
+            .or_else(|| try_eval_to_f64(e))
+        };
         let dashes: Vec<f64> = match &args[0] {
-          Expr::List(items) => {
-            items.iter().filter_map(try_eval_to_f64).collect()
-          }
-          other => try_eval_to_f64(other)
-            .map(|d| vec![d, d])
-            .unwrap_or_default(),
+          Expr::List(items) => items.iter().filter_map(dash_len).collect(),
+          other => dash_len(other).map(|d| vec![d, d]).unwrap_or_default(),
         };
         style.dashing = if dashes.is_empty() {
           None

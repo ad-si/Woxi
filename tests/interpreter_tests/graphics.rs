@@ -33616,4 +33616,29 @@ mod grid_text_in_graphics {
     );
     assert!(shown > plain + 5, "{plain} vs {shown}");
   }
+
+  /// `Dashed`/`Dotted` evaluate to `Dashing[{Small, Small}]` /
+  /// `Dashing[{0, Small}]`; a plot's `Epilog` must keep the named sizes
+  /// instead of silently drawing a solid (or wrongly dotted) line.
+  #[test]
+  fn plot_epilog_named_dashing() {
+    let dash = |style: &str| {
+      let svg = export_svg(&format!(
+        "Plot[x, {{x, 0, 1}}, Epilog -> {{{style}, Line[{{{{0, 0}}, {{1, 1}}}}]}}]"
+      ));
+      let tail = svg.split("epilogClip").last().unwrap().to_string();
+      tail
+        .split("stroke-dasharray=\"")
+        .nth(1)
+        .and_then(|t| t.split('"').next())
+        .map(str::to_string)
+    };
+    assert_eq!(dash("Dashed").as_deref(), Some("40.0,40.0"));
+    assert_eq!(dash("Dotted").as_deref(), Some("10.0,40.0"));
+    assert_eq!(
+      dash("Dashing[{Small, Large}]").as_deref(),
+      Some("40.0,160.0")
+    );
+    assert_eq!(dash("Red"), None);
+  }
 }
