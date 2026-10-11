@@ -1024,10 +1024,7 @@ fn q_to_expr(q: &Q) -> Expr {
   if q.d.is_one() {
     big_to_expr(&q.n)
   } else {
-    Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![big_to_expr(&q.n), big_to_expr(&q.d)].into(),
-    }
+    call("Rational", vec![big_to_expr(&q.n), big_to_expr(&q.d)])
   }
 }
 

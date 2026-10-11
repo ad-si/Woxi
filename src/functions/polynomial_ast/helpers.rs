@@ -47,7 +47,7 @@ pub fn mk_ratio(n: i128, d: i128) -> Expr {
 
 /// Build `Times[a, b]`.
 pub fn mk_times(a: Expr, b: Expr) -> Expr {
-  call("Times", vec![a, b])
+  times(vec![a, b])
 }
 
 // ─── Ascending trimmed polynomial coefficient vectors ────────────────

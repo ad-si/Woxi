@@ -311,7 +311,7 @@ pub(super) fn coeffs_to_poly(coeffs: &[i128], var: &str, p: i128) -> Expr {
       if c == 1 {
         pow
       } else {
-        call("Times", vec![Expr::Integer(c), pow])
+        times(vec![Expr::Integer(c), pow])
       }
     };
     terms.push(term);
@@ -322,7 +322,7 @@ pub(super) fn coeffs_to_poly(coeffs: &[i128], var: &str, p: i128) -> Expr {
   let expr = if terms.len() == 1 {
     terms.into_iter().next().unwrap()
   } else {
-    call("Plus", terms)
+    plus(terms)
   };
   crate::evaluator::evaluate_expr_to_expr(&expr).unwrap_or(expr)
 }
@@ -409,7 +409,7 @@ fn poly_gcd_pair(
     return Ok(a_prim);
   }
 
-  let result = call("Times", vec![content_gcd, a_prim]);
+  let result = times(vec![content_gcd, a_prim]);
   crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(
     &crate::evaluator::evaluate_expr_to_expr(&result)?,
   ))
@@ -486,10 +486,7 @@ fn poly_divide_by_constant(
     return Ok(poly.clone());
   }
 
-  let div = call(
-    "Times",
-    vec![pow(constant.clone(), Expr::Integer(-1)), poly.clone()],
-  );
+  let div = times(vec![pow(constant.clone(), Expr::Integer(-1)), poly.clone()]);
   let result = crate::evaluator::evaluate_expr_to_expr(&div)?;
   crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(&result))
 }
@@ -535,7 +532,7 @@ fn normalize_poly_sign(
   };
 
   if is_negative {
-    let neg = call("Times", vec![Expr::Integer(-1), poly.clone()]);
+    let neg = times(vec![Expr::Integer(-1), poly.clone()]);
     crate::evaluator::evaluate_expr_to_expr(&neg)
   } else {
     Ok(poly.clone())

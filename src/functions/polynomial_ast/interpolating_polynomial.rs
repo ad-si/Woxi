@@ -67,20 +67,14 @@ pub fn interpolating_polynomial_ast(
   for j in 1..n {
     for i in (j..n).rev() {
       // dd[i] = (dd[i] - dd[i-1]) / (x_vals[i] - x_vals[i-j])
-      let numer = call(
-        "Plus",
-        vec![
-          dd[i].clone(),
-          call("Times", vec![Expr::Integer(-1), dd[i - 1].clone()]),
-        ],
-      );
-      let denom = call(
-        "Plus",
-        vec![
-          x_vals[i].clone(),
-          call("Times", vec![Expr::Integer(-1), x_vals[i - j].clone()]),
-        ],
-      );
+      let numer = plus(vec![
+        dd[i].clone(),
+        times(vec![Expr::Integer(-1), dd[i - 1].clone()]),
+      ]);
+      let denom = plus(vec![
+        x_vals[i].clone(),
+        times(vec![Expr::Integer(-1), x_vals[i - j].clone()]),
+      ]);
       let divided = div2(numer, denom);
       dd[i] = evaluate_expr_to_expr(&divided)?;
     }
@@ -92,15 +86,12 @@ pub fn interpolating_polynomial_ast(
 
   for i in (0..n - 1).rev() {
     // result = dd[i] + (x - x_vals[i]) * result
-    let x_minus_xi = call(
-      "Plus",
-      vec![
-        var.clone(),
-        call("Times", vec![Expr::Integer(-1), x_vals[i].clone()]),
-      ],
-    );
-    let product = call("Times", vec![x_minus_xi, result]);
-    result = call("Plus", vec![dd[i].clone(), product]);
+    let x_minus_xi = plus(vec![
+      var.clone(),
+      times(vec![Expr::Integer(-1), x_vals[i].clone()]),
+    ]);
+    let product = times(vec![x_minus_xi, result]);
+    result = plus(vec![dd[i].clone(), product]);
   }
 
   evaluate_expr_to_expr(&result)

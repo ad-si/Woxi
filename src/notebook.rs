@@ -2243,6 +2243,39 @@ fn render_linear_syntax_escapes(s: &str) -> String {
   out
 }
 
+/// Parenthesize a sub/superscript that is more than one plain token so the
+/// flat prose rendering stays unambiguous: an exponent `-b e^(-c t)` must
+/// not read as `e^-b e^-c t`. Single words, numbers and lone symbols
+/// (`*`, `†`) stay bare, and an already parenthesized script is kept as is.
+fn group_script(script: &str) -> String {
+  let encloses_all = script.starts_with('(') && {
+    let mut depth = 0usize;
+    let mut closes_at_end = false;
+    for (i, c) in script.char_indices() {
+      match c {
+        '(' => depth += 1,
+        ')' => {
+          depth -= 1;
+          if depth == 0 {
+            closes_at_end = i + 1 == script.len();
+            break;
+          }
+        }
+        _ => {}
+      }
+    }
+    closes_at_end
+  };
+  if encloses_all
+    || script.chars().count() <= 1
+    || script.chars().all(|c| c.is_alphanumeric() || c == '.')
+  {
+    script.to_string()
+  } else {
+    format!("({script})")
+  }
+}
+
 /// Render a box expression as *display* text for a prose (Text) cell —
 /// the inline-formula counterpart of `extract_typeset_box`, preferring
 /// readable notation over evaluable InputForm: `SubscriptBox["D", "U"]` →
@@ -2361,7 +2394,7 @@ fn render_boxes_text(s: &str) -> String {
     if draws_nothing(&base) {
       return sub;
     }
-    return format!("{base}_{sub}");
+    return format!("{base}_{}", group_script(&sub));
   }
   if let Some(args) = positional_box_args("SuperscriptBox", s)
     && args.len() == 2
@@ -2375,7 +2408,7 @@ fn render_boxes_text(s: &str) -> String {
     let exp = render_boxes_text(&args[1]);
     return match superscript_unicode(&exp) {
       Some(sup) if !sup.is_empty() => format!("{base}{sup}"),
-      _ => format!("{base}^{exp}"),
+      _ => format!("{base}^{}", group_script(&exp)),
     };
   }
   if let Some(args) = positional_box_args("SubsuperscriptBox", s)
@@ -2385,8 +2418,10 @@ fn render_boxes_text(s: &str) -> String {
     let sub = render_boxes_text(&args[1]);
     let exp = render_boxes_text(&args[2]);
     return match superscript_unicode(&exp) {
-      Some(sup) if !sup.is_empty() => format!("{base}_{sub}{sup}"),
-      _ => format!("{base}_{sub}^{exp}"),
+      Some(sup) if !sup.is_empty() => {
+        format!("{base}_{}{sup}", group_script(&sub))
+      }
+      _ => format!("{base}_{}^{}", group_script(&sub), group_script(&exp)),
     };
   }
   if let Some(args) = positional_box_args("SqrtBox", s)
@@ -4837,6 +4872,37 @@ Cell["A subitem", "Subitem"]
   }
 
   #[test]
+  fn test_textdata_inline_math_groups_compound_scripts() {
+    // A nested exponent must not flatten into `e^-b e^-c t`: compound
+    // scripts are parenthesized, simple ones stay bare.
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ "Model ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{
+    SubscriptBox["y", "G"], "=", 
+    SubscriptBox["y", RowBox[{"i", "+", "1"}]], " ", 
+    SuperscriptBox["e", 
+     RowBox[{
+      RowBox[{"-", "b"}], " ", 
+      SuperscriptBox["e", 
+       RowBox[{
+        RowBox[{"-", "c"}], " ", "t"}]]}]], "+", 
+    SuperscriptBox["x", "n"], "+", 
+    SuperscriptBox["x", "2"]}], TraditionalForm]], "InlineMath"],
+ " done"
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let flat = parsed.flat_cells();
+    assert_eq!(
+      flat[0].1.content,
+      "Model y_G=y_(i+1) e^(-b e^(-c t))+x^n+x² done"
+    );
+  }
+
+  #[test]
   fn test_textdata_inline_math_cell_renders_content() {
     // Inline `Cell[…, "InlineMath"]` elements inside a TextData run carry
     // real prose (math embedded in a sentence) and must be rendered, not
@@ -6545,6 +6611,26 @@ Cell["Chapter 2", "Chapter"]
  " are the weights"
 }]"#;
     assert_eq!(extract_cell_content(s), "m_1,m_2 are the weights");
+  }
+
+  #[test]
+  fn test_extract_textdata_multi_token_subscripts_are_grouped() {
+    // A subscript made of several tokens reads as one script, so
+    // `R_{a+b}` is `R_(a+b)` and not `R_a+b`; single tokens stay bare.
+    let s = r#"TextData[{
+ Cell[BoxData[
+  FormBox[
+   RowBox[{
+    SubscriptBox["R", RowBox[{"a", "+", "b"}]], "=",
+    SubscriptBox["R", RowBox[{"c", ",", "d"}]], "+",
+    SubsuperscriptBox["T", RowBox[{"x", "+", "y"}], "4"], "+",
+    SubscriptBox["R", "e"]}], TraditionalForm]], "InlineMath"],
+ " done"
+}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "R_(a+b)=R_(c,d)+T_(x+y)\u{2074}+R_e done"
+    );
   }
 
   #[test]

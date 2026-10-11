@@ -517,10 +517,10 @@ fn table_over_iterator(
         }
         let val = eval_at(&current_expr)?;
         crate::evaluator::listable::push_list_element(&mut results, val);
-        current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
-          "Plus",
-          vec![current_expr, step_expr.clone()],
-        ))?;
+        current_expr = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+          current_expr,
+          step_expr.clone(),
+        ]))?;
         safety_counter += 1;
         if safety_counter > 1_000_000 {
           return Err(InterpreterError::EvaluationError(
@@ -544,10 +544,10 @@ fn table_over_iterator(
         }
         let val = eval_at(&current_expr)?;
         crate::evaluator::listable::push_list_element(&mut results, val);
-        current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
-          "Plus",
-          vec![current_expr, step_expr.clone()],
-        ))?;
+        current_expr = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+          current_expr,
+          step_expr.clone(),
+        ]))?;
         safety_counter += 1;
         if safety_counter > 1_000_000 {
           return Err(InterpreterError::EvaluationError(
@@ -758,19 +758,13 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(call);
       }
       // ratio = (max - min) / step
-      let ratio_expr = call(
-        "Times",
-        vec![
-          call(
-            "Plus",
-            vec![
-              max_expr.clone(),
-              call("Times", vec![Expr::Integer(-1), min_expr.clone()]),
-            ],
-          ),
-          pow(step_expr.clone(), Expr::Integer(-1)),
-        ],
-      );
+      let ratio_expr = times(vec![
+        plus(vec![
+          max_expr.clone(),
+          times(vec![Expr::Integer(-1), min_expr.clone()]),
+        ]),
+        pow(step_expr.clone(), Expr::Integer(-1)),
+      ]);
       // Accept rationals (e.g. `5/2`), floats, and symbolic reals like
       // `Pi` — fall through to `try_numeric` (which calls `N[expr]`)
       // when the ratio doesn't reduce to a literal Integer/Rational/Real.
@@ -798,9 +792,8 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let elem = if k == 0 {
             first_elem(&min_expr)?
           } else {
-            let k_times_step =
-              call("Times", vec![Expr::Integer(k), step_expr.clone()]);
-            let sum = call("Plus", vec![min_expr.clone(), k_times_step]);
+            let k_times_step = times(vec![Expr::Integer(k), step_expr.clone()]);
+            let sum = plus(vec![min_expr.clone(), k_times_step]);
             crate::evaluator::evaluate_expr_to_expr(&sum)?
           };
           results.push(elem);
@@ -1627,7 +1620,7 @@ fn build_offset_indices(
 ) -> Result<Vec<Expr>, InterpreterError> {
   let mut result = Vec::with_capacity(n.max(0) as usize);
   for i in 0..n {
-    let val = call("Plus", vec![start.clone(), Expr::Integer(i)]);
+    let val = plus(vec![start.clone(), Expr::Integer(i)]);
     result.push(crate::evaluator::evaluate_expr_to_expr(&val)?);
   }
   Ok(result)
@@ -1648,25 +1641,16 @@ fn build_range_indices(
     // Wolfram gives the midpoint (a + b) / 2 when requesting a single
     // sample over a range, matching Array[f, 1, {a, b}] → {f[(a+b)/2]}.
     let half = pow(Expr::Integer(2), Expr::Integer(-1));
-    let mid = call(
-      "Times",
-      vec![half, call("Plus", vec![a.clone(), b.clone()])],
-    );
+    let mid = times(vec![half, plus(vec![a.clone(), b.clone()])]);
     return Ok(vec![crate::evaluator::evaluate_expr_to_expr(&mid)?]);
   }
   let mut result = Vec::with_capacity(n as usize);
   // value_i = a + i * (b - a) / (n - 1)
-  let diff = call(
-    "Plus",
-    vec![b.clone(), call("Times", vec![Expr::Integer(-1), a.clone()])],
-  );
+  let diff = plus(vec![b.clone(), times(vec![Expr::Integer(-1), a.clone()])]);
   let inv_denom = pow(Expr::Integer(n - 1), Expr::Integer(-1));
   for i in 0..n {
-    let term = call(
-      "Times",
-      vec![Expr::Integer(i), diff.clone(), inv_denom.clone()],
-    );
-    let val = call("Plus", vec![a.clone(), term]);
+    let term = times(vec![Expr::Integer(i), diff.clone(), inv_denom.clone()]);
+    let val = plus(vec![a.clone(), term]);
     result.push(crate::evaluator::evaluate_expr_to_expr(&val)?);
   }
   Ok(result)

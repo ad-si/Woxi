@@ -156,7 +156,7 @@ fn expand_with_pattern_top(expr: &Expr, pat: &Expr, var: Option<&str>) -> Expr {
   if final_terms.len() == 1 {
     return final_terms.remove(0);
   }
-  call("Plus", final_terms)
+  plus(final_terms)
 }
 
 /// True when the 2nd argument to `Expand[expr, …]` is a value to match
@@ -230,7 +230,7 @@ fn expand_with_pattern(expr: &Expr, pat: &Expr) -> Expr {
       let exp = expand_with_pattern(t, pat);
       flatten_plus_into(&exp, &mut flat);
     }
-    return call("Plus", flat);
+    return plus(flat);
   }
   let times_args: Option<Vec<Expr>> = match expr {
     Expr::FunctionCall { name, args } if name == "Times" => Some(args.to_vec()),
@@ -285,13 +285,13 @@ fn expand_with_pattern(expr: &Expr, pat: &Expr) -> Expr {
       for t in &plus_terms {
         let mut new_factors = other_factors.clone();
         new_factors.push(t.clone());
-        let times = call("Times", new_factors);
+        let times = times(new_factors);
         let evaluated =
           crate::evaluator::evaluate_expr_to_expr(&times).unwrap_or(times);
         let exp = expand_with_pattern(&evaluated, pat);
         flatten_plus_into(&exp, &mut new_terms);
       }
-      return call("Plus", new_terms);
+      return plus(new_terms);
     }
     return expr.clone();
   }
@@ -465,7 +465,7 @@ fn reduce_coefficients_mod(expr: &Expr, m: i128) -> Expr {
       if reduced.iter().any(is_zero_expr) {
         return Expr::Integer(0);
       }
-      call("Times", reduced)
+      times(reduced)
     }
     // Power: only reduce the base (the exponent is a structural integer).
     Expr::BinaryOp {
@@ -534,10 +534,10 @@ fn reduce_term_mod(term: &Expr, m: i128) -> Expr {
           if new_args.len() == 1 {
             return new_args.into_iter().next().unwrap();
           }
-          return call("Times", new_args);
+          return times(new_args);
         }
         new_args.insert(0, Expr::Integer(r));
-        return call("Times", new_args);
+        return times(new_args);
       }
       // Non-Integer leading factor: recurse into each arg.
       let reduced: Vec<Expr> =
@@ -545,7 +545,7 @@ fn reduce_term_mod(term: &Expr, m: i128) -> Expr {
       if reduced.iter().any(is_zero_expr) {
         return Expr::Integer(0);
       }
-      call("Times", reduced)
+      times(reduced)
     }
     // Plus or Power (which can contain integer coefficients in a subtree)
     // → defer to the recursive mod reducer.
@@ -969,7 +969,7 @@ fn fold_term_numerics(expr: &Expr) -> Expr {
       resort_radical_sum(&folded)
     }
     Expr::FunctionCall { name, args } if name == "Plus" => {
-      let folded = call("Plus", args.iter().map(fold_term_numerics).collect());
+      let folded = plus(args.iter().map(fold_term_numerics).collect());
       resort_radical_sum(&folded)
     }
     Expr::UnaryOp {
@@ -1661,10 +1661,9 @@ fn expand_numerator_recursive(expr: &Expr) -> Expr {
       expand_numerator_recursive(left),
       expand_numerator_recursive(right),
     ),
-    Expr::FunctionCall { name, args } if name == "Plus" => call(
-      "Plus",
-      args.iter().map(expand_numerator_recursive).collect(),
-    ),
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      plus(args.iter().map(expand_numerator_recursive).collect())
+    }
 
     // a / b : expand the numerator a
     Expr::BinaryOp {
@@ -1690,7 +1689,7 @@ fn expand_numerator_recursive(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args } if name == "Times" => {
       let new_args: Vec<Expr> =
         args.iter().map(expand_numerator_in_product).collect();
-      call("Times", new_args)
+      times(new_args)
     }
 
     // base^n where n > 0: expand
@@ -1793,10 +1792,9 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
       expand_denominator_recursive(left),
       expand_denominator_recursive(right),
     ),
-    Expr::FunctionCall { name, args } if name == "Plus" => call(
-      "Plus",
-      args.iter().map(expand_denominator_recursive).collect(),
-    ),
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      plus(args.iter().map(expand_denominator_recursive).collect())
+    }
 
     // a / b : expand the denominator b
     Expr::BinaryOp {

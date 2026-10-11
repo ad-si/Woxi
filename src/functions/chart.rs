@@ -786,11 +786,7 @@ fn arithmetic_label(e: &Expr) -> Option<String> {
           let positive = if *n == -1 {
             base.clone()
           } else {
-            Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(base.clone()),
-              right: Box::new(Expr::Integer(-n)),
-            }
+            pow2(base.clone(), Expr::Integer(-n))
           };
           factors(&positive, num, den, !inverted);
         }
@@ -2321,10 +2317,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if slice_prims.is_empty() {
     return Ok(crate::graphics_result(svg));
   }
-  let structure = Expr::FunctionCall {
-    name: "Graphics".to_string(),
-    args: vec![Expr::List(slice_prims.into())].into(),
-  };
+  let structure = call1("Graphics", Expr::List(slice_prims.into()));
   Ok(crate::graphics_result_with_structure(svg, structure))
 }
 
@@ -4714,7 +4707,7 @@ mod tests {
   fn expr_to_label_treats_bare_none_as_no_label() {
     // The bare symbol `None` in a label option (`AxesLabel -> {"t", None}`)
     // must suppress the label, not print the literal text "None".
-    assert_eq!(expr_to_label(&Expr::Identifier("None".to_string())), None);
+    assert_eq!(expr_to_label(&id_expr("None")), None);
     // A quoted string "None" is a real label and must still print as-is.
     assert_eq!(
       expr_to_label(&Expr::String("None".to_string())),

@@ -894,7 +894,7 @@ pub(crate) fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
         // a - b → Plus[a, Times[-1, b]]
         BinaryOperator::Minus => Some(vec![
           left.as_ref().clone(),
-          call("Times", vec![Expr::Integer(-1), right.as_ref().clone()]),
+          times(vec![Expr::Integer(-1), right.as_ref().clone()]),
         ]),
         // 1/b → Power[b, -1]; a/b → Times[a, Power[b, -1]]
         BinaryOperator::Divide => {
@@ -1274,7 +1274,6 @@ pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(flat.into_iter().next().unwrap());
   }
 
-  let times = id_expr("Times");
   let is_scalar = |e: &Expr| -> bool {
     !matches!(e, Expr::List(_))
       && crate::functions::predicate_ast::is_numeric_q(e)
@@ -1309,7 +1308,7 @@ pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         rest.push(if others.len() == 1 {
           others.into_iter().next().unwrap()
         } else {
-          call("Times", others)
+          times(others)
         });
         continue;
       }
@@ -1318,6 +1317,7 @@ pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Among the non-scalar factors, contract maximal runs of explicit arrays.
+  let times = id_expr("Times");
   let mut factors: Vec<Expr> = Vec::new();
   let mut group: Vec<Expr> = Vec::new();
   let flush = |group: &mut Vec<Expr>,

@@ -33641,4 +33641,26 @@ mod grid_text_in_graphics {
     );
     assert_eq!(dash("Red"), None);
   }
+
+  /// `Pane[Text[Grid[…], …], {w, h}]` — a table wrapped in `Text` and a
+  /// sized `Pane`, with no `Style` in between — is drawn as the table. The
+  /// plain `Grid` pass runs before the wrappers are peeled, so the grid
+  /// they held used to be left as its symbolic `Grid[…]` echo.
+  #[test]
+  fn pane_text_wrapped_grid_renders_as_a_table() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Pane[Text[Grid[{{\"u\", \"v\"}, {\"T\", \"F\"}}, Frame -> All, \
+                      Background -> {{RGBColor[1, 0, 0], RGBColor[0, 1, 0]}}]], \
+            ImageSize -> {300, 200}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(!svg.contains("Grid["), "no expression text: {svg}");
+    assert!(
+      svg.contains(">T</text>") && svg.contains(">F</text>"),
+      "{svg}"
+    );
+  }
 }

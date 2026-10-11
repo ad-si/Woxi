@@ -391,11 +391,7 @@ pub fn music_plot(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   } else {
     let (y_min, y_max) = (lo - BAR_HALF_HEIGHT, hi + BAR_HALF_HEIGHT);
     let origin = y_min - (y_max - y_min) / 11.0 + roll.length / 50.0;
-    (
-      origin,
-      Expr::Identifier("Full".to_string()),
-      (origin, y_max + 1.0),
-    )
+    (origin, id_expr("Full"), (origin, y_max + 1.0))
   };
 
   let mut graphics_args = vec![content];
@@ -403,10 +399,7 @@ pub fn music_plot(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   graphics_args.extend([
     rule(
       "AxesOrigin",
-      list(vec![
-        Expr::Identifier("Automatic".to_string()),
-        Expr::Real(origin_y),
-      ]),
+      list(vec![id_expr("Automatic"), Expr::Real(origin_y)]),
     ),
     rule(
       "AspectRatio",
@@ -415,15 +408,9 @@ pub fn music_plot(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
     rule("Axes", bool_expr(true)),
     rule(
       "GridLines",
-      list(vec![
-        list(grid_lines(&roll)),
-        Expr::Identifier("None".to_string()),
-      ]),
+      list(vec![list(grid_lines(&roll)), id_expr("None")]),
     ),
-    rule(
-      "PlotRange",
-      list(vec![Expr::Identifier("Full".to_string()), y_range]),
-    ),
+    rule("PlotRange", list(vec![id_expr("Full"), y_range])),
     rule(
       "Ticks",
       list(vec![

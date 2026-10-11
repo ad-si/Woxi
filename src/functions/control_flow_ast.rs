@@ -135,10 +135,7 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         let mut out = args.to_vec();
         out[0] = evaluated_first.clone();
-        return Ok(Expr::FunctionCall {
-          name: "Piecewise".to_string(),
-          args: out.into(),
-        });
+        return Ok(call("Piecewise", out));
       }
     }
   }

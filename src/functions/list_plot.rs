@@ -145,10 +145,11 @@ fn association_to_data(
     return Expr::List(
       pairs
         .iter()
-        .map(|(k, v)| Expr::FunctionCall {
-          name: "Labeled".into(),
-          args: vec![canonicalize_element(v), Expr::String(label_string(k))]
-            .into(),
+        .map(|(k, v)| {
+          call(
+            "Labeled",
+            vec![canonicalize_element(v), Expr::String(label_string(k))],
+          )
         })
         .collect(),
     );
@@ -169,10 +170,11 @@ fn association_to_data(
     return Expr::List(
       pairs
         .iter()
-        .map(|(k, v)| Expr::FunctionCall {
-          name: "Labeled".into(),
-          args: vec![canonicalize_element(v), Expr::String(label_string(k))]
-            .into(),
+        .map(|(k, v)| {
+          call(
+            "Labeled",
+            vec![canonicalize_element(v), Expr::String(label_string(k))],
+          )
         })
         .collect(),
     );
@@ -221,10 +223,10 @@ fn canonicalize_element(e: &Expr) -> Expr {
   match &e {
     Expr::FunctionCall { name, args } if !args.is_empty() => {
       match name.as_str() {
-        "Callout" if args.len() >= 2 => Expr::FunctionCall {
-          name: "Labeled".into(),
-          args: vec![canonicalize_element(&args[0]), args[1].clone()].into(),
-        },
+        "Callout" if args.len() >= 2 => call(
+          "Labeled",
+          vec![canonicalize_element(&args[0]), args[1].clone()],
+        ),
         "Callout" => canonicalize_element(&args[0]),
         _ => e.clone(),
       }
@@ -269,23 +271,19 @@ fn canonicalize_plot_data(expr: &Expr, keys_label_points: bool) -> Expr {
     }
     Expr::FunctionCall { name, args } if !args.is_empty() => {
       match name.as_str() {
-        "Callout" if args.len() >= 2 => Expr::FunctionCall {
-          name: "Labeled".into(),
-          args: vec![
+        "Callout" if args.len() >= 2 => call(
+          "Labeled",
+          vec![
             canonicalize_plot_data(&args[0], keys_label_points),
             args[1].clone(),
-          ]
-          .into(),
-        },
+          ],
+        ),
         "Callout" => canonicalize_plot_data(&args[0], keys_label_points),
         "WeightedData" => {
           canonicalize_plot_data(&weighted_data_values(args), keys_label_points)
         }
-        "SparseArray" => evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "Normal".into(),
-          args: vec![e.clone()].into(),
-        })
-        .unwrap_or_else(|_| e.clone()),
+        "SparseArray" => evaluate_expr_to_expr(&call1("Normal", e.clone()))
+          .unwrap_or_else(|_| e.clone()),
         _ => e.clone(),
       }
     }
