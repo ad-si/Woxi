@@ -3802,6 +3802,23 @@ mod plot3d {
       }
     }
 
+    /// Regression: `ParametricPlot3D` surfaces ignored `PlotPoints` and
+    /// always sampled a fixed 51 x 51 grid, so a `Table` of many patches
+    /// (`PlotPoints -> 15`) took minutes to draw instead of staying
+    /// interactive.
+    #[test]
+    fn parametric_surface_honours_plot_points() {
+      clear_state();
+      for (n, points) in [("4", 16), ("7", 49), ("{5, 5}", 25)] {
+        let result = interpret(&format!(
+          "Length[ParametricPlot3D[{{u, v, u v}}, {{u, 0, 1}}, {{v, 0, 1}}, \
+           PlotPoints -> {n}][[1, 1]]]"
+        ))
+        .unwrap();
+        assert_eq!(result, points.to_string(), "PlotPoints -> {n}");
+      }
+    }
+
     #[test]
     fn holds_iterator_variables() {
       // Regression: RegionPlot3D was missing from the HoldAll list

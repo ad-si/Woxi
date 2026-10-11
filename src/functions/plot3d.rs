@@ -11370,6 +11370,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // stable as the surface changes) reshapes the region that was asked
   // for, not just whatever the current frame happens to sample.
   let mut plot_range: Option<[(f64, f64); 3]> = None;
+  // `PlotPoints -> n` (or `{nu, nv}`, of which the first is used): `n`
+  // samples per direction, i.e. `n - 1` grid cells. Demonstrations lower it
+  // (`PlotPoints -> 15`) to keep a `Table` of many patches interactive.
+  let mut plot_points: Option<usize> = None;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -11380,6 +11384,21 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "PlotStyle" => {
           plot_style_expr = Some(replacement.as_ref());
+        }
+        Expr::Identifier(name) if name == "PlotPoints" => {
+          let n = match evaluate_expr_to_expr(replacement) {
+            Ok(Expr::Integer(n)) => Some(n),
+            Ok(Expr::List(ref items)) => match items.first() {
+              Some(Expr::Integer(n)) => Some(*n),
+              _ => None,
+            },
+            _ => None,
+          };
+          if let Some(n) = n
+            && n >= 2
+          {
+            plot_points = Some(n as usize);
+          }
         }
         Expr::Identifier(name) if name == "BoxRatios" => {
           let value = evaluate_expr_to_expr(replacement)
@@ -11515,8 +11534,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (se, ce) = camera.elevation.sin_cos();
     [ce * ca, ce * sa, se]
   };
-  let u_step = (u_max - u_min) / GRID_N as f64;
-  let v_step = (v_max - v_min) / GRID_N as f64;
+  let grid_n = plot_points.map_or(GRID_N, |p| p - 1);
+  let u_step = (u_max - u_min) / grid_n as f64;
+  let v_step = (v_max - v_min) / grid_n as f64;
 
   // Phase 1: Sample all parametric surfaces and compute global ranges
   let mut all_surface_points: Vec<Vec<Vec<Option<(f64, f64, f64)>>>> =
@@ -11529,10 +11549,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut gz_max = f64::NEG_INFINITY;
 
   for surface in &surfaces {
-    let mut points = vec![vec![None; GRID_N + 1]; GRID_N + 1];
-    for i in 0..=GRID_N {
+    let mut points = vec![vec![None; grid_n + 1]; grid_n + 1];
+    for i in 0..=grid_n {
       let uval = u_min + i as f64 * u_step;
-      for j in 0..=GRID_N {
+      for j in 0..=grid_n {
         let vval = v_min + j as f64 * v_step;
         if let Some((x, y, z)) = evaluate_parametric_at_uv(
           &surface.fx,
@@ -11614,7 +11634,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .enumerate()
       .map(|(surface_idx, sg)| {
         let mut index_of: Vec<Vec<Option<usize>>> =
-          vec![vec![None; GRID_N + 1]; GRID_N + 1];
+          vec![vec![None; grid_n + 1]; grid_n + 1];
         let mut point_exprs: Vec<Expr> = Vec::new();
         for (i, row) in sg.iter().enumerate() {
           for (j, p) in row.iter().enumerate() {
@@ -11636,8 +11656,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if mesh_style_none || !matches!(mesh_mode, MeshMode::All) {
           content.push(call0("EdgeForm"));
         }
-        for i in 0..GRID_N {
-          for j in 0..GRID_N {
+        for i in 0..grid_n {
+          for j in 0..grid_n {
             let (Some(a), Some(b), Some(c), Some(d)) = (
               index_of[i][j],
               index_of[i + 1][j],
@@ -11726,8 +11746,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           };
           for m in 1..=n {
-            let k = (GRID_N * m + n.div_ceil(2)) / (n + 1);
-            for i in 0..GRID_N {
+            let k = (grid_n * m + n.div_ceil(2)) / (n + 1);
+            for i in 0..grid_n {
               push_segment(index_of[i][k], index_of[i + 1][k]);
               push_segment(index_of[k][i], index_of[k][i + 1]);
             }
@@ -11791,8 +11811,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for (surface_idx, sg) in all_surface_points.iter().enumerate() {
     let style = plot_style_for_surface(&plot_styles, surface_idx);
-    for i in 0..GRID_N {
-      for j in 0..GRID_N {
+    for i in 0..grid_n {
+      for j in 0..grid_n {
         let p00 = sg[i][j];
         let p10 = sg[i + 1][j];
         let p01 = sg[i][j + 1];
