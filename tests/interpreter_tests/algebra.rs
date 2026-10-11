@@ -2132,6 +2132,28 @@ mod factor_multivariate {
 mod factor_list {
   use super::*;
 
+  // A factor's sign follows its lexicographically leading monomial (the
+  // variables in canonical order): x - y stays, y^2 - x flips.
+  #[test]
+  fn multivariate_factor_sign() {
+    assert_eq!(
+      interpret("FactorList[(x - y) (x + y)]").unwrap(),
+      "{{1, 1}, {x - y, 1}, {x + y, 1}}"
+    );
+    assert_eq!(
+      interpret("FactorList[y - x]").unwrap(),
+      "{{-1, 1}, {x - y, 1}}"
+    );
+    assert_eq!(
+      interpret("FactorList[y^2 - x]").unwrap(),
+      "{{-1, 1}, {x - y^2, 1}}"
+    );
+    assert_eq!(
+      interpret("FactorList[b c - a]").unwrap(),
+      "{{-1, 1}, {a - b*c, 1}}"
+    );
+  }
+
   #[test]
   fn cubic() {
     assert_eq!(
@@ -11669,6 +11691,37 @@ mod discriminant {
 mod factor_square_free {
   use super::*;
 
+  // Factors of an explicit product that share a gcd are refined into
+  // coprime ones, so the result is square-free.
+  #[test]
+  fn refines_non_coprime_product_factors() {
+    assert_eq!(
+      interpret("FactorSquareFree[(x^2 - 1) (x + 1)]").unwrap(),
+      "(-1 + x)*(1 + x)^2"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[(x^2 - 4) (x^2 + 4 x + 4) (x + 7)]").unwrap(),
+      "(-2 + x)*(2 + x)^3*(7 + x)"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[(x^3 - x) (x^2 - 1)]").unwrap(),
+      "x*(-1 + x^2)^2"
+    );
+  }
+
+  // A monomial against a power of a sum takes the evaluator's Times order.
+  #[test]
+  fn monomial_vs_power_of_sum_order() {
+    assert_eq!(
+      interpret("FactorSquareFree[8 x^5 (x + 1)^3 (x - 2)^2]").unwrap(),
+      "8*(-2 + x)^2*x^5*(1 + x)^3"
+    );
+    assert_eq!(
+      interpret("FactorSquareFree[x^2 (x - 2)^2 (x + 1)]").unwrap(),
+      "(-2 + x)^2*x^2*(1 + x)"
+    );
+  }
+
   #[test]
   fn basic_repeated_factor() {
     assert_eq!(
@@ -13550,7 +13603,7 @@ mod minimal_polynomial {
     }
     clear_state();
     interpret("MinimalPolynomial[Sin[Pi/7], x]").unwrap();
-    assert_eq!(woxi::get_captured_messages_raw(), [] as [String; 0]);
+    assert_eq!(woxi::get_captured_messages_raw(), Vec::<String>::new());
   }
 
   #[test]

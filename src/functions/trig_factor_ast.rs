@@ -18,14 +18,6 @@ pub fn trig_factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(factor(&args[0]).unwrap_or_else(|| args[0].clone()))
 }
 
-fn times(fs: Vec<Expr>) -> Expr {
-  call("Times", fs)
-}
-
-fn plus(ts: Vec<Expr>) -> Expr {
-  call("Plus", ts)
-}
-
 fn div(a: Expr, b: i128) -> Expr {
   div2(a, Expr::Integer(b))
 }

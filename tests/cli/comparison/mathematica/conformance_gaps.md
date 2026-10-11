@@ -678,8 +678,7 @@ reason.
 `N[base, p]` produces numbers but with a **different precision tag**
 (`20.30` against WL's `20.46`, which accounts for the base magnitude) and a
 last mantissa digit off by one — an arbitrary-precision rounding problem rather
-than a dispatch one. `N[Zeta[3], 25]` is a separate gap: there is no
-arbitrary-precision `Zeta`.
+than a dispatch one.
 
 ### `N[I]` stays exact
 
@@ -776,7 +775,7 @@ digit.
 Woxi's machine `LogGamma` is msun's `lgamma` (accurate to an ulp); it matches
 wolframscript on most arguments but not all — `LogGamma[1.5]` is `…4522` (the
 correctly rounded value) against WL's `…4526`, `LogGamma[10.3]` `…355` against
-`…359`. The same 1–3 ULP class: `InverseErf[0.5]` (`…698` vs `…6993`, Woxi
+`…359`, `LogGamma[4.0]` `…055` (`Log[6.]`, correctly rounded) against `…0552`. The same 1–3 ULP class: `InverseErf[0.5]` (`…698` vs `…6993`, Woxi
 nearer), `LogIntegral[0.3]` (`…894` vs `…8946`, WL nearer) and
 `ExpIntegralE[2, 0.2]` (`…033` vs `…031`, WL nearer). **Not reproducible**
 without WL's own approximations; the last two are worth a more accurate
@@ -933,6 +932,34 @@ claims 19.02 digits and its 21st digit onward is already wrong, where Woxi's
 value is correct to the last digit shown. `Gamma`/`LogGamma` differ in the
 third decimal of the tag for the same reason. **Not reproducible.**
 
+`PolyGamma`, `Zeta` and `HurwitzZeta` at an arbitrary-precision argument
+differ in more than the third decimal. Woxi tags `PolyGamma` with the
+condition number `|z ψ⁽ⁿ⁺¹⁾(z)/ψ⁽ⁿ⁾(z)|` and `Zeta` with the lowest input
+precision. WL's digamma tag even *exceeds* the input's, capped near
+`p + log10(1024)`: `PolyGamma[1.9`20]` is tagged `22.45` (Woxi `19.44`), and
+`Zeta[0.5`20]` is tagged `18.35` (Woxi `20.`). The values agree.
+
+### Machine `PolyGamma` and `Zeta` are not correctly rounded in WL
+
+Woxi rounds machine `PolyGamma`, `Zeta`, `HurwitzZeta` and `HarmonicNumber`
+values from an arbitrary-precision evaluation, so they are correctly rounded.
+Wolframscript's are not, and no f64 recurrence/series variant reproduces its
+digits (best fit: 34% of 385 probes). Correct rounding matches it on about
+half of the `PolyGamma` probes (`PolyGamma[5.5]` is `…751` in WL, `…7512`
+correctly rounded) and on 50 of 80 `Zeta[s]` probes. Its machine Hurwitz
+zeta is worse: `Zeta[3.5, 0.3]` is 40 ulps off and at negative `s` it loses
+whole digits (`Zeta[-5.817415911509695, 0.1295065568974257]` is
+`-0.0033354…` in WL, `-0.0033395…` in Woxi and mpmath). WL's machine
+`Zeta[s]` at a negative `s` also returns a complex number with an imaginary
+part of about `1e-18`, an artifact of its complex reflection formula.
+**Not reproducible.**
+
+### Fractional-order `PolyGamma`
+
+`PolyGamma[0.5, 1.9]` is `0.7474244588681002` in WL (its fractional-calculus
+continuation of the order) and unevaluated in Woxi. Only integral orders,
+exact or inexact, are implemented.
+
 ### Display digits past the claimed precision differ
 
 An arbitrary-precision number prints more digits than its precision tag
@@ -988,6 +1015,19 @@ last bit and never a formula to correct.
 
 ## Algebra and calculus
 
+### `FullSimplify` nests a sum of radicals under one root
+
+```sh
+wolframscript -code 'FullSimplify[(Sqrt[14] + Sqrt[22])*2*Sqrt[8]*2*Sqrt[26]]'
+# 32*Sqrt[13*(9 + Sqrt[77])]
+woxi eval 'FullSimplify[(Sqrt[14] + Sqrt[22])*2*Sqrt[8]*2*Sqrt[26]]'
+# 16*(Sqrt[182] + Sqrt[286])
+```
+
+WL rewrites `√7 + √11` as `√(2(9 + √77))` (squaring the sum) and merges it
+with the other radicals. Woxi has no such denesting-in-reverse transformation;
+part of the open radical-canonicalization class.
+
 ### `FullSimplify` of a polynomial: WL's search is not cost-minimal
 
 FullSimplify of a univariate integer polynomial is decoded as a greedy search
@@ -1021,9 +1061,11 @@ through the older candidate pipeline.
 
 ### `FactorSquareFreeList` order of a lower-degree non-monic factor
 
-The factors are ordered by leading coefficient, then constant term, which
-matches 24 of 25 probes. The exception: `FactorSquareFreeList[(x^2 + 3)
-(2x - 1)^2]` lists `{-1 + 2*x, 2}` before `{3 + x^2, 1}` in wolframscript.
+An explicit product takes its factor order from `FactorSquareFree`, which
+matches wolframscript. For an expanded polynomial the factors are ordered by
+leading coefficient, then constant term, which matches 24 of 25 probes. The
+exception: `FactorSquareFreeList[Expand[(x^2 + 3)(2x - 1)^2]]` lists
+`{-1 + 2*x, 2}` before `{3 + x^2, 1}` in wolframscript.
 Ordering by degree first fixes it but breaks `x` against `-1 + x^2` (WL puts
 the latter first), and no single total order fits all 25 — the factor `x`
 seems to be placed separately.

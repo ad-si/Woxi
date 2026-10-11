@@ -991,6 +991,140 @@ fn is_half(expr: &Expr) -> bool {
   }
 }
 
+/// An Integer or Rational as a reduced BigInt fraction (positive
+/// denominator).
+fn expr_fraction_big(e: &Expr) -> Option<(BigInt, BigInt)> {
+  match e {
+    Expr::Integer(n) => Some((BigInt::from(*n), BigInt::from(1))),
+    Expr::BigInteger(n) => Some((n.clone(), BigInt::from(1))),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      let part = |x: &Expr| match x {
+        Expr::Integer(n) => Some(BigInt::from(*n)),
+        Expr::BigInteger(n) => Some(n.clone()),
+        _ => None,
+      };
+      Some((part(&args[0])?, part(&args[1])?))
+    }
+    _ => None,
+  }
+}
+
+/// `1F1[a, b, z]` for integers `1 ≤ a < b` at a rational `z ≠ 0` (see the
+/// caller), built as `A·E^z + C` and shaped like wolframscript's result:
+/// the content comes out so that the `E^|z|` coefficient inside is a
+/// positive integer — `2*(-1 + Sqrt[E])`, `-4*(-2 + Sqrt[E])` — and a
+/// negative `z` puts everything over `E^|z|`: `(-1 + E)/E`.
+fn hypergeometric1f1_rational_z(
+  a: i128,
+  b: i128,
+  zp: &BigInt,
+  zq: &BigInt,
+  z: &Expr,
+) -> Result<Expr, InterpreterError> {
+  type Rat = (BigInt, BigInt);
+  let reduce = |(n, d): Rat| -> Rat {
+    let (n, d) = rat_reduce_bigint(&n, &d);
+    if d < BigInt::from(0) {
+      (-n, -d)
+    } else {
+      (n, d)
+    }
+  };
+  let add = |x: &Rat, y: &Rat| reduce((&x.0 * &y.1 + &y.0 * &x.1, &x.1 * &y.1));
+  let mul = |x: &Rat, y: &Rat| reduce((&x.0 * &y.0, &x.1 * &y.1));
+  let int = |n: i128| -> Rat { (BigInt::from(n), BigInt::from(1)) };
+  let zr: Rat = reduce((zp.clone(), zq.clone()));
+  let z_inv: Rat = reduce((zr.1.clone(), zr.0.clone()));
+
+  // P_n and Q_n for n = 0..=b-2.
+  let max_n = (b - 2) as usize;
+  let (mut p_vec, mut q_vec) = (vec![int(1)], vec![int(-1)]);
+  let mut z_pow = int(1);
+  for n in 1..=max_n {
+    z_pow = mul(&z_pow, &zr);
+    p_vec.push(add(&z_pow, &mul(&int(-(n as i128)), &p_vec[n - 1])));
+    q_vec.push(mul(&int(-(n as i128)), &q_vec[n - 1]));
+  }
+  // Γ(b)/(Γ(a)·Γ(b-a)) = 1/Beta[a, b-a]
+  let (beta_num, beta_den) = beta_parts_big(a, b - a);
+  let prefactor: Rat = reduce((beta_den, beta_num));
+  let (mut e_coef, mut c_coef) = (int(0), int(0));
+  for k in 0..(b - a) {
+    let n = (a - 1 + k) as usize;
+    let mut z_neg_pow = int(1);
+    for _ in 0..=n {
+      z_neg_pow = mul(&z_neg_pow, &z_inv);
+    }
+    let sign = if k % 2 == 0 { 1 } else { -1 };
+    let binom = crate::functions::binomial_coeff_big(b - a - 1, k);
+    let coeff = mul(&(binom * BigInt::from(sign), BigInt::from(1)), &z_neg_pow);
+    e_coef = add(&e_coef, &mul(&coeff, &p_vec[n]));
+    c_coef = add(&c_coef, &mul(&coeff, &q_vec[n]));
+  }
+  let (e_coef, c_coef) = (mul(&e_coef, &prefactor), mul(&c_coef, &prefactor));
+
+  let eval = crate::evaluator::evaluate_function_call_ast;
+  let rat_expr = |(n, d): &Rat| -> Result<Expr, InterpreterError> {
+    if *d == BigInt::from(1) {
+      Ok(bigint_to_expr(n.clone()))
+    } else {
+      eval(
+        "Rational",
+        &[bigint_to_expr(n.clone()), bigint_to_expr(d.clone())],
+      )
+    }
+  };
+  let negative_z = *zp < BigInt::from(0);
+  // E^|z|: A·E^z + C is (A + C·E^|z|)/E^|z| for a negative z.
+  let abs_z = eval("Abs", std::slice::from_ref(z))?;
+  let exp_abs = eval("Power", &[id_expr("E"), abs_z])?;
+  // (constant part, E^|z| part) of the numerator.
+  let (lead, with_exp) = if negative_z {
+    (e_coef, c_coef)
+  } else {
+    (c_coef, e_coef)
+  };
+  let zero = BigInt::from(0);
+  let numerator = if with_exp.0 == zero {
+    rat_expr(&lead)?
+  } else if lead.0 == zero {
+    eval("Times", &[rat_expr(&with_exp)?, exp_abs.clone()])?
+  } else {
+    // Content g with the sign of the E^|z| coefficient: g·(c' + e'·E^|z|).
+    let den = {
+      let g = gcd_bigint(&lead.1, &with_exp.1);
+      &lead.1 / &g * &with_exp.1
+    };
+    let (ln, en) = (
+      &lead.0 * (&den / &lead.1),
+      &with_exp.0 * (&den / &with_exp.1),
+    );
+    let mut h = gcd_bigint(&ln, &en);
+    if en < zero {
+      h = -h;
+    }
+    let inner = eval(
+      "Plus",
+      &[
+        bigint_to_expr(&ln / &h),
+        eval("Times", &[bigint_to_expr(&en / &h), exp_abs.clone()])?,
+      ],
+    )?;
+    let g = rat_expr(&reduce((h, den)))?;
+    eval("Times", &[g, inner])?
+  };
+  if negative_z {
+    eval(
+      "Times",
+      &[numerator, eval("Power", &[exp_abs, Expr::Integer(-1)])?],
+    )
+  } else {
+    Ok(numerator)
+  }
+}
+
 pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
@@ -1220,123 +1354,21 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&prod);
   }
 
-  // Closed form for 1F1[positive integer a, positive integer b, integer z]
+  // Closed form for 1F1[positive integer a, positive integer b, rational z]
   // with 1 ≤ a < b. Uses the integral representation
   //   1F1[a, b, z] = Γ(b)/(Γ(a)·Γ(b-a))
   //                  · Σ_{k=0}^{b-a-1} (-1)^k · C(b-a-1, k) · I_{a-1+k}(z)
   // where I_n(z) = ∫_0^1 t^n · e^(zt) dt = (P_n(z)·e^z + Q_n) / z^(n+1)
   // with the recurrence P_n = z^n − n·P_{n-1}, P_0 = 1, Q_n = −n·Q_{n-1},
-  // Q_0 = −1. Result is folded into a rational coefficient times E^z plus
-  // a rational constant.
+  // Q_0 = −1. The result is A·E^z + C with rational A and C.
   if let (Expr::Integer(a_i), Expr::Integer(b_i)) = (&args[0], &args[1])
     && *a_i >= 1
     && *b_i > *a_i
-    && let Some(z_int) = expr_to_i128(&args[2])
-    && z_int != 0
     && *b_i <= 30
+    && let Some((zp, zq)) = expr_fraction_big(&args[2])
+    && zp != BigInt::from(0)
   {
-    let a = *a_i;
-    let b = *b_i;
-    let z = BigInt::from(z_int);
-    // Compute P_n, Q_n for n = a-1..=b-2 using BigInt recurrence.
-    let max_n = (b - 2) as usize;
-    let mut p_vec: Vec<BigInt> = Vec::with_capacity(max_n + 1);
-    let mut q_vec: Vec<BigInt> = Vec::with_capacity(max_n + 1);
-    let mut z_pow = BigInt::from(1);
-    p_vec.push(BigInt::from(1));
-    q_vec.push(BigInt::from(-1));
-    for n_idx in 1..=max_n {
-      z_pow *= &z;
-      let p_n = &z_pow - BigInt::from(n_idx) * &p_vec[n_idx - 1];
-      let q_n = -BigInt::from(n_idx) * &q_vec[n_idx - 1];
-      p_vec.push(p_n);
-      q_vec.push(q_n);
-    }
-    // Sum Σ_{k=0}^{b-a-1} (-1)^k · C(b-a-1, k) · I_{a-1+k}(z)
-    // where I_n = (P_n·e^z + Q_n)/z^(n+1). Accumulate the e^z-coefficient
-    // numerator, the constant numerator, and a common denominator.
-    // Common denominator = z^(b-1) (largest z^(n+1)).
-    let max_pow = b - 1;
-    let z_max = z.pow(max_pow as u32);
-    let mut e_num = BigInt::from(0);
-    let mut const_num = BigInt::from(0);
-    for k in 0..(b - a) {
-      let n_idx = (a - 1 + k) as usize;
-      let scale_pow = (max_pow - 1 - n_idx as i128) as u32;
-      let scale = z.pow(scale_pow);
-      let binom = crate::functions::binomial_coeff_big(b - a - 1, k);
-      let sign: i128 = if k.rem_euclid(2) == 0 { 1 } else { -1 };
-      let coeff = BigInt::from(sign) * &binom;
-      e_num += &coeff * &scale * &p_vec[n_idx];
-      const_num += &coeff * &scale * &q_vec[n_idx];
-    }
-    // Multiply by Γ(b)/(Γ(a)·Γ(b-a)) = 1/Beta[a, b-a]
-    let (num, den) = beta_parts_big(a, b - a);
-    let prefactor = den / num;
-    e_num *= &prefactor;
-    const_num *= &prefactor;
-    // Result = (e_num · E^z + const_num) / z_max  — reduce by gcd.
-    // Reduce by the gcd shared between numerator e^z coefficient, the
-    // numerator constant, and the denominator.
-    let g_all = gcd_bigint(&gcd_bigint(&e_num, &const_num), &z_max);
-    let denom = if g_all == BigInt::from(0) {
-      z_max.clone()
-    } else {
-      &z_max / &g_all
-    };
-    let mut e_n = if g_all == BigInt::from(0) {
-      e_num
-    } else {
-      e_num / &g_all
-    };
-    let mut c_n = if g_all == BigInt::from(0) {
-      const_num
-    } else {
-      const_num / &g_all
-    };
-    // Wolfram displays `e_n·E^z + c_n` as `(g · (e_n/g · E^z + c_n/g))`
-    // when the numerator has a common factor — pull that factor out so
-    // the inner Plus shows the smallest integer coefficients.
-    let mut outer_factor = BigInt::from(1);
-    let g_num = gcd_bigint(&e_n, &c_n);
-    if g_num > BigInt::from(1) {
-      outer_factor.clone_from(&g_num);
-      e_n /= &g_num;
-      c_n /= &g_num;
-    }
-    let exp_part = pow(id_expr("E"), Expr::Integer(z_int));
-    let e_term = if e_n == BigInt::from(0) {
-      Expr::Integer(0)
-    } else if e_n == BigInt::from(1) {
-      exp_part
-    } else {
-      crate::evaluator::evaluate_function_call_ast(
-        "Times",
-        &[bigint_to_expr(e_n), exp_part],
-      )?
-    };
-    let plus = crate::evaluator::evaluate_function_call_ast(
-      "Plus",
-      &[e_term, bigint_to_expr(c_n)],
-    )?;
-    // Result = (outer_factor / denom) · plus
-    let mut factors: Vec<Expr> = Vec::new();
-    if outer_factor != BigInt::from(1) {
-      factors.push(bigint_to_expr(outer_factor));
-    }
-    factors.push(plus);
-    if denom != BigInt::from(1) {
-      let inv_denom = crate::evaluator::evaluate_function_call_ast(
-        "Power",
-        &[bigint_to_expr(denom), Expr::Integer(-1)],
-      )?;
-      factors.push(inv_denom);
-    }
-    return if factors.len() == 1 {
-      Ok(factors.into_iter().next().unwrap())
-    } else {
-      crate::evaluator::evaluate_function_call_ast("Times", &factors)
-    };
+    return hypergeometric1f1_rational_z(*a_i, *b_i, &zp, &zq, &args[2]);
   }
 
   // Closed form for 1F1[positive integer a, 1, z]:

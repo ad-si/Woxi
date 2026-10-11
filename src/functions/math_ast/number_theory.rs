@@ -922,9 +922,6 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return bernoulli_polynomial(n, &args[1]);
   }
 
-  // Use the formula: B(n) computed via the explicit sum formula
-  // Store as rational numbers (numer, denom)
-  // B(0) = 1, B(1) = -1/2, B(odd>1) = 0
   if n == 0 {
     return Ok(Expr::Integer(1));
   }
@@ -934,47 +931,53 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n % 2 != 0 {
     return Ok(Expr::Integer(0));
   }
-
-  // Compute using the recurrence: sum_{k=0}^{n-1} C(n,k) * B(k) / (n - k + 1) = 0 ... wait
-  // Better: B(n) = -1/(n+1) * sum_{k=0}^{n-1} C(n+1, k) * B(k)
-  // We'll compute all Bernoulli numbers up to n
-
-  // Represent each Bernoulli number as a reduced (numerator, denominator)
-  // pair in BigInt, so large numerators (e.g. BernoulliB[60]) don't overflow
-  // i128.
-  fn reduce(num: &BigInt, den: &BigInt) -> (BigInt, BigInt) {
-    rat_reduce_bigint(num, den)
-  }
-  fn rat_add(a: &(BigInt, BigInt), b: &(BigInt, BigInt)) -> (BigInt, BigInt) {
-    reduce(&(&a.0 * &b.1 + &b.0 * &a.1), &(&a.1 * &b.1))
-  }
-  fn rat_mul(a: &(BigInt, BigInt), b: &(BigInt, BigInt)) -> (BigInt, BigInt) {
-    reduce(&(&a.0 * &b.0), &(&a.1 * &b.1))
-  }
-
-  let mut b: Vec<(BigInt, BigInt)> = Vec::with_capacity(n + 1);
-  b.push((BigInt::from(1), BigInt::from(1))); // B(0) = 1
-  if n >= 1 {
-    b.push((BigInt::from(-1), BigInt::from(2))); // B(1) = -1/2
-  }
-
-  for m in 2..=n {
-    if m % 2 != 0 {
-      b.push((BigInt::from(0), BigInt::from(1)));
-      continue;
-    }
-    // B(m) = -1/(m+1) * sum_{k=0}^{m-1} C(m+1, k) * B(k)
-    let mut sum = (BigInt::from(0), BigInt::from(1));
-    for k in 0..m {
-      let binom = binomial_coeff_big((m + 1) as i128, k as i128);
-      sum = rat_add(&sum, &rat_mul(&(binom, BigInt::from(1)), &b[k]));
-    }
-    let neg_inv = (BigInt::from(-1), BigInt::from(m as i128 + 1));
-    b.push(rat_mul(&neg_inv, &sum));
-  }
-
-  let (num, den) = b[n].clone();
+  let (num, den) = bernoulli_big(n);
   Ok(make_rational_expr(&num, &den))
+}
+
+thread_local! {
+  /// Even Bernoulli numbers B_0, B_2, B_4, … computed so far, as reduced
+  /// BigInt fractions.
+  static EVEN_BERNOULLI: RefCell<Vec<(BigInt, BigInt)>> =
+    RefCell::new(vec![(BigInt::from(1), BigInt::from(1))]);
+}
+
+/// The Bernoulli number B_n as a reduced (numerator, denominator) pair.
+/// Even ones are cached, so asking for B_2, B_4, … in turn (as asymptotic
+/// series do) costs one recurrence step each.
+pub fn bernoulli_big(n: usize) -> (BigInt, BigInt) {
+  if n == 1 {
+    return (BigInt::from(-1), BigInt::from(2));
+  }
+  if !n.is_multiple_of(2) {
+    return (BigInt::from(0), BigInt::from(1));
+  }
+  EVEN_BERNOULLI.with(|cache| {
+    let mut b = cache.borrow_mut();
+    while b.len() <= n / 2 {
+      // B(m) = -1/(m+1) * sum_{k=0}^{m-1} C(m+1, k) * B(k), where the only
+      // odd k with B(k) != 0 is k = 1.
+      let m = 2 * b.len();
+      let mut num = BigInt::from(0);
+      let mut den = BigInt::from(1);
+      let mut add = |tn: BigInt, td: &BigInt| {
+        let (rn, rd) =
+          rat_reduce_bigint(&(&num * td + tn * &den), &(&den * td));
+        num = rn;
+        den = rd;
+      };
+      for (j, (bn, bd)) in b.iter().enumerate() {
+        let binom = binomial_coeff_big((m + 1) as i128, (2 * j) as i128);
+        add(binom * bn, bd);
+      }
+      // k = 1: C(m+1, 1) * (-1/2)
+      add(BigInt::from(-((m + 1) as i64)), &BigInt::from(2));
+      let (rn, rd) =
+        rat_reduce_bigint(&-num, &(den * BigInt::from((m + 1) as i64)));
+      b.push((rn, rd));
+    }
+    b[n / 2].clone()
+  })
 }
 
 /// Compute the nth Bernoulli polynomial B_n(z) = sum_{k=0}^{n} C(n,k) * B_k * z^(n-k)
@@ -1626,10 +1629,13 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && harmonic_arg_is_inexact(&args[0])
     && let Some(x) = expr_to_num(&args[0])
   {
-    // Real input - use digamma approximation
-    // Euler-Mascheroni constant
-    let result = digamma(x + 1.0) + std::f64::consts::EULER_GAMMA;
-    return Ok(Expr::Real(result));
+    // The negative integers are poles of ψ(x + 1).
+    return Ok(
+      match crate::functions::math_ast::polygamma_f64(0, x + 1.0) {
+        Some(psi) => Expr::Real(psi + std::f64::consts::EULER_GAMMA),
+        None => Expr::Identifier("ComplexInfinity".to_string()),
+      },
+    );
   }
 
   // HarmonicNumber[n, -j] with a negative integer order is the power sum

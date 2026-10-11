@@ -5290,6 +5290,10 @@ pub const CONTINUING_NAMED_OPERATORS: &[&str] = &[
   "\u{2218}",
   "\\[Wedge]",
   "\u{22C0}",
+  "\\[Intersection]",
+  "\u{22C2}",
+  "\\[Union]",
+  "\u{22C3}",
   "\\[Vee]",
   "\u{22C1}",
   "\\[Cap]",
@@ -5414,6 +5418,9 @@ fn operator_precedence(op: &str) -> u8 {
     // the comparisons, `&&`, `||`, `->`, `/;` and the assignments. Without a
     // slot here those operators end up *inside* the Span (issue #564).
     ";;" => 29,
+    // Union (300) and Intersection (305) sit just below `+` (310).
+    "\\[Union]" | "\u{22C3}" => 28,
+    "\\[Intersection]" | "\u{22C2}" => 29,
     "~~" => 24, // StringExpression (lower than Alternatives)
     // Pattern/Optional `:` sits between StringExpression and Alternatives,
     // as in Wolfram (135 < 150 < 160): `x : a | b : v` is
@@ -5872,6 +5879,11 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     "\\[Backslash]" | "\u{2216}" => build_flat_op("Backslash", left, right),
     "\\[CircleDot]" | "\u{2299}" => build_flat_op("CircleDot", left, right),
     "\\[SmallCircle]" | "\u{2218}" => build_flat_op("SmallCircle", left, right),
+    // Union and Intersection are Flat: a ⋃ b ⋃ c -> Union[a, b, c].
+    "\\[Union]" | "\u{22C3}" => build_flat_op("Union", left, right),
+    "\\[Intersection]" | "\u{22C2}" => {
+      build_flat_op("Intersection", left, right)
+    }
     // Wedge and Vee are flat: a ⋀ b ⋀ c -> Wedge[a, b, c].
     "\\[Wedge]" | "\u{22C0}" => build_flat_op("Wedge", left, right),
     "\\[Vee]" | "\u{22C1}" => build_flat_op("Vee", left, right),
@@ -6402,10 +6414,10 @@ pub fn format_bigfloat(digits: &str, prec: f64) -> String {
     ""
   };
 
-  // Check if integer part has 6+ digits (value >= 1e6) → scientific notation
+  // Check if integer part has 7+ digits (value >= 1e6) → scientific notation
   // But skip if integer part is all zeros (like "0" or "00")
   let int_nonzero_len = int_part.trim_start_matches('0').len();
-  if int_part.len() >= 6 && int_nonzero_len > 0 {
+  if int_part.len() >= 7 && int_nonzero_len > 0 {
     // Collect all significant digits (integer + fractional)
     let all_digits: String =
       int_part.chars().chain(frac_part.chars()).collect();

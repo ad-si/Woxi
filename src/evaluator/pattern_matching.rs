@@ -2761,7 +2761,7 @@ pub fn apply_replace_all_ast(
           &source.options,
         ) {
           opts.push(rule_expr(
-            Expr::Identifier("AspectRatio".to_string()),
+            id_expr("AspectRatio"),
             Expr::Real(crate::functions::graphics::plot_source_aspect_ratio(
               source.image_size,
             )),
@@ -2886,12 +2886,16 @@ pub fn apply_replace_all_ast(
     // through to the textual replacement below, which drops the brackets the
     // replacement needs: `π r[t]^2 h[t]/3 /. r[t] -> h[t]/2` came out as
     // `π h[t]^2/12` — the substituted radius silently lost its square.
-    if !matches!(stripped, Expr::Identifier(_))
-      && !contains_pattern(&stripped)
-      && let Some(result) =
-        replace_literal_subexpr(expr, &stripped, replacement)
+    //
+    // When nothing equals it, nothing is replaced: the textual fallback below
+    // would find the digits of `3` inside the atomic integer `-3`
+    // (`-3 /. 3 -> 2` came out as `-2`).
+    if !matches!(stripped, Expr::Identifier(_)) && !contains_pattern(&stripped)
     {
-      return Ok(result);
+      return Ok(
+        replace_literal_subexpr(expr, &stripped, replacement)
+          .unwrap_or_else(|| expr.clone()),
+      );
     }
   }
 
@@ -3028,16 +3032,84 @@ fn replace_literal_subexpr(
   replacement: &Expr,
 ) -> Option<Expr> {
   let hit = std::cell::Cell::new(false);
+  // `Derivative[1][y]` is stored flat as `Derivative[1, y]` (or curried, as
+  // NDSolve builds it), and its application `y'[t]` as
+  // `Derivative[1, y, t]`: a call that extends the target's arguments is the
+  // target applied to the rest.
+  let flat_target = flat_derivative(target);
+  let derivative_arity = match flat_target.as_ref() {
+    Some(Expr::FunctionCall { args, .. })
+      if args.last().is_some_and(|f| !matches!(f, Expr::Integer(_))) =>
+    {
+      Some(args.len())
+    }
+    _ => None,
+  };
   let result =
     crate::functions::string_ast::map_expr_tree(expr, &|node: &Expr| {
       if expr_equal(node, target) {
         hit.set(true);
-        Some(replacement.clone())
-      } else {
-        None
+        return Some(replacement.clone());
       }
+      let (Some(k), Some(flat_target)) = (derivative_arity, &flat_target)
+      else {
+        return None;
+      };
+      let flat_node = flat_derivative(node)?;
+      let Expr::FunctionCall { name, args } = &flat_node else {
+        return None;
+      };
+      let head = Expr::FunctionCall {
+        name: name.clone(),
+        args: args[..k.min(args.len())].to_vec().into(),
+      };
+      if args.len() < k || !expr_equal(&head, flat_target) {
+        return None;
+      }
+      hit.set(true);
+      if args.len() == k {
+        return Some(replacement.clone());
+      }
+      let rest: Vec<Expr> = args[k..]
+        .iter()
+        .map(|a| {
+          replace_literal_subexpr(a, target, replacement)
+            .unwrap_or_else(|| a.clone())
+        })
+        .collect();
+      Some(match replacement {
+        Expr::Identifier(f) => Expr::FunctionCall {
+          name: f.clone(),
+          args: rest.into(),
+        },
+        other => Expr::CurriedCall {
+          func: Box::new(other.clone()),
+          args: rest,
+        },
+      })
     });
   hit.get().then_some(result)
+}
+
+/// A `Derivative` in its flat form `Derivative[n…, f, args…]`, from either
+/// that form or the curried `Derivative[n…][f][args…]`.
+fn flat_derivative(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::FunctionCall { name, .. } if name == "Derivative" => Some(e.clone()),
+    Expr::CurriedCall { func, args } => {
+      let flat = flat_derivative(func)?;
+      let Expr::FunctionCall { name, args: inner } = &flat else {
+        return None;
+      };
+      let mut all: Vec<Expr> = inner.to_vec();
+      all.extend(args.iter().cloned());
+      Some(Expr::FunctionCall {
+        name: name.clone(),
+        args: all.into(),
+      })
+    }
+    _ => None,
+  }
 }
 
 /// Check if two Expr values are structurally equal

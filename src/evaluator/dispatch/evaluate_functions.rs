@@ -7813,7 +7813,7 @@ fn evaluate_function_call_ast_inner(
           let entry = match ws.len() {
             0 => Expr::Integer(0),
             1 => ws.into_iter().next().unwrap(),
-            _ => crate::evaluator::evaluate_expr_to_expr(&call("Plus", ws))?,
+            _ => crate::evaluator::evaluate_expr_to_expr(&plus(ws))?,
           };
           out_row.push(entry);
         }
@@ -8803,15 +8803,12 @@ fn evaluate_function_call_ast_inner(
             let n = &dist_args[0];
             let p = &dist_args[1];
             // Build ((-1 + n)*n)/2 — flatten Times to get correct parenthesization
-            let n_minus_1 = call("Plus", vec![Expr::Integer(-1), n.clone()]);
-            let half = call(
-              "Times",
-              vec![
-                call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-                n_minus_1,
-                n.clone(),
-              ],
-            );
+            let n_minus_1 = plus(vec![Expr::Integer(-1), n.clone()]);
+            let half = times(vec![
+              call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+              n_minus_1,
+              n.clone(),
+            ]);
             return Ok(call("BinomialDistribution", vec![half, p.clone()]));
           }
 
@@ -8838,7 +8835,7 @@ fn evaluate_function_call_ast_inner(
           {
             let n = &dist_args[0];
             let p = &dist_args[1];
-            let n_minus_1 = call("Plus", vec![Expr::Integer(-1), n.clone()]);
+            let n_minus_1 = plus(vec![Expr::Integer(-1), n.clone()]);
             return Ok(call(
               "BinomialDistribution",
               vec![n_minus_1, p.clone()],
@@ -8882,16 +8879,13 @@ fn evaluate_function_call_ast_inner(
           {
             let n = &dist_args[0];
             let m = &dist_args[1];
-            let n_minus_1 = call("Plus", vec![Expr::Integer(-1), n.clone()]);
+            let n_minus_1 = plus(vec![Expr::Integer(-1), n.clone()]);
             // Flatten Times to get correct parenthesization: ((-1 + n)*n)/2
-            let half = call(
-              "Times",
-              vec![
-                call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-                n_minus_1.clone(),
-                n.clone(),
-              ],
-            );
+            let half = times(vec![
+              call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+              n_minus_1.clone(),
+              n.clone(),
+            ]);
             return Ok(call(
               "HypergeometricDistribution",
               vec![m.clone(), n_minus_1, half],
@@ -9154,7 +9148,7 @@ fn evaluate_function_call_ast_inner(
       let term = if factors.len() == 1 {
         factors.pop().unwrap()
       } else {
-        call("Times", factors)
+        times(factors)
       };
       term_exprs.push(term);
     }
@@ -9162,7 +9156,7 @@ fn evaluate_function_call_ast_inner(
     let poly_expr = if term_exprs.len() == 1 {
       term_exprs.pop().unwrap()
     } else {
-      call("Plus", term_exprs)
+      plus(term_exprs)
     };
 
     return Ok(Expr::Function {
@@ -10337,8 +10331,7 @@ fn evaluate_function_call_ast_inner(
         (vec![Expr::Integer(1); *r as usize], Expr::Integer(*r))
       }
       Expr::List(weights) if !weights.is_empty() => {
-        let sum = evaluate_expr_to_expr(&call(
-          "Plus",
+        let sum = evaluate_expr_to_expr(&plus(
           weights.iter().cloned().collect::<Vec<_>>(),
         ))?;
         (weights.iter().cloned().collect::<Vec<_>>(), sum)
@@ -10361,7 +10354,7 @@ fn evaluate_function_call_ast_inner(
       for j in 0..r {
         terms.push(times2(window[j].clone(), items[i + j].clone()));
       }
-      let sum = call("Plus", terms);
+      let sum = plus(terms);
       let avg = div2(sum, divisor.clone());
       result.push(evaluate_expr_to_expr(&avg)?);
     }
@@ -10442,13 +10435,10 @@ fn evaluate_function_call_ast_inner(
         ]
         .into(),
       };
-      let due = call(
-        "Times",
-        vec![
-          pow(call("Plus", vec![Expr::Integer(1), args[1].clone()]), q),
-          ordinary,
-        ],
-      );
+      let due = times(vec![
+        pow(plus(vec![Expr::Integer(1), args[1].clone()]), q),
+        ordinary,
+      ]);
       let result = evaluate_expr_to_expr(&due)?;
       // Only commit when the inner annuity actually evaluated.
       if !expr_to_string(&result).contains("Annuity") {
@@ -10531,16 +10521,13 @@ fn evaluate_function_call_ast_inner(
     let i_is_curve = matches!(i, Expr::List(_));
     let _ = (s_scalar, i_scalar);
     if !s_is_special && !i_is_curve && t_is_usable {
-      let value = call(
-        "Times",
-        vec![
-          s.clone(),
-          pow(
-            call("Plus", vec![Expr::Integer(1), i.clone()]),
-            t_for_formula.clone(),
-          ),
-        ],
-      );
+      let value = times(vec![
+        s.clone(),
+        pow(
+          plus(vec![Expr::Integer(1), i.clone()]),
+          t_for_formula.clone(),
+        ),
+      ]);
       return evaluate_expr_to_expr(&value);
     }
 
@@ -10569,37 +10556,27 @@ fn evaluate_function_call_ast_inner(
       let fp = pay.get(2).cloned().unwrap_or(Expr::Integer(0));
       let tspan = ann_args[1].clone();
       let q = ann_args.get(2).cloned().unwrap_or(Expr::Integer(1));
-      let one_plus_i = || call("Plus", vec![Expr::Integer(1), i.clone()]);
+      let one_plus_i = || plus(vec![Expr::Integer(1), i.clone()]);
       // (1+i)^-tspan
-      let pow_neg_tspan = || {
-        pow(
-          one_plus_i(),
-          call("Times", vec![Expr::Integer(-1), tspan.clone()]),
-        )
-      };
+      let pow_neg_tspan =
+        || pow(one_plus_i(), times(vec![Expr::Integer(-1), tspan.clone()]));
       // i_eff = (1+i)^q - 1
-      let i_eff = call("Plus", vec![pow(one_plus_i(), q), Expr::Integer(-1)]);
+      let i_eff = plus(vec![pow(one_plus_i(), q), Expr::Integer(-1)]);
       // PV_annuity = p * (1 - (1+i)^-tspan) / i_eff
-      let pv_annuity = call(
-        "Times",
-        vec![
-          p,
-          call(
-            "Plus",
-            vec![
-              Expr::Integer(1),
-              call("Times", vec![Expr::Integer(-1), pow_neg_tspan()]),
-            ],
-          ),
-          pow(i_eff, Expr::Integer(-1)),
-        ],
-      );
+      let pv_annuity = times(vec![
+        p,
+        plus(vec![
+          Expr::Integer(1),
+          times(vec![Expr::Integer(-1), pow_neg_tspan()]),
+        ]),
+        pow(i_eff, Expr::Integer(-1)),
+      ]);
       // fp * (1+i)^-tspan  (final payment discounted from time tspan)
-      let fp_term = call("Times", vec![fp, pow_neg_tspan()]);
+      let fp_term = times(vec![fp, pow_neg_tspan()]);
       // PV_0 = PV_annuity + ip + fp_term
-      let pv0 = call("Plus", vec![pv_annuity, ip, fp_term]);
+      let pv0 = plus(vec![pv_annuity, ip, fp_term]);
       // V_t = PV_0 * (1+i)^t
-      let result = call("Times", vec![pv0, pow(one_plus_i(), t.clone())]);
+      let result = times(vec![pv0, pow(one_plus_i(), t.clone())]);
       return evaluate_expr_to_expr(&result);
     }
 
@@ -10622,28 +10599,21 @@ fn evaluate_function_call_ast_inner(
       let n = ann_args[1].clone();
       // (1 + i)^-n
       let pow_neg_n = pow(
-        call("Plus", vec![Expr::Integer(1), i.clone()]),
-        call("Times", vec![Expr::Integer(-1), n]),
+        plus(vec![Expr::Integer(1), i.clone()]),
+        times(vec![Expr::Integer(-1), n]),
       );
       // 1 - (1+i)^-n
-      let numer = call(
-        "Plus",
-        vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), pow_neg_n]),
-        ],
-      );
+      let numer = plus(vec![
+        Expr::Integer(1),
+        times(vec![Expr::Integer(-1), pow_neg_n]),
+      ]);
       // PV = pmt * numer / i
-      let pv =
-        call("Times", vec![pmt, numer, pow(i.clone(), Expr::Integer(-1))]);
+      let pv = times(vec![pmt, numer, pow(i.clone(), Expr::Integer(-1))]);
       // V_t = PV * (1+i)^t
-      let result = call(
-        "Times",
-        vec![
-          pv,
-          pow(call("Plus", vec![Expr::Integer(1), i.clone()]), t.clone()),
-        ],
-      );
+      let result = times(vec![
+        pv,
+        pow(plus(vec![Expr::Integer(1), i.clone()]), t.clone()),
+      ]);
       return evaluate_expr_to_expr(&result);
     }
 
@@ -10668,24 +10638,21 @@ fn evaluate_function_call_ast_inner(
       let pmt = ann_args[0].clone();
       let tspan = ann_args[1].clone();
       let q = ann_args[2].clone();
-      let one_plus_i = || call("Plus", vec![Expr::Integer(1), i.clone()]);
+      let one_plus_i = || plus(vec![Expr::Integer(1), i.clone()]);
       // (1+i)^-tspan
       let pow_neg_tspan =
-        pow(one_plus_i(), call("Times", vec![Expr::Integer(-1), tspan]));
+        pow(one_plus_i(), times(vec![Expr::Integer(-1), tspan]));
       // 1 - (1+i)^-tspan
-      let numer = call(
-        "Plus",
-        vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), pow_neg_tspan]),
-        ],
-      );
+      let numer = plus(vec![
+        Expr::Integer(1),
+        times(vec![Expr::Integer(-1), pow_neg_tspan]),
+      ]);
       // i_eff = (1+i)^q - 1
-      let i_eff = call("Plus", vec![pow(one_plus_i(), q), Expr::Integer(-1)]);
+      let i_eff = plus(vec![pow(one_plus_i(), q), Expr::Integer(-1)]);
       // PV = pmt * numer / i_eff
-      let pv = call("Times", vec![pmt, numer, pow(i_eff, Expr::Integer(-1))]);
+      let pv = times(vec![pmt, numer, pow(i_eff, Expr::Integer(-1))]);
       // V_t = PV * (1+i)^t
-      let result = call("Times", vec![pv, pow(one_plus_i(), t.clone())]);
+      let result = times(vec![pv, pow(one_plus_i(), t.clone())]);
       return evaluate_expr_to_expr(&result);
     }
 
@@ -10727,19 +10694,13 @@ fn evaluate_function_call_ast_inner(
           (Expr::Integer(k as i128), c.clone())
         };
         // exponent = t - time_k
-        let exp = call(
-          "Plus",
-          vec![t.clone(), call("Times", vec![Expr::Integer(-1), time_k])],
-        );
-        terms.push(call(
-          "Times",
-          vec![
-            amount,
-            pow(call("Plus", vec![Expr::Integer(1), i.clone()]), exp),
-          ],
-        ));
+        let exp = plus(vec![t.clone(), times(vec![Expr::Integer(-1), time_k])]);
+        terms.push(times(vec![
+          amount,
+          pow(plus(vec![Expr::Integer(1), i.clone()]), exp),
+        ]));
       }
-      let sum = call("Plus", terms);
+      let sum = plus(terms);
       return evaluate_expr_to_expr(&sum);
     }
     // TimeValue[s, {r1, r2, ..., rn}, t] with non-negative integer t and a
@@ -10761,9 +10722,9 @@ fn evaluate_function_call_ast_inner(
       factors.push(s.clone());
       for k in 1..=t_usize {
         let idx = (k - 1).min(n - 1);
-        factors.push(call("Plus", vec![Expr::Integer(1), rates[idx].clone()]));
+        factors.push(plus(vec![Expr::Integer(1), rates[idx].clone()]));
       }
-      let prod = call("Times", factors);
+      let prod = times(factors);
       return evaluate_expr_to_expr(&prod);
     }
 
@@ -10800,13 +10761,13 @@ fn evaluate_function_call_ast_inner(
           // the period ending at time tk).
           if tk >= t_f {
             factors.push(pow(
-              call("Plus", vec![Expr::Integer(1), pair[1].clone()]),
+              plus(vec![Expr::Integer(1), pair[1].clone()]),
               Expr::Integer(-1),
             ));
           }
         }
       }
-      let prod = call("Times", factors);
+      let prod = times(factors);
       return evaluate_expr_to_expr(&prod);
     }
 
@@ -10870,16 +10831,13 @@ fn evaluate_function_call_ast_inner(
           }
           interp
         };
-        let value = call(
-          "Times",
-          vec![
-            s.clone(),
-            pow(
-              call("Plus", vec![Expr::Integer(1), Expr::Real(rate)]),
-              Expr::Real(-maturity),
-            ),
-          ],
-        );
+        let value = times(vec![
+          s.clone(),
+          pow(
+            plus(vec![Expr::Integer(1), Expr::Real(rate)]),
+            Expr::Real(-maturity),
+          ),
+        ]);
         return evaluate_expr_to_expr(&value);
       }
     }
@@ -12188,10 +12146,10 @@ fn nd_eigenvalues_diffusion_line(args: &[Expr]) -> Option<Expr> {
   };
 
   // Length L = b - a, evaluated to a number.
-  let length_expr = crate::evaluator::evaluate_expr_to_expr(&call(
-    "Plus",
-    vec![b_expr, call("Times", vec![Expr::Integer(-1), a_expr])],
-  ))
+  let length_expr = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+    b_expr,
+    times(vec![Expr::Integer(-1), a_expr]),
+  ]))
   .ok()?;
   let l = match crate::functions::math_ast::try_eval_to_f64(&length_expr) {
     Some(v) if v > 0.0 => v,
@@ -12766,7 +12724,7 @@ fn poly_to_expr(coeffs: &[i128], k: &Expr) -> Expr {
   let sum = if terms.len() == 1 {
     terms.pop().unwrap()
   } else {
-    call("Plus", terms)
+    plus(terms)
   };
 
   match crate::evaluator::evaluate_expr_to_expr(&sum) {

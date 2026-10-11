@@ -1,8 +1,8 @@
 use crate::InterpreterError;
 use crate::helpers::{
   binop, bool_expr, call, call0, call1, const_expr, div, div2, fail_expr,
-  id_expr, minus2, neg1, null_expr, plus2, pow, pow2, rule_delayed_expr,
-  rule_expr, times2, unevaluated,
+  id_expr, minus2, neg1, null_expr, plus, plus2, pow, pow2, rule_delayed_expr,
+  rule_expr, times, times2, unevaluated,
 };
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_output,

@@ -1062,3 +1062,62 @@ mod exact_near_integer {
     );
   }
 }
+
+// Arbitrary-precision and big exact arguments are rounded exactly, not
+// through f64. All verified against wolframscript.
+mod exact_rounding {
+  use super::*;
+
+  #[test]
+  fn round_bigfloat() {
+    assert_eq!(
+      interpret("Round[N[Pi, 30]*10^25]").unwrap(),
+      "31415926535897932384626434"
+    );
+    assert_eq!(
+      interpret("Round[N[2, 30]*10^25 + 1/2]").unwrap(),
+      "20000000000000000000000000"
+    );
+    assert_eq!(interpret("Round[2.5`30]").unwrap(), "2");
+    assert_eq!(interpret("Round[-2.5`30]").unwrap(), "-2");
+    assert_eq!(interpret("Round[N[7/2, 30]]").unwrap(), "4");
+    assert_eq!(
+      interpret("Round[N[Pi, 30], 10^-25]").unwrap(),
+      "15707963267948966192313217/5000000000000000000000000"
+    );
+  }
+
+  #[test]
+  fn round_big_exact() {
+    assert_eq!(
+      interpret("Round[Pi*10^20]").unwrap(),
+      "314159265358979323846"
+    );
+    assert_eq!(
+      interpret("Round[10^30/7]").unwrap(),
+      "142857142857142857142857142857"
+    );
+    assert_eq!(interpret("Round[2.7, 1/10]").unwrap(), "27/10");
+    assert_eq!(interpret("Round[0.25, 1/10]").unwrap(), "1/5");
+  }
+
+  #[test]
+  fn integer_and_fractional_part_bigfloat() {
+    assert_eq!(
+      interpret("IntegerPart[N[Pi, 30]*10^25]").unwrap(),
+      "31415926535897932384626433"
+    );
+    assert_eq!(
+      interpret("IntegerPart[-N[Pi, 30]*10^25]").unwrap(),
+      "-31415926535897932384626433"
+    );
+    assert_eq!(
+      interpret("Round[FractionalPart[N[Pi, 30]*10^25], 10^-3]").unwrap(),
+      "833/1000"
+    );
+    assert_eq!(
+      interpret("IntegerPart[Pi*10^20]").unwrap(),
+      "314159265358979323846"
+    );
+  }
+}

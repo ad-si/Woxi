@@ -2249,6 +2249,33 @@ mod high_level_functions {
       );
     }
 
+    // An explicit product keeps its coprime factors (not the expanded
+    // quartic), refines factors sharing a gcd, and signs multivariate
+    // factors by their lexicographically leading monomial.
+    #[test]
+    fn test_explicit_product() {
+      assert_eq!(
+        interpret("FactorSquareFreeList[(3 x + x^2) (1 + x + x^2)]").unwrap(),
+        "{{1, 1}, {x, 1}, {3 + x, 1}, {1 + x + x^2, 1}}"
+      );
+      assert_eq!(
+        interpret("FactorSquareFreeList[(x^2 + 3) (2 x - 1)^2]").unwrap(),
+        "{{1, 1}, {-1 + 2*x, 2}, {3 + x^2, 1}}"
+      );
+      assert_eq!(
+        interpret("FactorSquareFreeList[-(x + 1) (x + 2)]").unwrap(),
+        "{{-1, 1}, {1 + x, 1}, {2 + x, 1}}"
+      );
+      assert_eq!(
+        interpret("FactorSquareFreeList[(x^2 - 1) (x + 1)]").unwrap(),
+        "{{1, 1}, {-1 + x, 1}, {1 + x, 2}}"
+      );
+      assert_eq!(
+        interpret("FactorSquareFreeList[(x + y) (x - y)]").unwrap(),
+        "{{1, 1}, {x - y, 1}, {x + y, 1}}"
+      );
+    }
+
     #[test]
     fn test_three_distinct_multiplicities() {
       // 8*x^5*(x+1)^3*(x-2)^2
