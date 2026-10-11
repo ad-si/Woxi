@@ -17913,26 +17913,30 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
     return expr.clone();
   }
   let mut new_args = args.clone();
-  new_args.push(rule_expr(id_expr("ImageSize"), Expr::Integer(size)));
   // A bare `Graphics[…]` with no `AspectRatio` of its own defaults to
   // fitting the shape of its own data, which can be wildly elongated (a
   // tall stack of primitives, say) — fine standing alone, but it would
   // blow out the shared row/column/grid size when every other cell is a
   // modestly-proportioned plot. Laying out a grid of panels is exactly
   // when Wolfram normalizes every cell to the layout's own proportions, so
-  // pin the classic 1/GoldenRatio default here unless the picture already
-  // asked for a specific shape.
-  if name == "Graphics" {
-    let has_aspect_ratio = new_args.iter().any(|a| {
+  // pin the classic 1/GoldenRatio cell shape here unless the picture already
+  // asked for a specific shape. The cell is pinned through a `{w, h}`
+  // `ImageSize` rather than an `AspectRatio` rule: the former letterboxes
+  // the data inside the cell, so a `Disk` stays round, whereas the latter
+  // would stretch the data to fill it.
+  let has_aspect_ratio = name == "Graphics"
+    && args.iter().any(|a| {
       matches!(a, Expr::Rule { pattern, .. }
         if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "AspectRatio"))
     });
-    if !has_aspect_ratio {
-      new_args.push(rule_expr(
-        id_expr("AspectRatio"),
-        Expr::Real(1.0 / std::f64::consts::GOLDEN_RATIO),
-      ));
-    }
+  if name == "Graphics" && !has_aspect_ratio {
+    let h = (size as f64 / std::f64::consts::GOLDEN_RATIO).round() as i128;
+    new_args.push(rule_expr(
+      id_expr("ImageSize"),
+      Expr::List(vec![Expr::Integer(size), Expr::Integer(h)].into()),
+    ));
+  } else {
+    new_args.push(rule_expr(id_expr("ImageSize"), Expr::Integer(size)));
   }
   Expr::FunctionCall {
     name: name.clone(),
