@@ -1514,7 +1514,7 @@ pub(crate) fn weighted_data_parts(e: &Expr) -> Option<(Vec<Expr>, Vec<Expr>)> {
 
 /// Build `Plus[terms...]` and evaluate it.
 fn eval_plus(terms: Vec<Expr>) -> Result<Expr, InterpreterError> {
-  evaluate_expr_to_expr(&call("Plus", terms))
+  evaluate_expr_to_expr(&plus(terms))
 }
 
 /// Mean/Variance/StandardDeviation/Median of a WeightedData object, computed
@@ -1528,7 +1528,7 @@ fn weighted_data_stat(
 ) -> Result<Expr, InterpreterError> {
   let total_w = eval_plus(weights.to_vec())?;
   // Weighted mean μ = Σ(wᵢ xᵢ) / Σwᵢ.
-  let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
+  let times = |a: Expr, b: Expr| times(vec![a, b]);
   let weighted_sum = eval_plus(
     data
       .iter()
@@ -3211,7 +3211,7 @@ pub fn dispatch_list_operations(
         // wolframscript). For a finite center the natural low-to-high build
         // order is already canonical, so keep it to avoid disturbing it.
         if is_infinity {
-          let plus = call("Plus", terms);
+          let plus = plus(terms);
           return Some(evaluate_expr_to_expr(&plus));
         }
 
@@ -9028,10 +9028,10 @@ fn try_2d_conv_corr(
           } else {
             &km[a][b]
           };
-          terms.push(call("Times", vec![ke.clone(), dm[i + a][j + b].clone()]));
+          terms.push(times(vec![ke.clone(), dm[i + a][j + b].clone()]));
         }
       }
-      let sum = call("Plus", terms);
+      let sum = plus(terms);
       match evaluate_expr_to_expr(&sum) {
         Ok(v) => row.push(v),
         Err(e) => return Some(Err(e)),
@@ -9071,11 +9071,10 @@ fn list_convolve_ast(
     // Sum kernel[k-1-j] * data[i+j] for j in 0..k (kernel is reversed for convolution)
     let mut terms = Vec::with_capacity(k);
     for j in 0..k {
-      let product =
-        call("Times", vec![ker[k - 1 - j].clone(), data[i + j].clone()]);
+      let product = times(vec![ker[k - 1 - j].clone(), data[i + j].clone()]);
       terms.push(product);
     }
-    let sum = call("Plus", terms);
+    let sum = plus(terms);
     let evaluated = evaluate_expr_to_expr(&sum).unwrap_or(sum);
     result.push(evaluated);
   }
@@ -9579,10 +9578,10 @@ fn list_correlate_ast(
     // Sum kernel[j] * data[i+j] for j in 0..k (no reversal)
     let mut terms = Vec::with_capacity(k);
     for j in 0..k {
-      let product = call("Times", vec![ker[j].clone(), data[i + j].clone()]);
+      let product = times(vec![ker[j].clone(), data[i + j].clone()]);
       terms.push(product);
     }
-    let sum = call("Plus", terms);
+    let sum = plus(terms);
     let evaluated = evaluate_expr_to_expr(&sum).unwrap_or(sum);
     result.push(evaluated);
   }

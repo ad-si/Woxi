@@ -1151,7 +1151,7 @@ fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
   } else if numer_parts.len() == 1 {
     numer_parts.remove(0)
   } else {
-    call("Times", numer_parts)
+    times(numer_parts)
   };
 
   if denom_parts.is_empty() {
@@ -1160,7 +1160,7 @@ fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
     let denom = if denom_parts.len() == 1 {
       denom_parts.remove(0)
     } else {
-      call("Times", denom_parts)
+      times(denom_parts)
     };
     div2(numer, denom)
   }
@@ -1646,7 +1646,7 @@ pub fn quantity_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // When the unit is a pure number (Integer, Real, or Rational), Quantity[m, n]
       // reduces to the product m*n to match Mathematica's behavior.
       if is_pure_number(&unit) {
-        let product = call("Times", vec![magnitude, unit]);
+        let product = times(vec![magnitude, unit]);
         return crate::evaluator::evaluate_expr_to_expr(&product);
       }
       Ok(make_quantity(magnitude, unit))
@@ -1904,7 +1904,7 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
     if terms.len() == 1 {
       terms.pop()
     } else {
-      Some(call("Times", terms))
+      Some(times(terms))
     }
   };
   let numer = build_product(&positives);
@@ -1912,7 +1912,7 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
   match (numer, denom) {
     (Some(n), None) => n,
     (None, Some(d)) => pow(d, Expr::Integer(-1)),
-    (Some(n), Some(d)) => call("Times", vec![n, pow(d, Expr::Integer(-1))]),
+    (Some(n), Some(d)) => times(vec![n, pow(d, Expr::Integer(-1))]),
     (None, None) => Expr::Integer(1),
   }
 }
@@ -2182,7 +2182,7 @@ pub fn try_quantity_plus(
       let mut sorted_args = args.to_vec();
       sorted_args
         .sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
-      return Some(Ok(call("Plus", sorted_args)));
+      return Some(Ok(plus(sorted_args)));
     }
   }
 
@@ -2270,7 +2270,7 @@ pub fn try_quantity_plus(
     // Mix of Quantity and non-Quantity — return unevaluated Plus with quantities combined
     other_args.push(result);
     // Sort: non-quantity first, quantity last (matching Wolfram behavior)
-    Some(Ok(call("Plus", other_args)))
+    Some(Ok(plus(other_args)))
   }
 }
 
@@ -2317,7 +2317,7 @@ pub fn try_quantity_times(
     let raw_compound = if unit_parts.len() == 1 {
       unit_parts.remove(0)
     } else {
-      call("Times", unit_parts)
+      times(unit_parts)
     };
 
     // Try to simplify compound unit (merge same-dimension units)
@@ -2517,7 +2517,7 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
   } else if numer_parts.len() == 1 {
     numer_parts.remove(0)
   } else {
-    call("Times", numer_parts)
+    times(numer_parts)
   };
 
   if denom_parts.is_empty() {
@@ -2526,7 +2526,7 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
     let denom = if denom_parts.len() == 1 {
       denom_parts.remove(0)
     } else {
-      call("Times", denom_parts)
+      times(denom_parts)
     };
     Some(div2(numer, denom))
   }

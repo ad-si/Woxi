@@ -1295,14 +1295,11 @@ fn try_reduce_arc_degrees(
     "ArcSecDegrees" => "Sec",
     _ => return Ok(None),
   };
-  let radians = call(
-    "Times",
-    vec![
-      rhs.clone(),
-      id_expr("Pi"),
-      call("Rational", vec![Expr::Integer(1), Expr::Integer(180)]),
-    ],
-  );
+  let radians = times(vec![
+    rhs.clone(),
+    id_expr("Pi"),
+    call("Rational", vec![Expr::Integer(1), Expr::Integer(180)]),
+  ]);
   let threshold_expr = call1(trig_name, radians);
   let threshold = crate::evaluator::evaluate_expr_to_expr(&threshold_expr)?;
 
@@ -1463,7 +1460,7 @@ fn extract_abs_term(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
   let coeff = match consts.len() {
     0 => Expr::Integer(1),
     1 => consts.into_iter().next().unwrap(),
-    _ => simplify(call("Times", consts)),
+    _ => simplify(times(consts)),
   };
   Some((coeff, inner))
 }
@@ -3326,14 +3323,7 @@ pub fn is_rational(expr: &Expr) -> bool {
 /// Whether `expr` is a closed numeric value whose imaginary part is
 /// non-zero. Symbolic (non-numeric) expressions yield `false`.
 fn has_nonzero_imaginary_part(expr: &Expr) -> bool {
-  let im = Expr::FunctionCall {
-    name: "Im".to_string(),
-    args: vec![Expr::FunctionCall {
-      name: "N".to_string(),
-      args: vec![expr.clone()].into(),
-    }]
-    .into(),
-  };
+  let im = call("Im", vec![call1("N", expr.clone())]);
   crate::evaluator::evaluate_expr_to_expr(&im)
     .ok()
     .and_then(|v| try_eval_to_f64(&v))
@@ -3624,11 +3614,8 @@ fn zero_product_factors(
     return None;
   };
   let poly = expand_and_combine(&minus2(lhs, rhs));
-  let factored = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Factor".to_string(),
-    args: vec![poly].into(),
-  })
-  .ok()?;
+  let factored =
+    crate::evaluator::evaluate_expr_to_expr(&call1("Factor", poly)).ok()?;
   fn flatten(e: &Expr, out: &mut Vec<Expr>) {
     match e {
       Expr::BinaryOp {

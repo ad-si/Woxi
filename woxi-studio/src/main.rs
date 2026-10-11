@@ -19638,6 +19638,211 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`time$$ = 25}, \"\\[Ellipsis]\"]"], 
     assert_ne!(render(5.0), published, "the time control must matter");
   }
 
+  /// End-to-end regression for a "Calabi-Yau space" style Demonstration (the
+  /// code is independently written): a `Manipulate` whose `Initialization`
+  /// defines complex helper functions plus a function that returns a
+  /// `Table` of `ParametricPlot3D` patches, drawn with `Show` under an
+  /// `If`-selected `Lighting` list, with `SynchronousInitialization -> False`
+  /// and a slider and a `{True, False}` toggle with typeset labels.
+  #[test]
+  fn calabi_yau_style_manipulate_draws_its_patches() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", 
+  RowBox[{
+   RowBox[{"Show", "[", 
+    RowBox[{
+     RowBox[{"patches", "[", 
+      RowBox[{"0", ",", "0", ",", "0", ",", "phi", ",", "0", ",", "tint"}], "]"}], ",", 
+     RowBox[{"ViewPoint", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{
+        RowBox[{"-", "1.4"}], ",", "0", ",", "1.4"}], "}"}]}], ",", 
+     RowBox[{"Lighting", "\[Rule]", 
+      RowBox[{"If", "[", 
+       RowBox[{"tint", ",", 
+        RowBox[{"{", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{"\"\<Ambient\>\"", ",", 
+            RowBox[{"GrayLevel", "[", ".5", "]"}]}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"\"\<Directional\>\"", ",", "White", ",", 
+            RowBox[{"ImageScaled", "@", 
+             RowBox[{"{", 
+              RowBox[{"0", ",", "0", ",", "2"}], "}"}]}]}], "}"}]}], "}"}], 
+        ",", "Automatic"}], "]"}]}], ",", 
+     RowBox[{"PlotRange", "\[Rule]", "1.5"}], ",", 
+     RowBox[{"Boxed", "\[Rule]", "False"}], ",", 
+     RowBox[{"Axes", "\[Rule]", "False"}], ",", 
+     RowBox[{"SphericalRegion", "\[Rule]", "True"}], ",", 
+     RowBox[{"ImageSize", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{"300", ",", "300"}], "}"}]}], ",", 
+     RowBox[{"ViewAngle", "\[Rule]", 
+      RowBox[{"\[Pi]", "/", "4.5"}]}]}], "]"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"phi", ",", 
+       RowBox[{"\[Pi]", "/", "4"}], ",", "\"\<projection angle\>\""}], "}"}], 
+     ",", "0", ",", 
+     RowBox[{"2", " ", "Pi"}]}], "}"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"tint", ",", "False", ",", "\"\<color code surface\>\""}], "}"}], 
+     ",", 
+     RowBox[{"{", 
+      RowBox[{"True", ",", "False"}], "}"}]}], "}"}], ",", 
+   RowBox[{"Initialization", "\[RuleDelayed]", 
+    RowBox[{"{", 
+     RowBox[{
+      RowBox[{
+       RowBox[{"cosh2", "[", 
+        RowBox[{"a_", ",", "b_"}], "]"}], ":=", 
+       RowBox[{".5", " ", 
+        RowBox[{"(", 
+         RowBox[{
+          RowBox[{"E", "^", 
+           RowBox[{"(", 
+            RowBox[{"a", "+", 
+             RowBox[{"I", "*", "b"}]}], ")"}]}], "+", 
+          RowBox[{"E", "^", 
+           RowBox[{"(", 
+            RowBox[{
+             RowBox[{"-", "a"}], "-", 
+             RowBox[{"I", "*", "b"}]}], ")"}]}]}], ")"}]}]}], ";", 
+      RowBox[{
+       RowBox[{"root", "[", 
+        RowBox[{"a_", ",", "b_", ",", "m_", ",", "k_"}], "]"}], ":=", 
+       RowBox[{
+        RowBox[{"E", "^", 
+         RowBox[{"(", 
+          RowBox[{"k", "*", "2", "*", "Pi", "*", 
+           RowBox[{"I", "/", "m"}]}], ")"}]}], "*", 
+        RowBox[{
+         RowBox[{"cosh2", "[", 
+          RowBox[{"a", ",", "b"}], "]"}], "^", 
+         RowBox[{"(", 
+          RowBox[{"2.0", "/", "m"}], ")"}]}]}]}], ";", 
+      RowBox[{"deg", "=", "5"}], ";", 
+      RowBox[{
+       RowBox[{"patches", "[", 
+        RowBox[{
+        "x_", ",", "y_", ",", "z_", ",", "\[Alpha]_", ",", "t_", ",", "c_"}], 
+        "]"}], ":=", 
+       RowBox[{"Table", "[", 
+        RowBox[{
+         RowBox[{"With", "[", 
+          RowBox[{
+           RowBox[{"{", 
+            RowBox[{"ang", "=", 
+             RowBox[{"\[Alpha]", "-", "t"}]}], "}"}], ",", 
+           RowBox[{"ParametricPlot3D", "[", 
+            RowBox[{
+             RowBox[{"Evaluate", "@", 
+              RowBox[{"{", 
+               RowBox[{
+                RowBox[{
+                 RowBox[{"Re", "[", 
+                  RowBox[{"root", "[", 
+                   RowBox[{"a", ",", "b", ",", "deg", ",", "k1"}], "]"}], 
+                  "]"}], "+", "x"}], ",", 
+                RowBox[{
+                 RowBox[{"Re", "[", 
+                  RowBox[{"root", "[", 
+                   RowBox[{"a", ",", "b", ",", "deg", ",", "k2"}], "]"}], 
+                  "]"}], "+", "y"}], ",", 
+                RowBox[{
+                 RowBox[{
+                  RowBox[{"Cos", "[", "ang", "]"}], "*", 
+                  RowBox[{"Im", "[", 
+                   RowBox[{"root", "[", 
+                    RowBox[{"a", ",", "b", ",", "deg", ",", "k1"}], "]"}], 
+                   "]"}]}], "+", 
+                 RowBox[{
+                  RowBox[{"Sin", "[", "ang", "]"}], "*", 
+                  RowBox[{"Im", "[", 
+                   RowBox[{"root", "[", 
+                    RowBox[{"a", ",", "b", ",", "deg", ",", "k2"}], "]"}], 
+                   "]"}]}], "+", "z"}]}], "}"}]}], ",", 
+             RowBox[{"{", 
+              RowBox[{"a", ",", 
+               RowBox[{"-", "1"}], ",", "1"}], "}"}], ",", 
+             RowBox[{"{", 
+              RowBox[{"b", ",", "0", ",", 
+               RowBox[{"\[Pi]", "/", "2"}]}], "}"}], ",", 
+             RowBox[{"Boxed", "\[Rule]", "False"}], ",", 
+             RowBox[{"Axes", "\[Rule]", "False"}], ",", 
+             RowBox[{"PlotPoints", "\[Rule]", "6"}], ",", 
+             RowBox[{"PlotStyle", "\[Rule]", 
+              RowBox[{"If", "[", 
+               RowBox[{"c", ",", 
+                RowBox[{"RGBColor", "@", 
+                 RowBox[{"{", 
+                  RowBox[{
+                   RowBox[{"Rescale", "[", 
+                    RowBox[{"k1", ",", 
+                    RowBox[{"{", 
+                    RowBox[{"0", ",", 
+                    RowBox[{"deg", "-", "1"}]}], "}"}]}], "]"}], ",", 
+                   RowBox[{"Rescale", "[", 
+                    RowBox[{"k2", ",", 
+                    RowBox[{"{", 
+                    RowBox[{"0", ",", 
+                    RowBox[{"deg", "-", "1"}]}], "}"}]}], "]"}], ",", "0.5"}], 
+                  "}"}]}], ",", 
+                RowBox[{"{", 
+                 RowBox[{
+                  RowBox[{"RGBColor", "[", 
+                   RowBox[{".5", ",", ".5", ",", "1"}], "]"}], ",", 
+                  RowBox[{"Specularity", "[", 
+                   RowBox[{"White", ",", "128"}], "]"}]}], "}"}]}], "]"}]}], 
+             ",", 
+             RowBox[{"MaxRecursion", "\[Rule]", "0"}], ",", 
+             RowBox[{"PerformanceGoal", "\[Rule]", "\"\<Speed\>\""}], ",", 
+             RowBox[{"Mesh", "\[Rule]", "None"}]}], "]"}]}], "]"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"k1", ",", "0", ",", 
+           RowBox[{"deg", "-", "1"}]}], "}"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"k2", ",", "0", ",", 
+           RowBox[{"deg", "-", "1"}]}], "}"}]}], "]"}]}]}], "}"}]}], ",", 
+   RowBox[{"SynchronousInitialization", "\[Rule]", "False"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`phi$$ = 0.78}, \"\\[Ellipsis]\"]"], "Output"]
+}, Closed]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the patches must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the patches must draw");
+    let labels: Vec<String> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, label, .. }
+        | manipulate::ControlState::Discrete { name, label, .. } => {
+          format!("{name}: {label}")
+        }
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec!["phi: projection angle", "tint: color code surface"]
+    );
+  }
+
   /// End-to-end regression for a Demonstration that draws a vector field:
   /// a grid of short arrows, each coloured by looking its value up in a
   /// named gradient through `ColorData[scheme, "ColorFunction"]`, inside a

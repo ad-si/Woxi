@@ -948,7 +948,7 @@ pub fn try_interval_divide(
   // A same-sign span reciprocates as usual (and reverses orientation).
   let recip_spans = if let Some(spans) = &b_int {
     let pos_inf = id_expr("Infinity");
-    let neg_inf = call("Times", vec![Expr::Integer(-1), pos_inf.clone()]);
+    let neg_inf = times(vec![Expr::Integer(-1), pos_inf.clone()]);
     let recip_one = |x: &Expr| eval_binop(&Expr::Integer(1), x, "Divide").ok();
     let mut recip = Vec::new();
     for (lo, hi) in spans {
@@ -1320,7 +1320,7 @@ fn combine_complex(re: &Expr, im: &Expr) -> Expr {
 
 fn eval_add(a: &Expr, b: &Expr) -> Expr {
   crate::evaluator::evaluate_function_call_ast("Plus", &[a.clone(), b.clone()])
-    .unwrap_or_else(|_| call("Plus", vec![a.clone(), b.clone()]))
+    .unwrap_or_else(|_| plus(vec![a.clone(), b.clone()]))
 }
 
 fn eval_sub(a: &Expr, b: &Expr) -> Expr {
@@ -1328,13 +1328,13 @@ fn eval_sub(a: &Expr, b: &Expr) -> Expr {
     "Times",
     &[Expr::Integer(-1), b.clone()],
   )
-  .unwrap_or_else(|_| call("Times", vec![Expr::Integer(-1), b.clone()]));
+  .unwrap_or_else(|_| times(vec![Expr::Integer(-1), b.clone()]));
   eval_add(a, &neg_b)
 }
 
 fn eval_mul(a: &Expr, b: &Expr) -> Expr {
   crate::evaluator::evaluate_function_call_ast("Times", &[a.clone(), b.clone()])
-    .unwrap_or_else(|_| call("Times", vec![a.clone(), b.clone()]))
+    .unwrap_or_else(|_| times(vec![a.clone(), b.clone()]))
 }
 
 fn eval_divide(num: &Expr, den: &Expr) -> Expr {

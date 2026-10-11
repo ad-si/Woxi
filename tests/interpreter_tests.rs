@@ -1080,6 +1080,33 @@ mod interpreter_tests {
     );
   }
 
+  /// `TabView[<|label1 -> pane1, …|>]` (tabs given as an Association) is
+  /// the same view as the list-of-rules form and shows its first tab.
+  #[test]
+  fn test_tabview_association_shows_first_tab() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "TabView[<|\"first\" -> Plot[Sin[x], {x, 0, 4}, ImageSize -> 320], \
+       \"second\" -> Plot[Cos[x], {x, 0, 4}, ImageSize -> 480]|>]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(svg.starts_with("<svg width=\"320\""));
+  }
+
+  /// A `TabView` tab holding a `LocatorPane` shows the picture it wraps.
+  #[test]
+  fn test_tabview_locator_pane_tab_is_drawn() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "TabView[<|\"a\" -> LocatorPane[{{0, 0}}, \
+       Graphics[Circle[], ImageSize -> 300]], \"b\" -> 2|>, 1]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(svg.starts_with("<svg"));
+  }
+
   /// A `TabView` pane can also be given in the front end's own `{key,
   /// label -> content}` "Tabs" layout-tool form — a 2-element `List`
   /// pairing an explicit numeric key with a `label -> content` rule —
@@ -1619,25 +1646,31 @@ mod interpreter_tests {
   }
 
   #[test]
-  fn test_contour_plot_equations_use_per_contour_directives_and_dashing() {
-    // Regression: `ContourStyle -> {Directive[…], Directive[…]}` was merged
-    // into one style, and `Dashed` never reached the drawn contour lines.
+  fn test_contour_plot_equations_use_per_contour_directives() {
+    // Regression: `ContourStyle -> {Directive[…], Directive[…]}` on an
+    // equation-form ContourPlot styled every curve alike (the default
+    // grey); each Directive must style its own equation's curve, and a
+    // `Dashed` inside it must draw a dashed line.
     clear_state();
     let svg = interpret_with_stdout(
-      "ContourPlot[{x == y, x == -y}, {x, -1, 1}, {y, -1, 1}, \
-       ContourStyle -> {Directive[Red, Thick], \
-       Directive[Blue, Thick, Dashed]}]",
+      "ContourPlot[{x == y, x^2 + y^2 == 1}, {x, -1, 1}, {y, -1, 1}, \
+       ContourStyle -> {Directive[Red, Thick, Dashed], \
+       Directive[Blue, Thick]}]",
     )
     .unwrap()
     .graphics
     .expect("ContourPlot should produce a graphics SVG");
     assert!(
-      svg.contains("stroke=\"rgb(255,0,0)\" stroke-width=\"20.0\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"),
-      "first equation must be solid red:\n{svg}"
+      svg.contains(
+        "stroke=\"rgb(255,0,0)\" stroke-width=\"20.0\" stroke-dasharray="
+      ),
+      "first equation must be a dashed red line:\n{svg}"
     );
     assert!(
-      svg.contains("stroke=\"rgb(0,0,255)\" stroke-width=\"20.0\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-dasharray="),
-      "second equation must be dashed blue:\n{svg}"
+      svg.contains(
+        "stroke=\"rgb(0,0,255)\" stroke-width=\"20.0\" stroke-linecap"
+      ),
+      "second equation must be a solid blue line:\n{svg}"
     );
   }
 

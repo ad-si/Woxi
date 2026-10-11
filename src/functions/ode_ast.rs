@@ -1472,7 +1472,7 @@ fn try_solve_pde_system(
       let coeff = match coeff_factors.len() {
         0 => Expr::Integer(1),
         1 => coeff_factors.into_iter().next().unwrap(),
-        _ => call("Times", coeff_factors),
+        _ => times(coeff_factors),
       };
       Some((coeff, t_arg, x_arg))
     }
@@ -5775,7 +5775,7 @@ fn classify_product_term(
     } else if other_factors.len() == 1 {
       other_factors[0].clone()
     } else {
-      call("Times", other_factors.into_iter().cloned().collect())
+      times(other_factors.into_iter().cloned().collect())
     };
   } else {
     // No recognized linear y factor. The product is only a forcing term if it
@@ -8555,9 +8555,9 @@ fn lagrange_polynomial(
       }
     }
     factors.retain(|f| !matches!(f, Expr::Integer(1)));
-    terms.push(call("Times", factors));
+    terms.push(times(factors));
   }
-  Some(call("Plus", terms))
+  Some(plus(terms))
 }
 
 /// Lagrange interpolation over the stencil carried out in exact arithmetic.
@@ -9719,7 +9719,7 @@ fn classify_multivar_product(
     } else if other_factors.len() == 1 {
       other_factors[0].clone()
     } else {
-      call("Times", other_factors.into_iter().cloned().collect())
+      times(other_factors.into_iter().cloned().collect())
     };
     (y_order, Some(y_var), coeff)
   } else {

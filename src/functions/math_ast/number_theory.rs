@@ -1633,7 +1633,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(
       match crate::functions::math_ast::polygamma_f64(0, x + 1.0) {
         Some(psi) => Expr::Real(psi + std::f64::consts::EULER_GAMMA),
-        None => Expr::Identifier("ComplexInfinity".to_string()),
+        None => id_expr("ComplexInfinity"),
       },
     );
   }

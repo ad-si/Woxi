@@ -149,10 +149,7 @@ impl Dwd {
       ));
     }
     if self.image {
-      extras.push(rule_expr(
-        Expr::String("ImageData".into()),
-        Expr::Identifier("True".into()),
-      ));
+      extras.push(rule_expr(Expr::String("ImageData".into()), bool_expr(true)));
     }
     let name = Expr::String(self.kind.name().to_string());
     let wtrans = if extras.is_empty() {
@@ -295,16 +292,14 @@ fn eval(e: Expr) -> Expr {
 
 /// Sum coef_i * x_i, evaluated to canonical form.
 fn symbolic_dot_plain(pairs: Vec<(Expr, Expr)>) -> Expr {
-  let terms: Vec<Expr> = pairs
-    .into_iter()
-    .map(|(c, x)| call("Times", vec![c, x]))
-    .collect();
-  eval(call("Plus", terms))
+  let terms: Vec<Expr> =
+    pairs.into_iter().map(|(c, x)| times(vec![c, x])).collect();
+  eval(plus(terms))
 }
 
 /// Sqrt[2] * Sum coef_i * x_i, evaluated to canonical form.
 fn symbolic_dot(pairs: Vec<(Expr, Expr)>) -> Expr {
-  eval(call("Times", vec![sqrt2(), symbolic_dot_plain(pairs)]))
+  eval(times(vec![sqrt2(), symbolic_dot_plain(pairs)]))
 }
 
 /// Exact filters of a wavelet as (index, Expr) pairs, if available.
@@ -949,24 +944,18 @@ fn symbolic_idwt_step(
       .map(|t| {
         let mut terms: Vec<Expr> = Vec::new();
         for (i, c) in synth_lo {
-          terms.push(call(
-            "Times",
-            vec![
-              c.clone(),
-              a[(t + dilation * i).rem_euclid(nn) as usize].clone(),
-            ],
-          ));
+          terms.push(times(vec![
+            c.clone(),
+            a[(t + dilation * i).rem_euclid(nn) as usize].clone(),
+          ]));
         }
         for (i, c) in synth_hi {
-          terms.push(call(
-            "Times",
-            vec![
-              c.clone(),
-              d[(t + dilation * i).rem_euclid(nn) as usize].clone(),
-            ],
-          ));
+          terms.push(times(vec![
+            c.clone(),
+            d[(t + dilation * i).rem_euclid(nn) as usize].clone(),
+          ]));
         }
-        eval(call("Plus", terms))
+        eval(plus(terms))
       })
       .collect();
   }
@@ -980,16 +969,16 @@ fn symbolic_idwt_step(
   for (t, (at, dt)) in a.iter().zip(d.iter()).enumerate() {
     for (i, c) in synth_lo {
       let j = (2 * t as i64 + i).rem_euclid(n_even as i64) as usize;
-      terms[j].push(call("Times", vec![c.clone(), at.clone()]));
+      terms[j].push(times(vec![c.clone(), at.clone()]));
     }
     for (i, c) in synth_hi {
       let j = (2 * t as i64 + i).rem_euclid(n_even as i64) as usize;
-      terms[j].push(call("Times", vec![c.clone(), dt.clone()]));
+      terms[j].push(times(vec![c.clone(), dt.clone()]));
     }
   }
   let mut out: Vec<Expr> = terms
     .into_iter()
-    .map(|ts| eval(call("Times", vec![sqrt2(), call("Plus", ts)])))
+    .map(|ts| eval(times(vec![sqrt2(), plus(ts)])))
     .collect();
   out.truncate(n);
   out

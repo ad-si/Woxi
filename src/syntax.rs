@@ -1,6 +1,7 @@
 use crate::helpers::{
-  binop, call, call0, call1, div2, minus2, neg1, plus2, pow, pow2,
-  rule_delayed_expr, rule_expr, times2, unevaluated,
+  binop, bool_expr, call, call0, call1, const_expr, div2, fail_expr, id_expr,
+  minus2, neg1, null_expr, plus, plus2, pow, pow2, rule_delayed_expr,
+  rule_expr, times, times2, unevaluated,
 };
 use num_bigint::{BigInt, Sign};
 
@@ -360,17 +361,17 @@ fn double_struck_letter_glyph(c: char) -> Option<char> {
 fn named_char_to_expr(s: &str) -> Expr {
   // Direct Unicode character input
   match s {
-    "\u{20AC}" => return Expr::Identifier("\u{20AC}".to_string()), // €
-    "\u{03F5}" => return Expr::Identifier("\u{03F5}".to_string()), // ϵ
-    "\u{03C0}" => return Expr::Constant("Pi".to_string()),         // π
-    "\u{212F}" => return Expr::Constant("E".to_string()),          // ℯ
-    "\u{2147}" => return Expr::Constant("E".to_string()), // ⅇ (DOUBLE-STRUCK ITALIC SMALL E)
-    "\u{F74D}" => return Expr::Constant("E".to_string()), // Wolfram PUA \[ExponentialE]
-    "\u{00B0}" => return Expr::Constant("Degree".to_string()), // °
-    "\u{221E}" => return Expr::Identifier("Infinity".to_string()), // ∞
-    "\u{2148}" => return Expr::Identifier("I".to_string()), // ⅈ
-    "\u{F74E}" => return Expr::Identifier("I".to_string()), // Wolfram PUA \[ImaginaryI]
-    "\u{F74F}" => return Expr::Identifier("I".to_string()), // Wolfram PUA \[ImaginaryJ]
+    "\u{20AC}" => return id_expr("\u{20AC}"), // €
+    "\u{03F5}" => return id_expr("\u{03F5}"), // ϵ
+    "\u{03C0}" => return const_expr("Pi"),    // π
+    "\u{212F}" => return const_expr("E"),     // ℯ
+    "\u{2147}" => return const_expr("E"), // ⅇ (DOUBLE-STRUCK ITALIC SMALL E)
+    "\u{F74D}" => return const_expr("E"), // Wolfram PUA \[ExponentialE]
+    "\u{00B0}" => return const_expr("Degree"), // °
+    "\u{221E}" => return id_expr("Infinity"), // ∞
+    "\u{2148}" => return id_expr("I"),    // ⅈ
+    "\u{F74E}" => return id_expr("I"),    // Wolfram PUA \[ImaginaryI]
+    "\u{F74F}" => return id_expr("I"),    // Wolfram PUA \[ImaginaryJ]
     _ => {}
   }
 
@@ -423,16 +424,16 @@ fn named_char_to_expr(s: &str) -> Expr {
 
   // Special cases that map to constants
   match name {
-    "Pi" => return Expr::Constant("Pi".to_string()),
-    "ExponentialE" => return Expr::Constant("E".to_string()),
-    "Degree" => return Expr::Constant("Degree".to_string()),
+    "Pi" => return const_expr("Pi"),
+    "ExponentialE" => return const_expr("E"),
+    "Degree" => return const_expr("Degree"),
     _ => {}
   }
 
   // Special cases that map to known identifiers
   match name {
-    "Infinity" => return Expr::Identifier("Infinity".to_string()),
-    "ImaginaryI" | "ImaginaryJ" => return Expr::Identifier("I".to_string()),
+    "Infinity" => return id_expr("Infinity"),
+    "ImaginaryI" | "ImaginaryJ" => return id_expr("I"),
     _ => {}
   }
 
@@ -2017,7 +2018,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           ]
           .into(),
         },
-        _ => Expr::Identifier("Null".to_string()),
+        _ => null_expr(),
       }
     }
     // `tag /: lhs := rhs` and friends parse as their own rules, handled at
@@ -2287,7 +2288,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         crate::emit_message(&format!(
           "General::base: Requested base {base} in {s} should be between 2 and 36."
         ));
-        return Expr::Identifier("$Failed".to_string());
+        return fail_expr();
       }
       // The first digit the base cannot spell, named by its 1-based position
       // in the digits as written — the point of a fractional literal counts
@@ -2300,7 +2301,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           "General::digit: Digit at position {} in {digits} is too large to be used in base {base}.",
           position + 1
         ));
-        return Expr::Identifier("$Failed".to_string());
+        return fail_expr();
       }
       let lower = digits.to_lowercase();
       if let Some(dot_pos) = lower.find('.') {
@@ -2481,10 +2482,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       // `??symbol` parses as Information[symbol, LongForm -> True]; like `?`
       // it must hold the symbol so post-assignment inspection works.
       let symbol_name = pair.into_inner().next().unwrap().as_str().to_string();
-      let long_form_rule = rule_expr(
-        Expr::Identifier("LongForm".to_string()),
-        Expr::Identifier("True".to_string()),
-      );
+      let long_form_rule = rule_expr(id_expr("LongForm"), bool_expr(true));
       if symbol_name.contains('*') {
         call(
           "Information",
@@ -2505,9 +2503,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       named_char_to_expr(s)
     }
     // An omitted element or argument (`{a,,b}`, `f[a,]`) is `Null`.
-    Rule::OmittedArg | Rule::OmittedTrailingArg => {
-      Expr::Identifier("Null".to_string())
-    }
+    Rule::OmittedArg | Rule::OmittedTrailingArg => null_expr(),
     Rule::Identifier => {
       // A leading backtick ` `x` ` is shorthand for the current context,
       // which is Global by default — collapse it to `x`. An explicit
@@ -3518,7 +3514,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
                 ..
               }
             ) {
-            call("Times", flatten_times_chain(&factor))
+            times(flatten_times_chain(&factor))
           } else {
             factor
           };
@@ -4274,7 +4270,7 @@ fn parse_expression_inner(
           &mut term_was_implicit_times,
         );
         operators.push("=.".to_string());
-        terms.push(Expr::Identifier("Null".to_string())); // dummy right operand
+        terms.push(null_expr()); // dummy right operand
         term_was_implicit_times.push(false);
       }
       Rule::SpanNoOperandSep => {
@@ -4966,7 +4962,7 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
       // same `Null` any other trailing `;` appends.
       let trailing = count_separators(prev_end, span.start());
       for _ in 0..trailing {
-        exprs.push(Expr::Identifier("Null".to_string()));
+        exprs.push(null_expr());
       }
       let body = if exprs.len() == 1 {
         exprs.pop().unwrap()
@@ -4982,7 +4978,7 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
       // count separators minus 1 (one separator connects two expressions).
       let seps = count_separators(prev_end, span.start());
       for _ in 1..seps {
-        exprs.push(Expr::Identifier("Null".to_string()));
+        exprs.push(null_expr());
       }
     }
     exprs.push(pair_to_expr(child.clone()));
@@ -4991,7 +4987,7 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
   // Trailing separators after the last child → each is a Null.
   let trailing = count_separators(prev_end, stmts_end);
   for _ in 0..trailing {
-    exprs.push(Expr::Identifier("Null".to_string()));
+    exprs.push(null_expr());
   }
   if exprs.len() == 1 {
     exprs.into_iter().next().unwrap()
@@ -5290,6 +5286,10 @@ pub const CONTINUING_NAMED_OPERATORS: &[&str] = &[
   "\u{2218}",
   "\\[Wedge]",
   "\u{22C0}",
+  "\\[Intersection]",
+  "\u{22C2}",
+  "\\[Union]",
+  "\u{22C3}",
   "\\[Vee]",
   "\u{22C1}",
   "\\[Cap]",
@@ -5414,6 +5414,9 @@ fn operator_precedence(op: &str) -> u8 {
     // the comparisons, `&&`, `||`, `->`, `/;` and the assignments. Without a
     // slot here those operators end up *inside* the Span (issue #564).
     ";;" => 29,
+    // Union (300) and Intersection (305) sit just below `+` (310).
+    "\\[Union]" | "\u{22C3}" => 28,
+    "\\[Intersection]" | "\u{22C2}" => 29,
     "~~" => 24, // StringExpression (lower than Alternatives)
     // Pattern/Optional `:` sits between StringExpression and Alternatives,
     // as in Wolfram (135 < 150 < 160): `x : a | b : v` is
@@ -5499,7 +5502,7 @@ fn build_span(parts: Vec<Expr>) -> Expr {
     .map(|(slot, part)| {
       if is_span_omitted(&part) {
         if slot == 1 {
-          Expr::Identifier("All".to_string())
+          id_expr("All")
         } else {
           Expr::Integer(1)
         }
@@ -5872,6 +5875,11 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     "\\[Backslash]" | "\u{2216}" => build_flat_op("Backslash", left, right),
     "\\[CircleDot]" | "\u{2299}" => build_flat_op("CircleDot", left, right),
     "\\[SmallCircle]" | "\u{2218}" => build_flat_op("SmallCircle", left, right),
+    // Union and Intersection are Flat: a ⋃ b ⋃ c -> Union[a, b, c].
+    "\\[Union]" | "\u{22C3}" => build_flat_op("Union", left, right),
+    "\\[Intersection]" | "\u{22C2}" => {
+      build_flat_op("Intersection", left, right)
+    }
     // Wedge and Vee are flat: a ⋀ b ⋀ c -> Wedge[a, b, c].
     "\\[Wedge]" | "\u{22C0}" => build_flat_op("Wedge", left, right),
     "\\[Vee]" | "\u{22C1}" => build_flat_op("Vee", left, right),
@@ -6503,7 +6511,7 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
             Some(if rest.len() == 1 {
               rest[0].clone()
             } else {
-              call("Times", rest)
+              times(rest)
             })
           } else {
             let mut new_args = vec![Expr::Integer(-n)];
@@ -6511,7 +6519,7 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
             Some(if new_args.len() == 1 {
               new_args[0].clone()
             } else {
-              call("Times", new_args)
+              times(new_args)
             })
           }
         }
@@ -6521,7 +6529,7 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
           Some(if new_args.len() == 1 {
             new_args[0].clone()
           } else {
-            call("Times", new_args)
+            times(new_args)
           })
         }
         Expr::FunctionCall { name: rn, args: ra }
@@ -6541,7 +6549,7 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
           Some(if new_args.len() == 1 {
             new_args[0].clone()
           } else {
-            call("Times", new_args)
+            times(new_args)
           })
         }
         _ => None,
@@ -7046,7 +7054,7 @@ fn denominator_form(expr: &Expr) -> Expr {
       if let Expr::Real(r) = &ta[0] {
         let mut new_args = vec![Expr::Real(-r)];
         new_args.extend_from_slice(&ta[1..]);
-        call("Times", new_args)
+        times(new_args)
       } else {
         unreachable!()
       }
@@ -7072,7 +7080,7 @@ fn denominator_form(expr: &Expr) -> Expr {
           if new_args.len() == 1 {
             new_args.remove(0)
           } else {
-            call("Times", new_args)
+            times(new_args)
           }
         }
       } else {
@@ -7099,7 +7107,7 @@ fn denominator_form(expr: &Expr) -> Expr {
       };
       let mut new_args = vec![negated_rational];
       new_args.extend_from_slice(&ta[1..]);
-      call("Times", new_args)
+      times(new_args)
     }
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
@@ -8970,9 +8978,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 && matches!(&ca[0], Expr::Integer(0)) =>
             {
               match &ca[1] {
-                Expr::Integer(1) => vec![Expr::Identifier("I".to_string())],
+                Expr::Integer(1) => vec![id_expr("I")],
                 Expr::Integer(n) => {
-                  vec![Expr::Integer(*n), Expr::Identifier("I".to_string())]
+                  vec![Expr::Integer(*n), id_expr("I")]
                 }
                 _ => vec![a.clone()],
               }
@@ -9122,7 +9130,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 if let Expr::Integer(k) = &ra[0] {
                   call("Rational", vec![Expr::Integer(-k), ra[1].clone()])
                 } else {
-                  call("Times", vec![Expr::Integer(-1), t.clone()])
+                  times(vec![Expr::Integer(-1), t.clone()])
                 }
               }
               // -1 * rest → rest (double negation cancels)
@@ -9141,11 +9149,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 op: UnaryOperator::Minus,
                 operand,
               } => (**operand).clone(),
-              _ => call("Times", vec![Expr::Integer(-1), t.clone()]),
+              _ => times(vec![Expr::Integer(-1), t.clone()]),
             }
           };
           let neg_terms: Vec<Expr> = pargs.iter().map(negate).collect();
-          let neg_plus = call("Plus", neg_terms);
+          let neg_plus = plus(neg_terms);
           return format!("({})/{}", fmt(&neg_plus), d);
         }
         // Handle Times[Rational[n, d], expr] as "(n*expr)/d" (Wolfram convention)
@@ -9782,7 +9790,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               let pos_term = if new_args.len() == 1 {
                 new_args.into_iter().next().unwrap()
               } else {
-                call("Times", new_args)
+                times(new_args)
               };
               result.push_str(" - ");
               result.push_str(&fmt(&pos_term));
@@ -9797,7 +9805,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                   new_args.push((*f).clone());
                 }
               }
-              let canonical = call("Times", new_args);
+              let canonical = times(new_args);
               result.push_str(" + ");
               result.push_str(&fmt(&canonical));
             } else {
@@ -9854,7 +9862,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                     if pos_args.len() == 1 {
                       pos_args[0].clone()
                     } else {
-                      call("Times", pos_args)
+                      times(pos_args)
                     }
                   }
                   Some(new_coeff) => {
@@ -9863,7 +9871,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                     if new_args.len() == 1 {
                       new_args[0].clone()
                     } else {
-                      call("Times", new_args)
+                      times(new_args)
                     }
                   }
                 };
@@ -10158,7 +10166,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           let pos_numerator = if pos_args.len() == 1 {
             pos_args[0].clone()
           } else {
-            call("Times", pos_args)
+            times(pos_args)
           };
           let inner_div = div2(pos_numerator, *right.clone());
           let inner_str = expr_to_string(&inner_div);
@@ -12744,7 +12752,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
                 if new_args.len() == 1 {
                   new_args[0].clone()
                 } else {
-                  call("Times", new_args)
+                  times(new_args)
                 }
               }
             };
@@ -15304,7 +15312,7 @@ fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {
       if let Expr::Real(f) = &args[0] {
         new_args[0] = Expr::Real(-f);
       }
-      (" - ", call("Times", new_args))
+      (" - ", times(new_args))
     }
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -15329,7 +15337,7 @@ fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {
     {
       let mut new_args = args.to_vec();
       new_args[0] = negate_negative_rational(&args[0]).unwrap();
-      (" - ", call("Times", new_args))
+      (" - ", times(new_args))
     }
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -15382,7 +15390,7 @@ fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {
           if new_args.len() == 1 {
             new_args.into_iter().next().unwrap()
           } else {
-            call("Times", new_args)
+            times(new_args)
           },
         )
       } else {
@@ -15400,12 +15408,12 @@ fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {
           if new_args.len() == 1 {
             (" - ", new_args[0].clone())
           } else {
-            (" - ", call("Times", new_args))
+            (" - ", times(new_args))
           }
         } else {
           let mut new_args = vec![Expr::Integer(-n)];
           new_args.extend_from_slice(&args[1..]);
-          (" - ", call("Times", new_args))
+          (" - ", times(new_args))
         }
       } else {
         (" + ", expr.clone())
