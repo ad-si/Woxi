@@ -22937,12 +22937,12 @@ fn collect_body_tabview_selectors(expr: &Expr) -> Vec<(String, Vec<Expr>)> {
       Expr::FunctionCall { name, args } => {
         if name == "TabView"
           && args.len() >= 2
-          && let Expr::List(items) = &args[0]
+          && let Some(items) = tabview_panes(&args[0])
           && !items.is_empty()
           && let Expr::Identifier(var) = unwrap_pane_selector(&args[1])
           && !found.iter().any(|(v, _)| v == var)
         {
-          found.push((var.clone(), items.to_vec()));
+          found.push((var.clone(), items));
         }
         for a in args {
           walk(a, found);
@@ -23103,7 +23103,7 @@ fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
     if let Expr::FunctionCall { name, args } = expr
       && name == "TabView"
       && args.len() >= 2
-      && let Expr::List(items) = &args[0]
+      && let Some(items) = tabview_panes(&args[0])
     {
       let selector =
         crate::syntax::expr_to_source_form(unwrap_pane_selector(&args[1]));
@@ -23651,9 +23651,8 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   {
     return control_group_items(&args[0]);
   }
-  let Expr::List(items) = &args[0] else {
-    return None;
-  };
+  let items_owned = tabview_panes(&args[0])?;
+  let items = &items_owned;
   let mut out = Vec::new();
   // Consecutive label pieces of a `Row` (`"show ", Style["C", Italic], …`)
   // that lead into a control form one caption, not one heading each.
@@ -23757,6 +23756,22 @@ pub(crate) fn unwrap_pane_selector(selector: &Expr) -> &Expr {
 /// Returns `(None, item, item)` for anything else (a malformed pane falls
 /// back to itself as both label and content, matching Wolfram's tolerance
 /// for a plain non-rule entry).
+pub(crate) fn tabview_panes(arg: &Expr) -> Option<Vec<Expr>> {
+  match arg {
+    Expr::List(items) => Some(items.to_vec()),
+    Expr::Association(pairs) => Some(
+      pairs
+        .iter()
+        .map(|(k, v)| Expr::Rule {
+          pattern: Box::new(k.clone()),
+          replacement: Box::new(v.clone()),
+        })
+        .collect(),
+    ),
+    _ => None,
+  }
+}
+
 pub(crate) fn tabview_pane_parts(item: &Expr) -> (Option<Expr>, &Expr, &Expr) {
   match item {
     Expr::Rule {
@@ -24037,9 +24052,9 @@ fn pane_or_tab_governed_names(
     match e {
       Expr::FunctionCall { name, args } => {
         if (name == "PaneSelector" || name == "TabView")
-          && let Some(Expr::List(panes)) = args.first()
+          && let Some(panes) = args.first().and_then(tabview_panes)
         {
-          for pane in panes {
+          for pane in &panes {
             if let Expr::Rule { replacement, .. }
             | Expr::RuleDelayed { replacement, .. } = pane
             {
