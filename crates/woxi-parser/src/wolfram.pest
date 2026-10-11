@@ -149,7 +149,7 @@ PrivateUseLetter = _{ '\u{F6B2}'..'\u{F6CB}' | '\u{F770}'..'\u{F789}' | '\u{F6E6
 
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores
-PatternName = @{ (ASCII_ALPHA | LETTER | PrivateUseLetter) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter)* }
+PatternName = @{ (ASCII_ALPHA | LETTER | PrivateUseLetter | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "$")* }
 // NamedCharIdentifier: named character sequences like \[Phi], \[Alpha], etc.
 // Matches \[Name] syntax or direct Unicode chars for common symbols
 // Excludes operator named chars (\[Element], \[NotElement], \[ReverseElement], \[DirectedEdge], \[UndirectedEdge],

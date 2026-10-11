@@ -2045,6 +2045,78 @@ fn expand_band_rules(data: &Expr, dims: &[usize]) -> Option<Expr> {
   Some(Expr::List(expanded.into()))
 }
 
+/// Rewrite negative integer coordinates in explicit position rules (counted
+/// from the end of each axis, so `{-1, 1}` in a 3x3 array is `{3, 1}`) into
+/// positive ones. Pattern positions and out-of-range coordinates are left
+/// unchanged. Returns None when nothing needed rewriting.
+fn resolve_negative_positions(data: &Expr, dims: &[usize]) -> Option<Expr> {
+  let fix_rule = |item: &Expr| -> Option<Expr> {
+    let (pattern, replacement, delayed) = match item {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern, replacement, false),
+      Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern, replacement, true),
+      _ => return None,
+    };
+    let fix_coord = |c: &Expr, axis: usize| -> Option<Expr> {
+      let v = expr_to_i128(c)?;
+      let len = *dims.get(axis)? as i128;
+      (v < 0 && -v <= len).then(|| Expr::Integer(len + 1 + v))
+    };
+    let new_pattern = match pattern.as_ref() {
+      Expr::List(ps) if ps.len() == dims.len() => {
+        let mut changed = false;
+        let fixed: Vec<Expr> = ps
+          .iter()
+          .enumerate()
+          .map(|(k, p)| match fix_coord(p, k) {
+            Some(n) => {
+              changed = true;
+              n
+            }
+            None => p.clone(),
+          })
+          .collect();
+        changed.then(|| Expr::List(fixed.into()))?
+      }
+      other if dims.len() == 1 => fix_coord(other, 0)?,
+      _ => return None,
+    };
+    Some(if delayed {
+      Expr::RuleDelayed {
+        pattern: Box::new(new_pattern),
+        replacement: replacement.clone(),
+      }
+    } else {
+      Expr::Rule {
+        pattern: Box::new(new_pattern),
+        replacement: replacement.clone(),
+      }
+    })
+  };
+  match data {
+    Expr::List(items) => {
+      let mut any = false;
+      let new_items: Vec<Expr> = items
+        .iter()
+        .map(|it| match fix_rule(it) {
+          Some(n) => {
+            any = true;
+            n
+          }
+          None => it.clone(),
+        })
+        .collect();
+      any.then(|| Expr::List(new_items.into()))
+    }
+    single => fix_rule(single),
+  }
+}
+
 /// Expand a pattern rule such as `{i_} :> i` or `{i_, j_} :> i + j` (with an
 /// optional `/; cond`) into explicit `{i, j, ...} -> value` rules over the
 /// grid `dims`. The rule's left-hand side must be a `List` pattern (after
@@ -2446,16 +2518,20 @@ pub fn sparse_array_normalize_ast(
   } else {
     None
   };
+  let resolved_arg0: Option<Expr> = explicit_dims
+    .as_ref()
+    .and_then(|dims| resolve_negative_positions(&args[0], dims));
+  let arg0: &Expr = resolved_arg0.as_ref().unwrap_or(&args[0]);
   let expanded_data: Expr;
   let data: &Expr = if let Some(ref dims) = explicit_dims {
-    if let Some(expanded) = expand_pattern_rule(&args[0], dims)
-      .or_else(|| expand_band_rules(&args[0], dims))
-      .or_else(|| expand_pattern_rule_list(&args[0], dims))
+    if let Some(expanded) = expand_pattern_rule(arg0, dims)
+      .or_else(|| expand_band_rules(arg0, dims))
+      .or_else(|| expand_pattern_rule_list(arg0, dims))
     {
       expanded_data = expanded;
       &expanded_data
     } else {
-      &args[0]
+      arg0
     }
   } else if let Some(ref dims) = band_inferred_dims {
     if let Some(expanded) = expand_band_rules(&args[0], dims) {
