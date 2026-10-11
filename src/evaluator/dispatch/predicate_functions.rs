@@ -313,13 +313,14 @@ pub fn dispatch_predicate_functions(
       }
       // A fresh variable avoids any collision with symbols in the input.
       let var = id_expr("AlgebraicIntegerQ$x");
-      let mp = match evaluate_expr_to_expr(&call(
-        "MinimalPolynomial",
-        vec![args[0].clone(), var.clone()],
-      )) {
-        Ok(p) => p,
-        Err(e) => return Some(Err(e)),
-      };
+      let mp =
+        match crate::functions::polynomial_ast::minimal_polynomial_core(&[
+          args[0].clone(),
+          var.clone(),
+        ]) {
+          Ok(p) => p,
+          Err(e) => return Some(Err(e)),
+        };
       // MinimalPolynomial stays unevaluated for transcendental or non-numeric
       // inputs (Pi, symbols, …), which are not algebraic integers.
       if matches!(&mp, Expr::FunctionCall { name, .. }

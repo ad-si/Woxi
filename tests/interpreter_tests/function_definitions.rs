@@ -5885,3 +5885,24 @@ mod function_parts {
     assert_eq!(interpret("Last[#^2 &]").unwrap(), "#1^2");
   }
 }
+
+mod literal_slot_is_not_reevaluated {
+  use super::*;
+
+  // A literal argument in a definition's left-hand side is evaluated once,
+  // when the rule is stored. Re-evaluating it on every call made two rules
+  // that mention each other's heads (`lsA[p_, lsB[2, 3]]` and
+  // `lsB[lsA[e, 1], _]`) recurse until `$RecursionLimit`.
+  #[test]
+  fn mutually_referencing_rules_terminate() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "lsA[p_, lsB[2, 3]] := 1; lsB[lsA[e, 1], _] := 2; \
+         {lsB[3, 5], lsA[3, lsB[2, 3]], lsA[3, 4]}"
+      )
+      .unwrap(),
+      "{lsB[3, 5], 1, lsA[3, 4]}"
+    );
+  }
+}

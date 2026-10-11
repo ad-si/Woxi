@@ -344,7 +344,7 @@ fn jacobi_p_integer_ab(
   let sum = match terms.len() {
     0 => Expr::Integer(0),
     1 => terms.into_iter().next().unwrap(),
-    _ => call("Plus", terms),
+    _ => plus(terms),
   };
 
   if jacobi_x_is_exact_numeric(x) {
@@ -468,10 +468,9 @@ fn jacobi_p_rational_ab(
   x: &Expr,
 ) -> Result<Expr, InterpreterError> {
   // const + a, and const + a + b.
-  let plus_a = |c: i128| call("Plus", vec![Expr::Integer(c), a.clone()]);
-  let plus_ab =
-    |c: i128| call("Plus", vec![Expr::Integer(c), a.clone(), b.clone()]);
-  let x_minus_1 = call("Plus", vec![Expr::Integer(-1), x.clone()]);
+  let plus_a = |c: i128| plus(vec![Expr::Integer(c), a.clone()]);
+  let plus_ab = |c: i128| plus(vec![Expr::Integer(c), a.clone(), b.clone()]);
+  let x_minus_1 = plus(vec![Expr::Integer(-1), x.clone()]);
 
   let mut terms: Vec<Expr> = Vec::with_capacity(n + 1);
   for s in 0..=n {
@@ -504,9 +503,9 @@ fn jacobi_p_rational_ab(
       1 => factors.push(x_minus_1.clone()),
       p => factors.push(pow(x_minus_1.clone(), Expr::Integer(p as i128))),
     }
-    terms.push(call("Times", factors));
+    terms.push(times(factors));
   }
-  crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
+  crate::evaluator::evaluate_expr_to_expr(&plus(terms))
 }
 
 /// Evaluate the Jacobi polynomial P_n^{(a,b)}(x) numerically using
@@ -1077,21 +1076,16 @@ pub fn spherical_harmonic_y_ast(
     )
   };
   // Sqrt[Rational[2l+1, fact_ratio_den] / Pi] = Sqrt[arg]
-  let sqrt_arg = call(
-    "Times",
-    vec![norm_inner, pow(const_expr("Pi"), Expr::Integer(-1))],
-  );
+  let sqrt_arg =
+    times(vec![norm_inner, pow(const_expr("Pi"), Expr::Integer(-1))]);
   let sqrt_part = pow(
     sqrt_arg,
     call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
   );
-  let norm_expr = call(
-    "Times",
-    vec![
-      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-      sqrt_part,
-    ],
-  );
+  let norm_expr = times(vec![
+    call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+    sqrt_part,
+  ]);
   let cos_theta = call1("Cos", args[2].clone());
   let plm_raw = associated_legendre_p_ast(
     &Expr::Integer(l),
@@ -1107,13 +1101,10 @@ pub fn spherical_harmonic_y_ast(
   } else {
     pow(
       const_expr("E"),
-      call(
-        "Times",
-        vec![id_expr("I"), Expr::Integer(m), args[3].clone()],
-      ),
+      times(vec![id_expr("I"), Expr::Integer(m), args[3].clone()]),
     )
   };
-  let result = call("Times", vec![norm_expr, plm, imp]);
+  let result = times(vec![norm_expr, plm, imp]);
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&result)?;
   Ok(simplify_spherical_harmonic_form(&evaluated))
 }
@@ -1259,10 +1250,10 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
         vec![Expr::Integer(residual_n), Expr::Integer(residual_d)],
       )
     };
-    let new_sqrt_arg = call(
-      "Times",
-      vec![new_radicand_rat, pow(const_expr("Pi"), Expr::Integer(-1))],
-    );
+    let new_sqrt_arg = times(vec![
+      new_radicand_rat,
+      pow(const_expr("Pi"), Expr::Integer(-1)),
+    ]);
     let new_sqrt = pow(
       new_sqrt_arg,
       call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
@@ -1386,7 +1377,7 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
     new_args.push(c);
   }
   new_args.extend(others);
-  call("Times", new_args)
+  times(new_args)
 }
 
 fn extract_largest_square(n: i128) -> (i128, i128) {
@@ -1460,7 +1451,7 @@ fn legendre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
   let numerator = if terms.len() == 1 {
     terms.into_iter().next().unwrap()
   } else {
-    call("Plus", terms)
+    plus(terms)
   };
 
   if lcm == 1 {
@@ -1619,22 +1610,16 @@ fn legendre_q_symbolic_ast(
   let neg_half = call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]);
   let log_1mx = call1(
     "Log",
-    call(
-      "Plus",
-      vec![
-        Expr::Integer(1),
-        call("Times", vec![Expr::Integer(-1), x.clone()]),
-      ],
-    ),
+    plus(vec![
+      Expr::Integer(1),
+      times(vec![Expr::Integer(-1), x.clone()]),
+    ]),
   );
-  let log_1px = call1("Log", call("Plus", vec![Expr::Integer(1), x.clone()]));
-  let q0 = call(
-    "Plus",
-    vec![
-      call("Times", vec![neg_half, log_1mx]),
-      call("Times", vec![half, log_1px]),
-    ],
-  );
+  let log_1px = call1("Log", plus(vec![Expr::Integer(1), x.clone()]));
+  let q0 = plus(vec![
+    times(vec![neg_half, log_1mx]),
+    times(vec![half, log_1px]),
+  ]);
 
   if n == 0 {
     return crate::evaluator::evaluate_expr_to_expr(&q0);
@@ -1659,17 +1644,14 @@ fn legendre_q_symbolic_ast(
     ))?;
     let one_over_k =
       call("Rational", vec![Expr::Integer(1), Expr::Integer(k as i128)]);
-    w_terms.push(call("Times", vec![one_over_k, p_k_minus_1, p_n_minus_k]));
+    w_terms.push(times(vec![one_over_k, p_k_minus_1, p_n_minus_k]));
   }
-  let w = call("Plus", w_terms);
+  let w = plus(w_terms);
 
-  let result = call(
-    "Plus",
-    vec![
-      call("Times", vec![Expr::Integer(-1), w]),
-      call("Times", vec![p_n, q0]),
-    ],
-  );
+  let result = plus(vec![
+    times(vec![Expr::Integer(-1), w]),
+    times(vec![p_n, q0]),
+  ]);
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
@@ -2139,7 +2121,7 @@ fn chebyshev_t_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
     let term = match (coeff, x_power) {
       ((c, 1), None) => Expr::Integer(c),
       ((1, 1), Some(xp)) => xp,
-      ((-1, 1), Some(xp)) => call("Times", vec![Expr::Integer(-1), xp]),
+      ((-1, 1), Some(xp)) => times(vec![Expr::Integer(-1), xp]),
       ((c, 1), Some(xp)) => times2(Expr::Integer(c), xp),
       _ => return None, // Should not happen for Chebyshev (all integer coefficients)
     };
@@ -2212,7 +2194,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let pos = chebyshev_u_ast(&[Expr::Integer(-*m - 2), args[1].clone()])?;
     // Expand so the leading -1 distributes over a polynomial result
     // (e.g. -U_2(x) = -(-1 + 4 x^2) becomes 1 - 4 x^2).
-    let negated = call("Times", vec![Expr::Integer(-1), pos]);
+    let negated = times(vec![Expr::Integer(-1), pos]);
     return crate::evaluator::evaluate_function_call_ast("Expand", &[negated]);
   }
 
@@ -2331,7 +2313,7 @@ fn chebyshev_u_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
     let term = match (coeff, x_power) {
       ((c, 1), None) => Expr::Integer(c),
       ((1, 1), Some(xp)) => xp,
-      ((-1, 1), Some(xp)) => call("Times", vec![Expr::Integer(-1), xp]),
+      ((-1, 1), Some(xp)) => times(vec![Expr::Integer(-1), xp]),
       ((c, 1), Some(xp)) => times2(Expr::Integer(c), xp),
       _ => return None,
     };
@@ -2400,7 +2382,7 @@ fn gegenbauer_c_two_arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (2/n) * ChebyshevT[n, x], evaluated so the rational prefactor combines
   // with the polynomial into Wolfram's canonical form.
   let cheb = call("ChebyshevT", vec![args[0].clone(), args[1].clone()]);
-  let prod = call("Times", vec![prefactor, cheb]);
+  let prod = times(vec![prefactor, cheb]);
   crate::evaluator::evaluate_expr_to_expr(&prod)
 }
 
@@ -2586,7 +2568,7 @@ fn gegenbauer_symbolic_lambda(n: usize, lambda: &Expr, x: &Expr) -> Expr {
       factors.push(if i == 0 {
         lambda.clone()
       } else {
-        call("Plus", vec![Expr::Integer(i as i128), lambda.clone()])
+        plus(vec![Expr::Integer(i as i128), lambda.clone()])
       });
     }
     // x^power (omit for power 0, bare x for power 1).
@@ -2600,13 +2582,13 @@ fn gegenbauer_symbolic_lambda(n: usize, lambda: &Expr, x: &Expr) -> Expr {
     terms.push(match factors.len() {
       0 => Expr::Integer(1),
       1 => factors.remove(0),
-      _ => call("Times", factors),
+      _ => times(factors),
     });
   }
   match terms.len() {
     0 => Expr::Integer(0),
     1 => terms.remove(0),
-    _ => call("Plus", terms),
+    _ => plus(terms),
   }
 }
 
@@ -2845,7 +2827,7 @@ fn gegenbauer_polynomial_symbolic(
         if *cn == 1 && *cd == 1 {
           xp
         } else if *cn == -1 && *cd == 1 {
-          call("Times", vec![Expr::Integer(-1), xp])
+          times(vec![Expr::Integer(-1), xp])
         } else {
           times2(coeff_expr, xp)
         }
@@ -2960,7 +2942,7 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       //   LaguerreL[n, x] = Hypergeometric1F1[-n, 1, x].
       // Only forward the rewrite when both n and x are numeric (so the
       // Hypergeometric1F1 path returns a Real); otherwise stay unevaluated.
-      let neg_n = call("Times", vec![Expr::Integer(-1), args[0].clone()]);
+      let neg_n = times(vec![Expr::Integer(-1), args[0].clone()]);
       let rewrite = call(
         "Hypergeometric1F1",
         vec![neg_n, Expr::Integer(1), args[1].clone()],
@@ -3159,26 +3141,20 @@ fn generalized_laguerre_l_ast(
   let mut sum_terms: Vec<Expr> = Vec::with_capacity(n + 1);
   for k in 0..=n {
     let k_fact = fact(k);
-    sum_terms.push(call(
-      "Times",
-      vec![
-        call(
-          "Binomial",
-          vec![
-            call("Plus", vec![Expr::Integer(n as i128), a_expr.clone()]),
-            Expr::Integer((n - k) as i128),
-          ],
-        ),
-        pow(Expr::Integer(-1), k as i128),
-        pow(x_expr.clone(), k as i128),
-        pow(Expr::Integer(k_fact), -1),
-      ],
-    ));
+    sum_terms.push(times(vec![
+      call(
+        "Binomial",
+        vec![
+          plus(vec![Expr::Integer(n as i128), a_expr.clone()]),
+          Expr::Integer((n - k) as i128),
+        ],
+      ),
+      pow(Expr::Integer(-1), k as i128),
+      pow(x_expr.clone(), k as i128),
+      pow(Expr::Integer(k_fact), -1),
+    ]));
   }
-  let scaled = call(
-    "Times",
-    vec![Expr::Integer(n_fact), call("Plus", sum_terms)],
-  );
+  let scaled = times(vec![Expr::Integer(n_fact), plus(sum_terms)]);
   let result = div2(call1("Expand", scaled), Expr::Integer(n_fact));
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -3279,9 +3255,7 @@ fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> Expr {
     let term = match x_power {
       None => Expr::BigInteger(c.clone()),
       Some(xp) if *c == BigInt::from(1) => xp,
-      Some(xp) if *c == BigInt::from(-1) => {
-        call("Times", vec![Expr::Integer(-1), xp])
-      }
+      Some(xp) if *c == BigInt::from(-1) => times(vec![Expr::Integer(-1), xp]),
       Some(xp) => times2(Expr::BigInteger(c.clone()), xp),
     };
     terms.push(term);
@@ -3496,7 +3470,7 @@ fn hermite_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
     let term = match x_power {
       None => Expr::Integer(*c),
       Some(xp) if *c == 1 => xp,
-      Some(xp) if *c == -1 => call("Times", vec![Expr::Integer(-1), xp]),
+      Some(xp) if *c == -1 => times(vec![Expr::Integer(-1), xp]),
       Some(xp) => times2(Expr::Integer(*c), xp),
     };
     terms.push(term);
@@ -3877,7 +3851,7 @@ fn zernike_r_polynomial_symbolic(
     let term = match (*coeff, x_power) {
       (c, None) => Expr::Integer(c),
       (1, Some(xp)) => xp,
-      (-1, Some(xp)) => call("Times", vec![Expr::Integer(-1), xp]),
+      (-1, Some(xp)) => times(vec![Expr::Integer(-1), xp]),
       (c, Some(xp)) => times2(Expr::Integer(c), xp),
     };
     terms.push(term);

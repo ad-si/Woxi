@@ -11,9 +11,7 @@ pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     // ExpIntegralEi[0] = -Infinity
-    Expr::Integer(0) => {
-      Ok(call("Times", vec![Expr::Integer(-1), id_expr("Infinity")]))
-    }
+    Expr::Integer(0) => Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")])),
     // ExpIntegralEi[Infinity] = Infinity
     Expr::Identifier(s) if s == "Infinity" => Ok(id_expr("Infinity")),
     // Numeric evaluation
@@ -93,9 +91,7 @@ pub fn cos_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     // CosIntegral[0] = -Infinity
-    Expr::Integer(0) => {
-      Ok(call("Times", vec![Expr::Integer(-1), id_expr("Infinity")]))
-    }
+    Expr::Integer(0) => Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")])),
     // CosIntegral[Infinity] = 0
     Expr::Identifier(s) if s == "Infinity" => Ok(Expr::Integer(0)),
     // Numeric evaluation
@@ -104,7 +100,7 @@ pub fn cos_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => {
       if is_neg_infinity(other) {
         // CosIntegral[-Infinity] = I*Pi
-        return Ok(call("Times", vec![id_expr("I"), const_expr("Pi")]));
+        return Ok(times(vec![id_expr("I"), const_expr("Pi")]));
       }
       // Unevaluated
       Ok(unevaluated("CosIntegral", args))
@@ -234,7 +230,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::Integer(n) = &fargs[0]
         && *n < 0
       {
-        let pos_arg = call("Times", vec![Expr::Integer(-*n), fargs[1].clone()]);
+        let pos_arg = times(vec![Expr::Integer(-*n), fargs[1].clone()]);
         return Ok(negate_fresnel_s(pos_arg));
       }
       // FresnelS[I*z] = -I*FresnelS[z]
@@ -337,7 +333,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::Integer(n) = &fargs[0]
         && *n < 0
       {
-        let pos_arg = call("Times", vec![Expr::Integer(-*n), fargs[1].clone()]);
+        let pos_arg = times(vec![Expr::Integer(-*n), fargs[1].clone()]);
         return Ok(negate_fresnel_c(pos_arg));
       }
       // FresnelC[I*z] = I*FresnelC[z]
@@ -581,7 +577,7 @@ pub fn sin_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     // SinIntegral[Infinity] = Pi/2
     Expr::Identifier(s) if s == "Infinity" => {
-      Ok(call("Times", vec![make_rational(1, 2), const_expr("Pi")]))
+      Ok(times(vec![make_rational(1, 2), const_expr("Pi")]))
     }
     // Numeric evaluation
     Expr::Real(x) => Ok(Expr::Real(sin_integral_numeric(*x))),
@@ -589,7 +585,7 @@ pub fn sin_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => {
       if is_neg_infinity(other) {
         // SinIntegral[-Infinity] = -Pi/2
-        return Ok(call("Times", vec![make_rational(-1, 2), const_expr("Pi")]));
+        return Ok(times(vec![make_rational(-1, 2), const_expr("Pi")]));
       }
       // Unevaluated
       Ok(unevaluated("SinIntegral", args))
@@ -787,9 +783,7 @@ pub fn log_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // LogIntegral[0] = 0
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     // LogIntegral[1] = -Infinity (pole at x=1 since ln(1)=0)
-    Expr::Integer(1) => {
-      Ok(call("Times", vec![Expr::Integer(-1), id_expr("Infinity")]))
-    }
+    Expr::Integer(1) => Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")])),
     // Numeric evaluation: Li(x) = Ei(ln(x))
     Expr::Real(x) => {
       let result = exp_integral_ei_numeric(x.ln());
@@ -872,7 +866,7 @@ pub fn sinh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => {
       if is_neg_infinity(other) {
         // SinhIntegral[-Infinity] = -Infinity
-        return Ok(call("Times", vec![Expr::Integer(-1), id_expr("Infinity")]));
+        return Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")]));
       }
       // Unevaluated
       Ok(unevaluated("SinhIntegral", args))
@@ -956,9 +950,7 @@ pub fn cosh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     // CoshIntegral[0] = -Infinity
-    Expr::Integer(0) => {
-      Ok(call("Times", vec![Expr::Integer(-1), id_expr("Infinity")]))
-    }
+    Expr::Integer(0) => Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")])),
     // CoshIntegral[Infinity] = Infinity
     Expr::Identifier(s) if s == "Infinity" => Ok(id_expr("Infinity")),
     // Numeric evaluation

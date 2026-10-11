@@ -740,7 +740,7 @@ fn extract_quadratic_irrational(
       let inner = match remaining.len() {
         0 => return None,
         1 => remaining.into_iter().next().unwrap(),
-        _ => call("Times", remaining),
+        _ => times(remaining),
       };
       (inner, scale_n, scale_d)
     }
@@ -1362,20 +1362,17 @@ fn periodic_continued_fraction(
   let s_sqrt = if s == 1 {
     sqrt_d
   } else {
-    call("Times", vec![Expr::Integer(s), sqrt_d])
+    times(vec![Expr::Integer(s), sqrt_d])
   };
   let numer = if pn == 0 {
     s_sqrt
   } else {
-    call("Plus", vec![Expr::Integer(pn), s_sqrt])
+    plus(vec![Expr::Integer(pn), s_sqrt])
   };
   let value = if q == 1 {
     numer
   } else {
-    call(
-      "Times",
-      vec![numer, pow(Expr::Integer(q), Expr::Integer(-1))],
-    )
+    times(vec![numer, pow(Expr::Integer(q), Expr::Integer(-1))])
   };
   crate::evaluator::evaluate_expr_to_expr(&value).ok()
 }
@@ -2038,12 +2035,46 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // is used instead.
     let ratio = 53.0_f64 / (base as f64).log2();
     (ratio.ceil() as usize).max(1)
+  } else if let Expr::BigFloat(_, prec) = &args[0] {
+    // An arbitrary-precision number returns as many digits as it carries,
+    // in the target base: RealDigits[N[Pi, 20]] lists 20, and a 25-digit
+    // number has 83 binary or 21 hexadecimal digits.
+    ((prec * 10f64.ln() / (base as f64).ln()).round() as usize).max(1)
   } else {
     // Default: use machine-precision (~16 digits)
     16
   };
 
   let expr = &args[0];
+
+  if crate::functions::predicate_ast::is_complex_number(expr) {
+    crate::emit_message(&crate::syntax::format_message_with_expr(
+      "RealDigits::realx: The value ",
+      expr,
+      " is not a real number.",
+    ));
+    return Ok(unevaluated("RealDigits", args));
+  }
+
+  // An exact irrational (Pi, Sqrt[2], Log[2]) has no natural digit count:
+  // without an explicit length wolframscript reports ::ndig and leaves the
+  // call unevaluated.
+  if !explicit_num_digits
+    && !matches!(
+      expr,
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+    )
+    && expr_to_rational(expr).is_none()
+    && crate::functions::predicate_ast::is_numeric_q(expr)
+  {
+    crate::emit_message(
+      "RealDigits::ndig: The number of digits to return cannot be determined.",
+    );
+    return Ok(unevaluated("RealDigits", args));
+  }
 
   // Determine sign and work with absolute value
   let is_negative = match expr {
@@ -2296,6 +2327,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vec![Expr::List(digit_exprs.into()), Expr::Integer(p + 1)].into(),
       ));
     }
+    let base_exp = base_exp as i128;
     while digits.len() < num_digits {
       digits.push(0);
     }
@@ -2303,11 +2335,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let digit_exprs: Vec<Expr> =
       digits.iter().map(|&d| Expr::Integer(d)).collect();
     return Ok(Expr::List(
-      vec![
-        Expr::List(digit_exprs.into()),
-        Expr::Integer(base_exp as i128),
-      ]
-      .into(),
+      vec![Expr::List(digit_exprs.into()), Expr::Integer(base_exp)].into(),
     ));
   }
 
@@ -2351,6 +2379,8 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  let decimal_exp = decimal_exp as i128;
+
   // Pad with zeros if we don't have enough digits
   while digits.len() < num_digits {
     digits.push(0);
@@ -2363,11 +2393,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     digits.iter().map(|&d| Expr::Integer(d)).collect();
 
   Ok(Expr::List(
-    vec![
-      Expr::List(digit_exprs.into()),
-      Expr::Integer(decimal_exp as i128),
-    ]
-    .into(),
+    vec![Expr::List(digit_exprs.into()), Expr::Integer(decimal_exp)].into(),
   ))
 }
 
@@ -2435,13 +2461,13 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if weights[i] == BigInt::from(1) {
         terms.push(digit.clone());
       } else {
-        terms.push(call(
-          "Times",
-          vec![digit.clone(), bigint_to_expr(weights[i].clone())],
-        ));
+        terms.push(times(vec![
+          digit.clone(),
+          bigint_to_expr(weights[i].clone()),
+        ]));
       }
     }
-    let sum = call("Plus", terms);
+    let sum = plus(terms);
     return crate::evaluator::evaluate_expr_to_expr(&sum);
   }
 
@@ -2471,11 +2497,11 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           pow(base_expr.clone(), Expr::Integer(power))
         };
-        call("Times", vec![item.clone(), base_pow])
+        times(vec![item.clone(), base_pow])
       };
       terms.push(term);
     }
-    let sum = call("Plus", terms);
+    let sum = plus(terms);
     return crate::evaluator::evaluate_expr_to_expr(&sum);
   }
 
@@ -2575,10 +2601,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut result = items[0].clone();
     for item in &items[1..] {
       // result = result * base + item
-      result = call(
-        "Plus",
-        vec![call("Times", vec![base_expr.clone(), result]), item.clone()],
-      );
+      result = plus(vec![times(vec![base_expr.clone(), result]), item.clone()]);
       result = crate::evaluator::evaluate_expr_to_expr(&result)?;
     }
     Ok(result)

@@ -58,6 +58,160 @@ pub(crate) struct Triangle {
   pub edge_color: Option<(u8, u8, u8)>,
 }
 
+/// Largest scene `painter_order` refines: the pairwise overlap tests are
+/// quadratic, so bigger scenes keep the plain centroid sort.
+const PAINTER_ORDER_MAX_TRIANGLES: usize = 2500;
+
+/// Whether two projected triangles share interior area (touching along an
+/// edge or at a corner does not count).
+fn projected_triangles_overlap(
+  a: &[(f64, f64); 3],
+  b: &[(f64, f64); 3],
+) -> bool {
+  let eps = 1e-9;
+  for tri in [a, b] {
+    for i in 0..3 {
+      let (x0, y0) = tri[i];
+      let (x1, y1) = tri[(i + 1) % 3];
+      let (nx, ny) = (y1 - y0, x0 - x1);
+      let range = |t: &[(f64, f64); 3]| {
+        t.iter().fold((f64::MAX, f64::MIN), |(lo, hi), &(x, y)| {
+          let v = x * nx + y * ny;
+          (lo.min(v), hi.max(v))
+        })
+      };
+      let (alo, ahi) = range(a);
+      let (blo, bhi) = range(b);
+      let tol = eps * (nx.abs() + ny.abs()).max(1e-300);
+      if ahi <= blo + tol || bhi <= alo + tol {
+        return false;
+      }
+    }
+  }
+  true
+}
+
+/// Where triangle `t` lies relative to the plane of `plane`, seen from the
+/// viewer: `Some(true)` when wholly behind (or on) it, `Some(false)` when
+/// wholly in front, `None` when it straddles the plane.
+fn side_of_plane(
+  t: &[Point3D; 3],
+  plane: &[Point3D; 3],
+  gradient: [f64; 3],
+) -> Option<bool> {
+  let mut n = triangle_normal(plane[0], plane[1], plane[2]);
+  if n[0] * gradient[0] + n[1] * gradient[1] + n[2] * gradient[2] > 0.0 {
+    n = [-n[0], -n[1], -n[2]];
+  }
+  // `n` now points toward the viewer.
+  let eps = 1e-9;
+  let (mut behind, mut front) = (true, true);
+  for v in t {
+    let d = n[0] * (v.x - plane[0].x)
+      + n[1] * (v.y - plane[0].y)
+      + n[2] * (v.z - plane[0].z);
+    if d > eps {
+      behind = false;
+    }
+    if d < -eps {
+      front = false;
+    }
+  }
+  match (behind, front) {
+    (true, _) => Some(true),
+    (_, true) => Some(false),
+    _ => None,
+  }
+}
+
+/// Back-to-front draw order for the triangles. A centroid sort alone draws a
+/// large face that lies behind a small one on top of it (a cube inside a
+/// polyhedron pokes through its faces), so every overlapping pair is first
+/// ordered by which one lies wholly behind the other's plane; the centroid
+/// depth only breaks the remaining ties and cycles.
+fn painter_order(
+  verts: &[[Point3D; 3]],
+  projected: &[[(f64, f64); 3]],
+  depths: &[f64],
+  camera: &Camera,
+) -> Vec<usize> {
+  let n = verts.len();
+  let mut by_depth: Vec<usize> = (0..n).collect();
+  by_depth.sort_by(|&a, &b| {
+    depths[b]
+      .partial_cmp(&depths[a])
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  if n > PAINTER_ORDER_MAX_TRIANGLES {
+    return by_depth;
+  }
+  // depth(p) = gradient . p
+  let unit = |x, y, z| Point3D { x, y, z };
+  let d0 = depth(unit(0.0, 0.0, 0.0), camera);
+  let gradient = [
+    depth(unit(1.0, 0.0, 0.0), camera) - d0,
+    depth(unit(0.0, 1.0, 0.0), camera) - d0,
+    depth(unit(0.0, 0.0, 1.0), camera) - d0,
+  ];
+  let bbox: Vec<[f64; 4]> = projected
+    .iter()
+    .map(|t| {
+      let xs = t.iter().map(|p| p.0);
+      let ys = t.iter().map(|p| p.1);
+      [
+        xs.clone().fold(f64::MAX, f64::min),
+        xs.fold(f64::MIN, f64::max),
+        ys.clone().fold(f64::MAX, f64::min),
+        ys.fold(f64::MIN, f64::max),
+      ]
+    })
+    .collect();
+  // `after[i]` lists the triangles that must be drawn after `i`.
+  let mut after: Vec<Vec<usize>> = vec![Vec::new(); n];
+  let mut indegree = vec![0usize; n];
+  for i in 0..n {
+    for j in (i + 1)..n {
+      let (a, b) = (&bbox[i], &bbox[j]);
+      if a[1] <= b[0] || b[1] <= a[0] || a[3] <= b[2] || b[3] <= a[2] {
+        continue;
+      }
+      if !projected_triangles_overlap(&projected[i], &projected[j]) {
+        continue;
+      }
+      let i_behind = side_of_plane(&verts[i], &verts[j], gradient)
+        .or_else(|| side_of_plane(&verts[j], &verts[i], gradient).map(|s| !s));
+      match i_behind {
+        Some(true) => {
+          after[i].push(j);
+          indegree[j] += 1;
+        }
+        Some(false) => {
+          after[j].push(i);
+          indegree[i] += 1;
+        }
+        None => {}
+      }
+    }
+  }
+  let mut order = Vec::with_capacity(n);
+  let mut done = vec![false; n];
+  // `by_depth` is far-to-near, so the first ready entry is the farthest.
+  for _ in 0..n {
+    let pick = by_depth
+      .iter()
+      .copied()
+      .find(|&k| !done[k] && indegree[k] == 0)
+      .or_else(|| by_depth.iter().copied().find(|&k| !done[k]))
+      .unwrap();
+    done[pick] = true;
+    order.push(pick);
+    for &k in &after[pick] {
+      indegree[k] = indegree[k].saturating_sub(1);
+    }
+  }
+  order
+}
+
 struct MeshLine {
   projected: [(f64, f64); 2],
 }
@@ -5912,6 +6066,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Tessellate all primitives into triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
+  let mut triangle_vertices: Vec<[Point3D; 3]> = Vec::new();
   let base_color = (0x5E_u8, 0x81_u8, 0xB5_u8); // Default blue
 
   // Sphere-scene statistics for adaptive tessellation (see
@@ -6170,6 +6325,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         y: (v0.y + v1.y + v2.y) / 3.0,
         z: (v0.z + v1.z + v2.z) / 3.0,
       };
+      triangle_vertices.push([v0, v1, v2]);
       all_triangles.push(Triangle {
         boundary,
         edge_color: prim_style.edge_color,
@@ -6182,11 +6338,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Painter's algorithm
-  all_triangles.sort_by(|a, b| {
-    b.depth
-      .partial_cmp(&a.depth)
-      .unwrap_or(std::cmp::Ordering::Equal)
-  });
+  {
+    let projected: Vec<_> = all_triangles.iter().map(|t| t.projected).collect();
+    let depths: Vec<_> = all_triangles.iter().map(|t| t.depth).collect();
+    let order = painter_order(&triangle_vertices, &projected, &depths, &camera);
+    let mut slots: Vec<Option<Triangle>> =
+      all_triangles.drain(..).map(Some).collect();
+    all_triangles = order.into_iter().filter_map(|i| slots[i].take()).collect();
+  }
 
   // Compute 3D bounding box of all primitives for the wireframe box
   let [

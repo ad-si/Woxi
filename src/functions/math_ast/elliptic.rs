@@ -108,12 +108,9 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1]) {
         if *n == 1 && *d == 2 {
           // q(1/2) = exp(-Pi * K(1/2) / K(1/2)) = exp(-Pi)
-          return Ok(call(
-            "Power",
-            vec![
-              const_expr("E"),
-              call("Times", vec![Expr::Integer(-1), const_expr("Pi")]),
-            ],
+          return Ok(pow(
+            const_expr("E"),
+            times(vec![Expr::Integer(-1), const_expr("Pi")]),
           ));
         }
         // For other rationals, compute numerically
@@ -779,12 +776,9 @@ pub fn dedekind_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Gamma",
       call("Rational", vec![Expr::Integer(1), Expr::Integer(4)]),
     );
-    let pi_three_quarters = call(
-      "Power",
-      vec![
-        id_expr("Pi"),
-        call("Rational", vec![Expr::Integer(3), Expr::Integer(4)]),
-      ],
+    let pi_three_quarters = pow(
+      id_expr("Pi"),
+      call("Rational", vec![Expr::Integer(3), Expr::Integer(4)]),
     );
     let denom = times2(Expr::Integer(2), pi_three_quarters);
     let result = div2(gamma_quarter, denom);
@@ -1039,14 +1033,11 @@ fn weierstrass_cm_invariants(
                w_pow: i128| {
     div2(
       pow(gamma(1, gamma_arg_den), gamma_pow),
-      call(
-        "Times",
-        vec![
-          Expr::Integer(coeff),
-          pow(pi.clone(), pi_pow),
-          pow(w1e.clone(), w_pow),
-        ],
-      ),
+      times(vec![
+        Expr::Integer(coeff),
+        pow(pi.clone(), pi_pow),
+        pow(w1e.clone(), w_pow),
+      ]),
     )
   };
   let (g2, g3) = if is_square {
@@ -1554,10 +1545,10 @@ pub fn neville_theta_ast(
     let inner = call(name, vec![pos, m.clone()]);
     let flipped = crate::evaluator::evaluate_expr_to_expr(&inner)?;
     return if kind == 's' {
-      crate::evaluator::evaluate_expr_to_expr(&call(
-        "Times",
-        vec![Expr::Integer(-1), flipped],
-      ))
+      crate::evaluator::evaluate_expr_to_expr(&times(vec![
+        Expr::Integer(-1),
+        flipped,
+      ]))
     } else {
       Ok(flipped)
     };

@@ -1205,6 +1205,16 @@ mod real_number_formatting {
 mod plus_numeric_contagion {
   use super::*;
 
+  // `-I` is stored as a unary minus; it must turn machine-complex next to a
+  // Real like any other imaginary term.
+  #[test]
+  fn real_minus_unit_imaginary() {
+    assert_eq!(interpret("2.5 - I").unwrap(), "2.5 - 1.*I");
+    assert_eq!(interpret("-I + 3.").unwrap(), "3. - 1.*I");
+    assert_eq!(interpret("2.5 + Times[-1, I]").unwrap(), "2.5 - 1.*I");
+    assert_eq!(interpret("Im[2.5 - I]").unwrap(), "-1.");
+  }
+
   // Regression (mathics test_comparison.py:570): a machine Real among
   // the Plus terms numerifies named numeric constants (Pi, E, ...) and
   // any numeric constants embedded inside otherwise-symbolic summands
@@ -6247,6 +6257,100 @@ mod complex_division {
 mod min_max_identity {
   use super::*;
 
+  /// Evaluate `code` from a clean state and return its result together with
+  /// the number of `::nord` messages it emitted.
+  fn with_nord_count(code: &str) -> (String, usize) {
+    clear_state();
+    let result = interpret(code).unwrap();
+    let count = woxi::get_captured_messages_raw()
+      .iter()
+      .filter(|m| m.contains("::nord"))
+      .count();
+    (result, count)
+  }
+
+  // ComplexInfinity stays beside the real extremum, with one ::nord per
+  // evaluation that compares it: the given call (unless it is a lone list),
+  // and the re-evaluation of a changed result. All wolframscript-verified
+  // (differential fuzzer, seed 20261010).
+  #[test]
+  fn complex_infinity_nord_count() {
+    for (code, result, count) in [
+      (
+        "Min[-76.5, ComplexInfinity]",
+        "Min[-76.5, ComplexInfinity]",
+        1,
+      ),
+      ("Min[ComplexInfinity, 1]", "Min[1, ComplexInfinity]", 1),
+      ("Min[1, 2, ComplexInfinity]", "Min[1, ComplexInfinity]", 2),
+      ("Min[{1}, ComplexInfinity]", "Min[1, ComplexInfinity]", 2),
+      (
+        "Min[x, y, 3, ComplexInfinity]",
+        "Min[3, x, y, ComplexInfinity]",
+        1,
+      ),
+      ("Min[ComplexInfinity, x, x]", "Min[x, ComplexInfinity]", 2),
+      (
+        "Min[ComplexInfinity, ComplexInfinity, ComplexInfinity]",
+        "ComplexInfinity",
+        1,
+      ),
+      ("Max[{ComplexInfinity, 1, 2}]", "Max[2, ComplexInfinity]", 1),
+      ("Min[{ComplexInfinity}]", "ComplexInfinity", 0),
+      ("Min[1, Indeterminate, ComplexInfinity]", "Indeterminate", 0),
+    ] {
+      assert_eq!(with_nord_count(code), (result.to_string(), count), "{code}");
+    }
+  }
+
+  // A non-real number cannot be ordered: the call stays unevaluated (lists
+  // unflattened) with one ::nord per such item.
+  #[test]
+  fn non_real_numbers_stay_unevaluated() {
+    for (code, result, count) in [
+      ("Min[I, 1]", "Min[I, 1]", 1),
+      ("Min[I, 2, 1]", "Min[I, 1, 2]", 1),
+      ("Min[{I, 2, 1}]", "Min[{I, 2, 1}]", 1),
+      ("Min[1 + I, 2 - I]", "Min[1 + I, 2 - I]", 2),
+      ("Min[Sqrt[-2], 1]", "Min[1, I*Sqrt[2]]", 1),
+      (
+        "Min[DirectedInfinity[I], 1]",
+        "Min[1, DirectedInfinity[I]]",
+        1,
+      ),
+      (
+        "Min[1, 2, ComplexInfinity, I]",
+        "Min[I, 1, 2, ComplexInfinity]",
+        2,
+      ),
+    ] {
+      assert_eq!(with_nord_count(code), (result.to_string(), count), "{code}");
+    }
+  }
+
+  #[test]
+  fn nord_message_text() {
+    clear_state();
+    interpret("Min[DirectedInfinity[I], 1]").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.iter().any(|m| {
+      m.contains("Min::nord: Invalid comparison with I Infinity attempted.")
+    }));
+  }
+
+  // The kept arguments are in canonical order; a real infinity is not
+  // compared away against a symbol.
+  #[test]
+  fn kept_arguments_canonical_order() {
+    assert_eq!(
+      interpret("Max[y, x, Infinity]").unwrap(),
+      "Max[x, y, Infinity]"
+    );
+    assert_eq!(interpret("Min[x, -Infinity]").unwrap(), "Min[x, -Infinity]");
+    assert_eq!(interpret("Max[x, -Infinity]").unwrap(), "Max[x, -Infinity]");
+    assert_eq!(interpret("Max[-Infinity, 1, x]").unwrap(), "Max[1, x]");
+  }
+
   #[test]
   fn min_zero_args() {
     // Min[] is the identity element: Infinity
@@ -9978,6 +10082,67 @@ mod negative_half_times_sum_display {
 mod times_factor_vs_sum_ordering {
   use super::*;
 
+  // Rational radicals split their primes by exponent; a negative base no
+  // longer recurses (stack overflow on (-4/5)^(1/3); differential fuzzer,
+  // seed 20261011; wolframscript-verified).
+  #[test]
+  fn rational_base_radicals() {
+    for (input, expected) in [
+      ("(4/5)^(1/3)", "2^(2/3)/5^(1/3)"),
+      ("(12/5)^(1/3)", "(3/5)^(1/3)*2^(2/3)"),
+      ("(2/3)^(1/3)", "(2/3)^(1/3)"),
+      ("(4/9)^(1/3)", "(2/3)^(2/3)"),
+      ("(3/4)^(2/3)", "3^(2/3)/(2*2^(1/3))"),
+      ("(2/3)^(5/3)", "(2*(2/3)^(2/3))/3"),
+      ("(4/5)^(-1/3)", "5^(1/3)/2^(2/3)"),
+      ("CubeRoot[-4/5]", "-(2^(2/3)/5^(1/3))"),
+      ("(-4/5)^(1/3)", "(-1/5)^(1/3)*2^(2/3)"),
+      ("(-6/5)^(1/3)", "(-6/5)^(1/3)"),
+      ("(-2/3)^(1/3)", "(-2/3)^(1/3)"),
+      ("(-9/2)^(1/3)", "(-1/2)^(1/3)*3^(2/3)"),
+      ("(-12/5)^(1/3)", "(-3/5)^(1/3)*2^(2/3)"),
+      ("(-4/5)^(1/5)", "(-1/5)^(1/5)*2^(2/5)"),
+      ("(-4/5)^(2/3)", "(2*(-1)^(2/3)*2^(1/3))/5^(2/3)"),
+      ("(-8/5)^(2/3)", "4*(-1/5)^(2/3)"),
+      ("(-4/5)^(-1/3)", "-(((-1)^(2/3)*5^(1/3))/2^(2/3))"),
+      ("CubeRoot[-1/5]", "-5^(-1/3)"),
+      ("-2^(-1/3)", "-2^(-1/3)"),
+      ("-1/Sqrt[5]", "-(1/Sqrt[5])"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // A positive power of a sum orders against a bare sum by the two sums.
+  // Verified against wolframscript.
+  #[test]
+  fn power_of_sum_vs_sum() {
+    assert_eq!(
+      interpret("(1 + x)^2 (-1 + x)").unwrap(),
+      "(-1 + x)*(1 + x)^2"
+    );
+    assert_eq!(interpret("(2 + x)^2 (1 + x)").unwrap(), "(1 + x)*(2 + x)^2");
+    assert_eq!(
+      interpret("(1 + x)^3 (-2 + x)").unwrap(),
+      "(-2 + x)*(1 + x)^3"
+    );
+    assert_eq!(
+      interpret("(x - 1)^2 (x + 1)").unwrap(),
+      "(-1 + x)^2*(1 + x)"
+    );
+    assert_eq!(interpret("(b + x) (a + x)^2").unwrap(), "(a + x)^2*(b + x)");
+  }
+
+  // Two sum factors order by the Sort comparator, which compares sums
+  // termwise from the greatest term (InterpolatingPolynomial's Newton form).
+  #[test]
+  fn nested_sum_factor_first() {
+    assert_eq!(
+      interpret("(-1 + x)*(1 + (-2 + x)/2)").unwrap(),
+      "(1 + (-2 + x)/2)*(-1 + x)"
+    );
+  }
+
   // A power of a sum orders against a monomial by the sum's top term, the
   // same way a bare sum does: `x*Sqrt[1 + x]` but `Sqrt[1 - x]*x`.
   #[test]
@@ -12098,6 +12263,37 @@ mod an_n_ary_times_regroups_after_a_product_base_splits {
       )
       .unwrap(),
       "1/(2*E^((-3 + y)^2/4)*Sqrt[Pi])"
+    );
+  }
+}
+
+mod sum_non_integer_step {
+  use super::*;
+
+  #[test]
+  fn real_step() {
+    assert_eq!(interpret("Sum[k, {k, 1, 2, 0.5}]").unwrap(), "4.5");
+  }
+
+  #[test]
+  fn real_bounds_and_step() {
+    assert_eq!(interpret("Sum[k, {k, 1.5, 3.5, 0.5}]").unwrap(), "12.5");
+  }
+
+  #[test]
+  fn rational_step() {
+    assert_eq!(interpret("Sum[k^2, {k, 0, 1, 1/4}]").unwrap(), "15/8");
+  }
+
+  #[test]
+  fn matches_total_of_table() {
+    assert_eq!(
+      interpret(
+        "Sum[Exp[-2 (k - 3)^2], {k, 2, 4, 0.5}] == \
+         Total[Table[Exp[-2 (k - 3)^2], {k, 2, 4, 0.5}]]"
+      )
+      .unwrap(),
+      "True"
     );
   }
 }

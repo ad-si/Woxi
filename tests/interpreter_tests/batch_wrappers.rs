@@ -2948,6 +2948,37 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("Haversine[1]").unwrap(), "Haversine[1]");
   }
   #[test]
+  fn haversine_radical_angles() {
+    // Rational multiples of Pi whose Cos has a closed form become
+    // (1 - Cos[x])/2 with the radical kept unsimplified, like wolframscript
+    // (differential fuzzer, seed 20261010).
+    assert_eq!(interpret("Haversine[Pi/6]").unwrap(), "(1 - Sqrt[3]/2)/2");
+    assert_eq!(
+      interpret("Haversine[-2 Pi/12]").unwrap(),
+      "(1 - Sqrt[3]/2)/2"
+    );
+    assert_eq!(interpret("Haversine[Pi/4]").unwrap(), "(1 - 1/Sqrt[2])/2");
+    assert_eq!(
+      interpret("Haversine[Pi/5]").unwrap(),
+      "(1 + (-1 - Sqrt[5])/4)/2"
+    );
+    assert_eq!(interpret("Haversine[7 Pi/6]").unwrap(), "(1 + Sqrt[3]/2)/2");
+  }
+  #[test]
+  fn haversine_without_closed_form_stays_held() {
+    assert_eq!(interpret("Haversine[Pi/8]").unwrap(), "Haversine[Pi/8]");
+    assert_eq!(
+      interpret("Haversine[7 Pi/8]").unwrap(),
+      "Haversine[(7*Pi)/8]"
+    );
+    // Cos evaluates, but the argument is not a rational multiple of Pi.
+    assert_eq!(
+      interpret("Haversine[ArcCos[1/3]]").unwrap(),
+      "Haversine[ArcCos[1/3]]"
+    );
+    assert_eq!(interpret("Haversine[I Pi/3]").unwrap(), "Haversine[I/3*Pi]");
+  }
+  #[test]
   fn haversine_real_matches_wolframscript() {
     // Haversine[1.5] = Sin[1.5/2]^2 ≈ 0.4646313991661485. The exact last ULP
     // is platform-dependent (system libm differs across OSes; Linux CI gives

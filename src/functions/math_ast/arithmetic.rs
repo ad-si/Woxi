@@ -159,7 +159,7 @@ fn polynomial_term_to_series_data(
     } else if coeff_factors.len() == 1 {
       coeff_factors.remove(0)
     } else {
-      call("Times", coeff_factors)
+      times(coeff_factors)
     };
     return Some(make_sd(coeff, n));
   }
@@ -1010,10 +1010,10 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let opposite = directions.len() == 2
         && matches!(
-          crate::evaluator::evaluate_expr_to_expr(&call(
-            "Plus",
-            vec![directions[0].clone(), directions[1].clone()]
-          )),
+          crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+            directions[0].clone(),
+            directions[1].clone()
+          ])),
           Ok(Expr::Integer(0))
         );
       if complex_inf || opposite {
@@ -1105,7 +1105,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if final_args.len() == 1 {
       return Ok(final_args.remove(0));
     }
-    return Ok(call("Plus", final_args));
+    return Ok(plus(final_args));
   }
 
   // Classify arguments: exact (Integer/Rational), real (Real), bigfloat, or symbolic
@@ -1369,7 +1369,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else if final_args.len() == 1 {
       Ok(final_args.remove(0))
     } else {
-      Ok(call("Plus", final_args))
+      Ok(plus(final_args))
     }
   }
 }
@@ -1419,6 +1419,10 @@ fn is_integer_times_i(e: &Expr) -> bool {
     {
       exact_numeric(&args[0]) && exact_numeric(&args[1])
     }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_integer_times_i(operand),
     _ => false,
   }
 }
@@ -1447,7 +1451,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
     }
   };
   if matches!(&e, Expr::Identifier(s) if s == "I") {
-    return call("Times", vec![Expr::Real(1.0), id_expr("I")]);
+    return times(vec![Expr::Real(1.0), id_expr("I")]);
   }
   if let Expr::FunctionCall { name, args } = &e
     && name == "Times"
@@ -1460,7 +1464,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
         new_args.push(a.clone());
       }
     }
-    return call("Times", new_args);
+    return times(new_args);
   }
   if let Expr::BinaryOp {
     op: BinaryOperator::Times,
@@ -1470,7 +1474,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
   {
     let left_new = to_real(left).unwrap_or((**left).clone());
     let right_new = to_real(right).unwrap_or((**right).clone());
-    return call("Times", vec![left_new, right_new]);
+    return times(vec![left_new, right_new]);
   }
   // Complex[a, b] → Times[Real(b), I] is an oversimplification when a != 0;
   // for the simple `Complex[0, n]` case we expand to `Times[Real(n), I]`,
@@ -1504,9 +1508,24 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
     let zero_re = matches!(&re, Expr::Real(f) if *f == 0.0)
       || matches!(&re, Expr::Integer(0));
     if zero_re {
-      return call("Times", vec![im, id_expr("I")]);
+      return times(vec![im, id_expr("I")]);
     }
-    return call("Plus", vec![re, call("Times", vec![im, id_expr("I")])]);
+    return plus(vec![re, times(vec![im, id_expr("I")])]);
+  }
+  // `-I` (and `-(k I)`) is stored as a unary minus: promote the operand and
+  // fold the sign into its Real coefficient, so 2.5 - I reads 2.5 - 1.*I.
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = &e
+    && let promoted = promote_integer_times_i_to_real((**operand).clone())
+    && let Expr::FunctionCall { name, args } = &promoted
+    && name == "Times"
+    && let [Expr::Real(c), rest @ ..] = args.as_slice()
+  {
+    let mut negated = vec![Expr::Real(-c)];
+    negated.extend(rest.iter().cloned());
+    return call("Times", negated);
   }
   e
 }
@@ -1699,7 +1718,7 @@ fn decompose_term(e: &Expr) -> (Coeff, Expr) {
         if args.len() == 2 {
           args[1].clone()
         } else {
-          call("Times", args[1..].to_vec())
+          times(args[1..].to_vec())
         }
       };
       // Check if first arg is a numeric coefficient (integer/rational)
@@ -1809,7 +1828,7 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
         && matches!(&c, Coeff::Real(_))
         && matches!(&base, Expr::Identifier(s) if s == "I")
       {
-        result.push(call("Times", vec![c.to_expr(), base]));
+        result.push(times(vec![c.to_expr(), base]));
       }
       continue;
     }
@@ -1831,7 +1850,7 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
     // reason). Without this, `0. + 1. I` would collapse to `I` instead
     // of `Complex[0., 1.]` ≡ `0. + 1.*I`.
     if matches!(&c, Coeff::Real(_)) && c.is_one() {
-      result.push(call("Times", vec![c.to_expr(), base]));
+      result.push(times(vec![c.to_expr(), base]));
       continue;
     }
     if c.is_one() {
@@ -1849,7 +1868,7 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
           times_args.push(base);
         }
       }
-      result.push(call("Times", times_args));
+      result.push(times(times_args));
     }
   }
   result
@@ -2408,7 +2427,7 @@ fn strip_imaginary_literal_coeff(e: &Expr) -> Option<Expr> {
   Some(if rest.len() == 1 {
     rest.into_iter().next().unwrap()
   } else {
-    call("Times", rest)
+    times(rest)
   })
 }
 
@@ -3089,7 +3108,7 @@ fn strip_complex_literal_coeff(e: &Expr) -> Option<Expr> {
     return Some(if rest.len() == 1 {
       rest[0].clone()
     } else {
-      call("Times", rest.to_vec())
+      times(rest.to_vec())
     });
   }
   None
@@ -3641,7 +3660,7 @@ fn split_last_call_factor(base: &Expr) -> Option<((Expr, Expr), Option<Expr>)> {
   let rest = match rest.len() {
     0 => None,
     1 => rest.into_iter().next(),
-    _ => Some(call("Times", rest)),
+    _ => Some(times(rest)),
   };
   Some((parts, rest))
 }
@@ -5650,7 +5669,7 @@ fn order_factor_vs_additive(
   if let Some(v) = sym_var_name(&fb)
     && fe.is_some_and(|e| e > 0.0)
   {
-    let sum_expr = call("Plus", plus_args.to_vec());
+    let sum_expr = plus(plus_args.to_vec());
     if let Some((sv, coeffs)) = univar_rat_coeffs(&sum_expr)
       && sv == v
     {
@@ -5885,6 +5904,18 @@ fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
     match (is_number_base_power(a), is_number_base_power(b)) {
       (true, false) if !is_number(b) => return std::cmp::Ordering::Less,
       (false, true) if !is_number(a) => return std::cmp::Ordering::Greater,
+      // Two radicals of numbers order by base, then exponent, as in Sort:
+      // `(3/5)^(1/3)*2^(2/3)`, `(-1/2)^(1/3)*3^(2/3)`.
+      (true, true) => {
+        if let Some(ord) =
+          crate::functions::list_helpers_ast::sorting::numeric_base_power_cmp(
+            a, b,
+          )
+          && ord != std::cmp::Ordering::Equal
+        {
+          return ord;
+        }
+      }
       _ => {}
     }
     if let (Some((ba, (pa, qa))), Some((bb, (pb, qb)))) =
@@ -5956,6 +5987,27 @@ fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
             Expr::Identifier(_) | Expr::Constant(_)
           )
       };
+      // A positive power of a sum against a bare sum orders by the two sums,
+      // the power's exponent breaking a tie: `(-1 + x)*(1 + x)^2` and
+      // `(1 + x)*(2 + x)^2` (wolframscript-verified).
+      if sa == 0 && sb == 1 && plus_call_args(b).is_some()
+        && let Some(base) = power_additive_base(a)
+      {
+        let ord =
+          crate::functions::list_helpers_ast::sorting::canonical_cmp(base, b);
+        if ord != std::cmp::Ordering::Equal {
+          return ord;
+        }
+      }
+      if sa == 1 && sb == 0 && plus_call_args(a).is_some()
+        && let Some(base) = power_additive_base(b)
+      {
+        let ord =
+          crate::functions::list_helpers_ast::sorting::canonical_cmp(a, base);
+        if ord != std::cmp::Ordering::Equal {
+          return ord;
+        }
+      }
       if sa == 0 && sb == 1
         && let Some(pargs) = plus_call_args(b)
         && ident_base_factor(a)
@@ -6723,7 +6775,7 @@ fn combine_reciprocal_trig(
   let negate_exp = |e: &Expr| -> Expr {
     match e {
       Expr::Integer(n) => Expr::Integer(-n),
-      _ => call("Times", vec![Expr::Integer(-1), e.clone()]),
+      _ => times(vec![Expr::Integer(-1), e.clone()]),
     }
   };
 
@@ -8967,7 +9019,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       sort_symbolic_factors(&mut symbolic_args);
       let mut final_args: Vec<Expr> = vec![numeric];
       final_args.extend(symbolic_args);
-      return Ok(call("Times", final_args));
+      return Ok(times(final_args));
     }
 
     if symbolic_args.is_empty() {
@@ -8989,7 +9041,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if final_args.len() == 1 {
       return Ok(final_args.remove(0));
     }
-    return Ok(call("Times", final_args));
+    return Ok(times(final_args));
   }
 
   // Separate into: integers, rationals, reals, and symbolic arguments.
@@ -9137,7 +9189,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if final_args.len() == 1 {
       return Ok(final_args.remove(0));
     }
-    return Ok(call("Times", final_args));
+    return Ok(times(final_args));
   }
 
   // If any Real, try to convert symbolic constants (Pi, E, etc.) to floats.
@@ -9202,7 +9254,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return if final_args.len() == 1 {
       Ok(final_args.remove(0))
     } else {
-      Ok(call("Times", final_args))
+      Ok(times(final_args))
     };
   }
 
@@ -9231,7 +9283,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if final_args.len() == 1 {
       return Ok(final_args.remove(0));
     }
-    return Ok(call("Times", final_args));
+    return Ok(times(final_args));
   };
   let combined_denom = rat_denom;
   let mut coeff = if has_rational || (has_int && combined_denom != 1) {
@@ -9639,7 +9691,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if final_args.len() == 1 {
     Ok(final_args.remove(0))
   } else {
-    Ok(call("Times", final_args))
+    Ok(times(final_args))
   }
 }
 
@@ -10257,7 +10309,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
           if rest.len() == 1 {
             return multiply_scalar_by_expr(&coeff, &rest.remove(0));
           }
-          let rest_expr = call("Times", rest);
+          let rest_expr = times(rest);
           return multiply_scalar_by_expr(&coeff, &rest_expr);
         }
       }
@@ -10643,7 +10695,7 @@ fn flip_unit_negative_rational_product(expr: Expr) -> Expr {
   if !is_additive(&negated) {
     return expr;
   }
-  call("Times", vec![make_rational(1, *cd), negated])
+  times(vec![make_rational(1, *cd), negated])
 }
 
 /// Build the canonical form of `a / b` structurally (without evaluation).
@@ -10681,7 +10733,7 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
         let rest_expr = if rest.len() == 1 {
           rest.remove(0)
         } else {
-          call("Times", rest)
+          times(rest)
         };
         let rest_inv = pow(rest_expr, Expr::Integer(-1));
         // Sign is carried on the rational's numerator (Rational[-1, |c|]).
@@ -10692,7 +10744,7 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
             Expr::Integer(int_prod.abs()),
           ],
         );
-        return call("Times", vec![coeff, rest_inv]);
+        return times(vec![coeff, rest_inv]);
       }
     }
     return pow(b, Expr::Integer(-1));
@@ -10709,7 +10761,7 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
       args: new_args,
     };
   }
-  call("Times", vec![a, b_inv])
+  times(vec![a, b_inv])
 }
 
 /// True iff `exp` is a numeric constant whose absolute value is strictly
@@ -11105,7 +11157,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
     let copies: Vec<Expr> =
       std::iter::repeat_n(base.clone(), *n as usize).collect();
-    let product = call("Times", copies);
+    let product = times(copies);
     return crate::evaluator::evaluate_expr_to_expr(&product);
   }
 
@@ -11303,14 +11355,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let rest_sum = if rest.len() == 1 {
           rest.into_iter().next().unwrap()
         } else {
-          call("Plus", rest)
+          plus(rest)
         };
         factors.push(power_two(&e, &rest_sum)?);
       }
       let result = if factors.len() == 1 {
         factors.into_iter().next().unwrap()
       } else {
-        call("Times", factors)
+        times(factors)
       };
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
@@ -11364,10 +11416,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let coeff = if coeff_factors.len() == 1 {
           coeff_factors[0].clone()
         } else {
-          call(
-            "Times",
-            coeff_factors.iter().map(|e| (*e).clone()).collect(),
-          )
+          times(coeff_factors.iter().map(|e| (*e).clone()).collect())
         };
         return power_two(x, &coeff);
       }
@@ -11702,7 +11751,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           let radicand = if radicand_factors.len() == 1 {
             radicand_factors.into_iter().next().unwrap()
           } else {
-            call("Times", radicand_factors)
+            times(radicand_factors)
           };
           return times_ast(&[Expr::Integer(s), call1("Sqrt", radicand)]);
         }
@@ -11728,7 +11777,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           let rest_expr = if rest.len() == 1 {
             rest.into_iter().next().unwrap()
           } else {
-            call("Times", rest)
+            times(rest)
           };
           let pow_rest = power_two(&rest_expr, exp)?;
           return times_ast(&[pow_numeric, pow_rest]);
@@ -12047,12 +12096,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     } else if matches!(&sin_val, Expr::Integer(-1)) {
       negate_expr(i_expr)
     } else {
-      call("Times", vec![sin_val, i_expr])
+      times(vec![sin_val, i_expr])
     };
     if cos_is_zero {
       return Ok(imag_term);
     }
-    return Ok(call("Plus", vec![cos_val, imag_term]));
+    return Ok(plus(vec![cos_val, imag_term]));
   }
 
   // E^(a + k*I*Pi) → E^a * E^(k*I*Pi), when k*I*Pi appears as a Plus term
@@ -12097,7 +12146,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let rest_exp = if other_terms.len() == 1 {
           other_terms[0].clone()
         } else {
-          call("Plus", other_terms.into_iter().cloned().collect())
+          plus(other_terms.into_iter().cloned().collect())
         };
         let e_sym = base.clone();
         let e_rest = power_two(&e_sym, &rest_exp)?;
@@ -12294,7 +12343,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let rest = if eargs.len() == 2 {
       eargs[1].clone()
     } else {
-      call("Times", eargs[1..].to_vec())
+      times(eargs[1..].to_vec())
     };
     return power_two(&make_rational(*q, *p), &rest);
   }
@@ -12337,6 +12386,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // (-1/8)^(1/3) stays exact as (-1)^(1/3)/2 instead of going numeric.
     if *p < 0 {
       return negative_base_rational_power(&make_rational(-*p, *q), *n, *d);
+    }
+    if *p > 0
+      && *d > 2
+      && let Some(result) = rational_base_radical(*p, *q, *n, *d)
+    {
+      return result;
     }
     // For a negative exponent, flip the base: (p/q)^(-n/d) = (q/p)^(n/d).
     // Only do this flip when p > 0 so the flipped base is still a plain
@@ -12718,14 +12773,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let im_part = if im == 1.0 {
           id_expr("I")
         } else if im == -1.0 {
-          call("Times", vec![Expr::Integer(-1), id_expr("I")])
+          times(vec![Expr::Integer(-1), id_expr("I")])
         } else {
-          call("Times", vec![Expr::Real(im), id_expr("I")])
+          times(vec![Expr::Real(im), id_expr("I")])
         };
         if re == 0.0 {
           Ok(im_part)
         } else {
-          Ok(call("Plus", vec![Expr::Real(re), im_part]))
+          Ok(plus(vec![Expr::Real(re), im_part]))
         }
       }
     } else if has_real {
@@ -13257,6 +13312,124 @@ fn negative_number_magnitude(expr: &Expr) -> Option<Expr> {
 /// `2 (-1)^(1/3)` because the positive part is exact, `(-12)^(1/3)` becomes
 /// `(-3)^(1/3) 2^(2/3)` because only the leftover cube root can absorb the
 /// sign, and `(-2)^(5/3)` becomes `-2 (-2)^(2/3)`.
+/// `(p/q)^(n/d)` for a positive fraction, the way wolframscript writes it:
+/// each prime's exponent splits into an integer part (truncated toward zero)
+/// and a fractional part, and the primes whose fractional exponents agree in
+/// magnitude share one radical — `(4/5)^(1/3)` is `2^(2/3)/5^(1/3)`,
+/// `(12/5)^(1/3)` is `(3/5)^(1/3)*2^(2/3)`, `(2/3)^(1/3)` stays and
+/// `(3/4)^(2/3)` is `3^(2/3)/(2*2^(1/3))`. `None` for factors too large to
+/// split by trial division.
+fn rational_base_radical(
+  p: i128,
+  q: i128,
+  n: i128,
+  d: i128,
+) -> Option<Result<Expr, InterpreterError>> {
+  const TRIAL_DIVISION_BOUND: i128 = 1_000_000;
+  fn factor(mut m: i128) -> Option<Vec<(i128, i128)>> {
+    let mut out = Vec::new();
+    let mut f = 2i128;
+    while f * f <= m {
+      if f > TRIAL_DIVISION_BOUND {
+        return None;
+      }
+      let mut k = 0;
+      while m % f == 0 {
+        m /= f;
+        k += 1;
+      }
+      if k > 0 {
+        out.push((f, k));
+      }
+      f += 1;
+    }
+    if m > 1 {
+      out.push((m, 1));
+    }
+    Some(out)
+  }
+  let mut primes: Vec<(i128, i128)> = factor(p)?;
+  primes.extend(factor(q)?.into_iter().map(|(f, k)| (f, -k)));
+
+  // The integer parts form an exact rational; the fractional parts group by
+  // magnitude into (numerator, denominator) radicands.
+  let mut outside_num = BigInt::from(1);
+  let mut outside_den = BigInt::from(1);
+  let mut groups: Vec<((i128, i128), i128, i128)> = Vec::new();
+  for (prime, k) in primes {
+    let total = k.checked_mul(n)?;
+    let whole = total / d; // truncates toward zero
+    let (fn_, fd) = rat_reduce(total - whole * d, d);
+    if whole.unsigned_abs() > 10_000 {
+      return None;
+    }
+    let factor = BigInt::from(prime).pow(whole.unsigned_abs() as u32);
+    if whole > 0 {
+      outside_num *= factor;
+    } else {
+      outside_den *= factor;
+    }
+    if fn_ == 0 {
+      continue;
+    }
+    let key = (fn_.abs(), fd);
+    let idx = if let Some(i) = groups.iter().position(|(k, _, _)| *k == key) {
+      i
+    } else {
+      groups.push((key, 1, 1));
+      groups.len() - 1
+    };
+    if fn_ > 0 {
+      groups[idx].1 = groups[idx].1.checked_mul(prime)?;
+    } else {
+      groups[idx].2 = groups[idx].2.checked_mul(prime)?;
+    }
+  }
+  // A single radical with nothing outside is the input itself.
+  if groups.len() == 1
+    && outside_num == BigInt::from(1)
+    && outside_den == BigInt::from(1)
+  {
+    let ((en, ed), num, den) = groups[0];
+    if num == p && den == q && en == n && ed == d {
+      return Some(Ok(pow2(make_rational(p, q), make_rational(n, d))));
+    }
+  }
+  let mut factors: Vec<Expr> = Vec::new();
+  if outside_num != outside_den {
+    factors.push(Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![bigint_to_expr(outside_num), bigint_to_expr(outside_den)]
+        .into(),
+    });
+  }
+  for ((en, ed), num, den) in groups {
+    let e = make_rational(en, ed);
+    factors.push(if den == 1 {
+      pow2(Expr::Integer(num), e)
+    } else if num == 1 {
+      pow2(Expr::Integer(den), make_rational(-en, ed))
+    } else {
+      pow2(make_rational(num, den), e)
+    });
+  }
+  let factors: Vec<Expr> = factors
+    .into_iter()
+    .map(|f| match &f {
+      // Normalize an exact outside factor to Integer/Rational.
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        divide_ast(&[args[0].clone(), args[1].clone()]).unwrap_or(f)
+      }
+      _ => f,
+    })
+    .collect();
+  Some(match factors.len() {
+    0 => Ok(Expr::Integer(1)),
+    1 => Ok(factors.into_iter().next().unwrap()),
+    _ => times_ast(&factors),
+  })
+}
+
 fn negative_base_rational_power(
   magnitude: &Expr,
   p: i128,
@@ -13308,6 +13481,22 @@ fn negative_base_rational_power(
       let root_exp = make_rational(rp, rq);
       let root_key = expr_to_string(&root_exp);
       let mut merged = false;
+      // The sign joins a radical with the same exponent: a positive integer
+      // or fraction radicand (`(-2/9)^(1/3)` is `(-2)^(1/3)/3^(2/3)`,
+      // `(-12/5)^(1/3)` is `(-3/5)^(1/3)*2^(2/3)`), or — for a positive
+      // unit exponent or as the only radical — a reciprocal one read as a
+      // fraction (`(-9/2)^(1/3)` is `(-1/2)^(1/3)*3^(2/3)`, `(-8/5)^(2/3)`
+      // is `4*(-1/5)^(2/3)`). wolframscript keeps `(-4/5)^(-1/3)` as
+      // `-(((-1)^(2/3)*5^(1/3))/2^(2/3))` and `(-4/5)^(2/3)` as
+      // `(2*(-1)^(2/3)*2^(1/3))/5^(2/3)`.
+      let neg_root_key = expr_to_string(&make_rational(-rp, rq));
+      let radical_count = factors
+        .iter()
+        .filter(|f| {
+          let (_, e) = extract_base_exponent(f);
+          matches!(&e, Expr::FunctionCall { name, .. } if name == "Rational")
+        })
+        .count();
       for factor in &mut factors {
         let (fbase, fexp) = extract_base_exponent(factor);
         let positive_int = match &fbase {
@@ -13315,8 +13504,22 @@ fn negative_base_rational_power(
           Expr::BigInteger(n) => *n > BigInt::from(1),
           _ => false,
         };
-        if positive_int && expr_to_string(&fexp) == root_key {
+        let positive_fraction = matches!(&fbase,
+          Expr::FunctionCall { name, args } if name == "Rational"
+            && matches!(args[0], Expr::Integer(a) if a > 0));
+        let fexp_key = expr_to_string(&fexp);
+        if (positive_int || positive_fraction) && fexp_key == root_key {
           *factor = pow(negate_expr(fbase), root_exp.clone());
+          merged = true;
+          break;
+        }
+        if p > 0
+          && (rp == 1 || radical_count == 1)
+          && positive_int
+          && fexp_key == neg_root_key
+        {
+          let reciprocal = divide_ast(&[Expr::Integer(-1), fbase.clone()])?;
+          *factor = pow(reciprocal, root_exp.clone());
           merged = true;
           break;
         }
@@ -13426,7 +13629,6 @@ pub fn try_eval_to_f64_with_infinity(expr: &Expr) -> Option<f64> {
   try_eval_to_f64(expr)
 }
 
-/// Max[args...] or Max[list] - Maximum value
 /// If any argument is a SparseArray, return the argument list with every
 /// SparseArray replaced by its dense form (so Max/Min compare over the
 /// expanded elements). Returns `None` when no argument is a SparseArray.
@@ -13459,123 +13661,158 @@ fn contains_indeterminate(expr: &Expr) -> bool {
   }
 }
 
+/// Max[args...] or Max[list] - Maximum value
 pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // An Indeterminate argument (at any depth, since lists are flattened)
-  // makes the extremum Indeterminate: it cannot be ordered against anything.
-  if args.iter().any(contains_indeterminate) {
-    return Ok(id_expr("Indeterminate"));
-  }
-  if args.is_empty() {
-    return Ok(id_expr("-Infinity"));
-  }
-
-  // Any SparseArray argument is compared over its dense elements.
-  if let Some(dense) = densify_sparse_args(args) {
-    return max_ast(&dense);
-  }
-
-  // Handle Interval in Max
-  if let Some(result) = crate::functions::interval_ast::try_interval_max(args) {
-    return result;
-  }
-
-  // Flatten all nested lists
-  let items = flatten_lists(args);
-  if items.is_empty() {
-    return Ok(id_expr("-Infinity"));
-  }
-
-  // All-Quantity case: compare magnitudes after unit conversion and return the
-  // larger quantity in its original unit.
-  if let Some(result) =
-    crate::functions::quantity_ast::try_quantity_extreme(&items, true)
-  {
-    return Ok(result);
-  }
-
-  // Separate numeric and symbolic arguments
-  let mut best_val: Option<f64> = None;
-  let mut best_expr: Option<&Expr> = None;
-  let mut symbolic: Vec<Expr> = Vec::new();
-  for item in &items {
-    if let Some(n) = try_eval_to_f64_with_infinity(item) {
-      match best_val {
-        Some(m) if n > m => {
-          best_val = Some(n);
-          best_expr = Some(item);
-        }
-        None => {
-          best_val = Some(n);
-          best_expr = Some(item);
-        }
-        _ => {}
-      }
-    } else {
-      symbolic.push((*item).clone());
-    }
-  }
-
-  // Max is idempotent: Max[a, a] == a. Drop duplicate symbolic arguments
-  // (numeric duplicates already collapse into the single best value).
-  {
-    let mut seen = std::collections::HashSet::new();
-    symbolic.retain(|e| seen.insert(expr_to_string(e)));
-  }
-
-  if symbolic.is_empty() {
-    // All numeric
-    match best_expr {
-      Some(expr) => Ok((*expr).clone()),
-      None => Ok(num_to_expr(f64::NEG_INFINITY)),
-    }
-  } else {
-    // Mixed: keep max numeric and all symbolic args
-    let mut result_args: Vec<Expr> = Vec::new();
-    if let Some(expr) = best_expr {
-      result_args.push((*expr).clone());
-    }
-    result_args.extend(symbolic);
-    if result_args.len() == 1 {
-      Ok(result_args.remove(0))
-    } else {
-      Ok(call("Max", result_args))
-    }
-  }
+  extremum_ast(args, true)
 }
 
 /// Min[args...] or Min[list] - Minimum value
 pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  extremum_ast(args, false)
+}
+
+/// The text `::nord` shows for an item Max/Min cannot order, or `None` when
+/// the item is a real number or a symbolic quantity that may still become
+/// one. ComplexInfinity and the non-real DirectedInfinity[z] read as
+/// `ComplexInfinity` / `z Infinity`; other non-real numbers (`I`, `1 + I`,
+/// `I Sqrt[2]`) are shown as expressions.
+fn unorderable_display(e: &Expr) -> Option<crate::syntax::MessagePiece<'_>> {
+  use crate::syntax::MessagePiece;
+  match e {
+    Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity" => {
+      return Some(MessagePiece::Text("ComplexInfinity".to_string()));
+    }
+    Expr::FunctionCall { name, args } if name == "DirectedInfinity" => {
+      return match args.as_slice() {
+        [] => Some(MessagePiece::Text("ComplexInfinity".to_string())),
+        [dir]
+          if crate::functions::predicate_ast::is_numeric_q(dir)
+            && try_eval_to_f64(dir).is_none() =>
+        {
+          Some(MessagePiece::Text(format!(
+            "{} Infinity",
+            expr_to_string(dir)
+          )))
+        }
+        _ => None,
+      };
+    }
+    _ => {}
+  }
+  if crate::functions::predicate_ast::is_complex_number(e) {
+    return Some(MessagePiece::Expr(e));
+  }
+  // A numeric quantity with a non-zero imaginary part (I Sqrt[2]).
+  if try_eval_to_f64(e).is_none()
+    && crate::functions::predicate_ast::is_numeric_q(e)
+    && let Ok(n) =
+      crate::evaluator::evaluate_expr_to_expr(&call1("N", e.clone()))
+    && crate::functions::predicate_ast::is_complex_number(&n)
+  {
+    return Some(MessagePiece::Expr(e));
+  }
+  None
+}
+
+/// Shared implementation of Max (`is_max`) and Min.
+fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
+  let head = if is_max { "Max" } else { "Min" };
+  let identity = || {
+    if is_max {
+      id_expr("-Infinity")
+    } else {
+      id_expr("Infinity")
+    }
+  };
   // An Indeterminate argument (at any depth, since lists are flattened)
   // makes the extremum Indeterminate: it cannot be ordered against anything.
   if args.iter().any(contains_indeterminate) {
     return Ok(id_expr("Indeterminate"));
   }
   if args.is_empty() {
-    return Ok(id_expr("Infinity"));
+    return Ok(identity());
   }
 
   // Any SparseArray argument is compared over its dense elements.
   if let Some(dense) = densify_sparse_args(args) {
-    return min_ast(&dense);
+    return extremum_ast(&dense, is_max);
   }
 
-  // Handle Interval in Min
-  if let Some(result) = crate::functions::interval_ast::try_interval_min(args) {
+  let interval = if is_max {
+    crate::functions::interval_ast::try_interval_max(args)
+  } else {
+    crate::functions::interval_ast::try_interval_min(args)
+  };
+  if let Some(result) = interval {
     return result;
   }
 
   // Flatten all nested lists
   let items = flatten_lists(args);
   if items.is_empty() {
-    return Ok(id_expr("Infinity"));
+    return Ok(identity());
   }
 
   // All-Quantity case: compare magnitudes after unit conversion and return the
-  // smaller quantity in its original unit.
+  // extreme quantity in its original unit.
   if let Some(result) =
-    crate::functions::quantity_ast::try_quantity_extreme(&items, false)
+    crate::functions::quantity_ast::try_quantity_extreme(&items, is_max)
   {
     return Ok(result);
+  }
+
+  let emit_nord = |display: crate::syntax::MessagePiece| {
+    crate::emit_message(&crate::syntax::format_message_pieces(&[
+      crate::syntax::MessagePiece::Text(format!(
+        "{head}::nord: Invalid comparison with "
+      )),
+      display,
+      crate::syntax::MessagePiece::Text(" attempted.".to_string()),
+    ]));
+  };
+  let is_complex_infinity = |e: &Expr| {
+    matches!(
+      unorderable_display(e),
+      Some(crate::syntax::MessagePiece::Text(t)) if t == "ComplexInfinity"
+    )
+  };
+  let canonical = |v: &mut Vec<Expr>| {
+    v.sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
+  };
+
+  // A non-real number (I, 1 + I, I Sqrt[2], DirectedInfinity[I]) cannot be
+  // ordered: the whole call stays unevaluated, lists unflattened, with one
+  // ::nord per unorderable item in reverse canonical order
+  // (wolframscript-verified).
+  if items.len() >= 2 {
+    let mut sorted: Vec<&Expr> = items.clone();
+    sorted.sort_by(|a, b| {
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b)
+    });
+    let unorderable: Vec<crate::syntax::MessagePiece> = sorted
+      .iter()
+      .rev()
+      .filter_map(|e| unorderable_display(e))
+      .collect();
+    let has_non_real = unorderable.iter().any(|d| {
+      !matches!(d, crate::syntax::MessagePiece::Text(t) if t == "ComplexInfinity")
+    });
+    if has_non_real {
+      let mut ci_reported = false;
+      for display in unorderable {
+        if matches!(&display, crate::syntax::MessagePiece::Text(t) if t == "ComplexInfinity")
+        {
+          if ci_reported {
+            continue;
+          }
+          ci_reported = true;
+        }
+        emit_nord(display);
+      }
+      let mut kept = args.to_vec();
+      canonical(&mut kept);
+      return Ok(call(head, kept));
+    }
   }
 
   // Separate numeric and symbolic arguments
@@ -13584,46 +13821,69 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut symbolic: Vec<Expr> = Vec::new();
   for item in &items {
     if let Some(n) = try_eval_to_f64_with_infinity(item) {
-      match best_val {
-        Some(m) if n < m => {
-          best_val = Some(n);
-          best_expr = Some(item);
+      let better = match best_val {
+        Some(m) => {
+          if is_max {
+            n > m
+          } else {
+            n < m
+          }
         }
-        None => {
-          best_val = Some(n);
-          best_expr = Some(item);
-        }
-        _ => {}
+        None => true,
+      };
+      if better {
+        best_val = Some(n);
+        best_expr = Some(item);
       }
     } else {
       symbolic.push((*item).clone());
     }
   }
 
-  // Min is idempotent: Min[a, a] == a. Drop duplicate symbolic arguments.
+  // Max/Min are idempotent: Max[a, a] == a. Drop duplicate symbolic
+  // arguments (numeric duplicates already collapse into the single best
+  // value).
   {
     let mut seen = std::collections::HashSet::new();
     symbolic.retain(|e| seen.insert(expr_to_string(e)));
   }
 
-  if symbolic.is_empty() {
-    // All numeric
-    match best_expr {
-      Some(expr) => Ok((*expr).clone()),
-      None => Ok(num_to_expr(f64::INFINITY)),
+  let mut result_args: Vec<Expr> = Vec::new();
+  if let Some(expr) = best_expr {
+    result_args.push((*expr).clone());
+  }
+  result_args.extend(symbolic);
+  // Orderless: the kept arguments are in canonical order, so a real
+  // infinity sorts after the symbols (Max[x, y, Infinity]).
+  canonical(&mut result_args);
+
+  // ComplexInfinity stays beside the real extremum. wolframscript reports
+  // one ::nord for every evaluation of a call that compares it: the given
+  // call (unless it is a lone list, which is only flattened), and once more
+  // when a changed result is re-evaluated — Min[1, ComplexInfinity] warns
+  // once, Min[1, 2, ComplexInfinity] twice.
+  if items.len() >= 2 && items.iter().any(|e| is_complex_infinity(e)) {
+    let mut given = args.to_vec();
+    canonical(&mut given);
+    let reevaluated = result_args.len() >= 2
+      && result_args.iter().any(is_complex_infinity)
+      && (given.len() != result_args.len()
+        || given
+          .iter()
+          .zip(&result_args)
+          .any(|(a, b)| expr_to_string(a) != expr_to_string(b)));
+    let count = usize::from(args.len() >= 2) + usize::from(reevaluated);
+    for _ in 0..count {
+      emit_nord(crate::syntax::MessagePiece::Text(
+        "ComplexInfinity".to_string(),
+      ));
     }
-  } else {
-    // Mixed: keep min numeric and all symbolic args
-    let mut result_args: Vec<Expr> = Vec::new();
-    if let Some(expr) = best_expr {
-      result_args.push((*expr).clone());
-    }
-    result_args.extend(symbolic);
-    if result_args.len() == 1 {
-      Ok(result_args.remove(0))
-    } else {
-      Ok(call("Min", result_args))
-    }
+  }
+
+  match result_args.len() {
+    0 => Ok(identity()),
+    1 => Ok(result_args.remove(0)),
+    _ => Ok(call(head, result_args)),
   }
 }
 

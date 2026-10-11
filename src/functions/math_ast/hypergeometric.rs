@@ -194,14 +194,11 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // HypergeometricPFQ[{a}, {}, z] = (1 - z)^(-a). Closed form via the
   // generalised binomial series. Lets z = 1 yield 0^(-a) → ComplexInfinity.
   if a_list.len() == 1 && b_list.is_empty() {
-    let one_minus_z = call(
-      "Plus",
-      vec![
-        Expr::Integer(1),
-        call("Times", vec![Expr::Integer(-1), z.clone()]),
-      ],
-    );
-    let neg_a = call("Times", vec![Expr::Integer(-1), a_list[0].clone()]);
+    let one_minus_z = plus(vec![
+      Expr::Integer(1),
+      times(vec![Expr::Integer(-1), z.clone()]),
+    ]);
+    let neg_a = times(vec![Expr::Integer(-1), a_list[0].clone()]);
     let pow = pow(one_minus_z, neg_a);
     return crate::evaluator::evaluate_expr_to_expr(&pow);
   }
@@ -268,13 +265,10 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // introduces over one denominator, as wolframscript prints them.
       let recurrence = call1(
         "Together",
-        call(
-          "Plus",
-          vec![
-            step(p + 2),
-            call("Times", vec![coefficient, z.clone(), step(p + 4)]),
-          ],
-        ),
+        plus(vec![
+          step(p + 2),
+          times(vec![coefficient, z.clone(), step(p + 4)]),
+        ]),
       );
       return crate::evaluator::evaluate_expr_to_expr(&recurrence);
     }
@@ -300,35 +294,27 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         is_number(z) && try_eval_to_f64(z).is_some_and(|v| v < 0.0);
       let (radicand, bessel_name) = if is_negative_real {
         (
-          crate::evaluator::evaluate_expr_to_expr(&call(
-            "Times",
-            vec![Expr::Integer(-1), z.clone()],
-          ))?,
+          crate::evaluator::evaluate_expr_to_expr(&times(vec![
+            Expr::Integer(-1),
+            z.clone(),
+          ]))?,
           "BesselJ",
         )
       } else {
         (z.clone(), "BesselI")
       };
-      let two_sqrt_z = call(
-        "Times",
-        vec![Expr::Integer(2), call1("Sqrt", radicand.clone())],
-      );
+      let two_sqrt_z =
+        times(vec![Expr::Integer(2), call1("Sqrt", radicand.clone())]);
       let bessel = call(
         bessel_name,
-        vec![
-          call("Plus", vec![Expr::Integer(-1), b_expr.clone()]),
-          two_sqrt_z,
-        ],
+        vec![plus(vec![Expr::Integer(-1), b_expr.clone()]), two_sqrt_z],
       );
       // z^(1/2 - b/2): keep the exponent expanded (as wolframscript does)
       // rather than folded to (1 - b)/2.
-      let exponent = call(
-        "Plus",
-        vec![
-          rational(1, 2),
-          call("Times", vec![rational(-1, 2), b_expr.clone()]),
-        ],
-      );
+      let exponent = plus(vec![
+        rational(1, 2),
+        times(vec![rational(-1, 2), b_expr.clone()]),
+      ]);
       let z_pow = pow(radicand, exponent);
       let gamma = call1("Gamma", b_expr.clone());
       // Evaluate each part first and multiply the flattened factor lists: a
@@ -398,13 +384,13 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // so a step like `(-1) * (a+1)` collapses to `Plus[-1, -a]` here,
       // before joining the wider running product.
       let upper_unevaluated = if a_list.len() == 1 {
-        call("Plus", vec![a_list[0].clone(), Expr::Integer(k)])
+        plus(vec![a_list[0].clone(), Expr::Integer(k)])
       } else {
         let factors: Vec<Expr> = a_list
           .iter()
-          .map(|ai| call("Plus", vec![ai.clone(), Expr::Integer(k)]))
+          .map(|ai| plus(vec![ai.clone(), Expr::Integer(k)]))
           .collect();
-        call("Times", factors)
+        times(factors)
       };
       let upper = crate::evaluator::evaluate_expr_to_expr(&upper_unevaluated)?;
       let lower_unevaluated = if b_list.is_empty() {
@@ -413,25 +399,20 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut factors: Vec<Expr> = Vec::with_capacity(b_list.len() + 1);
         factors.push(Expr::Integer(k + 1));
         for bj in &b_list {
-          factors.push(call("Plus", vec![bj.clone(), Expr::Integer(k)]));
+          factors.push(plus(vec![bj.clone(), Expr::Integer(k)]));
         }
-        call("Times", factors)
+        times(factors)
       };
       let lower = crate::evaluator::evaluate_expr_to_expr(&lower_unevaluated)?;
-      let factor = call(
-        "Times",
-        vec![upper, z.clone(), pow(lower, Expr::Integer(-1))],
-      );
-      term = crate::evaluator::evaluate_expr_to_expr(&call(
-        "Times",
-        vec![term, factor],
-      ))?;
+      let factor = times(vec![upper, z.clone(), pow(lower, Expr::Integer(-1))]);
+      term =
+        crate::evaluator::evaluate_expr_to_expr(&times(vec![term, factor]))?;
       terms.push(term.clone());
     }
     let poly = if terms.len() == 1 {
       terms.remove(0)
     } else {
-      call("Plus", terms)
+      plus(terms)
     };
     return crate::evaluator::evaluate_expr_to_expr(&poly);
   }
@@ -486,27 +467,21 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let log_one_minus_z = call1(
       "Log",
-      call(
-        "Plus",
-        vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), z.clone()]),
-        ],
-      ),
+      plus(vec![
+        Expr::Integer(1),
+        times(vec![Expr::Integer(-1), z.clone()]),
+      ]),
     );
     let polylog = call("PolyLog", vec![Expr::Integer(2), z.clone()]);
     // Build the negated inner sum so the leading `-4·(−2·z − Log[1−z] + z·Log[1−z] + PolyLog[2,z])`
     // matches wolframscript's exact InputForm rather than the mathematically
     // equivalent `4·(2·z + …)` factoring.
-    let inner_neg = call(
-      "Plus",
-      vec![
-        call("Times", vec![Expr::Integer(-2), z.clone()]),
-        call("Times", vec![Expr::Integer(-1), log_one_minus_z.clone()]),
-        call("Times", vec![z.clone(), log_one_minus_z]),
-        polylog,
-      ],
-    );
+    let inner_neg = plus(vec![
+      times(vec![Expr::Integer(-2), z.clone()]),
+      times(vec![Expr::Integer(-1), log_one_minus_z.clone()]),
+      times(vec![z.clone(), log_one_minus_z]),
+      polylog,
+    ]);
     return times_ast(&[
       Expr::Integer(-4),
       inner_neg,
@@ -524,55 +499,37 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && matches!(&b_list[0], Expr::Integer(2))
     && matches!(&b_list[1], Expr::Integer(2))
   {
-    return Ok(call(
-      "Times",
-      vec![
-        call(
-          "Plus",
-          vec![
-            call("Times", vec![Expr::Integer(-1), z.clone()]),
-            call1(
-              "Log",
-              call(
-                "Plus",
-                vec![
-                  Expr::Integer(1),
-                  call("Times", vec![Expr::Integer(-1), z.clone()]),
-                ],
-              ),
-            ),
-            call(
-              "Times",
-              vec![
-                Expr::Integer(-1),
-                z.clone(),
-                call1(
-                  "Log",
-                  call(
-                    "Plus",
-                    vec![
-                      Expr::Integer(1),
-                      call("Times", vec![Expr::Integer(-1), z.clone()]),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
+    return Ok(times(vec![
+      plus(vec![
+        times(vec![Expr::Integer(-1), z.clone()]),
+        call1(
+          "Log",
+          plus(vec![
+            Expr::Integer(1),
+            times(vec![Expr::Integer(-1), z.clone()]),
+          ]),
         ),
-        pow(
-          call(
-            "Times",
-            vec![
-              Expr::Integer(2),
-              call("Plus", vec![Expr::Integer(-1), z.clone()]),
-              z.clone(),
-            ],
-          ),
+        times(vec![
           Expr::Integer(-1),
-        ),
-      ],
-    ));
+          z.clone(),
+          call1(
+            "Log",
+            plus(vec![
+              Expr::Integer(1),
+              times(vec![Expr::Integer(-1), z.clone()]),
+            ]),
+          ),
+        ]),
+      ]),
+      pow(
+        times(vec![
+          Expr::Integer(2),
+          plus(vec![Expr::Integer(-1), z.clone()]),
+          z.clone(),
+        ]),
+        Expr::Integer(-1),
+      ),
+    ]));
   }
 
   // Numeric evaluation: all parameters and z must be numeric
@@ -983,7 +940,7 @@ fn hypergeometric_2f1_regularized_non_positive_c(
     if factors.len() == 1 {
       factors.into_iter().next().unwrap()
     } else {
-      call("Times", factors)
+      times(factors)
     }
   };
 
@@ -1009,10 +966,7 @@ fn hypergeometric_2f1_regularized_non_positive_c(
     vec![inner_a, inner_b, inner_c, z.clone()],
   );
 
-  let product = call(
-    "Times",
-    vec![poch_a, poch_b, inv_factorial, z_pow, inner_2f1],
-  );
+  let product = times(vec![poch_a, poch_b, inv_factorial, z_pow, inner_2f1]);
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&product)?))
 }
 
@@ -1259,7 +1213,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let b_int = *b_i;
     let z = &args[2];
-    let plus = call("Plus", vec![Expr::Integer(b_int), z.clone()]);
+    let plus = plus(vec![Expr::Integer(b_int), z.clone()]);
     let ratio = div2(plus, Expr::Integer(b_int));
     let exp_z = pow(id_expr("E"), z.clone());
     let prod = times2(ratio, exp_z);
@@ -1670,7 +1624,7 @@ fn distribute_recursive(e: &Expr) -> Result<Expr, InterpreterError> {
       for a in args {
         new_args.push(distribute_recursive(a)?);
       }
-      crate::evaluator::evaluate_expr_to_expr(&call("Plus", new_args))
+      crate::evaluator::evaluate_expr_to_expr(&plus(new_args))
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut new_args = Vec::with_capacity(args.len());
@@ -1679,7 +1633,7 @@ fn distribute_recursive(e: &Expr) -> Result<Expr, InterpreterError> {
       }
       crate::evaluator::evaluate_function_call_ast(
         "Distribute",
-        &[call("Times", new_args)],
+        &[times(new_args)],
       )
     }
     _ => Ok(dist),
@@ -1719,15 +1673,14 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // (b+k)_(n-k): product b+k, b+k+1, …, b+n-1.
       let mut rising_factors: Vec<Expr> = Vec::new();
       for j in k..n {
-        rising_factors
-          .push(call("Plus", vec![b.clone(), Expr::Integer(j as i128)]));
+        rising_factors.push(plus(vec![b.clone(), Expr::Integer(j as i128)]));
       }
       let rising = if rising_factors.is_empty() {
         Expr::Integer(1)
       } else if rising_factors.len() == 1 {
         rising_factors.remove(0)
       } else {
-        call("Times", rising_factors)
+        times(rising_factors)
       };
       let coeff_int = coeff_sign * binom;
       let z_pow = if k == 0 {
@@ -1737,10 +1690,10 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         pow(z.clone(), Expr::Integer(k as i128))
       };
-      let term = call("Times", vec![Expr::Integer(coeff_int), rising, z_pow]);
+      let term = times(vec![Expr::Integer(coeff_int), rising, z_pow]);
       terms.push(term);
     }
-    let sum = call("Plus", terms);
+    let sum = plus(terms);
     return crate::evaluator::evaluate_expr_to_expr(&sum);
   }
 
@@ -1772,19 +1725,13 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // are handled by the fast path above.
   if crate::evaluator::pattern_matching::expr_equal(&args[0], &args[1]) {
     let z = args[2].clone();
-    let one_minus_a = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Plus",
-      vec![
-        Expr::Integer(1),
-        call("Times", vec![Expr::Integer(-1), args[0].clone()]),
-      ],
-    ))?;
+    let one_minus_a = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+      Expr::Integer(1),
+      times(vec![Expr::Integer(-1), args[0].clone()]),
+    ]))?;
     let exp_z = pow(id_expr("E"), z.clone());
     let gamma = call("Gamma", vec![one_minus_a, z]);
-    return crate::evaluator::evaluate_expr_to_expr(&call(
-      "Times",
-      vec![exp_z, gamma],
-    ));
+    return crate::evaluator::evaluate_expr_to_expr(&times(vec![exp_z, gamma]));
   }
 
   // Special case: HypergeometricU[a, a+1, z] = z^(-a)
@@ -1809,10 +1756,9 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let pow_z = pow(z.clone(), Expr::Integer(1 - *b));
     let exp_z = pow(id_expr("E"), z.clone());
     let gamma = call("Gamma", vec![Expr::Integer(*b - 1), z.clone()]);
-    return crate::evaluator::evaluate_expr_to_expr(&call(
-      "Times",
-      vec![pow_z, exp_z, gamma],
-    ));
+    return crate::evaluator::evaluate_expr_to_expr(&times(vec![
+      pow_z, exp_z, gamma,
+    ]));
   }
 
   // U[a, 2, z] for positive integer a ≥ 2 via the contiguous relation
@@ -1832,40 +1778,27 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ))?;
     // U[2, 2, z] = z^{-1} - E^z · Gamma[0, z]
     let exp_z = pow(id_expr("E"), z.clone());
-    let mut u_curr = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Plus",
-      vec![
-        pow(z.clone(), Expr::Integer(-1)),
-        call(
-          "Times",
-          vec![
-            Expr::Integer(-1),
-            exp_z,
-            call("Gamma", vec![Expr::Integer(0), z.clone()]),
-          ],
-        ),
-      ],
-    ))?;
+    let mut u_curr = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+      pow(z.clone(), Expr::Integer(-1)),
+      times(vec![
+        Expr::Integer(-1),
+        exp_z,
+        call("Gamma", vec![Expr::Integer(0), z.clone()]),
+      ]),
+    ]))?;
     // Iterate the recurrence from k=2 up to a-1 to obtain U[a, 2, z].
     for k in 2..*a {
-      let coeff_curr =
-        call("Plus", vec![Expr::Integer(2 * (k - 1)), z.clone()]);
-      let next = call(
-        "Times",
-        vec![
-          call(
-            "Rational",
-            vec![Expr::Integer(1), Expr::Integer(k * (k - 1))],
-          ),
-          call(
-            "Plus",
-            vec![
-              call("Times", vec![coeff_curr, u_curr.clone()]),
-              call("Times", vec![Expr::Integer(-1), u_prev.clone()]),
-            ],
-          ),
-        ],
-      );
+      let coeff_curr = plus(vec![Expr::Integer(2 * (k - 1)), z.clone()]);
+      let next = times(vec![
+        call(
+          "Rational",
+          vec![Expr::Integer(1), Expr::Integer(k * (k - 1))],
+        ),
+        plus(vec![
+          times(vec![coeff_curr, u_curr.clone()]),
+          times(vec![Expr::Integer(-1), u_prev.clone()]),
+        ]),
+      ]);
       let next = crate::evaluator::evaluate_expr_to_expr(&next)?;
       // Distribute the rational coefficients over Plus so the result stays
       // in the canonical "constant + coefficient·E^z·Γ[0,z]" shape rather
@@ -1971,36 +1904,30 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // 2F1(a, b, b, z) = (1-z)^(-a)
   if expr_to_string(&args[1]) == expr_to_string(&args[2]) {
-    let neg_a = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Times",
-      vec![Expr::Integer(-1), args[0].clone()],
-    ))?;
+    let neg_a = crate::evaluator::evaluate_expr_to_expr(&times(vec![
+      Expr::Integer(-1),
+      args[0].clone(),
+    ]))?;
     return crate::evaluator::evaluate_expr_to_expr(&pow(
-      call(
-        "Plus",
-        vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), z.clone()]),
-        ],
-      ),
+      plus(vec![
+        Expr::Integer(1),
+        times(vec![Expr::Integer(-1), z.clone()]),
+      ]),
       neg_a,
     ));
   }
 
   // 2F1(a, b, a, z) = (1-z)^(-b)
   if expr_to_string(&args[0]) == expr_to_string(&args[2]) {
-    let neg_b = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Times",
-      vec![Expr::Integer(-1), args[1].clone()],
-    ))?;
+    let neg_b = crate::evaluator::evaluate_expr_to_expr(&times(vec![
+      Expr::Integer(-1),
+      args[1].clone(),
+    ]))?;
     return crate::evaluator::evaluate_expr_to_expr(&pow(
-      call(
-        "Plus",
-        vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), z.clone()]),
-        ],
-      ),
+      plus(vec![
+        Expr::Integer(1),
+        times(vec![Expr::Integer(-1), z.clone()]),
+      ]),
       neg_b,
     ));
   }
@@ -2086,21 +2013,18 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && exp_one_minus_z < 0
       && exp_one_minus_z.rem_euclid(2) != 0;
     let (base_expr, inner_for_combine) = if flip {
-      let z_minus_one = call("Plus", vec![Expr::Integer(-1), z.clone()]);
+      let z_minus_one = plus(vec![Expr::Integer(-1), z.clone()]);
       let negated_inner = negate_leading_integer_coefficient(&inner);
       (z_minus_one, negated_inner)
     } else {
-      let one_minus_z = call(
-        "Plus",
-        vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), z.clone()]),
-        ],
-      );
+      let one_minus_z = plus(vec![
+        Expr::Integer(1),
+        times(vec![Expr::Integer(-1), z.clone()]),
+      ]);
       (one_minus_z, inner)
     };
     let prefactor = pow(base_expr, Expr::Integer(exp_one_minus_z));
-    let combined = call("Times", vec![prefactor, inner_for_combine]);
+    let combined = times(vec![prefactor, inner_for_combine]);
     let evaluated = crate::evaluator::evaluate_expr_to_expr(&combined)?;
     // For numeric z, distribute via Expand so the result collapses to a
     // single complex value.
@@ -2189,7 +2113,7 @@ fn negate_leading_integer_coefficient(expr: &Expr) -> Expr {
       if let Expr::Integer(n) = &new_args[0] {
         new_args[0] = Expr::Integer(-n);
       }
-      call("Times", new_args)
+      times(new_args)
     }
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -2283,9 +2207,9 @@ fn hypergeometric2f1_polynomial(
       // (-n+j) factor
       numer_factors.push(Expr::Integer(-ni + ji));
       // (b+j) factor
-      numer_factors.push(call("Plus", vec![b.clone(), Expr::Integer(ji)]));
+      numer_factors.push(plus(vec![b.clone(), Expr::Integer(ji)]));
       // (c+j) factor in denominator
-      denom_factors.push(call("Plus", vec![c.clone(), Expr::Integer(ji)]));
+      denom_factors.push(plus(vec![c.clone(), Expr::Integer(ji)]));
     }
     // k! in denominator
     k_fact *= k as i128;
@@ -2299,12 +2223,12 @@ fn hypergeometric2f1_polynomial(
     };
     numer_factors.push(zk);
 
-    let numer = call("Times", numer_factors);
-    let denom = call("Times", denom_factors);
-    terms.push(call("Times", vec![numer, pow(denom, Expr::Integer(-1))]));
+    let numer = times(numer_factors);
+    let denom = times(denom_factors);
+    terms.push(times(vec![numer, pow(denom, Expr::Integer(-1))]));
   }
 
-  let sum = call("Plus", terms);
+  let sum = plus(terms);
   crate::evaluator::evaluate_expr_to_expr(&sum)
 }
 
@@ -2315,13 +2239,10 @@ fn hypergeometric2f1_1_n_np1(
   z: &Expr,
 ) -> Result<Expr, InterpreterError> {
   // Build: -(n/z^n) * (sum_{k=1}^{n-1} z^k/k + Log[1-z])
-  let one_minus_z = call(
-    "Plus",
-    vec![
-      Expr::Integer(1),
-      call("Times", vec![Expr::Integer(-1), z.clone()]),
-    ],
-  );
+  let one_minus_z = plus(vec![
+    Expr::Integer(1),
+    times(vec![Expr::Integer(-1), z.clone()]),
+  ]);
   let log_1mz = call1("Log", one_minus_z);
 
   // Build the polynomial sum: sum_{k=1}^{n-1} z^k / k
@@ -2335,24 +2256,22 @@ fn hypergeometric2f1_1_n_np1(
     if k == 1 {
       inner_terms.push(zk);
     } else {
-      inner_terms.push(call(
-        "Times",
-        vec![
-          call("Rational", vec![Expr::Integer(1), Expr::Integer(k)]),
-          zk,
-        ],
-      ));
+      inner_terms.push(times(vec![
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(k)]),
+        zk,
+      ]));
     }
   }
   inner_terms.push(log_1mz);
 
-  let inner = call("Plus", inner_terms);
+  let inner = plus(inner_terms);
 
   // -(n/z^n) * inner = Times[-n, Power[z, -n], inner]
-  let result = call(
-    "Times",
-    vec![Expr::Integer(-n), pow(z.clone(), Expr::Integer(-n)), inner],
-  );
+  let result = times(vec![
+    Expr::Integer(-n),
+    pow(z.clone(), Expr::Integer(-n)),
+    inner,
+  ]);
 
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -2467,13 +2386,10 @@ fn hypergeometric2f1_1_b_c(
   let (factor_n, factor_d) = rat_reduce(factor_num, factor_den);
 
   // Build Log[1-z]
-  let one_minus_z = call(
-    "Plus",
-    vec![
-      Expr::Integer(1),
-      call("Times", vec![Expr::Integer(-1), z.clone()]),
-    ],
-  );
+  let one_minus_z = plus(vec![
+    Expr::Integer(1),
+    times(vec![Expr::Integer(-1), z.clone()]),
+  ]);
   let log_1mz = call1("Log", one_minus_z);
 
   // Build the Plus terms with factored coefficients
@@ -2515,7 +2431,7 @@ fn hypergeometric2f1_1_b_c(
     } else if factors.len() == 1 {
       factors.pop().unwrap()
     } else {
-      call("Times", factors)
+      times(factors)
     };
 
     plus_terms.push(term);
@@ -2524,7 +2440,7 @@ fn hypergeometric2f1_1_b_c(
   let inner = if plus_terms.len() == 1 {
     plus_terms.pop().unwrap()
   } else {
-    call("Plus", plus_terms)
+    plus(plus_terms)
   };
 
   // Build: factor * Power[z, -(c-1)] * inner
@@ -2548,7 +2464,7 @@ fn hypergeometric2f1_1_b_c(
   let result = if outer_factors.len() == 1 {
     outer_factors.pop().unwrap()
   } else {
-    call("Times", outer_factors)
+    times(outer_factors)
   };
 
   // Evaluate to get canonical form

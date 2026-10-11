@@ -77,6 +77,27 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
         children: vec![Expr::Integer(1)],
       }
     }
+    // -Infinity is the single DirectedInfinity[-1], not Times[-1, …].
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(args[0], Expr::Integer(-1))
+        && matches!(&args[1], Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity") =>
+    {
+      ExprForm::Composite {
+        head: "DirectedInfinity".to_string(),
+        children: vec![Expr::Integer(-1)],
+      }
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } if matches!(operand.as_ref(), Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity") => {
+      ExprForm::Composite {
+        head: "DirectedInfinity".to_string(),
+        children: vec![Expr::Integer(-1)],
+      }
+    }
     Expr::Identifier(s) => ExprForm::Atom(s.clone()),
     Expr::Constant(c) => ExprForm::Atom(c.clone()),
     Expr::Raw(s) => ExprForm::Atom(s.clone()),
@@ -259,11 +280,16 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
     }
 
     // --- Association ---
+    // A delayed entry `k :> v` is stored with the whole RuleDelayed as its
+    // value; it is the entry itself, not the value of a Rule.
     Expr::Association(items) => ExprForm::Composite {
       head: "Association".to_string(),
       children: items
         .iter()
-        .map(|(k, v)| rule_expr(k.clone(), v.clone()))
+        .map(|(k, v)| match v {
+          Expr::RuleDelayed { .. } => v.clone(),
+          _ => rule_expr(k.clone(), v.clone()),
+        })
         .collect(),
     },
 

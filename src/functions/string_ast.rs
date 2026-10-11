@@ -12282,15 +12282,70 @@ pub fn hamming_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "HammingDistance expects 2 or 3 arguments".into(),
     ));
   }
-  let ignore_case = args.len() == 3 && extract_ignore_case(&args[2..]);
-  let s1 = expr_to_str(&args[0]);
-  let s2 = expr_to_str(&args[1]);
-  let s1 = if ignore_case { s1.to_lowercase() } else { s1 };
-  let s2 = if ignore_case { s2.to_lowercase() } else { s2 };
-  let chars1: Vec<char> = s1.chars().collect();
-  let chars2: Vec<char> = s2.chars().collect();
+  if let Some(extra) = args[2..].iter().find(|e| {
+    !matches!(
+      e,
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::List(_)
+    )
+  }) {
+    crate::emit_message(&format!(
+      "HammingDistance::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
+      expr_to_string(extra),
+      expr_to_string(&unevaluated("HammingDistance", args))
+    ));
+    return Ok(unevaluated("HammingDistance", args));
+  }
+  // Two strings compare characters (IgnoreCase applies); two vectors compare
+  // elements with SameQ (IgnoreCase does not reach string elements). Any
+  // other pairing — mixed kinds, nested lists, non-string atoms — stays
+  // unevaluated without a message.
+  let distance: Option<usize> = match (&args[0], &args[1]) {
+    (Expr::String(s1), Expr::String(s2)) => {
+      let ignore_case = extract_ignore_case(&args[2..]);
+      let (s1, s2) = if ignore_case {
+        (s1.to_lowercase(), s2.to_lowercase())
+      } else {
+        (s1.clone(), s2.clone())
+      };
+      let chars1: Vec<char> = s1.chars().collect();
+      let chars2: Vec<char> = s2.chars().collect();
+      (chars1.len() == chars2.len()).then(|| {
+        chars1
+          .iter()
+          .zip(chars2.iter())
+          .filter(|(a, b)| a != b)
+          .count()
+      })
+    }
+    (Expr::List(v1), Expr::List(v2)) => {
+      if v1
+        .iter()
+        .chain(v2.iter())
+        .any(|e| matches!(e, Expr::List(_)))
+      {
+        return Ok(unevaluated("HammingDistance", args));
+      }
+      (v1.len() == v2.len()).then(|| {
+        v1.iter()
+          .zip(v2.iter())
+          .filter(|(a, b)| {
+            !matches!(
+              crate::functions::boolean_ast::same_q_ast(&[
+                (*a).clone(),
+                (*b).clone()
+              ]),
+              Ok(Expr::Identifier(ref t)) if t == "True"
+            )
+          })
+          .count()
+      })
+    }
+    _ => return Ok(unevaluated("HammingDistance", args)),
+  };
 
-  if chars1.len() != chars2.len() {
+  if let Some(d) = distance {
+    Ok(Expr::Integer(d as i128))
+  } else {
     // Recoverable in wolframscript: ::idim plus the unevaluated call, not
     // an evaluation abort.
     crate::emit_message(&format!(
@@ -12298,15 +12353,8 @@ pub fn hamming_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       expr_to_str(&args[0]),
       expr_to_str(&args[1])
     ));
-    return Ok(unevaluated("HammingDistance", args));
+    Ok(unevaluated("HammingDistance", args))
   }
-
-  let dist = chars1
-    .iter()
-    .zip(chars2.iter())
-    .filter(|(a, b)| a != b)
-    .count();
-  Ok(Expr::Integer(dist as i128))
 }
 
 /// Tokenize a string into words the way TextWords/WordCounts do: split on

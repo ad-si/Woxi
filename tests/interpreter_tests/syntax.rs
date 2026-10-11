@@ -1435,6 +1435,23 @@ mod full_form {
   use super::*;
 
   #[test]
+  fn full_form_negative_infinity() {
+    assert_eq!(
+      interpret("ToString[FullForm[-Infinity]]").unwrap(),
+      "DirectedInfinity[-1]"
+    );
+  }
+
+  // A delayed association entry is a RuleDelayed, not the value of a Rule.
+  #[test]
+  fn full_form_association_rule_delayed() {
+    assert_eq!(
+      interpret("ToString[FullForm[<|a :> 1 + x, b -> 2|>]]").unwrap(),
+      "Association[RuleDelayed[a, Plus[1, x]], Rule[b, 2]]"
+    );
+  }
+
+  #[test]
   fn full_form_plus() {
     // wolframscript's REPL keeps the `FullForm[…]` wrapper around `Plus`
     // expressions; the bare head form is reachable via `ToString[…]`.
@@ -9001,6 +9018,33 @@ mod reim {
 
 mod complex_expand {
   use super::*;
+
+  // The quotient trig and hyperbolic functions expand for real arguments
+  // too (differential fuzzer, seed 20261011; wolframscript-verified).
+  #[test]
+  fn reciprocal_trig_functions() {
+    for (input, expected) in [
+      ("Tan[x]", "Sin[2*x]/(1 + Cos[2*x])"),
+      ("Cot[x]", "-(Sin[2*x]/(-1 + Cos[2*x]))"),
+      ("Sec[x]", "(2*Cos[x])/(1 + Cos[2*x])"),
+      ("Csc[x]", "(-2*Sin[x])/(-1 + Cos[2*x])"),
+      ("Tanh[x]", "Sinh[2*x]/(1 + Cosh[2*x])"),
+      ("Coth[x]", "-(Sinh[2*x]/(1 - Cosh[2*x]))"),
+      ("Sech[x]", "(2*Cosh[x])/(1 + Cosh[2*x])"),
+      ("Csch[x]", "(-2*Sinh[x])/(1 - Cosh[2*x])"),
+      ("Tan[x]^2", "Sin[2*x]^2/(1 + Cos[2*x])^2"),
+      (
+        "Tan[x + I y]",
+        "Sin[2*x]/(Cos[2*x] + Cosh[2*y]) + (I*Sinh[2*y])/(Cos[2*x] + Cosh[2*y])",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("ComplexExpand[{input}]")).unwrap(),
+        expected,
+        "{input}"
+      );
+    }
+  }
 
   // ComplexExpand assumes every symbol is real, so Re/Im/Conjugate of a bare
   // symbol (and of a symbolic complex) collapse. Verified against wolframscript.

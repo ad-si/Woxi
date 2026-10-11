@@ -223,7 +223,7 @@ fn hurwitz_zeta_ast_inner(
       let pow = pow2(term_a, neg_s.clone());
       terms.push(times2(Expr::Integer(-1), pow));
     }
-    let sum = call("Plus", terms);
+    let sum = plus(terms);
     return crate::evaluator::evaluate_expr_to_expr(&sum);
   }
 
@@ -1018,7 +1018,7 @@ fn polygamma_odd_integer(n: usize, z: usize) -> Option<Expr> {
 
   // Inner expression: Plus[-partial_sum, zeta(n+1)]
   let neg_ps = make_rational(-ps_num, ps_den);
-  let inner = call("Plus", vec![neg_ps, zeta_expr]);
+  let inner = plus(vec![neg_ps, zeta_expr]);
 
   if nfact == 1 {
     // n = 1: just the inner expression
@@ -1159,7 +1159,7 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // (e.g. 3^(-2) -> 1/9) instead of staying a literal Power.
     return crate::evaluator::evaluate_expr_to_expr(&pow2(
       a.clone(),
-      call("Times", vec![Expr::Integer(-1), s.clone()]),
+      times(vec![Expr::Integer(-1), s.clone()]),
     ));
   }
 
@@ -1294,13 +1294,10 @@ fn complex_real(re: f64, im: f64) -> Expr {
   if im == 0.0 {
     return Expr::Real(re);
   }
-  call(
-    "Plus",
-    vec![
-      Expr::Real(re),
-      call("Times", vec![Expr::Real(im), id_expr("I")]),
-    ],
-  )
+  plus(vec![
+    Expr::Real(re),
+    times(vec![Expr::Real(im), id_expr("I")]),
+  ])
 }
 
 /// LerchPhi(z, s, a) for real z > 1, integer s ≥ 1, real a (and a + k

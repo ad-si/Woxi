@@ -2954,8 +2954,13 @@ pub fn factor_square_free_list_ast(
     }
   }
 
-  // Sort by constant term (value at x=0) in ascending order (Wolfram convention)
-  pairs.sort_by_key(|(c, _)| c[0]);
+  // Factors order by leading coefficient, then constant term — not by
+  // canonical Sort: {x, 2}, {-5 + 2*x, 1} but {-1 + x^2, 1}, {x, 2}
+  // (wolframscript-verified).
+  pairs.sort_by(|(a, _), (b, _)| {
+    let lead = |c: &Vec<i128>| c.last().copied().unwrap_or(0);
+    lead(a).cmp(&lead(b)).then(a[0].cmp(&b[0]))
+  });
 
   for (factor_coeffs, mult) in &pairs {
     let factor_expr = int_coeffs_to_canonical_expr(factor_coeffs, &var);
