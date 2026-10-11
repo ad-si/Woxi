@@ -465,6 +465,19 @@ fn convert_interpretation_meaning(s: &str) -> String {
 /// `name :> value`)? Typeset box heads carry display options after their
 /// positional arguments (e.g. `SuperscriptBox[a, b, MultilineFunction ->
 /// None]`); they must not leak into the reconstructed InputForm text.
+/// A multi-token subscript in prose (`w+s`, `s,i`, `no shield`) is wrapped
+/// in parentheses so it reads as one script (`R_(w+s)`) rather than as a
+/// subscripted `R_w` followed by `+s`. Plain words and numbers stay bare.
+fn group_script_text(sub: &str) -> String {
+  let simple = sub.chars().all(|c| c.is_alphanumeric() || c == '\'')
+    || (sub.starts_with('(') && sub.ends_with(')'));
+  if simple || sub.is_empty() {
+    sub.to_string()
+  } else {
+    format!("({sub})")
+  }
+}
+
 fn is_option_arg(s: &str) -> bool {
   let mut depth = 0i32;
   let mut in_string = false;
@@ -2361,7 +2374,7 @@ fn render_boxes_text(s: &str) -> String {
     if draws_nothing(&base) {
       return sub;
     }
-    return format!("{base}_{sub}");
+    return format!("{base}_{}", group_script_text(&sub));
   }
   if let Some(args) = positional_box_args("SuperscriptBox", s)
     && args.len() == 2
@@ -2385,8 +2398,10 @@ fn render_boxes_text(s: &str) -> String {
     let sub = render_boxes_text(&args[1]);
     let exp = render_boxes_text(&args[2]);
     return match superscript_unicode(&exp) {
-      Some(sup) if !sup.is_empty() => format!("{base}_{sub}{sup}"),
-      _ => format!("{base}_{sub}^{exp}"),
+      Some(sup) if !sup.is_empty() => {
+        format!("{base}_{}{sup}", group_script_text(&sub))
+      }
+      _ => format!("{base}_{}^{exp}", group_script_text(&sub)),
     };
   }
   if let Some(args) = positional_box_args("SqrtBox", s)
@@ -6545,6 +6560,26 @@ Cell["Chapter 2", "Chapter"]
  " are the weights"
 }]"#;
     assert_eq!(extract_cell_content(s), "m_1,m_2 are the weights");
+  }
+
+  #[test]
+  fn test_extract_textdata_multi_token_subscripts_are_grouped() {
+    // A subscript made of several tokens reads as one script, so
+    // `R_{a+b}` is `R_(a+b)` and not `R_a+b`; single tokens stay bare.
+    let s = r#"TextData[{
+ Cell[BoxData[
+  FormBox[
+   RowBox[{
+    SubscriptBox["R", RowBox[{"a", "+", "b"}]], "=",
+    SubscriptBox["R", RowBox[{"c", ",", "d"}]], "+",
+    SubsuperscriptBox["T", RowBox[{"x", "+", "y"}], "4"], "+",
+    SubscriptBox["R", "e"]}], TraditionalForm]], "InlineMath"],
+ " done"
+}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "R_(a+b)=R_(c,d)+T_(x+y)\u{2074}+R_e done"
+    );
   }
 
   #[test]
