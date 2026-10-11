@@ -42,8 +42,7 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
         ),
         BinaryOperator::Minus => {
           // a - b  =  Plus[a, Times[-1, b]]
-          let neg_right =
-            call("Times", vec![Expr::Integer(-1), *right.clone()]);
+          let neg_right = times(vec![Expr::Integer(-1), *right.clone()]);
           // Still flatten any further chained Plus on the left.
           let mut args = flatten_assoc_one(BinaryOperator::Plus, left.as_ref());
           args.push(neg_right);

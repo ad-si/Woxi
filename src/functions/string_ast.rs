@@ -6328,10 +6328,7 @@ fn sum_terms(expr: &Expr, out: &mut Vec<Expr>) {
       right,
     } => {
       sum_terms(left, out);
-      out.push(call(
-        "Times",
-        vec![Expr::Integer(-1), right.as_ref().clone()],
-      ));
+      out.push(times(vec![Expr::Integer(-1), right.as_ref().clone()]));
     }
     Expr::FunctionCall { name, args } if name == "Plus" => {
       out.extend(args.iter().cloned());
@@ -6339,11 +6336,7 @@ fn sum_terms(expr: &Expr, out: &mut Vec<Expr>) {
     Expr::FunctionCall { name, args } if name == NEGATED_SUM => {
       let mut inner = Vec::new();
       sum_terms(&args[0], &mut inner);
-      out.extend(
-        inner
-          .into_iter()
-          .map(|t| call("Times", vec![Expr::Integer(-1), t])),
-      );
+      out.extend(inner.into_iter().map(|t| times(vec![Expr::Integer(-1), t])));
     }
     _ => out.push(expr.clone()),
   }
@@ -6374,7 +6367,7 @@ fn tex_negated_sum(sum: &Expr) -> String {
   sum_terms(sum, &mut terms);
   let negated: Vec<Expr> = terms
     .into_iter()
-    .map(|t| call("Times", vec![Expr::Integer(-1), t]))
+    .map(|t| times(vec![Expr::Integer(-1), t]))
     .collect();
   tex_function_call("Plus", &negated)
 }
@@ -13905,7 +13898,7 @@ fn negated_term(expr: &Expr) -> Option<Expr> {
       Some(if rest.len() == 1 {
         rest.remove(0)
       } else {
-        call("Times", rest)
+        times(rest)
       })
     }
     Expr::BinaryOp {
@@ -16205,7 +16198,7 @@ fn number_form_family_inner(
       left,
       right,
     } => match product_factors(&[(**left).clone(), (**right).clone()]) {
-      Some(args) => call("Times", args),
+      Some(args) => times(args),
       None => times2(recurse(left), recurse(right)),
     },
     Expr::FunctionCall { name, args } => Expr::FunctionCall {

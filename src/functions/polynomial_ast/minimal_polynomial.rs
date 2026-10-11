@@ -73,7 +73,7 @@ fn is_explicit_algebraic(e: &Expr) -> bool {
     matches!(
       crate::evaluator::evaluate_expr_to_expr(&div2(
         x.clone(),
-        Expr::Constant("Pi".to_string())
+        const_expr("Pi")
       )),
       Ok(ref r) if is_rational(r)
     )

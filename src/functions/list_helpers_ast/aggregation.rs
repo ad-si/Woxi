@@ -376,10 +376,10 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       let med = Expr::BinaryOp {
         op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(1)),
-        right: Box::new(call(
-          "Times",
-          vec![pow2(Expr::Integer(2), pow2(a, Expr::Integer(-1))), k],
-        )),
+        right: Box::new(times(vec![
+          pow2(Expr::Integer(2), pow2(a, Expr::Integer(-1))),
+          k,
+        ])),
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
@@ -394,7 +394,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       let sqrt_pi = call1("Sqrt", id_expr("Pi"));
       let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
       let inverse_erf_half = call1("InverseErf", half);
-      let numer = call("Times", vec![sqrt_pi, inverse_erf_half]);
+      let numer = times(vec![sqrt_pi, inverse_erf_half]);
       let med = div2(numer, theta);
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
@@ -804,10 +804,10 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       }
       let avg = Expr::BinaryOp {
         op: BinaryOperator::Divide,
-        left: Box::new(call(
-          "Plus",
-          vec![sorted[len / 2 - 1].clone(), sorted[len / 2].clone()],
-        )),
+        left: Box::new(plus(vec![
+          sorted[len / 2 - 1].clone(),
+          sorted[len / 2].clone(),
+        ])),
         right: Box::new(Expr::Integer(2)),
       };
       return crate::evaluator::evaluate_expr_to_expr(&avg);
@@ -876,10 +876,10 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     } else {
       let avg = Expr::BinaryOp {
         op: BinaryOperator::Divide,
-        left: Box::new(call(
-          "Plus",
-          vec![keyed[len / 2 - 1].1.clone(), keyed[len / 2].1.clone()],
-        )),
+        left: Box::new(plus(vec![
+          keyed[len / 2 - 1].1.clone(),
+          keyed[len / 2].1.clone(),
+        ])),
         right: Box::new(Expr::Integer(2)),
       };
       crate::evaluator::evaluate_expr_to_expr(&avg)
@@ -1144,28 +1144,23 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if name == "Scaled" && a.len() == 1 =>
     {
       // Scale the expansion by the data range r = max - min.
-      let range = call(
-        "Plus",
-        vec![
-          max_expr.clone(),
-          call("Times", vec![Expr::Integer(-1), min_expr.clone()]),
-        ],
-      );
-      let scaled = call("Times", vec![a[0].clone(), range]);
+      let range = plus(vec![
+        max_expr.clone(),
+        times(vec![Expr::Integer(-1), min_expr.clone()]),
+      ]);
+      let scaled = times(vec![a[0].clone(), range]);
       let scaled = crate::evaluator::evaluate_expr_to_expr(&scaled)?;
       (scaled.clone(), scaled)
     }
     d => (d.clone(), d.clone()),
   };
 
-  let new_min = crate::evaluator::evaluate_expr_to_expr(&call(
-    "Plus",
-    vec![min_expr, call("Times", vec![Expr::Integer(-1), d_min])],
-  ))?;
-  let new_max = crate::evaluator::evaluate_expr_to_expr(&call(
-    "Plus",
-    vec![max_expr, d_max],
-  ))?;
+  let new_min = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+    min_expr,
+    times(vec![Expr::Integer(-1), d_min]),
+  ]))?;
+  let new_max =
+    crate::evaluator::evaluate_expr_to_expr(&plus(vec![max_expr, d_max]))?;
 
   Ok(Expr::List(vec![new_min, new_max].into()))
 }

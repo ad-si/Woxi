@@ -7356,7 +7356,7 @@ pub fn graph_metric_ast(
           }
         })
         .collect();
-      let sum = call("Plus", terms);
+      let sum = plus(terms);
       let mean = div(sum, Expr::Integer(local.len() as i128));
       return Ok(
         crate::evaluator::evaluate_expr_to_expr(&mean)
@@ -7436,10 +7436,10 @@ pub fn graph_metric_ast(
         num = num * vden + links * den;
         den *= vden;
       }
-      evaluated(call(
-        "Times",
-        vec![make_rational(num, den), make_rational(1, n as i128)],
-      ))
+      evaluated(times(vec![
+        make_rational(num, den),
+        make_rational(1, n as i128),
+      ]))
     }
     "MeanDegreeConnectivity" => {
       if n == 0 {

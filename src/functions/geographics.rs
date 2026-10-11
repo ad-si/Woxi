@@ -1854,14 +1854,13 @@ mod entity_resolution_tests {
 
   #[test]
   fn country_entity_resolves_to_country_centroid() {
-    let e = Expr::FunctionCall {
-      name: "Entity".into(),
-      args: vec![
+    let e = call(
+      "Entity",
+      vec![
         Expr::String("Country".into()),
         Expr::String("France".into()),
-      ]
-      .into(),
-    };
+      ],
+    );
     let (lat, lon) = entity_to_latlon(&e).unwrap();
     assert!((lat - 46.227638).abs() < 1e-2, "lat {lat}");
     assert!((lon - 2.213749).abs() < 1e-2, "lon {lon}");

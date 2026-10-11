@@ -230,13 +230,8 @@ pub fn tensor_rank_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   {
     let inner_rank = call1("TensorRank", args[0].clone());
     let reduction = Expr::Integer(2 * pairs.len() as i128);
-    let result = call(
-      "Plus",
-      vec![
-        call("Times", vec![Expr::Integer(-1), reduction]),
-        inner_rank,
-      ],
-    );
+    let result =
+      plus(vec![times(vec![Expr::Integer(-1), reduction]), inner_rank]);
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
@@ -408,7 +403,7 @@ fn build_contracted(
     if terms.len() == 1 {
       return Ok(terms.remove(0));
     }
-    crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
+    crate::evaluator::evaluate_expr_to_expr(&plus(terms))
   };
 
   if free_slots.is_empty() {
@@ -549,9 +544,9 @@ pub fn tensor_symmetry_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
     )
   };
   let neg = |e: &Expr| -> Expr {
-    let e = call("Times", vec![Expr::Integer(-1), e.clone()]);
+    let e = times(vec![Expr::Integer(-1), e.clone()]);
     crate::evaluator::evaluate_expr_to_expr(&e)
-      .unwrap_or_else(|_| call("Times", vec![Expr::Integer(-1), e.clone()]))
+      .unwrap_or_else(|_| times(vec![Expr::Integer(-1), e.clone()]))
   };
 
   let mut is_symmetric = true;

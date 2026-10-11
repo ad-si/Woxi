@@ -22766,7 +22766,7 @@ fn strip_body_locator_resets(expr: &Expr, vars: &[String]) -> Expr {
         && args.len() == 2
         && matches!(&args[0], Expr::Identifier(v) if vars.contains(v)) =>
     {
-      id_expr("Null")
+      null_expr()
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -23661,10 +23661,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     match caption.len() {
       0 => {}
       1 => out.push(caption.remove(0)),
-      _ => out.push(Expr::FunctionCall {
-        name: "Row".to_string(),
-        args: vec![Expr::List(std::mem::take(caption).into())].into(),
-      }),
+      _ => out.push(call1("Row", Expr::List(std::mem::take(caption).into()))),
     }
     caption.clear();
   };
@@ -23762,10 +23759,7 @@ pub(crate) fn tabview_panes(arg: &Expr) -> Option<Vec<Expr>> {
     Expr::Association(pairs) => Some(
       pairs
         .iter()
-        .map(|(k, v)| Expr::Rule {
-          pattern: Box::new(k.clone()),
-          replacement: Box::new(v.clone()),
-        })
+        .map(|(k, v)| rule_expr(k.clone(), v.clone()))
         .collect(),
     ),
     _ => None,

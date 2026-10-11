@@ -1025,14 +1025,13 @@ fn try_dirac_delta_integral(
   }
   // Confirm linearity: arg(2) - (2 c + d) must vanish.
   let arg_at_2 = eval(at(&arg, Expr::Integer(2)))?;
-  let linearity_residual = eval(Expr::FunctionCall {
-    name: "Subtract".to_string(),
-    args: vec![
+  let linearity_residual = eval(call(
+    "Subtract",
+    vec![
       arg_at_2,
       plus(vec![times(vec![Expr::Integer(2), c.clone()]), d.clone()]),
-    ]
-    .into(),
-  })?;
+    ],
+  ))?;
   if !matches!(linearity_residual, Expr::Integer(0)) {
     return None; // nonlinear delta argument
   }
