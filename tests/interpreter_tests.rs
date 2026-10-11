@@ -1541,6 +1541,37 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_contour_plot_bar_legend_and_contour_labels() {
+    // `PlotLegends -> Automatic` widens the picture by a colour-bar strip
+    // and `ContourLabels -> True` writes each level on its contour line.
+    clear_state();
+    let plain = interpret_with_stdout("ContourPlot[x y, {x, 0, 3}, {y, 0, 3}]")
+      .unwrap()
+      .graphics
+      .expect("ContourPlot should produce a graphics SVG");
+    let svg = interpret_with_stdout(
+      "ContourPlot[x y, {x, 0, 3}, {y, 0, 3}, PlotLegends -> Automatic, \
+       ContourLabels -> True]",
+    )
+    .unwrap()
+    .graphics
+    .expect("ContourPlot should produce a graphics SVG");
+    assert!(plain.starts_with("<svg width=\"360\""), "{plain}");
+    assert!(
+      svg.starts_with("<svg width=\"413\""),
+      "legend widens: {svg}"
+    );
+    assert!(
+      svg.matches("<text").count() > plain.matches("<text").count() + 8,
+      "legend ticks and contour labels add text:\n{svg}"
+    );
+    assert!(
+      svg.contains("paint-order=\"stroke\""),
+      "contour labels: {svg}"
+    );
+  }
+
+  #[test]
   fn test_show_contour_plot_with_directive_list_contour_style() {
     // Regression: `Show[ContourPlot[…], Graphics[…]]` where the
     // ContourPlot's `ContourStyle` is a `Directive[{…}]` (single List
