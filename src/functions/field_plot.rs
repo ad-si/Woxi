@@ -231,7 +231,7 @@ struct DensityContourOptions {
   contour_style: Option<crate::functions::plot::SeriesStyle>,
   /// `ContourStyle -> {{Black, Thick}, {Red, Thick}}`: one style per
   /// contour function, cycled when there are more functions than styles.
-  /// Empty unless every entry of the option is itself a list.
+  /// Empty unless every entry of the option is itself a list or Directive.
   contour_styles: Vec<Option<crate::functions::plot::SeriesStyle>>,
   /// `FrameLabel -> {bottom, left}`: the labels along the frame edges.
   frame_labels: crate::functions::plot::FrameLabels,
@@ -254,16 +254,19 @@ struct DensityContourOptions {
 }
 
 /// The per-contour styles of a `ContourStyle` value whose entries are all
-/// lists (`{{Black, Thick}, {Red, Thick}}`); empty for a single directive
-/// list such as `{Thick, Blue}`.
+/// lists or `Directive[…]`s (`{{Black, Thick}, {Red, Thick}}`,
+/// `{Directive[Red, Dashed], Directive[Blue]}`); empty for a single
+/// directive list such as `{Thick, Blue}`.
 fn per_contour_styles(
   value: &Expr,
 ) -> Vec<Option<crate::functions::plot::SeriesStyle>> {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   match &val {
     Expr::List(items)
-      if !items.is_empty()
-        && items.iter().all(|i| matches!(i, Expr::List(_))) =>
+      if !items.is_empty() && items.iter().all(|i| {
+        matches!(i, Expr::List(_))
+          || matches!(i, Expr::FunctionCall { name, .. } if name == "Directive")
+      }) =>
     {
       items
         .iter()
@@ -1554,6 +1557,7 @@ fn render_contour_lines_styled(
   render_width: u32,
   stroke: &str,
   weight: f64,
+  dash: &str,
 ) {
   let stroke_w = render_width as f64 / 1000.0 * weight;
   for &level in levels {
@@ -1565,7 +1569,7 @@ fn render_contour_lines_styled(
         .map(|(x, y)| format!("{x:.1},{y:.1}"))
         .collect();
       svg.push_str(&format!(
-        "<polyline points=\"{}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{stroke_w:.1}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n",
+        "<polyline points=\"{}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{stroke_w:.1}\"{dash} stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n",
         points.join(" ")
       ));
     }
@@ -1998,6 +2002,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       area.render_width,
       "#b0b0b0",
       0.4,
+      "",
     );
   }
   let (contour_color, contour_weight) = opts.contour_stroke();
@@ -2012,6 +2017,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.render_width,
     &contour_color,
     contour_weight,
+    "",
   );
   push_frame(
     &mut svg,
@@ -2054,6 +2060,28 @@ fn contour_style_directives(args: &[Expr], opts_from: usize) -> Vec<Expr> {
     }
   }
   Vec::new()
+}
+
+/// The ` stroke-dasharray` attribute of a contour whose style carries
+/// dashing (`Dashed`, `Dotted`, `Dashing[…]`); empty for a solid line.
+fn contour_dash_attr(
+  style: Option<&crate::functions::plot::SeriesStyle>,
+  render_width: u32,
+  svg_width: u32,
+) -> String {
+  let Some(dashes) = style.and_then(|s| s.dashing.as_ref()) else {
+    return String::new();
+  };
+  let scale = render_width as f64 / svg_width.max(1) as f64;
+  let lens: Vec<String> = dashes
+    .iter()
+    .map(|d| {
+      let len =
+        crate::functions::plot::dash_len(*d, render_width as f64, scale);
+      format!("{len:.1}")
+    })
+    .collect();
+  format!(" stroke-dasharray=\"{}\"", lens.join(","))
 }
 
 /// The equation form of ContourPlot: draw each body's zero contour as an
@@ -2100,6 +2128,7 @@ fn contour_plot_equations(
         )
       });
     let series_thickness = style.and_then(|s| s.thickness);
+    let dash = contour_dash_attr(style, area.render_width, opts.svg_width);
     let first_series = series.len();
     let mut grid = vec![vec![f64::NAN; n]; n];
     let mut any_finite = false;
@@ -2134,6 +2163,7 @@ fn contour_plot_equations(
       area.render_width,
       &contour_color,
       contour_weight,
+      &dash,
     );
     let scaled_cell = 1000.0 / FIELD_GRID as f64;
     let segments =
@@ -3712,6 +3742,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.render_width,
     &contour_color,
     contour_weight,
+    "",
   );
   push_frame(
     &mut svg,
