@@ -13550,7 +13550,7 @@ mod minimal_polynomial {
     }
     clear_state();
     interpret("MinimalPolynomial[Sin[Pi/7], x]").unwrap();
-    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(woxi::get_captured_messages_raw(), [] as [String; 0]);
   }
 
   #[test]
