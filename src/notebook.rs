@@ -2862,6 +2862,17 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
   result
 }
 
+/// Drop the contexts a saved Manipulate dump qualifies its symbols with:
+/// `` $CellContext` `` (the DynamicModule's private context) and
+/// `` DemonstrationsTools` `` (where the Demonstrations authoring notebooks
+/// create their control variables). The definitions in the same dump use the
+/// bare names, so keeping the prefix would make `` DemonstrationsTools`x ``
+/// a different symbol from the `x` those definitions refer to.
+fn strip_saved_contexts(s: &str) -> String {
+  s.replace("$CellContext`", "")
+    .replace("DemonstrationsTools`", "")
+}
+
 /// Extract the `Initialization :> ( … )` code from a saved FrontEnd
 /// dynamic-widget dump (the `DynamicModuleBox[…]` text stored in the Output
 /// cell of an evaluated `Manipulate[…]`).
@@ -2882,7 +2893,10 @@ pub fn extract_saved_initialization(box_dump: &str) -> Option<String> {
       if let Some(body) = rest.strip_prefix('(')
         && let Some(inner) = matching_paren_prefix(body)
       {
-        let cleaned = inner.replace("\\\n", "").replace("$CellContext`", "");
+        let cleaned = inner
+          .replace("\\\n", "")
+          .replace("$CellContext`", "")
+          .replace("DemonstrationsTools`", "");
         let cleaned = cleaned.trim();
         if !cleaned.is_empty() && cleaned != "None" {
           return Some(cleaned.to_string());
@@ -3034,9 +3048,7 @@ fn strip_uniquification_suffix(src: &str) -> String {
 /// evaluates as ordinary session-level input.
 pub fn reconstruct_manipulate_from_box_dump(box_dump: &str) -> Option<String> {
   let clean = |s: &str| {
-    strip_uniquification_suffix(
-      &s.replace("$CellContext`", "").replace("\\\n", ""),
-    )
+    strip_uniquification_suffix(&strip_saved_contexts(s).replace("\\\n", ""))
   };
   let body = clean(extract_arrow_value(box_dump, "Body")?);
   let specs = clean(extract_arrow_value(box_dump, "Specifications")?);
@@ -3122,7 +3134,7 @@ pub fn extract_saved_manipulate_variables(
       let part = part.trim();
       let eq = part.find('=')?;
       let (lhs, rhs) = (part[..eq].trim(), part[eq + 1..].trim());
-      let name = lhs.replace("$CellContext`", "");
+      let name = strip_saved_contexts(lhs);
       let name = name.strip_suffix("$$").unwrap_or(&name);
       let name = unescape_code_string(name);
       if name.is_empty() || rhs.is_empty() {
@@ -3135,7 +3147,7 @@ pub fn extract_saved_manipulate_variables(
       // value matches the plain symbol the live source's spec defines
       // (`scale1[abc]`), not a distinct `$CellContext`abc` that resolves
       // to nothing.
-      let value = rhs.replace("$CellContext`", "");
+      let value = strip_saved_contexts(rhs);
       Some((name, unescape_code_string(&value)))
     })
     .collect()
@@ -3177,7 +3189,7 @@ fn extract_dynamic_module_variables(box_dump: &str) -> Vec<(String, String)> {
       // See the matching strip in `extract_saved_manipulate_variables`: a
       // bare-symbol default value is context-qualified too, not just the
       // variable name.
-      let value = rhs.replace("$CellContext`", "");
+      let value = strip_saved_contexts(rhs);
       Some((unescape_code_string(name), unescape_code_string(&value)))
     })
     .collect()
@@ -6943,6 +6955,16 @@ yf4GL4DwC5VA4w
       cell.content
     );
     assert!(cell.content.trim_end().ends_with(';'));
+  }
+
+  #[test]
+  fn test_saved_dump_drops_demonstrations_tools_context() {
+    let dump = "DynamicModuleBox[{$CellContext`k$$ = 0}, \
+      DynamicBox[…],\n\
+      Initialization:>(f[DemonstrationsTools`x_] := \
+      DemonstrationsTools`x^2; $CellContext`a = f[3])]";
+    let init = extract_saved_initialization(dump).unwrap();
+    assert_eq!(init, "f[x_] := x^2; a = f[3]");
   }
 
   #[test]
