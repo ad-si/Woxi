@@ -46,9 +46,9 @@ fn distribute_re_im(
       let other = if other_f.len() == 1 {
         other_f.into_iter().next().unwrap()
       } else {
-        call("Times", other_f)
+        times(other_f)
       };
-      let combined = call("Times", vec![real_prod, apply(other)]);
+      let combined = times(vec![real_prod, apply(other)]);
       return Some(crate::evaluator::evaluate_expr_to_expr(&combined));
     }
   }
@@ -65,14 +65,14 @@ fn distribute_re_im(
       let rest_expr = if rest.len() == 1 {
         rest.into_iter().next().unwrap()
       } else {
-        call("Plus", rest)
+        plus(rest)
       };
       parts.push(apply(rest_expr));
     }
     for it in i_terms {
       parts.push(apply(it));
     }
-    let combined = call("Plus", parts);
+    let combined = plus(parts);
     return Some(crate::evaluator::evaluate_expr_to_expr(&combined));
   }
   None
@@ -369,7 +369,7 @@ fn product_of(mut factors: Vec<Expr>) -> Expr {
   if factors.len() == 1 {
     factors.pop().unwrap()
   } else {
-    call("Times", factors)
+    times(factors)
   }
 }
 
@@ -457,7 +457,7 @@ fn try_extract_complex_bigfloat(expr: &Expr) -> Option<(Expr, Expr)> {
     let im_part = if others.len() == 1 {
       others.into_iter().next().unwrap()
     } else {
-      call("Times", others)
+      times(others)
     };
     Some((None, Some(im_part)))
   };
@@ -586,7 +586,7 @@ fn collect_plus_terms(expr: &Expr) -> Option<Vec<Expr>> {
     } => {
       let mut t =
         collect_plus_terms(left).unwrap_or_else(|| vec![(**left).clone()]);
-      t.push(call("Times", vec![Expr::Integer(-1), (**right).clone()]));
+      t.push(times(vec![Expr::Integer(-1), (**right).clone()]));
       Some(t)
     }
     _ => None,
@@ -715,7 +715,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
       let i_factor: Option<Expr> = match i_mod {
         1 => {
           // Conjugate[I] = -I
-          Some(call("Times", vec![Expr::Integer(-1), id_expr("I")]))
+          Some(times(vec![Expr::Integer(-1), id_expr("I")]))
         }
         2 => {
           // I*I = -1, Conjugate[-1] = -1
@@ -734,7 +734,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
       } else if symbolic_factors.len() == 1 {
         Some(conjugate_one(&symbolic_factors[0])?)
       } else {
-        Some(conjugate_one(&call("Times", symbolic_factors))?)
+        Some(conjugate_one(&times(symbolic_factors))?)
       };
 
       // Combine: real_factors * i_factor * conj_symbolic
@@ -756,7 +756,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   } = expr
   {
     // Convert to flattened form and handle there
-    let flat = call("Times", vec![*left.clone(), *right.clone()]);
+    let flat = times(vec![*left.clone(), *right.clone()]);
     return conjugate_one(&flat);
   }
 
@@ -1041,13 +1041,10 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if k == 0 {
           return Ok(imz);
         }
-        let result = call(
-          "Plus",
-          vec![
-            imz,
-            call("Times", vec![Expr::Integer(-2 * k), const_expr("Pi")]),
-          ],
-        );
+        let result = plus(vec![
+          imz,
+          times(vec![Expr::Integer(-2 * k), const_expr("Pi")]),
+        ]);
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
     }
@@ -1103,7 +1100,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let remaining = if kept.len() == 1 {
       kept.into_iter().next().unwrap()
     } else {
-      call("Times", kept)
+      times(kept)
     };
     return arg_ast(&[remaining]);
   }
@@ -1352,7 +1349,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     return crate::evaluator::evaluate_function_call_ast(
       "Plus",
-      &[re_c, call("Times", vec![im_c, id_expr("I")])],
+      &[re_c, times(vec![im_c, id_expr("I")])],
     );
   }
 
@@ -1720,13 +1717,10 @@ fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
   } else {
     // Build re + im*I so Woxi's Plus/Times simplification formats it as
     // `33 + 7*I` instead of `Complex[33, 7]`.
-    call(
-      "Plus",
-      vec![
-        Expr::Integer(re_num),
-        call("Times", vec![Expr::Integer(im_num), id_expr("I")]),
-      ],
-    )
+    plus(vec![
+      Expr::Integer(re_num),
+      times(vec![Expr::Integer(im_num), id_expr("I")]),
+    ])
   };
   let num_evaluated =
     crate::evaluator::evaluate_expr_to_expr(&num_expr).ok()?;
@@ -1804,7 +1798,7 @@ pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         0 => Ok(Expr::Integer(1)),
         1 => Ok(num_factors.into_iter().next().unwrap()),
         _ => {
-          let product = call("Times", num_factors);
+          let product = times(num_factors);
           crate::evaluator::evaluate_expr_to_expr(&product)
         }
       }
@@ -1892,7 +1886,7 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         0 => Ok(Expr::Integer(1)),
         1 => Ok(denom_factors.into_iter().next().unwrap()),
         _ => {
-          let product = call("Times", denom_factors);
+          let product = times(denom_factors);
           crate::evaluator::evaluate_expr_to_expr(&product)
         }
       }
@@ -2119,13 +2113,12 @@ pub(crate) fn negate_if_negative(exp: &Expr) -> Option<Expr> {
         if args.len() == 2 {
           args[1].clone()
         } else {
-          call("Times", args[1..].to_vec())
+          times(args[1..].to_vec())
         }
       };
       match &args[0] {
         Expr::Integer(-1) => Some(rest()),
-        Expr::Integer(n) if *n < 0 => Some(call(
-          "Times",
+        Expr::Integer(n) if *n < 0 => Some(times(
           [vec![Expr::Integer(-n)], args[1..].to_vec()].concat(),
         )),
         Expr::FunctionCall { name: rn, args: ra }
@@ -2138,7 +2131,7 @@ pub(crate) fn negate_if_negative(exp: &Expr) -> Option<Expr> {
           };
           let positive =
             call("Rational", vec![Expr::Integer(-n), ra[1].clone()]);
-          Some(call("Times", [vec![positive], args[1..].to_vec()].concat()))
+          Some(times([vec![positive], args[1..].to_vec()].concat()))
         }
         _ => None,
       }

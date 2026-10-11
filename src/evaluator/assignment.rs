@@ -2196,7 +2196,12 @@ fn downvalue_arg_info(
       // Supports a trailing BlankSequence (`__`) or BlankNullSequence (`___`)
       // element, which relaxes the length check and (for named sequence
       // elements) binds the sequence variable to the matching tail.
-      Expr::List(patterns) if patterns.iter().any(contains_mutating_head) => {
+      Expr::List(patterns)
+        if patterns.iter().any(|p| {
+          contains_mutating_head(p)
+            || crate::evaluator::pattern_matching::is_optional_slot(p)
+        }) =>
+      {
         // An element like `x_ = expr_` (the `HoldFirst` "let"-binding
         // idiom, e.g. `myLet[{x_ = expr_}, x_] := expr`) must never be
         // decomposed via `build_list_pattern_match`'s Part accessors:
@@ -2325,7 +2330,10 @@ fn downvalue_arg_info(
           // head (`x_ = expr_`) skips the Part-accessor decomposition for
           // the same reason as the unnamed list-pattern case above.
           Expr::List(patterns)
-            if patterns.iter().any(contains_mutating_head) =>
+            if patterns.iter().any(|p| {
+              contains_mutating_head(p)
+                || crate::evaluator::pattern_matching::is_optional_slot(p)
+            }) =>
           {
             conditions.push(Some(call(
               "__StructuralPattern__",

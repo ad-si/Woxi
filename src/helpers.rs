@@ -20,6 +20,10 @@ pub fn plus2(a: Expr, b: Expr) -> Expr {
   binop(BinaryOperator::Plus, a, b)
 }
 
+pub fn plus(terms: Vec<Expr>) -> Expr {
+  call("Plus", terms)
+}
+
 pub fn minus2(a: Expr, b: Expr) -> Expr {
   binop(BinaryOperator::Minus, a, b)
 }
@@ -34,6 +38,10 @@ pub fn pow(b: Expr, e: Expr) -> Expr {
 
 pub fn times2(a: Expr, b: Expr) -> Expr {
   binop(BinaryOperator::Times, a, b)
+}
+
+pub fn times(terms: Vec<Expr>) -> Expr {
+  call("Times", terms)
 }
 
 pub fn div2(a: Expr, b: Expr) -> Expr {

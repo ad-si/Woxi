@@ -260,6 +260,8 @@ pub(crate) fn named_color(name: &str) -> Option<Color> {
     "Green" => Color::new(0.0, 1.0, 0.0),
     "Blue" => Color::new(0.0, 0.0, 1.0),
     "Black" => Color::new(0.0, 0.0, 0.0),
+    // `Transparent` is `GrayLevel[0, 0]`: black with zero alpha.
+    "Transparent" => Color::new(0.0, 0.0, 0.0).with_alpha(0.0),
     "White" => Color::new(1.0, 1.0, 1.0),
     "Gray" => Color::new(0.5, 0.5, 0.5),
     "Cyan" => Color::new(0.0, 1.0, 1.0),
@@ -13515,14 +13517,39 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         Some(f) => call1("PointSize", Expr::Real(f)),
         None => call1("PointSize", Expr::Real(0.012)),
       });
-      let coords: Vec<Expr> = sd
-        .points
-        .iter()
-        .filter(|(_, y)| y.is_finite())
-        .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
-        .collect();
-      if !coords.is_empty() {
-        series_prims.push(call1("Point", Expr::List(coords.into())));
+      // `ColorFunction -> f` colors every dot on its own.
+      if let Some(colors) = crate::functions::plot::scatter_point_colors(
+        &ps.options,
+        &sd.points,
+        ps.y_range,
+      ) {
+        for (&(x, y), (r, g, b)) in sd.points.iter().zip(colors) {
+          if !y.is_finite() {
+            continue;
+          }
+          series_prims.push(call(
+            "RGBColor",
+            vec![
+              Expr::Real(r as f64 / 255.0),
+              Expr::Real(g as f64 / 255.0),
+              Expr::Real(b as f64 / 255.0),
+            ],
+          ));
+          series_prims.push(call1(
+            "Point",
+            Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+          ));
+        }
+      } else {
+        let coords: Vec<Expr> = sd
+          .points
+          .iter()
+          .filter(|(_, y)| y.is_finite())
+          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+          .collect();
+        if !coords.is_empty() {
+          series_prims.push(call1("Point", Expr::List(coords.into())));
+        }
       }
     } else {
       series_prims.push(call1(
@@ -18025,6 +18052,23 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
         item.clone()
       } else {
         evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone())
+      };
+      // `Button[Graphics[…], action]` in a graphics grid (a board game's
+      // clickable squares) shows the picture it wraps; the action is inert
+      // in a static rendering.
+      let target = match &target {
+        Expr::FunctionCall { name, args }
+          if name == "Button"
+            && args.len() >= 2
+            && matches!(
+              &args[0],
+              Expr::FunctionCall { name: inner, .. }
+                if inner == "Graphics" || inner == "Graphics3D"
+            ) =>
+        {
+          args[0].clone()
+        }
+        _ => target,
       };
       let rewritten = with_default_image_size(&target, per_cell_w);
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
@@ -24279,6 +24323,27 @@ type DiscreteChoiceColumns = (
   Vec<Vec<LabelRun>>,
 );
 
+/// Evaluate a choice label that refers to a user symbol. Returns `None` when
+/// the label has no free symbol to resolve, or evaluating it fails or leaves
+/// it unchanged, so the caller keeps the label as written.
+fn resolve_choice_label(label: &Expr) -> Option<Expr> {
+  fn has_user_symbol(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(s) => !crate::evaluator::is_builtin_symbol(s),
+      Expr::List(items) => items.iter().any(has_user_symbol),
+      Expr::FunctionCall { args, .. } => args.iter().any(has_user_symbol),
+      _ => false,
+    }
+  }
+  if !has_user_symbol(label) {
+    return None;
+  }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(label).ok()?;
+  (crate::syntax::expr_to_string(&evaluated)
+    != crate::syntax::expr_to_string(label))
+  .then_some(evaluated)
+}
+
 fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
   let mut values = Vec::with_capacity(items.len());
   let mut labels = Vec::with_capacity(items.len());
@@ -24294,6 +24359,11 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       continue;
     }
     if let Some((value, label)) = discrete_choice_rule(item) {
+      // The choice list comes from a held `Manipulate` argument, so a label
+      // naming a notebook variable (`1 -> Row[{"name", exprName}]`) is still
+      // unevaluated here; resolve it against the current definitions.
+      let resolved_label = resolve_choice_label(label);
+      let label = resolved_label.as_ref().unwrap_or(label);
       values.push(crate::syntax::expr_to_source_form(value));
       // A rule label that is itself a graphic (the crosshair icons of
       // the Demonstrations site) renders as an SVG icon; its text column
@@ -25156,7 +25226,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // alignment wrapper `control_group_items` already unwraps to look for
       // a nested control layout — it carries no text of its own either.
       "Text" | "Item" | "DisplayForm" | "TraditionalForm" | "Tooltip"
-      | "Framed" | "Dynamic" => args
+      | "Framed" | "Dynamic" | "HoldForm" => args
         .first()
         .map(|a| manipulate_label_runs(a, italic))
         .unwrap_or_default(),
@@ -26060,10 +26130,26 @@ fn parse_manipulate_control(
       .or_else(|| {
         items[1..]
           .iter()
-          .find(|it| !is_control_type_rule(it))
+          .find(|it| {
+            !is_control_type_rule(it)
+              && !matches!(it, Expr::Identifier(s) if s == "None")
+          })
           .cloned()
       })
-      .unwrap_or(null_expr());
+      // `{v, None}` names no domain and no initial value, only the bare
+      // control-type marker; Wolfram starts such a variable at `0` (its
+      // saved `DynamicModule` dump shows `v$$ = 0`), so a body that counts
+      // it up (`v++`) or seeds from it (`SeedRandom[v]`) works at once.
+      .unwrap_or_else(|| {
+        if items[1..]
+          .iter()
+          .any(|it| matches!(it, Expr::Identifier(s) if s == "None"))
+        {
+          Expr::Integer(0)
+        } else {
+          null_expr()
+        }
+      });
     if is_hidden {
       // A `ControlType -> None` variable stays a live, mutable binding so
       // an interactive display can rewrite it. Without an explicit initial
@@ -30697,6 +30783,41 @@ mod manipulate_traditional_form_choice_svg_tests {
           value_label_svgs.iter().all(Option::is_none),
           "plain string labels must not grow icons: {value_label_svgs:?}"
         );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A choice label naming a notebook variable (`1 -> Row[{"a", label1}]`)
+  /// must show that variable's value, not its name.
+  #[test]
+  fn choice_labels_resolve_notebook_variables() {
+    crate::interpret("choiceLabelNorth = Style[\"north pole\", Blue]").unwrap();
+    let control = discrete_control(
+      "Manipulate[side, \
+       {{side, 1, \"side\"}, \
+        {1 -> Row[{\"to the \", choiceLabelNorth}], -1 -> \"south\"}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels, &["to the north pole", "south"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// `HoldForm` only suppresses evaluation; a choice label wrapping a
+  /// layout in it shows that layout's text, not the `HoldForm[…]` source.
+  #[test]
+  fn choice_labels_see_through_hold_form() {
+    let control = discrete_control(
+      "Manipulate[side, \
+       {{side, 1, \"side\"}, \
+        {1 -> HoldForm[Row[{\"left\", \" side\"}]], -1 -> \"right\"}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels, &["left side", "right"]);
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }

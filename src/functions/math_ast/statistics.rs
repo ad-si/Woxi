@@ -585,7 +585,7 @@ pub(crate) fn mixture_weighted_component_quantity(
   // Distribute the normalizing weight into every term — Σ (w_i/W) q(d_i) —
   // rather than dividing the summed numerator, so the result matches
   // wolframscript's form (e.g. `1/(2 Sqrt[2 Pi]) + …` instead of `(… )/2`).
-  let inv_w = pow(call("Plus", weights.to_vec()), Expr::Integer(-1));
+  let inv_w = pow(plus(weights.to_vec()), Expr::Integer(-1));
   let mut terms: Vec<Expr> = Vec::with_capacity(weights.len());
   for (w, d) in weights.iter().zip(dists.iter()) {
     let q = quantity(d)?;
@@ -596,9 +596,9 @@ pub(crate) fn mixture_weighted_component_quantity(
     {
       return Ok(None);
     }
-    terms.push(call("Times", vec![w.clone(), inv_w.clone(), q]));
+    terms.push(times(vec![w.clone(), inv_w.clone(), q]));
   }
-  let result = call("Plus", terms);
+  let result = plus(terms);
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?))
 }
 
@@ -625,20 +625,16 @@ fn mixture_variance(dargs: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
       return Ok(None);
     }
     let mu2 = pow(mu.clone(), Expr::Integer(2));
-    ex2_terms
-      .push(call("Times", vec![w.clone(), call("Plus", vec![var, mu2])]));
-    mean_terms.push(call("Times", vec![w.clone(), mu]));
+    ex2_terms.push(times(vec![w.clone(), plus(vec![var, mu2])]));
+    mean_terms.push(times(vec![w.clone(), mu]));
   }
-  let w_total = call("Plus", weights.to_vec());
+  let w_total = plus(weights.to_vec());
   let inv_w = pow(w_total, Expr::Integer(-1));
   // E[X²] = (Σ w_i (σ_i²+μ_i²)) / W ; μ = (Σ w_i μ_i) / W.
-  let ex2 = call("Times", vec![call("Plus", ex2_terms), inv_w.clone()]);
-  let mean = call("Times", vec![call("Plus", mean_terms), inv_w]);
+  let ex2 = times(vec![plus(ex2_terms), inv_w.clone()]);
+  let mean = times(vec![plus(mean_terms), inv_w]);
   let mean2 = pow(mean, Expr::Integer(2));
-  let result = call(
-    "Plus",
-    vec![ex2, call("Times", vec![Expr::Integer(-1), mean2])],
-  );
+  let result = plus(vec![ex2, times(vec![Expr::Integer(-1), mean2])]);
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?))
 }
 
@@ -1047,7 +1043,7 @@ fn standby_component_moments(
     }
     terms.push(m);
   }
-  crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms)).map(Some)
+  crate::evaluator::evaluate_expr_to_expr(&plus(terms)).map(Some)
 }
 
 /// Mean of columns in a list-of-lists (matrix)
@@ -1995,7 +1991,7 @@ fn harmonic_mean_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
     .iter()
     .map(|x| div2(Expr::Integer(1), x.clone()))
     .collect();
-  let sum = crate::evaluator::evaluate_expr_to_expr(&call("Plus", recips))?;
+  let sum = crate::evaluator::evaluate_expr_to_expr(&plus(recips))?;
   let n = items.len() as i128;
   crate::evaluator::evaluate_expr_to_expr(&div2(Expr::Integer(n), sum))
 }
@@ -2200,7 +2196,7 @@ fn covariance_pair(xs: &[Expr], ys: &[Expr]) -> Result<Expr, InterpreterError> {
     terms.push(val);
   }
 
-  let sum_expr = call("Plus", terms);
+  let sum_expr = plus(terms);
   let sum_val = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
   let result = div2(sum_val, Expr::Integer((n - 1) as i128));
   crate::evaluator::evaluate_expr_to_expr(&result)
@@ -2235,7 +2231,7 @@ fn symbolic_covariance(
         minus2(times2(Expr::Integer(n as i128), x.clone()), sum_x.clone());
       terms.push(times2(coeff, conj(y)));
     }
-    div2(call("Plus", terms), Expr::Integer((n * (n - 1)) as i128))
+    div2(plus(terms), Expr::Integer((n * (n - 1)) as i128))
   };
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -2942,10 +2938,10 @@ fn correlation_from_covariance(cov_rows: &[Expr]) -> Option<Expr> {
     for j in 0..n {
       // Cov[i, j] / Sqrt[Cov[i, i] * Cov[j, j]]
       let denom = pow(
-        call("Times", vec![cov[i][i].clone(), cov[j][j].clone()]),
+        times(vec![cov[i][i].clone(), cov[j][j].clone()]),
         call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
       );
-      let entry = call("Times", vec![cov[i][j].clone(), denom]);
+      let entry = times(vec![cov[i][j].clone(), denom]);
       row.push(crate::evaluator::evaluate_expr_to_expr(&entry).ok()?);
     }
     result.push(Expr::List(row.into()));
@@ -3058,7 +3054,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let w1 = ys[1].clone();
       let diff = |a: &Expr, b: &Expr| minus2(a.clone(), b.clone());
       let conj = |e: &Expr| call1("Conjugate", e.clone());
-      let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
+      let times = |a: Expr, b: Expr| times(vec![a, b]);
       let conj_diff = |a: &Expr, b: &Expr| minus2(conj(a), conj(b));
       let v_diff = diff(&v0, &v1);
       let w_diff = diff(&w0, &w1);
@@ -3287,12 +3283,12 @@ fn skellam_central_moment(a: &Expr, b: &Expr, n: i128) -> Expr {
     for &p in &lambda {
       factors.push(kappa(p));
     }
-    terms.push(call("Times", factors));
+    terms.push(times(factors));
   }
   if terms.is_empty() {
     return Expr::Integer(0);
   }
-  call("Plus", terms)
+  plus(terms)
 }
 
 fn distribution_moment(
@@ -3326,10 +3322,7 @@ fn distribution_moment(
     let result = if n.rem_euclid(2) == 1 {
       Expr::Integer(0)
     } else {
-      call(
-        "Times",
-        vec![Expr::Integer(fact_i128(n)), pow2(b, Expr::Integer(n))],
-      )
+      times(vec![Expr::Integer(fact_i128(n)), pow2(b, Expr::Integer(n))])
     };
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
   }
@@ -3354,21 +3347,18 @@ fn distribution_moment(
     let result = if n.rem_euclid(2) == 1 {
       Expr::Integer(0)
     } else {
-      call(
-        "Times",
-        vec![
-          // (-1)^(n/2 - 1)
-          pow2(Expr::Integer(-1), Expr::Integer(n / 2 - 1)),
-          // 2^n - 2 (kept symbolic so large n does not overflow)
-          call(
-            "Plus",
-            vec![pow2(Expr::Integer(2), Expr::Integer(n)), Expr::Integer(-2)],
-          ),
-          call1("BernoulliB", Expr::Integer(n)),
-          pow2(id_expr("Pi"), Expr::Integer(n)),
-          pow2(b, Expr::Integer(n)),
-        ],
-      )
+      times(vec![
+        // (-1)^(n/2 - 1)
+        pow2(Expr::Integer(-1), Expr::Integer(n / 2 - 1)),
+        // 2^n - 2 (kept symbolic so large n does not overflow)
+        plus(vec![
+          pow2(Expr::Integer(2), Expr::Integer(n)),
+          Expr::Integer(-2),
+        ]),
+        call1("BernoulliB", Expr::Integer(n)),
+        pow2(id_expr("Pi"), Expr::Integer(n)),
+        pow2(b, Expr::Integer(n)),
+      ])
     };
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
   }
@@ -3388,17 +3378,13 @@ fn distribution_moment(
     let result = if n.rem_euclid(2) == 1 {
       Expr::Integer(0)
     } else {
-      let diff =
-        call("Plus", vec![b, call("Times", vec![Expr::Integer(-1), a])]);
+      let diff = plus(vec![b, times(vec![Expr::Integer(-1), a])]);
       let num = pow2(diff, Expr::Integer(n));
       // 2^n * (n + 1), kept symbolic so large n does not overflow.
-      let denom = call(
-        "Times",
-        vec![
-          pow2(Expr::Integer(2), Expr::Integer(n)),
-          Expr::Integer(n + 1),
-        ],
-      );
+      let denom = times(vec![
+        pow2(Expr::Integer(2), Expr::Integer(n)),
+        Expr::Integer(n + 1),
+      ]);
       div2(num, denom)
     };
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
@@ -3412,14 +3398,11 @@ fn distribution_moment(
     let result = if n.rem_euclid(2) == 1 {
       Expr::Integer(0)
     } else {
-      call(
-        "Times",
-        vec![
-          pow2(Expr::Integer(-1), Expr::Integer(n / 2)),
-          call1("EulerE", Expr::Integer(n)),
-          pow2(s, Expr::Integer(n)),
-        ],
-      )
+      times(vec![
+        pow2(Expr::Integer(-1), Expr::Integer(n / 2)),
+        call1("EulerE", Expr::Integer(n)),
+        pow2(s, Expr::Integer(n)),
+      ])
     };
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
   }
@@ -3437,13 +3420,13 @@ fn distribution_moment(
       Expr::Integer(1)
     } else {
       pow2(
-        call("Times", vec![Expr::Integer(-1), mean.clone()]),
+        times(vec![Expr::Integer(-1), mean.clone()]),
         Expr::Integer(n - k),
       )
     };
-    terms.push(call("Times", vec![binom, neg_mean_pow, raw]));
+    terms.push(times(vec![binom, neg_mean_pow, raw]));
   }
-  let sum = call("Plus", terms);
+  let sum = plus(terms);
   // Expand so symbolic-parameter results collapse to their reduced form
   // (e.g. the Normal third central moment cancels to 0, Poisson's to m).
   let expanded = call1("Expand", sum);
@@ -3536,7 +3519,7 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Sum and divide by n
-  let sum_expr = call("Plus", terms);
+  let sum_expr = plus(terms);
   let sum_val = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
   let result = div2(sum_val, Expr::Integer(n as i128));
   crate::evaluator::evaluate_expr_to_expr(&result)
@@ -3592,7 +3575,7 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let powered = pow2(item.clone(), Expr::Integer(j as i128));
       terms.push(crate::evaluator::evaluate_expr_to_expr(&powered)?);
     }
-    let sum_expr = call("Plus", terms);
+    let sum_expr = plus(terms);
     let div = div2(sum_expr, Expr::Integer(n));
     crate::evaluator::evaluate_expr_to_expr(&div)
   };
@@ -3621,10 +3604,8 @@ fn cumulant_from_raw_moments(
     for m in 1..nn {
       let binom =
         crate::functions::binomial_coeff((nn - 1) as i128, (m - 1) as i128);
-      let term = call(
-        "Times",
-        vec![Expr::Integer(binom), k[m].clone(), mu[nn - m].clone()],
-      );
+      let term =
+        times(vec![Expr::Integer(binom), k[m].clone(), mu[nn - m].clone()]);
       acc = minus2(acc, term);
       acc = crate::evaluator::evaluate_expr_to_expr(&acc)?;
     }
@@ -3691,9 +3672,9 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // 3 + (1 - 6 (1 - p) p)/(n (1 - p) p)
       let num = minus2(
         Expr::Integer(1),
-        call("Times", vec![Expr::Integer(6), one_minus_p(&p), p.clone()]),
+        times(vec![Expr::Integer(6), one_minus_p(&p), p.clone()]),
       );
-      let den = call("Times", vec![n, one_minus_p(&p), p.clone()]);
+      let den = times(vec![n, one_minus_p(&p), p.clone()]);
       let result = three_plus(num, den);
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
@@ -3775,7 +3756,7 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     if let Some((n, p)) = two_params_of(&args[0], "BinomialDistribution") {
       let num = minus2(Expr::Integer(1), times2(Expr::Integer(2), p.clone()));
-      let scale = call("Times", vec![n, one_minus_p(&p), p.clone()]);
+      let scale = times(vec![n, one_minus_p(&p), p.clone()]);
       let result = div2(num, sqrt(scale));
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
@@ -3902,8 +3883,7 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .map(|item| pow(item.clone(), Expr::Integer(2)))
         .collect();
-      let mean_square =
-        div(call("Plus", squares), Expr::Integer(items.len() as i128));
+      let mean_square = div(plus(squares), Expr::Integer(items.len() as i128));
       Ok(crate::evaluator::evaluate_expr_to_expr(&make_sqrt(
         mean_square,
       ))?)
@@ -4177,8 +4157,8 @@ fn quantile_parametric(
   d: &Expr,
 ) -> Result<Expr, InterpreterError> {
   use crate::evaluator::evaluate_expr_to_expr as ev;
-  let plus = |x: Expr, y: Expr| call("Plus", vec![x, y]);
-  let times = |x: Expr, y: Expr| call("Times", vec![x, y]);
+  let plus = |x: Expr, y: Expr| plus(vec![x, y]);
+  let times = |x: Expr, y: Expr| times(vec![x, y]);
   // q must be numeric (Integer, Rational, or Real); otherwise leave symbolic.
   if try_eval_to_f64(q).is_none() {
     return Ok(call(
@@ -4289,7 +4269,6 @@ fn factorial_moment_of_distribution(
   dargs: &[Expr],
   r: i128,
 ) -> Option<Expr> {
-  let times = |fs: Vec<Expr>| call("Times", fs);
   let r_factorial = fact_i128(r);
   match (name, dargs) {
     // Poisson: E[X^(r)] = lambda^r (the defining property).
@@ -4302,10 +4281,8 @@ fn factorial_moment_of_distribution(
     }),
     // Geometric: r! (1/p - 1)^r, printed by Wolfram as r! (-1 + p^(-1))^r.
     ("GeometricDistribution", [p]) => {
-      let base = call(
-        "Plus",
-        vec![Expr::Integer(-1), pow2(p.clone(), Expr::Integer(-1))],
-      );
+      let base =
+        plus(vec![Expr::Integer(-1), pow2(p.clone(), Expr::Integer(-1))]);
       Some(times(vec![
         Expr::Integer(r_factorial),
         pow2(base, Expr::Integer(r)),
@@ -4321,10 +4298,10 @@ fn factorial_moment_of_distribution(
       let mut factors: Vec<Expr> = Vec::new();
       // (1 - n)*(2 - n)*...*((r-1) - n)
       for i in 1..r {
-        factors.push(call(
-          "Plus",
-          vec![Expr::Integer(i), times(vec![Expr::Integer(-1), n.clone()])],
-        ));
+        factors.push(plus(vec![
+          Expr::Integer(i),
+          times(vec![Expr::Integer(-1), n.clone()]),
+        ]));
       }
       factors.push(n.clone());
       factors.push(pow2(p.clone(), Expr::Integer(r)));
@@ -4384,10 +4361,10 @@ fn factorial_moment_via_expectation(
       factors.push(if i == 0 {
         var_expr.clone()
       } else {
-        call("Plus", vec![var_expr.clone(), Expr::Integer(-i)])
+        plus(vec![var_expr.clone(), Expr::Integer(-i)])
       });
     }
-    call("Times", factors)
+    times(factors)
   };
 
   // Expand into a monomial sum so Expectation resolves each moment exactly.
@@ -4465,11 +4442,11 @@ pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if k == 0 {
             x.clone()
           } else {
-            call("Plus", vec![x.clone(), Expr::Integer(-k)])
+            plus(vec![x.clone(), Expr::Integer(-k)])
           }
         })
         .collect();
-      return crate::evaluator::evaluate_expr_to_expr(&call("Times", factors));
+      return crate::evaluator::evaluate_expr_to_expr(&times(factors));
     }
     crate::evaluator::evaluate_expr_to_expr(&call(
       "FactorialPower",
@@ -4491,9 +4468,7 @@ pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         for (x, r) in coords.iter().zip(orders.iter()) {
           factors.push(factorial_power(x, r)?);
         }
-        terms.push(crate::evaluator::evaluate_expr_to_expr(&call(
-          "Times", factors,
-        ))?);
+        terms.push(crate::evaluator::evaluate_expr_to_expr(&times(factors))?);
       }
     }
     r => {
@@ -4524,7 +4499,7 @@ pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let abs_diff = call1("Abs", diff);
       abs_devs.push(abs_diff);
     }
-    let sum = call("Plus", abs_devs);
+    let sum = plus(abs_devs);
     let result = div2(sum, Expr::Integer(n));
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else {
@@ -5214,7 +5189,7 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let product = if pdf_values.len() == 1 {
     pdf_values.into_iter().next().unwrap()
   } else {
-    let product_expr = call("Times", pdf_values);
+    let product_expr = times(pdf_values);
     crate::evaluator::evaluate_expr_to_expr(&product_expr)?
   };
 
@@ -6500,17 +6475,14 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
       let n = Expr::Identifier(var.to_string());
       let m_one_half =
         call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]);
-      Some(call(
-        "Times",
-        vec![
-          // n^(n - 1/2)
-          pow(n.clone(), call("Plus", vec![n.clone(), m_one_half])),
-          // Sqrt[2*Pi]
-          make_sqrt(call("Times", vec![Expr::Integer(2), const_expr("Pi")])),
-          // E^(-n)
-          pow(const_expr("E"), call("Times", vec![Expr::Integer(-1), n])),
-        ],
-      ))
+      Some(times(vec![
+        // n^(n - 1/2)
+        pow(n.clone(), plus(vec![n.clone(), m_one_half])),
+        // Sqrt[2*Pi]
+        make_sqrt(times(vec![Expr::Integer(2), const_expr("Pi")])),
+        // E^(-n)
+        pow(const_expr("E"), times(vec![Expr::Integer(-1), n])),
+      ]))
     }
 
     // HarmonicNumber[var] → Log[var]
@@ -6556,7 +6528,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
       left,
       right,
     } => {
-      let neg_right = call("Times", vec![Expr::Integer(-1), *right.clone()]);
+      let neg_right = times(vec![Expr::Integer(-1), *right.clone()]);
       asymptotic_sum(&[*left.clone(), neg_right], var)
     }
 
@@ -6571,7 +6543,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
       if result_factors.len() == 1 {
         Some(result_factors.into_iter().next().unwrap())
       } else {
-        Some(call("Times", result_factors))
+        Some(times(result_factors))
       }
     }
 
@@ -6583,7 +6555,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
     } => {
       let l = discrete_asymptotic_leading(left, var)?;
       let r = discrete_asymptotic_leading(right, var)?;
-      Some(call("Times", vec![l, r]))
+      Some(times(vec![l, r]))
     }
 
     // BinaryOp Divide
@@ -6654,17 +6626,14 @@ fn contains_var(expr: &Expr, var: &str) -> bool {
 fn stirling_approx(var: &str) -> Expr {
   let n = Expr::Identifier(var.to_string());
   let one_half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
-  call(
-    "Times",
-    vec![
-      // n^(n + 1/2)
-      pow(n.clone(), call("Plus", vec![n.clone(), one_half])),
-      // Sqrt[2*Pi]
-      make_sqrt(call("Times", vec![Expr::Integer(2), const_expr("Pi")])),
-      // E^(-n)
-      pow(const_expr("E"), call("Times", vec![Expr::Integer(-1), n])),
-    ],
-  )
+  times(vec![
+    // n^(n + 1/2)
+    pow(n.clone(), plus(vec![n.clone(), one_half])),
+    // Sqrt[2*Pi]
+    make_sqrt(times(vec![Expr::Integer(2), const_expr("Pi")])),
+    // E^(-n)
+    pow(const_expr("E"), times(vec![Expr::Integer(-1), n])),
+  ])
 }
 
 /// Determine growth rate class for comparison.
@@ -6765,7 +6734,7 @@ fn asymptotic_sum(terms: &[Expr], var: &str) -> Option<Expr> {
     } else if (order - best_order).abs() < 1e-10 {
       // Same order - need to add them (e.g. 3n^2 + 5n^2 -> 8n^2)
       // For simplicity, if they have the same growth order, keep as sum
-      best_expr = call("Plus", vec![best_expr, asym]);
+      best_expr = plus(vec![best_expr, asym]);
     }
   }
   Some(best_expr)
@@ -6803,18 +6772,15 @@ fn asymptotic_binomial(
   let n = Expr::Identifier(var.to_string());
   let one_half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
   // 2^(1/2 + n) / (Sqrt[n] * Sqrt[Pi])
-  Some(call(
-    "Times",
-    vec![
-      // 2^(1/2 + n)
-      pow(Expr::Integer(2), call("Plus", vec![one_half, n.clone()])),
-      // 1 / (Sqrt[n] * Sqrt[Pi])
-      pow(
-        call("Times", vec![make_sqrt(n), make_sqrt(const_expr("Pi"))]),
-        Expr::Integer(-1),
-      ),
-    ],
-  ))
+  Some(times(vec![
+    // 2^(1/2 + n)
+    pow(Expr::Integer(2), plus(vec![one_half, n.clone()])),
+    // 1 / (Sqrt[n] * Sqrt[Pi])
+    pow(
+      times(vec![make_sqrt(n), make_sqrt(const_expr("Pi"))]),
+      Expr::Integer(-1),
+    ),
+  ]))
 }
 
 // ─── CovarianceFunction[ARMAProcess[...], s, t] ───────────────────────
@@ -6862,7 +6828,7 @@ pub fn covariance_function_data(
   for t in 0..(n - h_us) {
     terms.push(times2(dev(&items[t]), dev(&items[t + h_us])));
   }
-  let sum = call("Plus", terms);
+  let sum = plus(terms);
   let result = div2(sum, Expr::Integer(n as i128));
   Some(crate::evaluator::evaluate_expr_to_expr(&result))
 }
@@ -6898,7 +6864,7 @@ pub fn absolute_correlation_function_ast(
       .map(|t| times2(items[t].clone(), items[t + h_us].clone()))
       .collect();
     crate::evaluator::evaluate_expr_to_expr(&div2(
-      call("Plus", terms),
+      plus(terms),
       Expr::Integer(n as i128),
     ))
   };
@@ -7102,7 +7068,7 @@ pub fn biweight_midvariance_ast(
   if den_terms.is_empty() {
     return Ok(id_expr("Indeterminate"));
   }
-  let total = |ts: Vec<Expr>| call("Plus", ts);
+  let total = |ts: Vec<Expr>| plus(ts);
   ev(&div2(
     times2(Expr::Integer(items.len() as i128), total(num_terms)),
     pow2(total(den_terms), Expr::Integer(2)),
@@ -7361,10 +7327,10 @@ fn eval_once(e: Expr) -> Expr {
 // ─── AST builder helpers ────────────────────────────────────────────────
 
 fn cf_plus(xs: Vec<Expr>) -> Expr {
-  call("Plus", xs)
+  plus(xs)
 }
 fn cf_times(xs: Vec<Expr>) -> Expr {
-  call("Times", xs)
+  times(xs)
 }
 fn cf_pow(b: Expr, e: Expr) -> Expr {
   pow(b, e)
@@ -7521,7 +7487,7 @@ pub fn characteristic_function_ast(
     let mut f = vec![i_unit()];
     f.extend(factors);
     f.push(t.clone());
-    pow2(e_sym(), call("Times", f))
+    pow2(e_sym(), times(f))
   };
 
   let (dist_name, dargs) = match &args[0] {
@@ -7549,10 +7515,10 @@ pub fn characteristic_function_ast(
     ("NormalDistribution", []) => Some((
       pow2(
         e_sym(),
-        call(
-          "Times",
-          vec![make_rational(-1, 2), pow2(t.clone(), Expr::Integer(2))],
-        ),
+        times(vec![
+          make_rational(-1, 2),
+          pow2(t.clone(), Expr::Integer(2)),
+        ]),
       ),
       false,
     )),
@@ -7560,22 +7526,16 @@ pub fn characteristic_function_ast(
     ("NormalDistribution", [m, s]) => Some((
       pow2(
         e_sym(),
-        call(
-          "Plus",
-          vec![
-            call("Times", vec![i_unit(), m.clone(), t.clone()]),
-            neg1(div2(
-              call(
-                "Times",
-                vec![
-                  pow2(s.clone(), Expr::Integer(2)),
-                  pow2(t.clone(), Expr::Integer(2)),
-                ],
-              ),
-              Expr::Integer(2),
-            )),
-          ],
-        ),
+        plus(vec![
+          times(vec![i_unit(), m.clone(), t.clone()]),
+          neg1(div2(
+            times(vec![
+              pow2(s.clone(), Expr::Integer(2)),
+              pow2(t.clone(), Expr::Integer(2)),
+            ]),
+            Expr::Integer(2),
+          )),
+        ]),
       ),
       true,
     )),
@@ -7583,13 +7543,10 @@ pub fn characteristic_function_ast(
     ("ExponentialDistribution", [a]) => Some((
       div2(
         a.clone(),
-        call(
-          "Plus",
-          vec![
-            a.clone(),
-            call("Times", vec![Expr::Integer(-1), i_unit(), t.clone()]),
-          ],
-        ),
+        plus(vec![
+          a.clone(),
+          times(vec![Expr::Integer(-1), i_unit(), t.clone()]),
+        ]),
       ),
       false,
     )),
@@ -7597,39 +7554,27 @@ pub fn characteristic_function_ast(
     ("PoissonDistribution", [m]) => Some((
       pow2(
         e_sym(),
-        call(
-          "Times",
-          vec![
-            call("Plus", vec![Expr::Integer(-1), e_it(vec![])]),
-            m.clone(),
-          ],
-        ),
+        times(vec![plus(vec![Expr::Integer(-1), e_it(vec![])]), m.clone()]),
       ),
       false,
     )),
     // 1 - p + E^(I*t)*p
     ("BernoulliDistribution", [p]) => Some((
-      call(
-        "Plus",
-        vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), p.clone()]),
-          call("Times", vec![e_it(vec![]), p.clone()]),
-        ],
-      ),
+      plus(vec![
+        Expr::Integer(1),
+        times(vec![Expr::Integer(-1), p.clone()]),
+        times(vec![e_it(vec![]), p.clone()]),
+      ]),
       false,
     )),
     // (1 - p + E^(I*t)*p)^n
     ("BinomialDistribution", [n, p]) => Some((
       pow2(
-        call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            call("Times", vec![Expr::Integer(-1), p.clone()]),
-            call("Times", vec![e_it(vec![]), p.clone()]),
-          ],
-        ),
+        plus(vec![
+          Expr::Integer(1),
+          times(vec![Expr::Integer(-1), p.clone()]),
+          times(vec![e_it(vec![]), p.clone()]),
+        ]),
         n.clone(),
       ),
       false,
@@ -7638,26 +7583,17 @@ pub fn characteristic_function_ast(
     ("GeometricDistribution", [p]) => Some((
       div2(
         p.clone(),
-        call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            call(
-              "Times",
-              vec![
-                Expr::Integer(-1),
-                e_it(vec![]),
-                call(
-                  "Plus",
-                  vec![
-                    Expr::Integer(1),
-                    call("Times", vec![Expr::Integer(-1), p.clone()]),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
+        plus(vec![
+          Expr::Integer(1),
+          times(vec![
+            Expr::Integer(-1),
+            e_it(vec![]),
+            plus(vec![
+              Expr::Integer(1),
+              times(vec![Expr::Integer(-1), p.clone()]),
+            ]),
+          ]),
+        ]),
       ),
       false,
     )),
@@ -7666,26 +7602,17 @@ pub fn characteristic_function_ast(
       pow2(
         div2(
           p.clone(),
-          call(
-            "Plus",
-            vec![
-              Expr::Integer(1),
-              call(
-                "Times",
-                vec![
-                  Expr::Integer(-1),
-                  e_it(vec![]),
-                  call(
-                    "Plus",
-                    vec![
-                      Expr::Integer(1),
-                      call("Times", vec![Expr::Integer(-1), p.clone()]),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
+          plus(vec![
+            Expr::Integer(1),
+            times(vec![
+              Expr::Integer(-1),
+              e_it(vec![]),
+              plus(vec![
+                Expr::Integer(1),
+                times(vec![Expr::Integer(-1), p.clone()]),
+              ]),
+            ]),
+          ]),
         ),
         n.clone(),
       ),
@@ -7693,52 +7620,37 @@ pub fn characteristic_function_ast(
     )),
     // b*E^(I*m*t)*Pi*t*Csch[b*Pi*t]
     ("LogisticDistribution", [m, b]) => Some((
-      call(
-        "Times",
-        vec![
-          b.clone(),
-          e_it(vec![m.clone()]),
-          id_expr("Pi"),
-          t.clone(),
-          call1(
-            "Csch",
-            call("Times", vec![b.clone(), id_expr("Pi"), t.clone()]),
-          ),
-        ],
-      ),
+      times(vec![
+        b.clone(),
+        e_it(vec![m.clone()]),
+        id_expr("Pi"),
+        t.clone(),
+        call1("Csch", times(vec![b.clone(), id_expr("Pi"), t.clone()])),
+      ]),
       true,
     )),
     // E^(I*a*t)*Gamma[1 + I*b*t]
     ("GumbelDistribution", [a, b]) => Some((
-      call(
-        "Times",
-        vec![
-          e_it(vec![a.clone()]),
-          call1(
-            "Gamma",
-            call(
-              "Plus",
-              vec![
-                Expr::Integer(1),
-                call("Times", vec![i_unit(), b.clone(), t.clone()]),
-              ],
-            ),
-          ),
-        ],
-      ),
+      times(vec![
+        e_it(vec![a.clone()]),
+        call1(
+          "Gamma",
+          plus(vec![
+            Expr::Integer(1),
+            times(vec![i_unit(), b.clone(), t.clone()]),
+          ]),
+        ),
+      ]),
       true,
     )),
     // (1 - I*b*t)^(-a) — raw: the evaluator's canonical Times order
     // would print b*I*t
     ("GammaDistribution", [a, b]) => Some((
       pow2(
-        call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            neg1(call("Times", vec![i_unit(), b.clone(), t.clone()])),
-          ],
-        ),
+        plus(vec![
+          Expr::Integer(1),
+          neg1(times(vec![i_unit(), b.clone(), t.clone()])),
+        ]),
         neg1(a.clone()),
       ),
       true,
@@ -7746,13 +7658,10 @@ pub fn characteristic_function_ast(
     // (-I*(-1 + E^(I*t)))/t
     ("UniformDistribution", []) => Some((
       div2(
-        call(
-          "Times",
-          vec![
-            neg1(i_unit()),
-            call("Plus", vec![Expr::Integer(-1), e_it(vec![])]),
-          ],
-        ),
+        times(vec![
+          neg1(i_unit()),
+          plus(vec![Expr::Integer(-1), e_it(vec![])]),
+        ]),
         t.clone(),
       ),
       false,
@@ -7762,17 +7671,11 @@ pub fn characteristic_function_ast(
       let (a, b) = (bounds[0].clone(), bounds[1].clone());
       Some((
         div2(
-          call(
-            "Times",
-            vec![
-              neg1(i_unit()),
-              call(
-                "Plus",
-                vec![neg1(e_it(vec![a.clone()])), e_it(vec![b.clone()])],
-              ),
-            ],
-          ),
-          call("Times", vec![call("Plus", vec![neg1(a), b]), t.clone()]),
+          times(vec![
+            neg1(i_unit()),
+            plus(vec![neg1(e_it(vec![a.clone()])), e_it(vec![b.clone()])]),
+          ]),
+          times(vec![plus(vec![neg1(a), b]), t.clone()]),
         ),
         true,
       ))
@@ -7785,26 +7688,17 @@ pub fn characteristic_function_ast(
         pow2(
           e_sym(),
           div2(
-            call("Times", vec![i_unit(), v.clone(), t.clone()]),
+            times(vec![i_unit(), v.clone(), t.clone()]),
             Expr::Integer(2),
           ),
         )
       };
-      let diff = call("Plus", vec![e_half(&a), neg1(e_half(&b))]);
-      let num = call(
-        "Times",
-        vec![Expr::Integer(-4), pow2(diff, Expr::Integer(2))],
-      );
-      let den = call(
-        "Times",
-        vec![
-          pow2(
-            call("Plus", vec![a.clone(), neg1(b.clone())]),
-            Expr::Integer(2),
-          ),
-          pow2(t.clone(), Expr::Integer(2)),
-        ],
-      );
+      let diff = plus(vec![e_half(&a), neg1(e_half(&b))]);
+      let num = times(vec![Expr::Integer(-4), pow2(diff, Expr::Integer(2))]);
+      let den = times(vec![
+        pow2(plus(vec![a.clone(), neg1(b.clone())]), Expr::Integer(2)),
+        pow2(t.clone(), Expr::Integer(2)),
+      ]);
       // Evaluate so the exponent canonicalizes to I/2*a*t (matching
       // wolframscript) rather than the raw (I*a*t)/2.
       Some((div2(num, den), false))
@@ -7812,13 +7706,10 @@ pub fn characteristic_function_ast(
     // (1 - 2*I*t)^(-k/2)
     ("ChiSquareDistribution", [k]) => Some((
       pow2(
-        call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            call("Times", vec![Expr::Integer(-2), i_unit(), t.clone()]),
-          ],
-        ),
+        plus(vec![
+          Expr::Integer(1),
+          times(vec![Expr::Integer(-2), i_unit(), t.clone()]),
+        ]),
         div2(neg1(k.clone()), Expr::Integer(2)),
       ),
       false,
@@ -7829,8 +7720,8 @@ pub fn characteristic_function_ast(
         "Hypergeometric1F1",
         vec![
           a.clone(),
-          call("Plus", vec![a.clone(), b.clone()]),
-          call("Times", vec![i_unit(), t.clone()]),
+          plus(vec![a.clone(), b.clone()]),
+          times(vec![i_unit(), t.clone()]),
         ],
       ),
       false,
@@ -7839,19 +7730,13 @@ pub fn characteristic_function_ast(
     ("LaplaceDistribution", [m, b]) => Some((
       div2(
         e_it(vec![m.clone()]),
-        call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            call(
-              "Times",
-              vec![
-                pow2(b.clone(), Expr::Integer(2)),
-                pow2(t.clone(), Expr::Integer(2)),
-              ],
-            ),
-          ],
-        ),
+        plus(vec![
+          Expr::Integer(1),
+          times(vec![
+            pow2(b.clone(), Expr::Integer(2)),
+            pow2(t.clone(), Expr::Integer(2)),
+          ]),
+        ]),
       ),
       true,
     )),
@@ -7860,23 +7745,17 @@ pub fn characteristic_function_ast(
       div2(
         call(
           "Log",
-          vec![call(
-            "Plus",
-            vec![
-              Expr::Integer(1),
-              call("Times", vec![Expr::Integer(-1), e_it(vec![]), p.clone()]),
-            ],
-          )],
+          vec![plus(vec![
+            Expr::Integer(1),
+            times(vec![Expr::Integer(-1), e_it(vec![]), p.clone()]),
+          ])],
         ),
         call(
           "Log",
-          vec![call(
-            "Plus",
-            vec![
-              Expr::Integer(1),
-              call("Times", vec![Expr::Integer(-1), p.clone()]),
-            ],
-          )],
+          vec![plus(vec![
+            Expr::Integer(1),
+            times(vec![Expr::Integer(-1), p.clone()]),
+          ])],
         ),
       ),
       true,
@@ -7886,21 +7765,15 @@ pub fn characteristic_function_ast(
     ("CauchyDistribution", [a, b]) => Some((
       pow2(
         e_sym(),
-        call(
-          "Plus",
-          vec![
-            call("Times", vec![i_unit(), a.clone(), t.clone()]),
-            call(
-              "Times",
-              vec![
-                Expr::Integer(-1),
-                b.clone(),
-                t.clone(),
-                call1("Sign", t.clone()),
-              ],
-            ),
-          ],
-        ),
+        plus(vec![
+          times(vec![i_unit(), a.clone(), t.clone()]),
+          times(vec![
+            Expr::Integer(-1),
+            b.clone(),
+            t.clone(),
+            call1("Sign", t.clone()),
+          ]),
+        ]),
       ),
       true,
     )),
@@ -7908,10 +7781,7 @@ pub fn characteristic_function_ast(
     ("CauchyDistribution", []) => Some((
       pow2(
         e_sym(),
-        call(
-          "Times",
-          vec![Expr::Integer(-1), t.clone(), call1("Sign", t.clone())],
-        ),
+        times(vec![Expr::Integer(-1), t.clone(), call1("Sign", t.clone())]),
       ),
       true,
     )),
@@ -7952,18 +7822,15 @@ pub fn moment_generating_function_ast(
     } else {
       let mut f = factors;
       f.push(t.clone());
-      pow2(e_sym(), call("Times", f))
+      pow2(e_sym(), times(f))
     }
   };
   // 1 - p, written as Plus[1, Times[-1, p]]
   let one_minus = |p: &Expr| {
-    call(
-      "Plus",
-      vec![
-        Expr::Integer(1),
-        call("Times", vec![Expr::Integer(-1), p.clone()]),
-      ],
-    )
+    plus(vec![
+      Expr::Integer(1),
+      times(vec![Expr::Integer(-1), p.clone()]),
+    ])
   };
 
   let (dist_name, dargs) = match &args[0] {
@@ -7996,22 +7863,16 @@ pub fn moment_generating_function_ast(
     ("NormalDistribution", [m, s]) => Some((
       pow2(
         e_sym(),
-        call(
-          "Plus",
-          vec![
-            call("Times", vec![m.clone(), t.clone()]),
-            div2(
-              call(
-                "Times",
-                vec![
-                  pow2(s.clone(), Expr::Integer(2)),
-                  pow2(t.clone(), Expr::Integer(2)),
-                ],
-              ),
-              Expr::Integer(2),
-            ),
-          ],
-        ),
+        plus(vec![
+          times(vec![m.clone(), t.clone()]),
+          div2(
+            times(vec![
+              pow2(s.clone(), Expr::Integer(2)),
+              pow2(t.clone(), Expr::Integer(2)),
+            ]),
+            Expr::Integer(2),
+          ),
+        ]),
       ),
       true,
     )),
@@ -8019,10 +7880,7 @@ pub fn moment_generating_function_ast(
     ("ExponentialDistribution", [a]) => Some((
       div2(
         a.clone(),
-        call(
-          "Plus",
-          vec![a.clone(), call("Times", vec![Expr::Integer(-1), t.clone()])],
-        ),
+        plus(vec![a.clone(), times(vec![Expr::Integer(-1), t.clone()])]),
       ),
       false,
     )),
@@ -8030,44 +7888,26 @@ pub fn moment_generating_function_ast(
     ("PoissonDistribution", [m]) => Some((
       pow2(
         e_sym(),
-        call(
-          "Times",
-          vec![
-            call("Plus", vec![Expr::Integer(-1), e_t(vec![])]),
-            m.clone(),
-          ],
-        ),
+        times(vec![plus(vec![Expr::Integer(-1), e_t(vec![])]), m.clone()]),
       ),
       true,
     )),
     // 1 - p + E^t*p
     ("BernoulliDistribution", [p]) => Some((
-      call(
-        "Plus",
-        vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), p.clone()]),
-          call("Times", vec![e_t(vec![]), p.clone()]),
-        ],
-      ),
+      plus(vec![
+        Expr::Integer(1),
+        times(vec![Expr::Integer(-1), p.clone()]),
+        times(vec![e_t(vec![]), p.clone()]),
+      ]),
       false,
     )),
     // (1 + (-1 + E^t)*p)^n
     ("BinomialDistribution", [n, p]) => Some((
       pow2(
-        call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            call(
-              "Times",
-              vec![
-                call("Plus", vec![Expr::Integer(-1), e_t(vec![])]),
-                p.clone(),
-              ],
-            ),
-          ],
-        ),
+        plus(vec![
+          Expr::Integer(1),
+          times(vec![plus(vec![Expr::Integer(-1), e_t(vec![])]), p.clone()]),
+        ]),
         n.clone(),
       ),
       true,
@@ -8076,13 +7916,10 @@ pub fn moment_generating_function_ast(
     ("GeometricDistribution", [p]) => Some((
       div2(
         p.clone(),
-        call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            call("Times", vec![Expr::Integer(-1), e_t(vec![]), one_minus(p)]),
-          ],
-        ),
+        plus(vec![
+          Expr::Integer(1),
+          times(vec![Expr::Integer(-1), e_t(vec![]), one_minus(p)]),
+        ]),
       ),
       true,
     )),
@@ -8091,13 +7928,10 @@ pub fn moment_generating_function_ast(
       pow2(
         div2(
           p.clone(),
-          call(
-            "Plus",
-            vec![
-              Expr::Integer(1),
-              call("Times", vec![Expr::Integer(-1), e_t(vec![]), one_minus(p)]),
-            ],
-          ),
+          plus(vec![
+            Expr::Integer(1),
+            times(vec![Expr::Integer(-1), e_t(vec![]), one_minus(p)]),
+          ]),
         ),
         n.clone(),
       ),
@@ -8107,50 +7941,35 @@ pub fn moment_generating_function_ast(
     ("LogisticDistribution", [m, b]) => Some((
       div2(
         e_t(vec![m.clone()]),
-        call1(
-          "Sinc",
-          call("Times", vec![b.clone(), id_expr("Pi"), t.clone()]),
-        ),
+        call1("Sinc", times(vec![b.clone(), id_expr("Pi"), t.clone()])),
       ),
       true,
     )),
     // (1 - b*t)^(-a)
     ("GammaDistribution", [a, b]) => Some((
       pow2(
-        call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            neg1(call("Times", vec![b.clone(), t.clone()])),
-          ],
-        ),
+        plus(vec![
+          Expr::Integer(1),
+          neg1(times(vec![b.clone(), t.clone()])),
+        ]),
         neg1(a.clone()),
       ),
       true,
     )),
     // E^(a*t)*Gamma[1 + b*t]
     ("GumbelDistribution", [a, b]) => Some((
-      call(
-        "Times",
-        vec![
-          e_t(vec![a.clone()]),
-          call1(
-            "Gamma",
-            call(
-              "Plus",
-              vec![Expr::Integer(1), call("Times", vec![b.clone(), t.clone()])],
-            ),
-          ),
-        ],
-      ),
+      times(vec![
+        e_t(vec![a.clone()]),
+        call1(
+          "Gamma",
+          plus(vec![Expr::Integer(1), times(vec![b.clone(), t.clone()])]),
+        ),
+      ]),
       true,
     )),
     // (-1 + E^t)/t
     ("UniformDistribution", []) => Some((
-      div2(
-        call("Plus", vec![Expr::Integer(-1), e_t(vec![])]),
-        t.clone(),
-      ),
+      div2(plus(vec![Expr::Integer(-1), e_t(vec![])]), t.clone()),
       false,
     )),
     // (-E^(a*t) + E^(b*t))/((-a + b)*t)
@@ -8158,11 +7977,8 @@ pub fn moment_generating_function_ast(
       let (a, b) = (bounds[0].clone(), bounds[1].clone());
       Some((
         div2(
-          call(
-            "Plus",
-            vec![neg1(e_t(vec![a.clone()])), e_t(vec![b.clone()])],
-          ),
-          call("Times", vec![call("Plus", vec![neg1(a), b]), t.clone()]),
+          plus(vec![neg1(e_t(vec![a.clone()])), e_t(vec![b.clone()])]),
+          times(vec![plus(vec![neg1(a), b]), t.clone()]),
         ),
         true,
       ))
@@ -8173,36 +7989,24 @@ pub fn moment_generating_function_ast(
       let e_half = |v: &Expr| {
         pow2(
           e_sym(),
-          div2(call("Times", vec![v.clone(), t.clone()]), Expr::Integer(2)),
+          div2(times(vec![v.clone(), t.clone()]), Expr::Integer(2)),
         )
       };
-      let diff = call("Plus", vec![e_half(&a), neg1(e_half(&b))]);
-      let num = call(
-        "Times",
-        vec![Expr::Integer(4), pow2(diff, Expr::Integer(2))],
-      );
-      let den = call(
-        "Times",
-        vec![
-          pow2(
-            call("Plus", vec![a.clone(), neg1(b.clone())]),
-            Expr::Integer(2),
-          ),
-          pow2(t.clone(), Expr::Integer(2)),
-        ],
-      );
+      let diff = plus(vec![e_half(&a), neg1(e_half(&b))]);
+      let num = times(vec![Expr::Integer(4), pow2(diff, Expr::Integer(2))]);
+      let den = times(vec![
+        pow2(plus(vec![a.clone(), neg1(b.clone())]), Expr::Integer(2)),
+        pow2(t.clone(), Expr::Integer(2)),
+      ]);
       Some((div2(num, den), true))
     }
     // (1 - 2*t)^(-k/2)
     ("ChiSquareDistribution", [k]) => Some((
       pow2(
-        call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            call("Times", vec![Expr::Integer(-2), t.clone()]),
-          ],
-        ),
+        plus(vec![
+          Expr::Integer(1),
+          times(vec![Expr::Integer(-2), t.clone()]),
+        ]),
         div2(neg1(k.clone()), Expr::Integer(2)),
       ),
       false,
@@ -8211,11 +8015,7 @@ pub fn moment_generating_function_ast(
     ("BetaDistribution", [a, b]) => Some((
       call(
         "Hypergeometric1F1",
-        vec![
-          a.clone(),
-          call("Plus", vec![a.clone(), b.clone()]),
-          t.clone(),
-        ],
+        vec![a.clone(), plus(vec![a.clone(), b.clone()]), t.clone()],
       ),
       false,
     )),
@@ -8228,19 +8028,13 @@ pub fn moment_generating_function_ast(
     ("LaplaceDistribution", [m, b]) => Some((
       div2(
         e_t(vec![m.clone()]),
-        call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            neg1(call(
-              "Times",
-              vec![
-                pow2(b.clone(), Expr::Integer(2)),
-                pow2(t.clone(), Expr::Integer(2)),
-              ],
-            )),
-          ],
-        ),
+        plus(vec![
+          Expr::Integer(1),
+          neg1(times(vec![
+            pow2(b.clone(), Expr::Integer(2)),
+            pow2(t.clone(), Expr::Integer(2)),
+          ])),
+        ]),
       ),
       true,
     )),
@@ -8249,23 +8043,17 @@ pub fn moment_generating_function_ast(
       div2(
         call(
           "Log",
-          vec![call(
-            "Plus",
-            vec![
-              Expr::Integer(1),
-              call("Times", vec![Expr::Integer(-1), e_t(vec![]), p.clone()]),
-            ],
-          )],
+          vec![plus(vec![
+            Expr::Integer(1),
+            times(vec![Expr::Integer(-1), e_t(vec![]), p.clone()]),
+          ])],
         ),
         call(
           "Log",
-          vec![call(
-            "Plus",
-            vec![
-              Expr::Integer(1),
-              call("Times", vec![Expr::Integer(-1), p.clone()]),
-            ],
-          )],
+          vec![plus(vec![
+            Expr::Integer(1),
+            times(vec![Expr::Integer(-1), p.clone()]),
+          ])],
         ),
       ),
       true,
@@ -8315,9 +8103,9 @@ fn cgf_term(f: &Expr) -> Expr {
       operand,
     } = exp
     {
-      neg1(call("Times", vec![(**operand).clone(), log(base.clone())]))
+      neg1(times(vec![(**operand).clone(), log(base.clone())]))
     } else {
-      call("Times", vec![exp.clone(), log(base.clone())])
+      times(vec![exp.clone(), log(base.clone())])
     }
   } else {
     log(f.clone())
@@ -8365,40 +8153,28 @@ pub fn cumulant_generating_function_ast(
   // Distributions whose CGF is NOT a clean structural transform of the MGF.
   let special: Option<Expr> = match (dist_name, dargs) {
     // -t - Log[1 - (1 - E^(-t))/p]
-    ("GeometricDistribution", [p]) => Some(call(
-      "Plus",
-      vec![
-        neg1(t.clone()),
-        neg1(log(call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            neg1(div2(
-              call(
-                "Plus",
-                vec![Expr::Integer(1), neg1(pow2(e_sym(), neg1(t.clone())))],
-              ),
-              p.clone(),
-            )),
-          ],
-        ))),
-      ],
-    )),
+    ("GeometricDistribution", [p]) => Some(plus(vec![
+      neg1(t.clone()),
+      neg1(log(plus(vec![
+        Expr::Integer(1),
+        neg1(div2(
+          plus(vec![Expr::Integer(1), neg1(pow2(e_sym(), neg1(t.clone())))]),
+          p.clone(),
+        )),
+      ]))),
+    ])),
     // a*t + Log[(-1 + E^((-a + b)*t))/((-a + b)*t)]
     ("UniformDistribution", [Expr::List(bounds)]) if bounds.len() == 2 => {
       let (a, b) = (bounds[0].clone(), bounds[1].clone());
-      let span = || call("Plus", vec![neg1(a.clone()), b.clone()]);
-      let span_t = || call("Times", vec![span(), t.clone()]);
-      Some(call(
-        "Plus",
-        vec![
-          call("Times", vec![a.clone(), t.clone()]),
-          log(div2(
-            call("Plus", vec![Expr::Integer(-1), pow2(e_sym(), span_t())]),
-            span_t(),
-          )),
-        ],
-      ))
+      let span = || plus(vec![neg1(a.clone()), b.clone()]);
+      let span_t = || times(vec![span(), t.clone()]);
+      Some(plus(vec![
+        times(vec![a.clone(), t.clone()]),
+        log(div2(
+          plus(vec![Expr::Integer(-1), pow2(e_sym(), span_t())]),
+          span_t(),
+        )),
+      ]))
     }
     _ => None,
   };
@@ -8436,7 +8212,7 @@ pub fn cumulant_generating_function_ast(
       right,
     } = &mgf
   {
-    call("Plus", vec![cgf_term(left), neg1(cgf_term(right))])
+    plus(vec![cgf_term(left), neg1(cgf_term(right))])
   } else {
     cgf_term(&mgf)
   };
@@ -8470,17 +8246,13 @@ pub fn factorial_moment_generating_function_ast(
     && dargs.iter().all(|d| matches!(d, Expr::Identifier(_)))
   {
     let (m, sd) = (dargs[0].clone(), dargs[1].clone());
-    let times = |f: Vec<Expr>| call("Times", f);
     let sq = |e: Expr| pow2(e, Expr::Integer(2));
     return Ok(pow2(
       id_expr("E"),
-      call(
-        "Plus",
-        vec![
-          times(vec![m, log_t.clone()]),
-          div2(times(vec![sq(sd), sq(log_t)]), Expr::Integer(2)),
-        ],
-      ),
+      plus(vec![
+        times(vec![m, log_t.clone()]),
+        div2(times(vec![sq(sd), sq(log_t)]), Expr::Integer(2)),
+      ]),
     ));
   }
   let mgf = moment_generating_function_ast(&[args[0].clone(), log_t])?;
@@ -8514,10 +8286,11 @@ pub fn central_moment_generating_function_ast(
   if matches!(&mean, Expr::FunctionCall { name, .. } if name == "Mean") {
     return Ok(uneval());
   }
-  let damp_exponent = crate::evaluator::evaluate_expr_to_expr(&call(
-    "Times",
-    vec![Expr::Integer(-1), mean.clone(), args[1].clone()],
-  ))?;
+  let damp_exponent = crate::evaluator::evaluate_expr_to_expr(&times(vec![
+    Expr::Integer(-1),
+    mean.clone(),
+    args[1].clone(),
+  ]))?;
   // UniformDistribution keeps wolframscript's numerator order
   // (-E^(a t) + E^(b t)); a re-evaluated product would resort it.
   if let Expr::FunctionCall { name, args: dargs } = &args[0]
@@ -8529,27 +8302,20 @@ pub fn central_moment_generating_function_ast(
     let (a, b) = (minmax[0].clone(), minmax[1].clone());
     let symbolic = matches!(&args[1], Expr::Identifier(_))
       && minmax.iter().all(|d| matches!(d, Expr::Identifier(_)));
-    let times = |f: Vec<Expr>| call("Times", f);
     let e_pow = |e: Expr| pow2(id_expr("E"), e);
     let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
     let t = args[1].clone();
     let expr = div2(
-      call(
-        "Plus",
-        vec![
-          times(vec![
-            Expr::Integer(-1),
-            e_pow(times(vec![a.clone(), t.clone()])),
-          ]),
-          e_pow(times(vec![b.clone(), t.clone()])),
-        ],
-      ),
+      plus(vec![
+        times(vec![
+          Expr::Integer(-1),
+          e_pow(times(vec![a.clone(), t.clone()])),
+        ]),
+        e_pow(times(vec![b.clone(), t.clone()])),
+      ]),
       times(vec![
-        call(
-          "Plus",
-          vec![times(vec![Expr::Integer(-1), a.clone()]), b.clone()],
-        ),
-        e_pow(times(vec![half, call("Plus", vec![a, b]), t.clone()])),
+        plus(vec![times(vec![Expr::Integer(-1), a.clone()]), b.clone()]),
+        e_pow(times(vec![half, plus(vec![a, b]), t.clone()])),
         t,
       ]),
     );
@@ -8586,7 +8352,7 @@ pub fn central_moment_generating_function_ast(
     if matches!(damp_exponent, Expr::Integer(0)) {
       return Ok(mgf);
     }
-    let raw = call("Plus", vec![expo, damp_exponent]);
+    let raw = plus(vec![expo, damp_exponent]);
     // Keep wolframscript's exponent order (MGF exponent first, then
     // -mean*t) unless evaluation cancels terms — then use the
     // simplified exponent (e.g. the Normal case collapses to
@@ -8610,7 +8376,7 @@ pub fn central_moment_generating_function_ast(
     return Ok(pow2(id_expr("E"), exponent));
   }
   let damp = pow2(id_expr("E"), damp_exponent);
-  crate::evaluator::evaluate_expr_to_expr(&call("Times", vec![damp, mgf]))
+  crate::evaluator::evaluate_expr_to_expr(&times(vec![damp, mgf]))
 }
 
 // ─── CorrelationFunction ─────────────────────────────────────────────
@@ -8654,25 +8420,20 @@ pub fn correlation_function_ast(
 
   let mean = mean_ast(&[args[0].clone()])?;
   let dev = |x: &Expr| {
-    call(
-      "Plus",
-      vec![
-        x.clone(),
-        call("Times", vec![Expr::Integer(-1), mean.clone()]),
-      ],
-    )
+    plus(vec![
+      x.clone(),
+      times(vec![Expr::Integer(-1), mean.clone()]),
+    ])
   };
   let sum = |terms: Vec<Expr>| -> Result<Expr, InterpreterError> {
-    crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
+    crate::evaluator::evaluate_expr_to_expr(&plus(terms))
   };
   let len = data.len();
   let num_terms: Vec<Expr> = (0..len - lag)
-    .map(|i| call("Times", vec![dev(&data[i]), dev(&data[i + lag])]))
+    .map(|i| times(vec![dev(&data[i]), dev(&data[i + lag])]))
     .collect();
-  let den_terms: Vec<Expr> = data
-    .iter()
-    .map(|x| call("Times", vec![dev(x), dev(x)]))
-    .collect();
+  let den_terms: Vec<Expr> =
+    data.iter().map(|x| times(vec![dev(x), dev(x)])).collect();
   let numerator = sum(num_terms)?;
   let denominator = sum(den_terms)?;
 
@@ -8973,10 +8734,10 @@ pub fn cycle_index_polynomial_ast(
           pow2(base, Expr::Integer(m as i128))
         });
       }
-      call("Times", factors)
+      times(factors)
     })
     .collect();
-  crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
+  crate::evaluator::evaluate_expr_to_expr(&plus(terms))
 }
 
 /// Expand PermutationGroup generators into the full group via BFS closure.
@@ -9340,23 +9101,17 @@ fn erlang_b_symbolic(
   }
   let (c, a) = (args[0].clone(), args[1].clone());
   // a^c * E^(-a) / Gamma[1 + c, a]
-  let body = call(
-    "Times",
-    vec![
-      pow(a.clone(), c.clone()),
-      pow(
-        const_expr("E"),
-        call("Times", vec![Expr::Integer(-1), a.clone()]),
+  let body = times(vec![
+    pow(a.clone(), c.clone()),
+    pow(const_expr("E"), times(vec![Expr::Integer(-1), a.clone()])),
+    pow(
+      call(
+        "Gamma",
+        vec![plus(vec![Expr::Integer(1), c.clone()]), a.clone()],
       ),
-      pow(
-        call(
-          "Gamma",
-          vec![call("Plus", vec![Expr::Integer(1), c.clone()]), a.clone()],
-        ),
-        Expr::Integer(-1),
-      ),
-    ],
-  );
+      Expr::Integer(-1),
+    ),
+  ]);
   let body = match crate::evaluator::evaluate_expr_to_expr(&body) {
     Ok(b) => b,
     Err(e) => return Some(Err(e)),

@@ -1541,6 +1541,37 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_contour_plot_bar_legend_and_contour_labels() {
+    // `PlotLegends -> Automatic` widens the picture by a colour-bar strip
+    // and `ContourLabels -> True` writes each level on its contour line.
+    clear_state();
+    let plain = interpret_with_stdout("ContourPlot[x y, {x, 0, 3}, {y, 0, 3}]")
+      .unwrap()
+      .graphics
+      .expect("ContourPlot should produce a graphics SVG");
+    let svg = interpret_with_stdout(
+      "ContourPlot[x y, {x, 0, 3}, {y, 0, 3}, PlotLegends -> Automatic, \
+       ContourLabels -> True]",
+    )
+    .unwrap()
+    .graphics
+    .expect("ContourPlot should produce a graphics SVG");
+    assert!(plain.starts_with("<svg width=\"360\""), "{plain}");
+    assert!(
+      svg.starts_with("<svg width=\"413\""),
+      "legend widens: {svg}"
+    );
+    assert!(
+      svg.matches("<text").count() > plain.matches("<text").count() + 8,
+      "legend ticks and contour labels add text:\n{svg}"
+    );
+    assert!(
+      svg.contains("paint-order=\"stroke\""),
+      "contour labels: {svg}"
+    );
+  }
+
+  #[test]
   fn test_show_contour_plot_with_directive_list_contour_style() {
     // Regression: `Show[ContourPlot[…], Graphics[…]]` where the
     // ContourPlot's `ContourStyle` is a `Directive[{…}]` (single List
@@ -1561,6 +1592,29 @@ mod interpreter_tests {
     assert!(
       svg.contains("rgb(64,110,209)"),
       "merged ContourPlot must keep its Directive[{{…}}] ContourStyle color:\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_contour_plot_equations_use_per_contour_styles() {
+    // Regression: `ContourStyle -> {{Black, Thick}, {Red, Thick}}` on an
+    // equation-form ContourPlot styled every curve alike (the last entry);
+    // each entry must instead style its own equation's curve.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "ContourPlot[{x == y, x^2 + y^2 == 1}, {x, -1, 1}, {y, -1, 1}, \
+       ContourStyle -> {{Black, Thick}, {Red, Thick}}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("ContourPlot should produce a graphics SVG");
+    assert!(
+      svg.contains("stroke=\"rgb(0,0,0)\" stroke-width=\"20.0\""),
+      "first equation must be black:\n{svg}"
+    );
+    assert!(
+      svg.contains("stroke=\"rgb(255,0,0)\" stroke-width=\"20.0\""),
+      "second equation must be red:\n{svg}"
     );
   }
 
@@ -4316,6 +4370,37 @@ mod interpreter_tests {
     // An empty Association still counts as a valid (no-op) rule set rather
     // than triggering the reps error.
     assert_eq!(interpret("{a, b} /. <||>").unwrap(), "{a, b}");
+  }
+
+  // A literal left side replaces only what structurally equals it: negative
+  // numbers are atomic, so their digits are not a match (the textual fallback
+  // turned `-3 /. 3 -> 2` into `-2`).
+  #[test]
+  fn test_replace_all_literal_does_not_match_inside_negative_numbers() {
+    assert_eq!(interpret("-3 /. 3 -> 2").unwrap(), "-3");
+    assert_eq!(
+      interpret("{4, -5, -5, -3} /. 3 -> 2").unwrap(),
+      "{4, -5, -5, -3}"
+    );
+    assert_eq!(interpret("{-3, 3} /. 3 -> 2").unwrap(), "{-3, 2}");
+    assert_eq!(interpret("-3.5 /. 3.5 -> 7").unwrap(), "-3.5");
+    assert_eq!(interpret("-1/2 /. 1/2 -> 7").unwrap(), "-1/2");
+    assert_eq!(interpret("Hold[-3] /. 3 -> 2").unwrap(), "Hold[-3]");
+  }
+
+  // `Derivative[1][y]` matches inside its application `y'[t]`, whichever way
+  // it is stored.
+  #[test]
+  fn test_replace_all_literal_derivative_inside_its_application() {
+    assert_eq!(interpret("y'[2] /. Derivative[1][y] -> f").unwrap(), "f[2]");
+    assert_eq!(
+      interpret("y''[t] + y'[t] /. Derivative[1][y] -> g").unwrap(),
+      "g[t] + Derivative[2][y][t]"
+    );
+    assert_eq!(
+      interpret("y'[2] /. Derivative[1][y] -> (#^2 &)").unwrap(),
+      "4"
+    );
   }
 
   #[test]

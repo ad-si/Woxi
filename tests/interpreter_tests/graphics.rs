@@ -33554,4 +33554,49 @@ mod grid_text_in_graphics {
       .expect("b is gated");
     assert_eq!(cond, "((p) == (True)) && ((w) == (1))");
   }
+
+  #[test]
+  fn transparent_directive_draws_nothing_visible() {
+    let svg = export_svg("Graphics[{Transparent, Disk[]}]");
+    assert!(svg.contains("fill-opacity=\"0\""), "{svg}");
+    let svg3d =
+      export_svg("Graphics3D[{Transparent, Sphere[{1, 1, 1}, 0.25]}]");
+    assert!(svg3d.contains("opacity=\"0\""), "{svg3d}");
+  }
+
+  #[test]
+  fn graphics_grid_draws_button_wrapped_graphics() {
+    let svg = export_svg(
+      "GraphicsGrid[{{Button[Graphics[Disk[]], x = 1], Button[Graphics[Rectangle[]], x = 2]}}]",
+    );
+    assert!(svg.contains("<ellipse"), "{svg}");
+    assert!(svg.contains("<rect"), "{svg}");
+    assert!(!svg.contains("Button"), "{svg}");
+  }
+
+  #[test]
+  fn list_plot_color_function_colors_each_point() {
+    let colored = |expr: &str| {
+      let svg = export_svg(expr);
+      let mut fills: Vec<&str> = svg
+        .split("fill=\"")
+        .skip(1)
+        .filter_map(|t| t.split('"').next())
+        .filter(|f| f.starts_with("rgb(") || f.starts_with('#'))
+        .collect();
+      fills.sort_unstable();
+      fills.dedup();
+      fills.len()
+    };
+    let plain = colored("ListPlot[Table[Sin[i/30.], {i, 100}]]");
+    let ranged = colored(
+      "ListPlot[Table[Sin[i/30.], {i, 100}], ColorFunction -> \"DarkRainbow\"]",
+    );
+    assert!(ranged > plain + 5, "{plain} vs {ranged}");
+    // The per-point colors survive layering the plot with other graphics.
+    let shown = colored(
+      "Show[ListPlot[Table[Sin[i/30.], {i, 100}], ColorFunction -> \"DarkRainbow\"], Graphics[{Red, Line[{{40, 0}, {40, 2}}]}]]",
+    );
+    assert!(shown > plain + 5, "{plain} vs {shown}");
+  }
 }

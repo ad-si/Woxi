@@ -113,14 +113,14 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let kept_prod = if kept.len() == 1 {
             kept.into_iter().next().unwrap()
           } else {
-            call("Times", kept)
+            times(kept)
           };
           all.push(call1("Abs", kept_prod));
         }
         let result = match all.len() {
           0 => Expr::Integer(1),
           1 => all.into_iter().next().unwrap(),
-          _ => call("Times", all),
+          _ => times(all),
         };
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
@@ -203,7 +203,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // because the negation/identity re-evaluates the original arithmetic.
   if let Some(v) = try_eval_to_f64(&args[0]) {
     if v < 0.0 {
-      let neg = call("Times", vec![Expr::Integer(-1), args[0].clone()]);
+      let neg = times(vec![Expr::Integer(-1), args[0].clone()]);
       return crate::evaluator::evaluate_expr_to_expr(&neg);
     }
     return Ok(args[0].clone());
@@ -440,7 +440,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && is_strictly_positive_real(base)
   {
     let im_exp = call1("Im", exp.clone());
-    let new_exp = call("Times", vec![id_expr("I"), im_exp]);
+    let new_exp = times(vec![id_expr("I"), im_exp]);
     return crate::evaluator::evaluate_expr_to_expr(&pow(
       base.clone(),
       new_exp,
@@ -649,13 +649,10 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let abs = (re * re + im * im).sqrt();
     if abs > 0.0 {
-      return Ok(call(
-        "Plus",
-        vec![
-          Expr::Real(re / abs),
-          call("Times", vec![Expr::Real(im / abs), id_expr("I")]),
-        ],
-      ));
+      return Ok(plus(vec![
+        Expr::Real(re / abs),
+        times(vec![Expr::Real(im / abs), id_expr("I")]),
+      ]));
     }
   }
   // Sign[Sign[x]] = Sign[x] (idempotent).
@@ -695,14 +692,14 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let kept_prod = if kept.len() == 1 {
             kept.into_iter().next().unwrap()
           } else {
-            call("Times", kept)
+            times(kept)
           };
           all.push(call1("Sign", kept_prod));
         }
         let result = match all.len() {
           0 => Expr::Integer(1),
           1 => all.into_iter().next().unwrap(),
-          _ => call("Times", all),
+          _ => times(all),
         };
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
@@ -1371,15 +1368,14 @@ fn try_sqrt_plus_gcd(expr: &Expr) -> Option<Expr> {
     } else if new_coeff == -1 {
       new_terms.push(negate_expr(base.clone()));
     } else {
-      new_terms
-        .push(call("Times", vec![Expr::Integer(new_coeff), base.clone()]));
+      new_terms.push(times(vec![Expr::Integer(new_coeff), base.clone()]));
     }
   }
 
   let new_sum = if new_terms.len() == 1 {
     new_terms.remove(0)
   } else {
-    call("Plus", new_terms)
+    plus(new_terms)
   };
 
   let sqrt_part = make_sqrt(new_sum);
@@ -1533,7 +1529,7 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_expr_to_expr(&expr)
   };
   let negate = |e: Expr| -> Result<Expr, InterpreterError> {
-    let expr = call("Times", vec![Expr::Integer(-1), e]);
+    let expr = times(vec![Expr::Integer(-1), e]);
     crate::evaluator::evaluate_expr_to_expr(&expr)
   };
   if x < 0.0 {
@@ -1775,7 +1771,7 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Plus",
         &[
           Expr::Integer(floor_re),
-          call("Times", vec![Expr::Integer(floor_im), id_expr("I")]),
+          times(vec![Expr::Integer(floor_im), id_expr("I")]),
         ],
       )
     }
@@ -1849,7 +1845,7 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Plus",
         &[
           Expr::Integer(ceil_re),
-          call("Times", vec![Expr::Integer(ceil_im), id_expr("I")]),
+          times(vec![Expr::Integer(ceil_im), id_expr("I")]),
         ],
       )
     }
@@ -1916,7 +1912,7 @@ fn extract_integer_offset(
   let rest_expr = if rest.len() == 1 {
     rest.into_iter().next().unwrap()
   } else {
-    call("Plus", rest)
+    plus(rest)
   };
   let rounded = if is_floor {
     floor_ast(&[rest_expr])?
@@ -2121,20 +2117,28 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
     }
 
-    // Check if a is a Rational (n/d)
+    // A Rational step: a * Round[x/a], exact like the step.
     if let Expr::FunctionCall { name, args: rargs } = &eval_a
       && name == "Rational"
       && rargs.len() == 2
-      && let (Some(x_val), Some(a_val)) =
-        (try_eval_to_f64(&eval_x), try_eval_to_f64(&eval_a))
-      && a_val != 0.0
+      && try_eval_to_f64(&eval_x).is_some()
     {
-      let n = bankers_round(x_val / a_val) as i128;
-      // Return n * (num/den) as a rational
-      if let (Some(num), Some(den)) =
-        (expr_to_i128(&rargs[0]), expr_to_i128(&rargs[1]))
-      {
-        return Ok(make_rational(n * num, den));
+      let quotient = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[
+          eval_x.clone(),
+          crate::evaluator::evaluate_function_call_ast(
+            "Power",
+            &[eval_a.clone(), Expr::Integer(-1)],
+          )?,
+        ],
+      )?;
+      let n = round_ast(&[quotient])?;
+      if matches!(n, Expr::Integer(_) | Expr::BigInteger(_)) {
+        return crate::evaluator::evaluate_function_call_ast(
+          "Times",
+          &[n, eval_a],
+        );
       }
     }
 
@@ -2195,7 +2199,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let im = round_ast(&[cargs[1].clone()])?;
     return crate::evaluator::evaluate_function_call_ast(
       "Plus",
-      &[re, call("Times", vec![im, id_expr("I")])],
+      &[re, times(vec![im, id_expr("I")])],
     );
   }
   // Exact complex in Plus/Times form: extract and round parts separately
@@ -2208,16 +2212,57 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let im_rounded = round_ast(&[im_rat])?;
     return crate::evaluator::evaluate_function_call_ast(
       "Plus",
-      &[re_rounded, call("Times", vec![im_rounded, id_expr("I")])],
+      &[re_rounded, times(vec![im_rounded, id_expr("I")])],
     );
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
+    // A machine real rounds in f64. So does a small exact value that is
+    // clearly away from a half-integer; anything else (an arbitrary-precision
+    // number, a big magnitude, a near-tie) is rounded exactly.
+    let near_tie = ((n - n.trunc()).abs() - 0.5).abs() < 1e-6;
+    if matches!(&args[0], Expr::Real(_))
+      || (n.abs() < 1e15
+        && !near_tie
+        && !matches!(&args[0], Expr::BigFloat(..)))
+    {
+      return Ok(f64_to_int_expr(bankers_round(n)));
+    }
+    if let Some(r) = round_exact(&args[0])? {
+      return Ok(r);
+    }
     Ok(f64_to_int_expr(bankers_round(n)))
   } else if let Some(r) = try_symbolic_complex_rounding(&args[0], round_ast) {
     Ok(r)
   } else {
     Ok(unevaluated("Round", args))
   }
+}
+
+/// `Round[x]` for a real `x` via the exact `Floor[x + 1/2]`, stepping back
+/// to the even neighbour on an exact tie. `None` when `Floor` does not reach
+/// an integer.
+fn round_exact(x: &Expr) -> Result<Option<Expr>, InterpreterError> {
+  let eval_call = crate::evaluator::evaluate_function_call_ast;
+  let shifted = eval_call("Plus", &[x.clone(), make_rational(1, 2)])?;
+  let f = floor_ast(std::slice::from_ref(&shifted))?;
+  let odd = match &f {
+    Expr::Integer(n) => n % 2 != 0,
+    Expr::BigInteger(b) => (b % 2u32) != BigInt::from(0),
+    _ => return Ok(None),
+  };
+  if odd {
+    let rest = eval_call(
+      "Plus",
+      &[
+        shifted,
+        eval_call("Times", &[Expr::Integer(-1), f.clone()])?,
+      ],
+    )?;
+    if try_eval_to_f64(&rest) == Some(0.0) {
+      return eval_call("Plus", &[f, Expr::Integer(-1)]).map(Some);
+    }
+  }
+  Ok(Some(f))
 }
 
 /// Returns true if `expr` is a complex number with a non-zero imaginary part.
@@ -2278,10 +2323,10 @@ fn infinite_mod_quotient(
       try_eval_to_f64(n),
       Some(v) if v < 0.0
     );
-    let divided = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Times",
-      vec![m.clone(), Expr::Integer(if flip { -1 } else { 1 })],
-    ));
+    let divided = crate::evaluator::evaluate_expr_to_expr(&times(vec![
+      m.clone(),
+      Expr::Integer(if flip { -1 } else { 1 }),
+    ]));
     return Some(divided);
   }
   // Finite dividend, infinite divisor: nothing is taken away.
@@ -2908,7 +2953,7 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn build_complex_result(re: Expr, im: Expr) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_function_call_ast(
     "Plus",
-    &[re, call("Times", vec![im, id_expr("I")])],
+    &[re, times(vec![im, id_expr("I")])],
   )
 }
 
@@ -3001,6 +3046,18 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {
       if let Some(f) = try_eval_to_f64(&args[0]) {
+        // f64 cannot hold the integer part of an arbitrary-precision number
+        // or of a big value: truncate exactly through Floor/Ceiling.
+        if matches!(&args[0], Expr::BigFloat(..)) || f.abs() >= 1e15 {
+          let r = if f < 0.0 {
+            ceiling_ast(std::slice::from_ref(&args[0]))?
+          } else {
+            floor_ast(std::slice::from_ref(&args[0]))?
+          };
+          if matches!(r, Expr::Integer(_) | Expr::BigInteger(_)) {
+            return Ok(r);
+          }
+        }
         Ok(f64_to_int_expr(f.trunc()))
       } else if let Some(r) =
         try_symbolic_complex_rounding(&args[0], integer_part_ast)
@@ -3098,6 +3155,21 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(_) => Ok(Expr::Integer(0)),
     // Preserve Real type: FractionalPart[3.0] = 0. (not 0)
     Expr::Real(f) => Ok(Expr::Real(*f - f.trunc())),
+    // x - IntegerPart[x] in arbitrary-precision arithmetic, which also
+    // tracks the digits the subtraction cancels.
+    Expr::BigFloat(..) => {
+      let int_part = integer_part_ast(std::slice::from_ref(&args[0]))?;
+      crate::evaluator::evaluate_function_call_ast(
+        "Plus",
+        &[
+          args[0].clone(),
+          crate::evaluator::evaluate_function_call_ast(
+            "Times",
+            &[Expr::Integer(-1), int_part],
+          )?,
+        ],
+      )
+    }
     Expr::FunctionCall { name, args: rargs }
       if name == "Rational" && rargs.len() == 2 =>
     {
@@ -3159,10 +3231,7 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Expr::BigInteger(_) = &int_val {
           return crate::evaluator::evaluate_function_call_ast(
             "Plus",
-            &[
-              args[0].clone(),
-              call("Times", vec![Expr::Integer(-1), int_val]),
-            ],
+            &[args[0].clone(), times(vec![Expr::Integer(-1), int_val])],
           );
         }
       }
@@ -4007,7 +4076,7 @@ fn dirac_delta_scale(arg: &Expr) -> Option<(Expr, Expr)> {
   let c = if consts.len() == 1 {
     consts.into_iter().next().unwrap()
   } else {
-    crate::evaluator::evaluate_expr_to_expr(&call("Times", consts)).ok()?
+    crate::evaluator::evaluate_expr_to_expr(&times(consts)).ok()?
   };
   // `c == 1` leaves the argument unchanged; `c == -1` still normalizes the sign.
   if matches!(&c, Expr::Integer(1)) {
@@ -4016,7 +4085,7 @@ fn dirac_delta_scale(arg: &Expr) -> Option<(Expr, Expr)> {
   let g = if rest.len() == 1 {
     rest.into_iter().next().unwrap()
   } else {
-    call("Times", rest)
+    times(rest)
   };
   let abs_c = crate::evaluator::evaluate_expr_to_expr(&call1("Abs", c)).ok()?;
   Some((abs_c, g))

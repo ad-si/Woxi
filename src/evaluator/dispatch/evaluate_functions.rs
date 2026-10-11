@@ -750,6 +750,36 @@ fn normalize_piecharts_option(arg: &Expr) -> Expr {
   }
 }
 
+/// Evaluate one stored overload condition against the call's bindings.
+///
+/// A literal slot (`f[p_, g[2, 3]] := …`) is stored as `_dvN === literal`
+/// with the literal already evaluated at definition time. Re-evaluating that
+/// comparison per call would evaluate the literal again, and a literal that
+/// calls a head whose own rules mention `f` (`g[f[e, 1], _] := …`) then
+/// recurses forever. The literal is a pattern, not an expression to
+/// compute, so it is compared structurally as it was stored.
+fn eval_dispatch_condition(
+  cond_expr: &Expr,
+  bindings: &[(&str, &Expr)],
+  substituted_cond: &Expr,
+) -> Result<Expr, InterpreterError> {
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = cond_expr
+    && let [Expr::Identifier(slot), literal] = operands.as_slice()
+    && slot.starts_with("_dv")
+    && matches!(operators.as_slice(), [ComparisonOp::SameQ])
+    && let Some((_, value)) = bindings.iter().find(|(n, _)| n == slot)
+  {
+    return crate::functions::boolean_ast::same_q_ast(&[
+      (*value).clone(),
+      literal.clone(),
+    ]);
+  }
+  evaluate_expr_to_expr(substituted_cond)
+}
+
 fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
@@ -1406,7 +1436,11 @@ fn evaluate_function_call_ast_inner(
             cond_expr,
             &all_bindings,
           );
-          match evaluate_expr_to_expr(&substituted_cond) {
+          match eval_dispatch_condition(
+            cond_expr,
+            &all_bindings,
+            &substituted_cond,
+          ) {
             Ok(Expr::Identifier(ref s)) if s == "True" => {}
             _ => {
               conditions_met = false;
@@ -1743,7 +1777,11 @@ fn evaluate_function_call_ast_inner(
             // it unapplied, re-parse the string form (which yields a proper
             // application) and evaluate that — same approach MatchQ uses.
             let mut cond_ok = matches!(
-              evaluate_expr_to_expr(&substituted_cond),
+              eval_dispatch_condition(
+                cond_expr,
+                &all_bindings,
+                &substituted_cond
+              ),
               Ok(Expr::Identifier(ref s)) if s == "True"
             );
             if !cond_ok

@@ -48,23 +48,16 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ))?
     };
     // Compute a * q^k
-    let aqk = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Times",
-      vec![a.clone(), qk],
-    ))?;
+    let aqk =
+      crate::evaluator::evaluate_expr_to_expr(&times(vec![a.clone(), qk]))?;
     // Compute 1 - a*q^k
-    let factor = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Plus",
-      vec![
-        Expr::Integer(1),
-        call("Times", vec![Expr::Integer(-1), aqk]),
-      ],
-    ))?;
+    let factor = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+      Expr::Integer(1),
+      times(vec![Expr::Integer(-1), aqk]),
+    ]))?;
     // Multiply into result
-    result = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Times",
-      vec![result, factor],
-    ))?;
+    result =
+      crate::evaluator::evaluate_expr_to_expr(&times(vec![result, factor]))?;
   }
 
   Ok(result)
@@ -202,13 +195,10 @@ fn mittag_leffler_two_arg(
     match a {
       0 => {
         // 1/(1 - z)
-        let one_minus_z = call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            call("Times", vec![Expr::Integer(-1), z.clone()]),
-          ],
-        );
+        let one_minus_z = plus(vec![
+          Expr::Integer(1),
+          times(vec![Expr::Integer(-1), z.clone()]),
+        ]);
         return crate::evaluator::evaluate_expr_to_expr(&pow(
           one_minus_z,
           Expr::Integer(-1),
@@ -648,20 +638,14 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && is_int_or_real(&upper_n[1], 2)
     && is_int_or_real(&lower_m[0], 3)
   {
-    let exact = call(
-      "Plus",
-      vec![
-        Expr::Integer(2),
-        call(
-          "Times",
-          vec![
-            Expr::Integer(3),
-            id_expr("E"),
-            call1("ExpIntegralEi", Expr::Integer(-1)),
-          ],
-        ),
-      ],
-    );
+    let exact = plus(vec![
+      Expr::Integer(2),
+      times(vec![
+        Expr::Integer(3),
+        id_expr("E"),
+        call1("ExpIntegralEi", Expr::Integer(-1)),
+      ]),
+    ]);
     return crate::evaluator::evaluate_function_call_ast("N", &[exact]);
   }
 
@@ -1850,13 +1834,10 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::Real(re))
     } else {
       // Return Complex form
-      Ok(call(
-        "Plus",
-        vec![
-          Expr::Real(re),
-          call("Times", vec![Expr::Real(im), id_expr("I")]),
-        ],
-      ))
+      Ok(plus(vec![
+        Expr::Real(re),
+        times(vec![Expr::Real(im), id_expr("I")]),
+      ]))
     }
   }
 }
@@ -1901,12 +1882,12 @@ fn wigner_d_symbolic(
       let num = (2.0 * coef).round() as i128;
       Some(call("Rational", vec![Expr::Integer(num), Expr::Integer(2)]))?
     };
-    let exponent = call("Times", vec![id_expr("I"), coef_expr, ang.clone()]);
+    let exponent = times(vec![id_expr("I"), coef_expr, ang.clone()]);
     Some(pow(const_expr("E"), exponent))
   };
   let e1 = exp_factor(m1, phi)?;
   let e2 = exp_factor(m2, psi)?;
-  Some(call("Times", vec![e1, d, e2]))
+  Some(times(vec![e1, d, e2]))
 }
 
 /// Symbolic small d-matrix d^j_{m1,m2}(theta). `j2 = 2j`, `m1_2 = 2*m1`,
@@ -1942,13 +1923,10 @@ fn wigner_d_small_symbolic(
   let prefactor = call1("Sqrt", Expr::Integer(pref_under));
 
   // Build half-angle expressions Cos[theta/2], Sin[theta/2].
-  let half_theta = call(
-    "Times",
-    vec![
-      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-      theta.clone(),
-    ],
-  );
+  let half_theta = times(vec![
+    call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+    theta.clone(),
+  ]);
   let cos_ht = call1("Cos", half_theta.clone());
   let sin_ht = call1("Sin", half_theta);
 
@@ -1994,7 +1972,7 @@ fn wigner_d_small_symbolic(
     } else {
       call("Rational", vec![Expr::Integer(sign), Expr::Integer(denom)])
     };
-    terms.push(call("Times", vec![coeff, cos_term, sin_term]));
+    terms.push(times(vec![coeff, cos_term, sin_term]));
   }
 
   let sum = if terms.is_empty() {
@@ -2002,9 +1980,9 @@ fn wigner_d_small_symbolic(
   } else if terms.len() == 1 {
     terms.into_iter().next().unwrap()
   } else {
-    call("Plus", terms)
+    plus(terms)
   };
-  call("Times", vec![prefactor, sum])
+  times(vec![prefactor, sum])
 }
 
 /// Compute the Wigner (small) d-matrix element d^j_{m1,m2}(theta).
@@ -2227,9 +2205,9 @@ fn norlund_b_poly_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
     let nb = call("NorlundB", vec![Expr::Integer(k as i128), a.clone()]);
     let x_pow = pow(x.clone(), Expr::Integer((n - k) as i128));
-    terms.push(call("Times", vec![binom, nb, x_pow]));
+    terms.push(times(vec![binom, nb, x_pow]));
   }
-  let sum = call("Plus", terms);
+  let sum = plus(terms);
   crate::evaluator::evaluate_expr_to_expr(&sum)
 }
 
@@ -2252,7 +2230,7 @@ fn evaluate_norlund_symbolic(
       } else {
         pow(a.clone(), Expr::Integer(k as i128))
       };
-      call("Times", vec![coeff, a_pow])
+      times(vec![coeff, a_pow])
     };
     terms.push(term);
   }
@@ -2262,7 +2240,7 @@ fn evaluate_norlund_symbolic(
   if terms.len() == 1 {
     return crate::evaluator::evaluate_expr_to_expr(&terms.pop().unwrap());
   }
-  let sum = call("Plus", terms);
+  let sum = plus(terms);
   crate::evaluator::evaluate_expr_to_expr(&sum)
 }
 
@@ -3115,16 +3093,16 @@ pub fn effective_interest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if p_is_zero {
     // -1 + E^r
     let e_r = pow(id_expr("E"), r.clone());
-    let expr = call("Plus", vec![Expr::Integer(-1), e_r]);
+    let expr = plus(vec![Expr::Integer(-1), e_r]);
     return crate::evaluator::evaluate_expr_to_expr(&expr);
   }
 
   // General form: (1 + p*r)^(1/p) - 1.
-  let pr = call("Times", vec![p.clone(), r.clone()]);
-  let one_plus_pr = call("Plus", vec![Expr::Integer(1), pr]);
+  let pr = times(vec![p.clone(), r.clone()]);
+  let one_plus_pr = plus(vec![Expr::Integer(1), pr]);
   let inv_p = pow(p.clone(), Expr::Integer(-1));
   let pow = pow(one_plus_pr, inv_p);
-  let expr = call("Plus", vec![Expr::Integer(-1), pow]);
+  let expr = plus(vec![Expr::Integer(-1), pow]);
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 

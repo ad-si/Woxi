@@ -448,7 +448,7 @@ fn airy_build_value(
     ),
   );
   let denom = if with_extra_3 {
-    call("Times", vec![Expr::Integer(3), gamma])
+    times(vec![Expr::Integer(3), gamma])
   } else {
     gamma
   };
@@ -579,7 +579,7 @@ fn scorer_value_at_zero(numer: i128) -> Result<Expr, InterpreterError> {
   };
   let three_sixth = pow(Expr::Integer(3), rational(1, 6));
   let gamma = call1("Gamma", rational(2, 3));
-  let denom = call("Times", vec![Expr::Integer(3), three_sixth, gamma]);
+  let denom = times(vec![Expr::Integer(3), three_sixth, gamma]);
   let result = div2(Expr::Integer(numer), denom);
   crate::evaluator::evaluate_expr_to_expr(&result)
 }

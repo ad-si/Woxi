@@ -205,6 +205,7 @@ enum ContourSpec {
 }
 
 /// Options shared by the density / contour plot family.
+#[allow(clippy::struct_excessive_bools)]
 struct DensityContourOptions {
   svg_width: u32,
   svg_height: u32,
@@ -228,6 +229,10 @@ struct DensityContourOptions {
   /// `ContourStyle -> {Thick, Blue}`: how the contour lines are drawn.
   /// `None` keeps the default thin dark-grey line.
   contour_style: Option<crate::functions::plot::SeriesStyle>,
+  /// `ContourStyle -> {{Black, Thick}, {Red, Thick}}`: one style per
+  /// contour function, cycled when there are more functions than styles.
+  /// Empty unless every entry of the option is itself a list.
+  contour_styles: Vec<Option<crate::functions::plot::SeriesStyle>>,
   /// `FrameLabel -> {bottom, left}`: the labels along the frame edges.
   frame_labels: crate::functions::plot::FrameLabels,
   /// `Epilog -> {…}`: graphics primitives drawn over the finished plot,
@@ -240,9 +245,49 @@ struct DensityContourOptions {
   /// plotted value `z`) is `True`; other cells are left blank, matching
   /// `Plot3D`/`ContourPlot3D`'s `RegionFunction`.
   region_function: Option<Expr>,
+  /// `ContourLabels -> True` (or a function): label each contour line with
+  /// its level.
+  contour_labels: bool,
+  /// `PlotLegends -> Automatic`: a colour bar right of the plot with one
+  /// swatch per shaded band, labelled at the contour levels.
+  bar_legend: bool,
+}
+
+/// The per-contour styles of a `ContourStyle` value whose entries are all
+/// lists (`{{Black, Thick}, {Red, Thick}}`); empty for a single directive
+/// list such as `{Thick, Blue}`.
+fn per_contour_styles(
+  value: &Expr,
+) -> Vec<Option<crate::functions::plot::SeriesStyle>> {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  match &val {
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|i| matches!(i, Expr::List(_))) =>
+    {
+      items
+        .iter()
+        .map(crate::functions::plot::parse_style_directives)
+        .collect()
+    }
+    _ => Vec::new(),
+  }
 }
 
 impl DensityContourOptions {
+  /// The style of the `index`-th contour function: its own entry of a
+  /// per-contour `ContourStyle` (cycled), else the single shared style.
+  fn style_for_contour(
+    &self,
+    index: usize,
+  ) -> Option<&crate::functions::plot::SeriesStyle> {
+    if self.contour_styles.is_empty() {
+      self.contour_style.as_ref()
+    } else {
+      self.contour_styles[index % self.contour_styles.len()].as_ref()
+    }
+  }
+
   /// `(expr, scaling)` for `scaled_color`/`band_color`, when `ColorFunction`
   /// was given a pure function or symbol rather than a named gradient.
   fn cf_expr(&self) -> Option<(&Expr, bool)> {
@@ -266,11 +311,14 @@ fn parse_density_contour_options(
   let mut mesh: Option<usize> = None;
   let mut mesh_functions: Vec<Expr> = Vec::new();
   let mut contour_style = None;
+  let mut contour_styles = Vec::new();
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
   let mut epilog: Vec<Expr> = Vec::new();
   let mut region_function: Option<Expr> = None;
   let mut color_function_expr: Option<Expr> = None;
   let mut color_function_scaling = true;
+  let mut contour_labels = false;
+  let mut bar_legend = false;
   for opt in &args[start..] {
     if let Expr::Rule {
       pattern,
@@ -349,6 +397,7 @@ fn parse_density_contour_options(
         "ContourStyle" => {
           contour_style =
             crate::functions::plot::parse_style_directives(replacement);
+          contour_styles = per_contour_styles(replacement);
         }
         "FrameLabel" => {
           frame_labels = crate::functions::plot::parse_frame_label(replacement);
@@ -368,6 +417,14 @@ fn parse_density_contour_options(
         "RegionFunction" => {
           region_function = Some(replacement.clone());
         }
+        "ContourLabels" => {
+          contour_labels = !matches!(replacement, Expr::Identifier(v)
+            if v == "False" || v == "None");
+        }
+        "PlotLegends" => {
+          bar_legend = matches!(replacement, Expr::Identifier(v)
+            if v == "Automatic");
+        }
         _ => {}
       }
     }
@@ -384,10 +441,13 @@ fn parse_density_contour_options(
     mesh,
     mesh_functions,
     contour_style,
+    contour_styles,
     frame_labels,
     epilog,
     plot_label: parse_field_plot_label(args, start),
     region_function,
+    contour_labels,
+    bar_legend,
   }
 }
 
@@ -420,7 +480,14 @@ impl DensityContourOptions {
   /// `render_width / 1000`, so a thickness given in display pixels
   /// converts by the picture's own width.
   fn contour_stroke(&self) -> (String, f64) {
-    let Some(style) = &self.contour_style else {
+    self.contour_stroke_for(self.contour_style.as_ref())
+  }
+
+  fn contour_stroke_for(
+    &self,
+    style: Option<&crate::functions::plot::SeriesStyle>,
+  ) -> (String, f64) {
+    let Some(style) = style else {
       return (CONTOUR_LINE_COLOR.to_string(), CONTOUR_LINE_WEIGHT);
     };
     let color = style.color.map_or_else(
@@ -498,6 +565,124 @@ fn push_field_plot_overlays(
     ));
   }
   push_frame_labels(svg, area, &opts.frame_labels);
+}
+
+/// `ContourLabels -> True`: write each contour's level on its longest
+/// line, centred on the line with a light halo so it stays legible over
+/// the shading.
+fn push_contour_labels(
+  svg: &mut String,
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  area: &crate::functions::plot::PlotArea,
+) {
+  let (.., label_fill, _) = plot_theme();
+  let cell_w = area.plot_w / FIELD_GRID as f64;
+  let cell_h = area.plot_h / FIELD_GRID as f64;
+  let font = 11.0 * RESOLUTION_SCALE as f64;
+  for &level in levels {
+    let segments = marching_squares_segments(
+      grid,
+      level,
+      area.plot_x0,
+      area.plot_y0,
+      cell_w,
+      cell_h,
+    );
+    let chains = chain_segments(&segments);
+    let Some(chain) = chains.iter().max_by_key(|c| c.len()) else {
+      continue;
+    };
+    if chain.len() < 4 {
+      continue;
+    }
+    let (x, y) = chain[chain.len() / 2];
+    svg.push_str(&format!(
+      "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\" stroke=\"white\" stroke-width=\"{:.1}\" stroke-opacity=\"0.8\" paint-order=\"stroke\">{}</text>\n",
+      3.0 * RESOLUTION_SCALE as f64,
+      crate::functions::plot::format_tick(level)
+    ));
+  }
+}
+
+/// Extra display-pixel width a bar legend adds right of the plot.
+const BAR_LEGEND_STRIP: u32 = 53;
+
+/// `PlotLegends -> Automatic`: widen the picture and draw a vertical colour
+/// bar with one swatch per contour band (lowest at the bottom), labelled at
+/// the contour levels — Wolfram's `BarLegend`.
+fn push_bar_legend(
+  svg: &mut String,
+  area: &crate::functions::plot::PlotArea,
+  opts: &DensityContourOptions,
+  levels: &[f64],
+  (v_min, v_max): (f64, f64),
+) {
+  let sf = RESOLUTION_SCALE as f64;
+  let new_w = opts.svg_width + BAR_LEGEND_STRIP;
+  let new_render_w = new_w * RESOLUTION_SCALE;
+  let render_h = opts.svg_height * RESOLUTION_SCALE;
+  // The background rectangle spans the old canvas; stretch it first.
+  let old_bg = format!("width=\"{}\" height=\"{render_h}\"", area.render_width);
+  let new_bg = format!("width=\"{new_render_w}\" height=\"{render_h}\"");
+  *svg = svg.replacen(&old_bg, &new_bg, 1);
+  rewrite_svg_header(
+    svg,
+    new_w,
+    opts.svg_height,
+    new_render_w,
+    render_h,
+    opts.full_width,
+  );
+
+  let (.., label_fill, _) = plot_theme();
+  let bar_w = 13.0 * sf;
+  let bar_h = area.plot_h * 0.625;
+  let bar_x = area.plot_x0 + area.plot_w + 27.0 * sf;
+  let bar_y = area.plot_y0 + (area.plot_h - bar_h) / 2.0;
+  let span = v_max - v_min;
+  let frac = |v: f64| {
+    if span > 0.0 {
+      ((v - v_min) / span).clamp(0.0, 1.0)
+    } else {
+      0.5
+    }
+  };
+  let mut bounds = Vec::with_capacity(levels.len() + 2);
+  bounds.push(v_min);
+  bounds.extend_from_slice(levels);
+  bounds.push(v_max);
+  for band in 0..bounds.len() - 1 {
+    let (r, g, b) = band_color(
+      band,
+      levels,
+      v_min,
+      v_max,
+      opts.color_function.as_deref(),
+      opts.cf_expr(),
+    );
+    let y_top = bar_y + bar_h * (1.0 - frac(bounds[band + 1]));
+    let y_bot = bar_y + bar_h * (1.0 - frac(bounds[band]));
+    svg.push_str(&format!(
+      "<rect x=\"{bar_x:.1}\" y=\"{y_top:.1}\" width=\"{bar_w:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\"/>\n",
+      y_bot - y_top
+    ));
+  }
+  svg.push_str(&format!(
+    "<rect x=\"{bar_x:.1}\" y=\"{bar_y:.1}\" width=\"{bar_w:.1}\" height=\"{bar_h:.1}\" fill=\"none\" stroke=\"rgb(110,110,110)\" stroke-width=\"{:.1}\"/>\n",
+    0.8 * sf
+  ));
+  // Label every other level once there are too many to fit.
+  let stride = levels.len().div_ceil(8).max(1);
+  for &level in levels.iter().step_by(stride) {
+    svg.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{:.0}\" fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
+      bar_x + bar_w + 6.0 * sf,
+      bar_y + bar_h * (1.0 - frac(level)),
+      sf * 14.0,
+      crate::functions::plot::format_tick(level)
+    ));
+  }
 }
 
 /// Write a plot's `FrameLabel` text along the frame edges it names.
@@ -1836,6 +2021,12 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.plot_h,
   );
   push_field_plot_overlays(&mut svg, &area, &opts);
+  if opts.contour_labels {
+    push_contour_labels(&mut svg, &grid, &levels, &area);
+  }
+  if opts.bar_legend && opts.contour_shading {
+    push_bar_legend(&mut svg, &area, &opts, &levels, (v_min, v_max));
+  }
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result_with_structure(svg, structure))
@@ -1888,18 +2079,6 @@ fn contour_plot_equations(
 
   let cell_w = area.plot_w / FIELD_GRID as f64;
   let cell_h = area.plot_h / FIELD_GRID as f64;
-  let (contour_color, contour_weight) = opts.contour_stroke();
-  let series_color = opts.contour_style.as_ref().and_then(|s| s.color).map_or(
-    (0x40, 0x40, 0x40),
-    |c| {
-      (
-        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-      )
-    },
-  );
-  let series_thickness = opts.contour_style.as_ref().and_then(|s| s.thickness);
 
   // Alongside the standalone SVG, collect every contour chain in *data*
   // coordinates as a line series, so `Show[{ContourPlot[…], Graphics[…]}]`
@@ -1907,8 +2086,21 @@ fn contour_plot_equations(
   // scaled 0‥1000 space — `chain_segments` keys points on a 1/16 grid,
   // which would glue distinct points together in small data ranges.
   let mut series: Vec<crate::syntax::PlotSeriesData> = Vec::new();
+  let mut series_per_body: Vec<std::ops::Range<usize>> = Vec::new();
 
-  for body in bodies {
+  for (body_index, body) in bodies.iter().enumerate() {
+    let style = opts.style_for_contour(body_index);
+    let (contour_color, contour_weight) = opts.contour_stroke_for(style);
+    let series_color =
+      style.and_then(|s| s.color).map_or((0x40, 0x40, 0x40), |c| {
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      });
+    let series_thickness = style.and_then(|s| s.thickness);
+    let first_series = series.len();
     let mut grid = vec![vec![f64::NAN; n]; n];
     let mut any_finite = false;
     for (i, row) in grid.iter_mut().enumerate() {
@@ -1928,6 +2120,7 @@ fn contour_plot_equations(
       }
     }
     if !any_finite {
+      series_per_body.push(first_series..first_series);
       continue;
     }
     render_contour_lines_styled(
@@ -1972,6 +2165,7 @@ fn contour_plot_equations(
         });
       }
     }
+    series_per_body.push(first_series..series.len());
   }
 
   push_frame(
@@ -1988,14 +2182,25 @@ fn contour_plot_equations(
   // the curves — the ContourStyle directives plus one `Line[…]` per chain —
   // so `ContourPlot[…][[1]]` yields primitives that can be re-embedded in
   // an outer `Graphics[…]` (the Demonstrations Tooltip-stripping idiom).
-  let mut structure_items: Vec<Expr> = contour_style_directives(args, 3);
-  for s in &series {
-    let points: Vec<Expr> = s
-      .points
-      .iter()
-      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
-      .collect();
-    structure_items.push(call1("Line", Expr::List(points.into())));
+  let directives = contour_style_directives(args, 3);
+  let mut structure_items: Vec<Expr> = if opts.contour_styles.is_empty() {
+    directives.clone()
+  } else {
+    Vec::new()
+  };
+  for (body_index, range) in series_per_body.iter().enumerate() {
+    // A per-contour style precedes just its own function's curves.
+    if !opts.contour_styles.is_empty() {
+      structure_items.push(directives[body_index % directives.len()].clone());
+    }
+    for s in &series[range.clone()] {
+      let points: Vec<Expr> = s
+        .points
+        .iter()
+        .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
+        .collect();
+      structure_items.push(call1("Line", Expr::List(points.into())));
+    }
   }
   let structure = call1("Graphics", Expr::List(structure_items.into()));
   let source = crate::syntax::PlotSource {

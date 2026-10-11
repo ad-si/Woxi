@@ -1150,9 +1150,7 @@ pub fn multiply_scalar_by_expr(
   match scalar {
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     Expr::Integer(1) => Ok(expr.clone()),
-    Expr::Integer(-1) => {
-      Ok(call("Times", vec![Expr::Integer(-1), expr.clone()]))
-    }
+    Expr::Integer(-1) => Ok(times(vec![Expr::Integer(-1), expr.clone()])),
     _ => Ok(times2(scalar.clone(), expr.clone())),
   }
 }
@@ -1433,17 +1431,18 @@ pub fn build_complex_float_expr(re: f64, im: f64) -> Expr {
     return num_to_expr(re);
   }
 
-  let im_term = if im_abs == 1.0 {
-    i_expr
-  } else {
-    times2(Expr::Real(im_abs), i_expr)
-  };
-
   if re == 0.0 {
+    let im_term = if im_abs == 1.0 {
+      i_expr
+    } else {
+      times2(Expr::Real(im_abs), i_expr)
+    };
     if im > 0.0 { im_term } else { neg1(im_term) }
   } else {
     // A machine-complex result keeps its Real head even for an integral real
-    // part: wolframscript prints (1.5 + 2.5 I)^2 as -4. + 7.5*I, not -4 + 7.5*I.
+    // part: wolframscript prints (1.5 + 2.5 I)^2 as -4. + 7.5*I, not -4 + 7.5*I,
+    // and a unit imaginary part as 2.5 - 1.*I, not 2.5 - I.
+    let im_term = times2(Expr::Real(im_abs), i_expr);
     let re_expr = Expr::Real(re);
     if im > 0.0 {
       plus2(re_expr, im_term)
@@ -1741,5 +1740,20 @@ pub fn expr_to_f64(expr: &Expr) -> Option<f64> {
       }
     }
     _ => None,
+  }
+}
+
+/// Whether `expr` contains a `FunctionCall` with the given head anywhere.
+pub fn expr_contains_head(expr: &Expr, head: &str) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == head || args.iter().any(|a| expr_contains_head(a, head))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_head(left, head) || expr_contains_head(right, head)
+    }
+    Expr::UnaryOp { operand, .. } => expr_contains_head(operand, head),
+    Expr::List(items) => items.iter().any(|a| expr_contains_head(a, head)),
+    _ => false,
   }
 }

@@ -5885,3 +5885,48 @@ mod function_parts {
     assert_eq!(interpret("Last[#^2 &]").unwrap(), "#1^2");
   }
 }
+
+mod literal_slot_is_not_reevaluated {
+  use super::*;
+
+  // A literal argument in a definition's left-hand side is evaluated once,
+  // when the rule is stored. Re-evaluating it on every call made two rules
+  // that mention each other's heads (`lsA[p_, lsB[2, 3]]` and
+  // `lsB[lsA[e, 1], _]`) recurse until `$RecursionLimit`.
+  #[test]
+  fn mutually_referencing_rules_terminate() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "lsA[p_, lsB[2, 3]] := 1; lsB[lsA[e, 1], _] := 2; \
+         {lsB[3, 5], lsA[3, lsB[2, 3]], lsA[3, 4]}"
+      )
+      .unwrap(),
+      "{lsB[3, 5], 1, lsA[3, 4]}"
+    );
+  }
+
+  // `Optional` slots inside a list pattern fall back on their defaults when
+  // the list is shorter, just like in a function argument sequence.
+  #[test]
+  fn optional_slots_inside_list_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "olp[{t_, a_:10, b_:0.1}, c_:{0, 0}] := {t, a, b, c}; \
+         {olp[{3}, {1, 2}], olp[{3, 4, 5}], olp[{3, 4}, {1, 1}], olp[{3}], \
+         olp[{1, 2, 3, 4}]}"
+      )
+      .unwrap(),
+      "{{3, 10, 0.1, {1, 2}}, {3, 4, 5, {0, 0}}, {3, 4, 0.1, {1, 1}}, \
+       {3, 10, 0.1, {0, 0}}, olp[{1, 2, 3, 4}]}"
+    );
+    assert_eq!(
+      interpret("olq[l:{t_, a_:10}] := {l, t, a}; {olq[{3}], olq[{3, 4}]}")
+        .unwrap(),
+      "{{{3}, 3, 10}, {{3, 4}, 3, 4}}"
+    );
+    assert_eq!(interpret("MatchQ[{1}, {a_, b_:2}]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[{}, {a_, b_:2}]").unwrap(), "False");
+  }
+}

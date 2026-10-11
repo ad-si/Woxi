@@ -393,8 +393,11 @@ fn poly_gcd_pair(
 
   // If the result has degree 0 in the main variable and is symbolic
   // (not a pure number), the polynomials are coprime in this variable
+  // A remainder of degree 0 — symbolic, or a nonzero number left by the
+  // Euclidean steps over Q (1/4 for x^2 and 1 - 4x^2) — means the primitive
+  // parts are coprime.
   let a_deg = max_power_int(&expand_and_combine(&a), var).unwrap_or(0);
-  if a_deg == 0 && !is_numeric_expr(&a) {
+  if a_deg == 0 {
     return Ok(content_gcd);
   }
 
@@ -442,6 +445,12 @@ fn poly_integer_content(
           ..
         } => {
           // Rational number - include it
+          let abs = call1("Abs", c);
+          int_coeffs.push(crate::evaluator::evaluate_expr_to_expr(&abs)?);
+        }
+        // An evaluated rational coefficient (`x/2`) is a number too: the
+        // content of `x/2` is 1/2, so PolynomialGCD[x/2, x/3] is x/6.
+        Expr::FunctionCall { name, .. } if name == "Rational" => {
           let abs = call1("Abs", c);
           int_coeffs.push(crate::evaluator::evaluate_expr_to_expr(&abs)?);
         }
@@ -530,26 +539,6 @@ fn normalize_poly_sign(
     crate::evaluator::evaluate_expr_to_expr(&neg)
   } else {
     Ok(poly.clone())
-  }
-}
-
-/// Check if an expression is purely numeric (no symbolic variables)
-fn is_numeric_expr(expr: &Expr) -> bool {
-  match expr {
-    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
-    Expr::BinaryOp { left, right, .. } => {
-      is_numeric_expr(left) && is_numeric_expr(right)
-    }
-    Expr::UnaryOp { operand, .. } => is_numeric_expr(operand),
-    Expr::FunctionCall { name, args } => {
-      // Rational numbers like Times[-1, Power[...]] are numeric
-      (name == "Times"
-        || name == "Plus"
-        || name == "Power"
-        || name == "Rational")
-        && args.iter().all(is_numeric_expr)
-    }
-    _ => false,
   }
 }
 

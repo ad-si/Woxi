@@ -7,6 +7,27 @@ use crate::functions::math_ast::{
 /// MinimalPolynomial[α, x] - Computes the minimal polynomial of an algebraic number α
 /// in the variable x.
 pub fn minimal_polynomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let result = minimal_polynomial_core(args)?;
+  // Only a number that is not explicitly algebraic is reported; one this
+  // implementation merely cannot reduce (Sin[Pi/7]) stays quiet.
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "MinimalPolynomial")
+    && !is_explicit_algebraic(&args[0])
+  {
+    crate::emit_message(&crate::syntax::format_message_with_expr(
+      "MinimalPolynomial::nalg: ",
+      &args[0],
+      " is not an explicit algebraic number.",
+    ));
+  }
+  Ok(result)
+}
+
+/// [`minimal_polynomial_ast`] without the `::nalg` report, for callers that
+/// only probe whether a number is algebraic (`AlgebraicIntegerQ`,
+/// `NumberFieldDiscriminant`, which reports under its own name).
+pub fn minimal_polynomial_core(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "MinimalPolynomial expects exactly 2 arguments".into(),
@@ -35,10 +56,56 @@ pub fn minimal_polynomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let simplified = crate::evaluator::evaluate_expr_to_expr(&poly)?;
       Ok(simplified)
     }
-    None => {
-      // Return unevaluated
-      Ok(unevaluated("MinimalPolynomial", args))
+    None => Ok(unevaluated("MinimalPolynomial", args)),
+  }
+}
+
+/// Whether `e` is built from rationals, `I`, rational powers, `Root` /
+/// `AlgebraicNumber` objects and trigonometric values at rational multiples
+/// of Pi — WL's explicit algebraic numbers. Symbols, transcendental
+/// constants (Pi, E), machine reals, infinities and other functions are not.
+fn is_explicit_algebraic(e: &Expr) -> bool {
+  let is_rational = |x: &Expr| {
+    matches!(x, Expr::Integer(_) | Expr::BigInteger(_))
+      || matches!(x, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  let rational_multiple_of_pi = |x: &Expr| {
+    matches!(
+      crate::evaluator::evaluate_expr_to_expr(&div2(
+        x.clone(),
+        Expr::Constant("Pi".to_string())
+      )),
+      Ok(ref r) if is_rational(r)
+    )
+  };
+  match e {
+    _ if is_rational(e) => true,
+    Expr::Identifier(s) | Expr::Constant(s) => s == "I",
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Plus" | "Times" | "Complex" => args.iter().all(is_explicit_algebraic),
+      "Power" if args.len() == 2 => {
+        is_explicit_algebraic(&args[0]) && is_rational(&args[1])
+      }
+      "Sqrt" | "CubeRoot" if args.len() == 1 => is_explicit_algebraic(&args[0]),
+      "Surd" if args.len() == 2 => {
+        is_explicit_algebraic(&args[0]) && is_rational(&args[1])
+      }
+      "Root" | "AlgebraicNumber" => true,
+      "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" if args.len() == 1 => {
+        rational_multiple_of_pi(&args[0])
+      }
+      _ => false,
+    },
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => is_explicit_algebraic(left) && is_rational(right),
+    Expr::BinaryOp { left, right, .. } => {
+      is_explicit_algebraic(left) && is_explicit_algebraic(right)
     }
+    Expr::UnaryOp { operand, .. } => is_explicit_algebraic(operand),
+    _ => false,
   }
 }
 
@@ -2364,10 +2431,7 @@ pub fn number_field_discriminant_ast(
   }
   let ev = crate::evaluator::evaluate_expr_to_expr;
   let var = id_expr("NumberFieldDiscriminant$x");
-  let mp = ev(&call(
-    "MinimalPolynomial",
-    vec![args[0].clone(), var.clone()],
-  ))?;
+  let mp = minimal_polynomial_core(&[args[0].clone(), var.clone()])?;
   if matches!(&mp, Expr::FunctionCall { name, .. } if name == "MinimalPolynomial")
   {
     crate::emit_message(&format!(
