@@ -1326,12 +1326,13 @@ fn promote_result_graphics(expr: &syntax::Expr) {
   }
   if let syntax::Expr::FunctionCall { name, args } = expr
     && name == "TabView"
-    && let Some(syntax::Expr::List(items)) = args.first()
+    && let Some(items) =
+      args.first().and_then(functions::graphics::tabview_panes)
     && !items.is_empty()
   {
     let selected = args
       .get(1)
-      .and_then(|sel| selected_tabview_pane(items, sel))
+      .and_then(|sel| selected_tabview_pane(&items, sel))
       .unwrap_or(&items[0]);
     let (_, _, content) = functions::graphics::tabview_pane_parts(selected);
     // A pane laid out as a table/column/row (`Text@Grid[…]`, the common
@@ -1354,6 +1355,12 @@ fn promote_result_graphics(expr: &syntax::Expr) {
         capture_graphics(&svg);
         return;
       }
+    }
+    // A pane that is a `LocatorPane`/`ClickPane` shows the picture it wraps.
+    let pane = render_interactive_pane_if_needed(content.clone());
+    if let syntax::Expr::Graphics { svg, .. } = &pane {
+      capture_graphics(svg);
+      return;
     }
     promote_result_graphics(content);
   }
@@ -1563,10 +1570,10 @@ pub(crate) fn take_termination() -> Option<&'static str> {
 
 /// The value a terminated evaluation reports.
 fn terminated_evaluation_expr(tag: &'static str) -> syntax::Expr {
-  syntax::Expr::FunctionCall {
-    name: "TerminatedEvaluation".to_string(),
-    args: vec![syntax::Expr::Identifier(tag.to_string())].into(),
-  }
+  helpers::call1(
+    "TerminatedEvaluation",
+    syntax::Expr::Identifier(tag.to_string()),
+  )
 }
 
 /// Resolve an evaluation's outcome against a pending termination, clearing
@@ -2747,7 +2754,7 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
               emit_message(&format!(
                 "Goto::nolabel: Label {tag_str} not found."
               ));
-              syntax::Expr::Identifier("Null".to_string())
+              helpers::null_expr()
             }
             Err(InterpreterError::ThrowValue(val, tag)) => {
               // An uncaught Throw aborts evaluation at top level.
@@ -2758,10 +2765,7 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
                 Some(t) => vec![*val, *t],
                 None => vec![*val],
               };
-              let throw_expr = syntax::Expr::FunctionCall {
-                name: "Throw".to_string(),
-                args: throw_args.into(),
-              };
+              let throw_expr = helpers::call("Throw", throw_args);
               emit_message(&format!(
                 "Throw::nocatch: Uncaught {} returned to top level.",
                 syntax::format_expr(&throw_expr, syntax::ExprForm::Output)
@@ -2794,10 +2798,8 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
           } = &result_expr
           && n == "Sequence"
         {
-          result_expr = seq_args
-            .last()
-            .cloned()
-            .unwrap_or_else(|| syntax::Expr::Identifier("Null".to_string()));
+          result_expr =
+            seq_args.last().cloned().unwrap_or_else(helpers::null_expr);
         }
         // Keep `%` / `Out[]` history per statement (notebook semantics:
         // `2+2` then `% + 1` within one cell sees the intermediate 4). The
@@ -3416,7 +3418,7 @@ fn render_audio_if_needed(expr: syntax::Expr) -> syntax::Expr {
     && let Some(audio) = functions::sound::audio_to_output(&expr)
   {
     capture_audio(audio);
-    return syntax::Expr::Identifier("-Audio-".to_string());
+    return helpers::id_expr("-Audio-");
   }
   expr
 }
@@ -3431,7 +3433,7 @@ fn render_sound_if_needed(expr: syntax::Expr) -> syntax::Expr {
     && let Some(wav_base64) = functions::sound::sound_to_wav_base64(&expr)
   {
     capture_sound(&wav_base64);
-    return syntax::Expr::Identifier("-Sound-".to_string());
+    return helpers::id_expr("-Sound-");
   }
   expr
 }
@@ -3510,7 +3512,7 @@ fn render_image_if_needed(expr: syntax::Expr) -> syntax::Expr {
     let html =
       functions::image_ast::image_to_html_img(width, height, channels, data);
     capture_graphics(&html);
-    syntax::Expr::Identifier("-Image-".to_string())
+    helpers::id_expr("-Image-")
   } else {
     expr
   }
@@ -3732,12 +3734,8 @@ pub(crate) fn tableform_grid_args(
       _ => None,
     });
   if !has_alignment {
-    let align = table_alignment
-      .unwrap_or_else(|| syntax::Expr::Identifier("Left".into()));
-    grid_args.push(syntax::Expr::Rule {
-      pattern: Box::new(syntax::Expr::Identifier("Alignment".into())),
-      replacement: Box::new(align),
-    });
+    let align = table_alignment.unwrap_or_else(|| helpers::id_expr("Left"));
+    grid_args.push(helpers::rule_expr(helpers::id_expr("Alignment"), align));
   }
   grid_args.extend(args[1..].iter().cloned());
   Some((grid_args, group_gaps))
@@ -5159,14 +5157,13 @@ fn scientific_string_to_box(s: &str) -> Option<syntax::Expr> {
       vec![
         Expr::String(mantissa.to_string()),
         Expr::String(" \u{00d7} ".to_string()),
-        Expr::FunctionCall {
-          name: "SuperscriptBox".to_string(),
-          args: vec![
+        helpers::call(
+          "SuperscriptBox",
+          vec![
             Expr::String("10".to_string()),
             Expr::String(exp.to_string()),
-          ]
-          .into(),
-        },
+          ],
+        ),
       ]
       .into(),
     )]
@@ -6668,14 +6665,13 @@ fn store_function_definition(
         // lookup chain (which falls through to `Default[func]`) supplies
         // the user-set value (matching Wolfram's `f[x_.] := ...` +
         // `Default[f] = c` semantics).
-        defaults.push(Some(syntax::Expr::FunctionCall {
-          name: "Default".to_string(),
-          args: vec![
+        defaults.push(Some(helpers::call(
+          "Default",
+          vec![
             syntax::Expr::Identifier(func_name.clone()),
             syntax::Expr::Integer(position as i128),
-          ]
-          .into(),
-        }));
+          ],
+        )));
         heads.push(None);
         blank_types.push(1);
       }

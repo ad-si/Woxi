@@ -4601,16 +4601,13 @@ pub fn from_julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       x.max(1)
     };
-    crate::evaluator::evaluate_expr_to_expr(&call(
-      "Plus",
-      vec![
-        Expr::Integer(sec_whole),
-        call(
-          "Rational",
-          vec![Expr::Integer(rem_num / g), Expr::Integer(sd / g)],
-        ),
-      ],
-    ))?
+    crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+      Expr::Integer(sec_whole),
+      call(
+        "Rational",
+        vec![Expr::Integer(rem_num / g), Expr::Integer(sd / g)],
+      ),
+    ]))?
   };
 
   Ok(Expr::FunctionCall {

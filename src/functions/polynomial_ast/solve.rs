@@ -46,7 +46,7 @@ fn strip_sqrt_square(expr: Expr) -> Expr {
     Expr::FunctionCall { name, args } if name == "Times" => {
       let new_args: Vec<Expr> =
         args.iter().map(|a| strip_sqrt_square(a.clone())).collect();
-      call("Times", new_args)
+      times(new_args)
     }
     _ => expr,
   }
@@ -1627,10 +1627,8 @@ fn solve_by_linear_substitution(positional: &[Expr]) -> Option<Expr> {
   let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
   for sum in candidates {
     // The sum has to be linear in `var`: a constant slope and offset.
-    let slope = eval(Expr::FunctionCall {
-      name: "D".to_string(),
-      args: vec![sum.clone(), Expr::Identifier(var.clone())].into(),
-    })?;
+    let slope =
+      eval(call("D", vec![sum.clone(), Expr::Identifier(var.clone())]))?;
     if super::eliminate::contains_var(&slope, var) || is_zero_expr(&slope) {
       continue;
     }
@@ -1711,7 +1709,7 @@ fn abs_squared_to_squares(eqns: &Expr) -> (Expr, bool) {
       return None;
     }
     changed.set(true);
-    Some(call("Power", vec![inner, Expr::Integer(2)]))
+    Some(pow(inner, Expr::Integer(2)))
   });
   (rewritten, changed.get())
 }
@@ -1899,15 +1897,14 @@ fn solve_modular(
   if vars.is_empty() {
     return Ok(unevaluated("Solve", original));
   }
-  let reduced = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Reduce".to_string(),
-    args: vec![
+  let reduced = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Reduce",
+    vec![
       positional[0].clone(),
       positional[1].clone(),
       rule_expr(id_expr("Modulus"), Expr::Integer(n)),
-    ]
-    .into(),
-  })?;
+    ],
+  ))?;
   // `False` means no solutions; `True` means every value works, which Reduce
   // does not report for a modular system, so anything else unrecognised leaves
   // the call alone rather than guessing.
@@ -4508,14 +4505,14 @@ fn make_root_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
     let term = match (var_pow, c) {
       (None, c) => c.clone(),
       (Some(p), Expr::Integer(1)) => p,
-      (Some(p), c) => call("Times", vec![c.clone(), p]),
+      (Some(p), c) => times(vec![c.clone(), p]),
     };
     terms.push(term);
   }
   let body = match terms.len() {
     0 => return None,
     1 => terms.remove(0),
-    _ => call("Plus", terms),
+    _ => plus(terms),
   };
   let body = crate::evaluator::evaluate_expr_to_expr(&body).ok()?;
   let func = Expr::Function {
@@ -4804,7 +4801,7 @@ fn extract_abs_factor(e: &Expr, var: &str) -> Option<(Expr, Expr)> {
   let coeff = match coeff_factors.len() {
     0 => Expr::Integer(1),
     1 => coeff_factors.pop().unwrap(),
-    _ => call("Times", coeff_factors),
+    _ => times(coeff_factors),
   };
   Some((coeff, inner))
 }
@@ -5290,10 +5287,12 @@ fn try_solve_inverse_function(
         // Periodic part: (2*Pi*I*C[1]) / Log[base].
         let c1 = call1("C", Expr::Integer(1));
         let periodic = crate::evaluator::evaluate_expr_to_expr(&div2(
-          call(
-            "Times",
-            vec![Expr::Integer(2), id_expr("I"), id_expr("Pi"), c1.clone()],
-          ),
+          times(vec![
+            Expr::Integer(2),
+            id_expr("I"),
+            id_expr("Pi"),
+            c1.clone(),
+          ]),
           log_base,
         ))
         .ok()?;
@@ -5312,7 +5311,7 @@ fn try_solve_inverse_function(
           if principal_is_zero {
             periodic
           } else {
-            call("Plus", vec![periodic, principal.clone()])
+            plus(vec![periodic, principal.clone()])
           }
         };
         if matches!(&exp, Expr::Identifier(n) if n == var) {
@@ -5342,8 +5341,7 @@ fn try_solve_inverse_function(
         ))
         .ok()?;
         if is_constant_wrt(&slope, var) && !matches!(slope, Expr::Integer(0)) {
-          let placeholder =
-            Expr::Identifier("$SolvePeriodicFamily".to_string());
+          let placeholder = id_expr("$SolvePeriodicFamily");
           let new_eq = Expr::Comparison {
             operands: vec![exp.clone(), placeholder.clone()],
             operators: vec![ComparisonOp::Equal],
@@ -5359,10 +5357,10 @@ fn try_solve_inverse_function(
               if crate::functions::math_ast::complex::negate_if_negative(&slope)
                 .is_some()
               {
-                crate::evaluator::evaluate_expr_to_expr(&call(
-                  "Times",
-                  vec![Expr::Integer(-1), periodic],
-                ))
+                crate::evaluator::evaluate_expr_to_expr(&times(vec![
+                  Expr::Integer(-1),
+                  periodic,
+                ]))
                 .ok()?
               } else {
                 periodic
@@ -11676,10 +11674,10 @@ fn specialize_periodic_solution(
 
   let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
   let subst_param = |value: Expr| -> Option<Expr> {
-    eval(Expr::FunctionCall {
-      name: "ReplaceAll".to_string(),
-      args: vec![body.clone(), rule_expr(param.clone(), value)].into(),
-    })
+    eval(call(
+      "ReplaceAll",
+      vec![body.clone(), rule_expr(param.clone(), value)],
+    ))
   };
   // Linear coefficients: a = body | C=0, b = Coefficient[body, C, 1].
   let a = try_eval_to_f64(&subst_param(Expr::Integer(0))?)?;

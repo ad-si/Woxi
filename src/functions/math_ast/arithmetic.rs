@@ -1528,7 +1528,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
   {
     let mut negated = vec![Expr::Real(-c)];
     negated.extend(rest.iter().cloned());
-    return call("Times", negated);
+    return times(negated);
   }
   e
 }
@@ -13400,11 +13400,10 @@ fn rational_base_radical(
   }
   let mut factors: Vec<Expr> = Vec::new();
   if outside_num != outside_den {
-    factors.push(Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![bigint_to_expr(outside_num), bigint_to_expr(outside_den)]
-        .into(),
-    });
+    factors.push(call(
+      "Rational",
+      vec![bigint_to_expr(outside_num), bigint_to_expr(outside_den)],
+    ));
   }
   for ((en, ed), num, den) in groups {
     let e = make_rational(en, ed);

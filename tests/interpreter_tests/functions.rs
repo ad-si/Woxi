@@ -2696,6 +2696,35 @@ mod times_and_divide_characters {
   }
 }
 
+mod set_infix_operators {
+  use super::*;
+
+  #[test]
+  fn union_and_intersection_symbols() {
+    assert_eq!(interpret("{1, 2} \u{22C3} {2, 3}").unwrap(), "{1, 2, 3}");
+    assert_eq!(interpret("{1, 2, 3} \u{22C2} {2, 3, 4}").unwrap(), "{2, 3}");
+    assert_eq!(interpret(r#"{1} \[Union] {5}"#).unwrap(), "{1, 5}");
+    assert_eq!(interpret(r#"{1, 2} \[Intersection] {2}"#).unwrap(), "{2}");
+  }
+
+  #[test]
+  fn union_and_intersection_flat_and_precedence() {
+    assert_eq!(
+      interpret("{1} \u{22C3} {2} \u{22C3} {3}").unwrap(),
+      "{1, 2, 3}"
+    );
+    // Intersection binds tighter than Union.
+    assert_eq!(
+      interpret("{1} \u{22C3} {1, 2} \u{22C2} {2}").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("Hold[a \u{22C3} b \u{22C2} c]").unwrap(),
+      "Hold[Union[a, Intersection[b, c]]]"
+    );
+  }
+}
+
 mod ring_operators {
   use super::*;
 

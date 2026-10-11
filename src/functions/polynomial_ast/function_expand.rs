@@ -94,30 +94,24 @@ fn half_integer_numerator(e: &Expr) -> Option<i128> {
 /// `FunctionExpand[Gamma[0, 2]]` as the bare `-ExpIntegralEi[-2]`.
 fn incomplete_gamma_zero(z: &Expr) -> Expr {
   let minus_z = mk_times(mk_int(-1), z.clone());
-  call(
-    "Plus",
-    vec![
-      mk_times(mk_int(-1), call1("ExpIntegralEi", minus_z.clone())),
-      mk_div(
-        call(
-          "Plus",
-          vec![
-            mk_times(
-              mk_int(-1),
-              call1("Log", mk_times(mk_int(-1), pow(z.clone(), mk_int(-1)))),
-            ),
-            call1("Log", minus_z),
-          ],
+  plus(vec![
+    mk_times(mk_int(-1), call1("ExpIntegralEi", minus_z.clone())),
+    mk_div(
+      plus(vec![
+        mk_times(
+          mk_int(-1),
+          call1("Log", mk_times(mk_int(-1), pow(z.clone(), mk_int(-1)))),
         ),
-        mk_int(2),
-      ),
-      mk_times(mk_int(-1), call1("Log", z.clone())),
-    ],
-  )
+        call1("Log", minus_z),
+      ]),
+      mk_int(2),
+    ),
+    mk_times(mk_int(-1), call1("Log", z.clone())),
+  ])
 }
 
 fn mk_plus(a: Expr, b: Expr) -> Expr {
-  call("Plus", vec![a, b])
+  plus(vec![a, b])
 }
 
 /// The additive terms of `e` if its head is `Plus` (either the `Plus[…]` call
@@ -246,7 +240,7 @@ fn negate_if_negative(t: &Expr) -> Option<Expr> {
     Some(match factors.len() {
       0 => mk_int(1),
       1 => factors.into_iter().next().unwrap(),
-      _ => call("Times", factors),
+      _ => times(factors),
     })
   };
   match t {
@@ -666,15 +660,14 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         // Upwards: Gamma[a + 1, z] = a Gamma[a, z] + z^a E^-z.
         let mut a = 1i128;
         while a < p {
-          acc =
-            call("Plus", vec![mk_times(mk_ratio(a, 2), acc), elementary(a)]);
+          acc = plus(vec![mk_times(mk_ratio(a, 2), acc), elementary(a)]);
           a += 2;
         }
         // Downwards: Gamma[a, z] = (Gamma[a + 1, z] - z^a E^-z)/a.
         let mut a = -1i128;
         while a >= p {
           acc = mk_div(
-            call("Plus", vec![acc, mk_times(mk_int(-1), elementary(a))]),
+            plus(vec![acc, mk_times(mk_int(-1), elementary(a))]),
             mk_ratio(a, 2),
           );
           a -= 2;
@@ -698,19 +691,16 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         let mut acc = incomplete_gamma_zero(z);
         for a in (*n..0).rev() {
           acc = mk_div(
-            call(
-              "Plus",
-              vec![
-                acc,
+            plus(vec![
+              acc,
+              mk_times(
+                mk_int(-1),
                 mk_times(
-                  mk_int(-1),
-                  mk_times(
-                    pow(z.clone(), mk_int(a)),
-                    pow(mk_id("E"), mk_times(mk_int(-1), z.clone())),
-                  ),
+                  pow(z.clone(), mk_int(a)),
+                  pow(mk_id("E"), mk_times(mk_int(-1), z.clone())),
                 ),
-              ],
-            ),
+              ),
+            ]),
             mk_int(a),
           );
         }
@@ -747,7 +737,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         });
       }
       Some(mk_div(
-        call("Plus", terms),
+        plus(terms),
         mk_times(pow(mk_id("E"), z.clone()), z.clone()),
       ))
     }
@@ -809,10 +799,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
           call1("Gamma", mk_plus(mk_int(1), x.clone())),
           call1(
             "Gamma",
-            call(
-              "Plus",
-              vec![mk_int(1), mk_times(mk_int(-1), n.clone()), x.clone()],
-            ),
+            plus(vec![mk_int(1), mk_times(mk_int(-1), n.clone()), x.clone()]),
           ),
         )),
         _ => None,
@@ -866,16 +853,13 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     // Re[z] / Im[z] distribute over a sum: Re[a + b] → Re[a] + Re[b].
     "Re" | "Im" if args.len() == 1 => {
       let terms = as_plus_terms(&args[0])?;
-      Some(call(
-        "Plus",
-        terms.into_iter().map(|t| call1(name, t)).collect(),
-      ))
+      Some(plus(terms.into_iter().map(|t| call1(name, t)).collect()))
     }
 
     // Multinomial[a1, …, ak] = (a1 + … + ak)! / (a1! ⋯ ak!) →
     //   Gamma[1 + a1 + … + ak] / (Gamma[1 + a1] ⋯ Gamma[1 + ak]).
     "Multinomial" if !args.is_empty() => {
-      let sum = call("Plus", args.to_vec());
+      let sum = plus(args.to_vec());
       let numerator = call1("Gamma", mk_plus(mk_int(1), sum));
       let denominator = args
         .iter()
@@ -900,10 +884,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
             call1("Gamma", mk_plus(mk_int(1), k.clone())),
             call1(
               "Gamma",
-              call(
-                "Plus",
-                vec![mk_int(1), mk_times(mk_int(-1), k.clone()), n.clone()],
-              ),
+              plus(vec![mk_int(1), mk_times(mk_int(-1), k.clone()), n.clone()]),
             ),
           ),
         ))
@@ -1157,7 +1138,7 @@ fn try_gamma_ratio_in_times(factors: &[Expr]) -> Option<Expr> {
   Some(if rest.len() == 1 {
     rest.remove(0)
   } else {
-    call("Times", rest)
+    times(rest)
   })
 }
 

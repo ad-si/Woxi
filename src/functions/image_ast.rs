@@ -7411,37 +7411,29 @@ fn threshold_one_method(x: &Expr, t: &Expr, method: ThreshMethod) -> Expr {
   let expr = match method {
     ThreshMethod::Hard | ThreshMethod::Firm => return threshold_one(x, t),
     // Sign[x] * Max[|x| - t, 0]
-    ThreshMethod::Soft => call(
-      "Times",
-      vec![
-        call1("Sign", x.clone()),
-        call(
-          "Max",
-          vec![
-            call(
-              "Plus",
-              vec![abs_x, call("Times", vec![Expr::Integer(-1), t.clone()])],
-            ),
-            Expr::Integer(0),
-          ],
-        ),
-      ],
-    ),
+    ThreshMethod::Soft => times(vec![
+      call1("Sign", x.clone()),
+      call(
+        "Max",
+        vec![
+          plus(vec![abs_x, times(vec![Expr::Integer(-1), t.clone()])]),
+          Expr::Integer(0),
+        ],
+      ),
+    ]),
     // If[|x| > t, x - t^2/x, 0]
     ThreshMethod::Garrote => call(
       "If",
       vec![
         call("Greater", vec![abs_x, t.clone()]),
-        call(
-          "Plus",
-          vec![
-            x.clone(),
-            call(
-              "Times",
-              vec![Expr::Integer(-1), pow(t.clone(), 2), pow(x.clone(), -1)],
-            ),
-          ],
-        ),
+        plus(vec![
+          x.clone(),
+          times(vec![
+            Expr::Integer(-1),
+            pow(t.clone(), 2),
+            pow(x.clone(), -1),
+          ]),
+        ]),
         Expr::Integer(0),
       ],
     ),
@@ -7450,33 +7442,24 @@ fn threshold_one_method(x: &Expr, t: &Expr, method: ThreshMethod) -> Expr {
       "If",
       vec![
         call("Greater", vec![abs_x, t.clone()]),
-        call(
-          "Times",
-          vec![
-            call1("Sign", x.clone()),
-            call(
-              "Sqrt",
-              vec![call(
-                "Plus",
-                vec![
-                  pow(x.clone(), 2),
-                  call("Times", vec![Expr::Integer(-1), pow(t.clone(), 2)]),
-                ],
-              )],
-            ),
-          ],
-        ),
+        times(vec![
+          call1("Sign", x.clone()),
+          call(
+            "Sqrt",
+            vec![plus(vec![
+              pow(x.clone(), 2),
+              times(vec![Expr::Integer(-1), pow(t.clone(), 2)]),
+            ])],
+          ),
+        ]),
         Expr::Integer(0),
       ],
     ),
     // x^3 / (x^2 + t^2)
-    ThreshMethod::SmoothGarrote => call(
-      "Times",
-      vec![
-        pow(x.clone(), 3),
-        pow(call("Plus", vec![pow(x.clone(), 2), pow(t.clone(), 2)]), -1),
-      ],
-    ),
+    ThreshMethod::SmoothGarrote => times(vec![
+      pow(x.clone(), 3),
+      pow(plus(vec![pow(x.clone(), 2), pow(t.clone(), 2)]), -1),
+    ]),
   };
   crate::evaluator::evaluate_expr_to_expr(&expr).unwrap_or(expr)
 }

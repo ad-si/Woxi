@@ -3460,7 +3460,7 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if var_factors.len() == 1 {
         var_factors.into_iter().next().unwrap()
       } else {
-        call("Times", var_factors)
+        times(var_factors)
       };
       return Ok(Expr::List(
         vec![num_coeff, non_var, Expr::Integer(1)].into(),

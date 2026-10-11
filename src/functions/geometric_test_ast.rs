@@ -585,7 +585,7 @@ fn sub_expr(a: &Expr, b: &Expr) -> Expr {
 }
 
 fn mul_expr(a: &Expr, b: &Expr) -> Expr {
-  call("Times", vec![a.clone(), b.clone()])
+  times(vec![a.clone(), b.clone()])
 }
 
 /// CollinearPoints[{p1, p2, …}] — `True`/`False` when every coordinate is

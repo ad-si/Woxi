@@ -3773,6 +3773,53 @@ fn graphics_text_content(expr: &Expr) -> String {
       crate::functions::chart::expr_to_label(expr)
         .unwrap_or_else(|| expr_to_string(expr))
     }
+    // `ScientificForm`/`EngineeringForm` typeset as `mantissa×10ⁿ` on one
+    // line, with the exponent as a superscript — not the two-line OutputForm
+    // box `ToString` gives, which would split a label across two rows.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "ScientificForm" | "EngineeringForm")
+        && !args.is_empty() =>
+    {
+      let n = format_precision_arg(args.get(1), 6);
+      let parts = if name == "ScientificForm" {
+        crate::functions::string_ast::scientific_form_parts(&args[0], n)
+      } else {
+        crate::functions::string_ast::engineering_form_parts(&args[0], n)
+      };
+      match parts {
+        Some((mantissa, Some(exp))) => {
+          format!("{mantissa}×10{}", to_unicode_script_digits(&exp.to_string(), true))
+        }
+        Some((mantissa, None)) => mantissa,
+        None => graphics_text_content(&args[0]),
+      }
+    }
+    // A product with a string factor (`" = " NumberForm[x, 3]`) is the
+    // factors set side by side, each typeset on its own — the wrappers
+    // inside it still apply instead of printing as `NumberForm[…]` source.
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.iter().any(|a| matches!(a, Expr::String(_))) =>
+    {
+      args
+        .iter()
+        .map(graphics_text_content)
+        .collect::<Vec<_>>()
+        .join(" ")
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::String(_))
+      || matches!(right.as_ref(), Expr::String(_)) =>
+    {
+      format!(
+        "{} {}",
+        graphics_text_content(left),
+        graphics_text_content(right)
+      )
+    }
     _ => {
       let text = match crate::functions::string_ast::to_string_ast(
         std::slice::from_ref(expr),
@@ -21457,7 +21504,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // A `PaneSelector` argument shows one pane's controls at a time; the
     // flattened list holds every pane's, so each pane's controls also pick
     // up the condition under which they are on screen.
-    collect_pane_visibility(spec, &place_map, &mut control_visible);
+    collect_pane_visibility(spec, &place_map, &mut control_visible, None);
     if let Some(items) = named_control_group_items(spec) {
       arg_items.extend(items);
       continue;
@@ -22719,7 +22766,7 @@ fn strip_body_locator_resets(expr: &Expr, vars: &[String]) -> Expr {
         && args.len() == 2
         && matches!(&args[0], Expr::Identifier(v) if vars.contains(v)) =>
     {
-      id_expr("Null")
+      null_expr()
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -22890,12 +22937,12 @@ fn collect_body_tabview_selectors(expr: &Expr) -> Vec<(String, Vec<Expr>)> {
       Expr::FunctionCall { name, args } => {
         if name == "TabView"
           && args.len() >= 2
-          && let Expr::List(items) = &args[0]
+          && let Some(items) = tabview_panes(&args[0])
           && !items.is_empty()
           && let Expr::Identifier(var) = unwrap_pane_selector(&args[1])
           && !found.iter().any(|(v, _)| v == var)
         {
-          found.push((var.clone(), items.to_vec()));
+          found.push((var.clone(), items));
         }
         for a in args {
           walk(a, found);
@@ -23056,7 +23103,7 @@ fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
     if let Expr::FunctionCall { name, args } = expr
       && name == "TabView"
       && args.len() >= 2
-      && let Expr::List(items) = &args[0]
+      && let Some(items) = tabview_panes(&args[0])
     {
       let selector =
         crate::syntax::expr_to_source_form(unwrap_pane_selector(&args[1]));
@@ -23604,9 +23651,8 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   {
     return control_group_items(&args[0]);
   }
-  let Expr::List(items) = &args[0] else {
-    return None;
-  };
+  let items_owned = tabview_panes(&args[0])?;
+  let items = &items_owned;
   let mut out = Vec::new();
   // Consecutive label pieces of a `Row` (`"show ", Style["C", Italic], …`)
   // that lead into a control form one caption, not one heading each.
@@ -23615,10 +23661,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     match caption.len() {
       0 => {}
       1 => out.push(caption.remove(0)),
-      _ => out.push(Expr::FunctionCall {
-        name: "Row".to_string(),
-        args: vec![Expr::List(std::mem::take(caption).into())].into(),
-      }),
+      _ => out.push(call1("Row", Expr::List(std::mem::take(caption).into()))),
     }
     caption.clear();
   };
@@ -23710,6 +23753,19 @@ pub(crate) fn unwrap_pane_selector(selector: &Expr) -> &Expr {
 /// Returns `(None, item, item)` for anything else (a malformed pane falls
 /// back to itself as both label and content, matching Wolfram's tolerance
 /// for a plain non-rule entry).
+pub(crate) fn tabview_panes(arg: &Expr) -> Option<Vec<Expr>> {
+  match arg {
+    Expr::List(items) => Some(items.to_vec()),
+    Expr::Association(pairs) => Some(
+      pairs
+        .iter()
+        .map(|(k, v)| rule_expr(k.clone(), v.clone()))
+        .collect(),
+    ),
+    _ => None,
+  }
+}
+
 pub(crate) fn tabview_pane_parts(item: &Expr) -> (Option<Expr>, &Expr, &Expr) {
   match item {
     Expr::Rule {
@@ -23901,6 +23957,7 @@ fn collect_pane_visibility(
   spec: &Expr,
   place_map: &[Option<String>],
   out: &mut Vec<(String, String)>,
+  outer: Option<&str>,
 ) {
   // A `PaneSelector` may sit inside a `Grid`'s row list (the Demonstrations
   // idiom of a custom Grid-based control panel) — descend into a bare list
@@ -23908,7 +23965,7 @@ fn collect_pane_visibility(
   // `PaneSelector` nested that way is never found.
   if let Expr::List(items) = spec {
     for item in items {
-      collect_pane_visibility(item, place_map, out);
+      collect_pane_visibility(item, place_map, out, outer);
     }
     return;
   }
@@ -23918,7 +23975,7 @@ fn collect_pane_visibility(
   if name != "PaneSelector" {
     // The `PaneSelector` may sit inside a layout container.
     for arg in args {
-      collect_pane_visibility(arg, place_map, out);
+      collect_pane_visibility(arg, place_map, out, outer);
     }
     return;
   }
@@ -23940,11 +23997,24 @@ fn collect_pane_visibility(
     else {
       continue;
     };
-    let cond = format!(
+    let own = format!(
       "({}) == ({})",
       selector,
       crate::syntax::expr_to_source_form(pattern)
     );
+    // A pane nested inside another pane's content (`PaneSelector[{True ->
+    // PaneSelector[{1 -> control}, Dynamic[w]]}, Dynamic[p]]`) is only on
+    // screen while the outer pane is too, so its condition is the
+    // conjunction of both.
+    let cond = match outer {
+      Some(o) => format!("({o}) && ({own})"),
+      None => own,
+    };
+    if matches!(replacement.as_ref(), Expr::FunctionCall { name, .. } if name == "PaneSelector")
+    {
+      collect_pane_visibility(replacement, place_map, out, Some(&cond));
+      continue;
+    }
     for var in pane_control_variables(replacement, place_map) {
       match out.iter_mut().find(|(n, _)| *n == var) {
         Some((_, existing)) => *existing = format!("{existing} || {cond}"),
@@ -23976,9 +24046,9 @@ fn pane_or_tab_governed_names(
     match e {
       Expr::FunctionCall { name, args } => {
         if (name == "PaneSelector" || name == "TabView")
-          && let Some(Expr::List(panes)) = args.first()
+          && let Some(panes) = args.first().and_then(tabview_panes)
         {
-          for pane in panes {
+          for pane in &panes {
             if let Expr::Rule { replacement, .. }
             | Expr::RuleDelayed { replacement, .. } = pane
             {
@@ -24270,7 +24340,12 @@ fn resolve_choice_label(label: &Expr) -> Option<Expr> {
     match e {
       Expr::Identifier(s) => !crate::evaluator::is_builtin_symbol(s),
       Expr::List(items) => items.iter().any(has_user_symbol),
-      Expr::FunctionCall { args, .. } => args.iter().any(has_user_symbol),
+      // A call to a user-defined function (`reactionNames[1]`) also needs
+      // resolving, not just calls whose arguments mention a user symbol.
+      Expr::FunctionCall { name, args } => {
+        !crate::evaluator::is_builtin_symbol(name)
+          || args.iter().any(has_user_symbol)
+      }
       _ => false,
     }
   }
@@ -30740,6 +30815,27 @@ mod manipulate_traditional_form_choice_svg_tests {
     match &control {
       ManipulateControl::Discrete { value_labels, .. } => {
         assert_eq!(value_labels, &["to the north pole", "south"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A choice label that calls a user-defined function (`names[1]`) must
+  /// show the call's result, not the unevaluated call.
+  #[test]
+  fn choice_labels_resolve_user_function_calls() {
+    crate::interpret(
+      "choiceLabelName[k_] := Switch[k, 1, \"first\", 2, \"second\"]",
+    )
+    .unwrap();
+    let control = discrete_control(
+      "Manipulate[side, \
+       {{side, 1, \"side\"}, \
+        {1 -> choiceLabelName[1], 2 -> choiceLabelName[2]}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels, &["first", "second"]);
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
