@@ -262,8 +262,10 @@ fn per_contour_styles(
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   match &val {
     Expr::List(items)
-      if !items.is_empty()
-        && items.iter().all(|i| matches!(i, Expr::List(_))) =>
+      if !items.is_empty() && items.iter().all(|i| {
+        matches!(i, Expr::List(_))
+          || matches!(i, Expr::FunctionCall { name, .. } if name == "Directive")
+      }) =>
     {
       items
         .iter()
@@ -1554,8 +1556,25 @@ fn render_contour_lines_styled(
   render_width: u32,
   stroke: &str,
   weight: f64,
+  dashing: Option<&[f64]>,
 ) {
   let stroke_w = render_width as f64 / 1000.0 * weight;
+  // Relative lengths (Dashed, Dotted) are pixels; absolute ones are
+  // fractions of the picture width.
+  let dash_attr = dashing.map_or_else(String::new, |pattern| {
+    let vals: Vec<String> = pattern
+      .iter()
+      .map(|d| {
+        let len = crate::functions::plot::dash_len(
+          *d,
+          render_width as f64,
+          RESOLUTION_SCALE as f64,
+        );
+        format!("{len:.1}")
+      })
+      .collect();
+    format!(" stroke-dasharray=\"{}\"", vals.join(","))
+  });
   for &level in levels {
     let segments =
       marching_squares_segments(grid, level, plot_x0, plot_y0, cell_w, cell_h);
@@ -1565,7 +1584,7 @@ fn render_contour_lines_styled(
         .map(|(x, y)| format!("{x:.1},{y:.1}"))
         .collect();
       svg.push_str(&format!(
-        "<polyline points=\"{}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{stroke_w:.1}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n",
+        "<polyline points=\"{}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{stroke_w:.1}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"{dash_attr}/>\n",
         points.join(" ")
       ));
     }
@@ -1998,6 +2017,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       area.render_width,
       "#b0b0b0",
       0.4,
+      None,
     );
   }
   let (contour_color, contour_weight) = opts.contour_stroke();
@@ -2012,6 +2032,10 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.render_width,
     &contour_color,
     contour_weight,
+    opts
+      .contour_style
+      .as_ref()
+      .and_then(|s| s.dashing.as_deref()),
   );
   push_frame(
     &mut svg,
@@ -2134,6 +2158,7 @@ fn contour_plot_equations(
       area.render_width,
       &contour_color,
       contour_weight,
+      style.and_then(|s| s.dashing.as_deref()),
     );
     let scaled_cell = 1000.0 / FIELD_GRID as f64;
     let segments =
@@ -3712,6 +3737,10 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.render_width,
     &contour_color,
     contour_weight,
+    opts
+      .contour_style
+      .as_ref()
+      .and_then(|s| s.dashing.as_deref()),
   );
   push_frame(
     &mut svg,

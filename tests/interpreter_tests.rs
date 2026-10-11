@@ -1619,6 +1619,29 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_contour_plot_equations_use_per_contour_directives_and_dashing() {
+    // Regression: `ContourStyle -> {Directive[…], Directive[…]}` was merged
+    // into one style, and `Dashed` never reached the drawn contour lines.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "ContourPlot[{x == y, x == -y}, {x, -1, 1}, {y, -1, 1}, \
+       ContourStyle -> {Directive[Red, Thick], \
+       Directive[Blue, Thick, Dashed]}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("ContourPlot should produce a graphics SVG");
+    assert!(
+      svg.contains("stroke=\"rgb(255,0,0)\" stroke-width=\"20.0\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"),
+      "first equation must be solid red:\n{svg}"
+    );
+    assert!(
+      svg.contains("stroke=\"rgb(0,0,255)\" stroke-width=\"20.0\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-dasharray="),
+      "second equation must be dashed blue:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_column_with_nested_tableform_renders_as_graphics() {
     // In visual mode (playground / woxi-studio), a Column containing a
     // TableForm must pre-render the table as a sub-SVG instead of falling
