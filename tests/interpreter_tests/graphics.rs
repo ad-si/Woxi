@@ -8588,6 +8588,19 @@ mod plot3d {
     }
 
     #[test]
+    fn list_plot_background() {
+      // Regression: the scatter renderer behind ListPlot ignored Background
+      let svg = export_svg("ListPlot[{{1, 2}, {3, 4}}, Background -> Black]");
+      assert!(
+        svg.contains("<rect x=\"0\" y=\"0\"")
+          && svg.contains("fill=\"#000000\""),
+        "expected black background rect in ListPlot output"
+      );
+      let svg = export_svg("ListPlot[{1, 2, 3}, Background -> LightYellow]");
+      assert!(svg.contains("fill=\"#FFFFD9\""));
+    }
+
+    #[test]
     fn plot_combined_options_with_background() {
       // All of these options must work together (regression: Background
       // used to be silently ignored by Plot).
