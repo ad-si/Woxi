@@ -16451,6 +16451,35 @@ mod graphics_list {
     );
   }
 
+  /// Regression: a `Disk` in a `GraphicsRow`/`GraphicsGrid` cell used to be
+  /// stretched into an ellipse because the layout pinned the cell shape with
+  /// an `AspectRatio` rule; the cell shape must letterbox the data instead.
+  #[test]
+  fn graphics_grid_cell_keeps_disk_round() {
+    clear_state();
+    for code in [
+      "GraphicsRow[{Graphics[Disk[]]}]",
+      "GraphicsGrid[Table[Graphics[{EdgeForm[Black], Disk[{i, j}, 1]}], \
+         {i, 2}, {j, 2}], Spacings -> 0, Frame -> True]",
+    ] {
+      let svg = interpret_with_stdout(code)
+        .unwrap()
+        .graphics
+        .expect("layout should render");
+      let ellipse = svg
+        .lines()
+        .find(|l| l.contains("<ellipse"))
+        .expect("disk ellipse");
+      let attr = |name: &str| -> f64 {
+        let key = format!("{name}=\"");
+        let start = ellipse.find(&key).unwrap() + key.len();
+        let end = ellipse[start..].find('"').unwrap() + start;
+        ellipse[start..end].parse().unwrap()
+      };
+      assert_eq!(attr("rx"), attr("ry"), "disk stretched in {code}");
+    }
+  }
+
   /// Regression: a plain 1-D list with many graphics should also
   /// re-render each child at a smaller `ImageSize`, matching how
   /// `GraphicsRow` handles the same scenario. Before, every cell was
