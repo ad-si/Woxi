@@ -5905,4 +5905,28 @@ mod literal_slot_is_not_reevaluated {
       "{lsB[3, 5], 1, lsA[3, 4]}"
     );
   }
+
+  // `Optional` slots inside a list pattern fall back on their defaults when
+  // the list is shorter, just like in a function argument sequence.
+  #[test]
+  fn optional_slots_inside_list_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "olp[{t_, a_:10, b_:0.1}, c_:{0, 0}] := {t, a, b, c}; \
+         {olp[{3}, {1, 2}], olp[{3, 4, 5}], olp[{3, 4}, {1, 1}], olp[{3}], \
+         olp[{1, 2, 3, 4}]}"
+      )
+      .unwrap(),
+      "{{3, 10, 0.1, {1, 2}}, {3, 4, 5, {0, 0}}, {3, 4, 0.1, {1, 1}}, \
+       {3, 10, 0.1, {0, 0}}, olp[{1, 2, 3, 4}]}"
+    );
+    assert_eq!(
+      interpret("olq[l:{t_, a_:10}] := {l, t, a}; {olq[{3}], olq[{3, 4}]}")
+        .unwrap(),
+      "{{{3}, 3, 10}, {{3, 4}, 3, 4}}"
+    );
+    assert_eq!(interpret("MatchQ[{1}, {a_, b_:2}]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[{}, {a_, b_:2}]").unwrap(), "False");
+  }
 }
