@@ -3113,6 +3113,21 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         _ => expr,
       }
     }
+    // `Pane[Text[Grid[…]], size]` (also `Panel`/`Framed`): the pane only
+    // sizes the table `Text` marks for drawing. A pane around a bare
+    // `Grid` of plain text stays textual, so only look through to `Text`.
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Pane" | "Panel" | "Framed")
+        && matches!(
+          args.first(),
+          Some(syntax::Expr::FunctionCall { name: inner, .. }) if inner == "Text"
+        ) =>
+    {
+      match render_grid_if_needed(args[0].clone()) {
+        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        _ => expr,
+      }
+    }
     syntax::Expr::FunctionCall { name, args }
       if (name == "Grid" || name == "TextGrid") && !args.is_empty() =>
     {
