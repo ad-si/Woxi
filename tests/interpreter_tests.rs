@@ -1619,6 +1619,35 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_contour_plot_equations_use_per_contour_directives() {
+    // Regression: `ContourStyle -> {Directive[…], Directive[…]}` on an
+    // equation-form ContourPlot styled every curve alike (the default
+    // grey); each Directive must style its own equation's curve, and a
+    // `Dashed` inside it must draw a dashed line.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "ContourPlot[{x == y, x^2 + y^2 == 1}, {x, -1, 1}, {y, -1, 1}, \
+       ContourStyle -> {Directive[Red, Thick, Dashed], \
+       Directive[Blue, Thick]}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("ContourPlot should produce a graphics SVG");
+    assert!(
+      svg.contains(
+        "stroke=\"rgb(255,0,0)\" stroke-width=\"20.0\" stroke-dasharray="
+      ),
+      "first equation must be a dashed red line:\n{svg}"
+    );
+    assert!(
+      svg.contains(
+        "stroke=\"rgb(0,0,255)\" stroke-width=\"20.0\" stroke-linecap"
+      ),
+      "second equation must be a solid blue line:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_column_with_nested_tableform_renders_as_graphics() {
     // In visual mode (playground / woxi-studio), a Column containing a
     // TableForm must pre-render the table as a sub-SVG instead of falling
