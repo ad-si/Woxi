@@ -971,12 +971,23 @@ fn bigfloat_to_f64_approx(bf: &astro_float::BigFloat) -> Option<f64> {
     return Some(0.0);
   }
   let (words, _, sign, exp, _) = bf.as_raw_parts()?;
-  // The mantissa is 0.1… in little-endian 64-bit words. Its top word holds
-  // the leading 64 bits; any set bit below it only matters as a sticky bit
-  // for round-to-nearest of the u64 → f64 conversion.
-  let (&top, rest) = words.split_last()?;
-  let sticky = u64::from(rest.iter().any(|&w| w != 0));
-  let v = (top | sticky) as f64 * 2f64.powi(exp - 64);
+  // The mantissa is 0.1… in little-endian words (32 or 64 bits wide,
+  // depending on the target). The leading 64 bits are gathered from the top
+  // words; any set bit below them only matters as a sticky bit for
+  // round-to-nearest of the integer → f64 conversion.
+  let word_bits = (std::mem::size_of_val(words.first()?) * 8) as i32;
+  let mut top: u128 = 0;
+  let mut taken = 0;
+  let mut sticky = false;
+  for &w in words.iter().rev() {
+    if taken < 64 {
+      top = (top << word_bits) | u128::from(w);
+      taken += word_bits;
+    } else if w != 0 {
+      sticky = true;
+    }
+  }
+  let v = (top | u128::from(sticky)) as f64 * 2f64.powi(exp - taken);
   Some(if sign == astro_float::Sign::Neg {
     -v
   } else {
