@@ -24346,7 +24346,12 @@ fn resolve_choice_label(label: &Expr) -> Option<Expr> {
     match e {
       Expr::Identifier(s) => !crate::evaluator::is_builtin_symbol(s),
       Expr::List(items) => items.iter().any(has_user_symbol),
-      Expr::FunctionCall { args, .. } => args.iter().any(has_user_symbol),
+      // A call to a user-defined function (`reactionNames[1]`) also needs
+      // resolving, not just calls whose arguments mention a user symbol.
+      Expr::FunctionCall { name, args } => {
+        !crate::evaluator::is_builtin_symbol(name)
+          || args.iter().any(has_user_symbol)
+      }
       _ => false,
     }
   }
@@ -30816,6 +30821,27 @@ mod manipulate_traditional_form_choice_svg_tests {
     match &control {
       ManipulateControl::Discrete { value_labels, .. } => {
         assert_eq!(value_labels, &["to the north pole", "south"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A choice label that calls a user-defined function (`names[1]`) must
+  /// show the call's result, not the unevaluated call.
+  #[test]
+  fn choice_labels_resolve_user_function_calls() {
+    crate::interpret(
+      "choiceLabelName[k_] := Switch[k, 1, \"first\", 2, \"second\"]",
+    )
+    .unwrap();
+    let control = discrete_control(
+      "Manipulate[side, \
+       {{side, 1, \"side\"}, \
+        {1 -> choiceLabelName[1], 2 -> choiceLabelName[2]}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels, &["first", "second"]);
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
