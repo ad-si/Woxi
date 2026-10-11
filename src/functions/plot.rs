@@ -4555,7 +4555,9 @@ pub(crate) fn generate_scatter_svg_with_options(
     ),
   };
 
-  let (bg_color, dark_gray, _, label_fill, title_default_fill) = plot_theme();
+  let (theme_bg, dark_gray, _, label_fill, title_default_fill) = plot_theme();
+  // Background -> color replaces the theme background for the whole image.
+  let bg_color = opts.background.unwrap_or(theme_bg);
 
   // Dashed grid lines can't be drawn through plotters, so they are collected
   // here and emitted as `stroke-dasharray` polylines once the chart is done.
