@@ -577,11 +577,11 @@ pub fn polynomial_lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let gcd = call("PolynomialGCD", vec![result.clone(), arg.clone()]);
     let quotient = call(
       "Cancel",
-      vec![call("Times", vec![result, pow(gcd, Expr::Integer(-1))])],
+      vec![times(vec![result, pow(gcd, Expr::Integer(-1))])],
     );
     let quotient = crate::evaluator::evaluate_expr_to_expr(&quotient)
       .unwrap_or_else(|_| quotient.clone());
-    let lcm = call("Times", vec![quotient, arg.clone()]);
+    let lcm = times(vec![quotient, arg.clone()]);
     result = crate::evaluator::evaluate_expr_to_expr(&lcm).unwrap_or(lcm);
   }
   Ok(result)

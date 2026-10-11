@@ -9134,7 +9134,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // The plot's own picture draws no outline on the surface triangles, so
     // the extracted primitives must not pick up the default polygon edge
     // when re-rendered inside a `Graphics3D` (e.g. `plot[[1]]`).
-    content.insert(0, call("EdgeForm", vec![]));
+    content.insert(0, call0("EdgeForm"));
     let complex = call(
       "GraphicsComplex",
       vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
@@ -11074,10 +11074,7 @@ fn parametric_plot3d_curve_ast(
   });
   g3d_args.extend(forwarded_opts);
   if !has_axes {
-    g3d_args.push(Expr::Rule {
-      pattern: Box::new(Expr::Identifier("Axes".to_string())),
-      replacement: Box::new(Expr::Identifier("True".to_string())),
-    });
+    g3d_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
   }
 
   Ok(call("Graphics3D", g3d_args))
@@ -11272,10 +11269,7 @@ fn resolve_parametric_triples(
 }
 
 fn part_of(body: &Expr, index: i128) -> Expr {
-  Expr::FunctionCall {
-    name: "Part".to_string(),
-    args: vec![body.clone(), Expr::Integer(index)].into(),
-  }
+  call("Part", vec![body.clone(), Expr::Integer(index)])
 }
 
 /// Evaluate a parametric triple {fx(u,v), fy(u,v), fz(u,v)} at given u, v values.

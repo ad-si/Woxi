@@ -1596,7 +1596,7 @@ fn build_sparse_array_multi(
       // c_0's stored value is `Plus[0, coef]` — wolframscript's quirk
       // surfaces this accumulator as `0 + value` in the printed form.
       let value = if d == 0 {
-        call("Plus", vec![Expr::Integer(0), coef.clone()])
+        plus(vec![Expr::Integer(0), coef.clone()])
       } else {
         coef.clone()
       };

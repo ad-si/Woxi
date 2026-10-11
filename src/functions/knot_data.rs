@@ -262,15 +262,11 @@ fn image_data(knot: Knot) -> Option<Expr> {
     }
   }
 
-  let polygon = Expr::FunctionCall {
-    name: "Polygon".to_string(),
-    args: vec![Expr::List(faces.into())].into(),
-  };
-  let complex = Expr::FunctionCall {
-    name: "GraphicsComplex".to_string(),
-    args: vec![Expr::List(points.into()), Expr::List(vec![polygon].into())]
-      .into(),
-  };
+  let polygon = call1("Polygon", Expr::List(faces.into()));
+  let complex = call(
+    "GraphicsComplex",
+    vec![Expr::List(points.into()), Expr::List(vec![polygon].into())],
+  );
   Some(Expr::List(vec![complex].into()))
 }
 

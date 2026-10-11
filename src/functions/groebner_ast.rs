@@ -492,13 +492,13 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         terms.push(match factors.len() {
           1 => factors.remove(0),
-          _ => call("Times", factors),
+          _ => times(factors),
         });
       }
       let sum = if terms.len() == 1 {
         terms.remove(0)
       } else {
-        call("Plus", terms)
+        plus(terms)
       };
       crate::evaluator::evaluate_expr_to_expr(&sum).ok()
     })();

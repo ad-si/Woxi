@@ -103,7 +103,7 @@ fn reduce_coefficients(expr: &Expr, m: i128) -> Result<Expr, InterpreterError> {
   let result = if new_terms.len() == 1 {
     new_terms.pop().unwrap()
   } else {
-    call("Plus", new_terms)
+    plus(new_terms)
   };
   evaluate_expr_to_expr(&result)
 }
@@ -175,7 +175,7 @@ fn extract_coefficient(expr: &Expr) -> (i128, Option<Expr>) {
           let monomial = if remaining.len() == 1 {
             remaining.into_iter().next().unwrap()
           } else {
-            call("Times", remaining)
+            times(remaining)
           };
           return (*n, Some(monomial));
         }

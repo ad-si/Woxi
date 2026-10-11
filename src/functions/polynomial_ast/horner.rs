@@ -155,7 +155,7 @@ fn extract_fraction(expr: &Expr) -> Option<(Expr, Expr)> {
         let num = if num_args.len() == 1 {
           num_args.into_iter().next().unwrap()
         } else {
-          call("Times", num_args)
+          times(num_args)
         };
         Some((num, denom))
       } else {

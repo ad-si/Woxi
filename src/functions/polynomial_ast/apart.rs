@@ -951,7 +951,7 @@ fn rat_coeffs_to_expr(
   if terms.is_empty() {
     return Ok(Expr::Integer(0));
   }
-  crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
+  crate::evaluator::evaluate_expr_to_expr(&plus(terms))
 }
 
 pub fn poly_long_divide(num: &[i128], den: &[i128]) -> (Vec<i128>, Vec<i128>) {
@@ -1487,16 +1487,10 @@ pub fn apart_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let term = match p {
       0 => coeff,
-      _ => call(
-        "Times",
-        vec![
-          coeff,
-          call(
-            "Power",
-            vec![Expr::Identifier(var.clone()), Expr::Integer(p as i128)],
-          ),
-        ],
-      ),
+      _ => times(vec![
+        coeff,
+        pow(Expr::Identifier(var.clone()), Expr::Integer(p as i128)),
+      ]),
     };
     terms.push(term);
   }

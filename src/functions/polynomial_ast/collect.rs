@@ -126,7 +126,7 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let coeff = if coeffs.len() == 1 {
         coeffs.into_iter().next().unwrap()
       } else {
-        call("Plus", coeffs)
+        plus(coeffs)
       };
       // Build the var^power part.
       let var_part = if power == 0 {
@@ -155,7 +155,7 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if factors.len() == 1 {
         factors.into_iter().next().unwrap()
       } else {
-        times_ast(&factors).unwrap_or_else(|_| call("Times", factors))
+        times_ast(&factors).unwrap_or_else(|_| times(factors))
       };
       result_terms.push(term);
     }
@@ -304,7 +304,7 @@ fn extract_var_free_outer_factors(
   let inner_expr = if inner.len() == 1 {
     inner.remove(0)
   } else {
-    call("Times", inner)
+    times(inner)
   };
   Some((outer, inner_expr))
 }
@@ -332,7 +332,7 @@ fn as_plus_terms(expr: &Expr) -> Option<Vec<Expr>> {
 /// a Plus, so grouped coefficients stay intact. Falls back to a plain Plus
 /// chain if evaluation fails.
 fn plus_ast_canonical(terms: Vec<Expr>) -> Expr {
-  let sum = call("Plus", terms.clone());
+  let sum = plus(terms.clone());
   crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or_else(|_| {
     crate::functions::math_ast::plus_ast(&terms)
       .unwrap_or_else(|_| build_sum(terms))
