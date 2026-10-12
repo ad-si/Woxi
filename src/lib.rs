@@ -1366,6 +1366,20 @@ fn promote_result_graphics(expr: &syntax::Expr) {
   }
 }
 
+/// The content of the pane a `TabView[{…}, sel]` call currently shows: the
+/// one its selector names, or the first pane absent a usable selector.
+pub(crate) fn tabview_selected_content(
+  args: &[syntax::Expr],
+) -> Option<syntax::Expr> {
+  let items = args.first().and_then(functions::graphics::tabview_panes)?;
+  let selected = args
+    .get(1)
+    .and_then(|sel| selected_tabview_pane(&items, sel))
+    .or(items.first())?;
+  let (_, _, content) = functions::graphics::tabview_pane_parts(selected);
+  Some(content.clone())
+}
+
 /// Find the pane `TabView[{…}, sel]`'s selector currently names: `sel`
 /// (stripped of any `Dynamic[…]` wrapper) is evaluated against the live
 /// global state and compared, by `InputForm` text, against each pane's
