@@ -970,10 +970,18 @@ pub(crate) fn bigfloat_to_f64_approx(
     return Some(0.0);
   }
   let (words, _, sign, exp, _) = bf.as_raw_parts()?;
-  // The mantissa is 0.1… in little-endian 64-bit words. Its top word holds
-  // the leading 64 bits; any set bit below it only matters as a sticky bit
-  // for round-to-nearest of the u64 → f64 conversion.
-  let (&top, rest) = words.split_last()?;
+  // The mantissa is 0.1… in little-endian words (32-bit on wasm32, 64-bit
+  // elsewhere). Gather the leading 64 bits; any set bit below them only
+  // matters as a sticky bit for round-to-nearest of the u64 → f64 conversion.
+  let word_bits = 8 * std::mem::size_of_val(words.first()?) as u32;
+  let used = (64 / word_bits) as usize;
+  let split = words.len().saturating_sub(used);
+  let (rest, lead) = words.split_at(split);
+  let mut top = 0u64;
+  for &w in lead.iter().rev() {
+    top = (top << word_bits.min(63)) | w;
+  }
+  top <<= word_bits * (used - lead.len()) as u32;
   let sticky = u64::from(rest.iter().any(|&w| w != 0));
   // Scale into [1/2, 1) first and apply 2^exp in two halves, so neither
   // factor over- or underflows for a result near the ends of f64's range.
@@ -7887,4 +7895,26 @@ pub fn parametric_window_ast(
   };
   let _ = alpha;
   eval(&expr)
+}
+
+#[cfg(test)]
+mod bigfloat_to_f64_tests {
+  use super::bigfloat_to_f64_approx;
+  use astro_float::{BigFloat, Consts, RoundingMode};
+
+  #[test]
+  fn converts_with_any_word_size() {
+    let mut cc = Consts::new().unwrap();
+    for text in ["0.1", "-123456.789", "3.141592653589793", "1e-300"] {
+      let bf = BigFloat::parse(
+        text,
+        astro_float::Radix::Dec,
+        128,
+        RoundingMode::ToEven,
+        &mut cc,
+      );
+      let got = bigfloat_to_f64_approx(&bf).unwrap();
+      assert_eq!(got, text.parse::<f64>().unwrap(), "{text}");
+    }
+  }
 }
