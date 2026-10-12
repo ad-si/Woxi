@@ -1362,6 +1362,16 @@ fn promote_result_graphics(expr: &syntax::Expr) {
       capture_graphics(svg);
       return;
     }
+    // A `Dynamic[…]` pane shows what its (held) body evaluates to, e.g. a
+    // `Dynamic[Module[…, ListLinePlot[…]]]` speed plot beside a drawing tab.
+    if let syntax::Expr::FunctionCall { name, args } = content
+      && name == "Dynamic"
+      && let Some(held) = args.first()
+      && let Ok(value) = evaluator::evaluate_expr_to_expr(held)
+    {
+      promote_result_graphics(&value);
+      return;
+    }
     promote_result_graphics(content);
   }
 }
