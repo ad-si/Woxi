@@ -314,7 +314,7 @@ fn hoist_denominator_content(den: &Expr) -> Option<Expr> {
         Expr::UnaryOp {
           op: UnaryOperator::Minus,
           operand,
-        } => times(vec![Expr::Integer(-1), (**operand).clone()]),
+        } => neg((**operand).clone()),
         other => other.clone(),
       })
       .collect();

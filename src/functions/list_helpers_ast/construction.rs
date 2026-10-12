@@ -759,10 +759,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // ratio = (max - min) / step
       let ratio_expr = times(vec![
-        plus(vec![
-          max_expr.clone(),
-          times(vec![Expr::Integer(-1), min_expr.clone()]),
-        ]),
+        plus(vec![max_expr.clone(), neg(min_expr.clone())]),
         pow(step_expr.clone(), Expr::Integer(-1)),
       ]);
       // Accept rationals (e.g. `5/2`), floats, and symbolic reals like
@@ -1646,7 +1643,7 @@ fn build_range_indices(
   }
   let mut result = Vec::with_capacity(n as usize);
   // value_i = a + i * (b - a) / (n - 1)
-  let diff = plus(vec![b.clone(), times(vec![Expr::Integer(-1), a.clone()])]);
+  let diff = plus(vec![b.clone(), neg(a.clone())]);
   let inv_denom = pow(Expr::Integer(n - 1), Expr::Integer(-1));
   for i in 0..n {
     let term = times(vec![Expr::Integer(i), diff.clone(), inv_denom.clone()]);

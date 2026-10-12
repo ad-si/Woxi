@@ -586,7 +586,7 @@ fn collect_plus_terms(expr: &Expr) -> Option<Vec<Expr>> {
     } => {
       let mut t =
         collect_plus_terms(left).unwrap_or_else(|| vec![(**left).clone()]);
-      t.push(times(vec![Expr::Integer(-1), (**right).clone()]));
+      t.push(neg((**right).clone()));
       Some(t)
     }
     _ => None,
@@ -715,7 +715,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
       let i_factor: Option<Expr> = match i_mod {
         1 => {
           // Conjugate[I] = -I
-          Some(times(vec![Expr::Integer(-1), id_expr("I")]))
+          Some(neg(id_expr("I")))
         }
         2 => {
           // I*I = -1, Conjugate[-1] = -1

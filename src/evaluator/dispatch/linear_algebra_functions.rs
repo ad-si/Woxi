@@ -963,10 +963,7 @@ pub fn dispatch_linear_algebra_functions(
               for (j, elem) in cols.iter().enumerate() {
                 if i == j {
                   // a_ij - x
-                  let entry = plus(vec![
-                    elem.clone(),
-                    times(vec![Expr::Integer(-1), x.clone()]),
-                  ]);
+                  let entry = plus(vec![elem.clone(), neg(x.clone())]);
                   new_cols.push(entry);
                 } else {
                   new_cols.push(elem.clone());
@@ -1281,7 +1278,6 @@ pub fn dispatch_linear_algebra_functions(
         let times = |a: Expr, b: Expr| times(vec![a, b]);
         let plus = |a: Expr, b: Expr| plus(vec![a, b]);
         let sq = |a: Expr| pow(a, Expr::Integer(2));
-        let neg = |a: Expr| times(Expr::Integer(-1), a);
         let (ux, uy, vx, vy) =
           (u[0].clone(), u[1].clone(), v[0].clone(), v[1].clone());
         let dot =
@@ -1320,7 +1316,7 @@ pub fn dispatch_linear_algebra_functions(
       let theta = &args[0];
       let cos = call1("Cos", theta.clone());
       let sin = call1("Sin", theta.clone());
-      let neg_sin = times(vec![Expr::Integer(-1), sin.clone()]);
+      let neg_sin = neg(sin.clone());
       let mat = Expr::List(
         vec![
           Expr::List(vec![cos.clone(), neg_sin].into()),
@@ -1641,7 +1637,7 @@ pub fn dispatch_linear_algebra_functions(
       let theta = &args[0];
       let cos_t = call1("Cos", theta.clone());
       let sin_t = call1("Sin", theta.clone());
-      let neg_sin_t = times(vec![Expr::Integer(-1), sin_t.clone()]);
+      let neg_sin_t = neg(sin_t.clone());
       // Default last column is the zero translation
       let (tx, ty) = if args.len() == 2 {
         if let Expr::List(center) = &args[1]
@@ -2782,8 +2778,7 @@ pub fn dispatch_linear_algebra_functions(
                       inv_sqrt_n.clone()
                     } else if v == -1 {
                       // Use Times[-1, inv_sqrt_n] so display matches -(1/Sqrt[n])
-                      let entry =
-                        times(vec![Expr::Integer(-1), inv_sqrt_n.clone()]);
+                      let entry = neg(inv_sqrt_n.clone());
                       evaluate_expr_to_expr(&entry).unwrap_or(entry)
                     } else {
                       // v / Sqrt[n]
@@ -3309,7 +3304,7 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
 
         let new_val = evaluate_expr_to_expr(&plus(vec![
           matrix[i][j].clone(),
-          times(vec![Expr::Integer(-1), product]),
+          neg(product),
         ]))
         .unwrap_or(matrix[i][j].clone());
 
@@ -4022,7 +4017,7 @@ fn matrix_power_2x2_symbolic_block(
     let c2_num_raw = if is_diag {
       minus2(lambda_1.clone(), entry.clone())
     } else {
-      times(vec![Expr::Integer(-1), entry.clone()])
+      neg(entry.clone())
     };
     let c1 = eval(&div2(c1_num_raw, lambda_diff.clone())).ok()?;
     let c2 = eval(&div2(c2_num_raw, lambda_diff.clone())).ok()?;
@@ -4064,7 +4059,7 @@ fn matrix_power_2x2_symbolic_block(
 fn elementary_rotation(axis: i128, angle: &Expr) -> Expr {
   let c = call1("Cos", angle.clone());
   let s = call1("Sin", angle.clone());
-  let neg_s = times(vec![Expr::Integer(-1), s.clone()]);
+  let neg_s = neg(s.clone());
   let zero = Expr::Integer(0);
   let one = Expr::Integer(1);
   let rows: [[Expr; 3]; 3] = match axis {
@@ -4206,7 +4201,6 @@ fn rotation_transform_3d_axis(
   }
   let int = Expr::Integer;
   let times = |a: Expr, b: Expr| times(vec![a, b]);
-  let neg = |e: Expr| times(int(-1), e);
   let sq = |e: &Expr| pow(e.clone(), int(2));
 
   // Normalized axis u_i = axis_i / Sqrt[sum axis_i^2].

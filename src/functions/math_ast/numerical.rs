@@ -2795,7 +2795,7 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Evaluating the symbolic expression keeps exact and symbolic values
   // (Pi/10, 1/3, x/10, …) instead of floatifying, and a Real input still
   // yields a Real.
-  let neg = |e: &Expr| times(vec![Expr::Integer(-1), e.clone()]);
+  let neg = |e: &Expr| neg(e.clone());
   let sub = |a: &Expr, b: &Expr| plus(vec![a.clone(), neg(b)]);
   let x_minus_min = sub(&args[0], &range[0]);
   let y_span = sub(ymax, ymin);
@@ -3087,11 +3087,8 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|item| {
             let base = if is_real_valued(item) {
               if try_eval_to_f64(item).is_some_and(|v| v < 0.0) {
-                evaluate_expr_to_expr(&times(vec![
-                  Expr::Integer(-1),
-                  item.clone(),
-                ]))
-                .unwrap_or_else(|_| item.clone())
+                evaluate_expr_to_expr(&neg(item.clone()))
+                  .unwrap_or_else(|_| item.clone())
               } else {
                 item.clone()
               }
@@ -7787,7 +7784,7 @@ pub fn discrete_hadamard_transform_ast(
           if (r & j).count_ones() % 2 == 0 {
             e.clone()
           } else {
-            times(vec![Expr::Integer(-1), e.clone()])
+            neg(e.clone())
           }
         })
         .collect();

@@ -4,10 +4,6 @@ use crate::functions::math_ast::{
   expr_to_rational, is_sqrt, make_sqrt, rat_reduce,
 };
 
-fn neg(x: Expr) -> Expr {
-  times(vec![Expr::Integer(-1), x])
-}
-
 pub fn dispatch_complex_and_special(
   name: &str,
   args: &[Expr],
@@ -2859,13 +2855,7 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
       op: BinaryOperator::Minus,
       left,
       right,
-    } => (
-      "Plus",
-      vec![
-        *left.clone(),
-        times(vec![Expr::Integer(-1), *right.clone()]),
-      ],
-    ),
+    } => ("Plus", vec![*left.clone(), neg(*right.clone())]),
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
@@ -9013,7 +9003,7 @@ fn triangle_moment_parts(
   let ratio = |num: Expr, den: Expr| div2(num, den);
   let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
   let sub = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
-    ev(&plus(vec![a.clone(), times(vec![int(-1), b.clone()])]))
+    ev(&plus(vec![a.clone(), neg(b.clone())]))
   };
   let d1 = [sub(&v[1][0], &v[0][0])?, sub(&v[1][1], &v[0][1])?];
   let d2 = [sub(&v[2][0], &v[0][0])?, sub(&v[2][1], &v[0][1])?];

@@ -334,10 +334,7 @@ pub fn symmetric_reduction_ast(
       let e_prod = times(e_factors);
       g = eval(&call(
         "Expand",
-        vec![sum(vec![
-          g.clone(),
-          eval(&times(vec![Expr::Integer(-1), e_prod]))?,
-        ])],
+        vec![sum(vec![g.clone(), eval(&neg(e_prod))?])],
       ))?;
     } else {
       // The leading monomial cannot belong to the symmetric part: move it to
@@ -352,10 +349,7 @@ pub fn symmetric_reduction_ast(
       q_terms.push(mono.clone());
       g = eval(&call(
         "Expand",
-        vec![sum(vec![
-          g.clone(),
-          eval(&times(vec![Expr::Integer(-1), mono]))?,
-        ])],
+        vec![sum(vec![g.clone(), eval(&neg(mono))?])],
       ))?;
     }
   }
