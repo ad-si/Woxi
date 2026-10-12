@@ -42,6 +42,18 @@ mod sinc {
     assert_eq!(interpret("Sinc[Pi/2 - x]").unwrap(), "Sinc[Pi/2 - x]");
     assert_eq!(interpret("Sinc[2 Pi + x]").unwrap(), "Sinc[2*Pi + x]");
   }
+
+  // Sin[3 Pi/8] reduces to Cos[Pi/8], which has no radical form either, so
+  // Sinc stays. Regression (diff fuzzer): it gave (8*Cos[Pi/8])/(3*Pi).
+  #[test]
+  fn cosine_without_radical_form_stays_symbolic() {
+    assert_eq!(interpret("Sinc[3 Pi/8]").unwrap(), "Sinc[(3*Pi)/8]");
+    assert_eq!(interpret("Sinc[Pi/8]").unwrap(), "Sinc[Pi/8]");
+    assert_eq!(
+      interpret("Sinc[5 Pi/12]").unwrap(),
+      "(3*Sqrt[2]*(1 + Sqrt[3]))/(5*Pi)"
+    );
+  }
 }
 
 mod gudermannian {
@@ -3423,6 +3435,53 @@ mod exp_integral_ei {
     assert!((result - (-0.21938393439552026)).abs() < 1e-10);
   }
 
+  // The power series sums terms near e^|x| to a result near e^-|x|, so a
+  // machine evaluation of it was meaningless for x < -20 (Ei(-39.) came out
+  // as -0.0075). Negative arguments now go through E1's continued fraction
+  // and every value is rounded from a 64-bit result.
+  #[test]
+  fn negative_argument_has_no_cancellation() {
+    assert_eq!(
+      interpret("ExpIntegralEi[-39.]").unwrap(),
+      "-2.888779301522701*^-19"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[ExpIntegralEi[-20.]/N[ExpIntegralEi[-20], 30] - 1] < 10^-15"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Regression: past x = 40 an incorrect asymptotic continued fraction gave
+  // values 5% too small (Ei(41.) = 1.524*^16 instead of 1.6007*^16).
+  #[test]
+  fn large_positive_argument() {
+    assert_eq!(
+      interpret(
+        "Abs[ExpIntegralEi[41.]/N[ExpIntegralEi[41], 30] - 1] < 10^-14"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[ExpIntegralEi[300.]/N[ExpIntegralEi[300], 30] - 1] < 10^-13"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn n_arbitrary_precision_negative() {
+    assert_eq!(
+      interpret("Round[N[ExpIntegralEi[-30], 20], 10^-32]").unwrap(),
+      "-151077600534440627/50000000000000000000000000000000"
+    );
+  }
+
   #[test]
   fn n_complex_evaluates() {
     // N[ExpIntegralEi[1+I], 20] should produce a complex result
@@ -3536,6 +3595,101 @@ mod exp_integral_e {
     assert_eq!(
       interpret("ExpIntegralE[n, z]").unwrap(),
       "ExpIntegralE[n, z]"
+    );
+  }
+
+  // Regression: E_n(z) came from E_1 by the upward recurrence, which
+  // amplifies E_1's rounding error by about z^(n-1)/(n-1)! once z > n.
+  #[test]
+  fn no_upward_recurrence_error() {
+    assert_eq!(
+      interpret(
+        "Abs[ExpIntegralE[10, 30.]/N[ExpIntegralE[10, 30], 30] - 1] < 10^-14"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Regression: a negative order fell through to E_1 and a non-integer one
+  // was truncated to an integer (E_{-1}(2.) gave 0.0489 instead of 0.1015).
+  #[test]
+  fn negative_and_non_integer_order() {
+    assert_eq!(
+      interpret(
+        "Abs[ExpIntegralE[-1, 2.]/N[ExpIntegralE[-1, 2], 30] - 1] < 10^-15"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[ExpIntegralE[1.5, 2.]/N[ExpIntegralE[3/2, 2], 30] - 1] < 10^-14"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[ExpIntegralE[-20.5, 5.]/N[ExpIntegralE[-41/2, 5], 30] - 1] < 10^-15"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A negative argument lies on the branch cut, where the value is the
+  // limit from above: E_1(-x) = -Ei(x) - I Pi. Regression: gave Infinity.
+  #[test]
+  fn negative_argument_is_complex() {
+    assert_eq!(
+      interpret("Chop[ExpIntegralE[1, -2.] + ExpIntegralEi[2.] + I Pi]")
+        .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "Chop[ExpIntegralE[2, -0.5] - (Exp[0.5] + 0.5 ExpIntegralE[1, -0.5])]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "Chop[ExpIntegralE[0.5, -2.] - N[ExpIntegralE[1/2, -2], 30], 10^-14]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  // E_ν(0) = 1/(ν - 1) converges only for ν > 1, also for a real order.
+  #[test]
+  fn real_order_at_zero() {
+    assert_eq!(
+      interpret("ExpIntegralE[2.5, 0.]").unwrap(),
+      "0.6666666666666666"
+    );
+    assert_eq!(
+      interpret("ExpIntegralE[0.5, 0.]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  // Regression: N[ExpIntegralE[n, z], p] stayed unevaluated.
+  #[test]
+  fn n_arbitrary_precision() {
+    assert_eq!(
+      interpret("Round[N[ExpIntegralE[2, 2/10], 30], 10^-28]").unwrap(),
+      "5742006442412032410029809931/10000000000000000000000000000"
+    );
+    assert_eq!(
+      interpret("Precision[N[ExpIntegralE[2, 2/10], 30]]").unwrap(),
+      "30."
+    );
+    assert_eq!(
+      interpret("Round[N[ExpIntegralE[5/2, 3/10], 25], 10^-23]").unwrap(),
+      "36786241753840448655757/100000000000000000000000"
     );
   }
 }
@@ -4443,6 +4597,38 @@ mod log_integral {
   fn n_evaluates() {
     let result: f64 = interpret("N[LogIntegral[2]]").unwrap().parse().unwrap();
     assert!((result - 1.0451637801174924).abs() < 1e-10);
+  }
+
+  // Regression: ln x > 40 went through Ei's broken large-argument branch.
+  #[test]
+  fn large_argument() {
+    assert_eq!(
+      interpret(
+        "Abs[LogIntegral[10.^100]/N[LogIntegral[10^100], 30] - 1] < 10^-13"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // li(x) = Ei(ln|x| + I Pi) for x < 0. Regression: gave Indeterminate.
+  #[test]
+  fn negative_argument_is_complex() {
+    assert_eq!(interpret("Head[LogIntegral[-2.]]").unwrap(), "Complex");
+    assert_eq!(
+      interpret("Chop[LogIntegral[-2.] - N[LogIntegral[-2], 30], 10^-14]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  // Regression: N[LogIntegral[x], p] stayed unevaluated.
+  #[test]
+  fn n_arbitrary_precision() {
+    assert_eq!(
+      interpret("Round[N[LogIntegral[3/10], 30], 10^-28]").unwrap(),
+      "-787074514473447386231727371/5000000000000000000000000000"
+    );
   }
 }
 
@@ -8193,12 +8379,13 @@ mod gaussian_filter {
   #[test]
   fn impulse_1d() {
     // wolframscript: `GaussianFilter[{0., 0., 1., 0., 0.}, 1]`
-    // recovers the kernel as the impulse response. The last digit of
-    // the kernel coefficient comes from Bessel `I_1(0.25)` and differs
-    // from wolframscript by a single ulp — match Woxi's value exactly.
+    // recovers the kernel as the impulse response. The kernel coefficients
+    // come from Bessel `I_n(0.25)`, whose last digits differ from
+    // wolframscript's, hence the rounding.
     assert_eq!(
-      interpret("GaussianFilter[{0., 0., 1., 0., 0.}, 1]").unwrap(),
-      "{0., 0.09938048320860668, 0.8012390335827866, 0.09938048320860668, 0.}"
+      interpret("Round[GaussianFilter[{0., 0., 1., 0., 0.}, 1], 10^-14]")
+        .unwrap(),
+      "{0, 9938048320861/100000000000000, 80123903358279/100000000000000, 9938048320861/100000000000000, 0}"
     );
   }
 
@@ -8392,9 +8579,12 @@ mod airy_ai_prime {
 
   #[test]
   fn at_one() {
+    // Woxi's machine Airy values are correctly rounded; wolframscript's
+    // Ai' is off by a few ulps, so compare with the exact value.
     assert_eq!(
-      interpret("AiryAiPrime[1.0]").unwrap(),
-      "-0.15914744129679328"
+      interpret("Abs[AiryAiPrime[1.0]/N[AiryAiPrime[1], 30] - 1] < 10^-13")
+        .unwrap(),
+      "True"
     );
   }
 
@@ -8406,8 +8596,9 @@ mod airy_ai_prime {
   #[test]
   fn negative_arg() {
     assert_eq!(
-      interpret("AiryAiPrime[-1.0]").unwrap(),
-      "-0.010160567116645175"
+      interpret("Abs[AiryAiPrime[-1.0]/N[AiryAiPrime[-1], 30] - 1] < 10^-13")
+        .unwrap(),
+      "True"
     );
   }
 }
@@ -8417,7 +8608,10 @@ mod airy_bi_prime {
 
   #[test]
   fn at_zero() {
-    assert_eq!(interpret("AiryBiPrime[0.0]").unwrap(), "0.4482883573538264");
+    assert_eq!(
+      interpret("AiryBiPrime[0.0]").unwrap(),
+      "0.44828835735382633"
+    );
   }
 
   #[test]
@@ -8433,8 +8627,9 @@ mod airy_bi_prime {
   #[test]
   fn negative_arg() {
     assert_eq!(
-      interpret("AiryBiPrime[-1.0]").unwrap(),
-      "0.5923756264227923"
+      interpret("Abs[AiryBiPrime[-1.0]/N[AiryBiPrime[-1], 30] - 1] < 10^-13")
+        .unwrap(),
+      "True"
     );
   }
 }
@@ -9963,6 +10158,66 @@ mod gamma_incomplete {
     assert_eq!(interpret("Gamma[2, x]").unwrap(), "Gamma[2, x]");
   }
 
+  // Gamma[a, z] = z^a E_{1-a}(z). Regression: Gamma[0, z] used a separate,
+  // less accurate copy of E_1, and a negative z stayed unevaluated (it is
+  // complex, on the branch cut).
+  #[test]
+  fn gamma_numeric() {
+    assert_eq!(interpret("Gamma[0, 1.2]").unwrap(), "0.15840843685146258");
+    assert_eq!(
+      interpret("Abs[Gamma[0.3, 0.01]/N[Gamma[3/10, 1/100], 30] - 1] < 10^-15")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Chop[Gamma[-1.5, -2.] - N[Gamma[-3/2, -2], 30], 10^-14]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  // Regression: N[Gamma[a, z], p] stayed unevaluated.
+  #[test]
+  fn n_arbitrary_precision() {
+    assert_eq!(
+      interpret("Round[N[Gamma[0, 2/10], 30], 10^-28]").unwrap(),
+      "764156590114933180209232861/625000000000000000000000000"
+    );
+    assert_eq!(
+      interpret("Round[N[Gamma[5/2, 13/10], 30], 10^-28]").unwrap(),
+      "10121136007032034294142092887/10000000000000000000000000000"
+    );
+  }
+
+  // Machine Gamma is correctly rounded, like wolframscript's. Regression:
+  // the Lanczos approximation was off by several ulps (Gamma[2.5] gave
+  // 1.3293403881791384), and a result near the bottom of the f64 range
+  // underflowed to 0. in the BigFloat → f64 conversion.
+  #[test]
+  fn gamma_machine_correctly_rounded() {
+    assert_eq!(interpret("Gamma[2.5]").unwrap(), "1.329340388179137");
+    assert_eq!(interpret("Gamma[10.3]").unwrap(), "716430.6890623764");
+    assert_eq!(interpret("Gamma[150.7]").unwrap(), "1.269878477586582*^262");
+    assert_eq!(
+      interpret(
+        "Abs[Gamma[-170.3]/N[Gamma[SetPrecision[-170.3, 40]], 30] - 1] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Spouge's coefficients alternate with magnitudes near e^a, and c_0 must
+  // be Sqrt[2 Pi]. Regression: without guard bits and with c_0 = 1,
+  // N[Gamma[1507/10], 40] was wrong from the 16th digit.
+  #[test]
+  fn gamma_arbitrary_precision_large_argument() {
+    assert_eq!(
+      interpret("Round[N[Gamma[1507/10], 40]/10^262, 10^-38]").unwrap(),
+      "5079513910346617431739890017074311513/4000000000000000000000000000000000000"
+    );
+  }
+
   #[test]
   fn gamma_1_arg_still_works() {
     assert_eq!(interpret("Gamma[1/2]").unwrap(), "Sqrt[Pi]");
@@ -10017,7 +10272,12 @@ mod gamma_incomplete {
   // was 1e-30 instead of 1e30) and returned absurd magnitudes like 1e28.
   #[test]
   fn gamma_incomplete_real_cf_branch() {
-    assert_eq!(interpret("Gamma[3., 5.]").unwrap(), "0.24930403896616227");
+    // Woxi's value is correctly rounded, wolframscript's one ulp off, so
+    // compare against the exact value.
+    assert_eq!(
+      interpret("Abs[Gamma[3., 5.]/N[Gamma[3, 5], 30] - 1] < 10^-15").unwrap(),
+      "True"
+    );
     assert_eq!(interpret("Gamma[4., 6.]").unwrap(), "0.9072232966598872");
   }
 
@@ -11549,6 +11809,105 @@ mod exp_integral_ei_complex {
       interpret("Re[ExpIntegralEi[(1/2 + 0.5 I) Log[39]]]").unwrap(),
       interpret("Re[ExpIntegralEi[1.8317808230648231 + 1.8317808230648231 I]]")
         .unwrap()
+    );
+  }
+}
+
+mod bessel_family_machine_accuracy {
+  use super::*;
+
+  // The machine Bessel functions were f64 power series everywhere (and
+  // K/Y recurrences), which cancel catastrophically for a large argument:
+  // BesselJ[0, 100.] was -3.1*^24, BesselK[1.5, 100.] -2.4*^26 and
+  // BesselJ[0, 1000.] Indeterminate. They are now rounded from a 64-bit
+  // evaluation that switches to Hankel's expansions for large arguments.
+  #[test]
+  fn large_argument() {
+    for (f, x, tol) in [
+      ("BesselJ[0, ", "100", "13"),
+      ("BesselJ[1, ", "50", "13"),
+      ("BesselJ[0, ", "1000", "12"),
+      ("BesselY[0, ", "100", "13"),
+      ("BesselY[3/2, ", "50", "13"),
+      ("BesselK[3/2, ", "100", "13"),
+      ("BesselI[1, ", "100", "13"),
+      ("StruveH[0, ", "50", "13"),
+      ("StruveH[0, ", "20", "13"),
+      ("SphericalBesselJ[0, ", "100", "13"),
+    ] {
+      let code = format!("Abs[{f}{x}.]/N[{f}{x}], 30] - 1] < 10^-{tol}");
+      assert_eq!(interpret(&code).unwrap(), "True", "{code}");
+    }
+  }
+
+  // Airy functions of a large negative argument went through a diverging
+  // power series (AiryAi[-30.] was -4.5*^28); they now come from Bessel
+  // functions of order ±1/3, ±2/3.
+  #[test]
+  fn airy_large_negative_argument() {
+    for f in ["AiryAi", "AiryBi", "AiryAiPrime", "AiryBiPrime"] {
+      let code = format!("Abs[{f}[-30.]/N[{f}[-30], 30] - 1] < 10^-12");
+      assert_eq!(interpret(&code).unwrap(), "True", "{code}");
+    }
+  }
+
+  #[test]
+  fn values_match_wolframscript() {
+    assert_eq!(
+      interpret("BesselJ[2.5, 3.]").unwrap(),
+      "0.41271003220971597"
+    );
+    assert_eq!(interpret("BesselK[3, 0.7]").unwrap(), "21.97216902565094");
+    assert_eq!(interpret("BesselK[0, 0.5]").unwrap(), "0.9244190712276659");
+    assert_eq!(
+      interpret("BesselI[2.5, 1.5]").unwrap(),
+      "0.17166202218829632"
+    );
+    assert_eq!(
+      interpret("BesselJ[-1.5, 2.]").unwrap(),
+      "-0.3956232813587035"
+    );
+    assert_eq!(
+      interpret("BesselY[-1.5, 2.]").unwrap(),
+      "-0.49129377868716234"
+    );
+    assert_eq!(interpret("StruveH[2.3, 7.]").unwrap(), "1.9087588656455743");
+    assert_eq!(
+      interpret("StruveL[0, 50.]").unwrap(),
+      "2.9325537838493362*^20"
+    );
+    assert_eq!(interpret("AiryBi[1.3]").unwrap(), "1.5522841623445438");
+  }
+
+  // An exact order with a machine argument evaluates. Regression:
+  // BesselJ[1/2, 60.] stayed unevaluated.
+  #[test]
+  fn exact_order_machine_argument() {
+    assert_eq!(interpret("Head[BesselJ[1/2, 60.]]").unwrap(), "Real");
+  }
+
+  // Regression: N[Bessel…[…], p] stayed unevaluated.
+  #[test]
+  fn n_arbitrary_precision() {
+    assert_eq!(
+      interpret("Round[N[BesselJ[2, 3/10], 30], 10^-28]").unwrap(),
+      "111658619490639640396457349/10000000000000000000000000000"
+    );
+    assert_eq!(
+      interpret("Round[N[BesselY[1, 5], 20], 10^-18]").unwrap(),
+      "29572628678245369/200000000000000000"
+    );
+    assert_eq!(
+      interpret("Round[N[BesselI[0, 7/2], 20], 10^-18]").unwrap(),
+      "368910171611273983/50000000000000000"
+    );
+    assert_eq!(
+      interpret("Round[N[BesselK[3/2, 2], 20], 10^-18]").unwrap(),
+      "179906657952092171/1000000000000000000"
+    );
+    assert_eq!(
+      interpret("Round[N[BesselJ[1/3, 20], 25], 10^-23]").unwrap(),
+      "880302900064694988211/5000000000000000000000"
     );
   }
 }

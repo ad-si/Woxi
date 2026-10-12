@@ -9096,7 +9096,13 @@ pub fn farey_sequence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     b = d;
     c = c2;
     d = d2;
-    terms.push(make_rational_expr(&BigInt::from(a), &BigInt::from(b)));
+    // Farey neighbors satisfy b*c - a*d = 1, so a/b is already in lowest
+    // terms and needs no (BigInt) gcd reduction.
+    terms.push(if b == 1 {
+      Expr::Integer(a)
+    } else {
+      call("Rational", vec![Expr::Integer(a), Expr::Integer(b)])
+    });
   }
 
   if args.len() == 1 {

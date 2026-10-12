@@ -3603,3 +3603,34 @@ mod composition_under_a_holding_head {
     );
   }
 }
+
+mod unevaluated_call_reuses_arguments {
+  use super::*;
+
+  // A call no rule applies to is rebuilt from its evaluated arguments by
+  // moving them, not by deep-copying them. The copy, paid at every level,
+  // made re-evaluating a nested result quadratic in its depth, so this Fold
+  // was cubic overall (n = 500 took 2.6 s in a release build).
+  #[test]
+  fn deep_fold_result() {
+    assert_eq!(
+      interpret("Fold[h[{#1, #2}] &, 0, Range[3]]").unwrap(),
+      "h[{h[{h[{0, 1}], 2}], 3}]"
+    );
+    assert_eq!(
+      interpret("Depth[Fold[h[{#1, #2}] &, 0, Range[400]]]").unwrap(),
+      "801"
+    );
+  }
+
+  // The rules that do apply still see the call.
+  #[test]
+  fn rules_still_apply() {
+    assert_eq!(interpret("g /: h[g, x_] := x; h[g, 5]").unwrap(), "5");
+    assert_eq!(interpret("h[1, Sequence[2, 3]]").unwrap(), "h[1, 2, 3]");
+    assert_eq!(
+      interpret("f[x_] := x^2; {h[f[3]], h[]}").unwrap(),
+      "{h[9], h[]}"
+    );
+  }
+}

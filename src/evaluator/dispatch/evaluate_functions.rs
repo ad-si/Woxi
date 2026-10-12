@@ -191,6 +191,50 @@ fn is_identity_rewrite(name: &str, args: &[Expr], body: &Expr) -> bool {
   }
 }
 
+thread_local! {
+  /// The call (argument slice address and length, head address, recursion
+  /// depth) whose unevaluated result [`evaluate_function_call_owned`] builds
+  /// itself, and whether the fall-through of that very call was reached.
+  static OWNED_FALLTHROUGH: std::cell::Cell<(usize, usize, usize, usize)> =
+    const { std::cell::Cell::new((0, 0, 0, 0)) };
+  static OWNED_FALLTHROUGH_HIT: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// [`evaluate_function_call_ast`] for a caller that owns the evaluated
+/// arguments. When no rule applies, the call is rebuilt by moving `args`
+/// into it instead of cloning the slice — a deep copy that, paid at every
+/// level of a nested expression such as `Fold[h[{#1, #2}] &, 0, list]`'s,
+/// made re-evaluating it quadratic in its depth.
+pub(crate) fn evaluate_function_call_owned(
+  name: &str,
+  args: Vec<Expr>,
+) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return evaluate_function_call_ast(name, &args);
+  }
+  // `evaluate_function_call_ast` runs its body one level deeper.
+  let depth = crate::RECURSION_DEPTH.with(std::cell::Cell::get) + 1;
+  let key = (
+    args.as_ptr() as usize,
+    args.len(),
+    name.as_ptr() as usize,
+    depth,
+  );
+  let prev_key = OWNED_FALLTHROUGH.with(|c| c.replace(key));
+  let prev_hit = OWNED_FALLTHROUGH_HIT.with(|c| c.replace(false));
+  let result = evaluate_function_call_ast(name, &args);
+  let hit = OWNED_FALLTHROUGH_HIT.with(|c| c.replace(prev_hit));
+  OWNED_FALLTHROUGH.with(|c| c.set(prev_key));
+  if hit && result.is_ok() {
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.into(),
+    });
+  }
+  result
+}
+
 pub(crate) fn evaluate_function_call_ast(
   name: &str,
   args: &[Expr],
@@ -11512,7 +11556,19 @@ fn evaluate_function_call_ast_inner(
     crate::capture_unimplemented_call(&call_str);
   }
 
-  // Unknown function - return as symbolic function call
+  // Unknown function - return as symbolic function call. When this is the
+  // call `evaluate_function_call_owned` made, it builds the result from the
+  // arguments it owns; the placeholder returned here is discarded.
+  let key = (
+    args.as_ptr() as usize,
+    args.len(),
+    name.as_ptr() as usize,
+    crate::RECURSION_DEPTH.with(std::cell::Cell::get),
+  );
+  if !args.is_empty() && OWNED_FALLTHROUGH.with(std::cell::Cell::get) == key {
+    OWNED_FALLTHROUGH_HIT.with(|c| c.set(true));
+    return Ok(Expr::Integer(0));
+  }
   Ok(unevaluated(name, args))
 }
 

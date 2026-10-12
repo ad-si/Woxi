@@ -444,6 +444,7 @@ fn decompose_poly(f: &[Rat]) -> Vec<Vec<Rat>> {
     }
 
     if let Some((g, h)) = try_decompose_step(f, s) {
+      let (g, h) = make_inner_integral(g, h);
       // Recursively decompose g and h
       let mut result = decompose_poly(&g);
       let h_decomp = decompose_poly(&h);
@@ -458,6 +459,40 @@ fn decompose_poly(f: &[Rat]) -> Vec<Vec<Rat>> {
 
   // No decomposition found - return as-is
   vec![f.to_vec()]
+}
+
+/// Wolfram gives the inner polynomial integer coefficients: a monic `h`
+/// with rational coefficients is scaled by `d = ±lcm(denominators)`, which
+/// makes it primitive, and the outer one is rescaled to match,
+/// `g(y) → g(y/d)`. The sign of `d` makes the outer polynomial's
+/// highest odd-degree coefficient positive (`d > 0` when it has none), so
+/// `(2x² + x − 3)²` decomposes as `{9 + 6x + x², −x − 2x²}` and
+/// `(2x² + x)³ − 3 (2x² + x)` as `{−3x + x³, x + 2x²}`. A monic `h` with
+/// integer coefficients is kept as it is: `(x² + x − 1)²` is
+/// `{1 − 2x + x², x + x²}`.
+fn make_inner_integral(g: Vec<Rat>, h: Vec<Rat>) -> (Vec<Rat>, Vec<Rat>) {
+  let d = h.iter().fold(1i128, |acc, &(_, den)| {
+    acc / crate::functions::math_ast::gcd_i128(acc, den).max(1) * den
+  });
+  if d == 1 {
+    return (g, h);
+  }
+  let rescale = |d: i128| -> Vec<Rat> {
+    g.iter()
+      .enumerate()
+      .map(|(k, &c)| rat_div(c, rat_pow((d, 1), k)))
+      .collect()
+  };
+  let positive = rescale(d);
+  let top_odd_negative = positive
+    .iter()
+    .enumerate()
+    .rev()
+    .find(|(k, c)| k % 2 == 1 && !rat_is_zero(**c))
+    .is_some_and(|(_, c)| c.0 < 0);
+  let d = if top_odd_negative { -d } else { d };
+  let g = if d < 0 { rescale(d) } else { positive };
+  (g, poly_scale(&h, (d, 1)))
 }
 
 /// Merge adjacent monomial components.

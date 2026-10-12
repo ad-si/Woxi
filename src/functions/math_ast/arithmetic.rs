@@ -545,35 +545,6 @@ fn try_series_data_times(
   }
 }
 
-/// Does this expression contain any named Wolfram numeric constant
-/// (Pi, E, Degree, EulerGamma, Catalan, GoldenRatio, Glaisher, Khinchin)?
-/// Used by `plus_ast` to decide whether a symbolic summand should have
-/// its constants numerified when a machine Real is present in the sum.
-fn contains_named_numeric_constant(e: &Expr) -> bool {
-  match e {
-    Expr::Identifier(s) => matches!(
-      s.as_str(),
-      "Pi"
-        | "E"
-        | "Degree"
-        | "EulerGamma"
-        | "Catalan"
-        | "GoldenRatio"
-        | "Glaisher"
-        | "Khinchin"
-    ),
-    Expr::FunctionCall { args, .. } => {
-      args.iter().any(contains_named_numeric_constant)
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      contains_named_numeric_constant(left)
-        || contains_named_numeric_constant(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_named_numeric_constant(operand),
-    _ => false,
-  }
-}
-
 /// Plus[args...] - Sum of arguments, with list threading
 /// Which listable operation a `Threaded` broadcast is threading through.
 #[derive(Clone, Copy)]
@@ -1134,6 +1105,49 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // A machine number makes the whole sum machine precision: an
+  // arbitrary-precision summand — or the coefficient of an arbitrary-
+  // precision imaginary term — joins the machine fold as the f64 it rounds
+  // to (`1.5 + 2.5`30` → `4.`, `2. I - 2.`30 I` → `0. + 0.*I`).
+  // Regression: such summands used to be dropped from the sum.
+  let is_machine_imaginary = |e: &Expr| match e {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      matches!(args[0], Expr::Real(_))
+        && matches!(&args[1], Expr::Identifier(s) if s == "I")
+    }
+    _ => false,
+  };
+  let is_bigfloat_number = |e: &Expr| match e {
+    Expr::BigFloat(..) => true,
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      matches!(args[0], Expr::BigFloat(..))
+        && matches!(&args[1], Expr::Identifier(s) if s == "I")
+    }
+    _ => false,
+  };
+  if (has_real || flat_args.iter().any(is_machine_imaginary))
+    && flat_args.iter().any(is_bigfloat_number)
+  {
+    let demote = |e: &Expr| match e {
+      Expr::BigFloat(digits, _) => digits.parse::<f64>().ok().map(Expr::Real),
+      _ => None,
+    };
+    for arg in &mut flat_args {
+      if let Some(r) = demote(arg) {
+        *arg = r;
+      } else if let Expr::FunctionCall { name, args } = arg
+        && name == "Times"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Identifier(s) if s == "I")
+        && let Some(r) = demote(&args[0])
+      {
+        *arg = times2(r, Expr::Identifier("I".to_string()));
+      }
+    }
+    has_real = flat_args.iter().any(|a| matches!(a, Expr::Real(_)));
+    has_bigfloat = false;
+  }
+
   // If all numeric and no Reals/BigFloats, use exact rational arithmetic.
   // Uses Coeff::add which transparently promotes to BigInt on i128 overflow.
   if all_numeric && !has_real && !has_bigfloat {
@@ -1199,44 +1213,12 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
 
-    // Numeric contagion: if any term is a machine Real, fold each
-    // symbolic numeric-constant term (Pi, E, etc.) to a Real, and
-    // numerify the numeric constants embedded inside otherwise non-real
-    // terms like `Pi*I` so `2. + Pi*I` → `2. + 3.14159…*I`. Matches
-    // wolframscript: `2. + Pi` → `5.14159…`, `2. + Pi*I` →
-    // `2. + 3.14159…*I`, but `2. + (x-3)^2` stays `2. + (-3 + x)^2`
-    // because the symbolic summand contains no numeric constants.
-    // The numerified constants fold AFTER the literal terms, one at a
-    // time in input order — Wolfram's machine fold never combines the
-    // symbolic terms first (Plus[0.1, 0.2, Pi, -Pi] →
-    // 0.2999999999999998, Plus[1.*10^16, Pi, -1.*10^16] → 3.14159…).
-    let mut numerified_tail: Vec<f64> = Vec::new();
-    if has_real_term {
-      let mut remaining_symbolic: Vec<Expr> = Vec::new();
-      for arg in symbolic_args.drain(..) {
-        if let Some(f) = try_eval_to_f64(&arg) {
-          // Whole term reduces to a Real (e.g. Pi, E, Sqrt[2]).
-          numerified_tail.push(f);
-        } else if contains_named_numeric_constant(&arg)
-          && let Ok(n_val) = n_eval(&arg)
-        {
-          remaining_symbolic.push(n_val);
-        } else {
-          remaining_symbolic.push(arg);
-        }
-      }
-      symbolic_args = remaining_symbolic;
-    }
-
-    // Build final args: numeric sum first (if non-zero), then symbolic terms sorted
-    let mut final_args: Vec<Expr> = Vec::new();
-
     // Detect any `Times[Real, I]` symbolic summand. When present, the
     // sum is in the machine-precision Complex form (`Complex[r, im]`)
     // and we keep a leading `0.` real coefficient when real_sum is 0
     // so the output reads `0. + r*I` rather than dropping the `0.`.
     // This covers both `0. + 0. I` and `0. + 1. I`.
-    let has_inexact_zero_imag = symbolic_args.iter().any(|e| {
+    let is_inexact_imaginary = |e: &Expr| {
       matches!(
         e,
         Expr::FunctionCall { name, args }
@@ -1253,20 +1235,95 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } if matches!(left.as_ref(), Expr::Real(_))
           && matches!(right.as_ref(), Expr::Identifier(s) if s == "I")
       )
-    });
+    };
+    let has_inexact_zero_imag = symbolic_args.iter().any(is_inexact_imaginary);
+
+    // Numeric contagion: a machine Real summand — or a machine imaginary
+    // one, which is a Complex number in Wolfram — numericizes every summand
+    // that is a number (`NumericQ`): `2. + Pi` → `5.14159…`,
+    // `2. + Sqrt[2] I` → `2. + 1.41421…*I`, `1.5 I + Sqrt[2]` →
+    // `1.41421… + 1.5*I`. A summand that is not a number keeps its exact
+    // parts: `2. + Pi x` and `2. + (x-3)^2` stay as they are.
+    // The numerified constants fold AFTER the literal terms, one at a
+    // time in input order — Wolfram's machine fold never combines the
+    // symbolic terms first (Plus[0.1, 0.2, Pi, -Pi] →
+    // 0.2999999999999998, Plus[1.*10^16, Pi, -1.*10^16] → 3.14159…).
+    let contagion = has_real_term || has_inexact_zero_imag;
+    let mut numerified_tail: Vec<f64> = Vec::new();
+    if contagion {
+      let mut remaining_symbolic: Vec<Expr> = Vec::new();
+      for arg in symbolic_args.drain(..) {
+        if let Some(f) = try_eval_to_f64(&arg) {
+          // Whole term reduces to a Real (e.g. Pi, E, Sqrt[2]).
+          numerified_tail.push(f);
+        } else if !is_inexact_imaginary(&arg)
+          && crate::functions::predicate_ast::is_numeric_q(&arg)
+          && let Ok(n_val) = n_eval(&arg)
+        {
+          // A complex value (`E^I` → `0.54… + 0.84…*I`) splits into its
+          // real part, which joins the machine fold, and its imaginary term.
+          match try_extract_complex_float(&n_val) {
+            Some((re, im)) if re != 0.0 => {
+              numerified_tail.push(re);
+              remaining_symbolic.push(times2(
+                Expr::Real(im),
+                Expr::Identifier("I".to_string()),
+              ));
+            }
+            _ => remaining_symbolic.push(n_val),
+          }
+        } else {
+          remaining_symbolic.push(arg);
+        }
+      }
+      symbolic_args = remaining_symbolic;
+    }
+
+    // Without a machine number, arbitrary-precision summands combine with
+    // the exact ones under precision tracking, wherever they stand:
+    // `x + 1.5`30 + 2.5`20` → `4.`20.2 + x`, `x + 1.5`30 + 1` → `2.5`30.2 + x`.
+    let mut bigfloat_total: Option<Expr> = None;
+    if !contagion
+      && symbolic_args
+        .iter()
+        .any(|a| matches!(a, Expr::BigFloat(..)))
+    {
+      let mut parts: Vec<Expr> = Vec::new();
+      if has_exact && !exact_sum.is_zero() {
+        parts.push(exact_sum.to_expr());
+      }
+      symbolic_args.retain(|a| {
+        let is_bigfloat = matches!(a, Expr::BigFloat(..));
+        if is_bigfloat {
+          parts.push(a.clone());
+        }
+        !is_bigfloat
+      });
+      bigfloat_total = Some(bigfloat_plus(&parts));
+    }
+
+    // Build final args: numeric sum first (if non-zero), then symbolic terms sorted
+    let mut final_args: Vec<Expr> = Vec::new();
 
     // With any machine Real present, fold to f64 in Wolfram's order: the
     // literal numeric terms (exact and real alike, each converted to f64
     // individually) combine as the balanced machine tree, then the
     // numerified constants fold one at a time.
-    if has_real_term {
+    if contagion {
       let mut total = machine_sum(&numeric_terms);
       for f in &numerified_tail {
         total += f;
       }
-      if total != 0.0 || has_inexact_zero_imag {
+      // A machine zero stays as the numeric term of a symbolic sum, as in
+      // Wolfram (`x + 0.` → `0. + x`); only a sum whose sole inexact part
+      // is an imaginary term has no real part to keep.
+      let has_real_part =
+        has_real_term || has_exact || !numerified_tail.is_empty();
+      if total != 0.0 || has_real_part {
         final_args.push(Expr::Real(total));
       }
+    } else if let Some(total) = bigfloat_total {
+      final_args.push(total);
     } else if has_exact && !exact_sum.is_zero() {
       final_args.push(exact_sum.to_expr());
     }
@@ -1282,14 +1339,14 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && exact_sum.is_zero()
       && !flat_args.iter().any(|a| matches!(a, Expr::BigFloat(_, _)));
 
-    // When the sum has any Real (or BigFloat) component, promote the
+    // When the sum has a machine Real component, promote the
     // integer/rational coefficient of any imaginary symbolic term to a
     // Real. Wolfram's `1. + 2 I` evaluates to `Complex[1., 2.]`, not
     // `Plus[1., Times[2, I]]`; the closest we can get without a Complex
-    // node is `Plus[1., Times[2., I]]`.
-    let needs_complex_promotion = (has_real_term
-      || flat_args.iter().any(|a| matches!(a, Expr::BigFloat(_, _))))
-      && symbolic_args.iter().any(is_integer_times_i);
+    // node is `Plus[1., Times[2., I]]`. An arbitrary-precision real part
+    // keeps an exact imaginary one: `1.5`30 + 2 I` is `1.5`30 + 2*I`.
+    let needs_complex_promotion =
+      has_real_term && symbolic_args.iter().any(is_integer_times_i);
     let symbolic_args = if needs_complex_promotion {
       symbolic_args
         .into_iter()
@@ -1301,7 +1358,8 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // Collect like terms: group symbolic terms by their base expression
     // e.g. E + E → 2*E, 3*x + 2*x → 5*x
-    let collected = collect_like_terms(&symbolic_args);
+    let collected =
+      collect_like_terms(&combine_bigfloat_coefficients(symbolic_args));
 
     // Sort symbolic terms: polynomial-like terms first, then transcendental functions
     // This gives Mathematica-like ordering where x^2 comes before Sin[x].
@@ -1793,6 +1851,91 @@ fn decompose_term(e: &Expr) -> (Coeff, Expr) {
 
 /// Collect like terms: group symbolic terms by their base expression
 /// and sum their coefficients. E.g. [E, E] → [2*E], [3*x, 2*x] → [5*x].
+/// Combines the terms `c base` with an arbitrary-precision coefficient `c`
+/// that share their `base`, summing the coefficients with
+/// [`bigfloat_plus`]'s precision tracking: `1.5`30 I + 1.5`30 I` →
+/// `3.`30 I`. `Coeff` has no arbitrary-precision variant, so
+/// `collect_like_terms` would otherwise read `1.5`30 I` as an opaque base
+/// and double it to `2*1.5`30*I`.
+fn combine_bigfloat_coefficients(terms: Vec<Expr>) -> Vec<Expr> {
+  let split_bigfloat = |term: &Expr| -> Option<(Expr, Expr)> {
+    match term {
+      Expr::FunctionCall { name, args }
+        if name == "Times"
+          && args.len() >= 2
+          && matches!(args[0], Expr::BigFloat(..)) =>
+      {
+        let base = if args.len() == 2 {
+          args[1].clone()
+        } else {
+          times(args[1..].to_vec())
+        };
+        Some((args[0].clone(), base))
+      }
+      _ => None,
+    }
+  };
+  // Bases that carry an arbitrary-precision coefficient somewhere; an exact
+  // coefficient of the same base joins that sum (`2 I - 2.`30 I`).
+  let bigfloat_bases: Vec<String> = terms
+    .iter()
+    .filter_map(|t| split_bigfloat(t).map(|(_, base)| expr_to_string(&base)))
+    .collect();
+  if bigfloat_bases.is_empty() {
+    return terms;
+  }
+  let split = |term: &Expr| -> Option<(Expr, Expr)> {
+    if let Some(parts) = split_bigfloat(term) {
+      return Some(parts);
+    }
+    let (coeff, base) = decompose_term(term);
+    (!matches!(coeff, Coeff::Real(_))
+      && bigfloat_bases.contains(&expr_to_string(&base)))
+    .then(|| (coeff.to_expr(), base))
+  };
+  // Per base: its key, the base, the coefficients and the first term.
+  let mut groups: Vec<(String, Expr, Vec<Expr>, Expr)> = Vec::new();
+  let mut slots: Vec<Result<usize, Expr>> = Vec::new();
+  for term in terms {
+    match split(&term) {
+      Some((coeff, base)) => {
+        let key = expr_to_string(&base);
+        let idx = if let Some(idx) = groups.iter().position(|(k, ..)| *k == key)
+        {
+          idx
+        } else {
+          groups.push((key, base, Vec::new(), term.clone()));
+          slots.push(Ok(groups.len() - 1));
+          groups.len() - 1
+        };
+        groups[idx].2.push(coeff);
+      }
+      None => slots.push(Err(term)),
+    }
+  }
+  slots
+    .into_iter()
+    .map(|slot| match slot {
+      Err(term) => term,
+      Ok(idx) => {
+        let (_, base, coeffs, first) = &groups[idx];
+        if coeffs.len() == 1 {
+          return first.clone();
+        }
+        let coeff = bigfloat_plus(coeffs);
+        let mut factors = vec![coeff];
+        match base {
+          Expr::FunctionCall { name, args } if name == "Times" => {
+            factors.extend(args.iter().cloned());
+          }
+          _ => factors.push(base.clone()),
+        }
+        times(factors)
+      }
+    })
+    .collect()
+}
+
 fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   use std::collections::BTreeMap;
 
@@ -1819,16 +1962,14 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   for (_, base, c, original, count) in groups {
     if c.is_zero() {
       // Preserve `Real(0.0) * I` as the imaginary marker of an inexact
-      // Complex form *only when it came from a single un-combined term*.
-      // Wolfram's `1. + 0. I` evaluates to `Complex[1., 0.]` displayed
-      // as `1. + 0.*I`; without keeping the `0.*I` here, the imaginary
-      // component would silently disappear after Plus flattening of the
-      // BinaryOp::Plus form produced by `times_ast` for `0. I`.
-      // Restrict to count == 1 so genuine cancellations (e.g. the
-      // `I + (-I)` that arises when Sum bounds drop their imaginary
-      // part) still collapse to 0 rather than leaving a stray `0.*I`.
-      if count == 1
-        && matches!(&c, Coeff::Real(_))
+      // Complex form. Wolfram's `1. + 0. I` evaluates to `Complex[1., 0.]`
+      // displayed as `1. + 0.*I`; without keeping the `0.*I` here, the
+      // imaginary component would silently disappear after Plus flattening
+      // of the BinaryOp::Plus form produced by `times_ast` for `0. I`. A
+      // sum of machine Complex numbers is one too, so this holds when
+      // machine coefficients cancel (`2. I - 2. I` → `0. + 0.*I`); exact
+      // ones (`I + (-I)`) still collapse to 0.
+      if matches!(&c, Coeff::Real(_))
         && matches!(&base, Expr::Identifier(s) if s == "I")
       {
         result.push(times(vec![c.to_expr(), base]));
@@ -8864,6 +9005,21 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         _ => product,
       });
+    }
+  }
+
+  // Numbers alongside symbolic factors: the arbitrary-precision number
+  // absorbs the exact ones, `3 (2.`30 I)` → `6.`30 I`. Regression: the
+  // product was left as `3*2.`30*I`.
+  if has_bigfloat {
+    let (numeric, rest): (Vec<Expr>, Vec<Expr>) =
+      args.iter().cloned().partition(|a| {
+        matches!(a, Expr::BigFloat(..)) || expr_to_coeff(a).is_some()
+      });
+    if numeric.len() >= 2 && !rest.is_empty() {
+      let mut factors = vec![bigfloat_times(&numeric)?];
+      factors.extend(rest);
+      return times_ast(&factors);
     }
   }
 

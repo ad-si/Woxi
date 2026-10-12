@@ -9829,6 +9829,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                   Some(Some(Expr::BigInteger(-n)))
                 }
                 Expr::Real(r) if *r < 0.0 => Some(Some(Expr::Real(-r))),
+                Expr::BigFloat(digits, prec) if digits.starts_with('-') => {
+                  Some(Some(Expr::BigFloat(digits[1..].to_string(), *prec)))
+                }
                 Expr::FunctionCall { name: rn, args: ra }
                   if rn == "Rational"
                     && ra.len() == 2

@@ -295,6 +295,34 @@ mod n_arbitrary_precision {
     );
   }
 
+  // Regression: EulerGamma, Catalan, Glaisher and Khinchin came from
+  // ~105-digit literals, so every later digit was wrong (and every
+  // high-precision ExpIntegralE inherited EulerGamma's error). Beyond the
+  // literals they are now computed.
+  #[test]
+  fn n_constants_past_105_digits() {
+    assert_eq!(
+      interpret("RealDigits[N[EulerGamma, 130]][[1, 100 ;; 125]]").unwrap(),
+      "{5, 1, 4, 6, 3, 1, 4, 4, 7, 2, 4, 9, 8, 0, 7, 0, 8, 2, 4, 8, 0, 9, 6, 0, 5, 0}"
+    );
+    assert_eq!(
+      interpret("RealDigits[N[Catalan, 130]][[1, 100 ;; 125]]").unwrap(),
+      "{2, 4, 8, 5, 7, 4, 4, 2, 2, 6, 1, 9, 1, 9, 6, 1, 9, 9, 5, 7, 9, 0, 3, 5, 8, 9}"
+    );
+    assert_eq!(
+      interpret("RealDigits[N[Glaisher, 130]][[1, 101 ;; 115]]").unwrap(),
+      "{3, 9, 4, 2, 0, 6, 4, 6, 1, 2, 0, 3, 9, 9, 0}"
+    );
+    assert_eq!(
+      interpret("RealDigits[N[Khinchin, 300]][[1, 280 ;; 300]]").unwrap(),
+      "{2, 3, 5, 4, 5, 8, 1, 0, 6, 8, 6, 3, 1, 8, 5, 0, 1, 0, 3, 2, 3}"
+    );
+    assert_eq!(
+      interpret("RealDigits[N[EulerGamma, 300]][[1, 280 ;; 300]]").unwrap(),
+      "{1, 4, 6, 6, 9, 4, 0, 2, 9, 6, 0, 4, 3, 2, 5, 4, 2, 1, 5, 1, 9}"
+    );
+  }
+
   #[test]
   fn n_catalan_arbitrary() {
     // N[Catalan, 20] — Catalan's constant G at arbitrary precision.

@@ -2048,15 +2048,16 @@ pub fn dispatch_math_functions(
       // Expand to Sin[x]/x only when Sin[x] evaluated to a variable-free closed
       // form — a genuine value (number/radical) as for Sinc[Pi/2] or Sinc[2 Pi].
       // When Sin merely rewrites to another symbolic form (Sin[Pi + x] = -Sin[x],
-      // still containing a Sin; or Sin[Pi/2 + x] = Cos[x], still containing the
-      // free variable x), wolframscript keeps Sinc[x] symbolic, so leave it
-      // unevaluated. `not_a_value` flags either a residual Sin head or any free
-      // symbol.
+      // still containing a Sin; Sin[3 Pi/8] = Cos[Pi/8], a cosine without a
+      // radical form; or Sin[Pi/2 + x] = Cos[x], still containing the free
+      // variable x), wolframscript keeps Sinc[x] symbolic, so leave it
+      // unevaluated. `not_a_value` flags a residual Sin or Cos head or any
+      // free symbol.
       fn not_a_value(e: &Expr) -> bool {
         match e {
           Expr::Identifier(_) => true,
           Expr::FunctionCall { name, args } => {
-            name == "Sin" || args.iter().any(not_a_value)
+            name == "Sin" || name == "Cos" || args.iter().any(not_a_value)
           }
           Expr::BinaryOp { left, right, .. } => {
             not_a_value(left) || not_a_value(right)

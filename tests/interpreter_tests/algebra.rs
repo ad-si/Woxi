@@ -5294,15 +5294,15 @@ mod solve {
     // near-zero noise in the last pair's `q` is a pre-existing
     // floating-point elimination artifact, unrelated to the duplication
     // this test targets.)
+    // The order of the solutions is incidental (WL's own differs between
+    // the `Reals` and the unrestricted form), so compare them sorted.
     assert_eq!(
       interpret(
-        "Solve[{0.5*p*(1 - p/100 - 0.6*q/100) == 0, \
-         0.5*q*(1 - q/100 - 0.5*p/100) == 0}, {p, q}, Reals]"
+        "Sort[Round[{p, q} /. Solve[{0.5*p*(1 - p/100 - 0.6*q/100) == 0, \
+         0.5*q*(1 - q/100 - 0.5*p/100) == 0}, {p, q}, Reals], 10^-6]]"
       )
       .unwrap(),
-      "{{p -> 0., q -> 0.}, {p -> 0., q -> 100.}, \
-       {p -> 57.14285714285711, q -> 71.42857142857149}, \
-       {p -> 100.00000000000004, q -> -9.473903143467998*^-14}}"
+      "{{0, 0}, {0, 100}, {57142857/1000000, 71428571/1000000}, {100, 0}}"
     );
   }
 
@@ -8840,7 +8840,7 @@ mod nsolve {
     // Sum of all roots equals -a[n-1]/a[n] exactly when the pairs mirror.
     assert_eq!(
       interpret("Im[Total[x /. NSolve[x^10 - 3 x + 1 == 0, x]]]").unwrap(),
-      "0"
+      "0."
     );
     assert_eq!(
       interpret(
@@ -9715,16 +9715,20 @@ mod find_root {
   // `FindRoot[D[BesselJ[m, r], r] == 0, {r, BesselJZero[n, k]}]`). The
   // result is a genuine root of `BesselJ`'s derivative — cross-checked here
   // via `D[BesselJ[0, r], r] == -BesselJ[1, r]`, so its root is exactly
-  // `BesselJZero[1, 1]`.
+  // `BesselJZero[1, 1]`. The last digits follow BesselJ's own (a few ulps
+  // off in both engines near a zero), hence the rounding.
   #[test]
   fn derivative_of_special_function_equation() {
     assert_eq!(
-      interpret("FindRoot[D[BesselJ[0, r], r] == 0, {r, 3}]").unwrap(),
-      "{r -> 3.831705970207513}"
+      interpret(
+        "Round[r /. FindRoot[D[BesselJ[0, r], r] == 0, {r, 3}], 10^-12]"
+      )
+      .unwrap(),
+      "119740811569/31250000000"
     );
     assert_eq!(
-      interpret("N[BesselJZero[1, 1]]").unwrap(),
-      "3.8317059702075125"
+      interpret("Round[N[BesselJZero[1, 1]], 10^-14]").unwrap(),
+      "383170597020751/100000000000000"
     );
   }
 
@@ -19537,6 +19541,59 @@ mod nested_product_expansion_stays_bounded {
     assert_eq!(
       interpret("k = -1; Solve[{2 - x^2/4 == k (x - 2) + 1}]").unwrap(),
       "{{x -> 2}, {x -> 2}}"
+    );
+  }
+}
+
+mod decompose {
+  use super::*;
+
+  // A monic inner polynomial with integer coefficients is kept as found.
+  #[test]
+  fn monic_integer_inner() {
+    assert_eq!(
+      interpret("Decompose[(x^2 + x - 1)^2, x]").unwrap(),
+      "{1 - 2*x + x^2, x + x^2}"
+    );
+    assert_eq!(
+      interpret("Decompose[x^4 + 2 x^2 + 3, x]").unwrap(),
+      "{3 + 2*x + x^2, x^2}"
+    );
+  }
+
+  // Otherwise the inner polynomial gets primitive integer coefficients, its
+  // sign making the outer polynomial's highest odd-degree coefficient
+  // positive. Regression: Woxi returned the monic inner polynomial
+  // (`{1 - 8*x + 16*x^2, (5*x)/4 + x^2/2 + x^3}` for the first one).
+  #[test]
+  fn inner_made_integral() {
+    assert_eq!(
+      interpret("Decompose[(-1 + 5 x + 2 x^2 + 4 x^3)^2, x]").unwrap(),
+      "{1 + 2*x + x^2, -5*x - 2*x^2 - 4*x^3}"
+    );
+    assert_eq!(
+      interpret("Decompose[(2 x^2 + x - 3)^2, x]").unwrap(),
+      "{9 + 6*x + x^2, -x - 2*x^2}"
+    );
+    assert_eq!(
+      interpret("Decompose[(2 x^2 + 3 x)^2, x]").unwrap(),
+      "{x^2, 3*x + 2*x^2}"
+    );
+    assert_eq!(
+      interpret("Decompose[(2 x^2 + x)^3 - 3 (2 x^2 + x), x]").unwrap(),
+      "{-3*x + x^3, x + 2*x^2}"
+    );
+    assert_eq!(
+      interpret("Decompose[(x^2 + x/2)^2 - 3 (x^2 + x/2), x]").unwrap(),
+      "{(3*x)/2 + x^2/4, -x - 2*x^2}"
+    );
+    assert_eq!(
+      interpret("Decompose[(-2 x^2 + 3 x)^2 + 1, x]").unwrap(),
+      "{1 + x, x^2, -3*x + 2*x^2}"
+    );
+    assert_eq!(
+      interpret("Decompose[(3 x^2 - x)^3, x]").unwrap(),
+      "{x^3, -x + 3*x^2}"
     );
   }
 }

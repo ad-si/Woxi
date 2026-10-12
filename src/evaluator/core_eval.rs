@@ -2833,10 +2833,21 @@ pub fn evaluate_expr_to_expr_inner(
 
         // Evaluate arguments (respecting Hold attributes)
         let evaluated_args = evaluate_args_with_hold(name, args)?;
-        // Flatten Sequence arguments (unless function has SequenceHold attribute)
-        let evaluated_args = flatten_sequences(name, &evaluated_args);
-        // Dispatch to function implementation
-        evaluate_function_call_ast(name, &evaluated_args)
+        // Flatten Sequence arguments (unless function has SequenceHold
+        // attribute), then dispatch to the function implementation. The
+        // arguments are handed over owned when nothing was spliced, so an
+        // unevaluated result reuses them instead of copying them.
+        let spliced = match flatten_sequences(name, &evaluated_args) {
+          std::borrow::Cow::Owned(spliced) => Some(spliced),
+          std::borrow::Cow::Borrowed(_) => None,
+        };
+        match spliced {
+          Some(spliced) => evaluate_function_call_ast(name, &spliced),
+          None => crate::evaluator::dispatch::evaluate_functions::evaluate_function_call_owned(
+            name,
+            evaluated_args,
+          ),
+        }
       })(); // end of closure for stack tracking
       // Capture stack trace before popping, so errors carry context
       if matches!(&result, Err(InterpreterError::EvaluationError(_))) {

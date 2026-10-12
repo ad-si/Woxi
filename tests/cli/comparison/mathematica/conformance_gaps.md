@@ -458,20 +458,29 @@ symbol first in both. Same comparator as the entry above: WL keys the scaled
 sum on its last term (`x` ties with `x`, and a sum then sorts before the bare
 symbol, the `-1 + x < x` rule of `Sort`). Value identical, display only.
 
-### Inexact zero is dropped from a symbolic sum
+### A complex iterator with a fractional span
 
 ```sh
-wolframscript -code 'ToString[x + 0., InputForm]'     # 0. + x
-woxi eval 'ToString[x + 0., InputForm]'               # x
-wolframscript -code 'ToString[2. x + 0., InputForm]'  # 0. + 2.*x
-woxi eval 'ToString[2. x + 0., InputForm]'            # 2.*x
+wolframscript -code 'Table[k, {k, I, I + 1.5}]'   # {I, 1 + I}
+woxi eval 'Table[k, {k, I, I + 1.5}]'             # Table::iterb, unevaluated
 ```
 
-WL keeps a machine `0.` as the numeric term of any sum that has a symbolic
-part, so `a + 0.5 (b - a) + {{0., 0.5}, {-0.5, 0.}} . (b - a)` with symbolic
-`a` carries a `0. +` in every component. Woxi only keeps it when an `I` term
-needs it as the real part of a `Complex` (`1. + 0. I`). The `LinearModelFit`
-`BestFit` entry below is one symptom.
+`Table`, `Do`, `Range` and `Product` accept a complex start only when the
+span `(max - min)/step` is an exact integer (`{k, I, I + 1}` works). WL takes
+the floor of any non-negative real span. `Sum` handles it.
+
+### A machine complex number inside a symbolic sum is not bracketed
+
+```sh
+wolframscript -code 'x + 1.5 I'   # (0. + 1.5*I) + x
+woxi eval 'x + 1.5 I'             # 1.5*I + x
+wolframscript -code 'a + 0. I'    # (0. + 0.*I) + a
+woxi eval 'a + 0. I'              # 0. + 0.*I + a
+```
+
+In WL the machine `Complex` is one atom, printed with its `0.` real part and
+bracketed among the other summands. Woxi stores it as `re + im*I` terms of
+the surrounding `Plus`, so there is no atom to bracket. Values agree.
 
 ### Mixed sharing/non-sharing numerators over a shared denominator
 
@@ -762,27 +771,50 @@ rational approximations. Real outputs differ in the last 1–2 digits for small
 `|x|`, and the cancellation as `S, C → 1/2` degrades relative accuracy to
 ~1e-13 by `x = 10`. **Not reproducible** without WL's coefficients.
 
-### `BesselI` and `BesselJ` differ by 1–2 ULP
+### Machine Bessel, Airy and Struve values are not correctly rounded in WL
 
-`BesselI[0, 3]` is `…5025` in Woxi and `…50235` in WL. `BesselK` is
-bit-exact on the probed values; `BesselY` mostly is, but `BesselY[0, 2.4]` is
-`…7438` in Woxi and `…7439` in WL (the true value is `…743774`, so Woxi's is
-the nearer one). Affects e.g. `PDF[VonMisesDistribution[2, 3], 2.5]`'s last
-digit.
+Woxi rounds machine `BesselJ`, `BesselY`, `BesselI`, `BesselK`, `StruveH`,
+`StruveL` and the four Airy functions from a 64-bit evaluation, so they are
+correctly rounded (checked against 20-digit values of the exact double
+arguments). wolframscript's agree on most probes but not all, and drift
+further for large arguments: `BesselJ[0, 100.]` is `…223327` against the
+correctly rounded `…223122`, `BesselJ[1, 3.8]` `…731658` against `…7317`,
+`BesselY[0, 2.4]` `…7439` against `…7438`, `AiryAi[20.]` `…6705310*^-27`
+against `…6705404*^-27` and `AiryAiPrime[-1.]` is off by 4e-14. Anything
+built on them inherits the difference — `N[BesselJZero[1, 1]]` is `…5125`
+(the root is `3.83170597020751231…`) against WL's `…512`, and
+`GaussianFilter`'s kernel and `PDF[VonMisesDistribution[2, 3], 2.5]` differ
+in the last digit. **Not reproducible.**
 
 ### Machine special-function values differ in the last digits
 
 Woxi's machine `LogGamma` is msun's `lgamma` (accurate to an ulp); it matches
 wolframscript on most arguments but not all — `LogGamma[1.5]` is `…4522` (the
 correctly rounded value) against WL's `…4526`, `LogGamma[10.3]` `…355` against
-`…359`, `LogGamma[4.0]` `…055` (`Log[6.]`, correctly rounded) against `…0552`. The same 1–3 ULP class: `InverseErf[0.5]` (`…698` vs `…6993`, Woxi
-nearer), `LogIntegral[0.3]` (`…894` vs `…8946`, WL nearer) and
-`ExpIntegralE[2, 0.2]` (`…033` vs `…031`, WL nearer). **Not reproducible**
-without WL's own approximations; the last two are worth a more accurate
-algorithm.
+`…359`, `LogGamma[4.0]` `…055` (`Log[6.]`, correctly rounded) against `…0552`.
+The same 1–3 ULP class: `InverseErf[0.5]` (`…698` vs `…6993`, Woxi nearer).
+**Not reproducible** without WL's own approximations.
 
-Also missing from Woxi's numeric folding: `Gamma[rational]`, so
-`2. + Gamma[1/3]` stays symbolic where WL gives `5.357877069415496`.
+### Machine exponential integrals are not correctly rounded in WL
+
+Woxi rounds machine `ExpIntegralE`, `ExpIntegralEi`, `LogIntegral`,
+`Gamma[a, z]` and `Gamma[x]` from a 64-bit evaluation, so they are correctly
+rounded (checked against 40-digit values of the exact double arguments). WL's
+`Gamma[x]` is correctly rounded too and the two agree, but its exponential
+integrals are not: `LogIntegral[0.3]` is `…8946` against the correctly rounded
+`…894`, `ExpIntegralE[2, 0.2]` `…031` against `…032`,
+`ExpIntegralE[1, 0.7]` `…0923` against `…092`, `ExpIntegralEi[3.]` `…414`
+against `…416`, `ExpIntegralE[3, 10.]` is off by 1.6e-14 and
+`ExpIntegralEi[300.]` by 2e-14. Next to li's root WL loses whole digits:
+`LogIntegral[1.4513692348]` is `-2.2383719991068265*^-10` in WL and
+`-2.2383724226744812*^-10` (correct) in Woxi. **Not reproducible.**
+
+The guard digits WL prints past the precision of `N[LogIntegral[3/10], 30]`,
+`N[ExpIntegralE[2, 2/10], 30]` and `N[Gamma[0, 2/10], 30]` differ from
+Woxi's from about the 35th digit; Woxi's are the true ones (they agree with
+WL's own 60-digit values). For a complex result such as
+`N[ExpIntegralE[1, -2], 20]` WL tags each part with its own precision
+(`20.077…`, `19.879…`), Woxi with the requested one.
 
 ### Arbitrary-precision `Root` padding
 
@@ -3371,7 +3403,10 @@ gets `l[[1 + Quotient[n, 6]]]` as `#` and evaluates it again, so the first
 `Part::pkspec1` prints twice. It also costs time: a recursion that nests an
 unevaluated expression one level deeper per call re-evaluates the whole nest
 on every call. A `fromrank[list_, n_]` whose `Mod[n, 6]` argument nests
-until `$RecursionLimit` takes ~3s in Woxi and 0.03s in wolframscript.
+until `$RecursionLimit` takes ~3s in Woxi and 0.03s in wolframscript. And a
+nest built up step by step is re-evaluated whole at each step, which also
+costs stack: `Depth[Nest[h[{#}] &, 0, 1500]]` is 3001 in WL but exceeds
+`$RecursionLimit` in Woxi (as does the same `Fold` past ~500 steps).
 
 ### A too-deep `Part` on a packed array is `Part::partd1`
 
@@ -4824,13 +4859,6 @@ When a rational equation depends on the unknown only through one denominator
 sum linear in it (`a + b q`), the roots are found for that sum and mapped
 back (`q -> (root - a)/b`). They are equal to Wolfram's but not guaranteed to
 be printed in the same arrangement.
-
-### Mixed exact/inexact complex numbers keep the exact real part
-
-`1/2 + 0.5 I` and `1 + 2.5 I` print with the exact real part
-(`1/2 + 0.5*I`); `wolframscript` makes both parts machine precision
-(`0.5 + 0.5*I`, `1. + 2.5*I`). Products and function calls on such values
-numericize correctly, so only the printed form differs.
 
 ### `AxesLabel` on `ParametricPlot` is not drawn
 

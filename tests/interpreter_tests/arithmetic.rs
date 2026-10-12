@@ -1259,6 +1259,130 @@ mod plus_numeric_contagion {
   fn real_plus_polynomial_keeps_exact_exponent() {
     assert_eq!(interpret("Plus[2., (x-3)^2]").unwrap(), "2. + (-3 + x)^2");
   }
+
+  // Every summand that is a number numericizes — not only those containing
+  // a named constant, and whichever way `Pi` was spelled internally (the
+  // `Pi I` and `I Pi` orders store it differently). A summand that is not a
+  // number keeps its exact parts. Regression: `2. + I Pi`, `2. + Sqrt[2] I`
+  // and `2. + Log[3] I` stayed unevaluated.
+  #[test]
+  fn real_plus_numeric_imaginary_terms() {
+    assert_eq!(interpret("2. + I Pi").unwrap(), "2. + 3.141592653589793*I");
+    assert_eq!(
+      interpret("2. + Sqrt[2] I").unwrap(),
+      "2. + 1.4142135623730951*I"
+    );
+    assert_eq!(
+      interpret("2. + Log[3] I").unwrap(),
+      "2. + 1.0986122886681098*I"
+    );
+    assert_eq!(interpret("2. + Pi x").unwrap(), "2. + Pi*x");
+    assert_eq!(interpret("2. + f[Pi]").unwrap(), "2. + f[Pi]");
+    assert_eq!(interpret("2. + Sqrt[2] I x").unwrap(), "2. + I*Sqrt[2]*x");
+  }
+
+  // A machine imaginary summand is a machine Complex number, so it is just
+  // as contagious as a machine Real. Regression: `1.5 I + I Pi` and
+  // `1/2 + 0.5 I` kept their exact parts.
+  #[test]
+  fn inexact_imaginary_is_contagious() {
+    assert_eq!(
+      interpret("1.5 I + I Pi").unwrap(),
+      "0. + 4.641592653589793*I"
+    );
+    assert_eq!(
+      interpret("(2. - 1.5 I) + I Pi").unwrap(),
+      "2. + 1.6415926535897931*I"
+    );
+    assert_eq!(
+      interpret("1.5 I + Sqrt[2]").unwrap(),
+      "1.4142135623730951 + 1.5*I"
+    );
+    assert_eq!(interpret("1/2 + 0.5 I").unwrap(), "0.5 + 0.5*I");
+    assert_eq!(interpret("1 + 2.5 I").unwrap(), "1. + 2.5*I");
+    assert_eq!(
+      interpret("I Pi - 3.14 I").unwrap(),
+      "0. + 0.0015926535897929917*I"
+    );
+    assert_eq!(
+      interpret("1.5 I + E^I").unwrap(),
+      "0.5403023058681398 + 2.3414709848078967*I"
+    );
+    assert_eq!(interpret("0. + 0. I").unwrap(), "0. + 0.*I");
+  }
+
+  // A machine number makes the sum machine precision, so an arbitrary-
+  // precision summand joins the machine fold. Regression: it was dropped
+  // (`1.5 + 2.5`30` gave 1.5).
+  #[test]
+  fn machine_plus_arbitrary_precision() {
+    assert_eq!(interpret("1.5 + 2.5`30").unwrap(), "4.");
+    assert_eq!(interpret("1.5`30 - 1.2").unwrap(), "0.30000000000000004");
+    assert_eq!(interpret("1.5 - 1.5`30").unwrap(), "0.");
+    assert_eq!(interpret("1.5 - 1.5`30 + x").unwrap(), "0. + x");
+    assert_eq!(interpret("2. I - 2.`30 I").unwrap(), "0. + 0.*I");
+    assert_eq!(
+      interpret("(1.5 + 2.*I) - (1.5`30 + 2.`30*I)").unwrap(),
+      "0. + 0.*I"
+    );
+  }
+
+  // A machine zero is kept as the numeric term of a symbolic sum, and
+  // cancelling machine imaginary parts leave a machine Complex zero.
+  #[test]
+  fn machine_zero_is_kept() {
+    assert_eq!(interpret("x + 0.").unwrap(), "0. + x");
+    assert_eq!(interpret("2. x + 0.").unwrap(), "0. + 2.*x");
+    assert_eq!(interpret("x - 1. + 1").unwrap(), "0. + x");
+    assert_eq!(interpret("2. I - 2. I").unwrap(), "0. + 0.*I");
+    assert_eq!(interpret("I + (-I)").unwrap(), "0");
+  }
+}
+
+mod plus_arbitrary_precision_terms {
+  use super::*;
+
+  // Without a machine number, arbitrary-precision summands combine with
+  // each other and with exact ones wherever they stand in the sum, and
+  // arbitrary-precision coefficients of a common term add up. Regression:
+  // `x + 1.5`30 + 1` kept both numbers and two equal complex numbers summed
+  // to `2*1.5`30 + 4.`30*I`.
+  #[test]
+  fn numbers_and_coefficients_combine() {
+    assert_eq!(
+      interpret("x + 1.5`30 + 1").unwrap(),
+      "2.5`30.221848749616356 + x"
+    );
+    assert_eq!(
+      interpret("(1.5`30 + 2.`30 I) + (1.5`30 + 2.`30 I)").unwrap(),
+      "3.`30. + 4.`30.*I"
+    );
+    assert_eq!(interpret("1.5`30 I + 1.5`30 I").unwrap(), "3.`30.*I");
+    assert_eq!(
+      interpret("1 + (1.5`30 + 2.`30 I)").unwrap(),
+      "2.5`30.221848749616356 + 2.`30.*I"
+    );
+  }
+
+  // A negative arbitrary-precision coefficient prints as a subtraction.
+  #[test]
+  fn negative_coefficient_prints_as_minus() {
+    assert_eq!(interpret("1 + Times[-1.5`30, I]").unwrap(), "1 - 1.5`30.*I");
+  }
+
+  // `N` builds a complex result as the evaluated `Plus[re, Times[im, I]]`,
+  // so further arithmetic on it works. Regression: it was an unevaluated
+  // operator form (and, with per-part precision, raw strings), so
+  // `1 - N[…]` did not distribute.
+  #[test]
+  fn n_complex_result_is_arithmetic() {
+    assert_eq!(interpret("Chop[(1 + 2 I) - N[1 + 2 I, 30]]").unwrap(), "0");
+    assert_eq!(
+      interpret("Chop[LogIntegral[-2.] - N[LogIntegral[-2], 30], 10^-14]")
+        .unwrap(),
+      "0"
+    );
+  }
 }
 
 mod big_integer {

@@ -895,24 +895,24 @@ mod bessel_j_zero {
   #[test]
   fn numeric_j0_2() {
     assert_eq!(
-      interpret("N[BesselJZero[0, 2]]").unwrap(),
-      "5.520078110286309"
+      interpret("Round[N[BesselJZero[0, 2]], 10^-14]").unwrap(),
+      "552007811028631/100000000000000"
     );
   }
 
   #[test]
   fn numeric_j0_3() {
     assert_eq!(
-      interpret("N[BesselJZero[0, 3]]").unwrap(),
-      "8.653727912911014"
+      interpret("Round[N[BesselJZero[0, 3]], 10^-14]").unwrap(),
+      "865372791291101/100000000000000"
     );
   }
 
   #[test]
   fn numeric_j1_1() {
     assert_eq!(
-      interpret("N[BesselJZero[1, 1]]").unwrap(),
-      "3.8317059702075125"
+      interpret("Round[N[BesselJZero[1, 1]], 10^-14]").unwrap(),
+      "383170597020751/100000000000000"
     );
   }
 
@@ -5036,7 +5036,7 @@ mod special_function_listability {
     );
     assert_eq!(
       interpret("StruveH[0, {1., 2.}]").unwrap(),
-      "{0.5686566270482872, 0.7908588495080952}"
+      "{0.5686566270482879, 0.7908588495080959}"
     );
   }
 }

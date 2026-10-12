@@ -813,21 +813,31 @@ pub fn polygamma_order(n: &Expr) -> Option<usize> {
   }
 }
 
-/// Machine `PolyGamma[n, x]`, rounded from a 64-bit result (worked out with
-/// 64 guard bits) so it is accurate to the last bit (the f64 recurrence-plus-series loses up to ~40
-/// ulps to cancellation). `None` at a pole.
-pub fn polygamma_f64(n: usize, x: f64) -> Option<f64> {
-  use astro_float::{BigFloat, Consts, RoundingMode};
+/// Runs `f` with this thread's cached astro-float constants, which the
+/// machine-precision wrappers around the BigFloat special functions share
+/// instead of rebuilding them on every call.
+pub(crate) fn with_thread_consts<T>(
+  f: impl FnOnce(&mut astro_float::Consts) -> Option<T>,
+) -> Option<T> {
   thread_local! {
-    static CONSTS: std::cell::RefCell<Option<Consts>> =
+    static CONSTS: std::cell::RefCell<Option<astro_float::Consts>> =
       const { std::cell::RefCell::new(None) };
   }
   CONSTS.with(|slot| {
     let mut slot = slot.borrow_mut();
     if slot.is_none() {
-      *slot = Some(Consts::new().ok()?);
+      *slot = Some(astro_float::Consts::new().ok()?);
     }
-    let cc = slot.as_mut()?;
+    f(slot.as_mut()?)
+  })
+}
+
+/// Machine `PolyGamma[n, x]`, rounded from a 64-bit result (worked out with
+/// 64 guard bits) so it is accurate to the last bit (the f64 recurrence-plus-series loses up to ~40
+/// ulps to cancellation). `None` at a pole.
+pub fn polygamma_f64(n: usize, x: f64) -> Option<f64> {
+  use astro_float::{BigFloat, RoundingMode};
+  with_thread_consts(|cc| {
     let z = BigFloat::from_f64(x, 64);
     let r = polygamma_bigfloat(n, &z, 64, RoundingMode::ToEven, cc)?;
     bigfloat_to_f64_approx(&r)
@@ -839,7 +849,7 @@ pub fn polygamma_f64(n: usize, x: f64) -> Option<f64> {
 /// `ln N` is cached and the atanh series needs only multiplications, which
 /// makes it several times faster than a general `BigFloat::ln` for the
 /// series arguments of PolyGamma and Zeta.
-fn ln_above_integer(
+pub(crate) fn ln_above_integer(
   x: &astro_float::BigFloat,
   bits: usize,
   rm: astro_float::RoundingMode,
@@ -913,17 +923,8 @@ fn ln_above_integer(
 /// Euler–Maclaurin sum loses digits — badly so for negative `s`, whose
 /// terms grow and cancel. `None` at a pole or for a complex value.
 pub fn hurwitz_zeta_f64(s: f64, a: f64, signed: bool) -> Option<f64> {
-  use astro_float::{BigFloat, Consts, RoundingMode};
-  thread_local! {
-    static CONSTS: std::cell::RefCell<Option<Consts>> =
-      const { std::cell::RefCell::new(None) };
-  }
-  CONSTS.with(|slot| {
-    let mut slot = slot.borrow_mut();
-    if slot.is_none() {
-      *slot = Some(Consts::new().ok()?);
-    }
-    let cc = slot.as_mut()?;
+  use astro_float::{BigFloat, RoundingMode};
+  with_thread_consts(|cc| {
     let (sb, ab) = (BigFloat::from_f64(s, 64), BigFloat::from_f64(a, 64));
     let r =
       hurwitz_zeta_bigfloat(&sb, &ab, signed, 64, RoundingMode::ToEven, cc)?;
@@ -966,7 +967,9 @@ fn bernoulli_over_index(
 }
 
 /// A BigFloat's value rounded to the nearest `f64` (normal range only).
-fn bigfloat_to_f64_approx(bf: &astro_float::BigFloat) -> Option<f64> {
+pub(crate) fn bigfloat_to_f64_approx(
+  bf: &astro_float::BigFloat,
+) -> Option<f64> {
   if bf.is_zero() {
     return Some(0.0);
   }
@@ -976,7 +979,13 @@ fn bigfloat_to_f64_approx(bf: &astro_float::BigFloat) -> Option<f64> {
   // for round-to-nearest of the u64 → f64 conversion.
   let (&top, rest) = words.split_last()?;
   let sticky = u64::from(rest.iter().any(|&w| w != 0));
-  let v = (top | sticky) as f64 * 2f64.powi(exp - 64);
+  // Scale into [1/2, 1) first and apply 2^exp in two halves, so neither
+  // factor over- or underflows for a result near the ends of f64's range.
+  let half_exp = exp / 2;
+  let v = (top | sticky) as f64
+    * 2f64.powi(-64)
+    * 2f64.powi(half_exp)
+    * 2f64.powi(exp - half_exp);
   Some(if sign == astro_float::Sign::Neg {
     -v
   } else {
@@ -986,14 +995,16 @@ fn bigfloat_to_f64_approx(bf: &astro_float::BigFloat) -> Option<f64> {
 
 /// Arbitrary-precision Gamma via Spouge's approximation.
 ///
-/// `Γ(z+1) = (z+a)^(z+1/2) · e^{−(z+a)} · √(2π) · (c₀ + Σ_{k=1}^{a−1} c_k/(z+k))`
+/// `Γ(z+1) = (z+a)^(z+1/2) · e^{−(z+a)} · (c₀ + Σ_{k=1}^{a−1} c_k/(z+k))`
 ///
-/// with `c_0 = 1` and `c_k = (-1)^(k-1)/(k-1)! · (a-k)^(k-1/2) · e^(a-k)`.
-/// Choosing `a ≈ 1.6 · digits` gives ~`digits` accurate decimals. We
-/// shift the input by 1 (so the formula receives `z = input - 1`) and
-/// reflect to positive arguments via the reflection identity when
-/// `Re(z) ≤ 0`.
-fn gamma_bigfloat(
+/// with `c_0 = √(2π)` and `c_k = (-1)^(k-1)/(k-1)! · (a-k)^(k-1/2) · e^(a-k)`.
+/// The relative error is below `(2π)^{−a}`, which fixes `a` from the
+/// requested bits. The `c_k` alternate with magnitudes up to about `e^a`, so
+/// the sum is formed with `a·log₂e` guard bits; the coefficients depend only
+/// on the precision and are cached. We shift the input by 1 (so the formula
+/// receives `z = input - 1`) and reflect to positive arguments via the
+/// reflection identity when `Re(z) < 1/2`.
+pub(crate) fn gamma_bigfloat(
   z_in: &astro_float::BigFloat,
   bits: usize,
   rm: astro_float::RoundingMode,
@@ -1001,66 +1012,66 @@ fn gamma_bigfloat(
 ) -> astro_float::BigFloat {
   use astro_float::BigFloat;
 
-  // Choose `a` from the working precision. astro-float's bit count is
-  // a little above the requested decimal digits, so use log10(2) ≈ 0.301
-  // to convert bits → digits and pad by ~1.6.
-  let approx_digits = (bits as f64 * std::f64::consts::LOG10_2).ceil() as i64;
-  let a_int: i64 = ((approx_digits as f64) * 1.6).ceil() as i64 + 5;
-  let a_int = a_int.max(20);
-  let a_bf = BigFloat::from_i64(a_int, bits);
+  // (2π)^(−a) = 2^(−2.65 a) must clear the requested bits.
+  let a_int: i64 = (((bits + 8) as f64 / 2.65).ceil() as i64 + 2).max(8);
+  let w = bits + (a_int as f64 * std::f64::consts::LOG2_E).ceil() as usize + 8;
 
-  // Reflection: for Re(z) < 0.5 use Γ(z) = π / (sin(π·z) · Γ(1−z)).
-  let half = BigFloat::from_f64(0.5, bits);
-  let pi = cc.pi(bits, rm);
+  // Reflection: for z < 1/2 use Γ(z) = π / (sin(π·z) · Γ(1−z)).
+  let half = BigFloat::from_f64(0.5, w);
   if z_in.cmp(&half).is_some_and(|o| o < 0) {
-    let one = BigFloat::from_i32(1, bits);
-    let one_minus_z = one.sub(z_in, bits, rm);
-    let pi_z = pi.mul(z_in, bits, rm);
-    let sin_piz = pi_z.sin(bits, rm, cc);
-    let gamma_1mz = gamma_bigfloat(&one_minus_z, bits, rm, cc);
-    let denom = sin_piz.mul(&gamma_1mz, bits, rm);
-    return pi.div(&denom, bits, rm);
+    let pi = cc.pi(w, rm);
+    let one_minus_z = BigFloat::from_i32(1, w).sub(z_in, w, rm);
+    let sin_piz = pi.mul(z_in, w, rm).sin(w, rm, cc);
+    let gamma_1mz = gamma_bigfloat(&one_minus_z, w, rm, cc);
+    return pi.div(&sin_piz.mul(&gamma_1mz, w, rm), bits, rm);
   }
+
+  thread_local! {
+    static COEFFS: std::cell::RefCell<std::collections::HashMap<usize, std::rc::Rc<Vec<BigFloat>>>> =
+      std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  let coeffs = if let Some(c) = COEFFS.with(|c| c.borrow().get(&w).cloned()) {
+    c
+  } else {
+    // c_0 = √(2π), c_k = (-1)^(k-1)/(k-1)! · (a-k)^(k-1/2) · e^(a-k).
+    let two_pi = cc.pi(w, rm).mul(&BigFloat::from_i32(2, w), w, rm);
+    let mut c = vec![two_pi.sqrt(w, rm)];
+    let mut factorial = BigFloat::from_i32(1, w); // (k-1)!
+    for k in 1..a_int {
+      if k > 1 {
+        factorial = factorial.mul(&BigFloat::from_i64(k - 1, w), w, rm);
+      }
+      let a_minus_k = BigFloat::from_i64(a_int - k, w);
+      let half_offset = BigFloat::from_i64(k - 1, w).add(&half, w, rm);
+      let c_k = a_minus_k
+        .pow(&half_offset, w, rm, cc)
+        .mul(&a_minus_k.exp(w, rm, cc), w, rm)
+        .div(&factorial, w, rm);
+      c.push(if k % 2 == 0 { c_k.neg() } else { c_k });
+    }
+    let c = std::rc::Rc::new(c);
+    COEFFS.with(|m| m.borrow_mut().insert(w, c.clone()));
+    c
+  };
 
   // Work with z = z_in - 1 so the formula computes Γ(z+1) = Γ(z_in).
-  let one = BigFloat::from_i32(1, bits);
-  let z = z_in.sub(&one, bits, rm);
-
-  // Outer factor: (z + a)^(z + 1/2) · e^{−(z+a)}.
-  // Note: the canonical Spouge form has a `√(2π)` multiplier, but it
-  // cancels because c_0 in the convention used here is `1` (rather
-  // than `√(2π)`) — i.e. the √(2π) is absorbed into the coefficients
-  // implicitly. Empirically `outer_pow · exp_term · sum_with_c0=1`
-  // recovers Γ(z+1) without an explicit √(2π) factor.
-  let z_plus_a = z.add(&a_bf, bits, rm);
-  let z_plus_half = z.add(&half, bits, rm);
-  let outer_pow = z_plus_a.pow(&z_plus_half, bits, rm, cc);
-  let neg_zpa = z_plus_a.neg();
-  let exp_term = neg_zpa.exp(bits, rm, cc);
-  let outer = outer_pow.mul(&exp_term, bits, rm);
-
-  // Inner sum: c_0 + Σ_{k=1}^{a-1} c_k / (z + k)
-  // Compute c_k = (-1)^(k-1) / (k-1)! · (a-k)^(k-1/2) · e^(a-k).
-  let mut sum = BigFloat::from_i32(1, bits); // c_0
-  let mut factorial = BigFloat::from_i32(1, bits); // (k-1)! starting at k=1
-  for k in 1..a_int {
-    if k > 1 {
-      factorial = factorial.mul(&BigFloat::from_i64(k - 1, bits), bits, rm);
-    }
-    let a_minus_k = BigFloat::from_i64(a_int - k, bits);
-    let half_offset = BigFloat::from_i64(k - 1, bits).add(&half, bits, rm);
-    // (a-k)^(k - 1/2)
-    let term_pow = a_minus_k.pow(&half_offset, bits, rm, cc);
-    let exp_amk = a_minus_k.exp(bits, rm, cc);
-    let mut c_k = term_pow.mul(&exp_amk, bits, rm).div(&factorial, bits, rm);
-    if k % 2 == 0 {
-      c_k = c_k.neg();
-    }
-    let z_plus_k = z.add(&BigFloat::from_i64(k, bits), bits, rm);
-    let term = c_k.div(&z_plus_k, bits, rm);
-    sum = sum.add(&term, bits, rm);
+  let z = z_in.sub(&BigFloat::from_i32(1, w), w, rm);
+  let z_plus_a = z.add(&BigFloat::from_i64(a_int, w), w, rm);
+  // (z+a)^(z+½) e^(−(z+a)) as one exponential.
+  let outer = ln_above_integer(&z_plus_a, w, rm, cc)
+    .mul(&z.add(&half, w, rm), w, rm)
+    .sub(&z_plus_a, w, rm)
+    .exp(w, rm, cc);
+  // Σ c_k/(z+k) as a single fraction num/den: software division is far
+  // slower than multiplication, so divide once at the end.
+  let mut num = BigFloat::from_i32(0, w);
+  let mut den = BigFloat::from_i32(1, w);
+  for (k, c_k) in coeffs.iter().enumerate().skip(1) {
+    let z_plus_k = z.add(&BigFloat::from_i64(k as i64, w), w, rm);
+    num = num.mul(&z_plus_k, w, rm).add(&c_k.mul(&den, w, rm), w, rm);
+    den = den.mul(&z_plus_k, w, rm);
   }
-
+  let sum = coeffs[0].add(&num.div(&den, w, rm), w, rm);
   outer.mul(&sum, bits, rm)
 }
 
@@ -2101,6 +2112,41 @@ pub fn expr_to_bigfloat(
           let exp = expr_to_bigfloat(&args[1], bits, rm, cc)?;
           Ok(base.pow(&exp, bits, rm, cc))
         }
+        "AiryAi" | "AiryBi" | "AiryAiPrime" | "AiryBiPrime"
+          if args.len() == 1 =>
+        {
+          use crate::functions::math_ast::bessel_bigfloat::{
+            AiryKind, airy_bigfloat,
+          };
+          let kind = match name.as_str() {
+            "AiryAi" => AiryKind::Ai,
+            "AiryBi" => AiryKind::Bi,
+            "AiryAiPrime" => AiryKind::AiPrime,
+            _ => AiryKind::BiPrime,
+          };
+          let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          airy_bigfloat(kind, &x, bits, rm, cc).ok_or_else(|| {
+            InterpreterError::EvaluationError(format!("N: {name}[0] is exact"))
+          })
+        }
+        "BesselJ" | "BesselY" | "BesselI" | "BesselK" if args.len() == 2 => {
+          use crate::functions::math_ast::bessel_bigfloat::{
+            BesselKind, bessel_bigfloat,
+          };
+          let kind = match name.as_str() {
+            "BesselJ" => BesselKind::J,
+            "BesselY" => BesselKind::Y,
+            "BesselI" => BesselKind::I,
+            _ => BesselKind::K,
+          };
+          let nu = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          let x = expr_to_bigfloat(&args[1], bits, rm, cc)?;
+          bessel_bigfloat(kind, &nu, &x, bits, rm, cc).ok_or_else(|| {
+            InterpreterError::EvaluationError(format!(
+              "N: {name}[...] needs a positive argument here"
+            ))
+          })
+        }
         "Gamma" if args.len() == 1 => {
           let z = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           Ok(gamma_bigfloat(&z, bits, rm, cc))
@@ -2119,7 +2165,25 @@ pub fn expr_to_bigfloat(
         }
         "ExpIntegralEi" if args.len() == 1 => {
           let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
-          Ok(bigfloat_exp_integral_ei(&x, bits, rm, cc))
+          crate::functions::math_ast::exp_integral_ei_bigfloat(&x, bits, rm, cc)
+            .ok_or_else(|| {
+              InterpreterError::EvaluationError(
+                "N: ExpIntegralEi has a pole at 0".into(),
+              )
+            })
+        }
+        // The real-valued cases of the exponential-integral family; a
+        // complex value (negative argument) goes through the complex path.
+        "ExpIntegralE" | "LogIntegral" | "Gamma" => {
+          let (re, im) =
+            exp_integral_family_bigfloat(name, args, bits, rm, cc)?;
+          if im.is_zero() {
+            Ok(re)
+          } else {
+            Err(InterpreterError::EvaluationError(format!(
+              "N: {name}[...] is complex here"
+            )))
+          }
         }
         "ChampernowneNumber" if args.len() <= 1 => {
           let base = match args.first() {
@@ -2400,6 +2464,9 @@ fn expr_to_complex_bigfloat(
         let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
         Ok(complex_exp_integral_ei(&a, &b, bits, rm, cc))
       }
+      "ExpIntegralE" | "LogIntegral" | "Gamma" => {
+        exp_integral_family_bigfloat(name, args, bits, rm, cc)
+      }
       _ => Err(InterpreterError::EvaluationError(format!(
         "N: cannot evaluate {name}[...] to complex arbitrary precision"
       ))),
@@ -2419,76 +2486,49 @@ fn build_complex_bigfloat_result(
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> Result<Expr, InterpreterError> {
-  let i_expr = id_expr("I");
-  let max_digits: Option<i64> = None;
-
   if im.is_zero() {
     let re_str = bigfloat_to_string(re, None, rm, cc)?;
     return Ok(Expr::BigFloat(re_str, precision as f64));
   }
-
-  let im_negative = im.is_negative();
-  let im_abs = if im_negative { im.neg() } else { im.clone() };
-  let im_str = bigfloat_to_string(&im_abs, max_digits, rm, cc)?;
-
-  let im_bf = Expr::BigFloat(im_str, precision as f64);
-
-  // Build |im| * I term (always positive coefficient)
-  let abs_im_term = times2(im_bf, i_expr);
-
-  if re.is_zero() {
-    if im_negative {
-      // Pure negative imaginary: -|im|*I
-      let neg_im_str = bigfloat_to_string(im, max_digits, rm, cc)?;
-      let neg_im_bf = Expr::BigFloat(neg_im_str, precision as f64);
-      return Ok(times2(neg_im_bf, id_expr("I")));
-    }
-    return Ok(abs_im_term);
-  }
-
-  let re_str = bigfloat_to_string(re, max_digits, rm, cc)?;
-  let re_bf = Expr::BigFloat(re_str, precision as f64);
-
-  if im_negative {
-    // re - |im|*I
-    Ok(minus2(re_bf, abs_im_term))
-  } else {
-    // re + |im|*I
-    Ok(plus2(re_bf, abs_im_term))
-  }
+  let p = precision as f64;
+  complex_bigfloat_expr(re, im, p, p, rm, cc)
 }
 
-/// Build a complex result with per-component string precision markers.
-/// Uses Expr::Raw to embed the precision marker directly in the formatted string.
+/// Build a complex result with per-component precision markers.
 fn build_complex_result_with_string_precision(
   re: &astro_float::BigFloat,
   im: &astro_float::BigFloat,
   prec_re_str: &str,
   prec_im_str: &str,
-  _precision: usize,
+  precision: usize,
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> Result<Expr, InterpreterError> {
-  let re_str = bigfloat_to_string(re, None, rm, cc)?;
+  let parse = |s: &str| s.parse::<f64>().unwrap_or(precision as f64);
+  complex_bigfloat_expr(re, im, parse(prec_re_str), parse(prec_im_str), rm, cc)
+}
 
-  let re_raw = Expr::Raw(format!("{re_str}`{prec_re_str}"));
-
-  let im_negative = im.is_negative();
-  let im_abs_str = if im_negative {
-    bigfloat_to_string(&im.neg(), None, rm, cc)?
-  } else {
-    bigfloat_to_string(im, None, rm, cc)?
-  };
-  let im_raw = Expr::Raw(format!("{im_abs_str}`{prec_im_str}"));
-
-  let i_expr = id_expr("I");
-  let abs_im_term = times2(im_raw, i_expr);
-
-  if im_negative {
-    Ok(minus2(re_raw, abs_im_term))
-  } else {
-    Ok(plus2(re_raw, abs_im_term))
+/// The canonical evaluated form of an arbitrary-precision complex number,
+/// `Plus[re, Times[im, I]]` (just `Times[im, I]` for a zero real part), the
+/// same tree evaluating `1.5`30 + 2.`30 I` builds — so arithmetic on an `N`
+/// result sees numbers, not an unevaluated operator form.
+fn complex_bigfloat_expr(
+  re: &astro_float::BigFloat,
+  im: &astro_float::BigFloat,
+  prec_re: f64,
+  prec_im: f64,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<Expr, InterpreterError> {
+  let im_term = times(vec![
+    Expr::BigFloat(bigfloat_to_string(im, None, rm, cc)?, prec_im),
+    id_expr("I"),
+  ]);
+  if re.is_zero() {
+    return Ok(im_term);
   }
+  let re_bf = Expr::BigFloat(bigfloat_to_string(re, None, rm, cc)?, prec_re);
+  Ok(plus(vec![re_bf, im_term]))
 }
 
 /// Compute per-component precision markers for a complex function evaluation.
@@ -5418,61 +5458,55 @@ fn bigfloat_erfi(
   if is_negative { result.neg() } else { result }
 }
 
-/// Compute the exponential integral Ei(x) using BigFloat arithmetic.
-/// For real x: Ei(x) = γ + ln|x| + Σ_{n=1}^{∞} x^n / (n * n!)
-/// where γ is the Euler-Mascheroni constant.
-fn bigfloat_exp_integral_ei(
-  x: &astro_float::BigFloat,
+/// `ExpIntegralE[ν, z]`, `LogIntegral[x]` and `Gamma[a, z]` for real
+/// arguments, as (re, im). Gamma with one argument is the Gamma function,
+/// which `expr_to_bigfloat` handles before reaching here.
+fn exp_integral_family_bigfloat(
+  name: &str,
+  args: &[Expr],
   bits: usize,
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
-) -> astro_float::BigFloat {
-  use astro_float::BigFloat;
-
-  let work_bits = bits + 64;
-
-  // γ (Euler-Mascheroni constant)
-  let euler_gamma = compute_euler_gamma(work_bits, rm, cc);
-
-  // ln(|x|)
-  let ln_x = x.abs().ln(work_bits, rm, cc);
-
-  // Power series: Σ_{n=1}^{∞} x^n / (n * n!)
-  let mut sum = BigFloat::from_i32(0, work_bits);
-  let mut x_pow = x.clone(); // x^1
-  let mut factorial = BigFloat::from_i32(1, work_bits); // 1!
-
-  let max_iterations = bits * 2 + 100;
-  for n in 1..max_iterations {
-    let n_bf = BigFloat::from_i32(n as i32, work_bits);
-    if n > 1 {
-      x_pow = x_pow.mul(x, work_bits, rm);
-      factorial = factorial.mul(&n_bf, work_bits, rm);
+) -> Result<(astro_float::BigFloat, astro_float::BigFloat), InterpreterError> {
+  use crate::functions::math_ast as m;
+  let fail = || {
+    InterpreterError::EvaluationError(format!(
+      "N: cannot evaluate {name}[...] to arbitrary precision"
+    ))
+  };
+  match (name, args) {
+    ("ExpIntegralE", [nu, z]) => {
+      let nu = expr_to_bigfloat(nu, bits, rm, cc)?;
+      let z = expr_to_bigfloat(z, bits, rm, cc)?;
+      m::exp_integral_e_bigfloat(&nu, &z, bits, rm, cc).ok_or_else(fail)
     }
-    // term = x^n / (n * n!)
-    let denom = n_bf.mul(&factorial, work_bits, rm);
-    let term = x_pow.div(&denom, work_bits, rm);
-    sum = sum.add(&term, work_bits, rm);
-
-    if term.abs().is_zero() {
-      break;
+    ("LogIntegral", [x]) => {
+      let x = expr_to_bigfloat(x, bits, rm, cc)?;
+      if x.is_positive() {
+        let v = m::log_integral_bigfloat(&x, bits, rm, cc).ok_or_else(fail)?;
+        return Ok((v, astro_float::BigFloat::from_i32(0, bits)));
+      }
+      if x.is_zero() {
+        return Err(fail());
+      }
+      // li(x) = Ei(ln|x| + iπ) for x < 0.
+      let t = x.abs().ln(bits + 128, rm, cc);
+      let pi = cc.pi(bits + 128, rm);
+      Ok(complex_exp_integral_ei(&t, &pi, bits, rm, cc))
     }
-    if let (Some(t_exp), Some(s_exp)) =
-      (term.abs().exponent(), sum.abs().exponent())
-      && s_exp - t_exp > (work_bits as i32)
-    {
-      break;
+    ("Gamma", [a, z]) => {
+      let a = expr_to_bigfloat(a, bits, rm, cc)?;
+      let z = expr_to_bigfloat(z, bits, rm, cc)?;
+      m::upper_incomplete_gamma_bigfloat(&a, &z, bits, rm, cc).ok_or_else(fail)
     }
+    _ => Err(fail()),
   }
-
-  // Ei(x) = γ + ln(|x|) + sum (final result rounded to requested bits)
-  euler_gamma.add(&ln_x, work_bits, rm).add(&sum, bits, rm)
 }
 
 /// Compute the complex exponential integral Ei(z) using BigFloat arithmetic.
 /// For complex z = a + bi: Ei(z) = γ + Log(z) + Σ_{n=1}^{∞} z^n / (n * n!)
 /// where γ is the Euler-Mascheroni constant and Log is the complex logarithm.
-fn complex_exp_integral_ei(
+pub(crate) fn complex_exp_integral_ei(
   a: &astro_float::BigFloat,
   b: &astro_float::BigFloat,
   bits: usize,
@@ -5587,19 +5621,62 @@ fn complex_exp_integral_ei(
   (result_re, result_im)
 }
 
-/// Compute the Euler-Mascheroni constant γ to the given precision.
-fn compute_euler_gamma(
+/// The Euler–Mascheroni constant γ to `bits` bits: from a 105-digit literal
+/// up to 340 bits, beyond that by Brent and McMillan's algorithm B1,
+/// γ = U/V with U = Σ A_k, V = Σ B_k, B_k = B_{k−1} n²/k²,
+/// A_k = (A_{k−1} n²/k + B_k)/k, A_0 = −ln n — whose error is O(e^{−4n}).
+pub(crate) fn compute_euler_gamma(
   bits: usize,
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> astro_float::BigFloat {
   use astro_float::BigFloat;
 
-  // High-precision string for Euler-Mascheroni constant (105 digits)
-  let gamma_str = "0.5772156649015328606065120900824024310421593359399235988057672348848677267776646709369470632917467495";
-  BigFloat::parse(gamma_str, astro_float::Radix::Dec, bits, rm, cc)
+  if bits <= 340 {
+    let gamma_str = "0.5772156649015328606065120900824024310421593359399235988057672348848677267776646709369470632917467495";
+    return BigFloat::parse(gamma_str, astro_float::Radix::Dec, bits, rm, cc);
+  }
+  thread_local! {
+    static CACHE: std::cell::RefCell<std::collections::HashMap<usize, BigFloat>> =
+      std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  if let Some(v) = CACHE.with(|c| c.borrow().get(&bits).cloned()) {
+    return v;
+  }
+  let w = bits + 64;
+  let n = (bits as f64 * std::f64::consts::LN_2 / 4.0).ceil() as u64 + 2;
+  let n_bf = BigFloat::from_u64(n, w);
+  let n2 = n_bf.mul(&n_bf, w, rm);
+  let mut a = n_bf.ln(w, rm, cc).neg();
+  let mut b = BigFloat::from_i32(1, w);
+  let mut u = a.clone();
+  let mut v = b.clone();
+  for k in 1u64.. {
+    let k_bf = BigFloat::from_u64(k, w);
+    b = b.mul(&n2, w, rm).div(&k_bf.mul(&k_bf, w, rm), w, rm);
+    a = a
+      .mul(&n2, w, rm)
+      .div(&k_bf, w, rm)
+      .add(&b, w, rm)
+      .div(&k_bf, w, rm);
+    u = u.add(&a, w, rm);
+    v = v.add(&b, w, rm);
+    let small = |t: &BigFloat, s: &BigFloat| {
+      t.is_zero()
+        || t.exponent().unwrap_or(0) < s.exponent().unwrap_or(0) - w as i32
+    };
+    if k > n && small(&a, &u) && small(&b, &v) {
+      break;
+    }
+  }
+  let gamma = u.div(&v, bits, rm);
+  CACHE.with(|c| c.borrow_mut().insert(bits, gamma.clone()));
+  gamma
 }
 
+/// Catalan's constant G to `bits` bits: a 105-digit literal up to 340 bits,
+/// beyond that Ramanujan's series
+/// G = π/8 ln(2 + √3) + 3/8 Σ_{k≥0} 1/((2k+1)² C(2k, k)), two bits a term.
 fn compute_catalan(
   bits: usize,
   rm: astro_float::RoundingMode,
@@ -5607,11 +5684,42 @@ fn compute_catalan(
 ) -> astro_float::BigFloat {
   use astro_float::BigFloat;
 
-  // High-precision string for Catalan's constant G (OEIS A006752, ~105 digits)
-  let catalan_str = "0.91596559417721901505460351493238411077414937428167213426649811962176301977625476947935651292611510624857";
-  BigFloat::parse(catalan_str, astro_float::Radix::Dec, bits, rm, cc)
+  if bits <= 340 {
+    // Catalan's constant G (OEIS A006752, ~105 digits)
+    let catalan_str = "0.91596559417721901505460351493238411077414937428167213426649811962176301977625476947935651292611510624857";
+    return BigFloat::parse(catalan_str, astro_float::Radix::Dec, bits, rm, cc);
+  }
+  let w = bits + 64;
+  let mut central = BigFloat::from_i32(1, w); // C(2k, k)
+  let mut sum = BigFloat::from_i32(0, w);
+  for k in 0u64.. {
+    let odd = BigFloat::from_u64(2 * k + 1, w);
+    let term = central.mul(&odd.mul(&odd, w, rm), w, rm).reciprocal(w, rm);
+    sum = sum.add(&term, w, rm);
+    if term.exponent().unwrap_or(0) < sum.exponent().unwrap_or(0) - w as i32 {
+      break;
+    }
+    // C(2k+2, k+1) = C(2k, k) · 2(2k+1)/(k+1)
+    central = central
+      .mul(&BigFloat::from_u64(2 * (2 * k + 1), w), w, rm)
+      .div(&BigFloat::from_u64(k + 1, w), w, rm);
+  }
+  let three = BigFloat::from_i32(3, w);
+  let eight = BigFloat::from_i32(8, w);
+  let log_term = three
+    .sqrt(w, rm)
+    .add(&BigFloat::from_i32(2, w), w, rm)
+    .ln(w, rm, cc);
+  cc.pi(w, rm)
+    .mul(&log_term, w, rm)
+    .add(&three.mul(&sum, w, rm), w, rm)
+    .div(&eight, bits, rm)
 }
 
+/// The Glaisher–Kinkelin constant A to `bits` bits: a 102-digit literal up
+/// to 330 bits, beyond that ln A = (γ + ln 2π)/12 − ζ′(2)/(2π²), with
+/// ζ′(2) = −Σ ln k/k² summed directly below N and by Euler–Maclaurin above,
+/// where f = ln x/x² has f⁽ᵐ⁾(x) = (−1)ᵐ (m+1)! x^(−m−2) (ln x − H_{m+1} + 1).
 fn compute_glaisher(
   bits: usize,
   rm: astro_float::RoundingMode,
@@ -5619,11 +5727,78 @@ fn compute_glaisher(
 ) -> astro_float::BigFloat {
   use astro_float::BigFloat;
 
-  // Glaisher–Kinkelin constant A (OEIS A074962, ~105 digits).
-  let glaisher_str = "1.28242712910062263687534256886979172776768892732500119206374002174040630883966455201507550549353290381";
-  BigFloat::parse(glaisher_str, astro_float::Radix::Dec, bits, rm, cc)
+  if bits <= 330 {
+    // Glaisher–Kinkelin constant A (OEIS A074962, ~102 digits).
+    let glaisher_str = "1.28242712910062263687534256886979172776768892732500119206374002174040630883966455201507550549353290381";
+    return BigFloat::parse(
+      glaisher_str,
+      astro_float::Radix::Dec,
+      bits,
+      rm,
+      cc,
+    );
+  }
+  let w = bits + 64;
+  let one = BigFloat::from_i32(1, w);
+  // The Euler–Maclaurin terms shrink like (2j)!/(2πN)^(2j) until j ≈ πN.
+  let n = (w as f64 * std::f64::consts::LN_2 / (2.0 * std::f64::consts::PI))
+    .ceil() as u64
+    + 2;
+  // −ζ′(2) = Σ_{k=2}^{N−1} ln k/k² + Σ_{k≥N} f(k).
+  let mut sum = BigFloat::from_i32(0, w);
+  for k in 2..n {
+    let k_bf = BigFloat::from_u64(k, w);
+    sum = sum.add(
+      &k_bf.ln(w, rm, cc).div(&k_bf.mul(&k_bf, w, rm), w, rm),
+      w,
+      rm,
+    );
+  }
+  let n_bf = BigFloat::from_u64(n, w);
+  let ln_n = n_bf.ln(w, rm, cc);
+  let n2 = n_bf.mul(&n_bf, w, rm);
+  // ∫_N^∞ f = (ln N + 1)/N, plus f(N)/2.
+  sum = sum
+    .add(&ln_n.add(&one, w, rm).div(&n_bf, w, rm), w, rm)
+    .add(&ln_n.div(&n2.add(&n2, w, rm), w, rm), w, rm);
+  // − Σ_j B₂ⱼ/(2j)! f⁽²ʲ⁻¹⁾(N) = Σ_j B₂ⱼ N^(−2j−1) (ln N − H₂ⱼ + 1).
+  let mut harmonic = BigFloat::from_i32(0, w); // H_{2j}
+  let mut n_pow = n_bf.clone(); // N^(2j+1)
+  for j in 1usize.. {
+    let two_j = (2 * j) as u64;
+    harmonic = harmonic
+      .add(&one.div(&BigFloat::from_u64(two_j - 1, w), w, rm), w, rm)
+      .add(&one.div(&BigFloat::from_u64(two_j, w), w, rm), w, rm);
+    n_pow = n_pow.mul(&n2, w, rm);
+    let b2j = bernoulli_over_index(j, w, rm, cc).mul(
+      &BigFloat::from_u64(two_j, w),
+      w,
+      rm,
+    );
+    let term = b2j
+      .mul(&ln_n.sub(&harmonic, w, rm).add(&one, w, rm), w, rm)
+      .div(&n_pow, w, rm);
+    sum = sum.add(&term, w, rm);
+    if term.is_zero()
+      || term.exponent().unwrap_or(0) < sum.exponent().unwrap_or(0) - w as i32
+    {
+      break;
+    }
+  }
+  let zeta_prime_2 = sum.neg();
+  let pi = cc.pi(w, rm);
+  let two_pi = pi.add(&pi, w, rm);
+  let gamma = compute_euler_gamma(w, rm, cc);
+  let ln_a = gamma
+    .add(&two_pi.ln(w, rm, cc), w, rm)
+    .div(&BigFloat::from_i32(12, w), w, rm)
+    .sub(&zeta_prime_2.div(&two_pi.mul(&pi, w, rm), w, rm), w, rm);
+  ln_a.exp(bits, rm, cc)
 }
 
+/// Khinchin's constant K₀ to `bits` bits: a 102-digit literal up to 330 bits,
+/// beyond that ln K₀ · ln 2 = Σ_{n≥1} ζ(2n, 2)/n · Σ_{k=1}^{2n−1} (−1)^(k+1)/k,
+/// where the Hurwitz ζ(2n, 2) = ζ(2n) − 1 shrinks like 4^(−n).
 fn compute_khinchin(
   bits: usize,
   rm: astro_float::RoundingMode,
@@ -5631,9 +5806,47 @@ fn compute_khinchin(
 ) -> astro_float::BigFloat {
   use astro_float::BigFloat;
 
-  // Khinchin's constant K_0 (OEIS A002210, ~105 digits).
-  let khinchin_str = "2.68545200106530644530971483548179569382038229399446295305115234555721885953715200280114117493184769799";
-  BigFloat::parse(khinchin_str, astro_float::Radix::Dec, bits, rm, cc)
+  if bits <= 330 {
+    // Khinchin's constant K_0 (OEIS A002210, ~102 digits).
+    let khinchin_str = "2.68545200106530644530971483548179569382038229399446295305115234555721885953715200280114117493184769799";
+    return BigFloat::parse(
+      khinchin_str,
+      astro_float::Radix::Dec,
+      bits,
+      rm,
+      cc,
+    );
+  }
+  let w = bits + 64;
+  let one = BigFloat::from_i32(1, w);
+  let two = BigFloat::from_i32(2, w);
+  let mut sum = BigFloat::from_i32(0, w);
+  let mut alternating = BigFloat::from_i32(0, w); // Σ_{k=1}^{2n−1} (−1)^(k+1)/k
+  for n in 1u64.. {
+    let k_odd = BigFloat::from_u64(2 * n - 1, w);
+    if n > 1 {
+      alternating = alternating.sub(
+        &one.div(&BigFloat::from_u64(2 * n - 2, w), w, rm),
+        w,
+        rm,
+      );
+    }
+    alternating = alternating.add(&one.div(&k_odd, w, rm), w, rm);
+    let s = BigFloat::from_u64(2 * n, w);
+    let Some(zeta_tail) = hurwitz_zeta_bigfloat(&s, &two, false, w, rm, cc)
+    else {
+      break;
+    };
+    let term =
+      zeta_tail
+        .mul(&alternating, w, rm)
+        .div(&BigFloat::from_u64(n, w), w, rm);
+    sum = sum.add(&term, w, rm);
+    if term.exponent().unwrap_or(0) < sum.exponent().unwrap_or(0) - w as i32 {
+      break;
+    }
+  }
+  sum.div(&cc.ln_2(w, rm), w, rm).exp(bits, rm, cc)
 }
 
 /// The decimal expansion of the base-b Champernowne constant — the digits

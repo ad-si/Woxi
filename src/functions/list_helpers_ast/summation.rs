@@ -2419,8 +2419,15 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ]);
         if let Ok(diff_expr) = diff {
           let diff_eval = crate::evaluator::evaluate_expr_to_expr(&diff_expr);
+          // A machine bound leaves an inexact zero imaginary part
+          // (`(1.5 + 1.*I) - I` is `1.5 + 0.*I`); the span is still real.
           if let Ok(ref de) = diff_eval
             && let Some(range) = crate::functions::math_ast::try_eval_to_f64(de)
+              .or_else(|| {
+                crate::functions::math_ast::try_extract_complex_float(de)
+                  .filter(|&(_, im)| im == 0.0)
+                  .map(|(re, _)| re)
+              })
             && (0.0..10000.0).contains(&range)
           {
             let n_iters = range.floor() as i128 + 1;

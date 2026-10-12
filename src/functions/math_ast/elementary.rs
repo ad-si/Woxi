@@ -3296,6 +3296,12 @@ fn chop_expr(expr: &Expr, tolerance: f64) -> Result<Expr, InterpreterError> {
         Ok(expr.clone())
       }
     }
+    // An arbitrary-precision number, including the zero `0``30` an exact
+    // cancellation leaves.
+    Expr::BigFloat(digits, _) => match digits.parse::<f64>() {
+      Ok(f) if f.abs() < tolerance => Ok(Expr::Integer(0)),
+      _ => Ok(expr.clone()),
+    },
     Expr::List(items) => {
       let chopped: Result<Vec<Expr>, _> =
         items.iter().map(|e| chop_expr(e, tolerance)).collect();
