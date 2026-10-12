@@ -1132,10 +1132,7 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if name == "Scaled" && a.len() == 1 =>
     {
       // Scale the expansion by the data range r = max - min.
-      let range = plus(vec![
-        max_expr.clone(),
-        times(vec![Expr::Integer(-1), min_expr.clone()]),
-      ]);
+      let range = plus(vec![max_expr.clone(), neg(min_expr.clone())]);
       let scaled = times(vec![a[0].clone(), range]);
       let scaled = crate::evaluator::evaluate_expr_to_expr(&scaled)?;
       (scaled.clone(), scaled)
@@ -1143,10 +1140,8 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     d => (d.clone(), d.clone()),
   };
 
-  let new_min = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
-    min_expr,
-    times(vec![Expr::Integer(-1), d_min]),
-  ]))?;
+  let new_min =
+    crate::evaluator::evaluate_expr_to_expr(&plus(vec![min_expr, neg(d_min)]))?;
   let new_max =
     crate::evaluator::evaluate_expr_to_expr(&plus(vec![max_expr, d_max]))?;
 

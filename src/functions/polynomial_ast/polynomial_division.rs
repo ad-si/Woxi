@@ -661,7 +661,7 @@ pub fn build_mul(a: &Expr, b: &Expr) -> Expr {
 
 /// Build a subtraction expression
 pub fn build_sub(a: &Expr, b: &Expr) -> Expr {
-  plus(vec![a.clone(), times(vec![Expr::Integer(-1), b.clone()])])
+  plus(vec![a.clone(), neg(b.clone())])
 }
 
 /// Build polynomial from symbolic coefficients

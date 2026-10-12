@@ -430,11 +430,7 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           const_expr("Pi"),
         ]),
       );
-      terms.push(if num == 0 {
-        cot
-      } else {
-        times(vec![Expr::Integer(-1), cot])
-      });
+      terms.push(if num == 0 { cot } else { neg(cot) });
     }
     let sum = plus(terms);
     let product = times(vec![
@@ -707,11 +703,7 @@ fn convolve_pair(
     }
     (Mu, Power(0)) | (Power(0), Mu) => Some(Expr::FunctionCall {
       name: "KroneckerDelta".to_string(),
-      args: vec![plus(vec![
-        Expr::Integer(1),
-        times(vec![Expr::Integer(-1), m.clone()]),
-      ])]
-      .into(),
+      args: vec![plus(vec![Expr::Integer(1), neg(m.clone())])].into(),
     }),
     (Mu, Power(1)) | (Power(1), Mu) => Some(call1("EulerPhi", m.clone())),
     (Phi, Power(0)) | (Power(0), Phi) => Some(m.clone()),

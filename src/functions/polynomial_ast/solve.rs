@@ -5352,11 +5352,7 @@ fn try_solve_inverse_function(
               if crate::functions::math_ast::complex::negate_if_negative(&slope)
                 .is_some()
               {
-                crate::evaluator::evaluate_expr_to_expr(&times(vec![
-                  Expr::Integer(-1),
-                  periodic,
-                ]))
-                .ok()?
+                crate::evaluator::evaluate_expr_to_expr(&neg(periodic)).ok()?
               } else {
                 periodic
               };

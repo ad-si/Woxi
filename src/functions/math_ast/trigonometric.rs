@@ -982,7 +982,7 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
     _ => {}
   }
   // Default: wrap in Times[-1, expr]
-  times(vec![Expr::Integer(-1), expr])
+  neg(expr)
 }
 
 /// Split a denominator into `(k, rest)` where `k > 1` is its leading positive
@@ -5924,7 +5924,7 @@ fn make_plus(a: &Expr, b: &Expr) -> Expr {
 }
 
 fn make_minus(a: &Expr, b: &Expr) -> Expr {
-  plus(vec![a.clone(), times(vec![Expr::Integer(-1), b.clone()])])
+  plus(vec![a.clone(), neg(b.clone())])
 }
 
 fn make_divide(a: &Expr, b: &Expr) -> Expr {

@@ -70,10 +70,7 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let num = if name == "Sin" {
       times(vec![z.clone(), call1("Sin", a)])
     } else {
-      times(vec![
-        z.clone(),
-        plus(vec![z.clone(), times(vec![Expr::Integer(-1), cos_a])]),
-      ])
+      times(vec![z.clone(), plus(vec![z.clone(), neg(cos_a)])])
     };
     return Ok(div2(num, den));
   }
@@ -110,8 +107,7 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if c != 1 || p != 1 || q != 1 {
       return Ok(unevaluated(args));
     }
-    let a_minus_z =
-      plus(vec![a.clone(), times(vec![Expr::Integer(-1), z.clone()])]);
+    let a_minus_z = plus(vec![a.clone(), neg(z.clone())]);
     return Ok(match k {
       // -(z/(a - z))
       0 => neg1(div2(z.clone(), a_minus_z)),

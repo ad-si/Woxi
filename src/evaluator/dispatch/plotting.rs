@@ -86,11 +86,8 @@ pub fn dispatch_plotting(
       plus(vec![Expr::Integer(1), id_expr("I")]),
     ]))
     .ok()?;
-    let low = crate::evaluator::evaluate_expr_to_expr(&times(vec![
-      Expr::Integer(-1),
-      half.clone(),
-    ]))
-    .ok()?;
+    let low =
+      crate::evaluator::evaluate_expr_to_expr(&neg(half.clone())).ok()?;
     let mut expanded = args.to_vec();
     expanded[1] = Expr::List(vec![items[0].clone(), low, half].into());
     return dispatch_plotting(name, &expanded);

@@ -56,13 +56,10 @@ fn polylog_at_neg1_symbolic(s: &Expr) -> Result<Expr, InterpreterError> {
   // 2^(1 - s)
   let pow = pow(
     Expr::Integer(2),
-    plus(vec![
-      Expr::Integer(1),
-      times(vec![Expr::Integer(-1), s.clone()]),
-    ]),
+    plus(vec![Expr::Integer(1), neg(s.clone())]),
   );
   // 1 - 2^(1 - s)
-  let inner = plus(vec![Expr::Integer(1), times(vec![Expr::Integer(-1), pow])]);
+  let inner = plus(vec![Expr::Integer(1), neg(pow)]);
   // -(1 - 2^(1 - s)) Zeta[s]
   let result = times(vec![Expr::Integer(-1), inner, call1("Zeta", s.clone())]);
   crate::evaluator::evaluate_expr_to_expr(&result)
