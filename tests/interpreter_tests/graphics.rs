@@ -27783,6 +27783,39 @@ mod manipulate {
     );
   }
 
+  // ── Dynamic@Row[{caption pieces, Control[…]}] keeps its caption live ──
+
+  /// A Demonstrations idiom: a single `Dynamic@Row[…]` argument mixes a live
+  /// caption (`"from ", n, " to ", n + 9`) with the `Control[…]`s for the
+  /// variables it mentions. The caption must stay live (a `Dynamic` display)
+  /// rather than being frozen into a heading showing the source text `n`.
+  const LIVE_CAPTION_EXAMPLE: &str = "Manipulate[n, \
+    Dynamic@Row[{\"values from \", n, \" to \", n + 9, \
+    Control[{{n, 5, \"\"}, 1, 50, 1}]}]]";
+
+  #[test]
+  fn dynamic_row_caption_with_control_stays_live() {
+    use woxi::functions::graphics::build_manipulate_display;
+    let expr = interpret_to_expr(LIVE_CAPTION_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("live caption");
+    assert_eq!(spec.controls.len(), 1, "only the n slider is a control");
+    assert_eq!(spec.displays.len(), 1, "the caption is a live display");
+
+    let render = |n: &str| -> String {
+      let bindings = vec![("n".to_string(), n.to_string())];
+      woxi::with_scoped_globals(&bindings, || {
+        format!("{:?}", build_manipulate_display(&spec.displays[0], &[]))
+      })
+    };
+    let at_5 = render("5");
+    assert!(at_5.contains("\"5\"") && at_5.contains("\"14\""), "{at_5}");
+    let at_20 = render("20");
+    assert!(
+      at_20.contains("\"20\"") && at_20.contains("\"29\""),
+      "{at_20}"
+    );
+  }
+
   // ── PopupMenu[…] inside a display element (dynamically many dropdowns) ──
 
   /// A Demonstrations idiom: one `PopupMenu` per slot of a shared list

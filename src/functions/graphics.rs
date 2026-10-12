@@ -23524,6 +23524,84 @@ fn named_control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   Some(out)
 }
 
+/// Wrap the non-literal pieces of a caption produced by flattening a
+/// `Dynamic[Row[…]]` control layout in `Dynamic[…]`, so a caption such as
+/// `Row[{"from ", n, " to ", n + 59}]` re-renders from the live control
+/// values instead of being frozen into a static heading. Controls, spacers,
+/// string literals and anything already `Dynamic` pass through unchanged.
+fn make_live_caption(item: Expr) -> Expr {
+  fn is_literal(e: &Expr) -> bool {
+    match e {
+      Expr::String(_) => true,
+      Expr::FunctionCall { name, args } => {
+        (is_style_wrapper(name) || name == "Spacer")
+          && args
+            .first()
+            .is_none_or(|a| is_literal(a) || name == "Spacer")
+      }
+      _ => false,
+    }
+  }
+  fn needs_wrapping(e: &Expr) -> bool {
+    !is_literal(e)
+      && !annotation_contains_dynamic(e)
+      && !matches!(e, Expr::Identifier(s) if s == "Delimiter")
+      && !expr_contains_call(e, &["Control", "Button"])
+  }
+  match &item {
+    Expr::FunctionCall { name, args }
+      if name == "Row"
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(_)) =>
+    {
+      let Expr::List(parts) = &args[0] else {
+        unreachable!()
+      };
+      if !parts.iter().any(needs_wrapping) {
+        return item;
+      }
+      let parts: Vec<Expr> = parts
+        .iter()
+        .map(|p| {
+          if needs_wrapping(p) {
+            call1("Dynamic", p.clone())
+          } else {
+            p.clone()
+          }
+        })
+        .collect();
+      call1("Row", Expr::List(parts.into()))
+    }
+    other if needs_wrapping(other) => call1("Dynamic", item),
+    _ => item,
+  }
+}
+
+fn expr_contains_call(e: &Expr, heads: &[&str]) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      heads.contains(&name.as_str())
+        || args.iter().any(|a| expr_contains_call(a, heads))
+    }
+    Expr::List(items) => items.iter().any(|a| expr_contains_call(a, heads)),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      expr_contains_call(pattern, heads)
+        || expr_contains_call(replacement, heads)
+    }
+    Expr::Apply { func, list } => {
+      expr_contains_call(func, heads) || expr_contains_call(list, heads)
+    }
+    _ => false,
+  }
+}
+
 /// The flattened control items of a `Row[…]`/`Column[…]`/`Grid[…]`
 /// Manipulate argument that lays several controls out in one row (the
 /// Wolfram Demonstrations pattern `Row[{Control[…], Spacer[20],
@@ -23653,7 +23731,11 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     && !matches!(&args[0], Expr::List(_))
     && contains_explicit_control(&args[0])
   {
-    return control_group_items(&args[0]);
+    // The `Dynamic` makes every non-literal caption piece live
+    // (`Dynamic@Row[{"from ", n, " to ", n + 59, Control[…]}]` shows the
+    // current values of `n` and `n + 59`, not their source text).
+    return control_group_items(&args[0])
+      .map(|items| items.into_iter().map(make_live_caption).collect());
   }
   let items_owned = tabview_panes(&args[0])?;
   let items = &items_owned;
