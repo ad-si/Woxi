@@ -1215,8 +1215,17 @@ fn generate_svg(
           "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"#00000060\" stroke-width=\"0.5\"{opacity_attr}/>\n"
         ));
       } else {
+        // A translucent triangle's own-colour hairline overlaps its
+        // neighbours' and darkens every shared seam, tracing the
+        // tessellation across what should be a smooth surface. Only an
+        // opaque triangle needs it to close the anti-aliasing gap.
+        let seam_stroke = if tri.opacity < 1.0 && tri.boundary == [false; 3] {
+          "none".to_string()
+        } else {
+          format!("rgb({r},{g},{b})")
+        };
         svg.push_str(&format!(
-          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"0.5\"{opacity_attr}/>\n"
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
         ));
       }
     }
@@ -6776,8 +6785,17 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{fill_opacity_attr}/>\n"
         ));
       } else {
+        // A translucent triangle's own-colour hairline overlaps its
+        // neighbours' and darkens every shared seam, tracing the
+        // tessellation across what should be a smooth surface. Only an
+        // opaque triangle needs it to close the anti-aliasing gap.
+        let seam_stroke = if tri.opacity < 1.0 && tri.boundary == [false; 3] {
+          "none".to_string()
+        } else {
+          format!("rgb({r},{g},{b})")
+        };
         svg.push_str(&format!(
-          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"0.5\"{opacity_attr}/>\n"
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
         ));
         let corners = [(x0, y0), (x1, y1), (x2, y2)];
         for (e, on_outline) in tri.boundary.iter().enumerate() {

@@ -33705,4 +33705,18 @@ mod grid_text_in_graphics {
       "{svg}"
     );
   }
+
+  /// A translucent cylinder is one smooth surface: its triangles must not
+  /// stroke their shared seams, or the tessellation shows through.
+  #[test]
+  fn translucent_cylinder_has_no_seam_strokes() {
+    let result = interpret_with_stdout(
+      "Graphics3D[{Opacity[0.25], Cylinder[{{0, 0, 0}, {0, 0, 3}}, 1]}, \
+       Boxed -> False]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("<polygon"), "{svg}");
+    assert!(svg.contains("stroke=\"none\""), "{svg}");
+  }
 }
