@@ -1743,6 +1743,9 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         // or Point primitives that follow it.
         if let Some(c) = parse_color(&args[0]) {
           style.face_color = Some(c);
+        } else if matches!(&args[0], Expr::Identifier(s) if s == "None") {
+          // `FaceForm[None]` leaves area primitives unfilled.
+          style.face_color = Some(Color::new(0.0, 0.0, 0.0).with_alpha(0.0));
         }
         true
       }
@@ -8286,8 +8289,7 @@ fn render_primitive(
 /// `Automatic`, or a nested `{min, max}`) rather than a bare number: only
 /// then does `{elem1, elem2}` mean "one spec per axis". A plain `{min,
 /// max}` pair of numbers — e.g. `PlotRange -> {-3, 103}` — has neither
-/// element look like that, and means the *same* range for every axis
-/// instead (matching Wolfram's documented behavior for `Graphics`/`Show`).
+/// element look like that, and limits only the vertical axis.
 fn is_axis_range_spec(expr: &Expr) -> bool {
   matches!(expr, Expr::List(_))
     || matches!(expr, Expr::Identifier(s) if s == "All" || s == "Automatic")
@@ -8309,8 +8311,11 @@ fn parse_plot_range(
       let y_range = parse_range_spec(&items[1]);
       (x_range, y_range)
     }
+    // A bare `{min, max}` pair of numbers limits the vertical axis only;
+    // the horizontal range stays automatic.
+    Expr::List(items) if items.len() == 2 => (None, parse_range_spec(expr)),
     _ => {
-      // Single range applies to both axes
+      // A lone number `n` applies `{-n, n}` to both axes
       let r = parse_range_spec(expr);
       (r, r)
     }

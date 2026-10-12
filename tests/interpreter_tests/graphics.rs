@@ -2353,24 +2353,18 @@ mod graphics {
     }
 
     // `PlotRange -> {min, max}` — a flat pair of plain numbers, not the
-    // nested per-axis `{{xmin, xmax}, {ymin, ymax}}` form — applies the
-    // *same* range to every axis, matching Wolfram. It used to be
-    // misparsed as `{xSpec, ySpec}` (treating each bare number as a whole
-    // axis's own spec), which fed each one through the "a lone number n
-    // means {-n, n}" fallback and turned `{0, 100}` into x ∈ {0, 0} (a
-    // degenerate, zero-width range) and y ∈ {-100, 100} — found via a
-    // Demonstration whose `Show` combined an invisible `Plot[0, {x, a,
-    // b}, PlotRange -> {a, b}]` (a common idiom to force wide axis
-    // labels) with a `ContourPlot`, which blew up the merged picture's
-    // scale into a single sliver of a curve.
+    // nested per-axis `{{xmin, xmax}, {ymin, ymax}}` form — limits only the
+    // vertical axis; the horizontal range stays automatic. It used to be
+    // applied to both axes, which clipped a wide diagram (found via a
+    // Demonstration drawing a process flow with `PlotRange -> {-2, 2.5}`)
+    // down to its first few units.
     #[test]
-    fn plot_range_bare_pair_applies_to_both_axes() {
+    fn plot_range_bare_pair_limits_only_vertical_axis() {
       let svg = export_svg(
-        "Graphics[{Point[{50, 100}]}, PlotRange -> {0, 100}, \
+        "Graphics[{Point[{50, 100}], Point[{150, 0}]}, PlotRange -> {0, 100}, \
          Axes -> False, ImageSize -> {100, 100}]",
       );
-      let tag = svg.split("<circle ").nth(1).expect("a circle");
-      let attr = |name: &str| -> f64 {
+      let attr = |tag: &str, name: &str| -> f64 {
         tag
           .split(&format!("{name}=\""))
           .nth(1)
@@ -2379,15 +2373,32 @@ mod graphics {
           .parse()
           .unwrap_or_else(|_| panic!("numeric circle {name} in {tag}"))
       };
-      let (cx, cy) = (attr("cx"), attr("cy"));
-      // x = 50 is the midpoint of a 0..100 range applied to the x axis.
-      assert!(
-        (cx - 50.0).abs() < 2.0,
-        "expected cx near mid-width, cx={cx}"
-      );
-      // y = 100 is the top of a 0..100 range applied to the y axis (SVG y
-      // grows downward).
-      assert!(cy < 2.0, "expected cy flush at the top, cy={cy}");
+      let circles: Vec<&str> = svg.split("<circle ").skip(1).collect();
+      assert_eq!(circles.len(), 2, "both points drawn: {svg}");
+      // x = 150 lies inside the automatic horizontal range (well right of
+      // x = 50), not clipped away by a 0..100 x range.
+      assert!(attr(circles[1], "cx") > attr(circles[0], "cx") + 20.0);
+      // y = 100 is the top of the 0..100 vertical range (SVG y grows down).
+      assert!(attr(circles[0], "cy") < 10.0);
+    }
+
+    // `FaceForm[None]` leaves area primitives unfilled (they used to be
+    // painted solid black, hiding any label drawn inside them).
+    #[test]
+    fn face_form_none_leaves_area_primitives_unfilled() {
+      for prim in [
+        "Rectangle[{0, 0}, {1, 1}]",
+        "Disk[{0, 0}, 1]",
+        "Polygon[{{0, 0}, {1, 0}, {0, 1}}]",
+      ] {
+        let svg = export_svg(&format!(
+          "Graphics[{{EdgeForm[Thick], FaceForm[None], {prim}}}]"
+        ));
+        assert!(
+          svg.contains("fill-opacity=\"0\""),
+          "{prim} should be unfilled: {svg}"
+        );
+      }
     }
 
     // The per-axis form still works once either element unambiguously
