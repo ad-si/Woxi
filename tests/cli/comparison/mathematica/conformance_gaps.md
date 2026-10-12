@@ -3566,7 +3566,9 @@ where WL returns its canonical entity id.
 `Inset[Button[label, action], pos]` inside a `Manipulate` body draws correctly
 and the action is held, but pressing it does nothing: the renderer does not
 report each inset button's pixel rectangle, and Woxi Studio has no hit-testing
-against the rendered picture.
+against the rendered picture. (`Button[Graphics[…], action]` cells of a
+`GraphicsGrid` are the exception: they carry hit regions, and Woxi Studio
+overlays clickable areas on them.)
 
 ### `Manipulate` control gaps
 

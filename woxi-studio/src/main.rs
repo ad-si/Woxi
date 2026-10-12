@@ -4615,7 +4615,36 @@ fn render_manipulate_widget<'a>(
     if stale {
       svg_widget = svg_widget.opacity(0.3_f32);
     }
-    output_col = output_col.push(container(svg_widget).padding(4));
+    let picture: Element<'_, Message> = if state.button_regions.is_empty() {
+      svg_widget.into()
+    } else {
+      // Pressable `Button` cells drawn inside the picture: overlay a
+      // transparent clickable area on each, running its held action.
+      let mut layers: Vec<Element<'_, Message>> = vec![svg_widget.into()];
+      for region in &state.button_regions {
+        layers.push(
+          container(
+            button(space::Space::new())
+              .width(region.width)
+              .height(region.height)
+              .style(|_, _| button::Style::default())
+              .on_press(Message::ManipulateDisplayAction(
+                cell_idx,
+                region.action.clone(),
+              )),
+          )
+          .padding(iced::Padding {
+            top: region.y,
+            left: region.x,
+            right: 0.0,
+            bottom: 0.0,
+          })
+          .into(),
+        );
+      }
+      stack(layers).into()
+    };
+    output_col = output_col.push(container(picture).padding(4));
   } else if let Some(ref txt) = state.text_output {
     let mut output_text = text(txt.clone()).size(12).font(Font::MONOSPACE);
     if stale {

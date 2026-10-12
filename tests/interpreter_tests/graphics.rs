@@ -33738,3 +33738,31 @@ mod grid_text_in_graphics {
     assert!(svg.contains("stroke=\"none\""), "{svg}");
   }
 }
+
+/// A `Button[Graphics[…], action, opts…]` cell of a `GraphicsGrid` carries an
+/// invisible hit region naming its (substituted) action, so a live widget can
+/// press it; `Enabled -> False` removes the region and `Background` fills
+/// the cell behind the picture.
+#[test]
+fn graphics_grid_button_cells_carry_hit_regions() {
+  let svg = export_svg(
+    "GraphicsGrid[Table[With[{i = i, j = j}, \
+       Button[Graphics[Disk[]], b = i + j, \
+         Background -> Red, Enabled -> Dynamic[j != 2]]], \
+       {i, 2}, {j, 2}]]",
+  );
+  let mut actions: Vec<String> = svg
+    .split("id=\"woxi-btn-")
+    .skip(1)
+    .map(|rest| {
+      let hex = rest.split('"').next().unwrap();
+      woxi::functions::graphics::button_action_from_hit_id(&format!(
+        "woxi-btn-{hex}"
+      ))
+      .unwrap()
+    })
+    .collect();
+  actions.sort();
+  assert_eq!(actions, vec!["b = 1 + 1", "b = 2 + 1"]);
+  assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 4);
+}
