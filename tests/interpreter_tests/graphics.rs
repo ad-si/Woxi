@@ -25815,6 +25815,24 @@ mod manipulate {
     );
   }
 
+  /// A `TabView` nested in a `Column` next to text shows only its selected
+  /// pane's picture. Regression: the nested `TabView` was typeset as its
+  /// symbolic source (`TabView[{{1, … -> -Graphics-}, …}, …]`) instead of
+  /// the plot it displays.
+  #[test]
+  fn tab_view_nested_in_column_draws_selected_pane() {
+    let code = "tabSel = 2; Column[{\"title\", TabView[{\
+      {1, \"a\" -> Plot[Sin[x], {x, 0, 2 Pi}]}, \
+      {2, \"b\" -> Plot[Cos[x], {x, 0, 2 Pi}]}}, Dynamic[tabSel]]}]";
+    let svg = woxi::interpret_with_stdout(code)
+      .unwrap()
+      .graphics
+      .expect("must render a graphic");
+    assert!(!svg.contains("TabView["), "TabView source leaked: {svg}");
+    assert!(!svg.contains("-Graphics-"));
+    assert!(svg.contains("title"));
+  }
+
   /// A `PaneSelector[{value -> content, …}, selector]` shows one pane at a
   /// time in Wolfram; its panes hold controls just as a `TabView`'s tabs
   /// do, so they are found the same way. A variable declared in more than
