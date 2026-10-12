@@ -18111,10 +18111,10 @@ fn with_button_cell_chrome(svg: String, button_args: &[Expr]) -> String {
   }
   out.push_str(&svg[open_end..close]);
   if enabled {
-    let hex: String = crate::syntax::expr_to_source_form(&button_args[1])
-      .bytes()
-      .map(|b| format!("{b:02x}"))
-      .collect();
+    let mut hex = String::new();
+    for b in crate::syntax::expr_to_source_form(&button_args[1]).bytes() {
+      hex.push_str(&format!("{b:02x}"));
+    }
     out.push_str(&format!(
       "<rect id=\"{BUTTON_HIT_ID_PREFIX}{hex}\" x=\"{vb_x}\" y=\"{vb_y}\" width=\"{vb_w}\" height=\"{vb_h}\" fill=\"#000\" fill-opacity=\"0.001\"/>"
     ));
