@@ -958,7 +958,17 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Check if all args are numeric
   let nums: Vec<Option<f64>> = args.iter().map(try_eval_to_f64).collect();
   if nums.iter().all(std::option::Option::is_some) {
-    // All numeric and pairwise different (checked above via strings)
+    // Structurally different numbers can still be `Equal` within machine
+    // tolerance (`0.1 + 0.2 != 0.3` is False), so decide each pair with the
+    // canonical `Equal` rather than assuming they differ.
+    for i in 0..args.len() {
+      for j in i + 1..args.len() {
+        let pair = [args[i].clone(), args[j].clone()];
+        if matches!(equal_ast(&pair)?, Expr::Identifier(ref s) if s == "True") {
+          return Ok(bool_expr(false));
+        }
+      }
+    }
     return Ok(bool_expr(true));
   }
 

@@ -4542,6 +4542,34 @@ mod plot3d {
       );
     }
 
+    // Regression: a per-cell `Background` rule on a spanning cell paints the
+    // whole merged span, not just its first column.
+    #[test]
+    fn grid_cell_background_covers_the_whole_span() {
+      let svg = export_svg(
+        "Grid[{{\"title\", SpanFromLeft}, {\"a\", \"b\"}}, Background -> {None, None, {{1, 1} -> Red}}]",
+      );
+      let red = svg.matches("fill=\"rgb(255,0,0)\"").count()
+        + svg.matches("fill=\"#ff0000\"").count();
+      assert_eq!(red, 1, "{svg}");
+      // One rectangle covers both columns, so it is wider than a single cell.
+      let w: f64 = svg
+        .split("<rect")
+        .find(|r| r.contains("255,0,0") || r.contains("#ff0000"))
+        .and_then(|r| r.split("width=\"").nth(1))
+        .and_then(|r| r.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      let total: f64 = svg
+        .split("<svg")
+        .nth(1)
+        .and_then(|r| r.split("width=\"").nth(1))
+        .and_then(|r| r.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      assert!(w > total * 0.9, "span rect {w} of {total}: {svg}");
+    }
+
     #[test]
     fn subsuperscript_box_label_with_bare_sign_script() {
       let svg = export_svg(

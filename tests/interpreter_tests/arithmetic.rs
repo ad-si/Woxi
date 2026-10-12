@@ -2990,6 +2990,11 @@ mod infinity_comparisons {
       interpret("Unequal[ComplexInfinity, ComplexInfinity]").unwrap(),
       "ComplexInfinity != ComplexInfinity"
     );
+    // Machine reals within tolerance are Equal, so Unequal is False.
+    assert_eq!(interpret("0.1 + 0.2 != 0.3").unwrap(), "False");
+    assert_eq!(interpret("Unequal[0.1 + 0.2, 0.3]").unwrap(), "False");
+    assert_eq!(interpret("Unequal[1, 2., 3]").unwrap(), "True");
+    assert_eq!(interpret("Unequal[1, 2, 1.]").unwrap(), "False");
     // Symbolic operands stay unevaluated too.
     assert_eq!(
       interpret("ComplexInfinity == x").unwrap(),
