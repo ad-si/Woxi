@@ -1879,12 +1879,14 @@ fn extract_rowbox_content(s: &str) -> String {
       && i + 1 < parts.len()
       && piece.ends_with('&')
       && !piece.ends_with("&&")
+      && split_top_level_commas(&piece).len() == 1
     {
       // A nested row that ends in the postfix `&` is a complete pure
       // function. `&` binds looser than every infix operator, so spliced
       // into the parent row as bare text it would swallow whatever follows
       // (`RowBox[{RowBox[{f, "&"}], "/@", x}]` is `(f &) /@ x`, not
-      // `f /@ x &`).
+      // `f /@ x &`). A row carrying a top-level comma is a whole argument
+      // list (`Select[list, f &]`) and must not be parenthesized.
       format!("({piece})")
     } else {
       piece
@@ -6929,6 +6931,26 @@ Cell[BoxData[
       panic!("expected a single cell");
     };
     assert_eq!(cell.content, "(f[#]&)/@{1,2}");
+  }
+
+  /// A call whose argument-list row ends in a pure function
+  /// (`Select[list, f &]`) must keep its comma-separated arguments: the row
+  /// is an argument list, not a nested pure function to parenthesize, and
+  /// `Select[(list, f &)]` is not valid syntax.
+  #[test]
+  fn call_with_trailing_pure_function_argument_is_not_parenthesized() {
+    let nb = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{"Select", "[",
+  RowBox[{RowBox[{"p", "[", RowBox[{"[", "1", "]"}], "]"}], ",",
+   RowBox[{RowBox[{"MemberQ", "[", RowBox[{"#", ",", "x"}], "]"}], "&"}]}],
+  "]"}]], "Input"]
+}]"##;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(cell.content, "Select[p[[1]],MemberQ[#,x]&]");
   }
 
   /// A `Piecewise` typeset directly in a `RowBox` — the `\[Piecewise]`
