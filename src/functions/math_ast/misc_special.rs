@@ -53,7 +53,7 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Compute 1 - a*q^k
     let factor = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
       Expr::Integer(1),
-      times(vec![Expr::Integer(-1), aqk]),
+      neg(aqk),
     ]))?;
     // Multiply into result
     result =
@@ -195,10 +195,7 @@ fn mittag_leffler_two_arg(
     match a {
       0 => {
         // 1/(1 - z)
-        let one_minus_z = plus(vec![
-          Expr::Integer(1),
-          times(vec![Expr::Integer(-1), z.clone()]),
-        ]);
+        let one_minus_z = plus(vec![Expr::Integer(1), neg(z.clone())]);
         return crate::evaluator::evaluate_expr_to_expr(&pow(
           one_minus_z,
           Expr::Integer(-1),

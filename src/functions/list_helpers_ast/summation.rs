@@ -1086,7 +1086,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let count = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
               Expr::Integer(1),
               max_expr.clone(),
-              times(vec![Expr::Integer(-1), min_expr.clone()]),
+              neg(min_expr.clone()),
             ]))?;
             let power = pow2(body.clone(), count);
             return crate::evaluator::evaluate_expr_to_expr(&power);
@@ -1942,10 +1942,7 @@ fn regularized_infinite_sum(
       let term = crate::evaluator::evaluate_expr_to_expr(
         &crate::syntax::substitute_variable(body, var, &Expr::Integer(n)),
       )?;
-      let negated = crate::evaluator::evaluate_expr_to_expr(&times(vec![
-        Expr::Integer(-1),
-        term,
-      ]))?;
+      let negated = crate::evaluator::evaluate_expr_to_expr(&neg(term))?;
       result = crate::functions::math_ast::plus_ast(&[result, negated])?;
     }
   }
@@ -5403,12 +5400,7 @@ pub fn angle_path_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => return steps_err(),
     };
-    let negated = Expr::List(
-      angles
-        .iter()
-        .map(|a| times(vec![Expr::Integer(-1), a.clone()]))
-        .collect(),
-    );
+    let negated = Expr::List(angles.iter().map(|a| neg(a.clone())).collect());
     let rotation = eval(&call1("RollPitchYawMatrix", negated))?;
     if !matches!(&rotation, Expr::List(_)) {
       // Symbolic angles keep the whole call unevaluated.

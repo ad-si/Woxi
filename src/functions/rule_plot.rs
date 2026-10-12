@@ -11,16 +11,17 @@ use crate::syntax::Expr;
 /// unreadably wide (and costly to compute), so the call stays a placeholder.
 const MAX_CASES: usize = 4096;
 
-/// `(rule, colors, radius)` of a numeric `CellularAutomaton[spec]` rule.
-/// `spec` is `n`, `{n, k, r}`, or `{n, {k, …}, r}`; `k` defaults to 2 and
-/// `r` to 1.
-fn parse_rule_spec(spec: &Expr) -> Option<(Expr, usize, usize)> {
+/// `(rule, colors, radius, totalistic)` of a numeric `CellularAutomaton[spec]`
+/// rule. `spec` is `n`, `{n, k, r}`, or `{n, {k, …}, r}`; `k` defaults to 2
+/// and `r` to 1. A `{k, 1}` colour entry marks a totalistic rule, whose
+/// result depends only on the sum of the neighborhood.
+fn parse_rule_spec(spec: &Expr) -> Option<(Expr, usize, usize, bool)> {
   let small = |e: &Expr| match e {
     Expr::Integer(n) if (1..=64).contains(n) => Some(*n as usize),
     _ => None,
   };
   match spec {
-    Expr::Integer(_) => Some((spec.clone(), 2, 1)),
+    Expr::Integer(_) => Some((spec.clone(), 2, 1, false)),
     Expr::List(items) if (1..=3).contains(&items.len()) => {
       let k = match items.get(1) {
         None => 2,
@@ -32,7 +33,13 @@ fn parse_rule_spec(spec: &Expr) -> Option<(Expr, usize, usize)> {
         Some(Expr::List(inner)) if inner.len() == 1 => small(&inner[0])?,
         Some(e) => small(e)?,
       };
-      matches!(items[0], Expr::Integer(_)).then(|| (items[0].clone(), k, r))
+      let totalistic = matches!(
+        items.get(1),
+        Some(Expr::List(inner))
+          if inner.len() == 2 && matches!(inner[1], Expr::Integer(1))
+      );
+      matches!(items[0], Expr::Integer(_))
+        .then(|| (items[0].clone(), k, r, totalistic))
     }
     _ => None,
   }
@@ -49,9 +56,14 @@ pub fn rule_plot_graphics(
   if name != "CellularAutomaton" || ca.len() != 1 {
     return None;
   }
-  let (_, k, r) = parse_rule_spec(&ca[0])?;
+  let (_, k, r, totalistic) = parse_rule_spec(&ca[0])?;
   let width = 2 * r + 1;
-  let cases = k.checked_pow(width as u32).filter(|c| *c <= MAX_CASES)?;
+  // A totalistic rule has one case per neighborhood sum, not per pattern.
+  let cases = if totalistic {
+    (k - 1) * width + 1
+  } else {
+    k.checked_pow(width as u32).filter(|c| *c <= MAX_CASES)?
+  };
 
   let mut color_rules: Option<Expr> = None;
   let mut graphics_opts: Vec<Expr> = Vec::new();
@@ -101,9 +113,18 @@ pub fn rule_plot_graphics(
     // Neighborhood digits, most significant (leftmost cell) first.
     let mut digits = vec![0usize; width];
     let mut rest = code;
-    for d in digits.iter_mut().rev() {
-      *d = rest % k;
-      rest /= k;
+    if totalistic {
+      // Representative neighborhood: the sum spent on the largest colours
+      // first, leftmost.
+      for d in &mut digits {
+        *d = rest.min(k - 1);
+        rest -= *d;
+      }
+    } else {
+      for d in digits.iter_mut().rev() {
+        *d = rest % k;
+        rest /= k;
+      }
     }
     // The canonical `CellularAutomaton` evaluates the rule on a cyclic
     // row exactly one neighborhood wide, so its centre cell is the result.

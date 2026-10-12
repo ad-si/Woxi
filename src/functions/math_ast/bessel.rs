@@ -144,10 +144,7 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return if parity == 0 {
       Ok(positive_call)
     } else {
-      crate::evaluator::evaluate_expr_to_expr(&times(vec![
-        Expr::Integer(-1),
-        positive_call,
-      ]))
+      crate::evaluator::evaluate_expr_to_expr(&neg(positive_call))
     };
   }
 
@@ -777,10 +774,7 @@ fn wrap_bessel_k_factor(
     ),
     p.clone(),
     // 1 / E^z = E^(-z)
-    pow(
-      const_expr("E"),
-      times(vec![Expr::Integer(-1), z_expr.clone()]),
-    ),
+    pow(const_expr("E"), neg(z_expr.clone())),
     // 1 / Sqrt[z]
     pow(call1("Sqrt", z_expr.clone()), Expr::Integer(-1)),
   ]);
@@ -816,7 +810,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Expr::Integer(n) = n_expr
   {
     return if *n == 0 {
-      Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")]))
+      Ok(neg(id_expr("Infinity")))
     } else {
       Ok(id_expr("ComplexInfinity"))
     };
@@ -864,10 +858,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let p =
       half_int_bessel_polynomial(-n_num, z_expr, "Sin", "Cos", BesselSign::J)?;
     let p_signed = if sign < 0 {
-      crate::evaluator::evaluate_expr_to_expr(&times(vec![
-        Expr::Integer(-1),
-        p,
-      ]))?
+      crate::evaluator::evaluate_expr_to_expr(&neg(p))?
     } else {
       p
     };
@@ -884,10 +875,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return if pos_n.unsigned_abs() & 1 == 0 {
       Ok(positive_call)
     } else {
-      crate::evaluator::evaluate_expr_to_expr(&times(vec![
-        Expr::Integer(-1),
-        positive_call,
-      ]))
+      crate::evaluator::evaluate_expr_to_expr(&neg(positive_call))
     };
   }
 
@@ -1031,10 +1019,7 @@ fn coulomb_wave_reduce(
 fn coulomb_hplus_expr(l: i128, eta: &Expr, rho: &Expr) -> Expr {
   let i_unit = id_expr("I");
   // (-i)^L
-  let neg_i_pow = pow(
-    times(vec![Expr::Integer(-1), i_unit.clone()]),
-    Expr::Integer(l),
-  );
+  let neg_i_pow = pow(neg(i_unit.clone()), Expr::Integer(l));
   // e^(pi eta / 2)
   let exp_norm = call1(
     "Exp",

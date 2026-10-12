@@ -15315,6 +15315,23 @@ mod cases_count_level_spec {
   }
 
   #[test]
+  fn delete_cases_matches_rule_literally() {
+    // DeleteCases has no `pattern -> rhs` form; a rule is matched as-is.
+    assert_eq!(
+      interpret("DeleteCases[{a -> 1, b -> 2}, a -> 1]").unwrap(),
+      "{b -> 2}"
+    );
+    assert_eq!(
+      interpret("DeleteCases[{0 -> -1, 1 -> 0, 2 -> 1}, 2/2 -> 0]").unwrap(),
+      "{0 -> -1, 2 -> 1}"
+    );
+    assert_eq!(
+      interpret("DeleteCases[{a -> 1, b -> 2}, _ -> 1]").unwrap(),
+      "{b -> 2}"
+    );
+  }
+
+  #[test]
   fn delete_cases_exact_level() {
     assert_eq!(
       interpret("DeleteCases[{1, {2, 3}, {4, {5}}}, _Integer, {2}]").unwrap(),

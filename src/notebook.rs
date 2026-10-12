@@ -1885,8 +1885,8 @@ fn extract_rowbox_content(s: &str) -> String {
       // function. `&` binds looser than every infix operator, so spliced
       // into the parent row as bare text it would swallow whatever follows
       // (`RowBox[{RowBox[{f, "&"}], "/@", x}]` is `(f &) /@ x`, not
-      // `f /@ x &`). An argument list (`a, b, f &`) is not one function, and
-      // parenthesizing it would trap its commas, so it is left bare.
+      // `f /@ x &`). A row carrying a top-level comma is a whole argument
+      // list (`Select[list, f &]`) and must not be parenthesized.
       format!("({piece})")
     } else {
       piece
@@ -1974,6 +1974,14 @@ fn box_part_source(part: &str) -> String {
     // element between two operands does.
     if inner.starts_with("\\\"") {
       string_literal_source(inner)
+    } else if inner.starts_with("\\<") && inner.ends_with("\\>") {
+      // `\<…\>` is the linear-syntax spelling of a string literal's
+      // quotes (`"\<surface 1\>"` is the string `"surface 1"`), so the
+      // element is a string literal just like `"\"…\""`.
+      format!(
+        "\"{}\"",
+        escape_unescaped_quotes(&unescape_code_string(inner))
+      )
     } else {
       unescape_code_string(inner)
     }
@@ -5313,6 +5321,21 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_box_leaf_with_string_delimiters_is_a_string_literal() {
+    // A Manipulate control label written `"\<surface 1\>"` in a RowBox is
+    // the string "surface 1", not the bare tokens `surface 1`.
+    let nb = parse_notebook(
+      r#"Notebook[{Cell[BoxData[RowBox[{"f", "[", RowBox[{RowBox[{"{", RowBox[{"k", ",", "1", ",", "\"\<surface 1\>\""}], "}"}], ",", RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "]"}]], "Input"]}]"#,
+    )
+    .unwrap();
+    let flat = nb.flat_cells();
+    assert_eq!(
+      flat[0].1.content,
+      r#"f[{k,1,"surface 1"},Appearance->"Labeled"]"#
+    );
+  }
+
+  #[test]
   fn test_string_literal_source_preserves_already_escaped_quotes() {
     // A tooltip string containing an embedded quoted phrase (e.g. "Pareto
     // superior") round-trips through the front end as `\<...\\\"...\\\"...\>`:
@@ -6933,22 +6956,24 @@ Cell[BoxData[
     assert_eq!(cell.content, "(f[#]&)/@{1,2}");
   }
 
-  /// An argument list whose last argument is a pure function must not be
-  /// wrapped in parentheses as a whole: `g[a, b, Length[h]&]` stays a call
-  /// with three arguments, not `g[(a, b, Length[h]&)]`.
+  /// A call whose argument-list row ends in a pure function
+  /// (`Select[list, f &]`) must keep its comma-separated arguments: the row
+  /// is an argument list, not a nested pure function to parenthesize, and
+  /// `Select[(list, f &)]` is not valid syntax.
   #[test]
-  fn argument_list_ending_in_pure_function_is_not_parenthesized() {
+  fn call_with_trailing_pure_function_argument_is_not_parenthesized() {
     let nb = r##"Notebook[{
 Cell[BoxData[
- RowBox[{"g", "[",
-  RowBox[{"a", ",", "b", ",",
-   RowBox[{RowBox[{"Length", "[", "h", "]"}], "&"}]}], "]"}]], "Input"]
+ RowBox[{"Select", "[",
+  RowBox[{RowBox[{"p", "[", RowBox[{"[", "1", "]"}], "]"}], ",",
+   RowBox[{RowBox[{"MemberQ", "[", RowBox[{"#", ",", "x"}], "]"}], "&"}]}],
+  "]"}]], "Input"]
 }]"##;
     let parsed = parse_notebook(nb).unwrap();
     let CellEntry::Single(cell) = &parsed.cells[0] else {
       panic!("expected a single cell");
     };
-    assert_eq!(cell.content, "g[a,b,Length[h]&]");
+    assert_eq!(cell.content, "Select[p[[1]],MemberQ[#,x]&]");
   }
 
   /// A `Piecewise` typeset directly in a `RowBox` — the `\[Piecewise]`

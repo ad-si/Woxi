@@ -1653,7 +1653,7 @@ WhittakerM,Whittaker M function E^(-z/2) z^(m+1/2) Hypergeometric1F1[m-k+1/2 2m+
 InterpretationBox,Low-level box that displays one expression but interprets as another,✅,pure,3.0,1652
 IncludePods,Include pods in computation,,unevaluated,8.0,1653
 MathieuGroupM11,Mathieu group M11 (order 7920) as a formal permutation group,✅,pure,8.0,1656
-RulePlot,Draws each neighborhood and result of a cellular-automaton rule (other objects give an empty graphic),✅,pure,11.0,1656
+RulePlot,Draws each neighborhood (or each neighborhood sum for totalistic rules) and result of a cellular-automaton rule (other objects give an empty graphic),✅,pure,11.0,1656
 Overlaps,Option symbol specifying how the string and sequence matching functions treat overlapping matches — False keeps them disjoint True reports the preferred match per start position and All reports every match per start position,✅,pure,5.1,1658
 Trig,Trigonometric functions option,,unevaluated,2.0,1658
 ItoProcess,Ito stochastic process,,unevaluated,9.0,1659
@@ -3535,6 +3535,7 @@ Dialog,,🚫,,2.0,3612
 DiscreteShift,Discrete shift of an expression (n -> n+1),✅,pure,7.0,3612
 GaugeFaceStyle,,🚫,,9.0,3612
 HilbertCurve,Line through all cells of the 2^n x 2^n grid in Hilbert order (integer grid; DataRange maps to reals),✅,pure,11.1,3612
+GosperCurve,Line through the 7^n + 1 vertices of the order-n Gosper curve on the triangular lattice (L-system generated; orientation not verified against wolframscript),✅,pure,11.1,
 KumaraswamyDistribution,Kumaraswamy continuous distribution on the unit interval,✅,pure,8.0,3612
 LogLogisticDistribution,Log-logistic distribution with shape g and scale s,✅,pure,8.0,3612
 LongestCommonSequence,Returns the longest noncontiguous subsequence common to two strings or lists,✅,pure,7.0,3612

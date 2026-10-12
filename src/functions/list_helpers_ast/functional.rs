@@ -892,10 +892,9 @@ pub(crate) fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
     Expr::BinaryOp { op, left, right } => {
       match op {
         // a - b → Plus[a, Times[-1, b]]
-        BinaryOperator::Minus => Some(vec![
-          left.as_ref().clone(),
-          times(vec![Expr::Integer(-1), right.as_ref().clone()]),
-        ]),
+        BinaryOperator::Minus => {
+          Some(vec![left.as_ref().clone(), neg(right.as_ref().clone())])
+        }
         // 1/b → Power[b, -1]; a/b → Times[a, Power[b, -1]]
         BinaryOperator::Divide => {
           if matches!(left.as_ref(), Expr::Integer(1)) {

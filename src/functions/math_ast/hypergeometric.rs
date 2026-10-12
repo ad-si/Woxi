@@ -194,11 +194,8 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // HypergeometricPFQ[{a}, {}, z] = (1 - z)^(-a). Closed form via the
   // generalised binomial series. Lets z = 1 yield 0^(-a) → ComplexInfinity.
   if a_list.len() == 1 && b_list.is_empty() {
-    let one_minus_z = plus(vec![
-      Expr::Integer(1),
-      times(vec![Expr::Integer(-1), z.clone()]),
-    ]);
-    let neg_a = times(vec![Expr::Integer(-1), a_list[0].clone()]);
+    let one_minus_z = plus(vec![Expr::Integer(1), neg(z.clone())]);
+    let neg_a = neg(a_list[0].clone());
     let pow = pow(one_minus_z, neg_a);
     return crate::evaluator::evaluate_expr_to_expr(&pow);
   }
@@ -294,10 +291,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         is_number(z) && try_eval_to_f64(z).is_some_and(|v| v < 0.0);
       let (radicand, bessel_name) = if is_negative_real {
         (
-          crate::evaluator::evaluate_expr_to_expr(&times(vec![
-            Expr::Integer(-1),
-            z.clone(),
-          ]))?,
+          crate::evaluator::evaluate_expr_to_expr(&neg(z.clone()))?,
           "BesselJ",
         )
       } else {
@@ -465,20 +459,15 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && matches!(&b_list[0], Expr::Integer(3))
     && matches!(&b_list[1], Expr::Integer(3))
   {
-    let log_one_minus_z = call1(
-      "Log",
-      plus(vec![
-        Expr::Integer(1),
-        times(vec![Expr::Integer(-1), z.clone()]),
-      ]),
-    );
+    let log_one_minus_z =
+      call1("Log", plus(vec![Expr::Integer(1), neg(z.clone())]));
     let polylog = call("PolyLog", vec![Expr::Integer(2), z.clone()]);
     // Build the negated inner sum so the leading `-4·(−2·z − Log[1−z] + z·Log[1−z] + PolyLog[2,z])`
     // matches wolframscript's exact InputForm rather than the mathematically
     // equivalent `4·(2·z + …)` factoring.
     let inner_neg = plus(vec![
       times(vec![Expr::Integer(-2), z.clone()]),
-      times(vec![Expr::Integer(-1), log_one_minus_z.clone()]),
+      neg(log_one_minus_z.clone()),
       times(vec![z.clone(), log_one_minus_z]),
       polylog,
     ]);
@@ -501,24 +490,12 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(times(vec![
       plus(vec![
-        times(vec![Expr::Integer(-1), z.clone()]),
-        call1(
-          "Log",
-          plus(vec![
-            Expr::Integer(1),
-            times(vec![Expr::Integer(-1), z.clone()]),
-          ]),
-        ),
+        neg(z.clone()),
+        call1("Log", plus(vec![Expr::Integer(1), neg(z.clone())])),
         times(vec![
           Expr::Integer(-1),
           z.clone(),
-          call1(
-            "Log",
-            plus(vec![
-              Expr::Integer(1),
-              times(vec![Expr::Integer(-1), z.clone()]),
-            ]),
-          ),
+          call1("Log", plus(vec![Expr::Integer(1), neg(z.clone())])),
         ]),
       ]),
       pow(
@@ -1759,7 +1736,7 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let z = args[2].clone();
     let one_minus_a = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
       Expr::Integer(1),
-      times(vec![Expr::Integer(-1), args[0].clone()]),
+      neg(args[0].clone()),
     ]))?;
     let exp_z = pow(id_expr("E"), z.clone());
     let gamma = call("Gamma", vec![one_minus_a, z]);
@@ -1828,7 +1805,7 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ),
         plus(vec![
           times(vec![coeff_curr, u_curr.clone()]),
-          times(vec![Expr::Integer(-1), u_prev.clone()]),
+          neg(u_prev.clone()),
         ]),
       ]);
       let next = crate::evaluator::evaluate_expr_to_expr(&next)?;
@@ -1936,30 +1913,18 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // 2F1(a, b, b, z) = (1-z)^(-a)
   if expr_to_string(&args[1]) == expr_to_string(&args[2]) {
-    let neg_a = crate::evaluator::evaluate_expr_to_expr(&times(vec![
-      Expr::Integer(-1),
-      args[0].clone(),
-    ]))?;
+    let neg_a = crate::evaluator::evaluate_expr_to_expr(&neg(args[0].clone()))?;
     return crate::evaluator::evaluate_expr_to_expr(&pow(
-      plus(vec![
-        Expr::Integer(1),
-        times(vec![Expr::Integer(-1), z.clone()]),
-      ]),
+      plus(vec![Expr::Integer(1), neg(z.clone())]),
       neg_a,
     ));
   }
 
   // 2F1(a, b, a, z) = (1-z)^(-b)
   if expr_to_string(&args[0]) == expr_to_string(&args[2]) {
-    let neg_b = crate::evaluator::evaluate_expr_to_expr(&times(vec![
-      Expr::Integer(-1),
-      args[1].clone(),
-    ]))?;
+    let neg_b = crate::evaluator::evaluate_expr_to_expr(&neg(args[1].clone()))?;
     return crate::evaluator::evaluate_expr_to_expr(&pow(
-      plus(vec![
-        Expr::Integer(1),
-        times(vec![Expr::Integer(-1), z.clone()]),
-      ]),
+      plus(vec![Expr::Integer(1), neg(z.clone())]),
       neg_b,
     ));
   }
@@ -2049,10 +2014,7 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let negated_inner = negate_leading_integer_coefficient(&inner);
       (z_minus_one, negated_inner)
     } else {
-      let one_minus_z = plus(vec![
-        Expr::Integer(1),
-        times(vec![Expr::Integer(-1), z.clone()]),
-      ]);
+      let one_minus_z = plus(vec![Expr::Integer(1), neg(z.clone())]);
       (one_minus_z, inner)
     };
     let prefactor = pow(base_expr, Expr::Integer(exp_one_minus_z));
@@ -2271,10 +2233,7 @@ fn hypergeometric2f1_1_n_np1(
   z: &Expr,
 ) -> Result<Expr, InterpreterError> {
   // Build: -(n/z^n) * (sum_{k=1}^{n-1} z^k/k + Log[1-z])
-  let one_minus_z = plus(vec![
-    Expr::Integer(1),
-    times(vec![Expr::Integer(-1), z.clone()]),
-  ]);
+  let one_minus_z = plus(vec![Expr::Integer(1), neg(z.clone())]);
   let log_1mz = call1("Log", one_minus_z);
 
   // Build the polynomial sum: sum_{k=1}^{n-1} z^k / k
@@ -2418,10 +2377,7 @@ fn hypergeometric2f1_1_b_c(
   let (factor_n, factor_d) = rat_reduce(factor_num, factor_den);
 
   // Build Log[1-z]
-  let one_minus_z = plus(vec![
-    Expr::Integer(1),
-    times(vec![Expr::Integer(-1), z.clone()]),
-  ]);
+  let one_minus_z = plus(vec![Expr::Integer(1), neg(z.clone())]);
   let log_1mz = call1("Log", one_minus_z);
 
   // Build the Plus terms with factored coefficients

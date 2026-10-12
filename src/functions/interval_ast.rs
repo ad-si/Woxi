@@ -948,7 +948,7 @@ pub fn try_interval_divide(
   // A same-sign span reciprocates as usual (and reverses orientation).
   let recip_spans = if let Some(spans) = &b_int {
     let pos_inf = id_expr("Infinity");
-    let neg_inf = times(vec![Expr::Integer(-1), pos_inf.clone()]);
+    let neg_inf = neg(pos_inf.clone());
     let recip_one = |x: &Expr| eval_binop(&Expr::Integer(1), x, "Divide").ok();
     let mut recip = Vec::new();
     for (lo, hi) in spans {
@@ -1328,7 +1328,7 @@ fn eval_sub(a: &Expr, b: &Expr) -> Expr {
     "Times",
     &[Expr::Integer(-1), b.clone()],
   )
-  .unwrap_or_else(|_| times(vec![Expr::Integer(-1), b.clone()]));
+  .unwrap_or_else(|_| neg(b.clone()));
   eval_add(a, &neg_b)
 }
 

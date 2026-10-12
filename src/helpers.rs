@@ -7,6 +7,10 @@ pub fn neg1(e: Expr) -> Expr {
   }
 }
 
+pub fn neg(x: Expr) -> Expr {
+  times(vec![Expr::Integer(-1), x])
+}
+
 /// Helper to build a binary operation expression
 pub fn binop(op: BinaryOperator, a: Expr, b: Expr) -> Expr {
   Expr::BinaryOp {

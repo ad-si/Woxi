@@ -203,7 +203,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // because the negation/identity re-evaluates the original arithmetic.
   if let Some(v) = try_eval_to_f64(&args[0]) {
     if v < 0.0 {
-      let neg = times(vec![Expr::Integer(-1), args[0].clone()]);
+      let neg = neg(args[0].clone());
       return crate::evaluator::evaluate_expr_to_expr(&neg);
     }
     return Ok(args[0].clone());
@@ -1529,7 +1529,7 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_expr_to_expr(&expr)
   };
   let negate = |e: Expr| -> Result<Expr, InterpreterError> {
-    let expr = times(vec![Expr::Integer(-1), e]);
+    let expr = neg(e);
     crate::evaluator::evaluate_expr_to_expr(&expr)
   };
   if x < 0.0 {
@@ -3231,7 +3231,7 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Expr::BigInteger(_) = &int_val {
           return crate::evaluator::evaluate_function_call_ast(
             "Plus",
-            &[args[0].clone(), times(vec![Expr::Integer(-1), int_val])],
+            &[args[0].clone(), neg(int_val)],
           );
         }
       }

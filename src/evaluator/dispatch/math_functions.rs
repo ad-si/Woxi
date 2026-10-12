@@ -488,7 +488,7 @@ pub fn dispatch_math_functions(
           if let Some(v) = crate::functions::math_ast::try_eval_to_f64(&args[0])
           {
             if v < 0.0 {
-              let neg = times(vec![Expr::Integer(-1), args[0].clone()]);
+              let neg = neg(args[0].clone());
               return Some(crate::evaluator::evaluate_expr_to_expr(&neg));
             }
             return Some(Ok(args[0].clone()));
@@ -797,7 +797,7 @@ pub fn dispatch_math_functions(
               let m_2 = pow(m, Expr::Integer(2));
               let var = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
                 m2,
-                times(vec![Expr::Integer(-1), m_2]),
+                neg(m_2),
               ]));
               if let Ok(v) = var {
                 if name == "Variance" {
@@ -1483,8 +1483,7 @@ pub fn dispatch_math_functions(
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
       if matches!(&args[0], Expr::Integer(1)) {
-        let neg = |z: &Expr| times(vec![Expr::Integer(-1), z.clone()]);
-        let exp_neg = |z: &Expr| pow(const_expr("E"), neg(z));
+        let exp_neg = |z: &Expr| pow(const_expr("E"), neg(z.clone()));
         let diff = minus2(exp_neg(&args[1]), exp_neg(&args[2]));
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
@@ -4082,7 +4081,6 @@ pub fn dispatch_math_functions(
           return None;
         }
         // Build expression: Divide[Total[Power[Subtract[u,v], 2]], 2 * Plus[Total[...], Total[...]]]
-        let neg = |x: Expr| times(vec![Expr::Integer(-1), x]);
         let diff_sq: Vec<Expr> = u
           .iter()
           .zip(v.iter())
@@ -4116,10 +4114,7 @@ pub fn dispatch_math_functions(
       // Build 1 - Correlation[u, v] and evaluate
       let corr_expr =
         call("Correlation", vec![args[0].clone(), args[1].clone()]);
-      let result_expr = plus(vec![
-        Expr::Integer(1),
-        times(vec![Expr::Integer(-1), corr_expr]),
-      ]);
+      let result_expr = plus(vec![Expr::Integer(1), neg(corr_expr)]);
       return Some(evaluate_expr_to_expr(&result_expr));
     }
     // PowerModList[a, b, m] — modular power/root list
@@ -4478,7 +4473,7 @@ pub fn dispatch_math_functions(
       if let Expr::Comparison { operands, .. } = &args[0]
         && operands.len() == 2
       {
-        let neg = times(vec![Expr::Integer(-1), operands[1].clone()]);
+        let neg = neg(operands[1].clone());
         if let Some(result) = apply_to_sides(&args[0], &neg, "Plus") {
           return Some(evaluate_expr_to_expr(&result));
         }
@@ -4522,7 +4517,7 @@ pub fn dispatch_math_functions(
       if let Some(result) = pair_sides(&args[0], &args[1], SideOp::Subtract) {
         return Some(evaluate_expr_to_expr(&result));
       }
-      let neg = times(vec![Expr::Integer(-1), args[1].clone()]);
+      let neg = neg(args[1].clone());
       if let Some(result) = apply_to_sides(&args[0], &neg, "Plus") {
         return Some(evaluate_expr_to_expr(&result));
       }
@@ -4753,10 +4748,8 @@ pub fn dispatch_math_functions(
             // Linear interpolation: elems[idx] + rem/t_den * (elems[idx+1] - elems[idx])
             let frac =
               call("Rational", vec![Expr::Integer(rem), Expr::Integer(t_den)]);
-            let diff = plus(vec![
-              elems[idx + 1].clone(),
-              times(vec![Expr::Integer(-1), elems[idx].clone()]),
-            ]);
+            let diff =
+              plus(vec![elems[idx + 1].clone(), neg(elems[idx].clone())]);
             let interp =
               plus(vec![elems[idx].clone(), times(vec![frac, diff])]);
             result.push(evaluate_expr_to_expr(&interp).unwrap_or(interp));
@@ -6498,7 +6491,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         "Cos" => {
           let ix = times(vec![i.clone(), arg.clone()]);
           let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), times(vec![Expr::Integer(-1), ix]));
+          let e_nix = power(e.clone(), neg(ix));
           plus(vec![
             times(vec![half.clone(), e_ix]),
             times(vec![half, e_nix]),
@@ -6508,7 +6501,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         "Sin" => {
           let ix = times(vec![i.clone(), arg.clone()]);
           let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), times(vec![Expr::Integer(-1), ix]));
+          let e_nix = power(e.clone(), neg(ix));
           plus(vec![
             times(vec![Expr::Integer(-1), i.clone(), half.clone(), e_ix]),
             times(vec![i, half, e_nix]),
@@ -6517,7 +6510,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         // Cosh[x] = E^x/2 + E^(-x)/2
         "Cosh" => {
           let e_x = power(e.clone(), arg.clone());
-          let e_nx = power(e.clone(), times(vec![Expr::Integer(-1), arg]));
+          let e_nx = power(e.clone(), neg(arg));
           plus(vec![
             times(vec![half.clone(), e_x]),
             times(vec![half, e_nx]),
@@ -6526,7 +6519,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         // Sinh[x] = E^x/2 - E^(-x)/2
         "Sinh" => {
           let e_x = power(e.clone(), arg.clone());
-          let e_nx = power(e.clone(), times(vec![Expr::Integer(-1), arg]));
+          let e_nx = power(e.clone(), neg(arg));
           plus(vec![
             times(vec![half.clone(), e_x]),
             times(vec![Expr::Integer(-1), half, e_nx]),
@@ -6539,13 +6532,10 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         "Tan" => {
           let ix = times(vec![i.clone(), arg.clone()]);
           let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), times(vec![Expr::Integer(-1), ix]));
+          let e_nix = power(e.clone(), neg(ix));
           times(vec![
             i,
-            plus(vec![
-              e_nix.clone(),
-              times(vec![Expr::Integer(-1), e_ix.clone()]),
-            ]),
+            plus(vec![e_nix.clone(), neg(e_ix.clone())]),
             power(plus(vec![e_nix, e_ix]), Expr::Integer(-1)),
           ])
         }
@@ -6553,7 +6543,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         "Sec" => {
           let ix = times(vec![i.clone(), arg.clone()]);
           let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), times(vec![Expr::Integer(-1), ix]));
+          let e_nix = power(e.clone(), neg(ix));
           times(vec![
             Expr::Integer(2),
             power(plus(vec![e_ix, e_nix]), Expr::Integer(-1)),
@@ -6563,35 +6553,29 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         "Csc" => {
           let ix = times(vec![i.clone(), arg.clone()]);
           let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), times(vec![Expr::Integer(-1), ix]));
+          let e_nix = power(e.clone(), neg(ix));
           times(vec![
             Expr::Integer(-2),
             i,
-            power(
-              plus(vec![e_nix, times(vec![Expr::Integer(-1), e_ix])]),
-              Expr::Integer(-1),
-            ),
+            power(plus(vec![e_nix, neg(e_ix)]), Expr::Integer(-1)),
           ])
         }
         // Cot[x] = -I*(E^(-I*x) + E^(I*x))/(E^(-I*x) - E^(I*x))
         "Cot" => {
           let ix = times(vec![i.clone(), arg.clone()]);
           let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), times(vec![Expr::Integer(-1), ix]));
+          let e_nix = power(e.clone(), neg(ix));
           times(vec![
             Expr::Integer(-1),
             i,
             plus(vec![e_nix.clone(), e_ix.clone()]),
-            power(
-              plus(vec![e_nix, times(vec![Expr::Integer(-1), e_ix])]),
-              Expr::Integer(-1),
-            ),
+            power(plus(vec![e_nix, neg(e_ix)]), Expr::Integer(-1)),
           ])
         }
         // Sech[x] = 2/(E^x + E^(-x))
         "Sech" => {
           let e_x = power(e.clone(), arg.clone());
-          let e_nx = power(e.clone(), times(vec![Expr::Integer(-1), arg]));
+          let e_nx = power(e.clone(), neg(arg));
           times(vec![
             Expr::Integer(2),
             power(plus(vec![e_x, e_nx]), Expr::Integer(-1)),
@@ -6604,10 +6588,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
             times(vec![
               i.clone(),
               half.clone(),
-              log_of(plus(vec![
-                Expr::Integer(1),
-                times(vec![Expr::Integer(-1), ix.clone()]),
-              ])),
+              log_of(plus(vec![Expr::Integer(1), neg(ix.clone())])),
             ]),
             times(vec![
               Expr::Integer(-1),
@@ -6625,10 +6606,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
             times(vec![
               i.clone(),
               half.clone(),
-              log_of(plus(vec![
-                Expr::Integer(1),
-                times(vec![Expr::Integer(-1), i_over_x.clone()]),
-              ])),
+              log_of(plus(vec![Expr::Integer(1), neg(i_over_x.clone())])),
             ]),
             times(vec![
               Expr::Integer(-1),
@@ -6690,10 +6668,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
           times(vec![
             Expr::Integer(-1),
             half.clone(),
-            log_of(plus(vec![
-              Expr::Integer(1),
-              times(vec![Expr::Integer(-1), arg.clone()]),
-            ])),
+            log_of(plus(vec![Expr::Integer(1), neg(arg.clone())])),
           ]),
           times(vec![
             half.clone(),
@@ -6707,10 +6682,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
             times(vec![
               Expr::Integer(-1),
               half.clone(),
-              log_of(plus(vec![
-                Expr::Integer(1),
-                times(vec![Expr::Integer(-1), x_inv.clone()]),
-              ])),
+              log_of(plus(vec![Expr::Integer(1), neg(x_inv.clone())])),
             ]),
             times(vec![
               half.clone(),
@@ -6731,7 +6703,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         // Tanh[x] = E^x/(E^(-x) + E^x) - E^(-x)/(E^(-x) + E^x)
         "Tanh" => {
           let e_x = power(e.clone(), arg.clone());
-          let e_nx = power(e.clone(), times(vec![Expr::Integer(-1), arg]));
+          let e_nx = power(e.clone(), neg(arg));
           let denom =
             power(plus(vec![e_nx.clone(), e_x.clone()]), Expr::Integer(-1));
           plus(vec![
@@ -6984,9 +6956,7 @@ fn pair_sides(relation: &Expr, second: &Expr, op: SideOp) -> Option<Expr> {
   let combine = |a: &Expr, b: &Expr| -> Expr {
     match op {
       SideOp::Add => plus(vec![a.clone(), b.clone()]),
-      SideOp::Subtract => {
-        plus(vec![a.clone(), times(vec![Expr::Integer(-1), b.clone()])])
-      }
+      SideOp::Subtract => plus(vec![a.clone(), neg(b.clone())]),
       SideOp::Multiply => times(vec![a.clone(), b.clone()]),
       SideOp::Divide => {
         times(vec![a.clone(), pow(b.clone(), Expr::Integer(-1))])
@@ -7170,10 +7140,7 @@ fn resample_axis(elems: &[Expr], n: usize) -> Vec<Expr> {
     }
     let frac =
       call("Rational", vec![Expr::Integer(numer), Expr::Integer(denom)]);
-    let diff = plus(vec![
-      elems[index + 1].clone(),
-      times(vec![Expr::Integer(-1), elems[index].clone()]),
-    ]);
+    let diff = plus(vec![elems[index + 1].clone(), neg(elems[index].clone())]);
     let interp = plus(vec![elems[index].clone(), times(vec![frac, diff])]);
     result.push(evaluate_expr_to_expr(&interp).unwrap_or(interp));
   }

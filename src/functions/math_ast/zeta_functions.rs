@@ -1325,7 +1325,7 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // (e.g. 3^(-2) -> 1/9) instead of staying a literal Power.
     return crate::evaluator::evaluate_expr_to_expr(&pow2(
       a.clone(),
-      times(vec![Expr::Integer(-1), s.clone()]),
+      neg(s.clone()),
     ));
   }
 
