@@ -7555,6 +7555,8 @@ pub(crate) struct MarginOverrides {
   pub top_margin: u32,
   pub x_label_area: u32,
   pub y_label_area: u32,
+  /// `FrameTicks -> None`: draw neither tick marks nor tick labels.
+  pub hide_ticks: bool,
 }
 
 /// Create a plotters chart with axes drawn, returning the SVG and coordinate info.
@@ -7627,7 +7629,9 @@ pub(crate) fn generate_axes_only_opts(
     let y_minor_step = y_major / 5.0;
     let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
 
-    if x_tick_positions.is_some() {
+    if margins.is_some_and(|m| m.hide_ticks) {
+      // Nothing to draw: the caller paints the frame itself.
+    } else if x_tick_positions.is_some() {
       // Custom tick mode: suppress plotters' x-axis ticks entirely.
       // We'll draw tick marks manually after computing the plot area.
       chart
@@ -7725,7 +7729,7 @@ pub(crate) fn generate_axes_only_opts(
   // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
   // In custom-tick mode, the x axis is drawn manually (below) at the major
   // tick length, so we only extend the y axis here.
-  {
+  if !margins.is_some_and(|m| m.hide_ticks) {
     let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
     let x_axis_ext = if x_tick_positions.is_none() {
       Some((x_min, x_max, nice_step(x_max - x_min, AXIS_TICK_TARGET)))
