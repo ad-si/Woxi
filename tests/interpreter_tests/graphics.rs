@@ -33910,3 +33910,43 @@ fn graphics_grid_button_cells_carry_hit_regions() {
   assert_eq!(actions, vec!["b = 1 + 1", "b = 2 + 1"]);
   assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 4);
 }
+
+mod gosper_curve_tests {
+  use woxi::interpret;
+
+  // GosperCurve[n] is a Line with 7^n + 1 vertices on the triangular lattice.
+  #[test]
+  fn vertex_counts() {
+    assert_eq!(interpret("Head[GosperCurve[2]]").unwrap(), "Line");
+    assert_eq!(interpret("Length[GosperCurve[1][[1]]]").unwrap(), "8");
+    assert_eq!(interpret("Length[GosperCurve[2][[1]]]").unwrap(), "50");
+    assert_eq!(interpret("Length[GosperCurve[3][[1]]]").unwrap(), "344");
+  }
+
+  // Every step has unit length.
+  #[test]
+  fn unit_steps() {
+    assert_eq!(
+      interpret(
+        "Union[Round[Norm /@ Differences[GosperCurve[2][[1]]], 0.0001]]"
+      )
+      .unwrap(),
+      "{1.}"
+    );
+  }
+
+  #[test]
+  fn invalid_order() {
+    assert_eq!(interpret("GosperCurve[0]").unwrap(), "GosperCurve[0]");
+  }
+
+  // Usable inside Graphics.
+  #[test]
+  fn renders() {
+    assert_eq!(
+      interpret("Head[ExportString[Graphics[GosperCurve[2]], \"SVG\"]]")
+        .unwrap(),
+      "String"
+    );
+  }
+}
