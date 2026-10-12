@@ -14320,6 +14320,20 @@ fn span_height(rows: &[Vec<Expr>], i: usize, j: usize) -> usize {
     .count()
 }
 
+/// The `(row, column)` of the cell that a span placeholder at `(i, j)`
+/// continues; any other cell is its own origin.
+fn span_origin(rows: &[Vec<Expr>], i: usize, j: usize) -> (usize, usize) {
+  let cell_at = |r: usize, c: usize| rows.get(r).and_then(|row| row.get(c));
+  let (mut oi, mut oj) = (i, j);
+  while oj > 0 && cell_at(oi, oj).is_some_and(is_span_from_left) {
+    oj -= 1;
+  }
+  while oi > 0 && cell_at(oi, oj).is_some_and(is_span_from_above) {
+    oi -= 1;
+  }
+  (oi, oj)
+}
+
 /// `StyleForm` is the Wolfram Language's older spelling of `Style`; the
 /// front end renders the two identically (both stay unevaluated and are
 /// interpreted at display time), so every display path treats them alike.
@@ -15833,9 +15847,11 @@ fn grid_svg_styled_internal(
     // page along their shared edge, which shows as a seam on a dark
     // background.
     let colour_at = |j: usize| -> Option<Color> {
+      // A cell merged into a spanning one takes that cell's override.
+      let (oi, oj) = span_origin(&rows, i, j);
       cell_backgrounds
         .iter()
-        .find(|&&((ci, cj), _)| ci == i + 1 && cj == j + 1)
+        .find(|&&((ci, cj), _)| ci == oi + 1 && cj == oj + 1)
         .map(|&(_, color)| color)
         .or_else(|| {
           row_backgrounds

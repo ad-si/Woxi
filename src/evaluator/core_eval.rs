@@ -3463,7 +3463,17 @@ pub fn evaluate_expr_to_expr_inner(
             } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
-              l != r
+              // Same tolerance as `Equal` (`0.1 + 0.2 != 0.3` is False), so
+              // defer to its single implementation instead of comparing bits.
+              if l == r {
+                false
+              } else {
+                let pair = [left.clone(), right.clone()];
+                !matches!(
+                  crate::functions::boolean_ast::equal_ast(&pair)?,
+                  Expr::Identifier(ref s) if s == "True"
+                )
+              }
             } else if expr_to_string(left) == expr_to_string(right) {
               false
             } else if crate::functions::boolean_ast::all_components_equal(
