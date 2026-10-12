@@ -373,14 +373,10 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
     "PowerDistribution" if dargs.len() == 2 => {
       // Median[PowerDistribution[k, a]] = 1/(2^(1/a) k).
       let (k, a) = (dargs[0].clone(), dargs[1].clone());
-      let med = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(times(vec![
-          pow2(Expr::Integer(2), pow2(a, Expr::Integer(-1))),
-          k,
-        ])),
-      };
+      let med = div2(
+        Expr::Integer(1),
+        times(vec![pow2(Expr::Integer(2), pow2(a, Expr::Integer(-1))), k]),
+      );
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "LogisticDistribution" => match dargs.len() {
@@ -802,14 +798,10 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       if len % 2 == 1 {
         return Ok(sorted[len / 2].clone());
       }
-      let avg = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(plus(vec![
-          sorted[len / 2 - 1].clone(),
-          sorted[len / 2].clone(),
-        ])),
-        right: Box::new(Expr::Integer(2)),
-      };
+      let avg = div2(
+        plus(vec![sorted[len / 2 - 1].clone(), sorted[len / 2].clone()]),
+        Expr::Integer(2),
+      );
       return crate::evaluator::evaluate_expr_to_expr(&avg);
     }
   }
@@ -874,14 +866,10 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     if len % 2 == 1 {
       Ok(keyed[len / 2].1.clone())
     } else {
-      let avg = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(plus(vec![
-          keyed[len / 2 - 1].1.clone(),
-          keyed[len / 2].1.clone(),
-        ])),
-        right: Box::new(Expr::Integer(2)),
-      };
+      let avg = div2(
+        plus(vec![keyed[len / 2 - 1].1.clone(), keyed[len / 2].1.clone()]),
+        Expr::Integer(2),
+      );
       crate::evaluator::evaluate_expr_to_expr(&avg)
     }
   }

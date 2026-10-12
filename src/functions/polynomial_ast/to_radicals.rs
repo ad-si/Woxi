@@ -52,11 +52,7 @@ fn to_radicals_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::BinaryOp { op, left, right } => {
       let l = to_radicals_inner(left)?;
       let r = to_radicals_inner(right)?;
-      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: *op,
-        left: Box::new(l),
-        right: Box::new(r),
-      })
+      crate::evaluator::evaluate_expr_to_expr(&binop(*op, l, r))
     }
     // Recurse into unary ops
     Expr::UnaryOp { op, operand } => {

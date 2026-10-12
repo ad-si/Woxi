@@ -1594,11 +1594,7 @@ pub fn evaluate_expr_to_expr_inner(
           if let Expr::List(_) = &args[0] {
             let current_val = evaluate_expr_to_expr(&args[0])?;
             let rhs = evaluate_expr_to_expr(&args[1])?;
-            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op,
-              left: Box::new(current_val),
-              right: Box::new(rhs),
-            })?;
+            let new_val = evaluate_expr_to_expr(&binop(op, current_val, rhs))?;
             crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
             return Ok(new_val);
           }
@@ -1621,11 +1617,7 @@ pub fn evaluate_expr_to_expr_inner(
               }
             };
             let rhs = evaluate_expr_to_expr(&args[1])?;
-            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op,
-              left: Box::new(current_val),
-              right: Box::new(rhs),
-            })?;
+            let new_val = evaluate_expr_to_expr(&binop(op, current_val, rhs))?;
             ENV.with(|e| {
               e.borrow_mut().insert(
                 var_name.clone(),
@@ -1637,11 +1629,7 @@ pub fn evaluate_expr_to_expr_inner(
           if let Expr::Part { .. } = &args[0] {
             let rhs = evaluate_expr_to_expr(&args[1])?;
             let current_val = evaluate_expr_to_expr(&args[0])?;
-            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op,
-              left: Box::new(current_val),
-              right: Box::new(rhs),
-            })?;
+            let new_val = evaluate_expr_to_expr(&binop(op, current_val, rhs))?;
             crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
             return Ok(new_val);
           }
@@ -1664,11 +1652,7 @@ pub fn evaluate_expr_to_expr_inner(
               });
             }
             let rhs = evaluate_expr_to_expr(&args[1])?;
-            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op,
-              left: Box::new(current_val),
-              right: Box::new(rhs),
-            })?;
+            let new_val = evaluate_expr_to_expr(&binop(op, current_val, rhs))?;
             // Write through the target as written — `set_ast` evaluates the
             // arguments itself, and messages about it quote the source form.
             crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
@@ -4509,11 +4493,11 @@ fn unwrap_evaluate_in_body(body: &Expr) -> Result<Expr, InterpreterError> {
         .collect::<Result<_, _>>()?;
       Ok(Expr::List(new_items.into()))
     }
-    Expr::BinaryOp { op, left, right } => Ok(Expr::BinaryOp {
-      op: *op,
-      left: Box::new(unwrap_evaluate_in_body(left)?),
-      right: Box::new(unwrap_evaluate_in_body(right)?),
-    }),
+    Expr::BinaryOp { op, left, right } => Ok(binop(
+      *op,
+      unwrap_evaluate_in_body(left)?,
+      unwrap_evaluate_in_body(right)?,
+    )),
     Expr::UnaryOp { op, operand } => Ok(Expr::UnaryOp {
       op: *op,
       operand: Box::new(unwrap_evaluate_in_body(operand)?),

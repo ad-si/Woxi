@@ -50,11 +50,7 @@ fn function_expand_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
       {
         return Ok(expanded);
       }
-      Ok(Expr::BinaryOp {
-        op: *op,
-        left: Box::new(l),
-        right: Box::new(r),
-      })
+      Ok(binop(*op, l, r))
     }
     Expr::UnaryOp { op, operand } => {
       let o = function_expand_inner(operand)?;

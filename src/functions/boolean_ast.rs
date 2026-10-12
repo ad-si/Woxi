@@ -2818,11 +2818,11 @@ pub fn expand_boolean_function_objects(expr: &Expr) -> Expr {
       name: name.clone(),
       args: args.iter().map(expand_boolean_function_objects).collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(expand_boolean_function_objects(left)),
-      right: Box::new(expand_boolean_function_objects(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      expand_boolean_function_objects(left),
+      expand_boolean_function_objects(right),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(expand_boolean_function_objects(operand)),
@@ -3630,11 +3630,11 @@ fn substitute_boolean_var(expr: &Expr, var: &Expr, val: &Expr) -> Expr {
         .collect::<Vec<_>>()
         .into(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(substitute_boolean_var(left, var, val)),
-      right: Box::new(substitute_boolean_var(right, var, val)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      substitute_boolean_var(left, var, val),
+      substitute_boolean_var(right, var, val),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(substitute_boolean_var(operand, var, val)),

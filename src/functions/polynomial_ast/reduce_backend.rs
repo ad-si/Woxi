@@ -72,14 +72,14 @@ pub(super) fn try_linear_integer_reduce(args: &[Expr]) -> Option<Expr> {
     emit::formula_expr_for_targets(&result, &request.targets);
   for target in request.targets.iter().rev() {
     if result.contains_variable(target) {
-      expression = Expr::BinaryOp {
-        op: BinaryOperator::And,
-        left: Box::new(call(
+      expression = binop(
+        BinaryOperator::And,
+        call(
           "Element",
           vec![Expr::Identifier(target.name.clone()), id_expr("Integers")],
-        )),
-        right: Box::new(expression),
-      };
+        ),
+        expression,
+      );
     }
   }
   Some(expression)

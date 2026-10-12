@@ -3772,14 +3772,10 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let moments_inexact =
     matches!(&m2, Expr::Real(_)) || matches!(&m3, Expr::Real(_));
   let result = if moments_inexact {
-    let m2_pow = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(m2),
-      right: Box::new(call(
-        "Rational",
-        vec![Expr::Integer(-3), Expr::Integer(2)],
-      )),
-    };
+    let m2_pow = pow2(
+      m2,
+      call("Rational", vec![Expr::Integer(-3), Expr::Integer(2)]),
+    );
     times2(m3, m2_pow)
   } else {
     // Compute m3 / m2^(3/2) symbolically

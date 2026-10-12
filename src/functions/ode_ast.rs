@@ -7063,11 +7063,11 @@ fn substitute_c_constant(
   }
 
   match expr {
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(substitute_c_constant(left, pattern, replacement)),
-      right: Box::new(substitute_c_constant(right, pattern, replacement)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      substitute_c_constant(left, pattern, replacement),
+      substitute_c_constant(right, pattern, replacement),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(substitute_c_constant(operand, pattern, replacement)),

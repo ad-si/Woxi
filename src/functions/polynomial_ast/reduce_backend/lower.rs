@@ -509,7 +509,7 @@ fn quantifier_names(expr: &Expr) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::helpers::{call, div2, id_expr as id, plus2, times2};
+  use crate::helpers::{binop, call, div2, id_expr as id, plus2, times2};
 
   fn relation(left: Expr, operator: ComparisonOp, right: Expr) -> Expr {
     Expr::Comparison {
@@ -542,19 +542,11 @@ mod tests {
         "Exists",
         vec![
           id(bound_name),
-          Expr::BinaryOp {
-            op: BinaryOperator::And,
-            left: Box::new(relation(
-              id(bound_name),
-              ComparisonOp::Less,
-              id("a"),
-            )),
-            right: Box::new(relation(
-              id("z"),
-              ComparisonOp::Greater,
-              Expr::Integer(0),
-            )),
-          },
+          binop(
+            BinaryOperator::And,
+            relation(id(bound_name), ComparisonOp::Less, id("a")),
+            relation(id("z"), ComparisonOp::Greater, Expr::Integer(0)),
+          ),
         ],
       )
     };

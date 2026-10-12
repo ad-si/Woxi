@@ -10108,11 +10108,9 @@ fn replace_constant_i(e: &Expr) -> Expr {
       name: name.clone(),
       args: args.iter().map(replace_constant_i).collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(replace_constant_i(left)),
-      right: Box::new(replace_constant_i(right)),
-    },
+    Expr::BinaryOp { op, left, right } => {
+      binop(*op, replace_constant_i(left), replace_constant_i(right))
+    }
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(replace_constant_i(operand)),

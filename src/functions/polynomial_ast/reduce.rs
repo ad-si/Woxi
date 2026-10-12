@@ -2932,11 +2932,7 @@ fn try_reduce_linear_diophantine(
   // Alternatives: `Element[C[1] | C[2], Integers]`.
   if let Some(membership) = (0..total_params)
     .map(|slot| call("C", vec![Expr::Integer((slot + 1) as i128)]))
-    .reduce(|acc, p| Expr::BinaryOp {
-      op: BinaryOperator::Alternatives,
-      left: Box::new(acc),
-      right: Box::new(p),
-    })
+    .reduce(|acc, p| binop(BinaryOperator::Alternatives, acc, p))
   {
     conjuncts.push(element(membership));
   }

@@ -2963,11 +2963,11 @@ pub fn apply_format_recursively(expr: &Expr, target_form: &str) -> Expr {
     ),
     // A held expression keeps its infix operators as tree nodes; their
     // operands are subexpressions like any other (`HoldForm[a + Int[…]]`).
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(apply_format_recursively(left, target_form)),
-      right: Box::new(apply_format_recursively(right, target_form)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      apply_format_recursively(left, target_form),
+      apply_format_recursively(right, target_form),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(apply_format_recursively(operand, target_form)),
@@ -10048,15 +10048,14 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
           return undefined();
         }
         // (4 Pi r^3) / 3
-        let vol = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(times(vec![
+        let vol = div2(
+          times(vec![
             Expr::Integer(4),
             const_expr("Pi"),
             pow(radius, Expr::Integer(3)),
-          ])),
-          right: Box::new(Expr::Integer(3)),
-        };
+          ]),
+          Expr::Integer(3),
+        );
         return crate::evaluator::evaluate_expr_to_expr(&vol);
       }
       // Ellipsoid[c, {r1, r2, r3}] — solid ellipsoid, 3-D volume
@@ -10444,14 +10443,13 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           // Together hoists the rational content of Δθ - Sin[Δθ] so the
           // display matches wolframscript ((-2 + Pi)/4, not
           // (-1 + Pi/2)/2).
-          Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(times(vec![
+          div2(
+            times(vec![
               factor,
               call1("Together", plus(vec![dt.clone(), neg(call1("Sin", dt))])),
-            ])),
-            right: Box::new(Expr::Integer(2)),
-          }
+            ]),
+            Expr::Integer(2),
+          )
         };
         crate::evaluator::evaluate_expr_to_expr(&area)
       }
@@ -11244,17 +11242,16 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
         let mid = div2(plus(vec![th1, th2]), Expr::Integer(2));
         let half_dt = div2(dt.clone(), Expr::Integer(2));
         // Unit-circle offset 4 Sin[Δθ/2]^3 / (3 (Δθ - Sin[Δθ])).
-        let offset = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(times(vec![
+        let offset = div2(
+          times(vec![
             Expr::Integer(4),
             pow(call1("Sin", half_dt), Expr::Integer(3)),
-          ])),
-          right: Box::new(times(vec![
+          ]),
+          times(vec![
             Expr::Integer(3),
             plus(vec![dt.clone(), neg(call1("Sin", dt))]),
-          ])),
-        };
+          ]),
+        );
         let component = |center: &Expr, semi: &Expr, trig: &str| {
           plus(vec![
             center.clone(),

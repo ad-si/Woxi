@@ -254,11 +254,7 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       } else {
         n_eval(right)?
       };
-      let new_expr = Expr::BinaryOp {
-        op: *op,
-        left: Box::new(n_eval(left)?),
-        right: Box::new(new_right),
-      };
+      let new_expr = binop(*op, n_eval(left)?, new_right);
       // Re-evaluate to allow numeric simplification (e.g. complex powers)
       let result = match crate::evaluator::evaluate_expr_to_expr(&new_expr) {
         Ok(result) => result,
@@ -1275,11 +1271,7 @@ fn set_precision_walk(
     Expr::BinaryOp { op, left, right } => {
       let l = set_precision_walk(left, precision, bits, rm, cc)?;
       let r = set_precision_walk(right, precision, bits, rm, cc)?;
-      Ok(Expr::BinaryOp {
-        op: *op,
-        left: Box::new(l),
-        right: Box::new(r),
-      })
+      Ok(binop(*op, l, r))
     }
     Expr::UnaryOp { op, operand } => {
       let o = set_precision_walk(operand, precision, bits, rm, cc)?;
@@ -1375,11 +1367,11 @@ fn set_accuracy_walk(
         args: out.into(),
       })
     }
-    Expr::BinaryOp { op, left, right } => Ok(Expr::BinaryOp {
-      op: *op,
-      left: Box::new(set_accuracy_walk(left, accuracy, rm, cc)?),
-      right: Box::new(set_accuracy_walk(right, accuracy, rm, cc)?),
-    }),
+    Expr::BinaryOp { op, left, right } => Ok(binop(
+      *op,
+      set_accuracy_walk(left, accuracy, rm, cc)?,
+      set_accuracy_walk(right, accuracy, rm, cc)?,
+    )),
     Expr::UnaryOp { op, operand } => Ok(Expr::UnaryOp {
       op: *op,
       operand: Box::new(set_accuracy_walk(operand, accuracy, rm, cc)?),
@@ -1458,11 +1450,7 @@ fn set_precision_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::BinaryOp { op, left, right } => {
       let l = set_precision_machine(left)?;
       let r = set_precision_machine(right)?;
-      Ok(Expr::BinaryOp {
-        op: *op,
-        left: Box::new(l),
-        right: Box::new(r),
-      })
+      Ok(binop(*op, l, r))
     }
     Expr::UnaryOp { op, operand } => {
       let o = set_precision_machine(operand)?;
@@ -1664,11 +1652,7 @@ fn n_eval_arbitrary_partial(
       } else {
         n_eval_arbitrary_partial(right, precision, bits, rm, cc)?
       };
-      Ok(Expr::BinaryOp {
-        op: *op,
-        left: Box::new(l),
-        right: Box::new(r),
-      })
+      Ok(binop(*op, l, r))
     }
     // Comparison chains: N maps over the operands (`N[x == 1/3, 5]` →
     // `x == 0.33333`).
@@ -3906,11 +3890,11 @@ fn power_expand_recursive(expr: &Expr) -> Expr {
         args: new_args.into(),
       }
     }
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(power_expand_recursive(left)),
-      right: Box::new(power_expand_recursive(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      power_expand_recursive(left),
+      power_expand_recursive(right),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(power_expand_recursive(operand)),
@@ -7234,11 +7218,11 @@ fn substitute_slot_with_identifier(expr: &Expr, k: usize, name: &str) -> Expr {
         .map(|e| substitute_slot_with_identifier(e, k, name))
         .collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(substitute_slot_with_identifier(left, k, name)),
-      right: Box::new(substitute_slot_with_identifier(right, k, name)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      substitute_slot_with_identifier(left, k, name),
+      substitute_slot_with_identifier(right, k, name),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(substitute_slot_with_identifier(operand, k, name)),
