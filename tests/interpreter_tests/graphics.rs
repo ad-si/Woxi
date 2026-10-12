@@ -7151,6 +7151,23 @@ mod plot3d {
       );
     }
 
+    // `FrameTicks -> None` on a field plot keeps the frame box but draws
+    // neither tick marks nor tick labels.
+    #[test]
+    fn frame_ticks_none_on_density_and_contour_plots() {
+      for head in ["DensityPlot", "ContourPlot"] {
+        let plain = export_svg(&format!(
+          "{head}[x + y, {{x, 0, 1}}, {{y, 0, 1}}, FrameTicks -> None]"
+        ));
+        let ticked =
+          export_svg(&format!("{head}[x + y, {{x, 0, 1}}, {{y, 0, 1}}]"));
+        assert!(!plain.contains("<text"), "{head}: {plain}");
+        assert!(!plain.contains("<line"), "{head}: {plain}");
+        assert!(plain.contains("<rect"), "{head} keeps its frame");
+        assert!(ticked.contains("<text"), "{head} default draws labels");
+      }
+    }
+
     // With a single series a `PlotStyle` list is one combined style rather
     // than a per-series cycle, so `{PointSize[…], Red}` gives one red
     // series. With several series the list still cycles.

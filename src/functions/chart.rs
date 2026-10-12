@@ -3574,6 +3574,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     top_margin,
     x_label_area,
     y_label_area,
+    hide_ticks: false,
   };
 
   // One tick mark per box (centered), no labels — matches Mathematica
