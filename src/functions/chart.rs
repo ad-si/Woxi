@@ -2649,6 +2649,7 @@ fn chart_3d_camera() -> crate::functions::plot3d::Camera {
   crate::functions::plot3d::Camera {
     azimuth: -1.35, // ~-77° — only ~13° offset from a direct front view
     elevation: 0.32, // ~18°
+    vertical: crate::functions::plot3d::Camera::DEFAULT_VERTICAL,
   }
 }
 
