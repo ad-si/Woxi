@@ -23888,7 +23888,8 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       other => match control_group_items(other) {
         Some(nested) => out.extend(nested),
         None => {
-          out.push(dynamic_control_spec(other).unwrap_or_else(|| other.clone()))
+          out
+            .push(dynamic_control_spec(other).unwrap_or_else(|| other.clone()));
         }
       },
     }
