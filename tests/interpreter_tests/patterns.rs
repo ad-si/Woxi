@@ -6447,3 +6447,32 @@ mod optional_pattern_default_with_negative_power {
     );
   }
 }
+
+mod pattern_test_call_form {
+  use super::*;
+
+  /// `PatternTest[Pattern[n, Blank[]], test]` is the FullForm of `n_?test`
+  /// (saved notebook definitions use it); the test must restrict a
+  /// definition, and two rules differing only in the test must coexist.
+  #[test]
+  fn call_form_test_restricts_definition() {
+    assert_eq!(
+      interpret("f[PatternTest[n_, EvenQ]] := 1; {f[3], f[2]}").unwrap(),
+      "{f[3], 1}"
+    );
+  }
+
+  #[test]
+  fn call_form_rules_differing_only_in_test_coexist() {
+    assert_eq!(
+      interpret(
+        "g[PatternTest[Pattern[n, Blank[]], EvenQ], PatternTest[Pattern[b, \
+         Blank[]], Positive]] := n/2; g[PatternTest[Pattern[n, Blank[]], \
+         OddQ], PatternTest[Pattern[b, Blank[]], Positive]] := 3 n + 1; \
+         {g[3, 3], g[4, 3]}"
+      )
+      .unwrap(),
+      "{10, 2}"
+    );
+  }
+}

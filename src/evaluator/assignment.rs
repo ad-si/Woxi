@@ -2129,6 +2129,25 @@ fn emit_part_set_failure(
 /// `Set`'s `Default[sym, n] = v` has always stored slot 0 as. Pass `true`
 /// from `set_delayed_ast`, `false` from `set_ast`, to keep each form's
 /// existing consumers working.
+/// The native `PatternTest` node for a call-form `PatternTest[p, test]`
+/// whose tested pattern `p` is a plain (possibly named) blank.
+fn native_pattern_test(arg: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = arg else {
+    return None;
+  };
+  if name != "PatternTest" || args.len() != 2 {
+    return None;
+  }
+  let tested = evaluate_expr_to_expr(&args[0]).ok()?;
+  match crate::evaluator::pattern_functions::evaluate_pattern_test_ast(&[
+    tested,
+    args[1].clone(),
+  ]) {
+    Ok(node @ Expr::PatternTest { .. }) => Some(node),
+    _ => None,
+  }
+}
+
 #[allow(clippy::type_complexity)]
 fn downvalue_arg_info(
   func_name: &String,
@@ -2172,6 +2191,10 @@ fn downvalue_arg_info(
         }
         None => (arg, None),
       };
+    // `PatternTest[Pattern[n, Blank[]], test]` in call form (the FullForm
+    // of `n_?test`) describes the same slot as the native `n_?test` node.
+    let native_test = native_pattern_test(arg);
+    let arg = native_test.as_ref().unwrap_or(arg);
     let slot_start = params.len();
     match arg {
       // OptionsPattern[] or OptionsPattern[{defaults...}] — matches zero or more Rule arguments
