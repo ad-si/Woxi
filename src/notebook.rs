@@ -1875,6 +1875,17 @@ fn extract_rowbox_content(s: &str) -> String {
       } else {
         format!("({piece})")
       }
+    } else if part.starts_with("RowBox[")
+      && i + 1 < parts.len()
+      && piece.ends_with('&')
+      && !piece.ends_with("&&")
+    {
+      // A nested row that ends in the postfix `&` is a complete pure
+      // function. `&` binds looser than every infix operator, so spliced
+      // into the parent row as bare text it would swallow whatever follows
+      // (`RowBox[{RowBox[{f, "&"}], "/@", x}]` is `(f &) /@ x`, not
+      // `f /@ x &`).
+      format!("({piece})")
     } else {
       piece
     };
@@ -6901,6 +6912,23 @@ Cell[BoxData[
       cell.content,
       "RevolutionPlot3D[Piecewise[{{f[x+6], -6<=x<=-2}}],{x,-6,6}]"
     );
+  }
+
+  /// A nested row ending in the postfix `&` is a complete pure function: in
+  /// the parent row `(f &) /@ list` must keep its grouping, since `&` binds
+  /// looser than `/@` and would otherwise swallow `/@ list`.
+  #[test]
+  fn nested_pure_function_row_keeps_its_grouping() {
+    let nb = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{RowBox[{RowBox[{"f", "[", "#", "]"}], "&"}], "/@",
+  RowBox[{"{", RowBox[{"1", ",", "2"}], "}"}]}]], "Input"]
+}]"##;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(cell.content, "(f[#]&)/@{1,2}");
   }
 
   /// A `Piecewise` typeset directly in a `RowBox` — the `\[Piecewise]`
