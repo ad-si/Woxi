@@ -86,10 +86,7 @@ pub fn interpolating_polynomial_ast(
 
   for i in (0..n - 1).rev() {
     // result = dd[i] + (x - x_vals[i]) * result
-    let x_minus_xi = plus(vec![
-      var.clone(),
-      times(vec![Expr::Integer(-1), x_vals[i].clone()]),
-    ]);
+    let x_minus_xi = plus(vec![var.clone(), neg(x_vals[i].clone())]);
     let product = times(vec![x_minus_xi, result]);
     result = plus(vec![dd[i].clone(), product]);
   }

@@ -1,6 +1,6 @@
 use crate::helpers::{
   binop, bool_expr, call, call0, call1, const_expr, div2, fail_expr, id_expr,
-  minus2, neg1, null_expr, plus, plus2, pow, pow2, rule_delayed_expr,
+  minus2, neg, neg1, null_expr, plus, plus2, pow, pow2, rule_delayed_expr,
   rule_expr, times, times2, unevaluated,
 };
 use num_bigint::{BigInt, Sign};
@@ -9130,7 +9130,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 if let Expr::Integer(k) = &ra[0] {
                   call("Rational", vec![Expr::Integer(-k), ra[1].clone()])
                 } else {
-                  times(vec![Expr::Integer(-1), t.clone()])
+                  neg(t.clone())
                 }
               }
               // -1 * rest → rest (double negation cancels)
@@ -9149,7 +9149,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 op: UnaryOperator::Minus,
                 operand,
               } => (**operand).clone(),
-              _ => times(vec![Expr::Integer(-1), t.clone()]),
+              _ => neg(t.clone()),
             }
           };
           let neg_terms: Vec<Expr> = pargs.iter().map(negate).collect();

@@ -1043,23 +1043,14 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
         let n = fargs[1];
         return Some(times(vec![
           call1("Gamma", plus(vec![n.clone(), Expr::Integer(1)])),
-          pow(
-            s.clone(),
-            plus(vec![
-              Expr::Integer(-1),
-              times(vec![Expr::Integer(-1), n.clone()]),
-            ]),
-          ),
+          pow(s.clone(), plus(vec![Expr::Integer(-1), neg(n.clone())])),
         ]));
       }
       // L[E^(a*t), t, s] = 1/(s - a)  — E can be Identifier("E") or Constant("E")
       let is_e = matches!(fargs[0], Expr::Identifier(b) if b == "E")
         || matches!(fargs[0], Expr::Constant(b) if b == "E");
       if is_e && let Some(a) = extract_linear_coeff(fargs[1], t) {
-        return Some(pow(
-          plus(vec![s.clone(), times(vec![Expr::Integer(-1), a])]),
-          Expr::Integer(-1),
-        ));
+        return Some(pow(plus(vec![s.clone(), neg(a)]), Expr::Integer(-1)));
       }
     }
 
@@ -1139,10 +1130,7 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       return Some(times(vec![
         pow(a, n.clone()),
         pow(sqrt_term.clone(), Expr::Integer(-1)),
-        pow(
-          plus(vec![s.clone(), sqrt_term]),
-          times(vec![Expr::Integer(-1), n.clone()]),
-        ),
+        pow(plus(vec![s.clone(), sqrt_term]), neg(n.clone())),
       ]));
     }
 
@@ -1186,8 +1174,7 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
         } else {
           plus(exp_coeffs)
         };
-        let s_shifted =
-          plus(vec![s.clone(), times(vec![Expr::Integer(-1), c_sum])]);
+        let s_shifted = plus(vec![s.clone(), neg(c_sum)]);
         let g = if rest.len() == 1 {
           rest.remove(0)
         } else {
@@ -1267,7 +1254,7 @@ fn extract_exp_coeff(factor: &Expr, t: &str) -> Option<Expr> {
     && is_e(inner[0])
   {
     let a = extract_linear_coeff(inner[1], t)?;
-    return Some(times(vec![Expr::Integer(-1), a]));
+    return Some(neg(a));
   }
   None
 }
@@ -1526,7 +1513,7 @@ fn inverse_laplace_2d(
     return Some(call1(
       "DiracDelta",
       plus(vec![
-        times(vec![Expr::Integer(-1), Expr::Identifier(x.to_string())]),
+        neg(Expr::Identifier(x.to_string())),
         Expr::Identifier(y.to_string()),
       ]),
     ));
@@ -1955,16 +1942,13 @@ fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
         p,
       ]);
       let a = crate::evaluator::evaluate_expr_to_expr(&a).ok()?;
-      let disc = plus(vec![
-        pow(a.clone(), Expr::Integer(2)),
-        times(vec![Expr::Integer(-1), q.clone()]),
-      ]);
+      let disc = plus(vec![pow(a.clone(), Expr::Integer(2)), neg(q.clone())]);
       let disc = crate::evaluator::evaluate_expr_to_expr(&disc).ok()?;
       let disc_value = expr_to_f64(&disc)?;
       // A pair of complex poles oscillates, a pair of real (irrational)
       // ones grows hyperbolically.
       let (w2, cos_name, sin_name) = if disc_value < 0.0 {
-        (times(vec![Expr::Integer(-1), disc.clone()]), "Cos", "Sin")
+        (neg(disc.clone()), "Cos", "Sin")
       } else {
         (disc.clone(), "Cosh", "Sinh")
       };
@@ -2360,9 +2344,7 @@ fn normalize_to_func_calls(expr: &Expr) -> Expr {
       let right = normalize_to_func_calls(right);
       match op {
         BinaryOperator::Plus => plus(vec![left, right]),
-        BinaryOperator::Minus => {
-          plus(vec![left, times(vec![Expr::Integer(-1), right])])
-        }
+        BinaryOperator::Minus => plus(vec![left, neg(right)]),
         BinaryOperator::Times => times(vec![left, right]),
         BinaryOperator::Divide => {
           times(vec![left, pow(right, Expr::Integer(-1))])
@@ -2376,7 +2358,7 @@ fn normalize_to_func_calls(expr: &Expr) -> Expr {
       operand,
     } => {
       let inner = normalize_to_func_calls(operand);
-      times(vec![Expr::Integer(-1), inner])
+      neg(inner)
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -2652,7 +2634,6 @@ fn inverse_mellin_inner(
   sv: &str,
   x: &Expr,
 ) -> Option<(Expr, bool)> {
-  let neg = |e: Expr| make_times(vec![Expr::Integer(-1), e]);
   let e_pow = |e: Expr| pow2(id_expr("E"), e);
   let is_s = |e: &Expr| matches!(e, Expr::Identifier(v) if v == sv);
   let is_pi = |e: &Expr| {
@@ -2988,7 +2969,6 @@ fn mellin_inner(expr: &Expr, x: &str, s: &Expr) -> Option<Expr> {
     ])
   };
   let gamma = |arg: Expr| -> Expr { call1("Gamma", arg) };
-  let neg = |e: Expr| make_times(vec![Expr::Integer(-1), e]);
 
   // Constants: M[c] = c 2 Pi DiracDelta[I s].
   if !contains_variable(expr, x) {
@@ -4629,7 +4609,7 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
         return None;
       }
       let neg_a = coeff(base, 1)?; // = -a
-      let a = ev(times(vec![Expr::Integer(-1), neg_a]))?;
+      let a = ev(neg(neg_a))?;
       let residual = ev(call1(
         "Expand",
         minus2(

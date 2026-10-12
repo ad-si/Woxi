@@ -108,10 +108,7 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1]) {
         if *n == 1 && *d == 2 {
           // q(1/2) = exp(-Pi * K(1/2) / K(1/2)) = exp(-Pi)
-          return Ok(pow(
-            const_expr("E"),
-            times(vec![Expr::Integer(-1), const_expr("Pi")]),
-          ));
+          return Ok(pow(const_expr("E"), neg(const_expr("Pi"))));
         }
         // For other rationals, compute numerically
         let f = *n as f64 / *d as f64;
@@ -1545,10 +1542,7 @@ pub fn neville_theta_ast(
     let inner = call(name, vec![pos, m.clone()]);
     let flipped = crate::evaluator::evaluate_expr_to_expr(&inner)?;
     return if kind == 's' {
-      crate::evaluator::evaluate_expr_to_expr(&times(vec![
-        Expr::Integer(-1),
-        flipped,
-      ]))
+      crate::evaluator::evaluate_expr_to_expr(&neg(flipped))
     } else {
       Ok(flipped)
     };

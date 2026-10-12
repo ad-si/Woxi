@@ -11,13 +11,11 @@ pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     // ExpIntegralEi[0] = -Infinity
-    Expr::Integer(0) => Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")])),
+    Expr::Integer(0) => Ok(neg(id_expr("Infinity"))),
     // ExpIntegralEi[Infinity] = Infinity
     Expr::Identifier(s) if s == "Infinity" => Ok(id_expr("Infinity")),
     // Numeric evaluation
-    Expr::Real(x) if *x == 0.0 => {
-      Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")]))
-    }
+    Expr::Real(x) if *x == 0.0 => Ok(neg(id_expr("Infinity"))),
     Expr::Real(x) => Ok(
       exp_integral_ei_f64(*x)
         .map_or_else(|| unevaluated("ExpIntegralEi", args), Expr::Real),
@@ -53,7 +51,7 @@ pub fn cos_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     // CosIntegral[0] = -Infinity
-    Expr::Integer(0) => Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")])),
+    Expr::Integer(0) => Ok(neg(id_expr("Infinity"))),
     // CosIntegral[Infinity] = 0
     Expr::Identifier(s) if s == "Infinity" => Ok(Expr::Integer(0)),
     // Numeric evaluation
@@ -672,12 +670,10 @@ pub fn log_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // LogIntegral[0] = 0
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     // LogIntegral[1] = -Infinity (pole at x=1 since ln(1)=0)
-    Expr::Integer(1) => Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")])),
+    Expr::Integer(1) => Ok(neg(id_expr("Infinity"))),
     // Numeric evaluation: Li(x) = Ei(ln(x))
     Expr::Real(x) if *x == 0.0 => Ok(Expr::Real(0.0)),
-    Expr::Real(x) if *x == 1.0 => {
-      Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")]))
-    }
+    Expr::Real(x) if *x == 1.0 => Ok(neg(id_expr("Infinity"))),
     Expr::Real(x) => Ok(match log_integral_f64(*x) {
       Some((re, 0.0)) => Expr::Real(re),
       Some((re, im)) => build_complex_float_expr(re, im),
@@ -760,7 +756,7 @@ pub fn sinh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => {
       if is_neg_infinity(other) {
         // SinhIntegral[-Infinity] = -Infinity
-        return Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")]));
+        return Ok(neg(id_expr("Infinity")));
       }
       // Unevaluated
       Ok(unevaluated("SinhIntegral", args))
@@ -844,7 +840,7 @@ pub fn cosh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     // CoshIntegral[0] = -Infinity
-    Expr::Integer(0) => Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")])),
+    Expr::Integer(0) => Ok(neg(id_expr("Infinity"))),
     // CoshIntegral[Infinity] = Infinity
     Expr::Identifier(s) if s == "Infinity" => Ok(id_expr("Infinity")),
     // Numeric evaluation

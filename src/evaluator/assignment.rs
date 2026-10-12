@@ -5452,9 +5452,7 @@ fn normalize_lhs_for_upset(lhs: &Expr) -> Expr {
         _ => return lhs.clone(),
       };
       let right_expr = match op {
-        BinaryOperator::Minus => {
-          times(vec![Expr::Integer(-1), (**right).clone()])
-        }
+        BinaryOperator::Minus => neg((**right).clone()),
         BinaryOperator::Divide => pow((**right).clone(), Expr::Integer(-1)),
         _ => (**right).clone(),
       };

@@ -10602,17 +10602,13 @@ fn evaluate_function_call_ast_inner(
       let q = ann_args.get(2).cloned().unwrap_or(Expr::Integer(1));
       let one_plus_i = || plus(vec![Expr::Integer(1), i.clone()]);
       // (1+i)^-tspan
-      let pow_neg_tspan =
-        || pow(one_plus_i(), times(vec![Expr::Integer(-1), tspan.clone()]));
+      let pow_neg_tspan = || pow(one_plus_i(), neg(tspan.clone()));
       // i_eff = (1+i)^q - 1
       let i_eff = plus(vec![pow(one_plus_i(), q), Expr::Integer(-1)]);
       // PV_annuity = p * (1 - (1+i)^-tspan) / i_eff
       let pv_annuity = times(vec![
         p,
-        plus(vec![
-          Expr::Integer(1),
-          times(vec![Expr::Integer(-1), pow_neg_tspan()]),
-        ]),
+        plus(vec![Expr::Integer(1), neg(pow_neg_tspan())]),
         pow(i_eff, Expr::Integer(-1)),
       ]);
       // fp * (1+i)^-tspan  (final payment discounted from time tspan)
@@ -10642,15 +10638,9 @@ fn evaluate_function_call_ast_inner(
       let pmt = ann_args[0].clone();
       let n = ann_args[1].clone();
       // (1 + i)^-n
-      let pow_neg_n = pow(
-        plus(vec![Expr::Integer(1), i.clone()]),
-        times(vec![Expr::Integer(-1), n]),
-      );
+      let pow_neg_n = pow(plus(vec![Expr::Integer(1), i.clone()]), neg(n));
       // 1 - (1+i)^-n
-      let numer = plus(vec![
-        Expr::Integer(1),
-        times(vec![Expr::Integer(-1), pow_neg_n]),
-      ]);
+      let numer = plus(vec![Expr::Integer(1), neg(pow_neg_n)]);
       // PV = pmt * numer / i
       let pv = times(vec![pmt, numer, pow(i.clone(), Expr::Integer(-1))]);
       // V_t = PV * (1+i)^t
@@ -10684,13 +10674,9 @@ fn evaluate_function_call_ast_inner(
       let q = ann_args[2].clone();
       let one_plus_i = || plus(vec![Expr::Integer(1), i.clone()]);
       // (1+i)^-tspan
-      let pow_neg_tspan =
-        pow(one_plus_i(), times(vec![Expr::Integer(-1), tspan]));
+      let pow_neg_tspan = pow(one_plus_i(), neg(tspan));
       // 1 - (1+i)^-tspan
-      let numer = plus(vec![
-        Expr::Integer(1),
-        times(vec![Expr::Integer(-1), pow_neg_tspan]),
-      ]);
+      let numer = plus(vec![Expr::Integer(1), neg(pow_neg_tspan)]);
       // i_eff = (1+i)^q - 1
       let i_eff = plus(vec![pow(one_plus_i(), q), Expr::Integer(-1)]);
       // PV = pmt * numer / i_eff
@@ -10738,7 +10724,7 @@ fn evaluate_function_call_ast_inner(
           (Expr::Integer(k as i128), c.clone())
         };
         // exponent = t - time_k
-        let exp = plus(vec![t.clone(), times(vec![Expr::Integer(-1), time_k])]);
+        let exp = plus(vec![t.clone(), neg(time_k)]);
         terms.push(times(vec![
           amount,
           pow(plus(vec![Expr::Integer(1), i.clone()]), exp),
@@ -12202,11 +12188,9 @@ fn nd_eigenvalues_diffusion_line(args: &[Expr]) -> Option<Expr> {
   };
 
   // Length L = b - a, evaluated to a number.
-  let length_expr = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
-    b_expr,
-    times(vec![Expr::Integer(-1), a_expr]),
-  ]))
-  .ok()?;
+  let length_expr =
+    crate::evaluator::evaluate_expr_to_expr(&plus(vec![b_expr, neg(a_expr)]))
+      .ok()?;
   let l = match crate::functions::math_ast::try_eval_to_f64(&length_expr) {
     Some(v) if v > 0.0 => v,
     _ => return None,

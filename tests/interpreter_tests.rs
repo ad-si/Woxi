@@ -1107,6 +1107,20 @@ mod interpreter_tests {
     assert!(svg.starts_with("<svg"));
   }
 
+  /// A `TabView` tab that is a `Dynamic[Module[…, plot]]` (held, so it only
+  /// *computes* a picture) shows that picture, not the symbolic call.
+  #[test]
+  fn test_tabview_dynamic_computed_plot_tab_is_drawn() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "TabView[<|\"a\" -> 1, \"b\" -> Dynamic[Module[{u = 2}, \
+       ListLinePlot[{1, u, 3}, ImageSize -> 310]]]|>, 2]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(svg.starts_with("<svg width=\"310\""));
+  }
+
   /// A `TabView` pane can also be given in the front end's own `{key,
   /// label -> content}` "Tabs" layout-tool form — a 2-element `List`
   /// pairing an explicit numeric key with a `label -> content` rule —

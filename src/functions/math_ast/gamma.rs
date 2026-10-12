@@ -442,7 +442,7 @@ fn gamma_incomplete_upper(
   if matches!(a, Expr::Integer(1)) {
     return crate::evaluator::evaluate_expr_to_expr(&pow(
       id_expr("E"),
-      times(vec![Expr::Integer(-1), z.clone()]),
+      neg(z.clone()),
     ));
   }
 
@@ -523,7 +523,7 @@ fn gamma_incomplete_upper_int_a(
   } else {
     plus(terms)
   };
-  let exp_neg_z = pow(id_expr("E"), times(vec![Expr::Integer(-1), z.clone()]));
+  let exp_neg_z = pow(id_expr("E"), neg(z.clone()));
   let result = if factorial == 1 {
     times(vec![exp_neg_z, sum])
   } else {
@@ -833,10 +833,7 @@ fn incomplete_beta_ast(
       matches!(a, Expr::Integer(1)) || matches!(a, Expr::Real(f) if *f == 1.0);
     if a_is_one {
       // -Log[1 - z]
-      let one_minus_z = plus(vec![
-        Expr::Integer(1),
-        times(vec![Expr::Integer(-1), z.clone()]),
-      ]);
+      let one_minus_z = plus(vec![Expr::Integer(1), neg(z.clone())]);
       let result = times(vec![Expr::Integer(-1), call1("Log", one_minus_z)]);
       let result = crate::evaluator::evaluate_expr_to_expr(&result)?;
       return if inexact {
@@ -1173,10 +1170,7 @@ pub fn beta_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       || matches!(z_expr, Expr::FunctionCall { name, .. } if name == "Rational"))
   {
     let n = *a + *b - 1;
-    let one_minus_z = plus(vec![
-      Expr::Integer(1),
-      times(vec![Expr::Integer(-1), z_expr.clone()]),
-    ]);
+    let one_minus_z = plus(vec![Expr::Integer(1), neg(z_expr.clone())]);
     let terms: Vec<Expr> = (*a..=n)
       .map(|j| {
         times(vec![
@@ -1463,7 +1457,7 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(a_expr, Expr::Integer(1)) {
     return crate::evaluator::evaluate_expr_to_expr(&pow(
       const_expr("E"),
-      times(vec![Expr::Integer(-1), z_expr.clone()]),
+      neg(z_expr.clone()),
     ));
   }
 
@@ -1487,10 +1481,7 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         z_pow,
       ]));
     }
-    let e_pow = pow(
-      const_expr("E"),
-      times(vec![Expr::Integer(-1), z_expr.clone()]),
-    );
+    let e_pow = pow(const_expr("E"), neg(z_expr.clone()));
     return crate::evaluator::evaluate_expr_to_expr(&times(vec![
       e_pow,
       plus(terms),

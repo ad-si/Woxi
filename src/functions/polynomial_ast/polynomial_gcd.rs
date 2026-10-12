@@ -532,7 +532,7 @@ fn normalize_poly_sign(
   };
 
   if is_negative {
-    let neg = times(vec![Expr::Integer(-1), poly.clone()]);
+    let neg = neg(poly.clone());
     crate::evaluator::evaluate_expr_to_expr(&neg)
   } else {
     Ok(poly.clone())

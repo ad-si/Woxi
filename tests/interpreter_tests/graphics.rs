@@ -7151,6 +7151,23 @@ mod plot3d {
       );
     }
 
+    // `FrameTicks -> None` on a field plot keeps the frame box but draws
+    // neither tick marks nor tick labels.
+    #[test]
+    fn frame_ticks_none_on_density_and_contour_plots() {
+      for head in ["DensityPlot", "ContourPlot"] {
+        let plain = export_svg(&format!(
+          "{head}[x + y, {{x, 0, 1}}, {{y, 0, 1}}, FrameTicks -> None]"
+        ));
+        let ticked =
+          export_svg(&format!("{head}[x + y, {{x, 0, 1}}, {{y, 0, 1}}]"));
+        assert!(!plain.contains("<text"), "{head}: {plain}");
+        assert!(!plain.contains("<line"), "{head}: {plain}");
+        assert!(plain.contains("<rect"), "{head} keeps its frame");
+        assert!(ticked.contains("<text"), "{head} default draws labels");
+      }
+    }
+
     // With a single series a `PlotStyle` list is one combined style rather
     // than a per-series cycle, so `{PointSize[…], Red}` gives one red
     // series. With several series the list still cycles.
@@ -21650,6 +21667,17 @@ mod rule_plot {
   }
 
   #[test]
+  fn totalistic_rule_draws_one_case_per_neighborhood_sum() {
+    // 3 colours, radius 1: sums 0..6 -> 7 cases x 4 cells = 28 rectangles
+    // plus the clip-path rect.
+    let svg = export_svg("RulePlot[CellularAutomaton[{1261, {3, 1}}]]");
+    assert_eq!(svg.matches("<rect").count(), 29);
+    // 2 colours, radius 2: sums 0..5 -> 6 cases x 6 cells.
+    let svg = export_svg("RulePlot[CellularAutomaton[{20, {2, 1}, 2}]]");
+    assert_eq!(svg.matches("<rect").count(), 37);
+  }
+
+  #[test]
   fn elementary_rule_draws_every_neighborhood() {
     // 8 neighborhoods x (3 top cells + 1 result cell) = 32 rectangles
     // plus the clip-path rect.
@@ -21671,8 +21699,9 @@ mod rule_plot {
 
   #[test]
   fn totalistic_three_color_rule() {
-    // 3^3 neighborhoods, 4 rectangles each, plus the clip-path rect.
-    let svg = export_svg("RulePlot[CellularAutomaton[{1234, {3, 1}}]]");
+    // Non-totalistic: 3^3 neighborhoods, 4 rectangles each, plus the
+    // clip-path rect.
+    let svg = export_svg("RulePlot[CellularAutomaton[{1234, 3, 1}]]");
     assert_eq!(svg.matches("<rect").count(), 27 * 4 + 1);
   }
 
@@ -23748,6 +23777,36 @@ mod manipulate {
     manipulate_spec_to_json, parse_manipulate_bindings,
   };
   use woxi::interpret_to_expr;
+
+  // A hand-built control panel — `ExpressionCell[Grid[…]]` holding bare
+  // `Checkbox[Dynamic[v]]`/`Manipulator[Dynamic[v], …]`/`SetterBar[Dynamic[v],
+  // …]` controls — is neither a vsform error nor inert text: each bound
+  // control becomes a real control.
+  #[test]
+  fn spec_expression_cell_dynamic_controls_become_controls() {
+    let src = "Manipulate[If[on, a, -a], {a, 0, 5}, \
+       ExpressionCell[Row[{\"  \", Grid[{{Checkbox[Dynamic[on]], \"on\"}, \
+       {Row[{\"amount \", Manipulator[Dynamic[b], {1, 9, 2}]}]}, \
+       {SetterBar[Dynamic[m], {1 -> One, 2 -> Two}]}}]}]]]";
+    let result = woxi::interpret_with_stdout(src).unwrap();
+    assert!(
+      !result.warnings.iter().any(|w| w.contains("vsform")),
+      "no vsform expected, got {:?}",
+      result.warnings
+    );
+    let expr = interpret_to_expr(src).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Continuous { name, .. }
+        | ManipulateControl::Discrete { name, .. } => Some(name.as_str()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(names, vec!["a", "on", "b", "m"]);
+  }
 
   // A string-tagged variable spec (`"tag" -> {var, min, max}`) is the
   // control itself — including one whose bounds name sibling controls.
@@ -33878,4 +33937,44 @@ fn graphics3d_view_vertical_turns_the_picture() {
   assert!(dx < 1e-6 && dy > 1.0, "default: {dx} {dy}");
   let (dx, dy) = extent(&line(", ViewVertical -> {1, 0, 0}"));
   assert!(dy < 1e-6 && dx > 1.0, "tilted: {dx} {dy}");
+}
+
+mod gosper_curve_tests {
+  use woxi::interpret;
+
+  // GosperCurve[n] is a Line with 7^n + 1 vertices on the triangular lattice.
+  #[test]
+  fn vertex_counts() {
+    assert_eq!(interpret("Head[GosperCurve[2]]").unwrap(), "Line");
+    assert_eq!(interpret("Length[GosperCurve[1][[1]]]").unwrap(), "8");
+    assert_eq!(interpret("Length[GosperCurve[2][[1]]]").unwrap(), "50");
+    assert_eq!(interpret("Length[GosperCurve[3][[1]]]").unwrap(), "344");
+  }
+
+  // Every step has unit length.
+  #[test]
+  fn unit_steps() {
+    assert_eq!(
+      interpret(
+        "Union[Round[Norm /@ Differences[GosperCurve[2][[1]]], 0.0001]]"
+      )
+      .unwrap(),
+      "{1.}"
+    );
+  }
+
+  #[test]
+  fn invalid_order() {
+    assert_eq!(interpret("GosperCurve[0]").unwrap(), "GosperCurve[0]");
+  }
+
+  // Usable inside Graphics.
+  #[test]
+  fn renders() {
+    assert_eq!(
+      interpret("Head[ExportString[Graphics[GosperCurve[2]], \"SVG\"]]")
+        .unwrap(),
+      "String"
+    );
+  }
 }

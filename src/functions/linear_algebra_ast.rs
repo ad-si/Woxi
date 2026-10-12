@@ -717,10 +717,7 @@ fn cauchy_generating_vectors(
   }
 
   let sub = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
-    evaluate_expr_to_expr(&plus(vec![
-      a.clone(),
-      times(vec![Expr::Integer(-1), b.clone()]),
-    ]))
+    evaluate_expr_to_expr(&plus(vec![a.clone(), neg(b.clone())]))
   };
 
   let x: Vec<Expr> = s.iter().map(|r| r[0].clone()).collect();
@@ -1922,8 +1919,7 @@ pub fn companion_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if i >= 1 {
       row[i - 1] = Expr::Integer(1); // subdiagonal
     }
-    row[n - 1] =
-      evaluate_expr_to_expr(&times(vec![Expr::Integer(-1), c.clone()]))?;
+    row[n - 1] = evaluate_expr_to_expr(&neg(c.clone()))?;
     matrix.push(row);
   }
   if matches!(
@@ -2182,7 +2178,7 @@ pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let component = if (n + i + 1).is_multiple_of(2) {
         det
       } else {
-        evaluate_expr_to_expr(&times(vec![Expr::Integer(-1), det]))?
+        evaluate_expr_to_expr(&neg(det))?
       };
       result.push(component);
     }
@@ -3055,11 +3051,7 @@ fn divide_exact_root(root: &Expr, d: i128) -> Option<Expr> {
       operand,
     } => {
       let pos = divide_exact_root(operand, d)?;
-      crate::evaluator::evaluate_expr_to_expr(&times(vec![
-        Expr::Integer(-1),
-        pos,
-      ]))
-      .ok()
+      crate::evaluator::evaluate_expr_to_expr(&neg(pos)).ok()
     }
     Expr::FunctionCall { name, args }
       if name == "Times"
@@ -3067,11 +3059,7 @@ fn divide_exact_root(root: &Expr, d: i128) -> Option<Expr> {
         && matches!(&args[0], Expr::Integer(-1)) =>
     {
       let pos = divide_exact_root(&args[1], d)?;
-      crate::evaluator::evaluate_expr_to_expr(&times(vec![
-        Expr::Integer(-1),
-        pos,
-      ]))
-      .ok()
+      crate::evaluator::evaluate_expr_to_expr(&neg(pos)).ok()
     }
     _ => crate::evaluator::evaluate_expr_to_expr(&div2(
       root.clone(),
@@ -3386,10 +3374,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let sqrt_disc = call1("Sqrt", disc);
     let trace = plus(vec![a, d]);
     let lambda_minus = div2(
-      plus(vec![
-        trace.clone(),
-        times(vec![Expr::Integer(-1), sqrt_disc.clone()]),
-      ]),
+      plus(vec![trace.clone(), neg(sqrt_disc.clone())]),
       Expr::Integer(2),
     );
     let lambda_plus = div2(plus(vec![trace, sqrt_disc]), Expr::Integer(2));
@@ -3505,7 +3490,7 @@ fn symbolic_rotation_eigenvalues(matrix: &[Vec<Expr>]) -> Option<Vec<Expr>> {
     return None;
   }
   // bottom-left must equal `-(top-right)`
-  let neg_b = times(vec![Expr::Integer(-1), b.clone()]);
+  let neg_b = neg(b.clone());
   let neg_b_eval = crate::evaluator::evaluate_expr_to_expr(&neg_b).ok()?;
   if expr_to_string(c) != expr_to_string(&neg_b_eval) {
     return None;
@@ -3524,7 +3509,7 @@ fn symbolic_rotation_eigenvalues(matrix: &[Vec<Expr>]) -> Option<Vec<Expr>> {
   // = {3, 1}, not {2 - I^2, 2 + I^2}.
   let i = call("Complex", vec![Expr::Integer(0), Expr::Integer(1)]);
   let i_b = times(vec![i, b.clone()]);
-  let minus_ib = times(vec![Expr::Integer(-1), i_b.clone()]);
+  let minus_ib = neg(i_b.clone());
   let lo = plus(vec![a.clone(), minus_ib]);
   let hi = plus(vec![a.clone(), i_b]);
   let lo = crate::evaluator::evaluate_expr_to_expr(&lo).ok()?;
@@ -3991,10 +3976,7 @@ fn complex_2x2_eigenvectors(
   let quotient_vector =
     |num_minuend: &Expr, num_subtrahend: &Expr, den: &Expr| {
       let x = evaluate_expr_to_expr(&div2(
-        plus(vec![
-          num_minuend.clone(),
-          times(vec![Expr::Integer(-1), num_subtrahend.clone()]),
-        ]),
+        plus(vec![num_minuend.clone(), neg(num_subtrahend.clone())]),
         den.clone(),
       ))?;
       if let Some(gq) = expr_to_gq(&x) {
@@ -4028,7 +4010,7 @@ fn complex_2x2_eigenvectors(
       Ok(basis(true))
     } else {
       quotient_vector(b, &Expr::Integer(0), &{
-        plus(vec![d.clone(), times(vec![Expr::Integer(-1), a.clone()])])
+        plus(vec![d.clone(), neg(a.clone())])
       })
     }
   };
@@ -7938,10 +7920,7 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let fitted_expr = times(vec![
     Expr::Integer(1),
     pow(
-      plus(vec![
-        Expr::Integer(1),
-        call("Exp", vec![times(vec![Expr::Integer(-1), linear_expr])]),
-      ]),
+      plus(vec![Expr::Integer(1), call("Exp", vec![neg(linear_expr)])]),
       Expr::Integer(-1),
     ),
   ]);
@@ -9563,10 +9542,7 @@ pub fn matrix_function_ast(
   }
 
   // λ₁ − λ₂ decides between Sylvester (distinct) and Jordan (repeated)
-  let diff = make(
-    "Plus",
-    vec![l1.clone(), times(vec![Expr::Integer(-1), l2.clone()])],
-  )?;
+  let diff = make("Plus", vec![l1.clone(), neg(l2.clone())])?;
 
   let (alpha, beta) = if is_zero(&diff) {
     // Repeated eigenvalue λ: α = f'(λ), β = f(λ) − λ·f'(λ)
@@ -9588,10 +9564,7 @@ pub fn matrix_function_ast(
     let f_l1 = make(func, vec![l1.clone()])?;
     let f_l2 = make(func, vec![l2.clone()])?;
     // α = (f(λ₁) − f(λ₂)) / (λ₁ − λ₂)
-    let alpha_num = make(
-      "Plus",
-      vec![f_l1.clone(), times(vec![Expr::Integer(-1), f_l2.clone()])],
-    )?;
+    let alpha_num = make("Plus", vec![f_l1.clone(), neg(f_l2.clone())])?;
     let alpha = make("Divide", vec![alpha_num, diff.clone()])?;
     // β = (λ₁·f(λ₂) − λ₂·f(λ₁)) / (λ₁ − λ₂)
     let beta_num = make(
@@ -9841,7 +9814,7 @@ pub fn jordan_decomposition_ast(
   let c_zero = same(&c, &zero);
   let repeated = same(&l1, &l2);
 
-  let sub = |x: Expr, y: Expr| plus(vec![x, times(vec![Expr::Integer(-1), y])]);
+  let sub = |x: Expr, y: Expr| plus(vec![x, neg(y)]);
   let matrix = |c1: (Expr, Expr), c2: (Expr, Expr)| {
     Expr::List(
       vec![
@@ -10083,10 +10056,7 @@ fn subtract_scalar_from_diagonal(
     let mut new_row: Vec<Expr> = Vec::with_capacity(row.len());
     for (j, cell) in row.iter().enumerate() {
       if i == j {
-        let diff = plus(vec![
-          cell.clone(),
-          times(vec![Expr::Integer(-1), lam.clone()]),
-        ]);
+        let diff = plus(vec![cell.clone(), neg(lam.clone())]);
         new_row.push(crate::evaluator::evaluate_expr_to_expr(&diff).ok()?);
       } else {
         new_row.push(cell.clone());
@@ -12480,7 +12450,7 @@ pub fn symmetrize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut term = flat[pos_to_linear(&permuted, &dims)].clone();
       if flips {
         term = match kind {
-          SymmetryKind::Antisymmetric => times(vec![Expr::Integer(-1), term]),
+          SymmetryKind::Antisymmetric => neg(term),
           SymmetryKind::Hermitian => call1("Conjugate", term),
           _ => term,
         };
@@ -12605,9 +12575,7 @@ fn symmetrized_array_entries(
       let mut entry = value.clone();
       if odd {
         entry = match kind {
-          SymmetryKind::Antisymmetric => {
-            evaluate_expr_to_expr(&times(vec![Expr::Integer(-1), entry]))?
-          }
+          SymmetryKind::Antisymmetric => evaluate_expr_to_expr(&neg(entry))?,
           SymmetryKind::Hermitian => {
             evaluate_expr_to_expr(&call1("Conjugate", entry))?
           }

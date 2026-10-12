@@ -401,11 +401,7 @@ pub fn duration_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             hi = *k;
           }
         }
-        let span = ev(&plus(vec![
-          hi.1.clone(),
-          times(vec![Expr::Integer(-1), lo.1.clone()]),
-        ]))
-        .ok()?;
+        let span = ev(&plus(vec![hi.1.clone(), neg(lo.1.clone())])).ok()?;
         Some(seconds(span))
       })
     }
