@@ -6441,8 +6441,14 @@ fn parse_tick_spec(expr: &Expr) -> TickSpec {
         .iter()
         .filter_map(|entry| match entry {
           // `{pos, label}` gives the mark its own text.
+          // An `Invisible` label keeps the mark but paints no text.
           Expr::List(pair) if pair.len() >= 2 => {
-            Some((expr_to_f64(&pair[0])?, Some(expr_to_svg_markup(&pair[1]))))
+            let label = if peel_invisible(&pair[1]).is_some() {
+              String::new()
+            } else {
+              expr_to_svg_markup(&pair[1])
+            };
+            Some((expr_to_f64(&pair[0])?, Some(label)))
           }
           // A bare position is labelled with the expression standing at
           // it, so `Ticks -> {{-Pi, 0, Pi}, …}` reads "-π", "0", "π"

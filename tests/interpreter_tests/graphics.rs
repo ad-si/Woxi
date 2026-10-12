@@ -2278,6 +2278,19 @@ mod graphics {
       assert!(svg.contains(">wa</text>"), "{svg}");
     }
 
+    /// A tick whose label is `Invisible[…]` keeps its mark but paints no
+    /// text (not the literal `Invisible[1/6]`).
+    #[test]
+    fn invisible_tick_label_paints_no_text() {
+      let svg = export_svg(
+        "Graphics[{Rectangle[{0, 0}, {1, 1}]}, Axes -> {True, False}, \
+         PlotRange -> {{0, 1}, {0, 1}}, \
+         Ticks -> {{{0.25, Invisible[1/6]}, {0.5, \"mid\"}}, Automatic}]",
+      );
+      assert!(svg.contains(">mid</text>"), "{svg}");
+      assert!(!svg.contains("Invisible"), "{svg}");
+    }
+
     /// A y axis at an x range's padded edge (data starting at 0) keeps the
     /// outside gutter, so its tick labels are not cut off at the left.
     #[test]
