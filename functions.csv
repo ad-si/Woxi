@@ -1004,7 +1004,7 @@ FrontEndExecute,Requires external services or GUI infrastructure,🚫,io,3.0,982
 ScientificForm,Displays number in scientific notation,✅,pure,1.0,983
 LocatorPane,Draggable locator over a graphic; renders as an interactive 2D pane,✅,unevaluated,6.0,984
 DirectedEdges,Option saying whether graph edges are drawn as arrows,✅,none,6.0,986
-ViewVertical,,🚫,,2.0,986
+ViewVertical,Option for 3D up direction on screen,✅,pure,2.0,986
 StyleDefinitions,,🚫,,3.0,987
 RoundingRadius,,🚫,,7.0,988
 Ball,Geometric primitive representing a ball (filled sphere); drawn in Graphics and Graphics3D; a list of centres draws one ball per centre,✅,none,10.0,989

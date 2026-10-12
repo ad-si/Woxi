@@ -33911,6 +33911,34 @@ fn graphics_grid_button_cells_carry_hit_regions() {
   assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 4);
 }
 
+/// `ViewVertical` picks the direction that points up on screen: looking
+/// along +y, the z axis is vertical by default but lies flat once the
+/// vertical is the x axis.
+#[test]
+fn graphics3d_view_vertical_turns_the_picture() {
+  let line = |opts: &str| {
+    export_svg(&format!(
+      "Graphics3D[{{Thick, Line[{{{{0, 0, 0}}, {{0, 0, 1}}}}]}}, \
+         Boxed -> False, ViewPoint -> Front{opts}]"
+    ))
+  };
+  let extent = |svg: &str| {
+    let line = svg.lines().find(|l| l.starts_with("<line")).unwrap();
+    let attr = |name: &str| -> f64 {
+      let rest = line.split(&format!("{name}=\"")).nth(1).unwrap();
+      rest.split('"').next().unwrap().parse().unwrap()
+    };
+    (
+      (attr("x1") - attr("x2")).abs(),
+      (attr("y1") - attr("y2")).abs(),
+    )
+  };
+  let (dx, dy) = extent(&line(""));
+  assert!(dx < 1e-6 && dy > 1.0, "default: {dx} {dy}");
+  let (dx, dy) = extent(&line(", ViewVertical -> {1, 0, 0}"));
+  assert!(dy < 1e-6 && dx > 1.0, "tilted: {dx} {dy}");
+}
+
 mod gosper_curve_tests {
   use woxi::interpret;
 

@@ -23,12 +23,42 @@ pub(crate) struct Point3D {
 pub(crate) struct Camera {
   pub azimuth: f64,
   pub elevation: f64,
+  /// `ViewVertical`: the direction that points up on screen. The default
+  /// `{0, 0, 1}` is the one the azimuth/elevation basis already assumes.
+  pub vertical: [f64; 3],
 }
 
 impl Camera {
   /// Wolfram's default `ViewPoint`, in units of the longest side of the
   /// displayed box.
   pub(crate) const DEFAULT_VIEW_POINT: [f64; 3] = [1.3, -2.4, 2.0];
+  pub(crate) const DEFAULT_VERTICAL: [f64; 3] = [0.0, 0.0, 1.0];
+
+  /// Orthonormal screen basis `(right, up)` for a `ViewVertical` other than
+  /// the default: `up` is the vertical with its component along the view
+  /// direction removed, as Wolfram levels the camera against it. `None` for
+  /// a degenerate vertical (parallel to the view direction).
+  fn tilted_basis(&self) -> Option<([f64; 3], [f64; 3])> {
+    let (sa, ca) = self.azimuth.sin_cos();
+    let (se, ce) = self.elevation.sin_cos();
+    let d = [ce * ca, ce * sa, se];
+    let v = self.vertical;
+    let cross = |a: [f64; 3], b: [f64; 3]| {
+      [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+      ]
+    };
+    let right = cross(v, d);
+    let len =
+      (right[0] * right[0] + right[1] * right[1] + right[2] * right[2]).sqrt();
+    if len < 1e-9 {
+      return None;
+    }
+    let right = [right[0] / len, right[1] / len, right[2] / len];
+    Some((right, cross(d, right)))
+  }
 }
 
 impl Default for Camera {
@@ -37,6 +67,7 @@ impl Default for Camera {
     Self {
       azimuth: -1.07,  // ~-61 degrees
       elevation: 0.63, // ~36 degrees
+      vertical: Camera::DEFAULT_VERTICAL,
     }
   }
 }
@@ -230,6 +261,14 @@ const MESH_STEP: usize = 3;
 /// Orthographic projection from a camera at spherical (azimuth, elevation).
 /// Returns (screen_x, screen_y) in projected coordinates.
 pub(crate) fn project(p: Point3D, cam: &Camera) -> (f64, f64) {
+  if cam.vertical != Camera::DEFAULT_VERTICAL
+    && let Some((r, u)) = cam.tilted_basis()
+  {
+    return (
+      p.x * r[0] + p.y * r[1] + p.z * r[2],
+      p.x * u[0] + p.y * u[1] + p.z * u[2],
+    );
+  }
   // Straight down (or up) the z axis the screen basis is degenerate — the
   // vertical `{0, 0, 1}` the camera is levelled against points at the
   // viewer — so Wolfram falls back to the plain top view: x to the right
@@ -5901,12 +5940,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             _ => None,
           };
           if let Some(vp) = symbolic.or_else(|| eval_vec3(replacement)) {
-            camera = Camera {
-              azimuth: vp[1].atan2(vp[0]),
-              elevation: vp[2].atan2(vp[0].hypot(vp[1])),
-            };
+            camera.azimuth = vp[1].atan2(vp[0]);
+            camera.elevation = vp[2].atan2(vp[0].hypot(vp[1]));
             view_distance =
               (vp[0] * vp[0] + vp[1] * vp[1] + vp[2] * vp[2]).sqrt();
+          }
+        }
+        // `ViewVertical -> {x, y, z}`: which way is up on screen.
+        "ViewVertical" => {
+          if let Some(v) = eval_vec3(replacement)
+            && v.iter().any(|c| *c != 0.0)
+          {
+            camera.vertical = v;
           }
         }
         // `ViewAngle -> θ` (radians, or a `Quantity`/`Degree` product).
