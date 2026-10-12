@@ -7622,6 +7622,31 @@ mod tests {
     }
   }
 
+  /// A `SaveDefinitions -> True` dump writes `n_?OddQ` / `n_?EvenQ` in
+  /// FullForm (`PatternTest[Pattern[n, Blank[]], OddQ]`). Two mutually
+  /// recursive rules that differ only in that test used to collapse into one
+  /// rule, so the helper recursed forever and the widget showed
+  /// `TerminatedEvaluation[RecursionLimit]`.
+  #[test]
+  fn instantiate_stored_manipulate_keeps_fullform_pattern_tests() {
+    let code = "Manipulate[collatz[k], {{k, 6, \"start\"}, 1, 20, 1}, \
+      SaveDefinitions -> True]";
+    let stored = "DynamicModuleBox[{$CellContext`k$$ = 6}, \
+      DynamicBox[Manipulate`ManipulateBoxes[1, StandardForm, \
+      \"Variables\" :> {$CellContext`k$$ = 6}, \
+      \"Body\" :> $CellContext`collatz[$CellContext`k$$], \
+      \"Specifications\" :> {{{$CellContext`k$$, 6, \"start\"}, 1, 20, 1}}, \
+      \"Options\" :> {}, \"DefaultOptions\" :> {}]],\n\
+      Initialization:>({$CellContext`collatz[PatternTest[Pattern[\
+      $CellContext`n, Blank[]], EvenQ]] := $CellContext`n/2, \
+      $CellContext`collatz[PatternTest[Pattern[$CellContext`n, Blank[]], \
+      OddQ]] := 3 $CellContext`n + 1}; Typeset`initDone$$ = True)]";
+    let state = instantiate_stored_manipulate(code, stored)
+      .expect("instantiate_stored_manipulate should build a widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("3"));
+  }
+
   /// A Manipulate whose setter choices come from a notebook variable that
   /// does not evaluate here (the cell that builds it fails outside the
   /// author's original session) lost that control entirely when rebuilt from
