@@ -6919,7 +6919,7 @@ fn combine_reciprocal_trig(
   let negate_exp = |e: &Expr| -> Expr {
     match e {
       Expr::Integer(n) => Expr::Integer(-n),
-      _ => times(vec![Expr::Integer(-1), e.clone()]),
+      _ => neg(e.clone()),
     }
   };
 
@@ -12932,7 +12932,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let im_part = if im == 1.0 {
           id_expr("I")
         } else if im == -1.0 {
-          times(vec![Expr::Integer(-1), id_expr("I")])
+          neg(id_expr("I"))
         } else {
           times(vec![Expr::Real(im), id_expr("I")])
         };

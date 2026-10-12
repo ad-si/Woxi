@@ -7415,10 +7415,7 @@ fn threshold_one_method(x: &Expr, t: &Expr, method: ThreshMethod) -> Expr {
       call1("Sign", x.clone()),
       call(
         "Max",
-        vec![
-          plus(vec![abs_x, times(vec![Expr::Integer(-1), t.clone()])]),
-          Expr::Integer(0),
-        ],
+        vec![plus(vec![abs_x, neg(t.clone())]), Expr::Integer(0)],
       ),
     ]),
     // If[|x| > t, x - t^2/x, 0]

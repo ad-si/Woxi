@@ -1715,7 +1715,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if i == 1 {
             terms.push(Expr::Integer(1));
           } else {
-            let neg_order = times(vec![Expr::Integer(-1), order.clone()]);
+            let neg_order = neg(order.clone());
             terms.push(pow2(Expr::Integer(i), neg_order));
           }
         }
@@ -1918,7 +1918,7 @@ pub fn alternating_harmonic_number_ast(
         let eta = times(vec![
           plus(vec![Expr::Integer(-2), two_pow_r(r.clone())]),
           call1("Zeta", r.clone()),
-          two_pow_r(times(vec![Expr::Integer(-1), r.clone()])),
+          two_pow_r(neg(r.clone())),
         ]);
         return crate::evaluator::evaluate_expr_to_expr(&eta);
       }
@@ -1926,13 +1926,7 @@ pub fn alternating_harmonic_number_ast(
         // Sum[(-1)^(k+1) x^k/k^r, {k,1,Infinity}] = -PolyLog[r, -x]
         let poly_log = times(vec![
           Expr::Integer(-1),
-          call(
-            "PolyLog",
-            vec![
-              args[1].clone(),
-              times(vec![Expr::Integer(-1), args[2].clone()]),
-            ],
-          ),
+          call("PolyLog", vec![args[1].clone(), neg(args[2].clone())]),
         ]);
         return crate::evaluator::evaluate_expr_to_expr(&poly_log);
       }
@@ -2089,7 +2083,7 @@ pub fn hyper_harmonic_number_ast(
   let neg_s = |s: &Expr| -> Expr {
     match s {
       Expr::Integer(p) => Expr::Integer(-p),
-      _ => times(vec![Expr::Integer(-1), s.clone()]),
+      _ => neg(s.clone()),
     }
   };
 

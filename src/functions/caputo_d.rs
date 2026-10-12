@@ -16,9 +16,7 @@ fn as_calls(expr: &Expr) -> Expr {
       let (l, r) = (as_calls(left), as_calls(right));
       match op {
         BinaryOperator::Plus => plus(vec![l, r]),
-        BinaryOperator::Minus => {
-          plus(vec![l, times(vec![Expr::Integer(-1), r])])
-        }
+        BinaryOperator::Minus => plus(vec![l, neg(r)]),
         BinaryOperator::Times => times(vec![l, r]),
         BinaryOperator::Divide => times(vec![l, pow(r, Expr::Integer(-1))]),
         BinaryOperator::Power => pow(l, r),
@@ -28,7 +26,7 @@ fn as_calls(expr: &Expr) -> Expr {
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
-    } => times(vec![Expr::Integer(-1), as_calls(operand)]),
+    } => neg(as_calls(operand)),
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args.iter().map(as_calls).collect::<Vec<_>>().into(),

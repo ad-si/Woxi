@@ -2253,7 +2253,7 @@ fn signed_infinity(sign: i64) -> Expr {
   } else {
     // `Times[-1, Infinity]` renders as `-Infinity` (matching wolframscript);
     // `DirectedInfinity[-1]` would print in its unevaluated head form here.
-    times(vec![Expr::Integer(-1), id_expr("Infinity")])
+    neg(id_expr("Infinity"))
   }
 }
 
@@ -6566,7 +6566,7 @@ fn denest_one_sqrt(e: &Expr) -> Option<Expr> {
   let sqrt_d = sqrt_of(d);
   let sqrt_e = sqrt_of(e_val);
   // b > 0: Sqrt[e] + Sqrt[d]; b < 0: Sqrt[d] - Sqrt[e].
-  let neg_sqrt_e = times(vec![Expr::Integer(-1), sqrt_e.clone()]);
+  let neg_sqrt_e = neg(sqrt_e.clone());
   let sum = plus(if b >= 0 {
     vec![sqrt_e, sqrt_d]
   } else {
@@ -7035,7 +7035,7 @@ fn simplify_polynomial_factors(
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
-    } => times(vec![Expr::Integer(-1), recurse(operand)?]),
+    } => neg(recurse(operand)?),
     _ => {
       if collect_additive_terms(e).len() < 2 {
         return Some(e.clone());
@@ -7173,11 +7173,9 @@ fn extract_gamma_ratio(expr: &Expr) -> Option<(Expr, Expr)> {
 /// `(x+1)+1` collapses to `x+2`), but the product itself is left factored.
 fn gamma_ratio_product(expr: &Expr) -> Option<Expr> {
   let (a, b) = extract_gamma_ratio(expr)?;
-  let diff = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
-    a,
-    times(vec![Expr::Integer(-1), b.clone()]),
-  ]))
-  .ok()?;
+  let diff =
+    crate::evaluator::evaluate_expr_to_expr(&plus(vec![a, neg(b.clone())]))
+      .ok()?;
   // wolframscript reduces the rising-factorial product only for k <= 3 and
   // leaves larger ratios (e.g. Gamma[n+4]/Gamma[n]) unevaluated.
   let k = match diff {

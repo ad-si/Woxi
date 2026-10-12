@@ -1037,7 +1037,7 @@ fn try_dirac_delta_integral(
   }
 
   // Root x0 = -d / c.
-  let root = eval(div(times(vec![Expr::Integer(-1), d]), c.clone()))?;
+  let root = eval(div(neg(d), c.clone()))?;
   // g(x): the product of the non-delta factors.
   let g = if others.is_empty() {
     Expr::Integer(1)
@@ -1252,7 +1252,7 @@ fn try_definite_integral(
         _ => {}
       }
     } else if is_pi(hi) && trig_name == "Sin" {
-      let result = times(vec![Expr::Integer(-1), pi_log2]);
+      let result = neg(pi_log2);
       return Some(
         crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result),
       );
@@ -10040,10 +10040,7 @@ fn limit_sqrt_difference(expr: &Expr, var: &str, point: &Expr) -> Option<Expr> {
       op: BinaryOperator::Minus,
       left,
       right,
-    } => vec![
-      (**left).clone(),
-      times(vec![Expr::Integer(-1), (**right).clone()]),
-    ],
+    } => vec![(**left).clone(), neg((**right).clone())],
     _ => return None,
   };
   if terms.len() != 2 {
@@ -10060,7 +10057,7 @@ fn limit_sqrt_difference(expr: &Expr, var: &str, point: &Expr) -> Option<Expr> {
     let mag = if probe > 0.0 {
       t.clone()
     } else {
-      simplify(times(vec![Expr::Integer(-1), t.clone()]))
+      simplify(neg(t.clone()))
     };
     let radicand = sqrt_radicand(&mag, var)?;
     if probe > 0.0 {
@@ -13990,7 +13987,7 @@ fn additive_terms(expr: &Expr) -> Vec<Expr> {
       right,
     } => {
       let mut t = additive_terms(left);
-      let neg = times(vec![Expr::Integer(-1), (**right).clone()]);
+      let neg = neg((**right).clone());
       t.extend(additive_terms(&neg));
       t
     }
@@ -14055,7 +14052,7 @@ fn leading_fractional_power(
     }
     let diff = plus(vec![
       e.clone(),
-      times(vec![Expr::Integer(-1), Expr::Identifier(var.to_string())]),
+      neg(Expr::Identifier(var.to_string())),
       x0.clone(),
     ]);
     matches!(
@@ -14736,7 +14733,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       let log_arg = if assume_negative {
         // Log[-x]
-        times(vec![Expr::Integer(-1), Expr::Identifier(var_name.clone())])
+        neg(Expr::Identifier(var_name.clone()))
       } else {
         // Log[x]
         Expr::Identifier(var_name.clone())
@@ -14820,19 +14817,12 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ])]
         .into(),
       };
-      let log_neg_x = call1(
-        "Log",
-        times(vec![Expr::Integer(-1), Expr::Identifier(var_name.clone())]),
-      );
+      let log_neg_x = call1("Log", neg(Expr::Identifier(var_name.clone())));
       let two_log_x = times(vec![
         Expr::Integer(2),
         call1("Log", Expr::Identifier(var_name.clone())),
       ]);
-      let log_sum = plus(vec![
-        log_neg_inv_x,
-        times(vec![Expr::Integer(-1), log_neg_x]),
-        two_log_x,
-      ]);
+      let log_sum = plus(vec![log_neg_inv_x, neg(log_neg_x), two_log_x]);
       let reg_term = div2(log_sum, Expr::Integer(2));
 
       let result = plus2(exp_part, reg_term);
@@ -15124,7 +15114,7 @@ fn gaussian_closed_form_integral(
 ) -> Result<Expr, InterpreterError> {
   // Build `-α` and `Sqrt[-α]` as exact expressions so high-precision
   // evaluation later doesn't suffer f64-to-Real downcasting.
-  let neg_alpha = times(vec![Expr::Integer(-1), alpha.clone()]);
+  let neg_alpha = neg(alpha.clone());
   let neg_alpha_eval = crate::evaluator::evaluate_expr_to_expr(&neg_alpha)?;
   let sqrt_neg_alpha = call1("Sqrt", neg_alpha_eval.clone());
   let pi_over_neg_alpha = div2(const_expr("Pi"), neg_alpha_eval.clone());
@@ -17517,11 +17507,8 @@ fn kronecker_delta_offset(kernel: &Expr, n_var: &str) -> Option<Expr> {
   };
   let d = at(0)?; // arg(0) = d
   let a1 = at(1)?; // arg(1) = 1 + d, so the coefficient of n is a1 - d
-  let slope = crate::evaluator::evaluate_expr_to_expr(&plus2(
-    a1,
-    times(vec![Expr::Integer(-1), d.clone()]),
-  ))
-  .ok()?;
+  let slope =
+    crate::evaluator::evaluate_expr_to_expr(&plus2(a1, neg(d.clone()))).ok()?;
   if matches!(slope, Expr::Integer(1)) && is_constant_wrt(&d, n_var) {
     Some(d)
   } else {
@@ -17627,12 +17614,7 @@ pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: vec![
       product,
       Expr::List(
-        vec![
-          k_expr,
-          times(vec![Expr::Integer(-1), id_expr("Infinity")]),
-          id_expr("Infinity"),
-        ]
-        .into(),
+        vec![k_expr, neg(id_expr("Infinity")), id_expr("Infinity")].into(),
       ),
     ]
     .into(),
@@ -18693,7 +18675,7 @@ fn factorial_series_at_zero(var_name: &str, order: i128) -> Expr {
   for k in 0..=order {
     let raw = match k {
       0 => int(1),
-      1 => times(vec![int(-1), sym("EulerGamma")]),
+      1 => neg(sym("EulerGamma")),
       2 => {
         // (6 EulerGamma^2 + Pi^2) / 12.
         let num = plus(vec![
@@ -18746,14 +18728,14 @@ fn weber_anger_series_at_zero(
     if is_weber {
       // 1 - sign*Cos where sign = (-1)^k
       if k_even {
-        plus(vec![int(1), times(vec![int(-1), trig])])
+        plus(vec![int(1), neg(trig)])
       } else {
         plus(vec![int(1), trig])
       }
     } else if k_even {
       trig
     } else {
-      times(vec![int(-1), trig])
+      neg(trig)
     }
   };
 
@@ -18821,13 +18803,12 @@ fn factorial2_series_at_zero(var_name: &str, order: i128) -> Expr {
         // (-EulerGamma + Log[2]) / 2
         times(vec![
           rational(1, 2),
-          plus(vec![times(vec![int(-1), sym("EulerGamma")]), log(int(2))]),
+          plus(vec![neg(sym("EulerGamma")), log(int(2))]),
         ])
       }
       2 => {
         // (6 (EulerGamma - Log[2])^2 + Pi^2 (1 + Log[64] - 6 Log[Pi])) / 48
-        let eg_minus_log2 =
-          plus(vec![sym("EulerGamma"), times(vec![int(-1), log(int(2))])]);
+        let eg_minus_log2 = plus(vec![sym("EulerGamma"), neg(log(int(2)))]);
         let part_a = times(vec![int(6), pow(eg_minus_log2, int(2))]);
         let part_b = times(vec![
           pow(constant("Pi"), int(2)),
@@ -18935,7 +18916,7 @@ fn hyperfactorial_series_at_zero(var_name: &str, order: i128) -> Expr {
         // (1 - Log[2*Pi]) / 2
         times(vec![
           rational(1, 2),
-          plus(vec![int(1), times(vec![int(-1), log_2pi.clone()])]),
+          plus(vec![int(1), neg(log_2pi.clone())]),
         ])
       }
       2 => {

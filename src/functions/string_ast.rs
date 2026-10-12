@@ -6328,7 +6328,7 @@ fn sum_terms(expr: &Expr, out: &mut Vec<Expr>) {
       right,
     } => {
       sum_terms(left, out);
-      out.push(times(vec![Expr::Integer(-1), right.as_ref().clone()]));
+      out.push(neg(right.as_ref().clone()));
     }
     Expr::FunctionCall { name, args } if name == "Plus" => {
       out.extend(args.iter().cloned());
@@ -6336,7 +6336,7 @@ fn sum_terms(expr: &Expr, out: &mut Vec<Expr>) {
     Expr::FunctionCall { name, args } if name == NEGATED_SUM => {
       let mut inner = Vec::new();
       sum_terms(&args[0], &mut inner);
-      out.extend(inner.into_iter().map(|t| times(vec![Expr::Integer(-1), t])));
+      out.extend(inner.into_iter().map(neg));
     }
     _ => out.push(expr.clone()),
   }
@@ -6365,10 +6365,7 @@ const NEGATED_SUM: &str = "TeX`NegatedSum";
 fn tex_negated_sum(sum: &Expr) -> String {
   let mut terms = Vec::new();
   sum_terms(sum, &mut terms);
-  let negated: Vec<Expr> = terms
-    .into_iter()
-    .map(|t| times(vec![Expr::Integer(-1), t]))
-    .collect();
+  let negated: Vec<Expr> = terms.into_iter().map(neg).collect();
   tex_function_call("Plus", &negated)
 }
 

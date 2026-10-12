@@ -2697,7 +2697,7 @@ mod tests {
     let result = try_music_pitch_plus(&[
       named_pitch("Bb"),
       named_pitch("A#"),
-      times(vec![Expr::Integer(-1), named_pitch("C")]),
+      neg(named_pitch("C")),
     ]);
     expect_pitch_sum(result.as_ref(), 1, "G", 80);
   }
@@ -2707,11 +2707,9 @@ mod tests {
     // The intermediate `Bb - C` decodes back exactly as a MusicInterval, so
     // adding `A#` afterwards gives the same answer as summing all three at
     // once.
-    let partial = try_music_pitch_plus(&[
-      named_pitch("Bb"),
-      times(vec![Expr::Integer(-1), named_pitch("C")]),
-    ])
-    .unwrap();
+    let partial =
+      try_music_pitch_plus(&[named_pitch("Bb"), neg(named_pitch("C"))])
+        .unwrap();
     let result = try_music_pitch_plus(&[named_pitch("A#"), partial]);
     expect_pitch_sum(result.as_ref(), 1, "G", 80);
   }
@@ -2743,7 +2741,7 @@ mod tests {
     assert!(
       try_music_pitch_plus(&[
         times(vec![Expr::Integer(2), named_pitch("C")]),
-        times(vec![Expr::Integer(-1), named_pitch("C")]),
+        neg(named_pitch("C")),
       ])
       .is_none()
     );
@@ -2752,10 +2750,8 @@ mod tests {
   #[test]
   fn music_pitch_plus_octaveless_names_default_to_octave_4() {
     // Octaveless `C` defaults to octave 4, so `C - C4` cancels to a Unison.
-    let result = try_music_pitch_plus(&[
-      named_pitch("C"),
-      times(vec![Expr::Integer(-1), named_pitch("C4")]),
-    ]);
+    let result =
+      try_music_pitch_plus(&[named_pitch("C"), neg(named_pitch("C4"))]);
     match &result {
       Some(Expr::FunctionCall { name, args }) if name == "MusicInterval" => {
         match &args[..] {

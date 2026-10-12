@@ -200,11 +200,7 @@ fn two_angle_triangle(
   // Csc/Cot forms wolframscript displays (`c*Csc[a]*Sin[a + b]`,
   // `c*Cot[a]*Sin[b]`). Numeric angles evaluate these to the same values
   // the plain Sin-quotient forms produce.
-  let gamma = plus(vec![
-    id_expr("Pi"),
-    times(vec![Expr::Integer(-1), alpha.clone()]),
-    times(vec![Expr::Integer(-1), beta.clone()]),
-  ]);
+  let gamma = plus(vec![id_expr("Pi"), neg(alpha.clone()), neg(beta.clone())]);
   let (c, cx, cy) = if side_is_included {
     // ASA: the given side is c; apex = c Sin[β]/Sin[γ] * (Cos[α], Sin[α]).
     (
@@ -371,9 +367,7 @@ pub fn triangle_measurement_ast(
   let (ax, ay) = &coords[0];
   let (bx, by) = &coords[1];
   let (cx, cy) = &coords[2];
-  let diff = |u: &Expr, v: &Expr| {
-    plus(vec![u.clone(), times(vec![Expr::Integer(-1), v.clone()])])
-  };
+  let diff = |u: &Expr, v: &Expr| plus(vec![u.clone(), neg(v.clone())]);
   let twice_signed_area = plus(vec![
     times(vec![diff(bx, ax), diff(cy, ay)]),
     times(vec![Expr::Integer(-1), diff(cx, ax), diff(by, ay)]),

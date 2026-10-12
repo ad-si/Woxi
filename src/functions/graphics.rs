@@ -6441,8 +6441,14 @@ fn parse_tick_spec(expr: &Expr) -> TickSpec {
         .iter()
         .filter_map(|entry| match entry {
           // `{pos, label}` gives the mark its own text.
+          // An `Invisible` label keeps the mark but paints no text.
           Expr::List(pair) if pair.len() >= 2 => {
-            Some((expr_to_f64(&pair[0])?, Some(expr_to_svg_markup(&pair[1]))))
+            let label = if peel_invisible(&pair[1]).is_some() {
+              String::new()
+            } else {
+              expr_to_svg_markup(&pair[1])
+            };
+            Some((expr_to_f64(&pair[0])?, Some(label)))
           }
           // A bare position is labelled with the expression standing at
           // it, so `Ticks -> {{-Pi, 0, Pi}, …}` reads "-π", "0", "π"
@@ -14320,6 +14326,20 @@ fn span_height(rows: &[Vec<Expr>], i: usize, j: usize) -> usize {
     .count()
 }
 
+/// The `(row, column)` of the cell that a span placeholder at `(i, j)`
+/// continues; any other cell is its own origin.
+fn span_origin(rows: &[Vec<Expr>], i: usize, j: usize) -> (usize, usize) {
+  let cell_at = |r: usize, c: usize| rows.get(r).and_then(|row| row.get(c));
+  let (mut oi, mut oj) = (i, j);
+  while oj > 0 && cell_at(oi, oj).is_some_and(is_span_from_left) {
+    oj -= 1;
+  }
+  while oi > 0 && cell_at(oi, oj).is_some_and(is_span_from_above) {
+    oi -= 1;
+  }
+  (oi, oj)
+}
+
 /// `StyleForm` is the Wolfram Language's older spelling of `Style`; the
 /// front end renders the two identically (both stay unevaluated and are
 /// interpreted at display time), so every display path treats them alike.
@@ -15833,9 +15853,11 @@ fn grid_svg_styled_internal(
     // page along their shared edge, which shows as a seam on a dark
     // background.
     let colour_at = |j: usize| -> Option<Color> {
+      // A cell merged into a spanning one takes that cell's override.
+      let (oi, oj) = span_origin(&rows, i, j);
       cell_backgrounds
         .iter()
-        .find(|&&((ci, cj), _)| ci == i + 1 && cj == j + 1)
+        .find(|&&((ci, cj), _)| ci == oi + 1 && cj == oj + 1)
         .map(|&(_, color)| color)
         .or_else(|| {
           row_backgrounds
@@ -21619,6 +21641,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut arg_items: Vec<Expr> =
     Vec::with_capacity(args.len().saturating_sub(1));
   for spec in &args[1..] {
+    // `ExpressionCell[content, …]` is the front end's wrapper around a
+    // control row saved with the notebook (Demonstrations store their
+    // hand-built control panels this way); the content is the real row.
+    let spec = match spec {
+      Expr::FunctionCall { name, args: inner }
+        if name == "ExpressionCell" && !inner.is_empty() =>
+      {
+        &inner[0]
+      }
+      _ => spec,
+    };
     // A `PaneSelector` argument shows one pane's controls at a time; the
     // flattened list holds every pane's, so each pane's controls also pick
     // up the condition under which they are on screen.
@@ -23690,6 +23723,84 @@ fn dynamic_control_spec(e: &Expr) -> Option<Expr> {
   Some(call1("Control", Expr::List(spec.into())))
 }
 
+/// Wrap the non-literal pieces of a caption produced by flattening a
+/// `Dynamic[Row[…]]` control layout in `Dynamic[…]`, so a caption such as
+/// `Row[{"from ", n, " to ", n + 59}]` re-renders from the live control
+/// values instead of being frozen into a static heading. Controls, spacers,
+/// string literals and anything already `Dynamic` pass through unchanged.
+fn make_live_caption(item: Expr) -> Expr {
+  fn is_literal(e: &Expr) -> bool {
+    match e {
+      Expr::String(_) => true,
+      Expr::FunctionCall { name, args } => {
+        (is_style_wrapper(name) || name == "Spacer")
+          && args
+            .first()
+            .is_none_or(|a| is_literal(a) || name == "Spacer")
+      }
+      _ => false,
+    }
+  }
+  fn needs_wrapping(e: &Expr) -> bool {
+    !is_literal(e)
+      && !annotation_contains_dynamic(e)
+      && !matches!(e, Expr::Identifier(s) if s == "Delimiter")
+      && !expr_contains_call(e, &["Control", "Button"])
+  }
+  match &item {
+    Expr::FunctionCall { name, args }
+      if name == "Row"
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(_)) =>
+    {
+      let Expr::List(parts) = &args[0] else {
+        unreachable!()
+      };
+      if !parts.iter().any(needs_wrapping) {
+        return item;
+      }
+      let parts: Vec<Expr> = parts
+        .iter()
+        .map(|p| {
+          if needs_wrapping(p) {
+            call1("Dynamic", p.clone())
+          } else {
+            p.clone()
+          }
+        })
+        .collect();
+      call1("Row", Expr::List(parts.into()))
+    }
+    other if needs_wrapping(other) => call1("Dynamic", item),
+    _ => item,
+  }
+}
+
+fn expr_contains_call(e: &Expr, heads: &[&str]) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      heads.contains(&name.as_str())
+        || args.iter().any(|a| expr_contains_call(a, heads))
+    }
+    Expr::List(items) => items.iter().any(|a| expr_contains_call(a, heads)),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      expr_contains_call(pattern, heads)
+        || expr_contains_call(replacement, heads)
+    }
+    Expr::Apply { func, list } => {
+      expr_contains_call(func, heads) || expr_contains_call(list, heads)
+    }
+    _ => false,
+  }
+}
+
 /// The flattened control items of a `Row[…]`/`Column[…]`/`Grid[…]`
 /// Manipulate argument that lays several controls out in one row (the
 /// Wolfram Demonstrations pattern `Row[{Control[…], Spacer[20],
@@ -23821,7 +23932,11 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     && !matches!(&args[0], Expr::List(_))
     && contains_explicit_control(&args[0])
   {
-    return control_group_items(&args[0]);
+    // The `Dynamic` makes every non-literal caption piece live
+    // (`Dynamic@Row[{"from ", n, " to ", n + 59, Control[…]}]` shows the
+    // current values of `n` and `n + 59`, not their source text).
+    return control_group_items(&args[0])
+      .map(|items| items.into_iter().map(make_live_caption).collect());
   }
   let items_owned = tabview_panes(&args[0])?;
   let items = &items_owned;

@@ -2278,6 +2278,19 @@ mod graphics {
       assert!(svg.contains(">wa</text>"), "{svg}");
     }
 
+    /// A tick whose label is `Invisible[…]` keeps its mark but paints no
+    /// text (not the literal `Invisible[1/6]`).
+    #[test]
+    fn invisible_tick_label_paints_no_text() {
+      let svg = export_svg(
+        "Graphics[{Rectangle[{0, 0}, {1, 1}]}, Axes -> {True, False}, \
+         PlotRange -> {{0, 1}, {0, 1}}, \
+         Ticks -> {{{0.25, Invisible[1/6]}, {0.5, \"mid\"}}, Automatic}]",
+      );
+      assert!(svg.contains(">mid</text>"), "{svg}");
+      assert!(!svg.contains("Invisible"), "{svg}");
+    }
+
     /// A y axis at an x range's padded edge (data starting at 0) keeps the
     /// outside gutter, so its tick labels are not cut off at the left.
     #[test]
@@ -4540,6 +4553,34 @@ mod plot3d {
         !svg.contains("SpanFrom"),
         "SpanFromLeft must not be drawn as text:\n{svg}"
       );
+    }
+
+    // Regression: a per-cell `Background` rule on a spanning cell paints the
+    // whole merged span, not just its first column.
+    #[test]
+    fn grid_cell_background_covers_the_whole_span() {
+      let svg = export_svg(
+        "Grid[{{\"title\", SpanFromLeft}, {\"a\", \"b\"}}, Background -> {None, None, {{1, 1} -> Red}}]",
+      );
+      let red = svg.matches("fill=\"rgb(255,0,0)\"").count()
+        + svg.matches("fill=\"#ff0000\"").count();
+      assert_eq!(red, 1, "{svg}");
+      // One rectangle covers both columns, so it is wider than a single cell.
+      let w: f64 = svg
+        .split("<rect")
+        .find(|r| r.contains("255,0,0") || r.contains("#ff0000"))
+        .and_then(|r| r.split("width=\"").nth(1))
+        .and_then(|r| r.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      let total: f64 = svg
+        .split("<svg")
+        .nth(1)
+        .and_then(|r| r.split("width=\"").nth(1))
+        .and_then(|r| r.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      assert!(w > total * 0.9, "span rect {w} of {total}: {svg}");
     }
 
     #[test]
@@ -27839,6 +27880,39 @@ mod manipulate {
     assert!(
       json.contains(r#""bold":true,"color":"rgb(255,0,0)""#),
       "json: {json}"
+    );
+  }
+
+  // ── Dynamic@Row[{caption pieces, Control[…]}] keeps its caption live ──
+
+  /// A Demonstrations idiom: a single `Dynamic@Row[…]` argument mixes a live
+  /// caption (`"from ", n, " to ", n + 9`) with the `Control[…]`s for the
+  /// variables it mentions. The caption must stay live (a `Dynamic` display)
+  /// rather than being frozen into a heading showing the source text `n`.
+  const LIVE_CAPTION_EXAMPLE: &str = "Manipulate[n, \
+    Dynamic@Row[{\"values from \", n, \" to \", n + 9, \
+    Control[{{n, 5, \"\"}, 1, 50, 1}]}]]";
+
+  #[test]
+  fn dynamic_row_caption_with_control_stays_live() {
+    use woxi::functions::graphics::build_manipulate_display;
+    let expr = interpret_to_expr(LIVE_CAPTION_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("live caption");
+    assert_eq!(spec.controls.len(), 1, "only the n slider is a control");
+    assert_eq!(spec.displays.len(), 1, "the caption is a live display");
+
+    let render = |n: &str| -> String {
+      let bindings = vec![("n".to_string(), n.to_string())];
+      woxi::with_scoped_globals(&bindings, || {
+        format!("{:?}", build_manipulate_display(&spec.displays[0], &[]))
+      })
+    };
+    let at_5 = render("5");
+    assert!(at_5.contains("\"5\"") && at_5.contains("\"14\""), "{at_5}");
+    let at_20 = render("20");
+    assert!(
+      at_20.contains("\"20\"") && at_20.contains("\"29\""),
+      "{at_20}"
     );
   }
 
