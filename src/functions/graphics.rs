@@ -18024,6 +18024,105 @@ pub fn inject_image_size_for_list_of_graphics(expr: &Expr) -> Option<Expr> {
   None
 }
 
+/// Prefix of the `id` on the invisible rectangle that marks a pressable
+/// `Button` cell in a rendered picture; the rest of the id is the hex-encoded
+/// InputForm of the button's action. A live widget (Woxi Studio) finds these
+/// rectangles in the final SVG, however deeply the layout nested them, and
+/// overlays real clickable areas on them.
+pub const BUTTON_HIT_ID_PREFIX: &str = "woxi-btn-";
+
+/// Decode the action of a [`BUTTON_HIT_ID_PREFIX`] id.
+pub fn button_action_from_hit_id(id: &str) -> Option<String> {
+  let hex = id.strip_prefix(BUTTON_HIT_ID_PREFIX)?;
+  if hex.len() % 2 != 0 || !hex.is_ascii() {
+    return None;
+  }
+  let bytes: Option<Vec<u8>> = (0..hex.len())
+    .step_by(2)
+    .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
+    .collect();
+  String::from_utf8(bytes?).ok()
+}
+
+/// Dress the picture of a `Button[Graphics[…], action, opts…]` grid cell:
+/// a `Background -> color` option fills the cell behind the picture, and —
+/// unless `Enabled` evaluates to `False` — an invisible rectangle covering
+/// the cell records the action for hit-testing.
+fn with_button_cell_chrome(svg: String, button_args: &[Expr]) -> String {
+  let Some(dims) = parse_svg_dimensions(&svg) else {
+    return svg;
+  };
+  let vb: Vec<f64> = dims
+    .view_box
+    .split_whitespace()
+    .filter_map(|v| v.parse().ok())
+    .collect();
+  let [vb_x, vb_y, vb_w, vb_h] = vb[..] else {
+    return svg;
+  };
+  let option = |wanted: &str| {
+    button_args.iter().skip(2).find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(&**pattern, Expr::Identifier(n) if n == wanted) => {
+        Some((**replacement).clone())
+      }
+      _ => None,
+    })
+  };
+  let background = option("Background")
+    .and_then(|b| evaluate_expr_to_expr(&b).ok())
+    .and_then(|b| parse_color(&b));
+  let enabled = match option("Enabled") {
+    Some(cond) => {
+      let cond = match &cond {
+        Expr::FunctionCall { name, args }
+          if name == "Dynamic" && !args.is_empty() =>
+        {
+          args[0].clone()
+        }
+        other => other.clone(),
+      };
+      !matches!(
+        evaluate_expr_to_expr(&cond),
+        Ok(Expr::Identifier(ref v)) if v == "False"
+      )
+    }
+    None => true,
+  };
+  let Some(open_end) = svg
+    .find("<svg")
+    .and_then(|s| svg[s..].find('>').map(|e| s + e + 1))
+  else {
+    return svg;
+  };
+  let Some(close) = svg.rfind("</svg>") else {
+    return svg;
+  };
+  let mut out = String::with_capacity(svg.len() + 256);
+  out.push_str(&svg[..open_end]);
+  if let Some(bg) = background {
+    out.push_str(&format!(
+      "<rect x=\"{vb_x}\" y=\"{vb_y}\" width=\"{vb_w}\" height=\"{vb_h}\" fill=\"{}\"{}/>",
+      bg.to_svg_rgb(),
+      bg.opacity_attr()
+    ));
+  }
+  out.push_str(&svg[open_end..close]);
+  if enabled {
+    let hex: String = crate::syntax::expr_to_source_form(&button_args[1])
+      .bytes()
+      .map(|b| format!("{b:02x}"))
+      .collect();
+    out.push_str(&format!(
+      "<rect id=\"{BUTTON_HIT_ID_PREFIX}{hex}\" x=\"{vb_x}\" y=\"{vb_y}\" width=\"{vb_w}\" height=\"{vb_h}\" fill=\"#000\" fill-opacity=\"0.001\"/>"
+    ));
+  }
+  out.push_str(&svg[close..]);
+  out
+}
+
 /// Evaluate each item with `ImageSize -> per_cell_w` injected (when the
 /// item is a rewritable FunctionCall) and collect the resulting SVGs.
 /// Items that are already evaluated (variables, literals) pass through
@@ -18058,8 +18157,10 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
         evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone())
       };
       // `Button[Graphics[…], action]` in a graphics grid (a board game's
-      // clickable squares) shows the picture it wraps; the action is inert
-      // in a static rendering.
+      // clickable squares) shows the picture it wraps. The action is inert
+      // in a static rendering, but the cell carries an invisible hit
+      // region (see `with_button_cell_chrome`) so a live widget can press it.
+      let mut button_args: Option<Vec<Expr>> = None;
       let target = match &target {
         Expr::FunctionCall { name, args }
           if name == "Button"
@@ -18070,6 +18171,7 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
                 if inner == "Graphics" || inner == "Graphics3D"
             ) =>
         {
+          button_args = Some(args.iter().cloned().collect());
           args[0].clone()
         }
         _ => target,
@@ -18077,7 +18179,13 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
       let rewritten = with_default_image_size(&target, per_cell_w);
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
       let svg = crate::evaluator::expr_to_svg(&evaluated);
-      (!svg.is_empty()).then_some(svg)
+      if svg.is_empty() {
+        return None;
+      }
+      Some(match button_args {
+        Some(bargs) => with_button_cell_chrome(svg, &bargs),
+        None => svg,
+      })
     })
     .collect()
 }

@@ -330,6 +330,57 @@ type ResolvedChoices = (
   ),
 );
 
+/// A pressable `Button` cell inside a rendered picture: its rectangle in the
+/// picture's pixel coordinates and the held action to run when it is pressed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ButtonRegion {
+  pub x: f32,
+  pub y: f32,
+  pub width: f32,
+  pub height: f32,
+  pub action: String,
+}
+
+/// Find every pressable `Button` cell the renderer marked in `svg` (see
+/// `woxi::functions::graphics::BUTTON_HIT_ID_PREFIX`). The marker's absolute
+/// position is read from the parsed tree, so it is right however deeply the
+/// layout nested the cell's picture.
+pub fn button_regions_of(svg: &str) -> Vec<ButtonRegion> {
+  use resvg::usvg;
+  use woxi::functions::graphics::{
+    BUTTON_HIT_ID_PREFIX, button_action_from_hit_id,
+  };
+  if !svg.contains(BUTTON_HIT_ID_PREFIX) {
+    return Vec::new();
+  }
+  let Ok(tree) = usvg::Tree::from_str(svg, &usvg::Options::default()) else {
+    return Vec::new();
+  };
+  fn walk(group: &usvg::Group, out: &mut Vec<ButtonRegion>) {
+    for node in group.children() {
+      match node {
+        usvg::Node::Group(g) => walk(g, out),
+        usvg::Node::Path(p) => {
+          if let Some(action) = button_action_from_hit_id(p.id()) {
+            let r = p.abs_bounding_box();
+            out.push(ButtonRegion {
+              x: r.x(),
+              y: r.y(),
+              width: r.width(),
+              height: r.height(),
+              action,
+            });
+          }
+        }
+        _ => {}
+      }
+    }
+  }
+  let mut regions = Vec::new();
+  walk(tree.root(), &mut regions);
+  regions
+}
+
 /// Full state for a Manipulate cell: the held body plus its rendered
 /// output.
 #[derive(Debug, Clone)]
@@ -352,6 +403,10 @@ pub struct ManipulateState {
   /// The rendered widget tree for each display element.
   pub display_trees: Vec<DisplayNode>,
   pub graphics_handle: Option<svg::Handle>,
+  /// Pressable `Button` cells drawn inside the rendered picture (a board
+  /// game's clickable squares in a `GraphicsGrid`), in the picture's pixel
+  /// coordinates. The view overlays a real clickable area on each.
+  pub button_regions: Vec<ButtonRegion>,
   pub text_output: Option<String>,
   pub error: Option<String>,
   /// Whether this widget auto-plays (from `Animate[…]` / `ListAnimate[…]` /
@@ -511,6 +566,7 @@ impl ManipulateState {
       displays: spec.displays,
       display_trees: Vec::new(),
       graphics_handle: None,
+      button_regions: Vec::new(),
       text_output: None,
       error: None,
       animated: spec.animated,
@@ -1227,6 +1283,7 @@ impl ManipulateState {
 
         if let Some(svg) = result.graphics {
           let handle = svg::Handle::from_memory(svg.as_bytes().to_vec());
+          self.button_regions = button_regions_of(&svg);
           self.graphics_handle = Some(handle);
           self.text_output = None;
           self.error = None;
@@ -1234,6 +1291,7 @@ impl ManipulateState {
           // No graphic: either a textual result or genuinely empty output.
           // Blank the graphic and show the text (empty text => blank cell).
           self.graphics_handle = None;
+          self.button_regions.clear();
           self.text_output = if cleaned.is_empty() {
             None
           } else {
@@ -1246,6 +1304,7 @@ impl ManipulateState {
         // Surface the evaluation error. The render path shows the error in
         // place of the graphic, so drop the cached rendering here.
         self.graphics_handle = None;
+        self.button_regions.clear();
         self.text_output = None;
         self.error = Some(format!("{e}"));
       }
@@ -2708,6 +2767,79 @@ mod tests {
       state.state.iter().any(|(n, v)| n == "reset" && v == "0"),
       "state: {:?}",
       state.state
+    );
+  }
+
+  /// A two-player board game laid out as a `GraphicsGrid` of
+  /// `Button[Graphics[…], action]` cells (the shape of a tic-tac-toe style
+  /// Demonstration): every enabled cell must be a pressable region of the
+  /// picture, pressing one runs that cell's own action on the widget state,
+  /// and a cell whose `Enabled` condition turns false stops being pressable.
+  #[test]
+  fn graphics_grid_button_cells_are_pressable_regions() {
+    let code = r#"Manipulate[
+      Module[{board},
+        board = GraphicsGrid[
+          Table[
+            With[{i = i, j = j},
+              Button[
+                Graphics[{Dynamic@cols[[Mod[cells[[i, j]], 3, 1]]], Disk[{0, 0}, 1]}],
+                cells[[i, j]] = Mod[cells[[i, j]] + turn, 3, 1]; turn = 3 - turn; used[[i, j]] = 1,
+                Background -> LightGray,
+                Enabled -> Dynamic[used[[i, j]] == 0]]],
+            {i, 3}, {j, 3}],
+          Spacings -> 0, Frame -> True, ImageSize -> {150, 150}];
+        Row[{board}]],
+      {{cells, Table[1, {3}, {3}]}, ControlType -> None},
+      {{used, Table[0, {3}, {3}]}, ControlType -> None},
+      {{turn, 1}, ControlType -> None},
+      Initialization :> (cols = {White, Red, Blue})
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    assert_eq!(state.button_regions.len(), 9, "one region per cell");
+    // Regions are distinct pixel rectangles inside the picture.
+    for region in &state.button_regions {
+      assert!(region.width > 1.0 && region.height > 1.0, "{region:?}");
+    }
+    let mut origins: Vec<(i32, i32)> = state
+      .button_regions
+      .iter()
+      .map(|r| (r.x as i32, r.y as i32))
+      .collect();
+    origins.sort();
+    origins.dedup();
+    assert_eq!(origins.len(), 9, "cells must not overlap: {origins:?}");
+
+    // Pressing the first cell claims it for player 1 and passes the turn.
+    let action = state.button_regions[0].action.clone();
+    assert!(action.contains("cells[[1,1]]"), "{action}");
+    state.apply_button_action(&action);
+    assert!(state.error.is_none(), "button failed: {:?}", state.error);
+    let value = |name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    assert_eq!(value("turn"), "2");
+    assert!(
+      value("cells").starts_with("{{2, 1, 1}"),
+      "{}",
+      value("cells")
+    );
+    // That cell is now disabled, so it no longer offers a region.
+    assert_eq!(state.button_regions.len(), 8);
+    assert!(
+      state
+        .button_regions
+        .iter()
+        .all(|r| !r.action.contains("[[1,1]]")),
+      "the used cell must not stay pressable"
     );
   }
 }
