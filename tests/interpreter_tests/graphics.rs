@@ -21650,6 +21650,17 @@ mod rule_plot {
   }
 
   #[test]
+  fn totalistic_rule_draws_one_case_per_neighborhood_sum() {
+    // 3 colours, radius 1: sums 0..6 -> 7 cases x 4 cells = 28 rectangles
+    // plus the clip-path rect.
+    let svg = export_svg("RulePlot[CellularAutomaton[{1261, {3, 1}}]]");
+    assert_eq!(svg.matches("<rect").count(), 29);
+    // 2 colours, radius 2: sums 0..5 -> 6 cases x 6 cells.
+    let svg = export_svg("RulePlot[CellularAutomaton[{20, {2, 1}, 2}]]");
+    assert_eq!(svg.matches("<rect").count(), 37);
+  }
+
+  #[test]
   fn elementary_rule_draws_every_neighborhood() {
     // 8 neighborhoods x (3 top cells + 1 result cell) = 32 rectangles
     // plus the clip-path rect.
@@ -21671,8 +21682,9 @@ mod rule_plot {
 
   #[test]
   fn totalistic_three_color_rule() {
-    // 3^3 neighborhoods, 4 rectangles each, plus the clip-path rect.
-    let svg = export_svg("RulePlot[CellularAutomaton[{1234, {3, 1}}]]");
+    // Non-totalistic: 3^3 neighborhoods, 4 rectangles each, plus the
+    // clip-path rect.
+    let svg = export_svg("RulePlot[CellularAutomaton[{1234, 3, 1}]]");
     assert_eq!(svg.matches("<rect").count(), 27 * 4 + 1);
   }
 
