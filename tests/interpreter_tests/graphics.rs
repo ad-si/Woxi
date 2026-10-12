@@ -23749,6 +23749,36 @@ mod manipulate {
   };
   use woxi::interpret_to_expr;
 
+  // A hand-built control panel — `ExpressionCell[Grid[…]]` holding bare
+  // `Checkbox[Dynamic[v]]`/`Manipulator[Dynamic[v], …]`/`SetterBar[Dynamic[v],
+  // …]` controls — is neither a vsform error nor inert text: each bound
+  // control becomes a real control.
+  #[test]
+  fn spec_expression_cell_dynamic_controls_become_controls() {
+    let src = "Manipulate[If[on, a, -a], {a, 0, 5}, \
+       ExpressionCell[Row[{\"  \", Grid[{{Checkbox[Dynamic[on]], \"on\"}, \
+       {Row[{\"amount \", Manipulator[Dynamic[b], {1, 9, 2}]}]}, \
+       {SetterBar[Dynamic[m], {1 -> One, 2 -> Two}]}}]}]]]";
+    let result = woxi::interpret_with_stdout(src).unwrap();
+    assert!(
+      !result.warnings.iter().any(|w| w.contains("vsform")),
+      "no vsform expected, got {:?}",
+      result.warnings
+    );
+    let expr = interpret_to_expr(src).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Continuous { name, .. }
+        | ManipulateControl::Discrete { name, .. } => Some(name.as_str()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(names, vec!["a", "on", "b", "m"]);
+  }
+
   // A string-tagged variable spec (`"tag" -> {var, min, max}`) is the
   // control itself — including one whose bounds name sibling controls.
   #[test]

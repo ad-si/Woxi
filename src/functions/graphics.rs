@@ -23671,6 +23671,58 @@ fn named_control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   Some(out)
 }
 
+/// The `Control[…]` equivalent of a bare front-end control bound with
+/// `Dynamic[var]` — `Checkbox[Dynamic[v]]`, `Manipulator[Dynamic[v], {lo, hi,
+/// step}]` and `SetterBar[Dynamic[v, f], {val -> label, …}]` — the form a
+/// hand-built control panel (typically inside an `ExpressionCell[Grid[…]]`
+/// passed to `Manipulate`) uses instead of a variable specification. Only
+/// the bound symbol and the value set carry over; the optional tracking
+/// function of `Dynamic[v, f]` and the control's own options are dropped.
+fn dynamic_control_spec(e: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  let var = match args.first()? {
+    Expr::FunctionCall {
+      name: d,
+      args: dargs,
+    } if d == "Dynamic" => match dargs.first()? {
+      Expr::Identifier(v) => id_expr(v),
+      _ => return None,
+    },
+    _ => return None,
+  };
+  let rule_opt =
+    |x: &Expr| matches!(x, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let control_type = |t: &str| rule_expr(id_expr("ControlType"), id_expr(t));
+  let spec = match name.as_str() {
+    "Checkbox" if args.get(1).is_none_or(rule_opt) => {
+      vec![
+        var,
+        Expr::List(vec![id_expr("True"), id_expr("False")].into()),
+        control_type("Checkbox"),
+      ]
+    }
+    "Manipulator" => {
+      let Some(Expr::List(range)) = args.get(1) else {
+        return None;
+      };
+      let mut spec = vec![var];
+      spec.extend(range.iter().cloned());
+      spec.push(control_type("Manipulator"));
+      spec
+    }
+    "SetterBar" => {
+      let Some(Expr::List(choices)) = args.get(1) else {
+        return None;
+      };
+      vec![var, Expr::List(choices.clone()), control_type("SetterBar")]
+    }
+    _ => return None,
+  };
+  Some(call1("Control", Expr::List(spec.into())))
+}
+
 /// Wrap the non-literal pieces of a caption produced by flattening a
 /// `Dynamic[Row[…]]` control layout in `Dynamic[…]`, so a caption such as
 /// `Row[{"from ", n, " to ", n + 59}]` re-renders from the live control
@@ -23761,6 +23813,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       Expr::FunctionCall { name, args } => {
         name == "Control"
           || name == "Button"
+          || dynamic_control_spec(e).is_some()
           || args.iter().any(contains_control)
       }
       Expr::List(items) => items.iter().any(contains_control),
@@ -23941,14 +23994,18 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
         for cell in row {
           match control_group_items(cell) {
             Some(nested) => out.extend(nested),
-            None => out.push(cell.clone()),
+            None => out
+              .push(dynamic_control_spec(cell).unwrap_or_else(|| cell.clone())),
           }
         }
       }
       // Nested layout containers flatten recursively.
       other => match control_group_items(other) {
         Some(nested) => out.extend(nested),
-        None => out.push(other.clone()),
+        None => {
+          out
+            .push(dynamic_control_spec(other).unwrap_or_else(|| other.clone()));
+        }
       },
     }
   }
