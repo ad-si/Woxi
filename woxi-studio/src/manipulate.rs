@@ -2451,6 +2451,35 @@ mod tests {
   /// toggling either checkbox re-rendered around a broken, unevaluated
   /// `GraphicsComplex` instead of the star polyhedron.
   #[test]
+  fn expression_cell_control_rows_become_live_checkbox_displays() {
+    // A saved Demonstration stores hand-built control rows wrapped in
+    // `ExpressionCell[…]`; the wrapper must be transparent: no
+    // `Manipulate::vsform` message and real checkboxes, not static text.
+    let code = r#"Manipulate[
+      Graphics[{If[big, Disk[{0, 0}, 1], Disk[{0, 0}, 0.5]], If[tag, Text["x", {0, 0}], {}]}],
+      ExpressionCell[Row[{"  ", Grid[{{Checkbox[Dynamic[big]], "large", Checkbox[Dynamic[tag]], "tagged"}}]}]],
+      {{big, True}, ControlType -> None},
+      {{tag, False}, ControlType -> None}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+
+    assert_eq!(state.error, None);
+    assert_eq!(state.displays.len(), 1);
+    assert!(
+      !state.displays[0].starts_with("ExpressionCell"),
+      "wrapper must be stripped: {}",
+      state.displays[0]
+    );
+    assert!(
+      format!("{:?}", state.display_trees).contains("Checkbox"),
+      "controls must render as checkboxes: {:?}",
+      state.display_trees
+    );
+  }
+
+  #[test]
   fn demonstration_polyhedrondata_overlay_checkboxes_toggle_live() {
     let code = r#"Manipulate[
       Module[{base, star, spikes},
