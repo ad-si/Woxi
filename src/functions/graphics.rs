@@ -20585,6 +20585,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "Panel"
             | "OpenerView"
             | "Tooltip"
+            | "ExpressionCell"
         ) =>
       {
         out_args.push(spec.clone());
@@ -21618,6 +21619,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut arg_items: Vec<Expr> =
     Vec::with_capacity(args.len().saturating_sub(1));
   for spec in &args[1..] {
+    // `ExpressionCell[content, …]` is the front end's wrapper around a
+    // control row saved with the notebook (Demonstrations store their
+    // hand-built control panels this way); the content is the real row.
+    let spec = match spec {
+      Expr::FunctionCall { name, args: inner }
+        if name == "ExpressionCell" && !inner.is_empty() =>
+      {
+        &inner[0]
+      }
+      _ => spec,
+    };
     // A `PaneSelector` argument shows one pane's controls at a time; the
     // flattened list holds every pane's, so each pane's controls also pick
     // up the condition under which they are on screen.
@@ -23799,6 +23811,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       if (name == "Item"
         || name == "Text"
         || name == "Panel"
+        || name == "ExpressionCell"
         || name == "Style")
         && !args.is_empty() =>
     {
