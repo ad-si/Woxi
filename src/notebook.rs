@@ -1974,6 +1974,14 @@ fn box_part_source(part: &str) -> String {
     // element between two operands does.
     if inner.starts_with("\\\"") {
       string_literal_source(inner)
+    } else if inner.starts_with("\\<") && inner.ends_with("\\>") {
+      // `\<…\>` is the linear-syntax spelling of a string literal's
+      // quotes (`"\<surface 1\>"` is the string `"surface 1"`), so the
+      // element is a string literal just like `"\"…\""`.
+      format!(
+        "\"{}\"",
+        escape_unescaped_quotes(&unescape_code_string(inner))
+      )
     } else {
       unescape_code_string(inner)
     }
@@ -5310,6 +5318,21 @@ Cell["Chapter 2", "Chapter"]
     // \< and \> are Wolfram string delimiters in box expressions
     assert_eq!(unescape_string(r#"\<"Hello"\>"#), r#""Hello""#);
     assert_eq!(unescape_string(r#"\<Hello World!\>"#), "Hello World!");
+  }
+
+  #[test]
+  fn test_box_leaf_with_string_delimiters_is_a_string_literal() {
+    // A Manipulate control label written `"\<surface 1\>"` in a RowBox is
+    // the string "surface 1", not the bare tokens `surface 1`.
+    let nb = parse_notebook(
+      r#"Notebook[{Cell[BoxData[RowBox[{"f", "[", RowBox[{RowBox[{"{", RowBox[{"k", ",", "1", ",", "\"\<surface 1\>\""}], "}"}], ",", RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "]"}]], "Input"]}]"#,
+    )
+    .unwrap();
+    let flat = nb.flat_cells();
+    assert_eq!(
+      flat[0].1.content,
+      r#"f[{k,1,"surface 1"},Appearance->"Labeled"]"#
+    );
   }
 
   #[test]
