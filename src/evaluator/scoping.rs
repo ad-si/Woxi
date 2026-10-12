@@ -790,11 +790,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     // Rebuild Alternatives from remaining
     let alt_expr = remaining
       .into_iter()
-      .reduce(|acc, e| Expr::BinaryOp {
-        op: BinaryOperator::Alternatives,
-        left: Box::new(acc),
-        right: Box::new(e),
-      })
+      .reduce(|acc, e| binop(BinaryOperator::Alternatives, acc, e))
       .unwrap();
     return Ok(call("Element", vec![alt_expr, domain.clone()]));
   }
@@ -808,11 +804,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     let alt_expr = items
       .iter()
       .cloned()
-      .reduce(|acc, e| Expr::BinaryOp {
-        op: BinaryOperator::Alternatives,
-        left: Box::new(acc),
-        right: Box::new(e),
-      })
+      .reduce(|acc, e| binop(BinaryOperator::Alternatives, acc, e))
       .unwrap();
     return element_ast(&alt_expr, domain);
   }

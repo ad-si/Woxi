@@ -424,11 +424,9 @@ pub fn dispatch_evaluation_control(
             }
             e.clone()
           }
-          Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-            op: *op,
-            left: Box::new(substitute(left, map)),
-            right: Box::new(substitute(right, map)),
-          },
+          Expr::BinaryOp { op, left, right } => {
+            binop(*op, substitute(left, map), substitute(right, map))
+          }
           Expr::UnaryOp { op, operand } => Expr::UnaryOp {
             op: *op,
             operand: Box::new(substitute(operand, map)),
@@ -958,11 +956,9 @@ fn release_hold_rec(e: &Expr) -> Expr {
         .collect::<Vec<_>>()
         .into(),
     ),
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(release_hold_rec(left)),
-      right: Box::new(release_hold_rec(right)),
-    },
+    Expr::BinaryOp { op, left, right } => {
+      binop(*op, release_hold_rec(left), release_hold_rec(right))
+    }
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(release_hold_rec(operand)),

@@ -76,11 +76,7 @@ pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
       name: name.clone(),
       args: args.iter().map(sub).collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(sub(left)),
-      right: Box::new(sub(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(*op, sub(left), sub(right)),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(sub(operand)),

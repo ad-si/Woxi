@@ -2661,15 +2661,10 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if matches!(&rules, Expr::FunctionCall { name, .. } if name == "ToRules")
         && !all_equalities(&constraints)
       {
-        let conjunction =
-          constraints
-            .iter()
-            .cloned()
-            .reduce(|left, right| Expr::BinaryOp {
-              op: BinaryOperator::And,
-              left: Box::new(left),
-              right: Box::new(right),
-            });
+        let conjunction = constraints
+          .iter()
+          .cloned()
+          .reduce(|left, right| binop(BinaryOperator::And, left, right));
         if let Some(conjunction) = conjunction {
           let mut retry = args.to_vec();
           retry[0] = conjunction;

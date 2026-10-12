@@ -768,14 +768,13 @@ fn associated_legendre_p_ast(
     if half_m == 0 {
       sqrt_part
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(pow(
+      times2(
+        pow(
           minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
           Expr::Integer(half_m as i128),
-        )),
-        right: Box::new(sqrt_part),
-      }
+        ),
+        sqrt_part,
+      )
     }
   };
 
@@ -3644,11 +3643,11 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
           .collect(),
       }
     }
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(rewrite_sqrt_one_minus_cos_sq(left, theta)),
-      right: Box::new(rewrite_sqrt_one_minus_cos_sq(right, theta)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      rewrite_sqrt_one_minus_cos_sq(left, theta),
+      rewrite_sqrt_one_minus_cos_sq(right, theta),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(rewrite_sqrt_one_minus_cos_sq(operand, theta)),

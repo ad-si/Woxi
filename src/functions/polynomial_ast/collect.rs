@@ -624,11 +624,11 @@ fn substitute_expr_local(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
         .map(|e| substitute_expr_local(e, from, to))
         .collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(substitute_expr_local(left, from, to)),
-      right: Box::new(substitute_expr_local(right, from, to)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      substitute_expr_local(left, from, to),
+      substitute_expr_local(right, from, to),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(substitute_expr_local(operand, from, to)),

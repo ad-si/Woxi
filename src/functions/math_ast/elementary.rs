@@ -3317,11 +3317,7 @@ fn chop_expr(expr: &Expr, tolerance: f64) -> Result<Expr, InterpreterError> {
     Expr::BinaryOp { op, left, right } => {
       let new_left = chop_expr(left, tolerance)?;
       let new_right = chop_expr(right, tolerance)?;
-      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: *op,
-        left: Box::new(new_left),
-        right: Box::new(new_right),
-      })
+      crate::evaluator::evaluate_expr_to_expr(&binop(*op, new_left, new_right))
     }
     Expr::UnaryOp { op, operand } => {
       let new_operand = chop_expr(operand, tolerance)?;
