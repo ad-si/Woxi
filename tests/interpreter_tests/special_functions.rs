@@ -885,6 +885,18 @@ mod bessel_j_zero {
   }
 
   #[test]
+  fn real_contagion() {
+    assert_eq!(
+      interpret("Round[BesselJZero[0, 2]/2., 10^-6]").unwrap(),
+      "2760039/1000000"
+    );
+    assert_eq!(
+      interpret("Round[2.*BesselYZero[0, 1], 10^-6]").unwrap(),
+      "893577/500000"
+    );
+  }
+
+  #[test]
   fn numeric_j0_1() {
     assert_eq!(
       interpret("N[BesselJZero[0, 1]]").unwrap(),

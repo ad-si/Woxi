@@ -419,7 +419,7 @@ pub fn bessel_y_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// is `0.8935776066…`. The implementation mirrors `bessel_j_zero` but
 /// evaluates `bessel_y` and uses the recurrence
 /// `Y'_n(x) = n/x · Y_n(x) − Y_{n+1}(x)` for Newton refinement.
-fn bessel_y_zero(n: f64, k: usize) -> f64 {
+pub(crate) fn bessel_y_zero(n: f64, k: usize) -> f64 {
   let step = 0.5;
   // Y_n diverges at x = 0, so start the scan past a small positive
   // value (and past `n * 0.5` for large `n`, where the first zero
@@ -475,7 +475,7 @@ fn bessel_y_zero(n: f64, k: usize) -> f64 {
 }
 
 /// Find the k-th positive zero of J_n(x) using bisection + Newton's method
-fn bessel_j_zero(n: f64, k: usize) -> f64 {
+pub(crate) fn bessel_j_zero(n: f64, k: usize) -> f64 {
   // Find zeros by scanning for sign changes, then refining with bisection
   let step = 0.5;
   let start = if n > 0.0 { n * 0.5 } else { step };
