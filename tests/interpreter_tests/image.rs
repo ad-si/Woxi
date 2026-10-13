@@ -3098,6 +3098,65 @@ mod image_processing {
     );
   }
 
+  // ImageForwardTransformation maps source points through the function and
+  // resamples onto the requested size / PlotRange.
+  #[test]
+  fn image_forward_transformation_shift() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageForwardTransformation[Image[{{0, 1, 0.5}, {1, 0, 0.2}}], {#[[1]] + 1, #[[2]]} &, {6, 4}, DataRange -> {{0, 3}, {0, 2}}, PlotRange -> {{0, 5}, {0, 2}}]]"
+      )
+      .unwrap(),
+      "{6, 4}"
+    );
+    // Columns left of the shifted image stay background (black).
+    assert_eq!(
+      interpret(
+        "ImageData[ImageForwardTransformation[Image[{{1, 1, 1}, {1, 1, 1}}], {#[[1]] + 1, #[[2]]} &, {5, 2}, DataRange -> {{0, 3}, {0, 2}}, PlotRange -> {{0, 5}, {0, 2}}]]"
+      )
+      .unwrap(),
+      "{{0., 1., 1., 1., 0.}, {0., 1., 1., 1., 0.}}"
+    );
+  }
+
+  // Real-valued sizes are rounded and the default PlotRange is the bounding
+  // box of the transformed image (here the doubled width).
+  #[test]
+  fn image_forward_transformation_default_range() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageForwardTransformation[Image[{{0, 1}, {1, 0}}], {2 #[[1]], #[[2]]} &, {8., 4.}]]"
+      )
+      .unwrap(),
+      "{8, 4}"
+    );
+  }
+
+  #[test]
+  fn image_forward_transformation_non_image_stays_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageForwardTransformation[x, f, {2, 2}]").unwrap(),
+      "ImageForwardTransformation[x, f, {2, 2}]"
+    );
+  }
+
+  // HighlightImage draws marks over the image, in pixel coordinates, and
+  // returns an image of the same size.
+  #[test]
+  fn highlight_image_marker_line() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img = ConstantImage[Black, {20, 10}]; r = HighlightImage[img, ImageMarker[{{10, 0}, {10, 10}}, Graphics[{White, Thick, Line[{{0, 0}, {0, 10}}]}]]]; {ImageDimensions[r], ImageData[r][[5, 10]][[1]] > 0.5, ImageData[r][[5, 3]][[1]]}"
+      )
+      .unwrap(),
+      "{{20, 10}, True, 0.}"
+    );
+  }
+
   // ImageApply on an RGB image with a function that returns a scalar
   // collapses each pixel's channel list to that scalar — the result
   // is a 1-channel (grayscale) image.
