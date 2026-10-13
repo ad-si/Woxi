@@ -6756,6 +6756,25 @@ mod plot3d {
       );
     }
 
+    /// `ToString[…, TraditionalForm]` text keeps its string atoms quoted
+    /// inside the boxes; a grid cell typesets them without the quotes.
+    #[test]
+    fn grid_traditional_form_string_has_no_stray_quotes() {
+      let svg = export_svg(
+        "Grid[{{ToString[Superscript[\"4f\", \"14\"], TraditionalForm]}}]",
+      );
+      assert!(
+        !svg.contains("&quot;"),
+        "string atoms print without quotes: {svg}"
+      );
+      assert!(
+        svg.contains(
+          "4f<tspan baseline-shift=\"super\" font-size=\"70%\">14</tspan>"
+        ),
+        "the exponent is a superscript: {svg}"
+      );
+    }
+
     /// `Text[Framed[Column[{...}]], pos]` boxes a *stacked* label — the
     /// `Framed` background must grow to cover every line, not just the
     /// first, and must not be centred on the anchor of the (already

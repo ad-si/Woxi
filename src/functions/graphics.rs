@@ -12868,6 +12868,30 @@ fn bare_box_head_at(cs: &[char], i: usize) -> Option<(Expr, usize)> {
   }
 }
 
+/// The text of `cs` when it is exactly one `"…"` string literal (with `\"`
+/// and `\\` escapes), else None.
+fn quoted_box_literal(cs: &[char]) -> Option<String> {
+  if cs.len() < 2 || cs[0] != '"' || cs[cs.len() - 1] != '"' {
+    return None;
+  }
+  let mut out = String::new();
+  let mut i = 1;
+  while i < cs.len() - 1 {
+    match cs[i] {
+      '\\' if i + 2 < cs.len() && matches!(cs[i + 1], '"' | '\\') => {
+        out.push(cs[i + 1]);
+        i += 2;
+      }
+      '"' => return None,
+      c => {
+        out.push(c);
+        i += 1;
+      }
+    }
+  }
+  Some(out)
+}
+
 /// Parse a sequence of box-notation units (plain runs, `\(...\)` groups and
 /// `\*Head[...]` explicit boxes) into a list of box Exprs.
 fn parse_box_units(cs: &[char]) -> Vec<Expr> {
@@ -12948,6 +12972,15 @@ fn parse_box_units(cs: &[char]) -> Vec<Expr> {
 /// Parse box-notation content into a single box Expr (wrapping multiple units
 /// in a `RowBox`).
 fn parse_box_to_expr(cs: &[char]) -> Expr {
+  // A box argument written as a quoted string literal (`SuperscriptBox["4f",
+  // "14"]`, as `ToString[…, TraditionalForm]` emits) is the string's text,
+  // not text that happens to include the quote characters.
+  // MakeBoxes writes a string atom with its own quotes (`"\"4f\""`);
+  // TraditionalForm typesets it without them.
+  if let Some(text) = quoted_box_literal(trim_char_slice(cs)) {
+    let chars: Vec<char> = text.chars().collect();
+    return Expr::String(quoted_box_literal(&chars).unwrap_or(text));
+  }
   let mut units = parse_box_units(cs);
   match units.len() {
     0 => Expr::String(String::new()),
