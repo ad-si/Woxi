@@ -105,6 +105,9 @@ fn is_curve_or_group(expr: &Expr) -> bool {
     // curve is written (`If[cond, {fx, fy}, {}]`) once `cond` resolves to
     // `False`.
     Expr::List(items) if items.is_empty() => true,
+    // `If[cond, {fx, fy}]` without an else branch evaluates to `Null` when
+    // `cond` is `False`, which hides the curve the same way.
+    Expr::Identifier(name) if name == "Null" => true,
     // A pair is either a curve `{fx, fy}` or a group of two curves;
     // `collect_curves` decides which when it descends.
     Expr::List(items) if items.len() == 2 => true,
@@ -125,6 +128,9 @@ fn is_curve_group(expr: &Expr) -> bool {
 /// Flatten a (possibly nested) curve specification into individual curves,
 /// appending them to `out`. Returns whether the shape was understood.
 fn collect_curves<'a>(expr: &'a Expr, out: &mut Vec<CurveSrc<'a>>) -> bool {
+  if matches!(expr, Expr::Identifier(name) if name == "Null") {
+    return true;
+  }
   let Expr::List(items) = expr else {
     return false;
   };
