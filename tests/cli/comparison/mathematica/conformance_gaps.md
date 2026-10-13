@@ -4873,3 +4873,10 @@ unevaluated / report `ExampleData::notcoll`. The `Oulipo: Wordshift + 7`
 Demonstration needs both (its `Manipulate` is initialised from them), so
 only its static content and stored output render. `DictionaryLookup` works
 against the bundled word list, which may differ from Wolfram's dictionary.
+
+### `InverseLaplaceTransform` of a product of symbolic-pole factors
+
+`InverseLaplaceTransform` of a product of many `1/(s - pole)` factors with
+numeric complex poles returns unevaluated, so the time-response plot in the
+`Poles and Zeros of Time Domain Response Functions` Demonstration stays empty
+(its pole/zero plane renders fine).

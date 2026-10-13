@@ -7925,7 +7925,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return format!("Inequality[{}]", parts.join(", "));
       }
       // Sequence[] (empty sequence) displays as nothing in Wolfram output (OutputForm only)
-      if is_output && name == "Sequence" && args.is_empty() {
+      if is_output
+        && !in_true_input_form()
+        && name == "Sequence"
+        && args.is_empty()
+      {
         return String::new();
       }
       // Special case: Quantity[n, unit] — unit shown as quoted string(s)
