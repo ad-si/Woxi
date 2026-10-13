@@ -19012,16 +19012,31 @@ fn resolve_display_item(expr: &Expr) -> Expr {
   if matches!(&current, Expr::Identifier(s) if s == "Null") {
     return Expr::String(String::new());
   }
-  if let Expr::FunctionCall { name, args } = &current
-    && name == "Dynamic"
-    && !args.is_empty()
-  {
-    let captured = crate::captured_graphics_count();
-    let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0]);
-    crate::truncate_captured_graphics(captured);
-    if let Ok(inner) = evaluated {
-      current = inner;
+  // `Dynamic[…]` shows its current value; `EventHandler[content, rules…]`
+  // shows `content` (its event rules need live input a static rendering
+  // lacks). A Demonstration nests them in either order, e.g.
+  // `EventHandler[Dynamic[board[…]], "MouseClicked" :> …]`.
+  loop {
+    let head = match &current {
+      Expr::FunctionCall { name, args } if !args.is_empty() => {
+        Some((name.as_str(), &args[0]))
+      }
+      _ => None,
+    };
+    match head {
+      Some(("Dynamic", held)) => {
+        let captured = crate::captured_graphics_count();
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(held);
+        crate::truncate_captured_graphics(captured);
+        match evaluated {
+          Ok(inner) => current = inner,
+          Err(_) => break,
+        }
+      }
+      Some(("EventHandler", content)) => current = content.clone(),
+      _ => break,
     }
+    current = unwrap_display_wrappers(&current);
   }
   current = unwrap_display_wrappers(&current);
   // `InputForm[expr]` displays as the InputForm text of `expr`.

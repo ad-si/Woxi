@@ -10783,7 +10783,7 @@ fn primitive_bounds(e: &Expr, bounds: &mut Option<[f64; 4]>) {
 fn highlight_primitives(mark: &Expr, out: &mut Vec<Expr>) {
   match mark {
     Expr::List(items) => {
-      items.iter().for_each(|m| highlight_primitives(m, out))
+      items.iter().for_each(|m| highlight_primitives(m, out));
     }
     Expr::FunctionCall { name, args } if name == "ImageMarker" => {
       let Some(points) = args.first() else { return };

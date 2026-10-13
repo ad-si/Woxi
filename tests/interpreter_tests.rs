@@ -1257,6 +1257,26 @@ mod interpreter_tests {
     assert!(svg.contains("<svg"));
   }
 
+  /// The same click-to-edit idiom, but with the `EventHandler`s nested as
+  /// items of a `Column` inside a `Grid` cell (a puzzle board with a digit
+  /// picker below it). Each nested handler must draw its content — the
+  /// board graphic and the picker grid — not its source text.
+  #[test]
+  fn test_event_handler_items_in_column_in_grid_render() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Grid[{{Column[{\
+         EventHandler[Dynamic[Graphics[{Red, Rectangle[]}]], \
+           \"MouseClicked\" :> Null], \
+         EventHandler[Grid[{{1, 2, 3}}, Frame -> All], \
+           \"MouseClicked\" :> Null]}]}}]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected a rendered layout");
+    assert!(!svg.contains("EventHandler"), "raw source leaked: {svg}");
+    assert!(!svg.contains("MouseClicked"), "raw source leaked: {svg}");
+  }
+
   /// Script/CLI mode keeps EventHandler's canonical symbolic form, matching
   /// wolframscript run without a front end — only Woxi's visual hosts
   /// (Playground, Studio) release it to show the wrapped content.
