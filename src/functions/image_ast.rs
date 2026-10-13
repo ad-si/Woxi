@@ -10783,7 +10783,7 @@ fn primitive_bounds(e: &Expr, bounds: &mut Option<[f64; 4]>) {
 fn highlight_primitives(mark: &Expr, out: &mut Vec<Expr>) {
   match mark {
     Expr::List(items) => {
-      items.iter().for_each(|m| highlight_primitives(m, out))
+      items.iter().for_each(|m| highlight_primitives(m, out));
     }
     Expr::FunctionCall { name, args } if name == "ImageMarker" => {
       let Some(points) = args.first() else { return };
@@ -10801,11 +10801,13 @@ fn highlight_primitives(mark: &Expr, out: &mut Vec<Expr>) {
       let centre = if let Some(r) =
         option_value(&gargs[1..], "PlotRange").and_then(range_pair_of_pairs)
       {
-        (0.5 * (r[0] + r[1]), 0.5 * (r[2] + r[3]))
+        (f64::midpoint(r[0], r[1]), f64::midpoint(r[2], r[3]))
       } else {
         let mut b = None;
         primitive_bounds(prims, &mut b);
-        b.map_or((0.0, 0.0), |r| (0.5 * (r[0] + r[1]), 0.5 * (r[2] + r[3])))
+        b.map_or((0.0, 0.0), |r| {
+          (f64::midpoint(r[0], r[1]), f64::midpoint(r[2], r[3]))
+        })
       };
       let pts: Vec<&Expr> = match points {
         Expr::List(p)
