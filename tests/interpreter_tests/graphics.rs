@@ -3882,6 +3882,37 @@ mod plot3d {
       }
     }
 
+    /// Regression: `ColorFunction` on a `ParametricPlot3D` curve was dropped,
+    /// so the curve was always drawn in one flat color instead of being
+    /// colored along its length.
+    #[test]
+    fn parametric_curve_honours_color_function() {
+      clear_state();
+      // Distinct colors along the curve, driven by the scaled z coordinate.
+      let result = interpret(
+        "Length[DeleteDuplicates[Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, \
+         {t, 0, 6}, ColorFunction -> Function[{x, y, z}, Hue[z]]][[1]], \
+         _Hue, Infinity]]] > 10",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+      // The option is consumed, not forwarded to the Graphics3D result.
+      let result = interpret(
+        "FreeQ[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}, \
+         ColorFunction -> Function[{x, y, z}, Hue[z]]], ColorFunction]",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+      // Named schemes color by the scaled height as well.
+      let result = interpret(
+        "Length[DeleteDuplicates[Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, \
+         {t, 0, 6}, ColorFunction -> Function[{x, y, z}, \
+         ColorData[\"SouthwestColors\"][z]]][[1]], _RGBColor, Infinity]]] > 10",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+    }
+
     /// Regression: `ParametricPlot3D` surfaces ignored `PlotPoints` and
     /// always sampled a fixed 51 x 51 grid, so a `Table` of many patches
     /// (`PlotPoints -> 15`) took minutes to draw instead of staying

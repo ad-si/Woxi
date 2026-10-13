@@ -11058,6 +11058,9 @@ fn parametric_plot3d_curve_ast(
 
   // Extract PlotStyle option (if any). Other options are kept verbatim.
   let mut plot_style: Option<&Expr> = None;
+  let mut color_function: Option<Expr> = None;
+  let mut color_scaling = true;
+  let mut plot_range: Option<[(f64, f64); 3]> = None;
   let mut forwarded_opts: Vec<Expr> = Vec::new();
   for opt in opts {
     if let Expr::Rule {
@@ -11068,7 +11071,33 @@ fn parametric_plot3d_curve_ast(
       && name == "PlotStyle"
     {
       plot_style = Some(replacement.as_ref());
+    } else if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && name == "ColorFunction"
+    {
+      // Drawn per segment below instead of being forwarded to `Graphics3D`.
+      color_function = Some(replacement.as_ref().clone());
+    } else if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && name == "ColorFunctionScaling"
+    {
+      color_scaling =
+        !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False");
     } else {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = opt
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange")
+      {
+        plot_range = parse_axis_ranges(replacement);
+      }
       forwarded_opts.push(opt.clone());
     }
   }
@@ -11092,6 +11121,75 @@ fn parametric_plot3d_curve_ast(
     .as_ref()
     .map(|ps| plot_style_items(ps, curves.len()))
     .unwrap_or_default();
+
+  // `ColorFunction -> f` colors the curve along its length by
+  // `f[x, y, z, t]`. With `ColorFunctionScaling` (the default) x, y and z
+  // arrive rescaled to 0..1 over the plot range (the explicit `PlotRange`,
+  // else the sampled extent) and t over the parameter interval.
+  let color_bounds: [(f64, f64); 3] = match (&color_function, plot_range) {
+    (Some(_), Some(r)) => r,
+    (Some(_), None) => {
+      let mut b = [(f64::INFINITY, f64::NEG_INFINITY); 3];
+      for c in &curves {
+        for i in 0..=SAMPLE_N {
+          let t = t_min + i as f64 * dt;
+          if let Some((x, y, z)) =
+            evaluate_parametric_at_t(&c.fx, &c.fy, &c.fz, tvar, t)
+          {
+            for (k, v) in [x, y, z].into_iter().enumerate() {
+              b[k].0 = b[k].0.min(v);
+              b[k].1 = b[k].1.max(v);
+            }
+          }
+        }
+      }
+      b
+    }
+    _ => [(0.0, 1.0); 3],
+  };
+  let scale = |v: f64, (lo, hi): (f64, f64)| -> f64 {
+    if !color_scaling {
+      v
+    } else if hi > lo {
+      (v - lo) / (hi - lo)
+    } else {
+      0.5
+    }
+  };
+  let segment_color = |p: [f64; 3], t: f64| -> Option<Expr> {
+    let cf = color_function.as_ref()?;
+    let t_scaled = if color_scaling && t_max > t_min {
+      (t - t_min) / (t_max - t_min)
+    } else {
+      t
+    };
+    let (x, y, z) = (
+      scale(p[0], color_bounds[0]),
+      scale(p[1], color_bounds[1]),
+      scale(p[2], color_bounds[2]),
+    );
+    if let Some(name) =
+      crate::functions::field_plot::color_function_scheme_name(cf)
+    {
+      let (r, g, b) =
+        crate::functions::field_plot::apply_named_color_function(&name, z);
+      return Some(call(
+        "RGBColor",
+        vec![
+          Expr::Real(r as f64 / 255.0),
+          Expr::Real(g as f64 / 255.0),
+          Expr::Real(b as f64 / 255.0),
+        ],
+      ));
+    }
+    let args = [
+      Expr::Real(x),
+      Expr::Real(y),
+      Expr::Real(z),
+      Expr::Real(t_scaled),
+    ];
+    crate::evaluator::function_application::apply_curried_call(cf, &args).ok()
+  };
 
   // Build a primitives list: [<style>, Line[pts1], <style>, Line[pts2], …]
   let mut prim_items: Vec<Expr> = Vec::new();
@@ -11121,15 +11219,49 @@ fn parametric_plot3d_curve_ast(
         seg.clear();
       }
     };
+    let mut prev: Option<(f64, f64, f64, f64)> = None;
     for i in 0..=SAMPLE_N {
       let t = t_min + i as f64 * dt;
       if let Some((x, y, z)) =
         evaluate_parametric_at_t(&curve.fx, &curve.fy, &curve.fz, tvar, t)
       {
+        if color_function.is_some() {
+          // One colored segment per step, joined to the previous vertex.
+          if let Some((px, py, pz, pt)) = prev
+            && let Some(col) = segment_color(
+              [
+                f64::midpoint(px, x),
+                f64::midpoint(py, y),
+                f64::midpoint(pz, z),
+              ],
+              f64::midpoint(pt, t),
+            )
+          {
+            prim_items.push(call1("Directive", col));
+            prim_items.push(call1(
+              "Line",
+              Expr::List(
+                vec![
+                  Expr::List(
+                    vec![Expr::Real(px), Expr::Real(py), Expr::Real(pz)].into(),
+                  ),
+                  Expr::List(
+                    vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)].into(),
+                  ),
+                ]
+                .into(),
+              ),
+            ));
+            produced_any = true;
+          }
+          prev = Some((x, y, z, t));
+          continue;
+        }
         current_segment.push(Expr::List(
           vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)].into(),
         ));
       } else {
+        prev = None;
         flush(&mut current_segment, &mut prim_items);
       }
     }
