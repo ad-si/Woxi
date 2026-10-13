@@ -2938,7 +2938,8 @@ fn strip_saved_contexts(s: &str) -> String {
 /// freshly opened notebook's widget work before any other cell has been
 /// evaluated. The saved code is rewritten into plain session-level input:
 /// `$CellContext`` prefixes are dropped and the FrontEnd's line-continuation
-/// markers (a `\` at end of line in box text) are removed.
+/// markers (a `\` at end of line in box text) are removed, and so is the
+/// `$$` suffix of the DynamicModule's control variables.
 pub fn extract_saved_initialization(box_dump: &str) -> Option<String> {
   let mut search_from = 0;
   while let Some(rel) = box_dump[search_from..].find("Initialization") {
@@ -2949,10 +2950,12 @@ pub fn extract_saved_initialization(box_dump: &str) -> Option<String> {
       if let Some(body) = rest.strip_prefix('(')
         && let Some(inner) = matching_paren_prefix(body)
       {
-        let cleaned = inner
-          .replace("\\\n", "")
-          .replace("$CellContext`", "")
-          .replace("DemonstrationsTools`", "");
+        // The control variables lose their `$$` suffix here exactly as in
+        // the reconstructed body and specifications, or a delayed helper
+        // (`take := Take[data, m$$]`) would read a symbol no control sets.
+        let cleaned = strip_uniquification_suffix(&strip_saved_contexts(
+          &inner.replace("\\\n", ""),
+        ));
         let cleaned = cleaned.trim();
         if !cleaned.is_empty() && cleaned != "None" {
           return Some(cleaned.to_string());
@@ -7140,7 +7143,18 @@ yf4GL4DwC5VA4w
       {2, 3}}; Typeset`initDone$$ = True),\n\
       SynchronousInitialization->True]";
     let init = extract_saved_initialization(dump).unwrap();
-    assert_eq!(init, "{a = 1, b = {2, 3}}; Typeset`initDone$$ = True");
+    assert_eq!(init, "{a = 1, b = {2, 3}}; Typeset`initDone = True");
+  }
+
+  #[test]
+  fn test_extract_saved_initialization_strips_control_suffix() {
+    // A delayed helper reading a control (`take := Take[data, m$$]`) must
+    // see the same plain name the reconstructed controls carry.
+    let dump = "DynamicModuleBox[{$CellContext`m$$ = 3}, DynamicBox[…],\n\
+      Initialization:>($CellContext`take := Take[$CellContext`data, \
+      $CellContext`m$$]; $CellContext`x$7$$ = 1)]";
+    let init = extract_saved_initialization(dump).unwrap();
+    assert_eq!(init, "take := Take[data, m]; x$7 = 1");
   }
 
   #[test]

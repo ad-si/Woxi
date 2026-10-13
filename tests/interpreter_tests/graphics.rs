@@ -18993,6 +18993,22 @@ mod graphics_grid {
     assert!(svg.contains(">b<"), "{svg}");
   }
 
+  /// A `Grid` nested two layouts deep under a `Style` has the directives
+  /// pushed through the intermediate `Column`s down to its cells; the span
+  /// placeholder must stay a bare identifier on the way.
+  #[test]
+  fn styled_nested_column_grid_keeps_span_placeholders() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Text@Style[Column[{Column[{Grid[{{\"a\", \"b\"}, \
+                            {\"c\", SpanFromLeft}}, Frame -> All]}]}], 14]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(!svg.contains("SpanFromLeft"), "{svg}");
+    assert!(svg.contains(">c<"), "{svg}");
+  }
+
   #[test]
   fn grid_with_styled_image() {
     clear_state();
