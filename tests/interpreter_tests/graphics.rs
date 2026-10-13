@@ -13548,6 +13548,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `ContourPlot[{f, g}, …, Contours -> {c}]` draws the level curve of
+    /// every function in the list; it used to yield an empty SVG.
+    #[test]
+    fn contour_plot_function_list_with_explicit_levels() {
+      let svg = export_svg(
+        "ContourPlot[{x^2 + y^2 - 1, x - y}, {x, -2, 2}, {y, -2, 2}, \
+         Contours -> {0}, ContourShading -> False]",
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "expected contour polylines, got: {}",
+        &svg[..svg.len().min(200)]
+      );
+      // A non-zero level is the zero contour of `f - c`.
+      let shifted = export_svg(
+        "ContourPlot[{x^2 + y^2}, {x, -2, 2}, {y, -2, 2}, \
+         Contours -> {1}, ContourShading -> False]",
+      );
+      let equation =
+        export_svg("ContourPlot[x^2 + y^2 == 1, {x, -2, 2}, {y, -2, 2}]");
+      assert_eq!(
+        shifted.matches("<polyline").count(),
+        equation.matches("<polyline").count()
+      );
+    }
+
     /// Regression: a pole in the sampled domain (`1/Sqrt[x^2 + y^2]` blows
     /// up at the origin) used to dominate the raw min/max of the grid
     /// samples, which fed both the color scale and the automatic contour

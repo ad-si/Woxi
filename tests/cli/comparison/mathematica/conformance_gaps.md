@@ -4873,3 +4873,11 @@ unevaluated / report `ExampleData::notcoll`. The `Oulipo: Wordshift + 7`
 Demonstration needs both (its `Manipulate` is initialised from them), so
 only its static content and stored output render. `DictionaryLookup` works
 against the bundled word list, which may differ from Wolfram's dictionary.
+
+### `NDSolve` with `WhenEvent` and `Sow` does not run
+
+`NDSolve[{…, WhenEvent[t[s] == 1, Sow[{x[s], y[s]}]]}, …]` over an implicit
+(differential-algebraic) system stays unevaluated, so `Reap` collects nothing.
+The `All Real Roots of a Nonlinear System of Equations` Demonstration relies
+on this to mark its roots: the contour curves render, but the red root points
+and the root table are missing.
