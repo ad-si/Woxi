@@ -6710,6 +6710,33 @@ mod morphological_components {
   }
 }
 
+mod morphological_image_input {
+  use super::*;
+
+  // An image is thresholded on its gray levels like a numeric matrix.
+  #[test]
+  fn components_of_image() {
+    assert_eq!(
+      interpret(
+        "MorphologicalComponents[Image[{{0.9, 0.1, 0.9}, {0.1, 0.1, 0.1}, {0.9, 0.1, 0.9}}], 0.5]"
+      )
+      .unwrap(),
+      "{{1, 0, 2}, {0, 0, 0}, {3, 0, 4}}"
+    );
+  }
+
+  #[test]
+  fn perimeter_of_filled_square() {
+    assert_eq!(
+      interpret(
+        "ImageData[MorphologicalPerimeter[Image[{{0,0,0,0,0},{0,1,1,1,0},{0,1,1,1,0},{0,1,1,1,0},{0,0,0,0,0}}], 0.5]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0, 0, 0}, {0, 1, 1, 1, 0}, {0, 1, 0, 1, 0}, {0, 1, 1, 1, 0}, {0, 0, 0, 0, 0}}"
+    );
+  }
+}
+
 mod component_measurements {
   use super::*;
 

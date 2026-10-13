@@ -4874,6 +4874,14 @@ Demonstration needs both (its `Manipulate` is initialised from them), so
 only its static content and stored output render. `DictionaryLookup` works
 against the bundled word list, which may differ from Wolfram's dictionary.
 
+### `MorphologicalPerimeter` edge handling is unverified
+
+`MorphologicalPerimeter[image, t]` marks foreground pixels that touch a
+background pixel horizontally or vertically; pixels outside the image are
+ignored (not treated as background). Whether Wolfram counts the image border
+as background, and its exact connectivity, has not been checked against
+`wolframscript` (seen in the `Segmenting a Medical Image` Demonstration).
+
 ### `NDSolve` with `WhenEvent` and `Sow` does not run
 
 `NDSolve[{…, WhenEvent[t[s] == 1, Sow[{x[s], y[s]}]]}, …]` over an implicit
