@@ -15020,6 +15020,23 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
     {
       expr_to_textbox(&args[0])
     }
+    // `MatrixForm[matrix]` nested in a larger 2D layout (e.g. as a fraction
+    // numerator) keeps its text grid instead of the literal head.
+    Expr::FunctionCall { name, args }
+      if name == "MatrixForm"
+        && args.len() == 1
+        && crate::functions::string_ast::matrix_form_to_string(&args[0])
+          .is_some() =>
+    {
+      let text =
+        crate::functions::string_ast::matrix_form_to_string(&args[0]).unwrap();
+      let lines: Vec<String> =
+        text.lines().map(std::string::ToString::to_string).collect();
+      let baseline = lines.len().saturating_sub(1) / 2;
+      let mut tb = TextBox { lines, baseline };
+      tb.normalize();
+      tb
+    }
     // `Definition[sym]` / `FullDefinition[sym]` print as the definition text.
     Expr::FunctionCall { name, args }
       if (name == "Definition" || name == "FullDefinition")
