@@ -1754,6 +1754,101 @@ fn faces_complex(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// `"NetFaces"`: a planar net of the solid — the faces unfolded into the
+/// plane along a breadth-first spanning tree of the face adjacency graph,
+/// as a list of 2D `Polygon`s (one per face, sharing the edges the
+/// unfolding keeps joined).
+fn net_faces(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
+  let vertices = numeric_vertices(info)?;
+  let faces = numeric_faces(info)?;
+  let sub = |a: &[f64], b: &[f64]| -> Vec<f64> {
+    a.iter().zip(b).map(|(x, y)| x - y).collect()
+  };
+  let dot =
+    |a: &[f64], b: &[f64]| -> f64 { a.iter().zip(b).map(|(x, y)| x * y).sum() };
+
+  // Place `face` given the 2D images `pa`, `pb` of its edge (a, b) and a
+  // 2D point `away` on the side of the edge the face must not occupy.
+  let place = |face: &[usize],
+               a: usize,
+               b: usize,
+               pa: [f64; 2],
+               pb: [f64; 2],
+               away: [f64; 2]|
+   -> Vec<[f64; 2]> {
+    let e = sub(&vertices[b], &vertices[a]);
+    let len = dot(&e, &e).sqrt();
+    let u3: Vec<f64> = e.iter().map(|c| c / len).collect();
+    let u2 = [(pb[0] - pa[0]) / len, (pb[1] - pa[1]) / len];
+    let mut n2 = [-u2[1], u2[0]];
+    if (away[0] - pa[0]) * n2[0] + (away[1] - pa[1]) * n2[1] > 0.0 {
+      n2 = [-n2[0], -n2[1]];
+    }
+    face
+      .iter()
+      .map(|&v| {
+        let d = sub(&vertices[v], &vertices[a]);
+        let along = dot(&d, &u3);
+        let perp = (dot(&d, &d) - along * along).max(0.0).sqrt();
+        [
+          pa[0] + along * u2[0] + perp * n2[0],
+          pa[1] + along * u2[1] + perp * n2[1],
+        ]
+      })
+      .collect()
+  };
+
+  if faces.is_empty() {
+    return Ok(Expr::List(Vec::new().into()));
+  }
+  let mut placed: Vec<Option<Vec<[f64; 2]>>> = vec![None; faces.len()];
+  let first = &faces[0];
+  let (a0, b0) = (first[0], first[1]);
+  let e0 = sub(&vertices[b0], &vertices[a0]);
+  let len0 = dot(&e0, &e0).sqrt();
+  placed[0] = Some(place(first, a0, b0, [0.0, 0.0], [len0, 0.0], [0.0, -1.0]));
+  let mut queue = std::collections::VecDeque::from([0usize]);
+  while let Some(fi) = queue.pop_front() {
+    let face = faces[fi].clone();
+    let pos = placed[fi].clone().unwrap();
+    let n = pos.len() as f64;
+    let centroid = [
+      pos.iter().map(|p| p[0]).sum::<f64>() / n,
+      pos.iter().map(|p| p[1]).sum::<f64>() / n,
+    ];
+    for k in 0..face.len() {
+      let (a, b) = (face[k], face[(k + 1) % face.len()]);
+      for (gi, g) in faces.iter().enumerate() {
+        if placed[gi].is_some() {
+          continue;
+        }
+        let shares = (0..g.len()).any(|m| {
+          let (c, d) = (g[m], g[(m + 1) % g.len()]);
+          (c == a && d == b) || (c == b && d == a)
+        });
+        if shares {
+          placed[gi] =
+            Some(place(g, a, b, pos[k], pos[(k + 1) % face.len()], centroid));
+          queue.push_back(gi);
+        }
+      }
+    }
+  }
+
+  let polygons: Vec<Expr> = placed
+    .into_iter()
+    .flatten()
+    .map(|pts| {
+      let rows: Vec<Expr> = pts
+        .iter()
+        .map(|p| Expr::List(vec![Expr::Real(p[0]), Expr::Real(p[1])].into()))
+        .collect();
+      call1("Polygon", Expr::List(rows.into()))
+    })
+    .collect();
+  Ok(Expr::List(polygons.into()))
+}
+
 /// The face index lists as plain `usize` rows, for rendering.
 fn numeric_faces(
   info: &PolyhedronInfo,
@@ -1837,6 +1932,7 @@ static PROPERTIES: &[&str] = &[
   "Inradius",
   "Insphere",
   "Midradius",
+  "NetFaces",
   "Skeleton",
   "SkeletonGraph",
   "SurfaceArea",
@@ -1942,6 +2038,7 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "FaceCountRules" => face_count_rules(info),
         "FaceIndices" => face_indices(info),
         "Faces" => faces_complex(info),
+        "NetFaces" => net_faces(info),
         "Insphere" => insphere(info),
         "Skeleton" | "SkeletonGraph" => skeleton_graph(info),
         _ => unevaluated(),
