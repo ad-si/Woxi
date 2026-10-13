@@ -3100,6 +3100,19 @@ fn is_display_wrapper(expr: &syntax::Expr) -> bool {
   }
 }
 
+/// Whether `expr` is an image, possibly under `Pane`/`Panel` wrappers.
+fn wraps_a_raster_image(expr: &syntax::Expr) -> bool {
+  match expr {
+    syntax::Expr::Image { .. } => true,
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Pane" | "Panel") =>
+    {
+      args.first().is_some_and(wraps_a_raster_image)
+    }
+    _ => false,
+  }
+}
+
 /// If `expr` is a Grid[…] or TextGrid[…] call (possibly nested in a list),
 /// render it as SVG and return `-Graphics-`. Grid/TextGrid stay symbolic
 /// during evaluation so that part-assignment works; rendering only happens
@@ -3137,7 +3150,23 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         _ => expr,
       }
     }
-    // `Pane[Text[Grid[…]], size]` (also `Panel`/`Framed`): the pane only
+    // `Panel[Pane[image]]` — the Demonstrations idiom for showing a
+    // computed raster. The panel only frames the picture it wraps, so it is
+    // drawn as that picture (a pane around an image already is).
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Panel"
+        && args.len() == 1
+        && wraps_a_raster_image(&args[0]) =>
+    {
+      let mut content = &args[0];
+      while let syntax::Expr::FunctionCall { name, args } = content
+        && matches!(name.as_str(), "Pane" | "Panel")
+        && let Some(inner) = args.first()
+      {
+        content = inner;
+      }
+      content.clone()
+    } // `Pane[Text[Grid[…]], size]` (also `Panel`/`Framed`): the pane only
     // sizes the table `Text` marks for drawing. A pane around a bare
     // `Grid` of plain text stays textual, so only look through to `Text`.
     syntax::Expr::FunctionCall { name, args }

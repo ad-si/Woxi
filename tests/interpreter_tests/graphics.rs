@@ -19927,6 +19927,55 @@ mod grid_rasterize {
   }
 
   #[test]
+  fn image_of_graphics_with_pixel_size_pins_dimensions() {
+    clear_state();
+    // An explicit {w, h} ImageSize lays the graphic out at that pixel size,
+    // whether the graphic is written inline or comes from a variable.
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image[Graphics[{Red, Rectangle[{0, 0}, {5, 2}]}], \
+         ImageSize -> {80, 30}]]"
+      )
+      .unwrap(),
+      "{80, 30}"
+    );
+    assert_eq!(
+      interpret(
+        "g = Graphics[{Blue, Disk[]}]; \
+         ImageDimensions[Image[g, ImageSize -> {50, 70}]]"
+      )
+      .unwrap(),
+      "{50, 70}"
+    );
+  }
+
+  #[test]
+  fn image_add_combines_rgb_with_rgba_and_saturates() {
+    clear_state();
+    // A rasterized graphic (RGBA) adds to an RGB image on the color
+    // channels, and byte images saturate at white.
+    assert_eq!(
+      interpret(
+        "a = Image[Table[{0.8, 0.8, 0.8}, {2}, {3}], \"Byte\"]; \
+         b = Image[Graphics[{White, Rectangle[]}], ImageSize -> {3, 2}]; \
+         {ImageChannels[ImageAdd[a, b]], Max[ImageData[ImageAdd[a, b]]]}"
+      )
+      .unwrap(),
+      "{3, 1.}"
+    );
+  }
+
+  #[test]
+  fn panel_around_an_image_draws_the_image() {
+    clear_state();
+    let result = woxi::interpret_with_stdout(
+      "Panel[Pane[Image[{{0.2, 0.8}, {0.9, 0.1}}]]]",
+    )
+    .unwrap();
+    assert!(result.graphics.is_some());
+  }
+
+  #[test]
   fn image_of_graphics_rasterizes() {
     clear_state();
     // ImageSize only affects display, not the pixel data.
