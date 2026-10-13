@@ -11730,8 +11730,6 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .filter_map(|p| p.map(|(_, _, z)| z))
               .sum::<f64>()
               / 4.0;
-            let avg_z_norm = (avg_z - gz_min) / rz;
-            let default_color = height_color(avg_z_norm);
             let mesh_color = mesh_shading_active.then(|| {
               let avg_x = corners
                 .iter()
@@ -11759,11 +11757,29 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   .flatten()
               })
             });
-            let (cr, cg, cb) =
+            // Only an explicit colour (`PlotStyle`, `MeshShading`) is baked
+            // into a facet. Facets of the default look carry none, like
+            // wolframscript's `ParametricPlot3D[…][[1]]`, so a colour
+            // directive placed before the extracted complex still applies.
+            let explicit =
               match plot_style_for_surface(&plot_styles, surface_idx) {
-                Some(style) => style.color.unwrap_or(default_color),
-                None => mesh_color.flatten().unwrap_or(default_color),
+                Some(style) => style.color,
+                None => mesh_color.flatten(),
               };
+            let polygon = call1(
+              "Polygon",
+              Expr::List(
+                [a, b, c, d]
+                  .iter()
+                  .map(|&k| Expr::Integer(k as i128 + 1))
+                  .collect::<Vec<_>>()
+                  .into(),
+              ),
+            );
+            let Some((cr, cg, cb)) = explicit else {
+              content.push(polygon);
+              continue;
+            };
             content.push(Expr::List(
               vec![
                 call(
@@ -11774,16 +11790,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     Expr::Real(cb as f64 / 255.0),
                   ],
                 ),
-                call1(
-                  "Polygon",
-                  Expr::List(
-                    [a, b, c, d]
-                      .iter()
-                      .map(|&k| Expr::Integer(k as i128 + 1))
-                      .collect::<Vec<_>>()
-                      .into(),
-                  ),
-                ),
+                polygon,
               ]
               .into(),
             ));
