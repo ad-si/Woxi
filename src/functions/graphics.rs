@@ -13723,6 +13723,9 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Options carried over from the graphics being shown (see the
   // `Expr::Graphics` arm below).
   let mut inherited_options: Vec<Expr> = Vec::new();
+  // A `PlotRange` given to `Show` itself replaces the ranges of the shown
+  // graphics instead of being unioned with them.
+  let mut own_plot_range: Option<Expr> = None;
   // The single graphic of a `Show[g]`, and whether `Show` was given any
   // options of its own — with neither a second graphic nor an option to
   // apply, `Show[g]` is `g`.
@@ -13953,10 +13956,19 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
         has_own_options = true;
+        if matches!(option_name_value(expr_ref), Some(("PlotRange", _))) {
+          own_plot_range = Some(expr_ref.clone());
+        }
         merge_option(&mut merged_options, expr_ref);
       }
       _ => {}
     }
+  }
+  if let Some(range) = own_plot_range {
+    merged_options.retain(|existing| {
+      !matches!(option_name_value(existing), Some(("PlotRange", _)))
+    });
+    merged_options.push(range);
   }
 
   // `Show[g]` is `g`: hand back the rendering it already has instead of

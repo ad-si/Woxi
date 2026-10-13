@@ -11308,6 +11308,22 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A `PlotRange` given to `Show` itself replaces the ranges of the
+    /// shown graphics. It used to be unioned with the first graphic's
+    /// range, so narrowing a `RegionPlot` with `Show[…, PlotRange -> …]`
+    /// kept the full `{-1, 1}` axes.
+    #[test]
+    fn show_own_plot_range_replaces_region_plot_range() {
+      let svg = export_svg(
+        "Show[RegionPlot[x^2 + y^2 < 1, {x, -1, 1}, {y, 0, 1}], \
+           Graphics[{Circle[{0, 0}, 0.5]}], \
+           PlotRange -> {{-0.5, 0.5}, {0, 0.7}}]",
+      );
+      assert!(svg.contains(">0.7<"), "y axis must reach 0.7: {svg}");
+      assert!(!svg.contains(">1.0<"), "range must not stay at 1: {svg}");
+      assert!(!svg.contains(">-1.0<"), "range must not stay at -1: {svg}");
+    }
+
     // wolframscript accepts arbitrarily many curves in
     // `ParametricPlot[{{fx1,fy1}, {fx2,fy2}, …}, {t, …}]`. Woxi
     // previously rejected 3+ curves with a fatal error because
