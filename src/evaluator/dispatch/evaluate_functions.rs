@@ -5236,7 +5236,7 @@ fn evaluate_function_call_ast_inner(
     };
     let trailing_options: Vec<Expr> = args[options_start..]
       .iter()
-      .filter(|a| matches!(a, Expr::Rule { .. }))
+      .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
       .cloned()
       .collect();
 
