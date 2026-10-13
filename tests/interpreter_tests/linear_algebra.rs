@@ -1587,6 +1587,28 @@ mod eigenvalues {
     );
   }
 
+  /// Regression: exact rationals mixed with machine reals (a covariance
+  /// matrix) left `Eigenvectors` and `PrincipalComponents` unevaluated.
+  #[test]
+  fn mixed_rational_and_real_matrix() {
+    let m = "{{13/3, 5.75}, {5.75, 8.4}}";
+    assert_eq!(
+      interpret(&format!(
+        "Max[Abs[{m} . Eigenvectors[{m}][[1]] - \
+         Eigenvalues[{m}][[1]] Eigenvectors[{m}][[1]]]] < 10^-8"
+      ))
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Dimensions[PrincipalComponents[{{1, 2}, {3, 5}, {4, 4.5}, {6, 9}}]]"
+      )
+      .unwrap(),
+      "{4, 2}"
+    );
+  }
+
   #[test]
   fn eigenvalues_1x1() {
     assert_eq!(interpret("Eigenvalues[{{5}}]").unwrap(), "{5}");
