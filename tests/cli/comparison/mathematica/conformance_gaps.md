@@ -4904,3 +4904,12 @@ and the root table are missing.
 numeric complex poles returns unevaluated, so the time-response plot in the
 `Poles and Zeros of Time Domain Response Functions` Demonstration stays empty
 (its pole/zero plane renders fine).
+
+### `ReplaceAll` of many call sites by a large `InterpolatingFunction`
+
+`Table[x[i][t], {i, 80}, {t, 0, 388, 0.1}] /. sol[[1]]` with the NDSolve
+result of an 80-equation system (the default view of the `Circulant Ring
+Systems` Demonstration) deep-copies the tabulated data for every one of the
+~310,000 replaced `x[i]` heads, so it takes minutes instead of Wolfram's
+shared-structure instant. Applying an `InterpolatingFunction` itself is
+O(log points) now; only the per-occurrence copy remains.

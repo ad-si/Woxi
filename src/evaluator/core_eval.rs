@@ -2702,6 +2702,50 @@ pub fn evaluate_expr_to_expr_inner(
             )
           )
         });
+        // A symbol holding an `InterpolatingFunction` (an NDSolve or
+        // Interpolation result) is applied straight from the store: copying
+        // out its whole data table on every call made sampling it O(points).
+        // Only plain numeric arguments take this route, so nothing user-defined
+        // can run while the store is borrowed.
+        let holds_interpolation = ENV.with(|e| {
+          matches!(
+            e.borrow().get(name),
+            Some(StoredValue::ExprVal(Expr::FunctionCall { name: head, .. }))
+              if head == "InterpolatingFunction"
+          )
+        });
+        if holds_interpolation {
+          let mut prepared: Vec<Expr> = Vec::with_capacity(args.len());
+          for a in args {
+            prepared.push(evaluate_expr_to_expr(a)?);
+          }
+          if prepared.len() == 1
+            && matches!(
+              prepared[0],
+              Expr::Integer(_) | Expr::Real(_) | Expr::String(_)
+            )
+          {
+            let applied = ENV.with(|e| match e.borrow().get(name) {
+              Some(StoredValue::ExprVal(Expr::FunctionCall {
+                name: head,
+                args: func_args,
+              }))
+                if head == "InterpolatingFunction"
+                  && (2..=4).contains(&func_args.len()) =>
+              {
+                Some(
+                  crate::functions::ode_ast::evaluate_interpolating_function(
+                    func_args, &prepared,
+                  ),
+                )
+              }
+              _ => None,
+            });
+            if let Some(result) = applied {
+              return result;
+            }
+          }
+        }
         let var_val = ENV.with(|e| match e.borrow().get(name) {
           Some(
             value @ StoredValue::ExprVal(
@@ -2722,6 +2766,14 @@ pub fn evaluate_expr_to_expr_inner(
               // the template, not the `Set` — and what it yields is what
               // gets applied.
               let head_value = match stored_expr {
+                // Finished interpolation data: re-evaluating it would walk
+                // every tabulated point on each call (see the CurriedCall
+                // case).
+                Expr::FunctionCall { name: head, .. }
+                  if head == "InterpolatingFunction" =>
+                {
+                  stored_expr.clone()
+                }
                 Expr::FunctionCall { .. } => {
                   evaluate_expr_to_expr(&Expr::Identifier(name.clone()))?
                 }
@@ -4151,7 +4203,16 @@ pub fn evaluate_expr_to_expr_inner(
       // Evaluate the curried call: f[a][b] -> apply f[a] to args.
       // Honour Function[{params}, body, attrs] hold attributes so that
       // Function[..., HoldAll][1+1] sees its arg unevaluated.
-      let evaluated_func = evaluate_expr_to_expr(func)?;
+      // An `InterpolatingFunction[…]` head is inert, finished data (its
+      // tabulated points are already numbers), so re-evaluating it would
+      // only walk every data point again on each call — making sampling an
+      // NDSolve result cost O(points) per sample instead of a binary search.
+      let evaluated_func = match &**func {
+        Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => {
+          (**func).clone()
+        }
+        _ => evaluate_expr_to_expr(func)?,
+      };
       let hold_attrs = function_hold_attributes(&evaluated_func);
       let mut prepared: Vec<Expr> = Vec::with_capacity(args.len());
       for (i, a) in args.iter().enumerate() {

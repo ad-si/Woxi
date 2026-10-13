@@ -517,11 +517,9 @@ fn table_over_iterator(
         }
         let val = eval_at(&current_expr)?;
         crate::evaluator::listable::push_list_element(&mut results, val);
-        current_expr = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
-          current_expr,
-          step_expr.clone(),
-        ]))?;
         safety_counter += 1;
+        current_expr =
+          nth_iterator_value(&min_expr, &step_expr, safety_counter)?;
         if safety_counter > 1_000_000 {
           return Err(InterpreterError::EvaluationError(
             "Table: iterator exceeded maximum iterations".into(),
@@ -544,11 +542,9 @@ fn table_over_iterator(
         }
         let val = eval_at(&current_expr)?;
         crate::evaluator::listable::push_list_element(&mut results, val);
-        current_expr = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
-          current_expr,
-          step_expr.clone(),
-        ]))?;
         safety_counter += 1;
+        current_expr =
+          nth_iterator_value(&min_expr, &step_expr, safety_counter)?;
         if safety_counter > 1_000_000 {
           return Err(InterpreterError::EvaluationError(
             "Table: iterator exceeded maximum iterations".into(),
@@ -565,6 +561,24 @@ fn table_over_iterator(
 }
 
 use crate::functions::math_ast::expr_to_rational;
+
+/// The `k`-th iterator value `min + k*step`. Computing it from `min` each
+/// time (rather than adding `step` to the previous value) keeps machine-real
+/// steps free of accumulated rounding: `Table[t, {t, 0, 20, 0.1}]` ends
+/// exactly at `20.`, as `Range` does, not at `20.000000000000014`.
+fn nth_iterator_value(
+  min_expr: &Expr,
+  step_expr: &Expr,
+  k: usize,
+) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+    min_expr.clone(),
+    crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(k as i128), step_expr.clone()],
+    )?,
+  ]))
+}
 
 /// Number of steps from `min` to `max` implied by `ratio = (max - min) /
 /// step`, tolerant of floating-point rounding at an exact integer
