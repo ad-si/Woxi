@@ -790,6 +790,13 @@ struct ParsedOptions {
   interpolation_order: Option<i128>,
   /// `DataRange -> All` / `{xmin, xmax}` (None for the Automatic default).
   data_range: Option<DataRangeSpec>,
+  /// `MeshFunctions -> {f, …}`: only the first function shades a curve.
+  mesh_function: Option<Expr>,
+  /// `Mesh -> {{v1, v2, …}, …}`: the first function's mesh values.
+  mesh_levels: Vec<f64>,
+  /// `MeshShading -> {s0, s1, …}`: the style of each region between mesh
+  /// values, in increasing order of the mesh function.
+  mesh_shading: Vec<SeriesStyle>,
 }
 
 /// Parse common plot options from args[1..].
@@ -980,8 +987,26 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "Mesh" => match replacement {
           Expr::Identifier(v) if v == "All" => opts.mesh = Mesh::All,
           Expr::Identifier(v) if v == "Full" => opts.mesh = Mesh::Full,
+          Expr::List(per_function) => {
+            if let Some(Expr::List(levels)) = per_function.first() {
+              out.mesh_levels =
+                levels.iter().filter_map(try_eval_to_f64).collect();
+              out.mesh_levels.sort_by(f64::total_cmp);
+            }
+          }
           _ => {}
         },
+        "MeshFunctions" => {
+          if let Expr::List(items) = replacement {
+            out.mesh_function = items.first().cloned();
+          }
+        }
+        "MeshShading" => {
+          if matches!(replacement, Expr::List(_)) {
+            out.mesh_shading =
+              crate::functions::plot::parse_plot_style(replacement);
+          }
+        }
         // `None` (the default) means straight lines, like order 1.
         "InterpolationOrder" => {
           if let Some(n) = crate::functions::math_ast::expr_to_i128(replacement)
@@ -1019,6 +1044,71 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
     }
   }
   out
+}
+
+/// Split a polyline where `f(x, y)` crosses one of the sorted mesh `levels`,
+/// returning each piece with the index of the region (the number of levels
+/// below the function value) it lies in. Crossings are found by linear
+/// interpolation of the function between consecutive points.
+fn split_at_mesh_levels(
+  series: &[(f64, f64)],
+  f: &Expr,
+  levels: &[f64],
+) -> Vec<(usize, Vec<(f64, f64)>)> {
+  let value = |&(x, y): &(f64, f64)| -> Option<f64> {
+    let r = crate::functions::list_helpers_ast::apply_func_to_two_args(
+      f,
+      &Expr::Real(x),
+      &Expr::Real(y),
+    )
+    .ok()?;
+    try_eval_to_f64(&r)
+  };
+  let region = |v: f64| levels.iter().filter(|l| v > **l).count();
+  let mut pieces: Vec<(usize, Vec<(f64, f64)>)> = Vec::new();
+  let mut prev: Option<(f64, f64, f64)> = None;
+  for pt in series {
+    let Some(v) = value(pt) else { continue };
+    let cur = region(v);
+    if let Some((px, py, pv)) = prev {
+      let pr = region(pv);
+      if pr != cur {
+        // Mesh values crossed between the two points, in travel order.
+        let mut crossed: Vec<f64> = levels
+          .iter()
+          .copied()
+          .filter(|l| (pv.min(v)..=pv.max(v)).contains(l))
+          .collect();
+        if pv > v {
+          crossed.reverse();
+        }
+        let n = crossed.len();
+        for (k, l) in crossed.into_iter().enumerate() {
+          let t = (l - pv) / (v - pv);
+          let at = (px + t * (pt.0 - px), py + t * (pt.1 - py));
+          if let Some((_, piece)) = pieces.last_mut() {
+            piece.push(at);
+          }
+          // Each crossing steps one region up or down; the last lands on
+          // the region of the new point.
+          let next = if k + 1 == n {
+            cur
+          } else if v > pv {
+            pr + k + 1
+          } else {
+            pr.saturating_sub(k + 1)
+          };
+          pieces.push((next, vec![at]));
+        }
+      }
+    }
+    match pieces.last_mut() {
+      Some((_, piece)) => piece.push(*pt),
+      None => pieces.push((cur, vec![*pt])),
+    }
+    prev = Some((pt.0, pt.1, v));
+  }
+  pieces
 }
 
 /// Apply explicit PlotRange overrides from parsed options on top of the
@@ -1558,6 +1648,29 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+
+  // `MeshShading` colours the stretches of the curve between mesh values.
+  let mut draw_series = draw_series;
+  if let (Some(f), false, false) = (
+    &parsed.mesh_function,
+    parsed.mesh_levels.is_empty(),
+    parsed.mesh_shading.is_empty(),
+  ) {
+    let mut pieces = Vec::new();
+    let mut styles = Vec::new();
+    for series in &draw_series {
+      for (region, piece) in
+        split_at_mesh_levels(series, f, &parsed.mesh_levels)
+      {
+        styles.push(
+          parsed.mesh_shading[region % parsed.mesh_shading.len()].clone(),
+        );
+        pieces.push(piece);
+      }
+    }
+    draw_series = pieces;
+    parsed.opts.plot_style = styles;
+  }
 
   let svg =
     generate_svg_with_filling(&draw_series, x_range, y_range, &parsed.opts)?;

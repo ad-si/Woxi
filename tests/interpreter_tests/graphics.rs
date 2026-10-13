@@ -22588,6 +22588,38 @@ mod parametric_plot3d {
     );
   }
 
+  /// Regression (Wolfram Demonstration on cumulative sums and change
+  /// detection): `ListLinePlot` with `MeshFunctions`, `Mesh` and
+  /// `MeshShading` colours the stretches of the curve between mesh values
+  /// instead of drawing a single default-coloured line.
+  #[test]
+  fn list_line_plot_mesh_shading_colors_curve_segments() {
+    let svg = export_svg(
+      "ListLinePlot[{0, 1, 2, 3, 2, 1, 0, -1}, MeshFunctions -> {#2 &}, \
+       Mesh -> {{0.5, 1.5}}, MeshStyle -> None, \
+       MeshShading -> {Red, Green, Blue}]",
+    );
+    for color in ["#FF0000", "#00FF00", "#0000FF"] {
+      assert!(
+        svg.contains(&format!("stroke=\"{color}\"")),
+        "expected a {color} curve segment: {svg}"
+      );
+    }
+  }
+
+  /// A step-valued mesh function (`Boole[#1 >= m]`) splits the curve into a
+  /// left and a right part with the first and second shading colours.
+  #[test]
+  fn list_line_plot_mesh_shading_with_step_mesh_function() {
+    let svg = export_svg(
+      "m = 4; ListLinePlot[Accumulate[Range[8]], \
+       MeshFunctions -> {Boole[#1 >= m] &}, Mesh -> {{0}}, \
+       MeshStyle -> None, MeshShading -> {Red, Blue}]",
+    );
+    assert!(svg.contains("stroke=\"#FF0000\""), "no red part: {svg}");
+    assert!(svg.contains("stroke=\"#0000FF\""), "no blue part: {svg}");
+  }
+
   /// `Mesh -> {{v1, v2, ...}}` with more than one break value partitions
   /// the surface into as many regions as `MeshShading` gives colours,
   /// cycling through them in ascending order of the mesh function's value.
