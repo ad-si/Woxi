@@ -242,9 +242,50 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // `Image[Graphics[…]]` is the rasterized graphic; options such as
   // `ImageSize` only affect how it is displayed, not its pixel data.
+  // An explicit `ImageSize -> {w, h}` pins both dimensions, so the graphic
+  // is laid out at exactly that pixel size.
   #[cfg(not(target_arch = "wasm32"))]
-  if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Graphics") {
-    return rasterize_ast(&args[..1]);
+  {
+    let graphics_call = match &args[0] {
+      Expr::FunctionCall { name, .. } if name == "Graphics" => {
+        Some(args[0].clone())
+      }
+      Expr::Graphics {
+        structure: Some(s),
+        is_3d: false,
+        ..
+      } if matches!(s.as_ref(), Expr::FunctionCall { name, .. } if name == "Graphics") => {
+        Some(s.as_ref().clone())
+      }
+      _ => None,
+    };
+    if let Some(call) = graphics_call {
+      if let Some(size) = pixel_size_option(&args[opt_start..])
+        && let Expr::FunctionCall { name, args: gargs } = &call
+      {
+        let mut gargs: Vec<Expr> = gargs
+          .iter()
+          .filter(|a| {
+            !matches!(a, Expr::Rule { pattern, .. }
+              if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize"))
+          })
+          .cloned()
+          .collect();
+        gargs.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+          replacement: Box::new(size),
+        });
+        let sized = Expr::FunctionCall {
+          name: name.clone(),
+          args: gargs.into(),
+        };
+        return rasterize_ast(&[sized]);
+      }
+      return rasterize_ast(&[call]);
+    }
+    if matches!(&args[0], Expr::Graphics { .. }) {
+      return rasterize_ast(&args[..1]);
+    }
   }
 
   // Image[image, type] re-quantizes the NORMALIZED data into the new
@@ -3989,22 +4030,47 @@ fn pointwise_image_op(
     },
   ) = (&args[0], &args[1])
   {
-    if w1 != w2 || h1 != h2 || ch1 != ch2 {
+    // An image carrying an alpha channel combines with its opaque
+    // counterpart (an RGBA rasterized graphic with an RGB photo, say) on
+    // the shared color channels.
+    let alpha_pair = matches!((*ch1, *ch2), (2, 1) | (1, 2) | (4, 3) | (3, 4));
+    if w1 != w2 || h1 != h2 || (ch1 != ch2 && !alpha_pair) {
       return Err(InterpreterError::EvaluationError(format!(
         "{name}: images must have the same dimensions and channels"
       )));
     }
+    let out_ch = *ch1.min(ch2) as usize;
+    let (c1, c2) = (*ch1 as usize, *ch2 as usize);
     let is_r32 = matches!(t1, ImageType::Real32);
-    let new_data: Vec<f64> = data1
-      .iter()
-      .zip(data2.iter())
-      .map(|(&a, &b)| apply(a, b, is_r32))
-      .collect();
+    let new_data: Vec<f64> = if ch1 == ch2 {
+      data1
+        .iter()
+        .zip(data2.iter())
+        .map(|(&a, &b)| apply(a, b, is_r32))
+        .collect()
+    } else {
+      data1
+        .chunks(c1)
+        .zip(data2.chunks(c2))
+        .flat_map(|(p1, p2)| {
+          (0..out_ch)
+            .map(|k| apply(p1[k], p2[k], is_r32))
+            .collect::<Vec<_>>()
+        })
+        .collect()
+    };
+    // Integer-typed images saturate at their range limits.
+    let new_data =
+      if matches!(t1, ImageType::Bit | ImageType::Byte | ImageType::Bit16) {
+        new_data.into_iter().map(|v| v.clamp(0.0, 1.0)).collect()
+      } else {
+        new_data
+      };
     return Ok(Expr::Image {
       color_space: None,
       width: *w1,
       height: *h1,
-      channels: *ch1,
+      channels: out_ch as u8,
       data: Arc::new(new_data),
       image_type: *t1,
     });
@@ -8990,6 +9056,30 @@ fn coerce_graphics_to_image(expr: &Expr) -> Option<Expr> {
   {
     rasterize_svg(&graphics_svg(expr)?, 96.0).ok()
   }
+}
+
+/// The `ImageSize -> {w, h}` option among `opts` when it names an explicit
+/// positive integer pixel size (a scalar width leaves the height to the
+/// graphic's aspect ratio, which only affects display).
+#[cfg(not(target_arch = "wasm32"))]
+fn pixel_size_option(opts: &[Expr]) -> Option<Expr> {
+  opts.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+      match replacement.as_ref() {
+        Expr::List(dims)
+          if dims.len() == 2
+            && dims.iter().all(|d| matches!(d, Expr::Integer(n) if *n > 0)) =>
+        {
+          Some(replacement.as_ref().clone())
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  })
 }
 
 /// Rasterize[expr] or Rasterize[expr, ImageResolution -> n]
