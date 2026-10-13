@@ -660,6 +660,22 @@ mod pattern_matching {
       );
     }
 
+    /// A pure-function test must stay parenthesized when a call-form
+    /// `PatternTest` is printed back, or the text no longer parses
+    /// (`_?#1 > 0 &` re-reads as `(_?#1 > 0) &`).
+    #[test]
+    fn pattern_test_call_form_keeps_function_test_parenthesized() {
+      assert_eq!(
+        interpret("Hold[PatternTest[_, (#1 > 0 &)]]").unwrap(),
+        "Hold[_?(#1 > 0 & )]"
+      );
+      assert_eq!(
+        interpret("Module[{a}, DeleteCases[{{1, 2, 3}, {1, 2, 0}}, _?(#1[[3]] > 0.99 &)]]")
+          .unwrap(),
+        "{{1, 2, 0}}"
+      );
+    }
+
     /// Lists, literals and bracketed expressions are equally valid left sides.
     #[test]
     fn pattern_test_on_other_self_delimiting_lhs() {

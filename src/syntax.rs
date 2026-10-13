@@ -8510,7 +8510,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       }
       if name == "PatternTest" && args.len() == 2 {
         let pat = fmt(&args[0]);
-        let test = fmt(&args[1]);
+        // A non-symbol test (e.g. a pure function) is wrapped, as in
+        // `_?(#1 > 0 & )`; unwrapped, `?` would bind tighter than `&`.
+        let test = match &args[1] {
+          Expr::Identifier(_) => fmt(&args[1]),
+          t => format!("({})", fmt(t)),
+        };
         // Atoms and lists print without parens, matching wolframscript:
         // `a?f`, `1?f`, `"s"?f`, `{1, 2}?f`. Everything else is wrapped —
         // `?` binds tighter than any infix operator, and wolframscript
