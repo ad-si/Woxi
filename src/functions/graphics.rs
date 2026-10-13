@@ -2300,7 +2300,7 @@ fn collect_primitives(
         // `RasterBox` is the box form of `Raster` — the shape a stored
         // Demonstration image arrives in.
         "Raster" | "RasterBox" if !args.is_empty() => {
-          parse_raster(args, prims);
+          parse_raster(args, style.opacity, prims);
         }
         "GraphicsComplex" if args.len() >= 2 => {
           if let Some(coords) = expr_to_point_list(&args[0]) {
@@ -4809,7 +4809,7 @@ pub(crate) fn spline_knots_unclamped(args: &[Expr]) -> bool {
   })
 }
 
-fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
+fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
   // Raster[data], Raster[data, {{xmin, ymin}, {xmax, ymax}}], or
   // Raster[data, rect, {vmin, vmax}] — data is a 2D array of grayscale
   // values or {r,g,b}/{r,g,b,a} lists, scaled from the {vmin, vmax} range
@@ -4908,6 +4908,14 @@ fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
   if x_min > x_max {
     for row in &mut grid {
       row.reverse();
+    }
+  }
+
+  // An `Opacity[a]` directive in force fades every pixel, on top of any
+  // alpha channel the data itself carries.
+  if opacity < 1.0 {
+    for color in grid.iter_mut().flatten() {
+      *color = color.with_alpha(color.a * opacity);
     }
   }
 

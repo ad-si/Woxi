@@ -7787,7 +7787,19 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let body = &args[0];
+  // A list of profile curves `{{r1, z1}, {r2, z2}, …}` revolves each curve
+  // into its own surface, all drawn in one scene.
+  let bodies: Vec<&Expr> = match &args[0] {
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(
+          |it| matches!(it, Expr::List(c) if c.len() == 2 || c.len() == 3),
+        ) =>
+    {
+      items.iter().collect()
+    }
+    other => vec![other],
+  };
 
   // Parse t iterator
   let (tvar, t_min, t_max) =
@@ -7872,13 +7884,6 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 3-coordinate form is the Demonstrations idiom for a curve built with
   // `Sqrt`/trig components that already sits off the xz-plane; sweeping it
   // rotates the (fx, fy) vector by theta instead of assuming fy = 0.
-  let parametric_len: Option<usize> = match body {
-    Expr::List(items) if items.len() == 2 || items.len() == 3 => {
-      Some(items.len())
-    }
-    _ => None,
-  };
-
   let has_theta = theta_var.is_some();
 
   let camera = Camera::default();
@@ -7887,31 +7892,66 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let t_step = (t_max - t_min) / n_t as f64;
   let theta_step = (theta_max - theta_min) / n_theta as f64;
 
-  // Sample the surface grid: grid[i][j] = (x, y, z)
-  let mut grid: Vec<Vec<Option<Point3D>>> =
-    vec![vec![None; n_theta + 1]; n_t + 1];
+  // Sample each surface grid: grid[i][j] = (x, y, z)
+  let mut grids: Vec<Vec<Vec<Option<Point3D>>>> = Vec::new();
   let mut global_z_min = f64::INFINITY;
   let mut global_z_max = f64::NEG_INFINITY;
   let mut global_r_max: f64 = 0.0;
 
-  for i in 0..=n_t {
-    let tval = t_min + i as f64 * t_step;
-    for j in 0..=n_theta {
-      let theta = theta_min + j as f64 * theta_step;
+  for body in &bodies {
+    let parametric_len: Option<usize> = match body {
+      Expr::List(items) if items.len() == 2 || items.len() == 3 => {
+        Some(items.len())
+      }
+      _ => None,
+    };
+    let mut grid: Vec<Vec<Option<Point3D>>> =
+      vec![vec![None; n_theta + 1]; n_t + 1];
+    for i in 0..=n_t {
+      let tval = t_min + i as f64 * t_step;
+      for j in 0..=n_theta {
+        let theta = theta_min + j as f64 * theta_step;
 
-      let (fx, fy, z) = if has_theta {
-        let theta_v = theta_var.as_ref().unwrap();
-        if let Some(n) = parametric_len {
+        let (fx, fy, z) = if has_theta {
+          let theta_v = theta_var.as_ref().unwrap();
+          if let Some(n) = parametric_len {
+            if let Expr::List(items) = body {
+              let fx_val =
+                evaluate_at_t_theta(&items[0], &tvar, tval, theta_v, theta);
+              let fy_val = if n == 3 {
+                evaluate_at_t_theta(&items[1], &tvar, tval, theta_v, theta)
+              } else {
+                Some(0.0)
+              };
+              let fz_val =
+                evaluate_at_t_theta(&items[n - 1], &tvar, tval, theta_v, theta);
+              match (fx_val, fy_val, fz_val) {
+                (Some(fx), Some(fy), Some(fz))
+                  if fx.is_finite() && fy.is_finite() && fz.is_finite() =>
+                {
+                  (fx, fy, fz)
+                }
+                _ => continue,
+              }
+            } else {
+              continue;
+            }
+          } else {
+            // Scalar: r = f(t, θ), z = t
+            match evaluate_at_t_theta(body, &tvar, tval, theta_v, theta) {
+              Some(r) if r.is_finite() => (r, 0.0, tval),
+              _ => continue,
+            }
+          }
+        } else if let Some(n) = parametric_len {
           if let Expr::List(items) = body {
-            let fx_val =
-              evaluate_at_t_theta(&items[0], &tvar, tval, theta_v, theta);
+            let fx_val = evaluate_at_t(&items[0], &tvar, tval);
             let fy_val = if n == 3 {
-              evaluate_at_t_theta(&items[1], &tvar, tval, theta_v, theta)
+              evaluate_at_t(&items[1], &tvar, tval)
             } else {
               Some(0.0)
             };
-            let fz_val =
-              evaluate_at_t_theta(&items[n - 1], &tvar, tval, theta_v, theta);
+            let fz_val = evaluate_at_t(&items[n - 1], &tvar, tval);
             match (fx_val, fy_val, fz_val) {
               (Some(fx), Some(fy), Some(fz))
                 if fx.is_finite() && fy.is_finite() && fz.is_finite() =>
@@ -7924,52 +7964,27 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             continue;
           }
         } else {
-          // Scalar: r = f(t, θ), z = t
-          match evaluate_at_t_theta(body, &tvar, tval, theta_v, theta) {
-            Some(r) if r.is_finite() => (r, 0.0, tval),
+          // Scalar f(t): revolve (t, f(t)) → r = t, z = f(t)
+          match evaluate_at_t(body, &tvar, tval) {
+            Some(z) if z.is_finite() => (tval, 0.0, z),
             _ => continue,
           }
-        }
-      } else if let Some(n) = parametric_len {
-        if let Expr::List(items) = body {
-          let fx_val = evaluate_at_t(&items[0], &tvar, tval);
-          let fy_val = if n == 3 {
-            evaluate_at_t(&items[1], &tvar, tval)
-          } else {
-            Some(0.0)
-          };
-          let fz_val = evaluate_at_t(&items[n - 1], &tvar, tval);
-          match (fx_val, fy_val, fz_val) {
-            (Some(fx), Some(fy), Some(fz))
-              if fx.is_finite() && fy.is_finite() && fz.is_finite() =>
-            {
-              (fx, fy, fz)
-            }
-            _ => continue,
-          }
-        } else {
-          continue;
-        }
-      } else {
-        // Scalar f(t): revolve (t, f(t)) → r = t, z = f(t)
-        match evaluate_at_t(body, &tvar, tval) {
-          Some(z) if z.is_finite() => (tval, 0.0, z),
-          _ => continue,
-        }
-      };
+        };
 
-      // Rotate the (fx, fy) vector by theta around the z axis; fy = 0
-      // reduces to the plain r·cos/r·sin sweep the 2-coordinate and scalar
-      // forms already used.
-      let x = fx * theta.cos() - fy * theta.sin();
-      let y = fx * theta.sin() + fy * theta.cos();
+        // Rotate the (fx, fy) vector by theta around the z axis; fy = 0
+        // reduces to the plain r·cos/r·sin sweep the 2-coordinate and scalar
+        // forms already used.
+        let x = fx * theta.cos() - fy * theta.sin();
+        let y = fx * theta.sin() + fy * theta.cos();
 
-      grid[i][j] = Some(Point3D { x, y, z });
+        grid[i][j] = Some(Point3D { x, y, z });
 
-      global_z_min = global_z_min.min(z);
-      global_z_max = global_z_max.max(z);
-      global_r_max = global_r_max.max((x * x + y * y).sqrt());
+        global_z_min = global_z_min.min(z);
+        global_z_max = global_z_max.max(z);
+        global_r_max = global_r_max.max((x * x + y * y).sqrt());
+      }
     }
+    grids.push(grid);
   }
 
   if !global_z_min.is_finite()
@@ -7987,56 +8002,64 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // coordinates, so it can be re-drawn inside another `Graphics3D` (the
   // way the notebooks that build solids out of plot slices do).  The
   // rendering below works in normalized coordinates and is unaffected.
-  let structure = {
-    let mut index_of: Vec<Vec<Option<usize>>> =
-      vec![vec![None; n_theta + 1]; n_t + 1];
-    let mut point_exprs: Vec<Expr> = Vec::new();
-    for (i, row) in grid.iter().enumerate() {
-      for (j, cell) in row.iter().enumerate() {
-        if let Some(p) = cell {
-          index_of[i][j] = Some(point_exprs.len());
-          point_exprs.push(Expr::List(
-            vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into(),
-          ));
+  let surfaces: Vec<Expr> = grids
+    .iter()
+    .map(|grid| {
+      let mut index_of: Vec<Vec<Option<usize>>> =
+        vec![vec![None; n_theta + 1]; n_t + 1];
+      let mut point_exprs: Vec<Expr> = Vec::new();
+      for (i, row) in grid.iter().enumerate() {
+        for (j, cell) in row.iter().enumerate() {
+          if let Some(p) = cell {
+            index_of[i][j] = Some(point_exprs.len());
+            point_exprs.push(Expr::List(
+              vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into(),
+            ));
+          }
         }
       }
-    }
-    let mut quads: Vec<Expr> = Vec::new();
-    for i in 0..n_t {
-      for j in 0..n_theta {
-        if let (Some(a), Some(b), Some(c), Some(d)) = (
-          index_of[i][j],
-          index_of[i + 1][j],
-          index_of[i + 1][j + 1],
-          index_of[i][j + 1],
-        ) {
-          quads.push(Expr::List(
-            [a, b, c, d]
-              .iter()
-              .map(|&k| Expr::Integer(k as i128 + 1))
-              .collect::<Vec<_>>()
-              .into(),
-          ));
+      let mut quads: Vec<Expr> = Vec::new();
+      for i in 0..n_t {
+        for j in 0..n_theta {
+          if let (Some(a), Some(b), Some(c), Some(d)) = (
+            index_of[i][j],
+            index_of[i + 1][j],
+            index_of[i + 1][j + 1],
+            index_of[i][j + 1],
+          ) {
+            quads.push(Expr::List(
+              [a, b, c, d]
+                .iter()
+                .map(|&k| Expr::Integer(k as i128 + 1))
+                .collect::<Vec<_>>()
+                .into(),
+            ));
+          }
         }
       }
-    }
-    let mut content: Vec<Expr> = Vec::new();
-    // `PlotStyle -> Opacity[…]` belongs to the surface, so a caller that
-    // lifts it out of the plot keeps the translucency it asked for.
-    match &plot_style {
-      Some(Expr::List(items)) => content.extend(items.iter().cloned()),
-      Some(other) => content.push(other.clone()),
-      None => {}
-    }
-    content.push(call1("Polygon", Expr::List(quads.into())));
-    call1(
-      "Graphics3D",
+      let mut content: Vec<Expr> = Vec::new();
+      // `PlotStyle -> Opacity[…]` belongs to the surface, so a caller that
+      // lifts it out of the plot keeps the translucency it asked for.
+      match &plot_style {
+        Some(Expr::List(items)) => content.extend(items.iter().cloned()),
+        Some(other) => content.push(other.clone()),
+        None => {}
+      }
+      content.push(call1("Polygon", Expr::List(quads.into())));
       call(
         "GraphicsComplex",
         vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
-      ),
-    )
-  };
+      )
+    })
+    .collect();
+  let structure = call1(
+    "Graphics3D",
+    if surfaces.len() == 1 {
+      surfaces.into_iter().next().unwrap()
+    } else {
+      Expr::List(surfaces.into())
+    },
+  );
 
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
   let z_range = if (z_hi - z_lo).abs() < 1e-15 {
@@ -8074,87 +8097,89 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
 
-  for i in 0..n_t {
-    for j in 0..n_theta {
-      let p00 = grid[i][j];
-      let p10 = grid[i + 1][j];
-      let p01 = grid[i][j + 1];
-      let p11 = grid[i + 1][j + 1];
+  for grid in &grids {
+    for i in 0..n_t {
+      for j in 0..n_theta {
+        let p00 = grid[i][j];
+        let p10 = grid[i + 1][j];
+        let p01 = grid[i][j + 1];
+        let p11 = grid[i + 1][j + 1];
 
-      let normalize = |p: Point3D| -> Point3D {
-        Point3D {
-          x: p.x / r_scale,
-          y: p.y / r_scale,
-          z: nz(p.z),
+        let normalize = |p: Point3D| -> Point3D {
+          Point3D {
+            x: p.x / r_scale,
+            y: p.y / r_scale,
+            z: nz(p.z),
+          }
+        };
+
+        let z_norm_of = |p: Point3D| -> f64 {
+          ((p.z.clamp(z_lo, z_hi) - z_lo) / z_range).clamp(0.0, 1.0)
+        };
+
+        // Triangle 1: p00, p10, p01
+        if let (Some(pp00), Some(pp10), Some(pp01)) = (p00, p10, p01) {
+          let v0 = normalize(pp00);
+          let v1 = normalize(pp10);
+          let v2 = normalize(pp01);
+
+          let avg_z_norm =
+            (z_norm_of(pp00) + z_norm_of(pp10) + z_norm_of(pp01)) / 3.0;
+          let default_color = height_color(avg_z_norm);
+          let normal = triangle_normal(v0, v1, v2);
+          let (color, opacity) =
+            shade_facet(default_color, render_style.as_ref(), normal, view_dir);
+
+          let proj0 = project(v0, &camera);
+          let proj1 = project(v1, &camera);
+          let proj2 = project(v2, &camera);
+          let center = Point3D {
+            x: (v0.x + v1.x + v2.x) / 3.0,
+            y: (v0.y + v1.y + v2.y) / 3.0,
+            z: (v0.z + v1.z + v2.z) / 3.0,
+          };
+
+          all_triangles.push(Triangle {
+            boundary: [true; 3],
+            edge_color: None,
+            projected: [proj0, proj1, proj2],
+            depth: depth(center, &camera),
+            color,
+            opacity,
+          });
         }
-      };
 
-      let z_norm_of = |p: Point3D| -> f64 {
-        ((p.z.clamp(z_lo, z_hi) - z_lo) / z_range).clamp(0.0, 1.0)
-      };
+        // Triangle 2: p11, p01, p10
+        if let (Some(pp11), Some(pp01), Some(pp10)) = (p11, p01, p10) {
+          let v0 = normalize(pp11);
+          let v1 = normalize(pp01);
+          let v2 = normalize(pp10);
 
-      // Triangle 1: p00, p10, p01
-      if let (Some(pp00), Some(pp10), Some(pp01)) = (p00, p10, p01) {
-        let v0 = normalize(pp00);
-        let v1 = normalize(pp10);
-        let v2 = normalize(pp01);
+          let avg_z_norm =
+            (z_norm_of(pp11) + z_norm_of(pp01) + z_norm_of(pp10)) / 3.0;
+          let default_color = height_color(avg_z_norm);
+          let normal = triangle_normal(v0, v1, v2);
+          let (color, opacity) =
+            shade_facet(default_color, render_style.as_ref(), normal, view_dir);
 
-        let avg_z_norm =
-          (z_norm_of(pp00) + z_norm_of(pp10) + z_norm_of(pp01)) / 3.0;
-        let default_color = height_color(avg_z_norm);
-        let normal = triangle_normal(v0, v1, v2);
-        let (color, opacity) =
-          shade_facet(default_color, render_style.as_ref(), normal, view_dir);
+          let proj0 = project(v0, &camera);
+          let proj1 = project(v1, &camera);
+          let proj2 = project(v2, &camera);
+          let center = Point3D {
+            x: (v0.x + v1.x + v2.x) / 3.0,
+            y: (v0.y + v1.y + v2.y) / 3.0,
+            z: (v0.z + v1.z + v2.z) / 3.0,
+          };
 
-        let proj0 = project(v0, &camera);
-        let proj1 = project(v1, &camera);
-        let proj2 = project(v2, &camera);
-        let center = Point3D {
-          x: (v0.x + v1.x + v2.x) / 3.0,
-          y: (v0.y + v1.y + v2.y) / 3.0,
-          z: (v0.z + v1.z + v2.z) / 3.0,
-        };
-
-        all_triangles.push(Triangle {
-          boundary: [true; 3],
-          edge_color: None,
-          projected: [proj0, proj1, proj2],
-          depth: depth(center, &camera),
-          color,
-          opacity,
-        });
-      }
-
-      // Triangle 2: p11, p01, p10
-      if let (Some(pp11), Some(pp01), Some(pp10)) = (p11, p01, p10) {
-        let v0 = normalize(pp11);
-        let v1 = normalize(pp01);
-        let v2 = normalize(pp10);
-
-        let avg_z_norm =
-          (z_norm_of(pp11) + z_norm_of(pp01) + z_norm_of(pp10)) / 3.0;
-        let default_color = height_color(avg_z_norm);
-        let normal = triangle_normal(v0, v1, v2);
-        let (color, opacity) =
-          shade_facet(default_color, render_style.as_ref(), normal, view_dir);
-
-        let proj0 = project(v0, &camera);
-        let proj1 = project(v1, &camera);
-        let proj2 = project(v2, &camera);
-        let center = Point3D {
-          x: (v0.x + v1.x + v2.x) / 3.0,
-          y: (v0.y + v1.y + v2.y) / 3.0,
-          z: (v0.z + v1.z + v2.z) / 3.0,
-        };
-
-        all_triangles.push(Triangle {
-          boundary: [true; 3],
-          edge_color: None,
-          projected: [proj0, proj1, proj2],
-          depth: depth(center, &camera),
-          color,
-          opacity,
-        });
+          all_triangles.push(Triangle {
+            boundary: [true; 3],
+            edge_color: None,
+            projected: [proj0, proj1, proj2],
+            depth: depth(center, &camera),
+            color,
+            opacity,
+          });
+        }
       }
     }
   }

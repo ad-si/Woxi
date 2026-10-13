@@ -1878,6 +1878,8 @@ pub(crate) struct SeriesStyle {
   pub dashing: Option<Vec<f64>>,
   /// DropShadowing[...] directive: draw the curve with a drop shadow.
   pub shadow: Option<crate::functions::graphics::DropShadow>,
+  /// `Opacity[a]` directive: the curve's alpha. None = fully opaque.
+  pub opacity: Option<f64>,
 }
 
 /// A single explicit grid line: a position on its axis plus an optional
@@ -2056,6 +2058,10 @@ pub(crate) struct PlotOptions {
   /// height is derived so the frame has this ratio, matching Wolfram. `None`
   /// keeps `svg_height` as given.
   pub aspect_ratio: Option<f64>,
+  /// `AspectRatio -> Automatic`: derive the ratio from the plotted ranges
+  /// (`(ymax - ymin) / (xmax - xmin)`) once they are known, so one unit
+  /// spans the same length on both axes.
+  pub aspect_automatic: bool,
   /// `PlotMarkers -> …`: the glyph each series' points are drawn with,
   /// cycled over the series. Empty = plain round points.
   pub plot_markers: Vec<Option<PlotMarker>>,
@@ -2181,6 +2187,7 @@ impl Default for PlotOptions {
       background: None,
       image_padding: None,
       aspect_ratio: None,
+      aspect_automatic: false,
       plot_markers: Vec::new(),
       label_style: None,
       joined_per_series: None,
@@ -2371,6 +2378,8 @@ pub(crate) fn generate_svg_with_filling(
 /// plotters' backend would otherwise produce.
 struct DashedOverlay {
   color: (u8, u8, u8),
+  /// Stroke alpha (1.0 = opaque).
+  opacity: f64,
   stroke_w: u32,
   /// Dash pattern as fractions of the plot width (matching the legend swatch).
   dashes: Vec<f64>,
@@ -2442,11 +2451,16 @@ fn render_dash_overlays(
     let (r, g, b) = ov.color;
     svg.push_str(&format!(
       "<polyline fill=\"none\" stroke=\"rgb({},{},{})\" \
-       stroke-width=\"{}\" stroke-dasharray=\"{}\" stroke-linecap=\"round\" \
+       {}stroke-width=\"{}\" stroke-dasharray=\"{}\" stroke-linecap=\"round\" \
        points=\"{}\"/>\n",
       r,
       g,
       b,
+      if ov.opacity < 1.0 {
+        format!("stroke-opacity=\"{}\" ", ov.opacity)
+      } else {
+        String::new()
+      },
       ov.stroke_w,
       dash.join(","),
       pts.join(" ")
@@ -2885,12 +2899,37 @@ fn inject_prolog(
   buf.insert_str(insert_at, &prolog_svg);
 }
 
+/// Resolve `AspectRatio -> Automatic` against the final plotted ranges: the
+/// plotting area takes the data's own proportions, so equal x and y distances
+/// are drawn equally long. Borrows `opts` unchanged for any other aspect.
+fn with_automatic_aspect(
+  opts: &PlotOptions,
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+) -> std::borrow::Cow<'_, PlotOptions> {
+  let (dx, dy) = (x_range.1 - x_range.0, y_range.1 - y_range.0);
+  if opts.aspect_automatic
+    && opts.aspect_ratio.is_none()
+    && dx.is_finite()
+    && dy.is_finite()
+    && dx > 0.0
+    && dy > 0.0
+  {
+    let mut resolved = opts.clone();
+    resolved.aspect_ratio = Some(dy / dx);
+    std::borrow::Cow::Owned(resolved)
+  } else {
+    std::borrow::Cow::Borrowed(opts)
+  }
+}
+
 fn generate_svg_with_options(
   all_points: &[Vec<(f64, f64)>],
   x_range: (f64, f64),
   y_range: (f64, f64),
   opts: &PlotOptions,
 ) -> Result<String, InterpreterError> {
+  let opts = &*with_automatic_aspect(opts, x_range, y_range);
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
   let svg_width = opts.svg_width;
@@ -3327,6 +3366,7 @@ fn generate_svg_with_options(
             if let Some(dashes) = dash {
               dashed_overlays.push(DashedOverlay {
                 color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
+                opacity: 1.0,
                 stroke_w,
                 dashes,
                 points: vec![(x_min, *gy), (x_max, *gy)],
@@ -3371,6 +3411,7 @@ fn generate_svg_with_options(
             if let Some(dashes) = dash {
               dashed_overlays.push(DashedOverlay {
                 color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
+                opacity: 1.0,
                 stroke_w,
                 dashes,
                 points: vec![(*gx, y_min), (*gx, y_max)],
@@ -3544,6 +3585,7 @@ fn generate_svg_with_options(
                   if segment.len() >= 2 {
                     dashed_overlays.push(DashedOverlay {
                       color: (r, g, b),
+                      opacity: series_opacity(&opts.plot_style, series_idx),
                       stroke_w,
                       dashes: dash_pattern.clone(),
                       points: segment.clone(),
@@ -3571,12 +3613,12 @@ fn generate_svg_with_options(
                 }
               }
             } else {
+              let line_style = color
+                .mix(series_opacity(&opts.plot_style, series_idx))
+                .stroke_width(stroke_w);
               for segment in &segments {
                 chart
-                  .draw_series(LineSeries::new(
-                    segment.iter().copied(),
-                    color.stroke_width(stroke_w),
-                  ))
+                  .draw_series(LineSeries::new(segment.iter().copied(), line_style))
                   .map_err(|e| {
                     InterpreterError::EvaluationError(format!("Plot: {e}"))
                   })?;
@@ -4204,6 +4246,9 @@ pub(crate) fn collapse_style_for_single_series(
     if style.shadow.is_some() {
       merged.shadow.clone_from(&style.shadow);
     }
+    if style.opacity.is_some() {
+      merged.opacity = style.opacity;
+    }
   }
   vec![merged]
 }
@@ -4334,6 +4379,15 @@ fn series_color(plot_style: &[SeriesStyle], idx: usize) -> (u8, u8, u8) {
     } else {
       PLOT_COLORS[idx % PLOT_COLORS.len()]
     }
+  }
+}
+
+/// Get the line opacity for a series (1.0 = opaque).
+fn series_opacity(plot_style: &[SeriesStyle], idx: usize) -> f64 {
+  if plot_style.is_empty() {
+    1.0
+  } else {
+    plot_style[idx % plot_style.len()].opacity.unwrap_or(1.0)
   }
 }
 
@@ -4670,6 +4724,7 @@ pub(crate) fn generate_scatter_svg_with_options(
         if let Some(dashes) = dash {
           dashed_overlays.push(DashedOverlay {
             color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
+            opacity: 1.0,
             stroke_w,
             dashes,
             points: vec![(x_min, *gy), (x_max, *gy)],
@@ -4707,6 +4762,7 @@ pub(crate) fn generate_scatter_svg_with_options(
         if let Some(dashes) = dash {
           dashed_overlays.push(DashedOverlay {
             color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
+            opacity: 1.0,
             stroke_w,
             dashes,
             points: vec![(*gx, y_min), (*gx, y_max)],
@@ -8068,6 +8124,15 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
       "DropShadowing" => {
         style.shadow = crate::functions::graphics::parse_drop_shadowing(args);
       }
+      // `Opacity[a]` fades the curve; `Opacity[a, color]` also sets its color.
+      "Opacity" if !args.is_empty() => {
+        if let Some(a) = try_eval_to_f64(&args[0]) {
+          style.opacity = Some(a.clamp(0.0, 1.0));
+        }
+        if let Some(c) = args.get(1).and_then(parse_color) {
+          style.color = Some(c);
+        }
+      }
       "Thickness" if args.len() == 1 => {
         if let Expr::Identifier(s) = &args[0] {
           match s.as_str() {
@@ -8454,6 +8519,7 @@ pub(crate) fn parse_plot_style(replacement: &Expr) -> Vec<SeriesStyle> {
       || style.point_size.is_some()
       || style.dashing.is_some()
       || style.shadow.is_some()
+      || style.opacity.is_some()
     {
       vec![style]
     } else {
@@ -9057,6 +9123,8 @@ pub(crate) struct PlotRangeOverrides {
   /// the automatic range, which drops extreme outliers.
   pub y_all: bool,
   pub aspect_ratio: Option<f64>,
+  /// `AspectRatio -> Automatic`.
+  pub aspect_automatic: bool,
 }
 
 /// Apply one plot option shared by the function plotters (Plot,
@@ -9155,6 +9223,8 @@ pub(crate) fn apply_common_plot_option(
         && r > 0.0
       {
         overrides.aspect_ratio = Some(r);
+      } else if matches!(&val, Expr::Identifier(s) if s == "Automatic") {
+        overrides.aspect_automatic = true;
       }
     }
     "PlotPoints" => {
@@ -9494,6 +9564,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(ar) = overrides.aspect_ratio {
     plot_opts.aspect_ratio = Some(ar);
   }
+  plot_opts.aspect_automatic = overrides.aspect_automatic;
 
   // Parse iterator spec: {x, xmin, xmax}. Endpoints may be ±Infinity, in
   // which case the range is compactified onto a finite display coordinate

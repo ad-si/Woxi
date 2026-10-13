@@ -4881,3 +4881,18 @@ background pixel horizontally or vertically; pixels outside the image are
 ignored (not treated as background). Whether Wolfram counts the image border
 as background, and its exact connectivity, has not been checked against
 `wolframscript` (seen in the `Segmenting a Medical Image` Demonstration).
+
+### `NDSolve` with `WhenEvent` and `Sow` does not run
+
+`NDSolve[{…, WhenEvent[t[s] == 1, Sow[{x[s], y[s]}]]}, …]` over an implicit
+(differential-algebraic) system stays unevaluated, so `Reap` collects nothing.
+The `All Real Roots of a Nonlinear System of Equations` Demonstration relies
+on this to mark its roots: the contour curves render, but the red root points
+and the root table are missing.
+
+### `InverseLaplaceTransform` of a product of symbolic-pole factors
+
+`InverseLaplaceTransform` of a product of many `1/(s - pole)` factors with
+numeric complex poles returns unevaluated, so the time-response plot in the
+`Poles and Zeros of Time Domain Response Functions` Demonstration stays empty
+(its pole/zero plane renders fine).

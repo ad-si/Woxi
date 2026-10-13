@@ -629,6 +629,16 @@ impl ManipulateState {
       &known,
     );
     state.state.extend(defaults);
+    // Rows sharing one variable start from the first row's initial value
+    // (Wolfram stores a single `var$$ = <first initial>`), not the last's.
+    for i in 0..state.controls.len() {
+      let first = state.controls[..i]
+        .iter()
+        .all(|c| c.name() != state.controls[i].name());
+      if first {
+        state.sync_named_siblings(i);
+      }
+    }
     state.reevaluate();
     Some(state)
   }
@@ -1639,6 +1649,27 @@ mod tests {
     );
   }
 
+  /// Two SetterBar rows over disjoint choices can share one variable; the
+  /// variable starts at the *first* row's initial value (Wolfram keeps one
+  /// `var$$ = <first initial>`), so the second row shows nothing selected.
+  #[test]
+  fn shared_variable_rows_start_from_first_initial_value() {
+    let code = r#"Manipulate[
+      n,
+      {{n, 10, "low"}, {10 -> "a", 20 -> "b"}, ControlType -> SetterBar},
+      {{n, 30, "high"}, {30 -> "c", 40 -> "d"}, ControlType -> SetterBar}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let value = state
+      .bindings()
+      .into_iter()
+      .find(|(n, _)| n == "n")
+      .map(|(_, v)| v);
+    assert_eq!(value.as_deref(), Some("10"));
+  }
+
   use super::*;
 
   /// A Demonstration's setter-bar choices are typeset box labels
@@ -2524,17 +2555,24 @@ mod tests {
       woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
     let state = ManipulateState::from_expr(&expr).expect("state should build");
 
+    // The `Checkbox[Dynamic[var]]` cells become real checkbox controls (one
+    // per variable) rather than a static display, and nothing is left of the
+    // `ExpressionCell` wrapper.
     assert_eq!(state.error, None);
-    assert_eq!(state.displays.len(), 1);
+    let names: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| c.name())
+      .filter(|n| !n.is_empty())
+      .collect();
+    assert_eq!(names, ["big", "tag"]);
     assert!(
-      !state.displays[0].starts_with("ExpressionCell"),
-      "wrapper must be stripped: {}",
-      state.displays[0]
-    );
-    assert!(
-      format!("{:?}", state.display_trees).contains("Checkbox"),
-      "controls must render as checkboxes: {:?}",
-      state.display_trees
+      state
+        .displays
+        .iter()
+        .all(|d| !d.starts_with("ExpressionCell")),
+      "wrapper must be stripped: {:?}",
+      state.displays
     );
   }
 
