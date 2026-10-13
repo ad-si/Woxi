@@ -34182,3 +34182,32 @@ mod empty_plot {
     assert!(svg.contains("<text"), "axes missing: {svg}");
   }
 }
+
+#[test]
+fn manipulate_display_style_dynamic_keeps_grid_layout() {
+  use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+  // `Style[Dynamic[Row[{pad, Grid[…]}]]]` as a trailing Manipulate display
+  // must stay a row holding a real grid, not collapse into one text line.
+  let bindings = vec![("n".to_string(), "3".to_string())];
+  let node = build_manipulate_display(
+    "Style[Dynamic[If[n > 1, Row[{\"  \", Grid[Transpose[Table[{i, \"-\", i^2}, {i, n}]]]}], \"\"]]]",
+    &bindings,
+  );
+  match node {
+    DisplayNode::Row(children) => {
+      assert_eq!(children.len(), 2);
+      match &children[1] {
+        DisplayNode::Grid(rows) => {
+          assert_eq!(rows.len(), 3);
+          assert!(rows.iter().all(|r| r.len() == 3));
+        }
+        other => panic!("expected a Grid child, got {other:?}"),
+      }
+    }
+    other => panic!("expected a Row, got {other:?}"),
+  }
+
+  // Plain styled text still renders as styled text.
+  let text = build_manipulate_display("Style[\"hi\", Bold]", &bindings);
+  assert!(matches!(text, DisplayNode::Text { .. }));
+}
