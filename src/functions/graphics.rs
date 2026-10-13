@@ -28871,8 +28871,14 @@ fn display_expr_to_node(
       // typeset-measured here; it collapses to an empty spacer.
       "Invisible" if !args.is_empty() => DisplayNode::Spacer { width: 0.0 },
       // A styled caption fragment: rendered as rich text, not as source.
+      // A `Style[Dynamic[layout]]` wrapper around a block layout (the Cipher
+      // Encoder's key table: `Style[Dynamic[If[ok, Row[{"  ", Grid[…]}], ""]]]`)
+      // keeps the layout instead of flattening the grid into one text line.
       "Style" | "StyleForm" if !args.is_empty() => {
-        styled_text_node(expr, bindings)
+        match style_wrapped_block_layout(&args[0], bindings) {
+          Some(inner) => display_expr_to_node(&inner, bindings, probes, ons),
+          None => styled_text_node(expr, bindings),
+        }
       }
       // `Style[a, Italic]^2` (a Grid header such as "a²"): the styled base
       // keeps its styling and the exponent is typeset as a superscript,
@@ -28966,6 +28972,39 @@ fn display_expr_to_node(
     },
     _ => static_leaf_node(expr, bindings),
   }
+}
+
+/// The content of a `Style[content, …]` caption when it is a block layout
+/// (`Grid`, `Column`, `Panel`, … possibly inside a `Row`), after releasing a
+/// wrapping `Dynamic[…]` against `bindings`. `None` for plain styled text,
+/// which keeps its styling through [`styled_text_node`].
+fn style_wrapped_block_layout(
+  content: &Expr,
+  bindings: &[(String, String)],
+) -> Option<Expr> {
+  fn is_block_layout(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => match name.as_str() {
+        "Grid" | "GridBox" | "TableForm" | "Column" | "Panel" | "Framed"
+        | "Pane" | "Labeled" => true,
+        "Row" => matches!(
+          args.first(),
+          Some(Expr::List(items)) if items.iter().any(is_block_layout)
+        ),
+        _ => false,
+      },
+      _ => false,
+    }
+  }
+  let released = match content {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      eval_display_in_scope(&args[0], bindings)?
+    }
+    other => other.clone(),
+  };
+  is_block_layout(&released).then_some(released)
 }
 
 /// Whether `expr` is a `Style[…]`/`StyleForm[…]` call.
