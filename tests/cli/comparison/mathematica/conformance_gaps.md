@@ -4904,3 +4904,11 @@ and the root table are missing.
 numeric complex poles returns unevaluated, so the time-response plot in the
 `Poles and Zeros of Time Domain Response Functions` Demonstration stays empty
 (its pole/zero plane renders fine).
+
+### Upvalues whose pattern ends in `OptionsPattern[]` need an explicit option
+
+`Foo[c_Curve, OptionsPattern[]] ^:= …` is stored with a fixed argument count,
+so `Foo[Curve[1]]` (no options) does not match it, while `Foo[Curve[1], a -> 2]`
+does. In Wolfram `OptionsPattern[]` also matches zero arguments. The
+`Turtle Fractals` Demonstration defines such a `Show` upvalue, which its
+`Manipulate` never calls.

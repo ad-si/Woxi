@@ -5503,6 +5503,44 @@ fn normalize_lhs_for_upset(lhs: &Expr) -> Expr {
   }
 }
 
+/// The symbols an `UpSet`/`UpSetDelayed` left-hand side attaches its rule
+/// to: every argument that is a symbol, a call headed by one, or a pattern
+/// restricted to a head (`_Q`, or `Pattern[c, Blank[Q]]` written in
+/// FullForm). Unrestricted patterns (`r_`, `Pattern[r, Blank[]]`,
+/// `opts:OptionsPattern[]`) name no symbol and are skipped.
+fn upvalue_tags(lhs_args: &[Expr]) -> Vec<String> {
+  let mut tags: Vec<String> = Vec::new();
+  for arg in lhs_args {
+    let tag =
+      pattern_head_tag(arg).or_else(|| match strip_pattern_wrappers(arg) {
+        Expr::Identifier(s) => Some(s.clone()),
+        Expr::FunctionCall { name, .. }
+          if !matches!(
+            name.as_str(),
+            "Blank"
+              | "BlankSequence"
+              | "BlankNullSequence"
+              | "OptionsPattern"
+              | "Optional"
+              | "Alternatives"
+              | "Except"
+              | "PatternSequence"
+              | "Pattern"
+          ) =>
+        {
+          Some(name.clone())
+        }
+        _ => None,
+      });
+    if let Some(tag) = tag
+      && !tags.contains(&tag)
+    {
+      tags.push(tag);
+    }
+  }
+  tags
+}
+
 /// UpSet[lhs, rhs] — automatically assigns upvalues to all symbols in the arguments of lhs.
 /// f[g] ^= 5 stores an upvalue for g such that f[g] evaluates to 5.
 pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
@@ -5574,21 +5612,7 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(eval_rhs);
   }
 
-  // Find all tag symbols in the arguments. Patterns like `_Q` carry the
-  // tag in their `head` field; `Blank[Q]` (FunctionCall) is the same shape
-  // when written via FullForm.
-  let mut tags = Vec::new();
-  for arg in &lhs_args {
-    if let Some(h) = pattern_head_tag(arg) {
-      tags.push(h);
-      continue;
-    }
-    match arg {
-      Expr::Identifier(s) => tags.push(s.clone()),
-      Expr::FunctionCall { name, .. } => tags.push(name.clone()),
-      _ => {} // Skip non-symbol arguments (integers, etc.)
-    }
-  }
+  let tags = upvalue_tags(&lhs_args);
 
   if tags.is_empty() {
     return Err(InterpreterError::EvaluationError(format!(
@@ -5625,21 +5649,7 @@ pub fn upset_delayed_ast(
   };
   let lhs = &normalized_lhs;
 
-  // Find all tag symbols in the arguments. Patterns like `_Q` carry the
-  // tag in their `head` field; `Blank[Q]` (FunctionCall) is the same shape
-  // when written via FullForm.
-  let mut tags = Vec::new();
-  for arg in &lhs_args {
-    if let Some(h) = pattern_head_tag(arg) {
-      tags.push(h);
-      continue;
-    }
-    match arg {
-      Expr::Identifier(s) => tags.push(s.clone()),
-      Expr::FunctionCall { name, .. } => tags.push(name.clone()),
-      _ => {} // Skip non-symbol arguments
-    }
-  }
+  let tags = upvalue_tags(&lhs_args);
 
   if tags.is_empty() {
     return Err(InterpreterError::EvaluationError(format!(
