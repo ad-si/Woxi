@@ -7717,6 +7717,32 @@ mod plot3d {
       );
     }
 
+    /// A multi-line `PlotLabel` under a small explicit `ImagePadding` grows
+    /// upwards from the padding; it used to start above the canvas, so the
+    /// whole title was invisible.
+    #[test]
+    fn stacked_plot_label_stays_inside_the_image_with_image_padding() {
+      let svg = export_svg(
+        "ListPlot[{1, 3, 2}, ImageSize -> {500, 300}, \
+         ImagePadding -> {{35, 25}, {45, 25}}, \
+         PlotLabel -> Column[{\"line one\\nline two\", \"line three\"}]]",
+      );
+      let line = svg
+        .lines()
+        .find(|l| l.contains("line one"))
+        .expect("title text");
+      let y: f64 = line
+        .split_once(" y=\"")
+        .unwrap()
+        .1
+        .split_once('"')
+        .unwrap()
+        .0
+        .parse()
+        .unwrap();
+      assert!(y >= 0.0, "title starts above the image: {line}");
+    }
+
     /// Every label of a tick set carries the decimals its spacing needs, so
     /// a framed `Graphics` stepping by 0.5 reads `-1.0, -0.5, 0.0, …` —
     /// the same as the plot renderer, and as wolframscript.
