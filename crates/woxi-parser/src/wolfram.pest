@@ -650,6 +650,9 @@ BoxRight = _{ "\\)" | "\u{F7C0}" }
 // pairs around a single expression — Floor[x] / Ceiling[x].
 FloorBrackets = { "\u{230A}" ~ Expression ~ "\u{230B}" }
 CeilingBrackets = { "\u{2308}" ~ Expression ~ "\u{2309}" }
+// 〈a, b, …〉: `\[LeftAngleBracket]…\[RightAngleBracket]` (also written with
+// the CJK brackets U+3008/U+3009) is AngleBracket[a, b, …].
+AngleBrackets = { ("\u{2329}" | "\u{3008}") ~ Expression ~ ("," ~ Expression)* ~ ("\u{232A}" | "\u{3009}") }
 
 Term = _{
     DisplayedBoxes
@@ -663,6 +666,7 @@ Term = _{
   | PiecewisePrefix
   | FloorBrackets
   | CeilingBrackets
+  | AngleBrackets
   | Unset
   | ApplyToOp
   | AddTo
@@ -729,6 +733,7 @@ SimpleTerm = _{
   | PiecewisePrefix
   | FloorBrackets
   | CeilingBrackets
+  | AngleBrackets
   | UnsignedNumericValue
   | PrefixApplySimple
   | FunctionCall
@@ -754,6 +759,7 @@ TermNoImplicit = _{
   | PiecewisePrefix
   | FloorBrackets
   | CeilingBrackets
+  | AngleBrackets
   | Unset
   | ApplyToOp
   | AddTo
