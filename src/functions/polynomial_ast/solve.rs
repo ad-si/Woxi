@@ -7012,6 +7012,16 @@ fn build_find_root_func(arg: &Expr, vars: &[&str]) -> Expr {
     {
       minus2(fargs[0].clone(), fargs[1].clone())
     }
+    // An equation named by a symbol (`e1 = T + y == 5; FindRoot[{e1, ...}`)
+    // only reveals itself as an `Equal` once evaluated; resolve it first,
+    // then rewrite it like a literal equation.
+    Expr::Identifier(_) => {
+      let resolved = evaluate_with_vars_localized(arg, vars);
+      return match &resolved {
+        Expr::Identifier(_) => resolved,
+        _ => build_find_root_func(&resolved, vars),
+      };
+    }
     other => other.clone(),
   };
   evaluate_with_vars_localized(&raw, vars)
