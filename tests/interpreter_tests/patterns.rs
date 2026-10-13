@@ -5973,6 +5973,63 @@ mod tagged_rule_reachability {
   }
 }
 
+/// `UpSetDelayed`/`UpSet` in call form carry their patterns as FullForm
+/// (`Pattern[r, Blank[]]`, `Pattern[o, OptionsPattern[]]`), as a saved
+/// Manipulate's `SaveDefinitions` dump writes them. Only head-restricted
+/// patterns name a tag; the unrestricted ones must not be taken for one.
+mod upvalue_tags_from_full_form_patterns {
+  use super::*;
+
+  #[test]
+  fn unrestricted_full_form_patterns_name_no_tag() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "UpSetDelayed[Pattern[c, Blank[uvCurve]] Pattern[r, Blank[]], \
+         Map[r # &, c]]; uvCurve[1, 2]*3"
+      )
+      .unwrap(),
+      "uvCurve[3, 6]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      !msgs.iter().any(|m| m.contains("tagpos")),
+      "no tagpos expected, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn options_pattern_argument_names_no_tag() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "UpSetDelayed[uvShow[Pattern[c, Blank[uvCurve]], \
+         Pattern[o, OptionsPattern[]]], 7]; uvShow[uvCurve[1], a -> 2]"
+      )
+      .unwrap(),
+      "7"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      !msgs.iter().any(|m| m.contains("tagpos")),
+      "no tagpos expected, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn up_set_full_form_pattern_defines_upvalue() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "UpSet[Pattern[c, Blank[uvCurve2]] Pattern[r, Blank[]], 5]; \
+         uvCurve2[1]*3"
+      )
+      .unwrap(),
+      "5"
+    );
+  }
+}
+
 /// A blank's head restriction and a pattern's own name are ordinary symbols
 /// that a replacement rule reaches: `x_obj /. obj -> t` is `x_t`. WLJS's
 /// `CreateUType` derives one object type from another exactly this way, by
