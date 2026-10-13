@@ -2503,7 +2503,16 @@ pub fn evaluate_expr_to_expr_inner(
         // `>= 2` (rather than `>= 3`) so an even argument count like
         // `Switch[2, 1]` reaches switch_ast, which reports Switch::argct.
         if name == "Switch" && args.len() >= 2 {
-          return crate::functions::control_flow_ast::switch_ast(args);
+          // `Evaluate[…]` escapes Switch's hold and its result splices, so
+          // `Switch[x, Evaluate[pairs /. List -> Sequence]]` supplies the
+          // pattern/value arguments computed at call time.
+          let unwrapped = args
+            .iter()
+            .map(unwrap_top_level_evaluate)
+            .collect::<Result<Vec<_>, _>>()?;
+          return crate::functions::control_flow_ast::switch_ast(
+            &splice_top_level_sequences(unwrapped),
+          );
         }
         // Special handling for Piecewise - lazy evaluation of branches
         if name == "Piecewise" && !args.is_empty() && args.len() <= 2 {
