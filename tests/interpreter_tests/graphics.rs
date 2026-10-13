@@ -3206,6 +3206,46 @@ mod graphics {
       assert!(svg.contains("<polyline"), "Line should render: {svg}");
     }
   }
+
+  mod list_plot_data {
+    use super::*;
+
+    /// Number of plotted data marks/curves, told apart from axes and ticks
+    /// by the default first plot colour.
+    fn curve_marks(svg: &str) -> usize {
+      svg.matches("#5E81B5").count()
+    }
+
+    #[test]
+    fn leading_non_numeric_pair_keeps_the_curve() {
+      // A `Table` that starts at a singularity yields `{x, Indeterminate}`
+      // as its first row; the remaining rows must still be plotted.
+      for first in ["Indeterminate", "ComplexInfinity"] {
+        let svg = export_svg(&format!(
+          "ListLinePlot[{{{{0, {first}}}, {{1, -1}}, {{2, 0}}, {{3, 0.5}}}}]"
+        ));
+        assert!(curve_marks(&svg) >= 1, "curve missing for {first}: {svg}");
+      }
+    }
+
+    #[test]
+    fn leading_non_numeric_pair_keeps_the_points() {
+      let svg =
+        export_svg("ListPlot[{{0., Indeterminate}, {1., -3}, {2, 0}, {3, 1}}]");
+      assert!(curve_marks(&svg) >= 3, "points missing: {svg}");
+    }
+
+    #[test]
+    fn leading_non_numeric_pair_matches_dropping_it() {
+      let with = export_svg(
+        "ListLinePlot[{{0, Indeterminate}, {1, -1}, {2, 0}, {3, 1}}, PlotRange -> {{1, 3}, {-1, 1}}]",
+      );
+      let without = export_svg(
+        "ListLinePlot[{{1, -1}, {2, 0}, {3, 1}}, PlotRange -> {{1, 3}, {-1, 1}}]",
+      );
+      assert_eq!(with, without);
+    }
+  }
 }
 
 mod plot3d {
