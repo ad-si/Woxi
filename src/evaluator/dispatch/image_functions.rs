@@ -828,6 +828,11 @@ pub fn dispatch_image_functions(
         args,
       ));
     }
+    "MorphologicalPerimeter" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::image_ast::morphological_perimeter_ast(
+        args,
+      ));
+    }
     "ComponentMeasurements" if args.len() == 2 => {
       return Some(crate::functions::image_ast::component_measurements_ast(
         args,

@@ -1071,6 +1071,44 @@ mod definite_integrals {
   }
 
   #[test]
+  fn bose_integral_exact() {
+    assert_eq!(
+      interpret("Integrate[x^2/(Exp[x] - 1), {x, 0, Infinity}]").unwrap(),
+      "2*Zeta[3]"
+    );
+    assert_eq!(
+      interpret("Integrate[Sqrt[x]/(Exp[x] - 1), {x, 0, Infinity}]").unwrap(),
+      "(Sqrt[Pi]*Zeta[3/2])/2"
+    );
+    assert_eq!(
+      interpret("Integrate[x/(Exp[x] - 1), {x, 0, Infinity}]").unwrap(),
+      "Pi^2/6"
+    );
+  }
+
+  #[test]
+  fn bose_integral_with_fugacity_factor() {
+    // ∫_0^∞ Sqrt[x]/(a E^x - 1) dx = (Sqrt[Pi]/2) PolyLog[3/2, 1/a]
+    assert_eq!(
+      interpret("Integrate[Sqrt[x]/(1.2 Exp[x] - 1), {x, 0, Infinity}]")
+        .unwrap(),
+      interpret("N[Sqrt[Pi]/2 PolyLog[3/2, 1/1.2]]").unwrap()
+    );
+    assert_eq!(
+      interpret("Integrate[x/(3 Exp[x] - 1), {x, 0, Infinity}]").unwrap(),
+      "PolyLog[2, 1/3]"
+    );
+  }
+
+  #[test]
+  fn divergent_bose_integral_stays_unevaluated() {
+    assert_eq!(
+      interpret("Integrate[1/(Exp[x] - 1), {x, 0, Infinity}]").unwrap(),
+      "Integrate[(-1 + E^x)^(-1), {x, 0, Infinity}]"
+    );
+  }
+
+  #[test]
   fn gaussian_integral_full() {
     // ∫_{-∞}^{∞} E^(-x^2) dx = Sqrt[Pi]
     assert_eq!(
@@ -2384,6 +2422,15 @@ mod derivative_prime_notation {
     assert_eq!(
       interpret("Derivative[1, 0][f]").unwrap(),
       "Derivative[1, 0][f]"
+    );
+  }
+
+  #[test]
+  fn derivative_applied_to_several_arguments_keeps_all_of_them() {
+    assert_eq!(interpret("f'[t, {a}]").unwrap(), "Derivative[1][f][t, {a}]");
+    assert_eq!(
+      interpret("Derivative[2][g][x, y, z]").unwrap(),
+      "Derivative[2][g][x, y, z]"
     );
   }
 

@@ -5925,9 +5925,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
               // `SpanFromLeft`/`SpanFromAbove`/`SpanFromBoth` only continue a
               // merged cell: they hold no content, so they draw as blank
               // space rather than their own name.
+              //
+              // A `Null` cell (an `If[cond, picture]` that came out false)
+              // is empty in a notebook, not the word "Null".
               None if matches!(c, Expr::Identifier(s) if matches!(
                 s.as_str(),
-                "SpanFromLeft" | "SpanFromAbove" | "SpanFromBoth"
+                "SpanFromLeft" | "SpanFromAbove" | "SpanFromBoth" | "Null"
               )) =>
               {
                 "<svg width=\"1\" height=\"1\" viewBox=\"0 0 1 1\" xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string()

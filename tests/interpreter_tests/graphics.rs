@@ -3843,6 +3843,27 @@ mod plot3d {
       }
     }
 
+    /// Regression: an extracted `ParametricPlot3D[…][[1]]` complex baked a
+    /// height colour into every facet, so a colour directive placed before
+    /// it (the bimetal-strip layers) was overridden. Default facets carry
+    /// no colour; an explicit `PlotStyle` colour still does.
+    #[test]
+    fn extracted_parametric_surface_has_no_baked_default_colour() {
+      clear_state();
+      let plain = interpret(
+        "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 3][[1]], _RGBColor]",
+      )
+      .unwrap();
+      assert_eq!(plain, "True");
+      let styled = interpret(
+        "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 3, PlotStyle -> Red][[1]], _RGBColor]",
+      )
+      .unwrap();
+      assert_eq!(styled, "False");
+    }
+
     #[test]
     fn holds_iterator_variables() {
       // Regression: RegionPlot3D was missing from the HoldAll list
@@ -6466,6 +6487,34 @@ mod plot3d {
       );
     }
 
+    /// A named font size (`Medium`, `Small`, …) in a `Style` reaches the
+    /// label as a point size (the plot is drawn at 10x scale), bare or as
+    /// `FontSize -> name`. It used to be ignored, so a bold `Medium` plot title kept the default 17pt and ran
+    /// past the edge of a 300pt-wide plot (found via a downloaded Wolfram
+    /// Demonstrations Project notebook).
+    #[test]
+    fn plot_label_named_font_sizes_are_applied() {
+      for (style, size) in [
+        ("Medium", "120"),
+        ("Small", "90"),
+        ("Large", "240"),
+        ("Larger", "150"),
+        ("FontSize -> Tiny", "60"),
+      ] {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 1}}, PlotLabel -> Style[\"Title\", Bold, {style}]]"
+        ));
+        let label = svg
+          .split("<text ")
+          .find(|t| t.contains("Title"))
+          .expect("the plot label");
+        assert!(
+          label.contains(&format!("font-size=\"{size}\"")),
+          "{style} must give font-size {size}: {label}"
+        );
+      }
+    }
+
     /// `Evaluated -> True` works the body out once, with the plot
     /// variable still symbolic, instead of at every sample point. A fit
     /// only makes sense that way: substituting a number for the variable
@@ -7039,6 +7088,74 @@ mod plot3d {
       insta::assert_snapshot!(export_svg(
         r#"Plot[Sin[x], {x, 0, 2 Pi}, PlotLabel -> Style["Sine", Bold, Italic]]"#
       ));
+    }
+
+    // `PlotStyle -> Opacity[a]` fades the curve; `Opacity[0]` makes it
+    // invisible (the Demonstrations trick for a blank canvas to draw an
+    // Epilog on). Regression: the directive was ignored and a solid
+    // default-colored curve was drawn.
+    #[test]
+    fn plot_style_opacity_zero_hides_curve() {
+      let svg = export_svg("Plot[x, {x, 0, 3}, PlotStyle -> Opacity[0]]");
+      assert!(!svg.contains("<polyline"), "curve must be hidden: {svg}");
+    }
+
+    #[test]
+    fn plot_style_opacity_fades_curve_and_keeps_color() {
+      let svg = export_svg(
+        "Plot[{x, 2 x}, {x, 0, 3}, PlotStyle -> {Opacity[0.5, Blue], Green}]",
+      );
+      assert!(
+        svg.contains(r##"opacity="0.5" stroke="#0000FF""##),
+        "first curve must be half-transparent blue: {svg}"
+      );
+      assert!(
+        svg.contains(r##"opacity="1" stroke="#00FF00""##),
+        "second curve stays opaque green: {svg}"
+      );
+    }
+
+    #[test]
+    fn plot_style_opacity_applies_to_dashed_curve() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 3}, PlotStyle -> {Red, Opacity[0.3], Dashed}]",
+      );
+      assert!(svg.contains(r#"stroke-opacity="0.3""#), "{svg}");
+    }
+
+    // `AspectRatio -> Automatic` takes the plotted ranges' own proportions
+    // (here a 300 x 300 square); it used to be ignored, leaving the default
+    // golden-ratio frame that stretched square canvases.
+    #[test]
+    fn aspect_ratio_automatic_follows_plot_ranges() {
+      let auto = export_svg(
+        "Plot[x, {x, 0, 300}, PlotRange -> {0, 300}, Axes -> False, AspectRatio -> Automatic]",
+      );
+      let square = export_svg(
+        "Plot[x, {x, 0, 300}, PlotRange -> {0, 300}, Axes -> False, AspectRatio -> 1]",
+      );
+      let default = export_svg(
+        "Plot[x, {x, 0, 300}, PlotRange -> {0, 300}, Axes -> False]",
+      );
+      assert_eq!(auto, square);
+      assert_ne!(auto, default);
+    }
+
+    #[test]
+    fn aspect_ratio_automatic_wide_range_is_flat() {
+      let auto = export_svg(
+        "Plot[x, {x, 0, 100}, PlotRange -> {0, 10}, AspectRatio -> Automatic]",
+      );
+      let tenth = export_svg(
+        "Plot[x, {x, 0, 100}, PlotRange -> {0, 10}, AspectRatio -> 1/10]",
+      );
+      assert_eq!(auto, tenth);
+    }
+
+    #[test]
+    fn raster_honours_opacity_directive() {
+      let svg = export_svg("Graphics[{Opacity[.5], Raster[{{0, 1}, {1, 0}}]}]");
+      assert!(svg.contains(r#"fill-opacity="0.5""#), "{svg}");
     }
 
     #[test]
@@ -13548,6 +13665,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `ContourPlot[{f, g}, …, Contours -> {c}]` draws the level curve of
+    /// every function in the list; it used to yield an empty SVG.
+    #[test]
+    fn contour_plot_function_list_with_explicit_levels() {
+      let svg = export_svg(
+        "ContourPlot[{x^2 + y^2 - 1, x - y}, {x, -2, 2}, {y, -2, 2}, \
+         Contours -> {0}, ContourShading -> False]",
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "expected contour polylines, got: {}",
+        &svg[..svg.len().min(200)]
+      );
+      // A non-zero level is the zero contour of `f - c`.
+      let shifted = export_svg(
+        "ContourPlot[{x^2 + y^2}, {x, -2, 2}, {y, -2, 2}, \
+         Contours -> {1}, ContourShading -> False]",
+      );
+      let equation =
+        export_svg("ContourPlot[x^2 + y^2 == 1, {x, -2, 2}, {y, -2, 2}]");
+      assert_eq!(
+        shifted.matches("<polyline").count(),
+        equation.matches("<polyline").count()
+      );
+    }
+
     /// Regression: a pole in the sampled domain (`1/Sqrt[x^2 + y^2]` blows
     /// up at the origin) used to dominate the raw min/max of the grid
     /// samples, which fed both the color scale and the automatic contour
@@ -14976,6 +15119,25 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(
         !svg.contains("SubscriptBox"),
+        "the box-notation source leaked into the rendered label: {svg}"
+      );
+    }
+
+    /// A `Subscript` whose base is a styled string carrying inline box
+    /// notation (a vector label `Subscript[Style["\!\(\*OverscriptBox[\(r\),
+    /// \(\[RightVector]\)]\)", Italic], 1]` inside `Text`) folds into the
+    /// glyphs it typesets to instead of drawing the box source.
+    #[test]
+    fn text_subscript_of_box_notation_string() {
+      let svg = export_svg(
+        r#"Graphics[{Text[Style[Subscript[Style["\!\(\*OverscriptBox[\(r\), \(\[RightVector]\)]\)", Italic], "1"], 15], {0, 0}]}]"#,
+      );
+      assert!(
+        svg.contains("r\u{20D7}\u{2081}"),
+        "expected the vector label with a subscript 1: {svg}"
+      );
+      assert!(
+        !svg.contains("OverscriptBox"),
         "the box-notation source leaked into the rendered label: {svg}"
       );
     }
@@ -18871,6 +19033,22 @@ mod graphics_grid {
     assert!(svg.contains(">b<"), "{svg}");
   }
 
+  /// A `Grid` nested two layouts deep under a `Style` has the directives
+  /// pushed through the intermediate `Column`s down to its cells; the span
+  /// placeholder must stay a bare identifier on the way.
+  #[test]
+  fn styled_nested_column_grid_keeps_span_placeholders() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Text@Style[Column[{Column[{Grid[{{\"a\", \"b\"}, \
+                            {\"c\", SpanFromLeft}}, Frame -> All]}]}], 14]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(!svg.contains("SpanFromLeft"), "{svg}");
+    assert!(svg.contains(">c<"), "{svg}");
+  }
+
   #[test]
   fn grid_with_styled_image() {
     clear_state();
@@ -22586,6 +22764,38 @@ mod parametric_plot3d {
       colors.iter().any(|&(r, g, b)| r == 0 && g == 0 && b > 0),
       "expected a blue-shaded region for the high side of the mesh break, got {colors:?}"
     );
+  }
+
+  /// Regression (Wolfram Demonstration on cumulative sums and change
+  /// detection): `ListLinePlot` with `MeshFunctions`, `Mesh` and
+  /// `MeshShading` colours the stretches of the curve between mesh values
+  /// instead of drawing a single default-coloured line.
+  #[test]
+  fn list_line_plot_mesh_shading_colors_curve_segments() {
+    let svg = export_svg(
+      "ListLinePlot[{0, 1, 2, 3, 2, 1, 0, -1}, MeshFunctions -> {#2 &}, \
+       Mesh -> {{0.5, 1.5}}, MeshStyle -> None, \
+       MeshShading -> {Red, Green, Blue}]",
+    );
+    for color in ["#FF0000", "#00FF00", "#0000FF"] {
+      assert!(
+        svg.contains(&format!("stroke=\"{color}\"")),
+        "expected a {color} curve segment: {svg}"
+      );
+    }
+  }
+
+  /// A step-valued mesh function (`Boole[#1 >= m]`) splits the curve into a
+  /// left and a right part with the first and second shading colours.
+  #[test]
+  fn list_line_plot_mesh_shading_with_step_mesh_function() {
+    let svg = export_svg(
+      "m = 4; ListLinePlot[Accumulate[Range[8]], \
+       MeshFunctions -> {Boole[#1 >= m] &}, Mesh -> {{0}}, \
+       MeshStyle -> None, MeshShading -> {Red, Blue}]",
+    );
+    assert!(svg.contains("stroke=\"#FF0000\""), "no red part: {svg}");
+    assert!(svg.contains("stroke=\"#0000FF\""), "no blue part: {svg}");
   }
 
   /// `Mesh -> {{v1, v2, ...}}` with more than one break value partitions
@@ -32072,6 +32282,29 @@ mod graphics3d_painters_algorithm_face_subdivision {
 mod revolution_plot3d_part_extraction {
   use super::*;
 
+  /// A list of profile curves revolves each curve into its own surface
+  /// instead of failing with "function produced no finite values".
+  #[test]
+  fn revolution_plot3d_list_of_profile_curves() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Length[First[RevolutionPlot3D[{{-Sin[s], s}, {Sin[s], s}}, \
+         {s, 0, 1}]]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "Head[First[RevolutionPlot3D[{{-Sin[s], s}, {Sin[s], s}}, \
+         {s, 0, 1}]][[1]]]"
+      )
+      .unwrap(),
+      "GraphicsComplex"
+    );
+  }
+
   /// A 3-coordinate curve `{fx, fy, fz}` sweeps the `(fx, fy)` vector around
   /// the z axis by theta, rather than assuming `fy = 0` the way the plain
   /// `{r, z}` form does. Regression: only a 2-item list was ever recognized
@@ -33976,5 +34209,52 @@ mod gosper_curve_tests {
         .unwrap(),
       "String"
     );
+  }
+}
+
+mod stacked_horizontal_bar_title_and_null_grid_cells {
+  use super::*;
+
+  #[test]
+  fn horizontal_bar_chart_title_with_trailing_newline_stays_visible() {
+    let svg = export_svg(
+      r#"BarChart[{4.8, 5.2}, PlotLabel -> "abc\n", BarOrigin -> Left]"#,
+    );
+    let y: f64 = svg
+      .split("<text x=")
+      .find(|t| t.contains(">abc"))
+      .and_then(|t| t.split("y=\"").nth(1))
+      .and_then(|t| t.split('"').next())
+      .and_then(|t| t.parse().ok())
+      .expect("title text element");
+    assert!(y > 0.0, "title baseline {y} is above the top edge");
+  }
+
+  #[test]
+  fn grid_null_cell_next_to_a_picture_is_blank() {
+    let svg = export_svg(r#"Grid[{{Graphics[Circle[]]}, {Null}}]"#);
+    assert!(!svg.contains(">Null<"), "{svg}");
+  }
+}
+
+mod empty_plot {
+  use super::*;
+
+  // A Plot whose every curve is switched off (`If[False, …]` → `Null`)
+  // still draws its axes and PlotLabel over the given PlotRange.
+  #[test]
+  fn all_curves_null_keeps_axes_and_label() {
+    let svg = export_svg(
+      "Plot[{If[False, x], If[False, x^2]}, {x, -10, 10}, \
+       PlotRange -> {{-5, 15}, {-100, 100}}, PlotLabel -> \"caption\"]",
+    );
+    assert!(svg.contains("caption"), "PlotLabel missing: {svg}");
+    assert!(svg.contains("<text"), "axis ticks missing: {svg}");
+  }
+
+  #[test]
+  fn bare_null_plot_is_not_blank() {
+    let svg = export_svg("Plot[Null, {x, -1, 1}]");
+    assert!(svg.contains("<text"), "axes missing: {svg}");
   }
 }

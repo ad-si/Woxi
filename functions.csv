@@ -1064,7 +1064,7 @@ Today,Returns a DateObject representing the current date,✅,contextual,10.0,104
 ClippingStyle,,🚫,,6.0,1046
 Del,Symbolic nabla operator with Unicode display,✅,none,3.0,1046
 Resolve,Quantifier elimination for univariate and additively separable multivariate polynomial formulas,✅,pure,5.0,1047
-MorphologicalComponents,Label connected foreground components of an array,✅,pure,7.0,1048
+MorphologicalComponents,Label connected foreground components of an array or image,✅,pure,7.0,1048
 Wedge,Symbolic wedge product operator with Unicode display,✅,pure,3.0,1049
 SumConvergence,Tests convergence of infinite sums (rational geometric alternating and factorial terms),✅,pure,7.0,1050
 TextAlignment,,🚫,,3.0,1051
@@ -2479,7 +2479,7 @@ GeoIdentify,,🚫,,10.0,2503
 HilbertMatrix,Generate a Hilbert matrix of given size,✅,1,6.0,2503
 MenuSortingValue,,🚫,,8.0,2503
 Messages,Returns the messages associated with a symbol,✅,pure,1.0,2503
-MorphologicalPerimeter,,🚫,,7.0,2503
+MorphologicalPerimeter,Binary image of foreground pixels touching the background,✅,pure,7.0,2503
 BooleanMinimize,Find the minimal sum-of-products Boolean expression; terms are ordered by their literal pattern,✅,pure,7.0,2509
 ChiDistribution,represents a chi distribution with n degrees of freedom,✅,none,6.0,2509
 CloudPublish,,🚫,,10.2,2509

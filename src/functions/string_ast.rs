@@ -4779,7 +4779,7 @@ fn table_form_to_string(arg: &Expr) -> Option<String> {
 /// the widest cell anywhere in the matrix — left-aligned, with three-space
 /// separators and a blank line between rows. A flat vector renders as a single
 /// column, one element per row.
-fn matrix_form_to_string(arg: &Expr) -> Option<String> {
+pub(crate) fn matrix_form_to_string(arg: &Expr) -> Option<String> {
   let Expr::List(items) = arg else {
     return None;
   };

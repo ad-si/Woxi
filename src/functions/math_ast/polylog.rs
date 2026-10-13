@@ -26,6 +26,23 @@ pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return zeta_ast(&[Expr::Integer(*n)]);
   }
 
+  // PolyLog[s, 1] for an exact rational s > 1 is Zeta[s].
+  if matches!(z_expr, Expr::Integer(1))
+    && matches!(s_expr, Expr::FunctionCall { name, .. } if name == "Rational")
+    && try_eval_to_f64(s_expr).is_some_and(|sf| sf > 1.0)
+  {
+    return zeta_ast(std::slice::from_ref(s_expr));
+  }
+
+  // An exact rational order with an inexact argument evaluates numerically.
+  if matches!(s_expr, Expr::FunctionCall { name, .. } if name == "Rational")
+    && matches!(z_expr, Expr::Real(_))
+    && let (Some(sf), Some(zf)) =
+      (try_eval_to_f64(s_expr), try_eval_to_f64(z_expr))
+  {
+    return Ok(Expr::Real(polylog_numeric(sf, zf)));
+  }
+
   match s_expr {
     Expr::Integer(s) => {
       return polylog_integer_s(*s, z_expr, args);

@@ -2550,6 +2550,24 @@ fn downvalue_arg_info(
 
 pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   let lhs = &normalize_symbol_lhs(lhs);
+  // `Evaluate[target] = value` (also written `target // Evaluate = value`)
+  // forces the otherwise held left-hand side to evaluate first, then assigns
+  // to whatever it produced — e.g. a list of `sol[i]` targets.
+  let evaluate_target = match lhs {
+    Expr::FunctionCall { name, args }
+      if name == "Evaluate" && args.len() == 1 =>
+    {
+      Some(&args[0])
+    }
+    Expr::Postfix { expr, func } if matches!(func.as_ref(), Expr::Identifier(f) if f == "Evaluate") => {
+      Some(expr.as_ref())
+    }
+    _ => None,
+  };
+  if let Some(target) = evaluate_target {
+    let target = evaluate_expr_to_expr(target)?;
+    return set_ast(&target, rhs);
+  }
   // Unwrap Condition on LHS: f[x_] /; test = body is parsed as
   // Set[Condition[f[x_], test], body]. Extract the pattern and condition.
   let (lhs, _lhs_condition) = if let Expr::FunctionCall { name, args } = lhs

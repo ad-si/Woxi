@@ -7925,7 +7925,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return format!("Inequality[{}]", parts.join(", "));
       }
       // Sequence[] (empty sequence) displays as nothing in Wolfram output (OutputForm only)
-      if is_output && name == "Sequence" && args.is_empty() {
+      if is_output
+        && !in_true_input_form()
+        && name == "Sequence"
+        && args.is_empty()
+      {
         return String::new();
       }
       // Special case: Quantity[n, unit] — unit shown as quoted string(s)
@@ -8510,7 +8514,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       }
       if name == "PatternTest" && args.len() == 2 {
         let pat = fmt(&args[0]);
-        let test = fmt(&args[1]);
+        // A non-symbol test (e.g. a pure function) is wrapped, as in
+        // `_?(#1 > 0 & )`; unwrapped, `?` would bind tighter than `&`.
+        let test = match &args[1] {
+          Expr::Identifier(_) => fmt(&args[1]),
+          t => format!("({})", fmt(t)),
+        };
         // Atoms and lists print without parens, matching wolframscript:
         // `a?f`, `1?f`, `"s"?f`, `{1, 2}?f`. Everything else is wrapped —
         // `?` binds tighter than any infix operator, and wolframscript
@@ -10026,9 +10035,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       {
         let n_str = fmt(&args[0]);
         let f_str = fmt(&args[1]);
-        if args.len() == 3 {
-          let x_str = fmt(&args[2]);
-          return format!("Derivative[{n_str}][{f_str}][{x_str}]");
+        if args.len() >= 3 {
+          let applied: Vec<String> = args[2..].iter().map(&fmt).collect();
+          return format!(
+            "Derivative[{n_str}][{f_str}][{}]",
+            applied.join(", ")
+          );
         }
         return format!("Derivative[{n_str}][{f_str}]");
       }
@@ -15019,6 +15031,23 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
       if name == "HoldForm" && args.len() == 1 =>
     {
       expr_to_textbox(&args[0])
+    }
+    // `MatrixForm[matrix]` nested in a larger 2D layout (e.g. as a fraction
+    // numerator) keeps its text grid instead of the literal head.
+    Expr::FunctionCall { name, args }
+      if name == "MatrixForm"
+        && args.len() == 1
+        && crate::functions::string_ast::matrix_form_to_string(&args[0])
+          .is_some() =>
+    {
+      let text =
+        crate::functions::string_ast::matrix_form_to_string(&args[0]).unwrap();
+      let lines: Vec<String> =
+        text.lines().map(std::string::ToString::to_string).collect();
+      let baseline = lines.len().saturating_sub(1) / 2;
+      let mut tb = TextBox { lines, baseline };
+      tb.normalize();
+      tb
     }
     // `Definition[sym]` / `FullDefinition[sym]` print as the definition text.
     Expr::FunctionCall { name, args }

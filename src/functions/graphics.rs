@@ -1846,7 +1846,7 @@ fn named_style_appearance(name: &str) -> Option<(f64, Option<(u8, u8, u8)>)> {
 /// and `Large` are absolute in Wolfram's default stylesheet; `Larger` and
 /// `Smaller` scale whatever size is in force. Measured from wolframscript's
 /// own rendering of `Text[Style["z", …]]` against numeric sizes.
-fn named_font_size(name: &str, current: f64) -> Option<f64> {
+pub(crate) fn named_font_size(name: &str, current: f64) -> Option<f64> {
   Some(match name {
     "Tiny" => 6.0,
     "Small" => 9.0,
@@ -2300,7 +2300,7 @@ fn collect_primitives(
         // `RasterBox` is the box form of `Raster` — the shape a stored
         // Demonstration image arrives in.
         "Raster" | "RasterBox" if !args.is_empty() => {
-          parse_raster(args, prims);
+          parse_raster(args, style.opacity, prims);
         }
         "GraphicsComplex" if args.len() >= 2 => {
           if let Some(coords) = expr_to_point_list(&args[0]) {
@@ -3601,6 +3601,18 @@ fn wrap_text_to_width(text: &str, width: usize) -> String {
     .join("\n")
 }
 
+/// Peel `Style[…]`-like wrappers off `expr`, returning the innermost content.
+fn strip_style_wrappers(expr: &Expr) -> &Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      strip_style_wrappers(&args[0])
+    }
+    other => other,
+  }
+}
+
 fn graphics_text_content(expr: &Expr) -> String {
   match expr {
     // A string carrying inline `\!\(\*…\)` box notation — the front end's
@@ -3768,6 +3780,26 @@ fn graphics_text_content(expr: &Expr) -> String {
     // over ` D` is not what the picture is meant to show. `expr_to_label`
     // already folds them into the Unicode script characters for plot
     // labels, so a `Text` label written the same way reads the same way.
+    //
+    // A base carrying inline `\!\(\*…\)` box notation (a vector label
+    // `Subscript[Style["\!\(\*OverscriptBox[…]\)", Italic], 1]`) is folded
+    // into its glyphs first, so the box source is not drawn literally.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Subscript" | "Superscript")
+        && args.len() >= 2
+        && matches!(
+          strip_style_wrappers(&args[0]),
+          Expr::String(s) if s.contains(crate::functions::string_ast::BOX_START)
+        ) =>
+    {
+      let base = graphics_text_content(&args[0]);
+      let scripts: String = args[1..]
+        .iter()
+        .filter_map(crate::functions::chart::expr_to_label)
+        .map(|s| to_unicode_script_digits(&s, name == "Superscript"))
+        .collect();
+      format!("{base}{scripts}")
+    }
     Expr::FunctionCall { name, args }
       if (matches!(name.as_str(), "Subscript" | "Superscript")
         && args.len() >= 2)
@@ -4809,7 +4841,7 @@ pub(crate) fn spline_knots_unclamped(args: &[Expr]) -> bool {
   })
 }
 
-fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
+fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
   // Raster[data], Raster[data, {{xmin, ymin}, {xmax, ymax}}], or
   // Raster[data, rect, {vmin, vmax}] — data is a 2D array of grayscale
   // values or {r,g,b}/{r,g,b,a} lists, scaled from the {vmin, vmax} range
@@ -4908,6 +4940,14 @@ fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
   if x_min > x_max {
     for row in &mut grid {
       row.reverse();
+    }
+  }
+
+  // An `Opacity[a]` directive in force fades every pixel, on top of any
+  // alpha channel the data itself carries.
+  if opacity < 1.0 {
+    for color in grid.iter_mut().flatten() {
+      *color = color.with_alpha(color.a * opacity);
     }
   }
 
@@ -10661,6 +10701,16 @@ fn base_form_digits(x: &Expr, base: &Expr) -> Option<String> {
 /// The SVG text attributes a `Style[…]` directive list asks for — colour,
 /// slant, weight and size — for the `tspan` the styled content goes into.
 /// Directives with no textual meaning (or none we render) are skipped.
+/// The SVG `font-size` value for a named size. The absolute ones reuse
+/// `named_font_size`; `Larger`/`Smaller` are relative to the enclosing size.
+fn named_font_size_attr(name: &str) -> Option<String> {
+  match name {
+    "Larger" => Some("125%".to_string()),
+    "Smaller" => Some("80%".to_string()),
+    _ => named_font_size(name, 0.0).map(|size| format!("{size:.0}")),
+  }
+}
+
 fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
   // One slot per SVG attribute, last directive wins: `Style[expr, "Label",
   // 12]` names a stylesheet style *and* overrides its size, exactly as
@@ -10682,11 +10732,15 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
       Expr::Identifier(s) if s == "Bold" => {
         set("font-weight", "bold".to_string());
       }
-      // A bare number is the font size (`Style[expr, 12]`).
+      // A bare number is the font size (`Style[expr, 12]`), and so is a
+      // named one (`Style[expr, Medium]`).
       Expr::Integer(_) | Expr::Real(_) => {
         if let Some(size) = expr_to_f64(d) {
           set("font-size", format!("{size:.0}"));
         }
+      }
+      Expr::Identifier(s) if named_font_size_attr(s).is_some() => {
+        set("font-size", named_font_size_attr(s).unwrap());
       }
       // A named style brings its size and colour from the stylesheet.
       Expr::String(name) => {
@@ -10704,6 +10758,10 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
         Some("FontSize") => {
           if let Some(size) = expr_to_f64(replacement) {
             set("font-size", format!("{size:.0}"));
+          } else if let Expr::Identifier(s) = replacement.as_ref()
+            && let Some(attr) = named_font_size_attr(s)
+          {
+            set("font-size", attr);
           }
         }
         Some("FontColor") => {
@@ -14285,6 +14343,12 @@ pub struct GridStyle {
   /// The font family a `FontFamily -> "…"` directive asks for.
   pub font_family: Option<String>,
   pub(crate) color: Option<Color>,
+}
+
+/// Any of the `Grid` span continuation markers.
+fn is_span_marker(cell: &Expr) -> bool {
+  matches!(cell, Expr::Identifier(s)
+    if matches!(s.as_str(), "SpanFromLeft" | "SpanFromAbove" | "SpanFromBoth"))
 }
 
 /// `SpanFromLeft` in a `Grid` cell means "the cell to my left continues into
@@ -18997,7 +19061,10 @@ pub(crate) fn style_pushed_into_layout(
   // row/column renderer, which recognises a graphic by its own head and
   // would fall back to the `-Graphics-` placeholder text.
   let restyle = |e: &Expr| {
+    // A `Grid` span marker holds no content and is only recognized bare:
+    // inside a `Style` it would be drawn as its own name.
     if matches!(e, Expr::Graphics { .. })
+      || is_span_marker(e)
       || crate::evaluator::lays_out_a_graphic(e)
     {
       return e.clone();
@@ -21250,6 +21317,14 @@ pub struct ManipulateSpec {
   /// initial values produce — the frontend re-evaluates this code fragment
   /// against the live bindings after every change and rebuilds the choices.
   pub dynamic_values: Vec<(String, String)>,
+  /// Control captions that follow another control's variable, as `(control
+  /// name, caption code)`: `{{c, -2, Dynamic[If[mode == 0, Subscript[x, 2],
+  /// Subscript[z, 0]]]}, -2, 1}` names the same slider after a different
+  /// quantity per mode. The label stored on the control is only the caption
+  /// the initial values produce — the frontend re-evaluates this code
+  /// against the live bindings after every change (see
+  /// [`manipulate_eval_label_code`]).
+  pub dynamic_labels: Vec<(String, String)>,
   /// `(control name, reset code)` for a `LocatorPane`/`Locator` variable
   /// promoted from a plain body-local `var = expr;` assignment (see
   /// `collect_body_locator_pane_vars`), where `expr` references another
@@ -21508,6 +21583,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // Kept so a pick list the body draws can be lifted out of it once the
   // control specs say which variable it drives (see `body_popups` below).
   let mut body_expr_kept: Option<Expr> = None;
+  let mut dynamic_labels: Vec<(String, String)> = inner
+    .as_ref()
+    .map(|i| i.dynamic_labels.clone())
+    .unwrap_or_default();
   let (
     body_code,
     mut controls,
@@ -22099,6 +22178,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if let Some(code) = values_code {
           dynamic_values.push((c.name().to_string(), code));
         }
+        if let Some(code) = dynamic_label_code(&spec) {
+          dynamic_labels.push((c.name().to_string(), code));
+        }
         // A compiled widget dump lists every module variable as a hidden
         // `{var, ControlType -> None}` entry ahead of the visible control
         // that redeclares it; the later visible control owns the value, so
@@ -22482,7 +22564,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         rewrite(code);
       }
     }
-    for (_, code) in &mut dynamic_values {
+    for (_, code) in dynamic_values.iter_mut().chain(dynamic_labels.iter_mut())
+    {
       rewrite(code);
     }
     for (_, value) in fixed.iter_mut().chain(state.iter_mut()) {
@@ -22509,6 +22592,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible,
     dynamic_bounds,
     dynamic_values,
+    dynamic_labels,
     dynamic_locator_defaults,
     animation_var,
     animated,
@@ -24724,6 +24808,36 @@ pub fn manipulate_eval_values_code(
   (!columns.0.is_empty()).then_some(columns)
 }
 
+/// The caption code of a control spec `{{var, init, Dynamic[caption]}, …}`
+/// whose label follows other control variables, or `None` for a static one.
+fn dynamic_label_code(spec: &Expr) -> Option<String> {
+  let Expr::List(items) = spec else { return None };
+  let Some(Expr::List(head)) = items.first() else {
+    return None;
+  };
+  match head.get(2)? {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      Some(crate::syntax::expr_to_source_form(&args[0]))
+    }
+    _ => None,
+  }
+}
+
+/// Evaluate a [`ManipulateSpec::dynamic_labels`] caption against the
+/// current bindings and typeset it into label runs.
+pub fn manipulate_eval_label_code(code: &str) -> Option<Vec<LabelRun>> {
+  let expr = crate::interpret_to_expr(code).ok()?;
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
+  Some(manipulate_label_runs(&evaluated, false))
+}
+
+/// Flatten label runs to the plain text a styling-blind consumer shows.
+pub fn manipulate_label_text(runs: &[LabelRun]) -> String {
+  flatten_label_runs(runs)
+}
+
 /// Synthesize a plain symbol name for a compound (non-Identifier) control
 /// variable. `Subscript[signal, 1]` → `signal$1`; any other compound head
 /// sanitizes its whole InputForm, mapping non-symbol characters to `$`.
@@ -24901,6 +25015,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_labels: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
@@ -24988,6 +25103,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_labels: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
@@ -25117,6 +25233,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_labels: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
@@ -25173,6 +25290,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_labels: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
@@ -25241,6 +25359,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_labels: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var,
     animated: animate.is_some(),
