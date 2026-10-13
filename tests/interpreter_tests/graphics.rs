@@ -32140,6 +32140,29 @@ mod graphics3d_painters_algorithm_face_subdivision {
 mod revolution_plot3d_part_extraction {
   use super::*;
 
+  /// A list of profile curves revolves each curve into its own surface
+  /// instead of failing with "function produced no finite values".
+  #[test]
+  fn revolution_plot3d_list_of_profile_curves() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Length[First[RevolutionPlot3D[{{-Sin[s], s}, {Sin[s], s}}, \
+         {s, 0, 1}]]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "Head[First[RevolutionPlot3D[{{-Sin[s], s}, {Sin[s], s}}, \
+         {s, 0, 1}]][[1]]]"
+      )
+      .unwrap(),
+      "GraphicsComplex"
+    );
+  }
+
   /// A 3-coordinate curve `{fx, fy, fz}` sweeps the `(fx, fy)` vector around
   /// the z axis by theta, rather than assuming `fy = 0` the way the plain
   /// `{r, z}` form does. Regression: only a 2-item list was ever recognized
