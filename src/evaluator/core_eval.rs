@@ -1140,6 +1140,18 @@ pub fn evaluate_expr_to_expr_inner(
       Ok(Expr::List(evaluated.into()))
     }
     Expr::FunctionCall { name, args } => {
+      // `System`Plus[1, 2]` is the built-in `Plus[1, 2]`: a head that spells
+      // out the System context evaluates as its short name.
+      if let Some(short) = name.strip_prefix("System`")
+        && !short.is_empty()
+        && !short.contains('`')
+        && crate::evaluator::functions::is_builtin_symbol(short)
+      {
+        return evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: short.to_string(),
+          args: args.clone(),
+        });
+      }
       // Track function calls on the evaluation stack for stack traces.
       crate::push_eval_stack(name);
       // A literal `Sequence[…]` argument splices into the enclosing call
