@@ -14287,6 +14287,12 @@ pub struct GridStyle {
   pub(crate) color: Option<Color>,
 }
 
+/// Any of the `Grid` span continuation markers.
+fn is_span_marker(cell: &Expr) -> bool {
+  matches!(cell, Expr::Identifier(s)
+    if matches!(s.as_str(), "SpanFromLeft" | "SpanFromAbove" | "SpanFromBoth"))
+}
+
 /// `SpanFromLeft` in a `Grid` cell means "the cell to my left continues into
 /// this column": it draws nothing itself, and its neighbour is laid out
 /// across the merged span. `SpanFromBoth` continues a cell that spans both
@@ -18997,7 +19003,10 @@ pub(crate) fn style_pushed_into_layout(
   // row/column renderer, which recognises a graphic by its own head and
   // would fall back to the `-Graphics-` placeholder text.
   let restyle = |e: &Expr| {
+    // A `Grid` span marker holds no content and is only recognized bare:
+    // inside a `Style` it would be drawn as its own name.
     if matches!(e, Expr::Graphics { .. })
+      || is_span_marker(e)
       || crate::evaluator::lays_out_a_graphic(e)
     {
       return e.clone();
