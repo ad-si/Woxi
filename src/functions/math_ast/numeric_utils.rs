@@ -559,6 +559,21 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         let v = bessel_j(n, z);
         v.is_finite().then_some(v)
       }
+      // Zeros stay symbolic for exact arguments but numericize under
+      // Real contagion (BesselJZero[0, 2]/2. is a machine real).
+      "BesselJZero" | "BesselYZero" if args.len() == 2 => {
+        let n = try_eval_to_f64(&args[0])?;
+        let k = match &args[1] {
+          Expr::Integer(k) if *k >= 1 => *k as usize,
+          _ => return None,
+        };
+        let v = if name == "BesselJZero" {
+          crate::functions::math_ast::bessel::bessel_j_zero(n, k)
+        } else {
+          crate::functions::math_ast::bessel::bessel_y_zero(n, k)
+        };
+        v.is_finite().then_some(v)
+      }
       "BesselK" if args.len() == 2 => {
         let n = try_eval_to_f64(&args[0])?;
         let z = try_eval_to_f64(&args[1])?;
