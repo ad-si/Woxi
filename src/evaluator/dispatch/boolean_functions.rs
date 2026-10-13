@@ -78,9 +78,11 @@ pub fn dispatch_boolean_functions(
     // while it appears inside a control that is being actively manipulated,
     // and as `normalform` otherwise. In script mode (and any non-interactive
     // evaluation) nothing is ever actively manipulated, so it evaluates to
-    // its inactive form `normalform`, matching wolframscript.
+    // its inactive form `normalform`, matching wolframscript. The form is
+    // evaluated here because a notebook's saved definitions restore the
+    // `HoldAll` attribute on `ControlActive`, which leaves its arguments raw.
     "ControlActive" if args.len() == 2 => {
-      return Some(Ok(args[1].clone()));
+      return Some(crate::evaluator::evaluate_expr_to_expr(&args[1]));
     }
     // ControlActive[] with no arguments queries whether a control is currently
     // being actively manipulated. Outside an interactive notebook nothing is,

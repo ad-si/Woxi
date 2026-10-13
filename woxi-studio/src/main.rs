@@ -31973,4 +31973,40 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
       .collect();
     assert_eq!(names, ["a", "b"]);
   }
+
+  /// A Demonstration saved with `SaveDefinitions -> True` restores
+  /// `Attributes[ControlActive] = {HoldAll, ReadProtected}` in the widget's
+  /// stored Initialization. The helper's Table step is a `ControlActive[…]`
+  /// over Module locals, so with the attribute set it must still resolve to
+  /// its (evaluated) inactive form instead of failing the iterator check.
+  #[test]
+  fn held_control_active_step_in_saved_definitions_still_draws() {
+    let code = "Manipulate[ripple[a], {{a, 1, \"amplitude\"}, -2, 2}, \
+      SaveDefinitions -> True]";
+    let stored = "DynamicModuleBox[{$CellContext`a$$ = 1}, \
+      DynamicBox[…],\n\
+      Initialization:>({$CellContext`ripple[Pattern[$CellContext`a, \
+      Blank[]]] := Module[{$CellContext`L = 3 Pi, $CellContext`\\[Epsilon]}, \
+      $CellContext`\\[Epsilon] = $CellContext`L/30.; \
+      Graphics[Line[Table[{$CellContext`x, $CellContext`a Sin[$CellContext`x]}, \
+      {$CellContext`x, -$CellContext`L - $CellContext`\\[Epsilon], \
+      $CellContext`L + $CellContext`\\[Epsilon], \
+      ControlActive[(2 $CellContext`L + 2 $CellContext`\\[Epsilon])/10, \
+      (2 $CellContext`L + 2 $CellContext`\\[Epsilon])/40]}]]]], \
+      Attributes[ControlActive] = {HoldAll, ReadProtected}}; \
+      Typeset`initDone$$ = True)]";
+    let state = instantiate_stored_manipulate(code, stored)
+      .expect("instantiate_stored_manipulate should build a widget");
+    assert_eq!(state.error, None);
+    let r = woxi::interpret_with_stdout("ripple[1]").unwrap();
+    assert!(
+      r.warnings.iter().all(|w| !w.contains("iterb")),
+      "the held ControlActive step must resolve: {:?}",
+      r.warnings
+    );
+    let svg = r.graphics.clone().unwrap_or_else(|| {
+      panic!("the ripple must draw: {:?} {:?}", r.result, r.warnings)
+    });
+    assert!(svg.contains("<polyline") || svg.contains("<path"), "{svg}");
+  }
 }
