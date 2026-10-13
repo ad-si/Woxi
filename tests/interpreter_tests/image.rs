@@ -8478,4 +8478,32 @@ mod demonstration_image_filters {
       "{{0., 0., 1., 1.}, {0., 0., 1., 1.}, {1., 1., 0., 0.}, {1., 1., 0., 0.}}"
     );
   }
+
+  #[test]
+  fn image_levels_counts_pixel_values_per_channel() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageLevels[Binarize[Image[{{0, 1, 1}, {0, 0, 1}}]], 2]")
+        .unwrap(),
+      "{{0, 3}, {1, 3}}"
+    );
+    assert_eq!(
+      interpret("ImageLevels[Binarize[Image[{{0, 1, 1}, {0, 0, 1}}]]][[2, 2]]")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("ImageLevels[Image[{{0, 1}, {1, 1}}], 2]").unwrap(),
+      "{{0., 1}, {1., 3}}"
+    );
+    assert_eq!(
+      interpret("Length[ImageLevels[Image[{{0, 1}, {1, 1}}]]]").unwrap(),
+      "256"
+    );
+    assert_eq!(
+      interpret("Length[ImageLevels[Image[{{{1, 0, 0}, {0, 1, 0}}}], 2]]")
+        .unwrap(),
+      "3"
+    );
+  }
 }

@@ -3852,6 +3852,25 @@ mod tests {
       );
     }
 
+    /// `Panel[table, Text[caption]]` is drawn as the table with its caption
+    /// above it; with a bare-string caption a plain table stays text.
+    #[test]
+    fn panel_with_text_caption_renders_table_under_caption() {
+      let result = woxi::interpret_with_stdout(
+        r#"Panel[Grid[{{"a", "=", 1}, {"b", "=", 2}}], Text["Results"]]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the panel is a graphic");
+      assert!(svg.contains(">Results<"), "{svg}");
+      assert!(!svg.contains(">Panel<"), "{svg}");
+
+      let plain = woxi::interpret_with_stdout(
+        r#"Panel[Grid[{{1, 2}, {3, 4}}], "Results"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(plain.graphics.is_none(), "{:?}", plain.graphics);
+    }
+
     /// `Text` around a `Pane` of a plain table draws the table: the pane
     /// only sizes it.
     #[test]
