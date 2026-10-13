@@ -11743,6 +11743,31 @@ mod floor_ceiling_brackets {
   }
 }
 
+// `〈a, b〉` is the typeset input form for `\[LeftAngleBracket]…\[RightAngleBracket]`,
+// i.e. AngleBracket[a, b]. Regression: the downloaded Wolfram Demonstration
+// "Projection of One 2D Vector to Another" writes vector components this way
+// inside its Manipulate body, which used to fail to parse at all.
+mod angle_brackets {
+  use super::*;
+
+  #[test]
+  fn angle_brackets_parse_as_angle_bracket_call() {
+    assert_eq!(interpret("Head[〈x〉]").unwrap(), "AngleBracket");
+    assert_eq!(interpret("Length[〈a, b, c〉]").unwrap(), "3");
+    assert_eq!(interpret("List @@ 〈1, 2〉").unwrap(), "{1, 2}");
+  }
+
+  #[test]
+  fn angle_brackets_accept_cjk_spelling_and_expressions() {
+    assert_eq!(interpret("First[〈1 + 1, 3〉]").unwrap(), "2");
+    assert_eq!(interpret("Head[〈a〉]").unwrap(), "AngleBracket");
+    assert_eq!(
+      interpret("Head[\u{2329}a\u{232A}]").unwrap(),
+      "AngleBracket"
+    );
+  }
+}
+
 // `\[Piecewise]{{v1,c1},{v2,c2},…}` is the special-character input form for
 // `Piecewise[{{v1,c1},{v2,c2},…}]` that notebooks reconstruct from a
 // `GridBox` for the piecewise brace notation. Regression: a downloaded
