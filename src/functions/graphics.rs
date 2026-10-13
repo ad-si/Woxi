@@ -3601,6 +3601,18 @@ fn wrap_text_to_width(text: &str, width: usize) -> String {
     .join("\n")
 }
 
+/// Peel `Style[…]`-like wrappers off `expr`, returning the innermost content.
+fn strip_style_wrappers(expr: &Expr) -> &Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      strip_style_wrappers(&args[0])
+    }
+    other => other,
+  }
+}
+
 fn graphics_text_content(expr: &Expr) -> String {
   match expr {
     // A string carrying inline `\!\(\*…\)` box notation — the front end's
@@ -3768,6 +3780,26 @@ fn graphics_text_content(expr: &Expr) -> String {
     // over ` D` is not what the picture is meant to show. `expr_to_label`
     // already folds them into the Unicode script characters for plot
     // labels, so a `Text` label written the same way reads the same way.
+    //
+    // A base carrying inline `\!\(\*…\)` box notation (a vector label
+    // `Subscript[Style["\!\(\*OverscriptBox[…]\)", Italic], 1]`) is folded
+    // into its glyphs first, so the box source is not drawn literally.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Subscript" | "Superscript")
+        && args.len() >= 2
+        && matches!(
+          strip_style_wrappers(&args[0]),
+          Expr::String(s) if s.contains(crate::functions::string_ast::BOX_START)
+        ) =>
+    {
+      let base = graphics_text_content(&args[0]);
+      let scripts: String = args[1..]
+        .iter()
+        .filter_map(crate::functions::chart::expr_to_label)
+        .map(|s| to_unicode_script_digits(&s, name == "Superscript"))
+        .collect();
+      format!("{base}{scripts}")
+    }
     Expr::FunctionCall { name, args }
       if (matches!(name.as_str(), "Subscript" | "Superscript")
         && args.len() >= 2)

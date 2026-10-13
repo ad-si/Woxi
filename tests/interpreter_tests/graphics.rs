@@ -15123,6 +15123,25 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A `Subscript` whose base is a styled string carrying inline box
+    /// notation (a vector label `Subscript[Style["\!\(\*OverscriptBox[\(r\),
+    /// \(\[RightVector]\)]\)", Italic], 1]` inside `Text`) folds into the
+    /// glyphs it typesets to instead of drawing the box source.
+    #[test]
+    fn text_subscript_of_box_notation_string() {
+      let svg = export_svg(
+        r#"Graphics[{Text[Style[Subscript[Style["\!\(\*OverscriptBox[\(r\), \(\[RightVector]\)]\)", Italic], "1"], 15], {0, 0}]}]"#,
+      );
+      assert!(
+        svg.contains("r\u{20D7}\u{2081}"),
+        "expected the vector label with a subscript 1: {svg}"
+      );
+      assert!(
+        !svg.contains("OverscriptBox"),
+        "the box-notation source leaked into the rendered label: {svg}"
+      );
+    }
+
     /// A shaded contour plot keeps its shading when `Show` merges it with
     /// other graphics — the bands travel with the plot's symbolic form, so
     /// the merged picture is not reduced to bare contour lines. A
