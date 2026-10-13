@@ -2493,6 +2493,16 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           }
           Ok(Expr::List(diffed.into()))
         }
+        // `If[cond, a, b]` differentiates branch-by-branch and leaves the
+        // condition alone: `D[If[c, a, b], x] = If[c, D[a, x], D[b, x]]`.
+        "If" if args.len() >= 2 => {
+          let mut out = Vec::with_capacity(args.len());
+          out.push(args[0].clone());
+          for a in &args[1..] {
+            out.push(differentiate(a, var)?);
+          }
+          Ok(call("If", out))
+        }
         // `Piecewise[{{v_i, c_i}, …}, default]` differentiates value-by-value:
         // each piece keeps its condition with the value differentiated, and the
         // default becomes `Indeterminate` (the derivative is undefined at the

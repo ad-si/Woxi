@@ -1951,6 +1951,37 @@ mod differentiate_plus_times {
   }
 }
 
+mod differentiate_if {
+  use super::*;
+
+  // D[If[c, a, b], x] differentiates the branches and keeps the condition.
+  // Regression: this used to emit Derivative[…][If] terms that later made
+  // FindRoot fail with D::ivar.
+  #[test]
+  fn branches() {
+    assert_eq!(
+      interpret("D[If[x < 1, x^2, x^3], x]").unwrap(),
+      "If[x < 1, 2*x, 3*x^2]"
+    );
+  }
+
+  #[test]
+  fn two_argument_form() {
+    assert_eq!(interpret("D[If[x < 1, x^2], x]").unwrap(), "If[x < 1, 2*x]");
+  }
+
+  #[test]
+  fn delayed_derivative_then_find_root() {
+    assert_eq!(
+      interpret(
+        "dy[t_] = D[If[t <= 0, 0, t^2 - 4], t]; Round[t /. FindRoot[dy[t] == 1, {t, 3}], 0.1]"
+      )
+      .unwrap(),
+      "0.5"
+    );
+  }
+}
+
 mod differentiate_piecewise {
   use super::*;
 
