@@ -1011,9 +1011,11 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       }
       // `SqrtBox[a]` → `Sqrt[a]`.
       "SqrtBox" if args.len() == 1 => format!("Sqrt[{}]", conv(&args[0])),
-      // `RadicalBox[a, n]` → `Surd[a, n]` (n-th root).
+      // `RadicalBox[a, n]` → `a^(1/n)`. This is the principal power, not
+      // `Surd[a, n]`, so the index may be any number (e.g. a symbolic or
+      // real Weibull shape parameter), not only an integer.
       "RadicalBox" if args.len() == 2 => {
-        format!("Surd[{}, {}]", conv(&args[0]), conv(&args[1]))
+        format!("Power[{}, Power[{}, -1]]", conv(&args[0]), conv(&args[1]))
       }
       // `TagBox[content, tag, opts...]` is a display annotation; the
       // evaluable value is just `content`.
@@ -5636,6 +5638,18 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "Log[x]");
     let s = r#"BoxData[RowBox[{"sin", "(", "x", ")"}]]"#;
     assert_eq!(extract_cell_content(s), "Sin[x]");
+  }
+
+  /// `RadicalBox[a, n]` is the power `a^(1/n)`, not `Surd[a, n]`: the index
+  /// may be a real or symbolic number (a Weibull shape parameter), for which
+  /// `Surd` rejects the second argument. Regression found via a Wolfram
+  /// Demonstration fitting lifetime data to a Weibull model.
+  #[test]
+  fn test_radical_box_is_a_power_not_surd() {
+    let s = r#"BoxData[RadicalBox["x", "b"]]"#;
+    assert_eq!(extract_cell_content(s), "Power[x, Power[b, -1]]");
+    let s = r#"BoxData[RadicalBox["0.5", "1.5"]]"#;
+    assert_eq!(extract_cell_content(s), "Power[0.5, Power[1.5, -1]]");
   }
 
   /// A parenthesised group (literal `"("`/`")"` box tokens, as the FrontEnd
