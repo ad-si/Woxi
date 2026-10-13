@@ -23246,3 +23246,36 @@ mod table_real_step_accumulated_rounding {
     }
   }
 }
+
+/// `` Developer`FromPackedArray `` — Woxi has no packed arrays, so it returns
+/// its argument, which also makes it usable as an option value.
+mod from_packed_array {
+  use super::*;
+
+  #[test]
+  fn returns_the_array() {
+    assert_eq!(
+      interpret("Developer`FromPackedArray[{1, 2.5, 3}]").unwrap(),
+      "{1, 2.5, 3}"
+    );
+  }
+
+  #[test]
+  fn nested_array() {
+    assert_eq!(
+      interpret("Developer`FromPackedArray[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn usable_as_fourier_parameters() {
+    assert_eq!(
+      interpret(
+        "InverseFourier[{1., 2.}, FourierParameters -> Developer`FromPackedArray[{-1, 1}]] == InverseFourier[{1., 2.}, FourierParameters -> {-1, 1}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
