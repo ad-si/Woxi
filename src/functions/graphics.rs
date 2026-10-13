@@ -1846,7 +1846,7 @@ fn named_style_appearance(name: &str) -> Option<(f64, Option<(u8, u8, u8)>)> {
 /// and `Large` are absolute in Wolfram's default stylesheet; `Larger` and
 /// `Smaller` scale whatever size is in force. Measured from wolframscript's
 /// own rendering of `Text[Style["z", …]]` against numeric sizes.
-fn named_font_size(name: &str, current: f64) -> Option<f64> {
+pub(crate) fn named_font_size(name: &str, current: f64) -> Option<f64> {
   Some(match name {
     "Tiny" => 6.0,
     "Small" => 9.0,
@@ -2300,7 +2300,7 @@ fn collect_primitives(
         // `RasterBox` is the box form of `Raster` — the shape a stored
         // Demonstration image arrives in.
         "Raster" | "RasterBox" if !args.is_empty() => {
-          parse_raster(args, prims);
+          parse_raster(args, style.opacity, prims);
         }
         "GraphicsComplex" if args.len() >= 2 => {
           if let Some(coords) = expr_to_point_list(&args[0]) {
@@ -4809,7 +4809,7 @@ pub(crate) fn spline_knots_unclamped(args: &[Expr]) -> bool {
   })
 }
 
-fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
+fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
   // Raster[data], Raster[data, {{xmin, ymin}, {xmax, ymax}}], or
   // Raster[data, rect, {vmin, vmax}] — data is a 2D array of grayscale
   // values or {r,g,b}/{r,g,b,a} lists, scaled from the {vmin, vmax} range
@@ -4908,6 +4908,14 @@ fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
   if x_min > x_max {
     for row in &mut grid {
       row.reverse();
+    }
+  }
+
+  // An `Opacity[a]` directive in force fades every pixel, on top of any
+  // alpha channel the data itself carries.
+  if opacity < 1.0 {
+    for color in grid.iter_mut().flatten() {
+      *color = color.with_alpha(color.a * opacity);
     }
   }
 
@@ -10661,6 +10669,16 @@ fn base_form_digits(x: &Expr, base: &Expr) -> Option<String> {
 /// The SVG text attributes a `Style[…]` directive list asks for — colour,
 /// slant, weight and size — for the `tspan` the styled content goes into.
 /// Directives with no textual meaning (or none we render) are skipped.
+/// The SVG `font-size` value for a named size. The absolute ones reuse
+/// `named_font_size`; `Larger`/`Smaller` are relative to the enclosing size.
+fn named_font_size_attr(name: &str) -> Option<String> {
+  match name {
+    "Larger" => Some("125%".to_string()),
+    "Smaller" => Some("80%".to_string()),
+    _ => named_font_size(name, 0.0).map(|size| format!("{size:.0}")),
+  }
+}
+
 fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
   // One slot per SVG attribute, last directive wins: `Style[expr, "Label",
   // 12]` names a stylesheet style *and* overrides its size, exactly as
@@ -10682,11 +10700,15 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
       Expr::Identifier(s) if s == "Bold" => {
         set("font-weight", "bold".to_string());
       }
-      // A bare number is the font size (`Style[expr, 12]`).
+      // A bare number is the font size (`Style[expr, 12]`), and so is a
+      // named one (`Style[expr, Medium]`).
       Expr::Integer(_) | Expr::Real(_) => {
         if let Some(size) = expr_to_f64(d) {
           set("font-size", format!("{size:.0}"));
         }
+      }
+      Expr::Identifier(s) if named_font_size_attr(s).is_some() => {
+        set("font-size", named_font_size_attr(s).unwrap());
       }
       // A named style brings its size and colour from the stylesheet.
       Expr::String(name) => {
@@ -10704,6 +10726,10 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
         Some("FontSize") => {
           if let Some(size) = expr_to_f64(replacement) {
             set("font-size", format!("{size:.0}"));
+          } else if let Expr::Identifier(s) = replacement.as_ref()
+            && let Some(attr) = named_font_size_attr(s)
+          {
+            set("font-size", attr);
           }
         }
         Some("FontColor") => {

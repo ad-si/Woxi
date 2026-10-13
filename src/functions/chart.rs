@@ -237,6 +237,15 @@ fn text_wrapper_content(expr: &Expr) -> Option<&Expr> {
   }
 }
 
+/// A font size given as a number or as a named size (`Medium`, `Large`, …).
+/// `Larger`/`Smaller` scale Wolfram's default 12pt text.
+fn style_font_size(expr: &Expr) -> Option<f64> {
+  if let Expr::Identifier(name) = expr {
+    return crate::functions::graphics::named_font_size(name, 12.0);
+  }
+  try_eval_to_f64(expr)
+}
+
 /// Extract the bold/italic flags, color, and font size from a list of style
 /// directives — `Style[…]`'s trailing arguments, `Directive[…]`'s arguments,
 /// or a bare `LabelStyle -> {…}` list, all of which share this shape.
@@ -259,7 +268,7 @@ pub(crate) fn parse_style_directive_args(
         replacement,
       } => match pattern.as_ref() {
         Expr::Identifier(n) if n == "FontSize" => {
-          if let Some(f) = try_eval_to_f64(replacement) {
+          if let Some(f) = style_font_size(replacement) {
             font_size = Some(f);
           }
         }
@@ -285,7 +294,7 @@ pub(crate) fn parse_style_directive_args(
       _ => {
         if let Some(c) = parse_color(arg) {
           color = Some(c);
-        } else if let Some(f) = try_eval_to_f64(arg) {
+        } else if let Some(f) = style_font_size(arg) {
           font_size = Some(f);
         }
       }

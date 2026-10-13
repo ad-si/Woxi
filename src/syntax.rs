@@ -7925,7 +7925,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return format!("Inequality[{}]", parts.join(", "));
       }
       // Sequence[] (empty sequence) displays as nothing in Wolfram output (OutputForm only)
-      if is_output && name == "Sequence" && args.is_empty() {
+      if is_output
+        && !in_true_input_form()
+        && name == "Sequence"
+        && args.is_empty()
+      {
         return String::new();
       }
       // Special case: Quantity[n, unit] — unit shown as quoted string(s)
@@ -15019,6 +15023,23 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
       if name == "HoldForm" && args.len() == 1 =>
     {
       expr_to_textbox(&args[0])
+    }
+    // `MatrixForm[matrix]` nested in a larger 2D layout (e.g. as a fraction
+    // numerator) keeps its text grid instead of the literal head.
+    Expr::FunctionCall { name, args }
+      if name == "MatrixForm"
+        && args.len() == 1
+        && crate::functions::string_ast::matrix_form_to_string(&args[0])
+          .is_some() =>
+    {
+      let text =
+        crate::functions::string_ast::matrix_form_to_string(&args[0]).unwrap();
+      let lines: Vec<String> =
+        text.lines().map(std::string::ToString::to_string).collect();
+      let baseline = lines.len().saturating_sub(1) / 2;
+      let mut tb = TextBox { lines, baseline };
+      tb.normalize();
+      tb
     }
     // `Definition[sym]` / `FullDefinition[sym]` print as the definition text.
     Expr::FunctionCall { name, args }

@@ -6466,6 +6466,34 @@ mod plot3d {
       );
     }
 
+    /// A named font size (`Medium`, `Small`, …) in a `Style` reaches the
+    /// label as a point size (the plot is drawn at 10x scale), bare or as
+    /// `FontSize -> name`. It used to be ignored, so a bold `Medium` plot title kept the default 17pt and ran
+    /// past the edge of a 300pt-wide plot (found via a downloaded Wolfram
+    /// Demonstrations Project notebook).
+    #[test]
+    fn plot_label_named_font_sizes_are_applied() {
+      for (style, size) in [
+        ("Medium", "120"),
+        ("Small", "90"),
+        ("Large", "240"),
+        ("Larger", "150"),
+        ("FontSize -> Tiny", "60"),
+      ] {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 1}}, PlotLabel -> Style[\"Title\", Bold, {style}]]"
+        ));
+        let label = svg
+          .split("<text ")
+          .find(|t| t.contains("Title"))
+          .expect("the plot label");
+        assert!(
+          label.contains(&format!("font-size=\"{size}\"")),
+          "{style} must give font-size {size}: {label}"
+        );
+      }
+    }
+
     /// `Evaluated -> True` works the body out once, with the plot
     /// variable still symbolic, instead of at every sample point. A fit
     /// only makes sense that way: substituting a number for the variable
@@ -7039,6 +7067,74 @@ mod plot3d {
       insta::assert_snapshot!(export_svg(
         r#"Plot[Sin[x], {x, 0, 2 Pi}, PlotLabel -> Style["Sine", Bold, Italic]]"#
       ));
+    }
+
+    // `PlotStyle -> Opacity[a]` fades the curve; `Opacity[0]` makes it
+    // invisible (the Demonstrations trick for a blank canvas to draw an
+    // Epilog on). Regression: the directive was ignored and a solid
+    // default-colored curve was drawn.
+    #[test]
+    fn plot_style_opacity_zero_hides_curve() {
+      let svg = export_svg("Plot[x, {x, 0, 3}, PlotStyle -> Opacity[0]]");
+      assert!(!svg.contains("<polyline"), "curve must be hidden: {svg}");
+    }
+
+    #[test]
+    fn plot_style_opacity_fades_curve_and_keeps_color() {
+      let svg = export_svg(
+        "Plot[{x, 2 x}, {x, 0, 3}, PlotStyle -> {Opacity[0.5, Blue], Green}]",
+      );
+      assert!(
+        svg.contains(r##"opacity="0.5" stroke="#0000FF""##),
+        "first curve must be half-transparent blue: {svg}"
+      );
+      assert!(
+        svg.contains(r##"opacity="1" stroke="#00FF00""##),
+        "second curve stays opaque green: {svg}"
+      );
+    }
+
+    #[test]
+    fn plot_style_opacity_applies_to_dashed_curve() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 3}, PlotStyle -> {Red, Opacity[0.3], Dashed}]",
+      );
+      assert!(svg.contains(r#"stroke-opacity="0.3""#), "{svg}");
+    }
+
+    // `AspectRatio -> Automatic` takes the plotted ranges' own proportions
+    // (here a 300 x 300 square); it used to be ignored, leaving the default
+    // golden-ratio frame that stretched square canvases.
+    #[test]
+    fn aspect_ratio_automatic_follows_plot_ranges() {
+      let auto = export_svg(
+        "Plot[x, {x, 0, 300}, PlotRange -> {0, 300}, Axes -> False, AspectRatio -> Automatic]",
+      );
+      let square = export_svg(
+        "Plot[x, {x, 0, 300}, PlotRange -> {0, 300}, Axes -> False, AspectRatio -> 1]",
+      );
+      let default = export_svg(
+        "Plot[x, {x, 0, 300}, PlotRange -> {0, 300}, Axes -> False]",
+      );
+      assert_eq!(auto, square);
+      assert_ne!(auto, default);
+    }
+
+    #[test]
+    fn aspect_ratio_automatic_wide_range_is_flat() {
+      let auto = export_svg(
+        "Plot[x, {x, 0, 100}, PlotRange -> {0, 10}, AspectRatio -> Automatic]",
+      );
+      let tenth = export_svg(
+        "Plot[x, {x, 0, 100}, PlotRange -> {0, 10}, AspectRatio -> 1/10]",
+      );
+      assert_eq!(auto, tenth);
+    }
+
+    #[test]
+    fn raster_honours_opacity_directive() {
+      let svg = export_svg("Graphics[{Opacity[.5], Raster[{{0, 1}, {1, 0}}]}]");
+      assert!(svg.contains(r#"fill-opacity="0.5""#), "{svg}");
     }
 
     #[test]
@@ -13545,6 +13641,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         svg.contains("<polyline"),
         "expected the implicit circle as contour polylines, got: {}",
         &svg[..svg.len().min(200)]
+      );
+    }
+
+    /// `ContourPlot[{f, g}, …, Contours -> {c}]` draws the level curve of
+    /// every function in the list; it used to yield an empty SVG.
+    #[test]
+    fn contour_plot_function_list_with_explicit_levels() {
+      let svg = export_svg(
+        "ContourPlot[{x^2 + y^2 - 1, x - y}, {x, -2, 2}, {y, -2, 2}, \
+         Contours -> {0}, ContourShading -> False]",
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "expected contour polylines, got: {}",
+        &svg[..svg.len().min(200)]
+      );
+      // A non-zero level is the zero contour of `f - c`.
+      let shifted = export_svg(
+        "ContourPlot[{x^2 + y^2}, {x, -2, 2}, {y, -2, 2}, \
+         Contours -> {1}, ContourShading -> False]",
+      );
+      let equation =
+        export_svg("ContourPlot[x^2 + y^2 == 1, {x, -2, 2}, {y, -2, 2}]");
+      assert_eq!(
+        shifted.matches("<polyline").count(),
+        equation.matches("<polyline").count()
       );
     }
 
@@ -32071,6 +32193,29 @@ mod graphics3d_painters_algorithm_face_subdivision {
 
 mod revolution_plot3d_part_extraction {
   use super::*;
+
+  /// A list of profile curves revolves each curve into its own surface
+  /// instead of failing with "function produced no finite values".
+  #[test]
+  fn revolution_plot3d_list_of_profile_curves() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Length[First[RevolutionPlot3D[{{-Sin[s], s}, {Sin[s], s}}, \
+         {s, 0, 1}]]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "Head[First[RevolutionPlot3D[{{-Sin[s], s}, {Sin[s], s}}, \
+         {s, 0, 1}]][[1]]]"
+      )
+      .unwrap(),
+      "GraphicsComplex"
+    );
+  }
 
   /// A 3-coordinate curve `{fx, fy, fz}` sweeps the `(fx, fy)` vector around
   /// the z axis by theta, rather than assuming `fy = 0` the way the plain

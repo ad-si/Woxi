@@ -723,6 +723,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ImageValue" => Some((2, 3)),
     "MorphologicalBinarize" => Some((1, 2)),
     "MorphologicalComponents" => Some((1, 3)),
+    "MorphologicalPerimeter" => Some((1, 2)),
     "ComponentMeasurements" => Some((2, 3)),
     "RegionQ" => Some((1, 1)),
     "MeshRegionQ" => Some((1, 1)),

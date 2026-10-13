@@ -5824,6 +5824,22 @@ mod tex_form {
     );
   }
 
+  // A MatrixForm nested in a fraction keeps its grid layout.
+  #[test]
+  fn matrix_form_inside_fraction() {
+    assert_eq!(
+      interpret("ToString[MatrixForm[{{1, 2}, {3, 4}}]/7]").unwrap(),
+      "1   2\n\n3   4\n-----\n  7"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[MatrixForm[{{1, -20}, {-20, 1}}]/MatrixForm[{{-3}}], FormatType -> TraditionalForm]"
+      )
+      .unwrap(),
+      "1     -20\n\n-20   1\n---------\n   -3"
+    );
+  }
+
   // Piecewise renders as a LaTeX cases environment; Wolfram always shows the
   // catch-all row (the default value, or 0, with a True condition).
   #[test]
