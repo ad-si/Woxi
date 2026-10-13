@@ -33978,3 +33978,28 @@ mod gosper_curve_tests {
     );
   }
 }
+
+mod stacked_horizontal_bar_title_and_null_grid_cells {
+  use super::*;
+
+  #[test]
+  fn horizontal_bar_chart_title_with_trailing_newline_stays_visible() {
+    let svg = export_svg(
+      r#"BarChart[{4.8, 5.2}, PlotLabel -> "abc\n", BarOrigin -> Left]"#,
+    );
+    let y: f64 = svg
+      .split("<text x=")
+      .find(|t| t.contains(">abc"))
+      .and_then(|t| t.split("y=\"").nth(1))
+      .and_then(|t| t.split('"').next())
+      .and_then(|t| t.parse().ok())
+      .expect("title text element");
+    assert!(y > 0.0, "title baseline {y} is above the top edge");
+  }
+
+  #[test]
+  fn grid_null_cell_next_to_a_picture_is_blank() {
+    let svg = export_svg(r#"Grid[{{Graphics[Circle[]]}, {Null}}]"#);
+    assert!(!svg.contains(">Null<"), "{svg}");
+  }
+}

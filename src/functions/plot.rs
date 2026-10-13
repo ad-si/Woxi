@@ -5938,10 +5938,8 @@ pub(crate) fn generate_horizontal_bar_svg(
     // Place the title near the top so a clear gap remains above the bars.
     let ty = title_font_size * 1.2;
     let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
-    // A stacked title grows upwards: its last line stays where a one-line
-    // title would sit, so whatever shares the top margin below it (the y
-    // `AxesLabel`) is not written over.
-    let ty = ty - sl.extra_line_count() as f64 * fs * 1.2;
+    // A stacked title keeps its first line at the top and grows downwards
+    // into the extra top margin reserved for it.
     let fill = sl
       .color
       .as_ref()
