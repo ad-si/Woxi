@@ -2818,6 +2818,27 @@ mod graphics {
       );
     }
 
+    /// `Rotate[Text[…], θ]` inside a `Graphics` scene tilts the label's
+    /// baseline by θ (a vertical column label in a process diagram). It
+    /// must draw what `Text` with the equivalent baseline direction draws,
+    /// whether or not the label is wrapped in `Style`, and a zero angle must
+    /// leave the label untouched.
+    #[test]
+    fn rotate_tilts_a_text_label() {
+      let rotated = export_svg(
+        "Graphics[{Rotate[Style[Text[\"column\", {2, 5}, {0, 0}], Bold], Pi/2]}, PlotRange -> {{0, 4}, {0, 10}}]",
+      );
+      let direct = export_svg(
+        "Graphics[{Style[Text[\"column\", {2, 5}, {0, 0}, {0, 1}], Bold]}, PlotRange -> {{0, 4}, {0, 10}}]",
+      );
+      assert!(rotated.contains("rotate(-90.000"), "got:\n{rotated}");
+      assert_eq!(rotated, direct);
+      let flat = export_svg(
+        "Graphics[{Rotate[Text[\"column\", {2, 5}, {0, 0}], 0]}, PlotRange -> {{0, 4}, {0, 10}}]",
+      );
+      assert!(!flat.contains("rotate("), "got:\n{flat}");
+    }
+
     /// The three-argument form, `Rotate[g, θ, {x, y}]`, rotates about an
     /// explicit pivot in `g`'s own data coordinates.
     #[test]
