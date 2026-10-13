@@ -5432,6 +5432,28 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn control_active_resolves_when_a_saved_definition_makes_it_hold_all() {
+    // A Demonstration saved with `SaveDefinitions -> True` restores
+    // `Attributes[ControlActive] = {HoldAll, ReadProtected}`. The held
+    // inactive form must still be evaluated — including Module locals in a
+    // Table step — rather than left raw for the iterator check to reject.
+    let r = interpret_with_stdout(
+      "Attributes[ControlActive] = {HoldAll, ReadProtected}; \
+       {ControlActive[1 + 1, 2 + 2], \
+        Module[{L = 3, e}, e = L/3; \
+         Length[Table[x, {x, -L - e, L + e, \
+          ControlActive[4 (2 L + 2 e), (2 L + 2 e)/4]}]]]}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{4, 5}");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected warnings: {:?}",
+      r.warnings
+    );
+  }
+
+  #[test]
   fn polar_curves_stay_symbolic_in_script_mode() {
     // PolarCurve / FilledPolarCurve are lightweight graphics primitives that
     // the playground and Woxi Studio render as graphics. In the plain CLI
