@@ -855,6 +855,11 @@ enum Primitive {
     /// label: the glyphs are sheared/stretched about the anchor with it
     /// (the anchor itself is already moved). `None` for untransformed text.
     glyph_map: Option<[[f64; 2]; 2]>,
+    /// Character ranges (`start..end`, counted in `char`s of `text`) a
+    /// nested `Style[…, Italic]` sets in slanted type —
+    /// `Row[{Style["y", Italic], " = 1"}]` draws an italic `y` and an
+    /// upright remainder. Empty for a label with no partial styling.
+    italic_ranges: Vec<(usize, usize)>,
     style: StyleState,
   },
   BezierCurvePrim {
@@ -1750,17 +1755,23 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
             color: None,
             thickness: None,
           };
-          // Unwrap a single List argument: EdgeForm[{GrayLevel[0, 0.5]}]
-          let directives: &[Expr] =
-            if args.len() == 1 && matches!(&args[0], Expr::List(_)) {
-              if let Expr::List(items) = &args[0] {
-                items
-              } else {
-                args
+          // Unwrap Lists and `Directive[…]` wrappers (at any depth):
+          // `EdgeForm[{GrayLevel[0, 0.5]}]`, `EdgeForm[Directive[Thick, Red]]`.
+          fn flatten_edge_directives<'a>(a: &'a Expr, out: &mut Vec<&'a Expr>) {
+            match a {
+              Expr::List(items) => {
+                items.iter().for_each(|i| flatten_edge_directives(i, out));
               }
-            } else {
-              args
-            };
+              Expr::FunctionCall { name, args } if name == "Directive" => {
+                args.iter().for_each(|i| flatten_edge_directives(i, out));
+              }
+              other => out.push(other),
+            }
+          }
+          let mut directives: Vec<&Expr> = Vec::new();
+          args
+            .iter()
+            .for_each(|a| flatten_edge_directives(a, &mut directives));
           for a in directives {
             if let Some(c) = parse_color(a) {
               ef.color = Some(c);
@@ -4610,6 +4621,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     None
   };
 
+  let italic_ranges = italic_text_ranges(content, &text);
   prims.push(Primitive::TextPrim {
     text,
     x,
@@ -4620,6 +4632,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     scaled,
     direction,
     glyph_map: None,
+    italic_ranges,
     style: local_style,
   });
 }
@@ -5629,6 +5642,7 @@ fn rotate_primitive(
       scaled,
       direction,
       glyph_map,
+      italic_ranges,
       style,
     } => {
       let (nx, ny) = if *scaled { (*x, *y) } else { rp(*x, *y) };
@@ -5642,6 +5656,7 @@ fn rotate_primitive(
         scaled: *scaled,
         direction: direction.map(|(dx, dy)| rv(dx, dy)),
         glyph_map: *glyph_map,
+        italic_ranges: italic_ranges.clone(),
         style: style.clone(),
       }
     }
@@ -5839,6 +5854,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       scaled,
       direction,
       glyph_map,
+      italic_ranges,
       style,
     } => Primitive::TextPrim {
       text: text.clone(),
@@ -5850,6 +5866,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       scaled: *scaled,
       direction: *direction,
       glyph_map: *glyph_map,
+      italic_ranges: italic_ranges.clone(),
       style: style.clone(),
     },
     Primitive::RasterPrim {
@@ -6096,6 +6113,7 @@ fn scale_primitive(
       scaled,
       direction,
       glyph_map,
+      italic_ranges,
       style,
     } => {
       let (nx, ny) = if *scaled { (*x, *y) } else { sp(*x, *y) };
@@ -6109,6 +6127,7 @@ fn scale_primitive(
         scaled: *scaled,
         direction: direction.map(|(dx, dy)| (dx * sx, dy * sy)),
         glyph_map: *glyph_map,
+        italic_ranges: italic_ranges.clone(),
         style: style.clone(),
       }
     }
@@ -7442,6 +7461,58 @@ pub(crate) fn svg_escape(s: &str) -> String {
   render_math_letterlike_glyphs(&escaped)
 }
 
+/// Character ranges of `text` that `content`'s nested `Style[…, Italic]`
+/// parts set in slanted type. Empty unless the label's styled runs flatten
+/// to exactly `text` (so the ranges are known to line up) and at least one
+/// run, but not all of them, is italic — a uniformly italic label is
+/// already covered by the primitive's own font style.
+fn italic_text_ranges(content: &Expr, text: &str) -> Vec<(usize, usize)> {
+  if text.contains('\n') {
+    return Vec::new();
+  }
+  let runs = manipulate_label_runs(content, false);
+  if flatten_label_runs(&runs) != text
+    || !runs.iter().any(|r| r.italic)
+    || runs.iter().all(|r| r.italic || r.text.is_empty())
+  {
+    return Vec::new();
+  }
+  let mut ranges = Vec::new();
+  let mut pos = 0;
+  for r in &runs {
+    let len = r.text.chars().count();
+    if r.italic && len > 0 {
+      ranges.push((pos, pos + len));
+    }
+    pos += len;
+  }
+  ranges
+}
+
+/// [`svg_escape`] a single-line label, wrapping the characters inside
+/// `italic_ranges` in an italic `<tspan>`.
+fn svg_escape_with_italics(
+  text: &str,
+  italic_ranges: &[(usize, usize)],
+) -> String {
+  if italic_ranges.is_empty() {
+    return svg_escape(text);
+  }
+  let chars: Vec<char> = text.chars().collect();
+  let mut out = String::new();
+  let mut pos = 0;
+  for &(start, end) in italic_ranges {
+    let (start, end) = (start.min(chars.len()), end.min(chars.len()));
+    out.push_str(&svg_escape(&chars[pos..start].iter().collect::<String>()));
+    out.push_str("<tspan font-style=\"italic\">");
+    out.push_str(&svg_escape(&chars[start..end].iter().collect::<String>()));
+    out.push_str("</tspan>");
+    pos = end;
+  }
+  out.push_str(&svg_escape(&chars[pos..].iter().collect::<String>()));
+  out
+}
+
 /// Substitute any differential/exponential/imaginary-unit Letterlike
 /// Symbols glyph (see [`italic_letter_for_math_glyph`]) with an italicized
 /// plain-ASCII letter in a `<tspan>`. Safe to run after XML-escaping,
@@ -8155,6 +8226,7 @@ fn render_primitive(
       scaled,
       direction,
       glyph_map,
+      italic_ranges,
       style,
     } => {
       let color = style.effective_color();
@@ -8299,7 +8371,7 @@ fn render_primitive(
           style.font_weight,
           style.font_style,
           color.opacity_attr(),
-          svg_escape(text),
+          svg_escape_with_italics(text, italic_ranges),
         ));
       }
     }
