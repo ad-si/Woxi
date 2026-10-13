@@ -5021,6 +5021,17 @@ mod interpreter_tests {
       interpret("{0, If[True, Unevaluated[Sequence[]], {}], 9}").unwrap(),
       "{0, 9}"
     );
+    // An empty Sequence nested in a held expression keeps its spelling in
+    // InputForm, so the printed code re-parses (`{} -> Sequence[]` used to
+    // print as `{} -> `).
+    assert_eq!(
+      interpret("ToString[Hold[{} -> Sequence[]], InputForm]").unwrap(),
+      "Hold[{} -> Sequence[]]"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[f[a, Sequence[]]], InputForm]").unwrap(),
+      "Hold[f[a, Sequence[]]]"
+    );
     assert_eq!(
       interpret("g[x_] := Unevaluated[Sequence[1, x + 1]]; {0, g[5], 9}")
         .unwrap(),

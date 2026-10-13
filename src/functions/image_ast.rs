@@ -6600,6 +6600,90 @@ pub fn component_measurements_ast(
   Ok(Expr::List(rules.into()))
 }
 
+/// Gray levels of an image as rows of pixels (top row first); colour
+/// images use the channel mean. `None` for anything that is not an image.
+fn image_gray_matrix(e: &Expr) -> Option<Vec<Vec<f64>>> {
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    ..
+  } = e
+  else {
+    return None;
+  };
+  let (w, h, ch) = (*width as usize, *height as usize, *channels as usize);
+  let gray = |i: usize| -> f64 {
+    let px = &data[i * ch..(i + 1) * ch];
+    if ch >= 3 {
+      ((px[0] as f32 + px[1] as f32 + px[2] as f32) / 3.0f32) as f64
+    } else {
+      (px[0] as f32) as f64
+    }
+  };
+  Some(
+    (0..h)
+      .map(|y| (0..w).map(|x| gray(y * w + x)).collect())
+      .collect(),
+  )
+}
+
+/// MorphologicalPerimeter[image] / [image, t] gives a binary image of the
+/// foreground pixels (values above `t`, default 0) that touch a background
+/// pixel horizontally or vertically.
+pub fn morphological_perimeter_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("MorphologicalPerimeter", args);
+  let (Expr::Image { width, height, .. }, Some(mat)) =
+    (&args[0], image_gray_matrix(&args[0]))
+  else {
+    crate::emit_message(&format!(
+      "MorphologicalPerimeter::imginv: Expecting an image or graphics instead of {}.",
+      expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+  let threshold = match args.get(1) {
+    None => 0.0,
+    Some(t) => match crate::functions::math_ast::try_eval_to_f64(t) {
+      Some(v) => v,
+      None => return Ok(unevaluated()),
+    },
+  };
+  let (w, h) = (*width as usize, *height as usize);
+  let fg = |y: i64, x: i64| -> Option<bool> {
+    if y < 0 || x < 0 || y >= h as i64 || x >= w as i64 {
+      None
+    } else {
+      Some(mat[y as usize][x as usize] > threshold)
+    }
+  };
+  let mut out = vec![0.0f64; w * h];
+  for y in 0..h as i64 {
+    for x in 0..w as i64 {
+      if fg(y, x) != Some(true) {
+        continue;
+      }
+      let touches_background = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        .iter()
+        .any(|&(dy, dx)| fg(y + dy, x + dx) == Some(false));
+      if touches_background {
+        out[y as usize * w + x as usize] = 1.0;
+      }
+    }
+  }
+  Ok(Expr::Image {
+    color_space: None,
+    width: *width,
+    height: *height,
+    channels: 1,
+    data: Arc::new(out),
+    image_type: ImageType::Bit,
+  })
+}
+
 /// MorphologicalComponents[matrix] / [matrix, t] labels the connected
 /// foreground components (values above the threshold `t`, default 0) with
 /// consecutive integers assigned in raster order of first appearance.
@@ -6611,28 +6695,34 @@ pub fn morphological_components_ast(
   if args.is_empty() {
     return unevaluated();
   }
-  // Parse a rectangular numeric matrix.
-  let Expr::List(rows) = &args[0] else {
-    return unevaluated();
-  };
-  let mut mat: Vec<Vec<f64>> = Vec::with_capacity(rows.len());
+  // Parse a rectangular numeric matrix, or take the gray levels of an image.
+  let mut mat: Vec<Vec<f64>> = Vec::new();
   let mut ncols: Option<usize> = None;
-  for r in rows {
-    let Expr::List(cells) = r else {
+  if let Some(gray) = image_gray_matrix(&args[0]) {
+    ncols = gray.first().map(std::vec::Vec::len);
+    mat = gray;
+  } else {
+    let Expr::List(rows) = &args[0] else {
       return unevaluated();
     };
-    let mut row = Vec::with_capacity(cells.len());
-    for c in cells {
-      match crate::functions::math_ast::try_eval_to_f64(c) {
-        Some(v) => row.push(v),
-        None => return unevaluated(),
+    mat.reserve(rows.len());
+    for r in rows {
+      let Expr::List(cells) = r else {
+        return unevaluated();
+      };
+      let mut row = Vec::with_capacity(cells.len());
+      for c in cells {
+        match crate::functions::math_ast::try_eval_to_f64(c) {
+          Some(v) => row.push(v),
+          None => return unevaluated(),
+        }
       }
+      match ncols {
+        Some(nc) if nc != row.len() => return unevaluated(),
+        _ => ncols = Some(row.len()),
+      }
+      mat.push(row);
     }
-    match ncols {
-      Some(nc) if nc != row.len() => return unevaluated(),
-      _ => ncols = Some(row.len()),
-    }
-    mat.push(row);
   }
   let h = mat.len();
   let w = ncols.unwrap_or(0);

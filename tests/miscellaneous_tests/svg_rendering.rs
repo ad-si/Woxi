@@ -3393,6 +3393,42 @@ mod tests {
       );
     }
 
+    /// `GraphPlot`'s legacy `EdgeRenderingFunction` names an edge as the
+    /// plain pair `{u, v}` (not as an edge object), and Demonstrations
+    /// pass it as a delayed rule (`:>`), which used to be dropped.
+    #[test]
+    fn edge_rendering_function_gets_the_edge_as_a_pair() {
+      let svg = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3},
+           EdgeRenderingFunction :> (If[#2 == {1, 2},
+             {Blue, Line[#1]}, {Red, Line[#1]}] &)]"#,
+      );
+      assert_eq!(
+        svg.matches(r#"stroke="rgb(0,0,255)""#).count(),
+        1,
+        "only the {{1, 2}} edge is blue: {svg}"
+      );
+      assert_eq!(
+        svg.matches(r#"stroke="rgb(255,0,0)""#).count(),
+        1,
+        "the other edge is red: {svg}"
+      );
+    }
+
+    /// Edge options written as delayed rules reach `Graph` too.
+    #[test]
+    fn edge_shape_function_accepts_a_delayed_rule() {
+      let svg = svg_of(
+        r#"Graph[{1 -> 2, 2 -> 3},
+           EdgeShapeFunction :> ({Blue, Line[#1]} &)]"#,
+      );
+      assert_eq!(
+        svg.matches(r#"stroke="rgb(0,0,255)""#).count(),
+        2,
+        "both edges are drawn blue: {svg}"
+      );
+    }
+
     /// The second argument is the edge itself, as a `DirectedEdge` — which
     /// is what a test like `MemberQ[…, #2]` in a Demonstration matches on.
     #[test]

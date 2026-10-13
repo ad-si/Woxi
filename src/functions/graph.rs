@@ -432,6 +432,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the per-edge overrides of the rule-list form.
   let mut edge_shape: Option<EdgeShape> = None;
   let mut edge_shape_rules: Vec<(Expr, EdgeShape)> = Vec::new();
+  // `GraphPlot`'s legacy `EdgeRenderingFunction` names an edge as the
+  // plain list `{u, v}` rather than as an edge object.
+  let mut edge_arg_as_list = false;
   let mut vertex_labels = false;
   let mut vertex_shape: Option<String> = None;
   // `VertexShape -> {v -> graphic, …}` (plus an optional bare default
@@ -585,6 +588,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             edge_shape = Some(shape);
           }
           edge_shape_rules.extend(rules);
+          edge_arg_as_list = oname == "EdgeRenderingFunction";
         }
         // `DirectedEdges -> False` says how the edges are *drawn*: as
         // plain lines rather than arrows. The underlying edges keep their
@@ -914,13 +918,19 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         edge_head(edge_ref.weight().directed),
         vec![named(edge_ref.source()), named(edge_ref.target())],
       );
+      let legacy_edge = |e: &Expr| match e {
+        Expr::FunctionCall { args, .. } if edge_arg_as_list => {
+          Expr::List(args.clone())
+        }
+        other => other.clone(),
+      };
       let matched = edge_shape_rules
         .iter()
         .find(|(target, _)| same_edge(&edge_expr, target))
         .map(|(_, shape)| shape);
       matched
         .or(edge_shape.as_ref())
-        .map(|shape| (shape.clone(), edge_expr))
+        .map(|shape| (shape.clone(), legacy_edge(&edge_expr)))
     } else {
       None
     };
