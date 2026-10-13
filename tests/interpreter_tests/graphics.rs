@@ -21410,6 +21410,35 @@ mod graphics_complex_normal {
   }
 
   #[test]
+  fn polyhedron_data_net_faces_unfolds_every_face_flat() {
+    // A net has one 2D polygon per face, each keeping its side count and
+    // unit edge length, and shares an edge with an already placed face.
+    assert_eq!(
+      interpret(
+        r#"net = PolyhedronData["Dodecahedron", "NetFaces"];
+        {Length[net], Union[Map[Length[First[#]] &, net]],
+         Union[Map[Length[First[#][[1]]] &, net]]}"#
+      )
+      .unwrap(),
+      "{12, {5}, {2}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"net = PolyhedronData["Cube", "NetFaces"];
+        Round[Union[Flatten[Map[
+          Function[f, Norm[f[[1, 1]] - f[[1, 2]]]], net]]], 10^-9]"#
+      )
+      .unwrap(),
+      "{1}"
+    );
+    assert_eq!(
+      interpret(r#"Length[PolyhedronData["Icosahedron", "NetFaces"]]"#)
+        .unwrap(),
+      "20"
+    );
+  }
+
+  #[test]
   fn polyhedron_data_faces_normalizes_to_explicit_coordinates() {
     // The cube's `"Faces"` GraphicsComplex (see
     // `polyhedron_data_faces_is_a_graphics_complex`) normalizes to one
@@ -34314,6 +34343,31 @@ mod empty_plot {
   fn bare_null_plot_is_not_blank() {
     let svg = export_svg("Plot[Null, {x, -1, 1}]");
     assert!(svg.contains("<text"), "axes missing: {svg}");
+  }
+
+  #[test]
+  fn textured_polygon_embeds_image_and_clips_to_polygon() {
+    let svg = export_svg(
+      "Graphics[{Texture[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]], \
+       Polygon[{{0, 0}, {1, 0}, {1, 1}}, \
+       VertexTextureCoordinates -> {{0, 0}, {1, 0}, {1, 1}}]}]",
+    );
+    assert!(
+      svg.contains("data:image/png;base64,"),
+      "texture missing: {svg}"
+    );
+    assert!(svg.contains("clip-path=\"url(#tex"), "clip missing: {svg}");
+    assert!(svg.contains("<use"), "placement missing: {svg}");
+  }
+
+  #[test]
+  fn textured_polygon_without_coordinates_falls_back_to_plain_fill() {
+    let svg = export_svg(
+      "Graphics[{Texture[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]], \
+       Polygon[{{0, 0}, {1, 0}, {1, 1}}]}]",
+    );
+    assert!(!svg.contains("data:image/png"), "unexpected texture: {svg}");
+    assert!(svg.contains("<polygon"), "polygon missing: {svg}");
   }
 }
 

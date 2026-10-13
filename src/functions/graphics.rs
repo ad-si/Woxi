@@ -289,8 +289,20 @@ pub(crate) fn named_color(name: &str) -> Option<Color> {
 
 // ── Style State ──────────────────────────────────────────────────────────
 
+/// `Texture[image]` fill: the image as a base64 PNG, plus — once a polygon
+/// carries `VertexTextureCoordinates` — one `(u, v)` per polygon vertex.
+#[derive(Debug, Clone)]
+struct TextureFill {
+  png_b64: std::sync::Arc<str>,
+  width: u32,
+  height: u32,
+  coords: Vec<(f64, f64)>,
+}
+
 #[derive(Debug, Clone)]
 struct StyleState {
+  /// The `Texture[…]` directive in force, if any.
+  texture: Option<std::sync::Arc<TextureFill>>,
   color: Color,
   /// `FaceForm[…]` sets only this — the fill color of area primitives
   /// (Disk, Polygon, Rectangle, …) — leaving `color` (which Text, Line,
@@ -542,6 +554,7 @@ fn parse_shadow_color(expr: &Expr) -> Option<Color> {
 impl Default for StyleState {
   fn default() -> Self {
     Self {
+      texture: None,
       color: BLACK,
       face_color: None,
       opacity: 1.0,
@@ -1563,6 +1576,41 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       // recursion would repaint the primitives that follow
       // (`{GrayLevel[.25], Specularity[White, 10], Disk[]}`).
       "Specularity" if !args.is_empty() => true,
+      // `Texture[image]`: fills the polygons that follow with the image,
+      // placed by their `VertexTextureCoordinates`.
+      "Texture" if args.len() == 1 => {
+        if let Expr::Image {
+          width,
+          height,
+          channels,
+          data,
+          ..
+        } = &args[0]
+        {
+          use base64::Engine;
+          let img = crate::functions::image_ast::expr_to_dynamic_image(
+            *width, *height, *channels, data,
+          );
+          let mut png = Vec::new();
+          if img
+            .write_to(
+              &mut std::io::Cursor::new(&mut png),
+              image::ImageFormat::Png,
+            )
+            .is_ok()
+          {
+            style.texture = Some(std::sync::Arc::new(TextureFill {
+              png_b64: base64::engine::general_purpose::STANDARD
+                .encode(&png)
+                .into(),
+              width: *width,
+              height: *height,
+              coords: Vec::new(),
+            }));
+          }
+        }
+        true
+      }
       "Opacity" if !args.is_empty() => {
         if let Some(o) = expr_to_f64(&args[0]) {
           style.opacity = o.clamp(0.0, 1.0);
@@ -2913,6 +2961,56 @@ fn parse_point(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
 /// `VertexColors -> {c1, c2, …}`, the option shared by primitives that
 /// support per-vertex coloring (currently just `Line`). Returns `None` if
 /// the option is absent or its value isn't a list of parseable colors.
+/// `VertexTextureCoordinates -> {{u, v}, …}`, given either as a bare rule
+/// or inside a list of options (the form `Append[Polygon[…], {rule}]`
+/// produces).
+fn parse_vertex_texture_coordinates(opts: &[Expr]) -> Option<Vec<(f64, f64)>> {
+  fn from_rule(o: &Expr) -> Option<Vec<(f64, f64)>> {
+    match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexTextureCoordinates") =>
+      {
+        let Expr::List(items) = replacement.as_ref() else {
+          return None;
+        };
+        items.iter().map(expr_to_point).collect()
+      }
+      Expr::List(inner) => inner.iter().find_map(from_rule),
+      _ => None,
+    }
+  }
+  opts.iter().find_map(from_rule)
+}
+
+/// The style for one polygon: the `Texture` in force, if any, with the
+/// polygon's own texture coordinates attached (only when they line up with
+/// its vertices).
+fn with_texture_coords(
+  style: &StyleState,
+  coords: Option<&[(f64, f64)]>,
+  n_points: usize,
+) -> StyleState {
+  let mut out = style.clone();
+  if let (Some(tex), Some(coords)) = (&style.texture, coords)
+    && coords.len() == n_points
+  {
+    out.texture = Some(std::sync::Arc::new(TextureFill {
+      coords: coords.to_vec(),
+      ..(**tex).clone()
+    }));
+  } else if style.texture.is_some() {
+    // No usable coordinates: draw an ordinary filled polygon.
+    out.texture = None;
+  }
+  out
+}
+
 fn parse_vertex_colors(opts: &[Expr]) -> Option<Vec<Color>> {
   opts.iter().find_map(|o| match o {
     Expr::Rule {
@@ -3162,6 +3260,7 @@ fn parse_polygon(
   prims: &mut Vec<Primitive>,
 ) {
   let vertex_colors = parse_vertex_colors(&args[1..]);
+  let tex_coords = parse_vertex_texture_coordinates(&args[1..]);
   // Polygon[{p1, p2, …}] — one polygon — or Polygon[{poly1, poly2, …}],
   // a list of them, which is what mapping a face-index table over a vertex
   // list produces.
@@ -3169,11 +3268,12 @@ fn parse_polygon(
     // `VertexColors` assigns one color per point, in order — only usable
     // when the count actually lines up with the points being drawn.
     let vc = vertex_colors.clone().filter(|c| c.len() == pts.len());
+    let style = with_texture_coords(style, tex_coords.as_deref(), pts.len());
     prims.push(Primitive::PolygonPrim {
       points: pts,
       holes: Vec::new(),
       vertex_colors: vc,
-      style: style.clone(),
+      style,
     });
   } else if let Some((outer, holes)) =
     crate::functions::polygon_holes::split_holes(&args[0], &expr_to_point_list)
@@ -6231,6 +6331,91 @@ fn thickness_px(t: f64, bb: &BBox, svg_w: f64) -> f64 {
 /// `colors` gives one color per point in `points` (the outer boundary);
 /// hole-boundary points have no color of their own, so each one inherits
 /// whichever outer-boundary point is nearest to it.
+/// Fill a polygon with a texture: the image is clipped to the polygon and
+/// placed by the affine map that sends each vertex's texture coordinate
+/// (`(0, 0)` bottom-left, `(1, 1)` top-right) to its screen position.
+/// Returns `false` when no such map exists (fewer than three non-collinear
+/// vertices), so the caller can draw a plain fill instead.
+#[allow(clippy::too_many_arguments)]
+fn emit_textured_polygon(
+  out: &mut String,
+  points: &[(f64, f64)],
+  tex: &TextureFill,
+  screen_pts: &[String],
+  stroke_attr: &str,
+  bb: &BBox,
+  svg_w: f64,
+  svg_h: f64,
+) -> bool {
+  use std::hash::{Hash, Hasher};
+  if tex.coords.len() != points.len() || points.len() < 3 {
+    return false;
+  }
+  let (w, h) = (tex.width as f64, tex.height as f64);
+  let src: Vec<(f64, f64)> = tex
+    .coords
+    .iter()
+    .map(|&(u, v)| (u * w, (1.0 - v) * h))
+    .collect();
+  let dst: Vec<(f64, f64)> = points
+    .iter()
+    .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
+    .collect();
+  // The most spread-out vertex triple gives the best-conditioned map.
+  let mut best: Option<(usize, usize, usize, f64)> = None;
+  for i in 0..src.len() {
+    for j in i + 1..src.len() {
+      for k in j + 1..src.len() {
+        let area = ((src[j].0 - src[i].0) * (src[k].1 - src[i].1)
+          - (src[k].0 - src[i].0) * (src[j].1 - src[i].1))
+          .abs();
+        if best.is_none_or(|b| area > b.3) {
+          best = Some((i, j, k, area));
+        }
+      }
+    }
+  }
+  let Some((i, j, k, area)) = best else {
+    return false;
+  };
+  if area < 1e-9 {
+    return false;
+  }
+  // Solve dst = M · (src, 1) for M = (a b c d e f) from the three pairs.
+  let (s0, s1, s2) = (src[i], src[j], src[k]);
+  let det = (s1.0 - s0.0) * (s2.1 - s0.1) - (s2.0 - s0.0) * (s1.1 - s0.1);
+  let solve = |d0: f64, d1: f64, d2: f64| -> (f64, f64, f64) {
+    let p = ((d1 - d0) * (s2.1 - s0.1) - (d2 - d0) * (s1.1 - s0.1)) / det;
+    let q = ((d2 - d0) * (s1.0 - s0.0) - (d1 - d0) * (s2.0 - s0.0)) / det;
+    (p, q, d0 - p * s0.0 - q * s0.1)
+  };
+  let (a, c, e) = solve(dst[i].0, dst[j].0, dst[k].0);
+  let (b, d, f) = solve(dst[i].1, dst[j].1, dst[k].1);
+
+  let mut hasher = std::collections::hash_map::DefaultHasher::new();
+  tex.png_b64.hash(&mut hasher);
+  let id = hasher.finish();
+  let tex_id = format!("tex{id:x}");
+  if !out.contains(&format!("id=\"{tex_id}\"")) {
+    out.push_str(&format!(
+      "<defs><image id=\"{tex_id}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{}\"/></defs>\n",
+      tex.width, tex.height, tex.png_b64
+    ));
+  }
+  let clip_id = format!("{tex_id}c{}", out.len());
+  out.push_str(&format!(
+    "<clipPath id=\"{clip_id}\"><polygon points=\"{}\"/></clipPath>\n<g clip-path=\"url(#{clip_id})\"><use href=\"#{tex_id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/></g>\n",
+    screen_pts.join(" ")
+  ));
+  if !stroke_attr.is_empty() {
+    out.push_str(&format!(
+      "<polygon points=\"{}\" fill=\"none\"{stroke_attr}/>\n",
+      screen_pts.join(" ")
+    ));
+  }
+  true
+}
+
 fn emit_polygon_vertex_gradient(
   out: &mut String,
   points: &[(f64, f64)],
@@ -7665,6 +7850,22 @@ fn render_primitive(
       } else {
         String::new()
       };
+      if let Some(tex) = style.texture.as_ref()
+        && holes.is_empty()
+        && vertex_colors.is_none()
+        && emit_textured_polygon(
+          out,
+          points,
+          tex,
+          &pts,
+          &stroke_attr,
+          bb,
+          svg_w,
+          svg_h,
+        )
+      {
+        return;
+      }
       let subpath = |ring: &[(f64, f64)]| {
         let mut d = String::new();
         for (i, &(x, y)) in ring.iter().enumerate() {
