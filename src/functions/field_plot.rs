@@ -1791,6 +1791,29 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => equation_zero_body(body).map(|b| vec![b]),
   };
+  // `ContourPlot[{f, g}, …, Contours -> {c, …}]` draws the level curves of
+  // each function; a curve `f == c` is the zero contour of `f - c`.
+  let eq_bodies = eq_bodies.or_else(|| match body {
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|i| !matches!(i, Expr::List(_))) =>
+    {
+      match parse_density_contour_options(args, 3).contours {
+        ContourSpec::Levels(levels) if !levels.is_empty() => Some(
+          items
+            .iter()
+            .flat_map(|f| {
+              levels
+                .iter()
+                .map(move |&c| crate::helpers::minus2(f.clone(), Expr::Real(c)))
+            })
+            .collect(),
+        ),
+        _ => None,
+      }
+    }
+    _ => None,
+  });
   if let Some(bodies) = eq_bodies {
     return contour_plot_equations(&bodies, args);
   }
