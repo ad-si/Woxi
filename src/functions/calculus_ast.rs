@@ -1138,6 +1138,14 @@ fn try_definite_integral(
     return Some(result);
   }
 
+  // Bose integral: ∫_0^∞ c x^(s-1)/(a E^x - 1) dx = c Gamma[s] PolyLog[s, 1/a]
+  if matches!(lo, Expr::Integer(0))
+    && is_infinity(hi)
+    && let Some(result) = try_bose_integral(integrand, var)
+  {
+    return Some(result);
+  }
+
   // Gaussian integral: ∫_{-∞}^{∞} E^(-a*x^2) dx = Sqrt[Pi/a]
   if is_negative_infinity(lo)
     && is_infinity(hi)
@@ -1513,6 +1521,185 @@ fn flatten_times_factors(expr: &Expr) -> Vec<Expr> {
   let mut out = Vec::new();
   rec(expr, &mut out);
   out
+}
+
+/// An exact `Integer` or `Rational` as a `(numerator, denominator)` pair.
+fn exact_rational(e: &Expr) -> Option<(i128, i128)> {
+  match e {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => Some((*n, *d)),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Split `base^exp` (also `Sqrt[base]`) into base and exponent.
+fn base_and_exponent(e: &Expr) -> Option<(Expr, Expr)> {
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left.as_ref().clone(), right.as_ref().clone())),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((args[0].clone(), args[1].clone()))
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      Some((
+        args[0].clone(),
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// Match `E^var` / `Exp[var]`.
+fn is_exp_of_var(e: &Expr, var: &str) -> bool {
+  let is_var = |x: &Expr| matches!(x, Expr::Identifier(n) if n == var);
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Exp"
+    && args.len() == 1
+  {
+    return is_var(&args[0]);
+  }
+  base_and_exponent(e).is_some_and(|(b, x)| {
+    (matches!(&b, Expr::Constant(c) if c == "E")
+      || matches!(&b, Expr::Identifier(c) if c == "E"))
+      && is_var(&x)
+  })
+}
+
+fn add_frac(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
+  let num = a.0.checked_mul(b.1)?.checked_add(b.0.checked_mul(a.1)?)?;
+  let den = a.1.checked_mul(b.1)?;
+  let g = gcd_i128(num.abs(), den.abs()).max(1);
+  Some((num / g, den / g))
+}
+
+/// Match `a E^var - 1` (terms in any order, `a` a numeric constant) and
+/// return `a`.
+fn match_bose_denominator(den: &Expr, var: &str) -> Option<Expr> {
+  let terms: Vec<Expr> = match den {
+    Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![left.as_ref().clone(), right.as_ref().clone()],
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(1)) => {
+      vec![left.as_ref().clone(), Expr::Integer(-1)]
+    }
+    _ => return None,
+  };
+  if terms.len() != 2 || !terms.iter().any(|t| matches!(t, Expr::Integer(-1))) {
+    return None;
+  }
+  let exp_term = terms.iter().find(|t| !matches!(t, Expr::Integer(-1)))?;
+  let mut a_factors = Vec::new();
+  let mut seen_exp = false;
+  for f in flatten_times_factors(exp_term) {
+    if is_exp_of_var(&f, var) && !seen_exp {
+      seen_exp = true;
+    } else if !contains_var(&f, var) && try_eval_to_f64(&f).is_some() {
+      a_factors.push(f);
+    } else {
+      return None;
+    }
+  }
+  if !seen_exp {
+    return None;
+  }
+  Some(if a_factors.is_empty() {
+    Expr::Integer(1)
+  } else {
+    let t = times(a_factors);
+    crate::evaluator::evaluate_expr_to_expr(&t).unwrap_or(t)
+  })
+}
+
+/// Add `x^e` (or bare `x`) to the running exponent when `f` is a power of
+/// `var`; `None` when it is something else.
+fn var_power_of(f: &Expr, var: &str) -> Option<(i128, i128)> {
+  if matches!(f, Expr::Identifier(n) if n == var) {
+    return Some((1, 1));
+  }
+  let (b, x) = base_and_exponent(f)?;
+  if matches!(&b, Expr::Identifier(v) if v == var) {
+    exact_rational(&x)
+  } else {
+    None
+  }
+}
+
+/// `∫_0^∞ c x^(s-1) / (a E^x - 1) dx = c Gamma[s] PolyLog[s, 1/a]` for a
+/// numeric `a >= 1` (the Bose–Einstein integral), valid where it converges:
+/// `s > 0` for `a > 1`, `s > 1` for `a = 1`.
+fn try_bose_integral(integrand: &Expr, var: &str) -> Option<Expr> {
+  let mut power = (0i128, 1i128);
+  let mut a: Option<Expr> = None;
+  let mut consts: Vec<Expr> = Vec::new();
+  let mut take = |f: &Expr, power: &mut (i128, i128)| -> Option<()> {
+    if !contains_var(f, var) {
+      consts.push(f.clone());
+    } else if let Some(p) = var_power_of(f, var) {
+      *power = add_frac(*power, p)?;
+    } else if let Some((b, x)) = base_and_exponent(f)
+      && exact_rational(&x) == Some((-1, 1))
+      && a.is_none()
+    {
+      a = Some(match_bose_denominator(&b, var)?);
+    } else if let Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } = f
+      && a.is_none()
+    {
+      a = Some(match_bose_denominator(right, var)?);
+      if contains_var(left, var) {
+        *power = add_frac(*power, var_power_of(left, var)?)?;
+      } else {
+        consts.push(left.as_ref().clone());
+      }
+    } else {
+      return None;
+    }
+    Some(())
+  };
+  for f in flatten_times_factors(integrand) {
+    take(&f, &mut power)?;
+  }
+  let a = a?;
+  let a_val = try_eval_to_f64(&a)?;
+  let s = add_frac(power, (1, 1))?;
+  let s_val = s.0 as f64 / s.1 as f64;
+  if !(a_val > 1.0 && s_val > 0.0 || a_val == 1.0 && s_val > 1.0) {
+    return None;
+  }
+  let s_expr = if s.1 == 1 {
+    Expr::Integer(s.0)
+  } else {
+    call("Rational", vec![Expr::Integer(s.0), Expr::Integer(s.1)])
+  };
+  let mut factors = consts;
+  factors.push(call1("Gamma", s_expr.clone()));
+  factors.push(call(
+    "PolyLog",
+    vec![s_expr, call("Power", vec![a, Expr::Integer(-1)])],
+  ));
+  let result = times(factors);
+  Some(crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result))
 }
 
 /// Match `var` or `var^k` (k a non-negative integer) and return the exponent.

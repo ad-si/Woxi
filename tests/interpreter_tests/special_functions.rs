@@ -2393,6 +2393,11 @@ mod cases {
     );
   }
   #[test]
+  fn poly_log_rational_order() {
+    assert_case(r#"PolyLog[3/2, 1]"#, r#"Zeta[3/2]"#);
+    assert_case(r#"PolyLog[3/2, 0.8]"#, r#"1.2585703715238281"#);
+  }
+  #[test]
   fn poly_log_1() {
     assert_case(r#"PolyLog[s, 1]"#, r#"PolyLog[s, 1]"#);
   }

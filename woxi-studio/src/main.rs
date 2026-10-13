@@ -16289,6 +16289,40 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`A$$ = 5}, \"…\"]"], "Output"]
     }
   }
 
+  /// End-to-end regression for a Bose–Einstein population `Manipulate`: the
+  /// excited-orbital fraction comes from a `FindRoot` over a definite
+  /// `Integrate[Sqrt[x]/(a E^x - 1), {x, 0, Infinity}]`, which must resolve
+  /// numerically so both bars of every chart are drawn.
+  #[test]
+  fn bose_population_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[RowBox[{RowBox[{"frac", "[", RowBox[{"t_", ",", "d_"}], "]"}], ":=",
+ RowBox[{FractionBox["2", RowBox[{SqrtBox["\[Pi]"], RowBox[{"Zeta", "[", RowBox[{"3", "/", "2"}], "]"}]}]],
+  SuperscriptBox["t", RowBox[{"3", "/", "2"}]],
+  RowBox[{SubsuperscriptBox["\[Integral]", "0", "\[Infinity]"],
+   RowBox[{FractionBox[SqrtBox["x"], RowBox[{RowBox[{RowBox[{"(", RowBox[{"1", "+", "d"}], ")"}], RowBox[{"Exp", "[", "x", "]"}]}], "-", "1"}]],
+    RowBox[{"\[DifferentialD]", "x"}]}]}]}]}]], "Input"],
+Cell[BoxData[RowBox[{RowBox[{"pop", "[", RowBox[{"n_", ",", "t_"}], "]"}], ":=",
+ RowBox[{"Module", "[", RowBox[{RowBox[{"{", "s", "}"}], ",",
+  RowBox[{RowBox[{"s", "=", RowBox[{"FindRoot", "[", RowBox[{RowBox[{RowBox[{FractionBox["1", RowBox[{"n", " ", "d"}]], "+", RowBox[{"frac", "[", RowBox[{"t", ",", "d"}], "]"}]}], "==", "1"}], ",", RowBox[{"{", RowBox[{"d", ",", RowBox[{"2", "/", "n"}]}], "}"}]}], "]"}]}], ";",
+   RowBox[{RowBox[{"{", RowBox[{FractionBox["1", "d"], ",", RowBox[{"n", " ", RowBox[{"frac", "[", RowBox[{"t", ",", "d"}], "]"}]}]}], "}"}], "/.", "s"}]}]}], "]"}]}]], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData[RowBox[{"Manipulate", "[",
+ RowBox[{RowBox[{"BarChart", "[", RowBox[{RowBox[{"pop", "[", RowBox[{"10", ",", "t"}], "]"}], ",", RowBox[{"PlotLabel", "\[Rule]", "\"\<Populations\\n\>\""}], ",", RowBox[{"BarOrigin", "\[Rule]", "Left"}]}], "]"}], ",",
+  RowBox[{"{", RowBox[{RowBox[{"{", RowBox[{"t", ",", "1", ",", "\"\<temperature\>\""}], "}"}], ",", "0.1", ",", "5"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`t$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some());
+  }
+
   /// End-to-end regression for the "A Converging Geometric Series"
   /// Demonstration: a `Grid` with a `NumberForm` caption above a row of
   /// two pictures, the first assembled from rectangles `Sow`n in a loop.
