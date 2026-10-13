@@ -954,6 +954,17 @@ mod hyperlink {
   }
 
   #[test]
+  fn label_only_inside_text_row_svg() {
+    let svg = interpret(
+      r#"ExportString[Text[Row[{Hyperlink["LinkLabel", "http://example.com/x"], "!"}]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">LinkLabel<"));
+    assert!(!svg.contains("Hyperlink["));
+    assert!(!svg.contains("example.com"));
+  }
+
+  #[test]
   fn no_args_unevaluated() {
     assert_eq!(interpret("Hyperlink[]").unwrap(), "Hyperlink[]");
   }

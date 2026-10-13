@@ -3712,6 +3712,13 @@ fn graphics_text_content(expr: &Expr) -> String {
         .collect::<Vec<_>>()
         .join("\n")
     }
+    // `Hyperlink[label, uri]` shows just its label (`Hyperlink[uri]` the
+    // uri itself) when it sits inside a text label.
+    Expr::FunctionCall { name, args }
+      if name == "Hyperlink" && (args.len() == 1 || args.len() == 2) =>
+    {
+      graphics_text_content(&args[0])
+    }
     Expr::FunctionCall { name, args }
       if name == "Row"
         && !args.is_empty()
@@ -11701,6 +11708,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             ));
           }
           out
+        }
+
+        // Hyperlink[label, uri] inside a text label shows just its label.
+        "Hyperlink" if args.len() == 1 || args.len() == 2 => {
+          expr_to_svg_markup(&args[0])
         }
 
         // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
