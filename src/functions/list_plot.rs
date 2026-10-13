@@ -339,9 +339,21 @@ fn parse_list_data_err(
 
   // Check if it's a list of {x, y} pairs
   if let Expr::List(first_inner) = &items[0] {
+    // A leading pair with a non-numeric coordinate (`{0., Indeterminate}`
+    // from a `Table` that starts at a singularity) still marks a list of
+    // (x, y) pairs as long as every row is a scalar pair and some pair is
+    // plottable; the non-numeric rows are skipped below.
+    let is_numeric_pair = |item: &Expr| {
+      matches!(item, Expr::List(pair) if pair.len() == 2
+        && eval_to_value_err(&pair[0]).is_some()
+        && eval_to_value_err(&pair[1]).is_some())
+    };
     if first_inner.len() == 2
-      && eval_to_value_err(&first_inner[0]).is_some()
-      && eval_to_value_err(&first_inner[1]).is_some()
+      && (is_numeric_pair(&items[0])
+        || (items.iter().all(|item| {
+          matches!(item, Expr::List(pair) if pair.len() == 2
+            && !pair.iter().any(|e| matches!(e, Expr::List(_))))
+        }) && items.iter().any(is_numeric_pair)))
     {
       // {{x1,y1}, {x2,y2}, ...} → single series with explicit coords
       let mut points = Vec::with_capacity(items.len());
