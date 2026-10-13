@@ -3458,6 +3458,23 @@ fn ndsolve_system(
   let mut eq_items: Vec<Expr> = Vec::new();
   flatten_eq_list(&args[0], &mut eq_items);
   let eq_items = flatten_chained_equalities(&eq_items);
+  // `WhenEvent[Mod[x, p] == 0, action]` entries are periodic actions, not
+  // equations: split them off before the equations are classified.
+  let mut raw_time_events: Vec<RawTimeEvent> = Vec::new();
+  let mut eq_items_no_events: Vec<Expr> = Vec::with_capacity(eq_items.len());
+  for eq in eq_items {
+    if let Expr::FunctionCall { name, args: wargs } = &eq
+      && name == "WhenEvent"
+    {
+      let Some(ev) = parse_periodic_when_event(wargs, x_name) else {
+        return Ok(None);
+      };
+      raw_time_events.push(ev);
+    } else {
+      eq_items_no_events.push(eq);
+    }
+  }
+  let eq_items = eq_items_no_events;
   let mut odes: Vec<Expr> = Vec::new();
   // (function name, derivative order, evaluation point, value) — by name,
   // not index: an eliminated constraint variable shifts the positions in
@@ -3718,6 +3735,17 @@ fn ndsolve_system(
     None => None,
   };
 
+  let time_events: Vec<TimeEvent> = raw_time_events
+    .into_iter()
+    .map(|ev| TimeEvent {
+      period: ev.period,
+      offset: ev.offset,
+      action: substitute_function_values(&ev.action, &funcs, x_name),
+      state_names: var_names[1..=n_state].to_vec(),
+      x_name: x_name.clone(),
+    })
+    .collect();
+
   let n_steps = 1000usize;
   let mut points: Vec<(f64, Vec<f64>)> = match kind {
     ProblemKind::Initial { .. } => {
@@ -3766,6 +3794,7 @@ fn ndsolve_system(
           h,
           event_fn.as_ref(),
           event.and_then(|e| e.action.as_ref()),
+          &time_events,
           x_name,
           cached_mass_matrix.as_deref(),
         )?
@@ -3806,6 +3835,7 @@ fn ndsolve_system(
           -h_back,
           None,
           None,
+          &[],
           x_name,
           cached_mass_matrix.as_deref(),
         )?;
@@ -4067,6 +4097,7 @@ fn integrate_leg_until_event(
       h,
       event_fn,
       event_action,
+      &[],
       x_name,
       cached_m,
     )?
@@ -4147,6 +4178,7 @@ fn solve_bvp_shooting(
         h,
         None,
         None,
+        &[],
         x_name,
         cached_mass_matrix.as_deref(),
       )
@@ -4196,6 +4228,100 @@ fn solve_bvp_shooting(
   Ok(None)
 }
 
+/// A `WhenEvent[Mod[x, period, offset] == 0, action]` as parsed from the
+/// equation list (action still over the original `f[x]` calls).
+struct RawTimeEvent {
+  period: f64,
+  offset: f64,
+  action: Expr,
+}
+
+/// A periodic time event ready for integration: `action` is rewritten over
+/// the state placeholders, which [`TimeEvent::run`] replaces by the numeric
+/// state at the event time before evaluating it.
+struct TimeEvent {
+  period: f64,
+  offset: f64,
+  action: Expr,
+  state_names: Vec<String>,
+  x_name: String,
+}
+
+impl TimeEvent {
+  /// Calls `f` with every event time `offset + k*period` in `(lo, hi]`.
+  fn times_in(&self, lo: f64, hi: f64, f: &mut dyn FnMut(f64)) {
+    let slack = 1e-12 * (1.0 + hi.abs());
+    let mut k = ((lo - self.offset) / self.period + 1e-12).floor() as i64 + 1;
+    loop {
+      let t = self.offset + k as f64 * self.period;
+      if t > hi + slack {
+        break;
+      }
+      if t > lo + slack {
+        f(t);
+      }
+      k += 1;
+    }
+  }
+
+  /// Evaluate the action at time `t` with the given state. Returns
+  /// `Ok(false)` when the action asked to stop the integration.
+  fn run(&self, t: f64, state: &[f64]) -> Result<bool, InterpreterError> {
+    let mut action = self.action.clone();
+    for (name, v) in self.state_names.iter().zip(state) {
+      action =
+        crate::syntax::substitute_variable(&action, name, &Expr::Real(*v));
+    }
+    let action =
+      crate::syntax::substitute_variable(&action, &self.x_name, &Expr::Real(t));
+    match crate::evaluator::evaluate_expr_to_expr(&action) {
+      Ok(_) => Ok(true),
+      Err(InterpreterError::ThrowValue(_, tag))
+        if matches!(
+          tag.as_deref(),
+          Some(Expr::String(s)) if s == "StopIntegration"
+        ) =>
+      {
+        Ok(false)
+      }
+      Err(e) => Err(e),
+    }
+  }
+}
+
+/// Parse `WhenEvent[Mod[x, p] == 0, action]`.
+fn parse_periodic_when_event(
+  args: &[Expr],
+  x_name: &str,
+) -> Option<RawTimeEvent> {
+  if args.len() != 2 {
+    return None;
+  }
+  let (lhs, rhs) = as_equal_pair(&args[0])?;
+  if !matches!(rhs, Expr::Integer(0)) {
+    return None;
+  }
+  let Expr::FunctionCall { name, args: margs } = lhs else {
+    return None;
+  };
+  if name != "Mod" || margs.len() != 2 {
+    return None;
+  }
+  if !matches!(&margs[0], Expr::Identifier(a) if a == x_name) {
+    return None;
+  }
+  let period = nval_to_f64(&margs[1])?;
+  if !period.is_finite() || period <= 0.0 {
+    return None;
+  }
+  let offset = 0.0;
+  Some(RawTimeEvent {
+    period,
+    offset,
+    action: args[1].clone(),
+  })
+}
+
 /// Integrate one leg with RK4. Returns the points in integration order
 /// (starting at `x_from`), or `None` if a derivative evaluation failed.
 /// When an event function is given, integration stops at the located
@@ -4212,6 +4338,7 @@ fn integrate_leg(
   h: f64,
   event_fn: Option<&NumFn>,
   event_action: Option<&Expr>,
+  time_events: &[TimeEvent],
   x_name: &str,
   cached_m: Option<&[Vec<f64>]>,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
@@ -4279,6 +4406,38 @@ fn integrate_leg(
       }
       return Ok(if points.len() > 1 { Some(points) } else { None });
     };
+
+    if !time_events.is_empty() {
+      // Fire every periodic action whose time falls in (x, new_x], in
+      // time order, with the state interpolated to that time.
+      let mut due: Vec<(f64, usize)> = Vec::new();
+      for (ei, ev) in time_events.iter().enumerate() {
+        ev.times_in(x, new_x, &mut |t| due.push((t, ei)));
+      }
+      due.sort_by(|a, b| a.0.total_cmp(&b.0));
+      for (te, ei) in due {
+        let state_at = if (new_x - te).abs() <= f64::EPSILON * new_x.abs() {
+          new_state.clone()
+        } else {
+          match rk4_system_step(
+            residuals,
+            funcs,
+            state_offset,
+            &state,
+            x,
+            te - x,
+            cached_m,
+          )? {
+            Some(s) => s,
+            None => new_state.clone(),
+          }
+        };
+        if !time_events[ei].run(te, &state_at)? {
+          points.push((te, state_at));
+          return Ok(Some(points));
+        }
+      }
+    }
 
     if let Some(prev_g) = prev_event
       && let Some(new_g) = eval_event(new_x, &new_state)
