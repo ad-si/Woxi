@@ -21276,6 +21276,14 @@ pub struct ManipulateSpec {
   /// initial values produce — the frontend re-evaluates this code fragment
   /// against the live bindings after every change and rebuilds the choices.
   pub dynamic_values: Vec<(String, String)>,
+  /// Control captions that follow another control's variable, as `(control
+  /// name, caption code)`: `{{c, -2, Dynamic[If[mode == 0, Subscript[x, 2],
+  /// Subscript[z, 0]]]}, -2, 1}` names the same slider after a different
+  /// quantity per mode. The label stored on the control is only the caption
+  /// the initial values produce — the frontend re-evaluates this code
+  /// against the live bindings after every change (see
+  /// [`manipulate_eval_label_code`]).
+  pub dynamic_labels: Vec<(String, String)>,
   /// `(control name, reset code)` for a `LocatorPane`/`Locator` variable
   /// promoted from a plain body-local `var = expr;` assignment (see
   /// `collect_body_locator_pane_vars`), where `expr` references another
@@ -21534,6 +21542,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // Kept so a pick list the body draws can be lifted out of it once the
   // control specs say which variable it drives (see `body_popups` below).
   let mut body_expr_kept: Option<Expr> = None;
+  let mut dynamic_labels: Vec<(String, String)> = inner
+    .as_ref()
+    .map(|i| i.dynamic_labels.clone())
+    .unwrap_or_default();
   let (
     body_code,
     mut controls,
@@ -22125,6 +22137,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if let Some(code) = values_code {
           dynamic_values.push((c.name().to_string(), code));
         }
+        if let Some(code) = dynamic_label_code(&spec) {
+          dynamic_labels.push((c.name().to_string(), code));
+        }
         // A compiled widget dump lists every module variable as a hidden
         // `{var, ControlType -> None}` entry ahead of the visible control
         // that redeclares it; the later visible control owns the value, so
@@ -22508,7 +22523,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         rewrite(code);
       }
     }
-    for (_, code) in &mut dynamic_values {
+    for (_, code) in dynamic_values.iter_mut().chain(dynamic_labels.iter_mut())
+    {
       rewrite(code);
     }
     for (_, value) in fixed.iter_mut().chain(state.iter_mut()) {
@@ -22535,6 +22551,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible,
     dynamic_bounds,
     dynamic_values,
+    dynamic_labels,
     dynamic_locator_defaults,
     animation_var,
     animated,
@@ -24750,6 +24767,36 @@ pub fn manipulate_eval_values_code(
   (!columns.0.is_empty()).then_some(columns)
 }
 
+/// The caption code of a control spec `{{var, init, Dynamic[caption]}, …}`
+/// whose label follows other control variables, or `None` for a static one.
+fn dynamic_label_code(spec: &Expr) -> Option<String> {
+  let Expr::List(items) = spec else { return None };
+  let Some(Expr::List(head)) = items.first() else {
+    return None;
+  };
+  match head.get(2)? {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      Some(crate::syntax::expr_to_source_form(&args[0]))
+    }
+    _ => None,
+  }
+}
+
+/// Evaluate a [`ManipulateSpec::dynamic_labels`] caption against the
+/// current bindings and typeset it into label runs.
+pub fn manipulate_eval_label_code(code: &str) -> Option<Vec<LabelRun>> {
+  let expr = crate::interpret_to_expr(code).ok()?;
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
+  Some(manipulate_label_runs(&evaluated, false))
+}
+
+/// Flatten label runs to the plain text a styling-blind consumer shows.
+pub fn manipulate_label_text(runs: &[LabelRun]) -> String {
+  flatten_label_runs(runs)
+}
+
 /// Synthesize a plain symbol name for a compound (non-Identifier) control
 /// variable. `Subscript[signal, 1]` → `signal$1`; any other compound head
 /// sanitizes its whole InputForm, mapping non-symbol characters to `$`.
@@ -24927,6 +24974,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_labels: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
@@ -25014,6 +25062,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_labels: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
@@ -25143,6 +25192,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_labels: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
@@ -25199,6 +25249,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_labels: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
@@ -25267,6 +25318,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_labels: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var,
     animated: animate.is_some(),

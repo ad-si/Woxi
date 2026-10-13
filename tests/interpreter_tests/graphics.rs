@@ -34123,3 +34123,25 @@ mod gosper_curve_tests {
     );
   }
 }
+
+mod empty_plot {
+  use super::*;
+
+  // A Plot whose every curve is switched off (`If[False, …]` → `Null`)
+  // still draws its axes and PlotLabel over the given PlotRange.
+  #[test]
+  fn all_curves_null_keeps_axes_and_label() {
+    let svg = export_svg(
+      "Plot[{If[False, x], If[False, x^2]}, {x, -10, 10}, \
+       PlotRange -> {{-5, 15}, {-100, 100}}, PlotLabel -> \"caption\"]",
+    );
+    assert!(svg.contains("caption"), "PlotLabel missing: {svg}");
+    assert!(svg.contains("<text"), "axis ticks missing: {svg}");
+  }
+
+  #[test]
+  fn bare_null_plot_is_not_blank() {
+    let svg = export_svg("Plot[Null, {x, -1, 1}]");
+    assert!(svg.contains("<text"), "axes missing: {svg}");
+  }
+}
