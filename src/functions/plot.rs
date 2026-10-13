@@ -9688,10 +9688,18 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let has_finite = all_points
     .iter()
     .any(|pts| pts.iter().any(|(_, y)| y.is_finite()));
+  // Nothing plottable (every function is `Null` — a Manipulate whose
+  // checkboxes switch all curves off — or non-numeric): Wolfram still draws
+  // the empty plot, with its axes and `PlotLabel`, over the requested
+  // `PlotRange` (unit height when none is given).
   if !has_finite {
-    return Ok(crate::graphics_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    ));
+    let svg = generate_svg_with_filling(
+      &[],
+      plot_range_x.unwrap_or((x_min, x_max)),
+      plot_range_y.unwrap_or((0.0, 1.0)),
+      &plot_opts,
+    )?;
+    return Ok(crate::graphics_result(svg));
   }
 
   // Add 4% padding to the auto-computed y range

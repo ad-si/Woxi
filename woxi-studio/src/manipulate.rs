@@ -446,6 +446,9 @@ pub struct ManipulateState {
   /// (InputForm code), re-resolved on every change the way
   /// `dynamic_bounds` are.
   dynamic_values: Vec<(String, String)>,
+  /// Per-control captions that follow another control's variable (InputForm
+  /// code), re-typeset on every change like `dynamic_values` are.
+  dynamic_labels: Vec<(String, String)>,
   /// `(control name, reset code)` for a `LocatorPane` variable promoted from
   /// a body-local `var = expr;` assignment (see
   /// `woxi::functions::graphics::ManipulateSpec::dynamic_locator_defaults`).
@@ -580,6 +583,7 @@ impl ManipulateState {
       tracking: spec.tracking,
       dynamic_bounds: spec.dynamic_bounds,
       dynamic_values: spec.dynamic_values,
+      dynamic_labels: spec.dynamic_labels,
       pending_locator_reset: vec![false; spec.dynamic_locator_defaults.len()],
       dynamic_locator_defaults: spec.dynamic_locator_defaults,
       control_enabled,
@@ -1134,6 +1138,7 @@ impl ManipulateState {
     let control_visible = self.control_visible.clone();
     let dynamic_bounds = self.dynamic_bounds.clone();
     let dynamic_values = self.dynamic_values.clone();
+    let dynamic_labels = self.dynamic_labels.clone();
     // Every bound name (visible controls + hidden state), so a body that
     // reassigns one of its own controls — a common "preset" idiom, e.g.
     // `If[given > 0, {a, b, c} = presets[[given]]]` — moves that control's
@@ -1148,6 +1153,7 @@ impl ManipulateState {
       visible,
       resolved_bounds,
       resolved_values,
+      resolved_labels,
     ) = woxi::with_scoped_globals(&bindings, || {
       // The body runs *before* the captions are built: a Manipulate body
       // may assign to the widget's own variables (`{v, e} = ve[[n]]`),
@@ -1211,6 +1217,15 @@ impl ManipulateState {
             .map(|cols| (name.clone(), cols))
         })
         .collect();
+      // And captions that name another control's variable (a slider
+      // called x₂ in one mode and z₀ in another).
+      let labels: Vec<(String, _)> = dynamic_labels
+        .iter()
+        .filter_map(|(name, code)| {
+          woxi::functions::graphics::manipulate_eval_label_code(code)
+            .map(|runs| (name.clone(), runs))
+        })
+        .collect();
       (
         render,
         updated_bindings,
@@ -1219,6 +1234,7 @@ impl ManipulateState {
         visible,
         resolved,
         values,
+        labels,
       )
     });
     // Keep the body's writes to the widget's own variables, so the next
@@ -1246,6 +1262,7 @@ impl ManipulateState {
     self.control_is_enabled = enabled;
     self.control_is_visible = visible;
     self.apply_dynamic_bounds(&resolved_bounds);
+    self.apply_dynamic_labels(resolved_labels);
     // A re-resolved choice list may drop the value the body was just
     // rendered for; render again for the value the control settled on.
     if self.apply_dynamic_values(&resolved_values) && allow_retry {
@@ -1348,6 +1365,25 @@ impl ManipulateState {
         std::mem::swap(min, max);
       }
       *current = current.clamp(*min, *max);
+    }
+  }
+
+  /// Retitle each named control with its freshly typeset caption.
+  fn apply_dynamic_labels(&mut self, resolved: Vec<(String, Vec<LabelRun>)>) {
+    for (name, runs) in resolved {
+      let Some(
+        ControlState::Continuous {
+          label, label_runs, ..
+        }
+        | ControlState::Discrete {
+          label, label_runs, ..
+        },
+      ) = self.controls.iter_mut().find(|c| c.name() == name)
+      else {
+        continue;
+      };
+      *label = woxi::functions::graphics::manipulate_label_text(&runs);
+      *label_runs = runs;
     }
   }
 
@@ -2524,17 +2560,27 @@ mod tests {
       woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
     let state = ManipulateState::from_expr(&expr).expect("state should build");
 
+    // The `Checkbox[Dynamic[var]]` rows are real, live controls bound to
+    // the Manipulate's variables, not inert display text.
     assert_eq!(state.error, None);
-    assert_eq!(state.displays.len(), 1);
+    for name in ["big", "tag"] {
+      let ctrl = state
+        .controls
+        .iter()
+        .find(|c| c.name() == name && c.binds_variable())
+        .unwrap_or_else(|| panic!("no live control for {name}"));
+      assert!(
+        matches!(ctrl, ControlState::Discrete { values, .. } if values.len() == 2),
+        "{name} must be a True/False control: {ctrl:?}"
+      );
+    }
     assert!(
-      !state.displays[0].starts_with("ExpressionCell"),
-      "wrapper must be stripped: {}",
-      state.displays[0]
-    );
-    assert!(
-      format!("{:?}", state.display_trees).contains("Checkbox"),
-      "controls must render as checkboxes: {:?}",
-      state.display_trees
+      state
+        .displays
+        .iter()
+        .all(|d| !d.starts_with("ExpressionCell")),
+      "wrapper must be stripped: {:?}",
+      state.displays
     );
   }
 
@@ -2725,6 +2771,34 @@ mod tests {
       dump("amp$$")
     );
     assert!(dump("k$$").contains("label: \"freq\""), "{}", dump("k$$"));
+  }
+
+  /// A control caption written `Dynamic[If[mode == 0, x₂, z₀]]` follows the
+  /// mode control: it is retypeset on every change rather than frozen to
+  /// the source text of the `If`.
+  #[test]
+  fn dynamic_control_caption_follows_another_control() {
+    let code = r#"Manipulate[Plot[a x, {x, 0, 1}],
+      {{mode, 0, ""}, {0 -> "one", 1 -> "two"}},
+      {{a, 1, Dynamic[If[mode == 0, Subscript[Style["x", Italic], "2"],
+        Subscript[Style["z", Italic], "0"]]]}, 0, 2}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("widget should build");
+    let label = |state: &ManipulateState| {
+      let c = state.controls.iter().find(|c| c.name() == "a").unwrap();
+      format!("{c:?}")
+    };
+    assert!(label(&state).contains("label: \"x₂\""), "{}", label(&state));
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .unwrap();
+    assert!(state.select_discrete(idx, "two"));
+    state.reevaluate();
+    assert!(label(&state).contains("label: \"z₀\""), "{}", label(&state));
   }
 
   /// A control written `{{flag, flag, "label"}, {False, True}}` names its
