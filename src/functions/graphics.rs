@@ -14741,6 +14741,14 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     Expr::FunctionCall { name, .. } if is_graphics_producing_head(name) => {
       crate::evaluator::expr_to_svg(cell)
     }
+    // A `LocatorPane[…]` over a picture is drawn by its own renderer — the
+    // body with the locators on it — so the cell is that picture rather
+    // than the pane's source text.
+    Expr::FunctionCall { name, args }
+      if name == "LocatorPane" && args.len() >= 2 =>
+    {
+      crate::evaluator::expr_to_svg(cell)
+    }
     // A sound cell shows the sound box a notebook draws for it — a play
     // button and the waveform — rather than the `Play[…]` source text.
     Expr::FunctionCall { name, .. } if name == "Sound" || name == "Play" => {
