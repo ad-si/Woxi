@@ -4874,6 +4874,14 @@ Demonstration needs both (its `Manipulate` is initialised from them), so
 only its static content and stored output render. `DictionaryLookup` works
 against the bundled word list, which may differ from Wolfram's dictionary.
 
+### `Texture` in `Plot3D` / `TextureCoordinateFunction` is ignored
+
+`Plot3D[…, PlotStyle -> Directive[Texture[image]], TextureCoordinateFunction -> …]`
+draws the surface with the default coloring instead of mapping the image onto
+it (seen in the `Developing a Perspective Anamorphic Image` Demonstration).
+`ImageForwardTransformation` and `HighlightImage`, which that notebook's flat
+view uses, are implemented.
+
 ### `MorphologicalPerimeter` edge handling is unverified
 
 `MorphologicalPerimeter[image, t]` marks foreground pixels that touch a

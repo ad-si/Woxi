@@ -711,6 +711,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ImageAspectRatio" => Some((1, 1)),
     "ImageMultiply" => Some((2, usize::MAX)),
     "ImageQ" => Some((1, 1)),
+    "ImageForwardTransformation" => Some((2, usize::MAX)),
+    "HighlightImage" => Some((2, usize::MAX)),
     "ImageReflect" => Some((1, 2)),
     // wolframscript: ImageResize[img, dims, opts...]. Image-arg check
     // fires before arg-count, so widen the range here and let the

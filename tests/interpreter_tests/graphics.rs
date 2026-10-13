@@ -15149,6 +15149,25 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A `Subscript` whose base is a styled string carrying inline box
+    /// notation (a vector label `Subscript[Style["\!\(\*OverscriptBox[\(r\),
+    /// \(\[RightVector]\)]\)", Italic], 1]` inside `Text`) folds into the
+    /// glyphs it typesets to instead of drawing the box source.
+    #[test]
+    fn text_subscript_of_box_notation_string() {
+      let svg = export_svg(
+        r#"Graphics[{Text[Style[Subscript[Style["\!\(\*OverscriptBox[\(r\), \(\[RightVector]\)]\)", Italic], "1"], 15], {0, 0}]}]"#,
+      );
+      assert!(
+        svg.contains("r\u{20D7}\u{2081}"),
+        "expected the vector label with a subscript 1: {svg}"
+      );
+      assert!(
+        !svg.contains("OverscriptBox"),
+        "the box-notation source leaked into the rendered label: {svg}"
+      );
+    }
+
     /// A shaded contour plot keeps its shading when `Show` merges it with
     /// other graphics — the bands travel with the plot's symbolic form, so
     /// the merged picture is not reduced to bare contour lines. A
@@ -22771,6 +22790,38 @@ mod parametric_plot3d {
       colors.iter().any(|&(r, g, b)| r == 0 && g == 0 && b > 0),
       "expected a blue-shaded region for the high side of the mesh break, got {colors:?}"
     );
+  }
+
+  /// Regression (Wolfram Demonstration on cumulative sums and change
+  /// detection): `ListLinePlot` with `MeshFunctions`, `Mesh` and
+  /// `MeshShading` colours the stretches of the curve between mesh values
+  /// instead of drawing a single default-coloured line.
+  #[test]
+  fn list_line_plot_mesh_shading_colors_curve_segments() {
+    let svg = export_svg(
+      "ListLinePlot[{0, 1, 2, 3, 2, 1, 0, -1}, MeshFunctions -> {#2 &}, \
+       Mesh -> {{0.5, 1.5}}, MeshStyle -> None, \
+       MeshShading -> {Red, Green, Blue}]",
+    );
+    for color in ["#FF0000", "#00FF00", "#0000FF"] {
+      assert!(
+        svg.contains(&format!("stroke=\"{color}\"")),
+        "expected a {color} curve segment: {svg}"
+      );
+    }
+  }
+
+  /// A step-valued mesh function (`Boole[#1 >= m]`) splits the curve into a
+  /// left and a right part with the first and second shading colours.
+  #[test]
+  fn list_line_plot_mesh_shading_with_step_mesh_function() {
+    let svg = export_svg(
+      "m = 4; ListLinePlot[Accumulate[Range[8]], \
+       MeshFunctions -> {Boole[#1 >= m] &}, Mesh -> {{0}}, \
+       MeshStyle -> None, MeshShading -> {Red, Blue}]",
+    );
+    assert!(svg.contains("stroke=\"#FF0000\""), "no red part: {svg}");
+    assert!(svg.contains("stroke=\"#0000FF\""), "no blue part: {svg}");
   }
 
   /// `Mesh -> {{v1, v2, ...}}` with more than one break value partitions
@@ -34184,6 +34235,31 @@ mod gosper_curve_tests {
         .unwrap(),
       "String"
     );
+  }
+}
+
+mod stacked_horizontal_bar_title_and_null_grid_cells {
+  use super::*;
+
+  #[test]
+  fn horizontal_bar_chart_title_with_trailing_newline_stays_visible() {
+    let svg = export_svg(
+      r#"BarChart[{4.8, 5.2}, PlotLabel -> "abc\n", BarOrigin -> Left]"#,
+    );
+    let y: f64 = svg
+      .split("<text x=")
+      .find(|t| t.contains(">abc"))
+      .and_then(|t| t.split("y=\"").nth(1))
+      .and_then(|t| t.split('"').next())
+      .and_then(|t| t.parse().ok())
+      .expect("title text element");
+    assert!(y > 0.0, "title baseline {y} is above the top edge");
+  }
+
+  #[test]
+  fn grid_null_cell_next_to_a_picture_is_blank() {
+    let svg = export_svg(r#"Grid[{{Graphics[Circle[]]}, {Null}}]"#);
+    assert!(!svg.contains(">Null<"), "{svg}");
   }
 }
 
