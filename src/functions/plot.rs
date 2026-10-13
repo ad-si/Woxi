@@ -9431,7 +9431,11 @@ pub(crate) fn eval_body_vars_symbolic(body: &Expr, vars: &[&str]) -> Expr {
     .iter()
     .map(|v| (*v, crate::ENV.with(|e| e.borrow_mut().remove(*v))))
     .collect();
+  crate::evaluator::function_application::SYMBOLIC_PLOT_PROBE
+    .with(|p| p.set(p.get() + 1));
   let result = evaluate_expr_to_expr(body).unwrap_or_else(|_| body.clone());
+  crate::evaluator::function_application::SYMBOLIC_PLOT_PROBE
+    .with(|p| p.set(p.get() - 1));
   for (var, value) in saved {
     if let Some(v) = value {
       crate::ENV.with(|e| {

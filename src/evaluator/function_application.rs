@@ -119,6 +119,13 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   evaluate_expr_to_expr(&result)
 }
 
+thread_local! {
+  /// Non-zero while a plotting head evaluates its body with the plot
+  /// variables unbound (see `eval_body_vars_symbolic`).
+  pub(crate) static SYMBOLIC_PLOT_PROBE: std::cell::Cell<usize> =
+    const { std::cell::Cell::new(0) };
+}
+
 /// Largest slot index `n` referenced by `#n`/`##n` in `expr`. Returns 0 when
 /// the body uses no slots. SlotSequence `##` (== `##1`) counts as slot 1.
 /// The name of one `Compile` argument spec and whether its declared element
@@ -2372,6 +2379,21 @@ pub fn apply_curried_call(
         other => vec![other],
       };
       let body = &func_args[1];
+      // While a plot probes its body with the plot variables still free,
+      // running the compiled body on those symbols would unroll every
+      // iteration symbolically (exponential in the iteration count). Leave
+      // the call unevaluated; it is evaluated per numeric sample instead.
+      if SYMBOLIC_PLOT_PROBE.with(|p| p.get() > 0)
+        && specs.iter().zip(args.iter()).any(|(spec, arg)| {
+          compile_spec_rank(spec) == 0
+            && matches!(arg, Expr::Identifier(_) | Expr::FunctionCall { .. })
+        })
+      {
+        return Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        });
+      }
       let bound: Vec<(String, Expr)> = specs
         .iter()
         .zip(args.iter())
