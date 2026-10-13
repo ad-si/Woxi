@@ -2105,6 +2105,30 @@ fn call_expr(name: &str, args: &crate::ExprList) -> Expr {
   }
 }
 
+/// When any factor of a product is a list, evaluate the product so that it
+/// threads over the list; returns the resulting `List`, or `None` otherwise.
+fn thread_list_product(factors: &[&Expr]) -> Option<Expr> {
+  let is_list = |e: &Expr| {
+    matches!(e, Expr::List(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "List")
+  };
+  if !factors.iter().any(|f| is_list(f)) {
+    return None;
+  }
+  let product = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: factors
+      .iter()
+      .map(|f| (*f).clone())
+      .collect::<Vec<_>>()
+      .into(),
+  };
+  match crate::evaluator::evaluate_expr_to_expr(&product) {
+    Ok(list @ Expr::List(_)) => Some(list),
+    _ => None,
+  }
+}
+
 fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
   match expr {
     // Constants
@@ -2161,6 +2185,12 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           Ok(simplify(minus2(da, db)))
         }
         B::Times => {
+          // A list factor threads over the product (`x/2 {x, y}` is
+          // `{x^2/2, x y/2}`); differentiate the threaded list element-wise
+          // instead of applying the scalar product rule to the list.
+          if let Some(list) = thread_list_product(&[left, right]) {
+            return differentiate(&list, var);
+          }
           // Product rule: d/dx[a * b] = a' * b + a * b'
           let da = differentiate(left, var)?;
           let db = differentiate(right, var)?;
@@ -2745,6 +2775,11 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         }
         // Handle evaluated Times[a, b, ...] (FunctionCall form of *)
         "Times" if args.len() >= 2 => {
+          if let Some(list) =
+            thread_list_product(&args.iter().collect::<Vec<_>>())
+          {
+            return differentiate(&list, var);
+          }
           // Generalized product rule:
           // D[f1*f2*...*fn, x] = sum_i(f1*...*D[fi]*...*fn)
           // Each term replaces one factor with its derivative.

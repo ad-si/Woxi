@@ -20132,4 +20132,22 @@ mod ndsolve_step_forcing {
       "True"
     );
   }
+
+  #[test]
+  fn derivative_of_defined_function_with_list_product_body() {
+    // The body `x/2 {…}` is a scalar times a list: it must be differentiated
+    // element-wise, not with the scalar product rule applied to the list.
+    assert_eq!(
+      interpret("h[x_] := x/2 {x, x^2}; Derivative[1][h][t]").unwrap(),
+      "{t, (3*t^2)/2}"
+    );
+    assert_eq!(
+      interpret("h[x_] := x/2 {x, x^2}; h'[t]").unwrap(),
+      "{t, (3*t^2)/2}"
+    );
+    assert_eq!(
+      interpret("g[x_] := x/Pi {Sin[x], Cos[x]}; Derivative[1][g][t]").unwrap(),
+      interpret("D[t/Pi {Sin[t], Cos[t]}, t]").unwrap()
+    );
+  }
 }

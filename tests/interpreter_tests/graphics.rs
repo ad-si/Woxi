@@ -240,6 +240,22 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_if_without_else_hides_curve() {
+      // `If[cond, curve]` with a false `cond` evaluates to `Null`, which
+      // hides that curve instead of making the whole body unplottable.
+      let svg = export_svg(
+        "m = 1; ParametricPlot[{{Sin[t], Cos[t]}, \
+           If[m == 2, {t, t}]}, {t, 0, 3}, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 1);
+      let svg = export_svg(
+        "m = 2; ParametricPlot[{{Sin[t], Cos[t]}, \
+           If[m == 2, {t, t}]}, {t, 0, 3}, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 2);
+    }
+
+    #[test]
     fn parametric_plot_exclusions_break_curve_at_equation_roots() {
       // `Exclusions -> {t == c}` removes that parameter value, so the line
       // is split there instead of being drawn across the gap.
