@@ -3843,6 +3843,27 @@ mod plot3d {
       }
     }
 
+    /// Regression: an extracted `ParametricPlot3D[…][[1]]` complex baked a
+    /// height colour into every facet, so a colour directive placed before
+    /// it (the bimetal-strip layers) was overridden. Default facets carry
+    /// no colour; an explicit `PlotStyle` colour still does.
+    #[test]
+    fn extracted_parametric_surface_has_no_baked_default_colour() {
+      clear_state();
+      let plain = interpret(
+        "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 3][[1]], _RGBColor]",
+      )
+      .unwrap();
+      assert_eq!(plain, "True");
+      let styled = interpret(
+        "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 3, PlotStyle -> Red][[1]], _RGBColor]",
+      )
+      .unwrap();
+      assert_eq!(styled, "False");
+    }
+
     #[test]
     fn holds_iterator_variables() {
       // Regression: RegionPlot3D was missing from the HoldAll list
