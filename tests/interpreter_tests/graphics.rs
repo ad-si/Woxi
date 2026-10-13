@@ -1428,6 +1428,41 @@ mod graphics {
       );
     }
 
+    /// `EdgeForm[Directive[…]]` (and nested lists) carry the same colour
+    /// and width as the bare form.
+    #[test]
+    fn edge_form_accepts_directive_wrapper() {
+      for directive in [
+        "EdgeForm[Directive[Thick, Red]]",
+        "EdgeForm[{Directive[Thick, Red]}]",
+        "EdgeForm[Directive[{Thick, Directive[Red]}]]",
+      ] {
+        let svg = export_svg(&format!(
+          "Graphics[{{{directive}, Orange, Polygon[{{{{0,0}},{{2,0}},{{1,1}}}}]}}]"
+        ));
+        assert!(
+          svg.contains("stroke=\"rgb(255,0,0)\" stroke-width=\"2.00\""),
+          "{directive}: {svg}"
+        );
+      }
+    }
+
+    /// A `Style[…, Italic]` part of a `Text` label slants only its own
+    /// characters.
+    #[test]
+    fn text_label_italicises_only_styled_parts() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{Style[\"y\", Italic], \" = 1\"}], {0, 0}]}]",
+      );
+      assert!(
+        svg.contains("><tspan font-style=\"italic\">y</tspan> = 1</text>"),
+        "{svg}"
+      );
+      let plain =
+        export_svg("Graphics[{Text[Row[{\"y\", \" = 1\"}], {0, 0}]}]");
+      assert!(!plain.contains("<tspan"), "{plain}");
+    }
+
     /// What an `EdgeForm` leaves unsaid comes from Wolfram's defaults: a
     /// width alone strokes black, a colour alone strokes at width 1, and
     /// an `EdgeForm` that names neither draws no edge at all — which is
@@ -7879,6 +7914,8 @@ mod plot3d {
           .unwrap_or("")
           .to_string()
       };
+      // The italic parts are drawn as `<tspan>`s inside the label.
+      const FX: &str = "<tspan font-style=\"italic\">f</tspan>(<tspan font-style=\"italic\">x</tspan>)";
       let svg = export_svg(
         r#"Graphics[{Text[Row[{Style["f", Italic, 20], Style["(", 20],
              Style["x", Italic, 20], Style[")", 20]}], {0.5, 0.5}],
@@ -7888,11 +7925,11 @@ mod plot3d {
       );
       // Every part asks for 20 point, so the label is a 20-point label —
       // the same size as the plain `Style` label beside it.
-      assert_eq!(attr(&svg, "f(x)", "font-size"), "20");
+      assert_eq!(attr(&svg, FX, "font-size"), "20");
       assert_eq!(attr(&svg, "z", "font-size"), "20");
       // The parts disagree on slant (an italic letter, an upright bracket),
       // so the label keeps its own upright setting.
-      assert_eq!(attr(&svg, "f(x)", "font-style"), "normal");
+      assert_eq!(attr(&svg, FX, "font-style"), "normal");
       // Parts that agree on slant do carry it.
       assert_eq!(attr(&svg, "ab", "font-size"), "20");
       // A row with an unstyled part keeps the label's own size.
@@ -15165,7 +15202,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         r#"Graphics[{Text[Style[Subscript[Style["\!\(\*OverscriptBox[\(r\), \(\[RightVector]\)]\)", Italic], "1"], 15], {0, 0}]}]"#,
       );
       assert!(
-        svg.contains("r\u{20D7}\u{2081}"),
+        svg.contains("r\u{20D7}</tspan>\u{2081}"),
         "expected the vector label with a subscript 1: {svg}"
       );
       assert!(
