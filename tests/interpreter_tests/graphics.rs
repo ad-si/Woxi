@@ -6466,6 +6466,34 @@ mod plot3d {
       );
     }
 
+    /// A named font size (`Medium`, `Small`, …) in a `Style` reaches the
+    /// label as a point size (the plot is drawn at 10x scale), bare or as
+    /// `FontSize -> name`. It used to be ignored, so a bold `Medium` plot title kept the default 17pt and ran
+    /// past the edge of a 300pt-wide plot (found via a downloaded Wolfram
+    /// Demonstrations Project notebook).
+    #[test]
+    fn plot_label_named_font_sizes_are_applied() {
+      for (style, size) in [
+        ("Medium", "120"),
+        ("Small", "90"),
+        ("Large", "240"),
+        ("Larger", "150"),
+        ("FontSize -> Tiny", "60"),
+      ] {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 1}}, PlotLabel -> Style[\"Title\", Bold, {style}]]"
+        ));
+        let label = svg
+          .split("<text ")
+          .find(|t| t.contains("Title"))
+          .expect("the plot label");
+        assert!(
+          label.contains(&format!("font-size=\"{size}\"")),
+          "{style} must give font-size {size}: {label}"
+        );
+      }
+    }
+
     /// `Evaluated -> True` works the body out once, with the plot
     /// variable still symbolic, instead of at every sample point. A fit
     /// only makes sense that way: substituting a number for the variable

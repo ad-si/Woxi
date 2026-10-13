@@ -1846,7 +1846,7 @@ fn named_style_appearance(name: &str) -> Option<(f64, Option<(u8, u8, u8)>)> {
 /// and `Large` are absolute in Wolfram's default stylesheet; `Larger` and
 /// `Smaller` scale whatever size is in force. Measured from wolframscript's
 /// own rendering of `Text[Style["z", …]]` against numeric sizes.
-fn named_font_size(name: &str, current: f64) -> Option<f64> {
+pub(crate) fn named_font_size(name: &str, current: f64) -> Option<f64> {
   Some(match name {
     "Tiny" => 6.0,
     "Small" => 9.0,
@@ -10661,6 +10661,16 @@ fn base_form_digits(x: &Expr, base: &Expr) -> Option<String> {
 /// The SVG text attributes a `Style[…]` directive list asks for — colour,
 /// slant, weight and size — for the `tspan` the styled content goes into.
 /// Directives with no textual meaning (or none we render) are skipped.
+/// The SVG `font-size` value for a named size. The absolute ones reuse
+/// `named_font_size`; `Larger`/`Smaller` are relative to the enclosing size.
+fn named_font_size_attr(name: &str) -> Option<String> {
+  match name {
+    "Larger" => Some("125%".to_string()),
+    "Smaller" => Some("80%".to_string()),
+    _ => named_font_size(name, 0.0).map(|size| format!("{size:.0}")),
+  }
+}
+
 fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
   // One slot per SVG attribute, last directive wins: `Style[expr, "Label",
   // 12]` names a stylesheet style *and* overrides its size, exactly as
@@ -10682,11 +10692,15 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
       Expr::Identifier(s) if s == "Bold" => {
         set("font-weight", "bold".to_string());
       }
-      // A bare number is the font size (`Style[expr, 12]`).
+      // A bare number is the font size (`Style[expr, 12]`), and so is a
+      // named one (`Style[expr, Medium]`).
       Expr::Integer(_) | Expr::Real(_) => {
         if let Some(size) = expr_to_f64(d) {
           set("font-size", format!("{size:.0}"));
         }
+      }
+      Expr::Identifier(s) if named_font_size_attr(s).is_some() => {
+        set("font-size", named_font_size_attr(s).unwrap());
       }
       // A named style brings its size and colour from the stylesheet.
       Expr::String(name) => {
@@ -10704,6 +10718,10 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
         Some("FontSize") => {
           if let Some(size) = expr_to_f64(replacement) {
             set("font-size", format!("{size:.0}"));
+          } else if let Expr::Identifier(s) = replacement.as_ref()
+            && let Some(attr) = named_font_size_attr(s)
+          {
+            set("font-size", attr);
           }
         }
         Some("FontColor") => {
