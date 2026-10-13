@@ -5930,3 +5930,30 @@ mod literal_slot_is_not_reevaluated {
     assert_eq!(interpret("MatchQ[{}, {a_, b_:2}]").unwrap(), "False");
   }
 }
+
+mod evaluate_on_assignment_lhs {
+  use super::*;
+
+  // `Evaluate[target] = value` (and `target // Evaluate = value`) evaluates
+  // the held left-hand side first, then assigns to the result — here a
+  // list of `f[i]` targets, as Demonstrations use for solution tables.
+  #[test]
+  fn evaluate_forces_lhs_evaluation() {
+    clear_state();
+    assert_eq!(
+      interpret("Evaluate[Table[ev1[i], {i, 1, 3}]] = {a, b, c}; ev1[2]")
+        .unwrap(),
+      "b"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Table[ev2[i], {i, 1, 2}] // Evaluate = {7, 8}; {ev2[1], ev2[2]}"
+      )
+      .unwrap(),
+      "{7, 8}"
+    );
+    clear_state();
+    assert_eq!(interpret("ev3 = 1; Evaluate[ev3] = 5; ev3").unwrap(), "1");
+  }
+}
