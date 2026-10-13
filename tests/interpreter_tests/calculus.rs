@@ -9044,6 +9044,31 @@ mod ndsolve {
   }
 
   #[test]
+  fn when_event_periodic_action_samples_state() {
+    // `WhenEvent[Mod[t, p] == 0, Sow[…]]` fires at every multiple of `p`
+    // with the state at that time (a stroboscopic / Poincaré section).
+    let result = interpret(
+      "Reap[NDSolve[{x'[t] == 1, x[0] == 0, \
+       WhenEvent[Mod[t, 2] == 0, Sow[{t, x[t]}]]}, x, {t, 0, 7}]][[2]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{{{2., 2.}, {4., 4.}, {6., 6.}}}");
+  }
+
+  #[test]
+  fn when_event_periodic_action_coupled_system() {
+    // Three firings over {t, 0, 7} for period 2 Pi / 2: just count them.
+    let result = interpret(
+      "Length[Reap[NDSolve[{x'[t] == Cos[y[t]], y'[t] == Sin[x[t]], \
+       x[0] == 1, y[0] == 2, \
+       WhenEvent[Mod[t, Pi] == 0, Sow[{x[t], y[t]}]]}, {x, y}, \
+       {t, 0, 10}]][[2, 1]]]",
+    )
+    .unwrap();
+    assert_eq!(result, "3");
+  }
+
+  #[test]
   fn event_locator_stops_integration() {
     // Method -> {"EventLocator", …} stops at the event crossing and runs
     // the (held) EventAction: y' = -y from y(0)=1 crosses 0.5 at ln 2.
