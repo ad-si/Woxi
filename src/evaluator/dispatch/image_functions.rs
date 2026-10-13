@@ -792,6 +792,17 @@ pub fn dispatch_image_functions(
     "ImageCrop" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::image_crop_ast(args));
     }
+    "ImageForwardTransformation" if args.len() >= 2 => {
+      return Some(
+        crate::functions::image_ast::image_forward_transformation_ast(args),
+      );
+    }
+    "HighlightImage" if args.len() >= 2 => {
+      return Some(crate::functions::image_ast::highlight_image_ast(
+        args,
+        &evaluate_expr_to_expr,
+      ));
+    }
     "ImagePad" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::image_ast::image_pad_ast(args));
     }

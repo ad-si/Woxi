@@ -10383,3 +10383,429 @@ pub fn image_measurements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
   }
 }
+
+/// `{{a, b}, {c, d}}` of numbers → `[a, b, c, d]`.
+fn range_pair_of_pairs(e: &Expr) -> Option<[f64; 4]> {
+  let Expr::List(rows) = e else { return None };
+  if rows.len() != 2 {
+    return None;
+  }
+  let mut out = [0.0; 4];
+  for (i, row) in rows.iter().enumerate() {
+    let Expr::List(p) = row else { return None };
+    if p.len() != 2 {
+      return None;
+    }
+    out[2 * i] = crate::functions::math_ast::try_eval_to_f64(&p[0])?;
+    out[2 * i + 1] = crate::functions::math_ast::try_eval_to_f64(&p[1])?;
+  }
+  Some(out)
+}
+
+/// A positive pixel count given as an integer or a real (rounded).
+fn pixel_extent(e: &Expr) -> Option<usize> {
+  let v = crate::functions::math_ast::try_eval_to_f64(e)?.round();
+  (v >= 1.0 && v.is_finite()).then_some(v as usize)
+}
+
+/// ImageForwardTransformation[img, f, {w, h}] — map every point of `img`
+/// through `f` and resample the result onto a `w × h` image.
+///
+/// `f` takes a `{x, y}` point (in `DataRange` coordinates, y pointing up)
+/// and returns its new position. `DataRange` defaults to the pixel extent
+/// of `img`; `PlotRange` (the part of the transformed plane that is shown)
+/// defaults to the bounding box of the transformed image. The source is cut
+/// into a lattice of cells whose corners are mapped through `f`; each cell
+/// is rasterized as two triangles with the source position interpolated
+/// across them, so a smooth `f` leaves no holes. `Background` fills the
+/// uncovered pixels (black by default).
+pub fn image_forward_transformation_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("ImageForwardTransformation", args));
+  if args.len() < 2 {
+    return echo();
+  }
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+    ..
+  } = &args[0]
+  else {
+    return echo();
+  };
+  let (sw, sh, ch) = (*width as usize, *height as usize, *channels as usize);
+
+  // Positional size, then options.
+  let mut rest = &args[2..];
+  let mut size: Option<(usize, usize)> = None;
+  if let Some(first) = rest.first()
+    && !matches!(first, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+  {
+    size = match first {
+      Expr::List(v) if v.len() == 2 => {
+        match (pixel_extent(&v[0]), pixel_extent(&v[1])) {
+          (Some(w), Some(h)) => Some((w, h)),
+          _ => return echo(),
+        }
+      }
+      // A lone width: the height follows the plot range's aspect ratio,
+      // settled once that range is known.
+      other => match pixel_extent(other) {
+        Some(w) => Some((w, 0)),
+        _ => return echo(),
+      },
+    };
+    rest = &rest[1..];
+  }
+  let full_range = [0.0, sw as f64, 0.0, sh as f64];
+  let data_range = option_value(rest, "DataRange")
+    .and_then(range_pair_of_pairs)
+    .unwrap_or(full_range);
+  let plot_range =
+    option_value(rest, "PlotRange").and_then(range_pair_of_pairs);
+  let background: Vec<f64> =
+    match option_value(rest, "Background").and_then(color_directive_to_rgb) {
+      Some((r, g, b, a)) => match ch {
+        1 => vec![(r + g + b) / 3.0],
+        2 => vec![(r + g + b) / 3.0, a.unwrap_or(1.0)],
+        3 => vec![r, g, b],
+        _ => vec![r, g, b, a.unwrap_or(1.0)],
+      },
+      None => vec![0.0; ch],
+    };
+
+  // Lattice nodes: source pixel coordinates (u, v) → transformed (X, Y).
+  let mut nx = sw.clamp(2, 400);
+  let mut ny = sh.clamp(2, 400);
+  if let Some((w, h)) = size {
+    nx = nx.max(w.min(400));
+    ny = ny.max(h.min(400));
+  }
+  type Node = (f64, f64, f64, f64);
+  let mut nodes: Vec<Option<Node>> = Vec::with_capacity((nx + 1) * (ny + 1));
+  for j in 0..=ny {
+    let v = sh as f64 * j as f64 / ny as f64;
+    for i in 0..=nx {
+      let u = sw as f64 * i as f64 / nx as f64;
+      let dx = data_range[0] + (data_range[1] - data_range[0]) * u / sw as f64;
+      let dy = data_range[2]
+        + (data_range[3] - data_range[2]) * (sh as f64 - v) / sh as f64;
+      let point = Expr::List(vec![Expr::Real(dx), Expr::Real(dy)].into());
+      let mapped = crate::evaluator::apply_function_to_arg(&args[1], &point)
+        .ok()
+        .and_then(|r| match &r {
+          Expr::List(p) if p.len() == 2 => Some((
+            crate::functions::math_ast::try_eval_to_f64(&p[0])?,
+            crate::functions::math_ast::try_eval_to_f64(&p[1])?,
+          )),
+          _ => None,
+        })
+        .filter(|(x, y)| x.is_finite() && y.is_finite());
+      nodes.push(mapped.map(|(x, y)| (x, y, u, v)));
+    }
+  }
+
+  let range = plot_range.unwrap_or_else(|| {
+    let (mut x0, mut x1) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut y0, mut y1) = (f64::INFINITY, f64::NEG_INFINITY);
+    for (x, y, _, _) in nodes.iter().flatten() {
+      x0 = x0.min(*x);
+      x1 = x1.max(*x);
+      y0 = y0.min(*y);
+      y1 = y1.max(*y);
+    }
+    [x0, x1, y0, y1]
+  });
+  let (rw, rh) = (range[1] - range[0], range[3] - range[2]);
+  if !(rw.is_finite() && rh.is_finite()) || rw <= 0.0 || rh <= 0.0 {
+    return echo();
+  }
+  let (ow, oh) = match size {
+    Some((w, 0)) => (w, ((w as f64 * rh / rw).round() as usize).max(1)),
+    Some(s) => s,
+    None => (sw, sh),
+  };
+  if ow.saturating_mul(oh) > 64_000_000 {
+    return echo();
+  }
+
+  let mut out = Vec::with_capacity(ow * oh * ch);
+  for _ in 0..ow * oh {
+    out.extend_from_slice(&background);
+  }
+
+  // Source sample at continuous pixel position (u, v) (pixel centres at +½).
+  let sample = |u: f64, v: f64, dst: &mut [f64]| {
+    let fx = (u - 0.5).clamp(0.0, sw as f64 - 1.0);
+    let fy = (v - 0.5).clamp(0.0, sh as f64 - 1.0);
+    let (x0, y0) = (fx.floor() as usize, fy.floor() as usize);
+    let (x1, y1) = ((x0 + 1).min(sw - 1), (y0 + 1).min(sh - 1));
+    let (tx, ty) = (fx - x0 as f64, fy - y0 as f64);
+    for (c, d) in dst.iter_mut().enumerate() {
+      let at = |x: usize, y: usize| data[(y * sw + x) * ch + c];
+      *d = (at(x0, y0) * (1.0 - tx) + at(x1, y0) * tx) * (1.0 - ty)
+        + (at(x0, y1) * (1.0 - tx) + at(x1, y1) * tx) * ty;
+    }
+  };
+
+  // Output pixel coordinates of a node (continuous, y pointing down).
+  let to_px = |x: f64, y: f64| {
+    (
+      (x - range[0]) / rw * ow as f64,
+      (range[3] - y) / rh * oh as f64,
+    )
+  };
+  let mut raster = |tri: [Node; 3]| {
+    let p: Vec<(f64, f64)> = tri.iter().map(|n| to_px(n.0, n.1)).collect();
+    let min_x = p.iter().map(|q| q.0).fold(f64::INFINITY, f64::min);
+    let max_x = p.iter().map(|q| q.0).fold(f64::NEG_INFINITY, f64::max);
+    let min_y = p.iter().map(|q| q.1).fold(f64::INFINITY, f64::min);
+    let max_y = p.iter().map(|q| q.1).fold(f64::NEG_INFINITY, f64::max);
+    if max_x < 0.0 || max_y < 0.0 || min_x > ow as f64 || min_y > oh as f64 {
+      return;
+    }
+    let det = (p[1].1 - p[2].1) * (p[0].0 - p[2].0)
+      + (p[2].0 - p[1].0) * (p[0].1 - p[2].1);
+    if det.abs() < 1e-12 {
+      return;
+    }
+    let ix0 = (min_x - 0.5).ceil().max(0.0) as usize;
+    let ix1 = (max_x - 0.5).floor().min(ow as f64 - 1.0);
+    let iy0 = (min_y - 0.5).ceil().max(0.0) as usize;
+    let iy1 = (max_y - 0.5).floor().min(oh as f64 - 1.0);
+    if ix1 < 0.0 || iy1 < 0.0 {
+      return;
+    }
+    let eps = -1e-9;
+    for iy in iy0..=(iy1 as usize) {
+      for ix in ix0..=(ix1 as usize) {
+        let (qx, qy) = (ix as f64 + 0.5, iy as f64 + 0.5);
+        let l0 = ((p[1].1 - p[2].1) * (qx - p[2].0)
+          + (p[2].0 - p[1].0) * (qy - p[2].1))
+          / det;
+        let l1 = ((p[2].1 - p[0].1) * (qx - p[2].0)
+          + (p[0].0 - p[2].0) * (qy - p[2].1))
+          / det;
+        let l2 = 1.0 - l0 - l1;
+        if l0 < eps || l1 < eps || l2 < eps {
+          continue;
+        }
+        let u = l0 * tri[0].2 + l1 * tri[1].2 + l2 * tri[2].2;
+        let v = l0 * tri[0].3 + l1 * tri[1].3 + l2 * tri[2].3;
+        let base = (iy * ow + ix) * ch;
+        sample(u, v, &mut out[base..base + ch]);
+      }
+    }
+  };
+  for j in 0..ny {
+    for i in 0..nx {
+      let at = |di: usize, dj: usize| nodes[(j + dj) * (nx + 1) + i + di];
+      if let (Some(a), Some(b), Some(c), Some(d)) =
+        (at(0, 0), at(1, 0), at(0, 1), at(1, 1))
+      {
+        raster([a, b, c]);
+        raster([b, d, c]);
+      }
+    }
+  }
+
+  Ok(Expr::Image {
+    color_space: None,
+    width: ow as u32,
+    height: oh as u32,
+    channels: *channels,
+    data: Arc::new(out),
+    image_type: *image_type,
+  })
+}
+
+/// Bounding box `[xmin, xmax, ymin, ymax]` of the 2D points in a graphics
+/// primitive tree (circle and disk radii included).
+fn primitive_bounds(e: &Expr, bounds: &mut Option<[f64; 4]>) {
+  fn grow(b: &mut Option<[f64; 4]>, x: f64, y: f64) {
+    match b {
+      Some(r) => {
+        r[0] = r[0].min(x);
+        r[1] = r[1].max(x);
+        r[2] = r[2].min(y);
+        r[3] = r[3].max(y);
+      }
+      None => *b = Some([x, x, y, y]),
+    }
+  }
+  fn point_of(e: &Expr) -> Option<(f64, f64)> {
+    match e {
+      Expr::List(p) if p.len() == 2 => Some((
+        crate::functions::math_ast::try_eval_to_f64(&p[0])?,
+        crate::functions::math_ast::try_eval_to_f64(&p[1])?,
+      )),
+      _ => None,
+    }
+  }
+  match e {
+    Expr::List(items) => match point_of(e) {
+      Some((x, y)) => grow(bounds, x, y),
+      None => items.iter().for_each(|i| primitive_bounds(i, bounds)),
+    },
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Disk" | "Circle" | "Rectangle" | "Line" | "Point" | "Polygon"
+      ) =>
+    {
+      if let Some(first) = args.first() {
+        let radius = if matches!(name.as_str(), "Disk" | "Circle") {
+          match args.get(1) {
+            Some(r) => crate::functions::math_ast::try_eval_to_f64(r),
+            None => Some(1.0),
+          }
+          .unwrap_or(0.0)
+        } else {
+          0.0
+        };
+        if let Some((x, y)) = point_of(first) {
+          grow(bounds, x - radius, y - radius);
+          grow(bounds, x + radius, y + radius);
+        } else if radius == 0.0 || !matches!(name.as_str(), "Disk" | "Circle") {
+          primitive_bounds(first, bounds);
+        } else {
+          grow(bounds, -radius, -radius);
+          grow(bounds, radius, radius);
+        }
+      }
+      if matches!(name.as_str(), "Rectangle")
+        && let Some(second) = args.get(1)
+      {
+        primitive_bounds(second, bounds);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Expand one `HighlightImage` annotation into plain graphics primitives:
+/// `ImageMarker[pts, graphic]` places a copy of `graphic` (in image pixel
+/// units) centred on each point; anything else is already a primitive.
+fn highlight_primitives(mark: &Expr, out: &mut Vec<Expr>) {
+  match mark {
+    Expr::List(items) => {
+      items.iter().for_each(|m| highlight_primitives(m, out))
+    }
+    Expr::FunctionCall { name, args } if name == "ImageMarker" => {
+      let Some(points) = args.first() else { return };
+      let Some(Expr::FunctionCall {
+        name: gname,
+        args: gargs,
+      }) = args.get(1)
+      else {
+        return;
+      };
+      if gname != "Graphics" || gargs.is_empty() {
+        return;
+      }
+      let prims = &gargs[0];
+      let centre = if let Some(r) =
+        option_value(&gargs[1..], "PlotRange").and_then(range_pair_of_pairs)
+      {
+        (0.5 * (r[0] + r[1]), 0.5 * (r[2] + r[3]))
+      } else {
+        let mut b = None;
+        primitive_bounds(prims, &mut b);
+        b.map_or((0.0, 0.0), |r| (0.5 * (r[0] + r[1]), 0.5 * (r[2] + r[3])))
+      };
+      let pts: Vec<&Expr> = match points {
+        Expr::List(p)
+          if p.len() == 2
+            && p.iter().all(|c| {
+              crate::functions::math_ast::try_eval_to_f64(c).is_some()
+            }) =>
+        {
+          vec![points]
+        }
+        Expr::List(p) => p.iter().collect(),
+        _ => return,
+      };
+      for pt in pts {
+        let Expr::List(xy) = pt else { continue };
+        if xy.len() != 2 {
+          continue;
+        }
+        let (Some(x), Some(y)) = (
+          crate::functions::math_ast::try_eval_to_f64(&xy[0]),
+          crate::functions::math_ast::try_eval_to_f64(&xy[1]),
+        ) else {
+          continue;
+        };
+        out.push(Expr::FunctionCall {
+          name: "Translate".into(),
+          args: vec![
+            prims.clone(),
+            Expr::List(
+              vec![Expr::Real(x - centre.0), Expr::Real(y - centre.1)].into(),
+            ),
+          ]
+          .into(),
+        });
+      }
+    }
+    other => out.push(other.clone()),
+  }
+}
+
+/// HighlightImage[img, marks] — `img` with graphics `marks` drawn over it.
+/// The marks live in image pixel coordinates (origin bottom-left); the result
+/// is a new image the size of `img`. Display options such as `ImageSize` do
+/// not change the pixels and are ignored.
+pub fn highlight_image_ast(
+  args: &[Expr],
+  eval_fn: &dyn Fn(&Expr) -> Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("HighlightImage", args));
+  let Some(Expr::Image { width, height, .. }) = args.first() else {
+    return echo();
+  };
+  let (w, h) = (*width as f64, *height as f64);
+  let mut prims = Vec::new();
+  for mark in &args[1..] {
+    if !matches!(mark, Expr::Rule { .. } | Expr::RuleDelayed { .. }) {
+      highlight_primitives(mark, &mut prims);
+    }
+  }
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.into(),
+    args: args.into(),
+  };
+  let pair =
+    |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  let rule = |k: &str, v: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(k.into())),
+    replacement: Box::new(v),
+  };
+  let mut content = vec![call(
+    "Raster",
+    vec![
+      // `Raster` lists its rows bottom-first, `ImageData` top-first.
+      call("Reverse", vec![call("ImageData", vec![args[0].clone()])]),
+      Expr::List(vec![pair(0.0, 0.0), pair(w, h)].into()),
+    ],
+  )];
+  content.extend(prims);
+  let graphics = call(
+    "Graphics",
+    vec![
+      Expr::List(content.into()),
+      rule(
+        "PlotRange",
+        Expr::List(vec![pair(0.0, w), pair(0.0, h)].into()),
+      ),
+      rule("ImageSize", pair(w, h)),
+      rule("PlotRangePadding", Expr::Identifier("None".into())),
+      rule("ImagePadding", Expr::Integer(0)),
+    ],
+  );
+  eval_fn(&call("Rasterize", vec![graphics]))
+}
