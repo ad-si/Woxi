@@ -10026,9 +10026,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       {
         let n_str = fmt(&args[0]);
         let f_str = fmt(&args[1]);
-        if args.len() == 3 {
-          let x_str = fmt(&args[2]);
-          return format!("Derivative[{n_str}][{f_str}][{x_str}]");
+        if args.len() >= 3 {
+          let applied: Vec<String> = args[2..].iter().map(&fmt).collect();
+          return format!(
+            "Derivative[{n_str}][{f_str}][{}]",
+            applied.join(", ")
+          );
         }
         return format!("Derivative[{n_str}][{f_str}]");
       }
