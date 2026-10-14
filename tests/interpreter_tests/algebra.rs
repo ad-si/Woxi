@@ -9299,6 +9299,28 @@ mod find_root {
   use super::*;
 
   #[test]
+  fn equations_held_in_variables() {
+    assert_eq!(
+      interpret(
+        "e1 = a + b == 5; e2 = a - b == 1; FindRoot[{e1, e2}, {a, 1}, {b, 1}]"
+      )
+      .unwrap(),
+      "{a -> 3., b -> 2.}"
+    );
+  }
+
+  #[test]
+  fn equations_held_in_module_variables() {
+    assert_eq!(
+      interpret(
+        "Module[{a, b, e1, e2}, e1 = a + b == 5; e2 = a - b == 1; FindRoot[{e1, e2}, {a, 1}, {b, 1}][[1, 2]]]"
+      )
+      .unwrap(),
+      "3."
+    );
+  }
+
+  #[test]
   fn nonlinear_system_not_monotone_in_max_norm() {
     // The first full Newton step trades one component's residual for the
     // other's; it must still be taken instead of stalling at the start.
