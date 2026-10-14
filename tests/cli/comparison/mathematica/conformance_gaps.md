@@ -3006,7 +3006,7 @@ declared signatures:
 Counting the required and optional slots (skipping anything with
 `OptionsPattern` or a `BlankSequence`, which are unbounded) and comparing
 against Woxi's declared maximum turns up every documented argument form that
-is missing. The sweep originally found 80; the 67 below are what is left.
+is missing. The sweep originally found 80; the 66 below are what is left.
 
 Each one is a form wolframscript accepts and Woxi rejects on arity — so the
 failure mode is an `::argt` / `::argb` / `::argx` message rather than a wrong
@@ -3023,7 +3023,6 @@ answer, which makes them safe but individually invisible.
 | `BesselYZero` | 2–2 | 3 | `{_, _, _.}` |
 | `BooleanMaxterms` | 2–2 | 3 | `{_, _., _.}` |
 | `BooleanMinterms` | 2–2 | 3 | `{_, _., _.}` |
-| `CellularAutomaton` | 1–3 | 4 | `{_, _., _., _.}` |
 | `CenterArray` | 1–3 | 4 | `{_, _., _., _.}` |
 | `CharacterName` | 1–1 | 2 | `{_, _.}` |
 | `CircleThrough` | 1–1 | 3 | `{{__}, _., _.}` |

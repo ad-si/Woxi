@@ -735,4 +735,275 @@ mod step_and_cell_specs {
       "{{0, 1, 1, 1, 0}}"
     );
   }
+
+  // Half-integer ranges, offset-list neighborhoods, the explicit `All`
+  // window, rule-number bounds and the legacy four-argument form. All
+  // values verified against wolframscript.
+
+  #[test]
+  fn a_half_integer_range_reaches_one_cell_further_left() {
+    clear_state();
+    // r = 1/2 reads offsets -1 and 0: rule 4 (left cell 1, own cell 0)
+    // moves a cell right, rule 2 keeps an isolated cell in place.
+    assert_eq!(
+      interpret("CellularAutomaton[{4, 2, 1/2}, {0, 0, 1, 0, 0, 0}, 2]")
+        .unwrap(),
+      "{{0, 0, 1, 0, 0, 0}, {0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 0}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[{2, 2, 1/2}, {{1}, 0}, 3]").unwrap(),
+      "{{1}, {1}, {1}, {1}}"
+    );
+    // r = 3/2 reads offsets -2 through 1; rule 43690 copies offset 1, so
+    // the pattern moves left.
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{43690, 2, 3/2}, {1, 0, 0, 1, 1, 0, 1, 0}, 3]"
+      )
+      .unwrap(),
+      "{{1, 0, 0, 1, 1, 0, 1, 0}, {0, 0, 1, 1, 0, 1, 0, 1}, \
+       {0, 1, 1, 0, 1, 0, 1, 0}, {1, 1, 0, 1, 0, 1, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[{6, 2, 3/2}, {{1}, 0}, 2]").unwrap(),
+      "{{0, 0, 1}, {0, 1, 1}, {1, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn half_integer_ranges_take_weights_and_two_dimensions() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[{6, {2, 1}, 1/2}, {{1}, 0}, 3]").unwrap(),
+      "{{1, 0, 0, 0}, {1, 1, 0, 0}, {1, 1, 1, 0}, {1, 1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[{6, {2, {1, 2}}, 1/2}, {{1}, 0}, 3]")
+        .unwrap(),
+      "{{1, 0, 0, 0}, {1, 1, 0, 0}, {1, 0, 1, 0}, {1, 1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[{6, 2, {1/2, 1/2}}, {{1, 0}, {0, 0}}, 1]")
+        .unwrap(),
+      "{{{1, 0}, {0, 0}}, {{1, 1}, {0, 0}}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[{2, 2, {1/2, 5}}, {{{1}}, 0}, 1]").unwrap(),
+      "{{{0, 0, 0, 0, 0, 1}}, {{1, 0, 0, 0, 0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn an_offset_list_weights_its_cells_in_list_order() {
+    clear_state();
+    // The first offset gets the highest positional weight, so swapping
+    // the offsets reverses the direction of travel.
+    assert_eq!(
+      interpret("CellularAutomaton[{2, 2, {{1}, {-1}}}, {{1}, 0}, 2]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[{2, 2, {{-1}, {1}}}, {{1}, 0}, 2]").unwrap(),
+      "{{0, 0, 1}, {0, 1, 0}, {1, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{2, {2, {1, 3}}, {{-1}, {1}}}, {{1}, 0}, 2]"
+      )
+      .unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[{6, 2, {{-1}, {1}}}, {0, 1, 0, 0, 1}, 2]")
+        .unwrap(),
+      "{{0, 1, 0, 0, 1}, {0, 0, 1, 1, 0}, {0, 1, 1, 1, 1}}"
+    );
+    // Two-dimensional offsets take a flat weight list.
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{6, {2, {1, 2}}, {{-1, 0}, {0, 1}}}, {{{1}}, 0}, 1]"
+      )
+      .unwrap(),
+      "{{{0, 1}, {0, 0}}, {{1, 0}, {0, 1}}}"
+    );
+  }
+
+  #[test]
+  fn an_explicit_all_keeps_the_whole_affected_region() {
+    clear_state();
+    // Without a window only cells that ever leave the background are kept;
+    // `All` keeps every cell the rule could have reached, which for a
+    // lopsided neighborhood extends further on one side.
+    assert_eq!(
+      interpret("CellularAutomaton[{2, 2, 1}, {{1}, 0}, 3]").unwrap(),
+      "{{0, 0, 0, 1}, {0, 0, 1, 0}, {0, 1, 0, 0}, {1, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[{2, 2, 1}, {{1}, 0}, {3, All}]").unwrap(),
+      "{{0, 0, 0, 1, 0, 0, 0}, {0, 0, 1, 0, 0, 0, 0}, \
+       {0, 1, 0, 0, 0, 0, 0}, {1, 0, 0, 0, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[{2, 2, 1/2}, {{1}, 0}, {3, All}]").unwrap(),
+      "{{1, 0, 0, 0}, {1, 0, 0, 0}, {1, 0, 0, 0}, {1, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[{2, 2, {{1}, {2}}}, {{1}, 0}, {2, All}]")
+        .unwrap(),
+      "{{0, 0, 0, 0, 1}, {0, 0, 1, 0, 0}, {1, 0, 0, 0, 0}}"
+    );
+    // Per axis in 2D: the rows are `All`, the unnamed columns are trimmed.
+    let identity = "{2, {2, {{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}}, {1, 1}}";
+    assert_eq!(
+      interpret(&format!(
+        "CellularAutomaton[{identity}, {{{{{{1}}}}, 0}}, {{1, All, All}}]"
+      ))
+      .unwrap(),
+      "{{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, {{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "CellularAutomaton[{identity}, {{{{{{1}}}}, 0}}, {{1, All}}]"
+      ))
+      .unwrap(),
+      "{{{0}, {1}, {0}}, {{0}, {1}, {0}}}"
+    );
+  }
+
+  #[test]
+  fn the_four_argument_form_reads_its_offsets_relative_to_t() {
+    clear_state();
+    let full = "{{0, 0, 0, 1, 0, 0, 0}, {0, 0, 1, 1, 1, 0, 0}, \
+                {0, 1, 1, 0, 0, 1, 0}, {1, 1, 0, 1, 1, 1, 1}}";
+    for offs in ["{All, All}", "All", "{All}"] {
+      assert_eq!(
+        interpret(&format!("CellularAutomaton[30, {{{{1}}, 0}}, 3, {offs}]"))
+          .unwrap(),
+        full
+      );
+    }
+    // A non-negative offt is a modern tspec, even beyond t.
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, 0}, 3, {2, 3}]").unwrap(),
+      "{{1, 0, 0, 0}, {1, 1, 0, 0}, {0, 0, 1, 0}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, 0}, 3, {{{1}}}]").unwrap(),
+      "{1, 1, 1}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, 0}, 2, {{5}}]").unwrap(),
+      "{{1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1}}"
+    );
+    // Negative steps count back from t: -n alone is the last n steps.
+    let last_two = "{{0, 1, 1, 0, 0, 1, 0}, {1, 1, 0, 1, 1, 1, 1}}";
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, 0}, 3, -2]").unwrap(),
+      last_two
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, 0}, 3, {-2}]").unwrap(),
+      last_two
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, 0}, 3, {{-1}}]").unwrap(),
+      "{{1, 1, 0, 1, 1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, 0}, 3, {{-3, -2}}]").unwrap(),
+      "{{0, 1, 1, 1, 0}, {1, 1, 0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, 0}, 3, {All, -2}]").unwrap(),
+      "{{0, 0, 1}, {0, 1, 1}, {1, 1, 0}, {1, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn the_reversible_rule_demonstration_call_evaluates() {
+    // From the "Reversible Two-Color Cellular Automaton Rules"
+    // Demonstration: `CellularAutomaton[{rule, 2, 3/2}, init, n, {All, All}]`.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{43690, 2, 3/2}, {{1, 0, 1}, 0}, 3, {All, All}]"
+      )
+      .unwrap(),
+      "{{0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0}, \
+       {0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0}, \
+       {0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0}, \
+       {1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn malformed_specs_emit_wolfram_messages() {
+    let cases = [
+      (
+        "CellularAutomaton[30, {{1}, 0}, {3}, {All, All}]",
+        "CellularAutomaton::offg4: Since four arguments are used, the third \
+         argument {3} must be a non-negative machine integer, and the fourth \
+         argument {All, All} must be an integer or {offt, offx1, offx2, ... \
+         offxk}, where offt is present and k does not exceed 1, the number of \
+         spatial dimensions.",
+      ),
+      (
+        "CellularAutomaton[30, {{1}, 0}, 3, {-9}]",
+        "CellularAutomaton::offtm4: Step size 3 and temporal offset \
+         specification -9 request step -5, but the lowest step is 0.",
+      ),
+      (
+        "CellularAutomaton[{6, 2, 0.5}, {{1}, 0}, 3]",
+        "CellularAutomaton::rspec: The neighbor specification at position 3 \
+         of rule specification {6, 2, 0.5} should be a radius",
+      ),
+      (
+        "CellularAutomaton[{6, 2, {{0}, {0}}}, {{1}, 0}, 1]",
+        "CellularAutomaton::offrep: The offsets at position 3 in rule \
+         specification {6, 2, {{0}, {0}}}",
+      ),
+      (
+        "CellularAutomaton[{2, 2, {{0, 1}, {1}}}, {{1}, 0}, 1]",
+        "CellularAutomaton::offfo: Because rule specification \
+         {2, 2, {{0, 1}, {1}}} has no specified order",
+      ),
+      (
+        "CellularAutomaton[{6, {2, {1, 2, 4, 8, 16}}}, {{1}, 0}, 1]",
+        "CellularAutomaton::wtspec: The weight specification at position \
+         {2, 2} of rule specification {6, {2, {1, 2, 4, 8, 16}}} should be 1 \
+         or an array of non-negative machine integers with dimensions {3}.",
+      ),
+      (
+        "CellularAutomaton[{2, {2, {1, 2, 3}}, {{0}, {1}}}, {{1}, 0}, 1]",
+        "CellularAutomaton::wtlen: The length of the weight list {1, 2, 3} \
+         does not match the number of cells in the neighborhood {{0}, {1}}.",
+      ),
+      (
+        "CellularAutomaton[300, {{1}, 0}, 1]",
+        "CellularAutomaton::rsize: The specified rule number 300 is greater \
+         than the largest possible rule number (255).",
+      ),
+      (
+        "CellularAutomaton[{16, {2, 1}}, {{1}, 0}, 1]",
+        "CellularAutomaton::rsize: The specified rule number 16 is greater \
+         than the largest possible rule number (15).",
+      ),
+    ];
+    for (input, message) in cases {
+      clear_state();
+      let result = interpret_with_stdout(input).unwrap();
+      assert_eq!(result.result, input, "{input}");
+      assert!(
+        result.warnings.iter().any(|w| w.contains(message)),
+        "{input}: {:?}",
+        result.warnings
+      );
+    }
+    // The largest rule number itself is fine.
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[{15, {2, 1}}, {{1}, 0}, 1]").unwrap(),
+      "{{1}, {1}}"
+    );
+  }
 }

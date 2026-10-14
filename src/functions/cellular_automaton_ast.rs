@@ -14,6 +14,12 @@ use super::*;
 ///   {n, {k, {w1, w2, ...}}, r}        1D rule with explicit weights
 ///   {n, {k, wmatrix}, {r1, r2}}       2D rule with a weight matrix
 ///
+/// A range `r` is a non-negative integer or half-integer: `2r + 1` cells,
+/// from offset `-Ceiling[r]` to `Floor[r]` (so `1/2` is the cell and its
+/// left neighbor). An explicit offset list `{{dx1}, {dx2}, ...}` (or
+/// `{{dy1, dx1}, ...}` in 2D) names the cells directly; positional and
+/// explicit weights follow the list order.
+///
 /// Init forms: {c1, c2, ...} (cyclic) or {{c1, c2, ...}, bg} (infinite
 /// background) for 1D rules; a matrix or {matrix, bg} for 2D rules.
 ///
@@ -26,8 +32,13 @@ use super::*;
 /// through t2) and `{t1, t2, dt}` (every dt-th of those).
 ///
 /// A 1D rule takes at most one space window (the cells); a 2D rule takes the
-/// rows and then the columns, with the columns defaulting to `All`. Each is
-/// `All`, an offset `n` (from 0 or -n to n), or `{from, to[, dx]}`.
+/// rows and then the columns. Each is `All` (every cell the evolution could
+/// have affected), an offset `n` (from 0 or -n to n), or `{from, to[, dx]}`.
+/// An axis without a window keeps only the cells that ever differ from the
+/// background.
+///
+/// The legacy `CellularAutomaton[rule, init, t, {offt, offx, ...}]` form is
+/// rewritten to the three-argument one (see `legacy_offset_form`).
 pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("CellularAutomaton", args));
 
@@ -79,16 +90,20 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(cells.clone()));
   }
 
+  if args.len() == 4 {
+    return legacy_offset_form(args);
+  }
+
   if args.len() != 3 {
     return unevaluated();
   }
 
-  let Some(rule) = parse_rule(&args[0]) else {
-    crate::emit_message(&format!(
-      "CellularAutomaton::nspecnl: Rule specification {} should be an Integer, a List, a pure Boolean function, a String or an Association.",
-      expr_to_string(&args[0])
-    ));
-    return unevaluated();
+  let rule = match parse_rule(&args[0]) {
+    Ok(rule) => rule,
+    Err(msg) => {
+      crate::emit_message(&msg);
+      return unevaluated();
+    }
   };
 
   let Some(steps) = parse_step_spec(&args[2]) else {
@@ -102,17 +117,15 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // There is one space window per space dimension: a 1D rule takes at most
   // an `xspec` (the cells), a 2D rule an `xspec` and a `yspec` (the rows and
   // the columns). Naming more is the wrong shape for the rule, even when
-  // every one of them is `All`. A 2D rule given only an `xspec` windows the
-  // rows and keeps every column.
-  let (cells, rows, cols) = match (steps.windows.as_slice(), rule.two_d) {
-    ([], _) => (None, None, None),
-    ([x], false) => (*x, None, None),
-    ([x], true) => (None, *x, None),
-    ([x, y], true) => (None, *x, *y),
+  // every one of them is `All`.
+  let (cols, rows) = match (steps.windows.as_slice(), rule.two_d) {
+    ([], _) => (Window::Auto, Window::Auto),
+    ([x], false) => (*x, Window::Auto),
+    ([x], true) => (Window::Auto, *x),
+    ([x, y], true) => (*y, *x),
     _ => return unevaluated(),
   };
-  let Some(states) =
-    evolve(&rule, &init, background, &steps.times, cells.or(cols), rows)
+  let Some(states) = evolve(&rule, &init, background, &steps.times, cols, rows)
   else {
     return unevaluated();
   };
@@ -153,24 +166,123 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(exprs.into()))
 }
 
+/// CellularAutomaton[rule, init, t, offs] — the discontinued four-argument
+/// form. `t` must be a non-negative integer and `offs` an integer, `All` or
+/// an `{offt, offx, ...}` list with at most one `offx` per space dimension.
+/// It is the three-argument form with step spec `{offt, offx, ...}`, except
+/// that `offt` is read relative to `t`: `All` is steps 0 through t, and a
+/// negative step `-n` counts back from t (`-1` is step t). A bare `-n`
+/// selects the last n steps.
+fn legacy_offset_form(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("CellularAutomaton", args));
+  let rule = match parse_rule(&args[0]) {
+    Ok(rule) => rule,
+    Err(msg) => {
+      crate::emit_message(&msg);
+      return unevaluated();
+    }
+  };
+  let space_dims = if rule.two_d { 2 } else { 1 };
+  let t = match &args[2] {
+    Expr::Integer(t) if *t >= 0 => i64::try_from(*t).ok(),
+    _ => None,
+  };
+  let offs: Option<Vec<Expr>> = match &args[3] {
+    Expr::Integer(_) => Some(vec![args[3].clone()]),
+    Expr::Identifier(s) if s == "All" => Some(vec![args[3].clone()]),
+    Expr::List(items) if !items.is_empty() && items.len() <= space_dims + 1 => {
+      Some(items.to_vec())
+    }
+    _ => None,
+  };
+  let (Some(t), Some(mut offs)) = (t, offs) else {
+    crate::emit_message(&format!(
+      "CellularAutomaton::offg4: Since four arguments are used, the third argument {} must be a non-negative machine integer, and the fourth argument {} must be an integer or {{offt, offx1, offx2, ... offxk}}, where offt is present and k does not exceed {}, the number of spatial dimensions. Note that the four-argument form of CellularAutomaton is being discontinued.",
+      expr_to_string(&args[2]),
+      expr_to_string(&args[3]),
+      space_dims
+    ));
+    return unevaluated();
+  };
+  match resolve_legacy_tspec(&offs[0], t) {
+    Ok(tspec) => offs[0] = tspec,
+    Err(step) => {
+      crate::emit_message(&format!(
+        "CellularAutomaton::offtm4: Step size {} and temporal offset specification {} request step {}, but the lowest step is 0. Note that the four-argument form of CellularAutomaton is being discontinued.",
+        t,
+        expr_to_string(&offs[0]),
+        step
+      ));
+      return unevaluated();
+    }
+  }
+  cellular_automaton_ast(&[
+    args[0].clone(),
+    args[1].clone(),
+    Expr::List(offs.into()),
+  ])
+}
+
+/// Rewrite a legacy `offt` relative to the step count `t` into a modern
+/// tspec. `Err` carries a step that resolves to before step 0.
+fn resolve_legacy_tspec(offt: &Expr, t: i64) -> Result<Expr, i128> {
+  let step = |e: &Expr| -> Result<Expr, i128> {
+    match e {
+      Expr::Integer(n) if *n < 0 => {
+        let s = t as i128 + 1 + n;
+        if s < 0 { Err(s) } else { Ok(Expr::Integer(s)) }
+      }
+      other => Ok(other.clone()),
+    }
+  };
+  match offt {
+    Expr::Identifier(s) if s == "All" => Ok(Expr::Integer(t as i128)),
+    // The last n steps.
+    Expr::Integer(n) if *n < 0 => Ok(Expr::List(
+      vec![step(offt)?, Expr::Integer(t as i128)].into(),
+    )),
+    Expr::List(items) => {
+      let resolved: Result<Vec<Expr>, i128> = match items.as_ref() {
+        [Expr::List(inner)] if inner.len() == 1 => {
+          Ok(vec![Expr::List(vec![step(&inner[0])?].into())])
+        }
+        [t1] => Ok(vec![step(t1)?]),
+        [t1, t2] => Ok(vec![step(t1)?, step(t2)?]),
+        [t1, t2, dt] => Ok(vec![step(t1)?, step(t2)?, dt.clone()]),
+        _ => Ok(items.to_vec()),
+      };
+      Ok(Expr::List(resolved?.into()))
+    }
+    other => Ok(other.clone()),
+  }
+}
+
 struct RuleSpec {
   n: u128,
   k: u128,
-  /// Neighborhood weights, (2*r1 + 1) rows x (2*r2 + 1) columns.
-  /// 1D rules use a single row (r1 = 0).
-  weights: Vec<Vec<u128>>,
+  /// The neighborhood: the cell `(drow, dcol)` away from the updated cell
+  /// adds `weight * value` to the weighted sum. 1D rules use `drow = 0`.
+  neighbors: Vec<(i64, i64, u128)>,
   two_d: bool,
+}
+
+/// How one space axis of the result is chosen.
+#[derive(Clone, Copy)]
+enum Window {
+  /// No window named: the cells that ever differ from the background.
+  Auto,
+  /// `All`: every cell the evolution could have affected.
+  All,
+  /// `{from, to, step}` offsets relative to the init's first cell.
+  Range(i64, i64, usize),
 }
 
 struct StepSpec {
   /// The (ascending) time steps whose states are returned.
   times: Vec<usize>,
-  /// The space windows named after `tspec`, in order. Each is `(from, to,
-  /// step)` relative to the first cell/row/column of the initial condition,
-  /// or `None` for `All` (the whole affected region). A 1D rule takes at
-  /// most one (the cells); a 2D rule takes at most two (rows then columns,
-  /// with the columns defaulting to `All` when only one is given).
-  windows: Vec<Option<(i64, i64, usize)>>,
+  /// The space windows named after `tspec`, in order. A 1D rule takes at
+  /// most one (the cells); a 2D rule takes at most two (rows then columns).
+  windows: Vec<Window>,
   /// Whether `tspec` was written as the explicit single-state `{{t}}`
   /// form, as opposed to a form documented as always yielding "a list of
   /// the selected states" (`t`, `{t}`, `{t1, t2}`, `{t1, t2, dt}`) that
@@ -185,10 +297,15 @@ fn as_nonneg_int(expr: &Expr) -> Option<u128> {
   }
 }
 
-/// Range part of a rule spec: r (1D) or {r1, r2} (2D).
-enum RangeSpec {
-  One(usize),
-  Two(usize, usize),
+/// The cells a rule reads, before weights are attached.
+struct Neighborhood {
+  /// `(drow, dcol)` offsets in weight order (row-major for a range).
+  offsets: Vec<(i64, i64)>,
+  /// The cell counts `{d}` or `{d1, d2}` of a range neighborhood, which an
+  /// explicit weight array must match. `None` for an offset list, whose
+  /// weights are a flat list in offset order.
+  dims: Option<Vec<usize>>,
+  two_d: bool,
 }
 
 /// Per-dimension neighborhood radius cap. Real rules use single-digit
@@ -196,86 +313,22 @@ enum RangeSpec {
 /// grids.
 const MAX_RANGE: usize = 256;
 
-fn parse_range(expr: &Expr) -> Option<RangeSpec> {
-  let radius = |e: &Expr| -> Option<usize> {
-    let r = usize::try_from(as_nonneg_int(e)?).ok()?;
-    (r <= MAX_RANGE).then_some(r)
-  };
-  // An explicit 1D neighborhood `{{-r}, ..., {0}, ..., {r}}`: the ascending,
-  // symmetric offsets that the range `r` abbreviates.
-  let offsets = |items: &[Expr]| -> Option<usize> {
-    let r = items.len().checked_sub(1)? / 2;
-    if items.len().is_multiple_of(2) || r > MAX_RANGE {
-      return None;
-    }
-    for (i, item) in items.iter().enumerate() {
-      match item {
-        Expr::List(o)
-          if o.len() == 1
-            && matches!(&o[0], Expr::Integer(v) if *v == i as i128 - r as i128) =>
-          {}
-        _ => return None,
-      }
-    }
-    Some(r)
-  };
+/// A range `r` (an integer or half-integer) as its cell count `2r + 1` and
+/// the offset of its first cell, `-Ceiling[r]`.
+fn parse_radius(expr: &Expr) -> Option<(usize, i64)> {
   match expr {
-    Expr::Integer(_) => Some(RangeSpec::One(radius(expr)?)),
-    Expr::List(items)
-      if !items.is_empty()
-        && items.iter().all(|e| matches!(e, Expr::List(_))) =>
+    Expr::Integer(r) if *r >= 0 && *r <= MAX_RANGE as i128 => {
+      Some((2 * *r as usize + 1, -(*r as i64)))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
     {
-      Some(RangeSpec::One(offsets(items)?))
-    }
-    Expr::List(items) if items.len() == 2 => {
-      Some(RangeSpec::Two(radius(&items[0])?, radius(&items[1])?))
-    }
-    _ => None,
-  }
-}
-
-fn parse_rule(expr: &Expr) -> Option<RuleSpec> {
-  match expr {
-    Expr::Integer(n) if *n >= 0 => Some(RuleSpec {
-      n: *n as u128,
-      k: 2,
-      weights: vec![vec![4, 2, 1]],
-      two_d: false,
-    }),
-    Expr::List(items) if items.len() == 2 || items.len() == 3 => {
-      let n = as_nonneg_int(&items[0])?;
-      let range = match items.get(2) {
-        Some(r) => Some(parse_range(r)?),
-        None => None,
-      };
-      match &items[1] {
-        // {n, k[, r]} — general rule: the neighborhood read as a base-k
-        // number, i.e. positional weights k^(cells-1), ..., k, 1.
-        Expr::Integer(k) if *k >= 1 => {
-          let k = *k as u128;
-          let range = range.unwrap_or(RangeSpec::One(1));
-          let two_d = matches!(range, RangeSpec::Two(..));
-          let weights = positional_weights(k, &range)?;
-          Some(RuleSpec {
-            n,
-            k,
-            weights,
-            two_d,
-          })
-        }
-        // {n, {k, wspec}[, r]}
-        Expr::List(kw) if kw.len() == 2 => {
-          let k = as_nonneg_int(&kw[0])?;
-          if k == 0 {
-            return None;
-          }
-          let (weights, two_d) = parse_weights(&kw[1], range)?;
-          Some(RuleSpec {
-            n,
-            k,
-            weights,
-            two_d,
-          })
+      match (&args[0], &args[1]) {
+        (Expr::Integer(p), Expr::Integer(2))
+          if *p > 0 && *p <= 2 * MAX_RANGE as i128 =>
+        {
+          let cells = *p as usize + 1;
+          Some((cells, -((cells / 2) as i64)))
         }
         _ => None,
       }
@@ -284,92 +337,247 @@ fn parse_rule(expr: &Expr) -> Option<RuleSpec> {
   }
 }
 
-/// Positional weights for a general (non-totalistic) rule: cell values read
-/// row-major as a base-k number.
-fn positional_weights(k: u128, range: &RangeSpec) -> Option<Vec<Vec<u128>>> {
-  let (rows, cols) = match range {
-    RangeSpec::One(r) => (1, 2 * r + 1),
-    RangeSpec::Two(r1, r2) => (2 * r1 + 1, 2 * r2 + 1),
-  };
-  let cells = rows * cols;
-  let mut weights = Vec::with_capacity(rows);
-  for i in 0..rows {
-    let mut row = Vec::with_capacity(cols);
-    for j in 0..cols {
-      let exp = u32::try_from(cells - 1 - (i * cols + j)).ok()?;
-      row.push(k.checked_pow(exp)?);
-    }
-    weights.push(row);
+fn range_neighborhood(radii: &[(usize, i64)]) -> Neighborhood {
+  match radii {
+    [(d, lo)] => Neighborhood {
+      offsets: (0..*d as i64).map(|j| (0, lo + j)).collect(),
+      dims: Some(vec![*d]),
+      two_d: false,
+    },
+    [(d1, lo1), (d2, lo2)] => Neighborhood {
+      offsets: (0..*d1 as i64)
+        .flat_map(|i| (0..*d2 as i64).map(move |j| (lo1 + i, lo2 + j)))
+        .collect(),
+      dims: Some(vec![*d1, *d2]),
+      two_d: true,
+    },
+    _ => unreachable!("a range has one or two radii"),
   }
-  Some(weights)
 }
 
-/// Weight part of a rule spec: a uniform weight, a 1D list, or a matrix.
-/// Returns the weight grid and whether the rule is two-dimensional.
-fn parse_weights(
-  wspec: &Expr,
-  range: Option<RangeSpec>,
-) -> Option<(Vec<Vec<u128>>, bool)> {
-  match wspec {
-    // Uniform weight over the whole neighborhood (e.g. totalistic rules).
-    Expr::Integer(w) if *w >= 0 => {
-      let w = *w as u128;
-      match range.unwrap_or(RangeSpec::One(1)) {
-        RangeSpec::One(r) => Some((vec![vec![w; 2 * r + 1]], false)),
-        RangeSpec::Two(r1, r2) => {
-          Some((vec![vec![w; 2 * r2 + 1]; 2 * r1 + 1], true))
-        }
-      }
-    }
-    Expr::List(rows) if !rows.is_empty() => {
-      if rows.iter().all(|e| matches!(e, Expr::Integer(_))) {
-        // 1D weight list; must be odd-length and match an explicit range.
-        let weights: Option<Vec<u128>> =
-          rows.iter().map(as_nonneg_int).collect();
-        let weights = weights?;
-        if weights.len() % 2 == 0 {
-          return None;
-        }
-        match range {
-          None | Some(RangeSpec::One(_)) => {
-            if let Some(RangeSpec::One(r)) = range
-              && weights.len() != 2 * r + 1
-            {
-              return None;
-            }
-            Some((vec![weights], false))
-          }
-          Some(RangeSpec::Two(..)) => None,
-        }
-      } else {
-        // 2D weight matrix; odd dimensions, matching an explicit range.
-        let matrix: Option<Vec<Vec<u128>>> = rows
+/// The neighbor spec at position 3 of a rule: a range `r`, a 2D range
+/// `{r1, r2}` or an offset list. `Err(None)` marks a well-formed spec Woxi
+/// does not support (e.g. offsets in three dimensions).
+fn parse_neighborhood(
+  expr: &Expr,
+  spec: &Expr,
+) -> Result<Neighborhood, Option<String>> {
+  let rspec = || {
+    Some(format!(
+      "CellularAutomaton::rspec: The neighbor specification at position 3 of rule specification {} should be a radius, a nonempty list of radii or a nonempty list of offsets. A radius must be (d - 1)/2 for some positive machine integer d. The offsets are nonempty lists of machine integers.",
+      expr_to_string(spec)
+    ))
+  };
+  if let Some(radius) = parse_radius(expr) {
+    return Ok(range_neighborhood(&[radius]));
+  }
+  let Expr::List(items) = expr else {
+    return Err(rspec());
+  };
+  if items.is_empty() {
+    return Err(rspec());
+  }
+  if items.iter().all(|e| matches!(e, Expr::List(_))) {
+    // An explicit offset list.
+    let offsets: Option<Vec<Vec<i64>>> = items
+      .iter()
+      .map(|item| match item {
+        Expr::List(o) if !o.is_empty() => o
           .iter()
-          .map(|row| match row {
-            Expr::List(cells) if !cells.is_empty() => {
-              cells.iter().map(as_nonneg_int).collect()
-            }
+          .map(|c| match c {
+            Expr::Integer(v) => i64::try_from(*v).ok(),
             _ => None,
           })
-          .collect();
-        let matrix = matrix?;
-        let cols = matrix[0].len();
-        if matrix.iter().any(|r| r.len() != cols)
-          || matrix.len() % 2 == 0
-          || cols % 2 == 0
-        {
-          return None;
-        }
-        match range {
-          None => Some((matrix, true)),
-          Some(RangeSpec::Two(r1, r2))
-            if matrix.len() == 2 * r1 + 1 && cols == 2 * r2 + 1 =>
-          {
-            Some((matrix, true))
-          }
-          _ => None,
-        }
+          .collect(),
+        _ => None,
+      })
+      .collect();
+    let offsets = offsets.ok_or_else(rspec)?;
+    let dim = offsets[0].len();
+    if offsets.iter().any(|o| o.len() != dim) {
+      return Err(Some(format!(
+        "CellularAutomaton::offfo: Because rule specification {} has no specified order, the offsets at position 3 must have the same length.",
+        expr_to_string(spec)
+      )));
+    }
+    if dim > 2
+      || offsets
+        .iter()
+        .flatten()
+        .any(|c| c.unsigned_abs() > MAX_RANGE as u64)
+    {
+      return Err(None);
+    }
+    for (i, o) in offsets.iter().enumerate() {
+      if offsets[..i].contains(o) {
+        return Err(Some(format!(
+          "CellularAutomaton::offrep: The offsets at position 3 in rule specification {} (after adding any missing 0 time coordinates in the higher-order case) must be distinct.",
+          expr_to_string(spec)
+        )));
       }
+    }
+    return Ok(Neighborhood {
+      offsets: offsets
+        .iter()
+        .map(|o| if dim == 1 { (0, o[0]) } else { (o[0], o[1]) })
+        .collect(),
+      dims: None,
+      two_d: dim == 2,
+    });
+  }
+  match items.as_ref() {
+    [r1, r2] => match (parse_radius(r1), parse_radius(r2)) {
+      (Some(a), Some(b)) => Ok(range_neighborhood(&[a, b])),
+      _ => Err(rspec()),
+    },
+    // Ranges in three or more dimensions.
+    _ if items.iter().all(|e| parse_radius(e).is_some()) => Err(None),
+    _ => Err(rspec()),
+  }
+}
+
+/// Parse a rule spec. `Err` carries the message to emit.
+fn parse_rule(expr: &Expr) -> Result<RuleSpec, String> {
+  let nspecnl = || {
+    format!(
+      "CellularAutomaton::nspecnl: Rule specification {} should be an Integer, a List, a pure Boolean function, a String or an Association.",
+      expr_to_string(expr)
+    )
+  };
+  let (n, k, neighbors, two_d) = match expr {
+    Expr::Integer(n) if *n >= 0 => {
+      (*n as u128, 2, vec![(0, -1, 4), (0, 0, 2), (0, 1, 1)], false)
+    }
+    Expr::List(items) if items.len() == 2 || items.len() == 3 => {
+      let n = as_nonneg_int(&items[0]).ok_or_else(nspecnl)?;
+      let nbhd = match items.get(2) {
+        Some(r) => parse_neighborhood(r, expr)
+          .map_err(|msg| msg.unwrap_or_else(nspecnl))?,
+        // The default range is 1.
+        None => range_neighborhood(&[(3, -1)]),
+      };
+      let (k, weights) = match &items[1] {
+        // {n, k[, r]} — general rule: the neighborhood read as a base-k
+        // number, i.e. positional weights k^(cells-1), ..., k, 1.
+        Expr::Integer(k) if *k >= 1 => {
+          let k = *k as u128;
+          let cells = nbhd.offsets.len();
+          let weights: Option<Vec<u128>> = (0..cells)
+            .map(|i| k.checked_pow(u32::try_from(cells - 1 - i).ok()?))
+            .collect();
+          (k, weights.ok_or_else(nspecnl)?)
+        }
+        // {n, {k, wspec}[, r]}
+        Expr::List(kw) if kw.len() == 2 => {
+          let k = as_nonneg_int(&kw[0])
+            .filter(|&k| k > 0)
+            .ok_or_else(nspecnl)?;
+          (k, parse_weights(&kw[1], &nbhd, expr)?)
+        }
+        _ => return Err(nspecnl()),
+      };
+      let neighbors = nbhd
+        .offsets
+        .iter()
+        .zip(weights)
+        .map(|(&(dr, dc), w)| (dr, dc, w))
+        .collect();
+      (n, k, neighbors, nbhd.two_d)
+    }
+    _ => return Err(nspecnl()),
+  };
+
+  // The weighted sum runs from 0 to (k - 1) * (total weight), so a rule has
+  // that many plus one base-k digits.
+  let largest = neighbors
+    .iter()
+    .try_fold(0u128, |acc, &(_, _, w)| acc.checked_add(w))
+    .and_then(|total| total.checked_mul(k - 1))
+    .and_then(|max_sum| u32::try_from(max_sum.checked_add(1)?).ok())
+    .and_then(|digits| k.checked_pow(digits))
+    .map(|p| p - 1);
+  if let Some(largest) = largest
+    && n > largest
+  {
+    return Err(format!(
+      "CellularAutomaton::rsize: The specified rule number {n} is greater than the largest possible rule number ({largest})."
+    ));
+  }
+
+  Ok(RuleSpec {
+    n,
+    k,
+    neighbors,
+    two_d,
+  })
+}
+
+/// Weight part of a rule spec, in neighborhood order: a uniform weight, or
+/// an array matching the range's dimensions (a flat list matching the
+/// number of cells for an offset list).
+fn parse_weights(
+  wspec: &Expr,
+  nbhd: &Neighborhood,
+  spec: &Expr,
+) -> Result<Vec<u128>, String> {
+  if let Some(w) = as_nonneg_int(wspec) {
+    return Ok(vec![w; nbhd.offsets.len()]);
+  }
+  let flat_list = |e: &Expr, len: usize| -> Option<Vec<u128>> {
+    match e {
+      Expr::List(items) if items.len() == len => {
+        items.iter().map(as_nonneg_int).collect()
+      }
+      _ => None,
+    }
+  };
+  match &nbhd.dims {
+    Some(dims) => {
+      let weights = match dims.as_slice() {
+        [d] => flat_list(wspec, *d),
+        [d1, d2] => flat_list_of_rows(wspec, *d1, *d2, &flat_list),
+        _ => None,
+      };
+      weights.ok_or_else(|| {
+        format!(
+          "CellularAutomaton::wtspec: The weight specification at position {{2, 2}} of rule specification {} should be 1 or an array of non-negative machine integers with dimensions {{{}}}.",
+          expr_to_string(spec),
+          dims
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+        )
+      })
+    }
+    None => flat_list(wspec, nbhd.offsets.len()).ok_or_else(|| {
+      let offsets = match spec {
+        Expr::List(items) => expr_to_string(&items[2]),
+        _ => String::new(),
+      };
+      format!(
+        "CellularAutomaton::wtlen: The length of the weight list {} does not match the number of cells in the neighborhood {}.",
+        expr_to_string(wspec),
+        offsets
+      )
+    }),
+  }
+}
+
+/// A `rows` x `cols` weight matrix, flattened row-major.
+fn flat_list_of_rows(
+  wspec: &Expr,
+  rows: usize,
+  cols: usize,
+  flat_list: &dyn Fn(&Expr, usize) -> Option<Vec<u128>>,
+) -> Option<Vec<u128>> {
+  match wspec {
+    Expr::List(items) if items.len() == rows => {
+      let mut weights = Vec::with_capacity(rows * cols);
+      for row in items {
+        weights.extend(flat_list(row, cols)?);
+      }
+      Some(weights)
     }
     _ => None,
   }
@@ -439,10 +647,8 @@ fn parse_step_spec(expr: &Expr) -> Option<StepSpec> {
   })
 }
 
-/// The cell offsets an `xspec` names, as `(from, to, step)`. `Ok(None)` means
-/// "every cell" (`All`); a spec that cannot be read yields `None`.
-#[allow(clippy::type_complexity)]
-fn parse_cell_spec(expr: &Expr) -> Option<Option<(i64, i64, usize)>> {
+/// The cells an `xspec` names; a spec that cannot be read yields `None`.
+fn parse_cell_spec(expr: &Expr) -> Option<Window> {
   let as_int = |e: &Expr| -> Option<i64> {
     match e {
       Expr::Integer(n) => i64::try_from(*n).ok(),
@@ -450,11 +656,15 @@ fn parse_cell_spec(expr: &Expr) -> Option<Option<(i64, i64, usize)>> {
     }
   };
   match expr {
-    Expr::Identifier(s) if s == "All" => Some(None),
+    Expr::Identifier(s) if s == "All" => Some(Window::All),
     // A bare `n` runs from the origin out to offset n (either direction).
     Expr::Integer(_) => {
       let n = as_int(expr)?;
-      Some(Some(if n >= 0 { (0, n, 1) } else { (n, 0, 1) }))
+      Some(if n >= 0 {
+        Window::Range(0, n, 1)
+      } else {
+        Window::Range(n, 0, 1)
+      })
     }
     Expr::List(items) if items.len() == 2 || items.len() == 3 => {
       let from = as_int(&items[0])?;
@@ -463,7 +673,7 @@ fn parse_cell_spec(expr: &Expr) -> Option<Option<(i64, i64, usize)>> {
         Some(d) => usize::try_from(as_int(d)?).ok().filter(|&d| d > 0)?,
         None => 1,
       };
-      (to >= from).then_some(Some((from, to, step)))
+      (to >= from).then_some(Window::Range(from, to, step))
     }
     _ => None,
   }
@@ -549,95 +759,92 @@ fn rule_digit(n: u128, k: u128, s: u128) -> u128 {
   }
 }
 
-/// Extra background cells an axis needs beyond the rule's automatic growth
-/// so that an explicit window reaching past the affected region still
-/// evolves correctly. `base_origin` is where offset 0 of that axis sits on
-/// the automatically-grown grid; `init_len` is the init's size along it.
-fn axis_margin(
-  background: Option<u128>,
-  window: Option<(i64, i64, usize)>,
-  base_origin: i64,
+/// Where one axis of the evolution grid sits: `origin` is the grid index of
+/// offset 0 (the init's first cell) and `len` the grid's size.
+struct AxisLayout {
+  origin: i64,
+  len: usize,
+}
+
+/// A background init grows by the neighborhood's reach each step: a cell
+/// reading offset `d > 0` pulls information `d` cells toward lower indices,
+/// and one reading `d < 0` pushes it `-d` cells toward higher ones. The
+/// grid holds exactly the cells that could differ from the background by
+/// step `t_max`; every cell outside it equals the (evolving) background.
+/// A cyclic init keeps its size.
+fn axis_layout(
+  background: bool,
   init_len: usize,
-) -> usize {
-  match (background, window) {
-    (Some(_), Some((from, to, _))) => {
-      let far_edge = base_origin + init_len as i64 - 1 + base_origin;
-      let need_near = (base_origin - from).max(0) - base_origin;
-      let need_far = to - far_edge;
-      need_near.max(need_far).max(0) as usize
-    }
-    _ => 0,
+  offsets: impl Iterator<Item = i64> + Clone,
+  t_max: usize,
+) -> Option<AxisLayout> {
+  if !background {
+    return Some(AxisLayout {
+      origin: 0,
+      len: init_len,
+    });
   }
+  let t_max = i64::try_from(t_max).ok()?;
+  let hi = offsets.clone().max().unwrap_or(0).max(0);
+  let lo = offsets.min().unwrap_or(0).min(0);
+  let before = hi.checked_mul(t_max)?;
+  let after = (-lo).checked_mul(t_max)?;
+  let len = usize::try_from(before.checked_add(after)?)
+    .ok()?
+    .checked_add(init_len)?;
+  Some(AxisLayout {
+    origin: before,
+    len,
+  })
 }
 
 /// Evolve `init` under `rule`, returning the states at the requested `times`
-/// (which must be ascending). Background inits grow by the rule's range per
-/// step and are jointly trimmed afterwards; cyclic inits keep their size.
-/// `window` names the 1D cells (or, for a 2D rule, the columns) to keep;
-/// `row_window` names the rows to keep for a 2D rule. `None` means every
-/// cell that could be affected (automatic trimming for a background init,
-/// the whole grid for a cyclic one).
+/// (which must be ascending). `cols` windows the 1D cells (or, for a 2D
+/// rule, the columns) and `rows` the rows of a 2D rule.
 fn evolve(
   rule: &RuleSpec,
   init: &[Vec<u128>],
   background: Option<u128>,
   times: &[usize],
-  window: Option<(i64, i64, usize)>,
-  row_window: Option<(i64, i64, usize)>,
+  cols: Window,
+  rows: Window,
 ) -> Option<Vec<Vec<Vec<u128>>>> {
-  let r1 = (rule.weights.len() - 1) / 2;
-  let r2 = (rule.weights[0].len() - 1) / 2;
   let t_max = *times.last()?;
+  let row_axis = axis_layout(
+    background.is_some(),
+    init.len(),
+    rule.neighbors.iter().map(|n| n.0),
+    t_max,
+  )?;
+  let col_axis = axis_layout(
+    background.is_some(),
+    init[0].len(),
+    rule.neighbors.iter().map(|n| n.1),
+    t_max,
+  )?;
+  let (height, width) = (row_axis.len, col_axis.len);
 
-  // Offset 0 sits at row/column `r * t_max` of a background grid (the init
-  // is centered there) or at row/column 0 of a cyclic one.
-  let base_row_origin = match background {
-    Some(_) => (r1.checked_mul(t_max)?) as i64,
-    None => 0,
-  };
-  let base_col_origin = match background {
-    Some(_) => (r2.checked_mul(t_max)?) as i64,
-    None => 0,
-  };
-  let row_margin =
-    axis_margin(background, row_window, base_row_origin, init.len());
-  let col_margin =
-    axis_margin(background, window, base_col_origin, init[0].len());
-  let row_origin = base_row_origin + row_margin as i64;
-  let col_origin = base_col_origin + col_margin as i64;
-
-  let (height, width) = match background {
-    Some(_) => (
-      init
-        .len()
-        .checked_add((2 * r1).checked_mul(t_max)?)?
-        .checked_add(2usize.checked_mul(row_margin)?)?,
-      init[0]
-        .len()
-        .checked_add((2 * r2).checked_mul(t_max)?)?
-        .checked_add(2usize.checked_mul(col_margin)?)?,
-    ),
-    None => (init.len(), init[0].len()),
-  };
   // Refuse absurd evolutions instead of hanging (grids beyond any plotting
   // use). The work bound covers cells x steps x neighborhood size; the
   // result bound covers the memory held by the returned states.
-  let nbhd = rule.weights.len() * rule.weights[0].len();
   let cells = height.checked_mul(width)?;
-  let work = cells.checked_mul(t_max.max(1))?.checked_mul(nbhd)?;
+  let work = cells
+    .checked_mul(t_max.max(1))?
+    .checked_mul(rule.neighbors.len())?;
   let result_cells = cells.checked_mul(times.len())?;
   if cells > 4_000_000 || work > 1_000_000_000 || result_cells > 64_000_000 {
     return None;
   }
 
-  // Place the init centered on a background-filled grid (background inits)
-  // or use it verbatim (cyclic inits).
+  // Place the init on a background-filled grid (background inits) or use
+  // it verbatim (cyclic inits).
   let mut grid = match background {
     Some(bg) => {
       let mut grid = vec![vec![bg; width]; height];
       for (i, row) in init.iter().enumerate() {
         for (j, &cell) in row.iter().enumerate() {
-          grid[row_origin as usize + i][col_origin as usize + j] = cell;
+          grid[row_axis.origin as usize + i][col_axis.origin as usize + j] =
+            cell;
         }
       }
       grid
@@ -649,10 +856,9 @@ fn evolve(
   // all-background neighborhood.
   let mut bg = background.unwrap_or(0);
   let weight_total: u128 = rule
-    .weights
+    .neighbors
     .iter()
-    .flatten()
-    .fold(0u128, |acc, &w| acc.saturating_add(w));
+    .fold(0u128, |acc, &(_, _, w)| acc.saturating_add(w));
 
   let mut snapshots: Vec<(Vec<Vec<u128>>, u128)> = Vec::new();
   let mut next_time = 0;
@@ -669,23 +875,20 @@ fn evolve(
     for (x, next_row) in next.iter_mut().enumerate() {
       for (y, next_cell) in next_row.iter_mut().enumerate() {
         let mut s: u128 = 0;
-        for (i, wrow) in rule.weights.iter().enumerate() {
-          for (j, &w) in wrow.iter().enumerate() {
-            let dx = x as i64 + i as i64 - r1 as i64;
-            let dy = y as i64 + j as i64 - r2 as i64;
-            let value = if background.is_some() {
-              if dx < 0 || dy < 0 || dx >= height as i64 || dy >= width as i64 {
-                bg
-              } else {
-                grid[dx as usize][dy as usize]
-              }
+        for &(dr, dc, w) in &rule.neighbors {
+          let r = x as i64 + dr;
+          let c = y as i64 + dc;
+          let value = if background.is_some() {
+            if r < 0 || c < 0 || r >= height as i64 || c >= width as i64 {
+              bg
             } else {
-              let dx = dx.rem_euclid(height as i64) as usize;
-              let dy = dy.rem_euclid(width as i64) as usize;
-              grid[dx][dy]
-            };
-            s = s.saturating_add(w.saturating_mul(value));
-          }
+              grid[r as usize][c as usize]
+            }
+          } else {
+            grid[r.rem_euclid(height as i64) as usize]
+              [c.rem_euclid(width as i64) as usize]
+          };
+          s = s.saturating_add(w.saturating_mul(value));
         }
         *next_cell = rule_digit(rule.n, rule.k, s);
       }
@@ -694,11 +897,12 @@ fn evolve(
     bg = rule_digit(rule.n, rule.k, bg.saturating_mul(weight_total));
   }
 
-  // Each axis independently keeps either its explicit window (wrapping
-  // around for a cyclic init, reading the evolving background outside a
-  // background grid) or, with no window named, every row/column that
-  // could hold a non-background cell (a cyclic init keeps its full size,
-  // since it has no background to trim against).
+  // Each axis independently keeps its explicit window (wrapping around for
+  // a cyclic init, reading the evolving background outside a background
+  // grid), the whole grid for `All`, or, with no window named, every
+  // row/column that holds a non-background cell at a returned step (a
+  // cyclic init keeps its full size, since it has no background to trim
+  // against).
   let row_active = |r: usize| {
     snapshots
       .iter()
@@ -709,53 +913,47 @@ fn evolve(
       .iter()
       .any(|(g, bg)| g.iter().any(|row| row[c] != *bg))
   };
-  let auto_axis = |len: usize, active: &dyn Fn(usize) -> bool| -> Vec<i64> {
-    match background {
-      Some(_) => {
-        let top = (0..len).find(|&i| active(i)).unwrap_or(0);
-        let bottom = (0..len).rfind(|&i| active(i)).unwrap_or(0);
-        (top..=bottom).map(|i| i as i64).collect()
-      }
-      None => (0..len).map(|i| i as i64).collect(),
-    }
-  };
 
   // Bound the output size arithmetically before collecting either index
   // list: an explicit window's length isn't capped by `height`/`width`
   // (those stay at the small cyclic-init size regardless of window size),
   // so collecting first could allocate gigabytes before this check ever
   // ran.
-  let axis_len =
-    |window: Option<(i64, i64, usize)>, auto_len: usize| -> Option<usize> {
-      match window {
-        Some((from, to, step)) => {
-          let span = usize::try_from(to.checked_sub(from)?).ok()?;
-          span.checked_div(step)?.checked_add(1)
-        }
-        None => Some(auto_len),
+  let axis_len = |window: Window, grid_len: usize| -> Option<usize> {
+    match window {
+      Window::Range(from, to, step) => {
+        let span = usize::try_from(to.checked_sub(from)?).ok()?;
+        span.checked_div(step)?.checked_add(1)
       }
-    };
-  let windowed_cells = axis_len(row_window, height)?
-    .checked_mul(axis_len(window, width)?)?
+      Window::All | Window::Auto => Some(grid_len),
+    }
+  };
+  let windowed_cells = axis_len(rows, height)?
+    .checked_mul(axis_len(cols, width)?)?
     .checked_mul(times.len())?;
   if windowed_cells > 64_000_000 {
     return None;
   }
 
-  let row_indices: Vec<i64> = match row_window {
-    Some((from, to, step)) => (from..=to)
-      .step_by(step)
-      .map(|off| row_origin + off)
-      .collect(),
-    None => auto_axis(height, &row_active),
+  let indices = |window: Window,
+                 axis: &AxisLayout,
+                 active: &dyn Fn(usize) -> bool|
+   -> Vec<i64> {
+    match window {
+      Window::Range(from, to, step) => (from..=to)
+        .step_by(step)
+        .map(|off| axis.origin + off)
+        .collect(),
+      Window::Auto if background.is_some() => {
+        let first = (0..axis.len).find(|&i| active(i)).unwrap_or(0);
+        let last = (0..axis.len).rfind(|&i| active(i)).unwrap_or(0);
+        (first..=last).map(|i| i as i64).collect()
+      }
+      Window::Auto | Window::All => (0..axis.len as i64).collect(),
+    }
   };
-  let col_indices: Vec<i64> = match window {
-    Some((from, to, step)) => (from..=to)
-      .step_by(step)
-      .map(|off| col_origin + off)
-      .collect(),
-    None => auto_axis(width, &col_active),
-  };
+  let row_indices = indices(rows, &row_axis, &row_active);
+  let col_indices = indices(cols, &col_axis, &col_active);
 
   Some(
     snapshots
