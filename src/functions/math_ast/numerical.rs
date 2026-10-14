@@ -984,8 +984,8 @@ pub(crate) fn bigfloat_to_f64_approx(
   for &w in words[split..].iter().rev() {
     // `w` is already a u64 on 64-bit targets but a u32 on wasm32.
     #[allow(clippy::unnecessary_cast)]
-    let w = w as u64;
-    top = (top << (usize::BITS % 64)) | w;
+    let word = w as u64;
+    top = (top << (usize::BITS % 64)) | word;
   }
   top <<= 64 - used as u32 * usize::BITS;
   let sticky = u64::from(words[..split].iter().any(|&w| w != 0));
