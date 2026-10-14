@@ -13951,6 +13951,21 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         "AbsoluteThickness",
         Expr::Real(sd.thickness.unwrap_or(1.5)),
       ));
+      if let Some(dashes) = &sd.dashing {
+        // Relative lengths become pixels of this plot's image, so the dashes
+        // keep their size whatever picture `Show` draws them into.
+        let px: Vec<Expr> = dashes
+          .iter()
+          .map(|d| {
+            Expr::Real(if *d < 0.0 {
+              -*d
+            } else {
+              *d * ps.image_size.0 as f64
+            })
+          })
+          .collect();
+        series_prims.push(call1("AbsoluteDashing", Expr::List(px.into())));
+      }
       let segments = crate::functions::plot::split_into_segments(&sd.points);
       for seg in &segments {
         // The plot's own (outlier-trimmed) y range clips the curve, as it
