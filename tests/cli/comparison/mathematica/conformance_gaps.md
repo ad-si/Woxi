@@ -2604,6 +2604,25 @@ explicit cell window against it; Woxi checks the window's length
 arithmetically and declines rather than collecting a billion indices. The
 tspec grammar and every window that fits in memory agree with WL exactly.
 
+### `CellularAutomaton` rejects half-integer ranges and a fourth argument
+
+```sh
+woxi eval 'CellularAutomaton[{43690, 2, 3/2}, {1, 0, 0, 1, 1, 0, 1, 0}, 3]'
+# CellularAutomaton::nspecnl: Rule specification {43690, 2, 3/2} should be …
+woxi eval 'CellularAutomaton[{43690, 2, 1}, {1, 0, 0, 1, 1, 0, 1, 0}, 3, {All, All}]'
+# CellularAutomaton::argb: CellularAutomaton called with 4 arguments; …
+```
+
+WL accepts a rational range such as `3/2` (a neighborhood of `2r + 1` cells
+that is not centred on the cell) and the legacy four-argument form
+`CellularAutomaton[rule, init, t, {All, All}]`. Woxi supports neither, so
+Wolfram Demonstrations built on reversible two-color rules (for example
+"Reversible Two-Color Cellular Automaton Rules", whose `Manipulate` calls
+`CellularAutomaton[{rule, 2, 3/2}, init, n, {All, All}]`) cannot be rendered
+in Woxi Studio. The exact offset convention of half-integer ranges and the
+meaning of the fourth argument still have to be checked against
+`wolframscript` before implementing them.
+
 ### `DownValues` drops a `/;` guard on a compound left-hand side
 
 `f[x_] := x^2 /; x > 0` round-trips, but
