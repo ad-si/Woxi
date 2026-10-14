@@ -2806,7 +2806,13 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
           if let Ok(code) = u32::from_str_radix(&hex, 16)
             && let Some(ch) = char::from_u32(code)
           {
-            result.push(ch);
+            // `\.00` (character 0) is an invisible spacer some authors
+            // leave after a number (`RowBox[{"1", "\.00"}]`). A raw NUL is
+            // not valid in Wolfram source, so it must vanish rather than
+            // break the cell's code.
+            if code != 0 {
+              result.push(ch);
+            }
           } else {
             result.push('\\');
             result.push('.');
@@ -5391,6 +5397,9 @@ Cell["Chapter 2", "Chapter"]
     // `\.HH` is Wolfram's 2-hex-digit Latin-1 escape, e.g. in a
     // Demonstration author's name written as `M\.aa` for "Mª".
     assert_eq!(unescape_string("M\\.aa"), "M\u{AA}");
+    // `\.00` is character 0, an invisible spacer: it must not leave a NUL
+    // byte behind in the cell's code.
+    assert_eq!(unescape_string("1\\.00"), "1");
     assert_eq!(unescape_code_string("caf\\.e9"), "caf\u{E9}");
     // An incomplete/invalid escape is left untouched rather than eating
     // following characters.

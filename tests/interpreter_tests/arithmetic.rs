@@ -12513,3 +12513,32 @@ mod sum_non_integer_step {
     );
   }
 }
+
+mod plus_machine_complex {
+  use super::*;
+
+  #[test]
+  fn sums_machine_complex_numbers() {
+    assert_eq!(
+      interpret("(0.5 + 0.25 I) + (0.25 - 0.75 I)").unwrap(),
+      "0.75 - 0.5*I"
+    );
+  }
+
+  #[test]
+  fn complex_square_plus_constant_iteration() {
+    // Escape-time iteration of z^2 + c, as used for Mandelbrot sets.
+    assert_eq!(
+      interpret("Length@NestWhileList[#^2 + 1. &, 0, Abs[#] < 2 &, 1, 100]")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "Length@NestWhileList[#^2 + (0.25 + 0.5 I) &, 0, Abs[#] < 2 &, 1, 30]"
+      )
+      .unwrap(),
+      "31"
+    );
+  }
+}

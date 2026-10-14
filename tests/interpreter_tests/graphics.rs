@@ -1158,6 +1158,25 @@ mod graphics {
       ));
     }
 
+    /// `Thickness -> t` in a primitive list styles like `Thickness[t]`
+    /// (and likewise for the other size/opacity directives).
+    #[test]
+    fn option_rule_acts_as_directive() {
+      for (rule, directive) in [
+        ("Thickness -> 0.03", "Thickness[0.03]"),
+        ("AbsoluteThickness -> 3", "AbsoluteThickness[3]"),
+        ("Opacity -> 0.4", "Opacity[0.4]"),
+      ] {
+        assert_eq!(
+          export_svg(&format!("Graphics[{{{rule}, Circle[{{0, 0}}, 1]}}]")),
+          export_svg(&format!(
+            "Graphics[{{{directive}, Circle[{{0, 0}}, 1]}}]"
+          )),
+          "{rule}"
+        );
+      }
+    }
+
     #[test]
     fn dashing() {
       insta::assert_snapshot!(export_svg(
@@ -4786,6 +4805,23 @@ mod plot3d {
         svg.contains("<tspan") && svg.contains(">1 2</tspan>"),
         "Graphics3D SVG missing stacked second PlotLabel line:\n{svg}"
       );
+    }
+
+    #[test]
+    fn plot_label_inline_swatch_graphic_is_a_coloured_dot() {
+      for color in ["Red", "Blue"] {
+        let svg = export_svg(&format!(
+          "Graphics3D[Sphere[], PlotLabel -> Row[{{Graphics[{{{color}, Disk[]}}, ImageSize -> 10], \" x\"}}]]"
+        ));
+        assert!(
+          !svg.contains("Graphics[") && !svg.contains("Disk["),
+          "inline swatch must not leak as source text:\n{svg}"
+        );
+        assert!(
+          svg.contains("\u{25CF}</tspan> x"),
+          "inline swatch should typeset as a dot:\n{svg}"
+        );
+      }
     }
 
     // The "Latitude and Longitude of a Point on a Sphere" Demonstration
@@ -34595,4 +34631,24 @@ fn manipulate_display_style_dynamic_keeps_grid_layout() {
   // Plain styled text still renders as styled text.
   let text = build_manipulate_display("Style[\"hi\", Bold]", &bindings);
   assert!(matches!(text, DisplayNode::Text { .. }));
+}
+
+#[test]
+fn graphics3d_text_with_box_syntax_label_is_offset_by_its_visible_width() {
+  // A label written as linear-syntax boxes (`\!\(\*SubscriptBox[…]\)`) is
+  // mostly markup in its source string. Its alignment offset must scale
+  // with the characters actually drawn, so the label stays next to its
+  // anchor point instead of being thrown far away from it.
+  fn label_x(offset: &str) -> f64 {
+    let svg = interpret(&format!(
+      "ExportString[Graphics3D[{{Line[{{{{0,0,0}},{{0,0,1}}}}], \
+       Text[Text[\"\\!\\(\\*SubscriptBox[OverscriptBox[\\(B\\), \
+       \\(⇀\\)], \\(0\\)]\\)\"], {{0,0,1}}, {offset}]}}], \"SVG\"]"
+    ))
+    .unwrap();
+    let start = svg.find("<text x=\"").unwrap() + "<text x=\"".len();
+    svg[start..].split('"').next().unwrap().parse().unwrap()
+  }
+  let shift = (label_x("{1,-1}") - label_x("{0,0}")).abs();
+  assert!(shift < 30.0, "label shifted {shift}px away from its anchor");
 }

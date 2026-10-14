@@ -1863,6 +1863,27 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         Some(vec![0.0, -SMALL_DASH_PX, -SMALL_DASH_PX, -SMALL_DASH_PX]);
       true
     }
+    // A style given as an option rule inside a primitive list
+    // (`{Thickness -> 0.02, Circle[]}`) acts like the directive of the same
+    // name (`Thickness[0.02]`), so delegate to the single directive parser.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k)
+      if matches!(k.as_str(), "Thickness" | "AbsoluteThickness"
+        | "PointSize" | "AbsolutePointSize" | "Opacity")) =>
+    {
+      let Expr::Identifier(k) = pattern.as_ref() else {
+        return false;
+      };
+      apply_directive(
+        &Expr::FunctionCall {
+          name: k.clone(),
+          args: vec![replacement.as_ref().clone()].into(),
+        },
+        style,
+      )
+    }
     // A directive list nested one level down (`Directive[{Thick, Blue}]`,
     // `Style[expr, {Thick, Blue}]`) is equivalent to its items given
     // directly — recurse instead of falling through unrecognised, or the
@@ -2571,6 +2592,10 @@ fn collect_primitives(
       // Try as named color directive
       apply_directive(expr, &mut *style);
       let _ = name;
+    }
+    // `Thickness -> t` and friends in a primitive list act as directives.
+    Expr::Rule { .. } => {
+      apply_directive(expr, &mut *style);
     }
     _ => {}
   }
@@ -3754,8 +3779,11 @@ fn graphics_text_content(expr: &Expr) -> String {
     // is the flattened traditional-notation box tree — the same thing
     // `expr_to_svg_markup` draws — rather than `expr`'s InputForm. Keeping
     // the two in step is what makes the measured width match the drawing.
+    // (A string is its own text in any form, so it skips this.)
     Expr::FunctionCall { name, args }
-      if name == "TraditionalForm" && args.len() == 1 =>
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && !matches!(args[0], Expr::String(_)) =>
     {
       box_expr_to_plain(
         &crate::evaluator::dispatch::complex_and_special::
@@ -11228,6 +11256,53 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
     .collect()
 }
 
+/// The glyph a tiny inline graphic stands for in a text label: a filled
+/// dot for a `Disk`/`Point`, a ring for a `Circle`, coloured by the last
+/// colour directive before it. `None` for any graphic that holds other
+/// primitives, which have no text equivalent.
+fn inline_graphic_glyph(args: &[Expr]) -> Option<String> {
+  fn walk(
+    e: &Expr,
+    color: &mut Option<Color>,
+    glyph: &mut Option<(char, Option<Color>)>,
+  ) -> bool {
+    match e {
+      Expr::List(items) => items.iter().all(|i| walk(i, color, glyph)),
+      Expr::FunctionCall { name, .. }
+        if matches!(name.as_str(), "Disk" | "Point" | "Circle") =>
+      {
+        if glyph.is_some() {
+          return false;
+        }
+        let ch = if name == "Circle" {
+          '\u{25CB}'
+        } else {
+          '\u{25CF}'
+        };
+        *glyph = Some((ch, *color));
+        true
+      }
+      other => match parse_color(other) {
+        Some(c) => {
+          *color = Some(c);
+          true
+        }
+        None => false,
+      },
+    }
+  }
+  let mut color = None;
+  let mut glyph = None;
+  if !walk(args.first()?, &mut color, &mut glyph) {
+    return None;
+  }
+  let (ch, c) = glyph?;
+  Some(match c {
+    Some(c) => format!("<tspan fill=\"{}\">{ch}</tspan>", c.to_svg_rgb()),
+    None => ch.to_string(),
+  })
+}
+
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
   // `StringForm["template", args…]` substitutes its placeholders wherever
   // it is *typeset* — a graphic's label is exactly that (unlike
@@ -11818,6 +11893,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           }
         }
 
+        // A small inline `Graphics[{color, Disk[]}]` (a legend swatch in
+        // a label) can't nest an `<svg>` inside `<text>`, so it is typeset
+        // as the glyph it draws, in the colour it is drawn with.
+        "Graphics" if inline_graphic_glyph(args).is_some() => {
+          inline_graphic_glyph(args).unwrap_or_default()
+        }
+
         // HoldForm[expr] → render content
         "HoldForm" if args.len() == 1 => expr_to_svg_markup(&args[0]),
 
@@ -11829,16 +11911,22 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // notation, so typeset the expression instead of printing its
         // InputForm: `Sum[…, {n, 0, ∞}]` becomes a ∑ with limits and
         // `LegendreP[n, x]` becomes `Pₙ(x)`.
-        "TraditionalForm" if args.len() == 1 => boxes_to_svg(
-          &crate::evaluator::dispatch::complex_and_special::
-            expr_to_box_form_traditional(&args[0]),
-        ),
+        "TraditionalForm"
+          if args.len() == 1 && !matches!(args[0], Expr::String(_)) =>
+        {
+          boxes_to_svg(
+            &crate::evaluator::dispatch::complex_and_special::
+              expr_to_box_form_traditional(&args[0]),
+          )
+        }
 
         // Presentation wrappers display their content only.
         "RawBoxes" | "DisplayForm" if is_box_display_wrapper(name, args) => {
           boxes_to_svg(&args[0])
         }
-        "Text" | "DisplayForm" | "StandardForm" if args.len() == 1 => {
+        "Text" | "DisplayForm" | "StandardForm" | "TraditionalForm"
+          if args.len() == 1 =>
+        {
           expr_to_svg_markup(&args[0])
         }
 
@@ -12301,6 +12389,7 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       "Style" | "StyleForm" if !args.is_empty() => {
         estimate_display_width(&args[0])
       }
+      "Graphics" if inline_graphic_glyph(args).is_some() => 1.0,
       // HoldForm[expr] → width of content
       "HoldForm" if args.len() == 1 => estimate_display_width(&args[0]),
       // OverBar/UnderBar draw their accent as a zero-width line over the
@@ -19294,7 +19383,12 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
     let inner = args[0].clone();
     current = inner;
   }
+  // A string is drawn as its text in any form — `TraditionalForm["a = 1"]`
+  // has no quotes around it — and one carrying `\!\(\*…\)` box notation
+  // typesets from there, so it is never handed to the traditional box
+  // builder (which would print it quoted, box source and all).
   if traditional
+    && !matches!(&current, Expr::String(_))
     && !crate::evaluator::lays_out_a_graphic(&current)
     && !matches!(&current, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Grid" | "Column" | "Row" | "Framed"))
@@ -19506,7 +19600,9 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // `=` for `Equal`, `≤` for `LessEqual`, `sin(x)` for `Sin[x]`,
       // stacked fractions — by the same box pipeline the top-level
       // display uses.
-      "TraditionalForm" if args.len() == 1 => {
+      "TraditionalForm"
+        if args.len() == 1 && !matches!(args[0], Expr::String(_)) =>
+      {
         return form_box_svg(&args[0]);
       }
       // A styled layout keeps its layout, and its style: `Style[Row[{…}],
