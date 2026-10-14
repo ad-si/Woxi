@@ -16705,14 +16705,13 @@ fn grid_svg_styled_internal(
           let lh = markup_line_height(&markup, fs);
           let lines = split_markup_lines(&markup);
           let top = cy - (lines.len() as f64 - 1.0) / 2.0 * lh;
-          let body: String = lines
-            .iter()
-            .enumerate()
-            .map(|(k, line)| {
-              let dy = if k == 0 { 0.0 } else { lh };
-              format!("<tspan x=\"{cx:.1}\" dy=\"{dy:.1}\">{line}</tspan>")
-            })
-            .collect();
+          let mut body = String::new();
+          for (k, line) in lines.iter().enumerate() {
+            let dy = if k == 0 { 0.0 } else { lh };
+            body.push_str(&format!(
+              "<tspan x=\"{cx:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
+            ));
+          }
           (top, body)
         } else {
           (cy, markup)
