@@ -8372,10 +8372,15 @@ pub fn evaluate_interpolating_function(
   let (x_first, _) = extract_point(&data_points[0])?;
   let (x_last, _) = extract_point(&data_points[n - 1])?;
 
+  // Binary search for the interval containing x; a point outside the data
+  // range picks up the nearest interval and extrapolates along it.
+  let idx = find_interval(data_points, x_val.max(x_first).min(x_last), n)?;
+
   // Check for exact grid point match — return the stored y-value directly
   // to preserve original types (e.g. Integer for ListInterpolation with integer data).
+  // The data is sorted, so only the two ends of the located interval can match.
   if derivative_order == 0 {
-    for pt in data_points {
+    for pt in &data_points[idx..=(idx + 1).min(n - 1)] {
       if let Expr::List(pair) = pt
         && pair.len() == 2
         && let Ok(xp) = interp_value_to_f64(&pair[0])
@@ -8386,9 +8391,6 @@ pub fn evaluate_interpolating_function(
     }
   }
 
-  // Binary search for the interval containing x; a point outside the data
-  // range picks up the nearest interval and extrapolates along it.
-  let idx = find_interval(data_points, x_val.max(x_first).min(x_last), n)?;
   let eff_order = if order == 1 || n <= 2 {
     1
   } else {
