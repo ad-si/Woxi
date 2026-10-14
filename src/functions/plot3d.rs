@@ -4095,6 +4095,33 @@ fn collect_3d_primitives(
             style: style.clone(),
           });
         }
+        // Solids given by their corners (`Hexahedron`, `Tetrahedron`,
+        // `Prism`, `Pyramid`) or corners plus faces (`Polyhedron`) are
+        // drawn as one filled polygon per face.
+        "Hexahedron" | "Tetrahedron" | "Prism" | "Pyramid" | "Polyhedron"
+          if crate::functions::geometric_test_ast::polyhedron_faces(expr)
+            .is_some() =>
+        {
+          if let Some((points, faces)) =
+            crate::functions::geometric_test_ast::polyhedron_faces(expr)
+          {
+            for face in faces {
+              let points = face
+                .iter()
+                .map(|&i| Point3D {
+                  x: points[i][0],
+                  y: points[i][1],
+                  z: points[i][2],
+                })
+                .collect();
+              prims.push(Primitive3D::Polygon3D {
+                points,
+                holes: Vec::new(),
+                style: style.clone(),
+              });
+            }
+          }
+        }
         "Polygon" if !args.is_empty() => {
           if let Some(pts) = parse_point3d_list(&args[0]) {
             prims.push(Primitive3D::Polygon3D {
