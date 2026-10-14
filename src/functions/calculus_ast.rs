@@ -11060,6 +11060,71 @@ fn try_piecewise_definite_integral(
       };
       (pieces, args.get(1).cloned().unwrap_or(Expr::Integer(0)))
     }
+    // `f(x) * Piecewise[{{v, c}}, 0]` is `Piecewise[{{f(x) v, c}}, 0]`: a
+    // zero default stays zero under multiplication, so pull the factor in.
+    Expr::BinaryOp { .. } | Expr::FunctionCall { .. } => {
+      let factors = flatten_times_factors(integrand);
+      let zero_pw_pieces = |f: &Expr| -> Option<crate::ExprList> {
+        let Expr::FunctionCall { name, args } = f else {
+          return None;
+        };
+        let zero_default = match args.get(1) {
+          None => true,
+          Some(Expr::Integer(0)) => true,
+          Some(Expr::Real(z)) => *z == 0.0,
+          _ => false,
+        };
+        match args.first() {
+          Some(Expr::List(pieces)) if name == "Piecewise" && zero_default => {
+            Some(pieces.clone())
+          }
+          _ => None,
+        }
+      };
+      let pw_positions: Vec<usize> = factors
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| zero_pw_pieces(f).is_some())
+        .map(|(i, _)| i)
+        .collect();
+      if factors.len() < 2 || pw_positions.len() != 1 {
+        return None;
+      }
+      let k = pw_positions[0];
+      let pieces = zero_pw_pieces(&factors[k])?;
+      let others: Vec<Expr> = factors
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != k)
+        .map(|(_, f)| f.clone())
+        .collect();
+      let mut scaled = Vec::with_capacity(pieces.len());
+      for piece in &pieces {
+        let Expr::List(p) = piece else {
+          return None;
+        };
+        if p.len() != 2 {
+          return None;
+        }
+        let mut fs = others.clone();
+        fs.push(p[0].clone());
+        scaled.push(Expr::List(
+          vec![
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: fs.into(),
+            },
+            p[1].clone(),
+          ]
+          .into(),
+        ));
+      }
+      let pw = Expr::FunctionCall {
+        name: "Piecewise".to_string(),
+        args: vec![Expr::List(scaled.into()), Expr::Integer(0)].into(),
+      };
+      return try_piecewise_definite_integral(&pw, var, lo, hi);
+    }
     _ => return None,
   };
   // Only the zero-default case is handled; a non-zero default would need the
@@ -11079,34 +11144,74 @@ fn try_piecewise_definite_integral(
       Expr::List(p) if p.len() == 2 => (&p[0], &p[1]),
       _ => return None,
     };
-    let (cond_lo, cond_hi) = piecewise_condition_bounds(cond, var)?;
-    // Clip the condition's interval to the integration bounds.
-    let eff_lo =
-      tighter_definite_bound(lo, cond_lo.as_ref(), true, &bound_f64)?;
-    let eff_hi =
-      tighter_definite_bound(hi, cond_hi.as_ref(), false, &bound_f64)?;
-    let (elf, ehf) = (bound_f64(&eff_lo)?, bound_f64(&eff_hi)?);
-    if elf >= ehf {
-      continue; // empty sub-interval contributes nothing
+    // A disjunction of intervals (`a <= x <= b || c <= x <= d`) integrates
+    // the value over each of its disjoint intervals in turn.
+    for (cond_lo, cond_hi) in piecewise_condition_intervals(cond, var)? {
+      // Clip the condition's interval to the integration bounds.
+      let eff_lo =
+        tighter_definite_bound(lo, cond_lo.as_ref(), true, &bound_f64)?;
+      let eff_hi =
+        tighter_definite_bound(hi, cond_hi.as_ref(), false, &bound_f64)?;
+      let (elf, ehf) = (bound_f64(&eff_lo)?, bound_f64(&eff_hi)?);
+      if elf >= ehf {
+        continue; // empty sub-interval contributes nothing
+      }
+      let sub = integrate_ast(&[
+        val.clone(),
+        Expr::List(
+          vec![Expr::Identifier(var.to_string()), eff_lo, eff_hi].into(),
+        ),
+      ])
+      .ok()?;
+      // If the piece could not be integrated, bail to the generic path.
+      if expr_mentions_head(&sub, "Integrate") {
+        return None;
+      }
+      terms.push(sub);
     }
-    let sub = integrate_ast(&[
-      val.clone(),
-      Expr::List(
-        vec![Expr::Identifier(var.to_string()), eff_lo, eff_hi].into(),
-      ),
-    ])
-    .ok()?;
-    // If the piece could not be integrated, bail to the generic path.
-    if expr_mentions_head(&sub, "Integrate") {
-      return None;
-    }
-    terms.push(sub);
   }
   if terms.is_empty() {
     return Some(Expr::Integer(0));
   }
   let sum = plus(terms);
   Some(crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum))
+}
+
+/// Resolve a Piecewise condition into a list of disjoint intervals for `var`.
+/// An `Or` of interval conditions yields one interval per alternative; it
+/// gives up (`None`) when the alternatives overlap, since summing them would
+/// double count. Any other condition is a single interval.
+fn piecewise_condition_intervals(
+  cond: &Expr,
+  var: &str,
+) -> Option<Vec<(Option<Expr>, Option<Expr>)>> {
+  let alternatives: Vec<&Expr> = match cond {
+    Expr::FunctionCall { name, args } if name == "Or" => args.iter().collect(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      left,
+      right,
+    } => vec![left.as_ref(), right.as_ref()],
+    _ => return Some(vec![piecewise_condition_bounds(cond, var)?]),
+  };
+  let mut intervals = Vec::new();
+  for alt in alternatives {
+    intervals.extend(piecewise_condition_intervals(alt, var)?);
+  }
+  let f = |e: &Option<Expr>, default: f64| match e {
+    None => Some(default),
+    Some(e) => crate::functions::math_ast::try_eval_to_f64_with_infinity(e),
+  };
+  let mut keyed = Vec::with_capacity(intervals.len());
+  for iv in &intervals {
+    keyed.push((f(&iv.0, f64::NEG_INFINITY)?, f(&iv.1, f64::INFINITY)?));
+  }
+  let mut order: Vec<usize> = (0..keyed.len()).collect();
+  order.sort_by(|&a, &b| keyed[a].0.total_cmp(&keyed[b].0));
+  if order.windows(2).any(|w| keyed[w[0]].1 > keyed[w[1]].0) {
+    return None;
+  }
+  Some(order.into_iter().map(|i| intervals[i].clone()).collect())
 }
 
 /// Resolve a Piecewise condition into an interval `(lower, upper)` for `var`,

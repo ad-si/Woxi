@@ -987,7 +987,7 @@ CoefficientArrays,Returns sparse arrays of polynomial coefficients indexed by to
 SubscriptBox,Represents a subscript box for typesetting,✅,pure,3.0,964
 ArrayReshape,Reshapes a list into specified dimensions,✅,pure,9.0,965
 Key,Operator form for extracting values from associations by key,✅,none,10.0,966
-ProbabilityDistribution,Defines a custom probability distribution,✅,1,8.0,967
+ProbabilityDistribution,Defines a custom probability distribution (PDF/CDF/Quantile/Expectation; Mean/Variance via integration or summation; RandomVariate by inverse-transform sampling of the tabulated density),✅,1,8.0,967
 MeshCells,Cells of a mesh region of a given dimension as index primitives,✅,pure,10.0,968
 VertexStyle,Option for styling vertices in graphs,✅,none,8.0,969
 OverHat,Display form with a hat accent,✅,none,6.0,970

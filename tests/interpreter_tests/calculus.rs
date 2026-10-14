@@ -20288,3 +20288,29 @@ mod ndsolve_step_forcing {
     );
   }
 }
+
+mod integrate_piecewise_disjunction {
+  use super::*;
+
+  // Regression: an `Or` of interval conditions used to integrate to garbage
+  // (e.g. 7/2 instead of 3/2) because the generic antiderivative path ran.
+  #[test]
+  fn or_of_half_lines() {
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{1/2, x < 3 || x > 7}}, 0], {x, 2, 9}]")
+        .unwrap(),
+      "3/2"
+    );
+  }
+
+  #[test]
+  fn or_of_ranges_with_polynomial_factor() {
+    assert_eq!(
+      interpret(
+        "Integrate[x^2 Piecewise[{{1/2, 2 <= x <= 3 || 7 <= x <= 9}}, 0], {x, 2, 9}]"
+      )
+      .unwrap(),
+      "135/2"
+    );
+  }
+}

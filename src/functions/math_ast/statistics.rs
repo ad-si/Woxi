@@ -651,6 +651,14 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Mean expects exactly 1 argument".into(),
     ));
   }
+  // Custom distributions: moments from Integrate / Sum of the pdf.
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "ProbabilityDistribution"
+    && let Some((mean, _)) =
+      crate::functions::math_ast::distributions::probability_distribution_mean_variance(dargs)?
+  {
+    return Ok(mean);
+  }
   // A SparseArray argument is averaged over its dense form.
   if let Some(dense) =
     crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
@@ -1104,6 +1112,14 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Variance expects exactly 1 argument".into(),
     ));
+  }
+  // Custom distributions: moments from Integrate / Sum of the pdf.
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "ProbabilityDistribution"
+    && let Some((_, variance)) =
+      crate::functions::math_ast::distributions::probability_distribution_mean_variance(dargs)?
+  {
+    return Ok(variance);
   }
   // A SparseArray argument is handled via its dense form.
   if let Some(dense) =
