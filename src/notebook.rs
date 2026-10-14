@@ -2666,6 +2666,7 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     // normal fonts and would render as blank/tofu boxes; the grammar
     // accepts the readable `\[Name]` escape as the same postfix operator.
     "Transpose" => "\\[Transpose]",
+    "Conjugate" => "\\[Conjugate]",
     "ConjugateTranspose" => "\\[ConjugateTranspose]",
     "NoBreak"
     | "InvisibleSpace"
@@ -5474,6 +5475,12 @@ Cell["Chapter 2", "Chapter"]
     let s =
       r#"BoxData[RowBox[{RowBox[{"{", "a", "}"}], "\[ConjugateTranspose]"}]]"#;
     assert_eq!(extract_cell_content(s), "{a}\\[ConjugateTranspose]");
+  }
+
+  #[test]
+  fn test_extract_cell_content_conjugate_postfix_operator() {
+    let s = r#"BoxData[RowBox[{"z", "\[Conjugate]"}]]"#;
+    assert_eq!(extract_cell_content(s), "z\\[Conjugate]");
   }
 
   /// The FrontEnd also typesets `Part` as a bracketed subscript, which is

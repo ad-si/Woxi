@@ -180,7 +180,7 @@ LetterlikeSymbolChar = _{ "\u{2026}" | "\u{22EF}" | "\u{22EE}" | "\u{22F0}" | "\
 // handling in notebook.rs and the glyph list in graphics.rs.
 BigOperatorChar = _{ "\u{2211}" | "\u{220F}" }
 
-NamedCharBase = _{ !("\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Piecewise]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Intersection]" | "\\[Union]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]" | "\\[TildeTilde]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
+NamedCharBase = _{ !("\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Piecewise]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[Conjugate]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Intersection]" | "\\[Union]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]" | "\\[TildeTilde]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
 // Adjacent `\[Name]` segments (or named char + identifier chars)
 // concatenate into a single identifier — `\[CapitalGamma]\[Beta]` → `Γβ`,
 // `\[Angle]XYZ` → `∠XYZ`, `i\[Ellipsis]j` (when `i` then `\[Ellipsis]j`
@@ -498,15 +498,17 @@ FactorialSuffix = { "!!" | "!" ~ !"=" ~ !"!" }
 
 // TransposeSuffix: expr \[Transpose] → Transpose[expr]
 // Both the ASCII named-character form and the Unicode PUA glyph
-// (U+F3C5) are accepted. This is a postfix operator that binds as a
+// (U+F3C7) are accepted. This is a postfix operator that binds as a
 // suffix on the preceding Term.
-TransposeSuffix = @{ "\\[Transpose]" | "\u{F3C5}" | "\u{F3C7}" }
+TransposeSuffix = @{ "\\[Transpose]" | "\u{F3C7}" }
+// ConjugateSuffix: expr \[Conjugate] → Conjugate[expr] (U+F3C8)
+ConjugateSuffix = @{ "\\[Conjugate]" | "\u{F3C8}" }
 // ConjugateTransposeSuffix: expr \[ConjugateTranspose] → ConjugateTranspose[expr]
-ConjugateTransposeSuffix = @{ "\\[ConjugateTranspose]" | "\u{F3C6}" | "\u{F3C8}" }
+ConjugateTransposeSuffix = @{ "\\[ConjugateTranspose]" | "\u{F3C9}" }
 // TermSuffix: postfix suffix tokens that can follow a Term (after
 // FactorialSuffix). Silent choice rule — the underlying named rules
 // are the ones that appear in the parse tree.
-TermSuffix = _{ TransposeSuffix | ConjugateTransposeSuffix | PatternTestSuffix }
+TermSuffix = _{ TransposeSuffix | ConjugateSuffix | ConjugateTransposeSuffix | PatternTestSuffix }
 // One operand of an expression chain: an optional prefix operator, a Term and
 // the suffixes that bind to it. Spelled out as one alternative per prefix
 // rather than `(LeadingNot | LeadingPlus | LeadingMinus)? ~ Term ~ …` because
