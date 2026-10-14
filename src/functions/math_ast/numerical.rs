@@ -4536,6 +4536,11 @@ fn fourier_impl(
     }
   };
 
+  // Rectangular arrays of rank >= 2 are transformed along every axis.
+  if matches!(items[0], Expr::List(_)) {
+    return fourier_array_impl(func_name, args, inverse);
+  }
+
   // Extract numeric values as complex pairs
   let mut data: Vec<(f64, f64)> = Vec::with_capacity(items.len());
   for item in items {
@@ -4566,6 +4571,96 @@ fn fourier_impl(
     .collect();
 
   Ok(Expr::List(exprs.into()))
+}
+
+/// Multi-dimensional Fourier/InverseFourier of a rectangular array: the
+/// separable transform applies the 1D transform along each axis in turn.
+fn fourier_array_impl(
+  func_name: &str,
+  args: &[Expr],
+  inverse: bool,
+) -> Result<Expr, InterpreterError> {
+  let bad = || {
+    crate::emit_message(&format!(
+      "{}::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
+      func_name,
+      expr_to_string(&args[0])
+    ));
+    Ok(unevaluated(func_name, args))
+  };
+
+  // Determine the shape by descending along first elements.
+  let mut shape: Vec<usize> = Vec::new();
+  let mut cur = &args[0];
+  while let Expr::List(l) = cur {
+    if l.is_empty() {
+      return bad();
+    }
+    shape.push(l.len());
+    cur = &l[0];
+  }
+
+  // Flatten in row-major order, validating rectangularity.
+  fn flatten(e: &Expr, shape: &[usize], out: &mut Vec<(f64, f64)>) -> bool {
+    match shape {
+      [] => match try_extract_complex_float(e) {
+        Some(c) => {
+          out.push(c);
+          true
+        }
+        None => false,
+      },
+      [n, rest @ ..] => match e {
+        Expr::List(l) if l.len() == *n => {
+          l.iter().all(|x| flatten(x, rest, out))
+        }
+        _ => false,
+      },
+    }
+  }
+  let mut data: Vec<(f64, f64)> = Vec::with_capacity(shape.iter().product());
+  if !flatten(&args[0], &shape, &mut data) {
+    return bad();
+  }
+
+  let (param_a, param_b) = parse_fourier_parameters(&args[1..])?;
+
+  // Transform along each axis.
+  let total = data.len();
+  let mut stride = total;
+  for &n in &shape {
+    stride /= n;
+    let block = stride * n;
+    let mut line = vec![(0.0, 0.0); n];
+    for base in (0..total).step_by(block) {
+      for off in 0..stride {
+        for (k, slot) in line.iter_mut().enumerate() {
+          *slot = data[base + off + k * stride];
+        }
+        let t = dft_core(&line, param_a, param_b, inverse);
+        for (k, v) in t.into_iter().enumerate() {
+          data[base + off + k * stride] = v;
+        }
+      }
+    }
+  }
+
+  let any_complex = data.iter().any(|(_, im)| fourier_round(*im) != 0.0);
+
+  fn build(data: &[(f64, f64)], shape: &[usize], any_complex: bool) -> Expr {
+    match shape {
+      [] => fourier_result_to_expr(data[0].0, data[0].1, any_complex),
+      [n, rest @ ..] => {
+        let sub: usize = rest.iter().product();
+        Expr::List(
+          (0..*n)
+            .map(|i| build(&data[i * sub..(i + 1) * sub], rest, any_complex))
+            .collect(),
+        )
+      }
+    }
+  }
+  Ok(build(&data, &shape, any_complex))
 }
 
 /// Fourier[list] or Fourier[list, opts] - Discrete Fourier transform
