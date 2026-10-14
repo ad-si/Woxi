@@ -23279,3 +23279,38 @@ mod from_packed_array {
     );
   }
 }
+
+mod table_machine_real_step {
+  use super::*;
+
+  /// The iterator value is `min + k*step`, not a running sum, so a machine
+  /// real step accumulates no rounding: the last value lands exactly on the
+  /// bound (it used to drift to `20.000000000000014`, which pushed
+  /// `InterpolatingFunction` samples outside their domain).
+  #[test]
+  fn last_value_hits_bound_exactly() {
+    clear_state();
+    assert_eq!(interpret("Last[Table[t, {t, 0, 20, 0.1}]]").unwrap(), "20.");
+    assert_eq!(
+      interpret("Table[t, {t, 0, 1, 0.1}] == Range[0, 1, 0.1]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn exact_and_negative_steps_unchanged() {
+    clear_state();
+    assert_eq!(
+      interpret("Table[t, {t, 1/2, 2, 1/4}]").unwrap(),
+      "{1/2, 3/4, 1, 5/4, 3/2, 7/4, 2}"
+    );
+    assert_eq!(
+      interpret("Table[t, {t, Pi, 3 Pi, Pi/2}]").unwrap(),
+      "{Pi, (3*Pi)/2, 2*Pi, (5*Pi)/2, 3*Pi}"
+    );
+    assert_eq!(
+      interpret("Table[t, {t, 1., 0., -0.25}]").unwrap(),
+      "{1., 0.75, 0.5, 0.25, 0.}"
+    );
+  }
+}

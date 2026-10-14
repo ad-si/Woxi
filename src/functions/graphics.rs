@@ -5654,7 +5654,15 @@ fn rotate_primitive(
         background: *background,
         frame: *frame,
         scaled: *scaled,
-        direction: direction.map(|(dx, dy)| rv(dx, dy)),
+        // A label without a `direction` has its baseline along the x-axis,
+        // so a rotation tilts that baseline; a zero angle changes nothing.
+        direction: match direction {
+          Some((dx, dy)) => Some(rv(*dx, *dy)),
+          None if angle.rem_euclid(std::f64::consts::TAU) != 0.0 => {
+            Some(rv(1.0, 0.0))
+          }
+          None => None,
+        },
         glyph_map: *glyph_map,
         italic_ranges: italic_ranges.clone(),
         style: style.clone(),

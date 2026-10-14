@@ -8497,6 +8497,23 @@ mod ndsolve {
     );
   }
 
+  /// Applying a stored `InterpolatingFunction` looks the interval up by
+  /// binary search and returns grid values exactly, at both ends of the data
+  /// and in the interior (sampling a large NDSolve result used to scan and
+  /// re-evaluate every tabulated point per call).
+  #[test]
+  fn stored_interpolating_function_exact_grid_and_interior_values() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Interpolation[Table[{k, k^2}, {k, 0, 50}]]; \
+         {g[0], g[7], g[50], g[3.5], g[1/2]}"
+      )
+      .unwrap(),
+      "{0, 49, 2500, 12.25, 1/4}"
+    );
+  }
+
   /// `f'`/`f''` on machine-precision interpolation data takes a fast
   /// numeric path (Newton divided differences expanded to monomial
   /// coefficients) rather than building and simplifying a symbolic
@@ -20211,6 +20228,32 @@ mod ndsolve_step_forcing {
     assert_eq!(
       interpret("g[x_] := x/Pi {Sin[x], Cos[x]}; Derivative[1][g][t]").unwrap(),
       interpret("D[t/Pi {Sin[t], Cos[t]}, t]").unwrap()
+    );
+  }
+
+  // A zero-length domain `{t, t0, t0}` (an animation clock sitting at its
+  // start) is solved from the initial conditions instead of being left
+  // unevaluated, for scalar equations and coupled systems alike.
+  #[test]
+  fn ndsolve_zero_length_domain() {
+    assert_eq!(
+      interpret("NDSolve[{y'[t] + y[t] == 0, y[0] == 1}, y, {t, 0, 0}]")
+        .unwrap(),
+      "{{y -> InterpolatingFunction[{{0., 0.}}, <>]}}"
+    );
+    assert_eq!(
+      interpret(
+        "y[0] /. First[NDSolve[{y'[t] + y[t] == 0, y[0] == 3}, y, {t, 0, 0}]]"
+      )
+      .unwrap(),
+      "3."
+    );
+    assert_eq!(
+      interpret(
+        "{x[2], x[2]} /. First[NDSolve[{x''[t] + x[t] == 0, x[2] == 1, x'[2] == 4}, x, {t, 2, 2}]]"
+      )
+      .unwrap(),
+      "{1., 1.}"
     );
   }
 }
