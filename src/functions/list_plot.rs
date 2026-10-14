@@ -942,9 +942,9 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           if let Expr::List(items) = &val
             && items.len() >= 2
           {
-            let x = crate::functions::chart::expr_to_label(&items[0])
+            let x = crate::functions::graphics::styled_axis_label(&items[0])
               .unwrap_or_default();
-            let y = crate::functions::chart::expr_to_label(&items[1])
+            let y = crate::functions::graphics::styled_axis_label(&items[1])
               .unwrap_or_default();
             opts.axes_label = Some((x, y));
           }
