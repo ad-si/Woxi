@@ -1158,6 +1158,25 @@ mod graphics {
       ));
     }
 
+    /// `Thickness -> t` in a primitive list styles like `Thickness[t]`
+    /// (and likewise for the other size/opacity directives).
+    #[test]
+    fn option_rule_acts_as_directive() {
+      for (rule, directive) in [
+        ("Thickness -> 0.03", "Thickness[0.03]"),
+        ("AbsoluteThickness -> 3", "AbsoluteThickness[3]"),
+        ("Opacity -> 0.4", "Opacity[0.4]"),
+      ] {
+        assert_eq!(
+          export_svg(&format!("Graphics[{{{rule}, Circle[{{0, 0}}, 1]}}]")),
+          export_svg(&format!(
+            "Graphics[{{{directive}, Circle[{{0, 0}}, 1]}}]"
+          )),
+          "{rule}"
+        );
+      }
+    }
+
     #[test]
     fn dashing() {
       insta::assert_snapshot!(export_svg(
