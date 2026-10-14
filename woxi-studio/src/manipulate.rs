@@ -2976,4 +2976,41 @@ mod tests {
       "the used cell must not stay pressable"
     );
   }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a hydrogen-atom
+  /// quantum-number explorer) whose second setter row lists
+  /// `Range[0, n - 1]` for a quantum number that depends on the first row.
+  /// This is a self-authored, construct-equivalent example (a generic
+  /// pair of dependent counters, not the Demonstration's names or code).
+  ///
+  /// Coverage: a plain (non-`Dynamic`) dependent choice list is rebuilt
+  /// when the row it depends on changes.
+  #[test]
+  fn plain_range_choices_follow_the_row_they_depend_on() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[
+        If[b > a - 1, b = a - 1];
+        {a, b},
+        {{a, 1, Style[\"a\", Italic]}, Range[4], Setter},
+        {{b, 0, Style[\"b\", Italic]}, Range[0, a - 1], Setter}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let labels = |s: &ManipulateState| -> Vec<String> {
+      match s.controls.iter().find(|c| c.name() == "b") {
+        Some(ControlState::Discrete { value_labels, .. }) => {
+          value_labels.clone()
+        }
+        _ => vec![],
+      }
+    };
+    assert_eq!(labels(&state), vec!["0"]);
+    let a_idx = state.controls.iter().position(|c| c.name() == "a").unwrap();
+    assert!(state.select_discrete(a_idx, "4"));
+    state.reevaluate();
+    assert_eq!(labels(&state), vec!["0", "1", "2", "3"]);
+  }
 }

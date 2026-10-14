@@ -4457,12 +4457,33 @@ pub(crate) fn row_svg_with_rendered_items(
 /// and return `-Graphics-`. If the expression is a list containing any
 /// `Framed` elements, render the whole list as a Row-like Grid so all
 /// elements appear together in a single graphical output.
+/// Whether a top-level `Panel[Text[…], opts…]` is drawn as a box. A panel of
+/// plain content (a table, a picture) or one with a caption is left to the
+/// other renderers, which compose those.
+fn panel_of_text_is_box(args: &[syntax::Expr]) -> bool {
+  matches!(
+    args.first(),
+    Some(syntax::Expr::FunctionCall { name, .. }) if name == "Text"
+  ) && args[1..].iter().all(|a| {
+    matches!(
+      a,
+      syntax::Expr::Rule { .. } | syntax::Expr::RuleDelayed { .. }
+    )
+  })
+}
+
 fn render_framed_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     syntax::Expr::FunctionCall { name, args }
-      if name == "Framed" && !args.is_empty() =>
+      if (name == "Framed" && !args.is_empty())
+        || (name == "Panel" && panel_of_text_is_box(args)) =>
     {
-      if let Some(svg) = functions::graphics::framed_to_svg(args) {
+      let svg = if name == "Panel" {
+        functions::graphics::panel_to_svg(args)
+      } else {
+        functions::graphics::framed_to_svg(args)
+      };
+      if let Some(svg) = svg {
         graphics_result(svg)
       } else {
         expr
@@ -4511,7 +4532,11 @@ fn render_rotate_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// Check if an expression is or contains a Framed call.
 fn contains_framed(expr: &syntax::Expr) -> bool {
   match expr {
-    syntax::Expr::FunctionCall { name, .. } if name == "Framed" => true,
+    syntax::Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Framed" | "Panel") =>
+    {
+      true
+    }
     syntax::Expr::List(items) => items.iter().any(contains_framed),
     _ => false,
   }

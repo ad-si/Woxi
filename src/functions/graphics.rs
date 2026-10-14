@@ -1863,6 +1863,27 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         Some(vec![0.0, -SMALL_DASH_PX, -SMALL_DASH_PX, -SMALL_DASH_PX]);
       true
     }
+    // A style given as an option rule inside a primitive list
+    // (`{Thickness -> 0.02, Circle[]}`) acts like the directive of the same
+    // name (`Thickness[0.02]`), so delegate to the single directive parser.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k)
+      if matches!(k.as_str(), "Thickness" | "AbsoluteThickness"
+        | "PointSize" | "AbsolutePointSize" | "Opacity")) =>
+    {
+      let Expr::Identifier(k) = pattern.as_ref() else {
+        return false;
+      };
+      apply_directive(
+        &Expr::FunctionCall {
+          name: k.clone(),
+          args: vec![replacement.as_ref().clone()].into(),
+        },
+        style,
+      )
+    }
     // A directive list nested one level down (`Directive[{Thick, Blue}]`,
     // `Style[expr, {Thick, Blue}]`) is equivalent to its items given
     // directly — recurse instead of falling through unrecognised, or the
@@ -2571,6 +2592,10 @@ fn collect_primitives(
       // Try as named color directive
       apply_directive(expr, &mut *style);
       let _ = name;
+    }
+    // `Thickness -> t` and friends in a primitive list act as directives.
+    Expr::Rule { .. } => {
+      apply_directive(expr, &mut *style);
     }
     _ => {}
   }
@@ -3754,8 +3779,11 @@ fn graphics_text_content(expr: &Expr) -> String {
     // is the flattened traditional-notation box tree — the same thing
     // `expr_to_svg_markup` draws — rather than `expr`'s InputForm. Keeping
     // the two in step is what makes the measured width match the drawing.
+    // (A string is its own text in any form, so it skips this.)
     Expr::FunctionCall { name, args }
-      if name == "TraditionalForm" && args.len() == 1 =>
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && !matches!(args[0], Expr::String(_)) =>
     {
       box_expr_to_plain(
         &crate::evaluator::dispatch::complex_and_special::
@@ -4497,9 +4525,20 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // primitive entirely rather than falling through to the catch-all in
   // `graphics_text_content`, which would typeset the wrapper's own
   // textual form (`Invisible[e]`) as a literal on-screen label.
-  let (first_arg, mut hidden) = match peel_invisible(&args[0]) {
+  //
+  // `Mouseover[label, hover]` shows `label`; the hover appearance can't be
+  // represented in a static picture, so peel it (and any nesting of it)
+  // down to the label itself.
+  let mut label_arg = &args[0];
+  while let Expr::FunctionCall { name, args: margs } = label_arg
+    && name == "Mouseover"
+    && !margs.is_empty()
+  {
+    label_arg = &margs[0];
+  }
+  let (first_arg, mut hidden) = match peel_invisible(label_arg) {
     Some(inner) => (inner, true),
-    None => (&args[0], false),
+    None => (label_arg, false),
   };
   let mut local_style = style.clone();
   // `Framed[content, opts…]` boxes the label: a border around it and, with
@@ -11228,6 +11267,53 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
     .collect()
 }
 
+/// The glyph a tiny inline graphic stands for in a text label: a filled
+/// dot for a `Disk`/`Point`, a ring for a `Circle`, coloured by the last
+/// colour directive before it. `None` for any graphic that holds other
+/// primitives, which have no text equivalent.
+fn inline_graphic_glyph(args: &[Expr]) -> Option<String> {
+  fn walk(
+    e: &Expr,
+    color: &mut Option<Color>,
+    glyph: &mut Option<(char, Option<Color>)>,
+  ) -> bool {
+    match e {
+      Expr::List(items) => items.iter().all(|i| walk(i, color, glyph)),
+      Expr::FunctionCall { name, .. }
+        if matches!(name.as_str(), "Disk" | "Point" | "Circle") =>
+      {
+        if glyph.is_some() {
+          return false;
+        }
+        let ch = if name == "Circle" {
+          '\u{25CB}'
+        } else {
+          '\u{25CF}'
+        };
+        *glyph = Some((ch, *color));
+        true
+      }
+      other => match parse_color(other) {
+        Some(c) => {
+          *color = Some(c);
+          true
+        }
+        None => false,
+      },
+    }
+  }
+  let mut color = None;
+  let mut glyph = None;
+  if !walk(args.first()?, &mut color, &mut glyph) {
+    return None;
+  }
+  let (ch, c) = glyph?;
+  Some(match c {
+    Some(c) => format!("<tspan fill=\"{}\">{ch}</tspan>", c.to_svg_rgb()),
+    None => ch.to_string(),
+  })
+}
+
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
   // `StringForm["template", args…]` substitutes its placeholders wherever
   // it is *typeset* — a graphic's label is exactly that (unlike
@@ -11818,6 +11904,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           }
         }
 
+        // A small inline `Graphics[{color, Disk[]}]` (a legend swatch in
+        // a label) can't nest an `<svg>` inside `<text>`, so it is typeset
+        // as the glyph it draws, in the colour it is drawn with.
+        "Graphics" if inline_graphic_glyph(args).is_some() => {
+          inline_graphic_glyph(args).unwrap_or_default()
+        }
+
         // HoldForm[expr] → render content
         "HoldForm" if args.len() == 1 => expr_to_svg_markup(&args[0]),
 
@@ -11829,16 +11922,22 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // notation, so typeset the expression instead of printing its
         // InputForm: `Sum[…, {n, 0, ∞}]` becomes a ∑ with limits and
         // `LegendreP[n, x]` becomes `Pₙ(x)`.
-        "TraditionalForm" if args.len() == 1 => boxes_to_svg(
-          &crate::evaluator::dispatch::complex_and_special::
-            expr_to_box_form_traditional(&args[0]),
-        ),
+        "TraditionalForm"
+          if args.len() == 1 && !matches!(args[0], Expr::String(_)) =>
+        {
+          boxes_to_svg(
+            &crate::evaluator::dispatch::complex_and_special::
+              expr_to_box_form_traditional(&args[0]),
+          )
+        }
 
         // Presentation wrappers display their content only.
         "RawBoxes" | "DisplayForm" if is_box_display_wrapper(name, args) => {
           boxes_to_svg(&args[0])
         }
-        "Text" | "DisplayForm" | "StandardForm" if args.len() == 1 => {
+        "Text" | "DisplayForm" | "StandardForm" | "TraditionalForm"
+          if args.len() == 1 =>
+        {
           expr_to_svg_markup(&args[0])
         }
 
@@ -12301,6 +12400,7 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       "Style" | "StyleForm" if !args.is_empty() => {
         estimate_display_width(&args[0])
       }
+      "Graphics" if inline_graphic_glyph(args).is_some() => 1.0,
       // HoldForm[expr] → width of content
       "HoldForm" if args.len() == 1 => estimate_display_width(&args[0]),
       // OverBar/UnderBar draw their accent as a zero-width line over the
@@ -14346,7 +14446,13 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut y_max = f64::NEG_INFINITY;
     let mut image_size = plot_sources[0].image_size;
 
+    // A plot without any curve (every function `Null`) has no data to
+    // contribute to the combined ranges — unless nothing else does either.
+    let any_curves = plot_sources.iter().any(|ps| !ps.series.is_empty());
     for ps in &plot_sources {
+      if any_curves && ps.series.is_empty() {
+        continue;
+      }
       all_series.extend(ps.series.iter().cloned());
       x_min = x_min.min(ps.x_range.0);
       x_max = x_max.max(ps.x_range.1);
@@ -14825,6 +14931,10 @@ fn annotation_contains_place(expr: &Expr) -> bool {
       is_place_head(name) || args.iter().any(annotation_contains_place)
     }
     Expr::List(items) => items.iter().any(annotation_contains_place),
+    // `PaneSelector[{1 -> Place[2], …}, sel]`: the pane is the rule's value.
+    Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. } => {
+      annotation_contains_place(replacement)
+    }
     _ => false,
   }
 }
@@ -19309,7 +19419,12 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
     let inner = args[0].clone();
     current = inner;
   }
+  // A string is drawn as its text in any form — `TraditionalForm["a = 1"]`
+  // has no quotes around it — and one carrying `\!\(\*…\)` box notation
+  // typesets from there, so it is never handed to the traditional box
+  // builder (which would print it quoted, box source and all).
   if traditional
+    && !matches!(&current, Expr::String(_))
     && !crate::evaluator::lays_out_a_graphic(&current)
     && !matches!(&current, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Grid" | "Column" | "Row" | "Framed"))
@@ -19506,6 +19621,7 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // A `Framed[…]` box draws its border and its content; a `Column`
       // item that is one used to print as source.
       "Framed" if !args.is_empty() => return framed_to_svg(&args),
+      "Panel" if !args.is_empty() => return panel_to_svg(&args),
       // A sound item shows the sound box a notebook draws for it — a play
       // button and the waveform — rather than the `Play[…]` source text.
       "Sound" | "Play" => return crate::functions::sound::sound_svg(expr),
@@ -19521,7 +19637,9 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // `=` for `Equal`, `≤` for `LessEqual`, `sin(x)` for `Sin[x]`,
       // stacked fractions — by the same box pipeline the top-level
       // display uses.
-      "TraditionalForm" if args.len() == 1 => {
+      "TraditionalForm"
+        if args.len() == 1 && !matches!(args[0], Expr::String(_)) =>
+      {
         return form_box_svg(&args[0]);
       }
       // A styled layout keeps its layout, and its style: `Style[Row[{…}],
@@ -19786,6 +19904,39 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
 /// Render `Row[{items...}]` or `Row[{items...}, sep]` as a horizontal SVG layout.
 /// When `sep` is `Spacer[n]`, uses `n` points of horizontal space between items.
 /// When `sep` is any other expression, renders it as text between items.
+/// The text of a row item that is a string starting or ending with a
+/// newline, possibly inside `Style[…]` wrappers. Such a string breaks the
+/// line; a stacked 2D text like `"1\n-\n3"` (a typeset fraction) has its
+/// newlines in the middle and stays one centered block.
+fn newline_text(item: &Expr) -> Option<&str> {
+  match item {
+    Expr::String(s) if s.starts_with('\n') || s.ends_with('\n') => Some(s),
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      newline_text(&args[0])
+    }
+    _ => None,
+  }
+}
+
+/// `item` with its innermost string replaced by `text`.
+fn with_text(item: &Expr, text: &str) -> Expr {
+  match item {
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      let mut new_args = args.clone();
+      new_args[0] = with_text(&args[0], text);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    _ => Expr::String(text.to_string()),
+  }
+}
+
 pub fn row_to_svg(args: &[Expr]) -> Option<String> {
   if args.is_empty() {
     return None;
@@ -19798,6 +19949,45 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
 
   if items.is_empty() {
     return None;
+  }
+
+  // A string item carrying `\n` breaks the row: the text after the newline
+  // (and every item following it) continues on the next line, as in a
+  // notebook's text flow. Lay the lines out as a left-aligned column of
+  // sub-rows instead of squeezing a multi-line cell between its neighbours.
+  if args.len() == 1 && items.iter().any(|i| newline_text(i).is_some()) {
+    let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
+    for item in items {
+      match newline_text(item) {
+        Some(text) => {
+          for (k, seg) in text.split('\n').enumerate() {
+            if k > 0 {
+              lines.push(Vec::new());
+            }
+            if !seg.is_empty() {
+              lines.last_mut().unwrap().push(with_text(item, seg));
+            }
+          }
+        }
+        None => lines.last_mut().unwrap().push(item.clone()),
+      }
+    }
+    let rows: Vec<Expr> = lines
+      .into_iter()
+      .map(|line| {
+        // A blank line still takes one line of height.
+        let line = if line.is_empty() {
+          vec![Expr::String(" ".to_string())]
+        } else {
+          line
+        };
+        Expr::FunctionCall {
+          name: "Row".to_string(),
+          args: vec![Expr::List(line.into())].into(),
+        }
+      })
+      .collect();
+    return column_to_svg(&[Expr::List(rows.into())]);
   }
 
   // Split the tail into an optional separator (a non-rule second argument)
@@ -20189,6 +20379,24 @@ fn unwrap_framed_layout(expr: &Expr) -> Expr {
 /// Render `Framed[expr]` as an SVG box with a rectangular border around the content.
 /// Handles nested Framed by recursively rendering inner content as embedded SVG.
 pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
+  framed_box_to_svg(args, None)
+}
+
+/// `Panel[content, opts…]` drawn as the light-gray box a notebook shows:
+/// the same bordered box as `Framed`, filled unless `Background` says
+/// otherwise. A `Panel`'s optional second argument is a label, not an
+/// option, so only the rule arguments after the content are forwarded.
+pub fn panel_to_svg(args: &[Expr]) -> Option<String> {
+  let (content, rest) = args.split_first()?;
+  let mut box_args = vec![content.clone()];
+  box_args.extend(rest.iter().filter(|a| option_kv(a).is_some()).cloned());
+  framed_box_to_svg(&box_args, Some(Color::new(0.95, 0.95, 0.95)))
+}
+
+fn framed_box_to_svg(
+  args: &[Expr],
+  default_background: Option<Color>,
+) -> Option<String> {
   if args.is_empty() {
     return None;
   }
@@ -20201,6 +20409,7 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
     .filter_map(option_kv)
     .find(|(k, _)| *k == "Background")
     .and_then(|(_, v)| parse_color(v))
+    .or(default_background)
     .map(Color::to_svg_rgb);
   let rect_fill = bg_fill.as_deref().unwrap_or("none");
 
@@ -20390,6 +20599,10 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
           let (w, h) = parse_svg_wh(&svg);
           (Some(svg), w, h)
         }),
+        "Panel" => panel_to_svg(inner_args).map_or((None, 0.0, 0.0), |svg| {
+          let (w, h) = parse_svg_wh(&svg);
+          (Some(svg), w, h)
+        }),
         _ => (None, 0.0, 0.0),
       }
     } else if let Expr::Graphics { svg, .. } = content {
@@ -20544,6 +20757,7 @@ pub fn row_with_framed_to_svg(items: &[Expr]) -> Option<String> {
       // Render the entire Framed / Highlighted (with any nesting) as SVG
       let child_svg = match name.as_str() {
         "Framed" => framed_to_svg(args),
+        "Panel" => panel_to_svg(args),
         "Highlighted" => highlighted_to_svg(args),
         _ => None,
       };
@@ -22107,6 +22321,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
       _ => spec,
     };
+    // `(##1 &) @@ Thread[{1, 2, 3} -> Control[…]]` (or `Sequence @@ …`) written
+    // inside a layout's list is code that *produces* the list's items — a
+    // `PaneSelector` that gives the same control to several panes. Evaluate
+    // it so the panes' controls are visible to everything below.
+    let spliced_spec = splice_sequence_applies(spec);
+    let spec = &spliced_spec;
     // A `PaneSelector` argument shows one pane's controls at a time; the
     // flattened list holds every pane's, so each pane's controls also pick
     // up the condition under which they are on screen.
@@ -22122,7 +22342,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }
   let arg_items: Vec<Expr> =
     arg_items.into_iter().map(unwrap_control_wrapper).collect();
-  let pane_governed_names = pane_or_tab_governed_names(&args[1..], &place_map);
+  let spliced_specs: Vec<Expr> =
+    args[1..].iter().map(splice_sequence_applies).collect();
+  let pane_governed_names =
+    pane_or_tab_governed_names(&spliced_specs, &place_map);
   // A `ControlType -> …` given to the Manipulate itself sets the type of every
   // control that does not choose one; push it into the specs now that they are
   // flattened, so they parse through the single per-spec path below.
@@ -22375,10 +22598,23 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         let label_runs = manipulate_label_runs(&args[0], false);
         let enabled = extract_enabled_condition(&args[2..])
           .map(crate::syntax::expr_to_source_form);
+        let label = flatten_label_runs(&label_runs);
+        let action = crate::syntax::expr_to_source_form(&args[1]);
+        // The same button repeated in several panes of one `PaneSelector`
+        // (`PaneSelector[{1 -> Button["next", …], 2 -> Button["next", …]},
+        // step]`) is one button that is on screen in each of those panes.
+        if pane_governed_names.contains(&label)
+          && controls.iter().any(|prev| {
+            matches!(prev, ManipulateControl::Button { label: l, action: a, .. }
+              if *l == label && *a == action)
+          })
+        {
+          continue;
+        }
         controls.push(ManipulateControl::Button {
-          label: flatten_label_runs(&label_runs),
+          label,
           label_runs,
-          action: crate::syntax::expr_to_source_form(&args[1]),
+          action,
           enabled,
         });
         continue;
@@ -23117,7 +23353,8 @@ fn is_control_type_marker(item: &Expr) -> bool {
 /// bare marker (`{{p, init}, pmin, pmax, Locator}`) or `ControlType ->
 /// Locator`.
 fn spec_marks_locator(items: &[Expr]) -> bool {
-  items.iter().any(|it| {
+  custom_locator_pane_options(items).is_some()
+    || items.iter().any(|it| {
     matches!(it, Expr::Identifier(s) if s == "Locator")
       || matches!(
         it,
@@ -23126,6 +23363,49 @@ fn spec_marks_locator(items: &[Expr]) -> bool {
           if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
             && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Locator")
       )
+  })
+}
+
+/// The arguments of the `LocatorPane[Dynamic[var], graphic, …]` a spec's
+/// custom control function draws for the spec's own variable — `{{pts, init},
+/// {xmin, ymin}, {xmax, ymax}, (LocatorPane[Dynamic[pts], …] &)}`. Such a
+/// control is a draggable-points Locator whose options (`LocatorAutoCreate`)
+/// live on the pane rather than on the spec.
+fn custom_locator_pane_options(items: &[Expr]) -> Option<&[Expr]> {
+  fn find<'a>(expr: &'a Expr, var: &str) -> Option<&'a [Expr]> {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        if name == "LocatorPane"
+          && let Some(Expr::FunctionCall {
+            name: dname,
+            args: dargs,
+          }) = args.first()
+          && dname == "Dynamic"
+          && matches!(dargs.first(), Some(Expr::Identifier(v)) if v == var)
+        {
+          return Some(&args[1..]);
+        }
+        args.iter().find_map(|a| find(a, var))
+      }
+      Expr::List(items) => items.iter().find_map(|a| find(a, var)),
+      _ => None,
+    }
+  }
+  let var = manipulate_spec_var_name(items)?;
+  items[1..].iter().find_map(|it| {
+    // The echo holds a custom control function inside `Dynamic[…]`.
+    let it = match it {
+      Expr::FunctionCall { name, args }
+        if name == "Dynamic" && args.len() == 1 =>
+      {
+        &args[0]
+      }
+      other => other,
+    };
+    match it {
+      Expr::Function { body } => find(body, &var),
+      _ => None,
+    }
   })
 }
 
@@ -24685,6 +24965,65 @@ fn expand_conditional_control_items(
   out
 }
 
+/// The list a `Sequence @@ list` / `(##1 &) @@ list` (the identity-sequence
+/// idiom) application splices into its surroundings.
+fn sequence_apply_list(expr: &Expr) -> Option<&Expr> {
+  match expr {
+    Expr::Apply { func, list }
+      if matches!(func.as_ref(), Expr::Identifier(s) if s == "Sequence")
+        || matches!(
+          func.as_ref(),
+          Expr::Function { body } if matches!(body.as_ref(), Expr::SlotSequence(1))
+        ) =>
+    {
+      Some(list)
+    }
+    _ => None,
+  }
+}
+
+/// Replace every `Sequence @@ list` / `(##1 &) @@ list` found as an element of
+/// a list or a call's arguments with the elements `list` evaluates to, the
+/// way evaluation would splice them. The top-level expression itself is left
+/// alone (see `expand_conditional_control_items`).
+fn splice_sequence_applies(expr: &Expr) -> Expr {
+  fn splice_items(items: &[Expr]) -> Vec<Expr> {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+      if let Some(list) = sequence_apply_list(item)
+        && let Ok(Expr::List(ref inner)) = evaluate_expr_to_expr(list)
+      {
+        out.extend(splice_items(inner));
+        continue;
+      }
+      out.push(splice_sequence_applies(item));
+    }
+    out
+  }
+  match expr {
+    Expr::List(items) => Expr::List(splice_items(items).into()),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: splice_items(args).into(),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: pattern.clone(),
+      replacement: Box::new(splice_sequence_applies(replacement)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: pattern.clone(),
+      replacement: Box::new(splice_sequence_applies(replacement)),
+    },
+    _ => expr.clone(),
+  }
+}
+
 /// Record, for every control declared inside a `PaneSelector[{v -> content,
 /// …}, sel]` argument, the condition under which its pane is on screen
 /// (`sel == v`). Woxi lays every pane's controls out in one flat list, so
@@ -24861,6 +25200,17 @@ fn pane_control_variables(
           && let Some(Some(var)) = place_map.get(*n as usize - 1)
         {
           out.push(var.clone());
+          return;
+        }
+        // A pane holding a `Button` is on screen under the pane's condition
+        // like a control is; a button is identified by its label.
+        if name == "Button"
+          && args.len() >= 2
+          && let label =
+            flatten_label_runs(&manipulate_label_runs(&args[0], false))
+          && !label.is_empty()
+        {
+          out.push(label);
           return;
         }
         if name == "Control"
@@ -27002,7 +27352,10 @@ fn parse_manipulate_control(
         })
       })
       .collect();
-    let auto_create = items.iter().any(|it| {
+    let auto_create = items
+      .iter()
+      .chain(custom_locator_pane_options(items).into_iter().flatten())
+      .any(|it| {
       matches!(
         it,
         Expr::Rule { pattern, replacement }
@@ -30923,6 +31276,28 @@ mod manipulate_dynamic_control_list_tests {
   /// integer form must not be mistaken for "no auto-create" the way an
   /// unrecognized value would be.
   #[test]
+  fn locator_pane_custom_control_function_is_a_multi_point_locator() {
+    let s = spec(
+      "Manipulate[pts, {{pts, {{0, 0}, {1, 1}, {2, 0}}, \"\"}, {-1, -1}, \
+       {3, 2}, (LocatorPane[Dynamic[pts], Graphics[{}], \
+       LocatorAutoCreate -> {3, 20}] &)}]",
+    );
+    match &s.controls[0] {
+      ManipulateControl::Locator {
+        points,
+        x_max,
+        auto_create,
+        ..
+      } => {
+        assert_eq!(points.len(), 3);
+        assert_eq!(*x_max, 3.0);
+        assert!(*auto_create);
+      }
+      other => panic!("expected a Locator control, got {other:?}"),
+    }
+  }
+
+  #[test]
   fn locator_auto_create_bare_integer_enables_adding_points() {
     let s = spec(
       "Manipulate[pts, {{pts, {{0, 0}, {1, 1}}}, Locator, \
@@ -31529,6 +31904,63 @@ mod manipulate_control_placement_tests {
       vec!["a", "b"],
       "the layout template must not become a third, blank-labeled control: {:?}",
       spec.controls
+    );
+  }
+}
+
+#[cfg(test)]
+mod manipulate_pane_sequence_tests {
+  use super::*;
+
+  /// `(##1 &) @@ Thread[{1, 2, 3} -> Button[…]]` inside a `PaneSelector`
+  /// list is code producing the panes (one per key), and the same button
+  /// repeated across panes is a single control, not one per pane.
+  #[test]
+  fn sequence_apply_panes_share_one_button_and_one_control() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[a + n, {{a, 0}, 0, 1}, \
+       PaneSelector[{(##1 &) @@ Thread[{1, 2, 3} -> Button[\"next\", n = n + 1]], \
+         4 -> \"done\"}, Dynamic[n]], \
+       PaneSelector[{(##1 &) @@ Thread[{1, 2, 3} -> \
+         Control[{{b, 0, \"b\"}, 0, 1}]]}, Dynamic[n]], \
+       {{n, 1}, 1, 4, 1, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    let buttons = spec
+      .controls
+      .iter()
+      .filter(|c| matches!(c, ManipulateControl::Button { label, .. } if label == "next"))
+      .count();
+    assert_eq!(
+      buttons, 1,
+      "one `next` button expected: {:?}",
+      spec.controls
+    );
+    assert_eq!(
+      names.iter().filter(|n| **n == "b").count(),
+      1,
+      "one `b` control expected: {names:?}"
+    );
+  }
+
+  /// A `PaneSelector` whose panes are `Place[n]` references is layout, not a
+  /// display element of its own.
+  #[test]
+  fn pane_selector_of_place_references_is_not_a_display() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[a, {{a, 0, \"a\"}, 0, 1}, {{n, 1}, {1, 2}, ControlType -> None}, \
+       PaneSelector[{1 -> Manipulate`Place[1], 2 -> Manipulate`Place[1]}, \
+         Dynamic[n]]]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert!(
+      spec.displays.is_empty(),
+      "Place-only PaneSelector must not become a display: {:?}",
+      spec.displays
     );
   }
 }
