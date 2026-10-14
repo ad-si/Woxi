@@ -2891,6 +2891,12 @@ fn inject_prolog(
     "prolog",
     opts.clip_overlays,
   );
+  splice_after_background(buf, &prolog_svg);
+}
+
+/// Splice `overlay` into a finished SVG right after the canvas background
+/// rect, so everything painted later (axes, curves) draws on top of it.
+pub(crate) fn splice_after_background(buf: &mut String, overlay: &str) {
   // `root.fill(&bg_color)` (plotters) draws an opaque rect spanning the
   // whole canvas as the very first thing after the opening `<svg …>` tag
   // (and any embedded `<defs>` for fonts, which never paints anything
@@ -2914,7 +2920,7 @@ fn inject_prolog(
     Some(p) => after_defs + p + 2,
     None => after_defs,
   };
-  buf.insert_str(insert_at, &prolog_svg);
+  buf.insert_str(insert_at, overlay);
 }
 
 /// Resolve `AspectRatio -> Automatic` against the final plotted ranges: the
