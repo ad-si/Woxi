@@ -49,7 +49,7 @@ $ wo 'ArrayPlot /@ CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}
 `{tspec, xspec, yspec}` restricts a two-dimensional rule's rows and
 columns the same way `{tspec, xspec}` restricts a one-dimensional rule's
 cells; a two-dimensional rule given only an `xspec` windows its rows and
-keeps every column. The bare `{{t}}` tspec is what `ArrayPlot` needs to plot
+trims its columns to the cells that change. The bare `{{t}}` tspec is what `ArrayPlot` needs to plot
 a state directly:
 
 ```scrut
@@ -58,12 +58,39 @@ $ wo 'CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, {1, 1}}, {
 ```
 
 A second element in the step specification restricts the cells returned.
-`All` keeps every affected cell, while `{x1, x2}` names offsets relative to
+Without it only the cells that ever leave the background are kept; `All`
+keeps every cell the rule could have reached, while `{x1, x2}` names offsets relative to
 the first cell of the initial condition:
 
 ```scrut
 $ wo 'CellularAutomaton[90, {{1}, 0}, {3, {-2, 2}}]'
 {{0, 0, 1, 0, 0}, {0, 1, 0, 1, 0}, {1, 0, 0, 0, 1}, {0, 1, 0, 1, 0}}
+```
+
+Rule 2 moves a single cell left, so `All` keeps the three cells to its
+right that it could have reached but never did:
+
+```scrut
+$ wo 'CellularAutomaton[{2, 2, 1}, {{1}, 0}, {3, All}]'
+{{0, 0, 0, 1, 0, 0, 0}, {0, 0, 1, 0, 0, 0, 0}, {0, 1, 0, 0, 0, 0, 0}, {1, 0, 0, 0, 0, 0, 0}}
+```
+
+A range may be a half-integer: `r = 3/2` reads the four cells from offset
+`-2` to `1`. Rule 43690 copies the cell at offset `1`, so every pattern
+moves one cell left per step:
+
+```scrut
+$ wo 'CellularAutomaton[{43690, 2, 3/2}, {1, 0, 0, 1, 1, 0, 1, 0}, 3]'
+{{1, 0, 0, 1, 1, 0, 1, 0}, {0, 0, 1, 1, 0, 1, 0, 1}, {0, 1, 1, 0, 1, 0, 1, 0}, {1, 1, 0, 1, 0, 1, 0, 0}}
+```
+
+The discontinued four-argument form `CellularAutomaton[rule, init, t, offs]`
+still works. `offs` is `{offt, offx, ...}`, where a negative step counts back
+from `t`:
+
+```scrut
+$ wo 'CellularAutomaton[30, {{1}, 0}, 3, {-2, {-1, 1}}]'
+{{1, 0, 0}, {0, 1, 1}}
 ```
 
 Without a step count only one step runs, and just the new state comes back —

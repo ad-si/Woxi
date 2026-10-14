@@ -1249,7 +1249,7 @@ pub fn dispatch_linear_algebra_functions(
       // Symbolic: return unevaluated
       return Some(Ok(unevaluated("MatrixPower", args)));
     }
-    "CellularAutomaton" if args.len() == 2 || args.len() == 3 => {
+    "CellularAutomaton" if (2..=4).contains(&args.len()) => {
       return Some(
         crate::functions::cellular_automaton_ast::cellular_automaton_ast(args),
       );

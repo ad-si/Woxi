@@ -2604,25 +2604,6 @@ explicit cell window against it; Woxi checks the window's length
 arithmetically and declines rather than collecting a billion indices. The
 tspec grammar and every window that fits in memory agree with WL exactly.
 
-### `CellularAutomaton` rejects half-integer ranges and a fourth argument
-
-```sh
-woxi eval 'CellularAutomaton[{43690, 2, 3/2}, {1, 0, 0, 1, 1, 0, 1, 0}, 3]'
-# CellularAutomaton::nspecnl: Rule specification {43690, 2, 3/2} should be …
-woxi eval 'CellularAutomaton[{43690, 2, 1}, {1, 0, 0, 1, 1, 0, 1, 0}, 3, {All, All}]'
-# CellularAutomaton::argb: CellularAutomaton called with 4 arguments; …
-```
-
-WL accepts a rational range such as `3/2` (a neighborhood of `2r + 1` cells
-that is not centred on the cell) and the legacy four-argument form
-`CellularAutomaton[rule, init, t, {All, All}]`. Woxi supports neither, so
-Wolfram Demonstrations built on reversible two-color rules (for example
-"Reversible Two-Color Cellular Automaton Rules", whose `Manipulate` calls
-`CellularAutomaton[{rule, 2, 3/2}, init, n, {All, All}]`) cannot be rendered
-in Woxi Studio. The exact offset convention of half-integer ranges and the
-meaning of the fourth argument still have to be checked against
-`wolframscript` before implementing them.
-
 ### `DownValues` drops a `/;` guard on a compound left-hand side
 
 `f[x_] := x^2 /; x > 0` round-trips, but
@@ -3025,7 +3006,7 @@ declared signatures:
 Counting the required and optional slots (skipping anything with
 `OptionsPattern` or a `BlankSequence`, which are unbounded) and comparing
 against Woxi's declared maximum turns up every documented argument form that
-is missing. The sweep originally found 80; the 67 below are what is left.
+is missing. The sweep originally found 80; the 66 below are what is left.
 
 Each one is a form wolframscript accepts and Woxi rejects on arity — so the
 failure mode is an `::argt` / `::argb` / `::argx` message rather than a wrong
@@ -3042,7 +3023,6 @@ answer, which makes them safe but individually invisible.
 | `BesselYZero` | 2–2 | 3 | `{_, _, _.}` |
 | `BooleanMaxterms` | 2–2 | 3 | `{_, _., _.}` |
 | `BooleanMinterms` | 2–2 | 3 | `{_, _., _.}` |
-| `CellularAutomaton` | 1–3 | 4 | `{_, _., _., _.}` |
 | `CenterArray` | 1–3 | 4 | `{_, _., _., _.}` |
 | `CharacterName` | 1–1 | 2 | `{_, _.}` |
 | `CircleThrough` | 1–1 | 3 | `{{__}, _., _.}` |
