@@ -19320,7 +19320,7 @@ fn traditionalize_layout_items(expr: &Expr) -> Expr {
       }
     }
     Expr::FunctionCall { name, args }
-      if matches!(name.as_str(), "Style" | "Item" | "Pane")
+      if matches!(name.as_str(), "Style" | "Item" | "Pane" | "Invisible")
         && !args.is_empty() =>
     {
       let mut new_args = args.clone();
@@ -31577,6 +31577,23 @@ mod manipulate_traditional_form_choice_svg_tests {
     let expr = crate::parse_to_expr(code).expect("parse");
     let spec = extract_manipulate_spec(&expr).expect("extract spec");
     spec.controls.into_iter().next().expect("one control")
+  }
+
+  /// `TraditionalForm[Row[{…, Invisible[pad]}]]` (padding that keeps a
+  /// caption's width steady) must push the form through `Invisible` and
+  /// leave its content unpainted, not typeset `Invisible[pad]` as source.
+  #[test]
+  fn traditional_form_row_does_not_print_invisible_source() {
+    let items = traditionalize_layout_items(
+      &crate::syntax::string_to_expr("Row[{a, \" = \", Invisible[b/c]}]")
+        .unwrap(),
+    );
+    let src = crate::syntax::expr_to_source_form(&items);
+    assert!(
+      src.contains("Invisible[TraditionalForm[")
+        && !src.contains("TraditionalForm[Invisible["),
+      "form must sit inside Invisible: {src}"
+    );
   }
 
   /// A PopupMenu rule label wrapped in `TraditionalForm[…]` (the "choose a
