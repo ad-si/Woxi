@@ -364,8 +364,32 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build Graphics[{primitives...}, ImageSize -> width]
   let content = Expr::List(primitives.into());
-  let image_size_opt =
-    rule_expr(id_expr("ImageSize"), Expr::Integer(image_width as i128));
+  // A user-supplied `ImageSize` (number or `{w, h}`) overrides the computed width.
+  let image_size = args[1..]
+    .iter()
+    .find_map(|a| match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ImageSize") =>
+      {
+        match replacement.as_ref() {
+          e @ (Expr::Integer(_) | Expr::Real(_)) => Some(e.clone()),
+          Expr::List(items)
+            if items.len() == 2
+              && items
+                .iter()
+                .all(|i| matches!(i, Expr::Integer(_) | Expr::Real(_))) =>
+          {
+            Some(Expr::List(items.clone()))
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    })
+    .unwrap_or(Expr::Integer(image_width as i128));
+  let image_size_opt = rule_expr(id_expr("ImageSize"), image_size);
 
   graphics_ast(&[content, image_size_opt])
 }

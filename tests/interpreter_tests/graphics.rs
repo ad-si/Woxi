@@ -18310,6 +18310,21 @@ mod tree_form_graphics {
   }
 
   #[test]
+  fn tree_form_honors_image_size() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[TreeForm[f[x, y], ImageSize -> {420, 200}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("width=\"420\""), "expected width 420: {svg}");
+    assert!(svg.contains("height=\"200\""), "expected height 200: {svg}");
+    let svg =
+      interpret("ExportString[TreeForm[f[x, y], ImageSize -> 500], \"SVG\"]")
+        .unwrap();
+    assert!(svg.contains("width=\"500\""), "expected width 500: {svg}");
+  }
+
+  #[test]
   fn tree_form_nested() {
     clear_state();
     assert_eq!(
