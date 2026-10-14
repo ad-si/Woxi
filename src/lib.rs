@@ -4198,6 +4198,15 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // Graphics[…]}]] renders the column with its embedded graphic). CLI
   // mode keeps the symbolic Pane[…] echo to match wolframscript.
   let expr = unwrap_display_pass_through(expr);
+  // A grid wider than that box squeezes its automatically sized pictures
+  // (a plot's legend) to fit, instead of pushing the other columns out.
+  let expr = pane_box
+    .and_then(|(w, _)| {
+      functions::graphics::fit_grid_to_pane_width(&expr, w, &|c| {
+        functions::graphics::parse_svg_wh(&evaluator::expr_to_svg(c)).0
+      })
+    })
+    .unwrap_or(expr);
   // A picture the wrapper held (`Pane[Image[…], {w, h}]`) only becomes the
   // top-level Image now that the wrapper is gone, after the top-level
   // image pass has already run.
