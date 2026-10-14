@@ -3332,6 +3332,34 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         None => expr,
       }
     }
+    // `Panel[content, Text[label]]` — the Demonstrations idiom for a
+    // captioned result block (a `Grid` of readouts or a `GraphicsGrid` of
+    // pictures under a heading). Shown as the content with its label above
+    // it, composed through the `Labeled` pipeline above. The `Text` label
+    // is what marks the panel as a picture; a bare string label leaves a
+    // plain table as selectable text.
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Panel"
+        && args.len() == 2
+        && matches!(
+          &args[1],
+          syntax::Expr::FunctionCall { name: label, .. } if label == "Text"
+        ) =>
+    {
+      let labeled = syntax::Expr::FunctionCall {
+        name: "Labeled".to_string(),
+        args: vec![
+          args[0].clone(),
+          args[1].clone(),
+          syntax::Expr::Identifier("Top".to_string()),
+        ]
+        .into(),
+      };
+      match render_grid_if_needed(labeled) {
+        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        _ => expr,
+      }
+    }
     // `Pane`/`Panel`/`Framed` wrapping the multi-table compositions this
     // function builds above (`Labeled`, or the `Times`-as-`Row` idiom
     // below) — pass through to what they wrap, the way a notebook shows

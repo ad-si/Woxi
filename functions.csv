@@ -3080,7 +3080,7 @@ DimensionReduce,,🚫,,10.1,3121
 Dithering,,🚫,,8.0,3121
 DynamicModuleBox,,🚫,,6.0,3121
 FARIMAProcess,,🚫,,9.0,3121
-ImageLevels,,🚫,,8.0,3121
+ImageLevels,Counts the pixel values of each channel of an image,✅,pure,8.0,3121
 InverseFourierSinTransform,Inverse Fourier sine transform (the sine transform is an involution),✅,pure,4.0,3121
 LocalTime,,,,10.0,3121
 CycleIndexPolynomial,Cycle index polynomial of a permutation group in given variables,✅,pure,9.0,3124

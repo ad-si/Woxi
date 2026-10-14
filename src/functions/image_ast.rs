@@ -1935,6 +1935,84 @@ pub fn image_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
+/// ImageLevels[image] / ImageLevels[image, n] — `{value, count}` pairs for
+/// the pixel values of each channel. A single-channel image gives one flat
+/// list of pairs, a multichannel image one such list per channel. Without
+/// `n` the levels are the image type's own (`0, 1` for bit images, `0..255`
+/// for byte images, 256 levels for the others); with `n` the range is split
+/// into `n` evenly spaced levels and every pixel is counted at its nearest one.
+pub fn image_levels_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated("ImageLevels", args));
+  }
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+    ..
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "ImageLevels::imginv: Expecting an image or graphics instead of {}.",
+      expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated("ImageLevels", args));
+  };
+
+  let default_levels = match image_type {
+    ImageType::Bit => 2,
+    ImageType::Byte => 256,
+    ImageType::Bit16 => 65536,
+    _ => 256,
+  };
+  let levels = match args.get(1) {
+    None => default_levels,
+    Some(Expr::Integer(n)) if *n >= 2 => *n as usize,
+    Some(_) => return Ok(unevaluated("ImageLevels", args)),
+  };
+
+  let pixels = (*width as usize) * (*height as usize);
+  let ch = (*channels as usize).max(1);
+  let top = (levels - 1) as f64;
+  let level_value = |k: usize| -> Expr {
+    match image_type {
+      ImageType::Bit | ImageType::Byte | ImageType::Bit16
+        if levels == default_levels =>
+      {
+        Expr::Integer(k as i128)
+      }
+      _ => Expr::Real(k as f64 / top),
+    }
+  };
+
+  let per_channel: Vec<Expr> = (0..ch)
+    .map(|c| {
+      let mut counts = vec![0i128; levels];
+      for i in 0..pixels {
+        let v = data[i * ch + c].clamp(0.0, 1.0);
+        counts[(v * top).round() as usize] += 1;
+      }
+      Expr::List(
+        counts
+          .iter()
+          .enumerate()
+          .map(|(k, n)| {
+            Expr::List(vec![level_value(k), Expr::Integer(*n)].into())
+          })
+          .collect(),
+      )
+    })
+    .collect();
+
+  if ch == 1 {
+    Ok(per_channel.into_iter().next().unwrap())
+  } else {
+    Ok(Expr::List(per_channel.into()))
+  }
+}
+
 /// ImageReflect[img] / ImageReflect[img, side] / ImageReflect[img, s1 -> s2].
 /// Default: vertical (top↔bottom) flip. Horizontal / vertical sides reflect
 /// across the perpendicular axis; rules between perpendicular sides do the

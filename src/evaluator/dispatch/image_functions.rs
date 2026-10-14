@@ -771,6 +771,9 @@ pub fn dispatch_image_functions(
     "ImageHistogram" if !args.is_empty() => {
       return Some(crate::functions::image_ast::image_histogram_ast(args));
     }
+    "ImageLevels" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::image_levels_ast(args));
+    }
     "Pruning" if !args.is_empty() => {
       return Some(crate::functions::image_ast::pruning_ast(args));
     }
