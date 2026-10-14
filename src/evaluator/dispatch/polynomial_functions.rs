@@ -343,10 +343,7 @@ pub fn dispatch_polynomial_functions(
       if let Some(result) = try_constrained_linear_disk_symbolic(name, args) {
         return Some(Ok(result));
       }
-      return Some(crate::functions::polynomial_ast::minimize_ast(
-        args,
-        name == "Maximize",
-      ));
+      return Some(minimize_or_numeric_fallback(args, name == "Maximize"));
     }
     "LinearProgramming" if args.len() == 3 || args.len() == 4 => {
       return Some(crate::functions::polynomial_ast::linear_programming_ast(
@@ -354,10 +351,10 @@ pub fn dispatch_polynomial_functions(
       ));
     }
     "Minimize" if args.len() == 2 || args.len() == 3 => {
-      return Some(crate::functions::polynomial_ast::minimize_ast(args, false));
+      return Some(minimize_or_numeric_fallback(args, false));
     }
     "Maximize" if args.len() == 2 || args.len() == 3 => {
-      return Some(crate::functions::polynomial_ast::minimize_ast(args, true));
+      return Some(minimize_or_numeric_fallback(args, true));
     }
     // MinValue[f, x] / MaxValue[f, x] — the extremum value from the exact
     // optimizer's `{value, rules}` result. Unlike Maximize/Minimize these
@@ -1567,4 +1564,77 @@ fn numeric_arg_extremum(name: &str, args: &[Expr]) -> Option<Expr> {
   } else {
     Expr::List(values.into())
   })
+}
+
+/// True iff `expr` contains a machine-precision `Real` leaf.
+fn contains_machine_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_machine_real(left) || contains_machine_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_machine_real(operand),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_machine_real),
+    Expr::List(items) => items.iter().any(contains_machine_real),
+    _ => false,
+  }
+}
+
+/// Exact Minimize/Maximize; when the exact optimizer leaves the call
+/// unevaluated for an objective with machine-precision coefficients,
+/// Wolfram falls back to numerical optimization, so delegate to the
+/// canonical NMinimize/NMaximize implementation.
+fn minimize_or_numeric_fallback(
+  args: &[Expr],
+  maximize: bool,
+) -> Result<Expr, InterpreterError> {
+  // NMinimize itself consults the exact optimizer, so a guard stops the
+  // two from delegating to each other forever.
+  thread_local! {
+    static IN_NUMERIC_FALLBACK: std::cell::Cell<bool> =
+      const { std::cell::Cell::new(false) };
+  }
+  let candidate = args.len() == 2
+    && contains_machine_real(&args[0])
+    && !IN_NUMERIC_FALLBACK.with(std::cell::Cell::get);
+  if !candidate {
+    return crate::functions::polynomial_ast::minimize_ast(args, maximize);
+  }
+
+  // The exact attempt is only a probe: its complaints (natt, infy, ...) are
+  // replayed only if the numeric fallback does not take over.
+  let before = crate::snapshot_warnings();
+  let seen = before.messages().len();
+  crate::push_quiet();
+  let exact = crate::functions::polynomial_ast::minimize_ast(args, maximize);
+  crate::pop_quiet();
+  let raised = crate::snapshot_warnings().messages()[seen..].to_vec();
+  crate::restore_warnings(before);
+
+  let unevaluated = matches!(
+    &exact,
+    Ok(Expr::FunctionCall { name, .. })
+      if name == if maximize { "Maximize" } else { "Minimize" }
+  );
+  if unevaluated {
+    // NMinimize re-enters the exact optimizer internally; those probes'
+    // complaints are not part of this call's answer.
+    let numeric_before = crate::snapshot_warnings();
+    IN_NUMERIC_FALLBACK.with(|f| f.set(true));
+    crate::push_quiet();
+    let numeric =
+      crate::functions::polynomial_ast::nminimize_ast(args, maximize);
+    crate::pop_quiet();
+    IN_NUMERIC_FALLBACK.with(|f| f.set(false));
+    crate::restore_warnings(numeric_before);
+    if let Ok(numeric) = numeric
+      && matches!(&numeric, Expr::List(items) if items.len() == 2)
+    {
+      return Ok(numeric);
+    }
+  }
+  for message in raised {
+    crate::emit_message(&message);
+  }
+  exact
 }
