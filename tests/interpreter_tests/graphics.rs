@@ -34652,3 +34652,47 @@ fn graphics3d_text_with_box_syntax_label_is_offset_by_its_visible_width() {
   let shift = (label_x("{1,-1}") - label_x("{0,0}")).abs();
   assert!(shift < 30.0, "label shifted {shift}px away from its anchor");
 }
+
+#[test]
+fn graphics_grid_span_from_left_widens_the_preceding_cell() {
+  // `SpanFromLeft` makes the cell to its left cover both columns, so the
+  // lower panel is laid out as wide as the whole row above it.
+  fn cell_widths(code: &str) -> Vec<f64> {
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    svg
+      .split("<svg x=\"")
+      .skip(1)
+      .map(|part| {
+        let w = part.split("width=\"").nth(1).unwrap();
+        w.split('"').next().unwrap().parse().unwrap()
+      })
+      .collect()
+  }
+  let spanned = cell_widths(
+    "GraphicsGrid[{{Plot[Sin[x], {x, 0, 2}], Plot[Cos[x], {x, 0, 2}]}, \
+     {Plot[x, {x, 0, 2}], SpanFromLeft}}, ImageSize -> 320]",
+  );
+  let plain = cell_widths(
+    "GraphicsGrid[{{Plot[Sin[x], {x, 0, 2}], Plot[Cos[x], {x, 0, 2}]}}, \
+     ImageSize -> 320]",
+  );
+  let (top, bottom) = (plain[0], spanned[2]);
+  assert!(bottom > 1.8 * top, "spanned cell {bottom} vs plain {top}");
+  // The grid is no wider than it was without the spanned row.
+  let total = |code: &str| {
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let w = svg.split("<svg width=\"").nth(1).unwrap();
+    w.split('"').next().unwrap().parse::<f64>().unwrap()
+  };
+  assert!(
+    (total(
+      "GraphicsGrid[{{Plot[Sin[x], {x, 0, 2}], Plot[Cos[x], {x, 0, 2}]}, \
+       {Plot[x, {x, 0, 2}], SpanFromLeft}}, ImageSize -> 320]"
+    ) - total(
+      "GraphicsGrid[{{Plot[Sin[x], {x, 0, 2}], Plot[Cos[x], {x, 0, 2}]}}, \
+       ImageSize -> 320]"
+    ))
+    .abs()
+      < 2.0
+  );
+}

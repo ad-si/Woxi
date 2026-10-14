@@ -17979,15 +17979,33 @@ fn compute_grid_layout(
       opts
     };
 
-  // Parse all SVGs: (viewBox, inner_content, nat_w, nat_h).
-  let parsed_rows: Vec<Vec<(String, String, f64, f64)>> = rows
+  // Parse all SVGs: (viewBox, inner_content, nat_w, nat_h), plus whether
+  // each is the placeholder of a `SpanFromLeft` cell.
+  let mut parsed_rows: Vec<Vec<(String, String, f64, f64)>> = Vec::new();
+  let mut is_placeholder: Vec<Vec<bool>> = Vec::new();
+  for row in rows {
+    let mut parsed = Vec::new();
+    let mut flags = Vec::new();
+    for svg in row {
+      if let Some(p) = parse_svg_dimensions(svg) {
+        parsed.push((p.view_box, p.inner_content, p.nat_w, p.nat_h));
+        flags.push(is_span_placeholder_svg(svg));
+      }
+    }
+    parsed_rows.push(parsed);
+    is_placeholder.push(flags);
+  }
+  // Number of columns after a cell that it spans into.
+  let extra_cols: Vec<Vec<usize>> = is_placeholder
     .iter()
-    .map(|row| {
-      row
-        .iter()
-        .filter_map(|svg| {
-          let p = parse_svg_dimensions(svg)?;
-          Some((p.view_box, p.inner_content, p.nat_w, p.nat_h))
+    .map(|flags| {
+      (0..flags.len())
+        .map(|j| {
+          if flags[j] {
+            0
+          } else {
+            flags[j + 1..].iter().take_while(|f| **f).count()
+          }
         })
         .collect()
     })
@@ -18002,8 +18020,15 @@ fn compute_grid_layout(
   // target-width scaling.
   let row_nat_dims: Vec<(f64, f64)> = parsed_rows
     .iter()
-    .map(|row| {
-      let w: f64 = row.iter().map(|(_, _, nw, _)| *nw).sum();
+    .zip(is_placeholder.iter())
+    .map(|(row, flags)| {
+      // A spanned cell already counts the width of its placeholders.
+      let w: f64 = row
+        .iter()
+        .zip(flags)
+        .filter(|(_, ph)| !**ph)
+        .map(|((_, _, nw, _), _)| *nw)
+        .sum();
       let h: f64 = row.iter().map(|(_, _, _, nh)| *nh).fold(0.0_f64, f64::max);
       (w, h)
     })
@@ -18067,19 +18092,46 @@ fn compute_grid_layout(
   // (a picture in one row, a caption under it in the next). Rows of
   // uniform cells, the `GraphicsGrid` case, are unaffected.
   let mut col_w: Vec<f64> = vec![0.0; max_cols];
-  for row in &scaled_rows {
+  for (row, spans) in scaled_rows.iter().zip(&extra_cols) {
     for (j, (w, _)) in row.iter().enumerate() {
-      col_w[j] = col_w[j].max(*w);
+      // A cell that spans several columns doesn't size any one of them.
+      if spans[j] == 0 {
+        col_w[j] = col_w[j].max(*w);
+      }
     }
   }
 
   // Horizontal gap: `Scaled` is resolved against the average cell width
   // over the whole grid, so every row uses the same column pitch.
-  let cell_count = scaled_rows.iter().map(Vec::len).sum::<usize>().max(1);
+  let single_cells: Vec<f64> = scaled_rows
+    .iter()
+    .zip(&extra_cols)
+    .flat_map(|(row, spans)| {
+      row
+        .iter()
+        .zip(spans)
+        .filter(|(_, s)| **s == 0)
+        .map(|((w, _), _)| *w)
+    })
+    .collect();
   let avg_cell_w: f64 =
-    scaled_rows.iter().flatten().map(|(w, _)| *w).sum::<f64>()
-      / cell_count as f64;
+    single_cells.iter().sum::<f64>() / single_cells.len().max(1) as f64;
   let h_gap = opts.h_spacing.to_px(avg_cell_w);
+
+  // A spanned cell that is wider than the columns it covers widens the last
+  // of them.
+  for (row, spans) in scaled_rows.iter().zip(&extra_cols) {
+    for (j, (w, _)) in row.iter().enumerate() {
+      let k = spans[j];
+      if k > 0 {
+        let covered: f64 =
+          col_w[j..=j + k].iter().sum::<f64>() + h_gap * k as f64;
+        if *w > covered {
+          col_w[j + k] += *w - covered;
+        }
+      }
+    }
+  }
   let col_x: Vec<f64> = col_w
     .iter()
     .scan(0.0_f64, |x, w| {
@@ -18093,7 +18145,9 @@ fn compute_grid_layout(
   // column and vertically centre shorter cells within their row.
   let mut row_layouts: Vec<GridRowLayout> = Vec::new();
 
-  for (parsed_row, cell_dims) in parsed_rows.iter().zip(scaled_rows.iter()) {
+  for ((parsed_row, cell_dims), spans) in
+    parsed_rows.iter().zip(scaled_rows.iter()).zip(&extra_cols)
+  {
     if parsed_row.is_empty() {
       row_layouts.push(GridRowLayout {
         cells: Vec::new(),
@@ -18113,7 +18167,9 @@ fn compute_grid_layout(
       parsed_row.iter().zip(cell_dims.iter()).enumerate()
     {
       let y_off = ((row_h - ch) / 2.0).max(0.0);
-      let x = col_x[j] + (col_w[j] - cw) / 2.0;
+      let last = j + spans[j];
+      let span_w = col_x[last] + col_w[last] - col_x[j];
+      let x = col_x[j] + (span_w - cw) / 2.0;
       cells.push(LayoutCell {
         x,
         y_off,
@@ -18649,14 +18705,33 @@ fn with_button_cell_chrome(svg: String, button_args: &[Expr]) -> String {
   out
 }
 
+/// Marks the empty SVG standing in for a `SpanFromLeft` cell, so the grid
+/// layout can tell which cell spans several columns.
+const SPAN_PLACEHOLDER_ATTR: &str = "data-span-placeholder=\"1\"";
+
+fn is_span_placeholder_svg(svg: &str) -> bool {
+  svg.starts_with("<svg ") && svg[5..].starts_with(SPAN_PLACEHOLDER_ATTR)
+}
+
 /// Evaluate each item with `ImageSize -> per_cell_w` injected (when the
 /// item is a rewritable FunctionCall) and collect the resulting SVGs.
 /// Items that are already evaluated (variables, literals) pass through
 /// unchanged and are rendered at their natural size.
 fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
+  // A cell followed by `SpanFromLeft` markers is laid out across the
+  // columns they occupy, so it is rendered that many cells wide.
+  let spans: Vec<i128> = (0..items.len())
+    .map(|i| {
+      1 + items[i + 1..]
+        .iter()
+        .take_while(|c| is_span_from_left(c))
+        .count() as i128
+    })
+    .collect();
   items
     .iter()
-    .filter_map(|item| {
+    .enumerate()
+    .filter_map(|(item_idx, item)| {
       // `SpanFromLeft`/`SpanFromAbove`/`SpanFromBoth` mark a cell that only
       // continues one merged in `Grid` — they hold no content of their own.
       // `GraphicsGrid`/`Row`/`Column` don't merge spans the way `Grid` does,
@@ -18667,7 +18742,7 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
         // placeholder holds no content of its own, so the row's height
         // should follow whatever real content sits beside it.
         return Some(format!(
-          "<svg width=\"{per_cell_w}\" height=\"1\" viewBox=\"0 0 {per_cell_w} 1\"></svg>"
+          "<svg {SPAN_PLACEHOLDER_ATTR} width=\"{per_cell_w}\" height=\"1\" viewBox=\"0 0 {per_cell_w} 1\"></svg>"
         ));
       }
       // An inline call (`GraphicsGrid[{{Plot[…], Plot[…]}}]`) gets its
@@ -18702,7 +18777,8 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
         }
         _ => target,
       };
-      let rewritten = with_default_image_size(&target, per_cell_w);
+      let rewritten =
+        with_default_image_size(&target, per_cell_w * spans[item_idx]);
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
       let svg = crate::evaluator::expr_to_svg(&evaluated);
       if svg.is_empty() {
