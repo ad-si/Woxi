@@ -5343,6 +5343,46 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         Expr::List(items) => items.to_vec(),
         other => vec![other.clone()],
       };
+      // A string item carrying `\n` breaks the row: what follows the
+      // newline continues on the next line. Stack the lines as a one-column
+      // grid of rows instead of laying the break out inline.
+      if args.len() == 1
+        && parts
+          .iter()
+          .any(|p| matches!(p, Expr::String(s) if s.starts_with('\n') || s.ends_with('\n')))
+      {
+        let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
+        for p in &parts {
+          match p {
+            Expr::String(s) if s.starts_with('\n') || s.ends_with('\n') => {
+              for (k, seg) in s.split('\n').enumerate() {
+                if k > 0 {
+                  lines.push(Vec::new());
+                }
+                if !seg.is_empty() {
+                  lines
+                    .last_mut()
+                    .unwrap()
+                    .push(tf_display(&Expr::String(seg.to_string())));
+                }
+              }
+            }
+            other => lines.last_mut().unwrap().push(tf_display(other)),
+          }
+        }
+        let rows: Vec<Expr> = lines
+          .into_iter()
+          .map(|line| {
+            let cell = if line.is_empty() {
+              tf_string(" ")
+            } else {
+              tf_row(line)
+            };
+            Expr::List(vec![cell].into())
+          })
+          .collect();
+        return tf_box("GridBox", vec![Expr::List(rows.into())]);
+      }
       // A rule in separator position is an option, not a separator.
       let sep = args
         .get(1)
