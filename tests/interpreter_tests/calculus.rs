@@ -11593,6 +11593,34 @@ mod inverse_laplace_transform {
   use super::*;
 
   #[test]
+  fn shifted_inverse_square_root() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/Sqrt[s + b], s, t]").unwrap(),
+      "1/(E^(b*t)*Sqrt[Pi]*Sqrt[t])"
+    );
+  }
+
+  #[test]
+  fn fractional_power_of_s() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/s^(3/2), s, t]").unwrap(),
+      "(2*Sqrt[t])/Sqrt[Pi]"
+    );
+  }
+
+  #[test]
+  fn log_over_s() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[Log[s]/s, s, t]").unwrap(),
+      "-EulerGamma - Log[t]"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[a Log[b s]/s, s, t]").unwrap(),
+      "a*(-EulerGamma + Log[b] - Log[t])"
+    );
+  }
+
+  #[test]
   fn constant_one_over_s() {
     assert_eq!(
       interpret("InverseLaplaceTransform[1/s, s, t]").unwrap(),
