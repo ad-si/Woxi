@@ -5514,7 +5514,10 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // a String that displays as the typeset expression rather than as
         // its own source. `Sin[x]` becomes
         // `RowBox[{"sin", "(", "x", ")"}]`, a quotient a `FractionBox`.
-        return Ok(Expr::String(traditional_form_box_escape(&args[0], false)));
+        // Machine reals typeset at the 6 significant digits the
+        // FrontEnd displays: `0.7967806891350713` becomes `0.796781`.
+        let rounded = truncate_machine_reals_for_to_string(&args[0]);
+        return Ok(Expr::String(traditional_form_box_escape(&rounded, false)));
       }
       "StandardForm" => {
         // Build the box AST via MakeBoxes (which dispatches user-defined

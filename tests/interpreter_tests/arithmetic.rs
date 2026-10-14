@@ -7253,6 +7253,20 @@ mod cases {
     );
   }
 
+  /// `ToString[real, TraditionalForm]` typesets a machine real at the 6
+  /// significant digits the FrontEnd shows, like plain `ToString` does.
+  #[test]
+  fn to_string_traditional_form_rounds_machine_reals() {
+    assert_case(
+      "ToString[0.7967806891350713, TraditionalForm]",
+      "DisplayForm[FormBox[0.796781`, TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[{15.840646417884168, 1/2}, TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{{, RowBox[{15.8406`, ,, FractionBox[1, 2]}], }}], TraditionalForm]]",
+    );
+  }
+
   // A balanced `(...)` group inside box-notation is taken as a
   // single unit by the surrounding operator. wolframscript:
   // `\(x \/ (y + z)\)` → `FractionBox["x", RowBox[{"(", RowBox[{"y",
