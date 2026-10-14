@@ -849,6 +849,30 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::tree_form::expression_tree_plot_ast(args);
   }
 
+  // `MultivariateStatistics`EllipsoidQuantile[dist, p]` is the smallest
+  // ellipsoid holding probability p of a multinormal distribution: the
+  // Mahalanobis ball of squared radius InverseCDF[ChiSquareDistribution[d], p],
+  // i.e. Ellipsoid[mean, c Covariance].
+  if name == "MultivariateStatistics`EllipsoidQuantile"
+    && args.len() == 2
+    && matches!(&args[0], Expr::FunctionCall { name: d, .. }
+      if d == "MultinormalDistribution")
+  {
+    let mean = call1("Mean", args[0].clone());
+    let radius = call(
+      "InverseCDF",
+      vec![
+        call1("ChiSquareDistribution", call1("Length", mean.clone())),
+        args[1].clone(),
+      ],
+    );
+    let cov = call1("Covariance", args[0].clone());
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Ellipsoid",
+      vec![mean, call("Times", vec![radius, cov])],
+    ));
+  }
+
   // `GraphUtilities\`` works on a graph given as a plain list of rules
   // (`{1 -> 2, 2 -> 3}`). Build the equivalent `Graph` and delegate to the
   // built-in graph functions instead of reimplementing them.

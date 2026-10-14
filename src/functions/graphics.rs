@@ -2283,6 +2283,9 @@ fn collect_primitives(
         "Sphere" | "Ball" => {
           parse_sphere(name == "Ball", args, style, prims);
         }
+        "Ellipsoid" if args.len() == 2 => {
+          parse_ellipsoid(args, style, prims);
+        }
         "Rectangle" => {
           parse_rectangle(args, style, prims);
         }
@@ -3165,6 +3168,73 @@ fn parse_disk(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     cy,
     rx,
     ry,
+    style: style.clone(),
+  });
+}
+
+/// `Ellipsoid[c, {rx, ry}]` / `Ellipsoid[c, Σ]` inside a two-dimensional
+/// `Graphics`: a filled ellipse. The second argument is either the semi-axes
+/// or a positive-semidefinite covariance-like matrix, whose ellipse is
+/// `{x : (x - c).Σ^-1.(x - c) <= 1}`. Other dimensions draw nothing here.
+fn parse_ellipsoid(
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) {
+  let Some((cx, cy)) = expr_to_point(&args[0]) else {
+    return;
+  };
+  let Expr::List(second) = &args[1] else {
+    return;
+  };
+  // Semi-axes: an axis-aligned ellipse is exactly a `Disk`.
+  if second.len() == 2 && second.iter().all(|e| !matches!(e, Expr::List(_))) {
+    if let (Some(rx), Some(ry)) =
+      (expr_to_f64(&second[0]), expr_to_f64(&second[1]))
+    {
+      prims.push(Primitive::Disk {
+        cx,
+        cy,
+        rx,
+        ry,
+        style: style.clone(),
+      });
+    }
+    return;
+  }
+  // Matrix form: boundary points c + L (cos t, sin t) with Σ = L L^T.
+  let rows: Option<Vec<Vec<f64>>> = second
+    .iter()
+    .map(|r| match r {
+      Expr::List(items) if items.len() == 2 => {
+        Some(items.iter().filter_map(expr_to_f64).collect::<Vec<_>>())
+      }
+      _ => None,
+    })
+    .collect();
+  let Some(m) = rows.filter(|m| m.len() == 2 && m.iter().all(|r| r.len() == 2))
+  else {
+    return;
+  };
+  let (a, b, d) = (m[0][0], f64::midpoint(m[0][1], m[1][0]), m[1][1]);
+  if a < 0.0 || d < 0.0 || a * d - b * b < -1e-12 {
+    return;
+  }
+  let l11 = a.sqrt();
+  let l21 = if l11 > 0.0 { b / l11 } else { 0.0 };
+  let l22 = (d - l21 * l21).max(0.0).sqrt();
+  const STEPS: usize = 120;
+  let points = (0..STEPS)
+    .map(|i| {
+      let t = std::f64::consts::TAU * i as f64 / STEPS as f64;
+      let (s, c) = t.sin_cos();
+      (cx + l11 * c, cy + l21 * c + l22 * s)
+    })
+    .collect();
+  prims.push(Primitive::PolygonPrim {
+    points,
+    holes: Vec::new(),
+    vertex_colors: None,
     style: style.clone(),
   });
 }
