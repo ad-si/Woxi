@@ -1863,6 +1863,27 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         Some(vec![0.0, -SMALL_DASH_PX, -SMALL_DASH_PX, -SMALL_DASH_PX]);
       true
     }
+    // A style given as an option rule inside a primitive list
+    // (`{Thickness -> 0.02, Circle[]}`) acts like the directive of the same
+    // name (`Thickness[0.02]`), so delegate to the single directive parser.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k)
+      if matches!(k.as_str(), "Thickness" | "AbsoluteThickness"
+        | "PointSize" | "AbsolutePointSize" | "Opacity")) =>
+    {
+      let Expr::Identifier(k) = pattern.as_ref() else {
+        return false;
+      };
+      apply_directive(
+        &Expr::FunctionCall {
+          name: k.clone(),
+          args: vec![replacement.as_ref().clone()].into(),
+        },
+        style,
+      )
+    }
     // A directive list nested one level down (`Directive[{Thick, Blue}]`,
     // `Style[expr, {Thick, Blue}]`) is equivalent to its items given
     // directly — recurse instead of falling through unrecognised, or the
@@ -2571,6 +2592,10 @@ fn collect_primitives(
       // Try as named color directive
       apply_directive(expr, &mut *style);
       let _ = name;
+    }
+    // `Thickness -> t` and friends in a primitive list act as directives.
+    Expr::Rule { .. } => {
+      apply_directive(expr, &mut *style);
     }
     _ => {}
   }
