@@ -18093,14 +18093,30 @@ mod filling_style {
 
   #[test]
   fn plot_filling_style_color_only() {
-    // A bare color keeps the default 0.2 opacity but recolors the fill.
+    // A bare color recolors the fill and, as in Mathematica, draws it opaque.
     clear_state();
     let svg = export_svg(
       "Plot[Sin[x], {x, 0, 6}, Filling -> Axis, FillingStyle -> Red]",
     );
     assert!(
-      svg.contains("opacity=\"0.2\" fill=\"#FF0000\""),
-      "expected red fill polygon at the default 0.2 opacity"
+      svg.contains("opacity=\"1\" fill=\"#FF0000\""),
+      "expected an opaque red fill polygon"
+    );
+  }
+
+  #[test]
+  fn plot_filling_style_color_opaque_under_show() {
+    // A colored Bottom filling merged by Show stays opaque over a
+    // background rectangle (Stable-distribution Demonstration).
+    clear_state();
+    let svg = export_svg(
+      "Show[Graphics[{RGBColor[0.6, 0.73, 0.36], Rectangle[{0, 0}]}], \
+       Plot[Exp[-3 t], {t, 0, 1}, Filling -> Bottom, \
+       FillingStyle -> RGBColor[0.9, 0.42, 0.17]]]",
+    );
+    assert!(
+      svg.contains("fill=\"rgb(230,107,43)\"/>"),
+      "expected an opaque orange fill polygon (no fill-opacity)"
     );
   }
 
