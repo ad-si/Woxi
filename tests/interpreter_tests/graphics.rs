@@ -21995,12 +21995,12 @@ mod contour_plot_3d {
       "the plane must stay translucent"
     );
     let polygons: Vec<&str> = svg.split("<polygon points=\"").skip(1).collect();
-    assert!(!polygons.is_empty());
+    assert_ne!(polygons.len(), 0);
     for poly in polygons {
       let pts = poly.split('"').next().unwrap();
-      for coord in pts.split(|c| c == ' ' || c == ',') {
+      for coord in pts.split([' ', ',']) {
         let v: f64 = coord.parse().unwrap();
-        assert!(v >= -1.0 && v <= 361.0, "polygon spills out: {v}");
+        assert!((-1.0..=361.0).contains(&v), "polygon spills out: {v}");
       }
     }
   }
