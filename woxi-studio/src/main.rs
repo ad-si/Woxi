@@ -8398,6 +8398,34 @@ mod tests {
     );
   }
 
+  /// A slider written with a negative step (`{t, 0, Pi, -0.1}`) must step
+  /// by its magnitude, and a revolved-solid body must still draw.
+  #[test]
+  fn manipulate_negative_slider_step_uses_its_magnitude() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGraphics3D[{Opacity[0.5], Cylinder[{{0, 0, 0}, {0, 0, 1}}, r]}],\n{{r, 1, \"radius\"}, 0, 2, -0.25},\n{{t, 0, \"angle\"}, 0, Pi, -0.1, Appearance -> \"Labeled\"}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let steps: Vec<f64> = widget
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Continuous { step, .. } => Some(*step),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(steps, [0.25, 0.1]);
+  }
+
   /// A dissection Manipulate assembling colored polygon pieces with
   /// `Translate`/`Rotate`, a boolean checkbox control (`{False, True}`
   /// domain) toggling a hint overlay, and several `Tiny` step sliders with

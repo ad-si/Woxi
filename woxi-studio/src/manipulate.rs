@@ -1457,10 +1457,13 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         is_real,
         orientation,
       } => {
-        let step = step.unwrap_or_else(|| {
-          let span = (*max - *min).abs();
-          if span > 0.0 { span / 100.0 } else { 1.0 }
-        });
+        // Wolfram treats a negative step like its magnitude, and a zero
+        // step like an omitted one.
+        let step =
+          step.map(f64::abs).filter(|s| *s > 0.0).unwrap_or_else(|| {
+            let span = (*max - *min).abs();
+            if span > 0.0 { span / 100.0 } else { 1.0 }
+          });
         ControlState::Continuous {
           name: name.clone(),
           label: label.clone(),
