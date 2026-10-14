@@ -2517,6 +2517,14 @@ fn clip_line_to_box(
   Some((lo, hi))
 }
 
+fn point_in_box(p: &Point3D, bounds: &[(f64, f64); 3]) -> bool {
+  let eps = 1e-9;
+  [p.x, p.y, p.z]
+    .iter()
+    .zip(bounds)
+    .all(|(v, (lo, hi))| *v >= lo - eps && *v <= hi + eps)
+}
+
 /// Clip a polyline to the box an explicit `PlotRange` pins, splitting it
 /// where it leaves and re-enters — Wolfram draws nothing outside the range.
 fn clip_polyline_to_box(
@@ -6078,6 +6086,33 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prims.retain(|p| {
       !matches!(p, Primitive3D::Line3D { segments, .. } if segments.is_empty())
     });
+
+    // Likewise a polygon is cut down to the part inside the box, and
+    // dropped when nothing of it is left (a large translucent plane shown
+    // in a small range).
+    for prim in &mut prims {
+      if let Primitive3D::Polygon3D { points, holes, .. } = prim
+        && holes.is_empty()
+        && points.iter().any(|p| !point_in_box(p, &bounds))
+      {
+        let mut poly: Vec<[f64; 3]> =
+          points.iter().map(|p| [p.x, p.y, p.z]).collect();
+        for axis in 0..3 {
+          let mut n = [0.0; 3];
+          n[axis] = 1.0;
+          poly = clip_polygon_to_halfspace(&poly, n, bounds[axis].1);
+          n[axis] = -1.0;
+          poly = clip_polygon_to_halfspace(&poly, n, -bounds[axis].0);
+        }
+        *points = poly
+          .into_iter()
+          .map(|[x, y, z]| Point3D { x, y, z })
+          .collect();
+      }
+    }
+    prims.retain(|p| {
+      !matches!(p, Primitive3D::Polygon3D { points, .. } if points.len() < 3)
+    });
   }
 
   // The symbolic form carried on the rendered result so that Part can
@@ -9192,9 +9227,16 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 ));
               }
               content.push(Expr::List(
-                vec![
-                  color_directive.clone(),
-                  call1(
+                {
+                  let mut item = vec![color_directive.clone()];
+                  // A translucent surface stays translucent when its
+                  // primitives are merged into another graphic.
+                  if let Some(st) = style
+                    && st.opacity < 1.0
+                  {
+                    item.push(call1("Opacity", Expr::Real(st.opacity)));
+                  }
+                  item.push(call1(
                     "Polygon",
                     Expr::List(
                       vec![
@@ -9204,8 +9246,9 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                       ]
                       .into(),
                     ),
-                  ),
-                ]
+                  ));
+                  item
+                }
                 .into(),
               ));
             });

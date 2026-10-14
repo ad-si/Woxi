@@ -21979,6 +21979,33 @@ mod contour_plot_3d {
   use super::*;
 
   #[test]
+  fn shown_plane_keeps_its_opacity_and_is_cut_to_the_plot_range() {
+    // A translucent `ContourPlot3D` plane merged by `Show` into a
+    // `Graphics3D` with a fixed `PlotRange` stays translucent and is
+    // clipped to that range instead of spilling over the picture.
+    let svg = export_svg(
+      "Show[{Graphics3D[{Red, Polygon[{{0, 0, 0}, {5, 0, 0}, {5, 5, 5}}]}, \
+       PlotRange -> {{-5, 20}, {-5, 20}, {0, 15}}]}, \
+       {ContourPlot3D[x + y + z == 10, {x, -10, 60}, {y, -10, 60}, \
+       {z, -10, 60}, Mesh -> None, ContourStyle -> Directive[Blue, \
+       Opacity[0.1]], PlotPoints -> 6]}]",
+    );
+    assert!(
+      svg.contains("opacity=\"0.1\""),
+      "the plane must stay translucent"
+    );
+    let polygons: Vec<&str> = svg.split("<polygon points=\"").skip(1).collect();
+    assert!(!polygons.is_empty());
+    for poly in polygons {
+      let pts = poly.split('"').next().unwrap();
+      for coord in pts.split(|c| c == ' ' || c == ',') {
+        let v: f64 = coord.parse().unwrap();
+        assert!(v >= -1.0 && v <= 361.0, "polygon spills out: {v}");
+      }
+    }
+  }
+
+  #[test]
   fn extracted_surface_has_no_polygon_outline() {
     // `plot[[1]]` re-rendered in a `Graphics3D` must not outline every
     // surface triangle with the default polygon edge.
