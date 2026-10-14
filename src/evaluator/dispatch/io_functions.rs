@@ -5909,6 +5909,22 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       // of pictures (`Grid[{Join[{"encryption"}, pictures]}]`) showed the
       // label as quoted InputForm text (`"encryption"`) instead of a
       // caption.
+      // A `Grid` with merged cells (`SpanFromLeft`/`SpanFromAbove`) needs
+      // the table engine, which sizes the columns and rows a span covers
+      // and centres its content across them; the picture compositor below
+      // only knows one cell per slot.
+      if name == "Grid"
+        && layout_rows(name, args).iter().flatten().any(|c| {
+          matches!(c, Expr::Identifier(s) if matches!(
+            s.as_str(),
+            "SpanFromLeft" | "SpanFromAbove" | "SpanFromBoth"
+          ))
+        })
+        && let Ok(svg) =
+          crate::functions::graphics::grid_svg_with_gaps(args, &[])
+      {
+        return svg;
+      }
       let rows: Vec<Vec<String>> = layout_rows(name, args)
         .iter()
         .map(|cells| {

@@ -1428,6 +1428,41 @@ mod graphics {
       );
     }
 
+    /// `EdgeForm[Directive[…]]` (and nested lists) carry the same colour
+    /// and width as the bare form.
+    #[test]
+    fn edge_form_accepts_directive_wrapper() {
+      for directive in [
+        "EdgeForm[Directive[Thick, Red]]",
+        "EdgeForm[{Directive[Thick, Red]}]",
+        "EdgeForm[Directive[{Thick, Directive[Red]}]]",
+      ] {
+        let svg = export_svg(&format!(
+          "Graphics[{{{directive}, Orange, Polygon[{{{{0,0}},{{2,0}},{{1,1}}}}]}}]"
+        ));
+        assert!(
+          svg.contains("stroke=\"rgb(255,0,0)\" stroke-width=\"2.00\""),
+          "{directive}: {svg}"
+        );
+      }
+    }
+
+    /// A `Style[…, Italic]` part of a `Text` label slants only its own
+    /// characters.
+    #[test]
+    fn text_label_italicises_only_styled_parts() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{Style[\"y\", Italic], \" = 1\"}], {0, 0}]}]",
+      );
+      assert!(
+        svg.contains("><tspan font-style=\"italic\">y</tspan> = 1</text>"),
+        "{svg}"
+      );
+      let plain =
+        export_svg("Graphics[{Text[Row[{\"y\", \" = 1\"}], {0, 0}]}]");
+      assert!(!plain.contains("<tspan"), "{plain}");
+    }
+
     /// What an `EdgeForm` leaves unsaid comes from Wolfram's defaults: a
     /// width alone strokes black, a colour alone strokes at width 1, and
     /// an `EdgeForm` that names neither draws no edge at all — which is
@@ -2818,6 +2853,27 @@ mod graphics {
       );
     }
 
+    /// `Rotate[Text[…], θ]` inside a `Graphics` scene tilts the label's
+    /// baseline by θ (a vertical column label in a process diagram). It
+    /// must draw what `Text` with the equivalent baseline direction draws,
+    /// whether or not the label is wrapped in `Style`, and a zero angle must
+    /// leave the label untouched.
+    #[test]
+    fn rotate_tilts_a_text_label() {
+      let rotated = export_svg(
+        "Graphics[{Rotate[Style[Text[\"column\", {2, 5}, {0, 0}], Bold], Pi/2]}, PlotRange -> {{0, 4}, {0, 10}}]",
+      );
+      let direct = export_svg(
+        "Graphics[{Style[Text[\"column\", {2, 5}, {0, 0}, {0, 1}], Bold]}, PlotRange -> {{0, 4}, {0, 10}}]",
+      );
+      assert!(rotated.contains("rotate(-90.000"), "got:\n{rotated}");
+      assert_eq!(rotated, direct);
+      let flat = export_svg(
+        "Graphics[{Rotate[Text[\"column\", {2, 5}, {0, 0}], 0]}, PlotRange -> {{0, 4}, {0, 10}}]",
+      );
+      assert!(!flat.contains("rotate("), "got:\n{flat}");
+    }
+
     /// The three-argument form, `Rotate[g, θ, {x, y}]`, rotates about an
     /// explicit pivot in `g`'s own data coordinates.
     #[test]
@@ -3204,6 +3260,46 @@ mod graphics {
         "Coordinate built from InverseGammaRegularized should numericize: {svg}"
       );
       assert!(svg.contains("<polyline"), "Line should render: {svg}");
+    }
+  }
+
+  mod list_plot_data {
+    use super::*;
+
+    /// Number of plotted data marks/curves, told apart from axes and ticks
+    /// by the default first plot colour.
+    fn curve_marks(svg: &str) -> usize {
+      svg.matches("#5E81B5").count()
+    }
+
+    #[test]
+    fn leading_non_numeric_pair_keeps_the_curve() {
+      // A `Table` that starts at a singularity yields `{x, Indeterminate}`
+      // as its first row; the remaining rows must still be plotted.
+      for first in ["Indeterminate", "ComplexInfinity"] {
+        let svg = export_svg(&format!(
+          "ListLinePlot[{{{{0, {first}}}, {{1, -1}}, {{2, 0}}, {{3, 0.5}}}}]"
+        ));
+        assert!(curve_marks(&svg) >= 1, "curve missing for {first}: {svg}");
+      }
+    }
+
+    #[test]
+    fn leading_non_numeric_pair_keeps_the_points() {
+      let svg =
+        export_svg("ListPlot[{{0., Indeterminate}, {1., -3}, {2, 0}, {3, 1}}]");
+      assert!(curve_marks(&svg) >= 3, "points missing: {svg}");
+    }
+
+    #[test]
+    fn leading_non_numeric_pair_matches_dropping_it() {
+      let with = export_svg(
+        "ListLinePlot[{{0, Indeterminate}, {1, -1}, {2, 0}, {3, 1}}, PlotRange -> {{1, 3}, {-1, 1}}]",
+      );
+      let without = export_svg(
+        "ListLinePlot[{{1, -1}, {2, 0}, {3, 1}}, PlotRange -> {{1, 3}, {-1, 1}}]",
+      );
+      assert_eq!(with, without);
     }
   }
 }
@@ -3840,6 +3936,37 @@ mod plot3d {
             .is_err()
         );
       }
+    }
+
+    /// Regression: `ColorFunction` on a `ParametricPlot3D` curve was dropped,
+    /// so the curve was always drawn in one flat color instead of being
+    /// colored along its length.
+    #[test]
+    fn parametric_curve_honours_color_function() {
+      clear_state();
+      // Distinct colors along the curve, driven by the scaled z coordinate.
+      let result = interpret(
+        "Length[DeleteDuplicates[Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, \
+         {t, 0, 6}, ColorFunction -> Function[{x, y, z}, Hue[z]]][[1]], \
+         _Hue, Infinity]]] > 10",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+      // The option is consumed, not forwarded to the Graphics3D result.
+      let result = interpret(
+        "FreeQ[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}, \
+         ColorFunction -> Function[{x, y, z}, Hue[z]]], ColorFunction]",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+      // Named schemes color by the scaled height as well.
+      let result = interpret(
+        "Length[DeleteDuplicates[Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, \
+         {t, 0, 6}, ColorFunction -> Function[{x, y, z}, \
+         ColorData[\"SouthwestColors\"][z]]][[1]], _RGBColor, Infinity]]] > 10",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
     }
 
     /// Regression: `ParametricPlot3D` surfaces ignored `PlotPoints` and
@@ -6756,6 +6883,25 @@ mod plot3d {
       );
     }
 
+    /// `ToString[…, TraditionalForm]` text keeps its string atoms quoted
+    /// inside the boxes; a grid cell typesets them without the quotes.
+    #[test]
+    fn grid_traditional_form_string_has_no_stray_quotes() {
+      let svg = export_svg(
+        "Grid[{{ToString[Superscript[\"4f\", \"14\"], TraditionalForm]}}]",
+      );
+      assert!(
+        !svg.contains("&quot;"),
+        "string atoms print without quotes: {svg}"
+      );
+      assert!(
+        svg.contains(
+          "4f<tspan baseline-shift=\"super\" font-size=\"70%\">14</tspan>"
+        ),
+        "the exponent is a superscript: {svg}"
+      );
+    }
+
     /// `Text[Framed[Column[{...}]], pos]` boxes a *stacked* label — the
     /// `Framed` background must grow to cover every line, not just the
     /// first, and must not be centred on the anchor of the (already
@@ -7717,6 +7863,32 @@ mod plot3d {
       );
     }
 
+    /// A multi-line `PlotLabel` under a small explicit `ImagePadding` grows
+    /// upwards from the padding; it used to start above the canvas, so the
+    /// whole title was invisible.
+    #[test]
+    fn stacked_plot_label_stays_inside_the_image_with_image_padding() {
+      let svg = export_svg(
+        "ListPlot[{1, 3, 2}, ImageSize -> {500, 300}, \
+         ImagePadding -> {{35, 25}, {45, 25}}, \
+         PlotLabel -> Column[{\"line one\\nline two\", \"line three\"}]]",
+      );
+      let line = svg
+        .lines()
+        .find(|l| l.contains("line one"))
+        .expect("title text");
+      let y: f64 = line
+        .split_once(" y=\"")
+        .unwrap()
+        .1
+        .split_once('"')
+        .unwrap()
+        .0
+        .parse()
+        .unwrap();
+      assert!(y >= 0.0, "title starts above the image: {line}");
+    }
+
     /// Every label of a tick set carries the decimals its spacing needs, so
     /// a framed `Graphics` stepping by 0.5 reads `-1.0, -0.5, 0.0, …` —
     /// the same as the plot renderer, and as wolframscript.
@@ -7879,6 +8051,8 @@ mod plot3d {
           .unwrap_or("")
           .to_string()
       };
+      // The italic parts are drawn as `<tspan>`s inside the label.
+      const FX: &str = "<tspan font-style=\"italic\">f</tspan>(<tspan font-style=\"italic\">x</tspan>)";
       let svg = export_svg(
         r#"Graphics[{Text[Row[{Style["f", Italic, 20], Style["(", 20],
              Style["x", Italic, 20], Style[")", 20]}], {0.5, 0.5}],
@@ -7888,11 +8062,11 @@ mod plot3d {
       );
       // Every part asks for 20 point, so the label is a 20-point label —
       // the same size as the plain `Style` label beside it.
-      assert_eq!(attr(&svg, "f(x)", "font-size"), "20");
+      assert_eq!(attr(&svg, FX, "font-size"), "20");
       assert_eq!(attr(&svg, "z", "font-size"), "20");
       // The parts disagree on slant (an italic letter, an upright bracket),
       // so the label keeps its own upright setting.
-      assert_eq!(attr(&svg, "f(x)", "font-style"), "normal");
+      assert_eq!(attr(&svg, FX, "font-style"), "normal");
       // Parts that agree on slant do carry it.
       assert_eq!(attr(&svg, "ab", "font-size"), "20");
       // A row with an unstyled part keeps the label's own size.
@@ -15165,7 +15339,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         r#"Graphics[{Text[Style[Subscript[Style["\!\(\*OverscriptBox[\(r\), \(\[RightVector]\)]\)", Italic], "1"], 15], {0, 0}]}]"#,
       );
       assert!(
-        svg.contains("r\u{20D7}\u{2081}"),
+        svg.contains("r\u{20D7}</tspan>\u{2081}"),
         "expected the vector label with a subscript 1: {svg}"
       );
       assert!(
@@ -19927,6 +20101,55 @@ mod grid_rasterize {
   }
 
   #[test]
+  fn image_of_graphics_with_pixel_size_pins_dimensions() {
+    clear_state();
+    // An explicit {w, h} ImageSize lays the graphic out at that pixel size,
+    // whether the graphic is written inline or comes from a variable.
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image[Graphics[{Red, Rectangle[{0, 0}, {5, 2}]}], \
+         ImageSize -> {80, 30}]]"
+      )
+      .unwrap(),
+      "{80, 30}"
+    );
+    assert_eq!(
+      interpret(
+        "g = Graphics[{Blue, Disk[]}]; \
+         ImageDimensions[Image[g, ImageSize -> {50, 70}]]"
+      )
+      .unwrap(),
+      "{50, 70}"
+    );
+  }
+
+  #[test]
+  fn image_add_combines_rgb_with_rgba_and_saturates() {
+    clear_state();
+    // A rasterized graphic (RGBA) adds to an RGB image on the color
+    // channels, and byte images saturate at white.
+    assert_eq!(
+      interpret(
+        "a = Image[Table[{0.8, 0.8, 0.8}, {2}, {3}], \"Byte\"]; \
+         b = Image[Graphics[{White, Rectangle[]}], ImageSize -> {3, 2}]; \
+         {ImageChannels[ImageAdd[a, b]], Max[ImageData[ImageAdd[a, b]]]}"
+      )
+      .unwrap(),
+      "{3, 1.}"
+    );
+  }
+
+  #[test]
+  fn panel_around_an_image_draws_the_image() {
+    clear_state();
+    let result = woxi::interpret_with_stdout(
+      "Panel[Pane[Image[{{0.2, 0.8}, {0.9, 0.1}}]]]",
+    )
+    .unwrap();
+    assert!(result.graphics.is_some());
+  }
+
+  #[test]
   fn image_of_graphics_rasterizes() {
     clear_state();
     // ImageSize only affects display, not the pixel data.
@@ -21380,6 +21603,35 @@ mod graphics_complex_normal {
       "{Polygon[{{0, 0}, {1, 1}, {2, 0}}, VertexColors -> \
        {RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1]}], \
        Line[{{0, 0}, {1, 1}}]}"
+    );
+  }
+
+  #[test]
+  fn polyhedron_data_net_faces_unfolds_every_face_flat() {
+    // A net has one 2D polygon per face, each keeping its side count and
+    // unit edge length, and shares an edge with an already placed face.
+    assert_eq!(
+      interpret(
+        r#"net = PolyhedronData["Dodecahedron", "NetFaces"];
+        {Length[net], Union[Map[Length[First[#]] &, net]],
+         Union[Map[Length[First[#][[1]]] &, net]]}"#
+      )
+      .unwrap(),
+      "{12, {5}, {2}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"net = PolyhedronData["Cube", "NetFaces"];
+        Round[Union[Flatten[Map[
+          Function[f, Norm[f[[1, 1]] - f[[1, 2]]]], net]]], 10^-9]"#
+      )
+      .unwrap(),
+      "{1}"
+    );
+    assert_eq!(
+      interpret(r#"Length[PolyhedronData["Icosahedron", "NetFaces"]]"#)
+        .unwrap(),
+      "20"
     );
   }
 
@@ -34288,6 +34540,31 @@ mod empty_plot {
   fn bare_null_plot_is_not_blank() {
     let svg = export_svg("Plot[Null, {x, -1, 1}]");
     assert!(svg.contains("<text"), "axes missing: {svg}");
+  }
+
+  #[test]
+  fn textured_polygon_embeds_image_and_clips_to_polygon() {
+    let svg = export_svg(
+      "Graphics[{Texture[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]], \
+       Polygon[{{0, 0}, {1, 0}, {1, 1}}, \
+       VertexTextureCoordinates -> {{0, 0}, {1, 0}, {1, 1}}]}]",
+    );
+    assert!(
+      svg.contains("data:image/png;base64,"),
+      "texture missing: {svg}"
+    );
+    assert!(svg.contains("clip-path=\"url(#tex"), "clip missing: {svg}");
+    assert!(svg.contains("<use"), "placement missing: {svg}");
+  }
+
+  #[test]
+  fn textured_polygon_without_coordinates_falls_back_to_plain_fill() {
+    let svg = export_svg(
+      "Graphics[{Texture[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]], \
+       Polygon[{{0, 0}, {1, 0}, {1, 1}}]}]",
+    );
+    assert!(!svg.contains("data:image/png"), "unexpected texture: {svg}");
+    assert!(svg.contains("<polygon"), "polygon missing: {svg}");
   }
 }
 

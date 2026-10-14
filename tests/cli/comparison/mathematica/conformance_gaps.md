@@ -4905,6 +4905,7 @@ numeric complex poles returns unevaluated, so the time-response plot in the
 `Poles and Zeros of Time Domain Response Functions` Demonstration stays empty
 (its pole/zero plane renders fine).
 
+
 ### `ReplaceAll` of many call sites by a large `InterpolatingFunction`
 
 `Table[x[i][t], {i, 80}, {t, 0, 388, 0.1}] /. sol[[1]]` with the NDSolve
@@ -4913,3 +4914,11 @@ Systems` Demonstration) deep-copies the tabulated data for every one of the
 ~310,000 replaced `x[i]` heads, so it takes minutes instead of Wolfram's
 shared-structure instant. Applying an `InterpolatingFunction` itself is
 O(log points) now; only the per-occurrence copy remains.
+
+### Upvalues whose pattern ends in `OptionsPattern[]` need an explicit option
+
+`Foo[c_Curve, OptionsPattern[]] ^:= …` is stored with a fixed argument count,
+so `Foo[Curve[1]]` (no options) does not match it, while `Foo[Curve[1], a -> 2]`
+does. In Wolfram `OptionsPattern[]` also matches zero arguments. The
+`Turtle Fractals` Demonstration defines such a `Show` upvalue, which its
+`Manipulate` never calls.

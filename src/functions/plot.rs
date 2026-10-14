@@ -23,6 +23,15 @@ pub(crate) fn plot_label_extra_lines(label: Option<&StyledLabel>) -> usize {
     .map_or(0, StyledLabel::extra_line_count)
 }
 
+/// Extra top room, in render pixels, a stacked (multi-line) `PlotLabel`
+/// needs on top of an explicit `ImagePadding`: the title grows upwards from
+/// the padding, so the padding alone would push its extra lines off the
+/// canvas.
+fn stacked_title_room(label: Option<&StyledLabel>, sf: f64) -> i32 {
+  let font = label.and_then(|sl| sl.font_size).unwrap_or(17.0);
+  (plot_label_extra_lines(label) as f64 * font * 1.2 * sf).ceil() as i32
+}
+
 pub(crate) const DEFAULT_WIDTH: u32 = 360;
 pub(crate) const DEFAULT_HEIGHT: u32 = 225;
 /// Internal rendering resolution multiplier for sub-pixel precision.
@@ -3144,7 +3153,14 @@ fn generate_svg_with_options(
         opts.aspect_ratio,
         sf,
       );
-      (m.top as i32, m.bottom, m.left, 0u32, m.right, 0u32)
+      (
+        m.top as i32 + stacked_title_room(opts.plot_label.as_ref(), sf),
+        m.bottom,
+        m.left,
+        0u32,
+        m.right,
+        0u32,
+      )
     }
     None => (
       top_margin,
@@ -4587,7 +4603,7 @@ pub(crate) fn generate_scatter_svg_with_options(
         sf,
       );
       (
-        m.top as f64,
+        m.top as f64 + stacked_title_room(opts.plot_label.as_ref(), sf) as f64,
         m.right as f64,
         0.0,
         0.0,
@@ -9429,7 +9445,11 @@ pub(crate) fn eval_body_vars_symbolic(body: &Expr, vars: &[&str]) -> Expr {
     .iter()
     .map(|v| (*v, crate::ENV.with(|e| e.borrow_mut().remove(*v))))
     .collect();
+  crate::evaluator::function_application::SYMBOLIC_PLOT_PROBE
+    .with(|p| p.set(p.get() + 1));
   let result = evaluate_expr_to_expr(body).unwrap_or_else(|_| body.clone());
+  crate::evaluator::function_application::SYMBOLIC_PLOT_PROBE
+    .with(|p| p.set(p.get() - 1));
   for (var, value) in saved {
     if let Some(v) = value {
       crate::ENV.with(|e| {

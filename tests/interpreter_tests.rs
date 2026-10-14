@@ -1257,6 +1257,26 @@ mod interpreter_tests {
     assert!(svg.contains("<svg"));
   }
 
+  /// The same click-to-edit idiom, but with the `EventHandler`s nested as
+  /// items of a `Column` inside a `Grid` cell (a puzzle board with a digit
+  /// picker below it). Each nested handler must draw its content — the
+  /// board graphic and the picker grid — not its source text.
+  #[test]
+  fn test_event_handler_items_in_column_in_grid_render() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Grid[{{Column[{\
+         EventHandler[Dynamic[Graphics[{Red, Rectangle[]}]], \
+           \"MouseClicked\" :> Null], \
+         EventHandler[Grid[{{1, 2, 3}}, Frame -> All], \
+           \"MouseClicked\" :> Null]}]}}]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected a rendered layout");
+    assert!(!svg.contains("EventHandler"), "raw source leaked: {svg}");
+    assert!(!svg.contains("MouseClicked"), "raw source leaked: {svg}");
+  }
+
   /// Script/CLI mode keeps EventHandler's canonical symbolic form, matching
   /// wolframscript run without a front end — only Woxi's visual hosts
   /// (Playground, Studio) release it to show the wrapped content.
@@ -5429,6 +5449,28 @@ mod interpreter_tests {
         r.warnings
       );
     }
+  }
+
+  #[test]
+  fn control_active_resolves_when_a_saved_definition_makes_it_hold_all() {
+    // A Demonstration saved with `SaveDefinitions -> True` restores
+    // `Attributes[ControlActive] = {HoldAll, ReadProtected}`. The held
+    // inactive form must still be evaluated — including Module locals in a
+    // Table step — rather than left raw for the iterator check to reject.
+    let r = interpret_with_stdout(
+      "Attributes[ControlActive] = {HoldAll, ReadProtected}; \
+       {ControlActive[1 + 1, 2 + 2], \
+        Module[{L = 3, e}, e = L/3; \
+         Length[Table[x, {x, -L - e, L + e, \
+          ControlActive[4 (2 L + 2 e), (2 L + 2 e)/4]}]]]}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{4, 5}");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected warnings: {:?}",
+      r.warnings
+    );
   }
 
   #[test]

@@ -2349,6 +2349,51 @@ mod tests {
     }
 
     #[test]
+    fn grid_spans_a_picture_across_its_columns() {
+      // A picture merged over two columns with `SpanFromLeft` is centred
+      // across both, instead of widening the first column on its own and
+      // leaving a blank placeholder cell beside it.
+      let svg = svg_of(
+        "Grid[{{\"a\", \"b\", \"c\"}, \
+         {Graphics[Rectangle[], ImageSize -> 200], SpanFromLeft}}]",
+      );
+      assert!(
+        svg.contains("width=\"200.0\" height=\"200.0\""),
+        "picture at natural size: {svg}"
+      );
+      assert!(
+        !svg.contains("width=\"1\" height=\"1\""),
+        "no placeholder cell is drawn: {svg}"
+      );
+      // The merged cell covers the first two columns, so the third text
+      // cell sits beyond the picture's right edge (x = 6 + 200 + 6).
+      let c_x: f64 = svg
+        .split("<text x=\"")
+        .filter(|chunk| chunk.contains(">c</text>"))
+        .map(|chunk| chunk.split('"').next().unwrap().parse().unwrap())
+        .next()
+        .expect("text c");
+      assert!(c_x > 206.0, "third column starts after the span: {svg}");
+    }
+
+    #[test]
+    fn grid_cell_locator_pane_over_a_dynamic_picture_is_drawn() {
+      let svg = svg_of(
+        "a = {1.5, 1.5}; Grid[{{\"a\", \"b\"}, {LocatorPane[Dynamic[a], \
+         Dynamic[Graphics[Rectangle[], ImageSize -> 100]], \
+         {{0, 0}, {3, 3}}], SpanFromLeft}}]",
+      );
+      assert!(!svg.contains("LocatorPane"), "no source text: {svg}");
+      let width: u32 = svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .expect("width");
+      assert!(width < 300, "pane is sized as a picture: {svg}");
+    }
+
+    #[test]
     fn framed_text_grid_is_typeset_not_printed() {
       // A flash card: `Framed[Pane[Style[Grid[…], size], …], opts]` around a
       // text-only grid draws the grid inside the frame instead of printing

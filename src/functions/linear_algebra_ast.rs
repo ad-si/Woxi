@@ -3891,6 +3891,26 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let has_real = matrix
     .iter()
     .any(|row| row.iter().any(|e| matches!(e, Expr::Real(_))));
+  // Exact rationals mixed with machine reals (e.g. a covariance matrix)
+  // are inexact overall, so they are converted to reals.
+  let matrix: Vec<Vec<Expr>> = if has_real {
+    matrix
+      .into_iter()
+      .map(|row| {
+        row
+          .into_iter()
+          .map(|e| match &e {
+            Expr::FunctionCall { name, .. } if name == "Rational" => {
+              try_eval_to_f64(&e).map_or(e, Expr::Real)
+            }
+            _ => e,
+          })
+          .collect()
+      })
+      .collect()
+  } else {
+    matrix
+  };
   let all_numeric = matrix.iter().all(|row| {
     row
       .iter()

@@ -3137,6 +3137,24 @@ mod map_operator_forms {
     assert_eq!(interpret("Map[f, g[a, b]]").unwrap(), "g[f[a], f[b]]");
   }
 
+  // The mapped function is evaluated first, so a part extraction or a
+  // compound head resolves to the function it denotes.
+  #[test]
+  fn map_operator_evaluates_part_head() {
+    clear_state();
+    assert_eq!(
+      interpret("g = {h[1], h[2]}; h[1][x_] := x + 1; g[[1]] /@ {1, 2}")
+        .unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret("g = {h[1], h[2]}; h[1][x_] := x + 1; Map[g[[1]], {1, 2}]")
+        .unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(interpret("If[True, f, g] /@ {1}").unwrap(), "{f[1]}");
+  }
+
   // Atoms have no parts, so mapping leaves them alone.
   //   wolframscript -code 'f /@ 5'
   #[test]

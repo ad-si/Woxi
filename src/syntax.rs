@@ -3345,6 +3345,11 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let operand = pair_to_expr(pair.into_inner().next().unwrap());
       call1("Ceiling", operand)
     }
+    // `〈a, b, …〉`: the typeset bracket form for AngleBracket[a, b, …].
+    Rule::AngleBrackets => Expr::FunctionCall {
+      name: "AngleBracket".to_string(),
+      args: pair.into_inner().map(pair_to_expr).collect(),
+    },
     Rule::Increment => {
       // x++ -> Increment[x]; chained `x++++` -> Increment[Increment[x]].
       // Grammar emits one base pair followed by N `IncrementOp` pairs

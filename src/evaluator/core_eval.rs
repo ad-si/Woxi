@@ -1140,6 +1140,18 @@ pub fn evaluate_expr_to_expr_inner(
       Ok(Expr::List(evaluated.into()))
     }
     Expr::FunctionCall { name, args } => {
+      // `System`Plus[1, 2]` is the built-in `Plus[1, 2]`: a head that spells
+      // out the System context evaluates as its short name.
+      if let Some(short) = name.strip_prefix("System`")
+        && !short.is_empty()
+        && !short.contains('`')
+        && crate::evaluator::functions::is_builtin_symbol(short)
+      {
+        return evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: short.to_string(),
+          args: args.clone(),
+        });
+      }
       // Track function calls on the evaluation stack for stack traces.
       crate::push_eval_stack(name);
       // A literal `Sequence[…]` argument splices into the enclosing call
@@ -2503,7 +2515,16 @@ pub fn evaluate_expr_to_expr_inner(
         // `>= 2` (rather than `>= 3`) so an even argument count like
         // `Switch[2, 1]` reaches switch_ast, which reports Switch::argct.
         if name == "Switch" && args.len() >= 2 {
-          return crate::functions::control_flow_ast::switch_ast(args);
+          // `Evaluate[…]` escapes Switch's hold and its result splices, so
+          // `Switch[x, Evaluate[pairs /. List -> Sequence]]` supplies the
+          // pattern/value arguments computed at call time.
+          let unwrapped = args
+            .iter()
+            .map(unwrap_top_level_evaluate)
+            .collect::<Result<Vec<_>, _>>()?;
+          return crate::functions::control_flow_ast::switch_ast(
+            &splice_top_level_sequences(unwrapped),
+          );
         }
         // Special handling for Piecewise - lazy evaluation of branches
         if name == "Piecewise" && !args.is_empty() && args.len() <= 2 {
@@ -3764,6 +3785,13 @@ pub fn evaluate_expr_to_expr_inner(
     }
     Expr::Map { func, list } => {
       let evaluated_list = evaluate_expr_to_expr(list)?;
+      // Map does not hold its head: `list[[1]] /@ x` must reduce the part
+      // extraction first, as `Map[list[[1]], x]` does.
+      if matches!(func.as_ref(), Expr::Part { .. } | Expr::FunctionCall { .. })
+      {
+        let evaluated_func = evaluate_expr_to_expr(func)?;
+        return apply_map_ast(&evaluated_func, &evaluated_list);
+      }
       apply_map_ast(func, &evaluated_list)
     }
     Expr::Apply { func, list } => {

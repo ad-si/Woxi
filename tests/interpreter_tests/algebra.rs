@@ -4046,6 +4046,17 @@ mod switch {
   }
 
   #[test]
+  fn evaluate_splices_computed_branches() {
+    assert_eq!(
+      interpret(
+        "Switch[\"y\", Evaluate[{{\"x\", 1}, {\"y\", 2}, {\"z\", 3}} /. List -> Sequence]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
   fn no_match_returns_unevaluated() {
     assert_eq!(
       interpret("Switch[4, 1, a, 2, b, 3, c]").unwrap(),

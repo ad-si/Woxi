@@ -819,6 +819,21 @@ mod compile {
     );
   }
 
+  // Regression: a plot probes its body with the plot variables free; running
+  // a compiled iteration on those symbols unrolled it symbolically, which is
+  // exponential in the iteration count and made this plot never finish.
+  #[test]
+  fn compiled_iteration_in_density_plot_is_not_unrolled_symbolically() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ly = Compile[{{a, _Real}, {b, _Real}, {n, _Integer}}, Module[{x = 0.5, s = 0.}, Do[x = a x (1 - x); x = b x (1 - x); s = s + Log[Abs[a (1 - 2 x)]], {n}]; s/n]]; Head[DensityPlot[ly[u, v, 25], {u, 3, 4}, {v, 3, 4}, PlotPoints -> 5]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
   #[test]
   fn compile_forces_numerical() {
     clear_state();

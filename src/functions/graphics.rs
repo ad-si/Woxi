@@ -289,8 +289,20 @@ pub(crate) fn named_color(name: &str) -> Option<Color> {
 
 // ── Style State ──────────────────────────────────────────────────────────
 
+/// `Texture[image]` fill: the image as a base64 PNG, plus — once a polygon
+/// carries `VertexTextureCoordinates` — one `(u, v)` per polygon vertex.
+#[derive(Debug, Clone)]
+struct TextureFill {
+  png_b64: std::sync::Arc<str>,
+  width: u32,
+  height: u32,
+  coords: Vec<(f64, f64)>,
+}
+
 #[derive(Debug, Clone)]
 struct StyleState {
+  /// The `Texture[…]` directive in force, if any.
+  texture: Option<std::sync::Arc<TextureFill>>,
   color: Color,
   /// `FaceForm[…]` sets only this — the fill color of area primitives
   /// (Disk, Polygon, Rectangle, …) — leaving `color` (which Text, Line,
@@ -542,6 +554,7 @@ fn parse_shadow_color(expr: &Expr) -> Option<Color> {
 impl Default for StyleState {
   fn default() -> Self {
     Self {
+      texture: None,
       color: BLACK,
       face_color: None,
       opacity: 1.0,
@@ -842,6 +855,11 @@ enum Primitive {
     /// label: the glyphs are sheared/stretched about the anchor with it
     /// (the anchor itself is already moved). `None` for untransformed text.
     glyph_map: Option<[[f64; 2]; 2]>,
+    /// Character ranges (`start..end`, counted in `char`s of `text`) a
+    /// nested `Style[…, Italic]` sets in slanted type —
+    /// `Row[{Style["y", Italic], " = 1"}]` draws an italic `y` and an
+    /// upright remainder. Empty for a label with no partial styling.
+    italic_ranges: Vec<(usize, usize)>,
     style: StyleState,
   },
   BezierCurvePrim {
@@ -1563,6 +1581,41 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       // recursion would repaint the primitives that follow
       // (`{GrayLevel[.25], Specularity[White, 10], Disk[]}`).
       "Specularity" if !args.is_empty() => true,
+      // `Texture[image]`: fills the polygons that follow with the image,
+      // placed by their `VertexTextureCoordinates`.
+      "Texture" if args.len() == 1 => {
+        if let Expr::Image {
+          width,
+          height,
+          channels,
+          data,
+          ..
+        } = &args[0]
+        {
+          use base64::Engine;
+          let img = crate::functions::image_ast::expr_to_dynamic_image(
+            *width, *height, *channels, data,
+          );
+          let mut png = Vec::new();
+          if img
+            .write_to(
+              &mut std::io::Cursor::new(&mut png),
+              image::ImageFormat::Png,
+            )
+            .is_ok()
+          {
+            style.texture = Some(std::sync::Arc::new(TextureFill {
+              png_b64: base64::engine::general_purpose::STANDARD
+                .encode(&png)
+                .into(),
+              width: *width,
+              height: *height,
+              coords: Vec::new(),
+            }));
+          }
+        }
+        true
+      }
       "Opacity" if !args.is_empty() => {
         if let Some(o) = expr_to_f64(&args[0]) {
           style.opacity = o.clamp(0.0, 1.0);
@@ -1702,17 +1755,23 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
             color: None,
             thickness: None,
           };
-          // Unwrap a single List argument: EdgeForm[{GrayLevel[0, 0.5]}]
-          let directives: &[Expr] =
-            if args.len() == 1 && matches!(&args[0], Expr::List(_)) {
-              if let Expr::List(items) = &args[0] {
-                items
-              } else {
-                args
+          // Unwrap Lists and `Directive[…]` wrappers (at any depth):
+          // `EdgeForm[{GrayLevel[0, 0.5]}]`, `EdgeForm[Directive[Thick, Red]]`.
+          fn flatten_edge_directives<'a>(a: &'a Expr, out: &mut Vec<&'a Expr>) {
+            match a {
+              Expr::List(items) => {
+                items.iter().for_each(|i| flatten_edge_directives(i, out));
               }
-            } else {
-              args
-            };
+              Expr::FunctionCall { name, args } if name == "Directive" => {
+                args.iter().for_each(|i| flatten_edge_directives(i, out));
+              }
+              other => out.push(other),
+            }
+          }
+          let mut directives: Vec<&Expr> = Vec::new();
+          args
+            .iter()
+            .for_each(|a| flatten_edge_directives(a, &mut directives));
           for a in directives {
             if let Some(c) = parse_color(a) {
               ef.color = Some(c);
@@ -2913,6 +2972,56 @@ fn parse_point(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
 /// `VertexColors -> {c1, c2, …}`, the option shared by primitives that
 /// support per-vertex coloring (currently just `Line`). Returns `None` if
 /// the option is absent or its value isn't a list of parseable colors.
+/// `VertexTextureCoordinates -> {{u, v}, …}`, given either as a bare rule
+/// or inside a list of options (the form `Append[Polygon[…], {rule}]`
+/// produces).
+fn parse_vertex_texture_coordinates(opts: &[Expr]) -> Option<Vec<(f64, f64)>> {
+  fn from_rule(o: &Expr) -> Option<Vec<(f64, f64)>> {
+    match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexTextureCoordinates") =>
+      {
+        let Expr::List(items) = replacement.as_ref() else {
+          return None;
+        };
+        items.iter().map(expr_to_point).collect()
+      }
+      Expr::List(inner) => inner.iter().find_map(from_rule),
+      _ => None,
+    }
+  }
+  opts.iter().find_map(from_rule)
+}
+
+/// The style for one polygon: the `Texture` in force, if any, with the
+/// polygon's own texture coordinates attached (only when they line up with
+/// its vertices).
+fn with_texture_coords(
+  style: &StyleState,
+  coords: Option<&[(f64, f64)]>,
+  n_points: usize,
+) -> StyleState {
+  let mut out = style.clone();
+  if let (Some(tex), Some(coords)) = (&style.texture, coords)
+    && coords.len() == n_points
+  {
+    out.texture = Some(std::sync::Arc::new(TextureFill {
+      coords: coords.to_vec(),
+      ..(**tex).clone()
+    }));
+  } else if style.texture.is_some() {
+    // No usable coordinates: draw an ordinary filled polygon.
+    out.texture = None;
+  }
+  out
+}
+
 fn parse_vertex_colors(opts: &[Expr]) -> Option<Vec<Color>> {
   opts.iter().find_map(|o| match o {
     Expr::Rule {
@@ -3162,6 +3271,7 @@ fn parse_polygon(
   prims: &mut Vec<Primitive>,
 ) {
   let vertex_colors = parse_vertex_colors(&args[1..]);
+  let tex_coords = parse_vertex_texture_coordinates(&args[1..]);
   // Polygon[{p1, p2, …}] — one polygon — or Polygon[{poly1, poly2, …}],
   // a list of them, which is what mapping a face-index table over a vertex
   // list produces.
@@ -3169,11 +3279,12 @@ fn parse_polygon(
     // `VertexColors` assigns one color per point, in order — only usable
     // when the count actually lines up with the points being drawn.
     let vc = vertex_colors.clone().filter(|c| c.len() == pts.len());
+    let style = with_texture_coords(style, tex_coords.as_deref(), pts.len());
     prims.push(Primitive::PolygonPrim {
       points: pts,
       holes: Vec::new(),
       vertex_colors: vc,
-      style: style.clone(),
+      style,
     });
   } else if let Some((outer, holes)) =
     crate::functions::polygon_holes::split_holes(&args[0], &expr_to_point_list)
@@ -3711,6 +3822,13 @@ fn graphics_text_content(expr: &Expr) -> String {
         .map(graphics_text_content)
         .collect::<Vec<_>>()
         .join("\n")
+    }
+    // `Hyperlink[label, uri]` shows just its label (`Hyperlink[uri]` the
+    // uri itself) when it sits inside a text label.
+    Expr::FunctionCall { name, args }
+      if name == "Hyperlink" && (args.len() == 1 || args.len() == 2) =>
+    {
+      graphics_text_content(&args[0])
     }
     Expr::FunctionCall { name, args }
       if name == "Row"
@@ -4503,6 +4621,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     None
   };
 
+  let italic_ranges = italic_text_ranges(content, &text);
   prims.push(Primitive::TextPrim {
     text,
     x,
@@ -4513,6 +4632,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     scaled,
     direction,
     glyph_map: None,
+    italic_ranges,
     style: local_style,
   });
 }
@@ -5522,6 +5642,7 @@ fn rotate_primitive(
       scaled,
       direction,
       glyph_map,
+      italic_ranges,
       style,
     } => {
       let (nx, ny) = if *scaled { (*x, *y) } else { rp(*x, *y) };
@@ -5533,8 +5654,17 @@ fn rotate_primitive(
         background: *background,
         frame: *frame,
         scaled: *scaled,
-        direction: direction.map(|(dx, dy)| rv(dx, dy)),
+        // A label without a `direction` has its baseline along the x-axis,
+        // so a rotation tilts that baseline; a zero angle changes nothing.
+        direction: match direction {
+          Some((dx, dy)) => Some(rv(*dx, *dy)),
+          None if angle.rem_euclid(std::f64::consts::TAU) != 0.0 => {
+            Some(rv(1.0, 0.0))
+          }
+          None => None,
+        },
         glyph_map: *glyph_map,
+        italic_ranges: italic_ranges.clone(),
         style: style.clone(),
       }
     }
@@ -5732,6 +5862,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       scaled,
       direction,
       glyph_map,
+      italic_ranges,
       style,
     } => Primitive::TextPrim {
       text: text.clone(),
@@ -5743,6 +5874,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       scaled: *scaled,
       direction: *direction,
       glyph_map: *glyph_map,
+      italic_ranges: italic_ranges.clone(),
       style: style.clone(),
     },
     Primitive::RasterPrim {
@@ -5989,6 +6121,7 @@ fn scale_primitive(
       scaled,
       direction,
       glyph_map,
+      italic_ranges,
       style,
     } => {
       let (nx, ny) = if *scaled { (*x, *y) } else { sp(*x, *y) };
@@ -6002,6 +6135,7 @@ fn scale_primitive(
         scaled: *scaled,
         direction: direction.map(|(dx, dy)| (dx * sx, dy * sy)),
         glyph_map: *glyph_map,
+        italic_ranges: italic_ranges.clone(),
         style: style.clone(),
       }
     }
@@ -6224,6 +6358,91 @@ fn thickness_px(t: f64, bb: &BBox, svg_w: f64) -> f64 {
 /// `colors` gives one color per point in `points` (the outer boundary);
 /// hole-boundary points have no color of their own, so each one inherits
 /// whichever outer-boundary point is nearest to it.
+/// Fill a polygon with a texture: the image is clipped to the polygon and
+/// placed by the affine map that sends each vertex's texture coordinate
+/// (`(0, 0)` bottom-left, `(1, 1)` top-right) to its screen position.
+/// Returns `false` when no such map exists (fewer than three non-collinear
+/// vertices), so the caller can draw a plain fill instead.
+#[allow(clippy::too_many_arguments)]
+fn emit_textured_polygon(
+  out: &mut String,
+  points: &[(f64, f64)],
+  tex: &TextureFill,
+  screen_pts: &[String],
+  stroke_attr: &str,
+  bb: &BBox,
+  svg_w: f64,
+  svg_h: f64,
+) -> bool {
+  use std::hash::{Hash, Hasher};
+  if tex.coords.len() != points.len() || points.len() < 3 {
+    return false;
+  }
+  let (w, h) = (tex.width as f64, tex.height as f64);
+  let src: Vec<(f64, f64)> = tex
+    .coords
+    .iter()
+    .map(|&(u, v)| (u * w, (1.0 - v) * h))
+    .collect();
+  let dst: Vec<(f64, f64)> = points
+    .iter()
+    .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
+    .collect();
+  // The most spread-out vertex triple gives the best-conditioned map.
+  let mut best: Option<(usize, usize, usize, f64)> = None;
+  for i in 0..src.len() {
+    for j in i + 1..src.len() {
+      for k in j + 1..src.len() {
+        let area = ((src[j].0 - src[i].0) * (src[k].1 - src[i].1)
+          - (src[k].0 - src[i].0) * (src[j].1 - src[i].1))
+          .abs();
+        if best.is_none_or(|b| area > b.3) {
+          best = Some((i, j, k, area));
+        }
+      }
+    }
+  }
+  let Some((i, j, k, area)) = best else {
+    return false;
+  };
+  if area < 1e-9 {
+    return false;
+  }
+  // Solve dst = M · (src, 1) for M = (a b c d e f) from the three pairs.
+  let (s0, s1, s2) = (src[i], src[j], src[k]);
+  let det = (s1.0 - s0.0) * (s2.1 - s0.1) - (s2.0 - s0.0) * (s1.1 - s0.1);
+  let solve = |d0: f64, d1: f64, d2: f64| -> (f64, f64, f64) {
+    let p = ((d1 - d0) * (s2.1 - s0.1) - (d2 - d0) * (s1.1 - s0.1)) / det;
+    let q = ((d2 - d0) * (s1.0 - s0.0) - (d1 - d0) * (s2.0 - s0.0)) / det;
+    (p, q, d0 - p * s0.0 - q * s0.1)
+  };
+  let (a, c, e) = solve(dst[i].0, dst[j].0, dst[k].0);
+  let (b, d, f) = solve(dst[i].1, dst[j].1, dst[k].1);
+
+  let mut hasher = std::collections::hash_map::DefaultHasher::new();
+  tex.png_b64.hash(&mut hasher);
+  let id = hasher.finish();
+  let tex_id = format!("tex{id:x}");
+  if !out.contains(&format!("id=\"{tex_id}\"")) {
+    out.push_str(&format!(
+      "<defs><image id=\"{tex_id}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{}\"/></defs>\n",
+      tex.width, tex.height, tex.png_b64
+    ));
+  }
+  let clip_id = format!("{tex_id}c{}", out.len());
+  out.push_str(&format!(
+    "<clipPath id=\"{clip_id}\"><polygon points=\"{}\"/></clipPath>\n<g clip-path=\"url(#{clip_id})\"><use href=\"#{tex_id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/></g>\n",
+    screen_pts.join(" ")
+  ));
+  if !stroke_attr.is_empty() {
+    out.push_str(&format!(
+      "<polygon points=\"{}\" fill=\"none\"{stroke_attr}/>\n",
+      screen_pts.join(" ")
+    ));
+  }
+  true
+}
+
 fn emit_polygon_vertex_gradient(
   out: &mut String,
   points: &[(f64, f64)],
@@ -7250,6 +7469,58 @@ pub(crate) fn svg_escape(s: &str) -> String {
   render_math_letterlike_glyphs(&escaped)
 }
 
+/// Character ranges of `text` that `content`'s nested `Style[…, Italic]`
+/// parts set in slanted type. Empty unless the label's styled runs flatten
+/// to exactly `text` (so the ranges are known to line up) and at least one
+/// run, but not all of them, is italic — a uniformly italic label is
+/// already covered by the primitive's own font style.
+fn italic_text_ranges(content: &Expr, text: &str) -> Vec<(usize, usize)> {
+  if text.contains('\n') {
+    return Vec::new();
+  }
+  let runs = manipulate_label_runs(content, false);
+  if flatten_label_runs(&runs) != text
+    || !runs.iter().any(|r| r.italic)
+    || runs.iter().all(|r| r.italic || r.text.is_empty())
+  {
+    return Vec::new();
+  }
+  let mut ranges = Vec::new();
+  let mut pos = 0;
+  for r in &runs {
+    let len = r.text.chars().count();
+    if r.italic && len > 0 {
+      ranges.push((pos, pos + len));
+    }
+    pos += len;
+  }
+  ranges
+}
+
+/// [`svg_escape`] a single-line label, wrapping the characters inside
+/// `italic_ranges` in an italic `<tspan>`.
+fn svg_escape_with_italics(
+  text: &str,
+  italic_ranges: &[(usize, usize)],
+) -> String {
+  if italic_ranges.is_empty() {
+    return svg_escape(text);
+  }
+  let chars: Vec<char> = text.chars().collect();
+  let mut out = String::new();
+  let mut pos = 0;
+  for &(start, end) in italic_ranges {
+    let (start, end) = (start.min(chars.len()), end.min(chars.len()));
+    out.push_str(&svg_escape(&chars[pos..start].iter().collect::<String>()));
+    out.push_str("<tspan font-style=\"italic\">");
+    out.push_str(&svg_escape(&chars[start..end].iter().collect::<String>()));
+    out.push_str("</tspan>");
+    pos = end;
+  }
+  out.push_str(&svg_escape(&chars[pos..].iter().collect::<String>()));
+  out
+}
+
 /// Substitute any differential/exponential/imaginary-unit Letterlike
 /// Symbols glyph (see [`italic_letter_for_math_glyph`]) with an italicized
 /// plain-ASCII letter in a `<tspan>`. Safe to run after XML-escaping,
@@ -7658,6 +7929,22 @@ fn render_primitive(
       } else {
         String::new()
       };
+      if let Some(tex) = style.texture.as_ref()
+        && holes.is_empty()
+        && vertex_colors.is_none()
+        && emit_textured_polygon(
+          out,
+          points,
+          tex,
+          &pts,
+          &stroke_attr,
+          bb,
+          svg_w,
+          svg_h,
+        )
+      {
+        return;
+      }
       let subpath = |ring: &[(f64, f64)]| {
         let mut d = String::new();
         for (i, &(x, y)) in ring.iter().enumerate() {
@@ -7947,6 +8234,7 @@ fn render_primitive(
       scaled,
       direction,
       glyph_map,
+      italic_ranges,
       style,
     } => {
       let color = style.effective_color();
@@ -8091,7 +8379,7 @@ fn render_primitive(
           style.font_weight,
           style.font_style,
           color.opacity_attr(),
-          svg_escape(text),
+          svg_escape_with_italics(text, italic_ranges),
         ));
       }
     }
@@ -11703,6 +11991,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           out
         }
 
+        // Hyperlink[label, uri] inside a text label shows just its label.
+        "Hyperlink" if args.len() == 1 || args.len() == 2 => {
+          expr_to_svg_markup(&args[0])
+        }
+
         // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
         // them with the separator. A `Spacer[n]` gap — as a bare item or
         // as the separator — is carried as a `dx` on the *next* rendered
@@ -12655,6 +12948,30 @@ fn bare_box_head_at(cs: &[char], i: usize) -> Option<(Expr, usize)> {
   }
 }
 
+/// The text of `cs` when it is exactly one `"…"` string literal (with `\"`
+/// and `\\` escapes), else None.
+fn quoted_box_literal(cs: &[char]) -> Option<String> {
+  if cs.len() < 2 || cs[0] != '"' || cs[cs.len() - 1] != '"' {
+    return None;
+  }
+  let mut out = String::new();
+  let mut i = 1;
+  while i < cs.len() - 1 {
+    match cs[i] {
+      '\\' if i + 2 < cs.len() && matches!(cs[i + 1], '"' | '\\') => {
+        out.push(cs[i + 1]);
+        i += 2;
+      }
+      '"' => return None,
+      c => {
+        out.push(c);
+        i += 1;
+      }
+    }
+  }
+  Some(out)
+}
+
 /// Parse a sequence of box-notation units (plain runs, `\(...\)` groups and
 /// `\*Head[...]` explicit boxes) into a list of box Exprs.
 fn parse_box_units(cs: &[char]) -> Vec<Expr> {
@@ -12735,6 +13052,15 @@ fn parse_box_units(cs: &[char]) -> Vec<Expr> {
 /// Parse box-notation content into a single box Expr (wrapping multiple units
 /// in a `RowBox`).
 fn parse_box_to_expr(cs: &[char]) -> Expr {
+  // A box argument written as a quoted string literal (`SuperscriptBox["4f",
+  // "14"]`, as `ToString[…, TraditionalForm]` emits) is the string's text,
+  // not text that happens to include the quote characters.
+  // MakeBoxes writes a string atom with its own quotes (`"\"4f\""`);
+  // TraditionalForm typesets it without them.
+  if let Some(text) = quoted_box_literal(trim_char_slice(cs)) {
+    let chars: Vec<char> = text.chars().collect();
+    return Expr::String(quoted_box_literal(&chars).unwrap_or(text));
+  }
   let mut units = parse_box_units(cs);
   match units.len() {
     0 => Expr::String(String::new()),
@@ -14739,6 +15065,14 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     // rendering path turns `Graphics[…]` into a rendered graphic, so ask
     // for its SVG directly.
     Expr::FunctionCall { name, .. } if is_graphics_producing_head(name) => {
+      crate::evaluator::expr_to_svg(cell)
+    }
+    // A `LocatorPane[…]` over a picture is drawn by its own renderer — the
+    // body with the locators on it — so the cell is that picture rather
+    // than the pane's source text.
+    Expr::FunctionCall { name, args }
+      if name == "LocatorPane" && args.len() >= 2 =>
+    {
       crate::evaluator::expr_to_svg(cell)
     }
     // A sound cell shows the sound box a notebook draws for it — a play
@@ -19024,16 +19358,31 @@ fn resolve_display_item(expr: &Expr) -> Expr {
   if matches!(&current, Expr::Identifier(s) if s == "Null") {
     return Expr::String(String::new());
   }
-  if let Expr::FunctionCall { name, args } = &current
-    && name == "Dynamic"
-    && !args.is_empty()
-  {
-    let captured = crate::captured_graphics_count();
-    let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0]);
-    crate::truncate_captured_graphics(captured);
-    if let Ok(inner) = evaluated {
-      current = inner;
+  // `Dynamic[…]` shows its current value; `EventHandler[content, rules…]`
+  // shows `content` (its event rules need live input a static rendering
+  // lacks). A Demonstration nests them in either order, e.g.
+  // `EventHandler[Dynamic[board[…]], "MouseClicked" :> …]`.
+  loop {
+    let head = match &current {
+      Expr::FunctionCall { name, args } if !args.is_empty() => {
+        Some((name.as_str(), &args[0]))
+      }
+      _ => None,
+    };
+    match head {
+      Some(("Dynamic", held)) => {
+        let captured = crate::captured_graphics_count();
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(held);
+        crate::truncate_captured_graphics(captured);
+        match evaluated {
+          Ok(inner) => current = inner,
+          Err(_) => break,
+        }
+      }
+      Some(("EventHandler", content)) => current = content.clone(),
+      _ => break,
     }
+    current = unwrap_display_wrappers(&current);
   }
   current = unwrap_display_wrappers(&current);
   // `InputForm[expr]` displays as the InputForm text of `expr`.

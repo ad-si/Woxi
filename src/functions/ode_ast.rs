@@ -3396,8 +3396,13 @@ fn ndsolve_system(
         max
       };
       // NaN bounds must bail out too, so compare via partial_cmp rather
-      // than a negated float comparison.
-      if max.partial_cmp(&min) != Some(std::cmp::Ordering::Greater) {
+      // than a negated float comparison. A zero-length domain
+      // `{t, t0, t0}` is accepted (an animation clock starts there); the
+      // initial-value path below answers it from the initial conditions.
+      if !matches!(
+        max.partial_cmp(&min),
+        Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
+      ) {
         return Ok(None);
       }
       (Some(min), max)
@@ -3757,104 +3762,110 @@ fn ndsolve_system(
         }
       }
 
-      // When the mass matrix (the highest-derivative coefficients) turns
-      // out not to depend on `x` or the state — common for a
-      // holdup/mass-balance system, whose coefficients are plain
-      // numerals — building it once here instead of at every one of the
-      // run's stage evaluations is a large constant-factor speedup with
-      // no change to the result: the linear solve at each stage is
-      // unaffected, only where its matrix comes from.
-      let cached_mass_matrix = probe_constant_mass_matrix(
-        &residuals,
-        funcs.len(),
-        x0,
-        &init_state,
-        x_min,
-        x_max_resolved,
-      );
-      // Integrate forward from x0 to x_max, then (if x0 is interior)
-      // backward from x0 to x_min; events are only located on the
-      // forward leg, matching the direction NDSolve integrates first.
-      //
-      // An infinite `x_max_resolved` (`{t, t0, Infinity}`) only reaches
-      // here with an event present (the domain parsing above rejects it
-      // otherwise), so there's always something to stop on; a fixed step
-      // size sized to the whole domain, the way the finite case picks
-      // one, has no domain length to size itself from, so it's searched
-      // for instead.
-      let forward = if x_max_resolved.is_finite() {
-        let h = (x_max_resolved - x_min) / n_steps as f64;
-        integrate_leg(
-          &residuals,
-          &funcs,
-          &state_offset,
-          init_state.clone(),
-          x0,
-          x_max_resolved,
-          h,
-          event_fn.as_ref(),
-          event.and_then(|e| e.action.as_ref()),
-          &time_events,
-          x_name,
-          cached_mass_matrix.as_deref(),
-        )?
+      // A zero-length domain `{t, t0, t0}` has nothing to integrate: the
+      // solution is just the initial state at the single point `t0`.
+      if x_max_resolved == x_min {
+        vec![(x0, init_state.clone()), (x0, init_state)]
       } else {
-        integrate_leg_until_event(
+        // When the mass matrix (the highest-derivative coefficients) turns
+        // out not to depend on `x` or the state — common for a
+        // holdup/mass-balance system, whose coefficients are plain
+        // numerals — building it once here instead of at every one of the
+        // run's stage evaluations is a large constant-factor speedup with
+        // no change to the result: the linear solve at each stage is
+        // unaffected, only where its matrix comes from.
+        let cached_mass_matrix = probe_constant_mass_matrix(
           &residuals,
-          &funcs,
-          &state_offset,
+          funcs.len(),
+          x0,
           &init_state,
-          x0,
-          event_fn.as_ref(),
-          event.and_then(|e| e.action.as_ref()),
-          x_name,
-          cached_mass_matrix.as_deref(),
-        )?
-      };
-      let Some(forward) = forward else {
-        return Ok(None);
-      };
-      let backward = if x0 - x_min > 1e-12 {
-        // An infinite `x_max_resolved` leaves no whole-domain length to
-        // size a step from (unlike the finite case, which reuses the
-        // forward leg's own step); the backward leg's own span, from
-        // `x0` down to `x_min`, is always finite, so it's sized off that
-        // instead.
-        let h_back = if x_max_resolved.is_finite() {
-          (x_max_resolved - x_min) / n_steps as f64
-        } else {
-          (x0 - x_min) / n_steps as f64
-        };
-        let leg = integrate_leg(
-          &residuals,
-          &funcs,
-          &state_offset,
-          init_state,
-          x0,
           x_min,
-          -h_back,
-          None,
-          None,
-          &[],
-          x_name,
-          cached_mass_matrix.as_deref(),
-        )?;
-        let Some(leg) = leg else {
+          x_max_resolved,
+        );
+        // Integrate forward from x0 to x_max, then (if x0 is interior)
+        // backward from x0 to x_min; events are only located on the
+        // forward leg, matching the direction NDSolve integrates first.
+        //
+        // An infinite `x_max_resolved` (`{t, t0, Infinity}`) only reaches
+        // here with an event present (the domain parsing above rejects it
+        // otherwise), so there's always something to stop on; a fixed step
+        // size sized to the whole domain, the way the finite case picks
+        // one, has no domain length to size itself from, so it's searched
+        // for instead.
+        let forward = if x_max_resolved.is_finite() {
+          let h = (x_max_resolved - x_min) / n_steps as f64;
+          integrate_leg(
+            &residuals,
+            &funcs,
+            &state_offset,
+            init_state.clone(),
+            x0,
+            x_max_resolved,
+            h,
+            event_fn.as_ref(),
+            event.and_then(|e| e.action.as_ref()),
+            &time_events,
+            x_name,
+            cached_mass_matrix.as_deref(),
+          )?
+        } else {
+          integrate_leg_until_event(
+            &residuals,
+            &funcs,
+            &state_offset,
+            &init_state,
+            x0,
+            event_fn.as_ref(),
+            event.and_then(|e| e.action.as_ref()),
+            x_name,
+            cached_mass_matrix.as_deref(),
+          )?
+        };
+        let Some(forward) = forward else {
           return Ok(None);
         };
-        leg
-      } else {
-        Vec::new()
-      };
+        let backward = if x0 - x_min > 1e-12 {
+          // An infinite `x_max_resolved` leaves no whole-domain length to
+          // size a step from (unlike the finite case, which reuses the
+          // forward leg's own step); the backward leg's own span, from
+          // `x0` down to `x_min`, is always finite, so it's sized off that
+          // instead.
+          let h_back = if x_max_resolved.is_finite() {
+            (x_max_resolved - x_min) / n_steps as f64
+          } else {
+            (x0 - x_min) / n_steps as f64
+          };
+          let leg = integrate_leg(
+            &residuals,
+            &funcs,
+            &state_offset,
+            init_state,
+            x0,
+            x_min,
+            -h_back,
+            None,
+            None,
+            &[],
+            x_name,
+            cached_mass_matrix.as_deref(),
+          )?;
+          let Some(leg) = leg else {
+            return Ok(None);
+          };
+          leg
+        } else {
+          Vec::new()
+        };
 
-      // Combined, ascending in x. The backward leg is (x0, x0-h, …);
-      // reverse it and drop its first point (x0, present in the forward
-      // leg too).
-      let mut points: Vec<(f64, Vec<f64>)> = backward;
-      points.reverse();
-      points.pop();
-      points.extend(forward);
-      points
+        // Combined, ascending in x. The backward leg is (x0, x0-h, …);
+        // reverse it and drop its first point (x0, present in the forward
+        // leg too).
+        let mut points: Vec<(f64, Vec<f64>)> = backward;
+        points.reverse();
+        points.pop();
+        points.extend(forward);
+        points
+      }
     }
     ProblemKind::Boundary {
       x_lo,

@@ -1727,7 +1727,10 @@ mod graph_rendering {
       "ExportString[Graph[{1 <-> 2}, PlotLabel -> Subscript[Style[\"I\", Italic], 4]], \"SVG\"]"
     )
     .unwrap();
-    assert!(svg.contains(">I\u{2084}<"), "SVG: {svg}");
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">I</tspan>\u{2084}<"),
+      "SVG: {svg}"
+    );
     assert!(
       !svg.contains("Subscript["),
       "label should not leak its literal head name: {svg}"
