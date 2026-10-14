@@ -4861,6 +4861,10 @@ pub fn dispatch_list_operations(
     "Developer`ToPackedArray" => {
       return Some(list_helpers_ast::to_packed_array_ast(args));
     }
+    // Woxi keeps no packed representation, so unpacking is the identity.
+    "Developer`FromPackedArray" if args.len() == 1 => {
+      return Some(Ok(args[0].clone()));
+    }
     "ArrayComponents" if !args.is_empty() && args.len() <= 3 => {
       return Some(list_helpers_ast::array_components_ast(args));
     }
