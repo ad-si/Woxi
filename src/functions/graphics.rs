@@ -21393,6 +21393,14 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // action rather than binding a variable, so it is not a variable spec
       // either (a Demonstration's "choose a motif" menu is commonly written
       // this way).
+      Expr::FunctionCall { name, args: inner }
+        if name == "Pane"
+          && inner
+            .first()
+            .is_some_and(|c| expr_contains_call(c, &["Control"])) =>
+      {
+        out_args.push(spec.clone());
+      }
       Expr::FunctionCall { name, .. }
         if matches!(
           name.as_str(),
@@ -22462,6 +22470,15 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     let spec = match spec {
       Expr::FunctionCall { name, args: inner }
         if name == "ExpressionCell" && !inner.is_empty() =>
+      {
+        &inner[0]
+      }
+      // `Pane[Control@{…}, width]` fixes the width of a control row; the
+      // pane only sizes it, so the control inside is the real spec.
+      Expr::FunctionCall { name, args: inner }
+        if name == "Pane"
+          && !inner.is_empty()
+          && expr_contains_call(&inner[0], &["Control"]) =>
       {
         &inner[0]
       }

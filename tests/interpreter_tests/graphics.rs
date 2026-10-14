@@ -25772,6 +25772,31 @@ mod manipulate {
     );
   }
 
+  /// A control row wrapped in `Pane[Control@{…}, width]` (a fixed-width
+  /// control area) is a valid Manipulate argument: no vsform message, and
+  /// the checkbox bar inside is still the control.
+  #[test]
+  fn spec_pane_wrapped_control_is_not_a_vsform_error() {
+    let src = "Manipulate[picks, \
+       Pane[Control@{{picks, {}, \"parts\"}, \
+         {1 -> \"a\", 2 -> \"b\", 3 -> \"c\"}, CheckboxBar}, 300]]";
+    let result = woxi::interpret_with_stdout(src).unwrap();
+    assert!(
+      !result.warnings.iter().any(|w| w.contains("vsform")),
+      "no vsform expected, got {:?}",
+      result.warnings
+    );
+    let expr = interpret_to_expr(src).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(spec.state, vec![("picks".to_string(), "{}".to_string())],);
+    assert_eq!(spec.displays.len(), 1);
+    assert!(
+      spec.displays[0].starts_with("TogglerBar[Dynamic[picks]"),
+      "{}",
+      spec.displays[0]
+    );
+  }
+
   /// `ControlType -> CheckboxBar` (and `TogglerBar`) picks several of its
   /// choices at once: the variable binds the *list* of them, and the bar
   /// itself is carried as a display element. Read as a one-of picker it
