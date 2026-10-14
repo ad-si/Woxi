@@ -990,7 +990,9 @@ const PRISM_FACES: [&[usize]; 5] = [
 /// The vertices and faces of a polyhedron expression, as far as its head
 /// pins them down. `None` when the expression does not describe one with
 /// numeric coordinates.
-fn polyhedron_faces(expr: &Expr) -> Option<(Vec<Pt3>, Vec<Vec<usize>>)> {
+pub(crate) fn polyhedron_faces(
+  expr: &Expr,
+) -> Option<(Vec<[f64; 3]>, Vec<Vec<usize>>)> {
   let Expr::FunctionCall { name, args } = expr else {
     return None;
   };

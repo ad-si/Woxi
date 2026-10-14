@@ -34652,3 +34652,23 @@ fn graphics3d_text_with_box_syntax_label_is_offset_by_its_visible_width() {
   let shift = (label_x("{1,-1}") - label_x("{0,0}")).abs();
   assert!(shift < 30.0, "label shifted {shift}px away from its anchor");
 }
+
+#[test]
+fn graphics3d_draws_solids_given_by_their_corners() {
+  // Hexahedron[{8 corners}] is a symbolic solid: it must stay unevaluated
+  // (no "not yet implemented" warning) and Graphics3D must fill its faces.
+  let hexa = "Hexahedron[{{-1,-1,2},{1,-1,2},{1,1,2},{-1,1,2},\
+              {-2,-2,0},{2,-2,0},{2,2,0},{-2,2,0}}]";
+  assert_eq!(interpret(&format!("Head[{hexa}]")).unwrap(), "Hexahedron");
+  let svg = export_svg(&format!("Graphics3D[{hexa}]"));
+  assert!(svg.contains("<polygon"), "hexahedron faces not drawn");
+
+  // The other corner-defined solids share the same path.
+  let prism = export_svg(
+    "Graphics3D[Prism[{{0,0,0},{1,0,0},{0,1,0},{0,0,1},{1,0,1},{0,1,1}}]]",
+  );
+  assert!(prism.contains("<polygon"));
+  let tetra =
+    export_svg("Graphics3D[Tetrahedron[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]");
+  assert!(tetra.contains("<polygon"));
+}
