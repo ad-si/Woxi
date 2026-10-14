@@ -20213,4 +20213,30 @@ mod ndsolve_step_forcing {
       interpret("D[t/Pi {Sin[t], Cos[t]}, t]").unwrap()
     );
   }
+
+  // A zero-length domain `{t, t0, t0}` (an animation clock sitting at its
+  // start) is solved from the initial conditions instead of being left
+  // unevaluated, for scalar equations and coupled systems alike.
+  #[test]
+  fn ndsolve_zero_length_domain() {
+    assert_eq!(
+      interpret("NDSolve[{y'[t] + y[t] == 0, y[0] == 1}, y, {t, 0, 0}]")
+        .unwrap(),
+      "{{y -> InterpolatingFunction[{{0., 0.}}, <>]}}"
+    );
+    assert_eq!(
+      interpret(
+        "y[0] /. First[NDSolve[{y'[t] + y[t] == 0, y[0] == 3}, y, {t, 0, 0}]]"
+      )
+      .unwrap(),
+      "3."
+    );
+    assert_eq!(
+      interpret(
+        "{x[2], x[2]} /. First[NDSolve[{x''[t] + x[t] == 0, x[2] == 1, x'[2] == 4}, x, {t, 2, 2}]]"
+      )
+      .unwrap(),
+      "{1., 1.}"
+    );
+  }
 }
