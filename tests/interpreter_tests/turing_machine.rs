@@ -157,3 +157,33 @@ mod init_and_step_forms {
     );
   }
 }
+
+// A list background repeats periodically in both directions, aligned with the
+// first cell of the initial content.
+mod periodic_background {
+  use super::*;
+
+  #[test]
+  fn a_single_element_pattern_equals_a_plain_background() {
+    assert_eq!(
+      interpret("TuringMachine[2506, {1, {{}, {0}}}, 3]").unwrap(),
+      interpret("TuringMachine[2506, {1, {{}, 0}}, 3]").unwrap()
+    );
+  }
+
+  #[test]
+  fn the_pattern_fills_cells_the_head_reaches() {
+    assert_eq!(
+      interpret("TuringMachine[2506, {1, {{}, {0, 1}}}, 1]").unwrap(),
+      "{{{1, 1, 0}, {0, 1}}, {{2, 2, 1}, {1, 1}}}"
+    );
+  }
+
+  #[test]
+  fn initial_cells_may_combine_with_a_pattern() {
+    assert_eq!(
+      interpret("TuringMachine[2506, {1, {{1, 1}, {0, 1}}}, 0]").unwrap(),
+      "{{{1, 1, 0}, {1, 1}}}"
+    );
+  }
+}
