@@ -34852,3 +34852,36 @@ fn graphics_grid_span_from_left_widens_the_preceding_cell() {
       < 2.0
   );
 }
+
+#[test]
+fn styled_axes_label_keeps_font_directives() {
+  // `Style[label, Italic]` in an AxesLabel kept only its text, dropping the
+  // slant/weight/colour, in every plot family that takes the option.
+  for plot in [
+    "ListPlot[{1, 2, 3}",
+    "ListLinePlot[{1, 2, 3}",
+    "Plot[x, {x, 0, 1}",
+  ] {
+    let svg = interpret(&format!(
+      "ExportString[{plot}, AxesLabel -> {{Style[\"n\", Italic], \
+       Style[\"m\", Bold, Red]}}], \"SVG\"]"
+    ))
+    .unwrap();
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">n</tspan>"),
+      "{plot}: {svg}"
+    );
+    assert!(
+      svg.contains(
+        "<tspan font-weight=\"bold\" fill=\"rgb(255,0,0)\">m</tspan>"
+      ),
+      "{plot}"
+    );
+  }
+  // An unstyled label is unchanged.
+  let svg = interpret(
+    "ExportString[ListPlot[{1, 2}, AxesLabel -> {\"n\", \"m\"}], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(!svg.contains("<tspan font-style"));
+}
