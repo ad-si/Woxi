@@ -14819,6 +14819,35 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">flow<"), "{svg}");
     }
 
+    // Regression: `Prolog` (and `Epilog` on StreamPlot) was silently dropped
+    // by the field plots, so a disk marking an obstacle never appeared.
+    #[test]
+    fn field_plots_draw_prolog_under_the_plot() {
+      for plot in [
+        "ContourPlot[x^2 + y^2, {x, -3, 3}, {y, -3, 3}",
+        "DensityPlot[x^2 + y^2, {x, -3, 3}, {y, -3, 3}",
+        "StreamPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}",
+        "VectorPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}",
+      ] {
+        let svg = export_svg(&format!(
+          "{plot}, Prolog -> {{Orange, Disk[{{0, 0}}, 1]}}]"
+        ));
+        let disk = svg.find("<ellipse").expect(&svg);
+        let axis = svg.find("<polyline").expect(&svg);
+        assert!(disk < axis, "prolog must sit under the axes: {plot}");
+      }
+    }
+
+    #[test]
+    fn stream_plot_epilog_and_stream_style() {
+      let svg = export_svg(
+        "StreamPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}, \
+           Epilog -> {Orange, Disk[{0, 0}, 1]}, StreamStyle -> Black]",
+      );
+      assert!(svg.contains("<ellipse"), "{svg}");
+      assert!(svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+    }
+
     // Part 1 of a field plot is its graphics content, so a Demonstration can
     // lift the field into a `Graphics[{Opacity[…], StreamPlot[…][[1]]}]` of
     // its own instead of showing the plot on its own.

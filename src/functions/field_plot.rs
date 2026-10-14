@@ -176,12 +176,22 @@ fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
 /// so primitives that reference a Manipulate's current control values (e.g.
 /// `Disk[place1]`) resolve to numeric coordinates.
 fn parse_vector_plot_epilog(args: &[Expr], start: usize) -> Vec<Expr> {
-  for opt in &args[start..] {
+  parse_overlay_primitives(args, start, "Epilog")
+}
+
+/// The primitives of an `Epilog`/`Prolog` option among `args[start..]`,
+/// evaluated eagerly. Empty when the option is absent or `None`.
+fn parse_overlay_primitives(
+  args: &[Expr],
+  start: usize,
+  option: &str,
+) -> Vec<Expr> {
+  for opt in args.iter().skip(start) {
     if let Expr::Rule {
       pattern,
       replacement,
     } = opt
-      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "Epilog")
+      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == option)
     {
       let val = evaluate_expr_to_expr(replacement)
         .unwrap_or_else(|_| (**replacement).clone());
@@ -193,6 +203,36 @@ fn parse_vector_plot_epilog(args: &[Expr], start: usize) -> Vec<Expr> {
     }
   }
   Vec::new()
+}
+
+/// Draw a `Prolog`'s primitives under a field plot: spliced in right after
+/// the canvas background rect, so the axes, shading and contours that follow
+/// paint over them.
+fn splice_field_plot_prolog(
+  svg: &mut String,
+  area: &crate::functions::plot::PlotArea,
+  prolog: &[Expr],
+) {
+  if prolog.is_empty() {
+    return;
+  }
+  let prolog_area = crate::functions::plot_epilog::PlotArea {
+    x0: area.plot_x0,
+    y0: area.plot_y0,
+    w: area.plot_w,
+    h: area.plot_h,
+    x_min: area.x_min,
+    x_max: area.x_max,
+    y_min: area.y_min,
+    y_max: area.y_max,
+    scale: f64::from(RESOLUTION_SCALE),
+  };
+  let overlay = crate::functions::plot_epilog::render_epilog_svg(
+    prolog,
+    &prolog_area,
+    "prolog",
+  );
+  crate::functions::plot::splice_after_background(svg, &overlay);
 }
 
 /// Contour level specification from the Contours option.
@@ -241,6 +281,8 @@ struct DensityContourOptions {
   /// `Epilog -> {…}`: graphics primitives drawn over the finished plot,
   /// in data coordinates.
   epilog: Vec<Expr>,
+  /// `Prolog -> {…}`: graphics primitives drawn under the plot.
+  prolog: Vec<Expr>,
   /// `PlotLabel -> …`: the caption drawn above the plot, already typeset
   /// as SVG markup, alongside the font size its outer `Style` asked for.
   plot_label: Option<(String, Option<f64>)>,
@@ -458,6 +500,7 @@ fn parse_density_contour_options(
     frame_labels,
     frame_ticks,
     epilog,
+    prolog: parse_overlay_primitives(args, start, "Prolog"),
     plot_label: parse_field_plot_label(args, start),
     region_function,
     contour_labels,
@@ -566,6 +609,7 @@ fn push_field_plot_overlays(
   area: &crate::functions::plot::PlotArea,
   opts: &DensityContourOptions,
 ) {
+  splice_field_plot_prolog(svg, area, &opts.prolog);
   if let Some(label) = &opts.plot_label {
     inject_field_plot_label(svg, area, label);
   }
@@ -2919,6 +2963,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
   let epilog = parse_vector_plot_epilog(args, 3);
+  let prolog = parse_overlay_primitives(args, 3, "Prolog");
   let plot_label = parse_field_plot_label(args, 3);
 
   let x_step = (x_max - x_min) / VECTOR_GRID as f64;
@@ -2955,6 +3000,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
+  splice_field_plot_prolog(&mut svg, &area, &prolog);
   if let Some(label) = &plot_label {
     inject_field_plot_label(&mut svg, &area, label);
   }
@@ -3109,6 +3155,25 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
   let plot_label = parse_field_plot_label(args, 3);
+  let prolog = parse_overlay_primitives(args, 3, "Prolog");
+  let epilog = parse_overlay_primitives(args, 3, "Epilog");
+  // `StreamStyle -> color` paints every streamline alike; the default
+  // cycles through the plot colours.
+  let stream_color = args.iter().skip(3).find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(n) if n == "StreamStyle") => {
+      let style = crate::functions::plot::parse_style_directives(replacement)?;
+      let c = style.color?;
+      Some((
+        (c.r * 255.0).round() as u8,
+        (c.g * 255.0).round() as u8,
+        (c.b * 255.0).round() as u8,
+      ))
+    }
+    _ => None,
+  });
 
   // Use plotters for axes, reserving room above the frame for a PlotLabel.
   let margins = field_plot_label_margins(plot_label.as_ref());
@@ -3136,6 +3201,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
+  splice_field_plot_prolog(&mut svg, &area, &prolog);
   if let Some(label) = &plot_label {
     inject_field_plot_label(&mut svg, &area, label);
   }
@@ -3233,7 +3299,8 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       if points.len() > 1 {
         let color_idx = (si * seed_n + sj) % 6;
-        let (r, g, b) = crate::functions::plot::PLOT_COLORS[color_idx];
+        let (r, g, b) = stream_color
+          .unwrap_or(crate::functions::plot::PLOT_COLORS[color_idx]);
         svg.push_str(&format!(
           "<polyline points=\"{}\" fill=\"none\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"{stroke_w:.1}\" stroke-opacity=\"0.7\"/>\n",
           points.join(" ")
@@ -3241,6 +3308,25 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         primitives.push(styled_line(coords, (r, g, b)));
       }
     }
+  }
+
+  if !epilog.is_empty() {
+    let epilog_area = crate::functions::plot_epilog::PlotArea {
+      x0: area.plot_x0,
+      y0: area.plot_y0,
+      w: area.plot_w,
+      h: area.plot_h,
+      x_min: area.x_min,
+      x_max: area.x_max,
+      y_min: area.y_min,
+      y_max: area.y_max,
+      scale: f64::from(RESOLUTION_SCALE),
+    };
+    svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
+      &epilog,
+      &epilog_area,
+      "epilog",
+    ));
   }
 
   svg.push_str("</svg>");
