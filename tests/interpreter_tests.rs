@@ -2672,6 +2672,36 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_ellipsoid_quantile_is_scaled_covariance_ellipsoid() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "MultivariateStatistics`EllipsoidQuantile[\
+         MultinormalDistribution[{1, 2}, {{4., 0.}, {0., 1.}}], 0.5]"
+      )
+      .unwrap(),
+      "Ellipsoid[{1, 2}, {{5.545177444479556, 0.}, {0., 1.386294361119889}}]"
+    );
+  }
+
+  #[test]
+  fn test_graphics_draws_ellipsoid_regions() {
+    // Regression: 2D Ellipsoid primitives (e.g. the quantile ellipses of a
+    // multinormal distribution) were silently dropped from Graphics.
+    clear_state();
+    let axes =
+      interpret("ExportString[Graphics[Ellipsoid[{0, 0}, {2, 1}]], \"SVG\"]")
+        .unwrap();
+    assert!(axes.contains("<ellipse"), "{axes}");
+    let cov = interpret(
+      "ExportString[Graphics[Ellipsoid[{0, 0}, {{1.4, 0.4}, {0.4, 1.4}}]], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(cov.contains("<polygon"), "{cov}");
+  }
+
+  #[test]
   fn test_vector_plot_epilog_draws_extra_primitives() {
     // Regression: VectorPlot silently dropped its Epilog option entirely,
     // so markers a Wolfram Demonstration draws over the field (e.g. the
@@ -3347,6 +3377,25 @@ mod interpreter_tests {
     assert!(
       plain.contains("cy=\"288.00\""),
       "expected the asymmetric range to shift the circle's center: {plain}"
+    );
+  }
+
+  #[test]
+  fn test_mouseover_text_label_shows_static_appearance() {
+    // `Text[Mouseover[label, hover], pos]` — a Demonstration labels a
+    // corner with a rounded value that swaps to a framed full-precision
+    // value on hover. Regression: the label parser typeset the wrapper's
+    // own textual form (`Mouseover[…]`) as literal text; a static picture
+    // must show `label` only.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Text[Mouseover[Style[NumberForm[90., {20, 1}], 18], Framed[\"hover\"]], {1, 1}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">90.0<"), "label lost: {svg}");
+    assert!(
+      !svg.contains("Mouseover") && !svg.contains("hover"),
+      "Mouseover wrapper leaked as literal text: {svg}"
     );
   }
 

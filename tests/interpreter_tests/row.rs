@@ -299,6 +299,38 @@ mod row_visual_mode {
     assert!(x_attr > 150.0, "text x = {x_attr}");
   }
 
+  /// A `\n` inside a string item breaks the row onto a new line, also when
+  /// the item is wrapped in `Style`.
+  #[test]
+  fn row_newline_in_string_stacks_lines() {
+    clear_state();
+    let height = |code: &str| -> f64 {
+      let result = interpret_with_stdout(code).unwrap();
+      let svg = result.graphics.unwrap();
+      svg
+        .split("height=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap()
+    };
+    let one = height("Row[{\"ab\", \" = \", x}]");
+    let two = height("Row[{\"ab\\n\", \" = \", x}]");
+    let styled = height("Row[{Style[\"ab\\n\", 12], \" = \", x}]");
+    assert!(two > one * 1.5, "one = {one}, two = {two}");
+    assert!(styled > one * 1.5, "one = {one}, styled = {styled}");
+  }
+
+  #[test]
+  fn traditional_form_row_newline_boxes_are_stacked() {
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[TraditionalForm[Row[{\"a\\n\", x, \" = \", y}]]]")
+        .unwrap(),
+      "TagBox[FormBox[GridBox[{{a}, {RowBox[{x,  = , y}]}}], TraditionalForm], TraditionalForm, Editable -> True]"
+    );
+  }
+
   #[test]
   fn row_empty_list_passthrough() {
     clear_state();

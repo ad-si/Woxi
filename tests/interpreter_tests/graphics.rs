@@ -7975,6 +7975,19 @@ mod plot3d {
       assert!(svg.contains("<circle"), "the merged point must draw: {svg}");
     }
 
+    /// A dashed curve stays dashed when `Show` merges it with other plots.
+    /// Regression: the dash pattern was dropped, so the curve came out solid.
+    #[test]
+    fn show_keeps_the_dashing_of_a_plotted_curve() {
+      let svg = export_svg(
+        "Show[Plot[x, {x, 0, 1}], \
+         Plot[0.5, {x, 0, 1}, PlotStyle -> {Red, Dashed}]]",
+      );
+      assert!(svg.contains("stroke-dasharray=\"40.0,40.0\""), "{svg}");
+      let solid = export_svg("Show[Plot[x, {x, 0, 1}], Plot[0.5, {x, 0, 1}]]");
+      assert!(!solid.contains("stroke-dasharray"), "{solid}");
+    }
+
     /// A frame carries its own ticks, so `Axes -> False` beside
     /// `Frame -> True` hides the interior axes without taking the tick
     /// marks and their labels with them. Regression: a `Show` that
@@ -11229,6 +11242,25 @@ ParametricPlot[{sol[[1, 1, 2]], sol[[1, 2, 2]]}, {t, 0, 6}]",
         longest > 200,
         "Expected a sampled curve polyline, longest was {longest}"
       );
+    }
+
+    // Regression: a `Plot` whose function is `Null` (every curve switched off)
+    // is an empty plot, not an opaque picture. Mixed with a curve and plain
+    // `Graphics`, it used to make `Show` stack two separate SVGs, the opaque
+    // one's white background covering the curve.
+    #[test]
+    fn show_merges_empty_plot_with_curve_and_graphics() {
+      let svg = export_svg(
+        "show = 0; Show[{Plot[2 x, {x, -1, 1}], \
+Plot[If[show == 1, x], {x, -1, 1}], \
+Graphics[{Text[\"hi\", {0.2, 0.2}]}]}, PlotRange -> {{-1, 1}, {-1, 1}}]",
+      );
+      assert_eq!(
+        svg.matches("<svg x=").count(),
+        0,
+        "Show must emit one merged picture: {svg}"
+      );
+      assert!(svg.contains("<polyline"), "curve missing: {svg}");
     }
 
     // Regression: a curve-to-curve `Filling -> {i -> {{j}, style}}` must
@@ -18278,6 +18310,21 @@ mod tree_form_graphics {
   }
 
   #[test]
+  fn tree_form_honors_image_size() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[TreeForm[f[x, y], ImageSize -> {420, 200}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("width=\"420\""), "expected width 420: {svg}");
+    assert!(svg.contains("height=\"200\""), "expected height 200: {svg}");
+    let svg =
+      interpret("ExportString[TreeForm[f[x, y], ImageSize -> 500], \"SVG\"]")
+        .unwrap();
+    assert!(svg.contains("width=\"500\""), "expected width 500: {svg}");
+  }
+
+  #[test]
   fn tree_form_nested() {
     clear_state();
     assert_eq!(
@@ -20183,6 +20230,39 @@ mod grid_rasterize {
     )
     .unwrap();
     assert!(result.graphics.is_some());
+  }
+
+  #[test]
+  fn panel_around_styled_text_draws_a_filled_box() {
+    // Regression: `Panel[Text[Style[Row[{…}], 24]]]` (the formula display of
+    // a sampled Demonstration) printed as a clipped line of source text
+    // instead of a panel, because only `Framed` was drawn as a box.
+    clear_state();
+    let svg = woxi::interpret_with_stdout(
+      "Panel[Text[Style[Row[{Style[\"x\", Italic], \" = \", \"abc\"}], 24]]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Panel should produce a graphics SVG");
+    assert!(svg.contains("<rect"), "Panel should draw a box:\n{svg}");
+    assert!(
+      svg.contains("rgb(242,242,242)"),
+      "Panel should be filled light gray:\n{svg}"
+    );
+    assert!(!svg.contains("Panel["), "Panel head must not leak:\n{svg}");
+  }
+
+  #[test]
+  fn panel_in_a_column_keeps_its_background_option() {
+    clear_state();
+    let svg = woxi::interpret_with_stdout(
+      "Column[{Panel[Text[\"abc\"], Background -> RGBColor[1, 0, 0]], \"z\"}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Column of Panel should produce a graphics SVG");
+    assert!(svg.contains("<rect"), "{svg}");
+    assert!(!svg.contains("rgb(242,242,242)"), "{svg}");
   }
 
   #[test]
@@ -34671,4 +34751,48 @@ fn graphics3d_draws_solids_given_by_their_corners() {
   let tetra =
     export_svg("Graphics3D[Tetrahedron[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]");
   assert!(tetra.contains("<polygon"));
+}
+
+#[test]
+fn graphics_grid_span_from_left_widens_the_preceding_cell() {
+  // `SpanFromLeft` makes the cell to its left cover both columns, so the
+  // lower panel is laid out as wide as the whole row above it.
+  fn cell_widths(code: &str) -> Vec<f64> {
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    svg
+      .split("<svg x=\"")
+      .skip(1)
+      .map(|part| {
+        let w = part.split("width=\"").nth(1).unwrap();
+        w.split('"').next().unwrap().parse().unwrap()
+      })
+      .collect()
+  }
+  let spanned = cell_widths(
+    "GraphicsGrid[{{Plot[Sin[x], {x, 0, 2}], Plot[Cos[x], {x, 0, 2}]}, \
+     {Plot[x, {x, 0, 2}], SpanFromLeft}}, ImageSize -> 320]",
+  );
+  let plain = cell_widths(
+    "GraphicsGrid[{{Plot[Sin[x], {x, 0, 2}], Plot[Cos[x], {x, 0, 2}]}}, \
+     ImageSize -> 320]",
+  );
+  let (top, bottom) = (plain[0], spanned[2]);
+  assert!(bottom > 1.8 * top, "spanned cell {bottom} vs plain {top}");
+  // The grid is no wider than it was without the spanned row.
+  let total = |code: &str| {
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let w = svg.split("<svg width=\"").nth(1).unwrap();
+    w.split('"').next().unwrap().parse::<f64>().unwrap()
+  };
+  assert!(
+    (total(
+      "GraphicsGrid[{{Plot[Sin[x], {x, 0, 2}], Plot[Cos[x], {x, 0, 2}]}, \
+       {Plot[x, {x, 0, 2}], SpanFromLeft}}, ImageSize -> 320]"
+    ) - total(
+      "GraphicsGrid[{{Plot[Sin[x], {x, 0, 2}], Plot[Cos[x], {x, 0, 2}]}}, \
+       ImageSize -> 320]"
+    ))
+    .abs()
+      < 2.0
+  );
 }

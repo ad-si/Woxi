@@ -6353,3 +6353,4 @@ GraphUtilities`ExpressionTreePlot,Plots an expression tree as Graphics with one 
 GraphUtilities`PageRanks,PageRank of every vertex of a graph given as a list of rules as vertex -> rank rules,✅,pure,8.0,
 GraphUtilities`VertexList,Vertices of a graph given as a list of rules,✅,pure,6.0,
 GraphUtilities`ClosenessCentrality,Closeness centrality of every vertex of a graph given as a list of rules,✅,pure,8.0,
+MultivariateStatistics`EllipsoidQuantile,Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean, c Covariance],✅,pure,8.0,

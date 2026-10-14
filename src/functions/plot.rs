@@ -4190,11 +4190,11 @@ pub(crate) fn build_plot_source(
     .enumerate()
     .map(|(i, points)| {
       let color = series_color(plot_style, i);
-      let (thickness, point_size) = if plot_style.is_empty() {
-        (None, None)
+      let (thickness, point_size, dashing) = if plot_style.is_empty() {
+        (None, None, None)
       } else {
         let style = &plot_style[i % plot_style.len()];
-        (style.thickness, style.point_size)
+        (style.thickness, style.point_size, style.dashing.clone())
       };
       let scatter = if is_scatter.is_empty() {
         false
@@ -4211,6 +4211,7 @@ pub(crate) fn build_plot_source(
         marker: None,
         thickness,
         point_size,
+        dashing,
       }
     })
     .collect();
@@ -5041,6 +5042,7 @@ pub(crate) fn render_merged_plot_source(
       )),
       thickness: s.thickness,
       point_size: s.point_size,
+      dashing: s.dashing.clone(),
       ..SeriesStyle::default()
     })
     .collect();
@@ -7225,6 +7227,7 @@ pub(crate) fn histogram_plot_source(
       marker: None,
       thickness: None,
       point_size: None,
+      dashing: None,
     });
   }
 
@@ -9782,13 +9785,23 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the empty plot, with its axes and `PlotLabel`, over the requested
   // `PlotRange` (unit height when none is given).
   if !has_finite {
-    let svg = generate_svg_with_filling(
+    let x_display = plot_range_x.unwrap_or((x_min, x_max));
+    let y_display = plot_range_y.unwrap_or((0.0, 1.0));
+    let svg = generate_svg_with_filling(&[], x_display, y_display, &plot_opts)?;
+    // Keep the (empty) plot's source, so `Show` can tell it from an opaque
+    // picture and merge it as the layer without curves that it is.
+    let source = build_plot_source(
       &[],
-      plot_range_x.unwrap_or((x_min, x_max)),
-      plot_range_y.unwrap_or((0.0, 1.0)),
-      &plot_opts,
-    )?;
-    return Ok(crate::graphics_result(svg));
+      &plot_opts.plot_style,
+      x_display,
+      y_display,
+      (plot_opts.svg_width, plot_opts.svg_height),
+      &[false],
+      plot_opts.filling,
+      plot_opts.filling_style,
+      crate::functions::plot::explicit_options(args),
+    );
+    return Ok(crate::graphics_result_with_source(svg, source));
   }
 
   // Add 4% padding to the auto-computed y range

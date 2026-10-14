@@ -215,6 +215,11 @@ pub struct PlotSeriesData {
   /// points of `AbsolutePointSize[…]`, the same sign convention the graphics
   /// primitives use. `None` = the default dot.
   pub point_size: Option<f64>,
+  /// Dash pattern from `PlotStyle` (`Dashed`, `Dashing[…]`, …) in the
+  /// plot's own encoding — negative lengths are absolute pixels, positive
+  /// ones fractions of the image width. `None` = a solid line. Travels with
+  /// the series so a dashed curve stays dashed when `Show` merges it.
+  pub dashing: Option<Vec<f64>>,
 }
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its
