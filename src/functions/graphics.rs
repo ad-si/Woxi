@@ -3687,6 +3687,74 @@ fn is_box_display_wrapper(name: &str, args: &[Expr]) -> bool {
   }
 }
 
+/// Split SVG text markup at its newlines into one self-contained piece per
+/// line: the `<tspan>`s open at a newline are closed there and reopened at
+/// the start of the next line, so every line is well-formed markup that
+/// keeps the styling it was inside. An empty line becomes a no-break space
+/// so it still takes up a line of height.
+fn split_markup_lines(markup: &str) -> Vec<String> {
+  let mut lines: Vec<String> = Vec::new();
+  let mut current = String::new();
+  let mut has_text = false;
+  let mut open: Vec<String> = Vec::new();
+  let mut rest = markup;
+  let mut finish = |current: &mut String, has_text: &mut bool| {
+    if !*has_text {
+      current.push_str("&#160;");
+    }
+    lines.push(std::mem::take(current));
+    *has_text = false;
+  };
+  while let Some(c) = rest.chars().next() {
+    if c == '<'
+      && let Some(end) = rest.find('>')
+    {
+      let tag = &rest[..=end];
+      if tag.starts_with("</") {
+        open.pop();
+      } else if !tag.ends_with("/>") {
+        open.push(tag.to_string());
+      }
+      current.push_str(tag);
+      rest = &rest[end + 1..];
+    } else if c == '\n' {
+      for tag in open.iter().rev() {
+        let name = tag[1..]
+          .split(|ch: char| ch.is_whitespace() || ch == '>')
+          .next()
+          .unwrap_or("tspan");
+        current.push_str(&format!("</{name}>"));
+      }
+      finish(&mut current, &mut has_text);
+      for tag in &open {
+        current.push_str(tag);
+      }
+      rest = &rest[1..];
+    } else {
+      current.push(c);
+      has_text = true;
+      rest = &rest[c.len_utf8()..];
+    }
+  }
+  finish(&mut current, &mut has_text);
+  lines
+}
+
+/// The line height of text markup: 1.2 times its largest `font-size`
+/// (a percentage size such as a subscript's does not count), at least the
+/// `base` size.
+fn markup_line_height(markup: &str, base: f64) -> f64 {
+  let mut largest = base;
+  for part in markup.split("font-size=\"").skip(1) {
+    if let Some(value) = part.split('"').next()
+      && let Ok(size) = value.parse::<f64>()
+    {
+      largest = largest.max(size);
+    }
+  }
+  largest * 1.2
+}
+
 /// The column width a `Grid`'s `ItemSize -> w` (or `{w, h}`) fixes, as a
 /// number of characters. `w` counts ems and an average character is about
 /// half an em wide. `Automatic` and non-numeric sizes fix nothing.
@@ -16122,6 +16190,17 @@ fn grid_svg_styled_internal(
           cell_h *= scale;
         }
       }
+      // Text with line breaks takes a line of height per line.
+      if grid_cell_graphic(cell).is_none() && !has_fraction(cell) {
+        let style = extract_cell_style(cell);
+        let markup = expr_to_svg_markup(style.content);
+        if markup.contains('\n') {
+          let base = style.font_size.unwrap_or(font_size);
+          let lines = markup.split('\n').count() as f64;
+          cell_h =
+            cell_h.max(pad_y + lines * markup_line_height(&markup, base));
+        }
+      }
       // A graphic cell keeps its own height.
       if let Some((_, _, nat_h)) = grid_cell_graphic(cell) {
         cell_h = cell_h.max(nat_h + pad_y);
@@ -16619,8 +16698,27 @@ fn grid_svg_styled_internal(
         } else {
           ""
         };
+        // A line break starts a new line: one `<tspan>` per line, the block
+        // centred on the cell. Stacked fractions are drawn elsewhere.
+        let multiline = markup.contains('\n') && !has_fraction(cell);
+        let (text_y, markup) = if multiline {
+          let lh = markup_line_height(&markup, fs);
+          let lines = split_markup_lines(&markup);
+          let top = cy - (lines.len() as f64 - 1.0) / 2.0 * lh;
+          let body: String = lines
+            .iter()
+            .enumerate()
+            .map(|(k, line)| {
+              let dy = if k == 0 { 0.0 } else { lh };
+              format!("<tspan x=\"{cx:.1}\" dy=\"{dy:.1}\">{line}</tspan>")
+            })
+            .collect();
+          (top, body)
+        } else {
+          (cy, markup)
+        };
         let text_elem = format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{text_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
           ff = svg_escape(ff),
         );
         if let Some(href) = link_href {

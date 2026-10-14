@@ -344,4 +344,36 @@ mod row_visual_mode {
     let result = interpret_with_stdout("Row[x]").unwrap();
     assert_eq!(result.result, "Row[x]");
   }
+
+  /// A grid cell whose text holds line breaks (also nested inside `Style`
+  /// and `Row`) is drawn as one line per `<tspan>` in a taller row.
+  #[test]
+  fn grid_cell_newlines_stack_lines() {
+    clear_state();
+    let svg = |code: &str| -> String {
+      interpret_with_stdout(code).unwrap().graphics.unwrap()
+    };
+    let height = |svg: &str| -> f64 {
+      svg
+        .split("height=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap()
+    };
+    let one = svg("Grid[{{\"ab\"}}]");
+    let plain = svg("Grid[{{\"a\\nb\"}}]");
+    let nested = svg(
+      "Grid[{{Text[Style[Row[{Style[\"x\", Red], Style[\"\\ny\\n\", 18]}]]]}}]",
+    );
+    assert!(height(&plain) > height(&one) * 1.8);
+    assert!(height(&nested) > height(&one) * 2.5);
+    assert_eq!(plain.matches("<tspan x=").count(), 2);
+    assert_eq!(nested.matches("<tspan x=").count(), 3);
+    // Every line is well-formed on its own.
+    assert_eq!(
+      nested.matches("<tspan").count(),
+      nested.matches("</tspan>").count()
+    );
+  }
 }
