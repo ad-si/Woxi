@@ -4807,6 +4807,23 @@ mod plot3d {
       );
     }
 
+    #[test]
+    fn plot_label_inline_swatch_graphic_is_a_coloured_dot() {
+      for color in ["Red", "Blue"] {
+        let svg = export_svg(&format!(
+          "Graphics3D[Sphere[], PlotLabel -> Row[{{Graphics[{{{color}, Disk[]}}, ImageSize -> 10], \" x\"}}]]"
+        ));
+        assert!(
+          !svg.contains("Graphics[") && !svg.contains("Disk["),
+          "inline swatch must not leak as source text:\n{svg}"
+        );
+        assert!(
+          svg.contains("\u{25CF}</tspan> x"),
+          "inline swatch should typeset as a dot:\n{svg}"
+        );
+      }
+    }
+
     // The "Latitude and Longitude of a Point on a Sphere" Demonstration
     // titles its Graphics3D/ParametricPlot3D Show with exactly this shape:
     // a Column of computed strings wrapped in Style[…, "Label"]. The Style
