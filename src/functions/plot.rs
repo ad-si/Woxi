@@ -4190,11 +4190,11 @@ pub(crate) fn build_plot_source(
     .enumerate()
     .map(|(i, points)| {
       let color = series_color(plot_style, i);
-      let (thickness, point_size) = if plot_style.is_empty() {
-        (None, None)
+      let (thickness, point_size, dashing) = if plot_style.is_empty() {
+        (None, None, None)
       } else {
         let style = &plot_style[i % plot_style.len()];
-        (style.thickness, style.point_size)
+        (style.thickness, style.point_size, style.dashing.clone())
       };
       let scatter = if is_scatter.is_empty() {
         false
@@ -4211,6 +4211,7 @@ pub(crate) fn build_plot_source(
         marker: None,
         thickness,
         point_size,
+        dashing,
       }
     })
     .collect();
@@ -5041,6 +5042,7 @@ pub(crate) fn render_merged_plot_source(
       )),
       thickness: s.thickness,
       point_size: s.point_size,
+      dashing: s.dashing.clone(),
       ..SeriesStyle::default()
     })
     .collect();
@@ -7225,6 +7227,7 @@ pub(crate) fn histogram_plot_source(
       marker: None,
       thickness: None,
       point_size: None,
+      dashing: None,
     });
   }
 

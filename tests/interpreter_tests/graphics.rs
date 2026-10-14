@@ -7975,6 +7975,19 @@ mod plot3d {
       assert!(svg.contains("<circle"), "the merged point must draw: {svg}");
     }
 
+    /// A dashed curve stays dashed when `Show` merges it with other plots.
+    /// Regression: the dash pattern was dropped, so the curve came out solid.
+    #[test]
+    fn show_keeps_the_dashing_of_a_plotted_curve() {
+      let svg = export_svg(
+        "Show[Plot[x, {x, 0, 1}], \
+         Plot[0.5, {x, 0, 1}, PlotStyle -> {Red, Dashed}]]",
+      );
+      assert!(svg.contains("stroke-dasharray=\"40.0,40.0\""), "{svg}");
+      let solid = export_svg("Show[Plot[x, {x, 0, 1}], Plot[0.5, {x, 0, 1}]]");
+      assert!(!solid.contains("stroke-dasharray"), "{solid}");
+    }
+
     /// A frame carries its own ticks, so `Axes -> False` beside
     /// `Frame -> True` hides the interior axes without taking the tick
     /// marks and their labels with them. Regression: a `Show` that
