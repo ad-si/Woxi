@@ -32071,4 +32071,28 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
     });
     assert!(svg.contains("<polyline") || svg.contains("<path"), "{svg}");
   }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a gas-property
+  /// correlation) whose `Manipulate` body is a `Module` that stores its
+  /// equation in a local (`eq = z == …`) and then solves it with
+  /// `FindRoot[eq, {z, a, b}]`. Regression: `FindRoot` (HoldAll) received
+  /// the bare local instead of the equation, so the widget showed
+  /// `FindRoot::nlnum` instead of drawing. This is a self-authored,
+  /// construct-equivalent example, not the Demonstration's code.
+  #[test]
+  fn manipulate_module_local_equation_solved_by_findroot() {
+    let code = r#"Manipulate[
+      Module[{z, eq, root},
+        eq = z == 1 + p/(4 z);
+        root = z /. FindRoot[eq, {z, 0.5, 2}];
+        Graphics[Circle[{0, 0}, root]]],
+      {{p, 1}, 0.1, 3}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    state.reevaluate();
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "the circle must draw");
+  }
 }
