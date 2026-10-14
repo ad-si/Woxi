@@ -14331,7 +14331,13 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut y_max = f64::NEG_INFINITY;
     let mut image_size = plot_sources[0].image_size;
 
+    // A plot without any curve (every function `Null`) has no data to
+    // contribute to the combined ranges — unless nothing else does either.
+    let any_curves = plot_sources.iter().any(|ps| !ps.series.is_empty());
     for ps in &plot_sources {
+      if any_curves && ps.series.is_empty() {
+        continue;
+      }
       all_series.extend(ps.series.iter().cloned());
       x_min = x_min.min(ps.x_range.0);
       x_max = x_max.max(ps.x_range.1);
@@ -14810,6 +14816,10 @@ fn annotation_contains_place(expr: &Expr) -> bool {
       is_place_head(name) || args.iter().any(annotation_contains_place)
     }
     Expr::List(items) => items.iter().any(annotation_contains_place),
+    // `PaneSelector[{1 -> Place[2], …}, sel]`: the pane is the rule's value.
+    Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. } => {
+      annotation_contains_place(replacement)
+    }
     _ => false,
   }
 }
@@ -22092,6 +22102,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
       _ => spec,
     };
+    // `(##1 &) @@ Thread[{1, 2, 3} -> Control[…]]` (or `Sequence @@ …`) written
+    // inside a layout's list is code that *produces* the list's items — a
+    // `PaneSelector` that gives the same control to several panes. Evaluate
+    // it so the panes' controls are visible to everything below.
+    let spliced_spec = splice_sequence_applies(spec);
+    let spec = &spliced_spec;
     // A `PaneSelector` argument shows one pane's controls at a time; the
     // flattened list holds every pane's, so each pane's controls also pick
     // up the condition under which they are on screen.
@@ -22107,7 +22123,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }
   let arg_items: Vec<Expr> =
     arg_items.into_iter().map(unwrap_control_wrapper).collect();
-  let pane_governed_names = pane_or_tab_governed_names(&args[1..], &place_map);
+  let spliced_specs: Vec<Expr> =
+    args[1..].iter().map(splice_sequence_applies).collect();
+  let pane_governed_names =
+    pane_or_tab_governed_names(&spliced_specs, &place_map);
   // A `ControlType -> …` given to the Manipulate itself sets the type of every
   // control that does not choose one; push it into the specs now that they are
   // flattened, so they parse through the single per-spec path below.
@@ -22360,10 +22379,23 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         let label_runs = manipulate_label_runs(&args[0], false);
         let enabled = extract_enabled_condition(&args[2..])
           .map(crate::syntax::expr_to_source_form);
+        let label = flatten_label_runs(&label_runs);
+        let action = crate::syntax::expr_to_source_form(&args[1]);
+        // The same button repeated in several panes of one `PaneSelector`
+        // (`PaneSelector[{1 -> Button["next", …], 2 -> Button["next", …]},
+        // step]`) is one button that is on screen in each of those panes.
+        if pane_governed_names.contains(&label)
+          && controls.iter().any(|prev| {
+            matches!(prev, ManipulateControl::Button { label: l, action: a, .. }
+              if *l == label && *a == action)
+          })
+        {
+          continue;
+        }
         controls.push(ManipulateControl::Button {
-          label: flatten_label_runs(&label_runs),
+          label,
           label_runs,
-          action: crate::syntax::expr_to_source_form(&args[1]),
+          action,
           enabled,
         });
         continue;
@@ -24670,6 +24702,65 @@ fn expand_conditional_control_items(
   out
 }
 
+/// The list a `Sequence @@ list` / `(##1 &) @@ list` (the identity-sequence
+/// idiom) application splices into its surroundings.
+fn sequence_apply_list(expr: &Expr) -> Option<&Expr> {
+  match expr {
+    Expr::Apply { func, list }
+      if matches!(func.as_ref(), Expr::Identifier(s) if s == "Sequence")
+        || matches!(
+          func.as_ref(),
+          Expr::Function { body } if matches!(body.as_ref(), Expr::SlotSequence(1))
+        ) =>
+    {
+      Some(list)
+    }
+    _ => None,
+  }
+}
+
+/// Replace every `Sequence @@ list` / `(##1 &) @@ list` found as an element of
+/// a list or a call's arguments with the elements `list` evaluates to, the
+/// way evaluation would splice them. The top-level expression itself is left
+/// alone (see `expand_conditional_control_items`).
+fn splice_sequence_applies(expr: &Expr) -> Expr {
+  fn splice_items(items: &[Expr]) -> Vec<Expr> {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+      if let Some(list) = sequence_apply_list(item)
+        && let Ok(Expr::List(ref inner)) = evaluate_expr_to_expr(list)
+      {
+        out.extend(splice_items(inner));
+        continue;
+      }
+      out.push(splice_sequence_applies(item));
+    }
+    out
+  }
+  match expr {
+    Expr::List(items) => Expr::List(splice_items(items).into()),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: splice_items(args).into(),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: pattern.clone(),
+      replacement: Box::new(splice_sequence_applies(replacement)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: pattern.clone(),
+      replacement: Box::new(splice_sequence_applies(replacement)),
+    },
+    _ => expr.clone(),
+  }
+}
+
 /// Record, for every control declared inside a `PaneSelector[{v -> content,
 /// …}, sel]` argument, the condition under which its pane is on screen
 /// (`sel == v`). Woxi lays every pane's controls out in one flat list, so
@@ -24846,6 +24937,17 @@ fn pane_control_variables(
           && let Some(Some(var)) = place_map.get(*n as usize - 1)
         {
           out.push(var.clone());
+          return;
+        }
+        // A pane holding a `Button` is on screen under the pane's condition
+        // like a control is; a button is identified by its label.
+        if name == "Button"
+          && args.len() >= 2
+          && let label =
+            flatten_label_runs(&manipulate_label_runs(&args[0], false))
+          && !label.is_empty()
+        {
+          out.push(label);
           return;
         }
         if name == "Control"
@@ -31514,6 +31616,63 @@ mod manipulate_control_placement_tests {
       vec!["a", "b"],
       "the layout template must not become a third, blank-labeled control: {:?}",
       spec.controls
+    );
+  }
+}
+
+#[cfg(test)]
+mod manipulate_pane_sequence_tests {
+  use super::*;
+
+  /// `(##1 &) @@ Thread[{1, 2, 3} -> Button[…]]` inside a `PaneSelector`
+  /// list is code producing the panes (one per key), and the same button
+  /// repeated across panes is a single control, not one per pane.
+  #[test]
+  fn sequence_apply_panes_share_one_button_and_one_control() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[a + n, {{a, 0}, 0, 1}, \
+       PaneSelector[{(##1 &) @@ Thread[{1, 2, 3} -> Button[\"next\", n = n + 1]], \
+         4 -> \"done\"}, Dynamic[n]], \
+       PaneSelector[{(##1 &) @@ Thread[{1, 2, 3} -> \
+         Control[{{b, 0, \"b\"}, 0, 1}]]}, Dynamic[n]], \
+       {{n, 1}, 1, 4, 1, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    let buttons = spec
+      .controls
+      .iter()
+      .filter(|c| matches!(c, ManipulateControl::Button { label, .. } if label == "next"))
+      .count();
+    assert_eq!(
+      buttons, 1,
+      "one `next` button expected: {:?}",
+      spec.controls
+    );
+    assert_eq!(
+      names.iter().filter(|n| **n == "b").count(),
+      1,
+      "one `b` control expected: {names:?}"
+    );
+  }
+
+  /// A `PaneSelector` whose panes are `Place[n]` references is layout, not a
+  /// display element of its own.
+  #[test]
+  fn pane_selector_of_place_references_is_not_a_display() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[a, {{a, 0, \"a\"}, 0, 1}, {{n, 1}, {1, 2}, ControlType -> None}, \
+       PaneSelector[{1 -> Manipulate`Place[1], 2 -> Manipulate`Place[1]}, \
+         Dynamic[n]]]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert!(
+      spec.displays.is_empty(),
+      "Place-only PaneSelector must not become a display: {:?}",
+      spec.displays
     );
   }
 }

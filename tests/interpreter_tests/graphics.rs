@@ -11195,6 +11195,25 @@ ParametricPlot[{sol[[1, 1, 2]], sol[[1, 2, 2]]}, {t, 0, 6}]",
       );
     }
 
+    // Regression: a `Plot` whose function is `Null` (every curve switched off)
+    // is an empty plot, not an opaque picture. Mixed with a curve and plain
+    // `Graphics`, it used to make `Show` stack two separate SVGs, the opaque
+    // one's white background covering the curve.
+    #[test]
+    fn show_merges_empty_plot_with_curve_and_graphics() {
+      let svg = export_svg(
+        "show = 0; Show[{Plot[2 x, {x, -1, 1}], \
+Plot[If[show == 1, x], {x, -1, 1}], \
+Graphics[{Text[\"hi\", {0.2, 0.2}]}]}, PlotRange -> {{-1, 1}, {-1, 1}}]",
+      );
+      assert_eq!(
+        svg.matches("<svg x=").count(),
+        0,
+        "Show must emit one merged picture: {svg}"
+      );
+      assert!(svg.contains("<polyline"), "curve missing: {svg}");
+    }
+
     // Regression: a curve-to-curve `Filling -> {i -> {{j}, style}}` must
     // survive `Show` merging the plot with other graphics, drawn as a
     // polygon between the two curves in the requested colour.
