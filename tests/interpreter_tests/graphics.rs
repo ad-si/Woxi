@@ -20150,6 +20150,39 @@ mod grid_rasterize {
   }
 
   #[test]
+  fn panel_around_styled_text_draws_a_filled_box() {
+    // Regression: `Panel[Text[Style[Row[{…}], 24]]]` (the formula display of
+    // a sampled Demonstration) printed as a clipped line of source text
+    // instead of a panel, because only `Framed` was drawn as a box.
+    clear_state();
+    let svg = woxi::interpret_with_stdout(
+      "Panel[Text[Style[Row[{Style[\"x\", Italic], \" = \", \"abc\"}], 24]]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Panel should produce a graphics SVG");
+    assert!(svg.contains("<rect"), "Panel should draw a box:\n{svg}");
+    assert!(
+      svg.contains("rgb(242,242,242)"),
+      "Panel should be filled light gray:\n{svg}"
+    );
+    assert!(!svg.contains("Panel["), "Panel head must not leak:\n{svg}");
+  }
+
+  #[test]
+  fn panel_in_a_column_keeps_its_background_option() {
+    clear_state();
+    let svg = woxi::interpret_with_stdout(
+      "Column[{Panel[Text[\"abc\"], Background -> RGBColor[1, 0, 0]], \"z\"}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Column of Panel should produce a graphics SVG");
+    assert!(svg.contains("<rect"), "{svg}");
+    assert!(!svg.contains("rgb(242,242,242)"), "{svg}");
+  }
+
+  #[test]
   fn image_of_graphics_rasterizes() {
     clear_state();
     // ImageSize only affects display, not the pixel data.
