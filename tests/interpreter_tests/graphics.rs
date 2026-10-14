@@ -2469,18 +2469,20 @@ mod graphics {
     // painted solid black, hiding any label drawn inside them).
     #[test]
     fn face_form_none_leaves_area_primitives_unfilled() {
-      for prim in [
-        "Rectangle[{0, 0}, {1, 1}]",
-        "Disk[{0, 0}, 1]",
-        "Polygon[{{0, 0}, {1, 0}, {0, 1}}]",
-      ] {
-        let svg = export_svg(&format!(
-          "Graphics[{{EdgeForm[Thick], FaceForm[None], {prim}}}]"
-        ));
-        assert!(
-          svg.contains("fill-opacity=\"0\""),
-          "{prim} should be unfilled: {svg}"
-        );
+      for face in ["FaceForm[None]", "FaceForm[]"] {
+        for prim in [
+          "Rectangle[{0, 0}, {1, 1}]",
+          "Disk[{0, 0}, 1]",
+          "Polygon[{{0, 0}, {1, 0}, {0, 1}}]",
+        ] {
+          let svg = export_svg(&format!(
+            "Graphics[{{EdgeForm[Thick], {face}, {prim}}}]"
+          ));
+          assert!(
+            svg.contains("fill-opacity=\"0\""),
+            "{face} {prim} should be unfilled: {svg}"
+          );
+        }
       }
     }
 
