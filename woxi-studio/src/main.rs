@@ -7275,6 +7275,29 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 mod tests {
   use super::*;
 
+  /// A Manipulate whose Input cell stores a number followed by the legacy
+  /// `"\.00"` escape (character 0, an invisible spacer) must still open as
+  /// a live widget: the NUL it decodes to used to survive into the cell's
+  /// source and make it unparseable.
+  #[test]
+  fn manipulate_input_with_nul_spacer_escape_instantiates() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[RowBox[{"Manipulate", "[", RowBox[{RowBox[{"Graphics", "[", RowBox[{"Disk", "[", RowBox[{RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",", RowBox[{"r", "\.00"}]}], "]"}], "]"}], ",", RowBox[{"{", RowBox[{"r", ",", "1", ",", "3"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert_eq!(widget.controls.len(), 1);
+    assert!(widget.graphics_handle.is_some());
+  }
+
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
   /// randomly sampled Wolfram Demonstration notebook ("Dawn Spaceflight")
   /// whose `Manipulate` control-spec list carried a bare `Item["background"]`
