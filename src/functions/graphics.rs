@@ -19596,6 +19596,7 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // A `Framed[…]` box draws its border and its content; a `Column`
       // item that is one used to print as source.
       "Framed" if !args.is_empty() => return framed_to_svg(&args),
+      "Panel" if !args.is_empty() => return panel_to_svg(&args),
       // A sound item shows the sound box a notebook draws for it — a play
       // button and the waveform — rather than the `Play[…]` source text.
       "Sound" | "Play" => return crate::functions::sound::sound_svg(expr),
@@ -20281,6 +20282,24 @@ fn unwrap_framed_layout(expr: &Expr) -> Expr {
 /// Render `Framed[expr]` as an SVG box with a rectangular border around the content.
 /// Handles nested Framed by recursively rendering inner content as embedded SVG.
 pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
+  framed_box_to_svg(args, None)
+}
+
+/// `Panel[content, opts…]` drawn as the light-gray box a notebook shows:
+/// the same bordered box as `Framed`, filled unless `Background` says
+/// otherwise. A `Panel`'s optional second argument is a label, not an
+/// option, so only the rule arguments after the content are forwarded.
+pub fn panel_to_svg(args: &[Expr]) -> Option<String> {
+  let (content, rest) = args.split_first()?;
+  let mut box_args = vec![content.clone()];
+  box_args.extend(rest.iter().filter(|a| option_kv(a).is_some()).cloned());
+  framed_box_to_svg(&box_args, Some(Color::new(0.95, 0.95, 0.95)))
+}
+
+fn framed_box_to_svg(
+  args: &[Expr],
+  default_background: Option<Color>,
+) -> Option<String> {
   if args.is_empty() {
     return None;
   }
@@ -20293,6 +20312,7 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
     .filter_map(option_kv)
     .find(|(k, _)| *k == "Background")
     .and_then(|(_, v)| parse_color(v))
+    .or(default_background)
     .map(Color::to_svg_rgb);
   let rect_fill = bg_fill.as_deref().unwrap_or("none");
 
@@ -20482,6 +20502,10 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
           let (w, h) = parse_svg_wh(&svg);
           (Some(svg), w, h)
         }),
+        "Panel" => panel_to_svg(inner_args).map_or((None, 0.0, 0.0), |svg| {
+          let (w, h) = parse_svg_wh(&svg);
+          (Some(svg), w, h)
+        }),
         _ => (None, 0.0, 0.0),
       }
     } else if let Expr::Graphics { svg, .. } = content {
@@ -20636,6 +20660,7 @@ pub fn row_with_framed_to_svg(items: &[Expr]) -> Option<String> {
       // Render the entire Framed / Highlighted (with any nesting) as SVG
       let child_svg = match name.as_str() {
         "Framed" => framed_to_svg(args),
+        "Panel" => panel_to_svg(args),
         "Highlighted" => highlighted_to_svg(args),
         _ => None,
       };
