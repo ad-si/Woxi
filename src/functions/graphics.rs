@@ -19889,6 +19889,39 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
 /// Render `Row[{items...}]` or `Row[{items...}, sep]` as a horizontal SVG layout.
 /// When `sep` is `Spacer[n]`, uses `n` points of horizontal space between items.
 /// When `sep` is any other expression, renders it as text between items.
+/// The text of a row item that is a string starting or ending with a
+/// newline, possibly inside `Style[…]` wrappers. Such a string breaks the
+/// line; a stacked 2D text like `"1\n-\n3"` (a typeset fraction) has its
+/// newlines in the middle and stays one centered block.
+fn newline_text(item: &Expr) -> Option<&str> {
+  match item {
+    Expr::String(s) if s.starts_with('\n') || s.ends_with('\n') => Some(s),
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      newline_text(&args[0])
+    }
+    _ => None,
+  }
+}
+
+/// `item` with its innermost string replaced by `text`.
+fn with_text(item: &Expr, text: &str) -> Expr {
+  match item {
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      let mut new_args = args.clone();
+      new_args[0] = with_text(&args[0], text);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    _ => Expr::String(text.to_string()),
+  }
+}
+
 pub fn row_to_svg(args: &[Expr]) -> Option<String> {
   if args.is_empty() {
     return None;
@@ -19901,6 +19934,45 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
 
   if items.is_empty() {
     return None;
+  }
+
+  // A string item carrying `\n` breaks the row: the text after the newline
+  // (and every item following it) continues on the next line, as in a
+  // notebook's text flow. Lay the lines out as a left-aligned column of
+  // sub-rows instead of squeezing a multi-line cell between its neighbours.
+  if args.len() == 1 && items.iter().any(|i| newline_text(i).is_some()) {
+    let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
+    for item in items {
+      match newline_text(item) {
+        Some(text) => {
+          for (k, seg) in text.split('\n').enumerate() {
+            if k > 0 {
+              lines.push(Vec::new());
+            }
+            if !seg.is_empty() {
+              lines.last_mut().unwrap().push(with_text(item, seg));
+            }
+          }
+        }
+        None => lines.last_mut().unwrap().push(item.clone()),
+      }
+    }
+    let rows: Vec<Expr> = lines
+      .into_iter()
+      .map(|line| {
+        // A blank line still takes one line of height.
+        let line = if line.is_empty() {
+          vec![Expr::String(" ".to_string())]
+        } else {
+          line
+        };
+        Expr::FunctionCall {
+          name: "Row".to_string(),
+          args: vec![Expr::List(line.into())].into(),
+        }
+      })
+      .collect();
+    return column_to_svg(&[Expr::List(rows.into())]);
   }
 
   // Split the tail into an optional separator (a non-rule second argument)
