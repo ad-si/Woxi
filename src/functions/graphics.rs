@@ -4233,6 +4233,80 @@ fn strip_default_background_plate(svg: &str) -> String {
   svg.to_string()
 }
 
+/// The numeric `{{xmin, xmax}, {ymin, ymax}}` of a graphic's `PlotRange`.
+fn numeric_plot_range(options: &[Expr]) -> Option<((f64, f64), (f64, f64))> {
+  let value = options.iter().find_map(|o| {
+    option_name_value(o)
+      .and_then(|(n, v)| (n == "PlotRange").then(|| v.into_owned()))
+  })?;
+  let Expr::List(axes) = &value else {
+    return None;
+  };
+  let [xs, ys] = axes.as_slice() else {
+    return None;
+  };
+  let pair = |e: &Expr| expr_to_point(e).filter(|(a, b)| b > a);
+  Some((pair(xs)?, pair(ys)?))
+}
+
+/// `Inset[plot, pos, opos, size]` for a plot that draws its own frame or
+/// axes (a `RegionPlot`, a `Show` of one). Folding its primitives into the
+/// enclosing picture would drop the frame and the plot range the primitives
+/// were drawn against, so the plot is embedded whole instead: `size` is its
+/// width in the enclosing coordinates, and `opos` — a point in the plot's
+/// own data coordinates — is the point that lands on `pos`.
+fn framed_plot_inset(
+  args: &[Expr],
+  anchor: Option<(f64, f64, bool)>,
+) -> Option<Primitive> {
+  let Expr::Graphics {
+    svg,
+    is_3d: false,
+    structure: Some(_),
+    ..
+  } = peel_style_wrapper(&args[0])
+  else {
+    return None;
+  };
+  let options = graphics_options(peel_style_wrapper(&args[0]))?;
+  let draws_frame = options.iter().any(|o| {
+    matches!(
+      option_name_value(o),
+      Some((n, v)) if (n == "Frame" || n == "Axes")
+        && matches!(v.as_ref(), Expr::Identifier(t) if t == "True")
+    )
+  });
+  if !draws_frame {
+    return None;
+  }
+  let (width, _) = parse_inset_target_size(args);
+  let width = width.filter(|w| *w > 0.0)?;
+  let (px, py, false) = anchor? else {
+    return None;
+  };
+  let dims = parse_svg_dimensions(svg)?;
+  let height = width * dims.nat_h / dims.nat_w;
+  let (cx, cy) = match (
+    args.get(2).and_then(expr_to_point),
+    numeric_plot_range(&options),
+  ) {
+    (Some((ox, oy)), Some(((x0, x1), (y0, y1)))) => (
+      px + (0.5 - (ox - x0) / (x1 - x0)) * width,
+      py + (0.5 - (oy - y0) / (y1 - y0)) * height,
+    ),
+    _ => (px, py),
+  };
+  Some(Primitive::InsetGraphic {
+    svg: svg.clone(),
+    x: cx,
+    y: cy,
+    w: dims.nat_w,
+    h: dims.nat_h,
+    scaled: false,
+    size: Some((width, height)),
+  })
+}
+
 fn inset_primitives(
   args: &[Expr],
   errors: &mut Vec<String>,
@@ -4290,6 +4364,9 @@ fn inset_primitives(
   // the enclosing picture's coordinates. A telescope-view inset whose
   // primitives live in `[-1.1, 1.1]` would otherwise collapse to a dot
   // inside a picture measured in hundreds of units.
+  if let Some(prim) = framed_plot_inset(args, anchor) {
+    return Some(vec![prim]);
+  }
   let natural_size = parse_inset_target_size(args) == (None, None);
   let rendered;
   let image_svg;

@@ -1031,6 +1031,37 @@ mod graphics {
       );
     }
 
+    /// `Inset[Show[RegionPlot[…], Graphics[…]], pos, opos, size]` embeds the
+    /// framed plot whole: folding its primitives into the enclosing picture
+    /// used to drop the frame and strand a point drawn in the plot's
+    /// coordinates far from where the plot sits.
+    #[test]
+    fn a_framed_plot_inset_keeps_its_frame_and_plot_range() {
+      let svg = export_svg(
+        "Graphics[{Inset[Show[RegionPlot[False, {a, 0, 2 Pi}, {b, 0, 2 Pi}], \
+         Graphics[{Blue, Point[{1, 1}]}]], {3, -2}, {0, 0}, 4]}, \
+         PlotRange -> {{-2, 7}, {-3, 3}}, ImageSize -> {600, 320}]",
+      );
+      let nested = svg
+        .split("<svg ")
+        .nth(2)
+        .and_then(|s| s.split_once('>'))
+        .expect("a nested picture")
+        .0
+        .to_string();
+      // 4 data units of the (padded) plot range on a 600px canvas.
+      assert!(
+        nested.contains("width=\"213.33\""),
+        "the plot is sized in the enclosing coordinates: {nested}"
+      );
+      // The plot's own (0, 0) lands on the anchor {3, -2}: the plot centre
+      // sits half its width right of it.
+      assert!(
+        nested.contains("x=\"326.67\""),
+        "the plot's origin lands on the anchor: {nested}"
+      );
+    }
+
     /// `Inset[Pane[image, …], Automatic, Automatic, size]` — how a
     /// Demonstration shows a processed picture — draws the image itself
     /// instead of printing the `Pane[-Image-, …]` source as text.
