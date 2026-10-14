@@ -15040,6 +15040,20 @@ mod cases {
   }
 
   #[test]
+  fn maximize_minimize_machine_precision_falls_back_to_numeric() {
+    // With approximate coefficients and no closed form, Maximize/Minimize
+    // return a numeric {value, rules} result instead of staying unevaluated.
+    assert_case(
+      r#"Maximize[{Exp[-1./x]/(1 + y), 250 < x < 750, 250 < y < 750}, {x, y}][[2]]"#,
+      r#"{x -> 750., y -> 250.}"#,
+    );
+    assert_case(
+      r#"Minimize[{1./y + x, 250 < x < 750, 250 < y < 750}, {x, y}][[2]]"#,
+      r#"{x -> 250., y -> 750.}"#,
+    );
+  }
+
+  #[test]
   fn maximize_sinusoid_with_scaled_argument() {
     assert_case(r#"Maximize[5 Sin[4 Pi t], t]"#, r#"{5, {t -> 1/8}}"#);
     assert_case(r#"Minimize[5 Sin[2 t], t]"#, r#"{-5, {t -> -1/4*Pi}}"#);
