@@ -6997,6 +6997,17 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// evaluate (e.g. it stays opaque) is used as written, matching the
 /// multivariate path's fallback.
 fn build_find_root_func(arg: &Expr, vars: &[&str]) -> Expr {
+  // FindRoot holds its arguments, so an equation passed by name
+  // (`eq = f[x] == 0; FindRoot[eq, {x, x0}]`, typically a Module local)
+  // arrives as a bare symbol. Resolve it first to reveal the `lhs == rhs`
+  // structure the match below converts to `lhs - rhs`.
+  let resolved;
+  let arg = if matches!(arg, Expr::Identifier(_)) {
+    resolved = evaluate_with_vars_localized(arg, vars);
+    &resolved
+  } else {
+    arg
+  };
   let raw = match arg {
     Expr::Comparison {
       operands,

@@ -9308,6 +9308,31 @@ mod find_root {
     );
   }
 
+  /// Regression: FindRoot holds its arguments, so an equation stored in a
+  /// variable (a Module local in a Demonstration's Manipulate body) reached
+  /// it as a bare symbol and failed with `FindRoot::nlnum`.
+  #[test]
+  fn equation_stored_in_module_local() {
+    assert_eq!(
+      interpret(
+        "Module[{t, eq}, eq = t == 1 + 1/(4 t); t /. FindRoot[eq, {t, 0.5, 2}]]"
+      )
+      .unwrap()
+      .parse::<f64>()
+      .map(|v| (v * 1e9).round() / 1e9)
+      .unwrap(),
+      1.207106781
+    );
+  }
+
+  #[test]
+  fn equation_stored_in_global_variable() {
+    assert_eq!(
+      interpret("eqn = x^2 == 2; FindRoot[eqn, {x, 1}]").unwrap(),
+      "{x -> 1.4142135623730951}"
+    );
+  }
+
   #[test]
   fn polynomial_root() {
     assert_eq!(
