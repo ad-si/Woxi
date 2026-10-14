@@ -23102,7 +23102,8 @@ fn is_control_type_marker(item: &Expr) -> bool {
 /// bare marker (`{{p, init}, pmin, pmax, Locator}`) or `ControlType ->
 /// Locator`.
 fn spec_marks_locator(items: &[Expr]) -> bool {
-  items.iter().any(|it| {
+  custom_locator_pane_options(items).is_some()
+    || items.iter().any(|it| {
     matches!(it, Expr::Identifier(s) if s == "Locator")
       || matches!(
         it,
@@ -23111,6 +23112,49 @@ fn spec_marks_locator(items: &[Expr]) -> bool {
           if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
             && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Locator")
       )
+  })
+}
+
+/// The arguments of the `LocatorPane[Dynamic[var], graphic, …]` a spec's
+/// custom control function draws for the spec's own variable — `{{pts, init},
+/// {xmin, ymin}, {xmax, ymax}, (LocatorPane[Dynamic[pts], …] &)}`. Such a
+/// control is a draggable-points Locator whose options (`LocatorAutoCreate`)
+/// live on the pane rather than on the spec.
+fn custom_locator_pane_options(items: &[Expr]) -> Option<&[Expr]> {
+  fn find<'a>(expr: &'a Expr, var: &str) -> Option<&'a [Expr]> {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        if name == "LocatorPane"
+          && let Some(Expr::FunctionCall {
+            name: dname,
+            args: dargs,
+          }) = args.first()
+          && dname == "Dynamic"
+          && matches!(dargs.first(), Some(Expr::Identifier(v)) if v == var)
+        {
+          return Some(&args[1..]);
+        }
+        args.iter().find_map(|a| find(a, var))
+      }
+      Expr::List(items) => items.iter().find_map(|a| find(a, var)),
+      _ => None,
+    }
+  }
+  let var = manipulate_spec_var_name(items)?;
+  items[1..].iter().find_map(|it| {
+    // The echo holds a custom control function inside `Dynamic[…]`.
+    let it = match it {
+      Expr::FunctionCall { name, args }
+        if name == "Dynamic" && args.len() == 1 =>
+      {
+        &args[0]
+      }
+      other => other,
+    };
+    match it {
+      Expr::Function { body } => find(body, &var),
+      _ => None,
+    }
   })
 }
 
@@ -26987,7 +27031,10 @@ fn parse_manipulate_control(
         })
       })
       .collect();
-    let auto_create = items.iter().any(|it| {
+    let auto_create = items
+      .iter()
+      .chain(custom_locator_pane_options(items).into_iter().flatten())
+      .any(|it| {
       matches!(
         it,
         Expr::Rule { pattern, replacement }
@@ -30907,6 +30954,28 @@ mod manipulate_dynamic_control_list_tests {
   /// how many extra points a click may add this way (e.g. `-> 2`), and the
   /// integer form must not be mistaken for "no auto-create" the way an
   /// unrecognized value would be.
+  #[test]
+  fn locator_pane_custom_control_function_is_a_multi_point_locator() {
+    let s = spec(
+      "Manipulate[pts, {{pts, {{0, 0}, {1, 1}, {2, 0}}, \"\"}, {-1, -1}, \
+       {3, 2}, (LocatorPane[Dynamic[pts], Graphics[{}], \
+       LocatorAutoCreate -> {3, 20}] &)}]",
+    );
+    match &s.controls[0] {
+      ManipulateControl::Locator {
+        points,
+        x_max,
+        auto_create,
+        ..
+      } => {
+        assert_eq!(points.len(), 3);
+        assert_eq!(*x_max, 3.0);
+        assert!(*auto_create);
+      }
+      other => panic!("expected a Locator control, got {other:?}"),
+    }
+  }
+
   #[test]
   fn locator_auto_create_bare_integer_enables_adding_points() {
     let s = spec(
