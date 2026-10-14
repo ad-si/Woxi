@@ -4392,6 +4392,14 @@ fn parse_expression_inner(
           term_was_implicit_times.push(false);
         }
       }
+      Rule::ConjugateSuffix => {
+        // expr \[Conjugate] → Conjugate[expr]
+        if let Some(last) = terms.pop() {
+          term_was_implicit_times.pop();
+          terms.push(call1("Conjugate", last));
+          term_was_implicit_times.push(false);
+        }
+      }
       Rule::ConjugateTransposeSuffix => {
         // expr \[ConjugateTranspose] → ConjugateTranspose[expr]
         if let Some(last) = terms.pop() {
