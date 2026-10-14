@@ -4497,9 +4497,20 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // primitive entirely rather than falling through to the catch-all in
   // `graphics_text_content`, which would typeset the wrapper's own
   // textual form (`Invisible[e]`) as a literal on-screen label.
-  let (first_arg, mut hidden) = match peel_invisible(&args[0]) {
+  //
+  // `Mouseover[label, hover]` shows `label`; the hover appearance can't be
+  // represented in a static picture, so peel it (and any nesting of it)
+  // down to the label itself.
+  let mut label_arg = &args[0];
+  while let Expr::FunctionCall { name, args: margs } = label_arg
+    && name == "Mouseover"
+    && !margs.is_empty()
+  {
+    label_arg = &margs[0];
+  }
+  let (first_arg, mut hidden) = match peel_invisible(label_arg) {
     Some(inner) => (inner, true),
-    None => (&args[0], false),
+    None => (label_arg, false),
   };
   let mut local_style = style.clone();
   // `Framed[content, opts…]` boxes the label: a border around it and, with
