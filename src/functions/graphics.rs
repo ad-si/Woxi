@@ -1796,14 +1796,17 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         }
         true
       }
-      "FaceForm" if !args.is_empty() => {
+      "FaceForm" => {
         // FaceForm[color] sets the fill color of area primitives only —
         // unlike a bare color directive, it must not recolor Text, Line
         // or Point primitives that follow it.
-        if let Some(c) = parse_color(&args[0]) {
+        if let Some(c) = args.first().and_then(parse_color) {
           style.face_color = Some(c);
-        } else if matches!(&args[0], Expr::Identifier(s) if s == "None") {
-          // `FaceForm[None]` leaves area primitives unfilled.
+        } else if args.is_empty()
+          || matches!(&args[0], Expr::Identifier(s) if s == "None")
+        {
+          // `FaceForm[None]` and the bare `FaceForm[]` leave area
+          // primitives unfilled.
           style.face_color = Some(Color::new(0.0, 0.0, 0.0).with_alpha(0.0));
         }
         true
