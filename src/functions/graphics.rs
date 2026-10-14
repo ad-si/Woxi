@@ -3779,8 +3779,11 @@ fn graphics_text_content(expr: &Expr) -> String {
     // is the flattened traditional-notation box tree — the same thing
     // `expr_to_svg_markup` draws — rather than `expr`'s InputForm. Keeping
     // the two in step is what makes the measured width match the drawing.
+    // (A string is its own text in any form, so it skips this.)
     Expr::FunctionCall { name, args }
-      if name == "TraditionalForm" && args.len() == 1 =>
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && !matches!(args[0], Expr::String(_)) =>
     {
       box_expr_to_plain(
         &crate::evaluator::dispatch::complex_and_special::
@@ -11908,16 +11911,22 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // notation, so typeset the expression instead of printing its
         // InputForm: `Sum[…, {n, 0, ∞}]` becomes a ∑ with limits and
         // `LegendreP[n, x]` becomes `Pₙ(x)`.
-        "TraditionalForm" if args.len() == 1 => boxes_to_svg(
-          &crate::evaluator::dispatch::complex_and_special::
-            expr_to_box_form_traditional(&args[0]),
-        ),
+        "TraditionalForm"
+          if args.len() == 1 && !matches!(args[0], Expr::String(_)) =>
+        {
+          boxes_to_svg(
+            &crate::evaluator::dispatch::complex_and_special::
+              expr_to_box_form_traditional(&args[0]),
+          )
+        }
 
         // Presentation wrappers display their content only.
         "RawBoxes" | "DisplayForm" if is_box_display_wrapper(name, args) => {
           boxes_to_svg(&args[0])
         }
-        "Text" | "DisplayForm" | "StandardForm" if args.len() == 1 => {
+        "Text" | "DisplayForm" | "StandardForm" | "TraditionalForm"
+          if args.len() == 1 =>
+        {
           expr_to_svg_markup(&args[0])
         }
 
@@ -19374,7 +19383,12 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
     let inner = args[0].clone();
     current = inner;
   }
+  // A string is drawn as its text in any form — `TraditionalForm["a = 1"]`
+  // has no quotes around it — and one carrying `\!\(\*…\)` box notation
+  // typesets from there, so it is never handed to the traditional box
+  // builder (which would print it quoted, box source and all).
   if traditional
+    && !matches!(&current, Expr::String(_))
     && !crate::evaluator::lays_out_a_graphic(&current)
     && !matches!(&current, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Grid" | "Column" | "Row" | "Framed"))
@@ -19586,7 +19600,9 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // `=` for `Equal`, `≤` for `LessEqual`, `sin(x)` for `Sin[x]`,
       // stacked fractions — by the same box pipeline the top-level
       // display uses.
-      "TraditionalForm" if args.len() == 1 => {
+      "TraditionalForm"
+        if args.len() == 1 && !matches!(args[0], Expr::String(_)) =>
+      {
         return form_box_svg(&args[0]);
       }
       // A styled layout keeps its layout, and its style: `Style[Row[{…}],
