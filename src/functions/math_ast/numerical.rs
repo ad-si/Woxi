@@ -970,11 +970,22 @@ pub(crate) fn bigfloat_to_f64_approx(
     return Some(0.0);
   }
   let (words, _, sign, exp, _) = bf.as_raw_parts()?;
-  // The mantissa is 0.1… in little-endian 64-bit words. Its top word holds
-  // the leading 64 bits; any set bit below it only matters as a sticky bit
-  // for round-to-nearest of the u64 → f64 conversion.
-  let (&top, rest) = words.split_last()?;
-  let sticky = u64::from(rest.iter().any(|&w| w != 0));
+  // The mantissa is 0.1… in little-endian words (32 or 64 bits wide,
+  // depending on the target). Collect its leading 64 bits into `top`; any set
+  // bit below them only matters as a sticky bit for round-to-nearest of the
+  // u64 → f64 conversion.
+  let per_top = (64 / usize::BITS) as usize;
+  let used = per_top.min(words.len());
+  if used == 0 {
+    return None;
+  }
+  let split = words.len() - used;
+  let mut top: u64 = 0;
+  for &w in words[split..].iter().rev() {
+    top = (top << (usize::BITS % 64)) | w as u64;
+  }
+  top <<= 64 - used as u32 * usize::BITS;
+  let sticky = u64::from(words[..split].iter().any(|&w| w != 0));
   // Scale into [1/2, 1) first and apply 2^exp in two halves, so neither
   // factor over- or underflows for a result near the ends of f64's range.
   let half_exp = exp / 2;
