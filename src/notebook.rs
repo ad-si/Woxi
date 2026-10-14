@@ -89,7 +89,9 @@ impl CellStyle {
       "Input" => Some(Self::Input),
       "Output" => Some(Self::Output),
       "Code" => Some(Self::Code),
-      "Print" => Some(Self::Print),
+      // Kernel messages ("During evaluation of In[1]:=") are stdout-like
+      // output attached to the input that raised them, not prose.
+      "Print" | "Message" => Some(Self::Print),
       _ => None,
     }
   }
@@ -5192,6 +5194,25 @@ Cell["Chapter 2", "Chapter"]
       "Expected Subsubsection cells"
     );
     assert!(styles.contains(&CellStyle::Text), "Expected a Text cell");
+  }
+
+  #[test]
+  fn test_message_cell_parses_as_print_output() {
+    // A kernel message cell (`"Message", "MSG"`) follows the output it came
+    // from; it must attach to the input as output, not become a Text cell.
+    let nb = parse_notebook(
+      "Notebook[{\nCell[\"1/0\", \"Input\"],\n\
+       Cell[\"Power::infy: Infinite expression 1/0 encountered.\", \
+       \"Message\", \"MSG\",\n CellLabel->\"During evaluation of In[1]:=\"]\n}]",
+    )
+    .unwrap();
+    let flat = nb.flat_cells();
+    assert_eq!(flat.len(), 2);
+    assert_eq!(flat[1].1.style, CellStyle::Print);
+    assert_eq!(
+      flat[1].1.content,
+      "Power::infy: Infinite expression 1/0 encountered."
+    );
   }
 
   #[test]
