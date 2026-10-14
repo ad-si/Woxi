@@ -1340,3 +1340,34 @@ mod number_form_options {
     );
   }
 }
+
+mod traditional_form_of_a_string {
+  use super::*;
+
+  /// `TraditionalForm[str]` in a layout shows the text itself — not the
+  /// quoted string with its `\!\(\*…\)` box source — so a caption built
+  /// with `ToString[…, TraditionalForm]` typesets its subscripts.
+  #[test]
+  fn caption_string_is_typeset_not_quoted() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Row[{Style[TraditionalForm[StringJoin[ToString[Subscript["T", "s"]/Subscript["T", "q"], TraditionalForm], " = ", "1"]], 14]}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("FormBox"), "box source leaked: {svg}");
+    assert!(!svg.contains("&quot;"), "string drawn quoted: {svg}");
+    assert!(
+      svg.contains("baseline-shift=\"sub\""),
+      "no subscript: {svg}"
+    );
+  }
+
+  #[test]
+  fn plain_string_has_no_quotes() {
+    clear_state();
+    let svg =
+      interpret(r#"ExportString[Row[{TraditionalForm["a = 1"]}], "SVG"]"#)
+        .unwrap();
+    assert!(svg.contains(">a = 1<"), "{svg}");
+  }
+}
