@@ -748,6 +748,9 @@ SimpleTerm = _{
   | List
   | StringCall
   | String
+  // A parenthesized group applied to arguments / parts / a prime is one
+  // factor: `a (f)[x]` is `a f[x]`, not a parse error.
+  | ParenExtended
   | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
 }
 
