@@ -34575,3 +34575,23 @@ fn manipulate_display_style_dynamic_keeps_grid_layout() {
   let text = build_manipulate_display("Style[\"hi\", Bold]", &bindings);
   assert!(matches!(text, DisplayNode::Text { .. }));
 }
+
+#[test]
+fn graphics3d_text_with_box_syntax_label_is_offset_by_its_visible_width() {
+  // A label written as linear-syntax boxes (`\!\(\*SubscriptBox[…]\)`) is
+  // mostly markup in its source string. Its alignment offset must scale
+  // with the characters actually drawn, so the label stays next to its
+  // anchor point instead of being thrown far away from it.
+  fn label_x(offset: &str) -> f64 {
+    let svg = interpret(&format!(
+      "ExportString[Graphics3D[{{Line[{{{{0,0,0}},{{0,0,1}}}}], \
+       Text[Text[\"\\!\\(\\*SubscriptBox[OverscriptBox[\\(B\\), \
+       \\(⇀\\)], \\(0\\)]\\)\"], {{0,0,1}}, {offset}]}}], \"SVG\"]"
+    ))
+    .unwrap();
+    let start = svg.find("<text x=\"").unwrap() + "<text x=\"".len();
+    svg[start..].split('"').next().unwrap().parse().unwrap()
+  }
+  let shift = (label_x("{1,-1}") - label_x("{0,0}")).abs();
+  assert!(shift < 30.0, "label shifted {shift}px away from its anchor");
+}
