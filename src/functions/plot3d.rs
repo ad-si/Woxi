@@ -3976,7 +3976,7 @@ fn push_text3d_label(
   let (label, width_chars, font_size, color) = match styled {
     Some(s) => (
       s.svg(),
-      s.text.chars().count(),
+      s.visible_char_count(),
       s.font_size.unwrap_or(12.0),
       s.color,
     ),
