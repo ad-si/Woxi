@@ -3351,6 +3351,25 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_mouseover_text_label_shows_static_appearance() {
+    // `Text[Mouseover[label, hover], pos]` — a Demonstration labels a
+    // corner with a rounded value that swaps to a framed full-precision
+    // value on hover. Regression: the label parser typeset the wrapper's
+    // own textual form (`Mouseover[…]`) as literal text; a static picture
+    // must show `label` only.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Text[Mouseover[Style[NumberForm[90., {20, 1}], 18], Framed[\"hover\"]], {1, 1}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">90.0<"), "label lost: {svg}");
+    assert!(
+      !svg.contains("Mouseover") && !svg.contains("hover"),
+      "Mouseover wrapper leaked as literal text: {svg}"
+    );
+  }
+
+  #[test]
   fn test_invisible_text_label_paints_nothing() {
     // `Text[Invisible[Style["e", …]], pos]` — a Demonstration hides one
     // item's label (e.g. an edge whose name shouldn't show) by wrapping it

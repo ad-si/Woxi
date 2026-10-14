@@ -796,108 +796,131 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
-  // Threaded[...] broadcasting takes precedence over ordinary list threading.
-  if let Some(result) = try_threaded_op(args, ThreadedOp::Plus) {
-    return result;
-  }
+  // Sums of plain numbers (the hot path of numeric loops) can never involve
+  // Threaded, dates, series, quantities, intervals, music objects or Around,
+  // so skip those probes — several of them flatten and clone the arguments.
+  let plain_numbers = args.iter().all(|a| match a {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..) => true,
+    Expr::FunctionCall { name, args: parts }
+      if name == "Complex" || name == "Rational" =>
+    {
+      parts.iter().all(is_numeric_literal_part)
+    }
+    // Machine complex numbers are `re + im*I` / `re - im*I` expressions, and
+    // internal re-sums see their pieces (`I`, `im*I`, …) on their own.
+    _ => try_extract_complex_float(a).is_some(),
+  });
+  if !plain_numbers {
+    // Threaded[...] broadcasting takes precedence over ordinary list threading.
+    if let Some(result) = try_threaded_op(args, ThreadedOp::Plus) {
+      return result;
+    }
 
-  // Handle DateObject subtraction: DateObject[...] - DateObject[...] → Quantity[n, "Days"]
-  if let Some(result) = try_date_object_subtraction(args) {
-    return result;
-  }
+    // Handle DateObject subtraction: DateObject[...] - DateObject[...] → Quantity[n, "Days"]
+    if let Some(result) = try_date_object_subtraction(args) {
+      return result;
+    }
 
-  // Handle DateObject + Quantity[n, unit]: shift the date by the time span
-  // (commutatively, and for any number of calendar-unit quantities).
-  if let Some(result) = try_date_object_plus_quantity(args) {
-    return result;
-  }
+    // Handle DateObject + Quantity[n, unit]: shift the date by the time span
+    // (commutatively, and for any number of calendar-unit quantities).
+    if let Some(result) = try_date_object_plus_quantity(args) {
+      return result;
+    }
 
-  // Handle TimeObject + Quantity[n, time-unit]: shift the time of day.
-  if let Some(result) = try_time_object_plus_quantity(args) {
-    return result;
-  }
+    // Handle TimeObject + Quantity[n, time-unit]: shift the time of day.
+    if let Some(result) = try_time_object_plus_quantity(args) {
+      return result;
+    }
 
-  // Combine multiple `SeriesData[var, x0, …]` summands sharing the same
-  // (var, x0) into a single SeriesData. Truncates to the minimum order.
-  if let Some(result) = try_series_data_plus(args)? {
-    return Ok(result);
-  }
+    // Combine multiple `SeriesData[var, x0, …]` summands sharing the same
+    // (var, x0) into a single SeriesData. Truncates to the minimum order.
+    if let Some(result) = try_series_data_plus(args)? {
+      return Ok(result);
+    }
 
-  // A time-series operand keeps the series, combining the values.
-  if let Some(result) =
-    crate::functions::timeseries_ast::try_series_arithmetic("Plus", args)
-  {
-    return Ok(result);
-  }
+    // A time-series operand keeps the series, combining the values.
+    if let Some(result) =
+      crate::functions::timeseries_ast::try_series_arithmetic("Plus", args)
+    {
+      return Ok(result);
+    }
 
-  // A SparseArray summand keeps the sum sparse (the background shifts).
-  if let Some(result) =
-    crate::functions::list_helpers_ast::try_sparse_array_arithmetic(
-      "Plus", args,
-    )
-  {
-    return Ok(result);
-  }
+    // A SparseArray summand keeps the sum sparse (the background shifts).
+    if let Some(result) =
+      crate::functions::list_helpers_ast::try_sparse_array_arithmetic(
+        "Plus", args,
+      )
+    {
+      return Ok(result);
+    }
 
-  // Handle Quantity arithmetic before anything else
-  if let Some(result) = crate::functions::quantity_ast::try_quantity_plus(args)
-  {
-    return result;
-  }
+    // Handle Quantity arithmetic before anything else
+    if let Some(result) =
+      crate::functions::quantity_ast::try_quantity_plus(args)
+    {
+      return result;
+    }
 
-  // Handle Interval arithmetic
-  if let Some(result) = crate::functions::interval_ast::try_interval_plus(args)
-  {
-    return result;
-  }
+    // Handle Interval arithmetic
+    if let Some(result) =
+      crate::functions::interval_ast::try_interval_plus(args)
+    {
+      return result;
+    }
 
-  // Handle MusicChord transposition (WL 15): `MusicChord[{…}] + MusicInterval[…]`
-  // shifts every chord tone by the interval span. Checked before the pitch sum
-  // since a chord summand is not itself a pitch.
-  if let Some(result) =
-    crate::functions::music_ast::try_music_chord_plus_interval(args)
-  {
-    return Ok(result);
-  }
+    // Handle MusicChord transposition (WL 15): `MusicChord[{…}] + MusicInterval[…]`
+    // shifts every chord tone by the interval span. Checked before the pitch sum
+    // since a chord summand is not itself a pitch.
+    if let Some(result) =
+      crate::functions::music_ast::try_music_chord_plus_interval(args)
+    {
+      return Ok(result);
+    }
 
-  // Handle music container/event transposition (WL 15): adding a MusicInterval
-  // to a MusicNote/MusicMeasure/MusicVoice/MusicScore/MusicScale shifts every
-  // pitch it contains by the interval span.
-  if let Some(result) =
-    crate::functions::music_ast::try_music_container_plus_interval(args)
-  {
-    return Ok(result);
-  }
+    // Handle music container/event transposition (WL 15): adding a MusicInterval
+    // to a MusicNote/MusicMeasure/MusicVoice/MusicScore/MusicScale shifts every
+    // pitch it contains by the interval span.
+    if let Some(result) =
+      crate::functions::music_ast::try_music_container_plus_interval(args)
+    {
+      return Ok(result);
+    }
 
-  // Handle MusicPitch arithmetic (WL 15): adding/subtracting pitch objects
-  // combines them along the diatonic-position and MIDI-number axes; adding a
-  // MusicInterval transposes the pitch.
-  if let Some(result) = crate::functions::music_ast::try_music_pitch_plus(args)
-  {
-    return Ok(result);
-  }
+    // Handle MusicPitch arithmetic (WL 15): adding/subtracting pitch objects
+    // combines them along the diatonic-position and MIDI-number axes; adding a
+    // MusicInterval transposes the pitch.
+    if let Some(result) =
+      crate::functions::music_ast::try_music_pitch_plus(args)
+    {
+      return Ok(result);
+    }
 
-  // Handle MusicDuration arithmetic (WL 15): a sum of (scaled) durations
-  // combines their rhythmic values, e.g. `3 MusicDuration[1/2] + MusicDuration[1/4]`
-  // → `MusicDuration[<|"Duration" -> 7/4|>]`.
-  if let Some(products) =
-    crate::functions::music_ast::music_duration_plus_terms(args)
-  {
-    // Evaluate each `Times[coeff, value]` product before summing, then add the
-    // resulting rhythmic values exactly.
-    let values: Result<Vec<Expr>, _> = products
-      .iter()
-      .map(crate::evaluator::evaluate_expr_to_expr)
-      .collect();
-    let total = crate::evaluator::evaluate_function_call_ast("Plus", &values?)?;
-    return Ok(crate::functions::music_ast::music_duration_from_value(
-      total,
-    ));
-  }
+    // Handle MusicDuration arithmetic (WL 15): a sum of (scaled) durations
+    // combines their rhythmic values, e.g. `3 MusicDuration[1/2] + MusicDuration[1/4]`
+    // → `MusicDuration[<|"Duration" -> 7/4|>]`.
+    if let Some(products) =
+      crate::functions::music_ast::music_duration_plus_terms(args)
+    {
+      // Evaluate each `Times[coeff, value]` product before summing, then add the
+      // resulting rhythmic values exactly.
+      let values: Result<Vec<Expr>, _> = products
+        .iter()
+        .map(crate::evaluator::evaluate_expr_to_expr)
+        .collect();
+      let total =
+        crate::evaluator::evaluate_function_call_ast("Plus", &values?)?;
+      return Ok(crate::functions::music_ast::music_duration_from_value(
+        total,
+      ));
+    }
 
-  // Around (uncertain-value) error propagation.
-  if let Some(result) = try_around_plus(args) {
-    return Ok(result);
+    // Around (uncertain-value) error propagation.
+    if let Some(result) = try_around_plus(args) {
+      return Ok(result);
+    }
   }
 
   // Flatten nested Plus arguments (recursive to handle deeply nested Plus).

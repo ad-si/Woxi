@@ -3652,3 +3652,18 @@ mod unevaluated_call_reuses_arguments {
     );
   }
 }
+
+mod parenthesized_head_after_implicit_times {
+  use super::*;
+
+  #[test]
+  fn paren_group_called_after_juxtaposed_factor() {
+    assert_eq!(interpret("2 (b)[x]").unwrap(), "2*b[x]");
+    assert_eq!(interpret("(a)(b)[x]").unwrap(), "a*b[x]");
+  }
+
+  #[test]
+  fn pure_function_in_parens_after_factor() {
+    assert_eq!(interpret("2 (#+1&)[3]").unwrap(), "8");
+  }
+}
