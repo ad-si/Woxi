@@ -2587,6 +2587,8 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "StreamPlot"
         || name == "VectorPlot"
         || name == "StreamDensityPlot"
+        || name == "DiscretePlot"
+        || name == "DiscretePlot3D"
         || name == "Show"
         || name == "GraphicsRow"
         || name == "GraphicsColumn"
@@ -2694,6 +2696,8 @@ pub fn evaluate_expr_to_expr_inner(
               | "StreamPlot"
               | "VectorPlot"
               | "StreamDensityPlot"
+              | "DiscretePlot"
+              | "DiscretePlot3D"
           ) {
             let raw: Vec<Expr> = flattened
               .iter()

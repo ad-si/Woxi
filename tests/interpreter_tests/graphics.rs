@@ -21861,6 +21861,23 @@ mod discrete_plot {
     assert_eq!(result, "-Graphics-");
   }
 
+  // Regression: DiscretePlot holds its body (like Plot), so it is evaluated
+  // once per sampled point instead of once up front with `n` still symbolic
+  // (which made `data[[n]]` raise `Part::pkspec1`).
+  #[test]
+  fn holds_body() {
+    assert_eq!(
+      interpret("c = 0; DiscretePlot[(c++; n), {n, 1, 3}]; c").unwrap(),
+      "3"
+    );
+    let result = interpret(
+      "data = {1, 4, 9}; sq = {1, 2, 3}; \
+       Length[StringCases[ExportString[DiscretePlot[{data[[n]], sq[[n]]}, {n, 1, 3}], \"SVG\"], \"<circle\"]]",
+    )
+    .unwrap();
+    assert_eq!(result, "6");
+  }
+
   // {var, max} is shorthand for {var, 1, max} in DiscretePlot, matching Table.
   #[test]
   fn short_iter_spec() {
