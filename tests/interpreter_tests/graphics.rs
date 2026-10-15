@@ -34548,6 +34548,17 @@ mod grid_text_in_graphics {
     assert!(!svg.contains("Button"), "{svg}");
   }
 
+  /// A grid of text-labelled buttons (a keyboard of character keys) draws
+  /// each key as a plate with its own pressable hit region.
+  #[test]
+  fn graphics_grid_draws_text_labelled_buttons() {
+    let svg = export_svg(
+      "GraphicsGrid[Partition[Map[Button[#, AppendTo[msg, #]] &, CharacterRange[\"a\", \"f\"]], 3]]",
+    );
+    assert!(!svg.contains("Button"), "{svg}");
+    assert_eq!(svg.matches("id=\"woxi-btn-").count(), 6, "{svg}");
+  }
+
   #[test]
   fn list_plot_color_function_colors_each_point() {
     let colored = |expr: &str| {

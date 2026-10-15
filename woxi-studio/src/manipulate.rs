@@ -3013,4 +3013,50 @@ mod tests {
     state.reevaluate();
     assert_eq!(labels(&state), vec!["0", "1", "2", "3"]);
   }
+  /// A message-typing Demonstration: a `Column` of a reset `Button`, a
+  /// `GraphicsGrid` of character `Button`s, `Dynamic` read-outs of the typed
+  /// string and a conditional `Plot`, driven by a hidden list variable.
+  #[test]
+  fn typed_message_modulation_widget_renders() {
+    let code = r#"Manipulate[
+      Text@Column[{
+        Button["reset", msg = {}, ImageSize -> {200, 20}],
+        GraphicsGrid[
+          Partition[
+            Map[Button[#, AppendTo[msg, #]] &, CharacterRange["a", "p"]], 4],
+          Frame -> True, Spacings -> 2, ImageSize -> {300, 100}],
+        Dynamic["Typed: " <> StringJoin[msg]],
+        Dynamic[Grid[{msg, Flatten@IntegerString[ToCharacterCode[msg], 2, 7]},
+          Frame -> All]],
+        Dynamic@If[Length[msg] > 0,
+          Plot[
+            With[{k = Ceiling[t]},
+              If[kind == "AM",
+                (Flatten[IntegerDigits[ToCharacterCode[msg], 2, 7]][[k]] + .5)*
+                  Sin[2 Pi*freq*t],
+                Sin[(Flatten[IntegerDigits[ToCharacterCode[msg], 2, 7]][[k]] + .5)*
+                  2 Pi*freq*t]]],
+            {t, 0, 7*Length[msg]}, ImageSize -> {300, 100}],
+          ""]},
+        Frame -> True, Alignment -> Center],
+      Row[{Control[{{freq, 1}, 0, 10, ImageSize -> Tiny}], Spacer[20],
+        Control[{kind, {"AM", "FM"}}]}],
+      Control[{{msg, {"A"}}, ControlType -> None}],
+      ContentSize -> {400, 300}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let state = ManipulateState::from_expr(&expr).expect("should build");
+    assert_eq!(state.error, None);
+    assert!(state.graphics_handle.is_some(), "no graphics output");
+    assert_eq!(state.button_regions.len(), 16, "one region per key");
+    let mut state = state;
+    let action = state.button_regions[2].action.clone();
+    state.apply_button_action(&action);
+    assert_eq!(state.error, None);
+    let msg = state
+      .state
+      .iter()
+      .find(|(n, _)| n == "msg")
+      .map(|(_, v)| v.clone());
+    assert_eq!(msg.as_deref(), Some("{\"A\", \"c\"}"));
+  }
 }
