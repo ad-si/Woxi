@@ -27121,6 +27121,62 @@ fn default_control_label(name: &str) -> String {
   }
 }
 
+/// Rewrite every `FractionBox[n, d]` in a box tree as the in-line
+/// `RowBox[{n, "/", d}]` (a compound numerator or denominator in
+/// parentheses). A label is one line of text, so it cannot stack a fraction,
+/// and the stacked reading `box_expr_to_plain` gives drops the bar (`xa`).
+fn linearize_fraction_boxes(e: &Expr) -> Expr {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "FractionBox" && args.len() == 2 =>
+    {
+      let side = |b: &Expr| {
+        let b = linearize_fraction_boxes(b);
+        match &b {
+          Expr::FunctionCall { name, args }
+            if name == "RowBox"
+              && matches!(args.first(), Some(Expr::List(items)) if items.len() > 1) =>
+          {
+            Expr::FunctionCall {
+              name: "RowBox".to_string(),
+              args: vec![Expr::List(
+                vec![
+                  Expr::String("(".to_string()),
+                  b.clone(),
+                  Expr::String(")".to_string()),
+                ]
+                .into(),
+              )]
+              .into(),
+            }
+          }
+          _ => b,
+        }
+      };
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(
+          vec![
+            side(&args[0]),
+            Expr::String("/".to_string()),
+            side(&args[1]),
+          ]
+          .into(),
+        )]
+        .into(),
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(linearize_fraction_boxes).collect(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(linearize_fraction_boxes).collect())
+    }
+    _ => e.clone(),
+  }
+}
+
 fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
   let mut runs = manipulate_label_runs_inner(expr, italic);
   // A label is text a widget draws, so the private-use code points Wolfram
@@ -27232,6 +27288,36 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // wrapper's own source. `Item[content, opts…]` is the same grid-
       // alignment wrapper `control_group_items` already unwraps to look for
       // a nested control layout — it carries no text of its own either.
+      // `TraditionalForm` around a plain arithmetic expression (no styling
+      // or layout inside) typesets it in conventional notation —
+      // `(1 - x/a) x cot(α)` — not as its OutputForm source `Cot[α]`.
+      "TraditionalForm"
+        if args.len() == 1
+          && match &args[0] {
+            Expr::FunctionCall { name, .. } => {
+              matches!(name.as_str(), "Times" | "Plus")
+            }
+            Expr::BinaryOp { op, .. } => matches!(
+              op,
+              crate::syntax::BinaryOperator::Times
+                | crate::syntax::BinaryOperator::Plus
+                | crate::syntax::BinaryOperator::Minus
+                | crate::syntax::BinaryOperator::Divide
+            ),
+            _ => false,
+          }
+          && !contains_presentation_head(&args[0]) =>
+      {
+        let text = box_expr_to_plain(&linearize_fraction_boxes(
+          &crate::evaluator::dispatch::complex_and_special::
+            expr_to_box_form_traditional(&args[0]),
+        ));
+        vec![LabelRun {
+          text,
+          italic,
+          ..Default::default()
+        }]
+      }
       "Text" | "Item" | "DisplayForm" | "TraditionalForm" | "Tooltip"
       | "Framed" | "Dynamic" | "HoldForm" => args
         .first()
