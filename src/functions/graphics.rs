@@ -29393,6 +29393,11 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
     {
       form_box_svg(&args[0])
     }
+    // A `Pane[label, size, …]` wrapper (used to give typeset choices a
+    // uniform size) shows whatever icon its content renders to.
+    Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
+      discrete_choice_label_svg(&args[0])
+    }
     // Text layout heads never become icons: `Column[{"…", "…"}]` has no
     // graphical meaning, and evaluating it only yields the typeset echo of
     // its own source — which would put the label's InputForm on the button.
@@ -33130,6 +33135,32 @@ mod manipulate_traditional_form_choice_svg_tests {
           svgs[1], svgs[2],
           "1/t and Sqrt[4 - t^2] must typeset differently"
         );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A `TraditionalForm[…]` choice wrapped in `Pane[…, size, …]` (to give
+  /// typeset setter-bar buttons a uniform size) renders the same icon as
+  /// the bare form, while a `Pane` around plain text stays text.
+  #[test]
+  fn pane_wrapped_traditional_form_labels_render_as_svg_icons() {
+    let control = discrete_control(
+      "Manipulate[v, {{v, a}, \
+       {a, b -> Pane[TraditionalForm[1/Sqrt[x]], ImageSize -> {80, 30}, \
+        Alignment -> Center], \
+        c -> Pane[\"plain\"]}, ControlType -> SetterBar}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        value_label_svgs, ..
+      } => {
+        assert!(value_label_svgs[0].is_none());
+        let svg = value_label_svgs[1]
+          .as_deref()
+          .expect("Pane[TraditionalForm[…]] must render an icon");
+        assert!(svg.starts_with("<svg"), "not a rendered SVG: {svg}");
+        assert!(value_label_svgs[2].is_none());
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
