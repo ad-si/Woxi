@@ -8,6 +8,8 @@ use crate::functions::calculus_ast::differentiate_expr;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
 use crate::syntax::{expr_children, map_children};
 
+mod dde;
+
 // ─── DSolve ────────────────────────────────────────────────────────────
 
 /// DSolve[eqn, y[x], x] or DSolve[{eqn, ic1, ...}, y[x], x]
@@ -411,6 +413,11 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
+  }
+  // A first-order system with a stated history (`f[t /; t <= t0] == …`)
+  // and possibly delayed arguments `f[t - c]`.
+  if let Some(result) = dde::ndsolve_dde(&args[..3])? {
+    return Ok(result);
   }
   let opts = &args[n_pos..];
   let event = parse_event_locator_option(opts);

@@ -20314,3 +20314,41 @@ mod integrate_piecewise_disjunction {
     );
   }
 }
+
+mod ndsolve_delay {
+  use super::*;
+
+  /// `NDSolve` integrates delay differential equations: the history
+  /// `f[t /; t <= 0] == v` seeds the solution and `f[t - c]` looks up
+  /// earlier values (method of steps). For `z'[t] == -z[t - 1]` with
+  /// history 1 the exact solution is piecewise polynomial:
+  /// z(2) == -1/2 and z(3) == -1/6.
+  #[test]
+  fn ndsolve_delay_differential_equation() {
+    let code = "sol = NDSolve[{z'[t] == -z[t - 1], z[t /; t <= 0] == 1}, \
+       {z[t]}, {t, 0, 3}]; \
+       {z[t] /. sol /. t -> 2., z[t] /. sol /. t -> 3.}";
+    let result = interpret(code).unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split("}, {")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    assert!((nums[0] + 0.5).abs() < 1e-3, "{result}");
+    assert!((nums[1] + 1.0 / 6.0).abs() < 1e-3, "{result}");
+  }
+
+  /// A delayed unknown can be mixed with an ordinary one that states its
+  /// initial value as `w[0] == v`, and a zero delay is no delay at all.
+  #[test]
+  fn ndsolve_delay_system_mixes_plain_initial_values() {
+    let code = "sol = NDSolve[{z'[t] == -z[t - 0] + w[t - 1], \
+       z[t /; t <= 0] == 1, w'[t] == -w[t], w[0] == 2}, \
+       {z[t], w[t]}, {t, 0, 2}]; \
+       {Round[w[t] /. sol /. t -> 1., 0.0001], \
+        Round[z[t] /. sol /. t -> 0.5, 0.0001]}";
+    // w = 2 E^-t, so w(1) = 2/E = 0.7358.
+    let result = interpret(code).unwrap();
+    assert!(result.contains("0.7358"), "{result}");
+  }
+}
