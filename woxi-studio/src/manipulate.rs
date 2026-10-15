@@ -2220,6 +2220,49 @@ mod tests {
   }
 
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Crystal Lattices in Reciprocal Space") whose control panel is two
+  /// collapsible `OpenerView[{label, content}]` sections: one of preset
+  /// buttons assigning several variables at once, one holding a `Grid` of
+  /// `Control[…]` sliders. Independently written: different variables and
+  /// helper names.
+  ///
+  /// Regression coverage for `OpenerView` not being flattened like
+  /// `Column`: its controls were shown as inert text, so the variables they
+  /// declare stayed symbolic and the body rendered degenerate output.
+  #[test]
+  fn opener_view_sections_hold_real_controls() {
+    let code = r#"Manipulate[
+      Graphics[Line[{{0, 0}, {a, b}}], PlotRange -> 2],
+      OpenerView[{"presets",
+        Row[{Button["unit", {a, b} = {1, 1}], Button["flat", {a, b} = {1, 0}]}]}],
+      OpenerView[{"manual",
+        Grid[{{"a", Control[{{a, 1, ""}, -1, 1, 1}]},
+              {"b", Control[{{b, 0, ""}, -1, 1, 1}]}}]}]
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr)
+      .expect("OpenerView control sections should build a ManipulateState");
+    assert_eq!(state.error, None, "{:?}", state.error);
+    let bound: Vec<&str> = state
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| c.name())
+      .collect();
+    assert_eq!(bound, ["a", "b"]);
+    assert!(
+      state
+        .controls
+        .iter()
+        .any(|c| matches!(c, ControlState::Button { .. })),
+      "preset buttons must become real buttons: {:?}",
+      state.controls
+    );
+    assert!(state.graphics_handle.is_some(), "the plot should render");
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
   /// ("Vector Transformations and Eigenvectors of 2×2 Matrix") whose body
   /// builds its matrix and vector through a `Function[…][t]`/`ToExpression`
   /// indirection rather than referencing the control variables directly,
