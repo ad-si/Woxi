@@ -7257,6 +7257,45 @@ fn plot_label_styled(
   None
 }
 
+/// Repaint the picture's backdrop (the first `<rect>` the 3-D renderers
+/// emit) with an explicit `Background -> color` option.
+fn with_background_option(svg: String, opts: &[Expr]) -> String {
+  let color = opts.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Background") => {
+      crate::functions::graphics::parse_color(replacement)
+    }
+    _ => None,
+  });
+  let Some(c) = color else {
+    return svg;
+  };
+  let channel = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+  let fill = format!("rgb({},{},{})", channel(c.r), channel(c.g), channel(c.b));
+  let Some(start) = svg.find("<rect ") else {
+    return svg;
+  };
+  let Some(len) = svg[start..].find("/>") else {
+    return svg;
+  };
+  let tag = &svg[start..start + len];
+  let Some(f) = tag.find("fill=\"") else {
+    return svg;
+  };
+  let value_start = start + f + 6;
+  let Some(value_len) = svg[value_start..].find('"') else {
+    return svg;
+  };
+  format!(
+    "{}{}{}",
+    &svg[..value_start],
+    fill,
+    &svg[value_start + value_len..]
+  )
+}
+
 /// Set a 3-D picture's `PlotLabel` above it. The finished SVG is nested,
 /// untouched, into a canvas one label strip taller, with the label centred
 /// in the strip — the projection inside was scaled to the picture's own
@@ -7268,6 +7307,7 @@ fn with_plot_label(
   width: u32,
   height: u32,
 ) -> String {
+  let svg = with_background_option(svg, opts);
   let Some(styled) = plot_label_styled(opts) else {
     return svg;
   };
