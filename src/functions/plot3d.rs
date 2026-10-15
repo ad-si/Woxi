@@ -7370,7 +7370,7 @@ fn is_xyz_point_list(data: &[Expr]) -> bool {
           (Some(x), Some(y), Some(z))
             if x.is_finite() && y.is_finite() && z.is_finite() =>
           {
-            points.push((x, y, z))
+            points.push((x, y, z));
           }
           _ => return false,
         }
