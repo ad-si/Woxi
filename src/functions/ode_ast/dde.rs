@@ -210,7 +210,7 @@ pub(super) fn ndsolve_dde(
   let (Some(t0), Some(t1)) = (nval_to_f64(lo), nval_to_f64(hi)) else {
     return Ok(None);
   };
-  if !(t1 > t0) {
+  if t1.partial_cmp(&t0) != Some(std::cmp::Ordering::Greater) {
     return Ok(None);
   }
 
