@@ -9320,6 +9320,35 @@ mod find_root {
     );
   }
 
+  /// Regression: an equation produced by a call to a user-defined function
+  /// (`eq[i_] := y[i] == 2 x[i]`) was never rewritten to `lhs - rhs`, so
+  /// every residual evaluated to `False` and FindRoot failed with
+  /// `FindRoot::nlnum`.
+  #[test]
+  fn equations_from_function_calls() {
+    assert_eq!(
+      interpret(
+        "eq[i_] := y[i] == 2 x[i]; FindRoot[{eq[1], eq[2], x[1] + y[1] + x[2] == 7, x[2] - y[2] == -1}, {x[1], 1}, {y[1], 1}, {x[2], 1}, {y[2], 1}]"
+      )
+      .unwrap(),
+      "{x[1] -> 2., y[1] -> 4., x[2] -> 1., y[2] -> 2.}"
+    );
+  }
+
+  /// Regression: equations with thousands of nodes made the symbolic
+  /// Jacobian (differentiate + simplify per entry) effectively never
+  /// finish; oversized rows now use the finite-difference path.
+  #[test]
+  fn very_large_equation_still_solves() {
+    assert_eq!(
+      interpret(
+        "big = Total[Table[Sin[i x + y]/10^30, {i, 1, 700}]]; r = FindRoot[{x + y + big == 3, x - y == 1}, {x, 1}, {y, 1}]; Round[{x, y} /. r, 0.001]"
+      )
+      .unwrap(),
+      "{2., 1.}"
+    );
+  }
+
   #[test]
   fn nonlinear_system_not_monotone_in_max_norm() {
     // The first full Newton step trades one component's residual for the

@@ -11912,7 +11912,7 @@ impl Drop for LimitDepthGuard {
 
 /// Total node count of an expression, capped at `limit` (returns early once the
 /// cap is reached). Used to detect L'Hôpital derivative blow-up cheaply.
-fn expr_node_count_capped(expr: &Expr, limit: usize) -> usize {
+pub(crate) fn expr_node_count_capped(expr: &Expr, limit: usize) -> usize {
   fn go(expr: &Expr, count: &mut usize, limit: usize) {
     if *count >= limit {
       return;

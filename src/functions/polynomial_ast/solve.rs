@@ -6592,6 +6592,13 @@ const FIND_ROOT_DEFAULT_MAX_ITERATIONS: usize = 100;
 
 /// How many times one Newton step may be halved before it is accepted anyway.
 const FIND_ROOT_MAX_BACKTRACKS: usize = 60;
+/// Largest equation (in expression nodes) whose Jacobian row
+/// `find_root_multivariate` still differentiates symbolically. Beyond this
+/// the repeated `differentiate` + `simplify` passes grow so fast that a
+/// system of dozens of nested rational/exponential terms (e.g. an
+/// equation-of-state flash calculation) never finishes, so the row is left
+/// to the finite-difference / Broyden path instead.
+const FIND_ROOT_SYMBOLIC_JACOBIAN_MAX_NODES: usize = 4000;
 
 /// Parse the `MaxIterations` option out of FindRoot's trailing option
 /// arguments, shared by the single-variable and multivariate forms so the
@@ -7031,6 +7038,24 @@ fn build_find_root_func(arg: &Expr, vars: &[&str]) -> Expr {
       return match &resolved {
         Expr::Identifier(_) => resolved,
         _ => build_find_root_func(&resolved, vars),
+      };
+    }
+    // A call to a user-defined function that returns an equation
+    // (`eq[i_] := y[i] == k[i] x[i]; FindRoot[{eq[1], ...}, ...]`) only
+    // reveals the `Equal` once evaluated; resolve it, then rewrite it like a
+    // literal equation.
+    Expr::FunctionCall { .. } => {
+      let resolved = evaluate_with_vars_localized(arg, vars);
+      return match &resolved {
+        Expr::Comparison { operators, .. }
+          if operators.len() == 1 && operators[0] == ComparisonOp::Equal =>
+        {
+          build_find_root_func(&resolved, vars)
+        }
+        Expr::FunctionCall { name, .. } if name == "Equal" => {
+          build_find_root_func(&resolved, vars)
+        }
+        _ => resolved,
       };
     }
     other => other.clone(),
@@ -7839,9 +7864,15 @@ fn find_root_multivariate(
   let mut jac: Vec<Vec<Option<Expr>>> = Vec::with_capacity(n);
   for f in &eqns {
     let mut row = Vec::with_capacity(n);
+    let too_large = crate::functions::calculus_ast::expr_node_count_capped(
+      f,
+      FIND_ROOT_SYMBOLIC_JACOBIAN_MAX_NODES + 1,
+    ) > FIND_ROOT_SYMBOLIC_JACOBIAN_MAX_NODES;
     for v in &vars {
       let d = if crate::functions::calculus_ast::is_constant_wrt(f, v) {
         Some(Expr::Integer(0))
+      } else if too_large {
+        None
       } else {
         crate::functions::calculus_ast::differentiate_expr(f, v)
           .map(simplify)
