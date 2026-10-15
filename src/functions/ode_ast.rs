@@ -7835,7 +7835,7 @@ pub fn interpolation_ast(
   // Clamp order to valid range. A single data point is allowed: the order is
   // reduced to 0 (with inhr) and the result is a constant interpolation,
   // matching wolframscript.
-  let mut order = interp_order.clamp(1, 3) as usize;
+  let mut order = interp_order.max(1) as usize;
   if order >= n {
     let reduced = n - 1;
     crate::emit_message(&format!(
@@ -9060,39 +9060,27 @@ fn interpolating_derivative_value_numeric(
     }
   }
 
-  // Expand the nested Newton form
-  // c[0] + (x-x0)(c[1] + (x-x1)(c[2] + ...))
-  // into ascending-power monomial coefficients, via repeated polynomial
-  // multiplication by (x - x_k) — cheap since m is a handful of points.
-  let mut monomial = vec![coeffs[m - 1]];
-  for k in (0..m - 1).rev() {
-    // monomial *= (x - xs[k])
-    let mut shifted = vec![0.0; monomial.len() + 1];
-    for (i, c) in monomial.iter().enumerate() {
-      shifted[i + 1] += c;
-      shifted[i] -= c * xs[k];
-    }
-    monomial = shifted;
-    // monomial += coeffs[k] (constant term)
-    monomial[0] += coeffs[k];
-  }
-
-  if derivative_order >= monomial.len() {
+  // Evaluate the nested Newton form c[0] + (x-x0)(c[1] + (x-x1)(c[2] + ...))
+  // as a truncated Taylor series in h = x - x_val, so the derivative comes
+  // out without expanding monomial coefficients (which cancels
+  // catastrophically for high `InterpolationOrder`).
+  let d = derivative_order;
+  if d >= m {
     return Ok(Expr::Real(0.0));
   }
-  // Differentiate `derivative_order` times: term c*x^p -> c*p*x^(p-1).
-  for _ in 0..derivative_order {
-    monomial = monomial
-      .iter()
-      .enumerate()
-      .skip(1)
-      .map(|(p, c)| c * p as f64)
-      .collect();
+  let mut taylor = vec![0.0; d + 1];
+  taylor[0] = coeffs[m - 1];
+  for k in (0..m - 1).rev() {
+    let shift = x_val - xs[k];
+    // taylor = taylor * (shift + h) + coeffs[k]
+    for i in (0..=d).rev() {
+      let carried = if i > 0 { taylor[i - 1] } else { 0.0 };
+      taylor[i] = taylor[i] * shift + carried;
+    }
+    taylor[0] += coeffs[k];
   }
-
-  // Horner evaluation of the (now differentiated) monomial polynomial.
-  let value = monomial.iter().rev().fold(0.0, |acc, c| acc * x_val + c);
-  Ok(Expr::Real(value))
+  let factorial: f64 = (1..=d).map(|i| i as f64).product();
+  Ok(Expr::Real(taylor[d] * factorial))
 }
 
 /// Lagrange polynomial interpolation using (order+1) nearest points.
