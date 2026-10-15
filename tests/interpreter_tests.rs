@@ -726,6 +726,24 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_held_assignment_operand_keeps_parentheses() {
+    // An assignment or `;` sequence nested in arithmetic must keep its
+    // parentheses when printed, or the text re-parses as an assignment to
+    // the whole arithmetic expression (the Demonstrations idiom
+    // `x - (h = y) Cos[t]` inside a Manipulate body).
+    clear_state();
+    assert_eq!(interpret("Hold[x - (h = 2)]").unwrap(), "Hold[x - (h = 2)]");
+    assert_eq!(interpret("Hold[-(h = 3)]").unwrap(), "Hold[-(h = 3)]");
+    assert_eq!(interpret("Hold[(h = 3)^2]").unwrap(), "Hold[(h = 3)^2]");
+    assert_eq!(
+      interpret("Hold[a - (h = b) c]").unwrap(),
+      "Hold[a - (h = b)*c]"
+    );
+    assert_eq!(interpret("Hold[(a; b)^2]").unwrap(), "Hold[(a; b)^2]");
+    assert_eq!(interpret("Hold[a*(h := b)]").unwrap(), "Hold[a*(h := b)]");
+  }
+
+  #[test]
   fn test_arrow_named_characters_decode() {
     // The vertical/double arrow family must decode to Unicode (the
     // Demonstrations notebooks use \[DoubleDownArrow] as a "maps to"
@@ -2831,6 +2849,47 @@ mod interpreter_tests {
     .unwrap();
     assert!(!svg.contains("Column["), "Column source leaked: {svg}");
     assert!(svg.contains("one") && svg.contains("two"));
+  }
+
+  #[test]
+  fn test_graphics_text_pane_wraps_to_width() {
+    // Regression: `Text[Pane[str, width], pos]` (an Inset's label sized by
+    // a slider) drew the literal `Pane[…]` source on one clipped line
+    // instead of the text wrapped to the pane's width.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Text[Pane[\"alpha beta gamma delta epsilon zeta\", 100], {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Pane["), "Pane source leaked: {svg}");
+    assert!(
+      svg.contains(">alpha beta<"),
+      "first line not wrapped: {svg}"
+    );
+    assert!(svg.contains(">gamma delta<"), "second line missing: {svg}");
+
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Text[Pane[\"alpha beta\"], {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">alpha beta<") && !svg.contains("Pane["));
+  }
+
+  #[test]
+  fn test_graphics_scaled_inset_anchor_does_not_stretch_range() {
+    // Regression: an `ImageScaled` inset anchor (a fraction such as 0.5)
+    // was taken for a data point, so the range grew to include it and a
+    // position-less `Text` at the origin landed in a corner.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Text[\"hi\"], Inset[Graphics[Disk[], ImageSize -> 5], ImageScaled[{0.5, 0.5}]]}, ImageSize -> 144], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<text x=\"72.00\" y=\"72.00\""),
+      "label not centred: {svg}"
+    );
   }
 
   #[test]

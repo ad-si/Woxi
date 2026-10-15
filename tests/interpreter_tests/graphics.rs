@@ -240,6 +240,19 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_call_slots_each_return_a_point() {
+      // Slots written as products/dot products/calls (`k*c[t]`, `m . c[t]`)
+      // are not literal pairs but each yields a point per sample, so the
+      // body is a group of three curves rather than an invalid `{fx, fy}`.
+      let svg = export_svg(
+        "c[t_] := {Cos[t], Sin[t]}; m = {{1, 0}, {0, 2}}; \
+         ParametricPlot[{3*c[t], m . c[t], c[t]}, {t, 0, 2 Pi}, \
+           Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 3);
+    }
+
+    #[test]
     fn parametric_plot_if_without_else_hides_curve() {
       // `If[cond, curve]` with a false `cond` evaluates to `Null`, which
       // hides that curve instead of making the whole body unplottable.
@@ -18226,6 +18239,22 @@ mod list_plot_3d {
       interpret("ListPlot3D[{{0,0,0},{1,0,1},{0,1,2},{1,1,3}}]").unwrap(),
       "-Graphics3D-"
     );
+  }
+
+  // Regression: a flattened tensor grid of {x, y, z} triples (non-uniform
+  // spacing) must plot over its real x/y extents, not over row indices.
+  #[test]
+  fn list_plot3d_triples_use_real_coordinates() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ListPlot3D[Flatten[Table[{Cos[i Pi/8], Cos[j Pi/8], i + j}, \
+       {i, 0, 8}, {j, 0, 8}], 1]]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    // Axes span -1..1, not 0..8 (the index range of a z-matrix reading).
+    assert!(svg.contains(">-1</text>"));
+    assert!(!svg.contains(">8</text>"));
   }
 
   #[test]
