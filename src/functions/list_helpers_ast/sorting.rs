@@ -1763,7 +1763,7 @@ fn order_string(e: &Expr) -> String {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     fargs.len().hash(&mut hasher);
-    for part in fargs.iter() {
+    for part in fargs {
       hash_numeric_tree(part, &mut hasher);
     }
     let call_args = args.iter().map(order_string).collect::<Vec<_>>();
@@ -1783,7 +1783,7 @@ fn hash_numeric_tree(e: &Expr, hasher: &mut impl std::hash::Hasher) {
     Expr::Real(x) => x.to_bits().hash(hasher),
     Expr::List(items) => {
       items.len().hash(hasher);
-      for item in items.iter() {
+      for item in items {
         hash_numeric_tree(item, hasher);
       }
     }

@@ -2019,13 +2019,11 @@ fn try_symbol_replace_all(
     }
 
     // Recurse into List items (when pattern is not "List")
-    Expr::List(items) => {
-      map_unchanged_lazily::<()>(items, |item| {
-        Ok(try_symbol_replace_all(item, pattern_sym, replacement))
-      })
-      .unwrap_or(None)
-      .map(|new_items| Expr::List(new_items.into()))
-    }
+    Expr::List(items) => map_unchanged_lazily::<()>(items, |item| {
+      Ok(try_symbol_replace_all(item, pattern_sym, replacement))
+    })
+    .unwrap_or(None)
+    .map(|new_items| Expr::List(new_items.into())),
 
     // FunctionCall head replacement: f -> g turns f[a,b] into g[a,b]
     Expr::FunctionCall { name, args } => {
@@ -2624,14 +2622,12 @@ fn try_flat_replace_all(
         }),
       )
     }
-    Expr::List(items) => {
-      Ok(
-        map_unchanged_lazily(items, |item| {
-          try_flat_replace_all(item, pattern, replacement)
-        })?
-        .map(|new_items| Expr::List(new_items.into())),
-      )
-    }
+    Expr::List(items) => Ok(
+      map_unchanged_lazily(items, |item| {
+        try_flat_replace_all(item, pattern, replacement)
+      })?
+      .map(|new_items| Expr::List(new_items.into())),
+    ),
     _ => Ok(None),
   }
 }
@@ -2701,7 +2697,10 @@ fn shield_interpolating_functions(e: &Expr, held: &RefCell<Vec<Expr>>) -> Expr {
   if is_interpolating_function(e) {
     let mut held = held.borrow_mut();
     held.push(e.clone());
-    return Expr::Identifier(format!("$InterpolatingFunctionHold{}$", held.len()));
+    return Expr::Identifier(format!(
+      "$InterpolatingFunctionHold{}$",
+      held.len()
+    ));
   }
   if contains_interpolating_function(e) {
     return crate::syntax::map_children(e, &|c| {
