@@ -2351,6 +2351,37 @@ mod region_nearest {
     assert_eq!(interpret("Head[RegionNearest]").unwrap(), "Symbol");
   }
 
+  // Numeric projection onto an implicit curve / inequality region.
+  #[test]
+  fn implicit_region_numeric() {
+    assert_eq!(
+      interpret(
+        "RegionNearest[ImplicitRegion[x^2 + y^2 == 1, {x, y}], {3., 4.}]"
+      )
+      .unwrap(),
+      "{0.6, 0.8}"
+    );
+    assert_eq!(
+      interpret(
+        "RegionNearest[ImplicitRegion[y - 1 + x^2 <= 0, {x, y}], {0.5, 0.1}]"
+      )
+      .unwrap(),
+      "{0.5, 0.1}"
+    );
+    assert_eq!(
+      interpret("Round[RegionNearest[ImplicitRegion[y - 1 + x^2 == 0, {x, y}], {0.5, 0.5}], 0.000001]")
+        .unwrap(),
+      "{0.629961, 0.60315}"
+    );
+    assert_eq!(
+      interpret(
+        "RegionDistance[ImplicitRegion[x^2 + y^2 == 1, {x, y}], {3., 4.}]"
+      )
+      .unwrap(),
+      "4."
+    );
+  }
+
   // For a solid Disk/Ball an exterior point projects onto the boundary; an
   // interior point maps to itself.
   #[test]
