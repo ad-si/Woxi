@@ -34993,3 +34993,36 @@ fn styled_axes_label_keeps_font_directives() {
   .unwrap();
   assert!(!svg.contains("<tspan font-style"));
 }
+
+#[test]
+fn region_plot_color_function_colors_region_pointwise() {
+  // `ColorFunction -> f` fills the region with `f[x, y]` (coordinates scaled
+  // to 0..1 over the plot range) instead of one flat translucent tint.
+  let svg = interpret(
+    "ExportString[RegionPlot[True, {x, 0, 1}, {y, 0, 1}, \
+     ColorFunction -> Function[{x, y}, RGBColor[x, 0, y]], \
+     Frame -> False], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.contains("<rect"), "{svg}");
+  assert!(!svg.contains("fill-opacity=\"0.3\""), "{svg}");
+  // Bottom-left cell is nearly black; top-right nearly magenta.
+  assert!(svg.contains("fill=\"rgb(2,0,2)\""), "{svg}");
+  assert!(svg.contains("fill=\"rgb(253,0,253)\""), "{svg}");
+  // Only cells satisfying the predicate are drawn.
+  let half = interpret(
+    "ExportString[RegionPlot[x > 0.5, {x, 0, 1}, {y, 0, 1}, \
+     ColorFunction -> Function[{x, y}, RGBColor[x, 0, y]], \
+     Frame -> False], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(!half.contains("fill=\"rgb(2,0,2)\""), "{half}");
+  // `ColorFunctionScaling -> False` passes raw coordinates.
+  let raw = interpret(
+    "ExportString[RegionPlot[True, {x, 0, 1}, {y, 0, 1}, \
+     ColorFunction -> Function[{x, y}, GrayLevel[If[x > 5, 1, 0]]], \
+     ColorFunctionScaling -> False, Frame -> False], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(!raw.contains("rgb(255,255,255)"), "{raw}");
+}
