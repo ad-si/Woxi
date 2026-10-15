@@ -7033,6 +7033,24 @@ fn build_find_root_func(arg: &Expr, vars: &[&str]) -> Expr {
         _ => build_find_root_func(&resolved, vars),
       };
     }
+    // A call to a user-defined function that returns an equation
+    // (`eq[i_] := y[i] == k[i] x[i]; FindRoot[{eq[1], ...}, ...]`) only
+    // reveals the `Equal` once evaluated; resolve it, then rewrite it like a
+    // literal equation.
+    Expr::FunctionCall { .. } => {
+      let resolved = evaluate_with_vars_localized(arg, vars);
+      return match &resolved {
+        Expr::Comparison { operators, .. }
+          if operators.len() == 1 && operators[0] == ComparisonOp::Equal =>
+        {
+          build_find_root_func(&resolved, vars)
+        }
+        Expr::FunctionCall { name, .. } if name == "Equal" => {
+          build_find_root_func(&resolved, vars)
+        }
+        _ => resolved,
+      };
+    }
     other => other.clone(),
   };
   evaluate_with_vars_localized(&raw, vars)
