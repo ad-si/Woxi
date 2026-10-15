@@ -1478,11 +1478,19 @@ impl Filling {
 
 /// Parsed `FillingStyle -> …` value: an optional fill color override
 /// (`None` = use the series color) and an optional opacity (`None` = the
-/// default 0.2 translucency).
+/// default: 0.2 translucency, or fully opaque when a color is given).
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) struct FillStyle {
   pub color: Option<(u8, u8, u8)>,
   pub opacity: Option<f64>,
+}
+
+impl FillStyle {
+  /// The opacity the fill is drawn at: the explicit one, else fully opaque
+  /// when a color was given, else `None` (the default 0.2 translucency).
+  pub(crate) fn effective_opacity(&self) -> Option<f64> {
+    self.opacity.or(self.color.map(|_| 1.0))
+  }
 }
 
 /// Parse a `FillingStyle` option value. Supported forms: a color,
@@ -1550,7 +1558,8 @@ fn color_to_rgb8(c: WoxiColor) -> (u8, u8, u8) {
 }
 
 /// Resolve the fill paint for a series: the `FillingStyle` color override
-/// (else the series color) at the `FillingStyle` opacity (else 0.2).
+/// (else the series color) at the `FillingStyle` opacity. Without one the fill
+/// is translucent (0.2) by default, but opaque once a color is given.
 fn fill_paint(
   filling_style: Option<FillStyle>,
   series_rgb: (u8, u8, u8),
@@ -1560,7 +1569,7 @@ fn fill_paint(
     opacity: None,
   });
   let (r, g, b) = fs.color.unwrap_or(series_rgb);
-  RGBColor(r, g, b).mix(fs.opacity.unwrap_or(0.2))
+  RGBColor(r, g, b).mix(fs.effective_opacity().unwrap_or(0.2))
 }
 
 impl crate::syntax::SeriesFilling {
@@ -2882,6 +2891,12 @@ fn inject_prolog(
     "prolog",
     opts.clip_overlays,
   );
+  splice_after_background(buf, &prolog_svg);
+}
+
+/// Splice `overlay` into a finished SVG right after the canvas background
+/// rect, so everything painted later (axes, curves) draws on top of it.
+pub(crate) fn splice_after_background(buf: &mut String, overlay: &str) {
   // `root.fill(&bg_color)` (plotters) draws an opaque rect spanning the
   // whole canvas as the very first thing after the opening `<svg …>` tag
   // (and any embedded `<defs>` for fonts, which never paints anything
@@ -2905,7 +2920,7 @@ fn inject_prolog(
     Some(p) => after_defs + p + 2,
     None => after_defs,
   };
-  buf.insert_str(insert_at, &prolog_svg);
+  buf.insert_str(insert_at, overlay);
 }
 
 /// Resolve `AspectRatio -> Automatic` against the final plotted ranges: the
@@ -4182,7 +4197,7 @@ pub(crate) fn build_plot_source(
 ) -> crate::syntax::PlotSource {
   let series_filling = filling.to_series_filling();
   let (fill_color, fill_opacity) = match filling_style {
-    Some(fs) => (fs.color, fs.opacity),
+    Some(fs) => (fs.color, fs.effective_opacity()),
     None => (None, None),
   };
   let series = all_points
@@ -9176,10 +9191,10 @@ pub(crate) fn apply_common_plot_option(
       if let Expr::List(items) = &val
         && items.len() >= 2
       {
-        let x =
-          crate::functions::chart::expr_to_label(&items[0]).unwrap_or_default();
-        let y =
-          crate::functions::chart::expr_to_label(&items[1]).unwrap_or_default();
+        let x = crate::functions::graphics::styled_axis_label(&items[0])
+          .unwrap_or_default();
+        let y = crate::functions::graphics::styled_axis_label(&items[1])
+          .unwrap_or_default();
         plot_opts.axes_label = Some((x, y));
       }
     }
@@ -9882,7 +9897,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       if let Some(style) = series_filling_style(&plot_opts, i) {
         s.fill_color = style.color;
-        s.fill_opacity = style.opacity;
+        s.fill_opacity = style.effective_opacity();
       }
     }
   }
@@ -9956,9 +9971,9 @@ fn log_scale_plot_ast(
           if let Expr::List(items) = &val
             && items.len() >= 2
           {
-            let x = crate::functions::chart::expr_to_label(&items[0])
+            let x = crate::functions::graphics::styled_axis_label(&items[0])
               .unwrap_or_default();
-            let y = crate::functions::chart::expr_to_label(&items[1])
+            let y = crate::functions::graphics::styled_axis_label(&items[1])
               .unwrap_or_default();
             plot_opts.axes_label = Some((x, y));
           }

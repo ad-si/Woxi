@@ -1796,14 +1796,17 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         }
         true
       }
-      "FaceForm" if !args.is_empty() => {
+      "FaceForm" => {
         // FaceForm[color] sets the fill color of area primitives only —
         // unlike a bare color directive, it must not recolor Text, Line
         // or Point primitives that follow it.
-        if let Some(c) = parse_color(&args[0]) {
+        if let Some(c) = args.first().and_then(parse_color) {
           style.face_color = Some(c);
-        } else if matches!(&args[0], Expr::Identifier(s) if s == "None") {
-          // `FaceForm[None]` leaves area primitives unfilled.
+        } else if args.is_empty()
+          || matches!(&args[0], Expr::Identifier(s) if s == "None")
+        {
+          // `FaceForm[None]` and the bare `FaceForm[]` leave area
+          // primitives unfilled.
           style.face_color = Some(Color::new(0.0, 0.0, 0.0).with_alpha(0.0));
         }
         true
@@ -13384,10 +13387,31 @@ fn parse_box_to_expr(cs: &[char]) -> Expr {
   }
 }
 
+/// Leads a label string that already holds finished SVG `<text>` markup (a
+/// `Style[…]` label with its font directives applied) rather than plain text
+/// or box notation, so [`box_string_to_svg`] passes it through untouched.
+pub const STYLED_LABEL_MARKER: char = '\u{E000}';
+
+/// The label string for an axis label: a `Style[label, Italic, …]` carries
+/// its font directives as ready-made markup, anything else is its plain text.
+pub fn styled_axis_label(e: &Expr) -> Option<String> {
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Style"
+    && args.len() >= 2
+    && !style_directives_to_svg_attrs(&args[1..]).is_empty()
+  {
+    return Some(format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e)));
+  }
+  crate::functions::chart::expr_to_label(e)
+}
+
 /// Render a label string that may contain inline Wolfram box notation into
 /// SVG `<text>` content. Plain strings (no box notation) are simply
 /// SVG-escaped, so this is a safe drop-in for `svg_escape`.
 pub fn box_string_to_svg(s: &str) -> String {
+  if let Some(markup) = s.strip_prefix(STYLED_LABEL_MARKER) {
+    return markup.to_string();
+  }
   let norm = normalize_box_markers(s);
   let cs: Vec<char> = norm.chars().collect();
   parse_box_units(&cs).iter().map(boxes_to_svg).collect()
@@ -13523,6 +13547,11 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
 /// box markup itself. Used to size legends/labels instead of the raw byte
 /// length (which over-counts the `\!\(\*…\)` scaffolding).
 pub fn box_string_visible_len(s: &str) -> usize {
+  if let Some(markup) = s.strip_prefix(STYLED_LABEL_MARKER) {
+    return crate::functions::chart::svg_markup_visible_text(markup)
+      .chars()
+      .count();
+  }
   let norm = normalize_box_markers(s);
   let cs: Vec<char> = norm.chars().collect();
   parse_box_units(&cs)

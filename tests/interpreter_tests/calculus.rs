@@ -20319,5 +20319,29 @@ mod ndsolve_delay_equations {
        u[t /; t <= 0] == 1, v[t /; t <= 0] == 0}, {u, v}, {t, 0, 2}]; \
        Round[{u[2], v[2]} /. First[s], 10^-3]";
     assert_eq!(interpret(code).unwrap(), "{1, 2}");
+
+mod integrate_piecewise_disjunction {
+  use super::*;
+
+  // Regression: an `Or` of interval conditions used to integrate to garbage
+  // (e.g. 7/2 instead of 3/2) because the generic antiderivative path ran.
+  #[test]
+  fn or_of_half_lines() {
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{1/2, x < 3 || x > 7}}, 0], {x, 2, 9}]")
+        .unwrap(),
+      "3/2"
+    );
+  }
+
+  #[test]
+  fn or_of_ranges_with_polynomial_factor() {
+    assert_eq!(
+      interpret(
+        "Integrate[x^2 Piecewise[{{1/2, 2 <= x <= 3 || 7 <= x <= 9}}, 0], {x, 2, 9}]"
+      )
+      .unwrap(),
+      "135/2"
+    );
   }
 }

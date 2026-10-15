@@ -89,7 +89,9 @@ impl CellStyle {
       "Input" => Some(Self::Input),
       "Output" => Some(Self::Output),
       "Code" => Some(Self::Code),
-      "Print" => Some(Self::Print),
+      // Kernel messages ("During evaluation of In[1]:=") are stdout-like
+      // output attached to the input that raised them, not prose.
+      "Print" | "Message" => Some(Self::Print),
       _ => None,
     }
   }
@@ -2666,6 +2668,7 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     // normal fonts and would render as blank/tofu boxes; the grammar
     // accepts the readable `\[Name]` escape as the same postfix operator.
     "Transpose" => "\\[Transpose]",
+    "Conjugate" => "\\[Conjugate]",
     "ConjugateTranspose" => "\\[ConjugateTranspose]",
     "NoBreak"
     | "InvisibleSpace"
@@ -5195,6 +5198,25 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_message_cell_parses_as_print_output() {
+    // A kernel message cell (`"Message", "MSG"`) follows the output it came
+    // from; it must attach to the input as output, not become a Text cell.
+    let nb = parse_notebook(
+      "Notebook[{\nCell[\"1/0\", \"Input\"],\n\
+       Cell[\"Power::infy: Infinite expression 1/0 encountered.\", \
+       \"Message\", \"MSG\",\n CellLabel->\"During evaluation of In[1]:=\"]\n}]",
+    )
+    .unwrap();
+    let flat = nb.flat_cells();
+    assert_eq!(flat.len(), 2);
+    assert_eq!(flat[1].1.style, CellStyle::Print);
+    assert_eq!(
+      flat[1].1.content,
+      "Power::infy: Infinite expression 1/0 encountered."
+    );
+  }
+
+  #[test]
   fn test_parse_real_understanding_2d_translation_nb() {
     // A trimmed Wolfram Demonstrations template notebook (the shape of
     // downloaded Demonstration .nb files): section headers carrying inline
@@ -5474,6 +5496,12 @@ Cell["Chapter 2", "Chapter"]
     let s =
       r#"BoxData[RowBox[{RowBox[{"{", "a", "}"}], "\[ConjugateTranspose]"}]]"#;
     assert_eq!(extract_cell_content(s), "{a}\\[ConjugateTranspose]");
+  }
+
+  #[test]
+  fn test_extract_cell_content_conjugate_postfix_operator() {
+    let s = r#"BoxData[RowBox[{"z", "\[Conjugate]"}]]"#;
+    assert_eq!(extract_cell_content(s), "z\\[Conjugate]");
   }
 
   /// The FrontEnd also typesets `Part` as a bracketed subscript, which is
