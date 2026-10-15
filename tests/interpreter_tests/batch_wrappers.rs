@@ -9067,6 +9067,26 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  #[test]
+  fn hypercube_graph_with_graph_options() {
+    // Trailing options are forwarded to Graph instead of leaving the call
+    // unevaluated (used by Manipulate-based Demonstrations).
+    assert_eq!(
+      interpret(
+        "VertexList[HypercubeGraph[3, VertexSize -> 0.1, ImageSize -> {250, 300}]]"
+      )
+      .unwrap(),
+      "{1, 2, 3, 4, 5, 6, 7, 8}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeCount[HypercubeGraph[4, VertexStyle -> Hue[0.3], EdgeStyle -> {{Hue[0.5], Thickness[0.01]}}]]"
+      )
+      .unwrap(),
+      "32"
+    );
+  }
+
   // EdgeQ
   #[test]
   fn edge_q_true() {
