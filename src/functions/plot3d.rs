@@ -10315,11 +10315,19 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )
   };
 
+  // The body is held, so resolve user definitions (e.g. `r[1, 2]` standing
+  // for a large trigonometric expression) once up front instead of looking
+  // them up and re-evaluating them at every sample point.
+  let evaluated_bodies: Vec<Expr> = bodies
+    .iter()
+    .map(|b| evaluate_expr_to_expr(b).unwrap_or_else(|_| (*b).clone()))
+    .collect();
+
   // Build each surface's world-space triangles independently, clipping
   // cells that cross the region boundary.
   let mut surface_tris: Vec<Vec<[Point3D; 3]>> =
     Vec::with_capacity(bodies.len());
-  for &surface_body in &bodies {
+  for surface_body in &evaluated_bodies {
     // Evaluate the surface point at arbitrary (theta, phi) parameters.
     let surface_at = |theta: f64, phi: f64| -> Option<(Point3D, f64)> {
       let r =
