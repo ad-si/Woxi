@@ -19099,6 +19099,20 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
       // in a static rendering, but the cell carries an invisible hit
       // region (see `with_button_cell_chrome`) so a live widget can press it.
       let mut button_args: Option<Vec<Expr>> = None;
+      // A button with a text label (a keyboard of character keys) has no
+      // picture to wrap, so it draws as its plate.
+      if let Expr::FunctionCall { name, args } = &target
+        && name == "Button"
+        && args.len() >= 2
+        && !matches!(
+          &args[0],
+          Expr::FunctionCall { name: inner, .. }
+            if inner == "Graphics" || inner == "Graphics3D"
+        )
+      {
+        let plate = button_plate_svg(&graphics_text_content(&args[0]));
+        return Some(with_button_cell_chrome(plate, args));
+      }
       let target = match &target {
         Expr::FunctionCall { name, args }
           if name == "Button"
