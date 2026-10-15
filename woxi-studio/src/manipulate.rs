@@ -1462,7 +1462,14 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         let step =
           step.map(f64::abs).filter(|s| *s > 0.0).unwrap_or_else(|| {
             let span = (*max - *min).abs();
-            if span > 0.0 { span / 100.0 } else { 1.0 }
+            if !*is_real && span >= 1.0 {
+              // An all-exact-integer range makes an integer slider.
+              1.0
+            } else if span > 0.0 {
+              span / 100.0
+            } else {
+              1.0
+            }
           });
         ControlState::Continuous {
           name: name.clone(),
@@ -1652,6 +1659,31 @@ fn format_f64_real(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+  /// A slider whose bounds and initial value are exact integers and that
+  /// has no explicit step is an integer slider (step 1), not span/100.
+  #[test]
+  fn exact_integer_slider_without_step_steps_by_one() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{n, x}, {{n, 160}, 1, 160}, {{x, 0.5}, 0, 1}]",
+    )
+    .expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    let step_of = |name: &str| {
+      state
+        .controls
+        .iter()
+        .find_map(|c| match c {
+          ControlState::Continuous { name: n, step, .. } if n == name => {
+            Some(*step)
+          }
+          _ => None,
+        })
+        .expect("continuous control")
+    };
+    assert_eq!(step_of("n"), 1.0);
+    assert_eq!(step_of("x"), 0.01);
+  }
+
   /// A compiled widget dump lists each module variable as a hidden
   /// `{var, ControlType -> None}` entry before the visible control for the
   /// same variable; the hidden initial value must not shadow the control.
