@@ -2231,6 +2231,30 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(r);
     }
     Ok(f64_to_int_expr(bankers_round(n)))
+  } else if let Some((re, im)) =
+    try_extract_complex_float(&args[0]).or_else(|| {
+      // Algebraic numbers such as complex `Root` objects only reveal their
+      // complex value through `N`.
+      let n =
+        crate::evaluator::evaluate_function_call_ast("N", &args[..1]).ok()?;
+      try_extract_complex_float(&n)
+    })
+    && re.is_finite()
+    && im.is_finite()
+  {
+    // Exact complex expression with irrational parts (e.g. a product of
+    // `Root` objects): Round[a + b I] = Round[a] + Round[b] I. A sum of
+    // conjugate algebraic terms is real in exact arithmetic but carries a
+    // rounding-noise imaginary part numerically, so that part is dropped.
+    let im = if im.abs() < 1e-9 * re.abs().max(1.0) {
+      0.0
+    } else {
+      im
+    };
+    build_complex_result(
+      f64_to_int_expr(bankers_round(re)),
+      f64_to_int_expr(bankers_round(im)),
+    )
   } else if let Some(r) = try_symbolic_complex_rounding(&args[0], round_ast) {
     Ok(r)
   } else {

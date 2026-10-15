@@ -258,6 +258,53 @@ mod area {
   }
 
   #[test]
+  fn region_intersection_of_crossing_lines_is_a_point() {
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Line[{{0, 0}, {2, 2}}], Line[{{0, 2}, {2, 0}}]]"
+      )
+      .unwrap(),
+      "Point[{1, 1}]"
+    );
+    // Exact rational coordinates in 3D, extracted with First.
+    assert_eq!(
+      interpret(
+        "First@RegionIntersection[Line@{{0, 0, 0}, {3, 1, 0}}, \
+         Line@{{0, 1, 0}, {1, 0, 0}}]"
+      )
+      .unwrap(),
+      "{3/4, 1/4, 0}"
+    );
+  }
+
+  #[test]
+  fn region_intersection_of_disjoint_lines_is_empty() {
+    // Parallel, segments that stop short, and skew lines.
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Line[{{0, 0}, {1, 0}}], Line[{{0, 1}, {1, 1}}]]"
+      )
+      .unwrap(),
+      "EmptyRegion[2]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Line[{{0, 0}, {1, 1}}], Line[{{3, 0}, {3, 5}}]]"
+      )
+      .unwrap(),
+      "EmptyRegion[2]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Line[{{0, 0, 0}, {1, 0, 0}}], \
+         Line[{{0, 1, 1}, {0, -1, 1}}]]"
+      )
+      .unwrap(),
+      "EmptyRegion[3]"
+    );
+  }
+
+  #[test]
   fn cube_cross_sectioned_by_plane() {
     // The unit cube [0,1]^3 cut by the diagonal plane x+y=1: a rectangle
     // spanning the full z-extent (height 1) and the face diagonal (width

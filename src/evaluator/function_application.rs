@@ -1281,21 +1281,22 @@ fn compose_and_evaluate<'a>(
   crate::evaluator::evaluate_expr_to_expr(&built[0])
 }
 
-/// `Derivative[0, …, 1, …, 0][Max | Min][x1, …, xk]` at real numeric points:
-/// the partial derivative is `1` for the slot holding the unique extremum and
-/// `0` for every other slot. A tie is a kink, so it stays inert (`None`).
+/// `Derivative[n1, …, nk][Max | Min][x1, …, xk]` at real numeric points:
+/// `Max` and `Min` are piecewise linear, so a first-order partial is `1` for
+/// the slot holding the unique extremum and `0` for every other slot, and any
+/// higher total order is `0`. A tie is a kink, so it stays inert (`None`).
 fn apply_extremum_partial_derivative(
   func_name: &str,
   orders: &[i128],
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
-  let slot = {
-    let mut ones = orders.iter().enumerate().filter(|(_, n)| **n == 1);
-    let (slot, _) = ones.next()?;
-    if ones.next().is_some() || orders.iter().any(|n| *n > 1) {
-      return None;
-    }
-    slot
+  let total: i128 = orders.iter().sum();
+  let slot = if total == 1 {
+    orders.iter().position(|n| *n == 1)?
+  } else if total > 1 {
+    0
+  } else {
+    return None;
   };
   let values: Vec<f64> = args
     .iter()
@@ -1317,6 +1318,9 @@ fn apply_extremum_partial_derivative(
     .any(|(i, v)| i != best && *v == values[best]);
   if tied {
     return None;
+  }
+  if total > 1 {
+    return Some(Ok(Expr::Integer(0)));
   }
   Some(Ok(Expr::Integer(i128::from(slot == best))))
 }

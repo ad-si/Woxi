@@ -3876,6 +3876,40 @@ mod round_with_step {
   }
 }
 
+mod round_exact_complex_algebraic {
+  use super::*;
+
+  #[test]
+  fn round_exact_complex_with_surd() {
+    assert_eq!(interpret("Round[(1 + I) Sqrt[2]]").unwrap(), "1 + I");
+  }
+
+  #[test]
+  fn round_complex_root_sum() {
+    assert_eq!(
+      interpret("Round[Root[#^3 - # - 1 &, 2] + 3]").unwrap(),
+      "2 - I"
+    );
+  }
+
+  #[test]
+  fn round_conjugate_root_sum_is_real() {
+    // Closed form of the Tribonacci numbers: the exact sum of conjugate
+    // algebraic terms is real, so the result is a plain integer.
+    assert_eq!(
+      interpret(
+        "T[n_] := Round[1/(2 Sqrt[11]) (I (Root[-1 - #1 - #1^2 + #1^3 &, 3]^n \
+         Root[44 + 4 #1^2 + 4 #1^4 + #1^6 &, 2] + \
+         Root[-1 - #1 - #1^2 + #1^3 &, 1]^n Root[44 + 4 #1^2 + 4 #1^4 + #1^6 &, 3] + \
+         Root[-1 - #1 - #1^2 + #1^3 &, 2]^n Root[44 + 4 #1^2 + 4 #1^4 + #1^6 &, 6]))]; \
+         Table[T[n], {n, 0, 10}]"
+      )
+      .unwrap(),
+      "{0, 1, 1, 2, 4, 7, 13, 24, 44, 81, 149}"
+    );
+  }
+}
+
 // Rounding a real whose magnitude exceeds the i128 range must produce an exact
 // BigInteger (the float's exact integer value), not saturate to i128::MAX.
 mod round_large_reals {
