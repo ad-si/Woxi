@@ -12074,3 +12074,23 @@ mod option_symbols_batch {
     );
   }
 }
+
+mod nearest_function_with_options {
+  use super::*;
+
+  #[test]
+  fn distance_function_option_in_operator_form() {
+    assert_eq!(
+      interpret(
+        "nf = Nearest[{{1, 2}, {4, 5}, {7, 8}} -> Automatic, DistanceFunction -> (Abs[#1[[1]] - #2[[1]]] &)]; {nf[{6, 6}], nf[{1, 2}, 2]}"
+      )
+      .unwrap(),
+      "{{3}, {1, 2}}"
+    );
+  }
+
+  #[test]
+  fn plain_operator_form_with_count() {
+    assert_eq!(interpret("Nearest[{1, 5, 9, 12}][6, 2]").unwrap(), "{5, 9}");
+  }
+}

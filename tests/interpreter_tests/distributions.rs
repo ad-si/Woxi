@@ -8858,3 +8858,49 @@ mod multidimensional_fourier {
     );
   }
 }
+
+mod log_normal_distribution_random_variate {
+  use super::*;
+
+  #[test]
+  fn count_and_positive_support() {
+    assert_eq!(
+      interpret(
+        "s = RandomVariate[LogNormalDistribution[0.5, 0.2], 50]; {Length[s], AllTrue[s, # > 0 &]}"
+      )
+      .unwrap(),
+      "{50, True}"
+    );
+  }
+
+  #[test]
+  fn random_real_delegates_and_dimension_list() {
+    assert_eq!(
+      interpret("Dimensions[RandomReal[LogNormalDistribution[0, 1], {3, 4}]]")
+        .unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
+  fn single_sample_is_positive_real() {
+    assert_eq!(
+      interpret(
+        "x = RandomVariate[LogNormalDistribution[1, 0.5]]; {Head[x], x > 0}"
+      )
+      .unwrap(),
+      "{Real, True}"
+    );
+  }
+
+  #[test]
+  fn mean_of_samples_is_near_theory() {
+    assert_eq!(
+      interpret(
+        "Abs[Mean[RandomVariate[LogNormalDistribution[0, 0.3], 4000]] - Exp[0.045]] < 0.05"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
