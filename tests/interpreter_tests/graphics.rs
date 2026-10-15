@@ -34613,6 +34613,17 @@ mod grid_text_in_graphics {
     assert!(!svg.contains("Button"), "{svg}");
   }
 
+  /// A grid of text-labelled buttons (a keyboard of character keys) draws
+  /// each key as a plate with its own pressable hit region.
+  #[test]
+  fn graphics_grid_draws_text_labelled_buttons() {
+    let svg = export_svg(
+      "GraphicsGrid[Partition[Map[Button[#, AppendTo[msg, #]] &, CharacterRange[\"a\", \"f\"]], 3]]",
+    );
+    assert!(!svg.contains("Button"), "{svg}");
+    assert_eq!(svg.matches("id=\"woxi-btn-").count(), 6, "{svg}");
+  }
+
   #[test]
   fn list_plot_color_function_colors_each_point() {
     let colored = |expr: &str| {
@@ -35082,4 +35093,27 @@ fn plot_does_not_bridge_a_pole_with_a_vertical_line() {
   )
   .unwrap();
   assert_eq!(steep.matches("<polyline").count(), 1, "{steep}");
+}
+
+#[test]
+fn grid_column_width_follows_displayed_text() {
+  // Width of the Frame's first interior divider = width of column 1.
+  fn first_divider(code: &str) -> f64 {
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let xs: Vec<f64> = svg
+      .split("<line x1=\"")
+      .skip(1)
+      .filter_map(|l| l.split('"').next()?.parse().ok())
+      .filter(|x: &f64| *x > 0.0)
+      .collect();
+    xs.into_iter().fold(f64::INFINITY, f64::min)
+  }
+  // A machine real is measured at its 6-figure display, not at full precision.
+  let long = first_divider("Grid[{{0.1 + 0.2, 1}}, Frame -> All]");
+  let short = first_divider("Grid[{{0.3, 1}}, Frame -> All]");
+  assert_eq!(long, short);
+  // A derivative is measured as the function plus its prime marks.
+  let deriv = first_divider("Grid[{{Derivative[1][y], 1}}, Frame -> All]");
+  let plain = first_divider("Grid[{{\"y'\", 1}}, Frame -> All]");
+  assert!((deriv - plain).abs() < 1.0, "{deriv} vs {plain}");
 }
