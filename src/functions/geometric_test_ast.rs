@@ -987,6 +987,173 @@ const PRISM_FACES: [&[usize]; 5] = [
   &[2, 0, 3, 5],
 ];
 
+/// Where a Platonic-solid primitive (`Cube`, `Octahedron`, `Dodecahedron`,
+/// `Icosahedron`, or the regular `Tetrahedron`) sits, as its arguments give
+/// it:
+///   Head[]                      → origin, edge 1
+///   Head[l]                     → origin, edge l
+///   Head[{θ, ϕ}]                → origin, edge 1, rotated
+///   Head[{x, y, z}]             → centred there, edge 1
+///   Head[{θ, ϕ} | {x, y, z}, l] → likewise, edge l
+pub(crate) struct PlatonicPlacement {
+  /// `None` for the origin.
+  pub center: Option<Vec<Expr>>,
+  /// `{θ, ϕ}`: a turn by θ about the z axis followed by one by ϕ about the
+  /// y axis.
+  pub rotation: Option<(Expr, Expr)>,
+  pub edge: Expr,
+}
+
+/// Parse a Platonic-solid primitive's arguments (see [`PlatonicPlacement`]).
+/// `None` for any other shape — including Tetrahedron's explicit four-vertex
+/// form, three or more arguments (wolframscript leaves the rotated-and-
+/// centred form unevaluated), and a concrete non-positive edge
+/// (`Volume[Dodecahedron[-2]]` stays unevaluated in wolframscript).
+pub(crate) fn platonic_placement(args: &[Expr]) -> Option<PlatonicPlacement> {
+  let is_scalar = |e: &Expr| {
+    !matches!(e, Expr::List(_) | Expr::String(_) | Expr::Rule { .. })
+  };
+  // A two-element list turns the solid, a three-element one moves it.
+  let place = |e: &Expr| -> Option<(Option<Vec<Expr>>, Option<(Expr, Expr)>)> {
+    match e {
+      Expr::List(items) if items.len() == 2 && items.iter().all(is_scalar) => {
+        Some((None, Some((items[0].clone(), items[1].clone()))))
+      }
+      Expr::List(items) if items.len() == 3 && items.iter().all(is_scalar) => {
+        Some((Some(items.iter().cloned().collect()), None))
+      }
+      _ => None,
+    }
+  };
+  let ((center, rotation), edge) = match args {
+    [] => ((None, None), Expr::Integer(1)),
+    [e] if is_scalar(e) => ((None, None), e.clone()),
+    [c] => (place(c)?, Expr::Integer(1)),
+    [c, l] if is_scalar(l) => (place(c)?, l.clone()),
+    _ => return None,
+  };
+  if let Some(v) = crate::functions::math_ast::expr_to_num(&edge)
+    && v <= 0.0
+  {
+    return None;
+  }
+  Some(PlatonicPlacement {
+    center,
+    rotation,
+    edge,
+  })
+}
+
+/// The vertices of a unit-edge Platonic solid centred at the origin, placed
+/// the way Wolfram places `Head[]`: a face of the tetrahedron, cube and
+/// icosahedron's antiprism rings perpendicular to z, the octahedron's
+/// corners on the axes.
+fn platonic_unit_vertices(name: &str) -> Option<Vec<Pt3>> {
+  use std::f64::consts::PI;
+  let phi = f64::midpoint(1.0, 5f64.sqrt());
+  // Five corners at radius `r`, height `z`, turned `start` from the x axis.
+  let ring = |r: f64, z: f64, start: f64| -> Vec<Pt3> {
+    (0..5)
+      .map(|k| {
+        let a = start + 2.0 * PI * k as f64 / 5.0;
+        [r * a.cos(), r * a.sin(), z]
+      })
+      .collect()
+  };
+  // The circumradius of a unit-edge pentagon.
+  let pentagon = 1.0 / (2.0 * (PI / 5.0).sin());
+  Some(match name {
+    "Tetrahedron" => {
+      let low = -1.0 / (2.0 * 6f64.sqrt());
+      let back = -1.0 / (2.0 * 3f64.sqrt());
+      vec![
+        [back, -0.5, low],
+        [back, 0.5, low],
+        [1.0 / 3f64.sqrt(), 0.0, low],
+        [0.0, 0.0, 6f64.sqrt() / 4.0],
+      ]
+    }
+    "Cube" => (0..8)
+      .map(|i| {
+        let s = |bit: usize| if i >> bit & 1 == 1 { 0.5 } else { -0.5 };
+        [s(2), s(1), s(0)]
+      })
+      .collect(),
+    "Octahedron" => {
+      let r = 1.0 / 2f64.sqrt();
+      vec![
+        [r, 0.0, 0.0],
+        [-r, 0.0, 0.0],
+        [0.0, r, 0.0],
+        [0.0, -r, 0.0],
+        [0.0, 0.0, r],
+        [0.0, 0.0, -r],
+      ]
+    }
+    "Icosahedron" => {
+      let circum = (phi * phi + 1.0).sqrt() / 2.0;
+      let z = (circum * circum - pentagon * pentagon).sqrt();
+      let mut v = vec![[0.0, 0.0, circum], [0.0, 0.0, -circum]];
+      v.extend(ring(pentagon, z, 0.0));
+      v.extend(ring(pentagon, -z, PI / 5.0));
+      v
+    }
+    "Dodecahedron" => {
+      let circum = 3f64.sqrt() * phi / 2.0;
+      let (inner, outer) = (pentagon, phi * pentagon);
+      let z_cap = (circum * circum - inner * inner).sqrt();
+      let z_belt = (circum * circum - outer * outer).sqrt();
+      let mut v = ring(inner, z_cap, PI / 5.0);
+      v.extend(ring(outer, z_belt, PI / 5.0));
+      v.extend(ring(outer, -z_belt, 0.0));
+      v.extend(ring(inner, -z_cap, 0.0));
+      v
+    }
+    _ => return None,
+  })
+}
+
+/// The vertices and faces of a numerically placed Platonic solid.
+fn platonic_faces(
+  name: &str,
+  args: &[Expr],
+) -> Option<(Vec<Pt3>, Vec<Vec<usize>>)> {
+  use crate::functions::math_ast::try_eval_to_f64;
+  let placement = platonic_placement(args)?;
+  let edge = try_eval_to_f64(&placement.edge)?;
+  let center = match &placement.center {
+    Some(c) => [
+      try_eval_to_f64(&c[0])?,
+      try_eval_to_f64(&c[1])?,
+      try_eval_to_f64(&c[2])?,
+    ],
+    None => [0.0; 3],
+  };
+  let (theta, phi) = match &placement.rotation {
+    Some((t, p)) => (try_eval_to_f64(t)?, try_eval_to_f64(p)?),
+    None => (0.0, 0.0),
+  };
+  let (st, ct) = theta.sin_cos();
+  let (sp, cp) = phi.sin_cos();
+  let points: Vec<Pt3> = platonic_unit_vertices(name)?
+    .into_iter()
+    .map(|[x, y, z]| {
+      // Turn by θ about z, then by ϕ about y.
+      let (x, y) = (ct * x - st * y, st * x + ct * y);
+      let (x, z) = (cp * x + sp * z, -sp * x + cp * z);
+      [
+        center[0] + edge * x,
+        center[1] + edge * y,
+        center[2] + edge * z,
+      ]
+    })
+    .collect();
+  let tuples: Vec<(f64, f64, f64)> =
+    points.iter().map(|p| (p[0], p[1], p[2])).collect();
+  let faces = crate::functions::convex_hull::convex_hull_polygons(&tuples)?;
+  Some((points, faces))
+}
+
 /// The vertices and faces of a polyhedron expression, as far as its head
 /// pins them down. `None` when the expression does not describe one with
 /// numeric coordinates.
@@ -1031,7 +1198,14 @@ pub(crate) fn polyhedron_faces(
       }
       Some((points, faces))
     }
-    "Tetrahedron" | "Simplex" if args.len() == 1 => simplex(points3(&args[0])?),
+    "Tetrahedron" | "Simplex"
+      if args.len() == 1 && points3(&args[0]).is_some() =>
+    {
+      simplex(points3(&args[0])?)
+    }
+    "Cube" | "Octahedron" | "Dodecahedron" | "Icosahedron" | "Tetrahedron" => {
+      platonic_faces(name, args)
+    }
     "Hexahedron" if args.len() == 1 => {
       let points = points3(&args[0])?;
       (points.len() == 8).then(|| {

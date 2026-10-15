@@ -35182,6 +35182,108 @@ fn graphics3d_draws_solids_given_by_their_corners() {
 }
 
 #[test]
+fn graphics3d_draws_platonic_solids_at_wolfram_vertices() {
+  // Each solid's drawn corners must be exactly where the projected
+  // wolframscript vertices (`MeshCoordinates[DiscretizeGraphics[…]]`) land
+  // under the same fixed view — covering the default placement, rotation
+  // `{θ, ϕ}`, a centre, and an edge length.
+  let view = "PlotRange -> {{-3, 3}, {-3, 3}, {-3, 3}}, \
+              ViewPoint -> {1.3, -2.4, 2}, ImageSize -> 400";
+  let corners = |svg: &str, tag: &str| -> Vec<(f64, f64)> {
+    let mut pts: Vec<(f64, f64)> = Vec::new();
+    for part in svg.split(tag).skip(1) {
+      let coords: Vec<f64> = if tag == "<circle cx=\"" {
+        let cx = part.split('"').next().unwrap();
+        let cy = part
+          .split("cy=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap();
+        vec![cx.parse().unwrap(), cy.parse().unwrap()]
+      } else {
+        part
+          .split('"')
+          .next()
+          .unwrap()
+          .split([' ', ','])
+          .map(|c| c.parse().unwrap())
+          .collect()
+      };
+      for p in coords.chunks(2) {
+        if !pts
+          .iter()
+          .any(|q| (q.0 - p[0]).abs() < 0.3 && (q.1 - p[1]).abs() < 0.3)
+        {
+          pts.push((p[0], p[1]));
+        }
+      }
+    }
+    pts
+  };
+  for (solid, wl_vertices) in [
+    (
+      "Tetrahedron[]",
+      "{{-0.288675, -0.5, -0.204124}, {-0.288675, 0.5, -0.204124}, \
+       {0., 0., 0.612372}, {0.57735, 0., -0.204124}}",
+    ),
+    (
+      "Cube[{1, 2, 0}, 2]",
+      "{{0, 1, -1}, {0, 1, 1}, {0, 3, -1}, {0, 3, 1}, {2, 1, -1}, \
+       {2, 1, 1}, {2, 3, -1}, {2, 3, 1}}",
+    ),
+    (
+      "Octahedron[{Pi/6, Pi/3}]",
+      "{{-0.612372, 0., -0.353553}, {-0.306186, -0.353553, 0.53033}, \
+       {-0.176777, 0.612372, 0.306186}, {0.176777, -0.612372, -0.306186}, \
+       {0.306186, 0.353553, -0.53033}, {0.612372, 0., 0.353553}}",
+    ),
+    (
+      "Dodecahedron[]",
+      "{{-1.376382, 0., 0.262866}, {-1.113516, -0.809017, -0.262866}, \
+       {-1.113516, 0.809017, -0.262866}, {-0.850651, 0., 1.113516}, \
+       {-0.688191, -0.5, -1.113516}, {-0.688191, 0.5, -1.113516}, \
+       {-0.425325, -1.309017, 0.262866}, {-0.425325, 1.309017, 0.262866}, \
+       {-0.262866, -0.809017, 1.113516}, {-0.262866, 0.809017, 1.113516}, \
+       {0.262866, -0.809017, -1.113516}, {0.262866, 0.809017, -1.113516}, \
+       {0.425325, -1.309017, -0.262866}, {0.425325, 1.309017, -0.262866}, \
+       {0.688191, -0.5, 1.113516}, {0.688191, 0.5, 1.113516}, \
+       {0.850651, 0., -1.113516}, {1.113516, -0.809017, 0.262866}, \
+       {1.113516, 0.809017, 0.262866}, {1.376382, 0., -0.262866}}",
+    ),
+    (
+      "Icosahedron[]",
+      "{{-0.850651, 0., -0.425325}, {-0.688191, -0.5, 0.425325}, \
+       {-0.688191, 0.5, 0.425325}, {-0.262866, -0.809017, -0.425325}, \
+       {-0.262866, 0.809017, -0.425325}, {0., 0., -0.951057}, \
+       {0., 0., 0.951057}, {0.262866, -0.809017, 0.425325}, \
+       {0.262866, 0.809017, 0.425325}, {0.688191, -0.5, -0.425325}, \
+       {0.688191, 0.5, -0.425325}, {0.850651, 0., 0.425325}}",
+    ),
+  ] {
+    let drawn = corners(
+      &export_svg(&format!("Graphics3D[{{Opacity[0.5], {solid}}}, {view}]")),
+      "<polygon points=\"",
+    );
+    let expected = corners(
+      &export_svg(&format!("Graphics3D[Point[{wl_vertices}], {view}]")),
+      "<circle cx=\"",
+    );
+    assert!(expected.len() >= 4, "{solid}: vertices not drawn as points");
+    assert_eq!(drawn.len(), expected.len(), "{solid}: {drawn:?}");
+    for p in &expected {
+      assert!(
+        drawn
+          .iter()
+          .any(|q| (q.0 - p.0).abs() < 0.3 && (q.1 - p.1).abs() < 0.3),
+        "{solid}: no corner drawn at {p:?}"
+      );
+    }
+  }
+}
+
+#[test]
 fn graphics_grid_span_from_left_widens_the_preceding_cell() {
   // `SpanFromLeft` makes the cell to its left cover both columns, so the
   // lower panel is laid out as wide as the whole row above it.

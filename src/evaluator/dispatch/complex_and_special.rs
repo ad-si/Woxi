@@ -9908,54 +9908,15 @@ fn capsule_volume(
   crate::evaluator::evaluate_expr_to_expr(&plus(vec![cylinder, sphere]))
 }
 
-/// Parses the arguments of a Platonic-solid primitive (Cube, Octahedron,
-/// Dodecahedron, Icosahedron, Tetrahedron) into (center, edge length):
-///   Head[]                     → origin, 1
-///   Head[l]                    → origin, l
-///   Head[{θ, ϕ}]               → origin, 1  (rotation — metrics invariant)
-///   Head[{x, y, z}]            → center, 1
-///   Head[{θ, ϕ} | {x, y, z}, l] → center-or-origin, l
-/// Returns None for any other shape — including Tetrahedron's explicit
-/// four-vertex form (handled separately by the callers), three or more
-/// arguments (wolframscript leaves the rotated-and-centered form
-/// unevaluated), and a concrete non-positive edge (Volume[Dodecahedron[-2]]
-/// stays unevaluated in wolframscript).
+/// The (center, edge length) of a Platonic-solid primitive — a rotation
+/// leaves its metrics unchanged. See `platonic_placement` for the forms.
 fn platonic_center_edge(args: &[Expr]) -> Option<(Vec<Expr>, Expr)> {
-  let origin = || vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)];
-  let is_scalar = |e: &Expr| {
-    !matches!(e, Expr::List(_) | Expr::String(_) | Expr::Rule { .. })
-  };
-  // Some(Some(c)) → explicit center; Some(None) → rotation spec (origin).
-  let center_of = |e: &Expr| -> Option<Option<Vec<Expr>>> {
-    match e {
-      Expr::List(items) if items.len() == 2 && items.iter().all(is_scalar) => {
-        Some(None)
-      }
-      Expr::List(items) if items.len() == 3 && items.iter().all(is_scalar) => {
-        Some(Some(items.iter().cloned().collect()))
-      }
-      _ => None,
-    }
-  };
-  let (center, edge) = match args {
-    [] => (origin(), Expr::Integer(1)),
-    [e] if is_scalar(e) => (origin(), e.clone()),
-    [c] => match center_of(c)? {
-      Some(cv) => (cv, Expr::Integer(1)),
-      None => (origin(), Expr::Integer(1)),
-    },
-    [c, l] if is_scalar(l) => match center_of(c)? {
-      Some(cv) => (cv, l.clone()),
-      None => (origin(), l.clone()),
-    },
-    _ => return None,
-  };
-  if let Some(v) = crate::functions::math_ast::expr_to_num(&edge)
-    && v <= 0.0
-  {
-    return None;
-  }
-  Some((center, edge))
+  let placement =
+    crate::functions::geometric_test_ast::platonic_placement(args)?;
+  let center = placement.center.unwrap_or_else(|| {
+    vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)]
+  });
+  Some((center, placement.edge))
 }
 
 /// A unit-edge Platonic metric (volume or surface area, given as WL source)

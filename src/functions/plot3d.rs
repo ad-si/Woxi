@@ -4183,9 +4183,11 @@ fn collect_3d_primitives(
           });
         }
         // Solids given by their corners (`Hexahedron`, `Tetrahedron`,
-        // `Prism`, `Pyramid`) or corners plus faces (`Polyhedron`) are
-        // drawn as one filled polygon per face.
+        // `Prism`, `Pyramid`), corners plus faces (`Polyhedron`), or a
+        // placement of a Platonic solid (`Cube[]`, `Icosahedron[{θ, ϕ}]`, …)
+        // are drawn as one filled polygon per face.
         "Hexahedron" | "Tetrahedron" | "Prism" | "Pyramid" | "Polyhedron"
+        | "Cube" | "Octahedron" | "Dodecahedron" | "Icosahedron"
           if crate::functions::geometric_test_ast::polyhedron_faces(expr)
             .is_some() =>
         {
