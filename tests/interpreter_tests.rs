@@ -726,6 +726,24 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_held_assignment_operand_keeps_parentheses() {
+    // An assignment or `;` sequence nested in arithmetic must keep its
+    // parentheses when printed, or the text re-parses as an assignment to
+    // the whole arithmetic expression (the Demonstrations idiom
+    // `x - (h = y) Cos[t]` inside a Manipulate body).
+    clear_state();
+    assert_eq!(interpret("Hold[x - (h = 2)]").unwrap(), "Hold[x - (h = 2)]");
+    assert_eq!(interpret("Hold[-(h = 3)]").unwrap(), "Hold[-(h = 3)]");
+    assert_eq!(interpret("Hold[(h = 3)^2]").unwrap(), "Hold[(h = 3)^2]");
+    assert_eq!(
+      interpret("Hold[a - (h = b) c]").unwrap(),
+      "Hold[a - (h = b)*c]"
+    );
+    assert_eq!(interpret("Hold[(a; b)^2]").unwrap(), "Hold[(a; b)^2]");
+    assert_eq!(interpret("Hold[a*(h := b)]").unwrap(), "Hold[a*(h := b)]");
+  }
+
+  #[test]
   fn test_arrow_named_characters_decode() {
     // The vertical/double arrow family must decode to Unicode (the
     // Demonstrations notebooks use \[DoubleDownArrow] as a "maps to"
