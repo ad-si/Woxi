@@ -7507,6 +7507,31 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     );
   }
 
+  /// A heading `Text@Row[{…, TraditionalForm[x (1 - x/a) Cot[α]]}]` reads in
+  /// conventional notation (`cot(α)`, an in-line `x/a`), not as the
+  /// OutputForm source `x*(1 - x/a)*Cot[α]`.
+  #[test]
+  fn manipulate_heading_typesets_traditionalform_arithmetic() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[a, {a, 0, 1}, Item[Style[Text@Row[{"y = ", TraditionalForm[p (1 - p/q) Cot[b]]}], 12]]]"#,
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    let label = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Heading { label, .. } => Some(label.clone()),
+        _ => None,
+      })
+      .expect("a Heading control");
+    assert!(label.starts_with("y = "), "got {label:?}");
+    assert!(label.contains("cot(b)"), "got {label:?}");
+    assert!(label.contains("p/q"), "got {label:?}");
+    assert!(!label.contains("Cot["), "got {label:?}");
+  }
+
   /// A Manipulate whose body picks between two `Compile[…]`d
   /// angle-to-3D-point functions with `Switch` on a `SetterBar`-controlled
   /// mode, and — in the "combined" mode — plots both curves at once via
