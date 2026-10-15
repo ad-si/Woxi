@@ -95,20 +95,30 @@ pub fn table_iterators_invalid(name: &str, iters: &[Expr]) -> Option<String> {
         // `{i, ...}`: items[0] is the iterator variable (introduced for later
         // iterators). The remaining entries must be a single list, or all
         // resolve to numbers / earlier iterator variables.
+        // Bounds that reference an earlier iterator variable are only
+        // meaningful once that variable is bound, so they are not evaluated
+        // here (doing so would e.g. emit `Part::pkspec1` for `l[[i]]`).
+        let earlier_vars = bound_vars.clone();
+        let eval_bound = |e: &Expr| {
+          if expr_references_any(e, &earlier_vars) {
+            e.clone()
+          } else {
+            crate::evaluator::evaluate_expr_to_expr(e)
+              .unwrap_or_else(|_| e.clone())
+          }
+        };
         if let Expr::Identifier(v) = &items[0] {
           bound_vars.push(v.clone());
         }
         // A zero step `{i, min, max, 0}` never terminates: Table/Do reject it
         // with iterb rather than looping forever (matching wolframscript).
         if items.len() >= 4 {
-          let step = crate::evaluator::evaluate_expr_to_expr(&items[3])
-            .unwrap_or_else(|_| items[3].clone());
+          let step = eval_bound(&items[3]);
           if crate::functions::math_ast::try_eval_to_f64(&step) == Some(0.0) {
             return iterb(iter);
           }
         }
-        let second = crate::evaluator::evaluate_expr_to_expr(&items[1])
-          .unwrap_or_else(|_| items[1].clone());
+        let second = eval_bound(&items[1]);
         if matches!(second, Expr::List(_)) {
           continue;
         }

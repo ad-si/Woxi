@@ -4309,6 +4309,19 @@ mod plot3d {
       }
 
       #[test]
+      fn indexed_definition_radius_matches_inline_expression() {
+        // The radial function is held, so a definition such as `rad[1]` must
+        // be resolved (once) to the same surface as the inline expression.
+        let inline = export_svg(
+          "SphericalPlot3D[1 + 0.2 Cos[theta], {theta, 0, Pi}, {phi, 0, 2 Pi}, PlotPoints -> 8]",
+        );
+        let defined = export_svg(
+          "rad[1] = 1 + 0.2 Cos[theta]; SphericalPlot3D[rad[1], {theta, 0, Pi}, {phi, 0, 2 Pi}, PlotPoints -> 8]",
+        );
+        assert_eq!(inline, defined);
+      }
+
+      #[test]
       fn bumpy_sphere() {
         insta::assert_snapshot!(export_svg(
           "SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta, 0, Pi}, {phi, 0, 2 Pi}]"

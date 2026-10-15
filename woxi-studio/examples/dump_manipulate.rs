@@ -68,7 +68,9 @@ fn main() {
     // A standalone stored widget dump (no Input cell, e.g. a notebook
     // downloaded from the Demonstrations Project) is rebuilt into a plain
     // `Manipulate[…]` source first, as the Studio does when opening it.
-    let reconstructed = if cell.style == CellStyle::Output {
+    let follows_source = idx > 0
+      && matches!(all_cells[idx - 1].style, CellStyle::Input | CellStyle::Code);
+    let reconstructed = if cell.style == CellStyle::Output && !follows_source {
       woxi::notebook::reconstruct_manipulate_from_box_dump(&cell.content)
     } else {
       None
