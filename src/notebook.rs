@@ -2180,17 +2180,82 @@ fn group_fraction_part(s: &str) -> String {
 }
 
 /// Convert one `\(…\)` linear-syntax group's inner text (delimiters already
-/// stripped) into ordinary box source. A leading `\*` marks the group as box
-/// code in its own right (`\*SuperscriptBox[…]`) — drop the marker and keep
-/// converting; anything else is a plain display atom, which box source
-/// spells as a quoted string.
+/// stripped) into ordinary box source. A `\*` marks box code in its own
+/// right (`\*SuperscriptBox[…]`), at the start of the group or part-way
+/// through it (`-\*SuperscriptBox[…]`) — drop the marker and keep converting;
+/// plain runs around it are display atoms, which box source spells as quoted
+/// strings, and several pieces form a `RowBox`.
 fn linear_syntax_group_to_box_source(inner: &str) -> String {
-  match inner.strip_prefix("\\*") {
-    Some(rest) => linear_syntax_code_to_box_source(rest),
-    None => format!(
-      "\"{}\"",
-      linear_syntax_code_to_box_source(inner).replace('"', "\\\"")
-    ),
+  let chars: Vec<char> = inner.chars().collect();
+  // Split into plain-text runs and `\*`-introduced box-code runs. A code
+  // run is a head name followed by its balanced `[…]` argument list, and
+  // may sit anywhere in the group (`-\*SuperscriptBox[…]`, `(t/\*Sub…])`).
+  let mut pieces: Vec<String> = Vec::new();
+  let mut text = String::new();
+  let flush_text = |text: &mut String, pieces: &mut Vec<String>| {
+    if !text.is_empty() {
+      pieces.push(format!(
+        "\"{}\"",
+        linear_syntax_code_to_box_source(text).replace('"', "\\\"")
+      ));
+      text.clear();
+    }
+  };
+  let mut i = 0;
+  while i < chars.len() {
+    if chars[i] == '\\' && chars.get(i + 1) == Some(&'*') {
+      flush_text(&mut text, &mut pieces);
+      let mut j = i + 2;
+      // Head name (or a bare `\(…\)` group right after the marker).
+      while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '$') {
+        j += 1;
+      }
+      if chars.get(j) == Some(&'[') {
+        let mut depth = 0;
+        while j < chars.len() {
+          match chars[j] {
+            '[' => depth += 1,
+            ']' => {
+              depth -= 1;
+              if depth == 0 {
+                j += 1;
+                break;
+              }
+            }
+            _ => {}
+          }
+          j += 1;
+        }
+      } else if chars.get(j) == Some(&'\\') && chars.get(j + 1) == Some(&'(') {
+        let mut depth = 0;
+        while j < chars.len() {
+          if chars[j] == '\\' && chars.get(j + 1) == Some(&'(') {
+            depth += 1;
+            j += 2;
+          } else if chars[j] == '\\' && chars.get(j + 1) == Some(&')') {
+            depth -= 1;
+            j += 2;
+            if depth == 0 {
+              break;
+            }
+          } else {
+            j += 1;
+          }
+        }
+      }
+      let code: String = chars[i + 2..j].iter().collect();
+      pieces.push(linear_syntax_code_to_box_source(&code));
+      i = j;
+    } else {
+      text.push(chars[i]);
+      i += 1;
+    }
+  }
+  flush_text(&mut text, &mut pieces);
+  match pieces.len() {
+    0 => "\"\"".to_string(),
+    1 => pieces.remove(0),
+    _ => format!("RowBox[{{{}}}]", pieces.join(", ")),
   }
 }
 
@@ -7376,6 +7441,17 @@ yf4GL4DwC5VA4w
       ),
       None
     );
+  }
+
+  #[test]
+  fn test_linear_syntax_box_code_inside_group_text() {
+    // Box code introduced by `\*` part-way through a `\(…\)` group, with
+    // plain text before and after it, must not leak its source as text.
+    let s = r"A: \!\(\*SubscriptBox[\(p\), \(asym\)]\) \!\(\*SuperscriptBox[\(e\), \(-\*SuperscriptBox[\((t/\*SubscriptBox[\(t\), \(c\)])\), \(m\)]\)]\)";
+    let out = render_linear_syntax_escapes(s);
+    assert!(!out.contains("Box"), "{out}");
+    assert!(!out.contains('\\'), "{out}");
+    assert!(out.starts_with("A: p_asym e"), "{out}");
   }
 
   #[test]
