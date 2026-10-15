@@ -5072,8 +5072,9 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     Expr::List(items) => items.iter().any(lays_out_a_graphic),
     // A `TabView` shows its selected pane, so it is a picture when that is.
     Expr::FunctionCall { name, args } if name == "TabView" => {
-      crate::tabview_selected_content(args)
-        .is_some_and(|content| lays_out_a_graphic(&content))
+      crate::tabview_selected_content(args).is_some_and(|content| {
+        lays_out_a_graphic(&content) || is_tabular_layout(&content)
+      })
     }
     // `Style[content, …]` only sets font/color; the layout underneath it
     // decides whether there is a picture to draw.
@@ -5719,6 +5720,21 @@ fn wrap_pane_text(content: &Expr, width: f64, font_size: f64) -> Option<Expr> {
   }
 }
 
+/// A pane filled with a table/column/row layout (`Text@Grid[…]`, the common
+/// way a Demonstration puts prose and data in a tab), looking through the
+/// `Text`/`Pane`/`Panel` wrappers around it.
+fn is_tabular_layout(expr: &Expr) -> bool {
+  let mut layout = expr;
+  while let Expr::FunctionCall { name, args } = layout
+    && matches!(name.as_str(), "Text" | "Pane" | "Panel")
+    && !args.is_empty()
+  {
+    layout = &args[0];
+  }
+  matches!(layout, Expr::FunctionCall { name, args }
+    if matches!(name.as_str(), "Grid" | "Column" | "Row") && !args.is_empty())
+}
+
 /// The font size a `Style` directive list sets, if any.
 fn style_font_size(directives: &[Expr]) -> Option<f64> {
   directives.iter().find_map(|d| match d {
@@ -5805,7 +5821,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "TabView"
         && let Some(content) = crate::tabview_selected_content(args)
-        && lays_out_a_graphic(&content) =>
+        && (lays_out_a_graphic(&content) || is_tabular_layout(&content)) =>
     {
       expr_to_svg(&content)
     }

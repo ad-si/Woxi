@@ -26768,6 +26768,22 @@ mod manipulate {
     assert!(svg.contains("title"));
   }
 
+  /// A `TabView` whose pane is a `Text@Grid[…]` table, laid out in a
+  /// `Column` next to a picture, draws the table. Regression: a
+  /// Demonstration's description tab (`Text[TabView[{"info" -> Grid[…]}]]`)
+  /// was typeset as the symbolic `TabView[{info -> Grid[{{…` source line.
+  #[test]
+  fn tab_view_grid_pane_in_column_draws_table() {
+    let code = "ExportString[Column[{\
+      Text[TabView[{\"info\" -> Grid[{{\"alpha\", \"beta\"}, \
+      {\"gamma\", \"delta\"}}, Frame -> All]}]], \
+      Graphics[Circle[]]}], \"SVG\"]";
+    let svg = woxi::interpret(code).unwrap();
+    assert!(!svg.contains("TabView["), "TabView source leaked: {svg}");
+    assert!(!svg.contains("Grid["), "Grid source leaked: {svg}");
+    assert!(svg.contains("alpha") && svg.contains("delta"));
+  }
+
   /// A `PaneSelector[{value -> content, …}, selector]` shows one pane at a
   /// time in Wolfram; its panes hold controls just as a `TabView`'s tabs
   /// do, so they are found the same way. A variable declared in more than
