@@ -236,6 +236,26 @@ mod column_visual_mode {
     assert_eq!(svg.matches("font-size=\"20\"").count(), 2, "{svg}");
   }
 
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (Euclidean Algorithm:
+  /// GCD and LCM) whose `Manipulate` body styles a `Column` holding
+  /// `If[flag, …]` items that are `Null` while their checkbox is off.
+  /// `Null` is drawn as nothing, but pushing the `Style` size into every
+  /// item wrapped it as `Style[Null, 24]`, which was typeset as the word
+  /// "Null". Self-authored, construct-equivalent example.
+  #[test]
+  fn styled_column_does_not_draw_null_items() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "flag = False; Style[Text[Column[{\"a\", If[flag, \"b\"], \"\", If[flag, 2]}]], 24]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">a</text>"), "{svg}");
+    assert!(!svg.contains("Null"), "{svg}");
+  }
+
   /// The same lookup-through-`Text` has to work for `Row`, and survive an
   /// extra `Pane[…]` wrapper on top — the exact nesting a Manipulate body
   /// commonly uses (`Pane[Style[Text[Row[{…}]], size], {w, h}]`).

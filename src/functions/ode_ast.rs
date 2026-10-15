@@ -8,6 +8,8 @@ use crate::functions::calculus_ast::differentiate_expr;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
 use crate::syntax::{expr_children, map_children};
 
+mod dde;
+
 // ─── DSolve ────────────────────────────────────────────────────────────
 
 /// DSolve[eqn, y[x], x] or DSolve[{eqn, ic1, ...}, y[x], x]
@@ -411,6 +413,11 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
+  }
+  // A first-order system with a stated history (`f[t /; t <= t0] == …`)
+  // and possibly delayed arguments `f[t - c]`.
+  if let Some(result) = dde::ndsolve_dde(&args[..3])? {
+    return Ok(result);
   }
   let opts = &args[n_pos..];
   let event = parse_event_locator_option(opts);
@@ -3462,7 +3469,10 @@ fn ndsolve_system(
   // so every level of `List` is flattened rather than just the outermost.
   let mut eq_items: Vec<Expr> = Vec::new();
   flatten_eq_list(&args[0], &mut eq_items);
-  let eq_items = flatten_chained_equalities(&eq_items);
+  let eq_items: Vec<Expr> = flatten_chained_equalities(&eq_items)
+    .into_iter()
+    .map(|eq| history_condition_to_ic(&eq, x_name).unwrap_or(eq))
+    .collect();
   // `WhenEvent[Mod[x, p] == 0, action]` entries are periodic actions, not
   // equations: split them off before the equations are classified.
   let mut raw_time_events: Vec<RawTimeEvent> = Vec::new();
@@ -3480,6 +3490,7 @@ fn ndsolve_system(
     }
   }
   let eq_items = eq_items_no_events;
+  let time_events_empty = raw_time_events.is_empty();
   let mut odes: Vec<Expr> = Vec::new();
   // (function name, derivative order, evaluation point, value) — by name,
   // not index: an eliminated constraint variable shifts the positions in
@@ -3724,13 +3735,41 @@ fn ndsolve_system(
   // Rewrite the equations over placeholder variables and wrap them into
   // numeric residual functions.
   let mut residuals: Vec<NumFn> = Vec::with_capacity(odes.len());
+  let delay_found = std::cell::Cell::new(false);
   for ode in &odes {
     let normalized = normalize_equation(ode).ok();
     let Some(normalized) = normalized else {
       return Ok(None);
     };
+    let normalized = replace_delayed_values(
+      &normalized,
+      &funcs,
+      &state_offset,
+      x_name,
+      &delay_found,
+    );
     let rewritten = substitute_function_values(&normalized, &funcs, x_name);
     residuals.push(NumFn::new(rewritten, &var_names));
+  }
+  // A delay equation reads earlier values of the solution: before the
+  // initial point those are the (constant) history conditions, afterwards
+  // the steps the integrator has accepted so far.
+  let _dde_guard = DdeGuard;
+  if delay_found.get() {
+    if !matches!(kind, ProblemKind::Initial { .. }) || !time_events_empty {
+      return Ok(None);
+    }
+    let mut past = vec![0.0; var_names.len()];
+    for (fi, f) in funcs.iter().enumerate() {
+      past[1 + state_offset[fi]] = f.ics[0].unwrap_or(0.0);
+    }
+    DDE_HISTORY.with(|h| {
+      *h.borrow_mut() = Some(DdeHistory {
+        x0,
+        past,
+        points: Vec::new(),
+      });
+    });
   }
   let event_fn = match event {
     Some(spec) => {
@@ -4374,6 +4413,9 @@ fn integrate_leg(
   let mut state = init_state;
   let mut x = x_from;
   points.push((x, state.clone()));
+  if dde_active() {
+    dde_record(&points);
+  }
 
   let eval_event = |x: f64, state: &[f64]| -> Option<f64> {
     event_fn.and_then(|f| f.eval_state(x, state, funcs.len()).ok())
@@ -4505,6 +4547,9 @@ fn integrate_leg(
 
     state = new_state;
     x = new_x;
+    if dde_active() {
+      dde_record(&refined);
+    }
     points.append(&mut refined);
   }
   Ok(Some(points))
@@ -4940,6 +4985,195 @@ fn substitute_function_values(
   })
 }
 
+// ─── Delay differential equations ──────────────────────────────────────
+
+/// Internal head marking a delayed dependent-function value
+/// `DdeDelayed$[variableIndex, lag]` between the rewrite and the compiler.
+const DELAYED_HEAD: &str = "DdeDelayed$";
+
+/// Solution history of the delay equation being integrated: the constant
+/// pre-initial-time values (indexed like the variable vector) plus every
+/// accepted step so far.
+struct DdeHistory {
+  x0: f64,
+  past: Vec<f64>,
+  points: Vec<(f64, Vec<f64>)>,
+}
+
+thread_local! {
+  static DDE_HISTORY: std::cell::RefCell<Option<DdeHistory>> =
+    const { std::cell::RefCell::new(None) };
+}
+
+/// Value of variable `idx` (a slot of the `[x, state…]` vector) at `x`.
+/// Before the initial time it is the history function; afterwards it is
+/// linearly interpolated between accepted steps, and a lookup beyond the
+/// newest step (a lag shorter than the step being taken) uses that step.
+fn dde_history_value(idx: usize, x: f64) -> f64 {
+  DDE_HISTORY.with(|h| {
+    let h = h.borrow();
+    let Some(h) = h.as_ref() else {
+      return f64::NAN;
+    };
+    if x <= h.x0 || h.points.is_empty() {
+      return h.past.get(idx).copied().unwrap_or(f64::NAN);
+    }
+    let slot = idx - 1;
+    let i = h.points.partition_point(|(px, _)| *px < x);
+    if i == 0 {
+      return h.points[0].1[slot];
+    }
+    if i >= h.points.len() {
+      return h.points[h.points.len() - 1].1[slot];
+    }
+    let (xa, ya) = (&h.points[i - 1].0, &h.points[i - 1].1);
+    let (xb, yb) = (&h.points[i].0, &h.points[i].1);
+    if xb == xa {
+      return yb[slot];
+    }
+    ya[slot] + (yb[slot] - ya[slot]) * (x - xa) / (xb - xa)
+  })
+}
+
+fn dde_record(points: &[(f64, Vec<f64>)]) {
+  DDE_HISTORY.with(|h| {
+    if let Some(h) = h.borrow_mut().as_mut() {
+      h.points.extend(points.iter().cloned());
+    }
+  });
+}
+
+fn dde_active() -> bool {
+  DDE_HISTORY.with(|h| h.borrow().is_some())
+}
+
+/// Clears the delay history when the solve ends, however it ends.
+struct DdeGuard;
+impl Drop for DdeGuard {
+  fn drop(&mut self) {
+    DDE_HISTORY.with(|h| *h.borrow_mut() = None);
+  }
+}
+
+/// `f[t /; t <= t0] == c` (or `<`, `t_` pattern spelling) states the
+/// constant history of `f` up to `t0`. Rewrite it into the ordinary
+/// initial condition `f[t0] == c`, which also seeds the integration.
+fn history_condition_to_ic(eq: &Expr, x_name: &str) -> Option<Expr> {
+  let Expr::Comparison {
+    operands,
+    operators,
+  } = eq
+  else {
+    return None;
+  };
+  if operands.len() != 2 || operators != &vec![ComparisonOp::Equal] {
+    return None;
+  }
+  let Expr::FunctionCall { name, args } = &operands[0] else {
+    return None;
+  };
+  let [
+    Expr::FunctionCall {
+      name: cname,
+      args: cargs,
+    },
+  ] = args.as_ref()
+  else {
+    return None;
+  };
+  if cname != "Condition" || cargs.len() != 2 {
+    return None;
+  }
+  let is_var = |e: &Expr| match e {
+    Expr::Identifier(n) => n == x_name,
+    Expr::Pattern { name, .. } => name == x_name,
+    _ => false,
+  };
+  if !is_var(&cargs[0]) {
+    return None;
+  }
+  let Expr::Comparison {
+    operands: cops,
+    operators: cos,
+  } = &cargs[1]
+  else {
+    return None;
+  };
+  if cops.len() != 2 || cos.len() != 1 {
+    return None;
+  }
+  let bound = match cos[0] {
+    ComparisonOp::LessEqual | ComparisonOp::Less if is_var(&cops[0]) => {
+      &cops[1]
+    }
+    ComparisonOp::GreaterEqual | ComparisonOp::Greater if is_var(&cops[1]) => {
+      &cops[0]
+    }
+    _ => return None,
+  };
+  Some(Expr::Comparison {
+    operands: vec![
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![bound.clone()].into(),
+      },
+      operands[1].clone(),
+    ],
+    operators: vec![ComparisonOp::Equal],
+  })
+}
+
+/// Replace every delayed value `f[t - τ]` (τ a positive constant) of a
+/// dependent function by `DdeDelayed$[variableIndex, τ]`; returns whether
+/// any was found. A zero lag is simply `f[t]`.
+fn replace_delayed_values(
+  expr: &Expr,
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  x_name: &str,
+  found: &std::cell::Cell<bool>,
+) -> Expr {
+  if let Expr::FunctionCall { name, args } = expr
+    && args.len() == 1
+    && let Some(fi) = funcs.iter().position(|f| &f.name == name)
+    && !matches!(&args[0], Expr::Identifier(a) if a == x_name)
+  {
+    let at = |v: f64| {
+      let sub =
+        crate::syntax::substitute_variable(&args[0], x_name, &Expr::Real(v));
+      crate::evaluator::evaluate_expr_to_expr(&sub)
+        .ok()
+        .and_then(|r| expr_to_f64(&r).ok())
+    };
+    if let (Some(a0), Some(a1), Some(a2)) = (at(0.0), at(1.0), at(2.5))
+      && (a1 - a0 - 1.0).abs() < 1e-12
+      && (a2 - a0 - 2.5).abs() < 1e-12
+    {
+      let lag = -a0;
+      if lag.abs() < 1e-14 {
+        return Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![Expr::Identifier(x_name.to_string())].into(),
+        };
+      }
+      if lag > 0.0 {
+        found.set(true);
+        return Expr::FunctionCall {
+          name: DELAYED_HEAD.to_string(),
+          args: vec![
+            Expr::Integer((1 + state_offset[fi]) as i128),
+            Expr::Real(lag),
+          ]
+          .into(),
+        };
+      }
+    }
+  }
+  map_children(expr, &|c| {
+    replace_delayed_values(c, funcs, state_offset, x_name, found)
+  })
+}
+
 // ─── Compiled numeric expressions ─────────────────────────────────────
 
 /// A residual/event function over the numeric variable vector, compiled
@@ -5037,6 +5271,13 @@ enum NExpr {
   /// a value with a significant imaginary part is not a real ODE, and
   /// yields NaN so the solve is rejected instead of silently wrong.
   ComplexReal(Box<CExpr>),
+  /// The value of state variable `Var(idx)` `lag` earlier than the current
+  /// independent-variable value (`vars[0]`) — a delayed argument `f[t - τ]`
+  /// of a delay differential equation, read from the solution history.
+  Delayed {
+    idx: usize,
+    lag: f64,
+  },
 }
 
 impl NExpr {
@@ -5081,6 +5322,7 @@ impl NExpr {
           f64::NAN
         }
       }
+      Self::Delayed { idx, lag } => dde_history_value(*idx, vars[0] - lag),
       Self::Interp1D { func_args, arg } => {
         let x = arg.eval(vars);
         evaluate_interpolating_function(func_args, &[Expr::Real(x)])
@@ -5212,6 +5454,14 @@ fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
       operand,
     } => Some(NExpr::Neg(Box::new(comp(operand)?))),
     Expr::FunctionCall { name, args } => {
+      if name == DELAYED_HEAD
+        && let [Expr::Integer(idx), Expr::Real(lag)] = args.as_ref()
+      {
+        return Some(NExpr::Delayed {
+          idx: *idx as usize,
+          lag: *lag,
+        });
+      }
       let unary: Option<fn(f64) -> f64> = match name.as_str() {
         "Sin" => Some(f64::sin),
         "Cos" => Some(f64::cos),

@@ -11593,6 +11593,34 @@ mod inverse_laplace_transform {
   use super::*;
 
   #[test]
+  fn shifted_inverse_square_root() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/Sqrt[s + b], s, t]").unwrap(),
+      "1/(E^(b*t)*Sqrt[Pi]*Sqrt[t])"
+    );
+  }
+
+  #[test]
+  fn fractional_power_of_s() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/s^(3/2), s, t]").unwrap(),
+      "(2*Sqrt[t])/Sqrt[Pi]"
+    );
+  }
+
+  #[test]
+  fn log_over_s() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[Log[s]/s, s, t]").unwrap(),
+      "-EulerGamma - Log[t]"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[a Log[b s]/s, s, t]").unwrap(),
+      "a*(-EulerGamma + Log[b] - Log[t])"
+    );
+  }
+
+  #[test]
   fn constant_one_over_s() {
     assert_eq!(
       interpret("InverseLaplaceTransform[1/s, s, t]").unwrap(),
@@ -20289,6 +20317,39 @@ mod ndsolve_step_forcing {
   }
 }
 
+mod ndsolve_delay_equations {
+  use super::*;
+
+  /// `x'[t] == -x[t - 1]` with constant history 1 has the piecewise
+  /// polynomial solution 1 - t, (t-2)^2/2 - 1/2, ... (method of steps).
+  #[test]
+  fn single_delay_matches_method_of_steps() {
+    let code = "s = NDSolve[{x'[t] == -x[t - 1], x[t /; t <= 0] == 1}, x, \
+       {t, 0, 3}]; Round[{x[1/2], x[1], x[2], x[3]} /. First[s], 10^-4]";
+    assert_eq!(interpret(code).unwrap(), "{1/2, 0, -1/2, -1667/10000}");
+  }
+
+  /// A zero delay is an ordinary ODE; the history condition just supplies
+  /// the initial value.
+  #[test]
+  fn history_condition_with_zero_delay() {
+    let code = "s = NDSolve[{y'[t] == -y[t] + 0.5*y[t - 0], \
+       y[t /; t <= 0] == 2}, y, {t, 0, 2}]; \
+       Round[y[2] /. First[s], 10^-3]";
+    assert_eq!(interpret(code).unwrap(), "92/125");
+  }
+
+  /// A history condition may use any constant, and a parameterised
+  /// delay inside a coupled system works as well.
+  #[test]
+  fn coupled_system_with_delay_and_history() {
+    let code = "s = NDSolve[{u'[t] == -v[t - 2], v'[t] == u[t], \
+       u[t /; t <= 0] == 1, v[t /; t <= 0] == 0}, {u, v}, {t, 0, 2}]; \
+       Round[{u[2], v[2]} /. First[s], 10^-3]";
+    assert_eq!(interpret(code).unwrap(), "{1, 2}");
+  }
+}
+
 mod integrate_piecewise_disjunction {
   use super::*;
 
@@ -20312,5 +20373,43 @@ mod integrate_piecewise_disjunction {
       .unwrap(),
       "135/2"
     );
+  }
+}
+
+mod ndsolve_delay {
+  use super::*;
+
+  /// `NDSolve` integrates delay differential equations: the history
+  /// `f[t /; t <= 0] == v` seeds the solution and `f[t - c]` looks up
+  /// earlier values (method of steps). For `z'[t] == -z[t - 1]` with
+  /// history 1 the exact solution is piecewise polynomial:
+  /// z(2) == -1/2 and z(3) == -1/6.
+  #[test]
+  fn ndsolve_delay_differential_equation() {
+    let code = "sol = NDSolve[{z'[t] == -z[t - 1], z[t /; t <= 0] == 1}, \
+       {z[t]}, {t, 0, 3}]; \
+       {z[t] /. sol /. t -> 2., z[t] /. sol /. t -> 3.}";
+    let result = interpret(code).unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split("}, {")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    assert!((nums[0] + 0.5).abs() < 1e-3, "{result}");
+    assert!((nums[1] + 1.0 / 6.0).abs() < 1e-3, "{result}");
+  }
+
+  /// A delayed unknown can be mixed with an ordinary one that states its
+  /// initial value as `w[0] == v`, and a zero delay is no delay at all.
+  #[test]
+  fn ndsolve_delay_system_mixes_plain_initial_values() {
+    let code = "sol = NDSolve[{z'[t] == -z[t - 0] + w[t - 1], \
+       z[t /; t <= 0] == 1, w'[t] == -w[t], w[0] == 2}, \
+       {z[t], w[t]}, {t, 0, 2}]; \
+       {Round[w[t] /. sol /. t -> 1., 0.0001], \
+        Round[z[t] /. sol /. t -> 0.5, 0.0001]}";
+    // w = 2 E^-t, so w(1) = 2/E = 0.7358.
+    let result = interpret(code).unwrap();
+    assert!(result.contains("0.7358"), "{result}");
   }
 }

@@ -4759,6 +4759,27 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     None => (label_arg, false),
   };
   let mut local_style = style.clone();
+  // `Rotate[label, angle]` turns the label by `angle` radians
+  // counterclockwise, whether it wraps or sits inside the `Style` — peel it
+  // off here and turn it into the baseline direction below instead of
+  // typesetting `Rotate[…]` as literal text.
+  let mut rotation: Option<f64> = None;
+  fn peel_label_rotate<'a>(
+    e: &'a Expr,
+    rotation: &mut Option<f64>,
+  ) -> &'a Expr {
+    let mut cur = e;
+    while let Expr::FunctionCall { name, args: rargs } = cur
+      && name == "Rotate"
+      && rargs.len() == 2
+      && let Some(angle) = rotation_angle(&rargs[1])
+    {
+      *rotation = Some(rotation.unwrap_or(0.0) + angle);
+      cur = &rargs[0];
+    }
+    cur
+  }
+  let first_arg = peel_label_rotate(first_arg, &mut rotation);
   // `Framed[content, opts…]` boxes the label: a border around it and, with
   // `Background -> colour`, a panel behind it. Peel it off first so the
   // `Style` directives it usually wraps still reach the primitive.
@@ -4785,6 +4806,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     }
     other => other,
   };
+  let content = peel_label_rotate(content, &mut rotation);
   // `Style[Invisible[…], dirs…]` — the wrapper inside the styling.
   let content = match peel_invisible(content) {
     Some(inner) => {
@@ -4835,7 +4857,10 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // `Text[expr, pos, offset, direction]`: rotate the label so its baseline
   // runs parallel to `direction`, a vector in the same data coordinates as
   // `pos`. Left `None` for the common `Automatic`/omitted case.
-  let direction = args.get(3).and_then(text_direction);
+  let direction = args
+    .get(3)
+    .and_then(text_direction)
+    .or_else(|| rotation.map(|a| (a.cos(), a.sin())));
   // `Background -> colour`, written either as a trailing option of the
   // `Text` or as a directive of the `Style` it wraps.
   fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
@@ -14982,7 +15007,10 @@ fn grid_ast_internal(
     && let Some(combined) = combine_graphics_svgs(&rows)
   {
     crate::clear_captured_graphics();
-    return Ok(crate::graphics_result(combined));
+    return Ok(crate::graphics_result(with_grid_background(
+      combined,
+      &args[1..],
+    )));
   }
   let svg = grid_svg_internal(args, group_gaps, parens)?;
   Ok(crate::graphics_result(svg))
@@ -19903,8 +19931,11 @@ pub(crate) fn style_pushed_into_layout(
   let restyle = |e: &Expr| {
     // A `Grid` span marker holds no content and is only recognized bare:
     // inside a `Style` it would be drawn as its own name.
+    // `Null` (an `If[cond, …]` whose condition failed) draws as nothing,
+    // but inside a `Style` it would be typeset as the word "Null".
     if matches!(e, Expr::Graphics { .. })
       || is_span_marker(e)
+      || matches!(e, Expr::Identifier(n) if n == "Null")
       || crate::evaluator::lays_out_a_graphic(e)
     {
       return e.clone();
@@ -21046,6 +21077,310 @@ pub(crate) fn strip_svg_wrapper(svg: &str) -> &str {
   &svg[start..end]
 }
 
+/// Rescale a graphic whose root `<svg>` has a `viewBox` in its own coordinate
+/// system (larger than its `width`/`height`) down to fit a `width`x`height`
+/// box, keeping the aspect ratio. `None` for anything else (layouts, text),
+/// which has no scalable canvas and must be clipped instead.
+fn shrink_scalable_svg(
+  svg: &str,
+  natural_w: f64,
+  natural_h: f64,
+  width: f64,
+  height: f64,
+) -> Option<String> {
+  let root_start = svg.find("<svg")?;
+  let root_end = root_start + svg[root_start..].find('>')?;
+  let root = &svg[root_start..root_end];
+  let vb = root.find("viewBox=\"")? + 9;
+  let vb_len = root[vb..].find('"')?;
+  let dims: Vec<f64> = root[vb..vb + vb_len]
+    .split_whitespace()
+    .filter_map(|v| v.parse().ok())
+    .collect();
+  if dims.len() != 4 || dims[2] <= natural_w * 1.5 {
+    return None;
+  }
+  let scale = (width / natural_w).min(height / natural_h);
+  let (new_w, new_h) = (natural_w * scale, natural_h * scale);
+  let new_root = root
+    .replacen(
+      &format!("width=\"{natural_w}\""),
+      &format!("width=\"{new_w:.1}\""),
+      1,
+    )
+    .replacen(
+      &format!("height=\"{natural_h}\""),
+      &format!("height=\"{new_h:.1}\""),
+      1,
+    );
+  Some(format!(
+    "{}{}{}",
+    &svg[..root_start],
+    new_root,
+    &svg[root_end..]
+  ))
+}
+
+/// `svg` scaled to `new_w`x`new_h`: the original drawing is nested, with its
+/// own `viewBox`, in a root of the new size, so readers that size a picture
+/// from its `viewBox` agree with the ones that read `width`/`height`.
+fn resize_svg_root(svg: &str, new_w: f64, new_h: f64) -> String {
+  let (w, h) = parse_svg_wh(svg);
+  let root_end = svg
+    .find("<svg")
+    .and_then(|i| svg[i..].find('>').map(|e| i + e))
+    .unwrap_or(0);
+  let root = &svg[..root_end];
+  let view_box = root
+    .find("viewBox=\"")
+    .and_then(|i| {
+      root[i + 9..]
+        .find('"')
+        .map(|e| root[i + 9..i + 9 + e].to_string())
+    })
+    .unwrap_or_else(|| format!("0 0 {w} {h}"));
+  format!(
+    "<svg width=\"{new_w:.1}\" height=\"{new_h:.1}\" viewBox=\"0 0 {new_w:.1} {new_h:.1}\" xmlns=\"http://www.w3.org/2000/svg\">\n<svg x=\"0\" y=\"0\" width=\"{new_w:.1}\" height=\"{new_h:.1}\" viewBox=\"{view_box}\">{}</svg>\n</svg>",
+    strip_svg_wrapper(svg)
+  )
+}
+
+/// The picture a `Grid` cell holds, if it is a graphic.
+fn grid_cell_as_graphics(cell: &Expr) -> Option<Expr> {
+  match cell {
+    Expr::Graphics { .. } => Some(cell.clone()),
+    Expr::FunctionCall { name, .. } if is_graphics_producing_head(name) => {
+      let evaluated = evaluate_expr_to_expr(cell).ok()?;
+      if let g @ Expr::Graphics { .. } = evaluated {
+        return Some(g);
+      }
+      let svg = crate::evaluator::expr_to_svg(&evaluated);
+      svg.starts_with("<svg").then(|| Expr::Graphics {
+        svg,
+        is_3d: false,
+        source: None,
+        head: None,
+        structure: None,
+      })
+    }
+    _ => None,
+  }
+}
+
+fn grid_rows_of(grid: &Expr) -> Option<(&[Expr], Vec<Vec<Expr>>)> {
+  let Expr::FunctionCall { name, args } = grid else {
+    return None;
+  };
+  if name != "Grid" {
+    return None;
+  }
+  let Some(Expr::List(rows)) = args.first() else {
+    return None;
+  };
+  let rows = rows
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) => cells.to_vec(),
+      other => vec![other.clone()],
+    })
+    .collect();
+  Some((&args[1..], rows))
+}
+
+fn rebuild_grid(opts: &[Expr], rows: Vec<Vec<Expr>>) -> Expr {
+  let mut args = vec![Expr::List(
+    rows.into_iter().map(|r| Expr::List(r.into())).collect(),
+  )];
+  args.extend(opts.iter().cloned());
+  Expr::FunctionCall {
+    name: "Grid".to_string(),
+    args: args.into(),
+  }
+}
+
+/// Column widths of the cells' natural renderings, given a cell's width.
+fn grid_column_widths(
+  rows: &[Vec<Expr>],
+  cell_width: &dyn Fn(&Expr) -> f64,
+) -> Vec<f64> {
+  let ncols = rows.iter().map(Vec::len).max().unwrap_or(0);
+  let mut widths = vec![0.0_f64; ncols];
+  for row in rows {
+    for (j, cell) in row.iter().enumerate() {
+      widths[j] = widths[j].max(cell_width(cell));
+    }
+  }
+  widths
+}
+
+/// Shrink the pictures of one nested `Grid` column by `overflow` points,
+/// the way the FrontEnd squeezes automatically sized graphics when the
+/// layout around them is wider than the space it has. `None` when nothing
+/// can shrink.
+fn shrink_grid_graphics(
+  grid: &Expr,
+  overflow: f64,
+  cell_width: &dyn Fn(&Expr) -> f64,
+) -> Option<Expr> {
+  const MIN_PICTURE_WIDTH: f64 = 40.0;
+  let (opts, mut rows) = grid_rows_of(grid)?;
+  let widths = grid_column_widths(&rows, cell_width);
+  // The column that holds a picture and is the widest one.
+  let col = (0..widths.len())
+    .filter(|&j| {
+      rows
+        .iter()
+        .any(|r| r.get(j).is_some_and(|c| grid_cell_as_graphics(c).is_some()))
+    })
+    .max_by(|&a, &b| widths[a].total_cmp(&widths[b]))?;
+  let target = (widths[col] - overflow).max(MIN_PICTURE_WIDTH);
+  let mut changed = false;
+  for row in &mut rows {
+    let Some(cell) = row.get_mut(col) else {
+      continue;
+    };
+    let Some(picture) = grid_cell_as_graphics(cell) else {
+      continue;
+    };
+    let Expr::Graphics { svg, .. } = &picture else {
+      continue;
+    };
+    let (w, h) = parse_svg_wh(svg);
+    if w <= target || !svg.contains("viewBox=") {
+      continue;
+    }
+    // Redraw from the source at the smaller size so strokes and text keep
+    // their weight; a picture without one is scaled as it is.
+    if let Some(redrawn) =
+      grid_cell_as_graphics(&with_default_image_size(cell, target as i128))
+      && let Expr::Graphics {
+        svg: redrawn_svg, ..
+      } = &redrawn
+      && parse_svg_wh(redrawn_svg).0 < w
+    {
+      *cell = redrawn;
+      changed = true;
+      continue;
+    }
+    let scale = target / w;
+    let resized = resize_svg_root(svg, w * scale, h * scale);
+    *cell = Expr::Graphics {
+      svg: resized,
+      is_3d: false,
+      source: None,
+      head: None,
+      structure: None,
+    };
+    changed = true;
+  }
+  changed.then(|| rebuild_grid(opts, rows))
+}
+
+/// Fit `Pane[Grid[rows], {width, _}]`'s content into `width`: when the
+/// columns are wider than the pane, the FrontEnd squeezes the nested layouts
+/// holding automatically sized graphics (a plot's legend) instead of
+/// letting them push the other columns out of the pane. Returns the grid
+/// with those pictures shrunk, or `None` when it already fits or nothing can
+/// shrink.
+pub(crate) fn fit_grid_to_pane_width(
+  grid: &Expr,
+  width: f64,
+  cell_width: &dyn Fn(&Expr) -> f64,
+) -> Option<Expr> {
+  let (opts, rows) = grid_rows_of(grid)?;
+  let mut current = rebuild_grid(opts, rows);
+  let mut changed = false;
+  // Nested grids add padding of their own around the pictures, so a
+  // second pass takes up whatever the first one left over.
+  for _ in 0..3 {
+    let (opts, mut rows) = grid_rows_of(&current)?;
+    let widths = grid_column_widths(&rows, cell_width);
+    // Between columns the picture layout leaves `Scaled[0.1]` of the widest
+    // cell, unless the grid sets its own `Spacings`.
+    let gap = if opts.iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Spacings"))
+    }) {
+      0.0
+    } else {
+      0.1 * widths.iter().copied().fold(0.0, f64::max)
+    };
+    let overflow = widths.iter().sum::<f64>()
+      + gap * widths.len().saturating_sub(1) as f64
+      - width;
+    if overflow <= 0.5 {
+      break;
+    }
+    let mut pass_changed = false;
+    for row in &mut rows {
+      for cell in row.iter_mut() {
+        if let Some(shrunk) = shrink_grid_graphics(cell, overflow, cell_width) {
+          *cell = shrunk;
+          pass_changed = true;
+        }
+      }
+    }
+    if !pass_changed {
+      break;
+    }
+    changed = true;
+    current = rebuild_grid(opts, rows);
+  }
+  changed.then_some(current)
+}
+
+/// Paint a `Grid`'s uniform `Background -> color` behind an already
+/// composed picture. The picture compositor lays out the cells but has no
+/// notion of the grid's own background.
+pub(crate) fn with_grid_background(svg: String, options: &[Expr]) -> String {
+  let color = options.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Background") => {
+      parse_color(replacement)
+    }
+    _ => None,
+  });
+  let Some(color) = color else {
+    return svg;
+  };
+  let Some(root_start) = svg.find("<svg") else {
+    return svg;
+  };
+  let Some(rel_end) = svg[root_start..].find('>') else {
+    return svg;
+  };
+  let insert_at = root_start + rel_end + 1;
+  let (w, h) = parse_svg_wh(&svg);
+  let vb = svg[root_start..insert_at]
+    .find("viewBox=\"")
+    .and_then(|i| {
+      let from = root_start + i + 9;
+      svg[from..]
+        .find('"')
+        .map(|e| svg[from..from + e].to_string())
+    })
+    .unwrap_or_else(|| format!("0 0 {w} {h}"));
+  let dims: Vec<f64> = vb
+    .split_whitespace()
+    .filter_map(|v| v.parse().ok())
+    .collect();
+  let (x, y, vw, vh) = if dims.len() == 4 {
+    (dims[0], dims[1], dims[2], dims[3])
+  } else {
+    (0.0, 0.0, w, h)
+  };
+  let rect = format!(
+    "\n<rect x=\"{x}\" y=\"{y}\" width=\"{vw}\" height=\"{vh}\" fill=\"{}\"{}/>",
+    color.to_svg_rgb(),
+    color.opacity_attr()
+  );
+  let mut out = svg;
+  out.insert_str(insert_at, &rect);
+  out
+}
+
 /// Clip an already-rendered SVG to a `Pane[content, {width, height}]` box.
 /// The FrontEnd never grows a `Pane`'s reserved area to fit oversized
 /// content — with no scrollbar in a static export, content past the
@@ -21061,6 +21396,14 @@ pub(crate) fn clip_svg_to_pane_box(
   let (natural_w, natural_h) = parse_svg_wh(svg);
   if natural_w <= width && natural_h <= height {
     return svg.to_string();
+  }
+  // A graphic that carries its own `viewBox` (a `Plot`, `Graphics`, …) is a
+  // scalable picture: the FrontEnd shrinks it to fit the Pane instead of
+  // cutting it off, keeping its aspect ratio.
+  if let Some(scaled) =
+    shrink_scalable_svg(svg, natural_w, natural_h, width, height)
+  {
+    return scaled;
   }
   let inner = strip_svg_wrapper(svg);
   let clip_id = format!("paneClip_{width:.0}x{height:.0}");
@@ -23476,6 +23819,41 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     });
   }
 
+  // A `Slider2D[Dynamic[var], range]` inside a display element (the 2D
+  // colour picker under a canvas) drives `var`, one of the Manipulate's
+  // hidden state variables: give it a draggable stand-in row.
+  let slider2d_vars: Vec<_> = displays
+    .iter()
+    .filter_map(|d| crate::interpret_to_expr(d).ok())
+    .flat_map(|e| collect_display_slider2d_vars(&e))
+    .collect();
+  for (var, ((x_min, y_min), (x_max, y_max))) in slider2d_vars {
+    if controls.iter().any(|c| c.name() == var) {
+      continue;
+    }
+    let Some((_, code)) = state.iter().find(|(n, _)| *n == var) else {
+      continue;
+    };
+    let initial = crate::with_scoped_globals(&initial_bindings, || {
+      let expr = crate::interpret_to_expr(code).ok()?;
+      list2_f64(&evaluate_expr_to_expr(&expr).ok()?)
+    });
+    let Some((x_initial, y_initial)) = initial else {
+      continue;
+    };
+    controls.push(ManipulateControl::Slider2D {
+      name: var.clone(),
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      x_initial,
+      y_initial,
+      label: var,
+      write_callback: None,
+    });
+  }
+
   // A Manipulate with no controls or state at all (e.g. `Manipulate[x^2,
   // badspec]`, where `badspec` is neither a spec nor an option) isn't
   // renderable as an interactive widget — fall back to the plain path.
@@ -23960,6 +24338,63 @@ fn collect_body_locator_pane_vars(
           && !found.iter().any(|(n, _, _)| n == var)
         {
           found.push((var.clone(), args.get(2).cloned(), args[1].clone()));
+        }
+        for a in args {
+          walk(a, found);
+        }
+      }
+      Expr::List(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      Expr::CompoundExpr(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  walk(expr, &mut found);
+  found
+}
+
+/// Whether `expr` is a `Slider2D[…]` call.
+fn is_slider2d_call(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. } if name == "Slider2D")
+}
+
+/// Every `Slider2D[Dynamic[var], {{xmin, ymin}, {xmax, ymax}}, …]` drawn
+/// inside a display element (typically a colour strip in an `Overlay`),
+/// as `(var, ((xmin, ymin), (xmax, ymax)))`. The range defaults to the unit
+/// square, like Wolfram's. Each variable is listed once.
+fn collect_display_slider2d_vars(
+  expr: &Expr,
+) -> Vec<(String, ((f64, f64), (f64, f64)))> {
+  fn walk(expr: &Expr, found: &mut Vec<(String, ((f64, f64), (f64, f64)))>) {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        if name == "Slider2D"
+          && let Some(Expr::FunctionCall {
+            name: dname,
+            args: dargs,
+          }) = args.first()
+          && dname == "Dynamic"
+          && let Some(Expr::Identifier(var)) = dargs.first()
+          && !found.iter().any(|(n, _)| n == var)
+        {
+          let range = match args.get(1) {
+            Some(Expr::List(c)) if c.len() == 2 => {
+              match (list2_f64(&c[0]), list2_f64(&c[1])) {
+                (Some(lo), Some(hi)) => (lo, hi),
+                _ => ((0.0, 0.0), (1.0, 1.0)),
+              }
+            }
+            _ => ((0.0, 0.0), (1.0, 1.0)),
+          };
+          found.push((var.clone(), range));
         }
         for a in args {
           walk(a, found);
@@ -25215,6 +25650,19 @@ pub(crate) fn tabview_pane_parts(item: &Expr) -> (Option<Expr>, &Expr, &Expr) {
 /// whatever `expand_conditional_control_items` splices in, since a spliced
 /// control is just as likely to arrive `Control`-wrapped.
 fn unwrap_control_wrapper(spec: Expr) -> Expr {
+  // `Framed[Control[…]]` / `Panel[Control[…]]`: a bordered single control.
+  let spec = match &spec {
+    Expr::FunctionCall { name, args }
+      if (name == "Framed" || name == "Panel")
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
+        ) =>
+    {
+      args[0].clone()
+    }
+    _ => spec,
+  };
   let spec = match &spec {
     Expr::FunctionCall { name, args }
       if name == "Dynamic"
@@ -29908,6 +30356,19 @@ fn display_expr_to_node(
           None => static_leaf_node(expr, bindings),
         }
       }
+      // `Overlay[{layer1, layer2, …}, …]` stacks its layers. The
+      // interactive `Slider2D` layer is promoted to a control row of its own
+      // (see `collect_display_slider2d_vars`), so what is drawn here is the
+      // first remaining layer — e.g. the colour strip a 2D slider sits on.
+      "Overlay" if !args.is_empty() => match &args[0] {
+        Expr::List(layers) => {
+          match layers.iter().find(|l| !is_slider2d_call(l)) {
+            Some(layer) => display_expr_to_node(layer, bindings, probes, ons),
+            None => DisplayNode::Column(Vec::new()),
+          }
+        }
+        _ => static_leaf_node(expr, bindings),
+      },
       "Panel" | "Framed" | "Deploy" | "Item" | "Pane" | "Labeled"
         if !args.is_empty() =>
       {
@@ -31533,6 +31994,19 @@ mod manipulate_dynamic_control_list_tests {
     assert!(matches!(&s.controls[0], ManipulateControl::Color { .. }));
   }
 
+  /// A control hand-framed with `Framed[Control[…]]` (the Demonstrations
+  /// idiom for a bordered slider over a precomputed table) is a real
+  /// control, not a static display of the literal `Control[…]` call.
+  #[test]
+  fn framed_control_is_a_real_control() {
+    let s = spec(
+      "Manipulate[x + y, {{y, 1}, 0, 2}, Framed[Control[{{x, 2, \"x\"}, \
+       {1, 2, 3}, ControlType -> Slider}]]]",
+    );
+    assert_eq!(names(&s), vec!["y", "x"]);
+    assert_eq!(s.displays, [] as [std::string::String; 0]);
+  }
+
   /// `Sequence@@If[cond, ctrlSpec, {}]` inside a Dynamic control list
   /// splices in the extra control when the condition — evaluated against
   /// the other controls' initial values — holds.
@@ -31633,6 +32107,35 @@ mod manipulate_dynamic_control_list_tests {
         assert!(popup);
       }
       other => panic!("expected a Discrete control, got {other:?}"),
+    }
+  }
+
+  /// A `Slider2D[Dynamic[var], range]` inside a `Dynamic[Overlay[…]]`
+  /// display (a 2D colour picker laid over a gradient strip) drives the
+  /// hidden state variable `var`: it must surface as a draggable 2D control
+  /// with that range and the variable's current value. Found by a scheduled
+  /// QA run against the "Snowflake Designs" Demonstration notebook.
+  #[test]
+  fn display_slider2d_over_state_variable_becomes_control() {
+    let s = spec(
+      "Manipulate[pt, {{pt, {0.5, 0.3}}, None}, \
+       Row[{\"bg \", Dynamic@Overlay[{Slider2D[Dynamic[pt], \
+       {{0, 0.1}, {1, 0.9}}], Graphics[{}]}]}]]",
+    );
+    match s.controls.iter().find(|c| c.name() == "pt") {
+      Some(ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        ..
+      }) => {
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (0.0, 1.0, 0.1, 0.9));
+        assert_eq!((*x_initial, *y_initial), (0.5, 0.3));
+      }
+      other => panic!("expected a Slider2D control, got {other:?}"),
     }
   }
 

@@ -6747,6 +6747,268 @@ fn point_in_polygon_2d(verts: &[[f64; 2]], p: [f64; 2], eps: f64) -> bool {
   inside
 }
 
+/// Machine-number coordinates of `point` when it is a list of numeric values.
+fn real_coords(point: &Expr) -> Option<Vec<f64>> {
+  let Expr::List(items) = point else {
+    return None;
+  };
+  items
+    .iter()
+    .map(crate::functions::math_ast::try_eval_to_f64)
+    .collect()
+}
+
+/// Numeric nearest point for an `ImplicitRegion` and an inexact point; exact
+/// points are left to the symbolic paths (wolframscript answers those with
+/// algebraic numbers we do not build).
+fn implicit_nearest_for_point(region: &Expr, point: &Expr) -> Option<Vec<f64>> {
+  if !expr_contains_real(point) {
+    return None;
+  }
+  implicit_region_nearest_numeric(region, &real_coords(point)?)
+}
+
+/// Numeric nearest point of a point `q` to an `ImplicitRegion[pred, {vars}]`
+/// whose predicate is a single `==`, `<=`/`<` or `>=`/`>` comparison, found by
+/// projected descent on the boundary `lhs - rhs == 0` from several seeds.
+/// For an inequality, a `q` already inside the region is its own nearest
+/// point. `None` when the region is not of this form or nothing converges.
+fn implicit_region_nearest_numeric(
+  region: &Expr,
+  q: &[f64],
+) -> Option<Vec<f64>> {
+  use crate::syntax::ComparisonOp as Op;
+  let Expr::FunctionCall { name, args } = region else {
+    return None;
+  };
+  if name != "ImplicitRegion" || args.len() != 2 {
+    return None;
+  }
+  let Expr::List(vars) = &args[1] else {
+    return None;
+  };
+  let n = vars.len();
+  if n == 0 || n != q.len() {
+    return None;
+  }
+  let var_names: Vec<String> = vars
+    .iter()
+    .map(|v| match v {
+      Expr::Identifier(s) => Some(s.clone()),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let (lhs, rhs, op) = match &args[0] {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2 && operators.len() == 1 => {
+      (operands[0].clone(), operands[1].clone(), operators[0])
+    }
+    Expr::FunctionCall { name, args } if args.len() == 2 => {
+      let op = match name.as_str() {
+        "Equal" => Op::Equal,
+        "LessEqual" => Op::LessEqual,
+        "Less" => Op::Less,
+        "GreaterEqual" => Op::GreaterEqual,
+        "Greater" => Op::Greater,
+        _ => return None,
+      };
+      (args[0].clone(), args[1].clone(), op)
+    }
+    _ => return None,
+  };
+  // Orient so the region is `diff == 0` or `diff <= 0`.
+  let diff = match op {
+    Op::Equal | Op::LessEqual | Op::Less => call("Subtract", vec![lhs, rhs]),
+    Op::GreaterEqual | Op::Greater => call("Subtract", vec![rhs, lhs]),
+    _ => return None,
+  };
+  let is_eq = matches!(op, Op::Equal);
+
+  let eval_at = |e: &Expr, p: &[f64]| -> Option<f64> {
+    let vals: Vec<Expr> = p.iter().map(|v| Expr::Real(*v)).collect();
+    let bindings: Vec<(&str, &Expr)> = var_names
+      .iter()
+      .map(String::as_str)
+      .zip(vals.iter())
+      .collect();
+    let sub = crate::syntax::substitute_variables(e, &bindings);
+    let v = crate::functions::math_ast::try_eval_to_f64(
+      &crate::evaluator::evaluate_expr_to_expr(&sub).ok()?,
+    )?;
+    v.is_finite().then_some(v)
+  };
+  let partials: Vec<Expr> = vars
+    .iter()
+    .map(|v| {
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "D",
+        vec![diff.clone(), v.clone()],
+      ))
+    })
+    .collect::<Result<_, _>>()
+    .ok()?;
+  let f = |p: &[f64]| eval_at(&diff, p);
+  let grad = |p: &[f64]| -> Option<Vec<f64>> {
+    partials.iter().map(|d| eval_at(d, p)).collect()
+  };
+  let dist2 = |p: &[f64]| -> f64 {
+    p.iter().zip(q).map(|(a, b)| (a - b) * (a - b)).sum()
+  };
+  // Newton steps onto `diff == 0`.
+  let project = |p: &mut Vec<f64>| -> Option<()> {
+    for _ in 0..30 {
+      let v = f(p)?;
+      let g = grad(p)?;
+      let g2: f64 = g.iter().map(|x| x * x).sum();
+      if g2 < 1e-24 {
+        return None;
+      }
+      if v.abs() < 1e-14 {
+        break;
+      }
+      for i in 0..n {
+        p[i] -= v * g[i] / g2;
+      }
+    }
+    (f(p)?.abs() < 1e-9).then_some(())
+  };
+
+  if !is_eq && f(q)? <= 0.0 {
+    return Some(q.to_vec());
+  }
+
+  let mut seeds: Vec<Vec<f64>> = vec![q.to_vec()];
+  for &r in &[0.5, 1.5, 4.0] {
+    for k in 0..(2 * n) {
+      let mut s = q.to_vec();
+      s[k / 2] += if k % 2 == 0 { r } else { -r };
+      seeds.push(s);
+    }
+    if n == 2 {
+      for k in 0..8 {
+        let a = std::f64::consts::PI * k as f64 / 4.0;
+        seeds.push(vec![q[0] + r * a.cos(), q[1] + r * a.sin()]);
+      }
+    }
+  }
+
+  let mut best: Option<(f64, Vec<f64>)> = None;
+  for mut p in seeds {
+    if project(&mut p).is_none() {
+      continue;
+    }
+    for _ in 0..500 {
+      let Some(g) = grad(&p) else { break };
+      let g2: f64 = g.iter().map(|x| x * x).sum();
+      if g2 < 1e-24 {
+        break;
+      }
+      let v: Vec<f64> = (0..n).map(|i| q[i] - p[i]).collect();
+      let vn: f64 = v.iter().zip(&g).map(|(a, b)| a * b).sum::<f64>() / g2;
+      let vt: Vec<f64> = (0..n).map(|i| v[i] - vn * g[i]).collect();
+      if vt.iter().map(|x| x * x).sum::<f64>().sqrt() < 1e-13 {
+        break;
+      }
+      let mut t = 1.0;
+      let mut moved = false;
+      while t > 1e-14 {
+        let mut c: Vec<f64> = (0..n).map(|i| p[i] + t * vt[i]).collect();
+        if project(&mut c).is_some() && dist2(&c) < dist2(&p) {
+          p = c;
+          moved = true;
+          break;
+        }
+        t /= 2.0;
+      }
+      if !moved {
+        break;
+      }
+    }
+    // Polish with Newton on the KKT system `p - q + λ∇F = 0, F = 0`; the
+    // descent above stalls near 1e-8 because distance is flat at the optimum.
+    let residual = |u: &[f64]| -> Option<Vec<f64>> {
+      let g = grad(&u[..n])?;
+      let mut r: Vec<f64> = (0..n).map(|i| u[i] - q[i] + u[n] * g[i]).collect();
+      r.push(f(&u[..n])?);
+      Some(r)
+    };
+    if let Some(g) = grad(&p) {
+      let g2: f64 = g.iter().map(|x| x * x).sum();
+      let lam = (0..n).map(|i| (q[i] - p[i]) * g[i]).sum::<f64>() / g2;
+      let mut u = p.clone();
+      u.push(lam);
+      for _ in 0..8 {
+        let Some(r0) = residual(&u) else { break };
+        let m = n + 1;
+        let mut jac = vec![vec![0.0; m + 1]; m];
+        let mut ok = true;
+        for c in 0..m {
+          let h = 1e-6 * (1.0 + u[c].abs());
+          let (mut a, mut b) = (u.clone(), u.clone());
+          a[c] += h;
+          b[c] -= h;
+          match (residual(&a), residual(&b)) {
+            (Some(ra), Some(rb)) => {
+              for row in 0..m {
+                jac[row][c] = (ra[row] - rb[row]) / (2.0 * h);
+              }
+            }
+            _ => ok = false,
+          }
+        }
+        if !ok {
+          break;
+        }
+        for row in 0..m {
+          jac[row][m] = -r0[row];
+        }
+        // Gaussian elimination with partial pivoting.
+        let mut singular = false;
+        for col in 0..m {
+          let piv = (col..m)
+            .max_by(|&x, &y| jac[x][col].abs().total_cmp(&jac[y][col].abs()))
+            .unwrap_or(col);
+          if jac[piv][col].abs() < 1e-14 {
+            singular = true;
+            break;
+          }
+          jac.swap(col, piv);
+          for row in 0..m {
+            if row != col {
+              let fct = jac[row][col] / jac[col][col];
+              for k in col..=m {
+                jac[row][k] -= fct * jac[col][k];
+              }
+            }
+          }
+        }
+        if singular {
+          break;
+        }
+        let step: Vec<f64> = (0..m).map(|i| jac[i][m] / jac[i][i]).collect();
+        let cand: Vec<f64> = (0..m).map(|i| u[i] + step[i]).collect();
+        if f(&cand[..n]).is_none_or(|v| v.abs() > 1e-9) {
+          break;
+        }
+        u = cand;
+        if step.iter().all(|x| x.abs() < 1e-15) {
+          break;
+        }
+      }
+      if dist2(&u[..n]) <= dist2(&p) + 1e-12 {
+        p = u[..n].to_vec();
+      }
+    }
+    let d = dist2(&p);
+    if best.as_ref().is_none_or(|(bd, _)| d < *bd - 1e-12) {
+      best = Some((d, p));
+    }
+  }
+  best.map(|(_, p)| p)
+}
+
 /// RegionDistance[region, point] — the shortest distance from `point` to the
 /// (closed) `region`, zero when inside a solid region. Handles Point, Disk/Ball
 /// (solid), Circle/Sphere (boundary) and Rectangle/Cuboid (axis-aligned boxes)
@@ -6760,6 +7022,17 @@ fn compute_region_distance(
     || Ok(call("RegionDistance", vec![region.clone(), point.clone()]));
   if !matches!(point, Expr::List(_)) {
     return unevaluated();
+  }
+  if let Some(nearest) = implicit_nearest_for_point(region, point) {
+    let q = real_coords(point).unwrap_or_default();
+    return Ok(Expr::Real(
+      nearest
+        .iter()
+        .zip(q.iter())
+        .map(|(a, b)| (a - b) * (a - b))
+        .sum::<f64>()
+        .sqrt(),
+    ));
   }
   let Expr::FunctionCall { name, args } = region else {
     return unevaluated();
@@ -6934,6 +7207,15 @@ fn compute_region_nearest(
   let Expr::List(pt) = point else {
     return unevaluated();
   };
+  if let Some(nearest) = implicit_nearest_for_point(region, point) {
+    return Ok(Expr::List(
+      nearest
+        .into_iter()
+        .map(Expr::Real)
+        .collect::<Vec<_>>()
+        .into(),
+    ));
+  }
   let pt: Vec<Expr> = pt.iter().cloned().collect();
   let n = pt.len();
   let Expr::FunctionCall { name, args } = region else {

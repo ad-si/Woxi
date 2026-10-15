@@ -6082,6 +6082,31 @@ mod plot3d {
       assert_eq!(literal_angle, dynamic_angle);
     }
 
+    // `AspectRatio` sets the height of a Graphics3D picture relative to
+    // its width.
+    #[test]
+    fn graphics3d_aspect_ratio_sets_height() {
+      let svg = export_svg(
+        "Graphics3D[Sphere[], ImageSize -> 400, AspectRatio -> 1/2]",
+      );
+      assert!(svg.contains("width=\"400\" height=\"200\""), "{svg}");
+    }
+
+    // Explicit `Ticks` pin the 3D axis ticks instead of the automatic ones.
+    #[test]
+    fn graphics3d_explicit_ticks() {
+      let count = |ticks: &str| {
+        export_svg(&format!(
+          "Graphics3D[Sphere[], Axes -> True, Ticks -> {ticks}]"
+        ))
+        .matches("<text")
+        .count()
+      };
+      assert_eq!(count("{{0}, {0}, {0}}"), 3);
+      assert_eq!(count("{{-1, 1}, {0}, None}"), 3);
+      assert_eq!(count("None"), 0);
+    }
+
     // Regression: the "Icosahedron Ball" Demonstration body — a
     // SphericalPlot3D mesh reused via [[1]], transformed with
     // Translate/Rotate copies, and combined with PolyhedronData's
@@ -22043,6 +22068,33 @@ mod contour_plot_3d {
   use super::*;
 
   #[test]
+  fn shown_plane_keeps_its_opacity_and_is_cut_to_the_plot_range() {
+    // A translucent `ContourPlot3D` plane merged by `Show` into a
+    // `Graphics3D` with a fixed `PlotRange` stays translucent and is
+    // clipped to that range instead of spilling over the picture.
+    let svg = export_svg(
+      "Show[{Graphics3D[{Red, Polygon[{{0, 0, 0}, {5, 0, 0}, {5, 5, 5}}]}, \
+       PlotRange -> {{-5, 20}, {-5, 20}, {0, 15}}]}, \
+       {ContourPlot3D[x + y + z == 10, {x, -10, 60}, {y, -10, 60}, \
+       {z, -10, 60}, Mesh -> None, ContourStyle -> Directive[Blue, \
+       Opacity[0.1]], PlotPoints -> 6]}]",
+    );
+    assert!(
+      svg.contains("opacity=\"0.1\""),
+      "the plane must stay translucent"
+    );
+    let polygons: Vec<&str> = svg.split("<polygon points=\"").skip(1).collect();
+    assert_ne!(polygons.len(), 0);
+    for poly in polygons {
+      let pts = poly.split('"').next().unwrap();
+      for coord in pts.split([' ', ',']) {
+        let v: f64 = coord.parse().unwrap();
+        assert!((-1.0..=361.0).contains(&v), "polygon spills out: {v}");
+      }
+    }
+  }
+
+  #[test]
   fn extracted_surface_has_no_polygon_outline() {
     // `plot[[1]]` re-rendered in a `Graphics3D` must not outline every
     // surface triangle with the default polygon edge.
@@ -34917,6 +34969,23 @@ fn graphics_grid_span_from_left_widens_the_preceding_cell() {
   );
 }
 
+/// `Text[Rotate[label, θ], pos]` draws the label turned by θ (a Demonstration
+/// dial labels its axes this way) rather than typesetting `Rotate[…]`.
+#[test]
+fn text_with_rotated_label_turns_the_text() {
+  let svg = interpret(
+    "ExportString[Graphics[{Text[Rotate[Style[\"abc\", 12], Pi/2], {0, 0}], \
+     Text[Style[Rotate[\"xyz\", Pi], 12], {1, 1}], \
+     Text[Style[\"plain\", 12], {2, 2}]}], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(!svg.contains("Rotate"), "{svg}");
+  assert!(svg.contains("rotate(-90.000") && svg.contains(">abc</text>"));
+  assert!(svg.contains("rotate(180.000") || svg.contains("rotate(-180.000"));
+  let plain = svg.split(">plain</text>").next().unwrap();
+  assert!(!plain.rsplit("<text").next().unwrap().contains("rotate"));
+}
+
 #[test]
 fn styled_axes_label_keeps_font_directives() {
   // `Style[label, Italic]` in an AxesLabel kept only its text, dropping the
@@ -34948,4 +35017,37 @@ fn styled_axes_label_keeps_font_directives() {
   )
   .unwrap();
   assert!(!svg.contains("<tspan font-style"));
+}
+
+#[test]
+fn region_plot_color_function_colors_region_pointwise() {
+  // `ColorFunction -> f` fills the region with `f[x, y]` (coordinates scaled
+  // to 0..1 over the plot range) instead of one flat translucent tint.
+  let svg = interpret(
+    "ExportString[RegionPlot[True, {x, 0, 1}, {y, 0, 1}, \
+     ColorFunction -> Function[{x, y}, RGBColor[x, 0, y]], \
+     Frame -> False], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.contains("<rect"), "{svg}");
+  assert!(!svg.contains("fill-opacity=\"0.3\""), "{svg}");
+  // Bottom-left cell is nearly black; top-right nearly magenta.
+  assert!(svg.contains("fill=\"rgb(2,0,2)\""), "{svg}");
+  assert!(svg.contains("fill=\"rgb(253,0,253)\""), "{svg}");
+  // Only cells satisfying the predicate are drawn.
+  let half = interpret(
+    "ExportString[RegionPlot[x > 0.5, {x, 0, 1}, {y, 0, 1}, \
+     ColorFunction -> Function[{x, y}, RGBColor[x, 0, y]], \
+     Frame -> False], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(!half.contains("fill=\"rgb(2,0,2)\""), "{half}");
+  // `ColorFunctionScaling -> False` passes raw coordinates.
+  let raw = interpret(
+    "ExportString[RegionPlot[True, {x, 0, 1}, {y, 0, 1}, \
+     ColorFunction -> Function[{x, y}, GrayLevel[If[x > 5, 1, 0]]], \
+     ColorFunctionScaling -> False, Frame -> False], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(!raw.contains("rgb(255,255,255)"), "{raw}");
 }

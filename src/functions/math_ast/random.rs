@@ -1544,6 +1544,52 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     Expr::FunctionCall { name, args: dargs }
+      if name == "MixtureDistribution" && dargs.len() == 2 =>
+    {
+      // Pick a component by its (normalized) weight, then delegate the draw
+      // to that component's own sampler.
+      let (Expr::List(weights), Expr::List(comps)) = (&dargs[0], &dargs[1])
+      else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      let ws: Option<Vec<f64>> = weights.iter().map(try_eval_to_f64).collect();
+      let Some(ws) = ws else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      let total: f64 = ws.iter().sum();
+      if ws.len() != comps.len()
+        || ws.is_empty()
+        || ws.iter().any(|w| *w < 0.0)
+        || total <= 0.0
+      {
+        return Ok(unevaluated("RandomVariate", args));
+      }
+      let count = n.unwrap_or(1);
+      let mut out = Vec::with_capacity(count);
+      for _ in 0..count {
+        let u: f64 = crate::with_rng(|rng| rng.gen_range(0.0..total));
+        let mut acc = 0.0;
+        let mut idx = ws.len() - 1;
+        for (i, w) in ws.iter().enumerate() {
+          acc += w;
+          if u < acc {
+            idx = i;
+            break;
+          }
+        }
+        let draw = random_variate_ast(&[comps[idx].clone()])?;
+        if matches!(&draw, Expr::FunctionCall { name, .. } if name == "RandomVariate")
+        {
+          return Ok(unevaluated("RandomVariate", args));
+        }
+        out.push(draw);
+      }
+      match n {
+        None => Ok(out.remove(0)),
+        Some(_) => Ok(Expr::List(out.into())),
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
       if name == "ParetoDistribution" && dargs.len() == 2 =>
     {
       // Inverse-transform sampling: the CDF is 1 - (k/x)^alpha for x >= k,

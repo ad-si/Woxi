@@ -3905,6 +3905,17 @@ would have to be recovered by sampling and the interpolation scheme guessed.
 The indexed schemes (1, 2, 3) are implemented but scheme 1 agrees to ~15 digits
 rather than bit for bit.
 
+### `ColorData["Named"]` collections (Studio: Select, View and Compare Named Colors demo)
+
+`ColorData["Named"]`, `ColorData[scheme, "Range"]` and
+`ColorData[scheme, "ColorList"]` stay unevaluated for the named collections,
+so the Demonstration `Select, View and Compare Named Colors` initializes with
+`Part::partw` errors and its color-dot panels are empty. Only `"HTML"` and
+`"Legacy"` have lookup tables (by name). Making the notebook work needs the
+exact `"Atoms"`, `"Crayola"`, `"GeologicAges"`, `"WebSafe"` and `"System"`
+tables (names, RGB values and per-channel exactness) plus the shape of the
+`"Range"` result, none of which can be reconstructed without `wolframscript`.
+
 ### `ColorQuantize` is a stub
 
 Echoes unevaluated; a median-cut palette choice would likely be a

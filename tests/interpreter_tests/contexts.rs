@@ -724,3 +724,23 @@ mod system_context_heads {
     );
   }
 }
+
+/// A notebook stores `\[HappySmiley]`, `\[ClubSuit]` and friends as the bare
+/// glyph; they name symbols like any letter, so such source must parse.
+mod bare_glyph_symbols {
+  use super::*;
+
+  #[test]
+  fn smiley_and_suit_glyphs_are_symbols() {
+    for glyph in [
+      '\u{2639}', '\u{263A}', '\u{2660}', '\u{2661}', '\u{2662}', '\u{2663}',
+      '\u{F721}', '\u{F722}',
+    ] {
+      assert_eq!(interpret(&format!("Head[{glyph}]")).unwrap(), "Symbol");
+      assert_eq!(
+        interpret(&format!("Length[{{Style[{glyph}, 24], 1}}]")).unwrap(),
+        "2"
+      );
+    }
+  }
+}

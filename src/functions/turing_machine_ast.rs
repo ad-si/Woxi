@@ -325,8 +325,9 @@ fn simulate(
   results
 }
 
-/// The background colour of an `{state, {cells, background}}` initial
-/// condition, or `None` when the tape is an ordinary finite (cyclic) list.
+/// The background of an `{state, {cells, background}}` initial condition, or
+/// `None` when the tape is an ordinary finite (cyclic) list. The background is
+/// a single colour or a non-empty list of colours repeated periodically.
 fn infinite_tape_background(init: &Expr) -> Option<Expr> {
   let Expr::List(items) = init else { return None };
   if items.len() != 2 {
@@ -338,8 +339,24 @@ fn infinite_tape_background(init: &Expr) -> Option<Expr> {
   // `{cells, background}`: a list of cells followed by a single colour.
   (tape.len() == 2
     && matches!(&tape[0], Expr::List(_))
-    && matches!(&tape[1], Expr::Integer(_)))
+    && background_pattern(&tape[1]).is_some())
   .then(|| tape[1].clone())
+}
+
+/// The colours of a background spec: one integer, or a non-empty integer list
+/// that repeats periodically in both directions.
+fn background_pattern(bg: &Expr) -> Option<Vec<u8>> {
+  match bg {
+    Expr::Integer(n) => Some(vec![*n as u8]),
+    Expr::List(items) if !items.is_empty() => items
+      .iter()
+      .map(|e| match e {
+        Expr::Integer(n) => Some(*n as u8),
+        _ => None,
+      })
+      .collect(),
+    _ => None,
+  }
 }
 
 /// Run a machine on an infinite background tape. The head can move at most one
@@ -359,11 +376,11 @@ fn turing_machine_infinite(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Expr::List(tape_spec) = &items[1] else {
     return Ok(unevaluated("TuringMachine", args));
   };
-  let (Expr::List(cells), Expr::Integer(bg)) = (&tape_spec[0], &tape_spec[1])
+  let (Expr::List(cells), Some(bg)) =
+    (&tape_spec[0], background_pattern(&tape_spec[1]))
   else {
     return Ok(unevaluated("TuringMachine", args));
   };
-  let bg = *bg as u8;
   let content: Vec<u8> = cells
     .iter()
     .map(|e| match e {
@@ -381,10 +398,14 @@ fn turing_machine_infinite(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Offset 0 is the head's starting cell, and the given content starts there.
   let pad = steps + 1;
-  let mut tape = vec![bg; pad];
-  tape.extend(content.iter().copied());
-  tape.resize(pad + content.len().max(1) + pad, bg);
+  // A periodic background is aligned so that the first cell of the initial
+  // content holds the first colour of the pattern.
   let head = pad + start_pos - 1;
+  let total = pad + content.len().max(1) + pad;
+  let mut tape: Vec<u8> = (0..total)
+    .map(|i| bg[(i as i64 - pad as i64).rem_euclid(bg.len() as i64) as usize])
+    .collect();
+  tape[pad..pad + content.len()].copy_from_slice(&content);
 
   let transitions = decode_rule(rule_num, num_states, num_colors);
   let results = simulate(
