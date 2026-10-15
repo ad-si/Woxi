@@ -172,6 +172,7 @@ LetterlikeSymbolChar = _{ "\u{2026}" | "\u{22EF}" | "\u{22EE}" | "\u{22F0}" | "\
   | "\u{266F}" | "\u{266D}" | "\u{266E}"
   | "\u{2609}" | "\u{263F}" | "\u{2640}" | "\u{F3DF}" | "\u{2642}" | "\u{2643}" | "\u{2644}"
   | "\u{26E2}" | "\u{2646}" | "\u{2647}"
+  | "\u{2639}" | "\u{263A}" | '\u{2660}'..'\u{2663}' | '\u{F720}'..'\u{F729}'
 }
 
 // Bare big-operator glyphs (∑, ∏) used purely for display inside a
