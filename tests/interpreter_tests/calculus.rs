@@ -20289,6 +20289,39 @@ mod ndsolve_step_forcing {
   }
 }
 
+mod ndsolve_delay_equations {
+  use super::*;
+
+  /// `x'[t] == -x[t - 1]` with constant history 1 has the piecewise
+  /// polynomial solution 1 - t, (t-2)^2/2 - 1/2, ... (method of steps).
+  #[test]
+  fn single_delay_matches_method_of_steps() {
+    let code = "s = NDSolve[{x'[t] == -x[t - 1], x[t /; t <= 0] == 1}, x, \
+       {t, 0, 3}]; Round[{x[1/2], x[1], x[2], x[3]} /. First[s], 10^-4]";
+    assert_eq!(interpret(code).unwrap(), "{1/2, 0, -1/2, -1667/10000}");
+  }
+
+  /// A zero delay is an ordinary ODE; the history condition just supplies
+  /// the initial value.
+  #[test]
+  fn history_condition_with_zero_delay() {
+    let code = "s = NDSolve[{y'[t] == -y[t] + 0.5*y[t - 0], \
+       y[t /; t <= 0] == 2}, y, {t, 0, 2}]; \
+       Round[y[2] /. First[s], 10^-3]";
+    assert_eq!(interpret(code).unwrap(), "92/125");
+  }
+
+  /// A history condition may use any constant, and a parameterised
+  /// delay inside a coupled system works as well.
+  #[test]
+  fn coupled_system_with_delay_and_history() {
+    let code = "s = NDSolve[{u'[t] == -v[t - 2], v'[t] == u[t], \
+       u[t /; t <= 0] == 1, v[t /; t <= 0] == 0}, {u, v}, {t, 0, 2}]; \
+       Round[{u[2], v[2]} /. First[s], 10^-3]";
+    assert_eq!(interpret(code).unwrap(), "{1, 2}");
+  }
+}
+
 mod integrate_piecewise_disjunction {
   use super::*;
 
