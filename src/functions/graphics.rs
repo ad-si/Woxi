@@ -19931,8 +19931,11 @@ pub(crate) fn style_pushed_into_layout(
   let restyle = |e: &Expr| {
     // A `Grid` span marker holds no content and is only recognized bare:
     // inside a `Style` it would be drawn as its own name.
+    // `Null` (an `If[cond, …]` whose condition failed) draws as nothing,
+    // but inside a `Style` it would be typeset as the word "Null".
     if matches!(e, Expr::Graphics { .. })
       || is_span_marker(e)
+      || matches!(e, Expr::Identifier(n) if n == "Null")
       || crate::evaluator::lays_out_a_graphic(e)
     {
       return e.clone();
