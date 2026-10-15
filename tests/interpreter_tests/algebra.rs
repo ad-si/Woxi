@@ -9321,6 +9321,25 @@ mod find_root {
   }
 
   #[test]
+  fn find_root_with_search_bounds() {
+    // {var, x0, xmin, xmax} confines the search to [xmin, xmax].
+    assert_eq!(
+      interpret(
+        "Abs[(t /. FindRoot[Cos[t] - 1/2, {t, 1.2, 0.95, 2.2}]) - Pi/3] < 10^-10"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[(t /. FindRoot[Cos[t] - 1/2, {t, 4.9, 4., 5.35}]) - 5*Pi/3] < 10^-10"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn nonlinear_system_not_monotone_in_max_norm() {
     // The first full Newton step trades one component's residual for the
     // other's; it must still be taken instead of stalling at the start.
