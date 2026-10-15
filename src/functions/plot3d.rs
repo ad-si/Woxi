@@ -7354,15 +7354,31 @@ fn markup_char_count(markup: &str) -> usize {
   count.max(1)
 }
 
-/// True when `data` is a list of `{x, y, z}` triples of scalars. Such a list
-/// is scattered/gridded point data, not a z-matrix with three columns.
+/// True when `data` is a list of `{x, y, z}` triples of numbers that fill a
+/// complete tensor grid. Such a list is gridded point data, not a z-matrix
+/// that merely happens to have three columns.
 fn is_xyz_point_list(data: &[Expr]) -> bool {
-  data.iter().all(|row| match row {
-    Expr::List(r) => {
-      r.len() == 3 && r.iter().all(|e| !matches!(e, Expr::List(_)))
+  let mut points = Vec::with_capacity(data.len());
+  for row in data {
+    match row {
+      Expr::List(r) if r.len() == 3 => {
+        match (
+          try_eval_to_f64(&r[0]),
+          try_eval_to_f64(&r[1]),
+          try_eval_to_f64(&r[2]),
+        ) {
+          (Some(x), Some(y), Some(z))
+            if x.is_finite() && y.is_finite() && z.is_finite() =>
+          {
+            points.push((x, y, z))
+          }
+          _ => return false,
+        }
+      }
+      _ => return false,
     }
-    _ => false,
-  })
+  }
+  resample_tensor_grid(&points).is_some()
 }
 
 /// If `points` fill a complete tensor grid (every combination of the unique
