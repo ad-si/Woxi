@@ -12437,6 +12437,17 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       + estimate_display_width(exp) * 0.7;
   }
 
+  // `f'[x]`-style derivatives type as the function with prime marks (see
+  // `as_derivative_of`), not as the `Derivative[n][f]` source.
+  if let Some((func, order)) = as_derivative_of(expr) {
+    let marks = if order <= 3 {
+      order as f64
+    } else {
+      (order.to_string().len() + 2) as f64 * 0.7
+    };
+    return estimate_display_width(func) + marks;
+  }
+
   match expr {
     // Atoms
     // A string carrying inline linear syntax
@@ -12475,9 +12486,18 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       let digit_count = s.trim_start_matches('-').len();
       s.len() as f64 + digit_group_extra_width(digit_count)
     }
-    Expr::Real(_) | Expr::Constant(_) | Expr::Slot(_) => {
-      expr_to_output(expr).len() as f64
+    // A machine real shows at 6 significant figures, like
+    // `expr_to_svg_markup` draws it, not at full InputForm precision.
+    Expr::Real(f) => {
+      let parts = machine_real_display_parts(*f);
+      match parts.exponent {
+        Some(exp) => {
+          parts.mantissa.len() as f64 + 3.0 + exp.to_string().len() as f64 * 0.7
+        }
+        None => parts.mantissa.len() as f64,
+      }
     }
+    Expr::Constant(_) | Expr::Slot(_) => expr_to_output(expr).len() as f64,
 
     // List → {a, b, c}: 2 for braces + items + separators
     Expr::List(items) => {
