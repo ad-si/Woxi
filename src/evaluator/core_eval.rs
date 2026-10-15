@@ -104,6 +104,10 @@ pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
     // (e.g. `x = Sin[a]` with `a` unbound); re-evaluating those on lookup is
     // also the right behaviour (matches wolframscript: when `a` later gets a
     // value, `x` picks it up).
+    // An `InterpolatingFunction[…]` is finished data (an NDSolve or
+    // Interpolation result): re-evaluating it would walk every tabulated
+    // point on each lookup of the symbol that holds it.
+    Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => false,
     Expr::FunctionCall { .. } => true,
     Expr::BinaryOp { .. } => true,
     Expr::UnaryOp { .. } => true,
@@ -1138,6 +1142,17 @@ pub fn evaluate_expr_to_expr_inner(
         return evaluate_function_call_ast("List", &evaluated);
       }
       Ok(Expr::List(evaluated.into()))
+    }
+    // An `InterpolatingFunction[…]` is finished data (an NDSolve or
+    // Interpolation result whose tabulated points are already numbers), so
+    // evaluating it again would only walk every data point — and that walk
+    // happens each time the object is looked up or substituted.
+    Expr::FunctionCall { name, args }
+      if name == "InterpolatingFunction"
+        && (2..=4).contains(&args.len())
+        && matches!(args[0], Expr::List(_)) =>
+    {
+      Ok(expr.clone())
     }
     Expr::FunctionCall { name, args } => {
       // `System`Plus[1, 2]` is the built-in `Plus[1, 2]`: a head that spells

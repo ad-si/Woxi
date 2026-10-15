@@ -24633,6 +24633,35 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     }
   }
 
+  /// A slider whose spec is all exact integers (`{c, -2, 2}`) but whose
+  /// saved state is a machine real (`-1.999`) is continuous; it used to keep
+  /// an integer step and bind the value as an exact rational.
+  #[test]
+  fn saved_real_on_integer_range_makes_slider_continuous() {
+    let dump = "DynamicModuleBox[{$CellContext`c$$ = -1.999}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> $CellContext`c$$, \n\
+      \"Specifications\" :> {{{$CellContext`c$$, -2, \"c\"}, -2, 2}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let state = instantiate_manipulate_from_box_dump(dump)
+      .expect("the reconstructed Manipulate must build a widget");
+    match &state.controls[0] {
+      manipulate::ControlState::Continuous {
+        current,
+        is_real,
+        step,
+        ..
+      } => {
+        assert_eq!(*current, -1.999);
+        assert!(*is_real);
+        assert!(*step < 1.0);
+      }
+      other => panic!("expected a continuous control, got {other:?}"),
+    }
+  }
+
   /// A saved `ManipulateBoxes[…]` dump — the shape a Wolfram Demonstration
   /// downloaded straight from a share link carries, with no Input-cell
   /// source to fall back on (see [`instantiate_manipulate_from_box_dump`]) —

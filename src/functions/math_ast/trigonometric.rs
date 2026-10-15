@@ -1035,6 +1035,44 @@ fn build_complex_float_result(
   )
 }
 
+/// Evaluate one of the circular/hyperbolic functions at a complex float
+/// `re + im*I` by combining the complex sine/cosine (or sinh/cosh).
+/// Returns `None` for a pure real argument or an unknown name.
+fn complex_float_trig(
+  name: &str,
+  arg: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  if !contains_float(arg) {
+    return None;
+  }
+  let (a, b) = try_extract_complex_float(arg)?;
+  if b == 0.0 {
+    return None;
+  }
+  let (s, c) = match name {
+    "Tanh" | "Coth" | "Sech" | "Csch" => (
+      (a.sinh() * b.cos(), a.cosh() * b.sin()),
+      (a.cosh() * b.cos(), a.sinh() * b.sin()),
+    ),
+    "Cot" | "Sec" | "Csc" => (
+      (a.sin() * b.cosh(), a.cos() * b.sinh()),
+      (a.cos() * b.cosh(), -(a.sin() * b.sinh())),
+    ),
+    _ => return None,
+  };
+  let div = |n: (f64, f64), d: (f64, f64)| {
+    let den = d.0 * d.0 + d.1 * d.1;
+    ((n.0 * d.0 + n.1 * d.1) / den, (n.1 * d.0 - n.0 * d.1) / den)
+  };
+  let r = match name {
+    "Tanh" => div(s, c),
+    "Coth" | "Cot" => div(c, s),
+    "Sech" | "Sec" => div((1.0, 0.0), c),
+    _ => div((1.0, 0.0), s),
+  };
+  Some(build_complex_float_result(r.0, r.1))
+}
+
 /// Check if an argument is Indeterminate or ComplexInfinity.
 /// For periodic/trig functions, both should return Indeterminate.
 fn is_indeterminate_or_complex_infinity(expr: &Expr) -> bool {
@@ -2132,6 +2170,9 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::BigFloat(_, _)) {
     return bigfloat_trig_ratio(&args[0], None, "Cos");
   }
+  if let Some(r) = complex_float_trig("Sec", &args[0]) {
+    return r;
+  }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_sec(k, n)
   {
@@ -2184,6 +2225,9 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Csc of a BigFloat: 1/Sin[x] at arbitrary precision.
   if matches!(&args[0], Expr::BigFloat(_, _)) {
     return bigfloat_trig_ratio(&args[0], None, "Sin");
+  }
+  if let Some(r) = complex_float_trig("Csc", &args[0]) {
+    return r;
   }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_csc(k, n)
@@ -2239,6 +2283,9 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Cot of a BigFloat: Cos[x]/Sin[x] at arbitrary precision.
   if matches!(&args[0], Expr::BigFloat(_, _)) {
     return bigfloat_trig_ratio(&args[0], Some("Cos"), "Sin");
+  }
+  if let Some(r) = complex_float_trig("Cot", &args[0]) {
+    return r;
   }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_cot(k, n)
@@ -4402,6 +4449,9 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => return Ok(Expr::Real(f.tanh())),
     _ => {}
   }
+  if let Some(r) = complex_float_trig("Tanh", &args[0]) {
+    return r;
+  }
   // Tanh[Log[u]] = (u^2 - 1)/(u^2 + 1)
   if let Some(res) = hyperbolic_of_log("Tanh", &args[0]) {
     return res;
@@ -4462,6 +4512,9 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {}
   }
+  if let Some(r) = complex_float_trig("Coth", &args[0]) {
+    return r;
+  }
   // Coth[Log[u]] = (u^2 + 1)/(u^2 - 1)
   if let Some(res) = hyperbolic_of_log("Coth", &args[0]) {
     return res;
@@ -4511,6 +4564,9 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => return Ok(Expr::Integer(1)),
     Expr::Real(f) => return Ok(Expr::Real(1.0 / f.cosh())),
     _ => {}
+  }
+  if let Some(r) = complex_float_trig("Sech", &args[0]) {
+    return r;
   }
   // Sech[Log[u]] = (2 u)/(u^2 + 1)
   if let Some(res) = hyperbolic_of_log("Sech", &args[0]) {
@@ -4570,6 +4626,9 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(id_expr("ComplexInfinity"));
     }
     return Ok(Expr::Real(1.0 / s));
+  }
+  if let Some(r) = complex_float_trig("Csch", &args[0]) {
+    return r;
   }
   // Csch[Log[u]] = (2 u)/(u^2 - 1)
   if let Some(res) = hyperbolic_of_log("Csch", &args[0]) {

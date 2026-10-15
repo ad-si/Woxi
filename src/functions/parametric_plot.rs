@@ -532,10 +532,14 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let ok = evaluated_body
       .as_ref()
       .is_some_and(|ev| collect_curves(ev, &mut collected));
-    // Only list-shaped slots can resolve to coordinates later; a body of
-    // bare atoms (`{1, 2, 3}`) is not a curve specification at all.
+    // Only compound slots can resolve to coordinates later (a list, or a
+    // call/product such as `{k*c[t], A . c[t]}` returning a point per
+    // sample); a body of bare atoms (`{1, 2, 3}`) is not a curve
+    // specification at all.
     let has_slots = matches!(body, Expr::List(items)
-      if items.iter().any(|i| matches!(i, Expr::List(_))));
+      if items.iter().any(|i| !matches!(i,
+        Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_)
+        | Expr::BigFloat(..) | Expr::String(_) | Expr::Identifier(_))));
     if ok {
       collected
     } else if !has_slots {

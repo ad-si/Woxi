@@ -804,11 +804,11 @@ pub fn apply_function_to_arg(
         new_args.extend(args.iter().cloned());
         return evaluate_function_call_ast("Nearest", &new_args);
       }
-      // Nearest[data] is a NearestFunction; applying it forwards to the direct
-      // form: Nearest[data][x] -> Nearest[data, x].
-      if name == "Nearest" && args.len() == 1 {
-        let mut new_args = args.to_vec();
-        new_args.push(arg.clone());
+      // Nearest[data, opts…] is a NearestFunction; applying it forwards to the
+      // direct form: Nearest[data, opts…][x] -> Nearest[data, x, opts…].
+      if name == "Nearest" && is_nearest_function_head(args) {
+        let mut new_args = vec![args[0].clone(), arg.clone()];
+        new_args.extend(args[1..].iter().cloned());
         return evaluate_function_call_ast("Nearest", &new_args);
       }
       // Distribution operator forms: CDF[dist][x] -> CDF[dist, x], and the
@@ -2515,11 +2515,12 @@ pub fn apply_curried_call(
       // form: Nearest[data][x] -> Nearest[data, x], and
       // Nearest[data][x, n] -> Nearest[data, x, n].
       if name == "Nearest"
-        && func_args.len() == 1
+        && is_nearest_function_head(func_args)
         && (1..=2).contains(&args.len())
       {
-        let mut new_args = func_args.to_vec();
+        let mut new_args = vec![func_args[0].clone()];
         new_args.extend(args.iter().cloned());
+        new_args.extend(func_args[1..].iter().cloned());
         return evaluate_function_call_ast("Nearest", &new_args);
       }
       if is_subject_first_operator(name)
@@ -3290,4 +3291,16 @@ fn apply_transformation_function(
   }
 
   Ok(Expr::List(result.into()))
+}
+
+/// True for the arguments of a `NearestFunction`-style head
+/// `Nearest[data, opts…]`: the data followed only by options, so applying it
+/// to a target forwards to `Nearest[data, x, opts…]`.
+fn is_nearest_function_head(args: &[Expr]) -> bool {
+  !args.is_empty()
+    && args[1..].iter().all(|a| {
+      matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        || matches!(a, Expr::FunctionCall { name, args }
+          if (name == "Rule" || name == "RuleDelayed") && args.len() == 2)
+    })
 }

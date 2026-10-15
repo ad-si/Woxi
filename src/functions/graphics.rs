@@ -3999,6 +3999,28 @@ fn graphics_text_content(expr: &Expr) -> String {
     {
       graphics_text_content(&args[0])
     }
+    // `Pane[content, width, …]` sets `content` in a box `width` printer's
+    // points wide: its text wraps there (an average character being about
+    // half of the default 14-point font) rather than printing as the call.
+    // `Pane[content]` and a non-numeric size just show the content.
+    Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
+      let text = graphics_text_content(&args[0]);
+      let width = match args.get(1) {
+        Some(Expr::List(dims)) => dims.first(),
+        other => other,
+      };
+      let points = match width {
+        Some(Expr::Integer(n)) => Some(*n as f64),
+        Some(Expr::Real(f)) => Some(*f),
+        _ => None,
+      };
+      match points {
+        Some(w) if w > 0.0 => {
+          wrap_text_to_width(&text, ((w / 7.0).floor() as usize).max(1))
+        }
+        _ => text,
+      }
+    }
     Expr::FunctionCall { name, args }
       if name == "Row"
         && !args.is_empty()
@@ -5543,8 +5565,12 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
         bb.include_point(x, y);
       }
     }
-    Primitive::TextPrim { x, y, .. } => {
-      bb.include_point(*x, *y);
+    // A `Scaled`/`ImageScaled` anchor is a fraction of the range, so it
+    // says nothing about where the range lies.
+    Primitive::TextPrim { x, y, scaled, .. } => {
+      if !*scaled {
+        bb.include_point(*x, *y);
+      }
     }
     Primitive::RasterPrim {
       x_min,
@@ -5558,7 +5584,11 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
     }
     // An inset keeps its own pixel size, so it anchors the range at its
     // position and nothing more.
-    Primitive::InsetGraphic { x, y, .. } => bb.include_point(*x, *y),
+    Primitive::InsetGraphic { x, y, scaled, .. } => {
+      if !*scaled {
+        bb.include_point(*x, *y);
+      }
+    }
     // An unbounded fill only anchors the plot range at its defining
     // points; the fill itself extends past whatever range results.
     Primitive::HalfPlanePrim { p, v, w, .. } => {

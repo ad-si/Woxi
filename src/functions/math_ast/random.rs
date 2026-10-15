@@ -1513,6 +1513,31 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     Expr::FunctionCall { name, args: dargs }
+      if name == "LogNormalDistribution" && dargs.len() == 2 =>
+    {
+      // exp(X) with X ~ Normal(mu, sigma) is log-normal.
+      let (Some(mu), Some(sigma)) =
+        (try_eval_to_f64(&dargs[0]), try_eval_to_f64(&dargs[1]))
+      else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      let Ok(normal) = Normal::new(mu, sigma) else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      if sigma <= 0.0 {
+        return Ok(unevaluated("RandomVariate", args));
+      }
+      let sample = || -> Expr {
+        Expr::Real(crate::with_rng(|rng| normal.sample(rng)).exp())
+      };
+      match n {
+        None => Ok(sample()),
+        Some(count) => Ok(Expr::List(
+          (0..count).map(|_| sample()).collect::<Vec<_>>().into(),
+        )),
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
       if name == "ProbabilityDistribution" && dargs.len() == 2 =>
     {
       // Tabulate the density (continuous `{x, lo, hi}`) on a fine grid, or
