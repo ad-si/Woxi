@@ -20441,4 +20441,20 @@ mod ndsolve_delay {
     let result = interpret(code).unwrap();
     assert!(result.contains("0.7358"), "{result}");
   }
+
+  /// An `InterpolatingFunction` is an atomic object: replacement rules do
+  /// not reach into its tabulated data, so an NDSolve result can be sampled
+  /// through `/.` without walking (and copying) every data point.
+  #[test]
+  fn replace_all_does_not_descend_into_interpolating_function() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{1, 4, 9, 16}]; \
+         {(f /. 4 -> 5) === f, (h[f, t] /. t -> 2) === h[f, 2], \
+          f[2], (g[t] /. g -> f /. t -> 2)}"
+      )
+      .unwrap(),
+      "{True, True, 4, 4}"
+    );
+  }
 }
