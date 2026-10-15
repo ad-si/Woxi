@@ -11316,6 +11316,44 @@ fn polygon_path_area_expr(path: &[Expr]) -> Expr {
   times(vec![half, magnitude])
 }
 
+/// The `(outer, hole)` regions of `BooleanRegion[#1 && !#2 &, {outer, hole}]`
+/// when the hole's bounding box lies inside the outer region's, so that the
+/// difference removes exactly the hole's area.
+fn boolean_difference_parts(args: &[Expr]) -> Option<(Expr, Expr)> {
+  let [Expr::Function { body }, Expr::List(regions)] = args else {
+    return None;
+  };
+  let expected = call("And", vec![Expr::Slot(1), call1("Not", Expr::Slot(2))]);
+  if regions.len() != 2 || expr_to_string(body) != expr_to_string(&expected) {
+    return None;
+  }
+  let bounds = |r: &Expr| -> Option<Vec<(f64, f64)>> {
+    let b = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "RegionBounds",
+      r.clone(),
+    ))
+    .ok()?;
+    let Expr::List(dims) = &b else { return None };
+    dims
+      .iter()
+      .map(|d| match d {
+        Expr::List(lh) if lh.len() == 2 => Some((
+          crate::functions::graphics::expr_to_f64(&lh[0])?,
+          crate::functions::graphics::expr_to_f64(&lh[1])?,
+        )),
+        _ => None,
+      })
+      .collect()
+  };
+  let (outer, hole) = (bounds(&regions[0])?, bounds(&regions[1])?);
+  let inside = outer.len() == hole.len()
+    && outer
+      .iter()
+      .zip(hole.iter())
+      .all(|(o, h)| h.0 >= o.0 - 1e-12 && h.1 <= o.1 + 1e-12);
+  inside.then(|| (regions[0].clone(), regions[1].clone()))
+}
+
 /// Compute the centroid of a geometric region.
 fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(call1("RegionCentroid", expr.clone()));
@@ -11646,6 +11684,41 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           return compute_polygon_centroid(pts);
         }
         unevaluated()
+      }
+      // Region difference `A && !B`, with B lying inside A: the centroid is
+      // the area-weighted difference of the two centroids.
+      "BooleanRegion" if boolean_difference_parts(args).is_some() => {
+        let (outer, hole) = boolean_difference_parts(args).unwrap();
+        let eval = crate::evaluator::evaluate_expr_to_expr;
+        let area = |r: &Expr| eval(&call1("RegionMeasure", r.clone()));
+        let centroid = |r: &Expr| eval(&call1("RegionCentroid", r.clone()));
+        let (a1, a2) = (area(&outer)?, area(&hole)?);
+        let (c1, c2) = (centroid(&outer)?, centroid(&hole)?);
+        match (&c1, &c2) {
+          (Expr::List(c1), Expr::List(c2)) if c1.len() == c2.len() => {
+            let coords: Vec<Expr> = c1
+              .iter()
+              .zip(c2.iter())
+              .map(|(p, q)| {
+                call1(
+                  "Together",
+                  div2(
+                    plus(vec![
+                      times(vec![a1.clone(), p.clone()]),
+                      times(vec![Expr::Integer(-1), a2.clone(), q.clone()]),
+                    ]),
+                    plus(vec![
+                      a1.clone(),
+                      times(vec![Expr::Integer(-1), a2.clone()]),
+                    ]),
+                  ),
+                )
+              })
+              .collect();
+            eval(&Expr::List(coords.into()))
+          }
+          _ => unevaluated(),
+        }
       }
       // Line[{{x1,y1},{x2,y2},...}] — centroid is weighted average by segment length
       "Line" => {
