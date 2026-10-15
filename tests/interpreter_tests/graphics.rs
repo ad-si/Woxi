@@ -240,6 +240,19 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_call_slots_each_return_a_point() {
+      // Slots written as products/dot products/calls (`k*c[t]`, `m . c[t]`)
+      // are not literal pairs but each yields a point per sample, so the
+      // body is a group of three curves rather than an invalid `{fx, fy}`.
+      let svg = export_svg(
+        "c[t_] := {Cos[t], Sin[t]}; m = {{1, 0}, {0, 2}}; \
+         ParametricPlot[{3*c[t], m . c[t], c[t]}, {t, 0, 2 Pi}, \
+           Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 3);
+    }
+
+    #[test]
     fn parametric_plot_if_without_else_hides_curve() {
       // `If[cond, curve]` with a false `cond` evaluates to `Null`, which
       // hides that curve instead of making the whole body unplottable.
