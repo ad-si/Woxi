@@ -32118,4 +32118,46 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
     assert!(state.error.is_none(), "{:?}", state.error);
     assert!(state.graphics_handle.is_some(), "the circle must draw");
   }
+
+  /// A translucent `ContourPlot3D` slicing plane shown over a `Graphics3D`
+  /// with a fixed `PlotRange` (the "Orthographic Projection of
+  /// Parallelepipeds" layout) used to cover the whole picture in opaque
+  /// blue: the surface lost its `Opacity` when `Show` merged it and was not
+  /// cut to the plot range.
+  #[test]
+  fn translucent_slicing_plane_notebook_stays_inside_its_range() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Show[{Graphics3D[{Red, Polygon[{{0, 0, 0}, {s, 0, 0}, {s, s, s}}]}, Axes -> True, PlotRange -> {{-5, 20}, {-5, 20}, {0, 15}}]}, {ContourPlot3D[a x + y + z == k, {x, -10, 60}, {y, -10, 60}, {z, -10, 60}, Mesh -> None, PlotPoints -> 6, ContourStyle -> Directive[Blue, Opacity[0.1]]]}, SphericalRegion -> True], {{a, 1}, 0, 2}, {{k, 10}, 0, 15}, {{s, 4}, 1, 10}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some(), "the scene must draw");
+
+    let svg = woxi::interpret_with_stdout(&format!(
+      "a = 1; k = 10; s = 4;\n{}",
+      widget.body
+    ))
+    .expect("the body must render")
+    .graphics
+    .expect("the body must produce a graphic");
+    assert!(
+      svg.contains("opacity=\"0.1\""),
+      "the plane must be translucent"
+    );
+    for poly in svg.split("<polygon points=\"").skip(1) {
+      let pts = poly.split('"').next().unwrap();
+      for c in pts.split(|ch| ch == ' ' || ch == ',') {
+        let v: f64 = c.parse().unwrap();
+        assert!((-1.0..=361.0).contains(&v), "polygon spills out: {v}");
+      }
+    }
+  }
 }
