@@ -7439,6 +7439,23 @@ fn prints_as_not(e: &Expr) -> bool {
     if name == "Not" && args.len() == 1)
 }
 
+/// Whether `e` prints as an assignment (`=`, `:=`, `^=`, `^:=`) or a `;`
+/// sequence — forms that bind looser than every arithmetic operator and so
+/// need parentheses when they are an operand of one.
+fn is_loose_assignment(e: &Expr) -> bool {
+  match e {
+    Expr::CompoundExpr(_) => true,
+    Expr::FunctionCall { name, args } => {
+      (matches!(
+        name.as_str(),
+        "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+      ) && args.len() == 2)
+        || (name == "CompoundExpression" && args.len() >= 2)
+    }
+    _ => false,
+  }
+}
+
 /// Whether `e` prints with a leading `-`, in either spelling. A held
 /// `Minus[x]` keeps the call form until the recursion reaches it, so the
 /// parenthesisation checks above the recursion have to recognise both:
@@ -10344,6 +10361,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             ..
           }
         ) || matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
+          || is_loose_assignment(right)
         {
           format!("-({right_str})")
         } else {
@@ -10468,8 +10486,19 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         BinaryOperator::Times | BinaryOperator::Divide | BinaryOperator::Power
       );
 
-      let left_str = expr_to_string(left);
-      let right_str = expr_to_string(right);
+      // An assignment or a `;` sequence binds looser than every arithmetic
+      // and logical operator, so as an operand it needs its own parentheses:
+      // `a - (h = b) c`, not the re-parsed-differently `a - h = b*c`.
+      let operand_str = |e: &Expr| -> String {
+        let s = expr_to_string(e);
+        if is_loose_assignment(e) {
+          format!("({s})")
+        } else {
+          s
+        }
+      };
+      let left_str = operand_str(left);
+      let right_str = operand_str(right);
 
       // Special case: Or wraps And children in parens (Wolfram convention)
       if matches!(op, BinaryOperator::Or) {
@@ -10803,7 +10832,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         ) || matches!(
           operand.as_ref(),
           Expr::Function { .. }
-        ) || prints_as_not(operand.as_ref());
+        ) || prints_as_not(operand.as_ref())
+          || is_loose_assignment(operand);
         if needs_parens {
           format!("-({inner})")
         } else {
