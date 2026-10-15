@@ -3401,6 +3401,30 @@ mod graphics {
 }
 
 mod plot3d {
+  /// A translucent `PlotStyle` surface must stay translucent when `Show`
+  /// re-renders it from its symbolic form together with other graphics,
+  /// for every surface plot that carries one.
+  #[test]
+  fn shown_surfaces_keep_their_plot_style_opacity() {
+    for plot in [
+      "Plot3D[x y, {x, -1, 1}, {y, -1, 1}, PlotStyle -> Opacity[0.3]]",
+      "ParametricPlot3D[{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}, \
+       {u, 0, 2 Pi}, {v, 0, Pi}, PlotStyle -> Directive[Opacity[0.3], Red]]",
+      "SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}, \
+       PlotStyle -> Directive[Blue, Opacity[0.3]]]",
+    ] {
+      let opacity = |code: &str| {
+        let shown =
+          interpret(&format!("p = {plot}; {code} // InputForm")).unwrap();
+        shown.contains("Opacity[0.3]")
+      };
+      assert!(opacity("p[[1]]"), "symbolic form of {plot}");
+      let svg =
+        export_svg(&format!("Show[{plot}, Graphics3D[Point[{{0, 0, 0}}]]]"));
+      assert!(svg.contains("opacity=\"0.3\""), "Show of {plot}");
+    }
+  }
+
   /// Faces shared by two touching opaque boxes are interior to the union;
   /// a grid of unit cubes (e.g. a Menger-style fractal) must not emit them.
   #[test]

@@ -773,6 +773,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if !matches!(mesh_mode, MeshMode::All) {
           content.push(call0("EdgeForm"));
         }
+        content.extend(surface_opacity_directive(&plot_styles, surface_idx));
         for i in 0..GRID_N {
           for j in 0..GRID_N {
             let (Some(a), Some(b), Some(c), Some(d)) = (
@@ -3448,6 +3449,18 @@ fn plot_style_for_surface(
   } else {
     Some(&styles[surface_idx % styles.len()])
   }
+}
+
+/// The `Opacity[…]` a translucent `PlotStyle` gives a surface, placed at the
+/// head of its symbolic `GraphicsComplex` so the surface stays translucent
+/// when `Show` re-renders it together with other graphics.
+fn surface_opacity_directive(
+  styles: &[StyleState3D],
+  surface_idx: usize,
+) -> Option<Expr> {
+  plot_style_for_surface(styles, surface_idx)
+    .filter(|style| style.opacity < 1.0)
+    .map(|style| call1("Opacity", Expr::Real(style.opacity)))
 }
 
 /// Split a `PlotStyle` option value into one style item per plotted
@@ -10914,6 +10927,11 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )],
           None => vec![polygon_expr],
         };
+      if let Some(opacity) =
+        surface_opacity_directive(&plot_styles, surface_idx)
+      {
+        gc_content.insert(0, opacity);
+      }
       // The sampling triangles are far finer than any mesh the plot
       // shows, so their outlines are suppressed — otherwise extracting
       // the primitives (`plot[[1]]`) into a `Graphics3D` would turn the
@@ -12233,6 +12251,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if mesh_style_none || !matches!(mesh_mode, MeshMode::All) {
           content.push(call0("EdgeForm"));
         }
+        content.extend(surface_opacity_directive(&plot_styles, surface_idx));
         for i in 0..grid_n {
           for j in 0..grid_n {
             let (Some(a), Some(b), Some(c), Some(d)) = (
