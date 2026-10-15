@@ -2019,42 +2019,32 @@ fn try_symbol_replace_all(
     }
 
     // Recurse into List items (when pattern is not "List")
-    Expr::List(items) => {
-      let mut new_items = Vec::with_capacity(items.len());
-      let mut any_changed = false;
-      for item in items {
-        if let Some(new_item) =
-          try_symbol_replace_all(item, pattern_sym, replacement)
-        {
-          new_items.push(new_item);
-          any_changed = true;
-        } else {
-          new_items.push(item.clone());
-        }
-      }
-      if any_changed {
-        Some(Expr::List(new_items.into()))
-      } else {
-        None
-      }
-    }
+    Expr::List(items) => map_unchanged_lazily::<()>(items, |item| {
+      Ok(try_symbol_replace_all(item, pattern_sym, replacement))
+    })
+    .unwrap_or(None)
+    .map(|new_items| Expr::List(new_items.into())),
 
     // FunctionCall head replacement: f -> g turns f[a,b] into g[a,b]
     Expr::FunctionCall { name, args } => {
       let head_changed = name == pattern_sym;
+      // An InterpolatingFunction is atomic: rules never reach its data.
+      let atomic = name == "InterpolatingFunction";
       // Recurse into args
-      let mut new_args = Vec::with_capacity(args.len());
-      let mut any_arg_changed = false;
-      for arg in args {
-        if let Some(new_arg) =
-          try_symbol_replace_all(arg, pattern_sym, replacement)
-        {
-          new_args.push(new_arg);
-          any_arg_changed = true;
-        } else {
-          new_args.push(arg.clone());
-        }
-      }
+      let changed_args = if atomic {
+        None
+      } else {
+        map_unchanged_lazily::<()>(args, |arg| {
+          Ok(try_symbol_replace_all(arg, pattern_sym, replacement))
+        })
+        .unwrap_or(None)
+      };
+      let any_arg_changed = changed_args.is_some();
+      let new_args = if head_changed || any_arg_changed {
+        changed_args.unwrap_or_else(|| args.to_vec())
+      } else {
+        Vec::new()
+      };
       if head_changed {
         match replacement {
           Expr::Identifier(new_head) => Some(Expr::FunctionCall {
@@ -2486,6 +2476,35 @@ fn renamed_pattern_parts(
   })
 }
 
+/// Rewrite the elements of `items` with `f`, which answers `None` for an
+/// element it leaves alone. Returns `None` when nothing changed, and
+/// otherwise the new element list. Unchanged elements are only copied once
+/// something actually changes, so a replacement that misses a large element
+/// (an InterpolatingFunction's data table, say) does not pay to clone it.
+fn map_unchanged_lazily<E>(
+  items: &[Expr],
+  mut f: impl FnMut(&Expr) -> Result<Option<Expr>, E>,
+) -> Result<Option<Vec<Expr>>, E> {
+  let mut out: Option<Vec<Expr>> = None;
+  for (i, item) in items.iter().enumerate() {
+    match f(item)? {
+      Some(new_item) => out
+        .get_or_insert_with(|| {
+          let mut v = Vec::with_capacity(items.len());
+          v.extend_from_slice(&items[..i]);
+          v
+        })
+        .push(new_item),
+      None => {
+        if let Some(v) = out.as_mut() {
+          v.push(item.clone());
+        }
+      }
+    }
+  }
+  Ok(out)
+}
+
 /// Try Flat subsequence replacement. For a Flat function f, matches f[a,b] within f[a,b,c]
 /// by trying contiguous subsequences. Recursively applies to subexpressions.
 fn try_flat_replace_all(
@@ -2494,6 +2513,12 @@ fn try_flat_replace_all(
   replacement: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
   match expr {
+    // An InterpolatingFunction is an atomic object: rules never reach into
+    // its tabulated data (and walking thousands of points per replacement
+    // makes sampling an NDSolve result through `/.` crawl).
+    Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => {
+      Ok(None)
+    }
     Expr::FunctionCall { name, args } => {
       let has_flat = is_builtin_flat(name)
         || crate::func_attrs_contains(name, Attributes::Flat);
@@ -2587,45 +2612,22 @@ fn try_flat_replace_all(
         }
       }
       // Recurse into subexpressions
-      let mut changed = false;
-      let mut new_args = Vec::with_capacity(args.len());
-      for arg in args {
-        if let Some(new_arg) = try_flat_replace_all(arg, pattern, replacement)?
-        {
-          new_args.push(new_arg);
-          changed = true;
-        } else {
-          new_args.push(arg.clone());
-        }
-      }
-      if changed {
-        Ok(Some(Expr::FunctionCall {
+      Ok(
+        map_unchanged_lazily(args, |arg| {
+          try_flat_replace_all(arg, pattern, replacement)
+        })?
+        .map(|new_args| Expr::FunctionCall {
           name: name.clone(),
           args: new_args.into(),
-        }))
-      } else {
-        Ok(None)
-      }
+        }),
+      )
     }
-    Expr::List(items) => {
-      let mut changed = false;
-      let mut new_items = Vec::with_capacity(items.len());
-      for item in items {
-        if let Some(new_item) =
-          try_flat_replace_all(item, pattern, replacement)?
-        {
-          new_items.push(new_item);
-          changed = true;
-        } else {
-          new_items.push(item.clone());
-        }
-      }
-      if changed {
-        Ok(Some(Expr::List(new_items.into())))
-      } else {
-        Ok(None)
-      }
-    }
+    Expr::List(items) => Ok(
+      map_unchanged_lazily(items, |item| {
+        try_flat_replace_all(item, pattern, replacement)
+      })?
+      .map(|new_items| Expr::List(new_items.into())),
+    ),
     _ => Ok(None),
   }
 }
@@ -2678,7 +2680,89 @@ fn canonicalize_rules(rules: &Expr) -> Expr {
   }
 }
 
+fn is_interpolating_function(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. } if name == "InterpolatingFunction")
+}
+
+fn contains_interpolating_function(e: &Expr) -> bool {
+  is_interpolating_function(e)
+    || crate::syntax::expr_children(e)
+      .into_iter()
+      .any(contains_interpolating_function)
+}
+
+/// Swap every `InterpolatingFunction[…]` in `e` for a placeholder symbol
+/// and remember the original in `held`.
+fn shield_interpolating_functions(e: &Expr, held: &RefCell<Vec<Expr>>) -> Expr {
+  if is_interpolating_function(e) {
+    let mut held = held.borrow_mut();
+    held.push(e.clone());
+    return Expr::Identifier(format!(
+      "$InterpolatingFunctionHold{}$",
+      held.len()
+    ));
+  }
+  if contains_interpolating_function(e) {
+    return crate::syntax::map_children(e, &|c| {
+      shield_interpolating_functions(c, held)
+    });
+  }
+  e.clone()
+}
+
+fn held_interpolating_function(name: &str, held: &[Expr]) -> Option<Expr> {
+  let n = name
+    .strip_prefix("$InterpolatingFunctionHold")?
+    .strip_suffix('$')?
+    .parse::<usize>()
+    .ok()?;
+  held.get(n.checked_sub(1)?).cloned()
+}
+
+fn restore_interpolating_functions(e: &Expr, held: &[Expr]) -> Expr {
+  match e {
+    Expr::Identifier(name) => {
+      held_interpolating_function(name, held).unwrap_or_else(|| e.clone())
+    }
+    // `f[x]` with a placeholder head is the stored function applied to `x`.
+    Expr::FunctionCall { name, args }
+      if let Some(func) = held_interpolating_function(name, held) =>
+    {
+      Expr::CurriedCall {
+        func: Box::new(func),
+        args: args
+          .iter()
+          .map(|a| restore_interpolating_functions(a, held))
+          .collect(),
+      }
+    }
+    _ => crate::syntax::map_children(e, &|c| {
+      restore_interpolating_functions(c, held)
+    }),
+  }
+}
+
+/// `expr /. rules`. An `InterpolatingFunction` is an atomic object —
+/// replacement rules never reach into its tabulated data — so each one is
+/// set aside as a placeholder while the rules run, instead of every
+/// replacement path walking, formatting and copying thousands of points.
 pub fn apply_replace_all_ast(
+  expr: &Expr,
+  rules: &Expr,
+) -> Result<Expr, InterpreterError> {
+  if !contains_interpolating_function(expr)
+    && !contains_interpolating_function(rules)
+  {
+    return apply_replace_all_ast_impl(expr, rules);
+  }
+  let held = RefCell::new(Vec::new());
+  let shielded_expr = shield_interpolating_functions(expr, &held);
+  let shielded_rules = shield_interpolating_functions(rules, &held);
+  let result = apply_replace_all_ast_impl(&shielded_expr, &shielded_rules)?;
+  Ok(restore_interpolating_functions(&result, &held.borrow()))
+}
+
+fn apply_replace_all_ast_impl(
   expr: &Expr,
   rules: &Expr,
 ) -> Result<Expr, InterpreterError> {

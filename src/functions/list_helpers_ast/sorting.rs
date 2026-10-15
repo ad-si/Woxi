@@ -1742,11 +1742,52 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
         if cmp != 0 {
           return cmp;
         }
-        let a_str = expr_to_string(a);
-        let b_str = expr_to_string(b);
+        let a_str = order_string(a);
+        let b_str = order_string(b);
         wolfram_string_order(&a_str, &b_str)
       }
     }
+  }
+}
+
+/// The full string two otherwise tied compound expressions are ordered by.
+/// An `InterpolatingFunction[…]` head spells out every tabulated point, so
+/// ordering `H[t] xA[t]` after substituting NDSolve results would format
+/// thousands of numbers per comparison; a digest of the data stands in for
+/// them, which still tells two different functions apart.
+fn order_string(e: &Expr) -> String {
+  if let Expr::CurriedCall { func, args } = e
+    && let Expr::FunctionCall { name, args: fargs } = func.as_ref()
+    && name == "InterpolatingFunction"
+  {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    fargs.len().hash(&mut hasher);
+    for part in fargs {
+      hash_numeric_tree(part, &mut hasher);
+    }
+    let call_args = args.iter().map(order_string).collect::<Vec<_>>();
+    return format!(
+      "InterpolatingFunction[<{:016x}>][{}]",
+      hasher.finish(),
+      call_args.join(", ")
+    );
+  }
+  expr_to_string(e)
+}
+
+fn hash_numeric_tree(e: &Expr, hasher: &mut impl std::hash::Hasher) {
+  use std::hash::Hash;
+  match e {
+    Expr::Integer(n) => n.hash(hasher),
+    Expr::Real(x) => x.to_bits().hash(hasher),
+    Expr::List(items) => {
+      items.len().hash(hasher);
+      for item in items {
+        hash_numeric_tree(item, hasher);
+      }
+    }
+    other => expr_to_string(other).hash(hasher),
   }
 }
 
