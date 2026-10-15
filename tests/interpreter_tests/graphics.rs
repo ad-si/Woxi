@@ -34944,6 +34944,23 @@ fn graphics_grid_span_from_left_widens_the_preceding_cell() {
   );
 }
 
+/// `Text[Rotate[label, θ], pos]` draws the label turned by θ (a Demonstration
+/// dial labels its axes this way) rather than typesetting `Rotate[…]`.
+#[test]
+fn text_with_rotated_label_turns_the_text() {
+  let svg = interpret(
+    "ExportString[Graphics[{Text[Rotate[Style[\"abc\", 12], Pi/2], {0, 0}], \
+     Text[Style[Rotate[\"xyz\", Pi], 12], {1, 1}], \
+     Text[Style[\"plain\", 12], {2, 2}]}], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(!svg.contains("Rotate"), "{svg}");
+  assert!(svg.contains("rotate(-90.000") && svg.contains(">abc</text>"));
+  assert!(svg.contains("rotate(180.000") || svg.contains("rotate(-180.000"));
+  let plain = svg.split(">plain</text>").next().unwrap();
+  assert!(!plain.rsplit("<text").next().unwrap().contains("rotate"));
+}
+
 #[test]
 fn styled_axes_label_keeps_font_directives() {
   // `Style[label, Italic]` in an AxesLabel kept only its text, dropping the

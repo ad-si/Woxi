@@ -4759,6 +4759,27 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     None => (label_arg, false),
   };
   let mut local_style = style.clone();
+  // `Rotate[label, angle]` turns the label by `angle` radians
+  // counterclockwise, whether it wraps or sits inside the `Style` — peel it
+  // off here and turn it into the baseline direction below instead of
+  // typesetting `Rotate[…]` as literal text.
+  let mut rotation: Option<f64> = None;
+  fn peel_label_rotate<'a>(
+    e: &'a Expr,
+    rotation: &mut Option<f64>,
+  ) -> &'a Expr {
+    let mut cur = e;
+    while let Expr::FunctionCall { name, args: rargs } = cur
+      && name == "Rotate"
+      && rargs.len() == 2
+      && let Some(angle) = rotation_angle(&rargs[1])
+    {
+      *rotation = Some(rotation.unwrap_or(0.0) + angle);
+      cur = &rargs[0];
+    }
+    cur
+  }
+  let first_arg = peel_label_rotate(first_arg, &mut rotation);
   // `Framed[content, opts…]` boxes the label: a border around it and, with
   // `Background -> colour`, a panel behind it. Peel it off first so the
   // `Style` directives it usually wraps still reach the primitive.
@@ -4785,6 +4806,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     }
     other => other,
   };
+  let content = peel_label_rotate(content, &mut rotation);
   // `Style[Invisible[…], dirs…]` — the wrapper inside the styling.
   let content = match peel_invisible(content) {
     Some(inner) => {
@@ -4835,7 +4857,10 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // `Text[expr, pos, offset, direction]`: rotate the label so its baseline
   // runs parallel to `direction`, a vector in the same data coordinates as
   // `pos`. Left `None` for the common `Automatic`/omitted case.
-  let direction = args.get(3).and_then(text_direction);
+  let direction = args
+    .get(3)
+    .and_then(text_direction)
+    .or_else(|| rotation.map(|a| (a.cos(), a.sin())));
   // `Background -> colour`, written either as a trailing option of the
   // `Text` or as a directive of the `Style` it wraps.
   fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
