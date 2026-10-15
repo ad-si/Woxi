@@ -7836,12 +7836,24 @@ fn find_root_multivariate(
   // checking it first turns the dense n*n differentiate+simplify pass
   // into one that costs full differentiation only for the (sparse) pairs
   // that actually need it.
+  //
+  // An equation that is itself huge (e.g. an equation-of-state model whose
+  // closed form expands to thousands of nodes) is the opposite case: its
+  // symbolic derivative is larger still and `simplify` on it runs for
+  // minutes, far longer than the finite-difference/Broyden iteration that
+  // the `None` fallback gives. Such equations are not differentiated
+  // symbolically at all.
+  const MAX_SYMBOLIC_JACOBIAN_LEAVES: usize = 2000;
   let mut jac: Vec<Vec<Option<Expr>>> = Vec::with_capacity(n);
   for f in &eqns {
     let mut row = Vec::with_capacity(n);
+    let too_large =
+      super::simplify::leaf_count(f) > MAX_SYMBOLIC_JACOBIAN_LEAVES;
     for v in &vars {
       let d = if crate::functions::calculus_ast::is_constant_wrt(f, v) {
         Some(Expr::Integer(0))
+      } else if too_large {
+        None
       } else {
         crate::functions::calculus_ast::differentiate_expr(f, v)
           .map(simplify)

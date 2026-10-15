@@ -9330,6 +9330,21 @@ mod find_root {
     );
   }
 
+  /// Regression: an equation whose closed form is huge used to be
+  /// differentiated and simplified symbolically for the Jacobian, which ran
+  /// for minutes (a Demonstration's equation-of-state model never finished).
+  /// It now falls back to a finite-difference Jacobian and still converges.
+  #[test]
+  fn huge_equation_converges() {
+    assert_eq!(
+      interpret(
+        "sol = FindRoot[{Sum[Sin[k x]/k^2, {k, 1, 400}] + y == 1, x - y == 0.5}, {x, 1}, {y, 0.5}]; {Abs[Sum[Sin[k x]/k^2, {k, 1, 400}] + y - 1 /. sol] < 10^-6, Abs[x - y - 0.5 /. sol] < 10^-6}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
   /// Regression: FindRoot holds its arguments, so an equation stored in a
   /// variable (a Module local in a Demonstration's Manipulate body) reached
   /// it as a bare symbol and failed with `FindRoot::nlnum`.
