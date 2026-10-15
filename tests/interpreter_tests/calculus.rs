@@ -20319,6 +20319,8 @@ mod ndsolve_delay_equations {
        u[t /; t <= 0] == 1, v[t /; t <= 0] == 0}, {u, v}, {t, 0, 2}]; \
        Round[{u[2], v[2]} /. First[s], 10^-3]";
     assert_eq!(interpret(code).unwrap(), "{1, 2}");
+  }
+}
 
 mod integrate_piecewise_disjunction {
   use super::*;
