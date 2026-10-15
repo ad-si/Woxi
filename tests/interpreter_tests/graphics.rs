@@ -6082,6 +6082,31 @@ mod plot3d {
       assert_eq!(literal_angle, dynamic_angle);
     }
 
+    // `AspectRatio` sets the height of a Graphics3D picture relative to
+    // its width.
+    #[test]
+    fn graphics3d_aspect_ratio_sets_height() {
+      let svg = export_svg(
+        "Graphics3D[Sphere[], ImageSize -> 400, AspectRatio -> 1/2]",
+      );
+      assert!(svg.contains("width=\"400\" height=\"200\""), "{svg}");
+    }
+
+    // Explicit `Ticks` pin the 3D axis ticks instead of the automatic ones.
+    #[test]
+    fn graphics3d_explicit_ticks() {
+      let count = |ticks: &str| {
+        export_svg(&format!(
+          "Graphics3D[Sphere[], Axes -> True, Ticks -> {ticks}]"
+        ))
+        .matches("<text")
+        .count()
+      };
+      assert_eq!(count("{{0}, {0}, {0}}"), 3);
+      assert_eq!(count("{{-1, 1}, {0}, None}"), 3);
+      assert_eq!(count("None"), 0);
+    }
+
     // Regression: the "Icosahedron Ball" Demonstration body — a
     // SphericalPlot3D mesh reused via [[1]], transformed with
     // Translate/Rotate copies, and combined with PolyhedronData's
