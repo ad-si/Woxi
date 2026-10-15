@@ -541,7 +541,7 @@ fn named_char_to_expr(s: &str) -> Expr {
 /// `\[FormalX]` family (plain and script variants of the formal-variable
 /// alphabet used by `Reduce`, `Solve`, etc.), which lives in the private use
 /// area the same way. Mirrors `PrivateUseLetter` in wolfram.pest.
-fn is_symbol_letter(c: char) -> bool {
+pub fn is_symbol_letter(c: char) -> bool {
   c.is_alphabetic()
     || ('\u{F6B2}'..='\u{F6CB}').contains(&c)
     || ('\u{F770}'..='\u{F789}').contains(&c)
