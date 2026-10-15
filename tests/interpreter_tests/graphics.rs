@@ -2500,18 +2500,20 @@ mod graphics {
     // painted solid black, hiding any label drawn inside them).
     #[test]
     fn face_form_none_leaves_area_primitives_unfilled() {
-      for prim in [
-        "Rectangle[{0, 0}, {1, 1}]",
-        "Disk[{0, 0}, 1]",
-        "Polygon[{{0, 0}, {1, 0}, {0, 1}}]",
-      ] {
-        let svg = export_svg(&format!(
-          "Graphics[{{EdgeForm[Thick], FaceForm[None], {prim}}}]"
-        ));
-        assert!(
-          svg.contains("fill-opacity=\"0\""),
-          "{prim} should be unfilled: {svg}"
-        );
+      for face in ["FaceForm[None]", "FaceForm[]"] {
+        for prim in [
+          "Rectangle[{0, 0}, {1, 1}]",
+          "Disk[{0, 0}, 1]",
+          "Polygon[{{0, 0}, {1, 0}, {0, 1}}]",
+        ] {
+          let svg = export_svg(&format!(
+            "Graphics[{{EdgeForm[Thick], {face}, {prim}}}]"
+          ));
+          assert!(
+            svg.contains("fill-opacity=\"0\""),
+            "{face} {prim} should be unfilled: {svg}"
+          );
+        }
       }
     }
 
@@ -14819,6 +14821,35 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">flow<"), "{svg}");
     }
 
+    // Regression: `Prolog` (and `Epilog` on StreamPlot) was silently dropped
+    // by the field plots, so a disk marking an obstacle never appeared.
+    #[test]
+    fn field_plots_draw_prolog_under_the_plot() {
+      for plot in [
+        "ContourPlot[x^2 + y^2, {x, -3, 3}, {y, -3, 3}",
+        "DensityPlot[x^2 + y^2, {x, -3, 3}, {y, -3, 3}",
+        "StreamPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}",
+        "VectorPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}",
+      ] {
+        let svg = export_svg(&format!(
+          "{plot}, Prolog -> {{Orange, Disk[{{0, 0}}, 1]}}]"
+        ));
+        let disk = svg.find("<ellipse").expect(&svg);
+        let axis = svg.find("<polyline").expect(&svg);
+        assert!(disk < axis, "prolog must sit under the axes: {plot}");
+      }
+    }
+
+    #[test]
+    fn stream_plot_epilog_and_stream_style() {
+      let svg = export_svg(
+        "StreamPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}, \
+           Epilog -> {Orange, Disk[{0, 0}, 1]}, StreamStyle -> Black]",
+      );
+      assert!(svg.contains("<ellipse"), "{svg}");
+      assert!(svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+    }
+
     // Part 1 of a field plot is its graphics content, so a Demonstration can
     // lift the field into a `Graphics[{Opacity[…], StreamPlot[…][[1]]}]` of
     // its own instead of showing the plot on its own.
@@ -18093,14 +18124,30 @@ mod filling_style {
 
   #[test]
   fn plot_filling_style_color_only() {
-    // A bare color keeps the default 0.2 opacity but recolors the fill.
+    // A bare color recolors the fill and, as in Mathematica, draws it opaque.
     clear_state();
     let svg = export_svg(
       "Plot[Sin[x], {x, 0, 6}, Filling -> Axis, FillingStyle -> Red]",
     );
     assert!(
-      svg.contains("opacity=\"0.2\" fill=\"#FF0000\""),
-      "expected red fill polygon at the default 0.2 opacity"
+      svg.contains("opacity=\"1\" fill=\"#FF0000\""),
+      "expected an opaque red fill polygon"
+    );
+  }
+
+  #[test]
+  fn plot_filling_style_color_opaque_under_show() {
+    // A colored Bottom filling merged by Show stays opaque over a
+    // background rectangle (Stable-distribution Demonstration).
+    clear_state();
+    let svg = export_svg(
+      "Show[Graphics[{RGBColor[0.6, 0.73, 0.36], Rectangle[{0, 0}]}], \
+       Plot[Exp[-3 t], {t, 0, 1}, Filling -> Bottom, \
+       FillingStyle -> RGBColor[0.9, 0.42, 0.17]]]",
+    );
+    assert!(
+      svg.contains("fill=\"rgb(230,107,43)\"/>"),
+      "expected an opaque orange fill polygon (no fill-opacity)"
     );
   }
 
@@ -21861,6 +21908,23 @@ mod discrete_plot {
     assert_eq!(result, "-Graphics-");
   }
 
+  // Regression: DiscretePlot holds its body (like Plot), so it is evaluated
+  // once per sampled point instead of once up front with `n` still symbolic
+  // (which made `data[[n]]` raise `Part::pkspec1`).
+  #[test]
+  fn holds_body() {
+    assert_eq!(
+      interpret("c = 0; DiscretePlot[(c++; n), {n, 1, 3}]; c").unwrap(),
+      "3"
+    );
+    let result = interpret(
+      "data = {1, 4, 9}; sq = {1, 2, 3}; \
+       Length[StringCases[ExportString[DiscretePlot[{data[[n]], sq[[n]]}, {n, 1, 3}], \"SVG\"], \"<circle\"]]",
+    )
+    .unwrap();
+    assert_eq!(result, "6");
+  }
+
   // {var, max} is shorthand for {var, 1, max} in DiscretePlot, matching Table.
   #[test]
   fn short_iter_spec() {
@@ -21977,6 +22041,33 @@ mod log_linear_plot {
 
 mod contour_plot_3d {
   use super::*;
+
+  #[test]
+  fn shown_plane_keeps_its_opacity_and_is_cut_to_the_plot_range() {
+    // A translucent `ContourPlot3D` plane merged by `Show` into a
+    // `Graphics3D` with a fixed `PlotRange` stays translucent and is
+    // clipped to that range instead of spilling over the picture.
+    let svg = export_svg(
+      "Show[{Graphics3D[{Red, Polygon[{{0, 0, 0}, {5, 0, 0}, {5, 5, 5}}]}, \
+       PlotRange -> {{-5, 20}, {-5, 20}, {0, 15}}]}, \
+       {ContourPlot3D[x + y + z == 10, {x, -10, 60}, {y, -10, 60}, \
+       {z, -10, 60}, Mesh -> None, ContourStyle -> Directive[Blue, \
+       Opacity[0.1]], PlotPoints -> 6]}]",
+    );
+    assert!(
+      svg.contains("opacity=\"0.1\""),
+      "the plane must stay translucent"
+    );
+    let polygons: Vec<&str> = svg.split("<polygon points=\"").skip(1).collect();
+    assert_ne!(polygons.len(), 0);
+    for poly in polygons {
+      let pts = poly.split('"').next().unwrap();
+      for coord in pts.split([' ', ',']) {
+        let v: f64 = coord.parse().unwrap();
+        assert!((-1.0..=361.0).contains(&v), "polygon spills out: {v}");
+      }
+    }
+  }
 
   #[test]
   fn extracted_surface_has_no_polygon_outline() {
@@ -34868,4 +34959,37 @@ fn text_with_rotated_label_turns_the_text() {
   assert!(svg.contains("rotate(180.000") || svg.contains("rotate(-180.000"));
   let plain = svg.split(">plain</text>").next().unwrap();
   assert!(!plain.rsplit("<text").next().unwrap().contains("rotate"));
+}
+
+#[test]
+fn styled_axes_label_keeps_font_directives() {
+  // `Style[label, Italic]` in an AxesLabel kept only its text, dropping the
+  // slant/weight/colour, in every plot family that takes the option.
+  for plot in [
+    "ListPlot[{1, 2, 3}",
+    "ListLinePlot[{1, 2, 3}",
+    "Plot[x, {x, 0, 1}",
+  ] {
+    let svg = interpret(&format!(
+      "ExportString[{plot}, AxesLabel -> {{Style[\"n\", Italic], \
+       Style[\"m\", Bold, Red]}}], \"SVG\"]"
+    ))
+    .unwrap();
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">n</tspan>"),
+      "{plot}: {svg}"
+    );
+    assert!(
+      svg.contains(
+        "<tspan font-weight=\"bold\" fill=\"rgb(255,0,0)\">m</tspan>"
+      ),
+      "{plot}"
+    );
+  }
+  // An unstyled label is unchanged.
+  let svg = interpret(
+    "ExportString[ListPlot[{1, 2}, AxesLabel -> {\"n\", \"m\"}], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(!svg.contains("<tspan font-style"));
 }

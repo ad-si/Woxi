@@ -214,7 +214,7 @@ fn scale_lengths_after(
 
 /// The visible text of SVG markup: tags dropped, entities decoded. Used so a
 /// pre-typeset label still measures by what the reader sees.
-fn svg_markup_visible_text(markup: &str) -> String {
+pub(crate) fn svg_markup_visible_text(markup: &str) -> String {
   let mut out = String::with_capacity(markup.len());
   let mut in_tag = false;
   for c in markup.chars() {

@@ -2065,6 +2065,23 @@ mod conjugate_transpose {
       "{{0, 0}, {-I, 0}}"
     );
   }
+
+  #[test]
+  fn conjugate_postfix_named_char() {
+    // \[Conjugate] is the postfix form of Conjugate (not ConjugateTranspose)
+    assert_eq!(interpret("(3 + 4 I) \\[Conjugate]").unwrap(), "3 - 4*I");
+    assert_eq!(interpret("Im[Exp[I 1] \\[Conjugate]]").unwrap(), "-Sin[1]");
+  }
+
+  #[test]
+  fn conjugate_postfix_private_use_codepoints() {
+    // U+F3C8 is \[Conjugate], U+F3C9 is \[ConjugateTranspose]
+    assert_eq!(interpret("(3 + 4 I)\u{F3C8}").unwrap(), "3 - 4*I");
+    assert_eq!(
+      interpret("{{0, I}, {0, 0}}\u{F3C9}").unwrap(),
+      "{{0, 0}, {-I, 0}}"
+    );
+  }
 }
 
 mod box_matrix {

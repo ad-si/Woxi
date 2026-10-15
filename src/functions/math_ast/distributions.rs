@@ -1510,6 +1510,61 @@ pub fn quantile_distribution_numeric(
 /// PDF[ProbabilityDistribution[pdf_expr, {var, lo, hi}], t] substitutes `t`
 /// for the dummy variable in the pdf expression, returning a piecewise that
 /// is zero outside `[lo, hi]`.
+/// Raw moment `E[x^k]` of `ProbabilityDistribution[pdf, {x, lo, hi}]`
+/// (continuous: `Integrate[x^k pdf, {x, lo, hi}]`) or of
+/// `ProbabilityDistribution[pmf, {x, lo, hi, step}]` (discrete:
+/// `Sum[x^k pmf, {x, lo, hi, step}]`). `None` when the distribution is not of
+/// one of these forms or the moment does not evaluate to a closed value.
+pub fn probability_distribution_raw_moment(
+  dargs: &[Expr],
+  k: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  let [pdf, Expr::List(range)] = dargs else {
+    return Ok(None);
+  };
+  if !matches!(range.len(), 3 | 4) || !matches!(&range[0], Expr::Identifier(_))
+  {
+    return Ok(None);
+  }
+  let integrand = call(
+    "Times",
+    vec![call("Power", vec![range[0].clone(), int(k)]), pdf.clone()],
+  );
+  let head = if range.len() == 3 { "Integrate" } else { "Sum" };
+  let result = eval(&call(head, vec![integrand, Expr::List(range.clone())]))?;
+  let unresolved =
+    |e: &Expr| crate::syntax::expr_to_string(e).contains(&format!("{head}["));
+  Ok(if unresolved(&result) {
+    None
+  } else {
+    Some(result)
+  })
+}
+
+/// `(Mean, Variance)` of a `ProbabilityDistribution[…]` from its first two
+/// raw moments.
+pub fn probability_distribution_mean_variance(
+  dargs: &[Expr],
+) -> Result<Option<(Expr, Expr)>, InterpreterError> {
+  let (Some(m1), Some(m2)) = (
+    probability_distribution_raw_moment(dargs, 1)?,
+    probability_distribution_raw_moment(dargs, 2)?,
+  ) else {
+    return Ok(None);
+  };
+  let variance = eval(&call(
+    "Plus",
+    vec![
+      m2,
+      call(
+        "Times",
+        vec![int(-1), call("Power", vec![m1.clone(), int(2)])],
+      ),
+    ],
+  ))?;
+  Ok(Some((m1, variance)))
+}
+
 fn pdf_probability_distribution(
   dargs: &[Expr],
   x: Expr,

@@ -8724,3 +8724,83 @@ mod noncentral_student_t_distribution {
     );
   }
 }
+
+mod custom_probability_distribution_moments {
+  use super::*;
+
+  #[test]
+  fn continuous_mean_and_variance() {
+    assert_eq!(
+      interpret("Mean[ProbabilityDistribution[2 x, {x, 0, 1}]]").unwrap(),
+      "2/3"
+    );
+    assert_eq!(
+      interpret("Variance[ProbabilityDistribution[2 x, {x, 0, 1}]]").unwrap(),
+      "1/18"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[ProbabilityDistribution[2 x, {x, 0, 1}]]")
+        .unwrap(),
+      "1/(3*Sqrt[2])"
+    );
+  }
+
+  #[test]
+  fn discrete_mean_and_variance() {
+    assert_eq!(
+      interpret(
+        "Mean[ProbabilityDistribution[Piecewise[{{1/2, x == 1 || x == 2}}], {x, 1, 2, 1}]]"
+      )
+      .unwrap(),
+      "3/2"
+    );
+  }
+
+  #[test]
+  fn disjoint_support_mean() {
+    assert_eq!(
+      interpret(
+        "Mean[ProbabilityDistribution[Piecewise[{{1/2, 0 <= x <= 1 || 3 <= x <= 4}}, 0], {x, 0, 4}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+}
+
+mod custom_probability_distribution_random_variate {
+  use super::*;
+
+  #[test]
+  fn dimension_list_and_range() {
+    assert_eq!(
+      interpret(
+        "d = ProbabilityDistribution[x^2, {x, 2, 9}]; s = RandomVariate[d, {3, 4}]; {Dimensions[s], Min[s] >= 2, Max[s] <= 9}"
+      )
+      .unwrap(),
+      "{{3, 4}, True, True}"
+    );
+  }
+
+  #[test]
+  fn respects_disjoint_support() {
+    assert_eq!(
+      interpret(
+        "s = RandomVariate[ProbabilityDistribution[Piecewise[{{1, 0 <= x <= 1 || 3 <= x <= 4}}, 0], {x, 0, 4}], 300]; AllTrue[s, 0 <= # <= 1 || 3 <= # <= 4 &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn discrete_values() {
+    assert_eq!(
+      interpret(
+        "Union[RandomVariate[ProbabilityDistribution[Piecewise[{{1/2, x == 1 || x == 3}}], {x, 1, 3, 2}], 200]]"
+      )
+      .unwrap(),
+      "{1., 3.}"
+    );
+  }
+}
