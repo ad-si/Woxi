@@ -673,8 +673,8 @@ ChartStyle,Style specification for chart elements,✅,pure,7.0,634
 SelectionMove,Move the selection in a notebook,✅,none,3.0,636
 RotateLeft,Rotates list elements to the left,✅,pure,1.0,637
 PadRight,Pads a list on the right to a given length or nested shape with a cyclically tiled padding array,✅,pure,4.0,638
-Fourier,Discrete Fourier transform of a list,✅,pure,1.0,712
-InverseFourier,Inverse discrete Fourier transform of a list,✅,pure,1.0,1260
+Fourier,Discrete Fourier transform of a list or rectangular array,✅,pure,1.0,712
+InverseFourier,Inverse discrete Fourier transform of a list or rectangular array,✅,pure,1.0,1260
 FourierTransform,Computes the symbolic Fourier transform of an expression,✅,pure,4.0,639
 InverseFourierTransform,Computes the symbolic inverse Fourier transform of an expression,✅,pure,4.0,1124
 PowerExpand,Expands powers and logarithms assuming positive reals,✅,pure,2.0,640
@@ -1341,7 +1341,7 @@ ListStepPlot,Plots data as a step function,✅,pure,10.2,1327
 Larger,Font size directive for making text larger,✅,none,6.0,1328
 AngleBracket,Symbolic representation of angle brackets,✅,,3.0,1329
 GeoPath,Geographic path primitive for GeoGraphics,✅,pure,10.0,1330
-MixtureDistribution,Mixture of component distributions with given weights; Mean Variance PDF and CDF combine the components,✅,pure,8.0,1331
+MixtureDistribution,Mixture of component distributions with given weights; Mean Variance PDF and CDF combine the components; RandomVariate samples it,✅,pure,8.0,1331
 RemoveBackground,,🚫,,10.0,1332
 Hash,Hash of a string or of a ByteArray's bytes using MD2/MD4/MD5/SHA/SHA224/SHA256/SHA384/SHA512/SHA3-224/SHA3-256/SHA3-384/SHA3-512/Keccak256/RIPEMD160/RIPEMD160SHA256/CRC32/Adler32,✅,pure,1.0,1333
 DeleteSmallComponents,Zero out label-matrix components with few pixels,✅,pure,8.0,1334
