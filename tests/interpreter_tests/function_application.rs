@@ -3667,3 +3667,31 @@ mod parenthesized_head_after_implicit_times {
     assert_eq!(interpret("2 (#+1&)[3]").unwrap(), "8");
   }
 }
+
+mod apply_sequence_at_level {
+  use super::*;
+
+  #[test]
+  fn sequence_children_splice_into_parent_list() {
+    assert_eq!(
+      interpret("Apply[Sequence, {{a}, {b, c}}, {1}]").unwrap(),
+      "{a, b, c}"
+    );
+    assert_eq!(
+      interpret("Sort[Apply[Sequence, {{3}, {2, 1}}, {1}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Length[Apply[Sequence, {{a}, {b, c}, {}}, {1}]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn sequence_children_splice_into_parent_call() {
+    assert_eq!(
+      interpret("Apply[Sequence, g[{a}, {b, c}], {1}]").unwrap(),
+      "g[a, b, c]"
+    );
+  }
+}
