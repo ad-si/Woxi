@@ -1408,6 +1408,61 @@ fn draw_axes_on_box(
   z_range: (f64, f64),
   axes_labels: &[Option<String>; 3],
 ) {
+  draw_axes_on_box_with_ticks(
+    svg,
+    camera,
+    to_svg,
+    corners,
+    x_range,
+    y_range,
+    z_range,
+    axes_labels,
+    &[None, None, None],
+  );
+}
+
+/// Parse a 3D `Ticks` option into one entry per axis: `None` keeps the
+/// automatic ticks, `Some(positions)` pins them (`None` → no ticks at all,
+/// a list of positions or `{position, label}` pairs → just those).
+fn parse_ticks_3d(value: &Expr) -> [Option<Vec<f64>>; 3] {
+  let mut out: [Option<Vec<f64>>; 3] = [None, None, None];
+  if matches!(value, Expr::Identifier(s) if s == "None") {
+    return [Some(Vec::new()), Some(Vec::new()), Some(Vec::new())];
+  }
+  let Expr::List(axes) = value else {
+    return out;
+  };
+  for (slot, axis) in out.iter_mut().zip(axes.iter()) {
+    *slot = match axis {
+      Expr::Identifier(s) if s == "None" => Some(Vec::new()),
+      Expr::List(items) => Some(
+        items
+          .iter()
+          .filter_map(|item| match item {
+            Expr::List(pair) => pair.first().and_then(try_eval_to_f64),
+            other => try_eval_to_f64(other),
+          })
+          .collect(),
+      ),
+      _ => None,
+    };
+  }
+  out
+}
+
+/// `draw_axes_on_box` with per-axis explicit tick positions (`Ticks`).
+#[allow(clippy::too_many_arguments)]
+fn draw_axes_on_box_with_ticks(
+  svg: &mut String,
+  camera: &Camera,
+  to_svg: &dyn Fn(f64, f64) -> (f64, f64),
+  corners: &[Point3D; 8],
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  z_range: (f64, f64),
+  axes_labels: &[Option<String>; 3],
+  ticks: &[Option<Vec<f64>>; 3],
+) {
   let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
   let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
   let font_size = 13;
@@ -1502,6 +1557,17 @@ fn draw_axes_on_box(
   let (cx, cy) =
     to_svg(project(box_center, camera).0, project(box_center, camera).1);
 
+  let axis_ticks = |ai: usize, lo: f64, hi: f64| -> Vec<f64> {
+    match &ticks[ai] {
+      Some(positions) => positions
+        .iter()
+        .copied()
+        .filter(|v| *v >= lo.min(hi) && *v <= lo.max(hi))
+        .collect(),
+      None => tick_values(lo, hi),
+    }
+  };
+
   for (ai, &(axis_origin, end, (val_min, val_max), flipped)) in
     axes.iter().enumerate()
   {
@@ -1533,7 +1599,7 @@ fn draw_axes_on_box(
         // axis label is being pushed: their own offset plus half of the
         // widest one's box. Sideways of a vertical axis that is the text
         // width, below a horizontal one it is the line height.
-        let tick_chars = tick_values(val_min, val_max)
+        let tick_chars = axis_ticks(ai, val_min, val_max)
           .iter()
           .map(|v| format_tick(*v).chars().count())
           .max()
@@ -1569,7 +1635,7 @@ fn draw_axes_on_box(
     }
 
     // Ticks
-    for tick_val in tick_values(val_min, val_max) {
+    for tick_val in axis_ticks(ai, val_min, val_max) {
       // Map tick_val to parameter t along the axis [origin → end]
       let t_raw = if (val_max - val_min).abs() < 1e-15 {
         0.5
@@ -5913,6 +5979,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let mut show_axes = false;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
+  let mut tick_spec: [Option<Vec<f64>>; 3] = [None, None, None];
+  // `AspectRatio -> r`: the picture is `r` times as tall as it is wide.
+  let mut aspect_ratio: Option<f64> = None;
   for opt in &args[1..] {
     let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
@@ -6017,6 +6086,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             box_ratios = Some(r);
           }
         }
+        "Ticks" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          tick_spec = parse_ticks_3d(&value);
+        }
+        "AspectRatio" => {
+          if let Some(r) = try_eval_to_f64(
+            &evaluate_expr_to_expr(replacement)
+              .unwrap_or_else(|_| replacement.as_ref().clone()),
+          ) && r > 0.0
+            && r.is_finite()
+          {
+            aspect_ratio = Some(r);
+          }
+        }
         "Axes" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "False" => show_axes = false,
           Expr::Identifier(s) if s == "True" => show_axes = true,
@@ -6042,6 +6126,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {}
       }
     }
+  }
+
+  if let Some(r) = aspect_ratio {
+    svg_height = ((svg_width as f64 * r).round() as u32).max(1);
   }
 
   // Collect primitives
@@ -7013,7 +7101,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if show_axes {
     // The ticks report coordinates as they were given, so a box reshaped
     // by `BoxRatios` still reads off the data's own values.
-    draw_axes_on_box(
+    draw_axes_on_box_with_ticks(
       &mut svg,
       &camera,
       &to_svg,
@@ -7022,6 +7110,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (y3_min / axis_scale[1], y3_max / axis_scale[1]),
       (z3_min / axis_scale[2], z3_max / axis_scale[2]),
       &axes_labels,
+      &tick_spec,
     );
   }
 
