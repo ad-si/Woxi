@@ -8985,3 +8985,55 @@ mod zero_argument_region_defaults {
     assert_eq!(interpret("Length[Cylinder[]]").unwrap(), "1");
   }
 }
+
+mod region_centroid_difference {
+  use super::*;
+
+  #[test]
+  fn square_minus_disk_exact() {
+    assert_eq!(
+      interpret(
+        "RegionCentroid[RegionDifference[Rectangle[{-1, -1}, {1, 1}], \
+         Disk[{1/2, 0}, 1/4]]]"
+      )
+      .unwrap(),
+      "{-(Pi/(2*(64 - Pi))), 0}"
+    );
+  }
+
+  #[test]
+  fn square_minus_disk_numeric() {
+    assert_eq!(
+      interpret(
+        "RegionCentroid[RegionDifference[Rectangle[{-1, -1}, {1, 1}], \
+         Disk[{0.38, 0.38}, 0.55]]]"
+      )
+      .unwrap(),
+      "{-0.11841487309694458, -0.11841487309694458}"
+    );
+  }
+
+  #[test]
+  fn square_minus_triangle() {
+    assert_eq!(
+      interpret(
+        "RegionCentroid[RegionDifference[Rectangle[{0, 0}, {4, 4}], \
+         Triangle[{{0, 0}, {2, 0}, {0, 2}}]]]"
+      )
+      .unwrap(),
+      "{46/21, 46/21}"
+    );
+  }
+
+  #[test]
+  fn hole_sticking_out_stays_unevaluated() {
+    assert_eq!(
+      interpret(
+        "RegionCentroid[RegionDifference[Rectangle[{0, 0}, {2, 2}], \
+         Disk[{2, 2}, 1]]]"
+      )
+      .unwrap(),
+      "RegionCentroid[BooleanRegion[#1 &&  !#2 & , {Rectangle[{0, 0}, {2, 2}], Disk[{2, 2}, 1]}]]"
+    );
+  }
+}
