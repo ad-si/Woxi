@@ -25472,6 +25472,9 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   let Expr::FunctionCall { name, args } = spec else {
     return None;
   };
+  // `OpenerView[{label, content}]` (a collapsible section of preset buttons
+  // or manual-entry sliders) lists its label and content like a `Column`,
+  // so the controls inside are collected the same way.
   // `Dynamic[{ctrl1, ctrl2, …}]` (the Demonstrations idiom for a control
   // panel whose row set itself needs to react to another control, e.g. a
   // control only shown for some mode) flattens the same way a `Column` of
@@ -25482,7 +25485,13 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   // through via the `contains_control` guard below.
   if !matches!(
     name.as_str(),
-    "Row" | "Column" | "Grid" | "TabView" | "PaneSelector" | "Dynamic"
+    "Row"
+      | "Column"
+      | "Grid"
+      | "TabView"
+      | "PaneSelector"
+      | "OpenerView"
+      | "Dynamic"
   ) || args.is_empty()
   {
     return None;
