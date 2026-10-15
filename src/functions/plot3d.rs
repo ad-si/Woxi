@@ -7354,6 +7354,71 @@ fn markup_char_count(markup: &str) -> usize {
   count.max(1)
 }
 
+/// True when `data` is a list of `{x, y, z}` triples of scalars. Such a list
+/// is scattered/gridded point data, not a z-matrix with three columns.
+fn is_xyz_point_list(data: &[Expr]) -> bool {
+  data.iter().all(|row| match row {
+    Expr::List(r) => {
+      r.len() == 3 && r.iter().all(|e| !matches!(e, Expr::List(_)))
+    }
+    _ => false,
+  })
+}
+
+/// If `points` fill a complete tensor grid (every combination of the unique
+/// x and y values occurs), bilinearly resample it onto a uniform square grid.
+/// Returns `grid[i][j]` with `i` along x and `j` along y.
+fn resample_tensor_grid(points: &[(f64, f64, f64)]) -> Option<Vec<Vec<f64>>> {
+  fn uniq(mut v: Vec<f64>) -> Vec<f64> {
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    v.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
+    v
+  }
+  let xs = uniq(points.iter().map(|p| p.0).collect());
+  let ys = uniq(points.iter().map(|p| p.1).collect());
+  if xs.len() < 2 || ys.len() < 2 || xs.len() * ys.len() != points.len() {
+    return None;
+  }
+  let find = |v: &[f64], t: f64| {
+    v.binary_search_by(|a| {
+      if (*a - t).abs() < 1e-12 {
+        std::cmp::Ordering::Equal
+      } else {
+        a.partial_cmp(&t).unwrap()
+      }
+    })
+    .ok()
+  };
+  let mut z = vec![vec![f64::NAN; ys.len()]; xs.len()];
+  for &(x, y, v) in points {
+    let (i, j) = (find(&xs, x)?, find(&ys, y)?);
+    if z[i][j].is_finite() {
+      return None;
+    }
+    z[i][j] = v;
+  }
+  let n = xs.len().max(ys.len()).clamp(2, 60);
+  // Index of the cell containing `t` and the fraction within it.
+  let locate = |v: &[f64], t: f64| {
+    let k = v.partition_point(|a| *a <= t).clamp(1, v.len() - 1) - 1;
+    (k, ((t - v[k]) / (v[k + 1] - v[k])).clamp(0.0, 1.0))
+  };
+  let (x0, x1) = (xs[0], xs[xs.len() - 1]);
+  let (y0, y1) = (ys[0], ys[ys.len() - 1]);
+  let mut grid = vec![vec![0.0; n]; n];
+  for (i, row) in grid.iter_mut().enumerate() {
+    let (a, fa) = locate(&xs, x0 + (x1 - x0) * i as f64 / (n - 1) as f64);
+    for (j, cell) in row.iter_mut().enumerate() {
+      let (b, fb) = locate(&ys, y0 + (y1 - y0) * j as f64 / (n - 1) as f64);
+      *cell = z[a][b] * (1.0 - fa) * (1.0 - fb)
+        + z[a + 1][b] * fa * (1.0 - fb)
+        + z[a][b + 1] * (1.0 - fa) * fb
+        + z[a + 1][b + 1] * fa * fb;
+    }
+  }
+  Some(grid)
+}
+
 /// Implementation of ListPlot3D[data, opts...].
 /// Accepts two formats:
 /// - `{{x1,y1,z1}, {x2,y2,z2}, ...}` — explicit 3D coordinates
@@ -7449,7 +7514,8 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // 2D matrix format: {{z11, z12, ...}, {z21, z22, ...}, ...}
         Expr::List(first_row)
           if !first_row.is_empty()
-            && first_row.iter().all(|e| !matches!(e, Expr::List(_))) =>
+            && first_row.iter().all(|e| !matches!(e, Expr::List(_)))
+            && !is_xyz_point_list(outer) =>
         {
           // Verify all rows are lists of the same length (or close)
           let num_rows = outer.len();
@@ -7517,45 +7583,56 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ymax = ymax.max(y);
           }
 
-          // Bin points onto a grid
-          let grid_n = 50usize.min(points.len());
-          let x_range = if (xmax - xmin).abs() < 1e-15 {
-            1.0
+          // Points on a complete (possibly non-uniform) tensor grid, e.g.
+          // `Flatten[Table[{x, y, f}, {x, xs}, {y, ys}], 1]`, are resampled
+          // bilinearly onto a uniform grid instead of being binned.
+          let (grid, grid_n) = if let Some(grid) = resample_tensor_grid(&points)
+          {
+            let n = grid.len();
+            (grid, n)
           } else {
-            xmax - xmin
-          };
-          let y_range = if (ymax - ymin).abs() < 1e-15 {
-            1.0
-          } else {
-            ymax - ymin
-          };
-
-          let mut grid = vec![vec![f64::NAN; grid_n]; grid_n];
-          let mut count = vec![vec![0u32; grid_n]; grid_n];
-
-          for &(x, y, z) in &points {
-            let i = (((x - xmin) / x_range * (grid_n - 1) as f64).round()
-              as usize)
-              .min(grid_n - 1);
-            let j = (((y - ymin) / y_range * (grid_n - 1) as f64).round()
-              as usize)
-              .min(grid_n - 1);
-            if count[i][j] == 0 {
-              grid[i][j] = z;
+            // Bin points onto a grid
+            let grid_n = 50usize.min(points.len());
+            let x_range = if (xmax - xmin).abs() < 1e-15 {
+              1.0
             } else {
-              grid[i][j] += z;
-            }
-            count[i][j] += 1;
-          }
+              xmax - xmin
+            };
+            let y_range = if (ymax - ymin).abs() < 1e-15 {
+              1.0
+            } else {
+              ymax - ymin
+            };
 
-          // Average multiple points in same bin
-          for i in 0..grid_n {
-            for j in 0..grid_n {
-              if count[i][j] > 1 {
-                grid[i][j] /= count[i][j] as f64;
+            let mut grid = vec![vec![f64::NAN; grid_n]; grid_n];
+            let mut count = vec![vec![0u32; grid_n]; grid_n];
+
+            for &(x, y, z) in &points {
+              let i = (((x - xmin) / x_range * (grid_n - 1) as f64).round()
+                as usize)
+                .min(grid_n - 1);
+              let j = (((y - ymin) / y_range * (grid_n - 1) as f64).round()
+                as usize)
+                .min(grid_n - 1);
+              if count[i][j] == 0 {
+                grid[i][j] = z;
+              } else {
+                grid[i][j] += z;
+              }
+              count[i][j] += 1;
+            }
+
+            // Average multiple points in same bin
+            for i in 0..grid_n {
+              for j in 0..grid_n {
+                if count[i][j] > 1 {
+                  grid[i][j] /= count[i][j] as f64;
+                }
               }
             }
-          }
+
+            (grid, grid_n)
+          };
 
           (grid, grid_n, grid_n, xmin, xmax, ymin, ymax)
         }

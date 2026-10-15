@@ -18228,6 +18228,22 @@ mod list_plot_3d {
     );
   }
 
+  // Regression: a flattened tensor grid of {x, y, z} triples (non-uniform
+  // spacing) must plot over its real x/y extents, not over row indices.
+  #[test]
+  fn list_plot3d_triples_use_real_coordinates() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ListPlot3D[Flatten[Table[{Cos[i Pi/8], Cos[j Pi/8], i + j}, \
+       {i, 0, 8}, {j, 0, 8}], 1]]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    // Axes span -1..1, not 0..8 (the index range of a z-matrix reading).
+    assert!(svg.contains(">-1</text>"));
+    assert!(!svg.contains(">8</text>"));
+  }
+
   #[test]
   fn list_plot3d_matrix_format() {
     clear_state();
