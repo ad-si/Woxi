@@ -376,4 +376,70 @@ mod row_visual_mode {
       nested.matches("</tspan>").count()
     );
   }
+
+  fn root_size(svg: &str) -> (f64, f64) {
+    let attr = |name: &str| -> f64 {
+      svg
+        .split(&format!("{name}=\""))
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap()
+    };
+    (attr("width"), attr("height"))
+  }
+
+  /// A plot in a fixed-size `Pane` shrinks to fit the pane, keeping its
+  /// whole drawing, instead of being cut off at the pane's edges.
+  #[test]
+  fn pane_shrinks_plot_to_fit() {
+    clear_state();
+    let svg = interpret_with_stdout("Pane[Plot[x, {x, 0, 1}], {120, 80}]")
+      .unwrap()
+      .graphics
+      .unwrap();
+    let (w, h) = root_size(&svg);
+    assert!(w <= 120.0 && h <= 80.0, "{w}x{h}");
+    assert!(svg.contains("viewBox=\"0 0 3600 2250\""));
+    assert!(!svg.contains("paneClip"));
+  }
+
+  /// A grid made of pictures paints its own `Background`.
+  #[test]
+  fn picture_grid_paints_background() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Grid[{{Graphics[Circle[]], Graphics[Disk[]]}}, Background -> Yellow]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(svg.contains("fill=\"rgb(255,255,0)\""));
+  }
+
+  /// In a fixed-width `Pane`, a nested legend grid holding automatically
+  /// sized pictures is squeezed so the columns beside it stay inside the
+  /// pane rather than being pushed out of view.
+  #[test]
+  fn pane_squeezes_nested_legend_grid() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Pane[Grid[{{Pane[Plot[x, {x, 0, 1}], {200, 120}], \
+       Pane[Plot[x, {x, 0, 1}], {200, 120}]}, \
+       {Grid[{{Graphics[Line[{{0, 0}, {1, 0}}], AspectRatio -> 1/8], \
+       \"label\"}}]}}], {420, 200}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    let (w, _) = root_size(&svg);
+    assert!(w <= 420.0, "{w}");
+    // Every top-level picture starts inside the pane.
+    for part in svg.split("<svg x=\"").skip(1) {
+      let x: f64 = part.split('"').next().unwrap().parse().unwrap();
+      assert!(x < 420.0, "picture starts at {x}");
+    }
+    // The legend line was redrawn narrower, not left at its 360pt default.
+    assert!(!svg.contains("width=\"360\" height=\"45\""));
+  }
 }

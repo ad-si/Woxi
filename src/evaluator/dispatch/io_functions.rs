@@ -5770,6 +5770,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         }
         _ => None,
       };
+      // A grid wider than the pane squeezes its automatically sized
+      // pictures to fit.
+      let wrapped = wrapped.or_else(|| match (name.as_str(), args.get(1)) {
+        ("Pane", Some(Expr::List(size))) if size.len() == 2 => {
+          let w = pane_size_component(&size[0])?;
+          crate::functions::graphics::fit_grid_to_pane_width(
+            &args[0],
+            w,
+            &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
+          )
+        }
+        _ => None,
+      });
       let inner_svg = expr_to_svg(wrapped.as_ref().unwrap_or(&args[0]));
       match (name.as_str(), args.get(1)) {
         ("Pane", Some(Expr::List(size))) if size.len() == 2 => {
@@ -5973,7 +5986,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           &rows,
           option_args,
         )
-        .unwrap_or_else(|| expr_text_svg(expr))
+        .map_or_else(
+          || expr_text_svg(expr),
+          |svg| {
+            crate::functions::graphics::with_grid_background(svg, option_args)
+          },
+        )
       }
     }
     // A list of graphics renders as `{g1, g2, …}` with the plots drawn
