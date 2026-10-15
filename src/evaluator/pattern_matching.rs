@@ -2710,18 +2710,36 @@ fn shield_interpolating_functions(e: &Expr, held: &RefCell<Vec<Expr>>) -> Expr {
   e.clone()
 }
 
+fn held_interpolating_function(name: &str, held: &[Expr]) -> Option<Expr> {
+  let n = name
+    .strip_prefix("$InterpolatingFunctionHold")?
+    .strip_suffix('$')?
+    .parse::<usize>()
+    .ok()?;
+  held.get(n.checked_sub(1)?).cloned()
+}
+
 fn restore_interpolating_functions(e: &Expr, held: &[Expr]) -> Expr {
-  if let Expr::Identifier(name) = e
-    && let Some(n) = name
-      .strip_prefix("$InterpolatingFunctionHold")
-      .and_then(|r| r.strip_suffix('$'))
-      .and_then(|r| r.parse::<usize>().ok())
-    && n >= 1
-    && n <= held.len()
-  {
-    return held[n - 1].clone();
+  match e {
+    Expr::Identifier(name) => {
+      held_interpolating_function(name, held).unwrap_or_else(|| e.clone())
+    }
+    // `f[x]` with a placeholder head is the stored function applied to `x`.
+    Expr::FunctionCall { name, args }
+      if let Some(func) = held_interpolating_function(name, held) =>
+    {
+      Expr::CurriedCall {
+        func: Box::new(func),
+        args: args
+          .iter()
+          .map(|a| restore_interpolating_functions(a, held))
+          .collect(),
+      }
+    }
+    _ => crate::syntax::map_children(e, &|c| {
+      restore_interpolating_functions(c, held)
+    }),
   }
-  crate::syntax::map_children(e, &|c| restore_interpolating_functions(c, held))
 }
 
 /// `expr /. rules`. An `InterpolatingFunction` is an atomic object —

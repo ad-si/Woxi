@@ -20456,5 +20456,14 @@ mod ndsolve_delay {
       .unwrap(),
       "{True, True, 4, 4}"
     );
+    // Applying a substituted function leaves no placeholder behind.
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{u'[x] == -u[x], u[0] == 1}, u, {x, 0, 2}]; \
+         Round[(0.5 + u[x]) /. s /. x -> 1., 0.01]"
+      )
+      .unwrap(),
+      "{{0.87}}"
+    );
   }
 }
