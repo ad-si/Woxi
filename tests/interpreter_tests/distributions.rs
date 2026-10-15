@@ -8804,3 +8804,57 @@ mod custom_probability_distribution_random_variate {
     );
   }
 }
+
+mod mixture_distribution_random_variate {
+  use super::*;
+
+  #[test]
+  fn count_and_support() {
+    assert_eq!(
+      interpret(
+        "s = RandomVariate[MixtureDistribution[{1, 3}, {UniformDistribution[{0, 1}], UniformDistribution[{5, 6}]}], 500]; {Length[s], AllTrue[s, 0 <= # <= 1 || 5 <= # <= 6 &], Count[s, _?(# > 4 &)] > 250}"
+      )
+      .unwrap(),
+      "{500, True, True}"
+    );
+  }
+
+  #[test]
+  fn single_draw_is_real() {
+    assert_eq!(
+      interpret(
+        "Head[RandomVariate[MixtureDistribution[{1, 1}, {NormalDistribution[0, 1], UniformDistribution[]}]]]"
+      )
+      .unwrap(),
+      "Real"
+    );
+  }
+}
+
+mod multidimensional_fourier {
+  use super::*;
+
+  #[test]
+  fn fourier_matrix() {
+    assert_eq!(
+      interpret("Fourier[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{5., -1.}, {-2., 0.}}"
+    );
+  }
+
+  #[test]
+  fn inverse_roundtrip_non_square() {
+    assert_eq!(
+      interpret("InverseFourier[Fourier[{{1, 2, 3}, {3, 4, 7}}]]").unwrap(),
+      "{{1., 2., 3.}, {3., 4., 7.}}"
+    );
+  }
+
+  #[test]
+  fn ragged_array_is_rejected() {
+    assert_eq!(
+      interpret("Fourier[{{1, 2}, {3}}]").unwrap(),
+      "Fourier[{{1, 2}, {3}}]"
+    );
+  }
+}
