@@ -35077,6 +35077,25 @@ fn region_plot_color_function_colors_region_pointwise() {
 }
 
 #[test]
+fn plot_does_not_bridge_a_pole_with_a_vertical_line() {
+  // 1/x jumps from -∞ to +∞ at 0: two branches, no vertical connector.
+  for body in ["1/x", "x^-1", "x^-3"] {
+    let svg = interpret(&format!(
+      "ExportString[Plot[{body}, {{x, -2, 2}}, \
+       PlotRange -> {{{{-2, 2}}, {{-2, 2}}}}], \"SVG\"]"
+    ))
+    .unwrap();
+    assert_eq!(svg.matches("<polyline").count(), 2, "{body}: {svg}");
+  }
+  // A steep but continuous curve is still drawn through the range.
+  let steep = interpret(
+    "ExportString[Plot[50 x, {x, -1, 1}, PlotRange -> {-1, 1}], \"SVG\"]",
+  )
+  .unwrap();
+  assert_eq!(steep.matches("<polyline").count(), 1, "{steep}");
+}
+
+#[test]
 fn grid_column_width_follows_displayed_text() {
   // Width of the Frame's first interior divider = width of column 1.
   fn first_divider(code: &str) -> f64 {
