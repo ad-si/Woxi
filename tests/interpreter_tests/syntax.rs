@@ -12980,3 +12980,24 @@ mod base_literals {
     );
   }
 }
+
+mod context_named_characters {
+  use super::*;
+
+  // A saved Manipulate's stored definitions can hold symbols such as
+  // `Notebook$$34$227771`\[Omega]g1`, whose context-qualified name starts
+  // with a `\[Name]` named character. One unparsable entry used to discard
+  // the whole saved initialization.
+  #[test]
+  fn context_segment_may_start_with_a_named_character() {
+    assert_eq!(
+      interpret("Ctx`\\[Omega]g1 = 3; Ctx`\\[Omega]g1").unwrap(),
+      "3"
+    );
+    assert_eq!(interpret("Ctx`\\[Omega]g1 = 3; Ctx`ωg1").unwrap(), "3");
+    assert_eq!(
+      interpret("Overscript[Ctx`\\[Phi]x, _] = {1, 2}").unwrap(),
+      "{1, 2}"
+    );
+  }
+}

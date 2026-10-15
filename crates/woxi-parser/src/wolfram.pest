@@ -192,10 +192,11 @@ NamedCharIdentifier = @{ NamedCharBase ~ (NamedCharBase | ASCII_ALPHANUMERIC | L
 // `Foo`Bar`x`. A leading backtick ` `x` ` is shorthand for the current
 // context (Global by default). Each segment after a backtick must begin
 // with a letter/_/$ so numeric precision tags like `1`30`/`Pi`30` aren't
-// accidentally absorbed.
+// accidentally absorbed. A segment may also start with a `\[Name]` named
+// character (`Global`\[Omega]g`), as in a saved Manipulate's stored context symbols.
 Identifier = @{
-  ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
-  | ((ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
+  ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
+  | ((ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
 }
 String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ ANY) | ("\\" ~ ANY))* ~ "\"" }
 
