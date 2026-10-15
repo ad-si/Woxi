@@ -2834,6 +2834,47 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_text_pane_wraps_to_width() {
+    // Regression: `Text[Pane[str, width], pos]` (an Inset's label sized by
+    // a slider) drew the literal `Pane[…]` source on one clipped line
+    // instead of the text wrapped to the pane's width.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Text[Pane[\"alpha beta gamma delta epsilon zeta\", 100], {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Pane["), "Pane source leaked: {svg}");
+    assert!(
+      svg.contains(">alpha beta<"),
+      "first line not wrapped: {svg}"
+    );
+    assert!(svg.contains(">gamma delta<"), "second line missing: {svg}");
+
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Text[Pane[\"alpha beta\"], {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">alpha beta<") && !svg.contains("Pane["));
+  }
+
+  #[test]
+  fn test_graphics_scaled_inset_anchor_does_not_stretch_range() {
+    // Regression: an `ImageScaled` inset anchor (a fraction such as 0.5)
+    // was taken for a data point, so the range grew to include it and a
+    // position-less `Text` at the origin landed in a corner.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Text[\"hi\"], Inset[Graphics[Disk[], ImageSize -> 5], ImageScaled[{0.5, 0.5}]]}, ImageSize -> 144], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<text x=\"72.00\" y=\"72.00\""),
+      "label not centred: {svg}"
+    );
+  }
+
+  #[test]
   fn test_graphics_inset_framed_swatch_legend() {
     // Regression: `Inset[Framed[Style[Column[{Grid[{{swatch, "label"}}]}], …]],
     // pos]` (a hand-built legend) drew the literal `Column[{Grid[{{Graphics[…`
