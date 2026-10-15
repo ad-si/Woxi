@@ -3071,7 +3071,7 @@ pub fn saved_initialization_context_symbols(box_dump: &str) -> Vec<String> {
       while let Some(rel2) = inner[scan_from..].find(PREFIX) {
         let start = scan_from + rel2 + PREFIX.len();
         let end = inner[start..]
-          .find(|c: char| !(c.is_alphanumeric() || c == '$'))
+          .find(|c: char| !(is_symbol_char(c) || c == '$'))
           .map_or(inner.len(), |i| start + i);
         let name = &inner[start..end];
         if !name.is_empty() && !names.iter().any(|n| n == name) {
@@ -3126,11 +3126,14 @@ fn extract_arrow_value<'a>(box_dump: &'a str, key: &str) -> Option<&'a str> {
   }
 }
 
-/// Drop the DynamicModule's `$$` uniquification suffix from every symbol in
-/// `src` (`` p1$$ `` → `` p1 ``), so a control variable reads — and matches
-/// the plain names [`extract_saved_manipulate_variables`] reports — as the
-/// author wrote it. Only a `$$` that ends a symbol is removed; a symbol
-/// like `` x$1$$ `` keeps its inner `$`.
+/// Can `c` appear inside a symbol name? Besides Unicode letters and digits
+/// this covers the private-use-area letters that a decoded `\[ScriptM]`
+/// (and the rest of Wolfram's script / Gothic / double-struck alphabets)
+/// turns into.
+fn is_symbol_char(c: char) -> bool {
+  c.is_alphanumeric() || crate::syntax::is_symbol_letter(c)
+}
+
 /// Whether `prefix` ends in a complete `\[Name]` named-character escape
 /// (e.g. the `\[Alpha]` of a variable `\[Alpha]$$`).
 fn closes_named_character(prefix: &[char]) -> bool {
@@ -3144,6 +3147,11 @@ fn closes_named_character(prefix: &[char]) -> bool {
   j >= 2 && prefix[j - 1] == '[' && prefix[j - 2] == '\\'
 }
 
+/// Drop the DynamicModule's `$$` uniquification suffix from every symbol in
+/// `src` (`` p1$$ `` → `` p1 ``), so a control variable reads — and matches
+/// the plain names [`extract_saved_manipulate_variables`] reports — as the
+/// author wrote it. Only a `$$` that ends a symbol is removed; a symbol
+/// like `` x$1$$ `` keeps its inner `$`.
 fn strip_uniquification_suffix(src: &str) -> String {
   let chars: Vec<char> = src.chars().collect();
   let mut out = String::with_capacity(src.len());
@@ -3152,12 +3160,12 @@ fn strip_uniquification_suffix(src: &str) -> String {
     let ends_symbol = chars[i] == '$'
       && chars.get(i + 1) == Some(&'$')
       && i > 0
-      && (chars[i - 1].is_alphanumeric()
+      && (is_symbol_char(chars[i - 1])
         || chars[i - 1] == '$'
         || closes_named_character(&chars[..i]))
       && !chars
         .get(i + 2)
-        .is_some_and(|c| c.is_alphanumeric() || *c == '$' || *c == '`');
+        .is_some_and(|c| is_symbol_char(*c) || *c == '$' || *c == '`');
     if ends_symbol {
       i += 2;
     } else {
@@ -4651,6 +4659,19 @@ pub fn stored_output_vector_graphics_svg(content: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// Regression: a control variable named with a private-use-area letter
+  /// (`\[ScriptM]`, already decoded to U+F6BE in the saved box dump) lost
+  /// its `$$` suffix strip, so the saved value never matched the control.
+  #[test]
+  fn uniquification_suffix_is_stripped_after_private_use_letters() {
+    let script_m = "\u{F6BE}";
+    let src = format!("f[{script_m}$$, g$$, h$$x]");
+    assert_eq!(
+      strip_uniquification_suffix(&src),
+      format!("f[{script_m}, g, h$$x]")
+    );
+  }
 
   /// Regression: a multi-statement `Table` body — several `stmt;`-joined
   /// assignments ending in a result expression, each wrapped in its own

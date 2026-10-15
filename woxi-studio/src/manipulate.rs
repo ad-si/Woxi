@@ -249,12 +249,10 @@ impl ControlState {
   /// `time = 0` rewinds the trigger it drives).
   fn set_current_from_code(&mut self, code: &str) {
     use woxi::syntax::Expr;
+    // Exact rationals (`Rational[4, 5]`, as a saved dump records a slider's
+    // `4/5`) and constants count as numbers too, not just machine literals.
     fn as_f64(e: &Expr) -> Option<f64> {
-      match e {
-        Expr::Integer(n) => Some(*n as f64),
-        Expr::Real(r) => Some(*r),
-        _ => None,
-      }
+      woxi::functions::math_ast::try_eval_to_f64(e)
     }
     fn as_pair(e: &Expr) -> Option<(f64, f64)> {
       match e {

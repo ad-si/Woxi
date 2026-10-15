@@ -29954,6 +29954,41 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
   /// source's stale default; before `apply_saved_variables` existed,
   /// `instantiate_stored_manipulate` rebuilt the widget from the Input
   /// cell alone and always reset every control to its authored default.
+  /// Regression: a slider variable named with a script letter (`\[ScriptM]`)
+  /// whose saved dump value is an exact rational (`Rational[4, 5]`) must open
+  /// at that saved value; the rational was ignored, leaving the slider at the
+  /// source's authored default.
+  #[test]
+  fn stored_dump_restores_script_letter_variable_and_helper() {
+    let code = r#"Manipulate[
+      Plot[scriptHelper[x, \[ScriptM]], {x, 0, 1}],
+      {{\[ScriptM], 0, "mass \[ScriptM]"}, 0, 10, 1/10}
+    ]"#;
+    let dump = "DynamicModuleBox[{$CellContext`\\[ScriptM]$$ = Rational[4, 5]}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Variables\" :> {$CellContext`\\[ScriptM]$$ = Rational[4, 5]}, \n\
+      \"Body\" :> Plot[$CellContext`scriptHelper[x, $CellContext`\\[ScriptM]$$], \
+        {x, 0, 1}], \n\
+      \"Specifications\" :> {{{$CellContext`\\[ScriptM]$$, 0, \"mass\"}, \
+        0, 10, Rational[1, 10]}}, \n\
+      \"Options\" :> {}],\n\
+      Initialization:>($CellContext`scriptHelper[Pattern[$CellContext`x, \
+        Blank[]], Pattern[$CellContext`\\[ScriptM], Blank[]]] := \
+        $CellContext`x $CellContext`\\[ScriptM]; \
+        Typeset`initDone$$ = True),\n\
+      DynamicModuleValues:>{}]]";
+    let state =
+      instantiate_stored_manipulate(code, dump).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    match &state.controls[..] {
+      [manipulate::ControlState::Continuous { current, .. }] => {
+        assert_eq!(*current, 0.8, "saved value must load, not the default 0");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
   #[test]
   fn stored_dump_variables_override_the_sources_stale_defaults() {
     let code = r#"Manipulate[
