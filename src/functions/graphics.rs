@@ -23476,6 +23476,41 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     });
   }
 
+  // A `Slider2D[Dynamic[var], range]` inside a display element (the 2D
+  // colour picker under a canvas) drives `var`, one of the Manipulate's
+  // hidden state variables: give it a draggable stand-in row.
+  let slider2d_vars: Vec<_> = displays
+    .iter()
+    .filter_map(|d| crate::interpret_to_expr(d).ok())
+    .flat_map(|e| collect_display_slider2d_vars(&e))
+    .collect();
+  for (var, ((x_min, y_min), (x_max, y_max))) in slider2d_vars {
+    if controls.iter().any(|c| c.name() == var) {
+      continue;
+    }
+    let Some((_, code)) = state.iter().find(|(n, _)| *n == var) else {
+      continue;
+    };
+    let initial = crate::with_scoped_globals(&initial_bindings, || {
+      let expr = crate::interpret_to_expr(code).ok()?;
+      list2_f64(&evaluate_expr_to_expr(&expr).ok()?)
+    });
+    let Some((x_initial, y_initial)) = initial else {
+      continue;
+    };
+    controls.push(ManipulateControl::Slider2D {
+      name: var.clone(),
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      x_initial,
+      y_initial,
+      label: var,
+      write_callback: None,
+    });
+  }
+
   // A Manipulate with no controls or state at all (e.g. `Manipulate[x^2,
   // badspec]`, where `badspec` is neither a spec nor an option) isn't
   // renderable as an interactive widget — fall back to the plain path.
@@ -23960,6 +23995,63 @@ fn collect_body_locator_pane_vars(
           && !found.iter().any(|(n, _, _)| n == var)
         {
           found.push((var.clone(), args.get(2).cloned(), args[1].clone()));
+        }
+        for a in args {
+          walk(a, found);
+        }
+      }
+      Expr::List(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      Expr::CompoundExpr(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  walk(expr, &mut found);
+  found
+}
+
+/// Whether `expr` is a `Slider2D[…]` call.
+fn is_slider2d_call(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. } if name == "Slider2D")
+}
+
+/// Every `Slider2D[Dynamic[var], {{xmin, ymin}, {xmax, ymax}}, …]` drawn
+/// inside a display element (typically a colour strip in an `Overlay`),
+/// as `(var, ((xmin, ymin), (xmax, ymax)))`. The range defaults to the unit
+/// square, like Wolfram's. Each variable is listed once.
+fn collect_display_slider2d_vars(
+  expr: &Expr,
+) -> Vec<(String, ((f64, f64), (f64, f64)))> {
+  fn walk(expr: &Expr, found: &mut Vec<(String, ((f64, f64), (f64, f64)))>) {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        if name == "Slider2D"
+          && let Some(Expr::FunctionCall {
+            name: dname,
+            args: dargs,
+          }) = args.first()
+          && dname == "Dynamic"
+          && let Some(Expr::Identifier(var)) = dargs.first()
+          && !found.iter().any(|(n, _)| n == var)
+        {
+          let range = match args.get(1) {
+            Some(Expr::List(c)) if c.len() == 2 => {
+              match (list2_f64(&c[0]), list2_f64(&c[1])) {
+                (Some(lo), Some(hi)) => (lo, hi),
+                _ => ((0.0, 0.0), (1.0, 1.0)),
+              }
+            }
+            _ => ((0.0, 0.0), (1.0, 1.0)),
+          };
+          found.push((var.clone(), range));
         }
         for a in args {
           walk(a, found);
@@ -29908,6 +30000,19 @@ fn display_expr_to_node(
           None => static_leaf_node(expr, bindings),
         }
       }
+      // `Overlay[{layer1, layer2, …}, …]` stacks its layers. The
+      // interactive `Slider2D` layer is promoted to a control row of its own
+      // (see `collect_display_slider2d_vars`), so what is drawn here is the
+      // first remaining layer — e.g. the colour strip a 2D slider sits on.
+      "Overlay" if !args.is_empty() => match &args[0] {
+        Expr::List(layers) => {
+          match layers.iter().find(|l| !is_slider2d_call(l)) {
+            Some(layer) => display_expr_to_node(layer, bindings, probes, ons),
+            None => DisplayNode::Column(Vec::new()),
+          }
+        }
+        _ => static_leaf_node(expr, bindings),
+      },
       "Panel" | "Framed" | "Deploy" | "Item" | "Pane" | "Labeled"
         if !args.is_empty() =>
       {
@@ -31633,6 +31738,35 @@ mod manipulate_dynamic_control_list_tests {
         assert!(popup);
       }
       other => panic!("expected a Discrete control, got {other:?}"),
+    }
+  }
+
+  /// A `Slider2D[Dynamic[var], range]` inside a `Dynamic[Overlay[…]]`
+  /// display (a 2D colour picker laid over a gradient strip) drives the
+  /// hidden state variable `var`: it must surface as a draggable 2D control
+  /// with that range and the variable's current value. Found by a scheduled
+  /// QA run against the "Snowflake Designs" Demonstration notebook.
+  #[test]
+  fn display_slider2d_over_state_variable_becomes_control() {
+    let s = spec(
+      "Manipulate[pt, {{pt, {0.5, 0.3}}, None}, \
+       Row[{\"bg \", Dynamic@Overlay[{Slider2D[Dynamic[pt], \
+       {{0, 0.1}, {1, 0.9}}], Graphics[{}]}]}]]",
+    );
+    match s.controls.iter().find(|c| c.name() == "pt") {
+      Some(ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        ..
+      }) => {
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (0.0, 1.0, 0.1, 0.9));
+        assert_eq!((*x_initial, *y_initial), (0.5, 0.3));
+      }
+      other => panic!("expected a Slider2D control, got {other:?}"),
     }
   }
 

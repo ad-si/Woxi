@@ -2420,8 +2420,36 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let boundary_style = option("BoundaryStyle")
     .filter(|s| !matches!(s, Expr::Identifier(n) if n == "Automatic"));
 
+  // `ColorFunction -> f` colours the region pointwise by `f[x, y]` (the
+  // coordinates scaled to 0..1 over the plot range unless
+  // `ColorFunctionScaling -> False`) instead of filling it with one flat tint.
+  let color_function = option("ColorFunction").filter(
+    |f| !matches!(f, Expr::Identifier(s) if s == "Automatic" || s == "None"),
+  );
+  let scaling = !matches!(
+    option("ColorFunctionScaling"),
+    Some(Expr::Identifier(ref s)) if s == "False"
+  );
+
   let mut items: Vec<Expr> = Vec::new();
   for (k, pred) in predicates.iter().enumerate() {
+    if let Some(cf) = &color_function {
+      let cells = region_plot_color_cells(
+        pred,
+        cf,
+        scaling,
+        (&xvar, &yvar),
+        (x_min, x_max),
+        (y_min, y_max),
+        n.min(REGION_PLOT_COLOR_CELLS),
+      );
+      if !cells.is_empty() {
+        let mut group = vec![call0("EdgeForm")];
+        group.extend(cells);
+        items.push(Expr::List(group.into()));
+      }
+      continue;
+    }
     let loops =
       region_plot_loops(pred, &xvar, &yvar, (x_min, x_max), (y_min, y_max), n);
     let polygons = region_plot_polygons(&loops);
@@ -2501,6 +2529,73 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     *structure = Some(Box::new(call("Graphics", graphics_args)));
   }
   Ok(result)
+}
+
+/// Cells per axis of a `ColorFunction`-coloured `RegionPlot`.
+const REGION_PLOT_COLOR_CELLS: usize = 60;
+
+/// The `{color, Rectangle[…]}` cells of a `ColorFunction`-coloured region:
+/// every cell of an `n × n` grid whose centre satisfies `pred` is filled with
+/// `cf[x, y]`, the coordinates scaled to 0..1 over the plot range when
+/// `scaling` is set.
+fn region_plot_color_cells(
+  pred: &Expr,
+  cf: &Expr,
+  scaling: bool,
+  (xvar, yvar): (&str, &str),
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  n: usize,
+) -> Vec<Expr> {
+  let point =
+    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  let mut cells = Vec::new();
+  for i in 0..n {
+    let (fx0, fx1) = (i as f64 / n as f64, (i + 1) as f64 / n as f64);
+    for j in 0..n {
+      let (fy0, fy1) = (j as f64 / n as f64, (j + 1) as f64 / n as f64);
+      let fx = f64::midpoint(fx0, fx1);
+      let fy = f64::midpoint(fy0, fy1);
+      let (cx, cy) =
+        (x_min + fx * (x_max - x_min), y_min + fy * (y_max - y_min));
+      if !evaluate_condition(pred, xvar, yvar, cx, cy) {
+        continue;
+      }
+      let (ax, ay) = if scaling { (fx, fy) } else { (cx, cy) };
+      let applied = Expr::CurriedCall {
+        func: Box::new(cf.clone()),
+        args: vec![Expr::Real(ax), Expr::Real(ay)],
+      };
+      let Some(color) = evaluate_expr_to_expr(&applied)
+        .ok()
+        .and_then(|r| parse_color(&r))
+      else {
+        continue;
+      };
+      let rect = call(
+        "Rectangle",
+        vec![
+          point(x_min + fx0 * (x_max - x_min), y_min + fy0 * (y_max - y_min)),
+          point(x_min + fx1 * (x_max - x_min), y_min + fy1 * (y_max - y_min)),
+        ],
+      );
+      cells.push(Expr::List(
+        vec![
+          call(
+            "RGBColor",
+            vec![
+              Expr::Real(color.r),
+              Expr::Real(color.g),
+              Expr::Real(color.b),
+            ],
+          ),
+          rect,
+        ]
+        .into(),
+      ));
+    }
+  }
+  cells
 }
 
 /// The colour a `PlotStyle` entry names — the entry itself, or the last
