@@ -18913,6 +18913,68 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
   }
 }
 
+/// `with_default_image_size` for a `GraphicsRow`/`GraphicsColumn`/
+/// `GraphicsGrid` cell. These layouts size every cell to the shared column
+/// width, so a numeric `ImageSize` on the `Graphics[…]` cell itself
+/// (`Graphics[…, ImageSize -> {94, 64}]`) only contributes its aspect
+/// ratio — keeping the absolute size would leave that cell a different
+/// scale than its neighbours (a padded grid whose first cell is a big
+/// picture and whose other cells are tiny).
+fn with_cell_image_size(expr: &Expr, size: i128) -> Expr {
+  let inner = match expr {
+    Expr::Graphics {
+      structure: Some(inner),
+      ..
+    } => inner.as_ref(),
+    other => other,
+  };
+  if let Expr::FunctionCall { name, args } = inner
+    && name == "Graphics"
+  {
+    let is_size_rule = |a: &Expr| {
+      matches!(a, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize"))
+    };
+    let number = |e: &Expr| match e {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(r) => Some(*r),
+      _ => None,
+    };
+    let scaled = args.iter().find_map(|a| match a {
+      Expr::Rule { replacement, .. } if is_size_rule(a) => {
+        match replacement.as_ref() {
+          Expr::List(dims) if dims.len() == 2 => {
+            let (w, h) = (number(&dims[0])?, number(&dims[1])?);
+            (w > 0.0 && h > 0.0).then(|| {
+              Expr::List(
+                vec![
+                  Expr::Integer(size),
+                  Expr::Integer((size as f64 * h / w).round() as i128),
+                ]
+                .into(),
+              )
+            })
+          }
+          other => number(other)
+            .filter(|w| *w > 0.0)
+            .map(|_| Expr::Integer(size)),
+        }
+      }
+      _ => None,
+    });
+    if let Some(new_size) = scaled {
+      let mut new_args: Vec<Expr> =
+        args.iter().filter(|a| !is_size_rule(a)).cloned().collect();
+      new_args.push(rule_expr(id_expr("ImageSize"), new_size));
+      return Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      };
+    }
+  }
+  with_default_image_size(expr, size)
+}
+
 /// If `expr` is a top-level list that looks like a list of graphics
 /// (1-D `{p1, p2, ...}` or 2-D `{{p1, p2}, {p3, p4}}`), return a new
 /// expression with `ImageSize -> per_cell_w` injected on each child so
@@ -18960,7 +19022,7 @@ pub fn inject_image_size_for_list_of_graphics(expr: &Expr) -> Option<Expr> {
           Expr::List(
             items
               .iter()
-              .map(|it| with_default_image_size(it, per_cell_w))
+              .map(|it| with_cell_image_size(it, per_cell_w))
               .collect(),
           )
         } else {
@@ -18985,7 +19047,7 @@ pub fn inject_image_size_for_list_of_graphics(expr: &Expr) -> Option<Expr> {
     let per_cell_w = compute_per_cell_width(items.len(), None);
     let new_items: Vec<Expr> = items
       .iter()
-      .map(|it| with_default_image_size(it, per_cell_w))
+      .map(|it| with_cell_image_size(it, per_cell_w))
       .collect();
     return Some(Expr::List(new_items.into()));
   }
@@ -19179,7 +19241,7 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
         _ => target,
       };
       let rewritten =
-        with_default_image_size(&target, per_cell_w * spans[item_idx]);
+        with_cell_image_size(&target, per_cell_w * spans[item_idx]);
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
       let svg = crate::evaluator::expr_to_svg(&evaluated);
       if svg.is_empty() {
