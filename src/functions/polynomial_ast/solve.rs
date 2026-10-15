@@ -6735,7 +6735,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // evaluates to a complex number we route to a complex Newton iteration
   // before the real-only path below.
   let (var_name, x_start_expr) = match arg1 {
-    Expr::List(items) if items.len() == 2 || items.len() == 3 => {
+    Expr::List(items) if (2..=4).contains(&items.len()) => {
       let name = match &items[0] {
         Expr::Identifier(n) => n.clone(),
         _ => {
@@ -6771,7 +6771,24 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       im0,
     );
   }
+  let mut bounds: Option<(f64, f64)> = None;
   let (var, x0, x1_opt) = match arg1 {
+    Expr::List(items) if items.len() == 4 => {
+      // {var, x0, xmin, xmax}: Newton search confined to [xmin, xmax].
+      let var_name = match &items[0] {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "FindRoot: variable must be a symbol".into(),
+          ));
+        }
+      };
+      let x0 = find_root_eval_number(&items[1])?;
+      let lo = find_root_eval_number(&items[2])?;
+      let hi = find_root_eval_number(&items[3])?;
+      bounds = Some((lo.min(hi), lo.max(hi)));
+      (var_name, x0, None)
+    }
     Expr::List(items) if items.len() == 2 => {
       let var_name = match &items[0] {
         Expr::Identifier(name) => name.clone(),
@@ -6802,6 +6819,10 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "FindRoot: second argument must be {var, x0} or {var, x0, x1}".into(),
       ));
     }
+  };
+  let x0 = match bounds {
+    Some((lo, hi)) => x0.clamp(lo, hi),
+    None => x0,
   };
   // Use secant method if x1 is provided or Method -> "Secant"
   let use_secant = use_secant || x1_opt.is_some();
@@ -6944,6 +6965,9 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       shrink *= 0.5;
       trial = x - step * shrink;
+    }
+    if let Some((lo, hi)) = bounds {
+      trial = trial.clamp(lo, hi);
     }
     // A step this small means the iteration has settled, even for a function
     // whose residual cannot reach `tol` because of its scale. Note it and keep

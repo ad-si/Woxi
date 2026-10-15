@@ -20043,6 +20043,35 @@ mod extremum_partial_derivatives {
   }
 
   #[test]
+  fn higher_order_partials_vanish_away_from_ties() {
+    for (code, expected) in [
+      ("Derivative[0, 2][Max][0.5, 2.25]", "0"),
+      ("Derivative[0, 3][Min][0.5, 2.25]", "0"),
+      (
+        "g[t_] := Min[2.25, Max[1.25, t^3]]; \
+         {Derivative[2][g][0.5], Derivative[2][g][1.2]}",
+        "{0., 7.199999999999999}",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  #[test]
+  fn high_interpolation_order_is_global_polynomial() {
+    assert_eq!(
+      interpret(
+        "pts = {{0, 0}, {1, 1}, {2, 0}, {3, 2}, {4, 1}}; \
+         f = Interpolation[pts, InterpolationOrder -> 4]; \
+         {f[\"InterpolationOrder\"], Chop[f[0.5] - InterpolatingPolynomial[pts, x] /. x -> 0.5], \
+          Round[Derivative[2][f][0.5], 0.001]}"
+      )
+      .unwrap(),
+      "{{4}, 0, -7.708}"
+    );
+  }
+
+  #[test]
   fn tie_stays_unevaluated() {
     assert_eq!(
       interpret("Derivative[0, 1][Max][2, 2]").unwrap(),

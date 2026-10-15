@@ -599,7 +599,18 @@ fn clip_segments_to_y_range(
         } else if !prev_inside && !inside {
           // Both outside — check if the line passes through the range
           // (e.g. one above y_max and the other below y_min)
-          if (py > y_max && y < y_min) || (py < y_min && y > y_max) {
+          // A pole (e.g. `1/x` at 0) also jumps from one side to the other
+          // between neighbouring samples, but both samples lie far outside
+          // the range (a full range height or more); that gap must not be
+          // bridged by a vertical line. A steep but continuous curve stays
+          // within a range height of the boundaries.
+          let height = y_max - y_min;
+          let far_apart = (py - y).abs() > 3.0 * height
+            && (py > y_max + height || py < y_min - height)
+            && (y > y_max + height || y < y_min - height);
+          if !far_apart
+            && ((py > y_max && y < y_min) || (py < y_min && y > y_max))
+          {
             // Crosses both boundaries
             let t_min = (y_min - py) / (y - py);
             let t_max = (y_max - py) / (y - py);
