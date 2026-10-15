@@ -268,8 +268,29 @@ impl ControlState {
       return;
     };
     match self {
-      ControlState::Continuous { current, .. }
-      | ControlState::Trigger { current, .. } => {
+      ControlState::Continuous {
+        current,
+        is_real,
+        step,
+        min,
+        max,
+        ..
+      } => {
+        if let Some(v) = as_f64(&expr) {
+          *current = v;
+          // A machine real assigned to a slider whose spec was all exact
+          // integers (`{c, -2, 2}`) shows Wolfram's slider is continuous:
+          // an integer step could never have produced that value.
+          if matches!(expr, Expr::Real(_)) && !*is_real {
+            *is_real = true;
+            let span = (*max - *min).abs();
+            if span > 0.0 {
+              *step = span / 100.0;
+            }
+          }
+        }
+      }
+      ControlState::Trigger { current, .. } => {
         if let Some(v) = as_f64(&expr) {
           *current = v;
         }
