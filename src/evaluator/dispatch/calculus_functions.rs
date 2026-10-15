@@ -1661,6 +1661,35 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         ));
       }
 
+      // L^-1[(s + c)^(-n)] = t^(n-1) E^(-c t) / Gamma[n] for a negative
+      // rational (non-integer) exponent -n, e.g. 1/Sqrt[s + c].
+      if let Expr::FunctionCall { name, args } = fargs[1]
+        && name == "Rational"
+        && args.len() == 2
+        && let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1])
+        && *p < 0
+        && *q > 1
+      {
+        let shift = match fargs[0] {
+          Expr::Identifier(v) if v == s => Some(Expr::Integer(0)),
+          base => extract_linear_s_offset(base, s),
+        };
+        if let Some(c) = shift {
+          let n = fargs[1].clone();
+          let n = crate::evaluator::evaluate_expr_to_expr(&times(vec![
+            Expr::Integer(-1),
+            n,
+          ]))
+          .ok()?;
+          let t_id = Expr::Identifier(t.to_string());
+          return Some(times(vec![
+            pow(t_id.clone(), plus(vec![n.clone(), Expr::Integer(-1)])),
+            pow(const_expr("E"), times(vec![Expr::Integer(-1), c, t_id])),
+            pow(call1("Gamma", n), Expr::Integer(-1)),
+          ]));
+        }
+      }
+
       // L^-1[(s - a)^(-1)] = E^(a*t) or L^-1[(s + a)^(-1)] = E^(-a*t)
       if let Expr::Integer(-1) = fargs[1] {
         // Check if fargs[0] is (s + something) or (s - something)
@@ -1678,6 +1707,50 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
 
     // L^-1[a/(s^2 + a^2)] = Sin[a*t] and L^-1[s/(s^2 + a^2)] = Cos[a*t]
     if fname == "Times" && fargs.len() == 2 {
+      // L^-1[Log[k s]/s] = Log[k] - EulerGamma - Log[t] for k independent of s.
+      let log_over_s = [(0, 1), (1, 0)].iter().find_map(|&(i, j)| {
+        let is_inv_s = matches!(
+          as_func_args(fargs[j]),
+          Some(("Power", pa)) if pa.len() == 2
+            && matches!(pa[0], Expr::Identifier(v) if v == s)
+            && matches!(pa[1], Expr::Integer(-1))
+        );
+        if !is_inv_s {
+          return None;
+        }
+        let (ln, la) = as_func_args(fargs[i])?;
+        if ln != "Log" || la.len() != 1 {
+          return None;
+        }
+        match la[0] {
+          Expr::Identifier(v) if v == s => Some(Expr::Integer(1)),
+          inner => {
+            let (n2, fa) = as_func_args(inner)?;
+            if n2 != "Times" {
+              return None;
+            }
+            let (dep, rest): (Vec<Expr>, Vec<Expr>) =
+              fa.into_iter().cloned().partition(|x| depends_on(x, s));
+            if dep.len() == 1
+              && matches!(&dep[0], Expr::Identifier(v) if v == s)
+            {
+              Some(times(rest))
+            } else {
+              None
+            }
+          }
+        }
+      });
+      if let Some(k) = log_over_s {
+        return Some(plus(vec![
+          call1("Log", k),
+          times(vec![Expr::Integer(-1), const_expr("EulerGamma")]),
+          times(vec![
+            Expr::Integer(-1),
+            call1("Log", Expr::Identifier(t.to_string())),
+          ]),
+        ]));
+      }
       // Check for pattern: X * (s^2 + a^2)^(-1)
       let (numerator, denom_base) = if is_power_neg1(fargs[1]) {
         (fargs[0], get_power_base(fargs[1]))
