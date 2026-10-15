@@ -25215,6 +25215,19 @@ pub(crate) fn tabview_pane_parts(item: &Expr) -> (Option<Expr>, &Expr, &Expr) {
 /// whatever `expand_conditional_control_items` splices in, since a spliced
 /// control is just as likely to arrive `Control`-wrapped.
 fn unwrap_control_wrapper(spec: Expr) -> Expr {
+  // `Framed[Control[…]]` / `Panel[Control[…]]`: a bordered single control.
+  let spec = match &spec {
+    Expr::FunctionCall { name, args }
+      if (name == "Framed" || name == "Panel")
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
+        ) =>
+    {
+      args[0].clone()
+    }
+    _ => spec,
+  };
   let spec = match &spec {
     Expr::FunctionCall { name, args }
       if name == "Dynamic"
@@ -31531,6 +31544,19 @@ mod manipulate_dynamic_control_list_tests {
     assert_eq!(names(&s), vec!["col"]);
     assert_eq!(s.displays, [] as [std::string::String; 0]);
     assert!(matches!(&s.controls[0], ManipulateControl::Color { .. }));
+  }
+
+  /// A control hand-framed with `Framed[Control[…]]` (the Demonstrations
+  /// idiom for a bordered slider over a precomputed table) is a real
+  /// control, not a static display of the literal `Control[…]` call.
+  #[test]
+  fn framed_control_is_a_real_control() {
+    let s = spec(
+      "Manipulate[x + y, {{y, 1}, 0, 2}, Framed[Control[{{x, 2, \"x\"}, \
+       {1, 2, 3}, ControlType -> Slider}]]]",
+    );
+    assert_eq!(names(&s), vec!["y", "x"]);
+    assert_eq!(s.displays, [] as [std::string::String; 0]);
   }
 
   /// `Sequence@@If[cond, ctrlSpec, {}]` inside a Dynamic control list
