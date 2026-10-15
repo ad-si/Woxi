@@ -14407,7 +14407,9 @@ fn compute_region_set_op(
         Some(e) => e,
         None => return echo(),
       },
-      "RegionIntersection" => match region_box_intersection(&acc, next) {
+      "RegionIntersection" => match region_box_intersection(&acc, next)
+        .or_else(|| region_line_intersection(&acc, next))
+      {
         Some(region) => region,
         None => match boolean_region(name, &acc, next) {
           Some(r) => r,
@@ -14873,6 +14875,154 @@ fn compute_region_product(args: &[Expr]) -> Expr {
     }
   }
   product
+}
+
+/// `RegionIntersection` of two `Line`s (2D or 3D polylines): the exact
+/// points where their segments cross, as `Point[p]` / `Point[{p1, ...}]`, or
+/// `EmptyRegion[n]` when they never meet. Collinear overlaps are not a point
+/// set, so those (and anything symbolic) are left to `BooleanRegion`.
+fn region_line_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
+  let polyline = |r: &Expr| -> Option<Vec<Vec<Expr>>> {
+    let Expr::FunctionCall { name, args } = r else {
+      return None;
+    };
+    if name != "Line" || args.len() != 1 {
+      return None;
+    }
+    let Expr::List(pts) = &args[0] else {
+      return None;
+    };
+    let pts: Option<Vec<Vec<Expr>>> = pts
+      .iter()
+      .map(|p| match p {
+        Expr::List(c) if c.len() == 2 || c.len() == 3 => Some(c.to_vec()),
+        _ => None,
+      })
+      .collect();
+    let pts = pts?;
+    let dims = pts.first()?.len();
+    (pts.len() >= 2 && pts.iter().all(|p| p.len() == dims)).then_some(pts)
+  };
+  let pa = polyline(a)?;
+  let pb = polyline(b)?;
+  let dims = pa[0].len();
+  if pb[0].len() != dims {
+    return None;
+  }
+
+  let ev = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let plus = |x: Expr, y: Expr| call("Plus", vec![x, y]);
+  let times = |x: Expr, y: Expr| call("Times", vec![x, y]);
+  let sub =
+    |x: &Expr, y: &Expr| plus(x.clone(), times(Expr::Integer(-1), y.clone()));
+  let sub_v = |u: &[Expr], v: &[Expr]| -> Vec<Expr> {
+    u.iter().zip(v).map(|(x, y)| sub(x, y)).collect()
+  };
+  let dot = |u: &[Expr], v: &[Expr]| -> Expr {
+    call(
+      "Plus",
+      u.iter()
+        .zip(v)
+        .map(|(x, y)| times(x.clone(), y.clone()))
+        .collect(),
+    )
+  };
+  let cross = |u: &[Expr], v: &[Expr]| -> Vec<Expr> {
+    let c = |i: usize, j: usize| {
+      sub(
+        &times(u[i].clone(), v[j].clone()),
+        &times(u[j].clone(), v[i].clone()),
+      )
+    };
+    vec![c(1, 2), c(2, 0), c(0, 1)]
+  };
+  let pad = |p: &[Expr]| -> Vec<Expr> {
+    let mut v = p.to_vec();
+    v.resize(3, Expr::Integer(0));
+    v
+  };
+  let is_true = |e: Expr| -> Option<bool> {
+    match ev(e)? {
+      Expr::Identifier(ref s) if s == "True" => Some(true),
+      Expr::Identifier(ref s) if s == "False" => Some(false),
+      _ => None,
+    }
+  };
+  let is_zero = |e: &Expr| -> Option<bool> {
+    is_true(call("Equal", vec![e.clone(), Expr::Integer(0)]))
+  };
+
+  let mut points: Vec<Vec<Expr>> = Vec::new();
+  for sa in pa.windows(2) {
+    for sb in pb.windows(2) {
+      let (p, q) = (pad(&sa[0]), pad(&sb[0]));
+      let d = sub_v(&pad(&sa[1]), &p);
+      let e = sub_v(&pad(&sb[1]), &q);
+      let w = sub_v(&q, &p);
+      let n = cross(&d, &e);
+      let nn = ev(dot(&n, &n))?;
+      if is_zero(&nn)? {
+        // Parallel: disjoint is empty, collinear needs a segment overlap.
+        let wd = cross(&w, &d);
+        if is_zero(&ev(dot(&wd, &wd))?)? {
+          return None;
+        }
+        continue;
+      }
+      // Skew lines never meet; coplanar ones meet at p + t d.
+      if !is_zero(&ev(dot(&w, &n))?)? {
+        continue;
+      }
+      let t = ev(call(
+        "Times",
+        vec![
+          dot(&cross(&w, &e), &n),
+          call("Power", vec![nn.clone(), Expr::Integer(-1)]),
+        ],
+      ))?;
+      let s = ev(call(
+        "Times",
+        vec![
+          dot(&cross(&w, &d), &n),
+          call("Power", vec![nn, Expr::Integer(-1)]),
+        ],
+      ))?;
+      let within = |x: &Expr| -> Option<bool> {
+        Some(
+          is_true(call("GreaterEqual", vec![x.clone(), Expr::Integer(0)]))?
+            && is_true(call("LessEqual", vec![x.clone(), Expr::Integer(1)]))?,
+        )
+      };
+      if !(within(&t)? && within(&s)?) {
+        continue;
+      }
+      let pt: Option<Vec<Expr>> = (0..dims)
+        .map(|i| ev(plus(p[i].clone(), times(t.clone(), d[i].clone()))))
+        .collect();
+      let pt = pt?;
+      let key = expr_to_string(&Expr::List(pt.clone().into()));
+      if !points
+        .iter()
+        .any(|q| expr_to_string(&Expr::List(q.clone().into())) == key)
+      {
+        points.push(pt);
+      }
+    }
+  }
+  Some(match points.len() {
+    0 => call1("EmptyRegion", Expr::Integer(dims as i128)),
+    1 => call1("Point", Expr::List(points.remove(0).into())),
+    _ => call1(
+      "Point",
+      Expr::List(
+        points
+          .into_iter()
+          .map(|p| Expr::List(p.into()))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+    ),
+  })
 }
 
 /// Render coordinates back as integers when the source region used integers,
