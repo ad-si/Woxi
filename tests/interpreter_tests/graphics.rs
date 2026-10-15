@@ -23593,28 +23593,31 @@ mod parametric_plot3d {
     span(&coords(1)) / span(&coords(0))
   }
 
-  /// Regression (Wolfram Demonstration "Twisted Surfaces of Revolution"):
-  /// `ParametricPlot3D`'s own direct render (unlike `Graphics3D`'s) never
-  /// read `BoxRatios` at all — it always squashed the box into Wolfram's
-  /// `Plot3D`-family default `{1, 1, 0.4}` no matter what was asked for.
-  /// `BoxRatios -> Automatic` asks for the box shaped like the data's own
-  /// extents instead, so a tube running ten times as far along its axis
-  /// as it is wide must draw far taller than the squashed default.
+  /// `ParametricPlot3D`'s default `BoxRatios` is `Automatic` (unlike
+  /// `Plot3D`'s `{1, 1, 0.4}`): a tube running ten times as far along its
+  /// axis as it is wide draws tall, the same with or without the option —
+  /// and keeps that shape when `Show` re-renders it.
   #[test]
-  fn box_ratios_automatic_uses_the_datas_own_proportions() {
-    let default_shape = export_svg(
-      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -10, 10}]",
-    );
-    let automatic_shape = export_svg(
-      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -10, 10}, \
-       BoxRatios -> Automatic]",
-    );
-    let (default_aspect, automatic_aspect) =
-      (box_aspect(&default_shape), box_aspect(&automatic_shape));
-    assert!(
-      automatic_aspect > default_aspect * 2.0,
-      "Automatic BoxRatios must draw the data's true, much taller shape: \
-       {automatic_aspect} vs default {default_aspect}"
+  fn box_ratios_default_to_the_datas_own_proportions() {
+    let tube = "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, \
+                {v, -10, 10}";
+    let squashed =
+      box_aspect(&export_svg(&format!("{tube}, BoxRatios -> {{1, 1, 0.4}}]")));
+    for code in [
+      format!("{tube}]"),
+      format!("{tube}, BoxRatios -> Automatic]"),
+      format!("Show[{tube}], Graphics3D[Point[{{0, 0, 0}}]]]"),
+    ] {
+      let aspect = box_aspect(&export_svg(&code));
+      assert!(
+        aspect > squashed * 4.0,
+        "{code} must draw the data's true, much taller shape: \
+         {aspect} vs squashed {squashed}"
+      );
+    }
+    assert_eq!(
+      interpret(&format!("Options[{tube}], BoxRatios]")).unwrap(),
+      "{BoxRatios -> Automatic}"
     );
   }
 
@@ -34225,12 +34228,12 @@ fn test_show_merges_parametric_plot3d_surface_with_graphics3d() {
 #[test]
 fn test_show_parametric_plot3d_first_keeps_default_axes_and_box_ratios() {
   // Regression: the `structure` block that lets ParametricPlot3D merge
-  // into `Show` (previous test) initially left out the `Axes -> True` /
-  // `BoxRatios -> {1, 1, Z_SCALE}` defaults that the analogous Plot3D
-  // block fills in. `Show` takes its merged options from the *first*
-  // graphic's own structure, so with ParametricPlot3D listed first the
-  // merged picture would silently lose axes and get a different aspect
-  // ratio than ParametricPlot3D's own standalone default.
+  // into `Show` (previous test) initially left out the `Axes -> True`
+  // default. `Show` takes its merged options from the *first* graphic's
+  // own structure, so with ParametricPlot3D listed first the merged
+  // picture would silently lose axes. Its box keeps the data's own
+  // proportions (`BoxRatios -> Automatic`, unlike Plot3D's `{1, 1, 0.4}`),
+  // so no squashing `BoxRatios` may be spelled out either.
   clear_state();
   let expr = woxi::interpret_to_expr(
     "Show[ParametricPlot3D[{u, v, 0}, {u, -1, 1}, {v, -1, 1}], \
@@ -34245,8 +34248,8 @@ fn test_show_parametric_plot3d_first_keeps_default_axes_and_box_ratios() {
     "expected the merged structure to default to Axes -> True: {debug}"
   );
   assert!(
-    debug.contains(r#"pattern: Identifier("BoxRatios")"#),
-    "expected the merged structure to default BoxRatios: {debug}"
+    !debug.contains(r#"pattern: Identifier("BoxRatios")"#),
+    "the merged structure must leave BoxRatios Automatic: {debug}"
   );
 }
 

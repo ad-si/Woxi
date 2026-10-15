@@ -11954,12 +11954,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the usual way a mesh-shaded dissection hides its own seams.
   let mut mesh_style_none = false;
   // `BoxRatios -> {rx, ry, rz}` reshapes the bounding box to those
-  // proportions regardless of the surface's actual extent along each axis
-  // (Wolfram's own default here is `{1, 1, 0.4}`, matching `Z_SCALE`).
-  // `BoxRatios -> Automatic` instead asks for the box shaped like the
-  // data itself — no axis stretched relative to the others.
+  // proportions regardless of the surface's actual extent along each axis.
+  // Otherwise (Wolfram's default `Automatic`, unlike `Plot3D`'s
+  // `{1, 1, 0.4}`) the box is shaped like the data itself.
   let mut box_ratios_explicit: Option<[f64; 3]> = None;
-  let mut box_ratios_automatic = false;
   // `PlotRange -> {{x0,x1},{y0,y1},{z0,z1}}` pins the displayed region
   // regardless of the sampled surface's own extent, the same way it does
   // for `Graphics3D` — needed so a `BoxRatios` given alongside it (as
@@ -12000,9 +11998,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(name) if name == "BoxRatios" => {
           let value = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.as_ref().clone());
-          if matches!(&value, Expr::Identifier(s) if s == "Automatic") {
-            box_ratios_automatic = true;
-          } else if let Some(r) = eval_vec3(&value)
+          if let Some(r) = eval_vec3(&value)
             && r.iter().all(|v| *v > 0.0)
           {
             box_ratios_explicit = Some(r);
@@ -12206,18 +12202,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     gz_max - gz_min
   };
 
-  // `BoxRatios -> {a, b, c}` reshapes the box to those proportions;
-  // `BoxRatios -> Automatic` shapes it like the data's own extents
-  // instead (no axis independently stretched relative to the others);
-  // the unspecified default matches Wolfram's own `{1, 1, 0.4}` for
-  // `Plot3D`-family functions.
-  let box_ratios: [f64; 3] = if let Some(r) = box_ratios_explicit {
-    r
-  } else if box_ratios_automatic {
-    [rx, ry, rz]
-  } else {
-    [1.0, 1.0, Z_SCALE]
-  };
+  let box_ratios: [f64; 3] = box_ratios_explicit.unwrap_or([rx, ry, rz]);
 
   // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
   // `Show` merges the *primitives* of the graphics it is given, so a
@@ -12383,30 +12368,18 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Expr::List(complexes.into())
     };
-    // `ParametricPlot3D` draws axes and squats its box the same way
-    // `Plot3D` does (see the analogous block above), where a bare
-    // `Graphics3D` does neither: both defaults are spelled out so a
-    // surface shown inside another graphic — with `ParametricPlot3D`
-    // itself first in the `Show` — keeps the shape it was drawn with.
+    // `ParametricPlot3D` draws axes where a bare `Graphics3D` does not, so
+    // that default is spelled out: a surface shown inside another graphic
+    // — with `ParametricPlot3D` itself first in the `Show` — keeps them.
+    // Its box is shaped like the data, which is `Graphics3D`'s own default.
     let mut structure_args = vec![content];
     structure_args.extend(args[3..].iter().cloned());
-    let names = |opt: &str| {
-      structure_args.iter().any(|o| {
-        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
-          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
-      })
-    };
-    let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
+    let names_axes = structure_args.iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes"))
+    });
     if !names_axes {
       structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
-    }
-    if !names_ratios {
-      structure_args.push(rule_expr(
-        id_expr("BoxRatios"),
-        Expr::List(
-          vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
-        ),
-      ));
     }
     call("Graphics3D", structure_args)
   };
