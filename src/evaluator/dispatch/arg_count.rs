@@ -922,6 +922,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Max" => Some((0, usize::MAX)),
     "MaxFilter" => Some((2, 2)),
     "GradientFilter" => Some((2, 2)),
+    "LaplacianFilter" => Some((2, 2)),
     "MedianFilter" => Some((2, 2)),
     "MeanFilter" => Some((2, 2)),
     "StandardDeviationFilter" => Some((2, 2)),

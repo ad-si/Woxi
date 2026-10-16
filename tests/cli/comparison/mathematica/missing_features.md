@@ -565,7 +565,7 @@ Woxi does **not** support.
     `FourierCosSeries`, `FourierSinSeries`, `FourierSequenceTransform`
 - Morphological image processing: `HitMissTransform`, `TopHatTransform`,
     `BottomHatTransform`, `GeodesicDilation`, `GeodesicErosion`,
-    `MorphologicalPerimeter`, filters (`LaplacianFilter`,
+    `MorphologicalPerimeter`, filters (
     `EntropyFilter`, `GeometricMeanFilter`)
 - Generalized linear models: `GeneralizedLinearModelFit`,
     `ProbitModelFit`
