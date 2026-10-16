@@ -2192,6 +2192,30 @@ fn refine_zeta_zero(t0: f64) -> f64 {
   bigfloat_to_f64_nearest(&BigFloat::from_f64(t0, bits).sub(&step, bits, rm))
 }
 
+/// Imaginary part of `ZetaZero[k, t]`: the `k`-th zero (counting from 1)
+/// whose imaginary part exceeds `t`. Only positive `k` and non-negative `t`
+/// are handled; anything else returns `None` so the call stays symbolic.
+pub(crate) fn zeta_zero_t_after(k: i128, t: f64) -> Option<f64> {
+  if k < 1 || !t.is_finite() || t < 0.0 {
+    return None;
+  }
+  // Index of the first zero above `t`: start from the smooth count and
+  // correct by stepping, since the smooth count is off by a few zeros.
+  let mut n = (zeta_zero_smooth_count(t).floor() as i128).max(1);
+  while zeta_zero_t_for_k(n)? <= t {
+    n += 1;
+  }
+  while n > 1 && zeta_zero_t_for_k(n - 1)? > t {
+    n -= 1;
+  }
+  zeta_zero_t_for_k(n.checked_add(k - 1)?)
+}
+
+/// Numeric evaluation of `ZetaZero[k, t]` as the machine complex `1/2 + i t'`.
+pub fn zeta_zero_after_n_eval(k: i128, t: f64) -> Option<Expr> {
+  zeta_zero_t_after(k, t).map(|t| build_complex_float_expr(0.5, t))
+}
+
 /// Numeric evaluation of ZetaZero[k] for use by N[] and by automatic
 /// numericalization when ZetaZero appears mixed with an inexact number.
 /// Returns the k-th non-trivial zero 1/2 + i t_k as a machine-complex Expr.
@@ -2204,8 +2228,8 @@ pub fn zeta_zero_n_eval(k: i128) -> Option<Expr> {
 /// index, ZetaZero being NHoldFirst) evaluates it via `zeta_zero_n_eval`.
 /// A numeric index that is not a nonzero integer (`ZetaZero[3.]`,
 /// `ZetaZero[0]`, `ZetaZero[1/2]`) is rejected with `ZetaZero::intnz`.
-/// ZetaZero[k, t] / ZetaZero[k, t1, t2] (a zero pinned near a starting
-/// point / in a range) stay symbolic.
+/// ZetaZero[k, t] (the k-th zero above height t) evaluates under `N`;
+/// ZetaZero[k, t1, t2] stays symbolic.
 pub fn zeta_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
