@@ -4802,6 +4802,88 @@ fn gradient_filter_derivative_kernel(smooth: &[f64]) -> Vec<f64> {
   d
 }
 
+/// LaplacianFilter[image, r] — sum of the second derivatives of the
+/// image smoothed by the discrete Gaussian of half-width `r` and
+/// standard deviation `r/2`: `L ⊛_x (T ⊛_y I) + L ⊛_y (T ⊛_x I)`, where
+/// `T` is `gaussian_filter_kernel` and `L[k] = T[k-1] - 2·T[k] + T[k+1]`
+/// (so a unit parabola `k²` yields 2). Padding repeats the edge pixel.
+pub fn laplacian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("LaplacianFilter", args);
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+    ..
+  } = &args[0]
+  else {
+    return Ok(unevaluated());
+  };
+  let axis = match expr_to_f64_opt(&args[1]) {
+    Some(r) if r >= 1.0 => gaussian_axis_from_radius(r),
+    _ => return Ok(unevaluated()),
+  };
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = *channels as usize;
+  if w == 0 || h == 0 {
+    return Ok(args[0].clone());
+  }
+  let smooth = gaussian_filter_kernel(axis.radius, axis.sigma);
+  let wide = gaussian_filter_kernel(axis.radius + 1, axis.sigma);
+  let mut second: Vec<f64> = (1..wide.len() - 1)
+    .map(|i| wide[i - 1] - 2.0 * wide[i] + wide[i + 1])
+    .collect();
+  // Truncating the kernel must not leak a constant response, so the
+  // centre tap absorbs the truncation error and the taps sum to zero.
+  let centre = axis.radius;
+  let others: f64 = second
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| *i != centre)
+    .map(|(_, v)| v)
+    .sum();
+  second[centre] = -others;
+  let convolve = crate::functions::math_ast::convolve_edge_padded;
+  let along_rows = |source: &[f64], kernel: &[f64]| {
+    let mut out = vec![0.0; w * h];
+    for y in 0..h {
+      let filtered = convolve(&source[y * w..(y + 1) * w], kernel);
+      out[y * w..(y + 1) * w].copy_from_slice(&filtered);
+    }
+    out
+  };
+  let along_columns = |source: &[f64], kernel: &[f64]| {
+    let mut out = vec![0.0; w * h];
+    for x in 0..w {
+      let column: Vec<f64> = (0..h).map(|y| source[y * w + x]).collect();
+      let filtered = convolve(&column, kernel);
+      for y in 0..h {
+        out[y * w + x] = filtered[y];
+      }
+    }
+    out
+  };
+  let mut out: Vec<f64> = vec![0.0; data.len()];
+  for c_idx in 0..ch {
+    let plane: Vec<f64> = (0..w * h).map(|i| data[i * ch + c_idx]).collect();
+    let dxx = along_rows(&along_columns(&plane, &smooth), &second);
+    let dyy = along_columns(&along_rows(&plane, &smooth), &second);
+    for i in 0..w * h {
+      out[i * ch + c_idx] = dxx[i] + dyy[i];
+    }
+  }
+  Ok(Expr::Image {
+    color_space: None,
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(out),
+    image_type: *image_type,
+  })
+}
+
 pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A list argument reads its range like the other neighborhood filters:
   // the magnitude, and a whole number or nothing. An image keeps taking
