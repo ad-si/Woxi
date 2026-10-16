@@ -25741,6 +25741,28 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     && !matches!(&args[0], Expr::List(_))
     && contains_explicit_control(&args[0])
   {
+    // `Dynamic[If[cond, Control[…], Control[…]]]`: a control row that swaps
+    // with another control. Both branches' controls join the flat list;
+    // `collect_pane_visibility` records which condition shows each one.
+    if let Expr::FunctionCall {
+      name: head,
+      args: branches,
+    } = &args[0]
+      && head == "If"
+      && branches.len() >= 2
+    {
+      let mut out = Vec::new();
+      for branch in &branches[1..] {
+        if !contains_explicit_control(branch) {
+          continue;
+        }
+        match control_group_items(branch) {
+          Some(nested) => out.extend(nested),
+          None => out.push(branch.clone()),
+        }
+      }
+      return Some(out);
+    }
     // The `Dynamic` makes every non-literal caption piece live
     // (`Dynamic@Row[{"from ", n, " to ", n + 59, Control[…]}]` shows the
     // current values of `n` and `n + 59`, not their source text).
@@ -26144,6 +26166,29 @@ fn collect_pane_visibility(
   let Expr::FunctionCall { name, args } = spec else {
     return;
   };
+  // `If[cond, Control[…], Control[…]]` shows each branch's controls only
+  // while its condition holds (the else branch while `cond` does not).
+  if name == "If" && args.len() >= 2 {
+    let cond = crate::syntax::expr_to_source_form(&args[0]);
+    for (i, branch) in args[1..].iter().take(2).enumerate() {
+      let own = if i == 0 {
+        format!("({cond})")
+      } else {
+        format!("!({cond})")
+      };
+      let own = match outer {
+        Some(o) => format!("({o}) && {own}"),
+        None => own,
+      };
+      for var in pane_control_variables(branch, place_map) {
+        match out.iter_mut().find(|(n, _)| *n == var) {
+          Some((_, existing)) => *existing = format!("{existing} || {own}"),
+          None => out.push((var, own.clone())),
+        }
+      }
+    }
+    return;
+  }
   if name != "PaneSelector" {
     // The `PaneSelector` may sit inside a layout container.
     for arg in args {
@@ -28660,6 +28705,19 @@ fn parse_manipulate_control(
         && !matches!(it, Expr::Identifier(s) if is_control_type_name(s))
     })
     .collect();
+
+  // `{{v, {a, b, …}, label}, lo, hi, MultiSlider[##] &}`: an N-handle slider
+  // binding `v` to a *list*. Woxi has no multi-handle widget, so the list
+  // stays a live binding at its initial value rather than collapsing into
+  // a single scalar slider that would reset it to a number.
+  if let Some(init @ Expr::List(_)) = explicit_initial.as_ref()
+    && items[1..]
+      .iter()
+      .any(|it| crate::syntax::expr_to_source_form(it).contains("MultiSlider["))
+  {
+    let value = manipulate_value_to_input_form(init);
+    return Some(ParsedControl::Fixed { name, value });
+  }
 
   // `Appearance -> "Vertical"` (or the bare symbol `Vertical`) stacks a
   // SetterBar/RadioButtonBar/CheckboxBar in a column instead of Wolfram's
