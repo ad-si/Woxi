@@ -7501,9 +7501,11 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
     Expr::ReplaceAll { .. } | Expr::ReplaceRepeated { .. } => Some(7),
     Expr::CompoundExpr(_) => Some(1),
     // `body &` binds looser than every operator shorthand.
+    // Apply/Map/MapApply bind tighter than `Power` (620 vs 590), so a `Power`
+    // operand needs parens: `Plus @@ (a^k)`, not `Plus @@ a^k`.
     Expr::Function { .. } => Some(5),
-    Expr::Map { .. } => Some(47),
-    Expr::Apply { .. } | Expr::MapApply { .. } => Some(46),
+    Expr::Map { .. } => Some(49),
+    Expr::Apply { .. } | Expr::MapApply { .. } => Some(49),
     // ` !x` sits between `&&` and the application shorthands.
     Expr::UnaryOp {
       op: UnaryOperator::Not,
@@ -11053,13 +11055,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       )
     }
     Expr::Map { func, list } => {
-      format_map_apply_shorthand(func, list, "/@", 47)
+      format_map_apply_shorthand(func, list, "/@", 49)
     }
     Expr::Apply { func, list } => {
-      format_map_apply_shorthand(func, list, "@@", 46)
+      format_map_apply_shorthand(func, list, "@@", 49)
     }
     Expr::MapApply { func, list } => {
-      format_map_apply_shorthand(func, list, "@@@", 46)
+      format_map_apply_shorthand(func, list, "@@@", 49)
     }
     Expr::PrefixApply { func, arg } => {
       // f @ g is displayed as f[g] (Wolfram converts @ to function call notation)
