@@ -1176,6 +1176,26 @@ fn apply_at_level_recursive(
     items.clone()
   };
 
+  // A child whose head became `Sequence` splices into its parent, exactly as
+  // it would when the parent is evaluated: Apply[Sequence, {{a}, {b, c}}, {1}]
+  // is {a, b, c}.
+  let new_items: Vec<Expr> = if current_level < max_level
+    && new_items.iter().any(
+      |i| matches!(i, Expr::FunctionCall { name, .. } if name == "Sequence"),
+    ) {
+    new_items
+      .into_iter()
+      .flat_map(|i| match &i {
+        Expr::FunctionCall { name, args } if name == "Sequence" => {
+          args.to_vec()
+        }
+        _ => vec![i],
+      })
+      .collect()
+  } else {
+    new_items
+  };
+
   // Replace head at this level if in range
   if current_level >= min_level && current_level <= max_level {
     apply_func_as_head(func, &new_items)
