@@ -149,7 +149,7 @@ PrivateUseLetter = _{ '\u{F6B2}'..'\u{F6CB}' | '\u{F770}'..'\u{F789}' | '\u{F6E6
 
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores
-PatternName = @{ (ASCII_ALPHA | LETTER | PrivateUseLetter) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter)* }
+PatternName = @{ (ASCII_ALPHA | LETTER | PrivateUseLetter | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "$")* }
 // NamedCharIdentifier: named character sequences like \[Phi], \[Alpha], etc.
 // Matches \[Name] syntax or direct Unicode chars for common symbols
 // Excludes operator named chars (\[Element], \[NotElement], \[ReverseElement], \[DirectedEdge], \[UndirectedEdge],
@@ -172,6 +172,7 @@ LetterlikeSymbolChar = _{ "\u{2026}" | "\u{22EF}" | "\u{22EE}" | "\u{22F0}" | "\
   | "\u{266F}" | "\u{266D}" | "\u{266E}"
   | "\u{2609}" | "\u{263F}" | "\u{2640}" | "\u{F3DF}" | "\u{2642}" | "\u{2643}" | "\u{2644}"
   | "\u{26E2}" | "\u{2646}" | "\u{2647}"
+  | "\u{2639}" | "\u{263A}" | '\u{2660}'..'\u{2663}' | '\u{F720}'..'\u{F729}'
 }
 
 // Bare big-operator glyphs (∑, ∏) used purely for display inside a
@@ -180,7 +181,7 @@ LetterlikeSymbolChar = _{ "\u{2026}" | "\u{22EF}" | "\u{22EE}" | "\u{22F0}" | "\
 // handling in notebook.rs and the glyph list in graphics.rs.
 BigOperatorChar = _{ "\u{2211}" | "\u{220F}" }
 
-NamedCharBase = _{ !("\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Piecewise]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]" | "\\[TildeTilde]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
+NamedCharBase = _{ !("\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Piecewise]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[Conjugate]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Intersection]" | "\\[Union]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]" | "\\[TildeTilde]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
 // Adjacent `\[Name]` segments (or named char + identifier chars)
 // concatenate into a single identifier — `\[CapitalGamma]\[Beta]` → `Γβ`,
 // `\[Angle]XYZ` → `∠XYZ`, `i\[Ellipsis]j` (when `i` then `\[Ellipsis]j`
@@ -192,10 +193,11 @@ NamedCharIdentifier = @{ NamedCharBase ~ (NamedCharBase | ASCII_ALPHANUMERIC | L
 // `Foo`Bar`x`. A leading backtick ` `x` ` is shorthand for the current
 // context (Global by default). Each segment after a backtick must begin
 // with a letter/_/$ so numeric precision tags like `1`30`/`Pi`30` aren't
-// accidentally absorbed.
+// accidentally absorbed. A segment may also start with a `\[Name]` named
+// character (`Global`\[Omega]g`), as in a saved Manipulate's stored context symbols.
 Identifier = @{
-  ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
-  | ((ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
+  ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
+  | ((ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
 }
 String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ ANY) | ("\\" ~ ANY))* ~ "\"" }
 
@@ -287,6 +289,8 @@ Operator = @{
   | "\\[Backslash]" | "\u{2216}" // Backslash operator: a ∖ b → Backslash[a, b]
   | "\\[CircleDot]" | "\u{2299}" // CircleDot operator: a ⊙ b → CircleDot[a, b]
   | "\\[SmallCircle]" | "\u{2218}" // SmallCircle operator: a ∘ b → SmallCircle[a, b]
+  | "\\[Intersection]" | "\u{22C2}" // Intersection operator: a ⋂ b → Intersection[a, b]
+  | "\\[Union]" | "\u{22C3}" // Union operator: a ⋃ b → Union[a, b]
   | "\\[Wedge]" | "\u{22C0}" // Wedge operator: a ⋀ b → Wedge[a, b]
   | "\\[Vee]" | "\u{22C1}" // Vee operator: a ⋁ b → Vee[a, b]
   | "\\[Cap]" | "\u{2322}" // Cap operator: a ⌢ b → Cap[a, b]
@@ -496,15 +500,17 @@ FactorialSuffix = { "!!" | "!" ~ !"=" ~ !"!" }
 
 // TransposeSuffix: expr \[Transpose] → Transpose[expr]
 // Both the ASCII named-character form and the Unicode PUA glyph
-// (U+F3C5) are accepted. This is a postfix operator that binds as a
+// (U+F3C7) are accepted. This is a postfix operator that binds as a
 // suffix on the preceding Term.
-TransposeSuffix = @{ "\\[Transpose]" | "\u{F3C5}" | "\u{F3C7}" }
+TransposeSuffix = @{ "\\[Transpose]" | "\u{F3C7}" }
+// ConjugateSuffix: expr \[Conjugate] → Conjugate[expr] (U+F3C8)
+ConjugateSuffix = @{ "\\[Conjugate]" | "\u{F3C8}" }
 // ConjugateTransposeSuffix: expr \[ConjugateTranspose] → ConjugateTranspose[expr]
-ConjugateTransposeSuffix = @{ "\\[ConjugateTranspose]" | "\u{F3C6}" | "\u{F3C8}" }
+ConjugateTransposeSuffix = @{ "\\[ConjugateTranspose]" | "\u{F3C9}" }
 // TermSuffix: postfix suffix tokens that can follow a Term (after
 // FactorialSuffix). Silent choice rule — the underlying named rules
 // are the ones that appear in the parse tree.
-TermSuffix = _{ TransposeSuffix | ConjugateTransposeSuffix | PatternTestSuffix }
+TermSuffix = _{ TransposeSuffix | ConjugateSuffix | ConjugateTransposeSuffix | PatternTestSuffix }
 // One operand of an expression chain: an optional prefix operator, a Term and
 // the suffixes that bind to it. Spelled out as one alternative per prefix
 // rather than `(LeadingNot | LeadingPlus | LeadingMinus)? ~ Term ~ …` because
@@ -648,6 +654,9 @@ BoxRight = _{ "\\)" | "\u{F7C0}" }
 // pairs around a single expression — Floor[x] / Ceiling[x].
 FloorBrackets = { "\u{230A}" ~ Expression ~ "\u{230B}" }
 CeilingBrackets = { "\u{2308}" ~ Expression ~ "\u{2309}" }
+// 〈a, b, …〉: `\[LeftAngleBracket]…\[RightAngleBracket]` (also written with
+// the CJK brackets U+3008/U+3009) is AngleBracket[a, b, …].
+AngleBrackets = { ("\u{2329}" | "\u{3008}") ~ Expression ~ ("," ~ Expression)* ~ ("\u{232A}" | "\u{3009}") }
 
 Term = _{
     DisplayedBoxes
@@ -661,6 +670,7 @@ Term = _{
   | PiecewisePrefix
   | FloorBrackets
   | CeilingBrackets
+  | AngleBrackets
   | Unset
   | ApplyToOp
   | AddTo
@@ -727,6 +737,7 @@ SimpleTerm = _{
   | PiecewisePrefix
   | FloorBrackets
   | CeilingBrackets
+  | AngleBrackets
   | UnsignedNumericValue
   | PrefixApplySimple
   | FunctionCall
@@ -741,6 +752,9 @@ SimpleTerm = _{
   | List
   | StringCall
   | String
+  // A parenthesized group applied to arguments / parts / a prime is one
+  // factor: `a (f)[x]` is `a f[x]`, not a parse error.
+  | ParenExtended
   | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
 }
 
@@ -752,6 +766,7 @@ TermNoImplicit = _{
   | PiecewisePrefix
   | FloorBrackets
   | CeilingBrackets
+  | AngleBrackets
   | Unset
   | ApplyToOp
   | AddTo

@@ -15,14 +15,10 @@ fn as_calls(expr: &Expr) -> Expr {
     Expr::BinaryOp { op, left, right } => {
       let (l, r) = (as_calls(left), as_calls(right));
       match op {
-        BinaryOperator::Plus => call("Plus", vec![l, r]),
-        BinaryOperator::Minus => {
-          call("Plus", vec![l, call("Times", vec![Expr::Integer(-1), r])])
-        }
-        BinaryOperator::Times => call("Times", vec![l, r]),
-        BinaryOperator::Divide => {
-          call("Times", vec![l, pow(r, Expr::Integer(-1))])
-        }
+        BinaryOperator::Plus => plus(vec![l, r]),
+        BinaryOperator::Minus => plus(vec![l, neg(r)]),
+        BinaryOperator::Times => times(vec![l, r]),
+        BinaryOperator::Divide => times(vec![l, pow(r, Expr::Integer(-1))]),
         BinaryOperator::Power => pow(l, r),
         _ => expr.clone(),
       }
@@ -30,7 +26,7 @@ fn as_calls(expr: &Expr) -> Expr {
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
-    } => call("Times", vec![Expr::Integer(-1), as_calls(operand)]),
+    } => neg(as_calls(operand)),
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args.iter().map(as_calls).collect::<Vec<_>>().into(),
@@ -93,7 +89,7 @@ fn term_parts(term: &Expr, var: &str) -> Option<(Expr, Expr)> {
       let coefficient = match coefficients.len() {
         0 => Expr::Integer(1),
         1 => coefficients.into_iter().next().unwrap(),
-        _ => call("Times", coefficients),
+        _ => times(coefficients),
       };
       Some((coefficient, power?))
     }
@@ -197,7 +193,7 @@ pub fn caputo_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     // Gamma[p + 1] / Gamma[p - α + 1] * var^(p - α).
-    let plus = |a: Expr, b: Expr| call("Plus", vec![a, b]);
+    let plus = |a: Expr, b: Expr| plus(vec![a, b]);
     let shifted = eval_call(
       "Subtract",
       vec![plus(power.clone(), Expr::Integer(1)), order.clone()],

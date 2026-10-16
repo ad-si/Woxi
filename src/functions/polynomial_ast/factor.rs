@@ -144,6 +144,36 @@ fn reorder_factored_product(result: Expr) -> Expr {
     ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
   }
 
+  fn is_sum_power(e: &Expr) -> bool {
+    sum_degree(e).is_some() && !is_bare_sum(e)
+  }
+  fn is_monomial(e: &Expr) -> bool {
+    let base = match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        ..
+      } => left.as_ref(),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        &args[0]
+      }
+      other => other,
+    };
+    matches!(base, Expr::Identifier(_))
+  }
+  fn monomial_vs_sum_power_out_of_order(a: &Expr, b: &Expr) -> bool {
+    if !((is_monomial(a) && is_sum_power(b))
+      || (is_sum_power(a) && is_monomial(b)))
+    {
+      return false;
+    }
+    let mut pair = [a.clone(), b.clone()];
+    crate::functions::math_ast::sort_symbolic_factors(&mut pair);
+    crate::syntax::expr_to_string(&pair[0]) != crate::syntax::expr_to_string(a)
+  }
+
   let mut swapped_any = false;
   loop {
     let mut swapped = false;
@@ -154,6 +184,9 @@ fn reorder_factored_product(result: Expr) -> Expr {
         order_monomial_vs_sum(b, a) == Some(Ordering::Less)
         // monomial before sum, but the sum sorts first
         || order_monomial_vs_sum(a, b) == Some(Ordering::Greater)
+        // a monomial against a power of a sum: the evaluator's own Times
+        // order, (-2 + x)^2*x^5 but x^5*(1 + x)^3
+        || monomial_vs_sum_power_out_of_order(a, b)
         // both sums with known degrees: ascending degree, and on a tie the
         // canonical order of the two sums — which compares them from their
         // leading term backwards, so `Factor[5184*x^6 - 153*x^4 + 130*x^2
@@ -1421,16 +1454,40 @@ fn normalize_factor_signs(
 }
 
 /// Whether a polynomial factor's leading term carries a negative coefficient.
-/// woxi's canonical `Plus` order is lowest-degree-first, so the leading term
-/// is the last summand; `strip_negation` then decides the sign the same way
-/// the odd/even function reductions do.
+/// The leading term is the lexicographically largest monomial with the
+/// variables in canonical order, as in wolframscript: the highest power for
+/// one variable, `x` in `x - y` (so it stays) and `-x` in `y^2 - x` (so it
+/// flips to `x - y^2`).
 fn has_negative_leading_coeff(factor: &Expr) -> bool {
-  let leading = match factor {
-    Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty() => {
-      args.last().unwrap()
-    }
-    other => other,
+  let Expr::FunctionCall { name, args } = factor else {
+    return crate::functions::math_ast::strip_negation(factor).is_some();
   };
+  if name != "Plus" || args.is_empty() {
+    return crate::functions::math_ast::strip_negation(factor).is_some();
+  }
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let vars = match &eval(&call("Variables", vec![factor.clone()])) {
+    Ok(Expr::List(v)) if !v.is_empty() => v.to_vec(),
+    _ => {
+      return crate::functions::math_ast::strip_negation(args.last().unwrap())
+        .is_some();
+    }
+  };
+  let exponents = |term: &Expr| -> Vec<i128> {
+    vars
+      .iter()
+      .map(
+        |v| match &eval(&call("Exponent", vec![term.clone(), v.clone()])) {
+          Ok(Expr::Integer(k)) => *k,
+          _ => 0,
+        },
+      )
+      .collect()
+  };
+  let leading = args
+    .iter()
+    .max_by(|a, b| exponents(a).cmp(&exponents(b)))
+    .unwrap();
   crate::functions::math_ast::strip_negation(leading).is_some()
 }
 
@@ -2540,6 +2597,69 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
     }
   }
 
+  // Coprime refinement: two bases sharing a factor g become their
+  // cofactors and g, with the exponents added, so the result is square-free
+  // even when the input factors were not coprime:
+  // (x²-1)(x+1) → (-1+x)(1+x)², (x²-4)(x+2)² → (-2+x)(2+x)³.
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  'refine: loop {
+    for i in 0..items.len() {
+      for j in (i + 1)..items.len() {
+        if !is_sum(&items[i].0) || !is_sum(&items[j].0) {
+          continue;
+        }
+        let g = eval(&call(
+          "PolynomialGCD",
+          vec![items[i].0.clone(), items[j].0.clone()],
+        ))?;
+        if crate::functions::math_ast::is_concrete_number(&g) {
+          continue;
+        }
+        let (b_j, e_j) = items.remove(j);
+        let (b_i, e_i) = items.remove(i);
+        let cofactor = |b: &Expr| {
+          eval(&call(
+            "Cancel",
+            vec![times2(b.clone(), pow2(g.clone(), Expr::Integer(-1)))],
+          ))
+        };
+        let pieces = [
+          (cofactor(&b_i)?, e_i),
+          (cofactor(&b_j)?, e_j),
+          (g.clone(), e_i + e_j),
+        ];
+        for (piece, exp) in pieces {
+          let factored = factor_square_free_ast(std::slice::from_ref(&piece))?;
+          let Some((n, d, sub_items)) = decompose_content_factors(&factored)
+          else {
+            return Ok(None);
+          };
+          let (Some(n_pow), Some(d_pow)) = (
+            u32::try_from(exp).ok().and_then(|e| n.checked_pow(e)),
+            u32::try_from(exp).ok().and_then(|e| d.checked_pow(e)),
+          ) else {
+            return Ok(None);
+          };
+          let (Some(new_cnum), Some(new_cden)) =
+            (cnum.checked_mul(n_pow), cden.checked_mul(d_pow))
+          else {
+            return Ok(None);
+          };
+          cnum = new_cnum;
+          cden = new_cden;
+          for (b, e) in sub_items {
+            if !crate::functions::math_ast::is_concrete_number(&b) {
+              merge(b, e * exp, &mut items);
+            }
+          }
+        }
+        sum_changed = true;
+        continue 'refine;
+      }
+    }
+    break;
+  }
+
   (cnum, cden) = rat_reduce(cnum, cden);
 
   // A pure sign flip around one untouched square-free sum is not a
@@ -2879,6 +2999,13 @@ pub fn factor_square_free_list_ast(
     ));
   }
 
+  // An explicit product keeps its factors, as FactorSquareFree does:
+  // (3x + x²)(1 + x + x²) lists x, 3 + x and 1 + x + x² separately rather
+  // than refactoring the expanded quartic.
+  if let Some(product) = product_square_free(&args[0])? {
+    return factored_expr_to_list(&product);
+  }
+
   let expanded = expand_and_combine(&args[0]);
 
   // Handle zero
@@ -2954,8 +3081,13 @@ pub fn factor_square_free_list_ast(
     }
   }
 
-  // Sort by constant term (value at x=0) in ascending order (Wolfram convention)
-  pairs.sort_by_key(|(c, _)| c[0]);
+  // Factors order by leading coefficient, then constant term — not by
+  // canonical Sort: {x, 2}, {-5 + 2*x, 1} but {-1 + x^2, 1}, {x, 2}
+  // (wolframscript-verified).
+  pairs.sort_by(|(a, _), (b, _)| {
+    let lead = |c: &Vec<i128>| c.last().copied().unwrap_or(0);
+    lead(a).cmp(&lead(b)).then(a[0].cmp(&b[0]))
+  });
 
   for (factor_coeffs, mult) in &pairs {
     let factor_expr = int_coeffs_to_canonical_expr(factor_coeffs, &var);
@@ -3328,7 +3460,7 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if var_factors.len() == 1 {
         var_factors.into_iter().next().unwrap()
       } else {
-        call("Times", var_factors)
+        times(var_factors)
       };
       return Ok(Expr::List(
         vec![num_coeff, non_var, Expr::Integer(1)].into(),

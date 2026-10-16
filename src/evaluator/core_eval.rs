@@ -104,6 +104,10 @@ pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
     // (e.g. `x = Sin[a]` with `a` unbound); re-evaluating those on lookup is
     // also the right behaviour (matches wolframscript: when `a` later gets a
     // value, `x` picks it up).
+    // An `InterpolatingFunction[…]` is finished data (an NDSolve or
+    // Interpolation result): re-evaluating it would walk every tabulated
+    // point on each lookup of the symbol that holds it.
+    Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => false,
     Expr::FunctionCall { .. } => true,
     Expr::BinaryOp { .. } => true,
     Expr::UnaryOp { .. } => true,
@@ -1139,7 +1143,30 @@ pub fn evaluate_expr_to_expr_inner(
       }
       Ok(Expr::List(evaluated.into()))
     }
+    // An `InterpolatingFunction[…]` is finished data (an NDSolve or
+    // Interpolation result whose tabulated points are already numbers), so
+    // evaluating it again would only walk every data point — and that walk
+    // happens each time the object is looked up or substituted.
+    Expr::FunctionCall { name, args }
+      if name == "InterpolatingFunction"
+        && (2..=4).contains(&args.len())
+        && matches!(args[0], Expr::List(_)) =>
+    {
+      Ok(expr.clone())
+    }
     Expr::FunctionCall { name, args } => {
+      // `System`Plus[1, 2]` is the built-in `Plus[1, 2]`: a head that spells
+      // out the System context evaluates as its short name.
+      if let Some(short) = name.strip_prefix("System`")
+        && !short.is_empty()
+        && !short.contains('`')
+        && crate::evaluator::functions::is_builtin_symbol(short)
+      {
+        return evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: short.to_string(),
+          args: args.clone(),
+        });
+      }
       // Track function calls on the evaluation stack for stack traces.
       crate::push_eval_stack(name);
       // A literal `Sequence[…]` argument splices into the enclosing call
@@ -1594,11 +1621,7 @@ pub fn evaluate_expr_to_expr_inner(
           if let Expr::List(_) = &args[0] {
             let current_val = evaluate_expr_to_expr(&args[0])?;
             let rhs = evaluate_expr_to_expr(&args[1])?;
-            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op,
-              left: Box::new(current_val),
-              right: Box::new(rhs),
-            })?;
+            let new_val = evaluate_expr_to_expr(&binop(op, current_val, rhs))?;
             crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
             return Ok(new_val);
           }
@@ -1621,11 +1644,7 @@ pub fn evaluate_expr_to_expr_inner(
               }
             };
             let rhs = evaluate_expr_to_expr(&args[1])?;
-            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op,
-              left: Box::new(current_val),
-              right: Box::new(rhs),
-            })?;
+            let new_val = evaluate_expr_to_expr(&binop(op, current_val, rhs))?;
             ENV.with(|e| {
               e.borrow_mut().insert(
                 var_name.clone(),
@@ -1637,11 +1656,7 @@ pub fn evaluate_expr_to_expr_inner(
           if let Expr::Part { .. } = &args[0] {
             let rhs = evaluate_expr_to_expr(&args[1])?;
             let current_val = evaluate_expr_to_expr(&args[0])?;
-            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op,
-              left: Box::new(current_val),
-              right: Box::new(rhs),
-            })?;
+            let new_val = evaluate_expr_to_expr(&binop(op, current_val, rhs))?;
             crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
             return Ok(new_val);
           }
@@ -1664,11 +1679,7 @@ pub fn evaluate_expr_to_expr_inner(
               });
             }
             let rhs = evaluate_expr_to_expr(&args[1])?;
-            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op,
-              left: Box::new(current_val),
-              right: Box::new(rhs),
-            })?;
+            let new_val = evaluate_expr_to_expr(&binop(op, current_val, rhs))?;
             // Write through the target as written — `set_ast` evaluates the
             // arguments itself, and messages about it quote the source form.
             crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
@@ -2519,7 +2530,16 @@ pub fn evaluate_expr_to_expr_inner(
         // `>= 2` (rather than `>= 3`) so an even argument count like
         // `Switch[2, 1]` reaches switch_ast, which reports Switch::argct.
         if name == "Switch" && args.len() >= 2 {
-          return crate::functions::control_flow_ast::switch_ast(args);
+          // `Evaluate[…]` escapes Switch's hold and its result splices, so
+          // `Switch[x, Evaluate[pairs /. List -> Sequence]]` supplies the
+          // pattern/value arguments computed at call time.
+          let unwrapped = args
+            .iter()
+            .map(unwrap_top_level_evaluate)
+            .collect::<Result<Vec<_>, _>>()?;
+          return crate::functions::control_flow_ast::switch_ast(
+            &splice_top_level_sequences(unwrapped),
+          );
         }
         // Special handling for Piecewise - lazy evaluation of branches
         if name == "Piecewise" && !args.is_empty() && args.len() <= 2 {
@@ -2582,6 +2602,8 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "StreamPlot"
         || name == "VectorPlot"
         || name == "StreamDensityPlot"
+        || name == "DiscretePlot"
+        || name == "DiscretePlot3D"
         || name == "Show"
         || name == "GraphicsRow"
         || name == "GraphicsColumn"
@@ -2689,6 +2711,8 @@ pub fn evaluate_expr_to_expr_inner(
               | "StreamPlot"
               | "VectorPlot"
               | "StreamDensityPlot"
+              | "DiscretePlot"
+              | "DiscretePlot3D"
           ) {
             let raw: Vec<Expr> = flattened
               .iter()
@@ -2718,6 +2742,50 @@ pub fn evaluate_expr_to_expr_inner(
             )
           )
         });
+        // A symbol holding an `InterpolatingFunction` (an NDSolve or
+        // Interpolation result) is applied straight from the store: copying
+        // out its whole data table on every call made sampling it O(points).
+        // Only plain numeric arguments take this route, so nothing user-defined
+        // can run while the store is borrowed.
+        let holds_interpolation = ENV.with(|e| {
+          matches!(
+            e.borrow().get(name),
+            Some(StoredValue::ExprVal(Expr::FunctionCall { name: head, .. }))
+              if head == "InterpolatingFunction"
+          )
+        });
+        if holds_interpolation {
+          let mut prepared: Vec<Expr> = Vec::with_capacity(args.len());
+          for a in args {
+            prepared.push(evaluate_expr_to_expr(a)?);
+          }
+          if prepared.len() == 1
+            && matches!(
+              prepared[0],
+              Expr::Integer(_) | Expr::Real(_) | Expr::String(_)
+            )
+          {
+            let applied = ENV.with(|e| match e.borrow().get(name) {
+              Some(StoredValue::ExprVal(Expr::FunctionCall {
+                name: head,
+                args: func_args,
+              }))
+                if head == "InterpolatingFunction"
+                  && (2..=4).contains(&func_args.len()) =>
+              {
+                Some(
+                  crate::functions::ode_ast::evaluate_interpolating_function(
+                    func_args, &prepared,
+                  ),
+                )
+              }
+              _ => None,
+            });
+            if let Some(result) = applied {
+              return result;
+            }
+          }
+        }
         let var_val = ENV.with(|e| match e.borrow().get(name) {
           Some(
             value @ StoredValue::ExprVal(
@@ -2738,6 +2806,14 @@ pub fn evaluate_expr_to_expr_inner(
               // the template, not the `Set` — and what it yields is what
               // gets applied.
               let head_value = match stored_expr {
+                // Finished interpolation data: re-evaluating it would walk
+                // every tabulated point on each call (see the CurriedCall
+                // case).
+                Expr::FunctionCall { name: head, .. }
+                  if head == "InterpolatingFunction" =>
+                {
+                  stored_expr.clone()
+                }
                 Expr::FunctionCall { .. } => {
                   evaluate_expr_to_expr(&Expr::Identifier(name.clone()))?
                 }
@@ -2833,10 +2909,21 @@ pub fn evaluate_expr_to_expr_inner(
 
         // Evaluate arguments (respecting Hold attributes)
         let evaluated_args = evaluate_args_with_hold(name, args)?;
-        // Flatten Sequence arguments (unless function has SequenceHold attribute)
-        let evaluated_args = flatten_sequences(name, &evaluated_args);
-        // Dispatch to function implementation
-        evaluate_function_call_ast(name, &evaluated_args)
+        // Flatten Sequence arguments (unless function has SequenceHold
+        // attribute), then dispatch to the function implementation. The
+        // arguments are handed over owned when nothing was spliced, so an
+        // unevaluated result reuses them instead of copying them.
+        let spliced = match flatten_sequences(name, &evaluated_args) {
+          std::borrow::Cow::Owned(spliced) => Some(spliced),
+          std::borrow::Cow::Borrowed(_) => None,
+        };
+        match spliced {
+          Some(spliced) => evaluate_function_call_ast(name, &spliced),
+          None => crate::evaluator::dispatch::evaluate_functions::evaluate_function_call_owned(
+            name,
+            evaluated_args,
+          ),
+        }
       })(); // end of closure for stack tracking
       // Capture stack trace before popping, so errors carry context
       if matches!(&result, Err(InterpreterError::EvaluationError(_))) {
@@ -3468,7 +3555,17 @@ pub fn evaluate_expr_to_expr_inner(
             } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
-              l != r
+              // Same tolerance as `Equal` (`0.1 + 0.2 != 0.3` is False), so
+              // defer to its single implementation instead of comparing bits.
+              if l == r {
+                false
+              } else {
+                let pair = [left.clone(), right.clone()];
+                !matches!(
+                  crate::functions::boolean_ast::equal_ast(&pair)?,
+                  Expr::Identifier(ref s) if s == "True"
+                )
+              }
             } else if expr_to_string(left) == expr_to_string(right) {
               false
             } else if crate::functions::boolean_ast::all_components_equal(
@@ -3707,6 +3804,13 @@ pub fn evaluate_expr_to_expr_inner(
     }
     Expr::Map { func, list } => {
       let evaluated_list = evaluate_expr_to_expr(list)?;
+      // Map does not hold its head: `list[[1]] /@ x` must reduce the part
+      // extraction first, as `Map[list[[1]], x]` does.
+      if matches!(func.as_ref(), Expr::Part { .. } | Expr::FunctionCall { .. })
+      {
+        let evaluated_func = evaluate_expr_to_expr(func)?;
+        return apply_map_ast(&evaluated_func, &evaluated_list);
+      }
       apply_map_ast(func, &evaluated_list)
     }
     Expr::Apply { func, list } => {
@@ -4146,7 +4250,16 @@ pub fn evaluate_expr_to_expr_inner(
       // Evaluate the curried call: f[a][b] -> apply f[a] to args.
       // Honour Function[{params}, body, attrs] hold attributes so that
       // Function[..., HoldAll][1+1] sees its arg unevaluated.
-      let evaluated_func = evaluate_expr_to_expr(func)?;
+      // An `InterpolatingFunction[…]` head is inert, finished data (its
+      // tabulated points are already numbers), so re-evaluating it would
+      // only walk every data point again on each call — making sampling an
+      // NDSolve result cost O(points) per sample instead of a binary search.
+      let evaluated_func = match &**func {
+        Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => {
+          (**func).clone()
+        }
+        _ => evaluate_expr_to_expr(func)?,
+      };
       let hold_attrs = function_hold_attributes(&evaluated_func);
       let mut prepared: Vec<Expr> = Vec::with_capacity(args.len());
       for (i, a) in args.iter().enumerate() {
@@ -4246,7 +4359,7 @@ fn evaluate_binary_op_pair(
   {
     let is_seq = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Sequence");
     if is_seq(&left_val) || is_seq(&right_val) {
-      let neg = |e: Expr| call("Times", vec![Expr::Integer(-1), e]);
+      let neg = |e: Expr| neg(e);
       let recip = |e: Expr| pow(e, Expr::Integer(-1));
       let spliced: Option<(&str, Expr, Expr)> = match op {
         BinaryOperator::Plus => {
@@ -4498,11 +4611,11 @@ fn unwrap_evaluate_in_body(body: &Expr) -> Result<Expr, InterpreterError> {
         .collect::<Result<_, _>>()?;
       Ok(Expr::List(new_items.into()))
     }
-    Expr::BinaryOp { op, left, right } => Ok(Expr::BinaryOp {
-      op: *op,
-      left: Box::new(unwrap_evaluate_in_body(left)?),
-      right: Box::new(unwrap_evaluate_in_body(right)?),
-    }),
+    Expr::BinaryOp { op, left, right } => Ok(binop(
+      *op,
+      unwrap_evaluate_in_body(left)?,
+      unwrap_evaluate_in_body(right)?,
+    )),
     Expr::UnaryOp { op, operand } => Ok(Expr::UnaryOp {
       op: *op,
       operand: Box::new(unwrap_evaluate_in_body(operand)?),

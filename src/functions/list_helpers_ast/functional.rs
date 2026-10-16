@@ -892,10 +892,9 @@ pub(crate) fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
     Expr::BinaryOp { op, left, right } => {
       match op {
         // a - b → Plus[a, Times[-1, b]]
-        BinaryOperator::Minus => Some(vec![
-          left.as_ref().clone(),
-          call("Times", vec![Expr::Integer(-1), right.as_ref().clone()]),
-        ]),
+        BinaryOperator::Minus => {
+          Some(vec![left.as_ref().clone(), neg(right.as_ref().clone())])
+        }
         // 1/b → Power[b, -1]; a/b → Times[a, Power[b, -1]]
         BinaryOperator::Divide => {
           if matches!(left.as_ref(), Expr::Integer(1)) {
@@ -1177,6 +1176,26 @@ fn apply_at_level_recursive(
     items.clone()
   };
 
+  // A child whose head became `Sequence` splices into its parent, exactly as
+  // it would when the parent is evaluated: Apply[Sequence, {{a}, {b, c}}, {1}]
+  // is {a, b, c}.
+  let new_items: Vec<Expr> = if current_level < max_level
+    && new_items.iter().any(
+      |i| matches!(i, Expr::FunctionCall { name, .. } if name == "Sequence"),
+    ) {
+    new_items
+      .into_iter()
+      .flat_map(|i| match &i {
+        Expr::FunctionCall { name, args } if name == "Sequence" => {
+          args.to_vec()
+        }
+        _ => vec![i],
+      })
+      .collect()
+  } else {
+    new_items
+  };
+
   // Replace head at this level if in range
   if current_level >= min_level && current_level <= max_level {
     apply_func_as_head(func, &new_items)
@@ -1274,7 +1293,6 @@ pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(flat.into_iter().next().unwrap());
   }
 
-  let times = id_expr("Times");
   let is_scalar = |e: &Expr| -> bool {
     !matches!(e, Expr::List(_))
       && crate::functions::predicate_ast::is_numeric_q(e)
@@ -1309,7 +1327,7 @@ pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         rest.push(if others.len() == 1 {
           others.into_iter().next().unwrap()
         } else {
-          call("Times", others)
+          times(others)
         });
         continue;
       }
@@ -1318,6 +1336,7 @@ pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Among the non-scalar factors, contract maximal runs of explicit arrays.
+  let times = id_expr("Times");
   let mut factors: Vec<Expr> = Vec::new();
   let mut group: Vec<Expr> = Vec::new();
   let flush = |group: &mut Vec<Expr>,

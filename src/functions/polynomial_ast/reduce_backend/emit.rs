@@ -9,7 +9,7 @@ use woxi_reduce::{
   crt_pair, euclidean_mod, lcm, solve_linear_congruence,
 };
 
-use crate::helpers::{bool_expr, call, id_expr, neg1, plus2, times2};
+use crate::helpers::{binop, bool_expr, call, id_expr, neg1, plus2, times2};
 use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 use super::{bigint_expr, rational_expr};
@@ -622,11 +622,7 @@ fn fold_owned_binary(expressions: Vec<Expr>, operator: BinaryOperator) -> Expr {
       _ => unreachable!("only associative n-ary operators are folded"),
     };
   };
-  expressions.fold(first, |left, right| Expr::BinaryOp {
-    op: operator,
-    left: Box::new(left),
-    right: Box::new(right),
-  })
+  expressions.fold(first, |left, right| binop(operator, left, right))
 }
 
 // ---------------------------------------------------------------------------
@@ -909,11 +905,11 @@ fn factor_shared_membership(disjuncts: Vec<Expr>) -> Vec<Expr> {
   let Some(membership) = membership else {
     return disjuncts;
   };
-  vec![Expr::BinaryOp {
-    op: BinaryOperator::And,
-    left: Box::new(membership),
-    right: Box::new(fold_owned_binary(equations, BinaryOperator::Or)),
-  }]
+  vec![binop(
+    BinaryOperator::And,
+    membership,
+    fold_owned_binary(equations, BinaryOperator::Or),
+  )]
 }
 
 fn parametrized_branch_expr(
@@ -998,12 +994,9 @@ fn parametrized_branch_expr(
       .iter()
       .map(|(_, variable, _, _)| Expr::Identifier(variable.name.clone())),
   );
-  let membership =
-    members.into_iter().reduce(|left, right| Expr::BinaryOp {
-      op: BinaryOperator::Alternatives,
-      left: Box::new(left),
-      right: Box::new(right),
-    })?;
+  let membership = members
+    .into_iter()
+    .reduce(|left, right| binop(BinaryOperator::Alternatives, left, right))?;
 
   let mut conjuncts = vec![integer_membership(membership)];
   conjuncts.append(&mut parameter_bounds);

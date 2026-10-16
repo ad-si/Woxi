@@ -395,6 +395,30 @@ fn comparison_op_of(e: &Expr) -> Option<ComparisonOp> {
   }
 }
 
+/// Rewrite `Inequality[a, op1, b, op2, c]` as the chained comparison
+/// `a op1 b op2 c`; any other expression is returned unchanged.
+fn inequality_to_comparison(e: &Expr) -> Expr {
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Inequality"
+    && args.len() >= 3
+    && args.len() % 2 == 1
+  {
+    let ops: Option<Vec<ComparisonOp>> = args
+      .iter()
+      .skip(1)
+      .step_by(2)
+      .map(comparison_op_of)
+      .collect();
+    if let Some(operators) = ops {
+      return Expr::Comparison {
+        operands: args.iter().step_by(2).cloned().collect(),
+        operators,
+      };
+    }
+  }
+  e.clone()
+}
+
 /// `Reduce[bounds && extra, x, Integers]` where the conjunction bounds `x` to a
 /// finite integer interval and carries at least one non-bound constraint:
 /// enumerate the interval and keep the integers for which the full constraint
@@ -475,9 +499,10 @@ fn contains_conditional_expression(e: &Expr) -> bool {
   }
 }
 
-/// Is `eq` a trig equation `Sin/Cos/Tan/Cot[var] == const`?
+/// Is `eq` a trig equation `Sin/Cos/Tan/Cot[var] == const`, or
+/// `Sin/Cos[f(var)] == Sin/Cos[g(var)]`?
 fn is_trig_equation(eq: &Expr, var: &str) -> bool {
-  let lhs = match eq {
+  let (lhs, rhs) = match eq {
     Expr::Comparison {
       operands,
       operators,
@@ -485,13 +510,22 @@ fn is_trig_equation(eq: &Expr, var: &str) -> bool {
       && operators.len() == 1
       && operators[0] == ComparisonOp::Equal =>
     {
-      &operands[0]
+      (&operands[0], &operands[1])
     }
     Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
-      &args[0]
+      (&args[0], &args[1])
     }
     _ => return false,
   };
+  let sin_cos_of_var = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Sin" | "Cos")
+        && args.len() == 1
+        && contains_var(&args[0], var))
+  };
+  if sin_cos_of_var(lhs) && sin_cos_of_var(rhs) {
+    return true;
+  }
   matches!(lhs, Expr::FunctionCall { name, args }
     if matches!(name.as_str(), "Sin" | "Cos" | "Tan" | "Cot")
       && args.len() == 1
@@ -1295,14 +1329,11 @@ fn try_reduce_arc_degrees(
     "ArcSecDegrees" => "Sec",
     _ => return Ok(None),
   };
-  let radians = call(
-    "Times",
-    vec![
-      rhs.clone(),
-      id_expr("Pi"),
-      call("Rational", vec![Expr::Integer(1), Expr::Integer(180)]),
-    ],
-  );
+  let radians = times(vec![
+    rhs.clone(),
+    id_expr("Pi"),
+    call("Rational", vec![Expr::Integer(1), Expr::Integer(180)]),
+  ]);
   let threshold_expr = call1(trig_name, radians);
   let threshold = crate::evaluator::evaluate_expr_to_expr(&threshold_expr)?;
 
@@ -1463,7 +1494,7 @@ fn extract_abs_term(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
   let coeff = match consts.len() {
     0 => Expr::Integer(1),
     1 => consts.into_iter().next().unwrap(),
-    _ => simplify(call("Times", consts)),
+    _ => simplify(times(consts)),
   };
   Some((coeff, inner))
 }
@@ -2935,11 +2966,7 @@ fn try_reduce_linear_diophantine(
   // Alternatives: `Element[C[1] | C[2], Integers]`.
   if let Some(membership) = (0..total_params)
     .map(|slot| call("C", vec![Expr::Integer((slot + 1) as i128)]))
-    .reduce(|acc, p| Expr::BinaryOp {
-      op: BinaryOperator::Alternatives,
-      left: Box::new(acc),
-      right: Box::new(p),
-    })
+    .reduce(|acc, p| binop(BinaryOperator::Alternatives, acc, p))
   {
     conjuncts.push(element(membership));
   }
@@ -3112,6 +3139,81 @@ fn reduce_multi_var_and_inner(
       return Ok(pinned);
     }
     return Ok(and2(pinned, sub));
+  }
+
+  // A trig equation in one variable bounded by inequalities in that same
+  // variable has finitely many solutions. Solve that sub-system on its own and
+  // branch over the solutions (a periodic family would otherwise lose the
+  // bounds once the variable is substituted into the other constraints).
+  if vars.len() > 1 {
+    for v in vars {
+      let mut own: Vec<usize> = Vec::new();
+      let mut trig_eq = false;
+      let mut has_ineq = false;
+      for (i, c) in constraints.iter().enumerate() {
+        let mentions_other = vars.iter().any(|w| w != v && contains_var(c, w));
+        if mentions_other || !contains_var(c, v) {
+          continue;
+        }
+        own.push(i);
+        if is_trig_equation(c, v) {
+          trig_eq = true;
+        } else if !matches!(c, Expr::Comparison { operators, .. }
+          if operators.len() == 1 && operators[0] == ComparisonOp::Equal)
+        {
+          has_ineq = true;
+        }
+      }
+      if !trig_eq || !has_ineq {
+        continue;
+      }
+      let sub: Vec<Expr> = own
+        .iter()
+        .map(|&i| inequality_to_comparison(&constraints[i]))
+        .collect();
+      let sols = solve_ast(&[and_chain(&sub), Expr::Identifier(v.clone())])?;
+      let Expr::List(sol_list) = &sols else {
+        continue;
+      };
+      let mut values: Vec<Expr> = Vec::new();
+      let mut concrete = true;
+      for sol in sol_list {
+        match sol {
+          Expr::List(rules) if rules.len() == 1 => match &rules[0] {
+            Expr::Rule { replacement, .. }
+              if !contains_conditional_expression(replacement) =>
+            {
+              values.push((**replacement).clone());
+            }
+            _ => concrete = false,
+          },
+          _ => concrete = false,
+        }
+      }
+      if !concrete {
+        continue;
+      }
+      let mut branches = Vec::new();
+      for value in values {
+        let mut branch_constraints: Vec<Expr> = constraints
+          .iter()
+          .enumerate()
+          .filter(|(i, _)| !own.contains(i))
+          .map(|(_, c)| c.clone())
+          .collect();
+        branch_constraints
+          .insert(0, make_equality(&Expr::Identifier(v.clone()), &value));
+        let branch =
+          reduce_multi_var_and_inner(&branch_constraints, vars, domain)?;
+        if !matches!(&branch, Expr::Identifier(s) if s == "False") {
+          branches.push(branch);
+        }
+      }
+      if branches.is_empty() {
+        return Ok(bool_expr(false));
+      }
+      return Ok(build_or(branches));
+    }
   }
 
   // Find the best (equation, variable) pair: prefer last variable in the list
@@ -3326,14 +3428,7 @@ pub fn is_rational(expr: &Expr) -> bool {
 /// Whether `expr` is a closed numeric value whose imaginary part is
 /// non-zero. Symbolic (non-numeric) expressions yield `false`.
 fn has_nonzero_imaginary_part(expr: &Expr) -> bool {
-  let im = Expr::FunctionCall {
-    name: "Im".to_string(),
-    args: vec![Expr::FunctionCall {
-      name: "N".to_string(),
-      args: vec![expr.clone()].into(),
-    }]
-    .into(),
-  };
+  let im = call("Im", vec![call1("N", expr.clone())]);
   crate::evaluator::evaluate_expr_to_expr(&im)
     .ok()
     .and_then(|v| try_eval_to_f64(&v))
@@ -3624,11 +3719,8 @@ fn zero_product_factors(
     return None;
   };
   let poly = expand_and_combine(&minus2(lhs, rhs));
-  let factored = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Factor".to_string(),
-    args: vec![poly].into(),
-  })
-  .ok()?;
+  let factored =
+    crate::evaluator::evaluate_expr_to_expr(&call1("Factor", poly)).ok()?;
   fn flatten(e: &Expr, out: &mut Vec<Expr>) {
     match e {
       Expr::BinaryOp {

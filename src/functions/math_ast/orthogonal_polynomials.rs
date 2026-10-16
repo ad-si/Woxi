@@ -768,14 +768,13 @@ fn associated_legendre_p_ast(
     if half_m == 0 {
       sqrt_part
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(pow(
+      times2(
+        pow(
           minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
           Expr::Integer(half_m as i128),
-        )),
-        right: Box::new(sqrt_part),
-      }
+        ),
+        sqrt_part,
+      )
     }
   };
 
@@ -1608,13 +1607,7 @@ fn legendre_q_symbolic_ast(
   // Q_0(x) = -Log[1-x]/2 + Log[1+x]/2
   let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
   let neg_half = call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]);
-  let log_1mx = call1(
-    "Log",
-    plus(vec![
-      Expr::Integer(1),
-      times(vec![Expr::Integer(-1), x.clone()]),
-    ]),
-  );
+  let log_1mx = call1("Log", plus(vec![Expr::Integer(1), neg(x.clone())]));
   let log_1px = call1("Log", plus(vec![Expr::Integer(1), x.clone()]));
   let q0 = plus(vec![
     times(vec![neg_half, log_1mx]),
@@ -1648,10 +1641,7 @@ fn legendre_q_symbolic_ast(
   }
   let w = plus(w_terms);
 
-  let result = plus(vec![
-    times(vec![Expr::Integer(-1), w]),
-    times(vec![p_n, q0]),
-  ]);
+  let result = plus(vec![neg(w), times(vec![p_n, q0])]);
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
@@ -2121,7 +2111,7 @@ fn chebyshev_t_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
     let term = match (coeff, x_power) {
       ((c, 1), None) => Expr::Integer(c),
       ((1, 1), Some(xp)) => xp,
-      ((-1, 1), Some(xp)) => times(vec![Expr::Integer(-1), xp]),
+      ((-1, 1), Some(xp)) => neg(xp),
       ((c, 1), Some(xp)) => times2(Expr::Integer(c), xp),
       _ => return None, // Should not happen for Chebyshev (all integer coefficients)
     };
@@ -2194,7 +2184,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let pos = chebyshev_u_ast(&[Expr::Integer(-*m - 2), args[1].clone()])?;
     // Expand so the leading -1 distributes over a polynomial result
     // (e.g. -U_2(x) = -(-1 + 4 x^2) becomes 1 - 4 x^2).
-    let negated = times(vec![Expr::Integer(-1), pos]);
+    let negated = neg(pos);
     return crate::evaluator::evaluate_function_call_ast("Expand", &[negated]);
   }
 
@@ -2313,7 +2303,7 @@ fn chebyshev_u_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
     let term = match (coeff, x_power) {
       ((c, 1), None) => Expr::Integer(c),
       ((1, 1), Some(xp)) => xp,
-      ((-1, 1), Some(xp)) => times(vec![Expr::Integer(-1), xp]),
+      ((-1, 1), Some(xp)) => neg(xp),
       ((c, 1), Some(xp)) => times2(Expr::Integer(c), xp),
       _ => return None,
     };
@@ -2827,7 +2817,7 @@ fn gegenbauer_polynomial_symbolic(
         if *cn == 1 && *cd == 1 {
           xp
         } else if *cn == -1 && *cd == 1 {
-          times(vec![Expr::Integer(-1), xp])
+          neg(xp)
         } else {
           times2(coeff_expr, xp)
         }
@@ -2942,7 +2932,7 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       //   LaguerreL[n, x] = Hypergeometric1F1[-n, 1, x].
       // Only forward the rewrite when both n and x are numeric (so the
       // Hypergeometric1F1 path returns a Real); otherwise stay unevaluated.
-      let neg_n = times(vec![Expr::Integer(-1), args[0].clone()]);
+      let neg_n = neg(args[0].clone());
       let rewrite = call(
         "Hypergeometric1F1",
         vec![neg_n, Expr::Integer(1), args[1].clone()],
@@ -3255,7 +3245,7 @@ fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> Expr {
     let term = match x_power {
       None => Expr::BigInteger(c.clone()),
       Some(xp) if *c == BigInt::from(1) => xp,
-      Some(xp) if *c == BigInt::from(-1) => times(vec![Expr::Integer(-1), xp]),
+      Some(xp) if *c == BigInt::from(-1) => neg(xp),
       Some(xp) => times2(Expr::BigInteger(c.clone()), xp),
     };
     terms.push(term);
@@ -3470,7 +3460,7 @@ fn hermite_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
     let term = match x_power {
       None => Expr::Integer(*c),
       Some(xp) if *c == 1 => xp,
-      Some(xp) if *c == -1 => times(vec![Expr::Integer(-1), xp]),
+      Some(xp) if *c == -1 => neg(xp),
       Some(xp) => times2(Expr::Integer(*c), xp),
     };
     terms.push(term);
@@ -3644,11 +3634,11 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
           .collect(),
       }
     }
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(rewrite_sqrt_one_minus_cos_sq(left, theta)),
-      right: Box::new(rewrite_sqrt_one_minus_cos_sq(right, theta)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      rewrite_sqrt_one_minus_cos_sq(left, theta),
+      rewrite_sqrt_one_minus_cos_sq(right, theta),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(rewrite_sqrt_one_minus_cos_sq(operand, theta)),
@@ -3851,7 +3841,7 @@ fn zernike_r_polynomial_symbolic(
     let term = match (*coeff, x_power) {
       (c, None) => Expr::Integer(c),
       (1, Some(xp)) => xp,
-      (-1, Some(xp)) => times(vec![Expr::Integer(-1), xp]),
+      (-1, Some(xp)) => neg(xp),
       (c, Some(xp)) => times2(Expr::Integer(c), xp),
     };
     terms.push(term);

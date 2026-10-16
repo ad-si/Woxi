@@ -1071,6 +1071,44 @@ mod definite_integrals {
   }
 
   #[test]
+  fn bose_integral_exact() {
+    assert_eq!(
+      interpret("Integrate[x^2/(Exp[x] - 1), {x, 0, Infinity}]").unwrap(),
+      "2*Zeta[3]"
+    );
+    assert_eq!(
+      interpret("Integrate[Sqrt[x]/(Exp[x] - 1), {x, 0, Infinity}]").unwrap(),
+      "(Sqrt[Pi]*Zeta[3/2])/2"
+    );
+    assert_eq!(
+      interpret("Integrate[x/(Exp[x] - 1), {x, 0, Infinity}]").unwrap(),
+      "Pi^2/6"
+    );
+  }
+
+  #[test]
+  fn bose_integral_with_fugacity_factor() {
+    // ∫_0^∞ Sqrt[x]/(a E^x - 1) dx = (Sqrt[Pi]/2) PolyLog[3/2, 1/a]
+    assert_eq!(
+      interpret("Integrate[Sqrt[x]/(1.2 Exp[x] - 1), {x, 0, Infinity}]")
+        .unwrap(),
+      interpret("N[Sqrt[Pi]/2 PolyLog[3/2, 1/1.2]]").unwrap()
+    );
+    assert_eq!(
+      interpret("Integrate[x/(3 Exp[x] - 1), {x, 0, Infinity}]").unwrap(),
+      "PolyLog[2, 1/3]"
+    );
+  }
+
+  #[test]
+  fn divergent_bose_integral_stays_unevaluated() {
+    assert_eq!(
+      interpret("Integrate[1/(Exp[x] - 1), {x, 0, Infinity}]").unwrap(),
+      "Integrate[(-1 + E^x)^(-1), {x, 0, Infinity}]"
+    );
+  }
+
+  #[test]
   fn gaussian_integral_full() {
     // ∫_{-∞}^{∞} E^(-x^2) dx = Sqrt[Pi]
     assert_eq!(
@@ -1913,6 +1951,37 @@ mod differentiate_plus_times {
   }
 }
 
+mod differentiate_if {
+  use super::*;
+
+  // D[If[c, a, b], x] differentiates the branches and keeps the condition.
+  // Regression: this used to emit Derivative[…][If] terms that later made
+  // FindRoot fail with D::ivar.
+  #[test]
+  fn branches() {
+    assert_eq!(
+      interpret("D[If[x < 1, x^2, x^3], x]").unwrap(),
+      "If[x < 1, 2*x, 3*x^2]"
+    );
+  }
+
+  #[test]
+  fn two_argument_form() {
+    assert_eq!(interpret("D[If[x < 1, x^2], x]").unwrap(), "If[x < 1, 2*x]");
+  }
+
+  #[test]
+  fn delayed_derivative_then_find_root() {
+    assert_eq!(
+      interpret(
+        "dy[t_] = D[If[t <= 0, 0, t^2 - 4], t]; Round[t /. FindRoot[dy[t] == 1, {t, 3}], 0.1]"
+      )
+      .unwrap(),
+      "0.5"
+    );
+  }
+}
+
 mod differentiate_piecewise {
   use super::*;
 
@@ -2384,6 +2453,15 @@ mod derivative_prime_notation {
     assert_eq!(
       interpret("Derivative[1, 0][f]").unwrap(),
       "Derivative[1, 0][f]"
+    );
+  }
+
+  #[test]
+  fn derivative_applied_to_several_arguments_keeps_all_of_them() {
+    assert_eq!(interpret("f'[t, {a}]").unwrap(), "Derivative[1][f][t, {a}]");
+    assert_eq!(
+      interpret("Derivative[2][g][x, y, z]").unwrap(),
+      "Derivative[2][g][x, y, z]"
     );
   }
 
@@ -6594,6 +6672,35 @@ mod find_minimum {
   }
 
   #[test]
+  fn unconstrained_find_minimum_fires_step_monitor() {
+    // A quadratic converges in a single Newton step, so the monitor fires
+    // once, at the minimum.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Reap[FindMinimum[(x - 2)^2, {x, 5}, StepMonitor :> Sow[x]]][[2]]"
+      )
+      .unwrap(),
+      "{{2.}}"
+    );
+  }
+
+  #[test]
+  fn find_minimum_step_monitor_sees_variables_through_a_list() {
+    // The monitor reaches the variables indirectly via `vars`; they must be
+    // bound to the current point while it runs.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "vars = {x, y}; Reap[FindMinimum[(x - 1)^2 + (y + 2)^2, \
+         Transpose[{vars, {3., 3.}}], StepMonitor :> Sow[vars]]][[2]]"
+      )
+      .unwrap(),
+      "{{{1., -2.}}}"
+    );
+  }
+
+  #[test]
   fn constrained_maximum_without_step_monitor_unaffected() {
     // The StepMonitor plumbing must not change the plain constrained
     // FindMaximum result when the option isn't supplied. Rounded because
@@ -8450,6 +8557,23 @@ mod ndsolve {
     );
   }
 
+  /// Applying a stored `InterpolatingFunction` looks the interval up by
+  /// binary search and returns grid values exactly, at both ends of the data
+  /// and in the interior (sampling a large NDSolve result used to scan and
+  /// re-evaluate every tabulated point per call).
+  #[test]
+  fn stored_interpolating_function_exact_grid_and_interior_values() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Interpolation[Table[{k, k^2}, {k, 0, 50}]]; \
+         {g[0], g[7], g[50], g[3.5], g[1/2]}"
+      )
+      .unwrap(),
+      "{0, 49, 2500, 12.25, 1/4}"
+    );
+  }
+
   /// `f'`/`f''` on machine-precision interpolation data takes a fast
   /// numeric path (Newton divided differences expanded to monomial
   /// coefficients) rather than building and simplifying a symbolic
@@ -8994,6 +9118,31 @@ mod ndsolve {
         && (vals[1] - expected_hi).abs() < 0.01,
       "Expected {{{expected_lo}, {expected_hi}}}, got {result}"
     );
+  }
+
+  #[test]
+  fn when_event_periodic_action_samples_state() {
+    // `WhenEvent[Mod[t, p] == 0, Sow[…]]` fires at every multiple of `p`
+    // with the state at that time (a stroboscopic / Poincaré section).
+    let result = interpret(
+      "Reap[NDSolve[{x'[t] == 1, x[0] == 0, \
+       WhenEvent[Mod[t, 2] == 0, Sow[{t, x[t]}]]}, x, {t, 0, 7}]][[2]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{{{2., 2.}, {4., 4.}, {6., 6.}}}");
+  }
+
+  #[test]
+  fn when_event_periodic_action_coupled_system() {
+    // Three firings over {t, 0, 7} for period 2 Pi / 2: just count them.
+    let result = interpret(
+      "Length[Reap[NDSolve[{x'[t] == Cos[y[t]], y'[t] == Sin[x[t]], \
+       x[0] == 1, y[0] == 2, \
+       WhenEvent[Mod[t, Pi] == 0, Sow[{x[t], y[t]}]]}, {x, y}, \
+       {t, 0, 10}]][[2, 1]]]",
+    )
+    .unwrap();
+    assert_eq!(result, "3");
   }
 
   #[test]
@@ -11471,6 +11620,34 @@ mod recurrence_table {
 
 mod inverse_laplace_transform {
   use super::*;
+
+  #[test]
+  fn shifted_inverse_square_root() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/Sqrt[s + b], s, t]").unwrap(),
+      "1/(E^(b*t)*Sqrt[Pi]*Sqrt[t])"
+    );
+  }
+
+  #[test]
+  fn fractional_power_of_s() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/s^(3/2), s, t]").unwrap(),
+      "(2*Sqrt[t])/Sqrt[Pi]"
+    );
+  }
+
+  #[test]
+  fn log_over_s() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[Log[s]/s, s, t]").unwrap(),
+      "-EulerGamma - Log[t]"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[a Log[b s]/s, s, t]").unwrap(),
+      "a*(-EulerGamma + Log[b] - Log[t])"
+    );
+  }
 
   #[test]
   fn constant_one_over_s() {
@@ -19895,6 +20072,35 @@ mod extremum_partial_derivatives {
   }
 
   #[test]
+  fn higher_order_partials_vanish_away_from_ties() {
+    for (code, expected) in [
+      ("Derivative[0, 2][Max][0.5, 2.25]", "0"),
+      ("Derivative[0, 3][Min][0.5, 2.25]", "0"),
+      (
+        "g[t_] := Min[2.25, Max[1.25, t^3]]; \
+         {Derivative[2][g][0.5], Derivative[2][g][1.2]}",
+        "{0., 7.199999999999999}",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  #[test]
+  fn high_interpolation_order_is_global_polynomial() {
+    assert_eq!(
+      interpret(
+        "pts = {{0, 0}, {1, 1}, {2, 0}, {3, 2}, {4, 1}}; \
+         f = Interpolation[pts, InterpolationOrder -> 4]; \
+         {f[\"InterpolationOrder\"], Chop[f[0.5] - InterpolatingPolynomial[pts, x] /. x -> 0.5], \
+          Round[Derivative[2][f][0.5], 0.001]}"
+      )
+      .unwrap(),
+      "{{4}, 0, -7.708}"
+    );
+  }
+
+  #[test]
   fn tie_stays_unevaluated() {
     assert_eq!(
       interpret("Derivative[0, 1][Max][2, 2]").unwrap(),
@@ -20121,6 +20327,172 @@ mod ndsolve_step_forcing {
       )
       .unwrap(),
       "True"
+    );
+  }
+
+  #[test]
+  fn derivative_of_defined_function_with_list_product_body() {
+    // The body `x/2 {…}` is a scalar times a list: it must be differentiated
+    // element-wise, not with the scalar product rule applied to the list.
+    assert_eq!(
+      interpret("h[x_] := x/2 {x, x^2}; Derivative[1][h][t]").unwrap(),
+      "{t, (3*t^2)/2}"
+    );
+    assert_eq!(
+      interpret("h[x_] := x/2 {x, x^2}; h'[t]").unwrap(),
+      "{t, (3*t^2)/2}"
+    );
+    assert_eq!(
+      interpret("g[x_] := x/Pi {Sin[x], Cos[x]}; Derivative[1][g][t]").unwrap(),
+      interpret("D[t/Pi {Sin[t], Cos[t]}, t]").unwrap()
+    );
+  }
+
+  // A zero-length domain `{t, t0, t0}` (an animation clock sitting at its
+  // start) is solved from the initial conditions instead of being left
+  // unevaluated, for scalar equations and coupled systems alike.
+  #[test]
+  fn ndsolve_zero_length_domain() {
+    assert_eq!(
+      interpret("NDSolve[{y'[t] + y[t] == 0, y[0] == 1}, y, {t, 0, 0}]")
+        .unwrap(),
+      "{{y -> InterpolatingFunction[{{0., 0.}}, <>]}}"
+    );
+    assert_eq!(
+      interpret(
+        "y[0] /. First[NDSolve[{y'[t] + y[t] == 0, y[0] == 3}, y, {t, 0, 0}]]"
+      )
+      .unwrap(),
+      "3."
+    );
+    assert_eq!(
+      interpret(
+        "{x[2], x[2]} /. First[NDSolve[{x''[t] + x[t] == 0, x[2] == 1, x'[2] == 4}, x, {t, 2, 2}]]"
+      )
+      .unwrap(),
+      "{1., 1.}"
+    );
+  }
+}
+
+mod ndsolve_delay_equations {
+  use super::*;
+
+  /// `x'[t] == -x[t - 1]` with constant history 1 has the piecewise
+  /// polynomial solution 1 - t, (t-2)^2/2 - 1/2, ... (method of steps).
+  #[test]
+  fn single_delay_matches_method_of_steps() {
+    let code = "s = NDSolve[{x'[t] == -x[t - 1], x[t /; t <= 0] == 1}, x, \
+       {t, 0, 3}]; Round[{x[1/2], x[1], x[2], x[3]} /. First[s], 10^-4]";
+    assert_eq!(interpret(code).unwrap(), "{1/2, 0, -1/2, -1667/10000}");
+  }
+
+  /// A zero delay is an ordinary ODE; the history condition just supplies
+  /// the initial value.
+  #[test]
+  fn history_condition_with_zero_delay() {
+    let code = "s = NDSolve[{y'[t] == -y[t] + 0.5*y[t - 0], \
+       y[t /; t <= 0] == 2}, y, {t, 0, 2}]; \
+       Round[y[2] /. First[s], 10^-3]";
+    assert_eq!(interpret(code).unwrap(), "92/125");
+  }
+
+  /// A history condition may use any constant, and a parameterised
+  /// delay inside a coupled system works as well.
+  #[test]
+  fn coupled_system_with_delay_and_history() {
+    let code = "s = NDSolve[{u'[t] == -v[t - 2], v'[t] == u[t], \
+       u[t /; t <= 0] == 1, v[t /; t <= 0] == 0}, {u, v}, {t, 0, 2}]; \
+       Round[{u[2], v[2]} /. First[s], 10^-3]";
+    assert_eq!(interpret(code).unwrap(), "{1, 2}");
+  }
+}
+
+mod integrate_piecewise_disjunction {
+  use super::*;
+
+  // Regression: an `Or` of interval conditions used to integrate to garbage
+  // (e.g. 7/2 instead of 3/2) because the generic antiderivative path ran.
+  #[test]
+  fn or_of_half_lines() {
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{1/2, x < 3 || x > 7}}, 0], {x, 2, 9}]")
+        .unwrap(),
+      "3/2"
+    );
+  }
+
+  #[test]
+  fn or_of_ranges_with_polynomial_factor() {
+    assert_eq!(
+      interpret(
+        "Integrate[x^2 Piecewise[{{1/2, 2 <= x <= 3 || 7 <= x <= 9}}, 0], {x, 2, 9}]"
+      )
+      .unwrap(),
+      "135/2"
+    );
+  }
+}
+
+mod ndsolve_delay {
+  use super::*;
+
+  /// `NDSolve` integrates delay differential equations: the history
+  /// `f[t /; t <= 0] == v` seeds the solution and `f[t - c]` looks up
+  /// earlier values (method of steps). For `z'[t] == -z[t - 1]` with
+  /// history 1 the exact solution is piecewise polynomial:
+  /// z(2) == -1/2 and z(3) == -1/6.
+  #[test]
+  fn ndsolve_delay_differential_equation() {
+    let code = "sol = NDSolve[{z'[t] == -z[t - 1], z[t /; t <= 0] == 1}, \
+       {z[t]}, {t, 0, 3}]; \
+       {z[t] /. sol /. t -> 2., z[t] /. sol /. t -> 3.}";
+    let result = interpret(code).unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split("}, {")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    assert!((nums[0] + 0.5).abs() < 1e-3, "{result}");
+    assert!((nums[1] + 1.0 / 6.0).abs() < 1e-3, "{result}");
+  }
+
+  /// A delayed unknown can be mixed with an ordinary one that states its
+  /// initial value as `w[0] == v`, and a zero delay is no delay at all.
+  #[test]
+  fn ndsolve_delay_system_mixes_plain_initial_values() {
+    let code = "sol = NDSolve[{z'[t] == -z[t - 0] + w[t - 1], \
+       z[t /; t <= 0] == 1, w'[t] == -w[t], w[0] == 2}, \
+       {z[t], w[t]}, {t, 0, 2}]; \
+       {Round[w[t] /. sol /. t -> 1., 0.0001], \
+        Round[z[t] /. sol /. t -> 0.5, 0.0001]}";
+    // w = 2 E^-t, so w(1) = 2/E = 0.7358.
+    let result = interpret(code).unwrap();
+    assert!(result.contains("0.7358"), "{result}");
+  }
+
+  /// An `InterpolatingFunction` is an atomic object: replacement rules do
+  /// not reach into its tabulated data, so an NDSolve result can be sampled
+  /// through `/.` without walking (and copying) every data point.
+  #[test]
+  fn replace_all_does_not_descend_into_interpolating_function() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{1, 4, 9, 16}]; \
+         {(f /. 4 -> 5) === f, (h[f, t] /. t -> 2) === h[f, 2], \
+          f[2], (g[t] /. g -> f /. t -> 2)}"
+      )
+      .unwrap(),
+      "{True, True, 4, 4}"
+    );
+    // Applying a substituted function leaves no placeholder behind.
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{u'[x] == -u[x], u[0] == 1}, u, {x, 0, 2}]; \
+         Round[(0.5 + u[x]) /. s /. x -> 1., 0.01]"
+      )
+      .unwrap(),
+      "{0.87}"
     );
   }
 }

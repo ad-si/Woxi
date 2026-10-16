@@ -11,11 +11,15 @@ pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     // ExpIntegralEi[0] = -Infinity
-    Expr::Integer(0) => Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")])),
+    Expr::Integer(0) => Ok(neg(id_expr("Infinity"))),
     // ExpIntegralEi[Infinity] = Infinity
     Expr::Identifier(s) if s == "Infinity" => Ok(id_expr("Infinity")),
     // Numeric evaluation
-    Expr::Real(x) => Ok(Expr::Real(exp_integral_ei_numeric(*x))),
+    Expr::Real(x) if *x == 0.0 => Ok(neg(id_expr("Infinity"))),
+    Expr::Real(x) => Ok(
+      exp_integral_ei_f64(*x)
+        .map_or_else(|| unevaluated("ExpIntegralEi", args), Expr::Real),
+    ),
     // Check for -Infinity or other cases
     other => {
       if is_neg_infinity(other) {
@@ -36,50 +40,6 @@ pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Compute Ei(x) numerically
-/// For all x: Ei(x) = γ + ln|x| + Σ_{n=1}^∞ x^n / (n * n!)
-fn exp_integral_ei_numeric(x: f64) -> f64 {
-  if x.abs() < 40.0 {
-    // Power series: Ei(x) = γ + ln|x| + Σ x^n / (n * n!)
-    let euler_gamma = std::f64::consts::EULER_GAMMA;
-    let mut sum = euler_gamma + x.abs().ln();
-    let mut term = 1.0;
-    for n in 1..200 {
-      let nf = n as f64;
-      term *= x / nf;
-      sum += term / nf;
-      if (term / nf).abs() < 1e-16 * sum.abs() {
-        break;
-      }
-    }
-    sum
-  } else {
-    // Asymptotic expansion for large |x|: Ei(x) ~ e^x/x * Σ n!/x^n
-    // Use continued fraction for better convergence
-    let mut result = 0.0;
-    for n in (1..=100).rev() {
-      let nf = n as f64;
-      result = nf / (1.0 + nf / (x + result));
-    }
-    result = x.exp() / (x + result);
-    if x > 0.0 {
-      result
-    } else {
-      // For large negative x, Ei(x) ≈ e^x/x * (1 + 1!/x + 2!/x^2 + ...)
-      let mut sum = 1.0;
-      let mut term = 1.0;
-      for n in 1..100 {
-        term *= n as f64 / x;
-        sum += term;
-        if term.abs() < 1e-16 * sum.abs() {
-          break;
-        }
-      }
-      sum * x.exp() / x
-    }
-  }
-}
-
 /// CosIntegral[z] - Cosine integral Ci(z)
 /// Ci(z) = γ + ln(z) + ∫₀ᶻ (cos(t)-1)/t dt
 pub fn cos_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -91,7 +51,7 @@ pub fn cos_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     // CosIntegral[0] = -Infinity
-    Expr::Integer(0) => Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")])),
+    Expr::Integer(0) => Ok(neg(id_expr("Infinity"))),
     // CosIntegral[Infinity] = 0
     Expr::Identifier(s) if s == "Infinity" => Ok(Expr::Integer(0)),
     // Numeric evaluation
@@ -650,17 +610,20 @@ pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let z_expr = &args[1];
 
   // E_n(0): E_1(0) = ComplexInfinity, E_n(0) = 1/(n-1) for n > 1
-  if is_expr_zero(z_expr)
-    && let Expr::Integer(n) = n_expr
-  {
-    if *n == 1 {
-      return Ok(id_expr("ComplexInfinity"));
-    } else if *n > 1 {
-      // An inexact zero gives an inexact result: E_2(0.) = 1., not 1.
-      if matches!(z_expr, Expr::Real(_)) {
-        return Ok(Expr::Real(1.0 / (*n - 1) as f64));
+  if is_expr_zero(z_expr) {
+    match n_expr {
+      Expr::Integer(1) => return Ok(id_expr("ComplexInfinity")),
+      Expr::Integer(n) if *n > 1 => {
+        // An inexact zero gives an inexact result: E_2(0.) = 1., not 1.
+        if matches!(z_expr, Expr::Real(_)) {
+          return Ok(Expr::Real(1.0 / (*n - 1) as f64));
+        }
+        return Ok(make_rational(1, *n - 1));
       }
-      return Ok(make_rational(1, *n - 1));
+      // E_ν(0) = 1/(ν − 1) converges only for ν > 1.
+      Expr::Real(nu) if *nu > 1.0 => return Ok(Expr::Real(1.0 / (nu - 1.0))),
+      Expr::Real(_) => return Ok(id_expr("ComplexInfinity")),
+      _ => {}
     }
   }
 
@@ -682,93 +645,17 @@ pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && z_val.is_some()
     && (matches!(z_expr, Expr::Real(_)) || matches!(n_expr, Expr::Real(_)));
 
-  if is_numeric_eval {
-    let n = n_val.unwrap();
-    let z = z_val.unwrap();
-    let result = exp_integral_en(n as i64, z);
-    return Ok(Expr::Real(result));
+  if is_numeric_eval
+    && let Some((re, im)) = exp_integral_e_f64(n_val.unwrap(), z_val.unwrap())
+  {
+    return Ok(if im == 0.0 {
+      Expr::Real(re)
+    } else {
+      build_complex_float_expr(re, im)
+    });
   }
 
   Ok(unevaluated("ExpIntegralE", args))
-}
-
-/// Compute E_n(z) = ∫_1^∞ e^{-zt}/t^n dt
-fn exp_integral_en(n: i64, z: f64) -> f64 {
-  if n == 0 {
-    // E_0(z) = e^{-z}/z
-    return (-z).exp() / z;
-  }
-
-  // Compute E_1(z) first, then use recurrence for higher n
-  let e1 = exp_integral_e1(z);
-
-  if n == 1 {
-    return e1;
-  }
-
-  // Recurrence: E_{n+1}(z) = (e^{-z} - z*E_n(z))/n
-  let mut e_prev = e1;
-  let exp_neg_z = (-z).exp();
-  for k in 1..n {
-    let e_next = (exp_neg_z - z * e_prev) / k as f64;
-    e_prev = e_next;
-  }
-  e_prev
-}
-
-/// Compute E_1(z) via series for small z, continued fraction for large z
-fn exp_integral_e1(z: f64) -> f64 {
-  let euler_gamma = std::f64::consts::EULER_GAMMA;
-
-  if z <= 0.0 {
-    return f64::INFINITY;
-  }
-
-  if z < 1.5 {
-    // Series: E_1(z) = -γ - ln(z) + Σ_{n=1}^∞ (-1)^{n+1} z^n / (n * n!)
-    let mut sum = -euler_gamma - z.ln();
-    let mut term = 1.0;
-    for n in 1..200 {
-      let nf = n as f64;
-      term *= -z / nf;
-      sum -= term / nf;
-      if (term / nf).abs() < 1e-16 * sum.abs().max(1e-300) {
-        break;
-      }
-    }
-    sum
-  } else {
-    // Continued fraction: E_1(z) = e^{-z} * 1/(z + 1/(1 + 1/(z + 2/(1 + 2/(z + ...)))))
-    // Using Lentz-Thompson algorithm with a_i, b_i coefficients
-    // E_1(z) = e^{-z} * CF where CF = 1/(z+) 1/(1+) 1/(z+) 2/(1+) 2/(z+) 3/(1+) ...
-    // Equivalently using the modified Lentz: a_0=0, b_0=z, then alternating
-    // numerators [1, 1, 2, 2, 3, 3, ...] and denominators [1, z, 1, z, 1, z, ...]
-    let mut f = z; // b_0
-    let mut c = z;
-    let mut d = 0.0;
-
-    for i in 1..200 {
-      let a = ((i + 1) / 2) as f64; // 1, 1, 2, 2, 3, 3, ...
-      let b = if i % 2 == 1 { 1.0 } else { z };
-
-      d = b + a * d;
-      if d.abs() < 1e-30 {
-        d = 1e-30;
-      }
-      c = b + a / c;
-      if c.abs() < 1e-30 {
-        c = 1e-30;
-      }
-      d = 1.0 / d;
-      let delta = c * d;
-      f *= delta;
-      if (delta - 1.0).abs() < 1e-16 {
-        break;
-      }
-    }
-
-    (-z).exp() / f
-  }
 }
 
 /// LogIntegral[x] - Logarithmic integral Li(x) = Ei(ln(x))
@@ -783,12 +670,15 @@ pub fn log_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // LogIntegral[0] = 0
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     // LogIntegral[1] = -Infinity (pole at x=1 since ln(1)=0)
-    Expr::Integer(1) => Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")])),
+    Expr::Integer(1) => Ok(neg(id_expr("Infinity"))),
     // Numeric evaluation: Li(x) = Ei(ln(x))
-    Expr::Real(x) => {
-      let result = exp_integral_ei_numeric(x.ln());
-      Ok(Expr::Real(result))
-    }
+    Expr::Real(x) if *x == 0.0 => Ok(Expr::Real(0.0)),
+    Expr::Real(x) if *x == 1.0 => Ok(neg(id_expr("Infinity"))),
+    Expr::Real(x) => Ok(match log_integral_f64(*x) {
+      Some((re, 0.0)) => Expr::Real(re),
+      Some((re, im)) => build_complex_float_expr(re, im),
+      None => unevaluated("LogIntegral", args),
+    }),
     // Unevaluated
     _ => Ok(unevaluated("LogIntegral", args)),
   }
@@ -866,7 +756,7 @@ pub fn sinh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => {
       if is_neg_infinity(other) {
         // SinhIntegral[-Infinity] = -Infinity
-        return Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")]));
+        return Ok(neg(id_expr("Infinity")));
       }
       // Unevaluated
       Ok(unevaluated("SinhIntegral", args))
@@ -950,7 +840,7 @@ pub fn cosh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     // CoshIntegral[0] = -Infinity
-    Expr::Integer(0) => Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")])),
+    Expr::Integer(0) => Ok(neg(id_expr("Infinity"))),
     // CoshIntegral[Infinity] = Infinity
     Expr::Identifier(s) if s == "Infinity" => Ok(id_expr("Infinity")),
     // Numeric evaluation
@@ -1140,4 +1030,407 @@ fn complex_exp_integral_ei_f64(re: f64, im: f64) -> C64 {
     -e1.0 + 0.5 * (lz.0 - linv.0) - lnz.0,
     -e1.1 + 0.5 * (lz.1 - linv.1) - lnz.1,
   )
+}
+
+// ---------------------------------------------------------------------------
+// Real exponential integrals: the single numeric core behind ExpIntegralE,
+// ExpIntegralEi, LogIntegral and Gamma[a, z], at any precision. Machine
+// values are rounded from a 64-bit result, so the series' cancellation (a
+// power series for E_ν(z) at z = 20 sums terms near e^20 to a result near
+// e^-20) never reaches the f64 answer.
+// ---------------------------------------------------------------------------
+
+/// Binary exponent of `b`, or a huge negative number for zero.
+fn bf_exp(b: &astro_float::BigFloat) -> i32 {
+  if b.is_zero() {
+    i32::MIN / 4
+  } else {
+    b.exponent().unwrap_or(i32::MIN / 4)
+  }
+}
+
+/// Runs `eval` at `bits` plus a guard, growing the guard until the bits the
+/// evaluation reports losing to cancellation leave `bits` + 16 correct ones.
+fn with_cancellation_guard<T>(
+  bits: usize,
+  mut eval: impl FnMut(usize) -> (T, i32),
+) -> T {
+  let cap = 16 * bits + 4096;
+  let mut guard = 64;
+  loop {
+    let (value, lost) = eval(bits + guard);
+    let lost = lost.max(0) as usize;
+    if lost + 16 <= guard || guard > cap {
+      return value;
+    }
+    guard = (lost + 64).min(cap + 1);
+  }
+}
+
+/// Integer value of an integral BigFloat of moderate size.
+fn bf_small_integer(b: &astro_float::BigFloat) -> Option<i64> {
+  if !b.is_int() {
+    return None;
+  }
+  let f = crate::functions::math_ast::bigfloat_to_f64_approx(b)?;
+  (f.abs() < 1.0e9).then_some(f as i64)
+}
+
+/// The generalized exponential integral E_ν(z) for real ν and real z ≠ 0,
+/// as (real part, imaginary part). A negative z lies on the branch cut,
+/// where the value is the limit from above (principal `Log` and powers),
+/// matching wolframscript. `None` for z = 0.
+pub(crate) fn exp_integral_e_bigfloat(
+  nu: &astro_float::BigFloat,
+  z: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Option<(astro_float::BigFloat, astro_float::BigFloat)> {
+  use astro_float::BigFloat;
+  if z.is_zero() {
+    return None;
+  }
+  let zero = || BigFloat::from_i32(0, bits);
+  let n_int = bf_small_integer(nu);
+
+  // E_{-m}(z) = m! e^{-z} z^{-m-1} Σ_{k=0}^{m} z^k/k! is elementary.
+  if let Some(n) = n_int
+    && n <= 0
+  {
+    let m = (-n) as usize;
+    let re = with_cancellation_guard(bits, |w| {
+      let mut term = BigFloat::from_i32(1, w);
+      let mut sum = term.clone();
+      let mut max_exp = 0;
+      for k in 1..=m {
+        term = term
+          .mul(z, w, rm)
+          .div(&BigFloat::from_u64(k as u64, w), w, rm);
+        max_exp = max_exp.max(bf_exp(&term));
+        sum = sum.add(&term, w, rm);
+      }
+      let lost = max_exp - bf_exp(&sum);
+      let mut fact = BigFloat::from_i32(1, w);
+      for k in 2..=m {
+        fact = fact.mul(&BigFloat::from_u64(k as u64, w), w, rm);
+      }
+      let value = fact
+        .mul(&z.neg().exp(w, rm, cc), w, rm)
+        .mul(&sum, w, rm)
+        .div(&bigfloat_powi(z, m as i128 + 1, w, rm), w, rm);
+      (value, lost)
+    });
+    return Some((re.add(&zero(), bits, rm), zero()));
+  }
+
+  // Legendre's continued fraction converges fast once z (and z + ν, which
+  // keeps the partial denominators positive) is past a precision-dependent
+  // threshold; below it the power series is cheaper.
+  let threshold = 2.0 + bits as f64 / 32.0;
+  let zf = crate::functions::math_ast::bigfloat_to_f64_approx(z)?;
+  let nuf = crate::functions::math_ast::bigfloat_to_f64_approx(nu)?;
+  if zf > threshold
+    && zf + nuf > threshold
+    && let Some(v) = exp_integral_e_cf(nu, z, bits + 64, rm, cc)
+  {
+    return Some((v.add(&zero(), bits, rm), zero()));
+  }
+
+  let negative = z.is_negative();
+  let (re, im) = with_cancellation_guard(bits, |w| {
+    exp_integral_e_series(nu, n_int, z, negative, w, rm, cc)
+  });
+  Some((re.add(&zero(), bits, rm), im.add(&zero(), bits, rm)))
+}
+
+/// E_ν(z), z > 0, by the continued fraction of Numerical Recipes §6.3,
+/// e^{-z} (1/(z+ν−) 1·ν/(z+ν+2−) 2(ν+1)/(z+ν+4−) …), modified Lentz.
+/// `None` if it fails to converge.
+fn exp_integral_e_cf(
+  nu: &astro_float::BigFloat,
+  z: &astro_float::BigFloat,
+  w: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Option<astro_float::BigFloat> {
+  use astro_float::BigFloat;
+  let one = BigFloat::from_i32(1, w);
+  let two = BigFloat::from_i32(2, w);
+  let nu_m1 = nu.sub(&one, w, rm);
+  let mut b = z.add(nu, w, rm);
+  let mut c = BigFloat::from_f64(1.0e300, w);
+  let mut d = one.div(&b, w, rm);
+  let mut h = d.clone();
+  for i in 1..(50 * w + 10_000) {
+    let i_bf = BigFloat::from_u64(i as u64, w);
+    let an = i_bf.mul(&nu_m1.add(&i_bf, w, rm), w, rm).neg();
+    b = b.add(&two, w, rm);
+    d = one.div(&an.mul(&d, w, rm).add(&b, w, rm), w, rm);
+    c = b.add(&an.div(&c, w, rm), w, rm);
+    let del = c.mul(&d, w, rm);
+    h = h.mul(&del, w, rm);
+    if bf_exp(&del.sub(&one, w, rm)) < -(w as i32) + 2 {
+      return Some(h.mul(&z.neg().exp(w, rm, cc), w, rm));
+    }
+  }
+  None
+}
+
+/// E_ν(z) for ν not a non-positive integer, by its power series
+/// (DLMF 8.19.7 for integer ν = n ≥ 1, 8.19.10 otherwise), at working
+/// precision `w`. Returns ((re, im), bits lost to cancellation).
+fn exp_integral_e_series(
+  nu: &astro_float::BigFloat,
+  n_int: Option<i64>,
+  z: &astro_float::BigFloat,
+  negative: bool,
+  w: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> ((astro_float::BigFloat, astro_float::BigFloat), i32) {
+  use astro_float::BigFloat;
+  let one = BigFloat::from_i32(1, w);
+  let x = z.abs();
+  let ln_x = crate::functions::math_ast::ln_above_integer(&x, w, rm, cc);
+  let pi = cc.pi(w, rm);
+  let minus_z = z.neg();
+
+  // The non-series part, and the index the series skips (n − 1).
+  let (lead_re, lead_im, skip, a) = if let Some(n) = n_int {
+    // (−z)^{n−1}/(n−1)! · (ψ(n) − ln z), with ψ(n) = −γ + H_{n−1}.
+    let mut coef = one.clone();
+    let mut psi =
+      crate::functions::math_ast::compute_euler_gamma(w, rm, cc).neg();
+    for j in 1..n {
+      let j_bf = BigFloat::from_u64(j as u64, w);
+      coef = coef.mul(&minus_z, w, rm).div(&j_bf, w, rm);
+      psi = psi.add(&one.div(&j_bf, w, rm), w, rm);
+    }
+    let lead_re = coef.mul(&psi.sub(&ln_x, w, rm), w, rm);
+    // ln z = ln|z| + iπ on the cut.
+    let lead_im = if negative {
+      coef.mul(&pi, w, rm).neg()
+    } else {
+      BigFloat::from_i32(0, w)
+    };
+    (lead_re, lead_im, Some(n as usize - 1), None)
+  } else {
+    // Γ(1 − ν) z^{ν−1}, with z^{ν−1} = |z|^{ν−1} e^{iπ(ν−1)} on the cut.
+    let a = one.sub(nu, w, rm);
+    let gamma_a = crate::functions::math_ast::gamma_bigfloat(&a, w, rm, cc);
+    let lead = gamma_a.mul(&ln_x.mul(&a, w, rm).neg().exp(w, rm, cc), w, rm);
+    if negative {
+      let phase = pi.mul(&a, w, rm).neg();
+      (
+        lead.mul(&phase.cos(w, rm, cc), w, rm),
+        lead.mul(&phase.sin(w, rm, cc), w, rm),
+        None,
+        Some(a),
+      )
+    } else {
+      (lead, BigFloat::from_i32(0, w), None, Some(a))
+    }
+  };
+
+  // − Σ_{k≥0, k≠n−1} (−z)^k / (k! (k + 1 − ν)).
+  let one_minus_nu = a.unwrap_or_else(|| one.sub(nu, w, rm));
+  let xf =
+    crate::functions::math_ast::bigfloat_to_f64_approx(&x).unwrap_or(0.0);
+  let mut max_exp = bf_exp(&lead_re);
+  let mut re = lead_re;
+  let mut term = one.clone(); // (−z)^k / k!
+  let mut k: usize = 0;
+  loop {
+    if skip != Some(k) {
+      let denom = BigFloat::from_u64(k as u64, w).add(&one_minus_nu, w, rm);
+      let contribution = term.div(&denom, w, rm);
+      max_exp = max_exp.max(bf_exp(&contribution));
+      re = re.sub(&contribution, w, rm);
+      if k as f64 > xf && bf_exp(&contribution) < max_exp - w as i32 - 8 {
+        break;
+      }
+    }
+    k += 1;
+    term =
+      term
+        .mul(&minus_z, w, rm)
+        .div(&BigFloat::from_u64(k as u64, w), w, rm);
+  }
+  let lost = max_exp - bf_exp(&re);
+  ((re, lead_im), lost)
+}
+
+/// The exponential integral Ei(x) for real x ≠ 0: −E₁(−x) for x < 0, the
+/// power series γ + ln x + Σ x^k/(k·k!) for moderate x > 0 and the
+/// asymptotic series e^x/x Σ k!/x^k once its smallest term is negligible.
+pub(crate) fn exp_integral_ei_bigfloat(
+  x: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Option<astro_float::BigFloat> {
+  use astro_float::BigFloat;
+  if x.is_zero() {
+    return None;
+  }
+  let zero = BigFloat::from_i32(0, bits);
+  if x.is_negative() {
+    let one = BigFloat::from_i32(1, bits);
+    let (re, _) = exp_integral_e_bigfloat(&one, &x.neg(), bits, rm, cc)?;
+    return Some(re.neg());
+  }
+  let xf = crate::functions::math_ast::bigfloat_to_f64_approx(x)?;
+  let value = if xf > (bits as f64 + 16.0) * std::f64::consts::LN_2 + 2.0 {
+    // The terms shrink until k ≈ x, by then below 2^-(bits+16).
+    let w = bits + 64;
+    let mut sum = BigFloat::from_i32(1, w);
+    let mut term = BigFloat::from_i32(1, w);
+    let mut k = 1u64;
+    while (k as f64) < xf {
+      term = term.mul(&BigFloat::from_u64(k, w), w, rm).div(x, w, rm);
+      if bf_exp(&term) < -(w as i32) {
+        break;
+      }
+      sum = sum.add(&term, w, rm);
+      k += 1;
+    }
+    x.exp(w, rm, cc).div(x, w, rm).mul(&sum, w, rm)
+  } else {
+    with_cancellation_guard(bits, |w| {
+      let gamma = crate::functions::math_ast::compute_euler_gamma(w, rm, cc);
+      let ln_x = crate::functions::math_ast::ln_above_integer(x, w, rm, cc);
+      let mut sum = BigFloat::from_i32(0, w);
+      let mut power = BigFloat::from_i32(1, w); // x^k / k!
+      for k in 1u64.. {
+        let k_bf = BigFloat::from_u64(k, w);
+        power = power.mul(x, w, rm).div(&k_bf, w, rm);
+        let term = power.div(&k_bf, w, rm);
+        sum = sum.add(&term, w, rm);
+        if bf_exp(&term) < bf_exp(&sum) - w as i32 - 8 {
+          break;
+        }
+      }
+      let max_exp = bf_exp(&gamma).max(bf_exp(&ln_x)).max(bf_exp(&sum));
+      let value = gamma.add(&ln_x, w, rm).add(&sum, w, rm);
+      let lost = max_exp - bf_exp(&value);
+      (value, lost)
+    })
+  };
+  Some(value.add(&zero, bits, rm))
+}
+
+/// The logarithmic integral li(x) = Ei(ln x) for real x > 0, x ≠ 1. The
+/// logarithm is taken with 128 guard bits, which absorbs Ei's amplification
+/// of its error near li's root.
+pub(crate) fn log_integral_bigfloat(
+  x: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Option<astro_float::BigFloat> {
+  if !x.is_positive() {
+    return None;
+  }
+  let t = x.ln(bits + 128, rm, cc);
+  exp_integral_ei_bigfloat(&t, bits, rm, cc)
+}
+
+/// Gamma[a, z] = z^a E_{1−a}(z) for real a and real z ≠ 0, as (re, im);
+/// a negative z takes the principal power, as wolframscript does.
+pub(crate) fn upper_incomplete_gamma_bigfloat(
+  a: &astro_float::BigFloat,
+  z: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Option<(astro_float::BigFloat, astro_float::BigFloat)> {
+  use astro_float::BigFloat;
+  let w = bits + 32;
+  let one = BigFloat::from_i32(1, w);
+  let (e_re, e_im) = exp_integral_e_bigfloat(&one.sub(a, w, rm), z, w, rm, cc)?;
+  // z^a = |z|^a (cos πa + i sin πa) for z < 0.
+  let modulus =
+    crate::functions::math_ast::ln_above_integer(&z.abs(), w, rm, cc)
+      .mul(a, w, rm)
+      .exp(w, rm, cc);
+  let (p_re, p_im) = if z.is_negative() {
+    let phase = cc.pi(w, rm).mul(a, w, rm);
+    (
+      modulus.mul(&phase.cos(w, rm, cc), w, rm),
+      modulus.mul(&phase.sin(w, rm, cc), w, rm),
+    )
+  } else {
+    (modulus, BigFloat::from_i32(0, w))
+  };
+  let re = p_re
+    .mul(&e_re, w, rm)
+    .sub(&p_im.mul(&e_im, w, rm), bits, rm);
+  let im = p_re
+    .mul(&e_im, w, rm)
+    .add(&p_im.mul(&e_re, w, rm), bits, rm);
+  Some((re, im))
+}
+
+/// Runs `f` with this thread's cached astro-float constants at 64 bits and
+/// rounds the (re, im) result to f64 — the machine-precision entry point.
+fn machine_complex(
+  f: impl FnOnce(
+    astro_float::RoundingMode,
+    &mut astro_float::Consts,
+  ) -> Option<(astro_float::BigFloat, astro_float::BigFloat)>,
+) -> Option<(f64, f64)> {
+  crate::functions::math_ast::with_thread_consts(|cc| {
+    let (re, im) = f(astro_float::RoundingMode::ToEven, cc)?;
+    Some((
+      crate::functions::math_ast::bigfloat_to_f64_approx(&re)?,
+      crate::functions::math_ast::bigfloat_to_f64_approx(&im)?,
+    ))
+  })
+}
+
+/// Machine E_ν(z) for real ν, z ≠ 0, as (re, im).
+pub fn exp_integral_e_f64(nu: f64, z: f64) -> Option<(f64, f64)> {
+  use astro_float::BigFloat;
+  machine_complex(|rm, cc| {
+    let (nu, z) = (BigFloat::from_f64(nu, 64), BigFloat::from_f64(z, 64));
+    exp_integral_e_bigfloat(&nu, &z, 64, rm, cc)
+  })
+}
+
+/// Machine Ei(x) for real x ≠ 0.
+pub fn exp_integral_ei_f64(x: f64) -> Option<f64> {
+  use astro_float::BigFloat;
+  machine_complex(|rm, cc| {
+    let v = exp_integral_ei_bigfloat(&BigFloat::from_f64(x, 64), 64, rm, cc)?;
+    Some((v, BigFloat::from_i32(0, 64)))
+  })
+  .map(|(re, _)| re)
+}
+
+/// Machine li(x) for real x ≠ 0, 1, as (re, im): a negative x gives
+/// Ei(ln|x| + iπ).
+pub fn log_integral_f64(x: f64) -> Option<(f64, f64)> {
+  use astro_float::BigFloat;
+  machine_complex(|rm, cc| {
+    let xb = BigFloat::from_f64(x, 64);
+    if x > 0.0 {
+      let v = log_integral_bigfloat(&xb, 64, rm, cc)?;
+      return Some((v, BigFloat::from_i32(0, 64)));
+    }
+    let t = xb.abs().ln(64 + 128, rm, cc);
+    let pi = cc.pi(64 + 128, rm);
+    Some(crate::functions::math_ast::complex_exp_integral_ei(
+      &t, &pi, 64, rm, cc,
+    ))
+  })
+}
+
+/// Machine Gamma[a, z] for real a and real z ≠ 0, as (re, im).
+pub fn upper_incomplete_gamma_f64(a: f64, z: f64) -> Option<(f64, f64)> {
+  use astro_float::BigFloat;
+  machine_complex(|rm, cc| {
+    let (a, z) = (BigFloat::from_f64(a, 64), BigFloat::from_f64(z, 64));
+    upper_incomplete_gamma_bigfloat(&a, &z, 64, rm, cc)
+  })
 }

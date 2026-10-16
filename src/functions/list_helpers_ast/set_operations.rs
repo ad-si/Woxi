@@ -698,10 +698,10 @@ pub fn delete_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(m) => m.clone(),
       None => id_expr("Infinity"),
     };
-    return Ok(Expr::FunctionCall {
-      name: "DeleteElements".to_string(),
-      args: vec![args[0].clone(), rule_expr(rhs, elems_expr.clone())].into(),
-    });
+    return Ok(call(
+      "DeleteElements",
+      vec![args[0].clone(), rule_expr(rhs, elems_expr.clone())],
+    ));
   };
 
   // Resolve per-element budgets.

@@ -702,3 +702,45 @@ mod a_symbol_stored_in_a_variable_keeps_its_context {
     );
   }
 }
+
+mod system_context_heads {
+  use super::*;
+
+  /// Regression: a call whose head spells out the System context stayed
+  /// unevaluated (`System`Plus[1, 2]`), so e.g. a `System`Foo` symbol bound
+  /// from a package-guarded `If` could not be applied.
+  #[test]
+  fn qualified_builtin_head_evaluates() {
+    assert_eq!(interpret("System`Plus[1, 2]").unwrap(), "3");
+    assert_eq!(interpret("System`Map[f, {1, 2}]").unwrap(), "{f[1], f[2]}");
+    assert_eq!(
+      interpret("Dimensions[RandomVariate[System`MultinormalDistribution[{0, 0}, {{1, 0.6}, {0.6, 1}}], 5]]")
+        .unwrap(),
+      "{5, 2}"
+    );
+    assert_eq!(
+      interpret("System`NotABuiltin[1]").unwrap(),
+      "System`NotABuiltin[1]"
+    );
+  }
+}
+
+/// A notebook stores `\[HappySmiley]`, `\[ClubSuit]` and friends as the bare
+/// glyph; they name symbols like any letter, so such source must parse.
+mod bare_glyph_symbols {
+  use super::*;
+
+  #[test]
+  fn smiley_and_suit_glyphs_are_symbols() {
+    for glyph in [
+      '\u{2639}', '\u{263A}', '\u{2660}', '\u{2661}', '\u{2662}', '\u{2663}',
+      '\u{F721}', '\u{F722}',
+    ] {
+      assert_eq!(interpret(&format!("Head[{glyph}]")).unwrap(), "Symbol");
+      assert_eq!(
+        interpret(&format!("Length[{{Style[{glyph}, 24], 1}}]")).unwrap(),
+        "2"
+      );
+    }
+  }
+}

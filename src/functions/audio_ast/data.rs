@@ -364,7 +364,7 @@ pub fn duration_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // constructor forms have date-inference semantics Woxi does not
     // model and stay unevaluated.
     "TimeSeries" => {
-      let times: Option<Vec<&Expr>> = match oargs.first() {
+      let terms: Option<Vec<&Expr>> = match oargs.first() {
         Some(Expr::List(items))
           if oargs.len() == 1
             && !items.is_empty()
@@ -384,8 +384,8 @@ pub fn duration_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         _ => None,
       };
-      times.and_then(|times| {
-        let keyed: Option<Vec<(f64, &Expr)>> = times
+      terms.and_then(|terms| {
+        let keyed: Option<Vec<(f64, &Expr)>> = terms
           .iter()
           .map(|t| {
             crate::functions::math_ast::try_eval_to_f64(t).map(|f| (f, *t))
@@ -401,14 +401,7 @@ pub fn duration_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             hi = *k;
           }
         }
-        let span = ev(&call(
-          "Plus",
-          vec![
-            hi.1.clone(),
-            call("Times", vec![Expr::Integer(-1), lo.1.clone()]),
-          ],
-        ))
-        .ok()?;
+        let span = ev(&plus(vec![hi.1.clone(), neg(lo.1.clone())])).ok()?;
         Some(seconds(span))
       })
     }

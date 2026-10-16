@@ -258,6 +258,53 @@ mod area {
   }
 
   #[test]
+  fn region_intersection_of_crossing_lines_is_a_point() {
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Line[{{0, 0}, {2, 2}}], Line[{{0, 2}, {2, 0}}]]"
+      )
+      .unwrap(),
+      "Point[{1, 1}]"
+    );
+    // Exact rational coordinates in 3D, extracted with First.
+    assert_eq!(
+      interpret(
+        "First@RegionIntersection[Line@{{0, 0, 0}, {3, 1, 0}}, \
+         Line@{{0, 1, 0}, {1, 0, 0}}]"
+      )
+      .unwrap(),
+      "{3/4, 1/4, 0}"
+    );
+  }
+
+  #[test]
+  fn region_intersection_of_disjoint_lines_is_empty() {
+    // Parallel, segments that stop short, and skew lines.
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Line[{{0, 0}, {1, 0}}], Line[{{0, 1}, {1, 1}}]]"
+      )
+      .unwrap(),
+      "EmptyRegion[2]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Line[{{0, 0}, {1, 1}}], Line[{{3, 0}, {3, 5}}]]"
+      )
+      .unwrap(),
+      "EmptyRegion[2]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Line[{{0, 0, 0}, {1, 0, 0}}], \
+         Line[{{0, 1, 1}, {0, -1, 1}}]]"
+      )
+      .unwrap(),
+      "EmptyRegion[3]"
+    );
+  }
+
+  #[test]
   fn cube_cross_sectioned_by_plane() {
     // The unit cube [0,1]^3 cut by the diagonal plane x+y=1: a rectangle
     // spanning the full z-extent (height 1) and the face diagonal (width
@@ -2349,6 +2396,37 @@ mod region_nearest {
   #[test]
   fn head() {
     assert_eq!(interpret("Head[RegionNearest]").unwrap(), "Symbol");
+  }
+
+  // Numeric projection onto an implicit curve / inequality region.
+  #[test]
+  fn implicit_region_numeric() {
+    assert_eq!(
+      interpret(
+        "RegionNearest[ImplicitRegion[x^2 + y^2 == 1, {x, y}], {3., 4.}]"
+      )
+      .unwrap(),
+      "{0.6, 0.8}"
+    );
+    assert_eq!(
+      interpret(
+        "RegionNearest[ImplicitRegion[y - 1 + x^2 <= 0, {x, y}], {0.5, 0.1}]"
+      )
+      .unwrap(),
+      "{0.5, 0.1}"
+    );
+    assert_eq!(
+      interpret("Round[RegionNearest[ImplicitRegion[y - 1 + x^2 == 0, {x, y}], {0.5, 0.5}], 0.000001]")
+        .unwrap(),
+      "{0.629961, 0.60315}"
+    );
+    assert_eq!(
+      interpret(
+        "RegionDistance[ImplicitRegion[x^2 + y^2 == 1, {x, y}], {3., 4.}]"
+      )
+      .unwrap(),
+      "4."
+    );
   }
 
   // For a solid Disk/Ball an exterior point projects onto the boundary; an
@@ -8640,6 +8718,10 @@ mod convex_polyhedron_q {
       "ConvexPolyhedronQ[Tetrahedron[]]",
       "ConvexPolyhedronQ[Dodecahedron[]]",
       "ConvexPolyhedronQ[Dodecahedron[{0, 0, 0}, 2]]",
+      // `{θ, ϕ}` turns the solid rather than placing it.
+      "ConvexPolyhedronQ[Cube[{Pi/4, 0}]]",
+      "ConvexPolyhedronQ[Icosahedron[{Pi/5, Pi/3}, 2]]",
+      "ConvexPolyhedronQ[Tetrahedron[{1, 2, 3}]]",
       "ConvexPolyhedronQ[Octahedron[]]",
       "ConvexPolyhedronQ[Icosahedron[]]",
       "ConvexPolyhedronQ[Hexahedron[]]",
@@ -8905,5 +8987,57 @@ mod zero_argument_region_defaults {
     );
     assert_eq!(interpret("Depth[Sphere[]]").unwrap(), "3");
     assert_eq!(interpret("Length[Cylinder[]]").unwrap(), "1");
+  }
+}
+
+mod region_centroid_difference {
+  use super::*;
+
+  #[test]
+  fn square_minus_disk_exact() {
+    assert_eq!(
+      interpret(
+        "RegionCentroid[RegionDifference[Rectangle[{-1, -1}, {1, 1}], \
+         Disk[{1/2, 0}, 1/4]]]"
+      )
+      .unwrap(),
+      "{-(Pi/(2*(64 - Pi))), 0}"
+    );
+  }
+
+  #[test]
+  fn square_minus_disk_numeric() {
+    assert_eq!(
+      interpret(
+        "RegionCentroid[RegionDifference[Rectangle[{-1, -1}, {1, 1}], \
+         Disk[{0.38, 0.38}, 0.55]]]"
+      )
+      .unwrap(),
+      "{-0.11841487309694458, -0.11841487309694458}"
+    );
+  }
+
+  #[test]
+  fn square_minus_triangle() {
+    assert_eq!(
+      interpret(
+        "RegionCentroid[RegionDifference[Rectangle[{0, 0}, {4, 4}], \
+         Triangle[{{0, 0}, {2, 0}, {0, 2}}]]]"
+      )
+      .unwrap(),
+      "{46/21, 46/21}"
+    );
+  }
+
+  #[test]
+  fn hole_sticking_out_stays_unevaluated() {
+    assert_eq!(
+      interpret(
+        "RegionCentroid[RegionDifference[Rectangle[{0, 0}, {2, 2}], \
+         Disk[{2, 2}, 1]]]"
+      )
+      .unwrap(),
+      "RegionCentroid[BooleanRegion[#1 &&  !#2 & , {Rectangle[{0, 0}, {2, 2}], Disk[{2, 2}, 1]}]]"
+    );
   }
 }

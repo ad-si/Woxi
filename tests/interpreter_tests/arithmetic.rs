@@ -1205,6 +1205,16 @@ mod real_number_formatting {
 mod plus_numeric_contagion {
   use super::*;
 
+  // `-I` is stored as a unary minus; it must turn machine-complex next to a
+  // Real like any other imaginary term.
+  #[test]
+  fn real_minus_unit_imaginary() {
+    assert_eq!(interpret("2.5 - I").unwrap(), "2.5 - 1.*I");
+    assert_eq!(interpret("-I + 3.").unwrap(), "3. - 1.*I");
+    assert_eq!(interpret("2.5 + Times[-1, I]").unwrap(), "2.5 - 1.*I");
+    assert_eq!(interpret("Im[2.5 - I]").unwrap(), "-1.");
+  }
+
   // Regression (mathics test_comparison.py:570): a machine Real among
   // the Plus terms numerifies named numeric constants (Pi, E, ...) and
   // any numeric constants embedded inside otherwise-symbolic summands
@@ -1248,6 +1258,130 @@ mod plus_numeric_contagion {
   #[test]
   fn real_plus_polynomial_keeps_exact_exponent() {
     assert_eq!(interpret("Plus[2., (x-3)^2]").unwrap(), "2. + (-3 + x)^2");
+  }
+
+  // Every summand that is a number numericizes — not only those containing
+  // a named constant, and whichever way `Pi` was spelled internally (the
+  // `Pi I` and `I Pi` orders store it differently). A summand that is not a
+  // number keeps its exact parts. Regression: `2. + I Pi`, `2. + Sqrt[2] I`
+  // and `2. + Log[3] I` stayed unevaluated.
+  #[test]
+  fn real_plus_numeric_imaginary_terms() {
+    assert_eq!(interpret("2. + I Pi").unwrap(), "2. + 3.141592653589793*I");
+    assert_eq!(
+      interpret("2. + Sqrt[2] I").unwrap(),
+      "2. + 1.4142135623730951*I"
+    );
+    assert_eq!(
+      interpret("2. + Log[3] I").unwrap(),
+      "2. + 1.0986122886681098*I"
+    );
+    assert_eq!(interpret("2. + Pi x").unwrap(), "2. + Pi*x");
+    assert_eq!(interpret("2. + f[Pi]").unwrap(), "2. + f[Pi]");
+    assert_eq!(interpret("2. + Sqrt[2] I x").unwrap(), "2. + I*Sqrt[2]*x");
+  }
+
+  // A machine imaginary summand is a machine Complex number, so it is just
+  // as contagious as a machine Real. Regression: `1.5 I + I Pi` and
+  // `1/2 + 0.5 I` kept their exact parts.
+  #[test]
+  fn inexact_imaginary_is_contagious() {
+    assert_eq!(
+      interpret("1.5 I + I Pi").unwrap(),
+      "0. + 4.641592653589793*I"
+    );
+    assert_eq!(
+      interpret("(2. - 1.5 I) + I Pi").unwrap(),
+      "2. + 1.6415926535897931*I"
+    );
+    assert_eq!(
+      interpret("1.5 I + Sqrt[2]").unwrap(),
+      "1.4142135623730951 + 1.5*I"
+    );
+    assert_eq!(interpret("1/2 + 0.5 I").unwrap(), "0.5 + 0.5*I");
+    assert_eq!(interpret("1 + 2.5 I").unwrap(), "1. + 2.5*I");
+    assert_eq!(
+      interpret("I Pi - 3.14 I").unwrap(),
+      "0. + 0.0015926535897929917*I"
+    );
+    assert_eq!(
+      interpret("1.5 I + E^I").unwrap(),
+      "0.5403023058681398 + 2.3414709848078967*I"
+    );
+    assert_eq!(interpret("0. + 0. I").unwrap(), "0. + 0.*I");
+  }
+
+  // A machine number makes the sum machine precision, so an arbitrary-
+  // precision summand joins the machine fold. Regression: it was dropped
+  // (`1.5 + 2.5`30` gave 1.5).
+  #[test]
+  fn machine_plus_arbitrary_precision() {
+    assert_eq!(interpret("1.5 + 2.5`30").unwrap(), "4.");
+    assert_eq!(interpret("1.5`30 - 1.2").unwrap(), "0.30000000000000004");
+    assert_eq!(interpret("1.5 - 1.5`30").unwrap(), "0.");
+    assert_eq!(interpret("1.5 - 1.5`30 + x").unwrap(), "0. + x");
+    assert_eq!(interpret("2. I - 2.`30 I").unwrap(), "0. + 0.*I");
+    assert_eq!(
+      interpret("(1.5 + 2.*I) - (1.5`30 + 2.`30*I)").unwrap(),
+      "0. + 0.*I"
+    );
+  }
+
+  // A machine zero is kept as the numeric term of a symbolic sum, and
+  // cancelling machine imaginary parts leave a machine Complex zero.
+  #[test]
+  fn machine_zero_is_kept() {
+    assert_eq!(interpret("x + 0.").unwrap(), "0. + x");
+    assert_eq!(interpret("2. x + 0.").unwrap(), "0. + 2.*x");
+    assert_eq!(interpret("x - 1. + 1").unwrap(), "0. + x");
+    assert_eq!(interpret("2. I - 2. I").unwrap(), "0. + 0.*I");
+    assert_eq!(interpret("I + (-I)").unwrap(), "0");
+  }
+}
+
+mod plus_arbitrary_precision_terms {
+  use super::*;
+
+  // Without a machine number, arbitrary-precision summands combine with
+  // each other and with exact ones wherever they stand in the sum, and
+  // arbitrary-precision coefficients of a common term add up. Regression:
+  // `x + 1.5`30 + 1` kept both numbers and two equal complex numbers summed
+  // to `2*1.5`30 + 4.`30*I`.
+  #[test]
+  fn numbers_and_coefficients_combine() {
+    assert_eq!(
+      interpret("x + 1.5`30 + 1").unwrap(),
+      "2.5`30.221848749616356 + x"
+    );
+    assert_eq!(
+      interpret("(1.5`30 + 2.`30 I) + (1.5`30 + 2.`30 I)").unwrap(),
+      "3.`30. + 4.`30.*I"
+    );
+    assert_eq!(interpret("1.5`30 I + 1.5`30 I").unwrap(), "3.`30.*I");
+    assert_eq!(
+      interpret("1 + (1.5`30 + 2.`30 I)").unwrap(),
+      "2.5`30.221848749616356 + 2.`30.*I"
+    );
+  }
+
+  // A negative arbitrary-precision coefficient prints as a subtraction.
+  #[test]
+  fn negative_coefficient_prints_as_minus() {
+    assert_eq!(interpret("1 + Times[-1.5`30, I]").unwrap(), "1 - 1.5`30.*I");
+  }
+
+  // `N` builds a complex result as the evaluated `Plus[re, Times[im, I]]`,
+  // so further arithmetic on it works. Regression: it was an unevaluated
+  // operator form (and, with per-part precision, raw strings), so
+  // `1 - N[…]` did not distribute.
+  #[test]
+  fn n_complex_result_is_arithmetic() {
+    assert_eq!(interpret("Chop[(1 + 2 I) - N[1 + 2 I, 30]]").unwrap(), "0");
+    assert_eq!(
+      interpret("Chop[LogIntegral[-2.] - N[LogIntegral[-2], 30], 10^-14]")
+        .unwrap(),
+      "0"
+    );
   }
 }
 
@@ -2980,6 +3114,11 @@ mod infinity_comparisons {
       interpret("Unequal[ComplexInfinity, ComplexInfinity]").unwrap(),
       "ComplexInfinity != ComplexInfinity"
     );
+    // Machine reals within tolerance are Equal, so Unequal is False.
+    assert_eq!(interpret("0.1 + 0.2 != 0.3").unwrap(), "False");
+    assert_eq!(interpret("Unequal[0.1 + 0.2, 0.3]").unwrap(), "False");
+    assert_eq!(interpret("Unequal[1, 2., 3]").unwrap(), "True");
+    assert_eq!(interpret("Unequal[1, 2, 1.]").unwrap(), "False");
     // Symbolic operands stay unevaluated too.
     assert_eq!(
       interpret("ComplexInfinity == x").unwrap(),
@@ -3734,6 +3873,40 @@ mod round_with_step {
   #[test]
   fn round_symbolic_step() {
     assert_eq!(interpret("Round[10, Pi]").unwrap(), "3*Pi");
+  }
+}
+
+mod round_exact_complex_algebraic {
+  use super::*;
+
+  #[test]
+  fn round_exact_complex_with_surd() {
+    assert_eq!(interpret("Round[(1 + I) Sqrt[2]]").unwrap(), "1 + I");
+  }
+
+  #[test]
+  fn round_complex_root_sum() {
+    assert_eq!(
+      interpret("Round[Root[#^3 - # - 1 &, 2] + 3]").unwrap(),
+      "2 - I"
+    );
+  }
+
+  #[test]
+  fn round_conjugate_root_sum_is_real() {
+    // Closed form of the Tribonacci numbers: the exact sum of conjugate
+    // algebraic terms is real, so the result is a plain integer.
+    assert_eq!(
+      interpret(
+        "T[n_] := Round[1/(2 Sqrt[11]) (I (Root[-1 - #1 - #1^2 + #1^3 &, 3]^n \
+         Root[44 + 4 #1^2 + 4 #1^4 + #1^6 &, 2] + \
+         Root[-1 - #1 - #1^2 + #1^3 &, 1]^n Root[44 + 4 #1^2 + 4 #1^4 + #1^6 &, 3] + \
+         Root[-1 - #1 - #1^2 + #1^3 &, 2]^n Root[44 + 4 #1^2 + 4 #1^4 + #1^6 &, 6]))]; \
+         Table[T[n], {n, 0, 10}]"
+      )
+      .unwrap(),
+      "{0, 1, 1, 2, 4, 7, 13, 24, 44, 81, 149}"
+    );
   }
 }
 
@@ -5748,6 +5921,93 @@ mod expand_threading {
     );
   }
 
+  // The fraction-digit count depends on the magnitude too: WL keeps
+  // ceil(p·log2 10) + 33 bits below the leading bit in 64-bit limbs aligned
+  // to the binary point, so a smaller value needs the second limb at a
+  // lower precision. All verified against wolframscript.
+  #[test]
+  fn n_display_digits_depend_on_magnitude() {
+    // 4/3 and 1/3 switch to two limbs at p = 10, 1/7 already at p = 9.
+    assert_eq!(
+      interpret("N[-4/3, 9]").unwrap(),
+      "-1.3333333333333333333`9."
+    );
+    assert_eq!(
+      interpret("N[-4/3, 10]").unwrap(),
+      "-1.33333333333333333333333333333333333333`10."
+    );
+    assert_eq!(interpret("N[1/3, 9]").unwrap(), "0.3333333333333333333`9.");
+    assert_eq!(interpret("N[1/7, 8]").unwrap(), "0.1428571428571428571`8.");
+    assert_eq!(
+      interpret("N[1/7, 9]").unwrap(),
+      "0.14285714285714285714285714285714285714`9."
+    );
+    // Leading fraction zeros draw from the same fixed fraction digits.
+    assert_eq!(
+      interpret("N[1/7000000, 2]").unwrap(),
+      "1.428571428571`2.*^-7"
+    );
+    assert_eq!(
+      interpret("N[10^-8/7, 20]").unwrap(),
+      "1.4285714285714285714285714285714285714285714285714`20.*^-9"
+    );
+    // Large integer parts get no fraction limb, or even lose integer digits.
+    assert_eq!(
+      interpret("N[2^63/3, 1]").unwrap(),
+      "3.074457345618258603`1.*^18"
+    );
+    assert_eq!(
+      interpret("N[10^40/7, 3]").unwrap(),
+      "1.42857142857142857143`3.*^39"
+    );
+    assert_eq!(
+      interpret("N[10^40/7, 30]").unwrap(),
+      "1.4285714285714285714285714285714285714285714285714285714286`30.*^39"
+    );
+  }
+
+  #[test]
+  fn bigfloat_arithmetic_display_digits_depend_on_magnitude() {
+    assert_eq!(
+      interpret("N[1/3, 5]*2").unwrap(),
+      "0.6666666666666666666`5."
+    );
+    assert_eq!(
+      interpret("Exp[N[1, 5]]").unwrap(),
+      "2.7182818284590452354`5."
+    );
+    assert_eq!(
+      interpret("Log[N[2, 5]]").unwrap(),
+      "0.6931471805599453094`4.840825461045139"
+    );
+    assert_eq!(
+      interpret("SetPrecision[10^6/7, 5]").unwrap(),
+      "142857.1428571428571428571`5."
+    );
+    assert_eq!(
+      interpret("Sqrt[N[2, 9]]").unwrap(),
+      "1.4142135623730950488`9.301029995663981"
+    );
+    assert_eq!(
+      interpret("N[x + 1/3, 9]").unwrap(),
+      "0.3333333333333333333`9. + x"
+    );
+  }
+
+  // An arbitrary-precision number switches to `*^` notation from 10^6 on,
+  // like a machine real.
+  #[test]
+  fn bigfloat_scientific_notation_from_a_million() {
+    assert_eq!(
+      interpret("N[10^6/7, 14]").unwrap(),
+      "142857.1428571428571428571`14."
+    );
+    assert_eq!(interpret("N[10^5, 20]").unwrap(), "100000.`20.");
+    assert_eq!(interpret("999999.5`20").unwrap(), "999999.5`20.");
+    assert_eq!(interpret("N[10^6, 20]").unwrap(), "1.`20.*^6");
+    assert_eq!(interpret("1234567.1`20").unwrap(), "1.2345671`20.*^6");
+  }
+
   // N[expr, {precision, accuracy}] carries the effective precision tag
   // min(p, a + Log10[|value|]). Verified against wolframscript.
   #[test]
@@ -6246,6 +6506,100 @@ mod complex_division {
 
 mod min_max_identity {
   use super::*;
+
+  /// Evaluate `code` from a clean state and return its result together with
+  /// the number of `::nord` messages it emitted.
+  fn with_nord_count(code: &str) -> (String, usize) {
+    clear_state();
+    let result = interpret(code).unwrap();
+    let count = woxi::get_captured_messages_raw()
+      .iter()
+      .filter(|m| m.contains("::nord"))
+      .count();
+    (result, count)
+  }
+
+  // ComplexInfinity stays beside the real extremum, with one ::nord per
+  // evaluation that compares it: the given call (unless it is a lone list),
+  // and the re-evaluation of a changed result. All wolframscript-verified
+  // (differential fuzzer, seed 20261010).
+  #[test]
+  fn complex_infinity_nord_count() {
+    for (code, result, count) in [
+      (
+        "Min[-76.5, ComplexInfinity]",
+        "Min[-76.5, ComplexInfinity]",
+        1,
+      ),
+      ("Min[ComplexInfinity, 1]", "Min[1, ComplexInfinity]", 1),
+      ("Min[1, 2, ComplexInfinity]", "Min[1, ComplexInfinity]", 2),
+      ("Min[{1}, ComplexInfinity]", "Min[1, ComplexInfinity]", 2),
+      (
+        "Min[x, y, 3, ComplexInfinity]",
+        "Min[3, x, y, ComplexInfinity]",
+        1,
+      ),
+      ("Min[ComplexInfinity, x, x]", "Min[x, ComplexInfinity]", 2),
+      (
+        "Min[ComplexInfinity, ComplexInfinity, ComplexInfinity]",
+        "ComplexInfinity",
+        1,
+      ),
+      ("Max[{ComplexInfinity, 1, 2}]", "Max[2, ComplexInfinity]", 1),
+      ("Min[{ComplexInfinity}]", "ComplexInfinity", 0),
+      ("Min[1, Indeterminate, ComplexInfinity]", "Indeterminate", 0),
+    ] {
+      assert_eq!(with_nord_count(code), (result.to_string(), count), "{code}");
+    }
+  }
+
+  // A non-real number cannot be ordered: the call stays unevaluated (lists
+  // unflattened) with one ::nord per such item.
+  #[test]
+  fn non_real_numbers_stay_unevaluated() {
+    for (code, result, count) in [
+      ("Min[I, 1]", "Min[I, 1]", 1),
+      ("Min[I, 2, 1]", "Min[I, 1, 2]", 1),
+      ("Min[{I, 2, 1}]", "Min[{I, 2, 1}]", 1),
+      ("Min[1 + I, 2 - I]", "Min[1 + I, 2 - I]", 2),
+      ("Min[Sqrt[-2], 1]", "Min[1, I*Sqrt[2]]", 1),
+      (
+        "Min[DirectedInfinity[I], 1]",
+        "Min[1, DirectedInfinity[I]]",
+        1,
+      ),
+      (
+        "Min[1, 2, ComplexInfinity, I]",
+        "Min[I, 1, 2, ComplexInfinity]",
+        2,
+      ),
+    ] {
+      assert_eq!(with_nord_count(code), (result.to_string(), count), "{code}");
+    }
+  }
+
+  #[test]
+  fn nord_message_text() {
+    clear_state();
+    interpret("Min[DirectedInfinity[I], 1]").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.iter().any(|m| {
+      m.contains("Min::nord: Invalid comparison with I Infinity attempted.")
+    }));
+  }
+
+  // The kept arguments are in canonical order; a real infinity is not
+  // compared away against a symbol.
+  #[test]
+  fn kept_arguments_canonical_order() {
+    assert_eq!(
+      interpret("Max[y, x, Infinity]").unwrap(),
+      "Max[x, y, Infinity]"
+    );
+    assert_eq!(interpret("Min[x, -Infinity]").unwrap(), "Min[x, -Infinity]");
+    assert_eq!(interpret("Max[x, -Infinity]").unwrap(), "Max[x, -Infinity]");
+    assert_eq!(interpret("Max[-Infinity, 1, x]").unwrap(), "Max[1, x]");
+  }
 
   #[test]
   fn min_zero_args() {
@@ -6930,6 +7284,20 @@ mod cases {
     assert_case(
       "ToString[TraditionalForm[x + 3 y]]",
       r#"DisplayForm[FormBox[RowBox[{x, +, RowBox[{3, , y}]}], TraditionalForm]]"#,
+    );
+  }
+
+  /// `ToString[real, TraditionalForm]` typesets a machine real at the 6
+  /// significant digits the FrontEnd shows, like plain `ToString` does.
+  #[test]
+  fn to_string_traditional_form_rounds_machine_reals() {
+    assert_case(
+      "ToString[0.7967806891350713, TraditionalForm]",
+      "DisplayForm[FormBox[0.796781`, TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[{15.840646417884168, 1/2}, TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{{, RowBox[{15.8406`, ,, FractionBox[1, 2]}], }}], TraditionalForm]]",
     );
   }
 
@@ -9978,6 +10346,67 @@ mod negative_half_times_sum_display {
 mod times_factor_vs_sum_ordering {
   use super::*;
 
+  // Rational radicals split their primes by exponent; a negative base no
+  // longer recurses (stack overflow on (-4/5)^(1/3); differential fuzzer,
+  // seed 20261011; wolframscript-verified).
+  #[test]
+  fn rational_base_radicals() {
+    for (input, expected) in [
+      ("(4/5)^(1/3)", "2^(2/3)/5^(1/3)"),
+      ("(12/5)^(1/3)", "(3/5)^(1/3)*2^(2/3)"),
+      ("(2/3)^(1/3)", "(2/3)^(1/3)"),
+      ("(4/9)^(1/3)", "(2/3)^(2/3)"),
+      ("(3/4)^(2/3)", "3^(2/3)/(2*2^(1/3))"),
+      ("(2/3)^(5/3)", "(2*(2/3)^(2/3))/3"),
+      ("(4/5)^(-1/3)", "5^(1/3)/2^(2/3)"),
+      ("CubeRoot[-4/5]", "-(2^(2/3)/5^(1/3))"),
+      ("(-4/5)^(1/3)", "(-1/5)^(1/3)*2^(2/3)"),
+      ("(-6/5)^(1/3)", "(-6/5)^(1/3)"),
+      ("(-2/3)^(1/3)", "(-2/3)^(1/3)"),
+      ("(-9/2)^(1/3)", "(-1/2)^(1/3)*3^(2/3)"),
+      ("(-12/5)^(1/3)", "(-3/5)^(1/3)*2^(2/3)"),
+      ("(-4/5)^(1/5)", "(-1/5)^(1/5)*2^(2/5)"),
+      ("(-4/5)^(2/3)", "(2*(-1)^(2/3)*2^(1/3))/5^(2/3)"),
+      ("(-8/5)^(2/3)", "4*(-1/5)^(2/3)"),
+      ("(-4/5)^(-1/3)", "-(((-1)^(2/3)*5^(1/3))/2^(2/3))"),
+      ("CubeRoot[-1/5]", "-5^(-1/3)"),
+      ("-2^(-1/3)", "-2^(-1/3)"),
+      ("-1/Sqrt[5]", "-(1/Sqrt[5])"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // A positive power of a sum orders against a bare sum by the two sums.
+  // Verified against wolframscript.
+  #[test]
+  fn power_of_sum_vs_sum() {
+    assert_eq!(
+      interpret("(1 + x)^2 (-1 + x)").unwrap(),
+      "(-1 + x)*(1 + x)^2"
+    );
+    assert_eq!(interpret("(2 + x)^2 (1 + x)").unwrap(), "(1 + x)*(2 + x)^2");
+    assert_eq!(
+      interpret("(1 + x)^3 (-2 + x)").unwrap(),
+      "(-2 + x)*(1 + x)^3"
+    );
+    assert_eq!(
+      interpret("(x - 1)^2 (x + 1)").unwrap(),
+      "(-1 + x)^2*(1 + x)"
+    );
+    assert_eq!(interpret("(b + x) (a + x)^2").unwrap(), "(a + x)^2*(b + x)");
+  }
+
+  // Two sum factors order by the Sort comparator, which compares sums
+  // termwise from the greatest term (InterpolatingPolynomial's Newton form).
+  #[test]
+  fn nested_sum_factor_first() {
+    assert_eq!(
+      interpret("(-1 + x)*(1 + (-2 + x)/2)").unwrap(),
+      "(1 + (-2 + x)/2)*(-1 + x)"
+    );
+  }
+
   // A power of a sum orders against a monomial by the sum's top term, the
   // same way a bare sum does: `x*Sqrt[1 + x]` but `Sqrt[1 - x]*x`.
   #[test]
@@ -12129,6 +12558,35 @@ mod sum_non_integer_step {
       )
       .unwrap(),
       "True"
+    );
+  }
+}
+
+mod plus_machine_complex {
+  use super::*;
+
+  #[test]
+  fn sums_machine_complex_numbers() {
+    assert_eq!(
+      interpret("(0.5 + 0.25 I) + (0.25 - 0.75 I)").unwrap(),
+      "0.75 - 0.5*I"
+    );
+  }
+
+  #[test]
+  fn complex_square_plus_constant_iteration() {
+    // Escape-time iteration of z^2 + c, as used for Mandelbrot sets.
+    assert_eq!(
+      interpret("Length@NestWhileList[#^2 + 1. &, 0, Abs[#] < 2 &, 1, 100]")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "Length@NestWhileList[#^2 + (0.25 + 0.5 I) &, 0, Abs[#] < 2 &, 1, 30]"
+      )
+      .unwrap(),
+      "31"
     );
   }
 }

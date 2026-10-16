@@ -1502,8 +1502,9 @@ pub fn delete_cases_unified_ast(
     return Ok(original());
   }
   let subject = &args[0];
-  let pattern = &args[1];
-  let (match_pat, _) = extract_rule_parts(pattern);
+  // Unlike Cases, DeleteCases has no `pattern -> rhs` form: a rule is an
+  // ordinary expression to match (e.g. deleting `1 -> 0` from a rule list).
+  let match_pat = &args[1];
 
   let strict_int = |e: &Expr| -> Option<i64> {
     match e {

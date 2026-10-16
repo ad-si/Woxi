@@ -819,6 +819,21 @@ mod compile {
     );
   }
 
+  // Regression: a plot probes its body with the plot variables free; running
+  // a compiled iteration on those symbols unrolled it symbolically, which is
+  // exponential in the iteration count and made this plot never finish.
+  #[test]
+  fn compiled_iteration_in_density_plot_is_not_unrolled_symbolically() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ly = Compile[{{a, _Real}, {b, _Real}, {n, _Integer}}, Module[{x = 0.5, s = 0.}, Do[x = a x (1 - x); x = b x (1 - x); s = s + Log[Abs[a (1 - 2 x)]], {n}]; s/n]]; Head[DensityPlot[ly[u, v, 25], {u, 3, 4}, {v, 3, 4}, PlotPoints -> 5]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
   #[test]
   fn compile_forces_numerical() {
     clear_state();
@@ -5904,5 +5919,56 @@ mod literal_slot_is_not_reevaluated {
       .unwrap(),
       "{lsB[3, 5], 1, lsA[3, 4]}"
     );
+  }
+
+  // `Optional` slots inside a list pattern fall back on their defaults when
+  // the list is shorter, just like in a function argument sequence.
+  #[test]
+  fn optional_slots_inside_list_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "olp[{t_, a_:10, b_:0.1}, c_:{0, 0}] := {t, a, b, c}; \
+         {olp[{3}, {1, 2}], olp[{3, 4, 5}], olp[{3, 4}, {1, 1}], olp[{3}], \
+         olp[{1, 2, 3, 4}]}"
+      )
+      .unwrap(),
+      "{{3, 10, 0.1, {1, 2}}, {3, 4, 5, {0, 0}}, {3, 4, 0.1, {1, 1}}, \
+       {3, 10, 0.1, {0, 0}}, olp[{1, 2, 3, 4}]}"
+    );
+    assert_eq!(
+      interpret("olq[l:{t_, a_:10}] := {l, t, a}; {olq[{3}], olq[{3, 4}]}")
+        .unwrap(),
+      "{{{3}, 3, 10}, {{3, 4}, 3, 4}}"
+    );
+    assert_eq!(interpret("MatchQ[{1}, {a_, b_:2}]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[{}, {a_, b_:2}]").unwrap(), "False");
+  }
+}
+
+mod evaluate_on_assignment_lhs {
+  use super::*;
+
+  // `Evaluate[target] = value` (and `target // Evaluate = value`) evaluates
+  // the held left-hand side first, then assigns to the result — here a
+  // list of `f[i]` targets, as Demonstrations use for solution tables.
+  #[test]
+  fn evaluate_forces_lhs_evaluation() {
+    clear_state();
+    assert_eq!(
+      interpret("Evaluate[Table[ev1[i], {i, 1, 3}]] = {a, b, c}; ev1[2]")
+        .unwrap(),
+      "b"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Table[ev2[i], {i, 1, 2}] // Evaluate = {7, 8}; {ev2[1], ev2[2]}"
+      )
+      .unwrap(),
+      "{7, 8}"
+    );
+    clear_state();
+    assert_eq!(interpret("ev3 = 1; Evaluate[ev3] = 5; ev3").unwrap(), "1");
   }
 }

@@ -8724,3 +8724,239 @@ mod noncentral_student_t_distribution {
     );
   }
 }
+
+mod custom_probability_distribution_moments {
+  use super::*;
+
+  #[test]
+  fn continuous_mean_and_variance() {
+    assert_eq!(
+      interpret("Mean[ProbabilityDistribution[2 x, {x, 0, 1}]]").unwrap(),
+      "2/3"
+    );
+    assert_eq!(
+      interpret("Variance[ProbabilityDistribution[2 x, {x, 0, 1}]]").unwrap(),
+      "1/18"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[ProbabilityDistribution[2 x, {x, 0, 1}]]")
+        .unwrap(),
+      "1/(3*Sqrt[2])"
+    );
+  }
+
+  #[test]
+  fn discrete_mean_and_variance() {
+    assert_eq!(
+      interpret(
+        "Mean[ProbabilityDistribution[Piecewise[{{1/2, x == 1 || x == 2}}], {x, 1, 2, 1}]]"
+      )
+      .unwrap(),
+      "3/2"
+    );
+  }
+
+  #[test]
+  fn disjoint_support_mean() {
+    assert_eq!(
+      interpret(
+        "Mean[ProbabilityDistribution[Piecewise[{{1/2, 0 <= x <= 1 || 3 <= x <= 4}}, 0], {x, 0, 4}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+}
+
+mod custom_probability_distribution_random_variate {
+  use super::*;
+
+  #[test]
+  fn dimension_list_and_range() {
+    assert_eq!(
+      interpret(
+        "d = ProbabilityDistribution[x^2, {x, 2, 9}]; s = RandomVariate[d, {3, 4}]; {Dimensions[s], Min[s] >= 2, Max[s] <= 9}"
+      )
+      .unwrap(),
+      "{{3, 4}, True, True}"
+    );
+  }
+
+  #[test]
+  fn respects_disjoint_support() {
+    assert_eq!(
+      interpret(
+        "s = RandomVariate[ProbabilityDistribution[Piecewise[{{1, 0 <= x <= 1 || 3 <= x <= 4}}, 0], {x, 0, 4}], 300]; AllTrue[s, 0 <= # <= 1 || 3 <= # <= 4 &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn discrete_values() {
+    assert_eq!(
+      interpret(
+        "Union[RandomVariate[ProbabilityDistribution[Piecewise[{{1/2, x == 1 || x == 3}}], {x, 1, 3, 2}], 200]]"
+      )
+      .unwrap(),
+      "{1., 3.}"
+    );
+  }
+}
+
+mod mixture_distribution_random_variate {
+  use super::*;
+
+  #[test]
+  fn count_and_support() {
+    assert_eq!(
+      interpret(
+        "s = RandomVariate[MixtureDistribution[{1, 3}, {UniformDistribution[{0, 1}], UniformDistribution[{5, 6}]}], 500]; {Length[s], AllTrue[s, 0 <= # <= 1 || 5 <= # <= 6 &], Count[s, _?(# > 4 &)] > 250}"
+      )
+      .unwrap(),
+      "{500, True, True}"
+    );
+  }
+
+  #[test]
+  fn single_draw_is_real() {
+    assert_eq!(
+      interpret(
+        "Head[RandomVariate[MixtureDistribution[{1, 1}, {NormalDistribution[0, 1], UniformDistribution[]}]]]"
+      )
+      .unwrap(),
+      "Real"
+    );
+  }
+}
+
+mod multidimensional_fourier {
+  use super::*;
+
+  #[test]
+  fn fourier_matrix() {
+    assert_eq!(
+      interpret("Fourier[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{5., -1.}, {-2., 0.}}"
+    );
+  }
+
+  #[test]
+  fn inverse_roundtrip_non_square() {
+    assert_eq!(
+      interpret("InverseFourier[Fourier[{{1, 2, 3}, {3, 4, 7}}]]").unwrap(),
+      "{{1., 2., 3.}, {3., 4., 7.}}"
+    );
+  }
+
+  #[test]
+  fn ragged_array_is_rejected() {
+    assert_eq!(
+      interpret("Fourier[{{1, 2}, {3}}]").unwrap(),
+      "Fourier[{{1, 2}, {3}}]"
+    );
+  }
+}
+
+mod log_normal_distribution_random_variate {
+  use super::*;
+
+  #[test]
+  fn count_and_positive_support() {
+    assert_eq!(
+      interpret(
+        "s = RandomVariate[LogNormalDistribution[0.5, 0.2], 50]; {Length[s], AllTrue[s, # > 0 &]}"
+      )
+      .unwrap(),
+      "{50, True}"
+    );
+  }
+
+  #[test]
+  fn random_real_delegates_and_dimension_list() {
+    assert_eq!(
+      interpret("Dimensions[RandomReal[LogNormalDistribution[0, 1], {3, 4}]]")
+        .unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
+  fn single_sample_is_positive_real() {
+    assert_eq!(
+      interpret(
+        "x = RandomVariate[LogNormalDistribution[1, 0.5]]; {Head[x], x > 0}"
+      )
+      .unwrap(),
+      "{Real, True}"
+    );
+  }
+
+  #[test]
+  fn mean_of_samples_is_near_theory() {
+    assert_eq!(
+      interpret(
+        "Abs[Mean[RandomVariate[LogNormalDistribution[0, 0.3], 4000]] - Exp[0.045]] < 0.05"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod distribution_parameter_assumptions {
+  use super::*;
+
+  #[test]
+  fn normal() {
+    assert_eq!(
+      interpret("DistributionParameterAssumptions[NormalDistribution[m, s]]")
+        .unwrap(),
+      "Element[m, Reals] && s > 0"
+    );
+  }
+
+  #[test]
+  fn positive_parameters() {
+    assert_eq!(
+      interpret("DistributionParameterAssumptions[GammaDistribution[a, b]]")
+        .unwrap(),
+      "a > 0 && b > 0"
+    );
+  }
+
+  #[test]
+  fn single_parameter() {
+    assert_eq!(
+      interpret("DistributionParameterAssumptions[ExponentialDistribution[l]]")
+        .unwrap(),
+      "l > 0"
+    );
+  }
+
+  #[test]
+  fn unknown_distribution_stays_unevaluated() {
+    assert_eq!(
+      interpret("DistributionParameterAssumptions[FooDistribution[l]]")
+        .unwrap(),
+      "DistributionParameterAssumptions[FooDistribution[l]]"
+    );
+  }
+
+  #[test]
+  fn extended_parameter_forms_are_accepted() {
+    assert_eq!(
+      interpret("GammaDistribution[a, b, c, d]").unwrap(),
+      "GammaDistribution[a, b, c, d]"
+    );
+    assert_eq!(
+      interpret("InverseGaussianDistribution[m, l, t]").unwrap(),
+      "InverseGaussianDistribution[m, l, t]"
+    );
+    assert_eq!(
+      interpret("InverseChiSquareDistribution[n, x]").unwrap(),
+      "InverseChiSquareDistribution[n, x]"
+    );
+  }
+}

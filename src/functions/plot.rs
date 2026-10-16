@@ -23,6 +23,15 @@ pub(crate) fn plot_label_extra_lines(label: Option<&StyledLabel>) -> usize {
     .map_or(0, StyledLabel::extra_line_count)
 }
 
+/// Extra top room, in render pixels, a stacked (multi-line) `PlotLabel`
+/// needs on top of an explicit `ImagePadding`: the title grows upwards from
+/// the padding, so the padding alone would push its extra lines off the
+/// canvas.
+fn stacked_title_room(label: Option<&StyledLabel>, sf: f64) -> i32 {
+  let font = label.and_then(|sl| sl.font_size).unwrap_or(17.0);
+  (plot_label_extra_lines(label) as f64 * font * 1.2 * sf).ceil() as i32
+}
+
 pub(crate) const DEFAULT_WIDTH: u32 = 360;
 pub(crate) const DEFAULT_HEIGHT: u32 = 225;
 /// Internal rendering resolution multiplier for sub-pixel precision.
@@ -76,11 +85,7 @@ pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
       name: name.clone(),
       args: args.iter().map(sub).collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(sub(left)),
-      right: Box::new(sub(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(*op, sub(left), sub(right)),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(sub(operand)),
@@ -594,7 +599,18 @@ fn clip_segments_to_y_range(
         } else if !prev_inside && !inside {
           // Both outside — check if the line passes through the range
           // (e.g. one above y_max and the other below y_min)
-          if (py > y_max && y < y_min) || (py < y_min && y > y_max) {
+          // A pole (e.g. `1/x` at 0) also jumps from one side to the other
+          // between neighbouring samples, but both samples lie far outside
+          // the range (a full range height or more); that gap must not be
+          // bridged by a vertical line. A steep but continuous curve stays
+          // within a range height of the boundaries.
+          let height = y_max - y_min;
+          let far_apart = (py - y).abs() > 3.0 * height
+            && (py > y_max + height || py < y_min - height)
+            && (y > y_max + height || y < y_min - height);
+          if !far_apart
+            && ((py > y_max && y < y_min) || (py < y_min && y > y_max))
+          {
             // Crosses both boundaries
             let t_min = (y_min - py) / (y - py);
             let t_max = (y_max - py) / (y - py);
@@ -1419,6 +1435,61 @@ fn inject_top_right_frame(
   }
 }
 
+/// Tick marks on all four edges of a framed plot, pointing into the plot
+/// area as Wolfram draws them: a major tick at every multiple of the axis'
+/// `major_step` (where the labels sit on the bottom and left edges) and
+/// four minor ticks between neighbouring majors.
+///
+/// `x_axis` / `y_axis` each supply `(min, max, major_step)`; `None` leaves
+/// that axis without automatic ticks (e.g. it has explicit `Ticks`).
+fn inject_inward_frame_ticks(
+  buf: &mut String,
+  (plot_x0, plot_y0, plot_w, plot_h): (f64, f64, f64, f64),
+  x_axis: Option<(f64, f64, f64)>,
+  y_axis: Option<(f64, f64, f64)>,
+  (minor_len, major_len): (f64, f64),
+  stroke_w: f64,
+  color: &str,
+) {
+  // The positions along one axis, as (fraction of the span, is major).
+  let ticks = |(min, max, major): (f64, f64, f64)| -> Vec<(f64, bool)> {
+    if !(major > 0.0 && max > min) {
+      return Vec::new();
+    }
+    let minor = major / 5.0;
+    let eps = 1e-6;
+    let first = (min / minor - eps).ceil() as i64;
+    let last = (max / minor + eps).floor() as i64;
+    (first..=last)
+      .map(|k| ((k as f64 * minor - min) / (max - min), k % 5 == 0))
+      .collect()
+  };
+  let mut svg = String::new();
+  let mut line = |x1: f64, y1: f64, x2: f64, y2: f64| {
+    svg.push_str(&format!(
+      "<line x1=\"{x1:.1}\" y1=\"{y1:.1}\" x2=\"{x2:.1}\" y2=\"{y2:.1}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.0}\"/>\n"
+    ));
+  };
+  let (bottom, right) = (plot_y0 + plot_h, plot_x0 + plot_w);
+  for (frac, major) in x_axis.map(ticks).unwrap_or_default() {
+    let len = if major { major_len } else { minor_len };
+    let x = plot_x0 + frac * plot_w;
+    line(x, bottom, x, bottom - len);
+    line(x, plot_y0, x, plot_y0 + len);
+  }
+  for (frac, major) in y_axis.map(ticks).unwrap_or_default() {
+    let len = if major { major_len } else { minor_len };
+    let y = bottom - frac * plot_h;
+    line(plot_x0, y, plot_x0 + len, y);
+    line(right, y, right - len, y);
+  }
+  if !svg.is_empty()
+    && let Some(pos) = buf.rfind("</svg>")
+  {
+    buf.insert_str(pos, &svg);
+  }
+}
+
 /// Default minor (unlabeled) tick length in render-space units.
 pub(crate) const MINOR_TICK_LEN: i32 = 4;
 /// Default major (labeled) tick length in render-space units — slightly longer
@@ -1473,11 +1544,19 @@ impl Filling {
 
 /// Parsed `FillingStyle -> …` value: an optional fill color override
 /// (`None` = use the series color) and an optional opacity (`None` = the
-/// default 0.2 translucency).
+/// default: 0.2 translucency, or fully opaque when a color is given).
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) struct FillStyle {
   pub color: Option<(u8, u8, u8)>,
   pub opacity: Option<f64>,
+}
+
+impl FillStyle {
+  /// The opacity the fill is drawn at: the explicit one, else fully opaque
+  /// when a color was given, else `None` (the default 0.2 translucency).
+  pub(crate) fn effective_opacity(&self) -> Option<f64> {
+    self.opacity.or(self.color.map(|_| 1.0))
+  }
 }
 
 /// Parse a `FillingStyle` option value. Supported forms: a color,
@@ -1545,7 +1624,8 @@ fn color_to_rgb8(c: WoxiColor) -> (u8, u8, u8) {
 }
 
 /// Resolve the fill paint for a series: the `FillingStyle` color override
-/// (else the series color) at the `FillingStyle` opacity (else 0.2).
+/// (else the series color) at the `FillingStyle` opacity. Without one the fill
+/// is translucent (0.2) by default, but opaque once a color is given.
 fn fill_paint(
   filling_style: Option<FillStyle>,
   series_rgb: (u8, u8, u8),
@@ -1555,7 +1635,7 @@ fn fill_paint(
     opacity: None,
   });
   let (r, g, b) = fs.color.unwrap_or(series_rgb);
-  RGBColor(r, g, b).mix(fs.opacity.unwrap_or(0.2))
+  RGBColor(r, g, b).mix(fs.effective_opacity().unwrap_or(0.2))
 }
 
 impl crate::syntax::SeriesFilling {
@@ -1882,6 +1962,8 @@ pub(crate) struct SeriesStyle {
   pub dashing: Option<Vec<f64>>,
   /// DropShadowing[...] directive: draw the curve with a drop shadow.
   pub shadow: Option<crate::functions::graphics::DropShadow>,
+  /// `Opacity[a]` directive: the curve's alpha. None = fully opaque.
+  pub opacity: Option<f64>,
 }
 
 /// A single explicit grid line: a position on its axis plus an optional
@@ -2060,6 +2142,10 @@ pub(crate) struct PlotOptions {
   /// height is derived so the frame has this ratio, matching Wolfram. `None`
   /// keeps `svg_height` as given.
   pub aspect_ratio: Option<f64>,
+  /// `AspectRatio -> Automatic`: derive the ratio from the plotted ranges
+  /// (`(ymax - ymin) / (xmax - xmin)`) once they are known, so one unit
+  /// spans the same length on both axes.
+  pub aspect_automatic: bool,
   /// `PlotMarkers -> …`: the glyph each series' points are drawn with,
   /// cycled over the series. Empty = plain round points.
   pub plot_markers: Vec<Option<PlotMarker>>,
@@ -2185,6 +2271,7 @@ impl Default for PlotOptions {
       background: None,
       image_padding: None,
       aspect_ratio: None,
+      aspect_automatic: false,
       plot_markers: Vec::new(),
       label_style: None,
       joined_per_series: None,
@@ -2375,6 +2462,8 @@ pub(crate) fn generate_svg_with_filling(
 /// plotters' backend would otherwise produce.
 struct DashedOverlay {
   color: (u8, u8, u8),
+  /// Stroke alpha (1.0 = opaque).
+  opacity: f64,
   stroke_w: u32,
   /// Dash pattern as fractions of the plot width (matching the legend swatch).
   dashes: Vec<f64>,
@@ -2446,11 +2535,16 @@ fn render_dash_overlays(
     let (r, g, b) = ov.color;
     svg.push_str(&format!(
       "<polyline fill=\"none\" stroke=\"rgb({},{},{})\" \
-       stroke-width=\"{}\" stroke-dasharray=\"{}\" stroke-linecap=\"round\" \
+       {}stroke-width=\"{}\" stroke-dasharray=\"{}\" stroke-linecap=\"round\" \
        points=\"{}\"/>\n",
       r,
       g,
       b,
+      if ov.opacity < 1.0 {
+        format!("stroke-opacity=\"{}\" ", ov.opacity)
+      } else {
+        String::new()
+      },
       ov.stroke_w,
       dash.join(","),
       pts.join(" ")
@@ -2863,6 +2957,12 @@ fn inject_prolog(
     "prolog",
     opts.clip_overlays,
   );
+  splice_after_background(buf, &prolog_svg);
+}
+
+/// Splice `overlay` into a finished SVG right after the canvas background
+/// rect, so everything painted later (axes, curves) draws on top of it.
+pub(crate) fn splice_after_background(buf: &mut String, overlay: &str) {
   // `root.fill(&bg_color)` (plotters) draws an opaque rect spanning the
   // whole canvas as the very first thing after the opening `<svg …>` tag
   // (and any embedded `<defs>` for fonts, which never paints anything
@@ -2886,7 +2986,31 @@ fn inject_prolog(
     Some(p) => after_defs + p + 2,
     None => after_defs,
   };
-  buf.insert_str(insert_at, &prolog_svg);
+  buf.insert_str(insert_at, overlay);
+}
+
+/// Resolve `AspectRatio -> Automatic` against the final plotted ranges: the
+/// plotting area takes the data's own proportions, so equal x and y distances
+/// are drawn equally long. Borrows `opts` unchanged for any other aspect.
+fn with_automatic_aspect(
+  opts: &PlotOptions,
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+) -> std::borrow::Cow<'_, PlotOptions> {
+  let (dx, dy) = (x_range.1 - x_range.0, y_range.1 - y_range.0);
+  if opts.aspect_automatic
+    && opts.aspect_ratio.is_none()
+    && dx.is_finite()
+    && dy.is_finite()
+    && dx > 0.0
+    && dy > 0.0
+  {
+    let mut resolved = opts.clone();
+    resolved.aspect_ratio = Some(dy / dx);
+    std::borrow::Cow::Owned(resolved)
+  } else {
+    std::borrow::Cow::Borrowed(opts)
+  }
 }
 
 fn generate_svg_with_options(
@@ -2895,6 +3019,7 @@ fn generate_svg_with_options(
   y_range: (f64, f64),
   opts: &PlotOptions,
 ) -> Result<String, InterpreterError> {
+  let opts = &*with_automatic_aspect(opts, x_range, y_range);
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
   let svg_width = opts.svg_width;
@@ -3109,7 +3234,14 @@ fn generate_svg_with_options(
         opts.aspect_ratio,
         sf,
       );
-      (m.top as i32, m.bottom, m.left, 0u32, m.right, 0u32)
+      (
+        m.top as i32 + stacked_title_room(opts.plot_label.as_ref(), sf),
+        m.bottom,
+        m.left,
+        0u32,
+        m.right,
+        0u32,
+      )
     }
     None => (
       top_margin,
@@ -3331,6 +3463,7 @@ fn generate_svg_with_options(
             if let Some(dashes) = dash {
               dashed_overlays.push(DashedOverlay {
                 color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
+                opacity: 1.0,
                 stroke_w,
                 dashes,
                 points: vec![(x_min, *gy), (x_max, *gy)],
@@ -3375,6 +3508,7 @@ fn generate_svg_with_options(
             if let Some(dashes) = dash {
               dashed_overlays.push(DashedOverlay {
                 color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
+                opacity: 1.0,
                 stroke_w,
                 dashes,
                 points: vec![(*gx, y_min), (*gx, y_max)],
@@ -3548,6 +3682,7 @@ fn generate_svg_with_options(
                   if segment.len() >= 2 {
                     dashed_overlays.push(DashedOverlay {
                       color: (r, g, b),
+                      opacity: series_opacity(&opts.plot_style, series_idx),
                       stroke_w,
                       dashes: dash_pattern.clone(),
                       points: segment.clone(),
@@ -3575,12 +3710,12 @@ fn generate_svg_with_options(
                 }
               }
             } else {
+              let line_style = color
+                .mix(series_opacity(&opts.plot_style, series_idx))
+                .stroke_width(stroke_w);
               for segment in &segments {
                 chart
-                  .draw_series(LineSeries::new(
-                    segment.iter().copied(),
-                    color.stroke_width(stroke_w),
-                  ))
+                  .draw_series(LineSeries::new(segment.iter().copied(), line_style))
                   .map_err(|e| {
                     InterpreterError::EvaluationError(format!("Plot: {e}"))
                   })?;
@@ -3764,6 +3899,38 @@ fn generate_svg_with_options(
     if let Some(pos) = buf.rfind("</svg>") {
       buf.insert_str(pos, &series_svg);
     }
+  }
+
+  // A frame carries its tick marks on all four edges, pointing inward; the
+  // majors line up with the labels the chart mesh drew. Log and date axes
+  // place their own ticks, and an axis given explicit `Ticks` marks only
+  // the positions it names.
+  if opts.frame && show_ticks {
+    let area = (
+      margin_left as f64 + y_label_area as f64,
+      top_margin as f64,
+      render_width as f64
+        - margin_left as f64
+        - margin_right as f64
+        - y_label_area as f64,
+      render_height as f64
+        - top_margin as f64
+        - margin_bottom as f64
+        - x_label_area as f64,
+    );
+    let auto_x = opts.ticks_x.is_none() && !opts.log_x && !opts.date_axis;
+    let auto_y = opts.ticks_y.is_none() && !opts.log_y;
+    inject_inward_frame_ticks(
+      &mut buf,
+      area,
+      auto_x
+        .then(|| (x_min, x_max, nice_step(x_max - x_min, AXIS_TICK_TARGET))),
+      auto_y
+        .then(|| (y_min, y_max, nice_step(y_max - y_min, AXIS_TICK_TARGET))),
+      (MINOR_TICK_LEN as f64 * sf, MAJOR_TICK_LEN as f64 * sf),
+      sf,
+      &format!("rgb({},{},{})", dark_gray.0, dark_gray.1, dark_gray.2),
+    );
   }
 
   if origin_axes {
@@ -4128,7 +4295,7 @@ pub(crate) fn build_plot_source(
 ) -> crate::syntax::PlotSource {
   let series_filling = filling.to_series_filling();
   let (fill_color, fill_opacity) = match filling_style {
-    Some(fs) => (fs.color, fs.opacity),
+    Some(fs) => (fs.color, fs.effective_opacity()),
     None => (None, None),
   };
   let series = all_points
@@ -4136,11 +4303,11 @@ pub(crate) fn build_plot_source(
     .enumerate()
     .map(|(i, points)| {
       let color = series_color(plot_style, i);
-      let (thickness, point_size) = if plot_style.is_empty() {
-        (None, None)
+      let (thickness, point_size, dashing) = if plot_style.is_empty() {
+        (None, None, None)
       } else {
         let style = &plot_style[i % plot_style.len()];
-        (style.thickness, style.point_size)
+        (style.thickness, style.point_size, style.dashing.clone())
       };
       let scatter = if is_scatter.is_empty() {
         false
@@ -4157,6 +4324,7 @@ pub(crate) fn build_plot_source(
         marker: None,
         thickness,
         point_size,
+        dashing,
       }
     })
     .collect();
@@ -4207,6 +4375,9 @@ pub(crate) fn collapse_style_for_single_series(
     }
     if style.shadow.is_some() {
       merged.shadow.clone_from(&style.shadow);
+    }
+    if style.opacity.is_some() {
+      merged.opacity = style.opacity;
     }
   }
   vec![merged]
@@ -4338,6 +4509,15 @@ fn series_color(plot_style: &[SeriesStyle], idx: usize) -> (u8, u8, u8) {
     } else {
       PLOT_COLORS[idx % PLOT_COLORS.len()]
     }
+  }
+}
+
+/// Get the line opacity for a series (1.0 = opaque).
+fn series_opacity(plot_style: &[SeriesStyle], idx: usize) -> f64 {
+  if plot_style.is_empty() {
+    1.0
+  } else {
+    plot_style[idx % plot_style.len()].opacity.unwrap_or(1.0)
   }
 }
 
@@ -4537,7 +4717,7 @@ pub(crate) fn generate_scatter_svg_with_options(
         sf,
       );
       (
-        m.top as f64,
+        m.top as f64 + stacked_title_room(opts.plot_label.as_ref(), sf) as f64,
         m.right as f64,
         0.0,
         0.0,
@@ -4555,7 +4735,9 @@ pub(crate) fn generate_scatter_svg_with_options(
     ),
   };
 
-  let (bg_color, dark_gray, _, label_fill, title_default_fill) = plot_theme();
+  let (theme_bg, dark_gray, _, label_fill, title_default_fill) = plot_theme();
+  // Background -> color replaces the theme background for the whole image.
+  let bg_color = opts.background.unwrap_or(theme_bg);
 
   // Dashed grid lines can't be drawn through plotters, so they are collected
   // here and emitted as `stroke-dasharray` polylines once the chart is done.
@@ -4672,6 +4854,7 @@ pub(crate) fn generate_scatter_svg_with_options(
         if let Some(dashes) = dash {
           dashed_overlays.push(DashedOverlay {
             color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
+            opacity: 1.0,
             stroke_w,
             dashes,
             points: vec![(x_min, *gy), (x_max, *gy)],
@@ -4709,6 +4892,7 @@ pub(crate) fn generate_scatter_svg_with_options(
         if let Some(dashes) = dash {
           dashed_overlays.push(DashedOverlay {
             color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
+            opacity: 1.0,
             stroke_w,
             dashes,
             points: vec![(*gx, y_min), (*gx, y_max)],
@@ -4971,6 +5155,7 @@ pub(crate) fn render_merged_plot_source(
       )),
       thickness: s.thickness,
       point_size: s.point_size,
+      dashing: s.dashing.clone(),
       ..SeriesStyle::default()
     })
     .collect();
@@ -5940,10 +6125,8 @@ pub(crate) fn generate_horizontal_bar_svg(
     // Place the title near the top so a clear gap remains above the bars.
     let ty = title_font_size * 1.2;
     let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
-    // A stacked title grows upwards: its last line stays where a one-line
-    // title would sit, so whatever shares the top margin below it (the y
-    // `AxesLabel`) is not written over.
-    let ty = ty - sl.extra_line_count() as f64 * fs * 1.2;
+    // A stacked title keeps its first line at the top and grows downwards
+    // into the extra top margin reserved for it.
     let fill = sl
       .color
       .as_ref()
@@ -7157,6 +7340,7 @@ pub(crate) fn histogram_plot_source(
       marker: None,
       thickness: None,
       point_size: None,
+      dashing: None,
     });
   }
 
@@ -7557,6 +7741,8 @@ pub(crate) struct MarginOverrides {
   pub top_margin: u32,
   pub x_label_area: u32,
   pub y_label_area: u32,
+  /// `FrameTicks -> None`: draw neither tick marks nor tick labels.
+  pub hide_ticks: bool,
 }
 
 /// Create a plotters chart with axes drawn, returning the SVG and coordinate info.
@@ -7629,7 +7815,9 @@ pub(crate) fn generate_axes_only_opts(
     let y_minor_step = y_major / 5.0;
     let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
 
-    if x_tick_positions.is_some() {
+    if margins.is_some_and(|m| m.hide_ticks) {
+      // Nothing to draw: the caller paints the frame itself.
+    } else if x_tick_positions.is_some() {
       // Custom tick mode: suppress plotters' x-axis ticks entirely.
       // We'll draw tick marks manually after computing the plot area.
       chart
@@ -7727,7 +7915,7 @@ pub(crate) fn generate_axes_only_opts(
   // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
   // In custom-tick mode, the x axis is drawn manually (below) at the major
   // tick length, so we only extend the y axis here.
-  {
+  if !margins.is_some_and(|m| m.hide_ticks) {
     let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
     let x_axis_ext = if x_tick_positions.is_none() {
       Some((x_min, x_max, nice_step(x_max - x_min, AXIS_TICK_TARGET)))
@@ -8065,6 +8253,15 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
       }
       "DropShadowing" => {
         style.shadow = crate::functions::graphics::parse_drop_shadowing(args);
+      }
+      // `Opacity[a]` fades the curve; `Opacity[a, color]` also sets its color.
+      "Opacity" if !args.is_empty() => {
+        if let Some(a) = try_eval_to_f64(&args[0]) {
+          style.opacity = Some(a.clamp(0.0, 1.0));
+        }
+        if let Some(c) = args.get(1).and_then(parse_color) {
+          style.color = Some(c);
+        }
       }
       "Thickness" if args.len() == 1 => {
         if let Expr::Identifier(s) = &args[0] {
@@ -8452,6 +8649,7 @@ pub(crate) fn parse_plot_style(replacement: &Expr) -> Vec<SeriesStyle> {
       || style.point_size.is_some()
       || style.dashing.is_some()
       || style.shadow.is_some()
+      || style.opacity.is_some()
     {
       vec![style]
     } else {
@@ -9055,6 +9253,8 @@ pub(crate) struct PlotRangeOverrides {
   /// the automatic range, which drops extreme outliers.
   pub y_all: bool,
   pub aspect_ratio: Option<f64>,
+  /// `AspectRatio -> Automatic`.
+  pub aspect_automatic: bool,
 }
 
 /// Apply one plot option shared by the function plotters (Plot,
@@ -9089,10 +9289,10 @@ pub(crate) fn apply_common_plot_option(
       if let Expr::List(items) = &val
         && items.len() >= 2
       {
-        let x =
-          crate::functions::chart::expr_to_label(&items[0]).unwrap_or_default();
-        let y =
-          crate::functions::chart::expr_to_label(&items[1]).unwrap_or_default();
+        let x = crate::functions::graphics::styled_axis_label(&items[0])
+          .unwrap_or_default();
+        let y = crate::functions::graphics::styled_axis_label(&items[1])
+          .unwrap_or_default();
         plot_opts.axes_label = Some((x, y));
       }
     }
@@ -9153,6 +9353,8 @@ pub(crate) fn apply_common_plot_option(
         && r > 0.0
       {
         overrides.aspect_ratio = Some(r);
+      } else if matches!(&val, Expr::Identifier(s) if s == "Automatic") {
+        overrides.aspect_automatic = true;
       }
     }
     "PlotPoints" => {
@@ -9359,7 +9561,11 @@ pub(crate) fn eval_body_vars_symbolic(body: &Expr, vars: &[&str]) -> Expr {
     .iter()
     .map(|v| (*v, crate::ENV.with(|e| e.borrow_mut().remove(*v))))
     .collect();
+  crate::evaluator::function_application::SYMBOLIC_PLOT_PROBE
+    .with(|p| p.set(p.get() + 1));
   let result = evaluate_expr_to_expr(body).unwrap_or_else(|_| body.clone());
+  crate::evaluator::function_application::SYMBOLIC_PLOT_PROBE
+    .with(|p| p.set(p.get() - 1));
   for (var, value) in saved {
     if let Some(v) = value {
       crate::ENV.with(|e| {
@@ -9492,6 +9698,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(ar) = overrides.aspect_ratio {
     plot_opts.aspect_ratio = Some(ar);
   }
+  plot_opts.aspect_automatic = overrides.aspect_automatic;
 
   // Parse iterator spec: {x, xmin, xmax}. Endpoints may be ±Infinity, in
   // which case the range is compactified onto a finite display coordinate
@@ -9686,10 +9893,28 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let has_finite = all_points
     .iter()
     .any(|pts| pts.iter().any(|(_, y)| y.is_finite()));
+  // Nothing plottable (every function is `Null` — a Manipulate whose
+  // checkboxes switch all curves off — or non-numeric): Wolfram still draws
+  // the empty plot, with its axes and `PlotLabel`, over the requested
+  // `PlotRange` (unit height when none is given).
   if !has_finite {
-    return Ok(crate::graphics_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    ));
+    let x_display = plot_range_x.unwrap_or((x_min, x_max));
+    let y_display = plot_range_y.unwrap_or((0.0, 1.0));
+    let svg = generate_svg_with_filling(&[], x_display, y_display, &plot_opts)?;
+    // Keep the (empty) plot's source, so `Show` can tell it from an opaque
+    // picture and merge it as the layer without curves that it is.
+    let source = build_plot_source(
+      &[],
+      &plot_opts.plot_style,
+      x_display,
+      y_display,
+      (plot_opts.svg_width, plot_opts.svg_height),
+      &[false],
+      plot_opts.filling,
+      plot_opts.filling_style,
+      crate::functions::plot::explicit_options(args),
+    );
+    return Ok(crate::graphics_result_with_source(svg, source));
   }
 
   // Add 4% padding to the auto-computed y range
@@ -9770,7 +9995,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       if let Some(style) = series_filling_style(&plot_opts, i) {
         s.fill_color = style.color;
-        s.fill_opacity = style.opacity;
+        s.fill_opacity = style.effective_opacity();
       }
     }
   }
@@ -9844,9 +10069,9 @@ fn log_scale_plot_ast(
           if let Expr::List(items) = &val
             && items.len() >= 2
           {
-            let x = crate::functions::chart::expr_to_label(&items[0])
+            let x = crate::functions::graphics::styled_axis_label(&items[0])
               .unwrap_or_default();
-            let y = crate::functions::chart::expr_to_label(&items[1])
+            let y = crate::functions::graphics::styled_axis_label(&items[1])
               .unwrap_or_default();
             plot_opts.axes_label = Some((x, y));
           }

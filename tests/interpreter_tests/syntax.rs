@@ -1435,6 +1435,23 @@ mod full_form {
   use super::*;
 
   #[test]
+  fn full_form_negative_infinity() {
+    assert_eq!(
+      interpret("ToString[FullForm[-Infinity]]").unwrap(),
+      "DirectedInfinity[-1]"
+    );
+  }
+
+  // A delayed association entry is a RuleDelayed, not the value of a Rule.
+  #[test]
+  fn full_form_association_rule_delayed() {
+    assert_eq!(
+      interpret("ToString[FullForm[<|a :> 1 + x, b -> 2|>]]").unwrap(),
+      "Association[RuleDelayed[a, Plus[1, x]], Rule[b, 2]]"
+    );
+  }
+
+  #[test]
   fn full_form_plus() {
     // wolframscript's REPL keeps the `FullForm[…]` wrapper around `Plus`
     // expressions; the bare head form is reachable via `ToString[…]`.
@@ -9002,6 +9019,33 @@ mod reim {
 mod complex_expand {
   use super::*;
 
+  // The quotient trig and hyperbolic functions expand for real arguments
+  // too (differential fuzzer, seed 20261011; wolframscript-verified).
+  #[test]
+  fn reciprocal_trig_functions() {
+    for (input, expected) in [
+      ("Tan[x]", "Sin[2*x]/(1 + Cos[2*x])"),
+      ("Cot[x]", "-(Sin[2*x]/(-1 + Cos[2*x]))"),
+      ("Sec[x]", "(2*Cos[x])/(1 + Cos[2*x])"),
+      ("Csc[x]", "(-2*Sin[x])/(-1 + Cos[2*x])"),
+      ("Tanh[x]", "Sinh[2*x]/(1 + Cosh[2*x])"),
+      ("Coth[x]", "-(Sinh[2*x]/(1 - Cosh[2*x]))"),
+      ("Sech[x]", "(2*Cosh[x])/(1 + Cosh[2*x])"),
+      ("Csch[x]", "(-2*Sinh[x])/(1 - Cosh[2*x])"),
+      ("Tan[x]^2", "Sin[2*x]^2/(1 + Cos[2*x])^2"),
+      (
+        "Tan[x + I y]",
+        "Sin[2*x]/(Cos[2*x] + Cosh[2*y]) + (I*Sinh[2*y])/(Cos[2*x] + Cosh[2*y])",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("ComplexExpand[{input}]")).unwrap(),
+        expected,
+        "{input}"
+      );
+    }
+  }
+
   // ComplexExpand assumes every symbol is real, so Re/Im/Conjugate of a bare
   // symbol (and of a symbolic complex) collapse. Verified against wolframscript.
   #[test]
@@ -11699,6 +11743,31 @@ mod floor_ceiling_brackets {
   }
 }
 
+// `〈a, b〉` is the typeset input form for `\[LeftAngleBracket]…\[RightAngleBracket]`,
+// i.e. AngleBracket[a, b]. Regression: the downloaded Wolfram Demonstration
+// "Projection of One 2D Vector to Another" writes vector components this way
+// inside its Manipulate body, which used to fail to parse at all.
+mod angle_brackets {
+  use super::*;
+
+  #[test]
+  fn angle_brackets_parse_as_angle_bracket_call() {
+    assert_eq!(interpret("Head[〈x〉]").unwrap(), "AngleBracket");
+    assert_eq!(interpret("Length[〈a, b, c〉]").unwrap(), "3");
+    assert_eq!(interpret("List @@ 〈1, 2〉").unwrap(), "{1, 2}");
+  }
+
+  #[test]
+  fn angle_brackets_accept_cjk_spelling_and_expressions() {
+    assert_eq!(interpret("First[〈1 + 1, 3〉]").unwrap(), "2");
+    assert_eq!(interpret("Head[〈a〉]").unwrap(), "AngleBracket");
+    assert_eq!(
+      interpret("Head[\u{2329}a\u{232A}]").unwrap(),
+      "AngleBracket"
+    );
+  }
+}
+
 // `\[Piecewise]{{v1,c1},{v2,c2},…}` is the special-character input form for
 // `Piecewise[{{v1,c1},{v2,c2},…}]` that notebooks reconstruct from a
 // `GridBox` for the piecewise brace notation. Regression: a downloaded
@@ -12908,6 +12977,27 @@ mod base_literals {
     assert_eq!(
       interpret("19^^91g5dcg2h6da7260a9f3c4a").unwrap(),
       "123456789012345678901234567890"
+    );
+  }
+}
+
+mod context_named_characters {
+  use super::*;
+
+  // A saved Manipulate's stored definitions can hold symbols such as
+  // `Notebook$$34$227771`\[Omega]g1`, whose context-qualified name starts
+  // with a `\[Name]` named character. One unparsable entry used to discard
+  // the whole saved initialization.
+  #[test]
+  fn context_segment_may_start_with_a_named_character() {
+    assert_eq!(
+      interpret("Ctx`\\[Omega]g1 = 3; Ctx`\\[Omega]g1").unwrap(),
+      "3"
+    );
+    assert_eq!(interpret("Ctx`\\[Omega]g1 = 3; Ctx`ωg1").unwrap(), "3");
+    assert_eq!(
+      interpret("Overscript[Ctx`\\[Phi]x, _] = {1, 2}").unwrap(),
+      "{1, 2}"
     );
   }
 }

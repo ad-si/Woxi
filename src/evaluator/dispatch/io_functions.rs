@@ -1160,6 +1160,17 @@ pub fn dispatch_io_functions(
         return Some(Ok(null_expr()));
       }
     }
+    // EmitSound[sound] — play a sound. Woxi has no audio device of its own,
+    // so the synthesized WAV is captured for visual hosts (Woxi Studio plays
+    // the audio of a pressed `Button[…, EmitSound[…]]`); the call itself
+    // returns Null, as in Wolfram.
+    "EmitSound" if args.len() == 1 => {
+      if let Some(wav) = crate::functions::sound::sound_to_wav_base64(&args[0])
+      {
+        crate::capture_sound(&wav);
+      }
+      return Some(Ok(null_expr()));
+    }
     // HTTPRequest[url] / HTTPRequest[url, assoc] / HTTPRequest[assoc] —
     // symbolic HTTP request object; no network access is performed.
     // The one-argument URL form canonicalizes to HTTPRequest[url, <||>],
@@ -1796,12 +1807,17 @@ pub fn dispatch_io_functions(
         height,
         channels,
         data,
+        display_size,
         ..
       } = &args[1]
       {
         if fmt == "SVG" {
           let svg = crate::functions::image_ast::image_to_svg_document(
-            *width, *height, *channels, data,
+            *width,
+            *height,
+            *channels,
+            data,
+            *display_size,
           );
           if let Err(e) = std::fs::write(crate::vfs::resolve(&filename), &svg)
             .map_err(|e| {
@@ -5070,6 +5086,12 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   }
   match expr {
     Expr::List(items) => items.iter().any(lays_out_a_graphic),
+    // A `TabView` shows its selected pane, so it is a picture when that is.
+    Expr::FunctionCall { name, args } if name == "TabView" => {
+      crate::tabview_selected_content(args).is_some_and(|content| {
+        lays_out_a_graphic(&content) || is_tabular_layout(&content)
+      })
+    }
     // `Style[content, …]` only sets font/color; the layout underneath it
     // decides whether there is a picture to draw.
     Expr::FunctionCall { name, args }
@@ -5505,10 +5527,7 @@ fn unquoted_display_string(expr: &Expr) -> Expr {
     Expr::String(s) => {
       crate::functions::graphics::inline_box_string_to_box_expr(s).map_or_else(
         || Expr::Identifier(s.clone()),
-        |boxes| Expr::FunctionCall {
-          name: "DisplayForm".to_string(),
-          args: vec![boxes].into(),
-        },
+        |boxes| call1("DisplayForm", boxes),
       )
     }
     Expr::FunctionCall { name, args }
@@ -5687,10 +5706,7 @@ fn wrap_pane_text(content: &Expr, width: f64, font_size: f64) -> Option<Expr> {
       let inner = wrap_pane_text(&args[0], width, size)?;
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
-      Some(Expr::FunctionCall {
-        name: "Style".to_string(),
-        args: new_args.into(),
-      })
+      Some(call("Style", new_args))
     }
     "Text" if args.len() == 1 => wrap_pane_text(&args[0], width, font_size),
     "Row" if args.len() == 1 => {
@@ -5714,13 +5730,25 @@ fn wrap_pane_text(content: &Expr, width: f64, font_size: f64) -> Option<Expr> {
         .chunks(per_line)
         .map(|c| Expr::String(c.iter().collect()))
         .collect();
-      Some(Expr::FunctionCall {
-        name: "Column".to_string(),
-        args: vec![Expr::List(lines.into())].into(),
-      })
+      Some(call1("Column", Expr::List(lines.into())))
     }
     _ => None,
   }
+}
+
+/// A pane filled with a table/column/row layout (`Text@Grid[…]`, the common
+/// way a Demonstration puts prose and data in a tab), looking through the
+/// `Text`/`Pane`/`Panel` wrappers around it.
+fn is_tabular_layout(expr: &Expr) -> bool {
+  let mut layout = expr;
+  while let Expr::FunctionCall { name, args } = layout
+    && matches!(name.as_str(), "Text" | "Pane" | "Panel")
+    && !args.is_empty()
+  {
+    layout = &args[0];
+  }
+  matches!(layout, Expr::FunctionCall { name, args }
+    if matches!(name.as_str(), "Grid" | "Column" | "Row") && !args.is_empty())
 }
 
 /// The font size a `Style` directive list sets, if any.
@@ -5774,6 +5802,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         }
         _ => None,
       };
+      // A grid wider than the pane squeezes its automatically sized
+      // pictures to fit.
+      let wrapped = wrapped.or_else(|| match (name.as_str(), args.get(1)) {
+        ("Pane", Some(Expr::List(size))) if size.len() == 2 => {
+          let w = pane_size_component(&size[0])?;
+          crate::functions::graphics::fit_grid_to_pane_width(
+            &args[0],
+            w,
+            &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
+          )
+        }
+        _ => None,
+      });
       let inner_svg = expr_to_svg(wrapped.as_ref().unwrap_or(&args[0]));
       match (name.as_str(), args.get(1)) {
         ("Pane", Some(Expr::List(size))) if size.len() == 2 => {
@@ -5791,6 +5832,14 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // it displays is `expr`.
     Expr::FunctionCall { name, args } if name == "Item" && !args.is_empty() => {
       expr_to_svg(&args[0])
+    }
+    // `TabView[{…}, sel]` displays only the pane `sel` selects.
+    Expr::FunctionCall { name, args }
+      if name == "TabView"
+        && let Some(content) = crate::tabview_selected_content(args)
+        && (lays_out_a_graphic(&content) || is_tabular_layout(&content)) =>
+    {
+      expr_to_svg(&content)
     }
     // `ClickPane[expr, …]` displays `expr`. What it adds is a click
     // handler, which the picture itself does not carry — this is how a
@@ -5905,6 +5954,22 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       // of pictures (`Grid[{Join[{"encryption"}, pictures]}]`) showed the
       // label as quoted InputForm text (`"encryption"`) instead of a
       // caption.
+      // A `Grid` with merged cells (`SpanFromLeft`/`SpanFromAbove`) needs
+      // the table engine, which sizes the columns and rows a span covers
+      // and centres its content across them; the picture compositor below
+      // only knows one cell per slot.
+      if name == "Grid"
+        && layout_rows(name, args).iter().flatten().any(|c| {
+          matches!(c, Expr::Identifier(s) if matches!(
+            s.as_str(),
+            "SpanFromLeft" | "SpanFromAbove" | "SpanFromBoth"
+          ))
+        })
+        && let Ok(svg) =
+          crate::functions::graphics::grid_svg_with_gaps(args, &[])
+      {
+        return svg;
+      }
       let rows: Vec<Vec<String>> = layout_rows(name, args)
         .iter()
         .map(|cells| {
@@ -5921,9 +5986,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
               // `SpanFromLeft`/`SpanFromAbove`/`SpanFromBoth` only continue a
               // merged cell: they hold no content, so they draw as blank
               // space rather than their own name.
+              //
+              // A `Null` cell (an `If[cond, picture]` that came out false)
+              // is empty in a notebook, not the word "Null".
               None if matches!(c, Expr::Identifier(s) if matches!(
                 s.as_str(),
-                "SpanFromLeft" | "SpanFromAbove" | "SpanFromBoth"
+                "SpanFromLeft" | "SpanFromAbove" | "SpanFromBoth" | "Null"
               )) =>
               {
                 "<svg width=\"1\" height=\"1\" viewBox=\"0 0 1 1\" xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string()
@@ -5950,7 +6018,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           &rows,
           option_args,
         )
-        .unwrap_or_else(|| expr_text_svg(expr))
+        .map_or_else(
+          || expr_text_svg(expr),
+          |svg| {
+            crate::functions::graphics::with_grid_background(svg, option_args)
+          },
+        )
       }
     }
     // A list of graphics renders as `{g1, g2, …}` with the plots drawn
@@ -6353,9 +6426,14 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       height,
       channels,
       data,
+      display_size,
       ..
     } => crate::functions::image_ast::image_to_svg_document(
-      *width, *height, *channels, data,
+      *width,
+      *height,
+      *channels,
+      data,
+      *display_size,
     ),
     // TableForm[data, opts…] — render the aligned grid (matching how visual
     // frontends show it), instead of dumping the raw `TableForm[…]` text.

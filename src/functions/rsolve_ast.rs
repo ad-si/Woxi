@@ -208,13 +208,11 @@ fn replace_func0_with_symbol(
         .map(|a| replace_func0_with_symbol(a, func_name, var_name, sym))
         .collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(replace_func0_with_symbol(left, func_name, var_name, sym)),
-      right: Box::new(replace_func0_with_symbol(
-        right, func_name, var_name, sym,
-      )),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      replace_func0_with_symbol(left, func_name, var_name, sym),
+      replace_func0_with_symbol(right, func_name, var_name, sym),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(replace_func0_with_symbol(
@@ -1862,11 +1860,11 @@ fn substitute_func_values(
         .map(|a| substitute_func_values(a, func_names, values))
         .collect(),
     ),
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(substitute_func_values(left, func_names, values)),
-      right: Box::new(substitute_func_values(right, func_names, values)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      substitute_func_values(left, func_names, values),
+      substitute_func_values(right, func_names, values),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(substitute_func_values(operand, func_names, values)),

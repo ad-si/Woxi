@@ -2347,3 +2347,51 @@ mod cases {
     );
   }
 }
+
+mod complex_float_trig_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn hyperbolic_reciprocals_of_complex_floats() {
+    assert_eq!(
+      interpret("Tanh[1.+I]").unwrap(),
+      "1.0839233273386946 + 0.2717525853195117*I"
+    );
+    assert_eq!(
+      interpret("Coth[1.+I]").unwrap(),
+      "0.8680141428959249 - 0.21762156185440265*I"
+    );
+    assert_eq!(
+      interpret("Sech[1.+I]").unwrap(),
+      "0.4983370305551868 - 0.591083841721045*I"
+    );
+    assert_eq!(
+      interpret("Csch[1.+I]").unwrap(),
+      "0.3039310016284264 - 0.6215180171704283*I"
+    );
+  }
+
+  #[test]
+  fn circular_reciprocals_of_complex_floats() {
+    assert_eq!(
+      interpret("Cot[1.+I]").unwrap(),
+      "0.21762156185440265 - 0.8680141428959249*I"
+    );
+    assert_eq!(
+      interpret("Sec[1.+I]").unwrap(),
+      "0.4983370305551868 + 0.591083841721045*I"
+    );
+    assert_eq!(
+      interpret("Csc[1.+I]").unwrap(),
+      "0.6215180171704283 - 0.3039310016284264*I"
+    );
+  }
+
+  #[test]
+  fn coth_of_complex_float_in_numeric_expression() {
+    assert_eq!(
+      interpret("Re[1/Coth[1.+I]]").unwrap(),
+      interpret("Re[Tanh[1.+I]]").unwrap()
+    );
+  }
+}

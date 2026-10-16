@@ -545,35 +545,6 @@ fn try_series_data_times(
   }
 }
 
-/// Does this expression contain any named Wolfram numeric constant
-/// (Pi, E, Degree, EulerGamma, Catalan, GoldenRatio, Glaisher, Khinchin)?
-/// Used by `plus_ast` to decide whether a symbolic summand should have
-/// its constants numerified when a machine Real is present in the sum.
-fn contains_named_numeric_constant(e: &Expr) -> bool {
-  match e {
-    Expr::Identifier(s) => matches!(
-      s.as_str(),
-      "Pi"
-        | "E"
-        | "Degree"
-        | "EulerGamma"
-        | "Catalan"
-        | "GoldenRatio"
-        | "Glaisher"
-        | "Khinchin"
-    ),
-    Expr::FunctionCall { args, .. } => {
-      args.iter().any(contains_named_numeric_constant)
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      contains_named_numeric_constant(left)
-        || contains_named_numeric_constant(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_named_numeric_constant(operand),
-    _ => false,
-  }
-}
-
 /// Plus[args...] - Sum of arguments, with list threading
 /// Which listable operation a `Threaded` broadcast is threading through.
 #[derive(Clone, Copy)]
@@ -829,108 +800,131 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(sum);
   }
 
-  // Threaded[...] broadcasting takes precedence over ordinary list threading.
-  if let Some(result) = try_threaded_op(args, ThreadedOp::Plus) {
-    return result;
-  }
+  // Sums of plain numbers (the hot path of numeric loops) can never involve
+  // Threaded, dates, series, quantities, intervals, music objects or Around,
+  // so skip those probes — several of them flatten and clone the arguments.
+  let plain_numbers = args.iter().all(|a| match a {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..) => true,
+    Expr::FunctionCall { name, args: parts }
+      if name == "Complex" || name == "Rational" =>
+    {
+      parts.iter().all(is_numeric_literal_part)
+    }
+    // Machine complex numbers are `re + im*I` / `re - im*I` expressions, and
+    // internal re-sums see their pieces (`I`, `im*I`, …) on their own.
+    _ => try_extract_complex_float(a).is_some(),
+  });
+  if !plain_numbers {
+    // Threaded[...] broadcasting takes precedence over ordinary list threading.
+    if let Some(result) = try_threaded_op(args, ThreadedOp::Plus) {
+      return result;
+    }
 
-  // Handle DateObject subtraction: DateObject[...] - DateObject[...] → Quantity[n, "Days"]
-  if let Some(result) = try_date_object_subtraction(args) {
-    return result;
-  }
+    // Handle DateObject subtraction: DateObject[...] - DateObject[...] → Quantity[n, "Days"]
+    if let Some(result) = try_date_object_subtraction(args) {
+      return result;
+    }
 
-  // Handle DateObject + Quantity[n, unit]: shift the date by the time span
-  // (commutatively, and for any number of calendar-unit quantities).
-  if let Some(result) = try_date_object_plus_quantity(args) {
-    return result;
-  }
+    // Handle DateObject + Quantity[n, unit]: shift the date by the time span
+    // (commutatively, and for any number of calendar-unit quantities).
+    if let Some(result) = try_date_object_plus_quantity(args) {
+      return result;
+    }
 
-  // Handle TimeObject + Quantity[n, time-unit]: shift the time of day.
-  if let Some(result) = try_time_object_plus_quantity(args) {
-    return result;
-  }
+    // Handle TimeObject + Quantity[n, time-unit]: shift the time of day.
+    if let Some(result) = try_time_object_plus_quantity(args) {
+      return result;
+    }
 
-  // Combine multiple `SeriesData[var, x0, …]` summands sharing the same
-  // (var, x0) into a single SeriesData. Truncates to the minimum order.
-  if let Some(result) = try_series_data_plus(args)? {
-    return Ok(result);
-  }
+    // Combine multiple `SeriesData[var, x0, …]` summands sharing the same
+    // (var, x0) into a single SeriesData. Truncates to the minimum order.
+    if let Some(result) = try_series_data_plus(args)? {
+      return Ok(result);
+    }
 
-  // A time-series operand keeps the series, combining the values.
-  if let Some(result) =
-    crate::functions::timeseries_ast::try_series_arithmetic("Plus", args)
-  {
-    return Ok(result);
-  }
+    // A time-series operand keeps the series, combining the values.
+    if let Some(result) =
+      crate::functions::timeseries_ast::try_series_arithmetic("Plus", args)
+    {
+      return Ok(result);
+    }
 
-  // A SparseArray summand keeps the sum sparse (the background shifts).
-  if let Some(result) =
-    crate::functions::list_helpers_ast::try_sparse_array_arithmetic(
-      "Plus", args,
-    )
-  {
-    return Ok(result);
-  }
+    // A SparseArray summand keeps the sum sparse (the background shifts).
+    if let Some(result) =
+      crate::functions::list_helpers_ast::try_sparse_array_arithmetic(
+        "Plus", args,
+      )
+    {
+      return Ok(result);
+    }
 
-  // Handle Quantity arithmetic before anything else
-  if let Some(result) = crate::functions::quantity_ast::try_quantity_plus(args)
-  {
-    return result;
-  }
+    // Handle Quantity arithmetic before anything else
+    if let Some(result) =
+      crate::functions::quantity_ast::try_quantity_plus(args)
+    {
+      return result;
+    }
 
-  // Handle Interval arithmetic
-  if let Some(result) = crate::functions::interval_ast::try_interval_plus(args)
-  {
-    return result;
-  }
+    // Handle Interval arithmetic
+    if let Some(result) =
+      crate::functions::interval_ast::try_interval_plus(args)
+    {
+      return result;
+    }
 
-  // Handle MusicChord transposition (WL 15): `MusicChord[{…}] + MusicInterval[…]`
-  // shifts every chord tone by the interval span. Checked before the pitch sum
-  // since a chord summand is not itself a pitch.
-  if let Some(result) =
-    crate::functions::music_ast::try_music_chord_plus_interval(args)
-  {
-    return Ok(result);
-  }
+    // Handle MusicChord transposition (WL 15): `MusicChord[{…}] + MusicInterval[…]`
+    // shifts every chord tone by the interval span. Checked before the pitch sum
+    // since a chord summand is not itself a pitch.
+    if let Some(result) =
+      crate::functions::music_ast::try_music_chord_plus_interval(args)
+    {
+      return Ok(result);
+    }
 
-  // Handle music container/event transposition (WL 15): adding a MusicInterval
-  // to a MusicNote/MusicMeasure/MusicVoice/MusicScore/MusicScale shifts every
-  // pitch it contains by the interval span.
-  if let Some(result) =
-    crate::functions::music_ast::try_music_container_plus_interval(args)
-  {
-    return Ok(result);
-  }
+    // Handle music container/event transposition (WL 15): adding a MusicInterval
+    // to a MusicNote/MusicMeasure/MusicVoice/MusicScore/MusicScale shifts every
+    // pitch it contains by the interval span.
+    if let Some(result) =
+      crate::functions::music_ast::try_music_container_plus_interval(args)
+    {
+      return Ok(result);
+    }
 
-  // Handle MusicPitch arithmetic (WL 15): adding/subtracting pitch objects
-  // combines them along the diatonic-position and MIDI-number axes; adding a
-  // MusicInterval transposes the pitch.
-  if let Some(result) = crate::functions::music_ast::try_music_pitch_plus(args)
-  {
-    return Ok(result);
-  }
+    // Handle MusicPitch arithmetic (WL 15): adding/subtracting pitch objects
+    // combines them along the diatonic-position and MIDI-number axes; adding a
+    // MusicInterval transposes the pitch.
+    if let Some(result) =
+      crate::functions::music_ast::try_music_pitch_plus(args)
+    {
+      return Ok(result);
+    }
 
-  // Handle MusicDuration arithmetic (WL 15): a sum of (scaled) durations
-  // combines their rhythmic values, e.g. `3 MusicDuration[1/2] + MusicDuration[1/4]`
-  // → `MusicDuration[<|"Duration" -> 7/4|>]`.
-  if let Some(products) =
-    crate::functions::music_ast::music_duration_plus_terms(args)
-  {
-    // Evaluate each `Times[coeff, value]` product before summing, then add the
-    // resulting rhythmic values exactly.
-    let values: Result<Vec<Expr>, _> = products
-      .iter()
-      .map(crate::evaluator::evaluate_expr_to_expr)
-      .collect();
-    let total = crate::evaluator::evaluate_function_call_ast("Plus", &values?)?;
-    return Ok(crate::functions::music_ast::music_duration_from_value(
-      total,
-    ));
-  }
+    // Handle MusicDuration arithmetic (WL 15): a sum of (scaled) durations
+    // combines their rhythmic values, e.g. `3 MusicDuration[1/2] + MusicDuration[1/4]`
+    // → `MusicDuration[<|"Duration" -> 7/4|>]`.
+    if let Some(products) =
+      crate::functions::music_ast::music_duration_plus_terms(args)
+    {
+      // Evaluate each `Times[coeff, value]` product before summing, then add the
+      // resulting rhythmic values exactly.
+      let values: Result<Vec<Expr>, _> = products
+        .iter()
+        .map(crate::evaluator::evaluate_expr_to_expr)
+        .collect();
+      let total =
+        crate::evaluator::evaluate_function_call_ast("Plus", &values?)?;
+      return Ok(crate::functions::music_ast::music_duration_from_value(
+        total,
+      ));
+    }
 
-  // Around (uncertain-value) error propagation.
-  if let Some(result) = try_around_plus(args) {
-    return Ok(result);
+    // Around (uncertain-value) error propagation.
+    if let Some(result) = try_around_plus(args) {
+      return Ok(result);
+    }
   }
 
   // Flatten nested Plus arguments (recursive to handle deeply nested Plus).
@@ -1078,8 +1072,11 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Likewise a machine Real forces the general machine fold (which is
   // BigInt-aware via expr_to_coeff): Plus[2^60, 1, -2^60, 0.5] is 0.
   // because every term converts to f64 individually — the fast path
-  // would sum the integers exactly and leave `1 + 0.5` uncombined.
-  let has_real_arg = flat_args.iter().any(|a| matches!(a, Expr::Real(_)));
+  // would sum the integers exactly and leave `1 + 0.5` uncombined. An
+  // arbitrary-precision number goes to `bigfloat_plus` the same way.
+  let has_real_arg = flat_args
+    .iter()
+    .any(|a| matches!(a, Expr::Real(_) | Expr::BigFloat(..)));
 
   if has_bigint && !has_rational && !has_real_arg {
     let mut big_sum = BigInt::from(0);
@@ -1133,6 +1130,49 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_numeric = false;
       }
     }
+  }
+
+  // A machine number makes the whole sum machine precision: an
+  // arbitrary-precision summand — or the coefficient of an arbitrary-
+  // precision imaginary term — joins the machine fold as the f64 it rounds
+  // to (`1.5 + 2.5`30` → `4.`, `2. I - 2.`30 I` → `0. + 0.*I`).
+  // Regression: such summands used to be dropped from the sum.
+  let is_machine_imaginary = |e: &Expr| match e {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      matches!(args[0], Expr::Real(_))
+        && matches!(&args[1], Expr::Identifier(s) if s == "I")
+    }
+    _ => false,
+  };
+  let is_bigfloat_number = |e: &Expr| match e {
+    Expr::BigFloat(..) => true,
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      matches!(args[0], Expr::BigFloat(..))
+        && matches!(&args[1], Expr::Identifier(s) if s == "I")
+    }
+    _ => false,
+  };
+  if (has_real || flat_args.iter().any(is_machine_imaginary))
+    && flat_args.iter().any(is_bigfloat_number)
+  {
+    let demote = |e: &Expr| match e {
+      Expr::BigFloat(digits, _) => digits.parse::<f64>().ok().map(Expr::Real),
+      _ => None,
+    };
+    for arg in &mut flat_args {
+      if let Some(r) = demote(arg) {
+        *arg = r;
+      } else if let Expr::FunctionCall { name, args } = arg
+        && name == "Times"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Identifier(s) if s == "I")
+        && let Some(r) = demote(&args[0])
+      {
+        *arg = times2(r, Expr::Identifier("I".to_string()));
+      }
+    }
+    has_real = flat_args.iter().any(|a| matches!(a, Expr::Real(_)));
+    has_bigfloat = false;
   }
 
   // If all numeric and no Reals/BigFloats, use exact rational arithmetic.
@@ -1200,44 +1240,12 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
 
-    // Numeric contagion: if any term is a machine Real, fold each
-    // symbolic numeric-constant term (Pi, E, etc.) to a Real, and
-    // numerify the numeric constants embedded inside otherwise non-real
-    // terms like `Pi*I` so `2. + Pi*I` → `2. + 3.14159…*I`. Matches
-    // wolframscript: `2. + Pi` → `5.14159…`, `2. + Pi*I` →
-    // `2. + 3.14159…*I`, but `2. + (x-3)^2` stays `2. + (-3 + x)^2`
-    // because the symbolic summand contains no numeric constants.
-    // The numerified constants fold AFTER the literal terms, one at a
-    // time in input order — Wolfram's machine fold never combines the
-    // symbolic terms first (Plus[0.1, 0.2, Pi, -Pi] →
-    // 0.2999999999999998, Plus[1.*10^16, Pi, -1.*10^16] → 3.14159…).
-    let mut numerified_tail: Vec<f64> = Vec::new();
-    if has_real_term {
-      let mut remaining_symbolic: Vec<Expr> = Vec::new();
-      for arg in symbolic_args.drain(..) {
-        if let Some(f) = try_eval_to_f64(&arg) {
-          // Whole term reduces to a Real (e.g. Pi, E, Sqrt[2]).
-          numerified_tail.push(f);
-        } else if contains_named_numeric_constant(&arg)
-          && let Ok(n_val) = n_eval(&arg)
-        {
-          remaining_symbolic.push(n_val);
-        } else {
-          remaining_symbolic.push(arg);
-        }
-      }
-      symbolic_args = remaining_symbolic;
-    }
-
-    // Build final args: numeric sum first (if non-zero), then symbolic terms sorted
-    let mut final_args: Vec<Expr> = Vec::new();
-
     // Detect any `Times[Real, I]` symbolic summand. When present, the
     // sum is in the machine-precision Complex form (`Complex[r, im]`)
     // and we keep a leading `0.` real coefficient when real_sum is 0
     // so the output reads `0. + r*I` rather than dropping the `0.`.
     // This covers both `0. + 0. I` and `0. + 1. I`.
-    let has_inexact_zero_imag = symbolic_args.iter().any(|e| {
+    let is_inexact_imaginary = |e: &Expr| {
       matches!(
         e,
         Expr::FunctionCall { name, args }
@@ -1254,20 +1262,95 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } if matches!(left.as_ref(), Expr::Real(_))
           && matches!(right.as_ref(), Expr::Identifier(s) if s == "I")
       )
-    });
+    };
+    let has_inexact_zero_imag = symbolic_args.iter().any(is_inexact_imaginary);
+
+    // Numeric contagion: a machine Real summand — or a machine imaginary
+    // one, which is a Complex number in Wolfram — numericizes every summand
+    // that is a number (`NumericQ`): `2. + Pi` → `5.14159…`,
+    // `2. + Sqrt[2] I` → `2. + 1.41421…*I`, `1.5 I + Sqrt[2]` →
+    // `1.41421… + 1.5*I`. A summand that is not a number keeps its exact
+    // parts: `2. + Pi x` and `2. + (x-3)^2` stay as they are.
+    // The numerified constants fold AFTER the literal terms, one at a
+    // time in input order — Wolfram's machine fold never combines the
+    // symbolic terms first (Plus[0.1, 0.2, Pi, -Pi] →
+    // 0.2999999999999998, Plus[1.*10^16, Pi, -1.*10^16] → 3.14159…).
+    let contagion = has_real_term || has_inexact_zero_imag;
+    let mut numerified_tail: Vec<f64> = Vec::new();
+    if contagion {
+      let mut remaining_symbolic: Vec<Expr> = Vec::new();
+      for arg in symbolic_args.drain(..) {
+        if let Some(f) = try_eval_to_f64(&arg) {
+          // Whole term reduces to a Real (e.g. Pi, E, Sqrt[2]).
+          numerified_tail.push(f);
+        } else if !is_inexact_imaginary(&arg)
+          && crate::functions::predicate_ast::is_numeric_q(&arg)
+          && let Ok(n_val) = n_eval(&arg)
+        {
+          // A complex value (`E^I` → `0.54… + 0.84…*I`) splits into its
+          // real part, which joins the machine fold, and its imaginary term.
+          match try_extract_complex_float(&n_val) {
+            Some((re, im)) if re != 0.0 => {
+              numerified_tail.push(re);
+              remaining_symbolic.push(times2(
+                Expr::Real(im),
+                Expr::Identifier("I".to_string()),
+              ));
+            }
+            _ => remaining_symbolic.push(n_val),
+          }
+        } else {
+          remaining_symbolic.push(arg);
+        }
+      }
+      symbolic_args = remaining_symbolic;
+    }
+
+    // Without a machine number, arbitrary-precision summands combine with
+    // the exact ones under precision tracking, wherever they stand:
+    // `x + 1.5`30 + 2.5`20` → `4.`20.2 + x`, `x + 1.5`30 + 1` → `2.5`30.2 + x`.
+    let mut bigfloat_total: Option<Expr> = None;
+    if !contagion
+      && symbolic_args
+        .iter()
+        .any(|a| matches!(a, Expr::BigFloat(..)))
+    {
+      let mut parts: Vec<Expr> = Vec::new();
+      if has_exact && !exact_sum.is_zero() {
+        parts.push(exact_sum.to_expr());
+      }
+      symbolic_args.retain(|a| {
+        let is_bigfloat = matches!(a, Expr::BigFloat(..));
+        if is_bigfloat {
+          parts.push(a.clone());
+        }
+        !is_bigfloat
+      });
+      bigfloat_total = Some(bigfloat_plus(&parts));
+    }
+
+    // Build final args: numeric sum first (if non-zero), then symbolic terms sorted
+    let mut final_args: Vec<Expr> = Vec::new();
 
     // With any machine Real present, fold to f64 in Wolfram's order: the
     // literal numeric terms (exact and real alike, each converted to f64
     // individually) combine as the balanced machine tree, then the
     // numerified constants fold one at a time.
-    if has_real_term {
+    if contagion {
       let mut total = machine_sum(&numeric_terms);
       for f in &numerified_tail {
         total += f;
       }
-      if total != 0.0 || has_inexact_zero_imag {
+      // A machine zero stays as the numeric term of a symbolic sum, as in
+      // Wolfram (`x + 0.` → `0. + x`); only a sum whose sole inexact part
+      // is an imaginary term has no real part to keep.
+      let has_real_part =
+        has_real_term || has_exact || !numerified_tail.is_empty();
+      if total != 0.0 || has_real_part {
         final_args.push(Expr::Real(total));
       }
+    } else if let Some(total) = bigfloat_total {
+      final_args.push(total);
     } else if has_exact && !exact_sum.is_zero() {
       final_args.push(exact_sum.to_expr());
     }
@@ -1283,14 +1366,14 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && exact_sum.is_zero()
       && !flat_args.iter().any(|a| matches!(a, Expr::BigFloat(_, _)));
 
-    // When the sum has any Real (or BigFloat) component, promote the
+    // When the sum has a machine Real component, promote the
     // integer/rational coefficient of any imaginary symbolic term to a
     // Real. Wolfram's `1. + 2 I` evaluates to `Complex[1., 2.]`, not
     // `Plus[1., Times[2, I]]`; the closest we can get without a Complex
-    // node is `Plus[1., Times[2., I]]`.
-    let needs_complex_promotion = (has_real_term
-      || flat_args.iter().any(|a| matches!(a, Expr::BigFloat(_, _))))
-      && symbolic_args.iter().any(is_integer_times_i);
+    // node is `Plus[1., Times[2., I]]`. An arbitrary-precision real part
+    // keeps an exact imaginary one: `1.5`30 + 2 I` is `1.5`30 + 2*I`.
+    let needs_complex_promotion =
+      has_real_term && symbolic_args.iter().any(is_integer_times_i);
     let symbolic_args = if needs_complex_promotion {
       symbolic_args
         .into_iter()
@@ -1302,7 +1385,8 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // Collect like terms: group symbolic terms by their base expression
     // e.g. E + E → 2*E, 3*x + 2*x → 5*x
-    let collected = collect_like_terms(&symbolic_args);
+    let collected =
+      collect_like_terms(&combine_bigfloat_coefficients(symbolic_args));
 
     // Sort symbolic terms: polynomial-like terms first, then transcendental functions
     // This gives Mathematica-like ordering where x^2 comes before Sin[x].
@@ -1423,6 +1507,10 @@ fn is_integer_times_i(e: &Expr) -> bool {
     {
       exact_numeric(&args[0]) && exact_numeric(&args[1])
     }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_integer_times_i(operand),
     _ => false,
   }
 }
@@ -1511,6 +1599,21 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
       return times(vec![im, id_expr("I")]);
     }
     return plus(vec![re, times(vec![im, id_expr("I")])]);
+  }
+  // `-I` (and `-(k I)`) is stored as a unary minus: promote the operand and
+  // fold the sign into its Real coefficient, so 2.5 - I reads 2.5 - 1.*I.
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = &e
+    && let promoted = promote_integer_times_i_to_real((**operand).clone())
+    && let Expr::FunctionCall { name, args } = &promoted
+    && name == "Times"
+    && let [Expr::Real(c), rest @ ..] = args.as_slice()
+  {
+    let mut negated = vec![Expr::Real(-c)];
+    negated.extend(rest.iter().cloned());
+    return times(negated);
   }
   e
 }
@@ -1775,6 +1878,91 @@ fn decompose_term(e: &Expr) -> (Coeff, Expr) {
 
 /// Collect like terms: group symbolic terms by their base expression
 /// and sum their coefficients. E.g. [E, E] → [2*E], [3*x, 2*x] → [5*x].
+/// Combines the terms `c base` with an arbitrary-precision coefficient `c`
+/// that share their `base`, summing the coefficients with
+/// [`bigfloat_plus`]'s precision tracking: `1.5`30 I + 1.5`30 I` →
+/// `3.`30 I`. `Coeff` has no arbitrary-precision variant, so
+/// `collect_like_terms` would otherwise read `1.5`30 I` as an opaque base
+/// and double it to `2*1.5`30*I`.
+fn combine_bigfloat_coefficients(terms: Vec<Expr>) -> Vec<Expr> {
+  let split_bigfloat = |term: &Expr| -> Option<(Expr, Expr)> {
+    match term {
+      Expr::FunctionCall { name, args }
+        if name == "Times"
+          && args.len() >= 2
+          && matches!(args[0], Expr::BigFloat(..)) =>
+      {
+        let base = if args.len() == 2 {
+          args[1].clone()
+        } else {
+          times(args[1..].to_vec())
+        };
+        Some((args[0].clone(), base))
+      }
+      _ => None,
+    }
+  };
+  // Bases that carry an arbitrary-precision coefficient somewhere; an exact
+  // coefficient of the same base joins that sum (`2 I - 2.`30 I`).
+  let bigfloat_bases: Vec<String> = terms
+    .iter()
+    .filter_map(|t| split_bigfloat(t).map(|(_, base)| expr_to_string(&base)))
+    .collect();
+  if bigfloat_bases.is_empty() {
+    return terms;
+  }
+  let split = |term: &Expr| -> Option<(Expr, Expr)> {
+    if let Some(parts) = split_bigfloat(term) {
+      return Some(parts);
+    }
+    let (coeff, base) = decompose_term(term);
+    (!matches!(coeff, Coeff::Real(_))
+      && bigfloat_bases.contains(&expr_to_string(&base)))
+    .then(|| (coeff.to_expr(), base))
+  };
+  // Per base: its key, the base, the coefficients and the first term.
+  let mut groups: Vec<(String, Expr, Vec<Expr>, Expr)> = Vec::new();
+  let mut slots: Vec<Result<usize, Expr>> = Vec::new();
+  for term in terms {
+    match split(&term) {
+      Some((coeff, base)) => {
+        let key = expr_to_string(&base);
+        let idx = if let Some(idx) = groups.iter().position(|(k, ..)| *k == key)
+        {
+          idx
+        } else {
+          groups.push((key, base, Vec::new(), term.clone()));
+          slots.push(Ok(groups.len() - 1));
+          groups.len() - 1
+        };
+        groups[idx].2.push(coeff);
+      }
+      None => slots.push(Err(term)),
+    }
+  }
+  slots
+    .into_iter()
+    .map(|slot| match slot {
+      Err(term) => term,
+      Ok(idx) => {
+        let (_, base, coeffs, first) = &groups[idx];
+        if coeffs.len() == 1 {
+          return first.clone();
+        }
+        let coeff = bigfloat_plus(coeffs);
+        let mut factors = vec![coeff];
+        match base {
+          Expr::FunctionCall { name, args } if name == "Times" => {
+            factors.extend(args.iter().cloned());
+          }
+          _ => factors.push(base.clone()),
+        }
+        times(factors)
+      }
+    })
+    .collect()
+}
+
 fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   use std::collections::BTreeMap;
 
@@ -1801,16 +1989,14 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   for (_, base, c, original, count) in groups {
     if c.is_zero() {
       // Preserve `Real(0.0) * I` as the imaginary marker of an inexact
-      // Complex form *only when it came from a single un-combined term*.
-      // Wolfram's `1. + 0. I` evaluates to `Complex[1., 0.]` displayed
-      // as `1. + 0.*I`; without keeping the `0.*I` here, the imaginary
-      // component would silently disappear after Plus flattening of the
-      // BinaryOp::Plus form produced by `times_ast` for `0. I`.
-      // Restrict to count == 1 so genuine cancellations (e.g. the
-      // `I + (-I)` that arises when Sum bounds drop their imaginary
-      // part) still collapse to 0 rather than leaving a stray `0.*I`.
-      if count == 1
-        && matches!(&c, Coeff::Real(_))
+      // Complex form. Wolfram's `1. + 0. I` evaluates to `Complex[1., 0.]`
+      // displayed as `1. + 0.*I`; without keeping the `0.*I` here, the
+      // imaginary component would silently disappear after Plus flattening
+      // of the BinaryOp::Plus form produced by `times_ast` for `0. I`. A
+      // sum of machine Complex numbers is one too, so this holds when
+      // machine coefficients cancel (`2. I - 2. I` → `0. + 0.*I`); exact
+      // ones (`I + (-I)`) still collapse to 0.
+      if matches!(&c, Coeff::Real(_))
         && matches!(&base, Expr::Identifier(s) if s == "I")
       {
         result.push(times(vec![c.to_expr(), base]));
@@ -5889,6 +6075,18 @@ fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
     match (is_number_base_power(a), is_number_base_power(b)) {
       (true, false) if !is_number(b) => return std::cmp::Ordering::Less,
       (false, true) if !is_number(a) => return std::cmp::Ordering::Greater,
+      // Two radicals of numbers order by base, then exponent, as in Sort:
+      // `(3/5)^(1/3)*2^(2/3)`, `(-1/2)^(1/3)*3^(2/3)`.
+      (true, true) => {
+        if let Some(ord) =
+          crate::functions::list_helpers_ast::sorting::numeric_base_power_cmp(
+            a, b,
+          )
+          && ord != std::cmp::Ordering::Equal
+        {
+          return ord;
+        }
+      }
       _ => {}
     }
     if let (Some((ba, (pa, qa))), Some((bb, (pb, qb)))) =
@@ -5960,6 +6158,27 @@ fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
             Expr::Identifier(_) | Expr::Constant(_)
           )
       };
+      // A positive power of a sum against a bare sum orders by the two sums,
+      // the power's exponent breaking a tie: `(-1 + x)*(1 + x)^2` and
+      // `(1 + x)*(2 + x)^2` (wolframscript-verified).
+      if sa == 0 && sb == 1 && plus_call_args(b).is_some()
+        && let Some(base) = power_additive_base(a)
+      {
+        let ord =
+          crate::functions::list_helpers_ast::sorting::canonical_cmp(base, b);
+        if ord != std::cmp::Ordering::Equal {
+          return ord;
+        }
+      }
+      if sa == 1 && sb == 0 && plus_call_args(a).is_some()
+        && let Some(base) = power_additive_base(b)
+      {
+        let ord =
+          crate::functions::list_helpers_ast::sorting::canonical_cmp(a, base);
+        if ord != std::cmp::Ordering::Equal {
+          return ord;
+        }
+      }
       if sa == 0 && sb == 1
         && let Some(pargs) = plus_call_args(b)
         && ident_base_factor(a)
@@ -6727,7 +6946,7 @@ fn combine_reciprocal_trig(
   let negate_exp = |e: &Expr| -> Expr {
     match e {
       Expr::Integer(n) => Expr::Integer(-n),
-      _ => times(vec![Expr::Integer(-1), e.clone()]),
+      _ => neg(e.clone()),
     }
   };
 
@@ -8818,6 +9037,21 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         _ => product,
       });
+    }
+  }
+
+  // Numbers alongside symbolic factors: the arbitrary-precision number
+  // absorbs the exact ones, `3 (2.`30 I)` → `6.`30 I`. Regression: the
+  // product was left as `3*2.`30*I`.
+  if has_bigfloat {
+    let (numeric, rest): (Vec<Expr>, Vec<Expr>) =
+      args.iter().cloned().partition(|a| {
+        matches!(a, Expr::BigFloat(..)) || expr_to_coeff(a).is_some()
+      });
+    if numeric.len() >= 2 && !rest.is_empty() {
+      let mut factors = vec![bigfloat_times(&numeric)?];
+      factors.extend(rest);
+      return times_ast(&factors);
     }
   }
 
@@ -12344,6 +12578,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     if *p < 0 {
       return negative_base_rational_power(&make_rational(-*p, *q), *n, *d);
     }
+    if *p > 0
+      && *d > 2
+      && let Some(result) = rational_base_radical(*p, *q, *n, *d)
+    {
+      return result;
+    }
     // For a negative exponent, flip the base: (p/q)^(-n/d) = (q/p)^(n/d).
     // Only do this flip when p > 0 so the flipped base is still a plain
     // positive rational (handling signs of p is tricky and uncommon).
@@ -12724,7 +12964,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let im_part = if im == 1.0 {
           id_expr("I")
         } else if im == -1.0 {
-          times(vec![Expr::Integer(-1), id_expr("I")])
+          neg(id_expr("I"))
         } else {
           times(vec![Expr::Real(im), id_expr("I")])
         };
@@ -13263,6 +13503,123 @@ fn negative_number_magnitude(expr: &Expr) -> Option<Expr> {
 /// `2 (-1)^(1/3)` because the positive part is exact, `(-12)^(1/3)` becomes
 /// `(-3)^(1/3) 2^(2/3)` because only the leftover cube root can absorb the
 /// sign, and `(-2)^(5/3)` becomes `-2 (-2)^(2/3)`.
+/// `(p/q)^(n/d)` for a positive fraction, the way wolframscript writes it:
+/// each prime's exponent splits into an integer part (truncated toward zero)
+/// and a fractional part, and the primes whose fractional exponents agree in
+/// magnitude share one radical — `(4/5)^(1/3)` is `2^(2/3)/5^(1/3)`,
+/// `(12/5)^(1/3)` is `(3/5)^(1/3)*2^(2/3)`, `(2/3)^(1/3)` stays and
+/// `(3/4)^(2/3)` is `3^(2/3)/(2*2^(1/3))`. `None` for factors too large to
+/// split by trial division.
+fn rational_base_radical(
+  p: i128,
+  q: i128,
+  n: i128,
+  d: i128,
+) -> Option<Result<Expr, InterpreterError>> {
+  const TRIAL_DIVISION_BOUND: i128 = 1_000_000;
+  fn factor(mut m: i128) -> Option<Vec<(i128, i128)>> {
+    let mut out = Vec::new();
+    let mut f = 2i128;
+    while f * f <= m {
+      if f > TRIAL_DIVISION_BOUND {
+        return None;
+      }
+      let mut k = 0;
+      while m % f == 0 {
+        m /= f;
+        k += 1;
+      }
+      if k > 0 {
+        out.push((f, k));
+      }
+      f += 1;
+    }
+    if m > 1 {
+      out.push((m, 1));
+    }
+    Some(out)
+  }
+  let mut primes: Vec<(i128, i128)> = factor(p)?;
+  primes.extend(factor(q)?.into_iter().map(|(f, k)| (f, -k)));
+
+  // The integer parts form an exact rational; the fractional parts group by
+  // magnitude into (numerator, denominator) radicands.
+  let mut outside_num = BigInt::from(1);
+  let mut outside_den = BigInt::from(1);
+  let mut groups: Vec<((i128, i128), i128, i128)> = Vec::new();
+  for (prime, k) in primes {
+    let total = k.checked_mul(n)?;
+    let whole = total / d; // truncates toward zero
+    let (fn_, fd) = rat_reduce(total - whole * d, d);
+    if whole.unsigned_abs() > 10_000 {
+      return None;
+    }
+    let factor = BigInt::from(prime).pow(whole.unsigned_abs() as u32);
+    if whole > 0 {
+      outside_num *= factor;
+    } else {
+      outside_den *= factor;
+    }
+    if fn_ == 0 {
+      continue;
+    }
+    let key = (fn_.abs(), fd);
+    let idx = if let Some(i) = groups.iter().position(|(k, _, _)| *k == key) {
+      i
+    } else {
+      groups.push((key, 1, 1));
+      groups.len() - 1
+    };
+    if fn_ > 0 {
+      groups[idx].1 = groups[idx].1.checked_mul(prime)?;
+    } else {
+      groups[idx].2 = groups[idx].2.checked_mul(prime)?;
+    }
+  }
+  // A single radical with nothing outside is the input itself.
+  if groups.len() == 1
+    && outside_num == BigInt::from(1)
+    && outside_den == BigInt::from(1)
+  {
+    let ((en, ed), num, den) = groups[0];
+    if num == p && den == q && en == n && ed == d {
+      return Some(Ok(pow2(make_rational(p, q), make_rational(n, d))));
+    }
+  }
+  let mut factors: Vec<Expr> = Vec::new();
+  if outside_num != outside_den {
+    factors.push(call(
+      "Rational",
+      vec![bigint_to_expr(outside_num), bigint_to_expr(outside_den)],
+    ));
+  }
+  for ((en, ed), num, den) in groups {
+    let e = make_rational(en, ed);
+    factors.push(if den == 1 {
+      pow2(Expr::Integer(num), e)
+    } else if num == 1 {
+      pow2(Expr::Integer(den), make_rational(-en, ed))
+    } else {
+      pow2(make_rational(num, den), e)
+    });
+  }
+  let factors: Vec<Expr> = factors
+    .into_iter()
+    .map(|f| match &f {
+      // Normalize an exact outside factor to Integer/Rational.
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        divide_ast(&[args[0].clone(), args[1].clone()]).unwrap_or(f)
+      }
+      _ => f,
+    })
+    .collect();
+  Some(match factors.len() {
+    0 => Ok(Expr::Integer(1)),
+    1 => Ok(factors.into_iter().next().unwrap()),
+    _ => times_ast(&factors),
+  })
+}
+
 fn negative_base_rational_power(
   magnitude: &Expr,
   p: i128,
@@ -13314,6 +13671,22 @@ fn negative_base_rational_power(
       let root_exp = make_rational(rp, rq);
       let root_key = expr_to_string(&root_exp);
       let mut merged = false;
+      // The sign joins a radical with the same exponent: a positive integer
+      // or fraction radicand (`(-2/9)^(1/3)` is `(-2)^(1/3)/3^(2/3)`,
+      // `(-12/5)^(1/3)` is `(-3/5)^(1/3)*2^(2/3)`), or — for a positive
+      // unit exponent or as the only radical — a reciprocal one read as a
+      // fraction (`(-9/2)^(1/3)` is `(-1/2)^(1/3)*3^(2/3)`, `(-8/5)^(2/3)`
+      // is `4*(-1/5)^(2/3)`). wolframscript keeps `(-4/5)^(-1/3)` as
+      // `-(((-1)^(2/3)*5^(1/3))/2^(2/3))` and `(-4/5)^(2/3)` as
+      // `(2*(-1)^(2/3)*2^(1/3))/5^(2/3)`.
+      let neg_root_key = expr_to_string(&make_rational(-rp, rq));
+      let radical_count = factors
+        .iter()
+        .filter(|f| {
+          let (_, e) = extract_base_exponent(f);
+          matches!(&e, Expr::FunctionCall { name, .. } if name == "Rational")
+        })
+        .count();
       for factor in &mut factors {
         let (fbase, fexp) = extract_base_exponent(factor);
         let positive_int = match &fbase {
@@ -13321,8 +13694,22 @@ fn negative_base_rational_power(
           Expr::BigInteger(n) => *n > BigInt::from(1),
           _ => false,
         };
-        if positive_int && expr_to_string(&fexp) == root_key {
+        let positive_fraction = matches!(&fbase,
+          Expr::FunctionCall { name, args } if name == "Rational"
+            && matches!(args[0], Expr::Integer(a) if a > 0));
+        let fexp_key = expr_to_string(&fexp);
+        if (positive_int || positive_fraction) && fexp_key == root_key {
           *factor = pow(negate_expr(fbase), root_exp.clone());
+          merged = true;
+          break;
+        }
+        if p > 0
+          && (rp == 1 || radical_count == 1)
+          && positive_int
+          && fexp_key == neg_root_key
+        {
+          let reciprocal = divide_ast(&[Expr::Integer(-1), fbase.clone()])?;
+          *factor = pow(reciprocal, root_exp.clone());
           merged = true;
           break;
         }
@@ -13432,7 +13819,6 @@ pub fn try_eval_to_f64_with_infinity(expr: &Expr) -> Option<f64> {
   try_eval_to_f64(expr)
 }
 
-/// Max[args...] or Max[list] - Maximum value
 /// If any argument is a SparseArray, return the argument list with every
 /// SparseArray replaced by its dense form (so Max/Min compare over the
 /// expanded elements). Returns `None` when no argument is a SparseArray.
@@ -13465,123 +13851,158 @@ fn contains_indeterminate(expr: &Expr) -> bool {
   }
 }
 
+/// Max[args...] or Max[list] - Maximum value
 pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // An Indeterminate argument (at any depth, since lists are flattened)
-  // makes the extremum Indeterminate: it cannot be ordered against anything.
-  if args.iter().any(contains_indeterminate) {
-    return Ok(id_expr("Indeterminate"));
-  }
-  if args.is_empty() {
-    return Ok(id_expr("-Infinity"));
-  }
-
-  // Any SparseArray argument is compared over its dense elements.
-  if let Some(dense) = densify_sparse_args(args) {
-    return max_ast(&dense);
-  }
-
-  // Handle Interval in Max
-  if let Some(result) = crate::functions::interval_ast::try_interval_max(args) {
-    return result;
-  }
-
-  // Flatten all nested lists
-  let items = flatten_lists(args);
-  if items.is_empty() {
-    return Ok(id_expr("-Infinity"));
-  }
-
-  // All-Quantity case: compare magnitudes after unit conversion and return the
-  // larger quantity in its original unit.
-  if let Some(result) =
-    crate::functions::quantity_ast::try_quantity_extreme(&items, true)
-  {
-    return Ok(result);
-  }
-
-  // Separate numeric and symbolic arguments
-  let mut best_val: Option<f64> = None;
-  let mut best_expr: Option<&Expr> = None;
-  let mut symbolic: Vec<Expr> = Vec::new();
-  for item in &items {
-    if let Some(n) = try_eval_to_f64_with_infinity(item) {
-      match best_val {
-        Some(m) if n > m => {
-          best_val = Some(n);
-          best_expr = Some(item);
-        }
-        None => {
-          best_val = Some(n);
-          best_expr = Some(item);
-        }
-        _ => {}
-      }
-    } else {
-      symbolic.push((*item).clone());
-    }
-  }
-
-  // Max is idempotent: Max[a, a] == a. Drop duplicate symbolic arguments
-  // (numeric duplicates already collapse into the single best value).
-  {
-    let mut seen = std::collections::HashSet::new();
-    symbolic.retain(|e| seen.insert(expr_to_string(e)));
-  }
-
-  if symbolic.is_empty() {
-    // All numeric
-    match best_expr {
-      Some(expr) => Ok((*expr).clone()),
-      None => Ok(num_to_expr(f64::NEG_INFINITY)),
-    }
-  } else {
-    // Mixed: keep max numeric and all symbolic args
-    let mut result_args: Vec<Expr> = Vec::new();
-    if let Some(expr) = best_expr {
-      result_args.push((*expr).clone());
-    }
-    result_args.extend(symbolic);
-    if result_args.len() == 1 {
-      Ok(result_args.remove(0))
-    } else {
-      Ok(call("Max", result_args))
-    }
-  }
+  extremum_ast(args, true)
 }
 
 /// Min[args...] or Min[list] - Minimum value
 pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  extremum_ast(args, false)
+}
+
+/// The text `::nord` shows for an item Max/Min cannot order, or `None` when
+/// the item is a real number or a symbolic quantity that may still become
+/// one. ComplexInfinity and the non-real DirectedInfinity[z] read as
+/// `ComplexInfinity` / `z Infinity`; other non-real numbers (`I`, `1 + I`,
+/// `I Sqrt[2]`) are shown as expressions.
+fn unorderable_display(e: &Expr) -> Option<crate::syntax::MessagePiece<'_>> {
+  use crate::syntax::MessagePiece;
+  match e {
+    Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity" => {
+      return Some(MessagePiece::Text("ComplexInfinity".to_string()));
+    }
+    Expr::FunctionCall { name, args } if name == "DirectedInfinity" => {
+      return match args.as_slice() {
+        [] => Some(MessagePiece::Text("ComplexInfinity".to_string())),
+        [dir]
+          if crate::functions::predicate_ast::is_numeric_q(dir)
+            && try_eval_to_f64(dir).is_none() =>
+        {
+          Some(MessagePiece::Text(format!(
+            "{} Infinity",
+            expr_to_string(dir)
+          )))
+        }
+        _ => None,
+      };
+    }
+    _ => {}
+  }
+  if crate::functions::predicate_ast::is_complex_number(e) {
+    return Some(MessagePiece::Expr(e));
+  }
+  // A numeric quantity with a non-zero imaginary part (I Sqrt[2]).
+  if try_eval_to_f64(e).is_none()
+    && crate::functions::predicate_ast::is_numeric_q(e)
+    && let Ok(n) =
+      crate::evaluator::evaluate_expr_to_expr(&call1("N", e.clone()))
+    && crate::functions::predicate_ast::is_complex_number(&n)
+  {
+    return Some(MessagePiece::Expr(e));
+  }
+  None
+}
+
+/// Shared implementation of Max (`is_max`) and Min.
+fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
+  let head = if is_max { "Max" } else { "Min" };
+  let identity = || {
+    if is_max {
+      id_expr("-Infinity")
+    } else {
+      id_expr("Infinity")
+    }
+  };
   // An Indeterminate argument (at any depth, since lists are flattened)
   // makes the extremum Indeterminate: it cannot be ordered against anything.
   if args.iter().any(contains_indeterminate) {
     return Ok(id_expr("Indeterminate"));
   }
   if args.is_empty() {
-    return Ok(id_expr("Infinity"));
+    return Ok(identity());
   }
 
   // Any SparseArray argument is compared over its dense elements.
   if let Some(dense) = densify_sparse_args(args) {
-    return min_ast(&dense);
+    return extremum_ast(&dense, is_max);
   }
 
-  // Handle Interval in Min
-  if let Some(result) = crate::functions::interval_ast::try_interval_min(args) {
+  let interval = if is_max {
+    crate::functions::interval_ast::try_interval_max(args)
+  } else {
+    crate::functions::interval_ast::try_interval_min(args)
+  };
+  if let Some(result) = interval {
     return result;
   }
 
   // Flatten all nested lists
   let items = flatten_lists(args);
   if items.is_empty() {
-    return Ok(id_expr("Infinity"));
+    return Ok(identity());
   }
 
   // All-Quantity case: compare magnitudes after unit conversion and return the
-  // smaller quantity in its original unit.
+  // extreme quantity in its original unit.
   if let Some(result) =
-    crate::functions::quantity_ast::try_quantity_extreme(&items, false)
+    crate::functions::quantity_ast::try_quantity_extreme(&items, is_max)
   {
     return Ok(result);
+  }
+
+  let emit_nord = |display: crate::syntax::MessagePiece| {
+    crate::emit_message(&crate::syntax::format_message_pieces(&[
+      crate::syntax::MessagePiece::Text(format!(
+        "{head}::nord: Invalid comparison with "
+      )),
+      display,
+      crate::syntax::MessagePiece::Text(" attempted.".to_string()),
+    ]));
+  };
+  let is_complex_infinity = |e: &Expr| {
+    matches!(
+      unorderable_display(e),
+      Some(crate::syntax::MessagePiece::Text(t)) if t == "ComplexInfinity"
+    )
+  };
+  let canonical = |v: &mut Vec<Expr>| {
+    v.sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
+  };
+
+  // A non-real number (I, 1 + I, I Sqrt[2], DirectedInfinity[I]) cannot be
+  // ordered: the whole call stays unevaluated, lists unflattened, with one
+  // ::nord per unorderable item in reverse canonical order
+  // (wolframscript-verified).
+  if items.len() >= 2 {
+    let mut sorted: Vec<&Expr> = items.clone();
+    sorted.sort_by(|a, b| {
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b)
+    });
+    let unorderable: Vec<crate::syntax::MessagePiece> = sorted
+      .iter()
+      .rev()
+      .filter_map(|e| unorderable_display(e))
+      .collect();
+    let has_non_real = unorderable.iter().any(|d| {
+      !matches!(d, crate::syntax::MessagePiece::Text(t) if t == "ComplexInfinity")
+    });
+    if has_non_real {
+      let mut ci_reported = false;
+      for display in unorderable {
+        if matches!(&display, crate::syntax::MessagePiece::Text(t) if t == "ComplexInfinity")
+        {
+          if ci_reported {
+            continue;
+          }
+          ci_reported = true;
+        }
+        emit_nord(display);
+      }
+      let mut kept = args.to_vec();
+      canonical(&mut kept);
+      return Ok(call(head, kept));
+    }
   }
 
   // Separate numeric and symbolic arguments
@@ -13590,122 +14011,135 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut symbolic: Vec<Expr> = Vec::new();
   for item in &items {
     if let Some(n) = try_eval_to_f64_with_infinity(item) {
-      match best_val {
-        Some(m) if n < m => {
-          best_val = Some(n);
-          best_expr = Some(item);
+      let better = match best_val {
+        Some(m) => {
+          if is_max {
+            n > m
+          } else {
+            n < m
+          }
         }
-        None => {
-          best_val = Some(n);
-          best_expr = Some(item);
-        }
-        _ => {}
+        None => true,
+      };
+      if better {
+        best_val = Some(n);
+        best_expr = Some(item);
       }
     } else {
       symbolic.push((*item).clone());
     }
   }
 
-  // Min is idempotent: Min[a, a] == a. Drop duplicate symbolic arguments.
+  // Max/Min are idempotent: Max[a, a] == a. Drop duplicate symbolic
+  // arguments (numeric duplicates already collapse into the single best
+  // value).
   {
     let mut seen = std::collections::HashSet::new();
     symbolic.retain(|e| seen.insert(expr_to_string(e)));
   }
 
-  if symbolic.is_empty() {
-    // All numeric
-    match best_expr {
-      Some(expr) => Ok((*expr).clone()),
-      None => Ok(num_to_expr(f64::INFINITY)),
+  let mut result_args: Vec<Expr> = Vec::new();
+  if let Some(expr) = best_expr {
+    result_args.push((*expr).clone());
+  }
+  result_args.extend(symbolic);
+  // Orderless: the kept arguments are in canonical order, so a real
+  // infinity sorts after the symbols (Max[x, y, Infinity]).
+  canonical(&mut result_args);
+
+  // ComplexInfinity stays beside the real extremum. wolframscript reports
+  // one ::nord for every evaluation of a call that compares it: the given
+  // call (unless it is a lone list, which is only flattened), and once more
+  // when a changed result is re-evaluated — Min[1, ComplexInfinity] warns
+  // once, Min[1, 2, ComplexInfinity] twice.
+  if items.len() >= 2 && items.iter().any(|e| is_complex_infinity(e)) {
+    let mut given = args.to_vec();
+    canonical(&mut given);
+    let reevaluated = result_args.len() >= 2
+      && result_args.iter().any(is_complex_infinity)
+      && (given.len() != result_args.len()
+        || given
+          .iter()
+          .zip(&result_args)
+          .any(|(a, b)| expr_to_string(a) != expr_to_string(b)));
+    let count = usize::from(args.len() >= 2) + usize::from(reevaluated);
+    for _ in 0..count {
+      emit_nord(crate::syntax::MessagePiece::Text(
+        "ComplexInfinity".to_string(),
+      ));
     }
-  } else {
-    // Mixed: keep min numeric and all symbolic args
-    let mut result_args: Vec<Expr> = Vec::new();
-    if let Some(expr) = best_expr {
-      result_args.push((*expr).clone());
-    }
-    result_args.extend(symbolic);
-    if result_args.len() == 1 {
-      Ok(result_args.remove(0))
-    } else {
-      Ok(call("Min", result_args))
-    }
+  }
+
+  match result_args.len() {
+    0 => Ok(identity()),
+    1 => Ok(result_args.remove(0)),
+    _ => Ok(call(head, result_args)),
   }
 }
 
 /// Sum BigFloat (precision-tagged) numbers with precision tracking.
 /// Handles BigFloat + BigFloat and BigFloat + Integer/Rational.
 fn bigfloat_plus(args: &[Expr]) -> Expr {
-  // Extract (f64_value, precision) for each argument
-  // BigFloat: use stored precision; Integer/Rational: infinite precision
+  // Absolute error of the sum: each BigFloat contributes |v|·10^-p; exact
+  // summands (Integer, BigInteger, Rational) contribute none.
   let mut sum_val: f64 = 0.0;
   let mut sum_error: f64 = 0.0;
-
   for arg in args {
     match arg {
       Expr::BigFloat(digits, prec) => {
         let v: f64 = digits.parse().unwrap_or(0.0);
-        let p = *prec;
         sum_val += v;
-        sum_error += v.abs() * 10f64.powf(-p);
+        sum_error += v.abs() * 10f64.powf(-*prec);
       }
-      Expr::Integer(n) => {
-        sum_val += *n as f64;
-        // Integer has infinite precision, contributes 0 error
-      }
-      Expr::FunctionCall { name, args: rargs }
-        if name == "Rational" && rargs.len() == 2 =>
-      {
-        if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1]) {
-          sum_val += *n as f64 / *d as f64;
-        }
-      }
-      _ => {}
+      other => sum_val += try_eval_to_f64(other).unwrap_or(0.0),
     }
   }
-
-  // Compute result precision
-  let result_prec: f64 = if sum_val.abs() < 1e-300 || sum_error <= 0.0 {
-    // Fallback: use min finite precision among BigFloat args
+  let min_prec = || {
     args
       .iter()
-      .filter_map(|a| {
-        if let Expr::BigFloat(_, p) = a {
-          Some(*p)
-        } else {
-          None
-        }
+      .filter_map(|a| match a {
+        Expr::BigFloat(_, p) => Some(*p),
+        _ => None,
       })
-      .fold(None, |acc: Option<f64>, p| {
-        Some(acc.map_or(p, |a: f64| a.min(p)))
-      })
+      .reduce(f64::min)
       .unwrap_or(1.0)
-  } else {
-    let p = sum_val.abs().log10() - sum_error.log10();
-    p.max(1.0)
+  };
+  // Precision of a sum of value `v`: the digits of `v` its error leaves.
+  let precision_of = |v: f64| {
+    if v.abs() < 1e-300 || sum_error <= 0.0 {
+      min_prec()
+    } else {
+      (v.abs().log10() - sum_error.log10()).max(1.0)
+    }
   };
 
   // Compute the value itself. When every summand can be evaluated to an
   // astro-float BigFloat (numeric literals, exact constants), sum in
   // arbitrary precision so digits past the machine-double limit are correct
-  // (e.g. N[Pi,30] - 3 keeps ~28 accurate digits, not just 16). Otherwise fall
-  // back to the f64 approximation.
+  // (e.g. N[Pi,30] - 3 keeps ~28 accurate digits, not just 16) — and so the
+  // precision comes from the true sum, which the f64 one loses to
+  // cancellation (N[Pi,30]*10^25 - 31415926535897932384626433). Otherwise
+  // fall back to the f64 approximation.
   if args.iter().all(is_bigfloat_evaluable_factor) {
     use astro_float::{BigFloat, Consts, RoundingMode};
     let rm = RoundingMode::ToEven;
-    // Use enough bits to represent the least-precise summand's digits with
-    // margin, and at least the result precision.
+    // Enough bits for the most precise summand at its magnitude, so the
+    // exact parts of a cancelling sum survive.
+    let max_mag = args
+      .iter()
+      .filter_map(try_eval_to_f64)
+      .fold(0.0f64, |m, v| m.max(v.abs()))
+      .max(1.0)
+      .log10();
     let max_prec = args
       .iter()
-      .filter_map(|a| {
-        if let Expr::BigFloat(_, p) = a {
-          Some(*p)
-        } else {
-          None
-        }
+      .filter_map(|a| match a {
+        Expr::BigFloat(_, p) => Some(*p),
+        _ => None,
       })
       .fold(0.0f64, f64::max)
-      .max(result_prec);
+      .max(precision_of(sum_val))
+      + max_mag.max(0.0);
     let bits = nominal_bits(max_prec.ceil() as usize);
     if let Ok(mut cc) = Consts::new() {
       let mut sum = BigFloat::from_i32(0, bits);
@@ -13719,18 +14153,26 @@ fn bigfloat_plus(args: &[Expr]) -> Expr {
         }
       }
       if ok {
-        let max_fraction_digits =
-          ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
-        if let Ok(s) =
-          bigfloat_to_string(&sum, Some(max_fraction_digits), rm, &mut cc)
-        {
-          return Expr::BigFloat(s, result_prec);
+        let mut sum_str =
+          bigfloat_to_string(&sum, None, rm, &mut cc).unwrap_or_default();
+        let value: f64 = sum_str.parse().unwrap_or(sum_val);
+        // A sum below its own error is a zero of that accuracy:
+        // N[Pi, 30] - N[Pi, 20] is 0``19.5.
+        if sum_error > 0.0 && value.abs() <= sum_error {
+          return Expr::BigFloat("0".to_string(), -sum_error.log10());
+        }
+        let result_prec = precision_of(value);
+        let digits = wl_fraction_digits(&sum, result_prec);
+        if let Ok(s) = bigfloat_to_string(&sum, Some(digits), rm, &mut cc) {
+          sum_str = s;
+          return Expr::BigFloat(sum_str, result_prec);
         }
       }
     }
   }
 
   // Fallback: format the f64 approximation to the result precision.
+  let result_prec = precision_of(sum_val);
   let display_prec = (result_prec.round() as usize).max(1);
   let result_str = format_bigfloat_value(sum_val, display_prec);
   Expr::BigFloat(result_str, result_prec)
@@ -13910,13 +14352,12 @@ fn try_bigfloat_power(
   };
 
   let result_prec = base_prec - exp_val.abs().log10();
-  let max_fraction_digits =
-    ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
-  let result_str =
-    match bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc) {
-      Ok(s) => s,
-      Err(e) => return Some(Err(e)),
-    };
+  let digits = wl_fraction_digits(&result, result_prec);
+  let result_str = match bigfloat_to_string(&result, Some(digits), rm, &mut cc)
+  {
+    Ok(s) => s,
+    Err(e) => return Some(Err(e)),
+  };
   Some(Ok(Expr::BigFloat(result_str, result_prec)))
 }
 
@@ -13962,10 +14403,8 @@ fn bigfloat_times(args: &[Expr]) -> Result<Expr, InterpreterError> {
     product = product.mul(&factor, bits, rm);
   }
 
-  let max_fraction_digits =
-    ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
-  let result_str =
-    bigfloat_to_string(&product, Some(max_fraction_digits), rm, &mut cc)?;
+  let digits = wl_fraction_digits(&product, result_prec);
+  let result_str = bigfloat_to_string(&product, Some(digits), rm, &mut cc)?;
   Ok(Expr::BigFloat(result_str, result_prec))
 }
 

@@ -162,8 +162,8 @@ fn hoist_numerator_content(expr: &Expr) -> Expr {
   let Ok(divided) = divided else {
     return expr.clone();
   };
-  let prim = call("Plus", divided);
-  div2(call("Times", vec![Expr::Integer(content), prim]), den)
+  let prim = plus(divided);
+  div2(times(vec![Expr::Integer(content), prim]), den)
 }
 
 /// A unit-negative numerator coefficient distributes into a single sum
@@ -239,7 +239,7 @@ pub(super) fn hoist_result_denominator_content(expr: &Expr) -> Expr {
       right,
     } => times2(hoist_product_factor(left), hoist_product_factor(right)),
     Expr::FunctionCall { name, args } if name == "Times" => {
-      call("Times", args.iter().map(hoist_product_factor).collect())
+      times(args.iter().map(hoist_product_factor).collect())
     }
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
@@ -314,14 +314,14 @@ fn hoist_denominator_content(den: &Expr) -> Option<Expr> {
         Expr::UnaryOp {
           op: UnaryOperator::Minus,
           operand,
-        } => call("Times", vec![Expr::Integer(-1), (**operand).clone()]),
+        } => neg((**operand).clone()),
         other => other.clone(),
       })
       .collect();
     if rebuilt.len() == 1 {
       rebuilt.into_iter().next().unwrap()
     } else {
-      call("Plus", rebuilt)
+      plus(rebuilt)
     }
   }
 
@@ -467,7 +467,7 @@ pub(super) fn reduce_shared_integer_content(
   let new_num = if divided.len() == 1 {
     divided.remove(0)
   } else {
-    call("Plus", divided)
+    plus(divided)
   };
   if den_int / g == 1 {
     den_factors.remove(den_idx);
@@ -633,7 +633,7 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
       right,
     } => {
       // Flatten into a Times FunctionCall and recurse
-      let flat = call("Times", vec![*left.clone(), *right.clone()]);
+      let flat = times(vec![*left.clone(), *right.clone()]);
       extract_num_den(&flat)
     }
     // UnaryOp::Minus — negate the numerator
@@ -1000,7 +1000,7 @@ pub(super) fn canonicalize_quotient_sign(
           })
           .collect();
         if let Ok(terms) = divided {
-          neg_base = call("Plus", terms);
+          neg_base = plus(terms);
           new_factors.push(Expr::Integer(content_pow));
         }
       }
@@ -1032,7 +1032,7 @@ pub(super) fn canonicalize_quotient_sign(
       match divided {
         Ok(terms) => {
           den_changed = true;
-          let prim = call("Plus", terms);
+          let prim = plus(terms);
           new_factors.push(Expr::Integer(content_pow));
           new_factors.push(if exp == 1 {
             prim
@@ -1102,7 +1102,7 @@ pub(super) fn canonicalize_quotient_sign(
         parts.push(nf);
       }
       parts.push(pow2(rest_den, Expr::Integer(-1)));
-      call("Times", parts)
+      times(parts)
     };
   if sign < 0 && matches!(num, Expr::Integer(1)) {
     if numeric_flip_content > 1 {
@@ -2254,7 +2254,7 @@ fn split_exponent_coefficient(exp: &Expr) -> (Rat, Expr) {
     if args.len() == 1 {
       args[0].clone()
     } else {
-      call("Times", args.to_vec())
+      times(args.to_vec())
     }
   };
   match exp {
@@ -2304,7 +2304,7 @@ fn rebuild_power(base: &Expr, exp: Rat) -> Expr {
     && !matches!(inner_exp, Expr::Integer(_) | Expr::Real(_))
     && !matches!(inner_exp, Expr::FunctionCall { name, .. } if name == "Rational")
   {
-    let folded = call("Times", vec![rat_exp_to_expr(exp), inner_exp.clone()]);
+    let folded = times(vec![rat_exp_to_expr(exp), inner_exp.clone()]);
     let folded = crate::evaluator::evaluate_expr_to_expr(&folded)
       .unwrap_or_else(|_| folded.clone());
     return pow2(inner_base.clone(), folded);

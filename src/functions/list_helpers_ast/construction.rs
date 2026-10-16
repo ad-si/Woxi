@@ -95,20 +95,30 @@ pub fn table_iterators_invalid(name: &str, iters: &[Expr]) -> Option<String> {
         // `{i, ...}`: items[0] is the iterator variable (introduced for later
         // iterators). The remaining entries must be a single list, or all
         // resolve to numbers / earlier iterator variables.
+        // Bounds that reference an earlier iterator variable are only
+        // meaningful once that variable is bound, so they are not evaluated
+        // here (doing so would e.g. emit `Part::pkspec1` for `l[[i]]`).
+        let earlier_vars = bound_vars.clone();
+        let eval_bound = |e: &Expr| {
+          if expr_references_any(e, &earlier_vars) {
+            e.clone()
+          } else {
+            crate::evaluator::evaluate_expr_to_expr(e)
+              .unwrap_or_else(|_| e.clone())
+          }
+        };
         if let Expr::Identifier(v) = &items[0] {
           bound_vars.push(v.clone());
         }
         // A zero step `{i, min, max, 0}` never terminates: Table/Do reject it
         // with iterb rather than looping forever (matching wolframscript).
         if items.len() >= 4 {
-          let step = crate::evaluator::evaluate_expr_to_expr(&items[3])
-            .unwrap_or_else(|_| items[3].clone());
+          let step = eval_bound(&items[3]);
           if crate::functions::math_ast::try_eval_to_f64(&step) == Some(0.0) {
             return iterb(iter);
           }
         }
-        let second = crate::evaluator::evaluate_expr_to_expr(&items[1])
-          .unwrap_or_else(|_| items[1].clone());
+        let second = eval_bound(&items[1]);
         if matches!(second, Expr::List(_)) {
           continue;
         }
@@ -517,11 +527,9 @@ fn table_over_iterator(
         }
         let val = eval_at(&current_expr)?;
         crate::evaluator::listable::push_list_element(&mut results, val);
-        current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
-          "Plus",
-          vec![current_expr, step_expr.clone()],
-        ))?;
         safety_counter += 1;
+        current_expr =
+          nth_iterator_value(&min_expr, &step_expr, safety_counter)?;
         if safety_counter > 1_000_000 {
           return Err(InterpreterError::EvaluationError(
             "Table: iterator exceeded maximum iterations".into(),
@@ -544,11 +552,9 @@ fn table_over_iterator(
         }
         let val = eval_at(&current_expr)?;
         crate::evaluator::listable::push_list_element(&mut results, val);
-        current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
-          "Plus",
-          vec![current_expr, step_expr.clone()],
-        ))?;
         safety_counter += 1;
+        current_expr =
+          nth_iterator_value(&min_expr, &step_expr, safety_counter)?;
         if safety_counter > 1_000_000 {
           return Err(InterpreterError::EvaluationError(
             "Table: iterator exceeded maximum iterations".into(),
@@ -565,6 +571,24 @@ fn table_over_iterator(
 }
 
 use crate::functions::math_ast::expr_to_rational;
+
+/// The `k`-th iterator value `min + k*step`. Computing it from `min` each
+/// time (rather than adding `step` to the previous value) keeps machine-real
+/// steps free of accumulated rounding: `Table[t, {t, 0, 20, 0.1}]` ends
+/// exactly at `20.`, as `Range` does, not at `20.000000000000014`.
+fn nth_iterator_value(
+  min_expr: &Expr,
+  step_expr: &Expr,
+  k: usize,
+) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+    min_expr.clone(),
+    crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(k as i128), step_expr.clone()],
+    )?,
+  ]))
+}
 
 /// Number of steps from `min` to `max` implied by `ratio = (max - min) /
 /// step`, tolerant of floating-point rounding at an exact integer
@@ -758,19 +782,10 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(call);
       }
       // ratio = (max - min) / step
-      let ratio_expr = call(
-        "Times",
-        vec![
-          call(
-            "Plus",
-            vec![
-              max_expr.clone(),
-              call("Times", vec![Expr::Integer(-1), min_expr.clone()]),
-            ],
-          ),
-          pow(step_expr.clone(), Expr::Integer(-1)),
-        ],
-      );
+      let ratio_expr = times(vec![
+        plus(vec![max_expr.clone(), neg(min_expr.clone())]),
+        pow(step_expr.clone(), Expr::Integer(-1)),
+      ]);
       // Accept rationals (e.g. `5/2`), floats, and symbolic reals like
       // `Pi` — fall through to `try_numeric` (which calls `N[expr]`)
       // when the ratio doesn't reduce to a literal Integer/Rational/Real.
@@ -798,9 +813,8 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let elem = if k == 0 {
             first_elem(&min_expr)?
           } else {
-            let k_times_step =
-              call("Times", vec![Expr::Integer(k), step_expr.clone()]);
-            let sum = call("Plus", vec![min_expr.clone(), k_times_step]);
+            let k_times_step = times(vec![Expr::Integer(k), step_expr.clone()]);
+            let sum = plus(vec![min_expr.clone(), k_times_step]);
             crate::evaluator::evaluate_expr_to_expr(&sum)?
           };
           results.push(elem);
@@ -1627,7 +1641,7 @@ fn build_offset_indices(
 ) -> Result<Vec<Expr>, InterpreterError> {
   let mut result = Vec::with_capacity(n.max(0) as usize);
   for i in 0..n {
-    let val = call("Plus", vec![start.clone(), Expr::Integer(i)]);
+    let val = plus(vec![start.clone(), Expr::Integer(i)]);
     result.push(crate::evaluator::evaluate_expr_to_expr(&val)?);
   }
   Ok(result)
@@ -1648,25 +1662,16 @@ fn build_range_indices(
     // Wolfram gives the midpoint (a + b) / 2 when requesting a single
     // sample over a range, matching Array[f, 1, {a, b}] → {f[(a+b)/2]}.
     let half = pow(Expr::Integer(2), Expr::Integer(-1));
-    let mid = call(
-      "Times",
-      vec![half, call("Plus", vec![a.clone(), b.clone()])],
-    );
+    let mid = times(vec![half, plus(vec![a.clone(), b.clone()])]);
     return Ok(vec![crate::evaluator::evaluate_expr_to_expr(&mid)?]);
   }
   let mut result = Vec::with_capacity(n as usize);
   // value_i = a + i * (b - a) / (n - 1)
-  let diff = call(
-    "Plus",
-    vec![b.clone(), call("Times", vec![Expr::Integer(-1), a.clone()])],
-  );
+  let diff = plus(vec![b.clone(), neg(a.clone())]);
   let inv_denom = pow(Expr::Integer(n - 1), Expr::Integer(-1));
   for i in 0..n {
-    let term = call(
-      "Times",
-      vec![Expr::Integer(i), diff.clone(), inv_denom.clone()],
-    );
-    let val = call("Plus", vec![a.clone(), term]);
+    let term = times(vec![Expr::Integer(i), diff.clone(), inv_denom.clone()]);
+    let val = plus(vec![a.clone(), term]);
     result.push(crate::evaluator::evaluate_expr_to_expr(&val)?);
   }
   Ok(result)
@@ -2043,6 +2048,78 @@ fn expand_band_rules(data: &Expr, dims: &[usize]) -> Option<Expr> {
     expanded.push(item.clone());
   }
   Some(Expr::List(expanded.into()))
+}
+
+/// Rewrite negative integer coordinates in explicit position rules (counted
+/// from the end of each axis, so `{-1, 1}` in a 3x3 array is `{3, 1}`) into
+/// positive ones. Pattern positions and out-of-range coordinates are left
+/// unchanged. Returns None when nothing needed rewriting.
+fn resolve_negative_positions(data: &Expr, dims: &[usize]) -> Option<Expr> {
+  let fix_rule = |item: &Expr| -> Option<Expr> {
+    let (pattern, replacement, delayed) = match item {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern, replacement, false),
+      Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern, replacement, true),
+      _ => return None,
+    };
+    let fix_coord = |c: &Expr, axis: usize| -> Option<Expr> {
+      let v = expr_to_i128(c)?;
+      let len = *dims.get(axis)? as i128;
+      (v < 0 && -v <= len).then(|| Expr::Integer(len + 1 + v))
+    };
+    let new_pattern = match pattern.as_ref() {
+      Expr::List(ps) if ps.len() == dims.len() => {
+        let mut changed = false;
+        let fixed: Vec<Expr> = ps
+          .iter()
+          .enumerate()
+          .map(|(k, p)| match fix_coord(p, k) {
+            Some(n) => {
+              changed = true;
+              n
+            }
+            None => p.clone(),
+          })
+          .collect();
+        changed.then(|| Expr::List(fixed.into()))?
+      }
+      other if dims.len() == 1 => fix_coord(other, 0)?,
+      _ => return None,
+    };
+    Some(if delayed {
+      Expr::RuleDelayed {
+        pattern: Box::new(new_pattern),
+        replacement: replacement.clone(),
+      }
+    } else {
+      Expr::Rule {
+        pattern: Box::new(new_pattern),
+        replacement: replacement.clone(),
+      }
+    })
+  };
+  match data {
+    Expr::List(items) => {
+      let mut any = false;
+      let new_items: Vec<Expr> = items
+        .iter()
+        .map(|it| match fix_rule(it) {
+          Some(n) => {
+            any = true;
+            n
+          }
+          None => it.clone(),
+        })
+        .collect();
+      any.then(|| Expr::List(new_items.into()))
+    }
+    single => fix_rule(single),
+  }
 }
 
 /// Expand a pattern rule such as `{i_} :> i` or `{i_, j_} :> i + j` (with an
@@ -2446,16 +2523,20 @@ pub fn sparse_array_normalize_ast(
   } else {
     None
   };
+  let resolved_arg0: Option<Expr> = explicit_dims
+    .as_ref()
+    .and_then(|dims| resolve_negative_positions(&args[0], dims));
+  let arg0: &Expr = resolved_arg0.as_ref().unwrap_or(&args[0]);
   let expanded_data: Expr;
   let data: &Expr = if let Some(ref dims) = explicit_dims {
-    if let Some(expanded) = expand_pattern_rule(&args[0], dims)
-      .or_else(|| expand_band_rules(&args[0], dims))
-      .or_else(|| expand_pattern_rule_list(&args[0], dims))
+    if let Some(expanded) = expand_pattern_rule(arg0, dims)
+      .or_else(|| expand_band_rules(arg0, dims))
+      .or_else(|| expand_pattern_rule_list(arg0, dims))
     {
       expanded_data = expanded;
       &expanded_data
     } else {
-      &args[0]
+      arg0
     }
   } else if let Some(ref dims) = band_inferred_dims {
     if let Some(expanded) = expand_band_rules(&args[0], dims) {

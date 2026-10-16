@@ -511,6 +511,24 @@ impl WoxiStudio {
     self.playback = None;
   }
 
+  /// Play audio emitted by a pressed Manipulate button (`EmitSound[…]`),
+  /// replacing whatever is playing.
+  fn play_emitted_sound(&mut self, cell: usize, audio: &woxi::AudioOutput) {
+    self.stop_playback();
+    match play_audio(audio) {
+      Ok(child) => {
+        self.playback = Some(Playback {
+          cell,
+          child,
+          paused: false,
+          playing_image: None,
+        });
+        self.status = String::from("Playing sound…");
+      }
+      Err(e) => self.status = format!("Could not play sound: {e}"),
+    }
+  }
+
   /// The pre-rasterized "playing" variant of the given cell's graphic, while
   /// its embedded audio plays (not paused).
   fn playing_image(
@@ -1929,6 +1947,9 @@ impl WoxiStudio {
           && let Some(state) = editor.manipulate_state.as_mut()
         {
           state.apply_button_action(&action);
+          if let Some(audio) = state.emitted_sound.take() {
+            self.play_emitted_sound(cell_idx, &audio);
+          }
         }
         Task::none()
       }
@@ -1981,6 +2002,9 @@ impl WoxiStudio {
         {
           let action = action.clone();
           state.apply_button_action(&action);
+          if let Some(audio) = state.emitted_sound.take() {
+            self.play_emitted_sound(cell_idx, &audio);
+          }
         }
         Task::none()
       }
@@ -4615,7 +4639,36 @@ fn render_manipulate_widget<'a>(
     if stale {
       svg_widget = svg_widget.opacity(0.3_f32);
     }
-    output_col = output_col.push(container(svg_widget).padding(4));
+    let picture: Element<'_, Message> = if state.button_regions.is_empty() {
+      svg_widget.into()
+    } else {
+      // Pressable `Button` cells drawn inside the picture: overlay a
+      // transparent clickable area on each, running its held action.
+      let mut layers: Vec<Element<'_, Message>> = vec![svg_widget.into()];
+      for region in &state.button_regions {
+        layers.push(
+          container(
+            button(space::Space::new())
+              .width(region.width)
+              .height(region.height)
+              .style(|_, _| button::Style::default())
+              .on_press(Message::ManipulateDisplayAction(
+                cell_idx,
+                region.action.clone(),
+              )),
+          )
+          .padding(iced::Padding {
+            top: region.y,
+            left: region.x,
+            right: 0.0,
+            bottom: 0.0,
+          })
+          .into(),
+        );
+      }
+      stack(layers).into()
+    };
+    output_col = output_col.push(container(picture).padding(4));
   } else if let Some(ref txt) = state.text_output {
     let mut output_text = text(txt.clone()).size(12).font(Font::MONOSPACE);
     if stale {
@@ -7246,6 +7299,29 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 mod tests {
   use super::*;
 
+  /// A Manipulate whose Input cell stores a number followed by the legacy
+  /// `"\.00"` escape (character 0, an invisible spacer) must still open as
+  /// a live widget: the NUL it decodes to used to survive into the cell's
+  /// source and make it unparseable.
+  #[test]
+  fn manipulate_input_with_nul_spacer_escape_instantiates() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[RowBox[{"Manipulate", "[", RowBox[{RowBox[{"Graphics", "[", RowBox[{"Disk", "[", RowBox[{RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",", RowBox[{"r", "\.00"}]}], "]"}], "]"}], ",", RowBox[{"{", RowBox[{"r", ",", "1", ",", "3"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert_eq!(widget.controls.len(), 1);
+    assert!(widget.graphics_handle.is_some());
+  }
+
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
   /// randomly sampled Wolfram Demonstration notebook ("Dawn Spaceflight")
   /// whose `Manipulate` control-spec list carried a bare `Item["background"]`
@@ -7455,6 +7531,31 @@ mod tests {
     );
   }
 
+  /// A heading `Text@Row[{…, TraditionalForm[x (1 - x/a) Cot[α]]}]` reads in
+  /// conventional notation (`cot(α)`, an in-line `x/a`), not as the
+  /// OutputForm source `x*(1 - x/a)*Cot[α]`.
+  #[test]
+  fn manipulate_heading_typesets_traditionalform_arithmetic() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[a, {a, 0, 1}, Item[Style[Text@Row[{"y = ", TraditionalForm[p (1 - p/q) Cot[b]]}], 12]]]"#,
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    let label = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Heading { label, .. } => Some(label.clone()),
+        _ => None,
+      })
+      .expect("a Heading control");
+    assert!(label.starts_with("y = "), "got {label:?}");
+    assert!(label.contains("cot(b)"), "got {label:?}");
+    assert!(label.contains("p/q"), "got {label:?}");
+    assert!(!label.contains("Cot["), "got {label:?}");
+  }
+
   /// A Manipulate whose body picks between two `Compile[…]`d
   /// angle-to-3D-point functions with `Switch` on a `SetterBar`-controlled
   /// mode, and — in the "combined" mode — plots both curves at once via
@@ -7591,6 +7692,31 @@ mod tests {
       }
       other => panic!("expected a continuous control, got {other:?}"),
     }
+  }
+
+  /// A `SaveDefinitions -> True` dump writes `n_?OddQ` / `n_?EvenQ` in
+  /// FullForm (`PatternTest[Pattern[n, Blank[]], OddQ]`). Two mutually
+  /// recursive rules that differ only in that test used to collapse into one
+  /// rule, so the helper recursed forever and the widget showed
+  /// `TerminatedEvaluation[RecursionLimit]`.
+  #[test]
+  fn instantiate_stored_manipulate_keeps_fullform_pattern_tests() {
+    let code = "Manipulate[collatz[k], {{k, 6, \"start\"}, 1, 20, 1}, \
+      SaveDefinitions -> True]";
+    let stored = "DynamicModuleBox[{$CellContext`k$$ = 6}, \
+      DynamicBox[Manipulate`ManipulateBoxes[1, StandardForm, \
+      \"Variables\" :> {$CellContext`k$$ = 6}, \
+      \"Body\" :> $CellContext`collatz[$CellContext`k$$], \
+      \"Specifications\" :> {{{$CellContext`k$$, 6, \"start\"}, 1, 20, 1}}, \
+      \"Options\" :> {}, \"DefaultOptions\" :> {}]],\n\
+      Initialization:>({$CellContext`collatz[PatternTest[Pattern[\
+      $CellContext`n, Blank[]], EvenQ]] := $CellContext`n/2, \
+      $CellContext`collatz[PatternTest[Pattern[$CellContext`n, Blank[]], \
+      OddQ]] := 3 $CellContext`n + 1}; Typeset`initDone$$ = True)]";
+    let state = instantiate_stored_manipulate(code, stored)
+      .expect("instantiate_stored_manipulate should build a widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("3"));
   }
 
   /// A Manipulate whose setter choices come from a notebook variable that
@@ -8342,6 +8468,34 @@ mod tests {
       svg.matches("<line ").count() >= 3,
       "the three extended edge lines must be drawn: {svg}"
     );
+  }
+
+  /// A slider written with a negative step (`{t, 0, Pi, -0.1}`) must step
+  /// by its magnitude, and a revolved-solid body must still draw.
+  #[test]
+  fn manipulate_negative_slider_step_uses_its_magnitude() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGraphics3D[{Opacity[0.5], Cylinder[{{0, 0, 0}, {0, 0, 1}}, r]}],\n{{r, 1, \"radius\"}, 0, 2, -0.25},\n{{t, 0, \"angle\"}, 0, Pi, -0.1, Appearance -> \"Labeled\"}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let steps: Vec<f64> = widget
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Continuous { step, .. } => Some(*step),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(steps, [0.25, 0.1]);
   }
 
   /// A dissection Manipulate assembling colored polygon pieces with
@@ -16235,6 +16389,40 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`A$$ = 5}, \"…\"]"], "Output"]
     }
   }
 
+  /// End-to-end regression for a Bose–Einstein population `Manipulate`: the
+  /// excited-orbital fraction comes from a `FindRoot` over a definite
+  /// `Integrate[Sqrt[x]/(a E^x - 1), {x, 0, Infinity}]`, which must resolve
+  /// numerically so both bars of every chart are drawn.
+  #[test]
+  fn bose_population_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[RowBox[{RowBox[{"frac", "[", RowBox[{"t_", ",", "d_"}], "]"}], ":=",
+ RowBox[{FractionBox["2", RowBox[{SqrtBox["\[Pi]"], RowBox[{"Zeta", "[", RowBox[{"3", "/", "2"}], "]"}]}]],
+  SuperscriptBox["t", RowBox[{"3", "/", "2"}]],
+  RowBox[{SubsuperscriptBox["\[Integral]", "0", "\[Infinity]"],
+   RowBox[{FractionBox[SqrtBox["x"], RowBox[{RowBox[{RowBox[{"(", RowBox[{"1", "+", "d"}], ")"}], RowBox[{"Exp", "[", "x", "]"}]}], "-", "1"}]],
+    RowBox[{"\[DifferentialD]", "x"}]}]}]}]}]], "Input"],
+Cell[BoxData[RowBox[{RowBox[{"pop", "[", RowBox[{"n_", ",", "t_"}], "]"}], ":=",
+ RowBox[{"Module", "[", RowBox[{RowBox[{"{", "s", "}"}], ",",
+  RowBox[{RowBox[{"s", "=", RowBox[{"FindRoot", "[", RowBox[{RowBox[{RowBox[{FractionBox["1", RowBox[{"n", " ", "d"}]], "+", RowBox[{"frac", "[", RowBox[{"t", ",", "d"}], "]"}]}], "==", "1"}], ",", RowBox[{"{", RowBox[{"d", ",", RowBox[{"2", "/", "n"}]}], "}"}]}], "]"}]}], ";",
+   RowBox[{RowBox[{"{", RowBox[{FractionBox["1", "d"], ",", RowBox[{"n", " ", RowBox[{"frac", "[", RowBox[{"t", ",", "d"}], "]"}]}]}], "}"}], "/.", "s"}]}]}], "]"}]}]], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData[RowBox[{"Manipulate", "[",
+ RowBox[{RowBox[{"BarChart", "[", RowBox[{RowBox[{"pop", "[", RowBox[{"10", ",", "t"}], "]"}], ",", RowBox[{"PlotLabel", "\[Rule]", "\"\<Populations\\n\>\""}], ",", RowBox[{"BarOrigin", "\[Rule]", "Left"}]}], "]"}], ",",
+  RowBox[{"{", RowBox[{RowBox[{"{", RowBox[{"t", ",", "1", ",", "\"\<temperature\>\""}], "}"}], ",", "0.1", ",", "5"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`t$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some());
+  }
+
   /// End-to-end regression for the "A Converging Geometric Series"
   /// Demonstration: a `Grid` with a `NumberForm` caption above a row of
   /// two pictures, the first assembled from rectangles `Sow`n in a loop.
@@ -18155,7 +18343,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = -5}, \"\\[Ellipsis]\"]"], "Ou
     };
     let above = render(">");
     // The region is shaded, not an empty frame.
-    assert!(above.matches("<rect").count() > 100, "region not shaded");
+    assert!(above.contains("<polygon"), "region not shaded");
     // Flipping the inequality shades the complement.
     assert_ne!(above, render("<"), "the inequality control must matter");
   }
@@ -19636,6 +19824,253 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`time$$ = 25}, \"\\[Ellipsis]\"]"], 
     );
     // Integrating over a shorter interval draws a different trajectory.
     assert_ne!(render(5.0), published, "the time control must matter");
+  }
+
+  /// A picture-effects `Manipulate` (independently written): every effect
+  /// must produce a picture, and the "thumbnail" view pins the untouched
+  /// original to the corner with `Inset[image, {Left, Top}, {Left, Top}, …]`.
+  #[test]
+  fn image_effect_picker_draws_every_effect_and_view() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[RowBox[{"Manipulate", "[", "Graphics[{Inset[Pane[ImageEffect[Image[Table[{x/9., y/9., 0.5}, {y, 0, 9}, {x, 0, 9}]], {effect, 2}], ImageSize -> Automatic], Automatic, Automatic, 2], If[view == \"thumbnail\", Inset[Image[Table[{x/9., y/9., 0.5}, {y, 0, 9}, {x, 0, 9}]], {Left, Top}, {Left, Top}, 0.5], {}]}, PlotRange -> 1], {effect, {\"Charcoal\", \"OilPainting\", \"Solarization\", \"Noise\"}}, {view, {\"result\", \"thumbnail\"}}", "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`effect$$ = \"Charcoal\"}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some());
+
+    for effect in ["Charcoal", "OilPainting", "Solarization", "Noise"] {
+      for (view, images) in [("result", 1), ("thumbnail", 2)] {
+        let svg = woxi::interpret_with_stdout(&format!(
+          "effect = \"{effect}\"; view = \"{view}\";\n{}",
+          widget.body
+        ))
+        .expect("the body must render")
+        .graphics
+        .expect("the body must produce a graphic");
+        assert_eq!(
+          svg.matches("<image").count(),
+          images,
+          "{effect}/{view}: expected {images} picture(s)"
+        );
+        assert!(
+          !svg.contains("-Image-"),
+          "{effect}/{view}: unrendered image"
+        );
+      }
+    }
+  }
+
+  /// End-to-end regression for a "Calabi-Yau space" style Demonstration (the
+  /// code is independently written): a `Manipulate` whose `Initialization`
+  /// defines complex helper functions plus a function that returns a
+  /// `Table` of `ParametricPlot3D` patches, drawn with `Show` under an
+  /// `If`-selected `Lighting` list, with `SynchronousInitialization -> False`
+  /// and a slider and a `{True, False}` toggle with typeset labels.
+  #[test]
+  fn calabi_yau_style_manipulate_draws_its_patches() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", 
+  RowBox[{
+   RowBox[{"Show", "[", 
+    RowBox[{
+     RowBox[{"patches", "[", 
+      RowBox[{"0", ",", "0", ",", "0", ",", "phi", ",", "0", ",", "tint"}], "]"}], ",", 
+     RowBox[{"ViewPoint", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{
+        RowBox[{"-", "1.4"}], ",", "0", ",", "1.4"}], "}"}]}], ",", 
+     RowBox[{"Lighting", "\[Rule]", 
+      RowBox[{"If", "[", 
+       RowBox[{"tint", ",", 
+        RowBox[{"{", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{"\"\<Ambient\>\"", ",", 
+            RowBox[{"GrayLevel", "[", ".5", "]"}]}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"\"\<Directional\>\"", ",", "White", ",", 
+            RowBox[{"ImageScaled", "@", 
+             RowBox[{"{", 
+              RowBox[{"0", ",", "0", ",", "2"}], "}"}]}]}], "}"}]}], "}"}], 
+        ",", "Automatic"}], "]"}]}], ",", 
+     RowBox[{"PlotRange", "\[Rule]", "1.5"}], ",", 
+     RowBox[{"Boxed", "\[Rule]", "False"}], ",", 
+     RowBox[{"Axes", "\[Rule]", "False"}], ",", 
+     RowBox[{"SphericalRegion", "\[Rule]", "True"}], ",", 
+     RowBox[{"ImageSize", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{"300", ",", "300"}], "}"}]}], ",", 
+     RowBox[{"ViewAngle", "\[Rule]", 
+      RowBox[{"\[Pi]", "/", "4.5"}]}]}], "]"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"phi", ",", 
+       RowBox[{"\[Pi]", "/", "4"}], ",", "\"\<projection angle\>\""}], "}"}], 
+     ",", "0", ",", 
+     RowBox[{"2", " ", "Pi"}]}], "}"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"tint", ",", "False", ",", "\"\<color code surface\>\""}], "}"}], 
+     ",", 
+     RowBox[{"{", 
+      RowBox[{"True", ",", "False"}], "}"}]}], "}"}], ",", 
+   RowBox[{"Initialization", "\[RuleDelayed]", 
+    RowBox[{"{", 
+     RowBox[{
+      RowBox[{
+       RowBox[{"cosh2", "[", 
+        RowBox[{"a_", ",", "b_"}], "]"}], ":=", 
+       RowBox[{".5", " ", 
+        RowBox[{"(", 
+         RowBox[{
+          RowBox[{"E", "^", 
+           RowBox[{"(", 
+            RowBox[{"a", "+", 
+             RowBox[{"I", "*", "b"}]}], ")"}]}], "+", 
+          RowBox[{"E", "^", 
+           RowBox[{"(", 
+            RowBox[{
+             RowBox[{"-", "a"}], "-", 
+             RowBox[{"I", "*", "b"}]}], ")"}]}]}], ")"}]}]}], ";", 
+      RowBox[{
+       RowBox[{"root", "[", 
+        RowBox[{"a_", ",", "b_", ",", "m_", ",", "k_"}], "]"}], ":=", 
+       RowBox[{
+        RowBox[{"E", "^", 
+         RowBox[{"(", 
+          RowBox[{"k", "*", "2", "*", "Pi", "*", 
+           RowBox[{"I", "/", "m"}]}], ")"}]}], "*", 
+        RowBox[{
+         RowBox[{"cosh2", "[", 
+          RowBox[{"a", ",", "b"}], "]"}], "^", 
+         RowBox[{"(", 
+          RowBox[{"2.0", "/", "m"}], ")"}]}]}]}], ";", 
+      RowBox[{"deg", "=", "5"}], ";", 
+      RowBox[{
+       RowBox[{"patches", "[", 
+        RowBox[{
+        "x_", ",", "y_", ",", "z_", ",", "\[Alpha]_", ",", "t_", ",", "c_"}], 
+        "]"}], ":=", 
+       RowBox[{"Table", "[", 
+        RowBox[{
+         RowBox[{"With", "[", 
+          RowBox[{
+           RowBox[{"{", 
+            RowBox[{"ang", "=", 
+             RowBox[{"\[Alpha]", "-", "t"}]}], "}"}], ",", 
+           RowBox[{"ParametricPlot3D", "[", 
+            RowBox[{
+             RowBox[{"Evaluate", "@", 
+              RowBox[{"{", 
+               RowBox[{
+                RowBox[{
+                 RowBox[{"Re", "[", 
+                  RowBox[{"root", "[", 
+                   RowBox[{"a", ",", "b", ",", "deg", ",", "k1"}], "]"}], 
+                  "]"}], "+", "x"}], ",", 
+                RowBox[{
+                 RowBox[{"Re", "[", 
+                  RowBox[{"root", "[", 
+                   RowBox[{"a", ",", "b", ",", "deg", ",", "k2"}], "]"}], 
+                  "]"}], "+", "y"}], ",", 
+                RowBox[{
+                 RowBox[{
+                  RowBox[{"Cos", "[", "ang", "]"}], "*", 
+                  RowBox[{"Im", "[", 
+                   RowBox[{"root", "[", 
+                    RowBox[{"a", ",", "b", ",", "deg", ",", "k1"}], "]"}], 
+                   "]"}]}], "+", 
+                 RowBox[{
+                  RowBox[{"Sin", "[", "ang", "]"}], "*", 
+                  RowBox[{"Im", "[", 
+                   RowBox[{"root", "[", 
+                    RowBox[{"a", ",", "b", ",", "deg", ",", "k2"}], "]"}], 
+                   "]"}]}], "+", "z"}]}], "}"}]}], ",", 
+             RowBox[{"{", 
+              RowBox[{"a", ",", 
+               RowBox[{"-", "1"}], ",", "1"}], "}"}], ",", 
+             RowBox[{"{", 
+              RowBox[{"b", ",", "0", ",", 
+               RowBox[{"\[Pi]", "/", "2"}]}], "}"}], ",", 
+             RowBox[{"Boxed", "\[Rule]", "False"}], ",", 
+             RowBox[{"Axes", "\[Rule]", "False"}], ",", 
+             RowBox[{"PlotPoints", "\[Rule]", "6"}], ",", 
+             RowBox[{"PlotStyle", "\[Rule]", 
+              RowBox[{"If", "[", 
+               RowBox[{"c", ",", 
+                RowBox[{"RGBColor", "@", 
+                 RowBox[{"{", 
+                  RowBox[{
+                   RowBox[{"Rescale", "[", 
+                    RowBox[{"k1", ",", 
+                    RowBox[{"{", 
+                    RowBox[{"0", ",", 
+                    RowBox[{"deg", "-", "1"}]}], "}"}]}], "]"}], ",", 
+                   RowBox[{"Rescale", "[", 
+                    RowBox[{"k2", ",", 
+                    RowBox[{"{", 
+                    RowBox[{"0", ",", 
+                    RowBox[{"deg", "-", "1"}]}], "}"}]}], "]"}], ",", "0.5"}], 
+                  "}"}]}], ",", 
+                RowBox[{"{", 
+                 RowBox[{
+                  RowBox[{"RGBColor", "[", 
+                   RowBox[{".5", ",", ".5", ",", "1"}], "]"}], ",", 
+                  RowBox[{"Specularity", "[", 
+                   RowBox[{"White", ",", "128"}], "]"}]}], "}"}]}], "]"}]}], 
+             ",", 
+             RowBox[{"MaxRecursion", "\[Rule]", "0"}], ",", 
+             RowBox[{"PerformanceGoal", "\[Rule]", "\"\<Speed\>\""}], ",", 
+             RowBox[{"Mesh", "\[Rule]", "None"}]}], "]"}]}], "]"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"k1", ",", "0", ",", 
+           RowBox[{"deg", "-", "1"}]}], "}"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"k2", ",", "0", ",", 
+           RowBox[{"deg", "-", "1"}]}], "}"}]}], "]"}]}]}], "}"}]}], ",", 
+   RowBox[{"SynchronousInitialization", "\[Rule]", "False"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`phi$$ = 0.78}, \"\\[Ellipsis]\"]"], "Output"]
+}, Closed]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the patches must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the patches must draw");
+    let labels: Vec<String> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, label, .. }
+        | manipulate::ControlState::Discrete { name, label, .. } => {
+          format!("{name}: {label}")
+        }
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec!["phi: projection angle", "tint: color code surface"]
+    );
   }
 
   /// End-to-end regression for a Demonstration that draws a vector field:
@@ -24261,6 +24696,35 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
         assert_eq!(*current_index, 1)
       }
       other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A slider whose spec is all exact integers (`{c, -2, 2}`) but whose
+  /// saved state is a machine real (`-1.999`) is continuous; it used to keep
+  /// an integer step and bind the value as an exact rational.
+  #[test]
+  fn saved_real_on_integer_range_makes_slider_continuous() {
+    let dump = "DynamicModuleBox[{$CellContext`c$$ = -1.999}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> $CellContext`c$$, \n\
+      \"Specifications\" :> {{{$CellContext`c$$, -2, \"c\"}, -2, 2}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let state = instantiate_manipulate_from_box_dump(dump)
+      .expect("the reconstructed Manipulate must build a widget");
+    match &state.controls[0] {
+      manipulate::ControlState::Continuous {
+        current,
+        is_real,
+        step,
+        ..
+      } => {
+        assert_eq!(*current, -1.999);
+        assert!(*is_real);
+        assert!(*step < 1.0);
+      }
+      other => panic!("expected a continuous control, got {other:?}"),
     }
   }
 
@@ -29556,6 +30020,41 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
   /// source's stale default; before `apply_saved_variables` existed,
   /// `instantiate_stored_manipulate` rebuilt the widget from the Input
   /// cell alone and always reset every control to its authored default.
+  /// Regression: a slider variable named with a script letter (`\[ScriptM]`)
+  /// whose saved dump value is an exact rational (`Rational[4, 5]`) must open
+  /// at that saved value; the rational was ignored, leaving the slider at the
+  /// source's authored default.
+  #[test]
+  fn stored_dump_restores_script_letter_variable_and_helper() {
+    let code = r#"Manipulate[
+      Plot[scriptHelper[x, \[ScriptM]], {x, 0, 1}],
+      {{\[ScriptM], 0, "mass \[ScriptM]"}, 0, 10, 1/10}
+    ]"#;
+    let dump = "DynamicModuleBox[{$CellContext`\\[ScriptM]$$ = Rational[4, 5]}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Variables\" :> {$CellContext`\\[ScriptM]$$ = Rational[4, 5]}, \n\
+      \"Body\" :> Plot[$CellContext`scriptHelper[x, $CellContext`\\[ScriptM]$$], \
+        {x, 0, 1}], \n\
+      \"Specifications\" :> {{{$CellContext`\\[ScriptM]$$, 0, \"mass\"}, \
+        0, 10, Rational[1, 10]}}, \n\
+      \"Options\" :> {}],\n\
+      Initialization:>($CellContext`scriptHelper[Pattern[$CellContext`x, \
+        Blank[]], Pattern[$CellContext`\\[ScriptM], Blank[]]] := \
+        $CellContext`x $CellContext`\\[ScriptM]; \
+        Typeset`initDone$$ = True),\n\
+      DynamicModuleValues:>{}]]";
+    let state =
+      instantiate_stored_manipulate(code, dump).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    match &state.controls[..] {
+      [manipulate::ControlState::Continuous { current, .. }] => {
+        assert_eq!(*current, 0.8, "saved value must load, not the default 0");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
   #[test]
   fn stored_dump_variables_override_the_sources_stale_defaults() {
     let code = r#"Manipulate[
@@ -31713,5 +32212,107 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
       .map(|c| c.name())
       .collect();
     assert_eq!(names, ["a", "b"]);
+  }
+
+  /// A Demonstration saved with `SaveDefinitions -> True` restores
+  /// `Attributes[ControlActive] = {HoldAll, ReadProtected}` in the widget's
+  /// stored Initialization. The helper's Table step is a `ControlActive[…]`
+  /// over Module locals, so with the attribute set it must still resolve to
+  /// its (evaluated) inactive form instead of failing the iterator check.
+  #[test]
+  fn held_control_active_step_in_saved_definitions_still_draws() {
+    let code = "Manipulate[ripple[a], {{a, 1, \"amplitude\"}, -2, 2}, \
+      SaveDefinitions -> True]";
+    let stored = "DynamicModuleBox[{$CellContext`a$$ = 1}, \
+      DynamicBox[…],\n\
+      Initialization:>({$CellContext`ripple[Pattern[$CellContext`a, \
+      Blank[]]] := Module[{$CellContext`L = 3 Pi, $CellContext`\\[Epsilon]}, \
+      $CellContext`\\[Epsilon] = $CellContext`L/30.; \
+      Graphics[Line[Table[{$CellContext`x, $CellContext`a Sin[$CellContext`x]}, \
+      {$CellContext`x, -$CellContext`L - $CellContext`\\[Epsilon], \
+      $CellContext`L + $CellContext`\\[Epsilon], \
+      ControlActive[(2 $CellContext`L + 2 $CellContext`\\[Epsilon])/10, \
+      (2 $CellContext`L + 2 $CellContext`\\[Epsilon])/40]}]]]], \
+      Attributes[ControlActive] = {HoldAll, ReadProtected}}; \
+      Typeset`initDone$$ = True)]";
+    let state = instantiate_stored_manipulate(code, stored)
+      .expect("instantiate_stored_manipulate should build a widget");
+    assert_eq!(state.error, None);
+    let r = woxi::interpret_with_stdout("ripple[1]").unwrap();
+    assert!(
+      r.warnings.iter().all(|w| !w.contains("iterb")),
+      "the held ControlActive step must resolve: {:?}",
+      r.warnings
+    );
+    let svg = r.graphics.clone().unwrap_or_else(|| {
+      panic!("the ripple must draw: {:?} {:?}", r.result, r.warnings)
+    });
+    assert!(svg.contains("<polyline") || svg.contains("<path"), "{svg}");
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a gas-property
+  /// correlation) whose `Manipulate` body is a `Module` that stores its
+  /// equation in a local (`eq = z == …`) and then solves it with
+  /// `FindRoot[eq, {z, a, b}]`. Regression: `FindRoot` (HoldAll) received
+  /// the bare local instead of the equation, so the widget showed
+  /// `FindRoot::nlnum` instead of drawing. This is a self-authored,
+  /// construct-equivalent example, not the Demonstration's code.
+  #[test]
+  fn manipulate_module_local_equation_solved_by_findroot() {
+    let code = r#"Manipulate[
+      Module[{z, eq, root},
+        eq = z == 1 + p/(4 z);
+        root = z /. FindRoot[eq, {z, 0.5, 2}];
+        Graphics[Circle[{0, 0}, root]]],
+      {{p, 1}, 0.1, 3}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    state.reevaluate();
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "the circle must draw");
+  }
+
+  /// A translucent `ContourPlot3D` slicing plane shown over a `Graphics3D`
+  /// with a fixed `PlotRange` (the "Orthographic Projection of
+  /// Parallelepipeds" layout) used to cover the whole picture in opaque
+  /// blue: the surface lost its `Opacity` when `Show` merged it and was not
+  /// cut to the plot range.
+  #[test]
+  fn translucent_slicing_plane_notebook_stays_inside_its_range() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Show[{Graphics3D[{Red, Polygon[{{0, 0, 0}, {s, 0, 0}, {s, s, s}}]}, Axes -> True, PlotRange -> {{-5, 20}, {-5, 20}, {0, 15}}]}, {ContourPlot3D[a x + y + z == k, {x, -10, 60}, {y, -10, 60}, {z, -10, 60}, Mesh -> None, PlotPoints -> 6, ContourStyle -> Directive[Blue, Opacity[0.1]]]}, SphericalRegion -> True], {{a, 1}, 0, 2}, {{k, 10}, 0, 15}, {{s, 4}, 1, 10}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some(), "the scene must draw");
+
+    let svg = woxi::interpret_with_stdout(&format!(
+      "a = 1; k = 10; s = 4;\n{}",
+      widget.body
+    ))
+    .expect("the body must render")
+    .graphics
+    .expect("the body must produce a graphic");
+    assert!(
+      svg.contains("opacity=\"0.1\""),
+      "the plane must be translucent"
+    );
+    for poly in svg.split("<polygon points=\"").skip(1) {
+      let pts = poly.split('"').next().unwrap();
+      for c in pts.split(|ch| ch == ' ' || ch == ',') {
+        let v: f64 = c.parse().unwrap();
+        assert!((-1.0..=361.0).contains(&v), "polygon spills out: {v}");
+      }
+    }
   }
 }

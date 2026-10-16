@@ -203,7 +203,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // because the negation/identity re-evaluates the original arithmetic.
   if let Some(v) = try_eval_to_f64(&args[0]) {
     if v < 0.0 {
-      let neg = times(vec![Expr::Integer(-1), args[0].clone()]);
+      let neg = neg(args[0].clone());
       return crate::evaluator::evaluate_expr_to_expr(&neg);
     }
     return Ok(args[0].clone());
@@ -1529,7 +1529,7 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_expr_to_expr(&expr)
   };
   let negate = |e: Expr| -> Result<Expr, InterpreterError> {
-    let expr = times(vec![Expr::Integer(-1), e]);
+    let expr = neg(e);
     crate::evaluator::evaluate_expr_to_expr(&expr)
   };
   if x < 0.0 {
@@ -2117,20 +2117,28 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
     }
 
-    // Check if a is a Rational (n/d)
+    // A Rational step: a * Round[x/a], exact like the step.
     if let Expr::FunctionCall { name, args: rargs } = &eval_a
       && name == "Rational"
       && rargs.len() == 2
-      && let (Some(x_val), Some(a_val)) =
-        (try_eval_to_f64(&eval_x), try_eval_to_f64(&eval_a))
-      && a_val != 0.0
+      && try_eval_to_f64(&eval_x).is_some()
     {
-      let n = bankers_round(x_val / a_val) as i128;
-      // Return n * (num/den) as a rational
-      if let (Some(num), Some(den)) =
-        (expr_to_i128(&rargs[0]), expr_to_i128(&rargs[1]))
-      {
-        return Ok(make_rational(n * num, den));
+      let quotient = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[
+          eval_x.clone(),
+          crate::evaluator::evaluate_function_call_ast(
+            "Power",
+            &[eval_a.clone(), Expr::Integer(-1)],
+          )?,
+        ],
+      )?;
+      let n = round_ast(&[quotient])?;
+      if matches!(n, Expr::Integer(_) | Expr::BigInteger(_)) {
+        return crate::evaluator::evaluate_function_call_ast(
+          "Times",
+          &[n, eval_a],
+        );
       }
     }
 
@@ -2208,12 +2216,77 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
+    // A machine real rounds in f64. So does a small exact value that is
+    // clearly away from a half-integer; anything else (an arbitrary-precision
+    // number, a big magnitude, a near-tie) is rounded exactly.
+    let near_tie = ((n - n.trunc()).abs() - 0.5).abs() < 1e-6;
+    if matches!(&args[0], Expr::Real(_))
+      || (n.abs() < 1e15
+        && !near_tie
+        && !matches!(&args[0], Expr::BigFloat(..)))
+    {
+      return Ok(f64_to_int_expr(bankers_round(n)));
+    }
+    if let Some(r) = round_exact(&args[0])? {
+      return Ok(r);
+    }
     Ok(f64_to_int_expr(bankers_round(n)))
+  } else if let Some((re, im)) =
+    try_extract_complex_float(&args[0]).or_else(|| {
+      // Algebraic numbers such as complex `Root` objects only reveal their
+      // complex value through `N`.
+      let n =
+        crate::evaluator::evaluate_function_call_ast("N", &args[..1]).ok()?;
+      try_extract_complex_float(&n)
+    })
+    && re.is_finite()
+    && im.is_finite()
+  {
+    // Exact complex expression with irrational parts (e.g. a product of
+    // `Root` objects): Round[a + b I] = Round[a] + Round[b] I. A sum of
+    // conjugate algebraic terms is real in exact arithmetic but carries a
+    // rounding-noise imaginary part numerically, so that part is dropped.
+    let im = if im.abs() < 1e-9 * re.abs().max(1.0) {
+      0.0
+    } else {
+      im
+    };
+    build_complex_result(
+      f64_to_int_expr(bankers_round(re)),
+      f64_to_int_expr(bankers_round(im)),
+    )
   } else if let Some(r) = try_symbolic_complex_rounding(&args[0], round_ast) {
     Ok(r)
   } else {
     Ok(unevaluated("Round", args))
   }
+}
+
+/// `Round[x]` for a real `x` via the exact `Floor[x + 1/2]`, stepping back
+/// to the even neighbour on an exact tie. `None` when `Floor` does not reach
+/// an integer.
+fn round_exact(x: &Expr) -> Result<Option<Expr>, InterpreterError> {
+  let eval_call = crate::evaluator::evaluate_function_call_ast;
+  let shifted = eval_call("Plus", &[x.clone(), make_rational(1, 2)])?;
+  let f = floor_ast(std::slice::from_ref(&shifted))?;
+  let odd = match &f {
+    Expr::Integer(n) => n % 2 != 0,
+    Expr::BigInteger(b) => (b % 2u32) != BigInt::from(0),
+    _ => return Ok(None),
+  };
+  if odd {
+    let rest = eval_call(
+      "Plus",
+      &[
+        shifted,
+        eval_call("Times", &[Expr::Integer(-1), f.clone()])?,
+      ],
+    )?;
+    if try_eval_to_f64(&rest) == Some(0.0) {
+      return eval_call("Plus", &[f, Expr::Integer(-1)]).map(Some);
+    }
+  }
+  Ok(Some(f))
 }
 
 /// Returns true if `expr` is a complex number with a non-zero imaginary part.
@@ -2997,6 +3070,18 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {
       if let Some(f) = try_eval_to_f64(&args[0]) {
+        // f64 cannot hold the integer part of an arbitrary-precision number
+        // or of a big value: truncate exactly through Floor/Ceiling.
+        if matches!(&args[0], Expr::BigFloat(..)) || f.abs() >= 1e15 {
+          let r = if f < 0.0 {
+            ceiling_ast(std::slice::from_ref(&args[0]))?
+          } else {
+            floor_ast(std::slice::from_ref(&args[0]))?
+          };
+          if matches!(r, Expr::Integer(_) | Expr::BigInteger(_)) {
+            return Ok(r);
+          }
+        }
         Ok(f64_to_int_expr(f.trunc()))
       } else if let Some(r) =
         try_symbolic_complex_rounding(&args[0], integer_part_ast)
@@ -3094,6 +3179,21 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(_) => Ok(Expr::Integer(0)),
     // Preserve Real type: FractionalPart[3.0] = 0. (not 0)
     Expr::Real(f) => Ok(Expr::Real(*f - f.trunc())),
+    // x - IntegerPart[x] in arbitrary-precision arithmetic, which also
+    // tracks the digits the subtraction cancels.
+    Expr::BigFloat(..) => {
+      let int_part = integer_part_ast(std::slice::from_ref(&args[0]))?;
+      crate::evaluator::evaluate_function_call_ast(
+        "Plus",
+        &[
+          args[0].clone(),
+          crate::evaluator::evaluate_function_call_ast(
+            "Times",
+            &[Expr::Integer(-1), int_part],
+          )?,
+        ],
+      )
+    }
     Expr::FunctionCall { name, args: rargs }
       if name == "Rational" && rargs.len() == 2 =>
     {
@@ -3155,7 +3255,7 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Expr::BigInteger(_) = &int_val {
           return crate::evaluator::evaluate_function_call_ast(
             "Plus",
-            &[args[0].clone(), times(vec![Expr::Integer(-1), int_val])],
+            &[args[0].clone(), neg(int_val)],
           );
         }
       }
@@ -3220,6 +3320,12 @@ fn chop_expr(expr: &Expr, tolerance: f64) -> Result<Expr, InterpreterError> {
         Ok(expr.clone())
       }
     }
+    // An arbitrary-precision number, including the zero `0``30` an exact
+    // cancellation leaves.
+    Expr::BigFloat(digits, _) => match digits.parse::<f64>() {
+      Ok(f) if f.abs() < tolerance => Ok(Expr::Integer(0)),
+      _ => Ok(expr.clone()),
+    },
     Expr::List(items) => {
       let chopped: Result<Vec<Expr>, _> =
         items.iter().map(|e| chop_expr(e, tolerance)).collect();
@@ -3241,11 +3347,7 @@ fn chop_expr(expr: &Expr, tolerance: f64) -> Result<Expr, InterpreterError> {
     Expr::BinaryOp { op, left, right } => {
       let new_left = chop_expr(left, tolerance)?;
       let new_right = chop_expr(right, tolerance)?;
-      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: *op,
-        left: Box::new(new_left),
-        right: Box::new(new_right),
-      })
+      crate::evaluator::evaluate_expr_to_expr(&binop(*op, new_left, new_right))
     }
     Expr::UnaryOp { op, operand } => {
       let new_operand = chop_expr(operand, tolerance)?;

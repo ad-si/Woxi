@@ -212,7 +212,7 @@ Total,Sums the elements of a list down to a level spec — AllowedHeads -> All d
 ColorFunction,Option specifying the color function for visualization,✅,none,2.0,152
 ContourPlot,Creates a contour plot of a function,✅,pure,1.0,155
 RandomInteger,Generate random integers — RandomInteger[n] draws from 0 through n so a negative n draws downwards,✅,contextual,6.0,156
-NDSolve,Solves ordinary differential equations numerically (including coupled systems compound unknowns and EventLocator events) and 1-D PDEs via the method of lines (systems may mix parabolic groups with groups that only differentiate in the evolution variable): parabolic (single or coupled reaction-diffusion-convection systems) and hyperbolic (single second-order-in-time wave-type equations even with an implicit mixed space/time derivative on the right) with Dirichlet Neumann or (hyperbolic-only) periodic boundaries,✅,contextual,2.0,157
+NDSolve,Solves ordinary differential equations numerically (including delay equations with constant history and coupled systems compound unknowns and EventLocator events) and 1-D PDEs via the method of lines (systems may mix parabolic groups with groups that only differentiate in the evolution variable): parabolic (single or coupled reaction-diffusion-convection systems) and hyperbolic (single second-order-in-time wave-type equations even with an implicit mixed space/time derivative on the right) with Dirichlet Neumann or (hyperbolic-only) periodic boundaries,✅,contextual,2.0,157
 Integers,Domain symbol representing the set of integers,✅,pure,4.0,158
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6.0,159
 Limit,Computes the limit of an expression,✅,pure,1.0,160
@@ -272,7 +272,7 @@ Position,Finds all positions of a pattern in a list,✅,pure,1.0,218
 Union,Returns sorted union of lists or a key-merge of associations,✅,pure,1.0,219
 While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,220
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
-FindRoot,Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honours MaxIterations and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored),✅,pure,1.0,222
+FindRoot,Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honours MaxIterations and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored); a {var; x0; xmin; xmax} spec confines the search to the given bounds,✅,pure,1.0,222
 Image,Constructs an image from pixel data,✅,pure,7.0,223
 ColorData,"Named color data: the categories; the CSS colours of the ""HTML"" scheme and the pre-v6 Graphics`Colors` palette under the ""Legacy"" scheme; the colors of indexed schemes 1 (generated) 2 3 30 35 and 97; named gradients give a ColorDataFunction sampling the scheme (e.g. ColorData[""TemperatureMap""][0.5]), sample directly via ColorData[name, t], read the ""ColorFunction"" and ""Range"" properties, and render ""Image"" swatches (Rainbow-family control points sampled from Wolfram; the remaining gradients are approximations)",✅,pure,6.0,224
 Binomial,Returns the binomial coefficient,✅,pure,1.0,225
@@ -638,7 +638,7 @@ PlotLabels,Option for labeling plot curves,✅,none,10.4,597
 Scale,Scales a graphics object,✅,pure,6.0,597
 Log10,Returns the base-10 logarithm of a number,✅,pure,7.0,598
 EndPackage,Ends a package and puts its context on $ContextPath so its exports become visible,✅,effectful,1.0,599
-PolyhedronData,Properties of named polyhedra including the vertex-edge skeleton graph (Platonic solids; the Bilinski dodecahedron; the icosahedral and cubic Archimedean solids and their duals; the great and small stellated dodecahedra and rhombic hexecontahedron stellations; the triangular orthobicupola; MathematicaSpikey; and the stella octangula),🚧,pure,6.0,601
+PolyhedronData,Properties of named polyhedra including the vertex-edge skeleton graph and the unfolded planar net (NetFaces) (Platonic solids; the Bilinski dodecahedron; the icosahedral and cubic Archimedean solids and their duals; the great and small stellated dodecahedra and rhombic hexecontahedron stellations; the triangular orthobicupola; MathematicaSpikey; and the stella octangula),🚧,pure,6.0,601
 PolyhedronOperations`Truncate,Corner-cuts each Polygon face of a graphics expression to a ratio (default 3/10) of its edge length; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
 PolyhedronOperations`Stellate,Replaces each Polygon face of a graphics expression with a pyramid to a ratio (default 2) of the face's centroid distance; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
 Nearest,Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance) — DistanceFunction supplies another metric; empty or non-list data reports ::near1,✅,pure,6.0,602
@@ -673,8 +673,8 @@ ChartStyle,Style specification for chart elements,✅,pure,7.0,634
 SelectionMove,Move the selection in a notebook,✅,none,3.0,636
 RotateLeft,Rotates list elements to the left,✅,pure,1.0,637
 PadRight,Pads a list on the right to a given length or nested shape with a cyclically tiled padding array,✅,pure,4.0,638
-Fourier,Discrete Fourier transform of a list,✅,pure,1.0,712
-InverseFourier,Inverse discrete Fourier transform of a list,✅,pure,1.0,1260
+Fourier,Discrete Fourier transform of a list or rectangular array,✅,pure,1.0,712
+InverseFourier,Inverse discrete Fourier transform of a list or rectangular array,✅,pure,1.0,1260
 FourierTransform,Computes the symbolic Fourier transform of an expression,✅,pure,4.0,639
 InverseFourierTransform,Computes the symbolic inverse Fourier transform of an expression,✅,pure,4.0,1124
 PowerExpand,Expands powers and logarithms assuming positive reals,✅,pure,2.0,640
@@ -896,7 +896,7 @@ RealDigits,Returns the digits of a real number,✅,pure,2.0,866
 DigitCharacter,Represents a digit character in string patterns,✅,pure,5.1,870
 FixedPoint,Applies a function repeatedly until the result no longer changes,✅,pure,1.0,870
 QPochhammer,q-Pochhammer symbol; finite QPochhammer[a;q;n]; infinite QPochhammer[a;q]; Euler function QPochhammer[q],✅,pure,7.0,871
-DictionaryLookup,Requires external services or GUI infrastructure,🚫,io,6.0,872
+DictionaryLookup,Lists the words of the bundled English dictionary that match a string pattern; optionally limited to the first n matches,✅,pure,6.0,872
 EdgeStyle,Option for styling edges in graphs,✅,none,8.0,873
 FunctionExpand,Expands special functions into simpler forms,✅,pure,3.0,874
 BernoulliB,Returns the nth Bernoulli number (or the nth Bernoulli polynomial in x with the two-argument form),✅,pure,1.0,876
@@ -987,7 +987,7 @@ CoefficientArrays,Returns sparse arrays of polynomial coefficients indexed by to
 SubscriptBox,Represents a subscript box for typesetting,✅,pure,3.0,964
 ArrayReshape,Reshapes a list into specified dimensions,✅,pure,9.0,965
 Key,Operator form for extracting values from associations by key,✅,none,10.0,966
-ProbabilityDistribution,Defines a custom probability distribution,✅,1,8.0,967
+ProbabilityDistribution,Defines a custom probability distribution (PDF/CDF/Quantile/Expectation; Mean/Variance via integration or summation; RandomVariate by inverse-transform sampling of the tabulated density),✅,1,8.0,967
 MeshCells,Cells of a mesh region of a given dimension as index primitives,✅,pure,10.0,968
 VertexStyle,Option for styling vertices in graphs,✅,none,8.0,969
 OverHat,Display form with a hat accent,✅,none,6.0,970
@@ -1004,7 +1004,7 @@ FrontEndExecute,Requires external services or GUI infrastructure,🚫,io,3.0,982
 ScientificForm,Displays number in scientific notation,✅,pure,1.0,983
 LocatorPane,Draggable locator over a graphic; renders as an interactive 2D pane,✅,unevaluated,6.0,984
 DirectedEdges,Option saying whether graph edges are drawn as arrows,✅,none,6.0,986
-ViewVertical,,🚫,,2.0,986
+ViewVertical,Option for 3D up direction on screen,✅,pure,2.0,986
 StyleDefinitions,,🚫,,3.0,987
 RoundingRadius,,🚫,,7.0,988
 Ball,Geometric primitive representing a ball (filled sphere); drawn in Graphics and Graphics3D; a list of centres draws one ball per centre,✅,none,10.0,989
@@ -1064,7 +1064,7 @@ Today,Returns a DateObject representing the current date,✅,contextual,10.0,104
 ClippingStyle,,🚫,,6.0,1046
 Del,Symbolic nabla operator with Unicode display,✅,none,3.0,1046
 Resolve,Quantifier elimination for univariate and additively separable multivariate polynomial formulas,✅,pure,5.0,1047
-MorphologicalComponents,Label connected foreground components of an array,✅,pure,7.0,1048
+MorphologicalComponents,Label connected foreground components of an array or image,✅,pure,7.0,1048
 Wedge,Symbolic wedge product operator with Unicode display,✅,pure,3.0,1049
 SumConvergence,Tests convergence of infinite sums (rational geometric alternating and factorial terms),✅,pure,7.0,1050
 TextAlignment,,🚫,,3.0,1051
@@ -1207,7 +1207,7 @@ Orthogonalize,Orthonormalizes a set of vectors via Gram-Schmidt,✅,pure,6.0,119
 AnatomyData,,🚫,,10.3,1192
 FresnelS,Returns the Fresnel sine integral,✅,pure,3.0,1193
 CometData,,🚫,,10.0,1195
-HighlightImage,,🚫,,9.0,1195
+HighlightImage,Draws graphics marks over an image in pixel coordinates,✅,pure,9.0,1195
 Subgraph,Induced subgraph on given vertices (keeps the given vertex order),✅,pure,8.0,1197
 FindClusters,Partitions data into clusters,✅,unevaluated,6.0,1198
 OpenWrite,Opens a file for writing,✅,effectful,1.0,1199
@@ -1324,7 +1324,7 @@ KelvinKer,Kelvin ker function (real part of e^(-Pi I/2) BesselK on a rotated arg
 ComplexPlot3D,Plot the modulus of a complex function as a 3D surface over the complex plane,✅,pure,12.0,1311
 ControlActive,Represents an object displayed differently while a control is actively manipulated,✅,pure,6.0,1312
 ButtonBox,,🚫,,3.0,1313
-RegionDistance,Shortest distance from a point to a region (Point/Line/Disk/Ball/Circle/Sphere/Rectangle/Triangle/Polygon),✅,pure,10.0,1314
+RegionDistance,Shortest distance from a point to a region (Point/Line/Disk/Ball/Circle/Sphere/Rectangle/Triangle/Polygon; numeric ImplicitRegion),✅,pure,10.0,1314
 FirstPosition,First position Position reports for a pattern; the head of an expression sits at position {0},✅,pure,10.0,1317
 FourierSeries,,🚫,,7.0,1317
 Inactivate,Wraps every head in an expression with Inactive so it is held unevaluated,✅,pure,10.0,1317
@@ -1341,14 +1341,14 @@ ListStepPlot,Plots data as a step function,✅,pure,10.2,1327
 Larger,Font size directive for making text larger,✅,none,6.0,1328
 AngleBracket,Symbolic representation of angle brackets,✅,,3.0,1329
 GeoPath,Geographic path primitive for GeoGraphics,✅,pure,10.0,1330
-MixtureDistribution,Mixture of component distributions with given weights; Mean Variance PDF and CDF combine the components,✅,pure,8.0,1331
+MixtureDistribution,Mixture of component distributions with given weights; Mean Variance PDF and CDF combine the components; RandomVariate samples it,✅,pure,8.0,1331
 RemoveBackground,,🚫,,10.0,1332
 Hash,Hash of a string or of a ByteArray's bytes using MD2/MD4/MD5/SHA/SHA224/SHA256/SHA384/SHA512/SHA3-224/SHA3-256/SHA3-384/SHA3-512/Keccak256/RIPEMD160/RIPEMD160SHA256/CRC32/Adler32,✅,pure,1.0,1333
 DeleteSmallComponents,Zero out label-matrix components with few pixels,✅,pure,8.0,1334
 DeleteMissing,Delete Missing elements from a list or pairs with a missing value from an association,✅,pure,10.0,1338
 GalaxyData,,🚫,,10.0,1338
 PutAppend,Append expressions to a file,✅,effectful,1.0,1338
-ZetaZero,k-th non-trivial zero of the Riemann zeta function on the critical line,✅,pure,6.0,1338
+ZetaZero,k-th non-trivial zero of the Riemann zeta function on the critical line (or k-th zero above height t),✅,pure,6.0,1338
 Echo,Prints and returns an expression,✅,effectful,10.3,1339
 ConstellationData,,🚫,,10.0,1342
 Directory,Current working directory,✅,effectful,2.0,1342
@@ -1401,7 +1401,7 @@ PredictorMeasurements,Measurements of predictor function performance,🚫,io,10.
 PositiveIntegers,Domain of positive integers,✅,pure,12.0,1391
 ParabolicCylinderD,Parabolic cylinder function D_nu(z),✅,pure,6.0,1392
 ConvolutionLayer,Neural network convolution layer,🚫,io,11.0,1393
-EmitSound,Emit a sound,🚫,io,6.0,1394
+EmitSound,Plays a sound (captured as playable audio for visual hosts; returns Null),✅,io,6.0,1394
 SurvivalFunction,Survival function for distributions,✅,pure,8.0,1395
 ExpIntegralE,Generalized exponential integral E_n(z); FunctionExpand gives z^(n-1) Gamma[1-n z] and expands that Gamma for an integer or half-integer order,✅,pure,1.0,1397
 RootReduce,Reduce an algebraic number to a simplified radical or a minimal-polynomial Root object,✅,pure,3.0,1397
@@ -1509,7 +1509,7 @@ GeoProjection,Geographic projection specification,✅,pure,10.0,1503
 SoundVolume,Sound volume specification,✅,pure,6.0,1503
 GradientFilter,Image gradient filter,✅,pure,7.0,1507
 PermutationProduct,Product of permutations,✅,pure,8.0,1507
-RegionNearest,Nearest point in a region,✅,pure,10.0,1507
+RegionNearest,Nearest point in a region (also numeric for ImplicitRegion with inexact points),✅,pure,10.0,1507
 TakeDrop,Simultaneously take and drop elements from a list,✅,pure,10.2,1507
 BinaryReadList,Read binary data from a file,✅,pure,5.1,1509
 TildeTilde,Approximate equality relation,✅,pure,3.0,1509
@@ -1653,7 +1653,7 @@ WhittakerM,Whittaker M function E^(-z/2) z^(m+1/2) Hypergeometric1F1[m-k+1/2 2m+
 InterpretationBox,Low-level box that displays one expression but interprets as another,✅,pure,3.0,1652
 IncludePods,Include pods in computation,,unevaluated,8.0,1653
 MathieuGroupM11,Mathieu group M11 (order 7920) as a formal permutation group,✅,pure,8.0,1656
-RulePlot,Draws each neighborhood and result of a cellular-automaton rule (other objects give an empty graphic),✅,pure,11.0,1656
+RulePlot,Draws each neighborhood (or each neighborhood sum for totalistic rules) and result of a cellular-automaton rule (other objects give an empty graphic),✅,pure,11.0,1656
 Overlaps,Option symbol specifying how the string and sequence matching functions treat overlapping matches — False keeps them disjoint True reports the preferred match per start position and All reports every match per start position,✅,pure,5.1,1658
 Trig,Trigonometric functions option,,unevaluated,2.0,1658
 ItoProcess,Ito stochastic process,,unevaluated,9.0,1659
@@ -1932,7 +1932,7 @@ IsomorphicGraphQ,Test whether two graphs are isomorphic,✅,pure,8.0,1930
 Resampling,Signal processing option for resampling methods,🚫,,8.0,1930
 DumpSave,Serialization of definitions to a binary file,🚫,,3.0,1932
 RecordLists,Data import option for structuring records as lists,🚫,,2.0,1932
-ImageEffect,Applies an effect to an image (noise effects: SaltPepperNoise, GaussianNoise and Noise),✅,contextual,7.0,1935
+ImageEffect,Applies an effect to an image (SaltPepperNoise, GaussianNoise, Noise, Solarization, OilPainting and Charcoal),✅,contextual,7.0,1935
 VertexDelete,Delete one or more vertices from a graph along with their incident edges,✅,pure,8.0,1935
 FileNameSplit,Splits a file name into a list of path components,✅,pure,7.0,1938
 SmallCircle,Symbolic small-circle operator with Unicode display,✅,pure,3.0,1938
@@ -2216,7 +2216,7 @@ MittagLefflerE,Mittag-Leffler function E_alpha(z) or E_{alpha beta}(z) summed vi
 NProduct,Numerical product of a sequence,✅,none,1.0,2229
 SimpleGraph,Graph construction,🚫,None,8.0,2229
 Threshold,Replaces array values below a threshold with zero,✅,pure,8.0,2229
-Hexahedron,3D geometric primitive,🚫,None,10.0,2233
+Hexahedron,Symbolic hexahedron (8 corners); stays unevaluated and is drawn as six faces in Graphics3D,✅,unevaluated,10.0,2233
 Nand,Logical NAND,✅,pure,4.1,2233
 TimeSeriesShift,Shifts every time stamp of a series by a given amount,✅,pure,10.0,2233
 WaitAll,Async parallel computation,🚫,None,7.0,2233
@@ -2269,7 +2269,7 @@ ReadString,Read a file or stream as a string up to an optional terminator,✅,ef
 WriteLine,Write a string to an output stream followed by a newline,✅,effectful,10.0,2282
 BoundingRegion,Smallest bounding region of a point list or region — box by default and MinBall/MinDisk/FastBall/FastDisk/MinCuboid/MinRectangle on request,✅,pure,10.4,2286
 CellDingbat,Notebook UI,🚫,None,3.0,2286
-DistributionParameterAssumptions,Probability distribution,🚫,None,8.0,2286
+DistributionParameterAssumptions,Conditions on the parameters of a distribution,✅,pure,8.0,2286
 WheelGraph,Wheel graph with a hub vertex joined to a cycle of rim vertices,✅,pure,8.0,2286
 ContainsAll,Test if a list contains all elements of another list,✅,pure,10.2,2289
 HypergeometricDistribution,Hypergeometric distribution (sampling without replacement); supports PDF Mean and Variance,✅,pure,6.0,2289
@@ -2479,7 +2479,7 @@ GeoIdentify,,🚫,,10.0,2503
 HilbertMatrix,Generate a Hilbert matrix of given size,✅,1,6.0,2503
 MenuSortingValue,,🚫,,8.0,2503
 Messages,Returns the messages associated with a symbol,✅,pure,1.0,2503
-MorphologicalPerimeter,,🚫,,7.0,2503
+MorphologicalPerimeter,Binary image of foreground pixels touching the background,✅,pure,7.0,2503
 BooleanMinimize,Find the minimal sum-of-products Boolean expression; terms are ordered by their literal pattern,✅,pure,7.0,2509
 ChiDistribution,represents a chi distribution with n degrees of freedom,✅,none,6.0,2509
 CloudPublish,,🚫,,10.2,2509
@@ -2488,7 +2488,7 @@ ListCurvePathPlot,,🚫,,7.0,2509
 Bookmarks,Option for bookmarked settings in Manipulate,✅,pure,7.0,2512
 SliceDensityPlot3D,,🚫,,10.2,2512
 StringRepeat,Repeats a string a number of times optionally truncated to a given length,✅,pure,10.1,2512
-BracketingBar,,🚫,,3.0,2514
+BracketingBar,Inert typeset form of absolute-value bars around its content,✅,pure,3.0,2514
 StartProcess,,🚫,,10.0,2514
 DivisorSum,Applies a function to each divisor and sums the results,✅,pure,7.0,2519
 EdgeLabelStyle,,🚫,,8.0,2519
@@ -2570,7 +2570,7 @@ Transliterate,Transliterate text in other writing scripts to plain Latin/ASCII c
 AnyOrder,grammar pattern for any order,✅,Symbolic,10.1,2596
 ConstantImage,Create a constant image filled with a specified color or gray level,✅,pure,10.0,2596
 Decrypt,,🚫,,10.1,2596
-ImageForwardTransformation,,🚫,,8.0,2596
+ImageForwardTransformation,Maps an image through a function of its point coordinates and resamples it,✅,pure,8.0,2596
 NetMapOperator,,🚫,,11.1,2596
 DayCount,Count days (or occurrences of a given weekday) between two dates,✅,pure,9.0,2605
 ExpandNumerator,Expands the numerator of a rational expression,✅,pure,1.0,2605
@@ -3026,7 +3026,7 @@ BioSequence,,🚫,,12.2,3070
 CorrelationDistance,1 minus Pearson correlation between vectors,✅,none,6.0,3070
 FoldWhileList,Fold while a test holds returning every intermediate result,✅,pure,12.2,3070
 GeoHistogram,Geographic density histogram shading hexagonal or rectangular or triangular map tiles by count,✅,pure,11.0,3070
-LaplacianFilter,,🚫,,7.0,3070
+LaplacianFilter,Sum of second derivatives of the Gaussian-smoothed image for a radius r,✅,pure,7.0,3070
 Links,,🚫,,3.0,3070
 Postfix,Symbol for postfix display formatting,✅,pure,1.0,3070
 SeriesTermGoal,,,,12.1,3070
@@ -3080,7 +3080,7 @@ DimensionReduce,,🚫,,10.1,3121
 Dithering,,🚫,,8.0,3121
 DynamicModuleBox,,🚫,,6.0,3121
 FARIMAProcess,,🚫,,9.0,3121
-ImageLevels,,🚫,,8.0,3121
+ImageLevels,Counts the pixel values of each channel of an image,✅,pure,8.0,3121
 InverseFourierSinTransform,Inverse Fourier sine transform (the sine transform is an involution),✅,pure,4.0,3121
 LocalTime,,,,10.0,3121
 CycleIndexPolynomial,Cycle index polynomial of a permutation group in given variables,✅,pure,9.0,3124
@@ -3535,6 +3535,7 @@ Dialog,,🚫,,2.0,3612
 DiscreteShift,Discrete shift of an expression (n -> n+1),✅,pure,7.0,3612
 GaugeFaceStyle,,🚫,,9.0,3612
 HilbertCurve,Line through all cells of the 2^n x 2^n grid in Hilbert order (integer grid; DataRange maps to reals),✅,pure,11.1,3612
+GosperCurve,Line through the 7^n + 1 vertices of the order-n Gosper curve on the triangular lattice (L-system generated; orientation not verified against wolframscript),✅,pure,11.1,
 KumaraswamyDistribution,Kumaraswamy continuous distribution on the unit interval,✅,pure,8.0,3612
 LogLogisticDistribution,Log-logistic distribution with shape g and scale s,✅,pure,8.0,3612
 LongestCommonSequence,Returns the longest noncontiguous subsequence common to two strings or lists,✅,pure,7.0,3612
@@ -3872,7 +3873,7 @@ CommunityLabels,,,,9.0,3972
 CompoundElement,,,,10.1,3972
 ConoverTest,,,,8.0,3972
 DiscreteIndicator,,,,7.0,3972
-DoubleBracketingBar,,,,3.0,3972
+DoubleBracketingBar,Inert typeset form of double bars around its content,✅,pure,3.0,3972
 EdgeContract,Contract an edge of a graph merging its two endpoints into one vertex,✅,pure,10.0,3972
 EvaluationElements,,,,8.0,3972
 FindKClique,,,,9.0,3972
@@ -4007,7 +4008,7 @@ GenerateHTTPResponse,,🚫,,10.3,4104
 GroupElementPosition,Position of a permutation in the group element list,✅,pure,8.0,4104
 HTTPRedirect,,🚫,,10.0,4104
 HeunG,,,,12.1,4104
-ImageMarker,,🚫,,10.4,4104
+ImageMarker,Marker graphic placed at points in HighlightImage,✅,Symbolic,10.4,4104
 InverseTransformedRegion,,,,10.0,4104
 JaccardDissimilarity,Jaccard dissimilarity between binary vectors,✅,pure,6.0,4104
 LogBarnesG,Logarithm of the Barnes G-function (exact for integers),✅,pure,7.0,4104
@@ -6303,6 +6304,7 @@ ParallelSelect,Parallel version of Select (evaluated sequentially),✅,pure,14.2
 ParallelCases,Parallel version of Cases (evaluated sequentially),✅,pure,14.2,
 Convert`TeX`ExpressionToTeX,The converter behind TeXForm — returns the TeX of an expression as a string,✅,pure,1.0,
 Developer`ToPackedArray,Packs a full rectangular array of machine numbers into one numeric type; an optional second argument converts the leaves to Integer Real or Complex and anything unpackable is returned unchanged,✅,pure,4.0,
+Developer`FromPackedArray,Converts a packed array to a regular list; Woxi has no packed arrays so it returns the array unchanged,✅,pure,4.0,
 Internal`DynamicLibraryExtension,"Shared-library file extension of the host platform without the dot (""so"" ""dylib"" or ""dll"")",✅,pure,9.0,
 Language`ExtendedFullDefinition,All definitions a symbol carries (own down sub up default option message and attribute values) as one inert expression that can be assigned to another symbol to install them there,✅,pure,11.2,
 PacletManager`Package`loadWolframLanguageCode,Loads the Wolfram Language implementation a paclet provides for a context by reading the named file under the paclet root,✅,effectful,10.0,
@@ -6351,3 +6353,4 @@ GraphUtilities`ExpressionTreePlot,Plots an expression tree as Graphics with one 
 GraphUtilities`PageRanks,PageRank of every vertex of a graph given as a list of rules as vertex -> rank rules,✅,pure,8.0,
 GraphUtilities`VertexList,Vertices of a graph given as a list of rules,✅,pure,6.0,
 GraphUtilities`ClosenessCentrality,Closeness centrality of every vertex of a graph given as a list of rules,✅,pure,8.0,
+MultivariateStatistics`EllipsoidQuantile,Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean, c Covariance],✅,pure,8.0,

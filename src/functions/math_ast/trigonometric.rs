@@ -982,7 +982,7 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
     _ => {}
   }
   // Default: wrap in Times[-1, expr]
-  times(vec![Expr::Integer(-1), expr])
+  neg(expr)
 }
 
 /// Split a denominator into `(k, rest)` where `k > 1` is its leading positive
@@ -1033,6 +1033,44 @@ fn build_complex_float_result(
     "Complex",
     &[Expr::Real(re), Expr::Real(im)],
   )
+}
+
+/// Evaluate one of the circular/hyperbolic functions at a complex float
+/// `re + im*I` by combining the complex sine/cosine (or sinh/cosh).
+/// Returns `None` for a pure real argument or an unknown name.
+fn complex_float_trig(
+  name: &str,
+  arg: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  if !contains_float(arg) {
+    return None;
+  }
+  let (a, b) = try_extract_complex_float(arg)?;
+  if b == 0.0 {
+    return None;
+  }
+  let (s, c) = match name {
+    "Tanh" | "Coth" | "Sech" | "Csch" => (
+      (a.sinh() * b.cos(), a.cosh() * b.sin()),
+      (a.cosh() * b.cos(), a.sinh() * b.sin()),
+    ),
+    "Cot" | "Sec" | "Csc" => (
+      (a.sin() * b.cosh(), a.cos() * b.sinh()),
+      (a.cos() * b.cosh(), -(a.sin() * b.sinh())),
+    ),
+    _ => return None,
+  };
+  let div = |n: (f64, f64), d: (f64, f64)| {
+    let den = d.0 * d.0 + d.1 * d.1;
+    ((n.0 * d.0 + n.1 * d.1) / den, (n.1 * d.0 - n.0 * d.1) / den)
+  };
+  let r = match name {
+    "Tanh" => div(s, c),
+    "Coth" | "Cot" => div(c, s),
+    "Sech" | "Sec" => div((1.0, 0.0), c),
+    _ => div((1.0, 0.0), s),
+  };
+  Some(build_complex_float_result(r.0, r.1))
 }
 
 /// Check if an argument is Indeterminate or ComplexInfinity.
@@ -2132,6 +2170,9 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::BigFloat(_, _)) {
     return bigfloat_trig_ratio(&args[0], None, "Cos");
   }
+  if let Some(r) = complex_float_trig("Sec", &args[0]) {
+    return r;
+  }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_sec(k, n)
   {
@@ -2184,6 +2225,9 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Csc of a BigFloat: 1/Sin[x] at arbitrary precision.
   if matches!(&args[0], Expr::BigFloat(_, _)) {
     return bigfloat_trig_ratio(&args[0], None, "Sin");
+  }
+  if let Some(r) = complex_float_trig("Csc", &args[0]) {
+    return r;
   }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_csc(k, n)
@@ -2239,6 +2283,9 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Cot of a BigFloat: Cos[x]/Sin[x] at arbitrary precision.
   if matches!(&args[0], Expr::BigFloat(_, _)) {
     return bigfloat_trig_ratio(&args[0], Some("Cos"), "Sin");
+  }
+  if let Some(r) = complex_float_trig("Cot", &args[0]) {
+    return r;
   }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_cot(k, n)
@@ -2627,6 +2674,19 @@ pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(1) => Ok(id_expr("Infinity")),
     // InverseErf[-1] = -Infinity
     Expr::Integer(-1) => Ok(neg1(id_expr("Infinity"))),
+    // Odd on its domain: a negative rational in (-1, 0) pulls the sign out
+    // (InverseErf[-1/6] is -InverseErf[1/6]); outside the domain, and for
+    // symbolic arguments, it stays (wolframscript-verified).
+    Expr::FunctionCall { name, args: r }
+      if name == "Rational"
+        && matches!((&r[0], &r[1]), (Expr::Integer(p), Expr::Integer(q))
+          if *p < 0 && -*p < *q) =>
+    {
+      let (Expr::Integer(p), Expr::Integer(q)) = (&r[0], &r[1]) else {
+        unreachable!()
+      };
+      Ok(neg1(unevaluated("InverseErf", &[make_rational(-p, *q)])))
+    }
     // Numeric evaluation for Real arguments
     Expr::Real(f) => {
       if *f > -1.0 && *f < 1.0 {
@@ -3415,19 +3475,12 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(r);
   }
-  // ArcSin[-x] → -ArcSin[x] (odd function)
-  // Only apply for symbolic (non-numeric) arguments; for numeric arguments
-  // the existing Exact/Real paths below produce the canonical form.
-  if !matches!(
-    &args[0],
-    Expr::Integer(_)
-      | Expr::Real(_)
-      | Expr::BigInteger(_)
-      | Expr::BigFloat(_, _)
-  ) && !matches!(
-    &args[0],
-    Expr::FunctionCall { name, .. } if name == "Rational"
-  ) && let Some(neg) = try_extract_negated(&args[0])
+  // ArcSin[-x] → -ArcSin[x] (odd function), for exact numbers too:
+  // ArcSin[-1/3] is -ArcSin[1/3] and ArcSin[-1/2] is -Pi/6. Inexact
+  // arguments evaluate numerically below.
+  if !matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
+    && !matches!(&args[0], Expr::Integer(-1))
+    && let Some(neg) = try_extract_negated(&args[0])
   {
     let inner = crate::evaluator::evaluate_function_call_ast("ArcSin", &[neg])?;
     // Build -inner and let the evaluator simplify
@@ -4396,6 +4449,9 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => return Ok(Expr::Real(f.tanh())),
     _ => {}
   }
+  if let Some(r) = complex_float_trig("Tanh", &args[0]) {
+    return r;
+  }
   // Tanh[Log[u]] = (u^2 - 1)/(u^2 + 1)
   if let Some(res) = hyperbolic_of_log("Tanh", &args[0]) {
     return res;
@@ -4456,6 +4512,9 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {}
   }
+  if let Some(r) = complex_float_trig("Coth", &args[0]) {
+    return r;
+  }
   // Coth[Log[u]] = (u^2 + 1)/(u^2 - 1)
   if let Some(res) = hyperbolic_of_log("Coth", &args[0]) {
     return res;
@@ -4505,6 +4564,9 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => return Ok(Expr::Integer(1)),
     Expr::Real(f) => return Ok(Expr::Real(1.0 / f.cosh())),
     _ => {}
+  }
+  if let Some(r) = complex_float_trig("Sech", &args[0]) {
+    return r;
   }
   // Sech[Log[u]] = (2 u)/(u^2 + 1)
   if let Some(res) = hyperbolic_of_log("Sech", &args[0]) {
@@ -4564,6 +4626,9 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(id_expr("ComplexInfinity"));
     }
     return Ok(Expr::Real(1.0 / s));
+  }
+  if let Some(r) = complex_float_trig("Csch", &args[0]) {
+    return r;
   }
   // Csch[Log[u]] = (2 u)/(u^2 - 1)
   if let Some(res) = hyperbolic_of_log("Csch", &args[0]) {
@@ -4937,6 +5002,18 @@ pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(folded) = fold_inverse_of_forward("ArcCsc", &args[0]) {
     return Ok(folded);
   }
+  // ArcCsc is odd: ArcCsc[-x] → -ArcCsc[x] (ArcCsc[-5] is -ArcCsc[5],
+  // ArcCsc[-2] is -Pi/6). Inexact arguments evaluate numerically below.
+  if !matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
+    && !matches!(&args[0], Expr::Integer(-1))
+    && let Some(neg) = try_extract_negated(&args[0])
+  {
+    let inner = crate::evaluator::evaluate_function_call_ast("ArcCsc", &[neg])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), inner],
+    );
+  }
   match &args[0] {
     // ArcCsc[0] = ArcSin[1/0] = ComplexInfinity.
     Expr::Integer(0) => {
@@ -4954,8 +5031,9 @@ pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )?;
     let result =
       crate::evaluator::evaluate_function_call_ast("ArcSin", &[reciprocal])?;
-    // If ArcSin returned an exact result (not unevaluated), return it
-    if !matches!(&result, Expr::FunctionCall { name, .. } if name == "ArcSin") {
+    // Only a closed form is kept; an ArcSin that stayed symbolic leaves
+    // ArcCsc unevaluated.
+    if !expr_contains_head(&result, "ArcSin") {
       return Ok(result);
     }
   }
@@ -5905,7 +5983,7 @@ fn make_plus(a: &Expr, b: &Expr) -> Expr {
 }
 
 fn make_minus(a: &Expr, b: &Expr) -> Expr {
-  plus(vec![a.clone(), times(vec![Expr::Integer(-1), b.clone()])])
+  plus(vec![a.clone(), neg(b.clone())])
 }
 
 fn make_divide(a: &Expr, b: &Expr) -> Expr {

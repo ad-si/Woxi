@@ -726,6 +726,24 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_held_assignment_operand_keeps_parentheses() {
+    // An assignment or `;` sequence nested in arithmetic must keep its
+    // parentheses when printed, or the text re-parses as an assignment to
+    // the whole arithmetic expression (the Demonstrations idiom
+    // `x - (h = y) Cos[t]` inside a Manipulate body).
+    clear_state();
+    assert_eq!(interpret("Hold[x - (h = 2)]").unwrap(), "Hold[x - (h = 2)]");
+    assert_eq!(interpret("Hold[-(h = 3)]").unwrap(), "Hold[-(h = 3)]");
+    assert_eq!(interpret("Hold[(h = 3)^2]").unwrap(), "Hold[(h = 3)^2]");
+    assert_eq!(
+      interpret("Hold[a - (h = b) c]").unwrap(),
+      "Hold[a - (h = b)*c]"
+    );
+    assert_eq!(interpret("Hold[(a; b)^2]").unwrap(), "Hold[(a; b)^2]");
+    assert_eq!(interpret("Hold[a*(h := b)]").unwrap(), "Hold[a*(h := b)]");
+  }
+
+  #[test]
   fn test_arrow_named_characters_decode() {
     // The vertical/double arrow family must decode to Unicode (the
     // Demonstrations notebooks use \[DoubleDownArrow] as a "maps to"
@@ -1080,6 +1098,47 @@ mod interpreter_tests {
     );
   }
 
+  /// `TabView[<|label1 -> pane1, …|>]` (tabs given as an Association) is
+  /// the same view as the list-of-rules form and shows its first tab.
+  #[test]
+  fn test_tabview_association_shows_first_tab() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "TabView[<|\"first\" -> Plot[Sin[x], {x, 0, 4}, ImageSize -> 320], \
+       \"second\" -> Plot[Cos[x], {x, 0, 4}, ImageSize -> 480]|>]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(svg.starts_with("<svg width=\"320\""));
+  }
+
+  /// A `TabView` tab holding a `LocatorPane` shows the picture it wraps.
+  #[test]
+  fn test_tabview_locator_pane_tab_is_drawn() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "TabView[<|\"a\" -> LocatorPane[{{0, 0}}, \
+       Graphics[Circle[], ImageSize -> 300]], \"b\" -> 2|>, 1]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(svg.starts_with("<svg"));
+  }
+
+  /// A `TabView` tab that is a `Dynamic[Module[…, plot]]` (held, so it only
+  /// *computes* a picture) shows that picture, not the symbolic call.
+  #[test]
+  fn test_tabview_dynamic_computed_plot_tab_is_drawn() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "TabView[<|\"a\" -> 1, \"b\" -> Dynamic[Module[{u = 2}, \
+       ListLinePlot[{1, u, 3}, ImageSize -> 310]]]|>, 2]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(svg.starts_with("<svg width=\"310\""));
+  }
+
   /// A `TabView` pane can also be given in the front end's own `{key,
   /// label -> content}` "Tabs" layout-tool form — a 2-element `List`
   /// pairing an explicit numeric key with a `label -> content` rule —
@@ -1214,6 +1273,26 @@ mod interpreter_tests {
        EventHandler[...] source echo",
     );
     assert!(svg.contains("<svg"));
+  }
+
+  /// The same click-to-edit idiom, but with the `EventHandler`s nested as
+  /// items of a `Column` inside a `Grid` cell (a puzzle board with a digit
+  /// picker below it). Each nested handler must draw its content — the
+  /// board graphic and the picker grid — not its source text.
+  #[test]
+  fn test_event_handler_items_in_column_in_grid_render() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Grid[{{Column[{\
+         EventHandler[Dynamic[Graphics[{Red, Rectangle[]}]], \
+           \"MouseClicked\" :> Null], \
+         EventHandler[Grid[{{1, 2, 3}}, Frame -> All], \
+           \"MouseClicked\" :> Null]}]}}]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected a rendered layout");
+    assert!(!svg.contains("EventHandler"), "raw source leaked: {svg}");
+    assert!(!svg.contains("MouseClicked"), "raw source leaked: {svg}");
   }
 
   /// Script/CLI mode keeps EventHandler's canonical symbolic form, matching
@@ -1541,6 +1620,37 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_contour_plot_bar_legend_and_contour_labels() {
+    // `PlotLegends -> Automatic` widens the picture by a colour-bar strip
+    // and `ContourLabels -> True` writes each level on its contour line.
+    clear_state();
+    let plain = interpret_with_stdout("ContourPlot[x y, {x, 0, 3}, {y, 0, 3}]")
+      .unwrap()
+      .graphics
+      .expect("ContourPlot should produce a graphics SVG");
+    let svg = interpret_with_stdout(
+      "ContourPlot[x y, {x, 0, 3}, {y, 0, 3}, PlotLegends -> Automatic, \
+       ContourLabels -> True]",
+    )
+    .unwrap()
+    .graphics
+    .expect("ContourPlot should produce a graphics SVG");
+    assert!(plain.starts_with("<svg width=\"360\""), "{plain}");
+    assert!(
+      svg.starts_with("<svg width=\"413\""),
+      "legend widens: {svg}"
+    );
+    assert!(
+      svg.matches("<text").count() > plain.matches("<text").count() + 8,
+      "legend ticks and contour labels add text:\n{svg}"
+    );
+    assert!(
+      svg.contains("paint-order=\"stroke\""),
+      "contour labels: {svg}"
+    );
+  }
+
+  #[test]
   fn test_show_contour_plot_with_directive_list_contour_style() {
     // Regression: `Show[ContourPlot[…], Graphics[…]]` where the
     // ContourPlot's `ContourStyle` is a `Directive[{…}]` (single List
@@ -1561,6 +1671,58 @@ mod interpreter_tests {
     assert!(
       svg.contains("rgb(64,110,209)"),
       "merged ContourPlot must keep its Directive[{{…}}] ContourStyle color:\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_contour_plot_equations_use_per_contour_styles() {
+    // Regression: `ContourStyle -> {{Black, Thick}, {Red, Thick}}` on an
+    // equation-form ContourPlot styled every curve alike (the last entry);
+    // each entry must instead style its own equation's curve.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "ContourPlot[{x == y, x^2 + y^2 == 1}, {x, -1, 1}, {y, -1, 1}, \
+       ContourStyle -> {{Black, Thick}, {Red, Thick}}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("ContourPlot should produce a graphics SVG");
+    assert!(
+      svg.contains("stroke=\"rgb(0,0,0)\" stroke-width=\"20.0\""),
+      "first equation must be black:\n{svg}"
+    );
+    assert!(
+      svg.contains("stroke=\"rgb(255,0,0)\" stroke-width=\"20.0\""),
+      "second equation must be red:\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_contour_plot_equations_use_per_contour_directives() {
+    // Regression: `ContourStyle -> {Directive[…], Directive[…]}` on an
+    // equation-form ContourPlot styled every curve alike (the default
+    // grey); each Directive must style its own equation's curve, and a
+    // `Dashed` inside it must draw a dashed line.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "ContourPlot[{x == y, x^2 + y^2 == 1}, {x, -1, 1}, {y, -1, 1}, \
+       ContourStyle -> {Directive[Red, Thick, Dashed], \
+       Directive[Blue, Thick]}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("ContourPlot should produce a graphics SVG");
+    assert!(
+      svg.contains(
+        "stroke=\"rgb(255,0,0)\" stroke-width=\"20.0\" stroke-dasharray="
+      ),
+      "first equation must be a dashed red line:\n{svg}"
+    );
+    assert!(
+      svg.contains(
+        "stroke=\"rgb(0,0,255)\" stroke-width=\"20.0\" stroke-linecap"
+      ),
+      "second equation must be a solid blue line:\n{svg}"
     );
   }
 
@@ -2217,6 +2379,23 @@ mod interpreter_tests {
     assert_eq!(bytes.len(), 44 + (8000 * 7 / 10) * 2);
   }
 
+  #[test]
+  fn test_emit_sound_returns_null_and_captures_audio() {
+    // EmitSound[sound] returns Null (no "not implemented" warning) and hands
+    // the synthesized audio to visual hosts, e.g. a Manipulate button.
+    clear_state();
+    let r =
+      interpret_with_stdout("EmitSound[Sound[SoundNote[0, 1, \"Flute\"]]]")
+        .unwrap();
+    assert_eq!(r.result, "\0");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected warnings: {:?}",
+      r.warnings
+    );
+    assert!(r.sound.is_some(), "EmitSound should capture playable audio");
+  }
+
   /// Decode the `sound` channel of a visual-mode evaluation to WAV bytes.
   fn sound_wav_bytes(code: &str) -> Vec<u8> {
     clear_state();
@@ -2528,6 +2707,36 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_ellipsoid_quantile_is_scaled_covariance_ellipsoid() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "MultivariateStatistics`EllipsoidQuantile[\
+         MultinormalDistribution[{1, 2}, {{4., 0.}, {0., 1.}}], 0.5]"
+      )
+      .unwrap(),
+      "Ellipsoid[{1, 2}, {{5.545177444479556, 0.}, {0., 1.386294361119889}}]"
+    );
+  }
+
+  #[test]
+  fn test_graphics_draws_ellipsoid_regions() {
+    // Regression: 2D Ellipsoid primitives (e.g. the quantile ellipses of a
+    // multinormal distribution) were silently dropped from Graphics.
+    clear_state();
+    let axes =
+      interpret("ExportString[Graphics[Ellipsoid[{0, 0}, {2, 1}]], \"SVG\"]")
+        .unwrap();
+    assert!(axes.contains("<ellipse"), "{axes}");
+    let cov = interpret(
+      "ExportString[Graphics[Ellipsoid[{0, 0}, {{1.4, 0.4}, {0.4, 1.4}}]], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(cov.contains("<polygon"), "{cov}");
+  }
+
+  #[test]
   fn test_vector_plot_epilog_draws_extra_primitives() {
     // Regression: VectorPlot silently dropped its Epilog option entirely,
     // so markers a Wolfram Demonstration draws over the field (e.g. the
@@ -2657,6 +2866,47 @@ mod interpreter_tests {
     .unwrap();
     assert!(!svg.contains("Column["), "Column source leaked: {svg}");
     assert!(svg.contains("one") && svg.contains("two"));
+  }
+
+  #[test]
+  fn test_graphics_text_pane_wraps_to_width() {
+    // Regression: `Text[Pane[str, width], pos]` (an Inset's label sized by
+    // a slider) drew the literal `Pane[…]` source on one clipped line
+    // instead of the text wrapped to the pane's width.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Text[Pane[\"alpha beta gamma delta epsilon zeta\", 100], {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Pane["), "Pane source leaked: {svg}");
+    assert!(
+      svg.contains(">alpha beta<"),
+      "first line not wrapped: {svg}"
+    );
+    assert!(svg.contains(">gamma delta<"), "second line missing: {svg}");
+
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Text[Pane[\"alpha beta\"], {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">alpha beta<") && !svg.contains("Pane["));
+  }
+
+  #[test]
+  fn test_graphics_scaled_inset_anchor_does_not_stretch_range() {
+    // Regression: an `ImageScaled` inset anchor (a fraction such as 0.5)
+    // was taken for a data point, so the range grew to include it and a
+    // position-less `Text` at the origin landed in a corner.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Text[\"hi\"], Inset[Graphics[Disk[], ImageSize -> 5], ImageScaled[{0.5, 0.5}]]}, ImageSize -> 144], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<text x=\"72.00\" y=\"72.00\""),
+      "label not centred: {svg}"
+    );
   }
 
   #[test]
@@ -3203,6 +3453,25 @@ mod interpreter_tests {
     assert!(
       plain.contains("cy=\"288.00\""),
       "expected the asymmetric range to shift the circle's center: {plain}"
+    );
+  }
+
+  #[test]
+  fn test_mouseover_text_label_shows_static_appearance() {
+    // `Text[Mouseover[label, hover], pos]` — a Demonstration labels a
+    // corner with a rounded value that swaps to a framed full-precision
+    // value on hover. Regression: the label parser typeset the wrapper's
+    // own textual form (`Mouseover[…]`) as literal text; a static picture
+    // must show `label` only.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Text[Mouseover[Style[NumberForm[90., {20, 1}], 18], Framed[\"hover\"]], {1, 1}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">90.0<"), "label lost: {svg}");
+    assert!(
+      !svg.contains("Mouseover") && !svg.contains("hover"),
+      "Mouseover wrapper leaked as literal text: {svg}"
     );
   }
 
@@ -4318,6 +4587,37 @@ mod interpreter_tests {
     assert_eq!(interpret("{a, b} /. <||>").unwrap(), "{a, b}");
   }
 
+  // A literal left side replaces only what structurally equals it: negative
+  // numbers are atomic, so their digits are not a match (the textual fallback
+  // turned `-3 /. 3 -> 2` into `-2`).
+  #[test]
+  fn test_replace_all_literal_does_not_match_inside_negative_numbers() {
+    assert_eq!(interpret("-3 /. 3 -> 2").unwrap(), "-3");
+    assert_eq!(
+      interpret("{4, -5, -5, -3} /. 3 -> 2").unwrap(),
+      "{4, -5, -5, -3}"
+    );
+    assert_eq!(interpret("{-3, 3} /. 3 -> 2").unwrap(), "{-3, 2}");
+    assert_eq!(interpret("-3.5 /. 3.5 -> 7").unwrap(), "-3.5");
+    assert_eq!(interpret("-1/2 /. 1/2 -> 7").unwrap(), "-1/2");
+    assert_eq!(interpret("Hold[-3] /. 3 -> 2").unwrap(), "Hold[-3]");
+  }
+
+  // `Derivative[1][y]` matches inside its application `y'[t]`, whichever way
+  // it is stored.
+  #[test]
+  fn test_replace_all_literal_derivative_inside_its_application() {
+    assert_eq!(interpret("y'[2] /. Derivative[1][y] -> f").unwrap(), "f[2]");
+    assert_eq!(
+      interpret("y''[t] + y'[t] /. Derivative[1][y] -> g").unwrap(),
+      "g[t] + Derivative[2][y][t]"
+    );
+    assert_eq!(
+      interpret("y'[2] /. Derivative[1][y] -> (#^2 &)").unwrap(),
+      "4"
+    );
+  }
+
   #[test]
   fn test_replace_all_rewrites_head_symbol() {
     // ReplaceAll treats a compound's head as an ordinary subexpression, so a
@@ -4866,6 +5166,17 @@ mod interpreter_tests {
       interpret("{0, If[True, Unevaluated[Sequence[]], {}], 9}").unwrap(),
       "{0, 9}"
     );
+    // An empty Sequence nested in a held expression keeps its spelling in
+    // InputForm, so the printed code re-parses (`{} -> Sequence[]` used to
+    // print as `{} -> `).
+    assert_eq!(
+      interpret("ToString[Hold[{} -> Sequence[]], InputForm]").unwrap(),
+      "Hold[{} -> Sequence[]]"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[f[a, Sequence[]]], InputForm]").unwrap(),
+      "Hold[f[a, Sequence[]]]"
+    );
     assert_eq!(
       interpret("g[x_] := Unevaluated[Sequence[1, x + 1]]; {0, g[5], 9}")
         .unwrap(),
@@ -5263,6 +5574,28 @@ mod interpreter_tests {
         r.warnings
       );
     }
+  }
+
+  #[test]
+  fn control_active_resolves_when_a_saved_definition_makes_it_hold_all() {
+    // A Demonstration saved with `SaveDefinitions -> True` restores
+    // `Attributes[ControlActive] = {HoldAll, ReadProtected}`. The held
+    // inactive form must still be evaluated — including Module locals in a
+    // Table step — rather than left raw for the iterator check to reject.
+    let r = interpret_with_stdout(
+      "Attributes[ControlActive] = {HoldAll, ReadProtected}; \
+       {ControlActive[1 + 1, 2 + 2], \
+        Module[{L = 3, e}, e = L/3; \
+         Length[Table[x, {x, -L - e, L + e, \
+          ControlActive[4 (2 L + 2 e), (2 L + 2 e)/4]}]]]}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{4, 5}");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected warnings: {:?}",
+      r.warnings
+    );
   }
 
   #[test]

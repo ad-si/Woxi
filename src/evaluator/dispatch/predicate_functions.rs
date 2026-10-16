@@ -81,7 +81,7 @@ fn root_of_unity_q(z: &Expr) -> bool {
     if (pr - 1.0).abs() < 1e-9 && pi.abs() < 1e-9 {
       // Candidate order n found; confirm exactly with PossibleZeroQ[z^n - 1].
       let zn = pow(z.clone(), Expr::Integer(n as i128));
-      let diff = call("Plus", vec![zn, Expr::Integer(-1)]);
+      let diff = plus(vec![zn, Expr::Integer(-1)]);
       if let Ok(result) = crate::functions::predicate_ast::possible_zero_q_ast(
         std::slice::from_ref(&diff),
       ) && matches!(&result, Expr::Identifier(s) if s == "True")
@@ -313,13 +313,14 @@ pub fn dispatch_predicate_functions(
       }
       // A fresh variable avoids any collision with symbols in the input.
       let var = id_expr("AlgebraicIntegerQ$x");
-      let mp = match evaluate_expr_to_expr(&call(
-        "MinimalPolynomial",
-        vec![args[0].clone(), var.clone()],
-      )) {
-        Ok(p) => p,
-        Err(e) => return Some(Err(e)),
-      };
+      let mp =
+        match crate::functions::polynomial_ast::minimal_polynomial_core(&[
+          args[0].clone(),
+          var.clone(),
+        ]) {
+          Ok(p) => p,
+          Err(e) => return Some(Err(e)),
+        };
       // MinimalPolynomial stays unevaluated for transcendental or non-numeric
       // inputs (Pi, symbols, …), which are not algebraic integers.
       if matches!(&mp, Expr::FunctionCall { name, .. }

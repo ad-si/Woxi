@@ -231,9 +231,8 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let ratio = build_div(&lcp, dlc);
         let t = eval(build_mul(&ratio, &var_pow(dp - ddeg)))
           .unwrap_or_else(|_| build_mul(&ratio, &var_pow(dp - ddeg)));
-        quotients[i] =
-          eval(call("Plus", vec![quotients[i].clone(), t.clone()]))
-            .unwrap_or_else(|_| quotients[i].clone());
+        quotients[i] = eval(plus(vec![quotients[i].clone(), t.clone()]))
+          .unwrap_or_else(|_| quotients[i].clone());
         p = expand(&build_sub(&p, &build_mul(&t, de)));
         reduced = true;
         break;
@@ -243,7 +242,7 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Move the leading term of p into the remainder.
       let lt = eval(build_mul(&lcp, &var_pow(dp)))
         .unwrap_or_else(|_| build_mul(&lcp, &var_pow(dp)));
-      remainder = eval(call("Plus", vec![remainder.clone(), lt.clone()]))
+      remainder = eval(plus(vec![remainder.clone(), lt.clone()]))
         .unwrap_or_else(|_| remainder.clone());
       p = expand(&build_sub(&p, &lt));
     }
@@ -424,8 +423,7 @@ fn expr_to_mexp_terms(expr: &Expr, vars: &[Expr]) -> Option<Vec<(MExp, Expr)>> {
       0 => Expr::Integer(1),
       1 => coef_factors.remove(0),
       _ => {
-        crate::evaluator::evaluate_expr_to_expr(&call("Times", coef_factors))
-          .ok()?
+        crate::evaluator::evaluate_expr_to_expr(&times(coef_factors)).ok()?
       }
     };
     mexp_add_term(&mut poly, mono, coeff)?;
@@ -453,12 +451,12 @@ fn mexp_terms_to_expr(poly: &[(MExp, Expr)], vars: &[Expr]) -> Expr {
     }
     terms.push(match factors.len() {
       1 => factors.remove(0),
-      _ => call("Times", factors),
+      _ => times(factors),
     });
   }
   let sum = match terms.len() {
     1 => terms.remove(0),
-    _ => call("Plus", terms),
+    _ => plus(terms),
   };
   crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum)
 }
@@ -529,10 +527,8 @@ fn polynomial_reduce_multivar_symbolic(
         for (dm, dc) in &div_terms[i][1..] {
           let sm: MExp =
             dm.iter().zip(shift.iter()).map(|(a, b)| a + b).collect();
-          let sc = eval(&call(
-            "Times",
-            vec![Expr::Integer(-1), factor.clone(), dc.clone()],
-          ));
+          let sc =
+            eval(&times(vec![Expr::Integer(-1), factor.clone(), dc.clone()]));
           mexp_add_term(&mut p, sm, sc)?;
         }
         reduced = true;
@@ -660,15 +656,12 @@ fn build_div(a: &Expr, b: &Expr) -> Expr {
 
 /// Build a multiplication expression
 pub fn build_mul(a: &Expr, b: &Expr) -> Expr {
-  call("Times", vec![a.clone(), b.clone()])
+  times(vec![a.clone(), b.clone()])
 }
 
 /// Build a subtraction expression
 pub fn build_sub(a: &Expr, b: &Expr) -> Expr {
-  call(
-    "Plus",
-    vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
-  )
+  plus(vec![a.clone(), neg(b.clone())])
 }
 
 /// Build polynomial from symbolic coefficients
@@ -685,10 +678,7 @@ fn coeffs_to_expr_symbolic(coeffs: &[Expr], var: &str) -> Expr {
       if c_str == "1" {
         Expr::Identifier(var.to_string())
       } else {
-        call(
-          "Times",
-          vec![coeff.clone(), Expr::Identifier(var.to_string())],
-        )
+        times(vec![coeff.clone(), Expr::Identifier(var.to_string())])
       }
     } else {
       let var_power =
@@ -696,7 +686,7 @@ fn coeffs_to_expr_symbolic(coeffs: &[Expr], var: &str) -> Expr {
       if c_str == "1" {
         var_power
       } else {
-        call("Times", vec![coeff.clone(), var_power])
+        times(vec![coeff.clone(), var_power])
       }
     };
     terms.push(term);
@@ -707,6 +697,6 @@ fn coeffs_to_expr_symbolic(coeffs: &[Expr], var: &str) -> Expr {
   } else if terms.len() == 1 {
     terms.into_iter().next().unwrap()
   } else {
-    call("Plus", terms)
+    plus(terms)
   }
 }

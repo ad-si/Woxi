@@ -70,10 +70,7 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let num = if name == "Sin" {
       times(vec![z.clone(), call1("Sin", a)])
     } else {
-      times(vec![
-        z.clone(),
-        plus(vec![z.clone(), times(vec![Expr::Integer(-1), cos_a])]),
-      ])
+      times(vec![z.clone(), plus(vec![z.clone(), neg(cos_a)])])
     };
     return Ok(div2(num, den));
   }
@@ -110,8 +107,7 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if c != 1 || p != 1 || q != 1 {
       return Ok(unevaluated(args));
     }
-    let a_minus_z =
-      plus(vec![a.clone(), times(vec![Expr::Integer(-1), z.clone()])]);
+    let a_minus_z = plus(vec![a.clone(), neg(z.clone())]);
     return Ok(match k {
       // -(z/(a - z))
       0 => neg1(div2(z.clone(), a_minus_z)),
@@ -376,14 +372,6 @@ fn as_power(expr: &Expr) -> Option<(Expr, Expr)> {
     } => Some(((**left).clone(), (**right).clone())),
     _ => None,
   }
-}
-
-fn plus(terms: Vec<Expr>) -> Expr {
-  call("Plus", terms)
-}
-
-fn times(factors: Vec<Expr>) -> Expr {
-  call("Times", factors)
 }
 
 fn power(base: Expr, exp: i128) -> Expr {
@@ -1045,7 +1033,6 @@ pub fn fourier_coefficient_ast(
       call("Rational", vec![Expr::Integer(f.0), Expr::Integer(f.1)])
     }
   };
-  let times = |fs: Vec<Expr>| call("Times", fs);
   let pow = |b: Expr, e: i128| pow2(b, Expr::Integer(e));
   let i_unit = || id_expr("I");
   let pi = || const_expr("Pi");
@@ -1088,7 +1075,7 @@ pub fn fourier_coefficient_ast(
     match terms.len() {
       0 => Expr::Integer(0),
       1 => terms.remove(0),
-      _ => call("Plus", terms),
+      _ => plus(terms),
     }
   };
 
@@ -1121,19 +1108,16 @@ pub fn fourier_coefficient_ast(
   }
   // t^3: (c3*I*(-1)^n*(-6 + n^2*Pi^2))/n^3
   if let Some(ci) = coeff_i(c3) {
-    let bracket = call(
-      "Plus",
-      vec![
-        Expr::Integer(-6),
-        times(vec![pow(n_expr(), 2), pow(pi(), 2)]),
-      ],
-    );
+    let bracket = plus(vec![
+      Expr::Integer(-6),
+      times(vec![pow(n_expr(), 2), pow(pi(), 2)]),
+    ]);
     general_terms.push(div2(times(vec![ci, m1n(), bracket]), pow(n_expr(), 3)));
   }
   let general = match general_terms.len() {
     0 => Expr::Integer(0),
     1 => general_terms.remove(0),
-    _ => call("Plus", general_terms),
+    _ => plus(general_terms),
   };
 
   // Numeric n: pick the branch and evaluate
@@ -1203,8 +1187,6 @@ pub fn fourier_sin_cos_coefficient_ast(
   }
   let (k, c) = nonzero[0];
 
-  let times = |fs: Vec<Expr>| call("Times", fs);
-  let plus = |ts: Vec<Expr>| call("Plus", ts);
   let pow = |b: Expr, e: i128| pow2(b, Expr::Integer(e));
   let pi = || const_expr("Pi");
   let n_e = || n_arg.clone();

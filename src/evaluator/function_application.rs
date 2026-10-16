@@ -119,6 +119,13 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   evaluate_expr_to_expr(&result)
 }
 
+thread_local! {
+  /// Non-zero while a plotting head evaluates its body with the plot
+  /// variables unbound (see `eval_body_vars_symbolic`).
+  pub(crate) static SYMBOLIC_PLOT_PROBE: std::cell::Cell<usize> =
+    const { std::cell::Cell::new(0) };
+}
+
 /// Largest slot index `n` referenced by `#n`/`##n` in `expr`. Returns 0 when
 /// the body uses no slots. SlotSequence `##` (== `##1`) counts as slot 1.
 /// The name of one `Compile` argument spec and whether its declared element
@@ -797,11 +804,11 @@ pub fn apply_function_to_arg(
         new_args.extend(args.iter().cloned());
         return evaluate_function_call_ast("Nearest", &new_args);
       }
-      // Nearest[data] is a NearestFunction; applying it forwards to the direct
-      // form: Nearest[data][x] -> Nearest[data, x].
-      if name == "Nearest" && args.len() == 1 {
-        let mut new_args = args.to_vec();
-        new_args.push(arg.clone());
+      // Nearest[data, opts…] is a NearestFunction; applying it forwards to the
+      // direct form: Nearest[data, opts…][x] -> Nearest[data, x, opts…].
+      if name == "Nearest" && is_nearest_function_head(args) {
+        let mut new_args = vec![args[0].clone(), arg.clone()];
+        new_args.extend(args[1..].iter().cloned());
         return evaluate_function_call_ast("Nearest", &new_args);
       }
       // Distribution operator forms: CDF[dist][x] -> CDF[dist, x], and the
@@ -1274,21 +1281,22 @@ fn compose_and_evaluate<'a>(
   crate::evaluator::evaluate_expr_to_expr(&built[0])
 }
 
-/// `Derivative[0, …, 1, …, 0][Max | Min][x1, …, xk]` at real numeric points:
-/// the partial derivative is `1` for the slot holding the unique extremum and
-/// `0` for every other slot. A tie is a kink, so it stays inert (`None`).
+/// `Derivative[n1, …, nk][Max | Min][x1, …, xk]` at real numeric points:
+/// `Max` and `Min` are piecewise linear, so a first-order partial is `1` for
+/// the slot holding the unique extremum and `0` for every other slot, and any
+/// higher total order is `0`. A tie is a kink, so it stays inert (`None`).
 fn apply_extremum_partial_derivative(
   func_name: &str,
   orders: &[i128],
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
-  let slot = {
-    let mut ones = orders.iter().enumerate().filter(|(_, n)| **n == 1);
-    let (slot, _) = ones.next()?;
-    if ones.next().is_some() || orders.iter().any(|n| *n > 1) {
-      return None;
-    }
-    slot
+  let total: i128 = orders.iter().sum();
+  let slot = if total == 1 {
+    orders.iter().position(|n| *n == 1)?
+  } else if total > 1 {
+    0
+  } else {
+    return None;
   };
   let values: Vec<f64> = args
     .iter()
@@ -1310,6 +1318,9 @@ fn apply_extremum_partial_derivative(
     .any(|(i, v)| i != best && *v == values[best]);
   if tied {
     return None;
+  }
+  if total > 1 {
+    return Some(Ok(Expr::Integer(0)));
   }
   Some(Ok(Expr::Integer(i128::from(slot == best))))
 }
@@ -2372,6 +2383,21 @@ pub fn apply_curried_call(
         other => vec![other],
       };
       let body = &func_args[1];
+      // While a plot probes its body with the plot variables still free,
+      // running the compiled body on those symbols would unroll every
+      // iteration symbolically (exponential in the iteration count). Leave
+      // the call unevaluated; it is evaluated per numeric sample instead.
+      if SYMBOLIC_PLOT_PROBE.with(|p| p.get() > 0)
+        && specs.iter().zip(args.iter()).any(|(spec, arg)| {
+          compile_spec_rank(spec) == 0
+            && matches!(arg, Expr::Identifier(_) | Expr::FunctionCall { .. })
+        })
+      {
+        return Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        });
+      }
       let bound: Vec<(String, Expr)> = specs
         .iter()
         .zip(args.iter())
@@ -2489,11 +2515,12 @@ pub fn apply_curried_call(
       // form: Nearest[data][x] -> Nearest[data, x], and
       // Nearest[data][x, n] -> Nearest[data, x, n].
       if name == "Nearest"
-        && func_args.len() == 1
+        && is_nearest_function_head(func_args)
         && (1..=2).contains(&args.len())
       {
-        let mut new_args = func_args.to_vec();
+        let mut new_args = vec![func_args[0].clone()];
         new_args.extend(args.iter().cloned());
+        new_args.extend(func_args[1..].iter().cloned());
         return evaluate_function_call_ast("Nearest", &new_args);
       }
       if is_subject_first_operator(name)
@@ -3230,12 +3257,11 @@ fn apply_transformation_function(
       });
     };
     // Dot product of row with homogeneous vector
-    let dot = call(
-      "Plus",
+    let dot = plus(
       row
         .iter()
         .zip(hom.iter())
-        .map(|(a, b)| call("Times", vec![a.clone(), b.clone()]))
+        .map(|(a, b)| times(vec![a.clone(), b.clone()]))
         .collect(),
     );
     result.push(evaluate_expr_to_expr(&dot)?);
@@ -3249,12 +3275,11 @@ fn apply_transformation_function(
     && let Expr::List(last) = &rows[n]
     && last.len() == hom.len()
   {
-    let h = evaluate_expr_to_expr(&call(
-      "Plus",
+    let h = evaluate_expr_to_expr(&plus(
       last
         .iter()
         .zip(hom.iter())
-        .map(|(a, b)| call("Times", vec![a.clone(), b.clone()]))
+        .map(|(a, b)| times(vec![a.clone(), b.clone()]))
         .collect(),
     ))?;
     // Only rescale when the homogeneous coordinate is not the constant 1.
@@ -3266,4 +3291,16 @@ fn apply_transformation_function(
   }
 
   Ok(Expr::List(result.into()))
+}
+
+/// True for the arguments of a `NearestFunction`-style head
+/// `Nearest[data, opts…]`: the data followed only by options, so applying it
+/// to a target forwards to `Nearest[data, x, opts…]`.
+fn is_nearest_function_head(args: &[Expr]) -> bool {
+  !args.is_empty()
+    && args[1..].iter().all(|a| {
+      matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        || matches!(a, Expr::FunctionCall { name, args }
+          if (name == "Rule" || name == "RuleDelayed") && args.len() == 2)
+    })
 }

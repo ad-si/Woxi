@@ -53,7 +53,7 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Compute 1 - a*q^k
     let factor = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
       Expr::Integer(1),
-      times(vec![Expr::Integer(-1), aqk]),
+      neg(aqk),
     ]))?;
     // Multiply into result
     result =
@@ -195,10 +195,7 @@ fn mittag_leffler_two_arg(
     match a {
       0 => {
         // 1/(1 - z)
-        let one_minus_z = plus(vec![
-          Expr::Integer(1),
-          times(vec![Expr::Integer(-1), z.clone()]),
-        ]);
+        let one_minus_z = plus(vec![Expr::Integer(1), neg(z.clone())]);
         return crate::evaluator::evaluate_expr_to_expr(&pow(
           one_minus_z,
           Expr::Integer(-1),
@@ -1083,17 +1080,9 @@ pub fn struve_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n_expr = &args[0];
   let z_expr = &args[1];
 
-  // Extract numeric values
-  let n_val = match n_expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    _ => None,
-  };
-  let z_val = match z_expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    _ => None,
-  };
+  // Extract numeric values (an exact order like 1/3 included)
+  let n_val = expr_to_f64(n_expr);
+  let z_val = expr_to_f64(z_expr);
 
   // Special case: StruveH[n, 0] for non-negative integer n => 0
   if matches!(z_expr, Expr::Integer(0))
@@ -1133,41 +1122,21 @@ pub fn struve_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("StruveH", args))
 }
 
-/// Compute Struve H_n(z) using series expansion.
-///
-/// H_n(z) = sum_{m=0}^{inf} (-1)^m / (Gamma(m + 3/2) * Gamma(m + n + 3/2)) * (z/2)^(2m+n+1)
+/// Machine Struve H_n(z) for real n and z (see [`struve_f64`]).
 fn struve_h(n: f64, z: f64) -> f64 {
-  // Special case: z = 0
   if z == 0.0 {
-    if n >= -1.0 {
-      return 0.0;
-    }
-    // For n < -1 with z=0, it may be divergent
-    return f64::NAN;
+    // For n < -1 with z = 0 the series diverges.
+    return if n >= -1.0 { 0.0 } else { f64::NAN };
   }
-
-  let half_z = z / 2.0;
-
-  // Series expansion
-  let mut sum = 0.0;
-  let gamma_3_2 = gamma_fn(1.5); // Gamma(3/2) = sqrt(pi)/2
-  let first_gamma_denom = gamma_fn(n + 1.5);
-
-  // First term (m=0): (z/2)^(n+1) / (Gamma(3/2) * Gamma(n + 3/2))
-  let mut term = half_z.powf(n + 1.0) / (gamma_3_2 * first_gamma_denom);
-  sum += term;
-
-  for m in 1..300 {
-    // Ratio of consecutive terms:
-    // term_m / term_{m-1} = -half_z^2 / ((m + 0.5) * (m + n + 0.5))
-    term *= -half_z * half_z / ((m as f64 + 0.5) * (m as f64 + n + 0.5));
-    sum += term;
-    if term.abs() < 1e-17 * sum.abs().max(1e-300) {
-      break;
+  if z < 0.0 {
+    // H_n(−z) = (−1)^(n+1) H_n(z) for integer n.
+    if n.fract() != 0.0 {
+      return f64::NAN;
     }
+    let sign = if (n as i64) % 2 == 0 { -1.0 } else { 1.0 };
+    return sign * struve_h(n, -z);
   }
-
-  sum
+  struve_f64(false, n, z).unwrap_or(f64::NAN)
 }
 
 /// StruveL[n, z] — Modified Struve function L_n(z).
@@ -1182,17 +1151,9 @@ pub fn struve_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n_expr = &args[0];
   let z_expr = &args[1];
 
-  // Extract numeric values
-  let n_val = match n_expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    _ => None,
-  };
-  let z_val = match z_expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    _ => None,
-  };
+  // Extract numeric values (an exact order like 1/3 included)
+  let n_val = expr_to_f64(n_expr);
+  let z_val = expr_to_f64(z_expr);
 
   // Special case: StruveL[n, 0] for non-negative integer n => 0
   if matches!(z_expr, Expr::Integer(0))
@@ -1232,41 +1193,21 @@ pub fn struve_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("StruveL", args))
 }
 
-/// Compute modified Struve L_n(z) using series expansion.
-///
-/// L_n(z) = sum_{m=0}^{inf} 1 / (Gamma(m + 3/2) * Gamma(m + n + 3/2)) * (z/2)^(2m+n+1)
+/// Machine modified Struve L_n(z) for real n and z (see [`struve_f64`]).
 fn struve_l(n: f64, z: f64) -> f64 {
-  // Special case: z = 0
   if z == 0.0 {
-    if n >= -1.0 {
-      return 0.0;
-    }
-    // For n < -1 with z=0, it may be divergent
-    return f64::NAN;
+    // For n < -1 with z = 0 the series diverges.
+    return if n >= -1.0 { 0.0 } else { f64::NAN };
   }
-
-  let half_z = z / 2.0;
-
-  // Series expansion
-  let mut sum = 0.0;
-  let gamma_3_2 = gamma_fn(1.5); // Gamma(3/2) = sqrt(pi)/2
-  let first_gamma_denom = gamma_fn(n + 1.5);
-
-  // First term (m=0): (z/2)^(n+1) / (Gamma(3/2) * Gamma(n + 3/2))
-  let mut term = half_z.powf(n + 1.0) / (gamma_3_2 * first_gamma_denom);
-  sum += term;
-
-  for m in 1..300 {
-    // Ratio of consecutive terms (no alternating sign, unlike StruveH):
-    // term_m / term_{m-1} = half_z^2 / ((m + 0.5) * (m + n + 0.5))
-    term *= half_z * half_z / ((m as f64 + 0.5) * (m as f64 + n + 0.5));
-    sum += term;
-    if term.abs() < 1e-17 * sum.abs().max(1e-300) {
-      break;
+  if z < 0.0 {
+    // L_n(−z) = (−1)^(n+1) L_n(z) for integer n.
+    if n.fract() != 0.0 {
+      return f64::NAN;
     }
+    let sign = if (n as i64) % 2 == 0 { -1.0 } else { 1.0 };
+    return sign * struve_l(n, -z);
   }
-
-  sum
+  struve_f64(true, n, z).unwrap_or(f64::NAN)
 }
 
 /// SquareWave[t] - square wave with period 1: +1 for frac(t) in [0,1/2), -1 for [1/2,1)

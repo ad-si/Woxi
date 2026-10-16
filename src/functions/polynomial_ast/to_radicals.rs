@@ -52,11 +52,7 @@ fn to_radicals_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::BinaryOp { op, left, right } => {
       let l = to_radicals_inner(left)?;
       let r = to_radicals_inner(right)?;
-      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: *op,
-        left: Box::new(l),
-        right: Box::new(r),
-      })
+      crate::evaluator::evaluate_expr_to_expr(&binop(*op, l, r))
     }
     // Recurse into unary ops
     Expr::UnaryOp { op, operand } => {
@@ -74,7 +70,7 @@ fn mk_plus(args: Vec<Expr>) -> Expr {
   if args.len() == 1 {
     args.into_iter().next().unwrap()
   } else {
-    call("Plus", args)
+    plus(args)
   }
 }
 
@@ -207,7 +203,7 @@ fn classify_term(term: &Expr) -> Option<(usize, Expr)> {
         let coeff = if coeff_parts.len() == 1 {
           coeff_parts.into_iter().next().unwrap()
         } else {
-          call("Times", coeff_parts)
+          times(coeff_parts)
         };
 
         if let Expr::Slot(1) = slot_part {
@@ -302,14 +298,11 @@ fn root_to_radical(func: &Expr, k_expr: &Expr) -> Expr {
 
 /// Solve linear: a0 + a1*x = 0 → x = -a0/a1
 fn solve_linear(coeffs: &[Expr]) -> std::vec::Vec<Expr> {
-  vec![call(
-    "Times",
-    vec![
-      mk_int(-1),
-      coeffs[0].clone(),
-      pow(coeffs[1].clone(), mk_int(-1)),
-    ],
-  )]
+  vec![times(vec![
+    mk_int(-1),
+    coeffs[0].clone(),
+    pow(coeffs[1].clone(), mk_int(-1)),
+  ])]
 }
 
 /// Solve quadratic: a0 + a1*x + a2*x^2 = 0
@@ -380,10 +373,7 @@ fn solve_cubic(coeffs: &[Expr]) -> std::vec::Vec<Expr> {
   let q = mk_times(
     mk_plus(vec![
       mk_times(mk_int(2), pow(a2.clone(), mk_int(3))),
-      mk_times(
-        mk_int(-9),
-        call("Times", vec![a3.clone(), a2.clone(), a1.clone()]),
-      ),
+      mk_times(mk_int(-9), times(vec![a3.clone(), a2.clone(), a1.clone()])),
       mk_times(mk_int(27), mk_times(pow(a3.clone(), mk_int(2)), a0.clone())),
     ]),
     pow(mk_times(mk_int(27), pow(a3.clone(), mk_int(3))), mk_int(-1)),

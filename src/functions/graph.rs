@@ -432,6 +432,12 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the per-edge overrides of the rule-list form.
   let mut edge_shape: Option<EdgeShape> = None;
   let mut edge_shape_rules: Vec<(Expr, EdgeShape)> = Vec::new();
+  // `GraphPlot`'s legacy `EdgeRenderingFunction` names an edge as the
+  // plain list `{u, v}` rather than as an edge object.
+  let mut edge_arg_as_list = false;
+  // `EdgeLabels -> {edge -> label, …}`; `GraphPlot`'s legacy
+  // `EdgeRenderingFunction` receives the label as its third argument.
+  let mut edge_labels: Vec<(Expr, Expr)> = Vec::new();
   let mut vertex_labels = false;
   let mut vertex_shape: Option<String> = None;
   // `VertexShape -> {v -> graphic, …}` (plus an optional bare default
@@ -491,6 +497,17 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           edge_style_rules.extend(rules);
           if !directives.is_empty() {
             edge_style = directives.iter().find_map(parse_color);
+          }
+        }
+        "EdgeLabels" => {
+          if let Expr::List(items) = replacement {
+            for item in items {
+              if let Some((e, l)) =
+                crate::evaluator::dispatch::list_operations::as_rule(item)
+              {
+                edge_labels.push((e.clone(), l.clone()));
+              }
+            }
           }
         }
         "VertexLabels" => {
@@ -585,6 +602,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             edge_shape = Some(shape);
           }
           edge_shape_rules.extend(rules);
+          edge_arg_as_list = oname == "EdgeRenderingFunction";
         }
         // `DirectedEdges -> False` says how the edges are *drawn*: as
         // plain lines rather than arrows. The underlying edges keep their
@@ -914,20 +932,40 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         edge_head(edge_ref.weight().directed),
         vec![named(edge_ref.source()), named(edge_ref.target())],
       );
+      let legacy_edge = |e: &Expr| match e {
+        Expr::FunctionCall { args, .. } if edge_arg_as_list => {
+          Expr::List(args.clone())
+        }
+        other => other.clone(),
+      };
+      let label_of = |e: &Expr| {
+        edge_labels
+          .iter()
+          .find(|(target, _)| same_edge(e, target))
+          .map(|(_, label)| label.clone())
+      };
       let matched = edge_shape_rules
         .iter()
         .find(|(target, _)| same_edge(&edge_expr, target))
         .map(|(_, shape)| shape);
       matched
         .or(edge_shape.as_ref())
-        .map(|shape| (shape.clone(), edge_expr))
+        .map(|shape| (shape.clone(), legacy_edge(&edge_expr)))
+        .map(|(shape, legacy)| {
+          let label = if edge_arg_as_list {
+            label_of(&edge_expr)
+          } else {
+            None
+          };
+          (shape, legacy, label)
+        })
     } else {
       None
     };
 
     match shape {
-      Some((EdgeShape::Hidden, _)) => {}
-      Some((EdgeShape::Named(name), _)) => match name.as_str() {
+      Some((EdgeShape::Hidden, ..)) => {}
+      Some((EdgeShape::Named(name), ..)) => match name.as_str() {
         "Line" | "UndirectedLine" => {
           primitives.push(line_or_arrow(false, &shape_pts));
         }
@@ -936,10 +974,12 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         _ => primitives.push(line_or_arrow(edge_data.directed, &default_pts)),
       },
-      Some((EdgeShape::Func(f), edge_expr)) => {
+      Some((EdgeShape::Func(f), edge_expr, label)) => {
         let pts_expr = points_expr(&shape_pts);
-        match crate::functions::list_helpers_ast::apply_func_to_two_args(
-          &f, &pts_expr, &edge_expr,
+        let mut call_args = vec![pts_expr, edge_expr];
+        call_args.extend(label);
+        match crate::functions::list_helpers_ast::apply_func_to_n_args(
+          &f, &call_args,
         ) {
           // The result is wrapped in a list so that any directives it
           // sets stay scoped to this edge.
@@ -7356,7 +7396,7 @@ pub fn graph_metric_ast(
           }
         })
         .collect();
-      let sum = call("Plus", terms);
+      let sum = plus(terms);
       let mean = div(sum, Expr::Integer(local.len() as i128));
       return Ok(
         crate::evaluator::evaluate_expr_to_expr(&mean)
@@ -7436,10 +7476,10 @@ pub fn graph_metric_ast(
         num = num * vden + links * den;
         den *= vden;
       }
-      evaluated(call(
-        "Times",
-        vec![make_rational(num, den), make_rational(1, n as i128)],
-      ))
+      evaluated(times(vec![
+        make_rational(num, den),
+        make_rational(1, n as i128),
+      ]))
     }
     "MeanDegreeConnectivity" => {
       if n == 0 {

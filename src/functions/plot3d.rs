@@ -23,12 +23,42 @@ pub(crate) struct Point3D {
 pub(crate) struct Camera {
   pub azimuth: f64,
   pub elevation: f64,
+  /// `ViewVertical`: the direction that points up on screen. The default
+  /// `{0, 0, 1}` is the one the azimuth/elevation basis already assumes.
+  pub vertical: [f64; 3],
 }
 
 impl Camera {
   /// Wolfram's default `ViewPoint`, in units of the longest side of the
   /// displayed box.
   pub(crate) const DEFAULT_VIEW_POINT: [f64; 3] = [1.3, -2.4, 2.0];
+  pub(crate) const DEFAULT_VERTICAL: [f64; 3] = [0.0, 0.0, 1.0];
+
+  /// Orthonormal screen basis `(right, up)` for a `ViewVertical` other than
+  /// the default: `up` is the vertical with its component along the view
+  /// direction removed, as Wolfram levels the camera against it. `None` for
+  /// a degenerate vertical (parallel to the view direction).
+  fn tilted_basis(&self) -> Option<([f64; 3], [f64; 3])> {
+    let (sa, ca) = self.azimuth.sin_cos();
+    let (se, ce) = self.elevation.sin_cos();
+    let d = [ce * ca, ce * sa, se];
+    let v = self.vertical;
+    let cross = |a: [f64; 3], b: [f64; 3]| {
+      [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+      ]
+    };
+    let right = cross(v, d);
+    let len =
+      (right[0] * right[0] + right[1] * right[1] + right[2] * right[2]).sqrt();
+    if len < 1e-9 {
+      return None;
+    }
+    let right = [right[0] / len, right[1] / len, right[2] / len];
+    Some((right, cross(d, right)))
+  }
 }
 
 impl Default for Camera {
@@ -37,6 +67,7 @@ impl Default for Camera {
     Self {
       azimuth: -1.07,  // ~-61 degrees
       elevation: 0.63, // ~36 degrees
+      vertical: Camera::DEFAULT_VERTICAL,
     }
   }
 }
@@ -56,6 +87,9 @@ pub(crate) struct Triangle {
   /// also drawn at full opacity, so an outline stays visible around a
   /// transparent face.
   pub edge_color: Option<(u8, u8, u8)>,
+  /// The stroke width `EdgeForm[{…, Thick}]` asked outline edges to be
+  /// drawn with. `None` keeps the default hairline.
+  pub edge_width: Option<f64>,
 }
 
 /// Largest scene `painter_order` refines: the pairwise overlap tests are
@@ -230,6 +264,14 @@ const MESH_STEP: usize = 3;
 /// Orthographic projection from a camera at spherical (azimuth, elevation).
 /// Returns (screen_x, screen_y) in projected coordinates.
 pub(crate) fn project(p: Point3D, cam: &Camera) -> (f64, f64) {
+  if cam.vertical != Camera::DEFAULT_VERTICAL
+    && let Some((r, u)) = cam.tilted_basis()
+  {
+    return (
+      p.x * r[0] + p.y * r[1] + p.z * r[2],
+      p.x * u[0] + p.y * u[1] + p.z * u[2],
+    );
+  }
   // Straight down (or up) the z axis the screen basis is degenerate — the
   // vertical `{0, 0, 1}` the camera is levelled against points at the
   // viewer — so Wolfram falls back to the plain top view: x to the right
@@ -734,6 +776,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if !matches!(mesh_mode, MeshMode::All) {
           content.push(call0("EdgeForm"));
         }
+        content.extend(surface_opacity_directive(&plot_styles, surface_idx));
         for i in 0..GRID_N {
           for j in 0..GRID_N {
             let (Some(a), Some(b), Some(c), Some(d)) = (
@@ -922,6 +965,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
@@ -974,6 +1018,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
@@ -1215,8 +1260,17 @@ fn generate_svg(
           "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"#00000060\" stroke-width=\"0.5\"{opacity_attr}/>\n"
         ));
       } else {
+        // A translucent triangle's own-colour hairline overlaps its
+        // neighbours' and darkens every shared seam, tracing the
+        // tessellation across what should be a smooth surface. Only an
+        // opaque triangle needs it to close the anti-aliasing gap.
+        let seam_stroke = if tri.opacity < 1.0 && tri.boundary == [false; 3] {
+          "none".to_string()
+        } else {
+          format!("rgb({r},{g},{b})")
+        };
         svg.push_str(&format!(
-          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"0.5\"{opacity_attr}/>\n"
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
         ));
       }
     }
@@ -1360,6 +1414,61 @@ fn draw_axes_on_box(
   z_range: (f64, f64),
   axes_labels: &[Option<String>; 3],
 ) {
+  draw_axes_on_box_with_ticks(
+    svg,
+    camera,
+    to_svg,
+    corners,
+    x_range,
+    y_range,
+    z_range,
+    axes_labels,
+    &[None, None, None],
+  );
+}
+
+/// Parse a 3D `Ticks` option into one entry per axis: `None` keeps the
+/// automatic ticks, `Some(positions)` pins them (`None` → no ticks at all,
+/// a list of positions or `{position, label}` pairs → just those).
+fn parse_ticks_3d(value: &Expr) -> [Option<Vec<f64>>; 3] {
+  let mut out: [Option<Vec<f64>>; 3] = [None, None, None];
+  if matches!(value, Expr::Identifier(s) if s == "None") {
+    return [Some(Vec::new()), Some(Vec::new()), Some(Vec::new())];
+  }
+  let Expr::List(axes) = value else {
+    return out;
+  };
+  for (slot, axis) in out.iter_mut().zip(axes.iter()) {
+    *slot = match axis {
+      Expr::Identifier(s) if s == "None" => Some(Vec::new()),
+      Expr::List(items) => Some(
+        items
+          .iter()
+          .filter_map(|item| match item {
+            Expr::List(pair) => pair.first().and_then(try_eval_to_f64),
+            other => try_eval_to_f64(other),
+          })
+          .collect(),
+      ),
+      _ => None,
+    };
+  }
+  out
+}
+
+/// `draw_axes_on_box` with per-axis explicit tick positions (`Ticks`).
+#[allow(clippy::too_many_arguments)]
+fn draw_axes_on_box_with_ticks(
+  svg: &mut String,
+  camera: &Camera,
+  to_svg: &dyn Fn(f64, f64) -> (f64, f64),
+  corners: &[Point3D; 8],
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  z_range: (f64, f64),
+  axes_labels: &[Option<String>; 3],
+  ticks: &[Option<Vec<f64>>; 3],
+) {
   let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
   let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
   let font_size = 13;
@@ -1454,6 +1563,17 @@ fn draw_axes_on_box(
   let (cx, cy) =
     to_svg(project(box_center, camera).0, project(box_center, camera).1);
 
+  let axis_ticks = |ai: usize, lo: f64, hi: f64| -> Vec<f64> {
+    match &ticks[ai] {
+      Some(positions) => positions
+        .iter()
+        .copied()
+        .filter(|v| *v >= lo.min(hi) && *v <= lo.max(hi))
+        .collect(),
+      None => tick_values(lo, hi),
+    }
+  };
+
   for (ai, &(axis_origin, end, (val_min, val_max), flipped)) in
     axes.iter().enumerate()
   {
@@ -1485,7 +1605,7 @@ fn draw_axes_on_box(
         // axis label is being pushed: their own offset plus half of the
         // widest one's box. Sideways of a vertical axis that is the text
         // width, below a horizontal one it is the line height.
-        let tick_chars = tick_values(val_min, val_max)
+        let tick_chars = axis_ticks(ai, val_min, val_max)
           .iter()
           .map(|v| format_tick(*v).chars().count())
           .max()
@@ -1521,7 +1641,7 @@ fn draw_axes_on_box(
     }
 
     // Ticks
-    for tick_val in tick_values(val_min, val_max) {
+    for tick_val in axis_ticks(ai, val_min, val_max) {
       // Map tick_val to parameter t along the axis [origin → end]
       let t_raw = if (val_max - val_min).abs() < 1e-15 {
         0.5
@@ -2469,6 +2589,14 @@ fn clip_line_to_box(
   Some((lo, hi))
 }
 
+fn point_in_box(p: &Point3D, bounds: &[(f64, f64); 3]) -> bool {
+  let eps = 1e-9;
+  [p.x, p.y, p.z]
+    .iter()
+    .zip(bounds)
+    .all(|(v, (lo, hi))| *v >= lo - eps && *v <= hi + eps)
+}
+
 /// Clip a polyline to the box an explicit `PlotRange` pins, splitting it
 /// where it leaves and re-enters — Wolfram draws nothing outside the range.
 fn clip_polyline_to_box(
@@ -2904,6 +3032,8 @@ struct StyleState3D {
   /// silhouette on: `{Opacity[0], EdgeForm[Black], Cylinder[…]}` is the
   /// Demonstrations idiom for an unfilled circle in space.
   edge_color: Option<(u8, u8, u8)>,
+  /// The outline width a thickness inside `EdgeForm[…]` asks for.
+  edge_width: Option<f64>,
   /// `Specularity[colour, exponent]`: the highlight a shiny surface throws
   /// back at the viewer, as `(colour, exponent)`. `None` is the default
   /// matte surface. A larger exponent tightens the highlight.
@@ -2930,6 +3060,7 @@ impl Default for StyleState3D {
       capped: true,
       edges: true,
       edge_color: None,
+      edge_width: None,
       specular: None,
       dashing: None,
       point_size: None,
@@ -3144,28 +3275,21 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         return true;
       }
       // `EdgeForm[]` (and `EdgeForm[None]`) asks for faces with no outline;
-      // any other form keeps the default edge. A colour directive among the
-      // arguments — `EdgeForm[Black]`, `EdgeForm[{Thick, Red}]` — also sets
-      // the outline's colour.
+      // any other form keeps the default edge. A colour or thickness among
+      // the arguments — `EdgeForm[Black]`, `EdgeForm[{Thick, Red}]`,
+      // `EdgeForm[Directive[Red, AbsoluteThickness[2]]]` — also styles the
+      // outline.
       "EdgeForm" => {
         style.edges = !(args.is_empty()
           || matches!(args.first(), Some(Expr::Identifier(s)) if s == "None"));
-        style.edge_color = None;
+        let mut edge = StyleState3D::default();
         if style.edges {
-          let flat = match args.first() {
-            Some(Expr::List(items)) => items.to_vec(),
-            _ => args.to_vec(),
-          };
-          for a in &flat {
-            if let Some(c) = parse_color(a) {
-              style.edge_color = Some((
-                (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-                (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-                (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-              ));
-            }
+          for a in args {
+            apply_3d_directive(a, &mut edge);
           }
         }
+        style.edge_color = edge.color;
+        style.edge_width = edge.thickness;
         return true;
       }
       "Thickness" if args.len() == 1 => {
@@ -3326,6 +3450,18 @@ fn plot_style_for_surface(
   } else {
     Some(&styles[surface_idx % styles.len()])
   }
+}
+
+/// The `Opacity[…]` a translucent `PlotStyle` gives a surface, placed at the
+/// head of its symbolic `GraphicsComplex` so the surface stays translucent
+/// when `Show` re-renders it together with other graphics.
+fn surface_opacity_directive(
+  styles: &[StyleState3D],
+  surface_idx: usize,
+) -> Option<Expr> {
+  plot_style_for_surface(styles, surface_idx)
+    .filter(|style| style.opacity < 1.0)
+    .map(|style| call1("Opacity", Expr::Real(style.opacity)))
 }
 
 /// Split a `PlotStyle` option value into one style item per plotted
@@ -3928,7 +4064,7 @@ fn push_text3d_label(
   let (label, width_chars, font_size, color) = match styled {
     Some(s) => (
       s.svg(),
-      s.text.chars().count(),
+      s.visible_char_count(),
       s.font_size.unwrap_or(12.0),
       s.color,
     ),
@@ -4046,6 +4182,35 @@ fn collect_3d_primitives(
             p_max,
             style: style.clone(),
           });
+        }
+        // Solids given by their corners (`Hexahedron`, `Tetrahedron`,
+        // `Prism`, `Pyramid`), corners plus faces (`Polyhedron`), or a
+        // placement of a Platonic solid (`Cube[]`, `Icosahedron[{θ, ϕ}]`, …)
+        // are drawn as one filled polygon per face.
+        "Hexahedron" | "Tetrahedron" | "Prism" | "Pyramid" | "Polyhedron"
+        | "Cube" | "Octahedron" | "Dodecahedron" | "Icosahedron"
+          if crate::functions::geometric_test_ast::polyhedron_faces(expr)
+            .is_some() =>
+        {
+          if let Some((points, faces)) =
+            crate::functions::geometric_test_ast::polyhedron_faces(expr)
+          {
+            for face in faces {
+              let points = face
+                .iter()
+                .map(|&i| Point3D {
+                  x: points[i][0],
+                  y: points[i][1],
+                  z: points[i][2],
+                })
+                .collect();
+              prims.push(Primitive3D::Polygon3D {
+                points,
+                holes: Vec::new(),
+                style: style.clone(),
+              });
+            }
+          }
         }
         "Polygon" if !args.is_empty() => {
           if let Some(pts) = parse_point3d_list(&args[0]) {
@@ -5359,6 +5524,12 @@ fn tessellate_tube(
       .collect()
   };
 
+  // The subdivision budget is shared by the whole polyline: a curve already
+  // sampled into many short segments (a `ParametricPlot3D` helix with
+  // `PlotStyle -> Tube[r]`) needs no further rings, and splitting each of
+  // its segments to the radius' aspect target would multiply the mesh into
+  // tens of thousands of faces per redraw.
+  let max_steps = (MAX_SIDE_SUBDIVISIONS / dirs.len()).max(1);
   let mut rings: Vec<Vec<Point3D>> = Vec::with_capacity(keep.len());
   for (i, &idx) in keep.iter().enumerate() {
     let t = tangents[i];
@@ -5391,12 +5562,8 @@ fn tessellate_tube(
       let idx_next = keep[i + 1];
       let seg_len = norm(sub(&points[idx_next], &points[idx]));
       let r_next = radii.get(idx_next).copied().unwrap_or(0.0);
-      let steps = side_subdivision_steps(
-        seg_len,
-        r.max(r_next),
-        TUBE_SIDES,
-        MAX_SIDE_SUBDIVISIONS,
-      );
+      let steps =
+        side_subdivision_steps(seg_len, r.max(r_next), TUBE_SIDES, max_steps);
       for s in 1..steps {
         let frac = s as f64 / steps as f64;
         let center = Point3D {
@@ -5838,6 +6005,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let mut show_axes = false;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
+  let mut tick_spec: [Option<Vec<f64>>; 3] = [None, None, None];
+  // `AspectRatio -> r`: the picture is `r` times as tall as it is wide.
+  let mut aspect_ratio: Option<f64> = None;
   for opt in &args[1..] {
     let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
@@ -5892,12 +6062,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             _ => None,
           };
           if let Some(vp) = symbolic.or_else(|| eval_vec3(replacement)) {
-            camera = Camera {
-              azimuth: vp[1].atan2(vp[0]),
-              elevation: vp[2].atan2(vp[0].hypot(vp[1])),
-            };
+            camera.azimuth = vp[1].atan2(vp[0]);
+            camera.elevation = vp[2].atan2(vp[0].hypot(vp[1]));
             view_distance =
               (vp[0] * vp[0] + vp[1] * vp[1] + vp[2] * vp[2]).sqrt();
+          }
+        }
+        // `ViewVertical -> {x, y, z}`: which way is up on screen.
+        "ViewVertical" => {
+          if let Some(v) = eval_vec3(replacement)
+            && v.iter().any(|c| *c != 0.0)
+          {
+            camera.vertical = v;
           }
         }
         // `ViewAngle -> θ` (radians, or a `Quantity`/`Degree` product).
@@ -5936,6 +6112,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             box_ratios = Some(r);
           }
         }
+        "Ticks" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          tick_spec = parse_ticks_3d(&value);
+        }
+        "AspectRatio" => {
+          if let Some(r) = try_eval_to_f64(
+            &evaluate_expr_to_expr(replacement)
+              .unwrap_or_else(|_| replacement.as_ref().clone()),
+          ) && r > 0.0
+            && r.is_finite()
+          {
+            aspect_ratio = Some(r);
+          }
+        }
         "Axes" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "False" => show_axes = false,
           Expr::Identifier(s) if s == "True" => show_axes = true,
@@ -5961,6 +6152,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {}
       }
     }
+  }
+
+  if let Some(r) = aspect_ratio {
+    svg_height = ((svg_width as f64 * r).round() as u32).max(1);
   }
 
   // Collect primitives
@@ -5996,6 +6191,33 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     prims.retain(|p| {
       !matches!(p, Primitive3D::Line3D { segments, .. } if segments.is_empty())
+    });
+
+    // Likewise a polygon is cut down to the part inside the box, and
+    // dropped when nothing of it is left (a large translucent plane shown
+    // in a small range).
+    for prim in &mut prims {
+      if let Primitive3D::Polygon3D { points, holes, .. } = prim
+        && holes.is_empty()
+        && points.iter().any(|p| !point_in_box(p, &bounds))
+      {
+        let mut poly: Vec<[f64; 3]> =
+          points.iter().map(|p| [p.x, p.y, p.z]).collect();
+        for axis in 0..3 {
+          let mut n = [0.0; 3];
+          n[axis] = 1.0;
+          poly = clip_polygon_to_halfspace(&poly, n, bounds[axis].1);
+          n[axis] = -1.0;
+          poly = clip_polygon_to_halfspace(&poly, n, -bounds[axis].0);
+        }
+        *points = poly
+          .into_iter()
+          .map(|[x, y, z]| Point3D { x, y, z })
+          .collect();
+      }
+    }
+    prims.retain(|p| {
+      !matches!(p, Primitive3D::Polygon3D { points, .. } if points.len() < 3)
     });
   }
 
@@ -6244,6 +6466,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             capped: true,
             edges: true,
             edge_color: None,
+            edge_width: None,
             specular: None,
             dashing: None,
             point_size: None,
@@ -6329,6 +6552,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       all_triangles.push(Triangle {
         boundary,
         edge_color: prim_style.edge_color,
+        edge_width: prim_style.edge_width,
         projected: [p0, p1, p2],
         depth: depth(center, &camera),
         color,
@@ -6762,6 +6986,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some((er, eg, eb)) => format!("rgb({er},{eg},{eb})"),
         None => "rgb(64,64,64)".to_string(),
       };
+      let edge_width = tri.edge_width.unwrap_or(1.0);
       let fill_opacity_attr = if tri.opacity < 1.0 {
         format!(" fill-opacity=\"{}\"", tri.opacity)
       } else {
@@ -6773,11 +6998,20 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // colour instead, so the face reads as one flat surface.
       if tri.boundary == [true; 3] {
         svg.push_str(&format!(
-          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{fill_opacity_attr}/>\n"
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{fill_opacity_attr}/>\n"
         ));
       } else {
+        // A translucent triangle's own-colour hairline overlaps its
+        // neighbours' and darkens every shared seam, tracing the
+        // tessellation across what should be a smooth surface. Only an
+        // opaque triangle needs it to close the anti-aliasing gap.
+        let seam_stroke = if tri.opacity < 1.0 && tri.boundary == [false; 3] {
+          "none".to_string()
+        } else {
+          format!("rgb({r},{g},{b})")
+        };
         svg.push_str(&format!(
-          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"0.5\"{opacity_attr}/>\n"
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
         ));
         let corners = [(x0, y0), (x1, y1), (x2, y2)];
         for (e, on_outline) in tri.boundary.iter().enumerate() {
@@ -6787,7 +7021,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (ax, ay) = corners[e];
           let (bx, by) = corners[(e + 1) % 3];
           svg.push_str(&format!(
-            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"1\"/>\n",
+            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"/>\n",
           ));
         }
       }
@@ -6923,7 +7157,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if show_axes {
     // The ticks report coordinates as they were given, so a box reshaped
     // by `BoxRatios` still reads off the data's own values.
-    draw_axes_on_box(
+    draw_axes_on_box_with_ticks(
       &mut svg,
       &camera,
       &to_svg,
@@ -6932,6 +7166,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (y3_min / axis_scale[1], y3_max / axis_scale[1]),
       (z3_min / axis_scale[2], z3_max / axis_scale[2]),
       &axes_labels,
+      &tick_spec,
     );
   }
 
@@ -7043,6 +7278,45 @@ fn plot_label_styled(
   None
 }
 
+/// Repaint the picture's backdrop (the first `<rect>` the 3-D renderers
+/// emit) with an explicit `Background -> color` option.
+fn with_background_option(svg: String, opts: &[Expr]) -> String {
+  let color = opts.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Background") => {
+      crate::functions::graphics::parse_color(replacement)
+    }
+    _ => None,
+  });
+  let Some(c) = color else {
+    return svg;
+  };
+  let channel = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+  let fill = format!("rgb({},{},{})", channel(c.r), channel(c.g), channel(c.b));
+  let Some(start) = svg.find("<rect ") else {
+    return svg;
+  };
+  let Some(len) = svg[start..].find("/>") else {
+    return svg;
+  };
+  let tag = &svg[start..start + len];
+  let Some(f) = tag.find("fill=\"") else {
+    return svg;
+  };
+  let value_start = start + f + 6;
+  let Some(value_len) = svg[value_start..].find('"') else {
+    return svg;
+  };
+  format!(
+    "{}{}{}",
+    &svg[..value_start],
+    fill,
+    &svg[value_start + value_len..]
+  )
+}
+
 /// Set a 3-D picture's `PlotLabel` above it. The finished SVG is nested,
 /// untouched, into a canvas one label strip taller, with the label centred
 /// in the strip — the projection inside was scaled to the picture's own
@@ -7054,6 +7328,7 @@ fn with_plot_label(
   width: u32,
   height: u32,
 ) -> String {
+  let svg = with_background_option(svg, opts);
   let Some(styled) = plot_label_styled(opts) else {
     return svg;
   };
@@ -7138,6 +7413,87 @@ fn markup_char_count(markup: &str) -> usize {
     }
   }
   count.max(1)
+}
+
+/// True when `data` is a list of `{x, y, z}` triples of numbers that fill a
+/// complete tensor grid. Such a list is gridded point data, not a z-matrix
+/// that merely happens to have three columns.
+fn is_xyz_point_list(data: &[Expr]) -> bool {
+  let mut points = Vec::with_capacity(data.len());
+  for row in data {
+    match row {
+      Expr::List(r) if r.len() == 3 => {
+        match (
+          try_eval_to_f64(&r[0]),
+          try_eval_to_f64(&r[1]),
+          try_eval_to_f64(&r[2]),
+        ) {
+          (Some(x), Some(y), Some(z))
+            if x.is_finite() && y.is_finite() && z.is_finite() =>
+          {
+            points.push((x, y, z));
+          }
+          _ => return false,
+        }
+      }
+      _ => return false,
+    }
+  }
+  resample_tensor_grid(&points).is_some()
+}
+
+/// If `points` fill a complete tensor grid (every combination of the unique
+/// x and y values occurs), bilinearly resample it onto a uniform square grid.
+/// Returns `grid[i][j]` with `i` along x and `j` along y.
+fn resample_tensor_grid(points: &[(f64, f64, f64)]) -> Option<Vec<Vec<f64>>> {
+  fn uniq(mut v: Vec<f64>) -> Vec<f64> {
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    v.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
+    v
+  }
+  let xs = uniq(points.iter().map(|p| p.0).collect());
+  let ys = uniq(points.iter().map(|p| p.1).collect());
+  if xs.len() < 2 || ys.len() < 2 || xs.len() * ys.len() != points.len() {
+    return None;
+  }
+  let find = |v: &[f64], t: f64| {
+    v.binary_search_by(|a| {
+      if (*a - t).abs() < 1e-12 {
+        std::cmp::Ordering::Equal
+      } else {
+        a.partial_cmp(&t).unwrap()
+      }
+    })
+    .ok()
+  };
+  let mut z = vec![vec![f64::NAN; ys.len()]; xs.len()];
+  for &(x, y, v) in points {
+    let (i, j) = (find(&xs, x)?, find(&ys, y)?);
+    if z[i][j].is_finite() {
+      return None;
+    }
+    z[i][j] = v;
+  }
+  let n = xs.len().max(ys.len()).clamp(2, 60);
+  // Index of the cell containing `t` and the fraction within it.
+  let locate = |v: &[f64], t: f64| {
+    let k = v.partition_point(|a| *a <= t).clamp(1, v.len() - 1) - 1;
+    (k, ((t - v[k]) / (v[k + 1] - v[k])).clamp(0.0, 1.0))
+  };
+  let (x0, x1) = (xs[0], xs[xs.len() - 1]);
+  let (y0, y1) = (ys[0], ys[ys.len() - 1]);
+  let mut grid = vec![vec![0.0; n]; n];
+  for (i, row) in grid.iter_mut().enumerate() {
+    let (a, fa) = locate(&xs, x0 + (x1 - x0) * i as f64 / (n - 1) as f64);
+    for (j, cell) in row.iter_mut().enumerate() {
+      let (b, fb) = locate(&ys, y0 + (y1 - y0) * j as f64 / (n - 1) as f64);
+      *cell = z[a][b] * (1.0 - fa) * (1.0 - fb)
+        + z[a + 1][b] * fa * (1.0 - fb)
+        + z[a][b + 1] * (1.0 - fa) * fb
+        + z[a + 1][b + 1] * fa * fb;
+    }
+  }
+  Some(grid)
 }
 
 /// Implementation of ListPlot3D[data, opts...].
@@ -7235,7 +7591,8 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // 2D matrix format: {{z11, z12, ...}, {z21, z22, ...}, ...}
         Expr::List(first_row)
           if !first_row.is_empty()
-            && first_row.iter().all(|e| !matches!(e, Expr::List(_))) =>
+            && first_row.iter().all(|e| !matches!(e, Expr::List(_)))
+            && !is_xyz_point_list(outer) =>
         {
           // Verify all rows are lists of the same length (or close)
           let num_rows = outer.len();
@@ -7303,45 +7660,56 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ymax = ymax.max(y);
           }
 
-          // Bin points onto a grid
-          let grid_n = 50usize.min(points.len());
-          let x_range = if (xmax - xmin).abs() < 1e-15 {
-            1.0
+          // Points on a complete (possibly non-uniform) tensor grid, e.g.
+          // `Flatten[Table[{x, y, f}, {x, xs}, {y, ys}], 1]`, are resampled
+          // bilinearly onto a uniform grid instead of being binned.
+          let (grid, grid_n) = if let Some(grid) = resample_tensor_grid(&points)
+          {
+            let n = grid.len();
+            (grid, n)
           } else {
-            xmax - xmin
-          };
-          let y_range = if (ymax - ymin).abs() < 1e-15 {
-            1.0
-          } else {
-            ymax - ymin
-          };
-
-          let mut grid = vec![vec![f64::NAN; grid_n]; grid_n];
-          let mut count = vec![vec![0u32; grid_n]; grid_n];
-
-          for &(x, y, z) in &points {
-            let i = (((x - xmin) / x_range * (grid_n - 1) as f64).round()
-              as usize)
-              .min(grid_n - 1);
-            let j = (((y - ymin) / y_range * (grid_n - 1) as f64).round()
-              as usize)
-              .min(grid_n - 1);
-            if count[i][j] == 0 {
-              grid[i][j] = z;
+            // Bin points onto a grid
+            let grid_n = 50usize.min(points.len());
+            let x_range = if (xmax - xmin).abs() < 1e-15 {
+              1.0
             } else {
-              grid[i][j] += z;
-            }
-            count[i][j] += 1;
-          }
+              xmax - xmin
+            };
+            let y_range = if (ymax - ymin).abs() < 1e-15 {
+              1.0
+            } else {
+              ymax - ymin
+            };
 
-          // Average multiple points in same bin
-          for i in 0..grid_n {
-            for j in 0..grid_n {
-              if count[i][j] > 1 {
-                grid[i][j] /= count[i][j] as f64;
+            let mut grid = vec![vec![f64::NAN; grid_n]; grid_n];
+            let mut count = vec![vec![0u32; grid_n]; grid_n];
+
+            for &(x, y, z) in &points {
+              let i = (((x - xmin) / x_range * (grid_n - 1) as f64).round()
+                as usize)
+                .min(grid_n - 1);
+              let j = (((y - ymin) / y_range * (grid_n - 1) as f64).round()
+                as usize)
+                .min(grid_n - 1);
+              if count[i][j] == 0 {
+                grid[i][j] = z;
+              } else {
+                grid[i][j] += z;
+              }
+              count[i][j] += 1;
+            }
+
+            // Average multiple points in same bin
+            for i in 0..grid_n {
+              for j in 0..grid_n {
+                if count[i][j] > 1 {
+                  grid[i][j] /= count[i][j] as f64;
+                }
               }
             }
-          }
+
+            (grid, grid_n)
+          };
 
           (grid, grid_n, grid_n, xmin, xmax, ymin, ymax)
         }
@@ -7451,6 +7819,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
@@ -7496,6 +7865,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
@@ -7724,7 +8094,19 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let body = &args[0];
+  // A list of profile curves `{{r1, z1}, {r2, z2}, …}` revolves each curve
+  // into its own surface, all drawn in one scene.
+  let bodies: Vec<&Expr> = match &args[0] {
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(
+          |it| matches!(it, Expr::List(c) if c.len() == 2 || c.len() == 3),
+        ) =>
+    {
+      items.iter().collect()
+    }
+    other => vec![other],
+  };
 
   // Parse t iterator
   let (tvar, t_min, t_max) =
@@ -7809,13 +8191,6 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 3-coordinate form is the Demonstrations idiom for a curve built with
   // `Sqrt`/trig components that already sits off the xz-plane; sweeping it
   // rotates the (fx, fy) vector by theta instead of assuming fy = 0.
-  let parametric_len: Option<usize> = match body {
-    Expr::List(items) if items.len() == 2 || items.len() == 3 => {
-      Some(items.len())
-    }
-    _ => None,
-  };
-
   let has_theta = theta_var.is_some();
 
   let camera = Camera::default();
@@ -7824,31 +8199,66 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let t_step = (t_max - t_min) / n_t as f64;
   let theta_step = (theta_max - theta_min) / n_theta as f64;
 
-  // Sample the surface grid: grid[i][j] = (x, y, z)
-  let mut grid: Vec<Vec<Option<Point3D>>> =
-    vec![vec![None; n_theta + 1]; n_t + 1];
+  // Sample each surface grid: grid[i][j] = (x, y, z)
+  let mut grids: Vec<Vec<Vec<Option<Point3D>>>> = Vec::new();
   let mut global_z_min = f64::INFINITY;
   let mut global_z_max = f64::NEG_INFINITY;
   let mut global_r_max: f64 = 0.0;
 
-  for i in 0..=n_t {
-    let tval = t_min + i as f64 * t_step;
-    for j in 0..=n_theta {
-      let theta = theta_min + j as f64 * theta_step;
+  for body in &bodies {
+    let parametric_len: Option<usize> = match body {
+      Expr::List(items) if items.len() == 2 || items.len() == 3 => {
+        Some(items.len())
+      }
+      _ => None,
+    };
+    let mut grid: Vec<Vec<Option<Point3D>>> =
+      vec![vec![None; n_theta + 1]; n_t + 1];
+    for i in 0..=n_t {
+      let tval = t_min + i as f64 * t_step;
+      for j in 0..=n_theta {
+        let theta = theta_min + j as f64 * theta_step;
 
-      let (fx, fy, z) = if has_theta {
-        let theta_v = theta_var.as_ref().unwrap();
-        if let Some(n) = parametric_len {
+        let (fx, fy, z) = if has_theta {
+          let theta_v = theta_var.as_ref().unwrap();
+          if let Some(n) = parametric_len {
+            if let Expr::List(items) = body {
+              let fx_val =
+                evaluate_at_t_theta(&items[0], &tvar, tval, theta_v, theta);
+              let fy_val = if n == 3 {
+                evaluate_at_t_theta(&items[1], &tvar, tval, theta_v, theta)
+              } else {
+                Some(0.0)
+              };
+              let fz_val =
+                evaluate_at_t_theta(&items[n - 1], &tvar, tval, theta_v, theta);
+              match (fx_val, fy_val, fz_val) {
+                (Some(fx), Some(fy), Some(fz))
+                  if fx.is_finite() && fy.is_finite() && fz.is_finite() =>
+                {
+                  (fx, fy, fz)
+                }
+                _ => continue,
+              }
+            } else {
+              continue;
+            }
+          } else {
+            // Scalar: r = f(t, θ), z = t
+            match evaluate_at_t_theta(body, &tvar, tval, theta_v, theta) {
+              Some(r) if r.is_finite() => (r, 0.0, tval),
+              _ => continue,
+            }
+          }
+        } else if let Some(n) = parametric_len {
           if let Expr::List(items) = body {
-            let fx_val =
-              evaluate_at_t_theta(&items[0], &tvar, tval, theta_v, theta);
+            let fx_val = evaluate_at_t(&items[0], &tvar, tval);
             let fy_val = if n == 3 {
-              evaluate_at_t_theta(&items[1], &tvar, tval, theta_v, theta)
+              evaluate_at_t(&items[1], &tvar, tval)
             } else {
               Some(0.0)
             };
-            let fz_val =
-              evaluate_at_t_theta(&items[n - 1], &tvar, tval, theta_v, theta);
+            let fz_val = evaluate_at_t(&items[n - 1], &tvar, tval);
             match (fx_val, fy_val, fz_val) {
               (Some(fx), Some(fy), Some(fz))
                 if fx.is_finite() && fy.is_finite() && fz.is_finite() =>
@@ -7861,52 +8271,27 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             continue;
           }
         } else {
-          // Scalar: r = f(t, θ), z = t
-          match evaluate_at_t_theta(body, &tvar, tval, theta_v, theta) {
-            Some(r) if r.is_finite() => (r, 0.0, tval),
+          // Scalar f(t): revolve (t, f(t)) → r = t, z = f(t)
+          match evaluate_at_t(body, &tvar, tval) {
+            Some(z) if z.is_finite() => (tval, 0.0, z),
             _ => continue,
           }
-        }
-      } else if let Some(n) = parametric_len {
-        if let Expr::List(items) = body {
-          let fx_val = evaluate_at_t(&items[0], &tvar, tval);
-          let fy_val = if n == 3 {
-            evaluate_at_t(&items[1], &tvar, tval)
-          } else {
-            Some(0.0)
-          };
-          let fz_val = evaluate_at_t(&items[n - 1], &tvar, tval);
-          match (fx_val, fy_val, fz_val) {
-            (Some(fx), Some(fy), Some(fz))
-              if fx.is_finite() && fy.is_finite() && fz.is_finite() =>
-            {
-              (fx, fy, fz)
-            }
-            _ => continue,
-          }
-        } else {
-          continue;
-        }
-      } else {
-        // Scalar f(t): revolve (t, f(t)) → r = t, z = f(t)
-        match evaluate_at_t(body, &tvar, tval) {
-          Some(z) if z.is_finite() => (tval, 0.0, z),
-          _ => continue,
-        }
-      };
+        };
 
-      // Rotate the (fx, fy) vector by theta around the z axis; fy = 0
-      // reduces to the plain r·cos/r·sin sweep the 2-coordinate and scalar
-      // forms already used.
-      let x = fx * theta.cos() - fy * theta.sin();
-      let y = fx * theta.sin() + fy * theta.cos();
+        // Rotate the (fx, fy) vector by theta around the z axis; fy = 0
+        // reduces to the plain r·cos/r·sin sweep the 2-coordinate and scalar
+        // forms already used.
+        let x = fx * theta.cos() - fy * theta.sin();
+        let y = fx * theta.sin() + fy * theta.cos();
 
-      grid[i][j] = Some(Point3D { x, y, z });
+        grid[i][j] = Some(Point3D { x, y, z });
 
-      global_z_min = global_z_min.min(z);
-      global_z_max = global_z_max.max(z);
-      global_r_max = global_r_max.max((x * x + y * y).sqrt());
+        global_z_min = global_z_min.min(z);
+        global_z_max = global_z_max.max(z);
+        global_r_max = global_r_max.max((x * x + y * y).sqrt());
+      }
     }
+    grids.push(grid);
   }
 
   if !global_z_min.is_finite()
@@ -7924,56 +8309,64 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // coordinates, so it can be re-drawn inside another `Graphics3D` (the
   // way the notebooks that build solids out of plot slices do).  The
   // rendering below works in normalized coordinates and is unaffected.
-  let structure = {
-    let mut index_of: Vec<Vec<Option<usize>>> =
-      vec![vec![None; n_theta + 1]; n_t + 1];
-    let mut point_exprs: Vec<Expr> = Vec::new();
-    for (i, row) in grid.iter().enumerate() {
-      for (j, cell) in row.iter().enumerate() {
-        if let Some(p) = cell {
-          index_of[i][j] = Some(point_exprs.len());
-          point_exprs.push(Expr::List(
-            vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into(),
-          ));
+  let surfaces: Vec<Expr> = grids
+    .iter()
+    .map(|grid| {
+      let mut index_of: Vec<Vec<Option<usize>>> =
+        vec![vec![None; n_theta + 1]; n_t + 1];
+      let mut point_exprs: Vec<Expr> = Vec::new();
+      for (i, row) in grid.iter().enumerate() {
+        for (j, cell) in row.iter().enumerate() {
+          if let Some(p) = cell {
+            index_of[i][j] = Some(point_exprs.len());
+            point_exprs.push(Expr::List(
+              vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into(),
+            ));
+          }
         }
       }
-    }
-    let mut quads: Vec<Expr> = Vec::new();
-    for i in 0..n_t {
-      for j in 0..n_theta {
-        if let (Some(a), Some(b), Some(c), Some(d)) = (
-          index_of[i][j],
-          index_of[i + 1][j],
-          index_of[i + 1][j + 1],
-          index_of[i][j + 1],
-        ) {
-          quads.push(Expr::List(
-            [a, b, c, d]
-              .iter()
-              .map(|&k| Expr::Integer(k as i128 + 1))
-              .collect::<Vec<_>>()
-              .into(),
-          ));
+      let mut quads: Vec<Expr> = Vec::new();
+      for i in 0..n_t {
+        for j in 0..n_theta {
+          if let (Some(a), Some(b), Some(c), Some(d)) = (
+            index_of[i][j],
+            index_of[i + 1][j],
+            index_of[i + 1][j + 1],
+            index_of[i][j + 1],
+          ) {
+            quads.push(Expr::List(
+              [a, b, c, d]
+                .iter()
+                .map(|&k| Expr::Integer(k as i128 + 1))
+                .collect::<Vec<_>>()
+                .into(),
+            ));
+          }
         }
       }
-    }
-    let mut content: Vec<Expr> = Vec::new();
-    // `PlotStyle -> Opacity[…]` belongs to the surface, so a caller that
-    // lifts it out of the plot keeps the translucency it asked for.
-    match &plot_style {
-      Some(Expr::List(items)) => content.extend(items.iter().cloned()),
-      Some(other) => content.push(other.clone()),
-      None => {}
-    }
-    content.push(call1("Polygon", Expr::List(quads.into())));
-    call1(
-      "Graphics3D",
+      let mut content: Vec<Expr> = Vec::new();
+      // `PlotStyle -> Opacity[…]` belongs to the surface, so a caller that
+      // lifts it out of the plot keeps the translucency it asked for.
+      match &plot_style {
+        Some(Expr::List(items)) => content.extend(items.iter().cloned()),
+        Some(other) => content.push(other.clone()),
+        None => {}
+      }
+      content.push(call1("Polygon", Expr::List(quads.into())));
       call(
         "GraphicsComplex",
         vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
-      ),
-    )
-  };
+      )
+    })
+    .collect();
+  let structure = call1(
+    "Graphics3D",
+    if surfaces.len() == 1 {
+      surfaces.into_iter().next().unwrap()
+    } else {
+      Expr::List(surfaces.into())
+    },
+  );
 
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
   let z_range = if (z_hi - z_lo).abs() < 1e-15 {
@@ -8011,87 +8404,91 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
 
-  for i in 0..n_t {
-    for j in 0..n_theta {
-      let p00 = grid[i][j];
-      let p10 = grid[i + 1][j];
-      let p01 = grid[i][j + 1];
-      let p11 = grid[i + 1][j + 1];
+  for grid in &grids {
+    for i in 0..n_t {
+      for j in 0..n_theta {
+        let p00 = grid[i][j];
+        let p10 = grid[i + 1][j];
+        let p01 = grid[i][j + 1];
+        let p11 = grid[i + 1][j + 1];
 
-      let normalize = |p: Point3D| -> Point3D {
-        Point3D {
-          x: p.x / r_scale,
-          y: p.y / r_scale,
-          z: nz(p.z),
+        let normalize = |p: Point3D| -> Point3D {
+          Point3D {
+            x: p.x / r_scale,
+            y: p.y / r_scale,
+            z: nz(p.z),
+          }
+        };
+
+        let z_norm_of = |p: Point3D| -> f64 {
+          ((p.z.clamp(z_lo, z_hi) - z_lo) / z_range).clamp(0.0, 1.0)
+        };
+
+        // Triangle 1: p00, p10, p01
+        if let (Some(pp00), Some(pp10), Some(pp01)) = (p00, p10, p01) {
+          let v0 = normalize(pp00);
+          let v1 = normalize(pp10);
+          let v2 = normalize(pp01);
+
+          let avg_z_norm =
+            (z_norm_of(pp00) + z_norm_of(pp10) + z_norm_of(pp01)) / 3.0;
+          let default_color = height_color(avg_z_norm);
+          let normal = triangle_normal(v0, v1, v2);
+          let (color, opacity) =
+            shade_facet(default_color, render_style.as_ref(), normal, view_dir);
+
+          let proj0 = project(v0, &camera);
+          let proj1 = project(v1, &camera);
+          let proj2 = project(v2, &camera);
+          let center = Point3D {
+            x: (v0.x + v1.x + v2.x) / 3.0,
+            y: (v0.y + v1.y + v2.y) / 3.0,
+            z: (v0.z + v1.z + v2.z) / 3.0,
+          };
+
+          all_triangles.push(Triangle {
+            boundary: [true; 3],
+            edge_color: None,
+            edge_width: None,
+            projected: [proj0, proj1, proj2],
+            depth: depth(center, &camera),
+            color,
+            opacity,
+          });
         }
-      };
 
-      let z_norm_of = |p: Point3D| -> f64 {
-        ((p.z.clamp(z_lo, z_hi) - z_lo) / z_range).clamp(0.0, 1.0)
-      };
+        // Triangle 2: p11, p01, p10
+        if let (Some(pp11), Some(pp01), Some(pp10)) = (p11, p01, p10) {
+          let v0 = normalize(pp11);
+          let v1 = normalize(pp01);
+          let v2 = normalize(pp10);
 
-      // Triangle 1: p00, p10, p01
-      if let (Some(pp00), Some(pp10), Some(pp01)) = (p00, p10, p01) {
-        let v0 = normalize(pp00);
-        let v1 = normalize(pp10);
-        let v2 = normalize(pp01);
+          let avg_z_norm =
+            (z_norm_of(pp11) + z_norm_of(pp01) + z_norm_of(pp10)) / 3.0;
+          let default_color = height_color(avg_z_norm);
+          let normal = triangle_normal(v0, v1, v2);
+          let (color, opacity) =
+            shade_facet(default_color, render_style.as_ref(), normal, view_dir);
 
-        let avg_z_norm =
-          (z_norm_of(pp00) + z_norm_of(pp10) + z_norm_of(pp01)) / 3.0;
-        let default_color = height_color(avg_z_norm);
-        let normal = triangle_normal(v0, v1, v2);
-        let (color, opacity) =
-          shade_facet(default_color, render_style.as_ref(), normal, view_dir);
+          let proj0 = project(v0, &camera);
+          let proj1 = project(v1, &camera);
+          let proj2 = project(v2, &camera);
+          let center = Point3D {
+            x: (v0.x + v1.x + v2.x) / 3.0,
+            y: (v0.y + v1.y + v2.y) / 3.0,
+            z: (v0.z + v1.z + v2.z) / 3.0,
+          };
 
-        let proj0 = project(v0, &camera);
-        let proj1 = project(v1, &camera);
-        let proj2 = project(v2, &camera);
-        let center = Point3D {
-          x: (v0.x + v1.x + v2.x) / 3.0,
-          y: (v0.y + v1.y + v2.y) / 3.0,
-          z: (v0.z + v1.z + v2.z) / 3.0,
-        };
-
-        all_triangles.push(Triangle {
-          boundary: [true; 3],
-          edge_color: None,
-          projected: [proj0, proj1, proj2],
-          depth: depth(center, &camera),
-          color,
-          opacity,
-        });
-      }
-
-      // Triangle 2: p11, p01, p10
-      if let (Some(pp11), Some(pp01), Some(pp10)) = (p11, p01, p10) {
-        let v0 = normalize(pp11);
-        let v1 = normalize(pp01);
-        let v2 = normalize(pp10);
-
-        let avg_z_norm =
-          (z_norm_of(pp11) + z_norm_of(pp01) + z_norm_of(pp10)) / 3.0;
-        let default_color = height_color(avg_z_norm);
-        let normal = triangle_normal(v0, v1, v2);
-        let (color, opacity) =
-          shade_facet(default_color, render_style.as_ref(), normal, view_dir);
-
-        let proj0 = project(v0, &camera);
-        let proj1 = project(v1, &camera);
-        let proj2 = project(v2, &camera);
-        let center = Point3D {
-          x: (v0.x + v1.x + v2.x) / 3.0,
-          y: (v0.y + v1.y + v2.y) / 3.0,
-          z: (v0.z + v1.z + v2.z) / 3.0,
-        };
-
-        all_triangles.push(Triangle {
-          boundary: [true; 3],
-          edge_color: None,
-          projected: [proj0, proj1, proj2],
-          depth: depth(center, &camera),
-          color,
-          opacity,
-        });
+          all_triangles.push(Triangle {
+            boundary: [true; 3],
+            edge_color: None,
+            edge_width: None,
+            projected: [proj0, proj1, proj2],
+            depth: depth(center, &camera),
+            color,
+            opacity,
+          });
+        }
       }
     }
   }
@@ -8529,6 +8926,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             all_triangles.push(Triangle {
               boundary: [true; 3],
               edge_color: None,
+              edge_width: None,
               projected: [p0, p1, p2],
               depth: depth(center, &camera),
               color,
@@ -8551,6 +8949,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             all_triangles.push(Triangle {
               boundary: [true; 3],
               edge_color: None,
+              edge_width: None,
               projected: [p0, p2, p3],
               depth: depth(center, &camera),
               color,
@@ -8714,6 +9113,33 @@ fn march_tetra(
 ) {
   let inside: Vec<usize> = (0..4).filter(|&i| vals[i] >= level).collect();
   let outside: Vec<usize> = (0..4).filter(|&i| vals[i] < level).collect();
+  // The six tetrahedra of a cube wind alternately, so a triangle's vertex
+  // order says nothing about which way it faces. Orient every emitted
+  // triangle so its normal points toward the side where the field is above
+  // `level`; `FaceForm[front, back]` then colours a connected surface
+  // consistently instead of speckling it.
+  let centroid = |idx: &[usize]| -> [f64; 3] {
+    let n = idx.len().max(1) as f64;
+    let mut c = [0.0; 3];
+    for &i in idx {
+      c[0] += verts[i].x / n;
+      c[1] += verts[i].y / n;
+      c[2] += verts[i].z / n;
+    }
+    c
+  };
+  let (ci, co) = (centroid(&inside), centroid(&outside));
+  let toward_high = [ci[0] - co[0], ci[1] - co[1], ci[2] - co[2]];
+  let mut emit = |t: [Point3D; 3]| {
+    let n = triangle_normal(t[0], t[1], t[2]);
+    let dot =
+      n[0] * toward_high[0] + n[1] * toward_high[1] + n[2] * toward_high[2];
+    if dot < 0.0 {
+      emit([t[0], t[2], t[1]]);
+    } else {
+      emit(t);
+    }
+  };
 
   match (inside.len(), outside.len()) {
     (1, 3) => {
@@ -8764,6 +9190,27 @@ fn march_cube(
       emit,
     );
   }
+}
+
+/// Repaint the full-canvas background `<rect>` that `generate_svg` emits
+/// right after the opening `<svg>` tag.
+fn replace_canvas_background(svg: &str, (r, g, b): (u8, u8, u8)) -> String {
+  let Some(start) = svg.find("<rect width=") else {
+    return svg.to_string();
+  };
+  let Some(rel) = svg[start..].find("fill=\"rgb(") else {
+    return svg.to_string();
+  };
+  let fill_start = start + rel;
+  let Some(end_rel) = svg[fill_start..].find(")\"") else {
+    return svg.to_string();
+  };
+  let fill_end = fill_start + end_rel + 2;
+  format!(
+    "{}fill=\"rgb({r},{g},{b})\"{}",
+    &svg[..fill_start],
+    &svg[fill_end..]
+  )
 }
 
 /// ContourPlot3D[f == c, {x, xmin, xmax}, {y, ymin, ymax}, {z, zmin, zmax}]
@@ -8825,6 +9272,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the (equation-normalized) body is zero.
   let mut contour_count: Option<usize> = None;
   let mut contour_levels: Option<Vec<f64>> = None;
+  let mut background: Option<(u8, u8, u8)> = None;
 
   for opt in &args[4..] {
     if let Expr::Rule {
@@ -8850,6 +9298,13 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         },
         Expr::Identifier(name) if name == "ContourStyle" => {
           styles = parse_plot_style_3d(replacement, bodies.len());
+        }
+        Expr::Identifier(name) if name == "Background" => {
+          background = crate::functions::graphics::parse_color(replacement)
+            .map(|c| {
+              let q = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+              (q(c.r), q(c.g), q(c.b))
+            });
         }
         Expr::Identifier(name) if name == "PlotPoints" => {
           let n = match evaluate_expr_to_expr(replacement) {
@@ -9062,6 +9517,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               all_triangles.push(Triangle {
                 boundary: [true; 3],
                 edge_color: style.and_then(|s| s.edge_color),
+                edge_width: style.and_then(|s| s.edge_width),
                 projected: [p0, p1, p2],
                 depth: depth(center, &camera),
                 color,
@@ -9077,9 +9533,16 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 ));
               }
               content.push(Expr::List(
-                vec![
-                  color_directive.clone(),
-                  call1(
+                {
+                  let mut item = vec![color_directive.clone()];
+                  // A translucent surface stays translucent when its
+                  // primitives are merged into another graphic.
+                  if let Some(st) = style
+                    && st.opacity < 1.0
+                  {
+                    item.push(call1("Opacity", Expr::Real(st.opacity)));
+                  }
+                  item.push(call1(
                     "Polygon",
                     Expr::List(
                       vec![
@@ -9089,8 +9552,9 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                       ]
                       .into(),
                     ),
-                  ),
-                ]
+                  ));
+                  item
+                }
                 .into(),
               ));
             });
@@ -9127,6 +9591,11 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     [1.0, 1.0, Z_SCALE],
     &[None, None, None],
   )?;
+  // `Background -> colour` repaints the canvas rectangle drawn first.
+  let svg = match background {
+    Some(bg) => replace_canvas_background(&svg, bg),
+    None => svg,
+  };
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
@@ -9134,7 +9603,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // The plot's own picture draws no outline on the surface triangles, so
     // the extracted primitives must not pick up the default polygon edge
     // when re-rendered inside a `Graphics3D` (e.g. `plot[[1]]`).
-    content.insert(0, call("EdgeForm", vec![]));
+    content.insert(0, call0("EdgeForm"));
     let complex = call(
       "GraphicsComplex",
       vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
@@ -10200,11 +10669,19 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )
   };
 
+  // The body is held, so resolve user definitions (e.g. `r[1, 2]` standing
+  // for a large trigonometric expression) once up front instead of looking
+  // them up and re-evaluating them at every sample point.
+  let evaluated_bodies: Vec<Expr> = bodies
+    .iter()
+    .map(|b| evaluate_expr_to_expr(b).unwrap_or_else(|_| (*b).clone()))
+    .collect();
+
   // Build each surface's world-space triangles independently, clipping
   // cells that cross the region boundary.
   let mut surface_tris: Vec<Vec<[Point3D; 3]>> =
     Vec::with_capacity(bodies.len());
-  for &surface_body in &bodies {
+  for surface_body in &evaluated_bodies {
     // Evaluate the surface point at arbitrary (theta, phi) parameters.
     let surface_at = |theta: f64, phi: f64| -> Option<(Point3D, f64)> {
       let r =
@@ -10463,6 +10940,11 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )],
           None => vec![polygon_expr],
         };
+      if let Some(opacity) =
+        surface_opacity_directive(&plot_styles, surface_idx)
+      {
+        gc_content.insert(0, opacity);
+      }
       // The sampling triangles are far finer than any mesh the plot
       // shows, so their outlines are suppressed — otherwise extracting
       // the primitives (`plot[[1]]`) into a `Graphics3D` would turn the
@@ -10603,6 +11085,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       all_triangles.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_width: None,
         projected: [pa, pb, pc],
         depth: depth(center, &camera),
         color,
@@ -10786,6 +11269,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [p0, p1, p2],
           color,
           depth: depth(center, &camera),
@@ -10833,6 +11317,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [p0, p1, p2],
           color,
           depth: depth(center, &camera),
@@ -10970,6 +11455,9 @@ fn parametric_plot3d_curve_ast(
 
   // Extract PlotStyle option (if any). Other options are kept verbatim.
   let mut plot_style: Option<&Expr> = None;
+  let mut color_function: Option<Expr> = None;
+  let mut color_scaling = true;
+  let mut plot_range: Option<[(f64, f64); 3]> = None;
   let mut forwarded_opts: Vec<Expr> = Vec::new();
   for opt in opts {
     if let Expr::Rule {
@@ -10980,7 +11468,33 @@ fn parametric_plot3d_curve_ast(
       && name == "PlotStyle"
     {
       plot_style = Some(replacement.as_ref());
+    } else if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && name == "ColorFunction"
+    {
+      // Drawn per segment below instead of being forwarded to `Graphics3D`.
+      color_function = Some(replacement.as_ref().clone());
+    } else if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && name == "ColorFunctionScaling"
+    {
+      color_scaling =
+        !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False");
     } else {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = opt
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange")
+      {
+        plot_range = parse_axis_ranges(replacement);
+      }
       forwarded_opts.push(opt.clone());
     }
   }
@@ -11004,6 +11518,75 @@ fn parametric_plot3d_curve_ast(
     .as_ref()
     .map(|ps| plot_style_items(ps, curves.len()))
     .unwrap_or_default();
+
+  // `ColorFunction -> f` colors the curve along its length by
+  // `f[x, y, z, t]`. With `ColorFunctionScaling` (the default) x, y and z
+  // arrive rescaled to 0..1 over the plot range (the explicit `PlotRange`,
+  // else the sampled extent) and t over the parameter interval.
+  let color_bounds: [(f64, f64); 3] = match (&color_function, plot_range) {
+    (Some(_), Some(r)) => r,
+    (Some(_), None) => {
+      let mut b = [(f64::INFINITY, f64::NEG_INFINITY); 3];
+      for c in &curves {
+        for i in 0..=SAMPLE_N {
+          let t = t_min + i as f64 * dt;
+          if let Some((x, y, z)) =
+            evaluate_parametric_at_t(&c.fx, &c.fy, &c.fz, tvar, t)
+          {
+            for (k, v) in [x, y, z].into_iter().enumerate() {
+              b[k].0 = b[k].0.min(v);
+              b[k].1 = b[k].1.max(v);
+            }
+          }
+        }
+      }
+      b
+    }
+    _ => [(0.0, 1.0); 3],
+  };
+  let scale = |v: f64, (lo, hi): (f64, f64)| -> f64 {
+    if !color_scaling {
+      v
+    } else if hi > lo {
+      (v - lo) / (hi - lo)
+    } else {
+      0.5
+    }
+  };
+  let segment_color = |p: [f64; 3], t: f64| -> Option<Expr> {
+    let cf = color_function.as_ref()?;
+    let t_scaled = if color_scaling && t_max > t_min {
+      (t - t_min) / (t_max - t_min)
+    } else {
+      t
+    };
+    let (x, y, z) = (
+      scale(p[0], color_bounds[0]),
+      scale(p[1], color_bounds[1]),
+      scale(p[2], color_bounds[2]),
+    );
+    if let Some(name) =
+      crate::functions::field_plot::color_function_scheme_name(cf)
+    {
+      let (r, g, b) =
+        crate::functions::field_plot::apply_named_color_function(&name, z);
+      return Some(call(
+        "RGBColor",
+        vec![
+          Expr::Real(r as f64 / 255.0),
+          Expr::Real(g as f64 / 255.0),
+          Expr::Real(b as f64 / 255.0),
+        ],
+      ));
+    }
+    let args = [
+      Expr::Real(x),
+      Expr::Real(y),
+      Expr::Real(z),
+      Expr::Real(t_scaled),
+    ];
+    crate::evaluator::function_application::apply_curried_call(cf, &args).ok()
+  };
 
   // Build a primitives list: [<style>, Line[pts1], <style>, Line[pts2], …]
   let mut prim_items: Vec<Expr> = Vec::new();
@@ -11033,15 +11616,49 @@ fn parametric_plot3d_curve_ast(
         seg.clear();
       }
     };
+    let mut prev: Option<(f64, f64, f64, f64)> = None;
     for i in 0..=SAMPLE_N {
       let t = t_min + i as f64 * dt;
       if let Some((x, y, z)) =
         evaluate_parametric_at_t(&curve.fx, &curve.fy, &curve.fz, tvar, t)
       {
+        if color_function.is_some() {
+          // One colored segment per step, joined to the previous vertex.
+          if let Some((px, py, pz, pt)) = prev
+            && let Some(col) = segment_color(
+              [
+                f64::midpoint(px, x),
+                f64::midpoint(py, y),
+                f64::midpoint(pz, z),
+              ],
+              f64::midpoint(pt, t),
+            )
+          {
+            prim_items.push(call1("Directive", col));
+            prim_items.push(call1(
+              "Line",
+              Expr::List(
+                vec![
+                  Expr::List(
+                    vec![Expr::Real(px), Expr::Real(py), Expr::Real(pz)].into(),
+                  ),
+                  Expr::List(
+                    vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)].into(),
+                  ),
+                ]
+                .into(),
+              ),
+            ));
+            produced_any = true;
+          }
+          prev = Some((x, y, z, t));
+          continue;
+        }
         current_segment.push(Expr::List(
           vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)].into(),
         ));
       } else {
+        prev = None;
         flush(&mut current_segment, &mut prim_items);
       }
     }
@@ -11074,10 +11691,7 @@ fn parametric_plot3d_curve_ast(
   });
   g3d_args.extend(forwarded_opts);
   if !has_axes {
-    g3d_args.push(Expr::Rule {
-      pattern: Box::new(Expr::Identifier("Axes".to_string())),
-      replacement: Box::new(Expr::Identifier("True".to_string())),
-    });
+    g3d_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
   }
 
   Ok(call("Graphics3D", g3d_args))
@@ -11272,10 +11886,7 @@ fn resolve_parametric_triples(
 }
 
 fn part_of(body: &Expr, index: i128) -> Expr {
-  Expr::FunctionCall {
-    name: "Part".to_string(),
-    args: vec![body.clone(), Expr::Integer(index)].into(),
-  }
+  call("Part", vec![body.clone(), Expr::Integer(index)])
 }
 
 /// Evaluate a parametric triple {fx(u,v), fy(u,v), fz(u,v)} at given u, v values.
@@ -11357,12 +11968,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the usual way a mesh-shaded dissection hides its own seams.
   let mut mesh_style_none = false;
   // `BoxRatios -> {rx, ry, rz}` reshapes the bounding box to those
-  // proportions regardless of the surface's actual extent along each axis
-  // (Wolfram's own default here is `{1, 1, 0.4}`, matching `Z_SCALE`).
-  // `BoxRatios -> Automatic` instead asks for the box shaped like the
-  // data itself — no axis stretched relative to the others.
+  // proportions regardless of the surface's actual extent along each axis.
+  // Otherwise (Wolfram's default `Automatic`, unlike `Plot3D`'s
+  // `{1, 1, 0.4}`) the box is shaped like the data itself.
   let mut box_ratios_explicit: Option<[f64; 3]> = None;
-  let mut box_ratios_automatic = false;
   // `PlotRange -> {{x0,x1},{y0,y1},{z0,z1}}` pins the displayed region
   // regardless of the sampled surface's own extent, the same way it does
   // for `Graphics3D` — needed so a `BoxRatios` given alongside it (as
@@ -11370,6 +11979,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // stable as the surface changes) reshapes the region that was asked
   // for, not just whatever the current frame happens to sample.
   let mut plot_range: Option<[(f64, f64); 3]> = None;
+  // `PlotPoints -> n` (or `{nu, nv}`, of which the first is used): `n`
+  // samples per direction, i.e. `n - 1` grid cells. Demonstrations lower it
+  // (`PlotPoints -> 15`) to keep a `Table` of many patches interactive.
+  let mut plot_points: Option<usize> = None;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -11381,12 +11994,25 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(name) if name == "PlotStyle" => {
           plot_style_expr = Some(replacement.as_ref());
         }
+        Expr::Identifier(name) if name == "PlotPoints" => {
+          let n = match evaluate_expr_to_expr(replacement) {
+            Ok(Expr::Integer(n)) => Some(n),
+            Ok(Expr::List(ref items)) => match items.first() {
+              Some(Expr::Integer(n)) => Some(*n),
+              _ => None,
+            },
+            _ => None,
+          };
+          if let Some(n) = n
+            && n >= 2
+          {
+            plot_points = Some(n as usize);
+          }
+        }
         Expr::Identifier(name) if name == "BoxRatios" => {
           let value = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.as_ref().clone());
-          if matches!(&value, Expr::Identifier(s) if s == "Automatic") {
-            box_ratios_automatic = true;
-          } else if let Some(r) = eval_vec3(&value)
+          if let Some(r) = eval_vec3(&value)
             && r.iter().all(|v| *v > 0.0)
           {
             box_ratios_explicit = Some(r);
@@ -11515,8 +12141,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (se, ce) = camera.elevation.sin_cos();
     [ce * ca, ce * sa, se]
   };
-  let u_step = (u_max - u_min) / GRID_N as f64;
-  let v_step = (v_max - v_min) / GRID_N as f64;
+  let grid_n = plot_points.map_or(GRID_N, |p| p - 1);
+  let u_step = (u_max - u_min) / grid_n as f64;
+  let v_step = (v_max - v_min) / grid_n as f64;
 
   // Phase 1: Sample all parametric surfaces and compute global ranges
   let mut all_surface_points: Vec<Vec<Vec<Option<(f64, f64, f64)>>>> =
@@ -11529,10 +12156,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut gz_max = f64::NEG_INFINITY;
 
   for surface in &surfaces {
-    let mut points = vec![vec![None; GRID_N + 1]; GRID_N + 1];
-    for i in 0..=GRID_N {
+    let mut points = vec![vec![None; grid_n + 1]; grid_n + 1];
+    for i in 0..=grid_n {
       let uval = u_min + i as f64 * u_step;
-      for j in 0..=GRID_N {
+      for j in 0..=grid_n {
         let vval = v_min + j as f64 * v_step;
         if let Some((x, y, z)) = evaluate_parametric_at_uv(
           &surface.fx,
@@ -11589,18 +12216,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     gz_max - gz_min
   };
 
-  // `BoxRatios -> {a, b, c}` reshapes the box to those proportions;
-  // `BoxRatios -> Automatic` shapes it like the data's own extents
-  // instead (no axis independently stretched relative to the others);
-  // the unspecified default matches Wolfram's own `{1, 1, 0.4}` for
-  // `Plot3D`-family functions.
-  let box_ratios: [f64; 3] = if let Some(r) = box_ratios_explicit {
-    r
-  } else if box_ratios_automatic {
-    [rx, ry, rz]
-  } else {
-    [1.0, 1.0, Z_SCALE]
-  };
+  let box_ratios: [f64; 3] = box_ratios_explicit.unwrap_or([rx, ry, rz]);
 
   // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
   // `Show` merges the *primitives* of the graphics it is given, so a
@@ -11614,7 +12230,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .enumerate()
       .map(|(surface_idx, sg)| {
         let mut index_of: Vec<Vec<Option<usize>>> =
-          vec![vec![None; GRID_N + 1]; GRID_N + 1];
+          vec![vec![None; grid_n + 1]; grid_n + 1];
         let mut point_exprs: Vec<Expr> = Vec::new();
         for (i, row) in sg.iter().enumerate() {
           for (j, p) in row.iter().enumerate() {
@@ -11636,8 +12252,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if mesh_style_none || !matches!(mesh_mode, MeshMode::All) {
           content.push(call0("EdgeForm"));
         }
-        for i in 0..GRID_N {
-          for j in 0..GRID_N {
+        content.extend(surface_opacity_directive(&plot_styles, surface_idx));
+        for i in 0..grid_n {
+          for j in 0..grid_n {
             let (Some(a), Some(b), Some(c), Some(d)) = (
               index_of[i][j],
               index_of[i + 1][j],
@@ -11653,8 +12270,6 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .filter_map(|p| p.map(|(_, _, z)| z))
               .sum::<f64>()
               / 4.0;
-            let avg_z_norm = (avg_z - gz_min) / rz;
-            let default_color = height_color(avg_z_norm);
             let mesh_color = mesh_shading_active.then(|| {
               let avg_x = corners
                 .iter()
@@ -11682,11 +12297,29 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   .flatten()
               })
             });
-            let (cr, cg, cb) =
+            // Only an explicit colour (`PlotStyle`, `MeshShading`) is baked
+            // into a facet. Facets of the default look carry none, like
+            // wolframscript's `ParametricPlot3D[…][[1]]`, so a colour
+            // directive placed before the extracted complex still applies.
+            let explicit =
               match plot_style_for_surface(&plot_styles, surface_idx) {
-                Some(style) => style.color.unwrap_or(default_color),
-                None => mesh_color.flatten().unwrap_or(default_color),
+                Some(style) => style.color,
+                None => mesh_color.flatten(),
               };
+            let polygon = call1(
+              "Polygon",
+              Expr::List(
+                [a, b, c, d]
+                  .iter()
+                  .map(|&k| Expr::Integer(k as i128 + 1))
+                  .collect::<Vec<_>>()
+                  .into(),
+              ),
+            );
+            let Some((cr, cg, cb)) = explicit else {
+              content.push(polygon);
+              continue;
+            };
             content.push(Expr::List(
               vec![
                 call(
@@ -11697,16 +12330,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     Expr::Real(cb as f64 / 255.0),
                   ],
                 ),
-                call1(
-                  "Polygon",
-                  Expr::List(
-                    [a, b, c, d]
-                      .iter()
-                      .map(|&k| Expr::Integer(k as i128 + 1))
-                      .collect::<Vec<_>>()
-                      .into(),
-                  ),
-                ),
+                polygon,
               ]
               .into(),
             ));
@@ -11726,8 +12350,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           };
           for m in 1..=n {
-            let k = (GRID_N * m + n.div_ceil(2)) / (n + 1);
-            for i in 0..GRID_N {
+            let k = (grid_n * m + n.div_ceil(2)) / (n + 1);
+            for i in 0..grid_n {
               push_segment(index_of[i][k], index_of[i + 1][k]);
               push_segment(index_of[k][i], index_of[k][i + 1]);
             }
@@ -11758,30 +12382,18 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Expr::List(complexes.into())
     };
-    // `ParametricPlot3D` draws axes and squats its box the same way
-    // `Plot3D` does (see the analogous block above), where a bare
-    // `Graphics3D` does neither: both defaults are spelled out so a
-    // surface shown inside another graphic — with `ParametricPlot3D`
-    // itself first in the `Show` — keeps the shape it was drawn with.
+    // `ParametricPlot3D` draws axes where a bare `Graphics3D` does not, so
+    // that default is spelled out: a surface shown inside another graphic
+    // — with `ParametricPlot3D` itself first in the `Show` — keeps them.
+    // Its box is shaped like the data, which is `Graphics3D`'s own default.
     let mut structure_args = vec![content];
     structure_args.extend(args[3..].iter().cloned());
-    let names = |opt: &str| {
-      structure_args.iter().any(|o| {
-        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
-          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
-      })
-    };
-    let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
+    let names_axes = structure_args.iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes"))
+    });
     if !names_axes {
       structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
-    }
-    if !names_ratios {
-      structure_args.push(rule_expr(
-        id_expr("BoxRatios"),
-        Expr::List(
-          vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
-        ),
-      ));
     }
     call("Graphics3D", structure_args)
   };
@@ -11791,8 +12403,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for (surface_idx, sg) in all_surface_points.iter().enumerate() {
     let style = plot_style_for_surface(&plot_styles, surface_idx);
-    for i in 0..GRID_N {
-      for j in 0..GRID_N {
+    for i in 0..grid_n {
+      for j in 0..grid_n {
         let p00 = sg[i][j];
         let p10 = sg[i + 1][j];
         let p01 = sg[i][j + 1];
@@ -11856,6 +12468,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [
               project(v0, &camera),
               project(v1, &camera),
@@ -11886,6 +12499,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [
               project(v0, &camera),
               project(v1, &camera),
@@ -12165,5 +12779,45 @@ mod cuboid_rotation_tests {
       }
       _ => panic!("an axis-aligned transform must not tessellate a Cuboid"),
     }
+  }
+}
+
+#[cfg(test)]
+mod march_cube_orientation_tests {
+  use super::*;
+
+  /// Every triangle of a level surface faces toward the side where the
+  /// field exceeds the level — whichever of the cube's six tetrahedra
+  /// produced it — so `FaceForm[front, back]` colours it consistently.
+  #[test]
+  fn triangles_face_toward_higher_field_values() {
+    let n = 6;
+    let h = 2.0 / n as f64;
+    // A tilted plane: its gradient (1, 2, 3) is the same everywhere.
+    let f = |x: f64, y: f64, z: f64| x + 2.0 * y + 3.0 * z - 0.1;
+    let mut checked = 0;
+    for i in 0..n {
+      for j in 0..n {
+        for k in 0..n {
+          let at = |di: usize, dj: usize, dk: usize| Point3D {
+            x: -1.0 + (i + di) as f64 * h,
+            y: -1.0 + (j + dj) as f64 * h,
+            z: -1.0 + (k + dk) as f64 * h,
+          };
+          let corners: [Point3D; 8] =
+            std::array::from_fn(|c| at(c & 1, (c >> 1) & 1, (c >> 2) & 1));
+          let vals: [f64; 8] = std::array::from_fn(|c| {
+            f(corners[c].x, corners[c].y, corners[c].z)
+          });
+          march_cube(&corners, &vals, 0.0, &mut |t| {
+            let nrm = triangle_normal(t[0], t[1], t[2]);
+            let dot = nrm[0] + 2.0 * nrm[1] + 3.0 * nrm[2];
+            assert!(dot > 0.0, "triangle faces the low side");
+            checked += 1;
+          });
+        }
+      }
+    }
+    assert!(checked > 0);
   }
 }

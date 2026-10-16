@@ -8,6 +8,8 @@ use crate::functions::calculus_ast::differentiate_expr;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
 use crate::syntax::{expr_children, map_children};
 
+mod dde;
+
 // ─── DSolve ────────────────────────────────────────────────────────────
 
 /// DSolve[eqn, y[x], x] or DSolve[{eqn, ic1, ...}, y[x], x]
@@ -411,6 +413,11 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
+  }
+  // A first-order system with a stated history (`f[t /; t <= t0] == …`)
+  // and possibly delayed arguments `f[t - c]`.
+  if let Some(result) = dde::ndsolve_dde(&args[..3])? {
+    return Ok(result);
   }
   let opts = &args[n_pos..];
   let event = parse_event_locator_option(opts);
@@ -1472,7 +1479,7 @@ fn try_solve_pde_system(
       let coeff = match coeff_factors.len() {
         0 => Expr::Integer(1),
         1 => coeff_factors.into_iter().next().unwrap(),
-        _ => call("Times", coeff_factors),
+        _ => times(coeff_factors),
       };
       Some((coeff, t_arg, x_arg))
     }
@@ -3396,8 +3403,13 @@ fn ndsolve_system(
         max
       };
       // NaN bounds must bail out too, so compare via partial_cmp rather
-      // than a negated float comparison.
-      if max.partial_cmp(&min) != Some(std::cmp::Ordering::Greater) {
+      // than a negated float comparison. A zero-length domain
+      // `{t, t0, t0}` is accepted (an animation clock starts there); the
+      // initial-value path below answers it from the initial conditions.
+      if !matches!(
+        max.partial_cmp(&min),
+        Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
+      ) {
         return Ok(None);
       }
       (Some(min), max)
@@ -3457,7 +3469,28 @@ fn ndsolve_system(
   // so every level of `List` is flattened rather than just the outermost.
   let mut eq_items: Vec<Expr> = Vec::new();
   flatten_eq_list(&args[0], &mut eq_items);
-  let eq_items = flatten_chained_equalities(&eq_items);
+  let eq_items: Vec<Expr> = flatten_chained_equalities(&eq_items)
+    .into_iter()
+    .map(|eq| history_condition_to_ic(&eq, x_name).unwrap_or(eq))
+    .collect();
+  // `WhenEvent[Mod[x, p] == 0, action]` entries are periodic actions, not
+  // equations: split them off before the equations are classified.
+  let mut raw_time_events: Vec<RawTimeEvent> = Vec::new();
+  let mut eq_items_no_events: Vec<Expr> = Vec::with_capacity(eq_items.len());
+  for eq in eq_items {
+    if let Expr::FunctionCall { name, args: wargs } = &eq
+      && name == "WhenEvent"
+    {
+      let Some(ev) = parse_periodic_when_event(wargs, x_name) else {
+        return Ok(None);
+      };
+      raw_time_events.push(ev);
+    } else {
+      eq_items_no_events.push(eq);
+    }
+  }
+  let eq_items = eq_items_no_events;
+  let time_events_empty = raw_time_events.is_empty();
   let mut odes: Vec<Expr> = Vec::new();
   // (function name, derivative order, evaluation point, value) — by name,
   // not index: an eliminated constraint variable shifts the positions in
@@ -3702,13 +3735,41 @@ fn ndsolve_system(
   // Rewrite the equations over placeholder variables and wrap them into
   // numeric residual functions.
   let mut residuals: Vec<NumFn> = Vec::with_capacity(odes.len());
+  let delay_found = std::cell::Cell::new(false);
   for ode in &odes {
     let normalized = normalize_equation(ode).ok();
     let Some(normalized) = normalized else {
       return Ok(None);
     };
+    let normalized = replace_delayed_values(
+      &normalized,
+      &funcs,
+      &state_offset,
+      x_name,
+      &delay_found,
+    );
     let rewritten = substitute_function_values(&normalized, &funcs, x_name);
     residuals.push(NumFn::new(rewritten, &var_names));
+  }
+  // A delay equation reads earlier values of the solution: before the
+  // initial point those are the (constant) history conditions, afterwards
+  // the steps the integrator has accepted so far.
+  let _dde_guard = DdeGuard;
+  if delay_found.get() {
+    if !matches!(kind, ProblemKind::Initial { .. }) || !time_events_empty {
+      return Ok(None);
+    }
+    let mut past = vec![0.0; var_names.len()];
+    for (fi, f) in funcs.iter().enumerate() {
+      past[1 + state_offset[fi]] = f.ics[0].unwrap_or(0.0);
+    }
+    DDE_HISTORY.with(|h| {
+      *h.borrow_mut() = Some(DdeHistory {
+        x0,
+        past,
+        points: Vec::new(),
+      });
+    });
   }
   let event_fn = match event {
     Some(spec) => {
@@ -3717,6 +3778,17 @@ fn ndsolve_system(
     }
     None => None,
   };
+
+  let time_events: Vec<TimeEvent> = raw_time_events
+    .into_iter()
+    .map(|ev| TimeEvent {
+      period: ev.period,
+      offset: ev.offset,
+      action: substitute_function_values(&ev.action, &funcs, x_name),
+      state_names: var_names[1..=n_state].to_vec(),
+      x_name: x_name.clone(),
+    })
+    .collect();
 
   let n_steps = 1000usize;
   let mut points: Vec<(f64, Vec<f64>)> = match kind {
@@ -3729,102 +3801,110 @@ fn ndsolve_system(
         }
       }
 
-      // When the mass matrix (the highest-derivative coefficients) turns
-      // out not to depend on `x` or the state — common for a
-      // holdup/mass-balance system, whose coefficients are plain
-      // numerals — building it once here instead of at every one of the
-      // run's stage evaluations is a large constant-factor speedup with
-      // no change to the result: the linear solve at each stage is
-      // unaffected, only where its matrix comes from.
-      let cached_mass_matrix = probe_constant_mass_matrix(
-        &residuals,
-        funcs.len(),
-        x0,
-        &init_state,
-        x_min,
-        x_max_resolved,
-      );
-      // Integrate forward from x0 to x_max, then (if x0 is interior)
-      // backward from x0 to x_min; events are only located on the
-      // forward leg, matching the direction NDSolve integrates first.
-      //
-      // An infinite `x_max_resolved` (`{t, t0, Infinity}`) only reaches
-      // here with an event present (the domain parsing above rejects it
-      // otherwise), so there's always something to stop on; a fixed step
-      // size sized to the whole domain, the way the finite case picks
-      // one, has no domain length to size itself from, so it's searched
-      // for instead.
-      let forward = if x_max_resolved.is_finite() {
-        let h = (x_max_resolved - x_min) / n_steps as f64;
-        integrate_leg(
-          &residuals,
-          &funcs,
-          &state_offset,
-          init_state.clone(),
-          x0,
-          x_max_resolved,
-          h,
-          event_fn.as_ref(),
-          event.and_then(|e| e.action.as_ref()),
-          x_name,
-          cached_mass_matrix.as_deref(),
-        )?
+      // A zero-length domain `{t, t0, t0}` has nothing to integrate: the
+      // solution is just the initial state at the single point `t0`.
+      if x_max_resolved == x_min {
+        vec![(x0, init_state.clone()), (x0, init_state)]
       } else {
-        integrate_leg_until_event(
+        // When the mass matrix (the highest-derivative coefficients) turns
+        // out not to depend on `x` or the state — common for a
+        // holdup/mass-balance system, whose coefficients are plain
+        // numerals — building it once here instead of at every one of the
+        // run's stage evaluations is a large constant-factor speedup with
+        // no change to the result: the linear solve at each stage is
+        // unaffected, only where its matrix comes from.
+        let cached_mass_matrix = probe_constant_mass_matrix(
           &residuals,
-          &funcs,
-          &state_offset,
+          funcs.len(),
+          x0,
           &init_state,
-          x0,
-          event_fn.as_ref(),
-          event.and_then(|e| e.action.as_ref()),
-          x_name,
-          cached_mass_matrix.as_deref(),
-        )?
-      };
-      let Some(forward) = forward else {
-        return Ok(None);
-      };
-      let backward = if x0 - x_min > 1e-12 {
-        // An infinite `x_max_resolved` leaves no whole-domain length to
-        // size a step from (unlike the finite case, which reuses the
-        // forward leg's own step); the backward leg's own span, from
-        // `x0` down to `x_min`, is always finite, so it's sized off that
-        // instead.
-        let h_back = if x_max_resolved.is_finite() {
-          (x_max_resolved - x_min) / n_steps as f64
-        } else {
-          (x0 - x_min) / n_steps as f64
-        };
-        let leg = integrate_leg(
-          &residuals,
-          &funcs,
-          &state_offset,
-          init_state,
-          x0,
           x_min,
-          -h_back,
-          None,
-          None,
-          x_name,
-          cached_mass_matrix.as_deref(),
-        )?;
-        let Some(leg) = leg else {
+          x_max_resolved,
+        );
+        // Integrate forward from x0 to x_max, then (if x0 is interior)
+        // backward from x0 to x_min; events are only located on the
+        // forward leg, matching the direction NDSolve integrates first.
+        //
+        // An infinite `x_max_resolved` (`{t, t0, Infinity}`) only reaches
+        // here with an event present (the domain parsing above rejects it
+        // otherwise), so there's always something to stop on; a fixed step
+        // size sized to the whole domain, the way the finite case picks
+        // one, has no domain length to size itself from, so it's searched
+        // for instead.
+        let forward = if x_max_resolved.is_finite() {
+          let h = (x_max_resolved - x_min) / n_steps as f64;
+          integrate_leg(
+            &residuals,
+            &funcs,
+            &state_offset,
+            init_state.clone(),
+            x0,
+            x_max_resolved,
+            h,
+            event_fn.as_ref(),
+            event.and_then(|e| e.action.as_ref()),
+            &time_events,
+            x_name,
+            cached_mass_matrix.as_deref(),
+          )?
+        } else {
+          integrate_leg_until_event(
+            &residuals,
+            &funcs,
+            &state_offset,
+            &init_state,
+            x0,
+            event_fn.as_ref(),
+            event.and_then(|e| e.action.as_ref()),
+            x_name,
+            cached_mass_matrix.as_deref(),
+          )?
+        };
+        let Some(forward) = forward else {
           return Ok(None);
         };
-        leg
-      } else {
-        Vec::new()
-      };
+        let backward = if x0 - x_min > 1e-12 {
+          // An infinite `x_max_resolved` leaves no whole-domain length to
+          // size a step from (unlike the finite case, which reuses the
+          // forward leg's own step); the backward leg's own span, from
+          // `x0` down to `x_min`, is always finite, so it's sized off that
+          // instead.
+          let h_back = if x_max_resolved.is_finite() {
+            (x_max_resolved - x_min) / n_steps as f64
+          } else {
+            (x0 - x_min) / n_steps as f64
+          };
+          let leg = integrate_leg(
+            &residuals,
+            &funcs,
+            &state_offset,
+            init_state,
+            x0,
+            x_min,
+            -h_back,
+            None,
+            None,
+            &[],
+            x_name,
+            cached_mass_matrix.as_deref(),
+          )?;
+          let Some(leg) = leg else {
+            return Ok(None);
+          };
+          leg
+        } else {
+          Vec::new()
+        };
 
-      // Combined, ascending in x. The backward leg is (x0, x0-h, …);
-      // reverse it and drop its first point (x0, present in the forward
-      // leg too).
-      let mut points: Vec<(f64, Vec<f64>)> = backward;
-      points.reverse();
-      points.pop();
-      points.extend(forward);
-      points
+        // Combined, ascending in x. The backward leg is (x0, x0-h, …);
+        // reverse it and drop its first point (x0, present in the forward
+        // leg too).
+        let mut points: Vec<(f64, Vec<f64>)> = backward;
+        points.reverse();
+        points.pop();
+        points.extend(forward);
+        points
+      }
     }
     ProblemKind::Boundary {
       x_lo,
@@ -4067,6 +4147,7 @@ fn integrate_leg_until_event(
       h,
       event_fn,
       event_action,
+      &[],
       x_name,
       cached_m,
     )?
@@ -4147,6 +4228,7 @@ fn solve_bvp_shooting(
         h,
         None,
         None,
+        &[],
         x_name,
         cached_mass_matrix.as_deref(),
       )
@@ -4196,6 +4278,100 @@ fn solve_bvp_shooting(
   Ok(None)
 }
 
+/// A `WhenEvent[Mod[x, period, offset] == 0, action]` as parsed from the
+/// equation list (action still over the original `f[x]` calls).
+struct RawTimeEvent {
+  period: f64,
+  offset: f64,
+  action: Expr,
+}
+
+/// A periodic time event ready for integration: `action` is rewritten over
+/// the state placeholders, which [`TimeEvent::run`] replaces by the numeric
+/// state at the event time before evaluating it.
+struct TimeEvent {
+  period: f64,
+  offset: f64,
+  action: Expr,
+  state_names: Vec<String>,
+  x_name: String,
+}
+
+impl TimeEvent {
+  /// Calls `f` with every event time `offset + k*period` in `(lo, hi]`.
+  fn times_in(&self, lo: f64, hi: f64, f: &mut dyn FnMut(f64)) {
+    let slack = 1e-12 * (1.0 + hi.abs());
+    let mut k = ((lo - self.offset) / self.period + 1e-12).floor() as i64 + 1;
+    loop {
+      let t = self.offset + k as f64 * self.period;
+      if t > hi + slack {
+        break;
+      }
+      if t > lo + slack {
+        f(t);
+      }
+      k += 1;
+    }
+  }
+
+  /// Evaluate the action at time `t` with the given state. Returns
+  /// `Ok(false)` when the action asked to stop the integration.
+  fn run(&self, t: f64, state: &[f64]) -> Result<bool, InterpreterError> {
+    let mut action = self.action.clone();
+    for (name, v) in self.state_names.iter().zip(state) {
+      action =
+        crate::syntax::substitute_variable(&action, name, &Expr::Real(*v));
+    }
+    let action =
+      crate::syntax::substitute_variable(&action, &self.x_name, &Expr::Real(t));
+    match crate::evaluator::evaluate_expr_to_expr(&action) {
+      Ok(_) => Ok(true),
+      Err(InterpreterError::ThrowValue(_, tag))
+        if matches!(
+          tag.as_deref(),
+          Some(Expr::String(s)) if s == "StopIntegration"
+        ) =>
+      {
+        Ok(false)
+      }
+      Err(e) => Err(e),
+    }
+  }
+}
+
+/// Parse `WhenEvent[Mod[x, p] == 0, action]`.
+fn parse_periodic_when_event(
+  args: &[Expr],
+  x_name: &str,
+) -> Option<RawTimeEvent> {
+  if args.len() != 2 {
+    return None;
+  }
+  let (lhs, rhs) = as_equal_pair(&args[0])?;
+  if !matches!(rhs, Expr::Integer(0)) {
+    return None;
+  }
+  let Expr::FunctionCall { name, args: margs } = lhs else {
+    return None;
+  };
+  if name != "Mod" || margs.len() != 2 {
+    return None;
+  }
+  if !matches!(&margs[0], Expr::Identifier(a) if a == x_name) {
+    return None;
+  }
+  let period = nval_to_f64(&margs[1])?;
+  if !period.is_finite() || period <= 0.0 {
+    return None;
+  }
+  let offset = 0.0;
+  Some(RawTimeEvent {
+    period,
+    offset,
+    action: args[1].clone(),
+  })
+}
+
 /// Integrate one leg with RK4. Returns the points in integration order
 /// (starting at `x_from`), or `None` if a derivative evaluation failed.
 /// When an event function is given, integration stops at the located
@@ -4212,6 +4388,7 @@ fn integrate_leg(
   h: f64,
   event_fn: Option<&NumFn>,
   event_action: Option<&Expr>,
+  time_events: &[TimeEvent],
   x_name: &str,
   cached_m: Option<&[Vec<f64>]>,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
@@ -4236,6 +4413,9 @@ fn integrate_leg(
   let mut state = init_state;
   let mut x = x_from;
   points.push((x, state.clone()));
+  if dde_active() {
+    dde_record(&points);
+  }
 
   let eval_event = |x: f64, state: &[f64]| -> Option<f64> {
     event_fn.and_then(|f| f.eval_state(x, state, funcs.len()).ok())
@@ -4279,6 +4459,38 @@ fn integrate_leg(
       }
       return Ok(if points.len() > 1 { Some(points) } else { None });
     };
+
+    if !time_events.is_empty() {
+      // Fire every periodic action whose time falls in (x, new_x], in
+      // time order, with the state interpolated to that time.
+      let mut due: Vec<(f64, usize)> = Vec::new();
+      for (ei, ev) in time_events.iter().enumerate() {
+        ev.times_in(x, new_x, &mut |t| due.push((t, ei)));
+      }
+      due.sort_by(|a, b| a.0.total_cmp(&b.0));
+      for (te, ei) in due {
+        let state_at = if (new_x - te).abs() <= f64::EPSILON * new_x.abs() {
+          new_state.clone()
+        } else {
+          match rk4_system_step(
+            residuals,
+            funcs,
+            state_offset,
+            &state,
+            x,
+            te - x,
+            cached_m,
+          )? {
+            Some(s) => s,
+            None => new_state.clone(),
+          }
+        };
+        if !time_events[ei].run(te, &state_at)? {
+          points.push((te, state_at));
+          return Ok(Some(points));
+        }
+      }
+    }
 
     if let Some(prev_g) = prev_event
       && let Some(new_g) = eval_event(new_x, &new_state)
@@ -4335,6 +4547,9 @@ fn integrate_leg(
 
     state = new_state;
     x = new_x;
+    if dde_active() {
+      dde_record(&refined);
+    }
     points.append(&mut refined);
   }
   Ok(Some(points))
@@ -4770,6 +4985,195 @@ fn substitute_function_values(
   })
 }
 
+// ─── Delay differential equations ──────────────────────────────────────
+
+/// Internal head marking a delayed dependent-function value
+/// `DdeDelayed$[variableIndex, lag]` between the rewrite and the compiler.
+const DELAYED_HEAD: &str = "DdeDelayed$";
+
+/// Solution history of the delay equation being integrated: the constant
+/// pre-initial-time values (indexed like the variable vector) plus every
+/// accepted step so far.
+struct DdeHistory {
+  x0: f64,
+  past: Vec<f64>,
+  points: Vec<(f64, Vec<f64>)>,
+}
+
+thread_local! {
+  static DDE_HISTORY: std::cell::RefCell<Option<DdeHistory>> =
+    const { std::cell::RefCell::new(None) };
+}
+
+/// Value of variable `idx` (a slot of the `[x, state…]` vector) at `x`.
+/// Before the initial time it is the history function; afterwards it is
+/// linearly interpolated between accepted steps, and a lookup beyond the
+/// newest step (a lag shorter than the step being taken) uses that step.
+fn dde_history_value(idx: usize, x: f64) -> f64 {
+  DDE_HISTORY.with(|h| {
+    let h = h.borrow();
+    let Some(h) = h.as_ref() else {
+      return f64::NAN;
+    };
+    if x <= h.x0 || h.points.is_empty() {
+      return h.past.get(idx).copied().unwrap_or(f64::NAN);
+    }
+    let slot = idx - 1;
+    let i = h.points.partition_point(|(px, _)| *px < x);
+    if i == 0 {
+      return h.points[0].1[slot];
+    }
+    if i >= h.points.len() {
+      return h.points[h.points.len() - 1].1[slot];
+    }
+    let (xa, ya) = (&h.points[i - 1].0, &h.points[i - 1].1);
+    let (xb, yb) = (&h.points[i].0, &h.points[i].1);
+    if xb == xa {
+      return yb[slot];
+    }
+    ya[slot] + (yb[slot] - ya[slot]) * (x - xa) / (xb - xa)
+  })
+}
+
+fn dde_record(points: &[(f64, Vec<f64>)]) {
+  DDE_HISTORY.with(|h| {
+    if let Some(h) = h.borrow_mut().as_mut() {
+      h.points.extend(points.iter().cloned());
+    }
+  });
+}
+
+fn dde_active() -> bool {
+  DDE_HISTORY.with(|h| h.borrow().is_some())
+}
+
+/// Clears the delay history when the solve ends, however it ends.
+struct DdeGuard;
+impl Drop for DdeGuard {
+  fn drop(&mut self) {
+    DDE_HISTORY.with(|h| *h.borrow_mut() = None);
+  }
+}
+
+/// `f[t /; t <= t0] == c` (or `<`, `t_` pattern spelling) states the
+/// constant history of `f` up to `t0`. Rewrite it into the ordinary
+/// initial condition `f[t0] == c`, which also seeds the integration.
+fn history_condition_to_ic(eq: &Expr, x_name: &str) -> Option<Expr> {
+  let Expr::Comparison {
+    operands,
+    operators,
+  } = eq
+  else {
+    return None;
+  };
+  if operands.len() != 2 || operators != &vec![ComparisonOp::Equal] {
+    return None;
+  }
+  let Expr::FunctionCall { name, args } = &operands[0] else {
+    return None;
+  };
+  let [
+    Expr::FunctionCall {
+      name: cname,
+      args: cargs,
+    },
+  ] = args.as_ref()
+  else {
+    return None;
+  };
+  if cname != "Condition" || cargs.len() != 2 {
+    return None;
+  }
+  let is_var = |e: &Expr| match e {
+    Expr::Identifier(n) => n == x_name,
+    Expr::Pattern { name, .. } => name == x_name,
+    _ => false,
+  };
+  if !is_var(&cargs[0]) {
+    return None;
+  }
+  let Expr::Comparison {
+    operands: cops,
+    operators: cos,
+  } = &cargs[1]
+  else {
+    return None;
+  };
+  if cops.len() != 2 || cos.len() != 1 {
+    return None;
+  }
+  let bound = match cos[0] {
+    ComparisonOp::LessEqual | ComparisonOp::Less if is_var(&cops[0]) => {
+      &cops[1]
+    }
+    ComparisonOp::GreaterEqual | ComparisonOp::Greater if is_var(&cops[1]) => {
+      &cops[0]
+    }
+    _ => return None,
+  };
+  Some(Expr::Comparison {
+    operands: vec![
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![bound.clone()].into(),
+      },
+      operands[1].clone(),
+    ],
+    operators: vec![ComparisonOp::Equal],
+  })
+}
+
+/// Replace every delayed value `f[t - τ]` (τ a positive constant) of a
+/// dependent function by `DdeDelayed$[variableIndex, τ]`; returns whether
+/// any was found. A zero lag is simply `f[t]`.
+fn replace_delayed_values(
+  expr: &Expr,
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  x_name: &str,
+  found: &std::cell::Cell<bool>,
+) -> Expr {
+  if let Expr::FunctionCall { name, args } = expr
+    && args.len() == 1
+    && let Some(fi) = funcs.iter().position(|f| &f.name == name)
+    && !matches!(&args[0], Expr::Identifier(a) if a == x_name)
+  {
+    let at = |v: f64| {
+      let sub =
+        crate::syntax::substitute_variable(&args[0], x_name, &Expr::Real(v));
+      crate::evaluator::evaluate_expr_to_expr(&sub)
+        .ok()
+        .and_then(|r| expr_to_f64(&r).ok())
+    };
+    if let (Some(a0), Some(a1), Some(a2)) = (at(0.0), at(1.0), at(2.5))
+      && (a1 - a0 - 1.0).abs() < 1e-12
+      && (a2 - a0 - 2.5).abs() < 1e-12
+    {
+      let lag = -a0;
+      if lag.abs() < 1e-14 {
+        return Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![Expr::Identifier(x_name.to_string())].into(),
+        };
+      }
+      if lag > 0.0 {
+        found.set(true);
+        return Expr::FunctionCall {
+          name: DELAYED_HEAD.to_string(),
+          args: vec![
+            Expr::Integer((1 + state_offset[fi]) as i128),
+            Expr::Real(lag),
+          ]
+          .into(),
+        };
+      }
+    }
+  }
+  map_children(expr, &|c| {
+    replace_delayed_values(c, funcs, state_offset, x_name, found)
+  })
+}
+
 // ─── Compiled numeric expressions ─────────────────────────────────────
 
 /// A residual/event function over the numeric variable vector, compiled
@@ -4867,6 +5271,13 @@ enum NExpr {
   /// a value with a significant imaginary part is not a real ODE, and
   /// yields NaN so the solve is rejected instead of silently wrong.
   ComplexReal(Box<CExpr>),
+  /// The value of state variable `Var(idx)` `lag` earlier than the current
+  /// independent-variable value (`vars[0]`) — a delayed argument `f[t - τ]`
+  /// of a delay differential equation, read from the solution history.
+  Delayed {
+    idx: usize,
+    lag: f64,
+  },
 }
 
 impl NExpr {
@@ -4911,6 +5322,7 @@ impl NExpr {
           f64::NAN
         }
       }
+      Self::Delayed { idx, lag } => dde_history_value(*idx, vars[0] - lag),
       Self::Interp1D { func_args, arg } => {
         let x = arg.eval(vars);
         evaluate_interpolating_function(func_args, &[Expr::Real(x)])
@@ -5042,6 +5454,14 @@ fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
       operand,
     } => Some(NExpr::Neg(Box::new(comp(operand)?))),
     Expr::FunctionCall { name, args } => {
+      if name == DELAYED_HEAD
+        && let [Expr::Integer(idx), Expr::Real(lag)] = args.as_ref()
+      {
+        return Some(NExpr::Delayed {
+          idx: *idx as usize,
+          lag: *lag,
+        });
+      }
       let unary: Option<fn(f64) -> f64> = match name.as_str() {
         "Sin" => Some(f64::sin),
         "Cos" => Some(f64::cos),
@@ -5775,7 +6195,7 @@ fn classify_product_term(
     } else if other_factors.len() == 1 {
       other_factors[0].clone()
     } else {
-      call("Times", other_factors.into_iter().cloned().collect())
+      times(other_factors.into_iter().cloned().collect())
     };
   } else {
     // No recognized linear y factor. The product is only a forcing term if it
@@ -7063,11 +7483,11 @@ fn substitute_c_constant(
   }
 
   match expr {
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(substitute_c_constant(left, pattern, replacement)),
-      right: Box::new(substitute_c_constant(right, pattern, replacement)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      substitute_c_constant(left, pattern, replacement),
+      substitute_c_constant(right, pattern, replacement),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(substitute_c_constant(operand, pattern, replacement)),
@@ -7415,7 +7835,7 @@ pub fn interpolation_ast(
   // Clamp order to valid range. A single data point is allowed: the order is
   // reduced to 0 (with inhr) and the result is a constant interpolation,
   // matching wolframscript.
-  let mut order = interp_order.clamp(1, 3) as usize;
+  let mut order = interp_order.max(1) as usize;
   if order >= n {
     let reduced = n - 1;
     crate::emit_message(&format!(
@@ -8202,10 +8622,15 @@ pub fn evaluate_interpolating_function(
   let (x_first, _) = extract_point(&data_points[0])?;
   let (x_last, _) = extract_point(&data_points[n - 1])?;
 
+  // Binary search for the interval containing x; a point outside the data
+  // range picks up the nearest interval and extrapolates along it.
+  let idx = find_interval(data_points, x_val.max(x_first).min(x_last), n)?;
+
   // Check for exact grid point match — return the stored y-value directly
   // to preserve original types (e.g. Integer for ListInterpolation with integer data).
+  // The data is sorted, so only the two ends of the located interval can match.
   if derivative_order == 0 {
-    for pt in data_points {
+    for pt in &data_points[idx..=(idx + 1).min(n - 1)] {
       if let Expr::List(pair) = pt
         && pair.len() == 2
         && let Ok(xp) = interp_value_to_f64(&pair[0])
@@ -8216,9 +8641,6 @@ pub fn evaluate_interpolating_function(
     }
   }
 
-  // Binary search for the interval containing x; a point outside the data
-  // range picks up the nearest interval and extrapolates along it.
-  let idx = find_interval(data_points, x_val.max(x_first).min(x_last), n)?;
   let eff_order = if order == 1 || n <= 2 {
     1
   } else {
@@ -8555,9 +8977,9 @@ fn lagrange_polynomial(
       }
     }
     factors.retain(|f| !matches!(f, Expr::Integer(1)));
-    terms.push(call("Times", factors));
+    terms.push(times(factors));
   }
-  Some(call("Plus", terms))
+  Some(plus(terms))
 }
 
 /// Lagrange interpolation over the stencil carried out in exact arithmetic.
@@ -8638,39 +9060,27 @@ fn interpolating_derivative_value_numeric(
     }
   }
 
-  // Expand the nested Newton form
-  // c[0] + (x-x0)(c[1] + (x-x1)(c[2] + ...))
-  // into ascending-power monomial coefficients, via repeated polynomial
-  // multiplication by (x - x_k) — cheap since m is a handful of points.
-  let mut monomial = vec![coeffs[m - 1]];
-  for k in (0..m - 1).rev() {
-    // monomial *= (x - xs[k])
-    let mut shifted = vec![0.0; monomial.len() + 1];
-    for (i, c) in monomial.iter().enumerate() {
-      shifted[i + 1] += c;
-      shifted[i] -= c * xs[k];
-    }
-    monomial = shifted;
-    // monomial += coeffs[k] (constant term)
-    monomial[0] += coeffs[k];
-  }
-
-  if derivative_order >= monomial.len() {
+  // Evaluate the nested Newton form c[0] + (x-x0)(c[1] + (x-x1)(c[2] + ...))
+  // as a truncated Taylor series in h = x - x_val, so the derivative comes
+  // out without expanding monomial coefficients (which cancels
+  // catastrophically for high `InterpolationOrder`).
+  let d = derivative_order;
+  if d >= m {
     return Ok(Expr::Real(0.0));
   }
-  // Differentiate `derivative_order` times: term c*x^p -> c*p*x^(p-1).
-  for _ in 0..derivative_order {
-    monomial = monomial
-      .iter()
-      .enumerate()
-      .skip(1)
-      .map(|(p, c)| c * p as f64)
-      .collect();
+  let mut taylor = vec![0.0; d + 1];
+  taylor[0] = coeffs[m - 1];
+  for k in (0..m - 1).rev() {
+    let shift = x_val - xs[k];
+    // taylor = taylor * (shift + h) + coeffs[k]
+    for i in (0..=d).rev() {
+      let carried = if i > 0 { taylor[i - 1] } else { 0.0 };
+      taylor[i] = taylor[i] * shift + carried;
+    }
+    taylor[0] += coeffs[k];
   }
-
-  // Horner evaluation of the (now differentiated) monomial polynomial.
-  let value = monomial.iter().rev().fold(0.0, |acc, c| acc * x_val + c);
-  Ok(Expr::Real(value))
+  let factorial: f64 = (1..=d).map(|i| i as f64).product();
+  Ok(Expr::Real(taylor[d] * factorial))
 }
 
 /// Lagrange polynomial interpolation using (order+1) nearest points.
@@ -9719,7 +10129,7 @@ fn classify_multivar_product(
     } else if other_factors.len() == 1 {
       other_factors[0].clone()
     } else {
-      call("Times", other_factors.into_iter().cloned().collect())
+      times(other_factors.into_iter().cloned().collect())
     };
     (y_order, Some(y_var), coeff)
   } else {

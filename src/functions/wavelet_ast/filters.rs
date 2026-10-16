@@ -68,7 +68,7 @@ pub fn highpass_from_exact(lo: &ExactFilter) -> ExactFilter {
 }
 
 fn negate_expr(e: &Expr) -> Expr {
-  let call = call("Times", vec![Expr::Integer(-1), e.clone()]);
+  let call = neg(e.clone());
   crate::evaluator::evaluate_expr_to_expr(&call).unwrap_or(call)
 }
 

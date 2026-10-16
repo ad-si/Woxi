@@ -334,7 +334,7 @@ fn add_exponents(a: Expr, b: Expr) -> Expr {
     return a;
   }
   // Defer to the evaluator so numeric exponents collapse.
-  let sum = call("Plus", vec![a.clone(), b.clone()]);
+  let sum = plus(vec![a.clone(), b.clone()]);
   crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum)
 }
 

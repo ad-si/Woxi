@@ -1078,8 +1078,13 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
   // is the same four entries — so this precedes the `is_quiet` check too.
   let mut stop_line: Option<String> = None;
   let mut past_the_limit = false;
+  // `Off[General::stop]` switches the suppression off along with its
+  // notice: every repetition prints and joins `$MessageList`
+  // (wolframscript-verified).
+  let suppression_off = message_is_off("General::stop: ");
   if let Some(name) = message_name(msg)
     && name != "General::stop"
+    && !suppression_off
   {
     let count = MESSAGE_STOP_COUNTS.with(|m| {
       let mut m = m.borrow_mut();
@@ -1094,11 +1099,7 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
       let stop = format!(
         "General::stop: Further output of {name} will be suppressed during this calculation."
       );
-      // `Off[General::stop]` silences the notice itself, leaving only the
-      // suppression it announces.
-      if !message_is_off(&stop) {
-        stop_line = Some(stop);
-      }
+      stop_line = Some(stop);
     }
   }
   // `Check` watches generation, so it is told before the limit is applied.
@@ -1325,12 +1326,13 @@ fn promote_result_graphics(expr: &syntax::Expr) {
   }
   if let syntax::Expr::FunctionCall { name, args } = expr
     && name == "TabView"
-    && let Some(syntax::Expr::List(items)) = args.first()
+    && let Some(items) =
+      args.first().and_then(functions::graphics::tabview_panes)
     && !items.is_empty()
   {
     let selected = args
       .get(1)
-      .and_then(|sel| selected_tabview_pane(items, sel))
+      .and_then(|sel| selected_tabview_pane(&items, sel))
       .unwrap_or(&items[0]);
     let (_, _, content) = functions::graphics::tabview_pane_parts(selected);
     // A pane laid out as a table/column/row (`Text@Grid[…]`, the common
@@ -1354,8 +1356,38 @@ fn promote_result_graphics(expr: &syntax::Expr) {
         return;
       }
     }
+    // A pane that is a `LocatorPane`/`ClickPane` shows the picture it wraps.
+    let pane = render_interactive_pane_if_needed(content.clone());
+    if let syntax::Expr::Graphics { svg, .. } = &pane {
+      capture_graphics(svg);
+      return;
+    }
+    // A `Dynamic[…]` pane shows what its (held) body evaluates to, e.g. a
+    // `Dynamic[Module[…, ListLinePlot[…]]]` speed plot beside a drawing tab.
+    if let syntax::Expr::FunctionCall { name, args } = content
+      && name == "Dynamic"
+      && let Some(held) = args.first()
+      && let Ok(value) = evaluator::evaluate_expr_to_expr(held)
+    {
+      promote_result_graphics(&value);
+      return;
+    }
     promote_result_graphics(content);
   }
+}
+
+/// The content of the pane a `TabView[{…}, sel]` call currently shows: the
+/// one its selector names, or the first pane absent a usable selector.
+pub(crate) fn tabview_selected_content(
+  args: &[syntax::Expr],
+) -> Option<syntax::Expr> {
+  let items = args.first().and_then(functions::graphics::tabview_panes)?;
+  let selected = args
+    .get(1)
+    .and_then(|sel| selected_tabview_pane(&items, sel))
+    .or(items.first())?;
+  let (_, _, content) = functions::graphics::tabview_pane_parts(selected);
+  Some(content.clone())
 }
 
 /// Find the pane `TabView[{…}, sel]`'s selector currently names: `sel`
@@ -1466,14 +1498,14 @@ pub fn get_captured_output_svg() -> Option<String> {
 }
 
 /// Clears the captured audio buffer
-fn clear_captured_sound() {
+pub fn clear_captured_sound() {
   CAPTURED_SOUND.with(|buffer| {
     *buffer.borrow_mut() = None;
   });
 }
 
 /// Stores synthesized audio as a base64-encoded WAV (from Play/Sound).
-fn capture_sound(wav_base64: &str) {
+pub(crate) fn capture_sound(wav_base64: &str) {
   capture_audio(AudioOutput {
     base64: wav_base64.to_string(),
     mime: "audio/wav".to_string(),
@@ -1562,10 +1594,10 @@ pub(crate) fn take_termination() -> Option<&'static str> {
 
 /// The value a terminated evaluation reports.
 fn terminated_evaluation_expr(tag: &'static str) -> syntax::Expr {
-  syntax::Expr::FunctionCall {
-    name: "TerminatedEvaluation".to_string(),
-    args: vec![syntax::Expr::Identifier(tag.to_string())].into(),
-  }
+  helpers::call1(
+    "TerminatedEvaluation",
+    syntax::Expr::Identifier(tag.to_string()),
+  )
 }
 
 /// Resolve an evaluation's outcome against a pending termination, clearing
@@ -2746,7 +2778,7 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
               emit_message(&format!(
                 "Goto::nolabel: Label {tag_str} not found."
               ));
-              syntax::Expr::Identifier("Null".to_string())
+              helpers::null_expr()
             }
             Err(InterpreterError::ThrowValue(val, tag)) => {
               // An uncaught Throw aborts evaluation at top level.
@@ -2757,10 +2789,7 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
                 Some(t) => vec![*val, *t],
                 None => vec![*val],
               };
-              let throw_expr = syntax::Expr::FunctionCall {
-                name: "Throw".to_string(),
-                args: throw_args.into(),
-              };
+              let throw_expr = helpers::call("Throw", throw_args);
               emit_message(&format!(
                 "Throw::nocatch: Uncaught {} returned to top level.",
                 syntax::format_expr(&throw_expr, syntax::ExprForm::Output)
@@ -2793,10 +2822,8 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
           } = &result_expr
           && n == "Sequence"
         {
-          result_expr = seq_args
-            .last()
-            .cloned()
-            .unwrap_or_else(|| syntax::Expr::Identifier("Null".to_string()));
+          result_expr =
+            seq_args.last().cloned().unwrap_or_else(helpers::null_expr);
         }
         // Keep `%` / `Out[]` history per statement (notebook semantics:
         // `2+2` then `% + 1` within one cell sees the intermediate 4). The
@@ -3073,6 +3100,19 @@ fn is_display_wrapper(expr: &syntax::Expr) -> bool {
   }
 }
 
+/// Whether `expr` is an image, possibly under `Pane`/`Panel` wrappers.
+fn wraps_a_raster_image(expr: &syntax::Expr) -> bool {
+  match expr {
+    syntax::Expr::Image { .. } => true,
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Pane" | "Panel") =>
+    {
+      args.first().is_some_and(wraps_a_raster_image)
+    }
+    _ => false,
+  }
+}
+
 /// If `expr` is a Grid[…] or TextGrid[…] call (possibly nested in a list),
 /// render it as SVG and return `-Graphics-`. Grid/TextGrid stay symbolic
 /// during evaluation so that part-assignment works; rendering only happens
@@ -3106,6 +3146,37 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         content = inner.clone();
       }
       match render_grid_if_needed(content) {
+        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        _ => expr,
+      }
+    }
+    // `Panel[Pane[image]]` — the Demonstrations idiom for showing a
+    // computed raster. The panel only frames the picture it wraps, so it is
+    // drawn as that picture (a pane around an image already is).
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Panel"
+        && args.len() == 1
+        && wraps_a_raster_image(&args[0]) =>
+    {
+      let mut content = &args[0];
+      while let syntax::Expr::FunctionCall { name, args } = content
+        && matches!(name.as_str(), "Pane" | "Panel")
+        && let Some(inner) = args.first()
+      {
+        content = inner;
+      }
+      content.clone()
+    } // `Pane[Text[Grid[…]], size]` (also `Panel`/`Framed`): the pane only
+    // sizes the table `Text` marks for drawing. A pane around a bare
+    // `Grid` of plain text stays textual, so only look through to `Text`.
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Pane" | "Panel" | "Framed")
+        && matches!(
+          args.first(),
+          Some(syntax::Expr::FunctionCall { name: inner, .. }) if inner == "Text"
+        ) =>
+    {
+      match render_grid_if_needed(args[0].clone()) {
         graphics @ syntax::Expr::Graphics { .. } => graphics,
         _ => expr,
       }
@@ -3259,6 +3330,34 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       match functions::graphics::combine_graphics_svgs(&rows) {
         Some(svg) => graphics_result(svg),
         None => expr,
+      }
+    }
+    // `Panel[content, Text[label]]` — the Demonstrations idiom for a
+    // captioned result block (a `Grid` of readouts or a `GraphicsGrid` of
+    // pictures under a heading). Shown as the content with its label above
+    // it, composed through the `Labeled` pipeline above. The `Text` label
+    // is what marks the panel as a picture; a bare string label leaves a
+    // plain table as selectable text.
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Panel"
+        && args.len() == 2
+        && matches!(
+          &args[1],
+          syntax::Expr::FunctionCall { name: label, .. } if label == "Text"
+        ) =>
+    {
+      let labeled = syntax::Expr::FunctionCall {
+        name: "Labeled".to_string(),
+        args: vec![
+          args[0].clone(),
+          args[1].clone(),
+          syntax::Expr::Identifier("Top".to_string()),
+        ]
+        .into(),
+      };
+      match render_grid_if_needed(labeled) {
+        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        _ => expr,
       }
     }
     // `Pane`/`Panel`/`Framed` wrapping the multi-table compositions this
@@ -3415,7 +3514,7 @@ fn render_audio_if_needed(expr: syntax::Expr) -> syntax::Expr {
     && let Some(audio) = functions::sound::audio_to_output(&expr)
   {
     capture_audio(audio);
-    return syntax::Expr::Identifier("-Audio-".to_string());
+    return helpers::id_expr("-Audio-");
   }
   expr
 }
@@ -3430,7 +3529,7 @@ fn render_sound_if_needed(expr: syntax::Expr) -> syntax::Expr {
     && let Some(wav_base64) = functions::sound::sound_to_wav_base64(&expr)
   {
     capture_sound(&wav_base64);
-    return syntax::Expr::Identifier("-Sound-".to_string());
+    return helpers::id_expr("-Sound-");
   }
   expr
 }
@@ -3503,13 +3602,19 @@ fn render_image_if_needed(expr: syntax::Expr) -> syntax::Expr {
     height,
     channels,
     ref data,
+    display_size,
     ..
   } = expr
   {
-    let html =
-      functions::image_ast::image_to_html_img(width, height, channels, data);
+    let html = functions::image_ast::image_to_html_img(
+      width,
+      height,
+      channels,
+      data,
+      display_size,
+    );
     capture_graphics(&html);
-    syntax::Expr::Identifier("-Image-".to_string())
+    helpers::id_expr("-Image-")
   } else {
     expr
   }
@@ -3731,12 +3836,8 @@ pub(crate) fn tableform_grid_args(
       _ => None,
     });
   if !has_alignment {
-    let align = table_alignment
-      .unwrap_or_else(|| syntax::Expr::Identifier("Left".into()));
-    grid_args.push(syntax::Expr::Rule {
-      pattern: Box::new(syntax::Expr::Identifier("Alignment".into())),
-      replacement: Box::new(align),
-    });
+    let align = table_alignment.unwrap_or_else(|| helpers::id_expr("Left"));
+    grid_args.push(helpers::rule_expr(helpers::id_expr("Alignment"), align));
   }
   grid_args.extend(args[1..].iter().cloned());
   Some((grid_args, group_gaps))
@@ -4103,6 +4204,15 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // Graphics[…]}]] renders the column with its embedded graphic). CLI
   // mode keeps the symbolic Pane[…] echo to match wolframscript.
   let expr = unwrap_display_pass_through(expr);
+  // A grid wider than that box squeezes its automatically sized pictures
+  // (a plot's legend) to fit, instead of pushing the other columns out.
+  let expr = pane_box
+    .and_then(|(w, _)| {
+      functions::graphics::fit_grid_to_pane_width(&expr, w, &|c| {
+        functions::graphics::parse_svg_wh(&evaluator::expr_to_svg(c)).0
+      })
+    })
+    .unwrap_or(expr);
   // A picture the wrapper held (`Pane[Image[…], {w, h}]`) only becomes the
   // top-level Image now that the wrapper is gone, after the top-level
   // image pass has already run.
@@ -4362,12 +4472,33 @@ pub(crate) fn row_svg_with_rendered_items(
 /// and return `-Graphics-`. If the expression is a list containing any
 /// `Framed` elements, render the whole list as a Row-like Grid so all
 /// elements appear together in a single graphical output.
+/// Whether a top-level `Panel[Text[…], opts…]` is drawn as a box. A panel of
+/// plain content (a table, a picture) or one with a caption is left to the
+/// other renderers, which compose those.
+fn panel_of_text_is_box(args: &[syntax::Expr]) -> bool {
+  matches!(
+    args.first(),
+    Some(syntax::Expr::FunctionCall { name, .. }) if name == "Text"
+  ) && args[1..].iter().all(|a| {
+    matches!(
+      a,
+      syntax::Expr::Rule { .. } | syntax::Expr::RuleDelayed { .. }
+    )
+  })
+}
+
 fn render_framed_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     syntax::Expr::FunctionCall { name, args }
-      if name == "Framed" && !args.is_empty() =>
+      if (name == "Framed" && !args.is_empty())
+        || (name == "Panel" && panel_of_text_is_box(args)) =>
     {
-      if let Some(svg) = functions::graphics::framed_to_svg(args) {
+      let svg = if name == "Panel" {
+        functions::graphics::panel_to_svg(args)
+      } else {
+        functions::graphics::framed_to_svg(args)
+      };
+      if let Some(svg) = svg {
         graphics_result(svg)
       } else {
         expr
@@ -4416,7 +4547,11 @@ fn render_rotate_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// Check if an expression is or contains a Framed call.
 fn contains_framed(expr: &syntax::Expr) -> bool {
   match expr {
-    syntax::Expr::FunctionCall { name, .. } if name == "Framed" => true,
+    syntax::Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Framed" | "Panel") =>
+    {
+      true
+    }
     syntax::Expr::List(items) => items.iter().any(contains_framed),
     _ => false,
   }
@@ -4611,11 +4746,11 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
     // Arithmetic BinaryOps (Plus, Times, Power, etc.) can carry a
     // Graphics[...] FunctionCall as a child — wolframscript still
     // summarizes that inner graphic as `-Graphics-`, so recurse.
-    syntax::Expr::BinaryOp { op, left, right } => syntax::Expr::BinaryOp {
-      op: *op,
-      left: Box::new(render_graphics_fc_if_needed(*left.clone())),
-      right: Box::new(render_graphics_fc_if_needed(*right.clone())),
-    },
+    syntax::Expr::BinaryOp { op, left, right } => helpers::binop(
+      *op,
+      render_graphics_fc_if_needed(*left.clone()),
+      render_graphics_fc_if_needed(*right.clone()),
+    ),
     syntax::Expr::UnaryOp { op, operand } => syntax::Expr::UnaryOp {
       op: *op,
       operand: Box::new(render_graphics_fc_if_needed(*operand.clone())),
@@ -5158,14 +5293,13 @@ fn scientific_string_to_box(s: &str) -> Option<syntax::Expr> {
       vec![
         Expr::String(mantissa.to_string()),
         Expr::String(" \u{00d7} ".to_string()),
-        Expr::FunctionCall {
-          name: "SuperscriptBox".to_string(),
-          args: vec![
+        helpers::call(
+          "SuperscriptBox",
+          vec![
             Expr::String("10".to_string()),
             Expr::String(exp.to_string()),
-          ]
-          .into(),
-        },
+          ],
+        ),
       ]
       .into(),
     )]
@@ -6667,14 +6801,13 @@ fn store_function_definition(
         // lookup chain (which falls through to `Default[func]`) supplies
         // the user-set value (matching Wolfram's `f[x_.] := ...` +
         // `Default[f] = c` semantics).
-        defaults.push(Some(syntax::Expr::FunctionCall {
-          name: "Default".to_string(),
-          args: vec![
+        defaults.push(Some(helpers::call(
+          "Default",
+          vec![
             syntax::Expr::Identifier(func_name.clone()),
             syntax::Expr::Integer(position as i128),
-          ]
-          .into(),
-        }));
+          ],
+        )));
         heads.push(None);
         blank_types.push(1);
       }

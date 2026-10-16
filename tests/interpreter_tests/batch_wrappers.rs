@@ -2948,6 +2948,37 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("Haversine[1]").unwrap(), "Haversine[1]");
   }
   #[test]
+  fn haversine_radical_angles() {
+    // Rational multiples of Pi whose Cos has a closed form become
+    // (1 - Cos[x])/2 with the radical kept unsimplified, like wolframscript
+    // (differential fuzzer, seed 20261010).
+    assert_eq!(interpret("Haversine[Pi/6]").unwrap(), "(1 - Sqrt[3]/2)/2");
+    assert_eq!(
+      interpret("Haversine[-2 Pi/12]").unwrap(),
+      "(1 - Sqrt[3]/2)/2"
+    );
+    assert_eq!(interpret("Haversine[Pi/4]").unwrap(), "(1 - 1/Sqrt[2])/2");
+    assert_eq!(
+      interpret("Haversine[Pi/5]").unwrap(),
+      "(1 + (-1 - Sqrt[5])/4)/2"
+    );
+    assert_eq!(interpret("Haversine[7 Pi/6]").unwrap(), "(1 + Sqrt[3]/2)/2");
+  }
+  #[test]
+  fn haversine_without_closed_form_stays_held() {
+    assert_eq!(interpret("Haversine[Pi/8]").unwrap(), "Haversine[Pi/8]");
+    assert_eq!(
+      interpret("Haversine[7 Pi/8]").unwrap(),
+      "Haversine[(7*Pi)/8]"
+    );
+    // Cos evaluates, but the argument is not a rational multiple of Pi.
+    assert_eq!(
+      interpret("Haversine[ArcCos[1/3]]").unwrap(),
+      "Haversine[ArcCos[1/3]]"
+    );
+    assert_eq!(interpret("Haversine[I Pi/3]").unwrap(), "Haversine[I/3*Pi]");
+  }
+  #[test]
   fn haversine_real_matches_wolframscript() {
     // Haversine[1.5] = Sin[1.5/2]^2 ≈ 0.4646313991661485. The exact last ULP
     // is platform-dependent (system libm differs across OSes; Linux CI gives
@@ -6024,6 +6055,30 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn laplacian_filter_image() {
+    // A constant image has no second derivative; a single bright pixel
+    // gives a negative centre and positive neighbours summing to ~0.
+    assert_eq!(
+      interpret("ImageData[LaplacianFilter[Image[Table[0.5, {5}, {5}]], 1]]")
+        .unwrap(),
+      interpret("Table[0., {5}, {5}]").unwrap()
+    );
+    assert_eq!(
+      interpret(
+        "d = ImageData[LaplacianFilter[Image[ReplacePart[Table[0., {5}, {5}], {3, 3} -> 1.]], 1]]; {d[[3, 3]] < 0, d[[3, 2]] > 0, d[[2, 3]] > 0, Chop[Total[Flatten[d]], 10^-6]}"
+      )
+      .unwrap(),
+      "{True, True, True, 0}"
+    );
+  }
+  #[test]
+  fn laplacian_filter_non_image_unevaluated() {
+    assert_eq!(
+      interpret("LaplacianFilter[x, 1]").unwrap(),
+      "LaplacianFilter[x, 1]"
+    );
+  }
+  #[test]
   fn gradient_filter_basic_radius_1() {
     // 1-D GradientFilter[list, 1]: |central difference| with edge replication.
     // wolframscript: {0.5, 1., 1., 1., 1.5, 0., 1.5, 1., 1., 1., 0.5}
@@ -9036,6 +9091,26 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  #[test]
+  fn hypercube_graph_with_graph_options() {
+    // Trailing options are forwarded to Graph instead of leaving the call
+    // unevaluated (used by Manipulate-based Demonstrations).
+    assert_eq!(
+      interpret(
+        "VertexList[HypercubeGraph[3, VertexSize -> 0.1, ImageSize -> {250, 300}]]"
+      )
+      .unwrap(),
+      "{1, 2, 3, 4, 5, 6, 7, 8}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeCount[HypercubeGraph[4, VertexStyle -> Hue[0.3], EdgeStyle -> {{Hue[0.5], Thickness[0.01]}}]]"
+      )
+      .unwrap(),
+      "32"
+    );
+  }
+
   // EdgeQ
   #[test]
   fn edge_q_true() {
@@ -12041,5 +12116,25 @@ mod option_symbols_batch {
       .unwrap(),
       "DiscreteUniformDistribution[{5, 5}]"
     );
+  }
+}
+
+mod nearest_function_with_options {
+  use super::*;
+
+  #[test]
+  fn distance_function_option_in_operator_form() {
+    assert_eq!(
+      interpret(
+        "nf = Nearest[{{1, 2}, {4, 5}, {7, 8}} -> Automatic, DistanceFunction -> (Abs[#1[[1]] - #2[[1]]] &)]; {nf[{6, 6}], nf[{1, 2}, 2]}"
+      )
+      .unwrap(),
+      "{{3}, {1, 2}}"
+    );
+  }
+
+  #[test]
+  fn plain_operator_form_with_count() {
+    assert_eq!(interpret("Nearest[{1, 5, 9, 12}][6, 2]").unwrap(), "{5, 9}");
   }
 }

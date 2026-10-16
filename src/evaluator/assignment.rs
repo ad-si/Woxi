@@ -2129,6 +2129,25 @@ fn emit_part_set_failure(
 /// `Set`'s `Default[sym, n] = v` has always stored slot 0 as. Pass `true`
 /// from `set_delayed_ast`, `false` from `set_ast`, to keep each form's
 /// existing consumers working.
+/// The native `PatternTest` node for a call-form `PatternTest[p, test]`
+/// whose tested pattern `p` is a plain (possibly named) blank.
+fn native_pattern_test(arg: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = arg else {
+    return None;
+  };
+  if name != "PatternTest" || args.len() != 2 {
+    return None;
+  }
+  let tested = evaluate_expr_to_expr(&args[0]).ok()?;
+  match crate::evaluator::pattern_functions::evaluate_pattern_test_ast(&[
+    tested,
+    args[1].clone(),
+  ]) {
+    Ok(node @ Expr::PatternTest { .. }) => Some(node),
+    _ => None,
+  }
+}
+
 #[allow(clippy::type_complexity)]
 fn downvalue_arg_info(
   func_name: &String,
@@ -2172,6 +2191,10 @@ fn downvalue_arg_info(
         }
         None => (arg, None),
       };
+    // `PatternTest[Pattern[n, Blank[]], test]` in call form (the FullForm
+    // of `n_?test`) describes the same slot as the native `n_?test` node.
+    let native_test = native_pattern_test(arg);
+    let arg = native_test.as_ref().unwrap_or(arg);
     let slot_start = params.len();
     match arg {
       // OptionsPattern[] or OptionsPattern[{defaults...}] — matches zero or more Rule arguments
@@ -2196,7 +2219,12 @@ fn downvalue_arg_info(
       // Supports a trailing BlankSequence (`__`) or BlankNullSequence (`___`)
       // element, which relaxes the length check and (for named sequence
       // elements) binds the sequence variable to the matching tail.
-      Expr::List(patterns) if patterns.iter().any(contains_mutating_head) => {
+      Expr::List(patterns)
+        if patterns.iter().any(|p| {
+          contains_mutating_head(p)
+            || crate::evaluator::pattern_matching::is_optional_slot(p)
+        }) =>
+      {
         // An element like `x_ = expr_` (the `HoldFirst` "let"-binding
         // idiom, e.g. `myLet[{x_ = expr_}, x_] := expr`) must never be
         // decomposed via `build_list_pattern_match`'s Part accessors:
@@ -2325,7 +2353,10 @@ fn downvalue_arg_info(
           // head (`x_ = expr_`) skips the Part-accessor decomposition for
           // the same reason as the unnamed list-pattern case above.
           Expr::List(patterns)
-            if patterns.iter().any(contains_mutating_head) =>
+            if patterns.iter().any(|p| {
+              contains_mutating_head(p)
+                || crate::evaluator::pattern_matching::is_optional_slot(p)
+            }) =>
           {
             conditions.push(Some(call(
               "__StructuralPattern__",
@@ -2519,6 +2550,24 @@ fn downvalue_arg_info(
 
 pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   let lhs = &normalize_symbol_lhs(lhs);
+  // `Evaluate[target] = value` (also written `target // Evaluate = value`)
+  // forces the otherwise held left-hand side to evaluate first, then assigns
+  // to whatever it produced — e.g. a list of `sol[i]` targets.
+  let evaluate_target = match lhs {
+    Expr::FunctionCall { name, args }
+      if name == "Evaluate" && args.len() == 1 =>
+    {
+      Some(&args[0])
+    }
+    Expr::Postfix { expr, func } if matches!(func.as_ref(), Expr::Identifier(f) if f == "Evaluate") => {
+      Some(expr.as_ref())
+    }
+    _ => None,
+  };
+  if let Some(target) = evaluate_target {
+    let target = evaluate_expr_to_expr(target)?;
+    return set_ast(&target, rhs);
+  }
   // Unwrap Condition on LHS: f[x_] /; test = body is parsed as
   // Set[Condition[f[x_], test], body]. Extract the pattern and condition.
   let (lhs, _lhs_condition) = if let Expr::FunctionCall { name, args } = lhs
@@ -3452,7 +3501,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     for factor in &factors {
       evaluated.push(evaluate_expr_to_expr(factor)?);
     }
-    let shown = call("Times", evaluated);
+    let shown = times(evaluated);
     let shown = evaluate_expr_to_expr(&shown).unwrap_or(shown);
     crate::emit_message(&format!(
       "Set::write: Tag Times in {} is Protected.",
@@ -5444,9 +5493,7 @@ fn normalize_lhs_for_upset(lhs: &Expr) -> Expr {
         _ => return lhs.clone(),
       };
       let right_expr = match op {
-        BinaryOperator::Minus => {
-          call("Times", vec![Expr::Integer(-1), (**right).clone()])
-        }
+        BinaryOperator::Minus => neg((**right).clone()),
         BinaryOperator::Divide => pow((**right).clone(), Expr::Integer(-1)),
         _ => (**right).clone(),
       };
@@ -5454,6 +5501,44 @@ fn normalize_lhs_for_upset(lhs: &Expr) -> Expr {
     }
     _ => lhs.clone(),
   }
+}
+
+/// The symbols an `UpSet`/`UpSetDelayed` left-hand side attaches its rule
+/// to: every argument that is a symbol, a call headed by one, or a pattern
+/// restricted to a head (`_Q`, or `Pattern[c, Blank[Q]]` written in
+/// FullForm). Unrestricted patterns (`r_`, `Pattern[r, Blank[]]`,
+/// `opts:OptionsPattern[]`) name no symbol and are skipped.
+fn upvalue_tags(lhs_args: &[Expr]) -> Vec<String> {
+  let mut tags: Vec<String> = Vec::new();
+  for arg in lhs_args {
+    let tag =
+      pattern_head_tag(arg).or_else(|| match strip_pattern_wrappers(arg) {
+        Expr::Identifier(s) => Some(s.clone()),
+        Expr::FunctionCall { name, .. }
+          if !matches!(
+            name.as_str(),
+            "Blank"
+              | "BlankSequence"
+              | "BlankNullSequence"
+              | "OptionsPattern"
+              | "Optional"
+              | "Alternatives"
+              | "Except"
+              | "PatternSequence"
+              | "Pattern"
+          ) =>
+        {
+          Some(name.clone())
+        }
+        _ => None,
+      });
+    if let Some(tag) = tag
+      && !tags.contains(&tag)
+    {
+      tags.push(tag);
+    }
+  }
+  tags
 }
 
 /// UpSet[lhs, rhs] — automatically assigns upvalues to all symbols in the arguments of lhs.
@@ -5527,21 +5612,7 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(eval_rhs);
   }
 
-  // Find all tag symbols in the arguments. Patterns like `_Q` carry the
-  // tag in their `head` field; `Blank[Q]` (FunctionCall) is the same shape
-  // when written via FullForm.
-  let mut tags = Vec::new();
-  for arg in &lhs_args {
-    if let Some(h) = pattern_head_tag(arg) {
-      tags.push(h);
-      continue;
-    }
-    match arg {
-      Expr::Identifier(s) => tags.push(s.clone()),
-      Expr::FunctionCall { name, .. } => tags.push(name.clone()),
-      _ => {} // Skip non-symbol arguments (integers, etc.)
-    }
-  }
+  let tags = upvalue_tags(&lhs_args);
 
   if tags.is_empty() {
     return Err(InterpreterError::EvaluationError(format!(
@@ -5578,21 +5649,7 @@ pub fn upset_delayed_ast(
   };
   let lhs = &normalized_lhs;
 
-  // Find all tag symbols in the arguments. Patterns like `_Q` carry the
-  // tag in their `head` field; `Blank[Q]` (FunctionCall) is the same shape
-  // when written via FullForm.
-  let mut tags = Vec::new();
-  for arg in &lhs_args {
-    if let Some(h) = pattern_head_tag(arg) {
-      tags.push(h);
-      continue;
-    }
-    match arg {
-      Expr::Identifier(s) => tags.push(s.clone()),
-      Expr::FunctionCall { name, .. } => tags.push(name.clone()),
-      _ => {} // Skip non-symbol arguments
-    }
-  }
+  let tags = upvalue_tags(&lhs_args);
 
   if tags.is_empty() {
     return Err(InterpreterError::EvaluationError(format!(

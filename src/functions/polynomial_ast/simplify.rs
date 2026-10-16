@@ -209,7 +209,7 @@ fn mul_rest(a: Expr, b: Expr) -> Expr {
   match (matches!(a, Expr::Integer(1)), matches!(b, Expr::Integer(1))) {
     (true, _) => b,
     (_, true) => a,
-    _ => call("Times", vec![a, b]),
+    _ => times(vec![a, b]),
   }
 }
 
@@ -217,7 +217,7 @@ fn rebuild_product(mut rests: Vec<Expr>) -> Expr {
   match rests.len() {
     0 => Expr::Integer(1),
     1 => rests.pop().unwrap(),
-    _ => call("Times", rests),
+    _ => times(rests),
   }
 }
 
@@ -239,7 +239,7 @@ fn make_coeff_term((n, d): (i128, i128), rest: &Expr) -> Expr {
   if n == 1 && d == 1 {
     return rest.clone();
   }
-  call("Times", vec![coeff_expr, rest.clone()])
+  times(vec![coeff_expr, rest.clone()])
 }
 
 fn combine_additive(expr: &Expr) -> Expr {
@@ -274,7 +274,7 @@ fn combine_additive(expr: &Expr) -> Expr {
   match out.len() {
     0 => Expr::Integer(0),
     1 => out.pop().unwrap(),
-    _ => call("Plus", out),
+    _ => plus(out),
   }
 }
 
@@ -1914,7 +1914,7 @@ fn simplify_abs_with_signs(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
           if abs_factors.len() == 1 {
             return Some(abs_factors.into_iter().next().unwrap());
           }
-          return Some(call("Times", abs_factors));
+          return Some(times(abs_factors));
         }
       }
       None
@@ -2253,7 +2253,7 @@ fn signed_infinity(sign: i64) -> Expr {
   } else {
     // `Times[-1, Infinity]` renders as `-Infinity` (matching wolframscript);
     // `DirectedInfinity[-1]` would print in its unevaluated head form here.
-    call("Times", vec![Expr::Integer(-1), id_expr("Infinity")])
+    neg(id_expr("Infinity"))
   }
 }
 
@@ -2823,13 +2823,10 @@ fn refine_log(
     && info.negative_vars.contains(var_name)
   {
     // Return I*Pi + Log[-x] as a FunctionCall to avoid evaluation issues
-    return Some(call(
-      "Plus",
-      vec![
-        call("Times", vec![id_expr("I"), const_expr("Pi")]),
-        call1("Log", neg1(arg.clone())),
-      ],
-    ));
+    return Some(plus(vec![
+      times(vec![id_expr("I"), const_expr("Pi")]),
+      call1("Log", neg1(arg.clone())),
+    ]));
   }
 
   // Log[x^p] with -1 < p < 1 → p*Log[x]
@@ -5182,8 +5179,12 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
           })
           .collect();
         if let Ok(divided) = divided {
-          let inner = call("Plus", divided);
-          let product = call("Times", vec![content_expr, inner]);
+          // The cofactor is a sum in its own right: evaluate it so its terms
+          // take canonical order (-1 + x^(-1) + x).
+          let inner = plus(divided);
+          let inner =
+            crate::evaluator::evaluate_expr_to_expr(&inner).unwrap_or(inner);
+          let product = times(vec![content_expr, inner]);
           let candidate = if g_den == 1 {
             product
           } else {
@@ -5305,7 +5306,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
                 .iter()
                 .map(|&(n, _, e)| term_from_coeff(n, e, &var))
                 .collect();
-              let inner = call("Plus", sum_terms);
+              let inner = plus(sum_terms);
               let mono = if -k == 1 {
                 Expr::Identifier(var)
               } else {
@@ -5313,23 +5314,20 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
               };
               best = if unit_cofactors && g_num > 1 {
                 // |num| > 1 shows in the numerator/denominator products
-                let num = call("Times", vec![Expr::Integer(-g_num), inner]);
+                let num = times(vec![Expr::Integer(-g_num), inner]);
                 let den = if g_den > 1 {
-                  call("Times", vec![Expr::Integer(g_den), mono])
+                  times(vec![Expr::Integer(g_den), mono])
                 } else {
                   mono
                 };
                 div2(num, den)
               } else if g_den > 1 {
                 // a unit-negative rational shows as a prefactor
-                call(
-                  "Times",
-                  vec![
-                    make_rational(-1, g_den),
-                    inner,
-                    pow2(mono, Expr::Integer(-1)),
-                  ],
-                )
+                times(vec![
+                  make_rational(-1, g_den),
+                  inner,
+                  pow2(mono, Expr::Integer(-1)),
+                ])
               } else {
                 neg1(div2(inner, mono))
               };
@@ -5451,10 +5449,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
               }
             })
             .collect();
-          Some(call(
-            "Times",
-            vec![Expr::Integer(signed), sqrt_of(g), call("Plus", inner)],
-          ))
+          Some(times(vec![Expr::Integer(signed), sqrt_of(g), plus(inner)]))
         })()
       } else {
         None
@@ -5483,10 +5478,8 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
           })
           .collect();
         if let Ok(divided) = divided {
-          let candidate = call(
-            "Times",
-            vec![call1("Sqrt", Expr::Integer(g)), call("Plus", divided)],
-          );
+          let candidate =
+            times(vec![call1("Sqrt", Expr::Integer(g)), plus(divided)]);
           if wl_simplify_count(&candidate) < wl_simplify_count(&best) {
             best = candidate;
           }
@@ -5738,8 +5731,7 @@ pub(crate) fn factor_exponential_sum(expr: &Expr) -> Option<Expr> {
       d => times2(coeff.clone(), pow2(x.clone(), Expr::Integer(*d))),
     })
     .collect();
-  let poly =
-    crate::evaluator::evaluate_expr_to_expr(&call("Plus", poly_terms)).ok()?;
+  let poly = crate::evaluator::evaluate_expr_to_expr(&plus(poly_terms)).ok()?;
   // Factor when the polynomial actually factors; otherwise just collect
   // the coefficients of each power, which is the form wolframscript keeps
   // (`1 + E^t*(-1 + t)`, not the distributed `1 - E^t + E^t*t`).
@@ -5919,6 +5911,29 @@ pub(crate) fn wl_simplify_count(e: &Expr) -> i64 {
     }
     Expr::Real(_) | Expr::BigFloat(_, _) => 2,
     Expr::Identifier(_) | Expr::Constant(_) | Expr::String(_) => 1,
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => negated_simplify_count(operand),
+    // a - b is Plus[a, Times[-1, b]].
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => 1 + wl_simplify_count(left) + negated_simplify_count(right),
+    // Nested a + (b + c) and a*(b*c) are one flat Plus / Times.
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Times,
+      ..
+    } => {
+      use crate::functions::expr_form::{ExprForm, decompose_expr};
+      match decompose_expr(e) {
+        ExprForm::Composite { children, .. } => {
+          1 + children.iter().map(wl_simplify_count).sum::<i64>()
+        }
+        ExprForm::Atom(_) => 1,
+      }
+    }
     Expr::UnaryOp { operand, .. } => 1 + wl_simplify_count(operand),
     Expr::BinaryOp { left, right, .. } => {
       1 + wl_simplify_count(left) + wl_simplify_count(right)
@@ -5927,6 +5942,52 @@ pub(crate) fn wl_simplify_count(e: &Expr) -> i64 {
       1 + args.iter().map(wl_simplify_count).sum::<i64>()
     }
     _ => 1,
+  }
+}
+
+/// SimplifyCount of `-e` in WL's FullForm: the sign folds into a number or
+/// into a product's leading numeric coefficient (`-5` is one negative
+/// integer, `-(5*x)` is Times[-5, x]); any other product gains a -1 factor
+/// (`-(a*b)` is Times[-1, a, b]) and anything else the Times[-1, e] wrapper.
+fn negated_simplify_count(e: &Expr) -> i64 {
+  let negated_number = |n: &Expr| -> Option<i64> {
+    match n {
+      Expr::Integer(k) => Some(quotient_cost::sc_int(-*k)),
+      Expr::BigInteger(k) => Some(wl_simplify_count(&Expr::BigInteger(-k))),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match &args[0] {
+          Expr::Integer(k) => {
+            Some(1 + quotient_cost::sc_int(-*k) + wl_simplify_count(&args[1]))
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
+  if let Some(c) = negated_number(e) {
+    return c;
+  }
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      match negated_number(&args[0]) {
+        Some(c) => 1 + c + args[1..].iter().map(wl_simplify_count).sum::<i64>(),
+        None => wl_simplify_count(e) + 2,
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => match negated_number(left) {
+      Some(c) => 1 + c + wl_simplify_count(right),
+      None => wl_simplify_count(e) + 2,
+    },
+    _ => 3 + wl_simplify_count(e),
   }
 }
 
@@ -6070,7 +6131,115 @@ fn full_simplify_expr_with_together(expr: &Expr) -> Expr {
     let _ = best_c;
   }
 
-  best
+  simplify_call_arguments(&best, &full_simplify_expr_with_together)
+}
+
+/// Simplify and FullSimplify reach inside function calls: every compound
+/// argument is simplified on its own and kept when that makes it strictly
+/// cheaper by SimplifyCount — `Sin[1 + 2x + x^2]` -> `Sin[(1 + x)^2]`, but a
+/// tie such as `f[6 - 5x + x^2]` (`(-3 + x)*(-2 + x)` costs the same) keeps
+/// the argument (wolframscript-verified). Sums, products and lists are only
+/// descended through, since the caller simplified them as a whole; heads
+/// that hold their arguments are left alone.
+fn simplify_call_arguments(
+  expr: &Expr,
+  simplify: &dyn Fn(&Expr) -> Expr,
+) -> Expr {
+  use crate::evaluator::Attributes;
+  let holds = |name: &str| {
+    let builtin = crate::evaluator::get_builtin_attributes(name);
+    [
+      Attributes::HoldAll,
+      Attributes::HoldFirst,
+      Attributes::HoldRest,
+      Attributes::HoldAllComplete,
+    ]
+    .into_iter()
+    .any(|a| builtin.contains(a) || crate::func_attrs_contains(name, a))
+  };
+  let is_compound = |e: &Expr| {
+    matches!(
+      e,
+      Expr::FunctionCall { .. } | Expr::BinaryOp { .. } | Expr::UnaryOp { .. }
+    )
+  };
+  match expr {
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| simplify_call_arguments(e, simplify))
+        .collect(),
+    ),
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Plus" | "Times") =>
+    {
+      let new_args: Vec<Expr> = args
+        .iter()
+        .map(|e| simplify_call_arguments(e, simplify))
+        .collect();
+      if new_args
+        .iter()
+        .zip(args.iter())
+        .all(|(n, o)| exprs_equal(n, o))
+      {
+        return expr.clone();
+      }
+      crate::evaluator::evaluate_expr_to_expr(&call(name, new_args))
+        .unwrap_or_else(|_| expr.clone())
+    }
+    Expr::FunctionCall { name, args }
+      if !matches!(name.as_str(), "Rational" | "Complex") && !holds(name) =>
+    {
+      let new_args: Vec<Expr> = args
+        .iter()
+        .map(|a| {
+          if is_compound(a) {
+            simplify(a)
+          } else {
+            a.clone()
+          }
+        })
+        .collect();
+      if new_args
+        .iter()
+        .zip(args.iter())
+        .all(|(n, o)| exprs_equal(n, o))
+      {
+        return expr.clone();
+      }
+      // Judge the re-evaluated call, not the bare arguments: a factored
+      // denominator `Power[(1 + x)*(2 + 3*x), -1]` splits into two powers
+      // and costs more than the expanded one it replaced.
+      match crate::evaluator::evaluate_expr_to_expr(&call(name, new_args)) {
+        Ok(candidate)
+          if wl_simplify_count(&candidate) < wl_simplify_count(expr) =>
+        {
+          candidate
+        }
+        _ => expr.clone(),
+      }
+    }
+    // Operator forms (`E^(…)`, `a - b`, `-f[x]`) go through their FullForm
+    // head.
+    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } => {
+      use crate::functions::expr_form::{ExprForm, decompose_expr};
+      match decompose_expr(expr) {
+        ExprForm::Composite { head, children }
+          if matches!(head.as_str(), "Plus" | "Times" | "Power") =>
+        {
+          let as_call = call(&head, children);
+          let result = simplify_call_arguments(&as_call, simplify);
+          if exprs_equal(&result, &as_call) {
+            expr.clone()
+          } else {
+            result
+          }
+        }
+        _ => expr.clone(),
+      }
+    }
+    _ => expr.clone(),
+  }
 }
 
 /// Retrieve the current `$Assumptions` from the environment, if any, as an Expr.
@@ -6253,8 +6422,7 @@ fn try_complementary_inverse_trig(expr: &Expr) -> Option<Expr> {
     return None;
   }
   // c * Pi / 2
-  let result =
-    div2(call("Times", vec![c0, const_expr("Pi")]), Expr::Integer(2));
+  let result = div2(times(vec![c0, const_expr("Pi")]), Expr::Integer(2));
   crate::evaluator::evaluate_expr_to_expr(&result).ok()
 }
 
@@ -6398,15 +6566,12 @@ fn denest_one_sqrt(e: &Expr) -> Option<Expr> {
   let sqrt_d = sqrt_of(d);
   let sqrt_e = sqrt_of(e_val);
   // b > 0: Sqrt[e] + Sqrt[d]; b < 0: Sqrt[d] - Sqrt[e].
-  let neg_sqrt_e = call("Times", vec![Expr::Integer(-1), sqrt_e.clone()]);
-  let sum = call(
-    "Plus",
-    if b >= 0 {
-      vec![sqrt_e, sqrt_d]
-    } else {
-      vec![neg_sqrt_e, sqrt_d]
-    },
-  );
+  let neg_sqrt_e = neg(sqrt_e.clone());
+  let sum = plus(if b >= 0 {
+    vec![sqrt_e, sqrt_d]
+  } else {
+    vec![neg_sqrt_e, sqrt_d]
+  });
   crate::evaluator::evaluate_expr_to_expr(&sum).ok()
 }
 
@@ -6459,13 +6624,17 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   let abs_combined = simplify_abs_products(expr);
 
   // First apply regular simplification
-  let simplified = simplify_expr(&abs_combined);
+  let simplified = simplify_expr_with_together(&abs_combined);
 
   // Then expand fully and combine
   let expanded = expand_and_combine(&simplified);
 
   // Apply trig identities
   let trig_simplified = apply_trig_identities(&expanded);
+
+  if let Some(poly) = full_simplify_univariate_polynomial(&trig_simplified) {
+    return poly;
+  }
 
   // Keep track of the best (simplest) form using leaf count as complexity.
   // Include the pre-expansion simplified form as a candidate — expand_and_combine
@@ -6480,32 +6649,16 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
     }
   }
 
-  // Try factoring. wolframscript's Simplify applies FactorSquareFree to
-  // polynomial sums (square-free `2+3x+x^2` stays expanded, `x^3+4x^2+5x+2`
-  // becomes `(1+x)^2*(2+x)`), Factor to other shapes. Ties on the
-  // digit-weighted complexity prefer the factored form
-  // (Simplify[2x + 2] -> 2(1 + x)) UNLESS factoring introduces more
-  // negative integers — wolframscript keeps `3 - 3x` rather than
-  // `-3(-1 + x)`, but factors `-2x - 2` to `-2(1 + x)` (one negative
-  // instead of two).
-  let is_sum_shape = matches!(&trig_simplified, Expr::FunctionCall { name, .. } if name == "Plus")
-    || matches!(
-      &trig_simplified,
-      Expr::BinaryOp {
-        op: BinaryOperator::Plus | BinaryOperator::Minus,
-        ..
-      }
-    );
-  let factored_candidate = if is_sum_shape && polynomial_like(&trig_simplified)
-  {
-    crate::functions::polynomial_ast::factor_square_free_ast(
-      std::slice::from_ref(&trig_simplified),
-    )
-  } else {
-    crate::functions::polynomial_ast::factor_ast(std::slice::from_ref(
-      &trig_simplified,
-    ))
-  };
+  // Try factoring. Unlike Simplify (FactorSquareFree on polynomial sums),
+  // FullSimplify uses the full Factor: `x^2 - y^2` -> `(x - y)*(x + y)`,
+  // `x^2*y - y^3` -> `(x - y)*y*(x + y)`. Ties on the digit-weighted
+  // complexity prefer the factored form (2x + 2 -> 2(1 + x)) UNLESS
+  // factoring introduces more negative integers — wolframscript keeps
+  // `3 - 3x` rather than `-3(-1 + x)`, but factors `-2x - 2` to `-2(1 + x)`
+  // (one negative instead of two).
+  let factored_candidate = crate::functions::polynomial_ast::factor_ast(
+    std::slice::from_ref(&trig_simplified),
+  );
   if let Ok(factored) = factored_candidate
     && simplify_cost_key(&factored) <= simplify_cost_key(&best)
   {
@@ -6523,7 +6676,7 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   if terms.len() >= 2 {
     if let Ok(factored) = crate::functions::polynomial_ast::factor_terms_ast(
       std::slice::from_ref(&trig_simplified),
-    ) && simplify_cost_key(&factored) <= simplify_cost_key(&best)
+    ) && simplify_cost_key(&factored) < simplify_cost_key(&best)
     {
       let c = leaf_count(&factored);
       best = factored;
@@ -6635,6 +6788,271 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   best
 }
 
+/// FullSimplify of an expanded univariate polynomial with integer
+/// coefficients, decoded from wolframscript probes (see
+/// [`fs_univariate`] for the search).
+fn full_simplify_univariate_polynomial(expanded: &Expr) -> Option<Expr> {
+  if !polynomial_like(expanded) {
+    return None;
+  }
+  let mut vars = std::collections::BTreeSet::new();
+  collect_free_vars_simple(expanded, &mut vars);
+  if vars.len() != 1 {
+    return None;
+  }
+  let var = vars.into_iter().next()?;
+  let coeffs = extract_poly_coeffs(expanded, &var)?;
+  // The search is quadratic in the degree with a Factor call per state.
+  if coeffs.iter().filter(|c| **c != 0).count() < 2 || coeffs.len() > 25 {
+    return None;
+  }
+  fs_univariate(&coeffs, &var, &mut std::collections::HashMap::new())
+}
+
+/// The FullSimplify form of the polynomial `sum coeffs[i] var^i`. The
+/// candidates, cheapest by SimplifyCount, with ties going to the earlier:
+/// 1. the expanded form;
+/// 2. a genuine factorization (two or more non-constant factors, or a
+///    power) — taken greedily as soon as it is no more expensive than the
+///    expanded form, with each polynomial factor simplified in turn:
+///    `6 - 5x + x^2` -> `(-3 + x)*(-2 + x)` even though `6 + x*(-5 + x)`
+///    is cheaper;
+/// 3. the content times the simplified primitive part, for |content| > 1:
+///    `100 + 200x + 300x^2` -> `100*(1 + x*(2 + 3*x))`;
+/// 4. the low-order terms below some power plus the simplified remainder,
+///    with the remainder's content, sign and power of `var` pulled out:
+///    `1 + 2x - 3x^2` -> `1 + (2 - 3*x)*x`, `4 + x - 6x^2 + 3x^3` ->
+///    `4 + x + 3*(-2 + x)*x^2`, `1 - 5x - 4x^2 + x^3` ->
+///    `1 + (-5 + x)*x*(1 + x)`. Past the constant term a split needs a
+///    common content in the remainder; without a constant term the split
+///    pulls out the lowest power (`7x^2 + x^3 - 3x^4` ->
+///    `x^2*(7 + x - 3*x^2)`).
+///
+/// Candidates 3 and 4 must beat the best so far strictly — so
+/// `2 + 4x + 6x^2` stays expanded — except that the content and the power
+/// of `var` win a tie with the expanded form (`2 + 2x` -> `2*(1 + x)`,
+/// `x + x^2` -> `x*(1 + x)`).
+fn fs_univariate(
+  coeffs: &[i128],
+  var: &str,
+  memo: &mut std::collections::HashMap<Vec<i128>, Expr>,
+) -> Option<Expr> {
+  let mut coeffs = coeffs.to_vec();
+  while coeffs.len() > 1 && coeffs.last() == Some(&0) {
+    coeffs.pop();
+  }
+  if let Some(e) = memo.get(&coeffs) {
+    return Some(e.clone());
+  }
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let plain = eval(coeffs_to_expr(&coeffs, var))?;
+  let nonzero: Vec<usize> =
+    (0..coeffs.len()).filter(|&i| coeffs[i] != 0).collect();
+  if nonzero.len() < 2 {
+    memo.insert(coeffs, plain.clone());
+    return Some(plain);
+  }
+  let x = Expr::Identifier(var.to_string());
+  let x_pow = |m: usize| {
+    if m == 1 {
+      x.clone()
+    } else {
+      call("Power", vec![x.clone(), Expr::Integer(m as i128)])
+    }
+  };
+  let mut best = plain.clone();
+  let mut best_cost = wl_simplify_count(&best);
+
+  // 2. A genuine factorization, simplified factor by factor.
+  if let Ok(factored) =
+    crate::functions::polynomial_ast::factor_ast(std::slice::from_ref(&plain))
+    && is_genuine_factorization(&factored)
+    && wl_simplify_count(&factored) <= best_cost
+  {
+    let result = simplify_polynomial_factors(&factored, var, memo)?;
+    memo.insert(coeffs, result.clone());
+    return Some(result);
+  }
+
+  let content = coeffs.iter().fold(0i128, |g, &c| {
+    crate::functions::math_ast::gcd_i128(g, c.abs())
+  });
+
+  // 3. Content times the simplified primitive part.
+  if content > 1 {
+    for d in [content, -content] {
+      let primitive: Vec<i128> = coeffs.iter().map(|c| c / d).collect();
+      let inner = fs_univariate(&primitive, var, memo)?;
+      let candidate = eval(times(vec![Expr::Integer(d), inner]))?;
+      let cost = wl_simplify_count(&candidate);
+      // A tie with the expanded form goes to the content: `2 + 2x` ->
+      // `2*(1 + x)`.
+      if cost < best_cost || (cost == best_cost && exprs_equal(&best, &plain)) {
+        best = candidate;
+        best_cost = cost;
+      }
+    }
+  }
+
+  // 4. Low-order terms plus the simplified remainder.
+  for k in 1..coeffs.len() {
+    // Without a constant term the only split is at the lowest power, which
+    // pulls that power of `var` out of everything: `7x^2 + x^3 - 3x^4` ->
+    // `x^2*(7 + x - 3*x^2)`.
+    let low_is_zero = coeffs[..k].iter().all(|c| *c == 0);
+    if low_is_zero && k != nonzero[0] {
+      continue;
+    }
+    let upper: Vec<usize> =
+      (k..coeffs.len()).filter(|&i| coeffs[i] != 0).collect();
+    if upper.len() < 2 && !low_is_zero {
+      continue;
+    }
+    let m = upper[0];
+    let g = upper.iter().fold(0i128, |g, &i| {
+      crate::functions::math_ast::gcd_i128(g, coeffs[i].abs())
+    });
+    // Past the constant term, a split needs a common content to pull out:
+    // `4 + x - 6x^2 + 3x^3` -> `4 + x + 3*(-2 + x)*x^2`, but
+    // `-1 + x - x^2 + 2x^3` stays although `-1 + x + x^2*(-1 + 2*x)` is
+    // cheaper.
+    if k >= 2 && g == 1 && !low_is_zero {
+      continue;
+    }
+    let mut low = coeffs[..k].to_vec();
+    low.resize(k, 0);
+    let low_expr = coeffs_to_expr(&low, var);
+    // On a cost tie the minus is pulled only out of a remainder with a
+    // negative leading coefficient: `-1 - x*(2 + 3*x)` and
+    // `-3 - (-2 + x)*x`, but `1 + x*(-2 + x + x^2)` rather than
+    // `1 + (-1 + x)*x*(2 + x)` (wolframscript-verified).
+    let signs = if upper.last().is_some_and(|&i| coeffs[i] < 0) {
+      [-1i128, 1]
+    } else {
+      [1, -1]
+    };
+    for s in signs {
+      let d = s * g;
+      let q: Vec<i128> = coeffs[m..].iter().map(|c| c / d).collect();
+      let inner = fs_univariate(&q, var, memo)?;
+      let mut factors = Vec::new();
+      if d != 1 {
+        factors.push(Expr::Integer(d));
+      }
+      factors.push(x_pow(m));
+      factors.push(inner);
+      let candidate = if low_is_zero {
+        eval(times(factors))?
+      } else {
+        eval(plus(vec![low_expr.clone(), times(factors)]))?
+      };
+      let cost = wl_simplify_count(&candidate);
+      // Pulling out the power of `var` wins a tie with the expanded form:
+      // `x + x^2` -> `x*(1 + x)`.
+      if cost < best_cost
+        || (low_is_zero && cost == best_cost && exprs_equal(&best, &plain))
+      {
+        best = candidate;
+        best_cost = cost;
+      }
+    }
+  }
+  memo.insert(coeffs, best.clone());
+  Some(best)
+}
+
+/// Whether Factor split the polynomial into two or more non-constant factors
+/// or a power of one — not merely a numeric content.
+fn is_genuine_factorization(e: &Expr) -> bool {
+  let is_const = |f: &Expr| {
+    matches!(f, Expr::Integer(_) | Expr::BigInteger(_))
+      || matches!(f, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  let factors: Vec<Expr> = match e {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => return is_genuine_factorization(operand),
+    Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } => collect_multiplicative_factors(e),
+    _ => vec![e.clone()],
+  };
+  // A power of the variable is a monomial, pulled out by the split search
+  // instead: `-x*(-7 + …)` is not a factorization of `7x - 5x^2 - …`.
+  let is_sum = |f: &Expr| collect_additive_terms(f).len() >= 2;
+  let power_base = |f: &Expr| match f {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some(args[0].clone())
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      ..
+    } => Some((**left).clone()),
+    _ => None,
+  };
+  let sums: Vec<&Expr> = factors
+    .iter()
+    .filter(|f| {
+      !is_const(f) && power_base(f).as_ref().map_or(is_sum(f), is_sum)
+    })
+    .collect();
+  sums.len() >= 2 || sums.iter().any(|f| power_base(f).is_some())
+}
+
+/// Simplify every polynomial factor (and power base) of a Factor result
+/// with [`fs_univariate`], keeping the product's shape.
+fn simplify_polynomial_factors(
+  e: &Expr,
+  var: &str,
+  memo: &mut std::collections::HashMap<Vec<i128>, Expr>,
+) -> Option<Expr> {
+  let mut recurse = |f: &Expr| simplify_polynomial_factors(f, var, memo);
+  let rebuilt = match e {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut new_args = Vec::with_capacity(args.len());
+      for a in args {
+        new_args.push(recurse(a)?);
+      }
+      times(new_args)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => times(vec![recurse(left)?, recurse(right)?]),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      pow(recurse(&args[0])?, args[1].clone())
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => pow(recurse(left)?, (**right).clone()),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => neg(recurse(operand)?),
+    _ => {
+      if collect_additive_terms(e).len() < 2 {
+        return Some(e.clone());
+      }
+      return match extract_poly_coeffs(e, var) {
+        Some(coeffs) => fs_univariate(&coeffs, var, memo),
+        None => Some(e.clone()),
+      };
+    }
+  };
+  // Leave an unchanged product exactly as Factor ordered it.
+  if exprs_equal(&rebuilt, e) {
+    return Some(e.clone());
+  }
+  crate::evaluator::evaluate_expr_to_expr(&rebuilt).ok()
+}
+
 /// A product containing both a factor `z` and `Gamma[z]` collapses via the
 /// identity `z Gamma[z] = Gamma[z+1]`; other factors are preserved (so
 /// `2 x Gamma[x]` → `2 Gamma[x+1]`).
@@ -6664,10 +7082,10 @@ fn gamma_factor_absorb(expr: &Expr) -> Option<Expr> {
       continue;
     };
     // Gamma[arg + 1].
-    let arg_plus = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Plus",
-      vec![arg.clone(), Expr::Integer(1)],
-    ))
+    let arg_plus = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+      arg.clone(),
+      Expr::Integer(1),
+    ]))
     .ok()?;
     let new_gamma = call1("Gamma", arg_plus);
     let mut rest: Vec<Expr> = factors
@@ -6680,7 +7098,7 @@ fn gamma_factor_absorb(expr: &Expr) -> Option<Expr> {
     let product = if rest.len() == 1 {
       rest.into_iter().next().unwrap()
     } else {
-      call("Times", rest)
+      times(rest)
     };
     return crate::evaluator::evaluate_expr_to_expr(&product).ok();
   }
@@ -6701,10 +7119,10 @@ fn extract_gamma_ratio(expr: &Expr) -> Option<(Expr, Expr)> {
         return Some(args[0].clone());
       }
       if name == "Factorial" {
-        return crate::evaluator::evaluate_expr_to_expr(&call(
-          "Plus",
-          vec![args[0].clone(), Expr::Integer(1)],
-        ))
+        return crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+          args[0].clone(),
+          Expr::Integer(1),
+        ]))
         .ok();
       }
     }
@@ -6755,11 +7173,9 @@ fn extract_gamma_ratio(expr: &Expr) -> Option<(Expr, Expr)> {
 /// `(x+1)+1` collapses to `x+2`), but the product itself is left factored.
 fn gamma_ratio_product(expr: &Expr) -> Option<Expr> {
   let (a, b) = extract_gamma_ratio(expr)?;
-  let diff = crate::evaluator::evaluate_expr_to_expr(&call(
-    "Plus",
-    vec![a, call("Times", vec![Expr::Integer(-1), b.clone()])],
-  ))
-  .ok()?;
+  let diff =
+    crate::evaluator::evaluate_expr_to_expr(&plus(vec![a, neg(b.clone())]))
+      .ok()?;
   // wolframscript reduces the rising-factorial product only for k <= 3 and
   // leaves larger ratios (e.g. Gamma[n+4]/Gamma[n]) unevaluated.
   let k = match diff {
@@ -6768,17 +7184,17 @@ fn gamma_ratio_product(expr: &Expr) -> Option<Expr> {
   };
   let mut factors = Vec::with_capacity(k as usize);
   for j in 0..k {
-    let f = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Plus",
-      vec![b.clone(), Expr::Integer(j)],
-    ))
+    let f = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+      b.clone(),
+      Expr::Integer(j),
+    ]))
     .ok()?;
     factors.push(f);
   }
   Some(if factors.len() == 1 {
     factors.into_iter().next().unwrap()
   } else {
-    call("Times", factors)
+    times(factors)
   })
 }
 
@@ -7132,7 +7548,7 @@ fn simplify_inside_times(expr: &Expr) -> Expr {
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
       let new_args: Vec<Expr> = args.iter().map(simplify_plus_factor).collect();
-      call("Times", new_args)
+      times(new_args)
     }
     _ => expr.clone(),
   }
@@ -8898,14 +9314,14 @@ fn simplify_quotient_select(
       let term = div2(term_from_coeff(n, e, &var), den.clone());
       split_terms.push(crate::evaluator::evaluate_expr_to_expr(&term).ok()?);
     }
-    let sum = call("Plus", split_terms);
+    let sum = plus(split_terms);
     return Some((crate::evaluator::evaluate_expr_to_expr(&sum).ok()?, true));
   }
 
   // build the chosen quotient display
   let num_body = coeffs_from_terms(&chosen.num_terms, &var);
   let num_expr = if chosen.num_content.abs() > 1 {
-    call("Times", vec![Expr::Integer(chosen.num_content), num_body])
+    times(vec![Expr::Integer(chosen.num_content), num_body])
   } else {
     num_body
   };
@@ -8938,9 +9354,9 @@ fn simplify_quotient_select(
       factors.push(var_pow);
       factors.push(den_body);
     }
-    call("Times", factors)
+    times(factors)
   } else if chosen.den_content > 1 {
-    call("Times", vec![Expr::Integer(chosen.den_content), den_body])
+    times(vec![Expr::Integer(chosen.den_content), den_body])
   } else if den_is_mono {
     den.clone()
   } else {
@@ -8959,14 +9375,11 @@ fn simplify_quotient_select(
         pow2(Expr::Identifier(var.clone()), Expr::Integer(den_mono_exp))
       };
       return Some((
-        call(
-          "Times",
-          vec![
-            make_rational(-1, den_mono_coeff),
-            num_expr,
-            pow2(var_pow, Expr::Integer(-1)),
-          ],
-        ),
+        times(vec![
+          make_rational(-1, den_mono_coeff),
+          num_expr,
+          pow2(var_pow, Expr::Integer(-1)),
+        ]),
         true,
       ));
     }
@@ -9087,7 +9500,7 @@ fn radical_quotient_num_content(num: &Expr, den: &Expr) -> Option<Expr> {
     .collect();
   let divided = divided.ok()?;
   Some(div2(
-    call("Times", vec![Expr::Integer(signed), call("Plus", divided)]),
+    times(vec![Expr::Integer(signed), plus(divided)]),
     den.clone(),
   ))
 }
@@ -9135,10 +9548,7 @@ fn extract_numeric_content(e: &Expr) -> Option<Expr> {
     })
     .collect();
   let divided = divided.ok()?;
-  Some(call(
-    "Times",
-    vec![Expr::Integer(content), call("Plus", divided)],
-  ))
+  Some(times(vec![Expr::Integer(content), plus(divided)]))
 }
 
 /// Final Simplify sign normalization for a quotient (see
@@ -10049,7 +10459,7 @@ fn try_merge_logs(expr: &Expr) -> Option<Expr> {
     Some(
       pieces
         .into_iter()
-        .map(|p| call("Times", vec![Expr::Integer(coeff), p]))
+        .map(|p| times(vec![Expr::Integer(coeff), p]))
         .collect(),
     )
   }
@@ -10118,10 +10528,8 @@ fn try_merge_logs(expr: &Expr) -> Option<Expr> {
         .iter()
         .map(|(c, n)| (c / g as i64, n.clone()))
         .collect();
-      candidate_logs.push(call(
-        "Times",
-        vec![Expr::Integer(g as i128), build_log(&reduced)],
-      ));
+      candidate_logs
+        .push(times(vec![Expr::Integer(g as i128), build_log(&reduced)]));
     }
   }
 
@@ -10133,7 +10541,7 @@ fn try_merge_logs(expr: &Expr) -> Option<Expr> {
     let cand = if terms.len() == 1 {
       terms.pop().unwrap()
     } else {
-      call("Plus", terms)
+      plus(terms)
     };
     let cand = crate::evaluator::evaluate_expr_to_expr(&cand).unwrap_or(cand);
     let c = complexity_digits(&cand);

@@ -1751,7 +1751,7 @@ fn times_of(mut factors: Vec<Expr>) -> Expr {
   match factors.len() {
     0 => Expr::Integer(1),
     1 => factors.pop().unwrap(),
-    _ => call("Times", factors),
+    _ => times(factors),
   }
 }
 
@@ -1790,7 +1790,7 @@ pub fn music_duration_plus_terms(args: &[Expr]) -> Option<Vec<Expr>> {
   let mut products = Vec::with_capacity(flat.len());
   for term in &flat {
     let (coeff, value) = music_duration_summand(term)?;
-    products.push(call("Times", vec![coeff, value]));
+    products.push(times(vec![coeff, value]));
   }
   Some(products)
 }
@@ -2697,7 +2697,7 @@ mod tests {
     let result = try_music_pitch_plus(&[
       named_pitch("Bb"),
       named_pitch("A#"),
-      call("Times", vec![Expr::Integer(-1), named_pitch("C")]),
+      neg(named_pitch("C")),
     ]);
     expect_pitch_sum(result.as_ref(), 1, "G", 80);
   }
@@ -2707,11 +2707,9 @@ mod tests {
     // The intermediate `Bb - C` decodes back exactly as a MusicInterval, so
     // adding `A#` afterwards gives the same answer as summing all three at
     // once.
-    let partial = try_music_pitch_plus(&[
-      named_pitch("Bb"),
-      call("Times", vec![Expr::Integer(-1), named_pitch("C")]),
-    ])
-    .unwrap();
+    let partial =
+      try_music_pitch_plus(&[named_pitch("Bb"), neg(named_pitch("C"))])
+        .unwrap();
     let result = try_music_pitch_plus(&[named_pitch("A#"), partial]);
     expect_pitch_sum(result.as_ref(), 1, "G", 80);
   }
@@ -2742,8 +2740,8 @@ mod tests {
     // collects to `p` on the ordinary path).
     assert!(
       try_music_pitch_plus(&[
-        call("Times", vec![Expr::Integer(2), named_pitch("C")]),
-        call("Times", vec![Expr::Integer(-1), named_pitch("C")]),
+        times(vec![Expr::Integer(2), named_pitch("C")]),
+        neg(named_pitch("C")),
       ])
       .is_none()
     );
@@ -2752,10 +2750,8 @@ mod tests {
   #[test]
   fn music_pitch_plus_octaveless_names_default_to_octave_4() {
     // Octaveless `C` defaults to octave 4, so `C - C4` cancels to a Unison.
-    let result = try_music_pitch_plus(&[
-      named_pitch("C"),
-      call("Times", vec![Expr::Integer(-1), named_pitch("C4")]),
-    ]);
+    let result =
+      try_music_pitch_plus(&[named_pitch("C"), neg(named_pitch("C4"))]);
     match &result {
       Some(Expr::FunctionCall { name, args }) if name == "MusicInterval" => {
         match &args[..] {

@@ -5,7 +5,7 @@
 use crate::InterpreterError;
 use crate::helpers::{
   binop, bool_expr, call, call0, call1, const_expr, div, div2, id_expr, minus2,
-  neg1, null_expr, plus, plus2, pow, pow2, rule_expr, times, times2,
+  neg, neg1, null_expr, plus, plus2, pow, pow2, rule_expr, times, times2,
   unevaluated,
 };
 use crate::syntax::{
@@ -17,6 +17,7 @@ use num_bigint::{BigInt, Sign};
 mod airy;
 mod arithmetic;
 mod bessel;
+pub(crate) mod bessel_bigfloat;
 pub(crate) mod canonical_polynomial;
 mod carlson;
 pub mod complex;
@@ -47,6 +48,7 @@ mod zeta_functions;
 pub use airy::*;
 pub use arithmetic::*;
 pub use bessel::*;
+pub use bessel_bigfloat::*;
 pub use carlson::*;
 pub use complex::*;
 pub use coordinate_arrays::*;

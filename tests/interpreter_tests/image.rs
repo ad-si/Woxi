@@ -3041,6 +3041,31 @@ mod image_processing {
     );
   }
 
+  // A numeric {x, y} third argument in [-1, 1] picks which side the removed
+  // pixels come from: -1 behaves like Left/Bottom, 1 like Right/Top and 0 like
+  // Center (as used by zoom-pan demonstrations that pass a negated position).
+  #[test]
+  fn image_crop_numeric_offset_spec() {
+    clear_state();
+    let img = "Image[{{0, 0.1, 0.2, 0.3}, {0, 0.1, 0.2, 0.3}}]";
+    let crop = |spec: &str| {
+      interpret(&format!(
+        "Round[255 ImageData[ImageCrop[{img}, {{2, 2}}, {spec}]]]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(crop("{-1, 0}"), crop("{Left, Center}"));
+    assert_eq!(crop("{1, 0}"), crop("{Right, Center}"));
+    assert_eq!(crop("{0, 0}"), crop("Center"));
+    assert_eq!(
+      interpret(&format!(
+        "ImageDimensions[ImageCrop[{img}, {{3, 1}}, {{0.5, -1}}]]"
+      ))
+      .unwrap(),
+      "{3, 1}"
+    );
+  }
+
   // ImageCrop[image] with no size argument removes uniform borders.
   // Pixel precision is preserved (no Byte round-trip).
   #[test]
@@ -3095,6 +3120,65 @@ mod image_processing {
       )
       .unwrap(),
       "{2, 2}"
+    );
+  }
+
+  // ImageForwardTransformation maps source points through the function and
+  // resamples onto the requested size / PlotRange.
+  #[test]
+  fn image_forward_transformation_shift() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageForwardTransformation[Image[{{0, 1, 0.5}, {1, 0, 0.2}}], {#[[1]] + 1, #[[2]]} &, {6, 4}, DataRange -> {{0, 3}, {0, 2}}, PlotRange -> {{0, 5}, {0, 2}}]]"
+      )
+      .unwrap(),
+      "{6, 4}"
+    );
+    // Columns left of the shifted image stay background (black).
+    assert_eq!(
+      interpret(
+        "ImageData[ImageForwardTransformation[Image[{{1, 1, 1}, {1, 1, 1}}], {#[[1]] + 1, #[[2]]} &, {5, 2}, DataRange -> {{0, 3}, {0, 2}}, PlotRange -> {{0, 5}, {0, 2}}]]"
+      )
+      .unwrap(),
+      "{{0., 1., 1., 1., 0.}, {0., 1., 1., 1., 0.}}"
+    );
+  }
+
+  // Real-valued sizes are rounded and the default PlotRange is the bounding
+  // box of the transformed image (here the doubled width).
+  #[test]
+  fn image_forward_transformation_default_range() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageForwardTransformation[Image[{{0, 1}, {1, 0}}], {2 #[[1]], #[[2]]} &, {8., 4.}]]"
+      )
+      .unwrap(),
+      "{8, 4}"
+    );
+  }
+
+  #[test]
+  fn image_forward_transformation_non_image_stays_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageForwardTransformation[x, f, {2, 2}]").unwrap(),
+      "ImageForwardTransformation[x, f, {2, 2}]"
+    );
+  }
+
+  // HighlightImage draws marks over the image, in pixel coordinates, and
+  // returns an image of the same size.
+  #[test]
+  fn highlight_image_marker_line() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img = ConstantImage[Black, {20, 10}]; r = HighlightImage[img, ImageMarker[{{10, 0}, {10, 10}}, Graphics[{White, Thick, Line[{{0, 0}, {0, 10}}]}]]]; {ImageDimensions[r], ImageData[r][[5, 10]][[1]] > 0.5, ImageData[r][[5, 3]][[1]]}"
+      )
+      .unwrap(),
+      "{{20, 10}, True, 0.}"
     );
   }
 
@@ -6710,6 +6794,33 @@ mod morphological_components {
   }
 }
 
+mod morphological_image_input {
+  use super::*;
+
+  // An image is thresholded on its gray levels like a numeric matrix.
+  #[test]
+  fn components_of_image() {
+    assert_eq!(
+      interpret(
+        "MorphologicalComponents[Image[{{0.9, 0.1, 0.9}, {0.1, 0.1, 0.1}, {0.9, 0.1, 0.9}}], 0.5]"
+      )
+      .unwrap(),
+      "{{1, 0, 2}, {0, 0, 0}, {3, 0, 4}}"
+    );
+  }
+
+  #[test]
+  fn perimeter_of_filled_square() {
+    assert_eq!(
+      interpret(
+        "ImageData[MorphologicalPerimeter[Image[{{0,0,0,0,0},{0,1,1,1,0},{0,1,1,1,0},{0,1,1,1,0},{0,0,0,0,0}}], 0.5]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0, 0, 0}, {0, 1, 1, 1, 0}, {0, 1, 0, 1, 0}, {0, 1, 1, 1, 0}, {0, 0, 0, 0, 0}}"
+    );
+  }
+}
+
 mod component_measurements {
   use super::*;
 
@@ -8390,6 +8501,158 @@ mod demonstration_image_filters {
       )
       .unwrap(),
       "{{0., 0., 1., 1.}, {0., 0., 1., 1.}, {1., 1., 0., 0.}, {1., 1., 0., 0.}}"
+    );
+  }
+
+  #[test]
+  fn image_levels_counts_pixel_values_per_channel() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageLevels[Binarize[Image[{{0, 1, 1}, {0, 0, 1}}]], 2]")
+        .unwrap(),
+      "{{0, 3}, {1, 3}}"
+    );
+    assert_eq!(
+      interpret("ImageLevels[Binarize[Image[{{0, 1, 1}, {0, 0, 1}}]]][[2, 2]]")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("ImageLevels[Image[{{0, 1}, {1, 1}}], 2]").unwrap(),
+      "{{0., 1}, {1., 3}}"
+    );
+    assert_eq!(
+      interpret("Length[ImageLevels[Image[{{0, 1}, {1, 1}}]]]").unwrap(),
+      "256"
+    );
+    assert_eq!(
+      interpret("Length[ImageLevels[Image[{{{1, 0, 0}, {0, 1, 0}}}], 2]]")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  // The painterly effects are deterministic, so they are checked on values.
+  #[test]
+  fn image_effect_solarization_inverts_bright_values() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageEffect[Image[{{0.25, 0.75}}], \
+         {\"Solarization\", 0.5}]]"
+      )
+      .unwrap(),
+      "{{0.25, 0.25}}"
+    );
+    // The threshold is the effect's parameter.
+    assert_eq!(
+      interpret(
+        "ImageData[ImageEffect[Image[{{0.25, 0.75}}], \
+         {\"Solarization\", 0.1}]]"
+      )
+      .unwrap(),
+      "{{0.75, 0.25}}"
+    );
+  }
+
+  #[test]
+  fn image_effect_oil_painting_flattens_to_dominant_color() {
+    clear_state();
+    // A uniform image has nothing to smear.
+    assert_eq!(
+      interpret(
+        "ImageData[ImageEffect[Image[Table[0.5, {4}, {4}]], \
+         {\"OilPainting\", 2}]] == Table[0.5, {4}, {4}]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A single dark pixel is outvoted by its bright neighbours.
+    assert_eq!(
+      interpret(
+        "Max[ImageData[ImageEffect[Image[{{1., 1., 1.}, {1., 0., 1.}, \
+         {1., 1., 1.}}], {\"OilPainting\", 1}]]] - \
+         Min[ImageData[ImageEffect[Image[{{1., 1., 1.}, {1., 0., 1.}, \
+         {1., 1., 1.}}], {\"OilPainting\", 1}]]]"
+      )
+      .unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageEffect[Image[Table[{0.2, 0.4, 0.6}, {3}, {5}]], \
+         \"OilPainting\"]]"
+      )
+      .unwrap(),
+      "{5, 3}"
+    );
+  }
+
+  #[test]
+  fn image_effect_charcoal_draws_edges_on_white() {
+    clear_state();
+    // A flat image has no edges: pure white.
+    assert_eq!(
+      interpret(
+        "Union[Flatten[ImageData[ImageEffect[Image[Table[0.5, {4}, {4}]], \
+         {\"Charcoal\", 1}]]]]"
+      )
+      .unwrap(),
+      "{1.}"
+    );
+    // A step edge darkens the pixels beside it and leaves the rest white.
+    assert_eq!(
+      interpret(
+        "Min[ImageData[ImageEffect[Image[{{0., 0., 1., 1.}, {0., 0., 1., 1.}}], \
+         {\"Charcoal\", 1}]]] < 0.5"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod image_size_option {
+  use super::*;
+
+  fn svg_header(code: &str) -> String {
+    clear_state();
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let start = svg.find("<svg").unwrap();
+    svg[start..].split('>').next().unwrap().to_string()
+  }
+
+  #[test]
+  fn width_only_keeps_aspect_ratio() {
+    assert_eq!(
+      svg_header("Image[Table[0, {4}, {2}], ImageSize -> 20]"),
+      "<svg xmlns='http://www.w3.org/2000/svg' width='20' height='40'"
+    );
+  }
+
+  #[test]
+  fn box_size_fits_inside_keeping_aspect_ratio() {
+    assert_eq!(
+      svg_header("Image[Table[0, {4}, {2}], ImageSize -> {300, 400}]"),
+      "<svg xmlns='http://www.w3.org/2000/svg' width='200' height='400'"
+    );
+  }
+
+  #[test]
+  fn image_size_does_not_change_pixel_dimensions() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageDimensions[Image[{{0, 1}, {1, 0}}, ImageSize -> 100]]")
+        .unwrap(),
+      "{2, 2}"
+    );
+  }
+
+  #[test]
+  fn without_option_uses_pixel_size() {
+    assert_eq!(
+      svg_header("Image[Table[0, {4}, {2}]]"),
+      "<svg xmlns='http://www.w3.org/2000/svg' width='2' height='4'"
     );
   }
 }

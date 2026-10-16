@@ -771,6 +771,9 @@ pub fn dispatch_image_functions(
     "ImageHistogram" if !args.is_empty() => {
       return Some(crate::functions::image_ast::image_histogram_ast(args));
     }
+    "ImageLevels" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::image_levels_ast(args));
+    }
     "Pruning" if !args.is_empty() => {
       return Some(crate::functions::image_ast::pruning_ast(args));
     }
@@ -791,6 +794,17 @@ pub fn dispatch_image_functions(
     }
     "ImageCrop" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::image_crop_ast(args));
+    }
+    "ImageForwardTransformation" if args.len() >= 2 => {
+      return Some(
+        crate::functions::image_ast::image_forward_transformation_ast(args),
+      );
+    }
+    "HighlightImage" if args.len() >= 2 => {
+      return Some(crate::functions::image_ast::highlight_image_ast(
+        args,
+        &evaluate_expr_to_expr,
+      ));
     }
     "ImagePad" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::image_ast::image_pad_ast(args));
@@ -814,6 +828,11 @@ pub fn dispatch_image_functions(
     }
     "MorphologicalComponents" if !args.is_empty() => {
       return Some(crate::functions::image_ast::morphological_components_ast(
+        args,
+      ));
+    }
+    "MorphologicalPerimeter" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::image_ast::morphological_perimeter_ast(
         args,
       ));
     }
@@ -879,6 +898,9 @@ pub fn dispatch_image_functions(
     }
     "GradientFilter" if args.len() == 2 => {
       return Some(crate::functions::image_ast::gradient_filter_ast(args));
+    }
+    "LaplacianFilter" if args.len() == 2 => {
+      return Some(crate::functions::image_ast::laplacian_filter_ast(args));
     }
     "TextRecognize" if !args.is_empty() => {
       return Some(crate::functions::image_ast::text_recognize_ast(args));

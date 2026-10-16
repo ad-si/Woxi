@@ -191,6 +191,50 @@ fn is_identity_rewrite(name: &str, args: &[Expr], body: &Expr) -> bool {
   }
 }
 
+thread_local! {
+  /// The call (argument slice address and length, head address, recursion
+  /// depth) whose unevaluated result [`evaluate_function_call_owned`] builds
+  /// itself, and whether the fall-through of that very call was reached.
+  static OWNED_FALLTHROUGH: std::cell::Cell<(usize, usize, usize, usize)> =
+    const { std::cell::Cell::new((0, 0, 0, 0)) };
+  static OWNED_FALLTHROUGH_HIT: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// [`evaluate_function_call_ast`] for a caller that owns the evaluated
+/// arguments. When no rule applies, the call is rebuilt by moving `args`
+/// into it instead of cloning the slice — a deep copy that, paid at every
+/// level of a nested expression such as `Fold[h[{#1, #2}] &, 0, list]`'s,
+/// made re-evaluating it quadratic in its depth.
+pub(crate) fn evaluate_function_call_owned(
+  name: &str,
+  args: Vec<Expr>,
+) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return evaluate_function_call_ast(name, &args);
+  }
+  // `evaluate_function_call_ast` runs its body one level deeper.
+  let depth = crate::RECURSION_DEPTH.with(std::cell::Cell::get) + 1;
+  let key = (
+    args.as_ptr() as usize,
+    args.len(),
+    name.as_ptr() as usize,
+    depth,
+  );
+  let prev_key = OWNED_FALLTHROUGH.with(|c| c.replace(key));
+  let prev_hit = OWNED_FALLTHROUGH_HIT.with(|c| c.replace(false));
+  let result = evaluate_function_call_ast(name, &args);
+  let hit = OWNED_FALLTHROUGH_HIT.with(|c| c.replace(prev_hit));
+  OWNED_FALLTHROUGH.with(|c| c.set(prev_key));
+  if hit && result.is_ok() {
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.into(),
+    });
+  }
+  result
+}
+
 pub(crate) fn evaluate_function_call_ast(
   name: &str,
   args: &[Expr],
@@ -803,6 +847,30 @@ fn evaluate_function_call_ast_inner(
   // using the built-in's identical (lexicographic) algorithm.
   if name == "GraphUtilities`ExpressionTreePlot" && !args.is_empty() {
     return crate::functions::tree_form::expression_tree_plot_ast(args);
+  }
+
+  // `MultivariateStatistics`EllipsoidQuantile[dist, p]` is the smallest
+  // ellipsoid holding probability p of a multinormal distribution: the
+  // Mahalanobis ball of squared radius InverseCDF[ChiSquareDistribution[d], p],
+  // i.e. Ellipsoid[mean, c Covariance].
+  if name == "MultivariateStatistics`EllipsoidQuantile"
+    && args.len() == 2
+    && matches!(&args[0], Expr::FunctionCall { name: d, .. }
+      if d == "MultinormalDistribution")
+  {
+    let mean = call1("Mean", args[0].clone());
+    let radius = call(
+      "InverseCDF",
+      vec![
+        call1("ChiSquareDistribution", call1("Length", mean.clone())),
+        args[1].clone(),
+      ],
+    );
+    let cov = call1("Covariance", args[0].clone());
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Ellipsoid",
+      vec![mean, call("Times", vec![radius, cov])],
+    ));
   }
 
   // `GraphUtilities\`` works on a graph given as a plain list of rules
@@ -4040,9 +4108,11 @@ fn evaluate_function_call_ast_inner(
     }
   }
 
-  // HypercubeGraph[n] — n-dimensional hypercube graph
+  // HypercubeGraph[n, opts...] — n-dimensional hypercube graph; trailing
+  // options (VertexStyle, EdgeStyle, ImageSize, ...) are Graph options.
   if name == "HypercubeGraph"
-    && args.len() == 1
+    && !args.is_empty()
+    && args[1..].iter().all(crate::syntax::is_rule_expr)
     && let Expr::Integer(n) = &args[0]
   {
     let n = *n as usize;
@@ -4063,10 +4133,10 @@ fn evaluate_function_call_ast_inner(
         }
       }
     }
-    return Ok(call(
-      "Graph",
-      vec![Expr::List(vertices.into()), Expr::List(edges.into())],
-    ));
+    let mut graph_args =
+      vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+    graph_args.extend(args[1..].iter().cloned());
+    return Ok(call("Graph", graph_args));
   }
 
   // TuranGraph[n, k] — complete k-partite graph with n vertices, partitions as equal as possible
@@ -4164,6 +4234,7 @@ fn evaluate_function_call_ast_inner(
     // image_type.
     if let Expr::Image {
       color_space: _,
+      display_size: _,
       width,
       height,
       channels,
@@ -4242,6 +4313,7 @@ fn evaluate_function_call_ast_inner(
       }
       return Ok(Expr::Image {
         color_space: None,
+        display_size: None,
         width: *width,
         height: *height,
         channels: *channels,
@@ -4790,7 +4862,36 @@ fn evaluate_function_call_ast_inner(
       } else {
         literal_pos
       };
-      let mut forwarded: Vec<Expr> = vec![args[0].clone()];
+      // `GraphPlot[{{u -> v, label}, …}]` attaches a label to each edge:
+      // split the pairs into plain edges and an `EdgeLabels` option, which
+      // the legacy `EdgeRenderingFunction` receives as its third argument.
+      let mut edge_labels: Vec<Expr> = Vec::new();
+      let first_arg = match &args[0] {
+        Expr::List(items)
+          if !items.is_empty()
+            && items.iter().all(|it| {
+              matches!(it, Expr::List(p) if p.len() == 2
+                && crate::functions::graph::edge_endpoints(&p[0]).is_some())
+            }) =>
+        {
+          let mut edges = Vec::with_capacity(items.len());
+          for it in items {
+            if let Expr::List(p) = it {
+              edges.push(p[0].clone());
+              edge_labels.push(rule_expr(p[0].clone(), p[1].clone()));
+            }
+          }
+          Expr::List(edges.into())
+        }
+        other => other.clone(),
+      };
+      let mut forwarded: Vec<Expr> = vec![first_arg];
+      if !edge_labels.is_empty() {
+        forwarded.push(rule_expr(
+          id_expr("EdgeLabels"),
+          Expr::List(edge_labels.into()),
+        ));
+      }
       forwarded.extend(
         args[1..]
           .iter()
@@ -4833,7 +4934,7 @@ fn evaluate_function_call_ast_inner(
       // plain `Graph[…]`, which needs `AdjacencyGraph[m]`): a list whose
       // entries are themselves lists, rather than edges (Rules or
       // Directed/UndirectedEdge), is unambiguously that matrix form.
-      let matrix_graph = match &args[0] {
+      let matrix_graph = match &forwarded[0] {
         Expr::List(rows)
           if !rows.is_empty()
             && rows.iter().all(|r| matches!(r, Expr::List(_))) =>
@@ -5192,7 +5293,7 @@ fn evaluate_function_call_ast_inner(
     };
     let trailing_options: Vec<Expr> = args[options_start..]
       .iter()
-      .filter(|a| matches!(a, Expr::Rule { .. }))
+      .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
       .cloned()
       .collect();
 
@@ -7813,7 +7914,7 @@ fn evaluate_function_call_ast_inner(
           let entry = match ws.len() {
             0 => Expr::Integer(0),
             1 => ws.into_iter().next().unwrap(),
-            _ => crate::evaluator::evaluate_expr_to_expr(&call("Plus", ws))?,
+            _ => crate::evaluator::evaluate_expr_to_expr(&plus(ws))?,
           };
           out_row.push(entry);
         }
@@ -8803,15 +8904,12 @@ fn evaluate_function_call_ast_inner(
             let n = &dist_args[0];
             let p = &dist_args[1];
             // Build ((-1 + n)*n)/2 — flatten Times to get correct parenthesization
-            let n_minus_1 = call("Plus", vec![Expr::Integer(-1), n.clone()]);
-            let half = call(
-              "Times",
-              vec![
-                call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-                n_minus_1,
-                n.clone(),
-              ],
-            );
+            let n_minus_1 = plus(vec![Expr::Integer(-1), n.clone()]);
+            let half = times(vec![
+              call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+              n_minus_1,
+              n.clone(),
+            ]);
             return Ok(call("BinomialDistribution", vec![half, p.clone()]));
           }
 
@@ -8838,7 +8936,7 @@ fn evaluate_function_call_ast_inner(
           {
             let n = &dist_args[0];
             let p = &dist_args[1];
-            let n_minus_1 = call("Plus", vec![Expr::Integer(-1), n.clone()]);
+            let n_minus_1 = plus(vec![Expr::Integer(-1), n.clone()]);
             return Ok(call(
               "BinomialDistribution",
               vec![n_minus_1, p.clone()],
@@ -8882,16 +8980,13 @@ fn evaluate_function_call_ast_inner(
           {
             let n = &dist_args[0];
             let m = &dist_args[1];
-            let n_minus_1 = call("Plus", vec![Expr::Integer(-1), n.clone()]);
+            let n_minus_1 = plus(vec![Expr::Integer(-1), n.clone()]);
             // Flatten Times to get correct parenthesization: ((-1 + n)*n)/2
-            let half = call(
-              "Times",
-              vec![
-                call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-                n_minus_1.clone(),
-                n.clone(),
-              ],
-            );
+            let half = times(vec![
+              call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+              n_minus_1.clone(),
+              n.clone(),
+            ]);
             return Ok(call(
               "HypergeometricDistribution",
               vec![m.clone(), n_minus_1, half],
@@ -9154,7 +9249,7 @@ fn evaluate_function_call_ast_inner(
       let term = if factors.len() == 1 {
         factors.pop().unwrap()
       } else {
-        call("Times", factors)
+        times(factors)
       };
       term_exprs.push(term);
     }
@@ -9162,7 +9257,7 @@ fn evaluate_function_call_ast_inner(
     let poly_expr = if term_exprs.len() == 1 {
       term_exprs.pop().unwrap()
     } else {
-      call("Plus", term_exprs)
+      plus(term_exprs)
     };
 
     return Ok(Expr::Function {
@@ -10337,8 +10432,7 @@ fn evaluate_function_call_ast_inner(
         (vec![Expr::Integer(1); *r as usize], Expr::Integer(*r))
       }
       Expr::List(weights) if !weights.is_empty() => {
-        let sum = evaluate_expr_to_expr(&call(
-          "Plus",
+        let sum = evaluate_expr_to_expr(&plus(
           weights.iter().cloned().collect::<Vec<_>>(),
         ))?;
         (weights.iter().cloned().collect::<Vec<_>>(), sum)
@@ -10361,7 +10455,7 @@ fn evaluate_function_call_ast_inner(
       for j in 0..r {
         terms.push(times2(window[j].clone(), items[i + j].clone()));
       }
-      let sum = call("Plus", terms);
+      let sum = plus(terms);
       let avg = div2(sum, divisor.clone());
       result.push(evaluate_expr_to_expr(&avg)?);
     }
@@ -10442,13 +10536,10 @@ fn evaluate_function_call_ast_inner(
         ]
         .into(),
       };
-      let due = call(
-        "Times",
-        vec![
-          pow(call("Plus", vec![Expr::Integer(1), args[1].clone()]), q),
-          ordinary,
-        ],
-      );
+      let due = times(vec![
+        pow(plus(vec![Expr::Integer(1), args[1].clone()]), q),
+        ordinary,
+      ]);
       let result = evaluate_expr_to_expr(&due)?;
       // Only commit when the inner annuity actually evaluated.
       if !expr_to_string(&result).contains("Annuity") {
@@ -10531,16 +10622,13 @@ fn evaluate_function_call_ast_inner(
     let i_is_curve = matches!(i, Expr::List(_));
     let _ = (s_scalar, i_scalar);
     if !s_is_special && !i_is_curve && t_is_usable {
-      let value = call(
-        "Times",
-        vec![
-          s.clone(),
-          pow(
-            call("Plus", vec![Expr::Integer(1), i.clone()]),
-            t_for_formula.clone(),
-          ),
-        ],
-      );
+      let value = times(vec![
+        s.clone(),
+        pow(
+          plus(vec![Expr::Integer(1), i.clone()]),
+          t_for_formula.clone(),
+        ),
+      ]);
       return evaluate_expr_to_expr(&value);
     }
 
@@ -10569,37 +10657,23 @@ fn evaluate_function_call_ast_inner(
       let fp = pay.get(2).cloned().unwrap_or(Expr::Integer(0));
       let tspan = ann_args[1].clone();
       let q = ann_args.get(2).cloned().unwrap_or(Expr::Integer(1));
-      let one_plus_i = || call("Plus", vec![Expr::Integer(1), i.clone()]);
+      let one_plus_i = || plus(vec![Expr::Integer(1), i.clone()]);
       // (1+i)^-tspan
-      let pow_neg_tspan = || {
-        pow(
-          one_plus_i(),
-          call("Times", vec![Expr::Integer(-1), tspan.clone()]),
-        )
-      };
+      let pow_neg_tspan = || pow(one_plus_i(), neg(tspan.clone()));
       // i_eff = (1+i)^q - 1
-      let i_eff = call("Plus", vec![pow(one_plus_i(), q), Expr::Integer(-1)]);
+      let i_eff = plus(vec![pow(one_plus_i(), q), Expr::Integer(-1)]);
       // PV_annuity = p * (1 - (1+i)^-tspan) / i_eff
-      let pv_annuity = call(
-        "Times",
-        vec![
-          p,
-          call(
-            "Plus",
-            vec![
-              Expr::Integer(1),
-              call("Times", vec![Expr::Integer(-1), pow_neg_tspan()]),
-            ],
-          ),
-          pow(i_eff, Expr::Integer(-1)),
-        ],
-      );
+      let pv_annuity = times(vec![
+        p,
+        plus(vec![Expr::Integer(1), neg(pow_neg_tspan())]),
+        pow(i_eff, Expr::Integer(-1)),
+      ]);
       // fp * (1+i)^-tspan  (final payment discounted from time tspan)
-      let fp_term = call("Times", vec![fp, pow_neg_tspan()]);
+      let fp_term = times(vec![fp, pow_neg_tspan()]);
       // PV_0 = PV_annuity + ip + fp_term
-      let pv0 = call("Plus", vec![pv_annuity, ip, fp_term]);
+      let pv0 = plus(vec![pv_annuity, ip, fp_term]);
       // V_t = PV_0 * (1+i)^t
-      let result = call("Times", vec![pv0, pow(one_plus_i(), t.clone())]);
+      let result = times(vec![pv0, pow(one_plus_i(), t.clone())]);
       return evaluate_expr_to_expr(&result);
     }
 
@@ -10621,29 +10695,16 @@ fn evaluate_function_call_ast_inner(
       let pmt = ann_args[0].clone();
       let n = ann_args[1].clone();
       // (1 + i)^-n
-      let pow_neg_n = pow(
-        call("Plus", vec![Expr::Integer(1), i.clone()]),
-        call("Times", vec![Expr::Integer(-1), n]),
-      );
+      let pow_neg_n = pow(plus(vec![Expr::Integer(1), i.clone()]), neg(n));
       // 1 - (1+i)^-n
-      let numer = call(
-        "Plus",
-        vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), pow_neg_n]),
-        ],
-      );
+      let numer = plus(vec![Expr::Integer(1), neg(pow_neg_n)]);
       // PV = pmt * numer / i
-      let pv =
-        call("Times", vec![pmt, numer, pow(i.clone(), Expr::Integer(-1))]);
+      let pv = times(vec![pmt, numer, pow(i.clone(), Expr::Integer(-1))]);
       // V_t = PV * (1+i)^t
-      let result = call(
-        "Times",
-        vec![
-          pv,
-          pow(call("Plus", vec![Expr::Integer(1), i.clone()]), t.clone()),
-        ],
-      );
+      let result = times(vec![
+        pv,
+        pow(plus(vec![Expr::Integer(1), i.clone()]), t.clone()),
+      ]);
       return evaluate_expr_to_expr(&result);
     }
 
@@ -10668,24 +10729,17 @@ fn evaluate_function_call_ast_inner(
       let pmt = ann_args[0].clone();
       let tspan = ann_args[1].clone();
       let q = ann_args[2].clone();
-      let one_plus_i = || call("Plus", vec![Expr::Integer(1), i.clone()]);
+      let one_plus_i = || plus(vec![Expr::Integer(1), i.clone()]);
       // (1+i)^-tspan
-      let pow_neg_tspan =
-        pow(one_plus_i(), call("Times", vec![Expr::Integer(-1), tspan]));
+      let pow_neg_tspan = pow(one_plus_i(), neg(tspan));
       // 1 - (1+i)^-tspan
-      let numer = call(
-        "Plus",
-        vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), pow_neg_tspan]),
-        ],
-      );
+      let numer = plus(vec![Expr::Integer(1), neg(pow_neg_tspan)]);
       // i_eff = (1+i)^q - 1
-      let i_eff = call("Plus", vec![pow(one_plus_i(), q), Expr::Integer(-1)]);
+      let i_eff = plus(vec![pow(one_plus_i(), q), Expr::Integer(-1)]);
       // PV = pmt * numer / i_eff
-      let pv = call("Times", vec![pmt, numer, pow(i_eff, Expr::Integer(-1))]);
+      let pv = times(vec![pmt, numer, pow(i_eff, Expr::Integer(-1))]);
       // V_t = PV * (1+i)^t
-      let result = call("Times", vec![pv, pow(one_plus_i(), t.clone())]);
+      let result = times(vec![pv, pow(one_plus_i(), t.clone())]);
       return evaluate_expr_to_expr(&result);
     }
 
@@ -10727,19 +10781,13 @@ fn evaluate_function_call_ast_inner(
           (Expr::Integer(k as i128), c.clone())
         };
         // exponent = t - time_k
-        let exp = call(
-          "Plus",
-          vec![t.clone(), call("Times", vec![Expr::Integer(-1), time_k])],
-        );
-        terms.push(call(
-          "Times",
-          vec![
-            amount,
-            pow(call("Plus", vec![Expr::Integer(1), i.clone()]), exp),
-          ],
-        ));
+        let exp = plus(vec![t.clone(), neg(time_k)]);
+        terms.push(times(vec![
+          amount,
+          pow(plus(vec![Expr::Integer(1), i.clone()]), exp),
+        ]));
       }
-      let sum = call("Plus", terms);
+      let sum = plus(terms);
       return evaluate_expr_to_expr(&sum);
     }
     // TimeValue[s, {r1, r2, ..., rn}, t] with non-negative integer t and a
@@ -10761,9 +10809,9 @@ fn evaluate_function_call_ast_inner(
       factors.push(s.clone());
       for k in 1..=t_usize {
         let idx = (k - 1).min(n - 1);
-        factors.push(call("Plus", vec![Expr::Integer(1), rates[idx].clone()]));
+        factors.push(plus(vec![Expr::Integer(1), rates[idx].clone()]));
       }
-      let prod = call("Times", factors);
+      let prod = times(factors);
       return evaluate_expr_to_expr(&prod);
     }
 
@@ -10800,13 +10848,13 @@ fn evaluate_function_call_ast_inner(
           // the period ending at time tk).
           if tk >= t_f {
             factors.push(pow(
-              call("Plus", vec![Expr::Integer(1), pair[1].clone()]),
+              plus(vec![Expr::Integer(1), pair[1].clone()]),
               Expr::Integer(-1),
             ));
           }
         }
       }
-      let prod = call("Times", factors);
+      let prod = times(factors);
       return evaluate_expr_to_expr(&prod);
     }
 
@@ -10870,16 +10918,13 @@ fn evaluate_function_call_ast_inner(
           }
           interp
         };
-        let value = call(
-          "Times",
-          vec![
-            s.clone(),
-            pow(
-              call("Plus", vec![Expr::Integer(1), Expr::Real(rate)]),
-              Expr::Real(-maturity),
-            ),
-          ],
-        );
+        let value = times(vec![
+          s.clone(),
+          pow(
+            plus(vec![Expr::Integer(1), Expr::Real(rate)]),
+            Expr::Real(-maturity),
+          ),
+        ]);
         return evaluate_expr_to_expr(&value);
       }
     }
@@ -11192,6 +11237,7 @@ fn evaluate_function_call_ast_inner(
       | "GeoProjection"
       | "SoundVolume"
       | "GradientFilter"
+      | "LaplacianFilter"
       | "RegionNearest"
       | "TildeTilde"
       | "NotebookClose"
@@ -11543,6 +11589,10 @@ fn evaluate_function_call_ast_inner(
         // seeing them unevaluated is not a missing implementation.
         | "TemplateIf"
         | "TemplateSequence"
+        // Inert typeset bars: `\[LeftBracketingBar]x\[RightBracketingBar]`
+        // in input boxes parses to these and they stay unevaluated.
+        | "BracketingBar"
+        | "DoubleBracketingBar"
     )
   {
     let args_str = args
@@ -11554,7 +11604,19 @@ fn evaluate_function_call_ast_inner(
     crate::capture_unimplemented_call(&call_str);
   }
 
-  // Unknown function - return as symbolic function call
+  // Unknown function - return as symbolic function call. When this is the
+  // call `evaluate_function_call_owned` made, it builds the result from the
+  // arguments it owns; the placeholder returned here is discarded.
+  let key = (
+    args.as_ptr() as usize,
+    args.len(),
+    name.as_ptr() as usize,
+    crate::RECURSION_DEPTH.with(std::cell::Cell::get),
+  );
+  if !args.is_empty() && OWNED_FALLTHROUGH.with(std::cell::Cell::get) == key {
+    OWNED_FALLTHROUGH_HIT.with(|c| c.set(true));
+    return Ok(Expr::Integer(0));
+  }
   Ok(unevaluated(name, args))
 }
 
@@ -11980,6 +12042,7 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
   }
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -12033,6 +12096,7 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
       .collect();
     return Some(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -12188,11 +12252,9 @@ fn nd_eigenvalues_diffusion_line(args: &[Expr]) -> Option<Expr> {
   };
 
   // Length L = b - a, evaluated to a number.
-  let length_expr = crate::evaluator::evaluate_expr_to_expr(&call(
-    "Plus",
-    vec![b_expr, call("Times", vec![Expr::Integer(-1), a_expr])],
-  ))
-  .ok()?;
+  let length_expr =
+    crate::evaluator::evaluate_expr_to_expr(&plus(vec![b_expr, neg(a_expr)]))
+      .ok()?;
   let l = match crate::functions::math_ast::try_eval_to_f64(&length_expr) {
     Some(v) if v > 0.0 => v,
     _ => return None,
@@ -12522,6 +12584,7 @@ fn blend_images(colors: &[Expr], weight: Option<&Expr>) -> Option<Expr> {
   }
   Some(Expr::Image {
     color_space: None,
+    display_size: None,
     width: w,
     height: h,
     channels: ch,
@@ -12766,7 +12829,7 @@ fn poly_to_expr(coeffs: &[i128], k: &Expr) -> Expr {
   let sum = if terms.len() == 1 {
     terms.pop().unwrap()
   } else {
-    call("Plus", terms)
+    plus(terms)
   };
 
   match crate::evaluator::evaluate_expr_to_expr(&sum) {
@@ -12920,6 +12983,7 @@ fn morphological_op(
 
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -12947,6 +13011,7 @@ fn morphological_op(
     }
     return Some(Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,

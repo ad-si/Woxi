@@ -3345,6 +3345,46 @@ mod sort_atomic_normal {
 mod sort_canonical {
   use super::*;
 
+  // A sum whose greatest term is linear orders against a monomial by
+  // variable, then by coefficient (wolframscript-verified).
+  #[test]
+  fn linear_sum_against_monomial() {
+    for (input, expected) in [
+      ("Sort[{x, -5 + 2x}]", "{x, -5 + 2*x}"),
+      ("Sort[{x, -1 + x}]", "{-1 + x, x}"),
+      ("Sort[{x, 1 + x/2}]", "{1 + x/2, x}"),
+      ("Sort[{x^3, -1 + 2x}]", "{x^3, -1 + 2*x}"),
+      ("Sort[{a, -1 + 2x}]", "{a, -1 + 2*x}"),
+      ("Sort[{z, -1 + 2x}]", "{-1 + 2*x, z}"),
+      ("Sort[{x, -1 + 2x + y}]", "{x, -1 + 2*x + y}"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // Two sums compare termwise from their greatest term; the early/late
+  // class only places a sum among non-sums. Verified against wolframscript.
+  #[test]
+  fn sums_compare_termwise() {
+    assert_eq!(
+      interpret("Sort[{x - y z^3, 1 + x y z}]").unwrap(),
+      "{1 + x*y*z, x - y*z^3}"
+    );
+    assert_eq!(
+      interpret("Sort[{-3 + x, 8 - (x - 3)^2}]").unwrap(),
+      "{8 - (-3 + x)^2, -3 + x}"
+    );
+    assert_eq!(
+      interpret(
+        "Sort[{1 - x, 1 + x, 1 - x^2, 1 + x^2, -1 + x, x - x^2, 1/x + 1, \
+         Sqrt[x] + 1, 2 + x, 1 + 2 x, x + x^2}]"
+      )
+      .unwrap(),
+      "{1 + x^(-1), 1 + Sqrt[x], 1 - x, -1 + x, 1 + x, 2 + x, 1 + 2*x, \
+       1 - x^2, x - x^2, 1 + x^2, x + x^2}"
+    );
+  }
+
   // Compatible Quantities sort by their physical value, not structurally.
   #[test]
   fn sort_quantities_by_value() {
@@ -15275,6 +15315,23 @@ mod cases_count_level_spec {
   }
 
   #[test]
+  fn delete_cases_matches_rule_literally() {
+    // DeleteCases has no `pattern -> rhs` form; a rule is matched as-is.
+    assert_eq!(
+      interpret("DeleteCases[{a -> 1, b -> 2}, a -> 1]").unwrap(),
+      "{b -> 2}"
+    );
+    assert_eq!(
+      interpret("DeleteCases[{0 -> -1, 1 -> 0, 2 -> 1}, 2/2 -> 0]").unwrap(),
+      "{0 -> -1, 2 -> 1}"
+    );
+    assert_eq!(
+      interpret("DeleteCases[{a -> 1, b -> 2}, _ -> 1]").unwrap(),
+      "{b -> 2}"
+    );
+  }
+
+  #[test]
   fn delete_cases_exact_level() {
     assert_eq!(
       interpret("DeleteCases[{1, {2, 3}, {4, {5}}}, _Integer, {2}]").unwrap(),
@@ -23187,5 +23244,73 @@ mod table_real_step_accumulated_rounding {
       clear_state();
       assert_eq!(interpret(input).unwrap(), expected, "{input}");
     }
+  }
+}
+
+/// `` Developer`FromPackedArray `` — Woxi has no packed arrays, so it returns
+/// its argument, which also makes it usable as an option value.
+mod from_packed_array {
+  use super::*;
+
+  #[test]
+  fn returns_the_array() {
+    assert_eq!(
+      interpret("Developer`FromPackedArray[{1, 2.5, 3}]").unwrap(),
+      "{1, 2.5, 3}"
+    );
+  }
+
+  #[test]
+  fn nested_array() {
+    assert_eq!(
+      interpret("Developer`FromPackedArray[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn usable_as_fourier_parameters() {
+    assert_eq!(
+      interpret(
+        "InverseFourier[{1., 2.}, FourierParameters -> Developer`FromPackedArray[{-1, 1}]] == InverseFourier[{1., 2.}, FourierParameters -> {-1, 1}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod table_machine_real_step {
+  use super::*;
+
+  /// The iterator value is `min + k*step`, not a running sum, so a machine
+  /// real step accumulates no rounding: the last value lands exactly on the
+  /// bound (it used to drift to `20.000000000000014`, which pushed
+  /// `InterpolatingFunction` samples outside their domain).
+  #[test]
+  fn last_value_hits_bound_exactly() {
+    clear_state();
+    assert_eq!(interpret("Last[Table[t, {t, 0, 20, 0.1}]]").unwrap(), "20.");
+    assert_eq!(
+      interpret("Table[t, {t, 0, 1, 0.1}] == Range[0, 1, 0.1]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn exact_and_negative_steps_unchanged() {
+    clear_state();
+    assert_eq!(
+      interpret("Table[t, {t, 1/2, 2, 1/4}]").unwrap(),
+      "{1/2, 3/4, 1, 5/4, 3/2, 7/4, 2}"
+    );
+    assert_eq!(
+      interpret("Table[t, {t, Pi, 3 Pi, Pi/2}]").unwrap(),
+      "{Pi, (3*Pi)/2, 2*Pi, (5*Pi)/2, 3*Pi}"
+    );
+    assert_eq!(
+      interpret("Table[t, {t, 1., 0., -0.25}]").unwrap(),
+      "{1., 0.75, 0.5, 0.25, 0.}"
+    );
   }
 }

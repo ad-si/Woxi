@@ -4779,7 +4779,7 @@ fn table_form_to_string(arg: &Expr) -> Option<String> {
 /// the widest cell anywhere in the matrix — left-aligned, with three-space
 /// separators and a blank line between rows. A flat vector renders as a single
 /// column, one element per row.
-fn matrix_form_to_string(arg: &Expr) -> Option<String> {
+pub(crate) fn matrix_form_to_string(arg: &Expr) -> Option<String> {
   let Expr::List(items) = arg else {
     return None;
   };
@@ -5514,7 +5514,10 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // a String that displays as the typeset expression rather than as
         // its own source. `Sin[x]` becomes
         // `RowBox[{"sin", "(", "x", ")"}]`, a quotient a `FractionBox`.
-        return Ok(Expr::String(traditional_form_box_escape(&args[0], false)));
+        // Machine reals typeset at the 6 significant digits the
+        // FrontEnd displays: `0.7967806891350713` becomes `0.796781`.
+        let rounded = truncate_machine_reals_for_to_string(&args[0]);
+        return Ok(Expr::String(traditional_form_box_escape(&rounded, false)));
       }
       "StandardForm" => {
         // Build the box AST via MakeBoxes (which dispatches user-defined
@@ -6328,10 +6331,7 @@ fn sum_terms(expr: &Expr, out: &mut Vec<Expr>) {
       right,
     } => {
       sum_terms(left, out);
-      out.push(call(
-        "Times",
-        vec![Expr::Integer(-1), right.as_ref().clone()],
-      ));
+      out.push(neg(right.as_ref().clone()));
     }
     Expr::FunctionCall { name, args } if name == "Plus" => {
       out.extend(args.iter().cloned());
@@ -6339,11 +6339,7 @@ fn sum_terms(expr: &Expr, out: &mut Vec<Expr>) {
     Expr::FunctionCall { name, args } if name == NEGATED_SUM => {
       let mut inner = Vec::new();
       sum_terms(&args[0], &mut inner);
-      out.extend(
-        inner
-          .into_iter()
-          .map(|t| call("Times", vec![Expr::Integer(-1), t])),
-      );
+      out.extend(inner.into_iter().map(neg));
     }
     _ => out.push(expr.clone()),
   }
@@ -6372,10 +6368,7 @@ const NEGATED_SUM: &str = "TeX`NegatedSum";
 fn tex_negated_sum(sum: &Expr) -> String {
   let mut terms = Vec::new();
   sum_terms(sum, &mut terms);
-  let negated: Vec<Expr> = terms
-    .into_iter()
-    .map(|t| call("Times", vec![Expr::Integer(-1), t]))
-    .collect();
+  let negated: Vec<Expr> = terms.into_iter().map(neg).collect();
   tex_function_call("Plus", &negated)
 }
 
@@ -9104,6 +9097,24 @@ fn matching_box_close(chars: &[char], open: usize) -> Option<usize> {
   None
 }
 
+/// Whether the content of a `\(…\)` group is nothing but words separated by
+/// spaces — no nested box code, brackets, quotes or backslashes — and so
+/// reads as literal text.
+fn is_spaced_plain_text(chars: &[char]) -> bool {
+  let text = unescape_box_spaces(chars);
+  text.chars().any(char::is_whitespace)
+    && text.chars().any(char::is_alphanumeric)
+    && text.chars().all(|c| {
+      c.is_alphanumeric() || c.is_whitespace() || "'.,:;!?-".contains(c)
+    })
+}
+
+/// The text of a box group with each linear-syntax escaped space (`\ `)
+/// turned into the plain space it stands for.
+fn unescape_box_spaces(chars: &[char]) -> String {
+  chars.iter().collect::<String>().replace("\\ ", " ")
+}
+
 /// Drop the grouping markers inside a box segment and unwrap the quotes
 /// around its elements, keeping `\"` and `\\` escapes as literal characters.
 ///
@@ -9132,6 +9143,20 @@ fn strip_box_markup(chars: &[char]) -> String {
       {
         out.push('"');
         out.extend(&chars[i + 1..close]);
+        out.push('"');
+        i = close + 1;
+        continue;
+      }
+      // A group of plain words (`\(my\ height\)`) is text, not an
+      // expression: stripped bare, the gap between the words would parse as
+      // a product (`my*height`).
+      BOX_OPEN
+        if !in_box_text
+          && let Some(close) = matching_box_close(chars, i)
+          && is_spaced_plain_text(&chars[i + 1..close]) =>
+      {
+        out.push('"');
+        out.push_str(&unescape_box_spaces(&chars[i + 1..close]));
         out.push('"');
         i = close + 1;
         continue;
@@ -12282,15 +12307,70 @@ pub fn hamming_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "HammingDistance expects 2 or 3 arguments".into(),
     ));
   }
-  let ignore_case = args.len() == 3 && extract_ignore_case(&args[2..]);
-  let s1 = expr_to_str(&args[0]);
-  let s2 = expr_to_str(&args[1]);
-  let s1 = if ignore_case { s1.to_lowercase() } else { s1 };
-  let s2 = if ignore_case { s2.to_lowercase() } else { s2 };
-  let chars1: Vec<char> = s1.chars().collect();
-  let chars2: Vec<char> = s2.chars().collect();
+  if let Some(extra) = args[2..].iter().find(|e| {
+    !matches!(
+      e,
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::List(_)
+    )
+  }) {
+    crate::emit_message(&format!(
+      "HammingDistance::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
+      expr_to_string(extra),
+      expr_to_string(&unevaluated("HammingDistance", args))
+    ));
+    return Ok(unevaluated("HammingDistance", args));
+  }
+  // Two strings compare characters (IgnoreCase applies); two vectors compare
+  // elements with SameQ (IgnoreCase does not reach string elements). Any
+  // other pairing — mixed kinds, nested lists, non-string atoms — stays
+  // unevaluated without a message.
+  let distance: Option<usize> = match (&args[0], &args[1]) {
+    (Expr::String(s1), Expr::String(s2)) => {
+      let ignore_case = extract_ignore_case(&args[2..]);
+      let (s1, s2) = if ignore_case {
+        (s1.to_lowercase(), s2.to_lowercase())
+      } else {
+        (s1.clone(), s2.clone())
+      };
+      let chars1: Vec<char> = s1.chars().collect();
+      let chars2: Vec<char> = s2.chars().collect();
+      (chars1.len() == chars2.len()).then(|| {
+        chars1
+          .iter()
+          .zip(chars2.iter())
+          .filter(|(a, b)| a != b)
+          .count()
+      })
+    }
+    (Expr::List(v1), Expr::List(v2)) => {
+      if v1
+        .iter()
+        .chain(v2.iter())
+        .any(|e| matches!(e, Expr::List(_)))
+      {
+        return Ok(unevaluated("HammingDistance", args));
+      }
+      (v1.len() == v2.len()).then(|| {
+        v1.iter()
+          .zip(v2.iter())
+          .filter(|(a, b)| {
+            !matches!(
+              crate::functions::boolean_ast::same_q_ast(&[
+                (*a).clone(),
+                (*b).clone()
+              ]),
+              Ok(Expr::Identifier(ref t)) if t == "True"
+            )
+          })
+          .count()
+      })
+    }
+    _ => return Ok(unevaluated("HammingDistance", args)),
+  };
 
-  if chars1.len() != chars2.len() {
+  if let Some(d) = distance {
+    Ok(Expr::Integer(d as i128))
+  } else {
     // Recoverable in wolframscript: ::idim plus the unevaluated call, not
     // an evaluation abort.
     crate::emit_message(&format!(
@@ -12298,15 +12378,8 @@ pub fn hamming_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       expr_to_str(&args[0]),
       expr_to_str(&args[1])
     ));
-    return Ok(unevaluated("HammingDistance", args));
+    Ok(unevaluated("HammingDistance", args))
   }
-
-  let dist = chars1
-    .iter()
-    .zip(chars2.iter())
-    .filter(|(a, b)| a != b)
-    .count();
-  Ok(Expr::Integer(dist as i128))
 }
 
 /// Tokenize a string into words the way TextWords/WordCounts do: split on
@@ -13857,7 +13930,7 @@ fn negated_term(expr: &Expr) -> Option<Expr> {
       Some(if rest.len() == 1 {
         rest.remove(0)
       } else {
-        call("Times", rest)
+        times(rest)
       })
     }
     Expr::BinaryOp {
@@ -14851,20 +14924,62 @@ pub fn string_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 use std::sync::LazyLock;
 
+/// The bundled word list in its original case and dictionary order.
+static DICTIONARY_LIST: LazyLock<Vec<String>> = LazyLock::new(|| {
+  use flate2::read::GzDecoder;
+  use std::io::Read;
+
+  let compressed = include_bytes!("../../resources/dictionary_words.txt.gz");
+  let mut decoder = GzDecoder::new(&compressed[..]);
+  let mut text = String::new();
+  decoder
+    .read_to_string(&mut text)
+    .expect("Failed to decompress dictionary");
+
+  text.lines().map(str::to_string).collect()
+});
+
 static DICTIONARY_WORDS: LazyLock<std::collections::HashSet<String>> =
-  LazyLock::new(|| {
-    use flate2::read::GzDecoder;
-    use std::io::Read;
+  LazyLock::new(|| DICTIONARY_LIST.iter().map(|w| w.to_lowercase()).collect());
 
-    let compressed = include_bytes!("../../resources/dictionary_words.txt.gz");
-    let mut decoder = GzDecoder::new(&compressed[..]);
-    let mut text = String::new();
-    decoder
-      .read_to_string(&mut text)
-      .expect("Failed to decompress dictionary");
-
-    text.lines().map(str::to_lowercase).collect()
-  });
+/// DictionaryLookup[patt] - all dictionary words matching the string pattern
+/// DictionaryLookup[patt, n] - at most the first n matches
+/// DictionaryLookup[] - the whole word list
+pub fn dictionary_lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // An optional {"English", patt} wrapper selects the (only) English list.
+  let patt = match args.first() {
+    Some(Expr::List(items))
+      if items.len() == 2
+        && matches!(&items[0], Expr::String(l) if l == "English") =>
+    {
+      Some(items[1].clone())
+    }
+    Some(p) => Some(p.clone()),
+    None => None,
+  };
+  let limit = match args.get(1) {
+    None => None,
+    Some(Expr::Integer(n)) if *n >= 0 => Some(*n as usize),
+    Some(_) => return Ok(unevaluated("DictionaryLookup", args)),
+  };
+  let mut out = Vec::new();
+  for word in DICTIONARY_LIST.iter() {
+    if limit.is_some_and(|n| out.len() >= n) {
+      break;
+    }
+    let keep = match &patt {
+      None => true,
+      Some(p) => matches!(
+        string_match_q_ast(&[Expr::String(word.clone()), p.clone()])?,
+        Expr::Identifier(ref t) if t == "True"
+      ),
+    };
+    if keep {
+      out.push(Expr::String(word.clone()));
+    }
+  }
+  Ok(Expr::List(out.into()))
+}
 
 /// DictionaryWordQ[string] - True if string is a dictionary word
 pub fn dictionary_word_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -16115,7 +16230,7 @@ fn number_form_family_inner(
       left,
       right,
     } => match product_factors(&[(**left).clone(), (**right).clone()]) {
-      Some(args) => call("Times", args),
+      Some(args) => times(args),
       None => times2(recurse(left), recurse(right)),
     },
     Expr::FunctionCall { name, args } => Expr::FunctionCall {

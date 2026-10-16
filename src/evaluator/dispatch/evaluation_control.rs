@@ -424,11 +424,9 @@ pub fn dispatch_evaluation_control(
             }
             e.clone()
           }
-          Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-            op: *op,
-            left: Box::new(substitute(left, map)),
-            right: Box::new(substitute(right, map)),
-          },
+          Expr::BinaryOp { op, left, right } => {
+            binop(*op, substitute(left, map), substitute(right, map))
+          }
           Expr::UnaryOp { op, operand } => Expr::UnaryOp {
             op: *op,
             operand: Box::new(substitute(operand, map)),
@@ -715,6 +713,25 @@ pub fn dispatch_evaluation_control(
       // Not a recognized distribution — return unevaluated
       return Some(Ok(unevaluated("DistributionParameterQ", args)));
     }
+    // DistributionParameterAssumptions[dist] — conditions on the parameters
+    // under which `dist` is a valid distribution
+    "DistributionParameterAssumptions" if args.len() == 1 => {
+      if let Expr::FunctionCall {
+        name: dist_name,
+        args: dist_args,
+      } = &args[0]
+        && let Some(conds) =
+          distribution_parameter_assumptions(dist_name, dist_args)
+      {
+        let result = if conds.len() == 1 {
+          conds.into_iter().next().unwrap()
+        } else {
+          call("And", conds)
+        };
+        return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+      }
+      return Some(Ok(unevaluated("DistributionParameterAssumptions", args)));
+    }
     // ByteArray[{b1, b2, ...}] — create a byte array from a list of unsigned bytes
     // ByteArray["base64string"] — create a byte array from base64
     "ByteArray" if args.len() == 1 => {
@@ -898,10 +915,7 @@ pub fn dispatch_evaluation_control(
       if orig_str == eval_str {
         return Some(Ok(Expr::List(vec![].into())));
       }
-      let wrap = |e: Expr| Expr::FunctionCall {
-        name: "HoldForm".into(),
-        args: vec![e].into(),
-      };
+      let wrap = |e: Expr| call1("HoldForm", e);
       return Some(Ok(Expr::List(
         vec![wrap(original), wrap(evaluated)].into(),
       )));
@@ -961,11 +975,9 @@ fn release_hold_rec(e: &Expr) -> Expr {
         .collect::<Vec<_>>()
         .into(),
     ),
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(release_hold_rec(left)),
-      right: Box::new(release_hold_rec(right)),
-    },
+    Expr::BinaryOp { op, left, right } => {
+      binop(*op, release_hold_rec(left), release_hold_rec(right))
+    }
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(release_hold_rec(operand)),
@@ -1046,6 +1058,65 @@ fn is_positive_integer(expr: &Expr) -> bool {
 }
 
 /// Validate distribution parameters. Returns true if valid.
+/// Parameter constraints of the common continuous distributions: `true`
+/// means the parameter must be a positive real, `false` any real.
+fn distribution_parameter_kinds(
+  name: &str,
+  n: usize,
+) -> Option<&'static [bool]> {
+  Some(match (name, n) {
+    ("NormalDistribution" | "LogNormalDistribution", 2) => &[false, true],
+    (
+      "CauchyDistribution" | "LaplaceDistribution" | "LogisticDistribution",
+      2,
+    ) => &[false, true],
+    ("GumbelDistribution" | "LevyDistribution", 2) => &[false, true],
+    ("StudentTDistribution", 3) => &[false, true, true],
+    (
+      "GammaDistribution"
+      | "InverseGammaDistribution"
+      | "WeibullDistribution"
+      | "BetaDistribution"
+      | "ParetoDistribution"
+      | "FrechetDistribution"
+      | "NakagamiDistribution",
+      2,
+    ) => &[true, true],
+    (
+      "ExponentialDistribution"
+      | "PoissonDistribution"
+      | "ChiSquareDistribution"
+      | "RayleighDistribution"
+      | "HalfNormalDistribution"
+      | "ChiDistribution"
+      | "StudentTDistribution",
+      1,
+    ) => &[true],
+    _ => return None,
+  })
+}
+
+/// `DistributionParameterAssumptions` conditions, one per parameter.
+fn distribution_parameter_assumptions(
+  name: &str,
+  args: &[Expr],
+) -> Option<Vec<Expr>> {
+  let kinds = distribution_parameter_kinds(name, args.len())?;
+  Some(
+    kinds
+      .iter()
+      .zip(args)
+      .map(|(positive, p)| {
+        if *positive {
+          call("Greater", vec![p.clone(), Expr::Integer(0)])
+        } else {
+          call("Element", vec![p.clone(), Expr::Identifier("Reals".into())])
+        }
+      })
+      .collect(),
+  )
+}
+
 fn validate_distribution_params(name: &str, args: &[Expr]) -> bool {
   match name {
     "NormalDistribution" => {

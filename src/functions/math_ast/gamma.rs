@@ -442,7 +442,7 @@ fn gamma_incomplete_upper(
   if matches!(a, Expr::Integer(1)) {
     return crate::evaluator::evaluate_expr_to_expr(&pow(
       id_expr("E"),
-      times(vec![Expr::Integer(-1), z.clone()]),
+      neg(z.clone()),
     ));
   }
 
@@ -465,11 +465,22 @@ fn gamma_incomplete_upper(
   let has_real_arg = matches!(a, Expr::Real(_)) || matches!(z, Expr::Real(_));
   if has_real_arg
     && let (Some(a_val), Some(z_val)) = (try_eval_to_f64(a), try_eval_to_f64(z))
-    && z_val >= 0.0
   {
-    let result = upper_incomplete_gamma(a_val, z_val);
-    if result.is_finite() {
-      return Ok(Expr::Real(result));
+    if z_val == 0.0 {
+      let result = gamma_fn(a_val);
+      if result.is_finite() {
+        return Ok(Expr::Real(result));
+      }
+    } else if let Some((re, im)) = upper_incomplete_gamma_f64(a_val, z_val)
+      && re.is_finite()
+      && im.is_finite()
+    {
+      // Gamma[a, z] = z^a E_{1-a}(z), complex on the cut z < 0.
+      return Ok(if im == 0.0 {
+        Expr::Real(re)
+      } else {
+        build_complex_float_expr(re, im)
+      });
     }
   }
 
@@ -512,7 +523,7 @@ fn gamma_incomplete_upper_int_a(
   } else {
     plus(terms)
   };
-  let exp_neg_z = pow(id_expr("E"), times(vec![Expr::Integer(-1), z.clone()]));
+  let exp_neg_z = pow(id_expr("E"), neg(z.clone()));
   let result = if factorial == 1 {
     times(vec![exp_neg_z, sum])
   } else {
@@ -521,141 +532,25 @@ fn gamma_incomplete_upper_int_a(
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
-/// Numerical upper incomplete gamma via continued fraction (Legendre)
-fn upper_incomplete_gamma(a: f64, z: f64) -> f64 {
-  if z == 0.0 {
-    return gamma_fn(a);
-  }
-  // Special case: Gamma[0, z] = E_1(z) (the exponential integral). The
-  // generic series/CF route uses Gamma(a)·…−lower(a, z), which is
-  // singular at a=0 (Gamma(0)=∞ minus finite); use a dedicated routine.
-  if a == 0.0 && z > 0.0 {
-    return exp_integral_e1(z);
-  }
-  // Use series for small z, continued fraction for large z
-  if z < a + 1.0 {
-    // Gamma(a, z) = Gamma(a) - gamma_lower(a, z)
-    gamma_fn(a) - lower_incomplete_gamma_series(a, z)
-  } else {
-    // Continued fraction representation (Legendre)
-    upper_incomplete_gamma_cf(a, z)
-  }
-}
-
-/// E_1(z) = Gamma[0, z] for real z > 0.
-/// Uses the convergent series for z ≤ 1 and a Lentz continued fraction
-/// for larger z (cf. Numerical Recipes §6.3).
-fn exp_integral_e1(z: f64) -> f64 {
-  if z <= 1.0 {
-    let euler_gamma = std::f64::consts::EULER_GAMMA;
-    let mut sum = -euler_gamma - z.ln();
-    let mut term = 1.0_f64;
-    for k in 1..200 {
-      term *= -z / k as f64;
-      let inc = -term / k as f64;
-      sum += inc;
-      if inc.abs() < 1e-18 * sum.abs().max(1.0) {
-        break;
-      }
-    }
-    sum
-  } else {
-    // Lentz continued fraction:
-    //   E_1(z) = e^{-z} / (z + 1/(1 + 1/(z + 2/(1 + 2/(z + …)))))
-    let mut b = z + 1.0;
-    let mut c = 1e30_f64;
-    let mut d = 1.0 / b;
-    let mut h = d;
-    for i in 1..200 {
-      let i_f = i as f64;
-      let a_term = -i_f * i_f;
-      b += 2.0;
-      d = 1.0 / (a_term * d + b);
-      c = b + a_term / c;
-      let del = c * d;
-      h *= del;
-      if (del - 1.0).abs() < 1e-15 {
-        break;
-      }
-    }
-    h * (-z).exp()
-  }
-}
-
-/// Lower incomplete gamma via series expansion
-fn lower_incomplete_gamma_series(a: f64, z: f64) -> f64 {
-  let mut sum = 1.0 / a;
-  let mut term = 1.0 / a;
-  for n in 1..200 {
-    term *= z / (a + n as f64);
-    sum += term;
-    if term.abs() < 1e-15 * sum.abs() {
-      break;
-    }
-  }
-  sum * (-z).exp() * z.powf(a)
-}
-
-/// Upper incomplete gamma via continued fraction
-fn upper_incomplete_gamma_cf(a: f64, z: f64) -> f64 {
-  // Modified Lentz's method. `c` starts at 1/FPMIN (a large value), not
-  // FPMIN itself — initializing it small makes the first `an/c` term blow
-  // up and the whole continued fraction diverges.
-  let mut c = 1e30_f64;
-  let mut d = z + 1.0 - a;
-  if d.abs() < 1e-30 {
-    d = 1e-30;
-  }
-  d = 1.0 / d;
-  let mut f = d;
-  for n in 1..200 {
-    let an = n as f64 * (a - n as f64);
-    let bn = z + (2 * n + 1) as f64 - a;
-    d = bn + an * d;
-    if d.abs() < 1e-30 {
-      d = 1e-30;
-    }
-    c = bn + an / c;
-    if c.abs() < 1e-30 {
-      c = 1e-30;
-    }
-    d = 1.0 / d;
-    let delta = c * d;
-    f *= delta;
-    if (delta - 1.0).abs() < 1e-15 {
-      break;
-    }
-  }
-  f * (-z).exp() * z.powf(a)
-}
-
-/// Lanczos approximation for the Gamma function
+/// The Gamma function at machine precision.
+///
+/// Rounded from a 64-bit [`gamma_bigfloat`] value, so it is correctly
+/// rounded like wolframscript's (a Lanczos or musl `tgamma` approximation
+/// is off by a few ulps). The poles at the non-positive integers are
+/// reported as an infinity, which callers map to ComplexInfinity.
 pub fn gamma_fn(x: f64) -> f64 {
-  if x < 0.5 {
-    // Reflection formula: Gamma(1-z) * Gamma(z) = pi / sin(pi*z)
-    std::f64::consts::PI
-      / ((std::f64::consts::PI * x).sin() * gamma_fn(1.0 - x))
-  } else {
-    let x = x - 1.0;
-    let g = 7.0;
-    let c = [
-      0.999_999_999_999_809_9,
-      676.5203681218851,
-      -1259.1392167224028,
-      771.323_428_777_653_1,
-      -176.615_029_162_140_6,
-      12.507343278686905,
-      -0.13857109526572012,
-      9.984_369_578_019_572e-6,
-      1.5056327351493116e-7,
-    ];
-    let mut sum = c[0];
-    for (i, &ci) in c.iter().enumerate().skip(1) {
-      sum += ci / (x + i as f64);
-    }
-    let t = x + g + 0.5;
-    (2.0 * std::f64::consts::PI).sqrt() * t.powf(x + 0.5) * (-t).exp() * sum
+  if x <= 0.0 && x.fract() == 0.0 || x.is_nan() {
+    return if x.is_nan() { x } else { f64::INFINITY };
   }
+  if x > 172.0 {
+    return f64::INFINITY;
+  }
+  with_thread_consts(|cc| {
+    let rm = astro_float::RoundingMode::ToEven;
+    let g = gamma_bigfloat(&astro_float::BigFloat::from_f64(x, 64), 64, rm, cc);
+    bigfloat_to_f64_approx(&g)
+  })
+  .unwrap_or(f64::NAN)
 }
 
 // (2n)! / n! = (n+1)(n+2)...(2n)
@@ -938,10 +833,7 @@ fn incomplete_beta_ast(
       matches!(a, Expr::Integer(1)) || matches!(a, Expr::Real(f) if *f == 1.0);
     if a_is_one {
       // -Log[1 - z]
-      let one_minus_z = plus(vec![
-        Expr::Integer(1),
-        times(vec![Expr::Integer(-1), z.clone()]),
-      ]);
+      let one_minus_z = plus(vec![Expr::Integer(1), neg(z.clone())]);
       let result = times(vec![Expr::Integer(-1), call1("Log", one_minus_z)]);
       let result = crate::evaluator::evaluate_expr_to_expr(&result)?;
       return if inexact {
@@ -1082,21 +974,6 @@ fn incomplete_beta_ast(
   Ok(call("Beta", vec![z.clone(), a.clone(), b.clone()]))
 }
 
-/// Stirling's series for log(gamma(z)) when z is large and positive.
-/// log(gamma(z)) = (z - 1/2)*log(z) - z + (1/2)*log(2π)
-///                 + 1/(12z) - 1/(360z³) + 1/(1260z⁵) - ...
-fn log_gamma_stirling(z: f64) -> f64 {
-  use std::f64::consts::PI;
-  let log_2pi = (2.0 * PI).ln();
-  let z2 = z * z;
-  let z3 = z2 * z;
-  let z5 = z3 * z2;
-  let z7 = z5 * z2;
-  (z - 0.5) * z.ln() - z + 0.5 * log_2pi + 1.0 / (12.0 * z) - 1.0 / (360.0 * z3)
-    + 1.0 / (1260.0 * z5)
-    - 1.0 / (1680.0 * z7)
-}
-
 /// LogGamma[z] — logarithm of the gamma function.
 pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -1152,13 +1029,10 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(id_expr("Infinity"));
     }
     if matches!(z, Expr::Real(_)) {
-      // Compute log(|gamma(f)|) directly to avoid overflow for large f.
-      // Use Stirling series for f > 12, and Log[Gamma[f]] for smaller.
-      let result = if f >= 12.0 {
-        log_gamma_stirling(f)
-      } else {
-        gamma_fn(f).abs().ln()
-      };
+      // log|Gamma(f)| from msun's lgamma, accurate to an ulp everywhere —
+      // Log[Gamma[f]] loses most of its digits near the zeros at 1 and 2
+      // (LogGamma[2.2] was off by 2e-15).
+      let (result, _) = libm::lgamma_r(f);
       return Ok(Expr::Real(result));
     }
   }
@@ -1296,10 +1170,7 @@ pub fn beta_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       || matches!(z_expr, Expr::FunctionCall { name, .. } if name == "Rational"))
   {
     let n = *a + *b - 1;
-    let one_minus_z = plus(vec![
-      Expr::Integer(1),
-      times(vec![Expr::Integer(-1), z_expr.clone()]),
-    ]);
+    let one_minus_z = plus(vec![Expr::Integer(1), neg(z_expr.clone())]);
     let terms: Vec<Expr> = (*a..=n)
       .map(|j| {
         times(vec![
@@ -1586,7 +1457,7 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(a_expr, Expr::Integer(1)) {
     return crate::evaluator::evaluate_expr_to_expr(&pow(
       const_expr("E"),
-      times(vec![Expr::Integer(-1), z_expr.clone()]),
+      neg(z_expr.clone()),
     ));
   }
 
@@ -1610,10 +1481,7 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         z_pow,
       ]));
     }
-    let e_pow = pow(
-      const_expr("E"),
-      times(vec![Expr::Integer(-1), z_expr.clone()]),
-    );
+    let e_pow = pow(const_expr("E"), neg(z_expr.clone()));
     return crate::evaluator::evaluate_expr_to_expr(&times(vec![
       e_pow,
       plus(terms),

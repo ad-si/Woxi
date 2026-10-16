@@ -79,17 +79,10 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
-  // Extract numeric values
-  let n_val = match n_expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    _ => None,
-  };
-  let z_val = match z_expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    _ => None,
-  };
+  // Extract numeric values (an exact order like 1/2 included, as for the
+  // other Bessel functions)
+  let n_val = expr_to_f64(n_expr);
+  let z_val = expr_to_f64(z_expr);
 
   // Special case: BesselJ[n, 0] for integer n
   if matches!(z_expr, Expr::Integer(0))
@@ -151,10 +144,7 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return if parity == 0 {
       Ok(positive_call)
     } else {
-      crate::evaluator::evaluate_expr_to_expr(&times(vec![
-        Expr::Integer(-1),
-        positive_call,
-      ]))
+      crate::evaluator::evaluate_expr_to_expr(&neg(positive_call))
     };
   }
 
@@ -429,7 +419,7 @@ pub fn bessel_y_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// is `0.8935776066…`. The implementation mirrors `bessel_j_zero` but
 /// evaluates `bessel_y` and uses the recurrence
 /// `Y'_n(x) = n/x · Y_n(x) − Y_{n+1}(x)` for Newton refinement.
-fn bessel_y_zero(n: f64, k: usize) -> f64 {
+pub(crate) fn bessel_y_zero(n: f64, k: usize) -> f64 {
   let step = 0.5;
   // Y_n diverges at x = 0, so start the scan past a small positive
   // value (and past `n * 0.5` for large `n`, where the first zero
@@ -485,7 +475,7 @@ fn bessel_y_zero(n: f64, k: usize) -> f64 {
 }
 
 /// Find the k-th positive zero of J_n(x) using bisection + Newton's method
-fn bessel_j_zero(n: f64, k: usize) -> f64 {
+pub(crate) fn bessel_j_zero(n: f64, k: usize) -> f64 {
   // Find zeros by scanning for sign changes, then refining with bisection
   let step = 0.5;
   let start = if n > 0.0 { n * 0.5 } else { step };
@@ -551,34 +541,20 @@ fn bessel_j_zero(n: f64, k: usize) -> f64 {
   f64::NAN
 }
 
-/// Compute Bessel J_n(z) using series expansion
+/// Machine Bessel J_n(z) for real n and z (see [`bessel_f64`]); a negative
+/// z needs an integer order, J_n(−z) = (−1)^n J_n(z).
 pub fn bessel_j(n: f64, z: f64) -> f64 {
-  // Handle negative integer orders: J_{-n}(z) = (-1)^n * J_n(z)
-  if n < 0.0 && n == n.floor() {
-    let n_abs = -n;
-    let sign = if n_abs as i64 % 2 == 0 { 1.0 } else { -1.0 };
-    return sign * bessel_j(n_abs, z);
-  }
-
-  // Special case: z = 0
   if z == 0.0 {
     return if n == 0.0 { 1.0 } else { 0.0 };
   }
-
-  // Series: J_n(z) = sum_{m=0}^{inf} (-1)^m / (m! * Gamma(n+m+1)) * (z/2)^(2m+n)
-  let half_z = z / 2.0;
-  let mut sum = 0.0;
-  let mut term = half_z.powf(n) / gamma_fn(n + 1.0);
-  sum += term;
-
-  for m in 1..300 {
-    term *= -half_z * half_z / (m as f64 * (n + m as f64));
-    sum += term;
-    if term.abs() < 1e-17 * sum.abs().max(1e-300) {
-      break;
+  if z < 0.0 {
+    if n.fract() != 0.0 {
+      return f64::NAN;
     }
+    let sign = if (n as i64) % 2 == 0 { 1.0 } else { -1.0 };
+    return sign * bessel_j(n, -z);
   }
-  sum
+  bessel_f64(BesselKind::J, n, z).unwrap_or(f64::NAN)
 }
 
 /// BesselI[n, z] - Modified Bessel function of the first kind
@@ -647,30 +623,21 @@ pub fn bessel_i_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("BesselI", args))
 }
 
-/// Compute I_n(z) using series: I_n(z) = Σ (z/2)^{2m+n} / (m! * Γ(n+m+1))
+/// Machine Bessel I_n(z) for real n and z (see [`bessel_f64`]); a negative
+/// z needs an integer order.
 pub fn bessel_i(n: f64, z: f64) -> f64 {
-  if n < 0.0 && n == n.floor() {
-    // I_{-n}(z) = I_n(z) for integer n
-    return bessel_i(-n, z);
-  }
-
   if z == 0.0 {
     return if n == 0.0 { 1.0 } else { 0.0 };
   }
-
-  let half_z = z / 2.0;
-  let mut sum = 0.0;
-  let mut term = half_z.powf(n) / gamma_fn(n + 1.0);
-  sum += term;
-
-  for m in 1..300 {
-    term *= half_z * half_z / (m as f64 * (n + m as f64));
-    sum += term;
-    if term.abs() < 1e-17 * sum.abs().max(1e-300) {
-      break;
+  if z < 0.0 {
+    // I_n(−z) = (−1)^n I_n(z) for integer n.
+    if n.fract() != 0.0 {
+      return f64::NAN;
     }
+    let sign = if (n as i64) % 2 == 0 { 1.0 } else { -1.0 };
+    return sign * bessel_i(n, -z);
   }
-  sum
+  bessel_f64(BesselKind::I, n, z).unwrap_or(f64::NAN)
 }
 
 /// BesselK[n, z] - Modified Bessel function of the second kind
@@ -807,125 +774,20 @@ fn wrap_bessel_k_factor(
     ),
     p.clone(),
     // 1 / E^z = E^(-z)
-    pow(
-      const_expr("E"),
-      times(vec![Expr::Integer(-1), z_expr.clone()]),
-    ),
+    pow(const_expr("E"), neg(z_expr.clone())),
     // 1 / Sqrt[z]
     pow(call1("Sqrt", z_expr.clone()), Expr::Integer(-1)),
   ]);
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
-/// Compute K_n(z) for integer n using the Temme method for small z
-/// and the recurrence relation for integer orders.
+/// Machine Bessel K_n(z) for real n and z > 0 (see [`bessel_f64`]).
 pub fn bessel_k(n: f64, z: f64) -> f64 {
-  let n_int = n.round() as i64;
-  let n_abs = n_int.unsigned_abs();
-
-  // K_{-n}(z) = K_n(z)
-  let n_abs_f = n_abs as f64;
-
-  // Compute K_0 and K_1 directly, then use recurrence for higher orders
-  let (k0, k1) = bessel_k01(z);
-  if n_abs == 0 {
-    return k0;
+  // The pole at the origin; the callers report the order-dependent form.
+  if z == 0.0 {
+    return f64::INFINITY;
   }
-  if n_abs == 1 {
-    return k1;
-  }
-
-  // Recurrence: K_{n+1}(z) = (2n/z) * K_n(z) + K_{n-1}(z)
-  let mut km1 = k0;
-  let mut k = k1;
-  for i in 1..n_abs {
-    let kp1 = (2.0 * i as f64 / z) * k + km1;
-    km1 = k;
-    k = kp1;
-  }
-
-  // If original n was non-integer, we'd need a different approach
-  // but for now we handle integer n via recurrence
-  if (n - n_abs_f).abs() > 1e-10 && n >= 0.0 {
-    // Non-integer order: use K_v(z) = (π/2) * (I_{-v}(z) - I_v(z)) / sin(vπ)
-    let pi = std::f64::consts::PI;
-    let i_neg = bessel_i(-n, z);
-    let i_pos = bessel_i(n, z);
-    return (pi / 2.0) * (i_neg - i_pos) / (n * pi).sin();
-  }
-
-  k
-}
-
-/// Compute K_0(z) and K_1(z) simultaneously using the Temme series for small z
-/// and asymptotic expansion for large z.
-fn bessel_k01(z: f64) -> (f64, f64) {
-  if z <= 2.0 {
-    // Series for K_0 and K_1
-    let euler_gamma = std::f64::consts::EULER_GAMMA;
-    let lnz2 = (z / 2.0).ln();
-    let t = z * z / 4.0;
-
-    // K_0(z) = -(ln(z/2) + γ) * I_0(z) + Σ_{m=1}^∞ (z/2)^{2m} * H_m / (m!)^2
-    let i0 = bessel_i(0.0, z);
-    let mut k0 = -(lnz2 + euler_gamma) * i0;
-    let mut term0 = 1.0;
-    let mut hm = 0.0;
-    for m in 1..100 {
-      let mf = m as f64;
-      term0 *= t / (mf * mf);
-      hm += 1.0 / mf;
-      k0 += term0 * hm;
-      if (term0 * hm).abs() < 1e-17 * k0.abs().max(1e-300) {
-        break;
-      }
-    }
-
-    // K_1(z) = (1/z) + (ln(z/2) + γ - 1) * I_1(z)
-    //   - (z/2) * Σ_{m=0}^∞ (z²/4)^m * (H_m + H_{m+1}) / (2 * m! * (m+1)!)
-    // But the correct form is:
-    // K_1(z) = (1/z) - (ln(z/2) + γ) * I_1(z) + (z/4) * Σ_{m=0}^∞ ...
-    // Let's use recurrence from K_0 instead: K_1 = -K_0' (for the derivative)
-    // Or more reliably, compute via the Wronskian: I_n * K_{n+1} + I_{n+1} * K_n = 1/z
-    // So K_1 = (1/z - I_1 * K_0) / I_0
-    let i1 = bessel_i(1.0, z);
-    let k1 = (1.0 / z - i1 * k0) / i0;
-
-    (k0, k1)
-  } else {
-    // Asymptotic: K_n(z) ~ sqrt(π/(2z)) * e^{-z} * P_n(z)
-    // where P_n(z) = 1 + (4n²-1)/(8z) + (4n²-1)(4n²-9)/(2!(8z)²) + ...
-    let pi = std::f64::consts::PI;
-    let prefactor = (pi / (2.0 * z)).sqrt() * (-z).exp();
-
-    // K_0 asymptotic (μ = 0)
-    let mut sum0 = 1.0;
-    let mut term0 = 1.0;
-    for m in 1..30 {
-      let mf = m as f64;
-      let factor = -(0.0 - (2.0 * mf - 1.0).powi(2)) / (8.0 * z * mf);
-      term0 *= factor;
-      if term0.abs() < 1e-17 {
-        break;
-      }
-      sum0 += term0;
-    }
-
-    // K_1 asymptotic (μ = 4)
-    let mut sum1 = 1.0;
-    let mut term1 = 1.0;
-    for m in 1..30 {
-      let mf = m as f64;
-      let factor = (4.0 - (2.0 * mf - 1.0).powi(2)) / (8.0 * z * mf);
-      term1 *= factor;
-      if term1.abs() < 1e-17 {
-        break;
-      }
-      sum1 += term1;
-    }
-
-    (prefactor * sum0, prefactor * sum1)
-  }
+  bessel_f64(BesselKind::K, n, z).unwrap_or(f64::NAN)
 }
 
 /// BesselY[n, z] - Bessel function of the second kind
@@ -948,7 +810,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Expr::Integer(n) = n_expr
   {
     return if *n == 0 {
-      Ok(times(vec![Expr::Integer(-1), id_expr("Infinity")]))
+      Ok(neg(id_expr("Infinity")))
     } else {
       Ok(id_expr("ComplexInfinity"))
     };
@@ -996,10 +858,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let p =
       half_int_bessel_polynomial(-n_num, z_expr, "Sin", "Cos", BesselSign::J)?;
     let p_signed = if sign < 0 {
-      crate::evaluator::evaluate_expr_to_expr(&times(vec![
-        Expr::Integer(-1),
-        p,
-      ]))?
+      crate::evaluator::evaluate_expr_to_expr(&neg(p))?
     } else {
       p
     };
@@ -1016,110 +875,20 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return if pos_n.unsigned_abs() & 1 == 0 {
       Ok(positive_call)
     } else {
-      crate::evaluator::evaluate_expr_to_expr(&times(vec![
-        Expr::Integer(-1),
-        positive_call,
-      ]))
+      crate::evaluator::evaluate_expr_to_expr(&neg(positive_call))
     };
   }
 
   Ok(unevaluated("BesselY", args))
 }
 
-/// Compute Bessel Y_n(z) (second kind)
+/// Machine Bessel Y_n(z) for real n and z > 0 (see [`bessel_f64`]).
 pub fn bessel_y(n: f64, z: f64) -> f64 {
-  // Handle negative integer orders: Y_{-n}(z) = (-1)^n * Y_n(z)
-  if n < 0.0 && n == n.floor() {
-    let n_abs = -n;
-    let sign = if n_abs as i64 % 2 == 0 { 1.0 } else { -1.0 };
-    return sign * bessel_y(n_abs, z);
+  // The pole at the origin; the callers report the order-dependent form.
+  if z == 0.0 {
+    return f64::NEG_INFINITY;
   }
-
-  if n == n.floor() && n >= 0.0 {
-    // Integer order: use Y_0, Y_1 from series, then recurrence
-    let n_int = n as i64;
-    let y0 = bessel_y0(z);
-    if n_int == 0 {
-      return y0;
-    }
-    let y1 = bessel_y1(z);
-    if n_int == 1 {
-      return y1;
-    }
-    // Recurrence: Y_{n+1}(z) = (2n/z) * Y_n(z) - Y_{n-1}(z)
-    let mut y_prev = y0;
-    let mut y_curr = y1;
-    for k in 1..n_int {
-      let y_next = (2.0 * k as f64 / z) * y_curr - y_prev;
-      y_prev = y_curr;
-      y_curr = y_next;
-    }
-    y_curr
-  } else {
-    // Non-integer order: Y_n(z) = (J_n(z)*cos(nπ) - J_{-n}(z)) / sin(nπ)
-    let j_n = bessel_j(n, z);
-    let j_neg_n = bessel_j(-n, z);
-    let n_pi = n * std::f64::consts::PI;
-    (j_n * n_pi.cos() - j_neg_n) / n_pi.sin()
-  }
-}
-
-/// Y_0(z) = (2/π) * (J_0(z) * (ln(z/2) + γ) + Σ (-1)^{m+1} H_m * (z/2)^{2m} / (m!)^2)
-fn bessel_y0(z: f64) -> f64 {
-  let two_over_pi = 2.0 / std::f64::consts::PI;
-  let euler_gamma = std::f64::consts::EULER_GAMMA;
-  let half_z = z / 2.0;
-
-  let j0 = bessel_j(0.0, z);
-
-  // Series part: Σ_{m=1}^{∞} (-1)^{m+1} * H_m * (z/2)^{2m} / (m!)^2
-  let mut series_sum = 0.0;
-  let mut term = 1.0; // (z/2)^{2m} / (m!)^2 starting value
-  let mut h_m = 0.0; // harmonic number H_m
-
-  for m in 1..300 {
-    let mf = m as f64;
-    h_m += 1.0 / mf;
-    term *= half_z * half_z / (mf * mf);
-    let sign = if m % 2 == 0 { -1.0 } else { 1.0 };
-    series_sum += sign * h_m * term;
-    if (h_m * term).abs() < 1e-17 * series_sum.abs().max(1e-300) {
-      break;
-    }
-  }
-
-  two_over_pi * (j0 * (half_z.ln() + euler_gamma) + series_sum)
-}
-
-/// Y_1(z) = (2/π) * (J_1(z) * ln(z/2) - 1/z + Σ ...)
-fn bessel_y1(z: f64) -> f64 {
-  let two_over_pi = 2.0 / std::f64::consts::PI;
-  let euler_gamma = std::f64::consts::EULER_GAMMA;
-  let half_z = z / 2.0;
-
-  let j1 = bessel_j(1.0, z);
-
-  // Y_1(z) = (2/π) * (J_1(z)*(ln(z/2) + γ) - 1/z - (1/2) Σ_{m=0}^∞ (-1)^m (H_m + H_{m+1}) (z/2)^{2m+1} / (m!(m+1)!))
-  let mut series_sum = 0.0;
-  let mut term = half_z; // (z/2)^{2m+1} / (m! * (m+1)!) starting with m=0: (z/2)^1 / (0! * 1!) = z/2
-  let mut h_m = 0.0; // H_0 = 0
-  let mut h_m1 = 1.0; // H_1 = 1
-
-  series_sum += (h_m + h_m1) * term; // m=0 term (sign = +1 for (-1)^0)
-
-  for m in 1..300 {
-    let mf = m as f64;
-    h_m += 1.0 / mf;
-    h_m1 += 1.0 / (mf + 1.0);
-    term *= -half_z * half_z / (mf * (mf + 1.0));
-    series_sum += (h_m + h_m1) * term;
-    if ((h_m + h_m1) * term).abs() < 1e-17 * series_sum.abs().max(1e-300) {
-      break;
-    }
-  }
-
-  two_over_pi
-    * (j1 * ((half_z).ln() + euler_gamma) - 1.0 / z - 0.5 * series_sum)
+  bessel_f64(BesselKind::Y, n, z).unwrap_or(f64::NAN)
 }
 
 /// SphericalBesselJ[n, z] — spherical Bessel function of the first kind.
@@ -1250,10 +1019,7 @@ fn coulomb_wave_reduce(
 fn coulomb_hplus_expr(l: i128, eta: &Expr, rho: &Expr) -> Expr {
   let i_unit = id_expr("I");
   // (-i)^L
-  let neg_i_pow = pow(
-    times(vec![Expr::Integer(-1), i_unit.clone()]),
-    Expr::Integer(l),
-  );
+  let neg_i_pow = pow(neg(i_unit.clone()), Expr::Integer(l));
   // e^(pi eta / 2)
   let exp_norm = call1(
     "Exp",

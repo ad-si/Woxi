@@ -629,6 +629,34 @@ mod adjacency_graph_from_matrix {
   }
 }
 
+/// Regression: `GraphPlot[{{u -> v, label}, …}]` labels each edge. With
+/// three or more such pairs the list used to stay an unevaluated `Graph[…]`
+/// (it was only mistaken for an adjacency matrix when square), and
+/// `EdgeRenderingFunction` never received the label as its third argument.
+mod graph_plot_labelled_edges {
+  use super::*;
+
+  #[test]
+  fn renders_graphics() {
+    assert_eq!(
+      interpret("Head[GraphPlot[{{1 -> 2, a}, {2 -> 3, b}, {3 -> 4, c}}]]")
+        .unwrap(),
+      "Graphics"
+    );
+  }
+
+  #[test]
+  fn edge_rendering_function_receives_label() {
+    let svg = interpret(
+      "ExportString[GraphPlot[{{1 -> 2, 0}, {2 -> 3, 1/2}, {3 -> 4, 1}}, \
+       EdgeRenderingFunction -> ({Hue[#3], Line[#1]} &)], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("rgb(255,0,0)"));
+    assert!(svg.contains("rgb(0,255,255)"));
+  }
+}
+
 /// Regression: `GraphPlot[m]` takes a bare adjacency matrix directly
 /// (documented for GraphPlot, unlike plain `Graph[m]` which needs
 /// `AdjacencyGraph[m]`). It used to stay unevaluated because the matrix
@@ -1727,7 +1755,10 @@ mod graph_rendering {
       "ExportString[Graph[{1 <-> 2}, PlotLabel -> Subscript[Style[\"I\", Italic], 4]], \"SVG\"]"
     )
     .unwrap();
-    assert!(svg.contains(">I\u{2084}<"), "SVG: {svg}");
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">I</tspan>\u{2084}<"),
+      "SVG: {svg}"
+    );
     assert!(
       !svg.contains("Subscript["),
       "label should not leak its literal head name: {svg}"

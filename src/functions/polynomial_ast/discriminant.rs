@@ -86,16 +86,9 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let sign = if sign_exp % 2 == 0 { 1 } else { -1 };
 
   // Result = sign * Resultant / a_n
-  let signed_res = if sign == -1 {
-    call("Times", vec![Expr::Integer(-1), res])
-  } else {
-    res
-  };
+  let signed_res = if sign == -1 { neg(res) } else { res };
 
-  let result = call(
-    "Times",
-    vec![signed_res, pow(leading_coeff, Expr::Integer(-1))],
-  );
+  let result = times(vec![signed_res, pow(leading_coeff, Expr::Integer(-1))]);
 
   // Simplify the result
   let simplified = crate::evaluator::evaluate_expr_to_expr(&result)?;

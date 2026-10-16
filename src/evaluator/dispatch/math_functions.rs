@@ -488,7 +488,7 @@ pub fn dispatch_math_functions(
           if let Some(v) = crate::functions::math_ast::try_eval_to_f64(&args[0])
           {
             if v < 0.0 {
-              let neg = call("Times", vec![Expr::Integer(-1), args[0].clone()]);
+              let neg = neg(args[0].clone());
               return Some(crate::evaluator::evaluate_expr_to_expr(&neg));
             }
             return Some(Ok(args[0].clone()));
@@ -795,10 +795,10 @@ pub fn dispatch_math_functions(
             {
               // Var = E[x^2] - mean^2
               let m_2 = pow(m, Expr::Integer(2));
-              let var = crate::evaluator::evaluate_expr_to_expr(&call(
-                "Plus",
-                vec![m2, call("Times", vec![Expr::Integer(-1), m_2])],
-              ));
+              let var = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+                m2,
+                neg(m_2),
+              ]));
               if let Ok(v) = var {
                 if name == "Variance" {
                   return Some(Ok(v));
@@ -1483,8 +1483,7 @@ pub fn dispatch_math_functions(
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
       if matches!(&args[0], Expr::Integer(1)) {
-        let neg = |z: &Expr| call("Times", vec![Expr::Integer(-1), z.clone()]);
-        let exp_neg = |z: &Expr| pow(const_expr("E"), neg(z));
+        let exp_neg = |z: &Expr| pow(const_expr("E"), neg(z.clone()));
         let diff = minus2(exp_neg(&args[1]), exp_neg(&args[2]));
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
@@ -1855,13 +1854,10 @@ pub fn dispatch_math_functions(
           // wolframscript (e.g. StieltjesGamma[0, 2] -> -1 + EulerGamma).
           let expr = call1(
             "Expand",
-            call(
-              "Times",
-              vec![
-                Expr::Integer(-1),
-                call("PolyGamma", vec![Expr::Integer(0), args[1].clone()]),
-              ],
-            ),
+            times(vec![
+              Expr::Integer(-1),
+              call("PolyGamma", vec![Expr::Integer(0), args[1].clone()]),
+            ]),
           );
           crate::evaluator::evaluate_expr_to_expr(&expr).unwrap_or(unevaluated)
         }
@@ -2051,15 +2047,16 @@ pub fn dispatch_math_functions(
       // Expand to Sin[x]/x only when Sin[x] evaluated to a variable-free closed
       // form — a genuine value (number/radical) as for Sinc[Pi/2] or Sinc[2 Pi].
       // When Sin merely rewrites to another symbolic form (Sin[Pi + x] = -Sin[x],
-      // still containing a Sin; or Sin[Pi/2 + x] = Cos[x], still containing the
-      // free variable x), wolframscript keeps Sinc[x] symbolic, so leave it
-      // unevaluated. `not_a_value` flags either a residual Sin head or any free
-      // symbol.
+      // still containing a Sin; Sin[3 Pi/8] = Cos[Pi/8], a cosine without a
+      // radical form; or Sin[Pi/2 + x] = Cos[x], still containing the free
+      // variable x), wolframscript keeps Sinc[x] symbolic, so leave it
+      // unevaluated. `not_a_value` flags a residual Sin or Cos head or any
+      // free symbol.
       fn not_a_value(e: &Expr) -> bool {
         match e {
           Expr::Identifier(_) => true,
           Expr::FunctionCall { name, args } => {
-            name == "Sin" || args.iter().any(not_a_value)
+            name == "Sin" || name == "Cos" || args.iter().any(not_a_value)
           }
           Expr::BinaryOp { left, right, .. } => {
             not_a_value(left) || not_a_value(right)
@@ -2104,19 +2101,27 @@ pub fn dispatch_math_functions(
         let expr = pow2(sin_expr, Expr::Integer(2));
         return Some(crate::evaluator::evaluate_expr_to_expr(&expr));
       }
-      // Exact args: Haversine[x] = (1 - Cos[x])/2. wolframscript evaluates the
-      // nice-angle cases (Pi/3 -> 1/4, 2 Pi -> 0, 2 Pi/3 -> 3/4, ...). Return
-      // the computed value only when it reduces to a rational number — radical
-      // results (e.g. Pi/4, Pi/5) are left unevaluated to avoid a canonical
-      // radical-form divergence from wolframscript.
-      let cos_x = call1("Cos", args[0].clone());
-      let half = div2(minus2(Expr::Integer(1), cos_x), Expr::Integer(2));
-      if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&half) {
-        let is_rational = matches!(&result, Expr::Integer(_))
-          || matches!(&result, Expr::FunctionCall { name, args }
-            if name == "Rational" && args.len() == 2);
-        if is_rational {
-          return Some(Ok(result));
+      // Exact args: wolframscript rewrites Haversine[x] to (1 - Cos[x])/2
+      // only for rational multiples of Pi whose Cos evaluates in closed form
+      // (Pi/3 -> 1/4, Pi/6 -> (1 - Sqrt[3]/2)/2, but Haversine[Pi/8],
+      // Haversine[I Pi/3] and Haversine[ArcCos[1/3]] stay unevaluated).
+      let pi_ratio = crate::evaluator::evaluate_expr_to_expr(&div2(
+        args[0].clone(),
+        Expr::Constant("Pi".to_string()),
+      ));
+      let is_pi_multiple = match &pi_ratio {
+        Ok(Expr::Integer(_)) => true,
+        Ok(Expr::FunctionCall { name, .. }) => name == "Rational",
+        _ => false,
+      };
+      if is_pi_multiple {
+        let cos_x = call1("Cos", args[0].clone());
+        if let Ok(cos_val) = crate::evaluator::evaluate_expr_to_expr(&cos_x)
+          && !crate::functions::math_ast::expr_contains_head(&cos_val, "Cos")
+          && !crate::functions::math_ast::expr_contains_head(&cos_val, "Sin")
+        {
+          let half = div2(minus2(Expr::Integer(1), cos_val), Expr::Integer(2));
+          return Some(crate::evaluator::evaluate_expr_to_expr(&half));
         }
       }
     }
@@ -2483,10 +2488,8 @@ pub fn dispatch_math_functions(
       } else {
         Expr::Integer(10)
       };
-      let mantissa = call(
-        "Times",
-        vec![args[0].clone(), pow(base_expr, Expr::Integer(-e))],
-      );
+      let mantissa =
+        times(vec![args[0].clone(), pow(base_expr, Expr::Integer(-e))]);
       let mantissa_eval =
         crate::evaluator::evaluate_expr_to_expr(&mantissa).unwrap_or(mantissa);
       return Some(Ok(Expr::List(
@@ -3258,7 +3261,7 @@ pub fn dispatch_math_functions(
           let product = if factors.len() == 1 {
             factors.into_iter().next().unwrap()
           } else {
-            call("Times", factors)
+            times(factors)
           };
           coords.push(product);
         }
@@ -3296,7 +3299,7 @@ pub fn dispatch_math_functions(
           let sum = if squares.len() == 1 {
             squares.into_iter().next().unwrap()
           } else {
-            call("Plus", squares)
+            plus(squares)
           };
           call1("Sqrt", sum)
         };
@@ -3385,8 +3388,7 @@ pub fn dispatch_math_functions(
           && matches!(&imin_expr, Expr::Integer(1))
           && matches!(&imax_expr, Expr::Identifier(s) if s == "Infinity")
         {
-          let result =
-            call("Plus", vec![Expr::Integer(-1), id_expr("GoldenRatio")]);
+          let result = plus(vec![Expr::Integer(-1), id_expr("GoldenRatio")]);
           return Some(crate::evaluator::evaluate_expr_to_expr(&result));
         }
         if let (Expr::Integer(imin), Expr::Integer(imax)) =
@@ -3667,13 +3669,11 @@ pub fn dispatch_math_functions(
             && name == "Scaled"
             && args.len() == 1
           {
-            return evaluate_expr_to_expr(&call(
-              "Times",
-              vec![args[0].clone(), width.clone()],
-            ))
-            .unwrap_or_else(|_| {
-              call("Times", vec![args[0].clone(), width.clone()])
-            });
+            return evaluate_expr_to_expr(&times(vec![
+              args[0].clone(),
+              width.clone(),
+            ]))
+            .unwrap_or_else(|_| times(vec![args[0].clone(), width.clone()]));
           }
           spec.clone()
         }
@@ -3825,8 +3825,8 @@ pub fn dispatch_math_functions(
           ));
           den_terms.push(call1("Abs", plus2(ai.clone(), bi.clone())));
         }
-        let num = call("Plus", num_terms);
-        let den = call("Plus", den_terms);
+        let num = plus(num_terms);
+        let den = plus(den_terms);
         let result = div2(num, den);
         return Some(evaluate_expr_to_expr(&result));
       }
@@ -3859,7 +3859,7 @@ pub fn dispatch_math_functions(
           let den = plus2(call1("Abs", ai.clone()), call1("Abs", bi.clone()));
           terms.push(div2(num, den));
         }
-        let sum = call("Plus", terms);
+        let sum = plus(terms);
         return Some(evaluate_expr_to_expr(&sum));
       }
     }
@@ -4081,45 +4081,31 @@ pub fn dispatch_math_functions(
           return None;
         }
         // Build expression: Divide[Total[Power[Subtract[u,v], 2]], 2 * Plus[Total[...], Total[...]]]
-        let neg = |x: Expr| call("Times", vec![Expr::Integer(-1), x]);
         let diff_sq: Vec<Expr> = u
           .iter()
           .zip(v.iter())
           .map(|(ui, vi)| {
-            pow(
-              call("Plus", vec![ui.clone(), neg(vi.clone())]),
-              Expr::Integer(2),
-            )
+            pow(plus(vec![ui.clone(), neg(vi.clone())]), Expr::Integer(2))
           })
           .collect();
         let numerator = call1("Total", Expr::List(diff_sq.into()));
         // Variance-like terms
         let mean_u = call1("Mean", Expr::List(u.clone()));
         let mean_v = call1("Mean", Expr::List(v.clone()));
-        let sq = |x: Expr, m: Expr| {
-          pow(call("Plus", vec![x, neg(m)]), Expr::Integer(2))
-        };
+        let sq =
+          |x: Expr, m: Expr| pow(plus(vec![x, neg(m)]), Expr::Integer(2));
         let var_u: Vec<Expr> =
           u.iter().map(|ui| sq(ui.clone(), mean_u.clone())).collect();
         let var_v: Vec<Expr> =
           v.iter().map(|vi| sq(vi.clone(), mean_v.clone())).collect();
-        let denominator = call(
-          "Plus",
-          vec![
-            call1("Total", Expr::List(var_u.into())),
-            call1("Total", Expr::List(var_v.into())),
-          ],
-        );
-        let result = call(
-          "Times",
-          vec![
-            call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-            call(
-              "Times",
-              vec![numerator, pow(denominator, Expr::Integer(-1))],
-            ),
-          ],
-        );
+        let denominator = plus(vec![
+          call1("Total", Expr::List(var_u.into())),
+          call1("Total", Expr::List(var_v.into())),
+        ]);
+        let result = times(vec![
+          call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+          times(vec![numerator, pow(denominator, Expr::Integer(-1))]),
+        ]);
         return Some(evaluate_expr_to_expr(&result));
       }
     }
@@ -4128,13 +4114,7 @@ pub fn dispatch_math_functions(
       // Build 1 - Correlation[u, v] and evaluate
       let corr_expr =
         call("Correlation", vec![args[0].clone(), args[1].clone()]);
-      let result_expr = call(
-        "Plus",
-        vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), corr_expr]),
-        ],
-      );
+      let result_expr = plus(vec![Expr::Integer(1), neg(corr_expr)]);
       return Some(evaluate_expr_to_expr(&result_expr));
     }
     // PowerModList[a, b, m] — modular power/root list
@@ -4218,16 +4198,14 @@ pub fn dispatch_math_functions(
         let eval = |e: Expr| evaluate_expr_to_expr(&e).unwrap_or(e);
 
         // n.n and v.n (exact where possible).
-        let nn = eval(call(
-          "Plus",
+        let nn = eval(plus(
           (0..dim)
-            .map(|k| call("Times", vec![n_vec[k].clone(), n_vec[k].clone()]))
+            .map(|k| times(vec![n_vec[k].clone(), n_vec[k].clone()]))
             .collect(),
         ));
-        let vn = eval(call(
-          "Plus",
+        let vn = eval(plus(
           (0..dim)
-            .map(|k| call("Times", vec![v[k].clone(), n_vec[k].clone()]))
+            .map(|k| times(vec![v[k].clone(), n_vec[k].clone()]))
             .collect(),
         ));
         // v_proj = v - (v.n / n.n) * n
@@ -4236,18 +4214,14 @@ pub fn dispatch_math_functions(
           .map(|i| {
             eval(call(
               "Subtract",
-              vec![
-                v[i].clone(),
-                call("Times", vec![coeff.clone(), n_vec[i].clone()]),
-              ],
+              vec![v[i].clone(), times(vec![coeff.clone(), n_vec[i].clone()])],
             ))
           })
           .collect();
         // |v_proj|^2 — a zero projection has no shear direction.
-        let vpp = eval(call(
-          "Plus",
+        let vpp = eval(plus(
           (0..dim)
-            .map(|k| call("Times", vec![v_proj[k].clone(), v_proj[k].clone()]))
+            .map(|k| times(vec![v_proj[k].clone(), v_proj[k].clone()]))
             .collect(),
         ));
         let is_zero = matches!(&vpp, Expr::Integer(0))
@@ -4270,23 +4244,17 @@ pub fn dispatch_math_functions(
           for j in 0..dim {
             let delta = Expr::Integer(i128::from(i == j));
             // Tan[theta] * v_proj[i]*n[j] / (Sqrt[vpp]*Sqrt[nn])
-            let shear = call(
-              "Times",
-              vec![
-                tan.clone(),
-                v_proj[i].clone(),
-                n_vec[j].clone(),
-                pow(sqrt_vpp.clone(), Expr::Integer(-1)),
-                pow(sqrt_nn.clone(), Expr::Integer(-1)),
-              ],
-            );
+            let shear = times(vec![
+              tan.clone(),
+              v_proj[i].clone(),
+              n_vec[j].clone(),
+              pow(sqrt_vpp.clone(), Expr::Integer(-1)),
+              pow(sqrt_nn.clone(), Expr::Integer(-1)),
+            ]);
             // wolframscript reports each entry over a common denominator
             // (e.g. `(2 + Tan[t])/2` rather than `1 + Tan[t]/2`); Together
             // reproduces that form while leaving single-term entries intact.
-            row.push(eval(call(
-              "Together",
-              vec![call("Plus", vec![delta, shear])],
-            )));
+            row.push(eval(call("Together", vec![plus(vec![delta, shear])])));
           }
           rows.push(Expr::List(row.into()));
         }
@@ -4505,7 +4473,7 @@ pub fn dispatch_math_functions(
       if let Expr::Comparison { operands, .. } = &args[0]
         && operands.len() == 2
       {
-        let neg = call("Times", vec![Expr::Integer(-1), operands[1].clone()]);
+        let neg = neg(operands[1].clone());
         if let Some(result) = apply_to_sides(&args[0], &neg, "Plus") {
           return Some(evaluate_expr_to_expr(&result));
         }
@@ -4549,7 +4517,7 @@ pub fn dispatch_math_functions(
       if let Some(result) = pair_sides(&args[0], &args[1], SideOp::Subtract) {
         return Some(evaluate_expr_to_expr(&result));
       }
-      let neg = call("Times", vec![Expr::Integer(-1), args[1].clone()]);
+      let neg = neg(args[1].clone());
       if let Some(result) = apply_to_sides(&args[0], &neg, "Plus") {
         return Some(evaluate_expr_to_expr(&result));
       }
@@ -4621,8 +4589,8 @@ pub fn dispatch_math_functions(
           let factor = |d: i128| {
             call("Rational", vec![Expr::Integer(1), Expr::Integer(d)])
           };
-          let scale = |e: Expr, d: i128| call("Times", vec![e, factor(d)]);
-          let result = call("Plus", vec![d, scale(m, 60), scale(s, 3600)]);
+          let scale = |e: Expr, d: i128| times(vec![e, factor(d)]);
+          let result = plus(vec![d, scale(m, 60), scale(s, 3600)]);
           return Some(evaluate_expr_to_expr(&result));
         }
         // FromDMS[n] where n is just degrees
@@ -4780,17 +4748,10 @@ pub fn dispatch_math_functions(
             // Linear interpolation: elems[idx] + rem/t_den * (elems[idx+1] - elems[idx])
             let frac =
               call("Rational", vec![Expr::Integer(rem), Expr::Integer(t_den)]);
-            let diff = call(
-              "Plus",
-              vec![
-                elems[idx + 1].clone(),
-                call("Times", vec![Expr::Integer(-1), elems[idx].clone()]),
-              ],
-            );
-            let interp = call(
-              "Plus",
-              vec![elems[idx].clone(), call("Times", vec![frac, diff])],
-            );
+            let diff =
+              plus(vec![elems[idx + 1].clone(), neg(elems[idx].clone())]);
+            let interp =
+              plus(vec![elems[idx].clone(), times(vec![frac, diff])]);
             result.push(evaluate_expr_to_expr(&interp).unwrap_or(interp));
           }
         }
@@ -4948,9 +4909,9 @@ fn qgamma_ast(z_expr: &Expr, q_expr: &Expr) -> Result<Expr, InterpreterError> {
         _ => pow(q_expr.clone(), Expr::Integer(j)),
       })
       .collect();
-    factors.push(call("Plus", terms));
+    factors.push(plus(terms));
   }
-  let product = call("Times", factors);
+  let product = times(factors);
   crate::evaluator::evaluate_expr_to_expr(&product)
 }
 
@@ -5124,7 +5085,7 @@ fn midpoint_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   let p2 = &points[1];
 
   // (p1 + p2) / 2 - works for both scalar and vector points
-  let sum = call("Plus", vec![p1.clone(), p2.clone()]);
+  let sum = plus(vec![p1.clone(), p2.clone()]);
   let result = div2(sum, Expr::Integer(2));
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -5167,7 +5128,7 @@ fn qfactorial_ast(
     factors.push(factor);
   }
 
-  let product = call("Times", factors);
+  let product = times(factors);
 
   crate::evaluator::evaluate_expr_to_expr(&product)
 }
@@ -5506,12 +5467,12 @@ fn expand_log_in_complex_expand(expr: &Expr) -> Expr {
           let pos_const = if pos_const_factors.len() == 1 {
             pos_const_factors.remove(0)
           } else {
-            call("Times", pos_const_factors)
+            times(pos_const_factors)
           };
           let rest = if other_factors.len() == 1 {
             other_factors.remove(0)
           } else {
-            call("Times", other_factors)
+            times(other_factors)
           };
           let log_pos = call1("Log", pos_const);
           let log_rest = expand_log_in_complex_expand(&call1("Log", rest));
@@ -5577,20 +5538,20 @@ fn group_imag_terms(expr: &Expr) -> Expr {
     0 => Expr::Integer(0),
     1 => imag_parts.remove(0),
     _ => crate::evaluator::evaluate_function_call_ast("Plus", &imag_parts)
-      .unwrap_or(call("Plus", imag_parts)),
+      .unwrap_or(plus(imag_parts)),
   };
   if is_expr_zero(&imag) {
     return match real_parts.len() {
       0 => Expr::Integer(0),
       1 => real_parts.remove(0),
       _ => crate::evaluator::evaluate_function_call_ast("Plus", &real_parts)
-        .unwrap_or(call("Plus", real_parts)),
+        .unwrap_or(plus(real_parts)),
     };
   }
   let i_term = if matches!(imag, Expr::Integer(1)) {
     id_expr("I")
   } else {
-    call("Times", vec![id_expr("I"), imag])
+    times(vec![id_expr("I"), imag])
   };
   if real_parts.is_empty() {
     return crate::evaluator::evaluate_expr_to_expr(&i_term).unwrap_or(i_term);
@@ -5610,7 +5571,7 @@ fn group_imag_terms(expr: &Expr) -> Expr {
   if combined_args.len() == 1 {
     return combined_args.remove(0);
   }
-  call("Plus", combined_args)
+  plus(combined_args)
 }
 
 fn is_expr_zero(e: &Expr) -> bool {
@@ -5693,7 +5654,7 @@ fn strip_one_i_factor(t: &Expr) -> Option<Expr> {
     0 => Expr::Integer(1),
     1 => new_factors.remove(0),
     _ => crate::evaluator::evaluate_function_call_ast("Times", &new_factors)
-      .unwrap_or(call("Times", new_factors)),
+      .unwrap_or(times(new_factors)),
   })
 }
 
@@ -5807,12 +5768,12 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
       let real = if real_parts.len() == 1 {
         real_parts.remove(0)
       } else {
-        call("Plus", real_parts)
+        plus(real_parts)
       };
       let imag = if imag_parts.len() == 1 {
         imag_parts.remove(0)
       } else {
-        call("Plus", imag_parts)
+        plus(imag_parts)
       };
       Some((ce_simplify(real), ce_simplify(imag)))
     }
@@ -5998,7 +5959,7 @@ fn make_term(coef: i128, a: &Expr, ai: i128, b: &Expr, bi: i128) -> Expr {
   if factors.len() == 1 {
     return factors.into_iter().next().unwrap();
   }
-  ce_simplify(call("Times", factors))
+  ce_simplify(times(factors))
 }
 
 fn sum_terms(terms: Vec<Expr>) -> Expr {
@@ -6008,7 +5969,7 @@ fn sum_terms(terms: Vec<Expr>) -> Expr {
   if terms.len() == 1 {
     return terms.into_iter().next().unwrap();
   }
-  ce_simplify(call("Plus", terms))
+  ce_simplify(plus(terms))
 }
 
 /// Returns true when the base of a Power can be treated as a positive
@@ -6055,7 +6016,7 @@ fn abs_complex_expand_rewrite(arg: &Expr) -> Option<Expr> {
       .iter()
       .map(|f| complex_expand_recursive(&call1("Abs", f.clone())))
       .collect();
-    return Some(call("Times", abs_factors));
+    return Some(times(abs_factors));
   }
   // Abs[Power[positive_real, c]] → Power[positive_real, Re[c]]
   let power_parts: Option<(Expr, Expr)> = match arg {
@@ -6093,6 +6054,106 @@ fn abs_complex_expand_rewrite(arg: &Expr) -> Option<Expr> {
   None
 }
 
+/// Real and imaginary parts of the quotient trigonometric and hyperbolic
+/// functions at `a + I b`, written over the shared denominator Wolfram's
+/// ComplexExpand uses (`Tan[a + I b]` has `Cos[2a] + Cosh[2b]` under
+/// `Sin[2a]` and `Sinh[2b]`). `None` for any other head.
+fn reciprocal_trig_parts(
+  name: &str,
+  a: &Expr,
+  b: &Expr,
+) -> Option<(Expr, Expr)> {
+  let two = |e: &Expr| times2(Expr::Integer(2), e.clone());
+  let f = |h: &str, e: Expr| call1(h, e);
+  let neg = |e: Expr| times2(Expr::Integer(-1), e);
+  Some(match name {
+    "Tan" | "Cot" | "Sec" | "Csc" => {
+      // Circular functions: denominators in Cos[2a] and Cosh[2b].
+      let (cos2a, cosh2b) = (f("Cos", two(a)), f("Cosh", two(b)));
+      match name {
+        "Tan" => {
+          let den = plus2(cos2a, cosh2b);
+          (
+            div2(f("Sin", two(a)), den.clone()),
+            div2(f("Sinh", two(b)), den),
+          )
+        }
+        "Cot" => {
+          let den = minus2(cos2a, cosh2b);
+          (
+            neg(div2(f("Sin", two(a)), den.clone())),
+            div2(f("Sinh", two(b)), den),
+          )
+        }
+        "Sec" => {
+          let den = plus2(cos2a, cosh2b);
+          (
+            div2(
+              two(&times2(f("Cos", a.clone()), f("Cosh", b.clone()))),
+              den.clone(),
+            ),
+            div2(two(&times2(f("Sin", a.clone()), f("Sinh", b.clone()))), den),
+          )
+        }
+        _ => {
+          let den = minus2(cos2a, cosh2b);
+          (
+            div2(
+              neg(two(&times2(f("Sin", a.clone()), f("Cosh", b.clone())))),
+              den.clone(),
+            ),
+            div2(two(&times2(f("Cos", a.clone()), f("Sinh", b.clone()))), den),
+          )
+        }
+      }
+    }
+    "Tanh" | "Coth" | "Sech" | "Csch" => {
+      // Hyperbolic functions: denominators in Cos[2b] and Cosh[2a].
+      let (cos2b, cosh2a) = (f("Cos", two(b)), f("Cosh", two(a)));
+      match name {
+        "Tanh" => {
+          let den = plus2(cos2b, cosh2a);
+          (
+            div2(f("Sinh", two(a)), den.clone()),
+            div2(f("Sin", two(b)), den),
+          )
+        }
+        "Coth" => {
+          let den = minus2(cos2b, cosh2a);
+          (
+            neg(div2(f("Sinh", two(a)), den.clone())),
+            div2(f("Sin", two(b)), den),
+          )
+        }
+        "Sech" => {
+          let den = plus2(cos2b, cosh2a);
+          (
+            div2(
+              two(&times2(f("Cosh", a.clone()), f("Cos", b.clone()))),
+              den.clone(),
+            ),
+            div2(
+              neg(two(&times2(f("Sinh", a.clone()), f("Sin", b.clone())))),
+              den,
+            ),
+          )
+        }
+        _ => {
+          let den = minus2(cos2b, cosh2a);
+          (
+            div2(
+              neg(two(&times2(f("Sinh", a.clone()), f("Cos", b.clone())))),
+              den.clone(),
+            ),
+            div2(two(&times2(f("Cosh", a.clone()), f("Sin", b.clone()))), den),
+          )
+        }
+      }
+    }
+    _ => return None,
+  })
+}
+
 fn complex_expand_recursive(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } if args.len() == 1 => {
@@ -6111,6 +6172,17 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
       }
       // Try to split the argument into real + I*imag parts
       if let Some((re, im)) = split_real_imag(arg) {
+        // The quotient functions expand even for a real argument, which is
+        // the b = 0 case of the same formulas: ComplexExpand[Tan[x]] is
+        // Sin[2*x]/(1 + Cos[2*x]) (wolframscript-verified).
+        if let Some((real_part, imag_part)) =
+          reciprocal_trig_parts(name, &re, &im)
+        {
+          return ce_simplify(plus2(
+            real_part,
+            times2(id_expr("I"), imag_part),
+          ));
+        }
         // Check if imaginary part is zero
         let im_is_zero = matches!(&im, Expr::Integer(0));
         if !im_is_zero {
@@ -6146,25 +6218,6 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
               return ce_simplify(plus2(
                 times2(sinh_a, cos_b),
                 times2(id_expr("I"), times2(cosh_a, sin_b)),
-              ));
-            }
-            // Tanh[a + I*b] = (Sinh[2a] + I*Sin[2b]) / (Cos[2b] + Cosh[2a]).
-            // The split-into-real-and-imag form Wolfram emits keeps the
-            // shared denominator Cos[2b] + Cosh[2a] under both numerators
-            // — emit it the same way so display matches `ComplexExpand`'s.
-            "Tanh" => {
-              let two_a = times2(Expr::Integer(2), re.clone());
-              let two_b = times2(Expr::Integer(2), im.clone());
-              let sinh_2a = call1("Sinh", two_a.clone());
-              let sin_2b = call1("Sin", two_b.clone());
-              let cos_2b = call1("Cos", two_b);
-              let cosh_2a = call1("Cosh", two_a);
-              let denom = plus2(cos_2b, cosh_2a);
-              let real_part = div2(sinh_2a, denom.clone());
-              let imag_part = div2(sin_2b, denom);
-              return ce_simplify(plus2(
-                real_part,
-                times2(id_expr("I"), imag_part),
               ));
             }
             // Cosh[a + I*b] = Cosh[a]*Cos[b] + I*Sinh[a]*Sin[b]
@@ -6351,25 +6404,16 @@ fn exp_to_trig_expand(z: &Expr) -> Expr {
   // Check if z = I*x (purely imaginary)
   if let Some(x) = extract_imaginary_part(z) {
     // Cos[x] + I*Sin[x]
-    call(
-      "Plus",
-      vec![
-        call1("Cos", x.clone()),
-        call(
-          "Times",
-          vec![
-            call("Complex", vec![Expr::Integer(0), Expr::Integer(1)]),
-            call1("Sin", x.clone()),
-          ],
-        ),
-      ],
-    )
+    plus(vec![
+      call1("Cos", x.clone()),
+      times(vec![
+        call("Complex", vec![Expr::Integer(0), Expr::Integer(1)]),
+        call1("Sin", x.clone()),
+      ]),
+    ])
   } else {
     // Cosh[z] + Sinh[z]
-    call(
-      "Plus",
-      vec![call1("Cosh", z.clone()), call1("Sinh", z.clone())],
-    )
+    plus(vec![call1("Cosh", z.clone()), call1("Sinh", z.clone())])
   }
 }
 
@@ -6405,7 +6449,7 @@ fn extract_imaginary_part(z: &Expr) -> Option<Expr> {
         if other_factors.len() == 1 {
           Some(other_factors.into_iter().next().unwrap())
         } else {
-          Some(call("Times", other_factors))
+          Some(times(other_factors))
         }
       } else {
         None
@@ -6445,34 +6489,40 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
       match name.as_str() {
         // Cos[x] = E^(I*x)/2 + E^(-I*x)/2
         "Cos" => {
-          let ix = times(&[i.clone(), arg.clone()]);
+          let ix = times(vec![i.clone(), arg.clone()]);
           let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
-          plus(&[times(&[half.clone(), e_ix]), times(&[half, e_nix])])
+          let e_nix = power(e.clone(), neg(ix));
+          plus(vec![
+            times(vec![half.clone(), e_ix]),
+            times(vec![half, e_nix]),
+          ])
         }
         // Sin[x] = -I*E^(I*x)/2 + I*E^(-I*x)/2
         "Sin" => {
-          let ix = times(&[i.clone(), arg.clone()]);
+          let ix = times(vec![i.clone(), arg.clone()]);
           let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
-          plus(&[
-            times(&[Expr::Integer(-1), i.clone(), half.clone(), e_ix]),
-            times(&[i, half, e_nix]),
+          let e_nix = power(e.clone(), neg(ix));
+          plus(vec![
+            times(vec![Expr::Integer(-1), i.clone(), half.clone(), e_ix]),
+            times(vec![i, half, e_nix]),
           ])
         }
         // Cosh[x] = E^x/2 + E^(-x)/2
         "Cosh" => {
           let e_x = power(e.clone(), arg.clone());
-          let e_nx = power(e.clone(), times(&[Expr::Integer(-1), arg]));
-          plus(&[times(&[half.clone(), e_x]), times(&[half, e_nx])])
+          let e_nx = power(e.clone(), neg(arg));
+          plus(vec![
+            times(vec![half.clone(), e_x]),
+            times(vec![half, e_nx]),
+          ])
         }
         // Sinh[x] = E^x/2 - E^(-x)/2
         "Sinh" => {
           let e_x = power(e.clone(), arg.clone());
-          let e_nx = power(e.clone(), times(&[Expr::Integer(-1), arg]));
-          plus(&[
-            times(&[half.clone(), e_x]),
-            times(&[Expr::Integer(-1), half, e_nx]),
+          let e_nx = power(e.clone(), neg(arg));
+          plus(vec![
+            times(vec![half.clone(), e_x]),
+            times(vec![Expr::Integer(-1), half, e_nx]),
           ])
         }
         // Tan[x] = I*(E^(-I*x) - E^(I*x))/(E^(-I*x) + E^(I*x))
@@ -6480,179 +6530,164 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         // term is the positive-exponent E^(I*x); this matches wolframscript's
         // form and avoids rendering E^(-I*x) as -(1/E^(I*x)).
         "Tan" => {
-          let ix = times(&[i.clone(), arg.clone()]);
+          let ix = times(vec![i.clone(), arg.clone()]);
           let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
-          times(&[
+          let e_nix = power(e.clone(), neg(ix));
+          times(vec![
             i,
-            plus(&[e_nix.clone(), times(&[Expr::Integer(-1), e_ix.clone()])]),
-            power(plus(&[e_nix, e_ix]), Expr::Integer(-1)),
+            plus(vec![e_nix.clone(), neg(e_ix.clone())]),
+            power(plus(vec![e_nix, e_ix]), Expr::Integer(-1)),
           ])
         }
         // Sec[x] = 2/(E^(I*x) + E^(-I*x))
         "Sec" => {
-          let ix = times(&[i.clone(), arg.clone()]);
+          let ix = times(vec![i.clone(), arg.clone()]);
           let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
-          times(&[
+          let e_nix = power(e.clone(), neg(ix));
+          times(vec![
             Expr::Integer(2),
-            power(plus(&[e_ix, e_nix]), Expr::Integer(-1)),
+            power(plus(vec![e_ix, e_nix]), Expr::Integer(-1)),
           ])
         }
         // Csc[x] = -2*I/(E^(-I*x) - E^(I*x))
         "Csc" => {
-          let ix = times(&[i.clone(), arg.clone()]);
+          let ix = times(vec![i.clone(), arg.clone()]);
           let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
-          times(&[
+          let e_nix = power(e.clone(), neg(ix));
+          times(vec![
             Expr::Integer(-2),
             i,
-            power(
-              plus(&[e_nix, times(&[Expr::Integer(-1), e_ix])]),
-              Expr::Integer(-1),
-            ),
+            power(plus(vec![e_nix, neg(e_ix)]), Expr::Integer(-1)),
           ])
         }
         // Cot[x] = -I*(E^(-I*x) + E^(I*x))/(E^(-I*x) - E^(I*x))
         "Cot" => {
-          let ix = times(&[i.clone(), arg.clone()]);
+          let ix = times(vec![i.clone(), arg.clone()]);
           let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
-          times(&[
+          let e_nix = power(e.clone(), neg(ix));
+          times(vec![
             Expr::Integer(-1),
             i,
-            plus(&[e_nix.clone(), e_ix.clone()]),
-            power(
-              plus(&[e_nix, times(&[Expr::Integer(-1), e_ix])]),
-              Expr::Integer(-1),
-            ),
+            plus(vec![e_nix.clone(), e_ix.clone()]),
+            power(plus(vec![e_nix, neg(e_ix)]), Expr::Integer(-1)),
           ])
         }
         // Sech[x] = 2/(E^x + E^(-x))
         "Sech" => {
           let e_x = power(e.clone(), arg.clone());
-          let e_nx = power(e.clone(), times(&[Expr::Integer(-1), arg]));
-          times(&[
+          let e_nx = power(e.clone(), neg(arg));
+          times(vec![
             Expr::Integer(2),
-            power(plus(&[e_x, e_nx]), Expr::Integer(-1)),
+            power(plus(vec![e_x, e_nx]), Expr::Integer(-1)),
           ])
         }
         // ArcTan[x] = I/2 Log[1 - I x] - I/2 Log[1 + I x]
         "ArcTan" => {
-          let ix = times(&[i.clone(), arg.clone()]);
-          plus(&[
-            times(&[
+          let ix = times(vec![i.clone(), arg.clone()]);
+          plus(vec![
+            times(vec![
               i.clone(),
               half.clone(),
-              log_of(plus(&[
-                Expr::Integer(1),
-                times(&[Expr::Integer(-1), ix.clone()]),
-              ])),
+              log_of(plus(vec![Expr::Integer(1), neg(ix.clone())])),
             ]),
-            times(&[
+            times(vec![
               Expr::Integer(-1),
               i.clone(),
               half.clone(),
-              log_of(plus(&[Expr::Integer(1), ix])),
+              log_of(plus(vec![Expr::Integer(1), ix])),
             ]),
           ])
         }
         // ArcCot[x] = I/2 Log[1 - I/x] - I/2 Log[1 + I/x]
         "ArcCot" => {
           let i_over_x =
-            times(&[i.clone(), power(arg.clone(), Expr::Integer(-1))]);
-          plus(&[
-            times(&[
+            times(vec![i.clone(), power(arg.clone(), Expr::Integer(-1))]);
+          plus(vec![
+            times(vec![
               i.clone(),
               half.clone(),
-              log_of(plus(&[
-                Expr::Integer(1),
-                times(&[Expr::Integer(-1), i_over_x.clone()]),
-              ])),
+              log_of(plus(vec![Expr::Integer(1), neg(i_over_x.clone())])),
             ]),
-            times(&[
+            times(vec![
               Expr::Integer(-1),
               i.clone(),
               half.clone(),
-              log_of(plus(&[Expr::Integer(1), i_over_x])),
+              log_of(plus(vec![Expr::Integer(1), i_over_x])),
             ]),
           ])
         }
         // ArcSec[x] = Pi/2 + I Log[Sqrt[1 - x^-2] + I/x]
         "ArcSec" => {
-          let inner = plus(&[
-            sqrt_of(plus(&[
+          let inner = plus(vec![
+            sqrt_of(plus(vec![
               Expr::Integer(1),
-              times(&[
+              times(vec![
                 Expr::Integer(-1),
                 power(arg.clone(), Expr::Integer(-2)),
               ]),
             ])),
-            times(&[i.clone(), power(arg.clone(), Expr::Integer(-1))]),
+            times(vec![i.clone(), power(arg.clone(), Expr::Integer(-1))]),
           ]);
-          plus(&[
-            times(&[const_expr("Pi"), half.clone()]),
-            times(&[i.clone(), log_of(inner)]),
+          plus(vec![
+            times(vec![const_expr("Pi"), half.clone()]),
+            times(vec![i.clone(), log_of(inner)]),
           ])
         }
         // ArcCsc[x] = -I Log[Sqrt[1 - x^-2] + I/x]
         "ArcCsc" => {
-          let inner = plus(&[
-            sqrt_of(plus(&[
+          let inner = plus(vec![
+            sqrt_of(plus(vec![
               Expr::Integer(1),
-              times(&[
+              times(vec![
                 Expr::Integer(-1),
                 power(arg.clone(), Expr::Integer(-2)),
               ]),
             ])),
-            times(&[i.clone(), power(arg.clone(), Expr::Integer(-1))]),
+            times(vec![i.clone(), power(arg.clone(), Expr::Integer(-1))]),
           ]);
-          times(&[Expr::Integer(-1), i.clone(), log_of(inner)])
+          times(vec![Expr::Integer(-1), i.clone(), log_of(inner)])
         }
         // ArcSinh[x] = Log[x + Sqrt[1 + x^2]]
-        "ArcSinh" => log_of(plus(&[
+        "ArcSinh" => log_of(plus(vec![
           arg.clone(),
-          sqrt_of(plus(&[
+          sqrt_of(plus(vec![
             Expr::Integer(1),
             power(arg.clone(), Expr::Integer(2)),
           ])),
         ])),
         // ArcCosh[x] = Log[x + Sqrt[-1 + x] Sqrt[1 + x]]
-        "ArcCosh" => log_of(plus(&[
+        "ArcCosh" => log_of(plus(vec![
           arg.clone(),
-          times(&[
-            sqrt_of(plus(&[Expr::Integer(-1), arg.clone()])),
-            sqrt_of(plus(&[Expr::Integer(1), arg.clone()])),
+          times(vec![
+            sqrt_of(plus(vec![Expr::Integer(-1), arg.clone()])),
+            sqrt_of(plus(vec![Expr::Integer(1), arg.clone()])),
           ]),
         ])),
         // ArcTanh[x] = -1/2 Log[1 - x] + 1/2 Log[1 + x]
-        "ArcTanh" => plus(&[
-          times(&[
+        "ArcTanh" => plus(vec![
+          times(vec![
             Expr::Integer(-1),
             half.clone(),
-            log_of(plus(&[
-              Expr::Integer(1),
-              times(&[Expr::Integer(-1), arg.clone()]),
-            ])),
+            log_of(plus(vec![Expr::Integer(1), neg(arg.clone())])),
           ]),
-          times(&[
+          times(vec![
             half.clone(),
-            log_of(plus(&[Expr::Integer(1), arg.clone()])),
+            log_of(plus(vec![Expr::Integer(1), arg.clone()])),
           ]),
         ]),
         // ArcCoth[x] = -1/2 Log[1 - x^-1] + 1/2 Log[1 + x^-1]
         "ArcCoth" => {
           let x_inv = power(arg.clone(), Expr::Integer(-1));
-          plus(&[
-            times(&[
+          plus(vec![
+            times(vec![
               Expr::Integer(-1),
               half.clone(),
-              log_of(plus(&[
-                Expr::Integer(1),
-                times(&[Expr::Integer(-1), x_inv.clone()]),
-              ])),
+              log_of(plus(vec![Expr::Integer(1), neg(x_inv.clone())])),
             ]),
-            times(&[half.clone(), log_of(plus(&[Expr::Integer(1), x_inv]))]),
+            times(vec![
+              half.clone(),
+              log_of(plus(vec![Expr::Integer(1), x_inv])),
+            ]),
           ])
         }
         // NOTE: Coth and Csch are intentionally left to the default recursive
@@ -6668,12 +6703,12 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         // Tanh[x] = E^x/(E^(-x) + E^x) - E^(-x)/(E^(-x) + E^x)
         "Tanh" => {
           let e_x = power(e.clone(), arg.clone());
-          let e_nx = power(e.clone(), times(&[Expr::Integer(-1), arg]));
+          let e_nx = power(e.clone(), neg(arg));
           let denom =
-            power(plus(&[e_nx.clone(), e_x.clone()]), Expr::Integer(-1));
-          plus(&[
-            times(&[e_x, denom.clone()]),
-            times(&[Expr::Integer(-1), e_nx, denom]),
+            power(plus(vec![e_nx.clone(), e_x.clone()]), Expr::Integer(-1));
+          plus(vec![
+            times(vec![e_x, denom.clone()]),
+            times(vec![Expr::Integer(-1), e_nx, denom]),
           ])
         }
         // Other functions: recurse into args
@@ -6702,14 +6737,6 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
     }
     _ => expr.clone(),
   }
-}
-
-fn times(factors: &[Expr]) -> Expr {
-  unevaluated("Times", factors)
-}
-
-fn plus(terms: &[Expr]) -> Expr {
-  unevaluated("Plus", terms)
 }
 
 fn power(base: Expr, exp: Expr) -> Expr {
@@ -6928,14 +6955,11 @@ fn pair_sides(relation: &Expr, second: &Expr, op: SideOp) -> Option<Expr> {
 
   let combine = |a: &Expr, b: &Expr| -> Expr {
     match op {
-      SideOp::Add => call("Plus", vec![a.clone(), b.clone()]),
-      SideOp::Subtract => call(
-        "Plus",
-        vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
-      ),
-      SideOp::Multiply => call("Times", vec![a.clone(), b.clone()]),
+      SideOp::Add => plus(vec![a.clone(), b.clone()]),
+      SideOp::Subtract => plus(vec![a.clone(), neg(b.clone())]),
+      SideOp::Multiply => times(vec![a.clone(), b.clone()]),
       SideOp::Divide => {
-        call("Times", vec![a.clone(), pow(b.clone(), Expr::Integer(-1))])
+        times(vec![a.clone(), pow(b.clone(), Expr::Integer(-1))])
       }
     }
   };
@@ -6977,6 +7001,7 @@ fn image_min_max_filter(
 ) -> Option<Expr> {
   let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -7021,6 +7046,7 @@ fn image_min_max_filter(
   }
   Some(Expr::Image {
     color_space: None,
+    display_size: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -7116,17 +7142,8 @@ fn resample_axis(elems: &[Expr], n: usize) -> Vec<Expr> {
     }
     let frac =
       call("Rational", vec![Expr::Integer(numer), Expr::Integer(denom)]);
-    let diff = call(
-      "Plus",
-      vec![
-        elems[index + 1].clone(),
-        call("Times", vec![Expr::Integer(-1), elems[index].clone()]),
-      ],
-    );
-    let interp = call(
-      "Plus",
-      vec![elems[index].clone(), call("Times", vec![frac, diff])],
-    );
+    let diff = plus(vec![elems[index + 1].clone(), neg(elems[index].clone())]);
+    let interp = plus(vec![elems[index].clone(), times(vec![frac, diff])]);
     result.push(evaluate_expr_to_expr(&interp).unwrap_or(interp));
   }
   result

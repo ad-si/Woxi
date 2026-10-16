@@ -887,6 +887,34 @@ mod do_single_iter {
   }
 }
 
+mod do_dependent_bounds {
+  use super::*;
+
+  #[test]
+  fn part_in_later_iterator_bound_is_not_evaluated_early() {
+    // `lens[[i]]` in the inner bound must only be evaluated once `i` is
+    // bound; evaluating it up front used to emit Part::pkspec1.
+    clear_state();
+    let r = interpret_with_stdout(
+      "lens = {1, 2}; w = {2, 1}; t = {{{1, 2}}, {{3}, {4}}}; \
+       Do[d[i, j, k] = t[[i, j, k]], {i, 2}, {j, lens[[i]]}, {k, w[[i]]}]; \
+       {d[1, 1, 2], d[2, 2, 1]}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{2, 4}");
+    assert!(r.warnings.iter().all(|w| !w.contains("pkspec1")));
+  }
+
+  #[test]
+  fn part_in_later_table_bound() {
+    clear_state();
+    assert_eq!(
+      interpret("l = {1, 2}; Table[j, {i, 2}, {j, l[[i]]}]").unwrap(),
+      "{{1}, {1, 2}}"
+    );
+  }
+}
+
 mod while_single_arg {
   use super::*;
 
@@ -4535,7 +4563,8 @@ mod off_for_the_general_symbol {
     );
   }
 
-  // Switching it off leaves only the suppression it announces.
+  // Switching it off switches the suppression off too: all five
+  // repetitions are reported (wolframscript-verified).
   #[test]
   fn the_repetition_notice_can_be_switched_off() {
     clear_state();
@@ -4549,10 +4578,10 @@ mod off_for_the_general_symbol {
       !msgs.iter().any(|m| m.contains("General::stop")),
       "the notice should be off: {msgs:?}"
     );
-    // The message itself is still generated — only the notice is gone.
-    assert!(
-      msgs.iter().any(|m| m.contains("f::mymsg: boom")),
-      "the message should still be reported: {msgs:?}"
+    assert_eq!(
+      msgs.iter().filter(|m| m.contains("f::mymsg: boom")).count(),
+      5,
+      "every repetition should be reported: {msgs:?}"
     );
   }
 }

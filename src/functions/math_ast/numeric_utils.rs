@@ -460,9 +460,13 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Re"
         if args.len() == 1
           && matches!(&args[0], Expr::FunctionCall { name, args: fa }
-          if name == "ZetaZero" && fa.len() == 1) =>
+          if name == "ZetaZero" && (fa.len() == 1 || fa.len() == 2)) =>
       {
         match &args[0] {
+          Expr::FunctionCall { args: fa, .. } if fa.len() == 2 => {
+            let k = expr_to_i128(&fa[0])?;
+            super::zeta_zero_t_after(k, try_eval_to_f64(&fa[1])?).map(|_| 0.5)
+          }
           Expr::FunctionCall { args: fa, .. } => {
             expr_to_i128(&fa[0]).filter(|k| *k != 0).map(|_| 0.5)
           }
@@ -472,9 +476,13 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Im"
         if args.len() == 1
           && matches!(&args[0], Expr::FunctionCall { name, args: fa }
-          if name == "ZetaZero" && fa.len() == 1) =>
+          if name == "ZetaZero" && (fa.len() == 1 || fa.len() == 2)) =>
       {
         match &args[0] {
+          Expr::FunctionCall { args: fa, .. } if fa.len() == 2 => {
+            let k = expr_to_i128(&fa[0])?;
+            super::zeta_zero_t_after(k, try_eval_to_f64(&fa[1])?)
+          }
           Expr::FunctionCall { args: fa, .. } => {
             expr_to_i128(&fa[0]).and_then(super::zeta_zero_t_for_k)
           }
@@ -557,6 +565,21 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         let n = try_eval_to_f64(&args[0])?;
         let z = try_eval_to_f64(&args[1])?;
         let v = bessel_j(n, z);
+        v.is_finite().then_some(v)
+      }
+      // Zeros stay symbolic for exact arguments but numericize under
+      // Real contagion (BesselJZero[0, 2]/2. is a machine real).
+      "BesselJZero" | "BesselYZero" if args.len() == 2 => {
+        let n = try_eval_to_f64(&args[0])?;
+        let k = match &args[1] {
+          Expr::Integer(k) if *k >= 1 => *k as usize,
+          _ => return None,
+        };
+        let v = if name == "BesselJZero" {
+          crate::functions::math_ast::bessel::bessel_j_zero(n, k)
+        } else {
+          crate::functions::math_ast::bessel::bessel_y_zero(n, k)
+        };
         v.is_finite().then_some(v)
       }
       "BesselK" if args.len() == 2 => {
@@ -1150,7 +1173,7 @@ pub fn multiply_scalar_by_expr(
   match scalar {
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     Expr::Integer(1) => Ok(expr.clone()),
-    Expr::Integer(-1) => Ok(times(vec![Expr::Integer(-1), expr.clone()])),
+    Expr::Integer(-1) => Ok(neg(expr.clone())),
     _ => Ok(times2(scalar.clone(), expr.clone())),
   }
 }
@@ -1431,17 +1454,18 @@ pub fn build_complex_float_expr(re: f64, im: f64) -> Expr {
     return num_to_expr(re);
   }
 
-  let im_term = if im_abs == 1.0 {
-    i_expr
-  } else {
-    times2(Expr::Real(im_abs), i_expr)
-  };
-
   if re == 0.0 {
+    let im_term = if im_abs == 1.0 {
+      i_expr
+    } else {
+      times2(Expr::Real(im_abs), i_expr)
+    };
     if im > 0.0 { im_term } else { neg1(im_term) }
   } else {
     // A machine-complex result keeps its Real head even for an integral real
-    // part: wolframscript prints (1.5 + 2.5 I)^2 as -4. + 7.5*I, not -4 + 7.5*I.
+    // part: wolframscript prints (1.5 + 2.5 I)^2 as -4. + 7.5*I, not -4 + 7.5*I,
+    // and a unit imaginary part as 2.5 - 1.*I, not 2.5 - I.
+    let im_term = times2(Expr::Real(im_abs), i_expr);
     let re_expr = Expr::Real(re);
     if im > 0.0 {
       plus2(re_expr, im_term)
@@ -1739,5 +1763,20 @@ pub fn expr_to_f64(expr: &Expr) -> Option<f64> {
       }
     }
     _ => None,
+  }
+}
+
+/// Whether `expr` contains a `FunctionCall` with the given head anywhere.
+pub fn expr_contains_head(expr: &Expr, head: &str) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == head || args.iter().any(|a| expr_contains_head(a, head))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_head(left, head) || expr_contains_head(right, head)
+    }
+    Expr::UnaryOp { operand, .. } => expr_contains_head(operand, head),
+    Expr::List(items) => items.iter().any(|a| expr_contains_head(a, head)),
+    _ => false,
   }
 }

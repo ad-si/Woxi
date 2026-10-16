@@ -89,7 +89,9 @@ impl CellStyle {
       "Input" => Some(Self::Input),
       "Output" => Some(Self::Output),
       "Code" => Some(Self::Code),
-      "Print" => Some(Self::Print),
+      // Kernel messages ("During evaluation of In[1]:=") are stdout-like
+      // output attached to the input that raised them, not prose.
+      "Print" | "Message" => Some(Self::Print),
       _ => None,
     }
   }
@@ -1011,9 +1013,11 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       }
       // `SqrtBox[a]` → `Sqrt[a]`.
       "SqrtBox" if args.len() == 1 => format!("Sqrt[{}]", conv(&args[0])),
-      // `RadicalBox[a, n]` → `Surd[a, n]` (n-th root).
+      // `RadicalBox[a, n]` → `a^(1/n)`. This is the principal power, not
+      // `Surd[a, n]`, so the index may be any number (e.g. a symbolic or
+      // real Weibull shape parameter), not only an integer.
       "RadicalBox" if args.len() == 2 => {
-        format!("Surd[{}, {}]", conv(&args[0]), conv(&args[1]))
+        format!("Power[{}, Power[{}, -1]]", conv(&args[0]), conv(&args[1]))
       }
       // `TagBox[content, tag, opts...]` is a display annotation; the
       // evaluable value is just `content`.
@@ -1875,6 +1879,19 @@ fn extract_rowbox_content(s: &str) -> String {
       } else {
         format!("({piece})")
       }
+    } else if part.starts_with("RowBox[")
+      && i + 1 < parts.len()
+      && piece.ends_with('&')
+      && !piece.ends_with("&&")
+      && split_top_level_commas(&piece).len() == 1
+    {
+      // A nested row that ends in the postfix `&` is a complete pure
+      // function. `&` binds looser than every infix operator, so spliced
+      // into the parent row as bare text it would swallow whatever follows
+      // (`RowBox[{RowBox[{f, "&"}], "/@", x}]` is `(f &) /@ x`, not
+      // `f /@ x &`). A row carrying a top-level comma is a whole argument
+      // list (`Select[list, f &]`) and must not be parenthesized.
+      format!("({piece})")
     } else {
       piece
     };
@@ -1961,6 +1978,14 @@ fn box_part_source(part: &str) -> String {
     // element between two operands does.
     if inner.starts_with("\\\"") {
       string_literal_source(inner)
+    } else if inner.starts_with("\\<") && inner.ends_with("\\>") {
+      // `\<…\>` is the linear-syntax spelling of a string literal's
+      // quotes (`"\<surface 1\>"` is the string `"surface 1"`), so the
+      // element is a string literal just like `"\"…\""`.
+      format!(
+        "\"{}\"",
+        escape_unescaped_quotes(&unescape_code_string(inner))
+      )
     } else {
       unescape_code_string(inner)
     }
@@ -2155,17 +2180,82 @@ fn group_fraction_part(s: &str) -> String {
 }
 
 /// Convert one `\(…\)` linear-syntax group's inner text (delimiters already
-/// stripped) into ordinary box source. A leading `\*` marks the group as box
-/// code in its own right (`\*SuperscriptBox[…]`) — drop the marker and keep
-/// converting; anything else is a plain display atom, which box source
-/// spells as a quoted string.
+/// stripped) into ordinary box source. A `\*` marks box code in its own
+/// right (`\*SuperscriptBox[…]`), at the start of the group or part-way
+/// through it (`-\*SuperscriptBox[…]`) — drop the marker and keep converting;
+/// plain runs around it are display atoms, which box source spells as quoted
+/// strings, and several pieces form a `RowBox`.
 fn linear_syntax_group_to_box_source(inner: &str) -> String {
-  match inner.strip_prefix("\\*") {
-    Some(rest) => linear_syntax_code_to_box_source(rest),
-    None => format!(
-      "\"{}\"",
-      linear_syntax_code_to_box_source(inner).replace('"', "\\\"")
-    ),
+  let chars: Vec<char> = inner.chars().collect();
+  // Split into plain-text runs and `\*`-introduced box-code runs. A code
+  // run is a head name followed by its balanced `[…]` argument list, and
+  // may sit anywhere in the group (`-\*SuperscriptBox[…]`, `(t/\*Sub…])`).
+  let mut pieces: Vec<String> = Vec::new();
+  let mut text = String::new();
+  let flush_text = |text: &mut String, pieces: &mut Vec<String>| {
+    if !text.is_empty() {
+      pieces.push(format!(
+        "\"{}\"",
+        linear_syntax_code_to_box_source(text).replace('"', "\\\"")
+      ));
+      text.clear();
+    }
+  };
+  let mut i = 0;
+  while i < chars.len() {
+    if chars[i] == '\\' && chars.get(i + 1) == Some(&'*') {
+      flush_text(&mut text, &mut pieces);
+      let mut j = i + 2;
+      // Head name (or a bare `\(…\)` group right after the marker).
+      while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '$') {
+        j += 1;
+      }
+      if chars.get(j) == Some(&'[') {
+        let mut depth = 0;
+        while j < chars.len() {
+          match chars[j] {
+            '[' => depth += 1,
+            ']' => {
+              depth -= 1;
+              if depth == 0 {
+                j += 1;
+                break;
+              }
+            }
+            _ => {}
+          }
+          j += 1;
+        }
+      } else if chars.get(j) == Some(&'\\') && chars.get(j + 1) == Some(&'(') {
+        let mut depth = 0;
+        while j < chars.len() {
+          if chars[j] == '\\' && chars.get(j + 1) == Some(&'(') {
+            depth += 1;
+            j += 2;
+          } else if chars[j] == '\\' && chars.get(j + 1) == Some(&')') {
+            depth -= 1;
+            j += 2;
+            if depth == 0 {
+              break;
+            }
+          } else {
+            j += 1;
+          }
+        }
+      }
+      let code: String = chars[i + 2..j].iter().collect();
+      pieces.push(linear_syntax_code_to_box_source(&code));
+      i = j;
+    } else {
+      text.push(chars[i]);
+      i += 1;
+    }
+  }
+  flush_text(&mut text, &mut pieces);
+  match pieces.len() {
+    0 => "\"\"".to_string(),
+    1 => pieces.remove(0),
+    _ => format!("RowBox[{{{}}}]", pieces.join(", ")),
   }
 }
 
@@ -2243,13 +2333,46 @@ fn render_linear_syntax_escapes(s: &str) -> String {
   out
 }
 
+/// Parenthesize a sub/superscript that is more than one plain token so the
+/// flat prose rendering stays unambiguous: an exponent `-b e^(-c t)` must
+/// not read as `e^-b e^-c t`. Single words, numbers and lone symbols
+/// (`*`, `†`) stay bare, and an already parenthesized script is kept as is.
+fn group_script(script: &str) -> String {
+  let encloses_all = script.starts_with('(') && {
+    let mut depth = 0usize;
+    let mut closes_at_end = false;
+    for (i, c) in script.char_indices() {
+      match c {
+        '(' => depth += 1,
+        ')' => {
+          depth -= 1;
+          if depth == 0 {
+            closes_at_end = i + 1 == script.len();
+            break;
+          }
+        }
+        _ => {}
+      }
+    }
+    closes_at_end
+  };
+  if encloses_all
+    || script.chars().count() <= 1
+    || script.chars().all(|c| c.is_alphanumeric() || c == '.')
+  {
+    script.to_string()
+  } else {
+    format!("({script})")
+  }
+}
+
 /// Render a box expression as *display* text for a prose (Text) cell —
 /// the inline-formula counterpart of `extract_typeset_box`, preferring
 /// readable notation over evaluable InputForm: `SubscriptBox["D", "U"]` →
 /// `D_U`, `SuperscriptBox["V", "2"]` → `V²`, `FractionBox[a, b]` → `a/b`,
 /// and `GridBox` rows on separate lines. Named characters resolve to
 /// Unicode (`\[Del]` → `∇`), never to ASCII operator rewrites.
-fn render_boxes_text(s: &str) -> String {
+pub(crate) fn render_boxes_text(s: &str) -> String {
   let s = s.trim();
 
   // Plain string literal.
@@ -2361,7 +2484,7 @@ fn render_boxes_text(s: &str) -> String {
     if draws_nothing(&base) {
       return sub;
     }
-    return format!("{base}_{sub}");
+    return format!("{base}_{}", group_script(&sub));
   }
   if let Some(args) = positional_box_args("SuperscriptBox", s)
     && args.len() == 2
@@ -2375,7 +2498,7 @@ fn render_boxes_text(s: &str) -> String {
     let exp = render_boxes_text(&args[1]);
     return match superscript_unicode(&exp) {
       Some(sup) if !sup.is_empty() => format!("{base}{sup}"),
-      _ => format!("{base}^{exp}"),
+      _ => format!("{base}^{}", group_script(&exp)),
     };
   }
   if let Some(args) = positional_box_args("SubsuperscriptBox", s)
@@ -2385,8 +2508,10 @@ fn render_boxes_text(s: &str) -> String {
     let sub = render_boxes_text(&args[1]);
     let exp = render_boxes_text(&args[2]);
     return match superscript_unicode(&exp) {
-      Some(sup) if !sup.is_empty() => format!("{base}_{sub}{sup}"),
-      _ => format!("{base}_{sub}^{exp}"),
+      Some(sup) if !sup.is_empty() => {
+        format!("{base}_{}{sup}", group_script(&sub))
+      }
+      _ => format!("{base}_{}^{}", group_script(&sub), group_script(&exp)),
     };
   }
   if let Some(args) = positional_box_args("SqrtBox", s)
@@ -2608,6 +2733,7 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     // normal fonts and would render as blank/tofu boxes; the grammar
     // accepts the readable `\[Name]` escape as the same postfix operator.
     "Transpose" => "\\[Transpose]",
+    "Conjugate" => "\\[Conjugate]",
     "ConjugateTranspose" => "\\[ConjugateTranspose]",
     "NoBreak"
     | "InvisibleSpace"
@@ -2748,7 +2874,13 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
           if let Ok(code) = u32::from_str_radix(&hex, 16)
             && let Some(ch) = char::from_u32(code)
           {
-            result.push(ch);
+            // `\.00` (character 0) is an invisible spacer some authors
+            // leave after a number (`RowBox[{"1", "\.00"}]`). A raw NUL is
+            // not valid in Wolfram source, so it must vanish rather than
+            // break the cell's code.
+            if code != 0 {
+              result.push(ch);
+            }
           } else {
             result.push('\\');
             result.push('.');
@@ -2862,6 +2994,17 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
   result
 }
 
+/// Drop the contexts a saved Manipulate dump qualifies its symbols with:
+/// `` $CellContext` `` (the DynamicModule's private context) and
+/// `` DemonstrationsTools` `` (where the Demonstrations authoring notebooks
+/// create their control variables). The definitions in the same dump use the
+/// bare names, so keeping the prefix would make `` DemonstrationsTools`x ``
+/// a different symbol from the `x` those definitions refer to.
+fn strip_saved_contexts(s: &str) -> String {
+  s.replace("$CellContext`", "")
+    .replace("DemonstrationsTools`", "")
+}
+
 /// Extract the `Initialization :> ( … )` code from a saved FrontEnd
 /// dynamic-widget dump (the `DynamicModuleBox[…]` text stored in the Output
 /// cell of an evaluated `Manipulate[…]`).
@@ -2871,7 +3014,8 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
 /// freshly opened notebook's widget work before any other cell has been
 /// evaluated. The saved code is rewritten into plain session-level input:
 /// `$CellContext`` prefixes are dropped and the FrontEnd's line-continuation
-/// markers (a `\` at end of line in box text) are removed.
+/// markers (a `\` at end of line in box text) are removed, and so is the
+/// `$$` suffix of the DynamicModule's control variables.
 pub fn extract_saved_initialization(box_dump: &str) -> Option<String> {
   let mut search_from = 0;
   while let Some(rel) = box_dump[search_from..].find("Initialization") {
@@ -2882,7 +3026,12 @@ pub fn extract_saved_initialization(box_dump: &str) -> Option<String> {
       if let Some(body) = rest.strip_prefix('(')
         && let Some(inner) = matching_paren_prefix(body)
       {
-        let cleaned = inner.replace("\\\n", "").replace("$CellContext`", "");
+        // The control variables lose their `$$` suffix here exactly as in
+        // the reconstructed body and specifications, or a delayed helper
+        // (`take := Take[data, m$$]`) would read a symbol no control sets.
+        let cleaned = strip_uniquification_suffix(&strip_saved_contexts(
+          &inner.replace("\\\n", ""),
+        ));
         let cleaned = cleaned.trim();
         if !cleaned.is_empty() && cleaned != "None" {
           return Some(cleaned.to_string());
@@ -2922,7 +3071,7 @@ pub fn saved_initialization_context_symbols(box_dump: &str) -> Vec<String> {
       while let Some(rel2) = inner[scan_from..].find(PREFIX) {
         let start = scan_from + rel2 + PREFIX.len();
         let end = inner[start..]
-          .find(|c: char| !(c.is_alphanumeric() || c == '$'))
+          .find(|c: char| !(is_symbol_char(c) || c == '$'))
           .map_or(inner.len(), |i| start + i);
         let name = &inner[start..end];
         if !name.is_empty() && !names.iter().any(|n| n == name) {
@@ -2977,11 +3126,14 @@ fn extract_arrow_value<'a>(box_dump: &'a str, key: &str) -> Option<&'a str> {
   }
 }
 
-/// Drop the DynamicModule's `$$` uniquification suffix from every symbol in
-/// `src` (`` p1$$ `` → `` p1 ``), so a control variable reads — and matches
-/// the plain names [`extract_saved_manipulate_variables`] reports — as the
-/// author wrote it. Only a `$$` that ends a symbol is removed; a symbol
-/// like `` x$1$$ `` keeps its inner `$`.
+/// Can `c` appear inside a symbol name? Besides Unicode letters and digits
+/// this covers the private-use-area letters that a decoded `\[ScriptM]`
+/// (and the rest of Wolfram's script / Gothic / double-struck alphabets)
+/// turns into.
+fn is_symbol_char(c: char) -> bool {
+  c.is_alphanumeric() || crate::syntax::is_symbol_letter(c)
+}
+
 /// Whether `prefix` ends in a complete `\[Name]` named-character escape
 /// (e.g. the `\[Alpha]` of a variable `\[Alpha]$$`).
 fn closes_named_character(prefix: &[char]) -> bool {
@@ -2995,6 +3147,11 @@ fn closes_named_character(prefix: &[char]) -> bool {
   j >= 2 && prefix[j - 1] == '[' && prefix[j - 2] == '\\'
 }
 
+/// Drop the DynamicModule's `$$` uniquification suffix from every symbol in
+/// `src` (`` p1$$ `` → `` p1 ``), so a control variable reads — and matches
+/// the plain names [`extract_saved_manipulate_variables`] reports — as the
+/// author wrote it. Only a `$$` that ends a symbol is removed; a symbol
+/// like `` x$1$$ `` keeps its inner `$`.
 fn strip_uniquification_suffix(src: &str) -> String {
   let chars: Vec<char> = src.chars().collect();
   let mut out = String::with_capacity(src.len());
@@ -3003,12 +3160,12 @@ fn strip_uniquification_suffix(src: &str) -> String {
     let ends_symbol = chars[i] == '$'
       && chars.get(i + 1) == Some(&'$')
       && i > 0
-      && (chars[i - 1].is_alphanumeric()
+      && (is_symbol_char(chars[i - 1])
         || chars[i - 1] == '$'
         || closes_named_character(&chars[..i]))
       && !chars
         .get(i + 2)
-        .is_some_and(|c| c.is_alphanumeric() || *c == '$' || *c == '`');
+        .is_some_and(|c| is_symbol_char(*c) || *c == '$' || *c == '`');
     if ends_symbol {
       i += 2;
     } else {
@@ -3034,9 +3191,7 @@ fn strip_uniquification_suffix(src: &str) -> String {
 /// evaluates as ordinary session-level input.
 pub fn reconstruct_manipulate_from_box_dump(box_dump: &str) -> Option<String> {
   let clean = |s: &str| {
-    strip_uniquification_suffix(
-      &s.replace("$CellContext`", "").replace("\\\n", ""),
-    )
+    strip_uniquification_suffix(&strip_saved_contexts(s).replace("\\\n", ""))
   };
   let body = clean(extract_arrow_value(box_dump, "Body")?);
   let specs = clean(extract_arrow_value(box_dump, "Specifications")?);
@@ -3122,7 +3277,7 @@ pub fn extract_saved_manipulate_variables(
       let part = part.trim();
       let eq = part.find('=')?;
       let (lhs, rhs) = (part[..eq].trim(), part[eq + 1..].trim());
-      let name = lhs.replace("$CellContext`", "");
+      let name = strip_saved_contexts(lhs);
       let name = name.strip_suffix("$$").unwrap_or(&name);
       let name = unescape_code_string(name);
       if name.is_empty() || rhs.is_empty() {
@@ -3135,7 +3290,7 @@ pub fn extract_saved_manipulate_variables(
       // value matches the plain symbol the live source's spec defines
       // (`scale1[abc]`), not a distinct `$CellContext`abc` that resolves
       // to nothing.
-      let value = rhs.replace("$CellContext`", "");
+      let value = strip_saved_contexts(rhs);
       Some((name, unescape_code_string(&value)))
     })
     .collect()
@@ -3177,7 +3332,7 @@ fn extract_dynamic_module_variables(box_dump: &str) -> Vec<(String, String)> {
       // See the matching strip in `extract_saved_manipulate_variables`: a
       // bare-symbol default value is context-qualified too, not just the
       // variable name.
-      let value = rhs.replace("$CellContext`", "");
+      let value = strip_saved_contexts(rhs);
       Some((unescape_code_string(name), unescape_code_string(&value)))
     })
     .collect()
@@ -4505,6 +4660,19 @@ pub fn stored_output_vector_graphics_svg(content: &str) -> Option<String> {
 mod tests {
   use super::*;
 
+  /// Regression: a control variable named with a private-use-area letter
+  /// (`\[ScriptM]`, already decoded to U+F6BE in the saved box dump) lost
+  /// its `$$` suffix strip, so the saved value never matched the control.
+  #[test]
+  fn uniquification_suffix_is_stripped_after_private_use_letters() {
+    let script_m = "\u{F6BE}";
+    let src = format!("f[{script_m}$$, g$$, h$$x]");
+    assert_eq!(
+      strip_uniquification_suffix(&src),
+      format!("f[{script_m}, g, h$$x]")
+    );
+  }
+
   /// Regression: a multi-statement `Table` body — several `stmt;`-joined
   /// assignments ending in a result expression, each wrapped in its own
   /// `RowBox` the way the FrontEnd stores a stack of Input-cell lines —
@@ -4825,6 +4993,37 @@ Cell["A subitem", "Subitem"]
   }
 
   #[test]
+  fn test_textdata_inline_math_groups_compound_scripts() {
+    // A nested exponent must not flatten into `e^-b e^-c t`: compound
+    // scripts are parenthesized, simple ones stay bare.
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ "Model ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{
+    SubscriptBox["y", "G"], "=", 
+    SubscriptBox["y", RowBox[{"i", "+", "1"}]], " ", 
+    SuperscriptBox["e", 
+     RowBox[{
+      RowBox[{"-", "b"}], " ", 
+      SuperscriptBox["e", 
+       RowBox[{
+        RowBox[{"-", "c"}], " ", "t"}]]}]], "+", 
+    SuperscriptBox["x", "n"], "+", 
+    SuperscriptBox["x", "2"]}], TraditionalForm]], "InlineMath"],
+ " done"
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let flat = parsed.flat_cells();
+    assert_eq!(
+      flat[0].1.content,
+      "Model y_G=y_(i+1) e^(-b e^(-c t))+x^n+x² done"
+    );
+  }
+
+  #[test]
   fn test_textdata_inline_math_cell_renders_content() {
     // Inline `Cell[…, "InlineMath"]` elements inside a TextData run carry
     // real prose (math embedded in a sentence) and must be rendered, not
@@ -5085,6 +5284,25 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_message_cell_parses_as_print_output() {
+    // A kernel message cell (`"Message", "MSG"`) follows the output it came
+    // from; it must attach to the input as output, not become a Text cell.
+    let nb = parse_notebook(
+      "Notebook[{\nCell[\"1/0\", \"Input\"],\n\
+       Cell[\"Power::infy: Infinite expression 1/0 encountered.\", \
+       \"Message\", \"MSG\",\n CellLabel->\"During evaluation of In[1]:=\"]\n}]",
+    )
+    .unwrap();
+    let flat = nb.flat_cells();
+    assert_eq!(flat.len(), 2);
+    assert_eq!(flat[1].1.style, CellStyle::Print);
+    assert_eq!(
+      flat[1].1.content,
+      "Power::infy: Infinite expression 1/0 encountered."
+    );
+  }
+
+  #[test]
   fn test_parse_real_understanding_2d_translation_nb() {
     // A trimmed Wolfram Demonstrations template notebook (the shape of
     // downloaded Demonstration .nb files): section headers carrying inline
@@ -5222,6 +5440,21 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_box_leaf_with_string_delimiters_is_a_string_literal() {
+    // A Manipulate control label written `"\<surface 1\>"` in a RowBox is
+    // the string "surface 1", not the bare tokens `surface 1`.
+    let nb = parse_notebook(
+      r#"Notebook[{Cell[BoxData[RowBox[{"f", "[", RowBox[{RowBox[{"{", RowBox[{"k", ",", "1", ",", "\"\<surface 1\>\""}], "}"}], ",", RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "]"}]], "Input"]}]"#,
+    )
+    .unwrap();
+    let flat = nb.flat_cells();
+    assert_eq!(
+      flat[0].1.content,
+      r#"f[{k,1,"surface 1"},Appearance->"Labeled"]"#
+    );
+  }
+
+  #[test]
   fn test_string_literal_source_preserves_already_escaped_quotes() {
     // A tooltip string containing an embedded quoted phrase (e.g. "Pareto
     // superior") round-trips through the front end as `\<...\\\"...\\\"...\>`:
@@ -5272,6 +5505,9 @@ Cell["Chapter 2", "Chapter"]
     // `\.HH` is Wolfram's 2-hex-digit Latin-1 escape, e.g. in a
     // Demonstration author's name written as `M\.aa` for "Mª".
     assert_eq!(unescape_string("M\\.aa"), "M\u{AA}");
+    // `\.00` is character 0, an invisible spacer: it must not leave a NUL
+    // byte behind in the cell's code.
+    assert_eq!(unescape_string("1\\.00"), "1");
     assert_eq!(unescape_code_string("caf\\.e9"), "caf\u{E9}");
     // An incomplete/invalid escape is left untouched rather than eating
     // following characters.
@@ -5346,6 +5582,12 @@ Cell["Chapter 2", "Chapter"]
     let s =
       r#"BoxData[RowBox[{RowBox[{"{", "a", "}"}], "\[ConjugateTranspose]"}]]"#;
     assert_eq!(extract_cell_content(s), "{a}\\[ConjugateTranspose]");
+  }
+
+  #[test]
+  fn test_extract_cell_content_conjugate_postfix_operator() {
+    let s = r#"BoxData[RowBox[{"z", "\[Conjugate]"}]]"#;
+    assert_eq!(extract_cell_content(s), "z\\[Conjugate]");
   }
 
   /// The FrontEnd also typesets `Part` as a bracketed subscript, which is
@@ -5519,6 +5761,18 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "Log[x]");
     let s = r#"BoxData[RowBox[{"sin", "(", "x", ")"}]]"#;
     assert_eq!(extract_cell_content(s), "Sin[x]");
+  }
+
+  /// `RadicalBox[a, n]` is the power `a^(1/n)`, not `Surd[a, n]`: the index
+  /// may be a real or symbolic number (a Weibull shape parameter), for which
+  /// `Surd` rejects the second argument. Regression found via a Wolfram
+  /// Demonstration fitting lifetime data to a Weibull model.
+  #[test]
+  fn test_radical_box_is_a_power_not_surd() {
+    let s = r#"BoxData[RadicalBox["x", "b"]]"#;
+    assert_eq!(extract_cell_content(s), "Power[x, Power[b, -1]]");
+    let s = r#"BoxData[RadicalBox["0.5", "1.5"]]"#;
+    assert_eq!(extract_cell_content(s), "Power[0.5, Power[1.5, -1]]");
   }
 
   /// A parenthesised group (literal `"("`/`")"` box tokens, as the FrontEnd
@@ -6536,6 +6790,26 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_extract_textdata_multi_token_subscripts_are_grouped() {
+    // A subscript made of several tokens reads as one script, so
+    // `R_{a+b}` is `R_(a+b)` and not `R_a+b`; single tokens stay bare.
+    let s = r#"TextData[{
+ Cell[BoxData[
+  FormBox[
+   RowBox[{
+    SubscriptBox["R", RowBox[{"a", "+", "b"}]], "=",
+    SubscriptBox["R", RowBox[{"c", ",", "d"}]], "+",
+    SubsuperscriptBox["T", RowBox[{"x", "+", "y"}], "4"], "+",
+    SubscriptBox["R", "e"]}], TraditionalForm]], "InlineMath"],
+ " done"
+}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "R_(a+b)=R_(c,d)+T_(x+y)\u{2074}+R_e done"
+    );
+  }
+
+  #[test]
   fn test_extract_textdata_inline_math_formula() {
     // A boxed formula inside prose converts to display text (Unicode
     // superscripts, not InputForm parentheses) — this is a sentence.
@@ -6805,6 +7079,43 @@ Cell[BoxData[
     );
   }
 
+  /// A nested row ending in the postfix `&` is a complete pure function: in
+  /// the parent row `(f &) /@ list` must keep its grouping, since `&` binds
+  /// looser than `/@` and would otherwise swallow `/@ list`.
+  #[test]
+  fn nested_pure_function_row_keeps_its_grouping() {
+    let nb = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{RowBox[{RowBox[{"f", "[", "#", "]"}], "&"}], "/@",
+  RowBox[{"{", RowBox[{"1", ",", "2"}], "}"}]}]], "Input"]
+}]"##;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(cell.content, "(f[#]&)/@{1,2}");
+  }
+
+  /// A call whose argument-list row ends in a pure function
+  /// (`Select[list, f &]`) must keep its comma-separated arguments: the row
+  /// is an argument list, not a nested pure function to parenthesize, and
+  /// `Select[(list, f &)]` is not valid syntax.
+  #[test]
+  fn call_with_trailing_pure_function_argument_is_not_parenthesized() {
+    let nb = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{"Select", "[",
+  RowBox[{RowBox[{"p", "[", RowBox[{"[", "1", "]"}], "]"}], ",",
+   RowBox[{RowBox[{"MemberQ", "[", RowBox[{"#", ",", "x"}], "]"}], "&"}]}],
+  "]"}]], "Input"]
+}]"##;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(cell.content, "Select[p[[1]],MemberQ[#,x]&]");
+  }
+
   /// A `Piecewise` typeset directly in a `RowBox` — the `\[Piecewise]`
   /// brace immediately followed by its `GridBox` of value/condition rows,
   /// with no outer wrapping `GridBox`/`TagBox` (the shape produced by an
@@ -6946,6 +7257,16 @@ yf4GL4DwC5VA4w
   }
 
   #[test]
+  fn test_saved_dump_drops_demonstrations_tools_context() {
+    let dump = "DynamicModuleBox[{$CellContext`k$$ = 0}, \
+      DynamicBox[…],\n\
+      Initialization:>(f[DemonstrationsTools`x_] := \
+      DemonstrationsTools`x^2; $CellContext`a = f[3])]";
+    let init = extract_saved_initialization(dump).unwrap();
+    assert_eq!(init, "f[x_] := x^2; a = f[3]");
+  }
+
+  #[test]
   fn test_extract_saved_initialization() {
     // The Output dump of `Manipulate[…, SaveDefinitions -> True]`:
     // Deinitialization (whose name contains "initialization") must be
@@ -6959,7 +7280,18 @@ yf4GL4DwC5VA4w
       {2, 3}}; Typeset`initDone$$ = True),\n\
       SynchronousInitialization->True]";
     let init = extract_saved_initialization(dump).unwrap();
-    assert_eq!(init, "{a = 1, b = {2, 3}}; Typeset`initDone$$ = True");
+    assert_eq!(init, "{a = 1, b = {2, 3}}; Typeset`initDone = True");
+  }
+
+  #[test]
+  fn test_extract_saved_initialization_strips_control_suffix() {
+    // A delayed helper reading a control (`take := Take[data, m$$]`) must
+    // see the same plain name the reconstructed controls carry.
+    let dump = "DynamicModuleBox[{$CellContext`m$$ = 3}, DynamicBox[…],\n\
+      Initialization:>($CellContext`take := Take[$CellContext`data, \
+      $CellContext`m$$]; $CellContext`x$7$$ = 1)]";
+    let init = extract_saved_initialization(dump).unwrap();
+    assert_eq!(init, "take := Take[data, m]; x$7 = 1");
   }
 
   #[test]
@@ -7130,6 +7462,17 @@ yf4GL4DwC5VA4w
       ),
       None
     );
+  }
+
+  #[test]
+  fn test_linear_syntax_box_code_inside_group_text() {
+    // Box code introduced by `\*` part-way through a `\(…\)` group, with
+    // plain text before and after it, must not leak its source as text.
+    let s = r"A: \!\(\*SubscriptBox[\(p\), \(asym\)]\) \!\(\*SuperscriptBox[\(e\), \(-\*SuperscriptBox[\((t/\*SubscriptBox[\(t\), \(c\)])\), \(m\)]\)]\)";
+    let out = render_linear_syntax_escapes(s);
+    assert!(!out.contains("Box"), "{out}");
+    assert!(!out.contains('\\'), "{out}");
+    assert!(out.starts_with("A: p_asym e"), "{out}");
   }
 
   #[test]

@@ -105,6 +105,9 @@ fn is_curve_or_group(expr: &Expr) -> bool {
     // curve is written (`If[cond, {fx, fy}, {}]`) once `cond` resolves to
     // `False`.
     Expr::List(items) if items.is_empty() => true,
+    // `If[cond, {fx, fy}]` without an else branch evaluates to `Null` when
+    // `cond` is `False`, which hides the curve the same way.
+    Expr::Identifier(name) if name == "Null" => true,
     // A pair is either a curve `{fx, fy}` or a group of two curves;
     // `collect_curves` decides which when it descends.
     Expr::List(items) if items.len() == 2 => true,
@@ -125,6 +128,9 @@ fn is_curve_group(expr: &Expr) -> bool {
 /// Flatten a (possibly nested) curve specification into individual curves,
 /// appending them to `out`. Returns whether the shape was understood.
 fn collect_curves<'a>(expr: &'a Expr, out: &mut Vec<CurveSrc<'a>>) -> bool {
+  if matches!(expr, Expr::Identifier(name) if name == "Null") {
+    return true;
+  }
   let Expr::List(items) = expr else {
     return false;
   };
@@ -526,10 +532,14 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let ok = evaluated_body
       .as_ref()
       .is_some_and(|ev| collect_curves(ev, &mut collected));
-    // Only list-shaped slots can resolve to coordinates later; a body of
-    // bare atoms (`{1, 2, 3}`) is not a curve specification at all.
+    // Only compound slots can resolve to coordinates later (a list, or a
+    // call/product such as `{k*c[t], A . c[t]}` returning a point per
+    // sample); a body of bare atoms (`{1, 2, 3}`) is not a curve
+    // specification at all.
     let has_slots = matches!(body, Expr::List(items)
-      if items.iter().any(|i| matches!(i, Expr::List(_))));
+      if items.iter().any(|i| !matches!(i,
+        Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_)
+        | Expr::BigFloat(..) | Expr::String(_) | Expr::Identifier(_))));
     if ok {
       collected
     } else if !has_slots {

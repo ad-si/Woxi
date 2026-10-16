@@ -660,6 +660,22 @@ mod pattern_matching {
       );
     }
 
+    /// A pure-function test must stay parenthesized when a call-form
+    /// `PatternTest` is printed back, or the text no longer parses
+    /// (`_?#1 > 0 &` re-reads as `(_?#1 > 0) &`).
+    #[test]
+    fn pattern_test_call_form_keeps_function_test_parenthesized() {
+      assert_eq!(
+        interpret("Hold[PatternTest[_, (#1 > 0 &)]]").unwrap(),
+        "Hold[_?(#1 > 0 & )]"
+      );
+      assert_eq!(
+        interpret("Module[{a}, DeleteCases[{{1, 2, 3}, {1, 2, 0}}, _?(#1[[3]] > 0.99 &)]]")
+          .unwrap(),
+        "{{1, 2, 0}}"
+      );
+    }
+
     /// Lists, literals and bracketed expressions are equally valid left sides.
     #[test]
     fn pattern_test_on_other_self_delimiting_lhs() {
@@ -5957,6 +5973,63 @@ mod tagged_rule_reachability {
   }
 }
 
+/// `UpSetDelayed`/`UpSet` in call form carry their patterns as FullForm
+/// (`Pattern[r, Blank[]]`, `Pattern[o, OptionsPattern[]]`), as a saved
+/// Manipulate's `SaveDefinitions` dump writes them. Only head-restricted
+/// patterns name a tag; the unrestricted ones must not be taken for one.
+mod upvalue_tags_from_full_form_patterns {
+  use super::*;
+
+  #[test]
+  fn unrestricted_full_form_patterns_name_no_tag() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "UpSetDelayed[Pattern[c, Blank[uvCurve]] Pattern[r, Blank[]], \
+         Map[r # &, c]]; uvCurve[1, 2]*3"
+      )
+      .unwrap(),
+      "uvCurve[3, 6]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      !msgs.iter().any(|m| m.contains("tagpos")),
+      "no tagpos expected, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn options_pattern_argument_names_no_tag() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "UpSetDelayed[uvShow[Pattern[c, Blank[uvCurve]], \
+         Pattern[o, OptionsPattern[]]], 7]; uvShow[uvCurve[1], a -> 2]"
+      )
+      .unwrap(),
+      "7"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      !msgs.iter().any(|m| m.contains("tagpos")),
+      "no tagpos expected, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn up_set_full_form_pattern_defines_upvalue() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "UpSet[Pattern[c, Blank[uvCurve2]] Pattern[r, Blank[]], 5]; \
+         uvCurve2[1]*3"
+      )
+      .unwrap(),
+      "5"
+    );
+  }
+}
+
 /// A blank's head restriction and a pattern's own name are ordinary symbols
 /// that a replacement rule reaches: `x_obj /. obj -> t` is `x_t`. WLJS's
 /// `CreateUType` derives one object type from another exactly this way, by
@@ -6444,6 +6517,35 @@ mod optional_pattern_default_with_negative_power {
     assert_eq!(
       interpret("(1 + 2 I) /. {Complex[a_, b_] /; b > 1 :> a}").unwrap(),
       "1"
+    );
+  }
+}
+
+mod pattern_test_call_form {
+  use super::*;
+
+  /// `PatternTest[Pattern[n, Blank[]], test]` is the FullForm of `n_?test`
+  /// (saved notebook definitions use it); the test must restrict a
+  /// definition, and two rules differing only in the test must coexist.
+  #[test]
+  fn call_form_test_restricts_definition() {
+    assert_eq!(
+      interpret("f[PatternTest[n_, EvenQ]] := 1; {f[3], f[2]}").unwrap(),
+      "{f[3], 1}"
+    );
+  }
+
+  #[test]
+  fn call_form_rules_differing_only_in_test_coexist() {
+    assert_eq!(
+      interpret(
+        "g[PatternTest[Pattern[n, Blank[]], EvenQ], PatternTest[Pattern[b, \
+         Blank[]], Positive]] := n/2; g[PatternTest[Pattern[n, Blank[]], \
+         OddQ], PatternTest[Pattern[b, Blank[]], Positive]] := 3 n + 1; \
+         {g[3, 3], g[4, 3]}"
+      )
+      .unwrap(),
+      "{10, 2}"
     );
   }
 }

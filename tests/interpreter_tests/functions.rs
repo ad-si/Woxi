@@ -196,6 +196,34 @@ fn stationary_distribution_with_markov() {
 mod leaf_count {
   use super::*;
 
+  // An association counts its head plus its values' leaves; keys and rule
+  // wrappers are not parts. Verified against wolframscript.
+  #[test]
+  fn leaf_count_association() {
+    assert_eq!(interpret("LeafCount[<|a -> 1|>]").unwrap(), "2");
+    assert_eq!(interpret("LeafCount[<|a -> 1, b -> 2|>]").unwrap(), "3");
+    assert_eq!(interpret("LeafCount[<||>]").unwrap(), "1");
+    assert_eq!(interpret(r#"LeafCount[<|"a" -> {1, 2}|>]"#).unwrap(), "4");
+    assert_eq!(interpret("LeafCount[<|a :> 1 + x|>]").unwrap(), "4");
+    assert_eq!(interpret("LeafCount[<|a -> <|b -> 1|>|>]").unwrap(), "3");
+  }
+
+  // Operator forms count their FullForm tree.
+  #[test]
+  fn leaf_count_operator_forms() {
+    assert_eq!(interpret("LeafCount[a -> b]").unwrap(), "3");
+    assert_eq!(interpret("LeafCount[a :> 1 + x]").unwrap(), "5");
+    assert_eq!(interpret("LeafCount[f[x] &]").unwrap(), "3");
+    assert_eq!(interpret("LeafCount[x_]").unwrap(), "3");
+    assert_eq!(interpret("LeafCount[x__Integer]").unwrap(), "4");
+    assert_eq!(interpret("LeafCount[a == b]").unwrap(), "3");
+    assert_eq!(interpret("LeafCount[1 < x <= 2]").unwrap(), "6");
+    assert_eq!(interpret("LeafCount[Hold[a - b]]").unwrap(), "6");
+    assert_eq!(interpret("LeafCount[Hold[a/b]]").unwrap(), "6");
+    assert_eq!(interpret("LeafCount[Hold[-a]]").unwrap(), "4");
+    assert_eq!(interpret("LeafCount[-Infinity]").unwrap(), "2");
+  }
+
   #[test]
   fn leaf_count_sum_expr() {
     assert_eq!(interpret("LeafCount[1 + x + y^a]").unwrap(), "6");
@@ -2665,6 +2693,35 @@ mod times_and_divide_characters {
     assert_eq!(interpret("8 ÷ 2 + 1").unwrap(), "5");
     // CenterDot is a distinct operator and keeps its own meaning.
     assert_eq!(interpret("a · b").unwrap(), "a \u{00B7} b");
+  }
+}
+
+mod set_infix_operators {
+  use super::*;
+
+  #[test]
+  fn union_and_intersection_symbols() {
+    assert_eq!(interpret("{1, 2} \u{22C3} {2, 3}").unwrap(), "{1, 2, 3}");
+    assert_eq!(interpret("{1, 2, 3} \u{22C2} {2, 3, 4}").unwrap(), "{2, 3}");
+    assert_eq!(interpret(r#"{1} \[Union] {5}"#).unwrap(), "{1, 5}");
+    assert_eq!(interpret(r#"{1, 2} \[Intersection] {2}"#).unwrap(), "{2}");
+  }
+
+  #[test]
+  fn union_and_intersection_flat_and_precedence() {
+    assert_eq!(
+      interpret("{1} \u{22C3} {2} \u{22C3} {3}").unwrap(),
+      "{1, 2, 3}"
+    );
+    // Intersection binds tighter than Union.
+    assert_eq!(
+      interpret("{1} \u{22C3} {1, 2} \u{22C2} {2}").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("Hold[a \u{22C3} b \u{22C2} c]").unwrap(),
+      "Hold[Union[a, Intersection[b, c]]]"
+    );
   }
 }
 

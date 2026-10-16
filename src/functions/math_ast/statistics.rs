@@ -634,7 +634,7 @@ fn mixture_variance(dargs: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
   let ex2 = times(vec![plus(ex2_terms), inv_w.clone()]);
   let mean = times(vec![plus(mean_terms), inv_w]);
   let mean2 = pow(mean, Expr::Integer(2));
-  let result = plus(vec![ex2, times(vec![Expr::Integer(-1), mean2])]);
+  let result = plus(vec![ex2, neg(mean2)]);
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?))
 }
 
@@ -650,6 +650,14 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Mean expects exactly 1 argument".into(),
     ));
+  }
+  // Custom distributions: moments from Integrate / Sum of the pdf.
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "ProbabilityDistribution"
+    && let Some((mean, _)) =
+      crate::functions::math_ast::distributions::probability_distribution_mean_variance(dargs)?
+  {
+    return Ok(mean);
   }
   // A SparseArray argument is averaged over its dense form.
   if let Some(dense) =
@@ -1104,6 +1112,14 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Variance expects exactly 1 argument".into(),
     ));
+  }
+  // Custom distributions: moments from Integrate / Sum of the pdf.
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "ProbabilityDistribution"
+    && let Some((_, variance)) =
+      crate::functions::math_ast::distributions::probability_distribution_mean_variance(dargs)?
+  {
+    return Ok(variance);
   }
   // A SparseArray argument is handled via its dense form.
   if let Some(dense) =
@@ -3378,7 +3394,7 @@ fn distribution_moment(
     let result = if n.rem_euclid(2) == 1 {
       Expr::Integer(0)
     } else {
-      let diff = plus(vec![b, times(vec![Expr::Integer(-1), a])]);
+      let diff = plus(vec![b, neg(a)]);
       let num = pow2(diff, Expr::Integer(n));
       // 2^n * (n + 1), kept symbolic so large n does not overflow.
       let denom = times(vec![
@@ -3419,10 +3435,7 @@ fn distribution_moment(
     let neg_mean_pow = if n - k == 0 {
       Expr::Integer(1)
     } else {
-      pow2(
-        times(vec![Expr::Integer(-1), mean.clone()]),
-        Expr::Integer(n - k),
-      )
+      pow2(neg(mean.clone()), Expr::Integer(n - k))
     };
     terms.push(times(vec![binom, neg_mean_pow, raw]));
   }
@@ -3772,14 +3785,10 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let moments_inexact =
     matches!(&m2, Expr::Real(_)) || matches!(&m3, Expr::Real(_));
   let result = if moments_inexact {
-    let m2_pow = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(m2),
-      right: Box::new(call(
-        "Rational",
-        vec![Expr::Integer(-3), Expr::Integer(2)],
-      )),
-    };
+    let m2_pow = pow2(
+      m2,
+      call("Rational", vec![Expr::Integer(-3), Expr::Integer(2)]),
+    );
     times2(m3, m2_pow)
   } else {
     // Compute m3 / m2^(3/2) symbolically
@@ -4298,10 +4307,7 @@ fn factorial_moment_of_distribution(
       let mut factors: Vec<Expr> = Vec::new();
       // (1 - n)*(2 - n)*...*((r-1) - n)
       for i in 1..r {
-        factors.push(plus(vec![
-          Expr::Integer(i),
-          times(vec![Expr::Integer(-1), n.clone()]),
-        ]));
+        factors.push(plus(vec![Expr::Integer(i), neg(n.clone())]));
       }
       factors.push(n.clone());
       factors.push(pow2(p.clone(), Expr::Integer(r)));
@@ -6481,7 +6487,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
         // Sqrt[2*Pi]
         make_sqrt(times(vec![Expr::Integer(2), const_expr("Pi")])),
         // E^(-n)
-        pow(const_expr("E"), times(vec![Expr::Integer(-1), n])),
+        pow(const_expr("E"), neg(n)),
       ]))
     }
 
@@ -6528,7 +6534,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
       left,
       right,
     } => {
-      let neg_right = times(vec![Expr::Integer(-1), *right.clone()]);
+      let neg_right = neg(*right.clone());
       asymptotic_sum(&[*left.clone(), neg_right], var)
     }
 
@@ -6632,7 +6638,7 @@ fn stirling_approx(var: &str) -> Expr {
     // Sqrt[2*Pi]
     make_sqrt(times(vec![Expr::Integer(2), const_expr("Pi")])),
     // E^(-n)
-    pow(const_expr("E"), times(vec![Expr::Integer(-1), n])),
+    pow(const_expr("E"), neg(n)),
   ])
 }
 
@@ -7562,7 +7568,7 @@ pub fn characteristic_function_ast(
     ("BernoulliDistribution", [p]) => Some((
       plus(vec![
         Expr::Integer(1),
-        times(vec![Expr::Integer(-1), p.clone()]),
+        neg(p.clone()),
         times(vec![e_it(vec![]), p.clone()]),
       ]),
       false,
@@ -7572,7 +7578,7 @@ pub fn characteristic_function_ast(
       pow2(
         plus(vec![
           Expr::Integer(1),
-          times(vec![Expr::Integer(-1), p.clone()]),
+          neg(p.clone()),
           times(vec![e_it(vec![]), p.clone()]),
         ]),
         n.clone(),
@@ -7588,10 +7594,7 @@ pub fn characteristic_function_ast(
           times(vec![
             Expr::Integer(-1),
             e_it(vec![]),
-            plus(vec![
-              Expr::Integer(1),
-              times(vec![Expr::Integer(-1), p.clone()]),
-            ]),
+            plus(vec![Expr::Integer(1), neg(p.clone())]),
           ]),
         ]),
       ),
@@ -7607,10 +7610,7 @@ pub fn characteristic_function_ast(
             times(vec![
               Expr::Integer(-1),
               e_it(vec![]),
-              plus(vec![
-                Expr::Integer(1),
-                times(vec![Expr::Integer(-1), p.clone()]),
-              ]),
+              plus(vec![Expr::Integer(1), neg(p.clone())]),
             ]),
           ]),
         ),
@@ -7750,13 +7750,7 @@ pub fn characteristic_function_ast(
             times(vec![Expr::Integer(-1), e_it(vec![]), p.clone()]),
           ])],
         ),
-        call(
-          "Log",
-          vec![plus(vec![
-            Expr::Integer(1),
-            times(vec![Expr::Integer(-1), p.clone()]),
-          ])],
-        ),
+        call("Log", vec![plus(vec![Expr::Integer(1), neg(p.clone())])]),
       ),
       true,
     )),
@@ -7826,12 +7820,7 @@ pub fn moment_generating_function_ast(
     }
   };
   // 1 - p, written as Plus[1, Times[-1, p]]
-  let one_minus = |p: &Expr| {
-    plus(vec![
-      Expr::Integer(1),
-      times(vec![Expr::Integer(-1), p.clone()]),
-    ])
-  };
+  let one_minus = |p: &Expr| plus(vec![Expr::Integer(1), neg(p.clone())]);
 
   let (dist_name, dargs) = match &args[0] {
     Expr::FunctionCall { name, args } => (name.as_str(), args.as_slice()),
@@ -7878,10 +7867,7 @@ pub fn moment_generating_function_ast(
     )),
     // a/(a - t)
     ("ExponentialDistribution", [a]) => Some((
-      div2(
-        a.clone(),
-        plus(vec![a.clone(), times(vec![Expr::Integer(-1), t.clone()])]),
-      ),
+      div2(a.clone(), plus(vec![a.clone(), neg(t.clone())])),
       false,
     )),
     // E^((-1 + E^t)*m)
@@ -7896,7 +7882,7 @@ pub fn moment_generating_function_ast(
     ("BernoulliDistribution", [p]) => Some((
       plus(vec![
         Expr::Integer(1),
-        times(vec![Expr::Integer(-1), p.clone()]),
+        neg(p.clone()),
         times(vec![e_t(vec![]), p.clone()]),
       ]),
       false,
@@ -8048,13 +8034,7 @@ pub fn moment_generating_function_ast(
             times(vec![Expr::Integer(-1), e_t(vec![]), p.clone()]),
           ])],
         ),
-        call(
-          "Log",
-          vec![plus(vec![
-            Expr::Integer(1),
-            times(vec![Expr::Integer(-1), p.clone()]),
-          ])],
-        ),
+        call("Log", vec![plus(vec![Expr::Integer(1), neg(p.clone())])]),
       ),
       true,
     )),
@@ -8314,7 +8294,7 @@ pub fn central_moment_generating_function_ast(
         e_pow(times(vec![b.clone(), t.clone()])),
       ]),
       times(vec![
-        plus(vec![times(vec![Expr::Integer(-1), a.clone()]), b.clone()]),
+        plus(vec![neg(a.clone()), b.clone()]),
         e_pow(times(vec![half, plus(vec![a, b]), t.clone()])),
         t,
       ]),
@@ -8419,12 +8399,7 @@ pub fn correlation_function_ast(
   let lag = k.unsigned_abs() as usize;
 
   let mean = mean_ast(&[args[0].clone()])?;
-  let dev = |x: &Expr| {
-    plus(vec![
-      x.clone(),
-      times(vec![Expr::Integer(-1), mean.clone()]),
-    ])
-  };
+  let dev = |x: &Expr| plus(vec![x.clone(), neg(mean.clone())]);
   let sum = |terms: Vec<Expr>| -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_expr_to_expr(&plus(terms))
   };
@@ -9103,7 +9078,7 @@ fn erlang_b_symbolic(
   // a^c * E^(-a) / Gamma[1 + c, a]
   let body = times(vec![
     pow(a.clone(), c.clone()),
-    pow(const_expr("E"), times(vec![Expr::Integer(-1), a.clone()])),
+    pow(const_expr("E"), neg(a.clone())),
     pow(
       call(
         "Gamma",

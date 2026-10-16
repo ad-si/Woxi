@@ -1262,6 +1262,77 @@ pub fn random_permutation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Cumulative weight table for sampling `ProbabilityDistribution[f, range]`.
+struct SamplingTable {
+  /// Left edges of the grid cells (continuous) or the support points.
+  points: Vec<f64>,
+  cumulative: Vec<f64>,
+  total: f64,
+  /// Cell width for a continuous distribution, `None` for a discrete one.
+  width: Option<f64>,
+}
+
+fn probability_distribution_table(dargs: &[Expr]) -> Option<SamplingTable> {
+  use crate::functions::plot::substitute_var;
+  const CELLS: usize = 4000;
+  let [pdf, Expr::List(range)] = dargs else {
+    return None;
+  };
+  let Expr::Identifier(var) = range.first()? else {
+    return None;
+  };
+  let lo = try_eval_to_f64(range.get(1)?)?;
+  let hi = try_eval_to_f64(range.get(2)?)?;
+  if !lo.is_finite() || !hi.is_finite() || hi < lo {
+    return None;
+  }
+  let weight_at = |x: f64| -> f64 {
+    let e = substitute_var(pdf, var, &Expr::Real(x));
+    crate::evaluator::evaluate_expr_to_expr(&e)
+      .ok()
+      .and_then(|v| try_eval_to_f64(&v))
+      .filter(|w| w.is_finite() && *w > 0.0)
+      .unwrap_or(0.0)
+  };
+  let (points, weights, width) = match range.len() {
+    3 => {
+      let w = (hi - lo) / CELLS as f64;
+      let points: Vec<f64> = (0..CELLS).map(|i| lo + w * i as f64).collect();
+      let weights: Vec<f64> =
+        points.iter().map(|p| weight_at(p + w / 2.0)).collect();
+      (points, weights, Some(w))
+    }
+    4 => {
+      let step = try_eval_to_f64(&range[3])?;
+      if step <= 0.0 {
+        return None;
+      }
+      let count = ((hi - lo) / step + 1e-9).floor() as usize + 1;
+      let points: Vec<f64> = (0..count).map(|i| lo + step * i as f64).collect();
+      let weights = points.iter().map(|&p| weight_at(p)).collect();
+      (points, weights, None)
+    }
+    _ => return None,
+  };
+  let mut total = 0.0;
+  let cumulative: Vec<f64> = weights
+    .iter()
+    .map(|w: &f64| {
+      total += w;
+      total
+    })
+    .collect();
+  if total <= 0.0 {
+    return None;
+  }
+  Some(SamplingTable {
+    points,
+    cumulative,
+    total,
+    width,
+  })
+}
+
 /// RandomVariate[dist] or RandomVariate[dist, n]
 /// Supports UniformDistribution[{min, max}] and NormalDistribution[mu, sigma]
 pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1439,6 +1510,108 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           });
           Ok(Expr::List(results.into()))
         }
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
+      if name == "LogNormalDistribution" && dargs.len() == 2 =>
+    {
+      // exp(X) with X ~ Normal(mu, sigma) is log-normal.
+      let (Some(mu), Some(sigma)) =
+        (try_eval_to_f64(&dargs[0]), try_eval_to_f64(&dargs[1]))
+      else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      let Ok(normal) = Normal::new(mu, sigma) else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      if sigma <= 0.0 {
+        return Ok(unevaluated("RandomVariate", args));
+      }
+      let sample = || -> Expr {
+        Expr::Real(crate::with_rng(|rng| normal.sample(rng)).exp())
+      };
+      match n {
+        None => Ok(sample()),
+        Some(count) => Ok(Expr::List(
+          (0..count).map(|_| sample()).collect::<Vec<_>>().into(),
+        )),
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
+      if name == "ProbabilityDistribution" && dargs.len() == 2 =>
+    {
+      // Tabulate the density (continuous `{x, lo, hi}`) on a fine grid, or
+      // the mass function (discrete `{x, lo, hi, step}`) at its support
+      // points, and draw by inverse transform on the cumulative weights.
+      let Some(table) = probability_distribution_table(dargs) else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      let sample = || -> Expr {
+        let u: f64 = crate::with_rng(|rng| rng.gen_range(0.0..table.total));
+        let i = table
+          .cumulative
+          .partition_point(|&c| c <= u)
+          .min(table.cumulative.len() - 1);
+        let x = match table.width {
+          // Continuous: uniform within the selected grid cell.
+          Some(w) => {
+            table.points[i] + w * crate::with_rng(|rng| rng.gen_range(0.0..1.0))
+          }
+          None => table.points[i],
+        };
+        Expr::Real(x)
+      };
+      match n {
+        None => Ok(sample()),
+        Some(count) => Ok(Expr::List(
+          (0..count).map(|_| sample()).collect::<Vec<_>>().into(),
+        )),
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
+      if name == "MixtureDistribution" && dargs.len() == 2 =>
+    {
+      // Pick a component by its (normalized) weight, then delegate the draw
+      // to that component's own sampler.
+      let (Expr::List(weights), Expr::List(comps)) = (&dargs[0], &dargs[1])
+      else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      let ws: Option<Vec<f64>> = weights.iter().map(try_eval_to_f64).collect();
+      let Some(ws) = ws else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      let total: f64 = ws.iter().sum();
+      if ws.len() != comps.len()
+        || ws.is_empty()
+        || ws.iter().any(|w| *w < 0.0)
+        || total <= 0.0
+      {
+        return Ok(unevaluated("RandomVariate", args));
+      }
+      let count = n.unwrap_or(1);
+      let mut out = Vec::with_capacity(count);
+      for _ in 0..count {
+        let u: f64 = crate::with_rng(|rng| rng.gen_range(0.0..total));
+        let mut acc = 0.0;
+        let mut idx = ws.len() - 1;
+        for (i, w) in ws.iter().enumerate() {
+          acc += w;
+          if u < acc {
+            idx = i;
+            break;
+          }
+        }
+        let draw = random_variate_ast(&[comps[idx].clone()])?;
+        if matches!(&draw, Expr::FunctionCall { name, .. } if name == "RandomVariate")
+        {
+          return Ok(unevaluated("RandomVariate", args));
+        }
+        out.push(draw);
+      }
+      match n {
+        None => Ok(out.remove(0)),
+        Some(_) => Ok(Expr::List(out.into())),
       }
     }
     Expr::FunctionCall { name, args: dargs }

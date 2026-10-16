@@ -100,6 +100,13 @@ impl StyledLabel {
     })
   }
 
+  /// Number of characters the reader sees once the label is typeset —
+  /// the raw `text` of a `\!\(\*SubscriptBox[…]\)` label is mostly box
+  /// syntax and would overstate its width several times over.
+  pub(crate) fn visible_char_count(&self) -> usize {
+    svg_markup_visible_text(&self.svg()).chars().count()
+  }
+
   /// The label as SVG `<text>` content for a picture drawn at `scale`
   /// render units per nominal point.
   ///
@@ -207,7 +214,7 @@ fn scale_lengths_after(
 
 /// The visible text of SVG markup: tags dropped, entities decoded. Used so a
 /// pre-typeset label still measures by what the reader sees.
-fn svg_markup_visible_text(markup: &str) -> String {
+pub(crate) fn svg_markup_visible_text(markup: &str) -> String {
   let mut out = String::with_capacity(markup.len());
   let mut in_tag = false;
   for c in markup.chars() {
@@ -237,6 +244,15 @@ fn text_wrapper_content(expr: &Expr) -> Option<&Expr> {
   }
 }
 
+/// A font size given as a number or as a named size (`Medium`, `Large`, …).
+/// `Larger`/`Smaller` scale Wolfram's default 12pt text.
+fn style_font_size(expr: &Expr) -> Option<f64> {
+  if let Expr::Identifier(name) = expr {
+    return crate::functions::graphics::named_font_size(name, 12.0);
+  }
+  try_eval_to_f64(expr)
+}
+
 /// Extract the bold/italic flags, color, and font size from a list of style
 /// directives — `Style[…]`'s trailing arguments, `Directive[…]`'s arguments,
 /// or a bare `LabelStyle -> {…}` list, all of which share this shape.
@@ -259,7 +275,7 @@ pub(crate) fn parse_style_directive_args(
         replacement,
       } => match pattern.as_ref() {
         Expr::Identifier(n) if n == "FontSize" => {
-          if let Some(f) = try_eval_to_f64(replacement) {
+          if let Some(f) = style_font_size(replacement) {
             font_size = Some(f);
           }
         }
@@ -285,7 +301,7 @@ pub(crate) fn parse_style_directive_args(
       _ => {
         if let Some(c) = parse_color(arg) {
           color = Some(c);
-        } else if let Some(f) = try_eval_to_f64(arg) {
+        } else if let Some(f) = style_font_size(arg) {
           font_size = Some(f);
         }
       }
@@ -581,6 +597,18 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     {
       expr_to_label(&args[0])
     }
+    // `StringForm["delay `` s", 0.3]` is displayed with its slots filled,
+    // each value read as a label itself.
+    Expr::FunctionCall { name, args } if name == "StringForm" => {
+      let Some(Expr::String(template)) = args.first() else {
+        return None;
+      };
+      Some(crate::functions::string_ast::format_string_form_with(
+        template,
+        &args[1..],
+        |v| expr_to_label(v).unwrap_or_else(|| expr_to_string(v)),
+      ))
+    }
     // A list label is typeset as the list itself: `AxesLabel -> {t, {a, b}}`
     // labels the vertical axis `{a, b}`.
     Expr::List(items) => {
@@ -786,11 +814,7 @@ fn arithmetic_label(e: &Expr) -> Option<String> {
           let positive = if *n == -1 {
             base.clone()
           } else {
-            Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(base.clone()),
-              right: Box::new(Expr::Integer(-n)),
-            }
+            pow2(base.clone(), Expr::Integer(-n))
           };
           factors(&positive, num, den, !inverted);
         }
@@ -2321,10 +2345,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if slice_prims.is_empty() {
     return Ok(crate::graphics_result(svg));
   }
-  let structure = Expr::FunctionCall {
-    name: "Graphics".to_string(),
-    args: vec![Expr::List(slice_prims.into())].into(),
-  };
+  let structure = call1("Graphics", Expr::List(slice_prims.into()));
   Ok(crate::graphics_result_with_structure(svg, structure))
 }
 
@@ -2514,6 +2535,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [
             project(v0, &camera),
             project(v1, &camera),
@@ -2656,6 +2678,7 @@ fn chart_3d_camera() -> crate::functions::plot3d::Camera {
   crate::functions::plot3d::Camera {
     azimuth: -1.35, // ~-77° — only ~13° offset from a direct front view
     elevation: 0.32, // ~18°
+    vertical: crate::functions::plot3d::Camera::DEFAULT_VERTICAL,
   }
 }
 
@@ -2932,6 +2955,7 @@ fn build_cylindrical_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_width: None,
         projected: [
           project(v0, camera),
           project(v1, camera),
@@ -3055,6 +3079,7 @@ fn build_torus_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_width: None,
         projected: [
           project(v0, camera),
           project(v1, camera),
@@ -3581,6 +3606,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     top_margin,
     x_label_area,
     y_label_area,
+    hide_ticks: false,
   };
 
   // One tick mark per box (centered), no labels — matches Mathematica
@@ -4714,7 +4740,7 @@ mod tests {
   fn expr_to_label_treats_bare_none_as_no_label() {
     // The bare symbol `None` in a label option (`AxesLabel -> {"t", None}`)
     // must suppress the label, not print the literal text "None".
-    assert_eq!(expr_to_label(&Expr::Identifier("None".to_string())), None);
+    assert_eq!(expr_to_label(&id_expr("None")), None);
     // A quoted string "None" is a real label and must still print as-is.
     assert_eq!(
       expr_to_label(&Expr::String("None".to_string())),

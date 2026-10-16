@@ -1587,6 +1587,28 @@ mod eigenvalues {
     );
   }
 
+  /// Regression: exact rationals mixed with machine reals (a covariance
+  /// matrix) left `Eigenvectors` and `PrincipalComponents` unevaluated.
+  #[test]
+  fn mixed_rational_and_real_matrix() {
+    let m = "{{13/3, 5.75}, {5.75, 8.4}}";
+    assert_eq!(
+      interpret(&format!(
+        "Max[Abs[{m} . Eigenvectors[{m}][[1]] - \
+         Eigenvalues[{m}][[1]] Eigenvectors[{m}][[1]]]] < 10^-8"
+      ))
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Dimensions[PrincipalComponents[{{1, 2}, {3, 5}, {4, 4.5}, {6, 9}}]]"
+      )
+      .unwrap(),
+      "{4, 2}"
+    );
+  }
+
   #[test]
   fn eigenvalues_1x1() {
     assert_eq!(interpret("Eigenvalues[{{5}}]").unwrap(), "{5}");
@@ -2040,6 +2062,23 @@ mod conjugate_transpose {
     // \[ConjugateTranspose] is the postfix form of ConjugateTranspose
     assert_eq!(
       interpret("{{0, I}, {0, 0}} \\[ConjugateTranspose]").unwrap(),
+      "{{0, 0}, {-I, 0}}"
+    );
+  }
+
+  #[test]
+  fn conjugate_postfix_named_char() {
+    // \[Conjugate] is the postfix form of Conjugate (not ConjugateTranspose)
+    assert_eq!(interpret("(3 + 4 I) \\[Conjugate]").unwrap(), "3 - 4*I");
+    assert_eq!(interpret("Im[Exp[I 1] \\[Conjugate]]").unwrap(), "-Sin[1]");
+  }
+
+  #[test]
+  fn conjugate_postfix_private_use_codepoints() {
+    // U+F3C8 is \[Conjugate], U+F3C9 is \[ConjugateTranspose]
+    assert_eq!(interpret("(3 + 4 I)\u{F3C8}").unwrap(), "3 - 4*I");
+    assert_eq!(
+      interpret("{{0, I}, {0, 0}}\u{F3C9}").unwrap(),
       "{{0, 0}, {-I, 0}}"
     );
   }
@@ -10066,6 +10105,100 @@ mod normalize {
     assert_eq!(
       interpret("Normalize[{a, b}]").unwrap(),
       "{a/Sqrt[Abs[a]^2 + Abs[b]^2], b/Sqrt[Abs[a]^2 + Abs[b]^2]}"
+    );
+  }
+}
+
+mod sparse_array_negative_positions {
+  use super::*;
+
+  #[test]
+  fn negative_coordinates_count_from_the_end() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{{-1, 1} -> s, {1, 1} -> 2}, {3, 3}]]")
+        .unwrap(),
+      "{{2, 0, 0}, {0, 0, 0}, {s, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{-1 -> a, -3 -> b}, 3]]").unwrap(),
+      "{b, 0, a}"
+    );
+  }
+
+  #[test]
+  fn negative_coordinates_mixed_with_pattern_rules() {
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{{i_, i_} -> -s, {i_, j_} /; j - i == 1 -> s, \
+         {-1, 1} -> s}, {3, 3}]]"
+      )
+      .unwrap(),
+      "{{-s, s, 0}, {0, -s, s}, {s, 0, -s}}"
+    );
+  }
+}
+
+mod matrix_exp_sparse {
+  use super::*;
+
+  #[test]
+  fn sparse_matrix_acting_on_vector() {
+    assert_eq!(
+      interpret("MatrixExp[0 SparseArray[{{1, 1} -> 2}, {2, 2}], {1, 2}]")
+        .unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "MatrixExp[SparseArray[{{1, 1} -> 0, {2, 2} -> 0}, {2, 2}], {3, 4}]"
+      )
+      .unwrap(),
+      "{3, 4}"
+    );
+  }
+}
+
+mod matrix_exp_numeric {
+  use super::*;
+
+  #[test]
+  fn real_matrix_acting_on_vector() {
+    // Compare against the exact closed form of the cyclic generator.
+    assert_eq!(
+      interpret(
+        "v = MatrixExp[{{-0.2, 0.2, 0}, {0, -0.2, 0.2}, {0.2, 0, -0.2}}, \
+         {1, 3, 5}]; Max[Abs[v - {1.3931086630724865, 3.2948478726991794, \
+         4.312043464228334}]] < 10^-9"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn real_matrix_exponential() {
+    assert_eq!(
+      interpret(
+        "m = MatrixExp[{{1., 0, 0}, {0, 2., 1}, {0, 0, 3}}]; \
+         Max[Abs[Flatten[m - N[{{E, 0, 0}, {0, E^2, E^3 - E^2}, \
+         {0, 0, E^3}}]]]] < 10^-9"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod dollar_pattern_names {
+  use super::*;
+
+  #[test]
+  fn named_blank_with_dollar_in_name() {
+    assert_eq!(interpret("{1, 2} /. {a$_, b$_} -> a$ + b$").unwrap(), "3");
+    assert_eq!(interpret("MatchQ[{1, 1}, {i$_, i$_}]").unwrap(), "True");
+    assert_eq!(
+      interpret("Normal[SparseArray[{{i$_, i$_} -> 1}, {2, 2}]]").unwrap(),
+      "{{1, 0}, {0, 1}}"
     );
   }
 }

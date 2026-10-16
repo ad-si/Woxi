@@ -954,6 +954,17 @@ mod hyperlink {
   }
 
   #[test]
+  fn label_only_inside_text_row_svg() {
+    let svg = interpret(
+      r#"ExportString[Text[Row[{Hyperlink["LinkLabel", "http://example.com/x"], "!"}]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">LinkLabel<"));
+    assert!(!svg.contains("Hyperlink["));
+    assert!(!svg.contains("example.com"));
+  }
+
+  #[test]
   fn no_args_unevaluated() {
     assert_eq!(interpret("Hyperlink[]").unwrap(), "Hyperlink[]");
   }
@@ -1327,5 +1338,36 @@ mod number_form_options {
       .unwrap(),
       "                6\n1,234 567 8 \u{00d7} 10"
     );
+  }
+}
+
+mod traditional_form_of_a_string {
+  use super::*;
+
+  /// `TraditionalForm[str]` in a layout shows the text itself — not the
+  /// quoted string with its `\!\(\*…\)` box source — so a caption built
+  /// with `ToString[…, TraditionalForm]` typesets its subscripts.
+  #[test]
+  fn caption_string_is_typeset_not_quoted() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Row[{Style[TraditionalForm[StringJoin[ToString[Subscript["T", "s"]/Subscript["T", "q"], TraditionalForm], " = ", "1"]], 14]}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("FormBox"), "box source leaked: {svg}");
+    assert!(!svg.contains("&quot;"), "string drawn quoted: {svg}");
+    assert!(
+      svg.contains("baseline-shift=\"sub\""),
+      "no subscript: {svg}"
+    );
+  }
+
+  #[test]
+  fn plain_string_has_no_quotes() {
+    clear_state();
+    let svg =
+      interpret(r#"ExportString[Row[{TraditionalForm["a = 1"]}], "SVG"]"#)
+        .unwrap();
+    assert!(svg.contains(">a = 1<"), "{svg}");
   }
 }

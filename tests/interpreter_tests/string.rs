@@ -3201,6 +3201,74 @@ mod string_take_drop {
 mod hamming_distance {
   use super::*;
 
+  // Lists compare element by element with SameQ; before this the lists were
+  // stringified and their characters compared (differential fuzzer, seed
+  // 20261010). Verified against wolframscript.
+  #[test]
+  fn vectors_compare_elements() {
+    assert_eq!(
+      interpret("HammingDistance[{4, -5, -2}, {-2, 5, 6}]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("HammingDistance[{1, 2, 3}, {1, 5, 3}]").unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("HammingDistance[{a, b}, {a, c}]").unwrap(), "1");
+    assert_eq!(interpret("HammingDistance[{1, 1.}, {1., 1}]").unwrap(), "2");
+    assert_eq!(interpret("HammingDistance[{}, {}]").unwrap(), "0");
+    // IgnoreCase only applies to two strings, not to string elements.
+    assert_eq!(
+      interpret(
+        r#"HammingDistance[{"A", "b"}, {"a", "B"}, IgnoreCase -> True]"#
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn unequal_vectors_emit_idim() {
+    clear_state();
+    assert_eq!(
+      interpret("HammingDistance[{1, 2}, {1, 2, 3}]").unwrap(),
+      "HammingDistance[{1, 2}, {1, 2, 3}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.iter().any(|m| m.contains(
+      "HammingDistance::idim: {1, 2} and {1, 2, 3} must have the same length."
+    )));
+  }
+
+  #[test]
+  fn other_argument_kinds_stay_unevaluated() {
+    assert_eq!(
+      interpret("HammingDistance[12, 13]").unwrap(),
+      "HammingDistance[12, 13]"
+    );
+    assert_eq!(
+      interpret(r#"HammingDistance[{1, 2}, "ab"]"#).unwrap(),
+      "HammingDistance[{1, 2}, ab]"
+    );
+    assert_eq!(
+      interpret("HammingDistance[{{1, 2}, {3, 4}}, {{1, 2}, {3, 5}}]").unwrap(),
+      "HammingDistance[{{1, 2}, {3, 4}}, {{1, 2}, {3, 5}}]"
+    );
+  }
+
+  #[test]
+  fn non_option_third_argument_emits_nonopt() {
+    clear_state();
+    assert_eq!(
+      interpret("HammingDistance[{1, 2}, {1, 3}, foo]").unwrap(),
+      "HammingDistance[{1, 2}, {1, 3}, foo]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.iter().any(|m| m.contains(
+      "HammingDistance::nonopt: Options expected (instead of foo) beyond position 2"
+    )));
+  }
+
   #[test]
   fn basic() {
     assert_eq!(
@@ -5756,6 +5824,22 @@ mod tex_form {
     );
   }
 
+  // A MatrixForm nested in a fraction keeps its grid layout.
+  #[test]
+  fn matrix_form_inside_fraction() {
+    assert_eq!(
+      interpret("ToString[MatrixForm[{{1, 2}, {3, 4}}]/7]").unwrap(),
+      "1   2\n\n3   4\n-----\n  7"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[MatrixForm[{{1, -20}, {-20, 1}}]/MatrixForm[{{-3}}], FormatType -> TraditionalForm]"
+      )
+      .unwrap(),
+      "1     -20\n\n-20   1\n---------\n   -3"
+    );
+  }
+
   // Piecewise renders as a LaTeX cases environment; Wolfram always shows the
   // catch-all row (the default value, or 0, with a True condition).
   #[test]
@@ -7979,6 +8063,48 @@ mod template_apply {
     );
     // An undefined symbol renders as its own name.
     assert_eq!(interpret(r#"StringTemplate["<*x*>"][]"#).unwrap(), "x");
+  }
+}
+
+mod dictionary_lookup {
+  use super::*;
+
+  #[test]
+  fn prefix_wildcard_with_limit() {
+    assert_eq!(
+      interpret(r#"DictionaryLookup["zyg*", 2]"#).unwrap(),
+      interpret(r#"Take[DictionaryLookup["zyg*"], 2]"#).unwrap()
+    );
+  }
+
+  #[test]
+  fn exact_word() {
+    assert_eq!(
+      interpret(r#"DictionaryLookup["dolphin"]"#).unwrap(),
+      "{dolphin}"
+    );
+  }
+
+  #[test]
+  fn all_matches_are_dictionary_words() {
+    assert_eq!(
+      interpret(r#"AllTrue[DictionaryLookup["wor*d"], DictionaryWordQ]"#)
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn no_match() {
+    assert_eq!(interpret(r#"DictionaryLookup["qqqzzz*"]"#).unwrap(), "{}");
+  }
+
+  #[test]
+  fn whole_list_contains_pattern_result() {
+    assert_eq!(
+      interpret(r#"Length[DictionaryLookup["*"]] > 50000"#).unwrap(),
+      "True"
+    );
   }
 }
 

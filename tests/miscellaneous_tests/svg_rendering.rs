@@ -2349,6 +2349,51 @@ mod tests {
     }
 
     #[test]
+    fn grid_spans_a_picture_across_its_columns() {
+      // A picture merged over two columns with `SpanFromLeft` is centred
+      // across both, instead of widening the first column on its own and
+      // leaving a blank placeholder cell beside it.
+      let svg = svg_of(
+        "Grid[{{\"a\", \"b\", \"c\"}, \
+         {Graphics[Rectangle[], ImageSize -> 200], SpanFromLeft}}]",
+      );
+      assert!(
+        svg.contains("width=\"200.0\" height=\"200.0\""),
+        "picture at natural size: {svg}"
+      );
+      assert!(
+        !svg.contains("width=\"1\" height=\"1\""),
+        "no placeholder cell is drawn: {svg}"
+      );
+      // The merged cell covers the first two columns, so the third text
+      // cell sits beyond the picture's right edge (x = 6 + 200 + 6).
+      let c_x: f64 = svg
+        .split("<text x=\"")
+        .filter(|chunk| chunk.contains(">c</text>"))
+        .map(|chunk| chunk.split('"').next().unwrap().parse().unwrap())
+        .next()
+        .expect("text c");
+      assert!(c_x > 206.0, "third column starts after the span: {svg}");
+    }
+
+    #[test]
+    fn grid_cell_locator_pane_over_a_dynamic_picture_is_drawn() {
+      let svg = svg_of(
+        "a = {1.5, 1.5}; Grid[{{\"a\", \"b\"}, {LocatorPane[Dynamic[a], \
+         Dynamic[Graphics[Rectangle[], ImageSize -> 100]], \
+         {{0, 0}, {3, 3}}], SpanFromLeft}}]",
+      );
+      assert!(!svg.contains("LocatorPane"), "no source text: {svg}");
+      let width: u32 = svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .expect("width");
+      assert!(width < 300, "pane is sized as a picture: {svg}");
+    }
+
+    #[test]
     fn framed_text_grid_is_typeset_not_printed() {
       // A flash card: `Framed[Pane[Style[Grid[…], size], …], opts]` around a
       // text-only grid draws the grid inside the frame instead of printing
@@ -3393,6 +3438,42 @@ mod tests {
       );
     }
 
+    /// `GraphPlot`'s legacy `EdgeRenderingFunction` names an edge as the
+    /// plain pair `{u, v}` (not as an edge object), and Demonstrations
+    /// pass it as a delayed rule (`:>`), which used to be dropped.
+    #[test]
+    fn edge_rendering_function_gets_the_edge_as_a_pair() {
+      let svg = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3},
+           EdgeRenderingFunction :> (If[#2 == {1, 2},
+             {Blue, Line[#1]}, {Red, Line[#1]}] &)]"#,
+      );
+      assert_eq!(
+        svg.matches(r#"stroke="rgb(0,0,255)""#).count(),
+        1,
+        "only the {{1, 2}} edge is blue: {svg}"
+      );
+      assert_eq!(
+        svg.matches(r#"stroke="rgb(255,0,0)""#).count(),
+        1,
+        "the other edge is red: {svg}"
+      );
+    }
+
+    /// Edge options written as delayed rules reach `Graph` too.
+    #[test]
+    fn edge_shape_function_accepts_a_delayed_rule() {
+      let svg = svg_of(
+        r#"Graph[{1 -> 2, 2 -> 3},
+           EdgeShapeFunction :> ({Blue, Line[#1]} &)]"#,
+      );
+      assert_eq!(
+        svg.matches(r#"stroke="rgb(0,0,255)""#).count(),
+        2,
+        "both edges are drawn blue: {svg}"
+      );
+    }
+
     /// The second argument is the edge itself, as a `DirectedEdge` — which
     /// is what a test like `MemberQ[…, #2]` in a Demonstration matches on.
     #[test]
@@ -3769,6 +3850,25 @@ mod tests {
         "a text-only layout composes no picture: {:?}",
         result.graphics
       );
+    }
+
+    /// `Panel[table, Text[caption]]` is drawn as the table with its caption
+    /// above it; with a bare-string caption a plain table stays text.
+    #[test]
+    fn panel_with_text_caption_renders_table_under_caption() {
+      let result = woxi::interpret_with_stdout(
+        r#"Panel[Grid[{{"a", "=", 1}, {"b", "=", 2}}], Text["Results"]]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the panel is a graphic");
+      assert!(svg.contains(">Results<"), "{svg}");
+      assert!(!svg.contains(">Panel<"), "{svg}");
+
+      let plain = woxi::interpret_with_stdout(
+        r#"Panel[Grid[{{1, 2}, {3, 4}}], "Results"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(plain.graphics.is_none(), "{:?}", plain.graphics);
     }
 
     /// `Text` around a `Pane` of a plain table draws the table: the pane

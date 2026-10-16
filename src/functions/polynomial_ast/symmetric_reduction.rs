@@ -19,7 +19,7 @@ fn sum(terms: Vec<Expr>) -> Expr {
   match terms.len() {
     0 => Expr::Integer(0),
     1 => terms.into_iter().next().unwrap(),
-    _ => call("Plus", terms),
+    _ => plus(terms),
   }
 }
 
@@ -153,7 +153,7 @@ pub fn power_symmetric_polynomial_ast(
         terms.push(match factors.len() {
           0 => Expr::Integer(1),
           1 => factors.into_iter().next().unwrap(),
-          _ => call("Times", factors),
+          _ => times(factors),
         });
       }
       eval(&sum(terms))
@@ -250,7 +250,7 @@ pub fn augmented_symmetric_polynomial_ast(
       .collect();
     let term = match factors.len() {
       1 => factors.into_iter().next().unwrap(),
-      _ => call("Times", factors),
+      _ => times(factors),
     };
     terms.push(term);
   }
@@ -330,14 +330,11 @@ pub fn symmetric_reduction_ast(
           e_factors.push(pow(elem[k].clone(), dk));
         }
       }
-      p_terms.push(eval(&call("Times", p_factors))?);
-      let e_prod = call("Times", e_factors);
+      p_terms.push(eval(&times(p_factors))?);
+      let e_prod = times(e_factors);
       g = eval(&call(
         "Expand",
-        vec![sum(vec![
-          g.clone(),
-          eval(&call("Times", vec![Expr::Integer(-1), e_prod]))?,
-        ])],
+        vec![sum(vec![g.clone(), eval(&neg(e_prod))?])],
       ))?;
     } else {
       // The leading monomial cannot belong to the symmetric part: move it to
@@ -348,14 +345,11 @@ pub fn symmetric_reduction_ast(
           m_factors.push(pow(vars[i].clone(), ai));
         }
       }
-      let mono = eval(&call("Times", m_factors))?;
+      let mono = eval(&times(m_factors))?;
       q_terms.push(mono.clone());
       g = eval(&call(
         "Expand",
-        vec![sum(vec![
-          g.clone(),
-          eval(&call("Times", vec![Expr::Integer(-1), mono]))?,
-        ])],
+        vec![sum(vec![g.clone(), eval(&neg(mono))?])],
       ))?;
     }
   }
