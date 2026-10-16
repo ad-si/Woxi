@@ -6672,6 +6672,35 @@ mod find_minimum {
   }
 
   #[test]
+  fn unconstrained_find_minimum_fires_step_monitor() {
+    // A quadratic converges in a single Newton step, so the monitor fires
+    // once, at the minimum.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Reap[FindMinimum[(x - 2)^2, {x, 5}, StepMonitor :> Sow[x]]][[2]]"
+      )
+      .unwrap(),
+      "{{2.}}"
+    );
+  }
+
+  #[test]
+  fn find_minimum_step_monitor_sees_variables_through_a_list() {
+    // The monitor reaches the variables indirectly via `vars`; they must be
+    // bound to the current point while it runs.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "vars = {x, y}; Reap[FindMinimum[(x - 1)^2 + (y + 2)^2, \
+         Transpose[{vars, {3., 3.}}], StepMonitor :> Sow[vars]]][[2]]"
+      )
+      .unwrap(),
+      "{{{1., -2.}}}"
+    );
+  }
+
+  #[test]
   fn constrained_maximum_without_step_monitor_unaffected() {
     // The StepMonitor plumbing must not change the plain constrained
     // FindMaximum result when the option isn't supplied. Rounded because

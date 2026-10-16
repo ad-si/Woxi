@@ -11287,6 +11287,9 @@ pub fn find_minimum_ast(
     );
   }
 
+  // `StepMonitor :> …` fires once per accepted iteration below.
+  let step_monitor = find_option(&args[2..], "StepMonitor");
+
   // Trailing arguments are options (e.g. MaxIterations -> 2,
   // Method -> "Newton"). They aren't honoured yet, but we accept them
   // silently rather than aborting so call shapes match Wolfram.
@@ -11598,6 +11601,7 @@ pub fn find_minimum_ast(
         best_f = eval_at(f, &[best_x])? * sign;
       }
       x[0] = best_x;
+      fire_step_monitor(step_monitor, &vars, &x);
     }
   } else {
     // Multivariable: damped Newton on sign*f using the symbolic Hessian.
@@ -11659,6 +11663,7 @@ pub fn find_minimum_ast(
         let new_f = eval_at(f, &x_new)? * sign;
         if new_f <= current_f + c * alpha * decrease || alpha < 1e-15 {
           x = x_new;
+          fire_step_monitor(step_monitor, &vars, &x);
           break;
         }
         alpha *= 0.5;
@@ -12088,10 +12093,21 @@ fn fire_step_monitor(monitor: Option<&Expr>, vars: &[String], x: &[f64]) {
   let Some(monitor) = monitor else {
     return;
   };
-  let mut e = monitor.clone();
-  for (i, var) in vars.iter().enumerate() {
-    e = crate::syntax::substitute_variable(&e, var, &Expr::Real(x[i]));
-  }
+  // `Block[{x = …, y = …}, monitor]` binds the variables dynamically, so a
+  // monitor that reaches them indirectly (`Sow[vars]` with `vars = {x, y}`)
+  // sees the current point just like one that names them directly.
+  let bindings: Vec<Expr> = vars
+    .iter()
+    .zip(x.iter())
+    .map(|(var, val)| Expr::FunctionCall {
+      name: "Set".to_string(),
+      args: vec![Expr::Identifier(var.clone()), Expr::Real(*val)].into(),
+    })
+    .collect();
+  let e = Expr::FunctionCall {
+    name: "Block".to_string(),
+    args: vec![Expr::List(bindings.into()), monitor.clone()].into(),
+  };
   let _ = crate::evaluator::evaluate_expr_to_expr(&e);
 }
 
