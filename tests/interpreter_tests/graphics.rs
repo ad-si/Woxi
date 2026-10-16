@@ -35238,6 +35238,40 @@ fn grid_column_width_follows_displayed_text() {
   assert!((deriv - plain).abs() < 1.0, "{deriv} vs {plain}");
 }
 
+mod bracketing_bar_labels {
+  use super::*;
+
+  #[test]
+  fn bracketing_bar_is_inert_and_draws_bars() {
+    let svg = export_svg(r#"Grid[{{BracketingBar[x + 1]}}]"#);
+    assert!(svg.contains(">|1 + x|</text>"), "{svg}");
+    let svg = export_svg(r#"Grid[{{DoubleBracketingBar[v]}}]"#);
+    assert!(svg.contains(">\u{2016}v\u{2016}</text>"), "{svg}");
+  }
+
+  #[test]
+  fn bracketing_bar_inside_traditional_form() {
+    let svg =
+      export_svg(r#"Grid[{{TraditionalForm[BracketingBar[a + b]/c]}}]"#);
+    assert!(svg.contains("|a+b|"), "{svg}");
+    assert!(!svg.contains("BracketingBar"), "{svg}");
+  }
+
+  #[test]
+  fn bracketing_bar_is_not_reported_unimplemented() {
+    clear_state();
+    assert_eq!(interpret("BracketingBar[x]").unwrap(), "BracketingBar[x]");
+    assert_eq!(woxi::get_captured_warnings(), Vec::<String>::new());
+  }
+
+  #[test]
+  fn string_subscript_in_traditional_form_has_no_quotes() {
+    let svg = export_svg(r#"Grid[{{TraditionalForm[Subscript[S, "A"] + 1]}}]"#);
+    assert!(!svg.contains("&quot;"), "{svg}");
+    assert!(svg.contains(">A</tspan>"), "{svg}");
+  }
+}
+
 /// Regression: a `ProgressIndicator` cell in a `Grid` (a per-bracket fill bar
 /// in a Demonstration's table) draws a track with a proportional fill instead
 /// of printing `ProgressIndicator[…]` as text.

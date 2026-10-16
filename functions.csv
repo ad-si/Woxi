@@ -2488,7 +2488,7 @@ ListCurvePathPlot,,🚫,,7.0,2509
 Bookmarks,Option for bookmarked settings in Manipulate,✅,pure,7.0,2512
 SliceDensityPlot3D,,🚫,,10.2,2512
 StringRepeat,Repeats a string a number of times optionally truncated to a given length,✅,pure,10.1,2512
-BracketingBar,,🚫,,3.0,2514
+BracketingBar,Inert typeset form of absolute-value bars around its content,✅,pure,3.0,2514
 StartProcess,,🚫,,10.0,2514
 DivisorSum,Applies a function to each divisor and sums the results,✅,pure,7.0,2519
 EdgeLabelStyle,,🚫,,8.0,2519
@@ -3873,7 +3873,7 @@ CommunityLabels,,,,9.0,3972
 CompoundElement,,,,10.1,3972
 ConoverTest,,,,8.0,3972
 DiscreteIndicator,,,,7.0,3972
-DoubleBracketingBar,,,,3.0,3972
+DoubleBracketingBar,Inert typeset form of double bars around its content,✅,pure,3.0,3972
 EdgeContract,Contract an edge of a graph merging its two endpoints into one vertex,✅,pure,10.0,3972
 EvaluationElements,,,,8.0,3972
 FindKClique,,,,9.0,3972

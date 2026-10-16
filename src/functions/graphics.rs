@@ -12248,6 +12248,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // shifted tspans — a Demonstrations plot label reads
         // `Row[{α, " = ", K, "(", Subscript[p, 0], ")"}]`, which must show
         // `p₀`, not the 1D `Subscript[p, 0]` that OutputForm keeps.
+        // `BracketingBar[x]` / `DoubleBracketingBar[x]` are the inert typeset
+        // forms of `|x|` / `‖x‖` (what `\[LeftBracketingBar]x\[RightBracketingBar]`
+        // in input boxes parses to); they draw as their bars around the content.
+        "BracketingBar" | "DoubleBracketingBar" if args.len() == 1 => {
+          let bar = if name == "BracketingBar" { "|" } else { "\u{2016}" };
+          format!("{bar}{}{bar}", expr_to_svg_markup(&args[0]))
+        }
         "Subscript" | "Superscript" if args.len() >= 2 => {
           let shift = if name == "Subscript" { "sub" } else { "super" };
           let scripts: String = args[1..]
@@ -12957,7 +12964,16 @@ fn strip_precision_marker(s: &str) -> &str {
 pub fn boxes_to_svg(expr: &Expr) -> String {
   match expr {
     // Atoms: in box form, atoms are always Expr::String
-    Expr::String(s) => svg_escape(strip_precision_marker(s)),
+    // A string box is stored as its quoted source (`"\"A\""`) but is drawn
+    // without the quotes, as the front end does.
+    Expr::String(s) => {
+      let s = strip_precision_marker(s);
+      let unquoted = s
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or(s);
+      svg_escape(unquoted)
+    }
     // Identifiers can appear for fallback cases
     Expr::Identifier(s) => svg_escape(strip_precision_marker(s)),
     Expr::Integer(n) => group_digits_svg(&n.to_string()),
