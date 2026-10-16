@@ -4523,10 +4523,15 @@ fn inset_primitives(
       height,
       channels,
       data,
+      display_size,
       ..
     } => {
       image_svg = crate::functions::image_ast::image_to_html_img(
-        *width, *height, *channels, data,
+        *width,
+        *height,
+        *channels,
+        data,
+        *display_size,
       );
       Some(&image_svg)
     }
@@ -29527,9 +29532,14 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
       height,
       channels,
       data,
+      display_size,
       ..
     } => Some(crate::functions::image_ast::image_to_svg_document(
-      *width, *height, *channels, data,
+      *width,
+      *height,
+      *channels,
+      data,
+      *display_size,
     )),
     // Evaluating through the interpreter (not `evaluate_expr_to_expr`)
     // is what renders a held `Graphics[…]` call — or a user-defined icon

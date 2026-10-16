@@ -132,6 +132,8 @@ pub enum Expr {
     /// Explicit color-space tag (e.g. from ColorCombine[imgs, "HSB"]).
     /// `None` reports as `Automatic` from ImageColorSpace.
     color_space: Option<&'static str>,
+    /// Explicit display size (ImageSize option) in pixels, if any.
+    display_size: Option<(u32, u32)>,
   },
   /// Graphics output: holds SVG string, displays as -Graphics- (or -Graphics3D- if is_3d).
   /// `source` optionally carries the raw plot series data so that
@@ -758,6 +760,7 @@ impl Clone for Expr {
       Self::Raw(s) => return Self::Raw(s.clone()),
       Self::Image {
         color_space,
+        display_size,
         width,
         height,
         channels,
@@ -766,6 +769,7 @@ impl Clone for Expr {
       } => {
         return Self::Image {
           color_space: *color_space,
+          display_size: *display_size,
           width: *width,
           height: *height,
           channels: *channels,
@@ -850,6 +854,7 @@ impl Clone for Expr {
           Self::Raw(s) => results.push(Self::Raw(s.clone())),
           Self::Image {
             color_space,
+            display_size,
             width,
             height,
             channels,
@@ -857,6 +862,7 @@ impl Clone for Expr {
             image_type,
           } => results.push(Self::Image {
             color_space: *color_space,
+            display_size: *display_size,
             width: *width,
             height: *height,
             channels: *channels,
@@ -12979,6 +12985,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     // Image: produce NumericArray InputForm
     Expr::Image {
       color_space: _,
+      display_size: _,
       width,
       height,
       channels,

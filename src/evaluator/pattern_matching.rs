@@ -3290,6 +3290,7 @@ pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
         data: d1,
         image_type: t1,
         color_space: s1,
+        display_size: _,
       },
       Expr::Image {
         width: w2,
@@ -3298,6 +3299,7 @@ pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
         data: d2,
         image_type: t2,
         color_space: s2,
+        display_size: _,
       },
     ) => {
       w1 == w2

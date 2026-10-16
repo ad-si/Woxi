@@ -8532,3 +8532,48 @@ mod demonstration_image_filters {
     );
   }
 }
+
+mod image_size_option {
+  use super::*;
+
+  fn svg_header(code: &str) -> String {
+    clear_state();
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let start = svg.find("<svg").unwrap();
+    svg[start..].split('>').next().unwrap().to_string()
+  }
+
+  #[test]
+  fn width_only_keeps_aspect_ratio() {
+    assert_eq!(
+      svg_header("Image[Table[0, {4}, {2}], ImageSize -> 20]"),
+      "<svg xmlns='http://www.w3.org/2000/svg' width='20' height='40'"
+    );
+  }
+
+  #[test]
+  fn box_size_fits_inside_keeping_aspect_ratio() {
+    assert_eq!(
+      svg_header("Image[Table[0, {4}, {2}], ImageSize -> {300, 400}]"),
+      "<svg xmlns='http://www.w3.org/2000/svg' width='200' height='400'"
+    );
+  }
+
+  #[test]
+  fn image_size_does_not_change_pixel_dimensions() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageDimensions[Image[{{0, 1}, {1, 0}}, ImageSize -> 100]]")
+        .unwrap(),
+      "{2, 2}"
+    );
+  }
+
+  #[test]
+  fn without_option_uses_pixel_size() {
+    assert_eq!(
+      svg_header("Image[Table[0, {4}, {2}]]"),
+      "<svg xmlns='http://www.w3.org/2000/svg' width='2' height='4'"
+    );
+  }
+}
