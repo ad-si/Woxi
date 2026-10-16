@@ -289,6 +289,21 @@ mod column_visual_mode {
     assert!(svg.contains(">b</tspan>"), "{svg}");
   }
 
+  /// `Style[Column[{…, Pane[text, w]}, opts], "Label", 12]` pushes the style
+  /// onto each item; a `Pane` item used to come out as its own source text.
+  #[test]
+  fn styled_column_with_a_pane_item_draws_the_pane_content() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Style[Column[{Graphics[Circle[]], Pane[\"caption\", 350]}, \
+       Alignment -> Top, ItemSize -> {Automatic, {10, 5}}], \"Label\", 12]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("caption"), "{svg}");
+    assert!(!svg.contains("Pane["), "{svg}");
+  }
+
   /// `Invisible[expr]` keeps exactly the space `expr` occupies but paints
   /// nothing — Demonstrations hide a row with `If[show, Identity, Invisible]`
   /// and rely on the layout not jumping. It used to print as its own source.
