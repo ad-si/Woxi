@@ -20496,3 +20496,47 @@ mod ndsolve_delay {
     );
   }
 }
+
+mod integrate_linear_power {
+  use super::*;
+
+  #[test]
+  fn fractional_power_of_linear_argument() {
+    assert_eq!(
+      interpret("Integrate[(1 - 3 x)^(-3/8), x]").unwrap(),
+      "(-8*(1 - 3*x)^(5/8))/15"
+    );
+    assert_eq!(
+      interpret("Integrate[Sqrt[2 + 3 x], x]").unwrap(),
+      "(2*(2 + 3*x)^(3/2))/9"
+    );
+  }
+
+  #[test]
+  fn reciprocal_of_linear_argument_is_log() {
+    assert_eq!(
+      interpret("Integrate[1/(2 + 3 x), x]").unwrap(),
+      "Log[2 + 3*x]/3"
+    );
+  }
+
+  #[test]
+  fn definite_integral_with_symbolic_upper_bound() {
+    assert_eq!(
+      interpret("Integrate[(1 + x)^(-1/3), {x, 0, 7}]").unwrap(),
+      "9/2"
+    );
+    assert_eq!(
+      interpret("Integrate[2 (1 + 3 x)^(-1/2), {x, 0, t}]").unwrap(),
+      "-4/3 + (4*Sqrt[1 + 3*t])/3"
+    );
+  }
+
+  #[test]
+  fn symbolic_exponent_stays_unevaluated() {
+    assert_eq!(
+      interpret("Integrate[(a + b x)^n, x]").unwrap(),
+      "Integrate[(a + b*x)^n, x]"
+    );
+  }
+}
