@@ -4108,9 +4108,11 @@ fn evaluate_function_call_ast_inner(
     }
   }
 
-  // HypercubeGraph[n] — n-dimensional hypercube graph
+  // HypercubeGraph[n, opts...] — n-dimensional hypercube graph; trailing
+  // options (VertexStyle, EdgeStyle, ImageSize, ...) are Graph options.
   if name == "HypercubeGraph"
-    && args.len() == 1
+    && !args.is_empty()
+    && args[1..].iter().all(crate::syntax::is_rule_expr)
     && let Expr::Integer(n) = &args[0]
   {
     let n = *n as usize;
@@ -4131,10 +4133,10 @@ fn evaluate_function_call_ast_inner(
         }
       }
     }
-    return Ok(call(
-      "Graph",
-      vec![Expr::List(vertices.into()), Expr::List(edges.into())],
-    ));
+    let mut graph_args =
+      vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+    graph_args.extend(args[1..].iter().cloned());
+    return Ok(call("Graph", graph_args));
   }
 
   // TuranGraph[n, k] — complete k-partite graph with n vertices, partitions as equal as possible
@@ -4858,7 +4860,36 @@ fn evaluate_function_call_ast_inner(
       } else {
         literal_pos
       };
-      let mut forwarded: Vec<Expr> = vec![args[0].clone()];
+      // `GraphPlot[{{u -> v, label}, …}]` attaches a label to each edge:
+      // split the pairs into plain edges and an `EdgeLabels` option, which
+      // the legacy `EdgeRenderingFunction` receives as its third argument.
+      let mut edge_labels: Vec<Expr> = Vec::new();
+      let first_arg = match &args[0] {
+        Expr::List(items)
+          if !items.is_empty()
+            && items.iter().all(|it| {
+              matches!(it, Expr::List(p) if p.len() == 2
+                && crate::functions::graph::edge_endpoints(&p[0]).is_some())
+            }) =>
+        {
+          let mut edges = Vec::with_capacity(items.len());
+          for it in items {
+            if let Expr::List(p) = it {
+              edges.push(p[0].clone());
+              edge_labels.push(rule_expr(p[0].clone(), p[1].clone()));
+            }
+          }
+          Expr::List(edges.into())
+        }
+        other => other.clone(),
+      };
+      let mut forwarded: Vec<Expr> = vec![first_arg];
+      if !edge_labels.is_empty() {
+        forwarded.push(rule_expr(
+          id_expr("EdgeLabels"),
+          Expr::List(edge_labels.into()),
+        ));
+      }
       forwarded.extend(
         args[1..]
           .iter()
@@ -4901,7 +4932,7 @@ fn evaluate_function_call_ast_inner(
       // plain `Graph[…]`, which needs `AdjacencyGraph[m]`): a list whose
       // entries are themselves lists, rather than edges (Rules or
       // Directed/UndirectedEdge), is unambiguously that matrix form.
-      let matrix_graph = match &args[0] {
+      let matrix_graph = match &forwarded[0] {
         Expr::List(rows)
           if !rows.is_empty()
             && rows.iter().all(|r| matches!(r, Expr::List(_))) =>

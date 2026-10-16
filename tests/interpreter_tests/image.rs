@@ -3041,6 +3041,31 @@ mod image_processing {
     );
   }
 
+  // A numeric {x, y} third argument in [-1, 1] picks which side the removed
+  // pixels come from: -1 behaves like Left/Bottom, 1 like Right/Top and 0 like
+  // Center (as used by zoom-pan demonstrations that pass a negated position).
+  #[test]
+  fn image_crop_numeric_offset_spec() {
+    clear_state();
+    let img = "Image[{{0, 0.1, 0.2, 0.3}, {0, 0.1, 0.2, 0.3}}]";
+    let crop = |spec: &str| {
+      interpret(&format!(
+        "Round[255 ImageData[ImageCrop[{img}, {{2, 2}}, {spec}]]]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(crop("{-1, 0}"), crop("{Left, Center}"));
+    assert_eq!(crop("{1, 0}"), crop("{Right, Center}"));
+    assert_eq!(crop("{0, 0}"), crop("Center"));
+    assert_eq!(
+      interpret(&format!(
+        "ImageDimensions[ImageCrop[{img}, {{3, 1}}, {{0.5, -1}}]]"
+      ))
+      .unwrap(),
+      "{3, 1}"
+    );
+  }
+
   // ImageCrop[image] with no size argument removes uniform borders.
   // Pixel precision is preserved (no Byte round-trip).
   #[test]

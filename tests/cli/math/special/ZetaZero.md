@@ -28,3 +28,10 @@ automatically once an inexact number is mixed in.
 $ wo 'Re[ZetaZero[1]] + 0.5'
 1.
 ```
+
+The `k`-th zero above a given height:
+
+```scrut
+$ wo 'N[Im[ZetaZero[3, 50.]]]'
+59.34704400260235
+```

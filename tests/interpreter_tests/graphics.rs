@@ -17111,6 +17111,42 @@ mod graphics_list {
     }
   }
 
+  /// Regression: a cell carrying its own numeric `ImageSize` kept that
+  /// absolute size while its neighbours were fitted to the shared column
+  /// width, so a padded `GraphicsGrid` showed one oversized picture among
+  /// tiny cells. The cell's size only contributes its aspect ratio.
+  #[test]
+  fn graphics_grid_cell_image_size_is_fitted_to_the_column() {
+    clear_state();
+    for cell in [
+      "Graphics[Rectangle[], ImageSize -> {300, 200}]",
+      "Graphics[Rectangle[], ImageSize -> 300]",
+    ] {
+      let code = format!(
+        "GraphicsGrid[{{{{{cell}, Graphics[{{White, Disk[]}}]}}}}, \
+         ImageSize -> 120]"
+      );
+      let svg = interpret_with_stdout(&code)
+        .unwrap()
+        .graphics
+        .expect("layout should render");
+      let widths: Vec<f64> = svg
+        .lines()
+        .filter(|l| l.starts_with("<svg x="))
+        .filter_map(|l| {
+          let start = l.find(" width=\"")? + 8;
+          let end = l[start..].find('"')? + start;
+          l[start..end].parse().ok()
+        })
+        .collect();
+      assert_eq!(widths.len(), 2, "two cells expected in {code}: {svg}");
+      assert!(
+        (widths[0] - widths[1]).abs() <= 1.0,
+        "cells differ in width {widths:?} in {code}"
+      );
+    }
+  }
+
   /// Regression: a plain 1-D list with many graphics should also
   /// re-render each child at a smaller `ImageSize`, matching how
   /// `GraphicsRow` handles the same scenario. Before, every cell was
@@ -22108,6 +22144,23 @@ mod log_linear_plot {
 
 mod contour_plot_3d {
   use super::*;
+
+  #[test]
+  fn background_option_repaints_the_backdrop() {
+    for call in [
+      "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, \
+       {z, -1, 1}, Background -> Black, PlotPoints -> 5]",
+      "Plot3D[x y, {x, -1, 1}, {y, -1, 1}, Background -> Black, \
+       PlotPoints -> 5]",
+    ] {
+      let svg = export_svg(call);
+      assert!(
+        svg
+          .contains("<rect width=\"360\" height=\"360\" fill=\"rgb(0,0,0)\"/>"),
+        "{call}: backdrop must be black"
+      );
+    }
+  }
 
   #[test]
   fn shown_plane_keeps_its_opacity_and_is_cut_to_the_plot_range() {
@@ -28683,6 +28736,44 @@ mod manipulate {
   }
 
   #[test]
+  fn display_setterbar_on_list_slot_writes_back_to_the_slot() {
+    // `SetterBar[Dynamic[slots[[2]]], …]` — one bar per slot of a shared
+    // list — is a row of write-back buttons, not the frozen source text.
+    use woxi::functions::graphics::build_manipulate_display;
+    clear_state();
+    interpret("slots = {3, 2, 1}").unwrap();
+    let tree = build_manipulate_display(
+      "Row[{SetterBar[Dynamic[slots[[2]]], {1, 2, 3}]}]",
+      &[("slots".to_string(), "{3, 2, 1}".to_string())],
+    );
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    assert!(
+      nodes
+        .iter()
+        .all(|n| !matches!(n, DisplayNode::Static { .. })),
+      "SetterBar must not fall through to a source-text leaf: {nodes:?}"
+    );
+    let togglers: Vec<(&str, bool)> = nodes
+      .iter()
+      .filter_map(|n| match n {
+        DisplayNode::Toggler {
+          mutation, selected, ..
+        } => Some((mutation.as_str(), *selected)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      togglers,
+      vec![
+        ("slots[[2]] = 1", false),
+        ("slots[[2]] = 2", true),
+        ("slots[[2]] = 3", false)
+      ]
+    );
+  }
+
+  #[test]
   fn display_style_renders_as_styled_text() {
     // `Style[n, Bold, Red]` shows the *value* of n, bold and red — not the
     // literal `Style[…]` source.
@@ -35179,4 +35270,25 @@ mod bracketing_bar_labels {
     assert!(!svg.contains("&quot;"), "{svg}");
     assert!(svg.contains(">A</tspan>"), "{svg}");
   }
+
+/// Regression: a `ProgressIndicator` cell in a `Grid` (a per-bracket fill bar
+/// in a Demonstration's table) draws a track with a proportional fill instead
+/// of printing `ProgressIndicator[…]` as text.
+#[test]
+fn grid_progress_indicator_cell_draws_a_bar() {
+  let svg = export_svg;
+  let half = svg("Grid[{{\"a\", ProgressIndicator[5, {0, 10}]}}]");
+  assert!(!half.contains("ProgressIndicator"), "{half}");
+  assert!(half.contains("#5E9ED6"), "{half}");
+  // The fill width follows the fraction and is clamped to the range.
+  let width_of_fill = |s: &str| -> f64 {
+    let rect = s.split("<rect").find(|r| r.contains("#5E9ED6")).unwrap();
+    let w = rect.split("width=\"").nth(1).unwrap();
+    w.split('"').next().unwrap().parse().unwrap()
+  };
+  let full = svg("Grid[{{ProgressIndicator[3]}}]");
+  let none = svg("Grid[{{ProgressIndicator[-1]}}]");
+  assert!((width_of_fill(&half) - 74.5).abs() < 0.2, "{half}");
+  assert!((width_of_fill(&full) - 149.0).abs() < 0.2, "{full}");
+  assert!(width_of_fill(&none).abs() < 0.2, "{none}");
 }

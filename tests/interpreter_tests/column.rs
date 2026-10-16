@@ -425,6 +425,39 @@ mod column_visual_mode {
   }
 
   #[test]
+  fn column_styled_dynamic_item_shows_value() {
+    clear_state();
+    // `Style[Dynamic[expr], …]` is the readout idiom: the styled value, not
+    // the symbolic `Dynamic[…]` text, must be drawn — alone, in a Row, or
+    // inside a Column.
+    let result = interpret_with_stdout(
+      "Column[{Row[{Style[\"v = \", 14], Style[Dynamic[1 + 1], 14]}], \
+       Style[Dynamic[Round[10/7., 0.01]], 18, Red]}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">2</tspan>"), "expected value 2, got: {svg}");
+    assert!(svg.contains("1.43</"), "expected 1.43, got: {svg}");
+    assert!(!svg.contains("Dynamic"), "Dynamic leaked: {svg}");
+  }
+
+  #[test]
+  fn grid_cell_with_styled_dynamic_column_shows_value() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{\"title\", Column[{Row[{Style[\"v \", 14], \
+       Style[Dynamic[2 + 3], 14]}], Style[Dynamic[7 * 6], 18]}, Center]}}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("5</"), "expected value 5, got: {svg}");
+    assert!(svg.contains("42</"), "expected value 42, got: {svg}");
+    assert!(!svg.contains("Dynamic"), "Dynamic leaked: {svg}");
+  }
+
+  #[test]
   fn dynamic_top_level_shows_value_in_visual_mode() {
     clear_state();
     let result = interpret_with_stdout("Dynamic[1 + 1]").unwrap();

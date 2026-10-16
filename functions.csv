@@ -1348,7 +1348,7 @@ DeleteSmallComponents,Zero out label-matrix components with few pixels,✅,pure,
 DeleteMissing,Delete Missing elements from a list or pairs with a missing value from an association,✅,pure,10.0,1338
 GalaxyData,,🚫,,10.0,1338
 PutAppend,Append expressions to a file,✅,effectful,1.0,1338
-ZetaZero,k-th non-trivial zero of the Riemann zeta function on the critical line,✅,pure,6.0,1338
+ZetaZero,k-th non-trivial zero of the Riemann zeta function on the critical line (or k-th zero above height t),✅,pure,6.0,1338
 Echo,Prints and returns an expression,✅,effectful,10.3,1339
 ConstellationData,,🚫,,10.0,1342
 Directory,Current working directory,✅,effectful,2.0,1342
@@ -2269,7 +2269,7 @@ ReadString,Read a file or stream as a string up to an optional terminator,✅,ef
 WriteLine,Write a string to an output stream followed by a newline,✅,effectful,10.0,2282
 BoundingRegion,Smallest bounding region of a point list or region — box by default and MinBall/MinDisk/FastBall/FastDisk/MinCuboid/MinRectangle on request,✅,pure,10.4,2286
 CellDingbat,Notebook UI,🚫,None,3.0,2286
-DistributionParameterAssumptions,Probability distribution,🚫,None,8.0,2286
+DistributionParameterAssumptions,Conditions on the parameters of a distribution,✅,pure,8.0,2286
 WheelGraph,Wheel graph with a hub vertex joined to a cycle of rim vertices,✅,pure,8.0,2286
 ContainsAll,Test if a list contains all elements of another list,✅,pure,10.2,2289
 HypergeometricDistribution,Hypergeometric distribution (sampling without replacement); supports PDF Mean and Variance,✅,pure,6.0,2289

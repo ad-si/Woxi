@@ -8904,3 +8904,59 @@ mod log_normal_distribution_random_variate {
     );
   }
 }
+
+mod distribution_parameter_assumptions {
+  use super::*;
+
+  #[test]
+  fn normal() {
+    assert_eq!(
+      interpret("DistributionParameterAssumptions[NormalDistribution[m, s]]")
+        .unwrap(),
+      "Element[m, Reals] && s > 0"
+    );
+  }
+
+  #[test]
+  fn positive_parameters() {
+    assert_eq!(
+      interpret("DistributionParameterAssumptions[GammaDistribution[a, b]]")
+        .unwrap(),
+      "a > 0 && b > 0"
+    );
+  }
+
+  #[test]
+  fn single_parameter() {
+    assert_eq!(
+      interpret("DistributionParameterAssumptions[ExponentialDistribution[l]]")
+        .unwrap(),
+      "l > 0"
+    );
+  }
+
+  #[test]
+  fn unknown_distribution_stays_unevaluated() {
+    assert_eq!(
+      interpret("DistributionParameterAssumptions[FooDistribution[l]]")
+        .unwrap(),
+      "DistributionParameterAssumptions[FooDistribution[l]]"
+    );
+  }
+
+  #[test]
+  fn extended_parameter_forms_are_accepted() {
+    assert_eq!(
+      interpret("GammaDistribution[a, b, c, d]").unwrap(),
+      "GammaDistribution[a, b, c, d]"
+    );
+    assert_eq!(
+      interpret("InverseGaussianDistribution[m, l, t]").unwrap(),
+      "InverseGaussianDistribution[m, l, t]"
+    );
+    assert_eq!(
+      interpret("InverseChiSquareDistribution[n, x]").unwrap(),
+      "InverseChiSquareDistribution[n, x]"
+    );
+  }
+}

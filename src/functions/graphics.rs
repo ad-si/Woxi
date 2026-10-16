@@ -4265,6 +4265,36 @@ fn button_plate_svg(label: &str) -> String {
   )
 }
 
+/// A static `ProgressIndicator[x]` / `ProgressIndicator[x, {min, max}]`: a
+/// rounded track with the fraction `(x - min)/(max - min)` filled, clamped to
+/// the range. `None` unless `x` and the range are numeric (`Indeterminate`
+/// and symbolic values stay as text).
+fn progress_indicator_svg(args: &[Expr]) -> Option<String> {
+  let value = expr_to_f64(args.first()?)?;
+  let (lo, hi) = match args.get(1) {
+    None => (0.0, 1.0),
+    Some(Expr::List(range)) if range.len() == 2 => {
+      (expr_to_f64(&range[0])?, expr_to_f64(&range[1])?)
+    }
+    Some(_) => return None,
+  };
+  if hi <= lo {
+    return None;
+  }
+  let (w, h) = (150.0, 12.0);
+  let fraction = ((value - lo) / (hi - lo)).clamp(0.0, 1.0);
+  let filled = (w - 1.0) * fraction;
+  Some(format!(
+    "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <rect x=\"0.5\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" rx=\"3\" ry=\"3\" fill=\"#F2F2F2\" stroke=\"#BFBFBF\" stroke-width=\"1\"/>\n\
+     <rect x=\"0.5\" y=\"0.5\" width=\"{filled:.1}\" height=\"{:.1}\" rx=\"3\" ry=\"3\" fill=\"#5E9ED6\"/>\n\
+     </svg>\n",
+    w - 1.0,
+    h - 1.0,
+    h - 1.0
+  ))
+}
+
 /// Peel a top-level `Style[content, dirs…]`/`StyleForm[…]`/`Labeled[content,
 /// label, …]` wrapper so callers can pattern-match the payload underneath —
 /// e.g. `Inset[Style[img, Magnification -> .2], pos]` still embeds `img` as
@@ -13907,10 +13937,8 @@ pub(crate) fn mesh_region_to_graphics_prims(
   for v in vertices_list {
     if let Expr::List(coords) = v
       && coords.len() == 2
-      && let (Some(x), Some(y)) = (
-        crate::functions::math_ast::try_eval_to_f64(&coords[0]),
-        crate::functions::math_ast::try_eval_to_f64(&coords[1]),
-      )
+      && let (Some(x), Some(y)) =
+        (expr_to_f64(&coords[0]), expr_to_f64(&coords[1]))
     {
       vertices.push((x, y));
       continue;
@@ -13938,7 +13966,7 @@ pub(crate) fn mesh_region_to_graphics_prims(
           let points: Vec<Expr> = indices
             .iter()
             .filter_map(|idx| {
-              crate::functions::math_ast::try_eval_to_f64(idx).and_then(|i| {
+              expr_to_f64(idx).and_then(|i| {
                 let i = i as usize;
                 if i >= 1 && i <= vertices.len() {
                   let (x, y) = vertices[i - 1];
@@ -14031,7 +14059,7 @@ pub(crate) fn mesh_cell_style_overrides(
           if k.len() != 2 {
             continue;
           }
-          match crate::functions::math_ast::try_eval_to_f64(&k[0]) {
+          match expr_to_f64(&k[0]) {
             Some(2.0) => face_style = Some((**style).clone()),
             Some(1.0) => edge_style = Some((**style).clone()),
             _ => {}
@@ -14063,9 +14091,9 @@ pub(crate) fn mesh_region_to_graphics3d_prims(
     if let Expr::List(coords) = v
       && coords.len() == 3
       && let (Some(x), Some(y), Some(z)) = (
-        crate::functions::math_ast::try_eval_to_f64(&coords[0]),
-        crate::functions::math_ast::try_eval_to_f64(&coords[1]),
-        crate::functions::math_ast::try_eval_to_f64(&coords[2]),
+        expr_to_f64(&coords[0]),
+        expr_to_f64(&coords[1]),
+        expr_to_f64(&coords[2]),
       )
     {
       vertices.push((x, y, z));
@@ -14103,7 +14131,7 @@ pub(crate) fn mesh_region_to_graphics3d_prims(
           let points: Vec<Expr> = indices
             .iter()
             .filter_map(|idx| {
-              crate::functions::math_ast::try_eval_to_f64(idx).and_then(|i| {
+              expr_to_f64(idx).and_then(|i| {
                 let i = i as usize;
                 if i >= 1 && i <= vertices.len() {
                   let (x, y, z) = vertices[i - 1];
@@ -15571,6 +15599,12 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
       if name == "Button" && args.len() >= 2 =>
     {
       button_plate_svg(&graphics_text_content(&args[0]))
+    }
+    // A bare `ProgressIndicator[x]` cell (a per-row fill bar in a table of
+    // brackets or tasks) draws as its track and fill, not source text.
+    Expr::FunctionCall { name, args } if name == "ProgressIndicator" => {
+      let args: Vec<Expr> = args.iter().cloned().collect();
+      progress_indicator_svg(&args)?
     }
     // As above, a display wrapper that resolves to a picture is drawn
     // rather than printed as source.
@@ -18929,6 +18963,68 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
   }
 }
 
+/// `with_default_image_size` for a `GraphicsRow`/`GraphicsColumn`/
+/// `GraphicsGrid` cell. These layouts size every cell to the shared column
+/// width, so a numeric `ImageSize` on the `Graphics[…]` cell itself
+/// (`Graphics[…, ImageSize -> {94, 64}]`) only contributes its aspect
+/// ratio — keeping the absolute size would leave that cell a different
+/// scale than its neighbours (a padded grid whose first cell is a big
+/// picture and whose other cells are tiny).
+fn with_cell_image_size(expr: &Expr, size: i128) -> Expr {
+  let inner = match expr {
+    Expr::Graphics {
+      structure: Some(inner),
+      ..
+    } => inner.as_ref(),
+    other => other,
+  };
+  if let Expr::FunctionCall { name, args } = inner
+    && name == "Graphics"
+  {
+    let is_size_rule = |a: &Expr| {
+      matches!(a, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize"))
+    };
+    let number = |e: &Expr| match e {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(r) => Some(*r),
+      _ => None,
+    };
+    let scaled = args.iter().find_map(|a| match a {
+      Expr::Rule { replacement, .. } if is_size_rule(a) => {
+        match replacement.as_ref() {
+          Expr::List(dims) if dims.len() == 2 => {
+            let (w, h) = (number(&dims[0])?, number(&dims[1])?);
+            (w > 0.0 && h > 0.0).then(|| {
+              Expr::List(
+                vec![
+                  Expr::Integer(size),
+                  Expr::Integer((size as f64 * h / w).round() as i128),
+                ]
+                .into(),
+              )
+            })
+          }
+          other => number(other)
+            .filter(|w| *w > 0.0)
+            .map(|_| Expr::Integer(size)),
+        }
+      }
+      _ => None,
+    });
+    if let Some(new_size) = scaled {
+      let mut new_args: Vec<Expr> =
+        args.iter().filter(|a| !is_size_rule(a)).cloned().collect();
+      new_args.push(rule_expr(id_expr("ImageSize"), new_size));
+      return Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      };
+    }
+  }
+  with_default_image_size(expr, size)
+}
+
 /// If `expr` is a top-level list that looks like a list of graphics
 /// (1-D `{p1, p2, ...}` or 2-D `{{p1, p2}, {p3, p4}}`), return a new
 /// expression with `ImageSize -> per_cell_w` injected on each child so
@@ -18976,7 +19072,7 @@ pub fn inject_image_size_for_list_of_graphics(expr: &Expr) -> Option<Expr> {
           Expr::List(
             items
               .iter()
-              .map(|it| with_default_image_size(it, per_cell_w))
+              .map(|it| with_cell_image_size(it, per_cell_w))
               .collect(),
           )
         } else {
@@ -19001,7 +19097,7 @@ pub fn inject_image_size_for_list_of_graphics(expr: &Expr) -> Option<Expr> {
     let per_cell_w = compute_per_cell_width(items.len(), None);
     let new_items: Vec<Expr> = items
       .iter()
-      .map(|it| with_default_image_size(it, per_cell_w))
+      .map(|it| with_cell_image_size(it, per_cell_w))
       .collect();
     return Some(Expr::List(new_items.into()));
   }
@@ -19195,7 +19291,7 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
         _ => target,
       };
       let rewritten =
-        with_default_image_size(&target, per_cell_w * spans[item_idx]);
+        with_cell_image_size(&target, per_cell_w * spans[item_idx]);
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
       let svg = crate::evaluator::expr_to_svg(&evaluated);
       if svg.is_empty() {
@@ -19972,6 +20068,22 @@ fn resolve_display_item(expr: &Expr) -> Expr {
     current = unwrap_display_wrappers(&current);
   }
   current = unwrap_display_wrappers(&current);
+  // `Style[Dynamic[expr], directives…]` — the readout idiom — styles the
+  // current value of `expr`; release the hold under the `Style` so the value
+  // is drawn rather than the symbolic `Dynamic[…]` text.
+  if let Expr::FunctionCall { name, args } = &current
+    && name == "Style"
+    && args.len() >= 2
+    && matches!(&args[0], Expr::FunctionCall { name: d, args: da }
+      if d == "Dynamic" && !da.is_empty())
+  {
+    let mut restyled: Vec<Expr> = args.to_vec();
+    restyled[0] = resolve_display_item(&args[0]);
+    current = Expr::FunctionCall {
+      name: name.clone(),
+      args: restyled.into(),
+    };
+  }
   // `InputForm[expr]` displays as the InputForm text of `expr`.
   if let Expr::FunctionCall { name, args } = &current
     && name == "InputForm"
@@ -20093,6 +20205,9 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       "Button" if args.len() >= 2 => {
         return Some(button_plate_svg(&graphics_text_content(&args[0])));
       }
+      // A progress bar drawn as a track with its filled fraction rather
+      // than as `ProgressIndicator[…]` source text.
+      "ProgressIndicator" => return progress_indicator_svg(&args),
       // `TraditionalForm[expr]` is typeset in conventional notation —
       // `=` for `Equal`, `≤` for `LessEqual`, `sin(x)` for `Sin[x]`,
       // stacked fractions — by the same box pipeline the top-level
@@ -20881,7 +20996,7 @@ fn framed_box_to_svg(
       .iter()
       .filter_map(option_kv)
       .find(|(k, _)| *k == key)
-      .and_then(|(_, v)| crate::functions::math_ast::try_eval_to_f64(v))
+      .and_then(|(_, v)| expr_to_f64(v))
   };
   // `FrameMargins -> m` pads every side by `m` points.
   let margin: f64 = numeric_option("FrameMargins").unwrap_or(6.0);
@@ -26181,7 +26296,7 @@ fn manipulate_initial_value_bindings(specs: &[Expr]) -> Vec<(String, String)> {
         }
         Expr::Identifier(name) => {
           let min = items.get(1)?;
-          crate::functions::math_ast::try_eval_to_f64(min)?;
+          expr_to_f64(min)?;
           Some((name.clone(), crate::syntax::expr_to_source_form(min)))
         }
         _ => None,
@@ -26308,7 +26423,7 @@ fn manipulate_bound_is_inexact(expr: &Expr) -> bool {
 /// a finite number, in which case the control keeps its previous bound.
 pub fn manipulate_eval_bound_code(code: &str) -> Option<f64> {
   let expr = crate::interpret_to_expr(code).ok()?;
-  crate::functions::math_ast::try_eval_to_f64(&expr).filter(|v| v.is_finite())
+  expr_to_f64(&expr).filter(|v| v.is_finite())
 }
 
 /// Whether `expr` mentions any of `names` as a symbol. Used to tell a
@@ -26685,7 +26800,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }
   let (min, max, step, initial, is_real) = match args.get(idx) {
     Some(Expr::List(items)) if !items.is_empty() => {
-      let min = crate::functions::math_ast::try_eval_to_f64(&items[0])?;
+      let min = expr_to_f64(&items[0])?;
       let max = items
         .get(1)
         .and_then(crate::functions::math_ast::try_eval_to_f64)
@@ -26700,7 +26815,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }
     // A single number is the initial value over the default 0..1 range.
     Some(other) if idx == 0 => {
-      let init = crate::functions::math_ast::try_eval_to_f64(other)?;
+      let init = expr_to_f64(other)?;
       (0.0, 1.0, None, init, manipulate_bound_is_inexact(other))
     }
     // `Animator[]` / `Animator[Dynamic[v]]`: default 0..1 range.
@@ -28503,10 +28618,7 @@ fn parse_manipulate_control(
         crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[1]).0)
       })
       .filter(|_| max.is_finite());
-    let step = bounds
-      .get(2)
-      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
-      .unwrap_or(1.0);
+    let step = bounds.get(2).and_then(|e| expr_to_f64(e)).unwrap_or(1.0);
     let initial = explicit_initial
       .as_ref()
       .and_then(crate::functions::math_ast::try_eval_to_f64)
@@ -29198,7 +29310,7 @@ fn parse_list_element_manipulator(
   if base_name != name {
     return None;
   }
-  let idx = match crate::functions::math_ast::try_eval_to_f64(part_index) {
+  let idx = match expr_to_f64(part_index) {
     Some(v) if v.fract() == 0.0 && v >= 1.0 => v as usize,
     _ => return None,
   };
@@ -29408,6 +29520,11 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
       if name == "TraditionalForm" && args.len() == 1 =>
     {
       form_box_svg(&args[0])
+    }
+    // A `Pane[label, size, …]` wrapper (used to give typeset choices a
+    // uniform size) shows whatever icon its content renders to.
+    Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
+      discrete_choice_label_svg(&args[0])
     }
     // Text layout heads never become icons: `Column[{"…", "…"}]` has no
     // graphical meaning, and evaluating it only yields the typeset echo of
@@ -31182,17 +31299,18 @@ fn setterbar_node(
   probes: &mut Vec<String>,
   ons: &mut Vec<String>,
 ) -> Option<DisplayNode> {
-  let var = match args.first() {
+  // The write-back target: a bare symbol, or any assignable lvalue such as
+  // a list slot (`SetterBar[Dynamic[args[[n, 1]]], …]`, one bar per slot of
+  // a shared list), as with `popup_node`.
+  let lval = match args.first() {
     Some(Expr::FunctionCall { name, args: dargs })
       if name == "Dynamic" && !dargs.is_empty() =>
     {
-      match &dargs[0] {
-        Expr::Identifier(v) => v.clone(),
-        _ => return None,
-      }
+      &dargs[0]
     }
     _ => return None,
   };
+  let var = crate::syntax::expr_to_source_form(lval);
   // The choice list may be held (e.g. `Range[2, 10]`).
   let choices_expr = match &args[1] {
     l @ Expr::List(_) => l.clone(),
@@ -31202,10 +31320,9 @@ fn setterbar_node(
     return None;
   };
   // The current selection, for the per-choice `selected` state.
-  let current =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(var.clone()))
-      .ok()
-      .map(|e| crate::syntax::expr_to_source_form(&e));
+  let current = crate::evaluator::evaluate_expr_to_expr(lval)
+    .ok()
+    .map(|e| crate::syntax::expr_to_source_form(&e));
   let mut buttons = Vec::with_capacity(choices.len());
   for choice in choices {
     let (value, label) = match choice {
@@ -33146,6 +33263,32 @@ mod manipulate_traditional_form_choice_svg_tests {
           svgs[1], svgs[2],
           "1/t and Sqrt[4 - t^2] must typeset differently"
         );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A `TraditionalForm[…]` choice wrapped in `Pane[…, size, …]` (to give
+  /// typeset setter-bar buttons a uniform size) renders the same icon as
+  /// the bare form, while a `Pane` around plain text stays text.
+  #[test]
+  fn pane_wrapped_traditional_form_labels_render_as_svg_icons() {
+    let control = discrete_control(
+      "Manipulate[v, {{v, a}, \
+       {a, b -> Pane[TraditionalForm[1/Sqrt[x]], ImageSize -> {80, 30}, \
+        Alignment -> Center], \
+        c -> Pane[\"plain\"]}, ControlType -> SetterBar}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        value_label_svgs, ..
+      } => {
+        assert!(value_label_svgs[0].is_none());
+        let svg = value_label_svgs[1]
+          .as_deref()
+          .expect("Pane[TraditionalForm[…]] must render an icon");
+        assert!(svg.starts_with("<svg"), "not a rendered SVG: {svg}");
+        assert!(value_label_svgs[2].is_none());
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
