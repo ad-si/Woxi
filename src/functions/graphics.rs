@@ -27899,6 +27899,16 @@ fn label_is_compound(expr: &Expr) -> bool {
   }
 }
 
+/// Whether a box tree holds a literal text atom that contains a space.
+fn box_has_spaced_text(e: &Expr) -> bool {
+  match e {
+    Expr::String(s) => s.contains(' '),
+    Expr::List(items) => items.iter().any(box_has_spaced_text),
+    Expr::FunctionCall { args, .. } => args.iter().any(box_has_spaced_text),
+    _ => false,
+  }
+}
+
 /// Label runs for a string with inline `\!\(\*…\)` box segments: the prose
 /// stays literal and each box segment is converted to the expression it
 /// typesets and rendered by the same label machinery (so `SubscriptBox[p, 0]`
@@ -27924,6 +27934,20 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
     // reference to whatever a same-named Manipulate control is currently
     // bound to. Evaluating it would substitute that control's live value
     // (e.g. `x -> 1`) into every choice label that happens to mention `x`.
+    // The exception is a segment holding a literal text atom with a space
+    // (`FractionBox["my height", …]`): the source round trip would read the
+    // gap as a product (`my*height`), so such a segment is drawn straight
+    // as display text.
+    if let Ok(boxes) = crate::parse_to_expr(&seg.text)
+      && box_has_spaced_text(&boxes)
+    {
+      runs.push(LabelRun {
+        text: crate::notebook::render_boxes_text(&seg.text),
+        italic,
+        ..Default::default()
+      });
+      continue;
+    }
     let rendered = crate::notebook::box_source_to_expression(&seg.text)
       .and_then(|code| crate::parse_to_expr(&code).ok())
       .map(|expr| manipulate_label_runs(&expr, italic));
