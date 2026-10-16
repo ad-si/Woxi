@@ -35210,7 +35210,7 @@ fn framed_plot_draws_inward_major_and_minor_ticks_on_all_edges() {
   assert_eq!(x_ticks.len(), 62, "{x_ticks:?}");
   let majors = x_ticks.iter().filter(|t| len(t) > 50.0).count();
   assert_eq!(majors, 14, "seven majors on each of two edges");
-  assert!(!y_ticks.is_empty());
+  assert!(!y_ticks.is_empty(), "no y ticks drawn");
   // Every tick starts on the frame and points into the plot area.
   let bottom = x_ticks.iter().map(|t| t[1]).fold(f64::MIN, f64::max);
   for t in x_ticks.iter().filter(|t| t[1] == bottom) {
