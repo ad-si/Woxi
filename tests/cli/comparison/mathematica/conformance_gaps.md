@@ -4856,6 +4856,18 @@ Geometry (unit edges, volume, surface area, face structure) is derived from
 the golden-rhombus zonohedron; the vertex order, orientation and the
 `"Classes"` list were not checked against `wolframscript`.
 
+### `PolyhedronData` golden rhombic solids and `"NetFaces"` are unverified
+
+`AcuteGoldenRhombohedron`, `ObtuseGoldenRhombohedron` and `RhombicIcosahedron`
+are built as unit-edge zonohedra (z axis = the polar symmetry axis) without
+access to `wolframscript`, so the vertex/face order, orientation and the printed
+form of the exact metrics may differ from Wolfram's. Their `Circumradius` and
+`Midradius` are `Missing["NotApplicable"]` (the vertices/edges are not
+equidistant); the rhombic icosahedron's `Inradius` is too. `"NetFaces"` returns
+a `GraphicsComplex` over de-duplicated 2D points (the shape a Demonstration
+indexing `p[[1, #]] & /@ p[[2, 1]]` expects) — inferred from that usage, not
+checked directly.
+
 ### `PolyhedronData["SmallStellatedDodecahedron", …]` vertex/face ordering is unverified
 
 The vertex order, face order/winding and the printed form of the exact

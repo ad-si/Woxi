@@ -460,11 +460,11 @@ mod polyhedron_data_tests {
   fn polyhedron_data_all_lists_every_entity() {
     assert_eq!(
       interpret("PolyhedronData[All]").unwrap(),
-      "{BilinskiDodecahedron, Cube, DeltoidalHexecontahedron, \
+      "{AcuteGoldenRhombohedron, BilinskiDodecahedron, Cube, DeltoidalHexecontahedron, \
        DisdyakisTriacontahedron, Dodecahedron, GreatIcosahedron, GreatRhombicosidodecahedron, \
        GreatStellatedDodecahedron, Icosahedron, \
-       Icosidodecahedron, Octahedron, PentakisDodecahedron, \
-       RhombicDodecahedron, RhombicHexecontahedron, \
+       Icosidodecahedron, ObtuseGoldenRhombohedron, Octahedron, PentakisDodecahedron, \
+       RhombicDodecahedron, RhombicHexecontahedron, RhombicIcosahedron, \
        RhombicTriacontahedron, SmallRhombicosidodecahedron, \
        SmallRhombicuboctahedron, SmallStellatedDodecahedron, StellaOctangula, Tetrahedron, \
        TriangularOrthobicupola, TruncatedDodecahedron, TruncatedIcosahedron, TruncatedOctahedron, \
@@ -1181,6 +1181,70 @@ mod polyhedron_data_tests {
       )
       .unwrap(),
       "20"
+    );
+  }
+
+  // The golden rhombohedra and the rhombic icosahedron are zonohedra whose
+  // faces are all golden rhombi (diagonal ratio GoldenRatio) of unit edge.
+  #[test]
+  fn polyhedron_data_golden_rhombic_solids() {
+    assert_eq!(
+      interpret(
+        r#"Table[{PolyhedronData[s, "VertexCount"],
+             PolyhedronData[s, "EdgeCount"], PolyhedronData[s, "FaceCount"],
+             Length[PolyhedronData[s, "VertexCoordinates"]],
+             Length[PolyhedronData[s, "FaceIndices"]]},
+           {s, {"AcuteGoldenRhombohedron", "ObtuseGoldenRhombohedron",
+                "RhombicIcosahedron"}}]"#
+      )
+      .unwrap(),
+      "{{8, 12, 6, 8, 6}, {8, 12, 6, 8, 6}, {22, 40, 20, 22, 20}}"
+    );
+    // Every face is a planar rhombus of unit edge with long/short diagonal
+    // ratio GoldenRatio, and Euler's formula holds.
+    assert_eq!(
+      interpret(
+        r#"Table[
+          v = N[PolyhedronData[s, "VertexCoordinates"]];
+          f = PolyhedronData[s, "FaceIndices"];
+          {Union[Round[Flatten[Table[
+              {Norm[v[[q[[1]]]] - v[[q[[2]]]]], Norm[v[[q[[2]]]] - v[[q[[3]]]]],
+               Norm[v[[q[[3]]]] - v[[q[[4]]]]], Norm[v[[q[[4]]]] - v[[q[[1]]]]]},
+              {q, f}]], 10^-9]],
+           Union[Round[Table[
+              Max[Norm[v[[q[[1]]]] - v[[q[[3]]]]], Norm[v[[q[[2]]]] - v[[q[[4]]]]]]/
+              Min[Norm[v[[q[[1]]]] - v[[q[[3]]]]], Norm[v[[q[[2]]]] - v[[q[[4]]]]]],
+              {q, f}], 10^-9]] == {Round[N[GoldenRatio], 10^-9]},
+           Length[v] - PolyhedronData[s, "EdgeCount"] + Length[f]},
+          {s, {"AcuteGoldenRhombohedron", "ObtuseGoldenRhombohedron",
+               "RhombicIcosahedron"}}]"#
+      )
+      .unwrap(),
+      "{{{1}, True, 2}, {{1}, True, 2}, {{1}, True, 2}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Round[10^6 * N[{PolyhedronData["AcuteGoldenRhombohedron", "Volume"],
+           PolyhedronData["ObtuseGoldenRhombohedron", "Volume"],
+           PolyhedronData["RhombicIcosahedron", "Volume"],
+           PolyhedronData["RhombicIcosahedron", "SurfaceArea"]}]]"#
+      )
+      .unwrap(),
+      "{760845, 470228, 6155367, 17888544}"
+    );
+  }
+
+  // A net exposes the unfolded faces as a GraphicsComplex over 2D points.
+  #[test]
+  fn polyhedron_data_golden_rhombohedron_net() {
+    assert_eq!(
+      interpret(
+        r#"net = PolyhedronData["AcuteGoldenRhombohedron", "NetFaces"];
+        {Head[net], Length[net[[2, 1]]], Map[Length, net[[2, 1]]],
+         Length[First[net]] < 24}"#
+      )
+      .unwrap(),
+      "{GraphicsComplex, 6, {4, 4, 4, 4, 4, 4}, True}"
     );
   }
 }

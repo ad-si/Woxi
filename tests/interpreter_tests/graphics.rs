@@ -22235,30 +22235,37 @@ mod graphics_complex_normal {
 
   #[test]
   fn polyhedron_data_net_faces_unfolds_every_face_flat() {
-    // A net has one 2D polygon per face, each keeping its side count and
-    // unit edge length, and shares an edge with an already placed face.
+    // A net is a GraphicsComplex over 2D points with one polygon per face,
+    // each keeping its side count and unit edge length.
     assert_eq!(
       interpret(
         r#"net = PolyhedronData["Dodecahedron", "NetFaces"];
-        {Length[net], Union[Map[Length[First[#]] &, net]],
-         Union[Map[Length[First[#][[1]]] &, net]]}"#
+        {Head[net], Length[net[[2, 1]]], Union[Map[Length, net[[2, 1]]]],
+         Union[Map[Length, net[[1]]]]}"#
       )
       .unwrap(),
-      "{12, {5}, {2}}"
+      "{GraphicsComplex, 12, {5}, {2}}"
     );
     assert_eq!(
       interpret(
         r#"net = PolyhedronData["Cube", "NetFaces"];
         Round[Union[Flatten[Map[
-          Function[f, Norm[f[[1, 1]] - f[[1, 2]]]], net]]], 10^-9]"#
+          Function[f, Norm[net[[1, f[[1]]]] - net[[1, f[[2]]]]]],
+          net[[2, 1]]]]], 10^-9]"#
       )
       .unwrap(),
       "{1}"
     );
     assert_eq!(
-      interpret(r#"Length[PolyhedronData["Icosahedron", "NetFaces"]]"#)
+      interpret(r#"Length[PolyhedronData["Icosahedron", "NetFaces"][[2, 1]]]"#)
         .unwrap(),
       "20"
+    );
+    // Neighbouring faces of the unfolding share points.
+    assert_eq!(
+      interpret(r#"Length[PolyhedronData["Cube", "NetFaces"][[1]]] < 4*6"#)
+        .unwrap(),
+      "True"
     );
   }
 
@@ -28817,8 +28824,9 @@ mod manipulate {
         // and small stellated dodecahedra, the great icosahedron and
         // rhombic hexecontahedron
         // stellations, the triangular orthobicupola, the Bilinski
-        // dodecahedron, and the stella octangula.
-        assert_eq!(values.len(), 25, "every known solid");
+        // dodecahedron, the stella octangula, and the golden rhombohedra and
+        // rhombic icosahedron.
+        assert_eq!(values.len(), 28, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }

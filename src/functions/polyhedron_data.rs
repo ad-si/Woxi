@@ -1567,6 +1567,87 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       {2, 1, 3, 4}, {10, 8, 13, 14}, {9, 7, 2, 4}, {13, 11, 12, 14}}",
     classes_src: "{\"Amphichiral\", \"Convex\", \"Equilateral\", \"Zonohedron\"}",
   },
+  PolyhedronInfo {
+    name: "AcuteGoldenRhombohedron",
+    vertex_count: 8,
+    edge_count: 12,
+    face_count: 6,
+    volume: "Sqrt[2*(5 + Sqrt[5])]/5",
+    surface_area: "12/Sqrt[5]",
+    circumradius: "Missing[\"NotApplicable\"]",
+    inradius: "Sqrt[5]*Sqrt[2*(5 + Sqrt[5])]/20",
+    midradius: "Missing[\"NotApplicable\"]",
+    vertices_src: "\
+      With[{g1 = {Sqrt[(10 - 2*Sqrt[5])/15]*Cos[0*Pi/3], Sqrt[(10 - \
+      2*Sqrt[5])/15]*Sin[0*Pi/3], Sqrt[(5 + 2*Sqrt[5])/15]}, g2 = \
+      {Sqrt[(10 - 2*Sqrt[5])/15]*Cos[2*Pi/3], Sqrt[(10 - \
+      2*Sqrt[5])/15]*Sin[2*Pi/3], Sqrt[(5 + 2*Sqrt[5])/15]}, g3 = \
+      {Sqrt[(10 - 2*Sqrt[5])/15]*Cos[4*Pi/3], Sqrt[(10 - \
+      2*Sqrt[5])/15]*Sin[4*Pi/3], Sqrt[(5 + 2*Sqrt[5])/15]}}, {(-g1 -g2 \
+      -g3)/2, (-g1 -g2 +g3)/2, (g1 -g2 -g3)/2, (-g1 +g2 -g3)/2, (g1 -g2 \
+      +g3)/2, (g1 +g2 -g3)/2, (-g1 +g2 +g3)/2, (g1 +g2 +g3)/2}]",
+    faces_src: "\
+      {{2, 5, 8, 7}, {1, 4, 6, 3}, {3, 5, 2, 1}, {7, 8, 6, 4}, {3, 6, 8, \
+      5}, {2, 7, 4, 1}}",
+    classes_src: "{\"Convex\", \"Equilateral\", \"Zonohedron\"}",
+  },
+  PolyhedronInfo {
+    name: "ObtuseGoldenRhombohedron",
+    vertex_count: 8,
+    edge_count: 12,
+    face_count: 6,
+    volume: "Sqrt[2*(5 - Sqrt[5])]/5",
+    surface_area: "12/Sqrt[5]",
+    circumradius: "Missing[\"NotApplicable\"]",
+    inradius: "Sqrt[5]*Sqrt[2*(5 - Sqrt[5])]/20",
+    midradius: "Missing[\"NotApplicable\"]",
+    vertices_src: "\
+      With[{g1 = {Sqrt[(10 + 2*Sqrt[5])/15]*Cos[0*Pi/3], Sqrt[(10 + \
+      2*Sqrt[5])/15]*Sin[0*Pi/3], Sqrt[(5 - 2*Sqrt[5])/15]}, g2 = \
+      {Sqrt[(10 + 2*Sqrt[5])/15]*Cos[2*Pi/3], Sqrt[(10 + \
+      2*Sqrt[5])/15]*Sin[2*Pi/3], Sqrt[(5 - 2*Sqrt[5])/15]}, g3 = \
+      {Sqrt[(10 + 2*Sqrt[5])/15]*Cos[4*Pi/3], Sqrt[(10 + \
+      2*Sqrt[5])/15]*Sin[4*Pi/3], Sqrt[(5 - 2*Sqrt[5])/15]}}, {(-g1 -g2 \
+      -g3)/2, (-g1 -g2 +g3)/2, (g1 -g2 -g3)/2, (-g1 +g2 -g3)/2, (g1 -g2 \
+      +g3)/2, (g1 +g2 -g3)/2, (-g1 +g2 +g3)/2, (g1 +g2 +g3)/2}]",
+    faces_src: "\
+      {{2, 5, 8, 7}, {1, 4, 6, 3}, {1, 3, 5, 2}, {7, 8, 6, 4}, {3, 6, 8, \
+      5}, {1, 2, 7, 4}}",
+    classes_src: "{\"Convex\", \"Equilateral\", \"Zonohedron\"}",
+  },
+  PolyhedronInfo {
+    name: "RhombicIcosahedron",
+    vertex_count: 22,
+    edge_count: 40,
+    face_count: 20,
+    volume: "(1 + Sqrt[5])*Sqrt[(5 + Sqrt[5])/2]",
+    surface_area: "8*Sqrt[5]",
+    circumradius: "Missing[\"NotApplicable\"]",
+    inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Missing[\"NotApplicable\"]",
+    vertices_src: "\
+      With[{g1 = {2*Cos[0*Pi/5]/Sqrt[5], 2*Sin[0*Pi/5]/Sqrt[5], \
+      1/Sqrt[5]}, g2 = {2*Cos[2*Pi/5]/Sqrt[5], 2*Sin[2*Pi/5]/Sqrt[5], \
+      1/Sqrt[5]}, g3 = {2*Cos[4*Pi/5]/Sqrt[5], 2*Sin[4*Pi/5]/Sqrt[5], \
+      1/Sqrt[5]}, g4 = {2*Cos[6*Pi/5]/Sqrt[5], 2*Sin[6*Pi/5]/Sqrt[5], \
+      1/Sqrt[5]}, g5 = {2*Cos[8*Pi/5]/Sqrt[5], 2*Sin[8*Pi/5]/Sqrt[5], \
+      1/Sqrt[5]}}, {(-g1 -g2 -g3 -g4 -g5)/2, (-g1 -g2 -g3 +g4 -g5)/2, \
+      (-g1 -g2 -g3 -g4 +g5)/2, (g1 -g2 -g3 -g4 -g5)/2, (-g1 +g2 -g3 -g4 \
+      -g5)/2, (-g1 -g2 +g3 -g4 -g5)/2, (-g1 -g2 -g3 +g4 +g5)/2, (g1 -g2 \
+      -g3 -g4 +g5)/2, (g1 +g2 -g3 -g4 -g5)/2, (-g1 +g2 +g3 -g4 -g5)/2, \
+      (-g1 -g2 +g3 +g4 -g5)/2, (-g1 -g2 +g3 +g4 +g5)/2, (g1 -g2 -g3 +g4 \
+      +g5)/2, (g1 +g2 -g3 -g4 +g5)/2, (g1 +g2 +g3 -g4 -g5)/2, (-g1 +g2 \
+      +g3 +g4 -g5)/2, (g1 -g2 +g3 +g4 +g5)/2, (g1 +g2 -g3 +g4 +g5)/2, \
+      (g1 +g2 +g3 -g4 +g5)/2, (g1 +g2 +g3 +g4 -g5)/2, (-g1 +g2 +g3 +g4 \
+      +g5)/2, (g1 +g2 +g3 +g4 +g5)/2}]",
+    faces_src: "\
+      {{12, 17, 22, 21}, {5, 9, 4, 1}, {7, 13, 17, 12}, {10, 15, 9, 5}, \
+      {8, 13, 7, 3}, {10, 16, 20, 15}, {4, 8, 3, 1}, {21, 22, 20, 16}, \
+      {13, 18, 22, 17}, {1, 6, 10, 5}, {14, 18, 13, 8}, {11, 16, 10, 6}, \
+      {9, 14, 8, 4}, {12, 21, 16, 11}, {14, 19, 22, 18}, {1, 2, 11, 6}, \
+      {9, 15, 19, 14}, {7, 12, 11, 2}, {15, 20, 22, 19}, {1, 3, 7, 2}}",
+    classes_src: "{\"Convex\", \"Equilateral\", \"Zonohedron\"}",
+  },
 ];
 
 fn find_polyhedron(name: &str) -> Option<&'static PolyhedronInfo> {
@@ -1756,8 +1837,8 @@ fn faces_complex(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
 
 /// `"NetFaces"`: a planar net of the solid — the faces unfolded into the
 /// plane along a breadth-first spanning tree of the face adjacency graph,
-/// as a list of 2D `Polygon`s (one per face, sharing the edges the
-/// unfolding keeps joined).
+/// as `GraphicsComplex[points, Polygon[faces]]` over 2D points (faces share
+/// the points of the edges the unfolding keeps joined).
 fn net_faces(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
   let vertices = numeric_vertices(info)?;
   let faces = numeric_faces(info)?;
@@ -1799,7 +1880,13 @@ fn net_faces(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
   };
 
   if faces.is_empty() {
-    return Ok(Expr::List(Vec::new().into()));
+    return Ok(call(
+      "GraphicsComplex",
+      vec![
+        Expr::List(Vec::new().into()),
+        call1("Polygon", Expr::List(Vec::new().into())),
+      ],
+    ));
   }
   let mut placed: Vec<Option<Vec<[f64; 2]>>> = vec![None; faces.len()];
   let first = &faces[0];
@@ -1835,18 +1922,37 @@ fn net_faces(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let polygons: Vec<Expr> = placed
-    .into_iter()
-    .flatten()
-    .map(|pts| {
-      let rows: Vec<Expr> = pts
-        .iter()
-        .map(|p| Expr::List(vec![Expr::Real(p[0]), Expr::Real(p[1])].into()))
-        .collect();
-      call1("Polygon", Expr::List(rows.into()))
-    })
+  // Faces joined along a kept edge share its two points, so the net is a
+  // `GraphicsComplex` over the de-duplicated 2D points.
+  let mut points: Vec<[f64; 2]> = Vec::new();
+  let mut polygons: Vec<Expr> = Vec::new();
+  for pts in placed.into_iter().flatten() {
+    let indices: Vec<Expr> = pts
+      .iter()
+      .map(|p| {
+        let found = points.iter().position(|q| {
+          (q[0] - p[0]).abs() < 1e-9 && (q[1] - p[1]).abs() < 1e-9
+        });
+        let idx = found.unwrap_or_else(|| {
+          points.push(*p);
+          points.len() - 1
+        });
+        Expr::Integer(idx as i128 + 1)
+      })
+      .collect();
+    polygons.push(Expr::List(indices.into()));
+  }
+  let coords: Vec<Expr> = points
+    .iter()
+    .map(|p| Expr::List(vec![Expr::Real(p[0]), Expr::Real(p[1])].into()))
     .collect();
-  Ok(Expr::List(polygons.into()))
+  Ok(call(
+    "GraphicsComplex",
+    vec![
+      Expr::List(coords.into()),
+      call1("Polygon", Expr::List(polygons.into())),
+    ],
+  ))
 }
 
 /// The face index lists as plain `usize` rows, for rendering.
