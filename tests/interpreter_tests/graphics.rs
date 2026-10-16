@@ -14088,6 +14088,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// `Show` lays other graphics over a `DensityPlot` on the same axes:
+    /// the density merges as a `Raster` over its domain, so both layers
+    /// share one plot area instead of being set side by side.
+    #[test]
+    fn density_plot_merges_under_other_graphics_in_show() {
+      clear_state();
+      let structure = interpret(
+        "d = DensityPlot[x y, {x, -3, 3}, {y, -2, 2}]; r = First[d][[1]]; \
+         {Head[r], Dimensions[r[[1]]], r[[2]], \
+          AspectRatio /. Options[d], Frame /. Options[d]}",
+      )
+      .unwrap();
+      assert_eq!(
+        structure,
+        "{Raster, {100, 100, 4}, {{-3., -2.}, {3., 2.}}, 1, True}"
+      );
+      let svg = export_svg(
+        "Show[DensityPlot[x y, {x, -3, 3}, {y, -2, 2}], \
+         Graphics[{Red, Line[{{-3, -2}, {3, 2}}]}]]",
+      );
+      // One picture: a single raster image and no nested rendered plots.
+      assert_eq!(svg.matches("<image").count(), 1, "{svg:.300}");
+      assert_eq!(svg.matches("<svg").count(), 1, "{svg:.300}");
+      assert!(svg.contains("rgb(255,0,0)"));
+    }
+
     #[test]
     fn density_plot_image_size() {
       insta::assert_snapshot!(export_svg(

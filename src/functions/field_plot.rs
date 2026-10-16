@@ -1641,6 +1641,35 @@ fn render_contour_lines_styled(
 }
 
 /// DensityPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
+/// The symbolic `Graphics[items, opts]` a `ContourPlot`/`DensityPlot`
+/// carries alongside its rendering, so `Show` can merge its primitives with
+/// other graphics. It keeps the call's options too, so the merged picture is
+/// still drawn on the axes and range the plot asked for, and spells out the
+/// plot's own defaults where `Graphics` differs: framed, and square.
+fn field_plot_structure(items: Vec<Expr>, args: &[Expr]) -> Expr {
+  fn name_of(o: &Expr) -> Option<&str> {
+    crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
+  }
+  let mut structure_args = vec![Expr::List(items.into())];
+  let mut explicit = crate::functions::plot::explicit_options(args);
+  // The plot's own `PlotRange` clips the *function values* — its x/y axes
+  // are already fixed by the `{x,xmin,xmax}`/`{y,ymin,ymax}` iterators and
+  // stay put regardless of it. But `Graphics`/`Show` read a `PlotRange`
+  // rule as an axis-range spec, so forwarding the call's value verbatim
+  // would let it crop the axes of the merged picture. Drop it instead: the
+  // primitives already span the sampled domain, which is the range `Show`
+  // should use.
+  explicit.retain(|o| name_of(o) != Some("PlotRange"));
+  if !explicit.iter().any(|o| name_of(o) == Some("Frame")) {
+    structure_args.push(rule_expr(id_expr("Frame"), bool_expr(true)));
+  }
+  if !explicit.iter().any(|o| name_of(o) == Some("AspectRatio")) {
+    structure_args.push(rule_expr(id_expr("AspectRatio"), Expr::Integer(1)));
+  }
+  structure_args.extend(explicit);
+  call("Graphics", structure_args)
+}
+
 pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "DensityPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "DensityPlot")?;
@@ -1709,7 +1738,51 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+
+  // The coloured cells as a `Raster` spanning the plotted domain (rows from
+  // the bottom up), so `Show` can lay other graphics over the density
+  // instead of setting the two pictures side by side. Cells without a value
+  // stay transparent.
+  if !(v_min.is_finite() && v_max.is_finite()) {
+    return Ok(crate::graphics_result(svg));
+  }
+  let channel = |c: u8| Expr::Real(c as f64 / 255.0);
+  let rows: Vec<Expr> = (0..FIELD_GRID)
+    .map(|j| {
+      let row: Vec<Expr> = grid
+        .iter()
+        .map(|col| {
+          let v = col[j];
+          let ((r, g, b), alpha) = if v.is_finite() {
+            let rgb = scaled_color(
+              scale_value(v, v_min, v_max),
+              v,
+              opts.color_function.as_deref(),
+              opts.cf_expr(),
+            );
+            (rgb, 1.0)
+          } else {
+            ((0, 0, 0), 0.0)
+          };
+          Expr::List(
+            vec![channel(r), channel(g), channel(b), Expr::Real(alpha)].into(),
+          )
+        })
+        .collect();
+      Expr::List(row.into())
+    })
+    .collect();
+  let corner =
+    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  let raster = call(
+    "Raster",
+    vec![
+      Expr::List(rows.into()),
+      Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
+    ],
+  );
+  let structure = field_plot_structure(vec![raster], args);
+  Ok(crate::graphics_result_with_structure(svg, structure))
 }
 
 /// ContourPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -2019,32 +2092,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  // The symbolic form keeps the call's options too, so `Show` merging
-  // these contour lines with other primitives still draws them on the
-  // axes and range the plot asked for. A contour plot is framed by
-  // default, so the merged picture has to be framed as well unless the
-  // call turned it off.
-  let mut structure_args = vec![Expr::List(structure_items.into())];
-  let mut explicit = crate::functions::plot::explicit_options(args);
-  // A ContourPlot's own `PlotRange` clips the *function values* being
-  // contoured — its x/y axes are already fixed by the `{x,xmin,xmax}`/
-  // `{y,ymin,ymax}` iterators and stay put regardless of it. But
-  // `Graphics`/`Show` read a `PlotRange` rule as an axis-range spec, so
-  // forwarding the call's value verbatim would let it crop the axes of
-  // the merged picture. Drop it instead: the primitives below already
-  // span the sampled domain, which is the range `Show` should use.
-  explicit.retain(|o| {
-    crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
-      != Some("PlotRange")
-  });
-  if !explicit.iter().any(|o| {
-    crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
-      == Some("Frame")
-  }) {
-    structure_args.push(rule_expr(id_expr("Frame"), bool_expr(true)));
-  }
-  structure_args.extend(explicit);
-  let structure = call("Graphics", structure_args);
+  let structure = field_plot_structure(structure_items, args);
 
   // Use plotters for axes
   let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
