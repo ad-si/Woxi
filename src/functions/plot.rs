@@ -8708,7 +8708,7 @@ pub(crate) fn parse_axes_option(value: &Expr) -> Option<(bool, bool)> {
   let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
   match value {
     Expr::Identifier(s) if s == "True" => Some((true, true)),
-    Expr::Identifier(s) if s == "False" => Some((false, false)),
+    Expr::Identifier(s) if s == "False" || s == "None" => Some((false, false)),
     Expr::List(items) if items.len() == 2 => {
       Some((is_true(&items[0]), is_true(&items[1])))
     }
