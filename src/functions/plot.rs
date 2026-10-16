@@ -1970,6 +1970,9 @@ pub(crate) struct SeriesStyle {
   pub shadow: Option<crate::functions::graphics::DropShadow>,
   /// `Opacity[a]` directive: the curve's alpha. None = fully opaque.
   pub opacity: Option<f64>,
+  /// This style came from its own `{…}` entry of a `PlotStyle` list, i.e. it
+  /// is one dataset's style rather than a bare directive of a combined one.
+  pub from_list: bool,
 }
 
 /// A single explicit grid line: a position on its axis plus an optional
@@ -4356,7 +4359,8 @@ pub(crate) fn explicit_options(args: &[Expr]) -> Vec<Expr> {
 
 /// With a single series a `PlotStyle` list is one combined style, not a
 /// per-series cycle: `ListPlot[pts, PlotStyle -> {PointSize[.02], Red}]`
-/// draws one red series, not a `PointSize` series and a `Red` series. Later
+/// draws one red series, not a `PointSize` series and a `Red` series. A list
+/// made only of nested lists is per-dataset instead, so the first one wins. Later
 /// directives win, so a nested `{PointSize[.02], {PointSize[.04], Red}}`
 /// (the shape a `Which` inside `PlotStyle` produces) ends up red.
 pub(crate) fn collapse_style_for_single_series(
@@ -4364,6 +4368,11 @@ pub(crate) fn collapse_style_for_single_series(
 ) -> Vec<SeriesStyle> {
   if styles.len() < 2 {
     return styles.to_vec();
+  }
+  // `PlotStyle -> {{…}, {…}}` is one style list per dataset, and a lone
+  // dataset takes the first.
+  if styles.iter().all(|s| s.from_list) {
+    return vec![styles[0].clone()];
   }
   let mut merged = SeriesStyle::default();
   for style in styles {
@@ -8255,6 +8264,7 @@ pub(crate) fn parse_image_size(
 fn parse_one_series_style(expr: &Expr) -> SeriesStyle {
   let mut style = SeriesStyle::default();
   apply_style_directive(expr, &mut style);
+  style.from_list = matches!(expr, Expr::List(_));
   style
 }
 
