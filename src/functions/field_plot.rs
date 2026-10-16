@@ -831,7 +831,7 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
     },
     other => (other, (0.0, 1.0)),
   };
-  if !(hi > lo) {
+  if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) {
     return None;
   }
   let name = color_function_scheme_name(colors);

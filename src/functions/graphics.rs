@@ -20343,6 +20343,26 @@ pub(crate) fn style_pushed_into_layout(
     {
       return e.clone();
     }
+    // `Pane`/`Item` only size or place their content, so the style goes
+    // onto the content; `Style[Pane[…], …]` as an item would otherwise be
+    // typeset as the source text of the `Pane` call.
+    if let Expr::FunctionCall { name, args } = e
+      && matches!(name.as_str(), "Pane" | "Item")
+      && !args.is_empty()
+    {
+      let mut new_args: Vec<Expr> = args.iter().cloned().collect();
+      new_args[0] = Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: std::iter::once(args[0].clone())
+          .chain(directives.iter().cloned())
+          .collect::<Vec<_>>()
+          .into(),
+      };
+      return Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      };
+    }
     Expr::FunctionCall {
       name: "Style".to_string(),
       args: std::iter::once(e.clone())
