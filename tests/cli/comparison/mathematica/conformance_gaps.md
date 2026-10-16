@@ -3686,6 +3686,28 @@ matches nothing and the whole call is abandoned without a message. Woxi accepts
 either key. Not reproduced: silently abandoning the plot looks like a defect,
 and the same call with an `UndirectedEdge` key conforms on both sides.
 
+### `StreamPlot` streamline spacing is an approximation (not reproducible)
+
+Woxi places evenly spaced streamlines (Jobard–Lefer) about 1/22 of each axis'
+range apart by default. Wolfram's spacing depends on the field: counting the
+streamlines crossing a vertical line, a uniform flow
+(`StreamPlot[{1, 0}, {x, -1, 1}, {y, -1, 1}]`) has 29, but the flow around a
+cylinder (`{x, -3, 3}, {y, -2, 2}`) has 17 at its upstream edge. Its seeding
+algorithm is not recoverable from the output, so Woxi's default sits between
+the two, and `StreamPoints` settings keep Wolfram's proportions to it.
+
+### `DensityPlot` ignores `AspectRatio`
+
+`DensityPlot[x, {x, 0, 10}, {y, 0, 1}, AspectRatio -> 0.3]` is drawn square
+in Woxi; Wolfram draws it 0.3 times as tall as wide.
+
+### Merged graphics use a different tick font
+
+A plot merged with other graphics by `Show` (say a `DensityPlot` under a
+`StreamPlot`) is redrawn by the `Graphics` renderer, whose tick labels are a
+monospace font, larger than the plot renderer's sans-serif ones. Wolfram draws
+both alike.
+
 
 ## Images
 

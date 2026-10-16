@@ -14088,6 +14088,95 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// `Show` lays other graphics over a `DensityPlot` on the same axes:
+    /// the density merges as a `Raster` over its domain, so both layers
+    /// share one plot area instead of being set side by side.
+    #[test]
+    fn density_plot_merges_under_other_graphics_in_show() {
+      clear_state();
+      let structure = interpret(
+        "d = DensityPlot[x y, {x, -3, 3}, {y, -2, 2}]; r = First[d][[1]]; \
+         {Head[r], Dimensions[r[[1]]], r[[2]], \
+          AspectRatio /. Options[d], Frame /. Options[d]}",
+      )
+      .unwrap();
+      assert_eq!(
+        structure,
+        "{Raster, {100, 100, 4}, {{-3., -2.}, {3., 2.}}, 1, True}"
+      );
+      let svg = export_svg(
+        "Show[DensityPlot[x y, {x, -3, 3}, {y, -2, 2}], \
+         Graphics[{Red, Line[{{-3, -2}, {3, 2}}]}]]",
+      );
+      // One picture: a single raster image and no nested rendered plots.
+      assert_eq!(svg.matches("<image").count(), 1, "{svg:.300}");
+      assert_eq!(svg.matches("<svg").count(), 1, "{svg:.300}");
+      assert!(svg.contains("rgb(255,0,0)"));
+    }
+
+    /// `PlotLegends -> Automatic` makes `DensityPlot` a `Legended` plot
+    /// with a colour bar over the plotted value range, as in Wolfram;
+    /// `Show` keeps the legend when merging, and the bar is drawn beside
+    /// the plot.
+    #[test]
+    fn density_plot_legend_survives_show() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "d = DensityPlot[x, {x, 0, 1}, {y, 0, 1}, PlotRange -> {-3, 1}, \
+           ColorFunction -> \"TemperatureMap\", PlotLegends -> Automatic]; \
+           {Head[d], d[[2]]}"
+        )
+        .unwrap(),
+        "{Legended, Placed[BarLegend[{TemperatureMap, {-3., 1.}}], After]}"
+      );
+      assert_eq!(
+        interpret(
+          "s = Show[d, Graphics[{Red, Circle[{0.5, 0.5}, 0.2]}]]; \
+           {Head[s], s[[2]] === d[[2]], Head[First[s]]}"
+        )
+        .unwrap(),
+        "{Legended, True, Graphics}"
+      );
+      let svg = export_svg("s");
+      // One merged plot (its density raster) plus the 64-band colour bar.
+      assert_eq!(svg.matches("<image").count(), 1);
+      assert!(svg.matches("<rect").count() >= 64, "no colour bar");
+      assert!(svg.contains(">-3<") && svg.contains(">1<"), "bar labels");
+    }
+
+    /// `PlotRange -> {zmin, zmax}` stretches the colours over exactly that
+    /// range; a value beyond it is left blank by default and drawn per
+    /// `ClippingStyle` otherwise (`Automatic`: the end colour; a colour:
+    /// that colour), as in Wolfram.
+    #[test]
+    fn density_plot_plot_range_clips_values() {
+      clear_state();
+      // Cells of row 50 at x ≈ 1 (below), 5 (middle) and 9 (above).
+      let cells = |clipping: &str| {
+        interpret(&format!(
+          "r = First[DensityPlot[x, {{x, 0, 10}}, {{y, 0, 1}}, \
+           PlotRange -> {{2, 8}}, ColorFunction -> \"TemperatureMap\" \
+           {clipping}]][[1]]; Round[255 r[[1, 50, {{10, 50, 90}}]]]"
+        ))
+        .unwrap()
+      };
+      // The middle cell, centred at x = 4.95, just below the scale midpoint.
+      let mid = "{250, 251, 235, 255}";
+      assert_eq!(
+        cells(""),
+        format!("{{{{0, 0, 0, 0}}, {mid}, {{0, 0, 0, 0}}}}")
+      );
+      assert_eq!(
+        cells(", ClippingStyle -> Green"),
+        format!("{{{{0, 255, 0, 255}}, {mid}, {{0, 255, 0, 255}}}}")
+      );
+      assert_eq!(
+        cells(", ClippingStyle -> Automatic"),
+        format!("{{{{46, 78, 238, 255}}, {mid}, {{208, 34, 42, 255}}}}")
+      );
+    }
+
     #[test]
     fn density_plot_image_size() {
       insta::assert_snapshot!(export_svg(
@@ -15017,12 +15106,93 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     #[test]
     fn stream_plot_epilog_and_stream_style() {
+      // As in Wolfram, the default speed colouring wins over a
+      // `StreamStyle` colour; only `StreamColorFunction -> None` lets the
+      // `StreamStyle` colour through.
       let svg = export_svg(
         "StreamPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}, \
            Epilog -> {Orange, Disk[{0, 0}, 1]}, StreamStyle -> Black]",
       );
       assert!(svg.contains("<ellipse"), "{svg}");
-      assert!(svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+      assert!(!svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+      let plain = export_svg(
+        "StreamPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}, \
+           StreamColorFunction -> None, StreamStyle -> Black]",
+      );
+      assert!(plain.contains("stroke=\"rgb(0,0,0)\""), "{plain}");
+    }
+
+    /// `StreamDensityPlot` shades the speed on Wolfram's orange-to-yellow
+    /// `WL12DefaultVectorDensityGradient` (its end colours are
+    /// RGB(204, 102, 41) and RGB(255, 237, 128)), and draws the same
+    /// speed-coloured arrows as `StreamPlot` on top.
+    #[test]
+    fn stream_density_plot_uses_wolfram_vector_density_gradient() {
+      use base64::Engine as _;
+      let svg = export_svg(
+        "StreamDensityPlot[{x, 0}, {x, 0, 1}, {y, 0, 1}, StreamPoints -> 4]",
+      );
+      assert!(svg.contains("<polygon"), "streamline arrowheads");
+      let b64 = svg
+        .split("base64,")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap();
+      let png = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+      let img = ::image::load_from_memory(&png).unwrap().to_rgb8();
+      let (w, h) = img.dimensions();
+      // Speed |x| grows to the right: slow orange at the left edge, fast
+      // pale yellow at the right.
+      let left = img.get_pixel(0, h / 2).0;
+      let right = img.get_pixel(w - 1, h / 2).0;
+      let near = |a: [u8; 3], b: [u8; 3]| {
+        a.iter()
+          .zip(b)
+          .all(|(x, y)| (*x as i32 - y as i32).abs() <= 6)
+      };
+      assert!(near(left, [204, 102, 41]), "{left:?}");
+      assert!(near(right, [255, 237, 128]), "{right:?}");
+    }
+
+    /// Streamlines are evenly spaced, drawn as runs of arrows coloured by
+    /// the flow speed (slow violet, fast orange on Wolfram's default
+    /// vector gradient), and `StreamPoints` sets their density.
+    #[test]
+    fn stream_plot_draws_even_speed_coloured_arrows() {
+      clear_state();
+      let lines = |opts: &str| {
+        interpret(&format!(
+          "s = StreamPlot[{{1, 0}}, {{x, -1, 1}}, {{y, -1, 1}}{opts}]; \
+           Length[Union[Cases[s, Arrow[p_] :> Round[p[[1, 2]], 0.001], \
+           Infinity]]]"
+        ))
+        .unwrap()
+        .parse::<usize>()
+        .unwrap()
+      };
+      let (coarse, default, fine) = (
+        lines(", StreamPoints -> Coarse"),
+        lines(""),
+        lines(", StreamPoints -> Fine"),
+      );
+      assert!((20..=24).contains(&default), "{default} streamlines");
+      assert!(
+        coarse < default && default < fine,
+        "{coarse} {default} {fine}"
+      );
+      // Speed grows with x: the slowest segment is violet, the fastest
+      // orange, and every full-length segment carries the same head.
+      let colors = interpret(
+        "s = StreamPlot[{x + 2, 0}, {x, -1, 1}, {y, -1, 1}]; \
+         segs = SortBy[Cases[s, {Arrowheads[{{a_, _}}], c_RGBColor, \
+           Arrow[p_]} :> {Mean[p][[1]], List @@ c, a}, Infinity], First]; \
+         {Round[segs[[1, 2]], 0.25], Round[segs[[-1, 2]], 0.25], \
+          Max[segs[[All, 3]]]}",
+      )
+      .unwrap();
+      assert_eq!(colors, "{{0., 0., 0.75}, {1., 0.75, 0.}, 0.02}");
     }
 
     // Part 1 of a field plot is its graphics content, so a Demonstration can
@@ -15067,7 +15237,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         interpret(
           "Module[{h, x1, x2}, h = x1/(1 + x2); \
              Max[Flatten[Cases[StreamPlot[{x1 - h, x2 - h}, {x1, 0, 1}, \
-             {x2, 0, 1}][[1]], Line[p_] :> Length[DeleteDuplicates[p]], \
+             {x2, 0, 1}][[1]], (Line[p_] | Arrow[p_]) :> Length[DeleteDuplicates[p]], \
              Infinity]]] > 1]"
         )
         .unwrap(),
@@ -15081,7 +15251,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         interpret(
           "Max[Flatten[Cases[StreamPlot[{x, y}, {x, 0, 1}, {y, 0, 1}, \
              RegionFunction -> Function[{x, y}, x + y < 0.5]][[1]], \
-             Line[p_] :> (#[[1]] + #[[2]] & /@ p), Infinity]]] < 0.5"
+             (Line[p_] | Arrow[p_]) :> (#[[1]] + #[[2]] & /@ p), Infinity]]] < 0.5"
         )
         .unwrap(),
         "True"
@@ -35279,7 +35449,7 @@ fn framed_plot_draws_inward_major_and_minor_ticks_on_all_edges() {
   assert_eq!(x_ticks.len(), 62, "{x_ticks:?}");
   let majors = x_ticks.iter().filter(|t| len(t) > 50.0).count();
   assert_eq!(majors, 14, "seven majors on each of two edges");
-  assert!(!y_ticks.is_empty());
+  assert_ne!(y_ticks.len(), 0, "expected y ticks");
   // Every tick starts on the frame and points into the plot area.
   let bottom = x_ticks.iter().map(|t| t[1]).fold(f64::MIN, f64::max);
   for t in x_ticks.iter().filter(|t| t[1] == bottom) {
