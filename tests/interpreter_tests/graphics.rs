@@ -35146,3 +35146,25 @@ fn grid_column_width_follows_displayed_text() {
   let plain = first_divider("Grid[{{\"y'\", 1}}, Frame -> All]");
   assert!((deriv - plain).abs() < 1.0, "{deriv} vs {plain}");
 }
+
+/// Regression: a `ProgressIndicator` cell in a `Grid` (a per-bracket fill bar
+/// in a Demonstration's table) draws a track with a proportional fill instead
+/// of printing `ProgressIndicator[…]` as text.
+#[test]
+fn grid_progress_indicator_cell_draws_a_bar() {
+  let svg = export_svg;
+  let half = svg("Grid[{{\"a\", ProgressIndicator[5, {0, 10}]}}]");
+  assert!(!half.contains("ProgressIndicator"), "{half}");
+  assert!(half.contains("#5E9ED6"), "{half}");
+  // The fill width follows the fraction and is clamped to the range.
+  let width_of_fill = |s: &str| -> f64 {
+    let rect = s.split("<rect").find(|r| r.contains("#5E9ED6")).unwrap();
+    let w = rect.split("width=\"").nth(1).unwrap();
+    w.split('"').next().unwrap().parse().unwrap()
+  };
+  let full = svg("Grid[{{ProgressIndicator[3]}}]");
+  let none = svg("Grid[{{ProgressIndicator[-1]}}]");
+  assert!((width_of_fill(&half) - 74.5).abs() < 0.2, "{half}");
+  assert!((width_of_fill(&full) - 149.0).abs() < 0.2, "{full}");
+  assert!(width_of_fill(&none).abs() < 0.2, "{none}");
+}

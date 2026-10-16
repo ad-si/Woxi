@@ -4265,6 +4265,36 @@ fn button_plate_svg(label: &str) -> String {
   )
 }
 
+/// A static `ProgressIndicator[x]` / `ProgressIndicator[x, {min, max}]`: a
+/// rounded track with the fraction `(x - min)/(max - min)` filled, clamped to
+/// the range. `None` unless `x` and the range are numeric (`Indeterminate`
+/// and symbolic values stay as text).
+fn progress_indicator_svg(args: &[Expr]) -> Option<String> {
+  let value = expr_to_f64(args.first()?)?;
+  let (lo, hi) = match args.get(1) {
+    None => (0.0, 1.0),
+    Some(Expr::List(range)) if range.len() == 2 => {
+      (expr_to_f64(&range[0])?, expr_to_f64(&range[1])?)
+    }
+    Some(_) => return None,
+  };
+  if hi <= lo {
+    return None;
+  }
+  let (w, h) = (150.0, 12.0);
+  let fraction = ((value - lo) / (hi - lo)).clamp(0.0, 1.0);
+  let filled = (w - 1.0) * fraction;
+  Some(format!(
+    "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <rect x=\"0.5\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" rx=\"3\" ry=\"3\" fill=\"#F2F2F2\" stroke=\"#BFBFBF\" stroke-width=\"1\"/>\n\
+     <rect x=\"0.5\" y=\"0.5\" width=\"{filled:.1}\" height=\"{:.1}\" rx=\"3\" ry=\"3\" fill=\"#5E9ED6\"/>\n\
+     </svg>\n",
+    w - 1.0,
+    h - 1.0,
+    h - 1.0
+  ))
+}
+
 /// Peel a top-level `Style[content, dirs…]`/`StyleForm[…]`/`Labeled[content,
 /// label, …]` wrapper so callers can pattern-match the payload underneath —
 /// e.g. `Inset[Style[img, Magnification -> .2], pos]` still embeds `img` as
@@ -13891,10 +13921,8 @@ pub(crate) fn mesh_region_to_graphics_prims(
   for v in vertices_list {
     if let Expr::List(coords) = v
       && coords.len() == 2
-      && let (Some(x), Some(y)) = (
-        crate::functions::math_ast::try_eval_to_f64(&coords[0]),
-        crate::functions::math_ast::try_eval_to_f64(&coords[1]),
-      )
+      && let (Some(x), Some(y)) =
+        (expr_to_f64(&coords[0]), expr_to_f64(&coords[1]))
     {
       vertices.push((x, y));
       continue;
@@ -13922,7 +13950,7 @@ pub(crate) fn mesh_region_to_graphics_prims(
           let points: Vec<Expr> = indices
             .iter()
             .filter_map(|idx| {
-              crate::functions::math_ast::try_eval_to_f64(idx).and_then(|i| {
+              expr_to_f64(idx).and_then(|i| {
                 let i = i as usize;
                 if i >= 1 && i <= vertices.len() {
                   let (x, y) = vertices[i - 1];
@@ -14015,7 +14043,7 @@ pub(crate) fn mesh_cell_style_overrides(
           if k.len() != 2 {
             continue;
           }
-          match crate::functions::math_ast::try_eval_to_f64(&k[0]) {
+          match expr_to_f64(&k[0]) {
             Some(2.0) => face_style = Some((**style).clone()),
             Some(1.0) => edge_style = Some((**style).clone()),
             _ => {}
@@ -14047,9 +14075,9 @@ pub(crate) fn mesh_region_to_graphics3d_prims(
     if let Expr::List(coords) = v
       && coords.len() == 3
       && let (Some(x), Some(y), Some(z)) = (
-        crate::functions::math_ast::try_eval_to_f64(&coords[0]),
-        crate::functions::math_ast::try_eval_to_f64(&coords[1]),
-        crate::functions::math_ast::try_eval_to_f64(&coords[2]),
+        expr_to_f64(&coords[0]),
+        expr_to_f64(&coords[1]),
+        expr_to_f64(&coords[2]),
       )
     {
       vertices.push((x, y, z));
@@ -14087,7 +14115,7 @@ pub(crate) fn mesh_region_to_graphics3d_prims(
           let points: Vec<Expr> = indices
             .iter()
             .filter_map(|idx| {
-              crate::functions::math_ast::try_eval_to_f64(idx).and_then(|i| {
+              expr_to_f64(idx).and_then(|i| {
                 let i = i as usize;
                 if i >= 1 && i <= vertices.len() {
                   let (x, y, z) = vertices[i - 1];
@@ -15555,6 +15583,12 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
       if name == "Button" && args.len() >= 2 =>
     {
       button_plate_svg(&graphics_text_content(&args[0]))
+    }
+    // A bare `ProgressIndicator[x]` cell (a per-row fill bar in a table of
+    // brackets or tasks) draws as its track and fill, not source text.
+    Expr::FunctionCall { name, args } if name == "ProgressIndicator" => {
+      let args: Vec<Expr> = args.iter().cloned().collect();
+      progress_indicator_svg(&args)?
     }
     // As above, a display wrapper that resolves to a picture is drawn
     // rather than printed as source.
@@ -20077,6 +20111,9 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       "Button" if args.len() >= 2 => {
         return Some(button_plate_svg(&graphics_text_content(&args[0])));
       }
+      // A progress bar drawn as a track with its filled fraction rather
+      // than as `ProgressIndicator[…]` source text.
+      "ProgressIndicator" => return progress_indicator_svg(&args),
       // `TraditionalForm[expr]` is typeset in conventional notation —
       // `=` for `Equal`, `≤` for `LessEqual`, `sin(x)` for `Sin[x]`,
       // stacked fractions — by the same box pipeline the top-level
@@ -20865,7 +20902,7 @@ fn framed_box_to_svg(
       .iter()
       .filter_map(option_kv)
       .find(|(k, _)| *k == key)
-      .and_then(|(_, v)| crate::functions::math_ast::try_eval_to_f64(v))
+      .and_then(|(_, v)| expr_to_f64(v))
   };
   // `FrameMargins -> m` pads every side by `m` points.
   let margin: f64 = numeric_option("FrameMargins").unwrap_or(6.0);
@@ -26165,7 +26202,7 @@ fn manipulate_initial_value_bindings(specs: &[Expr]) -> Vec<(String, String)> {
         }
         Expr::Identifier(name) => {
           let min = items.get(1)?;
-          crate::functions::math_ast::try_eval_to_f64(min)?;
+          expr_to_f64(min)?;
           Some((name.clone(), crate::syntax::expr_to_source_form(min)))
         }
         _ => None,
@@ -26292,7 +26329,7 @@ fn manipulate_bound_is_inexact(expr: &Expr) -> bool {
 /// a finite number, in which case the control keeps its previous bound.
 pub fn manipulate_eval_bound_code(code: &str) -> Option<f64> {
   let expr = crate::interpret_to_expr(code).ok()?;
-  crate::functions::math_ast::try_eval_to_f64(&expr).filter(|v| v.is_finite())
+  expr_to_f64(&expr).filter(|v| v.is_finite())
 }
 
 /// Whether `expr` mentions any of `names` as a symbol. Used to tell a
@@ -26669,7 +26706,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }
   let (min, max, step, initial, is_real) = match args.get(idx) {
     Some(Expr::List(items)) if !items.is_empty() => {
-      let min = crate::functions::math_ast::try_eval_to_f64(&items[0])?;
+      let min = expr_to_f64(&items[0])?;
       let max = items
         .get(1)
         .and_then(crate::functions::math_ast::try_eval_to_f64)
@@ -26684,7 +26721,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }
     // A single number is the initial value over the default 0..1 range.
     Some(other) if idx == 0 => {
-      let init = crate::functions::math_ast::try_eval_to_f64(other)?;
+      let init = expr_to_f64(other)?;
       (0.0, 1.0, None, init, manipulate_bound_is_inexact(other))
     }
     // `Animator[]` / `Animator[Dynamic[v]]`: default 0..1 range.
@@ -28487,10 +28524,7 @@ fn parse_manipulate_control(
         crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[1]).0)
       })
       .filter(|_| max.is_finite());
-    let step = bounds
-      .get(2)
-      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
-      .unwrap_or(1.0);
+    let step = bounds.get(2).and_then(|e| expr_to_f64(e)).unwrap_or(1.0);
     let initial = explicit_initial
       .as_ref()
       .and_then(crate::functions::math_ast::try_eval_to_f64)
@@ -29182,7 +29216,7 @@ fn parse_list_element_manipulator(
   if base_name != name {
     return None;
   }
-  let idx = match crate::functions::math_ast::try_eval_to_f64(part_index) {
+  let idx = match expr_to_f64(part_index) {
     Some(v) if v.fract() == 0.0 && v >= 1.0 => v as usize,
     _ => return None,
   };
