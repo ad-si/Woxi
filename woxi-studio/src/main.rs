@@ -19506,6 +19506,60 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`pieceSpin$$ = {0., 0.}}, \"\\[Ellip
     );
   }
 
+  /// A slider captioned with a small picture beside its words
+  /// (`Dynamic[Row[{Pane[ArrayPlot[…], 80], "word"}, Spacer[6]]]`) is
+  /// labelled by the words alone, not the picture's `-Graphics-` placeholder.
+  #[test]
+  fn slider_caption_with_a_picture_keeps_only_its_words() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", 
+  RowBox[{
+   RowBox[{"ListLinePlot", "[", 
+    RowBox[{"Table", "[", 
+     RowBox[{
+      RowBox[{"Mod", "[", 
+       RowBox[{
+        RowBox[{"k", " ", "n"}], ",", "7"}], "]"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"n", ",", "1", ",", "12"}], "}"}]}], "]"}], "]"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"k", ",", "1", ",", 
+       RowBox[{"Dynamic", "[", 
+        RowBox[{"Row", "[", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"Pane", "[", 
+             RowBox[{
+              RowBox[{"ArrayPlot", "[", 
+               RowBox[{"{", 
+                RowBox[{"{", 
+                 RowBox[{"0", ",", "1", ",", "k"}], "}"}], "}"}], "]"}], ",", 
+              "80"}], "]"}], ",", "\"\<multiplier\>\""}], "}"}], ",", 
+          RowBox[{"Spacer", "[", "6", "]"}]}], "]"}], "]"}]}], "}"}], ",", 
+     "1", ",", "6", ",", "1"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    match &widget.controls[0] {
+      manipulate::ControlState::Continuous { label, .. } => {
+        assert_eq!(label.trim(), "multiplier");
+      }
+      other => panic!("unexpected control: {other:?}"),
+    }
+  }
+
   /// End-to-end regression for the "Chaos and Order in the Damped Forced
   /// Pendulum in a Plane" Demonstration: it integrates the damped driven
   /// pendulum `θ'' == -(g/l) Sin[θ] - γ θ' + a Cos[ω t]` from a grid of

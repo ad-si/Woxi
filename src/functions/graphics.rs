@@ -27616,6 +27616,13 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     return runs;
   }
   match expr {
+    // An evaluated picture (`-Graphics-`, `-Graphics3D-`, `-Image-`).
+    Expr::Graphics { .. } => vec![],
+    Expr::Raw(s) | Expr::Identifier(s)
+      if matches!(s.as_str(), "-Graphics-" | "-Graphics3D-" | "-Image-") =>
+    {
+      vec![]
+    }
     Expr::FunctionCall { name, args } => match name.as_str() {
       // Style[expr, dir…] — render `expr`, turning italic on if any directive
       // asks for it (bare `Italic` or `FontSlant -> "Italic"`), and applying
@@ -27684,8 +27691,14 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           ..Default::default()
         }]
       }
+      // A picture has no text a caption can carry (`-Graphics-` would be its
+      // OutputForm placeholder), so only the words beside it remain — a
+      // slider captioned with a small array plot and "initial condition"
+      // reads "initial condition".
+      "Graphics" | "Graphics3D" | "Image" | "Image3D" | "Graphics3DBox"
+      | "GraphicsBox" | "RasterBox" => vec![],
       "Text" | "Item" | "DisplayForm" | "TraditionalForm" | "Tooltip"
-      | "Framed" | "Dynamic" | "HoldForm" => args
+      | "Framed" | "Dynamic" | "HoldForm" | "Pane" | "Panel" => args
         .first()
         .map(|a| manipulate_label_runs(a, italic))
         .unwrap_or_default(),
