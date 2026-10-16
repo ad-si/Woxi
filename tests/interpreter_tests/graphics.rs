@@ -7707,6 +7707,19 @@ mod plot3d {
       assert!(two.contains("#FF0000") && two.contains("#00FF00"));
     }
 
+    // A `PlotStyle` of per-dataset style lists gives a lone dataset the
+    // first list, not the last one.
+    #[test]
+    fn plot_style_nested_lists_use_the_first_for_a_single_series() {
+      let svg = export_svg(
+        r#"ListPlot[{1, 2, 3, 2}, Joined -> True,
+             PlotStyle -> {{Thickness[0.006], RGBColor[1, 0.3, 0]},
+               {Thickness[0.006], RGBColor[0, 0.5, 1]}}]"#,
+      );
+      assert!(svg.contains("#FF4D00"));
+      assert!(!svg.contains("#0080FF"));
+    }
+
     // `ListLinePlot` reads a `PlotStyle` list over one curve as a single
     // combined style too: `{Thick, Orange}` is one thick orange line, not
     // a thick blue one.
