@@ -22932,7 +22932,7 @@ pub struct ManipulateSpec {
   /// control are only the values at build time — the frontend re-evaluates
   /// these code fragments against the live bindings after every change and
   /// updates the slider range to follow. A `None` side is static.
-  pub dynamic_bounds: Vec<(String, Option<String>, Option<String>)>,
+  pub dynamic_bounds: Vec<DynamicBound>,
   /// Discrete-control choice lists that reference other control variables,
   /// as `(control name, values code)`. A Demonstration whose level setter
   /// reads `Range[1, If[flat, 3, 6], 1]` offers six levels flat and three
@@ -23826,8 +23826,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if let Some(code) = tracking_fn {
           tracking.push((c.name().to_string(), code));
         }
-        if min_code.is_some() || max_code.is_some() {
-          dynamic_bounds.push((c.name().to_string(), min_code, max_code));
+        let step_code = dynamic_step_code(&spec);
+        if min_code.is_some() || max_code.is_some() || step_code.is_some() {
+          dynamic_bounds.push((
+            c.name().to_string(),
+            min_code,
+            max_code,
+            step_code,
+          ));
         }
         if let Some(code) = values_code {
           dynamic_values.push((c.name().to_string(), code));
@@ -24258,11 +24264,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     {
       rewrite(cond);
     }
-    for (_, min_code, max_code) in &mut dynamic_bounds {
-      if let Some(code) = min_code {
-        rewrite(code);
-      }
-      if let Some(code) = max_code {
+    for (_, min_code, max_code, step_code) in &mut dynamic_bounds {
+      for code in [min_code, max_code, step_code].into_iter().flatten() {
         rewrite(code);
       }
     }
@@ -26518,6 +26521,72 @@ fn manipulate_bound_expr(expr: &Expr) -> (&Expr, bool) {
   }
 }
 
+/// [`manipulate_bound_expr`] extended to a `Dynamic[…]` nested anywhere
+/// inside the bound (`19*If[Dynamic[v], 1, 360]`): every wrapper is
+/// replaced by its content so the bound can be evaluated against the live
+/// bindings, and the flag reports whether any wrapper was found.
+fn manipulate_bound_expr_deep(expr: &Expr) -> (Expr, bool) {
+  fn strip(expr: &Expr, found: &mut bool) -> Expr {
+    let list = |items: &[Expr], found: &mut bool| -> Vec<Expr> {
+      items.iter().map(|e| strip(e, found)).collect()
+    };
+    match expr {
+      Expr::FunctionCall { name, args }
+        if name == "Dynamic" && !args.is_empty() =>
+      {
+        *found = true;
+        strip(&args[0], found)
+      }
+      Expr::FunctionCall { name, args } => Expr::FunctionCall {
+        name: name.clone(),
+        args: list(args, found).into(),
+      },
+      Expr::List(items) => Expr::List(list(items, found).into()),
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(strip(left, found)),
+        right: Box::new(strip(right, found)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(strip(operand, found)),
+      },
+      Expr::Comparison {
+        operands,
+        operators,
+      } => Expr::Comparison {
+        operands: list(operands, found),
+        operators: operators.clone(),
+      },
+      other => other.clone(),
+    }
+  }
+  let mut found = false;
+  let stripped = strip(expr, &mut found);
+  (stripped, found)
+}
+
+/// A continuous control's bounds that follow other control variables, as
+/// `(control name, min code, max code, step code)`; a `None` part is static.
+pub type DynamicBound =
+  (String, Option<String>, Option<String>, Option<String>);
+
+/// The code of a control spec's step when it mentions `Dynamic[…]`
+/// (`{k, 0, 19*If[Dynamic[big], 1, 100], If[Dynamic[big], 1, 100]}`), so the
+/// slider's increment can follow the other control like its range does.
+fn dynamic_step_code(spec: &Expr) -> Option<String> {
+  let Expr::List(items) = spec else { return None };
+  let step = items[1..]
+    .iter()
+    .filter(|it| {
+      !matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        && !matches!(it, Expr::Identifier(s) if is_control_type_name(s))
+    })
+    .nth(2)?;
+  let (stripped, found) = manipulate_bound_expr_deep(step);
+  found.then(|| crate::syntax::expr_to_source_form(&stripped))
+}
+
 /// `Animate[expr, {var, min, max, …}, opts…]` nested inside a static
 /// display — a Demonstration's body composing one into a `Pane`/`Grid`
 /// rather than `Animate` being the whole Manipulate/cell output that
@@ -26580,7 +26649,8 @@ fn manipulate_post_body_bindings(
 /// because the environment was needed or because it is wrapped in
 /// `Dynamic[…]` — in which case it must be re-resolved against live bindings.
 fn eval_manipulate_bound(expr: &Expr) -> Option<(f64, bool)> {
-  let (expr, is_dynamic) = manipulate_bound_expr(expr);
+  let (expr, is_dynamic) = manipulate_bound_expr_deep(expr);
+  let expr = &expr;
   if let Some(v) =
     crate::functions::math_ast::try_eval_to_f64_with_infinity(expr)
   {
@@ -26600,7 +26670,8 @@ fn eval_manipulate_bound(expr: &Expr) -> Option<(f64, bool)> {
 /// continuous control's variable stays real-valued even at a "round" slider
 /// position (see [`ManipulateControl::Continuous::is_real`]).
 fn manipulate_bound_is_inexact(expr: &Expr) -> bool {
-  let (expr, _) = manipulate_bound_expr(expr);
+  let (expr, _) = manipulate_bound_expr_deep(expr);
+  let expr = &expr;
   // Fast path for a literal: no need to round-trip through the evaluator.
   match expr {
     Expr::Real(_) | Expr::BigFloat(_, _) => return true,
@@ -28852,12 +28923,16 @@ fn parse_manipulate_control(
     // it against the live bindings whenever `angle`/`speed` move.
     let min_code = min_dynamic
       .then(|| {
-        crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[0]).0)
+        crate::syntax::expr_to_source_form(
+          &manipulate_bound_expr_deep(bounds[0]).0,
+        )
       })
       .filter(|_| min.is_finite());
     let max_code = max_dynamic
       .then(|| {
-        crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[1]).0)
+        crate::syntax::expr_to_source_form(
+          &manipulate_bound_expr_deep(bounds[1]).0,
+        )
       })
       .filter(|_| max.is_finite());
     let step = bounds.get(2).and_then(|e| expr_to_f64(e)).unwrap_or(1.0);
@@ -29400,12 +29475,16 @@ fn parse_manipulate_control(
   // bindings and let the slider range follow the other control.
   let min_code = min_dynamic
     .then(|| {
-      crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[0]).0)
+      crate::syntax::expr_to_source_form(
+        &manipulate_bound_expr_deep(bounds[0]).0,
+      )
     })
     .filter(|_| min.is_finite());
   let max_code = max_dynamic
     .then(|| {
-      crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[1]).0)
+      crate::syntax::expr_to_source_form(
+        &manipulate_bound_expr_deep(bounds[1]).0,
+      )
     })
     .filter(|_| max.is_finite());
   // An infinite bound (`Animate[…, {ϕ, 0, Infinity}]` runs forever in
@@ -30625,8 +30704,10 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
     }
     // Dynamic bounds (a slider range following another control's variable)
     // ride along as code fragments for the frontend to re-resolve.
-    if let Some((_, min_code, max_code)) =
-      spec.dynamic_bounds.iter().find(|(n, _, _)| n == c.name())
+    if let Some((_, min_code, max_code, _)) = spec
+      .dynamic_bounds
+      .iter()
+      .find(|(n, _, _, _)| n == c.name())
       && part.ends_with('}')
     {
       let mut field = String::new();

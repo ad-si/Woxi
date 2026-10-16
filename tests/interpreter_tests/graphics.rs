@@ -29591,8 +29591,8 @@ mod manipulate {
     assert_eq!(
       spec.dynamic_bounds,
       vec![
-        ("t".to_string(), None, Some("P".to_string())),
-        ("dt".to_string(), None, Some("P".to_string())),
+        ("t".to_string(), None, Some("P".to_string()), None),
+        ("dt".to_string(), None, Some("P".to_string()), None),
       ]
     );
   }
@@ -29633,7 +29633,8 @@ mod manipulate {
       vec![(
         "triangle".to_string(),
         None,
-        Some("Binomial[points, 3]".to_string())
+        Some("Binomial[points, 3]".to_string()),
+        None
       )]
     );
     // Moving `points` to 22 widens the counter to Binomial[22, 3].

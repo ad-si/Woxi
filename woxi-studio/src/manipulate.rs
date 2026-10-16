@@ -463,7 +463,7 @@ pub struct ManipulateState {
   /// `(control name, min code, max code)`. Re-resolved against the live
   /// bindings on every re-evaluation so a slider range can follow another
   /// control (Kepler's time sliders are bounded by the orbital period `P`).
-  dynamic_bounds: Vec<(String, Option<String>, Option<String>)>,
+  dynamic_bounds: Vec<woxi::functions::graphics::DynamicBound>,
   /// Per-control choice lists that follow another control's variable
   /// (InputForm code), re-resolved on every change the way
   /// `dynamic_bounds` are.
@@ -1233,14 +1233,19 @@ impl ManipulateState {
         .collect();
       // Re-resolve bounds that follow another control's variable (e.g. a
       // time slider capped by the orbital period) against these bindings.
-      let resolved: Vec<(String, Option<f64>, Option<f64>)> = dynamic_bounds
+      let resolved: Vec<ResolvedBound> = dynamic_bounds
         .iter()
-        .map(|(name, min_code, max_code)| {
+        .map(|(name, min_code, max_code, step_code)| {
           let eval = |c: &Option<String>| {
             c.as_deref()
               .and_then(woxi::functions::graphics::manipulate_eval_bound_code)
           };
-          (name.clone(), eval(min_code), eval(max_code))
+          (
+            name.clone(),
+            eval(min_code),
+            eval(max_code),
+            eval(step_code),
+          )
         })
         .collect();
       // Likewise for choice lists built from another control's variable
@@ -1366,15 +1371,20 @@ impl ManipulateState {
   /// Move each named continuous control to its freshly resolved bounds and
   /// clamp its value inside them, so a slider range follows the control it
   /// references (dragging Kepler's period `P` widens the time sliders).
-  fn apply_dynamic_bounds(
-    &mut self,
-    resolved: &[(String, Option<f64>, Option<f64>)],
-  ) {
-    for (name, new_min, new_max) in resolved {
+  fn apply_dynamic_bounds(&mut self, resolved: &[ResolvedBound]) {
+    for (name, new_min, new_max, new_step) in resolved {
       // A dynamic bound may belong to either a Continuous slider or a
       // Trigger (a projectile's flight Trigger capped by another control's
       // computed range, e.g. `Dynamic[range[angle, speed]]`, follows that
       // control the same way a Continuous slider's dynamic bound does).
+      if let Some(v) = new_step.filter(|v| *v != 0.0)
+        && let Some(ControlState::Continuous { step, .. }) =
+          self.controls.iter_mut().find(|c| {
+            matches!(c, ControlState::Continuous { name: n, .. } if n == name)
+          })
+      {
+        *step = v.abs();
+      }
       let (min, max, current) = match self.controls.iter_mut().find(|c| {
         matches!(
           c,
@@ -1465,6 +1475,10 @@ impl ManipulateState {
     selection_moved
   }
 }
+
+/// A dynamic bound re-resolved to numbers:
+/// `(control name, min, max, step)`.
+type ResolvedBound = (String, Option<f64>, Option<f64>, Option<f64>);
 
 fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
   spec
@@ -3222,6 +3236,43 @@ mod tests {
     state.reevaluate();
     assert_eq!(labels(&state), vec!["0", "1", "2", "3"]);
   }
+  /// A slider bound that wraps `Dynamic` *inside* a larger expression
+  /// (`k*If[Dynamic[big], 1, 100]`) still makes a control, and follows the
+  /// other control when that one changes.
+  #[test]
+  fn slider_bound_with_nested_dynamic_follows_other_control() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{big, k},
+        {{big, False}, {False, True}},
+        {{k, 0}, 0, 19*If[Dynamic[big], 1, 100], If[Dynamic[big], 1, 100]}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let bounds = |s: &ManipulateState| {
+      s.controls.iter().find_map(|c| match c {
+        ControlState::Continuous {
+          name,
+          min,
+          max,
+          step,
+          ..
+        } if name == "k" => Some((*min, *max, *step)),
+        _ => None,
+      })
+    };
+    assert_eq!(bounds(&state), Some((0.0, 1900.0, 100.0)));
+    let big_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "big")
+      .unwrap();
+    assert!(state.select_discrete(big_idx, "True"));
+    state.reevaluate();
+    assert_eq!(bounds(&state), Some((0.0, 19.0, 1.0)));
+  }
+
   /// A message-typing Demonstration: a `Column` of a reset `Button`, a
   /// `GraphicsGrid` of character `Button`s, `Dynamic` read-outs of the typed
   /// string and a conditional `Plot`, driven by a hidden list variable.
