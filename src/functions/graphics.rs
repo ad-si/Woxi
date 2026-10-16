@@ -23797,6 +23797,19 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if let Some((_, orig_form, synth)) = &rename {
           renames.push((orig_form.clone(), synth.clone()));
         }
+        // A bare `{var, ControlType -> None}` (no initial value, no domain)
+        // after a visible control for the same variable only declares that
+        // the variable exists; it must not reset the control's value to
+        // `Null`.
+        if controls.iter().any(|prev| prev.name() == name)
+          && let Expr::List(items) = &spec
+          && matches!(items.first(), Some(Expr::Identifier(_)))
+          && items[1..].iter().all(|it| {
+            matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+          })
+        {
+          continue;
+        }
         // A hidden variable driven by an in-body `Locator[Dynamic[…]]`
         // becomes a visible Locator-style control: re-parse its spec with
         // the `ControlType -> None` option swapped for a `Locator` marker,

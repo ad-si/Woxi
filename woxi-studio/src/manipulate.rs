@@ -1920,6 +1920,36 @@ mod tests {
     assert_eq!(current("hi"), "114");
   }
 
+  /// A Demonstration declares a variable's visible control inside a
+  /// `Row[{Control[…], …}]` and afterwards lists the bare
+  /// `{var, ControlType -> None}` (no initial value, no domain) just to
+  /// declare it. That bare entry must not reset the control's value to
+  /// `Null`; the variable keeps the control's own default.
+  #[test]
+  fn bare_hidden_spec_after_control_keeps_control_default() {
+    let code = r#"Manipulate[
+      {count, tag},
+      Row[{Control[{{count, 4, "count"}, 2, 9, 1,
+        ControlType -> PopupMenu}], Spacer[10]}],
+      {{tag, 1}, ControlType -> None},
+      {count, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let ctrl = state
+      .controls
+      .iter()
+      .find(|c| c.name() == "count")
+      .expect("count control");
+    assert_eq!(ctrl.current_code(), "4");
+    assert!(
+      state.state.iter().all(|(n, _)| n != "count"),
+      "bare hidden spec must not become state: {:?}",
+      state.state
+    );
+  }
+
   /// A Demonstrations idiom declares a control's own default
   /// (`Control[{{n, 2, "n"}, …}]`) and then redeclares the same variable's
   /// *actual* starting value via a separate, hidden `{{n, 3}, None}` spec —
