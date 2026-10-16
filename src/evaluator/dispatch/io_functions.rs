@@ -6066,12 +6066,42 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         expr_text_svg(expr)
       }
     }
-    // Legended[graphics, legend]: the wrapped graphics carry the legend
-    // baked into their SVG (e.g. PeriodicTablePlot["Phase"]).
+    // Legended[graphics, legend]: a `BarLegend` (optionally `Placed`) is
+    // drawn right of the graphics, its bar 5/8 of their height, as Wolfram
+    // places a plot's colour bar. Other legends are baked into the wrapped
+    // graphics' SVG already (e.g. PeriodicTablePlot["Phase"]).
     Expr::FunctionCall { name, args }
       if name == "Legended" && !args.is_empty() =>
     {
-      expr_to_svg(&args[0])
+      let graphic = expr_to_svg(&args[0]);
+      let legend = match args.get(1) {
+        Some(Expr::FunctionCall { name, args: placed })
+          if name == "Placed" && !placed.is_empty() =>
+        {
+          Some(&placed[0])
+        }
+        other => other,
+      };
+      let bar = match legend {
+        Some(Expr::FunctionCall {
+          name,
+          args: bar_args,
+        }) if name == "BarLegend" => {
+          let height = crate::functions::graphics::svg_natural_size(&graphic)
+            .map_or(225.0, |(_, h)| h * 0.625);
+          crate::functions::field_plot::bar_legend_svg(bar_args, height)
+        }
+        _ => None,
+      };
+      match bar.and_then(|bar| {
+        crate::functions::graphics::combine_graphics_svgs(&[vec![
+          graphic.clone(),
+          bar,
+        ]])
+      }) {
+        Some(svg) => svg,
+        None => graphic,
+      }
     }
     // Mouseover[graphics, appearance]: a static export shows the base
     // appearance, i.e. the wrapped graphics — `appearance` only replaces it

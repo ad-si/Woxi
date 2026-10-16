@@ -6219,13 +6219,39 @@ pub(crate) fn wl_default_vector_gradient(t: f64) -> (u8, u8, u8) {
       0.828_253_206_343_699_9,
     ),
   ];
-  let pos = t.clamp(0.0, 1.0) * (LAB_STOPS.len() - 1) as f64;
-  let i = (pos.floor() as usize).min(LAB_STOPS.len() - 2);
+  lab_blend(&LAB_STOPS, t)
+}
+
+/// Wolfram's `"WL12DefaultVectorDensityGradient"` — the orange-to-yellow
+/// background of `StreamDensityPlot`/`VectorDensityPlot`, blended like
+/// `wl_default_vector_gradient` (stops from its `"BlendArgument"`).
+pub(crate) fn wl_default_vector_density_gradient(t: f64) -> (u8, u8, u8) {
+  const LAB_STOPS: [(f64, f64, f64); 2] = [
+    (
+      0.551_687_138_381_769_2,
+      0.385_527_990_328_619_06,
+      0.516_444_795_495_070_9,
+    ),
+    (
+      0.935_087_164_500_243_4,
+      -0.037_347_741_482_955_39,
+      0.546_878_782_824_649_7,
+    ),
+  ];
+  lab_blend(&LAB_STOPS, t)
+}
+
+/// `Blend` of `LABColor` stops (L in [0, 1], a/b divided by 100) at `t`:
+/// linear in LAB, then converted D50-LAB → sRGB with out-of-gamut channels
+/// clipped, as Wolfram renders it.
+fn lab_blend(stops: &[(f64, f64, f64)], t: f64) -> (u8, u8, u8) {
+  let pos = t.clamp(0.0, 1.0) * (stops.len() - 1) as f64;
+  let i = (pos.floor() as usize).min(stops.len() - 2);
   let f = pos - i as f64;
   let lerp = |a: f64, b: f64| a + (b - a) * f;
-  let l = lerp(LAB_STOPS[i].0, LAB_STOPS[i + 1].0) * 100.0;
-  let a = lerp(LAB_STOPS[i].1, LAB_STOPS[i + 1].1) * 100.0;
-  let b = lerp(LAB_STOPS[i].2, LAB_STOPS[i + 1].2) * 100.0;
+  let l = lerp(stops[i].0, stops[i + 1].0) * 100.0;
+  let a = lerp(stops[i].1, stops[i + 1].1) * 100.0;
+  let b = lerp(stops[i].2, stops[i + 1].2) * 100.0;
 
   // CIELAB → XYZ, D50 reference white.
   let fy = (l + 16.0) / 116.0;

@@ -58,6 +58,9 @@ struct EpilogStyle {
   /// Point diameter as a fraction of the plot width.
   point_size: f64,
   opacity: f64,
+  /// `Arrowheads[s]`: arrowhead length as a fraction of the plot width.
+  /// `None` sizes it from the stroke width.
+  arrowhead: Option<f64>,
 }
 
 impl EpilogStyle {
@@ -75,6 +78,7 @@ impl EpilogStyle {
       dashing: None,
       point_size: 0.012,
       opacity: 1.0,
+      arrowhead: None,
     }
   }
 
@@ -326,6 +330,20 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
       "AbsoluteThickness" if args.len() == 1 => {
         if let Some(t) = try_eval_to_f64(&args[0]) {
           style.thickness = t;
+        }
+      }
+      // `Arrowheads[s]` or `Arrowheads[{{s, pos}, …}]` — the head at the
+      // end of an arrow, `s` a fraction of the plot width.
+      "Arrowheads" if args.len() == 1 => {
+        let size = match &args[0] {
+          Expr::List(specs) => specs.first().and_then(|spec| match spec {
+            Expr::List(parts) => parts.first().and_then(try_eval_to_f64),
+            other => try_eval_to_f64(other),
+          }),
+          other => try_eval_to_f64(other),
+        };
+        if let Some(size) = size {
+          style.arrowhead = Some(size);
         }
       }
       "Dashing" if args.len() == 1 => {
@@ -870,11 +888,20 @@ fn arrow_head(
     return String::new();
   }
   let (ux, uy) = (dx / len, dy / len);
-  // Head size scales with stroke width but stays visible for thin strokes.
-  let size = (style.thickness * area.scale * 4.0).max(6.0 * area.scale);
+  // An `Arrowheads` size is a fraction of the plot width, drawn with the
+  // proportions `Graphics` gives it; otherwise the head scales with the
+  // stroke width but stays visible for thin strokes.
+  let (size, half) = if let Some(fraction) = style.arrowhead {
+    (fraction * area.w, fraction * area.w * 0.28)
+  } else {
+    let size = (style.thickness * area.scale * 4.0).max(6.0 * area.scale);
+    (size, size * 0.45)
+  };
+  if size <= 0.0 {
+    return String::new();
+  }
   let (bx, by) = (x2 - ux * size, y2 - uy * size);
   let (nx, ny) = (-uy, ux);
-  let half = size * 0.45;
   format!(
     "<polygon {} points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\"/>\n",
     style.fill_attrs(),
