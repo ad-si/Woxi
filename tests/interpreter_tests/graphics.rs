@@ -17111,6 +17111,42 @@ mod graphics_list {
     }
   }
 
+  /// Regression: a cell carrying its own numeric `ImageSize` kept that
+  /// absolute size while its neighbours were fitted to the shared column
+  /// width, so a padded `GraphicsGrid` showed one oversized picture among
+  /// tiny cells. The cell's size only contributes its aspect ratio.
+  #[test]
+  fn graphics_grid_cell_image_size_is_fitted_to_the_column() {
+    clear_state();
+    for cell in [
+      "Graphics[Rectangle[], ImageSize -> {300, 200}]",
+      "Graphics[Rectangle[], ImageSize -> 300]",
+    ] {
+      let code = format!(
+        "GraphicsGrid[{{{{{cell}, Graphics[{{White, Disk[]}}]}}}}, \
+         ImageSize -> 120]"
+      );
+      let svg = interpret_with_stdout(&code)
+        .unwrap()
+        .graphics
+        .expect("layout should render");
+      let widths: Vec<f64> = svg
+        .lines()
+        .filter(|l| l.starts_with("<svg x="))
+        .filter_map(|l| {
+          let start = l.find(" width=\"")? + 8;
+          let end = l[start..].find('"')? + start;
+          l[start..end].parse().ok()
+        })
+        .collect();
+      assert_eq!(widths.len(), 2, "two cells expected in {code}: {svg}");
+      assert!(
+        (widths[0] - widths[1]).abs() <= 1.0,
+        "cells differ in width {widths:?} in {code}"
+      );
+    }
+  }
+
   /// Regression: a plain 1-D list with many graphics should also
   /// re-render each child at a smaller `ImageSize`, matching how
   /// `GraphicsRow` handles the same scenario. Before, every cell was
