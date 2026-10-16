@@ -3671,7 +3671,80 @@ fn parse_regular_polygon(
   });
 }
 
+/// The polyline a `BezierCurve[{…}]` or `BSplineCurve[{…}, opts…]` stands
+/// for, so `Arrow[curve]` can run an arrow along it. `None` for any other
+/// expression.
+fn curve_polyline(expr: &Expr, style: &StyleState) -> Option<Vec<(f64, f64)>> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if args.is_empty() {
+    return None;
+  }
+  let mut tmp = Vec::new();
+  match name.as_str() {
+    "BSplineCurve" => parse_bspline(args, style, &mut tmp),
+    "BezierCurve" => parse_bezier(args, style, &mut tmp),
+    _ => return None,
+  }
+  match tmp.into_iter().next()? {
+    Primitive::Line { mut segments, .. } if segments.len() == 1 => {
+      Some(segments.remove(0))
+    }
+    // Same segmentation the renderer strokes: a line, a quadratic, a
+    // cubic, or a chain of cubics.
+    Primitive::BezierCurvePrim { points, .. } => {
+      let sample = |ctrl: &[(f64, f64)], t: f64| -> (f64, f64) {
+        let mut level = ctrl.to_vec();
+        while level.len() > 1 {
+          level = level
+            .windows(2)
+            .map(|w| {
+              (
+                w[0].0 + t * (w[1].0 - w[0].0),
+                w[0].1 + t * (w[1].1 - w[0].1),
+              )
+            })
+            .collect();
+        }
+        level[0]
+      };
+      const N: usize = 50;
+      let mut out = vec![points[0]];
+      let mut segs: Vec<&[(f64, f64)]> = Vec::new();
+      if points.len() <= 4 {
+        segs.push(&points);
+      } else {
+        let mut i = 0;
+        while i + 3 < points.len() {
+          segs.push(&points[i..i + 4]);
+          i += 3;
+        }
+      }
+      for seg in segs {
+        for k in 1..=N {
+          out.push(sample(seg, k as f64 / N as f64));
+        }
+      }
+      Some(out)
+    }
+    _ => None,
+  }
+}
+
 fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
+  // Arrow[BSplineCurve[…]] / Arrow[BezierCurve[…]] — an arrow along a curve.
+  if let Some(pts) = curve_polyline(&args[0], style) {
+    let pts_expr = Expr::List(
+      pts
+        .into_iter()
+        .map(|(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+        .collect(),
+    );
+    let mut sub: Vec<Expr> = vec![pts_expr];
+    sub.extend(args[1..].iter().cloned());
+    return parse_arrow(&sub, style, prims);
+  }
   // Arrow[{seg1, seg2, …}] — a list of paths — draws one arrow per path.
   if expr_to_point_list(&args[0]).is_none()
     && let Expr::List(items) = &args[0]

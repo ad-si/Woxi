@@ -638,6 +638,29 @@ mod graphics {
     }
 
     #[test]
+    fn arrow_along_bspline_curve() {
+      let svg =
+        export_svg("Graphics[{Arrow[BSplineCurve[{{0, 0}, {1, 1}, {2, 0}}]]}]");
+      assert!(!svg.contains("should be a pair of numbers"), "{svg}");
+      assert!(svg.contains("<polyline"), "{svg}");
+      assert!(svg.contains("<polygon"), "{svg}");
+    }
+
+    #[test]
+    fn arrow_along_bezier_curve() {
+      for curve in [
+        "BezierCurve[{{0, 0}, {1, 1}, {2, 0}}]",
+        "BezierCurve[{{0, 0}, {1, 1}, {2, 0}, {3, 1}}]",
+        "BezierCurve[{{0, 0}, {1, 1}, {2, 0}, {3, 1}, {4, 0}, {5, 1}, {6, 0}}]",
+      ] {
+        let svg = export_svg(&format!("Graphics[{{Arrow[{curve}]}}]"));
+        assert!(!svg.contains("should be a pair of numbers"), "{svg}");
+        assert!(svg.contains("<polyline"), "{svg}");
+        assert!(svg.contains("<polygon"), "{svg}");
+      }
+    }
+
+    #[test]
     fn arrow_setback_symmetric() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Arrow[{{0, 0}, {2, 0}}, {0.5, 0.5}]}]"
