@@ -511,6 +511,24 @@ impl WoxiStudio {
     self.playback = None;
   }
 
+  /// Play audio emitted by a pressed Manipulate button (`EmitSound[…]`),
+  /// replacing whatever is playing.
+  fn play_emitted_sound(&mut self, cell: usize, audio: &woxi::AudioOutput) {
+    self.stop_playback();
+    match play_audio(audio) {
+      Ok(child) => {
+        self.playback = Some(Playback {
+          cell,
+          child,
+          paused: false,
+          playing_image: None,
+        });
+        self.status = String::from("Playing sound…");
+      }
+      Err(e) => self.status = format!("Could not play sound: {e}"),
+    }
+  }
+
   /// The pre-rasterized "playing" variant of the given cell's graphic, while
   /// its embedded audio plays (not paused).
   fn playing_image(
@@ -1929,6 +1947,9 @@ impl WoxiStudio {
           && let Some(state) = editor.manipulate_state.as_mut()
         {
           state.apply_button_action(&action);
+          if let Some(audio) = state.emitted_sound.take() {
+            self.play_emitted_sound(cell_idx, &audio);
+          }
         }
         Task::none()
       }
@@ -1981,6 +2002,9 @@ impl WoxiStudio {
         {
           let action = action.clone();
           state.apply_button_action(&action);
+          if let Some(audio) = state.emitted_sound.take() {
+            self.play_emitted_sound(cell_idx, &audio);
+          }
         }
         Task::none()
       }
