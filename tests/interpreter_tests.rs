@@ -2379,6 +2379,23 @@ mod interpreter_tests {
     assert_eq!(bytes.len(), 44 + (8000 * 7 / 10) * 2);
   }
 
+  #[test]
+  fn test_emit_sound_returns_null_and_captures_audio() {
+    // EmitSound[sound] returns Null (no "not implemented" warning) and hands
+    // the synthesized audio to visual hosts, e.g. a Manipulate button.
+    clear_state();
+    let r =
+      interpret_with_stdout("EmitSound[Sound[SoundNote[0, 1, \"Flute\"]]]")
+        .unwrap();
+    assert_eq!(r.result, "\0");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected warnings: {:?}",
+      r.warnings
+    );
+    assert!(r.sound.is_some(), "EmitSound should capture playable audio");
+  }
+
   /// Decode the `sound` channel of a visual-mode evaluation to WAV bytes.
   fn sound_wav_bytes(code: &str) -> Vec<u8> {
     clear_state();

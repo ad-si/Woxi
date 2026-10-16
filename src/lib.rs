@@ -1498,14 +1498,14 @@ pub fn get_captured_output_svg() -> Option<String> {
 }
 
 /// Clears the captured audio buffer
-fn clear_captured_sound() {
+pub fn clear_captured_sound() {
   CAPTURED_SOUND.with(|buffer| {
     *buffer.borrow_mut() = None;
   });
 }
 
 /// Stores synthesized audio as a base64-encoded WAV (from Play/Sound).
-fn capture_sound(wav_base64: &str) {
+pub(crate) fn capture_sound(wav_base64: &str) {
   capture_audio(AudioOutput {
     base64: wav_base64.to_string(),
     mime: "audio/wav".to_string(),

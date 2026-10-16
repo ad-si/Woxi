@@ -428,6 +428,9 @@ pub struct ManipulateState {
   pub button_regions: Vec<ButtonRegion>,
   pub text_output: Option<String>,
   pub error: Option<String>,
+  /// Audio produced by the last pressed button's action (`Button[…,
+  /// EmitSound[…]]`), waiting for the host to play it.
+  pub emitted_sound: Option<woxi::AudioOutput>,
   /// Whether this widget auto-plays (from `Animate[…]` / `ListAnimate[…]` /
   /// `Animator[…]`): a timer advances the first continuous control while
   /// `playing` is set, and the view shows a play/pause toggle.
@@ -591,6 +594,7 @@ impl ManipulateState {
       button_regions: Vec::new(),
       text_output: None,
       error: None,
+      emitted_sound: None,
       animated: spec.animated,
       // Auto-play immediately (Wolfram's default AnimationRunning -> True)
       // unless the spec was built paused (`AnimationRunning -> False`).
@@ -725,10 +729,12 @@ impl ManipulateState {
   /// writes to bound control variables (e.g. `time = 0`) move the
   /// corresponding widgets. Re-renders afterwards.
   pub fn apply_button_action(&mut self, action: &str) {
+    woxi::clear_captured_sound();
     let updated = woxi::functions::graphics::apply_manipulate_button_action(
       &self.bindings(),
       action,
     );
+    self.emitted_sound = woxi::get_captured_sound();
     for (name, value) in updated {
       if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
         slot.1 = value;
@@ -1680,6 +1686,34 @@ fn format_f64_real(v: f64) -> String {
 mod tests {
   /// A slider whose bounds and initial value are exact integers and that
   /// has no explicit step is an integer slider (step 1), not span/100.
+  /// A pad of note buttons generated with `Map` whose action is
+  /// `EmitSound[Sound[SoundNote[…]]]` (a "name that pitch" quiz shape):
+  /// pressing one must hand its synthesized audio to the host instead of
+  /// printing a "not yet implemented" warning, and a button without a sound
+  /// must clear any stale audio.
+  #[test]
+  fn button_action_emitting_sound_exposes_audio() {
+    let code = r#"Manipulate[
+      Row[(Button[#, EmitSound[Sound[SoundNote[#, len, "Flute"]]]] &) /@ {0, 4, 7}, " "],
+      {{len, 1}, 1, 3, 1},
+      Button["silent", flag = 1]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "build must not report an error");
+    state.apply_button_action("EmitSound[Sound[SoundNote[4, len, \"Flute\"]]]");
+    assert!(
+      state.emitted_sound.take().is_some(),
+      "pressing a note button should expose playable audio"
+    );
+    state.apply_button_action("flag = 1");
+    assert!(
+      state.emitted_sound.is_none(),
+      "a silent button must not replay stale audio"
+    );
+  }
+
   #[test]
   fn exact_integer_slider_without_step_steps_by_one() {
     let expr = woxi::interpret_to_expr(

@@ -1160,6 +1160,17 @@ pub fn dispatch_io_functions(
         return Some(Ok(null_expr()));
       }
     }
+    // EmitSound[sound] — play a sound. Woxi has no audio device of its own,
+    // so the synthesized WAV is captured for visual hosts (Woxi Studio plays
+    // the audio of a pressed `Button[…, EmitSound[…]]`); the call itself
+    // returns Null, as in Wolfram.
+    "EmitSound" if args.len() == 1 => {
+      if let Some(wav) = crate::functions::sound::sound_to_wav_base64(&args[0])
+      {
+        crate::capture_sound(&wav);
+      }
+      return Some(Ok(null_expr()));
+    }
     // HTTPRequest[url] / HTTPRequest[url, assoc] / HTTPRequest[assoc] —
     // symbolic HTTP request object; no network access is performed.
     // The one-argument URL form canonicalizes to HTTPRequest[url, <||>],

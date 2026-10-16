@@ -591,7 +591,7 @@ Woxi does **not** support.
 - Dialogs, palettes, and windows: `CreateDialog`, `CreatePalette`,
     `CreateWindow`, `MessageDialog`, `ChoiceDialog`, `SystemDialogInput`,
     `Monitor`
-- Sound output: `EmitSound`, `Beep`
+- Sound output: `Beep`
 - Spheroidal functions: `SpheroidalPS`, `SpheroidalS1`,
     `SpheroidalEigenvalue` (and primes), `SiegelTheta`
 - Algebraic number fields: `AlgebraicNumber`, `ToNumberField`,
