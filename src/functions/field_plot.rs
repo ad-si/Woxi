@@ -296,6 +296,64 @@ struct DensityContourOptions {
   /// `PlotLegends -> Automatic`: a colour bar right of the plot with one
   /// swatch per shaded band, labelled at the contour levels.
   bar_legend: bool,
+  /// `PlotRange -> {zmin, zmax}` (or the third part of a three-axis
+  /// range): the values the colours span, instead of the sampled ones.
+  value_range: Option<(f64, f64)>,
+  /// `ClippingStyle`: how a cell outside `value_range` is drawn.
+  clipping: Clipping,
+}
+
+/// How a density cell whose value lies outside an explicit `PlotRange` is
+/// drawn, as `ClippingStyle` sets it.
+#[derive(Clone, Copy)]
+enum Clipping {
+  /// `None` (Wolfram's default): the cell is left blank.
+  Blank,
+  /// `Automatic`: the colour of the end of the range it is beyond.
+  Saturate,
+  /// A colour (or `{below, above}` colours); `None` leaves that side blank.
+  Colors(Option<(u8, u8, u8)>, Option<(u8, u8, u8)>),
+}
+
+impl Clipping {
+  fn parse(value: &Expr) -> Self {
+    let rgb = |e: &Expr| {
+      parse_color(e).map(|c| {
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      })
+    };
+    match value {
+      Expr::Identifier(s) if s == "Automatic" => Clipping::Saturate,
+      Expr::List(sides) if sides.len() == 2 => {
+        Clipping::Colors(rgb(&sides[0]), rgb(&sides[1]))
+      }
+      other => match rgb(other) {
+        Some(c) => Clipping::Colors(Some(c), Some(c)),
+        None => Clipping::Blank,
+      },
+    }
+  }
+}
+
+/// The value range of a `PlotRange -> {zmin, zmax}` (or `{{…}, {…},
+/// {zmin, zmax}}`) given to a density or contour plot.
+fn plot_value_range(value: &Expr) -> Option<(f64, f64)> {
+  let pair = |e: &Expr| match e {
+    Expr::List(ends) if ends.len() == 2 => {
+      let lo = try_eval_to_f64(&ends[0])?;
+      let hi = try_eval_to_f64(&ends[1])?;
+      (lo < hi).then_some((lo, hi))
+    }
+    _ => None,
+  };
+  match value {
+    Expr::List(parts) if parts.len() == 3 => pair(&parts[2]),
+    other => pair(other),
+  }
 }
 
 /// The per-contour styles of a `ContourStyle` value whose entries are all
@@ -368,6 +426,8 @@ fn parse_density_contour_options(
   let mut color_function_scaling = true;
   let mut contour_labels = false;
   let mut bar_legend = false;
+  let mut value_range: Option<(f64, f64)> = None;
+  let mut clipping = Clipping::Blank;
   for opt in &args[start..] {
     if let Expr::Rule {
       pattern,
@@ -476,6 +536,8 @@ fn parse_density_contour_options(
           contour_labels = !matches!(replacement, Expr::Identifier(v)
             if v == "False" || v == "None");
         }
+        "PlotRange" => value_range = plot_value_range(replacement),
+        "ClippingStyle" => clipping = Clipping::parse(replacement),
         "PlotLegends" => {
           bar_legend = matches!(replacement, Expr::Identifier(v)
             if v == "Automatic");
@@ -505,6 +567,8 @@ fn parse_density_contour_options(
     region_function,
     contour_labels,
     bar_legend,
+    value_range,
+    clipping,
   }
 }
 
@@ -944,25 +1008,92 @@ fn embed_grid_image(
   color_function: Option<&str>,
   color_function_expr: Option<(&Expr, bool)>,
 ) {
+  if !v_min.is_finite() || !v_max.is_finite() {
+    return;
+  }
+  let colors = cell_colors(
+    grid,
+    (v_min, v_max),
+    color_function,
+    color_function_expr,
+    Clipping::Saturate,
+  );
+  embed_color_image(svg, &colors, x0, y0, w, h);
+}
+
+/// The colour of each grid cell (`grid[col][row]`, row 0 at the bottom) on
+/// a colour scale spanning `range`; a cell without a value, or one outside
+/// the range that `clipping` leaves blank, has none.
+fn cell_colors(
+  grid: &[Vec<f64>],
+  (v_min, v_max): (f64, f64),
+  color_function: Option<&str>,
+  color_function_expr: Option<(&Expr, bool)>,
+  clipping: Clipping,
+) -> Vec<Vec<Option<(u8, u8, u8)>>> {
+  let color = |v: f64| {
+    scaled_color(
+      scale_value(v, v_min, v_max),
+      v,
+      color_function,
+      color_function_expr,
+    )
+  };
+  grid
+    .iter()
+    .map(|col| {
+      col
+        .iter()
+        .map(|&v| {
+          if !v.is_finite() {
+            return None;
+          }
+          let side = if v < v_min {
+            Some(false)
+          } else if v > v_max {
+            Some(true)
+          } else {
+            None
+          };
+          match (side, clipping) {
+            (None, _) | (Some(_), Clipping::Saturate) => Some(color(v)),
+            (Some(_), Clipping::Blank) => None,
+            (Some(above), Clipping::Colors(below_c, above_c)) => {
+              if above {
+                above_c
+              } else {
+                below_c
+              }
+            }
+          }
+        })
+        .collect()
+    })
+    .collect()
+}
+
+/// Embed a grid of cell colours (`colors[col][row]`, row 0 at the bottom;
+/// `None` transparent) as an image filling the given plot rectangle.
+fn embed_color_image(
+  svg: &mut String,
+  colors: &[Vec<Option<(u8, u8, u8)>>],
+  x0: f64,
+  y0: f64,
+  w: f64,
+  h: f64,
+) {
   use base64::Engine as _;
-  let cols = grid.len();
-  let rows = grid.first().map_or(0, std::vec::Vec::len);
-  if cols == 0 || rows == 0 || !v_min.is_finite() || !v_max.is_finite() {
+  let cols = colors.len();
+  let rows = colors.first().map_or(0, std::vec::Vec::len);
+  if cols == 0 || rows == 0 {
     return;
   }
   let mut img = image::RgbaImage::new(cols as u32, rows as u32);
-  for (i, col) in grid.iter().enumerate() {
-    for (j, &v) in col.iter().enumerate() {
-      let px = if v.is_finite() {
-        let (r, g, b) = scaled_color(
-          scale_value(v, v_min, v_max),
-          v,
-          color_function,
-          color_function_expr,
-        );
-        image::Rgba([r, g, b, 255])
-      } else {
-        image::Rgba([0, 0, 0, 0])
+  for (i, col) in colors.iter().enumerate() {
+    for (j, cell) in col.iter().enumerate() {
+      let px = match cell {
+        Some((r, g, b)) => image::Rgba([*r, *g, *b, 255]),
+        None => image::Rgba([0, 0, 0, 0]),
       };
       img.put_pixel(i as u32, (rows - 1 - j) as u32, px);
     }
@@ -1703,7 +1834,26 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  let (v_min, v_max) = robust_value_range(&samples);
+  // An explicit `PlotRange -> {zmin, zmax}` fixes the values the colours
+  // span; cells beyond it follow `ClippingStyle` (blank by default).
+  // Otherwise the colours span the sampled values.
+  let (v_min, v_max) = opts
+    .value_range
+    .unwrap_or_else(|| robust_value_range(&samples));
+  let clipping = if opts.value_range.is_some() {
+    opts.clipping
+  } else {
+    Clipping::Saturate
+  };
+  let colors = (v_min.is_finite() && v_max.is_finite()).then(|| {
+    cell_colors(
+      &grid,
+      (v_min, v_max),
+      opts.color_function.as_deref(),
+      opts.cf_expr(),
+      clipping,
+    )
+  });
 
   // Use plotters for axes, then overlay the density image
   let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
@@ -1716,18 +1866,16 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.truncate(pos);
   }
 
-  embed_grid_image(
-    &mut svg,
-    &grid,
-    v_min,
-    v_max,
-    area.plot_x0,
-    area.plot_y0,
-    area.plot_w,
-    area.plot_h,
-    opts.color_function.as_deref(),
-    opts.cf_expr(),
-  );
+  if let Some(colors) = &colors {
+    embed_color_image(
+      &mut svg,
+      colors,
+      area.plot_x0,
+      area.plot_y0,
+      area.plot_w,
+      area.plot_h,
+    );
+  }
   push_frame(
     &mut svg,
     area.plot_x0,
@@ -1741,28 +1889,20 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // The coloured cells as a `Raster` spanning the plotted domain (rows from
   // the bottom up), so `Show` can lay other graphics over the density
-  // instead of setting the two pictures side by side. Cells without a value
-  // stay transparent.
-  if !(v_min.is_finite() && v_max.is_finite()) {
+  // instead of setting the two pictures side by side. Cells without a
+  // colour stay transparent.
+  let Some(colors) = colors else {
     return Ok(crate::graphics_result(svg));
-  }
+  };
   let channel = |c: u8| Expr::Real(c as f64 / 255.0);
   let rows: Vec<Expr> = (0..FIELD_GRID)
     .map(|j| {
-      let row: Vec<Expr> = grid
+      let row: Vec<Expr> = colors
         .iter()
         .map(|col| {
-          let v = col[j];
-          let ((r, g, b), alpha) = if v.is_finite() {
-            let rgb = scaled_color(
-              scale_value(v, v_min, v_max),
-              v,
-              opts.color_function.as_deref(),
-              opts.cf_expr(),
-            );
-            (rgb, 1.0)
-          } else {
-            ((0, 0, 0), 0.0)
+          let ((r, g, b), alpha) = match col[j] {
+            Some(rgb) => (rgb, 1.0),
+            None => ((0, 0, 0), 0.0),
           };
           Expr::List(
             vec![channel(r), channel(g), channel(b), Expr::Real(alpha)].into(),

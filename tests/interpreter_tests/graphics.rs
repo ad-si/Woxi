@@ -14114,6 +14114,38 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("rgb(255,0,0)"));
     }
 
+    /// `PlotRange -> {zmin, zmax}` stretches the colours over exactly that
+    /// range; a value beyond it is left blank by default and drawn per
+    /// `ClippingStyle` otherwise (`Automatic`: the end colour; a colour:
+    /// that colour), as in Wolfram.
+    #[test]
+    fn density_plot_plot_range_clips_values() {
+      clear_state();
+      // Cells of row 50 at x ≈ 1 (below), 5 (middle) and 9 (above).
+      let cells = |clipping: &str| {
+        interpret(&format!(
+          "r = First[DensityPlot[x, {{x, 0, 10}}, {{y, 0, 1}}, \
+           PlotRange -> {{2, 8}}, ColorFunction -> \"TemperatureMap\" \
+           {clipping}]][[1]]; Round[255 r[[1, 50, {{10, 50, 90}}]]]"
+        ))
+        .unwrap()
+      };
+      // The middle cell, centred at x = 4.95, just below the scale midpoint.
+      let mid = "{250, 251, 235, 255}";
+      assert_eq!(
+        cells(""),
+        format!("{{{{0, 0, 0, 0}}, {mid}, {{0, 0, 0, 0}}}}")
+      );
+      assert_eq!(
+        cells(", ClippingStyle -> Green"),
+        format!("{{{{0, 255, 0, 255}}, {mid}, {{0, 255, 0, 255}}}}")
+      );
+      assert_eq!(
+        cells(", ClippingStyle -> Automatic"),
+        format!("{{{{46, 78, 238, 255}}, {mid}, {{208, 34, 42, 255}}}}")
+      );
+    }
+
     #[test]
     fn density_plot_image_size() {
       insta::assert_snapshot!(export_svg(
