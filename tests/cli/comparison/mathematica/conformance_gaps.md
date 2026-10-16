@@ -4948,3 +4948,16 @@ so `Foo[Curve[1]]` (no options) does not match it, while `Foo[Curve[1], a -> 2]`
 does. In Wolfram `OptionsPattern[]` also matches zero arguments. The
 `Turtle Fractals` Demonstration defines such a `Show` upvalue, which its
 `Manipulate` never calls.
+
+### `ExampleData[{"Text", name}]` is not bundled
+
+`ExampleData["Text"]` is not a collection Woxi serves, so
+`ExampleData[{"Text", "DeclarationOfIndependence"}]` (and the other public
+texts such as `"JFKInaugural"` or `"OriginOfSpecies"`) stays unevaluated with
+`ExampleData::notcoll`. The `Effect of Keyword Length on the Letter Frequency
+in Encrypted Messages` Demonstration builds its message popup from
+`StringTake[ExampleData[{"Text", #}], 5000]`, so its `Manipulate` shows an
+empty chart. Everything else in that Manipulate (the `Column`/`Panel` layout,
+`Tally`, the `BarChart` with `ChartLabels`) works when given a plain string.
+The full texts are needed verbatim to match Wolfram, which is why no
+truncated stand-in is bundled.
