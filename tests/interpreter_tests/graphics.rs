@@ -35185,6 +35185,30 @@ fn graphics3d_draws_solids_given_by_their_corners() {
 }
 
 #[test]
+fn plot_labels_fill_string_form_slots() {
+  // A `StringForm` legend, plot label or axis label is displayed with its
+  // slots filled, not as the raw `StringForm[…]` expression.
+  for (option, text) in [
+    (
+      "PlotLegends -> (StringForm[\"delay `` s\", #] & /@ {0.3})",
+      ">delay 0.3 s<",
+    ),
+    (
+      "PlotLabel -> StringForm[\"n = `1`, m = `2`\", 3, x]",
+      ">n = 3, m = x<",
+    ),
+    (
+      "AxesLabel -> {StringForm[\"t (``)\", \"s\"], None}",
+      ">t (s)<",
+    ),
+  ] {
+    let svg = export_svg(&format!("Plot[x, {{x, 0, 1}}, {option}]"));
+    assert!(svg.contains(text), "{option}");
+    assert!(!svg.contains("StringForm"), "{option}");
+  }
+}
+
+#[test]
 fn graphics_layouts_paint_their_background_behind_every_cell() {
   // `Background` on GraphicsRow/Column/Grid fills the whole layout, so the
   // gaps between cells take the colour instead of staying white.
