@@ -11694,8 +11694,51 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
   {
     return expr_to_svg_markup_lines(&args[0]);
   }
+  // `Row[{…}]` whose parts stack into several lines (a `Column`/`Grid`/
+  // `TableForm` among plain text) sets those blocks side by side: line `i`
+  // of the label joins line `i` of every part, shorter blocks centred
+  // vertically against the tallest. `Null` parts draw nothing.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Row"
+    && args.len() == 1
+    && let Expr::List(parts) = &args[0]
+    && parts.iter().any(|p| {
+      matches!(p, Expr::FunctionCall { name, .. }
+        if matches!(name.as_str(), "Column" | "Grid" | "TableForm"))
+    })
+  {
+    let blocks: Vec<Vec<String>> = parts
+      .iter()
+      .filter(|p| !matches!(p, Expr::Identifier(n) if n == "Null"))
+      .map(expr_to_svg_markup_lines)
+      .collect();
+    let height = blocks.iter().map(Vec::len).max().unwrap_or(0);
+    if height > 1 {
+      return (0..height)
+        .map(|i| {
+          blocks
+            .iter()
+            .map(|b| {
+              // A whitespace-only part is a gap between blocks, so it
+              // spans every line rather than sitting on the middle one.
+              if b.len() == 1 && b[0].trim().is_empty() {
+                return b[0].as_str();
+              }
+              let top = (height - b.len()) / 2;
+              match i.checked_sub(top).and_then(|j| b.get(j)) {
+                Some(line) => line.as_str(),
+                None => "",
+              }
+            })
+            .collect::<String>()
+        })
+        .collect();
+    }
+  }
   let rows: Vec<String> = match expr {
-    Expr::FunctionCall { name, args } if name == "Grid" && !args.is_empty() => {
+    Expr::FunctionCall { name, args }
+      if (name == "Grid" || name == "TableForm") && !args.is_empty() =>
+    {
       match &args[0] {
         Expr::List(rows) => rows
           .iter()
