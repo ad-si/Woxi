@@ -7075,7 +7075,23 @@ fn build_find_root_func(arg: &Expr, vars: &[&str]) -> Expr {
         _ => resolved,
       };
     }
-    other => other.clone(),
+    // Any other held form (`eq /. rules`, `If[...]`, `Which[...]`, ...) may
+    // only reveal an `Equal` once evaluated; resolve it, then rewrite that
+    // equation like a literal one.
+    other => {
+      let resolved = evaluate_with_vars_localized(other, vars);
+      return match &resolved {
+        Expr::Comparison { operators, .. }
+          if operators.len() == 1 && operators[0] == ComparisonOp::Equal =>
+        {
+          build_find_root_func(&resolved, vars)
+        }
+        Expr::FunctionCall { name, .. } if name == "Equal" => {
+          build_find_root_func(&resolved, vars)
+        }
+        _ => resolved,
+      };
+    }
   };
   evaluate_with_vars_localized(&raw, vars)
 }

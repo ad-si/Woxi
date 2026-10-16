@@ -9298,6 +9298,25 @@ mod linear_programming {
 mod find_root {
   use super::*;
 
+  /// Regression: an equation wrapped in `/.` (`eq /. z -> c[i]`) was not
+  /// evaluated before FindRoot rewrote it, so the residual never became a
+  /// number and FindRoot failed with `FindRoot::nlnum`.
+  #[test]
+  fn equation_with_replace_all() {
+    assert_eq!(
+      interpret(
+        "c[1] = 3; i = 1; FindRoot[(x - z) == 0 /. z -> c[i], {x, 0.}]"
+      )
+      .unwrap(),
+      "{x -> 3.}"
+    );
+    assert_eq!(
+      interpret("y = x^2/z; x /. FindRoot[(y - z) == 0 /. z -> 4, {x, 1.}]")
+        .unwrap(),
+      "4."
+    );
+  }
+
   #[test]
   fn equations_held_in_variables() {
     assert_eq!(
