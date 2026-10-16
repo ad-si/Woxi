@@ -1481,8 +1481,10 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         let step =
           step.map(f64::abs).filter(|s| *s > 0.0).unwrap_or_else(|| {
             let span = (*max - *min).abs();
-            if !*is_real && span >= 1.0 {
-              // An all-exact-integer range makes an integer slider.
+            let integral = min.fract() == 0.0 && max.fract() == 0.0;
+            if !*is_real && integral && span >= 1.0 {
+              // An all-exact-integer range makes an integer slider; an
+              // exact non-integer bound (`Pi`, `1/2`) keeps it continuous.
               1.0
             } else if span > 0.0 {
               span / 100.0
@@ -1701,6 +1703,31 @@ mod tests {
     };
     assert_eq!(step_of("n"), 1.0);
     assert_eq!(step_of("x"), 0.01);
+  }
+
+  /// An exact but non-integer bound (`Pi`) makes the slider continuous,
+  /// even though no bound was written as a machine real.
+  #[test]
+  fn exact_non_integer_bound_slider_is_continuous() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{r, q}, {{r, 0, \"rotate\"}, 0, Pi}, {q, 0, 5/2}]",
+    )
+    .expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    let step_of = |name: &str| {
+      state
+        .controls
+        .iter()
+        .find_map(|c| match c {
+          ControlState::Continuous { name: n, step, .. } if n == name => {
+            Some(*step)
+          }
+          _ => None,
+        })
+        .expect("continuous control")
+    };
+    assert!((step_of("r") - std::f64::consts::PI / 100.0).abs() < 1e-12);
+    assert!((step_of("q") - 0.025).abs() < 1e-12);
   }
 
   /// A compiled widget dump lists each module variable as a hidden
