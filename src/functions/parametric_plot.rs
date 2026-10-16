@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  NUM_SAMPLES, PlotOptions, PlotRangeOverrides,
+  NUM_SAMPLES, PlotOptions, PlotRangeOverrides, SeriesStyle,
   adjust_y_range_for_filling_opts, apply_common_plot_option, build_plot_source,
   evaluate_at_point, generate_svg_with_filling, parse_iterator, substitute_var,
 };
@@ -745,7 +745,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|(&(r, g, b), &curve)| {
         // Runs keep the weight and opacity of the curve they came from.
         let mut st = if base.is_empty() {
-          Default::default()
+          SeriesStyle::default()
         } else {
           base[curve % base.len()].clone()
         };
