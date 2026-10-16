@@ -22110,6 +22110,23 @@ mod contour_plot_3d {
   use super::*;
 
   #[test]
+  fn background_option_repaints_the_backdrop() {
+    for call in [
+      "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, \
+       {z, -1, 1}, Background -> Black, PlotPoints -> 5]",
+      "Plot3D[x y, {x, -1, 1}, {y, -1, 1}, Background -> Black, \
+       PlotPoints -> 5]",
+    ] {
+      let svg = export_svg(call);
+      assert!(
+        svg
+          .contains("<rect width=\"360\" height=\"360\" fill=\"rgb(0,0,0)\"/>"),
+        "{call}: backdrop must be black"
+      );
+    }
+  }
+
+  #[test]
   fn shown_plane_keeps_its_opacity_and_is_cut_to_the_plot_range() {
     // A translucent `ContourPlot3D` plane merged by `Show` into a
     // `Graphics3D` with a fixed `PlotRange` stays translucent and is
