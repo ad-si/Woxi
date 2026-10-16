@@ -19836,7 +19836,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`effect$$ = \"Charcoal\"}, \"\\[Elli
           images,
           "{effect}/{view}: expected {images} picture(s)"
         );
-        assert!(!svg.contains("-Image-"), "{effect}/{view}: unrendered image");
+        assert!(
+          !svg.contains("-Image-"),
+          "{effect}/{view}: unrendered image"
+        );
       }
     }
   }
