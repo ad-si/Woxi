@@ -18323,18 +18323,14 @@ struct LayoutOptions {
   /// True if Spacings was explicitly given (so Frame -> All shouldn't
   /// override the user's choice).
   spacings_explicit: bool,
+  /// `Background -> colour`: painted behind the whole layout, the gaps
+  /// between cells included.
+  background: Option<Color>,
 }
 
 /// Parse Spacings and ImageSize options from rule arguments.
 fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
-  let mut opts = LayoutOptions {
-    h_spacing: SpacingSpec::default_val(),
-    v_spacing: SpacingSpec::default_val(),
-    target_width: None,
-    target_height: None,
-    frame: FrameSetting::None,
-    spacings_explicit: false,
-  };
+  let mut opts = default_layout_options();
 
   for arg in args {
     if let Expr::Rule {
@@ -18363,6 +18359,9 @@ fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
               }
             }
           }
+        }
+        Expr::Identifier(name) if name == "Background" => {
+          opts.background = parse_background(replacement);
         }
         Expr::Identifier(name) if name == "Frame" => {
           opts.frame = match replacement.as_ref() {
@@ -18464,6 +18463,7 @@ fn compute_grid_layout(
         target_height: opts.target_height,
         frame: opts.frame,
         spacings_explicit: opts.spacings_explicit,
+        background: opts.background,
       };
       &opts_owned
     } else {
@@ -18732,6 +18732,12 @@ fn combine_svgs_grid(
     layout.total_width.ceil() as u32,
     layout.total_height.ceil() as u32,
   ));
+  if let Some(bg) = &opts.background {
+    svg.push_str(&format!(
+      "<rect width=\"100%\" height=\"100%\" fill=\"{}\"/>\n",
+      bg.to_svg_rgb(),
+    ));
+  }
 
   // Track per-row vertical positions so frame lines can be drawn at
   // the correct y boundaries even when rows have different heights.
@@ -18828,6 +18834,7 @@ fn default_layout_options() -> LayoutOptions {
     target_height: None,
     frame: FrameSetting::None,
     spacings_explicit: false,
+    background: None,
   }
 }
 

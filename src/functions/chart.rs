@@ -609,6 +609,18 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     {
       expr_to_label(&args[0])
     }
+    // `StringForm["delay `` s", 0.3]` is displayed with its slots filled,
+    // each value read as a label itself.
+    Expr::FunctionCall { name, args } if name == "StringForm" => {
+      let Some(Expr::String(template)) = args.first() else {
+        return None;
+      };
+      Some(crate::functions::string_ast::format_string_form_with(
+        template,
+        &args[1..],
+        |v| expr_to_label(v).unwrap_or_else(|| expr_to_string(v)),
+      ))
+    }
     // A list label is typeset as the list itself: `AxesLabel -> {t, {a, b}}`
     // labels the vertical axis `{a, b}`.
     Expr::List(items) => {
@@ -2535,6 +2547,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [
             project(v0, &camera),
             project(v1, &camera),
@@ -2954,6 +2967,7 @@ fn build_cylindrical_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_width: None,
         projected: [
           project(v0, camera),
           project(v1, camera),
@@ -3077,6 +3091,7 @@ fn build_torus_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_width: None,
         projected: [
           project(v0, camera),
           project(v1, camera),

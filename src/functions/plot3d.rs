@@ -87,6 +87,9 @@ pub(crate) struct Triangle {
   /// also drawn at full opacity, so an outline stays visible around a
   /// transparent face.
   pub edge_color: Option<(u8, u8, u8)>,
+  /// The stroke width `EdgeForm[{…, Thick}]` asked outline edges to be
+  /// drawn with. `None` keeps the default hairline.
+  pub edge_width: Option<f64>,
 }
 
 /// Largest scene `painter_order` refines: the pairwise overlap tests are
@@ -773,6 +776,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if !matches!(mesh_mode, MeshMode::All) {
           content.push(call0("EdgeForm"));
         }
+        content.extend(surface_opacity_directive(&plot_styles, surface_idx));
         for i in 0..GRID_N {
           for j in 0..GRID_N {
             let (Some(a), Some(b), Some(c), Some(d)) = (
@@ -961,6 +965,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
@@ -1013,6 +1018,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
@@ -3026,6 +3032,8 @@ struct StyleState3D {
   /// silhouette on: `{Opacity[0], EdgeForm[Black], Cylinder[…]}` is the
   /// Demonstrations idiom for an unfilled circle in space.
   edge_color: Option<(u8, u8, u8)>,
+  /// The outline width a thickness inside `EdgeForm[…]` asks for.
+  edge_width: Option<f64>,
   /// `Specularity[colour, exponent]`: the highlight a shiny surface throws
   /// back at the viewer, as `(colour, exponent)`. `None` is the default
   /// matte surface. A larger exponent tightens the highlight.
@@ -3052,6 +3060,7 @@ impl Default for StyleState3D {
       capped: true,
       edges: true,
       edge_color: None,
+      edge_width: None,
       specular: None,
       dashing: None,
       point_size: None,
@@ -3266,28 +3275,21 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         return true;
       }
       // `EdgeForm[]` (and `EdgeForm[None]`) asks for faces with no outline;
-      // any other form keeps the default edge. A colour directive among the
-      // arguments — `EdgeForm[Black]`, `EdgeForm[{Thick, Red}]` — also sets
-      // the outline's colour.
+      // any other form keeps the default edge. A colour or thickness among
+      // the arguments — `EdgeForm[Black]`, `EdgeForm[{Thick, Red}]`,
+      // `EdgeForm[Directive[Red, AbsoluteThickness[2]]]` — also styles the
+      // outline.
       "EdgeForm" => {
         style.edges = !(args.is_empty()
           || matches!(args.first(), Some(Expr::Identifier(s)) if s == "None"));
-        style.edge_color = None;
+        let mut edge = StyleState3D::default();
         if style.edges {
-          let flat = match args.first() {
-            Some(Expr::List(items)) => items.to_vec(),
-            _ => args.to_vec(),
-          };
-          for a in &flat {
-            if let Some(c) = parse_color(a) {
-              style.edge_color = Some((
-                (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-                (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-                (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-              ));
-            }
+          for a in args {
+            apply_3d_directive(a, &mut edge);
           }
         }
+        style.edge_color = edge.color;
+        style.edge_width = edge.thickness;
         return true;
       }
       "Thickness" if args.len() == 1 => {
@@ -3448,6 +3450,18 @@ fn plot_style_for_surface(
   } else {
     Some(&styles[surface_idx % styles.len()])
   }
+}
+
+/// The `Opacity[…]` a translucent `PlotStyle` gives a surface, placed at the
+/// head of its symbolic `GraphicsComplex` so the surface stays translucent
+/// when `Show` re-renders it together with other graphics.
+fn surface_opacity_directive(
+  styles: &[StyleState3D],
+  surface_idx: usize,
+) -> Option<Expr> {
+  plot_style_for_surface(styles, surface_idx)
+    .filter(|style| style.opacity < 1.0)
+    .map(|style| call1("Opacity", Expr::Real(style.opacity)))
 }
 
 /// Split a `PlotStyle` option value into one style item per plotted
@@ -4170,9 +4184,11 @@ fn collect_3d_primitives(
           });
         }
         // Solids given by their corners (`Hexahedron`, `Tetrahedron`,
-        // `Prism`, `Pyramid`) or corners plus faces (`Polyhedron`) are
-        // drawn as one filled polygon per face.
+        // `Prism`, `Pyramid`), corners plus faces (`Polyhedron`), or a
+        // placement of a Platonic solid (`Cube[]`, `Icosahedron[{θ, ϕ}]`, …)
+        // are drawn as one filled polygon per face.
         "Hexahedron" | "Tetrahedron" | "Prism" | "Pyramid" | "Polyhedron"
+        | "Cube" | "Octahedron" | "Dodecahedron" | "Icosahedron"
           if crate::functions::geometric_test_ast::polyhedron_faces(expr)
             .is_some() =>
         {
@@ -6450,6 +6466,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             capped: true,
             edges: true,
             edge_color: None,
+            edge_width: None,
             specular: None,
             dashing: None,
             point_size: None,
@@ -6535,6 +6552,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       all_triangles.push(Triangle {
         boundary,
         edge_color: prim_style.edge_color,
+        edge_width: prim_style.edge_width,
         projected: [p0, p1, p2],
         depth: depth(center, &camera),
         color,
@@ -6968,6 +6986,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some((er, eg, eb)) => format!("rgb({er},{eg},{eb})"),
         None => "rgb(64,64,64)".to_string(),
       };
+      let edge_width = tri.edge_width.unwrap_or(1.0);
       let fill_opacity_attr = if tri.opacity < 1.0 {
         format!(" fill-opacity=\"{}\"", tri.opacity)
       } else {
@@ -6979,7 +6998,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // colour instead, so the face reads as one flat surface.
       if tri.boundary == [true; 3] {
         svg.push_str(&format!(
-          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{fill_opacity_attr}/>\n"
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{fill_opacity_attr}/>\n"
         ));
       } else {
         // A translucent triangle's own-colour hairline overlaps its
@@ -7002,7 +7021,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (ax, ay) = corners[e];
           let (bx, by) = corners[(e + 1) % 3];
           svg.push_str(&format!(
-            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"1\"/>\n",
+            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"/>\n",
           ));
         }
       }
@@ -7800,6 +7819,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
@@ -7845,6 +7865,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
@@ -8428,6 +8449,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [proj0, proj1, proj2],
             depth: depth(center, &camera),
             color,
@@ -8460,6 +8482,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [proj0, proj1, proj2],
             depth: depth(center, &camera),
             color,
@@ -8903,6 +8926,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             all_triangles.push(Triangle {
               boundary: [true; 3],
               edge_color: None,
+              edge_width: None,
               projected: [p0, p1, p2],
               depth: depth(center, &camera),
               color,
@@ -8925,6 +8949,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             all_triangles.push(Triangle {
               boundary: [true; 3],
               edge_color: None,
+              edge_width: None,
               projected: [p0, p2, p3],
               depth: depth(center, &camera),
               color,
@@ -9492,6 +9517,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               all_triangles.push(Triangle {
                 boundary: [true; 3],
                 edge_color: style.and_then(|s| s.edge_color),
+                edge_width: style.and_then(|s| s.edge_width),
                 projected: [p0, p1, p2],
                 depth: depth(center, &camera),
                 color,
@@ -10914,6 +10940,11 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )],
           None => vec![polygon_expr],
         };
+      if let Some(opacity) =
+        surface_opacity_directive(&plot_styles, surface_idx)
+      {
+        gc_content.insert(0, opacity);
+      }
       // The sampling triangles are far finer than any mesh the plot
       // shows, so their outlines are suppressed — otherwise extracting
       // the primitives (`plot[[1]]`) into a `Graphics3D` would turn the
@@ -11054,6 +11085,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       all_triangles.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_width: None,
         projected: [pa, pb, pc],
         depth: depth(center, &camera),
         color,
@@ -11237,6 +11269,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [p0, p1, p2],
           color,
           depth: depth(center, &camera),
@@ -11284,6 +11317,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [p0, p1, p2],
           color,
           depth: depth(center, &camera),
@@ -11934,12 +11968,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the usual way a mesh-shaded dissection hides its own seams.
   let mut mesh_style_none = false;
   // `BoxRatios -> {rx, ry, rz}` reshapes the bounding box to those
-  // proportions regardless of the surface's actual extent along each axis
-  // (Wolfram's own default here is `{1, 1, 0.4}`, matching `Z_SCALE`).
-  // `BoxRatios -> Automatic` instead asks for the box shaped like the
-  // data itself — no axis stretched relative to the others.
+  // proportions regardless of the surface's actual extent along each axis.
+  // Otherwise (Wolfram's default `Automatic`, unlike `Plot3D`'s
+  // `{1, 1, 0.4}`) the box is shaped like the data itself.
   let mut box_ratios_explicit: Option<[f64; 3]> = None;
-  let mut box_ratios_automatic = false;
   // `PlotRange -> {{x0,x1},{y0,y1},{z0,z1}}` pins the displayed region
   // regardless of the sampled surface's own extent, the same way it does
   // for `Graphics3D` — needed so a `BoxRatios` given alongside it (as
@@ -11980,9 +12012,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(name) if name == "BoxRatios" => {
           let value = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.as_ref().clone());
-          if matches!(&value, Expr::Identifier(s) if s == "Automatic") {
-            box_ratios_automatic = true;
-          } else if let Some(r) = eval_vec3(&value)
+          if let Some(r) = eval_vec3(&value)
             && r.iter().all(|v| *v > 0.0)
           {
             box_ratios_explicit = Some(r);
@@ -12186,18 +12216,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     gz_max - gz_min
   };
 
-  // `BoxRatios -> {a, b, c}` reshapes the box to those proportions;
-  // `BoxRatios -> Automatic` shapes it like the data's own extents
-  // instead (no axis independently stretched relative to the others);
-  // the unspecified default matches Wolfram's own `{1, 1, 0.4}` for
-  // `Plot3D`-family functions.
-  let box_ratios: [f64; 3] = if let Some(r) = box_ratios_explicit {
-    r
-  } else if box_ratios_automatic {
-    [rx, ry, rz]
-  } else {
-    [1.0, 1.0, Z_SCALE]
-  };
+  let box_ratios: [f64; 3] = box_ratios_explicit.unwrap_or([rx, ry, rz]);
 
   // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
   // `Show` merges the *primitives* of the graphics it is given, so a
@@ -12233,6 +12252,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if mesh_style_none || !matches!(mesh_mode, MeshMode::All) {
           content.push(call0("EdgeForm"));
         }
+        content.extend(surface_opacity_directive(&plot_styles, surface_idx));
         for i in 0..grid_n {
           for j in 0..grid_n {
             let (Some(a), Some(b), Some(c), Some(d)) = (
@@ -12362,30 +12382,18 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Expr::List(complexes.into())
     };
-    // `ParametricPlot3D` draws axes and squats its box the same way
-    // `Plot3D` does (see the analogous block above), where a bare
-    // `Graphics3D` does neither: both defaults are spelled out so a
-    // surface shown inside another graphic — with `ParametricPlot3D`
-    // itself first in the `Show` — keeps the shape it was drawn with.
+    // `ParametricPlot3D` draws axes where a bare `Graphics3D` does not, so
+    // that default is spelled out: a surface shown inside another graphic
+    // — with `ParametricPlot3D` itself first in the `Show` — keeps them.
+    // Its box is shaped like the data, which is `Graphics3D`'s own default.
     let mut structure_args = vec![content];
     structure_args.extend(args[3..].iter().cloned());
-    let names = |opt: &str| {
-      structure_args.iter().any(|o| {
-        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
-          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
-      })
-    };
-    let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
+    let names_axes = structure_args.iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes"))
+    });
     if !names_axes {
       structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
-    }
-    if !names_ratios {
-      structure_args.push(rule_expr(
-        id_expr("BoxRatios"),
-        Expr::List(
-          vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
-        ),
-      ));
     }
     call("Graphics3D", structure_args)
   };
@@ -12460,6 +12468,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [
               project(v0, &camera),
               project(v1, &camera),
@@ -12490,6 +12499,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [
               project(v0, &camera),
               project(v1, &camera),

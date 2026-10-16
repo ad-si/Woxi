@@ -1435,6 +1435,61 @@ fn inject_top_right_frame(
   }
 }
 
+/// Tick marks on all four edges of a framed plot, pointing into the plot
+/// area as Wolfram draws them: a major tick at every multiple of the axis'
+/// `major_step` (where the labels sit on the bottom and left edges) and
+/// four minor ticks between neighbouring majors.
+///
+/// `x_axis` / `y_axis` each supply `(min, max, major_step)`; `None` leaves
+/// that axis without automatic ticks (e.g. it has explicit `Ticks`).
+fn inject_inward_frame_ticks(
+  buf: &mut String,
+  (plot_x0, plot_y0, plot_w, plot_h): (f64, f64, f64, f64),
+  x_axis: Option<(f64, f64, f64)>,
+  y_axis: Option<(f64, f64, f64)>,
+  (minor_len, major_len): (f64, f64),
+  stroke_w: f64,
+  color: &str,
+) {
+  // The positions along one axis, as (fraction of the span, is major).
+  let ticks = |(min, max, major): (f64, f64, f64)| -> Vec<(f64, bool)> {
+    if !(major > 0.0 && max > min) {
+      return Vec::new();
+    }
+    let minor = major / 5.0;
+    let eps = 1e-6;
+    let first = (min / minor - eps).ceil() as i64;
+    let last = (max / minor + eps).floor() as i64;
+    (first..=last)
+      .map(|k| ((k as f64 * minor - min) / (max - min), k % 5 == 0))
+      .collect()
+  };
+  let mut svg = String::new();
+  let mut line = |x1: f64, y1: f64, x2: f64, y2: f64| {
+    svg.push_str(&format!(
+      "<line x1=\"{x1:.1}\" y1=\"{y1:.1}\" x2=\"{x2:.1}\" y2=\"{y2:.1}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.0}\"/>\n"
+    ));
+  };
+  let (bottom, right) = (plot_y0 + plot_h, plot_x0 + plot_w);
+  for (frac, major) in x_axis.map(ticks).unwrap_or_default() {
+    let len = if major { major_len } else { minor_len };
+    let x = plot_x0 + frac * plot_w;
+    line(x, bottom, x, bottom - len);
+    line(x, plot_y0, x, plot_y0 + len);
+  }
+  for (frac, major) in y_axis.map(ticks).unwrap_or_default() {
+    let len = if major { major_len } else { minor_len };
+    let y = bottom - frac * plot_h;
+    line(plot_x0, y, plot_x0 + len, y);
+    line(right, y, right - len, y);
+  }
+  if !svg.is_empty()
+    && let Some(pos) = buf.rfind("</svg>")
+  {
+    buf.insert_str(pos, &svg);
+  }
+}
+
 /// Default minor (unlabeled) tick length in render-space units.
 pub(crate) const MINOR_TICK_LEN: i32 = 4;
 /// Default major (labeled) tick length in render-space units — slightly longer
@@ -3844,6 +3899,38 @@ fn generate_svg_with_options(
     if let Some(pos) = buf.rfind("</svg>") {
       buf.insert_str(pos, &series_svg);
     }
+  }
+
+  // A frame carries its tick marks on all four edges, pointing inward; the
+  // majors line up with the labels the chart mesh drew. Log and date axes
+  // place their own ticks, and an axis given explicit `Ticks` marks only
+  // the positions it names.
+  if opts.frame && show_ticks {
+    let area = (
+      margin_left as f64 + y_label_area as f64,
+      top_margin as f64,
+      render_width as f64
+        - margin_left as f64
+        - margin_right as f64
+        - y_label_area as f64,
+      render_height as f64
+        - top_margin as f64
+        - margin_bottom as f64
+        - x_label_area as f64,
+    );
+    let auto_x = opts.ticks_x.is_none() && !opts.log_x && !opts.date_axis;
+    let auto_y = opts.ticks_y.is_none() && !opts.log_y;
+    inject_inward_frame_ticks(
+      &mut buf,
+      area,
+      auto_x
+        .then(|| (x_min, x_max, nice_step(x_max - x_min, AXIS_TICK_TARGET))),
+      auto_y
+        .then(|| (y_min, y_max, nice_step(y_max - y_min, AXIS_TICK_TARGET))),
+      (MINOR_TICK_LEN as f64 * sf, MAJOR_TICK_LEN as f64 * sf),
+      sf,
+      &format!("rgb({},{},{})", dark_gray.0, dark_gray.1, dark_gray.2),
+    );
   }
 
   if origin_axes {
