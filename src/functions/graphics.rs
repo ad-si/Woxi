@@ -14585,6 +14585,53 @@ fn clip_segment_to_y_range(
 }
 
 pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // `Show` of a `Legended` graphic (a plot with `PlotLegends`) shows the
+  // graphic inside and keeps its legend on the result, as Wolfram does:
+  // `Show[Legended[g, l], h]` is `Legended[Show[g, h], l]`.
+  let mut legends: Vec<Expr> = Vec::new();
+  let mut unwrap = |arg: &Expr| -> Expr {
+    let value = match arg {
+      Expr::Identifier(_) | Expr::FunctionCall { .. }
+        if !matches!(arg, Expr::FunctionCall { name, .. }
+          if name == "Graphics" || name == "Graphics3D") =>
+      {
+        evaluate_expr_to_expr(arg).unwrap_or_else(|_| arg.clone())
+      }
+      _ => arg.clone(),
+    };
+    match &value {
+      Expr::FunctionCall { name, args }
+        if name == "Legended" && args.len() == 2 =>
+      {
+        legends.push(args[1].clone());
+        args[0].clone()
+      }
+      _ => arg.clone(),
+    }
+  };
+  let unwrapped: Vec<Expr> = args
+    .iter()
+    .map(|arg| match arg {
+      Expr::List(items) => Expr::List(items.iter().map(&mut unwrap).collect()),
+      other => unwrap(other),
+    })
+    .collect();
+  if legends.is_empty() {
+    return show_graphics(args);
+  }
+  let shown = show_graphics(&unwrapped)?;
+  let legend = if legends.len() == 1 {
+    legends.pop().expect("one legend")
+  } else {
+    Expr::List(legends.into())
+  };
+  Ok(Expr::FunctionCall {
+    name: "Legended".to_string(),
+    args: vec![shown, legend].into(),
+  })
+}
+
+fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut merged_primitives: Vec<Expr> = Vec::new();
   let mut merged_options: Vec<Expr> = Vec::new();
   let mut is_3d = false;

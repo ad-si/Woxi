@@ -14114,6 +14114,37 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("rgb(255,0,0)"));
     }
 
+    /// `PlotLegends -> Automatic` makes `DensityPlot` a `Legended` plot
+    /// with a colour bar over the plotted value range, as in Wolfram;
+    /// `Show` keeps the legend when merging, and the bar is drawn beside
+    /// the plot.
+    #[test]
+    fn density_plot_legend_survives_show() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "d = DensityPlot[x, {x, 0, 1}, {y, 0, 1}, PlotRange -> {-3, 1}, \
+           ColorFunction -> \"TemperatureMap\", PlotLegends -> Automatic]; \
+           {Head[d], d[[2]]}"
+        )
+        .unwrap(),
+        "{Legended, Placed[BarLegend[{TemperatureMap, {-3., 1.}}], After]}"
+      );
+      assert_eq!(
+        interpret(
+          "s = Show[d, Graphics[{Red, Circle[{0.5, 0.5}, 0.2]}]]; \
+           {Head[s], s[[2]] === d[[2]], Head[First[s]]}"
+        )
+        .unwrap(),
+        "{Legended, True, Graphics}"
+      );
+      let svg = export_svg("s");
+      // One merged plot (its density raster) plus the 64-band colour bar.
+      assert_eq!(svg.matches("<image").count(), 1);
+      assert!(svg.matches("<rect").count() >= 64, "no colour bar");
+      assert!(svg.contains(">-3<") && svg.contains(">1<"), "bar labels");
+    }
+
     /// `PlotRange -> {zmin, zmax}` stretches the colours over exactly that
     /// range; a value beyond it is left blank by default and drawn per
     /// `ClippingStyle` otherwise (`Automatic`: the end colour; a colour:

@@ -816,6 +816,80 @@ fn push_bar_legend(
   }
 }
 
+/// A standalone `BarLegend[{colors, {min, max}}]` (or `BarLegend[colors]`
+/// over 0..1): a vertical continuous colour bar `bar_height` display
+/// pixels tall, labelled at round values to its right. `colors` is a
+/// gradient name or a colour function of the rescaled value.
+pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
+  let (colors, (lo, hi)) = match args.first()? {
+    Expr::List(spec) if spec.len() == 2 => match &spec[1] {
+      Expr::List(range) if range.len() == 2 => (
+        &spec[0],
+        (try_eval_to_f64(&range[0])?, try_eval_to_f64(&range[1])?),
+      ),
+      _ => return None,
+    },
+    other => (other, (0.0, 1.0)),
+  };
+  if !(hi > lo) {
+    return None;
+  }
+  let name = color_function_scheme_name(colors);
+  let color_at = |t: f64| match &name {
+    Some(name) => apply_named_color_function(name, t),
+    None => scaled_color(t, lo + t * (hi - lo), None, Some((colors, true))),
+  };
+
+  let (.., label_fill, _) = plot_theme();
+  let (bar_w, pad) = (13.0, 4.0);
+  let step = crate::functions::plot::nice_step(hi - lo, 5);
+  let ticks: Vec<f64> = {
+    let first = (lo / step - 1e-9).ceil() as i64;
+    let last = (hi / step + 1e-9).floor() as i64;
+    (first..=last).map(|k| k as f64 * step).collect()
+  };
+  let labels: Vec<String> = ticks
+    .iter()
+    .map(|&v| crate::functions::plot::format_tick_with_step(v, step))
+    .collect();
+  let label_w =
+    labels.iter().map(|l| l.chars().count()).max().unwrap_or(1) as f64 * 7.5;
+  let width = pad + bar_w + 6.0 + label_w + pad;
+  let height = bar_height + 2.0 * pad + 8.0;
+  let top = pad + 4.0;
+  let mut svg = format!(
+    "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+  );
+  // The bar, as thin horizontal bands from the low end (bottom) upward.
+  const BANDS: usize = 64;
+  let band_h = bar_height / BANDS as f64;
+  for k in 0..BANDS {
+    let (r, g, b) = color_at((k as f64 + 0.5) / BANDS as f64);
+    let y = top + bar_height - (k + 1) as f64 * band_h;
+    svg.push_str(&format!(
+      "<rect x=\"{pad:.1}\" y=\"{y:.2}\" width=\"{bar_w:.1}\" height=\"{:.2}\" fill=\"rgb({r},{g},{b})\"/>\n",
+      band_h + 0.3
+    ));
+  }
+  svg.push_str(&format!(
+    "<rect x=\"{pad:.1}\" y=\"{top:.1}\" width=\"{bar_w:.1}\" height=\"{bar_height:.1}\" fill=\"none\" stroke=\"rgb(110,110,110)\" stroke-width=\"0.8\"/>\n"
+  ));
+  for (v, label) in ticks.iter().zip(&labels) {
+    let y = top + bar_height * (1.0 - (v - lo) / (hi - lo));
+    svg.push_str(&format!(
+      "<line x1=\"{:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"rgb(110,110,110)\" stroke-width=\"0.8\"/>\n",
+      pad + bar_w - 3.0,
+      pad + bar_w
+    ));
+    svg.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"{y:.1}\" font-family=\"sans-serif\" font-size=\"11\" fill=\"{label_fill}\" dominant-baseline=\"central\">{label}</text>\n",
+      pad + bar_w + 6.0
+    ));
+  }
+  svg.push_str("</svg>\n");
+  Some(svg)
+}
+
 /// Write a plot's `FrameLabel` text along the frame edges it names.
 fn push_frame_labels(
   svg: &mut String,
@@ -1922,7 +1996,32 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ],
   );
   let structure = field_plot_structure(vec![raster], args);
-  Ok(crate::graphics_result_with_structure(svg, structure))
+  let graphic = crate::graphics_result_with_structure(svg, structure);
+  if !opts.bar_legend {
+    return Ok(graphic);
+  }
+  // `PlotLegends -> Automatic` gives `Legended[plot, Placed[BarLegend[…],
+  // After]]`, as in Wolfram: a colour bar over the plotted value range,
+  // which `Show` keeps when it merges the plot with other graphics.
+  let colors = match (&opts.color_function, &opts.color_function_expr) {
+    (_, Some(f)) => f.clone(),
+    (Some(name), None) => Expr::String(name.clone()),
+    (None, None) => Expr::String("WL14DefaultDensityGradient".to_string()),
+  };
+  let bar = call1(
+    "BarLegend",
+    Expr::List(
+      vec![
+        colors,
+        Expr::List(vec![Expr::Real(v_min), Expr::Real(v_max)].into()),
+      ]
+      .into(),
+    ),
+  );
+  Ok(call(
+    "Legended",
+    vec![graphic, call("Placed", vec![bar, id_expr("After")])],
+  ))
 }
 
 /// ContourPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -4261,6 +4360,8 @@ pub(crate) fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
     "WL12DefaultVectorDensityGradient" => {
       crate::functions::plot::wl_default_vector_density_gradient(t)
     }
+    // The gradient `DensityPlot` shades with when given no `ColorFunction`.
+    "WL14DefaultDensityGradient" => density_gradient(t),
     "Rainbow" => {
       // Hue-based rainbow: red -> yellow -> green -> cyan -> blue -> violet
       let c = GfxColor::from_hue(t * 0.83, 1.0, 1.0);
