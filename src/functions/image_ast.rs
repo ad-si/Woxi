@@ -2515,23 +2515,32 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ImageCrop[img, {{x1,y1},{x2,y2}}] - Crop to region
 /// How many pixels a cropping spec removes from the low side (left, or bottom
 /// in Wolfram's bottom-left origin) when `remove` pixels have to go in total.
-/// Centering splits the remainder with round-half-to-even, so cropping a
-/// 4-wide image to 3 keeps the leftmost three while cropping it to 1 keeps the
-/// third pixel.
-fn image_crop_low_margin(spec: Option<&str>, remove: i64, low: &str) -> i64 {
-  match spec {
-    // Naming a side says pixels come off *that* side.
-    Some(s) if s == low => remove,
-    Some(s) if s != "Center" => 0,
-    _ => (remove as f64 / 2.0).round_ties_even() as i64,
-  }
+/// `low_share` is the fraction of the removal taken from the low side: 1 for
+/// `Left`/`Bottom`, 0 for `Right`/`Top`, 1/2 for `Center`. Centering splits the
+/// remainder with round-half-to-even, so cropping a 4-wide image to 3 keeps the
+/// leftmost three while cropping it to 1 keeps the third pixel.
+fn image_crop_low_margin(low_share: f64, remove: i64) -> i64 {
+  (remove as f64 * low_share).round_ties_even() as i64
 }
 
-/// The cropping sides named by the third argument, as `(horizontal, vertical)`
-/// where each is `Left`/`Right`, `Bottom`/`Top`, or `Center`.
-fn image_crop_sides(spec: &Expr) -> Option<(String, String)> {
-  let mut horizontal = "Center".to_string();
-  let mut vertical = "Center".to_string();
+/// The per-axis share of the removed pixels that comes off the low side
+/// (left / bottom), as `(horizontal, vertical)`. The third argument is either
+/// side names (`Left`, `Right`, `Top`, `Bottom`, `Center`) or a numeric pair
+/// `{x, y}` in `[-1, 1]` where `-1` is the same as `Left`/`Bottom` and `1` the
+/// same as `Right`/`Top`.
+fn image_crop_sides(spec: &Expr) -> Option<(f64, f64)> {
+  let mut horizontal = 0.5;
+  let mut vertical = 0.5;
+  if let Expr::List(items) = spec
+    && items.len() == 2
+    && let (Some(x), Some(y)) = (
+      crate::functions::math_ast::try_eval_to_f64(&items[0]),
+      crate::functions::math_ast::try_eval_to_f64(&items[1]),
+    )
+  {
+    let share = |t: f64| (1.0 - t.clamp(-1.0, 1.0)) / 2.0;
+    return Some((share(x), share(y)));
+  }
   let names: Vec<&Expr> = match spec {
     Expr::List(items) => items.iter().collect(),
     single => vec![single],
@@ -2541,8 +2550,10 @@ fn image_crop_sides(spec: &Expr) -> Option<(String, String)> {
       return None;
     };
     match s.as_str() {
-      "Left" | "Right" => horizontal.clone_from(s),
-      "Top" | "Bottom" => vertical.clone_from(s),
+      "Left" => horizontal = 1.0,
+      "Right" => horizontal = 0.0,
+      "Bottom" => vertical = 1.0,
+      "Top" => vertical = 0.0,
       "Center" => {}
       other => {
         crate::emit_message(&format!(
@@ -2593,13 +2604,13 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(sides) => sides,
         None => return echo(),
       },
-      None => ("Center".to_string(), "Center".to_string()),
+      None => (0.5, 0.5),
     };
 
     let remove_w = *width as i64 - target_w;
     let remove_h = *height as i64 - target_h;
-    let left = image_crop_low_margin(Some(&horizontal), remove_w, "Left");
-    let bottom = image_crop_low_margin(Some(&vertical), remove_h, "Bottom");
+    let left = image_crop_low_margin(horizontal, remove_w);
+    let bottom = image_crop_low_margin(vertical, remove_h);
     // The extents are removals, so they enter the padder negated.
     return Ok(
       image_pad_extents(
