@@ -998,7 +998,36 @@ fn expr_to_anchor(expr: &Expr) -> Option<(f64, f64, bool)> {
   {
     return Some((x, y, true));
   }
+  // `{Left, Top}` names the corner of the plot range: the same point as
+  // `Scaled[{0, 1}]`. `Center` is the middle on either axis.
+  if let Expr::List(items) = expr
+    && let [Expr::Identifier(h), Expr::Identifier(v)] = items.as_slice()
+  {
+    let horizontal = match h.as_str() {
+      "Left" => Some(0.0),
+      "Center" => Some(0.5),
+      "Right" => Some(1.0),
+      _ => None,
+    };
+    let vertical = match v.as_str() {
+      "Bottom" => Some(0.0),
+      "Center" => Some(0.5),
+      "Top" => Some(1.0),
+      _ => None,
+    };
+    if let (Some(x), Some(y)) = (horizontal, vertical) {
+      return Some((x, y, true));
+    }
+  }
   expr_to_point(expr).map(|(x, y)| (x, y, false))
+}
+
+/// The point of an inset's own picture that sits on its position, as
+/// fractions `(from the left, from the top)` of the picture. Only the
+/// symbolic corners `{Left, Top}` … are understood; `None` otherwise.
+fn inset_object_anchor(args: &[Expr]) -> Option<(f64, f64)> {
+  let (x, y, scaled) = expr_to_anchor(args.get(2)?)?;
+  scaled.then_some((x, 1.0 - y))
 }
 
 /// A primitive's anchor in data coordinates, turning a scaled fraction into
@@ -4571,14 +4600,34 @@ fn inset_primitives(
     && let Some((x, y, scaled)) = anchor
   {
     let (target_w, target_h) = parse_inset_target_size(args);
+    let mut svg = svg.clone();
+    let (mut w, mut h) = (dims.nat_w, dims.nat_h);
+    let mut size = target_w.zip(target_h);
+    // `Inset[obj, pos, {Left, Top}]` puts the object's own corner, not its
+    // centre, on `pos`. Embedded pictures always centre on the anchor, so
+    // pad the picture to twice its distance to the far side of that point.
+    if let Some((fx, fy)) = inset_object_anchor(args)
+      && ((fx - 0.5).abs() > 1e-9 || (fy - 0.5).abs() > 1e-9)
+    {
+      let (kx, ky) = (2.0 * fx.max(1.0 - fx), 2.0 * fy.max(1.0 - fy));
+      let (pw, ph) = (w * kx, h * ky);
+      let (ox, oy) = (pw / 2.0 - fx * w, ph / 2.0 - fy * h);
+      svg = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{pw:.2}\" \
+         height=\"{ph:.2}\" viewBox=\"0 0 {pw:.2} {ph:.2}\">\
+         <g transform=\"translate({ox:.2},{oy:.2})\">{svg}</g></svg>"
+      );
+      size = size.map(|(sw, sh)| (sw * kx, sh * ky));
+      (w, h) = (pw, ph);
+    }
     return Some(vec![Primitive::InsetGraphic {
-      svg: svg.clone(),
+      svg,
       x,
       y,
-      w: dims.nat_w,
-      h: dims.nat_h,
+      w,
+      h,
       scaled,
-      size: target_w.zip(target_h),
+      size,
     }]);
   }
   // `Inset[Button[label, action], pos]` — the control a puzzle

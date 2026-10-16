@@ -1090,6 +1090,37 @@ mod graphics {
       );
     }
 
+    /// `Inset[image, {Left, Top}, {Left, Top}, size]` — the thumbnail a
+    /// Demonstration pins to a corner — is drawn at that corner of the plot
+    /// range instead of falling through to the `-Image-` text.
+    #[test]
+    fn an_image_inset_at_a_symbolic_corner_is_pinned_there() {
+      let img = "Image[{{0.2, 0.8}, {0.9, 0.1}}]";
+      let corner = |pos: &str| {
+        export_svg(&format!(
+          "Graphics[{{Inset[{img}, {pos}, {pos}, 1]}}, PlotRange -> 1]"
+        ))
+      };
+      for pos in ["{Left, Top}", "{Right, Bottom}", "{Center, Center}"] {
+        let svg = corner(pos);
+        assert!(
+          svg.contains("<image") && !svg.contains("-Image-"),
+          "{pos}: the image must be embedded: {svg}"
+        );
+      }
+      // The picture is half the 360px canvas wide; its corner, not its
+      // centre, sits on the anchor.
+      assert!(
+        corner("{Left, Top}").contains("<svg x=\"-180.00\" y=\"-180.00\"")
+      );
+      assert!(
+        corner("{Right, Bottom}").contains("<svg x=\"180.00\" y=\"180.00\"")
+      );
+      assert!(
+        corner("{Center, Center}").contains("<svg x=\"90.00\" y=\"90.00\"")
+      );
+    }
+
     /// A symbolic `Graphics[…]` inset with no `size` keeps the size it would
     /// have on its own. It used to be folded into the enclosing picture's
     /// coordinates, so a unit-radius scene inset into a picture measured in
