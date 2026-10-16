@@ -15043,12 +15043,93 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     #[test]
     fn stream_plot_epilog_and_stream_style() {
+      // As in Wolfram, the default speed colouring wins over a
+      // `StreamStyle` colour; only `StreamColorFunction -> None` lets the
+      // `StreamStyle` colour through.
       let svg = export_svg(
         "StreamPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}, \
            Epilog -> {Orange, Disk[{0, 0}, 1]}, StreamStyle -> Black]",
       );
       assert!(svg.contains("<ellipse"), "{svg}");
-      assert!(svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+      assert!(!svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+      let plain = export_svg(
+        "StreamPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}, \
+           StreamColorFunction -> None, StreamStyle -> Black]",
+      );
+      assert!(plain.contains("stroke=\"rgb(0,0,0)\""), "{plain}");
+    }
+
+    /// `StreamDensityPlot` shades the speed on Wolfram's orange-to-yellow
+    /// `WL12DefaultVectorDensityGradient` (its end colours are
+    /// RGB(204, 102, 41) and RGB(255, 237, 128)), and draws the same
+    /// speed-coloured arrows as `StreamPlot` on top.
+    #[test]
+    fn stream_density_plot_uses_wolfram_vector_density_gradient() {
+      use base64::Engine as _;
+      let svg = export_svg(
+        "StreamDensityPlot[{x, 0}, {x, 0, 1}, {y, 0, 1}, StreamPoints -> 4]",
+      );
+      assert!(svg.contains("<polygon"), "streamline arrowheads");
+      let b64 = svg
+        .split("base64,")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap();
+      let png = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+      let img = ::image::load_from_memory(&png).unwrap().to_rgb8();
+      let (w, h) = img.dimensions();
+      // Speed |x| grows to the right: slow orange at the left edge, fast
+      // pale yellow at the right.
+      let left = img.get_pixel(0, h / 2).0;
+      let right = img.get_pixel(w - 1, h / 2).0;
+      let near = |a: [u8; 3], b: [u8; 3]| {
+        a.iter()
+          .zip(b)
+          .all(|(x, y)| (*x as i32 - y as i32).abs() <= 6)
+      };
+      assert!(near(left, [204, 102, 41]), "{left:?}");
+      assert!(near(right, [255, 237, 128]), "{right:?}");
+    }
+
+    /// Streamlines are evenly spaced, drawn as runs of arrows coloured by
+    /// the flow speed (slow violet, fast orange on Wolfram's default
+    /// vector gradient), and `StreamPoints` sets their density.
+    #[test]
+    fn stream_plot_draws_even_speed_coloured_arrows() {
+      clear_state();
+      let lines = |opts: &str| {
+        interpret(&format!(
+          "s = StreamPlot[{{1, 0}}, {{x, -1, 1}}, {{y, -1, 1}}{opts}]; \
+           Length[Union[Cases[s, Arrow[p_] :> Round[p[[1, 2]], 0.001], \
+           Infinity]]]"
+        ))
+        .unwrap()
+        .parse::<usize>()
+        .unwrap()
+      };
+      let (coarse, default, fine) = (
+        lines(", StreamPoints -> Coarse"),
+        lines(""),
+        lines(", StreamPoints -> Fine"),
+      );
+      assert!((20..=24).contains(&default), "{default} streamlines");
+      assert!(
+        coarse < default && default < fine,
+        "{coarse} {default} {fine}"
+      );
+      // Speed grows with x: the slowest segment is violet, the fastest
+      // orange, and every full-length segment carries the same head.
+      let colors = interpret(
+        "s = StreamPlot[{x + 2, 0}, {x, -1, 1}, {y, -1, 1}]; \
+         segs = SortBy[Cases[s, {Arrowheads[{{a_, _}}], c_RGBColor, \
+           Arrow[p_]} :> {Mean[p][[1]], List @@ c, a}, Infinity], First]; \
+         {Round[segs[[1, 2]], 0.25], Round[segs[[-1, 2]], 0.25], \
+          Max[segs[[All, 3]]]}",
+      )
+      .unwrap();
+      assert_eq!(colors, "{{0., 0., 0.75}, {1., 0.75, 0.}, 0.02}");
     }
 
     // Part 1 of a field plot is its graphics content, so a Demonstration can
@@ -15093,7 +15174,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         interpret(
           "Module[{h, x1, x2}, h = x1/(1 + x2); \
              Max[Flatten[Cases[StreamPlot[{x1 - h, x2 - h}, {x1, 0, 1}, \
-             {x2, 0, 1}][[1]], Line[p_] :> Length[DeleteDuplicates[p]], \
+             {x2, 0, 1}][[1]], (Line[p_] | Arrow[p_]) :> Length[DeleteDuplicates[p]], \
              Infinity]]] > 1]"
         )
         .unwrap(),
@@ -15107,7 +15188,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         interpret(
           "Max[Flatten[Cases[StreamPlot[{x, y}, {x, 0, 1}, {y, 0, 1}, \
              RegionFunction -> Function[{x, y}, x + y < 0.5]][[1]], \
-             Line[p_] :> (#[[1]] + #[[2]] & /@ p), Infinity]]] < 0.5"
+             (Line[p_] | Arrow[p_]) :> (#[[1]] + #[[2]] & /@ p), Infinity]]] < 0.5"
         )
         .unwrap(),
         "True"
