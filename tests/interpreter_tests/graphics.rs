@@ -35207,6 +35207,30 @@ fn graphics_layouts_paint_their_background_behind_every_cell() {
 }
 
 #[test]
+fn graphics3d_edge_form_directive_sets_outline_colour_and_width() {
+  // `EdgeForm[Directive[…]]` (and a list of directives) styles a solid's
+  // outline, including through `Opacity` on the faces; without a
+  // thickness the outline keeps its default hairline.
+  for (edge, stroke) in [
+    (
+      "EdgeForm[Directive[Red, AbsoluteThickness[3]]], Opacity[0.2]",
+      "stroke=\"rgb(255,0,0)\" stroke-width=\"3\"",
+    ),
+    (
+      "EdgeForm[{AbsoluteThickness[2], Green}]",
+      "stroke=\"rgb(0,255,0)\" stroke-width=\"2\"",
+    ),
+    (
+      "EdgeForm[White]",
+      "stroke=\"rgb(255,255,255)\" stroke-width=\"1\"",
+    ),
+  ] {
+    let svg = export_svg(&format!("Graphics3D[{{{edge}, Blue, Cube[]}}]"));
+    assert_eq!(svg.matches(stroke).count(), 24, "{edge}");
+  }
+}
+
+#[test]
 fn graphics3d_draws_platonic_solids_at_wolfram_vertices() {
   // Each solid's drawn corners must be exactly where the projected
   // wolframscript vertices (`MeshCoordinates[DiscretizeGraphics[…]]`) land

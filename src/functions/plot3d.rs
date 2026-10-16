@@ -87,6 +87,9 @@ pub(crate) struct Triangle {
   /// also drawn at full opacity, so an outline stays visible around a
   /// transparent face.
   pub edge_color: Option<(u8, u8, u8)>,
+  /// The stroke width `EdgeForm[{…, Thick}]` asked outline edges to be
+  /// drawn with. `None` keeps the default hairline.
+  pub edge_width: Option<f64>,
 }
 
 /// Largest scene `painter_order` refines: the pairwise overlap tests are
@@ -962,6 +965,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
@@ -1014,6 +1018,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
@@ -3027,6 +3032,8 @@ struct StyleState3D {
   /// silhouette on: `{Opacity[0], EdgeForm[Black], Cylinder[…]}` is the
   /// Demonstrations idiom for an unfilled circle in space.
   edge_color: Option<(u8, u8, u8)>,
+  /// The outline width a thickness inside `EdgeForm[…]` asks for.
+  edge_width: Option<f64>,
   /// `Specularity[colour, exponent]`: the highlight a shiny surface throws
   /// back at the viewer, as `(colour, exponent)`. `None` is the default
   /// matte surface. A larger exponent tightens the highlight.
@@ -3053,6 +3060,7 @@ impl Default for StyleState3D {
       capped: true,
       edges: true,
       edge_color: None,
+      edge_width: None,
       specular: None,
       dashing: None,
       point_size: None,
@@ -3267,28 +3275,21 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         return true;
       }
       // `EdgeForm[]` (and `EdgeForm[None]`) asks for faces with no outline;
-      // any other form keeps the default edge. A colour directive among the
-      // arguments — `EdgeForm[Black]`, `EdgeForm[{Thick, Red}]` — also sets
-      // the outline's colour.
+      // any other form keeps the default edge. A colour or thickness among
+      // the arguments — `EdgeForm[Black]`, `EdgeForm[{Thick, Red}]`,
+      // `EdgeForm[Directive[Red, AbsoluteThickness[2]]]` — also styles the
+      // outline.
       "EdgeForm" => {
         style.edges = !(args.is_empty()
           || matches!(args.first(), Some(Expr::Identifier(s)) if s == "None"));
-        style.edge_color = None;
+        let mut edge = StyleState3D::default();
         if style.edges {
-          let flat = match args.first() {
-            Some(Expr::List(items)) => items.to_vec(),
-            _ => args.to_vec(),
-          };
-          for a in &flat {
-            if let Some(c) = parse_color(a) {
-              style.edge_color = Some((
-                (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-                (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-                (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-              ));
-            }
+          for a in args {
+            apply_3d_directive(a, &mut edge);
           }
         }
+        style.edge_color = edge.color;
+        style.edge_width = edge.thickness;
         return true;
       }
       "Thickness" if args.len() == 1 => {
@@ -6465,6 +6466,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             capped: true,
             edges: true,
             edge_color: None,
+            edge_width: None,
             specular: None,
             dashing: None,
             point_size: None,
@@ -6550,6 +6552,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       all_triangles.push(Triangle {
         boundary,
         edge_color: prim_style.edge_color,
+        edge_width: prim_style.edge_width,
         projected: [p0, p1, p2],
         depth: depth(center, &camera),
         color,
@@ -6983,6 +6986,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some((er, eg, eb)) => format!("rgb({er},{eg},{eb})"),
         None => "rgb(64,64,64)".to_string(),
       };
+      let edge_width = tri.edge_width.unwrap_or(1.0);
       let fill_opacity_attr = if tri.opacity < 1.0 {
         format!(" fill-opacity=\"{}\"", tri.opacity)
       } else {
@@ -6994,7 +6998,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // colour instead, so the face reads as one flat surface.
       if tri.boundary == [true; 3] {
         svg.push_str(&format!(
-          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{fill_opacity_attr}/>\n"
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{fill_opacity_attr}/>\n"
         ));
       } else {
         // A translucent triangle's own-colour hairline overlaps its
@@ -7017,7 +7021,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (ax, ay) = corners[e];
           let (bx, by) = corners[(e + 1) % 3];
           svg.push_str(&format!(
-            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"1\"/>\n",
+            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"/>\n",
           ));
         }
       }
@@ -7815,6 +7819,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
@@ -7860,6 +7865,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
@@ -8443,6 +8449,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [proj0, proj1, proj2],
             depth: depth(center, &camera),
             color,
@@ -8475,6 +8482,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [proj0, proj1, proj2],
             depth: depth(center, &camera),
             color,
@@ -8918,6 +8926,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             all_triangles.push(Triangle {
               boundary: [true; 3],
               edge_color: None,
+              edge_width: None,
               projected: [p0, p1, p2],
               depth: depth(center, &camera),
               color,
@@ -8940,6 +8949,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             all_triangles.push(Triangle {
               boundary: [true; 3],
               edge_color: None,
+              edge_width: None,
               projected: [p0, p2, p3],
               depth: depth(center, &camera),
               color,
@@ -9507,6 +9517,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               all_triangles.push(Triangle {
                 boundary: [true; 3],
                 edge_color: style.and_then(|s| s.edge_color),
+                edge_width: style.and_then(|s| s.edge_width),
                 projected: [p0, p1, p2],
                 depth: depth(center, &camera),
                 color,
@@ -11074,6 +11085,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       all_triangles.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_width: None,
         projected: [pa, pb, pc],
         depth: depth(center, &camera),
         color,
@@ -11257,6 +11269,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [p0, p1, p2],
           color,
           depth: depth(center, &camera),
@@ -11304,6 +11317,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [p0, p1, p2],
           color,
           depth: depth(center, &camera),
@@ -12454,6 +12468,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [
               project(v0, &camera),
               project(v1, &camera),
@@ -12484,6 +12499,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_width: None,
             projected: [
               project(v0, &camera),
               project(v1, &camera),

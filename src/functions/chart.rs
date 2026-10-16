@@ -2523,6 +2523,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [
             project(v0, &camera),
             project(v1, &camera),
@@ -2942,6 +2943,7 @@ fn build_cylindrical_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_width: None,
         projected: [
           project(v0, camera),
           project(v1, camera),
@@ -3065,6 +3067,7 @@ fn build_torus_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_width: None,
         projected: [
           project(v0, camera),
           project(v1, camera),
