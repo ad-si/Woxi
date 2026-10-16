@@ -4232,6 +4232,7 @@ fn evaluate_function_call_ast_inner(
     // image_type.
     if let Expr::Image {
       color_space: _,
+      display_size: _,
       width,
       height,
       channels,
@@ -4310,6 +4311,7 @@ fn evaluate_function_call_ast_inner(
       }
       return Ok(Expr::Image {
         color_space: None,
+        display_size: None,
         width: *width,
         height: *height,
         channels: *channels,
@@ -12004,6 +12006,7 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
   }
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -12057,6 +12060,7 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
       .collect();
     return Some(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -12544,6 +12548,7 @@ fn blend_images(colors: &[Expr], weight: Option<&Expr>) -> Option<Expr> {
   }
   Some(Expr::Image {
     color_space: None,
+    display_size: None,
     width: w,
     height: h,
     channels: ch,
@@ -12942,6 +12947,7 @@ fn morphological_op(
 
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -12969,6 +12975,7 @@ fn morphological_op(
     }
     return Some(Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,

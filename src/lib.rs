@@ -3602,11 +3602,17 @@ fn render_image_if_needed(expr: syntax::Expr) -> syntax::Expr {
     height,
     channels,
     ref data,
+    display_size,
     ..
   } = expr
   {
-    let html =
-      functions::image_ast::image_to_html_img(width, height, channels, data);
+    let html = functions::image_ast::image_to_html_img(
+      width,
+      height,
+      channels,
+      data,
+      display_size,
+    );
     capture_graphics(&html);
     helpers::id_expr("-Image-")
   } else {

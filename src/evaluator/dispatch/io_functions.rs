@@ -1796,12 +1796,17 @@ pub fn dispatch_io_functions(
         height,
         channels,
         data,
+        display_size,
         ..
       } = &args[1]
       {
         if fmt == "SVG" {
           let svg = crate::functions::image_ast::image_to_svg_document(
-            *width, *height, *channels, data,
+            *width,
+            *height,
+            *channels,
+            data,
+            *display_size,
           );
           if let Err(e) = std::fs::write(crate::vfs::resolve(&filename), &svg)
             .map_err(|e| {
@@ -6394,9 +6399,14 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       height,
       channels,
       data,
+      display_size,
       ..
     } => crate::functions::image_ast::image_to_svg_document(
-      *width, *height, *channels, data,
+      *width,
+      *height,
+      *channels,
+      data,
+      *display_size,
     ),
     // TableForm[data, opts…] — render the aligned grid (matching how visual
     // frontends show it), instead of dumping the raw `TableForm[…]` text.

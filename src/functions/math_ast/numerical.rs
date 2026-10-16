@@ -6496,6 +6496,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Image input: separable 2D filter (row-then-column 1D passes).
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -6534,6 +6535,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -6709,6 +6711,7 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // separable 2D filter (`LowpassFilter[Image[…], ωc]`).
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -6749,6 +6752,7 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -6847,6 +6851,7 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Image input: separable 2D filter (row-then-column 1D passes).
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -6885,6 +6890,7 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -6990,6 +6996,7 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Image input: separable 2D filter (row-then-column 1D passes).
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -7028,6 +7035,7 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
