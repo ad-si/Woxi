@@ -9046,6 +9046,33 @@ fn march_tetra(
 ) {
   let inside: Vec<usize> = (0..4).filter(|&i| vals[i] >= level).collect();
   let outside: Vec<usize> = (0..4).filter(|&i| vals[i] < level).collect();
+  // The six tetrahedra of a cube wind alternately, so a triangle's vertex
+  // order says nothing about which way it faces. Orient every emitted
+  // triangle so its normal points toward the side where the field is above
+  // `level`; `FaceForm[front, back]` then colours a connected surface
+  // consistently instead of speckling it.
+  let centroid = |idx: &[usize]| -> [f64; 3] {
+    let n = idx.len().max(1) as f64;
+    let mut c = [0.0; 3];
+    for &i in idx {
+      c[0] += verts[i].x / n;
+      c[1] += verts[i].y / n;
+      c[2] += verts[i].z / n;
+    }
+    c
+  };
+  let (ci, co) = (centroid(&inside), centroid(&outside));
+  let toward_high = [ci[0] - co[0], ci[1] - co[1], ci[2] - co[2]];
+  let mut emit = |t: [Point3D; 3]| {
+    let n = triangle_normal(t[0], t[1], t[2]);
+    let dot =
+      n[0] * toward_high[0] + n[1] * toward_high[1] + n[2] * toward_high[2];
+    if dot < 0.0 {
+      emit([t[0], t[2], t[1]]);
+    } else {
+      emit(t);
+    }
+  };
 
   match (inside.len(), outside.len()) {
     (1, 3) => {
@@ -9096,6 +9123,27 @@ fn march_cube(
       emit,
     );
   }
+}
+
+/// Repaint the full-canvas background `<rect>` that `generate_svg` emits
+/// right after the opening `<svg>` tag.
+fn replace_canvas_background(svg: &str, (r, g, b): (u8, u8, u8)) -> String {
+  let Some(start) = svg.find("<rect width=") else {
+    return svg.to_string();
+  };
+  let Some(rel) = svg[start..].find("fill=\"rgb(") else {
+    return svg.to_string();
+  };
+  let fill_start = start + rel;
+  let Some(end_rel) = svg[fill_start..].find(")\"") else {
+    return svg.to_string();
+  };
+  let fill_end = fill_start + end_rel + 2;
+  format!(
+    "{}fill=\"rgb({r},{g},{b})\"{}",
+    &svg[..fill_start],
+    &svg[fill_end..]
+  )
 }
 
 /// ContourPlot3D[f == c, {x, xmin, xmax}, {y, ymin, ymax}, {z, zmin, zmax}]
@@ -9157,6 +9205,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the (equation-normalized) body is zero.
   let mut contour_count: Option<usize> = None;
   let mut contour_levels: Option<Vec<f64>> = None;
+  let mut background: Option<(u8, u8, u8)> = None;
 
   for opt in &args[4..] {
     if let Expr::Rule {
@@ -9182,6 +9231,13 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         },
         Expr::Identifier(name) if name == "ContourStyle" => {
           styles = parse_plot_style_3d(replacement, bodies.len());
+        }
+        Expr::Identifier(name) if name == "Background" => {
+          background = crate::functions::graphics::parse_color(replacement)
+            .map(|c| {
+              let q = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+              (q(c.r), q(c.g), q(c.b))
+            });
         }
         Expr::Identifier(name) if name == "PlotPoints" => {
           let n = match evaluate_expr_to_expr(replacement) {
@@ -9467,6 +9523,11 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     [1.0, 1.0, Z_SCALE],
     &[None, None, None],
   )?;
+  // `Background -> colour` repaints the canvas rectangle drawn first.
+  let svg = match background {
+    Some(bg) => replace_canvas_background(&svg, bg),
+    None => svg,
+  };
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
@@ -12666,5 +12727,45 @@ mod cuboid_rotation_tests {
       }
       _ => panic!("an axis-aligned transform must not tessellate a Cuboid"),
     }
+  }
+}
+
+#[cfg(test)]
+mod march_cube_orientation_tests {
+  use super::*;
+
+  /// Every triangle of a level surface faces toward the side where the
+  /// field exceeds the level — whichever of the cube's six tetrahedra
+  /// produced it — so `FaceForm[front, back]` colours it consistently.
+  #[test]
+  fn triangles_face_toward_higher_field_values() {
+    let n = 6;
+    let h = 2.0 / n as f64;
+    // A tilted plane: its gradient (1, 2, 3) is the same everywhere.
+    let f = |x: f64, y: f64, z: f64| x + 2.0 * y + 3.0 * z - 0.1;
+    let mut checked = 0;
+    for i in 0..n {
+      for j in 0..n {
+        for k in 0..n {
+          let at = |di: usize, dj: usize, dk: usize| Point3D {
+            x: -1.0 + (i + di) as f64 * h,
+            y: -1.0 + (j + dj) as f64 * h,
+            z: -1.0 + (k + dk) as f64 * h,
+          };
+          let corners: [Point3D; 8] =
+            std::array::from_fn(|c| at(c & 1, (c >> 1) & 1, (c >> 2) & 1));
+          let vals: [f64; 8] = std::array::from_fn(|c| {
+            f(corners[c].x, corners[c].y, corners[c].z)
+          });
+          march_cube(&corners, &vals, 0.0, &mut |t| {
+            let nrm = triangle_normal(t[0], t[1], t[2]);
+            let dot = nrm[0] + 2.0 * nrm[1] + 3.0 * nrm[2];
+            assert!(dot > 0.0, "triangle faces the low side");
+            checked += 1;
+          });
+        }
+      }
+    }
+    assert!(checked > 0);
   }
 }
