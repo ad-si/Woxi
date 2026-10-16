@@ -35170,7 +35170,7 @@ mod bracketing_bar_labels {
   fn bracketing_bar_is_not_reported_unimplemented() {
     clear_state();
     assert_eq!(interpret("BracketingBar[x]").unwrap(), "BracketingBar[x]");
-    assert!(woxi::get_captured_warnings().is_empty());
+    assert_eq!(woxi::get_captured_warnings(), Vec::<String>::new());
   }
 
   #[test]
