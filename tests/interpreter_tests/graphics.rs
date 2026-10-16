@@ -35876,3 +35876,23 @@ fn grid_progress_indicator_cell_draws_a_bar() {
   assert!((width_of_fill(&full) - 149.0).abs() < 0.2, "{full}");
   assert!(width_of_fill(&none).abs() < 0.2, "{none}");
 }
+
+/// A `TraditionalForm` quotient written on one line in a picture's text
+/// keeps the parentheses around a compound numerator or denominator:
+/// `1/(1+u+v)`, not `1/1+u+v`, which would read as `(1/1)+u+v`.
+#[test]
+fn traditionalform_inline_fraction_parenthesizes_compound_sides() {
+  let markup = |code: &str| {
+    let expr = woxi::interpret_to_expr(code).unwrap();
+    woxi::functions::graphics::expr_to_svg_markup(&expr)
+  };
+  let svg = markup(
+    "TraditionalForm[u (1/(1 + u + v) + 1/((1 + u)^2 (u/(1 + u) + v)))]",
+  );
+  assert!(svg.contains("1/(1+u+v)"), "{svg}");
+  assert!(svg.contains("u/(1+u)"), "{svg}");
+  assert!(!svg.contains("1/1+u"), "{svg}");
+  // A simple side stays bare.
+  let simple = markup("TraditionalForm[a/b]");
+  assert!(simple.contains("a/b"), "{simple}");
+}
