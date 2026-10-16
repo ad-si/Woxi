@@ -73,6 +73,16 @@ fn chart_datum_value(e: &Expr) -> Option<f64> {
   }
 }
 
+/// Typeset a label expression into its first line plus the lines after it.
+/// A newline inside the label (`Row[{"a", "\n", "b"}]`, a multi-line string)
+/// starts a new line, which an SVG `<text>` would otherwise collapse.
+fn markup_and_extra_lines(expr: &Expr) -> (String, Vec<String>) {
+  let mut lines =
+    crate::functions::graphics::expr_to_svg_markup_lines(expr).into_iter();
+  let first = lines.next().unwrap_or_default();
+  (first, lines.collect())
+}
+
 /// A label with optional styling (bold, italic, color, font-size).
 #[derive(Clone)]
 pub(crate) struct StyledLabel {
@@ -435,6 +445,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
+      let mut extra_lines = Vec::new();
       let (text, markup) = match &args[0] {
         Expr::String(s) => (s.clone(), None),
         Expr::Identifier(s) => (s.clone(), None),
@@ -442,7 +453,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         // rest of the graphic is, so `Subscript[p, 0]` shows as `p₀` and a
         // machine real keeps 6 significant figures.
         other => {
-          let markup = crate::functions::graphics::expr_to_svg_markup(other);
+          let (markup, rest) = markup_and_extra_lines(other);
+          extra_lines = rest;
           (svg_markup_visible_text(&markup), Some(markup))
         }
       };
@@ -451,7 +463,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       Some(StyledLabel {
         text,
         markup,
-        extra_lines: Vec::new(),
+        extra_lines,
         bold,
         italic,
         color,
@@ -461,7 +473,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
     // plot with its OutputForm text, matching wolframscript.
     other => {
-      let markup = crate::functions::graphics::expr_to_svg_markup(other);
+      let (markup, extra_lines) = markup_and_extra_lines(other);
       let text = svg_markup_visible_text(&markup);
       if text.is_empty() {
         None
@@ -469,7 +481,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         Some(StyledLabel {
           text,
           markup: Some(markup),
-          extra_lines: Vec::new(),
+          extra_lines,
           bold: false,
           italic: false,
           color: None,
