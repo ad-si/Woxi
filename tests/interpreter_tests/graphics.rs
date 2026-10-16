@@ -28683,6 +28683,44 @@ mod manipulate {
   }
 
   #[test]
+  fn display_setterbar_on_list_slot_writes_back_to_the_slot() {
+    // `SetterBar[Dynamic[slots[[2]]], …]` — one bar per slot of a shared
+    // list — is a row of write-back buttons, not the frozen source text.
+    use woxi::functions::graphics::build_manipulate_display;
+    clear_state();
+    interpret("slots = {3, 2, 1}").unwrap();
+    let tree = build_manipulate_display(
+      "Row[{SetterBar[Dynamic[slots[[2]]], {1, 2, 3}]}]",
+      &[("slots".to_string(), "{3, 2, 1}".to_string())],
+    );
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    assert!(
+      nodes
+        .iter()
+        .all(|n| !matches!(n, DisplayNode::Static { .. })),
+      "SetterBar must not fall through to a source-text leaf: {nodes:?}"
+    );
+    let togglers: Vec<(&str, bool)> = nodes
+      .iter()
+      .filter_map(|n| match n {
+        DisplayNode::Toggler {
+          mutation, selected, ..
+        } => Some((mutation.as_str(), *selected)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      togglers,
+      vec![
+        ("slots[[2]] = 1", false),
+        ("slots[[2]] = 2", true),
+        ("slots[[2]] = 3", false)
+      ]
+    );
+  }
+
+  #[test]
   fn display_style_renders_as_styled_text() {
     // `Style[n, Bold, Red]` shows the *value* of n, bold and red — not the
     // literal `Style[…]` source.

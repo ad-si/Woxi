@@ -19956,6 +19956,22 @@ fn resolve_display_item(expr: &Expr) -> Expr {
     current = unwrap_display_wrappers(&current);
   }
   current = unwrap_display_wrappers(&current);
+  // `Style[Dynamic[expr], directives…]` — the readout idiom — styles the
+  // current value of `expr`; release the hold under the `Style` so the value
+  // is drawn rather than the symbolic `Dynamic[…]` text.
+  if let Expr::FunctionCall { name, args } = &current
+    && name == "Style"
+    && args.len() >= 2
+    && matches!(&args[0], Expr::FunctionCall { name: d, args: da }
+      if d == "Dynamic" && !da.is_empty())
+  {
+    let mut restyled: Vec<Expr> = args.to_vec();
+    restyled[0] = resolve_display_item(&args[0]);
+    current = Expr::FunctionCall {
+      name: name.clone(),
+      args: restyled.into(),
+    };
+  }
   // `InputForm[expr]` displays as the InputForm text of `expr`.
   if let Expr::FunctionCall { name, args } = &current
     && name == "InputForm"
@@ -31166,17 +31182,18 @@ fn setterbar_node(
   probes: &mut Vec<String>,
   ons: &mut Vec<String>,
 ) -> Option<DisplayNode> {
-  let var = match args.first() {
+  // The write-back target: a bare symbol, or any assignable lvalue such as
+  // a list slot (`SetterBar[Dynamic[args[[n, 1]]], …]`, one bar per slot of
+  // a shared list), as with `popup_node`.
+  let lval = match args.first() {
     Some(Expr::FunctionCall { name, args: dargs })
       if name == "Dynamic" && !dargs.is_empty() =>
     {
-      match &dargs[0] {
-        Expr::Identifier(v) => v.clone(),
-        _ => return None,
-      }
+      &dargs[0]
     }
     _ => return None,
   };
+  let var = crate::syntax::expr_to_source_form(lval);
   // The choice list may be held (e.g. `Range[2, 10]`).
   let choices_expr = match &args[1] {
     l @ Expr::List(_) => l.clone(),
@@ -31186,10 +31203,9 @@ fn setterbar_node(
     return None;
   };
   // The current selection, for the per-choice `selected` state.
-  let current =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(var.clone()))
-      .ok()
-      .map(|e| crate::syntax::expr_to_source_form(&e));
+  let current = crate::evaluator::evaluate_expr_to_expr(lval)
+    .ok()
+    .map(|e| crate::syntax::expr_to_source_form(&e));
   let mut buttons = Vec::with_capacity(choices.len());
   for choice in choices {
     let (value, label) = match choice {
