@@ -190,6 +190,23 @@ mod column_visual_mode {
     assert!(!svg.contains("Dynamic"), "{svg}");
   }
 
+  #[test]
+  fn grid_cell_deploy_dynamic_shows_current_value() {
+    // `Deploy[Dynamic[…]]` in a Grid cell: the Deploy wrapper comes off and
+    // the Dynamic still displays its current value, not its source.
+    clear_state();
+    for cell in [
+      "Deploy[Dynamic[Column[{1 + 1, 7}]]]",
+      "Deploy[Dynamic[Text[Column[{1 + 1, 7}]]]]",
+    ] {
+      let result =
+        interpret_with_stdout(&format!("Grid[{{{{\"a\", {cell}}}}}]")).unwrap();
+      let svg = result.graphics.unwrap();
+      assert!(svg.contains(">2</text>"), "{svg}");
+      assert!(!svg.contains("Dynamic"), "{svg}");
+    }
+  }
+
   /// A `Style` wrapping a layout is inherited by everything inside it, so
   /// `Style[Column[{…}], 65, Hue[…]]` — the shape of a Demonstration's
   /// `Manipulate` body — is a large, coloured column. It used to fall back

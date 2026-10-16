@@ -19933,6 +19933,9 @@ fn resolve_display_item(expr: &Expr) -> Expr {
   // shows `content` (its event rules need live input a static rendering
   // lacks). A Demonstration nests them in either order, e.g.
   // `EventHandler[Dynamic[board[…]], "MouseClicked" :> …]`.
+  // Wrappers such as `Deploy[Dynamic[…]]` or `Text[Dynamic[…]]` come off
+  // first, so a `Dynamic` underneath is still resolved.
+  current = unwrap_display_wrappers(&current);
   loop {
     let head = match &current {
       Expr::FunctionCall { name, args } if !args.is_empty() => {
