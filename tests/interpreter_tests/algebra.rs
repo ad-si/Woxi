@@ -7564,6 +7564,50 @@ mod reduce {
   }
 
   #[test]
+  fn solve_sin_equals_shifted_sin() {
+    assert_eq!(
+      interpret("Solve[Sin[t] == Sin[t + 2 Pi/5], t]").unwrap(),
+      "{{t -> ConditionalExpression[(3*Pi)/10 + Pi*C[1], Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[Sin[t] == Cos[t], t]").unwrap(),
+      "{{t -> ConditionalExpression[Pi/4 + Pi*C[1], Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[Sin[t] == Sin[2 t], t]").unwrap(),
+      "{{t -> ConditionalExpression[2*Pi*C[1], Element[C[1], Integers]]}, {t -> ConditionalExpression[Pi/3 + (2*Pi*C[1])/3, Element[C[1], Integers]]}}"
+    );
+  }
+
+  #[test]
+  fn trig_bounded_sin_equals_shifted_sin() {
+    assert_eq!(
+      interpret("Reduce[Sin[t] == Sin[t + 2 Pi/5] && 0 <= t < 2 Pi, t, Reals]")
+        .unwrap(),
+      "t == (3*Pi)/10 || t == (13*Pi)/10"
+    );
+  }
+
+  // The bounds on `t` must survive when another unknown depends on it.
+  #[test]
+  fn trig_bounded_multi_var() {
+    assert_eq!(
+      interpret(
+        "Reduce[z == Sin[t] && Sin[t] == 1/2 && 0 <= t < 2 Pi && z > 0, {z, t}, Reals]"
+      )
+      .unwrap(),
+      "(z == 1/2 && t == Pi/6) || (z == 1/2 && t == (5*Pi)/6)"
+    );
+    assert_eq!(
+      interpret(
+        "Reduce[z == Sin[t] && Sin[t] == Sin[t + 2 Pi/5] && Inequality[0, LessEqual, t, Less, 2 Pi] && z > 0, {z, t}, Reals]"
+      )
+      .unwrap(),
+      "z == (1 + Sqrt[5])/4 && t == (3*Pi)/10"
+    );
+  }
+
+  #[test]
   fn trig_bounded_cos_half() {
     assert_eq!(
       interpret("Reduce[Cos[x] == 1/2 && 0 < x < 2 Pi, x]").unwrap(),
