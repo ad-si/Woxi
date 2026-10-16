@@ -34400,6 +34400,18 @@ mod grid_text_in_graphics {
   }
 
   #[test]
+  fn escaped_spaces_in_box_text_are_not_products() {
+    // `\ ` between words inside a box group is a literal space; it must not
+    // be read as implicit multiplication (`my*height`).
+    let svg = interpret(
+      r#"ExportString[Graphics[Text["\!\(\*FractionBox[\(my\ height\), \(my\ shadow\ length\)]\)=\!\(\*FractionBox[\(a\), \(b\)]\)", {0, 0}]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("(my height)/(my shadow length)=a/b"), "{svg}");
+    assert!(!svg.contains('*'), "{svg}");
+  }
+
+  #[test]
   fn grid_spanned_cells_are_centered_over_their_columns() {
     let svg = interpret(
       r#"ExportString[Grid[{{"a", "b", "c", "d"}, {"left", SpanFromLeft, "right", SpanFromLeft}}, Frame -> All], "SVG"]"#,
