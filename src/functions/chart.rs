@@ -73,6 +73,16 @@ fn chart_datum_value(e: &Expr) -> Option<f64> {
   }
 }
 
+/// Typeset a label expression into its first line plus the lines after it.
+/// A newline inside the label (`Row[{"a", "\n", "b"}]`, a multi-line string)
+/// starts a new line, which an SVG `<text>` would otherwise collapse.
+fn markup_and_extra_lines(expr: &Expr) -> (String, Vec<String>) {
+  let mut lines =
+    crate::functions::graphics::expr_to_svg_markup_lines(expr).into_iter();
+  let first = lines.next().unwrap_or_default();
+  (first, lines.collect())
+}
+
 /// A label with optional styling (bold, italic, color, font-size).
 #[derive(Clone)]
 pub(crate) struct StyledLabel {
@@ -435,6 +445,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
+      let mut extra_lines = Vec::new();
       let (text, markup) = match &args[0] {
         Expr::String(s) => (s.clone(), None),
         Expr::Identifier(s) => (s.clone(), None),
@@ -442,7 +453,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         // rest of the graphic is, so `Subscript[p, 0]` shows as `p₀` and a
         // machine real keeps 6 significant figures.
         other => {
-          let markup = crate::functions::graphics::expr_to_svg_markup(other);
+          let (markup, rest) = markup_and_extra_lines(other);
+          extra_lines = rest;
           (svg_markup_visible_text(&markup), Some(markup))
         }
       };
@@ -451,7 +463,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       Some(StyledLabel {
         text,
         markup,
-        extra_lines: Vec::new(),
+        extra_lines,
         bold,
         italic,
         color,
@@ -461,7 +473,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
     // plot with its OutputForm text, matching wolframscript.
     other => {
-      let markup = crate::functions::graphics::expr_to_svg_markup(other);
+      let (markup, extra_lines) = markup_and_extra_lines(other);
       let text = svg_markup_visible_text(&markup);
       if text.is_empty() {
         None
@@ -469,7 +481,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         Some(StyledLabel {
           text,
           markup: Some(markup),
-          extra_lines: Vec::new(),
+          extra_lines,
           bold: false,
           italic: false,
           color: None,
@@ -596,6 +608,18 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
       ) && args.len() == 1 =>
     {
       expr_to_label(&args[0])
+    }
+    // `StringForm["delay `` s", 0.3]` is displayed with its slots filled,
+    // each value read as a label itself.
+    Expr::FunctionCall { name, args } if name == "StringForm" => {
+      let Some(Expr::String(template)) = args.first() else {
+        return None;
+      };
+      Some(crate::functions::string_ast::format_string_form_with(
+        template,
+        &args[1..],
+        |v| expr_to_label(v).unwrap_or_else(|| expr_to_string(v)),
+      ))
     }
     // A list label is typeset as the list itself: `AxesLabel -> {t, {a, b}}`
     // labels the vertical axis `{a, b}`.
@@ -2523,6 +2547,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_width: None,
           projected: [
             project(v0, &camera),
             project(v1, &camera),
@@ -2942,6 +2967,7 @@ fn build_cylindrical_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_width: None,
         projected: [
           project(v0, camera),
           project(v1, camera),
@@ -3065,6 +3091,7 @@ fn build_torus_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_width: None,
         projected: [
           project(v0, camera),
           project(v1, camera),

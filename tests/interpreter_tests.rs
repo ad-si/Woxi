@@ -1455,6 +1455,34 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_listplot_plotlabel_row_with_newline_stacks_lines() {
+    // Regression: a `PlotLabel` built as `Row[{…, "\n", …}]` (a Demonstration
+    // title with an explicit line break, optionally under `Text[Style[…]]`)
+    // collapsed onto one line, because an SVG `<text>` ignores a raw newline.
+    // Each line is now its own tspan, growing upward like a Column title.
+    for label in [
+      "Row[{\"first \", Subscript[p, 1][x], \"\\n\", \"second\"}]",
+      "Text[Style[TraditionalForm[Row[{\"first \", Subscript[p, 1][x], \"\\n\", \"second\"}]], 12]]",
+    ] {
+      clear_state();
+      let svg = interpret_with_stdout(&format!(
+        "ListPlot[{{1, 2, 3}}, Joined -> True, PlotLabel -> {label}]"
+      ))
+      .unwrap()
+      .graphics
+      .expect("ListPlot should produce a graphics SVG");
+      assert!(
+        svg.contains("<tspan x=") && svg.contains(">second</tspan>"),
+        "second PlotLabel line must be its own tspan for {label}:\n{svg}"
+      );
+      assert!(
+        !svg.contains("\nsecond"),
+        "no raw newline may remain in the label for {label}:\n{svg}"
+      );
+    }
+  }
+
+  #[test]
   fn test_graphics_plotlabel_stringform_substitutes_placeholders() {
     // Regression: `PlotLabel -> StringForm["…", args]` (the "Paths inside a
     // Polygon" Demonstration's `PlotLabel -> StringForm["Path distance =

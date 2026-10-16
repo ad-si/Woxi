@@ -8718,6 +8718,10 @@ mod convex_polyhedron_q {
       "ConvexPolyhedronQ[Tetrahedron[]]",
       "ConvexPolyhedronQ[Dodecahedron[]]",
       "ConvexPolyhedronQ[Dodecahedron[{0, 0, 0}, 2]]",
+      // `{θ, ϕ}` turns the solid rather than placing it.
+      "ConvexPolyhedronQ[Cube[{Pi/4, 0}]]",
+      "ConvexPolyhedronQ[Icosahedron[{Pi/5, Pi/3}, 2]]",
+      "ConvexPolyhedronQ[Tetrahedron[{1, 2, 3}]]",
       "ConvexPolyhedronQ[Octahedron[]]",
       "ConvexPolyhedronQ[Icosahedron[]]",
       "ConvexPolyhedronQ[Hexahedron[]]",

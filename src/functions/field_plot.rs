@@ -296,6 +296,64 @@ struct DensityContourOptions {
   /// `PlotLegends -> Automatic`: a colour bar right of the plot with one
   /// swatch per shaded band, labelled at the contour levels.
   bar_legend: bool,
+  /// `PlotRange -> {zmin, zmax}` (or the third part of a three-axis
+  /// range): the values the colours span, instead of the sampled ones.
+  value_range: Option<(f64, f64)>,
+  /// `ClippingStyle`: how a cell outside `value_range` is drawn.
+  clipping: Clipping,
+}
+
+/// How a density cell whose value lies outside an explicit `PlotRange` is
+/// drawn, as `ClippingStyle` sets it.
+#[derive(Clone, Copy)]
+enum Clipping {
+  /// `None` (Wolfram's default): the cell is left blank.
+  Blank,
+  /// `Automatic`: the colour of the end of the range it is beyond.
+  Saturate,
+  /// A colour (or `{below, above}` colours); `None` leaves that side blank.
+  Colors(Option<(u8, u8, u8)>, Option<(u8, u8, u8)>),
+}
+
+impl Clipping {
+  fn parse(value: &Expr) -> Self {
+    let rgb = |e: &Expr| {
+      parse_color(e).map(|c| {
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      })
+    };
+    match value {
+      Expr::Identifier(s) if s == "Automatic" => Clipping::Saturate,
+      Expr::List(sides) if sides.len() == 2 => {
+        Clipping::Colors(rgb(&sides[0]), rgb(&sides[1]))
+      }
+      other => match rgb(other) {
+        Some(c) => Clipping::Colors(Some(c), Some(c)),
+        None => Clipping::Blank,
+      },
+    }
+  }
+}
+
+/// The value range of a `PlotRange -> {zmin, zmax}` (or `{{…}, {…},
+/// {zmin, zmax}}`) given to a density or contour plot.
+fn plot_value_range(value: &Expr) -> Option<(f64, f64)> {
+  let pair = |e: &Expr| match e {
+    Expr::List(ends) if ends.len() == 2 => {
+      let lo = try_eval_to_f64(&ends[0])?;
+      let hi = try_eval_to_f64(&ends[1])?;
+      (lo < hi).then_some((lo, hi))
+    }
+    _ => None,
+  };
+  match value {
+    Expr::List(parts) if parts.len() == 3 => pair(&parts[2]),
+    other => pair(other),
+  }
 }
 
 /// The per-contour styles of a `ContourStyle` value whose entries are all
@@ -368,6 +426,8 @@ fn parse_density_contour_options(
   let mut color_function_scaling = true;
   let mut contour_labels = false;
   let mut bar_legend = false;
+  let mut value_range: Option<(f64, f64)> = None;
+  let mut clipping = Clipping::Blank;
   for opt in &args[start..] {
     if let Expr::Rule {
       pattern,
@@ -476,6 +536,8 @@ fn parse_density_contour_options(
           contour_labels = !matches!(replacement, Expr::Identifier(v)
             if v == "False" || v == "None");
         }
+        "PlotRange" => value_range = plot_value_range(replacement),
+        "ClippingStyle" => clipping = Clipping::parse(replacement),
         "PlotLegends" => {
           bar_legend = matches!(replacement, Expr::Identifier(v)
             if v == "Automatic");
@@ -505,6 +567,8 @@ fn parse_density_contour_options(
     region_function,
     contour_labels,
     bar_legend,
+    value_range,
+    clipping,
   }
 }
 
@@ -752,6 +816,80 @@ fn push_bar_legend(
   }
 }
 
+/// A standalone `BarLegend[{colors, {min, max}}]` (or `BarLegend[colors]`
+/// over 0..1): a vertical continuous colour bar `bar_height` display
+/// pixels tall, labelled at round values to its right. `colors` is a
+/// gradient name or a colour function of the rescaled value.
+pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
+  let (colors, (lo, hi)) = match args.first()? {
+    Expr::List(spec) if spec.len() == 2 => match &spec[1] {
+      Expr::List(range) if range.len() == 2 => (
+        &spec[0],
+        (try_eval_to_f64(&range[0])?, try_eval_to_f64(&range[1])?),
+      ),
+      _ => return None,
+    },
+    other => (other, (0.0, 1.0)),
+  };
+  if !(hi > lo) {
+    return None;
+  }
+  let name = color_function_scheme_name(colors);
+  let color_at = |t: f64| match &name {
+    Some(name) => apply_named_color_function(name, t),
+    None => scaled_color(t, lo + t * (hi - lo), None, Some((colors, true))),
+  };
+
+  let (.., label_fill, _) = plot_theme();
+  let (bar_w, pad) = (13.0, 4.0);
+  let step = crate::functions::plot::nice_step(hi - lo, 5);
+  let ticks: Vec<f64> = {
+    let first = (lo / step - 1e-9).ceil() as i64;
+    let last = (hi / step + 1e-9).floor() as i64;
+    (first..=last).map(|k| k as f64 * step).collect()
+  };
+  let labels: Vec<String> = ticks
+    .iter()
+    .map(|&v| crate::functions::plot::format_tick_with_step(v, step))
+    .collect();
+  let label_w =
+    labels.iter().map(|l| l.chars().count()).max().unwrap_or(1) as f64 * 7.5;
+  let width = pad + bar_w + 6.0 + label_w + pad;
+  let height = bar_height + 2.0 * pad + 8.0;
+  let top = pad + 4.0;
+  let mut svg = format!(
+    "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+  );
+  // The bar, as thin horizontal bands from the low end (bottom) upward.
+  const BANDS: usize = 64;
+  let band_h = bar_height / BANDS as f64;
+  for k in 0..BANDS {
+    let (r, g, b) = color_at((k as f64 + 0.5) / BANDS as f64);
+    let y = top + bar_height - (k + 1) as f64 * band_h;
+    svg.push_str(&format!(
+      "<rect x=\"{pad:.1}\" y=\"{y:.2}\" width=\"{bar_w:.1}\" height=\"{:.2}\" fill=\"rgb({r},{g},{b})\"/>\n",
+      band_h + 0.3
+    ));
+  }
+  svg.push_str(&format!(
+    "<rect x=\"{pad:.1}\" y=\"{top:.1}\" width=\"{bar_w:.1}\" height=\"{bar_height:.1}\" fill=\"none\" stroke=\"rgb(110,110,110)\" stroke-width=\"0.8\"/>\n"
+  ));
+  for (v, label) in ticks.iter().zip(&labels) {
+    let y = top + bar_height * (1.0 - (v - lo) / (hi - lo));
+    svg.push_str(&format!(
+      "<line x1=\"{:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"rgb(110,110,110)\" stroke-width=\"0.8\"/>\n",
+      pad + bar_w - 3.0,
+      pad + bar_w
+    ));
+    svg.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"{y:.1}\" font-family=\"sans-serif\" font-size=\"11\" fill=\"{label_fill}\" dominant-baseline=\"central\">{label}</text>\n",
+      pad + bar_w + 6.0
+    ));
+  }
+  svg.push_str("</svg>\n");
+  Some(svg)
+}
+
 /// Write a plot's `FrameLabel` text along the frame edges it names.
 fn push_frame_labels(
   svg: &mut String,
@@ -944,25 +1082,92 @@ fn embed_grid_image(
   color_function: Option<&str>,
   color_function_expr: Option<(&Expr, bool)>,
 ) {
+  if !v_min.is_finite() || !v_max.is_finite() {
+    return;
+  }
+  let colors = cell_colors(
+    grid,
+    (v_min, v_max),
+    color_function,
+    color_function_expr,
+    Clipping::Saturate,
+  );
+  embed_color_image(svg, &colors, x0, y0, w, h);
+}
+
+/// The colour of each grid cell (`grid[col][row]`, row 0 at the bottom) on
+/// a colour scale spanning `range`; a cell without a value, or one outside
+/// the range that `clipping` leaves blank, has none.
+fn cell_colors(
+  grid: &[Vec<f64>],
+  (v_min, v_max): (f64, f64),
+  color_function: Option<&str>,
+  color_function_expr: Option<(&Expr, bool)>,
+  clipping: Clipping,
+) -> Vec<Vec<Option<(u8, u8, u8)>>> {
+  let color = |v: f64| {
+    scaled_color(
+      scale_value(v, v_min, v_max),
+      v,
+      color_function,
+      color_function_expr,
+    )
+  };
+  grid
+    .iter()
+    .map(|col| {
+      col
+        .iter()
+        .map(|&v| {
+          if !v.is_finite() {
+            return None;
+          }
+          let side = if v < v_min {
+            Some(false)
+          } else if v > v_max {
+            Some(true)
+          } else {
+            None
+          };
+          match (side, clipping) {
+            (None, _) | (Some(_), Clipping::Saturate) => Some(color(v)),
+            (Some(_), Clipping::Blank) => None,
+            (Some(above), Clipping::Colors(below_c, above_c)) => {
+              if above {
+                above_c
+              } else {
+                below_c
+              }
+            }
+          }
+        })
+        .collect()
+    })
+    .collect()
+}
+
+/// Embed a grid of cell colours (`colors[col][row]`, row 0 at the bottom;
+/// `None` transparent) as an image filling the given plot rectangle.
+fn embed_color_image(
+  svg: &mut String,
+  colors: &[Vec<Option<(u8, u8, u8)>>],
+  x0: f64,
+  y0: f64,
+  w: f64,
+  h: f64,
+) {
   use base64::Engine as _;
-  let cols = grid.len();
-  let rows = grid.first().map_or(0, std::vec::Vec::len);
-  if cols == 0 || rows == 0 || !v_min.is_finite() || !v_max.is_finite() {
+  let cols = colors.len();
+  let rows = colors.first().map_or(0, std::vec::Vec::len);
+  if cols == 0 || rows == 0 {
     return;
   }
   let mut img = image::RgbaImage::new(cols as u32, rows as u32);
-  for (i, col) in grid.iter().enumerate() {
-    for (j, &v) in col.iter().enumerate() {
-      let px = if v.is_finite() {
-        let (r, g, b) = scaled_color(
-          scale_value(v, v_min, v_max),
-          v,
-          color_function,
-          color_function_expr,
-        );
-        image::Rgba([r, g, b, 255])
-      } else {
-        image::Rgba([0, 0, 0, 0])
+  for (i, col) in colors.iter().enumerate() {
+    for (j, cell) in col.iter().enumerate() {
+      let px = match cell {
+        Some((r, g, b)) => image::Rgba([*r, *g, *b, 255]),
+        None => image::Rgba([0, 0, 0, 0]),
       };
       img.put_pixel(i as u32, (rows - 1 - j) as u32, px);
     }
@@ -1641,6 +1846,35 @@ fn render_contour_lines_styled(
 }
 
 /// DensityPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
+/// The symbolic `Graphics[items, opts]` a `ContourPlot`/`DensityPlot`
+/// carries alongside its rendering, so `Show` can merge its primitives with
+/// other graphics. It keeps the call's options too, so the merged picture is
+/// still drawn on the axes and range the plot asked for, and spells out the
+/// plot's own defaults where `Graphics` differs: framed, and square.
+fn field_plot_structure(items: Vec<Expr>, args: &[Expr]) -> Expr {
+  fn name_of(o: &Expr) -> Option<&str> {
+    crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
+  }
+  let mut structure_args = vec![Expr::List(items.into())];
+  let mut explicit = crate::functions::plot::explicit_options(args);
+  // The plot's own `PlotRange` clips the *function values* — its x/y axes
+  // are already fixed by the `{x,xmin,xmax}`/`{y,ymin,ymax}` iterators and
+  // stay put regardless of it. But `Graphics`/`Show` read a `PlotRange`
+  // rule as an axis-range spec, so forwarding the call's value verbatim
+  // would let it crop the axes of the merged picture. Drop it instead: the
+  // primitives already span the sampled domain, which is the range `Show`
+  // should use.
+  explicit.retain(|o| name_of(o) != Some("PlotRange"));
+  if !explicit.iter().any(|o| name_of(o) == Some("Frame")) {
+    structure_args.push(rule_expr(id_expr("Frame"), bool_expr(true)));
+  }
+  if !explicit.iter().any(|o| name_of(o) == Some("AspectRatio")) {
+    structure_args.push(rule_expr(id_expr("AspectRatio"), Expr::Integer(1)));
+  }
+  structure_args.extend(explicit);
+  call("Graphics", structure_args)
+}
+
 pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "DensityPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "DensityPlot")?;
@@ -1674,7 +1908,26 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  let (v_min, v_max) = robust_value_range(&samples);
+  // An explicit `PlotRange -> {zmin, zmax}` fixes the values the colours
+  // span; cells beyond it follow `ClippingStyle` (blank by default).
+  // Otherwise the colours span the sampled values.
+  let (v_min, v_max) = opts
+    .value_range
+    .unwrap_or_else(|| robust_value_range(&samples));
+  let clipping = if opts.value_range.is_some() {
+    opts.clipping
+  } else {
+    Clipping::Saturate
+  };
+  let colors = (v_min.is_finite() && v_max.is_finite()).then(|| {
+    cell_colors(
+      &grid,
+      (v_min, v_max),
+      opts.color_function.as_deref(),
+      opts.cf_expr(),
+      clipping,
+    )
+  });
 
   // Use plotters for axes, then overlay the density image
   let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
@@ -1687,18 +1940,16 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.truncate(pos);
   }
 
-  embed_grid_image(
-    &mut svg,
-    &grid,
-    v_min,
-    v_max,
-    area.plot_x0,
-    area.plot_y0,
-    area.plot_w,
-    area.plot_h,
-    opts.color_function.as_deref(),
-    opts.cf_expr(),
-  );
+  if let Some(colors) = &colors {
+    embed_color_image(
+      &mut svg,
+      colors,
+      area.plot_x0,
+      area.plot_y0,
+      area.plot_w,
+      area.plot_h,
+    );
+  }
   push_frame(
     &mut svg,
     area.plot_x0,
@@ -1709,7 +1960,68 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+
+  // The coloured cells as a `Raster` spanning the plotted domain (rows from
+  // the bottom up), so `Show` can lay other graphics over the density
+  // instead of setting the two pictures side by side. Cells without a
+  // colour stay transparent.
+  let Some(colors) = colors else {
+    return Ok(crate::graphics_result(svg));
+  };
+  let channel = |c: u8| Expr::Real(c as f64 / 255.0);
+  let rows: Vec<Expr> = (0..FIELD_GRID)
+    .map(|j| {
+      let row: Vec<Expr> = colors
+        .iter()
+        .map(|col| {
+          let ((r, g, b), alpha) = match col[j] {
+            Some(rgb) => (rgb, 1.0),
+            None => ((0, 0, 0), 0.0),
+          };
+          Expr::List(
+            vec![channel(r), channel(g), channel(b), Expr::Real(alpha)].into(),
+          )
+        })
+        .collect();
+      Expr::List(row.into())
+    })
+    .collect();
+  let corner =
+    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  let raster = call(
+    "Raster",
+    vec![
+      Expr::List(rows.into()),
+      Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
+    ],
+  );
+  let structure = field_plot_structure(vec![raster], args);
+  let graphic = crate::graphics_result_with_structure(svg, structure);
+  if !opts.bar_legend {
+    return Ok(graphic);
+  }
+  // `PlotLegends -> Automatic` gives `Legended[plot, Placed[BarLegend[…],
+  // After]]`, as in Wolfram: a colour bar over the plotted value range,
+  // which `Show` keeps when it merges the plot with other graphics.
+  let colors = match (&opts.color_function, &opts.color_function_expr) {
+    (_, Some(f)) => f.clone(),
+    (Some(name), None) => Expr::String(name.clone()),
+    (None, None) => Expr::String("WL14DefaultDensityGradient".to_string()),
+  };
+  let bar = call1(
+    "BarLegend",
+    Expr::List(
+      vec![
+        colors,
+        Expr::List(vec![Expr::Real(v_min), Expr::Real(v_max)].into()),
+      ]
+      .into(),
+    ),
+  );
+  Ok(call(
+    "Legended",
+    vec![graphic, call("Placed", vec![bar, id_expr("After")])],
+  ))
 }
 
 /// ContourPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -2019,32 +2331,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  // The symbolic form keeps the call's options too, so `Show` merging
-  // these contour lines with other primitives still draws them on the
-  // axes and range the plot asked for. A contour plot is framed by
-  // default, so the merged picture has to be framed as well unless the
-  // call turned it off.
-  let mut structure_args = vec![Expr::List(structure_items.into())];
-  let mut explicit = crate::functions::plot::explicit_options(args);
-  // A ContourPlot's own `PlotRange` clips the *function values* being
-  // contoured — its x/y axes are already fixed by the `{x,xmin,xmax}`/
-  // `{y,ymin,ymax}` iterators and stay put regardless of it. But
-  // `Graphics`/`Show` read a `PlotRange` rule as an axis-range spec, so
-  // forwarding the call's value verbatim would let it crop the axes of
-  // the merged picture. Drop it instead: the primitives below already
-  // span the sampled domain, which is the range `Show` should use.
-  explicit.retain(|o| {
-    crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
-      != Some("PlotRange")
-  });
-  if !explicit.iter().any(|o| {
-    crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
-      == Some("Frame")
-  }) {
-    structure_args.push(rule_expr(id_expr("Frame"), bool_expr(true)));
-  }
-  structure_args.extend(explicit);
-  let structure = call("Graphics", structure_args);
+  let structure = field_plot_structure(structure_items, args);
 
   // Use plotters for axes
   let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
@@ -3236,7 +3523,7 @@ pub fn list_vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// StreamPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
-/// Uses RK4 integration from seed points.
+/// Draws evenly spaced streamlines of the field (see `stream_primitives`).
 pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "StreamPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "StreamPlot")?;
@@ -3252,23 +3539,6 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let plot_label = parse_field_plot_label(args, 3);
   let prolog = parse_overlay_primitives(args, 3, "Prolog");
   let epilog = parse_overlay_primitives(args, 3, "Epilog");
-  // `StreamStyle -> color` paints every streamline alike; the default
-  // cycles through the plot colours.
-  let stream_color = args.iter().skip(3).find_map(|a| match a {
-    Expr::Rule {
-      pattern,
-      replacement,
-    } if matches!(&**pattern, Expr::Identifier(n) if n == "StreamStyle") => {
-      let style = crate::functions::plot::parse_style_directives(replacement)?;
-      let c = style.color?;
-      Some((
-        (c.r * 255.0).round() as u8,
-        (c.g * 255.0).round() as u8,
-        (c.b * 255.0).round() as u8,
-      ))
-    }
-    _ => None,
-  });
 
   // Use plotters for axes, reserving room above the frame for a PlotLabel.
   let margins = field_plot_label_margins(plot_label.as_ref());
@@ -3282,16 +3552,6 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     margins.as_ref(),
   )?;
 
-  let plot_x0 = area.plot_x0;
-  let plot_y0 = area.plot_y0;
-  let plot_w = area.plot_w;
-  let plot_h = area.plot_h;
-  let render_w = area.render_width;
-  let ax_min = area.x_min;
-  let ax_max = area.x_max;
-  let ay_min = area.y_min;
-  let ay_max = area.y_max;
-
   let mut svg = area.svg.clone();
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
@@ -3301,109 +3561,9 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     inject_field_plot_label(&mut svg, &area, label);
   }
 
-  let to_px = |x: f64, y: f64| -> (f64, f64) {
-    let sx = plot_x0 + (x - ax_min) / (ax_max - ax_min) * plot_w;
-    let sy = plot_y0 + (ay_max - y) / (ay_max - ay_min) * plot_h;
-    (sx, sy)
-  };
-
-  // `RegionFunction -> f` confines the streamlines: `f[x, y]` must hold at
-  // every point drawn.
-  let region = args.iter().skip(3).find_map(|a| match a {
-    Expr::Rule {
-      pattern,
-      replacement,
-    } if matches!(&**pattern, Expr::Identifier(n) if n == "RegionFunction") => {
-      Some((**replacement).clone())
-    }
-    _ => None,
-  });
-  let in_region = |x: f64, y: f64| -> bool {
-    region.as_ref().is_none_or(|r| {
-      let call = Expr::CurriedCall {
-        func: Box::new(r.clone()),
-        args: vec![Expr::Real(x), Expr::Real(y)],
-      };
-      matches!(
-        evaluate_expr_to_expr(&call),
-        Ok(Expr::Identifier(ref s)) if s == "True"
-      )
-    })
-  };
-
-  // Seed points on a grid
-  let seed_n = 8;
-  let x_step = (x_max - x_min) / seed_n as f64;
-  let y_step = (y_max - y_min) / seed_n as f64;
-  let dt = f64::midpoint(x_max - x_min, y_max - y_min) / 200.0;
-  let max_steps = 200;
-  let stroke_w = render_w as f64 / 1000.0 * 1.5;
-  // Streamlines in data coordinates, kept so `StreamPlot[…][[1]]` yields the
-  // primitives a surrounding `Graphics[{…}]` can redraw — as in Wolfram, where
-  // part 1 of the plot is its graphics content.
-  let mut primitives: Vec<Expr> = Vec::new();
-
-  for si in 0..seed_n {
-    for sj in 0..seed_n {
-      let mut x = x_min + (si as f64 + 0.5) * x_step;
-      let mut y = y_min + (sj as f64 + 0.5) * y_step;
-      if !in_region(x, y) {
-        continue;
-      }
-
-      let mut points = Vec::new();
-      let mut coords: Vec<(f64, f64)> = vec![(x, y)];
-      let (px, py) = to_px(x, y);
-      points.push(format!("{px:.1},{py:.1}"));
-
-      for _ in 0..max_steps {
-        // RK4 step
-        let (k1x, k1y) =
-          evaluate_vector(body, &xvar, &yvar, x, y).unwrap_or((0.0, 0.0));
-        let (k2x, k2y) = evaluate_vector(
-          body,
-          &xvar,
-          &yvar,
-          x + dt * k1x / 2.0,
-          y + dt * k1y / 2.0,
-        )
-        .unwrap_or((0.0, 0.0));
-        let (k3x, k3y) = evaluate_vector(
-          body,
-          &xvar,
-          &yvar,
-          x + dt * k2x / 2.0,
-          y + dt * k2y / 2.0,
-        )
-        .unwrap_or((0.0, 0.0));
-        let (k4x, k4y) =
-          evaluate_vector(body, &xvar, &yvar, x + dt * k3x, y + dt * k3y)
-            .unwrap_or((0.0, 0.0));
-
-        x += dt * (k1x + 2.0 * k2x + 2.0 * k3x + k4x) / 6.0;
-        y += dt * (k1y + 2.0 * k2y + 2.0 * k3y + k4y) / 6.0;
-
-        if x < x_min || x > x_max || y < y_min || y > y_max || !in_region(x, y)
-        {
-          break;
-        }
-        let (px, py) = to_px(x, y);
-        points.push(format!("{px:.1},{py:.1}"));
-        coords.push((x, y));
-      }
-
-      if points.len() > 1 {
-        let color_idx = (si * seed_n + sj) % 6;
-        let (r, g, b) = stream_color
-          .unwrap_or(crate::functions::plot::PLOT_COLORS[color_idx]);
-        svg.push_str(&format!(
-          "<polyline points=\"{}\" fill=\"none\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"{stroke_w:.1}\" stroke-opacity=\"0.7\"/>\n",
-          points.join(" ")
-        ));
-        primitives.push(styled_line(coords, (r, g, b)));
-      }
-    }
-  }
+  let primitives =
+    stream_primitives(body, &xvar, &yvar, (x_min, x_max), (y_min, y_max), args);
+  push_stream_svg(&mut svg, &primitives, &area);
 
   if !epilog.is_empty() {
     let epilog_area = crate::functions::plot_epilog::PlotArea {
@@ -3431,16 +3591,21 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
-/// `{RGBColor[r, g, b], Line[{{x, y}, …}]}` — one styled streamline in data
-/// coordinates, for the symbolic form a field plot remembers.
-fn styled_line(coords: Vec<(f64, f64)>, color: (u8, u8, u8)) -> Expr {
-  let points = Expr::List(
-    coords
-      .into_iter()
-      .map(|(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
-      .collect(),
-  );
-  Expr::List(vec![rgb_color(color), call1("Line", points)].into())
+/// The value of option `name` among a plot's arguments.
+fn option_rule<'a>(args: &'a [Expr], name: &str) -> Option<&'a Expr> {
+  args.iter().find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(n) if n == name) => {
+      Some(&**replacement)
+    }
+    _ => None,
+  })
 }
 
 /// `RGBColor[r, g, b]` from 8-bit channel values.
@@ -3455,6 +3620,207 @@ fn rgb_color((r, g, b): (u8, u8, u8)) -> Expr {
   )
 }
 
+/// The streamlines `StreamPlot` and `StreamDensityPlot` draw over the
+/// domain, as primitives in data coordinates: evenly spaced streamlines of
+/// the field `body`, each a run of arrows coloured by the flow speed, styled
+/// by the plot's `StreamPoints`, `StreamColorFunction`, `StreamStyle` and
+/// `RegionFunction` options among `args`.
+fn stream_primitives(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  args: &[Expr],
+) -> Vec<Expr> {
+  // `StreamStyle -> color` paints every streamline alike; the default
+  // cycles through the plot colours.
+  let stream_color = args.iter().skip(3).find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(n) if n == "StreamStyle") => {
+      let style = crate::functions::plot::parse_style_directives(replacement)?;
+      let c = style.color?;
+      Some((
+        (c.r * 255.0).round() as u8,
+        (c.g * 255.0).round() as u8,
+        (c.b * 255.0).round() as u8,
+      ))
+    }
+    _ => None,
+  });
+
+  // `RegionFunction -> f` confines the streamlines: `f[x, y]` must hold at
+  // every point drawn.
+  let region = args.iter().skip(3).find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(n) if n == "RegionFunction") => {
+      Some((**replacement).clone())
+    }
+    _ => None,
+  });
+  let in_region = |x: f64, y: f64| -> bool {
+    region.as_ref().is_none_or(|r| {
+      let call = Expr::CurriedCall {
+        func: Box::new(r.clone()),
+        args: vec![Expr::Real(x), Expr::Real(y)],
+      };
+      matches!(
+        evaluate_expr_to_expr(&call),
+        Ok(Expr::Identifier(ref s)) if s == "True"
+      )
+    })
+  };
+
+  // `StreamPoints` sets how densely the plot is filled, as the number of
+  // streamlines across either axis. Wolfram's own spacing depends on the
+  // field — about 29 lines across a uniform flow but 17 across the flow
+  // around a cylinder — so the default sits between the two, and the named
+  // and numeric settings keep Wolfram's proportions to it (`StreamPoints ->
+  // n` grows as √n).
+  let lines_across = match option_rule(args, "StreamPoints") {
+    Some(Expr::Identifier(s)) if s == "Coarse" => 11.0,
+    Some(Expr::Identifier(s)) if s == "Medium" => 16.0,
+    Some(Expr::Identifier(s)) if s == "Fine" => 26.0,
+    Some(e) => try_eval_to_f64(e)
+      .filter(|n| *n >= 1.0)
+      .map_or(22.0, |n| 2.2 * n.sqrt()),
+    None => 22.0,
+  };
+
+  // The field, sampled once over the plot and interpolated between nodes;
+  // a node outside the `RegionFunction` holds no flow.
+  let field = crate::functions::streamlines::SampledField::sample(
+    |x, y| {
+      in_region(x, y)
+        .then(|| evaluate_vector(body, xvar, yvar, x, y))
+        .flatten()
+    },
+    (x_min, x_max),
+    (y_min, y_max),
+    64,
+  );
+  let lines =
+    crate::functions::streamlines::even_streamlines(&field, 1.0 / lines_across);
+
+  // Each streamline is drawn as a run of arrows, each 8% of the plot range
+  // long with its head at the end (shorter at a streamline's end, with a
+  // proportionally smaller head), coloured by the flow speed through it.
+  const SEGMENT: f64 = 0.08;
+  let normalized_len = |a: (f64, f64), b: (f64, f64)| {
+    let du = (b.0 - a.0) / (x_max - x_min);
+    let dv = (b.1 - a.1) / (y_max - y_min);
+    (du * du + dv * dv).sqrt()
+  };
+  let mut segments: Vec<(Vec<(f64, f64)>, f64, f64)> = Vec::new();
+  for line in &lines {
+    let mut current = vec![line[0]];
+    let mut length = 0.0;
+    for pair in line.windows(2) {
+      current.push(pair[1]);
+      length += normalized_len(pair[0], pair[1]);
+      if length >= SEGMENT {
+        segments.push((
+          std::mem::replace(&mut current, vec![pair[1]]),
+          length,
+          0.0,
+        ));
+        length = 0.0;
+      }
+    }
+    if current.len() > 1 {
+      segments.push((current, length, 0.0));
+    }
+  }
+  for (points, _, speed) in &mut segments {
+    let mid = points[points.len() / 2];
+    *speed = field
+      .at(mid.0, mid.1)
+      .map_or(0.0, |(vx, vy)| (vx * vx + vy * vy).sqrt());
+  }
+  let (speed_min, speed_max) = segments
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), (_, _, s)| {
+      (lo.min(*s), hi.max(*s))
+    });
+
+  // By default the speed picks a colour on WL12DefaultVectorGradient, which
+  // overrides a `StreamStyle` colour as in Wolfram. `StreamColorFunction ->
+  // None` draws every streamline in the `StreamStyle` colour (or the first
+  // plot colour); a gradient name or a function replaces the default one.
+  let color_function = option_rule(args, "StreamColorFunction");
+  let color_of = |speed: f64| -> (u8, u8, u8) {
+    let t = if speed_max > speed_min {
+      (speed - speed_min) / (speed_max - speed_min)
+    } else {
+      0.5
+    };
+    match color_function {
+      Some(Expr::Identifier(s)) if s == "None" => {
+        stream_color.unwrap_or((49, 122, 163))
+      }
+      Some(Expr::String(name)) => apply_named_color_function(name.as_str(), t),
+      Some(Expr::Identifier(s)) if s == "Automatic" => {
+        crate::functions::plot::wl_default_vector_gradient(t)
+      }
+      Some(f) => scaled_color(t, speed, None, Some((f, true))),
+      None => crate::functions::plot::wl_default_vector_gradient(t),
+    }
+  };
+  let primitives: Vec<Expr> = segments
+    .into_iter()
+    .map(|(points, length, speed)| {
+      let head = 0.02 * (length / SEGMENT).min(1.0);
+      let coords = Expr::List(
+        points
+          .into_iter()
+          .map(|(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+          .collect(),
+      );
+      Expr::List(
+        vec![
+          call1(
+            "Arrowheads",
+            Expr::List(
+              vec![Expr::List(vec![Expr::Real(head), Expr::Real(1.0)].into())]
+                .into(),
+            ),
+          ),
+          rgb_color(color_of(speed)),
+          call1("Arrow", coords),
+        ]
+        .into(),
+      )
+    })
+    .collect();
+  primitives
+}
+
+/// Draw `stream_primitives` over the plot area of a field plot.
+fn push_stream_svg(
+  svg: &mut String,
+  primitives: &[Expr],
+  area: &crate::functions::plot::PlotArea,
+) {
+  svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
+    primitives,
+    &crate::functions::plot_epilog::PlotArea {
+      x0: area.plot_x0,
+      y0: area.plot_y0,
+      w: area.plot_w,
+      h: area.plot_h,
+      x_min: area.x_min,
+      x_max: area.x_max,
+      y_min: area.y_min,
+      y_max: area.y_max,
+      scale: f64::from(RESOLUTION_SCALE),
+    },
+    "streams",
+  ));
+}
 /// StreamDensityPlot: StreamPlot overlaid on DensityPlot background
 pub fn stream_density_plot_ast(
   args: &[Expr],
@@ -3509,11 +3875,6 @@ pub fn stream_density_plot_ast(
   let plot_y0 = area.plot_y0;
   let plot_w = area.plot_w;
   let plot_h = area.plot_h;
-  let render_w = area.render_width;
-  let ax_min = area.x_min;
-  let ax_max = area.x_max;
-  let ay_min = area.y_min;
-  let ay_max = area.y_max;
 
   let mut svg = area.svg.clone();
   if let Some(pos) = svg.rfind("</svg>") {
@@ -3523,76 +3884,38 @@ pub fn stream_density_plot_ast(
     inject_field_plot_label(&mut svg, &area, label);
   }
 
-  let to_px = |x: f64, y: f64| -> (f64, f64) {
-    let sx = plot_x0 + (x - ax_min) / (ax_max - ax_min) * plot_w;
-    let sy = plot_y0 + (ay_max - y) / (ay_max - ay_min) * plot_h;
-    (sx, sy)
+  // Density background: the flow speed, on Wolfram's orange-to-yellow
+  // vector density gradient unless a `ColorFunction` is given.
+  let density_opts = parse_density_contour_options(args, 3);
+  let (color_function, cf_expr) = match density_opts.cf_expr() {
+    Some(cf) => (density_opts.color_function.as_deref(), Some(cf)),
+    None => (
+      Some(
+        density_opts
+          .color_function
+          .as_deref()
+          .unwrap_or("WL12DefaultVectorDensityGradient"),
+      ),
+      None,
+    ),
   };
-
-  // Density background
   embed_grid_image(
-    &mut svg, &mag_grid, v_min, v_max, plot_x0, plot_y0, plot_w, plot_h, None,
-    None,
+    &mut svg,
+    &mag_grid,
+    v_min,
+    v_max,
+    plot_x0,
+    plot_y0,
+    plot_w,
+    plot_h,
+    color_function,
+    cf_expr,
   );
 
-  // Streamlines
-  let seed_n = 8;
-  let x_step = (x_max - x_min) / seed_n as f64;
-  let y_step_seed = (y_max - y_min) / seed_n as f64;
-  let dt = f64::midpoint(x_max - x_min, y_max - y_min) / 200.0;
-  let max_steps = 200;
-  let stroke_w = render_w as f64 / 1000.0 * 1.2;
-
-  for si in 0..seed_n {
-    for sj in 0..seed_n {
-      let mut x = x_min + (si as f64 + 0.5) * x_step;
-      let mut y = y_min + (sj as f64 + 0.5) * y_step_seed;
-      let mut points = Vec::new();
-      let (px, py) = to_px(x, y);
-      points.push(format!("{px:.1},{py:.1}"));
-
-      for _ in 0..max_steps {
-        let (k1x, k1y) =
-          evaluate_vector(body, &xvar, &yvar, x, y).unwrap_or((0.0, 0.0));
-        let (k2x, k2y) = evaluate_vector(
-          body,
-          &xvar,
-          &yvar,
-          x + dt * k1x / 2.0,
-          y + dt * k1y / 2.0,
-        )
-        .unwrap_or((0.0, 0.0));
-        let (k3x, k3y) = evaluate_vector(
-          body,
-          &xvar,
-          &yvar,
-          x + dt * k2x / 2.0,
-          y + dt * k2y / 2.0,
-        )
-        .unwrap_or((0.0, 0.0));
-        let (k4x, k4y) =
-          evaluate_vector(body, &xvar, &yvar, x + dt * k3x, y + dt * k3y)
-            .unwrap_or((0.0, 0.0));
-
-        x += dt * (k1x + 2.0 * k2x + 2.0 * k3x + k4x) / 6.0;
-        y += dt * (k1y + 2.0 * k2y + 2.0 * k3y + k4y) / 6.0;
-
-        if x < x_min || x > x_max || y < y_min || y > y_max {
-          break;
-        }
-        let (px, py) = to_px(x, y);
-        points.push(format!("{px:.1},{py:.1}"));
-      }
-
-      if points.len() > 1 {
-        let stream_stroke = crate::functions::graphics::theme().text_primary;
-        svg.push_str(&format!(
-          "<polyline points=\"{}\" fill=\"none\" stroke=\"{stream_stroke}\" stroke-width=\"{stroke_w:.1}\" stroke-opacity=\"0.6\"/>\n",
-          points.join(" ")
-        ));
-      }
-    }
-  }
+  // Streamlines, drawn as in StreamPlot.
+  let primitives =
+    stream_primitives(body, &xvar, &yvar, (x_min, x_max), (y_min, y_max), args);
+  push_stream_svg(&mut svg, &primitives, &area);
 
   push_frame(&mut svg, plot_x0, plot_y0, plot_w, plot_h);
 
@@ -4031,6 +4354,14 @@ pub(crate) fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
     );
   }
   match name {
+    "WL12DefaultVectorGradient" => {
+      crate::functions::plot::wl_default_vector_gradient(t)
+    }
+    "WL12DefaultVectorDensityGradient" => {
+      crate::functions::plot::wl_default_vector_density_gradient(t)
+    }
+    // The gradient `DensityPlot` shades with when given no `ColorFunction`.
+    "WL14DefaultDensityGradient" => density_gradient(t),
     "Rainbow" => {
       // Hue-based rainbow: red -> yellow -> green -> cyan -> blue -> violet
       let c = GfxColor::from_hue(t * 0.83, 1.0, 1.0);

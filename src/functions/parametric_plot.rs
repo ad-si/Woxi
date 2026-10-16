@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  NUM_SAMPLES, PlotOptions, PlotRangeOverrides,
+  NUM_SAMPLES, PlotOptions, PlotRangeOverrides, SeriesStyle,
   adjust_y_range_for_filling_opts, apply_common_plot_option, build_plot_source,
   evaluate_at_point, generate_svg_with_filling, parse_iterator, substitute_var,
 };
@@ -264,13 +264,14 @@ where
 
 /// Split the per-parameter samples into one point series per curve, keeping
 /// a gap (as a non-finite point) wherever the body did not evaluate.
-fn samples_to_series(samples: Vec<Sample>) -> Vec<Vec<(f64, f64)>> {
+fn samples_to_series(samples: Vec<Sample>) -> (Vec<Vec<(f64, f64)>>, Vec<f64>) {
   // The curve count comes from the first sample that evaluated.
   let n_curves = samples
     .iter()
     .find_map(|(_, row)| row.as_ref().map(std::vec::Vec::len))
     .unwrap_or(1);
   let mut series = vec![Vec::with_capacity(samples.len()); n_curves];
+  let params: Vec<f64> = samples.iter().map(|(t, _)| *t).collect();
   for (_, row) in samples {
     match row {
       Some(r) if r.len() == n_curves => {
@@ -285,7 +286,83 @@ fn samples_to_series(samples: Vec<Sample>) -> Vec<Vec<(f64, f64)>> {
       }
     }
   }
-  series
+  (series, params)
+}
+
+/// Split each sampled curve into runs of constant `ColorFunction` color.
+/// The function receives `{x, y, t}` taken at the midpoint of every step;
+/// with `ColorFunctionScaling` on, `x` and `y` are rescaled over the plot
+/// range and `t` over the parameter range first. A named gradient colors by
+/// the scaled `x`. Consecutive runs share their boundary point so the curve
+/// stays connected. Returns the run polylines and the color of each.
+fn color_function_series(
+  curves: &[Vec<(f64, f64)>],
+  params: &[Vec<f64>],
+  cf: &Expr,
+  scaling: bool,
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  (t_min, t_max): (f64, f64),
+) -> (Vec<Vec<(f64, f64)>>, Vec<(u8, u8, u8)>, Vec<usize>) {
+  let scale = |v: f64, lo: f64, hi: f64| {
+    if hi > lo { (v - lo) / (hi - lo) } else { 0.0 }
+  };
+  let scheme = crate::functions::field_plot::color_function_scheme_name(cf);
+  let color_at = |x: f64, y: f64, t: f64| -> (u8, u8, u8) {
+    let (sx, sy, st) = (
+      scale(x, x_min, x_max),
+      scale(y, y_min, y_max),
+      scale(t, t_min, t_max),
+    );
+    if let Some(name) = &scheme {
+      return crate::functions::field_plot::apply_named_color_function(
+        name, sx,
+      );
+    }
+    let args = if scaling {
+      vec![Expr::Real(sx), Expr::Real(sy), Expr::Real(st)]
+    } else {
+      vec![Expr::Real(x), Expr::Real(y), Expr::Real(t)]
+    };
+    let call = Expr::CurriedCall {
+      func: Box::new(cf.clone()),
+      args,
+    };
+    let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    evaluate_expr_to_expr(&call)
+      .ok()
+      .and_then(|r| crate::functions::graphics::parse_color(&r))
+      .map_or((0, 0, 0), |c| (ch(c.r), ch(c.g), ch(c.b)))
+  };
+  let mut runs: Vec<Vec<(f64, f64)>> = Vec::new();
+  let mut colors: Vec<(u8, u8, u8)> = Vec::new();
+  let mut owners: Vec<usize> = Vec::new();
+  for (ci, (curve, ts)) in curves.iter().zip(params).enumerate() {
+    // Index of the run still being extended (None after a gap).
+    let mut open: Option<usize> = None;
+    for (pair, tp) in curve.windows(2).zip(ts.windows(2)) {
+      let (a, b) = (pair[0], pair[1]);
+      if ![a.0, a.1, b.0, b.1].iter().all(|v| v.is_finite()) {
+        open = None;
+        continue;
+      }
+      let c = color_at(
+        f64::midpoint(a.0, b.0),
+        f64::midpoint(a.1, b.1),
+        f64::midpoint(tp[0], tp[1]),
+      );
+      match open {
+        Some(i) if colors[i] == c => runs[i].push(b),
+        _ => {
+          runs.push(vec![a, b]);
+          colors.push(c);
+          owners.push(ci);
+          open = Some(runs.len() - 1);
+        }
+      }
+    }
+  }
+  (runs, colors, owners)
 }
 
 /// Sample a whole-expression curve at parameter `t`. The evaluated body may
@@ -566,6 +643,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let num_samples = plot_opts.plot_points.max(NUM_SAMPLES);
   let max_total = num_samples.saturating_mul(2);
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(curves.len());
+  let mut all_params: Vec<Vec<f64>> = Vec::with_capacity(curves.len());
   let excluded = exclusion_roots(&args[2..], &var_name, t_min, t_max);
 
   for curve in &curves {
@@ -628,7 +706,9 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ),
     };
     insert_exclusion_gaps(&mut samples, &excluded);
-    all_points.extend(samples_to_series(samples));
+    let (series, params) = samples_to_series(samples);
+    all_params.extend(std::iter::repeat_n(params, series.len()));
+    all_points.extend(series);
   }
 
   // Compute ranges (explicit PlotRange components override the data extents)
@@ -646,8 +726,44 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (x_range, y_range) =
     apply_ranges_and_aspect(&mut plot_opts, &overrides, data_x, data_y);
 
-  let svg =
-    generate_svg_with_filling(&all_points, x_range, y_range, &plot_opts)?;
+  // `ColorFunction -> f` colors the curve along its length by `f[x, y, t]`:
+  // draw it as runs of constant color, one series per run.
+  let svg = if let Some(cf) = plot_opts.color_function.take() {
+    let (runs, colors, owners) = color_function_series(
+      &all_points,
+      &all_params,
+      &cf,
+      plot_opts.color_function_scaling,
+      x_range,
+      y_range,
+      (t_min, t_max),
+    );
+    let base = plot_opts.plot_style.clone();
+    plot_opts.plot_style = colors
+      .iter()
+      .zip(&owners)
+      .map(|(&(r, g, b), &curve)| {
+        // Runs keep the weight and opacity of the curve they came from.
+        let mut st = if base.is_empty() {
+          SeriesStyle::default()
+        } else {
+          base[curve % base.len()].clone()
+        };
+        st.color = Some(crate::functions::graphics::Color::new(
+          f64::from(r) / 255.0,
+          f64::from(g) / 255.0,
+          f64::from(b) / 255.0,
+        ));
+        st
+      })
+      .collect();
+    let svg = generate_svg_with_filling(&runs, x_range, y_range, &plot_opts);
+    plot_opts.plot_style = base;
+    plot_opts.color_function = Some(cf);
+    svg?
+  } else {
+    generate_svg_with_filling(&all_points, x_range, y_range, &plot_opts)?
+  };
 
   // Attach the sampled curves as a PlotSource so `Show` can merge this plot
   // with other graphics (re-rendering the curves as Line primitives). The

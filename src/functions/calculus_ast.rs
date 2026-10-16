@@ -6056,6 +6056,67 @@ fn try_integrate_linear_shift(expr: &Expr, var: &str) -> Option<Expr> {
   Some(div2(substitute_expr(&antiderivative, &var_expr, arg), a))
 }
 
+/// ∫ (a·x + b)^p dx = (a·x + b)^(p+1)/(a (p+1)) for p ≠ -1, and
+/// Log[a·x + b]/a for p == -1, where `a` and `b` are constant in `var`, `b`
+/// is nonzero and `p` is a constant exponent that is not a non-negative
+/// integer (those are polynomials and handled by the polynomial rules).
+fn try_integrate_linear_power(expr: &Expr, var: &str) -> Option<Expr> {
+  let (base, exponent) = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  // Symbolic exponents need a ConditionalExpression (p ≠ -1); stay numeric.
+  let numeric_exponent = matches!(exponent, Expr::Integer(_) | Expr::Real(_))
+    || matches!(exponent, Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2);
+  if !numeric_exponent
+    || matches!(exponent, Expr::Integer(n) if *n >= 0)
+    || matches!(base, Expr::Identifier(_) | Expr::Constant(_))
+  {
+    return None;
+  }
+  let a = extract_linear_coefficient(base, var)?;
+  if matches!(a, Expr::Integer(0) | Expr::Real(0.0)) {
+    return None;
+  }
+  let var_expr = Expr::Identifier(var.to_string());
+  let offset = crate::evaluator::evaluate_expr_to_expr(&minus2(
+    base.clone(),
+    times2(a.clone(), var_expr),
+  ))
+  .ok()?;
+  if matches!(offset, Expr::Integer(0) | Expr::Real(0.0)) {
+    return None;
+  }
+  let exponent_plus_one = crate::evaluator::evaluate_expr_to_expr(&plus2(
+    exponent.clone(),
+    Expr::Integer(1),
+  ))
+  .ok()?;
+  let result = if matches!(exponent_plus_one, Expr::Integer(0)) {
+    div2(
+      Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![base.clone()].into(),
+      },
+      a,
+    )
+  } else {
+    div2(
+      pow2(base.clone(), exponent_plus_one.clone()),
+      times2(a, exponent_plus_one),
+    )
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result).ok()
+}
+
 /// Split `n > 0` into `(k, m)` with `n == k*k*m` and `m` square-free, so
 /// that `Sqrt[n]` is `k*Sqrt[m]`.
 fn square_free_split(n: i128) -> (i128, i128) {
@@ -8111,6 +8172,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
 
   // ∫ c·g'(x)/g(x)^n dx = c·g(x)^(1-n)/(1-n) (n >= 2), the u = g(x) substitution.
   if let Some(result) = try_integrate_power_derivative(expr, var) {
+    return Some(result);
+  }
+
+  // ∫ (a·x + b)^p dx for a constant exponent p (non-integer, or negative).
+  if let Some(result) = try_integrate_linear_power(expr, var) {
     return Some(result);
   }
 

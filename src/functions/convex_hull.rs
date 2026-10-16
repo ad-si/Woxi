@@ -415,9 +415,7 @@ fn convex_hull_mesh_3d(pts: &[Expr], args: &[Expr], opts: &[Expr]) -> Expr {
   let unique_pts: Vec<(f64, f64, f64)> =
     unique.iter().map(|&(x, y, z, _)| (x, y, z)).collect();
 
-  let Some(faces) =
-    convex_hull_3d(&unique_pts).map(|t| merge_coplanar_faces(&unique_pts, &t))
-  else {
+  let Some(faces) = convex_hull_polygons(&unique_pts) else {
     // Fewer than 4 affinely independent points (coplanar, collinear, too
     // few, or coincident): wolframscript issues a message and leaves the
     // call unevaluated, matched here as the 2D case already does for its
@@ -483,6 +481,14 @@ fn convex_hull_mesh_3d(pts: &[Expr], args: &[Expr], opts: &[Expr]) -> Expr {
     all_exact,
     opts,
   )
+}
+
+/// The faces of the 3D convex hull of `points` as outward-wound polygons
+/// (coplanar triangles merged), or `None` when the points span no volume.
+pub(crate) fn convex_hull_polygons(
+  points: &[(f64, f64, f64)],
+) -> Option<Vec<Vec<usize>>> {
+  convex_hull_3d(points).map(|t| merge_coplanar_faces(points, &t))
 }
 
 /// A standard incremental ("beneath-beyond") 3D convex hull. Returns

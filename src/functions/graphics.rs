@@ -13653,6 +13653,33 @@ pub fn styled_axis_label(e: &Expr) -> Option<String> {
   crate::functions::chart::expr_to_label(e)
 }
 
+/// [`box_string_to_svg`] for a label drawn in a graphic whose user space is
+/// `scale` times its point size (the plot renderers draw at
+/// `RESOLUTION_SCALE`): the explicit `font-size`s a `Style[label, size]`
+/// carries are in points, so they scale along with the base font the
+/// label's `<text>` element gets.
+pub fn box_string_to_svg_scaled(s: &str, scale: f64) -> String {
+  let svg = box_string_to_svg(s);
+  if !s.starts_with(STYLED_LABEL_MARKER) || (scale - 1.0).abs() < 1e-9 {
+    return svg;
+  }
+  const KEY: &str = "font-size=\"";
+  let mut out = String::with_capacity(svg.len());
+  let mut rest = svg.as_str();
+  while let Some(i) = rest.find(KEY) {
+    let (head, tail) = rest.split_at(i + KEY.len());
+    out.push_str(head);
+    let end = tail.find('"').unwrap_or(tail.len());
+    match tail[..end].parse::<f64>() {
+      Ok(v) => out.push_str(&format!("{:.0}", v * scale)),
+      Err(_) => out.push_str(&tail[..end]),
+    }
+    rest = &tail[end..];
+  }
+  out.push_str(rest);
+  out
+}
+
 /// Render a label string that may contain inline Wolfram box notation into
 /// SVG `<text>` content. Plain strings (no box notation) are simply
 /// SVG-escaped, so this is a safe drop-in for `svg_escape`.
@@ -14631,6 +14658,53 @@ fn clip_segment_to_y_range(
 }
 
 pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // `Show` of a `Legended` graphic (a plot with `PlotLegends`) shows the
+  // graphic inside and keeps its legend on the result, as Wolfram does:
+  // `Show[Legended[g, l], h]` is `Legended[Show[g, h], l]`.
+  let mut legends: Vec<Expr> = Vec::new();
+  let mut unwrap = |arg: &Expr| -> Expr {
+    let value = match arg {
+      Expr::Identifier(_) | Expr::FunctionCall { .. }
+        if !matches!(arg, Expr::FunctionCall { name, .. }
+          if name == "Graphics" || name == "Graphics3D") =>
+      {
+        evaluate_expr_to_expr(arg).unwrap_or_else(|_| arg.clone())
+      }
+      _ => arg.clone(),
+    };
+    match &value {
+      Expr::FunctionCall { name, args }
+        if name == "Legended" && args.len() == 2 =>
+      {
+        legends.push(args[1].clone());
+        args[0].clone()
+      }
+      _ => arg.clone(),
+    }
+  };
+  let unwrapped: Vec<Expr> = args
+    .iter()
+    .map(|arg| match arg {
+      Expr::List(items) => Expr::List(items.iter().map(&mut unwrap).collect()),
+      other => unwrap(other),
+    })
+    .collect();
+  if legends.is_empty() {
+    return show_graphics(args);
+  }
+  let shown = show_graphics(&unwrapped)?;
+  let legend = if legends.len() == 1 {
+    legends.pop().expect("one legend")
+  } else {
+    Expr::List(legends.into())
+  };
+  Ok(Expr::FunctionCall {
+    name: "Legended".to_string(),
+    args: vec![shown, legend].into(),
+  })
+}
+
+fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut merged_primitives: Vec<Expr> = Vec::new();
   let mut merged_options: Vec<Expr> = Vec::new();
   let mut is_3d = false;
@@ -18396,18 +18470,14 @@ struct LayoutOptions {
   /// True if Spacings was explicitly given (so Frame -> All shouldn't
   /// override the user's choice).
   spacings_explicit: bool,
+  /// `Background -> colour`: painted behind the whole layout, the gaps
+  /// between cells included.
+  background: Option<Color>,
 }
 
 /// Parse Spacings and ImageSize options from rule arguments.
 fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
-  let mut opts = LayoutOptions {
-    h_spacing: SpacingSpec::default_val(),
-    v_spacing: SpacingSpec::default_val(),
-    target_width: None,
-    target_height: None,
-    frame: FrameSetting::None,
-    spacings_explicit: false,
-  };
+  let mut opts = default_layout_options();
 
   for arg in args {
     if let Expr::Rule {
@@ -18436,6 +18506,9 @@ fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
               }
             }
           }
+        }
+        Expr::Identifier(name) if name == "Background" => {
+          opts.background = parse_background(replacement);
         }
         Expr::Identifier(name) if name == "Frame" => {
           opts.frame = match replacement.as_ref() {
@@ -18537,6 +18610,7 @@ fn compute_grid_layout(
         target_height: opts.target_height,
         frame: opts.frame,
         spacings_explicit: opts.spacings_explicit,
+        background: opts.background,
       };
       &opts_owned
     } else {
@@ -18805,6 +18879,12 @@ fn combine_svgs_grid(
     layout.total_width.ceil() as u32,
     layout.total_height.ceil() as u32,
   ));
+  if let Some(bg) = &opts.background {
+    svg.push_str(&format!(
+      "<rect width=\"100%\" height=\"100%\" fill=\"{}\"/>\n",
+      bg.to_svg_rgb(),
+    ));
+  }
 
   // Track per-row vertical positions so frame lines can be drawn at
   // the correct y boundaries even when rows have different heights.
@@ -18901,6 +18981,7 @@ fn default_layout_options() -> LayoutOptions {
     target_height: None,
     frame: FrameSetting::None,
     spacings_explicit: false,
+    background: None,
   }
 }
 
@@ -23870,6 +23951,19 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if let Some((_, orig_form, synth)) = &rename {
           renames.push((orig_form.clone(), synth.clone()));
         }
+        // A bare `{var, ControlType -> None}` (no initial value, no domain)
+        // after a visible control for the same variable only declares that
+        // the variable exists; it must not reset the control's value to
+        // `Null`.
+        if controls.iter().any(|prev| prev.name() == name)
+          && let Expr::List(items) = &spec
+          && matches!(items.first(), Some(Expr::Identifier(_)))
+          && items[1..].iter().all(|it| {
+            matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+          })
+        {
+          continue;
+        }
         // A hidden variable driven by an in-body `Locator[Dynamic[…]]`
         // becomes a visible Locator-style control: re-parse its spec with
         // the `ControlType -> None` option swapped for a `Locator` marker,
@@ -25807,6 +25901,28 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     && !matches!(&args[0], Expr::List(_))
     && contains_explicit_control(&args[0])
   {
+    // `Dynamic[If[cond, Control[…], Control[…]]]`: a control row that swaps
+    // with another control. Both branches' controls join the flat list;
+    // `collect_pane_visibility` records which condition shows each one.
+    if let Expr::FunctionCall {
+      name: head,
+      args: branches,
+    } = &args[0]
+      && head == "If"
+      && branches.len() >= 2
+    {
+      let mut out = Vec::new();
+      for branch in &branches[1..] {
+        if !contains_explicit_control(branch) {
+          continue;
+        }
+        match control_group_items(branch) {
+          Some(nested) => out.extend(nested),
+          None => out.push(branch.clone()),
+        }
+      }
+      return Some(out);
+    }
     // The `Dynamic` makes every non-literal caption piece live
     // (`Dynamic@Row[{"from ", n, " to ", n + 59, Control[…]}]` shows the
     // current values of `n` and `n + 59`, not their source text).
@@ -26210,6 +26326,29 @@ fn collect_pane_visibility(
   let Expr::FunctionCall { name, args } = spec else {
     return;
   };
+  // `If[cond, Control[…], Control[…]]` shows each branch's controls only
+  // while its condition holds (the else branch while `cond` does not).
+  if name == "If" && args.len() >= 2 {
+    let cond = crate::syntax::expr_to_source_form(&args[0]);
+    for (i, branch) in args[1..].iter().take(2).enumerate() {
+      let own = if i == 0 {
+        format!("({cond})")
+      } else {
+        format!("!({cond})")
+      };
+      let own = match outer {
+        Some(o) => format!("({o}) && {own}"),
+        None => own,
+      };
+      for var in pane_control_variables(branch, place_map) {
+        match out.iter_mut().find(|(n, _)| *n == var) {
+          Some((_, existing)) => *existing = format!("{existing} || {own}"),
+          None => out.push((var, own.clone())),
+        }
+      }
+    }
+    return;
+  }
   if name != "PaneSelector" {
     // The `PaneSelector` may sit inside a layout container.
     for arg in args {
@@ -27253,6 +27392,15 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
 /// not change on every re-evaluation.
 fn manipulate_value_to_input_form(expr: &Expr) -> String {
   match crate::evaluator::evaluate_expr_to_expr(expr) {
+    // A rendered graphic inside the result (e.g. a saved
+    // `getCoordinates[Graphics[…]]` whose helper is only defined by the
+    // notebook's initialization code) serializes to the output-only
+    // `-Graphics-` placeholder, which no later re-evaluation can parse.
+    // Keep the symbolic source so the value is evaluated once the helper
+    // exists.
+    Ok(evaluated) if crate::contains_graphics_placeholder(&evaluated) => {
+      crate::syntax::expr_to_source_form(expr)
+    }
     Ok(evaluated) => crate::syntax::expr_to_source_form(&evaluated),
     Err(_) => crate::syntax::expr_to_source_form(expr),
   }
@@ -28717,6 +28865,19 @@ fn parse_manipulate_control(
         && !matches!(it, Expr::Identifier(s) if is_control_type_name(s))
     })
     .collect();
+
+  // `{{v, {a, b, …}, label}, lo, hi, MultiSlider[##] &}`: an N-handle slider
+  // binding `v` to a *list*. Woxi has no multi-handle widget, so the list
+  // stays a live binding at its initial value rather than collapsing into
+  // a single scalar slider that would reset it to a number.
+  if let Some(init @ Expr::List(_)) = explicit_initial.as_ref()
+    && items[1..]
+      .iter()
+      .any(|it| crate::syntax::expr_to_source_form(it).contains("MultiSlider["))
+  {
+    let value = manipulate_value_to_input_form(init);
+    return Some(ParsedControl::Fixed { name, value });
+  }
 
   // `Appearance -> "Vertical"` (or the bare symbol `Vertical`) stacks a
   // SetterBar/RadioButtonBar/CheckboxBar in a column instead of Wolfram's

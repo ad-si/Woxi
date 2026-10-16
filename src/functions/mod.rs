@@ -97,6 +97,7 @@ pub mod rule_plot;
 pub mod scoping;
 pub mod socket_ast;
 pub mod sound;
+pub mod streamlines;
 pub mod string_ast;
 pub mod sum_convergence_ast;
 pub mod tabular_ast;

@@ -3424,6 +3424,30 @@ mod graphics {
 }
 
 mod plot3d {
+  /// A translucent `PlotStyle` surface must stay translucent when `Show`
+  /// re-renders it from its symbolic form together with other graphics,
+  /// for every surface plot that carries one.
+  #[test]
+  fn shown_surfaces_keep_their_plot_style_opacity() {
+    for plot in [
+      "Plot3D[x y, {x, -1, 1}, {y, -1, 1}, PlotStyle -> Opacity[0.3]]",
+      "ParametricPlot3D[{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}, \
+       {u, 0, 2 Pi}, {v, 0, Pi}, PlotStyle -> Directive[Opacity[0.3], Red]]",
+      "SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}, \
+       PlotStyle -> Directive[Blue, Opacity[0.3]]]",
+    ] {
+      let opacity = |code: &str| {
+        let shown =
+          interpret(&format!("p = {plot}; {code} // InputForm")).unwrap();
+        shown.contains("Opacity[0.3]")
+      };
+      assert!(opacity("p[[1]]"), "symbolic form of {plot}");
+      let svg =
+        export_svg(&format!("Show[{plot}, Graphics3D[Point[{{0, 0, 0}}]]]"));
+      assert!(svg.contains("opacity=\"0.3\""), "Show of {plot}");
+    }
+  }
+
   /// Faces shared by two touching opaque boxes are interior to the union;
   /// a grid of unit cubes (e.g. a Menger-style fractal) must not emit them.
   #[test]
@@ -4055,6 +4079,44 @@ mod plot3d {
             .is_err()
         );
       }
+    }
+
+    /// Regression: `ColorFunction -> Function[{x, y, t}, …]` on a 2D
+    /// `ParametricPlot` was ignored (the curve stayed one flat color); it
+    /// receives the curve parameter as its third argument.
+    #[test]
+    fn parametric_plot_honours_color_function() {
+      clear_state();
+      let svg = |opts: &str| {
+        interpret(&format!(
+          "ExportString[ParametricPlot[{{Cos[t], Sin[t]}}, {{t, 0, 2 Pi}}, \
+           {opts}], \"SVG\"]"
+        ))
+        .unwrap()
+      };
+      let split = svg(
+        "ColorFunction -> Function[{x, y, t}, If[t < Pi, Red, Blue]], \
+         ColorFunctionScaling -> False",
+      );
+      assert!(split.contains("stroke=\"#FF0000\""));
+      assert!(split.contains("stroke=\"#0000FF\""));
+      // Scaled parameter: 0..1 over the parameter range.
+      let scaled =
+        svg("ColorFunction -> Function[{x, y, t}, If[t < 0.5, Red, Blue]]");
+      assert!(scaled.contains("stroke=\"#FF0000\""));
+      assert!(scaled.contains("stroke=\"#0000FF\""));
+    }
+
+    /// Regression: `Axes -> None` was ignored, so the axes were still drawn.
+    #[test]
+    fn axes_none_hides_axes() {
+      clear_state();
+      let result = interpret(
+        "StringContainsQ[ExportString[ParametricPlot[{Cos[t], Sin[t]}, \
+         {t, 0, 2 Pi}, Axes -> None], \"SVG\"], \"<text\"]",
+      )
+      .unwrap();
+      assert_eq!(result, "False");
     }
 
     /// Regression: `ColorFunction` on a `ParametricPlot3D` curve was dropped,
@@ -7643,6 +7705,37 @@ mod plot3d {
              PlotStyle -> {Red, Green}]"#,
       );
       assert!(two.contains("#FF0000") && two.contains("#00FF00"));
+    }
+
+    // `ListLinePlot` reads a `PlotStyle` list over one curve as a single
+    // combined style too: `{Thick, Orange}` is one thick orange line, not
+    // a thick blue one.
+    #[test]
+    fn list_line_plot_style_list_combines_for_a_single_curve() {
+      let one = export_svg(
+        r#"ListLinePlot[{{1, 2}, {2, 3}}, PlotStyle -> {Thick, Orange}]"#,
+      );
+      assert!(one.contains("stroke=\"#FF8000\""), "{one}");
+      let tooltip = export_svg(
+        r#"ListLinePlot[Tooltip[{{1, 2}, {2, 3}}, "f"],
+             PlotStyle -> {Thick, Orange}]"#,
+      );
+      assert!(tooltip.contains("stroke=\"#FF8000\""), "{tooltip}");
+    }
+
+    // A `Style[label, size]` axis label is in points; the plot draws at a
+    // multiple of that, so the size scales with the label's base font
+    // instead of shrinking the text to a tenth.
+    #[test]
+    fn list_plot_axes_label_style_size_scales_with_the_plot() {
+      let svg = export_svg(
+        r#"ListPlot[{{1, 2}, {2, 3}}, AxesLabel -> {Style["xx", 12], "y"}]"#,
+      );
+      let line = svg
+        .lines()
+        .find(|l| l.contains(">xx</tspan>"))
+        .unwrap_or_else(|| panic!("no xx label in {svg}"));
+      assert!(line.contains("<tspan font-size=\"120\">"), "{line}");
     }
 
     /// A `PointSize` in `PlotStyle` has to resize the dots, not just get
@@ -14018,6 +14111,95 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// `Show` lays other graphics over a `DensityPlot` on the same axes:
+    /// the density merges as a `Raster` over its domain, so both layers
+    /// share one plot area instead of being set side by side.
+    #[test]
+    fn density_plot_merges_under_other_graphics_in_show() {
+      clear_state();
+      let structure = interpret(
+        "d = DensityPlot[x y, {x, -3, 3}, {y, -2, 2}]; r = First[d][[1]]; \
+         {Head[r], Dimensions[r[[1]]], r[[2]], \
+          AspectRatio /. Options[d], Frame /. Options[d]}",
+      )
+      .unwrap();
+      assert_eq!(
+        structure,
+        "{Raster, {100, 100, 4}, {{-3., -2.}, {3., 2.}}, 1, True}"
+      );
+      let svg = export_svg(
+        "Show[DensityPlot[x y, {x, -3, 3}, {y, -2, 2}], \
+         Graphics[{Red, Line[{{-3, -2}, {3, 2}}]}]]",
+      );
+      // One picture: a single raster image and no nested rendered plots.
+      assert_eq!(svg.matches("<image").count(), 1, "{svg:.300}");
+      assert_eq!(svg.matches("<svg").count(), 1, "{svg:.300}");
+      assert!(svg.contains("rgb(255,0,0)"));
+    }
+
+    /// `PlotLegends -> Automatic` makes `DensityPlot` a `Legended` plot
+    /// with a colour bar over the plotted value range, as in Wolfram;
+    /// `Show` keeps the legend when merging, and the bar is drawn beside
+    /// the plot.
+    #[test]
+    fn density_plot_legend_survives_show() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "d = DensityPlot[x, {x, 0, 1}, {y, 0, 1}, PlotRange -> {-3, 1}, \
+           ColorFunction -> \"TemperatureMap\", PlotLegends -> Automatic]; \
+           {Head[d], d[[2]]}"
+        )
+        .unwrap(),
+        "{Legended, Placed[BarLegend[{TemperatureMap, {-3., 1.}}], After]}"
+      );
+      assert_eq!(
+        interpret(
+          "s = Show[d, Graphics[{Red, Circle[{0.5, 0.5}, 0.2]}]]; \
+           {Head[s], s[[2]] === d[[2]], Head[First[s]]}"
+        )
+        .unwrap(),
+        "{Legended, True, Graphics}"
+      );
+      let svg = export_svg("s");
+      // One merged plot (its density raster) plus the 64-band colour bar.
+      assert_eq!(svg.matches("<image").count(), 1);
+      assert!(svg.matches("<rect").count() >= 64, "no colour bar");
+      assert!(svg.contains(">-3<") && svg.contains(">1<"), "bar labels");
+    }
+
+    /// `PlotRange -> {zmin, zmax}` stretches the colours over exactly that
+    /// range; a value beyond it is left blank by default and drawn per
+    /// `ClippingStyle` otherwise (`Automatic`: the end colour; a colour:
+    /// that colour), as in Wolfram.
+    #[test]
+    fn density_plot_plot_range_clips_values() {
+      clear_state();
+      // Cells of row 50 at x ≈ 1 (below), 5 (middle) and 9 (above).
+      let cells = |clipping: &str| {
+        interpret(&format!(
+          "r = First[DensityPlot[x, {{x, 0, 10}}, {{y, 0, 1}}, \
+           PlotRange -> {{2, 8}}, ColorFunction -> \"TemperatureMap\" \
+           {clipping}]][[1]]; Round[255 r[[1, 50, {{10, 50, 90}}]]]"
+        ))
+        .unwrap()
+      };
+      // The middle cell, centred at x = 4.95, just below the scale midpoint.
+      let mid = "{250, 251, 235, 255}";
+      assert_eq!(
+        cells(""),
+        format!("{{{{0, 0, 0, 0}}, {mid}, {{0, 0, 0, 0}}}}")
+      );
+      assert_eq!(
+        cells(", ClippingStyle -> Green"),
+        format!("{{{{0, 255, 0, 255}}, {mid}, {{0, 255, 0, 255}}}}")
+      );
+      assert_eq!(
+        cells(", ClippingStyle -> Automatic"),
+        format!("{{{{46, 78, 238, 255}}, {mid}, {{208, 34, 42, 255}}}}")
+      );
+    }
+
     #[test]
     fn density_plot_image_size() {
       insta::assert_snapshot!(export_svg(
@@ -14947,12 +15129,93 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     #[test]
     fn stream_plot_epilog_and_stream_style() {
+      // As in Wolfram, the default speed colouring wins over a
+      // `StreamStyle` colour; only `StreamColorFunction -> None` lets the
+      // `StreamStyle` colour through.
       let svg = export_svg(
         "StreamPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}, \
            Epilog -> {Orange, Disk[{0, 0}, 1]}, StreamStyle -> Black]",
       );
       assert!(svg.contains("<ellipse"), "{svg}");
-      assert!(svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+      assert!(!svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+      let plain = export_svg(
+        "StreamPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}, \
+           StreamColorFunction -> None, StreamStyle -> Black]",
+      );
+      assert!(plain.contains("stroke=\"rgb(0,0,0)\""), "{plain}");
+    }
+
+    /// `StreamDensityPlot` shades the speed on Wolfram's orange-to-yellow
+    /// `WL12DefaultVectorDensityGradient` (its end colours are
+    /// RGB(204, 102, 41) and RGB(255, 237, 128)), and draws the same
+    /// speed-coloured arrows as `StreamPlot` on top.
+    #[test]
+    fn stream_density_plot_uses_wolfram_vector_density_gradient() {
+      use base64::Engine as _;
+      let svg = export_svg(
+        "StreamDensityPlot[{x, 0}, {x, 0, 1}, {y, 0, 1}, StreamPoints -> 4]",
+      );
+      assert!(svg.contains("<polygon"), "streamline arrowheads");
+      let b64 = svg
+        .split("base64,")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap();
+      let png = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+      let img = ::image::load_from_memory(&png).unwrap().to_rgb8();
+      let (w, h) = img.dimensions();
+      // Speed |x| grows to the right: slow orange at the left edge, fast
+      // pale yellow at the right.
+      let left = img.get_pixel(0, h / 2).0;
+      let right = img.get_pixel(w - 1, h / 2).0;
+      let near = |a: [u8; 3], b: [u8; 3]| {
+        a.iter()
+          .zip(b)
+          .all(|(x, y)| (*x as i32 - y as i32).abs() <= 6)
+      };
+      assert!(near(left, [204, 102, 41]), "{left:?}");
+      assert!(near(right, [255, 237, 128]), "{right:?}");
+    }
+
+    /// Streamlines are evenly spaced, drawn as runs of arrows coloured by
+    /// the flow speed (slow violet, fast orange on Wolfram's default
+    /// vector gradient), and `StreamPoints` sets their density.
+    #[test]
+    fn stream_plot_draws_even_speed_coloured_arrows() {
+      clear_state();
+      let lines = |opts: &str| {
+        interpret(&format!(
+          "s = StreamPlot[{{1, 0}}, {{x, -1, 1}}, {{y, -1, 1}}{opts}]; \
+           Length[Union[Cases[s, Arrow[p_] :> Round[p[[1, 2]], 0.001], \
+           Infinity]]]"
+        ))
+        .unwrap()
+        .parse::<usize>()
+        .unwrap()
+      };
+      let (coarse, default, fine) = (
+        lines(", StreamPoints -> Coarse"),
+        lines(""),
+        lines(", StreamPoints -> Fine"),
+      );
+      assert!((20..=24).contains(&default), "{default} streamlines");
+      assert!(
+        coarse < default && default < fine,
+        "{coarse} {default} {fine}"
+      );
+      // Speed grows with x: the slowest segment is violet, the fastest
+      // orange, and every full-length segment carries the same head.
+      let colors = interpret(
+        "s = StreamPlot[{x + 2, 0}, {x, -1, 1}, {y, -1, 1}]; \
+         segs = SortBy[Cases[s, {Arrowheads[{{a_, _}}], c_RGBColor, \
+           Arrow[p_]} :> {Mean[p][[1]], List @@ c, a}, Infinity], First]; \
+         {Round[segs[[1, 2]], 0.25], Round[segs[[-1, 2]], 0.25], \
+          Max[segs[[All, 3]]]}",
+      )
+      .unwrap();
+      assert_eq!(colors, "{{0., 0., 0.75}, {1., 0.75, 0.}, 0.02}");
     }
 
     // Part 1 of a field plot is its graphics content, so a Demonstration can
@@ -14997,7 +15260,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         interpret(
           "Module[{h, x1, x2}, h = x1/(1 + x2); \
              Max[Flatten[Cases[StreamPlot[{x1 - h, x2 - h}, {x1, 0, 1}, \
-             {x2, 0, 1}][[1]], Line[p_] :> Length[DeleteDuplicates[p]], \
+             {x2, 0, 1}][[1]], (Line[p_] | Arrow[p_]) :> Length[DeleteDuplicates[p]], \
              Infinity]]] > 1]"
         )
         .unwrap(),
@@ -15011,7 +15274,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         interpret(
           "Max[Flatten[Cases[StreamPlot[{x, y}, {x, 0, 1}, {y, 0, 1}, \
              RegionFunction -> Function[{x, y}, x + y < 0.5]][[1]], \
-             Line[p_] :> (#[[1]] + #[[2]] & /@ p), Infinity]]] < 0.5"
+             (Line[p_] | Arrow[p_]) :> (#[[1]] + #[[2]] & /@ p), Infinity]]] < 0.5"
         )
         .unwrap(),
         "True"
@@ -23592,28 +23855,31 @@ mod parametric_plot3d {
     span(&coords(1)) / span(&coords(0))
   }
 
-  /// Regression (Wolfram Demonstration "Twisted Surfaces of Revolution"):
-  /// `ParametricPlot3D`'s own direct render (unlike `Graphics3D`'s) never
-  /// read `BoxRatios` at all — it always squashed the box into Wolfram's
-  /// `Plot3D`-family default `{1, 1, 0.4}` no matter what was asked for.
-  /// `BoxRatios -> Automatic` asks for the box shaped like the data's own
-  /// extents instead, so a tube running ten times as far along its axis
-  /// as it is wide must draw far taller than the squashed default.
+  /// `ParametricPlot3D`'s default `BoxRatios` is `Automatic` (unlike
+  /// `Plot3D`'s `{1, 1, 0.4}`): a tube running ten times as far along its
+  /// axis as it is wide draws tall, the same with or without the option —
+  /// and keeps that shape when `Show` re-renders it.
   #[test]
-  fn box_ratios_automatic_uses_the_datas_own_proportions() {
-    let default_shape = export_svg(
-      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -10, 10}]",
-    );
-    let automatic_shape = export_svg(
-      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -10, 10}, \
-       BoxRatios -> Automatic]",
-    );
-    let (default_aspect, automatic_aspect) =
-      (box_aspect(&default_shape), box_aspect(&automatic_shape));
-    assert!(
-      automatic_aspect > default_aspect * 2.0,
-      "Automatic BoxRatios must draw the data's true, much taller shape: \
-       {automatic_aspect} vs default {default_aspect}"
+  fn box_ratios_default_to_the_datas_own_proportions() {
+    let tube = "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, \
+                {v, -10, 10}";
+    let squashed =
+      box_aspect(&export_svg(&format!("{tube}, BoxRatios -> {{1, 1, 0.4}}]")));
+    for code in [
+      format!("{tube}]"),
+      format!("{tube}, BoxRatios -> Automatic]"),
+      format!("Show[{tube}], Graphics3D[Point[{{0, 0, 0}}]]]"),
+    ] {
+      let aspect = box_aspect(&export_svg(&code));
+      assert!(
+        aspect > squashed * 4.0,
+        "{code} must draw the data's true, much taller shape: \
+         {aspect} vs squashed {squashed}"
+      );
+    }
+    assert_eq!(
+      interpret(&format!("Options[{tube}], BoxRatios]")).unwrap(),
+      "{BoxRatios -> Automatic}"
     );
   }
 
@@ -34224,12 +34490,12 @@ fn test_show_merges_parametric_plot3d_surface_with_graphics3d() {
 #[test]
 fn test_show_parametric_plot3d_first_keeps_default_axes_and_box_ratios() {
   // Regression: the `structure` block that lets ParametricPlot3D merge
-  // into `Show` (previous test) initially left out the `Axes -> True` /
-  // `BoxRatios -> {1, 1, Z_SCALE}` defaults that the analogous Plot3D
-  // block fills in. `Show` takes its merged options from the *first*
-  // graphic's own structure, so with ParametricPlot3D listed first the
-  // merged picture would silently lose axes and get a different aspect
-  // ratio than ParametricPlot3D's own standalone default.
+  // into `Show` (previous test) initially left out the `Axes -> True`
+  // default. `Show` takes its merged options from the *first* graphic's
+  // own structure, so with ParametricPlot3D listed first the merged
+  // picture would silently lose axes. Its box keeps the data's own
+  // proportions (`BoxRatios -> Automatic`, unlike Plot3D's `{1, 1, 0.4}`),
+  // so no squashing `BoxRatios` may be spelled out either.
   clear_state();
   let expr = woxi::interpret_to_expr(
     "Show[ParametricPlot3D[{u, v, 0}, {u, -1, 1}, {v, -1, 1}], \
@@ -34244,8 +34510,8 @@ fn test_show_parametric_plot3d_first_keeps_default_axes_and_box_ratios() {
     "expected the merged structure to default to Axes -> True: {debug}"
   );
   assert!(
-    debug.contains(r#"pattern: Identifier("BoxRatios")"#),
-    "expected the merged structure to default BoxRatios: {debug}"
+    !debug.contains(r#"pattern: Identifier("BoxRatios")"#),
+    "the merged structure must leave BoxRatios Automatic: {debug}"
   );
 }
 
@@ -35178,6 +35444,212 @@ fn graphics3d_draws_solids_given_by_their_corners() {
   let tetra =
     export_svg("Graphics3D[Tetrahedron[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]");
   assert!(tetra.contains("<polygon"));
+}
+
+#[test]
+fn framed_plot_draws_inward_major_and_minor_ticks_on_all_edges() {
+  // Wolfram marks a frame on all four edges with ticks pointing into the
+  // plot: a major at each labelled value and four minors between them.
+  let svg = export_svg("Plot[x, {x, 0, 30}, Frame -> True, PlotRange -> All]");
+  let ticks: Vec<[f64; 4]> = svg
+    .split("<line x1=\"")
+    .skip(1)
+    .filter_map(|l| {
+      let nums: Vec<f64> = l
+        .split('"')
+        .step_by(2)
+        .take(4)
+        .filter_map(|n| n.parse().ok())
+        .collect();
+      (nums.len() == 4).then(|| [nums[0], nums[1], nums[2], nums[3]])
+    })
+    .collect();
+  let vertical = |t: &[f64; 4]| (t[0] - t[2]).abs() < 0.05;
+  let len = |t: &[f64; 4]| (t[2] - t[0]).abs() + (t[3] - t[1]).abs();
+  let (x_ticks, y_ticks): (Vec<_>, Vec<_>) =
+    ticks.iter().partition(|t| vertical(t));
+  // x from 0 to 30 in majors of 5: 31 positions on the bottom and the top.
+  assert_eq!(x_ticks.len(), 62, "{x_ticks:?}");
+  let majors = x_ticks.iter().filter(|t| len(t) > 50.0).count();
+  assert_eq!(majors, 14, "seven majors on each of two edges");
+  assert_ne!(y_ticks.len(), 0, "expected y ticks");
+  // Every tick starts on the frame and points into the plot area.
+  let bottom = x_ticks.iter().map(|t| t[1]).fold(f64::MIN, f64::max);
+  for t in x_ticks.iter().filter(|t| t[1] == bottom) {
+    assert!(t[3] < t[1], "bottom tick points down: {t:?}");
+  }
+}
+
+#[test]
+fn plot_labels_fill_string_form_slots() {
+  // A `StringForm` legend, plot label or axis label is displayed with its
+  // slots filled, not as the raw `StringForm[…]` expression.
+  for (option, text) in [
+    (
+      "PlotLegends -> (StringForm[\"delay `` s\", #] & /@ {0.3})",
+      ">delay 0.3 s<",
+    ),
+    (
+      "PlotLabel -> StringForm[\"n = `1`, m = `2`\", 3, x]",
+      ">n = 3, m = x<",
+    ),
+    (
+      "AxesLabel -> {StringForm[\"t (``)\", \"s\"], None}",
+      ">t (s)<",
+    ),
+  ] {
+    let svg = export_svg(&format!("Plot[x, {{x, 0, 1}}, {option}]"));
+    assert!(svg.contains(text), "{option}");
+    assert!(!svg.contains("StringForm"), "{option}");
+  }
+}
+
+#[test]
+fn graphics_layouts_paint_their_background_behind_every_cell() {
+  // `Background` on GraphicsRow/Column/Grid fills the whole layout, so the
+  // gaps between cells take the colour instead of staying white.
+  for layout in [
+    "GraphicsRow[{Graphics[Disk[]], Graphics[Disk[]]}, Background -> Black]",
+    "GraphicsColumn[{Graphics[Disk[]], Graphics[Disk[]]}, Background -> Black]",
+    "GraphicsGrid[{{Graphics[Disk[]], Graphics[Disk[]]}}, Background -> Black]",
+  ] {
+    let svg = export_svg(layout);
+    let body = svg.split_once('>').unwrap().1.trim_start();
+    assert!(
+      body.starts_with(
+        "<rect width=\"100%\" height=\"100%\" fill=\"rgb(0,0,0)\""
+      ),
+      "{layout}: {body:.200}"
+    );
+  }
+  let plain = export_svg("GraphicsRow[{Graphics[Disk[]], Graphics[Disk[]]}]");
+  assert!(!plain.contains("height=\"100%\""));
+}
+
+#[test]
+fn graphics3d_edge_form_directive_sets_outline_colour_and_width() {
+  // `EdgeForm[Directive[…]]` (and a list of directives) styles a solid's
+  // outline, including through `Opacity` on the faces; without a
+  // thickness the outline keeps its default hairline.
+  for (edge, stroke) in [
+    (
+      "EdgeForm[Directive[Red, AbsoluteThickness[3]]], Opacity[0.2]",
+      "stroke=\"rgb(255,0,0)\" stroke-width=\"3\"",
+    ),
+    (
+      "EdgeForm[{AbsoluteThickness[2], Green}]",
+      "stroke=\"rgb(0,255,0)\" stroke-width=\"2\"",
+    ),
+    (
+      "EdgeForm[White]",
+      "stroke=\"rgb(255,255,255)\" stroke-width=\"1\"",
+    ),
+  ] {
+    let svg = export_svg(&format!("Graphics3D[{{{edge}, Blue, Cube[]}}]"));
+    assert_eq!(svg.matches(stroke).count(), 24, "{edge}");
+  }
+}
+
+#[test]
+fn graphics3d_draws_platonic_solids_at_wolfram_vertices() {
+  // Each solid's drawn corners must be exactly where the projected
+  // wolframscript vertices (`MeshCoordinates[DiscretizeGraphics[…]]`) land
+  // under the same fixed view — covering the default placement, rotation
+  // `{θ, ϕ}`, a centre, and an edge length.
+  let view = "PlotRange -> {{-3, 3}, {-3, 3}, {-3, 3}}, \
+              ViewPoint -> {1.3, -2.4, 2}, ImageSize -> 400";
+  let corners = |svg: &str, tag: &str| -> Vec<(f64, f64)> {
+    let mut pts: Vec<(f64, f64)> = Vec::new();
+    for part in svg.split(tag).skip(1) {
+      let coords: Vec<f64> = if tag == "<circle cx=\"" {
+        let cx = part.split('"').next().unwrap();
+        let cy = part
+          .split("cy=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap();
+        vec![cx.parse().unwrap(), cy.parse().unwrap()]
+      } else {
+        part
+          .split('"')
+          .next()
+          .unwrap()
+          .split([' ', ','])
+          .map(|c| c.parse().unwrap())
+          .collect()
+      };
+      for p in coords.chunks(2) {
+        if !pts
+          .iter()
+          .any(|q| (q.0 - p[0]).abs() < 0.3 && (q.1 - p[1]).abs() < 0.3)
+        {
+          pts.push((p[0], p[1]));
+        }
+      }
+    }
+    pts
+  };
+  for (solid, wl_vertices) in [
+    (
+      "Tetrahedron[]",
+      "{{-0.288675, -0.5, -0.204124}, {-0.288675, 0.5, -0.204124}, \
+       {0., 0., 0.612372}, {0.57735, 0., -0.204124}}",
+    ),
+    (
+      "Cube[{1, 2, 0}, 2]",
+      "{{0, 1, -1}, {0, 1, 1}, {0, 3, -1}, {0, 3, 1}, {2, 1, -1}, \
+       {2, 1, 1}, {2, 3, -1}, {2, 3, 1}}",
+    ),
+    (
+      "Octahedron[{Pi/6, Pi/3}]",
+      "{{-0.612372, 0., -0.353553}, {-0.306186, -0.353553, 0.53033}, \
+       {-0.176777, 0.612372, 0.306186}, {0.176777, -0.612372, -0.306186}, \
+       {0.306186, 0.353553, -0.53033}, {0.612372, 0., 0.353553}}",
+    ),
+    (
+      "Dodecahedron[]",
+      "{{-1.376382, 0., 0.262866}, {-1.113516, -0.809017, -0.262866}, \
+       {-1.113516, 0.809017, -0.262866}, {-0.850651, 0., 1.113516}, \
+       {-0.688191, -0.5, -1.113516}, {-0.688191, 0.5, -1.113516}, \
+       {-0.425325, -1.309017, 0.262866}, {-0.425325, 1.309017, 0.262866}, \
+       {-0.262866, -0.809017, 1.113516}, {-0.262866, 0.809017, 1.113516}, \
+       {0.262866, -0.809017, -1.113516}, {0.262866, 0.809017, -1.113516}, \
+       {0.425325, -1.309017, -0.262866}, {0.425325, 1.309017, -0.262866}, \
+       {0.688191, -0.5, 1.113516}, {0.688191, 0.5, 1.113516}, \
+       {0.850651, 0., -1.113516}, {1.113516, -0.809017, 0.262866}, \
+       {1.113516, 0.809017, 0.262866}, {1.376382, 0., -0.262866}}",
+    ),
+    (
+      "Icosahedron[]",
+      "{{-0.850651, 0., -0.425325}, {-0.688191, -0.5, 0.425325}, \
+       {-0.688191, 0.5, 0.425325}, {-0.262866, -0.809017, -0.425325}, \
+       {-0.262866, 0.809017, -0.425325}, {0., 0., -0.951057}, \
+       {0., 0., 0.951057}, {0.262866, -0.809017, 0.425325}, \
+       {0.262866, 0.809017, 0.425325}, {0.688191, -0.5, -0.425325}, \
+       {0.688191, 0.5, -0.425325}, {0.850651, 0., 0.425325}}",
+    ),
+  ] {
+    let drawn = corners(
+      &export_svg(&format!("Graphics3D[{{Opacity[0.5], {solid}}}, {view}]")),
+      "<polygon points=\"",
+    );
+    let expected = corners(
+      &export_svg(&format!("Graphics3D[Point[{wl_vertices}], {view}]")),
+      "<circle cx=\"",
+    );
+    assert!(expected.len() >= 4, "{solid}: vertices not drawn as points");
+    assert_eq!(drawn.len(), expected.len(), "{solid}: {drawn:?}");
+    for p in &expected {
+      assert!(
+        drawn
+          .iter()
+          .any(|q| (q.0 - p.0).abs() < 0.3 && (q.1 - p.1).abs() < 0.3),
+        "{solid}: no corner drawn at {p:?}"
+      );
+    }
+  }
 }
 
 #[test]

@@ -9413,6 +9413,44 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(state.control_is_visible, vec![true, false, false]);
   }
 
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a histogram bin
+  /// explorer) whose control grid holds a `Dynamic[If[mode, Control[…],
+  /// Control[…]]]` cell: a different control per mode, the second a
+  /// `MultiSlider` bound to a list. This is a self-authored, construct-
+  /// equivalent example.
+  ///
+  /// Coverage: each branch's control becomes a real row shown only under
+  /// its own condition, and the list-valued control keeps its initial list.
+  #[test]
+  fn manipulate_dynamic_if_swaps_controls_by_condition() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{mode, w, pts}, Grid[{{\
+       Control[{{mode, \"a\", \"mode\"}, {\"a\", \"b\"}}], \" \", \
+       Dynamic[If[mode === \"a\", Control[{{w, 1, \"w\"}, 0.1, 6}], \
+       Control[{{pts, {0, 3, 5}, \"points\"}, 0, 10, MultiSlider[##] &}]]]}}]]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert!(names.contains(&"w"), "{names:?}");
+    assert!(
+      !names.contains(&"pts"),
+      "list control is a binding: {names:?}"
+    );
+    let w_idx = names.iter().position(|n| *n == "w").unwrap();
+    assert!(state.control_is_visible[w_idx]);
+    assert!(state.display_trees.is_empty());
+
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert!(!state.control_is_visible[w_idx]);
+  }
+
   /// A `PaneSelector` keyed by strings (`"a" -> …`, `"b" -> …`) rather than
   /// integers — the Demonstrations idiom for a mode picker whose Setter
   /// labels double as the pane keys. String comparison must be exact (a
