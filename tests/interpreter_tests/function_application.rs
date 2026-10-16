@@ -630,6 +630,23 @@ mod operator_precedence_at_map_apply {
   }
 
   #[test]
+  fn map_apply_operand_power_is_parenthesized() {
+    // Apply/Map/MapApply bind tighter than Power, so a Power operand must keep
+    // its parentheses or the printed form re-parses as `(f @@ a)^k`.
+    assert_eq!(
+      interpret("Hold[Plus @@ (a^k)]").unwrap(),
+      "Hold[Plus @@ (a^k)]"
+    );
+    assert_eq!(interpret("Hold[f /@ (a^k)]").unwrap(), "Hold[f /@ (a^k)]");
+    assert_eq!(interpret("Hold[f @@@ (a^k)]").unwrap(), "Hold[f @@@ (a^k)]");
+    assert_eq!(interpret("Hold[(a^b) @@ x]").unwrap(), "Hold[(a^b) @@ x]");
+    assert_eq!(
+      interpret("Hold[(Plus @@ a)^k]").unwrap(),
+      "Hold[Plus @@ a^k]"
+    );
+  }
+
+  #[test]
   fn anon_func_map_continuation() {
     // f & /@ {1, 2} — & then /@ should work even for single-term body
     assert_eq!(
