@@ -18,6 +18,7 @@ mod airy;
 mod arithmetic;
 mod bessel;
 pub(crate) mod bessel_bigfloat;
+pub(crate) mod canonical_polynomial;
 mod carlson;
 pub mod complex;
 mod coordinate_arrays;

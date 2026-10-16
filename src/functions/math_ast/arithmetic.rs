@@ -795,6 +795,10 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(0));
   }
+  if let Some(sum) = super::canonical_polynomial::canonical_polynomial_sum(args)
+  {
+    return Ok(sum);
+  }
 
   // Sums of plain numbers (the hot path of numeric loops) can never involve
   // Threaded, dates, series, quantities, intervals, music objects or Around,
@@ -8198,6 +8202,11 @@ fn absorb_coefficient_into_power(
 }
 
 pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(product) =
+    super::canonical_polynomial::canonical_monomial_product(args)
+  {
+    return Ok(product);
+  }
   Ok(flip_unit_negative_rational_product(times_ast_inner(args)?))
 }
 

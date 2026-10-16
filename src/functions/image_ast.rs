@@ -4957,6 +4957,7 @@ pub fn laplacian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     channels: *channels,
     data: Arc::new(out),
     image_type: *image_type,
+    display_size: None,
   })
 }
 
