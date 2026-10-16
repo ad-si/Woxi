@@ -38,42 +38,7 @@ pub fn apply_func_to_two_args(
   arg1: &Expr,
   arg2: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  match func {
-    Expr::Identifier(name) => crate::evaluator::evaluate_function_call_ast(
-      name,
-      &[arg1.clone(), arg2.clone()],
-    ),
-    Expr::Function { body } => {
-      // Anonymous function with two slots
-      let substituted =
-        crate::syntax::substitute_slots(body, &[arg1.clone(), arg2.clone()]);
-      crate::evaluator::evaluate_expr_to_expr(&substituted)
-    }
-    Expr::NamedFunction { params, body, .. } => {
-      let args_vec = [arg1, arg2];
-      let bindings: Vec<(&str, &Expr)> = params
-        .iter()
-        .zip(args_vec.iter())
-        .map(|(p, a)| (p.as_str(), *a))
-        .collect();
-      let substituted = crate::syntax::substitute_variables(body, &bindings);
-      crate::evaluator::evaluate_expr_to_expr(&substituted)
-    }
-    Expr::FunctionCall { name, args } => {
-      // Curried function: f[a] applied to (b, c) becomes f[a, b, c]
-      let mut new_args = args.clone();
-      new_args.push(arg1.clone());
-      new_args.push(arg2.clone());
-      crate::evaluator::evaluate_function_call_ast(name, &new_args)
-    }
-    _ => {
-      let func_str = expr_to_string(func);
-      crate::evaluator::evaluate_function_call_ast(
-        &func_str,
-        &[arg1.clone(), arg2.clone()],
-      )
-    }
-  }
+  apply_func_to_args(func, &[arg1.clone(), arg2.clone()])
 }
 
 /// Apply a function to an arbitrary number of arguments (generalizes
@@ -98,6 +63,14 @@ pub fn apply_func_to_args(
         .collect();
       let substituted = crate::syntax::substitute_variables(body, &bindings);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
+    }
+    // Inert function objects are applied to the arguments, not extended
+    // by them: InterpolatingFunction[…][x, y], never
+    // InterpolatingFunction[…, x, y].
+    Expr::FunctionCall { name, .. }
+      if name == "InterpolatingFunction" || name == "ParametricFunction" =>
+    {
+      crate::evaluator::apply_curried_call(func, call_args)
     }
     Expr::FunctionCall { name, args } => {
       // Curried function: f[a] applied to (b, c, …) becomes f[a, b, c, …]
@@ -345,33 +318,7 @@ pub fn apply_func_to_n_args(
   func: &Expr,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  match func {
-    Expr::Identifier(name) => {
-      crate::evaluator::evaluate_function_call_ast(name, args)
-    }
-    Expr::Function { body } => {
-      let substituted = crate::syntax::substitute_slots(body, args);
-      crate::evaluator::evaluate_expr_to_expr(&substituted)
-    }
-    Expr::NamedFunction { params, body, .. } => {
-      let bindings: Vec<(&str, &Expr)> = params
-        .iter()
-        .zip(args.iter())
-        .map(|(p, a)| (p.as_str(), a))
-        .collect();
-      let substituted = crate::syntax::substitute_variables(body, &bindings);
-      crate::evaluator::evaluate_expr_to_expr(&substituted)
-    }
-    Expr::FunctionCall { name, args: fa } => {
-      let mut new_args = fa.clone();
-      new_args.extend(args.iter().cloned());
-      crate::evaluator::evaluate_function_call_ast(name, &new_args)
-    }
-    _ => {
-      let func_str = expr_to_string(func);
-      crate::evaluator::evaluate_function_call_ast(&func_str, args)
-    }
-  }
+  apply_func_to_args(func, args)
 }
 
 /// Helper to extract f64 from Expr
