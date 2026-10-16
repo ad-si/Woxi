@@ -35185,6 +35185,40 @@ fn graphics3d_draws_solids_given_by_their_corners() {
 }
 
 #[test]
+fn framed_plot_draws_inward_major_and_minor_ticks_on_all_edges() {
+  // Wolfram marks a frame on all four edges with ticks pointing into the
+  // plot: a major at each labelled value and four minors between them.
+  let svg = export_svg("Plot[x, {x, 0, 30}, Frame -> True, PlotRange -> All]");
+  let ticks: Vec<[f64; 4]> = svg
+    .split("<line x1=\"")
+    .skip(1)
+    .filter_map(|l| {
+      let nums: Vec<f64> = l
+        .split('"')
+        .step_by(2)
+        .take(4)
+        .filter_map(|n| n.parse().ok())
+        .collect();
+      (nums.len() == 4).then(|| [nums[0], nums[1], nums[2], nums[3]])
+    })
+    .collect();
+  let vertical = |t: &[f64; 4]| (t[0] - t[2]).abs() < 0.05;
+  let len = |t: &[f64; 4]| (t[2] - t[0]).abs() + (t[3] - t[1]).abs();
+  let (x_ticks, y_ticks): (Vec<_>, Vec<_>) =
+    ticks.iter().partition(|t| vertical(t));
+  // x from 0 to 30 in majors of 5: 31 positions on the bottom and the top.
+  assert_eq!(x_ticks.len(), 62, "{x_ticks:?}");
+  let majors = x_ticks.iter().filter(|t| len(t) > 50.0).count();
+  assert_eq!(majors, 14, "seven majors on each of two edges");
+  assert!(!y_ticks.is_empty());
+  // Every tick starts on the frame and points into the plot area.
+  let bottom = x_ticks.iter().map(|t| t[1]).fold(f64::MIN, f64::max);
+  for t in x_ticks.iter().filter(|t| t[1] == bottom) {
+    assert!(t[3] < t[1], "bottom tick points down: {t:?}");
+  }
+}
+
+#[test]
 fn plot_labels_fill_string_form_slots() {
   // A `StringForm` legend, plot label or axis label is displayed with its
   // slots filled, not as the raw `StringForm[…]` expression.
