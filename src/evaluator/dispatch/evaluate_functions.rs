@@ -4108,9 +4108,11 @@ fn evaluate_function_call_ast_inner(
     }
   }
 
-  // HypercubeGraph[n] — n-dimensional hypercube graph
+  // HypercubeGraph[n, opts...] — n-dimensional hypercube graph; trailing
+  // options (VertexStyle, EdgeStyle, ImageSize, ...) are Graph options.
   if name == "HypercubeGraph"
-    && args.len() == 1
+    && !args.is_empty()
+    && args[1..].iter().all(crate::syntax::is_rule_expr)
     && let Expr::Integer(n) = &args[0]
   {
     let n = *n as usize;
@@ -4131,10 +4133,10 @@ fn evaluate_function_call_ast_inner(
         }
       }
     }
-    return Ok(call(
-      "Graph",
-      vec![Expr::List(vertices.into()), Expr::List(edges.into())],
-    ));
+    let mut graph_args =
+      vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+    graph_args.extend(args[1..].iter().cloned());
+    return Ok(call("Graph", graph_args));
   }
 
   // TuranGraph[n, k] — complete k-partite graph with n vertices, partitions as equal as possible
