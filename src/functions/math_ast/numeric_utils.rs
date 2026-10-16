@@ -1780,3 +1780,171 @@ pub fn expr_contains_head(expr: &Expr, head: &str) -> bool {
     _ => false,
   }
 }
+
+/// Parts of a machine-complex value in one of the two shapes the arithmetic
+/// produces: the infix `re ± coeff*I` that [`build_complex_float_expr`]
+/// builds, or the `Plus[re, Times[im, I]]` call the general `Plus` path
+/// normalizes to. Anything else, including exact `I` or a zero real part,
+/// is `None`. A zero imaginary part (`0.001 + 0.*I`) is accepted.
+pub fn machine_complex_shape(expr: &Expr) -> Option<(f64, f64)> {
+  let (infix, sign, re_e, im_e): (bool, f64, &Expr, &Expr) = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => (true, 1.0, left, right),
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => (true, -1.0, left, right),
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() == 2 => {
+      (false, 1.0, &args[0], &args[1])
+    }
+    _ => return None,
+  };
+  let Expr::Real(re) = re_e else {
+    return None;
+  };
+  let (coeff, unit): (&Expr, &Expr) = match im_e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => (left, right),
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  let (Expr::Real(im), Expr::Identifier(i)) = (coeff, unit) else {
+    return None;
+  };
+  if i != "I"
+    || *re == 0.0
+    || (infix && *im < 0.0)
+    || !re.is_finite()
+    || !im.is_finite()
+  {
+    return None;
+  }
+  Some((*re, sign * *im))
+}
+
+/// [`machine_complex_shape`] restricted to a non-zero imaginary part.
+pub fn canonical_machine_complex(expr: &Expr) -> Option<(f64, f64)> {
+  machine_complex_shape(expr).filter(|(_, im)| *im != 0.0)
+}
+
+/// Whether `expr` is a machine-complex number already in the
+/// `Plus[re, Times[im, I]]` form evaluation leaves it in.
+pub fn is_normalized_machine_complex(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { .. })
+    && machine_complex_shape(expr).is_some()
+}
+
+/// The `Plus[re, Times[im, I]]` form the general `Plus` path leaves a
+/// machine-complex sum in.
+pub fn normalized_machine_complex(re: f64, im: f64) -> Expr {
+  call(
+    "Plus",
+    vec![
+      Expr::Real(re),
+      call("Times", vec![Expr::Real(im), id_expr("I")]),
+    ],
+  )
+}
+
+/// Direct IEEE evaluation of `l op r` when at least one operand is a
+/// canonical machine-complex number and the other a Real, small Integer or
+/// machine-complex number, skipping the symbolic Plus/Times/Power
+/// machinery (which costs ~100k instructions per operation and made
+/// complex-iteration loops such as Julia sets unusably slow). Results use
+/// the same formulas as the general path; anything that would degenerate
+/// (a zero or non-finite part, unsupported operand mix) returns `None` so
+/// the general path decides.
+pub fn fast_machine_complex_binop(
+  op: BinaryOperator,
+  l: &Expr,
+  r: &Expr,
+) -> Option<Expr> {
+  enum Operand {
+    Real(f64),
+    Complex(f64, f64),
+    /// `x + 0.*I`: only a Divide numerator takes it (as `x`); the general
+    /// path is inconsistent for it elsewhere, so it is left to that path.
+    ZeroImag(f64),
+    ExactI,
+  }
+  fn classify(e: &Expr) -> Option<Operand> {
+    match e {
+      Expr::Real(x) if x.is_finite() => Some(Operand::Real(*x)),
+      Expr::Integer(n) if n.unsigned_abs() < (1u128 << 53) => {
+        Some(Operand::Real(*n as f64))
+      }
+      Expr::Identifier(i) if i == "I" => Some(Operand::ExactI),
+      _ => machine_complex_shape(e).map(|(a, b)| {
+        if b == 0.0 {
+          Operand::ZeroImag(a)
+        } else {
+          Operand::Complex(a, b)
+        }
+      }),
+    }
+  }
+  let lo = classify(l)?;
+  let ro = classify(r)?;
+  let parts = |o: &Operand| match o {
+    Operand::Real(x) => (*x, 0.0),
+    Operand::Complex(a, b) => (*a, *b),
+    Operand::ZeroImag(x) => (*x, 0.0),
+    Operand::ExactI => (0.0, 1.0),
+  };
+  let is_cx = |o: &Operand| matches!(o, Operand::Complex(..));
+  if !is_cx(&lo) && !is_cx(&ro) {
+    return None;
+  }
+  if !matches!(op, BinaryOperator::Divide)
+    && (matches!(lo, Operand::ZeroImag(_))
+      || matches!(ro, Operand::ZeroImag(_)))
+  {
+    return None;
+  }
+  let ((a, b), (c, d)) = (parts(&lo), parts(&ro));
+  let (re, im) = match op {
+    BinaryOperator::Plus => (a + c, b + d),
+    BinaryOperator::Minus => (a - c, b - d),
+    BinaryOperator::Times => match (&lo, &ro) {
+      (Operand::Complex(..), Operand::Complex(..)) => {
+        (a * c - b * d, a * d + b * c)
+      }
+      (Operand::Real(x), Operand::Complex(p, q))
+      | (Operand::Complex(p, q), Operand::Real(x)) => (x * p, x * q),
+      _ => return None,
+    },
+    BinaryOperator::Divide => match (&lo, &ro) {
+      (Operand::Real(x) | Operand::ZeroImag(x), Operand::Complex(p, q)) => {
+        let (rc, rd) = wolfram_powi_complex(*p, *q, -1);
+        (x * rc, x * rd)
+      }
+      _ => return None,
+    },
+    BinaryOperator::Power => match (&lo, r) {
+      (Operand::Complex(p, q), Expr::Integer(n)) if *n != 0 && *n != 1 => {
+        wolfram_powi_complex(*p, *q, *n)
+      }
+      _ => return None,
+    },
+    _ => return None,
+  };
+  if re == 0.0 || im == 0.0 || !re.is_finite() || !im.is_finite() {
+    return None;
+  }
+  Some(
+    if matches!(op, BinaryOperator::Plus | BinaryOperator::Minus) {
+      normalized_machine_complex(re, im)
+    } else {
+      build_complex_float_expr(re, im)
+    },
+  )
+}

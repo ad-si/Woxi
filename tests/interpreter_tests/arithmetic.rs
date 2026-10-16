@@ -12589,4 +12589,48 @@ mod plus_machine_complex {
       "31"
     );
   }
+
+  /// Machine-complex arithmetic (the escape-time loop of a Julia set) takes
+  /// a direct numeric path; its results must match the symbolic one.
+  #[test]
+  fn machine_complex_arithmetic_through_a_stored_variable() {
+    assert_eq!(
+      interpret(
+        "z = 0.3 + 0.2 I; ToString[{z^3, 0.001/z^3, z^3 + 0.001/z^3 - I, \
+         z z, z - I, z + 2, 3 z, (0.001 + 0. I)/z, z^-2}, InputForm]"
+      )
+      .unwrap(),
+      "{-0.009000000000000005 + 0.046*I, \
+       -0.004096495220755578 - 0.020937642239417388*I, \
+       -0.013096495220755584 - 0.9749376422394174*I, \
+       0.04999999999999999 + 0.12*I, 0.3 - 0.8*I, 2.3 + 0.2*I, \
+       0.8999999999999999 + 0.6000000000000001*I, \
+       0.0023076923076923075 - 0.0015384615384615387*I, \
+       2.9585798816568043 - 7.100591715976332*I}"
+    );
+    assert_eq!(
+      interpret("z = 0.3 + 0.2 I; w = z; {w, Head[w], Re[w], Im[w]}").unwrap(),
+      "{0.3 + 0.2*I, Complex, 0.3, 0.2}"
+    );
+  }
+
+  #[test]
+  fn machine_complex_fixed_point_escape_count() {
+    assert_eq!(
+      interpret(
+        "Length[FixedPointList[#^3 + (0.001 + 0. I)/#^3 - I &, 0.3 + 0.2 I, \
+         75, SameTest -> (Abs[#] > 2.0 &)]]"
+      )
+      .unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret(
+        "Length[FixedPointList[#^3 + (0.001 + 0. I)/#^3 - I &, 0.05 + 0.1 I, \
+         75, SameTest -> (Abs[#] > 2.0 &)]]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
 }

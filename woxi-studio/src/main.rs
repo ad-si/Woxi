@@ -25998,6 +25998,45 @@ SaveDefinitions -> True]";
     );
   }
 
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// that shades the escape-time iterations of a cubic Julia map over a
+  /// grid of complex starting points. Independently written: different
+  /// map, grid and slider values. The constructs worth pinning down are an
+  /// `Initialization` block holding a `Compile`d complex-valued function
+  /// built on `FixedPointList` with a `SameTest`, a `Flatten`ed `Table`
+  /// grid, and a `ListDensityPlot` helper `Quiet`ed via `//`, driven by two
+  /// discrete-list setters.
+  #[test]
+  fn demonstration_julia_escape_time_density_manipulate_renders() {
+    let code = "Manipulate[\
+      plotEscape[cr, ci], \
+      {{cr, 0.01, \"Re c\"}, {-1, -0.1, 0, 0.01, 0.1, 1}}, \
+      {{ci, 0., \"Im c\"}, {-1, -0.1, 0, 0.01, 0.1, 1}}, \
+      TrackedSymbols -> True, SynchronousUpdating -> False, \
+      Initialization :> (\
+        maxIter = 20; \
+        escape = Compile[{{z, _Complex}, {c, _Complex}}, \
+          Re@Length[FixedPointList[#^2 + c &, z, maxIter, \
+            SameTest -> (Abs[#] > 2.0 &)]]]; \
+        grid = Flatten[Table[{a, b}, {a, -1.5, 1.5, 0.25}, \
+          {b, -1.2, 1.2, 0.25}], 1]; \
+        plotEscape[cr_, ci_] := ListDensityPlot[\
+          (({#[[1]], #[[2]], escape[#[[1]] + I #[[2]], cr + I ci]} &) /@ grid), \
+          Mesh -> False, AspectRatio -> Automatic, Frame -> False, \
+          RotateLabel -> False, ImageSize -> {400, 400}] // Quiet)]";
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("Julia-set Manipulate should build a state");
+    assert!(state.error.is_none(), "error: {:?}", state.error);
+    assert_eq!(state.controls.len(), 2);
+    assert!(
+      state.graphics_handle.is_some(),
+      "density plot should render, text: {:?}",
+      state.text_output
+    );
+  }
+
   /// Regression test for a `RefCell` reentrancy panic in
   /// `store_function_definition` (`src/lib.rs`): comparing a newly stored
   /// rule against the function's existing overloads (to place it by

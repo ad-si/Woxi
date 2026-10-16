@@ -1155,6 +1155,15 @@ pub fn evaluate_expr_to_expr_inner(
       Ok(expr.clone())
     }
     Expr::FunctionCall { name, args } => {
+      // A machine-complex value (`Plus[0.3, Times[0.2, I]]`) is already
+      // fully evaluated; re-evaluating it each time a variable holding it
+      // is read dominated complex iteration loops.
+      if name == "Plus"
+        && crate::functions::math_ast::is_normalized_machine_complex(expr)
+        && !has_user_rules("Plus")
+      {
+        return Ok(expr.clone());
+      }
       // `System`Plus[1, 2]` is the built-in `Plus[1, 2]`: a head that spells
       // out the System context evaluates as its short name.
       if let Some(short) = name.strip_prefix("System`")
@@ -4425,6 +4434,20 @@ fn evaluate_binary_op_pair(
     {
       return evaluate_function_call_ast(&new_head, &[left_val, right_val]);
     }
+  }
+
+  // Machine-complex arithmetic (`z^3 + c/z^3 - I` in an iteration loop):
+  // evaluate directly instead of through the symbolic machinery.
+  if let Some(name) = func_name.or(match op {
+    BinaryOperator::Minus => Some("Subtract"),
+    BinaryOperator::Divide => Some("Divide"),
+    _ => None,
+  }) && !has_user_rules(name)
+    && let Some(result) = crate::functions::math_ast::fast_machine_complex_binop(
+      op, &left_val, &right_val,
+    )
+  {
+    return Ok(result);
   }
 
   // `a - b` / `a / b` expand to Plus/Times/Power; let user-defined rules
