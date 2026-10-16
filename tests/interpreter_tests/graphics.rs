@@ -22204,6 +22204,19 @@ mod contour_plot_3d {
   }
 
   #[test]
+  fn background_option_repaints_canvas() {
+    let svg = export_svg(
+      "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, \
+       {z, -1, 1}, Background -> Black, PlotPoints -> 6]",
+    );
+    assert!(
+      svg.contains("<rect width=\"360\" height=\"360\" fill=\"rgb(0,0,0)\"/>"),
+      "canvas should be black: {}",
+      &svg[..300.min(svg.len())]
+    );
+  }
+
+  #[test]
   fn returns_graphics_3d() {
     assert_eq!(
       interpret(
