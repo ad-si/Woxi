@@ -11555,6 +11555,10 @@ fn evaluate_function_call_ast_inner(
         // seeing them unevaluated is not a missing implementation.
         | "TemplateIf"
         | "TemplateSequence"
+        // Inert typeset bars: `\[LeftBracketingBar]x\[RightBracketingBar]`
+        // in input boxes parses to these and they stay unevaluated.
+        | "BracketingBar"
+        | "DoubleBracketingBar"
     )
   {
     let args_str = args
