@@ -9097,6 +9097,24 @@ fn matching_box_close(chars: &[char], open: usize) -> Option<usize> {
   None
 }
 
+/// Whether the content of a `\(…\)` group is nothing but words separated by
+/// spaces — no nested box code, brackets, quotes or backslashes — and so
+/// reads as literal text.
+fn is_spaced_plain_text(chars: &[char]) -> bool {
+  let text = unescape_box_spaces(chars);
+  text.chars().any(char::is_whitespace)
+    && text.chars().any(char::is_alphanumeric)
+    && text.chars().all(|c| {
+      c.is_alphanumeric() || c.is_whitespace() || "'.,:;!?-".contains(c)
+    })
+}
+
+/// The text of a box group with each linear-syntax escaped space (`\ `)
+/// turned into the plain space it stands for.
+fn unescape_box_spaces(chars: &[char]) -> String {
+  chars.iter().collect::<String>().replace("\\ ", " ")
+}
+
 /// Drop the grouping markers inside a box segment and unwrap the quotes
 /// around its elements, keeping `\"` and `\\` escapes as literal characters.
 ///
@@ -9125,6 +9143,20 @@ fn strip_box_markup(chars: &[char]) -> String {
       {
         out.push('"');
         out.extend(&chars[i + 1..close]);
+        out.push('"');
+        i = close + 1;
+        continue;
+      }
+      // A group of plain words (`\(my\ height\)`) is text, not an
+      // expression: stripped bare, the gap between the words would parse as
+      // a product (`my*height`).
+      BOX_OPEN
+        if !in_box_text
+          && let Some(close) = matching_box_close(chars, i)
+          && is_spaced_plain_text(&chars[i + 1..close]) =>
+      {
+        out.push('"');
+        out.push_str(&unescape_box_spaces(&chars[i + 1..close]));
         out.push('"');
         i = close + 1;
         continue;

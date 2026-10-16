@@ -1348,7 +1348,7 @@ DeleteSmallComponents,Zero out label-matrix components with few pixels,✅,pure,
 DeleteMissing,Delete Missing elements from a list or pairs with a missing value from an association,✅,pure,10.0,1338
 GalaxyData,,🚫,,10.0,1338
 PutAppend,Append expressions to a file,✅,effectful,1.0,1338
-ZetaZero,k-th non-trivial zero of the Riemann zeta function on the critical line,✅,pure,6.0,1338
+ZetaZero,k-th non-trivial zero of the Riemann zeta function on the critical line (or k-th zero above height t),✅,pure,6.0,1338
 Echo,Prints and returns an expression,✅,effectful,10.3,1339
 ConstellationData,,🚫,,10.0,1342
 Directory,Current working directory,✅,effectful,2.0,1342
@@ -1401,7 +1401,7 @@ PredictorMeasurements,Measurements of predictor function performance,🚫,io,10.
 PositiveIntegers,Domain of positive integers,✅,pure,12.0,1391
 ParabolicCylinderD,Parabolic cylinder function D_nu(z),✅,pure,6.0,1392
 ConvolutionLayer,Neural network convolution layer,🚫,io,11.0,1393
-EmitSound,Emit a sound,🚫,io,6.0,1394
+EmitSound,Plays a sound (captured as playable audio for visual hosts; returns Null),✅,io,6.0,1394
 SurvivalFunction,Survival function for distributions,✅,pure,8.0,1395
 ExpIntegralE,Generalized exponential integral E_n(z); FunctionExpand gives z^(n-1) Gamma[1-n z] and expands that Gamma for an integer or half-integer order,✅,pure,1.0,1397
 RootReduce,Reduce an algebraic number to a simplified radical or a minimal-polynomial Root object,✅,pure,3.0,1397
@@ -1932,7 +1932,7 @@ IsomorphicGraphQ,Test whether two graphs are isomorphic,✅,pure,8.0,1930
 Resampling,Signal processing option for resampling methods,🚫,,8.0,1930
 DumpSave,Serialization of definitions to a binary file,🚫,,3.0,1932
 RecordLists,Data import option for structuring records as lists,🚫,,2.0,1932
-ImageEffect,Applies an effect to an image (noise effects: SaltPepperNoise, GaussianNoise and Noise),✅,contextual,7.0,1935
+ImageEffect,Applies an effect to an image (SaltPepperNoise, GaussianNoise, Noise, Solarization, OilPainting and Charcoal),✅,contextual,7.0,1935
 VertexDelete,Delete one or more vertices from a graph along with their incident edges,✅,pure,8.0,1935
 FileNameSplit,Splits a file name into a list of path components,✅,pure,7.0,1938
 SmallCircle,Symbolic small-circle operator with Unicode display,✅,pure,3.0,1938
@@ -2269,7 +2269,7 @@ ReadString,Read a file or stream as a string up to an optional terminator,✅,ef
 WriteLine,Write a string to an output stream followed by a newline,✅,effectful,10.0,2282
 BoundingRegion,Smallest bounding region of a point list or region — box by default and MinBall/MinDisk/FastBall/FastDisk/MinCuboid/MinRectangle on request,✅,pure,10.4,2286
 CellDingbat,Notebook UI,🚫,None,3.0,2286
-DistributionParameterAssumptions,Probability distribution,🚫,None,8.0,2286
+DistributionParameterAssumptions,Conditions on the parameters of a distribution,✅,pure,8.0,2286
 WheelGraph,Wheel graph with a hub vertex joined to a cycle of rim vertices,✅,pure,8.0,2286
 ContainsAll,Test if a list contains all elements of another list,✅,pure,10.2,2289
 HypergeometricDistribution,Hypergeometric distribution (sampling without replacement); supports PDF Mean and Variance,✅,pure,6.0,2289
@@ -2488,7 +2488,7 @@ ListCurvePathPlot,,🚫,,7.0,2509
 Bookmarks,Option for bookmarked settings in Manipulate,✅,pure,7.0,2512
 SliceDensityPlot3D,,🚫,,10.2,2512
 StringRepeat,Repeats a string a number of times optionally truncated to a given length,✅,pure,10.1,2512
-BracketingBar,,🚫,,3.0,2514
+BracketingBar,Inert typeset form of absolute-value bars around its content,✅,pure,3.0,2514
 StartProcess,,🚫,,10.0,2514
 DivisorSum,Applies a function to each divisor and sums the results,✅,pure,7.0,2519
 EdgeLabelStyle,,🚫,,8.0,2519
@@ -3026,7 +3026,7 @@ BioSequence,,🚫,,12.2,3070
 CorrelationDistance,1 minus Pearson correlation between vectors,✅,none,6.0,3070
 FoldWhileList,Fold while a test holds returning every intermediate result,✅,pure,12.2,3070
 GeoHistogram,Geographic density histogram shading hexagonal or rectangular or triangular map tiles by count,✅,pure,11.0,3070
-LaplacianFilter,,🚫,,7.0,3070
+LaplacianFilter,Sum of second derivatives of the Gaussian-smoothed image for a radius r,✅,pure,7.0,3070
 Links,,🚫,,3.0,3070
 Postfix,Symbol for postfix display formatting,✅,pure,1.0,3070
 SeriesTermGoal,,,,12.1,3070
@@ -3873,7 +3873,7 @@ CommunityLabels,,,,9.0,3972
 CompoundElement,,,,10.1,3972
 ConoverTest,,,,8.0,3972
 DiscreteIndicator,,,,7.0,3972
-DoubleBracketingBar,,,,3.0,3972
+DoubleBracketingBar,Inert typeset form of double bars around its content,✅,pure,3.0,3972
 EdgeContract,Contract an edge of a graph merging its two endpoints into one vertex,✅,pure,10.0,3972
 EvaluationElements,,,,8.0,3972
 FindKClique,,,,9.0,3972

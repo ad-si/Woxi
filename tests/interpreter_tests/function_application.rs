@@ -3666,4 +3666,54 @@ mod parenthesized_head_after_implicit_times {
   fn pure_function_in_parens_after_factor() {
     assert_eq!(interpret("2 (#+1&)[3]").unwrap(), "8");
   }
+
+  #[test]
+  fn map_thread_interpolating_function() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 1}, {2, 4}}]; MapThread[f, {{1, 1.5}}]"
+      )
+      .unwrap(),
+      "{1, 2.25}"
+    );
+  }
+  #[test]
+  fn map_thread_ndsolve_solution_pde() {
+    // The solution of a PDE is applied to (t, x) pairs, not extended by them.
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[u[t, x], t] == D[u[t, x], x, x], u[0, x] == Sin[Pi x], u[t, 0] == 0, u[t, 1] == 0}, u, {t, 0, 0.1}, {x, 0, 1}]; f = u /. First[s]; Max[Abs[MapThread[f, {{0, 0.1}, {0.5, 0.5}}] - {1, Exp[-Pi^2/10]}]] < 0.01"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod apply_sequence_at_level {
+  use super::*;
+
+  #[test]
+  fn sequence_children_splice_into_parent_list() {
+    assert_eq!(
+      interpret("Apply[Sequence, {{a}, {b, c}}, {1}]").unwrap(),
+      "{a, b, c}"
+    );
+    assert_eq!(
+      interpret("Sort[Apply[Sequence, {{3}, {2, 1}}, {1}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Length[Apply[Sequence, {{a}, {b, c}, {}}, {1}]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn sequence_children_splice_into_parent_call() {
+    assert_eq!(
+      interpret("Apply[Sequence, g[{a}, {b, c}], {1}]").unwrap(),
+      "g[a, b, c]"
+    );
+  }
 }

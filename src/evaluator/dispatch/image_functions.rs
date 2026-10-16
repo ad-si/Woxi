@@ -899,6 +899,9 @@ pub fn dispatch_image_functions(
     "GradientFilter" if args.len() == 2 => {
       return Some(crate::functions::image_ast::gradient_filter_ast(args));
     }
+    "LaplacianFilter" if args.len() == 2 => {
+      return Some(crate::functions::image_ast::laplacian_filter_ast(args));
+    }
     "TextRecognize" if !args.is_empty() => {
       return Some(crate::functions::image_ast::text_recognize_ast(args));
     }

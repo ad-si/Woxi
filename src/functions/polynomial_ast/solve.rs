@@ -4924,6 +4924,9 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
     }
     _ => return None,
   };
+  if let Some(result) = try_solve_trig_pair_eq(lhs, rhs, var) {
+    return Some(result);
+  }
   // A nonzero constant factor does not change the roots of `… == 0`, so peel
   // it off: `-Cos[x] == 0` and `3*Sin[x] == 0` solve like `Cos[x] == 0` and
   // `Sin[x] == 0`.
@@ -5078,6 +5081,115 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   };
 
   Some(make_rule_list(solutions))
+}
+
+/// `Sin/Cos[a1*var + b1] == Sin/Cos[a2*var + b2]` (both sides depend on `var`
+/// through a linear argument). Writing `Cos[A]` as `Sin[Pi/2 + A]`, the
+/// equation `Sin[A] == Sin[B]` holds iff `A == B + 2*Pi*k` or
+/// `A == Pi - B + 2*Pi*k`; each branch is linear in `var`. A branch whose
+/// `var` coefficient vanishes is either empty (skipped) or an identity, in
+/// which case `None` leaves the equation to the generic paths.
+fn try_solve_trig_pair_eq(lhs: &Expr, rhs: &Expr, var: &str) -> Option<Expr> {
+  // Normalize one side to the linear coefficients `(a, b)` of an equivalent
+  // `Sin[a*var + b]`.
+  let side = |e: &Expr| -> Option<(Expr, Expr)> {
+    let Expr::FunctionCall { name, args } = e else {
+      return None;
+    };
+    if args.len() != 1 || !matches!(name.as_str(), "Sin" | "Cos") {
+      return None;
+    }
+    let (a, b) = if matches!(&args[0], Expr::Identifier(s) if s == var) {
+      (Expr::Integer(1), Expr::Integer(0))
+    } else {
+      super::apart::extract_linear_coeffs(&args[0], var)?
+    };
+    if contains_var(&a, var) || contains_var(&b, var) {
+      return None;
+    }
+    let b = if name == "Cos" {
+      plus2(div2(const_expr("Pi"), Expr::Integer(2)), b)
+    } else {
+      b
+    };
+    Some((a, b))
+  };
+  let (a1, b1) = side(lhs)?;
+  let (a2, b2) = side(rhs)?;
+  let eval = |e: Expr| {
+    crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or_else(|_| e.clone())
+  };
+  let pi = const_expr("Pi");
+  let c1 = call1("C", Expr::Integer(1));
+  let two_pi_c1 = times2(Expr::Integer(2), times2(pi.clone(), c1.clone()));
+  // (var coefficient, constant) of each branch: `coef*var == const + 2*Pi*k`.
+  let branches = [
+    (
+      eval(minus2(a1.clone(), a2.clone())),
+      eval(minus2(b2.clone(), b1.clone())),
+    ),
+    (
+      eval(plus2(a1.clone(), a2.clone())),
+      eval(minus2(minus2(pi.clone(), b1), b2)),
+    ),
+  ];
+  let mut bodies: Vec<Expr> = Vec::new();
+  for (coef, constant) in branches {
+    if matches!(&coef, Expr::Integer(0)) {
+      // `0 == constant + 2*Pi*k` is solvable for an integer `k` iff
+      // `constant/(2*Pi)` is an integer, which makes the equation an identity.
+      let ratio = eval(div2(constant, times2(Expr::Integer(2), pi.clone())));
+      let is_int = match &ratio {
+        Expr::Integer(_) => true,
+        other => {
+          try_eval_to_f64(other).is_some_and(|v| (v - v.round()).abs() < 1e-12)
+        }
+      };
+      if is_int {
+        return None;
+      }
+      continue;
+    }
+    if contains_var(&coef, var) {
+      return None;
+    }
+    // `k -> -k` keeps the family intact; use it to divide by a positive
+    // coefficient so the parameter enters with a positive sign.
+    let (constant, coef) = if try_eval_to_f64(&coef).is_some_and(|v| v < 0.0) {
+      (eval(neg1(constant)), eval(neg1(coef)))
+    } else {
+      (constant, coef)
+    };
+    let body = eval(call1(
+      "Expand",
+      div2(plus2(constant, two_pi_c1.clone()), coef),
+    ));
+    if !bodies
+      .iter()
+      .any(|b| expr_to_string(b) == expr_to_string(&body))
+    {
+      bodies.push(body);
+    }
+  }
+  let element_c1_integers = call("Element", vec![c1, id_expr("Integers")]);
+  let var_expr = Expr::Identifier(var.to_string());
+  Some(Expr::List(
+    bodies
+      .into_iter()
+      .map(|body| {
+        Expr::List(
+          vec![rule_expr(
+            var_expr.clone(),
+            call(
+              "ConditionalExpression",
+              vec![body, element_c1_integers.clone()],
+            ),
+          )]
+          .into(),
+        )
+      })
+      .collect(),
+  ))
 }
 
 /// Shape `try_solve_inverse_function` knows how to invert once an
@@ -7075,7 +7187,23 @@ fn build_find_root_func(arg: &Expr, vars: &[&str]) -> Expr {
         _ => resolved,
       };
     }
-    other => other.clone(),
+    // Any other held form (`eq /. rules`, `If[...]`, `Which[...]`, ...) may
+    // only reveal an `Equal` once evaluated; resolve it, then rewrite that
+    // equation like a literal one.
+    other => {
+      let resolved = evaluate_with_vars_localized(other, vars);
+      return match &resolved {
+        Expr::Comparison { operators, .. }
+          if operators.len() == 1 && operators[0] == ComparisonOp::Equal =>
+        {
+          build_find_root_func(&resolved, vars)
+        }
+        Expr::FunctionCall { name, .. } if name == "Equal" => {
+          build_find_root_func(&resolved, vars)
+        }
+        _ => resolved,
+      };
+    }
   };
   evaluate_with_vars_localized(&raw, vars)
 }
@@ -11287,6 +11415,9 @@ pub fn find_minimum_ast(
     );
   }
 
+  // `StepMonitor :> …` fires once per accepted iteration below.
+  let step_monitor = find_option(&args[2..], "StepMonitor");
+
   // Trailing arguments are options (e.g. MaxIterations -> 2,
   // Method -> "Newton"). They aren't honoured yet, but we accept them
   // silently rather than aborting so call shapes match Wolfram.
@@ -11598,6 +11729,7 @@ pub fn find_minimum_ast(
         best_f = eval_at(f, &[best_x])? * sign;
       }
       x[0] = best_x;
+      fire_step_monitor(step_monitor, &vars, &x);
     }
   } else {
     // Multivariable: damped Newton on sign*f using the symbolic Hessian.
@@ -11659,6 +11791,7 @@ pub fn find_minimum_ast(
         let new_f = eval_at(f, &x_new)? * sign;
         if new_f <= current_f + c * alpha * decrease || alpha < 1e-15 {
           x = x_new;
+          fire_step_monitor(step_monitor, &vars, &x);
           break;
         }
         alpha *= 0.5;
@@ -12088,10 +12221,21 @@ fn fire_step_monitor(monitor: Option<&Expr>, vars: &[String], x: &[f64]) {
   let Some(monitor) = monitor else {
     return;
   };
-  let mut e = monitor.clone();
-  for (i, var) in vars.iter().enumerate() {
-    e = crate::syntax::substitute_variable(&e, var, &Expr::Real(x[i]));
-  }
+  // `Block[{x = …, y = …}, monitor]` binds the variables dynamically, so a
+  // monitor that reaches them indirectly (`Sow[vars]` with `vars = {x, y}`)
+  // sees the current point just like one that names them directly.
+  let bindings: Vec<Expr> = vars
+    .iter()
+    .zip(x.iter())
+    .map(|(var, val)| Expr::FunctionCall {
+      name: "Set".to_string(),
+      args: vec![Expr::Identifier(var.clone()), Expr::Real(*val)].into(),
+    })
+    .collect();
+  let e = Expr::FunctionCall {
+    name: "Block".to_string(),
+    args: vec![Expr::List(bindings.into()), monitor.clone()].into(),
+  };
   let _ = crate::evaluator::evaluate_expr_to_expr(&e);
 }
 

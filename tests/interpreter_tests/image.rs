@@ -3041,6 +3041,31 @@ mod image_processing {
     );
   }
 
+  // A numeric {x, y} third argument in [-1, 1] picks which side the removed
+  // pixels come from: -1 behaves like Left/Bottom, 1 like Right/Top and 0 like
+  // Center (as used by zoom-pan demonstrations that pass a negated position).
+  #[test]
+  fn image_crop_numeric_offset_spec() {
+    clear_state();
+    let img = "Image[{{0, 0.1, 0.2, 0.3}, {0, 0.1, 0.2, 0.3}}]";
+    let crop = |spec: &str| {
+      interpret(&format!(
+        "Round[255 ImageData[ImageCrop[{img}, {{2, 2}}, {spec}]]]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(crop("{-1, 0}"), crop("{Left, Center}"));
+    assert_eq!(crop("{1, 0}"), crop("{Right, Center}"));
+    assert_eq!(crop("{0, 0}"), crop("Center"));
+    assert_eq!(
+      interpret(&format!(
+        "ImageDimensions[ImageCrop[{img}, {{3, 1}}, {{0.5, -1}}]]"
+      ))
+      .unwrap(),
+      "{3, 1}"
+    );
+  }
+
   // ImageCrop[image] with no size argument removes uniform borders.
   // Pixel precision is preserved (no Byte round-trip).
   #[test]
@@ -8504,6 +8529,130 @@ mod demonstration_image_filters {
       interpret("Length[ImageLevels[Image[{{{1, 0, 0}, {0, 1, 0}}}], 2]]")
         .unwrap(),
       "3"
+    );
+  }
+
+  // The painterly effects are deterministic, so they are checked on values.
+  #[test]
+  fn image_effect_solarization_inverts_bright_values() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageEffect[Image[{{0.25, 0.75}}], \
+         {\"Solarization\", 0.5}]]"
+      )
+      .unwrap(),
+      "{{0.25, 0.25}}"
+    );
+    // The threshold is the effect's parameter.
+    assert_eq!(
+      interpret(
+        "ImageData[ImageEffect[Image[{{0.25, 0.75}}], \
+         {\"Solarization\", 0.1}]]"
+      )
+      .unwrap(),
+      "{{0.75, 0.25}}"
+    );
+  }
+
+  #[test]
+  fn image_effect_oil_painting_flattens_to_dominant_color() {
+    clear_state();
+    // A uniform image has nothing to smear.
+    assert_eq!(
+      interpret(
+        "ImageData[ImageEffect[Image[Table[0.5, {4}, {4}]], \
+         {\"OilPainting\", 2}]] == Table[0.5, {4}, {4}]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A single dark pixel is outvoted by its bright neighbours.
+    assert_eq!(
+      interpret(
+        "Max[ImageData[ImageEffect[Image[{{1., 1., 1.}, {1., 0., 1.}, \
+         {1., 1., 1.}}], {\"OilPainting\", 1}]]] - \
+         Min[ImageData[ImageEffect[Image[{{1., 1., 1.}, {1., 0., 1.}, \
+         {1., 1., 1.}}], {\"OilPainting\", 1}]]]"
+      )
+      .unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageEffect[Image[Table[{0.2, 0.4, 0.6}, {3}, {5}]], \
+         \"OilPainting\"]]"
+      )
+      .unwrap(),
+      "{5, 3}"
+    );
+  }
+
+  #[test]
+  fn image_effect_charcoal_draws_edges_on_white() {
+    clear_state();
+    // A flat image has no edges: pure white.
+    assert_eq!(
+      interpret(
+        "Union[Flatten[ImageData[ImageEffect[Image[Table[0.5, {4}, {4}]], \
+         {\"Charcoal\", 1}]]]]"
+      )
+      .unwrap(),
+      "{1.}"
+    );
+    // A step edge darkens the pixels beside it and leaves the rest white.
+    assert_eq!(
+      interpret(
+        "Min[ImageData[ImageEffect[Image[{{0., 0., 1., 1.}, {0., 0., 1., 1.}}], \
+         {\"Charcoal\", 1}]]] < 0.5"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod image_size_option {
+  use super::*;
+
+  fn svg_header(code: &str) -> String {
+    clear_state();
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let start = svg.find("<svg").unwrap();
+    svg[start..].split('>').next().unwrap().to_string()
+  }
+
+  #[test]
+  fn width_only_keeps_aspect_ratio() {
+    assert_eq!(
+      svg_header("Image[Table[0, {4}, {2}], ImageSize -> 20]"),
+      "<svg xmlns='http://www.w3.org/2000/svg' width='20' height='40'"
+    );
+  }
+
+  #[test]
+  fn box_size_fits_inside_keeping_aspect_ratio() {
+    assert_eq!(
+      svg_header("Image[Table[0, {4}, {2}], ImageSize -> {300, 400}]"),
+      "<svg xmlns='http://www.w3.org/2000/svg' width='200' height='400'"
+    );
+  }
+
+  #[test]
+  fn image_size_does_not_change_pixel_dimensions() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageDimensions[Image[{{0, 1}, {1, 0}}, ImageSize -> 100]]")
+        .unwrap(),
+      "{2, 2}"
+    );
+  }
+
+  #[test]
+  fn without_option_uses_pixel_size() {
+    assert_eq!(
+      svg_header("Image[Table[0, {4}, {2}]]"),
+      "<svg xmlns='http://www.w3.org/2000/svg' width='2' height='4'"
     );
   }
 }
