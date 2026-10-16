@@ -1018,7 +1018,10 @@ pub(crate) fn axes_label_svg_at(
        dominant-baseline=\"central\" font-family=\"sans-serif\" \
        font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
       x0 + w + font_size * 0.6,
-      crate::functions::graphics::box_string_to_svg(x_label)
+      crate::functions::graphics::box_string_to_svg_scaled(
+        x_label,
+        RESOLUTION_SCALE as f64
+      )
     ));
   }
   if show_y_axis && !y_label.is_empty() {
@@ -1037,7 +1040,10 @@ pub(crate) fn axes_label_svg_at(
        font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
        fill=\"{label_fill}\">{}</text>\n",
       y0 - font_size * 0.6,
-      crate::functions::graphics::box_string_to_svg(y_label)
+      crate::functions::graphics::box_string_to_svg_scaled(
+        y_label,
+        RESOLUTION_SCALE as f64
+      )
     ));
   }
   svg
@@ -8795,7 +8801,7 @@ pub(crate) fn parse_axes_option(value: &Expr) -> Option<(bool, bool)> {
   let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
   match value {
     Expr::Identifier(s) if s == "True" => Some((true, true)),
-    Expr::Identifier(s) if s == "False" => Some((false, false)),
+    Expr::Identifier(s) if s == "False" || s == "None" => Some((false, false)),
     Expr::List(items) if items.len() == 2 => {
       Some((is_true(&items[0]), is_true(&items[1])))
     }

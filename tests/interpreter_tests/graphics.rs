@@ -4058,6 +4058,44 @@ mod plot3d {
       }
     }
 
+    /// Regression: `ColorFunction -> Function[{x, y, t}, …]` on a 2D
+    /// `ParametricPlot` was ignored (the curve stayed one flat color); it
+    /// receives the curve parameter as its third argument.
+    #[test]
+    fn parametric_plot_honours_color_function() {
+      clear_state();
+      let svg = |opts: &str| {
+        interpret(&format!(
+          "ExportString[ParametricPlot[{{Cos[t], Sin[t]}}, {{t, 0, 2 Pi}}, \
+           {opts}], \"SVG\"]"
+        ))
+        .unwrap()
+      };
+      let split = svg(
+        "ColorFunction -> Function[{x, y, t}, If[t < Pi, Red, Blue]], \
+         ColorFunctionScaling -> False",
+      );
+      assert!(split.contains("stroke=\"#FF0000\""));
+      assert!(split.contains("stroke=\"#0000FF\""));
+      // Scaled parameter: 0..1 over the parameter range.
+      let scaled =
+        svg("ColorFunction -> Function[{x, y, t}, If[t < 0.5, Red, Blue]]");
+      assert!(scaled.contains("stroke=\"#FF0000\""));
+      assert!(scaled.contains("stroke=\"#0000FF\""));
+    }
+
+    /// Regression: `Axes -> None` was ignored, so the axes were still drawn.
+    #[test]
+    fn axes_none_hides_axes() {
+      clear_state();
+      let result = interpret(
+        "StringContainsQ[ExportString[ParametricPlot[{Cos[t], Sin[t]}, \
+         {t, 0, 2 Pi}, Axes -> None], \"SVG\"], \"<text\"]",
+      )
+      .unwrap();
+      assert_eq!(result, "False");
+    }
+
     /// Regression: `ColorFunction` on a `ParametricPlot3D` curve was dropped,
     /// so the curve was always drawn in one flat color instead of being
     /// colored along its length.
@@ -7644,6 +7682,37 @@ mod plot3d {
              PlotStyle -> {Red, Green}]"#,
       );
       assert!(two.contains("#FF0000") && two.contains("#00FF00"));
+    }
+
+    // `ListLinePlot` reads a `PlotStyle` list over one curve as a single
+    // combined style too: `{Thick, Orange}` is one thick orange line, not
+    // a thick blue one.
+    #[test]
+    fn list_line_plot_style_list_combines_for_a_single_curve() {
+      let one = export_svg(
+        r#"ListLinePlot[{{1, 2}, {2, 3}}, PlotStyle -> {Thick, Orange}]"#,
+      );
+      assert!(one.contains("stroke=\"#FF8000\""), "{one}");
+      let tooltip = export_svg(
+        r#"ListLinePlot[Tooltip[{{1, 2}, {2, 3}}, "f"],
+             PlotStyle -> {Thick, Orange}]"#,
+      );
+      assert!(tooltip.contains("stroke=\"#FF8000\""), "{tooltip}");
+    }
+
+    // A `Style[label, size]` axis label is in points; the plot draws at a
+    // multiple of that, so the size scales with the label's base font
+    // instead of shrinking the text to a tenth.
+    #[test]
+    fn list_plot_axes_label_style_size_scales_with_the_plot() {
+      let svg = export_svg(
+        r#"ListPlot[{{1, 2}, {2, 3}}, AxesLabel -> {Style["xx", 12], "y"}]"#,
+      );
+      let line = svg
+        .lines()
+        .find(|l| l.contains(">xx</tspan>"))
+        .unwrap_or_else(|| panic!("no xx label in {svg}"));
+      assert!(line.contains("<tspan font-size=\"120\">"), "{line}");
     }
 
     /// A `PointSize` in `PlotStyle` has to resize the dots, not just get
