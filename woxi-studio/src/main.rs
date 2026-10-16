@@ -19802,6 +19802,45 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`time$$ = 25}, \"\\[Ellipsis]\"]"], 
     assert_ne!(render(5.0), published, "the time control must matter");
   }
 
+  /// A picture-effects `Manipulate` (independently written): every effect
+  /// must produce a picture, and the "thumbnail" view pins the untouched
+  /// original to the corner with `Inset[image, {Left, Top}, {Left, Top}, …]`.
+  #[test]
+  fn image_effect_picker_draws_every_effect_and_view() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[RowBox[{"Manipulate", "[", "Graphics[{Inset[Pane[ImageEffect[Image[Table[{x/9., y/9., 0.5}, {y, 0, 9}, {x, 0, 9}]], {effect, 2}], ImageSize -> Automatic], Automatic, Automatic, 2], If[view == \"thumbnail\", Inset[Image[Table[{x/9., y/9., 0.5}, {y, 0, 9}, {x, 0, 9}]], {Left, Top}, {Left, Top}, 0.5], {}]}, PlotRange -> 1], {effect, {\"Charcoal\", \"OilPainting\", \"Solarization\", \"Noise\"}}, {view, {\"result\", \"thumbnail\"}}", "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`effect$$ = \"Charcoal\"}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some());
+
+    for effect in ["Charcoal", "OilPainting", "Solarization", "Noise"] {
+      for (view, images) in [("result", 1), ("thumbnail", 2)] {
+        let svg = woxi::interpret_with_stdout(&format!(
+          "effect = \"{effect}\"; view = \"{view}\";\n{}",
+          widget.body
+        ))
+        .expect("the body must render")
+        .graphics
+        .expect("the body must produce a graphic");
+        assert_eq!(
+          svg.matches("<image").count(),
+          images,
+          "{effect}/{view}: expected {images} picture(s)"
+        );
+        assert!(!svg.contains("-Image-"), "{effect}/{view}: unrendered image");
+      }
+    }
+  }
+
   /// End-to-end regression for a "Calabi-Yau space" style Demonstration (the
   /// code is independently written): a `Manipulate` whose `Initialization`
   /// defines complex helper functions plus a function that returns a

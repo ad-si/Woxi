@@ -1377,6 +1377,13 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// - `"Noise"` (amplitude `a`, default 0.1): adds zero-mean uniform noise
 ///   drawn from `[-a, a]` to every color channel, also unclipped.
 ///
+/// - `"Solarization"` (threshold `t`, default 0.5): color values above `t`
+///   are inverted, the rest are kept.
+/// - `"OilPainting"` (radius `r`, default 2): each pixel takes the mean
+///   color of the most frequent intensity level in its `(2r+1)²` window.
+/// - `"Charcoal"` (radius `r`, default 1): dark strokes on a white ground,
+///   drawn where the intensity changes over a distance of `r` pixels.
+///
 /// Other effects are not implemented and return the call unevaluated.
 pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
@@ -1481,6 +1488,74 @@ pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       });
+      out
+    }
+    "Solarization" => {
+      let Some(threshold) = numeric_param(0, 0.5) else {
+        return Ok(unevaluated("ImageEffect", args));
+      };
+      let mut out = data.as_ref().clone();
+      for pixel in out.chunks_mut(ch) {
+        for channel in pixel.iter_mut().take(color_channels) {
+          if *channel > threshold {
+            *channel = 1.0 - *channel;
+          }
+        }
+      }
+      out
+    }
+    "OilPainting" | "Charcoal" => {
+      let default_radius = if effect == "OilPainting" { 2.0 } else { 1.0 };
+      let Some(radius) = numeric_param(0, default_radius) else {
+        return Ok(unevaluated("ImageEffect", args));
+      };
+      let radius = radius.round().max(0.0) as i64;
+      let (w, h) = (*width as i64, *height as i64);
+      let intensity = |x: i64, y: i64| -> f64 {
+        let base = ((y.clamp(0, h - 1) * w + x.clamp(0, w - 1)) as usize) * ch;
+        data[base..base + color_channels].iter().sum::<f64>()
+          / color_channels as f64
+      };
+      let mut out = data.as_ref().clone();
+      for y in 0..h {
+        for x in 0..w {
+          let base = ((y * w + x) as usize) * ch;
+          if effect == "Charcoal" {
+            let dx = intensity(x + radius, y) - intensity(x - radius, y);
+            let dy = intensity(x, y + radius) - intensity(x, y - radius);
+            let value = 1.0 - ((dx.abs() + dy.abs()) * 2.0).min(1.0);
+            for channel in &mut out[base..base + color_channels] {
+              *channel = value;
+            }
+          } else {
+            const LEVELS: usize = 20;
+            let mut count = [0usize; LEVELS];
+            let mut sums = vec![vec![0.0; color_channels]; LEVELS];
+            for ny in (y - radius).max(0)..=(y + radius).min(h - 1) {
+              for nx in (x - radius).max(0)..=(x + radius).min(w - 1) {
+                let level = ((intensity(nx, ny) * LEVELS as f64) as usize)
+                  .min(LEVELS - 1);
+                let nbase = ((ny * w + nx) as usize) * ch;
+                count[level] += 1;
+                for (sum, value) in sums[level]
+                  .iter_mut()
+                  .zip(&data[nbase..nbase + color_channels])
+                {
+                  *sum += value;
+                }
+              }
+            }
+            // Ties go to the darker level so the result is deterministic.
+            let best =
+              (0..LEVELS).max_by_key(|&l| (count[l], LEVELS - l)).unwrap();
+            for (channel, sum) in
+              out[base..base + color_channels].iter_mut().zip(&sums[best])
+            {
+              *channel = sum / count[best] as f64;
+            }
+          }
+        }
+      }
       out
     }
     _ => return Ok(unevaluated("ImageEffect", args)),

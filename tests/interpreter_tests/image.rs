@@ -8506,4 +8506,83 @@ mod demonstration_image_filters {
       "3"
     );
   }
+
+  // The painterly effects are deterministic, so they are checked on values.
+  #[test]
+  fn image_effect_solarization_inverts_bright_values() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageEffect[Image[{{0.25, 0.75}}], \
+         {\"Solarization\", 0.5}]]"
+      )
+      .unwrap(),
+      "{{0.25, 0.25}}"
+    );
+    // The threshold is the effect's parameter.
+    assert_eq!(
+      interpret(
+        "ImageData[ImageEffect[Image[{{0.25, 0.75}}], \
+         {\"Solarization\", 0.1}]]"
+      )
+      .unwrap(),
+      "{{0.75, 0.25}}"
+    );
+  }
+
+  #[test]
+  fn image_effect_oil_painting_flattens_to_dominant_color() {
+    clear_state();
+    // A uniform image has nothing to smear.
+    assert_eq!(
+      interpret(
+        "ImageData[ImageEffect[Image[Table[0.5, {4}, {4}]], \
+         {\"OilPainting\", 2}]] == Table[0.5, {4}, {4}]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A single dark pixel is outvoted by its bright neighbours.
+    assert_eq!(
+      interpret(
+        "Max[ImageData[ImageEffect[Image[{{1., 1., 1.}, {1., 0., 1.}, \
+         {1., 1., 1.}}], {\"OilPainting\", 1}]]] - \
+         Min[ImageData[ImageEffect[Image[{{1., 1., 1.}, {1., 0., 1.}, \
+         {1., 1., 1.}}], {\"OilPainting\", 1}]]]"
+      )
+      .unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageEffect[Image[Table[{0.2, 0.4, 0.6}, {3}, {5}]], \
+         \"OilPainting\"]]"
+      )
+      .unwrap(),
+      "{5, 3}"
+    );
+  }
+
+  #[test]
+  fn image_effect_charcoal_draws_edges_on_white() {
+    clear_state();
+    // A flat image has no edges: pure white.
+    assert_eq!(
+      interpret(
+        "Union[Flatten[ImageData[ImageEffect[Image[Table[0.5, {4}, {4}]], \
+         {\"Charcoal\", 1}]]]]"
+      )
+      .unwrap(),
+      "{1.}"
+    );
+    // A step edge darkens the pixels beside it and leaves the rest white.
+    assert_eq!(
+      interpret(
+        "Min[ImageData[ImageEffect[Image[{{0., 0., 1., 1.}, {0., 0., 1., 1.}}], \
+         {\"Charcoal\", 1}]]] < 0.5"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
