@@ -35270,6 +35270,7 @@ mod bracketing_bar_labels {
     assert!(!svg.contains("&quot;"), "{svg}");
     assert!(svg.contains(">A</tspan>"), "{svg}");
   }
+}
 
 /// Regression: a `ProgressIndicator` cell in a `Grid` (a per-bracket fill bar
 /// in a Demonstration's table) draws a track with a proportional fill instead
