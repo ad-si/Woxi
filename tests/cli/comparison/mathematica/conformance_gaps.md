@@ -879,19 +879,13 @@ diverges the same way: `FindMaximum[{CDF[NormalDistribution[], x - 3],
 0 < x < 5}, {x, 1}]` stops at `x -> 4.999998363890543` in WL against Woxi's
 `x -> 5.`. Assertions over either have to round.
 
-### `StepMonitor` never fires for an unconstrained `FindMinimum`
+### `StepMonitor` step counts for an unconstrained `FindMinimum`
 
-Both engines report `noopmon` and monitor nothing for the *constrained*
-`{f, cons}` form, but WL does fire the monitor once per step of the
-unconstrained one, where Woxi's Newton iteration ignores it entirely:
-
-```sh
-wolframscript -code 'Length[Reap[FindMinimum[(x - 2)^2, {x, 5}, StepMonitor :> Sow[x]]][[2]]]'  # 1
-woxi eval 'Length[Reap[FindMinimum[(x - 2)^2, {x, 5}, StepMonitor :> Sow[x]]][[2]]]'            # 0
-```
-
-Matching it needs Woxi's iteration count to match WL's as well, not just the
-plumbing.
+Woxi fires the monitor once per accepted step of its own damped Newton
+iteration, whatever `Method` is requested, so the *number* of steps (and the
+intermediate points) can differ from WL's `"QuasiNewton"` or
+`"ConjugateGradient"` runs. Quadratics, which WL also solves in one step,
+agree.
 
 ### `Erf`'s last ULP, and the far tail of a correlated normal CDF
 
