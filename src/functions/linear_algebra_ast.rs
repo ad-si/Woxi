@@ -7215,14 +7215,14 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build FittedModel association
   let mut assoc = vec![
-    (Expr::String("Type".to_string()), id_expr("Linear")),
-    (Expr::String("FittedExpression".to_string()), fitted_expr),
+    (str_expr("Type"), id_expr("Linear")),
+    (str_expr("FittedExpression"), fitted_expr),
     (
-      Expr::String("BestFitParameters".to_string()),
+      str_expr("BestFitParameters"),
       Expr::List(coeffs.iter().map(|c| Expr::Real(*c)).collect()),
     ),
     (
-      Expr::String("IndependentVariables".to_string()),
+      str_expr("IndependentVariables"),
       Expr::List(
         var_names
           .iter()
@@ -7230,29 +7230,23 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect(),
       ),
     ),
+    (str_expr("BasisFunctions"), Expr::List(basis.into())),
     (
-      Expr::String("BasisFunctions".to_string()),
-      Expr::List(basis.into()),
-    ),
-    (
-      Expr::String("FitResiduals".to_string()),
+      str_expr("FitResiduals"),
       Expr::List(residuals.iter().map(|r| Expr::Real(*r)).collect()),
     ),
     (
-      Expr::String("PredictedResponse".to_string()),
+      str_expr("PredictedResponse"),
       Expr::List(fitted_values.iter().map(|v| Expr::Real(*v)).collect()),
     ),
-    (Expr::String("RSquared".to_string()), Expr::Real(r_squared)),
+    (str_expr("RSquared"), Expr::Real(r_squared)),
+    (str_expr("AdjustedRSquared"), Expr::Real(adjusted_r_squared)),
+    (str_expr("InputData"), input_data),
+    (str_expr("DesignMatrix"), design_matrix),
+    (str_expr("Function"), function_form),
+    (str_expr("Response"), response_vec),
     (
-      Expr::String("AdjustedRSquared".to_string()),
-      Expr::Real(adjusted_r_squared),
-    ),
-    (Expr::String("InputData".to_string()), input_data),
-    (Expr::String("DesignMatrix".to_string()), design_matrix),
-    (Expr::String("Function".to_string()), function_form),
-    (Expr::String("Response".to_string()), response_vec),
-    (
-      Expr::String("VariableName".to_string()),
+      str_expr("VariableName"),
       Expr::String(var_names.first().cloned().unwrap_or_default()),
     ),
   ];
@@ -7274,18 +7268,18 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect(),
     );
     assoc.push((
-      Expr::String("ParameterErrors".to_string()),
+      str_expr("ParameterErrors"),
       Expr::List(errors.iter().map(|e| Expr::Real(*e)).collect()),
     ));
     assoc.push((
-      Expr::String("ParameterTStatistics".to_string()),
+      str_expr("ParameterTStatistics"),
       Expr::List(t_stats.iter().map(|t| Expr::Real(*t)).collect()),
     ));
     assoc.push((
-      Expr::String("ParameterPValues".to_string()),
+      str_expr("ParameterPValues"),
       Expr::List(p_values.iter().map(|p| Expr::Real(*p)).collect()),
     ));
-    assoc.push((Expr::String("ParameterTableEntries".to_string()), entries));
+    assoc.push((str_expr("ParameterTableEntries"), entries));
   }
 
   Ok(call1("FittedModel", Expr::Association(assoc)))
@@ -7523,41 +7517,29 @@ pub fn nonlinear_model_fit_ast(
   };
 
   let mut assoc = vec![
-    (Expr::String("Type".to_string()), id_expr("Nonlinear")),
+    (str_expr("Type"), id_expr("Nonlinear")),
+    (str_expr("FittedExpression"), fitted_expr.clone()),
+    (str_expr("BestFitParameters"), param_rules.clone()),
     (
-      Expr::String("FittedExpression".to_string()),
-      fitted_expr.clone(),
-    ),
-    (
-      Expr::String("BestFitParameters".to_string()),
-      param_rules.clone(),
-    ),
-    (
-      Expr::String("IndependentVariables".to_string()),
+      str_expr("IndependentVariables"),
       Expr::List(vec![Expr::Identifier(var_name.clone())].into()),
     ),
-    (
-      Expr::String("VariableName".to_string()),
-      Expr::String(var_name.clone()),
-    ),
-    (Expr::String("BestFit".to_string()), fitted_expr),
+    (str_expr("VariableName"), Expr::String(var_name.clone())),
+    (str_expr("BestFit"), fitted_expr),
   ];
   if let Some((residuals, predicted, r_squared, adjusted_r_squared)) =
     goodness_of_fit
   {
     assoc.push((
-      Expr::String("FitResiduals".to_string()),
+      str_expr("FitResiduals"),
       Expr::List(residuals.into_iter().map(Expr::Real).collect()),
     ));
     assoc.push((
-      Expr::String("PredictedResponse".to_string()),
+      str_expr("PredictedResponse"),
       Expr::List(predicted.into_iter().map(Expr::Real).collect()),
     ));
-    assoc.push((Expr::String("RSquared".to_string()), Expr::Real(r_squared)));
-    assoc.push((
-      Expr::String("AdjustedRSquared".to_string()),
-      Expr::Real(adjusted_r_squared),
-    ));
+    assoc.push((str_expr("RSquared"), Expr::Real(r_squared)));
+    assoc.push((str_expr("AdjustedRSquared"), Expr::Real(adjusted_r_squared)));
   }
 
   if let Some((errors, t_stats, p_values, values)) =
@@ -7580,16 +7562,10 @@ pub fn nonlinear_model_fit_ast(
     );
     let reals =
       |v: &[f64]| Expr::List(v.iter().map(|x| Expr::Real(*x)).collect());
-    assoc.push((Expr::String("ParameterErrors".to_string()), reals(&errors)));
-    assoc.push((
-      Expr::String("ParameterTStatistics".to_string()),
-      reals(&t_stats),
-    ));
-    assoc.push((
-      Expr::String("ParameterPValues".to_string()),
-      reals(&p_values),
-    ));
-    assoc.push((Expr::String("ParameterTableEntries".to_string()), entries));
+    assoc.push((str_expr("ParameterErrors"), reals(&errors)));
+    assoc.push((str_expr("ParameterTStatistics"), reals(&t_stats)));
+    assoc.push((str_expr("ParameterPValues"), reals(&p_values)));
+    assoc.push((str_expr("ParameterTableEntries"), entries));
   }
 
   Ok(call1("FittedModel", Expr::Association(assoc)))
@@ -7753,41 +7729,32 @@ fn linear_model_fit_design_matrix_form(
     Expr::List(vec![design_matrix.clone(), response_vec.clone()].into());
 
   let assoc = Expr::Association(vec![
-    (Expr::String("Type".to_string()), id_expr("Linear")),
-    (Expr::String("FittedExpression".to_string()), fitted_expr),
+    (str_expr("Type"), id_expr("Linear")),
+    (str_expr("FittedExpression"), fitted_expr),
     (
-      Expr::String("BestFitParameters".to_string()),
+      str_expr("BestFitParameters"),
       Expr::List(coeffs.iter().map(|c| Expr::Real(*c)).collect()),
     ),
     (
-      Expr::String("IndependentVariables".to_string()),
+      str_expr("IndependentVariables"),
       Expr::List(basis.clone().into()),
     ),
+    (str_expr("BasisFunctions"), Expr::List(basis.into())),
     (
-      Expr::String("BasisFunctions".to_string()),
-      Expr::List(basis.into()),
-    ),
-    (
-      Expr::String("FitResiduals".to_string()),
+      str_expr("FitResiduals"),
       Expr::List(residuals.iter().map(|r| Expr::Real(*r)).collect()),
     ),
     (
-      Expr::String("PredictedResponse".to_string()),
+      str_expr("PredictedResponse"),
       Expr::List(fitted_values.iter().map(|v| Expr::Real(*v)).collect()),
     ),
-    (Expr::String("RSquared".to_string()), Expr::Real(r_squared)),
-    (
-      Expr::String("AdjustedRSquared".to_string()),
-      Expr::Real(adjusted_r_squared),
-    ),
-    (Expr::String("InputData".to_string()), input_data),
-    (Expr::String("DesignMatrix".to_string()), design_matrix),
-    (Expr::String("Function".to_string()), function_form),
-    (Expr::String("Response".to_string()), response_vec),
-    (
-      Expr::String("VariableName".to_string()),
-      Expr::String(String::new()),
-    ),
+    (str_expr("RSquared"), Expr::Real(r_squared)),
+    (str_expr("AdjustedRSquared"), Expr::Real(adjusted_r_squared)),
+    (str_expr("InputData"), input_data),
+    (str_expr("DesignMatrix"), design_matrix),
+    (str_expr("Function"), function_form),
+    (str_expr("Response"), response_vec),
+    (str_expr("VariableName"), Expr::String(String::new())),
   ]);
 
   Ok(call1("FittedModel", assoc))
@@ -7954,33 +7921,27 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   let assoc = Expr::Association(vec![
-    (Expr::String("Type".to_string()), id_expr("Logit")),
-    (Expr::String("FittedExpression".to_string()), fitted_expr),
+    (str_expr("Type"), id_expr("Logit")),
+    (str_expr("FittedExpression"), fitted_expr),
     (
-      Expr::String("BestFitParameters".to_string()),
+      str_expr("BestFitParameters"),
       Expr::List(beta.iter().map(|c| Expr::Real(*c)).collect()),
     ),
     (
-      Expr::String("IndependentVariables".to_string()),
+      str_expr("IndependentVariables"),
       Expr::List(vec![Expr::Identifier(var_name.clone())].into()),
     ),
+    (str_expr("BasisFunctions"), Expr::List(basis)),
     (
-      Expr::String("BasisFunctions".to_string()),
-      Expr::List(basis),
-    ),
-    (
-      Expr::String("FitResiduals".to_string()),
+      str_expr("FitResiduals"),
       Expr::List(residuals.iter().map(|r| Expr::Real(*r)).collect()),
     ),
     (
-      Expr::String("PredictedResponse".to_string()),
+      str_expr("PredictedResponse"),
       Expr::List(fitted_probs.iter().map(|v| Expr::Real(*v)).collect()),
     ),
-    (Expr::String("InputData".to_string()), input_data),
-    (
-      Expr::String("VariableName".to_string()),
-      Expr::String(var_name),
-    ),
+    (str_expr("InputData"), input_data),
+    (str_expr("VariableName"), Expr::String(var_name)),
   ]);
 
   Ok(call1("FittedModel", assoc))

@@ -12,7 +12,6 @@
 //! audio is decoded when the file is a WAV, and `Sound`/`Play` expressions
 //! are synthesized through the `Play` sampler.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::sound;
@@ -185,10 +184,7 @@ pub fn time_to_seconds(expr: &Expr) -> Option<f64> {
 
 /// `Quantity[value, unit]` expression.
 pub fn quantity(value: f64, unit: &str) -> Expr {
-  call(
-    "Quantity",
-    vec![Expr::Real(value), Expr::String(unit.to_string())],
-  )
+  call("Quantity", vec![Expr::Real(value), str_expr(unit)])
 }
 
 /// Linear-interpolation resampling of one channel to `new_len` samples,
@@ -242,10 +238,7 @@ pub fn import_audio_file(path: &str) -> Result<Expr, InterpreterError> {
       "Import: cannot open \"{path}\": file not found"
     )));
   }
-  Ok(call1(
-    "Audio",
-    call1("File", Expr::String(path.to_string())),
-  ))
+  Ok(call1("Audio", call1("File", str_expr(path))))
 }
 
 // ---------------------------------------------------------------------------
@@ -345,9 +338,8 @@ pub fn duration_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unev();
   }
   let ev = crate::evaluator::evaluate_expr_to_expr;
-  let seconds = |value: Expr| {
-    call("Quantity", vec![value, Expr::String("Seconds".to_string())])
-  };
+  let seconds =
+    |value: Expr| call("Quantity", vec![value, str_expr("Seconds")]);
   let durinv = |e: &Expr| {
     crate::emit_message(&format!(
       "Duration::durinv: Expecting an audio, sound, video, time series or date interval object instead of {}.",
@@ -493,7 +485,7 @@ fn audio_quantity(magnitude: f64, unit: &str) -> Expr {
   } else {
     Expr::Real(magnitude)
   };
-  call("Quantity", vec![value, Expr::String(unit.to_string())])
+  call("Quantity", vec![value, str_expr(unit)])
 }
 
 /// `AudioQ[expr]` — whether `expr` is an audio object. A `Sound` is not one,
@@ -550,7 +542,7 @@ pub fn audio_type_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("AudioType", args));
   }
   match audio_argument("AudioType", args) {
-    Some(_) => Ok(Expr::String("Real32".to_string())),
+    Some(_) => Ok(str_expr("Real32")),
     None => Ok(unevaluated("AudioType", args)),
   }
 }

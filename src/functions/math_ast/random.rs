@@ -596,8 +596,8 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ]
           .into(),
         ),
-        Expr::String("Instant".to_string()),
-        Expr::String("Gregorian".to_string()),
+        str_expr("Instant"),
+        str_expr("Gregorian"),
         Expr::Real(tz_offset_hours),
       ],
     )
@@ -654,8 +654,8 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ]
           .into(),
         ),
-        Expr::String("Instant".to_string()),
-        Expr::String("Gregorian".to_string()),
+        str_expr("Instant"),
+        str_expr("Gregorian"),
         Expr::Real(tz_offset_hours),
       ],
     )
@@ -792,7 +792,7 @@ pub fn random_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ]
           .into(),
         ),
-        Expr::String("Instant".to_string()),
+        str_expr("Instant"),
       ],
     )
   }

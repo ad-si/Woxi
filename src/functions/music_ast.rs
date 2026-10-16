@@ -454,12 +454,9 @@ fn axes_to_music_pitch(position: i128, midi: i128) -> Expr {
   call1(
     "MusicPitch",
     Expr::Association(vec![
-      (Expr::String("Accidental".into()), Expr::Integer(accidental)),
-      (
-        Expr::String("Key".into()),
-        Expr::String(DIATONIC_LETTERS[letter_idx].to_string()),
-      ),
-      (Expr::String("MIDINumber".into()), Expr::Integer(midi)),
+      (str_expr("Accidental"), Expr::Integer(accidental)),
+      (str_expr("Key"), str_expr(DIATONIC_LETTERS[letter_idx])),
+      (str_expr("MIDINumber"), Expr::Integer(midi)),
     ]),
   )
 }
@@ -479,9 +476,9 @@ fn midi_to_music_pitch(midi: i128) -> Expr {
   call1(
     "MusicPitch",
     Expr::Association(vec![
-      (Expr::String("Accidental".into()), Expr::Integer(accidental)),
-      (Expr::String("Key".into()), Expr::String(key.to_string())),
-      (Expr::String("MIDINumber".into()), Expr::Integer(midi)),
+      (str_expr("Accidental"), Expr::Integer(accidental)),
+      (str_expr("Key"), Expr::String(key.to_string())),
+      (str_expr("MIDINumber"), Expr::Integer(midi)),
     ]),
   )
 }
@@ -883,7 +880,7 @@ pub fn try_music_chord_plus_interval(args: &[Expr]) -> Option<Expr> {
     .collect();
   // The canonical chord form keys its tones under `"PitchList"`.
   let pitch_list = Expr::Association(vec![(
-    Expr::String("PitchList".into()),
+    str_expr("PitchList"),
     Expr::List(transposed?.into()),
   )]);
   let mut new_args = vec![pitch_list];
@@ -1029,10 +1026,7 @@ fn music_assoc(head: &str, pairs: Vec<(&str, Expr)>) -> Expr {
   call1(
     head,
     Expr::Association(
-      pairs
-        .into_iter()
-        .map(|(k, v)| (Expr::String(k.to_string()), v))
-        .collect(),
+      pairs.into_iter().map(|(k, v)| (str_expr(k), v)).collect(),
     ),
   )
 }
@@ -1162,7 +1156,7 @@ fn chord_tone_object(spec: &Expr) -> Option<Expr> {
   {
     let mut pairs = pairs.clone();
     let at = usize::from(assoc_get(&pairs, "Accidental").is_some());
-    pairs.insert(at, (Expr::String("Octave".to_string()), Expr::Integer(4)));
+    pairs.insert(at, (str_expr("Octave"), Expr::Integer(4)));
     return Some(call1("MusicPitch", Expr::Association(pairs)));
   }
   Some(tone)
@@ -1515,7 +1509,7 @@ pub fn music_chord(args: &[Expr]) -> Option<Expr> {
         return None; // an invalid chord name stays unevaluated
       };
       let mut pairs = pairs.clone();
-      pairs.insert(0, (Expr::String("Duration".to_string()), duration));
+      pairs.insert(0, (str_expr("Duration"), duration));
       Some(call1("MusicChord", Expr::Association(pairs)))
     }
     _ => None,
@@ -1634,7 +1628,7 @@ fn chord_intervals(pairs: &[(Expr, Expr)]) -> Option<Vec<Expr>> {
           "MusicInterval",
           vec![
             ("Semitones", Expr::Integer(simple)),
-            ("Name", Expr::String(interval_name(simple).to_string())),
+            ("Name", str_expr(interval_name(simple))),
             ("CompoundOctaves", Expr::Integer(compound)),
           ],
         )
@@ -1673,7 +1667,7 @@ pub fn music_property_access(
       }
       // A chord with no stored quality (a bare root) is a major triad.
       "Name" if assoc_get(pairs, "Root").is_some() => {
-        return Some(Expr::String("Major".to_string()));
+        return Some(str_expr("Major"));
       }
       _ => {}
     }
@@ -2028,7 +2022,7 @@ fn annotate_event(
     MeasureEvent::Chord(pairs, explicit) => {
       let mut pairs = pairs.clone();
       pairs.push((
-        Expr::String("Duration".to_string()),
+        str_expr("Duration"),
         beat_annotated_duration(*explicit, beat_duration, beats),
       ));
       call1("MusicChord", Expr::Association(pairs))
@@ -2314,16 +2308,13 @@ pub fn music_score(args: &[Expr]) -> Option<Expr> {
     ));
     return Some(unevaluated("MusicScore", args));
   }
-  let mut pairs = vec![(
-    Expr::String("VoiceList".to_string()),
-    Expr::List(items.clone()),
-  )];
+  let mut pairs = vec![(str_expr("VoiceList"), Expr::List(items.clone()))];
   if !items.is_empty() {
     if !items.iter().all(is_resolved_voice) {
       return None;
     }
     pairs.push((
-      Expr::String("TimeSignature".to_string()),
+      str_expr("TimeSignature"),
       resolved_time_signature(items.first()?)?,
     ));
   }
@@ -2415,7 +2406,7 @@ mod tests {
   // on structure / rendering to a string.
 
   fn head_with_c4(name: &str) -> Expr {
-    call(name, vec![Expr::String("C4".to_string())])
+    call(name, vec![str_expr("C4")])
   }
 
   fn is_true(expr: &Expr) -> bool {
@@ -2490,7 +2481,7 @@ mod tests {
   fn music_pitch_spells_string_spec() {
     // A named pitch canonicalizes to its spelled association; the octave adds
     // `Octave`/`Name` keys, an octaveless name keeps only Accidental/Key.
-    let result = music_pitch(&[Expr::String("C4".to_string())]);
+    let result = music_pitch(&[str_expr("C4")]);
     match &result {
       Some(Expr::FunctionCall { name, args }) if name == "MusicPitch" => {
         match &args[..] {
@@ -2514,7 +2505,7 @@ mod tests {
     // An association spec is already canonical and stays untouched.
     assert!(
       music_pitch(&[Expr::Association(vec![(
-        Expr::String("MIDINumber".into()),
+        str_expr("MIDINumber"),
         Expr::Integer(60),
       )])])
       .is_none()
@@ -2566,7 +2557,7 @@ mod tests {
     expect_midi_pitch(
       music_pitch(&[call(
         "Quantity",
-        vec![Expr::Integer(440), Expr::String("Hertz".into())],
+        vec![Expr::Integer(440), str_expr("Hertz")],
       )])
       .as_ref(),
       69,
@@ -2574,7 +2565,7 @@ mod tests {
     expect_midi_pitch(
       music_pitch(&[call(
         "Quantity",
-        vec![Expr::Integer(200), Expr::String("Hertz".into())],
+        vec![Expr::Integer(200), str_expr("Hertz")],
       )])
       .as_ref(),
       55,
@@ -2592,7 +2583,7 @@ mod tests {
     assert!(
       music_pitch(&[call(
         "Quantity",
-        vec![Expr::Integer(440), Expr::String("Meters".into())]
+        vec![Expr::Integer(440), str_expr("Meters")]
       )])
       .is_none()
     );
@@ -2610,7 +2601,7 @@ mod tests {
       55,
     );
     expect_midi_pitch(
-      music_pitch(&[call1("SoundNote", Expr::String("A4".into()))]).as_ref(),
+      music_pitch(&[call1("SoundNote", str_expr("A4"))]).as_ref(),
       69,
     );
   }
@@ -2618,7 +2609,7 @@ mod tests {
   #[test]
   fn music_pitch_extracts_note_pitch() {
     // A raw MusicNote spec resolves to the spelled note-pitch object …
-    let result = music_pitch(&[call1("MusicNote", Expr::String("G3".into()))]);
+    let result = music_pitch(&[call1("MusicNote", str_expr("G3"))]);
     match &result {
       Some(Expr::FunctionCall { name, args }) if name == "MusicPitch" => {
         match &args[..] {
@@ -2640,13 +2631,10 @@ mod tests {
     let stored = call1(
       "MusicNote",
       Expr::Association(vec![(
-        Expr::String("Pitch".into()),
+        str_expr("Pitch"),
         call1(
           "MusicPitch",
-          Expr::Association(vec![(
-            Expr::String("MIDINumber".into()),
-            Expr::Integer(55),
-          )]),
+          Expr::Association(vec![(str_expr("MIDINumber"), Expr::Integer(55))]),
         ),
       )]),
     );
@@ -2808,12 +2796,9 @@ mod tests {
     let assoc = call1(
       "MusicInterval",
       Expr::Association(vec![
-        (Expr::String("Semitones".into()), Expr::Integer(4)),
-        (
-          Expr::String("Name".into()),
-          Expr::String("MajorThird".into()),
-        ),
-        (Expr::String("CompoundOctaves".into()), Expr::Integer(1)),
+        (str_expr("Semitones"), Expr::Integer(4)),
+        (str_expr("Name"), str_expr("MajorThird")),
+        (str_expr("CompoundOctaves"), Expr::Integer(1)),
       ]),
     );
     assert_eq!(music_interval_axes(&assoc), Some((9, 16)));

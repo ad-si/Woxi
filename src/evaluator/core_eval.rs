@@ -963,8 +963,8 @@ pub fn evaluate_expr_to_expr_inner(
                 ]
                 .into(),
               ),
-              Expr::String("Instant".to_string()),
-              Expr::String("Gregorian".to_string()),
+              str_expr("Instant"),
+              str_expr("Gregorian"),
               Expr::Real(tz_offset_hours),
             ]
             .into(),
@@ -990,8 +990,8 @@ pub fn evaluate_expr_to_expr_inner(
                 ]
                 .into(),
               ),
-              Expr::String("Instant".to_string()),
-              Expr::String("Gregorian".to_string()),
+              str_expr("Instant"),
+              str_expr("Gregorian"),
               Expr::Real(tz_offset_hours),
             ]
             .into(),
@@ -1024,7 +1024,7 @@ pub fn evaluate_expr_to_expr_inner(
                 ]
                 .into(),
               ),
-              Expr::String("Day".to_string()),
+              str_expr("Day"),
             ]
             .into(),
           });
@@ -1050,7 +1050,7 @@ pub fn evaluate_expr_to_expr_inner(
                 ]
                 .into(),
               ),
-              Expr::String("Day".to_string()),
+              str_expr("Day"),
             ]
             .into(),
           });

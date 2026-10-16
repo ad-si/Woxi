@@ -516,9 +516,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // access wolframscript returns Missing["NotAvailable"] (message
     // $GeoLocation::dloff) rather than inventing a location, and Woxi —
     // being offline — matches that.
-    "$GeoLocation" => {
-      Some(call1("Missing", Expr::String("NotAvailable".to_string())))
-    }
+    "$GeoLocation" => Some(call1("Missing", str_expr("NotAvailable"))),
     // The process's standard streams, always open and always carrying the
     // ids `Streams[]` reports: `OutputStream[stdout, 1]` and
     // `OutputStream[stderr, 2]`. Writing to them — `WriteString[
@@ -584,7 +582,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         // the short name (e.g. "Mac" rather than "Mac.local").
         let host = std::str::from_utf8(&buf[..len]).unwrap_or("");
         let short = host.split('.').next().unwrap_or(host);
-        Some(Expr::String(short.to_string()))
+        Some(str_expr(short))
       } else {
         None
       }
@@ -666,11 +664,9 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       } else {
         "Unknown"
       };
-      Some(Expr::String(os.to_string()))
+      Some(str_expr(os))
     }
-    "$PathnameSeparator" => {
-      Some(Expr::String(std::path::MAIN_SEPARATOR.to_string()))
-    }
+    "$PathnameSeparator" => Some(str_expr(std::path::MAIN_SEPARATOR_STR)),
     // In script mode (no Mathematica front end / notebook UI),
     // wolframscript returns `False`. Woxi is always headless.
     "$Notebooks" => Some(bool_expr(false)),
@@ -697,10 +693,10 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // Default to "UTF8" like wolframscript on any modern terminal. The
     // user can override by `Set`-ing it; the assignment path bypasses
     // this fallback.
-    "$CharacterEncoding" => Some(Expr::String("UTF8".to_string())),
+    "$CharacterEncoding" => Some(str_expr("UTF8")),
     // `$SystemCharacterEncoding` uses the IANA form with a dash
     // ("UTF-8"), unlike the user-facing `$CharacterEncoding` above.
-    "$SystemCharacterEncoding" => Some(Expr::String("UTF-8".to_string())),
+    "$SystemCharacterEncoding" => Some(str_expr("UTF-8")),
     // List of available print forms, in wolframscript's exact order —
     // InputForm/OutputForm first, then the specialised ones, then the
     // current `$BoxForms` last (so user-defined box forms appended to
@@ -894,12 +890,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         "WindowsTurkish",
         "ZapfDingbats",
       ];
-      Some(Expr::List(
-        encodings
-          .iter()
-          .map(|s| Expr::String((*s).to_string()))
-          .collect(),
-      ))
+      Some(Expr::List(encodings.iter().map(|s| str_expr(s)).collect()))
     }
     #[cfg(not(target_arch = "wasm32"))]
     "$HomeDirectory" => std::env::var("HOME")
@@ -958,7 +949,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       } else {
         "/usr/share/Wolfram"
       };
-      Some(Expr::String(root.to_string()))
+      Some(str_expr(root))
     }
     // `$InstallationDirectory` points at where Wolfram is installed.
     // Report the parent directory of the current Woxi binary so the value
@@ -987,7 +978,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       } else {
         "/"
       };
-      Some(Expr::String(root.to_string()))
+      Some(str_expr(root))
     }
     "$ProcessorType" => {
       // wolframscript returns just the arch string, e.g. "ARM64" or "x86-64"
@@ -1000,7 +991,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       } else {
         std::env::consts::ARCH
       };
-      Some(Expr::String(arch.to_string()))
+      Some(str_expr(arch))
     }
     "$SystemMemory" => {
       let size = crate::functions::memory::memory_physical();
@@ -1310,7 +1301,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         "ZSTD",
       ]
       .iter()
-      .map(|s| Expr::String((*s).to_string()))
+      .map(|s| str_expr(s))
       .collect(),
     )),
     "$ExportFormats" => Some(Expr::List(
@@ -1531,7 +1522,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         "ZSTD",
       ]
       .iter()
-      .map(|s| Expr::String((*s).to_string()))
+      .map(|s| str_expr(s))
       .collect(),
     )),
     _ => None,

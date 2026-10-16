@@ -4712,18 +4712,13 @@ fn format_location_test_result(
       let header = Expr::List(
         vec![
           Expr::String(String::new()),
-          Expr::String("Statistic".to_string()),
-          Expr::String("P\u{2010}Value".to_string()),
+          str_expr("Statistic"),
+          str_expr("P\u{2010}Value"),
         ]
         .into(),
       );
       let row = Expr::List(
-        vec![
-          Expr::String(test_name.to_string()),
-          num_to_expr(t_stat),
-          num_to_expr(p),
-        ]
-        .into(),
+        vec![str_expr(test_name), num_to_expr(t_stat), num_to_expr(p)].into(),
       );
       call(
         "Grid",
@@ -4930,9 +4925,9 @@ fn legacy_full_report_rule(
       id_expr("None"),
       Expr::List(
         vec![
-          Expr::String(location_heading.to_string()),
-          Expr::String("TestStat".to_string()),
-          Expr::String("Distribution".to_string()),
+          str_expr(location_heading),
+          str_expr("TestStat"),
+          str_expr("Distribution"),
         ]
         .into(),
       ),
@@ -5425,10 +5420,9 @@ pub fn longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let coords = extract_geo_coords(&args[0]);
   match coords {
-    Some((_, lon)) => Ok(call(
-      "Quantity",
-      vec![lon, Expr::String("AngularDegrees".to_string())],
-    )),
+    Some((_, lon)) => {
+      Ok(call("Quantity", vec![lon, str_expr("AngularDegrees")]))
+    }
     None => Ok(unevaluated("Longitude", args)),
   }
 }
@@ -5440,10 +5434,9 @@ pub fn latitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let coords = extract_geo_coords(&args[0]);
   match coords {
-    Some((lat, _)) => Ok(call(
-      "Quantity",
-      vec![lat, Expr::String("AngularDegrees".to_string())],
-    )),
+    Some((lat, _)) => {
+      Ok(call("Quantity", vec![lat, str_expr("AngularDegrees")]))
+    }
     None => Ok(unevaluated("Latitude", args)),
   }
 }
@@ -5476,14 +5469,8 @@ pub fn latitude_longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match extract_geo_coords(&args[0]) {
     Some((lat, lon)) => Ok(Expr::List(
       vec![
-        call(
-          "Quantity",
-          vec![lat, Expr::String("AngularDegrees".to_string())],
-        ),
-        call(
-          "Quantity",
-          vec![lon, Expr::String("AngularDegrees".to_string())],
-        ),
+        call("Quantity", vec![lat, str_expr("AngularDegrees")]),
+        call("Quantity", vec![lon, str_expr("AngularDegrees")]),
       ]
       .into(),
     )),

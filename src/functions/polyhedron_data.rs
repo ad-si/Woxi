@@ -1972,13 +1972,7 @@ fn classes() -> Result<Expr, InterpreterError> {
 
 /// Build a `List` of string entries.
 fn string_list(items: &[&str]) -> Expr {
-  Expr::List(
-    items
-      .iter()
-      .map(|s| Expr::String(s.to_string()))
-      .collect::<Vec<_>>()
-      .into(),
-  )
+  Expr::List(items.iter().map(|s| str_expr(s)).collect())
 }
 
 pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

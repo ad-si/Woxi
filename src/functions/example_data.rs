@@ -86,7 +86,7 @@ static NETWORK_GRAPHS: LazyLock<Vec<NetworkGraph>> = LazyLock::new(|| {
             .split('|')
             .map(|v| match v.parse::<i128>() {
               Ok(n) => Expr::Integer(n),
-              Err(_) => Expr::String(v.to_string()),
+              Err(_) => str_expr(v),
             })
             .collect();
         }
@@ -167,7 +167,7 @@ fn network_graph_expr(g: &NetworkGraph) -> Expr {
 /// One property of a bundled network, or `None` when the property is not
 /// one this dataset type provides.
 fn network_graph_property(g: &NetworkGraph, property: &str) -> Option<Expr> {
-  let string = |s: &str| Expr::String(s.to_string());
+  let string = |s: &str| str_expr(s);
   Some(match property {
     "Graph" => network_graph_expr(g),
     "Name" => string(g.name),
@@ -544,13 +544,7 @@ pub fn example_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // ExampleData[] — the available types.
   if args.is_empty() {
-    return Ok(Expr::List(
-      TYPES
-        .iter()
-        .map(|t| Expr::String(t.to_string()))
-        .collect::<Vec<_>>()
-        .into(),
-    ));
+    return Ok(Expr::List(TYPES.iter().map(|t| str_expr(t)).collect()));
   }
 
   // ExampleData["type"] — the entries of that type, each a {type, name} pair.
@@ -565,10 +559,7 @@ pub fn example_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       names
         .iter()
         .map(|name| {
-          Expr::List(
-            vec![Expr::String(kind.clone()), Expr::String(name.to_string())]
-              .into(),
-          )
+          Expr::List(vec![Expr::String(kind.clone()), str_expr(name)].into())
         })
         .collect::<Vec<_>>()
         .into(),

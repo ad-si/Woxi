@@ -727,7 +727,7 @@ pub(crate) fn wavelet_filter_coefficients_ast(args: &[Expr]) -> Expr {
     ));
     return unevaluated("WaveletFilterCoefficients", args);
   };
-  let default_spec = Expr::String("PrimalLowpass".to_string());
+  let default_spec = str_expr("PrimalLowpass");
   let filt_spec = positional.get(1).copied().unwrap_or(&default_spec);
 
   // A list of filter specifications maps to a list of results.

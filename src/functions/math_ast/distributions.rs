@@ -12789,7 +12789,7 @@ pub fn empirical_distribution_ast(
   Ok(call(
     "DataDistribution",
     vec![
-      Expr::String("Empirical".to_string()),
+      str_expr("Empirical"),
       Expr::List(
         vec![
           Expr::List(weights.into()),
@@ -12870,7 +12870,7 @@ pub fn histogram_distribution_ast(
     Ok(call(
       "DataDistribution",
       vec![
-        Expr::String("Histogram".to_string()),
+        str_expr("Histogram"),
         Expr::List(
           vec![Expr::List(weights.into()), Expr::List(edges.into())].into(),
         ),

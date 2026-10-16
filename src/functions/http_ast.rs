@@ -6,7 +6,6 @@
 //! extraction like `req["Method"]`, `req[Method]`, or
 //! `req[{"Scheme", "Domain", Method}]`.
 
-#[allow(unused_imports)]
 use super::*;
 
 /// The user agent wolframscript sends and reports for HTTP requests.
@@ -195,11 +194,7 @@ fn http_request_property(func_args: &[Expr], prop: &str) -> Option<Expr> {
     "Path" => Some(Expr::List(if parts.path.is_empty() {
       vec![].into()
     } else {
-      parts
-        .path
-        .split('/')
-        .map(|s| Expr::String(s.to_string()))
-        .collect()
+      parts.path.split('/').map(str_expr).collect()
     })),
     "PathString" => Some(Expr::String(parts.path.clone())),
     "Query" => Some(query_to_expr(&parts.query)),
@@ -218,7 +213,7 @@ fn http_request_property(func_args: &[Expr], prop: &str) -> Option<Expr> {
     "Fragment" => Some(opt_str(&parts.fragment)),
     "Method" => Some(match assoc.and_then(|a| assoc_get(a, "Method")) {
       Some(Expr::String(m)) => Expr::String(m.clone()),
-      _ => Expr::String("GET".to_string()),
+      _ => str_expr("GET"),
     }),
     "Headers" => Some(Expr::List(
       headers
@@ -235,9 +230,7 @@ fn http_request_property(func_args: &[Expr], prop: &str) -> Option<Expr> {
     "ContentType" => Some(
       match headers.iter().find(|(name, _)| name == "content-type") {
         Some((_, value)) => value.clone(),
-        None if body.is_some() => {
-          Expr::String("text/plain;charset=utf-8".to_string())
-        }
+        None if body.is_some() => str_expr("text/plain;charset=utf-8"),
         None => none(),
       },
     ),
@@ -268,7 +261,7 @@ fn http_request_property(func_args: &[Expr], prop: &str) -> Option<Expr> {
     "Properties" => Some(Expr::List(
       PROPERTY_NAMES
         .iter()
-        .map(|name| Expr::String(name.to_string()))
+        .map(|name| str_expr(name))
         .chain(std::iter::once(id_expr("Method")))
         .collect(),
     )),
@@ -319,10 +312,7 @@ fn request_headers(assoc: Option<&[(Expr, Expr)]>) -> Vec<(String, Expr)> {
     _ => {}
   }
   if !headers.iter().any(|(name, _)| name == "user-agent") {
-    headers.push((
-      "user-agent".to_string(),
-      Expr::String(USER_AGENT.to_string()),
-    ));
+    headers.push(("user-agent".to_string(), str_expr(USER_AGENT)));
   }
   headers
 }
@@ -663,7 +653,7 @@ pub fn url_read_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
       },
       Expr::Association(vec![
         (
-          Expr::String("Headers".to_string()),
+          str_expr("Headers"),
           Expr::List(
             headers
               .into_iter()
@@ -673,14 +663,8 @@ pub fn url_read_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
               .collect(),
           ),
         ),
-        (
-          Expr::String("StatusCode".to_string()),
-          Expr::Integer(status),
-        ),
-        (
-          Expr::String("Cookies".to_string()),
-          Expr::List(vec![].into()),
-        ),
+        (str_expr("StatusCode"), Expr::Integer(status)),
+        (str_expr("Cookies"), Expr::List(vec![].into())),
       ]),
       rule_expr(id_expr("CharacterEncoding"), id_expr("Automatic")),
     ]
@@ -716,11 +700,11 @@ fn curl_error_text(stderr: &str) -> String {
 fn connection_failure(url: &str, func_args: &[Expr]) -> Expr {
   let request = http_request_ast(func_args)
     .unwrap_or(unevaluated("HTTPRequest", func_args));
-  let template_key = Expr::String("MessageTemplate".to_string());
+  let template_key = str_expr("MessageTemplate");
   Expr::FunctionCall {
     name: "Failure".to_string(),
     args: vec![
-      Expr::String("ConnectionFailure".to_string()),
+      str_expr("ConnectionFailure"),
       Expr::Association(vec![
         (
           template_key.clone(),
@@ -728,22 +712,16 @@ fn connection_failure(url: &str, func_args: &[Expr]) -> Expr {
           // value as the full RuleDelayed.
           rule_delayed_expr(
             template_key,
-            call(
-              "MessageName",
-              vec![id_expr("URLRead"), Expr::String("iurl".to_string())],
-            ),
+            call("MessageName", vec![id_expr("URLRead"), str_expr("iurl")]),
           ),
         ),
         (
-          Expr::String("MessageParameters".to_string()),
-          Expr::List(vec![Expr::String(url.to_string())].into()),
+          str_expr("MessageParameters"),
+          Expr::List(vec![str_expr(url)].into()),
         ),
-        (
-          Expr::String("URL".to_string()),
-          Expr::String(url.to_string()),
-        ),
-        (Expr::String("HTTPRequest".to_string()), request),
-        (Expr::String("Counter".to_string()), Expr::Integer(1)),
+        (str_expr("URL"), str_expr(url)),
+        (str_expr("HTTPRequest"), request),
+        (str_expr("Counter"), Expr::Integer(1)),
       ]),
     ]
     .into(),
@@ -977,7 +955,7 @@ pub fn url_parse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Association(
       names
         .iter()
-        .map(|n| (Expr::String(n.to_string()), component_value(n).unwrap()))
+        .map(|n| (str_expr(n), component_value(n).unwrap()))
         .collect(),
     )
   };

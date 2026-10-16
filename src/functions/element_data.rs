@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// Data for a single element.
@@ -34,7 +33,7 @@ static ATOMIC_WEIGHT_PRECISIONS: &[f64] = &[
 ];
 
 pub(crate) fn make_quantity(magnitude: Expr, unit: &str) -> Expr {
-  call("Quantity", vec![magnitude, Expr::String(unit.to_string())])
+  call("Quantity", vec![magnitude, str_expr(unit)])
 }
 
 fn make_bigfloat(value: f64, precision: f64) -> Expr {
@@ -57,15 +56,15 @@ fn format_real_for_precision(value: f64, _sig_digits: usize) -> String {
 }
 
 fn missing_not_available() -> Expr {
-  call1("Missing", Expr::String("NotAvailable".to_string()))
+  call1("Missing", str_expr("NotAvailable"))
 }
 
 fn missing_not_applicable() -> Expr {
-  call1("Missing", Expr::String("NotApplicable".to_string()))
+  call1("Missing", str_expr("NotApplicable"))
 }
 
 fn missing_not_found() -> Expr {
-  call1("Missing", Expr::String("NotFound".to_string()))
+  call1("Missing", str_expr("NotFound"))
 }
 
 static ELEMENTS: &[Element] = &[
@@ -2311,10 +2310,7 @@ pub fn element_entities() -> Vec<Expr> {
     .map(|elem| {
       call(
         "Entity",
-        vec![
-          Expr::String("Element".to_string()),
-          Expr::String(elem.standard_name.to_string()),
-        ],
+        vec![str_expr("Element"), str_expr(elem.standard_name)],
       )
     })
     .collect()
@@ -2343,8 +2339,8 @@ fn find_element_by_string(s: &str) -> Option<&'static Element> {
 fn get_property(elem: &Element, property: &str) -> Expr {
   match property {
     "Name" => Expr::String(elem.standard_name.to_lowercase()),
-    "StandardName" => Expr::String(elem.standard_name.to_string()),
-    "Abbreviation" => Expr::String(elem.abbreviation.to_string()),
+    "StandardName" => str_expr(elem.standard_name),
+    "Abbreviation" => str_expr(elem.abbreviation),
     "AtomicNumber" => Expr::Integer(elem.atomic_number),
     "AtomicWeight" => {
       let prec = ATOMIC_WEIGHT_PRECISIONS[(elem.atomic_number - 1) as usize];
@@ -2355,10 +2351,10 @@ fn get_property(elem: &Element, property: &str) -> Expr {
     }
     "Group" => match elem.group {
       Some(g) => Expr::Integer(g),
-      None => call1("Missing", Expr::String("Undefined".to_string())),
+      None => call1("Missing", str_expr("Undefined")),
     },
     "Period" => Expr::Integer(elem.period),
-    "Block" => Expr::String(elem.block.to_string()),
+    "Block" => str_expr(elem.block),
     "Electronegativity" | "ElectroNegativity" => match elem.electronegativity {
       Some(v) => {
         let prec = electronegativity_precision(v);
@@ -2434,8 +2430,8 @@ fn get_property(elem: &Element, property: &str) -> Expr {
       Some(phase) => call(
         "Entity",
         vec![
-          Expr::String("MatterPhase".to_string()),
-          Expr::String(phase.to_string()),
+          str_expr("MatterPhase"),
+          str_expr(phase),
         ],
       ),
       None => missing_not_available(),
@@ -2548,7 +2544,7 @@ fn format_electron_configuration_row(elem: &Element) -> Expr {
       continue;
     }
     if token.starts_with('[') {
-      parts.push(Expr::String(token.to_string()));
+      parts.push(str_expr(token));
       continue;
     }
     // Token shape: `<n><letter><count>` (e.g. `3p4`). The letter is a
@@ -2563,7 +2559,7 @@ fn format_electron_configuration_row(elem: &Element) -> Expr {
       }
     }
     let Some(li) = letter_idx else {
-      parts.push(Expr::String(token.to_string()));
+      parts.push(str_expr(token));
       continue;
     };
     let n_str = &token[..li];
@@ -2575,10 +2571,7 @@ fn format_electron_configuration_row(elem: &Element) -> Expr {
     parts.push(Expr::FunctionCall {
       name: "Superscript".to_string(),
       args: vec![
-        call(
-          "Style",
-          vec![Expr::String(letter.to_string()), id_expr("Italic")],
-        ),
+        call("Style", vec![str_expr(letter), id_expr("Italic")]),
         Expr::Integer(count),
       ]
       .into(),
@@ -2813,10 +2806,7 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map(|elem| {
           call(
             "Entity",
-            vec![
-              Expr::String("Element".to_string()),
-              Expr::String(elem.standard_name.to_string()),
-            ],
+            vec![str_expr("Element"), str_expr(elem.standard_name)],
           )
         })
         .collect();
@@ -2826,10 +2816,8 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // ElementData["Properties"] or ElementData[All] or ElementData[element]
       match &args[0] {
         Expr::String(s) if s == "Properties" => {
-          let props: Vec<Expr> = SUPPORTED_PROPERTIES
-            .iter()
-            .map(|p| Expr::String(p.to_string()))
-            .collect();
+          let props: Vec<Expr> =
+            SUPPORTED_PROPERTIES.iter().map(|p| str_expr(p)).collect();
           Ok(Expr::List(props.into()))
         }
         Expr::Identifier(s) if s == "All" => {
@@ -2838,10 +2826,7 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .map(|elem| {
               call(
                 "Entity",
-                vec![
-                  Expr::String("Element".to_string()),
-                  Expr::String(elem.standard_name.to_string()),
-                ],
+                vec![str_expr("Element"), str_expr(elem.standard_name)],
               )
             })
             .collect();
@@ -2852,10 +2837,7 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           match find_element(identifier) {
             Some(elem) => Ok(call(
               "Entity",
-              vec![
-                Expr::String("Element".to_string()),
-                Expr::String(elem.standard_name.to_string()),
-              ],
+              vec![str_expr("Element"), str_expr(elem.standard_name)],
             )),
             None => Ok(missing_not_found()),
           }

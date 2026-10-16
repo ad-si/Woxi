@@ -171,10 +171,7 @@ fn lookup_chain_from(mut current: Expr, keys: &[Expr]) -> Expr {
           crate::functions::association_ast::assoc_entry_value(k, value);
       }
       None => {
-        return call(
-          "Missing",
-          vec![Expr::String("KeyAbsent".to_string()), key.clone()],
-        );
+        return call("Missing", vec![str_expr("KeyAbsent"), key.clone()]);
       }
     }
   }
@@ -275,7 +272,7 @@ pub fn association_nested_access(
     )),
     ChainStep::Missing(i) => Ok(call(
       "Missing",
-      vec![Expr::String("KeyAbsent".to_string()), keys[i].clone()],
+      vec![str_expr("KeyAbsent"), keys[i].clone()],
     )),
     ChainStep::Value { value, next } => {
       Ok(lookup_chain_from(value, &keys[next..]))

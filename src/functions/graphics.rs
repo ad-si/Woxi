@@ -1536,7 +1536,7 @@ pub(crate) fn line_legend_svg(args: &[Expr]) -> Option<String> {
     entries.push(call(
       "Row",
       vec![Expr::List(
-        vec![line_item, Expr::String(" ".to_string()), label.clone()].into(),
+        vec![line_item, str_expr(" "), label.clone()].into(),
       )],
     ));
   }
@@ -1583,7 +1583,7 @@ pub(crate) fn swatch_legend_svg(args: &[Expr]) -> Option<String> {
     entries.push(call(
       "Row",
       vec![Expr::List(
-        vec![swatch_item, Expr::String(" ".to_string()), label.clone()].into(),
+        vec![swatch_item, str_expr(" "), label.clone()].into(),
       )],
     ));
   }
@@ -11168,7 +11168,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             Expr::String(s)
               if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') =>
             {
-              Expr::String(s[1..s.len() - 1].to_string())
+              str_expr(&s[1..s.len() - 1])
             }
             other => other.clone(),
           };
@@ -15781,7 +15781,7 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
       let row = Expr::List(
         vec![
           (**pattern).clone(),
-          Expr::String("\u{2192}".to_string()),
+          str_expr("\u{2192}"),
           (**replacement).clone(),
         ]
         .into(),
@@ -20783,7 +20783,7 @@ fn with_text(item: &Expr, text: &str) -> Expr {
         args: new_args,
       }
     }
-    _ => Expr::String(text.to_string()),
+    _ => str_expr(text),
   }
 }
 
@@ -20827,7 +20827,7 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
       .map(|line| {
         // A blank line still takes one line of height.
         let line = if line.is_empty() {
-          vec![Expr::String(" ".to_string())]
+          vec![str_expr(" ")]
         } else {
           line
         };
@@ -22207,12 +22207,7 @@ pub fn linear_gradient_filling_ast(
       call1("GrayLevel", Expr::Integer(0)),
       call1("GrayLevel", Expr::Integer(1)),
     ];
-    (
-      stops,
-      colors,
-      Expr::Integer(0),
-      Expr::String("Fixed".to_string()),
-    )
+    (stops, colors, Expr::Integer(0), str_expr("Fixed"))
   } else {
     // Parse angle (2nd arg) and space (3rd arg)
     let angle = if args.len() >= 2 {
@@ -22223,7 +22218,7 @@ pub fn linear_gradient_filling_ast(
     let space = if args.len() >= 3 {
       args[2].clone()
     } else {
-      Expr::String("Fixed".to_string())
+      str_expr("Fixed")
     };
 
     match &args[0] {
@@ -27714,12 +27709,7 @@ fn linearize_fraction_boxes(e: &Expr) -> Expr {
             Expr::FunctionCall {
               name: "RowBox".to_string(),
               args: vec![Expr::List(
-                vec![
-                  Expr::String("(".to_string()),
-                  b.clone(),
-                  Expr::String(")".to_string()),
-                ]
-                .into(),
+                vec![str_expr("("), b.clone(), str_expr(")")].into(),
               )]
               .into(),
             }
@@ -27730,12 +27720,7 @@ fn linearize_fraction_boxes(e: &Expr) -> Expr {
       Expr::FunctionCall {
         name: "RowBox".to_string(),
         args: vec![Expr::List(
-          vec![
-            side(&args[0]),
-            Expr::String("/".to_string()),
-            side(&args[1]),
-          ]
-          .into(),
+          vec![side(&args[0]), str_expr("/"), side(&args[1])].into(),
         )]
         .into(),
       }
@@ -32560,8 +32545,7 @@ mod manipulate_label_tests {
 
   #[test]
   fn style_italic_string_is_one_italic_run() {
-    let label =
-      call("Style", vec![Expr::String("t".into()), id_expr("Italic")]);
+    let label = call("Style", vec![str_expr("t"), id_expr("Italic")]);
     assert_eq!(runs(&label), vec![run("t", true)]);
   }
 
@@ -32570,8 +32554,8 @@ mod manipulate_label_tests {
     let label = call(
       "Style",
       vec![
-        Expr::String("t".into()),
-        rule_expr(id_expr("FontSlant"), Expr::String("Italic".into())),
+        str_expr("t"),
+        rule_expr(id_expr("FontSlant"), str_expr("Italic")),
       ],
     );
     assert_eq!(runs(&label), vec![run("t", true)]);
@@ -32580,8 +32564,7 @@ mod manipulate_label_tests {
   #[test]
   fn text_subscript_style_renders_italic_base_and_upright_subscript() {
     // Text[Subscript[Style["m", Italic], 1]]  ->  italic "m", upright "₁"
-    let styled =
-      call("Style", vec![Expr::String("m".into()), id_expr("Italic")]);
+    let styled = call("Style", vec![str_expr("m"), id_expr("Italic")]);
     let subscript = call("Subscript", vec![styled, Expr::Integer(1)]);
     let label = call1("Text", subscript);
     assert_eq!(runs(&label), vec![run("m", true), run("\u{2081}", false)]);
@@ -32602,12 +32585,8 @@ mod manipulate_label_tests {
 
   #[test]
   fn row_concatenates_parts_preserving_style() {
-    let italic_a =
-      call("Style", vec![Expr::String("a".into()), id_expr("Italic")]);
-    let row = call1(
-      "Row",
-      Expr::List(vec![italic_a, Expr::String("b".into())].into()),
-    );
+    let italic_a = call("Style", vec![str_expr("a"), id_expr("Italic")]);
+    let row = call1("Row", Expr::List(vec![italic_a, str_expr("b")].into()));
     assert_eq!(runs(&row), vec![run("a", true), run("b", false)]);
     assert_eq!(flatten_label_runs(&runs(&row)), "ab");
   }
@@ -32622,15 +32601,12 @@ mod manipulate_label_tests {
 
   #[test]
   fn derivative_of_an_italic_style_primes_an_italic_base() {
-    let italic_y =
-      call("Style", vec![Expr::String("y".into()), id_expr("Italic")]);
+    let italic_y = call("Style", vec![str_expr("y"), id_expr("Italic")]);
     let label = call1(
       "Text",
       call1(
         "Row",
-        Expr::List(
-          vec![derivative(1, italic_y), Expr::String("(0)".into())].into(),
-        ),
+        Expr::List(vec![derivative(1, italic_y), str_expr("(0)")].into()),
       ),
     );
     assert_eq!(
@@ -32654,10 +32630,7 @@ mod manipulate_label_tests {
   /// inside `Text` typesets with a prime, not as the raw application.
   #[test]
   fn text_markup_of_derivative_of_subscript_uses_prime() {
-    let theta1 = call(
-      "Subscript",
-      vec![Expr::String("\u{3b8}".into()), Expr::Integer(1)],
-    );
+    let theta1 = call("Subscript", vec![str_expr("\u{3b8}"), Expr::Integer(1)]);
     let markup = expr_to_svg_markup(&derivative(1, theta1));
     assert!(markup.ends_with("\u{2032}"), "{markup}");
     assert!(!markup.contains("Derivative"), "{markup}");

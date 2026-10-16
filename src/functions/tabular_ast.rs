@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// Create a Failure expression for Tabular/ToTabular errors.
@@ -8,13 +7,10 @@ fn make_tabular_failure(
   msg_tag: &str,
   data: &Expr,
 ) -> Expr {
-  let msg_template_key = Expr::String("MessageTemplate".to_string());
+  let msg_template_key = str_expr("MessageTemplate");
   let msg_name_call = call(
     "MessageName",
-    vec![
-      Expr::Identifier(func_name.to_string()),
-      Expr::String(msg_tag.to_string()),
-    ],
+    vec![Expr::Identifier(func_name.to_string()), str_expr(msg_tag)],
   );
   // Encode the `MessageTemplate :> MessageName[...]` (RuleDelayed) entry
   // using the Association formatter convention: a value of
@@ -24,10 +20,10 @@ fn make_tabular_failure(
   Expr::FunctionCall {
     name: "Failure".to_string(),
     args: vec![
-      Expr::String(tag.to_string()),
+      str_expr(tag),
       Expr::Association(vec![
         (
-          Expr::String("MessageParameters".to_string()),
+          str_expr("MessageParameters"),
           Expr::List(vec![data.clone()].into()),
         ),
         (msg_template_key, msg_template_value),
@@ -80,10 +76,8 @@ pub(crate) fn build_schema(
   num_rows: usize,
 ) -> Expr {
   // Build ColumnKeys -> {key1, key2, ...}
-  let column_keys_rule = (
-    Expr::String("ColumnKeys".to_string()),
-    Expr::List(col_keys.to_vec().into()),
-  );
+  let column_keys_rule =
+    (str_expr("ColumnKeys"), Expr::List(col_keys.to_vec().into()));
 
   // Build ColumnTypes -> <|key1 -> type1, key2 -> type2, ...|>
   let type_pairs: Vec<(Expr, Expr)> = col_keys
@@ -91,16 +85,11 @@ pub(crate) fn build_schema(
     .zip(col_types.iter())
     .map(|(k, t)| (k.clone(), Expr::Identifier(t.clone())))
     .collect();
-  let column_types_rule = (
-    Expr::String("ColumnTypes".to_string()),
-    Expr::Association(type_pairs),
-  );
+  let column_types_rule =
+    (str_expr("ColumnTypes"), Expr::Association(type_pairs));
 
   // Build RowCount -> n
-  let row_count_rule = (
-    Expr::String("RowCount".to_string()),
-    Expr::Integer(num_rows as i128),
-  );
+  let row_count_rule = (str_expr("RowCount"), Expr::Integer(num_rows as i128));
 
   Expr::FunctionCall {
     name: "TabularSchema".to_string(),
