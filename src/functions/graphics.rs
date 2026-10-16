@@ -26120,10 +26120,11 @@ pub(crate) fn tabview_pane_parts(item: &Expr) -> (Option<Expr>, &Expr, &Expr) {
 /// whatever `expand_conditional_control_items` splices in, since a spliced
 /// control is just as likely to arrive `Control`-wrapped.
 fn unwrap_control_wrapper(spec: Expr) -> Expr {
-  // `Framed[Control[…]]` / `Panel[Control[…]]`: a bordered single control.
+  // `Framed[Control[…]]` / `Panel[Control[…]]`: a bordered single control;
+  // `Tooltip[Control[…], hint]` only adds a hover hint to it.
   let spec = match &spec {
     Expr::FunctionCall { name, args }
-      if (name == "Framed" || name == "Panel")
+      if (name == "Framed" || name == "Panel" || name == "Tooltip")
         && matches!(
           args.first(),
           Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"

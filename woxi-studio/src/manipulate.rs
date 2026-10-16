@@ -2252,6 +2252,33 @@ mod tests {
     }
   }
 
+  /// A Demonstration whose "zoom" checkbox is written `Tooltip[Control[{{z,
+  /// False, ""}, {True, False}}], "hint"]`: the tooltip only adds a hover
+  /// hint, so `z` must be a real control the body can read. Before, the
+  /// whole `Tooltip[…]` was treated as a display, `z` stayed unbound, and
+  /// the `If[z, …]` in the body never evaluated.
+  #[test]
+  fn tooltip_wrapped_control_binds_its_variable() {
+    let code = r#"Manipulate[
+      Module[{m},
+        If[zoomed, m = 10 k, m = k];
+        Column[{Text[m]}]
+      ],
+      {{k, 2, "k"}, 1, 5, 1},
+      Row[{"zoom ",
+        Tooltip[Control[{{zoomed, False, ""}, {True, False}}], "zoom"]}]
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the Tooltip-wrapped control should build a ManipulateState");
+    assert_eq!(state.error, None, "body must evaluate cleanly");
+    assert!(
+      state.controls.iter().any(|c| c.name() == "zoomed"),
+      "Tooltip[Control[…]] must contribute a `zoomed` control"
+    );
+  }
+
   /// A `TabView` whose panes are `Grid`s with `SetterBar[Dynamic[var],
   /// choices] /. labels` cells (a key picker showing note names for numeric
   /// choices) and a `Sound[…]` row. The bars are lifted into the control
