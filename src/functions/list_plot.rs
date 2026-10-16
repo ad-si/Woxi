@@ -1661,6 +1661,15 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
 
+  // A single curve takes a `PlotStyle` list as one combined style, as
+  // `ListPlot` and `Plot` do: `{Thick, Orange}` is one thick orange line.
+  if draw_series.len() == 1 {
+    parsed.opts.plot_style =
+      crate::functions::plot::collapse_style_for_single_series(
+        &parsed.opts.plot_style,
+      );
+  }
+
   // `MeshShading` colours the stretches of the curve between mesh values.
   let mut draw_series = draw_series;
   if let (Some(f), false, false) = (
