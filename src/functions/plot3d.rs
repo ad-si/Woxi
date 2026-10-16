@@ -5508,6 +5508,12 @@ fn tessellate_tube(
       .collect()
   };
 
+  // The subdivision budget is shared by the whole polyline: a curve already
+  // sampled into many short segments (a `ParametricPlot3D` helix with
+  // `PlotStyle -> Tube[r]`) needs no further rings, and splitting each of
+  // its segments to the radius' aspect target would multiply the mesh into
+  // tens of thousands of faces per redraw.
+  let max_steps = (MAX_SIDE_SUBDIVISIONS / dirs.len()).max(1);
   let mut rings: Vec<Vec<Point3D>> = Vec::with_capacity(keep.len());
   for (i, &idx) in keep.iter().enumerate() {
     let t = tangents[i];
@@ -5540,12 +5546,8 @@ fn tessellate_tube(
       let idx_next = keep[i + 1];
       let seg_len = norm(sub(&points[idx_next], &points[idx]));
       let r_next = radii.get(idx_next).copied().unwrap_or(0.0);
-      let steps = side_subdivision_steps(
-        seg_len,
-        r.max(r_next),
-        TUBE_SIDES,
-        MAX_SIDE_SUBDIVISIONS,
-      );
+      let steps =
+        side_subdivision_steps(seg_len, r.max(r_next), TUBE_SIDES, max_steps);
       for s in 1..steps {
         let frac = s as f64 / steps as f64;
         let center = Point3D {

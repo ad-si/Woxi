@@ -32675,6 +32675,22 @@ mod tube_and_cap_form {
     assert_ne!(straight, tapered, "the second radius must narrow the tube");
   }
 
+  /// A curve already sampled into many short segments must not be
+  /// subdivided again per segment. Regression: a helix drawn with
+  /// `PlotStyle -> Tube[r]` ("Simple Spring Mass Damping") tessellated into
+  /// ~100k polygons, a ~12 MB SVG on every Manipulate redraw.
+  #[test]
+  fn finely_sampled_tube_stays_small() {
+    clear_state();
+    let svg = export_svg(
+      "ParametricPlot3D[{u, Cos[u], Sin[u]}, {u, 0, 6 Pi}, \
+       PlotStyle -> Tube[.07], Boxed -> False]",
+    );
+    let polygons = svg.matches("<polygon").count();
+    assert!(polygons > 1000, "the tube must draw: {polygons}");
+    assert!(polygons < 20000, "tube mesh is oversized: {polygons}");
+  }
+
   /// A bent tube keeps one closed surface through the corner.
   #[test]
   fn tube_follows_a_bent_polyline() {
