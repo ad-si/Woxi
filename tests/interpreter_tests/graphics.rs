@@ -7684,6 +7684,37 @@ mod plot3d {
       assert!(two.contains("#FF0000") && two.contains("#00FF00"));
     }
 
+    // `ListLinePlot` reads a `PlotStyle` list over one curve as a single
+    // combined style too: `{Thick, Orange}` is one thick orange line, not
+    // a thick blue one.
+    #[test]
+    fn list_line_plot_style_list_combines_for_a_single_curve() {
+      let one = export_svg(
+        r#"ListLinePlot[{{1, 2}, {2, 3}}, PlotStyle -> {Thick, Orange}]"#,
+      );
+      assert!(one.contains("stroke=\"#FF8000\""), "{one}");
+      let tooltip = export_svg(
+        r#"ListLinePlot[Tooltip[{{1, 2}, {2, 3}}, "f"],
+             PlotStyle -> {Thick, Orange}]"#,
+      );
+      assert!(tooltip.contains("stroke=\"#FF8000\""), "{tooltip}");
+    }
+
+    // A `Style[label, size]` axis label is in points; the plot draws at a
+    // multiple of that, so the size scales with the label's base font
+    // instead of shrinking the text to a tenth.
+    #[test]
+    fn list_plot_axes_label_style_size_scales_with_the_plot() {
+      let svg = export_svg(
+        r#"ListPlot[{{1, 2}, {2, 3}}, AxesLabel -> {Style["xx", 12], "y"}]"#,
+      );
+      let line = svg
+        .lines()
+        .find(|l| l.contains(">xx</tspan>"))
+        .unwrap_or_else(|| panic!("no xx label in {svg}"));
+      assert!(line.contains("<tspan font-size=\"120\">"), "{line}");
+    }
+
     /// A `PointSize` in `PlotStyle` has to resize the dots, not just get
     /// parsed and dropped: `PointSize[f]` is the fraction `f` of the image
     /// width the dot's *diameter* spans, so at the 500px-wide image below
