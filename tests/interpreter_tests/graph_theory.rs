@@ -7924,6 +7924,24 @@ mod graph_utilities_package {
   }
 
   #[test]
+  fn graph_utilities_graph_path() {
+    assert_eq!(
+      interpret(
+        "GraphUtilities`GraphPath[{a -> b, b -> c, c -> d, a -> d, d -> a}, a, c]"
+      )
+      .unwrap(),
+      "{a, b, c}"
+    );
+    assert_eq!(
+      interpret(
+        "GraphUtilities`GraphPath[{1 -> 2, 2 -> 3, 3 -> 4, 1 -> 4}, 1, 4]"
+      )
+      .unwrap(),
+      "{1, 4}"
+    );
+  }
+
+  #[test]
   fn closeness_centrality_matches_graph_version() {
     assert_eq!(
       interpret(
