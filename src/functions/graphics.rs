@@ -10140,6 +10140,42 @@ fn times_svg_separator(_left: &Expr, right: &Expr) -> &'static str {
   " "
 }
 
+/// True when a fraction's numerator or denominator box is a compound row
+/// (`1 + x + y`) that has to be parenthesised once the fraction is written
+/// on one line — `1/1+x+y` would read as `(1/1)+x+y`. A row that is already
+/// one parenthesised group, or a single item, reads unambiguously as is.
+fn fraction_side_needs_parens(b: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = b else {
+    return false;
+  };
+  if name != "RowBox" {
+    return false;
+  }
+  let Some(Expr::List(items)) = args.first() else {
+    return false;
+  };
+  if items.len() < 2 {
+    return false;
+  }
+  // `( … )` spanning the whole row: the opening paren closes at the end.
+  let is = |e: &Expr, t: &str| matches!(e, Expr::String(s) if s == t);
+  if is(&items[0], "(") && is(&items[items.len() - 1], ")") {
+    let mut depth = 0i32;
+    for (i, item) in items.iter().enumerate() {
+      if is(item, "(") {
+        depth += 1;
+      } else if is(item, ")") {
+        depth -= 1;
+        if depth == 0 && i + 1 < items.len() {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+  true
+}
+
 /// Render a stacked fraction (numerator over denominator) as SVG tspan markup.
 /// Uses `<tspan>` elements with `dy`/`dx` positioning in `ch` units so that
 /// the layout adapts to the actual monospace character width of the browser,
@@ -13085,8 +13121,16 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
 
       // FractionBox[num, den] → stacked fraction
       "FractionBox" if args.len() == 2 => {
-        let num_svg = boxes_to_svg(&args[0]);
-        let den_svg = boxes_to_svg(&args[1]);
+        let side = |b: &Expr| {
+          let svg = boxes_to_svg(b);
+          if fraction_side_needs_parens(b) {
+            format!("({svg})")
+          } else {
+            svg
+          }
+        };
+        let num_svg = side(&args[0]);
+        let den_svg = side(&args[1]);
         let num_w = estimate_box_display_width(&args[0]);
         let den_w = estimate_box_display_width(&args[1]);
         stacked_fraction_svg(&num_svg, &den_svg, num_w, den_w)
