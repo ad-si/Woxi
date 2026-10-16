@@ -2870,6 +2870,22 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         e.borrow_mut()
           .insert(var_name.clone(), StoredValue::Association(pairs))
       });
+    } else if let Some((re, im)) =
+      crate::functions::math_ast::machine_complex_shape(&rhs_value)
+      && matches!(&rhs_value, Expr::BinaryOp { .. })
+    {
+      // A machine-complex number built infix (`0.3 - 0.8*I`) is stored in
+      // the `Plus[re, Times[im, I]]` form reading its text back would
+      // evaluate to, without re-parsing that text on every read — which
+      // dominated complex iteration loops.
+      ENV.with(|e| {
+        e.borrow_mut().insert(
+          var_name.clone(),
+          StoredValue::ExprVal(
+            crate::functions::math_ast::normalized_machine_complex(re, im),
+          ),
+        )
+      });
     } else if matches!(
       &rhs_value,
       Expr::List(_)
@@ -2882,7 +2898,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         | Expr::Rule { .. }
         | Expr::RuleDelayed { .. }
     ) {
-      // Store lists, function calls, functions, strings, and rules as
+      // Store lists, function calls, functions, strings and rules as
       // ExprVal for faithful roundtrip. Rules in particular must not be
       // stored as Raw — `(p /; c) :> b` would reparse without the parens
       // as `Condition[p, RuleDelayed[c, b]]` because `:>` binds tighter
