@@ -1800,6 +1800,30 @@ mod tests {
     );
   }
 
+  /// A saved hidden state value can wrap a rendered graphic in a helper the
+  /// notebook defines later (`pts = helper[Graphics[…]]`). Freezing it must
+  /// keep the symbolic source rather than the output-only `-Graphics-`
+  /// placeholder, which cannot be parsed back when the body re-evaluates.
+  #[test]
+  fn hidden_state_with_graphic_keeps_symbolic_source() {
+    let code = r#"Manipulate[
+      Graphics[Circle[{0, 0}, n]],
+      {{pts, helper[Graphics[Circle[{0, 0}, 1]]]}, ControlType -> None},
+      {n, 1, 3, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let value = state
+      .state
+      .iter()
+      .find(|(n, _)| n == "pts")
+      .map(|(_, v)| v.clone())
+      .expect("pts state variable");
+    assert!(!value.contains("-Graphics-"), "got {value}");
+    assert!(value.starts_with("helper[Graphics["), "got {value}");
+  }
+
   /// Two SetterBar rows over disjoint choices can share one variable; the
   /// variable starts at the *first* row's initial value (Wolfram keeps one
   /// `var$$ = <first initial>`), so the second row shows nothing selected.

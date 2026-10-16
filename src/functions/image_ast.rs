@@ -4951,6 +4951,7 @@ pub fn laplacian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: *width,
     height: *height,
     channels: *channels,

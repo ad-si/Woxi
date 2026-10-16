@@ -3636,7 +3636,7 @@ fn is_graphics_placeholder(expr: &syntax::Expr) -> bool {
 }
 
 /// Check if an expression tree contains any Graphics placeholder
-fn contains_graphics_placeholder(expr: &syntax::Expr) -> bool {
+pub(crate) fn contains_graphics_placeholder(expr: &syntax::Expr) -> bool {
   if is_graphics_placeholder(expr) {
     return true;
   }

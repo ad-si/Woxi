@@ -27187,6 +27187,15 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
 /// not change on every re-evaluation.
 fn manipulate_value_to_input_form(expr: &Expr) -> String {
   match crate::evaluator::evaluate_expr_to_expr(expr) {
+    // A rendered graphic inside the result (e.g. a saved
+    // `getCoordinates[Graphics[…]]` whose helper is only defined by the
+    // notebook's initialization code) serializes to the output-only
+    // `-Graphics-` placeholder, which no later re-evaluation can parse.
+    // Keep the symbolic source so the value is evaluated once the helper
+    // exists.
+    Ok(evaluated) if crate::contains_graphics_placeholder(&evaluated) => {
+      crate::syntax::expr_to_source_form(expr)
+    }
     Ok(evaluated) => crate::syntax::expr_to_source_form(&evaluated),
     Err(_) => crate::syntax::expr_to_source_form(expr),
   }
