@@ -460,9 +460,13 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Re"
         if args.len() == 1
           && matches!(&args[0], Expr::FunctionCall { name, args: fa }
-          if name == "ZetaZero" && fa.len() == 1) =>
+          if name == "ZetaZero" && (fa.len() == 1 || fa.len() == 2)) =>
       {
         match &args[0] {
+          Expr::FunctionCall { args: fa, .. } if fa.len() == 2 => {
+            let k = expr_to_i128(&fa[0])?;
+            super::zeta_zero_t_after(k, try_eval_to_f64(&fa[1])?).map(|_| 0.5)
+          }
           Expr::FunctionCall { args: fa, .. } => {
             expr_to_i128(&fa[0]).filter(|k| *k != 0).map(|_| 0.5)
           }
@@ -472,9 +476,13 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Im"
         if args.len() == 1
           && matches!(&args[0], Expr::FunctionCall { name, args: fa }
-          if name == "ZetaZero" && fa.len() == 1) =>
+          if name == "ZetaZero" && (fa.len() == 1 || fa.len() == 2)) =>
       {
         match &args[0] {
+          Expr::FunctionCall { args: fa, .. } if fa.len() == 2 => {
+            let k = expr_to_i128(&fa[0])?;
+            super::zeta_zero_t_after(k, try_eval_to_f64(&fa[1])?)
+          }
           Expr::FunctionCall { args: fa, .. } => {
             expr_to_i128(&fa[0]).and_then(super::zeta_zero_t_for_k)
           }

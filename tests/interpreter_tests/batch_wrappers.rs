@@ -6055,6 +6055,30 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn laplacian_filter_image() {
+    // A constant image has no second derivative; a single bright pixel
+    // gives a negative centre and positive neighbours summing to ~0.
+    assert_eq!(
+      interpret("ImageData[LaplacianFilter[Image[Table[0.5, {5}, {5}]], 1]]")
+        .unwrap(),
+      interpret("Table[0., {5}, {5}]").unwrap()
+    );
+    assert_eq!(
+      interpret(
+        "d = ImageData[LaplacianFilter[Image[ReplacePart[Table[0., {5}, {5}], {3, 3} -> 1.]], 1]]; {d[[3, 3]] < 0, d[[3, 2]] > 0, d[[2, 3]] > 0, Chop[Total[Flatten[d]], 10^-6]}"
+      )
+      .unwrap(),
+      "{True, True, True, 0}"
+    );
+  }
+  #[test]
+  fn laplacian_filter_non_image_unevaluated() {
+    assert_eq!(
+      interpret("LaplacianFilter[x, 1]").unwrap(),
+      "LaplacianFilter[x, 1]"
+    );
+  }
+  #[test]
   fn gradient_filter_basic_radius_1() {
     // 1-D GradientFilter[list, 1]: |central difference| with edge replication.
     // wolframscript: {0.5, 1., 1., 1., 1.5, 0., 1.5, 1., 1., 1., 0.5}
@@ -9064,6 +9088,26 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(
       interpret("VertexList[HypercubeGraph[2]]").unwrap(),
       "{1, 2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn hypercube_graph_with_graph_options() {
+    // Trailing options are forwarded to Graph instead of leaving the call
+    // unevaluated (used by Manipulate-based Demonstrations).
+    assert_eq!(
+      interpret(
+        "VertexList[HypercubeGraph[3, VertexSize -> 0.1, ImageSize -> {250, 300}]]"
+      )
+      .unwrap(),
+      "{1, 2, 3, 4, 5, 6, 7, 8}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeCount[HypercubeGraph[4, VertexStyle -> Hue[0.3], EdgeStyle -> {{Hue[0.5], Thickness[0.01]}}]]"
+      )
+      .unwrap(),
+      "32"
     );
   }
 

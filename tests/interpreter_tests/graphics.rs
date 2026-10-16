@@ -1090,6 +1090,37 @@ mod graphics {
       );
     }
 
+    /// `Inset[image, {Left, Top}, {Left, Top}, size]` — the thumbnail a
+    /// Demonstration pins to a corner — is drawn at that corner of the plot
+    /// range instead of falling through to the `-Image-` text.
+    #[test]
+    fn an_image_inset_at_a_symbolic_corner_is_pinned_there() {
+      let img = "Image[{{0.2, 0.8}, {0.9, 0.1}}]";
+      let corner = |pos: &str| {
+        export_svg(&format!(
+          "Graphics[{{Inset[{img}, {pos}, {pos}, 1]}}, PlotRange -> 1]"
+        ))
+      };
+      for pos in ["{Left, Top}", "{Right, Bottom}", "{Center, Center}"] {
+        let svg = corner(pos);
+        assert!(
+          svg.contains("<image") && !svg.contains("-Image-"),
+          "{pos}: the image must be embedded: {svg}"
+        );
+      }
+      // The picture is half the 360px canvas wide; its corner, not its
+      // centre, sits on the anchor.
+      assert!(
+        corner("{Left, Top}").contains("<svg x=\"-180.00\" y=\"-180.00\"")
+      );
+      assert!(
+        corner("{Right, Bottom}").contains("<svg x=\"180.00\" y=\"180.00\"")
+      );
+      assert!(
+        corner("{Center, Center}").contains("<svg x=\"90.00\" y=\"90.00\"")
+      );
+    }
+
     /// A symbolic `Graphics[…]` inset with no `size` keeps the size it would
     /// have on its own. It used to be folded into the enclosing picture's
     /// coordinates, so a unit-radius scene inset into a picture measured in
@@ -17111,6 +17142,42 @@ mod graphics_list {
     }
   }
 
+  /// Regression: a cell carrying its own numeric `ImageSize` kept that
+  /// absolute size while its neighbours were fitted to the shared column
+  /// width, so a padded `GraphicsGrid` showed one oversized picture among
+  /// tiny cells. The cell's size only contributes its aspect ratio.
+  #[test]
+  fn graphics_grid_cell_image_size_is_fitted_to_the_column() {
+    clear_state();
+    for cell in [
+      "Graphics[Rectangle[], ImageSize -> {300, 200}]",
+      "Graphics[Rectangle[], ImageSize -> 300]",
+    ] {
+      let code = format!(
+        "GraphicsGrid[{{{{{cell}, Graphics[{{White, Disk[]}}]}}}}, \
+         ImageSize -> 120]"
+      );
+      let svg = interpret_with_stdout(&code)
+        .unwrap()
+        .graphics
+        .expect("layout should render");
+      let widths: Vec<f64> = svg
+        .lines()
+        .filter(|l| l.starts_with("<svg x="))
+        .filter_map(|l| {
+          let start = l.find(" width=\"")? + 8;
+          let end = l[start..].find('"')? + start;
+          l[start..end].parse().ok()
+        })
+        .collect();
+      assert_eq!(widths.len(), 2, "two cells expected in {code}: {svg}");
+      assert!(
+        (widths[0] - widths[1]).abs() <= 1.0,
+        "cells differ in width {widths:?} in {code}"
+      );
+    }
+  }
+
   /// Regression: a plain 1-D list with many graphics should also
   /// re-render each child at a smaller `ImageSize`, matching how
   /// `GraphicsRow` handles the same scenario. Before, every cell was
@@ -22110,6 +22177,23 @@ mod contour_plot_3d {
   use super::*;
 
   #[test]
+  fn background_option_repaints_the_backdrop() {
+    for call in [
+      "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, \
+       {z, -1, 1}, Background -> Black, PlotPoints -> 5]",
+      "Plot3D[x y, {x, -1, 1}, {y, -1, 1}, Background -> Black, \
+       PlotPoints -> 5]",
+    ] {
+      let svg = export_svg(call);
+      assert!(
+        svg
+          .contains("<rect width=\"360\" height=\"360\" fill=\"rgb(0,0,0)\"/>"),
+        "{call}: backdrop must be black"
+      );
+    }
+  }
+
+  #[test]
   fn shown_plane_keeps_its_opacity_and_is_cut_to_the_plot_range() {
     // A translucent `ContourPlot3D` plane merged by `Show` into a
     // `Graphics3D` with a fixed `PlotRange` stays translucent and is
@@ -22147,6 +22231,19 @@ mod contour_plot_3d {
       )
       .unwrap(),
       "EdgeForm[]"
+    );
+  }
+
+  #[test]
+  fn background_option_repaints_canvas() {
+    let svg = export_svg(
+      "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, \
+       {z, -1, 1}, Background -> Black, PlotPoints -> 6]",
+    );
+    assert!(
+      svg.contains("<rect width=\"360\" height=\"360\" fill=\"rgb(0,0,0)\"/>"),
+      "canvas should be black: {}",
+      &svg[..300.min(svg.len())]
     );
   }
 
@@ -26768,6 +26865,22 @@ mod manipulate {
     assert!(svg.contains("title"));
   }
 
+  /// A `TabView` whose pane is a `Text@Grid[…]` table, laid out in a
+  /// `Column` next to a picture, draws the table. Regression: a
+  /// Demonstration's description tab (`Text[TabView[{"info" -> Grid[…]}]]`)
+  /// was typeset as the symbolic `TabView[{info -> Grid[{{…` source line.
+  #[test]
+  fn tab_view_grid_pane_in_column_draws_table() {
+    let code = "ExportString[Column[{\
+      Text[TabView[{\"info\" -> Grid[{{\"alpha\", \"beta\"}, \
+      {\"gamma\", \"delta\"}}, Frame -> All]}]], \
+      Graphics[Circle[]]}], \"SVG\"]";
+    let svg = woxi::interpret(code).unwrap();
+    assert!(!svg.contains("TabView["), "TabView source leaked: {svg}");
+    assert!(!svg.contains("Grid["), "Grid source leaked: {svg}");
+    assert!(svg.contains("alpha") && svg.contains("delta"));
+  }
+
   /// A `PaneSelector[{value -> content, …}, selector]` shows one pane at a
   /// time in Wolfram; its panes hold controls just as a `TabView`'s tabs
   /// do, so they are found the same way. A variable declared in more than
@@ -28679,6 +28792,44 @@ mod manipulate {
       nodes
         .iter()
         .any(|n| matches!(n, DisplayNode::Spacer { width } if *width == 0.0))
+    );
+  }
+
+  #[test]
+  fn display_setterbar_on_list_slot_writes_back_to_the_slot() {
+    // `SetterBar[Dynamic[slots[[2]]], …]` — one bar per slot of a shared
+    // list — is a row of write-back buttons, not the frozen source text.
+    use woxi::functions::graphics::build_manipulate_display;
+    clear_state();
+    interpret("slots = {3, 2, 1}").unwrap();
+    let tree = build_manipulate_display(
+      "Row[{SetterBar[Dynamic[slots[[2]]], {1, 2, 3}]}]",
+      &[("slots".to_string(), "{3, 2, 1}".to_string())],
+    );
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    assert!(
+      nodes
+        .iter()
+        .all(|n| !matches!(n, DisplayNode::Static { .. })),
+      "SetterBar must not fall through to a source-text leaf: {nodes:?}"
+    );
+    let togglers: Vec<(&str, bool)> = nodes
+      .iter()
+      .filter_map(|n| match n {
+        DisplayNode::Toggler {
+          mutation, selected, ..
+        } => Some((mutation.as_str(), *selected)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      togglers,
+      vec![
+        ("slots[[2]] = 1", false),
+        ("slots[[2]] = 2", true),
+        ("slots[[2]] = 3", false)
+      ]
     );
   }
 
@@ -32675,6 +32826,22 @@ mod tube_and_cap_form {
     assert_ne!(straight, tapered, "the second radius must narrow the tube");
   }
 
+  /// A curve already sampled into many short segments must not be
+  /// subdivided again per segment. Regression: a helix drawn with
+  /// `PlotStyle -> Tube[r]` ("Simple Spring Mass Damping") tessellated into
+  /// ~100k polygons, a ~12 MB SVG on every Manipulate redraw.
+  #[test]
+  fn finely_sampled_tube_stays_small() {
+    clear_state();
+    let svg = export_svg(
+      "ParametricPlot3D[{u, Cos[u], Sin[u]}, {u, 0, 6 Pi}, \
+       PlotStyle -> Tube[.07], Boxed -> False]",
+    );
+    let polygons = svg.matches("<polygon").count();
+    assert!(polygons > 1000, "the tube must draw: {polygons}");
+    assert!(polygons < 20000, "tube mesh is oversized: {polygons}");
+  }
+
   /// A bent tube keeps one closed surface through the corner.
   #[test]
   fn tube_follows_a_bent_polyline() {
@@ -34400,6 +34567,18 @@ mod grid_text_in_graphics {
   }
 
   #[test]
+  fn escaped_spaces_in_box_text_are_not_products() {
+    // `\ ` between words inside a box group is a literal space; it must not
+    // be read as implicit multiplication (`my*height`).
+    let svg = interpret(
+      r#"ExportString[Graphics[Text["\!\(\*FractionBox[\(my\ height\), \(my\ shadow\ length\)]\)=\!\(\*FractionBox[\(a\), \(b\)]\)", {0, 0}]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("(my height)/(my shadow length)=a/b"), "{svg}");
+    assert!(!svg.contains('*'), "{svg}");
+  }
+
+  #[test]
   fn grid_spanned_cells_are_centered_over_their_columns() {
     let svg = interpret(
       r#"ExportString[Grid[{{"a", "b", "c", "d"}, {"left", SpanFromLeft, "right", SpanFromLeft}}, Frame -> All], "SVG"]"#,
@@ -35145,4 +35324,60 @@ fn grid_column_width_follows_displayed_text() {
   let deriv = first_divider("Grid[{{Derivative[1][y], 1}}, Frame -> All]");
   let plain = first_divider("Grid[{{\"y'\", 1}}, Frame -> All]");
   assert!((deriv - plain).abs() < 1.0, "{deriv} vs {plain}");
+}
+
+mod bracketing_bar_labels {
+  use super::*;
+
+  #[test]
+  fn bracketing_bar_is_inert_and_draws_bars() {
+    let svg = export_svg(r#"Grid[{{BracketingBar[x + 1]}}]"#);
+    assert!(svg.contains(">|1 + x|</text>"), "{svg}");
+    let svg = export_svg(r#"Grid[{{DoubleBracketingBar[v]}}]"#);
+    assert!(svg.contains(">\u{2016}v\u{2016}</text>"), "{svg}");
+  }
+
+  #[test]
+  fn bracketing_bar_inside_traditional_form() {
+    let svg =
+      export_svg(r#"Grid[{{TraditionalForm[BracketingBar[a + b]/c]}}]"#);
+    assert!(svg.contains("|a+b|"), "{svg}");
+    assert!(!svg.contains("BracketingBar"), "{svg}");
+  }
+
+  #[test]
+  fn bracketing_bar_is_not_reported_unimplemented() {
+    clear_state();
+    assert_eq!(interpret("BracketingBar[x]").unwrap(), "BracketingBar[x]");
+    assert_eq!(woxi::get_captured_warnings(), Vec::<String>::new());
+  }
+
+  #[test]
+  fn string_subscript_in_traditional_form_has_no_quotes() {
+    let svg = export_svg(r#"Grid[{{TraditionalForm[Subscript[S, "A"] + 1]}}]"#);
+    assert!(!svg.contains("&quot;"), "{svg}");
+    assert!(svg.contains(">A</tspan>"), "{svg}");
+  }
+}
+
+/// Regression: a `ProgressIndicator` cell in a `Grid` (a per-bracket fill bar
+/// in a Demonstration's table) draws a track with a proportional fill instead
+/// of printing `ProgressIndicator[…]` as text.
+#[test]
+fn grid_progress_indicator_cell_draws_a_bar() {
+  let svg = export_svg;
+  let half = svg("Grid[{{\"a\", ProgressIndicator[5, {0, 10}]}}]");
+  assert!(!half.contains("ProgressIndicator"), "{half}");
+  assert!(half.contains("#5E9ED6"), "{half}");
+  // The fill width follows the fraction and is clamped to the range.
+  let width_of_fill = |s: &str| -> f64 {
+    let rect = s.split("<rect").find(|r| r.contains("#5E9ED6")).unwrap();
+    let w = rect.split("width=\"").nth(1).unwrap();
+    w.split('"').next().unwrap().parse().unwrap()
+  };
+  let full = svg("Grid[{{ProgressIndicator[3]}}]");
+  let none = svg("Grid[{{ProgressIndicator[-1]}}]");
+  assert!((width_of_fill(&half) - 74.5).abs() < 0.2, "{half}");
+  assert!((width_of_fill(&full) - 149.0).abs() < 0.2, "{full}");
+  assert!(width_of_fill(&none).abs() < 0.2, "{none}");
 }

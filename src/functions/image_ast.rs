@@ -93,6 +93,7 @@ fn dynamic_image_to_expr(img: &image::DynamicImage) -> Expr {
         g.as_raw().iter().map(|&v| v as f64 / 255.0).collect();
       Expr::Image {
         color_space: None,
+        display_size: None,
         width,
         height,
         channels: 1,
@@ -105,6 +106,7 @@ fn dynamic_image_to_expr(img: &image::DynamicImage) -> Expr {
         rgba.as_raw().iter().map(|&v| v as f64 / 255.0).collect();
       Expr::Image {
         color_space: None,
+        display_size: None,
         width,
         height,
         channels: 4,
@@ -119,6 +121,7 @@ fn dynamic_image_to_expr(img: &image::DynamicImage) -> Expr {
         rgb.as_raw().iter().map(|&v| v as f64 / 255.0).collect();
       Expr::Image {
         color_space: None,
+        display_size: None,
         width,
         height,
         channels: 3,
@@ -130,12 +133,22 @@ fn dynamic_image_to_expr(img: &image::DynamicImage) -> Expr {
 }
 
 /// Encode an Expr::Image as a base64 PNG data URI `<img>` tag.
+///
+/// `display_size` is the `ImageSize` the image is shown at; the embedded
+/// raster keeps its own pixel dimensions and is scaled without smoothing.
 pub fn image_to_html_img(
   width: u32,
   height: u32,
   channels: u8,
   data: &[f64],
+  display_size: Option<(u32, u32)>,
 ) -> String {
+  let (shown_w, shown_h) = display_size.unwrap_or((width, height));
+  let rendering = if display_size.is_some() {
+    " style='image-rendering:pixelated'"
+  } else {
+    ""
+  };
   let dyn_img = expr_to_dynamic_image(width, height, channels, data);
   let mut buf = Vec::new();
   dyn_img
@@ -144,8 +157,8 @@ pub fn image_to_html_img(
   let b64 =
     base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buf);
   format!(
-    "<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}'>\
-     <image href='data:image/png;base64,{b64}' width='{width}' height='{height}'/>\
+    "<svg xmlns='http://www.w3.org/2000/svg' width='{shown_w}' height='{shown_h}'>\
+     <image href='data:image/png;base64,{b64}' width='{shown_w}' height='{shown_h}'{rendering}/>\
      </svg>"
   )
 }
@@ -162,10 +175,11 @@ pub fn image_to_svg_document(
   height: u32,
   channels: u8,
   data: &[f64],
+  display_size: Option<(u32, u32)>,
 ) -> String {
   format!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{}",
-    image_to_html_img(width, height, channels, data)
+    image_to_html_img(width, height, channels, data, display_size)
   )
 }
 
@@ -177,6 +191,60 @@ pub fn image_to_svg_document(
 /// treated as options like `ColorSpace -> ...` and `Interleaving -> ...`;
 /// unknown options are accepted and currently ignored.
 pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mut result = image_constructor_base(args)?;
+  if let Expr::Image {
+    width,
+    height,
+    display_size,
+    ..
+  } = &mut result
+    && let Some(size) = image_size_option(&args[1..], *width, *height)
+  {
+    *display_size = Some(size);
+  }
+  Ok(result)
+}
+
+/// Resolve an `ImageSize -> n` / `ImageSize -> {w, h}` option into the pixel
+/// size an image of `width` x `height` is displayed at.  A single number
+/// fixes the width; a pair is a bounding box the image is scaled to fit
+/// while keeping its aspect ratio.
+fn image_size_option(
+  opts: &[Expr],
+  width: u32,
+  height: u32,
+) -> Option<(u32, u32)> {
+  if width == 0 || height == 0 {
+    return None;
+  }
+  let number = |e: &Expr| match e {
+    Expr::Integer(n) if *n > 0 => Some(*n as f64),
+    Expr::Real(f) if *f > 0.0 => Some(*f),
+    _ => None,
+  };
+  let value = opts.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })?;
+  let scale = match value {
+    Expr::List(dims) if dims.len() == 2 => {
+      let (bw, bh) = (number(&dims[0])?, number(&dims[1])?);
+      (bw / width as f64).min(bh / height as f64)
+    }
+    other => number(other)? / width as f64,
+  };
+  Some((
+    ((width as f64 * scale).round() as u32).max(1),
+    ((height as f64 * scale).round() as u32).max(1),
+  ))
+}
+
+fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
       "Image expects at least 1 argument".into(),
@@ -315,6 +383,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     return Ok(Expr::Image {
       color_space,
+      display_size: None,
       width,
       height,
       channels,
@@ -435,6 +504,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width,
     height,
     channels,
@@ -840,6 +910,7 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -1060,6 +1131,7 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Image {
       color_space: _,
+      display_size: _,
       width,
       height,
       channels,
@@ -1096,6 +1168,7 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       Ok(Expr::Image {
         color_space: None,
+        display_size: None,
         width: *width,
         height: *height,
         channels: *channels,
@@ -1281,6 +1354,7 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       Ok(Expr::Image {
         color_space: None,
+        display_size: None,
         width: *width,
         height: *height,
         channels: 1,
@@ -1337,6 +1411,7 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (
     Expr::Image {
       color_space,
+      display_size: _,
       width,
       height,
       channels,
@@ -1355,6 +1430,7 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
   Ok(requantize_filtered(Expr::Image {
     color_space: *color_space,
+    display_size: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -1377,6 +1453,13 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// - `"Noise"` (amplitude `a`, default 0.1): adds zero-mean uniform noise
 ///   drawn from `[-a, a]` to every color channel, also unclipped.
 ///
+/// - `"Solarization"` (threshold `t`, default 0.5): color values above `t`
+///   are inverted, the rest are kept.
+/// - `"OilPainting"` (radius `r`, default 2): each pixel takes the mean
+///   color of the most frequent intensity level in its `(2r+1)²` window.
+/// - `"Charcoal"` (radius `r`, default 1): dark strokes on a white ground,
+///   drawn where the intensity changes over a distance of `r` pixels.
+///
 /// Other effects are not implemented and return the call unevaluated.
 pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
@@ -1389,6 +1472,7 @@ pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let Expr::Image {
     color_space,
+    display_size: _,
     width,
     height,
     channels,
@@ -1483,11 +1567,80 @@ pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
       out
     }
+    "Solarization" => {
+      let Some(threshold) = numeric_param(0, 0.5) else {
+        return Ok(unevaluated("ImageEffect", args));
+      };
+      let mut out = data.as_ref().clone();
+      for pixel in out.chunks_mut(ch) {
+        for channel in pixel.iter_mut().take(color_channels) {
+          if *channel > threshold {
+            *channel = 1.0 - *channel;
+          }
+        }
+      }
+      out
+    }
+    "OilPainting" | "Charcoal" => {
+      let default_radius = if effect == "OilPainting" { 2.0 } else { 1.0 };
+      let Some(radius) = numeric_param(0, default_radius) else {
+        return Ok(unevaluated("ImageEffect", args));
+      };
+      let radius = radius.round().max(0.0) as i64;
+      let (w, h) = (*width as i64, *height as i64);
+      let intensity = |x: i64, y: i64| -> f64 {
+        let base = ((y.clamp(0, h - 1) * w + x.clamp(0, w - 1)) as usize) * ch;
+        data[base..base + color_channels].iter().sum::<f64>()
+          / color_channels as f64
+      };
+      let mut out = data.as_ref().clone();
+      for y in 0..h {
+        for x in 0..w {
+          let base = ((y * w + x) as usize) * ch;
+          if effect == "Charcoal" {
+            let dx = intensity(x + radius, y) - intensity(x - radius, y);
+            let dy = intensity(x, y + radius) - intensity(x, y - radius);
+            let value = 1.0 - ((dx.abs() + dy.abs()) * 2.0).min(1.0);
+            for channel in &mut out[base..base + color_channels] {
+              *channel = value;
+            }
+          } else {
+            const LEVELS: usize = 20;
+            let mut count = [0usize; LEVELS];
+            let mut sums = vec![vec![0.0; color_channels]; LEVELS];
+            for ny in (y - radius).max(0)..=(y + radius).min(h - 1) {
+              for nx in (x - radius).max(0)..=(x + radius).min(w - 1) {
+                let level = ((intensity(nx, ny) * LEVELS as f64) as usize)
+                  .min(LEVELS - 1);
+                let nbase = ((ny * w + nx) as usize) * ch;
+                count[level] += 1;
+                for (sum, value) in sums[level]
+                  .iter_mut()
+                  .zip(&data[nbase..nbase + color_channels])
+                {
+                  *sum += value;
+                }
+              }
+            }
+            // Ties go to the darker level so the result is deterministic.
+            let best =
+              (0..LEVELS).max_by_key(|&l| (count[l], LEVELS - l)).unwrap();
+            for (channel, sum) in
+              out[base..base + color_channels].iter_mut().zip(&sums[best])
+            {
+              *channel = sum / count[best] as f64;
+            }
+          }
+        }
+      }
+      out
+    }
     _ => return Ok(unevaluated("ImageEffect", args)),
   };
 
   Ok(requantize_filtered(Expr::Image {
     color_space: *color_space,
+    display_size: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -1620,6 +1773,7 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -1726,6 +1880,7 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -1754,6 +1909,7 @@ pub fn histogram_transform_ast(
 ) -> Result<Expr, InterpreterError> {
   let Expr::Image {
     color_space,
+    display_size: _,
     width,
     height,
     channels,
@@ -1802,6 +1958,7 @@ pub fn histogram_transform_ast(
   }
   Ok(Expr::Image {
     color_space: *color_space,
+    display_size: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -2086,6 +2243,7 @@ pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -2137,6 +2295,7 @@ pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: new_w,
       height: new_h,
       channels: *channels,
@@ -2203,6 +2362,7 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -2279,6 +2439,7 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: new_w,
     height: new_h,
     channels: *channels,
@@ -2396,6 +2557,7 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -2504,6 +2666,7 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: new_w,
     height: new_h,
     channels: *channels,
@@ -2515,23 +2678,32 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ImageCrop[img, {{x1,y1},{x2,y2}}] - Crop to region
 /// How many pixels a cropping spec removes from the low side (left, or bottom
 /// in Wolfram's bottom-left origin) when `remove` pixels have to go in total.
-/// Centering splits the remainder with round-half-to-even, so cropping a
-/// 4-wide image to 3 keeps the leftmost three while cropping it to 1 keeps the
-/// third pixel.
-fn image_crop_low_margin(spec: Option<&str>, remove: i64, low: &str) -> i64 {
-  match spec {
-    // Naming a side says pixels come off *that* side.
-    Some(s) if s == low => remove,
-    Some(s) if s != "Center" => 0,
-    _ => (remove as f64 / 2.0).round_ties_even() as i64,
-  }
+/// `low_share` is the fraction of the removal taken from the low side: 1 for
+/// `Left`/`Bottom`, 0 for `Right`/`Top`, 1/2 for `Center`. Centering splits the
+/// remainder with round-half-to-even, so cropping a 4-wide image to 3 keeps the
+/// leftmost three while cropping it to 1 keeps the third pixel.
+fn image_crop_low_margin(low_share: f64, remove: i64) -> i64 {
+  (remove as f64 * low_share).round_ties_even() as i64
 }
 
-/// The cropping sides named by the third argument, as `(horizontal, vertical)`
-/// where each is `Left`/`Right`, `Bottom`/`Top`, or `Center`.
-fn image_crop_sides(spec: &Expr) -> Option<(String, String)> {
-  let mut horizontal = "Center".to_string();
-  let mut vertical = "Center".to_string();
+/// The per-axis share of the removed pixels that comes off the low side
+/// (left / bottom), as `(horizontal, vertical)`. The third argument is either
+/// side names (`Left`, `Right`, `Top`, `Bottom`, `Center`) or a numeric pair
+/// `{x, y}` in `[-1, 1]` where `-1` is the same as `Left`/`Bottom` and `1` the
+/// same as `Right`/`Top`.
+fn image_crop_sides(spec: &Expr) -> Option<(f64, f64)> {
+  let mut horizontal = 0.5;
+  let mut vertical = 0.5;
+  if let Expr::List(items) = spec
+    && items.len() == 2
+    && let (Some(x), Some(y)) = (
+      crate::functions::math_ast::try_eval_to_f64(&items[0]),
+      crate::functions::math_ast::try_eval_to_f64(&items[1]),
+    )
+  {
+    let share = |t: f64| (1.0 - t.clamp(-1.0, 1.0)) / 2.0;
+    return Some((share(x), share(y)));
+  }
   let names: Vec<&Expr> = match spec {
     Expr::List(items) => items.iter().collect(),
     single => vec![single],
@@ -2541,8 +2713,10 @@ fn image_crop_sides(spec: &Expr) -> Option<(String, String)> {
       return None;
     };
     match s.as_str() {
-      "Left" | "Right" => horizontal.clone_from(s),
-      "Top" | "Bottom" => vertical.clone_from(s),
+      "Left" => horizontal = 1.0,
+      "Right" => horizontal = 0.0,
+      "Bottom" => vertical = 1.0,
+      "Top" => vertical = 0.0,
       "Center" => {}
       other => {
         crate::emit_message(&format!(
@@ -2564,6 +2738,7 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -2593,13 +2768,13 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(sides) => sides,
         None => return echo(),
       },
-      None => ("Center".to_string(), "Center".to_string()),
+      None => (0.5, 0.5),
     };
 
     let remove_w = *width as i64 - target_w;
     let remove_h = *height as i64 - target_h;
-    let left = image_crop_low_margin(Some(&horizontal), remove_w, "Left");
-    let bottom = image_crop_low_margin(Some(&vertical), remove_h, "Bottom");
+    let left = image_crop_low_margin(horizontal, remove_w);
+    let bottom = image_crop_low_margin(vertical, remove_h);
     // The extents are removals, so they enter the padder negated.
     return Ok(
       image_pad_extents(
@@ -2645,6 +2820,7 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // The whole image matches the corner; return a 1×1 image.
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: 1,
       height: 1,
       channels: *channels,
@@ -2703,6 +2879,7 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: new_w as u32,
     height: new_h as u32,
     channels: *channels,
@@ -2894,6 +3071,7 @@ fn image_pad_extents(
 
   Some(Expr::Image {
     color_space: None,
+    display_size: None,
     width: new_w as u32,
     height: new_h as u32,
     channels: *channels,
@@ -2989,6 +3167,7 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       Ok(Expr::Image {
         color_space: None,
+        display_size: None,
         width: crop_w,
         height: crop_h,
         channels: *channels,
@@ -3105,6 +3284,7 @@ pub fn edge_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: *width,
     height: *height,
     channels: 1,
@@ -3422,6 +3602,7 @@ pub fn image_apply_ast(
 
   let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -3539,6 +3720,7 @@ pub fn image_apply_ast(
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: *width,
     height: *height,
     channels: out_ch as u8,
@@ -3691,6 +3873,7 @@ fn retag(image: &Expr, tag: Option<&'static str>) -> Expr {
       ..
     } => Expr::Image {
       color_space: tag,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -3788,6 +3971,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Image {
       color_space: _,
+      display_size: _,
       width,
       height,
       channels,
@@ -3815,6 +3999,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           Ok(Expr::Image {
             color_space: tag,
+            display_size: None,
             width: *width,
             height: *height,
             channels: 1,
@@ -3836,6 +4021,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             Ok(Expr::Image {
               color_space: tag,
+              display_size: None,
               width: *width,
               height: *height,
               channels: 3,
@@ -3853,6 +4039,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             Ok(Expr::Image {
               color_space: tag,
+              display_size: None,
               width: *width,
               height: *height,
               channels: 3,
@@ -3900,6 +4087,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           Ok(Expr::Image {
             color_space: tag,
+            display_size: None,
             width: *width,
             height: *height,
             channels: total as u8,
@@ -3975,6 +4163,7 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (
     Expr::Image {
       color_space: _,
+      display_size: _,
       width: w1,
       height: h1,
       channels: ch1,
@@ -4058,6 +4247,7 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: *w1,
     height: *h1,
     channels: *ch1,
@@ -4093,6 +4283,7 @@ fn pointwise_image_op(
   if let (
     Expr::Image {
       color_space: _,
+      display_size: _,
       width: w1,
       height: h1,
       channels: ch1,
@@ -4146,6 +4337,7 @@ fn pointwise_image_op(
       };
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *w1,
       height: *h1,
       channels: out_ch as u8,
@@ -4193,6 +4385,7 @@ fn pointwise_image_op(
           .collect();
         return Ok(Expr::Image {
           color_space: None,
+          display_size: None,
           width: *width,
           height: *height,
           channels: *channels,
@@ -4206,6 +4399,7 @@ fn pointwise_image_op(
   // (Image, scalar) — apply `op(pixel, scalar)` to every pixel.
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -4219,6 +4413,7 @@ fn pointwise_image_op(
       data.iter().map(|&v| apply(v, s, is_r32)).collect();
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -4229,6 +4424,7 @@ fn pointwise_image_op(
   // (scalar, Image) — apply `op(scalar, pixel)`.
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -4242,6 +4438,7 @@ fn pointwise_image_op(
       data.iter().map(|&v| apply(s, v, is_r32)).collect();
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -4365,6 +4562,7 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: w,
     height: h,
     channels,
@@ -4396,6 +4594,7 @@ pub fn binary_image_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn pixel_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -4573,6 +4772,7 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   //      then `|∇I| = √((∂I/∂x)² + (∂I/∂y)²)`.
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -4597,6 +4797,7 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -4676,6 +4877,88 @@ fn gradient_filter_derivative_kernel(smooth: &[f64]) -> Vec<f64> {
   d
 }
 
+/// LaplacianFilter[image, r] — sum of the second derivatives of the
+/// image smoothed by the discrete Gaussian of half-width `r` and
+/// standard deviation `r/2`: `L ⊛_x (T ⊛_y I) + L ⊛_y (T ⊛_x I)`, where
+/// `T` is `gaussian_filter_kernel` and `L[k] = T[k-1] - 2·T[k] + T[k+1]`
+/// (so a unit parabola `k²` yields 2). Padding repeats the edge pixel.
+pub fn laplacian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("LaplacianFilter", args);
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+    ..
+  } = &args[0]
+  else {
+    return Ok(unevaluated());
+  };
+  let axis = match expr_to_f64_opt(&args[1]) {
+    Some(r) if r >= 1.0 => gaussian_axis_from_radius(r),
+    _ => return Ok(unevaluated()),
+  };
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = *channels as usize;
+  if w == 0 || h == 0 {
+    return Ok(args[0].clone());
+  }
+  let smooth = gaussian_filter_kernel(axis.radius, axis.sigma);
+  let wide = gaussian_filter_kernel(axis.radius + 1, axis.sigma);
+  let mut second: Vec<f64> = (1..wide.len() - 1)
+    .map(|i| wide[i - 1] - 2.0 * wide[i] + wide[i + 1])
+    .collect();
+  // Truncating the kernel must not leak a constant response, so the
+  // centre tap absorbs the truncation error and the taps sum to zero.
+  let centre = axis.radius;
+  let others: f64 = second
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| *i != centre)
+    .map(|(_, v)| v)
+    .sum();
+  second[centre] = -others;
+  let convolve = crate::functions::math_ast::convolve_edge_padded;
+  let along_rows = |source: &[f64], kernel: &[f64]| {
+    let mut out = vec![0.0; w * h];
+    for y in 0..h {
+      let filtered = convolve(&source[y * w..(y + 1) * w], kernel);
+      out[y * w..(y + 1) * w].copy_from_slice(&filtered);
+    }
+    out
+  };
+  let along_columns = |source: &[f64], kernel: &[f64]| {
+    let mut out = vec![0.0; w * h];
+    for x in 0..w {
+      let column: Vec<f64> = (0..h).map(|y| source[y * w + x]).collect();
+      let filtered = convolve(&column, kernel);
+      for y in 0..h {
+        out[y * w + x] = filtered[y];
+      }
+    }
+    out
+  };
+  let mut out: Vec<f64> = vec![0.0; data.len()];
+  for c_idx in 0..ch {
+    let plane: Vec<f64> = (0..w * h).map(|i| data[i * ch + c_idx]).collect();
+    let dxx = along_rows(&along_columns(&plane, &smooth), &second);
+    let dyy = along_columns(&along_rows(&plane, &smooth), &second);
+    for i in 0..w * h {
+      out[i * ch + c_idx] = dxx[i] + dyy[i];
+    }
+  }
+  Ok(Expr::Image {
+    color_space: None,
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(out),
+    image_type: *image_type,
+  })
+}
+
 pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A list argument reads its range like the other neighborhood filters:
   // the magnitude, and a whole number or nothing. An image keeps taking
@@ -4708,6 +4991,7 @@ fn median_filter_body(args: &[Expr]) -> Expr {
   if let (
     Expr::Image {
       color_space: _,
+      display_size: _,
       width,
       height,
       channels,
@@ -4749,6 +5033,7 @@ fn median_filter_body(args: &[Expr]) -> Expr {
     }
     return Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -4848,6 +5133,7 @@ pub fn mean_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let (
     Expr::Image {
       color_space,
+      display_size: _,
       width,
       height,
       channels,
@@ -4884,6 +5170,7 @@ pub fn mean_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(quantize_image(Expr::Image {
       color_space: *color_space,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -4904,6 +5191,7 @@ pub fn mean_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn quantize_image(image: Expr) -> Expr {
   let Expr::Image {
     color_space,
+    display_size: _,
     width,
     height,
     channels,
@@ -4919,6 +5207,7 @@ fn quantize_image(image: Expr) -> Expr {
   };
   Expr::Image {
     color_space: *color_space,
+    display_size: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -4939,6 +5228,7 @@ pub fn image_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let Expr::Image {
     color_space,
+    display_size: _,
     width,
     height,
     channels,
@@ -4996,6 +5286,7 @@ pub fn image_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(quantize_image(Expr::Image {
     color_space: *color_space,
+    display_size: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -5055,6 +5346,7 @@ pub fn image_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // stored as.
   Ok(quantize_image(Expr::Image {
     color_space: None,
+    display_size: None,
     width: w1,
     height: h1,
     channels: c1,
@@ -5430,6 +5722,7 @@ pub fn image_deconvolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let Expr::Image {
     color_space,
+    display_size: _,
     width,
     height,
     channels,
@@ -5536,6 +5829,7 @@ pub fn image_deconvolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     color_space: *color_space,
+    display_size: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -5561,6 +5855,7 @@ fn spatial_filter_ast(
 ) -> Result<Expr, InterpreterError> {
   let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -5628,6 +5923,7 @@ fn spatial_filter_ast(
   }
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -5798,6 +6094,7 @@ fn gaussian_filter_image(
 ) -> Option<Expr> {
   let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -5839,6 +6136,7 @@ fn gaussian_filter_image(
   }
   Some(Expr::Image {
     color_space: None,
+    display_size: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -5983,6 +6281,7 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width,
       height,
       channels: 3,
@@ -6189,6 +6488,7 @@ pub fn pruning_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("Pruning", args);
   let Expr::Image {
     color_space,
+    display_size: _,
     width,
     height,
     channels,
@@ -6307,6 +6607,7 @@ pub fn pruning_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::Image {
     color_space: *color_space,
+    display_size: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -6395,6 +6696,7 @@ pub fn morphological_binarize_ast(
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width,
     height,
     channels: 1,
@@ -6820,6 +7122,7 @@ pub fn morphological_perimeter_ast(
   }
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: *width,
     height: *height,
     channels: 1,
@@ -7145,6 +7448,7 @@ pub fn filling_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width,
     height,
     channels,
@@ -7254,6 +7558,7 @@ pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // No background pixel anywhere: wolframscript yields all-1 values.
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width,
       height,
       channels: 1,
@@ -7282,6 +7587,7 @@ pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width,
     height,
     channels: 1,
@@ -7414,6 +7720,7 @@ pub fn color_combine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     color_space: color_space.map(|(name, _)| name),
+    display_size: None,
     width: w,
     height: h,
     channels: total as u8,
@@ -7429,6 +7736,7 @@ pub fn color_combine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn color_separate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -7449,6 +7757,7 @@ pub fn color_separate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let channel_data: Vec<f64> = (0..n).map(|i| data[i * ch + c_idx]).collect();
     images.push(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: 1,
@@ -7929,6 +8238,7 @@ pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("ImagePartition", args);
   let Expr::Image {
     color_space,
+    display_size: _,
     width,
     height,
     channels,
@@ -8018,6 +8328,7 @@ pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             Expr::Image {
               color_space,
+              display_size: None,
               width: bw as u32,
               height: bh as u32,
               channels,
@@ -8042,6 +8353,7 @@ pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if let Expr::Image {
     color_space,
+    display_size: _,
     width,
     height,
     channels,
@@ -8081,6 +8393,7 @@ pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     Ok(Expr::Image {
       color_space: *color_space,
+      display_size: None,
       width: new_w as u32,
       height: new_h as u32,
       channels: *channels,
@@ -8248,6 +8561,7 @@ fn extract_image_weight(
   // Direct image → weight 1.0
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -8268,6 +8582,7 @@ fn extract_image_weight(
     if let Some(w) = crate::functions::math_ast::try_eval_to_f64(left)
       && let Expr::Image {
         color_space: _,
+        display_size: _,
         width,
         height,
         channels,
@@ -8280,6 +8595,7 @@ fn extract_image_weight(
     if let Some(w) = crate::functions::math_ast::try_eval_to_f64(right)
       && let Expr::Image {
         color_space: _,
+        display_size: _,
         width,
         height,
         channels,
@@ -8299,6 +8615,7 @@ fn extract_image_weight(
     if let Some(w) = crate::functions::math_ast::try_eval_to_f64(&args[0])
       && let Expr::Image {
         color_space: _,
+        display_size: _,
         width,
         height,
         channels,
@@ -8311,6 +8628,7 @@ fn extract_image_weight(
     if let Some(w) = crate::functions::math_ast::try_eval_to_f64(&args[1])
       && let Expr::Image {
         color_space: _,
+        display_size: _,
         width,
         height,
         channels,
@@ -8393,6 +8711,7 @@ fn try_collage_same_shape(items: &[Expr]) -> Option<Expr> {
 
   Some(Expr::Image {
     color_space: None,
+    display_size: None,
     width: out_w as u32,
     height: out_h as u32,
     channels: ch_first,
@@ -8795,6 +9114,7 @@ fn try_assemble_same_shape(outer: &[Expr]) -> Option<Expr> {
 
   Some(Expr::Image {
     color_space: None,
+    display_size: None,
     width: out_w as u32,
     height: out_h as u32,
     channels: ch_first,
@@ -9273,6 +9593,7 @@ pub fn rasterize_svg(
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: pix_w,
     height: pix_h,
     channels: 4,
@@ -9566,6 +9887,7 @@ pub fn constant_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: w,
     height: h,
     channels,
@@ -9799,6 +10121,7 @@ pub fn color_balance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("ColorBalance", args);
   let Expr::Image {
     color_space,
+    display_size: _,
     width,
     height,
     channels,
@@ -9884,6 +10207,7 @@ pub fn color_balance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::Image {
     color_space,
+    display_size: None,
     width: *width,
     height: *height,
     channels: ch as u8,
@@ -10236,6 +10560,7 @@ pub fn crossing_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::Image {
         color_space: None,
+        display_size: None,
         width: *width,
         height: *height,
         channels: 1,
@@ -10589,6 +10914,7 @@ pub fn image_measurements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     data,
     image_type,
     color_space,
+    display_size: _,
   } = &args[0]
   else {
     return echo();
@@ -10873,6 +11199,7 @@ pub fn image_forward_transformation_ast(
 
   Ok(Expr::Image {
     color_space: None,
+    display_size: None,
     width: ow as u32,
     height: oh as u32,
     channels: *channels,

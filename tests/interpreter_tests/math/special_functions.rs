@@ -2498,6 +2498,27 @@ mod zeta {
   }
 
   #[test]
+  fn zeta_zero_with_height_finds_the_kth_zero_above_it() {
+    // ZetaZero[k, t] is the k-th zero whose imaginary part exceeds t.
+    assert_eq!(
+      interpret("N[ZetaZero[1, 50]]").unwrap(),
+      "0.5 + 52.970321477714464*I"
+    );
+    assert_eq!(
+      interpret("N[Im[ZetaZero[{1, 2, 3}, 50.]]]").unwrap(),
+      "{52.970321477714464, 56.44624769706339, 59.34704400260235}"
+    );
+    assert_eq!(
+      interpret("N[ZetaZero[1, 0]]").unwrap(),
+      "0.5 + 14.134725141734695*I"
+    );
+    // Re / Im numericalize inside graphics coordinates.
+    assert_eq!(interpret("N[Re[ZetaZero[2, 100.]]]").unwrap(), "0.5");
+    // Stays symbolic without N.
+    assert_eq!(interpret("ZetaZero[1, 50]").unwrap(), "ZetaZero[1, 50]");
+  }
+
+  #[test]
   fn zeta_zero_n_finds_the_root_numerically() {
     // N[] triggers root-finding for the k-th non-trivial zero 1/2 + i t_k,
     // correctly rounded to machine precision.

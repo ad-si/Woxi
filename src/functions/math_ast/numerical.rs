@@ -183,6 +183,14 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
           return Ok(r);
         }
       }
+      if name == "ZetaZero"
+        && args.len() == 2
+        && let Some(k) = expr_to_i128(&args[0])
+        && let Some(t) = super::try_eval_to_f64(&args[1])
+        && let Some(r) = zeta_zero_after_n_eval(k, t)
+      {
+        return Ok(r);
+      }
       // RootSum[poly &, fn &] — apply fn to each (complex) root of poly
       // and sum, returning a machine-precision Real (or Complex when the
       // imaginary part doesn't cancel).
@@ -6496,6 +6504,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Image input: separable 2D filter (row-then-column 1D passes).
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -6534,6 +6543,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -6709,6 +6719,7 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // separable 2D filter (`LowpassFilter[Image[…], ωc]`).
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -6749,6 +6760,7 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -6847,6 +6859,7 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Image input: separable 2D filter (row-then-column 1D passes).
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -6885,6 +6898,7 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -6990,6 +7004,7 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Image input: separable 2D filter (row-then-column 1D passes).
   if let Expr::Image {
     color_space: _,
+    display_size: _,
     width,
     height,
     channels,
@@ -7028,6 +7043,7 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Image {
       color_space: None,
+      display_size: None,
       width: *width,
       height: *height,
       channels: *channels,

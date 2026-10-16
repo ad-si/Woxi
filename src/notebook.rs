@@ -2372,7 +2372,7 @@ fn group_script(script: &str) -> String {
 /// `D_U`, `SuperscriptBox["V", "2"]` → `V²`, `FractionBox[a, b]` → `a/b`,
 /// and `GridBox` rows on separate lines. Named characters resolve to
 /// Unicode (`\[Del]` → `∇`), never to ASCII operator rewrites.
-fn render_boxes_text(s: &str) -> String {
+pub(crate) fn render_boxes_text(s: &str) -> String {
   let s = s.trim();
 
   // Plain string literal.

@@ -1160,6 +1160,17 @@ pub fn dispatch_io_functions(
         return Some(Ok(null_expr()));
       }
     }
+    // EmitSound[sound] — play a sound. Woxi has no audio device of its own,
+    // so the synthesized WAV is captured for visual hosts (Woxi Studio plays
+    // the audio of a pressed `Button[…, EmitSound[…]]`); the call itself
+    // returns Null, as in Wolfram.
+    "EmitSound" if args.len() == 1 => {
+      if let Some(wav) = crate::functions::sound::sound_to_wav_base64(&args[0])
+      {
+        crate::capture_sound(&wav);
+      }
+      return Some(Ok(null_expr()));
+    }
     // HTTPRequest[url] / HTTPRequest[url, assoc] / HTTPRequest[assoc] —
     // symbolic HTTP request object; no network access is performed.
     // The one-argument URL form canonicalizes to HTTPRequest[url, <||>],
@@ -1796,12 +1807,17 @@ pub fn dispatch_io_functions(
         height,
         channels,
         data,
+        display_size,
         ..
       } = &args[1]
       {
         if fmt == "SVG" {
           let svg = crate::functions::image_ast::image_to_svg_document(
-            *width, *height, *channels, data,
+            *width,
+            *height,
+            *channels,
+            data,
+            *display_size,
           );
           if let Err(e) = std::fs::write(crate::vfs::resolve(&filename), &svg)
             .map_err(|e| {
@@ -5072,8 +5088,9 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     Expr::List(items) => items.iter().any(lays_out_a_graphic),
     // A `TabView` shows its selected pane, so it is a picture when that is.
     Expr::FunctionCall { name, args } if name == "TabView" => {
-      crate::tabview_selected_content(args)
-        .is_some_and(|content| lays_out_a_graphic(&content))
+      crate::tabview_selected_content(args).is_some_and(|content| {
+        lays_out_a_graphic(&content) || is_tabular_layout(&content)
+      })
     }
     // `Style[content, …]` only sets font/color; the layout underneath it
     // decides whether there is a picture to draw.
@@ -5719,6 +5736,21 @@ fn wrap_pane_text(content: &Expr, width: f64, font_size: f64) -> Option<Expr> {
   }
 }
 
+/// A pane filled with a table/column/row layout (`Text@Grid[…]`, the common
+/// way a Demonstration puts prose and data in a tab), looking through the
+/// `Text`/`Pane`/`Panel` wrappers around it.
+fn is_tabular_layout(expr: &Expr) -> bool {
+  let mut layout = expr;
+  while let Expr::FunctionCall { name, args } = layout
+    && matches!(name.as_str(), "Text" | "Pane" | "Panel")
+    && !args.is_empty()
+  {
+    layout = &args[0];
+  }
+  matches!(layout, Expr::FunctionCall { name, args }
+    if matches!(name.as_str(), "Grid" | "Column" | "Row") && !args.is_empty())
+}
+
 /// The font size a `Style` directive list sets, if any.
 fn style_font_size(directives: &[Expr]) -> Option<f64> {
   directives.iter().find_map(|d| match d {
@@ -5805,7 +5837,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "TabView"
         && let Some(content) = crate::tabview_selected_content(args)
-        && lays_out_a_graphic(&content) =>
+        && (lays_out_a_graphic(&content) || is_tabular_layout(&content)) =>
     {
       expr_to_svg(&content)
     }
@@ -6394,9 +6426,14 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       height,
       channels,
       data,
+      display_size,
       ..
     } => crate::functions::image_ast::image_to_svg_document(
-      *width, *height, *channels, data,
+      *width,
+      *height,
+      *channels,
+      data,
+      *display_size,
     ),
     // TableForm[data, opts…] — render the aligned grid (matching how visual
     // frontends show it), instead of dumping the raw `TableForm[…]` text.

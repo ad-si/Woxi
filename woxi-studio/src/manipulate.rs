@@ -428,6 +428,9 @@ pub struct ManipulateState {
   pub button_regions: Vec<ButtonRegion>,
   pub text_output: Option<String>,
   pub error: Option<String>,
+  /// Audio produced by the last pressed button's action (`Button[…,
+  /// EmitSound[…]]`), waiting for the host to play it.
+  pub emitted_sound: Option<woxi::AudioOutput>,
   /// Whether this widget auto-plays (from `Animate[…]` / `ListAnimate[…]` /
   /// `Animator[…]`): a timer advances the first continuous control while
   /// `playing` is set, and the view shows a play/pause toggle.
@@ -591,6 +594,7 @@ impl ManipulateState {
       button_regions: Vec::new(),
       text_output: None,
       error: None,
+      emitted_sound: None,
       animated: spec.animated,
       // Auto-play immediately (Wolfram's default AnimationRunning -> True)
       // unless the spec was built paused (`AnimationRunning -> False`).
@@ -725,10 +729,12 @@ impl ManipulateState {
   /// writes to bound control variables (e.g. `time = 0`) move the
   /// corresponding widgets. Re-renders afterwards.
   pub fn apply_button_action(&mut self, action: &str) {
+    woxi::clear_captured_sound();
     let updated = woxi::functions::graphics::apply_manipulate_button_action(
       &self.bindings(),
       action,
     );
+    self.emitted_sound = woxi::get_captured_sound();
     for (name, value) in updated {
       if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
         slot.1 = value;
@@ -1481,8 +1487,10 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         let step =
           step.map(f64::abs).filter(|s| *s > 0.0).unwrap_or_else(|| {
             let span = (*max - *min).abs();
-            if !*is_real && span >= 1.0 {
-              // An all-exact-integer range makes an integer slider.
+            let integral = min.fract() == 0.0 && max.fract() == 0.0;
+            if !*is_real && integral && span >= 1.0 {
+              // An all-exact-integer range makes an integer slider; an
+              // exact non-integer bound (`Pi`, `1/2`) keeps it continuous.
               1.0
             } else if span > 0.0 {
               span / 100.0
@@ -1680,6 +1688,34 @@ fn format_f64_real(v: f64) -> String {
 mod tests {
   /// A slider whose bounds and initial value are exact integers and that
   /// has no explicit step is an integer slider (step 1), not span/100.
+  /// A pad of note buttons generated with `Map` whose action is
+  /// `EmitSound[Sound[SoundNote[…]]]` (a "name that pitch" quiz shape):
+  /// pressing one must hand its synthesized audio to the host instead of
+  /// printing a "not yet implemented" warning, and a button without a sound
+  /// must clear any stale audio.
+  #[test]
+  fn button_action_emitting_sound_exposes_audio() {
+    let code = r#"Manipulate[
+      Row[(Button[#, EmitSound[Sound[SoundNote[#, len, "Flute"]]]] &) /@ {0, 4, 7}, " "],
+      {{len, 1}, 1, 3, 1},
+      Button["silent", flag = 1]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "build must not report an error");
+    state.apply_button_action("EmitSound[Sound[SoundNote[4, len, \"Flute\"]]]");
+    assert!(
+      state.emitted_sound.take().is_some(),
+      "pressing a note button should expose playable audio"
+    );
+    state.apply_button_action("flag = 1");
+    assert!(
+      state.emitted_sound.is_none(),
+      "a silent button must not replay stale audio"
+    );
+  }
+
   #[test]
   fn exact_integer_slider_without_step_steps_by_one() {
     let expr = woxi::interpret_to_expr(
@@ -1701,6 +1737,31 @@ mod tests {
     };
     assert_eq!(step_of("n"), 1.0);
     assert_eq!(step_of("x"), 0.01);
+  }
+
+  /// An exact but non-integer bound (`Pi`) makes the slider continuous,
+  /// even though no bound was written as a machine real.
+  #[test]
+  fn exact_non_integer_bound_slider_is_continuous() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{r, q}, {{r, 0, \"rotate\"}, 0, Pi}, {q, 0, 5/2}]",
+    )
+    .expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    let step_of = |name: &str| {
+      state
+        .controls
+        .iter()
+        .find_map(|c| match c {
+          ControlState::Continuous { name: n, step, .. } if n == name => {
+            Some(*step)
+          }
+          _ => None,
+        })
+        .expect("continuous control")
+    };
+    assert!((step_of("r") - std::f64::consts::PI / 100.0).abs() < 1e-12);
+    assert!((step_of("q") - 0.025).abs() < 1e-12);
   }
 
   /// A compiled widget dump lists each module variable as a hidden

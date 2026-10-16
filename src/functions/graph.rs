@@ -435,6 +435,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `GraphPlot`'s legacy `EdgeRenderingFunction` names an edge as the
   // plain list `{u, v}` rather than as an edge object.
   let mut edge_arg_as_list = false;
+  // `EdgeLabels -> {edge -> label, …}`; `GraphPlot`'s legacy
+  // `EdgeRenderingFunction` receives the label as its third argument.
+  let mut edge_labels: Vec<(Expr, Expr)> = Vec::new();
   let mut vertex_labels = false;
   let mut vertex_shape: Option<String> = None;
   // `VertexShape -> {v -> graphic, …}` (plus an optional bare default
@@ -494,6 +497,17 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           edge_style_rules.extend(rules);
           if !directives.is_empty() {
             edge_style = directives.iter().find_map(parse_color);
+          }
+        }
+        "EdgeLabels" => {
+          if let Expr::List(items) = replacement {
+            for item in items {
+              if let Some((e, l)) =
+                crate::evaluator::dispatch::list_operations::as_rule(item)
+              {
+                edge_labels.push((e.clone(), l.clone()));
+              }
+            }
           }
         }
         "VertexLabels" => {
@@ -924,6 +938,12 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         other => other.clone(),
       };
+      let label_of = |e: &Expr| {
+        edge_labels
+          .iter()
+          .find(|(target, _)| same_edge(e, target))
+          .map(|(_, label)| label.clone())
+      };
       let matched = edge_shape_rules
         .iter()
         .find(|(target, _)| same_edge(&edge_expr, target))
@@ -931,13 +951,21 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       matched
         .or(edge_shape.as_ref())
         .map(|shape| (shape.clone(), legacy_edge(&edge_expr)))
+        .map(|(shape, legacy)| {
+          let label = if edge_arg_as_list {
+            label_of(&edge_expr)
+          } else {
+            None
+          };
+          (shape, legacy, label)
+        })
     } else {
       None
     };
 
     match shape {
-      Some((EdgeShape::Hidden, _)) => {}
-      Some((EdgeShape::Named(name), _)) => match name.as_str() {
+      Some((EdgeShape::Hidden, ..)) => {}
+      Some((EdgeShape::Named(name), ..)) => match name.as_str() {
         "Line" | "UndirectedLine" => {
           primitives.push(line_or_arrow(false, &shape_pts));
         }
@@ -946,10 +974,12 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         _ => primitives.push(line_or_arrow(edge_data.directed, &default_pts)),
       },
-      Some((EdgeShape::Func(f), edge_expr)) => {
+      Some((EdgeShape::Func(f), edge_expr, label)) => {
         let pts_expr = points_expr(&shape_pts);
-        match crate::functions::list_helpers_ast::apply_func_to_two_args(
-          &f, &pts_expr, &edge_expr,
+        let mut call_args = vec![pts_expr, edge_expr];
+        call_args.extend(label);
+        match crate::functions::list_helpers_ast::apply_func_to_n_args(
+          &f, &call_args,
         ) {
           // The result is wrapped in a list so that any directives it
           // sets stay scoped to this edge.

@@ -5416,6 +5416,14 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     "Abs" if args.len() == 1 => {
       tf_row(vec![tf_string("|"), tf(&args[0]), tf_string("|")])
     }
+    "BracketingBar" if args.len() == 1 => {
+      tf_row(vec![tf_string("|"), tf(&args[0]), tf_string("|")])
+    }
+    "DoubleBracketingBar" if args.len() == 1 => tf_row(vec![
+      tf_string("\u{2016}"),
+      tf(&args[0]),
+      tf_string("\u{2016}"),
+    ]),
     "Det" if args.len() == 1 => {
       if let Expr::List(rows) = &args[0]
         && tf_is_matrix(rows)
