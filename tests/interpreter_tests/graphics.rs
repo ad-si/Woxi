@@ -3448,6 +3448,48 @@ mod plot3d {
     }
   }
 
+  /// A `Texture` in a `SphericalPlot3D` `PlotStyle` paints the surface with
+  /// the image, placed by `TextureCoordinateFunction` (repeating outside the
+  /// unit square) — not with the plot's default height colouring.
+  #[test]
+  fn spherical_plot_paints_a_texture() {
+    let plot = |opts: &str| {
+      export_svg(&format!(
+        "SphericalPlot3D[1, {{t, 0, Pi}}, {{p, 0, 2 Pi}}, Axes -> False, \
+         Boxed -> False, PlotStyle -> Texture[Image[{{{{{{1, 0, 0}}, \
+         {{0, 0, 1}}}}}}]]{opts}]"
+      ))
+    };
+    // Facet fills as (red-ish, blue-ish) counts.
+    let count = |svg: &str| {
+      (
+        svg
+          .split("fill=\"rgb(")
+          .skip(1)
+          .filter(|f| f.split(')').next().is_some_and(|c| c.ends_with(",0,0")))
+          .count(),
+        svg
+          .split("fill=\"rgb(")
+          .skip(1)
+          .filter(|f| {
+            f.split(')').next().is_some_and(|c| c.starts_with("0,0,"))
+          })
+          .count(),
+      )
+    };
+    let (red, blue) = count(&plot(""));
+    assert!(red > 100 && blue > 100, "both halves show: {red} {blue}");
+    let (red, blue) =
+      count(&plot(", TextureCoordinateFunction -> ({0.1, 0} &)"));
+    assert!(red > 100 && blue == 0, "left half only: {red} {blue}");
+    let (red, blue) =
+      count(&plot(", TextureCoordinateFunction -> ({1.9, 0} &)"));
+    assert!(
+      red == 0 && blue > 100,
+      "wraps to the right half: {red} {blue}"
+    );
+  }
+
   /// Faces shared by two touching opaque boxes are interior to the union;
   /// a grid of unit cubes (e.g. a Menger-style fractal) must not emit them.
   #[test]
