@@ -35185,6 +35185,28 @@ fn graphics3d_draws_solids_given_by_their_corners() {
 }
 
 #[test]
+fn graphics_layouts_paint_their_background_behind_every_cell() {
+  // `Background` on GraphicsRow/Column/Grid fills the whole layout, so the
+  // gaps between cells take the colour instead of staying white.
+  for layout in [
+    "GraphicsRow[{Graphics[Disk[]], Graphics[Disk[]]}, Background -> Black]",
+    "GraphicsColumn[{Graphics[Disk[]], Graphics[Disk[]]}, Background -> Black]",
+    "GraphicsGrid[{{Graphics[Disk[]], Graphics[Disk[]]}}, Background -> Black]",
+  ] {
+    let svg = export_svg(layout);
+    let body = svg.split_once('>').unwrap().1.trim_start();
+    assert!(
+      body.starts_with(
+        "<rect width=\"100%\" height=\"100%\" fill=\"rgb(0,0,0)\""
+      ),
+      "{layout}: {body:.200}"
+    );
+  }
+  let plain = export_svg("GraphicsRow[{Graphics[Disk[]], Graphics[Disk[]]}]");
+  assert!(!plain.contains("height=\"100%\""));
+}
+
+#[test]
 fn graphics3d_draws_platonic_solids_at_wolfram_vertices() {
   // Each solid's drawn corners must be exactly where the projected
   // wolframscript vertices (`MeshCoordinates[DiscretizeGraphics[…]]`) land
