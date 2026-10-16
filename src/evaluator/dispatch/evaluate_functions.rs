@@ -908,6 +908,22 @@ fn evaluate_function_call_ast_inner(
     };
   }
 
+  // `GraphUtilities`GraphPath[rules, a, b]` is the shortest path from `a` to
+  // `b` in a graph given as a list of rules, i.e. `FindShortestPath`.
+  if name == "GraphUtilities`GraphPath"
+    && args.len() == 3
+    && matches!(&args[0], Expr::List(_))
+  {
+    let graph = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Graph",
+      args[0].clone(),
+    ))?;
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "FindShortestPath",
+      vec![graph, args[1].clone(), args[2].clone()],
+    ));
+  }
+
   let combinatorica_active = crate::current_context_path()
     .iter()
     .any(|c| c == "Combinatorica`");
