@@ -7927,9 +7927,9 @@ mod graph_utilities_package {
       "{Cube, Dodecahedron, Icosahedron, Octahedron, Tetrahedron}"
     );
     assert_eq!(
-      interpret("PolyhedronData[\"GreatRhombicuboctahedron\", \"Name\"]")
+      interpret("PolyhedronData[\"GreatRhombicosidodecahedron\", \"Name\"]")
         .unwrap(),
-      "great rhombicuboctahedron"
+      "great rhombicosidodecahedron"
     );
   }
 
