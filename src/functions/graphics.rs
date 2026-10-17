@@ -21022,7 +21022,7 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
 /// newlines in the middle and stays one centered block.
 fn newline_text(item: &Expr) -> Option<&str> {
   match item {
-    Expr::String(s) if s.starts_with('\n') || s.ends_with('\n') => Some(s),
+    Expr::String(s) if breaks_line(s) => Some(s),
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>
     {
@@ -21030,6 +21030,23 @@ fn newline_text(item: &Expr) -> Option<&str> {
     }
     _ => None,
   }
+}
+
+/// Whether a row string breaks the line: it starts or ends with a newline,
+/// or holds a blank line or a line of running prose (a word of three or more
+/// letters) — unlike the one-character-per-line stack of a typeset fraction.
+fn breaks_line(s: &str) -> bool {
+  if !s.contains('\n') {
+    return false;
+  }
+  s.starts_with('\n')
+    || s.ends_with('\n')
+    || s.contains("\n\n")
+    || s.split('\n').any(|line| {
+      line
+        .split(|c: char| !c.is_alphabetic())
+        .any(|w| w.chars().count() >= 3)
+    })
 }
 
 /// `item` with its innermost string replaced by `text`.
