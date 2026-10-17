@@ -177,6 +177,26 @@ fn resolve_func_name(name: &str) -> String {
   })
 }
 
+/// The expression stored as a symbol's OwnValue for the value `value`.
+///
+/// OwnValues of the form `Condition[body, test]` mean a guarded definition
+/// (`z /; test := body`), so a value that is itself a `Condition`
+/// (`z = (t /; t > 0)`) is stored under an always-true guard of its own and
+/// reads back unchanged.
+pub(crate) fn own_value_expr(value: &Expr) -> Expr {
+  match value {
+    Expr::FunctionCall { name, args }
+      if name == "Condition" && args.len() == 2 =>
+    {
+      call(
+        "Condition",
+        vec![value.clone(), Expr::Identifier("True".to_string())],
+      )
+    }
+    _ => value.clone(),
+  }
+}
+
 /// Returns true when a rule body carries a whole-rule `/;` guard, i.e. it is
 /// stored as a `Condition[body, test]` wrapper (`f[...] := body /; test`).
 fn body_has_condition(body: &Expr) -> bool {
@@ -2928,9 +2948,10 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       // stored as Raw — `(p /; c) :> b` would reparse without the parens
       // as `Condition[p, RuleDelayed[c, b]]` because `:>` binds tighter
       // than `/;`.
+      let stored = own_value_expr(&rhs_value);
       ENV.with(|e| {
         e.borrow_mut()
-          .insert(var_name.clone(), StoredValue::ExprVal(rhs_value.clone()))
+          .insert(var_name.clone(), StoredValue::ExprVal(stored))
       });
     } else {
       // A symbol keeps its context: `cache = wcache` inside a package has to
