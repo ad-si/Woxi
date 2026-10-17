@@ -464,6 +464,103 @@ mod unary_minus_parsing {
     assert_eq!(interpret("{-1.5, -2.5}").unwrap(), "{-1.5, -2.5}");
   }
 
+  // Unary minus (precedence 480) takes everything binding tighter than it as
+  // its operand: `.` (490), `**`, `⨯`, `@@`, … but not `∖` (460).
+  #[test]
+  fn unary_minus_scopes_over_tighter_operators() {
+    for (code, expected) in [
+      ("Hold[-a . b . c]", "Hold[Times[-1, Dot[a, b, c]]]"),
+      (
+        "Hold[-a ** b]",
+        "Hold[Times[-1, NonCommutativeMultiply[a, b]]]",
+      ),
+      ("Hold[-a \\[Cross] b]", "Hold[Times[-1, Cross[a, b]]]"),
+      (
+        "Hold[-a \\[SmallCircle] b]",
+        "Hold[Times[-1, SmallCircle[a, b]]]",
+      ),
+      (
+        "Hold[-a \\[Backslash] b]",
+        "Hold[Backslash[Times[-1, a], b]]",
+      ),
+      ("Hold[x * -a . b]", "Hold[Times[x, Times[-1, Dot[a, b]]]]"),
+      ("Hold[-f @@ a]", "Hold[Times[-1, Apply[f, a]]]"),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[FullForm[{code}]]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+
+  // After a tighter operator, the negation still owns the rest of the
+  // chain that binds tighter than unary minus.
+  #[test]
+  fn negated_right_operand_takes_tighter_chain() {
+    for (code, expected) in [
+      (
+        "Hold[a ** -b ** c]",
+        "Hold[NonCommutativeMultiply[a, Times[-1, NonCommutativeMultiply[b, c]]]]",
+      ),
+      (
+        "Hold[a ** -b . c]",
+        "Hold[NonCommutativeMultiply[a, Times[-1, Dot[b, c]]]]",
+      ),
+      (
+        "Hold[a ** b ** -c ** d]",
+        "Hold[NonCommutativeMultiply[a, b, Times[-1, NonCommutativeMultiply[c, d]]]]",
+      ),
+      ("Hold[a ~ f ~ -b ~ f ~ c]", "Hold[f[a, Times[-1, f[b, c]]]]"),
+      (
+        "Hold[a @ -b ** c]",
+        "Hold[a[Times[-1, NonCommutativeMultiply[b, c]]]]",
+      ),
+      ("Hold[a ^ -b ^ c]", "Hold[Power[a, Times[-1, Power[b, c]]]]"),
+      (
+        "Hold[a ** -b + c]",
+        "Hold[Plus[NonCommutativeMultiply[a, Times[-1, b]], c]]",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[FullForm[{code}]]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+
+  // A signed literal releases its minus before an operator binding tighter
+  // than unary minus, as it already did before `^`.
+  #[test]
+  fn negative_literal_before_tighter_operator() {
+    for (code, expected) in [
+      ("Hold[-2 . a]", "Hold[Times[-1, Dot[2, a]]]"),
+      ("Hold[-2.5 . a]", "Hold[Times[-1, Dot[2.5`, a]]]"),
+      (
+        "Hold[-2 ** a]",
+        "Hold[Times[-1, NonCommutativeMultiply[2, a]]]",
+      ),
+      ("Hold[-2 @@ a]", "Hold[Times[-1, Apply[2, a]]]"),
+      ("Hold[-2 /@ a]", "Hold[Times[-1, Map[2, a]]]"),
+      ("Hold[-2 <> a]", "Hold[Times[-1, StringJoin[2, a]]]"),
+      ("Hold[-2!]", "Hold[Times[-1, Factorial[2]]]"),
+      ("Hold[-2[a]]", "Hold[Times[-1, 2[a]]]"),
+      ("Hold[-2 ^= a]", "Hold[UpSet[-2, a]]"),
+      // Looser operators keep the signed literal.
+      ("Hold[-2 * a]", "Hold[Times[-2, a]]"),
+      ("Hold[-2 ~~ f]", "Hold[StringExpression[-2, f]]"),
+      ("Hold[-2 // f]", "Hold[f[-2]]"),
+      ("Hold[-2.a]", "Hold[Times[-2.`, a]]"),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[FullForm[{code}]]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+
   #[test]
   fn negative_expr_plus_constant() {
     assert_eq!(interpret("(-x + 3)").unwrap(), "3 - x");
@@ -574,6 +671,129 @@ mod unary_minus_parsing {
 /// `MapApply` (620), the tilde infix (630) and prefix `@` (640) in an order
 /// Woxi used to get wrong in three places: `Map` sat above `Apply` instead of
 /// beside it, both sat *below* `Power`, and `StringJoin` sat down at `Plus`.
+mod flat_ring_operators {
+  use super::*;
+
+  fn full_form(code: &str) -> String {
+    interpret(&format!("ToString[FullForm[{code}]]")).unwrap()
+  }
+
+  fn input_form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  // `**` is NonCommutativeMultiply at precedence 510: between `⨯` (500)
+  // and `⊙` (520), above `.` (490).
+  #[test]
+  fn non_commutative_multiply_operator() {
+    assert_eq!(interpret("a ** b").unwrap(), "a**b");
+    for (code, expected) in [
+      ("Hold[a ** b ** c]", "Hold[NonCommutativeMultiply[a, b, c]]"),
+      (
+        "Hold[a ** (b ** c)]",
+        "Hold[NonCommutativeMultiply[a, NonCommutativeMultiply[b, c]]]",
+      ),
+      (
+        "Hold[a ** b \\[Cross] c]",
+        "Hold[Cross[NonCommutativeMultiply[a, b], c]]",
+      ),
+      (
+        "Hold[a ** b \\[CircleDot] c]",
+        "Hold[NonCommutativeMultiply[a, CircleDot[b, c]]]",
+      ),
+      (
+        "Hold[a . b ** c]",
+        "Hold[Dot[a, NonCommutativeMultiply[b, c]]]",
+      ),
+      (
+        "Hold[a*b ** c]",
+        "Hold[Times[a, NonCommutativeMultiply[b, c]]]",
+      ),
+      (
+        "Hold[a ** b^c]",
+        "Hold[NonCommutativeMultiply[a, Power[b, c]]]",
+      ),
+      (
+        "Hold[x_ ** y_]",
+        "Hold[NonCommutativeMultiply[Pattern[x, Blank[]], Pattern[y, Blank[]]]]",
+      ),
+    ] {
+      assert_eq!(full_form(code), expected, "{code}");
+    }
+  }
+
+  // A chain of the same Flat operator parses as one n-ary call; parentheses
+  // keep the nesting.
+  #[test]
+  fn dot_chain_parses_n_ary() {
+    assert_eq!(full_form("Hold[a . b . c . d]"), "Hold[Dot[a, b, c, d]]");
+    assert_eq!(full_form("Hold[(a . b) . c]"), "Hold[Dot[Dot[a, b], c]]");
+    assert_eq!(
+      full_form("Hold[a . (b . c) . d]"),
+      "Hold[Dot[a, Dot[b, c], d]]"
+    );
+  }
+
+  #[test]
+  fn map_all_operator() {
+    assert_eq!(full_form("Hold[f //@ x]"), "Hold[MapAll[f, x]]");
+    assert_eq!(
+      full_form("Hold[f //@ g //@ x]"),
+      "Hold[MapAll[f, MapAll[g, x]]]"
+    );
+    assert_eq!(interpret("f //@ {a, {b}}").unwrap(), "f[{f[a], f[{f[b]}]}]");
+    assert_eq!(interpret("{1, 2} // Length").unwrap(), "2");
+  }
+
+  // Nested Flat calls and operands binding as loose or looser print
+  // parenthesized on either side, as do negative and rational numbers.
+  #[test]
+  fn flat_ring_operand_parens() {
+    for (code, expected) in [
+      ("Hold[Dot[a, Dot[b, c]]]", "Hold[a . (b . c)]"),
+      ("Hold[Dot[Dot[a, b], c]]", "Hold[(a . b) . c]"),
+      ("Hold[Dot[a, b, c]]", "Hold[a . b . c]"),
+      ("Hold[Dot[-a, b]]", "Hold[(-a) . b]"),
+      ("Hold[Dot[a, -b]]", "Hold[a . (-b)]"),
+      ("Hold[-Dot[a, b]]", "Hold[-a . b]"),
+      ("Hold[Dot[-2, a]]", "Hold[(-2) . a]"),
+      ("Hold[Dot[1/2, a]]", "Hold[(1/2) . a]"),
+      ("Hold[Dot[2.5, a]]", "Hold[2.5 . a]"),
+      ("Hold[Dot[a, b]^2]", "Hold[(a . b)^2]"),
+      ("Hold[a ** (b ** c)]", "Hold[a**(b**c)]"),
+      ("Hold[(-a) ** b]", "Hold[(-a)**b]"),
+      ("Hold[NonCommutativeMultiply[a, b + c]]", "Hold[a**(b + c)]"),
+      ("Hold[NonCommutativeMultiply[a, b*c]]", "Hold[a**(b*c)]"),
+      (
+        "Hold[NonCommutativeMultiply[a, Dot[b, c]]]",
+        "Hold[a**(b . c)]",
+      ),
+      ("Hold[NonCommutativeMultiply[a, b^c]]", "Hold[a**b^c]"),
+      ("Hold[a ** b . c]", "Hold[a**b . c]"),
+    ] {
+      assert_eq!(input_form(code), expected, "{code}");
+    }
+  }
+
+  // `Map[f, x]` written as a call prints like `f /@ x`.
+  #[test]
+  fn held_map_family_calls_print_infix() {
+    for (code, expected) in [
+      ("Hold[Map[f, x]]", "Hold[f /@ x]"),
+      ("Hold[Apply[f, x]]", "Hold[f @@ x]"),
+      ("Hold[MapApply[f, x]]", "Hold[f @@@ x]"),
+      ("Hold[MapAll[f, x]]", "Hold[f //@ x]"),
+      ("Hold[Map[f + g, x]]", "Hold[(f + g) /@ x]"),
+      ("Hold[Map[f, a + b]]", "Hold[f /@ (a + b)]"),
+      ("Hold[Map[Map[f, g], x]]", "Hold[(f /@ g) /@ x]"),
+      ("Hold[Map[f, \"s\"]]", "Hold[f /@ \"s\"]"),
+      ("Hold[Map[f, x, {2}]]", "Hold[Map[f, x, {2}]]"),
+    ] {
+      assert_eq!(input_form(code), expected, "{code}");
+    }
+  }
+}
+
 mod map_apply_stringjoin_precedence {
   use super::*;
 
@@ -4617,6 +4837,42 @@ mod non_commutative_multiply {
   #[test]
   fn ncm_two_args() {
     assert_eq!(interpret("NonCommutativeMultiply[x, y]").unwrap(), "x**y");
+  }
+
+  #[test]
+  fn ncm_infix_operator() {
+    assert_eq!(interpret("x**y").unwrap(), "x**y");
+    assert_eq!(interpret("x ** y").unwrap(), "x**y");
+    assert_eq!(interpret("Head[x**y]").unwrap(), "NonCommutativeMultiply");
+  }
+
+  #[test]
+  fn ncm_infix_flattens() {
+    assert_eq!(
+      interpret("ToString[FullForm[a**b**c]]").unwrap(),
+      "NonCommutativeMultiply[a, b, c]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[(a**b)**c]]").unwrap(),
+      "NonCommutativeMultiply[a, b, c]"
+    );
+  }
+
+  #[test]
+  fn ncm_infix_precedence() {
+    // Times (400) < Dot (490) < NonCommutativeMultiply (510) < Power (590)
+    assert_eq!(
+      interpret("ToString[FullForm[a*b**c]]").unwrap(),
+      "Times[a, NonCommutativeMultiply[b, c]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[a.b**c]]").unwrap(),
+      "Dot[a, NonCommutativeMultiply[b, c]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[a**b^2]]").unwrap(),
+      "NonCommutativeMultiply[a, Power[b, 2]]"
+    );
   }
 }
 
