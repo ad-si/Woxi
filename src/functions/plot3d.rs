@@ -92,9 +92,10 @@ pub(crate) struct Triangle {
   pub edge_width: Option<f64>,
 }
 
-/// Largest scene `painter_order` refines: the pairwise overlap tests are
-/// quadratic, so bigger scenes keep the plain centroid sort.
-const PAINTER_ORDER_MAX_TRIANGLES: usize = 2500;
+/// Largest scene `painter_order` refines: candidate pairs come from a sweep
+/// over the projected bounding boxes, but a dense scene can still be close
+/// to quadratic, so bigger scenes keep the plain centroid sort.
+const PAINTER_ORDER_MAX_TRIANGLES: usize = 60000;
 
 /// Whether two projected triangles share interior area (touching along an
 /// edge or at a corner does not count).
@@ -203,10 +204,20 @@ fn painter_order(
   // `after[i]` lists the triangles that must be drawn after `i`.
   let mut after: Vec<Vec<usize>> = vec![Vec::new(); n];
   let mut indegree = vec![0usize; n];
-  for i in 0..n {
-    for j in (i + 1)..n {
+  // Sweep along x so only triangles whose x extents overlap are paired.
+  let mut by_x: Vec<usize> = (0..n).collect();
+  by_x.sort_by(|&a, &b| {
+    bbox[a][0]
+      .partial_cmp(&bbox[b][0])
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  for (pos, &i) in by_x.iter().enumerate() {
+    for &j in &by_x[pos + 1..] {
       let (a, b) = (&bbox[i], &bbox[j]);
-      if a[1] <= b[0] || b[1] <= a[0] || a[3] <= b[2] || b[3] <= a[2] {
+      if b[0] >= a[1] {
+        break;
+      }
+      if a[3] <= b[2] || b[3] <= a[2] {
         continue;
       }
       if !projected_triangles_overlap(&projected[i], &projected[j]) {
@@ -229,18 +240,38 @@ fn painter_order(
   }
   let mut order = Vec::with_capacity(n);
   let mut done = vec![false; n];
-  // `by_depth` is far-to-near, so the first ready entry is the farthest.
-  for _ in 0..n {
-    let pick = by_depth
-      .iter()
-      .copied()
-      .find(|&k| !done[k] && indegree[k] == 0)
-      .or_else(|| by_depth.iter().copied().find(|&k| !done[k]))
-      .unwrap();
+  // Ready triangles, keyed by their far-to-near rank in `by_depth` so the
+  // farthest one is drawn first (`Reverse` turns the max-heap into a min-heap).
+  let mut rank = vec![0usize; n];
+  for (r, &k) in by_depth.iter().enumerate() {
+    rank[k] = r;
+  }
+  let mut ready: std::collections::BinaryHeap<std::cmp::Reverse<usize>> = (0
+    ..n)
+    .filter(|&k| indegree[k] == 0)
+    .map(|k| std::cmp::Reverse(rank[k]))
+    .collect();
+  // First possibly-undrawn entry of `by_depth`, for breaking cycles.
+  let mut cursor = 0;
+  while order.len() < n {
+    let pick = if let Some(std::cmp::Reverse(r)) = ready.pop() {
+      by_depth[r]
+    } else {
+      while done[by_depth[cursor]] {
+        cursor += 1;
+      }
+      by_depth[cursor]
+    };
+    if done[pick] {
+      continue;
+    }
     done[pick] = true;
     order.push(pick);
     for &k in &after[pick] {
       indegree[k] = indegree[k].saturating_sub(1);
+      if indegree[k] == 0 && !done[k] {
+        ready.push(std::cmp::Reverse(rank[k]));
+      }
     }
   }
   order
@@ -12994,5 +13025,59 @@ mod march_cube_orientation_tests {
       }
     }
     assert!(checked > 0);
+  }
+}
+
+#[cfg(test)]
+mod painter_order_tests {
+  use super::*;
+
+  /// A large face below a dense field of small faces (more than the old
+  /// 2500-triangle cap) must still be drawn first, even though the small
+  /// faces' centroids lie farther from the viewer than its own.
+  #[test]
+  fn large_face_stays_behind_many_small_faces() {
+    let camera = Camera::default();
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let mut verts =
+      vec![[p(-10.0, -10.0, 0.0), p(10.0, -10.0, 0.0), p(0.0, 10.0, 0.0)]];
+    let cells = 40;
+    let step = 6.0 / cells as f64;
+    for i in 0..cells {
+      for j in 0..cells {
+        let (x, y) = (-3.0 + i as f64 * step, -3.0 + j as f64 * step);
+        verts.push([p(x, y, 0.1), p(x + step, y, 0.1), p(x, y + step, 0.1)]);
+        verts.push([
+          p(x + step, y, 0.1),
+          p(x + step, y + step, 0.1),
+          p(x, y + step, 0.1),
+        ]);
+      }
+    }
+    assert!(verts.len() > 2500);
+    let projected: Vec<[(f64, f64); 3]> = verts
+      .iter()
+      .map(|t| std::array::from_fn(|i| project(t[i], &camera)))
+      .collect();
+    let depths: Vec<f64> = verts
+      .iter()
+      .map(|t| {
+        depth(
+          p(
+            (t[0].x + t[1].x + t[2].x) / 3.0,
+            (t[0].y + t[1].y + t[2].y) / 3.0,
+            (t[0].z + t[1].z + t[2].z) / 3.0,
+          ),
+          &camera,
+        )
+      })
+      .collect();
+    assert!(
+      depths[1..].iter().any(|d| *d > depths[0]),
+      "scenario must defeat a plain centroid sort"
+    );
+    let order = painter_order(&verts, &projected, &depths, &camera);
+    assert_eq!(order.len(), verts.len());
+    assert_eq!(order[0], 0, "the large back face is drawn first");
   }
 }
