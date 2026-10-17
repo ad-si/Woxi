@@ -12825,6 +12825,18 @@ mod padded_form {
   }
 
   #[test]
+  fn list_spec_pads_arbitrary_precision_reals() {
+    assert_eq!(
+      interpret("ToString[PaddedForm[N[1, 20], {4, 4}]]").unwrap(),
+      "1.0000"
+    );
+    assert_eq!(
+      interpret("ToString[PaddedForm[N[Pi, 20], {4, 3}]]").unwrap(),
+      " 3.142"
+    );
+  }
+
+  #[test]
   fn list_spec_rounds_and_pads() {
     assert_eq!(
       interpret("ToString[PaddedForm[12.345, {6, 2}]]").unwrap(),
