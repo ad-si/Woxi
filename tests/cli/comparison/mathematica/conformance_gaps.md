@@ -4973,3 +4973,10 @@ empty chart. Everything else in that Manipulate (the `Column`/`Panel` layout,
 `Tally`, the `BarChart` with `ChartLabels`) works when given a plain string.
 The full texts are needed verbatim to match Wolfram, which is why no
 truncated stand-in is bundled.
+
+### `Rotate[Text[…], angle]` inside a `Grid` cell is not rotated
+
+A `Grid` cell holding `Rotate[Text["Value"], 90 Degree]` (the usual vertical
+axis label beside a `GraphicsGrid`, as in the `Intramarginal Rent`
+Demonstration) is drawn unrotated. Rotation is honoured for plot labels
+(`PlotLabel`/`AxesLabel`) but not for `Grid` cell content.

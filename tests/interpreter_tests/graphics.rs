@@ -19478,6 +19478,49 @@ mod graphics_grid {
     assert_eq!(result, "-Graphics-");
   }
 
+  /// A row given as a call that evaluates to a list (`f /@ list`) is a row
+  /// of cells, not one cell holding the whole list.
+  #[test]
+  fn row_given_as_mapped_call_lays_out_cells() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "GraphicsGrid[{(Graphics[Circle[], PlotLabel -> #] &) /@ {1, 2, 3}}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    let height: f64 = svg
+      .split("height=\"")
+      .nth(1)
+      .and_then(|r| r.split('"').next())
+      .and_then(|h| h.parse().ok())
+      .expect("svg height");
+    assert!(height > 100.0, "cells must not collapse to a strip: {svg}");
+  }
+
+  /// A computed `ImageSize` (`0.75*{w, h}`) is honoured, and a negative
+  /// `Spacings` doesn't make neighbouring cells overlap.
+  #[test]
+  fn computed_image_size_and_negative_spacing() {
+    let svg = export_svg(
+      "GraphicsGrid[{{Graphics[Circle[]], Graphics[Circle[]]}}, \
+       Spacings -> {-60, 0}, ImageSize -> 0.5*{600, 300}]",
+    );
+    let width: f64 = svg
+      .split("width=\"")
+      .nth(1)
+      .and_then(|r| r.split('"').next())
+      .and_then(|w| w.parse().ok())
+      .expect("svg width");
+    assert!((250.0..=300.0).contains(&width), "width: {svg}");
+    let xs: Vec<f64> = svg
+      .split("<svg x=\"")
+      .skip(1)
+      .filter_map(|r| r.split('"').next()?.parse().ok())
+      .collect();
+    assert!(xs.len() >= 2 && xs[1] >= xs[0], "cells overlap: {xs:?}");
+  }
+
   #[test]
   fn grid_style_bold() {
     clear_state();
