@@ -862,49 +862,53 @@ fn try_one_identity_match(
     return None;
   }
 
-  // Separate args into optional (with defaults) and required patterns
+  // Separate args into optional (with defaults) and required patterns.
+  // `optional_bindings` holds, per optional slot index, the bindings that
+  // slot contributes when it is left out (its names bound to the default).
   let mut required_indices = Vec::new();
-  let mut bindings = Vec::new();
-  let mut has_optional = false;
+  let mut optional_bindings: Vec<(usize, Vec<(String, Expr)>)> = Vec::new();
   let mut all_optionals_have_default = true;
 
+  let resolve_default = |i: usize, inline: Option<&Expr>| -> Option<Expr> {
+    if let Some(d) = inline {
+      return Some(d.clone());
+    }
+    // System-determined default (_.): use Default[f, position], then the
+    // position-independent Default[f], then a user-set Default[f, ...].
+    crate::evaluator::dispatch::builtin_default_value_at_position(
+      pat_name,
+      i + 1,
+    )
+    .or_else(|| crate::evaluator::dispatch::builtin_default_value(pat_name))
+    .or_else(|| lookup_user_default(pat_name, i + 1, pat_args.len()))
+  };
+
   for (i, arg) in pat_args.iter().enumerate() {
-    match arg {
-      Expr::PatternOptional { name, default, .. } => {
-        has_optional = true;
-        // Bind optional pattern to its default value
-        if let Some(d) = default {
-          bindings.push((name.clone(), *d.clone()));
-        } else if let Some(def) =
-          crate::evaluator::dispatch::builtin_default_value_at_position(
-            pat_name,
-            i + 1,
-          )
-        {
-          // System-determined default (_.): use Default[f, position]
-          bindings.push((name.clone(), def));
-        } else if let Some(def) =
-          crate::evaluator::dispatch::builtin_default_value(pat_name)
-        {
-          // Fallback to position-independent Default[f]
-          bindings.push((name.clone(), def));
-        } else if let Some(def) =
-          lookup_user_default(pat_name, i + 1, pat_args.len())
-        {
-          // User-set Default[f, ...] = value via DownValue dispatch.
-          bindings.push((name.clone(), def));
-        } else {
-          // `x_.` with no inline default and no Default[f] defined:
-          // the optional cannot fire, so OneIdentity does not apply.
-          all_optionals_have_default = false;
-        }
-      }
-      Expr::Pattern { .. } | Expr::Identifier(_) => {
+    let (names, inline_default) =
+      if let Expr::PatternOptional { name, default, .. } = arg {
+        (vec![name.clone()], default.as_deref())
+      } else if let Some((inner, default)) = optional_call_parts(arg) {
+        // A general `Optional[p, d]` slot (`x___:0`, `_?NumericQ:2`, …):
+        // leaving it out binds every name in `p` to the default.
+        let mut names = Vec::new();
+        pattern_binding_names(inner, &mut names);
+        (names, default)
+      } else {
         required_indices.push(i);
-      }
-      _ => {
-        required_indices.push(i);
-      }
+        continue;
+      };
+    match resolve_default(i, inline_default) {
+      Some(def) => optional_bindings.push((
+        i,
+        names
+          .into_iter()
+          .filter(|n| !n.is_empty())
+          .map(|n| (n, def.clone()))
+          .collect(),
+      )),
+      // `x_.` with no inline default and no Default[f] defined:
+      // the optional cannot fire, so OneIdentity does not apply.
+      None => all_optionals_have_default = false,
     }
   }
 
@@ -912,16 +916,24 @@ fn try_one_identity_match(
   // least one pattern slot has a default value (`x_:c` or `x_.`). Without
   // any such optional slot — or if any `x_.` has no resolvable default —
   // OneIdentity does not collapse the match.
-  if !has_optional || !all_optionals_have_default {
+  if optional_bindings.is_empty() || !all_optionals_have_default {
     return None;
   }
+
+  let defaults_except = |skip: Option<usize>| -> Vec<(String, Expr)> {
+    optional_bindings
+      .iter()
+      .filter(|(idx, _)| Some(*idx) != skip)
+      .flat_map(|(_, b)| b.iter().cloned())
+      .collect()
+  };
 
   // OneIdentity: if there's exactly one required (non-optional) pattern slot,
   // try matching the expression against it
   if required_indices.len() == 1 {
     let req_pat = &pat_args[required_indices[0]];
     if let Some(mut req_bindings) = match_pattern(expr, req_pat)
-      && merge_bindings(&mut req_bindings, bindings)
+      && merge_bindings(&mut req_bindings, defaults_except(None))
     {
       return Some(req_bindings);
     }
@@ -932,49 +944,21 @@ fn try_one_identity_match(
   // expression while every other optional uses its default.
   if required_indices.is_empty() {
     for (target_idx, target_arg) in pat_args.iter().enumerate() {
-      let Expr::PatternOptional { .. } = target_arg else {
-        continue;
-      };
-      // Collect bindings for the other optionals (their defaults) and the
-      // matched binding for this one.
       let inner_pat = match target_arg {
         Expr::PatternOptional { name, head, .. } => Expr::Pattern {
           name: name.clone(),
           head: head.clone(),
           blank_type: 1,
         },
-        _ => continue,
+        _ => match optional_call_parts(target_arg) {
+          Some((inner, _)) => inner.clone(),
+          None => continue,
+        },
       };
-      if let Some(mut req_bindings) = match_pattern(expr, &inner_pat) {
-        let other_bindings: Vec<(String, Expr)> = bindings
-          .iter()
-          .enumerate()
-          .filter_map(|(bi, b)| {
-            // The bindings vector parallels the encounter order of optionals.
-            // We need to skip the binding for `target_idx`.
-            // Reconstruct the pattern index for each binding by counting
-            // optionals up to `bi`.
-            let mut opt_count = 0usize;
-            let mut pat_idx = None;
-            for (pi, p) in pat_args.iter().enumerate() {
-              if matches!(p, Expr::PatternOptional { .. }) {
-                if opt_count == bi {
-                  pat_idx = Some(pi);
-                  break;
-                }
-                opt_count += 1;
-              }
-            }
-            if pat_idx == Some(target_idx) {
-              None
-            } else {
-              Some(b.clone())
-            }
-          })
-          .collect();
-        if merge_bindings(&mut req_bindings, other_bindings) {
-          return Some(req_bindings);
-        }
+      if let Some(mut req_bindings) = match_pattern(expr, &inner_pat)
+        && merge_bindings(&mut req_bindings, defaults_except(Some(target_idx)))
+      {
+        return Some(req_bindings);
       }
     }
   }

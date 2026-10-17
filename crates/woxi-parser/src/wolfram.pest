@@ -887,8 +887,14 @@ PatternCondition = { PatternName ~ "_" ~ "/;" ~ ConditionExpr }
 // `y_:10^-6` — is absorbed into the default itself (`Optional[y_, 10^-6]`)
 // instead of being left for the enclosing expression to apply to the whole
 // pattern (`(y_:10)^-6`), which is what a bare `Term` produced.
-PatternOptionalWithHead = { PatternName ~ "_" ~ Identifier ~ ":" ~ !("=" | ">") ~ ConditionExpr }
-PatternOptionalSimple = { PatternName ~ "_" ~ ":" ~ !("=" | ">") ~ ConditionExpr }
+// The name, the blank and the head must be adjacent (`TightNameBlank*`
+// lookaheads, atomic so no implicit whitespace sneaks in): `n_ a:_m` is
+// `Times[n_, a:_m]`, not `Optional[n_a, _m]`. Whitespace is still allowed
+// around the `:` (`x_ : val`).
+TightNameBlankHead = @{ PatternName ~ "_" ~ !"_" ~ Identifier }
+TightNameBlank = @{ PatternName ~ "_" }
+PatternOptionalWithHead = { &TightNameBlankHead ~ PatternName ~ "_" ~ Identifier ~ ":" ~ !("=" | ">") ~ ConditionExpr }
+PatternOptionalSimple = { &TightNameBlank ~ PatternName ~ "_" ~ ":" ~ !("=" | ">") ~ ConditionExpr }
 // PatternOptionalAnonBlank: `_:default` — anonymous Optional[Blank[], default]
 // (no name binding). Distinct from PatternOptionalSimple, which requires a
 // PatternName before the `_`.
