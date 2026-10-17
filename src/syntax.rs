@@ -4418,7 +4418,7 @@ fn parse_expression_inner(
       _ => {
         if leading_minus {
           // When the operator just pushed binds *tighter* than the
-          // synthetic 0/NEGATE pair (precedence 45) would on its own,
+          // synthetic 0/NEGATE pair (precedence 46) would on its own,
           // replace it with its `_NEG` variant (operand negated directly)
           // instead of inserting that pair — otherwise the tighter operator
           // claims the synthetic `0` before NEGATE ever sees it, e.g.
@@ -4805,7 +4805,7 @@ fn apply_anon_continuation(
       if let Some(next_pair) = iter.next() {
         if next_pair.as_rule() == Rule::LeadingMinus {
           // Tilde infix (precedence 53) also binds tighter than NEGATE
-          // (45) — see the `Rule::Operator` branch above for why that
+          // (46) — see the `Rule::Operator` branch above for why that
           // needs `{op}_NEG` rather than the plain synthetic pair.
           if post_ops.last().is_some_and(|o| {
             operator_precedence(o) > operator_precedence("NEGATE")
@@ -5453,9 +5453,10 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Diamond]" | "\u{22C4}" => 38,    // above Wedge, below Backslash
     "\\[Backslash]" | "\u{2216}" => 39,  // above Diamond, below Dot
     "." => 40,                           // Dot (higher than the ring ops)
-    "\\[CircleDot]" | "\u{2299}" => 43,  // above Cross, below SmallCircle
-    "\\[SmallCircle]" | "\u{2218}" => 44, // above CircleDot, below Apply
-    "NEGATE" => 45, // Unary minus (PreMinus): between Times/Dot and Apply/Map,
+    "**" => 43,                          // NonCommutativeMultiply (above Cross)
+    "\\[CircleDot]" | "\u{2299}" => 44,  // above NonCommutativeMultiply
+    "\\[SmallCircle]" | "\u{2218}" => 45, // above CircleDot, below Apply
+    "NEGATE" => 46, // Unary minus (PreMinus): between Times/Dot and Apply/Map,
     // so `-f @@ list` reads as `-(f @@ list)` and `-f /@ list` as
     // `-(f /@ list)`, matching Wolfram (Apply/Map bind tighter than a
     // leading unary minus).
@@ -5766,7 +5767,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     ),
     // `op_NEG` — the synthetic marker `LeadingMinus` produces when it
     // follows an operator that binds *tighter* than the unary-minus
-    // placeholder (`NEGATE`, precedence 45): `f @ -g[x]` (precedence 56)
+    // placeholder (`NEGATE`, precedence 46): `f @ -g[x]` (precedence 56)
     // would otherwise let `@` claim the synthetic `0` before `NEGATE` ever
     // sees it, parsing as `f[0]` with `g[x]` orphaned and negated on its
     // own — dropping `f` entirely (`^_NEG` predates this and is excluded
@@ -5878,6 +5879,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     "\\[CirclePlus]" | "\u{2295}" => build_flat_op("CirclePlus", left, right),
     "\\[CircleTimes]" | "\u{2297}" => build_flat_op("CircleTimes", left, right),
     "\\[CenterDot]" | "\u{00B7}" => build_flat_op("CenterDot", left, right),
+    "**" => build_flat_op("NonCommutativeMultiply", left, right),
     // CircleMinus is binary (not flat): a ⊖ b ⊖ c -> CircleMinus[(a ⊖ b), c].
     "\\[CircleMinus]" | "\u{2296}" => {
       call("CircleMinus", vec![left.clone(), right.clone()])
