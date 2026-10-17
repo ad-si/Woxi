@@ -28122,6 +28122,32 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     {
       vec![]
     }
+    // `f[x]` with a compound head — `Subscript[π, q, a][x]` reads
+    // `π₍q,a₎(x)`: the head typeset as usual, the arguments in parentheses.
+    Expr::CurriedCall { func, args } => {
+      let mut runs = manipulate_label_runs(func, italic);
+      runs.push(LabelRun {
+        text: "(".to_string(),
+        italic: false,
+        ..Default::default()
+      });
+      for (i, arg) in args.iter().enumerate() {
+        if i > 0 {
+          runs.push(LabelRun {
+            text: ", ".to_string(),
+            italic: false,
+            ..Default::default()
+          });
+        }
+        runs.extend(manipulate_label_runs(arg, italic));
+      }
+      runs.push(LabelRun {
+        text: ")".to_string(),
+        italic: false,
+        ..Default::default()
+      });
+      runs
+    }
     Expr::FunctionCall { name, args } => match name.as_str() {
       // Style[expr, dir…] — render `expr`, turning italic on if any directive
       // asks for it (bare `Italic` or `FontSlant -> "Italic"`), and applying
