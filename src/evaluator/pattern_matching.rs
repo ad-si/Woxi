@@ -3306,6 +3306,22 @@ pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
         && s1 == s2
         && (std::sync::Arc::ptr_eq(d1, d2) || d1 == d2)
     }
+    // Likewise every rendered graphic displays as `-Graphics-`; two
+    // pictures are the same only when their renderings are.
+    (
+      Expr::Graphics {
+        svg: s1,
+        is_3d: d1,
+        head: h1,
+        ..
+      },
+      Expr::Graphics {
+        svg: s2,
+        is_3d: d2,
+        head: h2,
+        ..
+      },
+    ) => d1 == d2 && h1 == h2 && s1 == s2,
     _ => expr_to_string(a) == expr_to_string(b),
   }
 }

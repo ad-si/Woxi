@@ -4453,6 +4453,7 @@ pub(crate) fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
 /// Epilog.
 /// Cells can also be explicit color directives (e.g. Pink, Red).
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let args = &crate::functions::graphics::splice_option_lists(args)[..];
   let data = evaluate_expr_to_expr(&args[0])?;
   let data = crate::functions::list_helpers_ast::densify_sparse_array(&data)
     .unwrap_or(data);

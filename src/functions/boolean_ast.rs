@@ -258,7 +258,8 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // display placeholder, so the string fast path below would treat any
     // two images as SameQ regardless of their pixel data. Compare the
     // actual raster content instead whenever either side is an image.
-    if matches!(first, Expr::Image { .. }) || matches!(arg, Expr::Image { .. })
+    if matches!(first, Expr::Image { .. } | Expr::Graphics { .. })
+      || matches!(arg, Expr::Image { .. } | Expr::Graphics { .. })
     {
       if !crate::evaluator::pattern_matching::expr_equal(first, arg) {
         return Ok(bool_expr(false));
@@ -381,13 +382,14 @@ pub fn unsame_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // UnsameQ is True only if ALL pairs are different
   for i in 0..strs.len() {
     for j in (i + 1)..strs.len() {
-      let same = if matches!(args[i], Expr::Image { .. })
-        || matches!(args[j], Expr::Image { .. })
-      {
-        crate::evaluator::pattern_matching::expr_equal(&args[i], &args[j])
-      } else {
-        strs[i] == strs[j]
-      };
+      let same =
+        if matches!(args[i], Expr::Image { .. } | Expr::Graphics { .. })
+          || matches!(args[j], Expr::Image { .. } | Expr::Graphics { .. })
+        {
+          crate::evaluator::pattern_matching::expr_equal(&args[i], &args[j])
+        } else {
+          strs[i] == strs[j]
+        };
       if same {
         return Ok(bool_expr(false));
       }
@@ -744,8 +746,8 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // display placeholder, so the string fast path below would treat any
     // two images as Equal regardless of their pixel data. Compare the
     // actual raster content instead whenever either side is an image.
-    if matches!(&args[0], Expr::Image { .. })
-      || matches!(arg, Expr::Image { .. })
+    if matches!(&args[0], Expr::Image { .. } | Expr::Graphics { .. })
+      || matches!(arg, Expr::Image { .. } | Expr::Graphics { .. })
     {
       if !crate::evaluator::pattern_matching::expr_equal(&args[0], arg) {
         all_identical = false;
@@ -934,8 +936,8 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // images as a duplicate pair regardless of their pixel data — compare
   // those pairs structurally instead.
   let pair_identical = |i: usize, j: usize| {
-    if matches!(args[i], Expr::Image { .. })
-      || matches!(args[j], Expr::Image { .. })
+    if matches!(args[i], Expr::Image { .. } | Expr::Graphics { .. })
+      || matches!(args[j], Expr::Image { .. } | Expr::Graphics { .. })
     {
       crate::evaluator::pattern_matching::expr_equal(&args[i], &args[j])
     } else {

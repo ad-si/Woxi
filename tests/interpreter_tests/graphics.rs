@@ -36122,6 +36122,61 @@ fn traditionalform_inline_fraction_parenthesizes_compound_sides() {
   assert!(simple.contains("a/b"), "{simple}");
 }
 
+/// A list of options in the option slot means the same as the flat rules.
+#[test]
+fn array_plot_accepts_an_option_list() {
+  let flat = export_svg(
+    "ArrayPlot[{{2, 1, 2}}, ColorRules -> {2 -> White, 1 -> Black}, Mesh -> True]",
+  );
+  let listed = export_svg(
+    "ArrayPlot[{{2, 1, 2}}, {ColorRules -> {2 -> White, 1 -> Black}, Mesh -> True}]",
+  );
+  assert_eq!(flat, listed);
+}
+
+/// Rendered graphics display alike as `-Graphics-`, but different pictures
+/// are different expressions: they compare unequal and survive `Union`.
+#[test]
+fn different_graphics_are_not_the_same_expression() {
+  assert_eq!(
+    interpret("ArrayPlot[{{1, 2}}] === ArrayPlot[{{2, 1}}]").unwrap(),
+    "False"
+  );
+  assert_eq!(
+    interpret("ArrayPlot[{{1, 2}}] === ArrayPlot[{{1, 2}}]").unwrap(),
+    "True"
+  );
+  assert_eq!(
+    interpret(
+      "Length[Union[{ArrayPlot[{{1, 2}}], ArrayPlot[{{2, 1}}], ArrayPlot[{{2, 1}}]}]]"
+    )
+    .unwrap(),
+    "2"
+  );
+  assert_eq!(
+    interpret(
+      "Length[DeleteDuplicates[{ArrayPlot[{{1, 2}}] -> ArrayPlot[{{2, 1}}], ArrayPlot[{{1, 2}}] -> ArrayPlot[{{1, 2}}]}]]"
+    )
+    .unwrap(),
+    "2"
+  );
+}
+
+/// Vertices that are pictures are told apart, so the edges between them
+/// give a layered drawing, and an option list is not read as a position.
+#[test]
+fn layered_graph_plot_with_picture_vertices_and_option_list() {
+  let svg = export_svg(
+    "LayeredGraphPlot[{ArrayPlot[{{1, 2}}] -> ArrayPlot[{{2, 1}}], ArrayPlot[{{1, 2}}] -> ArrayPlot[{{1, 1}}]}, {ImageSize -> {400, 300}}]",
+  );
+  assert!(
+    svg.starts_with("<svg width=\"400\" height=\"300\""),
+    "{svg}"
+  );
+  // Three distinct vertices on two layers: the root has two outgoing edges.
+  assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
+}
+
 // A Demonstration's own "internal controls" — `Manipulator[Dynamic[x], …]`
 // sliders and `SetterBar[Dynamic[x], …]` rows inside a layout — are drawn as
 // the widgets they are instead of being printed as source text.

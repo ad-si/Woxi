@@ -5145,6 +5145,11 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     {
       lays_out_a_graphic(&args[0])
     }
+    // `picture -> picture` is typeset as the pictures around an arrow.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => lays_out_a_graphic(pattern) || lays_out_a_graphic(replacement),
     _ => false,
   }
 }
@@ -5778,6 +5783,21 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     return svg;
   }
   match expr {
+    // `picture -> picture` is typeset as the pictures around an arrow.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if lays_out_a_graphic(expr) => expr_to_svg(&call1(
+      "Row",
+      Expr::List(
+        vec![
+          (**pattern).clone(),
+          Expr::String("\u{2192}".to_string()),
+          (**replacement).clone(),
+        ]
+        .into(),
+      ),
+    )),
     Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
     // `Pane[content, opts…]` only constrains its content's size; the
     // FrontEnd displays the content, so exporting one exports what it

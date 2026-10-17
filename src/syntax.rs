@@ -11341,6 +11341,40 @@ pub fn expr_to_output(expr: &Expr) -> String {
   format_expr(expr, ExprForm::Output)
 }
 
+/// Text that tells apart expressions which differ only in the pictures they
+/// contain. Every rendered graphic displays as `-Graphics-`, so a display
+/// string alone cannot serve as an identity key (set operations, graph
+/// vertices); append this suffix to it. Empty when `expr` holds no graphics.
+pub fn graphics_identity_suffix(expr: &Expr) -> String {
+  fn collect(expr: &Expr, out: &mut String) {
+    match expr {
+      Expr::Graphics { svg, .. } => {
+        out.push('\u{0}');
+        out.push_str(svg);
+      }
+      Expr::List(items) => items.iter().for_each(|e| collect(e, out)),
+      Expr::FunctionCall { args, .. } => {
+        args.iter().for_each(|e| collect(e, out));
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => {
+        collect(pattern, out);
+        collect(replacement, out);
+      }
+      _ => {}
+    }
+  }
+  let mut out = String::new();
+  collect(expr, &mut out);
+  out
+}
+
 /// Flatten a nested BinaryOp::Times tree into a list of factors.
 fn flatten_binary_times<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
   match expr {
