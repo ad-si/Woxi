@@ -11224,6 +11224,44 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 6, $CellContext`step$$ = 
     assert_eq!(widget.control_placement, manipulate::ControlPlacement::Left);
   }
 
+  /// End-to-end regression for the shape of Demonstration that solves a
+  /// delay differential equation inside a helper whose history is stated
+  /// through a local holding `t /; t <= 0` (the condition variable is a
+  /// dummy, and the local is initialised in the enclosing scope), plotting
+  /// the delayed and undelayed solutions together.
+  #[test]
+  fn delay_equation_notebook_opens_with_its_widget() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nModule[{end = 6, solve, delayed, plain, x, t},\nsolve[d_] := Module[{h = If[PossibleZeroQ[d], 0, t /; t <= 0]}, First[x /. NDSolve[{x'[t] == r x[t] (1 - x[t - d]), x[h] == 0.2}, x, {t, 0, end}]]];\ndelayed = solve[delay]; plain = solve[0];\nPlot[{delayed[t], plain[t]}, {t, 0, end}, PlotRange -> All]],\n{{r, 1, \"rate\"}, 0.5, 2, 0.1},\n{{delay, 1, \"delay\"}, 0.5, 1.5, 0.1}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1, $CellContext`delay$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the delay-equation plot must render"
+    );
+    // The body really draws both solutions (an unsolvable system would
+    // still produce a graphic, just without curves).
+    let curves = woxi::interpret(&format!(
+      "r = 1.; delay = 1.; Length[Cases[{}, _Line, Infinity]]",
+      widget.body
+    ))
+    .unwrap();
+    assert_eq!(curves, "2", "body: {}", widget.body);
+  }
+
   #[test]
   fn hinged_dissection_notebook_opens_with_its_widget() {
     // End-to-end regression for the shape of Demonstration that animates a

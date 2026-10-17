@@ -445,6 +445,8 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `EdgeRenderingFunction` receives the label as its third argument.
   let mut edge_labels: Vec<(Expr, Expr)> = Vec::new();
   let mut vertex_labels = false;
+  // `EdgeLabeling -> False` (GraphPlot's legacy switch) hides the labels.
+  let mut edge_labeling = true;
   let mut vertex_shape: Option<String> = None;
   // `VertexShape -> {v -> graphic, …}` (plus an optional bare default
   // applying to every vertex the list doesn't name) replaces a vertex's
@@ -529,6 +531,10 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "VertexLabeling" => {
           vertex_labels =
             matches!(replacement, Expr::Identifier(s) if s == "True");
+        }
+        "EdgeLabeling" => {
+          edge_labeling =
+            !matches!(replacement, Expr::Identifier(s) if s == "False");
         }
         "VertexShapeFunction" => {
           if let Expr::String(s) = replacement {
@@ -996,6 +1002,38 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       None => primitives.push(line_or_arrow(edge_data.directed, &default_pts)),
+    }
+
+    // `EdgeLabels -> {edge -> label, …}` (and GraphPlot's `{edge, label}`
+    // pairs) set the label at the middle of the edge, unless the edge
+    // already carries a `Labeled[…]` one.
+    if edge_data.label.is_none() && si != di && !edge_labels.is_empty() {
+      let named = |idx: petgraph::graph::NodeIndex| {
+        unwrap_vertex_style(&vertices[graph[idx]]).0.clone()
+      };
+      let edge_expr = call(
+        edge_head(edge_ref.weight().directed),
+        vec![named(edge_ref.source()), named(edge_ref.target())],
+      );
+      if let Some((_, label)) = edge_labels
+        .iter()
+        .find(|(target, _)| same_edge(&edge_expr, target))
+        && edge_labeling
+      {
+        primitives.push(call(
+          "RGBColor",
+          vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+        ));
+        let styled = call("Style", vec![label.clone(), Expr::Integer(10)]);
+        let point = Expr::List(
+          vec![
+            Expr::Real(f64::midpoint(x1, x2)),
+            Expr::Real(f64::midpoint(y1, y2)),
+          ]
+          .into(),
+        );
+        primitives.push(call("Text", vec![styled, point]));
+      }
     }
 
     // Edge label

@@ -223,6 +223,7 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // The fresh symbol is globally unique, so the binding needs no
       // cleanup — and definitions or closures escaping the Module keep
       // working, like Wolfram's Temporary module variables.
+      let value = crate::evaluator::assignment::own_value_expr(&value);
       ENV.with(|e| e.borrow_mut().insert(fresh, StoredValue::ExprVal(value)));
     }
   }
@@ -304,6 +305,7 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       var_name,
     ));
     if let Some(evaluated) = init {
+      let evaluated = crate::evaluator::assignment::own_value_expr(&evaluated);
       ENV.with(|e| {
         e.borrow_mut()
           .insert(var_name.clone(), StoredValue::ExprVal(evaluated))
