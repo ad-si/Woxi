@@ -3072,6 +3072,22 @@ mod tests {
     assert!(dump("k$$").contains("label: \"freq\""), "{}", dump("k$$"));
   }
 
+  /// A caption can apply a compound head to an argument —
+  /// `TraditionalForm[Subscript[f, a][x]]` — which must typeset as the head's
+  /// script followed by `(x)`, not leak the raw `Subscript[f, a][x]` source.
+  #[test]
+  fn control_label_typesets_compound_head_call() {
+    let code = r#"Manipulate[Plot[a x, {x, 0, 1}],
+      {{a, 1, Row[{"show ", TraditionalForm[Subscript[g, 1][x]], " here"}]},
+        {True, False}}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let c = state.controls.iter().find(|c| c.name() == "a").unwrap();
+    let dump = format!("{c:?}");
+    assert!(dump.contains("label: \"show g₁(x) here\""), "{dump}");
+  }
+
   /// A control caption written `Dynamic[If[mode == 0, x₂, z₀]]` follows the
   /// mode control: it is retypeset on every change rather than frozen to
   /// the source text of the `If`.
