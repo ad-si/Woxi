@@ -36331,6 +36331,18 @@ mod static_dynamic_controls {
     assert!(!svg.contains("NumberForm["), "no source text: {svg}");
   }
 
+  /// `Show[image, graphics]` draws the image as the backdrop of the
+  /// graphics (in pixel coordinates) instead of dropping it.
+  #[test]
+  fn show_of_image_and_graphics_keeps_the_image() {
+    let svg = export_svg(
+      "Show[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}], \
+       Graphics[{Red, Disk[{1, 1}, .3]}]]",
+    );
+    assert!(svg.contains("<image"), "image is drawn: {svg}");
+    assert!(svg.contains("<ellipse"), "overlay is drawn: {svg}");
+  }
+
   /// `Inset[Text[…], pos]` places the text like `Text[…, pos]`; the inner
   /// `Text` head must not be printed as literal source.
   #[test]

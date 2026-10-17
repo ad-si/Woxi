@@ -15185,6 +15185,36 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         merge_option(&mut merged_options, expr_ref);
       }
+      // An Image shown together with other graphics is a picture whose
+      // coordinates are its pixel grid: it fills `{0, w} × {0, h}`, so
+      // primitives in pixel coordinates land on top of it.
+      Expr::Image { width, height, .. } => {
+        graphic_count += 1;
+        first_graphic_is_plot.get_or_insert(false);
+        let (w, h) = (*width as f64, *height as f64);
+        layers.push(Layer::Prims(merged_primitives.len()));
+        merged_primitives.push(Expr::FunctionCall {
+          name: "Inset".to_string(),
+          args: vec![
+            expr_ref.clone(),
+            Expr::List(vec![Expr::Real(w / 2.0), Expr::Real(h / 2.0)].into()),
+            id_expr("Center"),
+            Expr::List(vec![Expr::Real(w), Expr::Real(h)].into()),
+          ]
+          .into(),
+        });
+        if graphic_count == 1 {
+          let range =
+            |hi: f64| Expr::List(vec![Expr::Integer(0), Expr::Real(hi)].into());
+          merge_option(
+            &mut merged_options,
+            &rule_expr(
+              id_expr("PlotRange"),
+              Expr::List(vec![range(w), range(h)].into()),
+            ),
+          );
+        }
+      }
       _ => {}
     }
   }
