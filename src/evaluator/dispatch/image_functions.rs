@@ -747,7 +747,7 @@ pub fn dispatch_image_functions(
     "ColorNegate" if args.len() == 1 => {
       return Some(crate::functions::image_ast::color_negate_ast(args));
     }
-    "Binarize" if !args.is_empty() && args.len() <= 2 => {
+    "Binarize" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::binarize_ast(args));
     }
     "Blur" if !args.is_empty() && args.len() <= 2 => {
