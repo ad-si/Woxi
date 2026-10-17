@@ -1502,9 +1502,11 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           step.map(f64::abs).filter(|s| *s > 0.0).unwrap_or_else(|| {
             let span = (*max - *min).abs();
             let integral = min.fract() == 0.0 && max.fract() == 0.0;
-            if !*is_real && integral && span >= 1.0 {
+            if !*is_real && integral && span > 1.0 {
               // An all-exact-integer range makes an integer slider; an
-              // exact non-integer bound (`Pi`, `1/2`) keeps it continuous.
+              // exact non-integer bound (`Pi`, `1/2`) keeps it continuous,
+              // and so does the unit range `{t, 0, 1}`, which only has
+              // two integer positions and is used as a fraction.
               1.0
             } else if span > 0.0 {
               span / 100.0
@@ -1751,6 +1753,22 @@ mod tests {
     };
     assert_eq!(step_of("n"), 1.0);
     assert_eq!(step_of("x"), 0.01);
+  }
+
+  /// A unit range with exact integer bounds (`{t, 0, 1}`) is a continuous
+  /// fraction slider, not a two-position integer one.
+  #[test]
+  fn exact_unit_range_slider_is_continuous() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{t, u}, {{t, 0, \"open\"}, 0, 1}, {u, -3, -2}]",
+    )
+    .expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    for c in &state.controls {
+      if let ControlState::Continuous { name, step, .. } = c {
+        assert_eq!(*step, 0.01, "{name} should be continuous");
+      }
+    }
   }
 
   /// An exact but non-integer bound (`Pi`) makes the slider continuous,
