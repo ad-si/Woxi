@@ -19956,6 +19956,51 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`time$$ = 25}, \"\\[Ellipsis]\"]"], 
     assert_ne!(render(5.0), published, "the time control must matter");
   }
 
+  /// A control panel written as `Column[{Row[{…}] "", Grid[{{"label", …}}]}]`
+  /// has no comma after the `Row`, so the two items parse as an implicit
+  /// product. The panel must still list the row's control, then the grid's
+  /// caption and its controls, exactly as with the comma.
+  #[test]
+  fn control_panel_with_missing_comma_keeps_grid_caption() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[RowBox[{"Manipulate", "[", "Graphics[Circle[{0, 0}, r]], Column[{Row[{Control[{{mode, 1, \"\"}, {1 -> \"one\", 2 -> \"two\"}, Setter}]}] \"\", Grid[{{\"radii\", Control[{{r, 1}, 1, 2}], Control[{{q, 2}, 1, 3}]}}]}]", "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`mode$$ = 1, $CellContext`r$$ = 1, $CellContext`q$$ = 2}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let labels: Vec<String> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. }
+        | manipulate::ControlState::Discrete { name, .. } => {
+          format!("control {name}")
+        }
+        manipulate::ControlState::Heading { label, .. } => {
+          format!("heading {label}")
+        }
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec![
+        "control mode",
+        "heading ",
+        "heading radii",
+        "control r",
+        "control q"
+      ]
+    );
+  }
+
   /// A picture-effects `Manipulate` (independently written): every effect
   /// must produce a picture, and the "thumbnail" view pins the untouched
   /// original to the corner with `Inset[image, {Left, Top}, {Left, Top}, …]`.
