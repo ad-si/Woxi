@@ -25998,6 +25998,26 @@ fn expr_contains_call(e: &Expr, heads: &[&str]) -> bool {
   }
 }
 
+/// The factors of an implicit product (`a b c` → `[a, b, c]`) in source
+/// order, or the expression itself when it is not a product.
+fn split_implicit_product(e: &Expr) -> Vec<Expr> {
+  match e {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let mut out = split_implicit_product(left);
+      out.extend(split_implicit_product(right));
+      out
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().flat_map(split_implicit_product).collect()
+    }
+    _ => vec![e.clone()],
+  }
+}
+
 /// The flattened control items of a `Row[…]`/`Column[…]`/`Grid[…]`
 /// Manipulate argument that lays several controls out in one row (the
 /// Wolfram Demonstrations pattern `Row[{Control[…], Spacer[20],
@@ -26027,6 +26047,9 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       // inside the `f@@expr` the same way a plain function call is scanned.
       Expr::Apply { func, list } => {
         contains_control(func) || contains_control(list)
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        contains_control(left) || contains_control(right)
       }
       _ => false,
     }
@@ -26166,7 +26189,19 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     return control_group_items(&args[0])
       .map(|items| items.into_iter().map(make_live_caption).collect());
   }
-  let items_owned = tabview_panes(&args[0])?;
+  // A missing comma between two list items (`{Row[{…}] "", Grid[…]}`) parses
+  // as an implicit product; the control panel still lists each factor on its
+  // own, as the author laid them out.
+  let items_owned: Vec<Expr> = tabview_panes(&args[0])?
+    .into_iter()
+    .flat_map(|item| {
+      if contains_control(&item) {
+        split_implicit_product(&item)
+      } else {
+        vec![item]
+      }
+    })
+    .collect();
   let items = &items_owned;
   let mut out = Vec::new();
   // Consecutive label pieces of a `Row` (`"show ", Style["C", Italic], …`)
