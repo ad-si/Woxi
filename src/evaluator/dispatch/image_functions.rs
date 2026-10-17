@@ -203,6 +203,17 @@ fn indexed_scheme_color(n: i128, k: i128) -> Option<(f64, f64, f64)> {
       _ => (high, low, down),
     });
   }
+  // Scheme 17 is only partly known: the entries observed in Wolfram's own
+  // output. Any other index stays unevaluated rather than being guessed.
+  if n == 17 {
+    let byte = |r: f64, g: f64, b: f64| (r / 255.0, g / 255.0, b / 255.0);
+    return match k {
+      1 => Some(byte(72.0, 58.0, 57.0)),
+      2 => Some(byte(144.0, 59.0, 39.0)),
+      4 => Some(byte(220.0, 158.0, 67.0)),
+      _ => None,
+    };
+  }
   let colors = indexed_color_list(n)?;
   // The tabulated schemes wrap, index 0 landing on the last colour. Scheme
   // 97 does not wrap in Wolfram — past its ten entries it continues with
