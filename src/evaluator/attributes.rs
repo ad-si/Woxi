@@ -808,7 +808,7 @@ pub fn get_builtin_attributes(name: &str) -> Attributes {
     "And" | "Or" => A::Flat | A::HoldAll | A::OneIdentity | A::Protected,
 
     // Flat + OneIdentity + Protected
-    "NonCommutativeMultiply" => {
+    "Dot" | "NonCommutativeMultiply" => {
       A::Flat | A::OneIdentity | A::Protected
     }
 

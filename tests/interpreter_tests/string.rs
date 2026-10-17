@@ -4285,6 +4285,108 @@ mod string_match_q_patterns {
   use super::*;
 
   #[test]
+  fn wildcards_inside_alternatives() {
+    // Regression for #1434: `*` and `@` are wildcards in every string literal
+    // of a StringMatchQ pattern, not only in a bare top-level string.
+    assert_eq!(
+      interpret(r#"StringMatchQ["acd", "a*" | "b*"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ[{"acd", "bx", "c"}, "a*" | "b*"]"#).unwrap(),
+      "{True, True, False}"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["acd", {"a*", "b*"}]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["ACD", "a*" | "b*", IgnoreCase -> True]"#)
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["a@d", "a@" | "b"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["aBd", "a@d" | "b"]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn wildcards_inside_compound_patterns() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["acd", ("a*" | "x") ~~ "d"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["acd", "a*" ~~ _]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["acd", x : "a*"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["abab", Repeated["a*"]]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["acd", Shortest["a*"]]"#).unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn backslash_escapes_wildcards() {
+    // `\*` and `\@` are literal; a backslash before anything else is itself
+    // literal.
+    assert_eq!(
+      interpret(r#"StringMatchQ["a*b", "a\\*b"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["axb", "a\\*b"]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["a*b", "a\\*" ~~ "b"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["a@b", "a\\@b"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(interpret(r#"StringMatchQ["xb", "\\@b"]"#).unwrap(), "False");
+    assert_eq!(
+      interpret(r#"StringMatchQ["a\\*", "a\\*"]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["a\\*", "a\\\\*"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["a\\xyz", "a\\\\*"]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["a\\b", "a\\\\b"]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn other_string_functions_match_star_literally() {
+    // Only StringMatchQ uses the wildcard shorthand.
+    assert_eq!(interpret(r#"StringCases["acd", "a*"]"#).unwrap(), "{}");
+    assert_eq!(interpret(r#"StringFreeQ["acd", "a*"]"#).unwrap(), "True");
+    assert_eq!(interpret(r#"StringStartsQ["acd", "a*"]"#).unwrap(), "False");
+  }
+
+  #[test]
   fn digit_character() {
     assert_eq!(
       interpret(r#"StringMatchQ["1", DigitCharacter]"#).unwrap(),

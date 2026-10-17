@@ -12663,4 +12663,25 @@ mod sum_collects_terms_in_one_plus {
   fn empty_range_is_zero() {
     assert_eq!(interpret("Sum[x^k, {k, 1, 0}]").unwrap(), "0");
   }
+
+  #[test]
+  fn sums_vector_valued_terms() {
+    assert_eq!(interpret("Sum[{i, 2 i}, {i, 1, 3}]").unwrap(), "{6, 12}");
+    assert_eq!(
+      interpret("Sum[{i, 2 i}/{1, 2, 3}[[i]], {i, 1, 3}]").unwrap(),
+      "{3, 6}"
+    );
+    assert_eq!(
+      interpret("Sum[{a, b} k, {k, {1, 2, 3}}]").unwrap(),
+      "{6*a, 6*b}"
+    );
+  }
+
+  #[test]
+  fn plus_of_several_lists_and_scalars() {
+    assert_eq!(
+      interpret("Plus[{1, 2}, 3, {4, 5}, {6, 7}]").unwrap(),
+      "{14, 17}"
+    );
+  }
 }

@@ -2060,8 +2060,9 @@ pub fn with_scoped_globals<R>(
   let mut saved: Vec<(String, Option<StoredValue>)> =
     Vec::with_capacity(bindings.len());
   for (name, value) in bindings {
-    let evaluated = interpret_to_expr(value)
-      .unwrap_or_else(|_| syntax::Expr::Identifier(name.clone()));
+    let evaluated = thaw_graphic(name, value)
+      .or_else(|| interpret_to_expr(value).ok())
+      .unwrap_or_else(|| syntax::Expr::Identifier(name.clone()));
     let prev = ENV.with(|e| {
       e.borrow_mut()
         .insert(name.clone(), StoredValue::ExprVal(evaluated))
@@ -2072,10 +2073,46 @@ pub fn with_scoped_globals<R>(
   f()
 }
 
+thread_local! {
+  /// Rendered graphics held by Manipulate state variables, keyed by variable
+  /// name. A picture has no re-parseable source (it prints as `-Graphics-`),
+  /// so it is kept here between frames instead of in the binding string.
+  static FROZEN_GRAPHICS: std::cell::RefCell<
+    std::collections::HashMap<String, syntax::Expr>,
+  > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+const FROZEN_GRAPHIC_PREFIX: &str = "\u{0}frozen-graphic:";
+
+/// Binding value for a state variable that holds a rendered graphic: a marker
+/// [`with_scoped_globals`] resolves back to the graphic itself. `None` when
+/// `value` is not a graphic.
+pub fn freeze_graphic(name: &str, value: &syntax::Expr) -> Option<String> {
+  if !matches!(value, syntax::Expr::Graphics { .. }) {
+    return None;
+  }
+  FROZEN_GRAPHICS
+    .with(|m| m.borrow_mut().insert(name.to_string(), value.clone()));
+  Some(format!("{FROZEN_GRAPHIC_PREFIX}{name}"))
+}
+
+/// Whether a binding value is a marker produced by [`freeze_graphic`].
+pub fn is_frozen_graphic(value: &str) -> bool {
+  value.starts_with(FROZEN_GRAPHIC_PREFIX)
+}
+
+fn thaw_graphic(name: &str, value: &str) -> Option<syntax::Expr> {
+  if !is_frozen_graphic(value) {
+    return None;
+  }
+  FROZEN_GRAPHICS.with(|m| m.borrow().get(name).cloned())
+}
+
 /// Clear all thread-local interpreter state (environment variables
 /// and user-defined functions).  Useful for isolating test runs.
 pub fn clear_state() {
   ENV.with(|e| e.borrow_mut().clear());
+  FROZEN_GRAPHICS.with(|m| m.borrow_mut().clear());
   FUNC_DEFS.with(|m| m.borrow_mut().clear());
   MEMO_VALUES.with(|m| m.borrow_mut().clear());
   FUNC_ATTRS.with(|m| m.borrow_mut().clear());
@@ -4102,6 +4139,23 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   // The top-level pipeline transformations don't recurse into nested
   // wrapper arguments, so we apply the relevant ones here for a single
   // sub-expression.
+  //
+  // A directive-free `Style[content]` draws exactly as `content` does, so a
+  // layout item such as `Style[Text@Grid[…]]` is rendered from what it
+  // wraps. (Without this it stayed a bare call and the column printed the
+  // table's source text.) With directives, the styled-layout pass applies
+  // them to the `Column`/`Row`/`Grid` underneath.
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && functions::graphics::is_style_wrapper(name)
+  {
+    if args.len() == 1 {
+      return render_inline_display_wrapper(&args[0]);
+    }
+    let styled = render_styled_layout_if_needed(expr.clone());
+    if matches!(styled, syntax::Expr::Graphics { .. }) {
+      return styled;
+    }
+  }
   let expr = unwrap_display_pass_through(expr);
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);

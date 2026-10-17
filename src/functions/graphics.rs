@@ -2407,9 +2407,13 @@ fn collect_primitives(
         "Inset" if !args.is_empty() => {
           // `Inset[graphic, pos, …]` draws a picture inside this one; any
           // other object (a string, a number) is placed like `Text`.
-          match inset_primitives(args, errors) {
-            Some(inner) => prims.extend(inner),
-            None => parse_text(args, style, prims),
+          if let Some(text) = text_primitive_inset(args) {
+            collect_primitives(&text, style, prims, errors);
+          } else {
+            match inset_primitives(args, errors) {
+              Some(inner) => prims.extend(inner),
+              None => parse_text(args, style, prims),
+            }
           }
         }
         // `RasterBox` is the box form of `Raster` — the shape a stored
@@ -4641,6 +4645,23 @@ fn framed_plot_inset(
     scaled: false,
     size: Some((width, height)),
   })
+}
+
+/// `Inset[Text[obj], pos, …]` insets a text primitive, which is simply
+/// `Text[obj, pos]` — rewrite it so the inner `Text` is not mistaken for the
+/// object being placed (and printed as `Text[…]`).
+pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
+  if let (Expr::FunctionCall { name, args: targs }, Some(pos)) =
+    (strip_style_wrappers(args.first()?), args.get(1))
+    && name == "Text"
+    && targs.len() == 1
+  {
+    return Some(Expr::FunctionCall {
+      name: "Text".to_string(),
+      args: vec![targs[0].clone(), pos.clone()].into(),
+    });
+  }
+  None
 }
 
 fn inset_primitives(
@@ -8409,6 +8430,17 @@ fn render_primitive(
         }
         None => String::new(),
       };
+      // A full turn has coincident arc endpoints, which SVG draws as
+      // nothing; it is a plain disk.
+      if sweep_angle.abs() >= std::f64::consts::TAU - 1e-9 {
+        out.push_str(&format!(
+          "<ellipse cx=\"{scx:.2}\" cy=\"{scy:.2}\" rx=\"{srx:.2}\" ry=\"{sry:.2}\" fill=\"{}\"{}{}/>\n",
+          color.to_svg_rgb(),
+          fill_opacity,
+          stroke_attr,
+        ));
+        return;
+      }
       // Path: move to center, line to arc start, arc to arc end, close
       out.push_str(&format!(
         "<path d=\"M {scx:.2},{scy:.2} L {x1:.2},{y1:.2} A {srx:.2},{sry:.2} 0 {large_arc} {sweep_flag} {x2:.2},{y2:.2} Z\" fill=\"{}\"{}{}/>\n",
@@ -15164,6 +15196,36 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         merge_option(&mut merged_options, expr_ref);
       }
+      // An Image shown together with other graphics is a picture whose
+      // coordinates are its pixel grid: it fills `{0, w} × {0, h}`, so
+      // primitives in pixel coordinates land on top of it.
+      Expr::Image { width, height, .. } => {
+        graphic_count += 1;
+        first_graphic_is_plot.get_or_insert(false);
+        let (w, h) = (*width as f64, *height as f64);
+        layers.push(Layer::Prims(merged_primitives.len()));
+        merged_primitives.push(Expr::FunctionCall {
+          name: "Inset".to_string(),
+          args: vec![
+            expr_ref.clone(),
+            Expr::List(vec![Expr::Real(w / 2.0), Expr::Real(h / 2.0)].into()),
+            id_expr("Center"),
+            Expr::List(vec![Expr::Real(w), Expr::Real(h)].into()),
+          ]
+          .into(),
+        });
+        if graphic_count == 1 {
+          let range =
+            |hi: f64| Expr::List(vec![Expr::Integer(0), Expr::Real(hi)].into());
+          merge_option(
+            &mut merged_options,
+            &rule_expr(
+              id_expr("PlotRange"),
+              Expr::List(vec![range(w), range(h)].into()),
+            ),
+          );
+        }
+      }
       _ => {}
     }
   }
@@ -18634,8 +18696,11 @@ impl SpacingSpec {
   /// Resolve to pixels given a cell dimension (width or height)
   fn to_px(self, cell_dim: f64) -> f64 {
     match self {
-      Self::Points(pts) => pts * (4.0 / 3.0), // pt → px at 96 dpi
-      Self::Scaled(frac) => frac * cell_dim,
+      // A negative gap only avoids visible overlap in Wolfram Language
+      // because its plots carry padding around the frame; ours are tight,
+      // so cells are simply butted together instead.
+      Self::Points(pts) => (pts * (4.0 / 3.0)).max(0.0), // pt → px at 96 dpi
+      Self::Scaled(frac) => (frac * cell_dim).max(0.0),
     }
   }
 }
@@ -18734,7 +18799,15 @@ fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
           };
         }
         Expr::Identifier(name) if name == "ImageSize" => {
-          match replacement.as_ref() {
+          // The layout heads hold their arguments, so a computed size such
+          // as `0.75*{w, h}` arrives unevaluated; resolve it to a pair first.
+          let evaluated = match replacement.as_ref() {
+            Expr::List(_) => replacement.as_ref().clone(),
+            other => {
+              evaluate_expr_to_expr(other).unwrap_or_else(|_| other.clone())
+            }
+          };
+          match &evaluated {
             // {w, h} explicit pair
             Expr::List(pair) if pair.len() == 2 => {
               if let Some(w) = try_eval_to_f64(&pair[0]) {
@@ -19956,11 +20029,25 @@ pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     grid_expr_owned = evaluate_expr_to_expr(&args[0])?;
     &grid_expr_owned
   };
-  let Expr::List(outer_items) = grid_list_ref else {
+  let Expr::List(raw_outer_items) = grid_list_ref else {
     return Err(InterpreterError::EvaluationError(
       "GraphicsGrid expects a list of lists as its first argument".into(),
     ));
   };
+  // A held row that is a call rather than a literal list — e.g. the
+  // `{(Plot[…, #] &) /@ {…}}` shape — is a row once it evaluates to a
+  // list, so expand it here instead of treating the call as one cell.
+  let mut outer_items: Vec<Expr> = Vec::with_capacity(raw_outer_items.len());
+  for item in raw_outer_items {
+    match item {
+      Expr::List(_) => outer_items.push(item.clone()),
+      _ => match evaluate_expr_to_expr(item) {
+        Ok(row @ Expr::List(_)) => outer_items.push(row),
+        _ => outer_items.push(item.clone()),
+      },
+    }
+  }
+  let outer_items = &outer_items;
 
   // Determine the widest row so every cell in the grid is re-rendered
   // at the same per-cell width (grids typically expect uniform cells).
@@ -24771,8 +24858,8 @@ fn spec_marks_locator(items: &[Expr]) -> bool {
 /// {xmin, ymin}, {xmax, ymax}, (LocatorPane[Dynamic[pts], …] &)}`. Such a
 /// control is a draggable-points Locator whose options (`LocatorAutoCreate`)
 /// live on the pane rather than on the spec.
-fn custom_locator_pane_options(items: &[Expr]) -> Option<&[Expr]> {
-  fn find<'a>(expr: &'a Expr, var: &str) -> Option<&'a [Expr]> {
+fn custom_locator_pane_options(items: &[Expr]) -> Option<Vec<Expr>> {
+  fn find(expr: &Expr, var: &str) -> Option<Vec<Expr>> {
     match expr {
       Expr::FunctionCall { name, args } => {
         if name == "LocatorPane"
@@ -24783,7 +24870,7 @@ fn custom_locator_pane_options(items: &[Expr]) -> Option<&[Expr]> {
           && dname == "Dynamic"
           && matches!(dargs.first(), Some(Expr::Identifier(v)) if v == var)
         {
-          return Some(&args[1..]);
+          return Some(args.to_vec());
         }
         args.iter().find_map(|a| find(a, var))
       }
@@ -24802,10 +24889,74 @@ fn custom_locator_pane_options(items: &[Expr]) -> Option<&[Expr]> {
       }
       other => other,
     };
-    match it {
-      Expr::Function { body } => find(body, &var),
-      _ => None,
+    let Expr::Function { body } = it else {
+      return None;
+    };
+    // The pane is usually written inline, but a control function often just
+    // calls a user-defined helper (`makeDial[#1, …] &`) that builds it.
+    // Apply the function to `Dynamic[var]` the way Manipulate does and look
+    // for the pane in what it returns.
+    find(body, &var).or_else(|| {
+      let applied = Expr::FunctionCall {
+        name: "Apply".to_string(),
+        args: vec![
+          it.clone(),
+          Expr::List(
+            vec![Expr::FunctionCall {
+              name: "Dynamic".to_string(),
+              args: vec![Expr::Identifier(var.clone())].into(),
+            }]
+            .into(),
+          ),
+        ]
+        .into(),
+      };
+      let built = crate::evaluator::evaluate_expr_to_expr(&applied).ok()?;
+      find(&built, &var)
+    })
+  })
+}
+
+/// The `{{xmin, ymin}, {xmax, ymax}}` a `LocatorPane[Dynamic[var], graphic,
+/// bounds]` lets its locator move in: its explicit third argument, else the
+/// picture's numeric `PlotRange`.
+fn locator_pane_bounds(pane: &[Expr]) -> Option<Vec<(f64, f64)>> {
+  let corners = |e: &Expr| -> Option<Vec<(f64, f64)>> {
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(e).ok()?;
+    let Expr::List(pair) = &evaluated else {
+      return None;
+    };
+    let [a, b] = pair.as_slice() else { return None };
+    Some(vec![list2_f64(a)?, list2_f64(b)?])
+  };
+  if let Some(explicit) =
+    pane.get(2).filter(|e| !matches!(e, Expr::Rule { .. }))
+    && let Some(c) = corners(explicit)
+  {
+    return Some(c);
+  }
+  // `PlotRange -> {{xmin, xmax}, {ymin, ymax}}` on the picture.
+  let Expr::FunctionCall { args, .. } = pane.get(1)? else {
+    return None;
+  };
+  args.iter().find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "PlotRange") =>
+    {
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(replacement).ok()?;
+      let Expr::List(ranges) = &evaluated else {
+        return None;
+      };
+      let [x, y] = ranges.as_slice() else {
+        return None;
+      };
+      let (x0, x1) = list2_f64(x)?;
+      let (y0, y1) = list2_f64(y)?;
+      Some(vec![(x0, y0), (x1, y1)])
     }
+    _ => None,
   })
 }
 
@@ -26032,6 +26183,26 @@ fn strip_empty_string_factor(e: &Expr) -> &Expr {
   }
 }
 
+/// The factors of an implicit product (`a b c` → `[a, b, c]`) in source
+/// order, or the expression itself when it is not a product.
+fn split_implicit_product(e: &Expr) -> Vec<Expr> {
+  match e {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let mut out = split_implicit_product(left);
+      out.extend(split_implicit_product(right));
+      out
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().flat_map(split_implicit_product).collect()
+    }
+    _ => vec![e.clone()],
+  }
+}
+
 /// The flattened control items of a `Row[…]`/`Column[…]`/`Grid[…]`
 /// Manipulate argument that lays several controls out in one row (the
 /// Wolfram Demonstrations pattern `Row[{Control[…], Spacer[20],
@@ -26062,6 +26233,9 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       // inside the `f@@expr` the same way a plain function call is scanned.
       Expr::Apply { func, list } => {
         contains_control(func) || contains_control(list)
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        contains_control(left) || contains_control(right)
       }
       _ => false,
     }
@@ -26201,7 +26375,19 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     return control_group_items(&args[0])
       .map(|items| items.into_iter().map(make_live_caption).collect());
   }
-  let items_owned = tabview_panes(&args[0])?;
+  // A missing comma between two list items (`{Row[{…}] "", Grid[…]}`) parses
+  // as an implicit product; the control panel still lists each factor on its
+  // own, as the author laid them out.
+  let items_owned: Vec<Expr> = tabview_panes(&args[0])?
+    .into_iter()
+    .flat_map(|item| {
+      if contains_control(&item) {
+        split_implicit_product(&item)
+      } else {
+        vec![item]
+      }
+    })
+    .collect();
   let items = &items_owned;
   let mut out = Vec::new();
   // Consecutive label pieces of a `Row` (`"show ", Style["C", Italic], …`)
@@ -26373,10 +26559,14 @@ pub(crate) fn tabview_pane_parts(item: &Expr) -> (Option<Expr>, &Expr, &Expr) {
 /// control is just as likely to arrive `Control`-wrapped.
 fn unwrap_control_wrapper(spec: Expr) -> Expr {
   // `Framed[Control[…]]` / `Panel[Control[…]]`: a bordered single control;
-  // `Tooltip[Control[…], hint]` only adds a hover hint to it.
+  // `Tooltip[Control[…], hint]` only adds a hover hint to it, and
+  // `Item[Control[…], Alignment -> …]` is a grid cell that only positions it.
   let spec = match &spec {
     Expr::FunctionCall { name, args }
-      if (name == "Framed" || name == "Panel" || name == "Tooltip")
+      if (name == "Framed"
+        || name == "Panel"
+        || name == "Tooltip"
+        || name == "Item")
         && matches!(
           args.first(),
           Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
@@ -28042,6 +28232,32 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     {
       vec![]
     }
+    // `f[x]` with a compound head — `Subscript[π, q, a][x]` reads
+    // `π₍q,a₎(x)`: the head typeset as usual, the arguments in parentheses.
+    Expr::CurriedCall { func, args } => {
+      let mut runs = manipulate_label_runs(func, italic);
+      runs.push(LabelRun {
+        text: "(".to_string(),
+        italic: false,
+        ..Default::default()
+      });
+      for (i, arg) in args.iter().enumerate() {
+        if i > 0 {
+          runs.push(LabelRun {
+            text: ", ".to_string(),
+            italic: false,
+            ..Default::default()
+          });
+        }
+        runs.extend(manipulate_label_runs(arg, italic));
+      }
+      runs.push(LabelRun {
+        text: ")".to_string(),
+        italic: false,
+        ..Default::default()
+      });
+      runs
+    }
     Expr::FunctionCall { name, args } => match name.as_str() {
       // Style[expr, dir…] — render `expr`, turning italic on if any directive
       // asks for it (bare `Italic` or `FontSlant -> "Italic"`), and applying
@@ -29131,9 +29347,33 @@ fn parse_manipulate_control(
         })
       })
       .collect();
+    // A custom control function that draws `LocatorPane[Dynamic[var, cb],
+    // graphic, {{xmin, ymin}, {xmax, ymax}}]` carries the write-back
+    // callback on the pane's `Dynamic`, and the coordinate range on the
+    // pane (or, failing that, on the picture's `PlotRange`).
+    let pane = custom_locator_pane_options(items);
+    let pane_callback: Option<String> =
+      pane.as_ref().and_then(|p| match p.first() {
+        Some(Expr::FunctionCall { args, .. }) if args.len() >= 2 => {
+          Some(crate::syntax::expr_to_source_form(&args[1]))
+        }
+        _ => None,
+      });
+    let corner_bounds = if corner_bounds.len() >= 2 {
+      corner_bounds
+    } else {
+      pane
+        .as_deref()
+        .and_then(locator_pane_bounds)
+        .unwrap_or(corner_bounds)
+    };
     let auto_create = items
       .iter()
-      .chain(custom_locator_pane_options(items).into_iter().flatten())
+      .chain(
+        custom_locator_pane_options(items)
+          .iter()
+          .flat_map(|pane| pane.iter().skip(1)),
+      )
       .any(|it| {
       matches!(
         it,
@@ -29157,7 +29397,16 @@ fn parse_manipulate_control(
     });
     if let Some((x, y)) = list2_f64(&evaluated) {
       let (x_min, x_max, y_min, y_max) =
-        locator_range(&corner_bounds, &[(x, y)]);
+        if pane.is_some() && corner_bounds.len() < 2 {
+          // A pane whose picture states no range sits on an origin-centered
+          // picture (a dial, a unit-square pad): span the origin and the
+          // point symmetrically rather than a box around the point alone.
+          let half_x = x.abs().max(1.0);
+          let half_y = y.abs().max(1.0);
+          (-half_x, half_x, -half_y, half_y)
+        } else {
+          locator_range(&corner_bounds, &[(x, y)])
+        };
       return Some(ParsedControl::Visible {
         control: ManipulateControl::Slider2D {
           name,
@@ -29168,7 +29417,7 @@ fn parse_manipulate_control(
           x_initial: x,
           y_initial: y,
           label,
-          write_callback: None,
+          write_callback: pane_callback,
         },
         enabled,
         min_code: None,
@@ -30413,10 +30662,15 @@ pub fn manipulate_block_code(
   if bindings.is_empty() {
     return body_code.to_string();
   }
+  // A frozen graphic has no source form; it stays a global.
   let binding_parts: Vec<String> = bindings
     .iter()
+    .filter(|(_, value)| !crate::is_frozen_graphic(value))
     .map(|(name, value)| format!("{name} = {value}"))
     .collect();
+  if binding_parts.is_empty() {
+    return body_code.to_string();
+  }
   format!("Block[{{{}}}, {}]", binding_parts.join(", "), body_code)
 }
 
@@ -30667,7 +30921,9 @@ pub fn read_manipulate_state(names: &[String]) -> Vec<(String, String)> {
       if matches!(&value, Expr::Identifier(s) if s == name) {
         return None;
       }
-      Some((name.clone(), crate::syntax::expr_to_source_form(&value)))
+      let source = crate::freeze_graphic(name, &value)
+        .unwrap_or_else(|| crate::syntax::expr_to_source_form(&value));
+      Some((name.clone(), source))
     })
     .collect()
 }

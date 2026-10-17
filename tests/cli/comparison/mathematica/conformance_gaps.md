@@ -31,14 +31,12 @@ wolframscript -code 'ToString[ReplaceAll[x, 5], InputForm]'         # x /. 5
 woxi eval 'ToString[ReplaceAll[x, 5], InputForm]'                   # ReplaceAll[x, 5]
 
 # In a held expression:
-wolframscript -code 'ToString[Unevaluated[Map[f, g]], InputForm]'   # f /@ g
-woxi eval 'ToString[Unevaluated[Map[f, g]], InputForm]'             # Map[f, g]
+wolframscript -code 'ToString[Unevaluated[ReplaceRepeated[x, 5]], InputForm]'   # x //. 5
+woxi eval 'ToString[Unevaluated[ReplaceRepeated[x, 5]], InputForm]'             # ReplaceRepeated[x, 5]
 ```
 
-The affected heads are the ones with operator spellings: `ReplaceAll` (`/.`),
-`ReplaceRepeated` (`//.`), `Map` (`/@`), `Apply` (`@@`), and `Part` (`[[…]]`).
-`Part` is the mildest of these — it renders correctly on its own and only
-diverges inside a hold (`ToString[Unevaluated[Part[a, 2]], InputForm]`).
+The affected heads are `ReplaceAll` (`/.`) and `ReplaceRepeated` (`//.`).
+`Map`, `Apply`, `MapApply`, `MapAll` and `Part` print with their operators.
 
 ### `InputForm` brackets more than the printed form does
 
@@ -91,6 +89,17 @@ woxi eval 'ToString[Unevaluated[<|1 -> a|>], InputForm]'            # <|1 -> a|>
 
 Cosmetic, and confined to held echoes: `ToString[<|1 -> a|>, InputForm]` agrees
 on both engines.
+
+### A unary minus inside `Backslash` is not bracketed
+
+`Backslash` (precedence 460) binds looser than unary minus (480), yet
+wolframscript brackets a negated operand anyway; Woxi prints it bare. Both
+re-parse to the same tree.
+
+```sh
+wolframscript -code 'ToString[Hold[Backslash[-a, b]], InputForm]'   # Hold[(-a) ∖ b]
+woxi eval 'ToString[Hold[Backslash[-a, b]], InputForm]'             # Hold[-a ∖ b]
+```
 
 ### `-a/b` groups differently, and a held reciprocal is not canonicalized
 
@@ -3151,6 +3160,31 @@ woxi eval 'F[x_]=G[x]; N[F[x_]]=x^2; ClearAll[F]; {N[F[2]], N[G[2]]}'
 ```
 
 
+### `Flat` without `OneIdentity` binds singletons bare
+
+For a head that is `Flat` but not `OneIdentity`, Wolfram matches a blank that
+takes a single argument as `h[arg]` first, then bare, even when the argument
+counts are equal. Woxi always binds the bare argument. `Dot`,
+`NonCommutativeMultiply`, `Plus` and `Times` are all `OneIdentity`, so this
+only shows up for user heads.
+
+```sh
+wolframscript -code 'SetAttributes[h, Flat]; h[a, b, c] /. h[x_, y_] :> {x, y}'  # {h[a], h[b, c]}
+woxi eval 'SetAttributes[h, Flat]; h[a, b, c] /. h[x_, y_] :> {x, y}'            # {a, h[b, c]}
+wolframscript -code 'SetAttributes[h, Flat]; h[a, b] /. h[x_, y_] :> {x, y}'     # {h[a], h[b]}
+wolframscript -code 'SetAttributes[h, Flat]; ReplaceList[h[a, b, c], h[x_, y_] :> {x, y}]'
+# {{h[a], h[b, c]}, {h[a, b], h[c]}, {a, h[b, c]}, {h[a, b], c}}
+```
+
+With `Orderless` added, `ReplaceList` lists the wrapped readings first too,
+but `/.` picks a bare one (`{b, g[a, c]}` for `g[a, b, c]`), so the rule is
+not just "wrapped first".
+
+### A minus right after `.` is accepted
+
+Wolfram rejects `a . -b` (and `a . b . -c`) as a syntax error; Woxi reads it
+as `Dot[a, -b]`.
+
 ## Messages and error handling
 
 ### `RealDigits` of an arbitrary-precision number: the last digit
@@ -4973,3 +5007,10 @@ empty chart. Everything else in that Manipulate (the `Column`/`Panel` layout,
 `Tally`, the `BarChart` with `ChartLabels`) works when given a plain string.
 The full texts are needed verbatim to match Wolfram, which is why no
 truncated stand-in is bundled.
+
+### `Rotate[Text[…], angle]` inside a `Grid` cell is not rotated
+
+A `Grid` cell holding `Rotate[Text["Value"], 90 Degree]` (the usual vertical
+axis label beside a `GraphicsGrid`, as in the `Intramarginal Rent`
+Demonstration) is drawn unrotated. Rotation is honoured for plot labels
+(`PlotLabel`/`AxesLabel`) but not for `Grid` cell content.
