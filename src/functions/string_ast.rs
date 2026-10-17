@@ -802,11 +802,8 @@ fn split_replacement_value(
     return Ok(Expr::String(r.clone()));
   }
   if let Some(name) = cap_name {
-    let substituted = crate::syntax::substitute_variable(
-      rhs,
-      name,
-      &Expr::String(matched.to_string()),
-    );
+    let substituted =
+      crate::syntax::substitute_variable(rhs, name, &str_expr(matched));
     // Identity capture (`x : patt :> x`) needs no evaluation.
     if let Expr::String(_) = substituted {
       return Ok(substituted);
@@ -877,7 +874,7 @@ fn string_split_with_replacement(
       }
     }
     let Some((start, end, idx)) = best else { break };
-    result.push(Expr::String(s[last..start].to_string()));
+    result.push(str_expr(&s[last..start]));
     let (_, cap_name, rhs) = &compiled[idx];
     if let Some(rhs) = rhs {
       result.push(split_replacement_value(
@@ -889,7 +886,7 @@ fn string_split_with_replacement(
     last = end;
     splits += 1;
   }
-  result.push(Expr::String(s[last..].to_string()));
+  result.push(str_expr(&s[last..]));
 
   if max_parts.is_none() {
     // Drop a leading / trailing empty *text* segment.
@@ -944,10 +941,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // 1-argument form: split by whitespace, removing empty strings
   if args.len() == 1 {
-    let parts: Vec<Expr> = s
-      .split_whitespace()
-      .map(|p| Expr::String(p.to_string()))
-      .collect();
+    let parts: Vec<Expr> = s.split_whitespace().map(str_expr).collect();
     return Ok(Expr::List(parts.into()));
   }
 
@@ -1083,21 +1077,15 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           break;
         }
-        pieces.push(Expr::String(s[last..start].to_string()));
+        pieces.push(str_expr(&s[last..start]));
         last = end;
       }
-      pieces.push(Expr::String(s[last..].to_string()));
+      pieces.push(str_expr(&s[last..]));
       pieces
     } else if let Some(n) = max_parts {
-      re.splitn(&s, n)
-        .into_iter()
-        .map(|p| Expr::String(p.to_string()))
-        .collect()
+      re.splitn(&s, n).into_iter().map(str_expr).collect()
     } else {
-      re.split(&s)
-        .into_iter()
-        .map(|p| Expr::String(p.to_string()))
-        .collect()
+      re.split(&s).into_iter().map(str_expr).collect()
     };
     // Leading/trailing empty pieces are only dropped when no explicit
     // maximum number of pieces was requested.
@@ -1132,20 +1120,14 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           InterpreterError::EvaluationError(format!("Regex error: {e}"))
         })?;
       if let Some(n) = max_parts {
-        re.splitn(&s, n)
-          .map(|p| Expr::String(p.to_string()))
-          .collect()
+        re.splitn(&s, n).map(str_expr).collect()
       } else {
-        re.split(&s).map(|p| Expr::String(p.to_string())).collect()
+        re.split(&s).map(str_expr).collect()
       }
     } else if let Some(n) = max_parts {
-      s.splitn(n, &delims[0])
-        .map(|p| Expr::String(p.to_string()))
-        .collect()
+      s.splitn(n, &delims[0]).map(str_expr).collect()
     } else {
-      s.split(&delims[0])
-        .map(|p| Expr::String(p.to_string()))
-        .collect()
+      s.split(&delims[0]).map(str_expr).collect()
     }
   } else {
     // Split by multiple delimiters: scan left to right, trying the longest
@@ -1987,14 +1969,11 @@ pub fn string_replace_list_ast(
     // are dropped so a non-string replacement gives StringExpression[5, "bc"]
     // rather than StringExpression["", 5, "bc"].
     let (bs, be) = m.span;
-    let segments: Vec<Expr> = [
-      Expr::String(s[..bs].to_string()),
-      replacement,
-      Expr::String(s[be..].to_string()),
-    ]
-    .into_iter()
-    .filter(|seg| !matches!(seg, Expr::String(t) if t.is_empty()))
-    .collect();
+    let segments: Vec<Expr> =
+      [str_expr(&s[..bs]), replacement, str_expr(&s[be..])]
+        .into_iter()
+        .filter(|seg| !matches!(seg, Expr::String(t) if t.is_empty()))
+        .collect();
     results.push(join_replacement_segments(segments));
   }
   Ok(Expr::List(results.into()))
@@ -2115,7 +2094,7 @@ pub fn string_riffle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     owned_default_seps = (0..depth)
       .rev()
       .map(|i| match i {
-        0 => Expr::String(" ".to_string()),
+        0 => str_expr(" "),
         n => Expr::String("\n".repeat(n)),
       })
       .collect();
@@ -2584,12 +2563,12 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let s = expr_to_str(&args[0]);
 
   if args.len() == 1 {
-    Ok(Expr::String(s.trim().to_string()))
+    Ok(str_expr(s.trim()))
   } else if let Expr::String(patt) = &args[1] {
     // Plain string literal: strip one occurrence from each end
     let trimmed = s.strip_prefix(patt.as_str()).unwrap_or(&s);
     let trimmed = trimmed.strip_suffix(patt.as_str()).unwrap_or(trimmed);
-    Ok(Expr::String(trimmed.to_string()))
+    Ok(str_expr(trimmed))
   } else if let Some((regex_pat, constraints)) =
     string_pattern_to_regex_with_state(&args[1])
   {
@@ -2634,7 +2613,7 @@ fn substitute_captures(expr: &Expr, captures: &Captures) -> Expr {
   match expr {
     Expr::Identifier(name) => {
       if let Some(m) = captures.name(name) {
-        Expr::String(m.as_str().to_string())
+        str_expr(m.as_str())
       } else {
         expr.clone()
       }
@@ -3860,7 +3839,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let test_sub = substitute_captures(test, &caps);
         let test_val = crate::evaluator::evaluate_expr_to_expr(&test_sub)?;
         if matches!(&test_val, Expr::Identifier(t) if t == "True") {
-          out.push(Expr::String(m.as_str().to_string()));
+          out.push(str_expr(m.as_str()));
           if overlaps {
             let ch = s[i..].chars().next().unwrap();
             i += ch.len_utf8();
@@ -3890,7 +3869,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       all_overlap_spans(&with_ci(&regex_str), &constraints, &s)?
         .into_iter()
         .take(max_count)
-        .map(|(bs, be)| Expr::String(s[bs..be].to_string()))
+        .map(|(bs, be)| str_expr(&s[bs..be]))
         .collect()
     } else if overlaps {
       // Overlapping: emit a match for every char start position where the
@@ -3911,7 +3890,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           })
         {
-          out.push(Expr::String(m.as_str().to_string()));
+          out.push(str_expr(m.as_str()));
         }
       }
       out
@@ -3919,7 +3898,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       re.find_iter(&s)
         .into_iter()
         .take(max_count)
-        .map(|m| Expr::String(m.as_str().to_string()))
+        .map(|m| str_expr(m.as_str()))
         .collect()
     } else {
       // Non-overlapping match with back-reference constraints. Scan position
@@ -3941,7 +3920,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           })
         {
-          out.push(Expr::String(m.as_str().to_string()));
+          out.push(str_expr(m.as_str()));
           i += m.len();
         } else {
           let ch = s[i..].chars().next().unwrap();
@@ -3968,7 +3947,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .find_iter(&s)
       .into_iter()
       .take(max_count)
-      .map(|m| Expr::String(m.as_str().to_string()))
+      .map(|m| str_expr(m.as_str()))
       .collect();
     return Ok(Expr::List(matches.into()));
   }
@@ -5289,7 +5268,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if is_input_form {
       return Ok(Expr::String(mathml));
     }
-    return Ok(Expr::String(mathml.trim_end_matches('\n').to_string()));
+    return Ok(str_expr(mathml.trim_end_matches('\n')));
   }
 
   // If the expression is StandardForm[inner], produce box form representation
@@ -10754,7 +10733,7 @@ pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "y", "z", "ź", "ż",
     ]
     .iter()
-    .map(|s| Expr::String((*s).to_string()))
+    .map(|s| str_expr(s))
     .collect(),
     Some("Russian") => chars_to_list("абвгдеёжзийклмнопрстуфхцчшщъыьэюя"),
     // Pan-Cyrillic: superset covering several national alphabets (Russian,
@@ -10766,8 +10745,8 @@ pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "р", "с", "с́", "т", "ћ", "ќ", "у", "ў", "ф", "х", "ц", "ч", "џ", "ш",
       "щ", "ъ", "ы", "ь", "э", "ю", "я",
     ]
-    .iter()
-    .map(|s| Expr::String((*s).to_string()))
+    .into_iter()
+    .map(str_expr)
     .collect(),
     Some("Greek") => chars_to_list("αβγδεζηθικλμνξοπρστυφχψω"),
     Some(_) => {
@@ -10800,7 +10779,7 @@ pub fn from_letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if (-len..=-1).contains(&n) {
         len + n + 1
       } else {
-        return Expr::String(" ".to_string());
+        return str_expr(" ");
       };
       letters[(pos - 1) as usize].clone()
     };
@@ -10828,7 +10807,7 @@ pub fn from_letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else if (-26..=-1).contains(&n) {
       (26 + n + 1) as u8 // -1->26, -2->25, ..., -26->1
     } else {
-      return Expr::String(" ".to_string());
+      return str_expr(" ");
     };
     let ch = (b'a' + pos - 1) as char;
     Expr::String(ch.to_string())
@@ -13302,7 +13281,7 @@ pub fn format_digest(hex_string: &str, format: &str) -> Option<Expr> {
     .collect();
 
   match format {
-    "HexString" => Some(Expr::String(hex_string.to_string())),
+    "HexString" => Some(str_expr(hex_string)),
     "Base64Encoding" => {
       use base64::Engine;
       let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
@@ -13584,7 +13563,7 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           break;
         }
-        results.push(Expr::String(line.to_string()));
+        results.push(str_expr(line));
       }
     }
     "Word" => {
@@ -13595,7 +13574,7 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           break;
         }
-        results.push(Expr::String(word.to_string()));
+        results.push(str_expr(word));
       }
     }
     "Number" => {
@@ -13671,7 +13650,7 @@ fn read_list_record(
       };
       let token = tokens.get(i).unwrap_or(&"");
       match type_name {
-        "Word" => record.push(Expr::String(token.to_string())),
+        "Word" => record.push(str_expr(token)),
         "Number" => {
           if let Ok(n) = token.parse::<i128>() {
             record.push(Expr::Integer(n));
@@ -13681,7 +13660,7 @@ fn read_list_record(
             record.push(Expr::Identifier(token.to_string()));
           }
         }
-        "String" => record.push(Expr::String(token.to_string())),
+        "String" => record.push(str_expr(token)),
         _ => {
           if let Ok(expr) = crate::syntax::string_to_expr(token) {
             if let Ok(val) = crate::evaluator::evaluate_expr_to_expr(&expr) {
@@ -14577,9 +14556,9 @@ pub fn build_template_object(
   // XMLTemplate reports its insertion function as the string "HTMLFragment";
   // plain string templates use the TextString symbol.
   let insertion_value = if insertion_function == "HTMLFragment" {
-    Expr::String(insertion_function.to_string())
+    str_expr(insertion_function)
   } else {
-    Expr::Identifier(insertion_function.to_string())
+    id_expr(insertion_function)
   };
   object_args.push(option("InsertionFunction", insertion_value));
   object_args.push(option("MetaInformation", Expr::Association(Vec::new())));
@@ -16053,6 +16032,40 @@ pub(crate) fn number_form_family_to_string(
   head: &str,
   inner: &[Expr],
 ) -> Option<String> {
+  // A wrapper around another wrapper (`AccountingForm[NumberForm[x, {12, 2}],
+  // 12]`) formats the innermost number with the inner wrapper's own spec and
+  // options; the outer arguments only fill in what the inner one left out.
+  if let Some(Expr::FunctionCall {
+    name: inner_head,
+    args: inner_args,
+  }) = inner.first()
+    && matches!(
+      inner_head.as_str(),
+      "NumberForm" | "PaddedForm" | "AccountingForm"
+    )
+  {
+    let is_rule =
+      |a: &Expr| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+    let inner_positional = inner_args.iter().filter(|a| !is_rule(a)).count();
+    let mut merged: Vec<Expr> = inner_args.to_vec();
+    if inner_positional < 2 {
+      merged.extend(
+        inner[1..]
+          .iter()
+          .filter(|a| !is_rule(a))
+          .take(2 - inner_positional)
+          .cloned(),
+      );
+    }
+    merged.extend(inner[1..].iter().filter(|a| is_rule(a)).cloned());
+    // The inner wrapper decides how the digits are laid out; an outer
+    // AccountingForm only turns a leading minus sign into brackets.
+    let rendered = number_form_family_to_string(inner_head, &merged)?;
+    return Some(match rendered.strip_prefix('-') {
+      Some(digits) if head == "AccountingForm" => format!("({digits})"),
+      _ => rendered,
+    });
+  }
   let positional: Vec<&Expr> = inner
     .iter()
     .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
@@ -16637,10 +16650,7 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Err(call(
         "Missing",
-        vec![
-          Expr::String("PartAbsent".to_string()),
-          Expr::Integer(n as i128),
-        ],
+        vec![str_expr("PartAbsent"), Expr::Integer(n as i128)],
       ))
     }
   };

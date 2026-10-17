@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// Parse CSV input (RFC 4180) into a vector of rows, each row a vector of field strings.
@@ -83,7 +82,7 @@ fn auto_convert(s: &str) -> Expr {
   // An empty field has no value at all, which wolframscript reports as
   // Missing["NotAvailable"] rather than an empty string.
   if trimmed.is_empty() {
-    return call1("Missing", Expr::String("NotAvailable".to_string()));
+    return call1("Missing", str_expr("NotAvailable"));
   }
 
   // Try integer
@@ -106,7 +105,7 @@ fn auto_convert(s: &str) -> Expr {
     _ => {}
   }
 
-  Expr::String(s.to_string())
+  str_expr(s)
 }
 
 /// The type name wolframscript reports for a CSV column: `Integer64`,
@@ -205,12 +204,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
 
   if rows.is_empty() {
     return match element {
-      "Elements" => Expr::List(
-        ELEMENTS
-          .iter()
-          .map(|s| Expr::String(s.to_string()))
-          .collect(),
-      ),
+      "Elements" => Expr::List(ELEMENTS.iter().map(|s| str_expr(s)).collect()),
       "Data" | "RawData" => Expr::List(vec![].into()),
       "ColumnLabels" => Expr::List(vec![].into()),
       "ColumnCount" => Expr::Integer(0),
@@ -221,12 +215,9 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
       "ColumnTypes" => Expr::List(vec![].into()),
       "Schema" => super::tabular_ast::build_schema(&[], &[], 0),
       "Summary" => Expr::Association(vec![
-        (Expr::String("Columns".to_string()), Expr::Integer(0)),
-        (Expr::String("Rows".to_string()), Expr::Integer(0)),
-        (
-          Expr::String("ColumnLabels".to_string()),
-          Expr::List(vec![].into()),
-        ),
+        (str_expr("Columns"), Expr::Integer(0)),
+        (str_expr("Rows"), Expr::Integer(0)),
+        (str_expr("ColumnLabels"), Expr::List(vec![].into())),
       ]),
       "Dataset" => {
         super::dataset_ast::dataset_ast(&[Expr::List(vec![].into())])
@@ -245,12 +236,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
   let num_data_rows = data_rows.len();
 
   match element {
-    "Elements" => Expr::List(
-      ELEMENTS
-        .iter()
-        .map(|s| Expr::String(s.to_string()))
-        .collect(),
-    ),
+    "Elements" => Expr::List(ELEMENTS.iter().map(|s| str_expr(s)).collect()),
 
     // Every row, the labels included: the header is data too.
     "Data" => Expr::List(
@@ -369,16 +355,10 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
     }
 
     "Summary" => Expr::Association(vec![
+      (str_expr("Columns"), Expr::Integer(num_cols as i128)),
+      (str_expr("Rows"), Expr::Integer(num_data_rows as i128)),
       (
-        Expr::String("Columns".to_string()),
-        Expr::Integer(num_cols as i128),
-      ),
-      (
-        Expr::String("Rows".to_string()),
-        Expr::Integer(num_data_rows as i128),
-      ),
-      (
-        Expr::String("ColumnLabels".to_string()),
+        str_expr("ColumnLabels"),
         Expr::List(header.iter().map(|s| Expr::String(s.clone())).collect()),
       ),
     ]),

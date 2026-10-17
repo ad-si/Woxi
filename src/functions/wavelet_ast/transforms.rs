@@ -39,10 +39,10 @@ impl Padding {
   }
   pub fn to_expr(&self) -> Expr {
     match self {
-      Self::Periodic => Expr::String("Periodic".into()),
-      Self::Reflected => Expr::String("Reflected".into()),
-      Self::Reversed => Expr::String("Reversed".into()),
-      Self::Fixed => Expr::String("Fixed".into()),
+      Self::Periodic => str_expr("Periodic"),
+      Self::Reflected => str_expr("Reflected"),
+      Self::Reversed => str_expr("Reversed"),
+      Self::Fixed => str_expr("Fixed"),
       Self::Constant(c) => Expr::Real(*c),
     }
   }
@@ -970,10 +970,9 @@ fn spec_to_expr(spec: &WaveletSpec) -> Expr {
       "ReverseBiorthogonalSplineWavelet",
       vec![int(*n as i128), int(*m as i128)],
     ),
-    WaveletSpec::Cdf(lossy) => call1(
-      "CDFWavelet",
-      Expr::String(if *lossy { "9/7" } else { "5/3" }.to_string()),
-    ),
+    WaveletSpec::Cdf(lossy) => {
+      call1("CDFWavelet", str_expr(if *lossy { "9/7" } else { "5/3" }))
+    }
     WaveletSpec::Meyer(n, lim) => {
       call("MeyerWavelet", vec![int(*n as i128), Expr::Real(*lim)])
     }

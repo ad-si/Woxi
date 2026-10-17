@@ -1290,6 +1290,28 @@ fn contains_mutating_head(expr: &Expr) -> bool {
   }
 }
 
+/// Whether `expr` holds a `p_?test` anywhere. The placeholder round trip in
+/// `normalize_structural_pattern` keeps only a variable's name, head and
+/// blank type, so it would silently drop the test (`f[g[x_?EvenQ]]` would
+/// then match `g[3]`). Such patterns are stored as written.
+fn contains_pattern_test(expr: &Expr) -> bool {
+  match expr {
+    Expr::PatternTest { .. } => true,
+    Expr::FunctionCall { name, args } => {
+      name == "PatternTest" || args.iter().any(contains_pattern_test)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_pattern_test(left) || contains_pattern_test(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_pattern_test(operand),
+    Expr::List(items) => items.iter().any(contains_pattern_test),
+    Expr::CurriedCall { func, args } => {
+      contains_pattern_test(func) || args.iter().any(contains_pattern_test)
+    }
+    _ => false,
+  }
+}
+
 /// Whether the `index`-th argument of a call to `head` is held by the
 /// head's attributes. Such an argument on a definition's left-hand side is
 /// stored as written rather than evaluated: with `q` HoldFirst, `q[n] := 2`
@@ -1312,7 +1334,10 @@ pub(crate) fn lhs_slot_is_held(head: &str, index: usize) -> bool {
 /// E.g., `1/x_` (BinaryOp Divide) → `Power[x_, -1]` (canonical form).
 fn normalize_structural_pattern(pattern: &Expr) -> Expr {
   let vars = collect_pattern_vars(pattern);
-  if vars.is_empty() || contains_mutating_head(pattern) {
+  if vars.is_empty()
+    || contains_mutating_head(pattern)
+    || contains_pattern_test(pattern)
+  {
     return pattern.clone();
   }
   let with_placeholders = replace_patterns_with_placeholders(pattern, &vars);
@@ -3401,7 +3426,12 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         // existing rule it strictly dominates (is more specific than). Rules it
         // does not dominate — including incomparable ones — keep definition
         // order, matching Wolfram.
-        let pos = entry
+        // The dominance check matches patterns, which can evaluate user
+        // code (`x_?(#>0&)` tests) that reads `FUNC_DEFS`; run it on the
+        // rules lifted out of the table so no borrow is held meanwhile.
+        let existing = std::mem::take(entry);
+        drop(defs);
+        let pos = existing
           .iter()
           .position(|(p, c, d, h, bt, b)| {
             rule_dominates(
@@ -3419,7 +3449,12 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
               b,
             )
           })
-          .unwrap_or(entry.len());
+          .unwrap_or(existing.len());
+        let mut defs = m.borrow_mut();
+        let entry = defs.entry(func_name.clone()).or_default();
+        // A rule defined while the check ran stays after the old ones.
+        let added = std::mem::replace(entry, existing);
+        entry.extend(added);
         entry.insert(
           pos,
           (

@@ -21,7 +21,6 @@
 //! through [`SocketEntry::read_buffer`] so a short read leaves the rest
 //! addressable for the next one.
 
-#[allow(unused_imports)]
 use super::*;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -246,7 +245,7 @@ fn shutdown_entry(entry: &mut SocketEntry) {
 #[cfg(not(target_arch = "wasm32"))]
 fn new_uuid(server: bool) -> String {
   let prefix = if server { SERVER_UUID_PREFIX } else { "" };
-  let args = [Expr::String(prefix.to_string())];
+  let args = [str_expr(prefix)];
   let created =
     crate::evaluator::dispatch::predicate_functions::dispatch_predicate_functions(
       "CreateUUID",
@@ -262,7 +261,7 @@ fn new_uuid(server: bool) -> String {
 /// The `SocketObject["uuid"]` expression for a registry entry.
 #[cfg(not(target_arch = "wasm32"))]
 fn socket_expr(uuid: &str) -> Expr {
-  call1("SocketObject", Expr::String(uuid.to_string()))
+  call1("SocketObject", str_expr(uuid))
 }
 
 /// The UUID inside a `SocketObject["uuid"]`, whatever its registry state.
@@ -415,21 +414,18 @@ fn parse_endpoint(
 fn bad_protocol_failure(head: &str, protocol: &str) -> Expr {
   let template = call(
     "MessageName",
-    vec![
-      Expr::Identifier(head.to_string()),
-      Expr::String("noproto".to_string()),
-    ],
+    vec![Expr::Identifier(head.to_string()), str_expr("noproto")],
   );
-  let key = Expr::String("MessageTemplate".to_string());
+  let key = str_expr("MessageTemplate");
   Expr::FunctionCall {
     name: "Failure".to_string(),
     args: vec![
-      Expr::String("SocketsLink".to_string()),
+      str_expr("SocketsLink"),
       Expr::Association(vec![
         (key.clone(), rule_delayed_expr(key, template)),
         (
-          Expr::String("MessageParameters".to_string()),
-          Expr::List(vec![Expr::String(protocol.to_string())].into()),
+          str_expr("MessageParameters"),
+          Expr::List(vec![str_expr(protocol)].into()),
         ),
       ]),
     ]
@@ -1109,15 +1105,9 @@ fn handler_association(event: &SocketEvent, listen_socket: &str) -> Expr {
   let timestamp = crate::functions::datetime_ast::absolute_time_ast(&[])
     .unwrap_or(Expr::Real(0.0));
   let mut pairs = vec![
-    (Expr::String("TimeStamp".to_string()), timestamp),
-    (
-      Expr::String("SourceSocket".to_string()),
-      socket_expr(&event.socket),
-    ),
-    (
-      Expr::String("Socket".to_string()),
-      socket_expr(listen_socket),
-    ),
+    (str_expr("TimeStamp"), timestamp),
+    (str_expr("SourceSocket"), socket_expr(&event.socket)),
+    (str_expr("Socket"), socket_expr(listen_socket)),
   ];
   match &event.kind {
     EventKind::Data(bytes) => {
@@ -1134,17 +1124,14 @@ fn handler_association(event: &SocketEvent, listen_socket: &str) -> Expr {
         call1("ByteArrayToString", byte_array.clone()),
       ));
       pairs.push(delayed("DataBytes", call1("Normal", byte_array.clone())));
-      pairs.push((Expr::String("DataByteArray".to_string()), byte_array));
+      pairs.push((str_expr("DataByteArray"), byte_array));
       pairs.push((
-        Expr::String("MultipartComplete".to_string()),
+        str_expr("MultipartComplete"),
         crate::helpers::bool_expr(true),
       ));
     }
     EventKind::Error(message) => {
-      pairs.push((
-        Expr::String("Message".to_string()),
-        Expr::String(message.clone()),
-      ));
+      pairs.push((str_expr("Message"), Expr::String(message.clone())));
     }
     EventKind::Accepted | EventKind::Closed => {}
   }
@@ -1155,7 +1142,7 @@ fn handler_association(event: &SocketEvent, listen_socket: &str) -> Expr {
 /// marker `Expr::Association` uses for one.
 #[cfg(not(target_arch = "wasm32"))]
 fn delayed(key: &str, value: Expr) -> (Expr, Expr) {
-  let key = Expr::String(key.to_string());
+  let key = str_expr(key);
   (key.clone(), rule_delayed_expr(key, value))
 }
 
@@ -1529,13 +1516,7 @@ const LISTENER_PROPERTIES: [&str; 5] = [
 
 #[cfg(not(target_arch = "wasm32"))]
 fn string_list(items: &[&str]) -> Expr {
-  Expr::List(
-    items
-      .iter()
-      .map(|s| Expr::String((*s).to_string()))
-      .collect::<Vec<_>>()
-      .into(),
-  )
+  Expr::List(items.iter().map(|s| str_expr(s)).collect())
 }
 
 /// `SocketObject[…]["property"]`. An unknown property gives the empty list,
@@ -1583,16 +1564,16 @@ pub fn socket_property(uuid: &str, property: &str) -> Option<Expr> {
       // True only for ZeroMQ's in-process transport, which has no TCP
       // socket behind it at all.
       "InprocQ" => crate::helpers::bool_expr(false),
-      "Protocol" => Expr::String("TCP".to_string()),
-      "Scheme" => Expr::String("tcp".to_string()),
+      "Protocol" => str_expr("TCP"),
+      "Scheme" => str_expr("tcp"),
       // A socket nobody is listening on reports `None`, not the empty list
       // an unknown property gives.
       "SocketListener" => entry.listener_id.map_or_else(
         || id_expr("None"),
         |id| call1("SocketListener", Expr::Integer(id)),
       ),
-      "Type" => Expr::String("ZMQ_STREAM".to_string()),
-      "UUID" => Expr::String(uuid.to_string()),
+      "Type" => str_expr("ZMQ_STREAM"),
+      "UUID" => str_expr(uuid),
       _ => empty(),
     })
   })
@@ -1609,7 +1590,7 @@ pub fn listener_property(id: i128, property: &str) -> Option<Expr> {
     let listeners = l.borrow();
     let entry = listeners.get(&id)?;
     Some(match property {
-      "CharacterEncoding" => Expr::String("UTF-8".to_string()),
+      "CharacterEncoding" => str_expr("UTF-8"),
       "HandlerFunctions" => Expr::Association(
         entry
           .handlers

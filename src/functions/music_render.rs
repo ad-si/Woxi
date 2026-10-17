@@ -13,7 +13,6 @@
 //! so no font need be embedded or shaped by the host. The staff lines, stems,
 //! ledger lines and barlines are engraving rules, drawn directly as `<line>`s.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::graphics::theme;
 use crate::functions::music_ast::{
@@ -1590,7 +1589,7 @@ mod tests {
 
   /// A bare `MusicPitch` (pitch only, no rhythmic value).
   fn note(name: &str) -> Expr {
-    call1("MusicPitch", Expr::String(name.to_string()))
+    call1("MusicPitch", str_expr(name))
   }
 
   /// A `MusicNote` wrapping a pitch — a rhythmic event that does render.
@@ -1675,10 +1674,7 @@ mod tests {
   #[test]
   fn non_music_expressions_do_not_render() {
     assert!(music_to_svg(&Expr::Integer(3)).is_none());
-    assert!(
-      music_to_svg(&call1("MusicDuration", Expr::String("Half".to_string())))
-        .is_none()
-    );
+    assert!(music_to_svg(&call1("MusicDuration", str_expr("Half"))).is_none());
   }
 
   #[test]
@@ -1817,10 +1813,7 @@ mod tests {
 
   #[test]
   fn scale_expands_to_eight_notes() {
-    let scale = call(
-      "MusicScale",
-      vec![Expr::String("Major".to_string()), note("C4")],
-    );
+    let scale = call("MusicScale", vec![str_expr("Major"), note("C4")]);
     let mut glyphs = Vec::new();
     collect(&scale, &mut glyphs, &mut None);
     let notes = glyphs
@@ -1880,17 +1873,17 @@ mod tests {
       name: "MusicVoice".to_string(),
       args: vec![Expr::List(
         vec![
-          Expr::String("C".to_string()),
+          str_expr("C"),
           call(
             "MusicTimeSignature",
             vec![Expr::Integer(3), Expr::Integer(4)],
           ),
-          Expr::String("D".to_string()),
+          str_expr("D"),
           call(
             "MusicTimeSignature",
             vec![Expr::Integer(3), Expr::Integer(4)],
           ),
-          Expr::String("E".to_string()),
+          str_expr("E"),
         ]
         .into(),
       )]

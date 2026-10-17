@@ -8768,6 +8768,50 @@ mod custom_probability_distribution_moments {
   }
 }
 
+mod weibull_gamma_random_variate {
+  use super::*;
+
+  #[test]
+  fn dimension_list_and_positive_support() {
+    assert_eq!(
+      interpret(
+        "s = RandomVariate[WeibullDistribution[2.3, 5.6], {4, 3}]; {Dimensions[s], Min[s] > 0}"
+      )
+      .unwrap(),
+      "{{4, 3}, True}"
+    );
+    assert_eq!(
+      interpret(
+        "s = RandomReal[GammaDistribution[1.5, 2.0], {5, 2}]; {Dimensions[s], Min[s] > 0}"
+      )
+      .unwrap(),
+      "{{5, 2}, True}"
+    );
+  }
+
+  #[test]
+  fn sample_means_match_distribution_means() {
+    assert_eq!(
+      interpret("Round[Mean[RandomVariate[GammaDistribution[2, 3], 20000]]]")
+        .unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("Round[Mean[RandomVariate[WeibullDistribution[2, 3], 20000]]]")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn invalid_parameters_stay_unevaluated() {
+    assert_eq!(
+      interpret("RandomVariate[WeibullDistribution[-1, 2], 3]").unwrap(),
+      "RandomVariate[WeibullDistribution[-1, 2], 3]"
+    );
+  }
+}
+
 mod custom_probability_distribution_random_variate {
   use super::*;
 
@@ -8957,6 +9001,57 @@ mod distribution_parameter_assumptions {
     assert_eq!(
       interpret("InverseChiSquareDistribution[n, x]").unwrap(),
       "InverseChiSquareDistribution[n, x]"
+    );
+  }
+}
+
+mod gamma_weibull_sampling {
+  use super::*;
+
+  // RandomReal/RandomVariate draw from Gamma and Weibull distributions;
+  // the sample mean approaches the exact one (6 and 3 Gamma[3/2]).
+  #[test]
+  fn samples_have_the_right_size_and_mean() {
+    assert_eq!(
+      interpret("Length[RandomReal[GammaDistribution[2., 3.], 7]]").unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret("Length[RandomVariate[WeibullDistribution[2., 3.], 7]]")
+        .unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[Mean[RandomReal[GammaDistribution[2., 3.], 20000]] - 6] < 0.3"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[Mean[RandomReal[WeibullDistribution[2., 3.], 20000]] \
+         - 3 Sqrt[Pi]/2] < 0.1"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn single_sample_is_a_positive_real() {
+    assert_eq!(
+      interpret("{Head[#], # > 0} &[RandomReal[WeibullDistribution[2., 3.]]]")
+        .unwrap(),
+      "{Real, True}"
+    );
+  }
+
+  #[test]
+  fn symbolic_parameters_stay_unevaluated() {
+    assert_eq!(
+      interpret("RandomVariate[GammaDistribution[a, 3.], 2]").unwrap(),
+      "RandomVariate[GammaDistribution[a, 3.], 2]"
     );
   }
 }

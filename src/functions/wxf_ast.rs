@@ -2,7 +2,6 @@
 //! format (header "8:"). Token bytes, varint lengths, and the choice of
 //! integer width all match wolframscript's output byte for byte.
 
-#[allow(unused_imports)]
 use super::*;
 
 // WXF token bytes.
@@ -492,7 +491,7 @@ fn read_expr(bytes: &[u8], pos: &mut usize) -> Option<Expr> {
     T_STRING => {
       let len = read_varint(bytes, pos)?;
       let s = std::str::from_utf8(read_exact(bytes, pos, len)?).ok()?;
-      Some(Expr::String(s.to_string()))
+      Some(str_expr(s))
     }
     T_SYMBOL => {
       let len = read_varint(bytes, pos)?;

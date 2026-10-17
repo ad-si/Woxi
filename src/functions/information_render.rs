@@ -5,26 +5,16 @@
 //! Both use the existing `grid_svg_with_gaps` infrastructure so theming and
 //! layout stay consistent with `Grid[]` / `TableForm[]` output.
 
-#[allow(unused_imports)]
 use super::*;
 
 /// Build a `Style[content, Bold]` Expr.
 fn bold_style(text: &str) -> Expr {
-  call(
-    "Style",
-    vec![Expr::String(text.to_string()), id_expr("Bold")],
-  )
+  call("Style", vec![str_expr(text), id_expr("Bold")])
 }
 
 /// Build a `Style[content, color]` Expr where `color` is a named color identifier.
 fn colored_style(text: &str, color: &str) -> Expr {
-  call(
-    "Style",
-    vec![
-      Expr::String(text.to_string()),
-      Expr::Identifier(color.to_string()),
-    ],
-  )
+  call("Style", vec![str_expr(text), id_expr(color)])
 }
 
 /// Build a `Rule[lhs, rhs]` Expr.
@@ -87,7 +77,7 @@ pub fn render_information_card_svg(
     call(
       "Style",
       vec![
-        Expr::String(title.to_string()),
+        str_expr(title),
         id_expr("Bold"),
         call("Rule", vec![id_expr("FontSize"), Expr::Integer(16)]),
       ],

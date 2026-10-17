@@ -1086,7 +1086,7 @@ fn error_node(source: &str, message: &str, convention: Convention) -> Expr {
     "CodeParser`ErrorNode",
     vec![
       id_expr("Token`Error`UnexpectedCharacter"),
-      Expr::String(message.to_string()),
+      str_expr(message),
       Expr::Association(vec![(id_expr("CodeParser`Source"), span)]),
     ],
   )

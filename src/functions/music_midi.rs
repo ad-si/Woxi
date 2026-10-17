@@ -257,17 +257,10 @@ mod tests {
   use super::*;
 
   fn voice(pitches: &[&str]) -> Expr {
-    Expr::FunctionCall {
-      name: "MusicVoice".to_string(),
-      args: vec![Expr::List(
-        pitches
-          .iter()
-          .map(|p| Expr::String(p.to_string()))
-          .collect::<Vec<_>>()
-          .into(),
-      )]
-      .into(),
-    }
+    call1(
+      "MusicVoice",
+      Expr::List(pitches.iter().map(|p| str_expr(p)).collect()),
+    )
   }
 
   #[test]

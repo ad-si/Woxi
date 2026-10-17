@@ -92,6 +92,10 @@ pub fn unevaluated(name: &str, args: &[Expr]) -> Expr {
   }
 }
 
+pub fn str_expr(name: &str) -> Expr {
+  Expr::String(name.to_string())
+}
+
 pub fn const_expr(name: &str) -> Expr {
   Expr::Constant(name.to_string())
 }

@@ -156,6 +156,35 @@ mod row_visual_mode {
     assert!(svg.contains(">world</text>"));
   }
 
+  /// A rule between two pictures is typeset as the pictures around an arrow
+  /// inside a row, not echoed as `-Graphics- -> -Graphics-`.
+  #[test]
+  fn row_of_rules_between_pictures() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"g = ArrayPlot[{{1, 2}}]; Row[{g -> g, g -> g}, Spacer[3]]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(!svg.contains("GraphicsBox"), "{svg}");
+    assert!(!svg.contains("-Graphics-"), "{svg}");
+    assert!(svg.contains("\u{2192}"), "{svg}");
+  }
+
+  #[test]
+  fn grid_cell_row_of_rules_between_pictures() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"g = ArrayPlot[{{1, 2}}]; Grid[{{Text["rule:"], Row[Map[# -> # &, {g, g}], Spacer[3]]}}]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(!svg.contains("GraphicsBox"), "{svg}");
+    assert!(!svg.contains("-Graphics-"), "{svg}");
+  }
+
   /// A row inherits its `Style` the way a column does, and an
   /// `Invisible[…]` item holds its width without being painted.
   #[test]

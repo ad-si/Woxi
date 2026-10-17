@@ -145,6 +145,12 @@ struct RenderEdgeData {
 }
 
 /// Build a petgraph DiGraph for rendering (preserves edge labels and direction info).
+/// Key a vertex is looked up by when drawing: its output form, plus the
+/// pictures it holds so vertices that are different graphics stay distinct.
+fn vertex_key(vertex: &Expr) -> String {
+  expr_to_output(vertex) + &crate::syntax::graphics_identity_suffix(vertex)
+}
+
 fn build_render_graph(
   vertices: &[Expr],
   raw_edges: &[Expr],
@@ -154,7 +160,7 @@ fn build_render_graph(
 
   for (i, v) in vertices.iter().enumerate() {
     let (inner, _) = unwrap_vertex_style(v);
-    let key = expr_to_output(inner);
+    let key = vertex_key(inner);
     let idx = graph.add_node(i);
     index_map.insert(key, idx);
   }
@@ -168,8 +174,8 @@ fn build_render_graph(
       && eargs.len() == 2
     {
       let directed = ename == "DirectedEdge";
-      let src_key = expr_to_output(unwrap_vertex_style(&eargs[0]).0);
-      let dst_key = expr_to_output(unwrap_vertex_style(&eargs[1]).0);
+      let src_key = vertex_key(unwrap_vertex_style(&eargs[0]).0);
+      let dst_key = vertex_key(unwrap_vertex_style(&eargs[1]).0);
       if let (Some(&si), Some(&di)) =
         (index_map.get(&src_key), index_map.get(&dst_key))
       {
@@ -689,7 +695,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(dir) => {
         let root = layered_root
           .as_ref()
-          .and_then(|r| index_map.get(&expr_to_output(r)))
+          .and_then(|r| index_map.get(&vertex_key(r)))
           .map(|idx| idx.index());
         layered_layout(&graph, dir, root)
       }

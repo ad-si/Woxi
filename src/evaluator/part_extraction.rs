@@ -707,12 +707,8 @@ fn extract_part_ast_rest(
       };
       items.get(idx)
     };
-    let missing_for = |key: &Expr| {
-      call(
-        "Missing",
-        vec![Expr::String("KeyAbsent".to_string()), key.clone()],
-      )
-    };
+    let missing_for =
+      |key: &Expr| call("Missing", vec![str_expr("KeyAbsent"), key.clone()]);
     // Key-based lookup shared by the string, Key[...], and list-index forms.
     // String indices match only string keys; Key[k] matches any key exactly.
     let lookup = |key: &Expr| -> Option<Expr> {

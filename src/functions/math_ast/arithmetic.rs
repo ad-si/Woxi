@@ -14610,7 +14610,7 @@ fn try_time_object_plus_quantity(
     "TimeObject",
     vec![
       Expr::List(comps.into()),
-      Expr::String(granularity.to_string()),
+      str_expr(granularity),
       Expr::Real(0.0),
     ],
   )))

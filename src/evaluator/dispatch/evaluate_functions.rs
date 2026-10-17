@@ -2921,7 +2921,7 @@ fn evaluate_function_call_ast_inner(
     && args.len() == 2
     && let Some(text) = builtin_message_text(&args[0], &args[1])
   {
-    return Ok(Expr::String(text.to_string()));
+    return Ok(str_expr(text));
   }
 
   // BezierFunction[{p1, p2, ...}] → wolframscript's structured 7-arg form
@@ -2962,7 +2962,7 @@ fn evaluate_function_call_ast_inner(
         ),
         Expr::List(vec![Expr::Integer(0)].into()),
         id_expr("MachinePrecision"),
-        Expr::String("Unevaluated".to_string()),
+        str_expr("Unevaluated"),
       ]
       .into(),
     });
@@ -4843,6 +4843,8 @@ fn evaluate_function_call_ast_inner(
     "GraphPlot" | "LayeredGraphPlot" | "GraphPlot3D" | "TreePlot"
   ) && !args.is_empty()
   {
+    // Options may arrive as one list of rules, which is not a position.
+    let args = &crate::functions::graphics::splice_option_lists(args)[..];
     // Only forward when args[0] is a list of edges or an already-built
     // Graph[…]; otherwise keep the symbolic head (matches Woxi's
     // long-standing "stay unevaluated" wrapper behaviour for opaque
@@ -4931,15 +4933,13 @@ fn evaluate_function_call_ast_inner(
         }
       }
       if layered {
-        let mut spec =
-          vec![Expr::String("LayeredDigraphEmbedding".to_string())];
+        let mut spec = vec![str_expr("LayeredDigraphEmbedding")];
         if let Some(v) = root_vertex {
-          spec
-            .push(rule_expr(Expr::String("RootVertex".to_string()), v.clone()));
+          spec.push(rule_expr(str_expr("RootVertex"), v.clone()));
         }
         if let Some(dir) = root_pos {
           spec.push(rule_expr(
-            Expr::String("Orientation".to_string()),
+            str_expr("Orientation"),
             Expr::Identifier(dir.symbol().to_string()),
           ));
         }
@@ -5224,7 +5224,7 @@ fn evaluate_function_call_ast_inner(
       ga.push(Expr::List(
         vec![rule_expr(
           id_expr("GraphLayout"),
-          Expr::String("TutteEmbedding".to_string()),
+          str_expr("TutteEmbedding"),
         )]
         .into(),
       ));
@@ -11180,7 +11180,7 @@ fn evaluate_function_call_ast_inner(
     && args.len() == 2
     && !matches!(&args[0], Expr::List(_))
   {
-    return Ok(call1("Missing", Expr::String("NotFound".to_string())));
+    return Ok(call1("Missing", str_expr("NotFound")));
   }
 
   // Neural network layer/model functions return $Failed for invalid arguments
@@ -11339,7 +11339,7 @@ fn evaluate_function_call_ast_inner(
       return Ok(fail_expr());
     }
     return Ok(Expr::CurriedCall {
-      func: Box::new(call1("XMLObject", Expr::String("Document".to_string()))),
+      func: Box::new(call1("XMLObject", str_expr("Document"))),
       args: vec![Expr::List(vec![].into()), args[0].clone()],
     });
   }
@@ -13813,7 +13813,7 @@ fn bspline_structured(
       knot_lists,
       zeros,
       id_expr("MachinePrecision"),
-      Expr::String("Unevaluated".to_string()),
+      str_expr("Unevaluated"),
     ]
     .into(),
   }

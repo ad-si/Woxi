@@ -7782,8 +7782,42 @@ pub(crate) struct MarginOverrides {
   pub top_margin: u32,
   pub x_label_area: u32,
   pub y_label_area: u32,
-  /// `FrameTicks -> None`: draw neither tick marks nor tick labels.
-  pub hide_ticks: bool,
+  /// `FrameTicks -> {None, …}` / `{…, None}`: draw no tick marks or labels
+  /// along the x axis (bottom edge) and the y axis (left edge) respectively.
+  pub hide_x_ticks: bool,
+  pub hide_y_ticks: bool,
+}
+
+/// Which axes a `FrameTicks` setting leaves ticks on, as `(x, y)` — the
+/// bottom and the left edge. Accepts `None | False | All | Automatic`,
+/// `{xspec, yspec}`, `{b, l, t, r}` and `{{l, r}, {b, t}}`; an edge pair
+/// keeps the axis unless both of its sides are `None`/`False`.
+pub(crate) fn frame_tick_axes_visible(value: &Expr) -> (bool, bool) {
+  let hidden =
+    |e: &Expr| matches!(e, Expr::Identifier(v) if v == "None" || v == "False");
+  let is_edge_pair = |e: &Expr| match e {
+    Expr::List(p) if p.len() == 2 => p.iter().all(|x| {
+      !matches!(x, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))
+    }),
+    _ => false,
+  };
+  let pair_visible = |e: &Expr| match e {
+    Expr::List(p) if is_edge_pair(e) => !(hidden(&p[0]) && hidden(&p[1])),
+    other => !hidden(other),
+  };
+  match value {
+    Expr::List(items) if items.len() == 4 => (
+      !(hidden(&items[0]) && hidden(&items[2])),
+      !(hidden(&items[1]) && hidden(&items[3])),
+    ),
+    Expr::List(items) if items.len() == 2 && items.iter().any(is_edge_pair) => {
+      (pair_visible(&items[1]), pair_visible(&items[0]))
+    }
+    Expr::List(items) if items.len() == 2 => {
+      (!hidden(&items[0]), !hidden(&items[1]))
+    }
+    other => (!hidden(other), !hidden(other)),
+  }
 }
 
 /// Create a plotters chart with axes drawn, returning the SVG and coordinate info.
@@ -7856,37 +7890,22 @@ pub(crate) fn generate_axes_only_opts(
     let y_minor_step = y_major / 5.0;
     let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
 
-    if margins.is_some_and(|m| m.hide_ticks) {
+    let hide_x = margins.is_some_and(|m| m.hide_x_ticks);
+    let hide_y = margins.is_some_and(|m| m.hide_y_ticks);
+    if hide_x && hide_y {
       // Nothing to draw: the caller paints the frame itself.
-    } else if x_tick_positions.is_some() {
-      // Custom tick mode: suppress plotters' x-axis ticks entirely.
-      // We'll draw tick marks manually after computing the plot area.
-      chart
-        .configure_mesh()
-        .disable_mesh()
-        .x_labels(0)
-        .y_labels(y_tick_count)
-        .y_label_formatter(&move |v: &f64| {
-          if is_major_tick(*v, y_major) {
-            format_tick_with_step(*v, y_major)
-          } else {
-            String::new()
-          }
-        })
-        .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
-        .label_style(
-          ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
-            .into_font()
-            .color(&dark_gray),
-        )
-        .set_tick_mark_size(LabelAreaPosition::Left, tick)
-        .set_tick_mark_size(LabelAreaPosition::Bottom, 0)
-        .draw()
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
     } else {
+      // Custom x ticks are drawn manually further down, so plotters' own
+      // x-axis ticks are suppressed in that mode as well.
+      let no_x = hide_x || x_tick_positions.is_some();
       let x_major = nice_step(x_max - x_min, AXIS_TICK_TARGET);
       let x_minor_step = x_major / 5.0;
-      let x_tick_count = ((x_max - x_min) / x_minor_step).round() as usize + 1;
+      let x_tick_count = if no_x {
+        0
+      } else {
+        ((x_max - x_min) / x_minor_step).round() as usize + 1
+      };
+      let y_tick_count = if hide_y { 0 } else { y_tick_count };
 
       chart
         .configure_mesh()
@@ -7913,8 +7932,14 @@ pub(crate) fn generate_axes_only_opts(
             .into_font()
             .color(&dark_gray),
         )
-        .set_tick_mark_size(LabelAreaPosition::Left, tick)
-        .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
+        .set_tick_mark_size(
+          LabelAreaPosition::Left,
+          if hide_y { 0 } else { tick },
+        )
+        .set_tick_mark_size(
+          LabelAreaPosition::Bottom,
+          if no_x { 0 } else { tick },
+        )
         .draw()
         .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
     }
@@ -7956,13 +7981,16 @@ pub(crate) fn generate_axes_only_opts(
   // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
   // In custom-tick mode, the x axis is drawn manually (below) at the major
   // tick length, so we only extend the y axis here.
-  if !margins.is_some_and(|m| m.hide_ticks) {
+  let hide_x = margins.is_some_and(|m| m.hide_x_ticks);
+  let hide_y = margins.is_some_and(|m| m.hide_y_ticks);
+  if !(hide_x && hide_y) {
     let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
-    let x_axis_ext = if x_tick_positions.is_none() {
+    let x_axis_ext = if x_tick_positions.is_none() && !hide_x {
       Some((x_min, x_max, nice_step(x_max - x_min, AXIS_TICK_TARGET)))
     } else {
       None
     };
+    let y_axis_ext = (!hide_y).then_some((y_min, y_max, y_major));
     inject_major_tick_extensions(
       &mut buf,
       plot_x0,
@@ -7970,7 +7998,7 @@ pub(crate) fn generate_axes_only_opts(
       plot_w,
       plot_h,
       x_axis_ext,
-      Some((y_min, y_max, y_major)),
+      y_axis_ext,
       MINOR_TICK_LEN as f64 * s,
       MAJOR_TICK_LEN as f64 * s,
       s,
@@ -9418,10 +9446,8 @@ pub(crate) fn apply_common_plot_option(
     }
     "Frame" => plot_opts.frame = parse_frame_option(replacement),
     "FrameTicks" => {
-      plot_opts.frame_ticks = !matches!(
-        replacement,
-        Expr::Identifier(s) if s == "None" || s == "False"
-      );
+      let (x, y) = frame_tick_axes_visible(replacement);
+      plot_opts.frame_ticks = x || y;
     }
     "Evaluated" => {
       plot_opts.evaluated =

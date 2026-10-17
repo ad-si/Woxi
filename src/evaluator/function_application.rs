@@ -2580,10 +2580,7 @@ pub fn apply_curried_call(
               }
             }
             // Key not found: return Missing["KeyAbsent", k]
-            Ok(call(
-              "Missing",
-              vec![Expr::String("KeyAbsent".to_string()), key.clone()],
-            ))
+            Ok(call("Missing", vec![str_expr("KeyAbsent"), key.clone()]))
           }
           _ => {
             // Not an association: return unevaluated

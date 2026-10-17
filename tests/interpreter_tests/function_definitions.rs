@@ -6006,3 +6006,49 @@ mod condition_valued_variables {
     assert_eq!(interpret("h /; 2 > 1 := 3; h").unwrap(), "3");
   }
 }
+
+mod nested_pattern_tests_in_definitions {
+  use super::*;
+
+  // `p_?test` nested inside a structural pattern (`f[g[x_?test]]`) used to
+  // lose its test while the pattern was normalized, so the rule matched
+  // anything and the second of two complementary rules replaced the first.
+  #[test]
+  fn nested_pattern_test_keeps_its_test() {
+    clear_state();
+    assert_eq!(
+      interpret("f[loan[u_?IntegerQ]] := 1; {f[loan[3]], f[loan[x]]}").unwrap(),
+      "{1, f[loan[x]]}"
+    );
+  }
+
+  #[test]
+  fn complementary_nested_pattern_tests_are_both_kept() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g[loan[p_, u_?((#>0&))]] = 1; g[loan[p_, u_?((#<=0&))]] := 2; \
+         {g[loan[1, 3]], g[loan[1, -3]]}"
+      )
+      .unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  // Ordering the rules runs the tests while the definition table is being
+  // updated; a test that itself reads definitions must not panic.
+  #[test]
+  fn pattern_test_rules_with_more_general_siblings() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "h[{}, n : loan[a_, r_, t_]] := {n}; \
+         h[e : {__loan}, n : loan[a_, r_, t_?((#>0&))]] := Append[e, n]; \
+         h[e_List, m_, n_] := 5; \
+         {h[{}, loan[1, 2, 3]], h[{loan[1, 1, 1]}, loan[1, 2, 3]]}"
+      )
+      .unwrap(),
+      "{{loan[1, 2, 3]}, {loan[1, 1, 1], loan[1, 2, 3]}}"
+    );
+  }
+}

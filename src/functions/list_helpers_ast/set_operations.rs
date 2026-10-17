@@ -3,6 +3,13 @@ use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
 
+/// Identity key for the set operations in this file: the displayed form plus
+/// the renderings of any graphics inside (see `graphics_identity_suffix`).
+fn expr_to_string(expr: &Expr) -> String {
+  crate::syntax::expr_to_string(expr)
+    + &crate::syntax::graphics_identity_suffix(expr)
+}
+
 /// AST-based Tally: count occurrences of each element.
 /// Tally[{a, b, a, c, b, a}] -> {{a, 3}, {b, 2}, {c, 1}}
 pub fn tally_ast(list: &Expr) -> Result<Expr, InterpreterError> {

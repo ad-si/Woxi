@@ -92,9 +92,10 @@ pub(crate) struct Triangle {
   pub edge_width: Option<f64>,
 }
 
-/// Largest scene `painter_order` refines: the pairwise overlap tests are
-/// quadratic, so bigger scenes keep the plain centroid sort.
-const PAINTER_ORDER_MAX_TRIANGLES: usize = 2500;
+/// Largest scene `painter_order` refines: candidate pairs come from a sweep
+/// over the projected bounding boxes, but a dense scene can still be close
+/// to quadratic, so bigger scenes keep the plain centroid sort.
+const PAINTER_ORDER_MAX_TRIANGLES: usize = 60000;
 
 /// Whether two projected triangles share interior area (touching along an
 /// edge or at a corner does not count).
@@ -203,10 +204,20 @@ fn painter_order(
   // `after[i]` lists the triangles that must be drawn after `i`.
   let mut after: Vec<Vec<usize>> = vec![Vec::new(); n];
   let mut indegree = vec![0usize; n];
-  for i in 0..n {
-    for j in (i + 1)..n {
+  // Sweep along x so only triangles whose x extents overlap are paired.
+  let mut by_x: Vec<usize> = (0..n).collect();
+  by_x.sort_by(|&a, &b| {
+    bbox[a][0]
+      .partial_cmp(&bbox[b][0])
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  for (pos, &i) in by_x.iter().enumerate() {
+    for &j in &by_x[pos + 1..] {
       let (a, b) = (&bbox[i], &bbox[j]);
-      if a[1] <= b[0] || b[1] <= a[0] || a[3] <= b[2] || b[3] <= a[2] {
+      if b[0] >= a[1] {
+        break;
+      }
+      if a[3] <= b[2] || b[3] <= a[2] {
         continue;
       }
       if !projected_triangles_overlap(&projected[i], &projected[j]) {
@@ -229,18 +240,38 @@ fn painter_order(
   }
   let mut order = Vec::with_capacity(n);
   let mut done = vec![false; n];
-  // `by_depth` is far-to-near, so the first ready entry is the farthest.
-  for _ in 0..n {
-    let pick = by_depth
-      .iter()
-      .copied()
-      .find(|&k| !done[k] && indegree[k] == 0)
-      .or_else(|| by_depth.iter().copied().find(|&k| !done[k]))
-      .unwrap();
+  // Ready triangles, keyed by their far-to-near rank in `by_depth` so the
+  // farthest one is drawn first (`Reverse` turns the max-heap into a min-heap).
+  let mut rank = vec![0usize; n];
+  for (r, &k) in by_depth.iter().enumerate() {
+    rank[k] = r;
+  }
+  let mut ready: std::collections::BinaryHeap<std::cmp::Reverse<usize>> = (0
+    ..n)
+    .filter(|&k| indegree[k] == 0)
+    .map(|k| std::cmp::Reverse(rank[k]))
+    .collect();
+  // First possibly-undrawn entry of `by_depth`, for breaking cycles.
+  let mut cursor = 0;
+  while order.len() < n {
+    let pick = if let Some(std::cmp::Reverse(r)) = ready.pop() {
+      by_depth[r]
+    } else {
+      while done[by_depth[cursor]] {
+        cursor += 1;
+      }
+      by_depth[cursor]
+    };
+    if done[pick] {
+      continue;
+    }
     done[pick] = true;
     order.push(pick);
     for &k in &after[pick] {
       indegree[k] = indegree[k].saturating_sub(1);
+      if indegree[k] == 0 && !done[k] {
+        ready.push(std::cmp::Reverse(rank[k]));
+      }
     }
   }
   order
@@ -3048,6 +3079,9 @@ struct StyleState3D {
   /// of the image width, negative (stored) is an absolute size in printer's
   /// points. `None` draws the default 3px dot.
   point_size: Option<f64>,
+  /// `Texture[image]`: surfaces coloured by sampling this image at each
+  /// facet's texture coordinates (see [`texture_color`]).
+  texture: Option<std::sync::Arc<image::RgbImage>>,
 }
 
 impl Default for StyleState3D {
@@ -3064,6 +3098,7 @@ impl Default for StyleState3D {
       specular: None,
       dashing: None,
       point_size: None,
+      texture: None,
     }
   }
 }
@@ -3266,6 +3301,29 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       // white instead of dark grey).
       "Specularity" if !args.is_empty() => {
         style.specular = parse_specularity(args);
+        return true;
+      }
+      // `Texture[image]` paints the surfaces that follow with the image.
+      "Texture" if args.len() == 1 => {
+        let img = match &args[0] {
+          img @ Expr::Image { .. } => Some(img.clone()),
+          other => evaluate_expr_to_expr(other).ok(),
+        };
+        if let Some(Expr::Image {
+          width,
+          height,
+          channels,
+          ref data,
+          ..
+        }) = img
+        {
+          style.texture = Some(std::sync::Arc::new(
+            crate::functions::image_ast::expr_to_dynamic_image(
+              width, height, channels, data,
+            )
+            .to_rgb8(),
+          ));
+        }
         return true;
       }
       // CapForm[None] leaves an open surface's ends open; every named form
@@ -3546,6 +3604,26 @@ fn shade_facet(
     }
     None => (apply_lighting(default_color, normal), 1.0),
   }
+}
+
+/// The colour of `texture` at texture coordinates `(u, v)`: `(0, 0)` is the
+/// bottom-left corner and the image repeats outside the unit square.
+fn texture_color(
+  texture: &image::RgbImage,
+  u: f64,
+  v: f64,
+) -> Option<(u8, u8, u8)> {
+  if !u.is_finite() || !v.is_finite() {
+    return None;
+  }
+  let (w, h) = (texture.width(), texture.height());
+  if w == 0 || h == 0 {
+    return None;
+  }
+  let x = ((u.rem_euclid(1.0) * w as f64) as u32).min(w - 1);
+  let y = (((1.0 - v.rem_euclid(1.0)) * h as f64) as u32).min(h - 1);
+  let px = texture.get_pixel(x, y);
+  Some((px[0], px[1], px[2]))
 }
 
 /// The linear part of a rotation by `angle` around the axis direction `w`
@@ -6470,6 +6548,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             specular: None,
             dashing: None,
             point_size: None,
+            texture: None,
           },
         ),
       };
@@ -8344,7 +8423,10 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
-      let mut content: Vec<Expr> = Vec::new();
+      // The plot's own picture draws no outline on the sampling quads, so
+      // the extracted surface must not pick up the default polygon edge
+      // when re-rendered inside a `Graphics3D` (e.g. `plot[[1]]`).
+      let mut content: Vec<Expr> = vec![call0("EdgeForm")];
       // `PlotStyle -> Opacity[…]` belongs to the surface, so a caller that
       // lifts it out of the plot keeps the translucency it asked for.
       match &plot_style {
@@ -10532,6 +10614,9 @@ fn generate_line3d_svg(
 // ── SphericalPlot3D implementation ───────────────────────────────────
 
 const SPHERICAL_GRID: usize = 50;
+/// Grid density of a textured `SphericalPlot3D`, whose facets are the
+/// texture's pixels.
+const SPHERICAL_TEXTURE_GRID: usize = 80;
 
 /// SphericalPlot3D[r, {theta, t0, t1}, {phi, p0, p1}]
 /// Plots r(theta, phi) in spherical coordinates.
@@ -10580,6 +10665,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // region-clipped) surface with this color.
   let mut boundary_color: Option<(u8, u8, u8)> = None;
   let mut plot_style_expr: Option<&Expr> = None;
+  // `TextureCoordinateFunction -> f`: maps a facet to the point of a
+  // `Texture` image painted there.
+  let mut texture_fn: Option<Expr> = None;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -10590,6 +10678,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "PlotStyle" => {
           plot_style_expr = Some(replacement.as_ref());
+        }
+        Expr::Identifier(name) if name == "TextureCoordinateFunction" => {
+          texture_fn = Some(replacement.as_ref().clone());
         }
         Expr::Identifier(name) if name == "ImageSize" => {
           if let Some((w, h, fw)) =
@@ -10651,16 +10742,23 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let n_theta = plot_points.map_or(SPHERICAL_GRID, |p| p - 1);
-  let n_phi = plot_points.map_or(SPHERICAL_GRID, |p| p - 1);
-  let theta_range = theta_max - theta_min;
-  let phi_range = phi_max - phi_min;
-
   // `PlotStyle`, one style per surface (cycling); empty means it was not
   // given, so the height-based default colouring is used unchanged.
   let plot_styles: Vec<StyleState3D> = plot_style_expr
     .map(|e| parse_plot_style_3d(e, bodies.len()))
     .unwrap_or_default();
+
+  // A texture is sampled once per facet, so it needs finer facets than a
+  // plain surface to show any detail.
+  let default_grid = if plot_styles.iter().any(|s| s.texture.is_some()) {
+    SPHERICAL_TEXTURE_GRID
+  } else {
+    SPHERICAL_GRID
+  };
+  let n_theta = plot_points.map_or(default_grid, |p| p - 1);
+  let n_phi = plot_points.map_or(default_grid, |p| p - 1);
+  let theta_range = theta_max - theta_min;
+  let phi_range = phi_max - phi_min;
 
   let param_at = |i: usize, j: usize| -> (f64, f64) {
     (
@@ -10680,6 +10778,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build each surface's world-space triangles independently, clipping
   // cells that cross the region boundary.
   let mut surface_tris: Vec<Vec<[Point3D; 3]>> =
+    Vec::with_capacity(bodies.len());
+  // The (theta, phi) centroid of each triangle, for texture coordinates.
+  let mut surface_tri_params: Vec<Vec<(f64, f64)>> =
     Vec::with_capacity(bodies.len());
   for surface_body in &evaluated_bodies {
     // Evaluate the surface point at arbitrary (theta, phi) parameters.
@@ -10781,6 +10882,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
 
     let mut tris: Vec<[Point3D; 3]> = Vec::new();
+    let mut tri_params: Vec<(f64, f64)> = Vec::new();
     for i in 0..n_theta {
       for j in 0..n_phi {
         // The cell's two triangles in grid corners:
@@ -10806,10 +10908,12 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             continue;
           }
           // Fan-triangulate the clipped polygon back into world space.
-          let points: Vec<Point3D> = polygon
+          let (points, params): (Vec<Point3D>, Vec<(f64, f64)>) = polygon
             .iter()
-            .filter_map(|&(th, ph)| surface_at(th, ph).map(|(p, _)| p))
-            .collect();
+            .filter_map(|&(th, ph)| {
+              surface_at(th, ph).map(|(p, _)| (p, (th, ph)))
+            })
+            .unzip();
           if points.len() < 3 {
             continue;
           }
@@ -10828,11 +10932,16 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               continue;
             }
             tris.push([a, b, c]);
+            tri_params.push((
+              (params[0].0 + params[k].0 + params[k + 1].0) / 3.0,
+              (params[0].1 + params[k].1 + params[k + 1].1) / 3.0,
+            ));
           }
         }
       }
     }
     surface_tris.push(tris);
+    surface_tri_params.push(tri_params);
   }
 
   if surface_tris.iter().all(std::vec::Vec::is_empty) {
@@ -11058,7 +11167,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for (surface_idx, tris) in surface_tris.iter().enumerate() {
     let style = plot_style_for_surface(&plot_styles, surface_idx);
-    for tri in tris {
+    for (tri_idx, tri) in tris.iter().enumerate() {
       let [a, b, c] = *tri;
       let na = normalize(a);
       let nb = normalize(b);
@@ -11070,8 +11179,58 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         / 3.0;
       let default_color = height_color(avg_z);
       let normal = triangle_normal(na, nb, nc);
-      let (color, opacity) =
-        shade_facet(default_color, style, normal, view_dir);
+      // A textured surface takes its colour from the image at the facet's
+      // texture coordinates instead of from its height.
+      let textured = style.and_then(|s| s.texture.as_ref()).and_then(|tex| {
+        let (theta, phi) = surface_tri_params[surface_idx][tri_idx];
+        // Coordinates are scaled to the unit interval over the plot, as
+        // `TextureCoordinateScaling -> True` does.
+        let scaled = |v: f64, lo: f64, range: f64| {
+          if range.abs() < 1e-15 {
+            0.0
+          } else {
+            (v - lo) / range
+          }
+        };
+        let (cx, cy, cz) = (
+          (a.x + b.x + c.x) / 3.0,
+          (a.y + b.y + c.y) / 3.0,
+          (a.z + b.z + c.z) / 3.0,
+        );
+        let u_theta = scaled(theta, theta_min, theta_range);
+        let u_phi = scaled(phi, phi_min, phi_range);
+        let (u, v) = match &texture_fn {
+          None => (u_theta, u_phi),
+          Some(f) => {
+            let call = Expr::CurriedCall {
+              func: Box::new(f.clone()),
+              args: vec![
+                Expr::Real(scaled(cx, x_min, x_range_v)),
+                Expr::Real(scaled(cy, y_min, y_range_v)),
+                Expr::Real(scaled(cz, z_min, z_range_v)),
+                Expr::Real(u_theta),
+                Expr::Real(u_phi),
+                Expr::Real((cx * cx + cy * cy + cz * cz).sqrt()),
+              ],
+            };
+            match evaluate_expr_to_expr(&call).ok()? {
+              Expr::List(ref uv) if uv.len() == 2 => {
+                (try_eval_to_f64(&uv[0])?, try_eval_to_f64(&uv[1])?)
+              }
+              _ => return None,
+            }
+          }
+        };
+        texture_color(tex, u, v)
+      });
+      let (color, opacity) = match (style, textured) {
+        (Some(s), Some(base)) => {
+          let mut painted = s.clone();
+          painted.color = Some(base);
+          shade_facet(default_color, Some(&painted), normal, view_dir)
+        }
+        _ => shade_facet(default_color, style, normal, view_dir),
+      };
 
       let pa = project(na, &camera);
       let pb = project(nb, &camera);
@@ -11755,7 +11914,26 @@ fn resolve_one_parametric_triple(
     Expr::List(sub) if sub.len() == 3 => {
       Some((sub[0].clone(), sub[1].clone(), sub[2].clone()))
     }
-    _ => None,
+    // Stays symbolic until the parameters are numeric (e.g. an `If` on a
+    // sum of squares of `u`, `v`): probe at a sample point and, if it is
+    // a numeric 3-vector, read its components off with `Part`.
+    _ => {
+      let mut probe = item.clone();
+      for (i, var) in shadow_vars.iter().enumerate() {
+        probe =
+          substitute_var(&probe, var, &Expr::Real(0.37 + 0.24 * i as f64));
+      }
+      let value = evaluate_expr_to_expr(&probe).ok()?;
+      match &value {
+        Expr::List(sub)
+          if sub.len() == 3
+            && sub.iter().all(|c| try_eval_to_f64(c).is_some()) =>
+        {
+          Some((part_of(item, 1), part_of(item, 2), part_of(item, 3)))
+        }
+        _ => None,
+      }
+    }
   }
 }
 
@@ -11983,6 +12161,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // samples per direction, i.e. `n - 1` grid cells. Demonstrations lower it
   // (`PlotPoints -> 15`) to keep a `Table` of many patches interactive.
   let mut plot_points: Option<usize> = None;
+  // `RegionFunction -> f`: keep only the parts of the surface where
+  // `f[x, y, z, u, v]` is `True`.
+  let mut region_fn: Option<Expr> = None;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -12008,6 +12189,12 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             plot_points = Some(n as usize);
           }
+        }
+        Expr::Identifier(name) if name == "RegionFunction" => {
+          region_fn = Some(
+            evaluate_expr_to_expr(replacement)
+              .unwrap_or_else(|_| replacement.as_ref().clone()),
+          );
         }
         Expr::Identifier(name) if name == "BoxRatios" => {
           let value = evaluate_expr_to_expr(replacement)
@@ -12170,6 +12357,25 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           uval,
           vval,
         ) {
+          if let Some(region) = &region_fn {
+            let call = Expr::CurriedCall {
+              func: Box::new(region.clone()),
+              args: vec![
+                Expr::Real(x),
+                Expr::Real(y),
+                Expr::Real(z),
+                Expr::Real(uval),
+                Expr::Real(vval),
+              ],
+            };
+            let inside = matches!(
+              evaluate_expr_to_expr(&call),
+              Ok(Expr::Identifier(ref s)) if s == "True"
+            );
+            if !inside {
+              continue;
+            }
+          }
           points[i][j] = Some((x, y, z));
           gx_min = gx_min.min(x);
           gx_max = gx_max.max(x);
@@ -12819,5 +13025,59 @@ mod march_cube_orientation_tests {
       }
     }
     assert!(checked > 0);
+  }
+}
+
+#[cfg(test)]
+mod painter_order_tests {
+  use super::*;
+
+  /// A large face below a dense field of small faces (more than the old
+  /// 2500-triangle cap) must still be drawn first, even though the small
+  /// faces' centroids lie farther from the viewer than its own.
+  #[test]
+  fn large_face_stays_behind_many_small_faces() {
+    let camera = Camera::default();
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let mut verts =
+      vec![[p(-10.0, -10.0, 0.0), p(10.0, -10.0, 0.0), p(0.0, 10.0, 0.0)]];
+    let cells = 40;
+    let step = 6.0 / cells as f64;
+    for i in 0..cells {
+      for j in 0..cells {
+        let (x, y) = (-3.0 + i as f64 * step, -3.0 + j as f64 * step);
+        verts.push([p(x, y, 0.1), p(x + step, y, 0.1), p(x, y + step, 0.1)]);
+        verts.push([
+          p(x + step, y, 0.1),
+          p(x + step, y + step, 0.1),
+          p(x, y + step, 0.1),
+        ]);
+      }
+    }
+    assert!(verts.len() > 2500);
+    let projected: Vec<[(f64, f64); 3]> = verts
+      .iter()
+      .map(|t| std::array::from_fn(|i| project(t[i], &camera)))
+      .collect();
+    let depths: Vec<f64> = verts
+      .iter()
+      .map(|t| {
+        depth(
+          p(
+            (t[0].x + t[1].x + t[2].x) / 3.0,
+            (t[0].y + t[1].y + t[2].y) / 3.0,
+            (t[0].z + t[1].z + t[2].z) / 3.0,
+          ),
+          &camera,
+        )
+      })
+      .collect();
+    assert!(
+      depths[1..].iter().any(|d| *d > depths[0]),
+      "scenario must defeat a plain centroid sort"
+    );
+    let order = painter_order(&verts, &projected, &depths, &camera);
+    assert_eq!(order.len(), verts.len());
+    assert_eq!(order[0], 0, "the large back face is drawn first");
   }
 }
