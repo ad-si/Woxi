@@ -2407,9 +2407,13 @@ fn collect_primitives(
         "Inset" if !args.is_empty() => {
           // `Inset[graphic, pos, …]` draws a picture inside this one; any
           // other object (a string, a number) is placed like `Text`.
-          match inset_primitives(args, errors) {
-            Some(inner) => prims.extend(inner),
-            None => parse_text(args, style, prims),
+          if let Some(text) = text_primitive_inset(args) {
+            collect_primitives(&text, style, prims, errors);
+          } else {
+            match inset_primitives(args, errors) {
+              Some(inner) => prims.extend(inner),
+              None => parse_text(args, style, prims),
+            }
           }
         }
         // `RasterBox` is the box form of `Raster` — the shape a stored
@@ -4641,6 +4645,23 @@ fn framed_plot_inset(
     scaled: false,
     size: Some((width, height)),
   })
+}
+
+/// `Inset[Text[obj], pos, …]` insets a text primitive, which is simply
+/// `Text[obj, pos]` — rewrite it so the inner `Text` is not mistaken for the
+/// object being placed (and printed as `Text[…]`).
+pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
+  if let (Expr::FunctionCall { name, args: targs }, Some(pos)) =
+    (strip_style_wrappers(args.first()?), args.get(1))
+    && name == "Text"
+    && targs.len() == 1
+  {
+    return Some(Expr::FunctionCall {
+      name: "Text".to_string(),
+      args: vec![targs[0].clone(), pos.clone()].into(),
+    });
+  }
+  None
 }
 
 fn inset_primitives(
@@ -26028,6 +26049,26 @@ fn expr_contains_call(e: &Expr, heads: &[&str]) -> bool {
   }
 }
 
+/// The factors of an implicit product (`a b c` → `[a, b, c]`) in source
+/// order, or the expression itself when it is not a product.
+fn split_implicit_product(e: &Expr) -> Vec<Expr> {
+  match e {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let mut out = split_implicit_product(left);
+      out.extend(split_implicit_product(right));
+      out
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().flat_map(split_implicit_product).collect()
+    }
+    _ => vec![e.clone()],
+  }
+}
+
 /// The flattened control items of a `Row[…]`/`Column[…]`/`Grid[…]`
 /// Manipulate argument that lays several controls out in one row (the
 /// Wolfram Demonstrations pattern `Row[{Control[…], Spacer[20],
@@ -26057,6 +26098,9 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       // inside the `f@@expr` the same way a plain function call is scanned.
       Expr::Apply { func, list } => {
         contains_control(func) || contains_control(list)
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        contains_control(left) || contains_control(right)
       }
       _ => false,
     }
@@ -26196,7 +26240,19 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     return control_group_items(&args[0])
       .map(|items| items.into_iter().map(make_live_caption).collect());
   }
-  let items_owned = tabview_panes(&args[0])?;
+  // A missing comma between two list items (`{Row[{…}] "", Grid[…]}`) parses
+  // as an implicit product; the control panel still lists each factor on its
+  // own, as the author laid them out.
+  let items_owned: Vec<Expr> = tabview_panes(&args[0])?
+    .into_iter()
+    .flat_map(|item| {
+      if contains_control(&item) {
+        split_implicit_product(&item)
+      } else {
+        vec![item]
+      }
+    })
+    .collect();
   let items = &items_owned;
   let mut out = Vec::new();
   // Consecutive label pieces of a `Row` (`"show ", Style["C", Italic], …`)
@@ -26368,10 +26424,14 @@ pub(crate) fn tabview_pane_parts(item: &Expr) -> (Option<Expr>, &Expr, &Expr) {
 /// control is just as likely to arrive `Control`-wrapped.
 fn unwrap_control_wrapper(spec: Expr) -> Expr {
   // `Framed[Control[…]]` / `Panel[Control[…]]`: a bordered single control;
-  // `Tooltip[Control[…], hint]` only adds a hover hint to it.
+  // `Tooltip[Control[…], hint]` only adds a hover hint to it, and
+  // `Item[Control[…], Alignment -> …]` is a grid cell that only positions it.
   let spec = match &spec {
     Expr::FunctionCall { name, args }
-      if (name == "Framed" || name == "Panel" || name == "Tooltip")
+      if (name == "Framed"
+        || name == "Panel"
+        || name == "Tooltip"
+        || name == "Item")
         && matches!(
           args.first(),
           Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
@@ -30408,10 +30468,15 @@ pub fn manipulate_block_code(
   if bindings.is_empty() {
     return body_code.to_string();
   }
+  // A frozen graphic has no source form; it stays a global.
   let binding_parts: Vec<String> = bindings
     .iter()
+    .filter(|(_, value)| !crate::is_frozen_graphic(value))
     .map(|(name, value)| format!("{name} = {value}"))
     .collect();
+  if binding_parts.is_empty() {
+    return body_code.to_string();
+  }
   format!("Block[{{{}}}, {}]", binding_parts.join(", "), body_code)
 }
 
@@ -30662,7 +30727,9 @@ pub fn read_manipulate_state(names: &[String]) -> Vec<(String, String)> {
       if matches!(&value, Expr::Identifier(s) if s == name) {
         return None;
       }
-      Some((name.clone(), crate::syntax::expr_to_source_form(&value)))
+      let source = crate::freeze_graphic(name, &value)
+        .unwrap_or_else(|| crate::syntax::expr_to_source_form(&value));
+      Some((name.clone(), source))
     })
     .collect()
 }
