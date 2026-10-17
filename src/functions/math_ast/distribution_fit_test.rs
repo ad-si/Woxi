@@ -460,19 +460,13 @@ fn test_data_table(name: &str, stat: f64, p: f64) -> Expr {
   let header = Expr::List(
     vec![
       Expr::String(String::new()),
-      Expr::String("Statistic".to_string()),
-      Expr::String("P\u{2010}Value".to_string()),
+      str_expr("Statistic"),
+      str_expr("P\u{2010}Value"),
     ]
     .into(),
   );
-  let row = Expr::List(
-    vec![
-      Expr::String(name.to_string()),
-      num_to_expr(stat),
-      num_to_expr(p),
-    ]
-    .into(),
-  );
+  let row =
+    Expr::List(vec![str_expr(name), num_to_expr(stat), num_to_expr(p)].into());
   call(
     "Grid",
     vec![
@@ -498,30 +492,27 @@ fn build_hypothesis_test_data(u: &[f64], dist: &Expr) -> Expr {
   for &name in &TEST_NAMES {
     if let Some(r) = run_test(name, u) {
       tests.push((
-        Expr::String(name.to_string()),
+        str_expr(name),
         Expr::Association(vec![
-          (
-            Expr::String("TestStatistic".to_string()),
-            num_to_expr(r.statistic),
-          ),
-          (Expr::String("PValue".to_string()), num_to_expr(r.p_value)),
+          (str_expr("TestStatistic"), num_to_expr(r.statistic)),
+          (str_expr("PValue"), num_to_expr(r.p_value)),
         ]),
       ));
     }
   }
   Expr::Association(vec![
-    (Expr::String("FittedDistribution".to_string()), dist.clone()),
+    (str_expr("FittedDistribution"), dist.clone()),
     (
-      Expr::String("AllTests".to_string()),
+      str_expr("AllTests"),
       Expr::List(
         TEST_NAMES
           .iter()
           .filter(|n| **n != "CramerVonMises" || u.len() >= CVM_MIN_SAMPLE)
-          .map(|n| Expr::String(n.to_string()))
+          .map(|n| str_expr(n))
           .collect(),
       ),
     ),
-    (Expr::String("Tests".to_string()), Expr::Association(tests)),
+    (str_expr("Tests"), Expr::Association(tests)),
   ])
 }
 

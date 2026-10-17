@@ -3618,7 +3618,8 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     top_margin,
     x_label_area,
     y_label_area,
-    hide_ticks: false,
+    hide_x_ticks: false,
+    hide_y_ticks: false,
   };
 
   // One tick mark per box (centered), no labels — matches Mathematica
@@ -4754,10 +4755,7 @@ mod tests {
     // must suppress the label, not print the literal text "None".
     assert_eq!(expr_to_label(&id_expr("None")), None);
     // A quoted string "None" is a real label and must still print as-is.
-    assert_eq!(
-      expr_to_label(&Expr::String("None".to_string())),
-      Some("None".to_string())
-    );
+    assert_eq!(expr_to_label(&str_expr("None")), Some("None".to_string()));
   }
 
   #[test]
@@ -4853,13 +4851,9 @@ mod tests {
   fn named_scheme_accepts_string_and_colordata() {
     assert!(named_color_scheme("Pastel").is_some());
     assert!(named_color_scheme("Nonexistent").is_none());
+    assert_eq!(scheme_name(&str_expr("Pastel")).as_deref(), Some("Pastel"));
     assert_eq!(
-      scheme_name(&Expr::String("Pastel".into())).as_deref(),
-      Some("Pastel")
-    );
-    assert_eq!(
-      scheme_name(&call1("ColorData", Expr::String("Pastel".into())))
-        .as_deref(),
+      scheme_name(&call1("ColorData", str_expr("Pastel"))).as_deref(),
       Some("Pastel")
     );
   }

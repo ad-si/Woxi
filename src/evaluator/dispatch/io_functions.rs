@@ -435,9 +435,9 @@ fn run_process_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some("StandardOutput") => stdout,
     Some("StandardError") => stderr,
     _ => Expr::Association(vec![
-      (Expr::String("ExitCode".to_string()), exit_code),
-      (Expr::String("StandardOutput".to_string()), stdout),
-      (Expr::String("StandardError".to_string()), stderr),
+      (str_expr("ExitCode"), exit_code),
+      (str_expr("StandardOutput"), stdout),
+      (str_expr("StandardError"), stderr),
     ]),
   })
 }
@@ -462,10 +462,7 @@ pub(crate) const STANDARD_STREAMS: [(&str, i128); 2] =
 /// `Streams[]` all hand out.
 pub(crate) fn standard_stream_expr(is_stdout: bool) -> Expr {
   let (name, id) = STANDARD_STREAMS[usize::from(!is_stdout)];
-  call(
-    "OutputStream",
-    vec![Expr::String(name.to_string()), Expr::Integer(id)],
-  )
+  call("OutputStream", vec![str_expr(name), Expr::Integer(id)])
 }
 
 /// Recognize a channel that names one of the process's standard streams:
@@ -1215,7 +1212,7 @@ pub fn dispatch_io_functions(
       } else {
         "so"
       };
-      return Some(Ok(Expr::String(extension.to_string())));
+      return Some(Ok(str_expr(extension)));
     }
     // RunProcess[prog], RunProcess[{prog, arg, …}] — run a program to
     // completion and report its exit code and output streams.
@@ -1239,7 +1236,7 @@ pub fn dispatch_io_functions(
     "GetEnvironment" if args.len() == 1 => {
       let make_rule = |var: &str| -> Expr {
         rule_expr(
-          Expr::String(var.to_string()),
+          str_expr(var),
           match std::env::var(var) {
             Ok(val) => Expr::String(val),
             Err(_) => id_expr("None"),
@@ -2412,7 +2409,7 @@ pub fn dispatch_io_functions(
           if let Some(id) = stream_id {
             set_stream_position(id, start_pos + consumed);
           }
-          return Some(Ok(Expr::String(stripped.to_string())));
+          return Some(Ok(str_expr(stripped)));
         }
       }
       if let Some(id) = stream_id {
@@ -2540,7 +2537,7 @@ pub fn dispatch_io_functions(
               }
               let stripped = line.trim_end_matches('\r');
               if terms.iter().any(|t| stripped.contains(t.as_str())) {
-                out.push(Expr::String(stripped.to_string()));
+                out.push(str_expr(stripped));
                 found += 1;
               }
             }
@@ -2726,10 +2723,8 @@ pub fn dispatch_io_functions(
     "FileNameSplit" if !args.is_empty() && args.len() <= 2 => {
       let sep = file_name_separator(args);
       if let [Expr::String(s)] = positional_args(args).as_slice() {
-        let parts: Vec<Expr> = file_name_pieces(s, sep)
-          .into_iter()
-          .map(|part| Expr::String(part.to_string()))
-          .collect();
+        let parts: Vec<Expr> =
+          file_name_pieces(s, sep).into_iter().map(str_expr).collect();
         return Some(Ok(Expr::List(parts.into())));
       }
       return Some(Ok(unevaluated("FileNameSplit", args)));
@@ -3102,7 +3097,7 @@ pub fn dispatch_io_functions(
       let form = if args.len() == 2 {
         args[1].clone()
       } else {
-        Expr::String("Byte".to_string())
+        str_expr("Byte")
       };
       // Render a single-byte form (Byte/Character8) at the given offset,
       // returning EndOfFile when out of range.
@@ -3183,7 +3178,7 @@ pub fn dispatch_io_functions(
       let form = if args.len() == 2 {
         args[1].clone()
       } else {
-        Expr::String("Byte".to_string())
+        str_expr("Byte")
       };
       // Only "Byte" is supported; other forms fall through unevaluated so
       // callers see the same behaviour as for BinaryRead.
@@ -3486,7 +3481,7 @@ pub fn dispatch_io_functions(
         (remaining, remaining.len())
       };
 
-      let result = Expr::String(line.to_string());
+      let result = str_expr(line);
 
       // Advance position if it's a stream
       if let Some(id) = stream_id {
@@ -3836,7 +3831,7 @@ pub fn dispatch_io_functions(
     #[cfg(not(target_arch = "wasm32"))]
     "FileNames" if args.len() <= 3 => {
       let patterns = if args.is_empty() {
-        vec![Expr::String("*".to_string())]
+        vec![str_expr("*")]
       } else {
         let mut collected = Vec::new();
         flatten_file_patterns(&args[0], &mut collected);
@@ -4092,10 +4087,7 @@ pub fn dispatch_io_functions(
         Ok(meta) if meta.is_file() => {
           return Some(Ok(call(
             "Quantity",
-            vec![
-              Expr::Real(meta.len() as f64),
-              Expr::String("Bytes".to_string()),
-            ],
+            vec![Expr::Real(meta.len() as f64), str_expr("Bytes")],
           )));
         }
         Ok(meta) if meta.is_dir() => {
@@ -4320,7 +4312,7 @@ fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
         .find(|c: char| c.is_whitespace())
         .unwrap_or(trimmed.len());
       let word = &trimmed[..end];
-      (Expr::String(word.to_string()), skipped + end)
+      (str_expr(word), skipped + end)
     }
     "Number" => {
       // Skip leading whitespace
@@ -4369,7 +4361,7 @@ fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
       let end = remaining.find('\n').unwrap_or(remaining.len());
       let line = &remaining[..end];
       let advance = if end < remaining.len() { end + 1 } else { end };
-      (Expr::String(line.to_string()), advance)
+      (str_expr(line), advance)
     }
     "Character" => {
       let ch = remaining.chars().next().unwrap();
@@ -4806,7 +4798,7 @@ fn flatten_file_patterns(pattern: &Expr, out: &mut Vec<Expr>) {
 #[cfg(not(target_arch = "wasm32"))]
 fn file_name_matches(patterns: &[Expr], file_name: &str) -> bool {
   patterns.iter().any(|pattern| {
-    let args = [Expr::String(file_name.to_string()), pattern.clone()];
+    let args = [str_expr(file_name), pattern.clone()];
     matches!(
       crate::functions::string_ast::string_match_q_ast(&args),
       Ok(Expr::Identifier(ref s)) if s == "True"
@@ -5040,6 +5032,13 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
+  // A static `Manipulator[…]` slider or `SetterBar[…]` button row drawn
+  // inside a layout (a Demonstration's own "internal controls").
+  if matches!(expr, Expr::FunctionCall { name, args }
+    if (name == "Manipulator" || name == "SetterBar") && !args.is_empty())
+  {
+    return true;
+  }
   // A bare `LineLegend[…]` is a picture too — a Demonstration placing a
   // legend beside its plot rather than attached via `Legended`.
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "LineLegend") {
@@ -5146,6 +5145,11 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     {
       lays_out_a_graphic(&args[0])
     }
+    // `picture -> picture` is typeset as the pictures around an arrow.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => lays_out_a_graphic(pattern) || lays_out_a_graphic(replacement),
     _ => false,
   }
 }
@@ -5779,6 +5783,21 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     return svg;
   }
   match expr {
+    // `picture -> picture` is typeset as the pictures around an arrow.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if lays_out_a_graphic(expr) => expr_to_svg(&call1(
+      "Row",
+      Expr::List(
+        vec![
+          (**pattern).clone(),
+          Expr::String("\u{2192}".to_string()),
+          (**replacement).clone(),
+        ]
+        .into(),
+      ),
+    )),
     Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
     // `Pane[content, opts…]` only constrains its content's size; the
     // FrontEnd displays the content, so exporting one exports what it
@@ -5934,6 +5953,18 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         _ => vec![vec![content], vec![label]],
       };
       crate::functions::graphics::combine_graphics_svgs(&rows)
+        .unwrap_or_else(|| expr_text_svg(expr))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Manipulator" && !args.is_empty() =>
+    {
+      crate::functions::graphics::manipulator_svg(args)
+        .unwrap_or_else(|| expr_text_svg(expr))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "SetterBar" && !args.is_empty() =>
+    {
+      crate::functions::graphics::setter_bar_svg(args)
         .unwrap_or_else(|| expr_text_svg(expr))
     }
     // `Overlay[{item, …}]` stacks its items into one picture instead of

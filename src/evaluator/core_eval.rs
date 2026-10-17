@@ -963,8 +963,8 @@ pub fn evaluate_expr_to_expr_inner(
                 ]
                 .into(),
               ),
-              Expr::String("Instant".to_string()),
-              Expr::String("Gregorian".to_string()),
+              str_expr("Instant"),
+              str_expr("Gregorian"),
               Expr::Real(tz_offset_hours),
             ]
             .into(),
@@ -990,8 +990,8 @@ pub fn evaluate_expr_to_expr_inner(
                 ]
                 .into(),
               ),
-              Expr::String("Instant".to_string()),
-              Expr::String("Gregorian".to_string()),
+              str_expr("Instant"),
+              str_expr("Gregorian"),
               Expr::Real(tz_offset_hours),
             ]
             .into(),
@@ -1024,7 +1024,7 @@ pub fn evaluate_expr_to_expr_inner(
                 ]
                 .into(),
               ),
-              Expr::String("Day".to_string()),
+              str_expr("Day"),
             ]
             .into(),
           });
@@ -1050,7 +1050,7 @@ pub fn evaluate_expr_to_expr_inner(
                 ]
                 .into(),
               ),
-              Expr::String("Day".to_string()),
+              str_expr("Day"),
             ]
             .into(),
           });
@@ -3415,8 +3415,8 @@ pub fn evaluate_expr_to_expr_inner(
             // `-Image-` display placeholder, so the string fast path
             // would treat any two images as SameQ regardless of their
             // pixel data — compare the actual raster content instead.
-            if matches!(left, Expr::Image { .. })
-              || matches!(right, Expr::Image { .. })
+            if matches!(left, Expr::Image { .. } | Expr::Graphics { .. })
+              || matches!(right, Expr::Image { .. } | Expr::Graphics { .. })
             {
               crate::evaluator::pattern_matching::expr_equal(left, right)
             } else {
@@ -3432,8 +3432,8 @@ pub fn evaluate_expr_to_expr_inner(
             // fallback further below would treat any two images as
             // Equal regardless of their pixel data — compare the
             // actual raster content instead.
-            if matches!(left, Expr::Image { .. })
-              || matches!(right, Expr::Image { .. })
+            if matches!(left, Expr::Image { .. } | Expr::Graphics { .. })
+              || matches!(right, Expr::Image { .. } | Expr::Graphics { .. })
             {
               crate::evaluator::pattern_matching::expr_equal(left, right)
             } else if let Some(ord) = exact_integer_ord(left, right) {
@@ -3546,8 +3546,8 @@ pub fn evaluate_expr_to_expr_inner(
             // UnsameQ tests structural non-identity, not numeric inequality.
             // See the SameQ arm above: images all share the `-Image-`
             // display placeholder, so compare pixel data instead.
-            if matches!(left, Expr::Image { .. })
-              || matches!(right, Expr::Image { .. })
+            if matches!(left, Expr::Image { .. } | Expr::Graphics { .. })
+              || matches!(right, Expr::Image { .. } | Expr::Graphics { .. })
             {
               !crate::evaluator::pattern_matching::expr_equal(left, right)
             } else {
@@ -3555,8 +3555,8 @@ pub fn evaluate_expr_to_expr_inner(
             }
           }
           ComparisonOp::NotEqual => {
-            if matches!(left, Expr::Image { .. })
-              || matches!(right, Expr::Image { .. })
+            if matches!(left, Expr::Image { .. } | Expr::Graphics { .. })
+              || matches!(right, Expr::Image { .. } | Expr::Graphics { .. })
             {
               !crate::evaluator::pattern_matching::expr_equal(left, right)
             } else if let Some(ord) = exact_integer_ord(left, right) {

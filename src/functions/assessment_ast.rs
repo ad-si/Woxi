@@ -91,11 +91,8 @@ fn score_expr(score: f64) -> Expr {
 /// Build an `AssessmentResultObject[<|"AnswerCorrect" -> …, "Score" -> …|>]`.
 fn result_object(score: f64, correct: bool) -> Expr {
   let assoc = Expr::Association(vec![
-    (
-      Expr::String("AnswerCorrect".to_string()),
-      bool_expr(correct),
-    ),
-    (Expr::String("Score".to_string()), score_expr(score)),
+    (str_expr("AnswerCorrect"), bool_expr(correct)),
+    (str_expr("Score"), score_expr(score)),
   ]);
   call1("AssessmentResultObject", assoc)
 }

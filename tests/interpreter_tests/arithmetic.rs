@@ -12634,3 +12634,33 @@ mod plus_machine_complex {
     );
   }
 }
+
+mod sum_collects_terms_in_one_plus {
+  use super::*;
+
+  #[test]
+  fn nested_symbolic_quadratic_form() {
+    assert_eq!(
+      interpret("Sum[Subscript[a, i] Subscript[a, j], {i, 1, 2}, {j, 1, 2}]")
+        .unwrap(),
+      "Subscript[a, 1]^2 + 2*Subscript[a, 1]*Subscript[a, 2] + Subscript[a, 2]^2"
+    );
+  }
+
+  #[test]
+  fn large_nested_symbolic_sum_has_all_distinct_terms() {
+    assert_eq!(
+      interpret(
+        "Length[Sum[Sum[Subscript[a, j] Subscript[a, k], {k, 1, 40}], \
+         {j, 1, 40}]]"
+      )
+      .unwrap(),
+      "820"
+    );
+  }
+
+  #[test]
+  fn empty_range_is_zero() {
+    assert_eq!(interpret("Sum[x^k, {k, 1, 0}]").unwrap(), "0");
+  }
+}

@@ -10911,8 +10911,7 @@ fn one_sided_limit_ast(
     LimitDirection::FromBelow => "FromBelow",
     LimitDirection::TwoSided => "FromAbove",
   };
-  let direction_opt =
-    rule_expr(id_expr("Direction"), Expr::String(dir_str.to_string()));
+  let direction_opt = rule_expr(id_expr("Direction"), str_expr(dir_str));
 
   let result = limit_ast(&[args[0].clone(), args[1].clone(), direction_opt])?;
 

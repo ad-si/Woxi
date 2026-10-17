@@ -216,10 +216,9 @@ fn decode_element(
       for branch in &tree.branches {
         let value = match branch_values(data, branch) {
           Ok(values) => Expr::List(values.into()),
-          Err(e) => Expr::Association(vec![(
-            Expr::String("Error".into()),
-            Expr::String(e),
-          )]),
+          Err(e) => {
+            Expr::Association(vec![(str_expr("Error"), Expr::String(e))])
+          }
         };
         pairs.push((Expr::String(branch.name.clone()), value));
       }
@@ -533,15 +532,9 @@ fn read_directory(
             // Undecodable payloads (e.g. an unsupported compression codec for
             // this one record) degrade to metadata plus the reason.
             Expr::Association(vec![
-              (
-                Expr::String("ClassName".into()),
-                Expr::String(key.class_name.clone()),
-              ),
-              (
-                Expr::String("Title".into()),
-                Expr::String(key.title.clone()),
-              ),
-              (Expr::String("Error".into()), Expr::String(e)),
+              (str_expr("ClassName"), Expr::String(key.class_name.clone())),
+              (str_expr("Title"), Expr::String(key.title.clone())),
+              (str_expr("Error"), Expr::String(e)),
             ])
           }
         }
@@ -632,14 +625,8 @@ fn decode_object(key: &KeyInfo, payload: &[u8], budget: &mut usize) -> Expr {
   };
   decoded.unwrap_or_else(|_| {
     Expr::Association(vec![
-      (
-        Expr::String("ClassName".into()),
-        Expr::String(key.class_name.clone()),
-      ),
-      (
-        Expr::String("Title".into()),
-        Expr::String(key.title.clone()),
-      ),
+      (str_expr("ClassName"), Expr::String(key.class_name.clone())),
+      (str_expr("Title"), Expr::String(key.title.clone())),
     ])
   })
 }
@@ -762,22 +749,19 @@ fn decode_th1(
     edges,
   } = axis;
   let mut pairs: Vec<(Expr, Expr)> = vec![
-    (
-      Expr::String("ClassName".into()),
-      Expr::String(class_name.to_string()),
-    ),
-    (Expr::String("Title".into()), Expr::String(title)),
-    (Expr::String("NBins".into()), Expr::Integer(nbins as i128)),
-    (Expr::String("XMin".into()), Expr::Real(xmin)),
-    (Expr::String("XMax".into()), Expr::Real(xmax)),
+    (str_expr("ClassName"), str_expr(class_name)),
+    (str_expr("Title"), Expr::String(title)),
+    (str_expr("NBins"), Expr::Integer(nbins as i128)),
+    (str_expr("XMin"), Expr::Real(xmin)),
+    (str_expr("XMax"), Expr::Real(xmax)),
   ];
   if !edges.is_empty() {
     pairs.push((
-      Expr::String("BinEdges".into()),
+      str_expr("BinEdges"),
       Expr::List(edges.into_iter().map(Expr::Real).collect::<Vec<_>>().into()),
     ));
   }
-  pairs.push((Expr::String("Entries".into()), Expr::Real(entries)));
+  pairs.push((str_expr("Entries"), Expr::Real(entries)));
   // A histogram over the listing budget keeps the metadata above but omits its
   // bin contents (fetch them via the object's element path).
   if let Some(mut contents) = contents {
@@ -786,17 +770,11 @@ fn decode_th1(
     if contents.len() == nbins as usize + 2 {
       let overflow = contents.pop().expect("len >= 2");
       let underflow = contents.remove(0);
-      pairs.push((
-        Expr::String("BinContents".into()),
-        Expr::List(contents.into()),
-      ));
-      pairs.push((Expr::String("Underflow".into()), underflow));
-      pairs.push((Expr::String("Overflow".into()), overflow));
+      pairs.push((str_expr("BinContents"), Expr::List(contents.into())));
+      pairs.push((str_expr("Underflow"), underflow));
+      pairs.push((str_expr("Overflow"), overflow));
     } else {
-      pairs.push((
-        Expr::String("BinContents".into()),
-        Expr::List(contents.into()),
-      ));
+      pairs.push((str_expr("BinContents"), Expr::List(contents.into())));
     }
   }
   Ok(Expr::Association(pairs))
@@ -823,27 +801,18 @@ fn decode_th2(
   let contents = read_bin_array(&mut r, class_name, budget)?;
   let (nx, ny) = (x_axis.nbins.max(0) as usize, y_axis.nbins.max(0) as usize);
   let mut pairs: Vec<(Expr, Expr)> = vec![
-    (
-      Expr::String("ClassName".into()),
-      Expr::String(class_name.to_string()),
-    ),
-    (Expr::String("Title".into()), Expr::String(title)),
-    (
-      Expr::String("NBinsX".into()),
-      Expr::Integer(x_axis.nbins as i128),
-    ),
-    (Expr::String("XMin".into()), Expr::Real(x_axis.min)),
-    (Expr::String("XMax".into()), Expr::Real(x_axis.max)),
-    (
-      Expr::String("NBinsY".into()),
-      Expr::Integer(y_axis.nbins as i128),
-    ),
-    (Expr::String("YMin".into()), Expr::Real(y_axis.min)),
-    (Expr::String("YMax".into()), Expr::Real(y_axis.max)),
+    (str_expr("ClassName"), str_expr(class_name)),
+    (str_expr("Title"), Expr::String(title)),
+    (str_expr("NBinsX"), Expr::Integer(x_axis.nbins as i128)),
+    (str_expr("XMin"), Expr::Real(x_axis.min)),
+    (str_expr("XMax"), Expr::Real(x_axis.max)),
+    (str_expr("NBinsY"), Expr::Integer(y_axis.nbins as i128)),
+    (str_expr("YMin"), Expr::Real(y_axis.min)),
+    (str_expr("YMax"), Expr::Real(y_axis.max)),
   ];
   if !x_axis.edges.is_empty() {
     pairs.push((
-      Expr::String("XBinEdges".into()),
+      str_expr("XBinEdges"),
       Expr::List(
         x_axis
           .edges
@@ -856,7 +825,7 @@ fn decode_th2(
   }
   if !y_axis.edges.is_empty() {
     pairs.push((
-      Expr::String("YBinEdges".into()),
+      str_expr("YBinEdges"),
       Expr::List(
         y_axis
           .edges
@@ -867,7 +836,7 @@ fn decode_th2(
       ),
     ));
   }
-  pairs.push((Expr::String("Entries".into()), Expr::Real(entries)));
+  pairs.push((str_expr("Entries"), Expr::Real(entries)));
   // A histogram over the listing budget keeps the metadata above but omits its
   // bin contents (fetch them via the object's element path).
   if let Some(contents) = contents {
@@ -884,7 +853,7 @@ fn decode_th2(
       }
       rows.push(Expr::List(row.into()));
     }
-    pairs.push((Expr::String("BinContents".into()), Expr::List(rows.into())));
+    pairs.push((str_expr("BinContents"), Expr::List(rows.into())));
   }
   Ok(Expr::Association(pairs))
 }
@@ -1236,22 +1205,13 @@ fn parse_ttree(
 fn decode_ttree(key: &KeyInfo, payload: &[u8]) -> Result<Expr, String> {
   let (tree, branch_err) = parse_ttree(payload, key.key_len as u32)?;
   let mut pairs: Vec<(Expr, Expr)> = vec![
-    (
-      Expr::String("ClassName".into()),
-      Expr::String("TTree".into()),
-    ),
-    (
-      Expr::String("Title".into()),
-      Expr::String(tree.title.clone()),
-    ),
-    (
-      Expr::String("Entries".into()),
-      Expr::Integer(tree.entries as i128),
-    ),
+    (str_expr("ClassName"), str_expr("TTree")),
+    (str_expr("Title"), Expr::String(tree.title.clone())),
+    (str_expr("Entries"), Expr::Integer(tree.entries as i128)),
   ];
   if branch_err.is_none() {
     pairs.push((
-      Expr::String("Branches".into()),
+      str_expr("Branches"),
       Expr::Association(
         tree
           .branches
@@ -1510,10 +1470,10 @@ fn decode_lorentz_entry(bytes: &[u8]) -> Result<Expr, String> {
   let pz = r.read_f64()?;
   let e = r.read_f64()?;
   Ok(Expr::Association(vec![
-    (Expr::String("Px".into()), Expr::Real(px)),
-    (Expr::String("Py".into()), Expr::Real(py)),
-    (Expr::String("Pz".into()), Expr::Real(pz)),
-    (Expr::String("E".into()), Expr::Real(e)),
+    (str_expr("Px"), Expr::Real(px)),
+    (str_expr("Py"), Expr::Real(py)),
+    (str_expr("Pz"), Expr::Real(pz)),
+    (str_expr("E"), Expr::Real(e)),
   ]))
 }
 

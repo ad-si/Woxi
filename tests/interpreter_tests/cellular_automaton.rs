@@ -12,6 +12,20 @@ mod cellular_automaton {
   }
 
   #[test]
+  fn sparse_array_cells_with_background() {
+    let sparse = interpret(
+      "CellularAutomaton[{123, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, {1, 1}}, {SparseArray[{{2, 2} -> 1}, {3, 3}], 0}, {{0, 2, 1}, {0, 2}, {0, 2}}]",
+    )
+    .unwrap();
+    let dense = interpret(
+      "CellularAutomaton[{123, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, {1, 1}}, {{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, 0}, {{0, 2, 1}, {0, 2}, {0, 2}}]",
+    )
+    .unwrap();
+    assert_eq!(sparse, dense);
+    assert!(!sparse.contains("SparseArray"));
+  }
+
+  #[test]
   fn explicit_offset_neighborhood_matches_range() {
     for (offsets, r) in
       [("{{-1}, {0}, {1}}", 1), ("{{-2}, {-1}, {0}, {1}, {2}}", 2)]

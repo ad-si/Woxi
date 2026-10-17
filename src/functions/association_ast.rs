@@ -432,10 +432,7 @@ fn lookup_key(
   }
   match default {
     Some(d) => d.clone(),
-    None => call(
-      "Missing",
-      vec![Expr::String("KeyAbsent".to_string()), key.clone()],
-    ),
+    None => call("Missing", vec![str_expr("KeyAbsent"), key.clone()]),
   }
 }
 
@@ -989,10 +986,7 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             };
             crate::evaluator::evaluate_expr_to_expr(&call)?
           }
-          None => call(
-            "Missing",
-            vec![Expr::String("KeyAbsent".to_string()), key.clone()],
-          ),
+          None => call("Missing", vec![str_expr("KeyAbsent"), key.clone()]),
         };
         new_items.push((key.clone(), missing));
       }

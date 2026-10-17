@@ -302,13 +302,7 @@ static PROPERTIES: &[&str] = &[
 ];
 
 fn string_list(items: &[&str]) -> Expr {
-  Expr::List(
-    items
-      .iter()
-      .map(|s| Expr::String(s.to_string()))
-      .collect::<Vec<_>>()
-      .into(),
-  )
+  Expr::List(items.iter().map(|s| str_expr(s)).collect())
 }
 
 fn pair(a: i128, b: i128) -> Expr {
@@ -316,7 +310,7 @@ fn pair(a: i128, b: i128) -> Expr {
 }
 
 fn not_applicable() -> Expr {
-  call1("Missing", Expr::String("NotApplicable".to_string()))
+  call1("Missing", str_expr("NotApplicable"))
 }
 
 pub fn knot_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -386,14 +380,12 @@ pub fn knot_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Knot::Torus(..),
         ) => Ok(not_applicable()),
         ("StandardName", Knot::Table(n, k)) => Ok(match named {
-          Some((name, _, _)) => Expr::String(name.to_string()),
-          None => Expr::List(
-            vec![Expr::String("Knot".to_string()), pair(n, k)].into(),
-          ),
+          Some((name, _, _)) => str_expr(name),
+          None => Expr::List(vec![str_expr("Knot"), pair(n, k)].into()),
         }),
-        ("StandardName", Knot::Torus(p, q)) => Ok(Expr::List(
-          vec![Expr::String("TorusKnot".to_string()), pair(p, q)].into(),
-        )),
+        ("StandardName", Knot::Torus(p, q)) => {
+          Ok(Expr::List(vec![str_expr("TorusKnot"), pair(p, q)].into()))
+        }
         ("Name", Knot::Table(n, k)) => Ok(Expr::String(match named {
           Some((_, _, name)) => name.to_string(),
           None => format!("knot {n}-{k}"),

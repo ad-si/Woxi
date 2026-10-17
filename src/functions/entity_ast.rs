@@ -3,7 +3,6 @@
 //! Implements EntityStore, EntityRegister, EntityUnregister, EntityValue,
 //! EntityList, EntityProperties, EntityStores, EntityClassList, and Entity property access.
 
-#[allow(unused_imports)]
 use super::*;
 use std::cell::RefCell;
 
@@ -77,8 +76,7 @@ pub fn entity_store_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build the normalized form: EntityStore[<|Types -> <|...|>|>]
   let types_inner = Expr::Association(types_assoc);
-  let outer =
-    Expr::Association(vec![(Expr::String("Types".to_string()), types_inner)]);
+  let outer = Expr::Association(vec![(str_expr("Types"), types_inner)]);
 
   Ok(call1("EntityStore", outer))
 }
@@ -346,17 +344,14 @@ pub fn entity_stores_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 .collect(),
             );
             let type_data = Expr::Association(vec![
-              (Expr::String("Entities".to_string()), entities_assoc),
-              (Expr::String("Properties".to_string()), properties_assoc),
+              (str_expr("Entities"), entities_assoc),
+              (str_expr("Properties"), properties_assoc),
             ]);
             (Expr::String(type_name.clone()), type_data)
           })
           .collect();
         let types_inner = Expr::Association(type_pairs);
-        let outer = Expr::Association(vec![(
-          Expr::String("Types".to_string()),
-          types_inner,
-        )]);
+        let outer = Expr::Association(vec![(str_expr("Types"), types_inner)]);
         call1("EntityStore", outer)
       })
       .collect::<Vec<_>>()
@@ -403,10 +398,7 @@ fn lookup_entity_property(
                 }
               }
               // Entity found but property missing
-              return Some(call1(
-                "Missing",
-                Expr::String("NotAvailable".to_string()),
-              ));
+              return Some(call1("Missing", str_expr("NotAvailable")));
             }
           }
         }
@@ -586,10 +578,7 @@ fn resolve_entity_lookup(
     Some(val) => Ok(val),
     None => Ok(call(
       "Missing",
-      vec![
-        Expr::String("UnknownType".to_string()),
-        Expr::String(type_name.to_string()),
-      ],
+      vec![str_expr("UnknownType"), str_expr(type_name)],
     )),
   }
 }
@@ -646,10 +635,7 @@ fn entity_list_for_type(type_name: &str) -> Expr {
     }
     return call(
       "Missing",
-      vec![
-        Expr::String("UnknownType".to_string()),
-        Expr::String(type_name.to_string()),
-      ],
+      vec![str_expr("UnknownType"), str_expr(type_name)],
     );
   }
 
@@ -662,10 +648,7 @@ fn entity_list_for_type(type_name: &str) -> Expr {
           for (ename, _) in &data.entities {
             result.push(call(
               "Entity",
-              vec![
-                Expr::String(type_name.to_string()),
-                Expr::String(ename.clone()),
-              ],
+              vec![str_expr(type_name), Expr::String(ename.clone())],
             ));
           }
         }
@@ -681,10 +664,7 @@ fn entity_list_for_class(type_name: &str, class_name: &str) -> Expr {
   if !is_type_registered(type_name) {
     return call(
       "Missing",
-      vec![
-        Expr::String("UnknownType".to_string()),
-        Expr::String(type_name.to_string()),
-      ],
+      vec![str_expr("UnknownType"), str_expr(type_name)],
     );
   }
 
@@ -699,10 +679,7 @@ fn entity_list_for_class(type_name: &str, class_name: &str) -> Expr {
               for member in members {
                 result.push(call(
                   "Entity",
-                  vec![
-                    Expr::String(type_name.to_string()),
-                    Expr::String(member.clone()),
-                  ],
+                  vec![str_expr(type_name), Expr::String(member.clone())],
                 ));
               }
             }
@@ -730,10 +707,7 @@ fn entity_count_for_type(type_name: &str) -> Expr {
     }
     return call(
       "Missing",
-      vec![
-        Expr::String("UnknownType".to_string()),
-        Expr::String(type_name.to_string()),
-      ],
+      vec![str_expr("UnknownType"), str_expr(type_name)],
     );
   }
 
@@ -769,10 +743,7 @@ pub fn entity_class_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !is_type_registered(&type_name) {
     return Ok(call(
       "Missing",
-      vec![
-        Expr::String("UnknownType".to_string()),
-        Expr::String(type_name),
-      ],
+      vec![str_expr("UnknownType"), Expr::String(type_name)],
     ));
   }
 
@@ -819,10 +790,7 @@ fn entity_properties_for_type(type_name: &str) -> Expr {
   if !is_type_registered(type_name) {
     return call(
       "Missing",
-      vec![
-        Expr::String("UnknownType".to_string()),
-        Expr::String(type_name.to_string()),
-      ],
+      vec![str_expr("UnknownType"), str_expr(type_name)],
     );
   }
 
@@ -843,7 +811,7 @@ fn entity_properties_for_type(type_name: &str) -> Expr {
       .map(|prop_name| {
         call(
           "EntityProperty",
-          vec![Expr::String(type_name.to_string()), Expr::String(prop_name)],
+          vec![str_expr(type_name), Expr::String(prop_name)],
         )
       })
       .collect::<Vec<_>>()
@@ -960,10 +928,7 @@ pub fn entity_store_property_access(
                     return Ok(pval.clone());
                   }
                 }
-                return Ok(call1(
-                  "Missing",
-                  Expr::String("NotAvailable".to_string()),
-                ));
+                return Ok(call1("Missing", str_expr("NotAvailable")));
               }
             }
           }
@@ -974,10 +939,7 @@ pub fn entity_store_property_access(
 
   Ok(call(
     "Missing",
-    vec![
-      Expr::String("UnknownType".to_string()),
-      Expr::String(type_name),
-    ],
+    vec![str_expr("UnknownType"), Expr::String(type_name)],
   ))
 }
 
