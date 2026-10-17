@@ -2006,6 +2006,34 @@ mod tests {
     );
   }
 
+  /// A control row followed by an empty string (`Row[{Control[…], …}] ""`,
+  /// which the front end writes to keep a trailing blank) is the product of
+  /// the row and `""`. Its controls must still become real, bound controls
+  /// instead of the whole product being treated as an inert display.
+  #[test]
+  fn control_row_times_empty_string_still_yields_controls() {
+    let code = r#"Manipulate[
+      If[flag, {r, k}, {k, r}],
+      Column[{
+        Row[{Control[{{flag, True, ""},
+          {True -> "first", False -> "second"}, Setter}], Spacer[8],
+          Control[{{r, 3}, 1, 9, 1}]}] "",
+        Grid[{{"k", Spacer[4], Control[{{k, 2, "k"}, 0, 5, 1}]}}]
+      }]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let names: Vec<String> = state
+      .controls
+      .iter()
+      .map(|c| c.name().to_string())
+      .collect();
+    for n in ["flag", "r", "k"] {
+      assert!(names.iter().any(|x| x == n), "missing {n}: {names:?}");
+    }
+  }
+
   /// A Demonstrations idiom declares a control's own default
   /// (`Control[{{n, 2, "n"}, …}]`) and then redeclares the same variable's
   /// *actual* starting value via a separate, hidden `{{n, 3}, None}` spec —
