@@ -8230,6 +8230,19 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// Regression: a top `FrameLabel` containing a line break was drawn as
+    /// one `<text>` element, so SVG collapsed the break and the caption
+    /// ran off the image. Each line now gets its own element.
+    #[test]
+    fn plot_top_frame_label_breaks_lines() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, \
+         FrameLabel -> {{\"fb\", None}, {\"fl\", Row[{\"first\\nsecond\"}]}}]",
+      );
+      assert!(svg.contains(">first</text>"), "{svg}");
+      assert!(svg.contains(">second</text>"), "{svg}");
+    }
+
     /// Regression: `RegionPlot` ignored `FrameLabel`, so a Demonstration's
     /// captioned region plot came out with bare axes.
     #[test]
