@@ -1497,7 +1497,9 @@ fn gray_histogram(values: &[f64]) -> Vec<f64> {
     histogram[bin] += 1.0;
   }
   let total = values.len() as f64;
-  histogram.iter_mut().for_each(|c| *c /= total);
+  for c in &mut histogram {
+    *c /= total;
+  }
   histogram
 }
 
