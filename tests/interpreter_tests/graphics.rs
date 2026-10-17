@@ -12624,6 +12624,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn legacy_histograms_context_histogram() {
+      // `Histograms`Histogram` with `HistogramCategories` boundaries is the
+      // modern `Histogram` with explicit bin edges.
+      let legacy = export_svg(
+        "Histograms`Histogram[{1, 2, 2, 3, 3, 3}, Histograms`HistogramRange -> {0, 5}, Histograms`HistogramCategories -> Range[0, 5], Frame -> True]",
+      );
+      let modern = export_svg(
+        "Histogram[{1, 2, 2, 3, 3, 3}, {Range[0, 5]}, Frame -> True]",
+      );
+      assert_eq!(legacy, modern);
+    }
+
+    #[test]
     fn histogram_bin_count() {
       // The bin count is a target, not exact: wolframscript's userBinningN
       // gives this data {0, 5, 10} for n = 2 (2 bars) and the centered

@@ -580,6 +580,34 @@ pub fn dispatch_plotting(
     "Histogram" if !args.is_empty() => {
       Some(crate::functions::chart::histogram_ast(args))
     }
+    // The legacy `Histograms`` package spelling: `HistogramCategories` gave
+    // the bin edges and `HistogramRange` the plotted range, both folded into
+    // the modern bin specification.
+    "Histograms`Histogram" if !args.is_empty() => {
+      let mut new_args = vec![args[0].clone()];
+      let mut bins = None;
+      for opt in &args[1..] {
+        match super::list_operations::as_rule(opt) {
+          Some((Expr::Identifier(key), value))
+            if key == "Histograms`HistogramCategories" =>
+          {
+            // A plain list of category boundaries is `{{e1, e2, ...}}`
+            // in the modern bin specification.
+            bins = Some(match value {
+              Expr::List(_) => Expr::List(vec![value.clone()].into()),
+              _ => value.clone(),
+            });
+          }
+          Some((Expr::Identifier(key), _))
+            if key == "Histograms`HistogramRange" => {}
+          _ => new_args.push(opt.clone()),
+        }
+      }
+      if let Some(bins) = bins {
+        new_args.insert(1, bins);
+      }
+      Some(crate::functions::chart::histogram_ast(&new_args))
+    }
     "BoxWhiskerChart" if !args.is_empty() => {
       Some(crate::functions::chart::box_whisker_chart_ast(args))
     }
