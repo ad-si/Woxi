@@ -2407,9 +2407,13 @@ fn collect_primitives(
         "Inset" if !args.is_empty() => {
           // `Inset[graphic, pos, …]` draws a picture inside this one; any
           // other object (a string, a number) is placed like `Text`.
-          match inset_primitives(args, errors) {
-            Some(inner) => prims.extend(inner),
-            None => parse_text(args, style, prims),
+          if let Some(text) = text_primitive_inset(args) {
+            collect_primitives(&text, style, prims, errors);
+          } else {
+            match inset_primitives(args, errors) {
+              Some(inner) => prims.extend(inner),
+              None => parse_text(args, style, prims),
+            }
           }
         }
         // `RasterBox` is the box form of `Raster` — the shape a stored
@@ -4641,6 +4645,23 @@ fn framed_plot_inset(
     scaled: false,
     size: Some((width, height)),
   })
+}
+
+/// `Inset[Text[obj], pos, …]` insets a text primitive, which is simply
+/// `Text[obj, pos]` — rewrite it so the inner `Text` is not mistaken for the
+/// object being placed (and printed as `Text[…]`).
+pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
+  if let (Expr::FunctionCall { name, args: targs }, Some(pos)) =
+    (strip_style_wrappers(args.first()?), args.get(1))
+    && name == "Text"
+    && targs.len() == 1
+  {
+    return Some(Expr::FunctionCall {
+      name: "Text".to_string(),
+      args: vec![targs[0].clone(), pos.clone()].into(),
+    });
+  }
+  None
 }
 
 fn inset_primitives(
