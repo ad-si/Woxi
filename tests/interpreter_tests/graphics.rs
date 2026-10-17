@@ -22056,6 +22056,47 @@ mod blend {
   }
 
   #[test]
+  fn binarize_method_option() {
+    let img = "Image[{{0.1, 0.2, 0.3, 0.9}, {0.1, 0.8, 0.9, 0.95}}]";
+    assert_eq!(
+      interpret(&format!("ImageData[Binarize[{img}, Method -> \"Mean\"]]"))
+        .unwrap(),
+      "{{0, 0, 0, 1}, {0, 1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "ImageData[Binarize[{img}, Method -> {{\"BlackFraction\", 0.5}}]]"
+      ))
+      .unwrap(),
+      "{{0, 0, 0, 1}, {0, 1, 1, 1}}"
+    );
+    for method in ["Cluster", "Median", "Entropy", "MinimumError"] {
+      assert_eq!(
+        interpret(&format!("Head[Binarize[{img}, Method -> \"{method}\"]]"))
+          .unwrap(),
+        "Image"
+      );
+    }
+  }
+
+  #[test]
+  fn binarize_function_threshold() {
+    assert_eq!(
+      interpret("ImageData[Binarize[Image[{{0.1, 0.4, 0.9}}], # > 0.3 &]]")
+        .unwrap(),
+      "{{0, 1, 1}}"
+    );
+    // Color pixels are passed as channel lists.
+    assert_eq!(
+      interpret(
+        "ImageData[Binarize[Image[{{{1, 0, 0}, {0, 1, 0}}}], #[[1]] > 0.5 &]]"
+      )
+      .unwrap(),
+      "{{1, 0}}"
+    );
+  }
+
+  #[test]
   fn binarize_on_non_image_emits_imginv() {
     // wolframscript: Binarize on a non-image emits imginv even when the
     // threshold arg is also bogus, because the image check fires first.

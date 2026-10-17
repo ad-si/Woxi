@@ -121,7 +121,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PowerDistribution" => Some((2, 2)),
     "PERTDistribution" => Some((2, 3)),
     "Between" => Some((1, 2)),
-    "Binarize" => Some((1, 2)),
+    "Binarize" => Some((1, 3)),
     "BinaryDistance" => Some((2, 2)),
     "BinCounts" => Some((1, 2)),
     "BinLists" => Some((1, 2)),
