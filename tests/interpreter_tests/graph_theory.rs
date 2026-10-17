@@ -7994,4 +7994,33 @@ mod pareto_random_variate {
       "True"
     );
   }
+
+  #[test]
+  fn graph_edge_labels_are_drawn() {
+    assert_eq!(
+      interpret(
+        "StringCount[ExportString[Graph[{1 -> 2}, EdgeLabels -> {(1 -> 2) -> \"x\"}], \"SVG\"], \">x<\"]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn treeplot_labeled_edges_show_labels_unless_edgelabeling_false() {
+    assert_eq!(
+      interpret(
+        "StringCount[ExportString[TreePlot[{{1 -> 2, \"lbl\"}, {1 -> 3, \"lbl\"}}, Top, 1], \"SVG\"], \">lbl<\"]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "StringCount[ExportString[TreePlot[{{1 -> 2, \"lbl\"}}, Top, 1, EdgeLabeling -> False], \"SVG\"], \">lbl<\"]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
 }
