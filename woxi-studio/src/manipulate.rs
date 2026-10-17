@@ -1856,6 +1856,38 @@ mod tests {
     assert!(value.starts_with("helper[Graphics["), "got {value}");
   }
 
+  /// A body that caches a rendered plot in hidden state (recomputing it only
+  /// when a control changed) must still find the picture on the next frame:
+  /// the state holds a `-Graphics-` placeholder that cannot be parsed back.
+  #[test]
+  fn cached_graphic_in_hidden_state_survives_reevaluation() {
+    let code = r#"Manipulate[
+      If[seen != n, seen = n; cache = Plot[x, {x, 0, n}]];
+      Column[{cache, "caption"}],
+      {{seen, 0}, ControlType -> None},
+      {{cache, 0}, ControlType -> None},
+      {n, 1, 3, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(
+      state.graphics_handle.is_some(),
+      "first frame draws the plot"
+    );
+    // Nothing changed, so the body reuses `cache` from the saved state.
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert_eq!(
+      state.text_output, None,
+      "the cached plot must not print as a symbol name"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "second frame keeps the plot"
+    );
+  }
+
   /// Two SetterBar rows over disjoint choices can share one variable; the
   /// variable starts at the *first* row's initial value (Wolfram keeps one
   /// `var$$ = <first initial>`), so the second row shows nothing selected.

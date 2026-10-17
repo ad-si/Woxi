@@ -183,3 +183,27 @@ True
 $ wo 'StringMatchQ["a1b2c3", "@"]'
 True
 ```
+
+Wildcards work in every string of a compound pattern:
+
+```scrut
+$ wo 'StringMatchQ[{"acd", "bx", "c"}, "a*" | "b*"]'
+{True, True, False}
+```
+
+```scrut
+$ wo 'StringMatchQ["acd", ("a*" | "x") ~~ "d"]'
+True
+```
+
+A backslash makes `*` or `@` literal:
+
+```scrut
+$ wo 'StringMatchQ["a*b", "a\\*b"]'
+True
+```
+
+```scrut
+$ wo 'StringMatchQ["axb", "a\\*b"]'
+False
+```

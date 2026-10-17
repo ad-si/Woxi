@@ -576,8 +576,15 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     // `Expr::String` arm above and prints as-is.
     Expr::Identifier(s) if s == "None" => None,
     Expr::Identifier(s) => Some(s.clone()),
-    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
-      Some(expr_to_string(e))
+    Expr::Integer(_) | Expr::BigInteger(_) => Some(expr_to_string(e)),
+    // A real reads as `ToString` prints it (six significant digits), so a
+    // computed `Round[x, 0.1]` labels as `-0.6`, not `-0.6000000000000001`.
+    Expr::Real(_) => {
+      match crate::functions::string_ast::to_string_ast(std::slice::from_ref(e))
+      {
+        Ok(Expr::String(ref rendered)) => Some(rendered.clone()),
+        _ => Some(expr_to_string(e)),
+      }
     }
     // A styled label reads as its content — a Demonstration writes its
     // frame labels as `Style["force (kN)", 12]`. The same holds for the
