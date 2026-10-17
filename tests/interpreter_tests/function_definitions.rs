@@ -5973,6 +5973,40 @@ mod evaluate_on_assignment_lhs {
   }
 }
 
+mod condition_valued_variables {
+  use super::*;
+
+  /// A variable whose value is a `Condition` keeps it: `z = (t /; t <= 0)`
+  /// must not be read back as the guarded definition `z /; … := …`.
+  #[test]
+  fn set_stores_a_condition_value() {
+    clear_state();
+    assert_eq!(interpret("z = (t /; t <= 0); z").unwrap(), "t /; t <= 0");
+    assert_eq!(interpret("Head[z]").unwrap(), "Condition");
+  }
+
+  #[test]
+  fn module_and_block_locals_hold_condition_values() {
+    clear_state();
+    assert_eq!(
+      interpret("Module[{z = t /; t <= 0}, z]").unwrap(),
+      "t /; t <= 0"
+    );
+    assert_eq!(
+      interpret("Block[{z = t /; t <= 0}, Head[z]]").unwrap(),
+      "Condition"
+    );
+  }
+
+  /// A genuinely guarded definition still follows its guard.
+  #[test]
+  fn guarded_own_value_still_checks_its_guard() {
+    clear_state();
+    assert_eq!(interpret("g /; 1 > 2 := 3; g").unwrap(), "g");
+    assert_eq!(interpret("h /; 2 > 1 := 3; h").unwrap(), "3");
+  }
+}
+
 mod nested_pattern_tests_in_definitions {
   use super::*;
 

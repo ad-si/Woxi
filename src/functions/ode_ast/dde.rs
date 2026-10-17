@@ -37,8 +37,10 @@ fn delayed_name(k: usize) -> String {
   format!("__dde$delayed${k}")
 }
 
-/// `f[t /; t <= a] == rhs` — the history of `f` up to `a`. Returns the
-/// function name, the history's end point `a` and the right-hand side.
+/// `f[s /; s <= a] == rhs` — the history of `f` up to `a`. The condition's
+/// variable `s` is a dummy (it need not be the independent variable); `rhs`
+/// is returned in terms of `t_name`. Returns the function name, the history's
+/// end point `a` and the right-hand side.
 fn parse_history_condition(
   eq: &Expr,
   t_name: &str,
@@ -60,9 +62,9 @@ fn parse_history_condition(
   if cond_head != "Condition" || cond_args.len() != 2 {
     return None;
   }
-  if !matches!(&cond_args[0], Expr::Identifier(v) if v == t_name) {
+  let Expr::Identifier(dummy) = &cond_args[0] else {
     return None;
-  }
+  };
   let Expr::Comparison {
     operands,
     operators,
@@ -73,12 +75,17 @@ fn parse_history_condition(
   if operands.len() != 2
     || operators.len() != 1
     || !matches!(operators[0], ComparisonOp::LessEqual | ComparisonOp::Less)
-    || !matches!(&operands[0], Expr::Identifier(v) if v == t_name)
+    || !matches!(&operands[0], Expr::Identifier(v) if v == dummy)
   {
     return None;
   }
   let end = nval_to_f64(&operands[1])?;
-  Some((name.clone(), end, rhs.clone()))
+  let rhs = if dummy == t_name {
+    rhs.clone()
+  } else {
+    crate::syntax::rename_symbol(rhs, dummy, t_name)
+  };
+  Some((name.clone(), end, rhs))
 }
 
 fn contains_history_condition(eqs: &[Expr], t_name: &str) -> bool {
