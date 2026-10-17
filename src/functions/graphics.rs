@@ -15336,6 +15336,18 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // `ParametricPlot` and friends default to `AspectRatio -> Automatic`
       // and size themselves from the data, so a circle stays a circle once
       // `Show` layers other graphics on top of one.
+      // A plot's `AspectRatio -> Full` means "fill the given frame"; the
+      // layered graphic has no frame of its own to fill (and would size
+      // itself from the data aspect, a sliver for a wide `PlotRange`), so it
+      // keeps the shape the plot itself was drawn in.
+      let full_aspect = merged_options.iter().position(|o| {
+        matches!(o, Expr::Rule { pattern, replacement }
+          if option_name(pattern) == Some("AspectRatio")
+            && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Full"))
+      });
+      if let Some(i) = full_aspect {
+        merged_options.remove(i);
+      }
       if plot_options_need_aspect_ratio(&merged_options) {
         let aspect = plot_sources.first().map_or(
           1.0 / std::f64::consts::GOLDEN_RATIO,
@@ -27916,6 +27928,21 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
   runs
 }
 
+/// The formatted text of a number-formatting wrapper (`NumberForm[x, n]`,
+/// …), via `ToString`; `None` when it does not reduce to plain text.
+fn number_form_text(expr: &Expr) -> Option<String> {
+  let call = Expr::FunctionCall {
+    name: "ToString".to_string(),
+    args: vec![expr.clone()].into(),
+  };
+  match evaluate_expr_to_expr(&call) {
+    Ok(Expr::String(ref s)) if !s.starts_with(|c: char| c.is_alphabetic()) => {
+      Some(s.clone())
+    }
+    _ => None,
+  }
+}
+
 fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
   let output_run = |italic: bool| {
     let text =
@@ -28018,6 +28045,20 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // wrapper's own source. `Item[content, opts…]` is the same grid-
       // alignment wrapper `control_group_items` already unwraps to look for
       // a nested control layout — it carries no text of its own either.
+      // `NumberForm[x, n]` & co. stay unevaluated heads, so the generic
+      // fallback would print their source; the widget shows the formatted
+      // number, which is what `ToString` of the same expression yields.
+      "NumberForm" | "ScientificForm" | "EngineeringForm"
+      | "AccountingForm" | "PercentForm" | "PaddedForm" | "BaseForm"
+      | "CForm"
+        if number_form_text(expr).is_some() =>
+      {
+        vec![LabelRun {
+          text: number_form_text(expr).unwrap_or_default(),
+          italic,
+          ..Default::default()
+        }]
+      }
       // `TraditionalForm` around a plain arithmetic expression (no styling
       // or layout inside) typesets it in conventional notation —
       // `(1 - x/a) x cot(α)` — not as its OutputForm source `Cot[α]`.
