@@ -336,6 +336,7 @@ Operator = @{
   // `Term` has already taken `state["pos"]` as a `FunctionCallExtended` by
   // then. Must precede the bare `+`/`-`/`*`/`/` spellings below.
   | "+=" | "-=" | "*=" | "/="
+  | "**"     // NonCommutativeMultiply (must be before single *)
   | "+" | "-" | "*" | "/" | "^"
   | "." ~ !ASCII_DIGIT ~ !"."  // Dot operator (not decimal point, not .. or ...)
   | "<" | ">"

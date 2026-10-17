@@ -4618,6 +4618,42 @@ mod non_commutative_multiply {
   fn ncm_two_args() {
     assert_eq!(interpret("NonCommutativeMultiply[x, y]").unwrap(), "x**y");
   }
+
+  #[test]
+  fn ncm_infix_operator() {
+    assert_eq!(interpret("x**y").unwrap(), "x**y");
+    assert_eq!(interpret("x ** y").unwrap(), "x**y");
+    assert_eq!(interpret("Head[x**y]").unwrap(), "NonCommutativeMultiply");
+  }
+
+  #[test]
+  fn ncm_infix_flattens() {
+    assert_eq!(
+      interpret("ToString[FullForm[a**b**c]]").unwrap(),
+      "NonCommutativeMultiply[a, b, c]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[(a**b)**c]]").unwrap(),
+      "NonCommutativeMultiply[a, b, c]"
+    );
+  }
+
+  #[test]
+  fn ncm_infix_precedence() {
+    // Times (400) < Dot (490) < NonCommutativeMultiply (510) < Power (590)
+    assert_eq!(
+      interpret("ToString[FullForm[a*b**c]]").unwrap(),
+      "Times[a, NonCommutativeMultiply[b, c]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[a.b**c]]").unwrap(),
+      "Dot[a, NonCommutativeMultiply[b, c]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[a**b^2]]").unwrap(),
+      "NonCommutativeMultiply[a, Power[b, 2]]"
+    );
+  }
 }
 
 mod superscript_function {
