@@ -36330,6 +36330,46 @@ mod static_dynamic_controls {
     let svg = export_svg("Row[{\"length = \", NumberForm[0.25234, 4]}]");
     assert!(!svg.contains("NumberForm["), "no source text: {svg}");
   }
+  /// An explicit `AxesOrigin` is part of the automatic plot range, so the
+  /// axes cross inside the picture instead of the data being zoomed in.
+  #[test]
+  fn axes_origin_extends_the_automatic_plot_range() {
+    for code in [
+      "ListPlot[{{1, 5}, {2, 7}}, AxesOrigin -> {0, 0}]",
+      "ListPlot[{{1, 5}, {2, 7}}, Joined -> True, AxesOrigin -> {0, 0}]",
+      "Plot[x + 5, {x, 1, 2}, AxesOrigin -> {0, 0}]",
+    ] {
+      let svg = export_svg(code);
+      assert!(
+        y_tick_labels(&svg).iter().any(|l| l == "2"),
+        "{code}: y range must reach down to 0: {:?}",
+        y_tick_labels(&svg)
+      );
+    }
+    let svg = export_svg("ListPlot[{{1, 5}, {2, 7}}, AxesOrigin -> {0, 0}]");
+    assert!(
+      x_tick_labels(&svg).iter().any(|l| l == "0.5"),
+      "{:?}",
+      x_tick_labels(&svg)
+    );
+  }
+
+  /// `PlotLabel -> Framed[…]` boxes the title.
+  #[test]
+  fn framed_plot_label_is_boxed() {
+    let plain = export_svg("ListPlot[{{1, 5}, {2, 7}}, PlotLabel -> \"abc\"]");
+    for label in ["Framed[\"abc\"]", "Style[Framed[Row[{\"a\", \"bc\"}]], 18]"]
+    {
+      let svg = export_svg(&format!(
+        "ListPlot[{{{{1, 5}}, {{2, 7}}}}, PlotLabel -> {label}]"
+      ));
+      assert_eq!(
+        svg.matches("<rect").count(),
+        plain.matches("<rect").count() + 1,
+        "{label}: {svg}"
+      );
+    }
+  }
 }
 
 #[test]

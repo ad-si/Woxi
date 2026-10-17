@@ -7297,6 +7297,35 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+  /// A random-walk Manipulate whose plot pins `AxesOrigin -> {0, 0}` and
+  /// titles itself with a `Framed` message opens with the plot rendered
+  /// (the walk's helper is an initialization cell).
+  #[test]
+  fn random_walk_notebook_opens_with_its_widget() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData["walk[p_, n_] := Module[{pos = 5, pts = {{0, 5}}}, Do[AppendTo[pts, {k, pos}]; If[Random[] < p, pos++, pos--]; If[pos == 0, Break[]], {k, n}]; ListPlot[pts, AxesOrigin -> {0, 0}, Joined -> True, ImagePadding -> {{35, 20}, {20, 30}}, PlotLabel -> Style[Framed[Row[{\"steps: \", Length[pts]}]], 14]]];"], "Input", InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Column[{NumberForm[p, 3], walk[p, n]}], {{p, 0.5, \"win probability\"}, 0.4, 0.6, 0.01}, {{n, 50, \"steps\"}, {10, 50, 100}}, SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`p$$ = 0.5, $CellContext`n$$ = 50}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the walk plot must render"
+    );
+  }
+
   use super::*;
 
   /// A Manipulate whose Input cell stores a number followed by the legacy
