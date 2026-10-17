@@ -36237,4 +36237,43 @@ mod static_dynamic_controls {
     assert!(!svg.contains("hint"));
     assert!(svg.contains("#BCD6EE"), "the current choice is pressed");
   }
+
+  /// A rotated plot turns as one rigid image: a quarter turn swaps the
+  /// canvas's width and height rather than clipping it.
+  #[test]
+  fn rotating_a_plot_swaps_its_canvas_dimensions() {
+    let svg =
+      export_svg("Rotate[Plot[x, {x, 0, 1}, ImageSize -> {150, 301}], -Pi/2]");
+    assert!(
+      svg.starts_with("<svg width=\"301\" height=\"150\""),
+      "canvas must be 301x150 after a quarter turn: {svg}"
+    );
+    assert!(svg.contains("rotate(90"), "the picture is rotated: {svg}");
+  }
+
+  /// `Show[Plot[…, AspectRatio -> Full, PlotRange -> {0, 10}], g]` keeps the
+  /// plot's own shape instead of sizing itself from the data aspect (which
+  /// made a wide-range plot ten times taller than wide).
+  #[test]
+  fn show_of_full_aspect_plot_keeps_the_plot_shape() {
+    let svg = export_svg(
+      "Show[Plot[{x, 1}, {x, 0, 1}, AspectRatio -> Full, \
+       PlotRange -> {0, 10}], Graphics[{Line[{{0.5, 0}, {0.5, 11}}]}]]",
+    );
+    let height: f64 = svg
+      .split("height=\"")
+      .nth(1)
+      .and_then(|r| r.split('"').next())
+      .and_then(|h| h.parse().ok())
+      .expect("svg height");
+    assert!(height < 400.0, "plot must not be stretched: {svg}");
+  }
+
+  /// A `NumberForm[x, n]` caption inside a widget shows the formatted
+  /// number, not the source of the unevaluated head.
+  #[test]
+  fn number_form_label_shows_formatted_number() {
+    let svg = export_svg("Row[{\"length = \", NumberForm[0.25234, 4]}]");
+    assert!(!svg.contains("NumberForm["), "no source text: {svg}");
+  }
 }
