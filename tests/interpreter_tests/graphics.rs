@@ -4150,6 +4150,29 @@ mod plot3d {
       assert_eq!(result, "True");
     }
 
+    /// Regression: `ParametricPlot3D` surfaces ignored `RegionFunction`, so
+    /// cylinders meant to have holes cut into them were drawn solid.
+    #[test]
+    fn parametric_surface_honours_region_function() {
+      clear_state();
+      let result = interpret(
+        "Length[Cases[ParametricPlot3D[{t, Cos[u], Sin[u]}, {t, -3, 3}, \
+         {u, 0, 2 Pi}, RegionFunction -> (Abs[#1] < 1 &)], _Polygon, \
+         Infinity]] < Length[Cases[ParametricPlot3D[{t, Cos[u], Sin[u]}, \
+         {t, -3, 3}, {u, 0, 2 Pi}], _Polygon, Infinity]]",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+      // Every kept vertex satisfies the region function.
+      let result = interpret(
+        "Max[Abs[Cases[ParametricPlot3D[{t, Cos[u], Sin[u]}, {t, -3, 3}, \
+         {u, 0, 2 Pi}, RegionFunction -> (Abs[#1] < 1 &)], \
+         GraphicsComplex[pts_, _] :> pts[[All, 1]], Infinity][[1]]]] < 1",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+    }
+
     /// Regression: `ParametricPlot3D` surfaces ignored `PlotPoints` and
     /// always sampled a fixed 51 x 51 grid, so a `Table` of many patches
     /// (`PlotPoints -> 15`) took minutes to draw instead of staying

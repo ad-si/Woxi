@@ -11983,6 +11983,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // samples per direction, i.e. `n - 1` grid cells. Demonstrations lower it
   // (`PlotPoints -> 15`) to keep a `Table` of many patches interactive.
   let mut plot_points: Option<usize> = None;
+  // `RegionFunction -> f`: keep only the parts of the surface where
+  // `f[x, y, z, u, v]` is `True`.
+  let mut region_fn: Option<Expr> = None;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -12008,6 +12011,12 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             plot_points = Some(n as usize);
           }
+        }
+        Expr::Identifier(name) if name == "RegionFunction" => {
+          region_fn = Some(
+            evaluate_expr_to_expr(replacement)
+              .unwrap_or_else(|_| replacement.as_ref().clone()),
+          );
         }
         Expr::Identifier(name) if name == "BoxRatios" => {
           let value = evaluate_expr_to_expr(replacement)
@@ -12170,6 +12179,25 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           uval,
           vval,
         ) {
+          if let Some(region) = &region_fn {
+            let call = Expr::CurriedCall {
+              func: Box::new(region.clone()),
+              args: vec![
+                Expr::Real(x),
+                Expr::Real(y),
+                Expr::Real(z),
+                Expr::Real(uval),
+                Expr::Real(vval),
+              ],
+            };
+            let inside = matches!(
+              evaluate_expr_to_expr(&call),
+              Ok(Expr::Identifier(ref s)) if s == "True"
+            );
+            if !inside {
+              continue;
+            }
+          }
           points[i][j] = Some((x, y, z));
           gx_min = gx_min.min(x);
           gx_max = gx_max.max(x);
