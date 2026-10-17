@@ -19956,6 +19956,51 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`time$$ = 25}, \"\\[Ellipsis]\"]"], 
     assert_ne!(render(5.0), published, "the time control must matter");
   }
 
+  /// A control panel laid out as a `Grid` whose cells are
+  /// `Item[Control[…], Alignment -> …]` (independently written) must yield
+  /// real controls — a slider, a popup menu whose choices are lists, and a
+  /// checkbox — rather than headings showing the `Control[…]` source, and
+  /// the body must see the list-valued popup variable.
+  #[test]
+  fn grid_of_aligned_item_controls_become_real_controls() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[RowBox[{"Manipulate", "[", RowBox[{
+  RowBox[{"Graphics", "[", RowBox[{"Disk", "[", RowBox[{RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",", RowBox[{"Length", "[", RowBox[{"pick", "[", RowBox[{"[", "2", "]"}], "]"}], "]"}]}], "]"}], "]"}], ",",
+  RowBox[{"Grid", "[", RowBox[{"{", RowBox[{"{",
+    RowBox[{
+      RowBox[{"Item", "[", RowBox[{RowBox[{"Control", "[", RowBox[{"{", RowBox[{RowBox[{"{", RowBox[{"w", ",", "250"}], "}"}], ",", "200", ",", "800", ",", "50", ",", "Slider"}], "}"}], "]"}], ",", RowBox[{"Alignment", "->", "Left"}]}], "]"}], ",",
+      RowBox[{"Item", "[", RowBox[{RowBox[{"Control", "[", RowBox[{"{", RowBox[{RowBox[{"{", RowBox[{"pick", ",", RowBox[{"{", RowBox[{"1", ",", RowBox[{"{", RowBox[{"1", ",", "2", ",", "3"}], "}"}]}], "}"}], ",", "\"\<which\>\""}], "}"}], ",", RowBox[{"{", RowBox[{RowBox[{RowBox[{"{", RowBox[{"1", ",", RowBox[{"{", RowBox[{"1", ",", "2", ",", "3"}], "}"}]}], "}"}], "->", "\"\<first\>\""}], ",", RowBox[{RowBox[{"{", RowBox[{"2", ",", RowBox[{"{", "5", "}"}]}], "}"}], "->", "\"\<second\>\""}]}], "}"}], ",", "PopupMenu"}], "}"}], "]"}], ",", RowBox[{"Alignment", "->", "Left"}]}], "]"}], ",",
+      RowBox[{"Item", "[", RowBox[{RowBox[{"Control", "[", RowBox[{"{", RowBox[{RowBox[{"{", RowBox[{"flag", ",", "False", ",", "\"\<flag\>\""}], "}"}], ",", RowBox[{"{", RowBox[{"True", ",", "False"}], "}"}], ",", "Checkbox"}], "}"}], "]"}], ",", RowBox[{"Alignment", "->", "Left"}]}], "]"}]
+    }], "}"}], "}"}], "]"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{w$$ = 250}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. }
+        | manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        other => panic!("control shown as {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, vec!["w", "pick", "flag"]);
+    match &widget.controls[1] {
+      manipulate::ControlState::Discrete { values, .. } => {
+        assert_eq!(values, &vec!["{1, {1, 2, 3}}", "{2, {5}}"]);
+      }
+      other => panic!("unexpected control: {other:?}"),
+    }
+  }
+
   /// A picture-effects `Manipulate` (independently written): every effect
   /// must produce a picture, and the "thumbnail" view pins the untouched
   /// original to the corner with `Inset[image, {Left, Top}, {Left, Top}, …]`.
