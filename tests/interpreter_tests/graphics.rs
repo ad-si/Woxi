@@ -8230,6 +8230,18 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// A computed real in a `FrameLabel` prints as `ToString` does, not with
+    /// the float noise of its last bits (`Round[-0.64, 0.1]` is
+    /// `-0.6000000000000001` internally).
+    #[test]
+    fn plot_frame_label_real_prints_with_six_digits() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, \
+         FrameLabel -> {\"t\", Row[{\"d = \", Round[-0.64, 0.1]}]}]",
+      );
+      assert!(svg.contains("d = -0.6<"), "got {svg}");
+    }
+
     /// Regression: `RegionPlot` ignored `FrameLabel`, so a Demonstration's
     /// captioned region plot came out with bare axes.
     #[test]
