@@ -2133,10 +2133,10 @@ fn harmonic_antidifference_as_polygamma(expr: &Expr, var_name: &str) -> Expr {
 /// Add all terms of a finite sum with a single `Plus`. Folding them in one at
 /// a time re-sorts the growing symbolic sum at every step, which is
 /// quadratic for sums with many distinct terms.
-fn plus_all(terms: Vec<Expr>) -> Result<Expr, InterpreterError> {
+fn plus_all(terms: &[Expr]) -> Result<Expr, InterpreterError> {
   match terms.len() {
     0 => Ok(Expr::Integer(0)),
-    _ => crate::functions::math_ast::plus_ast(&terms),
+    _ => crate::functions::math_ast::plus_ast(terms),
   }
 }
 
@@ -2242,7 +2242,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         terms.push(sum_ast(&inner)?);
       }
-      return plus_all(terms);
+      return plus_all(&terms);
     }
     // Evaluate innermost sum first (last iterator), then wrap outward
     let body = &args[0];
@@ -2281,7 +2281,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               crate::syntax::substitute_variable(body, &var_name, item);
             terms.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
           }
-          return plus_all(terms);
+          return plus_all(&terms);
         }
       }
 
@@ -2313,7 +2313,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             crate::syntax::substitute_variable(body, &var_name, value);
           terms.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
         }
-        return plus_all(terms);
+        return plus_all(&terms);
       }
 
       // Check for infinite sum: {i, min, Infinity}
@@ -2409,7 +2409,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 .push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
               i += 1.0;
             }
-            return plus_all(terms);
+            return plus_all(&terms);
           }
         }
       }
@@ -2451,7 +2451,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               terms
                 .push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
             }
-            return plus_all(terms);
+            return plus_all(&terms);
           }
         }
       }
@@ -2565,7 +2565,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         terms.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
         i += step;
       }
-      return plus_all(terms);
+      return plus_all(&terms);
     }
     _ => {}
   }
