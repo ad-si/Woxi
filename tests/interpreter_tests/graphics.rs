@@ -8230,6 +8230,18 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// A computed real in a `FrameLabel` prints as `ToString` does, not with
+    /// the float noise of its last bits (`Round[-0.64, 0.1]` is
+    /// `-0.6000000000000001` internally).
+    #[test]
+    fn plot_frame_label_real_prints_with_six_digits() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, \
+         FrameLabel -> {\"t\", Row[{\"d = \", Round[-0.64, 0.1]}]}]",
+      );
+      assert!(svg.contains("d = -0.6<"), "got {svg}");
+    }
+
     /// Regression: `RegionPlot` ignored `FrameLabel`, so a Demonstration's
     /// captioned region plot came out with bare axes.
     #[test]
@@ -30964,6 +30976,23 @@ mod cases {
     );
   }
   #[test]
+  fn color_data_gradient_over_custom_range() {
+    assert_case(
+      r#"ColorData[{"RedGreenSplit", {-0.05, 0.05}}]"#,
+      r#"ColorDataFunction[RedGreenSplit, Gradients, {-0.05, 0.05}, Blend["RedGreenSplit", Rescale[#1, {-0.05, 0.05}]] & ]"#,
+    );
+    // Applying it rescales the argument onto the gradient's [0, 1].
+    assert_case(
+      r#"ColorData[{"Rainbow", {10, 20}}][15] === ColorData["Rainbow"][0.5]"#,
+      "True",
+    );
+    // Values outside the range clamp to the end colors.
+    assert_case(
+      r#"ColorData[{"Rainbow", {10, 20}}][99] === ColorData["Rainbow"][1]"#,
+      "True",
+    );
+  }
+  #[test]
   fn color_data_1() {
     assert_case(
       r#"ColorData[]"#,
@@ -36262,4 +36291,56 @@ mod static_dynamic_controls {
     );
     assert!(!svg.contains("ColorData"), "no source text: {svg}");
   }
+
+  /// A rotated plot turns as one rigid image: a quarter turn swaps the
+  /// canvas's width and height rather than clipping it.
+  #[test]
+  fn rotating_a_plot_swaps_its_canvas_dimensions() {
+    let svg =
+      export_svg("Rotate[Plot[x, {x, 0, 1}, ImageSize -> {150, 301}], -Pi/2]");
+    assert!(
+      svg.starts_with("<svg width=\"301\" height=\"150\""),
+      "canvas must be 301x150 after a quarter turn: {svg}"
+    );
+    assert!(svg.contains("rotate(90"), "the picture is rotated: {svg}");
+  }
+
+  /// `Show[Plot[…, AspectRatio -> Full, PlotRange -> {0, 10}], g]` keeps the
+  /// plot's own shape instead of sizing itself from the data aspect (which
+  /// made a wide-range plot ten times taller than wide).
+  #[test]
+  fn show_of_full_aspect_plot_keeps_the_plot_shape() {
+    let svg = export_svg(
+      "Show[Plot[{x, 1}, {x, 0, 1}, AspectRatio -> Full, \
+       PlotRange -> {0, 10}], Graphics[{Line[{{0.5, 0}, {0.5, 11}}]}]]",
+    );
+    let height: f64 = svg
+      .split("height=\"")
+      .nth(1)
+      .and_then(|r| r.split('"').next())
+      .and_then(|h| h.parse().ok())
+      .expect("svg height");
+    assert!(height < 400.0, "plot must not be stretched: {svg}");
+  }
+
+  /// A `NumberForm[x, n]` caption inside a widget shows the formatted
+  /// number, not the source of the unevaluated head.
+  #[test]
+  fn number_form_label_shows_formatted_number() {
+    let svg = export_svg("Row[{\"length = \", NumberForm[0.25234, 4]}]");
+    assert!(!svg.contains("NumberForm["), "no source text: {svg}");
+  }
+}
+
+#[test]
+fn graphics_grid_of_tooltipped_plots_draws_the_plots_not_source() {
+  let svg = export_svg(
+    "GraphicsGrid[{{Tooltip[ArrayPlot[{{1, 0}, {0, 1}}], \
+     ArrayPlot[{{0, 1}}]], ArrayPlot[{{0, 1}, {1, 0}}]}}]",
+  );
+  assert!(!svg.contains("Tooltip"), "{svg}");
+  assert!(!svg.contains("<text"), "{svg}");
+  let single = export_svg("Tooltip[ArrayPlot[{{1, 0}, {0, 1}}], \"hint\"]");
+  assert!(!single.contains("hint"), "{single}");
+  assert!(!single.contains("<text"), "{single}");
 }

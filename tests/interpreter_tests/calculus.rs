@@ -20457,6 +20457,28 @@ mod ndsolve_delay {
     assert!((nums[1] + 1.0 / 6.0).abs() < 1e-3, "{result}");
   }
 
+  /// The history condition's variable is a dummy: `z[s /; s <= 0] == 1 + s`
+  /// uses `s` for the pre-history time, and the condition can also arrive
+  /// through a variable holding the `Condition` (here the global `t`, as in
+  /// `Module[{c = t /; t <= 0}, …]`, where the initializer is not renamed).
+  #[test]
+  fn ndsolve_delay_history_condition_uses_a_dummy_variable() {
+    clear_state();
+    let result = interpret(
+      "sol = NDSolve[{z'[t] == -z[t - 1], z[s /; s <= 0] == 1}, z, \
+       {t, 0, 2}]; Round[z[2.] /. sol, 0.001]",
+    )
+    .unwrap();
+    assert_eq!(result, "{-0.5}");
+    let result = interpret(
+      "Module[{c = If[PossibleZeroQ[1.], 0, u /; u <= 0], z, t}, \
+       Round[First[z /. NDSolve[{z'[t] == -z[t - 1], z[c] == 1}, z, \
+       {t, 0, 2}]][2.], 0.001]]",
+    )
+    .unwrap();
+    assert_eq!(result, "-0.5");
+  }
+
   /// A delayed unknown can be mixed with an ordinary one that states its
   /// initial value as `w[0] == v`, and a zero delay is no delay at all.
   #[test]

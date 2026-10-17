@@ -5631,6 +5631,24 @@ pub(crate) fn rotate_graphic_svg(g: &Expr, rest: &[Expr]) -> String {
     },
     _ => None,
   };
+  // A framed or axed picture (a plot) turns as one rigid image, frame and
+  // ticks included, and its canvas swaps width and height; rotating only
+  // the primitives inside would leave the frame upright, so those go
+  // through the rendered-SVG fallback below.
+  let literal_graphics_args = literal_graphics_args.filter(|gfx_args| {
+    !gfx_args.iter().skip(1).any(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => {
+        matches!(pattern.as_ref(), Expr::Identifier(n)
+          if n == "Frame" || n == "Axes")
+          && !matches!(replacement.as_ref(),
+            Expr::Identifier(v) if v == "False" || v == "None")
+      }
+      _ => false,
+    })
+  });
   if let Some(mut gfx_args) = literal_graphics_args {
     let rotate_args = std::iter::once(gfx_args[0].clone())
       .chain(rest.iter().cloned())
@@ -5658,9 +5676,16 @@ pub(crate) fn rotate_graphic_svg(g: &Expr, rest: &[Expr]) -> String {
   }
   let inner = crate::functions::graphics::strip_svg_wrapper(&inner_svg);
   let deg = -angle.to_degrees();
-  let (cx, cy) = (w / 2.0, h / 2.0);
+  // The canvas grows to the rotated bounding box, so a quarter turn swaps
+  // width and height instead of clipping the picture.
+  let (sin, cos) = angle.sin_cos();
+  let nw = (w * cos.abs() + h * sin.abs()).max(1.0);
+  let nh = (w * sin.abs() + h * cos.abs()).max(1.0);
+  let (cx, cy) = (nw / 2.0, nh / 2.0);
+  let (ox, oy) = (w / 2.0, h / 2.0);
   format!(
-    "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"rotate({deg:.6} {cx:.2} {cy:.2})\">\n{inner}\n</g>\n</svg>"
+    "<svg width=\"{nw:.0}\" height=\"{nh:.0}\" viewBox=\"0 0 {nw:.0} {nh:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"translate({cx:.2} {cy:.2}) rotate({deg:.6}) translate({:.2} {:.2})\">\n{inner}\n</g>\n</svg>",
+    -ox, -oy
   )
 }
 
@@ -5850,6 +5875,17 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // `Item[expr, opts…]` is a layout cell; the options place it and what
     // it displays is `expr`.
     Expr::FunctionCall { name, args } if name == "Item" && !args.is_empty() => {
+      expr_to_svg(&args[0])
+    }
+    // `Tooltip[picture, tip]` displays the picture; the tip only appears
+    // on hover, so it has no place in a static export. (Without this arm a
+    // Demonstration's `GraphicsGrid` of tooltipped plots was set as the
+    // source text of each `Tooltip` call.)
+    Expr::FunctionCall { name, args }
+      if name == "Tooltip"
+        && args.len() >= 2
+        && lays_out_a_graphic(&args[0]) =>
+    {
       expr_to_svg(&args[0])
     }
     // `TabView[{…}, sel]` displays only the pane `sel` selects.

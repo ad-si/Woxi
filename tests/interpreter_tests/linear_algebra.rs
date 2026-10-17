@@ -96,6 +96,112 @@ mod dot {
     assert_eq!(interpret("Dot[a, b, c]").unwrap(), "a . b . c");
   }
 
+  // Dot is Flat and OneIdentity (issue #1384): Dot[] is a valid, silent
+  // empty product, and a nested Dot[] splices away as an empty sequence.
+  #[test]
+  fn dot_attributes() {
+    assert_eq!(
+      interpret("Attributes[Dot]").unwrap(),
+      "{Flat, OneIdentity, Protected}"
+    );
+  }
+
+  #[test]
+  fn dot_no_arguments_is_silent() {
+    let r = interpret_with_stdout("Dot[]").unwrap();
+    assert_eq!(r.result, "Dot[]");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected warnings: {:?}",
+      r.warnings
+    );
+  }
+
+  #[test]
+  fn dot_flattens_empty_dot() {
+    let r = interpret_with_stdout("Dot[a, Dot[], b]").unwrap();
+    assert_eq!(r.result, "a . b");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected warnings: {:?}",
+      r.warnings
+    );
+    assert_eq!(interpret("Dot[a, Dot[]]").unwrap(), "a");
+    assert_eq!(interpret("Dot[Dot[]]").unwrap(), "Dot[]");
+    assert_eq!(
+      interpret("Dot[{{1, 2}, {3, 4}}, Dot[], {5, 6}]").unwrap(),
+      "{17, 39}"
+    );
+  }
+
+  // Neighbours contract only where the pair evaluates; the rest stays one
+  // flat Dot instead of nesting as Dot[Dot[a, b], c].
+  #[test]
+  fn dot_n_ary_contracts_evaluable_neighbours() {
+    for (code, expected) in [
+      ("Dot[a, b, c]", "Dot[a, b, c]"),
+      (
+        "Dot[{{1, 2}, {3, 4}}, a, b]",
+        "Dot[List[List[1, 2], List[3, 4]], a, b]",
+      ),
+      (
+        "Dot[a, {{1, 2}, {3, 4}}, {{1, 0}, {0, 1}}]",
+        "Dot[a, List[List[1, 2], List[3, 4]]]",
+      ),
+      ("Dot[a, {{1, 2}, {3, 4}}, {5, 6}]", "Dot[a, List[17, 39]]"),
+      ("Dot[{1, 2}, a, {3, 4}]", "Dot[List[1, 2], a, List[3, 4]]"),
+      ("Dot[{1, 2}, {3, 4}, a]", "Dot[11, a]"),
+      ("Dot[{1, 2}, {{1, 2}, {3, 4}}, {5, 6}]", "95"),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[FullForm[{code}]]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+
+  #[test]
+  fn dot_n_ary_incompatible_pair_stays_flat() {
+    let r =
+      interpret_with_stdout("ToString[FullForm[Dot[{1, 2}, {1, 2, 3}, a]]]")
+        .unwrap();
+    assert_eq!(r.result, "Dot[List[1, 2], List[1, 2, 3], a]");
+    assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
+    assert!(r.warnings[0].contains("Dot::dotsh"));
+  }
+
+  // Flat but not Orderless: a pattern splits the arguments into contiguous
+  // runs only.
+  #[test]
+  fn dot_flat_pattern_matching() {
+    assert_eq!(
+      interpret("f[x_ . y_] := {x, y}; f[a . b . c]").unwrap(),
+      "{a, b . c}"
+    );
+    assert_eq!(
+      interpret("ReplaceList[a . b . c, x_ . y_ :> {x, y}]").unwrap(),
+      "{{a, b . c}, {a . b, c}}"
+    );
+    assert_eq!(
+      interpret("ReplaceList[a ** b ** c, x_ ** y_ :> {x, y}]").unwrap(),
+      "{{a, b**c}, {a**b, c}}"
+    );
+    // Orderless + Flat still tries every grouping.
+    assert_eq!(
+      interpret("ReplaceList[a + b + c, x_ + y_ :> {x, y}]").unwrap(),
+      "{{a, b + c}, {b, a + c}, {c, a + b}, {a + b, c}, {a + c, b}, {b + c, a}}"
+    );
+  }
+
+  #[test]
+  fn dot_flattens_nested_dot() {
+    assert_eq!(
+      interpret("ToString[FullForm[Dot[a, Dot[b, c], d]]]").unwrap(),
+      "Dot[a, b, c, d]"
+    );
+  }
+
   // A SparseArray operand is densified so Dot behaves like the dense case.
   #[test]
   fn sparse_matrix_dot_vector() {

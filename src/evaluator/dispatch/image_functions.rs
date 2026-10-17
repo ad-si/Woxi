@@ -80,6 +80,32 @@ fn gradient_color_function(scheme: &str) -> Expr {
   }
 }
 
+/// The color function of a named gradient stretched over a custom range,
+/// `ColorData[{scheme, {min, max}}]`:
+///   `ColorDataFunction[scheme, "Gradients", {min, max},
+///     Blend[scheme, Rescale[#1, {min, max}]] &]`.
+fn ranged_gradient_color_function(scheme: &str, range: &Expr) -> Expr {
+  let blend = Expr::Function {
+    body: Box::new(call(
+      "Blend",
+      vec![
+        str_expr(scheme),
+        call("Rescale", vec![Expr::Slot(1), range.clone()]),
+      ],
+    )),
+  };
+  Expr::FunctionCall {
+    name: "ColorDataFunction".to_string(),
+    args: vec![
+      str_expr(scheme),
+      str_expr("Gradients"),
+      range.clone(),
+      blend,
+    ]
+    .into(),
+  }
+}
+
 /// The color function of an indexed scheme (`ColorData[1]`, `ColorData[97]`,
 /// …), echoed in the same structured form `gradient_color_function` returns
 /// for a named gradient:
@@ -1165,6 +1191,15 @@ pub fn dispatch_image_functions(
         && crate::functions::chart::named_color_scheme(scheme).is_some()
       {
         return Some(Ok(gradient_color_function(scheme)));
+      }
+      // ColorData[{"scheme", {min, max}}]: the gradient over a custom range.
+      if let Expr::List(items) = &args[0]
+        && let [Expr::String(scheme), range @ Expr::List(bounds)] =
+          items.as_slice()
+        && bounds.len() == 2
+        && crate::functions::chart::named_color_scheme(scheme).is_some()
+      {
+        return Some(Ok(ranged_gradient_color_function(scheme, range)));
       }
       // ColorData[n]: the indexed scheme's color function, echoed in the
       // same structured form as the named-gradient case above. Applying it
