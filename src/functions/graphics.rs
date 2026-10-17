@@ -4396,15 +4396,12 @@ pub(crate) fn manipulator_svg(args: &[Expr]) -> Option<String> {
   if hi <= lo {
     return None;
   }
-  let labeled =
-    args[1.min(args.len())..]
-      .iter()
-      .filter_map(option_kv)
-      .any(|(k, v)| {
-        k == "Appearance" && matches!(v, Expr::String(s) if s == "Labeled")
-          || k == "Appearance"
-            && matches!(v, Expr::Identifier(s) if s == "Labeled")
-      });
+  let labeled = args[1.min(args.len())..].iter().filter_map(option_kv).any(
+    |(k, v)| {
+      k == "Appearance"
+        && matches!(v, Expr::String(s) | Expr::Identifier(s) if s == "Labeled")
+    },
+  );
   let (track_w, h) = (120.0, 20.0);
   let fraction = ((value - lo) / (hi - lo)).clamp(0.0, 1.0);
   let thumb_x = 6.0 + (track_w - 12.0) * fraction;
