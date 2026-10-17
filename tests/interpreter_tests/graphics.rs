@@ -36276,4 +36276,12 @@ mod static_dynamic_controls {
     let svg = export_svg("Row[{\"length = \", NumberForm[0.25234, 4]}]");
     assert!(!svg.contains("NumberForm["), "no source text: {svg}");
   }
+
+  #[test]
+  fn disk_with_full_turn_sector_draws_a_disk() {
+    let svg =
+      export_svg("Graphics[{Disk[{0, 0}, 1, {0, 2 Pi}], Circle[{0, 0}, 2]}]");
+    assert!(svg.contains("<ellipse") && svg.contains("fill=\"rgb(0,0,0)\""));
+    assert!(!svg.contains("<path"), "no degenerate arc path: {svg}");
+  }
 }
