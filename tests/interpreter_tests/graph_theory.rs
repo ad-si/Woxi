@@ -7898,6 +7898,42 @@ mod graph_utilities_package {
   use super::*;
 
   #[test]
+  fn hamiltonian_cycles_of_rule_list_visit_every_vertex_once() {
+    assert_eq!(
+      interpret(
+        "c = First[GraphUtilities`HamiltonianCycles[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1, 1 -> 3}]]; \
+         {Sort[c], Length[c]}"
+      )
+      .unwrap(),
+      "{{1, 2, 3, 4}, 4}"
+    );
+  }
+
+  #[test]
+  fn hamiltonian_cycles_of_polyhedron_skeleton() {
+    assert_eq!(
+      interpret(
+        "Sort[First[GraphUtilities`HamiltonianCycles[Rule @@@ PolyhedronData[\"Cube\", \"EdgeIndices\"]]]]"
+      )
+      .unwrap(),
+      "{1, 2, 3, 4, 5, 6, 7, 8}"
+    );
+  }
+
+  #[test]
+  fn polyhedron_data_class_lists_members_and_names() {
+    assert_eq!(
+      interpret("PolyhedronData[\"Platonic\"]").unwrap(),
+      "{Cube, Dodecahedron, Icosahedron, Octahedron, Tetrahedron}"
+    );
+    assert_eq!(
+      interpret("PolyhedronData[\"GreatRhombicuboctahedron\", \"Name\"]")
+        .unwrap(),
+      "great rhombicuboctahedron"
+    );
+  }
+
+  #[test]
   fn vertex_list_of_rule_list() {
     assert_eq!(
       interpret("GraphUtilities`VertexList[{a -> b, b -> c, c -> a}]").unwrap(),

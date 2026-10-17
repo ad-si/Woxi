@@ -924,6 +924,47 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
+  // `GraphUtilities`HamiltonianCycles[rules]` lists Hamiltonian cycles of the
+  // undirected graph given by a list of rules, each as a vertex sequence.
+  // Delegates to `FindHamiltonianCycle`, so only one cycle is reported.
+  if name == "GraphUtilities`HamiltonianCycles"
+    && args.len() == 1
+    && let Expr::List(rules) = &args[0]
+    && rules.iter().all(|r| {
+      matches!(r, Expr::Rule { .. })
+        || matches!(r, Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2)
+    })
+  {
+    let edges = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Apply",
+      vec![
+        Expr::Identifier("UndirectedEdge".to_string()),
+        args[0].clone(),
+        Expr::List(vec![Expr::Integer(1)].into()),
+      ],
+    ))?;
+    let graph = crate::evaluator::evaluate_expr_to_expr(&call1("Graph", edges))?;
+    let cycles = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "FindHamiltonianCycle",
+      graph,
+    ))?;
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Map",
+      vec![
+        Expr::Function {
+          body: Box::new(call(
+            "Map",
+            vec![
+              Expr::Identifier("First".to_string()),
+              Expr::Slot(1),
+            ],
+          )),
+        },
+        cycles,
+      ],
+    ));
+  }
+
   let combinatorica_active = crate::current_context_path()
     .iter()
     .any(|c| c == "Combinatorica`");
