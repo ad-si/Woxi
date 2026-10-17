@@ -33,3 +33,11 @@ The operator form does the same:
 $ wo 'SubstitutionSystem[{1 -> {1, 0}, 0 -> {1}}][{1}]'
 {1, 0}
 ```
+
+Blocks may differ in size, as long as all cells in a row of the grid expand
+to the same height and all cells in a column to the same width:
+
+```scrut
+$ wo 'FlattenAt[SubstitutionSystem[{3 -> {{1, 0}, {3, 2}}, 2 -> {{1}, {3}}, 1 -> {{3, 2}}, 0 -> {{3}}}, {{3}}, {2}], 1]'
+{{3, 2, 3}, {1, 0, 1}, {3, 2, 3}}
+```
