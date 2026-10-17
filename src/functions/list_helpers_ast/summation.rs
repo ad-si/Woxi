@@ -2130,6 +2130,16 @@ fn harmonic_antidifference_as_polygamma(expr: &Expr, var_name: &str) -> Expr {
   }
 }
 
+/// Add all terms of a finite sum with a single `Plus`. Folding them in one at
+/// a time re-sorts the growing symbolic sum at every step, which is
+/// quadratic for sums with many distinct terms.
+fn plus_all(terms: Vec<Expr>) -> Result<Expr, InterpreterError> {
+  match terms.len() {
+    0 => Ok(Expr::Integer(0)),
+    _ => crate::functions::math_ast::plus_ast(&terms),
+  }
+}
+
 pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     // Sum requires at least 2 arguments
@@ -2223,17 +2233,16 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some((var, values)) = concrete_iteration_grid(&args[1..])
       .map(|grid| grid.into_iter().next().expect("at least one iterator"))
     {
-      let mut acc = Expr::Integer(0);
+      let mut terms = Vec::with_capacity(values.len());
       for value in values {
         let mut inner = Vec::with_capacity(args.len() - 1);
         inner.push(crate::syntax::substitute_variable(&args[0], &var, &value));
         for spec in &args[2..] {
           inner.push(crate::syntax::substitute_variable(spec, &var, &value));
         }
-        let val = sum_ast(&inner)?;
-        acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
+        terms.push(sum_ast(&inner)?);
       }
-      return Ok(acc);
+      return plus_all(terms);
     }
     // Evaluate innermost sum first (last iterator), then wrap outward
     let body = &args[0];
@@ -2266,14 +2275,13 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           crate::evaluator::evaluate_expr_to_expr(&items[1])?;
         if let Expr::List(list_items) = &evaluated_second {
           // Sum[expr, {i, {v1, v2, ...}}] -> iterate over list elements
-          let mut acc = Expr::Integer(0);
+          let mut terms = Vec::with_capacity(list_items.len());
           for item in list_items {
             let substituted =
               crate::syntax::substitute_variable(body, &var_name, item);
-            let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-            acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
+            terms.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
           }
-          return Ok(acc);
+          return plus_all(terms);
         }
       }
 
@@ -2299,14 +2307,13 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ])
         && let Expr::List(values) = &range
       {
-        let mut acc = Expr::Integer(0);
+        let mut terms = Vec::with_capacity(values.len());
         for value in values {
           let substituted =
             crate::syntax::substitute_variable(body, &var_name, value);
-          let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-          acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
+          terms.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
         }
-        return Ok(acc);
+        return plus_all(terms);
       }
 
       // Check for infinite sum: {i, min, Infinity}
@@ -2387,7 +2394,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let max_f = crate::functions::math_ast::try_eval_to_f64(&items[2]);
           if let (Some(min_val), Some(max_val)) = (min_f, max_f) {
             // Iterate with step=1, substituting real values
-            let mut acc = Expr::Integer(0);
+            let mut terms = Vec::new();
             let mut i = min_val;
             while i <= max_val + 1e-10 {
               let sub_val =
@@ -2398,11 +2405,11 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 };
               let substituted =
                 crate::syntax::substitute_variable(body, &var_name, &sub_val);
-              let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-              acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
+              terms
+                .push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
               i += 1.0;
             }
-            return Ok(acc);
+            return plus_all(terms);
           }
         }
       }
@@ -2429,7 +2436,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             let n_iters = range.floor() as i128 + 1;
             let min_eval = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
-            let mut acc = Expr::Integer(0);
+            let mut terms = Vec::with_capacity(n_iters as usize);
             for j in 0..n_iters {
               let iter_val = if j == 0 {
                 min_eval.clone()
@@ -2441,10 +2448,10 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               };
               let substituted =
                 crate::syntax::substitute_variable(body, &var_name, &iter_val);
-              let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-              acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
+              terms
+                .push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
             }
-            return Ok(acc);
+            return plus_all(terms);
           }
         }
       }
@@ -2547,32 +2554,18 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
 
-      let mut acc = Expr::Integer(0);
+      let mut terms = Vec::new();
       let mut i = min;
-      if step > 0 {
-        while i <= max {
-          let substituted = crate::syntax::substitute_variable(
-            body,
-            &var_name,
-            &Expr::Integer(i),
-          );
-          let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-          acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
-          i += step;
-        }
-      } else {
-        while i >= max {
-          let substituted = crate::syntax::substitute_variable(
-            body,
-            &var_name,
-            &Expr::Integer(i),
-          );
-          let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-          acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
-          i += step;
-        }
+      while if step > 0 { i <= max } else { i >= max } {
+        let substituted = crate::syntax::substitute_variable(
+          body,
+          &var_name,
+          &Expr::Integer(i),
+        );
+        terms.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
+        i += step;
       }
-      return Ok(acc);
+      return plus_all(terms);
     }
     _ => {}
   }
