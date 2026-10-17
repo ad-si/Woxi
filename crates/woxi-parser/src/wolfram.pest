@@ -72,10 +72,23 @@ PartExtract = { (Slot | Identifier | UnsignedNumericValue | String) ~ PartIndexG
 // (`-2 ^ 2` must bind as `-(2^2)` just as `-2^2` does).
 PowGap = _{ (" " | "\t" | "\r" | "\n")* }
 
-// `-N^M` should bind as `-(N^M)` (Wolfram's `^` binds tighter than
-// unary `-`), so don't consume the leading `-` when it's followed by
-// digits-then-`^` — let the outer LeadingMinus path handle it.
-Integer = @{ ("-" ~ !(ASCII_DIGIT+ ~ PowGap ~ "^"))? ~ ASCII_DIGIT+ }
+// What can follow a number and bind tighter than unary minus (Wolfram
+// precedence 480): `-2^2` is `-(2^2)`, `-2 . a` is `-(2 . a)`, `-2!` is
+// `-(2!)`. A signed literal must not take the `-` before any of these — it
+// is released to LeadingMinus instead. A `.` needs whitespace in front, as
+// `-2.a` is the real `-2.` times `a`.
+NegLiteralTail = _{
+    PowGap ~ (
+        "^" ~ !("=" | ":=")
+      | "**" | "@" | "/@" | "//@" | "<>" | "~" ~ !"~"
+      | "\\[TensorProduct]" | "\u{F3DA}"
+      | "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}"
+      | "\\[CircleDot]" | "\u{2299}" | "\\[SmallCircle]" | "\u{2218}"
+    )
+  | (" " | "\t" | "\r" | "\n")+ ~ "." ~ !ASCII_DIGIT ~ !"."
+  | "!" ~ !"=" | "?" | "["
+}
+Integer = @{ ("-" ~ !(ASCII_DIGIT+ ~ NegLiteralTail))? ~ ASCII_DIGIT+ }
 // Integer with scientific notation: 5*^3 → 5000, 5*^-13 → Rational[1, 2000000000000]
 // The exponent may carry an explicit sign: Wolfram reads `1*^+150` too.
 ExponentSign = _{ "-" | "+" }
@@ -90,10 +103,10 @@ RealBody = _{
     ~ ("*^" ~ ExponentSign? ~ ASCII_DIGIT+)?
 }
 // Like the Integer rule, do NOT consume a leading `-` when the literal is
-// immediately followed by `^`: `-10.0^2` must parse as `-(10.0^2) = -100.`
-// (Wolfram precedence), with the `-` released to LeadingMinus.
+// followed by an operator binding tighter than unary minus: `-10.0^2` must
+// parse as `-(10.0^2) = -100.`, with the `-` released to LeadingMinus.
 Real = @{
-    ("-" ~ !(RealBody ~ PowGap ~ "^"))?
+    ("-" ~ !(RealBody ~ NegLiteralTail))?
     ~ RealBody
 }
 UnsignedInteger = @{ ASCII_DIGIT+ }
@@ -306,6 +319,7 @@ Operator = @{
   | "\\[Xor]" | "\u{22BB}" // Xor operator
   | "\\[And]" | "\u{2227}" // And operator (named form of &&)
   | "\\[Or]" | "\u{2228}" // Or operator (named form of ||)
+  | "//@"    // MapAll operator (must be before /@ and the // postfix)
   | "/@"     // keep first
   | ";;"     // Span (Wolfram precedence 305: tighter than =, ==, &&, |, ~~ and ->, looser than + and *)
   | "@@@"    // MapApply operator (must be before @@)
@@ -336,7 +350,7 @@ Operator = @{
   // `Term` has already taken `state["pos"]` as a `FunctionCallExtended` by
   // then. Must precede the bare `+`/`-`/`*`/`/` spellings below.
   | "+=" | "-=" | "*=" | "/="
-  | "**"     // NonCommutativeMultiply (must be before single *)
+  | "**"   // NonCommutativeMultiply (must be before *)
   | "+" | "-" | "*" | "/" | "^"
   | "." ~ !ASCII_DIGIT ~ !"."  // Dot operator (not decimal point, not .. or ...)
   | "<" | ">"
@@ -482,12 +496,11 @@ AnonymousFunctionSuffix = { "&" ~ !"&" ~ BracketArgs* }
 // whitespace to hide an intervening `-`.
 // `-` at the start of a sub-expression: typically not followed by a
 // digit (so `-3` still parses as a signed Integer literal). The
-// exception is `-N^M`: we want to peel off the unary minus so that
-// `-10^8 = -(10^8) = -100000000` (Wolfram precedence). When the next
-// chars are `digits ^`, treat the `-` as a LeadingMinus regardless of
-// the immediately-following digit — the Integer rule has a matching
-// lookahead to release `digits ^` from its `(-)?` prefix.
-LeadingMinus = @{ "-" ~ !"-" ~ ((!ASCII_DIGIT) | &(RealBody ~ PowGap ~ "^") | &(ASCII_DIGIT+ ~ PowGap ~ "^")) }
+// exception is a number followed by an operator binding tighter than unary
+// minus (`NegLiteralTail`): we peel off the unary minus so that
+// `-10^8 = -(10^8) = -100000000` (Wolfram precedence) — the Integer and
+// Real rules have a matching lookahead to release the `-`.
+LeadingMinus = @{ "-" ~ !"-" ~ ((!ASCII_DIGIT) | &(RealBody ~ NegLiteralTail) | &(ASCII_DIGIT+ ~ NegLiteralTail)) }
 // LeadingPlus marks a leading "+" in an expression: +x, +f[x], +(a+b), etc.
 // Only matches when NOT followed by a digit or "+" (so +3 parses as positive Integer,
 // ++ would be Increment). Semantically +expr is just expr.
@@ -869,10 +882,12 @@ ConditionOp = @{
   | "<>"                          // StringJoin (must be before < to avoid partial match)
   | "<=" | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" | ">=" | "\u{2265}" | "\u{2A7E}" | "\\[GreaterEqual]" | "<" | ">"       // Order comparison, ≤, ≥, ⩽, ⩾
   | ";;"                          // Span
+  | "//@"                         // MapAll (must be before /@)
   | "/@"                          // Map (must be before the bare "/" of Arithmetic)
   | "@@@"                         // MapApply (must be before @@)
   | "@@"                          // Apply (must be before @)
   | "@"                           // Prefix application
+  | "**"                          // NonCommutativeMultiply (must be before *)
   | "+" | "-" | "*" | "/" | "^"   // Arithmetic
   | "&&" | "||"                   // Logical
   | "|"                           // Alternatives

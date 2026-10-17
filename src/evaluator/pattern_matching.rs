@@ -1641,9 +1641,28 @@ pub fn enumerate_flat_partition_matches(
   if k == 0 || n < k {
     return out;
   }
+  let has_orderless =
+    crate::evaluator::listable::is_builtin_orderless(pat_name)
+      || crate::func_attrs_contains(pat_name, Attributes::Orderless);
   // Iterate size tuples in lex order, then for each, enumerate
   // ordered index partitions and try the match.
   for sizes in size_tuples_lex(n, k) {
+    // Without Orderless the arguments keep their order: each group is a
+    // contiguous run, so `ReplaceList[a . b . c, x_ . y_ :> {x, y}]` only
+    // splits as `{a, b . c}` and `{a . b, c}`.
+    if !has_orderless {
+      let mut groups: Vec<Vec<usize>> = Vec::with_capacity(k);
+      let mut cursor = 0;
+      for &sz in &sizes {
+        groups.push((cursor..cursor + sz).collect());
+        cursor += sz;
+      }
+      let refs: Vec<&Vec<usize>> = groups.iter().collect();
+      if let Some(b) = try_align_groups(pat_name, pat_args, expr_args, &refs) {
+        out.push(b);
+      }
+      continue;
+    }
     let indices: Vec<usize> = (0..n).collect();
     enumerate_partitions_with_sizes(
       &indices,
