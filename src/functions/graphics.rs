@@ -26149,6 +26149,40 @@ fn expr_contains_call(e: &Expr, heads: &[&str]) -> bool {
   }
 }
 
+/// `layout ""` (a layout juxtaposed with an empty string, which the front end
+/// writes to keep a trailing blank after a control row) multiplies the layout
+/// by `""`; the empty factor adds nothing, so reach the layout it follows.
+fn strip_empty_string_factor(e: &Expr) -> &Expr {
+  let is_empty = |x: &Expr| matches!(x, Expr::String(s) if s.is_empty());
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if is_empty(right) {
+        strip_empty_string_factor(left)
+      } else if is_empty(left) {
+        strip_empty_string_factor(right)
+      } else {
+        e
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && (is_empty(&args[0]) || is_empty(&args[1])) =>
+    {
+      strip_empty_string_factor(if is_empty(&args[1]) {
+        &args[0]
+      } else {
+        &args[1]
+      })
+    }
+    _ => e,
+  }
+}
+
 /// The factors of an implicit product (`a b c` → `[a, b, c]`) in source
 /// order, or the expression itself when it is not a product.
 fn split_implicit_product(e: &Expr) -> Vec<Expr> {
@@ -26176,6 +26210,7 @@ fn split_implicit_product(e: &Expr) -> Vec<Expr> {
 /// `Control[…]`/`Button[…]` anywhere, so plain `Row[…]` display
 /// expressions keep flowing to the display path.
 fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
+  let spec = strip_empty_string_factor(spec);
   fn contains_control(e: &Expr) -> bool {
     match e {
       Expr::FunctionCall { name, args } => {
