@@ -36277,3 +36277,16 @@ mod static_dynamic_controls {
     assert!(!svg.contains("NumberForm["), "no source text: {svg}");
   }
 }
+
+#[test]
+fn graphics_grid_of_tooltipped_plots_draws_the_plots_not_source() {
+  let svg = export_svg(
+    "GraphicsGrid[{{Tooltip[ArrayPlot[{{1, 0}, {0, 1}}], \
+     ArrayPlot[{{0, 1}}]], ArrayPlot[{{0, 1}, {1, 0}}]}}]",
+  );
+  assert!(!svg.contains("Tooltip"), "{svg}");
+  assert!(!svg.contains("<text"), "{svg}");
+  let single = export_svg("Tooltip[ArrayPlot[{{1, 0}, {0, 1}}], \"hint\"]");
+  assert!(!single.contains("hint"), "{single}");
+  assert!(!single.contains("<text"), "{single}");
+}
