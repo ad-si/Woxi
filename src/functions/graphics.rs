@@ -15539,7 +15539,8 @@ pub(crate) fn is_style_wrapper(name: &str) -> bool {
 /// look for a nested control layout, so a bare `Item[…]` reaching here never
 /// held one and is always plain text too.
 pub(crate) fn is_manipulate_annotation_head(name: &str) -> bool {
-  is_style_wrapper(name) || matches!(name, "Text" | "Item" | "Row" | "Column")
+  is_style_wrapper(name)
+    || matches!(name, "Text" | "TextCell" | "Item" | "Row" | "Column")
 }
 
 /// Whether an annotation row (`Style[…]`, `Row[{…}]`, `Column[{…}]`, …) has a

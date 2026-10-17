@@ -3347,3 +3347,28 @@ mod tests {
     assert_eq!(msg.as_deref(), Some("{\"A\", \"c\"}"));
   }
 }
+
+#[cfg(test)]
+mod textcell_tests {
+  use super::*;
+
+  /// A `TextCell[Row[{Style[…], …}]]` argument is a static caption line
+  /// between the controls (a Demonstration's "Drag the locators" hint), not
+  /// a malformed variable specification: it becomes a heading carrying the
+  /// caption text and the real controls after it still build.
+  #[test]
+  fn text_cell_caption_is_a_heading_not_a_variable_spec() {
+    let code = r#"Manipulate[
+      Plot[a*x, {x, 0, 1}],
+      TextCell[Row[{Style["Drag the slider ", Bold], Style["now", Red]}]],
+      {{a, 1}, 0, 2}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["", "a"]);
+    assert!(state.graphics_handle.is_some(), "the plot should render");
+    assert!(!state.controls[0].binds_variable());
+  }
+}
