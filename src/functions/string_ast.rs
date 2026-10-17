@@ -16032,6 +16032,40 @@ pub(crate) fn number_form_family_to_string(
   head: &str,
   inner: &[Expr],
 ) -> Option<String> {
+  // A wrapper around another wrapper (`AccountingForm[NumberForm[x, {12, 2}],
+  // 12]`) formats the innermost number with the inner wrapper's own spec and
+  // options; the outer arguments only fill in what the inner one left out.
+  if let Some(Expr::FunctionCall {
+    name: inner_head,
+    args: inner_args,
+  }) = inner.first()
+    && matches!(
+      inner_head.as_str(),
+      "NumberForm" | "PaddedForm" | "AccountingForm"
+    )
+  {
+    let is_rule =
+      |a: &Expr| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+    let inner_positional = inner_args.iter().filter(|a| !is_rule(a)).count();
+    let mut merged: Vec<Expr> = inner_args.to_vec();
+    if inner_positional < 2 {
+      merged.extend(
+        inner[1..]
+          .iter()
+          .filter(|a| !is_rule(a))
+          .take(2 - inner_positional)
+          .cloned(),
+      );
+    }
+    merged.extend(inner[1..].iter().filter(|a| is_rule(a)).cloned());
+    // The inner wrapper decides how the digits are laid out; an outer
+    // AccountingForm only turns a leading minus sign into brackets.
+    let rendered = number_form_family_to_string(inner_head, &merged)?;
+    return Some(match rendered.strip_prefix('-') {
+      Some(digits) if head == "AccountingForm" => format!("({digits})"),
+      _ => rendered,
+    });
+  }
   let positional: Vec<&Expr> = inner
     .iter()
     .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))

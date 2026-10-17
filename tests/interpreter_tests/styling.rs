@@ -662,6 +662,22 @@ mod accounting_form {
   }
 
   #[test]
+  fn wrapping_number_form_uses_inner_spec() {
+    assert_eq!(
+      interpret(
+        "ToString[AccountingForm[NumberForm[68472.203441, {12, 2}, DigitBlock -> 3], 12]]"
+      )
+      .unwrap(),
+      "68,472.20"
+    );
+    assert_eq!(
+      interpret("ToString[AccountingForm[NumberForm[-1234.5, {12, 2}], 12]]")
+        .unwrap(),
+      "(1234.50)"
+    );
+  }
+
+  #[test]
   fn head() {
     assert_eq!(
       interpret("Head[AccountingForm[123.45]]").unwrap(),
