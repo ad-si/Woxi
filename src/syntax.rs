@@ -12660,8 +12660,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       format_part_brackets(&args[0], &expr_to_input_form(&args[0]), &indices)
     }
     Expr::FunctionCall { name, args }
-      if !(args.len() == 2
-        && matches!(
+      if (args.len() != 2
+        || !matches!(
           name.as_str(),
           "Map" | "Apply" | "MapApply" | "MapAll"
         ))
