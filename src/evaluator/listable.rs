@@ -277,24 +277,11 @@ pub fn is_builtin_listable(name: &str) -> bool {
   )
 }
 
+/// Whether a builtin carries the Flat attribute. Delegates to the attribute
+/// table so `Attributes[f]` and the evaluator's flattening never drift apart.
 pub fn is_builtin_flat(name: &str) -> bool {
-  matches!(
-    name,
-    "Plus"
-      | "Times"
-      | "GCD"
-      | "LCM"
-      | "Composition"
-      | "Max"
-      | "Min"
-      | "And"
-      | "Or"
-      | "NonCommutativeMultiply"
-      | "Join"
-      | "StringJoin"
-      | "Union"
-      | "Intersection"
-  )
+  crate::evaluator::attributes::get_builtin_attributes(name)
+    .contains(crate::evaluator::attributes::Attributes::Flat)
 }
 
 pub fn is_builtin_orderless(name: &str) -> bool {

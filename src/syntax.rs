@@ -4418,7 +4418,7 @@ fn parse_expression_inner(
       _ => {
         if leading_minus {
           // When the operator just pushed binds *tighter* than the
-          // synthetic 0/NEGATE pair (precedence 45) would on its own,
+          // synthetic 0/NEGATE pair (precedence 40) would on its own,
           // replace it with its `_NEG` variant (operand negated directly)
           // instead of inserting that pair — otherwise the tighter operator
           // claims the synthetic `0` before NEGATE ever sees it, e.g.
@@ -4805,7 +4805,7 @@ fn apply_anon_continuation(
       if let Some(next_pair) = iter.next() {
         if next_pair.as_rule() == Rule::LeadingMinus {
           // Tilde infix (precedence 53) also binds tighter than NEGATE
-          // (45) — see the `Rule::Operator` branch above for why that
+          // (40) — see the `Rule::Operator` branch above for why that
           // needs `{op}_NEG` rather than the plain synthetic pair.
           if post_ops.last().is_some_and(|o| {
             operator_precedence(o) > operator_precedence("NEGATE")
@@ -5405,8 +5405,8 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[TildeTilde]" | "\u{2248}" => 21, // TildeTilde (same level as comparisons)
     // Cross and TensorProduct bind tighter than Dot in Wolfram
     // (Precedence 500 and 495 vs Dot's 490): a.b\[Cross]c is a.(b\[Cross]c).
-    "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" => 42, // Cross (above TensorProduct)
-    "\\[TensorProduct]" | "\u{F3DA}" => 41, // TensorProduct (just above Dot)
+    "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" => 43, // Cross (above TensorProduct)
+    "\\[TensorProduct]" | "\u{F3DA}" => 42, // TensorProduct (just above Dot)
     "\\[Cap]" | "\u{2322}" => 36,           // Cap (⌢, infix → Cap[a, b])
     "\\[Cup]" | "\u{2323}" => 36,           // Cup (⌣, infix → Cup[a, b])
     "\\[RightTee]" | "\u{22A2}" => 15, // RightTee (⊢, right-assoc, between -> and ==)
@@ -5451,14 +5451,19 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Vee]" | "\u{22C1}" => 36,        // above CircleTimes, below Wedge
     "\\[Wedge]" | "\u{22C0}" => 37,      // above Vee, below Diamond
     "\\[Diamond]" | "\u{22C4}" => 38,    // above Wedge, below Backslash
-    "\\[Backslash]" | "\u{2216}" => 39,  // above Diamond, below Dot
-    "." => 40,                           // Dot (higher than the ring ops)
-    "\\[CircleDot]" | "\u{2299}" => 43,  // above Cross, below SmallCircle
-    "\\[SmallCircle]" | "\u{2218}" => 44, // above CircleDot, below Apply
-    "NEGATE" => 45, // Unary minus (PreMinus): between Times/Dot and Apply/Map,
-    // so `-f @@ list` reads as `-(f @@ list)` and `-f /@ list` as
-    // `-(f /@ list)`, matching Wolfram (Apply/Map bind tighter than a
-    // leading unary minus).
+    "\\[Backslash]" | "\u{2216}" => 39,  // above Diamond, below NEGATE
+    // Unary minus (PreMinus, 480) sits between Backslash (460) and Dot
+    // (490): `-a . b` is `-(a . b)` but `-a \[Backslash] b` is
+    // `(-a) \[Backslash] b`. Everything tighter (`.`, `**`, `^`, `@@`, …)
+    // takes its right operand negated via `op_NEG`, so `-f @@ list` reads
+    // as `-(f @@ list)` and `-f /@ list` as `-(f /@ list)`.
+    "NEGATE" => 40,
+    "." => 41, // Dot (higher than the ring ops)
+    // NonCommutativeMultiply (510) sits between Cross (500) and CircleDot
+    // (520): `a ** b \[Cross] c` is `(a ** b) \[Cross] c`.
+    "**" => 44,
+    "\\[CircleDot]" | "\u{2299}" => 45, // above `**`, below SmallCircle
+    "\\[SmallCircle]" | "\u{2218}" => 46, // above CircleDot, below Apply
     "^" | "^_NEG" => 50, // Power (`^_NEG` is `a^-b` with negated right operand)
     // `Precedence[StringJoin]` is 600 — above `Power` (590), not at `Plus`'s
     // level: `a <> b^c` is `(a <> b)^c` and `a <> b*c` is `(a <> b)*c`.
@@ -5468,7 +5473,7 @@ fn operator_precedence(op: &str) -> u8 {
     // `a /@ b @@ c` is `Map[a, Apply[b, c]]`. They bind tighter than
     // `StringJoin` and `Power` (`Plus @@ {1, 2}^2` is `(Plus @@ {1, 2})^2`)
     // and looser than the tilde infix.
-    "@@@" | "@@" | "/@" => 52, // Apply/MapApply/Map
+    "@@@" | "@@" | "/@" | "//@" => 52, // Apply/MapApply/Map/MapAll
     s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 53, // Tilde infix: a ~f~ b (higher than ^, lower than @)
     "@" => 56, // Prefix application
     // Composition/RightComposition bind tighter than prefix application (so
@@ -5556,6 +5561,11 @@ fn build_expr_with_precedence(
   // extending? Only then may `a ⨯ b ⨯ c` collapse to `Cross[a, b, c]`; a
   // `Cross[…]` that came from parentheses or an explicit call is an operand.
   let mut in_cross_chain = false;
+  // The Flat infix operator (`.` or `**`) that built the current `result`
+  // in this loop, if any: `a . b . c` extends that one call to
+  // `Dot[a, b, c]` as in Wolfram, while a parenthesized `(a . b) . c` arrives
+  // as a term and stays nested.
+  let mut flat_chain_op: Option<&str> = None;
 
   while op_idx < operators.len() {
     let op_str = &operators[op_idx];
@@ -5596,6 +5606,7 @@ fn build_expr_with_precedence(
       }
       result = build_span(parts);
       in_cross_chain = false;
+      flat_chain_op = None;
       continue;
     }
 
@@ -5613,6 +5624,7 @@ fn build_expr_with_precedence(
       || assoc_op_str == "@@"
       || assoc_op_str == "@@@"
       || assoc_op_str == "/@"
+      || assoc_op_str == "//@"
       || assoc_op_str == "@*"
       || assoc_op_str == "/*"
       || assoc_op_str == "->"
@@ -5633,20 +5645,40 @@ fn build_expr_with_precedence(
     } else {
       prec + 1
     };
+    // `op_NEG`: the negation owns everything that binds tighter than unary
+    // minus, whatever `op` itself is — `a ** -b ** c` is
+    // `a ** -(b ** c)` and `a ^ -b ** c` is `a ^ -(b ** c)`.
+    let next_min_prec = if op_str.ends_with("_NEG") {
+      operator_precedence("NEGATE") + 1
+    } else {
+      next_min_prec
+    };
 
     // Build the right side with higher precedence
     let right =
       build_expr_with_precedence(terms, operators, op_idx + 1, next_min_prec);
 
     // Create the binary operation
+    let is_flat_chain_op = matches!(assoc_op_str, "." | "**");
     result = if is_cross_op(op_str) && !in_cross_chain {
       // First ⨯ of a chain: group binary, so `(a ⨯ b) ⨯ c` and
       // `Cross[a, b] ⨯ c` both stay `Cross[Cross[a, b], c]`.
       call("Cross", vec![result.clone(), right.clone()])
+    } else if is_flat_chain_op
+      && flat_chain_op == Some(assoc_op_str)
+      && let Expr::FunctionCall { args, .. } = &mut result
+    {
+      args.push(if op_str.ends_with("_NEG") {
+        neg1(right)
+      } else {
+        right
+      });
+      result
     } else {
       make_binary_op(&result, op_str, &right)
     };
     in_cross_chain = is_cross_op(op_str);
+    flat_chain_op = is_flat_chain_op.then_some(assoc_op_str);
 
     // Count how many terms were consumed on the right
     let mut right_terms = 1;
@@ -5766,7 +5798,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     ),
     // `op_NEG` — the synthetic marker `LeadingMinus` produces when it
     // follows an operator that binds *tighter* than the unary-minus
-    // placeholder (`NEGATE`, precedence 45): `f @ -g[x]` (precedence 56)
+    // placeholder (`NEGATE`, precedence 40): `f @ -g[x]` (precedence 56)
     // would otherwise let `@` claim the synthetic `0` before `NEGATE` ever
     // sees it, parsing as `f[0]` with `g[x]` orphaned and negated on its
     // own — dropping `f` entirely (`^_NEG` predates this and is excluded
@@ -6057,6 +6089,8 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       },
     },
     "." => call("Dot", vec![left.clone(), right.clone()]),
+    "**" => call("NonCommutativeMultiply", vec![left.clone(), right.clone()]),
+    "//@" => call("MapAll", vec![left.clone(), right.clone()]),
     "->" | "\u{2192}" | "\\[Rule]" | "\u{F522}" => {
       rule_expr(left.clone(), right.clone())
     }
@@ -7499,13 +7533,17 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       op: UnaryOperator::Not,
       ..
     } => Some(20),
+    // Unary minus (480) sits just below `.` (490), so it is bracketed as an
+    // operand of `.`, `**` and `^`: `(-a) . b`.
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       ..
-    } => Some(45),
+    } => Some(39),
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Not" if args.len() == 1 => Some(20),
-      "Dot" if args.len() == 2 => Some(40),
+      "Dot" if args.len() >= 2 => Some(40),
+      "NonCommutativeMultiply" if args.len() >= 2 => Some(44),
+      "Map" | "Apply" | "MapApply" | "MapAll" if args.len() == 2 => Some(49),
       "Plus" if args.len() >= 2 => Some(30),
       "Times" if args.len() >= 2 => Some(33),
       // `=`, `:=`, `^=` and `^:=` print infix and bind looser than every
@@ -7609,6 +7647,34 @@ fn function_body_needs_parens(body: &Expr) -> bool {
     }
     _ => false,
   }
+}
+
+/// Join the operands of a Flat infix head (`a . b`, `a**b`) whose printed
+/// precedence is `prec`. Every operand that binds as loose or looser is
+/// parenthesized — on both sides, since a Flat head never prints a nested
+/// call of its own bare: `a . (b . c)`, `(a . b) . c`, `a . (b - c)`. A
+/// negative or rational number is bracketed too, as `-2 . a` would re-parse
+/// as `-(2 . a)`: wolframscript prints `(-2) . a` and `(1/2)**a`.
+fn flat_ring_infix(
+  args: &[Expr],
+  sep: &str,
+  prec: u8,
+  fmt: &dyn Fn(&Expr) -> String,
+) -> String {
+  args
+    .iter()
+    .map(|a| {
+      let s = fmt(a);
+      let needs_parens = printed_infix_precedence(a).is_some_and(|p| p <= prec)
+        || matches!(a, Expr::Integer(n) if *n < 0)
+        || matches!(a, Expr::BigInteger(n) if n.sign() == Sign::Minus)
+        || matches!(a, Expr::Real(f) if *f < 0.0)
+        || matches!(a, Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2);
+      if needs_parens { format!("({s})") } else { s }
+    })
+    .collect::<Vec<_>>()
+    .join(sep)
 }
 
 /// Whether a `Part` base must be parenthesized so `base[[i]]` re-parses to
@@ -8657,8 +8723,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return format!("{}:{}", fmt(&args[0]), body);
       }
       if name == "NonCommutativeMultiply" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(&fmt).collect();
-        return parts.join("**");
+        return flat_ring_infix(args, "**", 44, &fmt);
       }
       // Special case: Minus[a, b, ...] with wrong arity displays with Unicode minus
       if name == "Minus" && args.len() >= 2 {
@@ -8669,19 +8734,22 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "ReverseElement" && args.len() == 2 {
         return format!("{} \u{220B} {}", fmt(&args[0]), fmt(&args[1]));
       }
-      // Special case: Dot[a, b] displays as a . b (infix notation).
-      // Operands that bind looser than `.` (Plus, Times, …) keep their
-      // parens so e.g. `a . (b - c)` doesn't re-parse as `(a . b) - c`.
-      if name == "Dot" && args.len() == 2 {
-        let operand = |a: &Expr| {
-          let s = fmt(a);
-          if printed_infix_precedence(a).is_some_and(|p| p < 40) {
-            format!("({s})")
-          } else {
-            s
-          }
+      // Special case: Dot[a, b, …] displays as a . b . … (infix notation).
+      if name == "Dot" && args.len() >= 2 {
+        return flat_ring_infix(args, " . ", 40, &fmt);
+      }
+      // A held `Map[f, x]` written as a call prints like `f /@ x` does.
+      if args.len() == 2 {
+        let op = match name.as_str() {
+          "Map" => Some("/@"),
+          "Apply" => Some("@@"),
+          "MapApply" => Some("@@@"),
+          "MapAll" => Some("//@"),
+          _ => None,
         };
-        return format!("{} . {}", operand(&args[0]), operand(&args[1]));
+        if let Some(op) = op {
+          return format_map_apply_shorthand(&args[0], &args[1], op, 49);
+        }
       }
       if name == "Composition" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
@@ -12592,52 +12660,57 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       format_part_brackets(&args[0], &expr_to_input_form(&args[0]), &indices)
     }
     Expr::FunctionCall { name, args }
-      if !matches!(
-        name.as_str(),
-        "Plus"
-          | "Times"
-          | "Power"
-          | "And"
-          | "Or"
-          | "Not"
-          | "Equal"
-          | "Unequal"
-          | "Less"
-          | "LessEqual"
-          | "Greater"
-          | "GreaterEqual"
-          | "Inequality"
-          | "Factorial"
-          | "Factorial2"
-          | "Increment"
-          | "Decrement"
-          | "PreIncrement"
-          | "PreDecrement"
-          | "Condition"
-          | "PatternTest"
-          | "Optional"
-          | "Alternatives"
-          | "Dot"
-          | "Repeated"
-          | "RepeatedNull"
-          | "Derivative"
-          | "Sequence"
-          | "Rational"
-          | "Complex"
-          | "DirectedInfinity"
-          | "Skeleton"
-          | "Composition"
-          | "RightComposition"
-          | "NonCommutativeMultiply"
-          | "Minus"
-          | "Therefore"
-          | "Because"
-          | "Blank"
-          | "BlankSequence"
-          | "BlankNullSequence"
-          | "ReverseElement"
-          | "TwoWayRule"
-      ) =>
+      if !(args.len() == 2
+        && matches!(
+          name.as_str(),
+          "Map" | "Apply" | "MapApply" | "MapAll"
+        ))
+        && !matches!(
+          name.as_str(),
+          "Plus"
+            | "Times"
+            | "Power"
+            | "And"
+            | "Or"
+            | "Not"
+            | "Equal"
+            | "Unequal"
+            | "Less"
+            | "LessEqual"
+            | "Greater"
+            | "GreaterEqual"
+            | "Inequality"
+            | "Factorial"
+            | "Factorial2"
+            | "Increment"
+            | "Decrement"
+            | "PreIncrement"
+            | "PreDecrement"
+            | "Condition"
+            | "PatternTest"
+            | "Optional"
+            | "Alternatives"
+            | "Dot"
+            | "Repeated"
+            | "RepeatedNull"
+            | "Derivative"
+            | "Sequence"
+            | "Rational"
+            | "Complex"
+            | "DirectedInfinity"
+            | "Skeleton"
+            | "Composition"
+            | "RightComposition"
+            | "NonCommutativeMultiply"
+            | "Minus"
+            | "Therefore"
+            | "Because"
+            | "Blank"
+            | "BlankSequence"
+            | "BlankNullSequence"
+            | "ReverseElement"
+            | "TwoWayRule"
+        ) =>
     {
       if args.is_empty() {
         format!("{}[]", call_head_display(name))
