@@ -5852,6 +5852,17 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Item" && !args.is_empty() => {
       expr_to_svg(&args[0])
     }
+    // `Tooltip[picture, tip]` displays the picture; the tip only appears
+    // on hover, so it has no place in a static export. (Without this arm a
+    // Demonstration's `GraphicsGrid` of tooltipped plots was set as the
+    // source text of each `Tooltip` call.)
+    Expr::FunctionCall { name, args }
+      if name == "Tooltip"
+        && args.len() >= 2
+        && lays_out_a_graphic(&args[0]) =>
+    {
+      expr_to_svg(&args[0])
+    }
     // `TabView[{…}, sel]` displays only the pane `sel` selects.
     Expr::FunctionCall { name, args }
       if name == "TabView"
