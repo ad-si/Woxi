@@ -210,6 +210,29 @@ fn gradient_strip_image(controls: &[(f64, f64, f64)]) -> Expr {
 /// tabulated: its hues start at 0.67 and advance by √5 - 2 turns, and every
 /// component is mapped into 0.24 … 0.6 — so it never repeats and accepts any
 /// index. The tabulated schemes cycle.
+/// RGB of monochromatic light of wavelength `w` nm (piecewise-linear
+/// approximation with intensity roll-off at the ends and gamma 0.8).
+fn visible_spectrum_rgb(w: f64) -> (f64, f64, f64) {
+  let (r, g, b) = match w {
+    w if (380.0..440.0).contains(&w) => (-(w - 440.0) / 60.0, 0.0, 1.0),
+    w if (440.0..490.0).contains(&w) => (0.0, (w - 440.0) / 50.0, 1.0),
+    w if (490.0..510.0).contains(&w) => (0.0, 1.0, -(w - 510.0) / 20.0),
+    w if (510.0..580.0).contains(&w) => ((w - 510.0) / 70.0, 1.0, 0.0),
+    w if (580.0..645.0).contains(&w) => (1.0, -(w - 645.0) / 65.0, 0.0),
+    w if (645.0..=750.0).contains(&w) => (1.0, 0.0, 0.0),
+    _ => (0.0, 0.0, 0.0),
+  };
+  let factor = if (380.0..420.0).contains(&w) {
+    0.3 + 0.7 * (w - 380.0) / 40.0
+  } else if (700.0..=750.0).contains(&w) {
+    0.3 + 0.7 * (750.0 - w) / 50.0
+  } else {
+    1.0
+  };
+  let adjust = |c: f64| (c * factor).powf(0.8);
+  (adjust(r), adjust(g), adjust(b))
+}
+
 fn indexed_scheme_color(n: i128, k: i128) -> Option<(f64, f64, f64)> {
   if n == 1 {
     let hue = (0.67 + (k - 1) as f64 * (5.0_f64.sqrt() - 2.0)).rem_euclid(1.0);
@@ -1004,6 +1027,19 @@ pub fn dispatch_image_functions(
         return Some(Ok(call(
           "RGBColor",
           vec![channel(r), channel(g), channel(b)],
+        )));
+      }
+      // ColorData["VisibleSpectrum", wavelength]: the color of light with
+      // the given wavelength in nm (380–750 nm; black outside that range).
+      if let Expr::String(scheme) = &args[0]
+        && scheme == "VisibleSpectrum"
+        && !matches!(&args[1], Expr::String(_))
+        && let Some(w) = crate::functions::math_ast::try_eval_to_f64(&args[1])
+      {
+        let (r, g, b) = visible_spectrum_rgb(w);
+        return Some(Ok(call(
+          "RGBColor",
+          vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
         )));
       }
       // ColorData[name, t]: sample the named gradient at parameter t
