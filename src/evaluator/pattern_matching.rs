@@ -884,24 +884,19 @@ fn try_one_identity_match(
   };
 
   for (i, arg) in pat_args.iter().enumerate() {
-    let (names, inline_default) = match arg {
-      Expr::PatternOptional { name, default, .. } => {
+    let (names, inline_default) =
+      if let Expr::PatternOptional { name, default, .. } = arg {
         (vec![name.clone()], default.as_deref())
-      }
-      _ => match optional_call_parts(arg) {
+      } else if let Some((inner, default)) = optional_call_parts(arg) {
         // A general `Optional[p, d]` slot (`x___:0`, `_?NumericQ:2`, …):
         // leaving it out binds every name in `p` to the default.
-        Some((inner, default)) => {
-          let mut names = Vec::new();
-          pattern_binding_names(inner, &mut names);
-          (names, default)
-        }
-        None => {
-          required_indices.push(i);
-          continue;
-        }
-      },
-    };
+        let mut names = Vec::new();
+        pattern_binding_names(inner, &mut names);
+        (names, default)
+      } else {
+        required_indices.push(i);
+        continue;
+      };
     match resolve_default(i, inline_default) {
       Some(def) => optional_bindings.push((
         i,
