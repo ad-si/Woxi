@@ -6406,6 +6406,26 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // A ragged array is still rectangular down to the level where its parts
+  // first disagree.
+  #[test]
+  fn dimensions_of_ragged_array_keeps_common_leading_levels() {
+    assert_eq!(
+      interpret("Dimensions[{{{1, 2}, {3}}, {{4, 5}, {6, 7}}}]").unwrap(),
+      "{2, 2}"
+    );
+    assert_eq!(
+      interpret("Dimensions[{{{{1, 2}}, {{3}}}, {{{4, 5}}, {{6, 7}}}}]")
+        .unwrap(),
+      "{2, 2, 1}"
+    );
+    assert_eq!(interpret("Dimensions[{{1, 2}, {3}}]").unwrap(), "{2}");
+    assert_eq!(
+      interpret("Dimensions[Array[{} &, {2, 3}]]").unwrap(),
+      "{2, 3, 0}"
+    );
+  }
+
   // Dimensions accepts Infinity for its level count, which it used to
   // reject with a hard error along with everything else invalid.
   #[test]
@@ -11021,6 +11041,54 @@ mod batch_unevaluated_wrappers_2 {
       interpret("SubstitutionSystem[{0 -> {0, 1}, 1 -> {1, 0}}, {0}, 3]")
         .unwrap(),
       "{{0}, {0, 1}, {0, 1, 1, 0}, {0, 1, 1, 0, 1, 0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn substitution_system_2d_mixed_block_sizes() {
+    // Blocks of different sizes tile when every grid row agrees on the
+    // block height and every grid column on the block width.
+    assert_eq!(
+      interpret(
+        "FlattenAt[SubstitutionSystem[{3 -> {{1, 0}, {3, 2}}, \
+         2 -> {{1}, {3}}, 1 -> {{3, 2}}, 0 -> {{3}}}, \
+         ConstantArray[3, {1, 1}], {2}], 1]"
+      )
+      .unwrap(),
+      "{{3, 2, 3}, {1, 0, 1}, {3, 2, 3}}"
+    );
+  }
+
+  #[test]
+  fn substitution_system_2d_incompatible_blocks_stay_unevaluated() {
+    assert_eq!(
+      interpret(
+        "SubstitutionSystem[{1 -> {{1, 1}}, 0 -> {{0}, {0}}}, {{1, 0}}, 1]"
+      )
+      .unwrap(),
+      "SubstitutionSystem[{1 -> {{1, 1}}, 0 -> {{0}, {0}}}, {{1, 0}}, 1]"
+    );
+  }
+
+  #[test]
+  fn sparse_array_positions_paired_with_values() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{{1, 1}, {2, 3}} -> {7, 9}]]").unwrap(),
+      "{{7, 0, 0}, {0, 0, 9}}"
+    );
+  }
+
+  #[test]
+  fn sparse_array_blank_position_rule_sets_background() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{{1, 1} -> 1, {_, _} -> 5, {2, 2} -> 3}]]")
+        .unwrap(),
+      "{{1, 5}, {5, 3}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[Keys[#] -> Values[#]]] &[ArrayRules[{{1, 0}, {0, 2}}]]")
+        .unwrap(),
+      "{{1, 0}, {0, 2}}"
     );
   }
 

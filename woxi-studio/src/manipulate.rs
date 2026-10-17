@@ -1856,6 +1856,38 @@ mod tests {
     assert!(value.starts_with("helper[Graphics["), "got {value}");
   }
 
+  /// A body that caches a rendered plot in hidden state (recomputing it only
+  /// when a control changed) must still find the picture on the next frame:
+  /// the state holds a `-Graphics-` placeholder that cannot be parsed back.
+  #[test]
+  fn cached_graphic_in_hidden_state_survives_reevaluation() {
+    let code = r#"Manipulate[
+      If[seen != n, seen = n; cache = Plot[x, {x, 0, n}]];
+      Column[{cache, "caption"}],
+      {{seen, 0}, ControlType -> None},
+      {{cache, 0}, ControlType -> None},
+      {n, 1, 3, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(
+      state.graphics_handle.is_some(),
+      "first frame draws the plot"
+    );
+    // Nothing changed, so the body reuses `cache` from the saved state.
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert_eq!(
+      state.text_output, None,
+      "the cached plot must not print as a symbol name"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "second frame keeps the plot"
+    );
+  }
+
   /// Two SetterBar rows over disjoint choices can share one variable; the
   /// variable starts at the *first* row's initial value (Wolfram keeps one
   /// `var$$ = <first initial>`), so the second row shows nothing selected.
@@ -3070,6 +3102,22 @@ mod tests {
       dump("amp$$")
     );
     assert!(dump("k$$").contains("label: \"freq\""), "{}", dump("k$$"));
+  }
+
+  /// A caption can apply a compound head to an argument —
+  /// `TraditionalForm[Subscript[f, a][x]]` — which must typeset as the head's
+  /// script followed by `(x)`, not leak the raw `Subscript[f, a][x]` source.
+  #[test]
+  fn control_label_typesets_compound_head_call() {
+    let code = r#"Manipulate[Plot[a x, {x, 0, 1}],
+      {{a, 1, Row[{"show ", TraditionalForm[Subscript[g, 1][x]], " here"}]},
+        {True, False}}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let c = state.controls.iter().find(|c| c.name() == "a").unwrap();
+    let dump = format!("{c:?}");
+    assert!(dump.contains("label: \"show g₁(x) here\""), "{dump}");
   }
 
   /// A control caption written `Dynamic[If[mode == 0, x₂, z₀]]` follows the

@@ -6549,3 +6549,60 @@ mod pattern_test_call_form {
     );
   }
 }
+
+/// Whitespace between a blank and the following symbol is implicit
+/// multiplication, even when a `:` follows: `n_ a:_m` is
+/// `Times[n_, a:_m]`, not `Optional[n_a, _m]` (issue #1386).
+mod implicit_times_before_named_pattern {
+  use super::*;
+
+  #[test]
+  fn parses_as_times() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[n_ a:_m]]]").unwrap(),
+      "Hold[Times[Pattern[n, Blank[]], Pattern[a, Blank[m]]]]"
+    );
+  }
+
+  #[test]
+  fn same_as_explicit_times() {
+    assert_eq!(interpret("(n_ a:_m) === (n_*a:_m)").unwrap(), "True");
+  }
+
+  #[test]
+  fn adjacent_head_still_optional() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[n_a:_m]]]").unwrap(),
+      "Hold[Optional[Pattern[n, Blank[a]], Blank[m]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x_Integer : 3]]]").unwrap(),
+      "Hold[Optional[Pattern[x, Blank[Integer]], 3]]"
+    );
+  }
+
+  /// `x___:0` is an Optional over a BlankNullSequence, not `x_` with head
+  /// `__`, and such a slot may be left out under OneIdentity.
+  #[test]
+  fn sequence_blank_with_default() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x1___:0]]]").unwrap(),
+      "Hold[Optional[Pattern[x1, BlankNullSequence[]], 0]]"
+    );
+    assert_eq!(
+      interpret(
+        "SetAttributes[F1386, OneIdentity]; x /. F1386[a___:0, y_] :> {a, y}"
+      )
+      .unwrap(),
+      "{0, x}"
+    );
+  }
+
+  #[test]
+  fn usable_in_definition() {
+    assert_eq!(
+      interpret("f[n_ a:_m] := {n, a}; f[3 m[1]]").unwrap(),
+      "{3, m[1]}"
+    );
+  }
+}

@@ -100,6 +100,8 @@ pub(crate) struct StyledLabel {
   pub italic: bool,
   pub color: Option<Color>,
   pub font_size: Option<f64>,
+  /// `Framed[…]` title: drawn inside a thin box.
+  pub framed: bool,
 }
 
 impl StyledLabel {
@@ -343,6 +345,15 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   if let Some(inner) = text_wrapper_content(expr) {
     return parse_styled_label(inner);
   }
+  // `Framed[title]` boxes the title it would otherwise draw.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Framed"
+    && !args.is_empty()
+  {
+    let mut label = parse_styled_label(&args[0])?;
+    label.framed = true;
+    return Some(label);
+  }
   // `Invisible[…]` paints nothing — a Demonstration wraps a `Text[…]`
   // label in it to hide one item (e.g. a hidden edge's name) while keeping
   // the surrounding code uniform across all items. Falling through to the
@@ -372,6 +383,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       italic: false,
       color: None,
       font_size: None,
+      framed: false,
     });
   }
   if let Expr::FunctionCall { name, args } = expr
@@ -395,7 +407,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     && name == "Style"
     && !args.is_empty()
     && matches!(&args[0], Expr::FunctionCall { name, args }
-        if (name == "Grid" || name == "Column") && !args.is_empty())
+        if matches!(name.as_str(), "Grid" | "Column" | "Framed")
+          && !args.is_empty())
   {
     let mut label = parse_styled_label(&args[0])?;
     let (bold, italic, color, font_size) =
@@ -422,6 +435,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         italic: false,
         color: None,
         font_size: None,
+        framed: false,
       })
     }
     Expr::String(s) => Some(StyledLabel {
@@ -432,6 +446,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       italic: false,
       color: None,
       font_size: None,
+      framed: false,
     }),
     Expr::Identifier(s) => Some(StyledLabel {
       text: s.clone(),
@@ -441,6 +456,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       italic: false,
       color: None,
       font_size: None,
+      framed: false,
     }),
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
@@ -468,6 +484,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         italic,
         color,
         font_size,
+        framed: false,
       })
     }
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
@@ -486,6 +503,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           italic: false,
           color: None,
           font_size: None,
+          framed: false,
         })
       }
     }
@@ -576,8 +594,15 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     // `Expr::String` arm above and prints as-is.
     Expr::Identifier(s) if s == "None" => None,
     Expr::Identifier(s) => Some(s.clone()),
-    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
-      Some(expr_to_string(e))
+    Expr::Integer(_) | Expr::BigInteger(_) => Some(expr_to_string(e)),
+    // A real reads as `ToString` prints it (six significant digits), so a
+    // computed `Round[x, 0.1]` labels as `-0.6`, not `-0.6000000000000001`.
+    Expr::Real(_) => {
+      match crate::functions::string_ast::to_string_ast(std::slice::from_ref(e))
+      {
+        Ok(Expr::String(ref rendered)) => Some(rendered.clone()),
+        _ => Some(expr_to_string(e)),
+      }
     }
     // A styled label reads as its content — a Demonstration writes its
     // frame labels as `Style["force (kN)", 12]`. The same holds for the

@@ -8230,6 +8230,18 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// A computed real in a `FrameLabel` prints as `ToString` does, not with
+    /// the float noise of its last bits (`Round[-0.64, 0.1]` is
+    /// `-0.6000000000000001` internally).
+    #[test]
+    fn plot_frame_label_real_prints_with_six_digits() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, \
+         FrameLabel -> {\"t\", Row[{\"d = \", Round[-0.64, 0.1]}]}]",
+      );
+      assert!(svg.contains("d = -0.6<"), "got {svg}");
+    }
+
     /// Regression: `RegionPlot` ignored `FrameLabel`, so a Demonstration's
     /// captioned region plot came out with bare axes.
     #[test]
@@ -19476,6 +19488,49 @@ mod graphics_grid {
     )
     .unwrap();
     assert_eq!(result, "-Graphics-");
+  }
+
+  /// A row given as a call that evaluates to a list (`f /@ list`) is a row
+  /// of cells, not one cell holding the whole list.
+  #[test]
+  fn row_given_as_mapped_call_lays_out_cells() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "GraphicsGrid[{(Graphics[Circle[], PlotLabel -> #] &) /@ {1, 2, 3}}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    let height: f64 = svg
+      .split("height=\"")
+      .nth(1)
+      .and_then(|r| r.split('"').next())
+      .and_then(|h| h.parse().ok())
+      .expect("svg height");
+    assert!(height > 100.0, "cells must not collapse to a strip: {svg}");
+  }
+
+  /// A computed `ImageSize` (`0.75*{w, h}`) is honoured, and a negative
+  /// `Spacings` doesn't make neighbouring cells overlap.
+  #[test]
+  fn computed_image_size_and_negative_spacing() {
+    let svg = export_svg(
+      "GraphicsGrid[{{Graphics[Circle[]], Graphics[Circle[]]}}, \
+       Spacings -> {-60, 0}, ImageSize -> 0.5*{600, 300}]",
+    );
+    let width: f64 = svg
+      .split("width=\"")
+      .nth(1)
+      .and_then(|r| r.split('"').next())
+      .and_then(|w| w.parse().ok())
+      .expect("svg width");
+    assert!((250.0..=300.0).contains(&width), "width: {svg}");
+    let xs: Vec<f64> = svg
+      .split("<svg x=\"")
+      .skip(1)
+      .filter_map(|r| r.split('"').next()?.parse().ok())
+      .collect();
+    assert!(xs.len() >= 2 && xs[1] >= xs[0], "cells overlap: {xs:?}");
   }
 
   #[test]
@@ -30964,6 +31019,23 @@ mod cases {
     );
   }
   #[test]
+  fn color_data_gradient_over_custom_range() {
+    assert_case(
+      r#"ColorData[{"RedGreenSplit", {-0.05, 0.05}}]"#,
+      r#"ColorDataFunction[RedGreenSplit, Gradients, {-0.05, 0.05}, Blend["RedGreenSplit", Rescale[#1, {-0.05, 0.05}]] & ]"#,
+    );
+    // Applying it rescales the argument onto the gradient's [0, 1].
+    assert_case(
+      r#"ColorData[{"Rainbow", {10, 20}}][15] === ColorData["Rainbow"][0.5]"#,
+      "True",
+    );
+    // Values outside the range clamp to the end colors.
+    assert_case(
+      r#"ColorData[{"Rainbow", {10, 20}}][99] === ColorData["Rainbow"][1]"#,
+      "True",
+    );
+  }
+  #[test]
   fn color_data_1() {
     assert_case(
       r#"ColorData[]"#,
@@ -36238,6 +36310,31 @@ mod static_dynamic_controls {
     assert!(svg.contains("#BCD6EE"), "the current choice is pressed");
   }
 
+  #[test]
+  fn color_data_visible_spectrum_maps_wavelength_to_rgb() {
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", 510]").unwrap(),
+      "RGBColor[0., 1., 0.]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", 700]").unwrap(),
+      "RGBColor[1., 0., 0.]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", 300]").unwrap(),
+      "RGBColor[0., 0., 0.]"
+    );
+  }
+
+  #[test]
+  fn plot_style_with_visible_spectrum_color_draws_the_curve() {
+    let svg = export_svg(
+      "ParametricPlot[{2.5, x}, {x, 0, 8.5}, \
+       PlotStyle -> ColorData[\"VisibleSpectrum\", 510]]",
+    );
+    assert!(!svg.contains("ColorData"), "no source text: {svg}");
+  }
+
   /// A rotated plot turns as one rigid image: a quarter turn swaps the
   /// canvas's width and height rather than clipping it.
   #[test]
@@ -36284,4 +36381,111 @@ mod static_dynamic_controls {
     assert!(svg.contains("<ellipse") && svg.contains("fill=\"rgb(0,0,0)\""));
     assert!(!svg.contains("<path"), "no degenerate arc path: {svg}");
   }
+
+  /// A scene of many thin `Tube`s (a maze built from tube walls) must not
+  /// tessellate each one into hundreds of rings: that drew ~190 rings per
+  /// tube and put close to a million polygons in the picture.
+  #[test]
+  fn crowd_of_thin_tubes_stays_small() {
+    let svg = export_svg(
+      "Graphics3D[Table[Tube[{{0, 0, j}, {1, 0, j}}, 0.01], {j, 20}]]",
+    );
+    let polygons = svg.matches("<polygon").count();
+    assert!(polygons < 40_000, "{polygons} polygons");
+  }
+
+  /// A lone tube still gets the full lengthwise subdivision.
+  #[test]
+  fn single_tube_keeps_fine_subdivision() {
+    let svg = export_svg("Graphics3D[Tube[{{0, 0, 0}, {1, 0, 0}}, 0.02]]");
+    assert!(svg.matches("<polygon").count() > 1000);
+  }
+
+  /// `Show[image, graphics]` draws the image as the backdrop of the
+  /// graphics (in pixel coordinates) instead of dropping it.
+  #[test]
+  fn show_of_image_and_graphics_keeps_the_image() {
+    let svg = export_svg(
+      "Show[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}], \
+       Graphics[{Red, Disk[{1, 1}, .3]}]]",
+    );
+    assert!(svg.contains("<image"), "image is drawn: {svg}");
+    assert!(svg.contains("<ellipse"), "overlay is drawn: {svg}");
+  }
+
+  /// `Inset[Text[…], pos]` places the text like `Text[…, pos]`; the inner
+  /// `Text` head must not be printed as literal source.
+  #[test]
+  fn inset_of_text_places_the_text() {
+    let svg = export_svg(
+      "Graphics[Inset[Text[Style[Row[{\"a \", Subscript[\"F\", 2]}], 10, Red]], \
+       {0, 0}]]",
+    );
+    assert!(!svg.contains("Text["), "no source text: {svg}");
+    assert!(svg.contains("rgb(255,0,0)"), "keeps the Red style: {svg}");
+  }
+
+  /// The same holds for an inset text label over a plot.
+  #[test]
+  fn inset_of_text_over_a_plot() {
+    let svg = export_svg(
+      "Show[Plot[x, {x, 0, 1}], Graphics[Inset[Text[\"label\"], {0.5, 0.5}]]]",
+    );
+    assert!(!svg.contains("Text["), "no source text: {svg}");
+    assert!(svg.contains(">label<"), "label is drawn: {svg}");
+  }
+
+  /// An explicit `AxesOrigin` is part of the automatic plot range, so the
+  /// axes cross inside the picture instead of the data being zoomed in.
+  #[test]
+  fn axes_origin_extends_the_automatic_plot_range() {
+    for code in [
+      "ListPlot[{{1, 5}, {2, 7}}, AxesOrigin -> {0, 0}]",
+      "ListPlot[{{1, 5}, {2, 7}}, Joined -> True, AxesOrigin -> {0, 0}]",
+      "Plot[x + 5, {x, 1, 2}, AxesOrigin -> {0, 0}]",
+    ] {
+      let svg = export_svg(code);
+      assert!(
+        y_tick_labels(&svg).iter().any(|l| l == "2"),
+        "{code}: y range must reach down to 0: {:?}",
+        y_tick_labels(&svg)
+      );
+    }
+    let svg = export_svg("ListPlot[{{1, 5}, {2, 7}}, AxesOrigin -> {0, 0}]");
+    assert!(
+      x_tick_labels(&svg).iter().any(|l| l == "0.5"),
+      "{:?}",
+      x_tick_labels(&svg)
+    );
+  }
+
+  /// `PlotLabel -> Framed[…]` boxes the title.
+  #[test]
+  fn framed_plot_label_is_boxed() {
+    let plain = export_svg("ListPlot[{{1, 5}, {2, 7}}, PlotLabel -> \"abc\"]");
+    for label in ["Framed[\"abc\"]", "Style[Framed[Row[{\"a\", \"bc\"}]], 18]"]
+    {
+      let svg = export_svg(&format!(
+        "ListPlot[{{{{1, 5}}, {{2, 7}}}}, PlotLabel -> {label}]"
+      ));
+      assert_eq!(
+        svg.matches("<rect").count(),
+        plain.matches("<rect").count() + 1,
+        "{label}: {svg}"
+      );
+    }
+  }
+}
+
+#[test]
+fn graphics_grid_of_tooltipped_plots_draws_the_plots_not_source() {
+  let svg = export_svg(
+    "GraphicsGrid[{{Tooltip[ArrayPlot[{{1, 0}, {0, 1}}], \
+     ArrayPlot[{{0, 1}}]], ArrayPlot[{{0, 1}, {1, 0}}]}}]",
+  );
+  assert!(!svg.contains("Tooltip"), "{svg}");
+  assert!(!svg.contains("<text"), "{svg}");
+  let single = export_svg("Tooltip[ArrayPlot[{{1, 0}, {0, 1}}], \"hint\"]");
+  assert!(!single.contains("hint"), "{single}");
+  assert!(!single.contains("<text"), "{single}");
 }
