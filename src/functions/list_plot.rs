@@ -1231,6 +1231,27 @@ fn interpolate_series(
     .collect()
 }
 
+/// Make the automatic plot range cover a numeric `AxesOrigin`, by adding
+/// the origin's coordinates as range-only points to every series.
+fn include_axes_origin(
+  range_series: &mut [Vec<(f64, f64)>],
+  origin: (Option<f64>, Option<f64>),
+) {
+  for series in range_series.iter_mut() {
+    let Some(&(x0, y0)) =
+      series.iter().find(|(x, y)| x.is_finite() && y.is_finite())
+    else {
+      continue;
+    };
+    if let Some(ox) = origin.0 {
+      series.push((ox, y0));
+    }
+    if let Some(oy) = origin.1 {
+      series.push((x0, oy));
+    }
+  }
+}
+
 /// Compute x/y ranges from data with 4% padding.
 fn compute_ranges(all_series: &[Vec<(f64, f64)>]) -> ((f64, f64), (f64, f64)) {
   compute_ranges_scaled(all_series, false, false)
@@ -1464,6 +1485,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if parsed.layout != PanelLayout::Overlaid && draw_series.len() > 1 {
+    include_axes_origin(&mut range_series, parsed.opts.axes_origin);
     return render_panel_layout(
       &draw_series,
       &range_series,
@@ -1472,6 +1494,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       !parsed.joined,
     );
   }
+  include_axes_origin(&mut range_series, parsed.opts.axes_origin);
   let (x_range, y_range) = compute_ranges(&range_series);
   let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);

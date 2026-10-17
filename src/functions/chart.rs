@@ -100,6 +100,8 @@ pub(crate) struct StyledLabel {
   pub italic: bool,
   pub color: Option<Color>,
   pub font_size: Option<f64>,
+  /// `Framed[…]` title: drawn inside a thin box.
+  pub framed: bool,
 }
 
 impl StyledLabel {
@@ -343,6 +345,15 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   if let Some(inner) = text_wrapper_content(expr) {
     return parse_styled_label(inner);
   }
+  // `Framed[title]` boxes the title it would otherwise draw.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Framed"
+    && !args.is_empty()
+  {
+    let mut label = parse_styled_label(&args[0])?;
+    label.framed = true;
+    return Some(label);
+  }
   // `Invisible[…]` paints nothing — a Demonstration wraps a `Text[…]`
   // label in it to hide one item (e.g. a hidden edge's name) while keeping
   // the surrounding code uniform across all items. Falling through to the
@@ -372,6 +383,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       italic: false,
       color: None,
       font_size: None,
+      framed: false,
     });
   }
   if let Expr::FunctionCall { name, args } = expr
@@ -395,7 +407,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     && name == "Style"
     && !args.is_empty()
     && matches!(&args[0], Expr::FunctionCall { name, args }
-        if (name == "Grid" || name == "Column") && !args.is_empty())
+        if matches!(name.as_str(), "Grid" | "Column" | "Framed")
+          && !args.is_empty())
   {
     let mut label = parse_styled_label(&args[0])?;
     let (bold, italic, color, font_size) =
@@ -422,6 +435,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         italic: false,
         color: None,
         font_size: None,
+        framed: false,
       })
     }
     Expr::String(s) => Some(StyledLabel {
@@ -432,6 +446,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       italic: false,
       color: None,
       font_size: None,
+      framed: false,
     }),
     Expr::Identifier(s) => Some(StyledLabel {
       text: s.clone(),
@@ -441,6 +456,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       italic: false,
       color: None,
       font_size: None,
+      framed: false,
     }),
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
@@ -468,6 +484,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         italic,
         color,
         font_size,
+        framed: false,
       })
     }
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
@@ -486,6 +503,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           italic: false,
           color: None,
           font_size: None,
+          framed: false,
         })
       }
     }
