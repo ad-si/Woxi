@@ -14273,6 +14273,40 @@ mod list_convolve {
   use super::*;
 
   #[test]
+  fn two_dimensional_padding_array() {
+    // A padding array tiles outwards from the data edges.
+    assert_eq!(
+      interpret(
+        "ListConvolve[{{1, 2}, {3, 4}}, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 1, {{10, 20}, {30, 40}}]"
+      )
+      .unwrap(),
+      "{{291, 244, 257}, {167, 23, 33}, {219, 53, 63}}"
+    );
+  }
+
+  #[test]
+  fn two_dimensional_scalar_padding() {
+    assert_eq!(
+      interpret(
+        "ListConvolve[{{1, 2}, {3, 4}}, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 1, 0]"
+      )
+      .unwrap(),
+      "{{1, 4, 7}, {7, 23, 33}, {19, 53, 63}}"
+    );
+  }
+
+  #[test]
+  fn two_dimensional_real_padding_array() {
+    assert_eq!(
+      interpret(
+        "ListConvolve[{{1., 2}, {3, 4}}, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 1, {{10, 20}, {30, 40}}]"
+      )
+      .unwrap(),
+      "{{291., 244., 257.}, {167., 23., 33.}, {219., 53., 63.}}"
+    );
+  }
+
+  #[test]
   fn symbolic() {
     assert_eq!(
       interpret("ListConvolve[{1, 1, 1}, {a, b, c, d, e}]").unwrap(),
