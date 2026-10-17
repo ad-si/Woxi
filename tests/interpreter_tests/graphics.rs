@@ -36237,4 +36237,29 @@ mod static_dynamic_controls {
     assert!(!svg.contains("hint"));
     assert!(svg.contains("#BCD6EE"), "the current choice is pressed");
   }
+
+  #[test]
+  fn color_data_visible_spectrum_maps_wavelength_to_rgb() {
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", 510]").unwrap(),
+      "RGBColor[0., 1., 0.]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", 700]").unwrap(),
+      "RGBColor[1., 0., 0.]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", 300]").unwrap(),
+      "RGBColor[0., 0., 0.]"
+    );
+  }
+
+  #[test]
+  fn plot_style_with_visible_spectrum_color_draws_the_curve() {
+    let svg = export_svg(
+      "ParametricPlot[{2.5, x}, {x, 0, 8.5}, \
+       PlotStyle -> ColorData[\"VisibleSpectrum\", 510]]",
+    );
+    assert!(!svg.contains("ColorData"), "no source text: {svg}");
+  }
 }
