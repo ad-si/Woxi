@@ -7743,6 +7743,36 @@ mod plot3d {
       }
     }
 
+    // `FrameTicks -> {xspec, yspec}` keeps the ticks of one axis only, and
+    // the nested `{{left, right}, {bottom, top}}` form says the same per
+    // edge.
+    #[test]
+    fn frame_ticks_per_axis_on_list_density_plot() {
+      let labels = |ticks: &str| {
+        export_svg(&format!(
+          "ListDensityPlot[Flatten[Table[{{x, y, x y}}, {{x, 0, 3}}, \
+           {{y, 0, 1, 1/2}}], 1]{ticks}]"
+        ))
+        .matches("<text")
+        .count()
+      };
+      let all = labels("");
+      let x_only = labels(", FrameTicks -> {Automatic, None}");
+      let y_only = labels(", FrameTicks -> {None, Automatic}");
+      assert!(x_only > 0 && x_only < all, "{x_only} of {all}");
+      assert!(y_only > 0 && y_only < all, "{y_only} of {all}");
+      assert_eq!(x_only + y_only, all);
+      assert_eq!(
+        labels(", FrameTicks -> {{None, None}, {Automatic, None}}"),
+        x_only
+      );
+      assert_eq!(
+        labels(", FrameTicks -> {{Automatic, None}, {None, None}}"),
+        y_only
+      );
+      assert_eq!(labels(", FrameTicks -> {None, None}"), 0);
+    }
+
     // With a single series a `PlotStyle` list is one combined style rather
     // than a per-series cycle, so `{PointSize[…], Red}` gives one red
     // series. With several series the list still cycles.
