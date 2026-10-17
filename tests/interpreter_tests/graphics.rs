@@ -36330,6 +36330,29 @@ mod static_dynamic_controls {
     let svg = export_svg("Row[{\"length = \", NumberForm[0.25234, 4]}]");
     assert!(!svg.contains("NumberForm["), "no source text: {svg}");
   }
+
+  /// `Inset[Text[…], pos]` places the text like `Text[…, pos]`; the inner
+  /// `Text` head must not be printed as literal source.
+  #[test]
+  fn inset_of_text_places_the_text() {
+    let svg = export_svg(
+      "Graphics[Inset[Text[Style[Row[{\"a \", Subscript[\"F\", 2]}], 10, Red]], \
+       {0, 0}]]",
+    );
+    assert!(!svg.contains("Text["), "no source text: {svg}");
+    assert!(svg.contains("rgb(255,0,0)"), "keeps the Red style: {svg}");
+  }
+
+  /// The same holds for an inset text label over a plot.
+  #[test]
+  fn inset_of_text_over_a_plot() {
+    let svg = export_svg(
+      "Show[Plot[x, {x, 0, 1}], Graphics[Inset[Text[\"label\"], {0.5, 0.5}]]]",
+    );
+    assert!(!svg.contains("Text["), "no source text: {svg}");
+    assert!(svg.contains(">label<"), "label is drawn: {svg}");
+  }
+
   /// An explicit `AxesOrigin` is part of the automatic plot range, so the
   /// axes cross inside the picture instead of the data being zoomed in.
   #[test]
