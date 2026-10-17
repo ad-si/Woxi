@@ -6074,6 +6074,23 @@ mod distance_transform {
   use super::*;
 
   #[test]
+  fn graphics_argument_is_rasterized() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Graphics[{Black, Disk[]}]; \
+         ImageDimensions[DistanceTransform[g]] == ImageDimensions[Rasterize[g]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Head[DistanceTransform[Graphics[{Black, Disk[]}]]]").unwrap(),
+      "Image"
+    );
+  }
+
+  #[test]
   fn euclidean_distances() {
     clear_state();
     assert_eq!(

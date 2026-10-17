@@ -7507,6 +7507,18 @@ const EDT_FAR: f64 = 1e18;
 /// semantics here instead.
 pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("DistanceTransform", args);
+  // Graphics are rasterized, like wolframscript does for any image argument.
+  let coerced;
+  let args: &[Expr] = if !matches!(&args[0], Expr::Image { .. })
+    && let Some(img) = coerce_graphics_to_image(&args[0])
+  {
+    let mut v = args.to_vec();
+    v[0] = img;
+    coerced = v;
+    &coerced
+  } else {
+    args
+  };
   let Expr::Image {
     width,
     height,
