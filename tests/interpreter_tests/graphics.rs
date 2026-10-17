@@ -36374,6 +36374,14 @@ mod static_dynamic_controls {
     assert!(!svg.contains("NumberForm["), "no source text: {svg}");
   }
 
+  #[test]
+  fn disk_with_full_turn_sector_draws_a_disk() {
+    let svg =
+      export_svg("Graphics[{Disk[{0, 0}, 1, {0, 2 Pi}], Circle[{0, 0}, 2]}]");
+    assert!(svg.contains("<ellipse") && svg.contains("fill=\"rgb(0,0,0)\""));
+    assert!(!svg.contains("<path"), "no degenerate arc path: {svg}");
+  }
+
   /// A scene of many thin `Tube`s (a maze built from tube walls) must not
   /// tessellate each one into hundreds of rings: that drew ~190 rings per
   /// tube and put close to a million polygons in the picture.

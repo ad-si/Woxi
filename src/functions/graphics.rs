@@ -8430,6 +8430,17 @@ fn render_primitive(
         }
         None => String::new(),
       };
+      // A full turn has coincident arc endpoints, which SVG draws as
+      // nothing; it is a plain disk.
+      if sweep_angle.abs() >= std::f64::consts::TAU - 1e-9 {
+        out.push_str(&format!(
+          "<ellipse cx=\"{scx:.2}\" cy=\"{scy:.2}\" rx=\"{srx:.2}\" ry=\"{sry:.2}\" fill=\"{}\"{}{}/>\n",
+          color.to_svg_rgb(),
+          fill_opacity,
+          stroke_attr,
+        ));
+        return;
+      }
       // Path: move to center, line to arc start, arc to arc end, close
       out.push_str(&format!(
         "<path d=\"M {scx:.2},{scy:.2} L {x1:.2},{y1:.2} A {srx:.2},{sry:.2} 0 {large_arc} {sweep_flag} {x2:.2},{y2:.2} Z\" fill=\"{}\"{}{}/>\n",
