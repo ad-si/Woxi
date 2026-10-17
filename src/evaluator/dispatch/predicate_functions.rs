@@ -1363,12 +1363,12 @@ pub fn dispatch_predicate_functions(
       // the name itself: everything up to and including the final
       // backtick. `b` `c` → `"b` "`, `Foo` `Bar` `x` → `"Foo` `Bar` "`.
       if let Some(last) = sym_name.rfind('`') {
-        return Some(Ok(Expr::String(sym_name[..=last].to_string())));
+        return Some(Ok(str_expr(&sym_name[..=last])));
       }
       // Built-in symbols are in System` context
       let builtin = get_builtin_attributes(&sym_name);
       if !builtin.is_empty() {
-        return Some(Ok(Expr::String("System`".to_string())));
+        return Some(Ok(str_expr("System`")));
       }
       // A name given as a string resolves like one that was read: it names
       // whichever symbol `$ContextPath` makes visible.
@@ -1390,7 +1390,7 @@ pub fn dispatch_predicate_functions(
         }
       }
       // User-defined symbols are in Global` context
-      return Some(Ok(Expr::String("Global`".to_string())));
+      return Some(Ok(str_expr("Global`")));
     }
     // Contexts[] — list known contexts; Contexts["pattern*"] — filter by
     // glob pattern. Woxi only tracks System` and Global` contexts; any other
@@ -2124,7 +2124,7 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
       make_rule("PlotRegion", id("Automatic")),
       make_rule("PreserveImageOptions", id("Automatic")),
       make_rule("Prolog", list(vec![])),
-      make_rule("RotationAction", Expr::String("Fit".to_string())),
+      make_rule("RotationAction", str_expr("Fit")),
       make_rule("SphericalRegion", id("Automatic")),
       make_rule("Ticks", id("Automatic")),
       make_rule("TicksStyle", list(vec![])),

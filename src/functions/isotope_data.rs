@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::element_data::resolve_element;
 
@@ -2509,7 +2508,7 @@ static ISOTOPES: &[Isotope] = &[
   },
 ];
 fn missing_not_available() -> Expr {
-  call1("Missing", Expr::String("NotAvailable".to_string()))
+  call1("Missing", str_expr("NotAvailable"))
 }
 
 /// Canonical isotope name Woxi's entity uses: the parent element's standard
@@ -2523,20 +2522,14 @@ fn canonical_name(iso: &Isotope) -> String {
 fn isotope_entity_property(property: &str) -> Expr {
   call(
     "EntityProperty",
-    vec![
-      Expr::String("Isotope".to_string()),
-      Expr::String(property.to_string()),
-    ],
+    vec![str_expr("Isotope"), str_expr(property)],
   )
 }
 
 fn isotope_entity(iso: &'static Isotope) -> Expr {
   call(
     "Entity",
-    vec![
-      Expr::String("Isotope".to_string()),
-      Expr::String(canonical_name(iso)),
-    ],
+    vec![str_expr("Isotope"), Expr::String(canonical_name(iso))],
   )
 }
 

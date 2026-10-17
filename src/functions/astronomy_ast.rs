@@ -1099,8 +1099,8 @@ fn date_object_instant(jd: f64) -> Expr {
         ]
         .into(),
       ),
-      Expr::String("Instant".to_string()),
-      Expr::String("Gregorian".to_string()),
+      str_expr("Instant"),
+      str_expr("Gregorian"),
       Expr::Real(0.0),
     ]
     .into(),
@@ -1110,7 +1110,7 @@ fn date_object_instant(jd: f64) -> Expr {
 fn angle_quantity(deg: f64) -> Expr {
   call(
     "Quantity",
-    vec![Expr::Real(deg), Expr::String("AngularDegrees".to_string())],
+    vec![Expr::Real(deg), str_expr("AngularDegrees")],
   )
 }
 
@@ -1119,10 +1119,7 @@ fn angle_quantity(deg: f64) -> Expr {
 fn right_ascension_quantity(hours: f64) -> Expr {
   call(
     "Quantity",
-    vec![
-      Expr::Real(hours),
-      Expr::String("HoursOfRightAscension".to_string()),
-    ],
+    vec![Expr::Real(hours), str_expr("HoursOfRightAscension")],
   )
 }
 
@@ -1172,8 +1169,8 @@ pub fn moon_phase_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "Name" => Ok(call(
       "Entity",
       vec![
-        Expr::String("MoonPhase".to_string()),
-        Expr::String(phase_entity_name(elongation).to_string()),
+        str_expr("MoonPhase"),
+        str_expr(phase_entity_name(elongation)),
       ],
     )),
     _ => Ok(unevaluated("MoonPhase", args)),
@@ -1385,9 +1382,9 @@ pub fn sidereal_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "MixedUnit".to_string(),
         args: vec![Expr::List(
           vec![
-            Expr::String("HoursOfRightAscension".to_string()),
-            Expr::String("MinutesOfRightAscension".to_string()),
-            Expr::String("SecondsOfRightAscension".to_string()),
+            str_expr("HoursOfRightAscension"),
+            str_expr("MinutesOfRightAscension"),
+            str_expr("SecondsOfRightAscension"),
           ]
           .into(),
         )]
@@ -1411,7 +1408,7 @@ fn sun_event_ast(name: &str, rise: bool, args: &[Expr]) -> Expr {
     // The event on the given UTC calendar day
     match sun_rise_set(jd, lat, lon) {
       Some((r, s)) => date_object_instant(if rise { r } else { s }),
-      None => call1("Missing", Expr::String("NotApplicable".to_string())),
+      None => call1("Missing", str_expr("NotApplicable")),
     }
   } else {
     // No date given: the next event after now (skipping polar
@@ -1425,7 +1422,7 @@ fn sun_event_ast(name: &str, rise: bool, args: &[Expr]) -> Expr {
         // Event already passed today; the loop moves on to the next day.
       }
     }
-    call1("Missing", Expr::String("NotApplicable".to_string()))
+    call1("Missing", str_expr("NotApplicable"))
   }
 }
 
@@ -1498,13 +1495,7 @@ pub fn solar_eclipse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// The eclipse "Type" property as an `Entity["EclipseType", …]`, matching
 /// Wolfram's classification value.
 fn eclipse_type_entity(kind: &str) -> Expr {
-  call(
-    "Entity",
-    vec![
-      Expr::String("EclipseType".to_string()),
-      Expr::String(kind.to_string()),
-    ],
-  )
+  call("Entity", vec![str_expr("EclipseType"), str_expr(kind)])
 }
 
 /// LunarEclipse[date?, property?] — the next lunar eclipse after the

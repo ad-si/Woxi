@@ -203,7 +203,7 @@ impl Cwd {
         )
       })
       .collect();
-    let opt = |k: &str, v: Expr| rule_expr(Expr::String(k.to_string()), v);
+    let opt = |k: &str, v: Expr| rule_expr(str_expr(k), v);
     let opts = Expr::List(
       vec![
         opt("Voices", Expr::Integer(self.voices as i128)),
@@ -725,7 +725,7 @@ fn cwd_property(cwd: &Cwd, prop: &str) -> Expr {
         "WaveletScale",
       ]
       .iter()
-      .map(|s| Expr::String(s.to_string()))
+      .map(|s| str_expr(s))
       .collect::<Vec<_>>()
       .into(),
     ),
@@ -765,7 +765,7 @@ fn cwd_property(cwd: &Cwd, prop: &str) -> Expr {
       crate::emit_message(&format!(
         "ContinuousWaveletData::prop: {prop} is not a valid property."
       ));
-      call1("Missing", Expr::String("NotAvailable".into()))
+      call1("Missing", str_expr("NotAvailable"))
     }
   }
 }

@@ -562,10 +562,7 @@ pub fn dispatch_complex_and_special(
         if was_unevaluated_wrap && !has_own && !has_down && !has_attrs {
           return Some(Ok(call(
             "Missing",
-            vec![
-              Expr::String("UnknownSymbol".to_string()),
-              Expr::String(sym.clone()),
-            ],
+            vec![str_expr("UnknownSymbol"), Expr::String(sym.clone())],
           )));
         }
 
@@ -2596,11 +2593,7 @@ fn row_box(row: Vec<Expr>) -> Expr {
 
 /// Wrap a box form in parentheses: RowBox[{"(", inner, ")"}].
 fn paren_box(inner: Expr) -> Expr {
-  let row = vec![
-    Expr::String("(".to_string()),
-    inner,
-    Expr::String(")".to_string()),
-  ];
+  let row = vec![str_expr("("), inner, str_expr(")")];
   row_box(row)
 }
 
@@ -2667,7 +2660,7 @@ fn string_form_boxes(expr: &Expr) -> Option<Expr> {
   for (i, segment) in marked.split(MARK).enumerate() {
     if i % 2 == 0 {
       if !segment.is_empty() {
-        pieces.push(Expr::String(segment.to_string()));
+        pieces.push(str_expr(segment));
       }
     } else if let Ok(idx) = segment.parse::<usize>()
       && let Some(value) = values.get(idx)
@@ -2777,7 +2770,7 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
     Expr::Integer(n) => {
       if *n < 0 {
         let row = vec![
-          Expr::String("-".to_string()),
+          str_expr("-"),
           // `unsigned_abs` avoids overflow when `n == i128::MIN`
           // (e.g. `-2^127`), where `-n` has no representable value.
           Expr::String(n.unsigned_abs().to_string()),
@@ -2789,10 +2782,7 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
     Expr::BigInteger(n) => {
       let s = n.to_string();
       if let Some(rest) = s.strip_prefix('-') {
-        let row = vec![
-          Expr::String("-".to_string()),
-          Expr::String(rest.to_string()),
-        ];
+        let row = vec![str_expr("-"), str_expr(rest)];
         return row_box(row);
       }
       return Expr::String(s);
@@ -2800,7 +2790,7 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
     Expr::Real(f) => {
       let text = format!("{}`", crate::syntax::format_real(f.abs()));
       if *f < 0.0 {
-        let row = vec![Expr::String("-".to_string()), Expr::String(text)];
+        let row = vec![str_expr("-"), Expr::String(text)];
         return row_box(row);
       }
       return Expr::String(text);
@@ -2808,10 +2798,7 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
     Expr::BigFloat(digits, prec) => {
       let text = crate::syntax::format_bigfloat(digits, *prec);
       if let Some(without_minus) = text.strip_prefix('-') {
-        let row = vec![
-          Expr::String("-".to_string()),
-          Expr::String(without_minus.to_string()),
-        ];
+        let row = vec![str_expr("-"), str_expr(without_minus)];
         return row_box(row);
       }
       return Expr::String(text);
@@ -2862,23 +2849,20 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
     } => ("Times", vec![Expr::Integer(-1), *operand.clone()]),
     _ => return Expr::String(expr_to_string(expr)),
   };
-  let mut parts: Vec<Expr> = vec![
-    Expr::String(head.to_string()),
-    Expr::String("[".to_string()),
-  ];
+  let mut parts: Vec<Expr> = vec![str_expr(head), str_expr("[")];
   if args.len() == 1 {
     parts.push(expr_to_full_box_form(&args[0]));
   } else if args.len() >= 2 {
     let mut inner = Vec::with_capacity(args.len() * 2 - 1);
     for (i, arg) in args.iter().enumerate() {
       if i > 0 {
-        inner.push(Expr::String(",".to_string()));
+        inner.push(str_expr(","));
       }
       inner.push(expr_to_full_box_form(arg));
     }
     parts.push(row_box(inner));
   }
-  parts.push(Expr::String("]".to_string()));
+  parts.push(str_expr("]"));
   row_box(parts)
 }
 
@@ -3121,13 +3105,12 @@ fn option_number_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
 /// `RowBox[{mantissa, " × ", SuperscriptBox["10", exp]}]`.
 fn scientific_value_box(mantissa: &str, exp: Option<i64>) -> Expr {
   match exp {
-    None => Expr::String(mantissa.to_string()),
+    None => str_expr(mantissa),
     Some(e) => {
-      let script_box =
-        vec![Expr::String("10".to_string()), Expr::String(e.to_string())];
+      let script_box = vec![str_expr("10"), Expr::String(e.to_string())];
       let row = vec![
-        Expr::String(mantissa.to_string()),
-        Expr::String(" \u{00d7} ".to_string()),
+        str_expr(mantissa),
+        str_expr(" \u{00d7} "),
         call("SuperscriptBox", script_box),
       ];
 
@@ -3172,16 +3155,12 @@ fn wrap_list_number_display_box(elems: Vec<Expr>, head: &str) -> Expr {
   let mut row = Vec::with_capacity(elems.len().saturating_mul(2));
   for (i, elem) in elems.into_iter().enumerate() {
     if i > 0 {
-      row.push(Expr::String(",".to_string()));
+      row.push(str_expr(","));
     }
     row.push(elem);
   }
   let inner_row = row_box(row);
-  let braces = vec![
-    Expr::String("{".to_string()),
-    inner_row,
-    Expr::String("}".to_string()),
-  ];
+  let braces = vec![str_expr("{"), inner_row, str_expr("}")];
   let braced = row_box(braces);
   call("TagBox", vec![braced, Expr::Identifier(head.to_string())])
 }
@@ -3234,34 +3213,34 @@ fn derivative_boxes(expr: &Expr) -> Option<Expr> {
   let script = if let [n @ 1..=3] = counts.as_slice() {
     Expr::String("\u{2032}".repeat(*n as usize))
   } else {
-    let mut parts = vec![Expr::String("(".to_string())];
+    let mut parts = vec![str_expr("(")];
     for (i, n) in counts.iter().enumerate() {
       if i > 0 {
-        parts.push(Expr::String(",".to_string()));
+        parts.push(str_expr(","));
       }
       parts.push(Expr::String(n.to_string()));
     }
-    parts.push(Expr::String(")".to_string()));
+    parts.push(str_expr(")"));
     row_box(parts)
   };
   let primed = call("SuperscriptBox", vec![expr_to_box_form(func), script]);
   if applied.is_empty() {
     return Some(primed);
   }
-  let mut parts = vec![primed, Expr::String("[".to_string())];
+  let mut parts = vec![primed, str_expr("[")];
   if applied.len() == 1 {
     parts.push(expr_to_box_form(&applied[0]));
   } else {
     let mut inner = Vec::new();
     for (i, arg) in applied.iter().enumerate() {
       if i > 0 {
-        inner.push(Expr::String(",".to_string()));
+        inner.push(str_expr(","));
       }
       inner.push(expr_to_box_form(arg));
     }
     parts.push(row_box(inner));
   }
-  parts.push(Expr::String("]".to_string()));
+  parts.push(str_expr("]"));
   Some(row_box(parts))
 }
 
@@ -3334,7 +3313,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     Expr::Integer(n) => {
       if *n < 0 {
         let row = vec![
-          Expr::String("-".to_string()),
+          str_expr("-"),
           // `unsigned_abs` avoids overflow when `n == i128::MIN`
           // (e.g. `-2^127`), where `-n` has no representable value.
           Expr::String(n.unsigned_abs().to_string()),
@@ -3347,10 +3326,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     }
     Expr::BigInteger(n) => {
       if *n < 0i128.into() {
-        let row = vec![
-          Expr::String("-".to_string()),
-          Expr::String((-n.clone()).to_string()),
-        ];
+        let row = vec![str_expr("-"), Expr::String((-n.clone()).to_string())];
         row_box(row)
       } else {
         Expr::String(n.to_string())
@@ -3370,7 +3346,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         format!("{abs_text}`")
       };
       if *f < 0.0 {
-        let row = vec![Expr::String("-".to_string()), Expr::String(text)];
+        let row = vec![str_expr("-"), Expr::String(text)];
         row_box(row)
       } else {
         Expr::String(text)
@@ -3381,10 +3357,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // precision-tagged big-float literals.
       let text = crate::syntax::format_bigfloat(digits, *prec);
       if let Some(without_minus) = text.strip_prefix('-') {
-        let row = vec![
-          Expr::String("-".to_string()),
-          Expr::String(without_minus.to_string()),
-        ];
+        let row = vec![str_expr("-"), str_expr(without_minus)];
         row_box(row)
       } else {
         Expr::String(text)
@@ -3418,7 +3391,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         let mut inner_args: Vec<Expr> = Vec::with_capacity(indices.len() * 2);
         for (i, idx) in indices.iter().enumerate() {
           if i > 0 {
-            inner_args.push(Expr::String(",".to_string()));
+            inner_args.push(str_expr(","));
           }
           inner_args.push(expr_to_box_form(idx));
         }
@@ -3426,9 +3399,9 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       };
       let row_args = vec![
         expr_to_box_form(head_expr),
-        Expr::String("\u{301A}".to_string()),
+        str_expr("\u{301A}"),
         inner_box,
-        Expr::String("\u{301B}".to_string()),
+        str_expr("\u{301B}"),
       ];
       row_box(row_args)
     }
@@ -3448,8 +3421,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         UnaryOperator::Minus => "-",
         UnaryOperator::Not => "!",
       };
-      let row =
-        vec![Expr::String(op_str.to_string()), expr_to_box_form(operand)];
+      let row = vec![str_expr(op_str), expr_to_box_form(operand)];
       row_box(row)
     }
     // BinaryOp::Plus/Minus/Times/And/Or/StringJoin/Alternatives
@@ -3497,7 +3469,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           ComparisonOp::SameQ => "===",
           ComparisonOp::UnsameQ => "=!=",
         };
-        parts.push(Expr::String(op_str.to_string()));
+        parts.push(str_expr(op_str));
         parts.push(expr_to_box_form(&operands[i + 1]));
       }
       row_box(parts)
@@ -3509,7 +3481,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     } => {
       let row = vec![
         expr_to_box_form(pattern),
-        Expr::String("\u{f522}".to_string()), // Mathematica's Rule arrow
+        str_expr("\u{f522}"), // Mathematica's Rule arrow
         expr_to_box_form(replacement),
       ];
       row_box(row)
@@ -3521,7 +3493,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     } => {
       let row = vec![
         expr_to_box_form(pattern),
-        Expr::String("\u{f51f}".to_string()), // Mathematica's RuleDelayed arrow
+        str_expr("\u{f51f}"), // Mathematica's RuleDelayed arrow
         expr_to_box_form(replacement),
       ];
       row_box(row)
@@ -3529,19 +3501,19 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     // Association: <|k1 -> v1, ...|>
     Expr::Association(items) => {
       let mut parts = Vec::new();
-      parts.push(Expr::String("<|".to_string()));
+      parts.push(str_expr("<|"));
       for (i, (k, v)) in items.iter().enumerate() {
         if i > 0 {
-          parts.push(Expr::String(",".to_string()));
+          parts.push(str_expr(","));
         }
         let row = vec![
           expr_to_box_form(k),
-          Expr::String("\u{f522}".to_string()),
+          str_expr("\u{f522}"),
           expr_to_box_form(v),
         ];
         parts.push(row_box(row));
       }
-      parts.push(Expr::String("|>".to_string()));
+      parts.push(str_expr("|>"));
       row_box(parts)
     }
     // CompoundExpr: e1; e2; e3
@@ -3549,7 +3521,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       let mut parts = Vec::new();
       for (i, e) in exprs.iter().enumerate() {
         if i > 0 {
-          parts.push(Expr::String(";".to_string()));
+          parts.push(str_expr(";"));
         }
         parts.push(expr_to_box_form(e));
       }
@@ -3567,7 +3539,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             && ta.len() == 2
             && matches!(&ta[0], Expr::Integer(-1))
           {
-            parts.push(Expr::String("-".to_string()));
+            parts.push(str_expr("-"));
             parts.push(expr_to_box_form(&ta[1]));
             continue;
           }
@@ -3577,7 +3549,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             && ta.len() >= 2
             && matches!(&ta[0], Expr::Integer(n) if *n < 0)
           {
-            parts.push(Expr::String("-".to_string()));
+            parts.push(str_expr("-"));
             // Negate the coefficient and box the positive term
             let mut pos_args = ta.clone();
             if let Expr::Integer(n) = &ta[0] {
@@ -3598,7 +3570,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             && ta.len() >= 2
             && matches!(&ta[0], Expr::BigInteger(n) if n.sign() == Sign::Minus)
           {
-            parts.push(Expr::String("-".to_string()));
+            parts.push(str_expr("-"));
             let mut pos_args = ta.clone();
             if let Expr::BigInteger(n) = &ta[0] {
               pos_args[0] = Expr::BigInteger(-n);
@@ -3610,7 +3582,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             parts.push(expr_to_box_form(&pos_term));
             continue;
           }
-          parts.push(Expr::String("+".to_string()));
+          parts.push(str_expr("+"));
         }
         parts.push(expr_to_box_form(arg));
       }
@@ -3626,17 +3598,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // so the leading minus applies to the whole product without showing
       // a literal "1" coefficient.
       if args.len() == 2 {
-        let row = vec![
-          Expr::String("-".to_string()),
-          box_with_paren_if_needed(&args[1]),
-        ];
+        let row = vec![str_expr("-"), box_with_paren_if_needed(&args[1])];
         return row_box(row);
       }
       let rest = unevaluated("Times", &args[1..]);
-      let row = vec![
-        Expr::String("-".to_string()),
-        paren_box(expr_to_box_form(&rest)),
-      ];
+      let row = vec![str_expr("-"), paren_box(expr_to_box_form(&rest))];
       row_box(row)
     }
     Expr::FunctionCall { name, args }
@@ -3649,10 +3615,10 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         let pos_n = Expr::Integer(-n);
         let inner = vec![
           expr_to_box_form(&pos_n),
-          Expr::String(" ".to_string()),
+          str_expr(" "),
           expr_to_box_form(&args[1]),
         ];
-        let row = vec![Expr::String("-".to_string()), row_box(inner)];
+        let row = vec![str_expr("-"), row_box(inner)];
 
         row_box(row)
       } else {
@@ -3675,7 +3641,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       let mut parts = Vec::new();
       for (i, arg) in args.iter().enumerate() {
         if i > 0 {
-          parts.push(Expr::String(" ".to_string()));
+          parts.push(str_expr(" "));
         }
         parts.push(box_with_paren_if_needed(arg));
       }
@@ -3696,10 +3662,8 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         if matches!(&ra[0], Expr::Integer(-1))
           && matches!(&ra[1], Expr::Integer(2))
         {
-          let frac = vec![
-            Expr::String("1".to_string()),
-            call1("SqrtBox", expr_to_box_form(&args[0])),
-          ];
+          let frac =
+            vec![str_expr("1"), call1("SqrtBox", expr_to_box_form(&args[0]))];
           return call("FractionBox", frac);
         }
       }
@@ -3761,10 +3725,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       } else {
         "UnderscriptBox"
       };
-      call(
-        box_name,
-        vec![expr_to_box_form(&args[0]), Expr::String("_".to_string())],
-      )
+      call(box_name, vec![expr_to_box_form(&args[0]), str_expr("_")])
     }
     expr if is_sqrt(expr).is_some() => {
       let sqrt_arg = is_sqrt(expr).unwrap();
@@ -3806,10 +3767,8 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         if matches!(&ra[0], Expr::Integer(-1))
           && matches!(&ra[1], Expr::Integer(2))
         {
-          let frac = vec![
-            Expr::String("1".to_string()),
-            call1("SqrtBox", expr_to_box_form(left)),
-          ];
+          let frac =
+            vec![str_expr("1"), call1("SqrtBox", expr_to_box_form(left))];
           return call("FractionBox", frac);
         }
       }
@@ -3833,7 +3792,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     // List → RowBox[{"{", RowBox[{elem, ",", elem, ...}], "}"}]
     Expr::List(items) => {
       let mut parts = Vec::new();
-      parts.push(Expr::String("{".to_string()));
+      parts.push(str_expr("{"));
       if !items.is_empty() {
         if items.len() == 1 {
           parts.push(box_subexpr_via_user_rules(&items[0]));
@@ -3841,14 +3800,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           let mut inner = Vec::new();
           for (i, item) in items.iter().enumerate() {
             if i > 0 {
-              inner.push(Expr::String(",".to_string()));
+              inner.push(str_expr(","));
             }
             inner.push(box_subexpr_via_user_rules(item));
           }
           parts.push(row_box(inner));
         }
       }
-      parts.push(Expr::String("}".to_string()));
+      parts.push(str_expr("}"));
       row_box(parts)
     }
     // Quantity[magnitude, unit] → RowBox[{box(magnitude), " ", unit-boxes}]
@@ -3856,8 +3815,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       if name == "Quantity" && args.len() == 2 =>
     {
       let unit_boxes = unit_to_box_form(&args[1], &args[0]);
-      let mut parts =
-        vec![expr_to_box_form(&args[0]), Expr::String(" ".to_string())];
+      let mut parts = vec![expr_to_box_form(&args[0]), str_expr(" ")];
       parts.push(unit_boxes);
       row_box(parts)
     }
@@ -4011,10 +3969,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       } else {
         format!("{name}ColorSwatchTemplate")
       };
-      let assoc = Expr::Association(vec![(
-        Expr::String("color".to_string()),
-        expr.clone(),
-      )]);
+      let assoc = Expr::Association(vec![(str_expr("color"), expr.clone())]);
       call("TemplateBox", vec![assoc, Expr::String(template)])
     }
     // Graphics[...] / Graphics3D[...] get dedicated box wrappers matching
@@ -4156,7 +4111,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         Expr::List(
           vec![expr_to_box_form(&label), Expr::String(uri_str)].into(),
         ),
-        Expr::String("HyperlinkURL".to_string()),
+        str_expr("HyperlinkURL"),
       ];
       call("TemplateBox", template)
     }
@@ -4173,7 +4128,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args } => {
       let mut parts = Vec::new();
       parts.push(Expr::String(name.clone()));
-      parts.push(Expr::String("[".to_string()));
+      parts.push(str_expr("["));
       if !args.is_empty() {
         if args.len() == 1 {
           parts.push(box_subexpr_via_user_rules(&args[0]));
@@ -4181,14 +4136,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           let mut inner = Vec::new();
           for (i, arg) in args.iter().enumerate() {
             if i > 0 {
-              inner.push(Expr::String(",".to_string()));
+              inner.push(str_expr(","));
             }
             inner.push(box_subexpr_via_user_rules(arg));
           }
           parts.push(row_box(inner));
         }
       }
-      parts.push(Expr::String("]".to_string()));
+      parts.push(str_expr("]"));
       row_box(parts)
     }
     // Default: use the string representation
@@ -4288,7 +4243,7 @@ fn trim_bigfloat_to_precision_for_output(expr: &Expr) -> Expr {
 // evaluation happens.
 
 fn tf_string(s: &str) -> Expr {
-  Expr::String(s.to_string())
+  str_expr(s)
 }
 
 fn tf_row(items: Vec<Expr>) -> Expr {
@@ -4337,7 +4292,7 @@ fn tf_thin_space() -> Expr {
   if TF_BOX_TEXT.get() {
     tf_string(" ")
   } else {
-    Expr::String("\u{2009}".to_string())
+    str_expr("\u{2009}")
   }
 }
 
@@ -4449,7 +4404,7 @@ pub fn traditional_boxes_to_standard(boxes: &Expr) -> Expr {
         .find(|(_, text)| text == s)
         .map_or(s.as_str(), |(glyph, _)| glyph);
       match TF_SYMBOL_GLYPHS.iter().find(|(_, g)| *g == glyph) {
-        Some((symbol, _)) => Expr::String(symbol.to_string()),
+        Some((symbol, _)) => str_expr(symbol),
         None => boxes.clone(),
       }
     }
@@ -4476,7 +4431,7 @@ pub fn traditional_boxes_to_standard(boxes: &Expr) -> Expr {
           .find(|(_, display)| display == head)
           .map_or(head.as_str(), |(function, _)| function);
         return row_box(vec![
-          Expr::String(head.to_string()),
+          str_expr(head),
           tf_string("["),
           arg.clone(),
           tf_string("]"),
@@ -4490,7 +4445,7 @@ pub fn traditional_boxes_to_standard(boxes: &Expr) -> Expr {
         let items: Vec<Expr> = items
           .iter()
           .map(|item| match item {
-            Expr::String(s) if s == "=" => Expr::String("==".to_string()),
+            Expr::String(s) if s == "=" => str_expr("=="),
             other => other.clone(),
           })
           .collect();
@@ -5331,7 +5286,7 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       };
       call(
         "TemplateBox",
-        vec![call("List", elements), Expr::String(template.to_string())],
+        vec![call("List", elements), str_expr(template)],
       )
     }
     // `Row[{a, b, …}]` concatenates its parts; `Row[{…}, sep]` joins them
@@ -5363,7 +5318,7 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
                   lines
                     .last_mut()
                     .unwrap()
-                    .push(tf_display(&Expr::String(seg.to_string())));
+                    .push(tf_display(&str_expr(seg)));
                 }
               }
             }
@@ -5721,7 +5676,7 @@ fn unit_to_box_form(unit: &Expr, magnitude: &Expr) -> Expr {
     } => {
       let row = vec![
         unit_to_box_form_inner(left),
-        Expr::String("/".to_string()),
+        str_expr("/"),
         unit_to_box_form_inner(right),
       ];
       row_box(row)
@@ -5733,7 +5688,7 @@ fn unit_to_box_form(unit: &Expr, magnitude: &Expr) -> Expr {
     } => {
       let row = vec![
         unit_to_box_form_inner(left),
-        Expr::String("\u{22c5}".to_string()),
+        str_expr("\u{22c5}"),
         unit_to_box_form_inner(right),
       ];
       row_box(row)
@@ -5762,12 +5717,12 @@ fn unit_to_box_form(unit: &Expr, magnitude: &Expr) -> Expr {
         join_with_dot(numer_parts)
       } else {
         let numer = if numer_parts.is_empty() {
-          Expr::String("1".to_string())
+          str_expr("1")
         } else {
           join_with_dot(numer_parts)
         };
         let denom = join_with_dot(denom_parts);
-        let row = vec![numer, Expr::String("/".to_string()), denom];
+        let row = vec![numer, str_expr("/"), denom];
         row_box(row)
       }
     }
@@ -5788,7 +5743,7 @@ fn unit_to_box_form_inner(unit: &Expr) -> Expr {
   match unit {
     Expr::Identifier(s) | Expr::String(s) => {
       let abbr = unit_to_abbreviation(s).unwrap_or(s);
-      Expr::String(abbr.to_string())
+      str_expr(abbr)
     }
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
@@ -5797,7 +5752,7 @@ fn unit_to_box_form_inner(unit: &Expr) -> Expr {
     } => {
       let row = vec![
         unit_to_box_form_inner(left),
-        Expr::String("/".to_string()),
+        str_expr("/"),
         unit_to_box_form_inner(right),
       ];
       row_box(row)
@@ -5809,7 +5764,7 @@ fn unit_to_box_form_inner(unit: &Expr) -> Expr {
     } => {
       let row = vec![
         unit_to_box_form_inner(left),
-        Expr::String("\u{22c5}".to_string()),
+        str_expr("\u{22c5}"),
         unit_to_box_form_inner(right),
       ];
       row_box(row)
@@ -5837,12 +5792,12 @@ fn unit_to_box_form_inner(unit: &Expr) -> Expr {
         join_with_dot(numer_parts)
       } else {
         let numer = if numer_parts.is_empty() {
-          Expr::String("1".to_string())
+          str_expr("1")
         } else {
           join_with_dot(numer_parts)
         };
         let denom = join_with_dot(denom_parts);
-        let row = vec![numer, Expr::String("/".to_string()), denom];
+        let row = vec![numer, str_expr("/"), denom];
         row_box(row)
       }
     }
@@ -5858,7 +5813,7 @@ fn join_with_dot(parts: Vec<Expr>) -> Expr {
   let mut result = Vec::new();
   for (i, p) in parts.into_iter().enumerate() {
     if i > 0 {
-      result.push(Expr::String("\u{22c5}".to_string()));
+      result.push(str_expr("\u{22c5}"));
     }
     result.push(p);
   }
@@ -16004,7 +15959,7 @@ fn information_property(sym: &str, property: &str) -> Expr {
   // does not ship.)
   if let Some(info) = crate::evaluator::get_builtin_function_info(sym) {
     return match property {
-      "Usage" => Expr::String(info.description.to_string()),
+      "Usage" => str_expr(info.description),
       "Attributes" => Expr::List(
         get_builtin_attributes(sym)
           .to_vec()
@@ -16015,10 +15970,7 @@ fn information_property(sym: &str, property: &str) -> Expr {
       "FullName" => Expr::String(format!("System`{sym}")),
       _ => call(
         "Missing",
-        vec![
-          Expr::String("UnknownProperty".to_string()),
-          Expr::String(property.to_string()),
-        ],
+        vec![str_expr("UnknownProperty"), str_expr(property)],
       ),
     };
   }
@@ -16060,7 +16012,7 @@ fn information_property(sym: &str, property: &str) -> Expr {
       let value = value.trim();
       // `Usage` and `FullName` are text; the rest are expressions.
       if property == "Usage" || property == "FullName" {
-        return Expr::String(value.to_string());
+        return str_expr(value);
       }
       return crate::syntax::string_to_expr(value)
         .unwrap_or_else(|_| Expr::Raw(value.to_string()));
@@ -16068,9 +16020,6 @@ fn information_property(sym: &str, property: &str) -> Expr {
   }
   call(
     "Missing",
-    vec![
-      Expr::String("UnknownProperty".to_string()),
-      Expr::String(property.to_string()),
-    ],
+    vec![str_expr("UnknownProperty"), str_expr(property)],
   )
 }

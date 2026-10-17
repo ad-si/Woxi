@@ -16,7 +16,6 @@
 //! does. Vertex labellings and hence `"EdgeRules"` follow the
 //! Knowledgebase's, so the two agree entry for entry over the covered slice.
 
-#[allow(unused_imports)]
 use super::*;
 
 /// A graph this module knows how to build. Named entities that *are* one of
@@ -282,10 +281,10 @@ fn vertices_and_edges(spec: &GraphSpec) -> (usize, Vec<(usize, usize)>) {
 fn standard_name(spec: &GraphSpec) -> Expr {
   let canon = canonical(spec);
   if let GraphSpec::Special(name) = canon {
-    return Expr::String(name.to_string());
+    return str_expr(name);
   }
   if let Some((name, ..)) = ALIAS_GRAPHS.iter().find(|(_, _, s)| *s == canon) {
-    return Expr::String(name.to_string());
+    return str_expr(name);
   }
   spec_expr(&canon)
 }
@@ -293,12 +292,10 @@ fn standard_name(spec: &GraphSpec) -> Expr {
 /// A spec as the `{family, size}` list Wolfram spells it with.
 fn spec_expr(spec: &GraphSpec) -> Expr {
   let pair = |family: &str, n: usize| {
-    Expr::List(
-      vec![Expr::String(family.to_string()), Expr::Integer(n as i128)].into(),
-    )
+    Expr::List(vec![str_expr(family), Expr::Integer(n as i128)].into())
   };
   match *spec {
-    GraphSpec::Special(name) => Expr::String(name.to_string()),
+    GraphSpec::Special(name) => str_expr(name),
     GraphSpec::Complete(n) => pair("Complete", n),
     GraphSpec::Cycle(n) => pair("Cycle", n),
     GraphSpec::Path(n) => pair("Path", n),
@@ -306,7 +303,7 @@ fn spec_expr(spec: &GraphSpec) -> Expr {
     GraphSpec::Wheel(n) => pair("Wheel", n),
     GraphSpec::CompleteBipartite(m, k) => Expr::List(
       vec![
-        Expr::String("CompleteBipartite".to_string()),
+        str_expr("CompleteBipartite"),
         Expr::List(
           vec![Expr::Integer(m as i128), Expr::Integer(k as i128)].into(),
         ),
@@ -397,22 +394,12 @@ fn graph_property(
 pub fn graph_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated_call = || Ok(unevaluated("GraphData", args));
   match args {
-    [] => Ok(Expr::List(
-      all_names()
-        .into_iter()
-        .map(|n| Expr::String(n.to_string()))
-        .collect::<Vec<_>>()
-        .into(),
-    )),
+    [] => Ok(Expr::List(all_names().into_iter().map(str_expr).collect())),
     // `GraphData["Properties"]` is a property query, not an entity lookup.
     // Wolfram lists 764 properties; Woxi lists the ones it answers.
-    [Expr::String(p)] if p == "Properties" => Ok(Expr::List(
-      PROPERTIES
-        .iter()
-        .map(|p| Expr::String((*p).to_string()))
-        .collect::<Vec<_>>()
-        .into(),
-    )),
+    [Expr::String(p)] if p == "Properties" => {
+      Ok(Expr::List(PROPERTIES.iter().map(|p| str_expr(p)).collect()))
+    }
     [entity] | [entity, _] => {
       let Some(spec) = resolve(entity) else {
         crate::emit_message(&format!(

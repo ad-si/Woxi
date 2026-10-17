@@ -2006,7 +2006,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let colors = match (&opts.color_function, &opts.color_function_expr) {
     (_, Some(f)) => f.clone(),
     (Some(name), None) => Expr::String(name.clone()),
-    (None, None) => Expr::String("WL14DefaultDensityGradient".to_string()),
+    (None, None) => str_expr("WL14DefaultDensityGradient"),
   };
   let bar = call1(
     "BarLegend",

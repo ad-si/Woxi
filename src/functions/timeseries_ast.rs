@@ -1440,8 +1440,8 @@ fn instant_date_object(date: &Expr) -> Option<Expr> {
     name: "DateObject".to_string(),
     args: vec![
       Expr::List(comps.into()),
-      Expr::String("Instant".to_string()),
-      Expr::String("Gregorian".to_string()),
+      str_expr("Instant"),
+      str_expr("Gregorian"),
       Expr::Real(0.0),
     ]
     .into(),

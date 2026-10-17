@@ -339,10 +339,7 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
           .cloned()
           .collect();
-        gargs.push(Expr::Rule {
-          pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
-          replacement: Box::new(size),
-        });
+        gargs.push(rule_expr(Expr::Identifier("ImageSize".to_string()), size));
         let sized = Expr::FunctionCall {
           name: name.clone(),
           args: gargs.into(),
@@ -835,10 +832,10 @@ pub fn image_type_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   if let Expr::Image { image_type, .. } = &args[0] {
-    return Ok(Expr::String(type_to_str(image_type).to_string()));
+    return Ok(str_expr(type_to_str(image_type)));
   }
   if let Some(t) = image3d_type(&args[0]) {
-    return Ok(Expr::String(type_to_str(&t).to_string()));
+    return Ok(str_expr(type_to_str(&t)));
   }
   crate::emit_message(&format!(
     "ImageType::imginv: Expecting an image or graphics instead of {}.",
@@ -1103,7 +1100,7 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // image (the common case for inputs built from raw NumericArrays).
   if let Expr::Image { color_space, .. } = &args[0] {
     return Ok(match color_space {
-      Some(cs) => Expr::String((*cs).to_string()),
+      Some(cs) => str_expr(cs),
       None => id_expr("Automatic"),
     });
   }
@@ -10846,7 +10843,7 @@ fn image_measurement(
     }
     "Channels" => Some(Expr::Integer(ch as i128)),
     "ColorSpace" => Some(match color_space {
-      Some(name) => Expr::String(name.to_string()),
+      Some(name) => str_expr(name),
       None => id_expr("Automatic"),
     }),
     "ImageDimensions" => Some(Expr::List(
@@ -10928,7 +10925,7 @@ pub fn image_measurements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Some(Ok(Expr::List(
         IMAGE_MEASUREMENT_PROPERTIES
           .iter()
-          .map(|p| Expr::String((*p).to_string()))
+          .map(|p| str_expr(p))
           .collect(),
       )));
     }
@@ -11369,10 +11366,7 @@ pub fn highlight_image_ast(
   };
   let pair =
     |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
-  let rule = |k: &str, v: Expr| Expr::Rule {
-    pattern: Box::new(Expr::Identifier(k.into())),
-    replacement: Box::new(v),
-  };
+  let rule = |k: &str, v: Expr| rule_expr(Expr::Identifier(k.into()), v);
   let mut content = vec![call(
     "Raster",
     vec![

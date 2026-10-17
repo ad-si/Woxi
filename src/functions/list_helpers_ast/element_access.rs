@@ -1590,10 +1590,8 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           show(&key),
           show(&container)
         ));
-        let missing = call(
-          "Missing",
-          vec![Expr::String("KeyAbsent".to_string()), call1("Key", key)],
-        );
+        let missing =
+          call("Missing", vec![str_expr("KeyAbsent"), call1("Key", key)]);
         Ok(Some(missing))
       }
     }

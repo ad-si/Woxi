@@ -2676,7 +2676,7 @@ pub fn bdd_object(table: &[bool], n: usize) -> Expr {
   call(
     "BooleanFunction",
     vec![rule_expr(
-      Expr::String("BDD".to_string()),
+      str_expr("BDD"),
       Expr::List(
         bdd_encoding(table, n)
           .into_iter()

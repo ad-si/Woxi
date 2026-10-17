@@ -10,7 +10,6 @@
 //! and then as SMILES structure specifications. Hydrogen atoms are added
 //! explicitly to fill the normal valences, as wolframscript does.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::element_data::{
   abbreviation_for_atomic_number, is_element_abbreviation,
@@ -588,7 +587,7 @@ fn add_explicit_hydrogens(graph: &mut MolGraph) {
 // ---------------------------------------------------------------------------
 
 fn rule(key: &str, value: Expr) -> Expr {
-  rule_expr(Expr::String(key.to_string()), value)
+  rule_expr(str_expr(key), value)
 }
 
 /// Render an atom for `AtomList` / `MoleculeValue["AtomList"]`: always an
@@ -633,9 +632,9 @@ fn atom_to_molecule_expr(atom: &AtomData) -> Expr {
 }
 
 fn bond_to_expr(bond: &(usize, usize, BondKind)) -> Expr {
-  Expr::FunctionCall {
-    name: "Bond".to_string(),
-    args: vec![
+  call(
+    "Bond",
+    vec![
       Expr::List(
         vec![
           Expr::Integer((bond.0 + 1) as i128),
@@ -643,10 +642,9 @@ fn bond_to_expr(bond: &(usize, usize, BondKind)) -> Expr {
         ]
         .into(),
       ),
-      Expr::String(bond.2.as_str().to_string()),
-    ]
-    .into(),
-  }
+      str_expr(bond.2.as_str()),
+    ],
+  )
 }
 
 fn graph_to_expr(graph: &MolGraph) -> Expr {

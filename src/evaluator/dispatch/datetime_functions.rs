@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// How many date components a granularity keeps: `"Month"` names a year and a
@@ -229,8 +228,8 @@ pub fn dispatch_datetime_functions(
             name: "DateInterval".to_string(),
             args: vec![
               Expr::List(vec![Expr::List(vec![start, end].into())].into()),
-              Expr::String("Day".to_string()),
-              Expr::String("Gregorian".to_string()),
+              str_expr("Day"),
+              str_expr("Gregorian"),
               id_expr("None"),
             ]
             .into(),
@@ -320,7 +319,7 @@ pub fn dispatch_datetime_functions(
               inner_args
                 .get(2)
                 .cloned()
-                .unwrap_or_else(|| Expr::String("Gregorian".to_string())),
+                .unwrap_or_else(|| str_expr("Gregorian")),
             );
             new_args.push(
               inner_args
@@ -358,8 +357,8 @@ pub fn dispatch_datetime_functions(
           name: "DateObject".to_string(),
           args: vec![
             date_list,
-            Expr::String("Instant".to_string()),
-            Expr::String("Gregorian".to_string()),
+            str_expr("Instant"),
+            str_expr("Gregorian"),
             Expr::Real(0.0),
           ]
           .into(),
@@ -412,17 +411,17 @@ pub fn dispatch_datetime_functions(
             .map_or_else(|| args[0].clone(), |c| Expr::List(c.into()));
         let mut extra: Vec<Expr> = Vec::new();
         match items.len() {
-          1 => extra.push(Expr::String("Year".to_string())),
-          2 => extra.push(Expr::String("Month".to_string())),
-          3 => extra.push(Expr::String("Day".to_string())),
+          1 => extra.push(str_expr("Year")),
+          2 => extra.push(str_expr("Month")),
+          3 => extra.push(str_expr("Day")),
           4..=6 => {
             let gran = match items.len() {
               4 => "Hour",
               5 => "Minute",
               _ => "Instant",
             };
-            extra.push(Expr::String(gran.to_string()));
-            extra.push(Expr::String("Gregorian".to_string()));
+            extra.push(str_expr(gran));
+            extra.push(str_expr("Gregorian"));
             extra.push(Expr::Real(0.0));
           }
           _ => {
@@ -462,7 +461,7 @@ pub fn dispatch_datetime_functions(
           new_args.push(args[1].clone());
           // Only the sub-day granularities carry the calendar and offset.
           if width >= 4 {
-            new_args.push(Expr::String("Gregorian".to_string()));
+            new_args.push(str_expr("Gregorian"));
             new_args.push(Expr::Real(0.0));
           }
           return Some(Ok(call("DateObject", new_args)));
@@ -602,8 +601,8 @@ pub fn dispatch_datetime_functions(
           name: "DateObject".to_string(),
           args: vec![
             date_list,
-            Expr::String("Instant".to_string()),
-            Expr::String("Gregorian".to_string()),
+            str_expr("Instant"),
+            str_expr("Gregorian"),
             Expr::Real(tz),
           ]
           .into(),
@@ -645,8 +644,8 @@ pub fn dispatch_datetime_functions(
           name: "DateObject".to_string(),
           args: vec![
             date_list,
-            Expr::String("Instant".to_string()),
-            Expr::String("Gregorian".to_string()),
+            str_expr("Instant"),
+            str_expr("Gregorian"),
             Expr::Real(0.0),
           ]
           .into(),

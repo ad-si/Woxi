@@ -1,7 +1,7 @@
 use crate::helpers::{
   binop, bool_expr, call, call0, call1, const_expr, div2, fail_expr, id_expr,
   minus2, neg, neg1, null_expr, plus, plus2, pow, pow2, rule_delayed_expr,
-  rule_expr, times, times2, unevaluated,
+  rule_expr, str_expr, times, times2, unevaluated,
 };
 use num_bigint::{BigInt, Sign};
 
@@ -1721,12 +1721,7 @@ fn parse_box_rowbox(toks: &[BoxTok]) -> Option<Expr> {
         let group = call(
           "RowBox",
           vec![Expr::List(
-            vec![
-              Expr::String("(".to_string()),
-              inner_expr,
-              Expr::String(")".to_string()),
-            ]
-            .into(),
+            vec![str_expr("("), inner_expr, str_expr(")")].into(),
           )],
         );
         parts.push(group);
@@ -1886,14 +1881,7 @@ fn box_unit_or_group(toks: &[BoxTok], start: usize) -> Option<(Expr, usize)> {
     let inner = parse_box_rowbox(&toks[start + 1..j])?;
     let group = call(
       "RowBox",
-      vec![Expr::List(
-        vec![
-          Expr::String("(".to_string()),
-          inner,
-          Expr::String(")".to_string()),
-        ]
-        .into(),
-      )],
+      vec![Expr::List(vec![str_expr("("), inner, str_expr(")")].into())],
     );
     return Some((group, j + 1));
   }
@@ -2679,7 +2667,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         .next()
         .is_some_and(|c| c.is_ascii_alphabetic())
       {
-        return call1("Slot", Expr::String(suffix.to_string()));
+        return call1("Slot", str_expr(suffix));
       }
       let num = if s.len() > 1 {
         suffix.parse().unwrap_or(1)
@@ -13204,7 +13192,7 @@ fn string_to_expr_unresolved(s: &str) -> Result<Expr, crate::InterpreterError> {
     }
     if is_single_literal {
       let inner = &trimmed[1..trimmed.len() - 1];
-      return Ok(Expr::String(inner.to_string()));
+      return Ok(str_expr(inner));
     }
   }
 

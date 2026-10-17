@@ -89,11 +89,11 @@ fn read_expr(data: &[u8], pos: &mut usize) -> Option<Expr> {
     }
     b'S' => {
       let s = std::str::from_utf8(read_len_bytes(data, pos)?).ok()?;
-      Some(Expr::String(s.to_string()))
+      Some(str_expr(s))
     }
     b's' => {
       let s = std::str::from_utf8(read_len_bytes(data, pos)?).ok()?;
-      Some(Expr::Identifier(s.to_string()))
+      Some(id_expr(s))
     }
     b'f' => {
       let nargs = read_i32(data, pos)?;

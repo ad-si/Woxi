@@ -789,13 +789,11 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     _ => "",
   };
   if !simple.is_empty() {
-    return Some(Expr::String(simple.to_string()));
+    return Some(str_expr(simple));
   }
 
   // Compound abbreviations
-  let make_div = |n: &str, d: &str| -> Expr {
-    div2(Expr::String(n.to_string()), Expr::String(d.to_string()))
-  };
+  let make_div = |n: &str, d: &str| -> Expr { div2(str_expr(n), str_expr(d)) };
   match s {
     "mph" => Some(make_div("Miles", "Hours")),
     "km/h" | "kph" => Some(make_div("Kilometers", "Hours")),
@@ -803,12 +801,10 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     _ => {
       // Try parsing "X/Y" pattern
       if let Some((num, den)) = s.split_once('/') {
-        let num_expr = resolve_unit_abbreviation(num).or_else(|| {
-          get_unit_info(num).map(|_| Expr::String(num.to_string()))
-        })?;
-        let den_expr = resolve_unit_abbreviation(den).or_else(|| {
-          get_unit_info(den).map(|_| Expr::String(den.to_string()))
-        })?;
+        let num_expr = resolve_unit_abbreviation(num)
+          .or_else(|| get_unit_info(num).map(|_| str_expr(num)))?;
+        let den_expr = resolve_unit_abbreviation(den)
+          .or_else(|| get_unit_info(den).map(|_| str_expr(den)))?;
         Some(div2(num_expr, den_expr))
       } else {
         None
@@ -1324,14 +1320,8 @@ fn canonical_unit_name(name: &str) -> &str {
 /// Used at format time to display entity-resolved compound units.
 fn format_expand_compound_unit(name: &str) -> Option<Expr> {
   match name {
-    "KilowattHours" => Some(times2(
-      Expr::String("Hours".to_string()),
-      Expr::String("Kilowatts".to_string()),
-    )),
-    "WattHours" => Some(times2(
-      Expr::String("Hours".to_string()),
-      Expr::String("Watts".to_string()),
-    )),
+    "KilowattHours" => Some(times2(str_expr("Hours"), str_expr("Kilowatts"))),
+    "WattHours" => Some(times2(str_expr("Hours"), str_expr("Watts"))),
     // Area aliases canonicalize to a squared length, matching Wolfram:
     // Quantity[1, "SquareMeters"] → Quantity[1, Meters^2].
     "SquareMeters" => Some(squared_length_unit("Meters")),
@@ -1343,7 +1333,7 @@ fn format_expand_compound_unit(name: &str) -> Option<Expr> {
 /// Build the unit expression `"<length>"^2` (e.g. Meters^2) used to canonicalize
 /// "Square…" area aliases.
 fn squared_length_unit(length: &str) -> Expr {
-  pow(Expr::String(length.to_string()), Expr::Integer(2))
+  pow(str_expr(length), Expr::Integer(2))
 }
 
 /// Try to produce the plural form of a singular unit name.
@@ -1376,7 +1366,7 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
       if let Some(compound) = format_expand_compound_unit(&s) {
         compound
       } else if get_unit_info(&s).is_some() {
-        Expr::String(canonical_unit_name(&s).to_string())
+        str_expr(canonical_unit_name(&s))
       } else if let Some(expanded) = resolve_unit_abbreviation(&s) {
         normalize_unit_for_output(expanded)
       } else if let Some(expanded) = resolve_per_unit(&s) {
@@ -1388,9 +1378,9 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
         if let Some(compound) = format_expand_compound_unit(&plural) {
           compound
         } else if get_unit_info(&plural).is_some() {
-          Expr::String(canonical_unit_name(&plural).to_string())
+          str_expr(canonical_unit_name(&plural))
         } else if let Some(canonical) = resolve_lowercase_unit(&s) {
-          Expr::String(canonical_unit_name(&canonical).to_string())
+          str_expr(canonical_unit_name(&canonical))
         } else {
           Expr::String(s)
         }
@@ -1426,7 +1416,7 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
         return compound;
       }
       if get_unit_info(&s).is_some() {
-        return Expr::String(canonical_unit_name(&s).to_string());
+        return str_expr(canonical_unit_name(&s));
       }
       if let Some(expanded) = resolve_unit_abbreviation(&s) {
         return normalize_unit_for_output(expanded);
@@ -1439,10 +1429,10 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
         return compound;
       }
       if get_unit_info(&plural).is_some() {
-        return Expr::String(canonical_unit_name(&plural).to_string());
+        return str_expr(canonical_unit_name(&plural));
       }
       if let Some(canonical) = resolve_lowercase_unit(&s) {
-        return Expr::String(canonical_unit_name(&canonical).to_string());
+        return str_expr(canonical_unit_name(&canonical));
       }
       unit
     }
@@ -1463,12 +1453,12 @@ fn normalize_unit(mut unit: Expr) -> Expr {
       // these scales are recognised only via temperature_scale, not
       // get_unit_info.
       if let Some(scale) = temperature_scale(&Expr::String(s.clone())) {
-        return Expr::String(temp_output_unit(scale).to_string());
+        return str_expr(temp_output_unit(scale));
       }
       if let Some(compound) = format_expand_compound_unit(&s) {
         compound
       } else if get_unit_info(&s).is_some() {
-        Expr::String(canonical_unit_name(&s).to_string())
+        str_expr(canonical_unit_name(&s))
       } else if let Some(expanded) = resolve_unit_abbreviation(&s) {
         normalize_unit(expanded)
       } else if let Some(expanded) = resolve_per_unit(&s) {
@@ -1479,9 +1469,9 @@ fn normalize_unit(mut unit: Expr) -> Expr {
         // Try singular → plural normalization
         let plural = normalize_singular_to_plural(&s);
         if get_unit_info(&plural).is_some() {
-          Expr::String(canonical_unit_name(&plural).to_string())
+          str_expr(canonical_unit_name(&plural))
         } else if let Some(canonical) = resolve_lowercase_unit(&s) {
-          Expr::String(canonical_unit_name(&canonical).to_string())
+          str_expr(canonical_unit_name(&canonical))
         } else {
           Expr::String(s)
         }
@@ -1893,7 +1883,7 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
         // Use string unit names so compound SI bases (e.g. "Meters"^3) are
         // accepted as unit specifications by the conversion path (bare
         // identifiers in a compound unit are treated as non-units).
-        let base = Expr::String(base_name(*d).to_string());
+        let base = str_expr(base_name(*d));
         if *e == 1 {
           base
         } else {
@@ -1991,7 +1981,7 @@ fn try_temperature_convert(
 
   Ok(Some(call(
     "Quantity",
-    vec![new_mag, Expr::String(temp_output_unit(tgt).to_string())],
+    vec![new_mag, str_expr(temp_output_unit(tgt))],
   )))
 }
 
@@ -2096,7 +2086,7 @@ pub fn unit_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vec![
           // Dimension names are Strings (`"TemperatureUnit"`), matching the
           // general path below and wolframscript — not bare symbols.
-          Expr::String("TemperatureUnit".to_string()),
+          str_expr("TemperatureUnit"),
           Expr::Integer(1),
         ]
         .into(),
@@ -2127,9 +2117,7 @@ pub fn unit_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .into_iter()
     .filter(|(_, exp)| *exp != 0)
     .map(|(name, exp)| {
-      Expr::List(
-        vec![Expr::String(name.to_string()), Expr::Integer(exp as i128)].into(),
-      )
+      Expr::List(vec![str_expr(name), Expr::Integer(exp as i128)].into())
     })
     .collect();
   Ok(Expr::List(pairs.into()))

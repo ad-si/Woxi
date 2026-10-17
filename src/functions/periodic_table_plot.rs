@@ -482,10 +482,10 @@ fn phase_legended(graphics: Expr) -> Expr {
   );
   let labels = Expr::List(
     vec![
-      Expr::String("gas".to_string()),
-      Expr::String("solid".to_string()),
-      Expr::String("liquid".to_string()),
-      call1("Missing", Expr::String("NotAvailable".to_string())),
+      str_expr("gas"),
+      str_expr("solid"),
+      str_expr("liquid"),
+      call1("Missing", str_expr("NotAvailable")),
     ]
     .into(),
   );
@@ -501,10 +501,7 @@ fn phase_legended(graphics: Expr) -> Expr {
         "LegendLabel",
         call(
           "EntityProperty",
-          vec![
-            Expr::String("Element".to_string()),
-            Expr::String("Phase".to_string()),
-          ],
+          vec![str_expr("Element"), str_expr("Phase")],
         ),
       ),
     ],

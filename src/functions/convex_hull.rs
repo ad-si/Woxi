@@ -154,11 +154,7 @@ fn boundary_mesh_region(
   let method = rule_expr(
     id_expr("Method"),
     Expr::List(
-      vec![rule_expr(
-        Expr::String("SeparateBoundaries".to_string()),
-        bool_expr(false),
-      )]
-      .into(),
+      vec![rule_expr(str_expr("SeparateBoundaries"), bool_expr(false))].into(),
     ),
   );
   let (properties, rest) = mesh_cell_properties(opts, cell_counts);

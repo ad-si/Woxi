@@ -231,9 +231,8 @@ pub fn stfd_property(head: &Expr, prop: &Expr) -> Option<Expr> {
         "WindowSize",
       ]
       .iter()
-      .map(|s| Expr::String((*s).to_string()))
-      .collect::<Vec<_>>()
-      .into(),
+      .map(|s| str_expr(s))
+      .collect(),
     )),
     _ => None,
   }
