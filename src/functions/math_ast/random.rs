@@ -1538,6 +1538,46 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     Expr::FunctionCall { name, args: dargs }
+      if (name == "GammaDistribution" || name == "WeibullDistribution")
+        && dargs.len() == 2 =>
+    {
+      // Both take a shape α and a scale β, and both need them positive.
+      let (Some(alpha), Some(beta)) =
+        (try_eval_to_f64(&dargs[0]), try_eval_to_f64(&dargs[1]))
+      else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      if !(alpha > 0.0 && beta > 0.0) {
+        return Ok(unevaluated("RandomVariate", args));
+      }
+      let sample: Box<dyn Fn() -> Expr> = if name == "GammaDistribution" {
+        let Ok(gamma) = rand_distr::Gamma::new(alpha, beta) else {
+          return Ok(unevaluated("RandomVariate", args));
+        };
+        Box::new(move || {
+          Expr::Real(crate::with_rng(|rng| {
+            rand_distr::Distribution::sample(&gamma, rng)
+          }))
+        })
+      } else {
+        // `rand_distr::Weibull::new` takes (scale, shape).
+        let Ok(weibull) = rand_distr::Weibull::new(beta, alpha) else {
+          return Ok(unevaluated("RandomVariate", args));
+        };
+        Box::new(move || {
+          Expr::Real(crate::with_rng(|rng| {
+            rand_distr::Distribution::sample(&weibull, rng)
+          }))
+        })
+      };
+      match n {
+        None => Ok(sample()),
+        Some(count) => Ok(Expr::List(
+          (0..count).map(|_| sample()).collect::<Vec<_>>().into(),
+        )),
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
       if name == "ProbabilityDistribution" && dargs.len() == 2 =>
     {
       // Tabulate the density (continuous `{x, lo, hi}`) on a fine grid, or

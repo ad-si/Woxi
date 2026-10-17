@@ -5040,6 +5040,13 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
+  // A static `Manipulator[…]` slider or `SetterBar[…]` button row drawn
+  // inside a layout (a Demonstration's own "internal controls").
+  if matches!(expr, Expr::FunctionCall { name, args }
+    if (name == "Manipulator" || name == "SetterBar") && !args.is_empty())
+  {
+    return true;
+  }
   // A bare `LineLegend[…]` is a picture too — a Demonstration placing a
   // legend beside its plot rather than attached via `Legended`.
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "LineLegend") {
@@ -5919,6 +5926,18 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         _ => vec![vec![content], vec![label]],
       };
       crate::functions::graphics::combine_graphics_svgs(&rows)
+        .unwrap_or_else(|| expr_text_svg(expr))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Manipulator" && !args.is_empty() =>
+    {
+      crate::functions::graphics::manipulator_svg(args)
+        .unwrap_or_else(|| expr_text_svg(expr))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "SetterBar" && !args.is_empty() =>
+    {
+      crate::functions::graphics::setter_bar_svg(args)
         .unwrap_or_else(|| expr_text_svg(expr))
     }
     // `Overlay[{item, …}]` stacks its items into one picture instead of

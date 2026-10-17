@@ -4013,8 +4013,9 @@ fn graphics_text_content(expr: &Expr) -> String {
     {
       typeset_constant_glyph(name).unwrap().to_string()
     }
+    // A `Tooltip` shows its content; the hint appears only on hover.
     Expr::FunctionCall { name, args }
-      if is_style_wrapper(name) && !args.is_empty() =>
+      if (is_style_wrapper(name) || name == "Tooltip") && !args.is_empty() =>
     {
       graphics_text_content(&args[0])
     }
@@ -4365,6 +4366,119 @@ fn button_plate_svg(label: &str) -> String {
     h / 2.0,
     svg_escape(label)
   )
+}
+
+/// The value a `Dynamic[x, …]` control is showing: `x` evaluated. Any other
+/// expression is its own value.
+fn dynamic_current_value(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone())
+    }
+    other => other.clone(),
+  }
+}
+
+/// A static `Manipulator[value, {min, max, step}]` slider: a track with the
+/// thumb at the current value, followed by the value when
+/// `Appearance -> "Labeled"`. `None` unless value and range are numeric.
+pub(crate) fn manipulator_svg(args: &[Expr]) -> Option<String> {
+  let value = expr_to_f64(&dynamic_current_value(args.first()?))?;
+  let (lo, hi) = match args.get(1) {
+    None => (0.0, 1.0),
+    Some(Expr::List(range)) if range.len() >= 2 => {
+      (expr_to_f64(&range[0])?, expr_to_f64(&range[1])?)
+    }
+    Some(_) => return None,
+  };
+  if hi <= lo {
+    return None;
+  }
+  let labeled =
+    args[1.min(args.len())..]
+      .iter()
+      .filter_map(option_kv)
+      .any(|(k, v)| {
+        k == "Appearance" && matches!(v, Expr::String(s) if s == "Labeled")
+          || k == "Appearance"
+            && matches!(v, Expr::Identifier(s) if s == "Labeled")
+      });
+  let (track_w, h) = (120.0, 20.0);
+  let fraction = ((value - lo) / (hi - lo)).clamp(0.0, 1.0);
+  let thumb_x = 6.0 + (track_w - 12.0) * fraction;
+  let label = if labeled {
+    graphics_text_content(&Expr::Real(value))
+  } else {
+    String::new()
+  };
+  let label_w = if labeled {
+    label.chars().count() as f64 * 8.4 + 8.0
+  } else {
+    0.0
+  };
+  let w = track_w + label_w;
+  let mut svg = format!(
+    "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <rect x=\"6\" y=\"8\" width=\"{:.1}\" height=\"4\" rx=\"2\" fill=\"#E6E6E6\" stroke=\"#BFBFBF\" stroke-width=\"0.5\"/>\n\
+     <rect x=\"6\" y=\"8\" width=\"{:.1}\" height=\"4\" rx=\"2\" fill=\"#5E9ED6\"/>\n\
+     <circle cx=\"{thumb_x:.1}\" cy=\"10\" r=\"5.5\" fill=\"#FDFDFD\" stroke=\"#7F7F7F\" stroke-width=\"1\"/>\n",
+    track_w - 12.0,
+    thumb_x - 6.0,
+  );
+  if labeled {
+    svg.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"10\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"12\" fill=\"#333\" dominant-baseline=\"central\">{}</text>\n",
+      track_w + 2.0,
+      svg_escape(&label)
+    ));
+  }
+  svg.push_str("</svg>\n");
+  Some(svg)
+}
+
+/// A static `SetterBar[value, {v1, v2, …}]` (or `{v1 -> label1, …}`): a row
+/// of buttons with the one equal to the current value pressed. `None` unless
+/// the choices are a non-empty list.
+pub(crate) fn setter_bar_svg(args: &[Expr]) -> Option<String> {
+  let Some(Expr::List(choices)) = args.get(1) else {
+    return None;
+  };
+  if choices.is_empty() {
+    return None;
+  }
+  let current = expr_to_string(&dynamic_current_value(args.first()?));
+  let h = 26.0;
+  let mut x = 0.0;
+  let mut body = String::new();
+  for choice in choices {
+    let (value, label) = match choice {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      other => (other, other),
+    };
+    let text = graphics_text_content(label);
+    let w = (text.chars().count() as f64 * 8.4 + 16.0).max(28.0);
+    let pressed = expr_to_string(value) == current;
+    body.push_str(&format!(
+      "<rect x=\"{:.1}\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" fill=\"{}\" stroke=\"#BFBFBF\" stroke-width=\"1\"/>\n\
+       <text x=\"{:.1}\" y=\"{:.1}\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"14\" fill=\"#000000\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+      x + 0.5,
+      w - 1.0,
+      h - 1.0,
+      if pressed { "#BCD6EE" } else { "#FDFDFD" },
+      x + w / 2.0,
+      h / 2.0,
+      svg_escape(&text)
+    ));
+    x += w;
+  }
+  Some(format!(
+    "<svg width=\"{x:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {x:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n{body}</svg>\n"
+  ))
 }
 
 /// A static `ProgressIndicator[x]` / `ProgressIndicator[x, {min, max}]`: a

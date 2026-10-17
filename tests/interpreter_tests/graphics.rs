@@ -35918,3 +35918,35 @@ fn traditionalform_inline_fraction_parenthesizes_compound_sides() {
   let simple = markup("TraditionalForm[a/b]");
   assert!(simple.contains("a/b"), "{simple}");
 }
+
+// A Demonstration's own "internal controls" — `Manipulator[Dynamic[x], …]`
+// sliders and `SetterBar[Dynamic[x], …]` rows inside a layout — are drawn as
+// the widgets they are instead of being printed as source text.
+mod static_dynamic_controls {
+  use super::*;
+
+  #[test]
+  fn manipulator_in_a_grid_draws_a_slider() {
+    let svg = export_svg(
+      "Grid[{{Labeled[Manipulator[Dynamic[x], {0.1, 1, 0.1}, \
+       Appearance -> \"Labeled\"], \"mean\", Left]}}] /. x -> 0.4",
+    );
+    assert!(svg.contains("<circle"), "slider thumb expected: {svg}");
+    assert!(!svg.contains("Manipulator["), "no source text: {svg}");
+    assert!(svg.contains(">mean<"));
+    assert!(svg.contains(">0.4<"));
+  }
+
+  #[test]
+  fn setter_bar_in_a_grid_draws_buttons_with_the_choice_pressed() {
+    let svg = export_svg(
+      "Grid[{{SetterBar[Dynamic[d], \
+       {1 -> \"one\", 2 -> Tooltip[Style[\"two\", 9], \"hint\"]}]}}] /. d -> 2",
+    );
+    assert!(!svg.contains("SetterBar["), "no source text: {svg}");
+    assert!(svg.contains(">one<"));
+    assert!(svg.contains(">two<"), "tooltip shows its content: {svg}");
+    assert!(!svg.contains("hint"));
+    assert!(svg.contains("#BCD6EE"), "the current choice is pressed");
+  }
+}

@@ -8960,3 +8960,54 @@ mod distribution_parameter_assumptions {
     );
   }
 }
+
+mod gamma_weibull_sampling {
+  use super::*;
+
+  // RandomReal/RandomVariate draw from Gamma and Weibull distributions;
+  // the sample mean approaches the exact one (6 and 3 Gamma[3/2]).
+  #[test]
+  fn samples_have_the_right_size_and_mean() {
+    assert_eq!(
+      interpret("Length[RandomReal[GammaDistribution[2., 3.], 7]]").unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret("Length[RandomVariate[WeibullDistribution[2., 3.], 7]]")
+        .unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[Mean[RandomReal[GammaDistribution[2., 3.], 20000]] - 6] < 0.3"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[Mean[RandomReal[WeibullDistribution[2., 3.], 20000]] \
+         - 3 Sqrt[Pi]/2] < 0.1"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn single_sample_is_a_positive_real() {
+    assert_eq!(
+      interpret("{Head[#], # > 0} &[RandomReal[WeibullDistribution[2., 3.]]]")
+        .unwrap(),
+      "{Real, True}"
+    );
+  }
+
+  #[test]
+  fn symbolic_parameters_stay_unevaluated() {
+    assert_eq!(
+      interpret("RandomVariate[GammaDistribution[a, 3.], 2]").unwrap(),
+      "RandomVariate[GammaDistribution[a, 3.], 2]"
+    );
+  }
+}
