@@ -5864,6 +5864,21 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     {
       rotate_graphic_svg(&args[0], &args[1..])
     }
+    // `Magnify[expr]` / `Magnify[expr, s]` shows `expr` scaled by `s` (1 by
+    // default). Without this arm a Demonstration's caption such as
+    // `Labeled[plot, Magnify[Text[…], 1.3], Right]` was set as the source
+    // text of the `Magnify` call, one enormous line beside the plot.
+    Expr::FunctionCall { name, args }
+      if name == "Magnify" && (args.len() == 1 || args.len() == 2) =>
+    {
+      let inner = expr_to_svg(&unquoted_display_string(&args[0]));
+      let factor = args
+        .get(1)
+        .and_then(crate::functions::math_ast::try_eval_to_f64)
+        .filter(|f| *f > 0.0)
+        .unwrap_or(1.0);
+      scale_svg_size(&inner, factor)
+    }
     // Outside a `Graphics`, `Text[expr]` only asks for `expr` to be shown
     // in text rather than mathematical form — it contributes no box of its
     // own, so export what it holds. (In a `Grid` cell this is the
@@ -6927,4 +6942,30 @@ pub(crate) fn readlist_inputstream(
     )));
   }
   Ok(get_stream_content(stream_id).map_or_else(String::new, |(c, _)| c))
+}
+
+/// Scale the displayed size of an SVG picture by `factor`, keeping its
+/// `viewBox` so the content scales with it. Anything that is not an `<svg
+/// width=".." height="..">` root is returned unchanged.
+fn scale_svg_size(svg: &str, factor: f64) -> String {
+  if (factor - 1.0).abs() < f64::EPSILON || !svg.starts_with("<svg") {
+    return svg.to_string();
+  }
+  let Some(end) = svg.find('>') else {
+    return svg.to_string();
+  };
+  let (head, rest) = svg.split_at(end);
+  let mut head = head.to_string();
+  for attr in ["width", "height"] {
+    let key = format!(" {attr}=\"");
+    if let Some(start) = head.find(&key) {
+      let vstart = start + key.len();
+      if let Some(vlen) = head[vstart..].find('"')
+        && let Ok(v) = head[vstart..vstart + vlen].parse::<f64>()
+      {
+        head.replace_range(vstart..vstart + vlen, &format!("{}", v * factor));
+      }
+    }
+  }
+  format!("{head}{rest}")
 }

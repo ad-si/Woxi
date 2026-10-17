@@ -35918,3 +35918,19 @@ fn traditionalform_inline_fraction_parenthesizes_compound_sides() {
   let simple = markup("TraditionalForm[a/b]");
   assert!(simple.contains("a/b"), "{simple}");
 }
+
+#[test]
+fn labeled_magnify_label_is_typeset_not_source() {
+  let svg = export_svg(
+    "Labeled[Graphics[Circle[]], Magnify[Text[\"caption\"], 2], Right]",
+  );
+  assert!(svg.contains("caption"), "{svg}");
+  assert!(!svg.contains("Magnify"), "{svg}");
+  let plain =
+    export_svg("Labeled[Graphics[Circle[]], Text[\"caption\"], Right]");
+  let width = |s: &str| -> f64 {
+    let rest = &s[s.find("width=\"").unwrap() + 7..];
+    rest[..rest.find('"').unwrap()].parse().unwrap()
+  };
+  assert!(width(&svg) > width(&plain), "{svg}");
+}
