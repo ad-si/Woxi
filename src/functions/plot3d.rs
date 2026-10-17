@@ -11755,7 +11755,26 @@ fn resolve_one_parametric_triple(
     Expr::List(sub) if sub.len() == 3 => {
       Some((sub[0].clone(), sub[1].clone(), sub[2].clone()))
     }
-    _ => None,
+    // Stays symbolic until the parameters are numeric (e.g. an `If` on a
+    // sum of squares of `u`, `v`): probe at a sample point and, if it is
+    // a numeric 3-vector, read its components off with `Part`.
+    _ => {
+      let mut probe = item.clone();
+      for (i, var) in shadow_vars.iter().enumerate() {
+        probe =
+          substitute_var(&probe, var, &Expr::Real(0.37 + 0.24 * i as f64));
+      }
+      let value = evaluate_expr_to_expr(&probe).ok()?;
+      match &value {
+        Expr::List(sub)
+          if sub.len() == 3
+            && sub.iter().all(|c| try_eval_to_f64(c).is_some()) =>
+        {
+          Some((part_of(item, 1), part_of(item, 2), part_of(item, 3)))
+        }
+        _ => None,
+      }
+    }
   }
 }
 

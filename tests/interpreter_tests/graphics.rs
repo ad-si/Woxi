@@ -4119,6 +4119,23 @@ mod plot3d {
       assert_eq!(result, "False");
     }
 
+    /// Regression: three surfaces whose items only become 3-vectors once
+    /// `u`, `v` are numeric (an `If` on a sum of squares) were read as one
+    /// scalar `{fx, fy, fz}` triple, giving "no finite values".
+    #[test]
+    fn parametric_surfaces_with_conditional_vector_items() {
+      clear_state();
+      let result = interpret(
+        "Head[ParametricPlot3D[{\
+         (If[#1 > 0, {1, u, v}/#1, {1, u, v}*10000] &)[Total[{u, v, 1}^2]], \
+         (If[#1 > 0, {u, 1, v}/#1, {u, 1, v}*10000] &)[Total[{u, v, 1}^2]], \
+         (If[#1 > 0, {u, v, 1}/#1, {u, v, 1}*10000] &)[Total[{u, v, 1}^2]]}, \
+         {u, -2, 2}, {v, -2, 2}]]",
+      )
+      .unwrap();
+      assert_eq!(result, "Graphics3D");
+    }
+
     /// Regression: `ColorFunction` on a `ParametricPlot3D` curve was dropped,
     /// so the curve was always drawn in one flat color instead of being
     /// colored along its length.
