@@ -825,6 +825,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     "FormBox",
     "AdjustmentBox",
     "FrameBox",
+    "ButtonBox",
     "CheckboxBox",
   ] {
     if !s.starts_with(head) {
@@ -1044,7 +1045,9 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       }
       // `StyleBox`, `FrameBox`, `AdjustmentBox`, `FormBox` similarly wrap
       // a displayed expression; recurse into the first arg.
-      "StyleBox" | "FrameBox" | "AdjustmentBox" | "FormBox"
+      // `ButtonBox["SeedRandom", BaseStyle -> "Link", …]` is a documentation
+      // hyperlink pasted into code; it displays (and evaluates as) its label.
+      "StyleBox" | "FrameBox" | "AdjustmentBox" | "FormBox" | "ButtonBox"
         if !args.is_empty() =>
       {
         conv(&args[0])
@@ -8329,5 +8332,18 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
     let src = reconstruct_manipulate_from_box_dump(dump).unwrap();
     assert!(!src.contains("$$"), "got: {src}");
     assert!(src.contains("\\[Alpha]"), "got: {src}");
+  }
+  /// Regression: a documentation hyperlink pasted into code
+  /// (`ButtonBox["Name", BaseStyle -> "Link", ButtonData -> "paclet:…"]`)
+  /// leaked its raw box syntax into the cell source, so the call head was
+  /// unparseable. It must read as its label.
+  #[test]
+  fn buttonbox_hyperlink_inside_code_row_reads_as_label() {
+    let boxes = r#"RowBox[{RowBox[{ButtonBox["Sqrt",
+       BaseStyle->"Link",
+       ButtonData->"paclet:ref/Sqrt"], "[", "16", "]"}], ";", "x"}]"#;
+    let src = box_source_to_expression(boxes).expect("box source converts");
+    assert!(!src.contains("ButtonBox"), "got: {src:?}");
+    assert_eq!(crate::interpret(&src).unwrap(), "x");
   }
 }
