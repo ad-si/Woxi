@@ -30337,10 +30337,15 @@ pub fn manipulate_block_code(
   if bindings.is_empty() {
     return body_code.to_string();
   }
+  // A frozen graphic has no source form; it stays a global.
   let binding_parts: Vec<String> = bindings
     .iter()
+    .filter(|(_, value)| !crate::is_frozen_graphic(value))
     .map(|(name, value)| format!("{name} = {value}"))
     .collect();
+  if binding_parts.is_empty() {
+    return body_code.to_string();
+  }
   format!("Block[{{{}}}, {}]", binding_parts.join(", "), body_code)
 }
 
@@ -30591,7 +30596,9 @@ pub fn read_manipulate_state(names: &[String]) -> Vec<(String, String)> {
       if matches!(&value, Expr::Identifier(s) if s == name) {
         return None;
       }
-      Some((name.clone(), crate::syntax::expr_to_source_form(&value)))
+      let source = crate::freeze_graphic(name, &value)
+        .unwrap_or_else(|| crate::syntax::expr_to_source_form(&value));
+      Some((name.clone(), source))
     })
     .collect()
 }
