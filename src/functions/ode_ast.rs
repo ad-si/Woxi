@@ -414,6 +414,23 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
   }
+  // An independent variable written as a compound expression
+  // (`{Subscript[A, m], 0, w}`) is keyed by a fresh symbol while
+  // integrating, then restored in the result.
+  if let Expr::List(domain) = &args[2]
+    && matches!(
+      domain.first(),
+      Some(Expr::FunctionCall { .. } | Expr::CurriedCall { .. })
+    )
+  {
+    let renames = vec![(domain[0].clone(), "NDSolve$var".to_string())];
+    let renamed: Vec<Expr> = args
+      .iter()
+      .map(|a| rename_compound_heads(a, &renames))
+      .collect();
+    let result = ndsolve_ast_inner(&renamed)?;
+    return Ok(restore_compound_heads(&result, &renames));
+  }
   // A first-order system with a stated history (`f[t /; t <= t0] == …`)
   // and possibly delayed arguments `f[t - c]`.
   if let Some(result) = dde::ndsolve_dde(&args[..3])? {
@@ -3402,6 +3419,11 @@ fn ndsolve_system(
         };
         max
       };
+      // A descending domain `{t, 0, -2}` integrates backwards and is
+      // reported over the ascending interval `[-2, 0]`, so its bounds are
+      // swapped. A NaN bound compares as neither and falls through to the
+      // check below.
+      let (min, max) = if max < min { (max, min) } else { (min, max) };
       // NaN bounds must bail out too, so compare via partial_cmp rather
       // than a negated float comparison. A zero-length domain
       // `{t, t0, t0}` is accepted (an animation clock starts there); the
@@ -4904,6 +4926,26 @@ fn probe_constant_mass_matrix(
   x_min: f64,
   x_max: f64,
 ) -> Option<Vec<Vec<f64>>> {
+  // The probe points are the solver's own, not the user's: a singular
+  // right-hand side there (`1/(x - x0)` guarded by `If[t == 0, …]`) must
+  // not print messages for evaluations the kernel would never make.
+  let snapshot = crate::snapshot_warnings();
+  crate::push_quiet();
+  let result =
+    probe_constant_mass_matrix_inner(residuals, n, x0, state0, x_min, x_max);
+  crate::pop_quiet();
+  crate::restore_warnings(snapshot);
+  result
+}
+
+fn probe_constant_mass_matrix_inner(
+  residuals: &[NumFn],
+  n: usize,
+  x0: f64,
+  state0: &[f64],
+  x_min: f64,
+  x_max: f64,
+) -> Option<Vec<Vec<f64>>> {
   let c0 = residual_constant_term(residuals, n, x0, state0)?;
   let m0 = mass_matrix(residuals, n, x0, state0, &c0)?;
 
@@ -5241,6 +5283,18 @@ enum NExpr {
   Neg(Box<Self>),
   Fn1(fn(f64) -> f64, Box<Self>),
   Fn2(fn(f64, f64) -> f64, Box<Self>, Box<Self>),
+  /// `If[lhs op rhs, then, otherwise]` on a single numeric comparison — a
+  /// right-hand side that switches branch on the independent variable
+  /// (`If[t == 0, limit, general]`, the usual way to dodge a removable
+  /// singularity at the start). Only the chosen branch is evaluated, so a
+  /// branch that is singular off its own region never poisons the other.
+  If {
+    op: ComparisonOp,
+    lhs: Box<Self>,
+    rhs: Box<Self>,
+    then: Box<Self>,
+    otherwise: Box<Self>,
+  },
   /// A leaf the compiler can't reduce to closed-form arithmetic — e.g. a
   /// call to a function defined elsewhere in the session (a boundary value
   /// pinned via `f[n][t_] := …`, say) rather than one of `compile_numeric`'s
@@ -5300,6 +5354,30 @@ impl NExpr {
       Self::Neg(e) => -e.eval(vars),
       Self::Fn1(f, a) => f(a.eval(vars)),
       Self::Fn2(f, a, b) => f(a.eval(vars), b.eval(vars)),
+      Self::If {
+        op,
+        lhs,
+        rhs,
+        then,
+        otherwise,
+      } => {
+        let (l, r) = (lhs.eval(vars), rhs.eval(vars));
+        // `Equal` on machine reals tolerates the last few bits.
+        let close = (l - r).abs() <= l.abs().max(r.abs()) * 2f64.powi(-47);
+        let holds = match op {
+          ComparisonOp::Equal | ComparisonOp::SameQ => close,
+          ComparisonOp::NotEqual | ComparisonOp::UnsameQ => !close,
+          ComparisonOp::Less => l < r && !close,
+          ComparisonOp::LessEqual => l < r || close,
+          ComparisonOp::Greater => l > r && !close,
+          ComparisonOp::GreaterEqual => l > r || close,
+        };
+        if holds {
+          then.eval(vars)
+        } else {
+          otherwise.eval(vars)
+        }
+      }
       Self::External { template, refs } => {
         let mut substituted = template.clone();
         for (name, idx) in refs {
@@ -5554,6 +5632,24 @@ fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
           compiled
             .into_iter()
             .reduce(|acc, e| NExpr::Fn2(f64::min, Box::new(acc), Box::new(e)))
+        }
+        "If" if args.len() == 3 => {
+          if let Expr::Comparison {
+            operands,
+            operators,
+          } = &args[0]
+            && let ([lhs, rhs], [op]) =
+              (operands.as_slice(), operators.as_slice())
+          {
+            return Some(NExpr::If {
+              op: *op,
+              lhs: Box::new(comp(lhs)?),
+              rhs: Box::new(comp(rhs)?),
+              then: Box::new(comp(&args[1])?),
+              otherwise: Box::new(comp(&args[2])?),
+            });
+          }
+          Some(compile_external_leaf(expr, var_names))
         }
         // Not one of the closed-form operators above — most commonly a
         // call to a function the session itself defined (a fixed boundary
