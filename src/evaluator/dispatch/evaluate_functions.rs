@@ -4843,6 +4843,8 @@ fn evaluate_function_call_ast_inner(
     "GraphPlot" | "LayeredGraphPlot" | "GraphPlot3D" | "TreePlot"
   ) && !args.is_empty()
   {
+    // Options may arrive as one list of rules, which is not a position.
+    let args = &crate::functions::graphics::splice_option_lists(args)[..];
     // Only forward when args[0] is a list of edges or an already-built
     // Graph[…]; otherwise keep the symbolic head (matches Woxi's
     // long-standing "stay unevaluated" wrapper behaviour for opaque

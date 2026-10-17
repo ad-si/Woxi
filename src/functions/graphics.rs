@@ -15777,7 +15777,9 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     Expr::Rule {
       pattern,
       replacement,
-    } if grid_cell_graphic(replacement).is_some() => {
+    } if grid_cell_graphic(replacement).is_some()
+      || grid_cell_graphic(pattern).is_some() =>
+    {
       let row = Expr::List(
         vec![
           (**pattern).clone(),
@@ -20454,6 +20456,12 @@ fn form_box_svg(expr: &Expr) -> Option<String> {
 /// compose instead of printing as raw InputForm text. `None` for other
 /// expressions (rendered as a plain text line by the caller).
 fn nested_layout_svg(expr: &Expr) -> Option<String> {
+  // `picture -> picture` is laid out the way a grid cell holding one is.
+  if matches!(expr, Expr::Rule { .. })
+    && crate::evaluator::lays_out_a_graphic(expr)
+  {
+    return Some(crate::evaluator::expr_to_svg(expr));
+  }
   if let Expr::FunctionCall { name, args } = expr {
     let args: Vec<Expr> = args.iter().cloned().collect();
     if args.is_empty() {
