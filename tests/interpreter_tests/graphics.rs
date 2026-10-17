@@ -36374,6 +36374,25 @@ mod static_dynamic_controls {
     assert!(!svg.contains("NumberForm["), "no source text: {svg}");
   }
 
+  /// A scene of many thin `Tube`s (a maze built from tube walls) must not
+  /// tessellate each one into hundreds of rings: that drew ~190 rings per
+  /// tube and put close to a million polygons in the picture.
+  #[test]
+  fn crowd_of_thin_tubes_stays_small() {
+    let svg = export_svg(
+      "Graphics3D[Table[Tube[{{0, 0, j}, {1, 0, j}}, 0.01], {j, 20}]]",
+    );
+    let polygons = svg.matches("<polygon").count();
+    assert!(polygons < 40_000, "{polygons} polygons");
+  }
+
+  /// A lone tube still gets the full lengthwise subdivision.
+  #[test]
+  fn single_tube_keeps_fine_subdivision() {
+    let svg = export_svg("Graphics3D[Tube[{{0, 0, 0}, {1, 0, 0}}, 0.02]]");
+    assert!(svg.matches("<polygon").count() > 1000);
+  }
+
   /// `Show[image, graphics]` draws the image as the backdrop of the
   /// graphics (in pixel coordinates) instead of dropping it.
   #[test]
