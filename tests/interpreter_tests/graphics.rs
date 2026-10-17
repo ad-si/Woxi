@@ -8230,6 +8230,18 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// A computed real in a `FrameLabel` prints as `ToString` does, not with
+    /// the float noise of its last bits (`Round[-0.64, 0.1]` is
+    /// `-0.6000000000000001` internally).
+    #[test]
+    fn plot_frame_label_real_prints_with_six_digits() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, \
+         FrameLabel -> {\"t\", Row[{\"d = \", Round[-0.64, 0.1]}]}]",
+      );
+      assert!(svg.contains("d = -0.6<"), "got {svg}");
+    }
+
     /// Regression: `RegionPlot` ignored `FrameLabel`, so a Demonstration's
     /// captioned region plot came out with bare axes.
     #[test]
@@ -30964,6 +30976,23 @@ mod cases {
     );
   }
   #[test]
+  fn color_data_gradient_over_custom_range() {
+    assert_case(
+      r#"ColorData[{"RedGreenSplit", {-0.05, 0.05}}]"#,
+      r#"ColorDataFunction[RedGreenSplit, Gradients, {-0.05, 0.05}, Blend["RedGreenSplit", Rescale[#1, {-0.05, 0.05}]] & ]"#,
+    );
+    // Applying it rescales the argument onto the gradient's [0, 1].
+    assert_case(
+      r#"ColorData[{"Rainbow", {10, 20}}][15] === ColorData["Rainbow"][0.5]"#,
+      "True",
+    );
+    // Values outside the range clamp to the end colors.
+    assert_case(
+      r#"ColorData[{"Rainbow", {10, 20}}][99] === ColorData["Rainbow"][1]"#,
+      "True",
+    );
+  }
+  #[test]
   fn color_data_1() {
     assert_case(
       r#"ColorData[]"#,
@@ -36238,6 +36267,31 @@ mod static_dynamic_controls {
     assert!(svg.contains("#BCD6EE"), "the current choice is pressed");
   }
 
+  #[test]
+  fn color_data_visible_spectrum_maps_wavelength_to_rgb() {
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", 510]").unwrap(),
+      "RGBColor[0., 1., 0.]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", 700]").unwrap(),
+      "RGBColor[1., 0., 0.]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", 300]").unwrap(),
+      "RGBColor[0., 0., 0.]"
+    );
+  }
+
+  #[test]
+  fn plot_style_with_visible_spectrum_color_draws_the_curve() {
+    let svg = export_svg(
+      "ParametricPlot[{2.5, x}, {x, 0, 8.5}, \
+       PlotStyle -> ColorData[\"VisibleSpectrum\", 510]]",
+    );
+    assert!(!svg.contains("ColorData"), "no source text: {svg}");
+  }
+
   /// A rotated plot turns as one rigid image: a quarter turn swaps the
   /// canvas's width and height rather than clipping it.
   #[test]
@@ -36298,4 +36352,58 @@ mod static_dynamic_controls {
     assert!(!svg.contains("Text["), "no source text: {svg}");
     assert!(svg.contains(">label<"), "label is drawn: {svg}");
   }
+
+  /// An explicit `AxesOrigin` is part of the automatic plot range, so the
+  /// axes cross inside the picture instead of the data being zoomed in.
+  #[test]
+  fn axes_origin_extends_the_automatic_plot_range() {
+    for code in [
+      "ListPlot[{{1, 5}, {2, 7}}, AxesOrigin -> {0, 0}]",
+      "ListPlot[{{1, 5}, {2, 7}}, Joined -> True, AxesOrigin -> {0, 0}]",
+      "Plot[x + 5, {x, 1, 2}, AxesOrigin -> {0, 0}]",
+    ] {
+      let svg = export_svg(code);
+      assert!(
+        y_tick_labels(&svg).iter().any(|l| l == "2"),
+        "{code}: y range must reach down to 0: {:?}",
+        y_tick_labels(&svg)
+      );
+    }
+    let svg = export_svg("ListPlot[{{1, 5}, {2, 7}}, AxesOrigin -> {0, 0}]");
+    assert!(
+      x_tick_labels(&svg).iter().any(|l| l == "0.5"),
+      "{:?}",
+      x_tick_labels(&svg)
+    );
+  }
+
+  /// `PlotLabel -> Framed[…]` boxes the title.
+  #[test]
+  fn framed_plot_label_is_boxed() {
+    let plain = export_svg("ListPlot[{{1, 5}, {2, 7}}, PlotLabel -> \"abc\"]");
+    for label in ["Framed[\"abc\"]", "Style[Framed[Row[{\"a\", \"bc\"}]], 18]"]
+    {
+      let svg = export_svg(&format!(
+        "ListPlot[{{{{1, 5}}, {{2, 7}}}}, PlotLabel -> {label}]"
+      ));
+      assert_eq!(
+        svg.matches("<rect").count(),
+        plain.matches("<rect").count() + 1,
+        "{label}: {svg}"
+      );
+    }
+  }
+}
+
+#[test]
+fn graphics_grid_of_tooltipped_plots_draws_the_plots_not_source() {
+  let svg = export_svg(
+    "GraphicsGrid[{{Tooltip[ArrayPlot[{{1, 0}, {0, 1}}], \
+     ArrayPlot[{{0, 1}}]], ArrayPlot[{{0, 1}, {1, 0}}]}}]",
+  );
+  assert!(!svg.contains("Tooltip"), "{svg}");
+  assert!(!svg.contains("<text"), "{svg}");
+  let single = export_svg("Tooltip[ArrayPlot[{{1, 0}, {0, 1}}], \"hint\"]");
+  assert!(!single.contains("hint"), "{single}");
+  assert!(!single.contains("<text"), "{single}");
 }

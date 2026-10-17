@@ -147,27 +147,37 @@ pub fn dispatch_linear_algebra_functions(
         name == "ObservabilityMatrix",
       ));
     }
-    // Dot[x] returns its single argument unchanged; Dot[a, b, c, …] chains
-    // pairwise dots left-to-right (a.b.c = (a.b).c), matching wolframscript.
+    // Dot[x] returns its single argument unchanged; Dot[a, b, c, …] contracts
+    // neighbours left-to-right, but only where a pair actually evaluates —
+    // Dot is Flat, so `Dot[a, m1, m2]` becomes `Dot[a, m1.m2]` and
+    // `Dot[a, b, c]` stays flat rather than nesting as `Dot[Dot[a, b], c]`.
     "Dot" if args.len() == 1 => {
       return Some(Ok(args[0].clone()));
     }
     "Dot" if args.len() >= 3 => {
-      let mut acc =
-        match crate::functions::linear_algebra_ast::dot_ast(&args[..2]) {
-          Ok(v) => v,
-          e => return Some(e),
-        };
-      for next in &args[2..] {
-        acc = match crate::functions::linear_algebra_ast::dot_ast(&[
-          acc,
+      let mut operands: Vec<Expr> = vec![args[0].clone()];
+      for next in &args[1..] {
+        let last = operands.pop().unwrap();
+        match crate::functions::linear_algebra_ast::dot_ast(&[
+          last.clone(),
           next.clone(),
         ]) {
-          Ok(v) => v,
+          Ok(Expr::FunctionCall { ref name, .. }) if name == "Dot" => {
+            operands.push(last);
+            operands.push(next.clone());
+          }
+          Ok(v) => operands.push(v),
           e => return Some(e),
-        };
+        }
       }
-      return Some(Ok(acc));
+      return Some(Ok(if operands.len() == 1 {
+        operands.pop().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Dot".to_string(),
+          args: operands.into(),
+        }
+      }));
     }
     "ArrayDot" if args.len() == 3 => {
       return Some(crate::functions::linear_algebra_ast::array_dot_ast(args));
