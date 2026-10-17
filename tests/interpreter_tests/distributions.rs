@@ -8768,6 +8768,50 @@ mod custom_probability_distribution_moments {
   }
 }
 
+mod weibull_gamma_random_variate {
+  use super::*;
+
+  #[test]
+  fn dimension_list_and_positive_support() {
+    assert_eq!(
+      interpret(
+        "s = RandomVariate[WeibullDistribution[2.3, 5.6], {4, 3}]; {Dimensions[s], Min[s] > 0}"
+      )
+      .unwrap(),
+      "{{4, 3}, True}"
+    );
+    assert_eq!(
+      interpret(
+        "s = RandomReal[GammaDistribution[1.5, 2.0], {5, 2}]; {Dimensions[s], Min[s] > 0}"
+      )
+      .unwrap(),
+      "{{5, 2}, True}"
+    );
+  }
+
+  #[test]
+  fn sample_means_match_distribution_means() {
+    assert_eq!(
+      interpret("Round[Mean[RandomVariate[GammaDistribution[2, 3], 20000]]]")
+        .unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("Round[Mean[RandomVariate[WeibullDistribution[2, 3], 20000]]]")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn invalid_parameters_stay_unevaluated() {
+    assert_eq!(
+      interpret("RandomVariate[WeibullDistribution[-1, 2], 3]").unwrap(),
+      "RandomVariate[WeibullDistribution[-1, 2], 3]"
+    );
+  }
+}
+
 mod custom_probability_distribution_random_variate {
   use super::*;
 
