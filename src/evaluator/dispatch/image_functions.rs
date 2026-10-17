@@ -80,6 +80,32 @@ fn gradient_color_function(scheme: &str) -> Expr {
   }
 }
 
+/// The color function of a named gradient stretched over a custom range,
+/// `ColorData[{scheme, {min, max}}]`:
+///   `ColorDataFunction[scheme, "Gradients", {min, max},
+///     Blend[scheme, Rescale[#1, {min, max}]] &]`.
+fn ranged_gradient_color_function(scheme: &str, range: &Expr) -> Expr {
+  let blend = Expr::Function {
+    body: Box::new(call(
+      "Blend",
+      vec![
+        str_expr(scheme),
+        call("Rescale", vec![Expr::Slot(1), range.clone()]),
+      ],
+    )),
+  };
+  Expr::FunctionCall {
+    name: "ColorDataFunction".to_string(),
+    args: vec![
+      str_expr(scheme),
+      str_expr("Gradients"),
+      range.clone(),
+      blend,
+    ]
+    .into(),
+  }
+}
+
 /// The color function of an indexed scheme (`ColorData[1]`, `ColorData[97]`,
 /// …), echoed in the same structured form `gradient_color_function` returns
 /// for a named gradient:
@@ -184,6 +210,29 @@ fn gradient_strip_image(controls: &[(f64, f64, f64)]) -> Expr {
 /// tabulated: its hues start at 0.67 and advance by √5 - 2 turns, and every
 /// component is mapped into 0.24 … 0.6 — so it never repeats and accepts any
 /// index. The tabulated schemes cycle.
+/// RGB of monochromatic light of wavelength `w` nm (piecewise-linear
+/// approximation with intensity roll-off at the ends and gamma 0.8).
+fn visible_spectrum_rgb(w: f64) -> (f64, f64, f64) {
+  let (r, g, b) = match w {
+    w if (380.0..440.0).contains(&w) => (-(w - 440.0) / 60.0, 0.0, 1.0),
+    w if (440.0..490.0).contains(&w) => (0.0, (w - 440.0) / 50.0, 1.0),
+    w if (490.0..510.0).contains(&w) => (0.0, 1.0, -(w - 510.0) / 20.0),
+    w if (510.0..580.0).contains(&w) => ((w - 510.0) / 70.0, 1.0, 0.0),
+    w if (580.0..645.0).contains(&w) => (1.0, -(w - 645.0) / 65.0, 0.0),
+    w if (645.0..=750.0).contains(&w) => (1.0, 0.0, 0.0),
+    _ => (0.0, 0.0, 0.0),
+  };
+  let factor = if (380.0..420.0).contains(&w) {
+    0.3 + 0.7 * (w - 380.0) / 40.0
+  } else if (700.0..=750.0).contains(&w) {
+    0.3 + 0.7 * (750.0 - w) / 50.0
+  } else {
+    1.0
+  };
+  let adjust = |c: f64| (c * factor).powf(0.8);
+  (adjust(r), adjust(g), adjust(b))
+}
+
 fn indexed_scheme_color(n: i128, k: i128) -> Option<(f64, f64, f64)> {
   if n == 1 {
     let hue = (0.67 + (k - 1) as f64 * (5.0_f64.sqrt() - 2.0)).rem_euclid(1.0);
@@ -202,6 +251,17 @@ fn indexed_scheme_color(n: i128, k: i128) -> Option<(f64, f64, f64)> {
       4 => (up, low, high),
       _ => (high, low, down),
     });
+  }
+  // Scheme 17 is only partly known: the entries observed in Wolfram's own
+  // output. Any other index stays unevaluated rather than being guessed.
+  if n == 17 {
+    let byte = |r: f64, g: f64, b: f64| (r / 255.0, g / 255.0, b / 255.0);
+    return match k {
+      1 => Some(byte(72.0, 58.0, 57.0)),
+      2 => Some(byte(144.0, 59.0, 39.0)),
+      4 => Some(byte(220.0, 158.0, 67.0)),
+      _ => None,
+    };
   }
   let colors = indexed_color_list(n)?;
   // The tabulated schemes wrap, index 0 landing on the last colour. Scheme
@@ -980,6 +1040,19 @@ pub fn dispatch_image_functions(
           vec![channel(r), channel(g), channel(b)],
         )));
       }
+      // ColorData["VisibleSpectrum", wavelength]: the color of light with
+      // the given wavelength in nm (380–750 nm; black outside that range).
+      if let Expr::String(scheme) = &args[0]
+        && scheme == "VisibleSpectrum"
+        && !matches!(&args[1], Expr::String(_))
+        && let Some(w) = crate::functions::math_ast::try_eval_to_f64(&args[1])
+      {
+        let (r, g, b) = visible_spectrum_rgb(w);
+        return Some(Ok(call(
+          "RGBColor",
+          vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+        )));
+      }
       // ColorData[name, t]: sample the named gradient at parameter t
       // (clamped to [0, 1]), and ColorData[name, "Image"]: a horizontal
       // gradient strip image (the swatch Wolfram shows in gradient
@@ -1129,6 +1202,15 @@ pub fn dispatch_image_functions(
         && crate::functions::chart::named_color_scheme(scheme).is_some()
       {
         return Some(Ok(gradient_color_function(scheme)));
+      }
+      // ColorData[{"scheme", {min, max}}]: the gradient over a custom range.
+      if let Expr::List(items) = &args[0]
+        && let [Expr::String(scheme), range @ Expr::List(bounds)] =
+          items.as_slice()
+        && bounds.len() == 2
+        && crate::functions::chart::named_color_scheme(scheme).is_some()
+      {
+        return Some(Ok(ranged_gradient_color_function(scheme, range)));
       }
       // ColorData[n]: the indexed scheme's color function, echoed in the
       // same structured form as the named-gradient case above. Applying it
