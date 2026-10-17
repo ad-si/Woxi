@@ -14496,6 +14496,25 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!svg.contains("Grid["), "leaked Grid head in:\n{svg}");
     }
 
+    /// A `Row` of stacked blocks (`Column`, `TableForm`) in a `PlotLabel`
+    /// sets them side by side, line by line, instead of leaking source.
+    #[test]
+    fn plot_label_row_of_columns_sets_blocks_side_by_side() {
+      let svg = export_svg(
+        "Graphics[{Circle[]}, PlotLabel -> Row[{Column[{\"top\", \"bottom\"}], \
+         \" = \", TableForm[{p, q}], Null, Column[{\"one\", \"two\", \"three\"}]}]]",
+      );
+      for leaked in ["Column[", "TableForm[", "Null"] {
+        assert!(!svg.contains(leaked), "leaked {leaked} in:\n{svg}");
+      }
+      assert!(svg.contains("top"), "missing first block in:\n{svg}");
+      assert!(
+        svg.contains(">three</tspan>"),
+        "missing third line in:\n{svg}"
+      );
+      assert!(svg.contains("bottom"), "missing second line in:\n{svg}");
+    }
+
     /// A `DensityPlot` takes the same labels and epilog — the option
     /// parsing is shared across the whole density/contour family.
     #[test]
