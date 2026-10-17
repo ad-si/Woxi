@@ -1216,14 +1216,16 @@ pub fn evaluate_expr_to_expr_inner(
             }
             return Ok(null_expr());
           }
-          // Condition didn't evaluate to True/False - return unevaluated
+          // Condition didn't evaluate to True/False - return unevaluated.
+          // The held branches are left alone except for an explicit
+          // `Evaluate[…]`, which forces evaluation through the hold.
           let mut new_args = vec![cond];
           for arg in args.iter().skip(1) {
-            new_args.push(arg.clone());
+            new_args.push(unwrap_top_level_evaluate(arg)?);
           }
           return Ok(Expr::FunctionCall {
             name: name.clone(),
-            args: new_args.into(),
+            args: splice_top_level_sequences(new_args).into(),
           });
         }
         // Special handling for Module/Block/Assuming - don't evaluate args (body needs local bindings first)
