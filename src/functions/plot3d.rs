@@ -8344,7 +8344,10 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
-      let mut content: Vec<Expr> = Vec::new();
+      // The plot's own picture draws no outline on the sampling quads, so
+      // the extracted surface must not pick up the default polygon edge
+      // when re-rendered inside a `Graphics3D` (e.g. `plot[[1]]`).
+      let mut content: Vec<Expr> = vec![call0("EdgeForm")];
       // `PlotStyle -> Opacity[…]` belongs to the surface, so a caller that
       // lifts it out of the plot keeps the translucency it asked for.
       match &plot_style {

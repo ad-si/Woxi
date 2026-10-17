@@ -4319,6 +4319,24 @@ mod plot3d {
       }
     }
 
+    /// `First[plot]` re-drawn in a `Graphics3D` must not outline the
+    /// sampling quads (the plot itself draws none).
+    #[test]
+    fn extracted_surface_has_no_outline() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "RevolutionPlot3D[{Sin[t], Cos[t]}, {t, 0, Pi}, {z, 0, 1}][[1, 2, 1]]"
+        )
+        .unwrap(),
+        "EdgeForm[]"
+      );
+      let svg = export_svg(
+        "Graphics3D[{Red, RevolutionPlot3D[{Sin[t], Cos[t]}, {t, 0, Pi}, {z, 0, 1}][[1]]}, Boxed -> False]",
+      );
+      assert!(!svg.contains("stroke=\"rgb(64,64,64)\""));
+    }
+
     mod options {
       use super::*;
 
@@ -33493,7 +33511,7 @@ mod revolution_plot3d_part_extraction {
     assert_eq!(
       interpret(
         "First[RevolutionPlot3D[{Cos[t], 1 + Sin[t]}, {t, -Pi/2, 0}, \
-         Mesh -> None, PlotStyle -> Opacity[0.2]]][[2, 1]]"
+         Mesh -> None, PlotStyle -> Opacity[0.2]]][[2, 2]]"
       )
       .unwrap(),
       "Opacity[0.2]"
