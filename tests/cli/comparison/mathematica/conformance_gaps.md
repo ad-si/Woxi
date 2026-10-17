@@ -5007,3 +5007,10 @@ empty chart. Everything else in that Manipulate (the `Column`/`Panel` layout,
 `Tally`, the `BarChart` with `ChartLabels`) works when given a plain string.
 The full texts are needed verbatim to match Wolfram, which is why no
 truncated stand-in is bundled.
+
+### `GraphUtilities`HamiltonianCycles` reports a single cycle
+
+Wolfram lists every Hamiltonian cycle of the graph. Woxi delegates to
+`FindHamiltonianCycle` and returns a one-element list, so `First[...]` (as in
+the `Hamiltonian Tours on Polyhedra` Demonstration) works, but `Length[...]`
+and later elements differ. The cycle chosen may also differ from Wolfram's.

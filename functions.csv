@@ -6354,4 +6354,5 @@ GraphUtilities`PageRanks,PageRank of every vertex of a graph given as a list of 
 GraphUtilities`VertexList,Vertices of a graph given as a list of rules,✅,pure,6.0,
 GraphUtilities`ClosenessCentrality,Closeness centrality of every vertex of a graph given as a list of rules,✅,pure,8.0,
 GraphUtilities`GraphPath,Shortest path between two vertices of a graph given as a list of rules,✅,pure,8.0,
+GraphUtilities`HamiltonianCycles,Hamiltonian cycle of a graph given as a list of rules as a vertex list (only one cycle is reported),🚧,pure,8.0,
 MultivariateStatistics`EllipsoidQuantile,Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean, c Covariance],✅,pure,8.0,
