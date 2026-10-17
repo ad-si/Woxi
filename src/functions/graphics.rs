@@ -26373,10 +26373,14 @@ pub(crate) fn tabview_pane_parts(item: &Expr) -> (Option<Expr>, &Expr, &Expr) {
 /// control is just as likely to arrive `Control`-wrapped.
 fn unwrap_control_wrapper(spec: Expr) -> Expr {
   // `Framed[Control[…]]` / `Panel[Control[…]]`: a bordered single control;
-  // `Tooltip[Control[…], hint]` only adds a hover hint to it.
+  // `Tooltip[Control[…], hint]` only adds a hover hint to it, and
+  // `Item[Control[…], Alignment -> …]` is a grid cell that only positions it.
   let spec = match &spec {
     Expr::FunctionCall { name, args }
-      if (name == "Framed" || name == "Panel" || name == "Tooltip")
+      if (name == "Framed"
+        || name == "Panel"
+        || name == "Tooltip"
+        || name == "Item")
         && matches!(
           args.first(),
           Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
