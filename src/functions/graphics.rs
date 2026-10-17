@@ -3981,7 +3981,7 @@ fn wrap_text_to_width(text: &str, width: usize) -> String {
 }
 
 /// Peel `Style[…]`-like wrappers off `expr`, returning the innermost content.
-fn strip_style_wrappers(expr: &Expr) -> &Expr {
+pub(crate) fn strip_style_wrappers(expr: &Expr) -> &Expr {
   match expr {
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>

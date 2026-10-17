@@ -998,6 +998,20 @@ mod graphics {
       }
     }
 
+    /// A string or scripted-string `Inset` in a plot's `Epilog` is a text
+    /// label like `Text`: no quote marks around the strings.
+    #[test]
+    fn a_plot_epilog_inset_of_a_string_draws_unquoted_text() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Epilog -> {\
+         Inset[Style[Subscript[\"y\", \"A\"], Bold, 12], {0.5, 0.5}], \
+         Inset[\"label\", {0.2, 0.8}]}]",
+      );
+      assert!(svg.contains(">label</text>"), "{svg}");
+      assert!(svg.contains("baseline-shift=\"sub\""), "{svg}");
+      assert!(!svg.contains("&quot;"), "no quoted strings: {svg}");
+    }
+
     /// `Graphics` takes `Prolog` and `Epilog` too: extra primitives drawn
     /// under and over its content. Neither stretches the plot range — a
     /// point far outside it is clipped away rather than rescaling the
