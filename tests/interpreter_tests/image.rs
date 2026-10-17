@@ -5451,6 +5451,22 @@ mod structural_numeric_equal {
     assert_eq!(interpret("ColorNegate[Yellow] == Blue").unwrap(), "True");
   }
 
+  // Machine reals inside lists are equal up to the last ~7 bits, just like
+  // scalar reals (regression: an elliptic-curve point compared to itself
+  // recomputed with a 1-ulp difference was judged unequal).
+  #[test]
+  fn lists_of_reals_compare_with_tolerance() {
+    assert_eq!(
+      interpret("{1., 0.9338094023943001} == {1., 0.9338094023943}").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("{1., 0.9338094023943001} != {1., 0.9338094023943}").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("{1., 2.} == {1., 2.0000001}").unwrap(), "False");
+  }
+
   #[test]
   fn generic_heads_and_lists() {
     assert_eq!(interpret("f[1.] == f[1]").unwrap(), "True");
