@@ -17335,6 +17335,38 @@ mod pane_wrapper_display {
     assert!(svg.contains("<svg x="), "expected embedded graphic");
   }
 
+  // A column item `Style[Text@Grid[…]]` is the table, typeset as a table —
+  // not the `Grid[{{…}}]` source text in a monospace row.
+  #[test]
+  fn column_item_style_of_text_grid_draws_the_table() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Pane[Column[{Style[Text[Grid[{{\"total:\", {1, 2}}}]]], \
+         Graphics[Disk[]]}], {440, 480}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("column should render");
+    assert!(!svg.contains("Grid[{{"), "table source leaked into: {svg}");
+    assert!(svg.contains("total:"), "expected the table cell text");
+    assert!(svg.contains("<svg x="), "expected embedded graphic");
+  }
+
+  // The same item with a size directive still draws the table.
+  #[test]
+  fn column_item_styled_text_grid_draws_the_table() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Column[{Style[Text[Grid[{{\"total:\", 3}}]], 18], \
+         Graphics[Disk[]]}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("column should render");
+    assert!(!svg.contains("Grid[{{"), "table source leaked into: {svg}");
+    assert!(svg.contains("total:"));
+  }
+
   // `Text[content]` is a font wrapper, not a thing to show: the standard
   // Demonstrations body `Text@Pane[Column[{…}]]` has to reach the column
   // underneath. Without this the whole body echoed as text and only the

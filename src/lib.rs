@@ -4102,6 +4102,23 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   // The top-level pipeline transformations don't recurse into nested
   // wrapper arguments, so we apply the relevant ones here for a single
   // sub-expression.
+  //
+  // A directive-free `Style[content]` draws exactly as `content` does, so a
+  // layout item such as `Style[Text@Grid[…]]` is rendered from what it
+  // wraps. (Without this it stayed a bare call and the column printed the
+  // table's source text.) With directives, the styled-layout pass applies
+  // them to the `Column`/`Row`/`Grid` underneath.
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && functions::graphics::is_style_wrapper(name)
+  {
+    if args.len() == 1 {
+      return render_inline_display_wrapper(&args[0]);
+    }
+    let styled = render_styled_layout_if_needed(expr.clone());
+    if matches!(styled, syntax::Expr::Graphics { .. }) {
+      return styled;
+    }
+  }
   let expr = unwrap_display_pass_through(expr);
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);
