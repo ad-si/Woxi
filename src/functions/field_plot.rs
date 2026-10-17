@@ -105,7 +105,8 @@ fn field_plot_label_margins(
       * RESOLUTION_SCALE,
     x_label_area: 40 * RESOLUTION_SCALE,
     y_label_area: 65 * RESOLUTION_SCALE,
-    hide_ticks: false,
+    hide_x_ticks: false,
+    hide_y_ticks: false,
   })
 }
 
@@ -276,8 +277,9 @@ struct DensityContourOptions {
   contour_styles: Vec<Option<crate::functions::plot::SeriesStyle>>,
   /// `FrameLabel -> {bottom, left}`: the labels along the frame edges.
   frame_labels: crate::functions::plot::FrameLabels,
-  /// `FrameTicks -> None | False` removes the tick marks and labels.
-  frame_ticks: bool,
+  /// `FrameTicks`: whether the bottom (x) and left (y) edges keep their
+  /// tick marks and labels.
+  frame_ticks: (bool, bool),
   /// `Epilog -> {…}`: graphics primitives drawn over the finished plot,
   /// in data coordinates.
   epilog: Vec<Expr>,
@@ -419,7 +421,7 @@ fn parse_density_contour_options(
   let mut contour_style = None;
   let mut contour_styles = Vec::new();
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
-  let mut frame_ticks = true;
+  let mut frame_ticks = (true, true);
   let mut epilog: Vec<Expr> = Vec::new();
   let mut region_function: Option<Expr> = None;
   let mut color_function_expr: Option<Expr> = None;
@@ -512,10 +514,8 @@ fn parse_density_contour_options(
           frame_labels = crate::functions::plot::parse_frame_label(replacement);
         }
         "FrameTicks" => {
-          frame_ticks = !matches!(
-            replacement,
-            Expr::Identifier(v) if v == "None" || v == "False"
-          );
+          frame_ticks =
+            crate::functions::plot::frame_tick_axes_visible(replacement);
         }
         // Evaluate now so primitives inside (e.g. `Point[{a, b}]` marking a
         // Manipulate's current parameters) resolve to numeric coordinates
@@ -632,7 +632,7 @@ fn field_plot_axes(
 ) -> Result<crate::functions::plot::PlotArea, InterpreterError> {
   let needs_margins = opts.has_outer_frame_labels()
     || opts.plot_label.is_some()
-    || !opts.frame_ticks;
+    || opts.frame_ticks != (true, true);
   let margins = needs_margins.then_some({
     let top_margin = match &opts.plot_label {
       Some((_, size)) => {
@@ -641,17 +641,24 @@ fn field_plot_axes(
       None => 10 * RESOLUTION_SCALE,
     };
     // Without tick labels only a `FrameLabel` still needs room outside.
-    let (x_label_area, y_label_area) =
-      if opts.frame_ticks || opts.has_outer_frame_labels() {
-        ((40 + 24) * RESOLUTION_SCALE, (65 + 20) * RESOLUTION_SCALE)
-      } else {
-        (0, 0)
-      };
+    let (x_ticks, y_ticks) = opts.frame_ticks;
+    let outer = opts.has_outer_frame_labels();
+    let x_label_area = if x_ticks || outer {
+      (40 + 24) * RESOLUTION_SCALE
+    } else {
+      0
+    };
+    let y_label_area = if y_ticks || outer {
+      (65 + 20) * RESOLUTION_SCALE
+    } else {
+      0
+    };
     crate::functions::plot::MarginOverrides {
       top_margin,
       x_label_area,
       y_label_area,
-      hide_ticks: !opts.frame_ticks,
+      hide_x_ticks: !opts.frame_ticks.0,
+      hide_y_ticks: !opts.frame_ticks.1,
     }
   });
   crate::functions::plot::generate_axes_only_opts(
