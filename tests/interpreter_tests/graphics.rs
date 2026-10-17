@@ -30976,6 +30976,23 @@ mod cases {
     );
   }
   #[test]
+  fn color_data_gradient_over_custom_range() {
+    assert_case(
+      r#"ColorData[{"RedGreenSplit", {-0.05, 0.05}}]"#,
+      r#"ColorDataFunction[RedGreenSplit, Gradients, {-0.05, 0.05}, Blend["RedGreenSplit", Rescale[#1, {-0.05, 0.05}]] & ]"#,
+    );
+    // Applying it rescales the argument onto the gradient's [0, 1].
+    assert_case(
+      r#"ColorData[{"Rainbow", {10, 20}}][15] === ColorData["Rainbow"][0.5]"#,
+      "True",
+    );
+    // Values outside the range clamp to the end colors.
+    assert_case(
+      r#"ColorData[{"Rainbow", {10, 20}}][99] === ColorData["Rainbow"][1]"#,
+      "True",
+    );
+  }
+  #[test]
   fn color_data_1() {
     assert_case(
       r#"ColorData[]"#,

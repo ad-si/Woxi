@@ -1054,6 +1054,17 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // The leading dimensions every part agrees on: a ragged array is still
+  // rectangular down to the level where the parts first differ
+  // (`Dimensions[{{{1, 2}, {3}}, {{4, 5}, {6, 7}}}]` is {2, 2}).
+  fn common_dimensions_prefix(sub_dims: &[Vec<i128>]) -> &[i128] {
+    let first = &sub_dims[0];
+    let len = (0..first.len())
+      .take_while(|&i| sub_dims.iter().all(|d| d.get(i) == Some(&first[i])))
+      .count();
+    &first[..len]
+  }
+
   fn get_dimensions(expr: &Expr, max_level: Option<usize>) -> Vec<i128> {
     if let Some(0) = max_level {
       return vec![];
@@ -1070,9 +1081,7 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .iter()
             .map(|it| get_dimensions(it, child_max))
             .collect();
-          if sub_dims.iter().all(|d| d == &sub_dims[0]) {
-            dims.extend(sub_dims[0].iter());
-          }
+          dims.extend(common_dimensions_prefix(&sub_dims));
         }
         dims
       }
@@ -1088,9 +1097,7 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .iter()
             .map(|it| get_dimensions(it, child_max))
             .collect();
-          if sub_dims.iter().all(|d| d == &sub_dims[0]) {
-            dims.extend(sub_dims[0].iter());
-          }
+          dims.extend(common_dimensions_prefix(&sub_dims));
         }
         dims
       }
@@ -1107,9 +1114,7 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .iter()
             .map(|(_, v)| get_dimensions(v, child_max))
             .collect();
-          if sub_dims.iter().all(|d| d == &sub_dims[0]) {
-            dims.extend(sub_dims[0].iter());
-          }
+          dims.extend(common_dimensions_prefix(&sub_dims));
         }
         dims
       }

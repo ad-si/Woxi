@@ -6406,6 +6406,26 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // A ragged array is still rectangular down to the level where its parts
+  // first disagree.
+  #[test]
+  fn dimensions_of_ragged_array_keeps_common_leading_levels() {
+    assert_eq!(
+      interpret("Dimensions[{{{1, 2}, {3}}, {{4, 5}, {6, 7}}}]").unwrap(),
+      "{2, 2}"
+    );
+    assert_eq!(
+      interpret("Dimensions[{{{{1, 2}}, {{3}}}, {{{4, 5}}, {{6, 7}}}}]")
+        .unwrap(),
+      "{2, 2, 1}"
+    );
+    assert_eq!(interpret("Dimensions[{{1, 2}, {3}}]").unwrap(), "{2}");
+    assert_eq!(
+      interpret("Dimensions[Array[{} &, {2, 3}]]").unwrap(),
+      "{2, 3, 0}"
+    );
+  }
+
   // Dimensions accepts Infinity for its level count, which it used to
   // reject with a hard error along with everything else invalid.
   #[test]
