@@ -24858,8 +24858,8 @@ fn spec_marks_locator(items: &[Expr]) -> bool {
 /// {xmin, ymin}, {xmax, ymax}, (LocatorPane[Dynamic[pts], …] &)}`. Such a
 /// control is a draggable-points Locator whose options (`LocatorAutoCreate`)
 /// live on the pane rather than on the spec.
-fn custom_locator_pane_options(items: &[Expr]) -> Option<&[Expr]> {
-  fn find<'a>(expr: &'a Expr, var: &str) -> Option<&'a [Expr]> {
+fn custom_locator_pane_options(items: &[Expr]) -> Option<Vec<Expr>> {
+  fn find(expr: &Expr, var: &str) -> Option<Vec<Expr>> {
     match expr {
       Expr::FunctionCall { name, args } => {
         if name == "LocatorPane"
@@ -24870,7 +24870,7 @@ fn custom_locator_pane_options(items: &[Expr]) -> Option<&[Expr]> {
           && dname == "Dynamic"
           && matches!(dargs.first(), Some(Expr::Identifier(v)) if v == var)
         {
-          return Some(&args[1..]);
+          return Some(args.to_vec());
         }
         args.iter().find_map(|a| find(a, var))
       }
@@ -24889,10 +24889,74 @@ fn custom_locator_pane_options(items: &[Expr]) -> Option<&[Expr]> {
       }
       other => other,
     };
-    match it {
-      Expr::Function { body } => find(body, &var),
-      _ => None,
+    let Expr::Function { body } = it else {
+      return None;
+    };
+    // The pane is usually written inline, but a control function often just
+    // calls a user-defined helper (`makeDial[#1, …] &`) that builds it.
+    // Apply the function to `Dynamic[var]` the way Manipulate does and look
+    // for the pane in what it returns.
+    find(body, &var).or_else(|| {
+      let applied = Expr::FunctionCall {
+        name: "Apply".to_string(),
+        args: vec![
+          it.clone(),
+          Expr::List(
+            vec![Expr::FunctionCall {
+              name: "Dynamic".to_string(),
+              args: vec![Expr::Identifier(var.clone())].into(),
+            }]
+            .into(),
+          ),
+        ]
+        .into(),
+      };
+      let built = crate::evaluator::evaluate_expr_to_expr(&applied).ok()?;
+      find(&built, &var)
+    })
+  })
+}
+
+/// The `{{xmin, ymin}, {xmax, ymax}}` a `LocatorPane[Dynamic[var], graphic,
+/// bounds]` lets its locator move in: its explicit third argument, else the
+/// picture's numeric `PlotRange`.
+fn locator_pane_bounds(pane: &[Expr]) -> Option<Vec<(f64, f64)>> {
+  let corners = |e: &Expr| -> Option<Vec<(f64, f64)>> {
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(e).ok()?;
+    let Expr::List(pair) = &evaluated else {
+      return None;
+    };
+    let [a, b] = pair.as_slice() else { return None };
+    Some(vec![list2_f64(a)?, list2_f64(b)?])
+  };
+  if let Some(explicit) =
+    pane.get(2).filter(|e| !matches!(e, Expr::Rule { .. }))
+    && let Some(c) = corners(explicit)
+  {
+    return Some(c);
+  }
+  // `PlotRange -> {{xmin, xmax}, {ymin, ymax}}` on the picture.
+  let Expr::FunctionCall { args, .. } = pane.get(1)? else {
+    return None;
+  };
+  args.iter().find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "PlotRange") =>
+    {
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(replacement).ok()?;
+      let Expr::List(ranges) = &evaluated else {
+        return None;
+      };
+      let [x, y] = ranges.as_slice() else {
+        return None;
+      };
+      let (x0, x1) = list2_f64(x)?;
+      let (y0, y1) = list2_f64(y)?;
+      Some(vec![(x0, y0), (x1, y1)])
     }
+    _ => None,
   })
 }
 
@@ -29248,9 +29312,33 @@ fn parse_manipulate_control(
         })
       })
       .collect();
+    // A custom control function that draws `LocatorPane[Dynamic[var, cb],
+    // graphic, {{xmin, ymin}, {xmax, ymax}}]` carries the write-back
+    // callback on the pane's `Dynamic`, and the coordinate range on the
+    // pane (or, failing that, on the picture's `PlotRange`).
+    let pane = custom_locator_pane_options(items);
+    let pane_callback: Option<String> =
+      pane.as_ref().and_then(|p| match p.first() {
+        Some(Expr::FunctionCall { args, .. }) if args.len() >= 2 => {
+          Some(crate::syntax::expr_to_source_form(&args[1]))
+        }
+        _ => None,
+      });
+    let corner_bounds = if corner_bounds.len() >= 2 {
+      corner_bounds
+    } else {
+      pane
+        .as_deref()
+        .and_then(locator_pane_bounds)
+        .unwrap_or(corner_bounds)
+    };
     let auto_create = items
       .iter()
-      .chain(custom_locator_pane_options(items).into_iter().flatten())
+      .chain(
+        custom_locator_pane_options(items)
+          .iter()
+          .flat_map(|pane| pane.iter().skip(1)),
+      )
       .any(|it| {
       matches!(
         it,
@@ -29274,7 +29362,16 @@ fn parse_manipulate_control(
     });
     if let Some((x, y)) = list2_f64(&evaluated) {
       let (x_min, x_max, y_min, y_max) =
-        locator_range(&corner_bounds, &[(x, y)]);
+        if pane.is_some() && corner_bounds.len() < 2 {
+          // A pane whose picture states no range sits on an origin-centered
+          // picture (a dial, a unit-square pad): span the origin and the
+          // point symmetrically rather than a box around the point alone.
+          let half_x = x.abs().max(1.0);
+          let half_y = y.abs().max(1.0);
+          (-half_x, half_x, -half_y, half_y)
+        } else {
+          locator_range(&corner_bounds, &[(x, y)])
+        };
       return Some(ParsedControl::Visible {
         control: ManipulateControl::Slider2D {
           name,
@@ -29285,7 +29382,7 @@ fn parse_manipulate_control(
           x_initial: x,
           y_initial: y,
           label,
-          write_callback: None,
+          write_callback: pane_callback,
         },
         enabled,
         min_code: None,

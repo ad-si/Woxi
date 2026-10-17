@@ -25285,6 +25285,49 @@ mod manipulate {
     assert_eq!(names, vec!["a", "on", "b", "m"]);
   }
 
+  // A control function that calls a user-defined helper building the
+  // `LocatorPane` (`{{p, init, label}, makeDial[#1, …] &}`, how a dial is
+  // written in a Demonstration's initialization code) is still a draggable
+  // 2D control: the pane's write-back callback and `PlotRange` carry over.
+  #[test]
+  fn spec_custom_control_function_building_locator_pane_is_slider2d() {
+    woxi::interpret(
+      "dial[Dynamic[pt_], lim_] := LocatorPane[Dynamic[pt, (pt = Normalize[#]) &], \
+       Graphics[Circle[{0, 0}, 1], PlotRange -> {{-lim, lim}, {-lim, lim}}]]",
+    )
+    .unwrap();
+    let expr = interpret_to_expr(
+      "Manipulate[p, {{p, {1, 0}, \"angle\"}, (dial[#1, 2] &)}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(spec.controls.len(), 1);
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        name,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        write_callback,
+        ..
+      } => {
+        assert_eq!(name, "p");
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (-2.0, 2.0, -2.0, 2.0));
+        assert_eq!((*x_initial, *y_initial), (1.0, 0.0));
+        assert!(
+          write_callback
+            .as_deref()
+            .is_some_and(|cb| cb.contains("Normalize")),
+          "got {write_callback:?}"
+        );
+      }
+      other => panic!("expected Slider2D, got {other:?}"),
+    }
+  }
+
   // A string-tagged variable spec (`"tag" -> {var, min, max}`) is the
   // control itself — including one whose bounds name sibling controls.
   #[test]
