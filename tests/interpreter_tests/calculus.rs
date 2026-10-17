@@ -20562,3 +20562,69 @@ mod integrate_linear_power {
     );
   }
 }
+
+mod ndsolve_descending_and_compound_domain {
+  use super::*;
+
+  /// A descending range `{t, 0, -2}` integrates backwards and is reported
+  /// over the ascending interval, like wolframscript.
+  #[test]
+  fn descending_range_integrates_backwards() {
+    assert_eq!(
+      interpret(
+        "First[NDSolve[{x'[t] == -x[t], x[0] == 1}, {x[t]}, {t, 0, -2}]]"
+      )
+      .unwrap(),
+      "{x[t] -> InterpolatingFunction[{{-2., 0.}}, <>][t]}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[x[t] /. First[NDSolve[{x'[t] == -x[t], x[0] == 1}, \
+         {x[t]}, {t, 0, -2}]] /. t -> -2, 0.001]"
+      )
+      .unwrap(),
+      "7.389"
+    );
+  }
+
+  /// The independent variable may itself be a compound expression such as
+  /// `Subscript[A, m]`.
+  #[test]
+  fn compound_independent_variable() {
+    assert_eq!(
+      interpret(
+        "First[NDSolve[{x'[Subscript[A, m]] == -x[Subscript[A, m]], \
+         x[0] == 1}, {x[Subscript[A, m]]}, {Subscript[A, m], 0, 2}]]"
+      )
+      .unwrap(),
+      "{x[Subscript[A, m]] -> InterpolatingFunction[{{0., 2.}}, <>][Subscript[A, m]]}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[x[Subscript[A, m]] /. First[NDSolve[\
+         {x'[Subscript[A, m]] == -x[Subscript[A, m]], x[0] == 1}, \
+         {x[Subscript[A, m]]}, {Subscript[A, m], 0, 2}]] \
+         /. Subscript[A, m] -> 2, 0.001]"
+      )
+      .unwrap(),
+      "0.135"
+    );
+  }
+
+  /// A right-hand side that switches branch at the start point
+  /// (`If[s == 0, limit, general]`) never evaluates the singular branch
+  /// there, in either direction.
+  #[test]
+  fn branch_on_independent_variable() {
+    for (end, expected) in [(2, "1.605"), (-2, "-1.605")] {
+      assert_eq!(
+        interpret(&format!(
+          "Round[u[s] /. First[NDSolve[{{u'[s] == If[s == 0, 1, Sin[s]/s], \
+           u[0] == 0}}, {{u[s]}}, {{s, 0, {end}}}]] /. s -> {end}, 0.001]"
+        ))
+        .unwrap(),
+        expected
+      );
+    }
+  }
+}

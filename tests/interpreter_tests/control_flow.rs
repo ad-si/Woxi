@@ -4860,3 +4860,22 @@ mod self_rewriting_rules {
     );
   }
 }
+
+mod if_evaluate_in_held_branches {
+  use super::*;
+
+  /// `Evaluate` forces evaluation through `If`'s hold even when the
+  /// condition stays undecided.
+  #[test]
+  fn evaluate_forces_branch_with_symbolic_condition() {
+    assert_eq!(
+      interpret("g[a_] := If[q == 0, Evaluate[u + 1 /. u -> a], 5]; g[3]")
+        .unwrap(),
+      "If[q == 0, 4, 5]"
+    );
+    assert_eq!(
+      interpret("If[q == 0, 1 + 1, 2 + 2]").unwrap(),
+      "If[q == 0, 1 + 1, 2 + 2]"
+    );
+  }
+}
