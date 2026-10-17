@@ -1641,7 +1641,7 @@ TakeWhile,Takes elements from start while predicate is true,✅,pure,6.0,1639
 ImageCollage,Creates a collage from a list of images with optional weights and fitting,✅,pure,10.0,1641
 NDEigensystem,Numerical eigensystem,,unevaluated,10.2,1641
 FindDistribution,Find matching distribution,,unevaluated,10.3,1643
-TextureCoordinateFunction,Texture coordinate function,,unevaluated,8.0,1643
+TextureCoordinateFunction,Option mapping surface points to Texture image coordinates (SphericalPlot3D),,unevaluated,8.0,1643
 TextCases,Extract text units of a given type from a string (Word mirrors TextWords and Sentence mirrors TextSentences; optional third arg keeps the first n),✅,pure,10.2,1644
 DirectoryName,Extract the directory name from a file path,✅,pure,3.0,1646
 DominantColors,Finds dominant colors in an image using k-means clustering,✅,pure,9.0,1646

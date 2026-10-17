@@ -3048,6 +3048,9 @@ struct StyleState3D {
   /// of the image width, negative (stored) is an absolute size in printer's
   /// points. `None` draws the default 3px dot.
   point_size: Option<f64>,
+  /// `Texture[image]`: surfaces coloured by sampling this image at each
+  /// facet's texture coordinates (see [`texture_color`]).
+  texture: Option<std::sync::Arc<image::RgbImage>>,
 }
 
 impl Default for StyleState3D {
@@ -3064,6 +3067,7 @@ impl Default for StyleState3D {
       specular: None,
       dashing: None,
       point_size: None,
+      texture: None,
     }
   }
 }
@@ -3266,6 +3270,29 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       // white instead of dark grey).
       "Specularity" if !args.is_empty() => {
         style.specular = parse_specularity(args);
+        return true;
+      }
+      // `Texture[image]` paints the surfaces that follow with the image.
+      "Texture" if args.len() == 1 => {
+        let img = match &args[0] {
+          img @ Expr::Image { .. } => Some(img.clone()),
+          other => evaluate_expr_to_expr(other).ok(),
+        };
+        if let Some(Expr::Image {
+          width,
+          height,
+          channels,
+          ref data,
+          ..
+        }) = img
+        {
+          style.texture = Some(std::sync::Arc::new(
+            crate::functions::image_ast::expr_to_dynamic_image(
+              width, height, channels, data,
+            )
+            .to_rgb8(),
+          ));
+        }
         return true;
       }
       // CapForm[None] leaves an open surface's ends open; every named form
@@ -3546,6 +3573,26 @@ fn shade_facet(
     }
     None => (apply_lighting(default_color, normal), 1.0),
   }
+}
+
+/// The colour of `texture` at texture coordinates `(u, v)`: `(0, 0)` is the
+/// bottom-left corner and the image repeats outside the unit square.
+fn texture_color(
+  texture: &image::RgbImage,
+  u: f64,
+  v: f64,
+) -> Option<(u8, u8, u8)> {
+  if !u.is_finite() || !v.is_finite() {
+    return None;
+  }
+  let (w, h) = (texture.width(), texture.height());
+  if w == 0 || h == 0 {
+    return None;
+  }
+  let x = ((u.rem_euclid(1.0) * w as f64) as u32).min(w - 1);
+  let y = (((1.0 - v.rem_euclid(1.0)) * h as f64) as u32).min(h - 1);
+  let px = texture.get_pixel(x, y);
+  Some((px[0], px[1], px[2]))
 }
 
 /// The linear part of a rotation by `angle` around the axis direction `w`
@@ -6470,6 +6517,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             specular: None,
             dashing: None,
             point_size: None,
+            texture: None,
           },
         ),
       };
@@ -10535,6 +10583,9 @@ fn generate_line3d_svg(
 // ── SphericalPlot3D implementation ───────────────────────────────────
 
 const SPHERICAL_GRID: usize = 50;
+/// Grid density of a textured `SphericalPlot3D`, whose facets are the
+/// texture's pixels.
+const SPHERICAL_TEXTURE_GRID: usize = 80;
 
 /// SphericalPlot3D[r, {theta, t0, t1}, {phi, p0, p1}]
 /// Plots r(theta, phi) in spherical coordinates.
@@ -10583,6 +10634,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // region-clipped) surface with this color.
   let mut boundary_color: Option<(u8, u8, u8)> = None;
   let mut plot_style_expr: Option<&Expr> = None;
+  // `TextureCoordinateFunction -> f`: maps a facet to the point of a
+  // `Texture` image painted there.
+  let mut texture_fn: Option<Expr> = None;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -10593,6 +10647,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "PlotStyle" => {
           plot_style_expr = Some(replacement.as_ref());
+        }
+        Expr::Identifier(name) if name == "TextureCoordinateFunction" => {
+          texture_fn = Some(replacement.as_ref().clone());
         }
         Expr::Identifier(name) if name == "ImageSize" => {
           if let Some((w, h, fw)) =
@@ -10654,16 +10711,23 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let n_theta = plot_points.map_or(SPHERICAL_GRID, |p| p - 1);
-  let n_phi = plot_points.map_or(SPHERICAL_GRID, |p| p - 1);
-  let theta_range = theta_max - theta_min;
-  let phi_range = phi_max - phi_min;
-
   // `PlotStyle`, one style per surface (cycling); empty means it was not
   // given, so the height-based default colouring is used unchanged.
   let plot_styles: Vec<StyleState3D> = plot_style_expr
     .map(|e| parse_plot_style_3d(e, bodies.len()))
     .unwrap_or_default();
+
+  // A texture is sampled once per facet, so it needs finer facets than a
+  // plain surface to show any detail.
+  let default_grid = if plot_styles.iter().any(|s| s.texture.is_some()) {
+    SPHERICAL_TEXTURE_GRID
+  } else {
+    SPHERICAL_GRID
+  };
+  let n_theta = plot_points.map_or(default_grid, |p| p - 1);
+  let n_phi = plot_points.map_or(default_grid, |p| p - 1);
+  let theta_range = theta_max - theta_min;
+  let phi_range = phi_max - phi_min;
 
   let param_at = |i: usize, j: usize| -> (f64, f64) {
     (
@@ -10683,6 +10747,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build each surface's world-space triangles independently, clipping
   // cells that cross the region boundary.
   let mut surface_tris: Vec<Vec<[Point3D; 3]>> =
+    Vec::with_capacity(bodies.len());
+  // The (theta, phi) centroid of each triangle, for texture coordinates.
+  let mut surface_tri_params: Vec<Vec<(f64, f64)>> =
     Vec::with_capacity(bodies.len());
   for surface_body in &evaluated_bodies {
     // Evaluate the surface point at arbitrary (theta, phi) parameters.
@@ -10784,6 +10851,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
 
     let mut tris: Vec<[Point3D; 3]> = Vec::new();
+    let mut tri_params: Vec<(f64, f64)> = Vec::new();
     for i in 0..n_theta {
       for j in 0..n_phi {
         // The cell's two triangles in grid corners:
@@ -10809,10 +10877,12 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             continue;
           }
           // Fan-triangulate the clipped polygon back into world space.
-          let points: Vec<Point3D> = polygon
+          let (points, params): (Vec<Point3D>, Vec<(f64, f64)>) = polygon
             .iter()
-            .filter_map(|&(th, ph)| surface_at(th, ph).map(|(p, _)| p))
-            .collect();
+            .filter_map(|&(th, ph)| {
+              surface_at(th, ph).map(|(p, _)| (p, (th, ph)))
+            })
+            .unzip();
           if points.len() < 3 {
             continue;
           }
@@ -10831,11 +10901,16 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               continue;
             }
             tris.push([a, b, c]);
+            tri_params.push((
+              (params[0].0 + params[k].0 + params[k + 1].0) / 3.0,
+              (params[0].1 + params[k].1 + params[k + 1].1) / 3.0,
+            ));
           }
         }
       }
     }
     surface_tris.push(tris);
+    surface_tri_params.push(tri_params);
   }
 
   if surface_tris.iter().all(std::vec::Vec::is_empty) {
@@ -11061,7 +11136,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for (surface_idx, tris) in surface_tris.iter().enumerate() {
     let style = plot_style_for_surface(&plot_styles, surface_idx);
-    for tri in tris {
+    for (tri_idx, tri) in tris.iter().enumerate() {
       let [a, b, c] = *tri;
       let na = normalize(a);
       let nb = normalize(b);
@@ -11073,8 +11148,58 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         / 3.0;
       let default_color = height_color(avg_z);
       let normal = triangle_normal(na, nb, nc);
-      let (color, opacity) =
-        shade_facet(default_color, style, normal, view_dir);
+      // A textured surface takes its colour from the image at the facet's
+      // texture coordinates instead of from its height.
+      let textured = style.and_then(|s| s.texture.as_ref()).and_then(|tex| {
+        let (theta, phi) = surface_tri_params[surface_idx][tri_idx];
+        // Coordinates are scaled to the unit interval over the plot, as
+        // `TextureCoordinateScaling -> True` does.
+        let scaled = |v: f64, lo: f64, range: f64| {
+          if range.abs() < 1e-15 {
+            0.0
+          } else {
+            (v - lo) / range
+          }
+        };
+        let (cx, cy, cz) = (
+          (a.x + b.x + c.x) / 3.0,
+          (a.y + b.y + c.y) / 3.0,
+          (a.z + b.z + c.z) / 3.0,
+        );
+        let u_theta = scaled(theta, theta_min, theta_range);
+        let u_phi = scaled(phi, phi_min, phi_range);
+        let (u, v) = match &texture_fn {
+          None => (u_theta, u_phi),
+          Some(f) => {
+            let call = Expr::CurriedCall {
+              func: Box::new(f.clone()),
+              args: vec![
+                Expr::Real(scaled(cx, x_min, x_range_v)),
+                Expr::Real(scaled(cy, y_min, y_range_v)),
+                Expr::Real(scaled(cz, z_min, z_range_v)),
+                Expr::Real(u_theta),
+                Expr::Real(u_phi),
+                Expr::Real((cx * cx + cy * cy + cz * cz).sqrt()),
+              ],
+            };
+            match evaluate_expr_to_expr(&call).ok()? {
+              Expr::List(ref uv) if uv.len() == 2 => {
+                (try_eval_to_f64(&uv[0])?, try_eval_to_f64(&uv[1])?)
+              }
+              _ => return None,
+            }
+          }
+        };
+        texture_color(tex, u, v)
+      });
+      let (color, opacity) = match (style, textured) {
+        (Some(s), Some(base)) => {
+          let mut painted = s.clone();
+          painted.color = Some(base);
+          shade_facet(default_color, Some(&painted), normal, view_dir)
+        }
+        _ => shade_facet(default_color, style, normal, view_dir),
+      };
 
       let pa = project(na, &camera);
       let pb = project(nb, &camera);
