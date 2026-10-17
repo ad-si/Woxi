@@ -18685,8 +18685,11 @@ impl SpacingSpec {
   /// Resolve to pixels given a cell dimension (width or height)
   fn to_px(self, cell_dim: f64) -> f64 {
     match self {
-      Self::Points(pts) => pts * (4.0 / 3.0), // pt → px at 96 dpi
-      Self::Scaled(frac) => frac * cell_dim,
+      // A negative gap only avoids visible overlap in Wolfram Language
+      // because its plots carry padding around the frame; ours are tight,
+      // so cells are simply butted together instead.
+      Self::Points(pts) => (pts * (4.0 / 3.0)).max(0.0), // pt → px at 96 dpi
+      Self::Scaled(frac) => (frac * cell_dim).max(0.0),
     }
   }
 }
@@ -18785,7 +18788,15 @@ fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
           };
         }
         Expr::Identifier(name) if name == "ImageSize" => {
-          match replacement.as_ref() {
+          // The layout heads hold their arguments, so a computed size such
+          // as `0.75*{w, h}` arrives unevaluated; resolve it to a pair first.
+          let evaluated = match replacement.as_ref() {
+            Expr::List(_) => replacement.as_ref().clone(),
+            other => {
+              evaluate_expr_to_expr(other).unwrap_or_else(|_| other.clone())
+            }
+          };
+          match &evaluated {
             // {w, h} explicit pair
             Expr::List(pair) if pair.len() == 2 => {
               if let Some(w) = try_eval_to_f64(&pair[0]) {
@@ -20007,11 +20018,25 @@ pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     grid_expr_owned = evaluate_expr_to_expr(&args[0])?;
     &grid_expr_owned
   };
-  let Expr::List(outer_items) = grid_list_ref else {
+  let Expr::List(raw_outer_items) = grid_list_ref else {
     return Err(InterpreterError::EvaluationError(
       "GraphicsGrid expects a list of lists as its first argument".into(),
     ));
   };
+  // A held row that is a call rather than a literal list — e.g. the
+  // `{(Plot[…, #] &) /@ {…}}` shape — is a row once it evaluates to a
+  // list, so expand it here instead of treating the call as one cell.
+  let mut outer_items: Vec<Expr> = Vec::with_capacity(raw_outer_items.len());
+  for item in raw_outer_items {
+    match item {
+      Expr::List(_) => outer_items.push(item.clone()),
+      _ => match evaluate_expr_to_expr(item) {
+        Ok(row @ Expr::List(_)) => outer_items.push(row),
+        _ => outer_items.push(item.clone()),
+      },
+    }
+  }
+  let outer_items = &outer_items;
 
   // Determine the widest row so every cell in the grid is re-rendered
   // at the same per-cell width (grids typically expect uniform cells).
