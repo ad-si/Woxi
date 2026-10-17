@@ -4,7 +4,6 @@
 
 use super::data::{AudioData, parse_audio, quantity};
 use super::spectral::power_spectrum;
-#[allow(unused_imports)]
 use super::*;
 
 /// One channel's worth of a measurement, as an expression.
@@ -83,7 +82,7 @@ fn channel_property(prop: &str, xs: &[f64], rate: f64) -> Option<Expr> {
     }
     "FundamentalFrequency" => Some(match fundamental_frequency(xs, rate) {
       Some(f) => quantity(f, "Hertz"),
-      None => call1("Missing", Expr::String("NotAvailable".to_string())),
+      None => call1("Missing", str_expr("NotAvailable")),
     }),
     "SpectralCentroid" | "SpectralSpread" | "SpectralSkewness"
     | "SpectralKurtosis" | "SpectralCrest" | "SpectralFlatness"
@@ -363,7 +362,7 @@ pub fn audio_intervals_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut entries = Vec::with_capacity(INTERVAL_PROPS.len());
       for prop in INTERVAL_PROPS {
         if let Some(v) = channel_property(prop, frame, audio.rate) {
-          entries.push((Expr::String((*prop).to_string()), v));
+          entries.push((str_expr(prop), v));
         }
       }
       let assoc = Expr::Association(entries);

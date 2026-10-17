@@ -238,7 +238,7 @@ pub fn select_first_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let not_found = || match default {
     Some(d) => d.clone(),
-    None => call1("Missing", Expr::String("NotFound".to_string())),
+    None => call1("Missing", str_expr("NotFound")),
   };
 
   // On an association, the predicate is tested against the values and the first
@@ -306,9 +306,11 @@ pub fn first_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Association(pairs) => pairs.iter().map(|(_, v)| v).collect(),
     _ => {
       // Other heads: return Missing["NotFound"] or the default.
-      return Ok(default.cloned().unwrap_or_else(|| {
-        call1("Missing", Expr::String("NotFound".to_string()))
-      }));
+      return Ok(
+        default
+          .cloned()
+          .unwrap_or_else(|| call1("Missing", str_expr("NotFound"))),
+      );
     }
   };
 
@@ -334,9 +336,9 @@ pub fn first_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // No match found
   Ok(
-    default.cloned().unwrap_or_else(|| {
-      call1("Missing", Expr::String("NotFound".to_string()))
-    }),
+    default
+      .cloned()
+      .unwrap_or_else(|| call1("Missing", str_expr("NotFound"))),
   )
 }
 
@@ -1736,7 +1738,7 @@ pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let default = if args.len() >= 3 {
     args[2].clone()
   } else {
-    call1("Missing", Expr::String("NotFound".to_string()))
+    call1("Missing", str_expr("NotFound"))
   };
   let mut position_args = vec![args[0].clone(), args[1].clone()];
   if args.len() >= 4 {

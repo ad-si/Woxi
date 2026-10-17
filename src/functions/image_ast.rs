@@ -339,10 +339,7 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
           .cloned()
           .collect();
-        gargs.push(Expr::Rule {
-          pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
-          replacement: Box::new(size),
-        });
+        gargs.push(rule_expr(Expr::Identifier("ImageSize".to_string()), size));
         let sized = Expr::FunctionCall {
           name: name.clone(),
           args: gargs.into(),
@@ -835,10 +832,10 @@ pub fn image_type_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   if let Expr::Image { image_type, .. } = &args[0] {
-    return Ok(Expr::String(type_to_str(image_type).to_string()));
+    return Ok(str_expr(type_to_str(image_type)));
   }
   if let Some(t) = image3d_type(&args[0]) {
-    return Ok(Expr::String(type_to_str(&t).to_string()));
+    return Ok(str_expr(type_to_str(&t)));
   }
   crate::emit_message(&format!(
     "ImageType::imginv: Expecting an image or graphics instead of {}.",
@@ -1103,7 +1100,7 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // image (the common case for inputs built from raw NumericArrays).
   if let Expr::Image { color_space, .. } = &args[0] {
     return Ok(match color_space {
-      Some(cs) => Expr::String((*cs).to_string()),
+      Some(cs) => str_expr(cs),
       None => id_expr("Automatic"),
     });
   }
@@ -1280,11 +1277,16 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Binarize[img] or Binarize[img, threshold]
+/// Binarize[img], Binarize[img, threshold] or Binarize[img, Method -> m]
+///
+/// `threshold` is a number (strict `>`), a pair `{t1, t2}` (inclusive range)
+/// or a function applied to each pixel value that returns `True` / `False`.
+/// `Method` selects an automatic threshold: `"Cluster"`, `"Mean"`,
+/// `"Median"`, `"Entropy"`, `"MinimumError"` or `{"BlackFraction", f}`.
 pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "Binarize expects 1 or 2 arguments".into(),
+      "Binarize expects 1 to 3 arguments".into(),
     ));
   }
 
@@ -1299,26 +1301,47 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("Binarize", args));
   }
 
-  // Threshold can be a single number (strict >) or a {t1, t2} pair
-  // (t1 <= v <= t2, both inclusive). The 1-arg form uses an automatic
-  // threshold (approximated here as 0.5 with the legacy >= compare so
-  // existing snapshots still pass; wolframscript uses Otsu's method).
-  enum Threshold {
+  // The 1-arg form uses an automatic threshold (approximated here as 0.5
+  // with the legacy >= compare so existing snapshots still pass;
+  // wolframscript uses Otsu's method).
+  enum Threshold<'a> {
     Default,
     Single(f64),
     Range(f64, f64),
+    Function(&'a Expr),
+    Method(BinarizeMethod),
   }
-  let threshold = if args.len() == 2 {
-    if let Expr::List(items) = &args[1]
-      && items.len() == 2
-    {
-      Threshold::Range(expr_to_f64(&items[0])?, expr_to_f64(&items[1])?)
-    } else {
-      Threshold::Single(expr_to_f64(&args[1])?)
+  let (options, positional): (Vec<&Expr>, Vec<&Expr>) = args[1..]
+    .iter()
+    .partition(|a| matches!(a, Expr::Rule { .. }));
+  if positional.len() > 1 {
+    return Ok(unevaluated("Binarize", args));
+  }
+  let method = options.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method") => {
+      Some(replacement.as_ref())
     }
-  } else {
-    Threshold::Default
+    _ => None,
+  });
+  let mut threshold = match positional.first() {
+    None => Threshold::Default,
+    Some(Expr::List(items)) if items.len() == 2 => {
+      Threshold::Range(expr_to_f64(&items[0])?, expr_to_f64(&items[1])?)
+    }
+    Some(f @ (Expr::Function { .. } | Expr::NamedFunction { .. })) => {
+      Threshold::Function(f)
+    }
+    Some(t) => Threshold::Single(expr_to_f64(t)?),
   };
+  if let (Threshold::Default, Some(m)) = (&threshold, method) {
+    match BinarizeMethod::parse(m) {
+      Some(m) => threshold = Threshold::Method(m),
+      None => return Ok(unevaluated("Binarize", args)),
+    }
+  }
 
   match &args[0] {
     Expr::Image {
@@ -1333,23 +1356,50 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let h = *height as usize;
 
       // If color, convert to grayscale first for comparison, output is 1-channel
-      let mut new_data = Vec::with_capacity(w * h);
-      for y in 0..h {
-        for x in 0..w {
-          let lum = if ch == 1 {
-            data[y * w + x]
+      let lums: Vec<f64> = (0..w * h)
+        .map(|i| {
+          if ch == 1 {
+            data[i]
           } else {
-            let base = (y * w + x) * ch;
+            let base = i * ch;
             // Luminance: 0.299*R + 0.587*G + 0.114*B
             0.299 * data[base] + 0.587 * data[base + 1] + 0.114 * data[base + 2]
-          };
-          let bit = match threshold {
-            Threshold::Default => lum >= 0.5,
-            Threshold::Single(t) => lum > t,
-            Threshold::Range(t1, t2) => lum >= t1 && lum <= t2,
-          };
-          new_data.push(if bit { 1.0 } else { 0.0 });
-        }
+          }
+        })
+        .collect();
+      let method_threshold = match &threshold {
+        Threshold::Method(m) => m.threshold(&lums),
+        _ => 0.5,
+      };
+      let mut new_data = Vec::with_capacity(w * h);
+      for (i, &lum) in lums.iter().enumerate() {
+        let bit = match &threshold {
+          Threshold::Default => lum >= 0.5,
+          Threshold::Single(t) => lum > *t,
+          Threshold::Range(t1, t2) => lum >= *t1 && lum <= *t2,
+          Threshold::Method(_) => lum > method_threshold,
+          Threshold::Function(f) => {
+            // The function sees the pixel value: a number for a
+            // single-channel image, otherwise the color channels.
+            let pixel = if ch == 1 {
+              Expr::Real(data[i])
+            } else {
+              let base = i * ch;
+              Expr::List(
+                data[base..base + ch.min(3)]
+                  .iter()
+                  .map(|v| Expr::Real(*v))
+                  .collect(),
+              )
+            };
+            let result =
+              crate::evaluator::function_application::apply_function_to_arg(
+                f, &pixel,
+              )?;
+            matches!(&result, Expr::Identifier(n) if n == "True")
+          }
+        };
+        new_data.push(if bit { 1.0 } else { 0.0 });
       }
 
       Ok(Expr::Image {
@@ -1366,6 +1416,137 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Binarize: first argument is not an Image".into(),
     )),
   }
+}
+
+/// The automatic threshold selectors `Binarize` accepts as `Method`.
+enum BinarizeMethod {
+  Cluster,
+  Mean,
+  Median,
+  Entropy,
+  MinimumError,
+  BlackFraction(f64),
+}
+
+impl BinarizeMethod {
+  fn parse(spec: &Expr) -> Option<Self> {
+    match spec {
+      Expr::String(s) => match s.as_str() {
+        "Cluster" => Some(Self::Cluster),
+        "Mean" => Some(Self::Mean),
+        "Median" => Some(Self::Median),
+        "Entropy" => Some(Self::Entropy),
+        "MinimumError" => Some(Self::MinimumError),
+        _ => None,
+      },
+      Expr::List(items) if items.len() == 2 => match (&items[0], &items[1]) {
+        (Expr::String(s), f) if s == "BlackFraction" => {
+          let f = expr_to_f64(f).ok()?;
+          (0.0..=1.0).contains(&f).then_some(Self::BlackFraction(f))
+        }
+        _ => None,
+      },
+      _ => None,
+    }
+  }
+
+  /// The gray level at or below which pixels become black.
+  fn threshold(&self, values: &[f64]) -> f64 {
+    if values.is_empty() {
+      return 0.5;
+    }
+    let sorted = || {
+      let mut sorted = values.to_vec();
+      sorted.sort_by(f64::total_cmp);
+      sorted
+    };
+    match self {
+      Self::Cluster => cluster_variance_threshold(values),
+      Self::Mean => values.iter().sum::<f64>() / values.len() as f64,
+      Self::Median => sorted()[values.len() / 2],
+      Self::BlackFraction(f) => {
+        let black = (f * values.len() as f64).round() as usize;
+        match black {
+          0 => -1.0,
+          n if n >= values.len() => 2.0,
+          n => sorted()[n - 1],
+        }
+      }
+      Self::Entropy | Self::MinimumError => {
+        let histogram = gray_histogram(values);
+        let bin = if matches!(self, Self::Entropy) {
+          max_entropy_bin(&histogram)
+        } else {
+          minimum_error_bin(&histogram)
+        };
+        (bin as f64 + 1.0) / histogram.len() as f64
+      }
+    }
+  }
+}
+
+/// A 256-bin histogram of values in `[0, 1]`, normalised to sum to 1.
+fn gray_histogram(values: &[f64]) -> Vec<f64> {
+  const BINS: usize = 256;
+  let mut histogram = vec![0.0; BINS];
+  for &v in values {
+    let bin = ((v.clamp(0.0, 1.0) * BINS as f64) as usize).min(BINS - 1);
+    histogram[bin] += 1.0;
+  }
+  let total = values.len() as f64;
+  for c in &mut histogram {
+    *c /= total;
+  }
+  histogram
+}
+
+/// Kapur's method: the split maximising the summed entropy of the two
+/// classes. Returns the last bin that is black.
+fn max_entropy_bin(histogram: &[f64]) -> usize {
+  let entropy = |range: std::ops::Range<usize>| -> f64 {
+    let mass: f64 = histogram[range.clone()].iter().sum();
+    if mass <= 0.0 {
+      return 0.0;
+    }
+    -histogram[range]
+      .iter()
+      .filter(|&&p| p > 0.0)
+      .map(|&p| (p / mass) * (p / mass).ln())
+      .sum::<f64>()
+  };
+  (0..histogram.len() - 1)
+    .map(|t| (t, entropy(0..t + 1) + entropy(t + 1..histogram.len())))
+    .max_by(|a, b| a.1.total_cmp(&b.1))
+    .map_or(histogram.len() / 2, |(t, _)| t)
+}
+
+/// Kittler–Illingworth minimum error thresholding: fit two Gaussians to
+/// the classes either side of each split and minimise the criterion.
+/// Returns the last bin that is black.
+fn minimum_error_bin(histogram: &[f64]) -> usize {
+  let stats = |range: std::ops::Range<usize>| -> Option<(f64, f64)> {
+    let mass: f64 = histogram[range.clone()].iter().sum();
+    if mass <= 0.0 {
+      return None;
+    }
+    let mean =
+      range.clone().map(|i| i as f64 * histogram[i]).sum::<f64>() / mass;
+    let var = range
+      .map(|i| (i as f64 - mean).powi(2) * histogram[i])
+      .sum::<f64>()
+      / mass;
+    Some((mass, var.max(1e-9)))
+  };
+  (0..histogram.len() - 1)
+    .filter_map(|t| {
+      let (p1, v1) = stats(0..t + 1)?;
+      let (p2, v2) = stats(t + 1..histogram.len())?;
+      let j = 1.0 + 2.0 * (p1 * v1.sqrt().ln() + p2 * v2.sqrt().ln())
+        - 2.0 * (p1 * p1.ln() + p2 * p2.ln());
+      Some((t, j))
+    })
+    .min_by(|a, b| a.1.total_cmp(&b.1))
+    .map_or(histogram.len() / 2, |(t, _)| t)
 }
 
 /// Blur[image] / Blur[image, r] — blur an image over pixel radius `r`
@@ -7507,6 +7688,18 @@ const EDT_FAR: f64 = 1e18;
 /// semantics here instead.
 pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("DistanceTransform", args);
+  // Graphics are rasterized, like wolframscript does for any image argument.
+  let coerced;
+  let args: &[Expr] = if !matches!(&args[0], Expr::Image { .. })
+    && let Some(img) = coerce_graphics_to_image(&args[0])
+  {
+    let mut v = args.to_vec();
+    v[0] = img;
+    coerced = v;
+    &coerced
+  } else {
+    args
+  };
   let Expr::Image {
     width,
     height,
@@ -10846,7 +11039,7 @@ fn image_measurement(
     }
     "Channels" => Some(Expr::Integer(ch as i128)),
     "ColorSpace" => Some(match color_space {
-      Some(name) => Expr::String(name.to_string()),
+      Some(name) => str_expr(name),
       None => id_expr("Automatic"),
     }),
     "ImageDimensions" => Some(Expr::List(
@@ -10928,7 +11121,7 @@ pub fn image_measurements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Some(Ok(Expr::List(
         IMAGE_MEASUREMENT_PROPERTIES
           .iter()
-          .map(|p| Expr::String((*p).to_string()))
+          .map(|p| str_expr(p))
           .collect(),
       )));
     }
@@ -11369,10 +11562,7 @@ pub fn highlight_image_ast(
   };
   let pair =
     |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
-  let rule = |k: &str, v: Expr| Expr::Rule {
-    pattern: Box::new(Expr::Identifier(k.into())),
-    replacement: Box::new(v),
-  };
+  let rule = |k: &str, v: Expr| rule_expr(Expr::Identifier(k.into()), v);
   let mut content = vec![call(
     "Raster",
     vec![

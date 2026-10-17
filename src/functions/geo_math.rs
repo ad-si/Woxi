@@ -5,7 +5,6 @@
 //! uses for `GeoModel -> ITRF00` (its default). This reproduces `GeoDistance`,
 //! `GeoDirection` and `GeoDestination` to full machine precision.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::geographics::{position_to_latlon, positions_from_arg};
 use crate::functions::math_ast::rat_reduce;
@@ -45,10 +44,7 @@ pub fn destination(lat: f64, lon: f64, az_deg: f64, dist_m: f64) -> (f64, f64) {
 // ── Wolfram-Language entry points ─────────────────────────────────────────
 
 fn quantity(magnitude: f64, unit: &str) -> Expr {
-  call(
-    "Quantity",
-    vec![Expr::Real(magnitude), Expr::String(unit.to_string())],
-  )
+  call("Quantity", vec![Expr::Real(magnitude), str_expr(unit)])
 }
 
 /// Wrap a geodesic distance (in meters) as a `Quantity`, picking the unit the
@@ -122,7 +118,7 @@ fn magnitude_in_unit(expr: &Expr, target_unit: &str) -> Option<f64> {
   }
   let converted = crate::functions::quantity_ast::unit_convert_ast(&[
     expr.clone(),
-    Expr::String(target_unit.to_string()),
+    str_expr(target_unit),
   ])
   .ok()?;
   if let Expr::FunctionCall { name, args } = &converted

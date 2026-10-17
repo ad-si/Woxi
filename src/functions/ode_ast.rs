@@ -8721,10 +8721,7 @@ pub fn interpolating_function_domain_ast(
   } = &interp
     && name == "InterpolatingFunction"
   {
-    return evaluate_interpolating_function(
-      func_args,
-      &[Expr::String("Domain".to_string())],
-    );
+    return evaluate_interpolating_function(func_args, &[str_expr("Domain")]);
   }
   Ok(unevaluated("InterpolatingFunctionDomain", &[interp]))
 }

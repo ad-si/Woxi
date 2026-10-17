@@ -3337,7 +3337,7 @@ pub fn sparse_array_property(sa_args: &[Expr], prop: &str) -> Option<Expr> {
         "ReplaceValues",
       ]
       .iter()
-      .map(|p| Expr::String((*p).to_string()))
+      .map(|p| str_expr(p))
       .collect(),
     )),
     _ => None,

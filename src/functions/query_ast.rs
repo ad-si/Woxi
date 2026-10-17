@@ -5,7 +5,6 @@
 //! everything else (Total, Mean, arbitrary functions) applies on the
 //! way up to the results of the deeper levels.
 
-#[allow(unused_imports)]
 use super::*;
 
 /// Inside a query a bare string names a key, so `GroupBy["a"]` groups by the
@@ -137,10 +136,7 @@ fn apply_query_inner(
 
 /// `Missing[tag, detail]`.
 fn missing(tag: &str, detail: &Expr) -> Expr {
-  call(
-    "Missing",
-    vec![Expr::String(tag.to_string()), detail.clone()],
-  )
+  call("Missing", vec![str_expr(tag), detail.clone()])
 }
 
 /// Resolve a 1-based (possibly negative) index against a container of `len`

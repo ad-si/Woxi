@@ -50,7 +50,7 @@ fn token_to_expr(tok: &str) -> Expr {
   {
     return Expr::Real(f);
   }
-  Expr::String(tok.to_string())
+  str_expr(tok)
 }
 
 /// Dispatch an `Import[..., element]` call for a plain-text source.
@@ -73,18 +73,10 @@ pub fn import_element(content: &str, element: &str) -> Option<Expr> {
     }
     "Lines" => {
       let lines = split_lines(content);
-      Some(Expr::List(
-        lines
-          .into_iter()
-          .map(|l| Expr::String(l.to_string()))
-          .collect(),
-      ))
+      Some(Expr::List(lines.into_iter().map(str_expr).collect()))
     }
     "Words" => {
-      let words: Vec<Expr> = content
-        .split_whitespace()
-        .map(|w| Expr::String(w.to_string()))
-        .collect();
+      let words: Vec<Expr> = content.split_whitespace().map(str_expr).collect();
       Some(Expr::List(words.into()))
     }
     "Data" => {
@@ -108,12 +100,7 @@ pub fn import_element(content: &str, element: &str) -> Option<Expr> {
           .collect();
         Some(Expr::List(rows.into()))
       } else {
-        Some(Expr::List(
-          lines
-            .into_iter()
-            .map(|l| Expr::String(l.to_string()))
-            .collect(),
-        ))
+        Some(Expr::List(lines.into_iter().map(str_expr).collect()))
       }
     }
     "Table" => {

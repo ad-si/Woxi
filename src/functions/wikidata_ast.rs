@@ -367,22 +367,17 @@ fn snak_to_expr(
       let mut meta: Vec<(Expr, Expr)> = Vec::new();
       if let Some((label, description)) = labels.get(&id) {
         if let Some(label) = label {
-          meta.push((
-            Expr::String("Label".to_string()),
-            Expr::String(label.clone()),
-          ));
+          meta.push((str_expr("Label"), Expr::String(label.clone())));
         }
         if let Some(description) = description {
-          meta.push((
-            Expr::String("Description".to_string()),
-            Expr::String(description.clone()),
-          ));
+          meta
+            .push((str_expr("Description"), Expr::String(description.clone())));
         }
       }
       Ok(call(
         "ExternalIdentifier",
         vec![
-          Expr::String("WikidataID".to_string()),
+          str_expr("WikidataID"),
           Expr::String(id),
           Expr::Association(meta),
         ],
@@ -411,7 +406,7 @@ fn snak_to_expr(
 /// `Missing["reason"]`.
 #[cfg(not(target_arch = "wasm32"))]
 fn missing(reason: &str) -> Expr {
-  call1("Missing", Expr::String(reason.to_string()))
+  call1("Missing", str_expr(reason))
 }
 
 /// `URL["…"]`.
@@ -439,7 +434,7 @@ fn parse_amount(amount: &str) -> Expr {
   }
   match s.parse::<f64>() {
     Ok(f) => Expr::Real(f),
-    Err(_) => Expr::String(amount.to_string()),
+    Err(_) => str_expr(amount),
   }
 }
 
@@ -691,8 +686,8 @@ mod tests {
     let ext_id = call(
       "ExternalIdentifier",
       vec![
-        Expr::String("WikidataID".to_string()),
-        Expr::String("Q405".to_string()),
+        str_expr("WikidataID"),
+        str_expr("Q405"),
         Expr::Association(vec![]),
       ],
     );
@@ -700,14 +695,11 @@ mod tests {
     // The identifier kind is enforced: an item is not a property.
     assert_eq!(resolve_id(&ext_id, 'P'), None);
     assert_eq!(
-      resolve_id(&Expr::String("P2067".to_string()), 'P'),
+      resolve_id(&str_expr("P2067"), 'P'),
       Some("P2067".to_string())
     );
     assert_eq!(
-      resolve_id(
-        &Expr::String("https://www.wikidata.org/wiki/Q405".to_string()),
-        'Q'
-      ),
+      resolve_id(&str_expr("https://www.wikidata.org/wiki/Q405"), 'Q'),
       Some("Q405".to_string())
     );
     assert_eq!(
@@ -720,7 +712,7 @@ mod tests {
       Some("P2067".to_string())
     );
     assert_eq!(resolve_id(&Expr::Integer(1), 'Q'), None);
-    assert_eq!(resolve_id(&Expr::String("Q40x5".to_string()), 'Q'), None);
+    assert_eq!(resolve_id(&str_expr("Q40x5"), 'Q'), None);
   }
 
   #[test]

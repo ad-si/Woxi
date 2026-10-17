@@ -1,6 +1,5 @@
 //! AST-native date/time functions.
 
-#[allow(unused_imports)]
 use super::*;
 
 /// Parse an ISO-style date/time string into its integer components, e.g.
@@ -370,10 +369,10 @@ pub fn calendar_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ]
         .into(),
       ),
-      Expr::String(granularity.to_string()),
+      str_expr(granularity),
     ];
     if let Some(cal) = calendar {
-      oargs.push(Expr::String(cal.to_string()));
+      oargs.push(str_expr(cal));
     }
     Ok(call("DateObject", oargs))
   };
@@ -1086,8 +1085,8 @@ fn date_object_interval_bounds(obj_args: &[Expr]) -> Option<Expr> {
     name: "DateObject".to_string(),
     args: vec![
       Expr::List(components.into()),
-      Expr::String("Instant".to_string()),
-      Expr::String("Gregorian".to_string()),
+      str_expr("Instant"),
+      str_expr("Gregorian"),
       time_zone.clone(),
     ]
     .into(),
@@ -1793,7 +1792,7 @@ fn make_date_result(
           ]
           .into(),
         ),
-        Expr::String("Day".to_string()),
+        str_expr("Day"),
       ]
       .into(),
     }
@@ -1969,7 +1968,7 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Expr::Real(diff_days)
     };
-    return Ok(call("Quantity", vec![n, Expr::String("Days".to_string())]));
+    return Ok(call("Quantity", vec![n, str_expr("Days")]));
   }
 
   // With unit specification
@@ -2038,10 +2037,7 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => (real_or_int(diff_days), "Days"),
   };
 
-  Ok(call(
-    "Quantity",
-    vec![n, Expr::String(unit_name.to_string())],
-  ))
+  Ok(call("Quantity", vec![n, str_expr(unit_name)]))
 }
 
 fn date_difference_multi_unit(c1: &[f64], c2: &[f64], units: &Expr) -> Expr {
@@ -2110,7 +2106,7 @@ fn date_difference_multi_unit(c1: &[f64], c2: &[f64], units: &Expr) -> Expr {
       "Second" => "Seconds",
       _ => unreachable!(),
     };
-    plurals.push(Expr::String(plural.to_string()));
+    plurals.push(str_expr(plural));
     if i == last_idx {
       // Final bucket keeps the leftover (may be fractional).
       let value = remaining / secs_per_unit;
@@ -2625,17 +2621,15 @@ pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "SecondShort" => int(sec),
       // 12-hour clock: 0 and 12 both map to 12, 13..23 map to 1..11.
       "Hour12" => int((h + 11).rem_euclid(12) + 1),
-      "AMPM" => Expr::String(if h < 12 { "AM" } else { "PM" }.to_string()),
+      "AMPM" => str_expr(if h < 12 { "AM" } else { "PM" }),
       // DayName is a Symbol (`Saturday`), not a String — matching `DayName[…]`
       // and wolframscript. The other name keys (MonthName, *Short) are Strings.
       "DayName" => {
         Expr::Identifier(day_name(day_of_week(y, mo, d)).to_string())
       }
-      "MonthName" => Expr::String(month_name(mo).to_string()),
-      "MonthNameShort" => Expr::String(month_name_short(mo).to_string()),
-      "DayNameShort" => {
-        Expr::String(day_name_short(day_of_week(y, mo, d)).to_string())
-      }
+      "MonthName" => str_expr(month_name(mo)),
+      "MonthNameShort" => str_expr(month_name_short(mo)),
+      "DayNameShort" => str_expr(day_name_short(day_of_week(y, mo, d))),
       "Quarter" => int((mo - 1) / 3 + 1),
       // The ISO 8601 ordinal date counts calendar days from the start of the
       // year (1..366), the same value as DayOfYear.
@@ -2647,10 +2641,8 @@ pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "QuarterName" => Expr::String(format!("Quarter {}", (mo - 1) / 3 + 1)),
       "QuarterNameShort" => Expr::String(format!("Q{}", (mo - 1) / 3 + 1)),
       // Just the first letter of the English name.
-      "MonthNameInitial" => Expr::String(month_name(mo)[..1].to_string()),
-      "DayNameInitial" => {
-        Expr::String(day_name(day_of_week(y, mo, d))[..1].to_string())
-      }
+      "MonthNameInitial" => str_expr(&month_name(mo)[..1]),
+      "DayNameInitial" => str_expr(&day_name(day_of_week(y, mo, d))[..1]),
       _ => return None,
     })
   };
@@ -2766,8 +2758,8 @@ fn day_round_result(
     vec![Expr::Integer(y), Expr::Integer(m), Expr::Integer(d)].into(),
   )];
   if let Some(tz) = tz {
-    date_args.push(Expr::String("Day".to_string()));
-    date_args.push(Expr::String("Gregorian".to_string()));
+    date_args.push(str_expr("Day"));
+    date_args.push(str_expr("Gregorian"));
     date_args.push(tz);
   }
   crate::evaluator::evaluate_expr_to_expr(&call("DateObject", date_args))
@@ -3180,7 +3172,7 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ]
         .into(),
       ),
-      Expr::String("Day".to_string()),
+      str_expr("Day"),
     ]
     .into(),
   })
@@ -3304,7 +3296,7 @@ pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ]
             .into(),
           ),
-          Expr::String("Day".to_string()),
+          str_expr("Day"),
         ]
         .into(),
       });
@@ -3396,10 +3388,7 @@ pub fn time_object_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(call(
     "TimeObject",
-    vec![
-      Expr::List(fields.into()),
-      Expr::String(granularity.to_string()),
-    ],
+    vec![Expr::List(fields.into()), str_expr(granularity)],
   ))
 }
 
@@ -3854,8 +3843,8 @@ fn instant_to_granular_date_object(
     name: "DateObject".to_string(),
     args: vec![
       Expr::List(fields.into()),
-      Expr::String(gran.to_string()),
-      Expr::String("Gregorian".to_string()),
+      str_expr(gran),
+      str_expr("Gregorian"),
       Expr::Real(0.0),
     ]
     .into(),
@@ -3863,7 +3852,7 @@ fn instant_to_granular_date_object(
   let date_only = |fields: Vec<Expr>, gran: &str| {
     call(
       "DateObject",
-      vec![Expr::List(fields.into()), Expr::String(gran.to_string())],
+      vec![Expr::List(fields.into()), str_expr(gran)],
     )
   };
   match gran {
@@ -4624,8 +4613,8 @@ pub fn from_julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ]
         .into(),
       ),
-      Expr::String("Instant".to_string()),
-      Expr::String("Gregorian".to_string()),
+      str_expr("Instant"),
+      str_expr("Gregorian"),
       Expr::Real(0.0),
     ]
     .into(),

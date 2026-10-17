@@ -1536,7 +1536,7 @@ pub(crate) fn line_legend_svg(args: &[Expr]) -> Option<String> {
     entries.push(call(
       "Row",
       vec![Expr::List(
-        vec![line_item, Expr::String(" ".to_string()), label.clone()].into(),
+        vec![line_item, str_expr(" "), label.clone()].into(),
       )],
     ));
   }
@@ -1583,7 +1583,7 @@ pub(crate) fn swatch_legend_svg(args: &[Expr]) -> Option<String> {
     entries.push(call(
       "Row",
       vec![Expr::List(
-        vec![swatch_item, Expr::String(" ".to_string()), label.clone()].into(),
+        vec![swatch_item, str_expr(" "), label.clone()].into(),
       )],
     ));
   }
@@ -4013,8 +4013,9 @@ fn graphics_text_content(expr: &Expr) -> String {
     {
       typeset_constant_glyph(name).unwrap().to_string()
     }
+    // A `Tooltip` shows its content; the hint appears only on hover.
     Expr::FunctionCall { name, args }
-      if is_style_wrapper(name) && !args.is_empty() =>
+      if (is_style_wrapper(name) || name == "Tooltip") && !args.is_empty() =>
     {
       graphics_text_content(&args[0])
     }
@@ -4365,6 +4366,116 @@ fn button_plate_svg(label: &str) -> String {
     h / 2.0,
     svg_escape(label)
   )
+}
+
+/// The value a `Dynamic[x, …]` control is showing: `x` evaluated. Any other
+/// expression is its own value.
+fn dynamic_current_value(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone())
+    }
+    other => other.clone(),
+  }
+}
+
+/// A static `Manipulator[value, {min, max, step}]` slider: a track with the
+/// thumb at the current value, followed by the value when
+/// `Appearance -> "Labeled"`. `None` unless value and range are numeric.
+pub(crate) fn manipulator_svg(args: &[Expr]) -> Option<String> {
+  let value = expr_to_f64(&dynamic_current_value(args.first()?))?;
+  let (lo, hi) = match args.get(1) {
+    None => (0.0, 1.0),
+    Some(Expr::List(range)) if range.len() >= 2 => {
+      (expr_to_f64(&range[0])?, expr_to_f64(&range[1])?)
+    }
+    Some(_) => return None,
+  };
+  if hi <= lo {
+    return None;
+  }
+  let labeled = args[1.min(args.len())..].iter().filter_map(option_kv).any(
+    |(k, v)| {
+      k == "Appearance"
+        && matches!(v, Expr::String(s) | Expr::Identifier(s) if s == "Labeled")
+    },
+  );
+  let (track_w, h) = (120.0, 20.0);
+  let fraction = ((value - lo) / (hi - lo)).clamp(0.0, 1.0);
+  let thumb_x = 6.0 + (track_w - 12.0) * fraction;
+  let label = if labeled {
+    graphics_text_content(&Expr::Real(value))
+  } else {
+    String::new()
+  };
+  let label_w = if labeled {
+    label.chars().count() as f64 * 8.4 + 8.0
+  } else {
+    0.0
+  };
+  let w = track_w + label_w;
+  let mut svg = format!(
+    "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <rect x=\"6\" y=\"8\" width=\"{:.1}\" height=\"4\" rx=\"2\" fill=\"#E6E6E6\" stroke=\"#BFBFBF\" stroke-width=\"0.5\"/>\n\
+     <rect x=\"6\" y=\"8\" width=\"{:.1}\" height=\"4\" rx=\"2\" fill=\"#5E9ED6\"/>\n\
+     <circle cx=\"{thumb_x:.1}\" cy=\"10\" r=\"5.5\" fill=\"#FDFDFD\" stroke=\"#7F7F7F\" stroke-width=\"1\"/>\n",
+    track_w - 12.0,
+    thumb_x - 6.0,
+  );
+  if labeled {
+    svg.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"10\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"12\" fill=\"#333\" dominant-baseline=\"central\">{}</text>\n",
+      track_w + 2.0,
+      svg_escape(&label)
+    ));
+  }
+  svg.push_str("</svg>\n");
+  Some(svg)
+}
+
+/// A static `SetterBar[value, {v1, v2, …}]` (or `{v1 -> label1, …}`): a row
+/// of buttons with the one equal to the current value pressed. `None` unless
+/// the choices are a non-empty list.
+pub(crate) fn setter_bar_svg(args: &[Expr]) -> Option<String> {
+  let Some(Expr::List(choices)) = args.get(1) else {
+    return None;
+  };
+  if choices.is_empty() {
+    return None;
+  }
+  let current = expr_to_string(&dynamic_current_value(args.first()?));
+  let h = 26.0;
+  let mut x = 0.0;
+  let mut body = String::new();
+  for choice in choices {
+    let (value, label) = match choice {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      other => (other, other),
+    };
+    let text = graphics_text_content(label);
+    let w = (text.chars().count() as f64 * 8.4 + 16.0).max(28.0);
+    let pressed = expr_to_string(value) == current;
+    body.push_str(&format!(
+      "<rect x=\"{:.1}\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" fill=\"{}\" stroke=\"#BFBFBF\" stroke-width=\"1\"/>\n\
+       <text x=\"{:.1}\" y=\"{:.1}\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"14\" fill=\"#000000\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+      x + 0.5,
+      w - 1.0,
+      h - 1.0,
+      if pressed { "#BCD6EE" } else { "#FDFDFD" },
+      x + w / 2.0,
+      h / 2.0,
+      svg_escape(&text)
+    ));
+    x += w;
+  }
+  Some(format!(
+    "<svg width=\"{x:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {x:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n{body}</svg>\n"
+  ))
 }
 
 /// A static `ProgressIndicator[x]` / `ProgressIndicator[x, {min, max}]`: a
@@ -11168,7 +11279,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             Expr::String(s)
               if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') =>
             {
-              Expr::String(s[1..s.len() - 1].to_string())
+              str_expr(&s[1..s.len() - 1])
             }
             other => other.clone(),
           };
@@ -11694,8 +11805,51 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
   {
     return expr_to_svg_markup_lines(&args[0]);
   }
+  // `Row[{…}]` whose parts stack into several lines (a `Column`/`Grid`/
+  // `TableForm` among plain text) sets those blocks side by side: line `i`
+  // of the label joins line `i` of every part, shorter blocks centred
+  // vertically against the tallest. `Null` parts draw nothing.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Row"
+    && args.len() == 1
+    && let Expr::List(parts) = &args[0]
+    && parts.iter().any(|p| {
+      matches!(p, Expr::FunctionCall { name, .. }
+        if matches!(name.as_str(), "Column" | "Grid" | "TableForm"))
+    })
+  {
+    let blocks: Vec<Vec<String>> = parts
+      .iter()
+      .filter(|p| !matches!(p, Expr::Identifier(n) if n == "Null"))
+      .map(expr_to_svg_markup_lines)
+      .collect();
+    let height = blocks.iter().map(Vec::len).max().unwrap_or(0);
+    if height > 1 {
+      return (0..height)
+        .map(|i| {
+          blocks
+            .iter()
+            .map(|b| {
+              // A whitespace-only part is a gap between blocks, so it
+              // spans every line rather than sitting on the middle one.
+              if b.len() == 1 && b[0].trim().is_empty() {
+                return b[0].as_str();
+              }
+              let top = (height - b.len()) / 2;
+              match i.checked_sub(top).and_then(|j| b.get(j)) {
+                Some(line) => line.as_str(),
+                None => "",
+              }
+            })
+            .collect::<String>()
+        })
+        .collect();
+    }
+  }
   let rows: Vec<String> = match expr {
-    Expr::FunctionCall { name, args } if name == "Grid" && !args.is_empty() => {
+    Expr::FunctionCall { name, args }
+      if (name == "Grid" || name == "TableForm") && !args.is_empty() =>
+    {
       match &args[0] {
         Expr::List(rows) => rows
           .iter()
@@ -15496,7 +15650,8 @@ pub(crate) fn is_style_wrapper(name: &str) -> bool {
 /// look for a nested control layout, so a bare `Item[…]` reaching here never
 /// held one and is always plain text too.
 pub(crate) fn is_manipulate_annotation_head(name: &str) -> bool {
-  is_style_wrapper(name) || matches!(name, "Text" | "Item" | "Row" | "Column")
+  is_style_wrapper(name)
+    || matches!(name, "Text" | "TextCell" | "Item" | "Row" | "Column")
 }
 
 /// Whether an annotation row (`Style[…]`, `Row[{…}]`, `Column[{…}]`, …) has a
@@ -15783,7 +15938,7 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
       let row = Expr::List(
         vec![
           (**pattern).clone(),
-          Expr::String("\u{2192}".to_string()),
+          str_expr("\u{2192}"),
           (**replacement).clone(),
         ]
         .into(),
@@ -20791,7 +20946,7 @@ fn with_text(item: &Expr, text: &str) -> Expr {
         args: new_args,
       }
     }
-    _ => Expr::String(text.to_string()),
+    _ => str_expr(text),
   }
 }
 
@@ -20835,7 +20990,7 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
       .map(|line| {
         // A blank line still takes one line of height.
         let line = if line.is_empty() {
-          vec![Expr::String(" ".to_string())]
+          vec![str_expr(" ")]
         } else {
           line
         };
@@ -22215,12 +22370,7 @@ pub fn linear_gradient_filling_ast(
       call1("GrayLevel", Expr::Integer(0)),
       call1("GrayLevel", Expr::Integer(1)),
     ];
-    (
-      stops,
-      colors,
-      Expr::Integer(0),
-      Expr::String("Fixed".to_string()),
-    )
+    (stops, colors, Expr::Integer(0), str_expr("Fixed"))
   } else {
     // Parse angle (2nd arg) and space (3rd arg)
     let angle = if args.len() >= 2 {
@@ -22231,7 +22381,7 @@ pub fn linear_gradient_filling_ast(
     let space = if args.len() >= 3 {
       args[2].clone()
     } else {
-      Expr::String("Fixed".to_string())
+      str_expr("Fixed")
     };
 
     match &args[0] {
@@ -27723,12 +27873,7 @@ fn linearize_fraction_boxes(e: &Expr) -> Expr {
             Expr::FunctionCall {
               name: "RowBox".to_string(),
               args: vec![Expr::List(
-                vec![
-                  Expr::String("(".to_string()),
-                  b.clone(),
-                  Expr::String(")".to_string()),
-                ]
-                .into(),
+                vec![str_expr("("), b.clone(), str_expr(")")].into(),
               )]
               .into(),
             }
@@ -27739,12 +27884,7 @@ fn linearize_fraction_boxes(e: &Expr) -> Expr {
       Expr::FunctionCall {
         name: "RowBox".to_string(),
         args: vec![Expr::List(
-          vec![
-            side(&args[0]),
-            Expr::String("/".to_string()),
-            side(&args[1]),
-          ]
-          .into(),
+          vec![side(&args[0]), str_expr("/"), side(&args[1])].into(),
         )]
         .into(),
       }
@@ -32569,8 +32709,7 @@ mod manipulate_label_tests {
 
   #[test]
   fn style_italic_string_is_one_italic_run() {
-    let label =
-      call("Style", vec![Expr::String("t".into()), id_expr("Italic")]);
+    let label = call("Style", vec![str_expr("t"), id_expr("Italic")]);
     assert_eq!(runs(&label), vec![run("t", true)]);
   }
 
@@ -32579,8 +32718,8 @@ mod manipulate_label_tests {
     let label = call(
       "Style",
       vec![
-        Expr::String("t".into()),
-        rule_expr(id_expr("FontSlant"), Expr::String("Italic".into())),
+        str_expr("t"),
+        rule_expr(id_expr("FontSlant"), str_expr("Italic")),
       ],
     );
     assert_eq!(runs(&label), vec![run("t", true)]);
@@ -32589,8 +32728,7 @@ mod manipulate_label_tests {
   #[test]
   fn text_subscript_style_renders_italic_base_and_upright_subscript() {
     // Text[Subscript[Style["m", Italic], 1]]  ->  italic "m", upright "₁"
-    let styled =
-      call("Style", vec![Expr::String("m".into()), id_expr("Italic")]);
+    let styled = call("Style", vec![str_expr("m"), id_expr("Italic")]);
     let subscript = call("Subscript", vec![styled, Expr::Integer(1)]);
     let label = call1("Text", subscript);
     assert_eq!(runs(&label), vec![run("m", true), run("\u{2081}", false)]);
@@ -32611,12 +32749,8 @@ mod manipulate_label_tests {
 
   #[test]
   fn row_concatenates_parts_preserving_style() {
-    let italic_a =
-      call("Style", vec![Expr::String("a".into()), id_expr("Italic")]);
-    let row = call1(
-      "Row",
-      Expr::List(vec![italic_a, Expr::String("b".into())].into()),
-    );
+    let italic_a = call("Style", vec![str_expr("a"), id_expr("Italic")]);
+    let row = call1("Row", Expr::List(vec![italic_a, str_expr("b")].into()));
     assert_eq!(runs(&row), vec![run("a", true), run("b", false)]);
     assert_eq!(flatten_label_runs(&runs(&row)), "ab");
   }
@@ -32631,15 +32765,12 @@ mod manipulate_label_tests {
 
   #[test]
   fn derivative_of_an_italic_style_primes_an_italic_base() {
-    let italic_y =
-      call("Style", vec![Expr::String("y".into()), id_expr("Italic")]);
+    let italic_y = call("Style", vec![str_expr("y"), id_expr("Italic")]);
     let label = call1(
       "Text",
       call1(
         "Row",
-        Expr::List(
-          vec![derivative(1, italic_y), Expr::String("(0)".into())].into(),
-        ),
+        Expr::List(vec![derivative(1, italic_y), str_expr("(0)")].into()),
       ),
     );
     assert_eq!(
@@ -32663,10 +32794,7 @@ mod manipulate_label_tests {
   /// inside `Text` typesets with a prime, not as the raw application.
   #[test]
   fn text_markup_of_derivative_of_subscript_uses_prime() {
-    let theta1 = call(
-      "Subscript",
-      vec![Expr::String("\u{3b8}".into()), Expr::Integer(1)],
-    );
+    let theta1 = call("Subscript", vec![str_expr("\u{3b8}"), Expr::Integer(1)]);
     let markup = expr_to_svg_markup(&derivative(1, theta1));
     assert!(markup.ends_with("\u{2032}"), "{markup}");
     assert!(!markup.contains("Derivative"), "{markup}");

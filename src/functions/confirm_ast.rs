@@ -33,11 +33,11 @@ pub fn with_enclose_scope<T>(body: impl FnOnce() -> T) -> T {
 }
 
 fn string(s: &str) -> Expr {
-  Expr::String(s.to_string())
+  str_expr(s)
 }
 
 fn symbol(s: &str) -> Expr {
-  Expr::Identifier(s.to_string())
+  id_expr(s)
 }
 
 fn failure(tag: &str, pairs: Vec<(&str, Expr)>) -> Expr {

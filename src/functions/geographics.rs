@@ -19,7 +19,6 @@
 //! is never distorted. `ImageSize` (width) and `GeoRange` (`"World"`, `All`, or
 //! an explicit `{{latmin, latmax}, {lonmin, lonmax}}` window) are honored.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::graphics::{Color, expr_to_f64, parse_color};
 use std::collections::HashMap;
@@ -1021,13 +1020,7 @@ fn country_entity(c: &Country) -> Expr {
   let name =
     crate::functions::country_data::canonical_name(fixup_ne_name(&c.name))
       .unwrap_or(c.name.as_str());
-  call(
-    "Entity",
-    vec![
-      Expr::String("Country".to_string()),
-      Expr::String(name.to_string()),
-    ],
-  )
+  call("Entity", vec![str_expr("Country"), str_expr(name)])
 }
 
 /// `GeoNearest["Country", pos]` — the country containing `pos` (or, for a point
@@ -1811,7 +1804,7 @@ mod entity_resolution_tests {
     Expr::FunctionCall {
       name: "Entity".into(),
       args: vec![
-        Expr::String("City".into()),
+        str_expr("City"),
         Expr::List(
           parts
             .iter()
@@ -1854,13 +1847,7 @@ mod entity_resolution_tests {
 
   #[test]
   fn country_entity_resolves_to_country_centroid() {
-    let e = call(
-      "Entity",
-      vec![
-        Expr::String("Country".into()),
-        Expr::String("France".into()),
-      ],
-    );
+    let e = call("Entity", vec![str_expr("Country"), str_expr("France")]);
     let (lat, lon) = entity_to_latlon(&e).unwrap();
     assert!((lat - 46.227638).abs() < 1e-2, "lat {lat}");
     assert!((lon - 2.213749).abs() < 1e-2, "lon {lon}");

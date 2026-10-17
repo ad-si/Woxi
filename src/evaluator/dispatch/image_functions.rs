@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// Colors of a Wolfram `ColorData` indexed scheme (`ColorData[n, "ColorList"]`).
@@ -67,16 +66,13 @@ const SCHEME_3: [(f64, f64, f64); 10] = [
 /// (see `apply_curried_call`).
 fn gradient_color_function(scheme: &str) -> Expr {
   let blend = Expr::Function {
-    body: Box::new(call(
-      "Blend",
-      vec![Expr::String(scheme.to_string()), Expr::Slot(1)],
-    )),
+    body: Box::new(call("Blend", vec![str_expr(scheme), Expr::Slot(1)])),
   };
   Expr::FunctionCall {
     name: "ColorDataFunction".to_string(),
     args: vec![
-      Expr::String(scheme.to_string()),
-      Expr::String("Gradients".to_string()),
+      str_expr(scheme),
+      str_expr("Gradients"),
       Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
       blend,
     ]
@@ -98,7 +94,7 @@ fn indexed_color_function(n: i128) -> Expr {
     name: "ColorDataFunction".to_string(),
     args: vec![
       Expr::Integer(n),
-      Expr::String("Indexed".to_string()),
+      str_expr("Indexed"),
       Expr::List(vec![Expr::Integer(1), id_expr("Infinity")].into()),
       blend,
     ]
@@ -358,9 +354,8 @@ fn import_pdf_element(
       "Elements" => Ok(Expr::List(
         ["PageCount", "Pages", "Plaintext"]
           .iter()
-          .map(|e| Expr::String((*e).to_string()))
-          .collect::<Vec<_>>()
-          .into(),
+          .map(|e| str_expr(e))
+          .collect(),
       )),
       _ => {
         crate::emit_message(&format!(
@@ -747,7 +742,7 @@ pub fn dispatch_image_functions(
     "ColorNegate" if args.len() == 1 => {
       return Some(crate::functions::image_ast::color_negate_ast(args));
     }
-    "Binarize" if !args.is_empty() && args.len() <= 2 => {
+    "Binarize" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::binarize_ast(args));
     }
     "Blur" if !args.is_empty() && args.len() <= 2 => {
@@ -945,10 +940,10 @@ pub fn dispatch_image_functions(
     "ColorData" if args.is_empty() => {
       return Some(Ok(Expr::List(
         vec![
-          Expr::String("Gradients".to_string()),
-          Expr::String("Indexed".to_string()),
-          Expr::String("Named".to_string()),
-          Expr::String("Physical".to_string()),
+          str_expr("Gradients"),
+          str_expr("Indexed"),
+          str_expr("Named"),
+          str_expr("Physical"),
         ]
         .into(),
       )));
@@ -1122,10 +1117,7 @@ pub fn dispatch_image_functions(
           "WatermelonColors",
         ];
         return Some(Ok(Expr::List(
-          names
-            .iter()
-            .map(|n| Expr::String((*n).to_string()))
-            .collect(),
+          names.iter().map(|n| str_expr(n)).collect(),
         )));
       }
       // ColorData["scheme"]: the gradient's color function, echoed in
@@ -1851,10 +1843,7 @@ pub fn dispatch_image_functions(
         let names =
           ["Data", "Lines", "Plaintext", "String", "Summary", "Words"];
         return Some(Ok(Expr::List(
-          names
-            .iter()
-            .map(|n| Expr::String((*n).to_string()))
-            .collect(),
+          names.iter().map(|n| str_expr(n)).collect(),
         )));
       }
       // `Lines` splits the input at every `\n`. A single trailing newline
@@ -1865,10 +1854,7 @@ pub fn dispatch_image_functions(
         let items: Vec<Expr> = if trimmed.is_empty() {
           Vec::new()
         } else {
-          trimmed
-            .split('\n')
-            .map(|s| Expr::String(s.to_string()))
-            .collect()
+          trimmed.split('\n').map(str_expr).collect()
         };
         return Some(Ok(Expr::List(items.into())));
       }
@@ -1997,7 +1983,7 @@ pub fn dispatch_image_functions(
             return Some(Ok(Expr::List(
               crate::functions::csv_ast::TABLE_ELEMENTS
                 .iter()
-                .map(|n| Expr::String((*n).to_string()))
+                .map(|n| str_expr(n))
                 .collect(),
             )));
           }
@@ -2043,10 +2029,8 @@ pub fn dispatch_image_functions(
       }
       // `Words` splits on ASCII whitespace and drops empty fragments.
       if format == "Words" {
-        let items: Vec<Expr> = content
-          .split_whitespace()
-          .map(|s| Expr::String(s.to_string()))
-          .collect();
+        let items: Vec<Expr> =
+          content.split_whitespace().map(str_expr).collect();
         return Some(Ok(Expr::List(items.into())));
       }
 

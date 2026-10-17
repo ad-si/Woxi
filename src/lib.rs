@@ -2292,7 +2292,7 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
       && !inner.contains("\\`")
       && !inner.contains("\\ ")
     {
-      set_fast_path_result_expr(syntax::Expr::String(inner.to_string()));
+      set_fast_path_result_expr(helpers::str_expr(inner));
       return Ok(inner.to_string());
     }
   }
@@ -2465,8 +2465,8 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
             ]
             .into(),
           ),
-          syntax::Expr::String("Instant".to_string()),
-          syntax::Expr::String("Gregorian".to_string()),
+          helpers::str_expr("Instant"),
+          helpers::str_expr("Gregorian"),
           syntax::Expr::Real(tz_offset_hours),
         ]
         .into(),
@@ -2494,8 +2494,8 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
             ]
             .into(),
           ),
-          syntax::Expr::String("Instant".to_string()),
-          syntax::Expr::String("Gregorian".to_string()),
+          helpers::str_expr("Instant"),
+          helpers::str_expr("Gregorian"),
           syntax::Expr::Real(tz_offset_hours),
         ]
         .into(),
@@ -2530,7 +2530,7 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
             ]
             .into(),
           ),
-          syntax::Expr::String("Day".to_string()),
+          helpers::str_expr("Day"),
         ]
         .into(),
       };
@@ -2558,7 +2558,7 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
             ]
             .into(),
           ),
-          syntax::Expr::String("Day".to_string()),
+          helpers::str_expr("Day"),
         ]
         .into(),
       };
@@ -3828,7 +3828,7 @@ pub(crate) fn tableform_grid_args(
             Some(syntax::Expr::Identifier(v.clone()))
           }
           Some(syntax::Expr::String(s)) if s == "." => {
-            Some(syntax::Expr::String(".".into()))
+            Some(helpers::str_expr("."))
           }
           _ => None,
         }
@@ -5291,14 +5291,11 @@ fn scientific_string_to_box(s: &str) -> Option<syntax::Expr> {
     name: "RowBox".to_string(),
     args: vec![Expr::List(
       vec![
-        Expr::String(mantissa.to_string()),
-        Expr::String(" \u{00d7} ".to_string()),
+        helpers::str_expr(mantissa),
+        helpers::str_expr(" \u{00d7} "),
         helpers::call(
           "SuperscriptBox",
-          vec![
-            Expr::String("10".to_string()),
-            Expr::String(exp.to_string()),
-          ],
+          vec![helpers::str_expr("10"), helpers::str_expr(exp)],
         ),
       ]
       .into(),

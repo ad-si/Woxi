@@ -2,7 +2,6 @@
 //! into, `XMLObject["Document"][prolog, root, epilog]` with elements written
 //! as `XMLElement[name, {attributes}, {children}]`.
 
-#[allow(unused_imports)]
 use super::*;
 
 /// A parse failure, carrying the byte offset it happened at so the caller can
@@ -251,7 +250,7 @@ impl<'a> Parser<'a> {
         let _ = end;
         let text = &self.source[start..self.pos - 3];
         if !text.is_empty() {
-          children.push(Expr::String(text.to_string()));
+          children.push(str_expr(text));
         }
         continue;
       }
@@ -293,7 +292,7 @@ impl<'a> Parser<'a> {
     is_attribute: bool,
   ) -> Result<Expr, XmlError> {
     let Some((prefix, local)) = name.split_once(':') else {
-      return Ok(Expr::String(name.to_string()));
+      return Ok(str_expr(name));
     };
     if is_attribute && prefix == "xmlns" {
       return Ok(namespaced_name(XMLNS_URI, local));
@@ -350,10 +349,7 @@ impl<'a> Parser<'a> {
           })
           .collect();
         prolog.push(Expr::CurriedCall {
-          func: Box::new(call1(
-            "XMLObject",
-            Expr::String("Declaration".to_string()),
-          )),
+          func: Box::new(call1("XMLObject", str_expr("Declaration"))),
           args: renamed,
         });
         continue;
@@ -383,13 +379,7 @@ fn capitalize(s: &str) -> String {
 /// `{namespace-uri, local-name}`, the name form wolframscript gives a
 /// prefixed element or attribute.
 fn namespaced_name(uri: &str, local: &str) -> Expr {
-  Expr::List(
-    vec![
-      Expr::String(uri.to_string()),
-      Expr::String(local.to_string()),
-    ]
-    .into(),
-  )
+  Expr::List(vec![str_expr(uri), str_expr(local)].into())
 }
 
 fn xml_element(name: Expr, attributes: Vec<Expr>, children: Vec<Expr>) -> Expr {
@@ -421,7 +411,7 @@ pub fn parse_xml_document(source: &str) -> Result<Expr, XmlError> {
     return parser.error();
   }
   Ok(Expr::CurriedCall {
-    func: Box::new(call1("XMLObject", Expr::String("Document".to_string()))),
+    func: Box::new(call1("XMLObject", str_expr("Document"))),
     args: vec![Expr::List(prolog.into()), root, Expr::List(epilog.into())],
   })
 }
@@ -745,12 +735,9 @@ pub fn xml_import_element(document: &Expr, element: &str) -> Option<Expr> {
     }
     // A comment carries no content, so wolframscript reports none.
     "Comments" | "EmbeddedDTD" => Expr::List(Vec::new().into()),
-    "Elements" => Expr::List(
-      XML_ELEMENTS
-        .iter()
-        .map(|n| Expr::String((*n).to_string()))
-        .collect(),
-    ),
+    "Elements" => {
+      Expr::List(XML_ELEMENTS.iter().map(|n| str_expr(n)).collect())
+    }
     _ => return None,
   })
 }

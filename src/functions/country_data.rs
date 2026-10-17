@@ -13,7 +13,6 @@
 //! to match the Wolfram Knowledgebase to the last digit; they give Woxi a
 //! self-contained, reproducible country dataset.
 
-#[allow(unused_imports)]
 use super::*;
 
 /// A single sovereign country: a canonical display name, its population in
@@ -262,15 +261,7 @@ pub fn canonical_name(name: &str) -> Option<&'static str> {
 pub fn country_entities() -> Vec<Expr> {
   COUNTRIES
     .iter()
-    .map(|c| {
-      call(
-        "Entity",
-        vec![
-          Expr::String("Country".to_string()),
-          Expr::String(c.canonical.to_string()),
-        ],
-      )
-    })
+    .map(|c| call("Entity", vec![str_expr("Country"), str_expr(c.canonical)]))
     .collect()
 }
 
@@ -289,13 +280,7 @@ fn lookup(name: &str) -> Option<&'static Country> {
 use crate::functions::element_data::make_quantity;
 
 fn missing(reason: &str, name: &str) -> Expr {
-  call(
-    "Missing",
-    vec![
-      Expr::String(reason.to_string()),
-      Expr::String(name.to_string()),
-    ],
-  )
+  call("Missing", vec![str_expr(reason), str_expr(name)])
 }
 
 /// Look up a property of a country given by canonical name (or alias), for the
@@ -308,7 +293,7 @@ pub fn country_property(name: &str, property: &str) -> Option<Expr> {
     "Population" => {
       make_quantity(Expr::Integer(country.population as i128), "People")
     }
-    "Name" => Expr::String(country.canonical.to_string()),
+    "Name" => str_expr(country.canonical),
     _ => missing("NotAvailable", property),
   })
 }
@@ -330,13 +315,7 @@ pub fn country_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn entity(canonical: &str) -> Expr {
-  call(
-    "Entity",
-    vec![
-      Expr::String("Country".to_string()),
-      Expr::String(canonical.to_string()),
-    ],
-  )
+  call("Entity", vec![str_expr("Country"), str_expr(canonical)])
 }
 
 /// Parse `val` according to a scalar Interpreter type. Returns `None` when the

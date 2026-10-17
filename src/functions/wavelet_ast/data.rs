@@ -125,14 +125,11 @@ impl Dwd {
       .collect();
     let mut extras: Vec<Expr> = Vec::new();
     if self.padding != Padding::Periodic {
-      extras.push(rule_expr(
-        Expr::String("Padding".into()),
-        self.padding.to_expr(),
-      ));
+      extras.push(rule_expr(str_expr("Padding"), self.padding.to_expr()));
     }
     if let Some(basis) = &self.basis_override {
       extras.push(rule_expr(
-        Expr::String("BasisIndex".into()),
+        str_expr("BasisIndex"),
         Expr::List(
           basis
             .iter()
@@ -143,15 +140,12 @@ impl Dwd {
       ));
     }
     if let Some(tv) = &self.threshold_values {
-      extras.push(rule_expr(
-        Expr::String("ThresholdValues".into()),
-        tv.clone(),
-      ));
+      extras.push(rule_expr(str_expr("ThresholdValues"), tv.clone()));
     }
     if self.image {
-      extras.push(rule_expr(Expr::String("ImageData".into()), bool_expr(true)));
+      extras.push(rule_expr(str_expr("ImageData"), bool_expr(true)));
     }
-    let name = Expr::String(self.kind.name().to_string());
+    let name = str_expr(self.kind.name());
     let wtrans = if extras.is_empty() {
       name
     } else {
@@ -1133,9 +1127,8 @@ fn dwd_property(dwd: &Dwd, prop: &str) -> Expr {
         "WaveletIndex",
       ]
       .iter()
-      .map(|s| Expr::String(s.to_string()))
-      .collect::<Vec<_>>()
-      .into(),
+      .map(|s| str_expr(s))
+      .collect(),
     ),
     "BasisIndex" => Expr::List(
       dwd
@@ -1155,7 +1148,7 @@ fn dwd_property(dwd: &Dwd, prop: &str) -> Expr {
     ),
     "Refinement" => Expr::Integer(dwd.refinement() as i128),
     "Wavelet" => dwd.wavelet.clone(),
-    "Transform" => Expr::String(dwd.kind.name().to_string()),
+    "Transform" => str_expr(dwd.kind.name()),
     "Padding" => dwd.padding.to_expr(),
     "DataDimensions" => dims_to_expr(&dwd.dims),
     "Dimensions" => Expr::List(
@@ -1201,7 +1194,7 @@ fn dwd_property(dwd: &Dwd, prop: &str) -> Expr {
       crate::emit_message(&format!(
         "DiscreteWaveletData::prop: {prop} is not a valid property."
       ));
-      call1("Missing", Expr::String("NotAvailable".into()))
+      call1("Missing", str_expr("NotAvailable"))
     }
   }
 }
@@ -1220,7 +1213,7 @@ struct ThresholdFun {
 fn parse_tspec(tspec: &Expr) -> Option<ThresholdFun> {
   let named = |kind: &str, delta: &str| ThresholdFun {
     kind: kind.to_string(),
-    delta_spec: Some(Expr::String(delta.to_string())),
+    delta_spec: Some(str_expr(delta)),
     extra: vec![],
   };
   match tspec {
@@ -1300,7 +1293,7 @@ pub fn wavelet_threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     return Ok(unevaluated(fname, args));
   };
-  let default_tspec = Expr::String("Universal".into());
+  let default_tspec = str_expr("Universal");
   let tspec = args.get(1).unwrap_or(&default_tspec);
   let Some(tfun) = parse_tspec(tspec) else {
     crate::emit_message(&format!(
@@ -1613,7 +1606,7 @@ pub fn wavelet_best_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     return Ok(unevaluated(fname, args));
   }
-  let default_cspec = Expr::String("ShannonEntropy".into());
+  let default_cspec = str_expr("ShannonEntropy");
   let cspec = args.get(1).unwrap_or(&default_cspec);
 
   let cost = |values: &[f64]| -> Option<f64> {

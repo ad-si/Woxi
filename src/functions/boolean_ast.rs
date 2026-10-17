@@ -535,6 +535,18 @@ pub fn bigfloat_digits_match_to(d0: &str, d1: &str, n: usize) -> bool {
 /// or `f[1., x] == f[1, x]` to True. Returns false when any component is not
 /// determinably equal (the caller then leaves the comparison symbolic rather
 /// than concluding False, matching Wolfram).
+/// Whether two numeric leaves are equal under `Equal` semantics: exactly,
+/// or — when either is a machine Real — up to the last ~7 bits
+/// (`2^-46 · max(|a|, |b|)`), so `0.9338094023943001 == 0.9338094023943`.
+fn leaves_numerically_equal(a: &Expr, b: &Expr, va: f64, vb: f64) -> bool {
+  if va == vb {
+    return true;
+  }
+  let is_real = |e: &Expr| matches!(e, Expr::Real(_));
+  (is_real(a) || is_real(b))
+    && (va - vb).abs() <= f64::max(va.abs(), vb.abs()) * (2.0_f64).powi(-46)
+}
+
 pub fn all_components_equal(a: &Expr, b: &Expr) -> bool {
   use crate::functions::math_ast::try_eval_to_f64;
   match (a, b) {
@@ -551,7 +563,7 @@ pub fn all_components_equal(a: &Expr, b: &Expr) -> bool {
       .all(|(x, y)| all_components_equal(x, y)),
     _ => {
       if let (Some(va), Some(vb)) = (try_eval_to_f64(a), try_eval_to_f64(b)) {
-        va == vb
+        leaves_numerically_equal(a, b, va, vb)
       } else {
         expr_to_string(a) == expr_to_string(b)
       }
@@ -668,7 +680,7 @@ pub fn structurally_unequal(a: &Expr, b: &Expr) -> bool {
     (None, None) => {
       use crate::functions::math_ast::try_eval_to_f64;
       match (try_eval_to_f64(a), try_eval_to_f64(b)) {
-        (Some(x), Some(y)) => x != y,
+        (Some(x), Some(y)) => !leaves_numerically_equal(a, b, x, y),
         _ => matches!((a, b), (Expr::String(x), Expr::String(y)) if x != y),
       }
     }
@@ -2678,7 +2690,7 @@ pub fn bdd_object(table: &[bool], n: usize) -> Expr {
   call(
     "BooleanFunction",
     vec![rule_expr(
-      Expr::String("BDD".to_string()),
+      str_expr("BDD"),
       Expr::List(
         bdd_encoding(table, n)
           .into_iter()

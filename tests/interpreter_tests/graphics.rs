@@ -3448,6 +3448,48 @@ mod plot3d {
     }
   }
 
+  /// A `Texture` in a `SphericalPlot3D` `PlotStyle` paints the surface with
+  /// the image, placed by `TextureCoordinateFunction` (repeating outside the
+  /// unit square) — not with the plot's default height colouring.
+  #[test]
+  fn spherical_plot_paints_a_texture() {
+    let plot = |opts: &str| {
+      export_svg(&format!(
+        "SphericalPlot3D[1, {{t, 0, Pi}}, {{p, 0, 2 Pi}}, Axes -> False, \
+         Boxed -> False, PlotStyle -> Texture[Image[{{{{{{1, 0, 0}}, \
+         {{0, 0, 1}}}}}}]]{opts}]"
+      ))
+    };
+    // Facet fills as (red-ish, blue-ish) counts.
+    let count = |svg: &str| {
+      (
+        svg
+          .split("fill=\"rgb(")
+          .skip(1)
+          .filter(|f| f.split(')').next().is_some_and(|c| c.ends_with(",0,0")))
+          .count(),
+        svg
+          .split("fill=\"rgb(")
+          .skip(1)
+          .filter(|f| {
+            f.split(')').next().is_some_and(|c| c.starts_with("0,0,"))
+          })
+          .count(),
+      )
+    };
+    let (red, blue) = count(&plot(""));
+    assert!(red > 100 && blue > 100, "both halves show: {red} {blue}");
+    let (red, blue) =
+      count(&plot(", TextureCoordinateFunction -> ({0.1, 0} &)"));
+    assert!(red > 100 && blue == 0, "left half only: {red} {blue}");
+    let (red, blue) =
+      count(&plot(", TextureCoordinateFunction -> ({1.9, 0} &)"));
+    assert!(
+      red == 0 && blue > 100,
+      "wraps to the right half: {red} {blue}"
+    );
+  }
+
   /// Faces shared by two touching opaque boxes are interior to the union;
   /// a grid of unit cubes (e.g. a Menger-style fractal) must not emit them.
   #[test]
@@ -4119,6 +4161,23 @@ mod plot3d {
       assert_eq!(result, "False");
     }
 
+    /// Regression: three surfaces whose items only become 3-vectors once
+    /// `u`, `v` are numeric (an `If` on a sum of squares) were read as one
+    /// scalar `{fx, fy, fz}` triple, giving "no finite values".
+    #[test]
+    fn parametric_surfaces_with_conditional_vector_items() {
+      clear_state();
+      let result = interpret(
+        "Head[ParametricPlot3D[{\
+         (If[#1 > 0, {1, u, v}/#1, {1, u, v}*10000] &)[Total[{u, v, 1}^2]], \
+         (If[#1 > 0, {u, 1, v}/#1, {u, 1, v}*10000] &)[Total[{u, v, 1}^2]], \
+         (If[#1 > 0, {u, v, 1}/#1, {u, v, 1}*10000] &)[Total[{u, v, 1}^2]]}, \
+         {u, -2, 2}, {v, -2, 2}]]",
+      )
+      .unwrap();
+      assert_eq!(result, "Graphics3D");
+    }
+
     /// Regression: `ColorFunction` on a `ParametricPlot3D` curve was dropped,
     /// so the curve was always drawn in one flat color instead of being
     /// colored along its length.
@@ -4145,6 +4204,29 @@ mod plot3d {
         "Length[DeleteDuplicates[Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, \
          {t, 0, 6}, ColorFunction -> Function[{x, y, z}, \
          ColorData[\"SouthwestColors\"][z]]][[1]], _RGBColor, Infinity]]] > 10",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+    }
+
+    /// Regression: `ParametricPlot3D` surfaces ignored `RegionFunction`, so
+    /// cylinders meant to have holes cut into them were drawn solid.
+    #[test]
+    fn parametric_surface_honours_region_function() {
+      clear_state();
+      let result = interpret(
+        "Length[Cases[ParametricPlot3D[{t, Cos[u], Sin[u]}, {t, -3, 3}, \
+         {u, 0, 2 Pi}, RegionFunction -> (Abs[#1] < 1 &)], _Polygon, \
+         Infinity]] < Length[Cases[ParametricPlot3D[{t, Cos[u], Sin[u]}, \
+         {t, -3, 3}, {u, 0, 2 Pi}], _Polygon, Infinity]]",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+      // Every kept vertex satisfies the region function.
+      let result = interpret(
+        "Max[Abs[Cases[ParametricPlot3D[{t, Cos[u], Sin[u]}, {t, -3, 3}, \
+         {u, 0, 2 Pi}, RegionFunction -> (Abs[#1] < 1 &)], \
+         GraphicsComplex[pts_, _] :> pts[[All, 1]], Infinity][[1]]]] < 1",
       )
       .unwrap();
       assert_eq!(result, "True");
@@ -4317,6 +4399,24 @@ mod plot3d {
           "RevolutionPlot3D[{t, t/2, t^2}, {t, 0.5, 2}]"
         ));
       }
+    }
+
+    /// `First[plot]` re-drawn in a `Graphics3D` must not outline the
+    /// sampling quads (the plot itself draws none).
+    #[test]
+    fn extracted_surface_has_no_outline() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "RevolutionPlot3D[{Sin[t], Cos[t]}, {t, 0, Pi}, {z, 0, 1}][[1, 2, 1]]"
+        )
+        .unwrap(),
+        "EdgeForm[]"
+      );
+      let svg = export_svg(
+        "Graphics3D[{Red, RevolutionPlot3D[{Sin[t], Cos[t]}, {t, 0, Pi}, {z, 0, 1}][[1]]}, Boxed -> False]",
+      );
+      assert!(!svg.contains("stroke=\"rgb(64,64,64)\""));
     }
 
     mod options {
@@ -7681,6 +7781,36 @@ mod plot3d {
         assert!(plain.contains("<rect"), "{head} keeps its frame");
         assert!(ticked.contains("<text"), "{head} default draws labels");
       }
+    }
+
+    // `FrameTicks -> {xspec, yspec}` keeps the ticks of one axis only, and
+    // the nested `{{left, right}, {bottom, top}}` form says the same per
+    // edge.
+    #[test]
+    fn frame_ticks_per_axis_on_list_density_plot() {
+      let labels = |ticks: &str| {
+        export_svg(&format!(
+          "ListDensityPlot[Flatten[Table[{{x, y, x y}}, {{x, 0, 3}}, \
+           {{y, 0, 1, 1/2}}], 1]{ticks}]"
+        ))
+        .matches("<text")
+        .count()
+      };
+      let all = labels("");
+      let x_only = labels(", FrameTicks -> {Automatic, None}");
+      let y_only = labels(", FrameTicks -> {None, Automatic}");
+      assert!(x_only > 0 && x_only < all, "{x_only} of {all}");
+      assert!(y_only > 0 && y_only < all, "{y_only} of {all}");
+      assert_eq!(x_only + y_only, all);
+      assert_eq!(
+        labels(", FrameTicks -> {{None, None}, {Automatic, None}}"),
+        x_only
+      );
+      assert_eq!(
+        labels(", FrameTicks -> {{Automatic, None}, {None, None}}"),
+        y_only
+      );
+      assert_eq!(labels(", FrameTicks -> {None, None}"), 0);
     }
 
     // With a single series a `PlotStyle` list is one combined style rather
@@ -12624,6 +12754,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn legacy_histograms_context_histogram() {
+      // `Histograms`Histogram` with `HistogramCategories` boundaries is the
+      // modern `Histogram` with explicit bin edges.
+      let legacy = export_svg(
+        "Histograms`Histogram[{1, 2, 2, 3, 3, 3}, Histograms`HistogramRange -> {0, 5}, Histograms`HistogramCategories -> Range[0, 5], Frame -> True]",
+      );
+      let modern = export_svg(
+        "Histogram[{1, 2, 2, 3, 3, 3}, {Range[0, 5]}, Frame -> True]",
+      );
+      assert_eq!(legacy, modern);
+    }
+
+    #[test]
     fn histogram_bin_count() {
       // The bin count is a target, not exact: wolframscript's userBinningN
       // gives this data {0, 5, 10} for n = 2 (2 bars) and the centered
@@ -14494,6 +14637,25 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(svg.contains("left 2.5"), "missing grid content in:\n{svg}");
       assert!(!svg.contains("Grid["), "leaked Grid head in:\n{svg}");
+    }
+
+    /// A `Row` of stacked blocks (`Column`, `TableForm`) in a `PlotLabel`
+    /// sets them side by side, line by line, instead of leaking source.
+    #[test]
+    fn plot_label_row_of_columns_sets_blocks_side_by_side() {
+      let svg = export_svg(
+        "Graphics[{Circle[]}, PlotLabel -> Row[{Column[{\"top\", \"bottom\"}], \
+         \" = \", TableForm[{p, q}], Null, Column[{\"one\", \"two\", \"three\"}]}]]",
+      );
+      for leaked in ["Column[", "TableForm[", "Null"] {
+        assert!(!svg.contains(leaked), "leaked {leaked} in:\n{svg}");
+      }
+      assert!(svg.contains("top"), "missing first block in:\n{svg}");
+      assert!(
+        svg.contains(">three</tspan>"),
+        "missing third line in:\n{svg}"
+      );
+      assert!(svg.contains("bottom"), "missing second line in:\n{svg}");
     }
 
     /// A `DensityPlot` takes the same labels and epilog — the option
@@ -21913,6 +22075,47 @@ mod blend {
     assert!(
       !msgs.iter().any(|m| m.contains("DominantColors::argt")),
       "should not emit ::argt when imginv applies, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn binarize_method_option() {
+    let img = "Image[{{0.1, 0.2, 0.3, 0.9}, {0.1, 0.8, 0.9, 0.95}}]";
+    assert_eq!(
+      interpret(&format!("ImageData[Binarize[{img}, Method -> \"Mean\"]]"))
+        .unwrap(),
+      "{{0, 0, 0, 1}, {0, 1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "ImageData[Binarize[{img}, Method -> {{\"BlackFraction\", 0.5}}]]"
+      ))
+      .unwrap(),
+      "{{0, 0, 0, 1}, {0, 1, 1, 1}}"
+    );
+    for method in ["Cluster", "Median", "Entropy", "MinimumError"] {
+      assert_eq!(
+        interpret(&format!("Head[Binarize[{img}, Method -> \"{method}\"]]"))
+          .unwrap(),
+        "Image"
+      );
+    }
+  }
+
+  #[test]
+  fn binarize_function_threshold() {
+    assert_eq!(
+      interpret("ImageData[Binarize[Image[{{0.1, 0.4, 0.9}}], # > 0.3 &]]")
+        .unwrap(),
+      "{{0, 1, 1}}"
+    );
+    // Color pixels are passed as channel lists.
+    assert_eq!(
+      interpret(
+        "ImageData[Binarize[Image[{{{1, 0, 0}, {0, 1, 0}}}], #[[1]] > 0.5 &]]"
+      )
+      .unwrap(),
+      "{{1, 0}}"
     );
   }
 
@@ -33474,7 +33677,7 @@ mod revolution_plot3d_part_extraction {
     assert_eq!(
       interpret(
         "First[RevolutionPlot3D[{Cos[t], 1 + Sin[t]}, {t, -Pi/2, 0}, \
-         Mesh -> None, PlotStyle -> Opacity[0.2]]][[2, 1]]"
+         Mesh -> None, PlotStyle -> Opacity[0.2]]][[2, 2]]"
       )
       .unwrap(),
       "Opacity[0.2]"
@@ -35972,4 +36175,36 @@ fn layered_graph_plot_with_picture_vertices_and_option_list() {
   );
   // Three distinct vertices on two layers: the root has two outgoing edges.
   assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
+}
+
+// A Demonstration's own "internal controls" — `Manipulator[Dynamic[x], …]`
+// sliders and `SetterBar[Dynamic[x], …]` rows inside a layout — are drawn as
+// the widgets they are instead of being printed as source text.
+mod static_dynamic_controls {
+  use super::*;
+
+  #[test]
+  fn manipulator_in_a_grid_draws_a_slider() {
+    let svg = export_svg(
+      "Grid[{{Labeled[Manipulator[Dynamic[x], {0.1, 1, 0.1}, \
+       Appearance -> \"Labeled\"], \"mean\", Left]}}] /. x -> 0.4",
+    );
+    assert!(svg.contains("<circle"), "slider thumb expected: {svg}");
+    assert!(!svg.contains("Manipulator["), "no source text: {svg}");
+    assert!(svg.contains(">mean<"));
+    assert!(svg.contains(">0.4<"));
+  }
+
+  #[test]
+  fn setter_bar_in_a_grid_draws_buttons_with_the_choice_pressed() {
+    let svg = export_svg(
+      "Grid[{{SetterBar[Dynamic[d], \
+       {1 -> \"one\", 2 -> Tooltip[Style[\"two\", 9], \"hint\"]}]}}] /. d -> 2",
+    );
+    assert!(!svg.contains("SetterBar["), "no source text: {svg}");
+    assert!(svg.contains(">one<"));
+    assert!(svg.contains(">two<"), "tooltip shows its content: {svg}");
+    assert!(!svg.contains("hint"));
+    assert!(svg.contains("#BCD6EE"), "the current choice is pressed");
+  }
 }
