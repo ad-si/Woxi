@@ -4845,8 +4845,16 @@ fn inset_primitives(
     && let Some((x, y)) = args.get(1).and_then(expr_to_point)
   {
     let label = graphics_text_content(&bargs[0]);
+    // With an action, the plate also carries the invisible hit region a
+    // live widget presses (see `with_button_cell_chrome`).
+    let plate = button_plate_svg(&label);
+    let svg = if bargs.len() >= 2 {
+      with_button_cell_chrome(plate, bargs)
+    } else {
+      plate
+    };
     return Some(vec![Primitive::InsetGraphic {
-      svg: button_plate_svg(&label),
+      svg,
       x,
       y,
       w: button_plate_size(&label).0,
@@ -21062,7 +21070,7 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
 /// newlines in the middle and stays one centered block.
 fn newline_text(item: &Expr) -> Option<&str> {
   match item {
-    Expr::String(s) if s.starts_with('\n') || s.ends_with('\n') => Some(s),
+    Expr::String(s) if breaks_line(s) => Some(s),
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>
     {
@@ -21070,6 +21078,23 @@ fn newline_text(item: &Expr) -> Option<&str> {
     }
     _ => None,
   }
+}
+
+/// Whether a row string breaks the line: it starts or ends with a newline,
+/// or holds a blank line or a line of running prose (a word of three or more
+/// letters) — unlike the one-character-per-line stack of a typeset fraction.
+fn breaks_line(s: &str) -> bool {
+  if !s.contains('\n') {
+    return false;
+  }
+  s.starts_with('\n')
+    || s.ends_with('\n')
+    || s.contains("\n\n")
+    || s.split('\n').any(|line| {
+      line
+        .split(|c: char| !c.is_alphabetic())
+        .any(|w| w.chars().count() >= 3)
+    })
 }
 
 /// `item` with its innermost string replaced by `text`.
@@ -25787,6 +25812,17 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
       displays.push(crate::syntax::expr_to_source_form(expr));
       id_expr("Nothing")
     }
+    // `Inset[Button[…], pos]` inside a graphic is drawn by the picture
+    // itself (as a plate carrying a hit region), so it stays in the body.
+    Expr::FunctionCall { name, args }
+      if name == "Inset"
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: b, .. }) if b == "Button"
+        ) =>
+    {
+      expr.clone()
+    }
     // A bare `Button[label, action, opts…]` drawn directly by the body (a
     // Demonstration's "throw"/"step" action mixed into a `Column` of
     // graphics and captions), distinct from a `Button` given as its own
@@ -28859,10 +28895,11 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
       .and_then(|code| crate::parse_to_expr(&code).ok())
       .map(|expr| manipulate_label_runs(&expr, italic));
     match rendered {
-      // An unrecognised box head keeps its source text rather than
-      // vanishing from the label.
+      // A box with no expression form (a `TagBox`/`GridBox` layout of
+      // formulas) is drawn as the display text it typesets to.
       None => runs.push(LabelRun {
-        text: seg.text,
+        text: crate::notebook::render_boxes_text(&seg.text)
+          .replace('\u{2060}', ""),
         italic,
         ..Default::default()
       }),
