@@ -16343,8 +16343,33 @@ fn parse_divider_entry(expr: &Expr) -> Option<Color> {
       // True means draw with default color — use a sentinel black
       Some(Color::new(0.0, 0.0, 0.0))
     }
+    // A line-style directive (`Thin`, `Thick`, `Dashed`, …) says how to draw
+    // the divider, not whether to, so it rules in the default colour.
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "Thickness" | "AbsoluteThickness" | "Dashing" | "AbsoluteDashing"
+      ) =>
+    {
+      Some(Color::new(0.0, 0.0, 0.0))
+    }
+    // `Directive[Red, Thick]` or `{Red, Thick}`: the colour if there is one.
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      Some(first_divider_color(args))
+    }
+    Expr::List(items) if !items.is_empty() => {
+      parse_color(expr).or_else(|| Some(first_divider_color(items)))
+    }
     _ => parse_color(expr),
   }
+}
+
+/// The first colour among style directives, black when none names one.
+fn first_divider_color(items: &[Expr]) -> Color {
+  items
+    .iter()
+    .find_map(parse_color)
+    .unwrap_or_else(|| Color::new(0.0, 0.0, 0.0))
 }
 
 /// A `position -> spec` rule from a `Dividers` option: the line position
