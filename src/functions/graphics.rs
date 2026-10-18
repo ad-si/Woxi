@@ -960,6 +960,31 @@ pub(crate) fn expr_to_f64(expr: &Expr) -> Option<f64> {
   try_eval_to_f64(expr)
 }
 
+/// The fixed point of `Scale[g, s, spec]` in 2D. Each coordinate of `spec`
+/// is a number or a bounding-box position (`Left`/`Right`/`Center` for x,
+/// `Bottom`/`Top`/`Center` for y), so `{Left, Bottom}` scales about the
+/// lower-left corner of the content's box. Returns `None` when `spec` is
+/// not such a pair (or the content has no box for a symbolic position).
+fn scale_anchor_point(spec: &Expr, bb: &BBox) -> Option<(f64, f64)> {
+  if let Expr::List(items) = spec
+    && items.len() == 2
+  {
+    let coord =
+      |item: &Expr, lo: f64, hi: f64, low: &str, high: &str| match item {
+        Expr::Identifier(n) if n == low && !bb.is_empty() => Some(lo),
+        Expr::Identifier(n) if n == high && !bb.is_empty() => Some(hi),
+        Expr::Identifier(n) if n == "Center" && !bb.is_empty() => {
+          Some(f64::midpoint(lo, hi))
+        }
+        other => expr_to_f64(other),
+      };
+    let x = coord(&items[0], bb.x_min, bb.x_max, "Left", "Right")?;
+    let y = coord(&items[1], bb.y_min, bb.y_max, "Bottom", "Top")?;
+    return Some((x, y));
+  }
+  expr_to_point(spec)
+}
+
 pub(crate) fn expr_to_point(expr: &Expr) -> Option<(f64, f64)> {
   // A point is usually already a `{x, y}` literal, but it can also be an
   // arithmetic expression that only reduces to one at evaluation time (e.g.
@@ -2461,12 +2486,14 @@ fn collect_primitives(
           collect_primitives(&args[0], &mut inner_style, &mut inner, errors);
           match rotation_angle(&args[1]) {
             Some(angle) => {
-              let (cx, cy) =
-                args.get(2).and_then(expr_to_point).unwrap_or_else(|| {
-                  let mut bb = BBox::empty();
-                  for p in &inner {
-                    bb.merge(&primitive_bbox(p));
-                  }
+              let mut bb = BBox::empty();
+              for p in &inner {
+                bb.merge(&primitive_bbox(p));
+              }
+              let (cx, cy) = args
+                .get(2)
+                .and_then(|spec| scale_anchor_point(spec, &bb))
+                .unwrap_or_else(|| {
                   if bb.is_empty() {
                     (0.0, 0.0)
                   } else {
@@ -2521,12 +2548,14 @@ fn collect_primitives(
           };
           match factors {
             Some((sx, sy)) => {
-              let (cx, cy) =
-                args.get(2).and_then(expr_to_point).unwrap_or_else(|| {
-                  let mut bb = BBox::empty();
-                  for p in &inner {
-                    bb.merge(&primitive_bbox(p));
-                  }
+              let mut bb = BBox::empty();
+              for p in &inner {
+                bb.merge(&primitive_bbox(p));
+              }
+              let (cx, cy) = args
+                .get(2)
+                .and_then(|spec| scale_anchor_point(spec, &bb))
+                .unwrap_or_else(|| {
                   if bb.is_empty() {
                     (0.0, 0.0)
                   } else {
@@ -4005,7 +4034,10 @@ fn graphics_text_content(expr: &Expr) -> String {
     // typesets to, the same as `Subscript`/`Superscript` below, instead of
     // drawing the private-use markers and box source literally.
     Expr::String(s) if s.contains(crate::functions::string_ast::BOX_START) => {
-      inline_box_label_runs(s, false).map_or_else(|| s.clone(), |runs| flatten_label_runs(&runs))
+      MARK_UNMAPPED_SUBSCRIPTS.with(|flag| flag.set(true));
+      let runs = inline_box_label_runs(s, false);
+      MARK_UNMAPPED_SUBSCRIPTS.with(|flag| flag.set(false));
+      runs.map_or_else(|| s.clone(), |runs| flatten_label_runs(&runs))
     }
     Expr::String(s) => s.clone(),
     // Text inside a picture is typeset, not printed: a mathematical
@@ -4845,8 +4877,16 @@ fn inset_primitives(
     && let Some((x, y)) = args.get(1).and_then(expr_to_point)
   {
     let label = graphics_text_content(&bargs[0]);
+    // With an action, the plate also carries the invisible hit region a
+    // live widget presses (see `with_button_cell_chrome`).
+    let plate = button_plate_svg(&label);
+    let svg = if bargs.len() >= 2 {
+      with_button_cell_chrome(plate, bargs)
+    } else {
+      plate
+    };
     return Some(vec![Primitive::InsetGraphic {
-      svg: button_plate_svg(&label),
+      svg,
       x,
       y,
       w: button_plate_size(&label).0,
@@ -8067,7 +8107,17 @@ pub(crate) fn svg_escape(s: &str) -> String {
     .replace('<', "&lt;")
     .replace('>', "&gt;")
     .replace('"', "&quot;");
-  render_math_letterlike_glyphs(&escaped)
+  let escaped = render_math_letterlike_glyphs(&escaped);
+  if escaped.contains(SUBSCRIPT_START) {
+    escaped
+      .replace(
+        SUBSCRIPT_START,
+        "<tspan baseline-shift=\"sub\" font-size=\"70%\">",
+      )
+      .replace(SUBSCRIPT_END, "</tspan>")
+  } else {
+    escaped
+  }
 }
 
 /// Character ranges of `text` that `content`'s nested `Style[…, Italic]`
@@ -9935,6 +9985,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 1 data-unit maps to the same number of pixels in both x and y,
   // so circles are always rendered round.
   // Skipped when AspectRatio -> Full (plots need independent axis scaling).
+  // An explicit `PlotRange` still bounds what is drawn: the extra room this
+  // adds shows only the background, so remember the requested range for
+  // the clip rectangle below.
+  let clip_x = plot_range_x.map(|_| (bb.x_min, bb.x_max));
+  let clip_y = plot_range_y.map(|_| (bb.y_min, bb.y_max));
   if !aspect_ratio_full {
     expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
   }
@@ -10130,11 +10185,46 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `DropShadow::filter_id`) so two differently-sized pictures merged into
   // one document (`GraphicsRow`, `Inset`) never collide, while pictures
   // that happen to share a size safely share one identical definition.
-  let clip_id = format!("plotClip_{svg_w:.0}x{svg_h:.0}");
+  let (clip_x0, clip_x1) = match clip_x {
+    Some((lo, hi)) => (
+      coord_x(lo, &bb, svg_w).clamp(0.0, svg_w),
+      coord_x(hi, &bb, svg_w).clamp(0.0, svg_w),
+    ),
+    None => (0.0, svg_w),
+  };
+  let (clip_y0, clip_y1) = match clip_y {
+    Some((lo, hi)) => (
+      coord_y(hi, &bb, svg_h).clamp(0.0, svg_h),
+      coord_y(lo, &bb, svg_h).clamp(0.0, svg_h),
+    ),
+    None => (0.0, svg_h),
+  };
+  // A range narrower than the drawing area (widened to its shape) gets
+  // its own id so it never shares a definition with an unclipped picture
+  // of the same size.
+  let narrowed = clip_x0 > 0.5
+    || clip_y0 > 0.5
+    || clip_x1 < svg_w - 0.5
+    || clip_y1 < svg_h - 0.5;
+  let clip_id = if narrowed {
+    format!(
+      "plotClip_{svg_w:.0}x{svg_h:.0}_{clip_x0:.0}_{clip_y0:.0}_{clip_x1:.0}_{clip_y1:.0}"
+    )
+  } else {
+    format!("plotClip_{svg_w:.0}x{svg_h:.0}")
+  };
   svg.push_str("<defs>\n");
-  svg.push_str(&format!(
-    "<clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\"/></clipPath>\n"
-  ));
+  if narrowed {
+    svg.push_str(&format!(
+      "<clipPath id=\"{clip_id}\"><rect x=\"{clip_x0:.2}\" y=\"{clip_y0:.2}\" width=\"{:.2}\" height=\"{:.2}\"/></clipPath>\n",
+      clip_x1 - clip_x0,
+      clip_y1 - clip_y0
+    ));
+  } else {
+    svg.push_str(&format!(
+      "<clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\"/></clipPath>\n"
+    ));
+  }
   for ds in &shadow_defs {
     svg.push_str(&ds.filter_def(1.0));
     svg.push('\n');
@@ -13855,7 +13945,21 @@ fn parse_box_to_expr(cs: &[char]) -> Expr {
   // TraditionalForm typesets it without them.
   if let Some(text) = quoted_box_literal(trim_char_slice(cs)) {
     let chars: Vec<char> = text.chars().collect();
-    return Expr::String(quoted_box_literal(&chars).unwrap_or(text));
+    let text = quoted_box_literal(&chars).unwrap_or(text);
+    // A string argument that itself carries linear syntax
+    // (`FractionBox["\!\(\*SubscriptBox[\(f\), \(x\)]\)", …]`, as
+    // `ToString[TraditionalForm["…"/"…"]]` emits) typesets like any other
+    // linear-syntax text rather than showing its escapes.
+    if text.contains("\\!\\(") {
+      let inner: Vec<char> = text.chars().collect();
+      let mut units = parse_box_units(&inner);
+      return match units.len() {
+        0 => Expr::String(String::new()),
+        1 => units.pop().unwrap(),
+        _ => call1("RowBox", Expr::List(units.into())),
+      };
+    }
+    return Expr::String(text);
   }
   let mut units = parse_box_units(cs);
   match units.len() {
@@ -13873,14 +13977,27 @@ pub const STYLED_LABEL_MARKER: char = '\u{E000}';
 /// The label string for an axis label: a `Style[label, Italic, …]` carries
 /// its font directives as ready-made markup, anything else is its plain text.
 pub fn styled_axis_label(e: &Expr) -> Option<String> {
-  if let Expr::FunctionCall { name, args } = e
-    && name == "Style"
-    && args.len() >= 2
-    && !style_directives_to_svg_attrs(&args[1..]).is_empty()
-  {
+  if contains_visible_style(e) {
     return Some(format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e)));
   }
   crate::functions::chart::expr_to_label(e)
+}
+
+/// Whether `e` is, or (inside a `Row`) holds, a `Style[label, …]` whose
+/// directives change how the text is drawn — `Row[{Style["a", Red], " b"}]`
+/// is a label whose colour a plain-text label would lose.
+fn contains_visible_style(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Style" => {
+      (args.len() >= 2 && !style_directives_to_svg_attrs(&args[1..]).is_empty())
+        || args.first().is_some_and(contains_visible_style)
+    }
+    Expr::FunctionCall { name, args } if name == "Row" => match args.first() {
+      Some(Expr::List(items)) => items.iter().any(contains_visible_style),
+      _ => false,
+    },
+    _ => false,
+  }
 }
 
 /// [`box_string_to_svg`] for a label drawn in a graphic whose user space is
@@ -16226,8 +16343,33 @@ fn parse_divider_entry(expr: &Expr) -> Option<Color> {
       // True means draw with default color — use a sentinel black
       Some(Color::new(0.0, 0.0, 0.0))
     }
+    // A line-style directive (`Thin`, `Thick`, `Dashed`, …) says how to draw
+    // the divider, not whether to, so it rules in the default colour.
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "Thickness" | "AbsoluteThickness" | "Dashing" | "AbsoluteDashing"
+      ) =>
+    {
+      Some(Color::new(0.0, 0.0, 0.0))
+    }
+    // `Directive[Red, Thick]` or `{Red, Thick}`: the colour if there is one.
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      Some(first_divider_color(args))
+    }
+    Expr::List(items) if !items.is_empty() => {
+      parse_color(expr).or_else(|| Some(first_divider_color(items)))
+    }
     _ => parse_color(expr),
   }
+}
+
+/// The first colour among style directives, black when none names one.
+fn first_divider_color(items: &[Expr]) -> Color {
+  items
+    .iter()
+    .find_map(parse_color)
+    .unwrap_or_else(|| Color::new(0.0, 0.0, 0.0))
 }
 
 /// A `position -> spec` rule from a `Dividers` option: the line position
@@ -20574,6 +20716,8 @@ fn resolve_display_item(expr: &Expr) -> Expr {
         }
       }
       Some(("EventHandler", content)) => current = content.clone(),
+      // `Tooltip[expr, hint]` draws as `expr`; the hint shows only on hover.
+      Some(("Tooltip", content)) => current = content.clone(),
       _ => break,
     }
     current = unwrap_display_wrappers(&current);
@@ -21022,7 +21166,7 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
 /// newlines in the middle and stays one centered block.
 fn newline_text(item: &Expr) -> Option<&str> {
   match item {
-    Expr::String(s) if s.starts_with('\n') || s.ends_with('\n') => Some(s),
+    Expr::String(s) if breaks_line(s) => Some(s),
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>
     {
@@ -21030,6 +21174,23 @@ fn newline_text(item: &Expr) -> Option<&str> {
     }
     _ => None,
   }
+}
+
+/// Whether a row string breaks the line: it starts or ends with a newline,
+/// or holds a blank line or a line of running prose (a word of three or more
+/// letters) — unlike the one-character-per-line stack of a typeset fraction.
+fn breaks_line(s: &str) -> bool {
+  if !s.contains('\n') {
+    return false;
+  }
+  s.starts_with('\n')
+    || s.ends_with('\n')
+    || s.contains("\n\n")
+    || s.split('\n').any(|line| {
+      line
+        .split(|c: char| !c.is_alphabetic())
+        .any(|w| w.chars().count() >= 3)
+    })
 }
 
 /// `item` with its innermost string replaced by `text`.
@@ -25747,6 +25908,17 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
       displays.push(crate::syntax::expr_to_source_form(expr));
       id_expr("Nothing")
     }
+    // `Inset[Button[…], pos]` inside a graphic is drawn by the picture
+    // itself (as a plate carrying a hit region), so it stays in the body.
+    Expr::FunctionCall { name, args }
+      if name == "Inset"
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: b, .. }) if b == "Button"
+        ) =>
+    {
+      expr.clone()
+    }
     // A bare `Button[label, action, opts…]` drawn directly by the body (a
     // Demonstration's "throw"/"step" action mixed into a `Column` of
     // graphics and captions), distinct from a `Button` given as its own
@@ -28819,10 +28991,11 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
       .and_then(|code| crate::parse_to_expr(&code).ok())
       .map(|expr| manipulate_label_runs(&expr, italic));
     match rendered {
-      // An unrecognised box head keeps its source text rather than
-      // vanishing from the label.
+      // A box with no expression form (a `TagBox`/`GridBox` layout of
+      // formulas) is drawn as the display text it typesets to.
       None => runs.push(LabelRun {
-        text: seg.text,
+        text: crate::notebook::render_boxes_text(&seg.text)
+          .replace('\u{2060}', ""),
         italic,
         ..Default::default()
       }),
@@ -28831,6 +29004,18 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
   }
   Some(runs)
 }
+
+thread_local! {
+  /// Set while a picture label is flattened to text: a subscript with a
+  /// letter Unicode has no subscript form for (a capital, as in `F_N`) is
+  /// then wrapped in [`SUBSCRIPT_START`]/[`SUBSCRIPT_END`] so the SVG writer
+  /// can lower it with a `<tspan>` instead of leaving it at full size.
+  static MARK_UNMAPPED_SUBSCRIPTS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+const SUBSCRIPT_START: char = '\u{E0F2}';
+const SUBSCRIPT_END: char = '\u{E0F3}';
 
 /// Build the runs for a `Subscript`/`Superscript`: the base rendered in the
 /// inherited style, followed by each remaining argument folded into Unicode
@@ -28841,6 +29026,8 @@ fn script_runs(
   italic: bool,
   superscript: bool,
 ) -> Vec<LabelRun> {
+  let mark =
+    !superscript && MARK_UNMAPPED_SUBSCRIPTS.with(std::cell::Cell::get);
   let mut runs = args
     .first()
     .map(|a| manipulate_label_runs(a, italic))
@@ -28849,10 +29036,16 @@ fn script_runs(
     .iter()
     .skip(1)
     .map(|a| {
-      to_unicode_script(
-        &flatten_label_runs(&manipulate_label_runs(a, false)),
-        superscript,
-      )
+      let text = flatten_label_runs(&manipulate_label_runs(a, false));
+      if mark
+        && text
+          .chars()
+          .any(|c| unicode_script_char(c, false).is_none())
+      {
+        format!("{SUBSCRIPT_START}{text}{SUBSCRIPT_END}")
+      } else {
+        to_unicode_script(&text, superscript)
+      }
     })
     .collect();
   if !script.is_empty() {

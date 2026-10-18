@@ -5018,6 +5018,13 @@ empty chart. Everything else in that Manipulate (the `Column`/`Panel` layout,
 The full texts are needed verbatim to match Wolfram, which is why no
 truncated stand-in is bundled.
 
+### `GraphUtilities`HamiltonianCycles` reports a single cycle
+
+Wolfram lists every Hamiltonian cycle of the graph. Woxi delegates to
+`FindHamiltonianCycle` and returns a one-element list, so `First[...]` (as in
+the `Hamiltonian Tours on Polyhedra` Demonstration) works, but `Length[...]`
+and later elements differ. The cycle chosen may also differ from Wolfram's.
+
 ### `Rotate[Text[…], angle]` inside a `Grid` cell is not rotated
 
 A `Grid` cell holding `Rotate[Text["Value"], 90 Degree]` (the usual vertical

@@ -1023,6 +1023,18 @@ mod graphics {
       assert!(svg.contains(">zzlabel</text>"), "{svg}");
     }
 
+    /// A `Tooltip` around a primitive in a plot's `Epilog` draws the
+    /// primitive; the tip only shows on hover.
+    #[test]
+    fn a_plot_epilog_tooltip_point_is_drawn() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Epilog -> {Red, \
+         Tooltip[Point[{0.5, 0.5}], \"tip\"], \
+         (Tooltip[Point[#], \"p\"] &) /@ {{0.2, 0.2}, {0.8, 0.8}}}]",
+      );
+      assert_eq!(svg.matches("<circle").count(), 3, "{svg}");
+    }
+
     /// `Graphics` takes `Prolog` and `Epilog` too: extra primitives drawn
     /// under and over its content. Neither stretches the plot range — a
     /// point far outside it is clipped away rather than rescaling the
@@ -2344,6 +2356,24 @@ mod graphics {
       );
       assert!(svg.contains("13.3") || svg.contains("13.2"), "{svg}");
       assert!(!svg.contains("NumberForm"), "{svg}");
+    }
+
+    #[test]
+    fn traditional_form_padded_form_complex_label() {
+      // Regression: `Text[TraditionalForm[PaddedForm[z, {4, 3}]]]` (the Argand
+      // Diagram readout) printed the raw `PaddedForm(…)` call with unrounded
+      // parts instead of the padded number with a traditional `i`.
+      let svg = export_svg(
+        "Graphics[Text[TraditionalForm[PaddedForm[0.35355 + 0.35355 I, {4, 3}]], {0, 0}]]",
+      );
+      assert!(svg.contains("0.354 +  0.354"), "{svg}");
+      assert!(svg.contains(">i</tspan>"), "{svg}");
+      assert!(!svg.contains("PaddedForm"), "{svg}");
+      let real = export_svg(
+        "Graphics[Text[TraditionalForm[PaddedForm[3.14159, {4, 3}]], {0, 0}]]",
+      );
+      assert!(real.contains("3.142"), "{real}");
+      assert!(!real.contains("PaddedForm"), "{real}");
     }
 
     #[test]
@@ -5771,6 +5801,31 @@ mod plot3d {
       );
     }
 
+    /// `Scale[g, s, {Left, Bottom}]` scales about a corner of the content's
+    /// bounding box, so the lower-left corner stays put. Regression: the
+    /// symbolic position was ignored and the content scaled about its
+    /// centre instead, which scattered a Demonstration's fractal tiles.
+    #[test]
+    fn graphics_scale_about_a_bounding_box_corner() {
+      let scene = |body: &str| {
+        export_svg(&format!(
+          "Graphics[{{Rectangle[{{-1, -1}}, {{3, 3}}], {body}}}]"
+        ))
+      };
+      assert_eq!(
+        scene("Scale[Rectangle[{0, 0}, {2, 2}], 1/2, {Left, Bottom}]"),
+        scene("Rectangle[{0, 0}, {1, 1}]"),
+      );
+      assert_eq!(
+        scene("Scale[Rectangle[{0, 0}, {2, 2}], 1/2, {Right, Top}]"),
+        scene("Rectangle[{1, 1}, {2, 2}]"),
+      );
+      assert_eq!(
+        scene("Scale[Rectangle[{0, 0}, {2, 2}], 1/2, {Left, 2}]"),
+        scene("Rectangle[{0, 1}, {1, 2}]"),
+      );
+    }
+
     /// `Scale[g, {sx, sy, sz}]` with unequal factors turns a sphere into an
     /// ellipsoid — the shape a Demonstration draws a diatomic molecule's
     /// electron cloud with. Regression: the radius was scaled by one
@@ -8239,6 +8294,19 @@ mod plot3d {
       );
       styled.sort();
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
+    }
+
+    /// Regression: a top `FrameLabel` containing a line break was drawn as
+    /// one `<text>` element, so SVG collapsed the break and the caption
+    /// ran off the image. Each line now gets its own element.
+    #[test]
+    fn plot_top_frame_label_breaks_lines() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, \
+         FrameLabel -> {{\"fb\", None}, {\"fl\", Row[{\"first\\nsecond\"}]}}]",
+      );
+      assert!(svg.contains(">first</text>"), "{svg}");
+      assert!(svg.contains(">second</text>"), "{svg}");
     }
 
     /// A computed real in a `FrameLabel` prints as `ToString` does, not with
@@ -16039,6 +16107,26 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `ToString[TraditionalForm["…"/"…"]]` of strings carrying inline box
+    /// notation yields a `FractionBox` whose arguments are quoted strings
+    /// that themselves hold `\!\(\*SubscriptBox[…]\)`; a `PlotLabel` built
+    /// from it must typeset those as subscripts, not print the escapes
+    /// (Virtual Oscilloscope demonstration).
+    #[test]
+    fn plot_label_traditional_form_of_box_notation_strings() {
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1}, PlotLabel -> StringJoin[ToString[TraditionalForm["\!\(\*SubscriptBox[\(f\), \(x\)]\)"/"\!\(\*SubscriptBox[\(f\), \(y\)]\)"]], " = 1/4"]]"#,
+      );
+      assert!(
+        svg.contains("<tspan"),
+        "expected subscript tspans in the label: {svg}"
+      );
+      assert!(
+        !svg.contains("SubscriptBox") && !svg.contains("\\!"),
+        "the box-notation source leaked into the rendered label: {svg}"
+      );
+    }
+
     /// A `Subscript` whose base is a styled string carrying inline box
     /// notation (a vector label `Subscript[Style["\!\(\*OverscriptBox[\(r\),
     /// \(\[RightVector]\)]\)", Italic], 1]` inside `Text`) folds into the
@@ -20485,6 +20573,30 @@ mod grid_frame_and_background {
     assert!(vertical.iter().any(|l| l.0 == 0.0), "left edge: {svg}");
   }
 
+  /// A line-style directive as a position spec (`1 -> Thin`, `2 -> Thick`)
+  /// still rules that line. Regression: only colours and `True` were
+  /// recognised, so a grid ruled with `Thin`/`Thick` came out with no lines.
+  #[test]
+  fn dividers_accept_line_style_directives() {
+    let svg = export_svg(
+      r#"Grid[{{"a", "b"}, {"c", "d"}}, Dividers -> {{1 -> Thin, 2 -> Thick, -1 -> Thin}, {2 -> Dashed}}]"#,
+    );
+    let lines = grid_lines(&svg);
+    let horizontal = lines.iter().filter(|l| l.1 == l.3).count();
+    let vertical = lines.iter().filter(|l| l.0 == l.2).count();
+    assert_eq!(vertical, 3, "left, middle and right: {svg}");
+    assert_eq!(horizontal, 1, "middle only: {svg}");
+  }
+
+  /// `Directive[colour, style]` rules the line in that colour.
+  #[test]
+  fn dividers_directive_keeps_its_colour() {
+    let svg = export_svg(
+      r#"Grid[{{"a", "b"}, {"c", "d"}}, Dividers -> {{2 -> Directive[Red, Thick]}, None}]"#,
+    );
+    assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+  }
+
   /// `Dividers -> Center` rules only the boundaries *between* cells, so the
   /// same grid keeps its outer edges open.
   #[test]
@@ -22791,6 +22903,39 @@ mod log_linear_plot {
   fn returns_graphics() {
     let result = interpret("LogLinearPlot[x, {x, 1, 100}]").unwrap();
     assert_eq!(result, "-Graphics-");
+  }
+
+  #[test]
+  fn frame_and_frame_label_are_drawn() {
+    let svg = export_svg(
+      "LogLinearPlot[x, {x, 1, 100}, Frame -> True, \
+       FrameLabel -> {\"ratio\", \"response\"}]",
+    );
+    assert!(svg.contains("ratio"), "{svg}");
+    assert!(svg.contains("response"), "{svg}");
+  }
+
+  #[test]
+  fn epilog_uses_natural_log_x_coordinates() {
+    // x = 10 is the geometric midpoint of {1, 100}, so a point at Log[10]
+    // sits in the horizontal middle of the plotting area, and one at
+    // Log[1] on its left edge.
+    let cx = |x: &str| -> f64 {
+      let svg = export_svg(&format!(
+        "LogLinearPlot[x, {{x, 1, 100}}, Frame -> True, \
+         PlotRange -> {{{{1, 100}}, {{0, 100}}}}, \
+         Epilog -> {{Point[{{Log[{x}], 5}}]}}]"
+      ));
+      let at = svg.find("<circle cx=\"").expect("circle") + 12;
+      let end = svg[at..].find('"').unwrap();
+      svg[at..at + end].parse().unwrap()
+    };
+    let (left, mid) = (cx("1"), cx("10"));
+    let right = cx("100");
+    assert!(
+      (mid - f64::midpoint(left, right)).abs() < 1.0,
+      "{left} {mid} {right}"
+    );
   }
 }
 
@@ -27532,6 +27677,21 @@ mod manipulate {
     assert!(svg.contains("title"));
   }
 
+  /// A `Tooltip` around a picture inside a `Column` draws the picture; the
+  /// hint shows only on hover. Regression: it was typeset as the
+  /// `-Graphics-` placeholder text.
+  #[test]
+  fn tooltip_graphic_in_column_draws_picture() {
+    let code = "ExportString[Column[{\
+      Tooltip[ArrayPlot[{{1, 0, 1}}], \"hint\"], \
+      Tooltip[Graphics[Circle[]], \"other\"]}], \"SVG\"]";
+    let svg = woxi::interpret(code).unwrap();
+    assert!(!svg.contains("-Graphics-"), "placeholder leaked: {svg}");
+    assert!(svg.contains("<rect"), "ArrayPlot cells missing: {svg}");
+    assert!(svg.contains("<circle") || svg.contains("<ellipse"));
+    assert!(!svg.contains("hint"));
+  }
+
   /// A `TabView` whose pane is a `Text@Grid[…]` table, laid out in a
   /// `Column` next to a picture, draws the table. Regression: a
   /// Demonstration's description tab (`Text[TabView[{"info" -> Grid[…]}]]`)
@@ -28456,6 +28616,32 @@ mod manipulate {
       "unexpected vsform warnings: {:?}",
       result.warnings
     );
+  }
+
+  #[test]
+  fn spec_string_with_tagged_grid_box_segment_is_typeset_not_raw_source() {
+    // A title string can carry a whole `TagBox`/`GridBox` equation system
+    // (a `Column` of formulas the FrontEnd stores as a linear-syntax box
+    // segment). It must read as the formulas, not as box source.
+    let expr = interpret_to_expr(
+      "Manipulate[a, \"title\\n\\!\\(\\*TagBox[TagBox[RowBox[{\\\"\\[NoBreak]\\\", \
+       TagBox[GridBox[{{RowBox[{SubscriptBox[\\\"u\\\", \\\"k\\\"], \\\"=\\\", \
+       \\\"1\\\"}]}, {RowBox[{SubscriptBox[\\\"v\\\", \\\"k\\\"], \\\"=\\\", \
+       \\\"2\\\"}]}}], Column], \\\"\\[NoBreak]\\\"}], \
+       Function[BoxForm`e$, MatrixForm[BoxForm`e$]]], \
+       Function[BoxForm`e$, MatrixForm[BoxForm`e$]]]\\)\", {a, 0, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    match &spec.controls[0] {
+      ManipulateControl::Heading { label, .. } => {
+        for bad in ["TagBox", "GridBox", "RowBox", "Function"] {
+          assert!(!label.contains(bad), "raw box source in {label:?}");
+        }
+        assert_eq!(label, "title\nu_k=1\nv_k=2");
+      }
+      other => panic!("expected a heading, got {other:?}"),
+    }
   }
 
   #[test]
@@ -35507,6 +35693,17 @@ mod grid_text_in_graphics {
     assert!(!svg.contains("Button"), "{svg}");
   }
 
+  /// A `Button` inset into a picture draws as a plate carrying its own
+  /// pressable hit region, one per button.
+  #[test]
+  fn inset_button_in_graphics_carries_hit_region() {
+    let svg = export_svg(
+      "Graphics[{Inset[Button[\"go\", n++], {1, 1}], Inset[Button[\"stop\", n = 0], {3, 1}]}]",
+    );
+    assert!(!svg.contains("Button"), "{svg}");
+    assert_eq!(svg.matches("id=\"woxi-btn-").count(), 2, "{svg}");
+  }
+
   /// A grid of text-labelled buttons (a keyboard of character keys) draws
   /// each key as a plate with its own pressable hit region.
   #[test]
@@ -36144,6 +36341,37 @@ fn styled_axes_label_keeps_font_directives() {
 }
 
 #[test]
+fn axes_label_row_keeps_styled_parts() {
+  // `Row[{Style[…, color], " and ", Style[…, color]}]` as an AxesLabel is a
+  // multi-coloured legend-like label; every part keeps its own colour.
+  for plot in [
+    "ListPlot[{1, 2, 3}",
+    "ListLinePlot[{1, 2, 3}",
+    "Plot[x, {x, 0, 1}",
+  ] {
+    let svg = interpret(&format!(
+      "ExportString[{plot}, AxesLabel -> {{\"t\", Row[{{Style[\"a\", Red], \
+       \" and \", Style[\"b\", Blue]}}]}}], \"SVG\"]"
+    ))
+    .unwrap();
+    assert!(
+      svg.contains(
+        "<tspan fill=\"rgb(255,0,0)\">a</tspan> and \
+         <tspan fill=\"rgb(0,0,255)\">b</tspan>"
+      ),
+      "{plot}: {svg}"
+    );
+  }
+  // A `Row` of plain strings stays unstyled.
+  let svg = interpret(
+    "ExportString[Plot[x, {x, 0, 1}, AxesLabel -> {\"t\", \
+     Row[{\"a\", \"b\"}]}], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(!svg.contains("<tspan fill"));
+}
+
+#[test]
 fn region_plot_color_function_colors_region_pointwise() {
   // `ColorFunction -> f` fills the region with `f[x, y]` (coordinates scaled
   // to 0..1 over the plot range) instead of one flat translucent tint.
@@ -36574,4 +36802,24 @@ fn graphics_grid_of_tooltipped_plots_draws_the_plots_not_source() {
   let single = export_svg("Tooltip[ArrayPlot[{{1, 0}, {0, 1}}], \"hint\"]");
   assert!(!single.contains("hint"), "{single}");
   assert!(!single.contains("<text"), "{single}");
+}
+
+#[test]
+fn explicit_plot_range_clips_content_in_widened_drawing_area() {
+  // The wide picture widens the x range to keep circles round, but the
+  // requested range still bounds what is drawn.
+  let svg = export_svg(
+    "Graphics[{Rectangle[{-12, 0}, {12, 1}]}, \
+     PlotRange -> {{-10, 10}, {-7, 12}}, ImageSize -> {550, 396}]",
+  );
+  assert!(
+    svg.contains(
+      "<rect x=\"66.58\" y=\"0.00\" width=\"416.84\" height=\"396.00\"/>"
+    ),
+    "{svg}"
+  );
+  // Without an explicit range the whole drawing area stays visible.
+  let auto = export_svg("Graphics[{Rectangle[{-12, 0}, {12, 1}]}]");
+  assert!(auto.contains("<clipPath id=\"plotClip_"), "{auto}");
+  assert!(auto.contains("<rect x=\"0\" y=\"0\" width="), "{auto}");
 }

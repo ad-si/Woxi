@@ -1732,6 +1732,28 @@ mod tests {
     );
   }
 
+  /// A sound-player display built with `Audio`Waveform` evaluates to an
+  /// Audio object (shown as `-Audio-`), not the raw unevaluated call.
+  #[test]
+  fn audio_waveform_display_evaluates_to_audio_object() {
+    let code = r#"Manipulate[
+      Plot[Sin[x t], {x, 0, 6}],
+      {{t, 0.2}, 0.1, 1, 0.1},
+      Dynamic[Audio`Waveform[Audio`Square, 440., t, Overtones -> 5, SampleRate -> 2^16]]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.display_trees.iter().any(
+        |n| matches!(n, DisplayNode::Static { text, .. } if text == "-Audio-")
+      ),
+      "{:?}",
+      state.display_trees
+    );
+  }
+
   #[test]
   fn exact_integer_slider_without_step_steps_by_one() {
     let expr = woxi::interpret_to_expr(
@@ -3464,5 +3486,55 @@ mod textcell_tests {
     assert_eq!(names, ["", "a"]);
     assert!(state.graphics_handle.is_some(), "the plot should render");
     assert!(!state.controls[0].binds_variable());
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a container-pouring
+  /// puzzle). This is a self-authored, construct-equivalent example: a
+  /// graphic whose `Inset[Button[…]]` actions swap list-of-pairs state with
+  /// a tuple `Part` assignment and bump a hidden counter, with an empty
+  /// argument inside the primitive list.
+  ///
+  /// Coverage: tuple `Part` assignment from a user helper, `++` on a hidden
+  /// control, and `Inset`ed buttons as pressable regions.
+  #[test]
+  fn inset_buttons_with_tuple_part_assignment_update_hidden_state() {
+    let code = r#"Manipulate[
+      Deploy@Framed@Graphics[{
+        Rectangle[{0, 0}, {3, s[[1, 1]]}],,
+        Rectangle[{6, 0}, {9, s[[2, 1]]}],
+        Inset[Button[" > ", {s[[1]], s[[2]]} = mv[{s[[1]], s[[2]]}, 5]; n++], {4.5, 2.5}],
+        Inset[Button["RESET", s = {{1, 0}, {2, 0}}; n = 0], {0, -4}],
+        Text[ToString[n] <> " steps", {10, -4}]},
+        PlotRange -> {{-1, 12}, {-5, 10}}, ImageSize -> 300],
+      {{s, {{3, 0}, {1, 0}}}, {-1, -5}, {16, 10}, None},
+      {{n, 0}, None},
+      SaveDefinitions -> True,
+      Initialization :> (mv[{{a_, ta_}, {b_, tb_}}, cb_] :=
+        If[a >= cb - b, {{a - cb + b, ta}, {cb, tb}}, {{0, ta}, {a + b, tb}}])
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "the graphic should render");
+    assert_eq!(state.button_regions.len(), 2, "both Inset buttons");
+    let value = |state: &ManipulateState, name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    let action = state.button_regions[0].action.clone();
+    state.apply_button_action(&action);
+    assert!(state.error.is_none(), "button failed: {:?}", state.error);
+    assert_eq!(value(&state, "n"), "1");
+    assert_eq!(value(&state, "s"), "{{0, 0}, {4, 0}}");
+    let reset = state.button_regions[1].action.clone();
+    state.apply_button_action(&reset);
+    assert_eq!(value(&state, "n"), "0");
+    assert_eq!(value(&state, "s"), "{{1, 0}, {2, 0}}");
   }
 }
