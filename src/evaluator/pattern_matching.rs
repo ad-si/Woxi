@@ -449,7 +449,7 @@ fn multi_replace_head(
   rules: &RuleSet<'_>,
   held: bool,
 ) -> Result<Option<Expr>, InterpreterError> {
-  let head = Expr::Identifier(name.to_string());
+  let head = id_expr(name);
   let new_head = apply_replace_all_multi_ast_impl(&head, rules, held)?;
   if expr_equal(&new_head, &head) {
     Ok(None)
@@ -633,7 +633,7 @@ fn try_ast_pattern_replace_impl(
         // `Hold[a + b] /. Plus -> Times` → `Hold[a*b]`. Replace the head and,
         // as ReplaceAll processes every position, the operands too, then
         // rebuild as the corresponding FunctionCall.
-        let head_sym = Expr::Identifier(func_name.to_string());
+        let head_sym = id_expr(func_name);
         if let Some(new_head) = try_ast_pattern_replace_single(
           &head_sym,
           pattern,
@@ -814,15 +814,12 @@ fn lookup_user_default(
   // matching Wolfram's lookup chain.
   for default_args in [
     vec![
-      Expr::Identifier(func_name.to_string()),
+      id_expr(func_name),
       Expr::Integer(position as i128),
       Expr::Integer(total_args as i128),
     ],
-    vec![
-      Expr::Identifier(func_name.to_string()),
-      Expr::Integer(position as i128),
-    ],
-    vec![Expr::Identifier(func_name.to_string())],
+    vec![id_expr(func_name), Expr::Integer(position as i128)],
+    vec![id_expr(func_name)],
   ] {
     let call = call("Default", default_args);
     if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&call) {
@@ -1610,10 +1607,10 @@ fn try_align_groups(
     let eff = if group.len() == 1 {
       expr_args[group[0]].clone()
     } else {
-      Expr::FunctionCall {
-        name: pat_name.to_string(),
-        args: group.iter().map(|&i| expr_args[i].clone()).collect(),
-      }
+      call(
+        pat_name,
+        group.iter().map(|&i| expr_args[i].clone()).collect(),
+      )
     };
     push_match_context(&bindings);
     let r = match_pattern(&eff, &pat_args[pi]);
@@ -2851,15 +2848,14 @@ fn apply_replace_all_ast_impl(
             )),
           ));
         }
-        Some(Expr::FunctionCall {
-          name: if *is_3d { "Graphics3D" } else { "Graphics" }.to_string(),
-          args: std::iter::once(Expr::List(
+        Some(call(
+          if *is_3d { "Graphics3D" } else { "Graphics" },
+          std::iter::once(Expr::List(
             crate::functions::graphics::plot_source_primitives(source).into(),
           ))
           .chain(opts)
-          .collect::<Vec<_>>()
-          .into(),
-        })
+          .collect(),
+        ))
       }
       (None, None) => None,
     };

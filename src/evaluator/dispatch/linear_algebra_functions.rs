@@ -173,10 +173,7 @@ pub fn dispatch_linear_algebra_functions(
       return Some(Ok(if operands.len() == 1 {
         operands.pop().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "Dot".to_string(),
-          args: operands.into(),
-        }
+        call("Dot", operands)
       }));
     }
     "ArrayDot" if args.len() == 3 => {

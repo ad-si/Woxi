@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::rat_reduce;
 
@@ -1415,9 +1414,8 @@ fn try_constrained_linear_disk_symbolic(
     (neg(x_coord), neg(y_coord))
   };
 
-  let rule = |var: &str, val: Expr| -> Expr {
-    call("Rule", vec![Expr::Identifier(var.to_string()), val])
-  };
+  let rule =
+    |var: &str, val: Expr| -> Expr { call("Rule", vec![id_expr(var), val]) };
   let argmap = Expr::List(vec![rule(&v1, px), rule(&v2, py)].into());
   Some(Expr::List(vec![value, argmap].into()))
 }

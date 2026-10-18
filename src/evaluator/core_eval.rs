@@ -500,8 +500,7 @@ pub fn named_color_expr(name: &str) -> Option<Expr> {
 /// to. `Thick` is `Thickness[Large]`, `Dotted` is `Dashing[{0, Small}]`, and
 /// so on — the same relationship [`named_color_expr`] captures for colors.
 pub fn style_directive_expr(name: &str) -> Option<Expr> {
-  let thickness =
-    |size: &str| call1("Thickness", Expr::Identifier(size.to_string()));
+  let thickness = |size: &str| call1("Thickness", id_expr(size));
   let small = || id_expr("Small");
   let dashing =
     |segments: Vec<Expr>| call1("Dashing", Expr::List(segments.into()));
@@ -842,7 +841,7 @@ pub fn evaluate_expr_to_expr_inner(
       if let Some(plain) =
         crate::evaluator::listable::system_variable_alias(name)
       {
-        return evaluate_expr_to_expr(&Expr::Identifier(plain.to_string()));
+        return evaluate_expr_to_expr(&id_expr(plain));
       }
       // Look up in environment
       if let Some(stored) = ENV.with(|e| e.borrow().get(name).cloned()) {
@@ -939,26 +938,19 @@ pub fn evaluate_expr_to_expr_inner(
             .parse::<f64>()
             .unwrap_or(0.0);
           let tz_offset_hours = now.offset().local_minus_utc() as f64 / 3600.0;
-          return Ok(Expr::FunctionCall {
-            name: "DateObject".to_string(),
-            args: vec![
+          let now_part = |fmt: &str| {
+            Expr::Integer(now.format(fmt).to_string().parse::<i128>().unwrap())
+          };
+          return Ok(call(
+            "DateObject",
+            vec![
               Expr::List(
                 vec![
-                  Expr::Integer(
-                    now.format("%Y").to_string().parse::<i128>().unwrap(),
-                  ),
-                  Expr::Integer(
-                    now.format("%m").to_string().parse::<i128>().unwrap(),
-                  ),
-                  Expr::Integer(
-                    now.format("%d").to_string().parse::<i128>().unwrap(),
-                  ),
-                  Expr::Integer(
-                    now.format("%H").to_string().parse::<i128>().unwrap(),
-                  ),
-                  Expr::Integer(
-                    now.format("%M").to_string().parse::<i128>().unwrap(),
-                  ),
+                  now_part("%Y"),
+                  now_part("%m"),
+                  now_part("%d"),
+                  now_part("%H"),
+                  now_part("%M"),
                   Expr::Real(seconds),
                 ]
                 .into(),
@@ -966,9 +958,8 @@ pub fn evaluate_expr_to_expr_inner(
               str_expr("Instant"),
               str_expr("Gregorian"),
               Expr::Real(tz_offset_hours),
-            ]
-            .into(),
-          });
+            ],
+          ));
         }
         #[cfg(target_arch = "wasm32")]
         if name == "Now" {
@@ -976,9 +967,9 @@ pub fn evaluate_expr_to_expr_inner(
           let seconds =
             now.get_seconds() as f64 + now.get_milliseconds() as f64 / 1000.0;
           let tz_offset_hours = -(now.get_timezone_offset() / 60.0);
-          return Ok(Expr::FunctionCall {
-            name: "DateObject".to_string(),
-            args: vec![
+          return Ok(call(
+            "DateObject",
+            vec![
               Expr::List(
                 vec![
                   Expr::Integer(now.get_full_year() as i128),
@@ -993,9 +984,8 @@ pub fn evaluate_expr_to_expr_inner(
               str_expr("Instant"),
               str_expr("Gregorian"),
               Expr::Real(tz_offset_hours),
-            ]
-            .into(),
-          });
+            ],
+          ));
         }
         // Handle Today/Tomorrow/Yesterday → DateObject[{y, m, d}, Day]
         #[cfg(not(target_arch = "wasm32"))]
@@ -1007,9 +997,9 @@ pub fn evaluate_expr_to_expr_inner(
             "Yesterday" => now - Duration::days(1),
             _ => now,
           };
-          return Ok(Expr::FunctionCall {
-            name: "DateObject".to_string(),
-            args: vec![
+          return Ok(call(
+            "DateObject",
+            vec![
               Expr::List(
                 vec![
                   Expr::Integer(
@@ -1025,9 +1015,8 @@ pub fn evaluate_expr_to_expr_inner(
                 .into(),
               ),
               str_expr("Day"),
-            ]
-            .into(),
-          });
+            ],
+          ));
         }
         #[cfg(target_arch = "wasm32")]
         if name == "Today" || name == "Tomorrow" || name == "Yesterday" {
@@ -1039,9 +1028,9 @@ pub fn evaluate_expr_to_expr_inner(
           };
           let ms = now.get_time() + (offset_days as f64) * 86_400_000.0;
           let d = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(ms));
-          return Ok(Expr::FunctionCall {
-            name: "DateObject".to_string(),
-            args: vec![
+          return Ok(call(
+            "DateObject",
+            vec![
               Expr::List(
                 vec![
                   Expr::Integer(d.get_full_year() as i128),
@@ -1051,9 +1040,8 @@ pub fn evaluate_expr_to_expr_inner(
                 .into(),
               ),
               str_expr("Day"),
-            ]
-            .into(),
-          });
+            ],
+          ));
         }
         // Handle system $ variables (both unqualified `$Foo` and
         // System-context-qualified `System`$Foo` forms).
@@ -1897,10 +1885,10 @@ pub fn evaluate_expr_to_expr_inner(
             // write `Append[assoc, rule]` followed by `Set` would make.
             Some(StoredValue::Association(_)) => {
               let assoc = evaluate_expr_to_expr(&args[0])?;
-              let appended = evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: if is_append { "Append" } else { "Prepend" }.to_string(),
-                args: vec![assoc, elem].into(),
-              })?;
+              let appended = evaluate_expr_to_expr(&call(
+                if is_append { "Append" } else { "Prepend" },
+                vec![assoc, elem],
+              ))?;
               crate::evaluator::assignment::set_ast(&args[0], &appended)?;
               return Ok(appended);
             }
