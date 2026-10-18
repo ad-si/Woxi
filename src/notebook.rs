@@ -1397,7 +1397,10 @@ fn differential_variable(s: &str) -> Option<String> {
   let inner = s.trim().strip_prefix("RowBox[")?.strip_suffix(']')?;
   let inner = inner.trim().strip_prefix('{')?.strip_suffix('}')?;
   let mut args = split_top_level_commas(inner);
-  if args.len() == 3 && args[1].trim().trim_matches('"').trim().is_empty() {
+  if args.len() == 3 && {
+    let mid = args[1].trim().trim_matches('"').trim();
+    mid.is_empty() || mid == r"\[InvisibleSpace]" || mid == "\u{2063}"
+  } {
     args.remove(1);
   }
   if args.len() != 2 {
@@ -8345,5 +8348,25 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
     let src = box_source_to_expression(boxes).expect("box source converts");
     assert!(!src.contains("ButtonBox"), "got: {src:?}");
     assert_eq!(crate::interpret(&src).unwrap(), "x");
+  }
+
+  /// `ⅆx` written with an `\[InvisibleSpace]` between the glyph and the
+  /// variable still closes the integral body, so the cell stays parseable
+  /// instead of leaving a bare `Subscript[∫, 0]`.
+  #[test]
+  fn integral_differential_with_invisible_space_names_its_variable() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  SubsuperscriptBox["\[Integral]", "0", "1"],
+  RowBox[{
+   RowBox[{"(", RowBox[{"2", "-", "x"}], ")"}],
+   RowBox[{"\[DifferentialD]", "\[InvisibleSpace]", "x"}]}]}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(cell.content, "Integrate[(2-x), {x, 0, 1}]");
   }
 }
