@@ -790,6 +790,10 @@ fn render_item(
         }
         render_item(&args[0], &mut scoped, area, out);
       }
+      // `Tooltip[prim, tip]` draws `prim`; the tip only shows on hover.
+      "Tooltip" if !args.is_empty() => {
+        render_item(&args[0], style, area, out);
+      }
       // An unrecognized head may be a user-defined helper (e.g. a
       // Demonstration's own `spring[t, b, s]`/`coil[th]` drawing a custom
       // shape via `Translate`/`Scale`/`Line`, defined through

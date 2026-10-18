@@ -1012,6 +1012,18 @@ mod graphics {
       assert!(!svg.contains("&quot;"), "no quoted strings: {svg}");
     }
 
+    /// A `Tooltip` around a primitive in a plot's `Epilog` draws the
+    /// primitive; the tip only shows on hover.
+    #[test]
+    fn a_plot_epilog_tooltip_point_is_drawn() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Epilog -> {Red, \
+         Tooltip[Point[{0.5, 0.5}], \"tip\"], \
+         (Tooltip[Point[#], \"p\"] &) /@ {{0.2, 0.2}, {0.8, 0.8}}}]",
+      );
+      assert_eq!(svg.matches("<circle").count(), 3, "{svg}");
+    }
+
     /// `Graphics` takes `Prolog` and `Epilog` too: extra primitives drawn
     /// under and over its content. Neither stretches the plot range — a
     /// point far outside it is clipped away rather than rescaling the
