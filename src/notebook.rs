@@ -3265,7 +3265,7 @@ pub fn extract_saved_manipulate_variables(
 ) -> Vec<(String, String)> {
   let from_module = extract_dynamic_module_variables(box_dump);
   if !from_module.is_empty() {
-    return resolve_saved_variable_references(from_module);
+    return resolve_saved_variable_references(&from_module);
   }
   let Some(raw) = extract_arrow_value(box_dump, "Variables") else {
     return Vec::new();
@@ -3277,7 +3277,7 @@ pub fn extract_saved_manipulate_variables(
   else {
     return Vec::new();
   };
-  let pairs = split_top_level_commas(inner)
+  let pairs: Vec<(String, String)> = split_top_level_commas(inner)
     .into_iter()
     .filter_map(|part| {
       let part = part.trim();
@@ -3300,7 +3300,7 @@ pub fn extract_saved_manipulate_variables(
       Some((name, unescape_code_string(&value)))
     })
     .collect();
-  resolve_saved_variable_references(pairs)
+  resolve_saved_variable_references(&pairs)
 }
 
 /// Replace a saved value that is just another saved variable's `name$$`
@@ -3309,7 +3309,7 @@ pub fn extract_saved_manipulate_variables(
 /// opens on the default instead of an unbound `nDef$$` symbol. Chains are
 /// followed; a reference to an unknown or cyclic variable is left as is.
 fn resolve_saved_variable_references(
-  pairs: Vec<(String, String)>,
+  pairs: &[(String, String)],
 ) -> Vec<(String, String)> {
   let lookup = |name: &str| {
     pairs
