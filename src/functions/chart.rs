@@ -2579,6 +2579,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           depth: depth(center, &camera),
           color,
           opacity: 1.0,
+          texture: None,
         });
       }
     }
@@ -2999,6 +3000,7 @@ fn build_cylindrical_sector(
         depth: depth(center, camera),
         color,
         opacity: 1.0,
+        texture: None,
       });
     };
 
@@ -3123,6 +3125,7 @@ fn build_torus_sector(
         depth: depth(center, camera),
         color,
         opacity: 1.0,
+        texture: None,
       });
     };
 

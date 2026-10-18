@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -5666,10 +5665,7 @@ pub(crate) fn rotate_graphic_svg(g: &Expr, rest: &[Expr]) -> String {
     let rotate_args = std::iter::once(gfx_args[0].clone())
       .chain(rest.iter().cloned())
       .collect();
-    gfx_args[0] = Expr::FunctionCall {
-      name: "Rotate".to_string(),
-      args: rotate_args,
-    };
+    gfx_args[0] = call("Rotate", rotate_args);
     return match crate::functions::graphics::graphics_ast(&gfx_args) {
       Ok(Expr::Graphics { ref svg, .. }) => svg.clone(),
       _ => String::new(),
@@ -5830,7 +5826,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       Expr::List(
         vec![
           (**pattern).clone(),
-          Expr::String("\u{2192}".to_string()),
+          str_expr("\u{2192}"),
           (**replacement).clone(),
         ]
         .into(),

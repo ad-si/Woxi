@@ -188,10 +188,7 @@ pub(crate) fn own_value_expr(value: &Expr) -> Expr {
     Expr::FunctionCall { name, args }
       if name == "Condition" && args.len() == 2 =>
     {
-      call(
-        "Condition",
-        vec![value.clone(), Expr::Identifier("True".to_string())],
-      )
+      call("Condition", vec![value.clone(), bool_expr(true)])
     }
     _ => value.clone(),
   }
@@ -1607,7 +1604,7 @@ fn set_upvalues_from_rules(
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
   };
-  let tag = Expr::Identifier(sym.to_string());
+  let tag = id_expr(sym);
   // The assignment names the whole list, so what was there before goes.
   clear_upvalues_of(sym);
   for rule in &rules {
@@ -1654,7 +1651,7 @@ fn set_ownvalues_from_rules(
       | Expr::RuleDelayed { replacement, .. } => (**replacement).clone(),
       _ => continue,
     };
-    set_ast(&Expr::Identifier(sym.to_string()), &replacement)?;
+    set_ast(&id_expr(sym), &replacement)?;
   }
   Ok(null_expr())
 }
@@ -4403,7 +4400,7 @@ fn build_list_pattern_match(
   patterns: &[Expr],
   base_name: &str,
 ) -> (Expr, Vec<(String, Expr)>) {
-  let base = Expr::Identifier(base_name.to_string());
+  let base = id_expr(base_name);
   // Detect a trailing sequence pattern (BlankSequence or BlankNullSequence).
   let (trailing_seq, trailing_seq_blank) =
     patterns.last().map_or((false, 0), |p| {
@@ -4506,14 +4503,10 @@ fn replace_subexpr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
     Expr::List(items) => {
       Expr::List(items.iter().map(|e| replace_subexpr(e, from, to)).collect())
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
-        .iter()
-        .map(|e| replace_subexpr(e, from, to))
-        .collect::<Vec<_>>()
-        .into(),
-    },
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args.iter().map(|e| replace_subexpr(e, from, to)).collect(),
+    ),
     Expr::BinaryOp { op, left, right } => binop(
       *op,
       replace_subexpr(left, from, to),
@@ -4715,13 +4708,7 @@ fn reconstruct_list_param(
 
   let mut part_names = Vec::new();
   for (idx, pat) in &elem_pats {
-    let path = call(
-      "Part",
-      vec![
-        Expr::Identifier(param.to_string()),
-        Expr::Integer(*idx as i128),
-      ],
-    );
+    let path = call("Part", vec![id_expr(param), Expr::Integer(*idx as i128)]);
     map_part_names(pat, &path, &mut part_names);
   }
 

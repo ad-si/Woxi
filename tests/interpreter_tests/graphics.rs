@@ -2039,6 +2039,18 @@ mod graphics {
       assert!(!svg.contains("Set"), "{svg}");
     }
 
+    /// A held `a ≈ Sum[…]` label reads as an approximation with a sigma,
+    /// not as the literal `TildeTilde[…]`/`Sum[…]` source.
+    #[test]
+    fn text_approximation_of_a_sum() {
+      let svg = export_svg(
+        "Grid[{{Style[HoldForm[a \\[TildeTilde] Sum[1/k, {k, 1, n}]], \"TraditionalForm\"]}}]",
+      );
+      assert!(svg.contains("a \u{2248} \u{2211}"), "{svg}");
+      assert!(!svg.contains("TildeTilde"), "{svg}");
+      assert!(!svg.contains("Sum["), "{svg}");
+    }
+
     /// The lines of a multi-line label are centred on its anchor.
     #[test]
     fn text_multiline_is_vertically_centered() {
@@ -16876,6 +16888,25 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!ranged.contains("ClickPane"), "not the source: {ranged}");
     }
 
+    // A `ClickPane` whose (held) content is a variable holding a picture,
+    // as in a board-game Demonstration, must draw that picture in a grid.
+    #[test]
+    fn a_click_pane_in_a_grid_resolves_a_picture_variable() {
+      for pane in [
+        "ClickPane[board, (x = #) &]",
+        "ClickPane[Dynamic[Deploy[board]], Function[p, x = Round[p]]]",
+      ] {
+        let svg = export_svg(&format!(
+          "board = Graphics[{{Disk[]}}]; Grid[{{{{{pane}, \"a\"}}}}]"
+        ));
+        assert!(
+          svg.contains("<ellipse") || svg.contains("<circle"),
+          "the picture must be drawn for {pane}: {svg}"
+        );
+        assert!(!svg.contains("ClickPane"), "not the source: {svg}");
+      }
+    }
+
     // A visual host shows the picture an interactive pane wraps even when
     // the pane is the whole result — a Manipulate body that *is* a
     // `ClickPane` rendered as a strip of source text.
@@ -29368,9 +29399,9 @@ mod manipulate {
         // and small stellated dodecahedra, the great icosahedron and
         // rhombic hexecontahedron
         // stellations, the triangular orthobicupola, the Bilinski
-        // dodecahedron, the stella octangula, and the golden rhombohedra and
-        // rhombic icosahedron.
-        assert_eq!(values.len(), 28, "every known solid");
+        // dodecahedron, the stella octangula, and the golden rhombohedra,
+        // rhombic icosahedron, and the cuboctahedron.
+        assert_eq!(values.len(), 29, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }
@@ -35961,6 +35992,33 @@ mod empty_plot {
   }
 
   #[test]
+  fn textured_graphics3d_polygon_embeds_image_per_triangle() {
+    let svg = export_svg(
+      "Graphics3D[{Texture[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]], \
+       Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}, \
+       VertexTextureCoordinates -> {{0, 0}, {1, 0}, {1, 1}, {0, 1}}]}]",
+    );
+    assert_eq!(svg.matches("<image").count(), 1, "image once: {svg}");
+    assert_eq!(svg.matches("<use").count(), 2, "one per triangle: {svg}");
+  }
+
+  #[test]
+  fn texture_accepts_graphics_in_2d_and_3d() {
+    let svg = export_svg(
+      "Graphics3D[{Texture[Graphics[Text[Style[3, 20], {0.5, 0.5}]]], \
+       Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}}, \
+       VertexTextureCoordinates -> {{0, 0}, {1, 0}, {1, 1}}]}]",
+    );
+    assert!(svg.contains("data:image/png;base64,"), "3D: {svg}");
+    let svg = export_svg(
+      "Graphics[{Texture[Graphics[Text[Style[3, 20], {0.5, 0.5}]]], \
+       Polygon[{{0, 0}, {1, 0}, {1, 1}}, \
+       VertexTextureCoordinates -> {{0, 0}, {1, 0}, {1, 1}}]}]",
+    );
+    assert!(svg.contains("data:image/png;base64,"), "2D: {svg}");
+  }
+
+  #[test]
   fn textured_polygon_without_coordinates_falls_back_to_plain_fill() {
     let svg = export_svg(
       "Graphics[{Texture[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]], \
@@ -36835,4 +36893,68 @@ fn labeled_blank_slot_in_grid_draws_its_caption() {
   );
   assert!(svg.contains("distribution"), "{svg}");
   assert!(!svg.contains("Labeled"), "{svg}");
+}
+
+/// Regression: a `Null` cell in a `GraphicsGrid` (e.g. `If[i == j, , …]`
+/// leaving a gap on a board's diagonal) printed the word "Null".
+#[test]
+fn graphics_grid_null_cell_is_blank() {
+  let svg = export_svg(
+    "GraphicsGrid[{{Graphics[Disk[]], Null}, {Null, Graphics[Disk[]]}}]",
+  );
+  assert!(!svg.contains("Null"), "{svg}");
+  assert!(svg.contains("<ellipse"), "{svg}");
+}
+
+#[test]
+fn explicit_size_after_named_style_overrides_its_size() {
+  // `Style[x, 12, "Section"]`: the stylesheet entry is the base and the
+  // explicit size sits on top of it, whichever side it was written.
+  let svg = export_svg(
+    "Column[{Text@Style[\"hi\", 12, \"Section\", Blue, Italic], \"x\"}]",
+  );
+  assert!(svg.contains("font-size=\"12\""), "{svg}");
+  assert!(!svg.contains("font-size=\"28\""), "{svg}");
+}
+
+#[test]
+fn slide_view_in_a_layout_shows_its_first_slide() {
+  let svg = export_svg(
+    "Column[{\"a\", SlideView[{Graphics[Circle[]], Graphics[Disk[]]}]}]",
+  );
+  assert!(!svg.contains("SlideView"), "{svg}");
+  assert!(svg.contains("<ellipse"), "{svg}");
+}
+
+#[test]
+fn graphics_layout_nested_in_a_row_fits_its_cell() {
+  let svg = export_svg(
+    "GraphicsRow[{GraphicsGrid[{{Graphics[Circle[]], Graphics[Circle[]]}}]}]",
+  );
+  assert!(svg.starts_with("<svg width=\"360\""), "{svg}");
+}
+
+#[test]
+fn list_fit_plot_draws_data_and_fitted_curve() {
+  for model in [
+    "",
+    ", \"Quadratic\"",
+    ", \"Exponential\"",
+    ", \"Kernel\"",
+    ", {1, x}",
+  ] {
+    let head =
+      interpret(&format!("Head[ListFitPlot[{{3, 5, 4, 8, 9, 12}}{model}]]"))
+        .unwrap();
+    assert_eq!(head, "Graphics", "model {model}");
+  }
+  // A perfect linear fit passes through the data: the curve is drawn
+  // in addition to the points.
+  let svg = export_svg("ListFitPlot[{{1, 2}, {2, 4}, {3, 6}}]");
+  assert!(svg.contains("<polyline"), "{svg}");
+  // Unknown models stay unevaluated.
+  assert_eq!(
+    interpret("ListFitPlot[{1, 2, 3}, \"Bogus\"]").unwrap(),
+    "ListFitPlot[{1, 2, 3}, Bogus]"
+  );
 }

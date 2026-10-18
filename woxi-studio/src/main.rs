@@ -7327,6 +7327,49 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`p$$ = 0.5, $CellContext`n$$ = 50}, 
   }
 
   use super::*;
+  /// A board Manipulate in the style of a Demonstrations puzzle: a
+  /// `Button` control whose label is a `Dynamic` string reading another
+  /// control (`{{board, init, ""}, Button[Dynamic["reset " <> ToString[n]],
+  /// …]&}`), and a custom control building a `GraphicsGrid` of clickable
+  /// cells with a blank (`Null`) diagonal. Regression: the dynamic label
+  /// was frozen as the raw `StringJoin[…]` source, the grid-building control
+  /// was dropped altogether, and `Null` cells printed the word "Null".
+  #[test]
+  fn demonstration_board_with_dynamic_button_label_and_grid_control() {
+    let code = r#"Manipulate[
+      "board",
+      {{n, 3, "size"}, 3, 6, 1},
+      {{cells, {{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}, ""},
+        Button[Dynamic["reset " <> ToString[n] <> " columns"],
+          cells = Table[0, {n}, {n}]] &},
+      Delimiter,
+      {{pick, False, ""},
+        GraphicsGrid[Table[With[{i = i, j = j},
+          If[i == j, , Button[Graphics[Dynamic[If[cells[[i, j]] == 0,
+            Rectangle[], Disk[]]]], cells[[i, j]] = 1 - cells[[i, j]]]]],
+          {i, Dimensions[cells][[1]]}, {j, Dimensions[cells][[1]]}]] &}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the controls should build a ManipulateState");
+    assert_eq!(state.error, None, "{:?}", state.error);
+    assert_eq!(
+      state.displays.len(),
+      2,
+      "label button and grid are displays"
+    );
+    let trees = format!("{:?}", state.display_trees);
+    assert!(
+      trees.contains("reset 3 columns"),
+      "the Dynamic label must be evaluated: {trees}"
+    );
+    assert!(!trees.contains("StringJoin"), "{trees}");
+    assert!(
+      !trees.contains(">Null<"),
+      "Null cells must stay blank: {trees}"
+    );
+    assert!(trees.contains("woxi-btn-"), "grid cells must be pressable");
+  }
 
   /// A Manipulate whose Input cell stores a number followed by the legacy
   /// `"\.00"` escape (character 0, an invisible spacer) must still open as
@@ -10320,6 +10363,24 @@ Cell[BoxData["standalone output"], "Output"]
     )
     .unwrap();
     assert_eq!(state.text_output.as_deref(), Some("41"));
+  }
+
+  #[test]
+  fn stored_manipulate_control_initialised_from_its_default_variable() {
+    // The saved DynamicModule initialises a control from a separate
+    // `…Def$$` default variable listed after it. Regression: the saved value
+    // arrived as the unbound symbol `nDef$$`, so the control never opened on
+    // its default and the body's `If[n == 2, …]` stayed unevaluated.
+    let dump = "DynamicModuleBox[{$CellContext`n$$ = $CellContext`nDef$$, \
+      $CellContext`nDef$$ = 2}, DynamicBox[…]]";
+    let state = instantiate_stored_manipulate(
+      "Manipulate[If[n == 2, \"two\", \"other\"], {{n, 1}, {1, 2}}]",
+      dump,
+    )
+    .unwrap();
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert_eq!(state.controls[0].current_code(), "2");
+    assert_eq!(state.text_output.as_deref(), Some("two"));
   }
 
   #[test]

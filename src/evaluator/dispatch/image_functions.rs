@@ -68,16 +68,15 @@ fn gradient_color_function(scheme: &str) -> Expr {
   let blend = Expr::Function {
     body: Box::new(call("Blend", vec![str_expr(scheme), Expr::Slot(1)])),
   };
-  Expr::FunctionCall {
-    name: "ColorDataFunction".to_string(),
-    args: vec![
+  call(
+    "ColorDataFunction",
+    vec![
       str_expr(scheme),
       str_expr("Gradients"),
       Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
       blend,
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// The color function of a named gradient stretched over a custom range,
@@ -94,16 +93,15 @@ fn ranged_gradient_color_function(scheme: &str, range: &Expr) -> Expr {
       ],
     )),
   };
-  Expr::FunctionCall {
-    name: "ColorDataFunction".to_string(),
-    args: vec![
+  call(
+    "ColorDataFunction",
+    vec![
       str_expr(scheme),
       str_expr("Gradients"),
       range.clone(),
       blend,
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// The color function of an indexed scheme (`ColorData[1]`, `ColorData[97]`,
@@ -116,16 +114,15 @@ fn indexed_color_function(n: i128) -> Expr {
   let blend = Expr::Function {
     body: Box::new(call("ColorData", vec![Expr::Integer(n), Expr::Slot(1)])),
   };
-  Expr::FunctionCall {
-    name: "ColorDataFunction".to_string(),
-    args: vec![
+  call(
+    "ColorDataFunction",
+    vec![
       Expr::Integer(n),
       str_expr("Indexed"),
       Expr::List(vec![Expr::Integer(1), id_expr("Infinity")].into()),
       blend,
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// `ColorData[30, "ColorList"]` — nine muted earth tones, likewise cycling.
@@ -182,12 +179,10 @@ fn gradient_strip_image(controls: &[(f64, f64, f64)]) -> Expr {
       Expr::List(vec![unit_corner(0, 0), unit_corner(1, 1)].into()),
     ],
   );
-  let option = |name: &str, value: Expr| {
-    rule_expr(Expr::Identifier(name.to_string()), value)
-  };
-  Expr::FunctionCall {
-    name: "Graphics".to_string(),
-    args: vec![
+  let option = |name: &str, value: Expr| rule_expr(id_expr(name), value);
+  call(
+    "Graphics",
+    vec![
       Expr::List(vec![raster].into()),
       Expr::List(
         vec![
@@ -201,9 +196,8 @@ fn gradient_strip_image(controls: &[(f64, f64, f64)]) -> Expr {
         ]
         .into(),
       ),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// The k-th color of an indexed scheme. Scheme 1 is generated rather than
@@ -2127,12 +2121,13 @@ pub fn dispatch_image_functions(
               Expr::List(
                 edges
                   .into_iter()
-                  .map(|(a, b)| Expr::Rule {
-                    pattern: Box::new(Expr::Integer(a as i128)),
-                    replacement: Box::new(Expr::Integer(b as i128)),
+                  .map(|(a, b)| {
+                    rule_expr(
+                      Expr::Integer(a as i128),
+                      Expr::Integer(b as i128),
+                    )
                   })
-                  .collect::<Vec<_>>()
-                  .into(),
+                  .collect(),
               )
             })
             .collect::<Vec<_>>();

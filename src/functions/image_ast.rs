@@ -5,6 +5,26 @@ use std::sync::Arc;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+/// The image behind a `Texture[…]` argument: an image as is, or any other
+/// expression (typically a `Graphics`, which `Texture` accepts) rasterized
+/// to one. `None` when it does not evaluate to an image.
+pub fn texture_source_image(arg: &Expr) -> Option<Expr> {
+  if matches!(arg, Expr::Image { .. }) {
+    return Some(arg.clone());
+  }
+  let value = crate::evaluator::evaluate_expr_to_expr(arg).ok()?;
+  if matches!(value, Expr::Image { .. }) {
+    return Some(value);
+  }
+  let call = Expr::FunctionCall {
+    name: "Rasterize".to_string(),
+    args: vec![value].into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&call)
+    .ok()
+    .filter(|v| matches!(v, Expr::Image { .. }))
+}
+
 /// Convert an Expr::Image to an `image::DynamicImage`.
 pub fn expr_to_dynamic_image(
   width: u32,

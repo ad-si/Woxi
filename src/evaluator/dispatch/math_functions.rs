@@ -2107,7 +2107,7 @@ pub fn dispatch_math_functions(
       // Haversine[I Pi/3] and Haversine[ArcCos[1/3]] stay unevaluated).
       let pi_ratio = crate::evaluator::evaluate_expr_to_expr(&div2(
         args[0].clone(),
-        Expr::Constant("Pi".to_string()),
+        const_expr("Pi"),
       ));
       let is_pi_multiple = match &pi_ratio {
         Ok(Expr::Integer(_)) => true,

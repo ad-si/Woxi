@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// Resolve an `In[…]` / `Out[…]` argument list to the input line it names.
@@ -1110,7 +1109,7 @@ fn distribution_parameter_assumptions(
         if *positive {
           call("Greater", vec![p.clone(), Expr::Integer(0)])
         } else {
-          call("Element", vec![p.clone(), Expr::Identifier("Reals".into())])
+          call("Element", vec![p.clone(), id_expr("Reals")])
         }
       })
       .collect(),
