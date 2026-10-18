@@ -3282,6 +3282,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       let rendered_content = render_grid_if_needed(args[0].clone());
       let content_svg = match &rendered_content {
         syntax::Expr::Graphics { svg, .. } => svg.clone(),
+        // A control Woxi Studio lifted into its panel leaves an empty
+        // string behind; its caption still labels the (blank) spot.
+        syntax::Expr::String(s) if s.is_empty() => String::new(),
         other if is_display_wrapper(other) => {
           evaluator::dispatch::io_functions::expr_to_svg(other)
         }
