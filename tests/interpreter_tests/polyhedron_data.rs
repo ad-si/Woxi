@@ -839,6 +839,28 @@ mod polyhedron_data_tests {
     );
   }
 
+  // "Spikey" is the short alias of "MathematicaSpikey".
+  #[test]
+  fn polyhedron_data_spikey_alias() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["Spikey", "VertexCount"],
+            PolyhedronData["Spikey", "VertexCoordinates"] ===
+              PolyhedronData["MathematicaSpikey", "VertexCoordinates"]}"#
+      )
+      .unwrap(),
+      "{62, True}"
+    );
+    assert_eq!(
+      interpret(r#"Head[N[PolyhedronData["Spikey"]]]"#).unwrap(),
+      "Graphics3D"
+    );
+    assert_eq!(
+      interpret(r#"Head[Part[N[PolyhedronData["Spikey"]], 1]]"#).unwrap(),
+      "GraphicsComplex"
+    );
+  }
+
   // The Archimedean solids with cubic (octahedral) symmetry: each is a
   // Platonic solid with its corners truncated.
   #[test]
