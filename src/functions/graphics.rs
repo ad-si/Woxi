@@ -4845,8 +4845,16 @@ fn inset_primitives(
     && let Some((x, y)) = args.get(1).and_then(expr_to_point)
   {
     let label = graphics_text_content(&bargs[0]);
+    // With an action, the plate also carries the invisible hit region a
+    // live widget presses (see `with_button_cell_chrome`).
+    let plate = button_plate_svg(&label);
+    let svg = if bargs.len() >= 2 {
+      with_button_cell_chrome(plate, bargs)
+    } else {
+      plate
+    };
     return Some(vec![Primitive::InsetGraphic {
-      svg: button_plate_svg(&label),
+      svg,
       x,
       y,
       w: button_plate_size(&label).0,
@@ -25746,6 +25754,17 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
     {
       displays.push(crate::syntax::expr_to_source_form(expr));
       id_expr("Nothing")
+    }
+    // `Inset[Button[…], pos]` inside a graphic is drawn by the picture
+    // itself (as a plate carrying a hit region), so it stays in the body.
+    Expr::FunctionCall { name, args }
+      if name == "Inset"
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: b, .. }) if b == "Button"
+        ) =>
+    {
+      expr.clone()
     }
     // A bare `Button[label, action, opts…]` drawn directly by the body (a
     // Demonstration's "throw"/"step" action mixed into a `Column` of

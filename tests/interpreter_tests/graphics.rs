@@ -35496,6 +35496,17 @@ mod grid_text_in_graphics {
     assert!(!svg.contains("Button"), "{svg}");
   }
 
+  /// A `Button` inset into a picture draws as a plate carrying its own
+  /// pressable hit region, one per button.
+  #[test]
+  fn inset_button_in_graphics_carries_hit_region() {
+    let svg = export_svg(
+      "Graphics[{Inset[Button[\"go\", n++], {1, 1}], Inset[Button[\"stop\", n = 0], {3, 1}]}]",
+    );
+    assert!(!svg.contains("Button"), "{svg}");
+    assert_eq!(svg.matches("id=\"woxi-btn-").count(), 2, "{svg}");
+  }
+
   /// A grid of text-labelled buttons (a keyboard of character keys) draws
   /// each key as a plate with its own pressable hit region.
   #[test]
