@@ -108,6 +108,24 @@ fn sequence_alignment_simple_substitution() {
 }
 
 #[test]
+fn sequence_alignment_merge_differences_false() {
+  assert_eq!(
+    interpret(
+      r#"SequenceAlignment["abcde", "axyde", MergeDifferences -> False]"#
+    )
+    .unwrap(),
+    "{a, {b, x}, {c, y}, de}"
+  );
+  assert_eq!(
+    interpret(
+      r#"SequenceAlignment["abcde", "axyde", MergeDifferences -> True]"#
+    )
+    .unwrap(),
+    "{a, {bc, xy}, de}"
+  );
+}
+
+#[test]
 fn sequence_alignment_identical() {
   assert_eq!(
     interpret(r#"SequenceAlignment["abc", "abc"]"#).unwrap(),

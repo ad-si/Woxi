@@ -2049,6 +2049,7 @@ static PROPERTIES: &[&str] = &[
   "Inradius",
   "Insphere",
   "Midradius",
+  "Name",
   "NetFaces",
   "Skeleton",
   "SkeletonGraph",
@@ -2087,6 +2088,39 @@ fn classes() -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// Entities belonging to `class`, sorted by name; `None` when no built-in
+/// solid is in that class.
+fn class_members(class: &str) -> Result<Option<Expr>, InterpreterError> {
+  let mut names: Vec<&str> = Vec::new();
+  for info in POLYHEDRA {
+    if let Expr::List(items) = &eval_wl(info.classes_src)?
+      && items
+        .iter()
+        .any(|i| matches!(i, Expr::String(c) if c == class))
+    {
+      names.push(info.name);
+    }
+  }
+  if names.is_empty() {
+    return Ok(None);
+  }
+  names.sort_unstable();
+  Ok(Some(string_list(&names)))
+}
+
+/// The "Name" property: the CamelCase entity name as lowercase words
+/// ("GreatRhombicuboctahedron" -> "great rhombicuboctahedron").
+fn display_name(name: &str) -> String {
+  let mut out = String::new();
+  for (i, c) in name.chars().enumerate() {
+    if c.is_uppercase() && i > 0 {
+      out.push(' ');
+    }
+    out.extend(c.to_lowercase());
+  }
+  out
+}
+
 /// Build a `List` of string entries.
 fn string_list(items: &[&str]) -> Expr {
   Expr::List(items.iter().map(|s| str_expr(s)).collect())
@@ -2116,6 +2150,11 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Classes" => return classes(),
       _ => {}
     }
+    if find_polyhedron(kind).is_none()
+      && let Some(members) = class_members(kind)?
+    {
+      return Ok(members);
+    }
   }
 
   let Some(Expr::String(name)) = args.first() else {
@@ -2136,6 +2175,7 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       match property.as_str() {
         "Classes" => eval_wl(info.classes_src),
+        "Name" => Ok(Expr::String(display_name(info.name))),
         "VertexCount" => Ok(Expr::Integer(info.vertex_count)),
         "EdgeCount" => Ok(Expr::Integer(info.edge_count)),
         "FaceCount" => Ok(Expr::Integer(info.face_count)),

@@ -822,12 +822,16 @@ mod compile {
   // Regression: a plot probes its body with the plot variables free; running
   // a compiled iteration on those symbols unrolled it symbolically, which is
   // exponential in the iteration count and made this plot never finish.
+  // Unrolled, 8 iterations already take over 30s in a release build, so 10
+  // still catches the regression. More only adds numeric work: DensityPlot
+  // ignores PlotPoints and samples a fixed 100x100 grid, and at 25 iterations
+  // that timed out on the nightly Windows runner.
   #[test]
   fn compiled_iteration_in_density_plot_is_not_unrolled_symbolically() {
     clear_state();
     assert_eq!(
       interpret(
-        "ly = Compile[{{a, _Real}, {b, _Real}, {n, _Integer}}, Module[{x = 0.5, s = 0.}, Do[x = a x (1 - x); x = b x (1 - x); s = s + Log[Abs[a (1 - 2 x)]], {n}]; s/n]]; Head[DensityPlot[ly[u, v, 25], {u, 3, 4}, {v, 3, 4}, PlotPoints -> 5]]"
+        "ly = Compile[{{a, _Real}, {b, _Real}, {n, _Integer}}, Module[{x = 0.5, s = 0.}, Do[x = a x (1 - x); x = b x (1 - x); s = s + Log[Abs[a (1 - 2 x)]], {n}]; s/n]]; Head[DensityPlot[ly[u, v, 10], {u, 3, 4}, {v, 3, 4}, PlotPoints -> 5]]"
       )
       .unwrap(),
       "Graphics"
