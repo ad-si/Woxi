@@ -1012,6 +1012,17 @@ mod graphics {
       assert!(!svg.contains("&quot;"), "no quoted strings: {svg}");
     }
 
+    /// A positionless `Text[label]` in a plot's `Epilog` sits at the origin,
+    /// as it does in `Graphics`, instead of being dropped.
+    #[test]
+    fn a_plot_epilog_text_without_a_position_is_drawn() {
+      let svg = export_svg(
+        "ListPlot[{{3, 17}, {7, 13}}, Epilog -> Text[\"zzlabel\"], \
+         PlotRange -> {{0, 500}, {0, 1000}}]",
+      );
+      assert!(svg.contains(">zzlabel</text>"), "{svg}");
+    }
+
     /// `Graphics` takes `Prolog` and `Epilog` too: extra primitives drawn
     /// under and over its content. Neither stretches the plot range — a
     /// point far outside it is clipped away rather than rescaling the
