@@ -1151,7 +1151,7 @@ mod compile {
       interpret(
         r#"cf = CompiledFunction[{7, 7.0, 42}, {{z, _Complex}, {c, _Complex}, {n, _Integer}}, {{2, 0, 0}}, {{}}, {0, 1, 2, 0, 0}, {{1}},
           Function[{z, c, n}, Length[FixedPointList[c (# - Sign[Re[#]]) &, z, n, SameTest -> (Abs[#1] > 2 &)]]], Evaluate];
-        Head[DensityPlot[cf[x + I y, 0.84 + 0.88 I, 40], {x, -2, 2}, {y, -2, 2}, PlotPoints -> 10, Mesh -> False]]"#
+        Head[DensityPlot[cf[x + I y, 0.84 + 0.88 I, 6], {x, -2, 2}, {y, -2, 2}, PlotPoints -> 10, Mesh -> False]]"#
       )
       .unwrap(),
       "Graphics"

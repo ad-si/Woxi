@@ -1901,6 +1901,18 @@ fn extract_rowbox_content(s: &str) -> String {
     } else {
       piece
     };
+    // A nested row that already ends in its own statement-ending `;`
+    // followed by a sibling bare `";"` is two terminators — a statement
+    // plus an empty one (`CompoundExpression[stmt, Null]`, then `;`) —
+    // not the `;;` `Span` operator. Glued together as text the two would
+    // read back as `Span`, so keep them apart.
+    if piece == ";"
+      && result.ends_with(';')
+      && i > 0
+      && parts[i - 1].trim().starts_with("RowBox[")
+    {
+      result.push(' ');
+    }
     push_juxtaposed(&mut result, &piece);
     i += 1;
   }
@@ -3265,7 +3277,7 @@ pub fn extract_saved_manipulate_variables(
 ) -> Vec<(String, String)> {
   let from_module = extract_dynamic_module_variables(box_dump);
   if !from_module.is_empty() {
-    return from_module;
+    return resolve_saved_variable_references(&from_module);
   }
   let Some(raw) = extract_arrow_value(box_dump, "Variables") else {
     return Vec::new();
@@ -3277,7 +3289,7 @@ pub fn extract_saved_manipulate_variables(
   else {
     return Vec::new();
   };
-  split_top_level_commas(inner)
+  let pairs: Vec<(String, String)> = split_top_level_commas(inner)
     .into_iter()
     .filter_map(|part| {
       let part = part.trim();
@@ -3298,6 +3310,40 @@ pub fn extract_saved_manipulate_variables(
       // to nothing.
       let value = strip_saved_contexts(rhs);
       Some((name, unescape_code_string(&value)))
+    })
+    .collect();
+  resolve_saved_variable_references(&pairs)
+}
+
+/// Replace a saved value that is just another saved variable's `name$$`
+/// (a control initialised from its default, e.g. `` $CellContext`n$$ =
+/// $CellContext`nDef$$ ``) by that variable's own value, so the control
+/// opens on the default instead of an unbound `nDef$$` symbol. Chains are
+/// followed; a reference to an unknown or cyclic variable is left as is.
+fn resolve_saved_variable_references(
+  pairs: &[(String, String)],
+) -> Vec<(String, String)> {
+  let lookup = |name: &str| {
+    pairs
+      .iter()
+      .find(|(n, _)| n == name)
+      .map(|(_, v)| v.clone())
+  };
+  pairs
+    .iter()
+    .map(|(name, value)| {
+      let mut value = value.clone();
+      for _ in 0..pairs.len() {
+        let Some(next) = value
+          .strip_suffix("$$")
+          .filter(|r| !r.is_empty() && r.chars().all(char::is_alphanumeric))
+          .and_then(lookup)
+        else {
+          break;
+        };
+        value = next;
+      }
+      (name.clone(), value)
     })
     .collect()
 }
@@ -7349,6 +7395,25 @@ yf4GL4DwC5VA4w
   }
 
   #[test]
+  fn test_extract_saved_manipulate_variables_resolves_default_references() {
+    // A control initialised from its own default variable, which is listed
+    // later (and a chain through two defaults), must open on that default
+    // rather than an unbound `nDef$$` symbol.
+    let dump = "DynamicModuleBox[{$CellContext`n$$ = $CellContext`nDef$$, \
+      $CellContext`nDef$$ = 2, $CellContext`k$$ = $CellContext`n$$, \
+      $CellContext`z$$ = $CellContext`missing$$}, DynamicBox[…]]";
+    assert_eq!(
+      extract_saved_manipulate_variables(dump),
+      vec![
+        ("n".to_string(), "2".to_string()),
+        ("nDef".to_string(), "2".to_string()),
+        ("k".to_string(), "2".to_string()),
+        ("z".to_string(), "missing$$".to_string()),
+      ]
+    );
+  }
+
+  #[test]
   fn test_extract_saved_manipulate_variables_skips_controller_shadow_vars() {
     // `ControllerVariables` pairs a real control with a hidden
     // `$CellContext`name$digits$$` linking variable in the same outer
@@ -8151,6 +8216,25 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
       "rng must stay a `Span[2, All]`, not get silently truncated to the \
        plain integer `2`, got: {result:?} from {expr_src:?}"
     );
+  }
+
+  #[test]
+  fn terminated_nested_row_followed_by_bare_semicolon_is_not_span() {
+    // A statement box that already carries its own `;` (`RowBox[{stmt,
+    // ";"}]`), wrapped in an outer row with one more bare `";"`, is a
+    // statement followed by an empty one — not the `;;` `Span` operator
+    // that the two glued semicolons would read back as. Otherwise the
+    // assigned value becomes `Span[value, All]`.
+    let boxes = r#"RowBox[{RowBox[{RowBox[{"vals", "=", RowBox[{"{", RowBox[{"1", ",", "2", ",", "3"}], "}"}]}], ";"}], ";"}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(
+      !expr_src.contains(";;"),
+      "the two semicolons must stay apart, got: {expr_src:?}"
+    );
+    let result = crate::interpret(&format!("{expr_src}\nHead[vals]"))
+      .expect("the reconstructed source must evaluate without error");
+    assert_eq!(result, "List", "got: {result:?} from {expr_src:?}");
   }
 
   #[test]

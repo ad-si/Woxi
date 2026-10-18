@@ -10826,9 +10826,9 @@ fn sparse_array_literal(n: usize, nonzeros: &[(usize, usize, Expr)]) -> Expr {
     }
     rowptr.push(Expr::Integer(count));
   }
-  Expr::FunctionCall {
-    name: "SparseArray".to_string(),
-    args: vec![
+  call(
+    "SparseArray",
+    vec![
       id_expr("Automatic"),
       Expr::List(
         vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into(),
@@ -10844,9 +10844,8 @@ fn sparse_array_literal(n: usize, nonzeros: &[(usize, usize, Expr)]) -> Expr {
         ]
         .into(),
       ),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// LDLDecomposition[m] — the L·D·Lᴴ factorization of an exact Hermitian

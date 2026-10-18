@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{divide_ast, times_ast};
 
@@ -507,7 +506,7 @@ pub fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
 
   // Add x factor for each leading zero (x^k = x * x * ... * x)
   for _ in 0..leading_zeros {
-    factors.push(Expr::Identifier(var.to_string()));
+    factors.push(id_expr(var));
   }
 
   if trimmed.len() <= 1 {
@@ -534,10 +533,7 @@ pub fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
     // Try rational root theorem
     if let Some(root) = find_integer_root(&remaining) {
       // Factor out (x - root) which in canonical form is (root_neg + x) → (-root + x)
-      factors.push(plus2(
-        Expr::Integer(-root),
-        Expr::Identifier(var.to_string()),
-      ));
+      factors.push(plus2(Expr::Integer(-root), id_expr(var)));
       remaining = divide_by_root(&remaining, root);
     } else {
       // No integer root. Try a non-integer rational root p/q: factor out the
@@ -701,12 +697,12 @@ fn factor_first_nonconst_coeff(expr: &Expr) -> i128 {
 fn linear_to_expr(c0: i128, c1: i128, var: &str) -> Expr {
   if c1 == 1 {
     if c0 == 0 {
-      Expr::Identifier(var.to_string())
+      id_expr(var)
     } else {
-      plus2(Expr::Integer(c0), Expr::Identifier(var.to_string()))
+      plus2(Expr::Integer(c0), id_expr(var))
     }
   } else {
-    let var_part = times2(Expr::Integer(c1), Expr::Identifier(var.to_string()));
+    let var_part = times2(Expr::Integer(c1), id_expr(var));
     if c0 == 0 {
       var_part
     } else {
@@ -1263,10 +1259,7 @@ fn factor_sub_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
   let mut remaining = coeffs.to_vec();
   let mut factors: Vec<Expr> = Vec::new();
   while let Some(root) = find_integer_root(&remaining) {
-    factors.push(plus2(
-      Expr::Integer(-root),
-      Expr::Identifier(var.to_string()),
-    ));
+    factors.push(plus2(Expr::Integer(-root), id_expr(var)));
     remaining = divide_by_root(&remaining, root);
     if remaining.len() <= 1 {
       break;
@@ -2188,12 +2181,9 @@ fn factor_terms_wrt_var(expr: &Expr, var: &str) -> Expr {
             let var_power = if *power == 0 {
               q_expr
             } else if *power == 1 {
-              times2(q_expr, Expr::Identifier(var.to_string()))
+              times2(q_expr, id_expr(var))
             } else {
-              times2(
-                q_expr,
-                pow2(Expr::Identifier(var.to_string()), Expr::Integer(*power)),
-              )
+              times2(q_expr, pow2(id_expr(var), Expr::Integer(*power)))
             };
             new_terms.push(var_power);
           }
@@ -3510,7 +3500,7 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Convert integer coefficient array to canonical Expr representation
 fn int_coeffs_to_canonical_expr(coeffs: &[i128], var: &str) -> Expr {
   // Build a polynomial Expr from coefficients and evaluate to canonical form
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
   let mut terms: Vec<Expr> = Vec::new();
 
   for (i, &c) in coeffs.iter().enumerate() {
@@ -3672,20 +3662,14 @@ fn homogeneous_cyclotomic(d: u64, a: &str, b: &str) -> Expr {
     }
     let a_pow = match k {
       0 => None,
-      1 => Some(Expr::Identifier(a.to_string())),
-      _ => Some(pow2(
-        Expr::Identifier(a.to_string()),
-        Expr::Integer(k as i128),
-      )),
+      1 => Some(id_expr(a)),
+      _ => Some(pow2(id_expr(a), Expr::Integer(k as i128))),
     };
     let b_exp = deg - k;
     let b_pow = match b_exp {
       0 => None,
-      1 => Some(Expr::Identifier(b.to_string())),
-      _ => Some(pow2(
-        Expr::Identifier(b.to_string()),
-        Expr::Integer(b_exp as i128),
-      )),
+      1 => Some(id_expr(b)),
+      _ => Some(pow2(id_expr(b), Expr::Integer(b_exp as i128))),
     };
     let mut factors: Vec<Expr> = Vec::new();
     if c.abs() != 1 {

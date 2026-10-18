@@ -10391,12 +10391,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // In Wolfram a `Graphics` expression stays an expression, so a picture
   // held in a variable can be layered by a later `Show` — without this the
   // primitives are gone and `Show[…, g, …]` silently drops `g`.
-  let structure = Expr::FunctionCall {
-    name: "Graphics".to_string(),
-    args: std::iter::once(content)
+  let structure = call(
+    "Graphics",
+    std::iter::once(content)
       .chain(args[1..].iter().cloned())
       .collect(),
-  };
+  );
   Ok(crate::graphics_result_with_structure(svg, structure))
 }
 
@@ -11750,7 +11750,7 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
     Some(slot) => slot.1 = value,
     None => attrs.push((name, value)),
   };
-  for d in directives {
+  for d in style_directives_in_application_order(directives) {
     match d {
       Expr::Identifier(s) if s == "Italic" => {
         set("font-style", "italic".to_string());
@@ -12297,6 +12297,29 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
       match name.as_str() {
         // Missing[...] → rendered as a dash
         "Missing" => "-".to_string(),
+
+        // TildeTilde[a, b, ...] → a ≈ b ≈ ...
+        "TildeTilde" if args.len() >= 2 => args
+          .iter()
+          .map(expr_to_svg_markup)
+          .collect::<Vec<_>>()
+          .join(" \u{2248} "),
+
+        // Sum[body, {k, lo, hi}] → ∑ with the bounds as sub/superscript
+        "Sum" if args.len() == 2 => match &args[1] {
+          Expr::List(it) if it.len() == 3 => format!(
+            "\u{2211}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}={}</tspan><tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan> {}",
+            expr_to_svg_markup(&it[0]),
+            expr_to_svg_markup(&it[1]),
+            expr_to_svg_markup(&it[2]),
+            expr_to_svg_markup(&args[0])
+          ),
+          _ => format!(
+            "Sum[{}, {}]",
+            expr_to_svg_markup(&args[0]),
+            expr_to_svg_markup(&args[1])
+          ),
+        },
 
         // Plus[a, b, ...] with negative-term handling
         "Plus" if args.len() >= 2 => {
@@ -15045,10 +15068,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Expr::List(legends.into())
   };
-  Ok(Expr::FunctionCall {
-    name: "Legended".to_string(),
-    args: vec![shown, legend].into(),
-  })
+  Ok(call("Legended", vec![shown, legend]))
 }
 
 fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -19578,7 +19598,13 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
   let Expr::FunctionCall { name, args } = expr else {
     return expr.clone();
   };
-  if !is_graphics_producing_head(name) {
+  // A graphics layout nested in another one (`GraphicsRow[{GraphicsGrid[…]}]`)
+  // fits the cell it sits in instead of keeping its own default width.
+  let is_nested_layout = matches!(
+    name.as_str(),
+    "GraphicsRow" | "GraphicsColumn" | "GraphicsGrid"
+  );
+  if !is_graphics_producing_head(name) && !is_nested_layout {
     return expr.clone();
   }
   let has_image_size = args.iter().any(|a| {
@@ -20741,8 +20767,21 @@ fn resolve_display_item(expr: &Expr) -> Expr {
         }
       }
       Some(("EventHandler", content)) => current = content.clone(),
+      // `ClickPane[content, handler]` shows `content`; the handler needs
+      // live clicks. `content` is held, so a state variable holding a
+      // picture (`ClickPane[Dynamic[board], …]`) still has to be resolved.
+      Some(("ClickPane", held)) => {
+        let captured = crate::captured_graphics_count();
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(held);
+        crate::truncate_captured_graphics(captured);
+        current = evaluated.unwrap_or_else(|_| held.clone());
+      }
       // `Tooltip[expr, hint]` draws as `expr`; the hint shows only on hover.
       Some(("Tooltip", content)) => current = content.clone(),
+      // `SlideView[{s1, s2, …}]` starts on its first slide.
+      Some(("SlideView", Expr::List(slides))) if !slides.is_empty() => {
+        current = slides[0].clone();
+      }
       _ => break,
     }
     current = unwrap_display_wrappers(&current);
@@ -20820,25 +20859,23 @@ pub(crate) fn style_pushed_into_layout(
       && !args.is_empty()
     {
       let mut new_args: Vec<Expr> = args.iter().cloned().collect();
-      new_args[0] = Expr::FunctionCall {
-        name: "Style".to_string(),
-        args: std::iter::once(args[0].clone())
+      new_args[0] = call(
+        "Style",
+        std::iter::once(args[0].clone())
           .chain(directives.iter().cloned())
-          .collect::<Vec<_>>()
-          .into(),
-      };
+          .collect(),
+      );
       return Expr::FunctionCall {
         name: name.clone(),
         args: new_args.into(),
       };
     }
-    Expr::FunctionCall {
-      name: "Style".to_string(),
-      args: std::iter::once(e.clone())
+    call(
+      "Style",
+      std::iter::once(e.clone())
         .chain(directives.iter().cloned())
-        .collect::<Vec<_>>()
-        .into(),
-    }
+        .collect(),
+    )
   };
   // A `Grid`'s items are rows of cells; everything else is a flat list.
   let styled: Vec<Expr> = items
@@ -21279,10 +21316,7 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
         } else {
           line
         };
-        Expr::FunctionCall {
-          name: "Row".to_string(),
-          args: vec![Expr::List(line.into())].into(),
-        }
+        call1("Row", Expr::List(line.into()))
       })
       .collect();
     return column_to_svg(&[Expr::List(rows.into())]);
@@ -22110,10 +22144,7 @@ fn rebuild_grid(opts: &[Expr], rows: Vec<Vec<Expr>>) -> Expr {
     rows.into_iter().map(|r| Expr::List(r.into())).collect(),
   )];
   args.extend(opts.iter().cloned());
-  Expr::FunctionCall {
-    name: "Grid".to_string(),
-    args: args.into(),
-  }
+  call("Grid", args)
 }
 
 /// Column widths of the cells' natural renderings, given a cell's width.
@@ -22623,9 +22654,9 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("DropShadowing", args));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "DropShadowing".to_string(),
-    args: vec![
+  Ok(call(
+    "DropShadowing",
+    vec![
       offset.unwrap_or_else(|| {
         Expr::List(vec![Expr::Integer(-3), Expr::Integer(-3)].into())
       }),
@@ -22639,9 +22670,8 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ],
         )
       }),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// LinearGradientFilling[...] - normalizes gradient color specifications
@@ -28304,24 +28334,18 @@ fn linearize_fraction_boxes(e: &Expr) -> Expr {
             if name == "RowBox"
               && matches!(args.first(), Some(Expr::List(items)) if items.len() > 1) =>
           {
-            Expr::FunctionCall {
-              name: "RowBox".to_string(),
-              args: vec![Expr::List(
-                vec![str_expr("("), b.clone(), str_expr(")")].into(),
-              )]
-              .into(),
-            }
+            call1(
+              "RowBox",
+              Expr::List(vec![str_expr("("), b.clone(), str_expr(")")].into()),
+            )
           }
           _ => b,
         }
       };
-      Expr::FunctionCall {
-        name: "RowBox".to_string(),
-        args: vec![Expr::List(
-          vec![side(&args[0]), str_expr("/"), side(&args[1])].into(),
-        )]
-        .into(),
-      }
+      call1(
+        "RowBox",
+        Expr::List(vec![side(&args[0]), str_expr("/"), side(&args[1])].into()),
+      )
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -28353,10 +28377,7 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
 /// The formatted text of a number-formatting wrapper (`NumberForm[x, n]`,
 /// …), via `ToString`; `None` when it does not reduce to plain text.
 fn number_form_text(expr: &Expr) -> Option<String> {
-  let call = Expr::FunctionCall {
-    name: "ToString".to_string(),
-    args: vec![expr.clone()].into(),
-  };
+  let call = call1("ToString", expr.clone());
   match evaluate_expr_to_expr(&call) {
     Ok(Expr::String(ref s)) if !s.starts_with(|c: char| c.is_alphabetic()) => {
       Some(s.clone())
@@ -29293,6 +29314,12 @@ fn unicode_script_char(c: char, superscript: bool) -> Option<char> {
       'x' => '\u{02E3}',
       'y' => '\u{02B8}',
       'z' => '\u{1DBB}',
+      // The five Greek letters with a modifier-letter superscript.
+      '\u{03B2}' => '\u{1D5D}',
+      '\u{03B3}' => '\u{1D5E}',
+      '\u{03B4}' => '\u{1D5F}',
+      '\u{03C6}' => '\u{1D60}',
+      '\u{03C7}' => '\u{1D61}',
       _ => return None,
     }
   } else {
@@ -29331,6 +29358,12 @@ fn unicode_script_char(c: char, superscript: bool) -> Option<char> {
       'u' => '\u{1D64}',
       'v' => '\u{1D65}',
       'x' => '\u{2093}',
+      // The five Greek letters with a subscript form.
+      '\u{03B2}' => '\u{1D66}',
+      '\u{03B3}' => '\u{1D67}',
+      '\u{03C1}' => '\u{1D68}',
+      '\u{03C6}' => '\u{1D69}',
+      '\u{03C7}' => '\u{1D6A}',
       _ => return None,
     }
   };
@@ -30037,8 +30070,12 @@ fn parse_manipulate_control(
       // keep its code so the frontend can rebuild the choices whenever the
       // other control moves. A `Dynamic[…]` wrapper is stripped first (see
       // `unwrap_dynamic_choices`) so the kept code re-evaluates cleanly too.
+      // An explicit `Dynamic[…]` list is live even when it names no sibling
+      // control: it may follow a free variable the body assigns itself
+      // (`Dynamic[Range[depthMax]]` with `depthMax = 4` set per mode).
       let values_code = (bounds.len() == 1
-        && expr_references_any(unwrap_dynamic_choices(bounds[0]), siblings))
+        && (matches!(bounds[0], Expr::FunctionCall { name, .. } if name == "Dynamic")
+          || expr_references_any(unwrap_dynamic_choices(bounds[0]), siblings)))
       .then(|| {
         crate::syntax::expr_to_source_form(unwrap_dynamic_choices(bounds[0]))
       });
@@ -31878,6 +31915,15 @@ fn display_expr_to_node(
         }
         _ => static_leaf_node(expr, bindings),
       },
+      // A static render of `SlideView[{s1, s2, …}]` shows its first slide,
+      // the one the slider starts on.
+      "SlideView" if matches!(args.first(), Some(Expr::List(l)) if !l.is_empty()) =>
+      {
+        let Expr::List(slides) = &args[0] else {
+          unreachable!()
+        };
+        display_expr_to_node(&slides[0], bindings, probes, ons)
+      }
       "Panel" | "Framed" | "Deploy" | "Item" | "Pane" | "Labeled"
         if !args.is_empty() =>
       {
@@ -33335,6 +33381,14 @@ mod manipulate_label_tests {
   fn superscript_renders_unicode() {
     let label = call("Superscript", vec![id_expr("x"), Expr::Integer(2)]);
     assert_eq!(runs(&label), vec![run("x", false), run("\u{00B2}", false)]);
+  }
+
+  #[test]
+  fn greek_superscript_and_subscript_use_unicode_letters() {
+    let sup = call("Superscript", vec![id_expr("x"), str_expr("\u{03B2}")]);
+    assert_eq!(runs(&sup), vec![run("x", false), run("\u{1D5D}", false)]);
+    let sub = call("Subscript", vec![id_expr("x"), str_expr("\u{03C7}")]);
+    assert_eq!(runs(&sub), vec![run("x", false), run("\u{1D6A}", false)]);
   }
 
   #[test]

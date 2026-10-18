@@ -2,7 +2,6 @@
 //!
 //! These functions work directly with `Expr` AST nodes.
 
-#[allow(unused_imports)]
 use super::*;
 
 /// The value an association entry hands back when it is looked up.
@@ -531,14 +530,10 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         }
       }
-      Ok(Expr::FunctionCall {
-        name: "Association".to_string(),
-        args: applied
-          .into_iter()
-          .map(|(_, r)| r)
-          .collect::<Vec<_>>()
-          .into(),
-      })
+      Ok(call(
+        "Association",
+        applied.into_iter().map(|(_, r)| r).collect(),
+      ))
     }
     Expr::List(items) => {
       // AssociationMap[f, {e1, e2, ...}] creates <|e1 -> f[e1], e2 -> f[e2], ...|>

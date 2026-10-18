@@ -12,7 +12,6 @@
 //! `MusicScore[{…}, MusicNotation -> "SheetMusic"]` and
 //! `MusicPlot[obj, MusicNotation -> "SheetMusic"]`.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::graphics::theme;
 use crate::functions::music_render::{
@@ -175,7 +174,7 @@ fn rgb(c: (f64, f64, f64)) -> Vec<Expr> {
 }
 
 fn rule(name: &str, value: Expr) -> Expr {
-  rule_expr(Expr::Identifier(name.to_string()), value)
+  rule_expr(id_expr(name), value)
 }
 
 fn list(items: Vec<Expr>) -> Expr {

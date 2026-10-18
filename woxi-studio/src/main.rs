@@ -10366,6 +10366,24 @@ Cell[BoxData["standalone output"], "Output"]
   }
 
   #[test]
+  fn stored_manipulate_control_initialised_from_its_default_variable() {
+    // The saved DynamicModule initialises a control from a separate
+    // `…Def$$` default variable listed after it. Regression: the saved value
+    // arrived as the unbound symbol `nDef$$`, so the control never opened on
+    // its default and the body's `If[n == 2, …]` stayed unevaluated.
+    let dump = "DynamicModuleBox[{$CellContext`n$$ = $CellContext`nDef$$, \
+      $CellContext`nDef$$ = 2}, DynamicBox[…]]";
+    let state = instantiate_stored_manipulate(
+      "Manipulate[If[n == 2, \"two\", \"other\"], {{n, 1}, {1, 2}}]",
+      dump,
+    )
+    .unwrap();
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert_eq!(state.controls[0].current_code(), "2");
+    assert_eq!(state.text_output.as_deref(), Some("two"));
+  }
+
+  #[test]
   fn stored_manipulate_saved_initialization_may_shadow_a_builtin() {
     // A Demonstration written before Wolfram shipped a built-in `Midpoint`
     // may define its own two-argument `Midpoint` helper. `SaveDefinitions

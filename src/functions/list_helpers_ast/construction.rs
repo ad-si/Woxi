@@ -26,12 +26,12 @@ pub fn table_multi_ast(
   }
   // Nest: the body for the outer iterator is Table[body, inner_iters...]
   // We build from the innermost outward
-  let inner_body = Expr::FunctionCall {
-    name: "Table".to_string(),
-    args: std::iter::once(body.clone())
+  let inner_body = call(
+    "Table",
+    std::iter::once(body.clone())
       .chain(iters[1..].iter().cloned())
       .collect(),
-  };
+  );
   table_ast(&inner_body, &iters[0])
 }
 
@@ -1471,12 +1471,12 @@ pub fn do_multi_ast(
         "Do::itraw: Raw object {} cannot be used as an iterator.",
         expr_to_string(&items[0])
       ));
-      return Ok(Expr::FunctionCall {
-        name: "Do".to_string(),
-        args: std::iter::once(body.clone())
+      return Ok(call(
+        "Do",
+        std::iter::once(body.clone())
           .chain(iter_specs.iter().cloned())
           .collect(),
-      });
+      ));
     }
   }
   match do_multi_inner(body, iter_specs) {
@@ -2282,18 +2282,17 @@ fn expand_pattern_rule_list(data: &Expr, dims: &[usize]) -> Option<Expr> {
         Matcher::Pattern(rule) => {
           let pos_list =
             Expr::List(pos.iter().map(|&p| Expr::Integer(p)).collect());
-          let match_q = Expr::FunctionCall {
-            name: "MatchQ".to_string(),
-            args: vec![
+          let match_q = call(
+            "MatchQ",
+            vec![
               pos_list.clone(),
               match rule {
                 Expr::Rule { pattern, .. }
                 | Expr::RuleDelayed { pattern, .. } => (**pattern).clone(),
                 _ => unreachable!(),
               },
-            ]
-            .into(),
-          };
+            ],
+          );
           if !matches!(
             crate::evaluator::evaluate_expr_to_expr(&match_q),
             Ok(Expr::Identifier(ref s)) if s == "True"
@@ -3390,9 +3389,9 @@ pub fn sparse_array_property(sa_args: &[Expr], prop: &str) -> Option<Expr> {
       let Expr::List(structure) = &sa_args[3] else {
         return None;
       };
-      Some(Expr::FunctionCall {
-        name: "SparseArray".to_string(),
-        args: vec![
+      Some(call(
+        "SparseArray",
+        vec![
           sa_args[0].clone(),
           sa_args[1].clone(),
           sa_args[2].clone(),
@@ -3404,9 +3403,8 @@ pub fn sparse_array_property(sa_args: &[Expr], prop: &str) -> Option<Expr> {
             ]
             .into(),
           ),
-        ]
-        .into(),
-      })
+        ],
+      ))
     }
     "Properties" => Some(Expr::List(
       [

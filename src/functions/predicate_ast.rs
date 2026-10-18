@@ -2,7 +2,6 @@
 //!
 //! These functions work directly with `Expr` AST nodes.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::Attributes;
 use crate::functions::math_ast::rat_reduce;
@@ -1727,7 +1726,7 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return true;
       }
       if use_pattern {
-        let head_expr = Expr::Identifier(h.to_string());
+        let head_expr = id_expr(h);
         if crate::functions::list_helpers_ast::matches_pattern_ast(
           &head_expr, form,
         ) {
@@ -2336,7 +2335,7 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Slot(_) => "Slot",
     _ => "Symbol",
   };
-  Ok(Expr::Identifier(head.to_string()))
+  Ok(id_expr(head))
 }
 
 /// Length[expr] - Returns the number of elements at the top level of an expression

@@ -3178,11 +3178,8 @@ fn distribution_raw_moment(
   n: i128,
   var: &str,
 ) -> Result<Option<Expr>, InterpreterError> {
-  let powered = pow2(Expr::Identifier(var.to_string()), Expr::Integer(n));
-  let distributed = call(
-    "Distributed",
-    vec![Expr::Identifier(var.to_string()), dist.clone()],
-  );
+  let powered = pow2(id_expr(var), Expr::Integer(n));
+  let distributed = call("Distributed", vec![id_expr(var), dist.clone()]);
   let exp = call("Expectation", vec![powered, distributed]);
   let result = crate::evaluator::evaluate_expr_to_expr(&exp)?;
   if matches!(&result, Expr::FunctionCall { name, .. } if name == "Expectation")
@@ -4893,7 +4890,7 @@ fn legacy_statistic(difference: f64, standard_error: f64) -> f64 {
 }
 
 fn legacy_rule(head: &str, value: Expr) -> Expr {
-  rule_expr(Expr::Identifier(head.to_string()), value)
+  rule_expr(id_expr(head), value)
 }
 
 fn legacy_p_value_expr(p: Option<f64>, two_sided: bool) -> Expr {
@@ -6465,7 +6462,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
       if name == "Gamma" && args.len() == 1 && is_pure_var(&args[0], var) =>
     {
       // Gamma[n] = (n-1)! ~ n^(n-1/2) * Sqrt[2*Pi] / E^n
-      let n = Expr::Identifier(var.to_string());
+      let n = id_expr(var);
       let m_one_half =
         call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]);
       Some(times(vec![
@@ -6484,7 +6481,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
         && args.len() == 1
         && is_pure_var(&args[0], var) =>
     {
-      Some(call1("Log", Expr::Identifier(var.to_string())))
+      Some(call1("Log", id_expr(var)))
     }
 
     // Power[base, exp] - handle var^k, k^var, etc.
@@ -6617,7 +6614,7 @@ fn contains_var(expr: &Expr, var: &str) -> bool {
 
 /// Stirling's approximation: n! ~ n^(n+1/2) * Sqrt[2*Pi] / E^n
 fn stirling_approx(var: &str) -> Expr {
-  let n = Expr::Identifier(var.to_string());
+  let n = id_expr(var);
   let one_half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
   times(vec![
     // n^(n + 1/2)
@@ -6762,7 +6759,7 @@ fn asymptotic_binomial(
     return None;
   }
 
-  let n = Expr::Identifier(var.to_string());
+  let n = id_expr(var);
   let one_half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
   // 2^(1/2 + n) / (Sqrt[n] * Sqrt[Pi])
   Some(times(vec![

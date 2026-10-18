@@ -1,6 +1,5 @@
 use plotters::prelude::{Color, *};
 
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::chart::{
@@ -5355,13 +5354,10 @@ fn scatter_overlay_primitives(
     Some(p) => call1("AbsolutePointSize", Expr::Real(-p)),
     None => call1("AbsolutePointSize", Expr::Real(6.0)),
   });
-  prims.push(Expr::FunctionCall {
-    name: "Point".to_string(),
-    args: vec![Expr::List(
-      finite.into_iter().map(point).collect::<Vec<_>>().into(),
-    )]
-    .into(),
-  });
+  prims.push(call1(
+    "Point",
+    Expr::List(finite.into_iter().map(point).collect::<Vec<_>>().into()),
+  ));
   prims
 }
 
@@ -9598,7 +9594,7 @@ fn compactify_plot_range(
 ) -> Result<(f64, f64, Option<Expr>), InterpreterError> {
   let min_inf = raw_min == f64::NEG_INFINITY;
   let max_inf = raw_max == f64::INFINITY;
-  let u = || Expr::Identifier(var.to_string());
+  let u = || id_expr(var);
   match (min_inf, max_inf) {
     (false, false) => {
       if !raw_min.is_finite() || !raw_max.is_finite() {

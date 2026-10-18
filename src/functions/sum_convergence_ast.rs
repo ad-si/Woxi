@@ -7,7 +7,6 @@
 //! - bare x^n (symbolic): Abs[x] < 1; bare 1/n^p (symbolic): Re[p] > 1
 //! - 1/n! decay: True
 
-#[allow(unused_imports)]
 use super::*;
 
 pub fn sum_convergence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -238,7 +237,7 @@ fn poly_degree(expr: &Expr, var: &str) -> Option<i128> {
   }
   let coeff_list = crate::evaluator::evaluate_expr_to_expr(&call(
     "CoefficientList",
-    vec![expr.clone(), Expr::Identifier(var.to_string())],
+    vec![expr.clone(), id_expr(var)],
   ))
   .ok()?;
   match &coeff_list {

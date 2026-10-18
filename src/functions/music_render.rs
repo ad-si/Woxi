@@ -1869,9 +1869,9 @@ mod tests {
   fn voice_shows_meter_and_reprints_on_change() {
     // A voice prints 4/4 at the start, then a new time signature when the meter
     // changes mid-stream, but not a repeated identical one.
-    let voice = Expr::FunctionCall {
-      name: "MusicVoice".to_string(),
-      args: vec![Expr::List(
+    let voice = call1(
+      "MusicVoice",
+      Expr::List(
         vec![
           str_expr("C"),
           call(
@@ -1886,9 +1886,8 @@ mod tests {
           str_expr("E"),
         ]
         .into(),
-      )]
-      .into(),
-    };
+      ),
+    );
     let mut glyphs = Vec::new();
     collect(&voice, &mut glyphs, &mut None);
     let sigs: Vec<(u32, u32)> = glyphs
@@ -1918,13 +1917,12 @@ mod tests {
       }
       call("MusicMeasure", args)
     };
-    let voice = Expr::FunctionCall {
-      name: "MusicVoice".to_string(),
-      args: vec![Expr::List(
+    let voice = call1(
+      "MusicVoice",
+      Expr::List(
         vec![measure(None), measure(Some((3, 4))), measure(None)].into(),
-      )]
-      .into(),
-    };
+      ),
+    );
     let mut glyphs = Vec::new();
     collect(&voice, &mut glyphs, &mut None);
     let sigs: Vec<(u32, u32)> = glyphs

@@ -591,7 +591,7 @@ fn coeff_to_ratio(e: &Expr) -> Option<(i128, i128)> {
 fn integer_coefficient_list(poly: &Expr, var_name: &str) -> Option<Vec<i128>> {
   let list = crate::evaluator::evaluate_expr_to_expr(&call(
     "CoefficientList",
-    vec![poly.clone(), Expr::Identifier(var_name.to_string())],
+    vec![poly.clone(), id_expr(var_name)],
   ))
   .ok()?;
   let Expr::List(ref items) = list else {
@@ -717,11 +717,7 @@ fn infinite_integer_root_product(
   let coeff = |p: &Expr| {
     eval(&call(
       "Coefficient",
-      vec![
-        p.clone(),
-        Expr::Identifier(var_name.to_string()),
-        deg.clone(),
-      ],
+      vec![p.clone(), id_expr(var_name), deg.clone()],
     ))
   };
   let lead_diff = eval(&minus2(coeff(&num)?, coeff(&den)?))?;
@@ -1886,7 +1882,7 @@ fn regularized_infinite_sum(
   let coefficients =
     crate::functions::polynomial_ast::coefficient_list_ast(&[
       polynomial,
-      Expr::Identifier(var.to_string()),
+      id_expr(var),
     ])?;
   let Expr::List(ref coefficients) = coefficients else {
     return Ok(None);
@@ -2087,10 +2083,7 @@ fn harmonic_antidifference_as_polygamma(expr: &Expr, var_name: &str) -> Expr {
     );
     let polygamma = crate::helpers::call(
       "PolyGamma",
-      vec![
-        Expr::Integer(order - 1),
-        Expr::Identifier(var_name.to_string()),
-      ],
+      vec![Expr::Integer(order - 1), id_expr(var_name)],
     );
     crate::evaluator::evaluate_expr_to_expr(&crate::helpers::times2(
       coefficient,
@@ -2680,7 +2673,7 @@ fn sum_polynomial_over_var(
 ) -> Result<Expr, InterpreterError> {
   let coeffs = crate::functions::polynomial_ast::coefficient_list_ast(&[
     poly.clone(),
-    Expr::Identifier(var_name.to_string()),
+    id_expr(var_name),
   ])?;
   let Expr::List(ref items) = coeffs else {
     return crate::evaluator::evaluate_expr_to_expr(&Expr::Integer(0));
@@ -2962,7 +2955,7 @@ fn try_symbolic_sum(
     && let Some(s) = monomial_times_single_harmonic(body, var_name)
     && (1..=64).contains(&s)
   {
-    let k = Expr::Identifier(var_name.to_string());
+    let k = id_expr(var_name);
     let s_of_k = faulhaber_power_sum(s, &k)?;
     let k_plus_1 = plus2(k.clone(), Expr::Integer(1));
     let qr =
@@ -3896,10 +3889,7 @@ fn tr_coeff_list(
   op: &str,
 ) -> Option<Vec<(i128, i128)>> {
   let part = call1(op, body.clone());
-  let cl = call(
-    "CoefficientList",
-    vec![part, Expr::Identifier(var_name.to_string())],
-  );
+  let cl = call("CoefficientList", vec![part, id_expr(var_name)]);
   let evaled = crate::evaluator::evaluate_expr_to_expr(&cl).ok()?;
   let Expr::List(items) = &evaled else {
     return None;
@@ -4983,7 +4973,7 @@ fn match_scaled_reciprocal_power(
     return None;
   }
   // a = base / n must be constant w.r.t. n (so base == a*n with no offset).
-  let ratio = div2(base, Expr::Identifier(var_name.to_string()));
+  let ratio = div2(base, id_expr(var_name));
   let a = crate::evaluator::evaluate_expr_to_expr(&ratio).ok()?;
   if crate::functions::polynomial_ast::contains_var(&a, var_name)
     || matches!(a, Expr::Integer(1))
