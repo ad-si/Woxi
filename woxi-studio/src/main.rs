@@ -7297,6 +7297,35 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+  /// A random-walk Manipulate whose plot pins `AxesOrigin -> {0, 0}` and
+  /// titles itself with a `Framed` message opens with the plot rendered
+  /// (the walk's helper is an initialization cell).
+  #[test]
+  fn random_walk_notebook_opens_with_its_widget() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData["walk[p_, n_] := Module[{pos = 5, pts = {{0, 5}}}, Do[AppendTo[pts, {k, pos}]; If[Random[] < p, pos++, pos--]; If[pos == 0, Break[]], {k, n}]; ListPlot[pts, AxesOrigin -> {0, 0}, Joined -> True, ImagePadding -> {{35, 20}, {20, 30}}, PlotLabel -> Style[Framed[Row[{\"steps: \", Length[pts]}]], 14]]];"], "Input", InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Column[{NumberForm[p, 3], walk[p, n]}], {{p, 0.5, \"win probability\"}, 0.4, 0.6, 0.01}, {{n, 50, \"steps\"}, {10, 50, 100}}, SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`p$$ = 0.5, $CellContext`n$$ = 50}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the walk plot must render"
+    );
+  }
+
   use super::*;
 
   /// A Manipulate whose Input cell stores a number followed by the legacy
@@ -19954,6 +19983,96 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`time$$ = 25}, \"\\[Ellipsis]\"]"], 
     );
     // Integrating over a shorter interval draws a different trajectory.
     assert_ne!(render(5.0), published, "the time control must matter");
+  }
+
+  /// A control panel laid out as a `Grid` whose cells are
+  /// `Item[Control[…], Alignment -> …]` (independently written) must yield
+  /// real controls — a slider, a popup menu whose choices are lists, and a
+  /// checkbox — rather than headings showing the `Control[…]` source, and
+  /// the body must see the list-valued popup variable.
+  #[test]
+  fn grid_of_aligned_item_controls_become_real_controls() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[RowBox[{"Manipulate", "[", RowBox[{
+  RowBox[{"Graphics", "[", RowBox[{"Disk", "[", RowBox[{RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",", RowBox[{"Length", "[", RowBox[{"pick", "[", RowBox[{"[", "2", "]"}], "]"}], "]"}]}], "]"}], "]"}], ",",
+  RowBox[{"Grid", "[", RowBox[{"{", RowBox[{"{",
+    RowBox[{
+      RowBox[{"Item", "[", RowBox[{RowBox[{"Control", "[", RowBox[{"{", RowBox[{RowBox[{"{", RowBox[{"w", ",", "250"}], "}"}], ",", "200", ",", "800", ",", "50", ",", "Slider"}], "}"}], "]"}], ",", RowBox[{"Alignment", "->", "Left"}]}], "]"}], ",",
+      RowBox[{"Item", "[", RowBox[{RowBox[{"Control", "[", RowBox[{"{", RowBox[{RowBox[{"{", RowBox[{"pick", ",", RowBox[{"{", RowBox[{"1", ",", RowBox[{"{", RowBox[{"1", ",", "2", ",", "3"}], "}"}]}], "}"}], ",", "\"\<which\>\""}], "}"}], ",", RowBox[{"{", RowBox[{RowBox[{RowBox[{"{", RowBox[{"1", ",", RowBox[{"{", RowBox[{"1", ",", "2", ",", "3"}], "}"}]}], "}"}], "->", "\"\<first\>\""}], ",", RowBox[{RowBox[{"{", RowBox[{"2", ",", RowBox[{"{", "5", "}"}]}], "}"}], "->", "\"\<second\>\""}]}], "}"}], ",", "PopupMenu"}], "}"}], "]"}], ",", RowBox[{"Alignment", "->", "Left"}]}], "]"}], ",",
+      RowBox[{"Item", "[", RowBox[{RowBox[{"Control", "[", RowBox[{"{", RowBox[{RowBox[{"{", RowBox[{"flag", ",", "False", ",", "\"\<flag\>\""}], "}"}], ",", RowBox[{"{", RowBox[{"True", ",", "False"}], "}"}], ",", "Checkbox"}], "}"}], "]"}], ",", RowBox[{"Alignment", "->", "Left"}]}], "]"}]
+    }], "}"}], "}"}], "]"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{w$$ = 250}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. }
+        | manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        other => panic!("control shown as {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, vec!["w", "pick", "flag"]);
+    match &widget.controls[1] {
+      manipulate::ControlState::Discrete { values, .. } => {
+        assert_eq!(values, &vec!["{1, {1, 2, 3}}", "{2, {5}}"]);
+      }
+      other => panic!("unexpected control: {other:?}"),
+    }
+  }
+
+  /// A control panel written as `Column[{Row[{…}] "", Grid[{{"label", …}}]}]`
+  /// has no comma after the `Row`, so the two items parse as an implicit
+  /// product. The panel must still list the row's control, then the grid's
+  /// caption and its controls, exactly as with the comma.
+  #[test]
+  fn control_panel_with_missing_comma_keeps_grid_caption() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[RowBox[{"Manipulate", "[", "Graphics[Circle[{0, 0}, r]], Column[{Row[{Control[{{mode, 1, \"\"}, {1 -> \"one\", 2 -> \"two\"}, Setter}]}] \"\", Grid[{{\"radii\", Control[{{r, 1}, 1, 2}], Control[{{q, 2}, 1, 3}]}}]}]", "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`mode$$ = 1, $CellContext`r$$ = 1, $CellContext`q$$ = 2}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let labels: Vec<String> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. }
+        | manipulate::ControlState::Discrete { name, .. } => {
+          format!("control {name}")
+        }
+        manipulate::ControlState::Heading { label, .. } => {
+          format!("heading {label}")
+        }
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec![
+        "control mode",
+        "heading ",
+        "heading radii",
+        "control r",
+        "control q"
+      ]
+    );
   }
 
   /// A picture-effects `Manipulate` (independently written): every effect

@@ -2874,6 +2874,14 @@ pub(crate) fn plot_labels_svg(
     // title would sit, so whatever shares the top margin below it (the y
     // `AxesLabel`) is not written over.
     let ty = ty - sl.extra_line_count() as f64 * fs * 1.2;
+    // A box around the title must stay inside the image, even when a tight
+    // `ImagePadding` leaves less room above the plot than the box needs.
+    let ty = if sl.framed {
+      let top = ty - fs * 0.9 - 6.0 * sf;
+      ty + (sf - top).max(0.0)
+    } else {
+      ty
+    };
     let fill = sl
       .color
       .as_ref()
@@ -2884,6 +2892,23 @@ pub(crate) fn plot_labels_svg(
     }
     if sl.italic {
       style_attrs.push_str(" font-style=\"italic\"");
+    }
+    if sl.framed {
+      // Box the title: the widest line plus Framed's 6pt margin per side.
+      let margin = 6.0 * sf;
+      let w = sl.max_line_chars() as f64 * fs * 0.47 + 2.0 * margin;
+      let lines = 1.0 + sl.extra_line_count() as f64;
+      let h = lines * fs * 1.2 + 2.0 * margin - fs * 0.2;
+      let top = ty - fs * 0.9 - margin;
+      labels_svg.push_str(&format!(
+        "<rect x=\"{:.1}\" y=\"{top:.1}\" width=\"{w:.1}\" \
+           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"none\" \
+           stroke=\"{}\" stroke-width=\"{:.1}\"/>\n",
+        cx - w / 2.0,
+        3.0 * sf,
+        crate::functions::graphics::theme().framed_border,
+        sf,
+      ));
     }
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
@@ -8867,6 +8892,18 @@ pub(crate) fn parse_axes_origin(value: &Expr) -> (Option<f64>, Option<f64>) {
   }
 }
 
+/// Widen an automatic data range so it contains an explicit `AxesOrigin`
+/// coordinate, as Wolfram does; `None` (an automatic origin) leaves it alone.
+pub(crate) fn include_in_range(
+  (min, max): (f64, f64),
+  origin: Option<f64>,
+) -> (f64, f64) {
+  match origin {
+    Some(o) if o.is_finite() => (min.min(o), max.max(o)),
+    _ => (min, max),
+  }
+}
+
 pub(crate) fn parse_axes_option(value: &Expr) -> Option<(bool, bool)> {
   let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
   match value {
@@ -9991,6 +10028,10 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(crate::graphics_result_with_source(svg, source));
   }
 
+  // A numeric `AxesOrigin` y is part of the automatic plot range.
+  let (y_data_min, y_data_max) =
+    include_in_range((y_data_min, y_data_max), plot_opts.axes_origin.1);
+
   // Add 4% padding to the auto-computed y range
   let y_range = y_data_max - y_data_min;
   let padding = if y_range.abs() < f64::EPSILON {
@@ -10335,6 +10376,11 @@ fn log_scale_plot_ast(
     finite_xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
   let y_data_min = finite_ys.iter().copied().fold(f64::INFINITY, f64::min);
   let y_data_max = finite_ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+  let (y_data_min, y_data_max) = if log_y {
+    (y_data_min, y_data_max)
+  } else {
+    include_in_range((y_data_min, y_data_max), plot_opts.axes_origin.1)
+  };
 
   let (y_auto_min, y_auto_max) = if log_y {
     // Multiplicative padding in log space (equivalent to additive 4% in log10)

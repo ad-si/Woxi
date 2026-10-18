@@ -4615,7 +4615,8 @@ fn collect_3d_primitives(
                 .fold(0.0f64, f64::max);
               vec![extent / 100.0; pts.len()]
             };
-            let tris = tessellate_tube(&pts, &radii, style.capped);
+            let budget = tube_subdivision_budget(SCENE_TUBE_COUNT.get());
+            let tris = tessellate_tube(&pts, &radii, style.capped, budget);
             if !tris.is_empty() {
               prims.push(Primitive3D::Surface3D {
                 tris,
@@ -5407,6 +5408,37 @@ fn cylinder_max_subdivisions(
   }
 }
 
+thread_local! {
+  /// Number of `Tube`s in the `Graphics3D` currently being collected, so
+  /// each can size its tessellation to the crowd it is drawn in.
+  static SCENE_TUBE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Count the `Tube` primitives in a 3D scene.
+fn count_tubes(expr: &Expr) -> usize {
+  match expr {
+    Expr::List(items) => items.iter().map(count_tubes).sum(),
+    Expr::FunctionCall { name, args } => {
+      usize::from(name == "Tube") + args.iter().map(count_tubes).sum::<usize>()
+    }
+    _ => 0,
+  }
+}
+
+/// Longitudinal subdivision budget for one `Tube` in a scene with
+/// `tube_count` of them. Regression: a maze Demonstration drew every wall
+/// as a hair-thin `Tube`; the lengthwise ring budget meant for a lone tube
+/// gave each one ~190 rings, tessellating the scene into nearly a million
+/// polygons. In a crowd each tube is only a few pixels wide, so the
+/// depth-sorting seams the budget guards against are imperceptible.
+fn tube_subdivision_budget(tube_count: usize) -> usize {
+  if tube_count <= 8 {
+    MAX_SIDE_SUBDIVISIONS
+  } else {
+    16
+  }
+}
+
 /// Tessellate a cylinder along its axis. With `capped`, flat disks close
 /// both ends — Wolfram's default; `CapForm[None]` leaves it a hollow tube.
 /// A flat cylinder (its two ends nearly coincident) is how a Demonstration
@@ -5524,6 +5556,7 @@ fn tessellate_tube(
   points: &[Point3D],
   radii: &[f64],
   capped: bool,
+  max_subdivisions: usize,
 ) -> Vec<(Point3D, Point3D, Point3D)> {
   const TUBE_SIDES: usize = 24;
   if points.len() < 2 {
@@ -5607,7 +5640,7 @@ fn tessellate_tube(
   // `PlotStyle -> Tube[r]`) needs no further rings, and splitting each of
   // its segments to the radius' aspect target would multiply the mesh into
   // tens of thousands of faces per redraw.
-  let max_steps = (MAX_SIDE_SUBDIVISIONS / dirs.len()).max(1);
+  let max_steps = (max_subdivisions / dirs.len()).max(1);
   let mut rings: Vec<Vec<Point3D>> = Vec::with_capacity(keep.len());
   for (i, &idx) in keep.iter().enumerate() {
     let t = tangents[i];
@@ -6239,6 +6272,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Collect primitives
   let mut prims = Vec::new();
   let mut style3d = StyleState3D::default();
+  SCENE_TUBE_COUNT.set(count_tubes(&content));
   collect_3d_primitives(&content, &mut style3d, &mut prims);
 
   // Unbounded primitives (`InfiniteLine`, `InfinitePlane`, …) show only the

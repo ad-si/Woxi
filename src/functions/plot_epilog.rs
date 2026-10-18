@@ -752,6 +752,12 @@ fn render_item(
       // natural size.
       // A string or script expression inset is a text label placed like
       // `Text` (no quotes around the string), not a picture.
+      "Inset"
+        if let Some(text) =
+          crate::functions::graphics::text_primitive_inset(args) =>
+      {
+        render_item(&text, style, area, out);
+      }
       "Inset" if args.len() >= 2 && is_text_inset(&args[0]) => {
         let text = Expr::FunctionCall {
           name: "Text".to_string(),
