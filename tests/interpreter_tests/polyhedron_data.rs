@@ -1269,4 +1269,40 @@ mod polyhedron_data_tests {
       "{GraphicsComplex, 6, {4, 4, 4, 4, 4, 4}, True}"
     );
   }
+
+  // `{"Prism", n}` is the unit-edge right prism: 2n vertices, n + 2 faces.
+  #[test]
+  fn polyhedron_data_prism_faces() {
+    assert_eq!(
+      interpret(
+        r#"Table[{PolyhedronData[{"Prism", n}, "VertexCount"],
+           PolyhedronData[{"Prism", n}, "FaceCount"],
+           Length[PolyhedronData[{"Prism", n}, "Faces"][[2, 1]]],
+           Length[PolyhedronData[{"Prism", n}, "Faces"][[1]]]}, {n, 3, 6}]"#
+      )
+      .unwrap(),
+      "{{6, 5, 5, 6}, {8, 6, 6, 8}, {10, 7, 7, 10}, {12, 8, 8, 12}}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData[{"Prism", 4}, "Volume"]"#).unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData[{"Prism", 3}, "FaceIndices"]"#).unwrap(),
+      "{{3, 2, 1}, {4, 5, 6}, {1, 2, 5, 4}, {2, 3, 6, 5}, {3, 1, 4, 6}}"
+    );
+  }
+
+  // Prism edges are unit length, so adjacent base vertices are 1 apart.
+  #[test]
+  fn polyhedron_data_prism_unit_edges() {
+    assert_eq!(
+      interpret(
+        r#"v = N[PolyhedronData[{"Prism", 5}, "VertexCoordinates"]];
+        {Round[Norm[v[[1]] - v[[2]]], 10^-9], Round[Norm[v[[1]] - v[[6]]], 10^-9]}"#
+      )
+      .unwrap(),
+      "{1, 1}"
+    );
+  }
 }

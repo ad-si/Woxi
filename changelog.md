@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- A `Tooltip[graphic, hint]` inside a `Column` (or other layout) was typeset
+    as the `-Graphics-` placeholder instead of drawing the picture. It now
+    draws like its content. Found via the scheduled Wolfram Demonstrations
+    check opening "Compressed Constrained Cellular Automaton Initialization",
+    whose Manipulate stacks tooltipped `ArrayPlot`s in a `Column`.
 - `Factor` now factors multivariate polynomials completely, e.g.
     `Factor[Expand[(a + b + c + d)^3]]` gives `(a + b + c + d)^3` instead of
     the expanded sum (#1157). The Kronecker-substitution path is replaced by

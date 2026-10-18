@@ -7110,8 +7110,7 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
   // Substitute Slot(1) → __rs_x__ to get a polynomial in a named variable
   // (extract_poly_coeffs needs an identifier).
   let var = "__rs_x__";
-  let poly_in_var =
-    substitute_variable(poly_body, "#1", &Expr::Identifier(var.to_string()));
+  let poly_in_var = substitute_variable(poly_body, "#1", &id_expr(var));
   // Slot(1) inside Function bodies is stored differently from Identifier
   // "#1"; substitute that variant too.
   let poly_in_var = substitute_slot_with_identifier(&poly_in_var, 1, var);
@@ -7326,7 +7325,7 @@ fn collect_expr_vars(
 /// be passed through the named-variable polynomial helpers.
 fn substitute_slot_with_identifier(expr: &Expr, k: usize, name: &str) -> Expr {
   match expr {
-    Expr::Slot(n) if *n == k => Expr::Identifier(name.to_string()),
+    Expr::Slot(n) if *n == k => id_expr(name),
     Expr::List(items) => Expr::List(
       items
         .iter()

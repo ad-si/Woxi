@@ -6852,7 +6852,7 @@ fn fs_univariate(
     memo.insert(coeffs, plain.clone());
     return Some(plain);
   }
-  let x = Expr::Identifier(var.to_string());
+  let x = id_expr(var);
   let x_pow = |m: usize| {
     if m == 1 {
       x.clone()
@@ -7515,11 +7515,8 @@ fn simplify_collected_coefficients(
       full_simplify_recursive(&summed_coeff).unwrap_or(summed_coeff);
     let var_part: Option<Expr> = match power {
       0 => None,
-      1 => Some(Expr::Identifier(var.to_string())),
-      _ => Some(pow2(
-        Expr::Identifier(var.to_string()),
-        Expr::Integer(power),
-      )),
+      1 => Some(id_expr(var)),
+      _ => Some(pow2(id_expr(var), Expr::Integer(power))),
     };
     let new_term = match (simplified_coeff, var_part) {
       (c, None) => c,
@@ -9404,8 +9401,8 @@ fn simplify_quotient_select(
 fn term_from_coeff(c: i128, e: i128, var: &str) -> Expr {
   let mono = match e {
     0 => return Expr::Integer(c),
-    1 => Expr::Identifier(var.to_string()),
-    _ => pow2(Expr::Identifier(var.to_string()), Expr::Integer(e)),
+    1 => id_expr(var),
+    _ => pow2(id_expr(var), Expr::Integer(e)),
   };
   if c == 1 {
     mono
@@ -9867,12 +9864,9 @@ pub fn coeffs_to_expr(coeffs: &[i128], var: &str) -> Expr {
     let var_part = if i == 0 {
       None
     } else if i == 1 {
-      Some(Expr::Identifier(var.to_string()))
+      Some(id_expr(var))
     } else {
-      Some(pow2(
-        Expr::Identifier(var.to_string()),
-        Expr::Integer(i as i128),
-      ))
+      Some(pow2(id_expr(var), Expr::Integer(i as i128)))
     };
 
     let term = match (c, var_part) {

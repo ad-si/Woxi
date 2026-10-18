@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{gcd_i128, lcm_i128};
 
@@ -199,7 +198,7 @@ fn replace_func0_with_symbol(
         && args.len() == 1
         && extract_var_offset(&args[0], var_name) == Some(0) =>
     {
-      Expr::Identifier(sym.to_string())
+      id_expr(sym)
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -302,7 +301,7 @@ fn solve_logistic_map(
     return None;
   }
 
-  let n_var = Expr::Identifier(var_name.to_string());
+  let n_var = id_expr(var_name);
   let cos = |arg: Expr| call1("Cos", arg);
 
   match ics.len() {
@@ -521,7 +520,7 @@ fn solve_first_order_arithmetic(
     return None; // index-dependent forcing — not an arithmetic progression
   }
 
-  let n = Expr::Identifier(var_name.to_string());
+  let n = id_expr(var_name);
   // d * n
   let dn =
     crate::evaluator::evaluate_expr_to_expr(&times2(d.clone(), n.clone()))
@@ -569,19 +568,16 @@ fn wrap_rsolve_result(
   return_as_func_call: bool,
 ) -> Expr {
   let pattern = if return_as_func_call {
-    call1(func_name, Expr::Identifier(var_name.to_string()))
+    call1(func_name, id_expr(var_name))
   } else {
-    Expr::Identifier(func_name.to_string())
+    id_expr(func_name)
   };
   let replacement = if return_as_func_call {
     solution
   } else {
     call(
       "Function",
-      vec![
-        Expr::List(vec![Expr::Identifier(var_name.to_string())].into()),
-        solution,
-      ],
+      vec![Expr::List(vec![id_expr(var_name)].into()), solution],
     )
   };
   let rule = rule_expr(pattern, replacement);
@@ -947,7 +943,7 @@ fn build_fib_lucas_combination(
     return Some(Expr::Integer(0));
   }
 
-  let n_var = Expr::Identifier(var_name.to_string());
+  let n_var = id_expr(var_name);
   let base = |name: &str| call1(name, n_var.clone());
   let c = |i: i128| call1("C", Expr::Integer(i));
 
@@ -1027,7 +1023,7 @@ fn build_first_order_with_ic(
     m += 1;
   }
   let off = m - *k;
-  let n_var = Expr::Identifier(var_name.to_string());
+  let n_var = id_expr(var_name);
   // Exponent `n` (off == 0) or `off + n` (constant first, matching display).
   let exponent = if off == 0 {
     n_var
@@ -1097,7 +1093,7 @@ fn build_partial_solution(
     return None;
   }
 
-  let n_var = Expr::Identifier(var_name.to_string());
+  let n_var = id_expr(var_name);
   let c1 = call1("C", Expr::Integer(1));
 
   fn root_pow(r: i128, n_var: &Expr) -> Expr {
@@ -1169,20 +1165,17 @@ fn build_general_solution(
       };
       let exponent = if single_root {
         // `-1 + n` (constant first) to match wolframscript's display order.
-        plus2(Expr::Integer(-1), Expr::Identifier(var_name.to_string()))
+        plus2(Expr::Integer(-1), id_expr(var_name))
       } else {
-        Expr::Identifier(var_name.to_string())
+        id_expr(var_name)
       };
       factors.push(pow2(root_expr, exponent));
     }
     if mult_index >= 1 {
       factors.push(if mult_index == 1 {
-        Expr::Identifier(var_name.to_string())
+        id_expr(var_name)
       } else {
-        pow2(
-          Expr::Identifier(var_name.to_string()),
-          Expr::Integer(mult_index as i128),
-        )
+        pow2(id_expr(var_name), Expr::Integer(mult_index as i128))
       });
     }
     factors.push(const_expr);
@@ -1592,16 +1585,13 @@ fn build_solution(
       } else {
         crate::functions::math_ast::make_rational(rn, rd)
       };
-      factors.push(pow2(root_expr, Expr::Identifier(var_name.to_string())));
+      factors.push(pow2(root_expr, id_expr(var_name)));
     }
     if mult_index >= 1 {
       factors.push(if mult_index == 1 {
-        Expr::Identifier(var_name.to_string())
+        id_expr(var_name)
       } else {
-        pow2(
-          Expr::Identifier(var_name.to_string()),
-          Expr::Integer(mult_index as i128),
-        )
+        pow2(id_expr(var_name), Expr::Integer(mult_index as i128))
       });
     }
 

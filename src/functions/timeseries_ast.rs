@@ -7,7 +7,6 @@
 //! rebuilt into this canonical form by pairing the value path with the dates
 //! generated from the embedded date specification.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::datetime_ast::{
   date_to_absolute_seconds, day_of_week, days_in_month,
@@ -1436,16 +1435,15 @@ fn instant_date_object(date: &Expr) -> Option<Expr> {
   while comps.len() < 6 {
     comps.push(Expr::Integer(0));
   }
-  Some(Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: vec![
+  Some(call(
+    "DateObject",
+    vec![
       Expr::List(comps.into()),
       str_expr("Instant"),
       str_expr("Gregorian"),
       Expr::Real(0.0),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// `Normal[ts]` — the explicit `{{date, value}, …}` list, with each date stamp

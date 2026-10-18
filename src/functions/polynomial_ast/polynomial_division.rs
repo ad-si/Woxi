@@ -571,11 +571,8 @@ pub fn poly_divide_symbolic(
 
   if q_deg == 0 {
     // Dividing by a constant - check if it's zero
-    let q_coeff = coefficient_ast(&[
-      q.clone(),
-      Expr::Identifier(var.to_string()),
-      Expr::Integer(0),
-    ])?;
+    let q_coeff =
+      coefficient_ast(&[q.clone(), id_expr(var), Expr::Integer(0)])?;
     let q_str =
       expr_to_string(&crate::evaluator::evaluate_expr_to_expr(&q_coeff)?);
     if q_str == "0" {
@@ -588,22 +585,14 @@ pub fn poly_divide_symbolic(
   // Extract coefficients for p
   let mut p_coeffs: Vec<Expr> = Vec::new();
   for i in 0..=p_deg {
-    let c = coefficient_ast(&[
-      p.clone(),
-      Expr::Identifier(var.to_string()),
-      Expr::Integer(i),
-    ])?;
+    let c = coefficient_ast(&[p.clone(), id_expr(var), Expr::Integer(i)])?;
     p_coeffs.push(crate::evaluator::evaluate_expr_to_expr(&c)?);
   }
 
   // Extract coefficients for q
   let mut q_coeffs: Vec<Expr> = Vec::new();
   for i in 0..=q_deg {
-    let c = coefficient_ast(&[
-      q.clone(),
-      Expr::Identifier(var.to_string()),
-      Expr::Integer(i),
-    ])?;
+    let c = coefficient_ast(&[q.clone(), id_expr(var), Expr::Integer(i)])?;
     q_coeffs.push(crate::evaluator::evaluate_expr_to_expr(&c)?);
   }
 
@@ -676,13 +665,12 @@ fn coeffs_to_expr_symbolic(coeffs: &[Expr], var: &str) -> Expr {
       coeff.clone()
     } else if i == 1 {
       if c_str == "1" {
-        Expr::Identifier(var.to_string())
+        id_expr(var)
       } else {
-        times(vec![coeff.clone(), Expr::Identifier(var.to_string())])
+        times(vec![coeff.clone(), id_expr(var)])
       }
     } else {
-      let var_power =
-        pow(Expr::Identifier(var.to_string()), Expr::Integer(i as i128));
+      let var_power = pow(id_expr(var), Expr::Integer(i as i128));
       if c_str == "1" {
         var_power
       } else {

@@ -85,18 +85,17 @@ impl Token {
 
   /// `LeafNode[kind, "text", <|Source -> …|>]`.
   fn to_leaf_node(&self, convention: Convention) -> Expr {
-    Expr::FunctionCall {
-      name: "CodeParser`LeafNode".to_string(),
-      args: vec![
+    call(
+      "CodeParser`LeafNode",
+      vec![
         Expr::Identifier(self.kind.clone()),
         Expr::String(self.text.clone()),
         Expr::Association(vec![(
           id_expr("CodeParser`Source"),
           self.source(convention),
         )]),
-      ]
-      .into(),
-    }
+      ],
+    )
   }
 }
 
@@ -992,18 +991,17 @@ fn group_tokens(
         start_line_column: tokens[opened_at].start_line_column,
         end_line_column: tokens[*index - 1].end_line_column,
       };
-      nodes.push(Expr::FunctionCall {
-        name: "CodeParser`GroupNode".to_string(),
-        args: vec![
-          Expr::Identifier(kind.to_string()),
+      nodes.push(call(
+        "CodeParser`GroupNode",
+        vec![
+          id_expr(kind),
           Expr::List(children.into()),
           Expr::Association(vec![(
             id_expr("CodeParser`Source"),
             group.source(convention),
           )]),
-        ]
-        .into(),
-      });
+        ],
+      ));
     } else {
       nodes.push(token.to_leaf_node(convention));
       *index += 1;

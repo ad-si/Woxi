@@ -2568,14 +2568,13 @@ fn format_electron_configuration_row(elem: &Element) -> Expr {
     let n: i128 = n_str.parse().unwrap_or(0);
     let count: i128 = count_str.parse().unwrap_or(0);
     parts.push(Expr::Integer(n));
-    parts.push(Expr::FunctionCall {
-      name: "Superscript".to_string(),
-      args: vec![
+    parts.push(call(
+      "Superscript",
+      vec![
         call("Style", vec![str_expr(letter), id_expr("Italic")]),
         Expr::Integer(count),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
   call1("Row", Expr::List(parts.into()))
 }

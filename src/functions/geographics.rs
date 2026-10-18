@@ -1525,19 +1525,17 @@ pub fn geo_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "RGBColor",
       vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
     ));
-    items.push(Expr::FunctionCall {
-      name: "Woxi`GeoHistogramBin".to_string(),
-      args: vec![Expr::List(
+    items.push(call1(
+      "Woxi`GeoHistogramBin",
+      Expr::List(
         ring
           .iter()
           .map(|(lat, lon)| {
             Expr::List(vec![Expr::Real(*lat), Expr::Real(*lon)].into())
           })
-          .collect::<Vec<_>>()
-          .into(),
-      )]
-      .into(),
-    });
+          .collect(),
+      ),
+    ));
   }
   let content = Expr::List(items.into());
   let legend = legend.then_some(Legend {

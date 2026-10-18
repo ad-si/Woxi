@@ -1176,7 +1176,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && matches!(&args[1], Expr::Identifier(s) if s == "I")
         && let Some(r) = demote(&args[0])
       {
-        *arg = times2(r, Expr::Identifier("I".to_string()));
+        *arg = times2(r, id_expr("I"));
       }
     }
     has_real = flat_args.iter().any(|a| matches!(a, Expr::Real(_)));
@@ -1300,10 +1300,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           match try_extract_complex_float(&n_val) {
             Some((re, im)) if re != 0.0 => {
               numerified_tail.push(re);
-              remaining_symbolic.push(times2(
-                Expr::Real(im),
-                Expr::Identifier("I".to_string()),
-              ));
+              remaining_symbolic.push(times2(Expr::Real(im), id_expr("I")));
             }
             _ => remaining_symbolic.push(n_val),
           }

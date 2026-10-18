@@ -1766,6 +1766,28 @@ mod tests {
     assert_eq!(count_of(&state), 3);
   }
 
+  /// A sound-player display built with `Audio`Waveform` evaluates to an
+  /// Audio object (shown as `-Audio-`), not the raw unevaluated call.
+  #[test]
+  fn audio_waveform_display_evaluates_to_audio_object() {
+    let code = r#"Manipulate[
+      Plot[Sin[x t], {x, 0, 6}],
+      {{t, 0.2}, 0.1, 1, 0.1},
+      Dynamic[Audio`Waveform[Audio`Square, 440., t, Overtones -> 5, SampleRate -> 2^16]]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.display_trees.iter().any(
+        |n| matches!(n, DisplayNode::Static { text, .. } if text == "-Audio-")
+      ),
+      "{:?}",
+      state.display_trees
+    );
+  }
+
   #[test]
   fn exact_integer_slider_without_step_steps_by_one() {
     let expr = woxi::interpret_to_expr(
