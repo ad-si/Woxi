@@ -8230,6 +8230,19 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// Regression: a top `FrameLabel` containing a line break was drawn as
+    /// one `<text>` element, so SVG collapsed the break and the caption
+    /// ran off the image. Each line now gets its own element.
+    #[test]
+    fn plot_top_frame_label_breaks_lines() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, \
+         FrameLabel -> {{\"fb\", None}, {\"fl\", Row[{\"first\\nsecond\"}]}}]",
+      );
+      assert!(svg.contains(">first</text>"), "{svg}");
+      assert!(svg.contains(">second</text>"), "{svg}");
+    }
+
     /// A computed real in a `FrameLabel` prints as `ToString` does, not with
     /// the float noise of its last bits (`Round[-0.64, 0.1]` is
     /// `-0.6000000000000001` internally).
