@@ -913,6 +913,46 @@ mod reverse_rule {
   fn reverse_rule_numeric() {
     assert_eq!(interpret("Reverse[1 -> 2]").unwrap(), "2 -> 1");
   }
+
+  // Regression for #1438: RuleDelayed and other operator forms are compound
+  // expressions, not atoms, so Reverse permutes their arguments.
+  #[test]
+  fn reverse_rule_delayed() {
+    assert_eq!(interpret("Reverse[x :> y]").unwrap(), "y :> x");
+    assert_eq!(interpret("Reverse[x_ :> f[x]]").unwrap(), "f[x] :> x_");
+    assert_eq!(interpret("Head[Reverse[x :> y]]").unwrap(), "RuleDelayed");
+  }
+
+  #[test]
+  fn reverse_operator_forms() {
+    assert_eq!(interpret("Reverse[a^b]").unwrap(), "b^a");
+    assert_eq!(interpret("Reverse[a < b]").unwrap(), "b < a");
+    assert_eq!(interpret("Reverse[f[a][b, c]]").unwrap(), "f[a][c, b]");
+  }
+
+  // The rebuilt expression is evaluated, so Orderless heads re-sort —
+  // except where a Hold attribute keeps the reversed parts as they are.
+  #[test]
+  fn reverse_reevaluates_result() {
+    assert_eq!(interpret("Reverse[a + b + c]").unwrap(), "a + b + c");
+    assert_eq!(interpret("Reverse[a b]").unwrap(), "a*b");
+    assert_eq!(interpret("Reverse[{a + b}, 2]").unwrap(), "{a + b}");
+    assert_eq!(
+      interpret("Reverse[Hold[a + b, c], 2]").unwrap(),
+      "Hold[b + a, c]"
+    );
+  }
+
+  #[test]
+  fn reverse_rules_at_levels() {
+    assert_eq!(interpret("Reverse[x :> y, 1]").unwrap(), "y :> x");
+    assert_eq!(interpret("Reverse[x -> y, 1]").unwrap(), "y -> x");
+    assert_eq!(interpret("Reverse[{x :> y}, 2]").unwrap(), "{y :> x}");
+    assert_eq!(
+      interpret("Reverse[{x :> y, a -> b}, {1, 2}]").unwrap(),
+      "{b -> a, y :> x}"
+    );
+  }
 }
 
 mod reverse_association {
