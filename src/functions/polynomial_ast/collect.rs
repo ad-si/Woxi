@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::calculus_ast::simplify;
 use crate::functions::math_ast::times_ast;
@@ -56,7 +55,7 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Compound target like q[x] or q[0, x]: replace it with a fresh
       // identifier, collect over the identifier, then substitute back.
       let placeholder = "__collect_target__";
-      let placeholder_id = Expr::Identifier(placeholder.to_string());
+      let placeholder_id = id_expr(placeholder);
       let substituted =
         substitute_expr_local(&args[0], &args[1], &placeholder_id);
       let mut sub_call = vec![substituted, placeholder_id.clone()];
@@ -132,12 +131,9 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let var_part = if power == 0 {
         None
       } else if power == 1 {
-        Some(Expr::Identifier(var.to_string()))
+        Some(id_expr(var))
       } else {
-        Some(pow2(
-          Expr::Identifier(var.to_string()),
-          Expr::Integer(power),
-        ))
+        Some(pow2(id_expr(var), Expr::Integer(power)))
       };
       // Assemble outer * coeff * var_part as a Times list, then sort
       // canonically via times_ast. Use `Plus[…]` for the coefficient
@@ -217,12 +213,9 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let var_part = if power == 0 {
       None
     } else if power == 1 {
-      Some(Expr::Identifier(var.to_string()))
+      Some(id_expr(var))
     } else {
-      Some(pow2(
-        Expr::Identifier(var.to_string()),
-        Expr::Integer(power),
-      ))
+      Some(pow2(id_expr(var), Expr::Integer(power)))
     };
 
     let term = match (combined_coeff.clone(), var_part) {

@@ -500,7 +500,7 @@ fn read_expr(bytes: &[u8], pos: &mut usize) -> Option<Expr> {
         .strip_prefix("Global`")
         .or_else(|| full.strip_prefix("System`"))
         .unwrap_or(full);
-      Some(Expr::Identifier(name.to_string()))
+      Some(id_expr(name))
     }
     T_FUNCTION => {
       let argc = read_varint(bytes, pos)?;

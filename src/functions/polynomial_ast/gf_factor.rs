@@ -361,7 +361,7 @@ fn gf_poly_to_expr(
   coeffs: &[i128],
   var: &str,
 ) -> Result<Expr, InterpreterError> {
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
   let mut sum = Expr::Integer(0);
   for (i, &c) in coeffs.iter().enumerate() {
     if c == 0 {

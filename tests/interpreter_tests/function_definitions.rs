@@ -1140,6 +1140,24 @@ mod compile {
     );
   }
 
+  // A DensityPlot body calling a restored `CompiledFunction` is first probed
+  // with the plot variables still free. Running the embedded pure function on
+  // those symbols would unroll every iteration (exponential in the iteration
+  // count), so the plot must defer it and sample numerically instead.
+  #[test]
+  fn compiled_function_serialized_form_in_density_plot_does_not_unroll() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"cf = CompiledFunction[{7, 7.0, 42}, {{z, _Complex}, {c, _Complex}, {n, _Integer}}, {{2, 0, 0}}, {{}}, {0, 1, 2, 0, 0}, {{1}},
+          Function[{z, c, n}, Length[FixedPointList[c (# - Sign[Re[#]]) &, z, n, SameTest -> (Abs[#1] > 2 &)]]], Evaluate];
+        Head[DensityPlot[cf[x + I y, 0.84 + 0.88 I, 40], {x, -2, 2}, {y, -2, 2}, PlotPoints -> 10, Mesh -> False]]"#
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
   // The same fallback must apply when the compiled helper is called deep
   // inside a larger computation (a Module composing it several times), which
   // is the shape that actually matters: the un-reduced call otherwise grows

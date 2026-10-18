@@ -638,7 +638,7 @@ PlotLabels,Option for labeling plot curves,✅,none,10.4,597
 Scale,Scales a graphics object,✅,pure,6.0,597
 Log10,Returns the base-10 logarithm of a number,✅,pure,7.0,598
 EndPackage,Ends a package and puts its context on $ContextPath so its exports become visible,✅,effectful,1.0,599
-PolyhedronData,Properties of named polyhedra including the vertex-edge skeleton graph and the unfolded planar net (NetFaces) (Platonic solids; the golden rhombohedra and rhombic icosahedron; the Bilinski dodecahedron; the icosahedral and cubic Archimedean solids and their duals; the great and small stellated dodecahedra and rhombic hexecontahedron stellations; the triangular orthobicupola; MathematicaSpikey also named Spikey; and the stella octangula),🚧,pure,6.0,601
+PolyhedronData,Properties of named polyhedra including the vertex-edge skeleton graph and the unfolded planar net (NetFaces) (Platonic solids; the golden rhombohedra and rhombic icosahedron; the Bilinski dodecahedron; the icosahedral and cubic Archimedean solids (including the cuboctahedron) and their duals; the great and small stellated dodecahedra and rhombic hexecontahedron stellations; the triangular orthobicupola; MathematicaSpikey also named Spikey; and the stella octangula; and the right n-gonal prisms),🚧,pure,6.0,601
 PolyhedronOperations`Truncate,Corner-cuts each Polygon face of a graphics expression to a ratio (default 3/10) of its edge length; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
 PolyhedronOperations`Stellate,Replaces each Polygon face of a graphics expression with a pyramid to a ratio (default 2) of the face's centroid distance; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
 Nearest,Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance) — DistanceFunction supplies another metric; empty or non-list data reports ::near1,✅,pure,6.0,602
@@ -2340,6 +2340,7 @@ WindowFrame,notebook UI,🚫,None,3.0,2355
 FindProcessParameters,stochastic process fitting,🚫,None,9.0,2360
 KirchhoffMatrix,Builds the Kirchhoff (Laplacian) matrix of a graph,✅,none,8.0,2360
 ListPlay,Plays a list of amplitude levels as a sound,✅,None,2.0,2360
+Audio`Waveform,Synthesizes a periodic waveform (Audio`Sinusoid Triangle Square Sawtooth) of given frequency and duration as an Audio object,✅,pure,11.0,2360
 SmoothHistogram3D,3D visualization,🚫,None,8.0,2360
 SyntaxQ,Test if a string is valid Wolfram Language syntax,✅,1,2.0,2360
 SurfaceArea,Total boundary area of a 3D solid region,✅,pure,12.0,2361
@@ -4091,7 +4092,7 @@ GeoStylingImageFunction,,🚫,,10.0,4204
 HarmonicMeanFilter,,,,7.0,4204
 InnerPolygon,,,,12.0,4204
 LeftTeeArrow,,,,3.0,4204
-ListFitPlot,,,,14.0,4204
+ListFitPlot,Plots data together with a fitted model curve,✅,pure,14.0,4204
 ListFitPlot3D,,,,14.0,4204
 ListFormat,,,,10.0,4204
 Listen,,,,8.0,4204
@@ -6356,3 +6357,9 @@ GraphUtilities`ClosenessCentrality,Closeness centrality of every vertex of a gra
 GraphUtilities`GraphPath,Shortest path between two vertices of a graph given as a list of rules,✅,pure,8.0,
 GraphUtilities`HamiltonianCycles,Hamiltonian cycle of a graph given as a list of rules as a vertex list (only one cycle is reported),🚧,pure,8.0,
 MultivariateStatistics`EllipsoidQuantile,Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean, c Covariance],✅,pure,8.0,
+Combinatorica`FromUnorderedPairs,Builds a Combinatorica graph with one edge per distinct vertex pair on a circular embedding,✅,pure,6.0,
+Combinatorica`V,Number of vertices of a Combinatorica graph,✅,pure,6.0,
+Combinatorica`ToAdjacencyLists,Sorted neighbour lists of a Combinatorica graph,✅,pure,6.0,
+Combinatorica`ConnectedComponents,Connected components of a Combinatorica graph as sorted vertex lists,✅,pure,6.0,
+Combinatorica`BreadthFirstTraversal,Vertices of a Combinatorica graph in breadth-first order from a start vertex,✅,pure,6.0,
+Combinatorica`ShortestPath,Shortest vertex path between two vertices of a Combinatorica graph,✅,pure,6.0,

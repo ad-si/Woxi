@@ -5937,10 +5937,7 @@ pub fn highlight_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => Vec::new(),
     };
     value.extend(rules);
-    merged.push(rule_expr(
-      Expr::Identifier(name.to_string()),
-      Expr::List(value.into()),
-    ));
+    merged.push(rule_expr(id_expr(name), Expr::List(value.into())));
   }
   merged.push(rule_expr(
     id_expr("GraphHighlight"),
@@ -8594,10 +8591,7 @@ pub fn graph_property_list_ast(
     .collect();
   if extra.is_empty() {
     return Ok(Expr::List(
-      BASE_GRAPH_PROPERTIES
-        .iter()
-        .map(|p| Expr::Identifier((*p).to_string()))
-        .collect(),
+      BASE_GRAPH_PROPERTIES.iter().map(|p| id_expr(p)).collect(),
     ));
   }
   let mut names: Vec<String> = BASE_GRAPH_PROPERTIES

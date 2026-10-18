@@ -2222,16 +2222,16 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let pi = std::f64::consts::PI;
         slice_prims.push(Expr::List(
           vec![
-            Expr::FunctionCall {
-              name: "RGBColor".to_string(),
-              args: [r, g, b]
+            call(
+              "RGBColor",
+              [r, g, b]
                 .iter()
                 .map(|&c| Expr::Real(f64::from(c) / 255.0))
                 .collect(),
-            },
-            Expr::FunctionCall {
-              name: "Disk".to_string(),
-              args: vec![
+            ),
+            call(
+              "Disk",
+              vec![
                 Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
                 Expr::Integer(1),
                 Expr::List(
@@ -2241,9 +2241,8 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   ]
                   .into(),
                 ),
-              ]
-              .into(),
-            },
+              ],
+            ),
           ]
           .into(),
         ));
@@ -2253,17 +2252,16 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let mid = std::f64::consts::PI
           - (start_angle + sweep / 2.0 - std::f64::consts::PI);
-        slice_prims.push(Expr::FunctionCall {
-          name: "Text".to_string(),
-          args: vec![
+        slice_prims.push(call(
+          "Text",
+          vec![
             Expr::String(label.text.clone()),
             Expr::List(
               vec![Expr::Real(0.6 * mid.cos()), Expr::Real(0.6 * mid.sin())]
                 .into(),
             ),
-          ]
-          .into(),
-        });
+          ],
+        ));
       }
 
       if r_in <= 1e-9 {

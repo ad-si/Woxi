@@ -13690,7 +13690,7 @@ fn read_list_record(
           } else if let Ok(f) = token.parse::<f64>() {
             record.push(Expr::Real(f));
           } else {
-            record.push(Expr::Identifier(token.to_string()));
+            record.push(id_expr(token));
           }
         }
         "String" => record.push(str_expr(token)),
@@ -14582,9 +14582,7 @@ pub fn build_template_object(
   if let Some(assoc) = bound_args {
     object_args.push(assoc);
   }
-  let option = |name: &str, value: Expr| {
-    rule_expr(Expr::Identifier(name.to_string()), value)
-  };
+  let option = |name: &str, value: Expr| rule_expr(id_expr(name), value);
   object_args.push(option("CombinerFunction", id_expr("StringJoin")));
   // XMLTemplate reports its insertion function as the string "HTMLFragment";
   // plain string templates use the TextString symbol.

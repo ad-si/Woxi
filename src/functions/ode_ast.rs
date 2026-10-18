@@ -2135,7 +2135,7 @@ fn rewrite_pde_rhs_hyperbolic(
       (2, 2) => "NDSolve$WXX",
       _ => return None,
     };
-    return Some(Expr::Identifier(placeholder.to_string()));
+    return Some(id_expr(placeholder));
   }
   let failed = std::cell::Cell::new(false);
   let mapped = map_children(expr, &|c| {
@@ -2781,7 +2781,7 @@ fn try_solve_hyperbolic_pde(
     "InterpolatingFunction",
     vec![domain, grid_expr, orders, coords],
   );
-  let rule = rule_expr(Expr::Identifier(u_name.to_string()), interp);
+  let rule = rule_expr(id_expr(u_name), interp);
   Ok(Some(Expr::List(vec![Expr::List(vec![rule].into())].into())))
 }
 
@@ -5195,7 +5195,7 @@ fn replace_delayed_values(
       if lag.abs() < 1e-14 {
         return Expr::FunctionCall {
           name: name.clone(),
-          args: vec![Expr::Identifier(x_name.to_string())].into(),
+          args: vec![id_expr(x_name)].into(),
         };
       }
       if lag > 0.0 {
@@ -6511,7 +6511,7 @@ fn variation_of_parameters(
   if coeffs.len() != 3 {
     return None;
   }
-  let x = || Expr::Identifier(x_name.to_string());
+  let x = || id_expr(x_name);
   // E^(r x), reduced to 1 for r == 0.
   let exp_rx = |r: f64| -> Expr {
     if r.abs() < 1e-10 {
@@ -6571,7 +6571,7 @@ fn variation_of_parameters(
       crate::evaluator::evaluate_expr_to_expr(&integrand).unwrap_or(integrand);
     let result = crate::functions::calculus_ast::integrate_ast(&[
       integrand,
-      Expr::Identifier(x_name.to_string()),
+      id_expr(x_name),
     ])
     .ok()?;
     if contains_function_call(&result, "Integrate") {
@@ -6905,7 +6905,7 @@ fn build_homogeneous_solution(
   roots: &[(f64, f64, usize)],
   x_name: &str,
 ) -> Expr {
-  let x = Expr::Identifier(x_name.to_string());
+  let x = id_expr(x_name);
   let mut terms: Vec<Expr> = Vec::new();
   let mut c_idx = 1usize;
 
@@ -6983,7 +6983,7 @@ fn make_c(n: usize) -> Expr {
 
 /// Create E^(r*x) expression, simplifying for special values
 fn make_exp_term(r: f64, x_name: &str) -> Expr {
-  let x = Expr::Identifier(x_name.to_string());
+  let x = id_expr(x_name);
   let r_expr = f64_to_nice_expr(r);
   let exponent = if matches!(&r_expr, Expr::Integer(1)) {
     x
@@ -6995,7 +6995,7 @@ fn make_exp_term(r: f64, x_name: &str) -> Expr {
 
 /// Create Cos[β*x] or Sin[β*x] expression
 fn make_trig_term(func: &str, beta: f64, x_name: &str) -> Expr {
-  let x = Expr::Identifier(x_name.to_string());
+  let x = id_expr(x_name);
   let beta_expr = f64_to_nice_expr(beta);
   let arg = if matches!(&beta_expr, Expr::Integer(1)) {
     x
@@ -7098,7 +7098,7 @@ fn solve_first_order_linear(
     // y = ∫Q(x)dx + C[1]
     let integral = crate::functions::calculus_ast::integrate_ast(&[
       q_expr,
-      Expr::Identifier(x_name.to_string()),
+      id_expr(x_name),
     ])?;
     return Ok(plus2(integral, make_c(1)));
   }
@@ -7120,7 +7120,7 @@ fn solve_first_order_linear(
   // y = (1/μ) * (∫μ*Q(x)dx + C[1])
   let p_integral = crate::functions::calculus_ast::integrate_ast(&[
     p_expr.clone(),
-    Expr::Identifier(x_name.to_string()),
+    id_expr(x_name),
   ])?;
 
   let mu = pow2(const_expr("E"), p_integral.clone());
@@ -7128,10 +7128,8 @@ fn solve_first_order_linear(
   let mu_q =
     crate::functions::calculus_ast::simplify(times2(mu.clone(), q_expr));
 
-  let mu_q_integral = crate::functions::calculus_ast::integrate_ast(&[
-    mu_q,
-    Expr::Identifier(x_name.to_string()),
-  ])?;
+  let mu_q_integral =
+    crate::functions::calculus_ast::integrate_ast(&[mu_q, id_expr(x_name)])?;
 
   // y = E^(-∫P dx) * (∫(μ*Q)dx + C[1])
   let neg_p_integral = negate_expr(&p_integral);
@@ -7363,7 +7361,7 @@ fn product_of(factors: Vec<Expr>) -> Expr {
 fn closed_form_integral(integrand: &Expr, var: &str) -> Option<Expr> {
   let result = crate::functions::calculus_ast::integrate_ast(&[
     simplify(integrand.clone()),
-    Expr::Identifier(var.to_string()),
+    id_expr(var),
   ])
   .ok()?;
   (!mentions_head(&result, "Integrate")).then_some(result)
@@ -7387,7 +7385,7 @@ fn values_agree(a: &Expr, b: &Expr) -> bool {
 
 /// Create E^(expr*x) for symbolic expressions
 fn make_exp_term_expr(coeff: &Expr, x_name: &str) -> Expr {
-  let x = Expr::Identifier(x_name.to_string());
+  let x = id_expr(x_name);
   let exponent = match coeff {
     Expr::Integer(1) => x,
     Expr::Integer(-1) => neg1(x),
@@ -7419,10 +7417,7 @@ fn find_particular_solution(
     // If a_0 = 0 but a_1 != 0, try y_p = c*x
     if coeffs.len() > 1 && coeffs[1].abs() > 1e-15 {
       let c = -val / coeffs[1];
-      return Some(times2(
-        f64_to_nice_expr(c),
-        Expr::Identifier(x_name.to_string()),
-      ));
+      return Some(times2(f64_to_nice_expr(c), id_expr(x_name)));
     }
   }
   None
@@ -9258,7 +9253,7 @@ fn try_linear_first_order_pde_body(
     return None;
   }
   // Build the body: E^(c*x) * C[1][y - b*x]
-  let n_var = |s: &str| Expr::Identifier(s.to_string());
+  let n_var = |s: &str| id_expr(s);
   let exp_part = if c_eff == 0 {
     Expr::Integer(1)
   } else {
@@ -9331,7 +9326,7 @@ fn try_direct_linear_pde_body(
   if a == 0 {
     return None; // No Fx term means no characteristic to integrate along.
   }
-  let n_var = |s: &str| Expr::Identifier(s.to_string());
+  let n_var = |s: &str| id_expr(s);
   // Argument to C[1]: y - (b/a)*x.
   let c1_arg = if b == 0 {
     n_var(yn)
@@ -9479,7 +9474,7 @@ fn try_euler_pde_body(
     Expr::Integer(n) => *n,
     _ => return None,
   };
-  let n_var = |s: &str| Expr::Identifier(s.to_string());
+  let n_var = |s: &str| id_expr(s);
   // Build c*Log[x] + C[1][y/x].
   let log_x = call1("Log", n_var(xn));
   let y_over_x = div2(n_var(yn), n_var(xn));
@@ -9581,12 +9576,12 @@ fn wrap_pde_solution(
   yn: &str,
   return_call_form: bool,
 ) -> Expr {
-  let n_var = |s: &str| Expr::Identifier(s.to_string());
+  let n_var = |s: &str| id_expr(s);
   let rule = if return_call_form {
     rule_expr(call(fname, vec![n_var(xn), n_var(yn)]), body)
   } else {
     rule_expr(
-      Expr::Identifier(fname.to_string()),
+      id_expr(fname),
       call(
         "Function",
         vec![Expr::List(vec![n_var(xn), n_var(yn)].into()), body],
@@ -9822,12 +9817,8 @@ fn try_second_order_constant_pde_body(
   };
   // `λ*x + y`, with the coefficient folded in by the evaluator so that
   // λ = 1 leaves a bare `x`.
-  let arg_of = |lambda: Expr| {
-    eval(plus2(
-      times2(lambda, Expr::Identifier(xn.to_string())),
-      Expr::Identifier(yn.to_string()),
-    ))
-  };
+  let arg_of =
+    |lambda: Expr| eval(plus2(times2(lambda, id_expr(xn)), id_expr(yn)));
   let c_of = |k: i128, arg: Expr| Expr::CurriedCall {
     func: Box::new(call1("C", Expr::Integer(k))),
     args: vec![arg],
@@ -9838,7 +9829,7 @@ fn try_second_order_constant_pde_body(
     let arg = arg_of(root(&a, 1));
     return Some(plus2(
       c_of(1, arg.clone()),
-      times2(Expr::Identifier(xn.to_string()), c_of(2, arg)),
+      times2(id_expr(xn), c_of(2, arg)),
     ));
   }
   // Taking the reciprocal turns the `+` root into the `-` one, so the
@@ -10752,7 +10743,7 @@ fn sol_terms_expr(terms: &[SolTerm], x_name: &str) -> Expr {
       factors.push(coeff);
     }
     if term.power > 0 {
-      let x = Expr::Identifier(x_name.to_string());
+      let x = id_expr(x_name);
       factors.push(if term.power == 1 {
         x
       } else {
@@ -11084,7 +11075,7 @@ fn dsolve_linear_system(
       rule_expr(
         Expr::FunctionCall {
           name: yn.clone(),
-          args: vec![Expr::Identifier(x_name.to_string())].into(),
+          args: vec![id_expr(x_name)].into(),
         },
         sol,
       )

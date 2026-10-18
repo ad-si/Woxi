@@ -729,15 +729,15 @@ pub fn matrix_q_with_test_ast(
           if matches!(elem, Expr::List(_)) {
             return Ok(bool_expr(false));
           }
-          let test_call = Expr::FunctionCall {
-            name: if let Expr::Identifier(n) = test {
-              n.clone()
+          let test_call = call1(
+            if let Expr::Identifier(n) = test {
+              n.as_str()
             } else {
               // For non-identifier tests, build an application
-              "__test__".to_string()
+              "__test__"
             },
-            args: vec![elem.clone()].into(),
-          };
+            elem.clone(),
+          );
           let result = if let Expr::Identifier(_) = test {
             crate::evaluator::evaluate_expr_to_expr(&test_call)?
           } else {

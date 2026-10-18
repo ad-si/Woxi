@@ -5031,3 +5031,16 @@ A `Grid` cell holding `Rotate[Text["Value"], 90 Degree]` (the usual vertical
 axis label beside a `GraphicsGrid`, as in the `Intramarginal Rent`
 Demonstration) is drawn unrotated. Rotation is honoured for plot labels
 (`PlotLabel`/`AxesLabel`) but not for `Grid` cell content.
+
+## Combinatorica graph functions and `{"Prism", n}` (unverified against wolframscript)
+
+`Combinatorica`FromUnorderedPairs`, `V`, `ToAdjacencyLists`,
+`ConnectedComponents`, `BreadthFirstTraversal[g, v]` and `ShortestPath` were
+written from the package's documented behaviour (as needed by the `Two Points
+on a Polyhedron` Demonstration) and could not be checked against a real kernel:
+the circular-embedding vertex coordinates, the tie-breaking order of the
+traversal/shortest path, and the `Level`/`Edge` flags of
+`BreadthFirstTraversal` (left unevaluated) may differ. Likewise the vertex
+order, face order and orientation of `PolyhedronData[{"Prism", n}, …]` are a
+guess; `"InsphereRadius"`/`"Midradius"` report `Missing["NotApplicable"]`.
+

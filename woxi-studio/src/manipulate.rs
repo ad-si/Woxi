@@ -1732,6 +1732,62 @@ mod tests {
     );
   }
 
+  /// A choice list `Dynamic[Range[top]]` that follows a free variable the
+  /// body itself assigns (not a control): switching the mode makes the body
+  /// assign a different `top`, and the offered choices must follow it.
+  #[test]
+  fn choice_list_follows_variable_assigned_by_body() {
+    let code = r#"Manipulate[
+      If[mode == "short", top = 3; Range[top], top = 5; Range[top]],
+      {{mode, "short"}, {"short", "long"}},
+      {{k, 1}, Dynamic[Range[top]], ControlType -> SetterBar}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let count_of = |state: &ManipulateState| {
+      state
+        .controls
+        .iter()
+        .find_map(|c| match c {
+          ControlState::Discrete { name, values, .. } if name == "k" => {
+            Some(values.len())
+          }
+          _ => None,
+        })
+        .expect("k control")
+    };
+    assert_eq!(count_of(&state), 3);
+    assert!(state.select_discrete(0, "long"));
+    state.reevaluate();
+    assert_eq!(count_of(&state), 5);
+    assert!(state.select_discrete(0, "short"));
+    state.reevaluate();
+    assert_eq!(count_of(&state), 3);
+  }
+
+  /// A sound-player display built with `Audio`Waveform` evaluates to an
+  /// Audio object (shown as `-Audio-`), not the raw unevaluated call.
+  #[test]
+  fn audio_waveform_display_evaluates_to_audio_object() {
+    let code = r#"Manipulate[
+      Plot[Sin[x t], {x, 0, 6}],
+      {{t, 0.2}, 0.1, 1, 0.1},
+      Dynamic[Audio`Waveform[Audio`Square, 440., t, Overtones -> 5, SampleRate -> 2^16]]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.display_trees.iter().any(
+        |n| matches!(n, DisplayNode::Static { text, .. } if text == "-Audio-")
+      ),
+      "{:?}",
+      state.display_trees
+    );
+  }
+
   #[test]
   fn exact_integer_slider_without_step_steps_by_one() {
     let expr = woxi::interpret_to_expr(

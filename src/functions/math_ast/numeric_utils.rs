@@ -1846,13 +1846,10 @@ pub fn is_normalized_machine_complex(expr: &Expr) -> bool {
 /// The `Plus[re, Times[im, I]]` form the general `Plus` path leaves a
 /// machine-complex sum in.
 pub fn normalized_machine_complex(re: f64, im: f64) -> Expr {
-  call(
-    "Plus",
-    vec![
-      Expr::Real(re),
-      call("Times", vec![Expr::Real(im), id_expr("I")]),
-    ],
-  )
+  plus(vec![
+    Expr::Real(re),
+    times(vec![Expr::Real(im), id_expr("I")]),
+  ])
 }
 
 /// Direct IEEE evaluation of `l op r` when at least one operand is a

@@ -7,7 +7,6 @@
 //! per 2-cell, or the boundary loop of a boundary mesh — so exact
 //! coordinates keep exact answers.
 
-#[allow(unused_imports)]
 use super::*;
 
 /// A parsed mesh: its coordinates and its cells by dimension.
@@ -205,16 +204,15 @@ impl Mesh {
     // A boundary mesh fills its interior: the loop is its single 2-cell.
     if d == 2 && self.cells[2].is_empty() && self.boundary {
       let loop_indices = self.boundary_loop()?;
-      return Some(vec![Expr::FunctionCall {
-        name: "Polygon".to_string(),
-        args: vec![Expr::List(
+      return Some(vec![call1(
+        "Polygon",
+        Expr::List(
           loop_indices
             .into_iter()
             .map(|i| Expr::Integer(i as i128))
             .collect(),
-        )]
-        .into(),
-      }]);
+        ),
+      )]);
     }
     Some(
       self.cells[d]
