@@ -16041,6 +16041,26 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `ToString[TraditionalForm["…"/"…"]]` of strings carrying inline box
+    /// notation yields a `FractionBox` whose arguments are quoted strings
+    /// that themselves hold `\!\(\*SubscriptBox[…]\)`; a `PlotLabel` built
+    /// from it must typeset those as subscripts, not print the escapes
+    /// (Virtual Oscilloscope demonstration).
+    #[test]
+    fn plot_label_traditional_form_of_box_notation_strings() {
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1}, PlotLabel -> StringJoin[ToString[TraditionalForm["\!\(\*SubscriptBox[\(f\), \(x\)]\)"/"\!\(\*SubscriptBox[\(f\), \(y\)]\)"]], " = 1/4"]]"#,
+      );
+      assert!(
+        svg.contains("<tspan"),
+        "expected subscript tspans in the label: {svg}"
+      );
+      assert!(
+        !svg.contains("SubscriptBox") && !svg.contains("\\!"),
+        "the box-notation source leaked into the rendered label: {svg}"
+      );
+    }
+
     /// A `Subscript` whose base is a styled string carrying inline box
     /// notation (a vector label `Subscript[Style["\!\(\*OverscriptBox[\(r\),
     /// \(\[RightVector]\)]\)", Italic], 1]` inside `Text`) folds into the

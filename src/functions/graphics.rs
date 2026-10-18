@@ -13903,7 +13903,21 @@ fn parse_box_to_expr(cs: &[char]) -> Expr {
   // TraditionalForm typesets it without them.
   if let Some(text) = quoted_box_literal(trim_char_slice(cs)) {
     let chars: Vec<char> = text.chars().collect();
-    return Expr::String(quoted_box_literal(&chars).unwrap_or(text));
+    let text = quoted_box_literal(&chars).unwrap_or(text);
+    // A string argument that itself carries linear syntax
+    // (`FractionBox["\!\(\*SubscriptBox[\(f\), \(x\)]\)", …]`, as
+    // `ToString[TraditionalForm["…"/"…"]]` emits) typesets like any other
+    // linear-syntax text rather than showing its escapes.
+    if text.contains("\\!\\(") {
+      let inner: Vec<char> = text.chars().collect();
+      let mut units = parse_box_units(&inner);
+      return match units.len() {
+        0 => Expr::String(String::new()),
+        1 => units.pop().unwrap(),
+        _ => call1("RowBox", Expr::List(units.into())),
+      };
+    }
+    return Expr::String(text);
   }
   let mut units = parse_box_units(cs);
   match units.len() {
