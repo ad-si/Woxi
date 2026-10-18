@@ -13873,14 +13873,27 @@ pub const STYLED_LABEL_MARKER: char = '\u{E000}';
 /// The label string for an axis label: a `Style[label, Italic, …]` carries
 /// its font directives as ready-made markup, anything else is its plain text.
 pub fn styled_axis_label(e: &Expr) -> Option<String> {
-  if let Expr::FunctionCall { name, args } = e
-    && name == "Style"
-    && args.len() >= 2
-    && !style_directives_to_svg_attrs(&args[1..]).is_empty()
-  {
+  if contains_visible_style(e) {
     return Some(format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e)));
   }
   crate::functions::chart::expr_to_label(e)
+}
+
+/// Whether `e` is, or (inside a `Row`) holds, a `Style[label, …]` whose
+/// directives change how the text is drawn — `Row[{Style["a", Red], " b"}]`
+/// is a label whose colour a plain-text label would lose.
+fn contains_visible_style(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Style" => {
+      (args.len() >= 2 && !style_directives_to_svg_attrs(&args[1..]).is_empty())
+        || args.first().is_some_and(contains_visible_style)
+    }
+    Expr::FunctionCall { name, args } if name == "Row" => match args.first() {
+      Some(Expr::List(items)) => items.iter().any(contains_visible_style),
+      _ => false,
+    },
+    _ => false,
+  }
 }
 
 /// [`box_string_to_svg`] for a label drawn in a graphic whose user space is

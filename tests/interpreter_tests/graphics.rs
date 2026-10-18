@@ -36133,6 +36133,37 @@ fn styled_axes_label_keeps_font_directives() {
 }
 
 #[test]
+fn axes_label_row_keeps_styled_parts() {
+  // `Row[{Style[…, color], " and ", Style[…, color]}]` as an AxesLabel is a
+  // multi-coloured legend-like label; every part keeps its own colour.
+  for plot in [
+    "ListPlot[{1, 2, 3}",
+    "ListLinePlot[{1, 2, 3}",
+    "Plot[x, {x, 0, 1}",
+  ] {
+    let svg = interpret(&format!(
+      "ExportString[{plot}, AxesLabel -> {{\"t\", Row[{{Style[\"a\", Red], \
+       \" and \", Style[\"b\", Blue]}}]}}], \"SVG\"]"
+    ))
+    .unwrap();
+    assert!(
+      svg.contains(
+        "<tspan fill=\"rgb(255,0,0)\">a</tspan> and \
+         <tspan fill=\"rgb(0,0,255)\">b</tspan>"
+      ),
+      "{plot}: {svg}"
+    );
+  }
+  // A `Row` of plain strings stays unstyled.
+  let svg = interpret(
+    "ExportString[Plot[x, {x, 0, 1}, AxesLabel -> {\"t\", \
+     Row[{\"a\", \"b\"}]}], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(!svg.contains("<tspan fill"));
+}
+
+#[test]
 fn region_plot_color_function_colors_region_pointwise() {
   // `ColorFunction -> f` fills the region with `f[x, y]` (coordinates scaled
   // to 0..1 over the plot range) instead of one flat translucent tint.
