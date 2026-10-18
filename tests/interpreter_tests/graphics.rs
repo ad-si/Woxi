@@ -36823,3 +36823,31 @@ fn explicit_plot_range_clips_content_in_widened_drawing_area() {
   assert!(auto.contains("<clipPath id=\"plotClip_"), "{auto}");
   assert!(auto.contains("<rect x=\"0\" y=\"0\" width="), "{auto}");
 }
+
+#[test]
+fn explicit_size_after_named_style_overrides_its_size() {
+  // `Style[x, 12, "Section"]`: the stylesheet entry is the base and the
+  // explicit size sits on top of it, whichever side it was written.
+  let svg = export_svg(
+    "Column[{Text@Style[\"hi\", 12, \"Section\", Blue, Italic], \"x\"}]",
+  );
+  assert!(svg.contains("font-size=\"12\""), "{svg}");
+  assert!(!svg.contains("font-size=\"28\""), "{svg}");
+}
+
+#[test]
+fn slide_view_in_a_layout_shows_its_first_slide() {
+  let svg = export_svg(
+    "Column[{\"a\", SlideView[{Graphics[Circle[]], Graphics[Disk[]]}]}]",
+  );
+  assert!(!svg.contains("SlideView"), "{svg}");
+  assert!(svg.contains("<ellipse"), "{svg}");
+}
+
+#[test]
+fn graphics_layout_nested_in_a_row_fits_its_cell() {
+  let svg = export_svg(
+    "GraphicsRow[{GraphicsGrid[{{Graphics[Circle[]], Graphics[Circle[]]}}]}]",
+  );
+  assert!(svg.starts_with("<svg width=\"360\""), "{svg}");
+}

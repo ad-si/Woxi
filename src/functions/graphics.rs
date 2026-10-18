@@ -11750,7 +11750,7 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
     Some(slot) => slot.1 = value,
     None => attrs.push((name, value)),
   };
-  for d in directives {
+  for d in style_directives_in_application_order(directives) {
     match d {
       Expr::Identifier(s) if s == "Italic" => {
         set("font-style", "italic".to_string());
@@ -19557,7 +19557,13 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
   let Expr::FunctionCall { name, args } = expr else {
     return expr.clone();
   };
-  if !is_graphics_producing_head(name) {
+  // A graphics layout nested in another one (`GraphicsRow[{GraphicsGrid[…]}]`)
+  // fits the cell it sits in instead of keeping its own default width.
+  let is_nested_layout = matches!(
+    name.as_str(),
+    "GraphicsRow" | "GraphicsColumn" | "GraphicsGrid"
+  );
+  if !is_graphics_producing_head(name) && !is_nested_layout {
     return expr.clone();
   }
   let has_image_size = args.iter().any(|a| {
@@ -20718,6 +20724,10 @@ fn resolve_display_item(expr: &Expr) -> Expr {
       Some(("EventHandler", content)) => current = content.clone(),
       // `Tooltip[expr, hint]` draws as `expr`; the hint shows only on hover.
       Some(("Tooltip", content)) => current = content.clone(),
+      // `SlideView[{s1, s2, …}]` starts on its first slide.
+      Some(("SlideView", Expr::List(slides))) if !slides.is_empty() => {
+        current = slides[0].clone();
+      }
       _ => break,
     }
     current = unwrap_display_wrappers(&current);
@@ -31813,6 +31823,15 @@ fn display_expr_to_node(
         }
         _ => static_leaf_node(expr, bindings),
       },
+      // A static render of `SlideView[{s1, s2, …}]` shows its first slide,
+      // the one the slider starts on.
+      "SlideView" if matches!(args.first(), Some(Expr::List(l)) if !l.is_empty()) =>
+      {
+        let Expr::List(slides) = &args[0] else {
+          unreachable!()
+        };
+        display_expr_to_node(&slides[0], bindings, probes, ons)
+      }
       "Panel" | "Framed" | "Deploy" | "Item" | "Pane" | "Labeled"
         if !args.is_empty() =>
       {
