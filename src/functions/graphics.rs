@@ -1638,13 +1638,26 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       // `Texture[image]`: fills the polygons that follow with the image,
       // placed by their `VertexTextureCoordinates`.
       "Texture" if args.len() == 1 => {
+        // `Texture[Graphics[…]]` paints with the rasterized graphic.
+        #[cfg(not(target_arch = "wasm32"))]
+        let rasterized = match &args[0] {
+          Expr::Graphics { .. } => {
+            crate::functions::image_ast::rasterize_ast(&args[..1]).ok()
+          }
+          Expr::FunctionCall { name, .. } if name == "Graphics" => {
+            crate::functions::image_ast::rasterize_ast(&args[..1]).ok()
+          }
+          _ => None,
+        };
+        #[cfg(target_arch = "wasm32")]
+        let rasterized: Option<Expr> = None;
         if let Expr::Image {
           width,
           height,
           channels,
           data,
           ..
-        } = &args[0]
+        } = rasterized.as_ref().unwrap_or(&args[0])
         {
           use base64::Engine;
           let img = crate::functions::image_ast::expr_to_dynamic_image(
@@ -2349,7 +2362,9 @@ fn collect_primitives(
         "Polygon" | "Triangle" if !args.is_empty() => {
           let before = prims.len();
           parse_polygon(args, style, prims);
-          if prims.len() == before {
+          // `Polygon[{}]` is an empty set of polygons, not a bad coordinate.
+          let empty = matches!(&args[0], Expr::List(items) if items.is_empty());
+          if prims.len() == before && !empty {
             errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
           }
         }
@@ -3093,8 +3108,8 @@ fn parse_vertex_texture_coordinates(opts: &[Expr]) -> Option<Vec<(f64, f64)>> {
 }
 
 /// The style for one polygon: the `Texture` in force, if any, with the
-/// polygon's own texture coordinates attached (only when they line up with
-/// its vertices).
+/// polygon's own texture coordinates attached (only when there is at least
+/// one per vertex; surplus trailing coordinates are ignored).
 fn with_texture_coords(
   style: &StyleState,
   coords: Option<&[(f64, f64)]>,
@@ -3102,10 +3117,10 @@ fn with_texture_coords(
 ) -> StyleState {
   let mut out = style.clone();
   if let (Some(tex), Some(coords)) = (&style.texture, coords)
-    && coords.len() == n_points
+    && coords.len() >= n_points
   {
     out.texture = Some(std::sync::Arc::new(TextureFill {
-      coords: coords.to_vec(),
+      coords: coords[..n_points].to_vec(),
       ..(**tex).clone()
     }));
   } else if style.texture.is_some() {
