@@ -35961,6 +35961,33 @@ mod empty_plot {
   }
 
   #[test]
+  fn textured_graphics3d_polygon_embeds_image_per_triangle() {
+    let svg = export_svg(
+      "Graphics3D[{Texture[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]], \
+       Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}, \
+       VertexTextureCoordinates -> {{0, 0}, {1, 0}, {1, 1}, {0, 1}}]}]",
+    );
+    assert_eq!(svg.matches("<image").count(), 1, "image once: {svg}");
+    assert_eq!(svg.matches("<use").count(), 2, "one per triangle: {svg}");
+  }
+
+  #[test]
+  fn texture_accepts_graphics_in_2d_and_3d() {
+    let svg = export_svg(
+      "Graphics3D[{Texture[Graphics[Text[Style[3, 20], {0.5, 0.5}]]], \
+       Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}}, \
+       VertexTextureCoordinates -> {{0, 0}, {1, 0}, {1, 1}}]}]",
+    );
+    assert!(svg.contains("data:image/png;base64,"), "3D: {svg}");
+    let svg = export_svg(
+      "Graphics[{Texture[Graphics[Text[Style[3, 20], {0.5, 0.5}]]], \
+       Polygon[{{0, 0}, {1, 0}, {1, 1}}, \
+       VertexTextureCoordinates -> {{0, 0}, {1, 0}, {1, 1}}]}]",
+    );
+    assert!(svg.contains("data:image/png;base64,"), "2D: {svg}");
+  }
+
+  #[test]
   fn textured_polygon_without_coordinates_falls_back_to_plain_fill() {
     let svg = export_svg(
       "Graphics[{Texture[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]], \
