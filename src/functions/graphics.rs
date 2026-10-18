@@ -20713,6 +20713,15 @@ fn resolve_display_item(expr: &Expr) -> Expr {
         }
       }
       Some(("EventHandler", content)) => current = content.clone(),
+      // `ClickPane[content, handler]` shows `content`; the handler needs
+      // live clicks. `content` is held, so a state variable holding a
+      // picture (`ClickPane[Dynamic[board], …]`) still has to be resolved.
+      Some(("ClickPane", held)) => {
+        let captured = crate::captured_graphics_count();
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(held);
+        crate::truncate_captured_graphics(captured);
+        current = evaluated.unwrap_or_else(|_| held.clone());
+      }
       // `Tooltip[expr, hint]` draws as `expr`; the hint shows only on hover.
       Some(("Tooltip", content)) => current = content.clone(),
       _ => break,

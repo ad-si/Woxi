@@ -16876,6 +16876,25 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!ranged.contains("ClickPane"), "not the source: {ranged}");
     }
 
+    // A `ClickPane` whose (held) content is a variable holding a picture,
+    // as in a board-game Demonstration, must draw that picture in a grid.
+    #[test]
+    fn a_click_pane_in_a_grid_resolves_a_picture_variable() {
+      for pane in [
+        "ClickPane[board, (x = #) &]",
+        "ClickPane[Dynamic[Deploy[board]], Function[p, x = Round[p]]]",
+      ] {
+        let svg = export_svg(&format!(
+          "board = Graphics[{{Disk[]}}]; Grid[{{{{{pane}, \"a\"}}}}]"
+        ));
+        assert!(
+          svg.contains("<ellipse") || svg.contains("<circle"),
+          "the picture must be drawn for {pane}: {svg}"
+        );
+        assert!(!svg.contains("ClickPane"), "not the source: {svg}");
+      }
+    }
+
     // A visual host shows the picture an interactive pane wraps even when
     // the pane is the whole result — a Manipulate body that *is* a
     // `ClickPane` rendered as a strip of source text.
