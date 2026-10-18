@@ -20474,6 +20474,30 @@ mod grid_frame_and_background {
     assert!(vertical.iter().any(|l| l.0 == 0.0), "left edge: {svg}");
   }
 
+  /// A line-style directive as a position spec (`1 -> Thin`, `2 -> Thick`)
+  /// still rules that line. Regression: only colours and `True` were
+  /// recognised, so a grid ruled with `Thin`/`Thick` came out with no lines.
+  #[test]
+  fn dividers_accept_line_style_directives() {
+    let svg = export_svg(
+      r#"Grid[{{"a", "b"}, {"c", "d"}}, Dividers -> {{1 -> Thin, 2 -> Thick, -1 -> Thin}, {2 -> Dashed}}]"#,
+    );
+    let lines = grid_lines(&svg);
+    let horizontal = lines.iter().filter(|l| l.1 == l.3).count();
+    let vertical = lines.iter().filter(|l| l.0 == l.2).count();
+    assert_eq!(vertical, 3, "left, middle and right: {svg}");
+    assert_eq!(horizontal, 1, "middle only: {svg}");
+  }
+
+  /// `Directive[colour, style]` rules the line in that colour.
+  #[test]
+  fn dividers_directive_keeps_its_colour() {
+    let svg = export_svg(
+      r#"Grid[{{"a", "b"}, {"c", "d"}}, Dividers -> {{2 -> Directive[Red, Thick]}, None}]"#,
+    );
+    assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+  }
+
   /// `Dividers -> Center` rules only the boundaries *between* cells, so the
   /// same grid keeps its outer edges open.
   #[test]
