@@ -2513,6 +2513,17 @@ mod graphics {
       assert!(svg.contains(">wa</text>"), "{svg}");
     }
 
+    /// A tick label that calls a function (`ToString[a]` inside a `Row`)
+    /// shows the call's result, not just the literal parts around it.
+    #[test]
+    fn explicit_tick_label_with_function_call_is_evaluated() {
+      let svg = export_svg(
+        "a = 2.5; Plot[Sin[t], {t, 0, 3}, \
+         Ticks -> {{{a, Text[Row[{\"a = \", ToString[a]}]]}}, Automatic}]",
+      );
+      assert!(svg.contains(">a = 2.5</text>"), "{svg}");
+    }
+
     /// A tick whose label is `Invisible[…]` keeps its mark but paints no
     /// text (not the literal `Invisible[1/6]`).
     #[test]

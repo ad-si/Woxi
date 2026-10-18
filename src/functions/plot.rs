@@ -9097,7 +9097,12 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
         // A label given as text may still embed box notation (a notebook
         // writes a superscript that way), so it renders like every other
         // label a plot draws rather than being escaped raw.
-        let label = crate::functions::chart::expr_to_label(&pair[1])
+        // The label is kept as written, so a call inside it — the
+        // `ToString[a]` of `Row[{"a = ", ToString[a]}]` — is worked out
+        // before it is read as text.
+        let label_expr =
+          evaluate_expr_to_expr(&pair[1]).unwrap_or_else(|_| pair[1].clone());
+        let label = crate::functions::chart::expr_to_label(&label_expr)
           .map_or_else(
             || crate::functions::graphics::svg_escape(&format_tick(pos)),
             |text| crate::functions::graphics::box_string_to_svg(&text),
