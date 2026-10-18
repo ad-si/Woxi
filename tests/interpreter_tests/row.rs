@@ -350,6 +350,30 @@ mod row_visual_mode {
     assert!(styled > one * 1.5, "one = {one}, styled = {styled}");
   }
 
+  /// A newline in the middle of a prose string (a blank line between
+  /// paragraphs) also breaks the row, while the one-character-per-line
+  /// stack of a typeset fraction stays one block.
+  #[test]
+  fn row_newline_inside_prose_string_stacks_lines() {
+    clear_state();
+    let height = |code: &str| -> f64 {
+      let result = interpret_with_stdout(code).unwrap();
+      let svg = result.graphics.unwrap();
+      svg
+        .split("height=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap()
+    };
+    let one = height("Row[{\"has \", x, \" red balls\"}]");
+    let prose =
+      height("Row[{\"has \", x, \" red balls.\\n\\nProbability for\"}]");
+    assert!(prose > one * 2.5, "one = {one}, prose = {prose}");
+    let fraction = height("Row[{\"y = \", \"1\\n-\\n3\"}]");
+    assert!(fraction < one * 3.0, "one = {one}, fraction = {fraction}");
+  }
+
   #[test]
   fn traditional_form_row_newline_boxes_are_stacked() {
     clear_state();

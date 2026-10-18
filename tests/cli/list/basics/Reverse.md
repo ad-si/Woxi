@@ -31,3 +31,15 @@ $ wo 'Reverse[{a, b, c, d}]'
 $ wo 'Reverse[{-5, 3.14, 0, 42}]'
 {42, 0, 3.14, -5}
 ```
+
+Any compound expression has its arguments reversed, including rules.
+
+```scrut
+$ wo 'Reverse[x :> y]'
+y :> x
+```
+
+```scrut
+$ wo 'Reverse[f[a, b, c]]'
+f[c, b, a]
+```

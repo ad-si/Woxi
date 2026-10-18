@@ -8230,6 +8230,19 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// Regression: a top `FrameLabel` containing a line break was drawn as
+    /// one `<text>` element, so SVG collapsed the break and the caption
+    /// ran off the image. Each line now gets its own element.
+    #[test]
+    fn plot_top_frame_label_breaks_lines() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, \
+         FrameLabel -> {{\"fb\", None}, {\"fl\", Row[{\"first\\nsecond\"}]}}]",
+      );
+      assert!(svg.contains(">first</text>"), "{svg}");
+      assert!(svg.contains(">second</text>"), "{svg}");
+    }
+
     /// A computed real in a `FrameLabel` prints as `ToString` does, not with
     /// the float noise of its last bits (`Round[-0.64, 0.1]` is
     /// `-0.6000000000000001` internally).
@@ -28468,6 +28481,32 @@ mod manipulate {
   }
 
   #[test]
+  fn spec_string_with_tagged_grid_box_segment_is_typeset_not_raw_source() {
+    // A title string can carry a whole `TagBox`/`GridBox` equation system
+    // (a `Column` of formulas the FrontEnd stores as a linear-syntax box
+    // segment). It must read as the formulas, not as box source.
+    let expr = interpret_to_expr(
+      "Manipulate[a, \"title\\n\\!\\(\\*TagBox[TagBox[RowBox[{\\\"\\[NoBreak]\\\", \
+       TagBox[GridBox[{{RowBox[{SubscriptBox[\\\"u\\\", \\\"k\\\"], \\\"=\\\", \
+       \\\"1\\\"}]}, {RowBox[{SubscriptBox[\\\"v\\\", \\\"k\\\"], \\\"=\\\", \
+       \\\"2\\\"}]}}], Column], \\\"\\[NoBreak]\\\"}], \
+       Function[BoxForm`e$, MatrixForm[BoxForm`e$]]], \
+       Function[BoxForm`e$, MatrixForm[BoxForm`e$]]]\\)\", {a, 0, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    match &spec.controls[0] {
+      ManipulateControl::Heading { label, .. } => {
+        for bad in ["TagBox", "GridBox", "RowBox", "Function"] {
+          assert!(!label.contains(bad), "raw box source in {label:?}");
+        }
+        assert_eq!(label, "title\nu_k=1\nv_k=2");
+      }
+      other => panic!("expected a heading, got {other:?}"),
+    }
+  }
+
+  #[test]
   fn spec_text_argument_is_an_annotation_row() {
     // `Text[Row[…]]` between the controls is a static label, exactly like
     // `Style[…]` — Wolfram tags it ThisIsNotAControl rather than reporting a
@@ -35516,6 +35555,17 @@ mod grid_text_in_graphics {
     assert!(!svg.contains("Button"), "{svg}");
   }
 
+  /// A `Button` inset into a picture draws as a plate carrying its own
+  /// pressable hit region, one per button.
+  #[test]
+  fn inset_button_in_graphics_carries_hit_region() {
+    let svg = export_svg(
+      "Graphics[{Inset[Button[\"go\", n++], {1, 1}], Inset[Button[\"stop\", n = 0], {3, 1}]}]",
+    );
+    assert!(!svg.contains("Button"), "{svg}");
+    assert_eq!(svg.matches("id=\"woxi-btn-").count(), 2, "{svg}");
+  }
+
   /// A grid of text-labelled buttons (a keyboard of character keys) draws
   /// each key as a plate with its own pressable hit region.
   #[test]
@@ -36583,4 +36633,24 @@ fn graphics_grid_of_tooltipped_plots_draws_the_plots_not_source() {
   let single = export_svg("Tooltip[ArrayPlot[{{1, 0}, {0, 1}}], \"hint\"]");
   assert!(!single.contains("hint"), "{single}");
   assert!(!single.contains("<text"), "{single}");
+}
+
+#[test]
+fn explicit_plot_range_clips_content_in_widened_drawing_area() {
+  // The wide picture widens the x range to keep circles round, but the
+  // requested range still bounds what is drawn.
+  let svg = export_svg(
+    "Graphics[{Rectangle[{-12, 0}, {12, 1}]}, \
+     PlotRange -> {{-10, 10}, {-7, 12}}, ImageSize -> {550, 396}]",
+  );
+  assert!(
+    svg.contains(
+      "<rect x=\"66.58\" y=\"0.00\" width=\"416.84\" height=\"396.00\"/>"
+    ),
+    "{svg}"
+  );
+  // Without an explicit range the whole drawing area stays visible.
+  let auto = export_svg("Graphics[{Rectangle[{-12, 0}, {12, 1}]}]");
+  assert!(auto.contains("<clipPath id=\"plotClip_"), "{auto}");
+  assert!(auto.contains("<rect x=\"0\" y=\"0\" width="), "{auto}");
 }
