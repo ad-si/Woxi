@@ -2411,7 +2411,7 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Try pattern-based matching (DigitCharacter, LetterCharacter, Repeated, etc.)
   if let Some((regex_str, constraints)) =
-    string_pattern_to_regex_with_state(&args[1])
+    string_match_pattern_to_regex_with_state(&args[1])
   {
     let case_flag = if ignore_case { "(?i)" } else { "" };
     let full_regex = format!("{case_flag}^(?:{regex_str})$");
@@ -2684,13 +2684,20 @@ fn substitute_captures(expr: &Expr, captures: &Captures) -> Expr {
   }
 }
 
-/// Convert a bare (top-level) string pattern using Wolfram's metacharacter
-/// shorthand: `*` matches any sequence and `@` matches one-or-more
-/// non-uppercase characters. Every other character is matched literally.
-fn bare_string_metachars_to_regex(s: &str) -> String {
+/// Convert a string literal of a `StringMatchQ` pattern using Wolfram's
+/// metacharacter shorthand: `*` matches any sequence and `@` matches
+/// one-or-more non-uppercase characters. A backslash makes a following `*` or
+/// `@` literal; every other character (including a lone backslash) is matched
+/// literally.
+fn string_metachars_to_regex(s: &str) -> String {
   let mut result = String::new();
-  for ch in s.chars() {
+  let mut chars = s.chars().peekable();
+  while let Some(ch) = chars.next() {
     match ch {
+      '\\' if matches!(chars.peek(), Some('*' | '@')) => {
+        let escaped = chars.next().unwrap();
+        result.push_str(&regex::escape(&escaped.to_string()));
+      }
       '*' => result.push_str(".*"),
       '@' => result.push_str("[^A-Z]+"),
       _ => result.push_str(&regex::escape(&ch.to_string())),
@@ -2843,6 +2850,10 @@ struct PatternState {
   /// Pairs `(original_capture_name, duplicate_capture_name)` whose captures
   /// must compare equal for the overall match to be accepted.
   constraints: Vec<(String, String)>,
+  /// Whether string literals use the `*`/`@` metacharacter shorthand. Only
+  /// `StringMatchQ` patterns do; every other string function matches string
+  /// literals verbatim.
+  wildcards: bool,
 }
 
 impl PatternState {
@@ -2851,6 +2862,7 @@ impl PatternState {
       first_body: std::collections::HashMap::new(),
       dup_counter: 0,
       constraints: Vec::new(),
+      wildcards: false,
     }
   }
 }
@@ -2868,16 +2880,25 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
 fn string_pattern_to_regex_with_state(
   expr: &Expr,
 ) -> Option<(String, Vec<(String, String)>)> {
+  pattern_to_regex_with_state(expr, PatternState::new())
+}
+
+/// Like `string_pattern_to_regex_with_state`, but for a `StringMatchQ`
+/// pattern, whose string literals use the `*`/`@` metacharacter shorthand
+/// wherever they occur (`"a*" | "b*"`, `x : "a*"`, `"a*" ~~ _`, …).
+fn string_match_pattern_to_regex_with_state(
+  expr: &Expr,
+) -> Option<(String, Vec<(String, String)>)> {
   let mut state = PatternState::new();
-  // A bare string pattern uses Wolfram's metacharacter shorthand (`*` matches
-  // any run, `@` matches one-or-more non-uppercase). Strings nested inside a
-  // compound pattern (StringExpression via `~~`, Shortest, …) match literally,
-  // so this only fires when the whole pattern is a single string.
-  let regex = if let Expr::String(s) = expr {
-    bare_string_metachars_to_regex(s)
-  } else {
-    string_pattern_to_regex_inner(expr, &mut state)?
-  };
+  state.wildcards = true;
+  pattern_to_regex_with_state(expr, state)
+}
+
+fn pattern_to_regex_with_state(
+  expr: &Expr,
+  mut state: PatternState,
+) -> Option<(String, Vec<(String, String)>)> {
+  let regex = string_pattern_to_regex_inner(expr, &mut state)?;
   // Enable the "dot matches newline" flag so blanks (`.`, `.+`, `.*`) and `*`
   // span newlines, matching Wolfram string patterns — e.g. Shortest[___]
   // stripping a multi-line block comment.
@@ -3376,10 +3397,10 @@ fn string_pattern_to_regex_inner(
   seen: &mut PatternState,
 ) -> Option<String> {
   Some(match expr {
-    // A string literal nested inside a compound pattern matches literally —
-    // the `*`/`@` metacharacter shorthand only applies to a bare top-level
-    // string (handled in `string_pattern_to_regex_with_state`). So e.g.
-    // `"/*" ~~ Shortest[___] ~~ "*/"` matches a literal `/*…*/`.
+    // A string literal matches literally (so e.g. `"/*" ~~ Shortest[___] ~~
+    // "*/"` matches a literal `/*…*/`), except in StringMatchQ patterns,
+    // where `*` and `@` are wildcards.
+    Expr::String(s) if seen.wildcards => string_metachars_to_regex(s),
     Expr::String(s) => regex::escape(s),
 
     // Character class patterns and blank patterns

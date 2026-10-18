@@ -2485,6 +2485,63 @@ fn parse_sparse_data(
   Some((rules, shape))
 }
 
+/// Rewrite the single-argument rule forms of `SparseArray` into a plain list
+/// of `position -> value` rules plus an optional background value taken from
+/// a `{_, …, _} -> value` rule. Returns `None` when `data` uses neither form.
+fn sparse_rules_with_background(data: &Expr) -> Option<(Expr, Option<Expr>)> {
+  let as_rule = |e: &Expr| -> Option<(Expr, Expr)> {
+    match e {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => Some((pattern.as_ref().clone(), replacement.as_ref().clone())),
+      _ => None,
+    }
+  };
+  let mut changed = false;
+  let rules: Vec<Expr> = match data {
+    Expr::Rule { .. } => {
+      let (lhs, rhs) = as_rule(data)?;
+      match (&lhs, &rhs) {
+        (Expr::List(keys), Expr::List(vals))
+          if keys.len() == vals.len()
+            && !keys.is_empty()
+            && keys.iter().all(|k| matches!(k, Expr::List(_))) =>
+        {
+          changed = true;
+          keys
+            .iter()
+            .zip(vals.iter())
+            .map(|(k, v)| Expr::Rule {
+              pattern: Box::new(k.clone()),
+              replacement: Box::new(v.clone()),
+            })
+            .collect()
+        }
+        _ => return None,
+      }
+    }
+    Expr::List(items) if items.iter().all(|i| as_rule(i).is_some()) => {
+      items.to_vec()
+    }
+    _ => return None,
+  };
+  let mut background = None;
+  let mut kept = Vec::with_capacity(rules.len());
+  for rule in rules {
+    let (lhs, rhs) = as_rule(&rule)?;
+    let is_blank_position = matches!(&lhs, Expr::List(pos)
+      if !pos.is_empty() && pos.iter().all(|p| expr_to_string(p) == "_"));
+    if is_blank_position {
+      changed = true;
+      background.get_or_insert(rhs);
+    } else {
+      kept.push(rule);
+    }
+  }
+  changed.then(|| (Expr::List(kept.into()), background))
+}
+
 /// Normalize SparseArray arguments to the canonical form
 /// `SparseArray[Automatic, dims, default, rules]`. Accepts:
 ///   SparseArray[rules]                — infer dims from positions
@@ -2507,6 +2564,33 @@ pub fn sparse_array_normalize_ast(
 
   if args.is_empty() || args.len() > 3 {
     return Ok(unevaluated("SparseArray", args));
+  }
+
+  // `SparseArray[{pos1, pos2, …} -> {val1, val2, …}]` pairs positions with
+  // values; a `{_, …, _} -> v` rule sets the background of a call without an
+  // explicit default. Both reduce to the plain rule-list form.
+  if args.len() == 1
+    && let Some(normalized) = sparse_rules_with_background(&args[0])
+  {
+    let mut rewritten = args.to_vec();
+    rewritten.truncate(1);
+    let (rules, background) = normalized;
+    rewritten[0] = rules;
+    if let Some(bg) = background {
+      rewritten.push(Expr::Identifier("Automatic".to_string()));
+      rewritten.push(bg);
+    }
+    if rewritten.len() == 3 {
+      // dims are inferred from the remaining rules
+      let Some((_, inferred)) = parse_sparse_data(&rewritten[0], &rewritten[2])
+      else {
+        return Ok(unevaluated("SparseArray", args));
+      };
+      rewritten[1] = Expr::List(
+        inferred.iter().map(|&n| Expr::Integer(n as i128)).collect(),
+      );
+    }
+    return sparse_array_normalize_ast(&rewritten);
   }
 
   // Band[{i, j}] / Band[{i, j}, {iMax, jMax}] rules need to know the

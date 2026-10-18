@@ -9245,18 +9245,34 @@ fn nd_nest(flat: &[Expr], dims: &[usize]) -> Expr {
 /// The data element at a (possibly out-of-range, per dimension) 1-based
 /// multi-index, extended past the edges: cyclically when `padding` is
 /// `None` (each out-of-range dimension wraps independently), or by
-/// broadcasting the padding value whenever any dimension is out of range.
+/// broadcasting the padding value (or tiling the padding array) whenever any
+/// dimension is out of range.
 fn nd_correlate_element(
   data_flat: &[Expr],
   strides: &[usize],
   dims: &[usize],
   idx: &[i128],
   padding: Option<&Expr>,
+  pad_array: Option<&(Vec<usize>, Vec<Expr>)>,
 ) -> Expr {
   let out_of_range =
     idx.iter().zip(dims).any(|(&i, &n)| i < 1 || i > n as i128);
-  if out_of_range && let Some(p) = padding {
-    return p.clone();
+  if out_of_range {
+    if let Some(pad) = pad_array {
+      // A padding array tiles the plane: index `i` of each dimension takes
+      // padding element `(i - 1) mod L`, as in the 1-D rule.
+      let (pad_dims, pad_flat) = pad;
+      let pad_strides = nd_strides(pad_dims);
+      let mut flat = 0usize;
+      for (d, &i) in idx.iter().enumerate() {
+        flat +=
+          (i - 1).rem_euclid(pad_dims[d] as i128) as usize * pad_strides[d];
+      }
+      return pad_flat[flat].clone();
+    }
+    if let Some(p) = padding {
+      return p.clone();
+    }
   }
   let mut flat = 0usize;
   for (d, &i) in idx.iter().enumerate() {
@@ -9265,6 +9281,33 @@ fn nd_correlate_element(
     flat += wrapped * strides[d];
   }
   data_flat[flat].clone()
+}
+
+/// Fast path for the default `Plus[Times[k, d], …]` combination when every
+/// term is a machine number (at least one a real): the sum is formed
+/// directly instead of building and evaluating a symbolic expression, which
+/// dominates the cost on image-sized arrays. `None` when any term is
+/// something else, or integers only, so the evaluator keeps exact arithmetic.
+fn nd_numeric_dot(
+  terms: &[(Expr, Expr)],
+  g: Option<&Expr>,
+  h: Option<&Expr>,
+) -> Option<Expr> {
+  if g.is_some() || h.is_some() {
+    return None;
+  }
+  let as_f64 = |e: &Expr| match e {
+    Expr::Real(x) => Some(*x),
+    Expr::Integer(n) => Some(*n as f64),
+    _ => None,
+  };
+  let mut any_real = false;
+  let mut sum = 0.0;
+  for (k, d) in terms {
+    any_real |= matches!(k, Expr::Real(_)) || matches!(d, Expr::Real(_));
+    sum += as_f64(k)? * as_f64(d)?;
+  }
+  any_real.then_some(Expr::Real(sum))
 }
 
 /// General N-dimensional `ListCorrelate`/`ListConvolve` overhang form
@@ -9293,9 +9336,18 @@ fn correlate_convolve_overhang_nd(
   if rank < 2 || data_dims.len() != rank {
     return None;
   }
-  if let Some(Expr::List(_)) = padding {
-    return None;
-  }
+  // A list padding must be a rectangular array of the same rank as the data;
+  // it is tiled outwards from the data edges.
+  let pad_array = match padding {
+    Some(p @ Expr::List(_)) => {
+      let (dims, flat) = nd_shape_and_flatten(p)?;
+      if dims.len() != rank || dims.contains(&0) {
+        return None;
+      }
+      Some((dims, flat))
+    }
+    _ => None,
+  };
 
   let norm = |k: i128, m: usize| -> Option<usize> {
     let pos = if k < 0 { m as i128 + 1 + k } else { k };
@@ -9374,14 +9426,19 @@ fn correlate_convolve_overhang_nd(
         data_dims,
         &data_idx,
         padding,
+        pad_array.as_ref(),
       );
       terms.push((ker_flat[ker_flat_idx].clone(), data_val));
     }
     if reverse {
       terms.reverse();
     }
-    let sum = correlate_combine(terms, g, h);
-    let evaluated = evaluate_expr_to_expr(&sum).unwrap_or(sum);
+    let evaluated = if let Some(v) = nd_numeric_dot(&terms, g, h) {
+      v
+    } else {
+      let sum = correlate_combine(terms, g, h);
+      evaluate_expr_to_expr(&sum).unwrap_or(sum)
+    };
     let out_flat_idx: usize = t
       .iter()
       .enumerate()
