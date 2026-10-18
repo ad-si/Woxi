@@ -5070,6 +5070,25 @@ mod solve {
   }
 
   #[test]
+  fn nsolve_polynomial_with_complex_coefficients() {
+    // Every root of a polynomial with non-real coefficients is found, and
+    // each one satisfies the equation.
+    assert_eq!(
+      interpret("Length[NSolve[x^7 + (0.5 + 0.5*I)*x/1.3 + 1 == 0, x]]")
+        .unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret(
+        "r = NSolve[x^5 + (1 - 2*I)*x^2 + 3 == 0, x]; \
+         Max[Abs[(x^5 + (1 - 2*I)*x^2 + 3) /. r]] < 10^-10"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn quadratic_symmetric() {
     assert_eq!(
       interpret("Solve[x^2 - 4 == 0, x]").unwrap(),
