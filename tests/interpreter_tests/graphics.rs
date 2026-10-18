@@ -37013,8 +37013,8 @@ fn plot_filling_covers_domain_where_curve_leaves_plot_range() {
     .split_whitespace()
     .map(|p| p.split(',').next().unwrap().parse().unwrap())
     .collect();
-  let max_x = xs.iter().cloned().fold(f64::MIN, f64::max);
-  let min_x = xs.iter().cloned().fold(f64::MAX, f64::min);
+  let max_x = xs.iter().copied().fold(f64::MIN, f64::max);
+  let min_x = xs.iter().copied().fold(f64::MAX, f64::min);
   // Right of the visible curve (x > 8) the whole height is filled.
   assert!(
     (max_x - right).abs() < 1.5,
