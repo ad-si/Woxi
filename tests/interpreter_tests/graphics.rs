@@ -36913,6 +36913,31 @@ fn explicit_plot_range_clips_content_in_widened_drawing_area() {
 }
 
 #[test]
+fn pane_pads_small_content_to_its_fixed_box() {
+  // Regression: `Pane[content, {w, h}]` reserves the whole box, so content
+  // smaller than it is placed by an explicit `Alignment`, not left in the
+  // top-left corner of its natural size.
+  let centred = export_svg(
+    "Pane[Graphics[Circle[], ImageSize -> {100, 60}], {400, 300}, \
+     Alignment -> {Center, Center}]",
+  );
+  assert!(
+    centred.contains("<svg width=\"400\" height=\"300\""),
+    "{centred}"
+  );
+  assert!(centred.contains("translate(150.0 120.0)"), "{centred}");
+  let default =
+    export_svg("Pane[Graphics[Circle[], ImageSize -> {100, 60}], {400, 300}]");
+  // Without an `Alignment` the content keeps its natural canvas.
+  assert!(!default.contains("<svg width=\"400\""), "{default}");
+  let right = export_svg(
+    "Pane[Graphics[Circle[], ImageSize -> {100, 60}], {400, 300}, \
+     Alignment -> {Right, Bottom}]",
+  );
+  assert!(right.contains("translate(300.0 240.0)"), "{right}");
+}
+
+#[test]
 fn labeled_blank_slot_in_grid_draws_its_caption() {
   // Regression: a control Woxi Studio lifts into its panel leaves `""`
   // behind, and `Labeled["", caption, Left]` then printed as source text
