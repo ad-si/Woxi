@@ -2454,10 +2454,22 @@ pub fn apply_curried_call(
       // `FunctionCall` AST here, not the `NamedFunction`/`Function` value
       // `Function[…]` evaluates to — evaluate it first to get something
       // `apply_curried_call` can invoke.
+      // While a plot probes its body with the plot variables still free, the
+      // fallback would unroll every iteration on those symbols (exponential
+      // in the iteration count), so the call stays unevaluated until it is
+      // sampled with numbers — as with the 2-argument form above.
+      let probing_symbolically = SYMBOLIC_PLOT_PROBE.with(|p| p.get() > 0)
+        && args.iter().any(|arg| {
+          matches!(arg, Expr::Identifier(_) | Expr::FunctionCall { .. })
+        });
       match func_args.iter().find(|a| {
         matches!(a, Expr::NamedFunction { .. } | Expr::Function { .. })
           || matches!(a, Expr::FunctionCall { name, .. } if name == "Function")
       }) {
+        Some(_) if probing_symbolically => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
         Some(pure_fn) => {
           let pure_fn = evaluate_expr_to_expr(pure_fn)?;
           apply_curried_call(&pure_fn, args)

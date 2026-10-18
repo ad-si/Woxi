@@ -701,10 +701,10 @@ fn convolve_pair(
         Some(sigma)
       }
     }
-    (Mu, Power(0)) | (Power(0), Mu) => Some(Expr::FunctionCall {
-      name: "KroneckerDelta".to_string(),
-      args: vec![plus(vec![Expr::Integer(1), neg(m.clone())])].into(),
-    }),
+    (Mu, Power(0)) | (Power(0), Mu) => Some(call1(
+      "KroneckerDelta",
+      plus(vec![Expr::Integer(1), neg(m.clone())]),
+    )),
     (Mu, Power(1)) | (Power(1), Mu) => Some(call1("EulerPhi", m.clone())),
     (Phi, Power(0)) | (Power(0), Phi) => Some(m.clone()),
     (Unknown, Power(0)) if with_divisor_sum => {
@@ -721,16 +721,15 @@ fn convolve_pair(
 fn divisor_sum_expr(body: &Expr, var: &str, m: &Expr) -> Expr {
   let slotted = crate::syntax::substitute_variable(body, var, &Expr::Slot(1));
   let slotted = reorder_slots_last(&slotted);
-  Expr::FunctionCall {
-    name: "DivisorSum".to_string(),
-    args: vec![
+  call(
+    "DivisorSum",
+    vec![
       m.clone(),
       Expr::Function {
         body: Box::new(slotted),
       },
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Wolfram's canonical order sorts bare slots after composite terms
@@ -876,16 +875,15 @@ pub fn dirichlet_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for bt in &b_terms {
       let core = match convolve_pair(at, bt, &var, m, true) {
         Some(c) => c,
-        None => Expr::FunctionCall {
-          name: "DirichletConvolve".to_string(),
-          args: vec![
+        None => call(
+          "DirichletConvolve",
+          vec![
             at.atom_expr.clone(),
             bt.atom_expr.clone(),
             Expr::Identifier(var.clone()),
             m.clone(),
-          ]
-          .into(),
-        },
+          ],
+        ),
       };
       parts.push(scale_by_coeffs(core, at, bt));
     }

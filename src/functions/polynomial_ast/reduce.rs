@@ -1,5 +1,4 @@
 use super::together::negate_expr;
-#[allow(unused_imports)]
 use super::*;
 
 use super::reduce_backend::{
@@ -218,15 +217,9 @@ fn tighten_integer_one_sided(result: &Expr, var: &str) -> Option<Expr> {
     ComparisonOp::LessEqual => (c.floor() as i64, ComparisonOp::LessEqual),
     _ => return None,
   };
-  let element = call(
-    "Element",
-    vec![Expr::Identifier(var.to_string()), id_expr("Integers")],
-  );
+  let element = call("Element", vec![id_expr(var), id_expr("Integers")]);
   let comp = Expr::Comparison {
-    operands: vec![
-      Expr::Identifier(var.to_string()),
-      Expr::Integer(bound as i128),
-    ],
+    operands: vec![id_expr(var), Expr::Integer(bound as i128)],
     operators: vec![out_op],
   };
   Some(and2(element, comp))
@@ -277,10 +270,7 @@ fn enumerate_integer_interval(result: &Expr, var: &str) -> Option<Expr> {
   }
   let terms: Vec<Expr> = (lower..=upper)
     .map(|i| Expr::Comparison {
-      operands: vec![
-        Expr::Identifier(var.to_string()),
-        Expr::Integer(i as i128),
-      ],
+      operands: vec![id_expr(var), Expr::Integer(i as i128)],
       operators: vec![ComparisonOp::Equal],
     })
     .collect();
@@ -468,10 +458,7 @@ fn try_reduce_bounded_integer_filtered(expr: &Expr, var: &str) -> Option<Expr> {
     let evaled = crate::evaluator::evaluate_expr_to_expr(&subst).ok()?;
     if matches!(&evaled, Expr::Identifier(s) if s == "True") {
       terms.push(Expr::Comparison {
-        operands: vec![
-          Expr::Identifier(var.to_string()),
-          Expr::Integer(i as i128),
-        ],
+        operands: vec![id_expr(var), Expr::Integer(i as i128)],
         operators: vec![ComparisonOp::Equal],
       });
     }
@@ -547,11 +534,11 @@ fn try_reduce_bounded_trig(
   if ineqs.is_empty() || !is_trig_equation(&eq, var) {
     return Ok(None);
   }
-  let sols = solve_ast(&[expr.clone(), Expr::Identifier(var.to_string())])?;
+  let sols = solve_ast(&[expr.clone(), id_expr(var)])?;
   let Expr::List(sol_list) = &sols else {
     return Ok(None);
   };
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
   let mut eqs: Vec<Expr> = Vec::new();
   for sol in sol_list {
     let Expr::List(rules) = sol else {
@@ -939,10 +926,7 @@ fn reduce_single_var(
   }
 
   // If expression is already a simple passthrough (like x > 0)
-  Ok(call(
-    "Reduce",
-    vec![expr.clone(), Expr::Identifier(var.to_string())],
-  ))
+  Ok(call("Reduce", vec![expr.clone(), id_expr(var)]))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1032,7 +1016,7 @@ fn try_reduce_linear_parametric(
   if domain.is_some() {
     return Ok(None);
   }
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
   let degree = crate::functions::polynomial_ast::exponent_ast(&[
     expanded.clone(),
     var_expr.clone(),
@@ -1169,7 +1153,7 @@ fn reduce_equation(
     operands: vec![lhs.clone(), rhs.clone()],
     operators: vec![ComparisonOp::Equal],
   };
-  let solve_result = solve_ast(&[eq_expr, Expr::Identifier(var.to_string())])?;
+  let solve_result = solve_ast(&[eq_expr, id_expr(var)])?;
 
   // Convert Solve result (list of rules) to Or of equalities
   if let Expr::List(solutions) = &solve_result {
@@ -1199,8 +1183,7 @@ fn reduce_equation(
               continue;
             }
 
-            equalities
-              .push(make_equality(&Expr::Identifier(var.to_string()), &value));
+            equalities.push(make_equality(&id_expr(var), &value));
           }
         }
       }
@@ -1245,19 +1228,14 @@ fn reduce_equation(
   }
 
   // Return Reduce unevaluated
-  Ok(Expr::FunctionCall {
-    name: "Reduce".to_string(),
-    args: if let Some(dom) = domain {
-      vec![
-        make_equality(lhs, rhs),
-        Expr::Identifier(var.to_string()),
-        Expr::Identifier(dom.to_string()),
-      ]
-      .into()
+  Ok(call(
+    "Reduce",
+    if let Some(dom) = domain {
+      vec![make_equality(lhs, rhs), id_expr(var), id_expr(dom)]
     } else {
-      vec![make_equality(lhs, rhs), Expr::Identifier(var.to_string())].into()
+      vec![make_equality(lhs, rhs), id_expr(var)]
     },
-  })
+  ))
 }
 
 /// Reduce a != b for variable var.
@@ -1342,9 +1320,8 @@ fn try_reduce_arc_degrees(
     make_compound_inequality(&low, op1, var, op2, &high)
   };
   // Helper: simple comparison `var op c`.
-  let simple = |op: CompOp, c: Expr| -> Expr {
-    make_comparison(&Expr::Identifier(var.to_string()), &c, op)
-  };
+  let simple =
+    |op: CompOp, c: Expr| -> Expr { make_comparison(&id_expr(var), &c, op) };
 
   // Build the result. Only `>` audit cases for now — that's the documented
   // basic example for every ArcXxxDegrees function.
@@ -1447,10 +1424,7 @@ fn reduce_inequality(
       // Return unevaluated
       Ok(call(
         "Reduce",
-        vec![
-          make_comparison(lhs, rhs, op),
-          Expr::Identifier(var.to_string()),
-        ],
+        vec![make_comparison(lhs, rhs, op), id_expr(var)],
       ))
     }
   }
@@ -1715,26 +1689,21 @@ fn reduce_linear_inequality(
     let final_op = if *ai < 0 { flip_op(op) } else { op };
 
     let _ = domain;
-    return make_comparison(
-      &Expr::Identifier(var.to_string()),
-      &bound,
-      final_op,
-    );
+    return make_comparison(&id_expr(var), &bound, final_op);
   }
 
   // Symbolic coefficient — can't determine sign, return unevaluated
-  Expr::FunctionCall {
-    name: "Reduce".to_string(),
-    args: vec![
+  call(
+    "Reduce",
+    vec![
       make_comparison(
-        &plus2(times2(a, Expr::Identifier(var.to_string())), b),
+        &plus2(times2(a, id_expr(var)), b),
         &Expr::Integer(0),
         op,
       ),
-      Expr::Identifier(var.to_string()),
-    ]
-    .into(),
-  }
+      id_expr(var),
+    ],
+  )
 }
 
 /// Reduce a quadratic inequality (a*x^2 + b*x + c op 0)
@@ -1784,10 +1753,7 @@ fn reduce_quadratic_inequality(
         if domain == Some("Reals") {
           bool_expr(true)
         } else {
-          call(
-            "Element",
-            vec![Expr::Identifier(var.to_string()), id_expr("Reals")],
-          )
+          call("Element", vec![id_expr(var), id_expr("Reals")])
         }
       } else {
         bool_expr(false)
@@ -1800,44 +1766,32 @@ fn reduce_quadratic_inequality(
       // If a > 0: poly = a*(x - r)^2 >= 0, equals 0 at r
       let _ = domain;
       return match op {
-        CompOp::Equal => {
-          make_equality(&Expr::Identifier(var.to_string()), &root)
-        }
+        CompOp::Equal => make_equality(&id_expr(var), &root),
         CompOp::GreaterEqual if ai > 0 => {
           if domain == Some("Reals") {
             bool_expr(true)
           } else {
-            call(
-              "Element",
-              vec![Expr::Identifier(var.to_string()), id_expr("Reals")],
-            )
+            call("Element", vec![id_expr(var), id_expr("Reals")])
           }
         }
         CompOp::Greater if ai > 0 => Expr::Comparison {
-          operands: vec![Expr::Identifier(var.to_string()), root],
+          operands: vec![id_expr(var), root],
           operators: vec![ComparisonOp::NotEqual],
         },
-        CompOp::LessEqual if ai > 0 => {
-          make_equality(&Expr::Identifier(var.to_string()), &root)
-        }
+        CompOp::LessEqual if ai > 0 => make_equality(&id_expr(var), &root),
         CompOp::Less if ai > 0 => bool_expr(false),
         CompOp::LessEqual if ai < 0 => {
           if domain == Some("Reals") {
             bool_expr(true)
           } else {
-            call(
-              "Element",
-              vec![Expr::Identifier(var.to_string()), id_expr("Reals")],
-            )
+            call("Element", vec![id_expr(var), id_expr("Reals")])
           }
         }
         CompOp::Less if ai < 0 => Expr::Comparison {
-          operands: vec![Expr::Identifier(var.to_string()), root],
+          operands: vec![id_expr(var), root],
           operators: vec![ComparisonOp::NotEqual],
         },
-        CompOp::GreaterEqual if ai < 0 => {
-          make_equality(&Expr::Identifier(var.to_string()), &root)
-        }
+        CompOp::GreaterEqual if ai < 0 => make_equality(&id_expr(var), &root),
         CompOp::Greater if ai < 0 => bool_expr(false),
         _ => bool_expr(false),
       };
@@ -1869,31 +1823,15 @@ fn reduce_quadratic_inequality(
       (CompOp::Greater, true) | (CompOp::Less, false) => {
         // x < r1 || x > r2
         build_or(vec![
-          make_comparison(
-            &Expr::Identifier(var.to_string()),
-            &r1,
-            CompOp::Less,
-          ),
-          make_comparison(
-            &Expr::Identifier(var.to_string()),
-            &r2,
-            CompOp::Greater,
-          ),
+          make_comparison(&id_expr(var), &r1, CompOp::Less),
+          make_comparison(&id_expr(var), &r2, CompOp::Greater),
         ])
       }
       (CompOp::GreaterEqual, true) | (CompOp::LessEqual, false) => {
         // x <= r1 || x >= r2
         build_or(vec![
-          make_comparison(
-            &Expr::Identifier(var.to_string()),
-            &r1,
-            CompOp::LessEqual,
-          ),
-          make_comparison(
-            &Expr::Identifier(var.to_string()),
-            &r2,
-            CompOp::GreaterEqual,
-          ),
+          make_comparison(&id_expr(var), &r1, CompOp::LessEqual),
+          make_comparison(&id_expr(var), &r2, CompOp::GreaterEqual),
         ])
       }
       (CompOp::Less, true) | (CompOp::Greater, false) => {
@@ -1916,10 +1854,7 @@ fn reduce_quadratic_inequality(
     // Non-integer coefficients — return unevaluated
     call(
       "Reduce",
-      vec![
-        minus2(poly.clone(), Expr::Integer(0)),
-        Expr::Identifier(var.to_string()),
-      ],
+      vec![minus2(poly.clone(), Expr::Integer(0)), id_expr(var)],
     )
   }
 }
@@ -1991,8 +1926,7 @@ fn try_factor_and_reduce_inequality(
     operands: vec![lhs.clone(), rhs.clone()],
     operators: vec![ComparisonOp::Equal],
   };
-  let solve_result =
-    solve_ast(&[eq, Expr::Identifier(var.to_string())]).ok()?;
+  let solve_result = solve_ast(&[eq, id_expr(var)]).ok()?;
 
   if let Expr::List(solutions) = &solve_result {
     let mut roots: Vec<(Expr, f64)> = Vec::new();
@@ -2040,7 +1974,7 @@ fn try_factor_and_reduce_inequality(
       let sign = eval_poly_at(&poly, var, test_x);
       if sign_matches(sign, op) {
         intervals.push(make_comparison(
-          &Expr::Identifier(var.to_string()),
+          &id_expr(var),
           &roots[0].0,
           if inclusive {
             CompOp::LessEqual
@@ -2054,8 +1988,7 @@ fn try_factor_and_reduce_inequality(
     // Test at roots (for <= and >=)
     if matches!(op, CompOp::LessEqual | CompOp::GreaterEqual | CompOp::Equal) {
       for (root_expr, _) in &roots {
-        intervals
-          .push(make_equality(&Expr::Identifier(var.to_string()), root_expr));
+        intervals.push(make_equality(&id_expr(var), root_expr));
       }
     }
 
@@ -2089,7 +2022,7 @@ fn try_factor_and_reduce_inequality(
       let sign = eval_poly_at(&poly, var, test_x);
       if sign_matches(sign, op) {
         intervals.push(make_comparison(
-          &Expr::Identifier(var.to_string()),
+          &id_expr(var),
           &roots.last().unwrap().0,
           if inclusive {
             CompOp::GreaterEqual
@@ -2562,7 +2495,7 @@ fn reduce_combined_inequalities(
       } else {
         CompOp::Greater
       };
-      return Ok(make_comparison(&Expr::Identifier(var.to_string()), low, op));
+      return Ok(make_comparison(&id_expr(var), low, op));
     }
     (None, Some((high, high_inc))) => {
       let op = if *high_inc {
@@ -2570,11 +2503,7 @@ fn reduce_combined_inequalities(
       } else {
         CompOp::Less
       };
-      return Ok(make_comparison(
-        &Expr::Identifier(var.to_string()),
-        high,
-        op,
-      ));
+      return Ok(make_comparison(&id_expr(var), high, op));
     }
     (None, None) => {}
   }
@@ -3371,25 +3300,22 @@ fn reduce_multi_var_and_inner(
   }
 
   // No equation found to solve — return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "Reduce".to_string(),
-    args: {
-      let combined = constraints
-        .iter()
-        .skip(1)
-        .fold(constraints[0].clone(), |acc, c| and2(acc, c.clone()));
-      let vars_expr = if vars.len() == 1 {
-        Expr::Identifier(vars[0].clone())
-      } else {
-        Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect())
-      };
-      if let Some(dom) = domain {
-        vec![combined, vars_expr, Expr::Identifier(dom.to_string())].into()
-      } else {
-        vec![combined, vars_expr].into()
-      }
-    },
-  })
+  Ok(call("Reduce", {
+    let combined = constraints
+      .iter()
+      .skip(1)
+      .fold(constraints[0].clone(), |acc, c| and2(acc, c.clone()));
+    let vars_expr = if vars.len() == 1 {
+      Expr::Identifier(vars[0].clone())
+    } else {
+      Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect())
+    };
+    if let Some(dom) = domain {
+      vec![combined, vars_expr, id_expr(dom)]
+    } else {
+      vec![combined, vars_expr]
+    }
+  }))
 }
 
 /// Check if a value is in a given domain.
@@ -3902,10 +3828,6 @@ fn extract_x_y_coeffs(e: &Expr, vars: &[String]) -> Option<(Expr, Expr)> {
 }
 
 fn call_coefficient(e: &Expr, var: &str, n: i128) -> Option<Expr> {
-  let args = vec![
-    e.clone(),
-    Expr::Identifier(var.to_string()),
-    Expr::Integer(n),
-  ];
+  let args = vec![e.clone(), id_expr(var), Expr::Integer(n)];
   super::coefficient_ast(&args).ok()
 }

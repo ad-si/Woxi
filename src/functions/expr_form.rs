@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::rat_reduce;
 
@@ -269,7 +268,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
         for (i, op) in operands.iter().enumerate() {
           children.push(op.clone());
           if i < operators.len() {
-            children.push(Expr::Identifier(op_name(&operators[i]).to_string()));
+            children.push(id_expr(op_name(&operators[i])));
           }
         }
         ExprForm::Composite {
@@ -371,14 +370,13 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       head,
       default,
     } => {
-      let blank = Expr::FunctionCall {
-        name: "Blank".to_string(),
-        args: head
+      let blank = call(
+        "Blank",
+        head
           .as_ref()
           .map(|h| vec![Expr::Identifier(h.clone())])
-          .unwrap_or_default()
-          .into(),
-      };
+          .unwrap_or_default(),
+      );
       // `_.` is `Optional[Blank[]]`; only a named `x_.` wraps in `Pattern`.
       let pattern = if name.is_empty() {
         blank

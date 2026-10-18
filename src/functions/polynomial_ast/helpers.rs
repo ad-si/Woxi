@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 // ─── helpers ────────────────────────────────────────────────────────
@@ -119,17 +118,16 @@ pub fn make_compound_inequality(
     CompOp::GreaterEqual => "GreaterEqual",
     _ => "Less",
   };
-  Expr::FunctionCall {
-    name: "Inequality".to_string(),
-    args: vec![
+  call(
+    "Inequality",
+    vec![
       low.clone(),
-      Expr::Identifier(op1_name.to_string()),
-      Expr::Identifier(var.to_string()),
-      Expr::Identifier(op2_name.to_string()),
+      id_expr(op1_name),
+      id_expr(var),
+      id_expr(op2_name),
       high.clone(),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Build an Or expression from a list of terms.

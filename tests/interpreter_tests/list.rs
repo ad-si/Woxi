@@ -11042,6 +11042,36 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_graph_traversal() {
+    // A graph from unordered pairs: two components, a path 1-3-6 hanging off
+    // the triangle 1-2-3.
+    assert_eq!(
+      interpret(
+        "g = Combinatorica`FromUnorderedPairs[{{1,2},{2,3},{3,1},{4,5},{3,6}}]; \
+         {Combinatorica`V[g], Combinatorica`ToAdjacencyLists[g], \
+          Combinatorica`ConnectedComponents[g], \
+          Combinatorica`BreadthFirstTraversal[g, 1], \
+          Combinatorica`ShortestPath[g, 1, 6], \
+          Combinatorica`ShortestPath[g, 1, 5]}"
+      )
+      .unwrap(),
+      "{6, {{2, 3}, {1, 3}, {1, 2, 6}, {5}, {4}, {3}}, {{1, 2, 3, 6}, {4, 5}}, {1, 2, 3, 6}, {1, 3, 6}, {}}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_graph_functions_by_bare_name_once_loaded() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; g = FromUnorderedPairs[{{1,2},{2,3}}]; \
+         {V[g], ConnectedComponents[g], ShortestPath[g, 1, 3]}"
+      )
+      .unwrap(),
+      "{3, {{1, 2, 3}}, {1, 2, 3}}"
+    );
+  }
+
+  #[test]
   fn combinatorica_unrank_permutation_matches_lexicographic_order() {
     // Combinatorica`UnrankPermutation[r, l] gives the r-th permutation of
     // `l` in lexicographic order, 1-indexed (r runs from 1 through

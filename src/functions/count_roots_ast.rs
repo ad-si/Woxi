@@ -12,7 +12,6 @@
 //! Non-polynomial input (transcendental functions, complex rectangle bounds,
 //! Real-valued bounds) returns the call unevaluated.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::rat_reduce_bigint;
 use num_traits::{One, Signed, Zero};
@@ -357,7 +356,7 @@ fn rat_from_expr(e: &Expr) -> Option<Rat> {
 fn poly_from(f: &Expr, var: &str) -> Option<Poly> {
   let coeff_list = crate::evaluator::evaluate_expr_to_expr(&call(
     "CoefficientList",
-    vec![f.clone(), Expr::Identifier(var.to_string())],
+    vec![f.clone(), id_expr(var)],
   ))
   .ok()?;
   let Expr::List(items) = &coeff_list else {

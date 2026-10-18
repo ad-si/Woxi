@@ -1,7 +1,6 @@
 use super::coefficient::collect_additive_terms;
 use super::coefficient::term_var_power_and_coeff;
 use super::expand::expand_and_combine;
-#[allow(unused_imports)]
 use super::*;
 
 /// Decompose[poly, x] - decompose a polynomial into a composition of simpler polynomials.
@@ -245,12 +244,9 @@ fn rational_coeffs_to_expr(coeffs: &[Rat], var: &str) -> Expr {
     let var_part = if i == 0 {
       None
     } else if i == 1 {
-      Some(Expr::Identifier(var.to_string()))
+      Some(id_expr(var))
     } else {
-      Some(pow2(
-        Expr::Identifier(var.to_string()),
-        Expr::Integer(i as i128),
-      ))
+      Some(pow2(id_expr(var), Expr::Integer(i as i128)))
     };
 
     let term = match var_part {

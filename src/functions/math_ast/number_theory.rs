@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use num_traits::{Signed, Zero};
 use std::cell::RefCell;
@@ -8784,7 +8783,7 @@ fn six_j_symbol_symbolic(
     }
     let forced_value = Expr::Integer(v_2j / 2);
     let cond = Expr::Comparison {
-      operands: vec![Expr::Identifier(sym_name.to_string()), forced_value],
+      operands: vec![id_expr(sym_name), forced_value],
       operators: vec![ComparisonOp::Equal],
     };
     branches.push(Expr::List(vec![value, cond].into()));

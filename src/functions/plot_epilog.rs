@@ -7,7 +7,6 @@
 //! transform as the axis labels and dash overlays) and injected just
 //! before `</svg>`.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::graphics::{Color, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
@@ -642,8 +641,13 @@ fn render_item(
           }
         }
       }
-      "Text" if args.len() >= 2 => {
-        if let Some((x, y)) = anchor2(&args[1], area) {
+      "Text" if !args.is_empty() => {
+        // `Text[label]` sits at the origin, as in `Graphics`.
+        let anchor = match args.get(1) {
+          Some(pos) => anchor2(pos, area),
+          None => Some((0.0, 0.0)),
+        };
+        if let Some((x, y)) = anchor {
           // `Framed[content, opts…]` boxes the label: a panel behind it and
           // a border around it, both drawn before the text so the text sits
           // on top. Peeling it off first leaves the `Style[…]` it usually
@@ -759,10 +763,7 @@ fn render_item(
         render_item(&text, style, area, out);
       }
       "Inset" if args.len() >= 2 && is_text_inset(&args[0]) => {
-        let text = Expr::FunctionCall {
-          name: "Text".to_string(),
-          args: vec![args[0].clone(), args[1].clone()].into(),
-        };
+        let text = call("Text", vec![args[0].clone(), args[1].clone()]);
         render_item(&text, style, area, out);
       }
       "Inset" if !args.is_empty() => {
@@ -789,6 +790,10 @@ fn render_item(
           apply_directive(d, &mut scoped);
         }
         render_item(&args[0], &mut scoped, area, out);
+      }
+      // `Tooltip[prim, tip]` draws `prim`; the tip only shows on hover.
+      "Tooltip" if !args.is_empty() => {
+        render_item(&args[0], style, area, out);
       }
       // An unrecognized head may be a user-defined helper (e.g. a
       // Demonstration's own `spring[t, b, s]`/`coil[th]` drawing a custom

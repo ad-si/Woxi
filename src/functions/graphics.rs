@@ -4034,7 +4034,10 @@ fn graphics_text_content(expr: &Expr) -> String {
     // typesets to, the same as `Subscript`/`Superscript` below, instead of
     // drawing the private-use markers and box source literally.
     Expr::String(s) if s.contains(crate::functions::string_ast::BOX_START) => {
-      inline_box_label_runs(s, false).map_or_else(|| s.clone(), |runs| flatten_label_runs(&runs))
+      MARK_UNMAPPED_SUBSCRIPTS.with(|flag| flag.set(true));
+      let runs = inline_box_label_runs(s, false);
+      MARK_UNMAPPED_SUBSCRIPTS.with(|flag| flag.set(false));
+      runs.map_or_else(|| s.clone(), |runs| flatten_label_runs(&runs))
     }
     Expr::String(s) => s.clone(),
     // Text inside a picture is typeset, not printed: a mathematical
@@ -8104,7 +8107,17 @@ pub(crate) fn svg_escape(s: &str) -> String {
     .replace('<', "&lt;")
     .replace('>', "&gt;")
     .replace('"', "&quot;");
-  render_math_letterlike_glyphs(&escaped)
+  let escaped = render_math_letterlike_glyphs(&escaped);
+  if escaped.contains(SUBSCRIPT_START) {
+    escaped
+      .replace(
+        SUBSCRIPT_START,
+        "<tspan baseline-shift=\"sub\" font-size=\"70%\">",
+      )
+      .replace(SUBSCRIPT_END, "</tspan>")
+  } else {
+    escaped
+  }
 }
 
 /// Character ranges of `text` that `content`'s nested `Style[…, Italic]`
@@ -10378,12 +10391,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // In Wolfram a `Graphics` expression stays an expression, so a picture
   // held in a variable can be layered by a later `Show` — without this the
   // primitives are gone and `Show[…, g, …]` silently drops `g`.
-  let structure = Expr::FunctionCall {
-    name: "Graphics".to_string(),
-    args: std::iter::once(content)
+  let structure = call(
+    "Graphics",
+    std::iter::once(content)
       .chain(args[1..].iter().cloned())
       .collect(),
-  };
+  );
   Ok(crate::graphics_result_with_structure(svg, structure))
 }
 
@@ -13964,14 +13977,27 @@ pub const STYLED_LABEL_MARKER: char = '\u{E000}';
 /// The label string for an axis label: a `Style[label, Italic, …]` carries
 /// its font directives as ready-made markup, anything else is its plain text.
 pub fn styled_axis_label(e: &Expr) -> Option<String> {
-  if let Expr::FunctionCall { name, args } = e
-    && name == "Style"
-    && args.len() >= 2
-    && !style_directives_to_svg_attrs(&args[1..]).is_empty()
-  {
+  if contains_visible_style(e) {
     return Some(format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e)));
   }
   crate::functions::chart::expr_to_label(e)
+}
+
+/// Whether `e` is, or (inside a `Row`) holds, a `Style[label, …]` whose
+/// directives change how the text is drawn — `Row[{Style["a", Red], " b"}]`
+/// is a label whose colour a plain-text label would lose.
+fn contains_visible_style(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Style" => {
+      (args.len() >= 2 && !style_directives_to_svg_attrs(&args[1..]).is_empty())
+        || args.first().is_some_and(contains_visible_style)
+    }
+    Expr::FunctionCall { name, args } if name == "Row" => match args.first() {
+      Some(Expr::List(items)) => items.iter().any(contains_visible_style),
+      _ => false,
+    },
+    _ => false,
+  }
 }
 
 /// [`box_string_to_svg`] for a label drawn in a graphic whose user space is
@@ -15019,10 +15045,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Expr::List(legends.into())
   };
-  Ok(Expr::FunctionCall {
-    name: "Legended".to_string(),
-    args: vec![shown, legend].into(),
-  })
+  Ok(call("Legended", vec![shown, legend]))
 }
 
 fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -16317,8 +16340,33 @@ fn parse_divider_entry(expr: &Expr) -> Option<Color> {
       // True means draw with default color — use a sentinel black
       Some(Color::new(0.0, 0.0, 0.0))
     }
+    // A line-style directive (`Thin`, `Thick`, `Dashed`, …) says how to draw
+    // the divider, not whether to, so it rules in the default colour.
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "Thickness" | "AbsoluteThickness" | "Dashing" | "AbsoluteDashing"
+      ) =>
+    {
+      Some(Color::new(0.0, 0.0, 0.0))
+    }
+    // `Directive[Red, Thick]` or `{Red, Thick}`: the colour if there is one.
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      Some(first_divider_color(args))
+    }
+    Expr::List(items) if !items.is_empty() => {
+      parse_color(expr).or_else(|| Some(first_divider_color(items)))
+    }
     _ => parse_color(expr),
   }
+}
+
+/// The first colour among style directives, black when none names one.
+fn first_divider_color(items: &[Expr]) -> Color {
+  items
+    .iter()
+    .find_map(parse_color)
+    .unwrap_or_else(|| Color::new(0.0, 0.0, 0.0))
 }
 
 /// A `position -> spec` rule from a `Dividers` option: the line position
@@ -20665,6 +20713,8 @@ fn resolve_display_item(expr: &Expr) -> Expr {
         }
       }
       Some(("EventHandler", content)) => current = content.clone(),
+      // `Tooltip[expr, hint]` draws as `expr`; the hint shows only on hover.
+      Some(("Tooltip", content)) => current = content.clone(),
       _ => break,
     }
     current = unwrap_display_wrappers(&current);
@@ -20742,25 +20792,23 @@ pub(crate) fn style_pushed_into_layout(
       && !args.is_empty()
     {
       let mut new_args: Vec<Expr> = args.iter().cloned().collect();
-      new_args[0] = Expr::FunctionCall {
-        name: "Style".to_string(),
-        args: std::iter::once(args[0].clone())
+      new_args[0] = call(
+        "Style",
+        std::iter::once(args[0].clone())
           .chain(directives.iter().cloned())
-          .collect::<Vec<_>>()
-          .into(),
-      };
+          .collect(),
+      );
       return Expr::FunctionCall {
         name: name.clone(),
         args: new_args.into(),
       };
     }
-    Expr::FunctionCall {
-      name: "Style".to_string(),
-      args: std::iter::once(e.clone())
+    call(
+      "Style",
+      std::iter::once(e.clone())
         .chain(directives.iter().cloned())
-        .collect::<Vec<_>>()
-        .into(),
-    }
+        .collect(),
+    )
   };
   // A `Grid`'s items are rows of cells; everything else is a flat list.
   let styled: Vec<Expr> = items
@@ -21201,10 +21249,7 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
         } else {
           line
         };
-        Expr::FunctionCall {
-          name: "Row".to_string(),
-          args: vec![Expr::List(line.into())].into(),
-        }
+        call1("Row", Expr::List(line.into()))
       })
       .collect();
     return column_to_svg(&[Expr::List(rows.into())]);
@@ -22032,10 +22077,7 @@ fn rebuild_grid(opts: &[Expr], rows: Vec<Vec<Expr>>) -> Expr {
     rows.into_iter().map(|r| Expr::List(r.into())).collect(),
   )];
   args.extend(opts.iter().cloned());
-  Expr::FunctionCall {
-    name: "Grid".to_string(),
-    args: args.into(),
-  }
+  call("Grid", args)
 }
 
 /// Column widths of the cells' natural renderings, given a cell's width.
@@ -22545,9 +22587,9 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("DropShadowing", args));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "DropShadowing".to_string(),
-    args: vec![
+  Ok(call(
+    "DropShadowing",
+    vec![
       offset.unwrap_or_else(|| {
         Expr::List(vec![Expr::Integer(-3), Expr::Integer(-3)].into())
       }),
@@ -22561,9 +22603,8 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ],
         )
       }),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// LinearGradientFilling[...] - normalizes gradient color specifications
@@ -28226,24 +28267,18 @@ fn linearize_fraction_boxes(e: &Expr) -> Expr {
             if name == "RowBox"
               && matches!(args.first(), Some(Expr::List(items)) if items.len() > 1) =>
           {
-            Expr::FunctionCall {
-              name: "RowBox".to_string(),
-              args: vec![Expr::List(
-                vec![str_expr("("), b.clone(), str_expr(")")].into(),
-              )]
-              .into(),
-            }
+            call1(
+              "RowBox",
+              Expr::List(vec![str_expr("("), b.clone(), str_expr(")")].into()),
+            )
           }
           _ => b,
         }
       };
-      Expr::FunctionCall {
-        name: "RowBox".to_string(),
-        args: vec![Expr::List(
-          vec![side(&args[0]), str_expr("/"), side(&args[1])].into(),
-        )]
-        .into(),
-      }
+      call1(
+        "RowBox",
+        Expr::List(vec![side(&args[0]), str_expr("/"), side(&args[1])].into()),
+      )
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -28275,10 +28310,7 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
 /// The formatted text of a number-formatting wrapper (`NumberForm[x, n]`,
 /// …), via `ToString`; `None` when it does not reduce to plain text.
 fn number_form_text(expr: &Expr) -> Option<String> {
-  let call = Expr::FunctionCall {
-    name: "ToString".to_string(),
-    args: vec![expr.clone()].into(),
-  };
+  let call = call1("ToString", expr.clone());
   match evaluate_expr_to_expr(&call) {
     Ok(Expr::String(ref s)) if !s.starts_with(|c: char| c.is_alphabetic()) => {
       Some(s.clone())
@@ -28952,6 +28984,18 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
   Some(runs)
 }
 
+thread_local! {
+  /// Set while a picture label is flattened to text: a subscript with a
+  /// letter Unicode has no subscript form for (a capital, as in `F_N`) is
+  /// then wrapped in [`SUBSCRIPT_START`]/[`SUBSCRIPT_END`] so the SVG writer
+  /// can lower it with a `<tspan>` instead of leaving it at full size.
+  static MARK_UNMAPPED_SUBSCRIPTS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+const SUBSCRIPT_START: char = '\u{E0F2}';
+const SUBSCRIPT_END: char = '\u{E0F3}';
+
 /// Build the runs for a `Subscript`/`Superscript`: the base rendered in the
 /// inherited style, followed by each remaining argument folded into Unicode
 /// sub-/superscript glyphs (which have no italic variant, so they stay
@@ -28961,6 +29005,8 @@ fn script_runs(
   italic: bool,
   superscript: bool,
 ) -> Vec<LabelRun> {
+  let mark =
+    !superscript && MARK_UNMAPPED_SUBSCRIPTS.with(std::cell::Cell::get);
   let mut runs = args
     .first()
     .map(|a| manipulate_label_runs(a, italic))
@@ -28969,10 +29015,16 @@ fn script_runs(
     .iter()
     .skip(1)
     .map(|a| {
-      to_unicode_script(
-        &flatten_label_runs(&manipulate_label_runs(a, false)),
-        superscript,
-      )
+      let text = flatten_label_runs(&manipulate_label_runs(a, false));
+      if mark
+        && text
+          .chars()
+          .any(|c| unicode_script_char(c, false).is_none())
+      {
+        format!("{SUBSCRIPT_START}{text}{SUBSCRIPT_END}")
+      } else {
+        to_unicode_script(&text, superscript)
+      }
     })
     .collect();
   if !script.is_empty() {
@@ -29939,8 +29991,12 @@ fn parse_manipulate_control(
       // keep its code so the frontend can rebuild the choices whenever the
       // other control moves. A `Dynamic[…]` wrapper is stripped first (see
       // `unwrap_dynamic_choices`) so the kept code re-evaluates cleanly too.
+      // An explicit `Dynamic[…]` list is live even when it names no sibling
+      // control: it may follow a free variable the body assigns itself
+      // (`Dynamic[Range[depthMax]]` with `depthMax = 4` set per mode).
       let values_code = (bounds.len() == 1
-        && expr_references_any(unwrap_dynamic_choices(bounds[0]), siblings))
+        && (matches!(bounds[0], Expr::FunctionCall { name, .. } if name == "Dynamic")
+          || expr_references_any(unwrap_dynamic_choices(bounds[0]), siblings)))
       .then(|| {
         crate::syntax::expr_to_source_form(unwrap_dynamic_choices(bounds[0]))
       });
