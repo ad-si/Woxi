@@ -306,7 +306,7 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(r#"PolyhedronData["Properties"]"#).unwrap(),
       "{Circumradius, Classes, EdgeCount, EdgeIndices, FaceCount, \
-       FaceCountRules, FaceIndices, Faces, Inradius, Insphere, Midradius, Name, NetFaces, \
+       FaceCountRules, FaceIndices, Faces, Inradius, Insphere, Midradius, Name, NetCoordinates, NetFaceIndices, NetFaces, \
        Skeleton, SkeletonGraph, SurfaceArea, VertexCoordinates, VertexCount, Volume}"
     );
   }
@@ -462,7 +462,7 @@ mod polyhedron_data_tests {
       interpret("PolyhedronData[All]").unwrap(),
       "{AcuteGoldenRhombohedron, BilinskiDodecahedron, Cube, Cuboctahedron, DeltoidalHexecontahedron, \
        DisdyakisTriacontahedron, Dodecahedron, GreatIcosahedron, GreatRhombicosidodecahedron, \
-       GreatStellatedDodecahedron, Icosahedron, \
+       GreatStellatedDodecahedron, GyroelongatedSquareDipyramid, Icosahedron, \
        Icosidodecahedron, ObtuseGoldenRhombohedron, Octahedron, PentakisDodecahedron, \
        RhombicDodecahedron, RhombicHexecontahedron, RhombicIcosahedron, \
        RhombicTriacontahedron, SmallRhombicosidodecahedron, \
@@ -1330,6 +1330,77 @@ mod polyhedron_data_tests {
       )
       .unwrap(),
       "{1, 1}"
+    );
+  }
+
+  // Johnson solid J17: a square antiprism capped by two square pyramids.
+  #[test]
+  fn polyhedron_data_gyroelongated_square_dipyramid() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["GyroelongatedSquareDipyramid", "VertexCount"],
+           PolyhedronData["GyroelongatedSquareDipyramid", "EdgeCount"],
+           PolyhedronData["GyroelongatedSquareDipyramid", "FaceCount"],
+           PolyhedronData["GyroelongatedSquareDipyramid", "SurfaceArea"]}"#
+      )
+      .unwrap(),
+      "{10, 24, 16, 4*Sqrt[3]}"
+    );
+  }
+
+  #[test]
+  fn polyhedron_data_gyroelongated_square_dipyramid_unit_edges() {
+    assert_eq!(
+      interpret(
+        r#"Module[{v = N[PolyhedronData["GyroelongatedSquareDipyramid", "VertexCoordinates"]],
+              f = PolyhedronData["GyroelongatedSquareDipyramid", "FaceIndices"]},
+          Union[Flatten[Table[Round[Norm[v[[t[[i]]]] - v[[t[[Mod[i, 3] + 1]]]]], 10^-9],
+            {t, f}, {i, 3}]]]]"#
+      )
+      .unwrap(),
+      "{1}"
+    );
+  }
+
+  #[test]
+  fn polyhedron_data_gyroelongated_square_dipyramid_volume() {
+    assert_eq!(
+      interpret(
+        r#"Module[{v = N[PolyhedronData["GyroelongatedSquareDipyramid", "VertexCoordinates"]],
+              f = PolyhedronData["GyroelongatedSquareDipyramid", "FaceIndices"]},
+          Round[Total[Map[(v[[#[[1]]]] . Cross[v[[#[[2]]]], v[[#[[3]]]]])/6 &, f]]
+            - N[PolyhedronData["GyroelongatedSquareDipyramid", "Volume"]], 10^-9]]"#
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  // The net is a planar strip of 16 unit triangles over 18 points, as used
+  // by the Wolfram Demonstrations dissecting nets.
+  #[test]
+  fn polyhedron_data_net_coordinates_and_face_indices() {
+    assert_eq!(
+      interpret(
+        r#"{Length[PolyhedronData["GyroelongatedSquareDipyramid", "NetCoordinates"]],
+           Length[PolyhedronData["GyroelongatedSquareDipyramid", "NetFaceIndices"]],
+           PolyhedronData["GyroelongatedSquareDipyramid", "NetCoordinates"][[2]]}"#
+      )
+      .unwrap(),
+      "{18, 16, {1/2, Sqrt[3]/2}}"
+    );
+  }
+
+  // Solids without a predefined net derive the properties from "NetFaces".
+  #[test]
+  fn polyhedron_data_net_properties_match_net_faces() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["Cube", "NetCoordinates"] == PolyhedronData["Cube", "NetFaces"][[1]],
+           PolyhedronData["Cube", "NetFaceIndices"] == PolyhedronData["Cube", "NetFaces"][[2, 1]]}"#
+      )
+      .unwrap(),
+      "{True, True}"
     );
   }
 }

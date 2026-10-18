@@ -4912,6 +4912,15 @@ a `GraphicsComplex` over de-duplicated 2D points (the shape a Demonstration
 indexing `p[[1, #]] & /@ p[[2, 1]]` expects) — inferred from that usage, not
 checked directly.
 
+### `PolyhedronData["GyroelongatedSquareDipyramid", …]` ordering is unverified
+
+The vertex/face order and orientation of the solid are built without access to
+`wolframscript` and may differ from Wolfram's; `Circumradius`, `Inradius` and
+`Midradius` are `Missing["NotApplicable"]`. The `"NetCoordinates"` lattice is
+the strip layout a Demonstration caches, but `"NetFaceIndices"` (16 triangles:
+an 8-triangle strip plus a row of 4 above and 4 below) was inferred from how
+that Demonstration folds the net, so its face numbering is not checked directly.
+
 ### `PolyhedronData["SmallStellatedDodecahedron", …]` vertex/face ordering is unverified
 
 The vertex order, face order/winding and the printed form of the exact

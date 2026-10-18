@@ -1676,6 +1676,38 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       {9, 15, 19, 14}, {7, 12, 11, 2}, {15, 20, 22, 19}, {1, 3, 7, 2}}",
     classes_src: "{\"Convex\", \"Equilateral\", \"Zonohedron\"}",
   },
+  PolyhedronInfo {
+    name: "GyroelongatedSquareDipyramid",
+    vertex_count: 10,
+    edge_count: 24,
+    face_count: 16,
+    // Johnson solid J17: a square antiprism with a square pyramid glued
+    // to each square face. 16 unit equilateral triangles.
+    volume: "(2 + Sqrt[2])/(3*2^(1/4)) + Sqrt[2]/3",
+    surface_area: "4*Sqrt[3]",
+    // Apexes, ring vertices and the face centers are at pairwise different
+    // distances from the center, so there are no common spheres.
+    circumradius: "Missing[\"NotApplicable\"]",
+    inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Missing[\"NotApplicable\"]",
+    // Apex, the upper square ring, the lower square ring (twisted by 45
+    // degrees), the lower apex. z is the C4 symmetry axis.
+    vertices_src: "{\
+      {0, 0, 1/(2*2^(1/4)) + 1/Sqrt[2]}, \
+      {1/Sqrt[2], 0, 1/(2*2^(1/4))}, {0, 1/Sqrt[2], 1/(2*2^(1/4))}, \
+      {-1/Sqrt[2], 0, 1/(2*2^(1/4))}, {0, -1/Sqrt[2], 1/(2*2^(1/4))}, \
+      {1/2, 1/2, -1/(2*2^(1/4))}, {-1/2, 1/2, -1/(2*2^(1/4))}, \
+      {-1/2, -1/2, -1/(2*2^(1/4))}, {1/2, -1/2, -1/(2*2^(1/4))}, \
+      {0, 0, -1/(2*2^(1/4)) - 1/Sqrt[2]}}",
+    faces_src: "{\
+      {1, 2, 3}, {1, 3, 4}, {1, 4, 5}, {1, 5, 2}, \
+      {2, 6, 3}, {6, 7, 3}, {3, 7, 4}, {7, 8, 4}, \
+      {4, 8, 5}, {8, 9, 5}, {5, 9, 2}, {9, 6, 2}, \
+      {10, 7, 6}, {10, 8, 7}, {10, 9, 8}, {10, 6, 9}}",
+    classes_src: "\
+      {\"Amphichiral\", \"Convex\", \"Deltahedron\", \"Equilateral\", \
+      \"Johnson\", \"Nonuniform\", \"Rigid\", \"Simple\", \"Zalgaller\"}",
+  },
 ];
 
 fn find_polyhedron(name: &str) -> Option<&'static PolyhedronInfo> {
@@ -1984,6 +2016,62 @@ fn net_faces(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// A predefined planar net for solids whose net is a fixed strip layout
+/// rather than a search result: the 2D vertex coordinates and the faces as
+/// 1-based indices into them.
+fn predefined_net(name: &str) -> Option<(&'static str, &'static str)> {
+  match name {
+    // 16 triangles in a strip of two rows of 8, flanked by a row of 4
+    // triangles above and one below.
+    "GyroelongatedSquareDipyramid" => Some((
+      "{{0, Sqrt[3]}, {1/2, Sqrt[3]/2}, {1/2, (3*Sqrt[3])/2}, {1, 0}, \
+        {1, Sqrt[3]}, {3/2, Sqrt[3]/2}, {3/2, (3*Sqrt[3])/2}, {2, 0}, \
+        {2, Sqrt[3]}, {5/2, Sqrt[3]/2}, {5/2, (3*Sqrt[3])/2}, {3, 0}, \
+        {3, Sqrt[3]}, {7/2, Sqrt[3]/2}, {7/2, (3*Sqrt[3])/2}, {4, 0}, \
+        {4, Sqrt[3]}, {9/2, Sqrt[3]/2}}",
+      "{{1, 2, 5}, {2, 6, 5}, {5, 6, 9}, {6, 10, 9}, {9, 10, 13}, \
+        {10, 14, 13}, {13, 14, 17}, {14, 18, 17}, {1, 5, 3}, {5, 9, 7}, \
+        {9, 13, 11}, {13, 17, 15}, {2, 4, 6}, {6, 8, 10}, {10, 12, 14}, \
+        {14, 16, 18}}",
+    )),
+    _ => None,
+  }
+}
+
+enum NetPart {
+  Coordinates,
+  FaceIndices,
+}
+
+/// `"NetCoordinates"` / `"NetFaceIndices"`: the vertices and faces of the
+/// solid's planar net.
+fn net_data(
+  info: &PolyhedronInfo,
+  part: NetPart,
+) -> Result<Expr, InterpreterError> {
+  if let Some((coords, faces)) = predefined_net(info.name) {
+    return eval_wl(match part {
+      NetPart::Coordinates => coords,
+      NetPart::FaceIndices => faces,
+    });
+  }
+  let net = net_faces(info)?;
+  let Expr::FunctionCall { args, .. } = &net else {
+    return Err(InterpreterError::EvaluationError(
+      "PolyhedronData: net is not a GraphicsComplex".into(),
+    ));
+  };
+  match (part, args.as_slice()) {
+    (NetPart::Coordinates, [coords, _]) => Ok(coords.clone()),
+    (NetPart::FaceIndices, [_, Expr::FunctionCall { args: poly, .. }]) => {
+      Ok(poly[0].clone())
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "PolyhedronData: net is not a GraphicsComplex".into(),
+    )),
+  }
+}
+
 /// The face index lists as plain `usize` rows, for rendering.
 fn numeric_faces(
   info: &PolyhedronInfo,
@@ -2078,6 +2166,8 @@ static PROPERTIES: &[&str] = &[
   "Insphere",
   "Midradius",
   "Name",
+  "NetCoordinates",
+  "NetFaceIndices",
   "NetFaces",
   "Skeleton",
   "SkeletonGraph",
@@ -2289,6 +2379,8 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "FaceIndices" => face_indices(info),
         "Faces" => faces_complex(info),
         "NetFaces" => net_faces(info),
+        "NetCoordinates" => net_data(info, NetPart::Coordinates),
+        "NetFaceIndices" => net_data(info, NetPart::FaceIndices),
         "Insphere" => insphere(info),
         "Skeleton" | "SkeletonGraph" => skeleton_graph(info),
         _ => unevaluated(),

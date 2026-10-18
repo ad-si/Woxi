@@ -29410,9 +29410,10 @@ mod manipulate {
         // and small stellated dodecahedra, the great icosahedron and
         // rhombic hexecontahedron
         // stellations, the triangular orthobicupola, the Bilinski
-        // dodecahedron, the stella octangula, and the golden rhombohedra,
-        // rhombic icosahedron, and the cuboctahedron.
-        assert_eq!(values.len(), 29, "every known solid");
+        // dodecahedron, the stella octangula, the golden rhombohedra,
+        // rhombic icosahedron, the cuboctahedron, and the gyroelongated
+        // square dipyramid.
+        assert_eq!(values.len(), 30, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }
