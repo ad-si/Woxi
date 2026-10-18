@@ -29268,6 +29268,12 @@ fn unicode_script_char(c: char, superscript: bool) -> Option<char> {
       'x' => '\u{02E3}',
       'y' => '\u{02B8}',
       'z' => '\u{1DBB}',
+      // The five Greek letters with a modifier-letter superscript.
+      '\u{03B2}' => '\u{1D5D}',
+      '\u{03B3}' => '\u{1D5E}',
+      '\u{03B4}' => '\u{1D5F}',
+      '\u{03C6}' => '\u{1D60}',
+      '\u{03C7}' => '\u{1D61}',
       _ => return None,
     }
   } else {
@@ -29306,6 +29312,12 @@ fn unicode_script_char(c: char, superscript: bool) -> Option<char> {
       'u' => '\u{1D64}',
       'v' => '\u{1D65}',
       'x' => '\u{2093}',
+      // The five Greek letters with a subscript form.
+      '\u{03B2}' => '\u{1D66}',
+      '\u{03B3}' => '\u{1D67}',
+      '\u{03C1}' => '\u{1D68}',
+      '\u{03C6}' => '\u{1D69}',
+      '\u{03C7}' => '\u{1D6A}',
       _ => return None,
     }
   };
@@ -33270,6 +33282,14 @@ mod manipulate_label_tests {
   fn superscript_renders_unicode() {
     let label = call("Superscript", vec![id_expr("x"), Expr::Integer(2)]);
     assert_eq!(runs(&label), vec![run("x", false), run("\u{00B2}", false)]);
+  }
+
+  #[test]
+  fn greek_superscript_and_subscript_use_unicode_letters() {
+    let sup = call("Superscript", vec![id_expr("x"), str_expr("\u{03B2}")]);
+    assert_eq!(runs(&sup), vec![run("x", false), run("\u{1D5D}", false)]);
+    let sub = call("Subscript", vec![id_expr("x"), str_expr("\u{03C7}")]);
+    assert_eq!(runs(&sub), vec![run("x", false), run("\u{1D6A}", false)]);
   }
 
   #[test]
