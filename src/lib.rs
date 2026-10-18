@@ -2478,26 +2478,21 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
         .parse::<f64>()
         .unwrap_or(0.0);
       let tz_offset_hours = now.offset().local_minus_utc() as f64 / 3600.0;
-      let expr = syntax::Expr::FunctionCall {
-        name: "DateObject".to_string(),
-        args: vec![
+      let now_part = |fmt: &str| {
+        syntax::Expr::Integer(
+          now.format(fmt).to_string().parse::<i128>().unwrap(),
+        )
+      };
+      let expr = helpers::call(
+        "DateObject",
+        vec![
           syntax::Expr::List(
             vec![
-              syntax::Expr::Integer(
-                now.format("%Y").to_string().parse::<i128>().unwrap(),
-              ),
-              syntax::Expr::Integer(
-                now.format("%m").to_string().parse::<i128>().unwrap(),
-              ),
-              syntax::Expr::Integer(
-                now.format("%d").to_string().parse::<i128>().unwrap(),
-              ),
-              syntax::Expr::Integer(
-                now.format("%H").to_string().parse::<i128>().unwrap(),
-              ),
-              syntax::Expr::Integer(
-                now.format("%M").to_string().parse::<i128>().unwrap(),
-              ),
+              now_part("%Y"),
+              now_part("%m"),
+              now_part("%d"),
+              now_part("%H"),
+              now_part("%M"),
               syntax::Expr::Real(seconds),
             ]
             .into(),
@@ -2505,9 +2500,8 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
           helpers::str_expr("Instant"),
           helpers::str_expr("Gregorian"),
           syntax::Expr::Real(tz_offset_hours),
-        ]
-        .into(),
-      };
+        ],
+      );
       set_fast_path_result_expr(expr.clone());
       return Ok(syntax::expr_to_output(&expr));
     }

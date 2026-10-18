@@ -560,10 +560,7 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
             ],
           )
         };
-        let draw = Expr::FunctionCall {
-          name: if s.is_scatter { "Point" } else { "Line" }.to_string(),
-          args: vec![points].into(),
-        };
+        let draw = call1(if s.is_scatter { "Point" } else { "Line" }, points);
         let mut prims = vec![Expr::List(vec![rgb_expr(s.color), draw].into())];
         // `Filling` draws a shaded region under the curve — bake it in as
         // an explicit `Polygon` primitive alongside the `Line`, the way
@@ -576,18 +573,17 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
           let opacity = s.fill_opacity.unwrap_or(0.2);
           let styled_fill =
             call("Opacity", vec![Expr::Real(opacity), rgb_expr(fill_color)]);
-          let polygon = Expr::FunctionCall {
-            name: "Polygon".to_string(),
-            args: vec![Expr::List(
+          let polygon = call1(
+            "Polygon",
+            Expr::List(
               polygon_points
                 .into_iter()
                 .map(|(x, y)| {
                   Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
                 })
                 .collect(),
-            )]
-            .into(),
-          };
+            ),
+          );
           prims.push(Expr::List(vec![styled_fill, polygon].into()));
         }
         prims
@@ -1048,7 +1044,7 @@ fn extract_part_ast_rest(
         } else {
           "RuleDelayed"
         };
-        return Ok(Expr::Identifier(head_name.to_string()));
+        return Ok(id_expr(head_name));
       }
       let parts: [&Expr; 2] = [pattern, replacement];
       let len = 2i64;
@@ -1096,7 +1092,7 @@ fn extract_part_ast_rest(
         }
       };
       if idx == 0 {
-        return Ok(Expr::Identifier(head_name.to_string()));
+        return Ok(id_expr(head_name));
       }
       let len = parts.len() as i64;
       let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
@@ -1118,7 +1114,7 @@ fn extract_part_ast_rest(
         UnaryOperator::Not => ("Not", vec![*operand.clone()]),
       };
       if idx == 0 {
-        return Ok(Expr::Identifier(head_name.to_string()));
+        return Ok(id_expr(head_name));
       }
       let len = parts.len() as i64;
       let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
