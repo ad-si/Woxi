@@ -20574,6 +20574,8 @@ fn resolve_display_item(expr: &Expr) -> Expr {
         }
       }
       Some(("EventHandler", content)) => current = content.clone(),
+      // `Tooltip[expr, hint]` draws as `expr`; the hint shows only on hover.
+      Some(("Tooltip", content)) => current = content.clone(),
       _ => break,
     }
     current = unwrap_display_wrappers(&current);

@@ -27521,6 +27521,21 @@ mod manipulate {
     assert!(svg.contains("title"));
   }
 
+  /// A `Tooltip` around a picture inside a `Column` draws the picture; the
+  /// hint shows only on hover. Regression: it was typeset as the
+  /// `-Graphics-` placeholder text.
+  #[test]
+  fn tooltip_graphic_in_column_draws_picture() {
+    let code = "ExportString[Column[{\
+      Tooltip[ArrayPlot[{{1, 0, 1}}], \"hint\"], \
+      Tooltip[Graphics[Circle[]], \"other\"]}], \"SVG\"]";
+    let svg = woxi::interpret(code).unwrap();
+    assert!(!svg.contains("-Graphics-"), "placeholder leaked: {svg}");
+    assert!(svg.contains("<rect"), "ArrayPlot cells missing: {svg}");
+    assert!(svg.contains("<circle") || svg.contains("<ellipse"));
+    assert!(!svg.contains("hint"));
+  }
+
   /// A `TabView` whose pane is a `Text@Grid[…]` table, laid out in a
   /// `Column` next to a picture, draws the table. Regression: a
   /// Demonstration's description tab (`Text[TabView[{"info" -> Grid[…]}]]`)
