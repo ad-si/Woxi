@@ -22781,6 +22781,39 @@ mod log_linear_plot {
     let result = interpret("LogLinearPlot[x, {x, 1, 100}]").unwrap();
     assert_eq!(result, "-Graphics-");
   }
+
+  #[test]
+  fn frame_and_frame_label_are_drawn() {
+    let svg = export_svg(
+      "LogLinearPlot[x, {x, 1, 100}, Frame -> True, \
+       FrameLabel -> {\"ratio\", \"response\"}]",
+    );
+    assert!(svg.contains("ratio"), "{svg}");
+    assert!(svg.contains("response"), "{svg}");
+  }
+
+  #[test]
+  fn epilog_uses_natural_log_x_coordinates() {
+    // x = 10 is the geometric midpoint of {1, 100}, so a point at Log[10]
+    // sits in the horizontal middle of the plotting area, and one at
+    // Log[1] on its left edge.
+    let cx = |x: &str| -> f64 {
+      let svg = export_svg(&format!(
+        "LogLinearPlot[x, {{x, 1, 100}}, Frame -> True, \
+         PlotRange -> {{{{1, 100}}, {{0, 100}}}}, \
+         Epilog -> {{Point[{{Log[{x}], 5}}]}}]"
+      ));
+      let at = svg.find("<circle cx=\"").expect("circle") + 12;
+      let end = svg[at..].find('"').unwrap();
+      svg[at..at + end].parse().unwrap()
+    };
+    let (left, mid) = (cx("1"), cx("10"));
+    let right = cx("100");
+    assert!(
+      (mid - (left + right) / 2.0).abs() < 1.0,
+      "{left} {mid} {right}"
+    );
+  }
 }
 
 mod contour_plot_3d {
