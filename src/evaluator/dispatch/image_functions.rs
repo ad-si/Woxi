@@ -2116,6 +2116,31 @@ pub fn dispatch_image_functions(
         return Some(Ok(Expr::List(items.into())));
       }
 
+      // `Graph6` stores graphs as printable-ASCII adjacency bit vectors.
+      if format == "Graph6" {
+        if requested_element.as_deref() == Some("EdgeRules")
+          && let Some(graphs) = crate::functions::graph::decode_graph6(&content)
+        {
+          let per_graph = graphs
+            .into_iter()
+            .map(|(_, edges)| {
+              Expr::List(
+                edges
+                  .into_iter()
+                  .map(|(a, b)| Expr::Rule {
+                    pattern: Box::new(Expr::Integer(a as i128)),
+                    replacement: Box::new(Expr::Integer(b as i128)),
+                  })
+                  .collect::<Vec<_>>()
+                  .into(),
+              )
+            })
+            .collect::<Vec<_>>();
+          return Some(Ok(Expr::List(per_graph.into())));
+        }
+        return Some(Ok(unevaluated("ImportString", args)));
+      }
+
       if format != "CSV" {
         return Some(Ok(unevaluated("ImportString", args)));
       }
