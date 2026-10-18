@@ -975,6 +975,21 @@ fn evaluate_function_call_ast_inner(
     "Derangements" if combinatorica_active => "Combinatorica`Derangements",
     "RandomKSubset" if combinatorica_active => "Combinatorica`RandomKSubset",
     "Backtrack" if combinatorica_active => "Combinatorica`Backtrack",
+    "FromUnorderedPairs" | "ToAdjacencyLists" | "BreadthFirstTraversal"
+      if combinatorica_active =>
+    {
+      combinatorica_graph_name(name)
+    }
+    "V" | "ConnectedComponents" | "ShortestPath"
+      if combinatorica_active
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: head, .. })
+            if head == "Combinatorica`Graph"
+        ) =>
+    {
+      combinatorica_graph_name(name)
+    }
     "RandomPermutation"
       if combinatorica_active
         && args.len() == 1
@@ -14091,5 +14106,18 @@ fn unwrap_condition_guards(
       }
       _ => return Ok(None),
     }
+  }
+}
+
+/// The `Combinatorica\`` spelling of a graph function that the loaded
+/// package makes available under its bare name.
+fn combinatorica_graph_name(name: &str) -> &'static str {
+  match name {
+    "FromUnorderedPairs" => "Combinatorica`FromUnorderedPairs",
+    "ToAdjacencyLists" => "Combinatorica`ToAdjacencyLists",
+    "BreadthFirstTraversal" => "Combinatorica`BreadthFirstTraversal",
+    "V" => "Combinatorica`V",
+    "ConnectedComponents" => "Combinatorica`ConnectedComponents",
+    _ => "Combinatorica`ShortestPath",
   }
 }
