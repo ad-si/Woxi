@@ -2349,7 +2349,9 @@ fn collect_primitives(
         "Polygon" | "Triangle" if !args.is_empty() => {
           let before = prims.len();
           parse_polygon(args, style, prims);
-          if prims.len() == before {
+          // `Polygon[{}]` is an empty set of polygons, not a bad coordinate.
+          let empty = matches!(&args[0], Expr::List(items) if items.is_empty());
+          if prims.len() == before && !empty {
             errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
           }
         }
@@ -3093,8 +3095,8 @@ fn parse_vertex_texture_coordinates(opts: &[Expr]) -> Option<Vec<(f64, f64)>> {
 }
 
 /// The style for one polygon: the `Texture` in force, if any, with the
-/// polygon's own texture coordinates attached (only when they line up with
-/// its vertices).
+/// polygon's own texture coordinates attached (only when there is at least
+/// one per vertex; surplus trailing coordinates are ignored).
 fn with_texture_coords(
   style: &StyleState,
   coords: Option<&[(f64, f64)]>,
@@ -3102,10 +3104,10 @@ fn with_texture_coords(
 ) -> StyleState {
   let mut out = style.clone();
   if let (Some(tex), Some(coords)) = (&style.texture, coords)
-    && coords.len() == n_points
+    && coords.len() >= n_points
   {
     out.texture = Some(std::sync::Arc::new(TextureFill {
-      coords: coords.to_vec(),
+      coords: coords[..n_points].to_vec(),
       ..(**tex).clone()
     }));
   } else if style.texture.is_some() {

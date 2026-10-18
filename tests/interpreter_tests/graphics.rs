@@ -36031,6 +36031,24 @@ mod empty_plot {
   }
 
   #[test]
+  fn texture_ignores_surplus_vertex_texture_coordinates() {
+    let svg = export_svg(
+      "Graphics[{Texture[Graphics[{Red, Disk[]}]], \
+       Polygon[{{0, 0}, {1, 0}, {1, 1}}, \
+       VertexTextureCoordinates -> {{0, 0}, {1, 0}, {1, 1}, {0, 1}, {2, 2}}]}]",
+    );
+    assert!(svg.contains("<use"), "placement missing: {svg}");
+  }
+
+  #[test]
+  fn empty_polygon_list_draws_nothing_without_a_message() {
+    let svg =
+      export_svg("Graphics[{Polygon[{}], Polygon[{{0, 0}, {1, 0}, {0, 1}}]}]");
+    assert!(!svg.contains("should be a pair of numbers"), "{svg}");
+    assert_eq!(svg.matches("<polygon").count(), 1, "{svg}");
+  }
+
+  #[test]
   fn textured_polygon_without_coordinates_falls_back_to_plain_fill() {
     let svg = export_svg(
       "Graphics[{Texture[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]], \
