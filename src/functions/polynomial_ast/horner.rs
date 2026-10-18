@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::polynomial_ast::coefficient::coefficient_ast;
 use crate::functions::polynomial_ast::exponent::max_power_int;
@@ -70,18 +69,15 @@ fn horner_form_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
   // Extract coefficients for each power from 0 to degree
   let mut coeffs = Vec::new();
   for power in 0..=degree {
-    let coeff = coefficient_ast(&[
-      expanded.clone(),
-      Expr::Identifier(var.to_string()),
-      Expr::Integer(power),
-    ])?;
+    let coeff =
+      coefficient_ast(&[expanded.clone(), id_expr(var), Expr::Integer(power)])?;
     let simplified = crate::evaluator::evaluate_expr_to_expr(&coeff)?;
     coeffs.push(simplified);
   }
 
   // Build Horner form: c_0 + x * (c_1 + x * (c_2 + ... + x * c_n))
   // Start from the highest degree and work down
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
 
   // Start with the highest coefficient
   let mut result = coeffs[degree as usize].clone();

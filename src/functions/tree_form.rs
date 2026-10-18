@@ -299,18 +299,17 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
 
-      primitives.push(Expr::FunctionCall {
-        name: "Rectangle".to_string(),
-        args: vec![
+      primitives.push(call(
+        "Rectangle",
+        vec![
           Expr::List(
             vec![Expr::Real(node.x - hw), Expr::Real(node.y - hh)].into(),
           ),
           Expr::List(
             vec![Expr::Real(node.x + hw), Expr::Real(node.y + hh)].into(),
           ),
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
 
     // Second pass: text labels for all nodes (on top of boxes)
@@ -639,18 +638,17 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
       ));
     }
 
-    primitives.push(Expr::FunctionCall {
-      name: "Rectangle".to_string(),
-      args: vec![
+    primitives.push(call(
+      "Rectangle",
+      vec![
         Expr::List(
           vec![Expr::Real(node.x - hw), Expr::Real(node.y - hh)].into(),
         ),
         Expr::List(
           vec![Expr::Real(node.x + hw), Expr::Real(node.y + hh)].into(),
         ),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
 
   // Text labels

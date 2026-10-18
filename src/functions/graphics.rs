@@ -10391,12 +10391,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // In Wolfram a `Graphics` expression stays an expression, so a picture
   // held in a variable can be layered by a later `Show` — without this the
   // primitives are gone and `Show[…, g, …]` silently drops `g`.
-  let structure = Expr::FunctionCall {
-    name: "Graphics".to_string(),
-    args: std::iter::once(content)
+  let structure = call(
+    "Graphics",
+    std::iter::once(content)
       .chain(args[1..].iter().cloned())
       .collect(),
-  };
+  );
   Ok(crate::graphics_result_with_structure(svg, structure))
 }
 
@@ -15045,10 +15045,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Expr::List(legends.into())
   };
-  Ok(Expr::FunctionCall {
-    name: "Legended".to_string(),
-    args: vec![shown, legend].into(),
-  })
+  Ok(call("Legended", vec![shown, legend]))
 }
 
 fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -20795,25 +20792,23 @@ pub(crate) fn style_pushed_into_layout(
       && !args.is_empty()
     {
       let mut new_args: Vec<Expr> = args.iter().cloned().collect();
-      new_args[0] = Expr::FunctionCall {
-        name: "Style".to_string(),
-        args: std::iter::once(args[0].clone())
+      new_args[0] = call(
+        "Style",
+        std::iter::once(args[0].clone())
           .chain(directives.iter().cloned())
-          .collect::<Vec<_>>()
-          .into(),
-      };
+          .collect(),
+      );
       return Expr::FunctionCall {
         name: name.clone(),
         args: new_args.into(),
       };
     }
-    Expr::FunctionCall {
-      name: "Style".to_string(),
-      args: std::iter::once(e.clone())
+    call(
+      "Style",
+      std::iter::once(e.clone())
         .chain(directives.iter().cloned())
-        .collect::<Vec<_>>()
-        .into(),
-    }
+        .collect(),
+    )
   };
   // A `Grid`'s items are rows of cells; everything else is a flat list.
   let styled: Vec<Expr> = items
@@ -21254,10 +21249,7 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
         } else {
           line
         };
-        Expr::FunctionCall {
-          name: "Row".to_string(),
-          args: vec![Expr::List(line.into())].into(),
-        }
+        call1("Row", Expr::List(line.into()))
       })
       .collect();
     return column_to_svg(&[Expr::List(rows.into())]);
@@ -22085,10 +22077,7 @@ fn rebuild_grid(opts: &[Expr], rows: Vec<Vec<Expr>>) -> Expr {
     rows.into_iter().map(|r| Expr::List(r.into())).collect(),
   )];
   args.extend(opts.iter().cloned());
-  Expr::FunctionCall {
-    name: "Grid".to_string(),
-    args: args.into(),
-  }
+  call("Grid", args)
 }
 
 /// Column widths of the cells' natural renderings, given a cell's width.
@@ -22598,9 +22587,9 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("DropShadowing", args));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "DropShadowing".to_string(),
-    args: vec![
+  Ok(call(
+    "DropShadowing",
+    vec![
       offset.unwrap_or_else(|| {
         Expr::List(vec![Expr::Integer(-3), Expr::Integer(-3)].into())
       }),
@@ -22614,9 +22603,8 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ],
         )
       }),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// LinearGradientFilling[...] - normalizes gradient color specifications
@@ -28279,24 +28267,18 @@ fn linearize_fraction_boxes(e: &Expr) -> Expr {
             if name == "RowBox"
               && matches!(args.first(), Some(Expr::List(items)) if items.len() > 1) =>
           {
-            Expr::FunctionCall {
-              name: "RowBox".to_string(),
-              args: vec![Expr::List(
-                vec![str_expr("("), b.clone(), str_expr(")")].into(),
-              )]
-              .into(),
-            }
+            call1(
+              "RowBox",
+              Expr::List(vec![str_expr("("), b.clone(), str_expr(")")].into()),
+            )
           }
           _ => b,
         }
       };
-      Expr::FunctionCall {
-        name: "RowBox".to_string(),
-        args: vec![Expr::List(
-          vec![side(&args[0]), str_expr("/"), side(&args[1])].into(),
-        )]
-        .into(),
-      }
+      call1(
+        "RowBox",
+        Expr::List(vec![side(&args[0]), str_expr("/"), side(&args[1])].into()),
+      )
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -28328,10 +28310,7 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
 /// The formatted text of a number-formatting wrapper (`NumberForm[x, n]`,
 /// …), via `ToString`; `None` when it does not reduce to plain text.
 fn number_form_text(expr: &Expr) -> Option<String> {
-  let call = Expr::FunctionCall {
-    name: "ToString".to_string(),
-    args: vec![expr.clone()].into(),
-  };
+  let call = call1("ToString", expr.clone());
   match evaluate_expr_to_expr(&call) {
     Ok(Expr::String(ref s)) if !s.starts_with(|c: char| c.is_alphabetic()) => {
       Some(s.clone())

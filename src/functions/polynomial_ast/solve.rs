@@ -1,5 +1,4 @@
 use super::together::negate_expr;
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::calculus_ast::{
   differentiate_expr, is_constant_wrt, simplify,
@@ -1638,7 +1637,7 @@ fn solve_by_linear_substitution(positional: &[Expr]) -> Option<Expr> {
       &Expr::Integer(0),
     ))?;
     let name = "WoxiSolveSum";
-    let fresh = Expr::Identifier(name.to_string());
+    let fresh = id_expr(name);
     let new_lhs = substitute_expr(&lhs, &sum, &fresh);
     let new_rhs = substitute_expr(&rhs, &sum, &fresh);
     if super::eliminate::contains_var(&new_lhs, var)
@@ -1772,17 +1771,16 @@ fn expand_chained_equalities(eqns: &Expr) -> Expr {
     } if operands.len() > 2
       && operators.iter().all(|op| *op == ComparisonOp::Equal) =>
     {
-      Expr::FunctionCall {
-        name: "And".to_string(),
-        args: operands
+      call(
+        "And",
+        operands
           .windows(2)
           .map(|pair| Expr::Comparison {
             operands: pair.to_vec(),
             operators: vec![ComparisonOp::Equal],
           })
-          .collect::<Vec<_>>()
-          .into(),
-      }
+          .collect(),
+      )
     }
     Expr::List(items) => {
       Expr::List(items.iter().map(expand_chained_equalities).collect())
@@ -3157,9 +3155,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       solution
     };
-    Expr::List(
-      vec![rule_expr(Expr::Identifier(var.to_string()), solution)].into(),
-    )
+    Expr::List(vec![rule_expr(id_expr(var), solution)].into())
   };
 
   // Factor out x^k when the k lowest-degree coefficients are zero.
@@ -4199,7 +4195,7 @@ fn roots_of_last_variable(
 /// need dividing through by an expression that may vanish, so those go to
 /// the resultant instead, which eliminates `var` outright.
 fn eliminate_var(dividend: &Expr, divisor: &Expr, var: &str) -> Option<Expr> {
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
   if leading_coefficient_is_numeric(divisor, var) {
     let remainder =
       crate::functions::polynomial_ast::polynomial_remainder_ast(&[
@@ -4299,7 +4295,7 @@ fn leading_coefficient_is_numeric(poly: &Expr, var: &str) -> bool {
   };
   let Ok(leading) = crate::functions::polynomial_ast::coefficient_ast(&[
     poly.clone(),
-    Expr::Identifier(var.to_string()),
+    id_expr(var),
     Expr::Integer(degree),
   ]) else {
     return false;
@@ -4320,8 +4316,7 @@ fn univariate_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
     operands: vec![poly.clone(), Expr::Integer(0)],
     operators: vec![ComparisonOp::Equal],
   };
-  let solved =
-    solve_ast(&[equation, Expr::Identifier(var.to_string())]).ok()?;
+  let solved = solve_ast(&[equation, id_expr(var)]).ok()?;
   let Expr::List(ref solutions) = solved else {
     return None;
   };
@@ -4448,9 +4443,7 @@ fn numeric_polynomial_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
       } else {
         crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
       };
-      Expr::List(
-        vec![rule_expr(Expr::Identifier(var.to_string()), value)].into(),
-      )
+      Expr::List(vec![rule_expr(id_expr(var), value)].into())
     })
     .collect();
   Some(Expr::List(solutions.into()))
@@ -4519,9 +4512,7 @@ fn make_root_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
       "Root",
       vec![func.clone(), Expr::Integer(k as i128), Expr::Integer(0)],
     );
-    solutions.push(Expr::List(
-      vec![rule_expr(Expr::Identifier(var.to_string()), root)].into(),
-    ));
+    solutions.push(Expr::List(vec![rule_expr(id_expr(var), root)].into()));
   }
   Some(Expr::List(solutions.into()))
 }
@@ -4842,7 +4833,7 @@ fn try_solve_abs_eq(
       operands: vec![inner.clone(), value],
       operators: vec![ComparisonOp::Equal],
     };
-    let r = solve_ast(&[branch_eq, Expr::Identifier(var.to_string())]).ok()?;
+    let r = solve_ast(&[branch_eq, id_expr(var)]).ok()?;
     match r {
       Expr::List(ref items) => Some(items.to_vec()),
       _ => None,
@@ -4975,7 +4966,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
     let _c = try_eval_to_f64(rhs)?;
   }
 
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
   let pi = const_expr("Pi");
   let c1 = call1("C", Expr::Integer(1));
   let element_c1_integers =
@@ -5172,7 +5163,7 @@ fn try_solve_trig_pair_eq(lhs: &Expr, rhs: &Expr, var: &str) -> Option<Expr> {
     }
   }
   let element_c1_integers = call("Element", vec![c1, id_expr("Integers")]);
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
   Some(Expr::List(
     bodies
       .into_iter()
@@ -5359,7 +5350,7 @@ fn try_solve_inverse_function(
         operands: vec![base, simplified_rhs],
         operators: vec![ComparisonOp::Equal],
       };
-      let solved = solve_ast(&[new_eq, Expr::Identifier(var.to_string())]);
+      let solved = solve_ast(&[new_eq, id_expr(var)]);
       // An even root takes only its principal value, so undoing it can
       // produce an answer the equation itself does not have.
       return Some(match rational_parts(&exp) {
@@ -5424,11 +5415,8 @@ fn try_solve_inverse_function(
         if matches!(&exp, Expr::Identifier(n) if n == var) {
           return Some(Ok(Expr::List(
             vec![Expr::List(
-              vec![rule_expr(
-                Expr::Identifier(var.to_string()),
-                conditional(family(periodic)),
-              )]
-              .into(),
+              vec![rule_expr(id_expr(var), conditional(family(periodic)))]
+                .into(),
             )]
             .into(),
           )));
@@ -5444,7 +5432,7 @@ fn try_solve_inverse_function(
         //     → 1 + (2*I*Pi*C[1])/Log[3] - Log[5]/Log[3]
         let slope = crate::evaluator::evaluate_expr_to_expr(&call(
           "D",
-          vec![exp.clone(), Expr::Identifier(var.to_string())],
+          vec![exp.clone(), id_expr(var)],
         ))
         .ok()?;
         if is_constant_wrt(&slope, var) && !matches!(slope, Expr::Integer(0)) {
@@ -5453,8 +5441,7 @@ fn try_solve_inverse_function(
             operands: vec![exp.clone(), placeholder.clone()],
             operators: vec![ComparisonOp::Equal],
           };
-          let solved =
-            solve_ast(&[new_eq, Expr::Identifier(var.to_string())]).ok()?;
+          let solved = solve_ast(&[new_eq, id_expr(var)]).ok()?;
           if let Expr::List(solutions) = &solved
             && let [solution] = &solutions[..]
             && let Expr::List(rules) = solution
@@ -5474,11 +5461,7 @@ fn try_solve_inverse_function(
             .ok()?;
             return Some(Ok(Expr::List(
               vec![Expr::List(
-                vec![rule_expr(
-                  Expr::Identifier(var.to_string()),
-                  conditional(value),
-                )]
-                .into(),
+                vec![rule_expr(id_expr(var), conditional(value))].into(),
               )]
               .into(),
             )));
@@ -5494,7 +5477,7 @@ fn try_solve_inverse_function(
         operands: vec![exp, simplified_rhs],
         operators: vec![ComparisonOp::Equal],
       };
-      return Some(solve_ast(&[new_eq, Expr::Identifier(var.to_string())]));
+      return Some(solve_ast(&[new_eq, id_expr(var)]));
     }
   }
 
@@ -5568,7 +5551,7 @@ fn try_solve_inverse_function(
     };
 
     // Recursively solve the resulting equation
-    let solved = solve_ast(&[new_eq, Expr::Identifier(var.to_string())]);
+    let solved = solve_ast(&[new_eq, id_expr(var)]);
     // `Sqrt` is never negative, so squaring the equation away can produce
     // an answer the equation itself does not have.
     Some(if name == "Sqrt" {
@@ -5679,8 +5662,7 @@ fn try_solve_radical_equation(
     operands: vec![cleared, Expr::Integer(0)],
     operators: vec![ComparisonOp::Equal],
   };
-  let solved =
-    solve_ast(&[cleared_equation, Expr::Identifier(var.to_string())]).ok()?;
+  let solved = solve_ast(&[cleared_equation, id_expr(var)]).ok()?;
   let Expr::List(ref candidates) = solved else {
     return None;
   };
@@ -6204,12 +6186,9 @@ fn build_eq_from_coeffs(coeffs: &[Expr], var: &str) -> Expr {
     let term = if i == 0 {
       c.clone()
     } else if i == 1 {
-      times2(c.clone(), Expr::Identifier(var.to_string()))
+      times2(c.clone(), id_expr(var))
     } else {
-      times2(
-        c.clone(),
-        pow2(Expr::Identifier(var.to_string()), Expr::Integer(i as i128)),
-      )
+      times2(c.clone(), pow2(id_expr(var), Expr::Integer(i as i128)))
     };
     terms.push(term);
   }
@@ -6261,7 +6240,7 @@ pub fn simplify_sqrt_parts(n: i128) -> (i128, i128) {
 /// Replace `Slot(k)` with a named identifier inside a (pure-function) body.
 fn rs_subst_slot(expr: &Expr, k: usize, name: &str) -> Expr {
   match expr {
-    Expr::Slot(n) if *n == k => Expr::Identifier(name.to_string()),
+    Expr::Slot(n) if *n == k => id_expr(name),
     Expr::List(items) => {
       Expr::List(items.iter().map(|e| rs_subst_slot(e, k, name)).collect())
     }
@@ -6298,7 +6277,7 @@ pub fn root_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
   let var = "__rootsum_x__";
-  let var_sym = Expr::Identifier(var.to_string());
+  let var_sym = id_expr(var);
 
   // Apply a pure-function argument `#... &` to the variable and expand.
   let apply = |f: &Expr| -> Option<Expr> {
@@ -7467,7 +7446,7 @@ fn find_root_complex_newton(
     };
     crate::evaluator::evaluate_expr_to_expr(&combined).unwrap_or(combined)
   };
-  let lhs_ident = Expr::Identifier(var.to_string());
+  let lhs_ident = id_expr(var);
   let lhs =
     crate::evaluator::evaluate_expr_to_expr(&lhs_ident).unwrap_or(lhs_ident);
   Ok(Expr::List(vec![rule_expr(lhs, value)].into()))
@@ -9400,7 +9379,7 @@ fn minimize_abs_breakpoints(f: &Expr, var: &str) -> Vec<Expr> {
       operands: vec![g, Expr::Integer(0)],
       operators: vec![ComparisonOp::Equal],
     };
-    let solved = solve_ast(&[eq, Expr::Identifier(var.to_string())]);
+    let solved = solve_ast(&[eq, id_expr(var)]);
     if let Ok(Expr::List(sol_sets)) = &solved {
       for sol_set in sol_sets {
         if let Expr::List(rules) = sol_set {
@@ -9489,10 +9468,7 @@ fn minimize_single_var(
 
   if critical_points.is_empty() {
     // Bounded function with no critical points: return unevaluated
-    return Ok(call(
-      func_name,
-      vec![f.clone(), Expr::Identifier(var.to_string())],
-    ));
+    return Ok(call(func_name, vec![f.clone(), id_expr(var)]));
   }
 
   // Evaluate f at each critical point, find the minimum
@@ -9523,10 +9499,7 @@ fn minimize_single_var(
   }
 
   let (Some(min_val), Some(min_x)) = (best_exact, best_x) else {
-    return Ok(call(
-      func_name,
-      vec![f.clone(), Expr::Identifier(var.to_string())],
-    ));
+    return Ok(call(func_name, vec![f.clone(), id_expr(var)]));
   };
 
   // For maximize, negate the value back
@@ -9536,7 +9509,7 @@ fn minimize_single_var(
     min_val
   };
 
-  let rule = rule_expr(Expr::Identifier(var.to_string()), min_x);
+  let rule = rule_expr(id_expr(var), min_x);
   Ok(Expr::List(
     vec![result_val, Expr::List(vec![rule].into())].into(),
   ))
@@ -9620,7 +9593,7 @@ fn minimize_find_critical_points_1d(
     operands: vec![df.clone(), Expr::Integer(0)],
     operators: vec![ComparisonOp::Equal],
   };
-  match solve_ast(&[df_eq, Expr::Identifier(var.to_string())]) {
+  match solve_ast(&[df_eq, id_expr(var)]) {
     Ok(solutions) => {
       if let Expr::List(sol_sets) = &solutions {
         // If Solve returned unevaluated pieces or empty list, try numerical
@@ -10328,10 +10301,7 @@ fn minimize_diverges_to_neg_infinity(
 ) -> Result<bool, InterpreterError> {
   let limit = crate::functions::calculus_ast::limit_ast(&[
     f.clone(),
-    rule_expr(
-      Expr::Identifier(var.to_string()),
-      signed_infinity(toward_positive),
-    ),
+    rule_expr(id_expr(var), signed_infinity(toward_positive)),
   ])?;
   // `-Infinity` reaches here in several shapes (Times[-1, Infinity],
   // DirectedInfinity[-1], a negated identifier); compare the rendered form.
@@ -10472,10 +10442,7 @@ fn minimize_constrained_1d(
         .chain(constraints.iter().cloned())
         .collect(),
     );
-    return Ok(call(
-      func_name,
-      vec![obj_with_cons, Expr::Identifier(var.to_string())],
-    ));
+    return Ok(call(func_name, vec![obj_with_cons, id_expr(var)]));
   }
 
   // An unbounded feasible direction can carry the objective off to infinity,
@@ -10494,10 +10461,7 @@ fn minimize_constrained_1d(
       func_name,
       if maximize { "maximum" } else { "minimum" }
     ));
-    let rule = rule_expr(
-      Expr::Identifier(var.to_string()),
-      signed_infinity(toward_positive),
-    );
+    let rule = rule_expr(id_expr(var), signed_infinity(toward_positive));
     return Ok(Expr::List(
       vec![signed_infinity(maximize), Expr::List(vec![rule].into())].into(),
     ));
@@ -10534,10 +10498,7 @@ fn minimize_constrained_1d(
         .chain(constraints.iter().cloned())
         .collect(),
     );
-    return Ok(call(
-      func_name,
-      vec![obj_with_cons, Expr::Identifier(var.to_string())],
-    ));
+    return Ok(call(func_name, vec![obj_with_cons, id_expr(var)]));
   }
 
   // Find the minimum among candidates
@@ -10560,10 +10521,7 @@ fn minimize_constrained_1d(
     }
     let limit = crate::functions::calculus_ast::limit_ast(&[
       f.clone(),
-      rule_expr(
-        Expr::Identifier(var.to_string()),
-        signed_infinity(toward_positive),
-      ),
+      rule_expr(id_expr(var), signed_infinity(toward_positive)),
     ])?;
     let Some(lv) = minimize_try_f64(&limit) else {
       continue;
@@ -10571,10 +10529,7 @@ fn minimize_constrained_1d(
     if lv >= best_f {
       continue;
     }
-    let rule = rule_expr(
-      Expr::Identifier(var.to_string()),
-      signed_infinity(toward_positive),
-    );
+    let rule = rule_expr(id_expr(var), signed_infinity(toward_positive));
     let value = if maximize {
       simplify(negate_expr(&limit))
     } else {
@@ -10615,7 +10570,7 @@ fn minimize_constrained_1d(
     (rv, result_x_expr)
   };
 
-  let rule = rule_expr(Expr::Identifier(var.to_string()), result_x);
+  let rule = rule_expr(id_expr(var), result_x);
   Ok(Expr::List(
     vec![result_val, Expr::List(vec![rule].into())].into(),
   ))
@@ -11212,15 +11167,14 @@ pub fn find_min_value_ast(
 ) -> Result<Expr, InterpreterError> {
   match find_minimum_ast(args, maximize)? {
     Expr::List(ref items) if items.len() == 2 => Ok(items[0].clone()),
-    _ => Ok(Expr::FunctionCall {
-      name: if maximize {
+    _ => Ok(call(
+      if maximize {
         "FindMaxValue"
       } else {
         "FindMinValue"
-      }
-      .to_string(),
-      args: args.to_vec().into(),
-    }),
+      },
+      args.to_vec(),
+    )),
   }
 }
 
@@ -11929,9 +11883,7 @@ fn specialize_periodic_solution(
         Ok(Expr::Identifier(ref s)) if s == "True")
     });
     if ok {
-      result.push(Expr::List(
-        vec![rule_expr(Expr::Identifier(var_name.to_string()), value)].into(),
-      ));
+      result.push(Expr::List(vec![rule_expr(id_expr(var_name), value)].into()));
     }
   }
   Some(result)
@@ -12227,15 +12179,11 @@ fn fire_step_monitor(monitor: Option<&Expr>, vars: &[String], x: &[f64]) {
   let bindings: Vec<Expr> = vars
     .iter()
     .zip(x.iter())
-    .map(|(var, val)| Expr::FunctionCall {
-      name: "Set".to_string(),
-      args: vec![Expr::Identifier(var.clone()), Expr::Real(*val)].into(),
+    .map(|(var, val)| {
+      call("Set", vec![Expr::Identifier(var.clone()), Expr::Real(*val)])
     })
     .collect();
-  let e = Expr::FunctionCall {
-    name: "Block".to_string(),
-    args: vec![Expr::List(bindings.into()), monitor.clone()].into(),
-  };
+  let e = call("Block", vec![Expr::List(bindings.into()), monitor.clone()]);
   let _ = crate::evaluator::evaluate_expr_to_expr(&e);
 }
 

@@ -114,11 +114,7 @@ pub(super) fn poly_to_coeffs_mod(
   let deg = max_power_int(&expanded, var).unwrap_or(0);
   let mut coeffs = Vec::with_capacity((deg + 1) as usize);
   for i in 0..=deg {
-    let c = coefficient_ast(&[
-      poly.clone(),
-      Expr::Identifier(var.to_string()),
-      Expr::Integer(i),
-    ])?;
+    let c = coefficient_ast(&[poly.clone(), id_expr(var), Expr::Integer(i)])?;
     let c = crate::evaluator::evaluate_expr_to_expr(&c)?;
     let ci = crate::functions::math_ast::expr_to_i128(&c).ok_or_else(|| {
       InterpreterError::EvaluationError(
@@ -304,9 +300,9 @@ pub(super) fn coeffs_to_poly(coeffs: &[i128], var: &str, p: i128) -> Expr {
       Expr::Integer(c)
     } else {
       let pow = if i == 1 {
-        Expr::Identifier(var.to_string())
+        id_expr(var)
       } else {
-        pow(Expr::Identifier(var.to_string()), Expr::Integer(i as i128))
+        pow(id_expr(var), Expr::Integer(i as i128))
       };
       if c == 1 {
         pow
@@ -426,11 +422,7 @@ fn poly_integer_content(
 
   let mut int_coeffs = Vec::new();
   for i in 0..=deg {
-    let c = coefficient_ast(&[
-      poly.clone(),
-      Expr::Identifier(var.to_string()),
-      Expr::Integer(i),
-    ])?;
+    let c = coefficient_ast(&[poly.clone(), id_expr(var), Expr::Integer(i)])?;
     let c = crate::evaluator::evaluate_expr_to_expr(&c)?;
     let c_str = expr_to_string(&c);
     if c_str != "0" {
@@ -506,11 +498,8 @@ fn normalize_poly_sign(
   let expanded = expand_and_combine(poly);
   let deg = max_power_int(&expanded, var).unwrap_or(0);
 
-  let lead_coeff = coefficient_ast(&[
-    poly.clone(),
-    Expr::Identifier(var.to_string()),
-    Expr::Integer(deg),
-  ])?;
+  let lead_coeff =
+    coefficient_ast(&[poly.clone(), id_expr(var), Expr::Integer(deg)])?;
   let lead_coeff = crate::evaluator::evaluate_expr_to_expr(&lead_coeff)?;
 
   let is_negative = match &lead_coeff {

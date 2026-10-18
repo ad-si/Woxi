@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use std::cmp::Ordering;
 
@@ -871,13 +870,10 @@ fn parametric_region_ast(
       {
         continue;
       }
-      quads.push(Expr::FunctionCall {
-        name: "Polygon".to_string(),
-        args: vec![Expr::List(
-          corners.iter().map(|c| pt_expr(c.unwrap())).collect(),
-        )]
-        .into(),
-      });
+      quads.push(call1(
+        "Polygon",
+        Expr::List(corners.iter().map(|c| pt_expr(c.unwrap())).collect()),
+      ));
     }
   }
   if quads.is_empty() {

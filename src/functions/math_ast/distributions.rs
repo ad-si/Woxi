@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 
@@ -1526,10 +1525,7 @@ pub fn probability_distribution_raw_moment(
   {
     return Ok(None);
   }
-  let integrand = call(
-    "Times",
-    vec![call("Power", vec![range[0].clone(), int(k)]), pdf.clone()],
-  );
+  let integrand = times(vec![pow(range[0].clone(), int(k)), pdf.clone()]);
   let head = if range.len() == 3 { "Integrate" } else { "Sum" };
   let result = eval(&call(head, vec![integrand, Expr::List(range.clone())]))?;
   let unresolved =
@@ -1552,16 +1548,10 @@ pub fn probability_distribution_mean_variance(
   ) else {
     return Ok(None);
   };
-  let variance = eval(&call(
-    "Plus",
-    vec![
-      m2,
-      call(
-        "Times",
-        vec![int(-1), call("Power", vec![m1.clone(), int(2)])],
-      ),
-    ],
-  ))?;
+  let variance = eval(&plus(vec![
+    m2,
+    times(vec![int(-1), pow(m1.clone(), int(2))]),
+  ]))?;
   Ok(Some((m1, variance)))
 }
 
@@ -3429,10 +3419,7 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for d in data {
       let substituted = crate::evaluator::evaluate_expr_to_expr(&call(
         "ReplaceAll",
-        vec![
-          event.clone(),
-          rule_expr(Expr::Identifier(var_name.to_string()), d.clone()),
-        ],
+        vec![event.clone(), rule_expr(id_expr(var_name), d.clone())],
       ))?;
       if matches!(&substituted, Expr::Identifier(s) if s == "True") {
         count += 1;
@@ -3608,10 +3595,7 @@ fn probability_from_event(
     "Probability",
     vec![
       event.clone(),
-      call(
-        "Distributed",
-        vec![Expr::Identifier(var.to_string()), dist.clone()],
-      ),
+      call("Distributed", vec![id_expr(var), dist.clone()]),
     ],
   ))
 }
@@ -4021,9 +4005,7 @@ fn try_symbolic_expectation(
     },
     _ => return None,
   };
-  let iter = Expr::List(
-    vec![Expr::Identifier(var.to_string()), lo.clone(), hi.clone()].into(),
-  );
+  let iter = Expr::List(vec![id_expr(var), lo.clone(), hi.clone()].into());
   let integral = call("Integrate", vec![expr.clone(), iter]);
   let result = eval(&div2(integral, minus2(hi, lo))).ok()?;
   // A definite integral that could not be done leaves an Integrate head; reject
@@ -4149,7 +4131,7 @@ fn try_probability_probability_distribution(
   let pdf = if dummy == var_name {
     pdf_raw.clone()
   } else {
-    substitute_var(pdf_raw, dummy, &Expr::Identifier(var_name.to_string()))
+    substitute_var(pdf_raw, dummy, &id_expr(var_name))
   };
 
   // Helper: build Integrate[pdf, {var, a, b}].
@@ -4158,7 +4140,7 @@ fn try_probability_probability_distribution(
       "Integrate",
       vec![
         pdf.clone(),
-        Expr::List(vec![Expr::Identifier(var_name.to_string()), a, b].into()),
+        Expr::List(vec![id_expr(var_name), a, b].into()),
       ],
     )
   };
@@ -4368,16 +4350,14 @@ fn try_expectation_censored(
     let pdf = if dummy == var {
       base_args[0].clone()
     } else {
-      substitute_var(&base_args[0], dummy, &Expr::Identifier(var.to_string()))
+      substitute_var(&base_args[0], dummy, &id_expr(var))
     };
     // Integrate f(x) * pdf(x) from a to b.
     let mid_integral = call(
       "Integrate",
       vec![
         times2(expr.clone(), pdf.clone()),
-        Expr::List(
-          vec![Expr::Identifier(var.to_string()), a.clone(), b.clone()].into(),
-        ),
+        Expr::List(vec![id_expr(var), a.clone(), b.clone()].into()),
       ],
     );
     // P[X < a] and P[X > b] via integrals of pdf over (lo, a) / (b, hi).
@@ -4387,9 +4367,7 @@ fn try_expectation_censored(
         "Integrate",
         vec![
           pdf.clone(),
-          Expr::List(
-            vec![Expr::Identifier(var.to_string()), lo, a.clone()].into(),
-          ),
+          Expr::List(vec![id_expr(var), lo, a.clone()].into()),
         ],
       )
     };
@@ -4397,12 +4375,7 @@ fn try_expectation_censored(
       let hi = iter[2].clone();
       call(
         "Integrate",
-        vec![
-          pdf,
-          Expr::List(
-            vec![Expr::Identifier(var.to_string()), b.clone(), hi].into(),
-          ),
-        ],
+        vec![pdf, Expr::List(vec![id_expr(var), b.clone(), hi].into())],
       )
     };
     let f_at_a = substitute_var(expr, var, &a);
@@ -6280,10 +6253,7 @@ fn expectation_numerical(
         expr.clone(),
         call(
           "Distributed",
-          vec![
-            Expr::Identifier(var.to_string()),
-            unevaluated(dist_name, dargs),
-          ],
+          vec![id_expr(var), unevaluated(dist_name, dargs)],
         ),
       ],
     )
