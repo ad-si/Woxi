@@ -3277,7 +3277,7 @@ pub fn extract_saved_manipulate_variables(
 ) -> Vec<(String, String)> {
   let from_module = extract_dynamic_module_variables(box_dump);
   if !from_module.is_empty() {
-    return from_module;
+    return resolve_saved_variable_references(&from_module);
   }
   let Some(raw) = extract_arrow_value(box_dump, "Variables") else {
     return Vec::new();
@@ -3289,7 +3289,7 @@ pub fn extract_saved_manipulate_variables(
   else {
     return Vec::new();
   };
-  split_top_level_commas(inner)
+  let pairs: Vec<(String, String)> = split_top_level_commas(inner)
     .into_iter()
     .filter_map(|part| {
       let part = part.trim();
@@ -3310,6 +3310,40 @@ pub fn extract_saved_manipulate_variables(
       // to nothing.
       let value = strip_saved_contexts(rhs);
       Some((name, unescape_code_string(&value)))
+    })
+    .collect();
+  resolve_saved_variable_references(&pairs)
+}
+
+/// Replace a saved value that is just another saved variable's `name$$`
+/// (a control initialised from its default, e.g. `` $CellContext`n$$ =
+/// $CellContext`nDef$$ ``) by that variable's own value, so the control
+/// opens on the default instead of an unbound `nDef$$` symbol. Chains are
+/// followed; a reference to an unknown or cyclic variable is left as is.
+fn resolve_saved_variable_references(
+  pairs: &[(String, String)],
+) -> Vec<(String, String)> {
+  let lookup = |name: &str| {
+    pairs
+      .iter()
+      .find(|(n, _)| n == name)
+      .map(|(_, v)| v.clone())
+  };
+  pairs
+    .iter()
+    .map(|(name, value)| {
+      let mut value = value.clone();
+      for _ in 0..pairs.len() {
+        let Some(next) = value
+          .strip_suffix("$$")
+          .filter(|r| !r.is_empty() && r.chars().all(char::is_alphanumeric))
+          .and_then(lookup)
+        else {
+          break;
+        };
+        value = next;
+      }
+      (name.clone(), value)
     })
     .collect()
 }
@@ -7357,6 +7391,25 @@ yf4GL4DwC5VA4w
     assert_eq!(
       extract_saved_manipulate_variables(dump),
       vec![("n".to_string(), "33.".to_string())]
+    );
+  }
+
+  #[test]
+  fn test_extract_saved_manipulate_variables_resolves_default_references() {
+    // A control initialised from its own default variable, which is listed
+    // later (and a chain through two defaults), must open on that default
+    // rather than an unbound `nDef$$` symbol.
+    let dump = "DynamicModuleBox[{$CellContext`n$$ = $CellContext`nDef$$, \
+      $CellContext`nDef$$ = 2, $CellContext`k$$ = $CellContext`n$$, \
+      $CellContext`z$$ = $CellContext`missing$$}, DynamicBox[…]]";
+    assert_eq!(
+      extract_saved_manipulate_variables(dump),
+      vec![
+        ("n".to_string(), "2".to_string()),
+        ("nDef".to_string(), "2".to_string()),
+        ("k".to_string(), "2".to_string()),
+        ("z".to_string(), "missing$$".to_string()),
+      ]
     );
   }
 
