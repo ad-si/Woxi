@@ -1656,9 +1656,10 @@ fn find_polyhedron(name: &str) -> Option<&'static PolyhedronInfo> {
   // hexecontahedron: its 62 vertices are the 12+30+20 vertices of an
   // icosahedron, an icosidodecahedron and a dodecahedron, moved out to a
   // common radius per vertex class — exactly this solid's own construction.
+  // "Spikey" is the short alias for the same solid.
   let name = match name {
     "Hexahedron" => "Cube",
-    "MathematicaSpikey" => "RhombicHexecontahedron",
+    "MathematicaSpikey" | "Spikey" => "RhombicHexecontahedron",
     _ => name,
   };
   POLYHEDRA.iter().find(|p| p.name == name)
@@ -1996,25 +1997,35 @@ fn polyhedron_graphics(
 ) -> Result<Expr, InterpreterError> {
   let vertices = numeric_vertices(info)?;
   let faces = numeric_faces(info)?;
+  let points: Vec<Expr> = vertices
+    .iter()
+    .map(|v| {
+      Expr::List(v.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into())
+    })
+    .collect();
   let polygons: Vec<Expr> = faces
     .iter()
     .map(|face| {
-      let pts: Vec<Expr> = face
-        .iter()
-        .map(|&idx| {
-          Expr::List(
-            vertices[idx]
-              .iter()
-              .map(|&c| Expr::Real(c))
-              .collect::<Vec<_>>()
-              .into(),
-          )
-        })
-        .collect();
-      call1("Polygon", Expr::List(pts.into()))
+      Expr::List(
+        face
+          .iter()
+          .map(|&idx| Expr::Integer(idx as i128 + 1))
+          .collect::<Vec<_>>()
+          .into(),
+      )
     })
     .collect();
-  let graphics = call1("Graphics3D", Expr::List(polygons.into()));
+  // Like Wolfram, one `GraphicsComplex` over the shared vertex list.
+  let graphics = call1(
+    "Graphics3D",
+    call(
+      "GraphicsComplex",
+      vec![
+        Expr::List(points.into()),
+        call1("Polygon", Expr::List(polygons.into())),
+      ],
+    ),
+  );
   crate::evaluator::evaluate_expr_to_expr(&graphics)
 }
 
