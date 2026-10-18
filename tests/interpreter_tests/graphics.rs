@@ -5778,6 +5778,31 @@ mod plot3d {
       );
     }
 
+    /// `Scale[g, s, {Left, Bottom}]` scales about a corner of the content's
+    /// bounding box, so the lower-left corner stays put. Regression: the
+    /// symbolic position was ignored and the content scaled about its
+    /// centre instead, which scattered a Demonstration's fractal tiles.
+    #[test]
+    fn graphics_scale_about_a_bounding_box_corner() {
+      let scene = |body: &str| {
+        export_svg(&format!(
+          "Graphics[{{Rectangle[{{-1, -1}}, {{3, 3}}], {body}}}]"
+        ))
+      };
+      assert_eq!(
+        scene("Scale[Rectangle[{0, 0}, {2, 2}], 1/2, {Left, Bottom}]"),
+        scene("Rectangle[{0, 0}, {1, 1}]"),
+      );
+      assert_eq!(
+        scene("Scale[Rectangle[{0, 0}, {2, 2}], 1/2, {Right, Top}]"),
+        scene("Rectangle[{1, 1}, {2, 2}]"),
+      );
+      assert_eq!(
+        scene("Scale[Rectangle[{0, 0}, {2, 2}], 1/2, {Left, 2}]"),
+        scene("Rectangle[{0, 1}, {1, 2}]"),
+      );
+    }
+
     /// `Scale[g, {sx, sy, sz}]` with unequal factors turns a sphere into an
     /// ellipsoid — the shape a Demonstration draws a diatomic molecule's
     /// electron cloud with. Regression: the radius was scaled by one
