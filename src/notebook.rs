@@ -1901,6 +1901,18 @@ fn extract_rowbox_content(s: &str) -> String {
     } else {
       piece
     };
+    // A nested row that already ends in its own statement-ending `;`
+    // followed by a sibling bare `";"` is two terminators — a statement
+    // plus an empty one (`CompoundExpression[stmt, Null]`, then `;`) —
+    // not the `;;` `Span` operator. Glued together as text the two would
+    // read back as `Span`, so keep them apart.
+    if piece == ";"
+      && result.ends_with(';')
+      && i > 0
+      && parts[i - 1].trim().starts_with("RowBox[")
+    {
+      result.push(' ');
+    }
     push_juxtaposed(&mut result, &piece);
     i += 1;
   }
@@ -8151,6 +8163,25 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
       "rng must stay a `Span[2, All]`, not get silently truncated to the \
        plain integer `2`, got: {result:?} from {expr_src:?}"
     );
+  }
+
+  #[test]
+  fn terminated_nested_row_followed_by_bare_semicolon_is_not_span() {
+    // A statement box that already carries its own `;` (`RowBox[{stmt,
+    // ";"}]`), wrapped in an outer row with one more bare `";"`, is a
+    // statement followed by an empty one — not the `;;` `Span` operator
+    // that the two glued semicolons would read back as. Otherwise the
+    // assigned value becomes `Span[value, All]`.
+    let boxes = r#"RowBox[{RowBox[{RowBox[{"vals", "=", RowBox[{"{", RowBox[{"1", ",", "2", ",", "3"}], "}"}]}], ";"}], ";"}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(
+      !expr_src.contains(";;"),
+      "the two semicolons must stay apart, got: {expr_src:?}"
+    );
+    let result = crate::interpret(&format!("{expr_src}\nHead[vals]"))
+      .expect("the reconstructed source must evaluate without error");
+    assert_eq!(result, "List", "got: {result:?} from {expr_src:?}");
   }
 
   #[test]

@@ -8072,6 +8072,15 @@ mod cases {
     assert_case(r#"Extract[<|a -> 1, b -> 2|>, Key[b]]"#, r#"2"#);
   }
   #[test]
+  fn spaced_semicolons_before_newline_are_not_span() {
+    // `; ;` is a statement plus an empty one, not the `;;` Span operator,
+    // so the next line stays its own statement.
+    assert_case("v = {1, 2, 3}; ;\nHead[v]", "List");
+    assert_case("a = 3; ;\na", "3");
+    // Adjacent semicolons still form a Span.
+    assert_case("v = {1, 2, 3};;\nHead[v]", "Span");
+  }
+  #[test]
   fn divide_16() {
     assert_case(r#";; // FullForm"#, r#"FullForm[Span[1, All]]"#);
   }
