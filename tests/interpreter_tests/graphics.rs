@@ -29369,8 +29369,8 @@ mod manipulate {
         // rhombic hexecontahedron
         // stellations, the triangular orthobicupola, the Bilinski
         // dodecahedron, the stella octangula, and the golden rhombohedra and
-        // rhombic icosahedron.
-        assert_eq!(values.len(), 28, "every known solid");
+        // rhombic icosahedron, and the gyroelongated square dipyramid.
+        assert_eq!(values.len(), 29, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }
