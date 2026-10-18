@@ -1638,17 +1638,17 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       // `Texture[image]`: fills the polygons that follow with the image,
       // placed by their `VertexTextureCoordinates`.
       "Texture" if args.len() == 1 => {
-        if let Expr::Image {
+        if let Some(Expr::Image {
           width,
           height,
           channels,
-          data,
+          ref data,
           ..
-        } = &args[0]
+        }) = crate::functions::image_ast::texture_source_image(&args[0])
         {
           use base64::Engine;
           let img = crate::functions::image_ast::expr_to_dynamic_image(
-            *width, *height, *channels, data,
+            width, height, channels, data,
           );
           let mut png = Vec::new();
           if img
@@ -1662,8 +1662,8 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
               png_b64: base64::engine::general_purpose::STANDARD
                 .encode(&png)
                 .into(),
-              width: *width,
-              height: *height,
+              width,
+              height,
               coords: Vec::new(),
             }));
           }
