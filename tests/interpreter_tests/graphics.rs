@@ -36614,3 +36614,23 @@ fn graphics_grid_of_tooltipped_plots_draws_the_plots_not_source() {
   assert!(!single.contains("hint"), "{single}");
   assert!(!single.contains("<text"), "{single}");
 }
+
+#[test]
+fn explicit_plot_range_clips_content_in_widened_drawing_area() {
+  // The wide picture widens the x range to keep circles round, but the
+  // requested range still bounds what is drawn.
+  let svg = export_svg(
+    "Graphics[{Rectangle[{-12, 0}, {12, 1}]}, \
+     PlotRange -> {{-10, 10}, {-7, 12}}, ImageSize -> {550, 396}]",
+  );
+  assert!(
+    svg.contains(
+      "<rect x=\"66.58\" y=\"0.00\" width=\"416.84\" height=\"396.00\"/>"
+    ),
+    "{svg}"
+  );
+  // Without an explicit range the whole drawing area stays visible.
+  let auto = export_svg("Graphics[{Rectangle[{-12, 0}, {12, 1}]}]");
+  assert!(auto.contains("<clipPath id=\"plotClip_"), "{auto}");
+  assert!(auto.contains("<rect x=\"0\" y=\"0\" width="), "{auto}");
+}

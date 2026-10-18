@@ -9943,6 +9943,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 1 data-unit maps to the same number of pixels in both x and y,
   // so circles are always rendered round.
   // Skipped when AspectRatio -> Full (plots need independent axis scaling).
+  // An explicit `PlotRange` still bounds what is drawn: the extra room this
+  // adds shows only the background, so remember the requested range for
+  // the clip rectangle below.
+  let clip_x = plot_range_x.map(|_| (bb.x_min, bb.x_max));
+  let clip_y = plot_range_y.map(|_| (bb.y_min, bb.y_max));
   if !aspect_ratio_full {
     expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
   }
@@ -10138,11 +10143,46 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `DropShadow::filter_id`) so two differently-sized pictures merged into
   // one document (`GraphicsRow`, `Inset`) never collide, while pictures
   // that happen to share a size safely share one identical definition.
-  let clip_id = format!("plotClip_{svg_w:.0}x{svg_h:.0}");
+  let (clip_x0, clip_x1) = match clip_x {
+    Some((lo, hi)) => (
+      coord_x(lo, &bb, svg_w).clamp(0.0, svg_w),
+      coord_x(hi, &bb, svg_w).clamp(0.0, svg_w),
+    ),
+    None => (0.0, svg_w),
+  };
+  let (clip_y0, clip_y1) = match clip_y {
+    Some((lo, hi)) => (
+      coord_y(hi, &bb, svg_h).clamp(0.0, svg_h),
+      coord_y(lo, &bb, svg_h).clamp(0.0, svg_h),
+    ),
+    None => (0.0, svg_h),
+  };
+  // A range narrower than the drawing area (widened to its shape) gets
+  // its own id so it never shares a definition with an unclipped picture
+  // of the same size.
+  let narrowed = clip_x0 > 0.5
+    || clip_y0 > 0.5
+    || clip_x1 < svg_w - 0.5
+    || clip_y1 < svg_h - 0.5;
+  let clip_id = if narrowed {
+    format!(
+      "plotClip_{svg_w:.0}x{svg_h:.0}_{clip_x0:.0}_{clip_y0:.0}_{clip_x1:.0}_{clip_y1:.0}"
+    )
+  } else {
+    format!("plotClip_{svg_w:.0}x{svg_h:.0}")
+  };
   svg.push_str("<defs>\n");
-  svg.push_str(&format!(
-    "<clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\"/></clipPath>\n"
-  ));
+  if narrowed {
+    svg.push_str(&format!(
+      "<clipPath id=\"{clip_id}\"><rect x=\"{clip_x0:.2}\" y=\"{clip_y0:.2}\" width=\"{:.2}\" height=\"{:.2}\"/></clipPath>\n",
+      clip_x1 - clip_x0,
+      clip_y1 - clip_y0
+    ));
+  } else {
+    svg.push_str(&format!(
+      "<clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\"/></clipPath>\n"
+    ));
+  }
   for ds in &shadow_defs {
     svg.push_str(&ds.filter_def(1.0));
     svg.push('\n');
