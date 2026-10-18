@@ -2036,7 +2036,18 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::List => parse_list(pair),
     Rule::ListExtended => parse_list_extended(&pair),
-    Rule::FunctionCallExtended => parse_function_call_extended(&pair),
+    Rule::FunctionCallExtended => {
+      let mut result = parse_function_call_extended(&pair);
+      // Trailing `++` / `--` chain: `x[a]++` is `Increment[x[a]]`.
+      for op in pair.into_inner() {
+        match op.as_rule() {
+          Rule::IncrementOp => result = call1("Increment", result),
+          Rule::DecrementOp => result = call1("Decrement", result),
+          _ => {}
+        }
+      }
+      result
+    }
     Rule::FunctionCall => parse_function_call(&pair),
     Rule::Expression | Rule::ExpressionNoImplicit | Rule::ConditionExpr => {
       parse_expression(pair)
