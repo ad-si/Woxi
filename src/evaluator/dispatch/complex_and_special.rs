@@ -5210,6 +5210,27 @@ fn assignment_operator(name: &str) -> Option<&'static str> {
   })
 }
 
+/// Box for `PaddedForm[x, spec]` / `AccountingForm[x]` around a number: the
+/// text `ToString` gives, with a trailing imaginary unit typeset as `i`.
+fn padded_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
+  if args.is_empty() || matches!(args[0], Expr::List(_) | Expr::String(_)) {
+    return None;
+  }
+  let text =
+    crate::functions::string_ast::number_form_family_to_string(name, args)?;
+  if text.contains('\n') || text.starts_with(name) {
+    return None;
+  }
+  let text = text.trim_start().to_string();
+  Some(match text.strip_suffix(" I") {
+    Some(head) => tf_row(vec![
+      tf_string(&format!("{head} ")),
+      tf(&Expr::Identifier("I".to_string())),
+    ]),
+    None => tf_string(&text),
+  })
+}
+
 fn tf_call(name: &str, args: &[Expr]) -> Expr {
   match name {
     _ if args.len() == 2 && assignment_operator(name).is_some() => {
@@ -5226,6 +5247,14 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       if number_display_form_box(name, args).is_some() =>
     {
       number_display_form_box(name, args).unwrap()
+    }
+    // `PaddedForm`/`AccountingForm` typeset as their formatted number, like
+    // the number-display forms above; a complex value keeps its imaginary
+    // unit as the traditional `i` after the formatted parts.
+    "PaddedForm" | "AccountingForm"
+      if padded_form_box(name, args).is_some() =>
+    {
+      padded_form_box(name, args).unwrap()
     }
     // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
     // the boxes still say the expression was held; it draws as its content.
