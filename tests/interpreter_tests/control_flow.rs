@@ -4472,6 +4472,26 @@ mod postfix_increment_parsing {
   }
 
   #[test]
+  fn increment_and_decrement_work_on_indexed_variables() {
+    clear_state();
+    assert_eq!(interpret("c[a] = 1; c[a]++; c[a]").unwrap(), "2");
+    clear_state();
+    assert_eq!(interpret("c[a] = 1; {c[a]--, c[a]}").unwrap(), "{1, 0}");
+    clear_state();
+    assert_eq!(interpret("c[a] = 1; {++c[a], c[a]}").unwrap(), "{2, 2}");
+    clear_state();
+    assert_eq!(interpret("c[a] = 1; --c[a]; c[a]").unwrap(), "0");
+    clear_state();
+    assert_eq!(
+      interpret("Do[k[i] = 0; k[i]++; k[i]++, {i, 2}]; {k[1], k[2]}").unwrap(),
+      "{2, 2}"
+    );
+    // Without a stored value the call stays unevaluated.
+    clear_state();
+    assert_eq!(interpret("g[a]++").unwrap(), "g[a]++");
+  }
+
+  #[test]
   fn ordinary_arithmetic_and_juxtaposition_are_unaffected() {
     clear_state();
     assert_eq!(interpret("3 - 1").unwrap(), "2");
