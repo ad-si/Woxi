@@ -36988,3 +36988,21 @@ fn list_fit_plot_draws_data_and_fitted_curve() {
     "ListFitPlot[{1, 2, 3}, Bogus]"
   );
 }
+
+#[test]
+fn tooltip_around_a_graphic_displays_the_graphic_in_visual_mode() {
+  for code in [
+    "Tooltip[Graphics[Circle[]], \"tip\"]",
+    "Dynamic[Tooltip[Graphics[Circle[]], \"tip\"]]",
+    "Dynamic@Tooltip[Graphics[{Red, Disk[]}], \"tip\"]",
+  ] {
+    let r = interpret_with_stdout(code).unwrap();
+    assert!(r.graphics.is_some(), "{code}: no picture captured");
+    assert_eq!(r.result, "-Graphics-", "{code}");
+  }
+  // Plain command-line evaluation keeps the symbolic call.
+  assert_eq!(
+    interpret("Head[Tooltip[Graphics[Circle[]], \"tip\"]]").unwrap(),
+    "Tooltip"
+  );
+}
