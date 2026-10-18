@@ -29991,8 +29991,12 @@ fn parse_manipulate_control(
       // keep its code so the frontend can rebuild the choices whenever the
       // other control moves. A `Dynamic[…]` wrapper is stripped first (see
       // `unwrap_dynamic_choices`) so the kept code re-evaluates cleanly too.
+      // An explicit `Dynamic[…]` list is live even when it names no sibling
+      // control: it may follow a free variable the body assigns itself
+      // (`Dynamic[Range[depthMax]]` with `depthMax = 4` set per mode).
       let values_code = (bounds.len() == 1
-        && expr_references_any(unwrap_dynamic_choices(bounds[0]), siblings))
+        && (matches!(bounds[0], Expr::FunctionCall { name, .. } if name == "Dynamic")
+          || expr_references_any(unwrap_dynamic_choices(bounds[0]), siblings)))
       .then(|| {
         crate::syntax::expr_to_source_form(unwrap_dynamic_choices(bounds[0]))
       });
