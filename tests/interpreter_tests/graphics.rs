@@ -36823,3 +36823,16 @@ fn explicit_plot_range_clips_content_in_widened_drawing_area() {
   assert!(auto.contains("<clipPath id=\"plotClip_"), "{auto}");
   assert!(auto.contains("<rect x=\"0\" y=\"0\" width="), "{auto}");
 }
+
+#[test]
+fn labeled_blank_slot_in_grid_draws_its_caption() {
+  // Regression: a control Woxi Studio lifts into its panel leaves `""`
+  // behind, and `Labeled["", caption, Left]` then printed as source text
+  // (`Labeled[, distribution, Left]`) instead of drawing the caption.
+  let svg = export_svg(
+    "Grid[{{Labeled[\"\", Text@Style[\"distribution\", 10], Left], \
+     SpanFromLeft}}]",
+  );
+  assert!(svg.contains("distribution"), "{svg}");
+  assert!(!svg.contains("Labeled"), "{svg}");
+}

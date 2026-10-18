@@ -5008,6 +5008,11 @@ fn is_inline_graphic(expr: &Expr) -> bool {
   }
 }
 
+/// The empty string a Studio-lifted control leaves in a body's layout.
+fn is_blank_string(expr: &Expr) -> bool {
+  matches!(expr, Expr::String(s) if s.is_empty())
+}
+
 /// The layout wrappers whose *cells* `expr_to_svg` composes: each one
 /// arranges its parts in a grid, so a picture anywhere inside has to be
 /// drawn rather than written out as source.
@@ -5022,6 +5027,13 @@ const LAYOUT_HEADS: &[&str] = &["Grid", "Column", "Row", "Labeled"];
 /// `ImageSize` of its own.
 pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   if is_inline_graphic(expr) {
+    return true;
+  }
+  // `Labeled["", label, …]`: the blank spot a lifted control leaves behind,
+  // still drawn as its caption.
+  if matches!(expr, Expr::FunctionCall { name, args }
+    if name == "Labeled" && args.len() >= 2 && is_blank_string(&args[0]))
+  {
     return true;
   }
   // A held `Graphics[…]` / `Graphics3D[…]` call is a picture too —
@@ -5589,7 +5601,8 @@ fn contains_framed_or_highlighted(expr: &Expr) -> bool {
 /// and `Row` reach the visual pipeline through passes of their own.)
 pub(crate) fn labeled_display_svg(expr: &Expr) -> Option<String> {
   let is_labeled = matches!(expr, Expr::FunctionCall { name, args }
-    if name == "Labeled" && args.len() >= 2 && lays_out_a_graphic(&args[0]));
+    if name == "Labeled" && args.len() >= 2
+      && (is_blank_string(&args[0]) || lays_out_a_graphic(&args[0])));
   is_labeled.then(|| expr_to_svg(expr))
 }
 
@@ -5973,9 +5986,13 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "Labeled"
         && args.len() >= 2
-        && lays_out_a_graphic(&args[0]) =>
+        && (is_blank_string(&args[0]) || lays_out_a_graphic(&args[0])) =>
     {
-      let content = expr_to_svg(&args[0]);
+      let content = if is_blank_string(&args[0]) {
+        String::new()
+      } else {
+        expr_to_svg(&args[0])
+      };
       // A label is shown as text, so a string one loses its quotes.
       let label = expr_to_svg(&unquoted_display_string(&args[1]));
       let position = match args.get(2) {
