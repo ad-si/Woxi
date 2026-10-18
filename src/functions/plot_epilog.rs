@@ -642,8 +642,13 @@ fn render_item(
           }
         }
       }
-      "Text" if args.len() >= 2 => {
-        if let Some((x, y)) = anchor2(&args[1], area) {
+      "Text" if !args.is_empty() => {
+        // `Text[label]` sits at the origin, as in `Graphics`.
+        let anchor = match args.get(1) {
+          Some(pos) => anchor2(pos, area),
+          None => Some((0.0, 0.0)),
+        };
+        if let Some((x, y)) = anchor {
           // `Framed[content, opts…]` boxes the label: a panel behind it and
           // a border around it, both drawn before the text so the text sits
           // on top. Peeling it off first leaves the `Style[…]` it usually

@@ -1012,6 +1012,17 @@ mod graphics {
       assert!(!svg.contains("&quot;"), "no quoted strings: {svg}");
     }
 
+    /// A positionless `Text[label]` in a plot's `Epilog` sits at the origin,
+    /// as it does in `Graphics`, instead of being dropped.
+    #[test]
+    fn a_plot_epilog_text_without_a_position_is_drawn() {
+      let svg = export_svg(
+        "ListPlot[{{3, 17}, {7, 13}}, Epilog -> Text[\"zzlabel\"], \
+         PlotRange -> {{0, 500}, {0, 1000}}]",
+      );
+      assert!(svg.contains(">zzlabel</text>"), "{svg}");
+    }
+
     /// A `Tooltip` around a primitive in a plot's `Epilog` draws the
     /// primitive; the tip only shows on hover.
     #[test]
