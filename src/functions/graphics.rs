@@ -15845,6 +15845,27 @@ pub(crate) fn is_manipulate_annotation_head(name: &str) -> bool {
     || matches!(name, "Text" | "TextCell" | "Item" | "Row" | "Column")
 }
 
+/// Whether a button label is `Dynamic[…]` around a string built from the
+/// bindings (`Dynamic["reset " <> ToString[n]]`), which has to be re-evaluated
+/// as they change rather than typeset from its source.
+fn is_dynamic_string_label(label: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = label else {
+    return false;
+  };
+  name == "Dynamic"
+    && args.len() == 1
+    && match &args[0] {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::StringJoin,
+        ..
+      } => true,
+      Expr::FunctionCall { name, .. } => {
+        name == "StringJoin" || name == "ToString"
+      }
+      _ => false,
+    }
+}
+
 /// Whether an annotation row (`Style[…]`, `Row[{…}]`, `Column[{…}]`, …) has a
 /// `Dynamic[…]` anywhere inside it — a Demonstration's live step counter is
 /// often written `Row[{Style["moves: "], Dynamic[moves]}]` right in the
@@ -19872,7 +19893,11 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
       // `GraphicsGrid`/`Row`/`Column` don't merge spans the way `Grid` does,
       // but the placeholder should still draw as nothing rather than fall
       // through to the text renderer and print its own name.
-      if is_span_placeholder(item) {
+      // A `Null` cell (`If[i == j, , …]` leaving a gap in a board) is blank
+      // space, not the text "Null".
+      if is_span_placeholder(item)
+        || matches!(item, Expr::Identifier(s) if s == "Null")
+      {
         // A near-zero height keeps this cell from inflating its row: the
         // placeholder holds no content of its own, so the row's height
         // should follow whatever real content sits beside it.
@@ -30096,6 +30121,18 @@ fn parse_manipulate_control(
     && built_name == "Button"
     && built_args.len() >= 2
   {
+    // A label that reads the bindings (`Dynamic["new game with " <> n]`)
+    // has to follow them, which only a display element does.
+    if is_dynamic_string_label(&built_args[0]) {
+      let value = explicit_initial
+        .as_ref()
+        .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_source_form);
+      return Some(ParsedControl::StateWithDisplay {
+        name,
+        value,
+        display: crate::syntax::expr_to_source_form(built.as_ref().unwrap()),
+      });
+    }
     let button_runs = manipulate_label_runs(&built_args[0], false);
     let value = explicit_initial
       .as_ref()
@@ -30109,6 +30146,34 @@ fn parse_manipulate_control(
         action: crate::syntax::expr_to_source_form(&built_args[1]),
         enabled: None,
       },
+    });
+  }
+  // Custom control whose builder yields a picture or layout rather than a
+  // `Button` (a board of clickable cells bound to another variable): the
+  // variable becomes live state and the built widget is a display element,
+  // re-rendered from the live bindings like any in-body widget.
+  if let Some(Expr::FunctionCall {
+    name: built_name, ..
+  }) = &built
+    && matches!(
+      built_name.as_str(),
+      "GraphicsGrid"
+        | "Graphics"
+        | "Grid"
+        | "Row"
+        | "Column"
+        | "Panel"
+        | "Framed"
+        | "Pane"
+    )
+  {
+    let value = explicit_initial
+      .as_ref()
+      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_source_form);
+    return Some(ParsedControl::StateWithDisplay {
+      name,
+      value,
+      display: crate::syntax::expr_to_source_form(built.as_ref().unwrap()),
     });
   }
   // Per-element custom control: `{{op, default, label}, Manipulator[

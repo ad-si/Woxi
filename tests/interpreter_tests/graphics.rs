@@ -36823,3 +36823,14 @@ fn explicit_plot_range_clips_content_in_widened_drawing_area() {
   assert!(auto.contains("<clipPath id=\"plotClip_"), "{auto}");
   assert!(auto.contains("<rect x=\"0\" y=\"0\" width="), "{auto}");
 }
+
+/// Regression: a `Null` cell in a `GraphicsGrid` (e.g. `If[i == j, , …]`
+/// leaving a gap on a board's diagonal) printed the word "Null".
+#[test]
+fn graphics_grid_null_cell_is_blank() {
+  let svg = export_svg(
+    "GraphicsGrid[{{Graphics[Disk[]], Null}, {Null, Graphics[Disk[]]}}]",
+  );
+  assert!(!svg.contains("Null"), "{svg}");
+  assert!(svg.contains("<ellipse"), "{svg}");
+}
