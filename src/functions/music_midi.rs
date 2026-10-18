@@ -309,13 +309,10 @@ mod tests {
   fn score_two_voices_matches_wolfram_bytes() {
     // MusicScore[{MusicVoice[{"A","G","E"}], MusicVoice[{"F","E","C"}]}] must
     // serialize byte-for-byte to the reference file Wolfram exports.
-    let score = Expr::FunctionCall {
-      name: "MusicScore".to_string(),
-      args: vec![Expr::List(
-        vec![voice(&["A", "G", "E"]), voice(&["F", "E", "C"])].into(),
-      )]
-      .into(),
-    };
+    let score = call1(
+      "MusicScore",
+      Expr::List(vec![voice(&["A", "G", "E"]), voice(&["F", "E", "C"])].into()),
+    );
     let bytes = music_to_midi(&score).unwrap();
     let expected: &[u8] = &[
       0x4d, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x01, 0x00, 0x02,

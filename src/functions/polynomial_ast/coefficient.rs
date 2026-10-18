@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::pattern_matching::expr_equal;
 
@@ -455,11 +454,8 @@ fn coefficient_list_multi(
   }
   let mut items = Vec::with_capacity(shape[0] as usize);
   for power in 0..shape[0] {
-    let coeff = coefficient_ast(&[
-      poly.clone(),
-      Expr::Identifier(vars[0].to_string()),
-      Expr::Integer(power),
-    ])?;
+    let coeff =
+      coefficient_ast(&[poly.clone(), id_expr(vars[0]), Expr::Integer(power)])?;
     let simplified = crate::evaluator::evaluate_expr_to_expr(&coeff)?;
     let sub = if vars.len() == 1 {
       simplified
@@ -1564,15 +1560,16 @@ fn build_sparse_array_multi(
     dims_vec.push(Expr::Integer(n as i128));
   }
   let dims_list = Expr::List(dims_vec.into());
-  let make_outer = |inner: Expr| Expr::FunctionCall {
-    name: "SparseArray".to_string(),
-    args: vec![
-      id_expr("Automatic"),
-      dims_list.clone(),
-      Expr::Integer(0),
-      inner,
-    ]
-    .into(),
+  let make_outer = |inner: Expr| {
+    call(
+      "SparseArray",
+      vec![
+        id_expr("Automatic"),
+        dims_list.clone(),
+        Expr::Integer(0),
+        inner,
+      ],
+    )
   };
   // Collect this degree's entries from each poly, in poly order.
   let mut row_counts = vec![0i128; m];

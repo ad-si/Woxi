@@ -339,7 +339,7 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
           .cloned()
           .collect();
-        gargs.push(rule_expr(Expr::Identifier("ImageSize".to_string()), size));
+        gargs.push(rule_expr(id_expr("ImageSize"), size));
         let sized = Expr::FunctionCall {
           name: name.clone(),
           args: gargs.into(),
@@ -1195,16 +1195,15 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             negate_component(&cargs[2])?,
           ],
         )),
-        4 => Ok(Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![
+        4 => Ok(call(
+          "RGBColor",
+          vec![
             negate_component(&cargs[0])?,
             negate_component(&cargs[1])?,
             negate_component(&cargs[2])?,
             cargs[3].clone(),
-          ]
-          .into(),
-        }),
+          ],
+        )),
         _ => Err(InterpreterError::EvaluationError(
           "ColorNegate: RGBColor must have 3 or 4 arguments".into(),
         )),
@@ -11556,10 +11555,7 @@ pub fn highlight_image_ast(
       highlight_primitives(mark, &mut prims);
     }
   }
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.into(),
-    args: args.into(),
-  };
+  let call = |name: &str, args: Vec<Expr>| call(name, args);
   let pair =
     |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
   let rule = |k: &str, v: Expr| rule_expr(Expr::Identifier(k.into()), v);
@@ -11581,7 +11577,7 @@ pub fn highlight_image_ast(
         Expr::List(vec![pair(0.0, w), pair(0.0, h)].into()),
       ),
       rule("ImageSize", pair(w, h)),
-      rule("PlotRangePadding", Expr::Identifier("None".into())),
+      rule("PlotRangePadding", id_expr("None")),
       rule("ImagePadding", Expr::Integer(0)),
     ],
   );

@@ -224,16 +224,15 @@ pub fn dispatch_datetime_functions(
         let d2 =
           crate::functions::datetime_ast::resolve_date_to_list(&dates[1]);
         if let (Some(start), Some(end)) = (d1, d2) {
-          return Some(Ok(Expr::FunctionCall {
-            name: "DateInterval".to_string(),
-            args: vec![
+          return Some(Ok(call(
+            "DateInterval",
+            vec![
               Expr::List(vec![Expr::List(vec![start, end].into())].into()),
               str_expr("Day"),
               str_expr("Gregorian"),
               id_expr("None"),
-            ]
-            .into(),
-          }));
+            ],
+          )));
         }
       }
       crate::emit_message(&format!(
@@ -353,16 +352,15 @@ pub fn dispatch_datetime_functions(
           ]
           .into(),
         );
-        return Some(Ok(Expr::FunctionCall {
-          name: "DateObject".to_string(),
-          args: vec![
+        return Some(Ok(call(
+          "DateObject",
+          vec![
             date_list,
             str_expr("Instant"),
             str_expr("Gregorian"),
             Expr::Real(0.0),
-          ]
-          .into(),
-        }));
+          ],
+        )));
       }
       // DateObject["2024-03-15"] — parse an ISO date/time string into a
       // component list and let the list logic below tag the granularity.
@@ -597,16 +595,15 @@ pub fn dispatch_datetime_functions(
           ]
           .into(),
         );
-        return Some(Ok(Expr::FunctionCall {
-          name: "DateObject".to_string(),
-          args: vec![
+        return Some(Ok(call(
+          "DateObject",
+          vec![
             date_list,
             str_expr("Instant"),
             str_expr("Gregorian"),
             Expr::Real(tz),
-          ]
-          .into(),
-        }));
+          ],
+        )));
       }
       #[cfg(not(feature = "cli"))]
       {
@@ -640,16 +637,15 @@ pub fn dispatch_datetime_functions(
           ]
           .into(),
         );
-        return Some(Ok(Expr::FunctionCall {
-          name: "DateObject".to_string(),
-          args: vec![
+        return Some(Ok(call(
+          "DateObject",
+          vec![
             date_list,
             str_expr("Instant"),
             str_expr("Gregorian"),
             Expr::Real(0.0),
-          ]
-          .into(),
-        }));
+          ],
+        )));
       }
       #[cfg(not(feature = "cli"))]
       {

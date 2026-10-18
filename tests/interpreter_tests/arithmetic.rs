@@ -7267,6 +7267,16 @@ mod cases {
     );
   }
 
+  /// `a ≈ b` is typeset infix in TraditionalForm, not as `TildeTilde[a, b]`
+  /// (the Gregory Series demo labels its plot with a held `π/4 ≈ Sum[…]`).
+  #[test]
+  fn traditional_form_tilde_tilde_is_infix() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[a ≈ b]]"#,
+      r#"TagBox[FormBox[RowBox[{a, ≈, b}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
   /// A `Plus` term with a negative coefficient boxes as `- <positive>`, the
   /// way wolframscript does (`RowBox[{a, -, RowBox[{2.5, " ", b}]}]`), not as
   /// `+ -2.5 b`.
@@ -8070,6 +8080,15 @@ mod cases {
     assert_case(r#"Extract[<|"a" -> 1, "b" -> 2|>, Key["a"]]"#, r#"1"#);
     assert_case(r#"Extract[<|"a" -> 1, "b" -> 2|>, "b"]"#, r#"2"#);
     assert_case(r#"Extract[<|a -> 1, b -> 2|>, Key[b]]"#, r#"2"#);
+  }
+  #[test]
+  fn spaced_semicolons_before_newline_are_not_span() {
+    // `; ;` is a statement plus an empty one, not the `;;` Span operator,
+    // so the next line stays its own statement.
+    assert_case("v = {1, 2, 3}; ;\nHead[v]", "List");
+    assert_case("a = 3; ;\na", "3");
+    // Adjacent semicolons still form a Span.
+    assert_case("v = {1, 2, 3};;\nHead[v]", "Span");
   }
   #[test]
   fn divide_16() {

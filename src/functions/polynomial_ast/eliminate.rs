@@ -1,5 +1,4 @@
 use super::together::negate_expr;
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 
@@ -81,8 +80,7 @@ fn solve_for_var(eq: &Expr, var: &str) -> Option<Expr> {
   let degree = max_power_int(&expanded, var)?;
   if degree != 1 {
     // For non-linear, fall back to Solve
-    let solutions =
-      solve_ast(&[eq.clone(), Expr::Identifier(var.to_string())]).ok()?;
+    let solutions = solve_ast(&[eq.clone(), id_expr(var)]).ok()?;
     if let Expr::List(outer) = &solutions {
       for item in outer {
         if let Expr::List(inner) = item {

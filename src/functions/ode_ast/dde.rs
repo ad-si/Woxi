@@ -113,7 +113,7 @@ fn rewrite_delayed(
       return Expr::Identifier(state_name(name));
     }
     let diff = crate::evaluator::evaluate_expr_to_expr(&minus2(
-      Expr::Identifier(t_name.to_string()),
+      id_expr(t_name),
       args[0].clone(),
     ))
     .ok()

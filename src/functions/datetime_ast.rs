@@ -1081,15 +1081,16 @@ fn date_object_interval_bounds(obj_args: &[Expr]) -> Option<Expr> {
   } else {
     Expr::Real(0.0)
   };
-  let instant = |components: Vec<Expr>| Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: vec![
-      Expr::List(components.into()),
-      str_expr("Instant"),
-      str_expr("Gregorian"),
-      time_zone.clone(),
-    ]
-    .into(),
+  let instant = |components: Vec<Expr>| {
+    call(
+      "DateObject",
+      vec![
+        Expr::List(components.into()),
+        str_expr("Instant"),
+        str_expr("Gregorian"),
+        time_zone.clone(),
+      ],
+    )
   };
   Some(Expr::List(
     vec![instant(normalized(start)), instant(normalized(end))].into(),
@@ -1369,16 +1370,15 @@ pub fn time_zone_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let rebuild = |list: Vec<Expr>, tz: Expr| -> Expr {
-    Expr::FunctionCall {
-      name: "DateObject".to_string(),
-      args: vec![
+    call(
+      "DateObject",
+      vec![
         Expr::List(list.into()),
         Expr::String(granularity.clone()),
         Expr::String(calendar.clone()),
         tz,
-      ]
-      .into(),
-    }
+      ],
+    )
   };
 
   // Date-granularity objects only swap the zone label.
@@ -1781,9 +1781,9 @@ fn make_date_result(
   as_date_object: bool,
 ) -> Expr {
   if as_date_object {
-    Expr::FunctionCall {
-      name: "DateObject".to_string(),
-      args: vec![
+    call(
+      "DateObject",
+      vec![
         Expr::List(
           vec![
             Expr::Integer(y as i128),
@@ -1793,9 +1793,8 @@ fn make_date_result(
           .into(),
         ),
         str_expr("Day"),
-      ]
-      .into(),
-    }
+      ],
+    )
   } else if input_len <= 3 {
     Expr::List(
       vec![
@@ -2526,7 +2525,7 @@ pub fn day_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     components[1] as i64,
     components[2] as i64,
   );
-  Ok(Expr::Identifier(day_name(dow).to_string()))
+  Ok(id_expr(day_name(dow)))
 }
 
 /// Day of the year (1–366) for a Gregorian date.
@@ -2624,9 +2623,7 @@ pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "AMPM" => str_expr(if h < 12 { "AM" } else { "PM" }),
       // DayName is a Symbol (`Saturday`), not a String — matching `DayName[…]`
       // and wolframscript. The other name keys (MonthName, *Short) are Strings.
-      "DayName" => {
-        Expr::Identifier(day_name(day_of_week(y, mo, d)).to_string())
-      }
+      "DayName" => id_expr(day_name(day_of_week(y, mo, d))),
       "MonthName" => str_expr(month_name(mo)),
       "MonthNameShort" => str_expr(month_name_short(mo)),
       "DayNameShort" => str_expr(day_name_short(day_of_week(y, mo, d))),
@@ -2929,18 +2926,17 @@ pub fn next_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (ny, nm, nd) =
     absolute_days_to_date(date_to_absolute_days(y, m, d) + days_forward);
 
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: vec![Expr::List(
+  crate::evaluator::evaluate_expr_to_expr(&call1(
+    "DateObject",
+    Expr::List(
       vec![
         Expr::Integer(ny as i128),
         Expr::Integer(nm as i128),
         Expr::Integer(nd as i128),
       ]
       .into(),
-    )]
-    .into(),
-  })
+    ),
+  ))
 }
 
 /// PreviousDate[date, weekday] — the previous occurrence of the given weekday
@@ -2993,18 +2989,17 @@ pub fn previous_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (ny, nm, nd) =
     absolute_days_to_date(date_to_absolute_days(y, m, d) - days_back);
 
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: vec![Expr::List(
+  crate::evaluator::evaluate_expr_to_expr(&call1(
+    "DateObject",
+    Expr::List(
       vec![
         Expr::Integer(ny as i128),
         Expr::Integer(nm as i128),
         Expr::Integer(nd as i128),
       ]
       .into(),
-    )]
-    .into(),
-  })
+    ),
+  ))
 }
 
 /// Resolve a date expression (date list, date string, DateObject) to a
@@ -3161,9 +3156,9 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Return DateObject[{y, m, d}, Day]
-  Ok(Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: vec![
+  Ok(call(
+    "DateObject",
+    vec![
       Expr::List(
         vec![
           Expr::Integer(ny as i128),
@@ -3173,9 +3168,8 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .into(),
       ),
       str_expr("Day"),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 // ─── DayRange ───────────────────────────────────────────────────────
@@ -3285,9 +3279,9 @@ pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => true,
     };
     if keep {
-      result.push(Expr::FunctionCall {
-        name: "DateObject".to_string(),
-        args: vec![
+      result.push(call(
+        "DateObject",
+        vec![
           Expr::List(
             vec![
               Expr::Integer(y as i128),
@@ -3297,9 +3291,8 @@ pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .into(),
           ),
           str_expr("Day"),
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
     abs += 1;
   }
@@ -3839,15 +3832,16 @@ fn instant_to_granular_date_object(
   let seconds = (seconds * 1e6).round() / 1e6;
   let (y, m, d, h, mi, s) = absolute_seconds_to_date(seconds);
   let int = |v: i64| Expr::Integer(v as i128);
-  let with_time_zone = |fields: Vec<Expr>, gran: &str| Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: vec![
-      Expr::List(fields.into()),
-      str_expr(gran),
-      str_expr("Gregorian"),
-      Expr::Real(0.0),
-    ]
-    .into(),
+  let with_time_zone = |fields: Vec<Expr>, gran: &str| {
+    call(
+      "DateObject",
+      vec![
+        Expr::List(fields.into()),
+        str_expr(gran),
+        str_expr("Gregorian"),
+        Expr::Real(0.0),
+      ],
+    )
   };
   let date_only = |fields: Vec<Expr>, gran: &str| {
     call(
@@ -4323,19 +4317,17 @@ pub fn date_select_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let end = date_to_absolute_days(e.0, e.1, e.2);
         for abs in start..=end {
           let (y, m, d) = absolute_days_to_date(abs);
-          let obj =
-            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-              name: "DateObject".to_string(),
-              args: vec![Expr::List(
-                vec![
-                  Expr::Integer(y as i128),
-                  Expr::Integer(m as i128),
-                  Expr::Integer(d as i128),
-                ]
-                .into(),
-              )]
+          let obj = crate::evaluator::evaluate_expr_to_expr(&call1(
+            "DateObject",
+            Expr::List(
+              vec![
+                Expr::Integer(y as i128),
+                Expr::Integer(m as i128),
+                Expr::Integer(d as i128),
+              ]
               .into(),
-            })?;
+            ),
+          ))?;
           days.push(obj);
         }
       }
@@ -4599,9 +4591,9 @@ pub fn from_julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ]))?
   };
 
-  Ok(Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: vec![
+  Ok(call(
+    "DateObject",
+    vec![
       Expr::List(
         vec![
           Expr::Integer(year),
@@ -4616,7 +4608,6 @@ pub fn from_julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       str_expr("Instant"),
       str_expr("Gregorian"),
       Expr::Real(0.0),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }

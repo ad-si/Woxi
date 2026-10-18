@@ -460,7 +460,7 @@ mod polyhedron_data_tests {
   fn polyhedron_data_all_lists_every_entity() {
     assert_eq!(
       interpret("PolyhedronData[All]").unwrap(),
-      "{AcuteGoldenRhombohedron, BilinskiDodecahedron, Cube, DeltoidalHexecontahedron, \
+      "{AcuteGoldenRhombohedron, BilinskiDodecahedron, Cube, Cuboctahedron, DeltoidalHexecontahedron, \
        DisdyakisTriacontahedron, Dodecahedron, GreatIcosahedron, GreatRhombicosidodecahedron, \
        GreatStellatedDodecahedron, Icosahedron, \
        Icosidodecahedron, ObtuseGoldenRhombohedron, Octahedron, PentakisDodecahedron, \
@@ -1267,6 +1267,33 @@ mod polyhedron_data_tests {
       )
       .unwrap(),
       "{GraphicsComplex, 6, {4, 4, 4, 4, 4, 4}, True}"
+    );
+  }
+
+  // The cuboctahedron: vertices, faces and metrics agree with each other.
+  #[test]
+  fn polyhedron_data_cuboctahedron() {
+    assert_eq!(
+      interpret(
+        r#"{Length[PolyhedronData["Cuboctahedron", "VertexCoordinates"]],
+          Sort[Map[Length, PolyhedronData["Cuboctahedron", "FaceIndices"]]],
+          Length[PolyhedronData["Cuboctahedron", "EdgeIndices"]],
+          PolyhedronData["Cuboctahedron", "Volume"],
+          PolyhedronData["Cuboctahedron", "Circumradius"]}"#
+      )
+      .unwrap(),
+      "{12, {3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4}, 24, \
+       (5*Sqrt[2])/3, 1}"
+    );
+    // Every edge has unit length.
+    assert_eq!(
+      interpret(
+        r#"v = PolyhedronData["Cuboctahedron", "VertexCoordinates"];
+        Union[Map[Simplify[Norm[v[[#[[1]]]] - v[[#[[2]]]]]] &,
+          PolyhedronData["Cuboctahedron", "EdgeIndices"]]]"#
+      )
+      .unwrap(),
+      "{1}"
     );
   }
 

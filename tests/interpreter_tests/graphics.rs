@@ -2039,6 +2039,18 @@ mod graphics {
       assert!(!svg.contains("Set"), "{svg}");
     }
 
+    /// A held `a ≈ Sum[…]` label reads as an approximation with a sigma,
+    /// not as the literal `TildeTilde[…]`/`Sum[…]` source.
+    #[test]
+    fn text_approximation_of_a_sum() {
+      let svg = export_svg(
+        "Grid[{{Style[HoldForm[a \\[TildeTilde] Sum[1/k, {k, 1, n}]], \"TraditionalForm\"]}}]",
+      );
+      assert!(svg.contains("a \u{2248} \u{2211}"), "{svg}");
+      assert!(!svg.contains("TildeTilde"), "{svg}");
+      assert!(!svg.contains("Sum["), "{svg}");
+    }
+
     /// The lines of a multi-line label are centred on its anchor.
     #[test]
     fn text_multiline_is_vertically_centered() {
@@ -16876,6 +16888,25 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!ranged.contains("ClickPane"), "not the source: {ranged}");
     }
 
+    // A `ClickPane` whose (held) content is a variable holding a picture,
+    // as in a board-game Demonstration, must draw that picture in a grid.
+    #[test]
+    fn a_click_pane_in_a_grid_resolves_a_picture_variable() {
+      for pane in [
+        "ClickPane[board, (x = #) &]",
+        "ClickPane[Dynamic[Deploy[board]], Function[p, x = Round[p]]]",
+      ] {
+        let svg = export_svg(&format!(
+          "board = Graphics[{{Disk[]}}]; Grid[{{{{{pane}, \"a\"}}}}]"
+        ));
+        assert!(
+          svg.contains("<ellipse") || svg.contains("<circle"),
+          "the picture must be drawn for {pane}: {svg}"
+        );
+        assert!(!svg.contains("ClickPane"), "not the source: {svg}");
+      }
+    }
+
     // A visual host shows the picture an interactive pane wraps even when
     // the pane is the whole result — a Manipulate body that *is* a
     // `ClickPane` rendered as a strip of source text.
@@ -29368,9 +29399,9 @@ mod manipulate {
         // and small stellated dodecahedra, the great icosahedron and
         // rhombic hexecontahedron
         // stellations, the triangular orthobicupola, the Bilinski
-        // dodecahedron, the stella octangula, and the golden rhombohedra and
-        // rhombic icosahedron.
-        assert_eq!(values.len(), 28, "every known solid");
+        // dodecahedron, the stella octangula, and the golden rhombohedra,
+        // rhombic icosahedron, and the cuboctahedron.
+        assert_eq!(values.len(), 29, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }
@@ -36850,4 +36881,29 @@ fn graphics_layout_nested_in_a_row_fits_its_cell() {
     "GraphicsRow[{GraphicsGrid[{{Graphics[Circle[]], Graphics[Circle[]]}}]}]",
   );
   assert!(svg.starts_with("<svg width=\"360\""), "{svg}");
+}
+
+#[test]
+fn list_fit_plot_draws_data_and_fitted_curve() {
+  for model in [
+    "",
+    ", \"Quadratic\"",
+    ", \"Exponential\"",
+    ", \"Kernel\"",
+    ", {1, x}",
+  ] {
+    let head =
+      interpret(&format!("Head[ListFitPlot[{{3, 5, 4, 8, 9, 12}}{model}]]"))
+        .unwrap();
+    assert_eq!(head, "Graphics", "model {model}");
+  }
+  // A perfect linear fit passes through the data: the curve is drawn
+  // in addition to the points.
+  let svg = export_svg("ListFitPlot[{{1, 2}, {2, 4}, {3, 6}}]");
+  assert!(svg.contains("<polyline"), "{svg}");
+  // Unknown models stay unevaluated.
+  assert_eq!(
+    interpret("ListFitPlot[{1, 2, 3}, \"Bogus\"]").unwrap(),
+    "ListFitPlot[{1, 2, 3}, Bogus]"
+  );
 }

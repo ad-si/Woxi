@@ -268,11 +268,7 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // standard chain-rule differentiation, then put the slot back.
     if let Expr::Slot(_) = &items[0] {
       let fresh = "$__DSlotVar__";
-      let body = replace_subexpr_simple(
-        &args[0],
-        &items[0],
-        &Expr::Identifier(fresh.to_string()),
-      );
+      let body = replace_subexpr_simple(&args[0], &items[0], &id_expr(fresh));
       let mut result = body;
       for _ in 0..n {
         result = differentiate(&result, fresh)?;
@@ -280,11 +276,7 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // Putting the slot back changes where the factor sorts, so the
       // result is re-evaluated into canonical order.
-      result = replace_subexpr_simple(
-        &result,
-        &Expr::Identifier(fresh.to_string()),
-        &items[0],
-      );
+      result = replace_subexpr_simple(&result, &id_expr(fresh), &items[0]);
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
     // Non-symbol variable specifier (e.g. x[k]) — apply
@@ -300,16 +292,12 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Slot variable: same fresh-symbol trick as the {Slot, n} branch.
   if let Expr::Slot(_) = &args[1] {
     let fresh = "$__DSlotVar__";
-    let body = replace_subexpr_simple(
-      &args[0],
-      &args[1],
-      &Expr::Identifier(fresh.to_string()),
-    );
+    let body = replace_subexpr_simple(&args[0], &args[1], &id_expr(fresh));
     let result = differentiate(&body, fresh)?;
     let result = simplify(result);
     return crate::evaluator::evaluate_expr_to_expr(&replace_subexpr_simple(
       &result,
-      &Expr::Identifier(fresh.to_string()),
+      &id_expr(fresh),
       &args[1],
     ));
   }
@@ -434,18 +422,14 @@ fn differentiate_wrt_expr(
   // Plus/Times) that silently fell to "treat as constant → 0" for anything
   // else, e.g. `D[(a x[k])^2, x[k]]` or `D[Log[x[k]], x[k]]`.
   let fresh = "$__DIndexedVar__";
-  let body = replace_subexpr_simple(
-    expr,
-    var_expr,
-    &Expr::Identifier(fresh.to_string()),
-  );
+  let body = replace_subexpr_simple(expr, var_expr, &id_expr(fresh));
   let result = differentiate(&body, fresh)?;
   let result = simplify(result);
   // `x[k]` sorts differently from the fresh symbol it stood in for, so the
   // result is re-evaluated into canonical order.
   crate::evaluator::evaluate_expr_to_expr(&replace_subexpr_simple(
     &result,
-    &Expr::Identifier(fresh.to_string()),
+    &id_expr(fresh),
     var_expr,
   ))
 }
@@ -872,12 +856,9 @@ fn factor_logarithmic_antiderivative(expr: &Expr, var: &str) -> Option<Expr> {
     });
   }
   let power_expr = if common_power == 1 {
-    Expr::Identifier(var.to_string())
+    id_expr(var)
   } else {
-    pow(
-      Expr::Identifier(var.to_string()),
-      Expr::Integer(common_power),
-    )
+    pow(id_expr(var), Expr::Integer(common_power))
   };
   let frac = call(
     "Rational",
@@ -2302,14 +2283,7 @@ fn thread_list_product(factors: &[&Expr]) -> Option<Expr> {
   if !factors.iter().any(|f| is_list(f)) {
     return None;
   }
-  let product = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: factors
-      .iter()
-      .map(|f| (*f).clone())
-      .collect::<Vec<_>>()
-      .into(),
-  };
+  let product = call("Times", factors.iter().map(|f| (*f).clone()).collect());
   match crate::evaluator::evaluate_expr_to_expr(&product) {
     Ok(list @ Expr::List(_)) => Some(list),
     _ => None,
@@ -2344,7 +2318,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 "D",
                 vec![
                   Expr::Identifier(name.clone()),
-                  Expr::Identifier(var.to_string()),
+                  id_expr(var),
                   rule.clone(),
                 ],
               )
@@ -2456,10 +2430,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             )))
           }
         }
-        _ => Ok(call(
-          "D",
-          vec![expr.clone(), Expr::Identifier(var.to_string())],
-        )),
+        _ => Ok(call("D", vec![expr.clone(), id_expr(var)])),
       }
     }
 
@@ -2469,10 +2440,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         let d = differentiate(operand, var)?;
         Ok(neg1(d))
       } else {
-        Ok(call(
-          "D",
-          vec![expr.clone(), Expr::Identifier(var.to_string())],
-        ))
+        Ok(call("D", vec![expr.clone(), id_expr(var)]))
       }
     }
 
@@ -2526,10 +2494,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 ));
               } else {
                 // Unexpected piece shape — fall back to unevaluated D[…].
-                return Ok(call(
-                  "D",
-                  vec![expr.clone(), Expr::Identifier(var.to_string())],
-                ));
+                return Ok(call("D", vec![expr.clone(), id_expr(var)]));
               }
             }
             Ok(call(
@@ -2537,10 +2502,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               vec![Expr::List(diffed_pieces.into()), id_expr("Indeterminate")],
             ))
           } else {
-            Ok(call(
-              "D",
-              vec![expr.clone(), Expr::Identifier(var.to_string())],
-            ))
+            Ok(call("D", vec![expr.clone(), id_expr(var)]))
           }
         }
         // SeriesData[var, x0, {coeffs}, nmin, nmax, denom]: differentiate
@@ -2558,10 +2520,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let coeffs = match &args[2] {
             Expr::List(items) => items.clone(),
             _ => {
-              return Ok(call(
-                "D",
-                vec![expr.clone(), Expr::Identifier(var.to_string())],
-              ));
+              return Ok(call("D", vec![expr.clone(), id_expr(var)]));
             }
           };
           let nmin_val = match &args[3] {
@@ -3110,10 +3069,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           }
           if !matches!(dn, Expr::Integer(0)) {
             // Derivative w.r.t. order: leave unevaluated
-            return Ok(call(
-              "D",
-              vec![expr.clone(), Expr::Identifier(var.to_string())],
-            ));
+            return Ok(call("D", vec![expr.clone(), id_expr(var)]));
           }
           // Use plus_ast for canonical ordering: n-1 → Plus[-1, n], n+1 → Plus[1, n]
           let n_minus_1 = crate::functions::math_ast::plus_ast(&[
@@ -3195,10 +3151,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             return Ok(Expr::Integer(0));
           }
           if !matches!(dn, Expr::Integer(0)) {
-            return Ok(call(
-              "D",
-              vec![expr.clone(), Expr::Identifier(var.to_string())],
-            ));
+            return Ok(call("D", vec![expr.clone(), id_expr(var)]));
           }
           let n_minus_1 = crate::functions::math_ast::plus_ast(&[
             Expr::Integer(-1),
@@ -3223,10 +3176,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             return Ok(Expr::Integer(0));
           }
           if !matches!(dn, Expr::Integer(0)) {
-            return Ok(call(
-              "D",
-              vec![expr.clone(), Expr::Identifier(var.to_string())],
-            ));
+            return Ok(call("D", vec![expr.clone(), id_expr(var)]));
           }
           let n_minus_1 = crate::functions::math_ast::plus_ast(&[
             Expr::Integer(-1),
@@ -3294,10 +3244,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             return Ok(Expr::Integer(0));
           }
           if !matches!(dm, Expr::Integer(0)) {
-            return Ok(call(
-              "D",
-              vec![expr.clone(), Expr::Identifier(var.to_string())],
-            ));
+            return Ok(call("D", vec![expr.clone(), id_expr(var)]));
           }
           // 1 - m Sin[phi]^2
           let inner = crate::evaluator::evaluate_expr_to_expr(&minus2(
@@ -3624,9 +3571,9 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           if matches!(dz, Expr::Integer(0)) {
             return Ok(Expr::Integer(0));
           }
-          let result = Expr::FunctionCall {
-            name: "Piecewise".to_string(),
-            args: vec![
+          let result = call(
+            "Piecewise",
+            vec![
               Expr::List(
                 vec![Expr::List(
                   vec![
@@ -3641,9 +3588,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 .into(),
               ),
               id_expr("Indeterminate"),
-            ]
-            .into(),
-          };
+            ],
+          );
           if matches!(dz, Expr::Integer(1)) {
             Ok(result)
           } else {
@@ -3675,16 +3621,15 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             operands: vec![args[0].clone(), step_call],
             operators: vec![cmp_op],
           };
-          let pw = Expr::FunctionCall {
-            name: "Piecewise".to_string(),
-            args: vec![
+          let pw = call(
+            "Piecewise",
+            vec![
               Expr::List(
                 vec![Expr::List(vec![Expr::Integer(0), cond].into())].into(),
               ),
               id_expr("Indeterminate"),
-            ]
-            .into(),
-          };
+            ],
+          );
           Ok(simplify(times2(dz, pw)))
         }
         // UnitStep[x]: D[UnitStep[x], x] = Piecewise[{{Indeterminate, x == 0}}, 0]
@@ -3710,9 +3655,9 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           if matches!(dz, Expr::Integer(0)) {
             return Ok(Expr::Integer(0));
           }
-          let result = Expr::FunctionCall {
-            name: "Piecewise".to_string(),
-            args: vec![
+          let result = call(
+            "Piecewise",
+            vec![
               Expr::List(
                 vec![Expr::List(
                   vec![
@@ -3727,9 +3672,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 .into(),
               ),
               Expr::Integer(0),
-            ]
-            .into(),
-          };
+            ],
+          );
           if matches!(dz, Expr::Integer(1)) {
             Ok(result)
           } else {
@@ -3755,9 +3699,9 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               .into(),
             )
           };
-          let result = Expr::FunctionCall {
-            name: "Piecewise".to_string(),
-            args: vec![
+          let result = call(
+            "Piecewise",
+            vec![
               Expr::List(
                 vec![
                   clause(Expr::Integer(0), ComparisonOp::Less),
@@ -3766,9 +3710,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 .into(),
               ),
               id_expr("Indeterminate"),
-            ]
-            .into(),
-          };
+            ],
+          );
           if matches!(dz, Expr::Integer(1)) {
             Ok(result)
           } else {
@@ -3879,16 +3822,15 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             if !is_constant_wrt(integrand, var) {
               let inner_deriv = differentiate(integrand, var)?;
               if !matches!(inner_deriv, Expr::Integer(0)) {
-                terms.push(Expr::FunctionCall {
-                  name: "Integrate".to_string(),
-                  args: vec![
+                terms.push(call(
+                  "Integrate",
+                  vec![
                     inner_deriv,
                     Expr::List(
                       vec![int_var.clone(), lo.clone(), hi.clone()].into(),
                     ),
-                  ]
-                  .into(),
-                });
+                  ],
+                ));
               }
             }
 
@@ -3946,10 +3888,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                   vec![dg, Expr::Identifier(iv)],
                 ))
               }
-              None => Ok(call(
-                "D",
-                vec![expr.clone(), Expr::Identifier(var.to_string())],
-              )),
+              None => Ok(call("D", vec![expr.clone(), id_expr(var)])),
             }
           }
         }
@@ -4118,10 +4057,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
       if !args.is_empty() && is_constant_wrt(func.as_ref(), var) {
         return chain_rule_unknown_function(func.as_ref(), args, var);
       }
-      Ok(call(
-        "D",
-        vec![expr.clone(), Expr::Identifier(var.to_string())],
-      ))
+      Ok(call("D", vec![expr.clone(), id_expr(var)]))
     }
 
     // Lists differentiate element-wise. The fallback below would fold a
@@ -4141,10 +4077,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
       if is_constant_wrt(expr, var) {
         Ok(Expr::Integer(0))
       } else {
-        Ok(call(
-          "D",
-          vec![expr.clone(), Expr::Identifier(var.to_string())],
-        ))
+        Ok(call("D", vec![expr.clone(), id_expr(var)]))
       }
     }
   }
@@ -4818,7 +4751,7 @@ fn make_gaussian_antiderivative(
   coeff: &Expr,
   erf_name: &str,
 ) -> Expr {
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
   let (erf_arg, prefix) = match coeff {
     Expr::Integer(1) => {
       // a=1: Erf[x], prefix = Sqrt[Pi]
@@ -4870,7 +4803,7 @@ fn make_fresnel_antiderivative(
   coeff: &Expr,
   fresnel_name: &str,
 ) -> Expr {
-  let x = Expr::Identifier(var.to_string());
+  let x = id_expr(var);
   let pi = const_expr("Pi");
   let sqrt_pi_2 = make_sqrt(div2(pi.clone(), Expr::Integer(2)));
   let sqrt_2_pi = make_sqrt(div2(Expr::Integer(2), pi));
@@ -5027,7 +4960,7 @@ fn arcsin_arccos_linear_antideriv(
   if p == 0 {
     return None;
   }
-  let x = Expr::Identifier(var.to_string());
+  let x = id_expr(var);
   let x_sq = pow2(x.clone(), Expr::Integer(2));
   // Sqrt argument: q^2 - p^2 * x^2 (with p^2 elided when p^2 == 1).
   let p_sq = p.checked_mul(p)?;
@@ -5047,7 +4980,7 @@ fn arcsin_arccos_linear_antideriv(
     div2(sqrt_expr, Expr::Integer(p))
   };
   let inverse_trig = unevaluated(fname, args);
-  let x_times_atrig = times2(Expr::Identifier(var.to_string()), inverse_trig);
+  let x_times_atrig = times2(id_expr(var), inverse_trig);
   let join_op = if fname == "ArcCos" {
     BinaryOperator::Minus
   } else {
@@ -5197,7 +5130,7 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
       let sinh_double = call1("Sinh", double_arg);
       let four_a = simplify(times2(Expr::Integer(4), coeff));
       let sinh_term = div2(sinh_double, four_a);
-      let x_half = div2(Expr::Identifier(var.to_string()), Expr::Integer(2));
+      let x_half = div2(id_expr(var), Expr::Integer(2));
       let join_op = if name == "Cosh" {
         BinaryOperator::Plus
       } else {
@@ -5217,7 +5150,7 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
     // 4*a
     let four_a = simplify(times2(Expr::Integer(4), coeff));
     // x/2
-    let x_half = div2(Expr::Identifier(var.to_string()), Expr::Integer(2));
+    let x_half = div2(id_expr(var), Expr::Integer(2));
     // sin(2*a*x)/(4*a)
     let sin_term = div2(sin_double, four_a);
     if is_sin {
@@ -5383,9 +5316,9 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
     let denom = 1i128 << n; // 2^n
     let (const_num, const_den) = rat_reduce(binom_mid, denom);
     let numer_term = if const_num == 1 {
-      Expr::Identifier(var.to_string())
+      id_expr(var)
     } else {
-      times2(Expr::Integer(const_num), Expr::Identifier(var.to_string()))
+      times2(Expr::Integer(const_num), id_expr(var))
     };
     let const_term = if const_den == 1 {
       numer_term
@@ -5407,9 +5340,9 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
     // Build the trig argument: freq * a * x
     let freq_arg = if matches!(&coeff, Expr::Integer(1)) {
       if freq == 1 {
-        Expr::Identifier(var.to_string())
+        id_expr(var)
       } else {
-        times2(Expr::Integer(freq), Expr::Identifier(var.to_string()))
+        times2(Expr::Integer(freq), id_expr(var))
       }
     } else {
       simplify(times2(Expr::Integer(freq), arg.clone()))
@@ -5558,9 +5491,9 @@ fn try_match_exp_over_linear(
 
   // Build ExpIntegralEi[a*x]
   let ei_arg = if matches!(&linear_coeff, Expr::Integer(1)) {
-    Expr::Identifier(var.to_string())
+    id_expr(var)
   } else {
-    times2(linear_coeff, Expr::Identifier(var.to_string()))
+    times2(linear_coeff, id_expr(var))
   };
   let ei_expr = call1("ExpIntegralEi", ei_arg);
 
@@ -5618,9 +5551,9 @@ fn try_match_si_ci_over_linear(
   let denom_const = try_match_linear_arg(denominator, var)?; // c in c*x
 
   let si_arg = if matches!(&linear_coeff, Expr::Integer(1)) {
-    Expr::Identifier(var.to_string())
+    id_expr(var)
   } else {
-    times2(linear_coeff, Expr::Identifier(var.to_string()))
+    times2(linear_coeff, id_expr(var))
   };
   let si_expr = call1(integral_name, si_arg);
 
@@ -5724,7 +5657,7 @@ fn try_integrate_poly_over_sqrt_quadratic(
   // Radicand coefficients a + 0*x + b*x^2 with numeric a > 0 and b != 0.
   let rad_eval = crate::evaluator::evaluate_expr_to_expr(&radicand)
     .unwrap_or_else(|_| radicand.clone());
-  let x = Expr::Identifier(var.to_string());
+  let x = id_expr(var);
   let rc_expr = crate::functions::polynomial_ast::coefficient_list_ast(&[
     rad_eval,
     x.clone(),
@@ -5802,7 +5735,7 @@ fn try_integrate_inverse_sqrt(base: &Expr, var: &str) -> Option<Expr> {
   // Try to match the base as a + b*x^2 by extracting polynomial coefficients
   let base_eval =
     crate::evaluator::evaluate_expr_to_expr(base).unwrap_or(base.clone());
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
 
   // Use CoefficientList to extract coefficients
   let coeff_result = crate::functions::polynomial_ast::coefficient_list_ast(&[
@@ -5839,7 +5772,7 @@ fn try_integrate_inverse_sqrt(base: &Expr, var: &str) -> Option<Expr> {
     let ratio = simplify(div2(abs_b.clone(), a.clone()));
     let sqrt_ratio = simplify(call1("Sqrt", ratio));
     let sqrt_abs_b = simplify(call1("Sqrt", abs_b));
-    let arg = simplify(times2(Expr::Identifier(var.to_string()), sqrt_ratio));
+    let arg = simplify(times2(id_expr(var), sqrt_ratio));
     let arcsin = call1("ArcSin", arg);
     Some(make_divided(arcsin, sqrt_abs_b))
   } else {
@@ -5847,7 +5780,7 @@ fn try_integrate_inverse_sqrt(base: &Expr, var: &str) -> Option<Expr> {
     let ratio = simplify(div2(b.clone(), a.clone()));
     let sqrt_ratio = simplify(call1("Sqrt", ratio));
     let sqrt_b = simplify(call1("Sqrt", b.clone()));
-    let arg = simplify(times2(Expr::Identifier(var.to_string()), sqrt_ratio));
+    let arg = simplify(times2(id_expr(var), sqrt_ratio));
     let arcsinh = call1("ArcSinh", arg);
     Some(make_divided(arcsinh, sqrt_b))
   }
@@ -5865,7 +5798,7 @@ fn try_integrate_inverse_sqrt(base: &Expr, var: &str) -> Option<Expr> {
 fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
   let base_eval = crate::evaluator::evaluate_expr_to_expr(base)
     .unwrap_or_else(|_| base.clone());
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
   let coeff_result = crate::functions::polynomial_ast::coefficient_list_ast(&[
     base_eval, var_expr,
   ])
@@ -5898,7 +5831,7 @@ fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
   }
 
   let sqrt_base = make_sqrt(base.clone());
-  let x = Expr::Identifier(var.to_string());
+  let x = id_expr(var);
   // First term: (x*Sqrt[base])/2.
   let first = div2(times2(x.clone(), sqrt_base), Expr::Integer(2));
   // |b| for the b < 0 branch (ArcSin needs the positive coefficient).
@@ -5910,10 +5843,7 @@ fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
   // arc_arg = x * Sqrt[|b|/a]
   let ratio = simplify(div2(abs_b.clone(), a.clone()));
   let arc_arg = simplify(times2(x, make_sqrt(ratio)));
-  let arc = Expr::FunctionCall {
-    name: (if b_neg { "ArcSin" } else { "ArcSinh" }).to_string(),
-    args: vec![arc_arg].into(),
-  };
+  let arc = call1(if b_neg { "ArcSin" } else { "ArcSinh" }, arc_arg);
   // Second term: (a*arc) / (2*Sqrt[|b|]).
   let denom = simplify(times2(Expr::Integer(2), make_sqrt(abs_b)));
   let second = make_divided(times2(a.clone(), arc), denom);
@@ -6032,7 +5962,7 @@ fn try_integrate_linear_shift(expr: &Expr, var: &str) -> Option<Expr> {
   if matches!(a, Expr::Integer(0)) {
     return None;
   }
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
   // A zero offset means `f[a*x]`, which the per-function rules below own —
   // taking it over here would change their output shape.
   let offset = crate::evaluator::evaluate_expr_to_expr(&minus2(
@@ -6086,7 +6016,7 @@ fn try_integrate_linear_power(expr: &Expr, var: &str) -> Option<Expr> {
   if matches!(a, Expr::Integer(0) | Expr::Real(0.0)) {
     return None;
   }
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
   let offset = crate::evaluator::evaluate_expr_to_expr(&minus2(
     base.clone(),
     times2(a.clone(), var_expr),
@@ -6101,13 +6031,7 @@ fn try_integrate_linear_power(expr: &Expr, var: &str) -> Option<Expr> {
   ))
   .ok()?;
   let result = if matches!(exponent_plus_one, Expr::Integer(0)) {
-    div2(
-      Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: vec![base.clone()].into(),
-      },
-      a,
-    )
+    div2(call1("Log", base.clone()), a)
   } else {
     div2(
       pow2(base.clone(), exponent_plus_one.clone()),
@@ -6178,7 +6102,7 @@ fn integrate_linear_over_quadratic(
     .checked_mul(b)?
     .checked_sub(4i128.checked_mul(a)?.checked_mul(c)?)?;
   let two_a = a.checked_mul(2)?;
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
 
   // A perfect-square discriminant means rational roots, and wolframscript
   // splits into partial fractions there rather than using ArcTanh.
@@ -6562,13 +6486,13 @@ fn try_integrate_rational_impl(
     // Convention: argument is positive at x=0
     // root > 0: Log[root - x], root < 0: Log[-root + x], root = 0: Log[x]
     let log_arg = if root == 0 {
-      Expr::Identifier(var.to_string())
+      id_expr(var)
     } else if root > 0 {
       // Log[root - x]
-      minus2(Expr::Integer(root), Expr::Identifier(var.to_string()))
+      minus2(Expr::Integer(root), id_expr(var))
     } else {
       // root < 0: Log[-root + x]
-      plus2(Expr::Integer(-root), Expr::Identifier(var.to_string()))
+      plus2(Expr::Integer(-root), id_expr(var))
     };
 
     let log_expr = call1("Log", log_arg);
@@ -6677,9 +6601,9 @@ fn try_integrate_rational_impl(
       // Helper: build `coeff * x` (or just `x` when coeff == 1).
       let var_term = |coeff: i128| -> Expr {
         if coeff == 1 {
-          Expr::Identifier(var.to_string())
+          id_expr(var)
         } else {
-          times2(Expr::Integer(coeff), Expr::Identifier(var.to_string()))
+          times2(Expr::Integer(coeff), id_expr(var))
         }
       };
 
@@ -6897,10 +6821,7 @@ fn try_integrate_rational_impl(
     // Build quadratic expr for Log: c + b*x + x^2 (Wolfram orders by ascending power)
     let quad_log_arg = if b == 0 && c == 1 {
       // 1 + x^2
-      plus2(
-        Expr::Integer(1),
-        pow2(Expr::Identifier(var.to_string()), Expr::Integer(2)),
-      )
+      plus2(Expr::Integer(1), pow2(id_expr(var), Expr::Integer(2)))
     } else {
       coeffs_to_expr(&[c, b, 1], var)
     };
@@ -6964,21 +6885,15 @@ fn try_integrate_rational_impl(
       // Build ArcTan argument numerator: b_simplified + two_simplified * x
       let arctan_numerator = if b_simplified == 0 {
         if two_simplified == 1 {
-          Expr::Identifier(var.to_string())
+          id_expr(var)
         } else {
-          times2(
-            Expr::Integer(two_simplified),
-            Expr::Identifier(var.to_string()),
-          )
+          times2(Expr::Integer(two_simplified), id_expr(var))
         }
       } else {
         let x_term = if two_simplified == 1 {
-          Expr::Identifier(var.to_string())
+          id_expr(var)
         } else {
-          times2(
-            Expr::Integer(two_simplified),
-            Expr::Identifier(var.to_string()),
-          )
+          times2(Expr::Integer(two_simplified), id_expr(var))
         };
         plus2(Expr::Integer(b_simplified), x_term)
       };
@@ -7267,7 +7182,7 @@ fn try_integrate_one_over_poly_rootsum(expr: &Expr, var: &str) -> Option<Expr> {
   let pprime_in_slot =
     crate::syntax::substitute_variable(&pprime, var, &Expr::Slot(1));
   // Inner function body: Log[x - #1] / p'(#1).
-  let var_expr = Expr::Identifier(var.to_string());
+  let var_expr = id_expr(var);
   let log_arg = minus2(var_expr, Expr::Slot(1));
   let log_term = call1("Log", log_arg);
   let body = div2(log_term, pprime_in_slot);
@@ -8107,11 +8022,7 @@ fn try_integrate_reciprocal_quadratic(expr: &Expr, var: &str) -> Option<Expr> {
 
   let pow_neg1 = |e: Expr| pow(e, Expr::Integer(-1));
   // arg = sqrt_p * x / sqrt_q
-  let arg = times(vec![
-    sqrt_p.clone(),
-    Expr::Identifier(var.to_string()),
-    pow_neg1(sqrt_q.clone()),
-  ]);
+  let arg = times(vec![sqrt_p.clone(), id_expr(var), pow_neg1(sqrt_q.clone())]);
   // norm = sqrt_p * sqrt_q
   let norm = times(vec![sqrt_p, sqrt_q]);
   let func = if is_neg { "ArcTanh" } else { "ArcTan" };
@@ -8135,7 +8046,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
   // General constant check: ∫ c dy = c*y for any expression c independent of y
   // (handles compound expressions like x^2, Sin[x], etc. when integrating w.r.t. a different variable)
   if is_constant_wrt(expr, var) {
-    return Some(times2(expr.clone(), Expr::Identifier(var.to_string())));
+    return Some(times2(expr.clone(), id_expr(var)));
   }
 
   // ∫ p(x)/Sqrt[a + b x^2] dx for polynomial p.
@@ -8188,26 +8099,16 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
 
   match expr {
     // Constant: ∫ c dx = c*x
-    Expr::Integer(n) => {
-      Some(times2(Expr::Integer(*n), Expr::Identifier(var.to_string())))
-    }
-    Expr::Real(f) => {
-      Some(times2(Expr::Real(*f), Expr::Identifier(var.to_string())))
-    }
+    Expr::Integer(n) => Some(times2(Expr::Integer(*n), id_expr(var))),
+    Expr::Real(f) => Some(times2(Expr::Real(*f), id_expr(var))),
 
     // Variable: ∫ x dx = x^2/2, ∫ c dx = c*x
     Expr::Identifier(name) => {
       if name == var {
-        Some(div2(
-          pow2(Expr::Identifier(var.to_string()), Expr::Integer(2)),
-          Expr::Integer(2),
-        ))
+        Some(div2(pow2(id_expr(var), Expr::Integer(2)), Expr::Integer(2)))
       } else {
         // Constant * x
-        Some(times2(
-          Expr::Identifier(name.clone()),
-          Expr::Identifier(var.to_string()),
-        ))
+        Some(times2(Expr::Identifier(name.clone()), id_expr(var)))
       }
     }
 
@@ -8319,10 +8220,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             && matches!(&largs[0], Expr::Identifier(nm) if nm == var)
             && matches!(right.as_ref(), Expr::Integer(-1))
           {
-            return Some(call(
-              "LogIntegral",
-              vec![Expr::Identifier(var.to_string())],
-            ));
+            return Some(call("LogIntegral", vec![id_expr(var)]));
           }
           // ∫ Log[x]^n dx = x · Σ_{k=0}^{n} (-1)^(n-k) (n!/k!) Log[x]^k
           // for integer n ≥ 1 (repeated integration by parts). wolframscript
@@ -8341,7 +8239,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             let n = *n;
             let fact = |m: i128| -> i128 { (1..=m).product() };
             let nf = fact(n);
-            let logx = call1("Log", Expr::Identifier(var.to_string()));
+            let logx = call1("Log", id_expr(var));
             let mut sum: Option<Expr> = None;
             for k in 0..=n {
               let mag = nf / fact(k);
@@ -8357,10 +8255,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                 Some(s) => plus2(s, term),
               });
             }
-            return Some(times2(
-              Expr::Identifier(var.to_string()),
-              sum.unwrap(),
-            ));
+            return Some(times2(id_expr(var), sum.unwrap()));
           }
           // ∫ 1/(a + b*x)^n dx for n ≥ 2 integer → -(a+b*x)^(1-n)/(b*(n-1))
           // Wolfram keeps this factored, matching wolframscript's
@@ -8404,10 +8299,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             };
             // Special case: ∫ x^(-1) dx = Log[x]
             if matches!(&new_exp, Expr::Integer(0)) {
-              return Some(call(
-                "Log",
-                vec![Expr::Identifier(var.to_string())],
-              ));
+              return Some(call("Log", vec![id_expr(var)]));
             }
             let power_expr = pow2(*left.clone(), new_exp.clone());
             // When new_exp is a negative integer, use Wolfram canonical form:
@@ -8457,7 +8349,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             // Standard integration-by-parts result; matches wolframscript
             // (which surfaces the `Erf[1/x]` term).
             if match_neg_inverse_x_squared(exp_arg, var) {
-              let var_expr = Expr::Identifier(var.to_string());
+              let var_expr = id_expr(var);
               let inv_x = pow2(var_expr.clone(), Expr::Integer(-1));
               let term1 = times2(var_expr, expr.clone());
               let term2 =
@@ -8639,14 +8531,14 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               ],
             ));
           }
-          Some(Expr::FunctionCall {
-            name: "Piecewise".to_string(),
-            args: if args.len() == 2 {
-              vec![Expr::List(new_pieces.into()), default_expr].into()
+          Some(call(
+            "Piecewise",
+            if args.len() == 2 {
+              vec![Expr::List(new_pieces.into()), default_expr]
             } else {
-              vec![Expr::List(new_pieces.into())].into()
+              vec![Expr::List(new_pieces.into())]
             },
-          })
+          ))
         }
         "Plus" if args.len() >= 2 => {
           // ∫ (a + b + ...) dx = ∫ a dx + ∫ b dx + ...
@@ -8658,7 +8550,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         // for real arguments, away from 0).
         "RealSign" if args.len() == 1 => {
           if matches!(&args[0], Expr::Identifier(n) if n == var) {
-            Some(call1("Abs", Expr::Identifier(var.to_string())))
+            Some(call1("Abs", id_expr(var)))
           } else {
             None
           }
@@ -8669,7 +8561,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         // antiderivative recovers the original integrand (away from 0).
         "RealAbs" if args.len() == 1 => {
           if matches!(&args[0], Expr::Identifier(n) if n == var) {
-            let x = Expr::Identifier(var.to_string());
+            let x = id_expr(var);
             let real_abs_x = call1("RealAbs", x.clone());
             Some(div2(times2(x, real_abs_x), Expr::Integer(2)))
           } else {
@@ -8700,7 +8592,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           if let Expr::Identifier(name) = &args[0]
             && name == var
           {
-            let x = Expr::Identifier(var.to_string());
+            let x = id_expr(var);
             let x_sq = pow2(x.clone(), Expr::Integer(2));
             let one_plus = plus2(Expr::Integer(1), x_sq);
             let log_term = call1("Log", one_plus);
@@ -8726,7 +8618,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           if let Expr::Identifier(n) = &args[0]
             && n == var
           {
-            let x = Expr::Identifier(var.to_string());
+            let x = id_expr(var);
             let neg = |e: Expr| times2(Expr::Integer(-1), e);
             let correction = match name.as_str() {
               "SinIntegral" => call1("Cos", x.clone()),
@@ -8755,7 +8647,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           if let Expr::Identifier(n) = &args[0]
             && n == var
           {
-            let x = Expr::Identifier(var.to_string());
+            let x = id_expr(var);
             let sqrt = |e: Expr| call1("Sqrt", e);
             let x_sq = pow2(x.clone(), Expr::Integer(2));
             let correction = match name.as_str() {
@@ -8800,7 +8692,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           if let Expr::Identifier(n) = &args[0]
             && n == var
           {
-            let x = Expr::Identifier(var.to_string());
+            let x = id_expr(var);
             let x_sq = pow2(x.clone(), Expr::Integer(2));
             let sqrt_pi = call1("Sqrt", const_expr("Pi"));
             let neg = |e: Expr| times2(Expr::Integer(-1), e);
@@ -8963,7 +8855,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           if let Expr::Identifier(name) = &args[0]
             && name == var
           {
-            let x = Expr::Identifier(var.to_string());
+            let x = id_expr(var);
             return Some(times2(
               x,
               plus2(Expr::Integer(-1), call_expr("Log", args)),
@@ -8974,15 +8866,12 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             && matches!(
               crate::evaluator::evaluate_function_call_ast(
                 "Subtract",
-                &[
-                  args[0].clone(),
-                  times2(coefficient, Expr::Identifier(var.to_string())),
-                ],
+                &[args[0].clone(), times2(coefficient, id_expr(var)),],
               ),
               Ok(Expr::Integer(0))
             )
           {
-            let x = Expr::Identifier(var.to_string());
+            let x = id_expr(var);
             return Some(plus2(
               neg1(x.clone()),
               times2(x, call_expr("Log", args)),
@@ -9003,7 +8892,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               let log_log = call_expr("Log", args);
               let first = if try_match_linear_arg(&u, var).is_some() {
                 // u = a*x, so u/a = x
-                times2(Expr::Identifier(var.to_string()), log_log)
+                times2(id_expr(var), log_log)
               } else {
                 make_divided(times2(u.clone(), log_log), coeff.clone())
               };
@@ -9030,7 +8919,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           } else if var_factors.is_empty() {
             // All constant: ∫ c dx = c*x
             let const_expr = call_expr("Times", args);
-            Some(times2(const_expr, Expr::Identifier(var.to_string())))
+            Some(times2(const_expr, id_expr(var)))
           } else {
             // Direct-derivative products: Sec*Tan, Csc*Cot, Sech*Tanh,
             // Csch*Coth (carrying through any constant factors).
@@ -9691,13 +9580,10 @@ fn limit_bounded_oscillating_sum(expr: &Expr, var_name: &str) -> Option<Expr> {
     return Some(id_expr("Indeterminate"));
   }
   let bound: i128 = coeffs_abs.iter().sum();
-  Some(Expr::FunctionCall {
-    name: "Interval".to_string(),
-    args: vec![Expr::List(
-      vec![Expr::Integer(-bound), Expr::Integer(bound)].into(),
-    )]
-    .into(),
-  })
+  Some(call1(
+    "Interval",
+    Expr::List(vec![Expr::Integer(-bound), Expr::Integer(bound)].into()),
+  ))
 }
 
 /// Split an additive term `t` into `(coefficient, body)` where the
@@ -10304,10 +10190,7 @@ fn sqrt_radicand(mag: &Expr, _var: &str) -> Option<Expr> {
 /// CoefficientList[P, var] as a vector of exact coefficient expressions
 /// (ascending degree), or None if `P` isn't a polynomial in `var`.
 fn poly_coefflist(p: &Expr, var: &str) -> Option<Vec<Expr>> {
-  let cl = call(
-    "CoefficientList",
-    vec![p.clone(), Expr::Identifier(var.to_string())],
-  );
+  let cl = call("CoefficientList", vec![p.clone(), id_expr(var)]);
   let evaled = crate::evaluator::evaluate_expr_to_expr(&cl).ok()?;
   match &evaled {
     Expr::List(items) => Some(items.iter().cloned().collect()),
@@ -10506,8 +10389,7 @@ fn limit_at_infinity(
     // Constant base, variable exponent: lift the limit into the exponent.
     // Limit[c^g(n), n -> point] = c^Limit[g, n -> point] when c is free of n.
     if is_constant_wrt(&base, var_name) && !is_constant_wrt(&exp, var_name) {
-      let rule =
-        rule_expr(Expr::Identifier(var_name.to_string()), point.clone());
+      let rule = rule_expr(id_expr(var_name), point.clone());
       let exp_limit = limit_ast(&[exp.clone(), rule])?;
       // Only commit if the inner Limit fully resolved.
       if !matches!(&exp_limit, Expr::FunctionCall { name, .. } if name == "Limit")
@@ -10529,8 +10411,7 @@ fn limit_at_infinity(
       let product =
         crate::evaluator::evaluate_expr_to_expr(&product).unwrap_or(product);
       // Take the limit of g * (f - 1) as var -> Infinity
-      let rule =
-        rule_expr(Expr::Identifier(var_name.to_string()), point.clone());
+      let rule = rule_expr(id_expr(var_name), point.clone());
       let exponent_limit = limit_ast(&[product, rule])?;
 
       // Return E^limit once the exponent limit has resolved — either a clean
@@ -10690,10 +10571,7 @@ fn limit_at_infinity(
   // Return unevaluated
   Ok(call(
     "Limit",
-    vec![
-      expr.clone(),
-      rule_expr(Expr::Identifier(var_name.to_string()), point.clone()),
-    ],
+    vec![expr.clone(), rule_expr(id_expr(var_name), point.clone())],
   ))
 }
 
@@ -11173,21 +11051,12 @@ fn try_piecewise_definite_integral(
         }
         let mut fs = others.clone();
         fs.push(p[0].clone());
-        scaled.push(Expr::List(
-          vec![
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: fs.into(),
-            },
-            p[1].clone(),
-          ]
-          .into(),
-        ));
+        scaled.push(Expr::List(vec![call("Times", fs), p[1].clone()].into()));
       }
-      let pw = Expr::FunctionCall {
-        name: "Piecewise".to_string(),
-        args: vec![Expr::List(scaled.into()), Expr::Integer(0)].into(),
-      };
+      let pw = call(
+        "Piecewise",
+        vec![Expr::List(scaled.into()), Expr::Integer(0)],
+      );
       return try_piecewise_definite_integral(&pw, var, lo, hi);
     }
     _ => return None,
@@ -11223,9 +11092,7 @@ fn try_piecewise_definite_integral(
       }
       let sub = integrate_ast(&[
         val.clone(),
-        Expr::List(
-          vec![Expr::Identifier(var.to_string()), eff_lo, eff_hi].into(),
-        ),
+        Expr::List(vec![id_expr(var), eff_lo, eff_hi].into()),
       ])
       .ok()?;
       // If the piece could not be integrated, bail to the generic path.
@@ -12696,7 +12563,7 @@ fn analytic_residue_limit(
   var_name: &str,
   z0: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let rule = rule_expr(Expr::Identifier(var_name.to_string()), z0.clone());
+  let rule = rule_expr(id_expr(var_name), z0.clone());
   let lim = limit_ast(&[expr.clone(), rule])?;
   if !matches!(&lim, Expr::FunctionCall { name, .. } if name == "Limit") {
     return Ok(lim);
@@ -13180,22 +13047,20 @@ pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &var_name,
           &pow2(Expr::Identifier(var_name.clone()), Expr::Integer(-1)),
         );
-        let coeff =
-          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "SeriesCoefficient".to_string(),
-            args: vec![
-              composed,
-              Expr::List(
-                vec![
-                  Expr::Identifier(var_name.clone()),
-                  Expr::Integer(0),
-                  Expr::Integer(1),
-                ]
-                .into(),
-              ),
-            ]
-            .into(),
-          });
+        let coeff = crate::evaluator::evaluate_expr_to_expr(&call(
+          "SeriesCoefficient",
+          vec![
+            composed,
+            Expr::List(
+              vec![
+                Expr::Identifier(var_name.clone()),
+                Expr::Integer(0),
+                Expr::Integer(1),
+              ]
+              .into(),
+            ),
+          ],
+        ));
         if let Ok(c) = coeff
           && !matches!(&c, Expr::FunctionCall { name, .. }
             if name == "SeriesCoefficient" || name == "SeriesData")
@@ -13847,12 +13712,8 @@ fn try_series_quotient(
     vec![
       f.clone(),
       Expr::List(
-        vec![
-          Expr::Identifier(var_name.to_string()),
-          x0.clone(),
-          Expr::Integer(order + guard),
-        ]
-        .into(),
+        vec![id_expr(var_name), x0.clone(), Expr::Integer(order + guard)]
+          .into(),
       ),
     ]
   };
@@ -13919,7 +13780,7 @@ fn try_series_quotient(
     coefficients.pop();
   }
   let data = vec![
-    Expr::Identifier(var_name.to_string()),
+    id_expr(var_name),
     x0.clone(),
     Expr::List(coefficients.into()),
     Expr::Integer(nmin),
@@ -14452,11 +14313,7 @@ fn leading_fractional_power(
     if matches!(x0, Expr::Integer(0)) {
       return matches!(e, Expr::Identifier(s) if s == var);
     }
-    let diff = plus(vec![
-      e.clone(),
-      neg(Expr::Identifier(var.to_string())),
-      x0.clone(),
-    ]);
+    let diff = plus(vec![e.clone(), neg(id_expr(var)), x0.clone()]);
     matches!(
       crate::evaluator::evaluate_expr_to_expr(&diff),
       Ok(Expr::Integer(0))
@@ -15211,14 +15068,13 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
 
       // Regularization term: (Log[-1/x] - Log[-x] + 2*Log[x])/2
-      let log_neg_inv_x = Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: vec![times(vec![
+      let log_neg_inv_x = call1(
+        "Log",
+        times(vec![
           Expr::Integer(-1),
           pow(Expr::Identifier(var_name.clone()), Expr::Integer(-1)),
-        ])]
-        .into(),
-      };
+        ]),
+      );
       let log_neg_x = call1("Log", neg(Expr::Identifier(var_name.clone())));
       let two_log_x = times(vec![
         Expr::Integer(2),
@@ -17296,7 +17152,7 @@ pub fn dt_total_differential_ast(
   if is_true_constant(expr) {
     return Ok(Expr::Integer(0));
   }
-  let dt_of = |sym: &str| call1("Dt", Expr::Identifier(sym.to_string()));
+  let dt_of = |sym: &str| call1("Dt", id_expr(sym));
   // A bare variable is the base case: Dt[x] stays unevaluated (Dt[Pi] = 0).
   if let Expr::Identifier(n) = expr {
     if DT_CONSTANT_SYMBOLS.contains(&n.as_str()) {
@@ -17347,10 +17203,7 @@ fn total_differentiate(
         Ok(Expr::Integer(1))
       } else {
         // Other variables may depend on var: return Dt[y, x]
-        Ok(call(
-          "Dt",
-          vec![expr.clone(), Expr::Identifier(var.to_string())],
-        ))
+        Ok(call("Dt", vec![expr.clone(), id_expr(var)]))
       }
     }
 
@@ -17399,16 +17252,10 @@ fn total_differentiate(
           Ok(simplify(times2(expr.clone(), dg)))
         } else {
           // General f^g: return unevaluated
-          Ok(call(
-            "Dt",
-            vec![expr.clone(), Expr::Identifier(var.to_string())],
-          ))
+          Ok(call("Dt", vec![expr.clone(), id_expr(var)]))
         }
       }
-      _ => Ok(call(
-        "Dt",
-        vec![expr.clone(), Expr::Identifier(var.to_string())],
-      )),
+      _ => Ok(call("Dt", vec![expr.clone(), id_expr(var)])),
     },
 
     // Unary minus
@@ -17417,10 +17264,7 @@ fn total_differentiate(
         let d = total_differentiate(operand, var)?;
         Ok(neg1(d))
       } else {
-        Ok(call(
-          "Dt",
-          vec![expr.clone(), Expr::Identifier(var.to_string())],
-        ))
+        Ok(call("Dt", vec![expr.clone(), id_expr(var)]))
       }
     }
 
@@ -17436,7 +17280,7 @@ fn total_differentiate(
             return Ok(Expr::Integer(0));
           }
           let mut new_args = args.to_vec();
-          new_args.push(Expr::Identifier(var.to_string()));
+          new_args.push(id_expr(var));
           Ok(canonical_dt(&new_args))
         }
         "Sin" if args.len() == 1 => {
@@ -17506,18 +17350,12 @@ fn total_differentiate(
         }
         _ => {
           // Unknown function: return unevaluated
-          Ok(call(
-            "Dt",
-            vec![expr.clone(), Expr::Identifier(var.to_string())],
-          ))
+          Ok(call("Dt", vec![expr.clone(), id_expr(var)]))
         }
       }
     }
 
-    _ => Ok(call(
-      "Dt",
-      vec![expr.clone(), Expr::Identifier(var.to_string())],
-    )),
+    _ => Ok(call("Dt", vec![expr.clone(), id_expr(var)])),
   }
 }
 
@@ -17633,12 +17471,9 @@ fn leading_series_term(series: &Expr, var: &str, x0: &Expr) -> Option<Expr> {
       crate::functions::math_ast::make_rational(order, denom)
     };
     let base = if matches!(x0, Expr::Integer(0)) {
-      Expr::Identifier(var.to_string())
+      id_expr(var)
     } else {
-      call(
-        "Subtract",
-        vec![Expr::Identifier(var.to_string()), x0.clone()],
-      )
+      call("Subtract", vec![id_expr(var), x0.clone()])
     };
     let pow = pow(base, exp);
     return Some(times(vec![c.clone(), pow]));
@@ -17801,17 +17636,16 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Solve poly_expr == 0 for t
   use crate::evaluator::evaluate_expr_to_expr;
 
-  let solve_expr = Expr::FunctionCall {
-    name: "Solve".to_string(),
-    args: vec![
+  let solve_expr = call(
+    "Solve",
+    vec![
       Expr::Comparison {
         operands: vec![poly_expr, Expr::Integer(0)],
         operators: vec![ComparisonOp::Equal],
       },
       id_expr("AsymptoticSolve$t"),
-    ]
-    .into(),
-  };
+    ],
+  );
 
   let solutions = evaluate_expr_to_expr(&solve_expr)?;
 
@@ -17993,7 +17827,7 @@ pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build: Sum[(f /. n -> k$dc) * (g /. m -> (m - k$dc)), {k$dc, -Infinity, Infinity}]
   let k_var = "DiscreteConvolve$k";
-  let k_expr = Expr::Identifier(k_var.to_string());
+  let k_expr = id_expr(k_var);
 
   // f /. n -> k
   let f_sub = crate::syntax::substitute_variable(f_expr, &n_var, &k_expr);
@@ -18011,16 +17845,15 @@ pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let product = times2(f_sub, g_sub);
 
   // Build Sum[product, {k, -Infinity, Infinity}]
-  let sum_expr = Expr::FunctionCall {
-    name: "Sum".to_string(),
-    args: vec![
+  let sum_expr = call(
+    "Sum",
+    vec![
       product,
       Expr::List(
         vec![k_expr, neg(id_expr("Infinity")), id_expr("Infinity")].into(),
       ),
-    ]
-    .into(),
-  };
+    ],
+  );
 
   let result = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
   // If the infinite sum did not reduce to a closed form it still references
@@ -18556,7 +18389,7 @@ fn try_exponential_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
   }
 
   // Compute f(x+h) - f(x) for the exponent
-  let x_plus_h = plus2(Expr::Identifier(var.to_string()), step.clone());
+  let x_plus_h = plus2(id_expr(var), step.clone());
   let shifted_exp =
     crate::syntax::substitute_variable(exponent, var, &x_plus_h);
 
@@ -18591,7 +18424,7 @@ fn try_trig_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
     return None;
   }
 
-  let x_plus_h = plus2(Expr::Identifier(var.to_string()), step.clone());
+  let x_plus_h = plus2(id_expr(var), step.clone());
   let shifted_arg = crate::syntax::substitute_variable(arg, var, &x_plus_h);
 
   // Compute half_delta = (shifted_arg - arg) / 2 via evaluation
@@ -19012,7 +18845,7 @@ fn qfactorial_series_at_zero(var_name: &str, n: usize, order: i128) -> Expr {
   coeffs.resize(limit + 1, 0);
   let coeff_exprs: Vec<Expr> = coeffs.into_iter().map(Expr::Integer).collect();
   let data = vec![
-    Expr::Identifier(var_name.to_string()),
+    id_expr(var_name),
     Expr::Integer(0),
     Expr::List(coeff_exprs.into()),
     Expr::Integer(0),
@@ -19029,7 +18862,7 @@ fn barnes_g_series_at_zero(var_name: &str, order: i128) -> Expr {
     coeffs.push(barnes_g_series_coefficient(k));
   }
   let data = vec![
-    Expr::Identifier(var_name.to_string()),
+    id_expr(var_name),
     Expr::Integer(0),
     Expr::List(coeffs.into()),
     Expr::Integer(1),
@@ -19045,7 +18878,7 @@ fn barnes_g_series_coefficient(k: i128) -> Expr {
     crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e)
   };
   let int = |n: i128| Expr::Integer(n);
-  let sym = |s: &str| Expr::Identifier(s.to_string());
+  let sym = |s: &str| id_expr(s);
   let constant = |s: &str| Expr::Constant(s.to_string());
   let log = |arg: Expr| call1("Log", arg);
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
@@ -19069,7 +18902,7 @@ fn barnes_g_series_coefficient(k: i128) -> Expr {
 /// expressed with EulerGamma and Pi to match wolframscript's display.
 fn factorial_series_at_zero(var_name: &str, order: i128) -> Expr {
   let int = |n: i128| Expr::Integer(n);
-  let sym = |s: &str| Expr::Identifier(s.to_string());
+  let sym = |s: &str| id_expr(s);
   let constant = |s: &str| Expr::Constant(s.to_string());
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
 
@@ -19091,7 +18924,7 @@ fn factorial_series_at_zero(var_name: &str, order: i128) -> Expr {
     coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
   }
   let data = vec![
-    Expr::Identifier(var_name.to_string()),
+    id_expr(var_name),
     Expr::Integer(0),
     Expr::List(coeffs.into()),
     Expr::Integer(0),
@@ -19178,7 +19011,7 @@ fn weber_anger_series_at_zero(
     coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
   }
   let data = vec![
-    Expr::Identifier(var_name.to_string()),
+    id_expr(var_name),
     Expr::Integer(0),
     Expr::List(coeffs.into()),
     Expr::Integer(0),
@@ -19192,7 +19025,7 @@ fn weber_anger_series_at_zero(
 /// Coefficients involve EulerGamma, Log[2], Log[Pi], Log[64], and Pi^2.
 fn factorial2_series_at_zero(var_name: &str, order: i128) -> Expr {
   let int = |n: i128| Expr::Integer(n);
-  let sym = |s: &str| Expr::Identifier(s.to_string());
+  let sym = |s: &str| id_expr(s);
   let constant = |s: &str| Expr::Constant(s.to_string());
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
   let log = |arg: Expr| call1("Log", arg);
@@ -19227,7 +19060,7 @@ fn factorial2_series_at_zero(var_name: &str, order: i128) -> Expr {
     coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
   }
   let data = vec![
-    Expr::Identifier(var_name.to_string()),
+    id_expr(var_name),
     Expr::Integer(0),
     Expr::List(coeffs.into()),
     Expr::Integer(0),
@@ -19260,7 +19093,7 @@ fn factorial_power_series_at_zero(
     .map(|k| Expr::Integer(stirling.get(k).copied().unwrap_or(0)))
     .collect();
   let data = vec![
-    Expr::Identifier(var_name.to_string()),
+    id_expr(var_name),
     Expr::Integer(0),
     Expr::List(coeffs.into()),
     Expr::Integer(min_idx as i128),
@@ -19291,7 +19124,7 @@ fn pochhammer_half_series_at_zero(var_name: &str, order: i128) -> Expr {
     coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
   }
   let data = vec![
-    Expr::Identifier(var_name.to_string()),
+    id_expr(var_name),
     Expr::Integer(0),
     Expr::List(coeffs.into()),
     Expr::Integer(1),
@@ -19303,7 +19136,7 @@ fn pochhammer_half_series_at_zero(var_name: &str, order: i128) -> Expr {
 
 fn hyperfactorial_series_at_zero(var_name: &str, order: i128) -> Expr {
   let int = |n: i128| Expr::Integer(n);
-  let sym = |s: &str| Expr::Identifier(s.to_string());
+  let sym = |s: &str| id_expr(s);
   let constant = |s: &str| Expr::Constant(s.to_string());
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
   let log = |arg: Expr| call1("Log", arg);
@@ -19338,7 +19171,7 @@ fn hyperfactorial_series_at_zero(var_name: &str, order: i128) -> Expr {
     coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
   }
   let data = vec![
-    Expr::Identifier(var_name.to_string()),
+    id_expr(var_name),
     Expr::Integer(0),
     Expr::List(coeffs.into()),
     Expr::Integer(0),
@@ -19426,7 +19259,7 @@ fn series_at_infinity(
     return Ok(None);
   };
   let mut rebased = series_args;
-  rebased[0] = Expr::Identifier(var.to_string());
+  rebased[0] = id_expr(var);
   rebased[1] = id_expr("Infinity");
   Ok(Some(call("SeriesData", rebased)))
 }

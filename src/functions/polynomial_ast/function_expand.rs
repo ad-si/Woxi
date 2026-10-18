@@ -64,7 +64,7 @@ fn function_expand_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 fn mk_id(name: &str) -> Expr {
-  Expr::Identifier(name.to_string())
+  id_expr(name)
 }
 
 /// The numerator of `e` when it is a half-integer — `Rational[p, 2]` with an

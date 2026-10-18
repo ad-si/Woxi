@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::times_ast;
 
@@ -350,9 +349,9 @@ fn apart_proper_fraction(expr: &Expr, var: &str) -> Expr {
 
     // Build linear factor: when root is 0, just use the variable directly
     let linear_factor = if root == 0 {
-      Expr::Identifier(var.to_string())
+      id_expr(var)
     } else {
-      plus2(Expr::Integer(-root), Expr::Identifier(var.to_string()))
+      plus2(Expr::Integer(-root), id_expr(var))
     };
 
     if ad == 1 && an.abs() == 1 {
@@ -842,9 +841,9 @@ fn apart_repeated_roots(
     let an = a.n.abs();
     let ad = a.d; // already positive
     let linear_factor = if b.root == 0 {
-      Expr::Identifier(var.to_string())
+      id_expr(var)
     } else {
-      plus2(Expr::Integer(-b.root), Expr::Identifier(var.to_string()))
+      plus2(Expr::Integer(-b.root), id_expr(var))
     };
     // The factor raised to the term's power: f for k == 1, f^k otherwise.
     let den_factor = if b.k == 1 {
@@ -940,9 +939,9 @@ fn rat_coeffs_to_expr(
       coeff
     } else {
       let var_pow = if i == 1 {
-        Expr::Identifier(var.to_string())
+        id_expr(var)
       } else {
-        pow2(Expr::Identifier(var.to_string()), Expr::Integer(i as i128))
+        pow2(id_expr(var), Expr::Integer(i as i128))
       };
       times2(coeff, var_pow)
     };
