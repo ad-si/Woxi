@@ -737,6 +737,38 @@ pub fn flatten_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// The head and arguments `Reverse` permutes. Every compound expression has
+/// them, not only a `FunctionCall`: `x :> y` is `RuleDelayed[x, y]`, `a^b` is
+/// `Power[a, b]` and `a < b` is `Less[a, b]`. Rational/Complex are atoms —
+/// their internal args must not reverse (Reverse[3/4] emits Reverse::normal,
+/// it does not become 4/3).
+fn reverse_head_args(expr: &Expr) -> Option<(Expr, Vec<Expr>)> {
+  match expr {
+    Expr::FunctionCall { name, args } if !is_atomic_arg(expr) => {
+      Some((Expr::Identifier(name.clone()), args.to_vec()))
+    }
+    Expr::FunctionCall { .. } => None,
+    Expr::CurriedCall { func, args } => Some(((**func).clone(), args.clone())),
+    _ => {
+      expr_to_head_args(expr).map(|(head, args)| (Expr::Identifier(head), args))
+    }
+  }
+}
+
+/// Rebuild `head[args]` from the parts `reverse_head_args` returned.
+fn rebuild_head_args(head: Expr, args: Vec<Expr>) -> Expr {
+  match head {
+    Expr::Identifier(ref name) => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.into(),
+    },
+    func => Expr::CurriedCall {
+      func: Box::new(func),
+      args,
+    },
+  }
+}
+
 /// AST-based Reverse: reverse a list.
 pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   match list {
@@ -750,31 +782,16 @@ pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       reversed.reverse();
       Ok(Expr::Association(reversed))
     }
-    // Rational/Complex are atoms — their internal args must not reverse
-    // (Reverse[3/4] emits Reverse::normal, it does not become 4/3).
-    Expr::FunctionCall { name, args }
-      if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(list) =>
-    {
-      let mut reversed = args.clone();
-      reversed.reverse();
-      Ok(Expr::FunctionCall {
-        name: name.clone(),
-        args: reversed,
-      })
-    }
-    Expr::Rule {
-      pattern,
-      replacement,
-    } => Ok(Expr::Rule {
-      pattern: replacement.clone(),
-      replacement: pattern.clone(),
-    }),
     _ => {
-      crate::functions::list_helpers_ast::sorting::emit_nonatomic_normal_message(
-        "Reverse",
-        std::slice::from_ref(list),
-      );
-      Ok(call1("Reverse", list.clone()))
+      if let Some((head, mut args)) = reverse_head_args(list) {
+        args.reverse();
+        // Evaluate so the reversed arguments are canonicalized again
+        // (Reverse[a + b + c] is a + b + c, Reverse[x :> y] is y :> x).
+        crate::evaluator::evaluate_expr_to_expr(&rebuild_head_args(head, args))
+      } else {
+        emit_nonatomic_normal_message("Reverse", std::slice::from_ref(list));
+        Ok(call1("Reverse", list.clone()))
+      }
     }
   }
 }
@@ -787,13 +804,9 @@ pub fn reverse_level_ast(
   // The first argument must be a non-atomic expression. Atoms (String,
   // Integer, Symbol, …) emit the `normal` message and leave Reverse[expr, n]
   // unevaluated, matching Wolfram.
-  if !matches!(
-    list,
-    Expr::List(_)
-      | Expr::Association(_)
-      | Expr::FunctionCall { .. }
-      | Expr::Rule { .. }
-  ) {
+  if !matches!(list, Expr::List(_) | Expr::Association(_))
+    && reverse_head_args(list).is_none()
+  {
     crate::emit_message(&format!(
       "Reverse::normal: Nonatomic expression expected at position 1 in Reverse[{}, {}].",
       crate::syntax::format_expr(list, crate::syntax::ExprForm::Output),
@@ -823,61 +836,50 @@ pub fn reverse_level_ast(
     min_level: usize,
     max_level: usize,
   ) -> Expr {
-    let in_range = current_level >= min_level && current_level <= max_level;
+    if current_level > max_level {
+      return expr.clone();
+    }
+    let in_range = current_level >= min_level;
+    let recurse = |item: &Expr| {
+      reverse_at_levels(item, current_level + 1, min_level, max_level)
+    };
     match expr {
       Expr::List(items) => {
-        // First recurse into children
-        let mut children: Vec<Expr> = items
-          .iter()
-          .map(|item| {
-            reverse_at_levels(item, current_level + 1, min_level, max_level)
-          })
-          .collect();
-        // Then reverse at this level if it's in range
+        let mut children: Vec<Expr> = items.iter().map(recurse).collect();
         if in_range {
           children.reverse();
         }
         Expr::List(children.into())
       }
-      // Any non-List head (e.g. f[a, b, c]) reverses its arguments the same
-      // way Lists do — Reverse[f[a, b, c], 1] gives f[c, b, a].
-      Expr::FunctionCall { name, args } => {
-        let mut children: Vec<Expr> = args
-          .iter()
-          .map(|item| {
-            reverse_at_levels(item, current_level + 1, min_level, max_level)
-          })
-          .collect();
-        if in_range {
-          children.reverse();
-        }
-        Expr::FunctionCall {
-          name: name.clone(),
-          args: children.into(),
-        }
-      }
       // Associations reverse the order of their key->value pairs at this
       // level; recurse into the values for deeper levels.
       Expr::Association(pairs) => {
-        let mut children: Vec<(Expr, Expr)> = pairs
-          .iter()
-          .map(|(k, v)| {
-            (
-              k.clone(),
-              reverse_at_levels(v, current_level + 1, min_level, max_level),
-            )
-          })
-          .collect();
+        let mut children: Vec<(Expr, Expr)> =
+          pairs.iter().map(|(k, v)| (k.clone(), recurse(v))).collect();
         if in_range {
           children.reverse();
         }
         Expr::Association(children)
       }
-      _ => expr.clone(),
+      // Any other compound expression (f[a, b, c], x :> y, a^b, …) reverses
+      // its arguments the same way Lists do. The rebuilt call is evaluated
+      // once at the end.
+      _ => match reverse_head_args(expr) {
+        Some((head, args)) => {
+          let mut children: Vec<Expr> = args.iter().map(recurse).collect();
+          if in_range {
+            children.reverse();
+          }
+          rebuild_head_args(head, children)
+        }
+        None => expr.clone(),
+      },
     }
   }
 
-  Ok(reverse_at_levels(list, 1, min_level, max_level))
+  crate::evaluator::evaluate_expr_to_expr(&reverse_at_levels(
+    list, 1, min_level, max_level,
+  ))
 }
 
 /// AST-based Transpose: transpose a matrix (list of lists).

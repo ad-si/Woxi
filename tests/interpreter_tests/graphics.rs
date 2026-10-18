@@ -8230,6 +8230,19 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// Regression: a top `FrameLabel` containing a line break was drawn as
+    /// one `<text>` element, so SVG collapsed the break and the caption
+    /// ran off the image. Each line now gets its own element.
+    #[test]
+    fn plot_top_frame_label_breaks_lines() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, \
+         FrameLabel -> {{\"fb\", None}, {\"fl\", Row[{\"first\\nsecond\"}]}}]",
+      );
+      assert!(svg.contains(">first</text>"), "{svg}");
+      assert!(svg.contains(">second</text>"), "{svg}");
+    }
+
     /// A computed real in a `FrameLabel` prints as `ToString` does, not with
     /// the float noise of its last bits (`Round[-0.64, 0.1]` is
     /// `-0.6000000000000001` internally).
@@ -28445,6 +28458,32 @@ mod manipulate {
       "unexpected vsform warnings: {:?}",
       result.warnings
     );
+  }
+
+  #[test]
+  fn spec_string_with_tagged_grid_box_segment_is_typeset_not_raw_source() {
+    // A title string can carry a whole `TagBox`/`GridBox` equation system
+    // (a `Column` of formulas the FrontEnd stores as a linear-syntax box
+    // segment). It must read as the formulas, not as box source.
+    let expr = interpret_to_expr(
+      "Manipulate[a, \"title\\n\\!\\(\\*TagBox[TagBox[RowBox[{\\\"\\[NoBreak]\\\", \
+       TagBox[GridBox[{{RowBox[{SubscriptBox[\\\"u\\\", \\\"k\\\"], \\\"=\\\", \
+       \\\"1\\\"}]}, {RowBox[{SubscriptBox[\\\"v\\\", \\\"k\\\"], \\\"=\\\", \
+       \\\"2\\\"}]}}], Column], \\\"\\[NoBreak]\\\"}], \
+       Function[BoxForm`e$, MatrixForm[BoxForm`e$]]], \
+       Function[BoxForm`e$, MatrixForm[BoxForm`e$]]]\\)\", {a, 0, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    match &spec.controls[0] {
+      ManipulateControl::Heading { label, .. } => {
+        for bad in ["TagBox", "GridBox", "RowBox", "Function"] {
+          assert!(!label.contains(bad), "raw box source in {label:?}");
+        }
+        assert_eq!(label, "title\nu_k=1\nv_k=2");
+      }
+      other => panic!("expected a heading, got {other:?}"),
+    }
   }
 
   #[test]

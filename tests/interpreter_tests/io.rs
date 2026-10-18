@@ -5973,6 +5973,19 @@ mod import_string {
   use super::*;
 
   #[test]
+  fn import_string_graph6_edge_rules() {
+    assert_eq!(
+      interpret(r#"ImportString["Bw", {"Graph6", "EdgeRules"}]"#).unwrap(),
+      "{{1 -> 2, 1 -> 3, 2 -> 3}}"
+    );
+    // A 4-cycle, then an edgeless graph on two vertices; one graph per line.
+    assert_eq!(
+      interpret(r#"ImportString["Cr\nB?", {"Graph6", "EdgeRules"}]"#).unwrap(),
+      "{{1 -> 2, 1 -> 3, 2 -> 4, 3 -> 4}, {}}"
+    );
+  }
+
+  #[test]
   fn import_string_csv_default() {
     let result =
       interpret(r#"ImportString["name,age\nAlice,30\nBob,25", "CSV"]"#)
