@@ -2336,6 +2336,24 @@ mod graphics {
     }
 
     #[test]
+    fn traditional_form_padded_form_complex_label() {
+      // Regression: `Text[TraditionalForm[PaddedForm[z, {4, 3}]]]` (the Argand
+      // Diagram readout) printed the raw `PaddedForm(…)` call with unrounded
+      // parts instead of the padded number with a traditional `i`.
+      let svg = export_svg(
+        "Graphics[Text[TraditionalForm[PaddedForm[0.35355 + 0.35355 I, {4, 3}]], {0, 0}]]",
+      );
+      assert!(svg.contains("0.354 +  0.354"), "{svg}");
+      assert!(svg.contains(">i</tspan>"), "{svg}");
+      assert!(!svg.contains("PaddedForm"), "{svg}");
+      let real = export_svg(
+        "Graphics[Text[TraditionalForm[PaddedForm[3.14159, {4, 3}]], {0, 0}]]",
+      );
+      assert!(real.contains("3.142"), "{real}");
+      assert!(!real.contains("PaddedForm"), "{real}");
+    }
+
+    #[test]
     fn pie_chart_with_tooltip_values_draws_all_slices() {
       // Regression: `Tooltip[value, hint]` data elements were dropped, so the
       // pie came out empty and an Inset of it printed as `-Graphics-`.
