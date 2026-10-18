@@ -16250,6 +16250,36 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   mod complex_plot {
     use super::*;
 
+    /// `Mod` of a complex function used to stay unevaluated, so every sample
+    /// was dropped and the domain colouring came out fully transparent.
+    #[test]
+    fn complex_plot_of_complex_mod_is_coloured() {
+      let svg = export_svg("ComplexPlot[Mod[z^-2, 2], {z, -1 - I, 1 + I}]");
+      let b64 = svg
+        .split("data:image/png;base64,")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("embedded bitmap");
+      use base64::Engine as _;
+      let png = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+      let img = ::image::load_from_memory(&png).unwrap().to_rgba8();
+      let opaque = img.pixels().filter(|p| p.0[3] == 255).count();
+      assert!(
+        opaque * 2 > img.pixels().count(),
+        "expected most samples to be coloured, got {opaque}"
+      );
+    }
+
+    #[test]
+    fn complex_plot_draws_plot_label() {
+      let svg = export_svg(
+        "ComplexPlot[z^2, {z, -1 - I, 1 + I}, PlotLabel -> \"Domain\"]",
+      );
+      assert!(svg.contains(">Domain</text>"), "missing label");
+    }
+
     #[test]
     fn complex_plot_identity() {
       insta::assert_snapshot!(export_svg(

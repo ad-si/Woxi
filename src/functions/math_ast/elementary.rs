@@ -2532,6 +2532,19 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
+  // Gaussian Mod with machine-real parts, e.g. Mod[3.5 + 4.2*I, 2] =
+  // -0.5 + 0.2*I: the same m - n*Round[m/n] rule applied to numeric complex
+  // operands.
+  if let (Some((_, m_im)), Some((_, n_im))) =
+    (try_extract_complex_f64(m), try_extract_complex_f64(n))
+    && (m_im != 0.0 || n_im != 0.0)
+  {
+    let quotient = div2(m.clone(), n.clone());
+    let round_quot = call1("Round", quotient);
+    let result = minus2(m.clone(), times2(n.clone(), round_quot));
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+
   // Float fallback
   if let (Some(a), Some(b)) = (try_eval_to_f64(m), try_eval_to_f64(n)) {
     if b == 0.0 {

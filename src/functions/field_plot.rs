@@ -5156,20 +5156,28 @@ pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (svg_width, svg_height, full_width) = parse_field_options(args, 2);
 
   let grid_size = FIELD_GRID;
+  let plot_label = parse_field_plot_label(args, 2);
 
-  // Use plotters for axes (Re on x-axis, Im on y-axis)
-  let area = generate_axes_only(
+  // Use plotters for axes (Re on x-axis, Im on y-axis), reserving room above
+  // the frame for a PlotLabel.
+  let margins = field_plot_label_margins(plot_label.as_ref());
+  let mut area = crate::functions::plot::generate_axes_only_opts(
     (re_min, re_max),
     (im_min, im_max),
     svg_width,
     svg_height,
     full_width,
+    None,
+    margins.as_ref(),
   )?;
 
-  let mut svg = area.svg;
+  let mut svg = std::mem::take(&mut area.svg);
   // Remove closing </svg> to append custom elements
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
+  }
+  if let Some(label) = &plot_label {
+    inject_field_plot_label(&mut svg, &area, label);
   }
 
   // Render domain coloring as one embedded bitmap (a pixel per sample)
