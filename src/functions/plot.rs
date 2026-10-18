@@ -2832,12 +2832,18 @@ pub(crate) fn plot_labels_svg(
   {
     let cx = plot_x0 + plot_w / 2.0;
     let ty = margin_top - font_size * 0.6;
-    labels_svg.push_str(&format!(
-      "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-         fill=\"{label_fill}\">{}</text>\n",
-      crate::functions::graphics::box_string_to_svg(top_label)
-    ));
+    // A label with line breaks stacks upward: the last line sits just
+    // above the frame, earlier ones above it.
+    let lines: Vec<&str> = top_label.split('\n').collect();
+    for (i, line) in lines.iter().enumerate() {
+      let ly = ty - (lines.len() - 1 - i) as f64 * font_size * 1.2;
+      labels_svg.push_str(&format!(
+        "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"{label_fill}\">{}</text>\n",
+        crate::functions::graphics::box_string_to_svg(line)
+      ));
+    }
   }
 
   // Right FrameLabel (rotated +90 on the right frame edge)
