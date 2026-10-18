@@ -2832,12 +2832,18 @@ pub(crate) fn plot_labels_svg(
   {
     let cx = plot_x0 + plot_w / 2.0;
     let ty = margin_top - font_size * 0.6;
-    labels_svg.push_str(&format!(
-      "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-         fill=\"{label_fill}\">{}</text>\n",
-      crate::functions::graphics::box_string_to_svg(top_label)
-    ));
+    // A label with line breaks stacks upward: the last line sits just
+    // above the frame, earlier ones above it.
+    let lines: Vec<&str> = top_label.split('\n').collect();
+    for (i, line) in lines.iter().enumerate() {
+      let ly = ty - (lines.len() - 1 - i) as f64 * font_size * 1.2;
+      labels_svg.push_str(&format!(
+        "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"{label_fill}\">{}</text>\n",
+        crate::functions::graphics::box_string_to_svg(line)
+      ));
+    }
   }
 
   // Right FrameLabel (rotated +90 on the right frame edge)
@@ -2915,6 +2921,26 @@ pub(crate) fn plot_labels_svg(
   labels_svg
 }
 
+/// Overlay primitives on a log axis use that axis's natural-log coordinates
+/// (`Point[{Log[x], y}]` in a `LogLinearPlot`), so express the displayed
+/// range in them.
+fn log_overlay_ranges(
+  opts: &PlotOptions,
+  (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
+) -> (f64, f64, f64, f64) {
+  let (x_min, x_max) = if opts.log_x && x_min > 0.0 && x_max > 0.0 {
+    (x_min.ln(), x_max.ln())
+  } else {
+    (x_min, x_max)
+  };
+  let (y_min, y_max) = if opts.log_y && y_min > 0.0 && y_max > 0.0 {
+    (y_min.ln(), y_max.ln())
+  } else {
+    (y_min, y_max)
+  };
+  (x_min, x_max, y_min, y_max)
+}
+
 /// Draw an `Epilog`'s primitives over a finished plot. Both renderers (the
 /// line one below and the scatter one) inject them the same way, so a plot
 /// keeps its epilog whichever of the two drew it.
@@ -2933,7 +2959,7 @@ fn inject_epilog(
     return;
   }
   let (x0, y0, w, h) = area;
-  let (x_min, x_max, y_min, y_max) = ranges;
+  let (x_min, x_max, y_min, y_max) = log_overlay_ranges(opts, ranges);
   let area = crate::functions::plot_epilog::PlotArea {
     x0,
     y0,
@@ -2973,7 +2999,7 @@ fn inject_prolog(
     return;
   }
   let (x0, y0, w, h) = area;
-  let (x_min, x_max, y_min, y_max) = ranges;
+  let (x_min, x_max, y_min, y_max) = log_overlay_ranges(opts, ranges);
   let area = crate::functions::plot_epilog::PlotArea {
     x0,
     y0,
@@ -10145,9 +10171,10 @@ fn log_scale_plot_ast(
   let body = &args[0];
   let iter_spec = &args[1];
 
-  // Parse options
+  // Parse options; the shared helper covers everything the other function
+  // plotters accept (Frame, FrameLabel, Epilog, ImagePadding, …).
   let mut plot_opts = PlotOptions::default();
-  let mut plot_range_y: Option<(f64, f64)> = None;
+  let mut overrides = PlotRangeOverrides::default();
   let mut legends_automatic = false;
   let mut legends_expressions = false;
   for opt in &args[2..] {
@@ -10155,102 +10182,33 @@ fn log_scale_plot_ast(
       crate::functions::graphics::option_name_value(opt)
     {
       let replacement = &*replacement;
-      match name {
-        "ImageSize" => {
-          if let Some((w, h, fw)) =
-            parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
-          {
-            plot_opts.svg_width = w;
-            plot_opts.svg_height = h;
-            plot_opts.full_width = fw;
-          }
+      if apply_common_plot_option(
+        name,
+        replacement,
+        &mut plot_opts,
+        &mut overrides,
+      ) {
+        continue;
+      }
+      if name == "PlotLegends" {
+        let (labels, auto, expressions, position) =
+          parse_plot_legends(replacement);
+        plot_opts.legend_position = position;
+        if auto {
+          legends_automatic = true;
+        } else if expressions {
+          legends_expressions = true;
+        } else {
+          plot_opts.plot_legends = labels;
         }
-        "PlotLabel" => {
-          let val = evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.clone());
-          if let Some(sl) = crate::functions::chart::parse_styled_label(&val) {
-            plot_opts.plot_label = Some(sl);
-          }
-        }
-        "AxesLabel" => {
-          let val = evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.clone());
-          if let Expr::List(items) = &val
-            && items.len() >= 2
-          {
-            let x = crate::functions::graphics::styled_axis_label(&items[0])
-              .unwrap_or_default();
-            let y = crate::functions::graphics::styled_axis_label(&items[1])
-              .unwrap_or_default();
-            plot_opts.axes_label = Some((x, y));
-          }
-        }
-        "PlotStyle" => {
-          plot_opts.plot_style = parse_plot_style(replacement);
-        }
-        "PlotTheme" => {
-          if let Expr::String(theme) = replacement {
-            apply_plot_theme(&mut plot_opts, theme);
-          }
-        }
-        "GridLines" => {
-          let val = evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.clone());
-          let (sx, sy) = parse_grid_lines_spec(&val);
-          apply_grid_side(
-            sx,
-            &mut plot_opts.grid_lines_x,
-            &mut plot_opts.grid_x_lines,
-          );
-          apply_grid_side(
-            sy,
-            &mut plot_opts.grid_lines_y,
-            &mut plot_opts.grid_y_lines,
-          );
-        }
-        "GridLinesStyle" => {
-          plot_opts.grid_lines_style = parse_style_directives(replacement);
-        }
-        "PlotRange" => {
-          let (_rx, ry) = parse_plot_range(replacement);
-          if ry.is_some() {
-            plot_range_y = ry;
-          }
-        }
-        "PlotPoints" => {
-          let val = evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.clone());
-          if let Expr::Integer(n) = &val
-            && *n > 0
-          {
-            plot_opts.plot_points = *n as usize;
-          }
-        }
-        "Filling" => {
-          apply_filling_option(replacement, &mut plot_opts);
-        }
-        "FillingStyle" => {
-          plot_opts.filling_style = parse_filling_style(replacement);
-        }
-        "Background" => {
-          plot_opts.background = parse_background_option(replacement);
-        }
-        "PlotLegends" => {
-          let (labels, auto, expressions, position) =
-            parse_plot_legends(replacement);
-          plot_opts.legend_position = position;
-          if auto {
-            legends_automatic = true;
-          } else if expressions {
-            legends_expressions = true;
-          } else {
-            plot_opts.plot_legends = labels;
-          }
-        }
-        _ => {}
       }
     }
   }
+  let plot_range_y = overrides.y;
+  if let Some(ar) = overrides.aspect_ratio {
+    plot_opts.aspect_ratio = Some(ar);
+  }
+  plot_opts.aspect_automatic = overrides.aspect_automatic;
 
   // Parse iterator spec: {x, xmin, xmax}
   let (var_name, x_min, x_max) = match iter_spec {

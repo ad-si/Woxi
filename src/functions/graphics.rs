@@ -4845,8 +4845,16 @@ fn inset_primitives(
     && let Some((x, y)) = args.get(1).and_then(expr_to_point)
   {
     let label = graphics_text_content(&bargs[0]);
+    // With an action, the plate also carries the invisible hit region a
+    // live widget presses (see `with_button_cell_chrome`).
+    let plate = button_plate_svg(&label);
+    let svg = if bargs.len() >= 2 {
+      with_button_cell_chrome(plate, bargs)
+    } else {
+      plate
+    };
     return Some(vec![Primitive::InsetGraphic {
-      svg: button_plate_svg(&label),
+      svg,
       x,
       y,
       w: button_plate_size(&label).0,
@@ -9935,6 +9943,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 1 data-unit maps to the same number of pixels in both x and y,
   // so circles are always rendered round.
   // Skipped when AspectRatio -> Full (plots need independent axis scaling).
+  // An explicit `PlotRange` still bounds what is drawn: the extra room this
+  // adds shows only the background, so remember the requested range for
+  // the clip rectangle below.
+  let clip_x = plot_range_x.map(|_| (bb.x_min, bb.x_max));
+  let clip_y = plot_range_y.map(|_| (bb.y_min, bb.y_max));
   if !aspect_ratio_full {
     expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
   }
@@ -10130,11 +10143,46 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `DropShadow::filter_id`) so two differently-sized pictures merged into
   // one document (`GraphicsRow`, `Inset`) never collide, while pictures
   // that happen to share a size safely share one identical definition.
-  let clip_id = format!("plotClip_{svg_w:.0}x{svg_h:.0}");
+  let (clip_x0, clip_x1) = match clip_x {
+    Some((lo, hi)) => (
+      coord_x(lo, &bb, svg_w).clamp(0.0, svg_w),
+      coord_x(hi, &bb, svg_w).clamp(0.0, svg_w),
+    ),
+    None => (0.0, svg_w),
+  };
+  let (clip_y0, clip_y1) = match clip_y {
+    Some((lo, hi)) => (
+      coord_y(hi, &bb, svg_h).clamp(0.0, svg_h),
+      coord_y(lo, &bb, svg_h).clamp(0.0, svg_h),
+    ),
+    None => (0.0, svg_h),
+  };
+  // A range narrower than the drawing area (widened to its shape) gets
+  // its own id so it never shares a definition with an unclipped picture
+  // of the same size.
+  let narrowed = clip_x0 > 0.5
+    || clip_y0 > 0.5
+    || clip_x1 < svg_w - 0.5
+    || clip_y1 < svg_h - 0.5;
+  let clip_id = if narrowed {
+    format!(
+      "plotClip_{svg_w:.0}x{svg_h:.0}_{clip_x0:.0}_{clip_y0:.0}_{clip_x1:.0}_{clip_y1:.0}"
+    )
+  } else {
+    format!("plotClip_{svg_w:.0}x{svg_h:.0}")
+  };
   svg.push_str("<defs>\n");
-  svg.push_str(&format!(
-    "<clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\"/></clipPath>\n"
-  ));
+  if narrowed {
+    svg.push_str(&format!(
+      "<clipPath id=\"{clip_id}\"><rect x=\"{clip_x0:.2}\" y=\"{clip_y0:.2}\" width=\"{:.2}\" height=\"{:.2}\"/></clipPath>\n",
+      clip_x1 - clip_x0,
+      clip_y1 - clip_y0
+    ));
+  } else {
+    svg.push_str(&format!(
+      "<clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\"/></clipPath>\n"
+    ));
+  }
   for ds in &shadow_defs {
     svg.push_str(&ds.filter_def(1.0));
     svg.push('\n');
@@ -13855,7 +13903,21 @@ fn parse_box_to_expr(cs: &[char]) -> Expr {
   // TraditionalForm typesets it without them.
   if let Some(text) = quoted_box_literal(trim_char_slice(cs)) {
     let chars: Vec<char> = text.chars().collect();
-    return Expr::String(quoted_box_literal(&chars).unwrap_or(text));
+    let text = quoted_box_literal(&chars).unwrap_or(text);
+    // A string argument that itself carries linear syntax
+    // (`FractionBox["\!\(\*SubscriptBox[\(f\), \(x\)]\)", …]`, as
+    // `ToString[TraditionalForm["…"/"…"]]` emits) typesets like any other
+    // linear-syntax text rather than showing its escapes.
+    if text.contains("\\!\\(") {
+      let inner: Vec<char> = text.chars().collect();
+      let mut units = parse_box_units(&inner);
+      return match units.len() {
+        0 => Expr::String(String::new()),
+        1 => units.pop().unwrap(),
+        _ => call1("RowBox", Expr::List(units.into())),
+      };
+    }
+    return Expr::String(text);
   }
   let mut units = parse_box_units(cs);
   match units.len() {
@@ -21022,7 +21084,7 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
 /// newlines in the middle and stays one centered block.
 fn newline_text(item: &Expr) -> Option<&str> {
   match item {
-    Expr::String(s) if s.starts_with('\n') || s.ends_with('\n') => Some(s),
+    Expr::String(s) if breaks_line(s) => Some(s),
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>
     {
@@ -21030,6 +21092,23 @@ fn newline_text(item: &Expr) -> Option<&str> {
     }
     _ => None,
   }
+}
+
+/// Whether a row string breaks the line: it starts or ends with a newline,
+/// or holds a blank line or a line of running prose (a word of three or more
+/// letters) — unlike the one-character-per-line stack of a typeset fraction.
+fn breaks_line(s: &str) -> bool {
+  if !s.contains('\n') {
+    return false;
+  }
+  s.starts_with('\n')
+    || s.ends_with('\n')
+    || s.contains("\n\n")
+    || s.split('\n').any(|line| {
+      line
+        .split(|c: char| !c.is_alphabetic())
+        .any(|w| w.chars().count() >= 3)
+    })
 }
 
 /// `item` with its innermost string replaced by `text`.
@@ -25747,6 +25826,17 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
       displays.push(crate::syntax::expr_to_source_form(expr));
       id_expr("Nothing")
     }
+    // `Inset[Button[…], pos]` inside a graphic is drawn by the picture
+    // itself (as a plate carrying a hit region), so it stays in the body.
+    Expr::FunctionCall { name, args }
+      if name == "Inset"
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: b, .. }) if b == "Button"
+        ) =>
+    {
+      expr.clone()
+    }
     // A bare `Button[label, action, opts…]` drawn directly by the body (a
     // Demonstration's "throw"/"step" action mixed into a `Column` of
     // graphics and captions), distinct from a `Button` given as its own
@@ -28819,10 +28909,11 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
       .and_then(|code| crate::parse_to_expr(&code).ok())
       .map(|expr| manipulate_label_runs(&expr, italic));
     match rendered {
-      // An unrecognised box head keeps its source text rather than
-      // vanishing from the label.
+      // A box with no expression form (a `TagBox`/`GridBox` layout of
+      // formulas) is drawn as the display text it typesets to.
       None => runs.push(LabelRun {
-        text: seg.text,
+        text: crate::notebook::render_boxes_text(&seg.text)
+          .replace('\u{2060}', ""),
         italic,
         ..Default::default()
       }),

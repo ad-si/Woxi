@@ -306,7 +306,7 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(r#"PolyhedronData["Properties"]"#).unwrap(),
       "{Circumradius, Classes, EdgeCount, EdgeIndices, FaceCount, \
-       FaceCountRules, FaceIndices, Faces, Inradius, Insphere, Midradius, NetFaces, \
+       FaceCountRules, FaceIndices, Faces, Inradius, Insphere, Midradius, Name, NetFaces, \
        Skeleton, SkeletonGraph, SurfaceArea, VertexCoordinates, VertexCount, Volume}"
     );
   }

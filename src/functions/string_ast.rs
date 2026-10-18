@@ -16486,6 +16486,14 @@ fn padded_form_to_string(
       .collect();
     return Some(format!("{{{}}}", parts?.join(", ")));
   }
+  // An arbitrary-precision real is padded from its digit string, like a
+  // machine real (the f64 payload of `BigFloat` is its precision, not its value).
+  if let Expr::BigFloat(digits, _) = value
+    && let Ok(v) = digits.parse::<f64>()
+    && matches!(spec, Expr::List(_))
+  {
+    return padded_form_to_string(&Expr::Real(v), spec, lpad, rpad);
+  }
   match spec {
     Expr::Integer(n) if *n >= 0 => match value {
       Expr::Integer(i) => {
