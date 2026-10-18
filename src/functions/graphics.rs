@@ -28819,10 +28819,11 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
       .and_then(|code| crate::parse_to_expr(&code).ok())
       .map(|expr| manipulate_label_runs(&expr, italic));
     match rendered {
-      // An unrecognised box head keeps its source text rather than
-      // vanishing from the label.
+      // A box with no expression form (a `TagBox`/`GridBox` layout of
+      // formulas) is drawn as the display text it typesets to.
       None => runs.push(LabelRun {
-        text: seg.text,
+        text: crate::notebook::render_boxes_text(&seg.text)
+          .replace('\u{2060}', ""),
         italic,
         ..Default::default()
       }),

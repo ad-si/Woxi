@@ -28461,6 +28461,32 @@ mod manipulate {
   }
 
   #[test]
+  fn spec_string_with_tagged_grid_box_segment_is_typeset_not_raw_source() {
+    // A title string can carry a whole `TagBox`/`GridBox` equation system
+    // (a `Column` of formulas the FrontEnd stores as a linear-syntax box
+    // segment). It must read as the formulas, not as box source.
+    let expr = interpret_to_expr(
+      "Manipulate[a, \"title\\n\\!\\(\\*TagBox[TagBox[RowBox[{\\\"\\[NoBreak]\\\", \
+       TagBox[GridBox[{{RowBox[{SubscriptBox[\\\"u\\\", \\\"k\\\"], \\\"=\\\", \
+       \\\"1\\\"}]}, {RowBox[{SubscriptBox[\\\"v\\\", \\\"k\\\"], \\\"=\\\", \
+       \\\"2\\\"}]}}], Column], \\\"\\[NoBreak]\\\"}], \
+       Function[BoxForm`e$, MatrixForm[BoxForm`e$]]], \
+       Function[BoxForm`e$, MatrixForm[BoxForm`e$]]]\\)\", {a, 0, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    match &spec.controls[0] {
+      ManipulateControl::Heading { label, .. } => {
+        for bad in ["TagBox", "GridBox", "RowBox", "Function"] {
+          assert!(!label.contains(bad), "raw box source in {label:?}");
+        }
+        assert_eq!(label, "title\nu_k=1\nv_k=2");
+      }
+      other => panic!("expected a heading, got {other:?}"),
+    }
+  }
+
+  #[test]
   fn spec_text_argument_is_an_annotation_row() {
     // `Text[Row[…]]` between the controls is a static label, exactly like
     // `Style[…]` — Wolfram tags it ThisIsNotAControl rather than reporting a
