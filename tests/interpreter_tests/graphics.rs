@@ -36730,3 +36730,28 @@ fn explicit_plot_range_clips_content_in_widened_drawing_area() {
   assert!(auto.contains("<clipPath id=\"plotClip_"), "{auto}");
   assert!(auto.contains("<rect x=\"0\" y=\"0\" width="), "{auto}");
 }
+
+#[test]
+fn list_fit_plot_draws_data_and_fitted_curve() {
+  for model in [
+    "",
+    ", \"Quadratic\"",
+    ", \"Exponential\"",
+    ", \"Kernel\"",
+    ", {1, x}",
+  ] {
+    let head =
+      interpret(&format!("Head[ListFitPlot[{{3, 5, 4, 8, 9, 12}}{model}]]"))
+        .unwrap();
+    assert_eq!(head, "Graphics", "model {model}");
+  }
+  // A perfect linear fit passes through the data: the curve is drawn
+  // in addition to the points.
+  let svg = export_svg("ListFitPlot[{{1, 2}, {2, 4}, {3, 6}}]");
+  assert!(svg.contains("<polyline"), "{svg}");
+  // Unknown models stay unevaluated.
+  assert_eq!(
+    interpret("ListFitPlot[{1, 2, 3}, \"Bogus\"]").unwrap(),
+    "ListFitPlot[{1, 2, 3}, Bogus]"
+  );
+}

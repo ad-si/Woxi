@@ -42,7 +42,7 @@ Woxi does **not** support.
 
 ## Version 14.3 (2025)
 
-- Data fitting: `ListFitPlot`, `ListFitPlot3D`, `LocalModelFit` (LOESS),
+- Data fitting: `ListFitPlot3D`, `LocalModelFit` (LOESS),
     `KernelModelFit`
 - Surface and mesh processing: `SurfaceDensityPlot3D`, `SmoothMesh`,
     `SimplifyMesh`, `Remesh`, `SubdivisionRegion`

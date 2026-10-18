@@ -2184,3 +2184,74 @@ pub fn audio_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     generate_svg_with_filling(&all_series, x_range, y_range, &parsed.opts)?;
   Ok(crate::graphics_result(svg))
 }
+
+/// ListFitPlot[data, model, opts] — the data points together with the curve
+/// of the model fitted to them. Delegates to `Fit`, `ListPlot` and `Plot`.
+///
+/// Supported models: "Linear" (default), "Quadratic", "Cubic", "Quartic",
+/// "Quintic", "Exponential", "Kernel" (Gaussian kernel smoothing), or an
+/// explicit list of basis functions in `x`.
+pub fn list_fit_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let is_option = |e: &Expr| {
+    matches!(e, Expr::Rule { .. })
+      || matches!(e, Expr::FunctionCall { name, .. }
+        if name == "Rule" || name == "RuleDelayed")
+  };
+  let model = args.get(1).filter(|e| !is_option(e));
+  let opts: Vec<String> = args
+    .iter()
+    .skip(if model.is_some() { 2 } else { 1 })
+    .map(expr_to_string)
+    .collect();
+  let opts = if opts.is_empty() {
+    String::new()
+  } else {
+    format!(", {}", opts.join(", "))
+  };
+
+  let poly = |n: usize| {
+    let basis: Vec<String> = (0..=n).map(|k| format!("x$lfp^{k}")).collect();
+    Some(format!("Fit[pts$lfp, {{{}}}, x$lfp]", basis.join(", ")))
+  };
+  let fit = match model {
+    None => poly(1),
+    Some(Expr::String(s)) => match s.as_str() {
+      "Linear" => poly(1),
+      "Quadratic" => poly(2),
+      "Cubic" => poly(3),
+      "Quartic" => poly(4),
+      "Quintic" => poly(5),
+      "Exponential" => Some(
+        "Exp[Fit[{#[[1]], Log[#[[2]]]} & /@ pts$lfp, {1, x$lfp}, x$lfp]]"
+          .to_string(),
+      ),
+      "Kernel" => Some(
+        "With[{h$lfp = (Max[pts$lfp[[All, 1]]] - Min[pts$lfp[[All, 1]]])/ \
+         Length[pts$lfp]^(1/5)/2}, Total[Exp[-(x$lfp - pts$lfp[[All, 1]])^2/ \
+         (2 h$lfp^2)]*pts$lfp[[All, 2]]]/ \
+         Total[Exp[-(x$lfp - pts$lfp[[All, 1]])^2/(2 h$lfp^2)]]]"
+          .to_string(),
+      ),
+      _ => None,
+    },
+    Some(basis @ Expr::List(_)) => Some(format!(
+      "Fit[pts$lfp, {}, x] /. x -> x$lfp",
+      expr_to_string(basis)
+    )),
+    Some(_) => None,
+  };
+  let Some(fit) = fit else {
+    return Ok(unevaluated("ListFitPlot", args));
+  };
+
+  let code = format!(
+    "Module[{{d$lfp = {data}, pts$lfp, f$lfp}}, \
+     pts$lfp = If[MatrixQ[d$lfp] && Dimensions[d$lfp][[2]] == 2, d$lfp, \
+     Transpose[{{Range[Length[d$lfp]], d$lfp}}]]; \
+     f$lfp = {fit}; \
+     Show[ListPlot[d$lfp{opts}], Plot[Evaluate[f$lfp], {{x$lfp, \
+     Min[pts$lfp[[All, 1]]], Max[pts$lfp[[All, 1]]]}}]]]",
+    data = expr_to_string(&args[0]),
+  );
+  evaluate_expr_to_expr(&crate::syntax::string_to_expr(&code)?)
+}
