@@ -227,10 +227,7 @@ pub(crate) fn evaluate_function_call_owned(
   let hit = OWNED_FALLTHROUGH_HIT.with(|c| c.replace(prev_hit));
   OWNED_FALLTHROUGH.with(|c| c.set(prev_key));
   if hit && result.is_ok() {
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.into(),
-    });
+    return Ok(call(name, args));
   }
   result
 }
@@ -869,7 +866,7 @@ fn evaluate_function_call_ast_inner(
     let cov = call1("Covariance", args[0].clone());
     return crate::evaluator::evaluate_expr_to_expr(&call(
       "Ellipsoid",
-      vec![mean, call("Times", vec![radius, cov])],
+      vec![mean, times(vec![radius, cov])],
     ));
   }
 
@@ -938,7 +935,7 @@ fn evaluate_function_call_ast_inner(
     let edges = crate::evaluator::evaluate_expr_to_expr(&call(
       "Apply",
       vec![
-        Expr::Identifier("UndirectedEdge".to_string()),
+        id_expr("UndirectedEdge"),
         args[0].clone(),
         Expr::List(vec![Expr::Integer(1)].into()),
       ],
@@ -955,7 +952,7 @@ fn evaluate_function_call_ast_inner(
           body: Box::new(call(
             "Map",
             vec![
-              Expr::Identifier("First".to_string()),
+              id_expr("First"),
               Expr::Slot(1),
             ],
           )),
@@ -3003,9 +3000,9 @@ fn evaluate_function_call_ast_inner(
         _ => to_real(p),
       })
       .collect();
-    return Ok(Expr::FunctionCall {
-      name: "BezierFunction".to_string(),
-      args: vec![
+    return Ok(call(
+      "BezierFunction",
+      vec![
         Expr::Integer(1),
         Expr::List(
           vec![Expr::List(vec![Expr::Real(0.0), Expr::Real(1.0)].into())]
@@ -3019,9 +3016,8 @@ fn evaluate_function_call_ast_inner(
         Expr::List(vec![Expr::Integer(0)].into()),
         id_expr("MachinePrecision"),
         str_expr("Unevaluated"),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
 
   // BSplineFunction[{p1, p2, ...}] (curve) or BSplineFunction[array]
@@ -4526,16 +4522,15 @@ fn evaluate_function_call_ast_inner(
         }
       }
 
-      return Ok(Expr::FunctionCall {
-        name: "MeshRegion".to_string(),
-        args: vec![
+      return Ok(call(
+        "MeshRegion",
+        vec![
           Expr::List(vertices.into()),
           Expr::List(
             vec![call1("Polygon", Expr::List(polygons.into()))].into(),
           ),
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
   }
 
@@ -4994,10 +4989,7 @@ fn evaluate_function_call_ast_inner(
           spec.push(rule_expr(str_expr("RootVertex"), v.clone()));
         }
         if let Some(dir) = root_pos {
-          spec.push(rule_expr(
-            str_expr("Orientation"),
-            Expr::Identifier(dir.symbol().to_string()),
-          ));
+          spec.push(rule_expr(str_expr("Orientation"), id_expr(dir.symbol())));
         }
         forwarded
           .push(rule_expr(id_expr("GraphLayout"), Expr::List(spec.into())));
@@ -5119,17 +5111,16 @@ fn evaluate_function_call_ast_inner(
       let theta = (90.0 - theta_deg).to_radians();
       let nx = theta.cos();
       let ny = theta.sin();
-      primitives.push(Expr::FunctionCall {
-        name: "Line".to_string(),
-        args: vec![Expr::List(
+      primitives.push(call1(
+        "Line",
+        Expr::List(
           vec![
             Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
             Expr::List(vec![Expr::Real(nx), Expr::Real(ny)].into()),
           ]
           .into(),
-        )]
-        .into(),
-      });
+        ),
+      ));
     }
     let mut graphics_args = vec![Expr::List(primitives.into())];
     graphics_args.extend(gauge_options(args));
@@ -5173,17 +5164,16 @@ fn evaluate_function_call_ast_inner(
     {
       for v in values {
         let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
-        primitives.push(Expr::FunctionCall {
-          name: "Line".to_string(),
-          args: vec![Expr::List(
+        primitives.push(call1(
+          "Line",
+          Expr::List(
             vec![
               Expr::List(vec![Expr::Real(t), Expr::Integer(0)].into()),
               Expr::List(vec![Expr::Real(t), Expr::Real(0.2)].into()),
             ]
             .into(),
-          )]
-          .into(),
-        });
+          ),
+        ));
       }
     }
     let mut graphics_args = vec![Expr::List(primitives.into())];
@@ -10282,16 +10272,15 @@ fn evaluate_function_call_ast_inner(
             operands: vec![x.clone(), Expr::Integer(0)],
             operators: vec![ComparisonOp::Less],
           };
-          let pw = Expr::FunctionCall {
-            name: "Piecewise".to_string(),
-            args: vec![
+          let pw = call(
+            "Piecewise",
+            vec![
               Expr::List(
                 vec![Expr::List(vec![neg1(x.clone()), negative].into())].into(),
               ),
               x,
-            ]
-            .into(),
-          };
+            ],
+          );
           return refined(evaluate_expr_to_expr(&pw)?);
         }
         "Sign" if over_reals && fargs.len() == 1 => {
@@ -10300,9 +10289,9 @@ fn evaluate_function_call_ast_inner(
             operands: vec![x.clone(), Expr::Integer(0)],
             operators: vec![op],
           };
-          let pw = Expr::FunctionCall {
-            name: "Piecewise".to_string(),
-            args: vec![
+          let pw = call(
+            "Piecewise",
+            vec![
               Expr::List(
                 vec![
                   Expr::List(
@@ -10315,9 +10304,8 @@ fn evaluate_function_call_ast_inner(
                 .into(),
               ),
               Expr::Integer(0),
-            ]
-            .into(),
-          };
+            ],
+          );
           return refined(evaluate_expr_to_expr(&pw)?);
         }
         "Min" if fargs.len() >= 2 => {
@@ -10391,16 +10379,15 @@ fn evaluate_function_call_ast_inner(
             operands: vec![fargs[0].clone(), Expr::Integer(0)],
             operators: vec![ComparisonOp::GreaterEqual],
           };
-          let pw = Expr::FunctionCall {
-            name: "Piecewise".to_string(),
-            args: vec![
+          let pw = call(
+            "Piecewise",
+            vec![
               Expr::List(
                 vec![Expr::List(vec![Expr::Integer(1), cond].into())].into(),
               ),
               Expr::Integer(0),
-            ]
-            .into(),
-          };
+            ],
+          );
           return evaluate_expr_to_expr(&pw);
         }
         // Ramp[x] = x for x >= 0, else 0.
@@ -10409,23 +10396,22 @@ fn evaluate_function_call_ast_inner(
             operands: vec![fargs[0].clone(), Expr::Integer(0)],
             operators: vec![ComparisonOp::GreaterEqual],
           };
-          let pw = Expr::FunctionCall {
-            name: "Piecewise".to_string(),
-            args: vec![
+          let pw = call(
+            "Piecewise",
+            vec![
               Expr::List(
                 vec![Expr::List(vec![fargs[0].clone(), cond].into())].into(),
               ),
               Expr::Integer(0),
-            ]
-            .into(),
-          };
+            ],
+          );
           return evaluate_expr_to_expr(&pw);
         }
         // Boole[cond] = 1 when cond is True, else 0.
         "Boole" if fargs.len() == 1 => {
-          let pw = Expr::FunctionCall {
-            name: "Piecewise".to_string(),
-            args: vec![
+          let pw = call(
+            "Piecewise",
+            vec![
               Expr::List(
                 vec![Expr::List(
                   vec![Expr::Integer(1), fargs[0].clone()].into(),
@@ -10433,9 +10419,8 @@ fn evaluate_function_call_ast_inner(
                 .into(),
               ),
               Expr::Integer(0),
-            ]
-            .into(),
-          };
+            ],
+          );
           return evaluate_expr_to_expr(&pw);
         }
         "Clip" if !fargs.is_empty() => {
@@ -10461,9 +10446,9 @@ fn evaluate_function_call_ast_inner(
             operands: vec![x.clone(), hi.clone()],
             operators: vec![ComparisonOp::Greater],
           };
-          let pw = Expr::FunctionCall {
-            name: "Piecewise".to_string(),
-            args: vec![
+          let pw = call(
+            "Piecewise",
+            vec![
               Expr::List(
                 vec![
                   Expr::List(vec![lo, cond_lo].into()),
@@ -10472,9 +10457,8 @@ fn evaluate_function_call_ast_inner(
                 .into(),
               ),
               x,
-            ]
-            .into(),
-          };
+            ],
+          );
           return evaluate_expr_to_expr(&pw);
         }
         _ => {}
@@ -10596,18 +10580,17 @@ fn evaluate_function_call_ast_inner(
       && (ann_args.len() == 2 || ann_args.len() == 3)
     {
       let q = ann_args.get(2).cloned().unwrap_or(Expr::Integer(1));
-      let ordinary = Expr::FunctionCall {
-        name: "TimeValue".to_string(),
-        args: vec![
+      let ordinary = call(
+        "TimeValue",
+        vec![
           Expr::FunctionCall {
             name: "Annuity".to_string(),
             args: ann_args.clone(),
           },
           args[1].clone(),
           args[2].clone(),
-        ]
-        .into(),
-      };
+        ],
+      );
       let due = times(vec![
         pow(plus(vec![Expr::Integer(1), args[1].clone()]), q),
         ordinary,
@@ -11219,7 +11202,7 @@ fn evaluate_function_call_ast_inner(
     } else {
       "Special"
     };
-    return Ok(Expr::Identifier(result.to_string()));
+    return Ok(id_expr(result));
   }
 
   // DirectoryQ[path] — check if path is a directory
@@ -12416,15 +12399,15 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
       let (num, den) = sum[0];
       Some(call("GrayLevel", vec![rational_to_expr(num, den * n_i128)]))
     } else {
-      Some(Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: (0..3)
+      Some(call(
+        "RGBColor",
+        (0..3)
           .map(|ch| {
             let (num, den) = sum[ch];
             rational_to_expr(num, den * n_i128)
           })
           .collect(),
-      })
+      ))
     }
   } else {
     // Blend[{c1, c2, ...}, weights] where weights is a list of the wrong
@@ -12528,12 +12511,12 @@ fn evaluate_blend_positioned(pairs: &[Expr], t_arg: &Expr) -> Option<Expr> {
     if all_graylevel {
       call("GrayLevel", vec![rational_to_expr(rgb[0].0, rgb[0].1)])
     } else {
-      Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: (0..3)
+      call(
+        "RGBColor",
+        (0..3)
           .map(|ch| rational_to_expr(rgb[ch].0, rgb[ch].1))
           .collect(),
-      }
+      )
     }
   };
 
@@ -12596,10 +12579,7 @@ fn evaluate_blend_positioned(pairs: &[Expr], t_arg: &Expr) -> Option<Expr> {
   if all_graylevel {
     Some(call1("GrayLevel", build_channel(0)))
   } else {
-    Some(Expr::FunctionCall {
-      name: "RGBColor".to_string(),
-      args: (0..3).map(build_channel).collect(),
-    })
+    Some(call("RGBColor", (0..3).map(build_channel).collect()))
   }
 }
 
@@ -12707,10 +12687,7 @@ fn blend_two_float(
   if as_graylevel {
     call1("GrayLevel", build_channel(0))
   } else {
-    Expr::FunctionCall {
-      name: "RGBColor".to_string(),
-      args: (0..3).map(build_channel).collect(),
-    }
+    call("RGBColor", (0..3).map(build_channel).collect())
   }
 }
 
@@ -12738,10 +12715,7 @@ fn blend_two_rational(
   if as_graylevel {
     call1("GrayLevel", build_channel(0))
   } else {
-    Expr::FunctionCall {
-      name: "RGBColor".to_string(),
-      args: (0..3).map(build_channel).collect(),
-    }
+    call("RGBColor", (0..3).map(build_channel).collect())
   }
 }
 
@@ -13866,9 +13840,9 @@ fn bspline_structured(
   let knot_lists: Expr =
     Expr::List(knots.iter().map(|k| bspline_real_list(k)).collect());
   let zeros: Expr = Expr::List((0..dim).map(|_| Expr::Integer(0)).collect());
-  Expr::FunctionCall {
-    name: "BSplineFunction".to_string(),
-    args: vec![
+  call(
+    "BSplineFunction",
+    vec![
       Expr::Integer(dim as i128),
       ranges,
       degree_list,
@@ -13878,9 +13852,8 @@ fn bspline_structured(
       zeros,
       id_expr("MachinePrecision"),
       str_expr("Unevaluated"),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// The `cell -> block` replacements of a 2D substitution system, keyed by the

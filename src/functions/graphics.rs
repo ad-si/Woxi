@@ -1638,17 +1638,17 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       // `Texture[image]`: fills the polygons that follow with the image,
       // placed by their `VertexTextureCoordinates`.
       "Texture" if args.len() == 1 => {
-        if let Expr::Image {
+        if let Some(Expr::Image {
           width,
           height,
           channels,
-          data,
+          ref data,
           ..
-        } = &args[0]
+        }) = crate::functions::image_ast::texture_source_image(&args[0])
         {
           use base64::Engine;
           let img = crate::functions::image_ast::expr_to_dynamic_image(
-            *width, *height, *channels, data,
+            width, height, channels, data,
           );
           let mut png = Vec::new();
           if img
@@ -1662,8 +1662,8 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
               png_b64: base64::engine::general_purpose::STANDARD
                 .encode(&png)
                 .into(),
-              width: *width,
-              height: *height,
+              width,
+              height,
               coords: Vec::new(),
             }));
           }
@@ -11750,7 +11750,7 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
     Some(slot) => slot.1 = value,
     None => attrs.push((name, value)),
   };
-  for d in directives {
+  for d in style_directives_in_application_order(directives) {
     match d {
       Expr::Identifier(s) if s == "Italic" => {
         set("font-style", "italic".to_string());
@@ -12297,6 +12297,29 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
       match name.as_str() {
         // Missing[...] → rendered as a dash
         "Missing" => "-".to_string(),
+
+        // TildeTilde[a, b, ...] → a ≈ b ≈ ...
+        "TildeTilde" if args.len() >= 2 => args
+          .iter()
+          .map(expr_to_svg_markup)
+          .collect::<Vec<_>>()
+          .join(" \u{2248} "),
+
+        // Sum[body, {k, lo, hi}] → ∑ with the bounds as sub/superscript
+        "Sum" if args.len() == 2 => match &args[1] {
+          Expr::List(it) if it.len() == 3 => format!(
+            "\u{2211}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}={}</tspan><tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan> {}",
+            expr_to_svg_markup(&it[0]),
+            expr_to_svg_markup(&it[1]),
+            expr_to_svg_markup(&it[2]),
+            expr_to_svg_markup(&args[0])
+          ),
+          _ => format!(
+            "Sum[{}, {}]",
+            expr_to_svg_markup(&args[0]),
+            expr_to_svg_markup(&args[1])
+          ),
+        },
 
         // Plus[a, b, ...] with negative-term handling
         "Plus" if args.len() >= 2 => {
@@ -15840,6 +15863,27 @@ pub(crate) fn is_style_wrapper(name: &str) -> bool {
 pub(crate) fn is_manipulate_annotation_head(name: &str) -> bool {
   is_style_wrapper(name)
     || matches!(name, "Text" | "TextCell" | "Item" | "Row" | "Column")
+}
+
+/// Whether a button label is `Dynamic[…]` around a string built from the
+/// bindings (`Dynamic["reset " <> ToString[n]]`), which has to be re-evaluated
+/// as they change rather than typeset from its source.
+fn is_dynamic_string_label(label: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = label else {
+    return false;
+  };
+  name == "Dynamic"
+    && args.len() == 1
+    && match &args[0] {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::StringJoin,
+        ..
+      } => true,
+      Expr::FunctionCall { name, .. } => {
+        name == "StringJoin" || name == "ToString"
+      }
+      _ => false,
+    }
 }
 
 /// Whether an annotation row (`Style[…]`, `Row[{…}]`, `Column[{…}]`, …) has a
@@ -19554,7 +19598,13 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
   let Expr::FunctionCall { name, args } = expr else {
     return expr.clone();
   };
-  if !is_graphics_producing_head(name) {
+  // A graphics layout nested in another one (`GraphicsRow[{GraphicsGrid[…]}]`)
+  // fits the cell it sits in instead of keeping its own default width.
+  let is_nested_layout = matches!(
+    name.as_str(),
+    "GraphicsRow" | "GraphicsColumn" | "GraphicsGrid"
+  );
+  if !is_graphics_producing_head(name) && !is_nested_layout {
     return expr.clone();
   }
   let has_image_size = args.iter().any(|a| {
@@ -19869,7 +19919,11 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
       // `GraphicsGrid`/`Row`/`Column` don't merge spans the way `Grid` does,
       // but the placeholder should still draw as nothing rather than fall
       // through to the text renderer and print its own name.
-      if is_span_placeholder(item) {
+      // A `Null` cell (`If[i == j, , …]` leaving a gap in a board) is blank
+      // space, not the text "Null".
+      if is_span_placeholder(item)
+        || matches!(item, Expr::Identifier(s) if s == "Null")
+      {
         // A near-zero height keeps this cell from inflating its row: the
         // placeholder holds no content of its own, so the row's height
         // should follow whatever real content sits beside it.
@@ -20713,8 +20767,21 @@ fn resolve_display_item(expr: &Expr) -> Expr {
         }
       }
       Some(("EventHandler", content)) => current = content.clone(),
+      // `ClickPane[content, handler]` shows `content`; the handler needs
+      // live clicks. `content` is held, so a state variable holding a
+      // picture (`ClickPane[Dynamic[board], …]`) still has to be resolved.
+      Some(("ClickPane", held)) => {
+        let captured = crate::captured_graphics_count();
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(held);
+        crate::truncate_captured_graphics(captured);
+        current = evaluated.unwrap_or_else(|_| held.clone());
+      }
       // `Tooltip[expr, hint]` draws as `expr`; the hint shows only on hover.
       Some(("Tooltip", content)) => current = content.clone(),
+      // `SlideView[{s1, s2, …}]` starts on its first slide.
+      Some(("SlideView", Expr::List(slides))) if !slides.is_empty() => {
+        current = slides[0].clone();
+      }
       _ => break,
     }
     current = unwrap_display_wrappers(&current);
@@ -29247,6 +29314,12 @@ fn unicode_script_char(c: char, superscript: bool) -> Option<char> {
       'x' => '\u{02E3}',
       'y' => '\u{02B8}',
       'z' => '\u{1DBB}',
+      // The five Greek letters with a modifier-letter superscript.
+      '\u{03B2}' => '\u{1D5D}',
+      '\u{03B3}' => '\u{1D5E}',
+      '\u{03B4}' => '\u{1D5F}',
+      '\u{03C6}' => '\u{1D60}',
+      '\u{03C7}' => '\u{1D61}',
       _ => return None,
     }
   } else {
@@ -29285,6 +29358,12 @@ fn unicode_script_char(c: char, superscript: bool) -> Option<char> {
       'u' => '\u{1D64}',
       'v' => '\u{1D65}',
       'x' => '\u{2093}',
+      // The five Greek letters with a subscript form.
+      '\u{03B2}' => '\u{1D66}',
+      '\u{03B3}' => '\u{1D67}',
+      '\u{03C1}' => '\u{1D68}',
+      '\u{03C6}' => '\u{1D69}',
+      '\u{03C7}' => '\u{1D6A}',
       _ => return None,
     }
   };
@@ -29991,8 +30070,12 @@ fn parse_manipulate_control(
       // keep its code so the frontend can rebuild the choices whenever the
       // other control moves. A `Dynamic[…]` wrapper is stripped first (see
       // `unwrap_dynamic_choices`) so the kept code re-evaluates cleanly too.
+      // An explicit `Dynamic[…]` list is live even when it names no sibling
+      // control: it may follow a free variable the body assigns itself
+      // (`Dynamic[Range[depthMax]]` with `depthMax = 4` set per mode).
       let values_code = (bounds.len() == 1
-        && expr_references_any(unwrap_dynamic_choices(bounds[0]), siblings))
+        && (matches!(bounds[0], Expr::FunctionCall { name, .. } if name == "Dynamic")
+          || expr_references_any(unwrap_dynamic_choices(bounds[0]), siblings)))
       .then(|| {
         crate::syntax::expr_to_source_form(unwrap_dynamic_choices(bounds[0]))
       });
@@ -30075,6 +30158,18 @@ fn parse_manipulate_control(
     && built_name == "Button"
     && built_args.len() >= 2
   {
+    // A label that reads the bindings (`Dynamic["new game with " <> n]`)
+    // has to follow them, which only a display element does.
+    if is_dynamic_string_label(&built_args[0]) {
+      let value = explicit_initial
+        .as_ref()
+        .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_source_form);
+      return Some(ParsedControl::StateWithDisplay {
+        name,
+        value,
+        display: crate::syntax::expr_to_source_form(built.as_ref().unwrap()),
+      });
+    }
     let button_runs = manipulate_label_runs(&built_args[0], false);
     let value = explicit_initial
       .as_ref()
@@ -30088,6 +30183,34 @@ fn parse_manipulate_control(
         action: crate::syntax::expr_to_source_form(&built_args[1]),
         enabled: None,
       },
+    });
+  }
+  // Custom control whose builder yields a picture or layout rather than a
+  // `Button` (a board of clickable cells bound to another variable): the
+  // variable becomes live state and the built widget is a display element,
+  // re-rendered from the live bindings like any in-body widget.
+  if let Some(Expr::FunctionCall {
+    name: built_name, ..
+  }) = &built
+    && matches!(
+      built_name.as_str(),
+      "GraphicsGrid"
+        | "Graphics"
+        | "Grid"
+        | "Row"
+        | "Column"
+        | "Panel"
+        | "Framed"
+        | "Pane"
+    )
+  {
+    let value = explicit_initial
+      .as_ref()
+      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_source_form);
+    return Some(ParsedControl::StateWithDisplay {
+      name,
+      value,
+      display: crate::syntax::expr_to_source_form(built.as_ref().unwrap()),
     });
   }
   // Per-element custom control: `{{op, default, label}, Manipulator[
@@ -31792,6 +31915,15 @@ fn display_expr_to_node(
         }
         _ => static_leaf_node(expr, bindings),
       },
+      // A static render of `SlideView[{s1, s2, …}]` shows its first slide,
+      // the one the slider starts on.
+      "SlideView" if matches!(args.first(), Some(Expr::List(l)) if !l.is_empty()) =>
+      {
+        let Expr::List(slides) = &args[0] else {
+          unreachable!()
+        };
+        display_expr_to_node(&slides[0], bindings, probes, ons)
+      }
       "Panel" | "Framed" | "Deploy" | "Item" | "Pane" | "Labeled"
         if !args.is_empty() =>
       {
@@ -33249,6 +33381,14 @@ mod manipulate_label_tests {
   fn superscript_renders_unicode() {
     let label = call("Superscript", vec![id_expr("x"), Expr::Integer(2)]);
     assert_eq!(runs(&label), vec![run("x", false), run("\u{00B2}", false)]);
+  }
+
+  #[test]
+  fn greek_superscript_and_subscript_use_unicode_letters() {
+    let sup = call("Superscript", vec![id_expr("x"), str_expr("\u{03B2}")]);
+    assert_eq!(runs(&sup), vec![run("x", false), run("\u{1D5D}", false)]);
+    let sub = call("Subscript", vec![id_expr("x"), str_expr("\u{03C7}")]);
+    assert_eq!(runs(&sub), vec![run("x", false), run("\u{1D6A}", false)]);
   }
 
   #[test]

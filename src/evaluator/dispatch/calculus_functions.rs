@@ -361,7 +361,7 @@ pub fn dispatch_calculus_functions(
         if let Expr::Identifier(func_name) = &args[1] {
           // Use a dummy variable, differentiate, then replace with Slot[1]
           let dummy = "__d_slot__";
-          let dummy_expr = Expr::Identifier(dummy.to_string());
+          let dummy_expr = id_expr(dummy);
           let mut deriv = Expr::FunctionCall {
             name: func_name.clone(),
             args: vec![dummy_expr.clone()].into(),
@@ -861,7 +861,7 @@ pub fn dispatch_calculus_functions(
           _ => None,
         };
         if let Some(inv_name) = inverse {
-          return Some(Ok(Expr::Identifier(inv_name.to_string())));
+          return Some(Ok(id_expr(inv_name)));
         }
       }
     }
@@ -1500,8 +1500,8 @@ fn inverse_laplace_2d(
     has_one && has_pq
   };
 
-  let sqrt_x = || call1("Sqrt", Expr::Identifier(x.to_string()));
-  let sqrt_y = || call1("Sqrt", Expr::Identifier(y.to_string()));
+  let sqrt_x = || call1("Sqrt", id_expr(x));
+  let sqrt_y = || call1("Sqrt", id_expr(y));
 
   // Case 1: F = 1/(p*q) → 1.
   if matches!(&num, Expr::Integer(1)) && is_product_pq(&den) {
@@ -1510,13 +1510,7 @@ fn inverse_laplace_2d(
 
   // Case 2: F = 1/(p + q) → DiracDelta[-x + y].
   if matches!(&num, Expr::Integer(1)) && is_sum_pq(&den) {
-    return Some(call1(
-      "DiracDelta",
-      plus(vec![
-        neg(Expr::Identifier(x.to_string())),
-        Expr::Identifier(y.to_string()),
-      ]),
-    ));
+    return Some(call1("DiracDelta", plus(vec![neg(id_expr(x)), id_expr(y)])));
   }
 
   // Case 3: F = 1/(1 + p*q) → BesselJ[0, 2*Sqrt[x]*Sqrt[y]].
@@ -1555,11 +1549,7 @@ fn inverse_laplace_2d(
     false
   };
   if matches!(&num, Expr::Integer(1)) && is_sqrt_one_plus_pq(&den) {
-    let neg_xy = times(vec![
-      Expr::Integer(-1),
-      Expr::Identifier(x.to_string()),
-      Expr::Identifier(y.to_string()),
-    ]);
+    let neg_xy = times(vec![Expr::Integer(-1), id_expr(x), id_expr(y)]);
     let cosh_arg = times(vec![Expr::Integer(2), call1("Sqrt", neg_xy)]);
     let cosh = call1("Cosh", cosh_arg);
     let pi_sqrt_xy = times(vec![const_expr("Pi"), sqrt_x(), sqrt_y()]);
@@ -1573,7 +1563,7 @@ fn inverse_laplace_2d(
 fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
   // L^-1[c] = c * DiracDelta[t] for c independent of s.
   if !depends_on(expr, s) {
-    let dirac = call1("DiracDelta", Expr::Identifier(t.to_string()));
+    let dirac = call1("DiracDelta", id_expr(t));
     if matches!(expr, Expr::Integer(1)) {
       return Some(dirac);
     }
@@ -1598,7 +1588,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
           }
           // s^(-n) → t^(n-1) / (n-1)!
           return Some(times(vec![
-            pow(Expr::Identifier(t.to_string()), Expr::Integer(n - 1)),
+            pow(id_expr(t), Expr::Integer(n - 1)),
             pow(call1("Gamma", Expr::Integer(n)), Expr::Integer(-1)),
           ]));
         }
@@ -1621,10 +1611,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         && !exponent_is_sum
         && let Some(k) = extract_linear_coeff(fargs[1], s)
       {
-        return Some(call(
-          "DiracDelta",
-          vec![plus(vec![Expr::Identifier(t.to_string()), k])],
-        ));
+        return Some(call("DiracDelta", vec![plus(vec![id_expr(t), k])]));
       }
 
       // L^-1[(s^2 + a^2)^(-1)] = Sin[a*t] / a, and the hyperbolic counterpart
@@ -1638,7 +1625,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         };
         return Some(times(vec![
           pow(a.clone(), Expr::Integer(-1)),
-          call(func, vec![times(vec![a, Expr::Identifier(t.to_string())])]),
+          call(func, vec![times(vec![a, id_expr(t)])]),
         ]));
       }
 
@@ -1654,10 +1641,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         };
         return Some(call(
           func,
-          vec![
-            Expr::Integer(0),
-            times(vec![a, Expr::Identifier(t.to_string())]),
-          ],
+          vec![Expr::Integer(0), times(vec![a, id_expr(t)])],
         ));
       }
 
@@ -1676,12 +1660,8 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         };
         if let Some(c) = shift {
           let n = fargs[1].clone();
-          let n = crate::evaluator::evaluate_expr_to_expr(&times(vec![
-            Expr::Integer(-1),
-            n,
-          ]))
-          .ok()?;
-          let t_id = Expr::Identifier(t.to_string());
+          let n = crate::evaluator::evaluate_expr_to_expr(&neg(n)).ok()?;
+          let t_id = id_expr(t);
           return Some(times(vec![
             pow(t_id.clone(), plus(vec![n.clone(), Expr::Integer(-1)])),
             pow(const_expr("E"), times(vec![Expr::Integer(-1), c, t_id])),
@@ -1695,11 +1675,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         // Check if fargs[0] is (s + something) or (s - something)
         if let Some(neg_a) = extract_linear_s_offset(fargs[0], s) {
           // (s + neg_a)^(-1) → E^(-neg_a * t)
-          let exponent = times(vec![
-            Expr::Integer(-1),
-            neg_a,
-            Expr::Identifier(t.to_string()),
-          ]);
+          let exponent = times(vec![Expr::Integer(-1), neg_a, id_expr(t)]);
           return Some(pow(const_expr("E"), exponent));
         }
       }
@@ -1744,11 +1720,8 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
       if let Some(k) = log_over_s {
         return Some(plus(vec![
           call1("Log", k),
-          times(vec![Expr::Integer(-1), const_expr("EulerGamma")]),
-          times(vec![
-            Expr::Integer(-1),
-            call1("Log", Expr::Identifier(t.to_string())),
-          ]),
+          neg(const_expr("EulerGamma")),
+          times(vec![Expr::Integer(-1), call1("Log", id_expr(t))]),
         ]));
       }
       // Check for pattern: X * (s^2 + a^2)^(-1)
@@ -1774,20 +1747,14 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
             && n == s
           {
             // s / (s^2 + a^2) → Cos[a t]  (or Cosh[a t])
-            return Some(call(
-              cos_name,
-              vec![times(vec![a, Expr::Identifier(t.to_string())])],
-            ));
+            return Some(call(cos_name, vec![times(vec![a, id_expr(t)])]));
           }
           // For numerator/(s^2 + a^2) → (numerator/a) * Sin[a*t]
           if !depends_on(numerator, s) {
             return Some(times(vec![
               numerator.clone(),
               pow(a.clone(), Expr::Integer(-1)),
-              call(
-                sin_name,
-                vec![times(vec![a, Expr::Identifier(t.to_string())])],
-              ),
+              call(sin_name, vec![times(vec![a, id_expr(t)])]),
             ]));
           }
         }
@@ -1869,7 +1836,7 @@ fn inverse_laplace_exact_rational(
   s: &str,
   t: &str,
 ) -> Option<Expr> {
-  let s_id = Expr::Identifier(s.to_string());
+  let s_id = id_expr(s);
   let combined =
     crate::functions::together_ast(std::slice::from_ref(expr)).ok()?;
   let num_expr =
@@ -1912,8 +1879,8 @@ fn inverse_laplace_exact_rational(
 /// Inverse-transform one `Apart` term — see `inverse_laplace_exact_rational`
 /// for the closed forms. `None` for any shape outside them.
 fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
-  let s_id = Expr::Identifier(s.to_string());
-  let t_id = Expr::Identifier(t.to_string());
+  let s_id = id_expr(s);
+  let t_id = id_expr(t);
   let factors: Vec<Expr> = match as_func_args(term) {
     Some(("Times", args)) => args.into_iter().cloned().collect(),
     _ => vec![term.clone()],
@@ -2054,7 +2021,7 @@ fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
 /// `DiracDelta^(k)[t]`: the k-th derivative of `DiracDelta` at `t`, and
 /// plain `DiracDelta[t]` for k = 0. This is `L^-1[s^k]`.
 fn dirac_delta_derivative(k: i128, t: &str) -> Expr {
-  let t_id = Expr::Identifier(t.to_string());
+  let t_id = id_expr(t);
   if k == 0 {
     return call1("DiracDelta", t_id);
   }
@@ -2133,7 +2100,7 @@ fn inverse_laplace_partial_fractions(
     return None;
   }
 
-  let s_id = Expr::Identifier(s.to_string());
+  let s_id = id_expr(s);
   let num_coeffs = polynomial_f64_coeffs(&num_expr, &s_id)?;
   let den_coeffs = polynomial_f64_coeffs(&den_expr, &s_id)?;
   let den_degree = den_coeffs.len().checked_sub(1)?;
@@ -2169,7 +2136,7 @@ fn inverse_laplace_partial_fractions(
     .collect();
 
   let e_const = || const_expr("E");
-  let t_id = || Expr::Identifier(t.to_string());
+  let t_id = || id_expr(t);
 
   let mut terms: Vec<Expr> = quotient
     .iter()
@@ -4406,7 +4373,7 @@ fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
           operands: vec![diff_eval, Expr::Integer(0)],
           operators: vec![ComparisonOp::Equal],
         };
-        let var_expr = Expr::Identifier(var.to_string());
+        let var_expr = id_expr(var);
         crate::push_quiet();
         let solve_result =
           crate::functions::polynomial_ast::solve::solve_ast(&[
@@ -4513,7 +4480,7 @@ fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
             operands: vec![lhs.clone(), rhs.clone()],
             operators: vec![ComparisonOp::Equal],
           };
-          let var_expr = Expr::Identifier(var.to_string());
+          let var_expr = id_expr(var);
           crate::push_quiet();
           let solve_result =
             crate::functions::polynomial_ast::solve::solve_ast(&[
@@ -4955,12 +4922,10 @@ fn gf_inner(
     // GeneratingFunction[f[n+k], n, x] = (1/x^k) * (GF[f[n],n,x] - Sum[f[i]*x^i, {i,0,k-1}])
     let base_expr = Expr::FunctionCall {
       name: fname.clone(),
-      args: vec![Expr::Identifier(inner_var.to_string())].into(),
+      args: vec![id_expr(inner_var)].into(),
     };
-    let gf_base = call(
-      "GeneratingFunction",
-      vec![base_expr, Expr::Identifier(n.to_string()), x.clone()],
-    );
+    let gf_base =
+      call("GeneratingFunction", vec![base_expr, id_expr(n), x.clone()]);
     // Subtract the first k terms
     let mut subtract_terms = Vec::new();
     for i in 0..shift {
@@ -6489,8 +6454,8 @@ fn invert_pure_function(body: &Expr) -> Option<Expr> {
   // Substitute Slot[1] in the body with a sentinel identifier `$inv_x$`.
   let x_name = "$inv_x$";
   let y_name = "$inv_y$";
-  let x_expr = Expr::Identifier(x_name.to_string());
-  let y_expr = Expr::Identifier(y_name.to_string());
+  let x_expr = id_expr(x_name);
+  let y_expr = id_expr(y_name);
   let body_x =
     crate::syntax::substitute_slots(body, std::slice::from_ref(&x_expr));
 
@@ -6726,22 +6691,22 @@ fn parametric_ndsolve(name: &str, args: &[Expr]) -> Option<Expr> {
     Expr::Identifier(n) => vec![n.clone()],
     _ => return None,
   };
-  let callx = |head: &str, dep: &Expr| Expr::FunctionCall {
-    name: head.to_string(),
-    args: {
+  let callx = |head: &str, dep: &Expr| {
+    call(head, {
       let mut a = vec![args[0].clone(), dep.clone(), args[2].clone()];
       a.extend(args[4..].iter().cloned());
-      a.into()
-    },
+      a
+    })
   };
-  let function = |body: Expr| Expr::FunctionCall {
-    name: "ParametricFunction".to_string(),
-    args: vec![Expr::NamedFunction {
-      params: params.clone(),
-      body: Box::new(body),
-      bracketed: true,
-    }]
-    .into(),
+  let function = |body: Expr| {
+    call1(
+      "ParametricFunction",
+      Expr::NamedFunction {
+        params: params.clone(),
+        body: Box::new(body),
+        bracketed: true,
+      },
+    )
   };
   if name == "ParametricNDSolveValue" {
     return Some(function(callx("NDSolveValue", &args[1])));

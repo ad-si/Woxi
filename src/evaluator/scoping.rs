@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// Report a `With`/`Module`/`Block` whose local variable specification is not
@@ -367,7 +366,7 @@ fn mentions_symbol(expr: &Expr, name: &str) -> bool {
   matches!(
     crate::functions::predicate_ast::free_q_ast(&[
       expr.clone(),
-      Expr::Identifier(name.to_string()),
+      id_expr(name),
     ]),
     Ok(Expr::Identifier(ref s)) if s == "False"
   )
