@@ -11429,6 +11429,14 @@ fn evaluate_function_call_ast_inner(
     return Ok(sound);
   }
 
+  // Audio`Waveform[shape, f, t, opts…] synthesizes a periodic waveform as an
+  // Audio object (the sound player of the "Sounds of Waveforms" demo).
+  if name == "Audio`Waveform"
+    && let Some(audio) = crate::functions::sound::audio_waveform(args)
+  {
+    return Ok(audio);
+  }
+
   // Check if the function is a known but unimplemented Wolfram Language function.
   // Some symbolic CAS objects (Root, RootSum, …) intentionally stay
   // unevaluated as their canonical form, so flagging them as

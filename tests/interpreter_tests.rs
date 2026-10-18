@@ -2504,6 +2504,31 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_audio_waveform_builds_playable_audio() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Length[First[Audio`Waveform[Audio`Square, 440., 0.1, Overtones -> 5, SampleRate -> 65536]]]"
+      )
+      .unwrap(),
+      "6554"
+    );
+    assert_eq!(
+      interpret("Take[First[Audio`Waveform[Audio`Triangle, 1., 1., SampleRate -> 8]], 8]")
+        .unwrap(),
+      "{-1., -0.5, 0., 0.5, 1., 0.5, 0., -0.5}"
+    );
+    assert_eq!(
+      interpret("Audio`Waveform[Audio`Foo, 1., 1.]").unwrap(),
+      "Audio`Waveform[Audio`Foo, 1., 1.]"
+    );
+    let r = interpret_with_stdout("Audio`Waveform[Audio`Sinusoid, 440., 0.2]")
+      .unwrap();
+    let audio = r.sound.expect("waveform should produce playable audio");
+    assert_eq!(audio.mime, "audio/wav");
+  }
+
+  #[test]
   fn test_list_play_target_waveform_in_visual_mode() {
     // The motivating example: a 50 Hz sine sampled at 2000 Hz over 1 second
     // (2001 samples) plays as a Sound in the visual hosts.
