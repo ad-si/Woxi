@@ -1009,7 +1009,7 @@ pub fn dispatch_predicate_functions(
         rule_delayed_expr(call1("HoldPattern", pat), val)
       };
       let default_of = |sym: &str, extra: Vec<Expr>| {
-        let mut default_args = vec![Expr::Identifier(sym.to_string())];
+        let mut default_args = vec![id_expr(sym)];
         default_args.extend(extra);
         call("Default", default_args)
       };
@@ -1087,14 +1087,7 @@ pub fn dispatch_predicate_functions(
                 .values()
                 .map(|(arg_exprs, value)| {
                   rule_delayed_expr(
-                    Expr::FunctionCall {
-                      name: "HoldPattern".to_string(),
-                      args: vec![Expr::FunctionCall {
-                        name: sym.clone(),
-                        args: arg_exprs.clone().into(),
-                      }]
-                      .into(),
-                    },
+                    call1("HoldPattern", call(sym.as_str(), arg_exprs.clone())),
                     value.clone(),
                   )
                 })
@@ -1181,14 +1174,7 @@ pub fn dispatch_predicate_functions(
                 (args, guarded)
               });
             rule_delayed_expr(
-              Expr::FunctionCall {
-                name: "HoldPattern".to_string(),
-                args: vec![Expr::FunctionCall {
-                  name: sym.clone(),
-                  args: pattern_args.into(),
-                }]
-                .into(),
-              },
+              call1("HoldPattern", call(sym.as_str(), pattern_args)),
               display_body,
             )
           })
@@ -1228,7 +1214,7 @@ pub fn dispatch_predicate_functions(
           Ok(value) => value,
           Err(e) => return Some(Err(e)),
         };
-        sections.push(rule_expr(Expr::Identifier((*head).to_string()), value));
+        sections.push(rule_expr(id_expr(head), value));
       }
       return Some(Ok(call1(
         "Language`DefinitionList",
@@ -1332,11 +1318,7 @@ pub fn dispatch_predicate_functions(
         all_attrs.add(user.to_u32());
       }
       return Some(Ok(Expr::List(
-        all_attrs
-          .to_vec()
-          .iter()
-          .map(|a| Expr::Identifier(a.to_string()))
-          .collect(),
+        all_attrs.to_vec().iter().map(|a| id_expr(a)).collect(),
       )));
     }
     // Context[] - return current context
@@ -1870,7 +1852,7 @@ fn vector_order_ast(name: &str, arg: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 fn make_rule(name: &str, value: Expr) -> Expr {
-  rule_expr(Expr::Identifier(name.to_string()), value)
+  rule_expr(id_expr(name), value)
 }
 
 /// Precedence of a symbol or expression — matches Wolfram's `Precedence`.
@@ -1947,12 +1929,12 @@ fn precedence_value(expr: &Expr) -> f64 {
 
 /// Helper to create a RuleDelayed expression: name :> value
 fn make_rule_delayed(name: &str, value: Expr) -> Expr {
-  rule_delayed_expr(Expr::Identifier(name.to_string()), value)
+  rule_delayed_expr(id_expr(name), value)
 }
 
 /// Return built-in default options for known functions.
 pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
-  let id = |s: &str| Expr::Identifier(s.to_string());
+  let id = |s: &str| id_expr(s);
   let real = |f: f64| Expr::Real(f);
   let list = |v: Vec<Expr>| Expr::List(v.into());
   let func_slot1 = |body: Expr| Expr::Function {

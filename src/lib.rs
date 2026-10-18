@@ -2478,26 +2478,21 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
         .parse::<f64>()
         .unwrap_or(0.0);
       let tz_offset_hours = now.offset().local_minus_utc() as f64 / 3600.0;
-      let expr = syntax::Expr::FunctionCall {
-        name: "DateObject".to_string(),
-        args: vec![
+      let now_part = |fmt: &str| {
+        syntax::Expr::Integer(
+          now.format(fmt).to_string().parse::<i128>().unwrap(),
+        )
+      };
+      let expr = helpers::call(
+        "DateObject",
+        vec![
           syntax::Expr::List(
             vec![
-              syntax::Expr::Integer(
-                now.format("%Y").to_string().parse::<i128>().unwrap(),
-              ),
-              syntax::Expr::Integer(
-                now.format("%m").to_string().parse::<i128>().unwrap(),
-              ),
-              syntax::Expr::Integer(
-                now.format("%d").to_string().parse::<i128>().unwrap(),
-              ),
-              syntax::Expr::Integer(
-                now.format("%H").to_string().parse::<i128>().unwrap(),
-              ),
-              syntax::Expr::Integer(
-                now.format("%M").to_string().parse::<i128>().unwrap(),
-              ),
+              now_part("%Y"),
+              now_part("%m"),
+              now_part("%d"),
+              now_part("%H"),
+              now_part("%M"),
               syntax::Expr::Real(seconds),
             ]
             .into(),
@@ -2505,9 +2500,8 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
           helpers::str_expr("Instant"),
           helpers::str_expr("Gregorian"),
           syntax::Expr::Real(tz_offset_hours),
-        ]
-        .into(),
-      };
+        ],
+      );
       set_fast_path_result_expr(expr.clone());
       return Ok(syntax::expr_to_output(&expr));
     }
@@ -3288,6 +3282,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       let rendered_content = render_grid_if_needed(args[0].clone());
       let content_svg = match &rendered_content {
         syntax::Expr::Graphics { svg, .. } => svg.clone(),
+        // A control Woxi Studio lifted into its panel leaves an empty
+        // string behind; its caption still labels the (blank) spot.
+        syntax::Expr::String(s) if s.is_empty() => String::new(),
         other if is_display_wrapper(other) => {
           evaluator::dispatch::io_functions::expr_to_svg(other)
         }
@@ -5839,15 +5836,34 @@ fn expand_char_escapes(input: &str) -> String {
 /// decides: an even run is `;;` (or `;;;;`) and the line still needs a
 /// separator after it, an odd one ends in a `;` that already separates.
 fn ends_with_span_separator(code_tail: &str) -> bool {
-  let semicolons = code_tail.chars().rev().take_while(|c| *c == ';').count();
+  let semicolons = code_tail
+    .trim_end()
+    .chars()
+    .rev()
+    .take_while(|c| *c == ';')
+    .count();
   semicolons > 0 && semicolons % 2 == 0
 }
 
 /// Append a code character to a line's rolling tail, keeping the tail bounded.
 /// Whitespace is skipped, so `f[x] \[Star]` ends in `\[Star]` either way.
+///
+/// Whitespace after a `;` is kept as a single space, so `a; ;` (a statement
+/// and an empty one) is not mistaken for the `a;;` `Span` once the next
+/// character shows the semicolons were not adjacent.
 fn push_code_tail(tail: &mut String, ch: char) {
   if ch.is_whitespace() {
+    if tail.ends_with(';') {
+      tail.push(' ');
+    }
     return;
+  }
+  if tail.ends_with(' ') {
+    tail.pop();
+    // Only a following `;` keeps the gap; anything else ends the run.
+    if ch == ';' {
+      tail.push(' ');
+    }
   }
   tail.push(ch);
   // 32 bytes comfortably covers the longest named operator.
@@ -6048,7 +6064,7 @@ pub fn insert_statement_separators(input: &str) -> String {
         && !ends_with_tag_set
         && !ends_with_operator
         && !ends_with_prefix_not
-        && !syntax::ends_with_continuing_named_operator(&code_tail);
+        && !syntax::ends_with_continuing_named_operator(code_tail.trim_end());
 
       if needs_semi {
         // Defer the semicolon — record position before the newline
@@ -6065,7 +6081,9 @@ pub fn insert_statement_separators(input: &str) -> String {
       // Newline inside nesting — just pass through
       result.push(ch);
     } else {
-      if !ch.is_whitespace() {
+      if ch.is_whitespace() {
+        push_code_tail(&mut code_tail, ch);
+      } else {
         // Actual code encountered — flush any pending semicolon
         if let Some(pos) = pending_semi_pos.take() {
           result.insert(pos, ';');
@@ -6269,7 +6287,7 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
         && !ends_with_condition
         && !ends_with_operator
         && !ends_with_prefix_not
-        && !syntax::ends_with_continuing_named_operator(&code_tail);
+        && !syntax::ends_with_continuing_named_operator(code_tail.trim_end());
 
       if should_split {
         let stmt = current.trim().to_string();
@@ -6290,7 +6308,9 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
       // Newline inside nesting — just pass through
       current.push(ch);
     } else {
-      if !ch.is_whitespace() {
+      if ch.is_whitespace() {
+        push_code_tail(&mut code_tail, ch);
+      } else {
         line_has_code = true;
         current_has_code = true;
         prev_code_char = last_code_char;

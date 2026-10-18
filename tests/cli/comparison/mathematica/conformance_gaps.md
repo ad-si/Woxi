@@ -3596,11 +3596,11 @@ mean, diagonal or geometric mean. What radius it normalizes by was not decoded.
 
 ### `Texture` and `VertexTextureCoordinates`
 
-A textured solid renders as flat-shaded default-blue polygons. Implementing it
-means carrying uv pairs per triangle and emitting the image once into `<defs>`
-with per-triangle clip paths and an affine matrix — a renderer feature, and one
-that cannot be checked against wolframscript by diffing SVG (it rasterises 3D
-output).
+A textured convex `Polygon` in `Graphics3D` is drawn with its image (per-triangle
+clip path and affine matrix), but the image is not lit: Wolfram shades it with
+the scene lighting. Textured concave or holed polygons render as plain
+default-blue faces. This cannot be checked against wolframscript by diffing SVG
+(it rasterises 3D output).
 
 ### Some `Complex*` plot functions are unimplemented
 
@@ -4911,6 +4911,15 @@ equidistant); the rhombic icosahedron's `Inradius` is too. `"NetFaces"` returns
 a `GraphicsComplex` over de-duplicated 2D points (the shape a Demonstration
 indexing `p[[1, #]] & /@ p[[2, 1]]` expects) — inferred from that usage, not
 checked directly.
+
+### `PolyhedronData["GyroelongatedSquareDipyramid", …]` ordering is unverified
+
+The vertex/face order and orientation of the solid are built without access to
+`wolframscript` and may differ from Wolfram's; `Circumradius`, `Inradius` and
+`Midradius` are `Missing["NotApplicable"]`. The `"NetCoordinates"` lattice is
+the strip layout a Demonstration caches, but `"NetFaceIndices"` (16 triangles:
+an 8-triangle strip plus a row of 4 above and 4 below) was inferred from how
+that Demonstration folds the net, so its face numbering is not checked directly.
 
 ### `PolyhedronData["SmallStellatedDodecahedron", …]` vertex/face ordering is unverified
 

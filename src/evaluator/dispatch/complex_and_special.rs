@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{
   expr_to_rational, is_sqrt, make_sqrt, rat_reduce,
@@ -3142,10 +3141,7 @@ fn number_display_inner_box(inner: Expr, value: &Expr) -> Expr {
 fn wrap_number_display_box(inner: Expr, value: &Expr, head: &str) -> Expr {
   call(
     "TagBox",
-    vec![
-      number_display_inner_box(inner, value),
-      Expr::Identifier(head.to_string()),
-    ],
+    vec![number_display_inner_box(inner, value), id_expr(head)],
   )
 }
 
@@ -3162,7 +3158,7 @@ fn wrap_list_number_display_box(elems: Vec<Expr>, head: &str) -> Expr {
   let inner_row = row_box(row);
   let braces = vec![str_expr("{"), inner_row, str_expr("}")];
   let braced = row_box(braces);
-  call("TagBox", vec![braced, Expr::Identifier(head.to_string())])
+  call("TagBox", vec![braced, id_expr(head)])
 }
 
 /// StandardForm boxes for a derivative — `f′[x]`, `f′′[x]`, `f⁽⁴⁾[x]`,
@@ -3984,10 +3980,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       } else {
         "Graphics3DBox"
       };
-      Expr::FunctionCall {
-        name: box_head.to_string(),
-        args: args.iter().map(to_graphics_boxes).collect(),
-      }
+      call(box_head, args.iter().map(to_graphics_boxes).collect())
     }
     Expr::Graphics { is_3d, .. } => {
       let box_head = if *is_3d {
@@ -5223,10 +5216,9 @@ fn padded_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
   }
   let text = text.trim_start().to_string();
   Some(match text.strip_suffix(" I") {
-    Some(head) => tf_row(vec![
-      tf_string(&format!("{head} ")),
-      tf(&Expr::Identifier("I".to_string())),
-    ]),
+    Some(head) => {
+      tf_row(vec![tf_string(&format!("{head} ")), tf(&id_expr("I"))])
+    }
     None => tf_string(&text),
   })
 }
@@ -5391,6 +5383,17 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     "Divide" if args.len() == 2 => tf_fraction(&args[0], &args[1]),
     "Exp" if args.len() == 1 => {
       tf_box("SuperscriptBox", vec![tf_string("\u{2147}"), tf(&args[0])])
+    }
+    // `a ≈ b ≈ …` is written infix, like the comparison operators.
+    "TildeTilde" if args.len() >= 2 => {
+      let mut parts = Vec::with_capacity(args.len() * 2 - 1);
+      for (i, arg) in args.iter().enumerate() {
+        if i > 0 {
+          parts.push(tf_string("\u{2248}"));
+        }
+        parts.push(tf(arg));
+      }
+      tf_row(parts)
     }
     "Sum" if args.len() >= 2 => tf_big_operator("\u{2211}", args), // ∑
     "Product" if args.len() >= 2 => tf_big_operator("\u{220F}", args), // ∏
@@ -5949,7 +5952,7 @@ fn activate_expr(expr: &Expr, filter: Option<&Vec<String>>) -> Expr {
 fn make_inactive_head(head: &str, args: Vec<Expr>, wrap: bool) -> Expr {
   if wrap {
     Expr::CurriedCall {
-      func: Box::new(call1("Inactive", Expr::Identifier(head.to_string()))),
+      func: Box::new(call1("Inactive", id_expr(head))),
       args,
     }
   } else {
@@ -11660,10 +11663,7 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
                       times(vec![a1.clone(), p.clone()]),
                       times(vec![Expr::Integer(-1), a2.clone(), q.clone()]),
                     ]),
-                    plus(vec![
-                      a1.clone(),
-                      times(vec![Expr::Integer(-1), a2.clone()]),
-                    ]),
+                    plus(vec![a1.clone(), neg(a2.clone())]),
                   ),
                 )
               })
@@ -12182,7 +12182,7 @@ fn try_polynomial(vals: &[(i128, i128)], var_name: &str) -> Option<Expr> {
   // Note: our sequence is 1-indexed, so we use (n-1) in place of x in the formula
 
   // Build symbolic expression
-  let var = Expr::Identifier(var_name.to_string());
+  let var = id_expr(var_name);
   let mut terms: Vec<Expr> = Vec::new();
 
   for k in 0..=degree {
@@ -15219,16 +15219,15 @@ fn region_line_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
   }
 
   let ev = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
-  let plus = |x: Expr, y: Expr| call("Plus", vec![x, y]);
-  let times = |x: Expr, y: Expr| call("Times", vec![x, y]);
+  let plus = |x: Expr, y: Expr| plus(vec![x, y]);
+  let times = |x: Expr, y: Expr| times(vec![x, y]);
   let sub =
     |x: &Expr, y: &Expr| plus(x.clone(), times(Expr::Integer(-1), y.clone()));
   let sub_v = |u: &[Expr], v: &[Expr]| -> Vec<Expr> {
     u.iter().zip(v).map(|(x, y)| sub(x, y)).collect()
   };
   let dot = |u: &[Expr], v: &[Expr]| -> Expr {
-    call(
-      "Plus",
+    crate::helpers::plus(
       u.iter()
         .zip(v)
         .map(|(x, y)| times(x.clone(), y.clone()))
@@ -15281,20 +15280,11 @@ fn region_line_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
       if !is_zero(&ev(dot(&w, &n))?)? {
         continue;
       }
-      let t = ev(call(
-        "Times",
-        vec![
-          dot(&cross(&w, &e), &n),
-          call("Power", vec![nn.clone(), Expr::Integer(-1)]),
-        ],
+      let t = ev(times(
+        dot(&cross(&w, &e), &n),
+        pow(nn.clone(), Expr::Integer(-1)),
       ))?;
-      let s = ev(call(
-        "Times",
-        vec![
-          dot(&cross(&w, &d), &n),
-          call("Power", vec![nn, Expr::Integer(-1)]),
-        ],
-      ))?;
+      let s = ev(times(dot(&cross(&w, &d), &n), pow(nn, Expr::Integer(-1))))?;
       let within = |x: &Expr| -> Option<bool> {
         Some(
           is_true(call("GreaterEqual", vec![x.clone(), Expr::Integer(0)]))?
@@ -15993,7 +15983,7 @@ fn information_property(sym: &str, property: &str) -> Expr {
         get_builtin_attributes(sym)
           .to_vec()
           .into_iter()
-          .map(|a| Expr::Identifier(a.to_string()))
+          .map(id_expr)
           .collect(),
       ),
       "FullName" => Expr::String(format!("System`{sym}")),

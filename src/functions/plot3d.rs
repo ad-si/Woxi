@@ -90,6 +90,17 @@ pub(crate) struct Triangle {
   /// The stroke width `EdgeForm[{…, Thick}]` asked outline edges to be
   /// drawn with. `None` keeps the default hairline.
   pub edge_width: Option<f64>,
+  /// The image painted over a polygon's triangle, when a `Texture` is in
+  /// force and the polygon carries `VertexTextureCoordinates`.
+  pub texture: Option<TriangleTexture>,
+}
+
+/// A `Texture` image placed on one triangle by the texture coordinate of
+/// each of its vertices (`(0, 0)` bottom-left, `(1, 1)` top-right).
+#[derive(Clone)]
+pub(crate) struct TriangleTexture {
+  pub image: std::sync::Arc<image::RgbImage>,
+  pub uv: [(f64, f64); 3],
 }
 
 /// Largest scene `painter_order` refines: candidate pairs come from a sweep
@@ -1001,6 +1012,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             depth: depth(center, &camera),
             color,
             opacity,
+            texture: None,
           });
         }
 
@@ -1054,6 +1066,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             depth: depth(center, &camera),
             color,
             opacity,
+            texture: None,
           });
         }
       }
@@ -3082,6 +3095,9 @@ struct StyleState3D {
   /// `Texture[image]`: surfaces coloured by sampling this image at each
   /// facet's texture coordinates (see [`texture_color`]).
   texture: Option<std::sync::Arc<image::RgbImage>>,
+  /// `VertexTextureCoordinates` of the polygon being added: one `(u, v)`
+  /// per corner, placing `texture` on it.
+  texture_coords: Option<std::sync::Arc<Vec<(f64, f64)>>>,
 }
 
 impl Default for StyleState3D {
@@ -3099,6 +3115,7 @@ impl Default for StyleState3D {
       dashing: None,
       point_size: None,
       texture: None,
+      texture_coords: None,
     }
   }
 }
@@ -3305,10 +3322,7 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       }
       // `Texture[image]` paints the surfaces that follow with the image.
       "Texture" if args.len() == 1 => {
-        let img = match &args[0] {
-          img @ Expr::Image { .. } => Some(img.clone()),
-          other => evaluate_expr_to_expr(other).ok(),
-        };
+        let img = crate::functions::image_ast::texture_source_image(&args[0]);
         if let Some(Expr::Image {
           width,
           height,
@@ -3604,6 +3618,118 @@ fn shade_facet(
     }
     None => (apply_lighting(default_color, normal), 1.0),
   }
+}
+
+/// `VertexTextureCoordinates -> {{u, v}, …}` among a `Polygon`'s options.
+fn parse_texture_coords3d(opts: &[Expr]) -> Option<Vec<(f64, f64)>> {
+  opts.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexTextureCoordinates") =>
+    {
+      let Expr::List(items) = replacement.as_ref() else {
+        return None;
+      };
+      items
+        .iter()
+        .map(|p| match p {
+          Expr::List(xy) if xy.len() == 2 => {
+            Some((
+              crate::functions::math_ast::expr_to_f64(&xy[0])?,
+              crate::functions::math_ast::expr_to_f64(&xy[1])?,
+            ))
+          }
+          _ => None,
+        })
+        .collect()
+    }
+    _ => None,
+  })
+}
+
+/// The texture of triangle `i` in the fan triangulation of a textured,
+/// convex polygon: corners `0`, `i + 1`, `i + 2` of the polygon.
+fn fan_texture(
+  prim: &Primitive3D,
+  style: &StyleState3D,
+  i: usize,
+  tri_count: usize,
+) -> Option<TriangleTexture> {
+  let Primitive3D::Polygon3D { points, holes, .. } = prim else {
+    return None;
+  };
+  let (image, coords) =
+    (style.texture.as_ref()?, style.texture_coords.as_ref()?);
+  if !holes.is_empty()
+    || coords.len() != points.len()
+    || tri_count + 2 != points.len()
+    || !is_convex_polygon3d(points)
+  {
+    return None;
+  }
+  Some(TriangleTexture {
+    image: image.clone(),
+    uv: [coords[0], coords[i + 1], coords[i + 2]],
+  })
+}
+
+/// Emit a triangle filled with its texture: the image clipped to the
+/// triangle and placed by the affine map from texture space to the screen.
+fn emit_textured_triangle(
+  svg: &mut String,
+  tex: &TriangleTexture,
+  corners: [(f64, f64); 3],
+  ids: &mut Vec<(*const image::RgbImage, String)>,
+) -> bool {
+  use base64::Engine;
+  let (w, h) = (tex.image.width() as f64, tex.image.height() as f64);
+  let s: Vec<(f64, f64)> = tex
+    .uv
+    .iter()
+    .map(|&(u, v)| (u * w, (1.0 - v) * h))
+    .collect();
+  let det = (s[1].0 - s[0].0) * (s[2].1 - s[0].1)
+    - (s[2].0 - s[0].0) * (s[1].1 - s[0].1);
+  if det.abs() < 1e-9 {
+    return false;
+  }
+  let solve = |d0: f64, d1: f64, d2: f64| {
+    let p =
+      ((d1 - d0) * (s[2].1 - s[0].1) - (d2 - d0) * (s[1].1 - s[0].1)) / det;
+    let q =
+      ((d2 - d0) * (s[1].0 - s[0].0) - (d1 - d0) * (s[2].0 - s[0].0)) / det;
+    (p, q, d0 - p * s[0].0 - q * s[0].1)
+  };
+  let (a, c, e) = solve(corners[0].0, corners[1].0, corners[2].0);
+  let (b, d, f) = solve(corners[0].1, corners[1].1, corners[2].1);
+  let key = std::sync::Arc::as_ptr(&tex.image);
+  let id = if let Some((_, id)) = ids.iter().find(|(k, _)| *k == key) {
+    id.clone()
+  } else {
+    let mut png = Vec::new();
+    if image::DynamicImage::ImageRgb8((*tex.image).clone())
+      .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+      .is_err()
+    {
+      return false;
+    }
+    let id = format!("tex{}", ids.len());
+    svg.push_str(&format!(
+      "<defs><image id=\"{id}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{}\"/></defs>\n",
+      tex.image.width(),
+      tex.image.height(),
+      base64::engine::general_purpose::STANDARD.encode(&png)
+    ));
+    ids.push((key, id.clone()));
+    id
+  };
+  let clip = format!("{id}c{}", svg.len());
+  svg.push_str(&format!(
+    "<clipPath id=\"{clip}\"><polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\"/></clipPath>\n<g clip-path=\"url(#{clip})\"><use href=\"#{id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/></g>\n",
+    corners[0].0, corners[0].1, corners[1].0, corners[1].1, corners[2].0, corners[2].1
+  ));
+  true
 }
 
 /// The colour of `texture` at texture coordinates `(u, v)`: `(0, 0)` is the
@@ -4292,10 +4418,14 @@ fn collect_3d_primitives(
         }
         "Polygon" if !args.is_empty() => {
           if let Some(pts) = parse_point3d_list(&args[0]) {
+            let mut style = style.clone();
+            style.texture_coords = parse_texture_coords3d(&args[1..])
+              .filter(|c| c.len() == pts.len())
+              .map(std::sync::Arc::new);
             prims.push(Primitive3D::Polygon3D {
               points: pts,
               holes: Vec::new(),
-              style: style.clone(),
+              style,
             });
           } else if let Some((outer, holes)) =
             crate::functions::polygon_holes::split_holes(
@@ -6583,6 +6713,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             dashing: None,
             point_size: None,
             texture: None,
+            texture_coords: None,
           },
         ),
       };
@@ -6670,6 +6801,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         depth: depth(center, &camera),
         color,
         opacity: prim_opacity,
+        texture: fan_texture(prim, prim_style, i, tri_count),
       });
     }
   }
@@ -7074,6 +7206,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     };
     let mut ei = 0;
+    let mut texture_ids = Vec::new();
     for tri in &all_triangles {
       // Emit any edge segments further from the camera than this triangle
       while ei < sorted_edges.len() && sorted_edges[ei].depth >= tri.depth {
@@ -7084,6 +7217,27 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (x0, y0) = to_svg(tri.projected[0].0, tri.projected[0].1);
       let (x1, y1) = to_svg(tri.projected[1].0, tri.projected[1].1);
       let (x2, y2) = to_svg(tri.projected[2].0, tri.projected[2].1);
+      if let Some(tex) = &tri.texture {
+        let corners = [(x0, y0), (x1, y1), (x2, y2)];
+        if emit_textured_triangle(&mut svg, tex, corners, &mut texture_ids) {
+          let edge_stroke = match tri.edge_color {
+            Some((er, eg, eb)) => format!("rgb({er},{eg},{eb})"),
+            None => "rgb(64,64,64)".to_string(),
+          };
+          let edge_width = tri.edge_width.unwrap_or(1.0);
+          for (e, on_outline) in tri.boundary.iter().enumerate() {
+            if !on_outline {
+              continue;
+            }
+            let (ax, ay) = corners[e];
+            let (bx, by) = corners[(e + 1) % 3];
+            svg.push_str(&format!(
+              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"/>\n",
+            ));
+          }
+          continue;
+        }
+      }
       let (r, g, b) = tri.color;
       let opacity_attr = if tri.opacity < 1.0 {
         format!(" opacity=\"{}\"", tri.opacity)
@@ -7937,6 +8091,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           depth: depth(center, &camera),
           color,
           opacity: 1.0,
+          texture: None,
         });
       }
 
@@ -7983,6 +8138,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           depth: depth(center, &camera),
           color,
           opacity: 1.0,
+          texture: None,
         });
       }
     }
@@ -8570,6 +8726,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             depth: depth(center, &camera),
             color,
             opacity,
+            texture: None,
           });
         }
 
@@ -8603,6 +8760,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             depth: depth(center, &camera),
             color,
             opacity,
+            texture: None,
           });
         }
       }
@@ -9047,6 +9205,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               depth: depth(center, &camera),
               color,
               opacity: 1.0,
+              texture: None,
             });
           }
 
@@ -9070,6 +9229,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               depth: depth(center, &camera),
               color,
               opacity: 1.0,
+              texture: None,
             });
           }
         }
@@ -9638,6 +9798,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 depth: depth(center, &camera),
                 color,
                 opacity,
+                texture: None,
               });
 
               // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
@@ -11283,6 +11444,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         depth: depth(center, &camera),
         color,
         opacity,
+        texture: None,
       });
     }
   }
@@ -11467,6 +11629,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           color,
           depth: depth(center, &camera),
           opacity: 1.0,
+          texture: None,
         });
       }
 
@@ -11515,6 +11678,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           color,
           depth: depth(center, &camera),
           opacity: 1.0,
+          texture: None,
         });
       }
     }
@@ -12717,6 +12881,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             depth: depth(center, &camera),
             color,
             opacity,
+            texture: None,
           });
         }
 
@@ -12748,6 +12913,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             depth: depth(center, &camera),
             color,
             opacity,
+            texture: None,
           });
         }
       }

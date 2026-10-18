@@ -181,6 +181,11 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(result) = try_nsolve_pure_power(args) {
     return result;
   }
+  // Polynomials with non-real numeric coefficients have no real-coefficient
+  // structure to exploit; solve them with a complex-coefficient iteration.
+  if let Some(result) = try_nsolve_complex_coefficients(args) {
+    return result;
+  }
   // Fall back to symbolic solve + numerize
   let symbolic = solve_ast(args)?;
   // What Solve leaves unevaluated, NSolve leaves unevaluated too — under
@@ -492,6 +497,157 @@ fn try_nsolve_pure_power(
     })
     .collect::<Vec<_>>();
   Some(Ok(Expr::List(rules.into())))
+}
+
+/// `NSolve[p == 0, x]` for a polynomial of degree >= 3 whose numeric
+/// coefficients are not all real (e.g. `x^n + (1 + 2 I) x + 1 == 0`).
+/// The symbolic solver cannot reach these in closed form, so the roots come
+/// from Durand-Kerner on complex coefficients, sorted like every NSolve.
+fn try_nsolve_complex_coefficients(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() != 2 {
+    return None;
+  }
+  let Expr::Identifier(var) = &args[1] else {
+    return None;
+  };
+  let poly = match &args[0] {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == ComparisonOp::Equal =>
+    {
+      minus2(operands[0].clone(), operands[1].clone())
+    }
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Equal" && fargs.len() == 2 =>
+    {
+      minus2(fargs[0].clone(), fargs[1].clone())
+    }
+    _ => return None,
+  };
+  let expanded = expand_and_combine(&poly);
+  let terms = collect_additive_terms(&expanded);
+  let degree = max_power_int(&expanded, var)? as usize;
+  if degree < 3 {
+    return None;
+  }
+  let mut coeffs = vec![(0.0f64, 0.0f64); degree + 1];
+  for (d, slot) in coeffs.iter_mut().enumerate() {
+    for term in &terms {
+      if let Some(c) = extract_coefficient_of_power(term, var, d as i128) {
+        let c = simplify(c);
+        let (re, im) = try_eval_to_f64(&c)
+          .map(|v| (v, 0.0))
+          .or_else(|| try_extract_complex_float(&c))?;
+        slot.0 += re;
+        slot.1 += im;
+      }
+    }
+  }
+  if coeffs.iter().all(|c| c.1 == 0.0) || coeffs[degree] == (0.0, 0.0) {
+    return None;
+  }
+  let mut roots = durand_kerner_complex_roots(&coeffs);
+  roots.sort_by(|a, b| {
+    a.0
+      .partial_cmp(&b.0)
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+  });
+  let rules = roots
+    .into_iter()
+    .map(|(re, im)| {
+      let value = if im == 0.0 {
+        Expr::Real(re)
+      } else {
+        crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
+      };
+      Expr::List(vec![rule_expr(Expr::Identifier(var.clone()), value)].into())
+    })
+    .collect::<Vec<_>>();
+  Some(Ok(Expr::List(rules.into())))
+}
+
+/// All roots of a polynomial with complex coefficients (`coeffs[i]` is the
+/// `(re, im)` coefficient of x^i, degree >= 1), by Durand-Kerner iteration
+/// followed by a few Newton steps.
+fn durand_kerner_complex_roots(coeffs: &[(f64, f64)]) -> Vec<(f64, f64)> {
+  let n = coeffs.len() - 1;
+  let mul = |a: (f64, f64), b: (f64, f64)| {
+    (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+  };
+  let div = |a: (f64, f64), b: (f64, f64)| {
+    let d = b.0 * b.0 + b.1 * b.1;
+    ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+  };
+  let lc = coeffs[n];
+  let monic: Vec<(f64, f64)> = coeffs.iter().map(|&c| div(c, lc)).collect();
+  let eval = |z: (f64, f64)| {
+    let mut acc = monic[n];
+    for k in (0..n).rev() {
+      let m = mul(acc, z);
+      acc = (m.0 + monic[k].0, m.1 + monic[k].1);
+    }
+    acc
+  };
+  // Start on a circle bounding the roots (Cauchy bound), off the axes.
+  let radius = 1.0
+    + monic[..n]
+      .iter()
+      .map(|c| c.0.hypot(c.1))
+      .fold(0.0_f64, f64::max);
+  let mut roots: Vec<(f64, f64)> = (0..n)
+    .map(|k| {
+      let ang = 2.0 * std::f64::consts::PI * (k as f64) / (n as f64) + 0.4;
+      (radius * ang.cos(), radius * ang.sin())
+    })
+    .collect();
+  for _ in 0..2000 {
+    let prev = roots.clone();
+    let mut max_delta = 0.0_f64;
+    for k in 0..n {
+      let z = prev[k];
+      let mut q = eval(z);
+      for (j, &w) in prev.iter().enumerate() {
+        if j == k {
+          continue;
+        }
+        let diff = (z.0 - w.0, z.1 - w.1);
+        if diff != (0.0, 0.0) {
+          q = div(q, diff);
+        }
+      }
+      roots[k] = (z.0 - q.0, z.1 - q.1);
+      max_delta = max_delta.max(q.0.hypot(q.1));
+    }
+    let scale = 1.0 + roots.iter().map(|r| r.0.hypot(r.1)).fold(0.0, f64::max);
+    if max_delta < 1e-15 * scale {
+      break;
+    }
+  }
+  // Newton polish.
+  for r in &mut roots {
+    for _ in 0..3 {
+      let mut dp = (0.0, 0.0);
+      let mut p = monic[n];
+      for k in (0..n).rev() {
+        let m = mul(dp, *r);
+        dp = (m.0 + p.0, m.1 + p.1);
+        let m = mul(p, *r);
+        p = (m.0 + monic[k].0, m.1 + monic[k].1);
+      }
+      if dp == (0.0, 0.0) {
+        break;
+      }
+      let step = div(p, dp);
+      *r = (r.0 - step.0, r.1 - step.1);
+    }
+  }
+  roots
 }
 
 /// Principal-branch complex power: (a+bi)^(c+di) = exp((c+di) * Log[a+bi]).
