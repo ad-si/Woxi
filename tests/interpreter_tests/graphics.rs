@@ -22810,7 +22810,7 @@ mod log_linear_plot {
     let (left, mid) = (cx("1"), cx("10"));
     let right = cx("100");
     assert!(
-      (mid - (left + right) / 2.0).abs() < 1.0,
+      (mid - f64::midpoint(left, right)).abs() < 1.0,
       "{left} {mid} {right}"
     );
   }
