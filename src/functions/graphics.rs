@@ -960,6 +960,31 @@ pub(crate) fn expr_to_f64(expr: &Expr) -> Option<f64> {
   try_eval_to_f64(expr)
 }
 
+/// The fixed point of `Scale[g, s, spec]` in 2D. Each coordinate of `spec`
+/// is a number or a bounding-box position (`Left`/`Right`/`Center` for x,
+/// `Bottom`/`Top`/`Center` for y), so `{Left, Bottom}` scales about the
+/// lower-left corner of the content's box. Returns `None` when `spec` is
+/// not such a pair (or the content has no box for a symbolic position).
+fn scale_anchor_point(spec: &Expr, bb: &BBox) -> Option<(f64, f64)> {
+  if let Expr::List(items) = spec
+    && items.len() == 2
+  {
+    let coord =
+      |item: &Expr, lo: f64, hi: f64, low: &str, high: &str| match item {
+        Expr::Identifier(n) if n == low && !bb.is_empty() => Some(lo),
+        Expr::Identifier(n) if n == high && !bb.is_empty() => Some(hi),
+        Expr::Identifier(n) if n == "Center" && !bb.is_empty() => {
+          Some(f64::midpoint(lo, hi))
+        }
+        other => expr_to_f64(other),
+      };
+    let x = coord(&items[0], bb.x_min, bb.x_max, "Left", "Right")?;
+    let y = coord(&items[1], bb.y_min, bb.y_max, "Bottom", "Top")?;
+    return Some((x, y));
+  }
+  expr_to_point(spec)
+}
+
 pub(crate) fn expr_to_point(expr: &Expr) -> Option<(f64, f64)> {
   // A point is usually already a `{x, y}` literal, but it can also be an
   // arithmetic expression that only reduces to one at evaluation time (e.g.
@@ -2461,12 +2486,14 @@ fn collect_primitives(
           collect_primitives(&args[0], &mut inner_style, &mut inner, errors);
           match rotation_angle(&args[1]) {
             Some(angle) => {
-              let (cx, cy) =
-                args.get(2).and_then(expr_to_point).unwrap_or_else(|| {
-                  let mut bb = BBox::empty();
-                  for p in &inner {
-                    bb.merge(&primitive_bbox(p));
-                  }
+              let mut bb = BBox::empty();
+              for p in &inner {
+                bb.merge(&primitive_bbox(p));
+              }
+              let (cx, cy) = args
+                .get(2)
+                .and_then(|spec| scale_anchor_point(spec, &bb))
+                .unwrap_or_else(|| {
                   if bb.is_empty() {
                     (0.0, 0.0)
                   } else {
@@ -2521,12 +2548,14 @@ fn collect_primitives(
           };
           match factors {
             Some((sx, sy)) => {
-              let (cx, cy) =
-                args.get(2).and_then(expr_to_point).unwrap_or_else(|| {
-                  let mut bb = BBox::empty();
-                  for p in &inner {
-                    bb.merge(&primitive_bbox(p));
-                  }
+              let mut bb = BBox::empty();
+              for p in &inner {
+                bb.merge(&primitive_bbox(p));
+              }
+              let (cx, cy) = args
+                .get(2)
+                .and_then(|spec| scale_anchor_point(spec, &bb))
+                .unwrap_or_else(|| {
                   if bb.is_empty() {
                     (0.0, 0.0)
                   } else {
