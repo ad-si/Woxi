@@ -3734,3 +3734,47 @@ mod apply_sequence_at_level {
     );
   }
 }
+
+mod negative_levels_and_compound_heads {
+  use super::*;
+
+  /// A negative level selects subexpressions by their own Depth, wherever
+  /// they sit, not relative to the depth of the whole expression.
+  #[test]
+  fn apply_negative_level_uses_each_subexpression_depth() {
+    assert_eq!(
+      interpret("Apply[f, {{1, 2}, {{3, 4}, {5, 6}}}, {-2}]").unwrap(),
+      "{f[1, 2], {f[3, 4], f[5, 6]}}"
+    );
+    assert_eq!(
+      interpret("Apply[f, {{1, 2}, {{3, 4}, {5, {6}}}}, {-2}]").unwrap(),
+      "{f[1, 2], {f[3, 4], {5, f[6]}}}"
+    );
+    assert_eq!(
+      interpret("Apply[f, {{1, 2}, {{3, 4}, {5, 6}}}, {-3}]").unwrap(),
+      "{{1, 2}, f[{3, 4}, {5, 6}]}"
+    );
+  }
+
+  #[test]
+  fn apply_negative_level_ranges() {
+    assert_eq!(
+      interpret("Apply[f, {{1, 2}, {{3, 4}, {5, 6}}}, {-3, -2}]").unwrap(),
+      "{f[1, 2], f[f[3, 4], f[5, 6]]}"
+    );
+    assert_eq!(
+      interpret("Apply[f, {{1, 2}, {{3, 4}, {5, 6}}}, -2]").unwrap(),
+      "{f[1, 2], f[f[3, 4], f[5, 6]]}"
+    );
+  }
+
+  /// A compound head is applied to the threaded arguments, never extended
+  /// by them.
+  #[test]
+  fn map_thread_with_compound_head() {
+    assert_eq!(
+      interpret("MapThread[g[h], {{1, 3}, {2, 4}}]").unwrap(),
+      "{g[h][1, 2], g[h][3, 4]}"
+    );
+  }
+}
