@@ -2039,6 +2039,18 @@ mod graphics {
       assert!(!svg.contains("Set"), "{svg}");
     }
 
+    /// A held `a ≈ Sum[…]` label reads as an approximation with a sigma,
+    /// not as the literal `TildeTilde[…]`/`Sum[…]` source.
+    #[test]
+    fn text_approximation_of_a_sum() {
+      let svg = export_svg(
+        "Grid[{{Style[HoldForm[a \\[TildeTilde] Sum[1/k, {k, 1, n}]], \"TraditionalForm\"]}}]",
+      );
+      assert!(svg.contains("a \u{2248} \u{2211}"), "{svg}");
+      assert!(!svg.contains("TildeTilde"), "{svg}");
+      assert!(!svg.contains("Sum["), "{svg}");
+    }
+
     /// The lines of a multi-line label are centred on its anchor.
     #[test]
     fn text_multiline_is_vertically_centered() {

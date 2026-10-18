@@ -5392,6 +5392,17 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     "Exp" if args.len() == 1 => {
       tf_box("SuperscriptBox", vec![tf_string("\u{2147}"), tf(&args[0])])
     }
+    // `a ≈ b ≈ …` is written infix, like the comparison operators.
+    "TildeTilde" if args.len() >= 2 => {
+      let mut parts = Vec::with_capacity(args.len() * 2 - 1);
+      for (i, arg) in args.iter().enumerate() {
+        if i > 0 {
+          parts.push(tf_string("\u{2248}"));
+        }
+        parts.push(tf(arg));
+      }
+      tf_row(parts)
+    }
     "Sum" if args.len() >= 2 => tf_big_operator("\u{2211}", args), // ∑
     "Product" if args.len() >= 2 => tf_big_operator("\u{220F}", args), // ∏
     "Integrate" if args.len() >= 2 => tf_integrate(args),
