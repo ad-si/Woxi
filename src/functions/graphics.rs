@@ -4005,7 +4005,10 @@ fn graphics_text_content(expr: &Expr) -> String {
     // typesets to, the same as `Subscript`/`Superscript` below, instead of
     // drawing the private-use markers and box source literally.
     Expr::String(s) if s.contains(crate::functions::string_ast::BOX_START) => {
-      inline_box_label_runs(s, false).map_or_else(|| s.clone(), |runs| flatten_label_runs(&runs))
+      MARK_UNMAPPED_SUBSCRIPTS.with(|flag| flag.set(true));
+      let runs = inline_box_label_runs(s, false);
+      MARK_UNMAPPED_SUBSCRIPTS.with(|flag| flag.set(false));
+      runs.map_or_else(|| s.clone(), |runs| flatten_label_runs(&runs))
     }
     Expr::String(s) => s.clone(),
     // Text inside a picture is typeset, not printed: a mathematical
@@ -8067,7 +8070,17 @@ pub(crate) fn svg_escape(s: &str) -> String {
     .replace('<', "&lt;")
     .replace('>', "&gt;")
     .replace('"', "&quot;");
-  render_math_letterlike_glyphs(&escaped)
+  let escaped = render_math_letterlike_glyphs(&escaped);
+  if escaped.contains(SUBSCRIPT_START) {
+    escaped
+      .replace(
+        SUBSCRIPT_START,
+        "<tspan baseline-shift=\"sub\" font-size=\"70%\">",
+      )
+      .replace(SUBSCRIPT_END, "</tspan>")
+  } else {
+    escaped
+  }
 }
 
 /// Character ranges of `text` that `content`'s nested `Style[…, Italic]`
@@ -28832,6 +28845,18 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
   Some(runs)
 }
 
+thread_local! {
+  /// Set while a picture label is flattened to text: a subscript with a
+  /// letter Unicode has no subscript form for (a capital, as in `F_N`) is
+  /// then wrapped in [`SUBSCRIPT_START`]/[`SUBSCRIPT_END`] so the SVG writer
+  /// can lower it with a `<tspan>` instead of leaving it at full size.
+  static MARK_UNMAPPED_SUBSCRIPTS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+const SUBSCRIPT_START: char = '\u{E0F2}';
+const SUBSCRIPT_END: char = '\u{E0F3}';
+
 /// Build the runs for a `Subscript`/`Superscript`: the base rendered in the
 /// inherited style, followed by each remaining argument folded into Unicode
 /// sub-/superscript glyphs (which have no italic variant, so they stay
@@ -28841,6 +28866,8 @@ fn script_runs(
   italic: bool,
   superscript: bool,
 ) -> Vec<LabelRun> {
+  let mark =
+    !superscript && MARK_UNMAPPED_SUBSCRIPTS.with(std::cell::Cell::get);
   let mut runs = args
     .first()
     .map(|a| manipulate_label_runs(a, italic))
@@ -28849,10 +28876,16 @@ fn script_runs(
     .iter()
     .skip(1)
     .map(|a| {
-      to_unicode_script(
-        &flatten_label_runs(&manipulate_label_runs(a, false)),
-        superscript,
-      )
+      let text = flatten_label_runs(&manipulate_label_runs(a, false));
+      if mark
+        && text
+          .chars()
+          .any(|c| unicode_script_char(c, false).is_none())
+      {
+        format!("{SUBSCRIPT_START}{text}{SUBSCRIPT_END}")
+      } else {
+        to_unicode_script(&text, superscript)
+      }
     })
     .collect();
   if !script.is_empty() {
