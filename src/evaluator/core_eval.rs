@@ -1341,9 +1341,27 @@ pub fn evaluate_expr_to_expr_inner(
             return Ok(current_val);
           }
           // Handle Part expressions: ++x[[i]], --x[[i]], x[[i]]++, x[[i]]--
-          if let Expr::Part { .. } = &args[0] {
+          // and indexed variables: ++x[a], x[a]++ (a DownValue set via `x[a] = v`).
+          let is_part = matches!(&args[0], Expr::Part { .. });
+          let is_call = matches!(&args[0], Expr::FunctionCall { .. });
+          if is_part || is_call {
             // Get the current value at the part position
             let current_val = evaluate_expr_to_expr(&args[0])?;
+            if is_call
+              && expr_to_string(&current_val) == expr_to_string(&args[0])
+            {
+              // No value stored for `x[a]`: same rvalue failure as an
+              // unset symbol.
+              crate::emit_message(&format!(
+                "{}::rvalue: {} is not a variable with a value, so its value cannot be changed.",
+                name,
+                expr_to_string(&args[0])
+              ));
+              return Ok(Expr::FunctionCall {
+                name: name.clone(),
+                args: args.clone(),
+              });
+            }
             let delta = if name == "Increment" || name == "PreIncrement" {
               Expr::Integer(1)
             } else {

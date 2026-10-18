@@ -402,8 +402,8 @@ Decrement = { (PartExtract | Identifier | NumericValue) ~ DecrementOp ~ Decremen
 // operand so `++++a+++++2` parses as `++(++(a++++)) + 2` (Wolfram's
 // greedy reading: the postfix `++++` chain after `a` is inside the
 // innermost PreIncrement, not split by the trailing `+`).
-PreIncrement = { "++" ~ (PreIncrement | Increment | PartExtract | Identifier | NumericValue) }
-PreDecrement = { "--" ~ (PreDecrement | Decrement | PartExtract | Identifier | NumericValue) }
+PreIncrement = { "++" ~ (PreIncrement | Increment | PartExtract | FunctionCall | Identifier | NumericValue) }
+PreDecrement = { "--" ~ (PreDecrement | Decrement | PartExtract | FunctionCall | Identifier | NumericValue) }
 
 // InformationQuery: ?symbol or ?pattern* shorthand for Information[symbol]
 InformationQuery = { "?" ~ !"?" ~ InformationPattern }
@@ -625,6 +625,9 @@ FunctionCallExtended = {
         (PartIndexSuffix ~ BracketArgs*)+ ~ (ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix)?
       | ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix
     )?
+    // `x[a]++` / `x[a]--` on an indexed variable. Matched here, not as a
+    // separate Term, so the call is still parsed only once.
+    ~ (IncrementOp+ | DecrementOp+)?
 }
 
 // SlotCall: #[args] or #n[args] — Slot used as a function head (e.g., in Y combinator: #[#] &)

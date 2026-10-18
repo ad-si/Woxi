@@ -306,7 +306,7 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(r#"PolyhedronData["Properties"]"#).unwrap(),
       "{Circumradius, Classes, EdgeCount, EdgeIndices, FaceCount, \
-       FaceCountRules, FaceIndices, Faces, Inradius, Insphere, Midradius, NetFaces, \
+       FaceCountRules, FaceIndices, Faces, Inradius, Insphere, Midradius, Name, NetFaces, \
        Skeleton, SkeletonGraph, SurfaceArea, VertexCoordinates, VertexCount, Volume}"
     );
   }
@@ -836,6 +836,28 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(r#"PolyhedronData["MathematicaSpikey"]"#).unwrap(),
       "-Graphics3D-"
+    );
+  }
+
+  // "Spikey" is the short alias of "MathematicaSpikey".
+  #[test]
+  fn polyhedron_data_spikey_alias() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["Spikey", "VertexCount"],
+            PolyhedronData["Spikey", "VertexCoordinates"] ===
+              PolyhedronData["MathematicaSpikey", "VertexCoordinates"]}"#
+      )
+      .unwrap(),
+      "{62, True}"
+    );
+    assert_eq!(
+      interpret(r#"Head[N[PolyhedronData["Spikey"]]]"#).unwrap(),
+      "Graphics3D"
+    );
+    assert_eq!(
+      interpret(r#"Head[Part[N[PolyhedronData["Spikey"]], 1]]"#).unwrap(),
+      "GraphicsComplex"
     );
   }
 

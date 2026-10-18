@@ -12037,11 +12037,22 @@ pub fn longest_common_sequence_positions_ast(
 /// SequenceAlignment[s1, s2] — aligns two strings using Needleman-Wunsch
 /// Returns a list of matching segments and {diff1, diff2} pairs.
 pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "SequenceAlignment expects exactly 2 arguments".into(),
+      "SequenceAlignment expects at least 2 arguments".into(),
     ));
   }
+
+  // MergeDifferences -> False keeps each differing position as its own pair
+  // instead of merging adjacent mismatches into one.
+  let merge_differences = !args[2..].iter().any(|opt| {
+    matches!(
+      opt,
+      Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "MergeDifferences")
+          && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False")
+    )
+  });
 
   // Handle both strings and lists. For lists we keep the original elements
   // (`orig1`/`orig2`) so segments can be emitted as element sublists rather
@@ -12170,6 +12181,7 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           && aligned1[k].is_some()
           && aligned2[k].is_some()
           && chars1[aligned1[k].unwrap()] != chars2[aligned2[k].unwrap()]
+          && merge_differences
         {
           idx1.push(aligned1[k].unwrap());
           idx2.push(aligned2[k].unwrap());
@@ -16473,6 +16485,14 @@ fn padded_form_to_string(
       .map(|e| padded_form_to_string(e, spec, lpad, rpad))
       .collect();
     return Some(format!("{{{}}}", parts?.join(", ")));
+  }
+  // An arbitrary-precision real is padded from its digit string, like a
+  // machine real (the f64 payload of `BigFloat` is its precision, not its value).
+  if let Expr::BigFloat(digits, _) = value
+    && let Ok(v) = digits.parse::<f64>()
+    && matches!(spec, Expr::List(_))
+  {
+    return padded_form_to_string(&Expr::Real(v), spec, lpad, rpad);
   }
   match spec {
     Expr::Integer(n) if *n >= 0 => match value {

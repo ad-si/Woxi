@@ -638,7 +638,7 @@ PlotLabels,Option for labeling plot curves,✅,none,10.4,597
 Scale,Scales a graphics object,✅,pure,6.0,597
 Log10,Returns the base-10 logarithm of a number,✅,pure,7.0,598
 EndPackage,Ends a package and puts its context on $ContextPath so its exports become visible,✅,effectful,1.0,599
-PolyhedronData,Properties of named polyhedra including the vertex-edge skeleton graph and the unfolded planar net (NetFaces) (Platonic solids; the golden rhombohedra and rhombic icosahedron; the Bilinski dodecahedron; the icosahedral and cubic Archimedean solids and their duals; the great and small stellated dodecahedra and rhombic hexecontahedron stellations; the triangular orthobicupola; MathematicaSpikey; and the stella octangula),🚧,pure,6.0,601
+PolyhedronData,Properties of named polyhedra including the vertex-edge skeleton graph and the unfolded planar net (NetFaces) (Platonic solids; the golden rhombohedra and rhombic icosahedron; the Bilinski dodecahedron; the icosahedral and cubic Archimedean solids and their duals; the great and small stellated dodecahedra and rhombic hexecontahedron stellations; the triangular orthobicupola; MathematicaSpikey also named Spikey; and the stella octangula),🚧,pure,6.0,601
 PolyhedronOperations`Truncate,Corner-cuts each Polygon face of a graphics expression to a ratio (default 3/10) of its edge length; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
 PolyhedronOperations`Stellate,Replaces each Polygon face of a graphics expression with a pyramid to a ratio (default 2) of the face's centroid distance; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
 Nearest,Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance) — DistanceFunction supplies another metric; empty or non-list data reports ::near1,✅,pure,6.0,602
@@ -838,7 +838,7 @@ BarLegend,Color bar legend for plots,✅,none,9.0,805
 ExponentialDistribution,Represents an exponential distribution,✅,pure,6.0,806
 MatrixExp,Computes the matrix exponential,✅,pure,2.0,807
 ImageResolution,Option for image resolution in DPI,✅,none,3.0,808
-ImportString,Imports data from a string (CSV/TSV/Table/JSON/Lines/Words/Text/List/XML) with a {format; element} spec selecting part of the document and trailing rules read as options; a CSV header row is inferred from the column types; an empty document fails for the formats that need rows,✅,pure,4.0,809
+ImportString,Imports data from a string (CSV/TSV/Table/JSON/Lines/Words/Text/List/XML/Graph6 EdgeRules) with a {format; element} spec selecting part of the document and trailing rules read as options; a CSV header row is inferred from the column types; an empty document fails for the formats that need rows,✅,pure,4.0,809
 RandomGraph,Generate a random graph,✅,contextual,8.0,810
 SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1.0,811
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1.0,812
@@ -6354,4 +6354,5 @@ GraphUtilities`PageRanks,PageRank of every vertex of a graph given as a list of 
 GraphUtilities`VertexList,Vertices of a graph given as a list of rules,✅,pure,6.0,
 GraphUtilities`ClosenessCentrality,Closeness centrality of every vertex of a graph given as a list of rules,✅,pure,8.0,
 GraphUtilities`GraphPath,Shortest path between two vertices of a graph given as a list of rules,✅,pure,8.0,
+GraphUtilities`HamiltonianCycles,Hamiltonian cycle of a graph given as a list of rules as a vertex list (only one cycle is reported),🚧,pure,8.0,
 MultivariateStatistics`EllipsoidQuantile,Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean, c Covariance],✅,pure,8.0,
