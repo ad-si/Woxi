@@ -8714,3 +8714,48 @@ fn regular_polygon_points(
     })
     .collect()
 }
+
+/// Decodes a Graph6 document (one graph per line, optional `>>graph6<<`
+/// header) into `(vertex count, edges)` per graph. Edges are 1-based and
+/// listed column by column, as in the format's upper-triangle bit vector.
+pub fn decode_graph6(text: &str) -> Option<Vec<(usize, Vec<(usize, usize)>)>> {
+  let mut graphs = Vec::new();
+  for line in text.lines() {
+    let line = line.trim();
+    if line.is_empty() {
+      continue;
+    }
+    let line = line.strip_prefix(">>graph6<<").unwrap_or(line);
+    let bytes = line.as_bytes();
+    if bytes.iter().any(|b| !(63..=126).contains(b)) {
+      return None;
+    }
+    let (n, rest) = if bytes.first() == Some(&126) {
+      if bytes.len() < 4 {
+        return None;
+      }
+      let n = bytes[1..4]
+        .iter()
+        .fold(0usize, |acc, b| (acc << 6) | (*b - 63) as usize);
+      (n, &bytes[4..])
+    } else {
+      ((*bytes.first()? - 63) as usize, &bytes[1..])
+    };
+    let bit_count = n * n.saturating_sub(1) / 2;
+    if rest.len() * 6 < bit_count {
+      return None;
+    }
+    let mut edges = Vec::new();
+    let mut k = 0;
+    for j in 1..n {
+      for i in 0..j {
+        if (rest[k / 6] - 63) >> (5 - k % 6) & 1 == 1 {
+          edges.push((i + 1, j + 1));
+        }
+        k += 1;
+      }
+    }
+    graphs.push((n, edges));
+  }
+  Some(graphs)
+}
