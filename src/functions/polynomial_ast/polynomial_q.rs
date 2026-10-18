@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::pattern_matching::expr_equal;
 use crate::functions::calculus_ast::is_constant_wrt;
@@ -56,7 +55,7 @@ fn is_polynomial_in_var(expr: &Expr, var_expr: &Expr) -> bool {
     return is_polynomial(expr, name);
   }
   const FRESH: &str = "$__PolyVar__";
-  let fresh = Expr::Identifier(FRESH.to_string());
+  let fresh = id_expr(FRESH);
   let substituted = replace_subexpr(expr, var_expr, &fresh);
   if has_negative_powers(&substituted) {
     return false;

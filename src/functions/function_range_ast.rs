@@ -6,7 +6,6 @@
 //! Tanh -> -1 < y < 1, and 1/(1 + x^2) -> Inequality[0, Less, y,
 //! LessEqual, 1].
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::rat_reduce;
 
@@ -95,17 +94,16 @@ pub fn function_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && matches!(&pargs[0], Expr::Integer(1))
       && matches!(as_power(&pargs[1]), Some((b, Expr::Integer(2))) if is_x(&b))
     {
-      return Ok(Expr::FunctionCall {
-        name: "Inequality".to_string(),
-        args: vec![
+      return Ok(call(
+        "Inequality",
+        vec![
           Expr::Integer(0),
           id_expr("Less"),
           y.clone(),
           id_expr("LessEqual"),
           Expr::Integer(1),
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
   }
 
@@ -169,7 +167,7 @@ fn as_power(expr: &Expr) -> Option<(Expr, Expr)> {
 fn poly_coeffs(expr: &Expr, var: &str) -> Option<Vec<(i128, i128)>> {
   let coeff_list = crate::evaluator::evaluate_expr_to_expr(&call(
     "CoefficientList",
-    vec![expr.clone(), Expr::Identifier(var.to_string())],
+    vec![expr.clone(), id_expr(var)],
   ))
   .ok()?;
   let items = match &coeff_list {

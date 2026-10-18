@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// Infer the TypeSystem type for an expression.
@@ -22,7 +21,7 @@ fn infer_type(expr: &Expr) -> Expr {
 
 /// Create TypeSystem`Atom[<name>]
 fn ts_atom(name: &str) -> Expr {
-  call1("TypeSystem`Atom", Expr::Identifier(name.to_string()))
+  call1("TypeSystem`Atom", id_expr(name))
 }
 
 /// Infer the type for a list of items.

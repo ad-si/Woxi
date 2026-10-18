@@ -15,7 +15,6 @@
 //! `$TimeZone`), whereas wolframscript localizes to the geo location's
 //! time zone.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::datetime_ast::{
   absolute_seconds_to_date, date_to_absolute_seconds, extract_date_components,
@@ -1085,9 +1084,9 @@ fn date_object_instant(jd: f64) -> Expr {
   let (y, m, d, h, min, s) = absolute_seconds_to_date(abs);
   // Sub-millisecond digits are ephemeris noise; keep the output stable.
   let s = (s * 1000.0).round() / 1000.0;
-  Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: vec![
+  call(
+    "DateObject",
+    vec![
       Expr::List(
         vec![
           Expr::Integer(y as i128),
@@ -1102,9 +1101,8 @@ fn date_object_instant(jd: f64) -> Expr {
       str_expr("Instant"),
       str_expr("Gregorian"),
       Expr::Real(0.0),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 fn angle_quantity(deg: f64) -> Expr {
@@ -1363,36 +1361,33 @@ pub fn sidereal_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (m, h)
   };
   let h = if h >= 24.0 { h - 24.0 } else { h };
-  Ok(Expr::FunctionCall {
-    name: "Quantity".to_string(),
-    args: vec![
-      Expr::FunctionCall {
-        name: "MixedMagnitude".to_string(),
-        args: vec![Expr::List(
+  Ok(call(
+    "Quantity",
+    vec![
+      call1(
+        "MixedMagnitude",
+        Expr::List(
           vec![
             Expr::Integer(h as i128),
             Expr::Integer(m as i128),
             Expr::Real(s),
           ]
           .into(),
-        )]
-        .into(),
-      },
-      Expr::FunctionCall {
-        name: "MixedUnit".to_string(),
-        args: vec![Expr::List(
+        ),
+      ),
+      call1(
+        "MixedUnit",
+        Expr::List(
           vec![
             str_expr("HoursOfRightAscension"),
             str_expr("MinutesOfRightAscension"),
             str_expr("SecondsOfRightAscension"),
           ]
           .into(),
-        )]
-        .into(),
-      },
-    ]
-    .into(),
-  })
+        ),
+      ),
+    ],
+  ))
 }
 
 // ─── Sunrise / Sunset / DaylightQ ───────────────────────────────────

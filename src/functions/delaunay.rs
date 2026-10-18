@@ -2,7 +2,6 @@
 //! set, as the `MeshRegion[coords, {Polygon[{…}]}]` object the region
 //! machinery reads.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::try_eval_to_f64;
 
@@ -151,15 +150,14 @@ pub fn delaunay_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // wolframscript answers with the points themselves.
   if points.len() <= 3 {
     mesh_args.push(Expr::List(
-      vec![Expr::FunctionCall {
-        name: "Point".to_string(),
-        args: vec![Expr::List(
+      vec![call1(
+        "Point",
+        Expr::List(
           (1..=points.len())
             .map(|i| Expr::List(vec![Expr::Integer(i as i128)].into()))
             .collect(),
-        )]
-        .into(),
-      }]
+        ),
+      )]
       .into(),
     ));
   } else {
@@ -167,9 +165,9 @@ pub fn delaunay_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(original());
     };
     mesh_args.push(Expr::List(
-      vec![Expr::FunctionCall {
-        name: "Polygon".to_string(),
-        args: vec![Expr::List(
+      vec![call1(
+        "Polygon",
+        Expr::List(
           triangles
             .into_iter()
             .map(|t| {
@@ -178,9 +176,8 @@ pub fn delaunay_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               )
             })
             .collect(),
-        )]
-        .into(),
-      }]
+        ),
+      )]
       .into(),
     ));
   }

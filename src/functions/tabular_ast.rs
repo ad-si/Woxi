@@ -8,18 +8,16 @@ fn make_tabular_failure(
   data: &Expr,
 ) -> Expr {
   let msg_template_key = str_expr("MessageTemplate");
-  let msg_name_call = call(
-    "MessageName",
-    vec![Expr::Identifier(func_name.to_string()), str_expr(msg_tag)],
-  );
+  let msg_name_call =
+    call("MessageName", vec![id_expr(func_name), str_expr(msg_tag)]);
   // Encode the `MessageTemplate :> MessageName[...]` (RuleDelayed) entry
   // using the Association formatter convention: a value of
   // `RuleDelayed { pattern == key, replacement }` renders as `key :> replacement`.
   let msg_template_value =
     rule_delayed_expr(msg_template_key.clone(), msg_name_call);
-  Expr::FunctionCall {
-    name: "Failure".to_string(),
-    args: vec![
+  call(
+    "Failure",
+    vec![
       str_expr(tag),
       Expr::Association(vec![
         (
@@ -28,9 +26,8 @@ fn make_tabular_failure(
         ),
         (msg_template_key, msg_template_value),
       ]),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Infer the element type for a column of values.
@@ -91,15 +88,14 @@ pub(crate) fn build_schema(
   // Build RowCount -> n
   let row_count_rule = (str_expr("RowCount"), Expr::Integer(num_rows as i128));
 
-  Expr::FunctionCall {
-    name: "TabularSchema".to_string(),
-    args: vec![Expr::Association(vec![
+  call1(
+    "TabularSchema",
+    Expr::Association(vec![
       column_keys_rule,
       column_types_rule,
       row_count_rule,
-    ])]
-    .into(),
-  }
+    ]),
+  )
 }
 
 /// Tabular[data] — constructs a Tabular object from rectangular data.

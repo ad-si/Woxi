@@ -7,7 +7,6 @@
 //! transform as the axis labels and dash overlays) and injected just
 //! before `</svg>`.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::graphics::{Color, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
@@ -759,10 +758,7 @@ fn render_item(
         render_item(&text, style, area, out);
       }
       "Inset" if args.len() >= 2 && is_text_inset(&args[0]) => {
-        let text = Expr::FunctionCall {
-          name: "Text".to_string(),
-          args: vec![args[0].clone(), args[1].clone()].into(),
-        };
+        let text = call("Text", vec![args[0].clone(), args[1].clone()]);
         render_item(&text, style, area, out);
       }
       "Inset" if !args.is_empty() => {

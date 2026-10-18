@@ -1213,16 +1213,15 @@ pub fn map_indexed_with_level_heads_ast(
   heads_opt: &Expr,
 ) -> Result<Expr, InterpreterError> {
   if !is_heads_true_option(heads_opt) {
-    return Ok(Expr::FunctionCall {
-      name: "MapIndexed".to_string(),
-      args: vec![
+    return Ok(call(
+      "MapIndexed",
+      vec![
         func.clone(),
         expr.clone(),
         level_spec.clone(),
         heads_opt.clone(),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
   // `{-1}` selects every atomic leaf; with `Heads -> True` each compound
   // node's head is also rewritten with `0` appended to its position.
@@ -1236,16 +1235,15 @@ pub fn map_indexed_with_level_heads_ast(
       if let Some(n) = expr_to_i128(&items[0]) {
         (n as i64, n as i64)
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "MapIndexed".to_string(),
-          args: vec![
+        return Ok(call(
+          "MapIndexed",
+          vec![
             func.clone(),
             expr.clone(),
             level_spec.clone(),
             heads_opt.clone(),
-          ]
-          .into(),
-        });
+          ],
+        ));
       }
     }
     Expr::List(items) if items.len() == 2 => {
@@ -1254,16 +1252,15 @@ pub fn map_indexed_with_level_heads_ast(
       (min, max)
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "MapIndexed".to_string(),
-        args: vec![
+      return Ok(call(
+        "MapIndexed",
+        vec![
           func.clone(),
           expr.clone(),
           level_spec.clone(),
           heads_opt.clone(),
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
   };
   map_indexed_at_depth_heads(func, expr, 0, min_level, max_level, &[])

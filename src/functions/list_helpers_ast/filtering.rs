@@ -2004,14 +2004,14 @@ fn pick_recursive(
     });
   }
 
-  Ok(Expr::FunctionCall {
-    name: "Pick".to_string(),
-    args: if let Some(p) = pattern {
-      vec![list.clone(), sel.clone(), p.clone()].into()
+  Ok(call(
+    "Pick",
+    if let Some(p) = pattern {
+      vec![list.clone(), sel.clone(), p.clone()]
     } else {
-      vec![list.clone(), sel.clone()].into()
+      vec![list.clone(), sel.clone()]
     },
-  })
+  ))
 }
 
 fn matches_selector(sel: &Expr, pattern: Option<&Expr>) -> bool {

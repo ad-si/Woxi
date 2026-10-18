@@ -11,7 +11,6 @@
 //! leave the `Region[…]` expression unevaluated, like other unsupported
 //! cases elsewhere in the interpreter.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::graphics::Color;
 use crate::functions::math_ast::try_eval_to_f64;
@@ -129,18 +128,17 @@ fn region_primitives(reg: &Expr) -> Option<(Vec<Expr>, bool)> {
     }
     "Triangle" => match args.len() {
       // Triangle[] is the standard 2-simplex.
-      0 => area_2d(Expr::FunctionCall {
-        name: "Triangle".to_string(),
-        args: vec![Expr::List(
+      0 => area_2d(call1(
+        "Triangle",
+        Expr::List(
           vec![
             Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
             Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
             Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
           ]
           .into(),
-        )]
-        .into(),
-      }),
+        ),
+      )),
       1 if is_point_list(&args[0], 2) => area_2d(reg.clone()),
       // A triangle in 3-space renders as a 3D polygon face.
       1 if is_point_list(&args[0], 3) => solid_3d(Expr::FunctionCall {

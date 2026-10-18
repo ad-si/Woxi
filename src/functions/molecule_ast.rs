@@ -651,9 +651,9 @@ fn graph_to_expr(graph: &MolGraph) -> Expr {
   // wolframscript's canonical form is the three-argument
   // `Molecule[{atoms…}, {bonds…}, {metadata…}]`; the metadata list (stereo,
   // coordinates, …) is empty here.
-  Expr::FunctionCall {
-    name: "Molecule".to_string(),
-    args: vec![
+  call(
+    "Molecule",
+    vec![
       Expr::List(
         graph
           .atoms
@@ -671,9 +671,8 @@ fn graph_to_expr(graph: &MolGraph) -> Expr {
           .into(),
       ),
       Expr::List(Vec::new().into()),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Parse one atom specification: `"C"`, an atomic number, or

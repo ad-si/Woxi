@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{
   expr_to_f64, expr_to_i128, expr_to_rational, gcd_bigint,
@@ -116,10 +115,7 @@ pub fn minimal_polynomial_pure_ast(
   alpha: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let dummy = "WoxiMinimalPolynomialDummyVar";
-  let poly = minimal_polynomial_ast(&[
-    alpha.clone(),
-    Expr::Identifier(dummy.to_string()),
-  ])?;
+  let poly = minimal_polynomial_ast(&[alpha.clone(), id_expr(dummy)])?;
   // If the two-argument form could not reduce α, keep the call unevaluated.
   if matches!(&poly, Expr::FunctionCall { name, .. } if name == "MinimalPolynomial")
   {
@@ -361,7 +357,7 @@ fn substitute_identifier(expr: &Expr, name: &str, replacement: &Expr) -> Expr {
 fn factor_int_coeffs(factor: &Expr, var: &str) -> Option<Vec<i128>> {
   let clist = crate::evaluator::evaluate_expr_to_expr(&call(
     "CoefficientList",
-    vec![factor.clone(), Expr::Identifier(var.to_string())],
+    vec![factor.clone(), id_expr(var)],
   ))
   .ok()?;
   let Expr::List(ref items) = clist else {

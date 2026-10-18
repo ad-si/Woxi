@@ -247,14 +247,13 @@ fn http_request_property(func_args: &[Expr], prop: &str) -> Option<Expr> {
     )),
     "BodyByteArray" => {
       use base64::Engine as _;
-      Some(Expr::FunctionCall {
-        name: "ByteArray".to_string(),
-        args: vec![Expr::String(
+      Some(call1(
+        "ByteArray",
+        Expr::String(
           base64::engine::general_purpose::STANDARD
             .encode(body.unwrap_or_default()),
-        )]
-        .into(),
-      })
+        ),
+      ))
     }
     "Cookies" => Some(id_expr("Automatic")),
     "FormRules" => Some(none()),
@@ -641,16 +640,15 @@ pub fn url_read_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   else {
     return unevaluated();
   };
-  Ok(Expr::FunctionCall {
-    name: "HTTPResponse".to_string(),
-    args: vec![
-      Expr::FunctionCall {
-        name: "ByteArray".to_string(),
-        args: vec![Expr::String(
+  Ok(call(
+    "HTTPResponse",
+    vec![
+      call1(
+        "ByteArray",
+        Expr::String(
           base64::engine::general_purpose::STANDARD.encode(response_body),
-        )]
-        .into(),
-      },
+        ),
+      ),
       Expr::Association(vec![
         (
           str_expr("Headers"),
@@ -667,9 +665,8 @@ pub fn url_read_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
         (str_expr("Cookies"), Expr::List(vec![].into())),
       ]),
       rule_expr(id_expr("CharacterEncoding"), id_expr("Automatic")),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// The human-readable part of a curl error line: `curl: (6) Could not
@@ -701,9 +698,9 @@ fn connection_failure(url: &str, func_args: &[Expr]) -> Expr {
   let request = http_request_ast(func_args)
     .unwrap_or(unevaluated("HTTPRequest", func_args));
   let template_key = str_expr("MessageTemplate");
-  Expr::FunctionCall {
-    name: "Failure".to_string(),
-    args: vec![
+  call(
+    "Failure",
+    vec![
       str_expr("ConnectionFailure"),
       Expr::Association(vec![
         (
@@ -723,9 +720,8 @@ fn connection_failure(url: &str, func_args: &[Expr]) -> Expr {
         (str_expr("HTTPRequest"), request),
         (str_expr("Counter"), Expr::Integer(1)),
       ]),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Split a raw `curl -i` capture into the final response's headers, status
