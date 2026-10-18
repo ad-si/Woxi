@@ -3523,6 +3523,16 @@ data range.
 against Woxi's 500. The values agree exactly and the shape is the same; only
 small-scale wiggles are under-resolved.
 
+### 2D field plots ignore `PlotPoints` and `MaxRecursion`
+
+`DensityPlot`, `ContourPlot`, `RegionPlot` and the other field plots sample a
+fixed 100×100 grid, whatever the options say. Wolfram starts from a
+`PlotPoints` grid and refines it adaptively. Counting body evaluations of
+`Sin[u v]` on `{u, 3, 4}, {v, 3, 4}`, wolframscript makes 973 by default, 210
+with `PlotPoints -> 5`, and 27 with `PlotPoints -> 5, MaxRecursion -> 0`.
+Woxi makes 10000 every time. The pictures look alike, but an expensive body
+(a compiled iteration, say) runs about 10–50 times longer than in Wolfram.
+
 ### Plot parts nest differently
 
 wolframscript wraps curves in `GraphicsComplex` / `Annotation` where Woxi emits
@@ -5014,3 +5024,10 @@ Wolfram lists every Hamiltonian cycle of the graph. Woxi delegates to
 `FindHamiltonianCycle` and returns a one-element list, so `First[...]` (as in
 the `Hamiltonian Tours on Polyhedra` Demonstration) works, but `Length[...]`
 and later elements differ. The cycle chosen may also differ from Wolfram's.
+
+### `Rotate[Text[…], angle]` inside a `Grid` cell is not rotated
+
+A `Grid` cell holding `Rotate[Text["Value"], 90 Degree]` (the usual vertical
+axis label beside a `GraphicsGrid`, as in the `Intramarginal Rent`
+Demonstration) is drawn unrotated. Rotation is honoured for plot labels
+(`PlotLabel`/`AxesLabel`) but not for `Grid` cell content.

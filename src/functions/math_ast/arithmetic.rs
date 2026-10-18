@@ -1036,6 +1036,14 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Check for list threading
   let has_list = flat_args.iter().any(|a| matches!(a, Expr::List(_)));
+  if has_list && flat_args.len() > 2 {
+    // Threading is pairwise: fold the terms left to right.
+    let mut acc = flat_args[0].clone();
+    for term in &flat_args[1..] {
+      acc = plus_ast(&[acc, term.clone()])?;
+    }
+    return Ok(acc);
+  }
   if has_list {
     let result = thread_binary_over_lists(&flat_args, |a, b| {
       // Delegate to plus_ast so rationals, bigints, symbolic terms,

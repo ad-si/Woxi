@@ -13862,13 +13862,12 @@ fn bspline_structured(
 
 /// The `cell -> block` replacements of a 2D substitution system, keyed by the
 /// cell's rendered form. Returns `None` unless every rule replaces a cell with
-/// a rectangular block and all blocks share one shape (which is what makes the
-/// expanded grid rectangular).
+/// a non-empty rectangular block. Blocks may differ in size; whether they fit
+/// together is decided per grid by `substitute_grid`.
 fn two_d_substitution_blocks(
   rules: &[(Expr, Expr)],
 ) -> Option<Vec<(String, Vec<Vec<Expr>>)>> {
   let mut out: Vec<(String, Vec<Vec<Expr>>)> = Vec::new();
-  let mut shape: Option<(usize, usize)> = None;
   for (from, to) in rules {
     let Expr::List(rows) = to else { return None };
     let mut block = Vec::with_capacity(rows.len());
@@ -13876,42 +13875,57 @@ fn two_d_substitution_blocks(
       let Expr::List(cells) = row else { return None };
       block.push(cells.to_vec());
     }
-    let dims = (block.len(), block.first()?.len());
-    if dims.0 == 0 || dims.1 == 0 || block.iter().any(|r| r.len() != dims.1) {
+    let width = block.first()?.len();
+    if width == 0 || block.iter().any(|r| r.len() != width) {
       return None;
-    }
-    match shape {
-      None => shape = Some(dims),
-      Some(s) if s != dims => return None,
-      _ => {}
     }
     out.push((expr_to_string(from), block));
   }
   (!out.is_empty()).then_some(out)
 }
 
-/// Expand every cell of `grid` into its block and tile the results.
+/// Expand every cell of `grid` into its block and tile the results. Blocks may
+/// differ in size as long as all cells of a grid row expand to the same height
+/// and all cells of a grid column to the same width; otherwise the blocks
+/// cannot tile and `None` is returned. A cell without a rule stands for a
+/// block of copies of itself.
 fn substitute_grid(
   grid: &[Vec<Expr>],
   blocks: &[(String, Vec<Vec<Expr>>)],
 ) -> Option<Vec<Vec<Expr>>> {
-  let (bh, bw) = {
-    let b = &blocks.first()?.1;
-    (b.len(), b[0].len())
-  };
   let width = grid.first()?.len();
   if grid.iter().any(|r| r.len() != width) {
     return None;
   }
-  let mut out = vec![Vec::with_capacity(width * bw); grid.len() * bh];
+  let block_of = |cell: &Expr| {
+    let key = expr_to_string(cell);
+    blocks.iter().find(|(k, _)| *k == key).map(|(_, b)| b)
+  };
+  let mut heights: Vec<Option<usize>> = vec![None; grid.len()];
+  let mut widths: Vec<Option<usize>> = vec![None; width];
   for (i, row) in grid.iter().enumerate() {
-    for cell in row {
-      let key = expr_to_string(cell);
-      // A cell with no rule stands for a block of copies of itself.
-      let block = blocks.iter().find(|(k, _)| *k == key).map(|(_, b)| b);
-      for a in 0..bh {
-        for b in 0..bw {
-          out[i * bh + a].push(match block {
+    for (j, cell) in row.iter().enumerate() {
+      let Some(block) = block_of(cell) else {
+        continue;
+      };
+      let (h, w) = (block.len(), block[0].len());
+      if *heights[i].get_or_insert(h) != h || *widths[j].get_or_insert(w) != w {
+        return None;
+      }
+    }
+  }
+  let heights: Vec<usize> = heights.iter().map(|h| h.unwrap_or(1)).collect();
+  let widths: Vec<usize> = widths.iter().map(|w| w.unwrap_or(1)).collect();
+  let mut out: Vec<Vec<Expr>> = Vec::with_capacity(heights.iter().sum());
+  for (i, row) in grid.iter().enumerate() {
+    let first = out.len();
+    out
+      .extend((0..heights[i]).map(|_| Vec::with_capacity(widths.iter().sum())));
+    for (j, cell) in row.iter().enumerate() {
+      let block = block_of(cell);
+      for a in 0..heights[i] {
+        for b in 0..widths[j] {
+          out[first + a].push(match block {
             Some(block) => block[a][b].clone(),
             None => cell.clone(),
           });

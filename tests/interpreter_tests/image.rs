@@ -7720,6 +7720,36 @@ mod color_data_gradients {
     }
   }
 
+  /// Indexed scheme 17: only the entries seen in Wolfram's own rendered
+  /// output are known (1, 2 and 4); the others stay unevaluated instead of
+  /// being guessed.
+  #[test]
+  fn color_data_indexed_scheme_17() {
+    assert_eq!(
+      woxi::interpret("ToString[List @@ ColorData[17, 1] * 255, InputForm]")
+        .unwrap(),
+      "{72., 58., 57.}"
+    );
+    assert_eq!(
+      woxi::interpret(
+        "ToString[Round[List @@ ColorData[17, 2] * 255], InputForm]"
+      )
+      .unwrap(),
+      "{144, 59, 39}"
+    );
+    assert_eq!(
+      woxi::interpret(
+        "ToString[Round[List @@ ColorData[17, 4] * 255], InputForm]"
+      )
+      .unwrap(),
+      "{220, 158, 67}"
+    );
+    assert_eq!(
+      woxi::interpret("ColorData[17, 3]").unwrap(),
+      "ColorData[17, 3]"
+    );
+  }
+
   /// Indexed scheme 35, the orange-to-red palette (by way of yellow-green
   /// and indigo) a Demonstration's `ListPlot` colors its series with. Like
   /// scheme 30 it is a fixed ten-colour palette that cycles. Every value is
