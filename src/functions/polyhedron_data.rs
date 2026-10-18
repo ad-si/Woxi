@@ -2126,6 +2126,66 @@ fn string_list(items: &[&str]) -> Expr {
   Expr::List(items.iter().map(|s| str_expr(s)).collect())
 }
 
+/// The right `n`-gonal prism with unit edges, `{"Prism", n}` for `n >= 3`:
+/// the regular `n`-gon base at `z = -1/2` and its copy at `z = +1/2`
+/// (vertices `1..n` and `n+1..2n`), the two bases and `n` square sides, all
+/// wound outward. Built on demand and cached, since `PolyhedronInfo` holds
+/// `'static` source strings.
+fn prism_info(n: i128) -> &'static PolyhedronInfo {
+  use std::collections::HashMap;
+  use std::sync::{Mutex, OnceLock};
+  static CACHE: OnceLock<Mutex<HashMap<i128, &'static PolyhedronInfo>>> =
+    OnceLock::new();
+  let mut cache = CACHE
+    .get_or_init(|| Mutex::new(HashMap::new()))
+    .lock()
+    .unwrap();
+  if let Some(info) = cache.get(&n) {
+    return info;
+  }
+  let ring = |z: &str| -> Vec<String> {
+    (0..n)
+      .map(|k| {
+        format!(
+          "{{Cos[2 Pi {k}/{n}]/(2 Sin[Pi/{n}]), Sin[2 Pi {k}/{n}]/(2 Sin[Pi/{n}]), {z}}}"
+        )
+      })
+      .collect()
+  };
+  let vertices: Vec<String> =
+    ring("-1/2").into_iter().chain(ring("1/2")).collect();
+  let bottom: Vec<String> = (1..=n).rev().map(|i| i.to_string()).collect();
+  let top: Vec<String> = (n + 1..=2 * n).map(|i| i.to_string()).collect();
+  let mut faces = vec![
+    format!("{{{}}}", bottom.join(", ")),
+    format!("{{{}}}", top.join(", ")),
+  ];
+  for k in 1..=n {
+    let next = k % n + 1;
+    faces.push(format!("{{{k}, {next}, {}, {}}}", n + next, n + k));
+  }
+  let info = Box::leak(Box::new(PolyhedronInfo {
+    name: "Prism",
+    vertex_count: 2 * n,
+    edge_count: 3 * n,
+    face_count: n + 2,
+    volume: leak(format!("{n}/(4 Tan[Pi/{n}])")),
+    surface_area: leak(format!("{n} + {n}/(2 Tan[Pi/{n}])")),
+    circumradius: leak(format!("Sqrt[1/4 + 1/(4 Sin[Pi/{n}]^2)]")),
+    inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Missing[\"NotApplicable\"]",
+    vertices_src: leak(format!("{{{}}}", vertices.join(", "))),
+    faces_src: leak(format!("{{{}}}", faces.join(", "))),
+    classes_src: "{\"Convex\", \"Prism\"}",
+  }));
+  cache.insert(n, info);
+  info
+}
+
+fn leak(s: String) -> &'static str {
+  Box::leak(s.into_boxed_str())
+}
+
 pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("PolyhedronData", args));
 
@@ -2157,10 +2217,21 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let Some(Expr::String(name)) = args.first() else {
-    return unevaluated();
+  let info = match args.first() {
+    Some(Expr::List(spec)) => match spec.as_slice() {
+      [Expr::String(kind), Expr::Integer(n)] if kind == "Prism" && *n >= 3 => {
+        Some(prism_info(*n))
+      }
+      _ => return unevaluated(),
+    },
+    Some(Expr::String(name)) => find_polyhedron(name),
+    _ => return unevaluated(),
   };
-  let Some(info) = find_polyhedron(name) else {
+  let name = match args.first() {
+    Some(Expr::String(name)) => name.as_str(),
+    _ => "Prism",
+  };
+  let Some(info) = info else {
     crate::emit_message(&format!(
       "PolyhedronData::notent: {name} is not a known entity, class, or tag for PolyhedronData. Use PolyhedronData[] for a list of entities."
     ));

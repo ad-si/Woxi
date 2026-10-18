@@ -975,6 +975,21 @@ fn evaluate_function_call_ast_inner(
     "Derangements" if combinatorica_active => "Combinatorica`Derangements",
     "RandomKSubset" if combinatorica_active => "Combinatorica`RandomKSubset",
     "Backtrack" if combinatorica_active => "Combinatorica`Backtrack",
+    "FromUnorderedPairs" | "ToAdjacencyLists" | "BreadthFirstTraversal"
+      if combinatorica_active =>
+    {
+      combinatorica_graph_name(name)
+    }
+    "V" | "ConnectedComponents" | "ShortestPath"
+      if combinatorica_active
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: head, .. })
+            if head == "Combinatorica`Graph"
+        ) =>
+    {
+      combinatorica_graph_name(name)
+    }
     "RandomPermutation"
       if combinatorica_active
         && args.len() == 1
@@ -11429,6 +11444,14 @@ fn evaluate_function_call_ast_inner(
     return Ok(sound);
   }
 
+  // Audio`Waveform[shape, f, t, opts…] synthesizes a periodic waveform as an
+  // Audio object (the sound player of the "Sounds of Waveforms" demo).
+  if name == "Audio`Waveform"
+    && let Some(audio) = crate::functions::sound::audio_waveform(args)
+  {
+    return Ok(audio);
+  }
+
   // Check if the function is a known but unimplemented Wolfram Language function.
   // Some symbolic CAS objects (Root, RootSum, …) intentionally stay
   // unevaluated as their canonical form, so flagging them as
@@ -14091,5 +14114,18 @@ fn unwrap_condition_guards(
       }
       _ => return Ok(None),
     }
+  }
+}
+
+/// The `Combinatorica\`` spelling of a graph function that the loaded
+/// package makes available under its bare name.
+fn combinatorica_graph_name(name: &str) -> &'static str {
+  match name {
+    "FromUnorderedPairs" => "Combinatorica`FromUnorderedPairs",
+    "ToAdjacencyLists" => "Combinatorica`ToAdjacencyLists",
+    "BreadthFirstTraversal" => "Combinatorica`BreadthFirstTraversal",
+    "V" => "Combinatorica`V",
+    "ConnectedComponents" => "Combinatorica`ConnectedComponents",
+    _ => "Combinatorica`ShortestPath",
   }
 }

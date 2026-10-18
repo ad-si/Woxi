@@ -2901,6 +2901,18 @@ pub fn dispatch_list_operations(
     "Combinatorica`Backtrack" if (1..=4).contains(&args.len()) => {
       return Some(list_helpers_ast::combinatorica_backtrack_ast(args));
     }
+    "Combinatorica`FromUnorderedPairs"
+    | "Combinatorica`V"
+    | "Combinatorica`ToAdjacencyLists"
+    | "Combinatorica`ConnectedComponents"
+    | "Combinatorica`BreadthFirstTraversal"
+    | "Combinatorica`ShortestPath" => {
+      return Some(
+        crate::functions::combinatorica_graph::combinatorica_graph_ast(
+          name, args,
+        ),
+      );
+    }
     "Combinatorica`Derangements" if args.len() == 1 => {
       return Some(list_helpers_ast::combinatorica_derangements_ast(args));
     }

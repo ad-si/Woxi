@@ -1012,6 +1012,29 @@ mod graphics {
       assert!(!svg.contains("&quot;"), "no quoted strings: {svg}");
     }
 
+    /// A positionless `Text[label]` in a plot's `Epilog` sits at the origin,
+    /// as it does in `Graphics`, instead of being dropped.
+    #[test]
+    fn a_plot_epilog_text_without_a_position_is_drawn() {
+      let svg = export_svg(
+        "ListPlot[{{3, 17}, {7, 13}}, Epilog -> Text[\"zzlabel\"], \
+         PlotRange -> {{0, 500}, {0, 1000}}]",
+      );
+      assert!(svg.contains(">zzlabel</text>"), "{svg}");
+    }
+
+    /// A `Tooltip` around a primitive in a plot's `Epilog` draws the
+    /// primitive; the tip only shows on hover.
+    #[test]
+    fn a_plot_epilog_tooltip_point_is_drawn() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Epilog -> {Red, \
+         Tooltip[Point[{0.5, 0.5}], \"tip\"], \
+         (Tooltip[Point[#], \"p\"] &) /@ {{0.2, 0.2}, {0.8, 0.8}}}]",
+      );
+      assert_eq!(svg.matches("<circle").count(), 3, "{svg}");
+    }
+
     /// `Graphics` takes `Prolog` and `Epilog` too: extra primitives drawn
     /// under and over its content. Neither stretches the plot range — a
     /// point far outside it is clipped away rather than rescaling the
@@ -20550,6 +20573,30 @@ mod grid_frame_and_background {
     assert!(vertical.iter().any(|l| l.0 == 0.0), "left edge: {svg}");
   }
 
+  /// A line-style directive as a position spec (`1 -> Thin`, `2 -> Thick`)
+  /// still rules that line. Regression: only colours and `True` were
+  /// recognised, so a grid ruled with `Thin`/`Thick` came out with no lines.
+  #[test]
+  fn dividers_accept_line_style_directives() {
+    let svg = export_svg(
+      r#"Grid[{{"a", "b"}, {"c", "d"}}, Dividers -> {{1 -> Thin, 2 -> Thick, -1 -> Thin}, {2 -> Dashed}}]"#,
+    );
+    let lines = grid_lines(&svg);
+    let horizontal = lines.iter().filter(|l| l.1 == l.3).count();
+    let vertical = lines.iter().filter(|l| l.0 == l.2).count();
+    assert_eq!(vertical, 3, "left, middle and right: {svg}");
+    assert_eq!(horizontal, 1, "middle only: {svg}");
+  }
+
+  /// `Directive[colour, style]` rules the line in that colour.
+  #[test]
+  fn dividers_directive_keeps_its_colour() {
+    let svg = export_svg(
+      r#"Grid[{{"a", "b"}, {"c", "d"}}, Dividers -> {{2 -> Directive[Red, Thick]}, None}]"#,
+    );
+    assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+  }
+
   /// `Dividers -> Center` rules only the boundaries *between* cells, so the
   /// same grid keeps its outer edges open.
   #[test]
@@ -27628,6 +27675,21 @@ mod manipulate {
     assert!(!svg.contains("TabView["), "TabView source leaked: {svg}");
     assert!(!svg.contains("-Graphics-"));
     assert!(svg.contains("title"));
+  }
+
+  /// A `Tooltip` around a picture inside a `Column` draws the picture; the
+  /// hint shows only on hover. Regression: it was typeset as the
+  /// `-Graphics-` placeholder text.
+  #[test]
+  fn tooltip_graphic_in_column_draws_picture() {
+    let code = "ExportString[Column[{\
+      Tooltip[ArrayPlot[{{1, 0, 1}}], \"hint\"], \
+      Tooltip[Graphics[Circle[]], \"other\"]}], \"SVG\"]";
+    let svg = woxi::interpret(code).unwrap();
+    assert!(!svg.contains("-Graphics-"), "placeholder leaked: {svg}");
+    assert!(svg.contains("<rect"), "ArrayPlot cells missing: {svg}");
+    assert!(svg.contains("<circle") || svg.contains("<ellipse"));
+    assert!(!svg.contains("hint"));
   }
 
   /// A `TabView` whose pane is a `Text@Grid[…]` table, laid out in a
@@ -36276,6 +36338,37 @@ fn styled_axes_label_keeps_font_directives() {
   )
   .unwrap();
   assert!(!svg.contains("<tspan font-style"));
+}
+
+#[test]
+fn axes_label_row_keeps_styled_parts() {
+  // `Row[{Style[…, color], " and ", Style[…, color]}]` as an AxesLabel is a
+  // multi-coloured legend-like label; every part keeps its own colour.
+  for plot in [
+    "ListPlot[{1, 2, 3}",
+    "ListLinePlot[{1, 2, 3}",
+    "Plot[x, {x, 0, 1}",
+  ] {
+    let svg = interpret(&format!(
+      "ExportString[{plot}, AxesLabel -> {{\"t\", Row[{{Style[\"a\", Red], \
+       \" and \", Style[\"b\", Blue]}}]}}], \"SVG\"]"
+    ))
+    .unwrap();
+    assert!(
+      svg.contains(
+        "<tspan fill=\"rgb(255,0,0)\">a</tspan> and \
+         <tspan fill=\"rgb(0,0,255)\">b</tspan>"
+      ),
+      "{plot}: {svg}"
+    );
+  }
+  // A `Row` of plain strings stays unstyled.
+  let svg = interpret(
+    "ExportString[Plot[x, {x, 0, 1}, AxesLabel -> {\"t\", \
+     Row[{\"a\", \"b\"}]}], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(!svg.contains("<tspan fill"));
 }
 
 #[test]

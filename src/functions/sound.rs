@@ -524,6 +524,99 @@ pub(crate) fn audio_sample_rate(args: &[Expr]) -> f64 {
 /// Sample rate `wolframscript` uses for `ListPlay` sampled sounds (Hz).
 const LIST_PLAY_SAMPLE_RATE: f64 = 8000.0;
 
+/// Default sample rate of `Audio`Waveform` when no `SampleRate` is given (Hz).
+const WAVEFORM_SAMPLE_RATE: f64 = 44100.0;
+
+/// Upper bound on the samples `Audio`Waveform` will synthesize.
+const WAVEFORM_MAX_SAMPLES: f64 = 4_000_000.0;
+
+/// Evaluate `Audio`Waveform[shape, f, t, opts…]`: a periodic waveform of
+/// frequency `f` (Hz) and duration `t` (s) as an `Audio[{samples…},
+/// SampleRate -> r]` object. `shape` is `Audio`Sinusoid`, `Audio`Triangle`,
+/// `Audio`Square` or `Audio`Sawtooth`; `Overtones -> n` builds the non-sine
+/// shapes from the Fourier series truncated at `n` further harmonics (the
+/// ideal shape when absent). Returns `None` for any other argument shape so
+/// the call stays unevaluated.
+pub fn audio_waveform(args: &[Expr]) -> Option<Expr> {
+  if args.len() < 3 {
+    return None;
+  }
+  let Expr::Identifier(shape) = &args[0] else {
+    return None;
+  };
+  let shape = shape.strip_prefix("Audio`")?;
+  if !matches!(shape, "Sinusoid" | "Triangle" | "Square" | "Sawtooth") {
+    return None;
+  }
+  let freq = try_eval_to_f64(&args[1]).filter(|f| *f > 0.0)?;
+  let duration = try_eval_to_f64(&args[2]).filter(|t| *t > 0.0)?;
+  let rate = option_sample_rate(&args[3..], WAVEFORM_SAMPLE_RATE);
+  let overtones = args[3..].iter().find_map(|opt| {
+    let (key, value) = rule_parts(opt)?;
+    matches!(key, Expr::Identifier(n) if n == "Overtones")
+      .then(|| try_eval_to_f64(value))
+      .flatten()
+      .filter(|n| *n >= 0.0)
+      .map(|n| n as usize)
+  });
+  let count = (duration * rate).round();
+  if !(1.0..=WAVEFORM_MAX_SAMPLES).contains(&count) {
+    return None;
+  }
+
+  let tau = std::f64::consts::TAU;
+  let sample = |t: f64| -> f64 {
+    let phase = (t * freq).fract();
+    match (shape, overtones) {
+      ("Sinusoid", _) => (tau * phase).sin(),
+      ("Square", None) => {
+        if phase < 0.5 {
+          1.0
+        } else {
+          -1.0
+        }
+      }
+      ("Triangle", None) => 1.0 - 4.0 * (phase - 0.5).abs(),
+      ("Sawtooth", None) => 2.0 * phase - 1.0,
+      (_, Some(n)) => {
+        let pi = std::f64::consts::PI;
+        (1..=n + 1)
+          .map(|k| {
+            let kf = k as f64;
+            let w = (tau * kf * phase).sin();
+            match shape {
+              "Square" if k % 2 == 1 => 4.0 / (pi * kf) * w,
+              "Triangle" if k % 2 == 1 => {
+                let sign = if (k / 2) % 2 == 0 { 1.0 } else { -1.0 };
+                8.0 / (pi * pi * kf * kf) * sign * w
+              }
+              "Sawtooth" => {
+                let sign = if k % 2 == 1 { 1.0 } else { -1.0 };
+                2.0 / (pi * kf) * sign * w
+              }
+              _ => 0.0,
+            }
+          })
+          .sum()
+      }
+      _ => 0.0,
+    }
+  };
+  let samples: Vec<Expr> = (0..count as usize)
+    .map(|i| Expr::Real(sample(i as f64 / rate)))
+    .collect();
+  Some(call(
+    "Audio",
+    vec![
+      Expr::List(samples.into()),
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier("SampleRate".to_string())),
+        replacement: Box::new(Expr::Real(rate)),
+      },
+    ],
+  ))
+}
+
 /// Build the `Sound[SampledSoundList[{samples…}, rate]]` object that
 /// `ListPlay[data, opts…]` produces. `data` is a list of amplitude levels;
 /// wolframscript normalizes them linearly so the minimum maps to -1 and the
