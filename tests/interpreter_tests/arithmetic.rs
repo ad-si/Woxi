@@ -7267,6 +7267,16 @@ mod cases {
     );
   }
 
+  /// `a ≈ b` is typeset infix in TraditionalForm, not as `TildeTilde[a, b]`
+  /// (the Gregory Series demo labels its plot with a held `π/4 ≈ Sum[…]`).
+  #[test]
+  fn traditional_form_tilde_tilde_is_infix() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[a ≈ b]]"#,
+      r#"TagBox[FormBox[RowBox[{a, ≈, b}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
   /// A `Plus` term with a negative coefficient boxes as `- <positive>`, the
   /// way wolframscript does (`RowBox[{a, -, RowBox[{2.5, " ", b}]}]`), not as
   /// `+ -2.5 b`.

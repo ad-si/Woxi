@@ -12298,6 +12298,29 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // Missing[...] → rendered as a dash
         "Missing" => "-".to_string(),
 
+        // TildeTilde[a, b, ...] → a ≈ b ≈ ...
+        "TildeTilde" if args.len() >= 2 => args
+          .iter()
+          .map(expr_to_svg_markup)
+          .collect::<Vec<_>>()
+          .join(" \u{2248} "),
+
+        // Sum[body, {k, lo, hi}] → ∑ with the bounds as sub/superscript
+        "Sum" if args.len() == 2 => match &args[1] {
+          Expr::List(it) if it.len() == 3 => format!(
+            "\u{2211}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}={}</tspan><tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan> {}",
+            expr_to_svg_markup(&it[0]),
+            expr_to_svg_markup(&it[1]),
+            expr_to_svg_markup(&it[2]),
+            expr_to_svg_markup(&args[0])
+          ),
+          _ => format!(
+            "Sum[{}, {}]",
+            expr_to_svg_markup(&args[0]),
+            expr_to_svg_markup(&args[1])
+          ),
+        },
+
         // Plus[a, b, ...] with negative-term handling
         "Plus" if args.len() >= 2 => {
           let mut result = expr_to_svg_markup(&args[0]);
