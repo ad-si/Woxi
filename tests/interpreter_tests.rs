@@ -2857,6 +2857,23 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_text_lowers_subscript_without_unicode_form() {
+    // Unicode has no subscript capital N, so `F_N` used to draw as a flat
+    // "FN". The subscript is now lowered with a `<tspan>` instead.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Text[\"\\!\\(\\*SubscriptBox[\\(F\\), \\(N\\)]\\) cos\", {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(
+        "F<tspan baseline-shift=\"sub\" font-size=\"70%\">N</tspan> cos"
+      ),
+      "expected lowered N in SVG, got: {svg}"
+    );
+  }
+
+  #[test]
   fn test_graphics_text_renders_inline_box_notation() {
     // A notebook `Text[…]` label can carry its typeset content as inline
     // `\!\(\*…\)` box notation — the front end's linear-syntax form for a
