@@ -170,7 +170,7 @@ pub fn dispatch_string_functions(
         crate::functions::string_ast::smith_waterman_similarity_ast(args),
       );
     }
-    "SequenceAlignment" if args.len() == 2 => {
+    "SequenceAlignment" if args.len() >= 2 => {
       return Some(crate::functions::string_ast::sequence_alignment_ast(args));
     }
     "LongestCommonSubsequence" if args.len() == 2 => {
