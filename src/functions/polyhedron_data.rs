@@ -572,6 +572,34 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       \"UniformDual\"}",
   },
   PolyhedronInfo {
+    name: "Cuboctahedron",
+    vertex_count: 12,
+    edge_count: 24,
+    face_count: 14,
+    volume: "5*Sqrt[2]/3",
+    surface_area: "2*(3 + Sqrt[3])",
+    circumradius: "1",
+    inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Sqrt[3]/2",
+    // The midpoints of a cube's edges, scaled to unit edge length.
+    vertices_src: "{\
+      {0, -1/Sqrt[2], -1/Sqrt[2]}, {-1/Sqrt[2], 0, -1/Sqrt[2]}, \
+      {1/Sqrt[2], 0, -1/Sqrt[2]}, {0, 1/Sqrt[2], -1/Sqrt[2]}, \
+      {-1/Sqrt[2], -1/Sqrt[2], 0}, {1/Sqrt[2], -1/Sqrt[2], 0}, \
+      {-1/Sqrt[2], 1/Sqrt[2], 0}, {1/Sqrt[2], 1/Sqrt[2], 0}, \
+      {0, -1/Sqrt[2], 1/Sqrt[2]}, {-1/Sqrt[2], 0, 1/Sqrt[2]}, \
+      {1/Sqrt[2], 0, 1/Sqrt[2]}, {0, 1/Sqrt[2], 1/Sqrt[2]}}",
+    faces_src: "{\
+      {6, 3, 8, 11}, {7, 2, 5, 10}, {8, 4, 7, 12}, {5, 1, 6, 9}, \
+      {10, 9, 11, 12}, {3, 1, 2, 4}, {11, 8, 12}, {8, 3, 4}, \
+      {9, 6, 11}, {6, 1, 3}, {12, 7, 10}, {4, 2, 7}, {10, 5, 9}, \
+      {2, 1, 5}}",
+    classes_src: "\
+      {\"Amphichiral\", \"Archimedean\", \"Canonical\", \"Convex\", \
+      \"Equilateral\", \"Quasiregular\", \"Rigid\", \"Rupert\", \
+      \"Simple\", \"Uniform\"}",
+  },
+  PolyhedronInfo {
     name: "Icosidodecahedron",
     vertex_count: 30,
     edge_count: 60,
