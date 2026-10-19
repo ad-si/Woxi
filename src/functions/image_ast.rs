@@ -2929,7 +2929,25 @@ fn image_crop_sides(spec: &Expr) -> Option<(f64, f64)> {
   Some((horizontal, vertical))
 }
 
-pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+pub fn image_crop_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A trailing `Padding -> value` option fills the pixels added when the
+  // requested size exceeds the image.
+  let mut args = all_args;
+  let mut padding: Option<&Expr> = None;
+  while let Some((
+    Expr::Rule {
+      pattern,
+      replacement,
+    },
+    rest,
+  )) = args.split_last()
+  {
+    if matches!(&**pattern, Expr::Identifier(n) | Expr::String(n) if n == "Padding")
+    {
+      padding.get_or_insert(&**replacement);
+    }
+    args = rest;
+  }
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "ImageCrop expects 1, 2 or 3 arguments".into(),
@@ -2954,12 +2972,20 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // ImageCrop[image, size] / ImageCrop[image, size, spec] — crop (or, when the
   // requested size is larger, pad) to an explicit width and height.
   if args.len() >= 2 {
-    let echo = || Ok(unevaluated("ImageCrop", args));
+    let echo = || Ok(unevaluated("ImageCrop", all_args));
+    // Non-integer sizes (e.g. `{300, 300}/zoom`) are rounded to whole pixels.
+    let pixels = |e: &Expr| {
+      as_int(e).or_else(|| {
+        crate::functions::math_ast::try_eval_to_f64(e)
+          .filter(|v| v.is_finite())
+          .map(|v| v.round() as i64)
+      })
+    };
     let (Some(target_w), Some(target_h)) = (match &args[1] {
       Expr::List(size) if size.len() == 2 => {
-        (as_int(&size[0]), as_int(&size[1]))
+        (pixels(&size[0]), pixels(&size[1]))
       }
-      other => (as_int(other), as_int(other)),
+      other => (pixels(other), pixels(other)),
     }) else {
       return echo();
     };
@@ -2983,9 +3009,9 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         -(remove_w - left),
         -bottom,
         -(remove_h - bottom),
-        None,
+        padding,
       )
-      .unwrap_or_else(|| unevaluated("ImageCrop", args)),
+      .unwrap_or_else(|| unevaluated("ImageCrop", all_args)),
     );
   }
 

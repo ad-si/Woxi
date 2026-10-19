@@ -2284,6 +2284,28 @@ mod image_processing {
   }
 
   #[test]
+  fn image_crop_padding_option_and_real_size() {
+    clear_state();
+    let img = "Image[{{0, 0.1, 0.2, 0.3}, {0, 0.1, 0.2, 0.3}}]";
+    // Padding -> value fills the pixels added by an oversized crop.
+    assert_eq!(
+      interpret(&format!(
+        "Round[255 ImageData[ImageCrop[{img}, {{6, 2}}, {{0, 0}}, Padding -> White]]]"
+      ))
+      .unwrap(),
+      "{{255, 0, 26, 51, 77, 255}, {255, 0, 26, 51, 77, 255}}"
+    );
+    // Non-integer sizes are rounded to whole pixels.
+    assert_eq!(
+      interpret(&format!(
+        "ImageDimensions[ImageCrop[{img}, {{4, 2}}/3, Padding -> White]]"
+      ))
+      .unwrap(),
+      "{1, 1}"
+    );
+  }
+
+  #[test]
   fn blur_preserves_dimensions() {
     clear_state();
     let result = interpret(
