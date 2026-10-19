@@ -825,6 +825,175 @@ WL's own 60-digit values). For a complex result such as
 `N[ExpIntegralE[1, -2], 20]` WL tags each part with its own precision
 (`20.077…`, `19.879…`), Woxi with the requested one.
 
+### Machine `PolyGamma` and Hurwitz `Zeta` values are not correctly rounded in WL
+
+Woxi rounds machine `PolyGamma` and `Zeta[s, a]`/`HurwitzZeta` from an
+arbitrary-precision evaluation, so they are correctly rounded (checked with
+mpmath at 30 digits). wolframscript agrees on most arguments but not all:
+`PolyGamma[-7.7]` is `…6933` against WL's `…7003`, `PolyGamma[2, 0.3]`
+`…72604` against `…72617`, `Zeta[3, -2.5]` `…413456` against `…41346` and the
+real part of `HurwitzZeta[0.5, -0.5]` `…216304` against `…21629`. Next to the
+root of ψ WL loses digits: `PolyGamma[1.46]` is `-0.0015805619870834522`
+(mpmath: `-0.00158056198708345210…`) against WL's `…0833398`. At a negative
+`s` the drift reaches the third digit: `Zeta[-5.817415911509695,
+0.1295065568974257]` is `-0.0033395080665649794` in Woxi and mpmath and
+`-0.0033354818170026833` in WL. **Not reproducible.** The last-digit cases
+are compared with a tolerance by the unit-test conformance check
+(`NEAR_MATCH`); the negative-`s` one is skipped.
+
+### `PolyGamma` of a fractional order is unimplemented
+
+```sh
+wolframscript -code 'PolyGamma[0.5, 1.9]'   # 0.7474244588681002
+woxi eval 'PolyGamma[0.5, 1.9]'             # PolyGamma[0.5, 1.9]
+```
+
+WL continues ψ⁽ⁿ⁾ to non-integer orders by fractional calculus; neither
+Espinosa–Moll's `e^(-γs) ∂s[e^(γs) ζ(s+1, z)/Γ(-s)]` (0.8274… here) nor
+`Γ(ν+1) ζ(ν+1, z)` reproduces its values, so Woxi leaves the call unevaluated.
+
+### Trig equations whose roots wolframscript leaves as ArcTan forms
+
+```sh
+wolframscript -code 'Solve[Sin[t] == Sin[t + 2 Pi/5], t]'
+# {{t -> ConditionalExpression[ArcTan[Sqrt[2*(3 + Sqrt[5])]/(3*Sqrt[5 + 2*Sqrt[5]]
+#   - Sqrt[5*(5 + 2*Sqrt[5])])] + 2*Pi*C[1], …]}, {t -> … -Pi - ArcTan[…] …}}
+woxi eval 'Solve[Sin[t] == Sin[t + 2 Pi/5], t]'
+# {{t -> ConditionalExpression[(-7*Pi)/10 + 2*Pi*C[1], …]},
+#  {t -> ConditionalExpression[(3*Pi)/10 + 2*Pi*C[1], …]}}
+```
+
+The ArcTan expressions are 3π/10 and -7π/10; Woxi solves `Sin[A] == Sin[B]`
+through `A == B + 2πk || A == π - B + 2πk` and gets the multiples of π
+directly. `Reduce` over a bounded interval differs the same way.
+
+### Reduce keeps a common equation inside each branch
+
+```sh
+wolframscript -code 'Reduce[z == Sin[t] && Sin[t] == 1/2 && 0 <= t < 2 Pi && z > 0, {z, t}, Reals]'
+# z == 1/2 && (t == Pi/6 || t == (5*Pi)/6)
+woxi eval 'Reduce[z == Sin[t] && Sin[t] == 1/2 && 0 <= t < 2 Pi && z > 0, {z, t}, Reals]'
+# (z == 1/2 && t == Pi/6) || (z == 1/2 && t == (5*Pi)/6)
+```
+
+When to factor a shared equation out of the disjunction is not decoded:
+`Reduce[{x == 2, y^2 == x + 2}, {x, y}]` factors (`x == 2 && (y == -2 ||
+y == 2)`), but `Reduce[{x^2 == 1, y == 1}, {x, y}]` distributes and puts `y`
+first (`(y == 1 && x == -1) || (y == 1 && x == 1)`), and Woxi does the
+opposite in both.
+
+### A definite integral up to a symbol carries no condition
+
+```sh
+wolframscript -code 'Integrate[2 (1 + 3 x)^(-1/2), {x, 0, t}]'
+# ConditionalExpression[(4*(-1 + Sqrt[1 + 3*t]))/3, Re[t] > 0 || …]
+woxi eval 'Integrate[2 (1 + 3 x)^(-1/2), {x, 0, t}]'
+# -4/3 + (4*Sqrt[1 + 3*t])/3
+```
+
+Woxi returns `F[t] - F[0]` unconditionally and does not collect it.
+
+### `x*(a*x)^n` orders its factors the other way round
+
+```sh
+wolframscript -code '{x (a x)^n, Sort[{(a x)^n, x}]}'   # {x*(a*x)^n, {x, (a*x)^n}}
+woxi eval '{x (a x)^n, Sort[{(a x)^n, x}]}'             # {(a*x)^n*x, {(a*x)^n, x}}
+```
+
+A power of a product compares by its base, and `x` precedes `a*x` (the
+last-factor rule), but `canonical_cmp` and `sort_symbolic_factors` put the
+power first; `Order[x, (a x)^n]` is right. So `Integrate[(a x)^n, x]` prints
+`((a*x)^n*x)/(1 + n)` where WL prints `(x*(a*x)^n)/(1 + n)`.
+
+### RegionCentroid of a region difference
+
+`RegionCentroid[RegionDifference[outer, hole]]` is worked out exactly only
+when the hole lies inside `outer`. wolframscript also handles a hole that
+sticks out (`Disk[{2, 2}, 1]` at a corner of `Rectangle[{0, 0}, {2, 2}]` gives
+`{(2*(26 - 3*Pi))/(3*(16 - Pi)), …}`), where Woxi stays unevaluated; and for
+an inexact disk it integrates over a discretized disk, so
+`Disk[{0.38, 0.38}, 0.55]` gives `-0.11783686539341964` against the exact
+`-0.11841487309694458`.
+
+### HighlightImage returns the image at its own size
+
+```sh
+wolframscript -code 'ImageDimensions[HighlightImage[ConstantImage[Black, {200, 100}], {Red, Point[{5, 5}]}]]'
+# {400, 200}
+woxi eval 'ImageDimensions[HighlightImage[ConstantImage[Black, {200, 100}], {Red, Point[{5, 5}]}]]'
+# {200, 100}
+```
+
+wolframscript rasterizes the highlighted picture through the front end, at
+the display's scale — twice the pixels on a Retina Mac — and with a minimum
+height (`{20, 10}` becomes `{40, 33}`). Woxi draws onto the image's own
+pixels. **Not reproducible** across machines.
+
+### Machine eigenvectors have other signs
+
+```sh
+wolframscript -code 'Eigenvectors[{{2., 1.}, {1., 2.}}]'   # {{0.707…, 0.707…}, {-0.707…, 0.707…}}
+woxi eval 'Eigenvectors[{{2., 1.}, {1., 2.}}]'             # {{-0.707…, -0.707…}, {-0.707…, 0.707…}}
+```
+
+An eigenvector's sign is LAPACK's choice in wolframscript and follows no
+normalization of its components that Woxi could copy (`{{-1., 0.}, {0.,
+-1.}}` for `{{4., 0.}, {0., 1.}}`, `{{0., 1.}, {-1., 0.}}` for `{{2., 0.},
+{0., 3.}}`). Anything built on them inherits it, e.g. the directions of
+`MultivariateStatistics`EllipsoidQuantile`. **Not reproducible.**
+
+### Equations in a radical and its reciprocal
+
+```sh
+wolframscript -code 'Solve[Sqrt[x] + 1/Sqrt[x] == 3, x]'
+# {{x -> (7 - 3*Sqrt[5])/2}, {x -> (7 + 3*Sqrt[5])/2}}
+woxi eval 'Solve[Sqrt[x] + 1/Sqrt[x] == 3, x]'
+# {{x -> Root[-1 + 18*#1 - 79*#1^2 + 18*#1^3 - #1^4 & , 2, 0]}, …}
+```
+
+Woxi does not substitute `u = Sqrt[x]` (or `u = (2 + y)^(1/3)`), so `Solve`
+answers with `Root` objects or stays unevaluated, and `NSolve` falls back to
+a numeric search that lands a few ULPs off (`159.83316151184493` for
+`79 + 33 Sqrt[6]`, correctly `159.83316151184488`). wolframscript's
+`NSolve` also lists such roots in the reverse of `Solve`'s order.
+
+### `Sort` puts a sum before a lone monomial of a call
+
+```sh
+wolframscript -code 'Sort[{Pi + 2 Pi C[1], 2 Pi C[1], -Pi/3 + 2 Pi C[1]}]'
+# {2*Pi*C[1], -1/3*Pi + 2*Pi*C[1], Pi + 2*Pi*C[1]}
+woxi eval 'Sort[{Pi + 2 Pi C[1], 2 Pi C[1], -Pi/3 + 2 Pi C[1]}]'
+# {-1/3*Pi + 2*Pi*C[1], Pi + 2*Pi*C[1], 2*Pi*C[1]}
+```
+
+`canonical_cmp`'s class rule for sums (decoded on polynomials in `x`) sorts
+these sums before the monomial; `Order[2 Pi C[1], Pi + 2 Pi C[1]]` is `1`
+in both. Solve's trig families sort with their own key for this reason.
+
+### NDSolve does not integrate complex-valued equations
+
+```sh
+wolframscript -code 'NDSolve[{x'"'"'[t] == I x[t], x[0] == 1}, x, {t, 0, 1}]'
+# {{x -> InterpolatingFunction[{{0., 1.}}, …]}} with complex values
+woxi eval 'NDSolve[{x'"'"'[t] == I x[t], x[0] == 1}, x, {t, 0, 1}]'
+# unevaluated
+```
+
+Woxi's integrator carries a real state vector; a right-hand side written
+with `I` is only accepted when it is real along the trajectory
+(`Sqrt[2 + I x[t]] Sqrt[2 - I x[t]]`).
+
+### Guard digits of small arbitrary-precision numbers
+
+WL shows the decimal digits of its binary value, which is rounded to whole
+64-bit limbs below the binary point (see `wl_fraction_digits`). Woxi rounds
+`N[rational, p]` to that grid too, which makes e.g. `N[3/700000000, 20]`
+(`…428572`) match, but for some magnitudes WL's last displayed digit is one
+lower than the nearest grid point gives: `N[10^-8/7, 20]` is `…285715` in
+Woxi and `…285713` in WL, and `N[10^-9/7, 45]` `…715` against `…714`.
+Truncating instead of rounding to the grid fixes those and breaks as many
+others, so the rule is not decoded yet.
+
 ### Arbitrary-precision `Root` padding
 
 `N[Root[#^3 - # - 1 &, 1], 10]` prints ~40 digits in both engines, but only the
@@ -4846,14 +5015,6 @@ woxi eval 'Together[1/x + 1/y, Modulus -> 3]'   # stays unevaluated
 
 The modular path cancels over GF(p) with univariate polynomial arithmetic,
 so a multivariate fraction (or a composite modulus) is returned unevaluated.
-
-### `PolyhedronData["StellaOctangula", …]` is unverified against wolframscript
-
-The entity was added from the geometry (compound of two unit-edge
-tetrahedra, vertices at the cube corners of side `1/Sqrt[2]`) without a
-wolframscript to compare against. The vertex and face *order*, the
-`"Classes"` list and the `"Volume"` / `"SurfaceArea"` / `"Inradius"` /
-`"Midradius"` values (currently `Missing[…]`) may differ from Wolfram's.
 
 ### `BesselJ/I/Y/K` at complex arguments lose accuracy for large `|z|`
 

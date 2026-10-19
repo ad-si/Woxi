@@ -5106,6 +5106,24 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   if contains_var(&lin_a, var) || contains_var(&lin_b, var) {
     return None;
   }
+  // A negative `a` is turned positive the way wolframscript does it, through
+  // the parity of the function: `Sin[1 - x] == 1/2` is solved as
+  // `Sin[-1 + x] == -1/2`, giving `1 + (7*Pi)/6 + 2*Pi*C[1]`.
+  let evaluated =
+    |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e);
+  let flipped_rhs;
+  let (lin_a, lin_b, rhs) = if try_eval_to_f64(&lin_a).is_some_and(|v| v < 0.0)
+  {
+    let rhs = if trig_name == "Cos" {
+      rhs
+    } else {
+      flipped_rhs = evaluated(neg1(rhs.clone()));
+      &flipped_rhs
+    };
+    (evaluated(neg1(lin_a)), evaluated(neg1(lin_b)), rhs)
+  } else {
+    (lin_a, lin_b, rhs)
+  };
   // Constant rhs. The simplified special forms below apply to Sin/Cos at
   // {-1, 0, 1} and Tan/Cot at 0; every other numeric constant (including
   // Tan/Cot at ±1) uses the general inverse-trig family.
@@ -5216,14 +5234,11 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   {
     solutions
   } else {
+    // `var = (family - b)/a`, as wolframscript leaves it — not expanded:
+    // `(Pi/2 + 2*Pi*C[1])/2`.
     solutions
       .into_iter()
-      .map(|body| {
-        eval(call1(
-          "Expand",
-          div2(minus2(body, lin_b.clone()), lin_a.clone()),
-        ))
-      })
+      .map(|body| eval(div2(minus2(body, lin_b.clone()), lin_a.clone())))
       .collect()
   };
 
@@ -5307,17 +5322,83 @@ fn try_solve_trig_pair_eq(lhs: &Expr, rhs: &Expr, var: &str) -> Option<Expr> {
     } else {
       (constant, coef)
     };
-    let body = eval(call1(
-      "Expand",
-      div2(plus2(constant, two_pi_c1.clone()), coef),
-    ));
-    if !bodies
-      .iter()
-      .any(|b| expr_to_string(b) == expr_to_string(&body))
-    {
-      bodies.push(body);
+    // `coef*var == constant + 2*Pi*k` with an integer coef m has m families
+    // of period 2*Pi, which is how wolframscript writes them: each
+    // representative (constant + 2*Pi*j)/m moved into (-Pi, Pi], plus
+    // 2*Pi*C[1] (`Sin[x] == Cos[x]` is -3*Pi/4 and Pi/4).
+    let mut new_bodies = Vec::new();
+    let pi_multiple =
+      matches!(eval(div2(constant.clone(), pi.clone())), Expr::Integer(_))
+        || matches!(
+          eval(div2(constant.clone(), pi.clone())),
+          Expr::FunctionCall { ref name, .. } if name == "Rational"
+        );
+    match &coef {
+      Expr::Integer(m) if *m >= 1 && *m <= 64 && pi_multiple => {
+        for j in 0..*m {
+          let rep = eval(div2(
+            plus2(constant.clone(), times2(Expr::Integer(2 * j), pi.clone())),
+            Expr::Integer(*m),
+          ));
+          let rep = match try_eval_to_f64(&rep) {
+            Some(v) => {
+              let turns = ((v - std::f64::consts::PI)
+                / (2.0 * std::f64::consts::PI))
+                .ceil();
+              if turns == 0.0 {
+                rep
+              } else {
+                eval(minus2(
+                  rep,
+                  times2(Expr::Integer(turns as i128 * 2), pi.clone()),
+                ))
+              }
+            }
+            None => rep,
+          };
+          new_bodies.push(eval(plus2(rep, two_pi_c1.clone())));
+        }
+      }
+      _ => new_bodies.push(eval(call1(
+        "Expand",
+        div2(plus2(constant, two_pi_c1.clone()), coef),
+      ))),
+    }
+    for body in new_bodies {
+      if !bodies
+        .iter()
+        .any(|b| expr_to_string(b) == expr_to_string(&body))
+      {
+        bodies.push(body);
+      }
     }
   }
+  // In canonical order: the bare `2*Pi*C[1]` before every `c + 2*Pi*C[1]`,
+  // and those by their constant, ascending.
+  let constant_of = |body: &Expr| -> f64 {
+    let at_zero = crate::evaluator::pattern_matching::apply_replace_all_ast(
+      body,
+      &rule_expr(c1.clone(), Expr::Integer(0)),
+    )
+    .ok()
+    .and_then(|e| crate::evaluator::evaluate_expr_to_expr(&e).ok());
+    at_zero
+      .and_then(|e| try_eval_to_f64(&e))
+      .unwrap_or(f64::INFINITY)
+  };
+  let mut keyed: Vec<(bool, f64, Expr)> = bodies
+    .into_iter()
+    .map(|b| {
+      let c = constant_of(&b);
+      (c != 0.0, c, b)
+    })
+    .collect();
+  keyed.sort_by(|x, y| {
+    (x.0, x.1)
+      .partial_cmp(&(y.0, y.1))
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  let bodies: Vec<Expr> = keyed.into_iter().map(|(_, _, b)| b).collect();
   let element_c1_integers = call("Element", vec![c1, id_expr("Integers")]);
   let var_expr = id_expr(var);
   Some(Expr::List(

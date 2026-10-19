@@ -1777,6 +1777,17 @@ pub fn inverse_gamma_regularized_ast(
       expr_to_f64(&args[2]),
     ) && av > 0.0
     {
+      // For a == 1, Q(1, z) = E^-z inverts in closed form, which is exact
+      // where the bisection on a computed Q loses digits:
+      // InverseGammaRegularized[1, 0, 0.5] is Log[2.].
+      if av == 1.0 {
+        let rest = (-z0v).exp() - qv;
+        return Ok(Expr::Real(if z0v == 0.0 {
+          -(-qv).ln_1p()
+        } else {
+          -rest.ln()
+        }));
+      }
       let target = gamma_regularized_numeric(av, z0v) - qv;
       return Ok(Expr::Real(inverse_gamma_regularized_numeric(av, target)));
     }

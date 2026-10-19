@@ -113,6 +113,10 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
 
+  if let Some(result) = function_rule_automaton(args) {
+    return result;
+  }
+
   let rule = match parse_rule(&args[0]) {
     Ok(rule) => rule,
     Err(msg) => {
@@ -179,6 +183,129 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::List(exprs.into()))
+}
+
+/// `CellularAutomaton[{f, {}, neighborhood}, init, steps]` — a rule given as
+/// a function of the list of neighbor values (in offset order). The cells are
+/// arbitrary expressions and the init is cyclic: a flat list for a 1D
+/// neighborhood, a matrix for a 2D one. `None` when the rule is not of this
+/// form; background inits are left unevaluated.
+fn function_rule_automaton(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::List(spec) = &args[0] else {
+    return None;
+  };
+  let [func, Expr::List(order), nbhd_spec] = spec.as_ref() else {
+    return None;
+  };
+  if !order.is_empty() || matches!(func, Expr::Integer(_) | Expr::List(_)) {
+    return None;
+  }
+  let keep = || Some(Ok(unevaluated("CellularAutomaton", args)));
+  let Ok(nbhd) = parse_neighborhood(nbhd_spec, &args[0]) else {
+    return keep();
+  };
+  let steps = parse_step_spec(&args[2])?;
+  let Expr::List(rows_in) = &args[1] else {
+    return keep();
+  };
+  let matrix_init = rows_in.iter().all(|r| matches!(r, Expr::List(_)));
+  if rows_in.is_empty() || matrix_init != nbhd.two_d {
+    return keep();
+  }
+  let mut grid: Vec<Vec<Expr>> = if nbhd.two_d {
+    rows_in
+      .iter()
+      .map(|r| match r {
+        Expr::List(cells) => cells.to_vec(),
+        _ => unreachable!(),
+      })
+      .collect()
+  } else {
+    vec![rows_in.to_vec()]
+  };
+  let width = grid[0].len();
+  if width == 0 || grid.iter().any(|r| r.len() != width) {
+    return keep();
+  }
+  let height = grid.len();
+  let t_max = *steps.times.last()?;
+  if height.checked_mul(width)?.checked_mul(t_max.max(1))? > 10_000_000 {
+    return keep();
+  }
+  let (rows_win, cols_win) = match (steps.windows.as_slice(), nbhd.two_d) {
+    ([], _) => (Window::Auto, Window::Auto),
+    ([x], false) => (Window::Auto, *x),
+    ([x], true) => (*x, Window::Auto),
+    ([x, y], true) => (*x, *y),
+    _ => return keep(),
+  };
+
+  let mut snapshots = Vec::new();
+  let mut next_time = 0;
+  for t in 0..=t_max {
+    if steps.times.get(next_time) == Some(&t) {
+      snapshots.push(grid.clone());
+      next_time += 1;
+    }
+    if t == t_max {
+      break;
+    }
+    let mut next = Vec::with_capacity(height);
+    for x in 0..height as i64 {
+      let mut row = Vec::with_capacity(width);
+      for y in 0..width as i64 {
+        let neighbors: Vec<Expr> = nbhd
+          .offsets
+          .iter()
+          .map(|&(dr, dc)| {
+            grid[(x + dr).rem_euclid(height as i64) as usize]
+              [(y + dc).rem_euclid(width as i64) as usize]
+              .clone()
+          })
+          .collect();
+        match crate::evaluator::apply_function_to_arg(
+          func,
+          &Expr::List(neighbors.into()),
+        ) {
+          Ok(v) => row.push(v),
+          Err(e) => return Some(Err(e)),
+        }
+      }
+      next.push(row);
+    }
+    grid = next;
+  }
+
+  let indices = |window: Window, len: usize| -> Vec<usize> {
+    match window {
+      Window::Range(from, to, step) => (from..=to)
+        .step_by(step)
+        .map(|off| off.rem_euclid(len as i64) as usize)
+        .collect(),
+      Window::Auto | Window::All => (0..len).collect(),
+    }
+  };
+  let row_idx = indices(rows_win, height);
+  let col_idx = indices(cols_win, width);
+  let mut states: Vec<Expr> = snapshots
+    .iter()
+    .map(|g| {
+      let pick = |r: usize| -> Expr {
+        Expr::List(col_idx.iter().map(|&c| g[r][c].clone()).collect())
+      };
+      if nbhd.two_d {
+        Expr::List(row_idx.iter().map(|&r| pick(r)).collect())
+      } else {
+        pick(0)
+      }
+    })
+    .collect();
+  if steps.single_state {
+    return Some(Ok(states.remove(0)));
+  }
+  Some(Ok(Expr::List(states.into())))
 }
 
 /// CellularAutomaton[rule, init, t, offs] — the discontinued four-argument

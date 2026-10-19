@@ -443,6 +443,23 @@ fn extract_assumptions_inner(assumption: &Expr, info: &mut AssumptionInfo) {
       let left = &operands[0];
       let right = &operands[1];
 
+      // An inequality only holds between reals: x > -5 makes x real.
+      if matches!(
+        op,
+        ComparisonOp::Greater
+          | ComparisonOp::GreaterEqual
+          | ComparisonOp::Less
+          | ComparisonOp::LessEqual
+      ) {
+        for side in [left, right] {
+          if let Expr::Identifier(name) = side
+            && !info.real_vars.contains(name)
+          {
+            info.real_vars.push(name.clone());
+          }
+        }
+      }
+
       // x > c where c >= 0 → positive (strictly)
       if matches!(op, ComparisonOp::Greater)
         && let Expr::Identifier(name) = left
@@ -949,6 +966,9 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
   }
   if let Some(rooted) = refine_positive_base_root(expr, info) {
     return rooted;
+  }
+  if let Some(power) = refine_even_power_of_abs(expr, info) {
+    return power;
   }
   if let Some(rooted) = refine_sum_root(expr, info, assumption) {
     return rooted;
@@ -1792,14 +1812,96 @@ fn refine_positive_base_root(
     _ => return None,
   };
   let product = n.checked_mul(p)?;
-  if product == 0
-    || product % q != 0
-    || !is_positive_under_assumptions(base, info)
-  {
+  if product == 0 || product % q != 0 {
     return None;
   }
-  let rooted = make_power_or_identity(base, product / q);
+  let m = product / q;
+  let rooted = if is_positive_under_assumptions(base, info) {
+    make_power_or_identity(base, m)
+  } else if n % 2 == 0 && is_real_under_assumptions(base, info) {
+    // An even power of a real base is |b|^n, so the root is |b|^m — and
+    // just b^m for an even m: Sqrt[(1 + x)^4] is (1 + x)^2 for real x.
+    if m % 2 == 0 {
+      make_power_or_identity(base, m)
+    } else {
+      let abs = simplify_abs_with_signs(base, info)
+        .unwrap_or_else(|| call1("Abs", base.clone()));
+      make_power_or_identity(&abs, m)
+    }
+  } else {
+    return None;
+  };
   Some(crate::evaluator::evaluate_expr_to_expr(&rooted).unwrap_or(rooted))
+}
+
+/// Whether `expr` is real under the assumptions: a polynomial with real
+/// coefficients in variables assumed real (or bounded, or integer).
+fn is_real_under_assumptions(expr: &Expr, info: &AssumptionInfo) -> bool {
+  match expr {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
+    Expr::Identifier(name) => {
+      info.real_vars.contains(name) || info.integer_vars.contains(name)
+    }
+    Expr::FunctionCall { name, args } if name == "Rational" => args.len() == 2,
+    Expr::FunctionCall { name, args } if name == "Plus" || name == "Times" => {
+      args.iter().all(|a| is_real_under_assumptions(a, info))
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      matches!(args[1], Expr::Integer(_))
+        && is_real_under_assumptions(&args[0], info)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus | BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      is_real_under_assumptions(left, info)
+        && is_real_under_assumptions(right, info)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      matches!(right.as_ref(), Expr::Integer(_))
+        && is_real_under_assumptions(left, info)
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_real_under_assumptions(operand, info),
+    _ => false,
+  }
+}
+
+/// Abs[u]^n → u^n for an even n and a real u.
+fn refine_even_power_of_abs(
+  expr: &Expr,
+  info: &AssumptionInfo,
+) -> Option<Expr> {
+  let (base, exp) = match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => return None,
+  };
+  let Expr::Integer(n) = exp else { return None };
+  let Expr::FunctionCall { name, args } = base else {
+    return None;
+  };
+  if name != "Abs" || args.len() != 1 || n % 2 != 0 {
+    return None;
+  }
+  if !is_real_under_assumptions(&args[0], info) {
+    return None;
+  }
+  let power = pow2(args[0].clone(), Expr::Integer(*n));
+  Some(crate::evaluator::evaluate_expr_to_expr(&power).unwrap_or(power))
 }
 
 /// B^(-r) → 1/(B^r refined) for a negative rational exponent, so the
@@ -1828,8 +1930,13 @@ fn refine_reciprocal_root(
   if expr_to_string(&refined) == expr_to_string(&root) {
     return None;
   }
-  crate::evaluator::evaluate_expr_to_expr(&pow2(refined, Expr::Integer(-1)))
-    .ok()
+  let reciprocal =
+    crate::evaluator::evaluate_expr_to_expr(&pow2(refined, Expr::Integer(-1)))
+      .ok()?;
+  // Only when it is simpler by wolframscript's measure: (k^4 x)^(-1/4)
+  // (count 10) stays, as 1/(k x^(1/4)) counts 11.
+  (wl_simplify_count(&reciprocal) < wl_simplify_count(expr))
+    .then_some(reciprocal)
 }
 
 /// An exponent written as a ratio of two integers, `(numerator, denominator)`.

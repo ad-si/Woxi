@@ -1075,6 +1075,16 @@ pub(crate) fn axes_label_svg_at(
 /// reads `-1.0, -0.5, 0.0, 0.5, 1.0`, not `-1, -0.5, 0, 0.5, 1`, while one
 /// stepping by 2 reads `0, 2, 4`.
 pub(crate) fn format_tick_with_step(v: f64, step: f64) -> String {
+  // A tick set spaced finer than `10^-5` lives entirely in scientific
+  // notation: its labels are not integers however close to one they sit
+  // (`2*10^-36` is not the axis zero), only a tick a hair off zero
+  // relative to the step is.
+  if step.is_finite() && step != 0.0 && step.abs() < 1e-5 {
+    if v.abs() < step.abs() * 1e-6 {
+      return "0".to_string();
+    }
+    return format_scientific_tick(v);
+  }
   let decimals = tick_step_decimals(step);
   if decimals == 0 {
     return format_tick(v);
@@ -1107,6 +1117,22 @@ fn tick_step_decimals(step: f64) -> usize {
     .unwrap_or(6)
 }
 
+/// `v` as `m×10^e` with Unicode superscript exponent digits.
+fn format_scientific_tick(v: f64) -> String {
+  let exp = v.abs().log10().floor() as i32;
+  let mantissa = v / 10f64.powi(exp);
+  let mantissa = if (mantissa - mantissa.round()).abs() < 1e-9 {
+    format!("{}", mantissa.round() as i64)
+  } else {
+    let s = format!("{mantissa:.3}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+  };
+  format!(
+    "{mantissa}\u{d7}10{}",
+    crate::functions::graphics::to_unicode_script(&exp.to_string(), true)
+  )
+}
+
 pub(crate) fn format_tick(v: f64) -> String {
   // Outside `[10^-5, 10^6)` the Wolfram Language labels a tick in
   // scientific notation — a frequency axis running to 6*10^15 is labelled
@@ -1123,18 +1149,7 @@ pub(crate) fn format_tick(v: f64) -> String {
   }
   let magnitude = v.abs();
   if magnitude >= 1e6 || (magnitude > 0.0 && magnitude < 1e-5) {
-    let exp = magnitude.log10().floor() as i32;
-    let mantissa = v / 10f64.powi(exp);
-    let mantissa = if (mantissa - mantissa.round()).abs() < 1e-9 {
-      format!("{}", mantissa.round() as i64)
-    } else {
-      let s = format!("{mantissa:.3}");
-      s.trim_end_matches('0').trim_end_matches('.').to_string()
-    };
-    return format!(
-      "{mantissa}\u{d7}10{}",
-      crate::functions::graphics::to_unicode_script(&exp.to_string(), true)
-    );
+    return format_scientific_tick(v);
   }
   // Enough decimals to tell neighbouring ticks apart — a 0.0002 step used
   // to render every label as `0.0`.
@@ -1725,6 +1740,15 @@ fn parse_filling_rules(
   flatten_rules(replacement, &mut items);
   let mut rules = Vec::new();
   for item in items {
+    // A bare series number `i` directly in the list (`Filling -> {1, 3}`)
+    // is shorthand for `i -> Axis`.
+    if let Expr::Integer(n) = item
+      && *n >= 1
+      && matches!(replacement, Expr::List(top) if top.iter().any(|t| std::ptr::eq(t, item)))
+    {
+      rules.push((*n as usize - 1, FillTarget::Level(Filling::Axis), None));
+      continue;
+    }
     let (pattern, rhs) = match item {
       Expr::Rule {
         pattern,
@@ -4393,6 +4417,9 @@ pub(crate) fn build_plot_source(
         let style = &plot_style[i % plot_style.len()];
         (style.thickness, style.point_size, style.dashing.clone())
       };
+      let opacity = plot_style
+        .get(i % plot_style.len().max(1))
+        .and_then(|s| s.opacity);
       let scatter = if is_scatter.is_empty() {
         false
       } else {
@@ -4409,6 +4436,7 @@ pub(crate) fn build_plot_source(
         thickness,
         point_size,
         dashing,
+        opacity,
       }
     })
     .collect();
@@ -5264,6 +5292,7 @@ pub(crate) fn render_merged_plot_source(
       thickness: s.thickness,
       point_size: s.point_size,
       dashing: s.dashing.clone(),
+      opacity: s.opacity,
       ..SeriesStyle::default()
     })
     .collect();
@@ -7472,6 +7501,7 @@ pub(crate) fn histogram_plot_source(
       thickness: None,
       point_size: None,
       dashing: None,
+      opacity: None,
     });
   }
 
@@ -8771,37 +8801,10 @@ pub(crate) fn apply_markers_to_source(
 pub(crate) fn parse_plot_style(replacement: &Expr) -> Vec<SeriesStyle> {
   let val = evaluate_expr_to_expr(replacement).unwrap_or(replacement.clone());
   if let Expr::List(items) = &val {
-    // Check if this is a list of per-series styles or a single compound style.
-    // If any item is itself a Directive or a List, treat as per-series.
-    // If all items are simple directives (colors, Thick, etc.), treat as
-    // a single compound style applied to all series.
-    let has_per_series = items.iter().any(|item| {
-      matches!(
-        item,
-        Expr::FunctionCall { name, .. } if name == "Directive"
-      ) || matches!(item, Expr::List(_))
-        || matches!(
-          item,
-          Expr::FunctionCall { name, .. }
-            if name == "RGBColor"
-              || name == "Hue"
-              || name == "GrayLevel"
-              || name == "Darker"
-              || name == "Lighter"
-              || name == "Blend"
-        )
-        || matches!(item, Expr::Identifier(s) if crate::functions::graphics::named_color(s).is_some())
-    });
-    if has_per_series {
-      items.iter().map(parse_one_series_style).collect()
-    } else {
-      // Single compound style: {Purple, Thick, Dashed}
-      let mut style = SeriesStyle::default();
-      for item in items {
-        apply_style_directive(item, &mut style);
-      }
-      vec![style]
-    }
+    // A list is one style per series (`{Thin, Thick}` strokes the first
+    // curve thin and the second thick). Callers drawing a single series
+    // merge the entries into one compound style (`{Purple, Thick, Dashed}`).
+    items.iter().map(parse_one_series_style).collect()
   } else {
     let style = parse_one_series_style(&val);
     if style.color.is_some()

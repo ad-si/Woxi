@@ -1217,6 +1217,11 @@ pub fn dispatch_complex_and_special(
     "TagBox" if args.len() == 2 => {
       return Some(Ok(unevaluated(name, args)));
     }
+    // TemplateBox[{…}, "name"] — a front-end display template (a `Row` is
+    // `TemplateBox[{…}, "RowDefault"]`). Inert.
+    "TemplateBox" if args.len() >= 2 => {
+      return Some(Ok(unevaluated(name, args)));
+    }
     "InterpretationBox" if args.len() == 2 => {
       return Some(Ok(unevaluated(name, args)));
     }
@@ -3037,9 +3042,9 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
       "NumberForm" if args.len() == 1 => string_ast::number_form_parts(val, 6)?,
       "NumberForm" if args.len() == 2 => match &args[1] {
         Expr::Integer(n) => string_ast::number_form_parts(val, *n as i64)?,
-        Expr::List(spec) if spec.len() == 2 => match &spec[1] {
-          Expr::Integer(f) => {
-            string_ast::number_form_fixed_parts(val, *f as i64)?
+        Expr::List(spec) if spec.len() == 2 => match (&spec[0], &spec[1]) {
+          (Expr::Integer(n), Expr::Integer(f)) => {
+            string_ast::number_form_fixed_parts(val, *n as i64, *f as i64)?
           }
           _ => return None,
         },
@@ -3053,17 +3058,8 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
   // single `TagBox[..., Head]`.
   let first = args.first()?;
   if let Expr::List(items) = first {
-    let inner_boxes: Option<Vec<Expr>> = items
-      .iter()
-      .map(|v| {
-        let (mantissa, exp) = parts_for(v)?;
-        Some(number_display_inner_box(
-          scientific_value_box(&mantissa, exp),
-          v,
-        ))
-      })
-      .collect();
-    return Some(wrap_list_number_display_box(inner_boxes?, name));
+    let inner_boxes = number_display_list_boxes(items, &parts_for)?;
+    return Some(wrap_list_number_display_box(inner_boxes, name));
   }
   let Some((mantissa, exp)) = parts_for(first) else {
     return option_number_form_box(name, args);
@@ -3073,6 +3069,30 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
     first,
     name,
   ))
+}
+
+/// Per-element display boxes of a (possibly nested) list argument: a nested
+/// list becomes its own braced, comma-separated row, so a matrix threads
+/// through the number form like a flat list does.
+fn number_display_list_boxes(
+  items: &[Expr],
+  parts_for: &dyn Fn(&Expr) -> Option<(String, Option<i64>)>,
+) -> Option<Vec<Expr>> {
+  items
+    .iter()
+    .map(|v| {
+      if let Expr::List(sub) = v {
+        return Some(braced_row_box(number_display_list_boxes(
+          sub, parts_for,
+        )?));
+      }
+      let (mantissa, exp) = parts_for(v)?;
+      Some(number_display_inner_box(
+        scientific_value_box(&mantissa, exp),
+        v,
+      ))
+    })
+    .collect()
 }
 
 /// `NumberForm[x, spec, opts…]` with display options (`NumberPadding`,
@@ -3148,6 +3168,11 @@ fn wrap_number_display_box(inner: Expr, value: &Expr, head: &str) -> Expr {
 /// Wrap the per-element display boxes of a list argument with wolframscript's
 /// `TagBox[RowBox[{"{", RowBox[{elem, ",", elem, ...}], "}"}], head]`.
 fn wrap_list_number_display_box(elems: Vec<Expr>, head: &str) -> Expr {
+  call("TagBox", vec![braced_row_box(elems), id_expr(head)])
+}
+
+/// `RowBox[{"{", RowBox[{e1, ",", e2, …}], "}"}]`.
+fn braced_row_box(elems: Vec<Expr>) -> Expr {
   let mut row = Vec::with_capacity(elems.len().saturating_mul(2));
   for (i, elem) in elems.into_iter().enumerate() {
     if i > 0 {
@@ -3155,10 +3180,7 @@ fn wrap_list_number_display_box(elems: Vec<Expr>, head: &str) -> Expr {
     }
     row.push(elem);
   }
-  let inner_row = row_box(row);
-  let braces = vec![str_expr("{"), inner_row, str_expr("}")];
-  let braced = row_box(braces);
-  call("TagBox", vec![braced, id_expr(head)])
+  row_box(vec![str_expr("{"), row_box(row), str_expr("}")])
 }
 
 /// StandardForm boxes for a derivative — `f′[x]`, `f′′[x]`, `f⁽⁴⁾[x]`,
@@ -3864,8 +3886,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       if (name == "StandardForm" || name == "TraditionalForm")
         && args.len() == 1 =>
     {
+      // These boxes are what `ToBoxes`/`MakeBoxes` hand back, so they take
+      // the box-text shapes wolframscript writes (`TemplateBox[…,
+      // "RowDefault"]` for a `Row`), not those of Woxi's own renderers.
       let inner_box = if name == "TraditionalForm" {
-        expr_to_box_form_traditional(&args[0])
+        expr_to_box_form_traditional_text(&args[0])
       } else {
         expr_to_box_form(&args[0])
       };
@@ -5420,6 +5445,49 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         tf_row(vec![tf_string("det"), tf_parens(tf(&args[0]))])
       }
     }
+    // In box text a matrix is wolframscript's MatrixForm template: the
+    // bracketed grid with its spacing options, word joiners inside the
+    // parentheses, tagged with the function that reads it back.
+    "MatrixForm" if args.len() == 1 && TF_BOX_TEXT.get() => {
+      if let Expr::List(rows) = &args[0]
+        && tf_is_matrix(rows)
+      {
+        let mut grid = tf_matrix_grid(rows);
+        if let Expr::FunctionCall {
+          args: grid_args, ..
+        } = &mut grid
+        {
+          let mut extended = grid_args.to_vec();
+          for (option, value) in [
+            ("RowSpacings", Expr::Integer(1)),
+            ("ColumnSpacings", Expr::Integer(1)),
+            ("RowAlignments", id_expr("Baseline")),
+            ("ColumnAlignments", id_expr("Center")),
+          ] {
+            extended.push(rule_expr(id_expr(option), value));
+          }
+          *grid_args = extended.into();
+        }
+        let joiner = tf_string("\u{2060}");
+        let bracketed = tf_row(vec![
+          tf_string("("),
+          joiner.clone(),
+          grid,
+          joiner,
+          tf_string(")"),
+        ]);
+        let e = id_expr("BoxForm`e$");
+        tf_box(
+          "TagBox",
+          vec![
+            bracketed,
+            call("Function", vec![e.clone(), call1("MatrixForm", e)]),
+          ],
+        )
+      } else {
+        tf(&args[0])
+      }
+    }
     "MatrixForm" | "TableForm" if args.len() == 1 => {
       if let Expr::List(rows) = &args[0]
         && tf_is_matrix(rows)
@@ -5546,6 +5614,10 @@ fn tf(expr: &Expr) -> Expr {
     // which the box renderers take care of; the places where a string
     // contributes bare display text (a `Row` item, a `Style` body) go
     // through `tf_display`.
+    // In box text it is spelled with its escapes too (`"\"a\\n\""`).
+    Expr::String(_) if TF_BOX_TEXT.get() => {
+      tf_string(&crate::syntax::expr_to_input_form(expr))
+    }
     Expr::String(s) => tf_string(&format!("\"{s}\"")),
     Expr::FunctionCall { name, args } => tf_call(name, args),
     // A computed head — `HoldForm[f][x]`, which is how a Demonstration
@@ -11655,16 +11727,15 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
             let coords: Vec<Expr> = c1
               .iter()
               .zip(c2.iter())
+              // Left as the quotient it is, the way wolframscript prints it:
+              // `-1/32*Pi/(4 - Pi/16)`.
               .map(|(p, q)| {
-                call1(
-                  "Together",
-                  div2(
-                    plus(vec![
-                      times(vec![a1.clone(), p.clone()]),
-                      times(vec![Expr::Integer(-1), a2.clone(), q.clone()]),
-                    ]),
-                    plus(vec![a1.clone(), neg(a2.clone())]),
-                  ),
+                div2(
+                  plus(vec![
+                    times(vec![a1.clone(), p.clone()]),
+                    times(vec![Expr::Integer(-1), a2.clone(), q.clone()]),
+                  ]),
+                  plus(vec![a1.clone(), neg(a2.clone())]),
                 )
               })
               .collect();
@@ -15307,20 +15378,27 @@ fn region_line_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
       }
     }
   }
-  Some(match points.len() {
-    0 => call1("EmptyRegion", Expr::Integer(dims as i128)),
-    1 => call1("Point", Expr::List(points.remove(0).into())),
-    _ => call1(
-      "Point",
-      Expr::List(
-        points
-          .into_iter()
-          .map(|p| Expr::List(p.into()))
-          .collect::<Vec<_>>()
-          .into(),
-      ),
-    ),
-  })
+  if points.is_empty() {
+    return Some(call1("EmptyRegion", Expr::Integer(dims as i128)));
+  }
+  // Wolfram lists the crossings in reverse canonical order, and as a
+  // multi-point `Point[{p1, …}]` even when there is only one — except for a
+  // single inexact crossing, which is a plain `Point[p]`.
+  let inexact = points
+    .iter()
+    .flatten()
+    .any(|c| matches!(c, Expr::Real(_) | Expr::BigFloat(..)));
+  if inexact && points.len() == 1 {
+    return Some(call1("Point", Expr::List(points.remove(0).into())));
+  }
+  let list = Expr::List(
+    points
+      .into_iter()
+      .map(|p| Expr::List(p.into()))
+      .collect::<Vec<_>>()
+      .into(),
+  );
+  Some(call1("Point", ev(call1("Reverse", call1("Sort", list)))?))
 }
 
 /// Render coordinates back as integers when the source region used integers,

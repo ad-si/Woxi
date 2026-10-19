@@ -194,7 +194,15 @@ pub fn dispatch_evaluation_control(
     "MaxwellDistribution" if args.len() == 1 => {
       return Some(Ok(unevaluated("MaxwellDistribution", args)));
     }
-    "MarchenkoPasturDistribution" if args.len() == 1 || args.len() == 2 => {
+    // The scale defaults to 1 and is written out: MarchenkoPasturDistribution[
+    // l] is MarchenkoPasturDistribution[l, 1].
+    "MarchenkoPasturDistribution" if args.len() == 1 => {
+      return Some(Ok(unevaluated(
+        "MarchenkoPasturDistribution",
+        &[args[0].clone(), Expr::Integer(1)],
+      )));
+    }
+    "MarchenkoPasturDistribution" if args.len() == 2 => {
       return Some(Ok(unevaluated("MarchenkoPasturDistribution", args)));
     }
     "WignerSemicircleDistribution" if args.len() == 1 || args.len() == 2 => {

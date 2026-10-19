@@ -11059,14 +11059,36 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // Blocks that do not tile leave the step's ArrayFlatten unevaluated (with
+  // ArrayFlatten::match), and every later step wraps it again.
   #[test]
-  fn substitution_system_2d_incompatible_blocks_stay_unevaluated() {
+  fn substitution_system_2d_incompatible_blocks_leave_array_flatten() {
     assert_eq!(
       interpret(
-        "SubstitutionSystem[{1 -> {{1, 1}}, 0 -> {{0}, {0}}}, {{1, 0}}, 1]"
+        "SubstitutionSystem[{1 -> {{1, 1}}, 0 -> {{0}, {0}}}, {{1, 0}}, 2]"
       )
       .unwrap(),
-      "SubstitutionSystem[{1 -> {{1, 1}}, 0 -> {{0}, {0}}}, {{1, 0}}, 1]"
+      "{{{1, 0}}, ArrayFlatten[{{{{1, 1}}, {{0}, {0}}}}, 2], \
+       ArrayFlatten[ArrayFlatten[{{{{1, 1}}, {{0}, {0}}}}, 2], 2]}"
+    );
+  }
+
+  #[test]
+  fn array_flatten_blocks_must_tile() {
+    woxi::clear_state();
+    let result =
+      woxi::interpret_with_stdout("ArrayFlatten[{{{{1, 1}}, {{0}, {0}}}}]")
+        .unwrap();
+    assert_eq!(result.result, "ArrayFlatten[{{{{1, 1}}, {{0}, {0}}}}]");
+    assert_eq!(result.warnings.len(), 1);
+    assert!(result.warnings[0].starts_with("ArrayFlatten::match:"));
+    assert!(
+      result.warnings[0]
+        .ends_with("Here the condition fails for k = 1 and i_k = j_k = 1.")
+    );
+    assert_eq!(
+      interpret("Quiet[ArrayFlatten[x]]").unwrap(),
+      "ArrayFlatten[x]"
     );
   }
 
@@ -11078,12 +11100,30 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // A `{_, _}` rule matches every position: it sets the background, and
+  // the rules after it neither take effect nor size the array.
   #[test]
   fn sparse_array_blank_position_rule_sets_background() {
     assert_eq!(
       interpret("Normal[SparseArray[{{1, 1} -> 1, {_, _} -> 5, {2, 2} -> 3}]]")
         .unwrap(),
-      "{{1, 5}, {5, 3}}"
+      "{{1}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{{2, 2} -> 3, {_, _} -> 5}]]").unwrap(),
+      "{{5, 5}, {5, 3}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{{_, _} -> 5, {2, 2} -> 3}]]").unwrap(),
+      "SparseArray[{{_, _} -> 5, {2, 2} -> 3}]"
+    );
+    // Other pattern rules leave the sizing to the explicit positions.
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{{1, 2} -> 1, {i_, j_} /; i > j -> 7, {3, 3} -> 3}]]"
+      )
+      .unwrap(),
+      "{{0, 1, 0}, {7, 0, 0}, {7, 7, 3}}"
     );
     assert_eq!(
       interpret("Normal[SparseArray[Keys[#] -> Values[#]]] &[ArrayRules[{{1, 0}, {0, 2}}]]")

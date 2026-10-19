@@ -325,6 +325,10 @@ struct StyleState {
   /// text — the same panel `Text[…, Background -> colour]` asks for — and
   /// means nothing to the other primitives, which never read it.
   text_background: Option<Color>,
+  /// How the lines of a multi-line label (`Text[Column[…, Left]]`) line up
+  /// against each other: the SVG `text-anchor` of the block's left or right
+  /// edge. `None` centers every line on the anchor.
+  text_line_anchor: Option<&'static str>,
   /// `Arrowheads[…]`: where the heads of the arrows that follow sit, how
   /// big they are and — for a custom head — what to draw there. `None`
   /// keeps Wolfram's default: one head at the tip.
@@ -573,6 +577,7 @@ impl Default for StyleState {
       font_style: "normal".to_string(),
       font_family: String::new(),
       text_background: None,
+      text_line_anchor: None,
       arrowheads: None,
       cap_form: None,
       join_form: None,
@@ -2340,7 +2345,7 @@ fn collect_primitives(
         "Sphere" | "Ball" => {
           parse_sphere(name == "Ball", args, style, prims);
         }
-        "Ellipsoid" if args.len() == 2 => {
+        "Ellipsoid" if args.len() == 2 || args.len() == 3 => {
           parse_ellipsoid(args, style, prims);
         }
         "Rectangle" => {
@@ -3254,6 +3259,44 @@ fn parse_ellipsoid(
   let Expr::List(second) = &args[1] else {
     return;
   };
+  // `Ellipsoid[c, {r1, r2}, {d1, d2}]`: semi-axes r1, r2 along the
+  // directions d1, d2.
+  if args.len() == 3 {
+    let radii: Option<Vec<f64>> = second.iter().map(expr_to_f64).collect();
+    let directions: Option<Vec<(f64, f64)>> = match &args[2] {
+      Expr::List(dirs) => dirs.iter().map(expr_to_point).collect(),
+      _ => None,
+    };
+    let (Some(radii), Some(dirs)) = (radii, directions) else {
+      return;
+    };
+    if radii.len() != 2 || dirs.len() != 2 {
+      return;
+    }
+    let unit = |(x, y): (f64, f64)| {
+      let n = x.hypot(y);
+      if n > 0.0 { (x / n, y / n) } else { (x, y) }
+    };
+    let (u, v) = (unit(dirs[0]), unit(dirs[1]));
+    const STEPS: usize = 120;
+    let points = (0..STEPS)
+      .map(|i| {
+        let t = std::f64::consts::TAU * i as f64 / STEPS as f64;
+        let (s, c) = t.sin_cos();
+        (
+          cx + radii[0] * c * u.0 + radii[1] * s * v.0,
+          cy + radii[0] * c * u.1 + radii[1] * s * v.1,
+        )
+      })
+      .collect();
+    prims.push(Primitive::PolygonPrim {
+      points,
+      holes: Vec::new(),
+      vertex_colors: None,
+      style: style.clone(),
+    });
+    return;
+  }
   // Semi-axes: an axis-aligned ellipse is exactly a `Disk`.
   if second.len() == 2 && second.iter().all(|e| !matches!(e, Expr::List(_))) {
     if let (Some(rx), Some(ry)) =
@@ -4255,8 +4298,17 @@ fn graphics_text_content(expr: &Expr) -> String {
         && args.len() >= 2)
         || (name == "Subsuperscript" && args.len() == 3) =>
     {
-      crate::functions::chart::expr_to_label(expr)
-        .unwrap_or_else(|| expr_to_string(expr))
+      // Flatten through the styled runs (with unmapped subscripts marked so
+      // the SVG writer lowers them) — the same text `italic_text_ranges`
+      // measures its italic ranges against.
+      let runs = with_marked_subscripts(|| manipulate_label_runs(expr, false));
+      let text = flatten_label_runs(&runs);
+      if text.is_empty() {
+        crate::functions::chart::expr_to_label(expr)
+          .unwrap_or_else(|| expr_to_string(expr))
+      } else {
+        text
+      }
     }
     // `ScientificForm`/`EngineeringForm` typeset as `mantissa×10ⁿ` on one
     // line, with the exponent as a superscript — not the two-line OutputForm
@@ -5200,6 +5252,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // setting alone.
   apply_agreed_row_part_styles(content, &mut local_style);
   let text = graphics_text_content(content);
+  local_style.text_line_anchor = column_line_anchor(content);
 
   let (x, y, scaled) = if args.len() >= 2 {
     expr_to_anchor(&args[1]).unwrap_or((0.0, 0.0, false))
@@ -5270,6 +5323,36 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     italic_ranges,
     style: local_style,
   });
+}
+
+/// The horizontal alignment `Column[{…}, Left | Right]` (or
+/// `Alignment -> …`) gives the lines of a label, as the SVG `text-anchor` of
+/// the block's edge; `None` for centered lines and for anything but a
+/// `Column`.
+fn column_line_anchor(content: &Expr) -> Option<&'static str> {
+  fn anchor_of(spec: &Expr) -> Option<&'static str> {
+    match spec {
+      Expr::Identifier(s) if s == "Left" => Some("start"),
+      Expr::Identifier(s) if s == "Right" => Some("end"),
+      Expr::List(items) => items.first().and_then(anchor_of),
+      _ => None,
+    }
+  }
+  let Expr::FunctionCall { name, args } = content else {
+    return None;
+  };
+  if name != "Column" {
+    return None;
+  }
+  args.iter().skip(1).find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Alignment") => {
+      anchor_of(replacement)
+    }
+    other => anchor_of(other),
+  })
 }
 
 /// The rotation direction of `Text[expr, pos, offset, direction]`: a plain
@@ -8206,7 +8289,7 @@ fn italic_text_ranges(content: &Expr, text: &str) -> Vec<(usize, usize)> {
   if text.contains('\n') {
     return Vec::new();
   }
-  let runs = manipulate_label_runs(content, false);
+  let runs = with_marked_subscripts(|| manipulate_label_runs(content, false));
   if flatten_label_runs(&runs) != text
     || !runs.iter().any(|r| r.italic)
     || runs.iter().all(|r| r.italic || r.text.is_empty())
@@ -9081,8 +9164,15 @@ fn render_primitive(
       if text.contains('\n') {
         // Multi-line text with tspan
         let lines: Vec<&str> = text.split('\n').collect();
+        // Left/right-aligned lines hang from the block's edge, half of its
+        // (estimated) width either side of the anchor.
+        let (line_anchor, sx) = match style.text_line_anchor {
+          Some("start") => ("start", sx - longest as f64 * fs * 0.5 / 2.0),
+          Some(_) => ("end", sx + longest as f64 * fs * 0.5 / 2.0),
+          None => ("middle", sx),
+        };
         out.push_str(&format!(
-          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{}{rotate_attr}>",
+          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{line_anchor}\" dominant-baseline=\"central\"{}{rotate_attr}>",
           color.to_svg_rgb(),
           style.font_weight,
           style.font_style,
@@ -10975,6 +11065,32 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
     }
 
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // `TemplateBox[{…}, "RowDefault"]`, the box text of a `Row`, draws as
+      // its parts in a row, a string part as its text.
+      "TemplateBox"
+        if args.len() == 2
+          && matches!(&args[1], Expr::String(t) if t == "RowDefault")
+          && matches!(&args[0], Expr::List(_)) =>
+      {
+        let Expr::List(items) = &args[0] else {
+          unreachable!("guarded by the match arm")
+        };
+        let parts: Vec<Expr> = items
+          .iter()
+          .map(|item| match item {
+            Expr::String(s)
+              if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') =>
+            {
+              crate::syntax::string_to_expr(s)
+                .ok()
+                .filter(|e| matches!(e, Expr::String(_)))
+                .unwrap_or_else(|| str_expr(&s[1..s.len() - 1]))
+            }
+            other => other.clone(),
+          })
+          .collect();
+        layout_box(&call1("RowBox", Expr::List(parts.into())), font_size)
+      }
       // RowBox: lay out children left-to-right, align baselines
       "RowBox" if args.len() == 1 => {
         let items = match &args[0] {
@@ -14244,6 +14360,22 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
         .first()
         .map(|a| box_expr_to_plain_in(a, spaced))
         .unwrap_or_default(),
+      // A row template draws its parts; a string part (`"\"abc\""`, as box
+      // text writes it) as its text.
+      "TemplateBox" if args.len() == 2 => match &args[0] {
+        Expr::List(items) => items
+          .iter()
+          .map(|item| match item {
+            Expr::String(s)
+              if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') =>
+            {
+              s[1..s.len() - 1].to_string()
+            }
+            other => box_expr_to_plain_in(other, spaced),
+          })
+          .collect(),
+        other => box_expr_to_plain_in(other, spaced),
+      },
       // An accent that has a combining mark is drawn over (under) its base
       // as that mark, `ÿ` for a double dot over `y`.
       "OverscriptBox" | "UnderscriptBox" if args.len() >= 2 => accent_text(
@@ -14939,6 +15071,14 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         Expr::Real(sd.color.2 as f64 / 255.0),
       ],
     ));
+    // `Opacity[a]` from `PlotStyle`; once any series is faded, the rest
+    // state their own (opaque) level so the directive can't leak onto them.
+    if let Some(a) = sd
+      .opacity
+      .or_else(|| ps.series.iter().any(|s| s.opacity.is_some()).then_some(1.0))
+    {
+      series_prims.push(call1("Opacity", Expr::Real(a)));
+    }
     if sd.is_scatter
       && let Some(marker) = &sd.marker
     {
@@ -16591,6 +16731,84 @@ fn grid_base_style(opts: &[Expr], outer: &GridStyle) -> GridStyle {
   gs
 }
 
+/// A `Column[…]` that is a cell of a `Grid` is set like the rest of the
+/// grid's text: in the grid's face and size, not as a free-standing column
+/// (which defaults to monospace at the base size). A column of plain text
+/// takes the grid's style directives, with the sans face as the default
+/// family. Other cells are returned unchanged.
+fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
+    return cell.clone();
+  }
+  let mut directives: Vec<Expr> = Vec::new();
+  if style.font_weight == Some("bold") {
+    directives.push(Expr::Identifier("Bold".to_string()));
+  }
+  if style.font_style == Some("italic") {
+    directives.push(Expr::Identifier("Italic".to_string()));
+  }
+  if let Some(size) = style.font_size {
+    directives.push(Expr::Real(size));
+  }
+  if let Some(color) = style.color {
+    directives.push(color.to_expr());
+  }
+  let family = style
+    .font_family
+    .clone()
+    .unwrap_or_else(|| "Atkinson Hyperlegible Next, sans-serif".to_string());
+  directives.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
+    replacement: Box::new(Expr::String(family)),
+  });
+  // A column of plain text lines sets as one text run, the way a `Row` cell
+  // does: a line break between the items, with no per-item boxes whose
+  // widths are only estimated.
+  if let Expr::FunctionCall { args, .. } = cell
+    && let Some(Expr::List(items)) = args.first()
+    && args.len() == 1
+    && !items.is_empty()
+    && items.iter().all(is_plain_text_item)
+  {
+    let mut parts: Vec<Expr> = Vec::with_capacity(items.len() * 2);
+    for (i, item) in items.iter().enumerate() {
+      if i > 0 {
+        parts.push(Expr::String("\n".to_string()));
+      }
+      parts.push(item.clone());
+    }
+    let row = call("Row", vec![Expr::List(parts.into())]);
+    return call(
+      "Style",
+      std::iter::once(row).chain(directives).collect::<Vec<_>>(),
+    );
+  }
+  cell.clone()
+}
+
+/// Whether a `Column` item is text only: a string, number or symbol, or a
+/// `Row`, `Style` or `NumberForm` of such.
+fn is_plain_text_item(item: &Expr) -> bool {
+  match item {
+    Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => true,
+    // A symbol stands for the number a Manipulate control holds.
+    Expr::Identifier(_) => true,
+    Expr::FunctionCall { name, args } if name == "Row" => match args.first() {
+      Some(Expr::List(parts)) => {
+        args.len() == 1 && parts.iter().all(is_plain_text_item)
+      }
+      _ => false,
+    },
+    Expr::FunctionCall { name, args }
+      if (is_style_wrapper(name) || name == "NumberForm")
+        && !args.is_empty() =>
+    {
+      is_plain_text_item(&args[0])
+    }
+    _ => false,
+  }
+}
+
 fn grid_svg_styled_internal(
   args: &[Expr],
   group_gaps: &[usize],
@@ -16641,6 +16859,7 @@ fn grid_svg_styled_internal(
   for row in &mut rows {
     for cell in row.iter_mut() {
       *cell = resolve_display_item(cell);
+      *cell = column_cell_in_grid_style(cell, default_style);
     }
   }
 
@@ -22975,7 +23194,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // either (a Demonstration's "choose a motif" menu is commonly written
       // this way).
       Expr::FunctionCall { name, args: inner }
-        if name == "Pane"
+        if (name == "Pane" || name == "Labeled")
           && inner
             .first()
             .is_some_and(|c| expr_contains_call(c, &["Control"])) =>
@@ -24057,7 +24276,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       // `Pane[Control@{…}, width]` fixes the width of a control row; the
       // pane only sizes it, so the control inside is the real spec.
       Expr::FunctionCall { name, args: inner }
-        if name == "Pane"
+        if (name == "Pane" || name == "Labeled")
           && !inner.is_empty()
           && expr_contains_call(&inner[0], &["Control"]) =>
       {
@@ -26756,6 +26975,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
         || name == "Text"
         || name == "Panel"
         || name == "ExpressionCell"
+        || name == "Labeled"
         || name == "Style")
         && !args.is_empty() =>
     {
@@ -26880,6 +27100,20 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     // more than one pane is registered once, from the first pane that
     // declares it. `collect_pane_visibility` records which pane each one
     // came from, so the frontend can still show one panel at a time.)
+    // `TabView[{{value, label -> pane}, …}, Dynamic[v]]`: a pane may be
+    // spelled as a `{value, label -> pane}` list; its content is the pane.
+    let item = match (name.as_str(), item) {
+      ("TabView", Expr::List(pair))
+        if pair.len() == 2
+          && matches!(
+            &pair[1],
+            Expr::Rule { .. } | Expr::RuleDelayed { .. }
+          ) =>
+      {
+        &pair[1]
+      }
+      _ => item,
+    };
     let item = match (name.as_str(), item) {
       (
         "TabView" | "PaneSelector",
@@ -27029,6 +27263,7 @@ fn unwrap_control_wrapper(spec: Expr) -> Expr {
       if (name == "Framed"
         || name == "Panel"
         || name == "Tooltip"
+        || name == "Labeled"
         || name == "Item")
         && matches!(
           args.first(),
@@ -29310,6 +29545,15 @@ thread_local! {
   /// can lower it with a `<tspan>` instead of leaving it at full size.
   static MARK_UNMAPPED_SUBSCRIPTS: std::cell::Cell<bool> =
     const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with unmapped subscript letters wrapped in the
+/// [`SUBSCRIPT_START`]/[`SUBSCRIPT_END`] markers.
+fn with_marked_subscripts<T>(f: impl FnOnce() -> T) -> T {
+  let prev = MARK_UNMAPPED_SUBSCRIPTS.with(|flag| flag.replace(true));
+  let out = f();
+  MARK_UNMAPPED_SUBSCRIPTS.with(|flag| flag.set(prev));
+  out
 }
 
 const SUBSCRIPT_START: char = '\u{E0F2}';
@@ -33623,57 +33867,6 @@ pub fn peano_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     points.push((x, y));
   }
   Ok(space_filling_curve("PeanoCurve", args, side, &points))
-}
-
-/// GosperCurve[n] — Line through the 7^n + 1 vertices of the order-n Gosper
-/// curve (flowsnake), generated by the classic 60° L-system
-///   A → A-B--B+A++AA+B-   B → +A-BB--B-A++A+B
-/// with unit steps on the triangular lattice, starting at the origin.
-pub fn gosper_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Ok(unevaluated("GosperCurve", args));
-  let Some(n) = curve_order("GosperCurve", args, 8) else {
-    return unevaluated();
-  };
-  let mut word: Vec<u8> = vec![b'A'];
-  for _ in 0..n {
-    let mut next = Vec::with_capacity(word.len() * 7);
-    for &c in &word {
-      match c {
-        b'A' => next.extend_from_slice(b"A-B--B+A++AA+B-"),
-        b'B' => next.extend_from_slice(b"+A-BB--B-A++A+B"),
-        other => next.push(other),
-      }
-    }
-    word = next;
-  }
-  // Lattice basis: direction k (multiples of 60°) = (cos, sin)(60°·k),
-  // expressed in integer coordinates (a, b) → (a + b/2, b·√3/2).
-  const DIRS: [(i64, i64); 6] =
-    [(1, 0), (0, 1), (-1, 1), (-1, 0), (0, -1), (1, -1)];
-  let to_point = |a: i64, b: i64| -> Expr {
-    Expr::List(
-      vec![
-        Expr::Real(a as f64 + b as f64 / 2.0),
-        Expr::Real(b as f64 * 3f64.sqrt() / 2.0),
-      ]
-      .into(),
-    )
-  };
-  let (mut a, mut b, mut dir) = (0i64, 0i64, 0usize);
-  let mut points = vec![to_point(a, b)];
-  for &c in &word {
-    match c {
-      b'A' | b'B' => {
-        a += DIRS[dir].0;
-        b += DIRS[dir].1;
-        points.push(to_point(a, b));
-      }
-      b'+' => dir = (dir + 1) % 6,
-      b'-' => dir = (dir + 5) % 6,
-      _ => {}
-    }
-  }
-  Ok(call1("Line", Expr::List(points.into())))
 }
 
 /// SierpinskiCurve[n] — the closed Sierpiński square curve as a Line,

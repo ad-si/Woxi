@@ -2932,22 +2932,27 @@ mod together {
     assert_eq!(interpret("Together[1/x + 1/y]").unwrap(), "(x + y)/(x*y)");
   }
 
-  // `Modulus -> p` reduces the combined numerator and denominator mod p,
-  // cancels their gcd over GF(p) and makes the denominator monic.
+  // `Modulus -> p`: a single fraction keeps its shape and only reduces its
+  // coefficients and cancels a common GF(p) factor; a sum is combined over
+  // GF(p), its terms' constants inverted, over a gcd-free product of the
+  // terms' denominators. All wolframscript-verified.
   #[test]
   fn together_modulus() {
     assert_eq!(
       interpret("Together[(2 + 7*x)/(2*x), Modulus -> 7]").unwrap(),
       "x^(-1)"
     );
-    assert_eq!(interpret("Together[1/(2*x), Modulus -> 7]").unwrap(), "4/x");
+    assert_eq!(
+      interpret("Together[1/(2*x), Modulus -> 7]").unwrap(),
+      "1/(2*x)"
+    );
     assert_eq!(
       interpret("Together[(x^2 + 1)/(x + 1), Modulus -> 2]").unwrap(),
       "1 + x"
     );
     assert_eq!(
       interpret("Together[1/x + 1/(x + 1), Modulus -> 2]").unwrap(),
-      "(x + x^2)^(-1)"
+      "1/(x*(1 + x))"
     );
     assert_eq!(
       interpret("Together[(x^2 - 1)/(x + 1) + 3/(2*x), Modulus -> 5]").unwrap(),
@@ -2959,7 +2964,23 @@ mod together {
     );
     assert_eq!(
       interpret("Together[{1/(2*x), 7*x/(x + 1)}, Modulus -> 7]").unwrap(),
-      "{4/x, 0}"
+      "{1/(2*x), 0}"
+    );
+  }
+
+  #[test]
+  fn together_modulus_shapes() {
+    assert_eq!(
+      interpret(
+        "{Together[(6x + 2)/(2x^2 + 4), Modulus -> 7], \
+          Together[(x^2 - 1)/(2x + 2), Modulus -> 7], \
+          Together[1/(x^2 + 3x + 2) + 1/(x + 1), Modulus -> 7], \
+          Together[1/(2x^2 + 3x + 2) + 1/x, Modulus -> 7], \
+          Together[3/(2x + 1) + 1/x, Modulus -> 7]}"
+      )
+      .unwrap(),
+      "{(2 + 6*x)/(2*(2 + x^2)), 3 + 4*x, (3 + x)/((1 + x)*(2 + x)), \
+       (1 + 2*x + x^2)/(x*(6 + x)^2), (6*(3 + x))/(x*(4 + x))}"
     );
   }
 
@@ -6917,9 +6938,15 @@ mod simplify_assumptions {
       interpret("Simplify[(k^4 x)^(1/4), {x > 0, k > 0}]").unwrap(),
       "k*x^(1/4)"
     );
+    // The reciprocal root would be no simpler by wolframscript's
+    // SimplifyCount (11 against 10), so it stays.
     assert_eq!(
       interpret("Simplify[1/(k^4 x)^(1/4), {x > 0, k > 0}]").unwrap(),
-      "1/(k*x^(1/4))"
+      "(k^4*x)^(-1/4)"
+    );
+    assert_eq!(
+      interpret("Simplify[((1 + x)^4)^(-1/2), x > 0]").unwrap(),
+      "(1 + x)^(-2)"
     );
     assert_eq!(interpret("Refine[Sqrt[k^2], {k > 0, x > 0}]").unwrap(), "k");
   }
@@ -6941,10 +6968,19 @@ mod simplify_assumptions {
       interpret("Simplify[Sqrt[8 k^4 x/(1 + x)^4*2], {x > 0, k > 0}]").unwrap(),
       "(4*k^2*Sqrt[x])/(1 + x)^2"
     );
-    // Without a sign for 1 + x the root stays.
+    // An even power of a real base needs no sign: x > -5 only makes x real.
     assert_eq!(
       interpret("Simplify[Sqrt[(1 + x)^4], x > -5]").unwrap(),
-      "Sqrt[(1 + x)^4]"
+      "(1 + x)^2"
+    );
+    assert_eq!(
+      interpret(
+        "{Simplify[Sqrt[x^4], Element[x, Reals]], \
+          Simplify[(x^6)^(1/2), Element[x, Reals]], \
+          Simplify[Abs[x]^4, Element[x, Reals]], Simplify[Sqrt[(1 + x)^4]]}"
+      )
+      .unwrap(),
+      "{x^2, Abs[x]^3, x^4, Sqrt[(1 + x)^4]}"
     );
   }
 
@@ -7480,7 +7516,7 @@ mod reduce {
     // lose that branch and report `False` here.
     assert_eq!(
       interpret("Reduce[{A*C==0,B*C==1},{A,B,C}]").unwrap(),
-      "A == 0 && C == B^(-1)"
+      "A == 0 && B != 0 && C == B^(-1)"
     );
     // Unit vector {0, 0, 1, 0} factors as {A, B} x {C, D} with A = 0.
     assert_eq!(
@@ -7498,6 +7534,33 @@ mod reduce {
       )
       .unwrap(),
       "A == 0 && B == 1 && C == 0 && D == 1"
+    );
+  }
+
+  // A solution with the other unknowns in its denominator holds only where
+  // that denominator does not vanish; where it does, the equation is solved
+  // afresh.
+  #[test]
+  fn denominators_of_a_solution_are_excluded() {
+    assert_eq!(
+      interpret("Reduce[x y == 2, {x, y}]").unwrap(),
+      "x != 0 && y == 2/x"
+    );
+    assert_eq!(
+      interpret("Reduce[a y == b, {a, b, y}]").unwrap(),
+      "(a == 0 && b == 0) || (a != 0 && y == b/a)"
+    );
+    assert_eq!(
+      interpret("Reduce[(x - 1) y == 3, {x, y}]").unwrap(),
+      "-1 + x != 0 && y == 3/(-1 + x)"
+    );
+    assert_eq!(
+      interpret("Reduce[{x y == 1, x + z == 2}, {x, y, z}]").unwrap(),
+      "x != 0 && y == x^(-1) && z == 2 - x"
+    );
+    assert_eq!(
+      interpret("Reduce[{A*C == 0, B*C == 1}, {C, A, B}]").unwrap(),
+      "A == 0 && C != 0 && B == C^(-1)"
     );
   }
 
@@ -7642,15 +7705,21 @@ mod reduce {
   fn solve_sin_equals_shifted_sin() {
     assert_eq!(
       interpret("Solve[Sin[t] == Sin[t + 2 Pi/5], t]").unwrap(),
-      "{{t -> ConditionalExpression[(3*Pi)/10 + Pi*C[1], Element[C[1], Integers]]}}"
+      "{{t -> ConditionalExpression[(-7*Pi)/10 + 2*Pi*C[1], Element[C[1], Integers]]}, {t -> ConditionalExpression[(3*Pi)/10 + 2*Pi*C[1], Element[C[1], Integers]]}}"
     );
+    // Families of period 2*Pi, the bare 2*Pi*C[1] first and the rest by
+    // their constant, as wolframscript writes them.
     assert_eq!(
       interpret("Solve[Sin[t] == Cos[t], t]").unwrap(),
-      "{{t -> ConditionalExpression[Pi/4 + Pi*C[1], Element[C[1], Integers]]}}"
+      "{{t -> ConditionalExpression[(-3*Pi)/4 + 2*Pi*C[1], Element[C[1], Integers]]}, {t -> ConditionalExpression[Pi/4 + 2*Pi*C[1], Element[C[1], Integers]]}}"
     );
     assert_eq!(
       interpret("Solve[Sin[t] == Sin[2 t], t]").unwrap(),
-      "{{t -> ConditionalExpression[2*Pi*C[1], Element[C[1], Integers]]}, {t -> ConditionalExpression[Pi/3 + (2*Pi*C[1])/3, Element[C[1], Integers]]}}"
+      "{{t -> ConditionalExpression[2*Pi*C[1], Element[C[1], Integers]]}, {t -> ConditionalExpression[-1/3*Pi + 2*Pi*C[1], Element[C[1], Integers]]}, {t -> ConditionalExpression[Pi/3 + 2*Pi*C[1], Element[C[1], Integers]]}, {t -> ConditionalExpression[Pi + 2*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[Cos[t] == Cos[3 t], t]").unwrap(),
+      "{{t -> ConditionalExpression[2*Pi*C[1], Element[C[1], Integers]]}, {t -> ConditionalExpression[-1/2*Pi + 2*Pi*C[1], Element[C[1], Integers]]}, {t -> ConditionalExpression[Pi/2 + 2*Pi*C[1], Element[C[1], Integers]]}, {t -> ConditionalExpression[Pi + 2*Pi*C[1], Element[C[1], Integers]]}}"
     );
   }
 
@@ -8795,18 +8864,28 @@ mod nsolve {
   // cube root and its reciprocal.
   #[test]
   fn nsolve_falls_back_to_numeric_search_for_reciprocal_fractional_powers() {
+    // The roots are 79 ∓ 33 Sqrt[6]. wolframscript lists them the other way
+    // round and the numeric search lands a few ULPs off, so they are
+    // compared sorted and rounded (see conformance_gaps.md).
     assert_eq!(
-      interpret("NSolve[(2 + y)^(1/3) + 3/(2 + y)^(1/3) == 6, y]").unwrap(),
-      "{{y -> -1.8331615118448772}, {y -> 159.83316151184493}}"
+      interpret(
+        "Round[Sort[y /. NSolve[(2 + y)^(1/3) + 3/(2 + y)^(1/3) == 6, y]], \
+         10^-10]"
+      )
+      .unwrap(),
+      "{-9165807559/5000000000, 799165807559/5000000000}"
     );
     // The generated constant `Solve` itself introduces for an equation it
     // cannot solve in closed form, `C[1]`, is exactly this kind of
     // non-identifier "variable" — confirm the numeric fallback solves for
     // it too, not only for a plain symbol.
     assert_eq!(
-      interpret("NSolve[(2 + C[1])^(1/3) + 3/(2 + C[1])^(1/3) == 6, C[1]]")
-        .unwrap(),
-      "{{C[1] -> -1.8331615118448772}, {C[1] -> 159.83316151184493}}"
+      interpret(
+        "Round[Sort[C[1] /. NSolve[(2 + C[1])^(1/3) + 3/(2 + C[1])^(1/3) \
+         == 6, C[1]]], 10^-10]"
+      )
+      .unwrap(),
+      "{-9165807559/5000000000, 799165807559/5000000000}"
     );
   }
 
@@ -15228,15 +15307,15 @@ mod cases {
   fn solve_trig_linear_argument() {
     assert_case(
       r#"Solve[Cos[2 x] == 0, x]"#,
-      r#"{{x -> ConditionalExpression[-1/4*Pi + Pi*C[1], Element[C[1], Integers]]}, {x -> ConditionalExpression[Pi/4 + Pi*C[1], Element[C[1], Integers]]}}"#,
+      r#"{{x -> ConditionalExpression[(-1/2*Pi + 2*Pi*C[1])/2, Element[C[1], Integers]]}, {x -> ConditionalExpression[(Pi/2 + 2*Pi*C[1])/2, Element[C[1], Integers]]}}"#,
     );
     assert_case(
       r#"Solve[Cos[4 Pi x] == 0, x]"#,
-      r#"{{x -> ConditionalExpression[-1/8 + C[1]/2, Element[C[1], Integers]]}, {x -> ConditionalExpression[1/8 + C[1]/2, Element[C[1], Integers]]}}"#,
+      r#"{{x -> ConditionalExpression[(-1/2*Pi + 2*Pi*C[1])/(4*Pi), Element[C[1], Integers]]}, {x -> ConditionalExpression[(Pi/2 + 2*Pi*C[1])/(4*Pi), Element[C[1], Integers]]}}"#,
     );
     assert_case(
       r#"Solve[Tan[3 x] == 1, x]"#,
-      r#"{{x -> ConditionalExpression[Pi/12 + (Pi*C[1])/3, Element[C[1], Integers]]}}"#,
+      r#"{{x -> ConditionalExpression[(Pi/4 + Pi*C[1])/3, Element[C[1], Integers]]}}"#,
     );
   }
 
