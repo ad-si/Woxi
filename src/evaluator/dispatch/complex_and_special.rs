@@ -3053,17 +3053,8 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
   // single `TagBox[..., Head]`.
   let first = args.first()?;
   if let Expr::List(items) = first {
-    let inner_boxes: Option<Vec<Expr>> = items
-      .iter()
-      .map(|v| {
-        let (mantissa, exp) = parts_for(v)?;
-        Some(number_display_inner_box(
-          scientific_value_box(&mantissa, exp),
-          v,
-        ))
-      })
-      .collect();
-    return Some(wrap_list_number_display_box(inner_boxes?, name));
+    let inner_boxes = number_display_list_boxes(items, &parts_for)?;
+    return Some(wrap_list_number_display_box(inner_boxes, name));
   }
   let Some((mantissa, exp)) = parts_for(first) else {
     return option_number_form_box(name, args);
@@ -3073,6 +3064,30 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
     first,
     name,
   ))
+}
+
+/// Per-element display boxes of a (possibly nested) list argument: a nested
+/// list becomes its own braced, comma-separated row, so a matrix threads
+/// through the number form like a flat list does.
+fn number_display_list_boxes(
+  items: &[Expr],
+  parts_for: &dyn Fn(&Expr) -> Option<(String, Option<i64>)>,
+) -> Option<Vec<Expr>> {
+  items
+    .iter()
+    .map(|v| {
+      if let Expr::List(sub) = v {
+        return Some(braced_row_box(number_display_list_boxes(
+          sub, parts_for,
+        )?));
+      }
+      let (mantissa, exp) = parts_for(v)?;
+      Some(number_display_inner_box(
+        scientific_value_box(&mantissa, exp),
+        v,
+      ))
+    })
+    .collect()
 }
 
 /// `NumberForm[x, spec, opts…]` with display options (`NumberPadding`,
@@ -3148,6 +3163,11 @@ fn wrap_number_display_box(inner: Expr, value: &Expr, head: &str) -> Expr {
 /// Wrap the per-element display boxes of a list argument with wolframscript's
 /// `TagBox[RowBox[{"{", RowBox[{elem, ",", elem, ...}], "}"}], head]`.
 fn wrap_list_number_display_box(elems: Vec<Expr>, head: &str) -> Expr {
+  call("TagBox", vec![braced_row_box(elems), id_expr(head)])
+}
+
+/// `RowBox[{"{", RowBox[{e1, ",", e2, …}], "}"}]`.
+fn braced_row_box(elems: Vec<Expr>) -> Expr {
   let mut row = Vec::with_capacity(elems.len().saturating_mul(2));
   for (i, elem) in elems.into_iter().enumerate() {
     if i > 0 {
@@ -3155,10 +3175,7 @@ fn wrap_list_number_display_box(elems: Vec<Expr>, head: &str) -> Expr {
     }
     row.push(elem);
   }
-  let inner_row = row_box(row);
-  let braces = vec![str_expr("{"), inner_row, str_expr("}")];
-  let braced = row_box(braces);
-  call("TagBox", vec![braced, id_expr(head)])
+  row_box(vec![str_expr("{"), row_box(row), str_expr("}")])
 }
 
 /// StandardForm boxes for a derivative — `f′[x]`, `f′′[x]`, `f⁽⁴⁾[x]`,
