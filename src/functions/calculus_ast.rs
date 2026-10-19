@@ -184,6 +184,25 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?.into()));
   }
 
+  // Thread over equations: D[lhs == rhs, var] -> D[lhs, var] == D[rhs, var]
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = &args[0]
+    && operators.iter().all(|op| matches!(op, ComparisonOp::Equal))
+  {
+    let mut derived = Vec::with_capacity(operands.len());
+    for operand in operands {
+      let mut a = vec![operand.clone()];
+      a.extend_from_slice(&args[1..]);
+      derived.push(d_ast(&a)?);
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::Comparison {
+      operands: derived,
+      operators: operators.clone(),
+    });
+  }
+
   // Handle D[expr, {{x, y, ...}}] — gradient/Jacobian
   if let Expr::List(outer_items) = &args[1]
     && outer_items.len() == 1
