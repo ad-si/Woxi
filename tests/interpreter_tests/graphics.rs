@@ -7884,6 +7884,25 @@ mod plot3d {
       );
     }
 
+    // `Frame -> False` on a density or contour plot leaves out the box and
+    // its tick labels, so only the coloured image remains.
+    #[test]
+    fn frame_false_on_density_and_contour_plots() {
+      for plot in ["DensityPlot", "ContourPlot"] {
+        let framed =
+          export_svg(&format!("{plot}[x y, {{x, -1, 1}}, {{y, -1, 1}}]"));
+        let bare = export_svg(&format!(
+          "{plot}[x y, {{x, -1, 1}}, {{y, -1, 1}}, Frame -> False]"
+        ));
+        assert!(framed.contains("<text"), "{plot} default has tick labels");
+        assert!(!bare.contains("<text"), "{plot}: {bare}");
+        assert!(
+          !bare.contains("stroke=\"rgb(102,102,102)\""),
+          "{plot} must draw no frame box: {bare}"
+        );
+      }
+    }
+
     // `FrameTicks -> None` on a field plot keeps the frame box but draws
     // neither tick marks nor tick labels.
     #[test]
