@@ -4393,6 +4393,9 @@ pub(crate) fn build_plot_source(
         let style = &plot_style[i % plot_style.len()];
         (style.thickness, style.point_size, style.dashing.clone())
       };
+      let opacity = plot_style
+        .get(i % plot_style.len().max(1))
+        .and_then(|s| s.opacity);
       let scatter = if is_scatter.is_empty() {
         false
       } else {
@@ -4409,6 +4412,7 @@ pub(crate) fn build_plot_source(
         thickness,
         point_size,
         dashing,
+        opacity,
       }
     })
     .collect();
@@ -5264,6 +5268,7 @@ pub(crate) fn render_merged_plot_source(
       thickness: s.thickness,
       point_size: s.point_size,
       dashing: s.dashing.clone(),
+      opacity: s.opacity,
       ..SeriesStyle::default()
     })
     .collect();
@@ -7472,6 +7477,7 @@ pub(crate) fn histogram_plot_source(
       thickness: None,
       point_size: None,
       dashing: None,
+      opacity: None,
     });
   }
 

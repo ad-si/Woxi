@@ -37153,3 +37153,54 @@ mod list_plot_frame {
     assert_eq!(out, "Graphics");
   }
 }
+
+mod show_plot_opacity {
+  use super::*;
+
+  #[test]
+  fn show_keeps_curve_opacity_from_plot_style() {
+    let svg = export_svg(
+      "Show[ParametricPlot[{Sin[t], Cos[t]}, {t, 0, 3}, PlotStyle -> Opacity[0.3], Axes -> None], Graphics[{Red, Disk[]}]]",
+    );
+    assert!(svg.contains("opacity=\"0.3\""), "{svg}");
+  }
+
+  #[test]
+  fn show_keeps_fully_transparent_curve() {
+    let svg = export_svg(
+      "Show[Plot[Sin[x], {x, 0, 3}, PlotStyle -> Opacity[0], Axes -> None], Graphics[{Red, Disk[]}]]",
+    );
+    assert!(svg.contains("opacity=\"0\""), "{svg}");
+  }
+
+  #[test]
+  fn show_leaves_unstyled_curve_opaque() {
+    let svg = export_svg(
+      "Show[Plot[Sin[x], {x, 0, 3}, Axes -> None], Graphics[{Red, Disk[]}]]",
+    );
+    assert!(!svg.contains("opacity=\"0"), "{svg}");
+  }
+}
+
+mod animate_result_display {
+  use super::*;
+
+  #[test]
+  fn animate_returned_by_helper_displays_first_frame() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "mk[r_] := Animate[Graphics[{Red, Disk[{T, 0}, r]}], {T, 0, 1}]; mk[2]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("Animate result should draw a frame");
+    assert!(svg.contains("<ellipse"), "{svg}");
+  }
+
+  #[test]
+  fn animate_result_stays_symbolic_in_script_mode() {
+    clear_state();
+    let out =
+      interpret("Head[Animate[Graphics[{Disk[{T, 0}]}], {T, 0, 1}]]").unwrap();
+    assert_eq!(out, "Animate");
+  }
+}
