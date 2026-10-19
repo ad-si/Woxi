@@ -5262,6 +5262,24 @@ pub fn dispatch_list_operations(
     "Identity" if args.len() == 1 => {
       return Some(list_helpers_ast::identity_ast(&args[0]));
     }
+    // Setting[expr] evaluates to the value expr; for an inline colour control
+    // (ColorSetterBox[c, ...], ColorSetter[c, ...], ColorSlider[c, ...]) that
+    // is the colour it currently holds.
+    "Setting" if args.len() == 1 => {
+      if let Expr::FunctionCall {
+        name: head,
+        args: inner,
+      } = &args[0]
+        && matches!(
+          head.as_str(),
+          "ColorSetterBox" | "ColorSetter" | "ColorSlider"
+        )
+        && let Some(color) = inner.first()
+      {
+        return Some(Ok(color.clone()));
+      }
+      return Some(Ok(args[0].clone()));
+    }
     // Once[expr] / Once[expr, loc] evaluates expr once and returns the result.
     // Woxi is stateless per evaluation, so caching is a no-op: just unwrap the
     // (already-evaluated) argument.

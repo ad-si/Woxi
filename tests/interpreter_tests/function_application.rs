@@ -3778,3 +3778,36 @@ mod negative_levels_and_compound_heads {
     );
   }
 }
+
+// Setting[expr] evaluates to expr; an inline colour control gives its colour.
+mod setting {
+  use super::*;
+
+  #[test]
+  fn plain_value() {
+    assert_eq!(interpret("Setting[1 + 1]").unwrap(), "2");
+    assert_eq!(interpret("Setting[x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn color_setter_box_gives_its_color() {
+    assert_eq!(
+      interpret(
+        "Setting[ColorSetterBox[RGBColor[1, 0, 0], \"SwatchSpectrum\"]]"
+      )
+      .unwrap(),
+      "RGBColor[1, 0, 0]"
+    );
+  }
+
+  #[test]
+  fn usable_as_background_value() {
+    assert_eq!(
+      interpret(
+        "c = Setting[ColorSetterBox[GrayLevel[0.5], \"SwatchSpectrum\"]]; c"
+      )
+      .unwrap(),
+      "GrayLevel[0.5]"
+    );
+  }
+}
