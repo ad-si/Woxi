@@ -2340,7 +2340,7 @@ fn collect_primitives(
         "Sphere" | "Ball" => {
           parse_sphere(name == "Ball", args, style, prims);
         }
-        "Ellipsoid" if args.len() == 2 => {
+        "Ellipsoid" if args.len() == 2 || args.len() == 3 => {
           parse_ellipsoid(args, style, prims);
         }
         "Rectangle" => {
@@ -3254,6 +3254,44 @@ fn parse_ellipsoid(
   let Expr::List(second) = &args[1] else {
     return;
   };
+  // `Ellipsoid[c, {r1, r2}, {d1, d2}]`: semi-axes r1, r2 along the
+  // directions d1, d2.
+  if args.len() == 3 {
+    let radii: Option<Vec<f64>> = second.iter().map(expr_to_f64).collect();
+    let directions: Option<Vec<(f64, f64)>> = match &args[2] {
+      Expr::List(dirs) => dirs.iter().map(expr_to_point).collect(),
+      _ => None,
+    };
+    let (Some(radii), Some(dirs)) = (radii, directions) else {
+      return;
+    };
+    if radii.len() != 2 || dirs.len() != 2 {
+      return;
+    }
+    let unit = |(x, y): (f64, f64)| {
+      let n = x.hypot(y);
+      if n > 0.0 { (x / n, y / n) } else { (x, y) }
+    };
+    let (u, v) = (unit(dirs[0]), unit(dirs[1]));
+    const STEPS: usize = 120;
+    let points = (0..STEPS)
+      .map(|i| {
+        let t = std::f64::consts::TAU * i as f64 / STEPS as f64;
+        let (s, c) = t.sin_cos();
+        (
+          cx + radii[0] * c * u.0 + radii[1] * s * v.0,
+          cy + radii[0] * c * u.1 + radii[1] * s * v.1,
+        )
+      })
+      .collect();
+    prims.push(Primitive::PolygonPrim {
+      points,
+      holes: Vec::new(),
+      vertex_colors: None,
+      style: style.clone(),
+    });
+    return;
+  }
   // Semi-axes: an axis-aligned ellipse is exactly a `Disk`.
   if second.len() == 2 && second.iter().all(|e| !matches!(e, Expr::List(_))) {
     if let (Some(rx), Some(ry)) =
@@ -6115,6 +6153,32 @@ fn rotation_angle(spec: &Expr) -> Option<f64> {
   Some(vy.atan2(vx) - uy.atan2(ux))
 }
 
+/// True when the radii differ, i.e. the shape is a proper ellipse whose
+/// rotation can't be expressed by moving its centre alone.
+fn is_elliptical(rx: f64, ry: f64) -> bool {
+  (rx - ry).abs() > 1e-12 * rx.abs().max(ry.abs())
+}
+
+/// Points along the ellipse `(cx + rx cos t, cy + ry sin t)` for `t` from
+/// `t1` to `t2`, each mapped through `map` (e.g. a rotation).
+fn ellipse_outline(
+  cx: f64,
+  cy: f64,
+  rx: f64,
+  ry: f64,
+  t1: f64,
+  t2: f64,
+  map: &impl Fn(f64, f64) -> (f64, f64),
+) -> Vec<(f64, f64)> {
+  const STEPS: usize = 180;
+  (0..=STEPS)
+    .map(|i| {
+      let t = t1 + (t2 - t1) * i as f64 / STEPS as f64;
+      map(cx + rx * t.cos(), cy + ry * t.sin())
+    })
+    .collect()
+}
+
 fn rotate_primitive(
   prim: &Primitive,
   cx: f64,
@@ -6123,6 +6187,7 @@ fn rotate_primitive(
 ) -> Primitive {
   let cos = angle.cos();
   let sin = angle.sin();
+  const TAU: f64 = std::f64::consts::TAU;
   let rp = |x: f64, y: f64| rotate_point(x, y, cx, cy, cos, sin);
   // Rotate a direction vector (no translation).
   let rv = |x: f64, y: f64| (x * cos - y * sin, x * sin + y * cos);
@@ -6229,6 +6294,54 @@ fn rotate_primitive(
       vertex_colors: None,
       style: style.clone(),
     },
+    // An elliptical Disk/Circle/sector has no rotation field, so once it is
+    // turned off-axis it becomes a polygon/polyline tracing its outline.
+    Primitive::Disk {
+      cx: dcx,
+      cy: dcy,
+      rx,
+      ry,
+      style,
+    } if is_elliptical(*rx, *ry) => Primitive::PolygonPrim {
+      points: ellipse_outline(*dcx, *dcy, *rx, *ry, 0.0, TAU, &rp),
+      holes: Vec::new(),
+      vertex_colors: None,
+      style: style.clone(),
+    },
+    Primitive::CircleArc {
+      cx: dcx,
+      cy: dcy,
+      rx,
+      ry,
+      angles,
+      style,
+    } if is_elliptical(*rx, *ry) => {
+      let (a1, a2) = angles.unwrap_or((0.0, TAU));
+      Primitive::Line {
+        segments: vec![ellipse_outline(*dcx, *dcy, *rx, *ry, a1, a2, &rp)],
+        vertex_colors: None,
+        style: style.clone(),
+      }
+    }
+    Primitive::DiskSector {
+      cx: dcx,
+      cy: dcy,
+      rx,
+      ry,
+      angle1,
+      angle2,
+      style,
+    } if is_elliptical(*rx, *ry) => {
+      let mut points = vec![rp(*dcx, *dcy)];
+      points
+        .extend(ellipse_outline(*dcx, *dcy, *rx, *ry, *angle1, *angle2, &rp));
+      Primitive::PolygonPrim {
+        points,
+        holes: Vec::new(),
+        vertex_colors: None,
+        style: style.clone(),
+      }
+    }
     Primitive::Disk {
       cx: dcx,
       cy: dcy,
@@ -10909,6 +11022,32 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
     }
 
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // `TemplateBox[{…}, "RowDefault"]`, the box text of a `Row`, draws as
+      // its parts in a row, a string part as its text.
+      "TemplateBox"
+        if args.len() == 2
+          && matches!(&args[1], Expr::String(t) if t == "RowDefault")
+          && matches!(&args[0], Expr::List(_)) =>
+      {
+        let Expr::List(items) = &args[0] else {
+          unreachable!("guarded by the match arm")
+        };
+        let parts: Vec<Expr> = items
+          .iter()
+          .map(|item| match item {
+            Expr::String(s)
+              if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') =>
+            {
+              crate::syntax::string_to_expr(s)
+                .ok()
+                .filter(|e| matches!(e, Expr::String(_)))
+                .unwrap_or_else(|| str_expr(&s[1..s.len() - 1]))
+            }
+            other => other.clone(),
+          })
+          .collect();
+        layout_box(&call1("RowBox", Expr::List(parts.into())), font_size)
+      }
       // RowBox: lay out children left-to-right, align baselines
       "RowBox" if args.len() == 1 => {
         let items = match &args[0] {
@@ -14178,6 +14317,22 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
         .first()
         .map(|a| box_expr_to_plain_in(a, spaced))
         .unwrap_or_default(),
+      // A row template draws its parts; a string part (`"\"abc\""`, as box
+      // text writes it) as its text.
+      "TemplateBox" if args.len() == 2 => match &args[0] {
+        Expr::List(items) => items
+          .iter()
+          .map(|item| match item {
+            Expr::String(s)
+              if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') =>
+            {
+              s[1..s.len() - 1].to_string()
+            }
+            other => box_expr_to_plain_in(other, spaced),
+          })
+          .collect(),
+        other => box_expr_to_plain_in(other, spaced),
+      },
       // An accent that has a combining mark is drawn over (under) its base
       // as that mark, `ÿ` for a double dot over `y`.
       "OverscriptBox" | "UnderscriptBox" if args.len() >= 2 => accent_text(
@@ -22352,10 +22507,25 @@ pub(crate) fn clip_svg_to_pane_box(
   svg: &str,
   width: f64,
   height: f64,
+  align: Option<(f64, f64)>,
 ) -> String {
   let (natural_w, natural_h) = parse_svg_wh(svg);
   if natural_w <= width && natural_h <= height {
-    return svg.to_string();
+    // Content that fits keeps its natural canvas, unless the Pane states
+    // an `Alignment`: then it sits where that puts it in the whole box.
+    let Some(align) = align else {
+      return svg.to_string();
+    };
+    if natural_w == width && natural_h == height {
+      return svg.to_string();
+    }
+    let x = (width - natural_w) * align.0;
+    let y = (height - natural_h) * align.1;
+    let root = svg.find("<svg").unwrap_or(0);
+    return format!(
+      "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"translate({x:.1} {y:.1})\">\n{}\n</g>\n</svg>",
+      &svg[root..]
+    );
   }
   // A graphic that carries its own `viewBox` (a `Plot`, `Graphics`, …) is a
   // scalable picture: the FrontEnd shrinks it to fit the Pane instead of
@@ -24048,6 +24218,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // value before the body or any display reads it.
   for spec in &arg_items {
     collect_bare_setterbar_state(spec, &sibling_names, &mut state);
+    collect_display_module_state(spec, &sibling_names, &mut state);
   }
   // Filled in on demand by the spec loop below, when a spec only parses
   // once the body has run (see the retry there).
@@ -24207,6 +24378,18 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
       continue;
     }
+    // `Item[Button[…], Alignment -> …]` only positions a button in the
+    // panel; the button itself is the control.
+    let spec = match spec {
+      Expr::FunctionCall { name, args }
+        if name == "Item"
+          && !args.is_empty()
+          && matches!(&args[0], Expr::FunctionCall { name: n, .. } if n == "Button") =>
+      {
+        &args[0]
+      }
+      _ => spec,
+    };
     // `Delimiter` and string / `Style[…]` / `Text[…]` arguments are static
     // annotation rows between controls (Wolfram's `ThisIsNotAControl`),
     // keeping their position among the control rows.
@@ -25741,6 +25924,137 @@ fn collect_bare_setterbar_state(
       }
     }
     _ => {}
+  }
+}
+
+/// Whether a `DynamicModule` local's initializer is a plain literal (number,
+/// string, boolean, or a list of those), so it can seed a state variable.
+fn is_literal_init(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_) | Expr::Real(_) | Expr::String(_) => true,
+    Expr::Identifier(s) => s == "True" || s == "False",
+    Expr::List(items) => items.iter().all(is_literal_init),
+    _ => false,
+  }
+}
+
+/// Seed `state` with the literal-initialized locals of every
+/// `DynamicModule[{v = init, …}, …]` written inside an extra display
+/// argument. Its locals are the display's own persistent state — e.g. the
+/// value of a `Manipulator[Dynamic[v], …]` slider drawn there — which only
+/// survives from one frame to the next, and can only be written back by
+/// that slider, when it is a named state variable of the Manipulate
+/// instead of a fresh `Module` local on every re-evaluation (see
+/// [`strip_bound_dynamic_modules`]).
+fn collect_display_module_state(
+  spec: &Expr,
+  known: &[String],
+  state: &mut Vec<(String, String)>,
+) {
+  match spec {
+    Expr::FunctionCall { name, args } => {
+      if name == "DynamicModule"
+        && args.len() >= 2
+        && let Expr::List(locals) = &args[0]
+      {
+        for local in locals {
+          if let Expr::FunctionCall {
+            name: set_name,
+            args: set_args,
+          } = local
+            && set_name == "Set"
+            && set_args.len() == 2
+            && let Expr::Identifier(var) = &set_args[0]
+            && is_literal_init(&set_args[1])
+            && !known.contains(var)
+            && !state.iter().any(|(n, _)| n == var)
+          {
+            state.push((
+              var.clone(),
+              crate::syntax::expr_to_source_form(&set_args[1]),
+            ));
+          }
+        }
+      }
+      for a in args {
+        collect_display_module_state(a, known, state);
+      }
+    }
+    Expr::List(items) => {
+      for it in items {
+        collect_display_module_state(it, known, state);
+      }
+    }
+    Expr::CompoundExpr(items) => {
+      for it in items {
+        collect_display_module_state(it, known, state);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Whether `name` is a live state variable: listed in `bindings`, or (when
+/// the caller has installed the bindings as scoped globals instead) holding
+/// a value of its own.
+fn is_bound_state_var(name: &str, bindings: &[(String, String)]) -> bool {
+  bindings.iter().any(|(b, _)| b == name)
+    || matches!(
+      crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(
+        name.to_string()
+      )),
+      Ok(v) if !matches!(&v, Expr::Identifier(s) if s == name)
+    )
+}
+
+/// Replace every `DynamicModule[{v = init, …}, body]` whose locals are all
+/// bound in `bindings` (seeded by [`collect_display_module_state`]) with its
+/// bare `body`, so those names stay the stable state variables they were
+/// seeded as. Evaluating the module instead would rename them to a fresh
+/// `v$n` on every rebuild, losing the value a slider wrote into them.
+fn strip_bound_dynamic_modules(
+  expr: &Expr,
+  bindings: &[(String, String)],
+) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      if name == "DynamicModule"
+        && args.len() >= 2
+        && let Expr::List(locals) = &args[0]
+        && locals.iter().all(|l| {
+          matches!(
+            l,
+            Expr::FunctionCall { name: n, args: a }
+              if n == "Set"
+                && a.len() == 2
+                && matches!(&a[0], Expr::Identifier(v)
+                  if is_bound_state_var(v, bindings))
+          )
+        })
+      {
+        return strip_bound_dynamic_modules(&args[1], bindings);
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args
+          .iter()
+          .map(|a| strip_bound_dynamic_modules(a, bindings))
+          .collect(),
+      }
+    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| strip_bound_dynamic_modules(a, bindings))
+        .collect(),
+    ),
+    Expr::CompoundExpr(items) => Expr::CompoundExpr(
+      items
+        .iter()
+        .map(|a| strip_bound_dynamic_modules(a, bindings))
+        .collect(),
+    ),
+    other => other.clone(),
   }
 }
 
@@ -28719,7 +29033,16 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       if arithmetic_label_operator(*op).is_some()
         && contains_presentation_head(expr) =>
     {
-      let (text, group) = arithmetic_label_operator(*op).unwrap_or_default();
+      let (mut text, group) =
+        arithmetic_label_operator(*op).unwrap_or_default();
+      // Typeset pieces multiplied together set side by side.
+      let is_styled = |e: &Expr| {
+        is_style_call(e)
+          || matches!(e, Expr::FunctionCall { name, .. } if name == "Text")
+      };
+      if text == "*" && is_styled(left) && is_styled(right) {
+        text = " ";
+      }
       let side = |e: &Expr| {
         if group {
           grouped_label_runs(e, italic)
@@ -28856,7 +29179,14 @@ fn product_label_runs(factors: &[Expr], italic: bool) -> Vec<LabelRun> {
   let (denominators, numerators): (Vec<&Expr>, Vec<&Expr>) =
     factors.iter().partition(|f| reciprocal_base(f).is_some());
   let numerators: Vec<Expr> = numerators.into_iter().cloned().collect();
-  let mut runs = joined_label_runs(&numerators, "*", true, italic);
+  // Typeset pieces (`Style[…] Text[…]`) set side by side, as the front end
+  // shows them; a product of plain symbols keeps its `*`.
+  let sep = if numerators.iter().all(contains_presentation_head) {
+    " "
+  } else {
+    "*"
+  };
+  let mut runs = joined_label_runs(&numerators, sep, true, italic);
   if denominators.is_empty() {
     return runs;
   }
@@ -31170,8 +31500,13 @@ pub fn apply_manipulate_mutations(
   if mutations.is_empty() {
     return Vec::new();
   }
+  // A mutation may chain several statements (`a = 1; b = a`, a slider's
+  // write-back plus its `EventHandler` action); every one of them can
+  // change a state variable.
+  let statements: Vec<String> =
+    mutations.iter().flat_map(|m| split_statements(m)).collect();
   let mut vars: Vec<String> = Vec::new();
-  for m in mutations {
+  for m in &statements {
     if let Some(v) = mutation_target_symbol(m)
       && !vars.contains(&v)
     {
@@ -31181,7 +31516,7 @@ pub fn apply_manipulate_mutations(
   if vars.is_empty() {
     return Vec::new();
   }
-  let body = format!("{}; {{{}}}", mutations.join("; "), vars.join(", "));
+  let body = format!("{}; {{{}}}", statements.join("; "), vars.join(", "));
   let code = manipulate_block_code(&body, bindings);
   match crate::interpret_to_expr(&code) {
     Ok(Expr::List(ref vals)) if vals.len() == vars.len() => vars
@@ -31243,13 +31578,60 @@ pub fn read_manipulate_state(names: &[String]) -> Vec<(String, String)> {
     .collect()
 }
 
+/// Split source code at its top-level `;` (outside brackets and strings).
+fn split_statements(code: &str) -> Vec<String> {
+  let mut out = Vec::new();
+  let mut depth = 0i32;
+  let mut in_string = false;
+  let mut escaped = false;
+  let mut cur = String::new();
+  for c in code.chars() {
+    if in_string {
+      cur.push(c);
+      if escaped {
+        escaped = false;
+      } else if c == '\\' {
+        escaped = true;
+      } else if c == '"' {
+        in_string = false;
+      }
+      continue;
+    }
+    match c {
+      '"' => {
+        in_string = true;
+        cur.push(c);
+      }
+      '[' | '(' | '{' => {
+        depth += 1;
+        cur.push(c);
+      }
+      ']' | ')' | '}' => {
+        depth -= 1;
+        cur.push(c);
+      }
+      ';' if depth == 0 => {
+        if !cur.trim().is_empty() {
+          out.push(cur.trim().to_string());
+        }
+        cur.clear();
+      }
+      _ => cur.push(c),
+    }
+  }
+  if !cur.trim().is_empty() {
+    out.push(cur.trim().to_string());
+  }
+  out
+}
+
 /// The distinct target variables of a set of write-back assignments, in first-
 /// seen order. Used to read back the mutated state values after applying the
 /// assignments to the (globally-installed) bindings.
 pub fn mutation_target_symbols(mutations: &[String]) -> Vec<String> {
   let mut vars: Vec<String> = Vec::new();
-  for m in mutations {
-    if let Some(v) = mutation_target_symbol(m)
+  for m in mutations.iter().flat_map(|m| split_statements(m)) {
+    if let Some(v) = mutation_target_symbol(&m)
       && !vars.contains(&v)
     {
       vars.push(v);
@@ -31820,6 +32202,22 @@ pub enum DisplayNode {
     choices: Vec<(String, String)>,
     enabled: bool,
   },
+  /// A `Manipulator[Dynamic[lval], {min, max, step}]` (or `Slider`) drawn as
+  /// a display element: dragging it writes `lval = <value>` back. `after`
+  /// holds the statements of an enclosing `EventHandler`'s
+  /// `"MouseClicked"`/`"MouseDragged"` actions, run right after the
+  /// write-back (the Demonstrations idiom for copying a module-local slider
+  /// value into the persistent state once the user has touched it).
+  /// `enabled` is a trailing `Enabled -> cond` option's live value.
+  Slider {
+    target: String,
+    min: f64,
+    max: f64,
+    step: f64,
+    current: f64,
+    enabled: bool,
+    after: Vec<String>,
+  },
   /// A `Spacer[w]`: `w` printer's points of horizontal space.
   Spacer { width: f64 },
   /// A text leaf with its styled runs, so `Style["…", Bold, Red]` renders
@@ -31849,7 +32247,17 @@ pub fn build_manipulate_display(
   display_code: &str,
   bindings: &[(String, String)],
 ) -> DisplayNode {
-  let Ok(expr) = crate::interpret_to_expr(display_code) else {
+  // Only displays with a `DynamicModule` are re-serialized: the round trip
+  // through source form is otherwise needless and can reshape precedence.
+  let code = match crate::syntax::string_to_expr(display_code) {
+    Ok(parsed) if display_code.contains("DynamicModule") => {
+      crate::syntax::expr_to_source_form(&strip_bound_dynamic_modules(
+        &parsed, bindings,
+      ))
+    }
+    _ => display_code.to_string(),
+  };
+  let Ok(expr) = crate::interpret_to_expr(&code) else {
     return DisplayNode::Static {
       svg: None,
       text: String::new(),
@@ -31975,6 +32383,63 @@ fn display_expr_to_node(
         DisplayNode::Row(list_children(&args[0], bindings, probes, ons))
       }
       "Checkbox" => checkbox_node(args, probes, ons),
+      // `Tooltip[content, tip]` draws as its content; the tip is only shown
+      // on hover.
+      "Tooltip" if !args.is_empty() => {
+        display_expr_to_node(&args[0], bindings, probes, ons)
+      }
+      // `Manipulator[Dynamic[lval], {min, max, step}, …]` / `Slider[…]`
+      // written inside a display element: a live slider writing back to
+      // `lval`.
+      "Manipulator" | "Slider" if args.len() >= 2 => {
+        match slider_node(args, Vec::new()) {
+          Some(node) => node,
+          None => static_leaf_node(expr, bindings),
+        }
+      }
+      // `EventHandler[content, "MouseClicked" :> action, …]`: draws as its
+      // content. When the content is a slider, the click/drag actions run
+      // after each of its write-backs.
+      "EventHandler" if args.len() >= 2 => {
+        let after: Vec<String> = args[1..]
+          .iter()
+          .filter_map(|ev| match ev {
+            Expr::Rule {
+              pattern,
+              replacement,
+            }
+            | Expr::RuleDelayed {
+              pattern,
+              replacement,
+            } if matches!(
+              pattern.as_ref(),
+              Expr::String(e) if e == "MouseClicked" || e == "MouseDragged"
+            ) =>
+            {
+              Some(held_action_statements(replacement))
+            }
+            _ => None,
+          })
+          .flatten()
+          .fold(Vec::new(), |mut acc, st| {
+            if !acc.contains(&st) {
+              acc.push(st);
+            }
+            acc
+          });
+        match &args[0] {
+          Expr::FunctionCall {
+            name: n,
+            args: sargs,
+          } if (n == "Manipulator" || n == "Slider") && sargs.len() >= 2 => {
+            match slider_node(sargs, after) {
+              Some(node) => node,
+              None => static_leaf_node(&args[0], bindings),
+            }
+          }
+          inner => display_expr_to_node(inner, bindings, probes, ons),
+        }
+      }
       // `Button[label, action]` — the action is held, so its source is
       // taken verbatim and evaluated only when the button is pressed.
       "Button" if args.len() >= 2 => DisplayNode::Button {
@@ -32752,6 +33217,69 @@ fn action_menu_node(
   })
 }
 
+/// The statements of a held event/button action: `(a = 1; b = 2)` gives
+/// `["a = 1", "b = 2"]`, a lone statement gives itself.
+fn held_action_statements(action: &Expr) -> Vec<String> {
+  match action {
+    Expr::CompoundExpr(items) => items
+      .iter()
+      .map(crate::syntax::expr_to_source_form)
+      .collect(),
+    other => vec![crate::syntax::expr_to_source_form(other)],
+  }
+}
+
+/// `Manipulator[Dynamic[lval], {min, max, step}, …]` as a display slider.
+/// Bounds are evaluated against the live bindings (the caller has already
+/// released the enclosing `Dynamic`, so they are numbers); a missing step
+/// falls back to a continuous slider.
+fn slider_node(args: &[Expr], after: Vec<String>) -> Option<DisplayNode> {
+  let lval = match args.first() {
+    Some(Expr::FunctionCall { name, args: dargs })
+      if name == "Dynamic" && !dargs.is_empty() =>
+    {
+      &dargs[0]
+    }
+    _ => return None,
+  };
+  let target = crate::syntax::expr_to_source_form(lval);
+  let range = crate::evaluator::evaluate_expr_to_expr(&args[1]).ok()?;
+  let Expr::List(bounds) = &range else {
+    return None;
+  };
+  if bounds.len() < 2 {
+    return None;
+  }
+  let min = expr_to_f64(&bounds[0]).filter(|v| v.is_finite())?;
+  let max = expr_to_f64(&bounds[1]).filter(|v| v.is_finite())?;
+  let step = bounds
+    .get(2)
+    .and_then(expr_to_f64)
+    .filter(|v| v.is_finite() && *v > 0.0)
+    .unwrap_or(0.0);
+  let current = crate::evaluator::evaluate_expr_to_expr(lval)
+    .ok()
+    .and_then(|e| expr_to_f64(&e))
+    .filter(|v| v.is_finite())
+    .unwrap_or(min)
+    .clamp(min.min(max), max.max(min));
+  let enabled = extract_enabled_condition(&args[2..]).is_none_or(|cond| {
+    !matches!(
+      crate::evaluator::evaluate_expr_to_expr(cond),
+      Ok(Expr::Identifier(ref s)) if s == "False"
+    )
+  });
+  Some(DisplayNode::Slider {
+    target,
+    min,
+    max,
+    step,
+    current,
+    enabled,
+    after,
+  })
+}
+
 fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
   let lval = match args.first() {
     Some(Expr::FunctionCall { name, args: dargs })
@@ -32832,6 +33360,7 @@ fn assign_checkbox_state(
     DisplayNode::Spacer { .. }
     | DisplayNode::Text { .. }
     | DisplayNode::Static { .. }
+    | DisplayNode::Slider { .. }
     | DisplayNode::Popup { .. } => {}
   }
 }
@@ -32992,6 +33521,25 @@ fn display_node_to_json(node: &DisplayNode) -> String {
         json_escape_manipulate(current),
         choices_json.join(","),
         enabled,
+      )
+    }
+    DisplayNode::Slider {
+      target,
+      min,
+      max,
+      step,
+      current,
+      enabled,
+      after,
+    } => {
+      let after_json: Vec<String> = after
+        .iter()
+        .map(|a| format!("\"{}\"", json_escape_manipulate(a)))
+        .collect();
+      format!(
+        r#"{{"kind":"slider","target":"{}","min":{min},"max":{max},"step":{step},"current":{current},"enabled":{enabled},"after":[{}]}}"#,
+        json_escape_manipulate(target),
+        after_json.join(","),
       )
     }
     DisplayNode::Spacer { width } => {
@@ -33173,57 +33721,6 @@ pub fn peano_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     points.push((x, y));
   }
   Ok(space_filling_curve("PeanoCurve", args, side, &points))
-}
-
-/// GosperCurve[n] — Line through the 7^n + 1 vertices of the order-n Gosper
-/// curve (flowsnake), generated by the classic 60° L-system
-///   A → A-B--B+A++AA+B-   B → +A-BB--B-A++A+B
-/// with unit steps on the triangular lattice, starting at the origin.
-pub fn gosper_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Ok(unevaluated("GosperCurve", args));
-  let Some(n) = curve_order("GosperCurve", args, 8) else {
-    return unevaluated();
-  };
-  let mut word: Vec<u8> = vec![b'A'];
-  for _ in 0..n {
-    let mut next = Vec::with_capacity(word.len() * 7);
-    for &c in &word {
-      match c {
-        b'A' => next.extend_from_slice(b"A-B--B+A++AA+B-"),
-        b'B' => next.extend_from_slice(b"+A-BB--B-A++A+B"),
-        other => next.push(other),
-      }
-    }
-    word = next;
-  }
-  // Lattice basis: direction k (multiples of 60°) = (cos, sin)(60°·k),
-  // expressed in integer coordinates (a, b) → (a + b/2, b·√3/2).
-  const DIRS: [(i64, i64); 6] =
-    [(1, 0), (0, 1), (-1, 1), (-1, 0), (0, -1), (1, -1)];
-  let to_point = |a: i64, b: i64| -> Expr {
-    Expr::List(
-      vec![
-        Expr::Real(a as f64 + b as f64 / 2.0),
-        Expr::Real(b as f64 * 3f64.sqrt() / 2.0),
-      ]
-      .into(),
-    )
-  };
-  let (mut a, mut b, mut dir) = (0i64, 0i64, 0usize);
-  let mut points = vec![to_point(a, b)];
-  for &c in &word {
-    match c {
-      b'A' | b'B' => {
-        a += DIRS[dir].0;
-        b += DIRS[dir].1;
-        points.push(to_point(a, b));
-      }
-      b'+' => dir = (dir + 1) % 6,
-      b'-' => dir = (dir + 5) % 6,
-      _ => {}
-    }
-  }
-  Ok(call1("Line", Expr::List(points.into())))
 }
 
 /// SierpinskiCurve[n] — the closed Sierpiński square curve as a Line,

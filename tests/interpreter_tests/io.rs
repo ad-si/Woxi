@@ -880,19 +880,22 @@ mod streams {
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn open_write_and_close() {
-    let result =
-      interpret(r#"file = CreateFile[]; f = OpenWrite[file]; Close[f]"#)
-        .unwrap();
-    assert_ne!(result, "");
+    // Close gives back the file name, which is in $TemporaryDirectory.
+    let result = interpret(
+      r#"file = CreateFile[]; f = OpenWrite[file]; {Close[f] === file, StringStartsQ[file, $TemporaryDirectory]}"#,
+    )
+    .unwrap();
+    assert_eq!(result, "{True, True}");
   }
 
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn open_append_and_close() {
-    let result =
-      interpret(r#"file = CreateFile[]; f = OpenAppend[file]; Close[f]"#)
-        .unwrap();
-    assert_ne!(result, "");
+    let result = interpret(
+      r#"file = CreateFile[]; f = OpenAppend[file]; Close[f] === file"#,
+    )
+    .unwrap();
+    assert_eq!(result, "True");
   }
 
   #[test]
@@ -924,10 +927,10 @@ mod streams {
   #[cfg(not(target_arch = "wasm32"))]
   fn write_string_to_file() {
     let result = interpret(
-      r#"f = OpenWrite[CreateFile[]]; WriteString[f, "hello"]; Close[f]"#,
+      r#"f = OpenWrite[CreateFile[]]; WriteString[f, "hello"]; ReadString[Close[f]]"#,
     )
     .unwrap();
-    assert_ne!(result, "");
+    assert_eq!(result, "hello");
   }
 
   #[test]

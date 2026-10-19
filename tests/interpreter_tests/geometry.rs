@@ -264,7 +264,7 @@ mod area {
         "RegionIntersection[Line[{{0, 0}, {2, 2}}], Line[{{0, 2}, {2, 0}}]]"
       )
       .unwrap(),
-      "Point[{1, 1}]"
+      "Point[{{1, 1}}]"
     );
     // Exact rational coordinates in 3D, extracted with First.
     assert_eq!(
@@ -273,7 +273,24 @@ mod area {
          Line@{{0, 1, 0}, {1, 0, 0}}]"
       )
       .unwrap(),
-      "{3/4, 1/4, 0}"
+      "{{3/4, 1/4, 0}}"
+    );
+    // Several crossings come in reverse canonical order; a single inexact
+    // one is a plain Point[p].
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Line[{{0, 0}, {2, 2}, {4, 0}, {6, 2}}], \
+         Line[{{0, 1}, {6, 1}}]]"
+      )
+      .unwrap(),
+      "Point[{{5, 1}, {3, 1}, {1, 1}}]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Line[{{0., 0.}, {2, 2}}], Line[{{0, 2}, {2, 0}}]]"
+      )
+      .unwrap(),
+      "Point[{1., 1.}]"
     );
   }
 
@@ -9001,7 +9018,7 @@ mod region_centroid_difference {
          Disk[{1/2, 0}, 1/4]]]"
       )
       .unwrap(),
-      "{-(Pi/(2*(64 - Pi))), 0}"
+      "{-1/32*Pi/(4 - Pi/16), 0}"
     );
   }
 

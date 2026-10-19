@@ -3393,7 +3393,7 @@ pub fn dispatch_list_operations(
       });
     }
     "ArrayFlatten" if args.len() == 1 => {
-      return Some(Ok(array_flatten_ast(&args[0])));
+      return Some(Ok(array_flatten_ast(&args[0], args)));
     }
     // ArrayFlatten[a, r] glues a depth-2r block array. It is defined as
     // Flatten[a, {{1, r+1}, {2, r+2}, ..., {r, 2r}}]. r = 2 is the default,
@@ -3404,7 +3404,7 @@ pub fn dispatch_list_operations(
         return Some(Ok(unevaluated("ArrayFlatten", args)));
       };
       if r == 2 {
-        return Some(Ok(array_flatten_ast(&args[0])));
+        return Some(Ok(array_flatten_ast(&args[0], args)));
       }
       let spec: Vec<Expr> = (1..=r)
         .map(|i| {
@@ -8219,10 +8219,22 @@ fn normal_convert_associations(expr: &Expr) -> Expr {
 /// Combines a matrix of sub-matrices (blocks) into a single matrix.
 /// Scalar entries (e.g. 0) are expanded to zero/constant matrices
 /// of the appropriate dimensions inferred from neighboring blocks.
-fn array_flatten_ast(arg: &Expr) -> Expr {
+///
+/// Blocks that do not tile — two matrices of one block row with different
+/// heights, or of one block column with different widths — leave the call
+/// unevaluated with `ArrayFlatten::match`; a non-list emits
+/// `ArrayFlatten::depth`. `call_args` is the call as written, for both.
+fn array_flatten_ast(arg: &Expr, call_args: &[Expr]) -> Expr {
+  let original = || unevaluated("ArrayFlatten", call_args);
   // arg should be a list of rows, where each row is a list of blocks (sub-matrices)
   let Expr::List(block_rows) = arg else {
-    return call1("ArrayFlatten", arg.clone());
+    crate::emit_message(&format!(
+      "ArrayFlatten::depth: The ArrayDepth of the expression at position 1 \
+       of {} must be at least equal to the specified rank 2. (The rank is \
+       given by the optional second argument, which defaults to 2.)",
+      expr_to_output(&original())
+    ));
+    return original();
   };
 
   if block_rows.is_empty() {
@@ -8266,14 +8278,26 @@ fn array_flatten_ast(arg: &Expr) -> Expr {
   let mut row_heights: Vec<Option<usize>> = vec![None; n_block_rows];
   let mut col_widths: Vec<Option<usize>> = vec![None; n_block_cols];
 
+  let mismatch = |k: usize, index: usize| {
+    crate::emit_message(&format!(
+      "ArrayFlatten::match: {} fails the matching condition for \
+       ArrayFlatten[a,n]: if b = a[[i_1,i_2,...,i_n]], c = \
+       a[[j_1,j_2,...,j_n]], Head[a] == Head[b] == Head[c], \
+       Length[Dimensions[b]] >= n, Length[Dimensions[c]] >= n and i_k = j_k, \
+       then Dimensions[b][[k]] must equal Dimensions[c][[k]]. Here the \
+       condition fails for k = {k} and i_k = j_k = {index}.",
+      expr_to_output(&original())
+    ));
+    original()
+  };
   for (i, row) in block_grid.iter().enumerate() {
     for (j, block) in row.iter().enumerate() {
       if let Some((h, w)) = block_dims(block) {
-        if row_heights[i].is_none() {
-          row_heights[i] = Some(h);
+        if *row_heights[i].get_or_insert(h) != h {
+          return mismatch(1, i + 1);
         }
-        if col_widths[j].is_none() {
-          col_widths[j] = Some(w);
+        if j < n_block_cols && *col_widths[j].get_or_insert(w) != w {
+          return mismatch(2, j + 1);
         }
       }
     }

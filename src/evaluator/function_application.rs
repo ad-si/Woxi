@@ -1242,14 +1242,21 @@ fn try_sub_value_curried_match(
     if let Some(bindings) =
       crate::evaluator::pattern_matching::match_pattern(&actual, lhs)
     {
-      // A rule that rewrites the call to itself (`Subscript[l, a][x_] :=
-      // Subscript[l, a][x]`) is a fixed point; stop rather than recurse.
+      // A rule that rewrites the call to itself is a fixed point when it is
+      // literal (`Subscript[l, a][x] = Subscript[l, a][x]`); one with
+      // patterns (`Subscript[l, a][x_] := Subscript[l, a][x]`) is applied
+      // again and again until `$IterationLimit` stops it.
       if let Ok(raw) =
         crate::evaluator::pattern_matching::substitute_bindings_unevaluated(
           body, &bindings,
         )
         && expr_to_string(&raw) == expr_to_string(&actual)
       {
+        if crate::evaluator::pattern_matching::contains_pattern(lhs) {
+          return Some(Ok(
+            crate::evaluator::dispatch::evaluate_functions::iteration_limit_exceeded(),
+          ));
+        }
         return Some(Ok(raw));
       }
       return Some(crate::evaluator::pattern_matching::apply_bindings(
@@ -1281,48 +1288,87 @@ fn compose_and_evaluate<'a>(
   crate::evaluator::evaluate_expr_to_expr(&built[0])
 }
 
-/// `Derivative[n1, …, nk][Max | Min][x1, …, xk]` at real numeric points:
-/// `Max` and `Min` are piecewise linear, so a first-order partial is `1` for
-/// the slot holding the unique extremum and `0` for every other slot, and any
-/// higher total order is `0`. A tie is a kink, so it stays inert (`None`).
+/// `Derivative[n1, …, nk][Max | Min][x1, …, xk]`. `Max` and `Min` are
+/// piecewise linear, so a first-order partial is `1` where its slot holds
+/// the *first* extremal argument and `0` elsewhere, and any higher total
+/// order is `0`. Written as wolframscript writes it: slot `j` is the first
+/// maximum when `x_i - x_j < 0` for every earlier `i` and `x_j - x_i >= 0`
+/// for every later one (reversed for `Min`), and the partial for slot `k`
+/// is `Piecewise[{{0, C_1 || … || C_(k-1)}, {1, C_k}}, 0]` — the first case
+/// dropped for k = 1, the second folded into the default for the last slot.
 fn apply_extremum_partial_derivative(
   func_name: &str,
   orders: &[i128],
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   let total: i128 = orders.iter().sum();
-  let slot = if total == 1 {
-    orders.iter().position(|n| *n == 1)?
-  } else if total > 1 {
-    0
-  } else {
-    return None;
-  };
-  let values: Vec<f64> = args
-    .iter()
-    .map(crate::functions::math_ast::try_eval_to_f64)
-    .collect::<Option<_>>()?;
-  let pick = |a: &f64, b: &f64| {
-    if func_name == "Max" { a > b } else { a < b }
-  };
-  let best = (1..values.len()).fold(0, |best, i| {
-    if pick(&values[i], &values[best]) {
-      i
-    } else {
-      best
-    }
-  });
-  let tied = values
-    .iter()
-    .enumerate()
-    .any(|(i, v)| i != best && *v == values[best]);
-  if tied {
+  if total == 0 {
     return None;
   }
   if total > 1 {
     return Some(Ok(Expr::Integer(0)));
   }
-  Some(Ok(Expr::Integer(i128::from(slot == best))))
+  let slot = orders.iter().position(|n| *n == 1)?;
+  let n = args.len();
+  let is_max = func_name == "Max";
+  let difference = |a: &Expr, b: &Expr| {
+    plus(vec![a.clone(), times(vec![Expr::Integer(-1), b.clone()])])
+  };
+  let all = |mut conds: Vec<Expr>| {
+    if conds.len() == 1 {
+      conds.remove(0)
+    } else {
+      call("And", conds)
+    }
+  };
+  let any = |mut conds: Vec<Expr>| {
+    if conds.len() == 1 {
+      conds.remove(0)
+    } else {
+      call("Or", conds)
+    }
+  };
+  let first_extremum = |j: usize| -> Expr {
+    let mut conds = Vec::with_capacity(n - 1);
+    for i in 0..n {
+      if i < j {
+        let head = if is_max { "Less" } else { "Greater" };
+        conds.push(call(
+          head,
+          vec![difference(&args[i], &args[j]), Expr::Integer(0)],
+        ));
+      } else if i > j {
+        let head = if is_max { "GreaterEqual" } else { "LessEqual" };
+        conds.push(call(
+          head,
+          vec![difference(&args[j], &args[i]), Expr::Integer(0)],
+        ));
+      }
+    }
+    all(conds)
+  };
+  let case = |value: i128, cond: Expr| {
+    Expr::List(vec![Expr::Integer(value), cond].into())
+  };
+  let piecewise = |cases: Vec<Expr>, default: i128| {
+    call(
+      "Piecewise",
+      vec![Expr::List(cases.into()), Expr::Integer(default)],
+    )
+  };
+  let result = if n == 1 {
+    Expr::Integer(1)
+  } else if slot == 0 {
+    piecewise(vec![case(1, first_extremum(0))], 0)
+  } else {
+    let earlier = any((0..slot).map(first_extremum).collect());
+    if slot == n - 1 {
+      piecewise(vec![case(0, earlier)], 1)
+    } else {
+      piecewise(vec![case(0, earlier), case(1, first_extremum(slot))], 0)
+    }
+  };
+  Some(evaluate_expr_to_expr(&result))
 }
 
 /// `Derivative[n1, …, nk][f][x1, …, xk]` for a symbol `f` defined by a single

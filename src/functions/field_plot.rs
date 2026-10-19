@@ -4490,6 +4490,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut data_range: Option<((f64, f64), (f64, f64))> = None;
   // `DataReversed -> True`: first row at the bottom instead of the top.
   let mut data_reversed = false;
+  // `AspectRatio -> r` (height / width) overrides the default of matching
+  // the matrix shape.
+  let mut aspect_ratio: Option<f64> = None;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -4516,6 +4519,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             data_range = Some(((x0, x1), (y0, y1)));
           }
+        }
+        "AspectRatio" => {
+          aspect_ratio = try_eval_to_f64(replacement).filter(|r| *r > 0.0);
         }
         "DataReversed" => {
           if let Expr::Identifier(v) = replacement.as_ref()
@@ -4611,11 +4617,17 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
 
   // Aspect ratio: match the matrix shape (wider if more cols, taller if more rows)
-  let aspect = n_rows as f64 / n_cols as f64;
+  let aspect = aspect_ratio.unwrap_or(n_rows as f64 / n_cols as f64);
   let (svg_width, svg_height) = if aspect <= 1.0 {
-    (svg_width, (svg_width as f64 * aspect).round() as u32)
+    (
+      svg_width,
+      ((svg_width as f64 * aspect).round() as u32).max(1),
+    )
   } else {
-    ((svg_height as f64 / aspect).round() as u32, svg_height)
+    (
+      ((svg_height as f64 / aspect).round() as u32).max(1),
+      svg_height,
+    )
   };
 
   let s = RESOLUTION_SCALE;
@@ -4833,8 +4845,40 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The symbolic content, as `First`/`Part` see it: a `Raster` of the cell
   // colors with the first row at the top (`Raster` rows run bottom-up, so a
   // default plot lists them reversed) over the `DataRange` rectangle.
-  let ((x0, x1), (y0, y1)) =
-    data_range.unwrap_or(((0.0, n_cols as f64), (0.0, n_rows as f64)));
+  // `DataRange` places the cell *centers*, so the raster reaches half a
+  // cell beyond it (a single cell spans the whole range); without one the
+  // cells sit on the integer grid {{0, 0}, {cols, rows}}.
+  let rect = match data_range {
+    Some(((x0, x1), (y0, y1))) => {
+      let widen = |lo: f64, hi: f64, n: usize| {
+        if n > 1 {
+          let half = (hi - lo) / (n - 1) as f64 / 2.0;
+          (lo - half, hi + half)
+        } else {
+          (lo, hi)
+        }
+      };
+      let (x0, x1) = widen(x0, x1, n_cols);
+      let (y0, y1) = widen(y0, y1, n_rows);
+      Expr::List(
+        vec![
+          Expr::List(vec![Expr::Real(x0), Expr::Real(y0)].into()),
+          Expr::List(vec![Expr::Real(x1), Expr::Real(y1)].into()),
+        ]
+        .into(),
+      )
+    }
+    None => Expr::List(
+      vec![
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+        Expr::List(
+          vec![Expr::Integer(n_cols as i128), Expr::Integer(n_rows as i128)]
+            .into(),
+        ),
+      ]
+      .into(),
+    ),
+  };
   let channel = |v: u8| Expr::Real(f64::from(v) / 255.0);
   let mut raster_rows: Vec<Expr> = cell_rgb
     .iter()
@@ -4853,13 +4897,6 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !data_reversed {
     raster_rows.reverse();
   }
-  let rect = Expr::List(
-    vec![
-      Expr::List(vec![Expr::Real(x0), Expr::Real(y0)].into()),
-      Expr::List(vec![Expr::Real(x1), Expr::Real(y1)].into()),
-    ]
-    .into(),
-  );
   let structure = call1(
     "Graphics",
     call("Raster", vec![Expr::List(raster_rows.into()), rect]),
@@ -5156,20 +5193,28 @@ pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (svg_width, svg_height, full_width) = parse_field_options(args, 2);
 
   let grid_size = FIELD_GRID;
+  let plot_label = parse_field_plot_label(args, 2);
 
-  // Use plotters for axes (Re on x-axis, Im on y-axis)
-  let area = generate_axes_only(
+  // Use plotters for axes (Re on x-axis, Im on y-axis), reserving room above
+  // the frame for a PlotLabel.
+  let margins = field_plot_label_margins(plot_label.as_ref());
+  let mut area = crate::functions::plot::generate_axes_only_opts(
     (re_min, re_max),
     (im_min, im_max),
     svg_width,
     svg_height,
     full_width,
+    None,
+    margins.as_ref(),
   )?;
 
-  let mut svg = area.svg;
+  let mut svg = std::mem::take(&mut area.svg);
   // Remove closing </svg> to append custom elements
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
+  }
+  if let Some(label) = &plot_label {
+    inject_field_plot_label(&mut svg, &area, label);
   }
 
   // Render domain coloring as one embedded bitmap (a pixel per sample)

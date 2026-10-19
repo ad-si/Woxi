@@ -2025,17 +2025,11 @@ fn try_symbol_replace_all(
     // FunctionCall head replacement: f -> g turns f[a,b] into g[a,b]
     Expr::FunctionCall { name, args } => {
       let head_changed = name == pattern_sym;
-      // An InterpolatingFunction is atomic: rules never reach its data.
-      let atomic = name == "InterpolatingFunction";
       // Recurse into args
-      let changed_args = if atomic {
-        None
-      } else {
-        map_unchanged_lazily::<()>(args, |arg| {
-          Ok(try_symbol_replace_all(arg, pattern_sym, replacement))
-        })
-        .unwrap_or(None)
-      };
+      let changed_args = map_unchanged_lazily::<()>(args, |arg| {
+        Ok(try_symbol_replace_all(arg, pattern_sym, replacement))
+      })
+      .unwrap_or(None);
       let any_arg_changed = changed_args.is_some();
       let new_args = if head_changed || any_arg_changed {
         changed_args.unwrap_or_else(|| args.to_vec())
@@ -2510,12 +2504,6 @@ fn try_flat_replace_all(
   replacement: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
   match expr {
-    // An InterpolatingFunction is an atomic object: rules never reach into
-    // its tabulated data (and walking thousands of points per replacement
-    // makes sampling an NDSolve result through `/.` crawl).
-    Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => {
-      Ok(None)
-    }
     Expr::FunctionCall { name, args } => {
       let has_flat = is_builtin_flat(name)
         || crate::func_attrs_contains(name, Attributes::Flat);
@@ -2707,6 +2695,33 @@ fn shield_interpolating_functions(e: &Expr, held: &RefCell<Vec<Expr>>) -> Expr {
   e.clone()
 }
 
+/// Shield the `InterpolatingFunction`s that rules substitute in (an NDSolve
+/// solution `{x -> InterpolatingFunction[…]}`), but not a pattern that names
+/// the head (`InterpolatingFunction[d_, __] :> d`), which has to stay a
+/// pattern.
+fn shield_rule_values(rules: &Expr, held: &RefCell<Vec<Expr>>) -> Expr {
+  match rules {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => rule_expr(
+      *pattern.clone(),
+      shield_interpolating_functions(replacement, held),
+    ),
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => rule_delayed_expr(
+      *pattern.clone(),
+      shield_interpolating_functions(replacement, held),
+    ),
+    Expr::List(items) => {
+      Expr::List(items.iter().map(|r| shield_rule_values(r, held)).collect())
+    }
+    _ => shield_interpolating_functions(rules, held),
+  }
+}
+
 fn held_interpolating_function(name: &str, held: &[Expr]) -> Option<Expr> {
   let n = name
     .strip_prefix("$InterpolatingFunctionHold")?
@@ -2739,10 +2754,61 @@ fn restore_interpolating_functions(e: &Expr, held: &[Expr]) -> Expr {
   }
 }
 
-/// `expr /. rules`. An `InterpolatingFunction` is an atomic object —
-/// replacement rules never reach into its tabulated data — so each one is
-/// set aside as a placeholder while the rules run, instead of every
-/// replacement path walking, formatting and copying thousands of points.
+/// Whether a rule with left-hand side `lhs` could match something inside an
+/// `InterpolatingFunction`, whose arguments hold only numbers and lists. A
+/// symbol or a call with a concrete head (`t`, `g[x_]`) cannot; numbers,
+/// lists and bare patterns (`4`, `{a_, b_}`, `_Real`) can.
+fn rule_can_reach_interpolation_data(lhs: &Expr) -> bool {
+  match lhs {
+    Expr::Identifier(s) => s == "List" || s == "InterpolatingFunction",
+    Expr::FunctionCall { name, .. } => matches!(
+      name.as_str(),
+      "List"
+        | "InterpolatingFunction"
+        | "Pattern"
+        | "Blank"
+        | "BlankSequence"
+        | "BlankNullSequence"
+        | "Alternatives"
+        | "Condition"
+        | "PatternTest"
+        | "Optional"
+        | "Except"
+        | "Verbatim"
+        | "HoldPattern"
+        | "Repeated"
+        | "RepeatedNull"
+        | "Longest"
+        | "Shortest"
+    ),
+    _ => true,
+  }
+}
+
+/// Whether any rule in `rules` could reach into an `InterpolatingFunction`'s
+/// data; true for anything that is not plainly a (list of) rule(s).
+fn rules_reach_interpolation_data(rules: &Expr) -> bool {
+  match rules {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      rule_can_reach_interpolation_data(pattern)
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      rule_can_reach_interpolation_data(&args[0])
+    }
+    Expr::List(items) => items.iter().any(rules_reach_interpolation_data),
+    _ => true,
+  }
+}
+
+/// `expr /. rules`. A rule that can only match symbols or calls with a
+/// concrete head finds nothing inside an `InterpolatingFunction`'s
+/// tabulated data, so each one is set aside as a placeholder while such
+/// rules run, instead of every replacement path walking, formatting and
+/// copying thousands of points (sampling an NDSolve result through
+/// `x[t] /. sol /. t -> 2.`). Any other rule reaches into the data as in
+/// wolframscript: `Interpolation[{1, 4, 9, 16}] /. 4 -> 5` changes it.
 pub fn apply_replace_all_ast(
   expr: &Expr,
   rules: &Expr,
@@ -2753,8 +2819,12 @@ pub fn apply_replace_all_ast(
     return apply_replace_all_ast_impl(expr, rules);
   }
   let held = RefCell::new(Vec::new());
-  let shielded_expr = shield_interpolating_functions(expr, &held);
-  let shielded_rules = shield_interpolating_functions(rules, &held);
+  let shielded_expr = if rules_reach_interpolation_data(rules) {
+    expr.clone()
+  } else {
+    shield_interpolating_functions(expr, &held)
+  };
+  let shielded_rules = shield_rule_values(rules, &held);
   let result = apply_replace_all_ast_impl(&shielded_expr, &shielded_rules)?;
   Ok(restore_interpolating_functions(&result, &held.borrow()))
 }

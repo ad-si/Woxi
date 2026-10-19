@@ -1311,6 +1311,52 @@ mod plus_numeric_contagion {
     assert_eq!(interpret("0. + 0. I").unwrap(), "0. + 0.*I");
   }
 
+  // A complex number prints as one unit: a machine pure-imaginary one keeps
+  // its `0.` real part and a complex summand or factor is bracketed.
+  // Regression: `ToString[2. I - 2. I, InputForm]` was `0.*I` and
+  // `x + 2 + 3 I` printed as `2 + x + 3*I`.
+  #[test]
+  fn complex_number_prints_as_one_unit() {
+    assert_eq!(interpret("3.5 I").unwrap(), "0. + 3.5*I");
+    assert_eq!(interpret("-1.5 I").unwrap(), "0. - 1.5*I");
+    assert_eq!(interpret("x + 1.5 I").unwrap(), "(0. + 1.5*I) + x");
+    assert_eq!(interpret("x - 1.5 I").unwrap(), "(0. - 1.5*I) + x");
+    assert_eq!(interpret("x + 2. + 1.5 I").unwrap(), "(2. + 1.5*I) + x");
+    assert_eq!(interpret("x + 2 + 3 I").unwrap(), "(2 + 3*I) + x");
+    assert_eq!(interpret("x + 3 I").unwrap(), "3*I + x");
+    assert_eq!(interpret("1.5 I x + y").unwrap(), "(0. + 1.5*I)*x + y");
+    assert_eq!(interpret("Sqrt[x] 2. I").unwrap(), "(0. + 2.*I)*Sqrt[x]");
+    assert_eq!(interpret("x^(1.5 I)").unwrap(), "x^(0. + 1.5*I)");
+    assert_eq!(interpret("{f[1.5 I]}").unwrap(), "{f[0. + 1.5*I]}");
+    assert_eq!(interpret("Hold[1.5 I]").unwrap(), "Hold[1.5*I]");
+    assert_eq!(
+      interpret(
+        "ToString[{2. I - 2. I, 1.5 I + I Pi, x + 2 + 3 I}, InputForm]"
+      )
+      .unwrap(),
+      "{0. + 0.*I, 0. + 4.641592653589793*I, (2 + 3*I) + x}"
+    );
+    assert_eq!(interpret("ToString[2. I - 2. I]").unwrap(), "0. + 0. I");
+  }
+
+  // A machine pure imaginary is Complex[0., b]: its real part is 0.
+  #[test]
+  fn real_part_of_machine_imaginary() {
+    assert_eq!(
+      interpret("{Re[1.5 I], Re[2. I - 2. I], Re[I Pi], Re[3 I]}").unwrap(),
+      "{0., 0., 0, 0}"
+    );
+  }
+
+  // A nested sum is bracketed in InputForm wherever it stands.
+  #[test]
+  fn nested_plus_input_form() {
+    assert_eq!(
+      interpret("ToString[Hold[Plus[Plus[a, b], c]], InputForm]").unwrap(),
+      "Hold[(a + b) + c]"
+    );
+  }
+
   // A machine number makes the sum machine precision, so an arbitrary-
   // precision summand joins the machine fold. Regression: it was dropped
   // (`1.5 + 2.5`30` gave 1.5).
@@ -1368,6 +1414,10 @@ mod plus_arbitrary_precision_terms {
   #[test]
   fn negative_coefficient_prints_as_minus() {
     assert_eq!(interpret("1 + Times[-1.5`30, I]").unwrap(), "1 - 1.5`30.*I");
+    assert_eq!(
+      interpret("ToString[x - 2.5`20 y, InputForm]").unwrap(),
+      "x - 2.5`20.*y"
+    );
   }
 
   // `N` builds a complex result as the evaluated `Plus[re, Times[im, I]]`,
@@ -5947,9 +5997,11 @@ mod expand_threading {
       interpret("N[1/7000000, 2]").unwrap(),
       "1.428571428571`2.*^-7"
     );
+    // The digits are those of the value rounded to the limb grid, not of
+    // the exact rational: …571|42… shows as …572.
     assert_eq!(
-      interpret("N[10^-8/7, 20]").unwrap(),
-      "1.4285714285714285714285714285714285714285714285714`20.*^-9"
+      interpret("N[3/700000000, 20]").unwrap(),
+      "4.28571428571428571428571428572`20.*^-9"
     );
     // Large integer parts get no fraction limb, or even lose integer digits.
     assert_eq!(
@@ -9119,7 +9171,7 @@ mod arbitrary_precision_transcendentals {
     );
     assert_eq!(
       interpret("ArcSinh[N[1/2, 20]]").unwrap(),
-      "0.48121182505960344749775891342436842314`20.031821293103135"
+      "0.48121182505960344749775891342436842313`20.031821293103135"
     );
     assert_eq!(
       interpret("ArcTanh[N[1/2, 20]]").unwrap(),
@@ -9408,6 +9460,15 @@ mod mod_exact_symbolic {
     assert_eq!(interpret("Mod[Pi, 2, -1]").unwrap(), "-4 + Pi");
     assert_eq!(interpret("Mod[Pi, 1, 1]").unwrap(), "-2 + Pi");
     assert_eq!(interpret("Mod[7 Pi/2, Pi, 1]").unwrap(), "Pi/2");
+  }
+
+  // Gaussian Mod also applies when the complex operand has machine-real
+  // parts (it used to stay unevaluated, which blanked ComplexPlot of Mod).
+  #[test]
+  fn gaussian_mod_machine_reals() {
+    assert_eq!(interpret("Mod[3.5 + 4.5 I, 2]").unwrap(), "-0.5 + 0.5*I");
+    assert_eq!(interpret("Mod[2.5 I, 2]").unwrap(), "0. + 0.5*I");
+    assert_eq!(interpret("Mod[1.5 + 0.5 I, 1]").unwrap(), "-0.5 + 0.5*I");
   }
 }
 

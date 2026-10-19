@@ -553,6 +553,26 @@ pub(crate) fn split_into_segments(
   segments
 }
 
+/// Finite segments of `points` with every y clamped into `[y_min, y_max]`.
+/// A filled region keeps covering the plot area where the curve itself has
+/// left the plot range, so it follows the clamped curve instead of the
+/// clipped one.
+pub(crate) fn clamp_segments_to_y_range(
+  points: &[(f64, f64)],
+  y_min: f64,
+  y_max: f64,
+) -> Vec<Vec<(f64, f64)>> {
+  split_into_segments(points)
+    .into_iter()
+    .map(|seg| {
+      seg
+        .into_iter()
+        .map(|(x, y)| (x, y.clamp(y_min, y_max)))
+        .collect()
+    })
+    .collect()
+}
+
 /// Clip line segments to a y-range, interpolating at boundaries.
 /// Points outside the range are removed and the line is split,
 /// with interpolated points added at the boundary crossings.
@@ -3685,7 +3705,12 @@ fn generate_svg_with_options(
               match series_fill_target(opts, series_idx) {
                 FillTarget::Level(level) => {
                   if let Some(ref_y) = level.reference_y(y_min, y_max) {
-                    for segment in &segments {
+                    let fill_segments = clip_segments_to_x_range(
+                      clamp_segments_to_y_range(points, y_min, y_max),
+                      x_min,
+                      x_max,
+                    );
+                    for segment in &fill_segments {
                       if segment.len() < 2 {
                         continue;
                       }
@@ -4893,6 +4918,24 @@ pub(crate) fn generate_scatter_svg_with_options(
           if tick_axis_x { tick } else { 0 },
         )
         .draw()
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }
+
+    // A framed plot closes its plotting area on all four sides, as in the
+    // line renderer; the mesh above only draws the left and bottom edges.
+    if opts.frame {
+      let frame_style = dark_gray.stroke_width(RESOLUTION_SCALE);
+      chart
+        .draw_series(std::iter::once(PathElement::new(
+          vec![
+            (x_min, y_min),
+            (x_max, y_min),
+            (x_max, y_max),
+            (x_min, y_max),
+            (x_min, y_min),
+          ],
+          frame_style,
+        )))
         .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
     }
 

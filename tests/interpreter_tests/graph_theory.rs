@@ -7901,7 +7901,7 @@ mod graph_utilities_package {
   fn hamiltonian_cycles_of_rule_list_visit_every_vertex_once() {
     assert_eq!(
       interpret(
-        "c = First[GraphUtilities`HamiltonianCycles[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1, 1 -> 3}]]; \
+        "Needs[\"GraphUtilities`\"]; c = First[GraphUtilities`HamiltonianCycles[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1, 1 -> 3}]]; \
          {Sort[c], Length[c]}"
       )
       .unwrap(),
@@ -7913,7 +7913,7 @@ mod graph_utilities_package {
   fn hamiltonian_cycles_of_polyhedron_skeleton() {
     assert_eq!(
       interpret(
-        "Sort[First[GraphUtilities`HamiltonianCycles[Rule @@@ PolyhedronData[\"Cube\", \"EdgeIndices\"]]]]"
+        "Needs[\"GraphUtilities`\"]; Sort[First[GraphUtilities`HamiltonianCycles[Rule @@@ PolyhedronData[\"Cube\", \"EdgeIndices\"]]]]"
       )
       .unwrap(),
       "{1, 2, 3, 4, 5, 6, 7, 8}"
@@ -7924,6 +7924,10 @@ mod graph_utilities_package {
   fn polyhedron_data_class_lists_members_and_names() {
     assert_eq!(
       interpret("PolyhedronData[\"Platonic\"]").unwrap(),
+      "{Tetrahedron, Cube, Octahedron, Dodecahedron, Icosahedron}"
+    );
+    assert_eq!(
+      interpret("PolyhedronData[\"PlatonicDual\"]").unwrap(),
       "{Cube, Dodecahedron, Icosahedron, Octahedron, Tetrahedron}"
     );
     assert_eq!(
@@ -7933,8 +7937,12 @@ mod graph_utilities_package {
     );
   }
 
+  // The package's VertexList and ClosenessCentrality only exist once it is
+  // loaded in an *earlier* input: read in the same line as the `Needs`, the
+  // names are created before it runs (wolframscript leaves them unevaluated).
   #[test]
   fn vertex_list_of_rule_list() {
+    interpret("Needs[\"GraphUtilities`\"]").unwrap();
     assert_eq!(
       interpret("GraphUtilities`VertexList[{a -> b, b -> c, c -> a}]").unwrap(),
       "{a, b, c}"
@@ -7945,14 +7953,14 @@ mod graph_utilities_package {
   fn page_ranks_are_vertex_rules_summing_to_one() {
     assert_eq!(
       interpret(
-        "Round[Last /@ GraphUtilities`PageRanks[{1 -> 2, 2 -> 3, 3 -> 1}], 10^-6]"
+        "Needs[\"GraphUtilities`\"]; Round[Last /@ GraphUtilities`PageRanks[{1 -> 2, 2 -> 3, 3 -> 1}], 10^-6]"
       )
       .unwrap(),
       "{333333/1000000, 333333/1000000, 333333/1000000}"
     );
     assert_eq!(
       interpret(
-        "First /@ GraphUtilities`PageRanks[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 3}]"
+        "Needs[\"GraphUtilities`\"]; First /@ GraphUtilities`PageRanks[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 3}]"
       )
       .unwrap(),
       "{1, 2, 3}"
@@ -7963,28 +7971,36 @@ mod graph_utilities_package {
   fn graph_utilities_graph_path() {
     assert_eq!(
       interpret(
-        "GraphUtilities`GraphPath[{a -> b, b -> c, c -> d, a -> d, d -> a}, a, c]"
+        "Needs[\"GraphUtilities`\"]; GraphUtilities`GraphPath[{a -> b, b -> c, c -> d, a -> d, d -> a}, a, c]"
       )
       .unwrap(),
       "{a, b, c}"
     );
     assert_eq!(
       interpret(
-        "GraphUtilities`GraphPath[{1 -> 2, 2 -> 3, 3 -> 4, 1 -> 4}, 1, 4]"
+        "Needs[\"GraphUtilities`\"]; GraphUtilities`GraphPath[{1 -> 2, 2 -> 3, 3 -> 4, 1 -> 4}, 1, 4]"
       )
       .unwrap(),
       "{1, 4}"
     );
   }
 
+  // The package's closeness is the reciprocal of the distance sum, not the
+  // built-in's (n - 1)/Σd, and 0. for a vertex that cannot reach the rest.
   #[test]
-  fn closeness_centrality_matches_graph_version() {
+  fn closeness_centrality_is_reciprocal_distance_sum() {
+    interpret("Needs[\"GraphUtilities`\"]").unwrap();
     assert_eq!(
       interpret(
-        "GraphUtilities`ClosenessCentrality[{1 -> 2, 2 -> 3, 3 -> 1}] === ClosenessCentrality[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]"
+        "GraphUtilities`ClosenessCentrality[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1, 1 -> 3}]"
       )
       .unwrap(),
-      "True"
+      "{0.25, 0.16666666666666666, 0.16666666666666666, 0.2}"
+    );
+    assert_eq!(
+      interpret("GraphUtilities`ClosenessCentrality[{1 -> 2, 2 -> 3}]")
+        .unwrap(),
+      "{0.3333333333333333, 0., 0.}"
     );
   }
 
@@ -7992,7 +8008,7 @@ mod graph_utilities_package {
   fn expression_tree_plot_line_has_one_segment_per_edge() {
     assert_eq!(
       interpret(
-        "Length[First[First[Cases[GraphUtilities`ExpressionTreePlot[f[a, g[b, c]]], _Line, Infinity]]]]"
+        "Needs[\"GraphUtilities`\"]; Length[First[First[Cases[GraphUtilities`ExpressionTreePlot[f[a, g[b, c]]], _Line, Infinity]]]]"
       )
       .unwrap(),
       "4"

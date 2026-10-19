@@ -4795,7 +4795,9 @@ fn display_node_plain_text(
     DisplayNode::Column(children) | DisplayNode::Row(children) => {
       children.iter().map(display_node_plain_text).collect()
     }
-    DisplayNode::Checkbox { .. } | DisplayNode::Spacer { .. } => String::new(),
+    DisplayNode::Checkbox { .. }
+    | DisplayNode::Slider { .. }
+    | DisplayNode::Spacer { .. } => String::new(),
     DisplayNode::Popup { current, .. } => current.clone(),
   }
 }
@@ -4952,6 +4954,44 @@ fn render_display_node<'a>(
         list = list.style(disabled_pick_list_style);
       }
       list.into()
+    }
+    DisplayNode::Slider {
+      target,
+      min,
+      max,
+      step,
+      current,
+      enabled,
+      after,
+    } => {
+      // A `Manipulator[Dynamic[lval], {min, max, step}]` display element:
+      // dragging writes `lval = <value>` back, followed by the statements of
+      // an enclosing `EventHandler`'s click/drag actions. A trailing
+      // `Enabled -> cond` reading `False` greys it out and swallows drags.
+      let enabled = *enabled;
+      let target = target.clone();
+      let after = after.clone();
+      let mut s = slider(*min..=*max, *current, move |v| {
+        if !enabled {
+          return Message::Noop;
+        }
+        let mut mutation = format!("{target} = {v}");
+        for a in &after {
+          mutation.push_str("; ");
+          mutation.push_str(a);
+        }
+        Message::ManipulateDisplayToggled(cell_idx, mutation)
+      })
+      .width(iced::Length::Fixed(120.0));
+      if *step > 0.0 {
+        s = s.step(*step);
+      } else {
+        s = s.step((max - min) / 1000.0);
+      }
+      if !enabled {
+        s = s.style(disabled_slider_style);
+      }
+      s.into()
     }
     DisplayNode::Spacer { width } => {
       space::Space::new().width(*width as f32).into()
@@ -8328,6 +8368,39 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       "bare-integer-count Compile helper should build a ManipulateState",
     );
     assert_eq!(state.error, None, "the compiled body must evaluate cleanly");
+  }
+
+  /// A Manipulate whose body is `Dynamic@Tooltip[Graphics[…], "text"]`
+  /// preceded by statements that mutate hidden `ControlType -> None` state
+  /// (a particle-simulation shape found in a Demonstrations notebook,
+  /// independently written). Regression: `Tooltip` was not looked through,
+  /// so the widget showed `Tooltip[, text]` instead of the drawing.
+  #[test]
+  fn manipulate_dynamic_tooltip_wrapped_graphics_with_hidden_state() {
+    let code = r#"Manipulate[
+      If[reset, steps = 0];
+      Dynamic@Tooltip[
+        Graphics[{Blue, Circle[{0., 0.}, rad],
+          If[run, steps += 1;],
+          EdgeForm[Black], Disk[#, 0.3] & /@ pts},
+          PlotRange -> {{-rad, rad}, {-rad, rad}},
+          PlotLabel -> Style[StringForm["step = ``", steps]]],
+        "hover text"],
+      Row@{Control@{{run, False, Tooltip["go", "start"]}, {False, True}},
+        Spacer[20],
+        Control@{{reset, False, "reset"}, {False, True}}},
+      {{steps, 0}, ControlType -> None},
+      {{rad, 4.}, ControlType -> None},
+      {{pts, {{1, 1}, {-1, 2}}}, ControlType -> None},
+      TrackedSymbols -> True
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("Manipulate should build a ManipulateState");
+    assert_eq!(state.error, None);
+    assert!(state.graphics_handle.is_some(), "the drawing must render");
+    assert_eq!(state.text_output, None);
   }
 
   /// A Manipulate whose body composites two independently computed plots
@@ -15275,6 +15348,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         | DisplayNode::ActionMenu { label, .. } => walk(label, out),
         DisplayNode::Checkbox { .. }
         | DisplayNode::Popup { .. }
+        | DisplayNode::Slider { .. }
         | DisplayNode::Spacer { .. }
         | DisplayNode::Text { .. }
         | DisplayNode::Static { .. } => {}
@@ -15312,6 +15386,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         | DisplayNode::Button { label, .. }
         | DisplayNode::ActionMenu { label, .. } => walk(label, out),
         DisplayNode::Checkbox { .. }
+        | DisplayNode::Slider { .. }
         | DisplayNode::Spacer { .. }
         | DisplayNode::Text { .. }
         | DisplayNode::Static { .. } => {}
@@ -15379,6 +15454,119 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     let (_, selected_second) = popup_menu_state(&choices, "2");
     assert_eq!(selected_first.map(|c| c.index), Some(0));
     assert_eq!(selected_second.map(|c| c.index), Some(1));
+  }
+
+  /// A `Manipulator[Dynamic[slot], {0, 3, 1}]` drawn inside a display
+  /// element — wrapped in `Tooltip`, a `DynamicModule` holding `slot`, and an
+  /// `EventHandler` whose click action copies `slot` into persistent state —
+  /// is a live slider: its module-local stays one stable state variable,
+  /// and dragging it writes back and runs the handler's statements.
+  #[test]
+  fn display_manipulator_in_event_handler_writes_back_and_runs_actions() {
+    use woxi::functions::graphics::DisplayNode;
+    fn sliders(
+      node: &DisplayNode,
+      out: &mut Vec<(String, f64, f64, f64, bool, Vec<String>)>,
+    ) {
+      match node {
+        DisplayNode::Slider {
+          target,
+          min,
+          max,
+          step,
+          enabled,
+          after,
+          ..
+        } => {
+          out.push((target.clone(), *min, *max, *step, *enabled, after.clone()))
+        }
+        DisplayNode::Row(children) | DisplayNode::Column(children) => {
+          children.iter().for_each(|c| sliders(c, out))
+        }
+        DisplayNode::Panel(child) => sliders(child, out),
+        _ => {}
+      }
+    }
+    let code = "Manipulate[\
+      If[jump, {cx, cy} = pts[[sel + 1]]; jump = False]; \
+      ListPlot[{{cx, cy}}], \
+      {{pts, {{0, 0}, {1, 1}, {2, 4}, {3, 9}}}, ControlType -> None}, \
+      {{sel, 0}, ControlType -> None}, \
+      {{jump, False}, ControlType -> None}, \
+      {{cx, 0}, ControlType -> None}, {{cy, 0}, ControlType -> None}, \
+      {{on, True}, {True, False}}, \
+      Tooltip[DynamicModule[{slot = 0}, Row[{\"pick \", \
+        Dynamic[EventHandler[Manipulator[Dynamic[slot], {0, 3, 1}, \
+          Enabled -> on], \
+          \"MouseClicked\" :> (sel = slot; jump = True), \
+          \"MouseDragged\" :> (sel = slot; jump = True)]]}]], \"tip\"]]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("Manipulate with a display slider must build a widget");
+    assert!(state.error.is_none(), "body must render: {:?}", state.error);
+    assert!(
+      state.state.iter().any(|(n, v)| n == "slot" && v == "0"),
+      "the DynamicModule local is seeded as state: {:?}",
+      state.state
+    );
+
+    let mut found = Vec::new();
+    state
+      .display_trees
+      .iter()
+      .for_each(|t| sliders(t, &mut found));
+    assert_eq!(
+      found,
+      vec![(
+        "slot".to_string(),
+        0.0,
+        3.0,
+        1.0,
+        true,
+        vec!["sel = slot".to_string(), "jump = True".to_string()],
+      )],
+      "one slider, targeting the stable local, with deduplicated actions"
+    );
+    for t in &state.display_trees {
+      let _: Element<'_, Message> = render_display_node(0, t);
+    }
+
+    // Dragging to slot 2 writes `slot`, then runs the handler's statements:
+    // the body picks up the selected point on the re-render.
+    state.apply_display_mutation("slot = 2; sel = slot; jump = True");
+    let get = |name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+    };
+    assert_eq!(get("slot").as_deref(), Some("2"));
+    assert_eq!(get("sel").as_deref(), Some("2"));
+    assert_eq!(get("cx").as_deref(), Some("2"));
+    assert_eq!(get("cy").as_deref(), Some("4"));
+    assert_eq!(get("jump").as_deref(), Some("False"));
+    let mut found = Vec::new();
+    state
+      .display_trees
+      .iter()
+      .for_each(|t| sliders(t, &mut found));
+    assert_eq!(found[0].0, "slot", "the target survives a re-render");
+  }
+
+  /// A control caption that multiplies typeset pieces (`Style["n", Italic]
+  /// Text[…]`) reads as juxtaposed words, not as `n*word`.
+  #[test]
+  fn control_label_product_of_styled_pieces_is_space_separated() {
+    let code = "Manipulate[x, {{x, 1, Style[\"n\", Italic] Text[\"words\"]}, \
+      1, 3, 1}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("Manipulate must build a widget");
+    match &state.controls[0] {
+      manipulate::ControlState::Continuous { label, .. } => {
+        assert_eq!(label, "n words");
+      }
+      other => panic!("unexpected control: {other:?}"),
+    }
   }
 
   #[test]

@@ -37,10 +37,10 @@ fn delayed_name(k: usize) -> String {
   format!("__dde$delayed${k}")
 }
 
-/// `f[s /; s <= a] == rhs` — the history of `f` up to `a`. The condition's
-/// variable `s` is a dummy (it need not be the independent variable); `rhs`
-/// is returned in terms of `t_name`. Returns the function name, the history's
-/// end point `a` and the right-hand side.
+/// `f[t /; t <= a] == rhs` — the history of `f` up to `a`. The condition's
+/// variable has to be the independent variable `t_name`: wolframscript
+/// rejects `f[s /; s <= a]` (`NDSolve::ndsv`). Returns the function name, the
+/// history's end point `a` and the right-hand side.
 fn parse_history_condition(
   eq: &Expr,
   t_name: &str,
@@ -62,9 +62,9 @@ fn parse_history_condition(
   if cond_head != "Condition" || cond_args.len() != 2 {
     return None;
   }
-  let Expr::Identifier(dummy) = &cond_args[0] else {
+  if !matches!(&cond_args[0], Expr::Identifier(v) if v == t_name) {
     return None;
-  };
+  }
   let Expr::Comparison {
     operands,
     operators,
@@ -75,17 +75,12 @@ fn parse_history_condition(
   if operands.len() != 2
     || operators.len() != 1
     || !matches!(operators[0], ComparisonOp::LessEqual | ComparisonOp::Less)
-    || !matches!(&operands[0], Expr::Identifier(v) if v == dummy)
+    || !matches!(&operands[0], Expr::Identifier(v) if v == t_name)
   {
     return None;
   }
   let end = nval_to_f64(&operands[1])?;
-  let rhs = if dummy == t_name {
-    rhs.clone()
-  } else {
-    crate::syntax::rename_symbol(rhs, dummy, t_name)
-  };
-  Some((name.clone(), end, rhs))
+  Some((name.clone(), end, rhs.clone()))
 }
 
 fn contains_history_condition(eqs: &[Expr], t_name: &str) -> bool {

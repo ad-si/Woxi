@@ -2371,6 +2371,16 @@ mod graphics {
     }
 
     #[test]
+    fn number_form_of_nested_list_is_typeset() {
+      // Regression: `NumberForm[matrix, {3, 2}]` (a Manipulate readout of a
+      // 2x2 matrix) printed the raw `NumberForm[{{…}}, {3, 2}]` call because
+      // only flat lists were threaded.
+      let svg = export_svg("NumberForm[{{0.953939, 0}, {0, 0.3}}, {3, 2}]");
+      assert!(!svg.contains("NumberForm"), "{svg}");
+      assert!(svg.contains("0.95"), "{svg}");
+    }
+
+    #[test]
     fn traditional_form_padded_form_complex_label() {
       // Regression: `Text[TraditionalForm[PaddedForm[z, {4, 3}]]]` (the Argand
       // Diagram readout) printed the raw `PaddedForm(…)` call with unrounded
@@ -15661,6 +15671,22 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_aspect_ratio() {
+      // Regression: `AspectRatio -> r` shapes the plot; a one-row, very wide
+      // array used to collapse to zero height.
+      let svg = export_svg(
+        "ArrayPlot[{Range[0, 1000]}, AspectRatio -> 1/4, ImageSize -> {500, 200}]",
+      );
+      assert!(
+        svg.starts_with("<svg width=\"500\" height=\"125\""),
+        "unexpected header: {}",
+        svg.lines().next().unwrap_or("")
+      );
+      let tall = export_svg("ArrayPlot[{{1, 2}, {3, 4}}, AspectRatio -> 2]");
+      assert!(!tall.starts_with("<svg width=\"0\""));
+    }
+
+    #[test]
     fn array_plot_integer_scaling() {
       // Regression: values > 1 must be auto-scaled, not clamped to [0,1]
       let svg = export_svg("ArrayPlot[{{1, 2, 3, 4}, {5, 6, 7, 8}}]");
@@ -15734,6 +15760,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // DataRange places the cell centers, so the raster reaches half a cell
+    // beyond it; without one the cells sit on the integer grid.
     #[test]
     fn array_plot_data_range_places_raster() {
       clear_state();
@@ -15742,7 +15770,18 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "First[ArrayPlot[{{1, 2}, {3, 4}}, DataRange -> {{-2, 2}, {-1, 1}}]][[2]]"
         )
         .unwrap(),
-        "{{-2., -1.}, {2., 1.}}"
+        "{{-4., -2.}, {4., 2.}}"
+      );
+      assert_eq!(
+        interpret(
+          "First[ArrayPlot[{{1, 2, 3}, {3, 4, 5}}, DataRange -> {{0, 1}, {0, 10}}]][[2]]"
+        )
+        .unwrap(),
+        "{{-0.25, -5.}, {1.25, 15.}}"
+      );
+      assert_eq!(
+        interpret("First[ArrayPlot[{{1, 2}, {3, 4}}]][[2]]").unwrap(),
+        "{{0, 0}, {2, 2}}"
       );
     }
 
@@ -16254,6 +16293,36 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
   mod complex_plot {
     use super::*;
+
+    /// `Mod` of a complex function used to stay unevaluated, so every sample
+    /// was dropped and the domain colouring came out fully transparent.
+    #[test]
+    fn complex_plot_of_complex_mod_is_coloured() {
+      let svg = export_svg("ComplexPlot[Mod[z^-2, 2], {z, -1 - I, 1 + I}]");
+      let b64 = svg
+        .split("data:image/png;base64,")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("embedded bitmap");
+      use base64::Engine as _;
+      let png = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+      let img = ::image::load_from_memory(&png).unwrap().to_rgba8();
+      let opaque = img.pixels().filter(|p| p.0[3] == 255).count();
+      assert!(
+        opaque * 2 > img.pixels().count(),
+        "expected most samples to be coloured, got {opaque}"
+      );
+    }
+
+    #[test]
+    fn complex_plot_draws_plot_label() {
+      let svg = export_svg(
+        "ComplexPlot[z^2, {z, -1 - I, 1 + I}, PlotLabel -> \"Domain\"]",
+      );
+      assert!(svg.contains(">Domain</text>"), "missing label");
+    }
 
     #[test]
     fn complex_plot_identity() {
@@ -35907,42 +35976,18 @@ fn graphics3d_view_vertical_turns_the_picture() {
   assert!(dy < 1e-6 && dx > 1.0, "tilted: {dx} {dy}");
 }
 
-mod gosper_curve_tests {
+/// `GosperCurve` is not a Wolfram Language function (Wolfram 15 has no
+/// `*Gosper*` symbol at all), so it stays unevaluated and a notebook can
+/// define it itself.
+mod gosper_curve_is_not_built_in {
   use woxi::interpret;
 
-  // GosperCurve[n] is a Line with 7^n + 1 vertices on the triangular lattice.
   #[test]
-  fn vertex_counts() {
-    assert_eq!(interpret("Head[GosperCurve[2]]").unwrap(), "Line");
-    assert_eq!(interpret("Length[GosperCurve[1][[1]]]").unwrap(), "8");
-    assert_eq!(interpret("Length[GosperCurve[2][[1]]]").unwrap(), "50");
-    assert_eq!(interpret("Length[GosperCurve[3][[1]]]").unwrap(), "344");
-  }
-
-  // Every step has unit length.
-  #[test]
-  fn unit_steps() {
+  fn stays_unevaluated_and_can_be_defined() {
+    assert_eq!(interpret("GosperCurve[2]").unwrap(), "GosperCurve[2]");
     assert_eq!(
-      interpret(
-        "Union[Round[Norm /@ Differences[GosperCurve[2][[1]]], 0.0001]]"
-      )
-      .unwrap(),
-      "{1.}"
-    );
-  }
-
-  #[test]
-  fn invalid_order() {
-    assert_eq!(interpret("GosperCurve[0]").unwrap(), "GosperCurve[0]");
-  }
-
-  // Usable inside Graphics.
-  #[test]
-  fn renders() {
-    assert_eq!(
-      interpret("Head[ExportString[Graphics[GosperCurve[2]], \"SVG\"]]")
-        .unwrap(),
-      "String"
+      interpret("GosperCurve[n_] := {n}; GosperCurve[2]").unwrap(),
+      "{2}"
     );
   }
 }
@@ -36561,7 +36606,10 @@ mod bracketing_bar_labels {
   #[test]
   fn bracketing_bar_is_not_reported_unimplemented() {
     clear_state();
-    assert_eq!(interpret("BracketingBar[x]").unwrap(), "BracketingBar[x]");
+    assert_eq!(
+      interpret("BracketingBar[x]").unwrap(),
+      "\u{f603} x \u{f604}"
+    );
     assert_eq!(woxi::get_captured_warnings(), Vec::<String>::new());
   }
 
@@ -36721,11 +36769,15 @@ mod static_dynamic_controls {
   fn color_data_visible_spectrum_maps_wavelength_to_rgb() {
     assert_eq!(
       interpret("ColorData[\"VisibleSpectrum\", 510]").unwrap(),
-      "RGBColor[0., 1., 0.]"
+      "RGBColor[0., 0.982210818520001, 0.3620321472504943]"
     );
     assert_eq!(
       interpret("ColorData[\"VisibleSpectrum\", 700]").unwrap(),
-      "RGBColor[1., 0., 0.]"
+      "RGBColor[0.37701167554406145, 0., 0.]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", 525]").unwrap(),
+      "RGBColor[0., 1., 0.]"
     );
     assert_eq!(
       interpret("ColorData[\"VisibleSpectrum\", 300]").unwrap(),
@@ -36918,6 +36970,31 @@ fn explicit_plot_range_clips_content_in_widened_drawing_area() {
 }
 
 #[test]
+fn pane_pads_small_content_to_its_fixed_box() {
+  // Regression: `Pane[content, {w, h}]` reserves the whole box, so content
+  // smaller than it is placed by an explicit `Alignment`, not left in the
+  // top-left corner of its natural size.
+  let centred = export_svg(
+    "Pane[Graphics[Circle[], ImageSize -> {100, 60}], {400, 300}, \
+     Alignment -> {Center, Center}]",
+  );
+  assert!(
+    centred.contains("<svg width=\"400\" height=\"300\""),
+    "{centred}"
+  );
+  assert!(centred.contains("translate(150.0 120.0)"), "{centred}");
+  let default =
+    export_svg("Pane[Graphics[Circle[], ImageSize -> {100, 60}], {400, 300}]");
+  // Without an `Alignment` the content keeps its natural canvas.
+  assert!(!default.contains("<svg width=\"400\""), "{default}");
+  let right = export_svg(
+    "Pane[Graphics[Circle[], ImageSize -> {100, 60}], {400, 300}, \
+     Alignment -> {Right, Bottom}]",
+  );
+  assert!(right.contains("translate(300.0 240.0)"), "{right}");
+}
+
+#[test]
 fn labeled_blank_slot_in_grid_draws_its_caption() {
   // Regression: a control Woxi Studio lifts into its panel leaves `""`
   // behind, and `Labeled["", caption, Left]` then printed as source text
@@ -37014,4 +37091,98 @@ fn text_subscript_of_styled_base_keeps_italic_and_lowers_script() {
     svg.contains("<tspan baseline-shift=\"sub\" font-size=\"70%\">b</tspan>"),
     "{svg}"
   );
+}
+
+/// A `Filling -> Top` region keeps covering the plot area where the curve
+/// has left the clipped `PlotRange`, instead of stopping at the last
+/// in-range sample.
+#[test]
+fn plot_filling_covers_domain_where_curve_leaves_plot_range() {
+  let svg = export_svg(
+    "Plot[-5/2 x + 7, {x, -13, 13}, Filling -> Top, PlotRange -> 13]",
+  );
+  let (left, _, right, _) = plot_area(&svg);
+  let tag = svg
+    .lines()
+    .find(|l| l.starts_with("<polygon") && l.contains("opacity=\"0.2\""))
+    .expect("fill polygon");
+  let points = tag
+    .split("points=\"")
+    .nth(1)
+    .unwrap()
+    .split('"')
+    .next()
+    .unwrap();
+  let xs: Vec<f64> = points
+    .split_whitespace()
+    .map(|p| p.split(',').next().unwrap().parse().unwrap())
+    .collect();
+  let max_x = xs.iter().copied().fold(f64::MIN, f64::max);
+  let min_x = xs.iter().copied().fold(f64::MAX, f64::min);
+  // Right of the visible curve (x > 8) the whole height is filled.
+  assert!(
+    (max_x - right).abs() < 1.5,
+    "fill ends at {max_x}, area at {right}"
+  );
+  assert!(
+    min_x < left + (right - left) * 0.45,
+    "fill starts at {min_x}"
+  );
+}
+
+#[test]
+fn tooltip_around_a_graphic_displays_the_graphic_in_visual_mode() {
+  for code in [
+    "Tooltip[Graphics[Circle[]], \"tip\"]",
+    "Dynamic[Tooltip[Graphics[Circle[]], \"tip\"]]",
+    "Dynamic@Tooltip[Graphics[{Red, Disk[]}], \"tip\"]",
+  ] {
+    let r = interpret_with_stdout(code).unwrap();
+    assert!(r.graphics.is_some(), "{code}: no picture captured");
+    assert_eq!(r.result, "-Graphics-", "{code}");
+  }
+  // Plain command-line evaluation keeps the symbolic call.
+  assert_eq!(
+    interpret("Head[Tooltip[Graphics[Circle[]], \"tip\"]]").unwrap(),
+    "Tooltip"
+  );
+}
+
+mod list_plot_frame {
+  use super::*;
+
+  #[test]
+  fn framed_list_plot_closes_all_four_edges() {
+    // The scatter renderer used to draw only the left and bottom edges.
+    let svg = interpret(
+      "ExportString[ListPlot[{{1, 1}, {2, 2}, {3, 1}}, Frame -> True], \"SVG\"]",
+    )
+    .unwrap();
+    let framed = svg.split("<polyline").any(|p| {
+      p.matches(',').count() >= 5 && p.contains("points=\"") && {
+        let pts = p.split("points=\"").nth(1).unwrap_or("");
+        let pts = pts.split('"').next().unwrap_or("");
+        let v: Vec<&str> = pts.split_whitespace().collect();
+        v.len() == 5 && v.first() == v.last()
+      }
+    });
+    assert!(framed, "expected a closed 5-point frame polyline");
+  }
+
+  #[test]
+  fn unframed_list_plot_has_no_closed_frame() {
+    let svg =
+      interpret("ExportString[ListPlot[{{1, 1}, {2, 2}, {3, 1}}], \"SVG\"]")
+        .unwrap();
+    assert!(!svg.contains("points=\"750,1749 3499,1749 3499,100"));
+  }
+
+  #[test]
+  fn list_plot_accepts_frame_ticks_option() {
+    let out = interpret(
+      "Head[ListPlot[{{1, 1}, {2, 2}}, Frame -> True, FrameTicks -> {{None, None}, {Range[0, 3], None}}]]",
+    )
+    .unwrap();
+    assert_eq!(out, "Graphics");
+  }
 }

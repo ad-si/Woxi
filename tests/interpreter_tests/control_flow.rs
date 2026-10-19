@@ -4845,15 +4845,39 @@ mod monitor_evaluates_its_expression {
   }
 }
 
-/// A rule that rewrites a call to itself is a fixed point of evaluation, so
-/// it must stop there instead of exhausting `$RecursionLimit`.
+/// A literal rule that rewrites a call to itself is a fixed point of
+/// evaluation; one with patterns is applied until `$IterationLimit` stops
+/// it. Neither may exhaust `$RecursionLimit`.
 mod self_rewriting_rules {
   use super::*;
 
   #[test]
   fn delayed_rule_returning_its_own_call() {
     clear_state();
-    assert_eq!(interpret("g[x_] := g[x]; g[3]").unwrap(), "g[3]");
+    assert_eq!(
+      interpret("g[x_] := g[x]; g[3]").unwrap(),
+      "TerminatedEvaluation[IterationLimit]"
+    );
+    clear_state();
+    let result =
+      interpret_with_stdout("g[x_] := g[x]; ToString[{g[3], a}, InputForm]")
+        .unwrap();
+    assert_eq!(
+      result.result,
+      "{TerminatedEvaluation[\"IterationLimit\"], a}"
+    );
+    assert_eq!(
+      result.warnings,
+      vec![
+        "$IterationLimit::itlim: Iteration limit of 4096 exceeded.".to_string()
+      ]
+    );
+  }
+
+  #[test]
+  fn literal_delayed_rule_returning_its_own_call() {
+    clear_state();
+    assert_eq!(interpret("f[x] := f[x]; f[x]").unwrap(), "f[x]");
   }
 
   #[test]
@@ -4864,7 +4888,7 @@ mod self_rewriting_rules {
         "Subscript[l, a][x_] := Subscript[l, a][x]; Subscript[l, a][3]"
       )
       .unwrap(),
-      "Subscript[l, a][3]"
+      "TerminatedEvaluation[IterationLimit]"
     );
   }
 

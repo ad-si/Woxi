@@ -1049,6 +1049,31 @@ fn complex_float_trig(
   if b == 0.0 {
     return None;
   }
+  let recip = |(re, im): (f64, f64)| {
+    let den = re * re + im * im;
+    (re / den, -im / den)
+  };
+  // Tanh and Tan take the double-angle forms, and Coth and Cot their
+  // reciprocals: those are the roundings wolframscript's machine values have, to
+  // the last bit, where a quotient of the complex sinh/cosh drifts by one.
+  let tanh = || {
+    let d = (2.0 * a).cosh() + (2.0 * b).cos();
+    ((2.0 * a).sinh() / d, (2.0 * b).sin() / d)
+  };
+  match name {
+    "Tanh" => return Some(build_complex_float_result(tanh().0, tanh().1)),
+    "Coth" => {
+      let r = recip(tanh());
+      return Some(build_complex_float_result(r.0, r.1));
+    }
+    "Tan" | "Cot" => {
+      let d = (2.0 * a).cos() + (2.0 * b).cosh();
+      let tan = ((2.0 * a).sin() / d, (2.0 * b).sinh() / d);
+      let r = if name == "Tan" { tan } else { recip(tan) };
+      return Some(build_complex_float_result(r.0, r.1));
+    }
+    _ => {}
+  }
   let (s, c) = match name {
     "Tanh" | "Coth" | "Sech" | "Csch" => (
       (a.sinh() * b.cos(), a.cosh() * b.sin()),
@@ -1065,8 +1090,6 @@ fn complex_float_trig(
     ((n.0 * d.0 + n.1 * d.1) / den, (n.1 * d.0 - n.0 * d.1) / den)
   };
   let r = match name {
-    "Tanh" => div(s, c),
-    "Coth" | "Cot" => div(c, s),
     "Sech" | "Sec" => div((1.0, 0.0), c),
     _ => div((1.0, 0.0), s),
   };
@@ -2082,6 +2105,9 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // instead of leaving `Tan[1.`30.]` unevaluated.
   if matches!(&args[0], Expr::BigFloat(_, _)) {
     return bigfloat_trig_ratio(&args[0], Some("Sin"), "Cos");
+  }
+  if let Some(r) = complex_float_trig("Tan", &args[0]) {
+    return r;
   }
   // Exact complex: for purely imaginary: tan(bi) = i*tanh(b)
   if let Some(((re_num, _re_den), (im_num, im_den))) =

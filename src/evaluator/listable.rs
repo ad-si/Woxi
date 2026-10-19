@@ -895,11 +895,10 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     "$TemporaryDirectory" => {
-      // Canonicalize to match wolframscript's output on macOS
-      // (/var/folders/... -> /private/var/folders/...) and strip trailing slash.
-      let tmp = std::env::temp_dir();
-      let canon = crate::utils::canonicalize(&tmp).unwrap_or(tmp);
-      let mut s = canon.to_string_lossy().into_owned();
+      // Without the trailing slash, as wolframscript prints it.
+      let mut s = crate::utils::temporary_directory()
+        .to_string_lossy()
+        .into_owned();
       while s.len() > 1 && s.ends_with('/') {
         s.pop();
       }
