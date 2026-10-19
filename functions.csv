@@ -1892,7 +1892,7 @@ XYZColor,XYZ color specification,,unevaluated,10.0,1887
 GraphHighlightStyle,Graph highlight style,,unevaluated,8.0,1889
 ImageTrim,Trims an image to a specified coordinate region,✅,pure,8.0,1889
 BSplineSurface,B-spline surface 3D graphics primitive,✅,unevaluated,7.0,1891
-Setting,Setting wrapper,,unevaluated,6.0,1891
+Setting,Evaluates to its argument; an inline colour control gives its colour,✅,pure,6.0,1891
 SingularValueList,Returns the nonzero singular values of a matrix in decreasing order,✅,pure,5.0,1892
 Gudermannian,Returns the Gudermannian function value,✅,pure,7.0,1895
 MorphologicalBinarize,Hysteresis threshold binarization of an image,✅,pure,8.0,1895
