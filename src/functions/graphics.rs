@@ -16731,6 +16731,84 @@ fn grid_base_style(opts: &[Expr], outer: &GridStyle) -> GridStyle {
   gs
 }
 
+/// A `Column[…]` that is a cell of a `Grid` is set like the rest of the
+/// grid's text: in the grid's face and size, not as a free-standing column
+/// (which defaults to monospace at the base size). A column of plain text
+/// takes the grid's style directives, with the sans face as the default
+/// family. Other cells are returned unchanged.
+fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
+    return cell.clone();
+  }
+  let mut directives: Vec<Expr> = Vec::new();
+  if style.font_weight == Some("bold") {
+    directives.push(Expr::Identifier("Bold".to_string()));
+  }
+  if style.font_style == Some("italic") {
+    directives.push(Expr::Identifier("Italic".to_string()));
+  }
+  if let Some(size) = style.font_size {
+    directives.push(Expr::Real(size));
+  }
+  if let Some(color) = style.color {
+    directives.push(color.to_expr());
+  }
+  let family = style
+    .font_family
+    .clone()
+    .unwrap_or_else(|| "Atkinson Hyperlegible Next, sans-serif".to_string());
+  directives.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
+    replacement: Box::new(Expr::String(family)),
+  });
+  // A column of plain text lines sets as one text run, the way a `Row` cell
+  // does: a line break between the items, with no per-item boxes whose
+  // widths are only estimated.
+  if let Expr::FunctionCall { args, .. } = cell
+    && let Some(Expr::List(items)) = args.first()
+    && args.len() == 1
+    && !items.is_empty()
+    && items.iter().all(is_plain_text_item)
+  {
+    let mut parts: Vec<Expr> = Vec::with_capacity(items.len() * 2);
+    for (i, item) in items.iter().enumerate() {
+      if i > 0 {
+        parts.push(Expr::String("\n".to_string()));
+      }
+      parts.push(item.clone());
+    }
+    let row = call("Row", vec![Expr::List(parts.into())]);
+    return call(
+      "Style",
+      std::iter::once(row).chain(directives).collect::<Vec<_>>(),
+    );
+  }
+  cell.clone()
+}
+
+/// Whether a `Column` item is text only: a string, number or symbol, or a
+/// `Row`, `Style` or `NumberForm` of such.
+fn is_plain_text_item(item: &Expr) -> bool {
+  match item {
+    Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => true,
+    // A symbol stands for the number a Manipulate control holds.
+    Expr::Identifier(_) => true,
+    Expr::FunctionCall { name, args } if name == "Row" => match args.first() {
+      Some(Expr::List(parts)) => {
+        args.len() == 1 && parts.iter().all(is_plain_text_item)
+      }
+      _ => false,
+    },
+    Expr::FunctionCall { name, args }
+      if (is_style_wrapper(name) || name == "NumberForm")
+        && !args.is_empty() =>
+    {
+      is_plain_text_item(&args[0])
+    }
+    _ => false,
+  }
+}
+
 fn grid_svg_styled_internal(
   args: &[Expr],
   group_gaps: &[usize],
@@ -16781,6 +16859,7 @@ fn grid_svg_styled_internal(
   for row in &mut rows {
     for cell in row.iter_mut() {
       *cell = resolve_display_item(cell);
+      *cell = column_cell_in_grid_style(cell, default_style);
     }
   }
 
