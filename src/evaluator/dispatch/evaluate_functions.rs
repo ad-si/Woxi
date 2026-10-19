@@ -10188,7 +10188,7 @@ fn evaluate_function_call_ast_inner(
       for _ in 0..1000 {
         let n =
           NEXT_TEMP_DIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
+        let path = crate::utils::temporary_directory().join(format!(
           "woxi_{}_{}",
           std::process::id(),
           n

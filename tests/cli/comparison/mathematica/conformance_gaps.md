@@ -825,6 +825,80 @@ WL's own 60-digit values). For a complex result such as
 `N[ExpIntegralE[1, -2], 20]` WL tags each part with its own precision
 (`20.077…`, `19.879…`), Woxi with the requested one.
 
+### Machine `PolyGamma` and Hurwitz `Zeta` values are not correctly rounded in WL
+
+Woxi rounds machine `PolyGamma` and `Zeta[s, a]`/`HurwitzZeta` from an
+arbitrary-precision evaluation, so they are correctly rounded (checked with
+mpmath at 30 digits). wolframscript agrees on most arguments but not all:
+`PolyGamma[-7.7]` is `…6933` against WL's `…7003`, `PolyGamma[2, 0.3]`
+`…72604` against `…72617`, `Zeta[3, -2.5]` `…413456` against `…41346` and the
+real part of `HurwitzZeta[0.5, -0.5]` `…216304` against `…21629`. Next to the
+root of ψ WL loses digits: `PolyGamma[1.46]` is `-0.0015805619870834522`
+(mpmath: `-0.00158056198708345210…`) against WL's `…0833398`. At a negative
+`s` the drift reaches the third digit: `Zeta[-5.817415911509695,
+0.1295065568974257]` is `-0.0033395080665649794` in Woxi and mpmath and
+`-0.0033354818170026833` in WL. **Not reproducible.** The last-digit cases
+are compared with a tolerance by the unit-test conformance check
+(`NEAR_MATCH`); the negative-`s` one is skipped.
+
+### `PolyGamma` of a fractional order is unimplemented
+
+```sh
+wolframscript -code 'PolyGamma[0.5, 1.9]'   # 0.7474244588681002
+woxi eval 'PolyGamma[0.5, 1.9]'             # PolyGamma[0.5, 1.9]
+```
+
+WL continues ψ⁽ⁿ⁾ to non-integer orders by fractional calculus; neither
+Espinosa–Moll's `e^(-γs) ∂s[e^(γs) ζ(s+1, z)/Γ(-s)]` (0.8274… here) nor
+`Γ(ν+1) ζ(ν+1, z)` reproduces its values, so Woxi leaves the call unevaluated.
+
+### A definite integral up to a symbol carries no condition
+
+```sh
+wolframscript -code 'Integrate[2 (1 + 3 x)^(-1/2), {x, 0, t}]'
+# ConditionalExpression[(4*(-1 + Sqrt[1 + 3*t]))/3, Re[t] > 0 || …]
+woxi eval 'Integrate[2 (1 + 3 x)^(-1/2), {x, 0, t}]'
+# -4/3 + (4*Sqrt[1 + 3*t])/3
+```
+
+Woxi returns `F[t] - F[0]` unconditionally and does not collect it.
+
+### `x*(a*x)^n` orders its factors the other way round
+
+```sh
+wolframscript -code '{x (a x)^n, Sort[{(a x)^n, x}]}'   # {x*(a*x)^n, {x, (a*x)^n}}
+woxi eval '{x (a x)^n, Sort[{(a x)^n, x}]}'             # {(a*x)^n*x, {(a*x)^n, x}}
+```
+
+A power of a product compares by its base, and `x` precedes `a*x` (the
+last-factor rule), but `canonical_cmp` and `sort_symbolic_factors` put the
+power first; `Order[x, (a x)^n]` is right. So `Integrate[(a x)^n, x]` prints
+`((a*x)^n*x)/(1 + n)` where WL prints `(x*(a*x)^n)/(1 + n)`.
+
+### NDSolve does not integrate complex-valued equations
+
+```sh
+wolframscript -code 'NDSolve[{x'"'"'[t] == I x[t], x[0] == 1}, x, {t, 0, 1}]'
+# {{x -> InterpolatingFunction[{{0., 1.}}, …]}} with complex values
+woxi eval 'NDSolve[{x'"'"'[t] == I x[t], x[0] == 1}, x, {t, 0, 1}]'
+# unevaluated
+```
+
+Woxi's integrator carries a real state vector; a right-hand side written
+with `I` is only accepted when it is real along the trajectory
+(`Sqrt[2 + I x[t]] Sqrt[2 - I x[t]]`).
+
+### Guard digits of small arbitrary-precision numbers
+
+WL shows the decimal digits of its binary value, which is rounded to whole
+64-bit limbs below the binary point (see `wl_fraction_digits`). Woxi rounds
+`N[rational, p]` to that grid too, which makes e.g. `N[3/700000000, 20]`
+(`…428572`) match, but for some magnitudes WL's last displayed digit is one
+lower than the nearest grid point gives: `N[10^-8/7, 20]` is `…285715` in
+Woxi and `…285713` in WL, and `N[10^-9/7, 45]` `…715` against `…714`.
+Truncating instead of rounding to the grid fixes those and breaks as many
+others, so the rule is not decoded yet.
+
 ### Arbitrary-precision `Root` padding
 
 `N[Root[#^3 - # - 1 &, 1], 10]` prints ~40 digits in both engines, but only the

@@ -12,6 +12,16 @@ fn rand_str(length: usize) -> String {
   characters.iter().collect::<String>()
 }
 
+/// `$TemporaryDirectory`: the system temp directory with its symlinks
+/// resolved, as wolframscript reports it (`/private/var/folders/…` rather
+/// than `/var/folders/…` on macOS). Every temporary file and directory is
+/// made in it.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn temporary_directory() -> std::path::PathBuf {
+  let tmp = std::env::temp_dir();
+  canonicalize(&tmp).unwrap_or(tmp)
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn create_file(
   filename_opt: Option<String>,
@@ -21,7 +31,7 @@ pub fn create_file(
       let home_dir = std::env::current_dir().unwrap();
       home_dir.join(filename)
     }
-    None => std::env::temp_dir().join(rand_str(16)),
+    None => temporary_directory().join(rand_str(16)),
   };
 
   create_new_file(file_path)
@@ -34,7 +44,7 @@ pub fn create_temp_file(
   extension: &str,
 ) -> Result<std::path::PathBuf, std::io::Error> {
   create_new_file(
-    std::env::temp_dir().join(format!("{}.{extension}", rand_str(16))),
+    temporary_directory().join(format!("{}.{extension}", rand_str(16))),
   )
 }
 

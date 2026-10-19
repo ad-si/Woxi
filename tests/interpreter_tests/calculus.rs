@@ -20373,9 +20373,12 @@ mod ndsolve_step_forcing {
   #[test]
   fn ndsolve_zero_length_domain() {
     assert_eq!(
-      interpret("NDSolve[{y'[t] + y[t] == 0, y[0] == 1}, y, {t, 0, 0}]")
-        .unwrap(),
-      "{{y -> InterpolatingFunction[{{0., 0.}}, <>]}}"
+      interpret(
+        "NDSolve[{y'[t] + y[t] == 0, y[0] == 1}, y, {t, 0, 0}] /. \
+         InterpolatingFunction[d_, __] :> Domain[d]"
+      )
+      .unwrap(),
+      "{{y -> Domain[{{0., 0.}}]}}"
     );
     assert_eq!(
       interpret(
@@ -20476,21 +20479,22 @@ mod ndsolve_delay {
     assert!((nums[1] + 1.0 / 6.0).abs() < 1e-3, "{result}");
   }
 
-  /// The history condition's variable is a dummy: `z[s /; s <= 0] == 1 + s`
-  /// uses `s` for the pre-history time, and the condition can also arrive
-  /// through a variable holding the `Condition` (here the global `t`, as in
-  /// `Module[{c = t /; t <= 0}, …]`, where the initializer is not renamed).
+  /// The history condition's variable has to be the independent variable —
+  /// wolframscript leaves `z[s /; s <= 0] == 1` unevaluated — but the
+  /// condition can arrive through a variable holding it, as a Module local
+  /// initialised to `t /; t <= 0`.
   #[test]
-  fn ndsolve_delay_history_condition_uses_a_dummy_variable() {
+  fn ndsolve_delay_history_condition_variable() {
     clear_state();
+    assert_eq!(
+      interpret(
+        "Head[NDSolve[{z'[t] == -z[t - 1], z[s /; s <= 0] == 1}, z, {t, 0, 2}]]"
+      )
+      .unwrap(),
+      "NDSolve"
+    );
     let result = interpret(
-      "sol = NDSolve[{z'[t] == -z[t - 1], z[s /; s <= 0] == 1}, z, \
-       {t, 0, 2}]; Round[z[2.] /. sol, 0.001]",
-    )
-    .unwrap();
-    assert_eq!(result, "{-0.5}");
-    let result = interpret(
-      "Module[{c = If[PossibleZeroQ[1.], 0, u /; u <= 0], z, t}, \
+      "Module[{c = If[PossibleZeroQ[1.], 0, t /; t <= 0]}, \
        Round[First[z /. NDSolve[{z'[t] == -z[t - 1], z[c] == 1}, z, \
        {t, 0, 2}]][2.], 0.001]]",
     )
@@ -20512,11 +20516,12 @@ mod ndsolve_delay {
     assert!(result.contains("0.7358"), "{result}");
   }
 
-  /// An `InterpolatingFunction` is an atomic object: replacement rules do
-  /// not reach into its tabulated data, so an NDSolve result can be sampled
-  /// through `/.` without walking (and copying) every data point.
+  /// A rule that names a symbol cannot match anything in an
+  /// `InterpolatingFunction`'s tabulated data, so an NDSolve result is
+  /// sampled through `/.` without walking (and copying) every data point;
+  /// a rule that can match a number reaches the data, as in wolframscript.
   #[test]
-  fn replace_all_does_not_descend_into_interpolating_function() {
+  fn replace_all_and_interpolating_function_data() {
     assert_eq!(
       interpret(
         "f = Interpolation[{1, 4, 9, 16}]; \
@@ -20524,7 +20529,7 @@ mod ndsolve_delay {
           f[2], (g[t] /. g -> f /. t -> 2)}"
       )
       .unwrap(),
-      "{True, True, 4, 4}"
+      "{False, True, 4, 4}"
     );
     // Applying a substituted function leaves no placeholder behind.
     assert_eq!(
@@ -20567,17 +20572,33 @@ mod integrate_linear_power {
       interpret("Integrate[(1 + x)^(-1/3), {x, 0, 7}]").unwrap(),
       "9/2"
     );
+    // wolframscript wraps this one in a ConditionalExpression on t (see
+    // conformance_gaps.md); the values agree.
     assert_eq!(
-      interpret("Integrate[2 (1 + 3 x)^(-1/2), {x, 0, t}]").unwrap(),
-      "-4/3 + (4*Sqrt[1 + 3*t])/3"
+      interpret("Integrate[2 (1 + 3 x)^(-1/2), {x, 0, t}] /. t -> 5").unwrap(),
+      "4"
     );
   }
 
+  // A symbolic exponent gets the generic antiderivative, without a p != -1
+  // condition, like x^n.
   #[test]
-  fn symbolic_exponent_stays_unevaluated() {
+  fn symbolic_exponent() {
     assert_eq!(
       interpret("Integrate[(a + b x)^n, x]").unwrap(),
-      "Integrate[(a + b*x)^n, x]"
+      "(a + b*x)^(1 + n)/(b*(1 + n))"
+    );
+    assert_eq!(
+      interpret("Integrate[(a + b x)^(n - 1), x]").unwrap(),
+      "(a + b*x)^n/(b*n)"
+    );
+    assert_eq!(
+      interpret("Integrate[(3 - x)^k, x]").unwrap(),
+      "(3 - x)^(1 + k)/(-1 - k)"
+    );
+    assert_eq!(
+      interpret("Integrate[(a x)^n, x] /. {a -> 2, n -> 3}").unwrap(),
+      "2*x^4"
     );
   }
 }
@@ -20591,10 +20612,11 @@ mod ndsolve_descending_and_compound_domain {
   fn descending_range_integrates_backwards() {
     assert_eq!(
       interpret(
-        "First[NDSolve[{x'[t] == -x[t], x[0] == 1}, {x[t]}, {t, 0, -2}]]"
+        "First[NDSolve[{x'[t] == -x[t], x[0] == 1}, {x[t]}, {t, 0, -2}]] /. \
+         InterpolatingFunction[d_, __] :> Domain[d]"
       )
       .unwrap(),
-      "{x[t] -> InterpolatingFunction[{{-2., 0.}}, <>][t]}"
+      "{x[t] -> Domain[{{-2., 0.}}][t]}"
     );
     assert_eq!(
       interpret(
@@ -20613,10 +20635,11 @@ mod ndsolve_descending_and_compound_domain {
     assert_eq!(
       interpret(
         "First[NDSolve[{x'[Subscript[A, m]] == -x[Subscript[A, m]], \
-         x[0] == 1}, {x[Subscript[A, m]]}, {Subscript[A, m], 0, 2}]]"
+         x[0] == 1}, {x[Subscript[A, m]]}, {Subscript[A, m], 0, 2}]] /. \
+         InterpolatingFunction[d_, __] :> Domain[d]"
       )
       .unwrap(),
-      "{x[Subscript[A, m]] -> InterpolatingFunction[{{0., 2.}}, <>][Subscript[A, m]]}"
+      "{x[Subscript[A, m]] -> Domain[{{0., 2.}}][Subscript[A, m]]}"
     );
     assert_eq!(
       interpret(

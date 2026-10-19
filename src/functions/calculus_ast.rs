@@ -6008,7 +6008,10 @@ fn try_integrate_linear_shift(expr: &Expr, var: &str) -> Option<Expr> {
 /// ∫ (a·x + b)^p dx = (a·x + b)^(p+1)/(a (p+1)) for p ≠ -1, and
 /// Log[a·x + b]/a for p == -1, where `a` and `b` are constant in `var`, `b`
 /// is nonzero and `p` is a constant exponent that is not a non-negative
-/// integer (those are polynomials and handled by the polynomial rules).
+/// integer (those are polynomials and handled by the polynomial rules). A
+/// symbolic `p` gets the generic antiderivative without a `p ≠ -1`
+/// condition, as for `x^p` and as in wolframscript; so does
+/// ∫ (a·x)^p dx = x (a·x)^p/(p+1).
 fn try_integrate_linear_power(expr: &Expr, var: &str) -> Option<Expr> {
   let (base, exponent) = match expr {
     Expr::BinaryOp {
@@ -6021,11 +6024,10 @@ fn try_integrate_linear_power(expr: &Expr, var: &str) -> Option<Expr> {
     }
     _ => return None,
   };
-  // Symbolic exponents need a ConditionalExpression (p ≠ -1); stay numeric.
   let numeric_exponent = matches!(exponent, Expr::Integer(_) | Expr::Real(_))
     || matches!(exponent, Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2);
-  if !numeric_exponent
+  if contains_var(exponent, var)
     || matches!(exponent, Expr::Integer(n) if *n >= 0)
     || matches!(base, Expr::Identifier(_) | Expr::Constant(_))
   {
@@ -6038,17 +6040,26 @@ fn try_integrate_linear_power(expr: &Expr, var: &str) -> Option<Expr> {
   let var_expr = id_expr(var);
   let offset = crate::evaluator::evaluate_expr_to_expr(&minus2(
     base.clone(),
-    times2(a.clone(), var_expr),
+    times2(a.clone(), var_expr.clone()),
   ))
   .ok()?;
-  if matches!(offset, Expr::Integer(0) | Expr::Real(0.0)) {
-    return None;
-  }
   let exponent_plus_one = crate::evaluator::evaluate_expr_to_expr(&plus2(
     exponent.clone(),
     Expr::Integer(1),
   ))
   .ok()?;
+  if matches!(offset, Expr::Integer(0) | Expr::Real(0.0)) {
+    // (a·x)^p with a symbolic p: x (a·x)^p/(p+1). A numeric p is left to
+    // the power rules, which split the constant factor out.
+    if numeric_exponent {
+      return None;
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&div2(
+      times2(var_expr, expr.clone()),
+      exponent_plus_one,
+    ))
+    .ok();
+  }
   let result = if matches!(exponent_plus_one, Expr::Integer(0)) {
     div2(call1("Log", base.clone()), a)
   } else {

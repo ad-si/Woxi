@@ -7683,6 +7683,18 @@ fn mentions_system_context(expr: &Expr) -> bool {
   }
 }
 
+/// The delimiters a bracketing head prints between: `AngleBracket[a, b]` is
+/// `〈 a, b 〉`, `BracketingBar[x]` is `\[LeftBracketingBar] x
+/// \[RightBracketingBar]` (private-use glyphs, as in wolframscript).
+fn bracket_display_glyphs(name: &str) -> Option<(&'static str, &'static str)> {
+  match name {
+    "AngleBracket" => Some(("\u{2329}", "\u{232A}")),
+    "BracketingBar" => Some(("\u{F603}", "\u{F604}")),
+    "DoubleBracketingBar" => Some(("\u{F605}", "\u{F606}")),
+    _ => None,
+  }
+}
+
 /// Whether `e` prints with a leading `!`. `Not` binds looser than arithmetic,
 /// comparison, `;;`, `!` and function application, so wolframscript wraps it
 /// in parens inside any of those — `( !a)^2` — but not inside `&&`, `||`,
@@ -9133,10 +9145,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "DotEqual" && args.len() == 2 {
         return format!("{} \u{2250} {}", fmt(&args[0]), fmt(&args[1]));
       }
-      // AngleBracket[a, b, ...] displays as 〈a, b, ...〉
-      if name == "AngleBracket" && !args.is_empty() {
+      // AngleBracket[a, b, ...] displays as 〈a, b, ...〉, and the bracketing
+      // bars between their \[LeftBracketingBar]-style private-use glyphs.
+      if let Some((open, close)) = bracket_display_glyphs(name)
+        && !args.is_empty()
+      {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
-        return format!("\u{2329} {} \u{232A}", parts.join(", "));
+        return format!("{open} {} {close}", parts.join(", "));
       }
       // Special case: Or[a, b, ...] displays as a || b || ...
       // Wolfram wraps And subterms in parens: (a && b) || (c && d)
@@ -12849,10 +12864,11 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       )
     }
     Expr::FunctionCall { name, args }
-      if name == "AngleBracket" && !args.is_empty() =>
+      if bracket_display_glyphs(name).is_some() && !args.is_empty() =>
     {
+      let (open, close) = bracket_display_glyphs(name).unwrap_or_default();
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
-      format!("\u{2329} {} \u{232A}", parts.join(", "))
+      format!("{open} {} {close}", parts.join(", "))
     }
     // Named slot Slot["name"] displays as #name (matching wolframscript),
     // mirroring the format_expr arm. Must precede the generic FunctionCall

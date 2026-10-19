@@ -526,6 +526,7 @@ function buildWolframScript(
   // empties symbols, it does not remove them), so the harness creates no
   // `Global`` symbol at all.
   lines.push("WX`DateTol = 90");
+  lines.push("WX`NearRelTol = 10^-8");
   lines.push("WX`RelTol = 0.02");
   lines.push("WX`AbsTol = 0.01");
   lines.push(
@@ -549,6 +550,18 @@ function buildWolframScript(
       " If[Length[WX`a$] =!= Length[WX`b$] || Length[WX`a$] == 0, Return[False]];" +
       " TrueQ[And @@ MapThread[" +
       "Abs[#1 - #2] <= Max[WX`AbsTol, WX`RelTol*Max[Abs[#1], Abs[#2]]] &," +
+      " {WX`a$, WX`b$}]]]"
+  );
+
+  // `WX`NearQ` is `WX`ApproxQ` for values that only differ in their last
+  // digits (see NEAR_MATCH): same skeleton, numbers within 1e-8 relative.
+  lines.push(
+    "WX`NearQ[WX`woxi$_, WX`ws$_] := Module[{WX`a$, WX`b$}," +
+      " If[WX`Skeleton[WX`woxi$] =!= WX`Skeleton[WX`ws$], Return[False]];" +
+      " WX`a$ = WX`Nums[WX`woxi$]; WX`b$ = WX`Nums[WX`ws$];" +
+      " If[Length[WX`a$] =!= Length[WX`b$] || Length[WX`a$] == 0, Return[False]];" +
+      " TrueQ[And @@ MapThread[" +
+      "Abs[#1 - #2] <= WX`NearRelTol*Max[Abs[#1], Abs[#2]] &," +
       " {WX`a$, WX`b$}]]]"
   );
 
@@ -678,7 +691,9 @@ function buildWolframScript(
     // string equality.
     const mismatchTest = APPROX_MATCH.has(expr)
       ? "!WX`ApproxQ[WX`ee$$, WX`rr$$]"
-      : "WX`rr$$ =!= WX`ee$$";
+      : NEAR_MATCH.has(expr)
+        ? "!WX`NearQ[WX`ee$$, WX`rr$$]"
+        : "WX`rr$$ =!= WX`ee$$";
     // Wrap in CheckAbort so Abort[]/Interrupt[] calls inside test cases
     // don't kill the entire script run.
     // Strip trailing newlines from both sides before comparison,
@@ -764,6 +779,32 @@ const APPROX_MATCH = new Set([
   "FindMinimum[(x - 3)^2, {x, 1, 0, 2}]",
   "FindMaximum[-(x - 3)^2, {x, 0, -5, 1}]",
   "FindMinimum[(x - 3)^2 + (y - 2)^2, {{x, 0, 0, 1}, {y, 0, -10, 10}}]",
+]);
+
+// Machine values that differ from wolframscript's in their last digits only,
+// compared with `WX`NearQ` (same printed structure, every number within 1e-8
+// relative) instead of being skipped. Each is a case where Woxi's double is
+// the correctly rounded (or exact) one and wolframscript's is not — see
+// "Machine special-function values differ in the last digits" and its
+// neighbours in conformance_gaps.md — or where both engines iterate to a
+// root and stop in different places.
+const NEAR_MATCH = new Set([
+  "PolyGamma[-7.7]",
+  "PolyGamma[2, 0.3]",
+  "PolyGamma[1.46]",
+  "Zeta[3, -2.5]",
+  "HurwitzZeta[0.5, -0.5]",
+  "ExpIntegralEi[1. + 2. I]",
+  // Woxi's inverse transform of the transform is exact, wolframscript's
+  // carries FFT round-off (0.9999999999999999, 3.0000000000000004, …).
+  "InverseFourier[Fourier[{{1, 2, 3}, {3, 4, 7}}]]",
+  // The event time comes out as 6.000000000000001 in wolframscript.
+  "Reap[NDSolve[{x'[t] == 1, x[0] == 0, WhenEvent[Mod[t, 2] == 0, Sow[{t, x[t]}]]}, x, {t, 0, 7}]][[2]]",
+  // Woxi projects onto the circle exactly; wolframscript's iterative
+  // minimisation stops ~3e-10 short.
+  "RegionNearest[ImplicitRegion[x^2 + y^2 == 1, {x, y}], {3., 4.}]",
+  // 1 - Sqrt[3] rounded at the last digit (…772 against …773).
+  "Solve[Norm[{x, y} - {1., 1.}] == Norm[{x, y} - {3., 1.}] == 2, {x, y}]",
 ]);
 
 /**
@@ -2215,6 +2256,13 @@ function main() {
     // solution do conform.
     "NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]",
     "NDSolve[{y'[t] == -y[t], y[1] == 1}, y, {t, 1, 3.5}]",
+    // The same for a ParametricFunction: Wolfram prints its internal state
+    // (an Internal`Bag, a HashTable of the parameters, the solver options).
+    "pf = y /. ParametricNDSolve[{y'[t] == -k y[t]^n, y[0] == 1}, y, {t, 0, 10}, {k, n}]; pf[a, b][2.]",
+    "y /. ParametricNDSolve[{y'[t] == -k y[t], y[0] == 1}, y, {t, 0, 1}, {k}]",
+    // A genuinely complex-valued ODE is unimplemented (see "NDSolve does not
+    // integrate complex-valued equations" in conformance_gaps.md).
+    "NDSolve[{x'[t] == I x[t], x[0] == 1}, x[t], {t, 0, 1}]",
 
     // DynamicModule: Wolfram keeps the wrapper around the evaluated body
     // (`DynamicModule[{x = 2}, 4, DynamicModuleValues :> {}]`) because the
@@ -2412,6 +2460,11 @@ function main() {
     // cases whose *setup* is a context construct; here the construct is in
     // the expression itself.
     'Needs["DifferentialEquations`InterpolatingFunctionAnatomy`"]; InterpolatingFunctionDomain[Interpolation[{1, 4, 9, 16}]]',
+
+    // wolframscript's Hurwitz zeta at a negative s is off in the third digit
+    // (-0.0033354818…; mpmath and Woxi agree on -0.0033395080…). See
+    // "Machine `PolyGamma` and Hurwitz `Zeta` values" in conformance_gaps.md.
+    "Zeta[-5.817415911509695, 0.1295065568974257]",
   ]);
 
   /** Names whose meaning depends on where one input unit ends and the next

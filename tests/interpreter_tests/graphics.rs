@@ -35948,42 +35948,18 @@ fn graphics3d_view_vertical_turns_the_picture() {
   assert!(dy < 1e-6 && dx > 1.0, "tilted: {dx} {dy}");
 }
 
-mod gosper_curve_tests {
+/// `GosperCurve` is not a Wolfram Language function (Wolfram 15 has no
+/// `*Gosper*` symbol at all), so it stays unevaluated and a notebook can
+/// define it itself.
+mod gosper_curve_is_not_built_in {
   use woxi::interpret;
 
-  // GosperCurve[n] is a Line with 7^n + 1 vertices on the triangular lattice.
   #[test]
-  fn vertex_counts() {
-    assert_eq!(interpret("Head[GosperCurve[2]]").unwrap(), "Line");
-    assert_eq!(interpret("Length[GosperCurve[1][[1]]]").unwrap(), "8");
-    assert_eq!(interpret("Length[GosperCurve[2][[1]]]").unwrap(), "50");
-    assert_eq!(interpret("Length[GosperCurve[3][[1]]]").unwrap(), "344");
-  }
-
-  // Every step has unit length.
-  #[test]
-  fn unit_steps() {
+  fn stays_unevaluated_and_can_be_defined() {
+    assert_eq!(interpret("GosperCurve[2]").unwrap(), "GosperCurve[2]");
     assert_eq!(
-      interpret(
-        "Union[Round[Norm /@ Differences[GosperCurve[2][[1]]], 0.0001]]"
-      )
-      .unwrap(),
-      "{1.}"
-    );
-  }
-
-  #[test]
-  fn invalid_order() {
-    assert_eq!(interpret("GosperCurve[0]").unwrap(), "GosperCurve[0]");
-  }
-
-  // Usable inside Graphics.
-  #[test]
-  fn renders() {
-    assert_eq!(
-      interpret("Head[ExportString[Graphics[GosperCurve[2]], \"SVG\"]]")
-        .unwrap(),
-      "String"
+      interpret("GosperCurve[n_] := {n}; GosperCurve[2]").unwrap(),
+      "{2}"
     );
   }
 }
@@ -36602,7 +36578,10 @@ mod bracketing_bar_labels {
   #[test]
   fn bracketing_bar_is_not_reported_unimplemented() {
     clear_state();
-    assert_eq!(interpret("BracketingBar[x]").unwrap(), "BracketingBar[x]");
+    assert_eq!(
+      interpret("BracketingBar[x]").unwrap(),
+      "\u{f603} x \u{f604}"
+    );
     assert_eq!(woxi::get_captured_warnings(), Vec::<String>::new());
   }
 
@@ -36762,11 +36741,15 @@ mod static_dynamic_controls {
   fn color_data_visible_spectrum_maps_wavelength_to_rgb() {
     assert_eq!(
       interpret("ColorData[\"VisibleSpectrum\", 510]").unwrap(),
-      "RGBColor[0., 1., 0.]"
+      "RGBColor[0., 0.982210818520001, 0.3620321472504943]"
     );
     assert_eq!(
       interpret("ColorData[\"VisibleSpectrum\", 700]").unwrap(),
-      "RGBColor[1., 0., 0.]"
+      "RGBColor[0.37701167554406145, 0., 0.]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", 525]").unwrap(),
+      "RGBColor[0., 1., 0.]"
     );
     assert_eq!(
       interpret("ColorData[\"VisibleSpectrum\", 300]").unwrap(),

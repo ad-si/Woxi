@@ -5988,9 +5988,11 @@ mod expand_threading {
       interpret("N[1/7000000, 2]").unwrap(),
       "1.428571428571`2.*^-7"
     );
+    // The digits are those of the value rounded to the limb grid, not of
+    // the exact rational: …571|42… shows as …572.
     assert_eq!(
-      interpret("N[10^-8/7, 20]").unwrap(),
-      "1.4285714285714285714285714285714285714285714285714`20.*^-9"
+      interpret("N[3/700000000, 20]").unwrap(),
+      "4.28571428571428571428571428572`20.*^-9"
     );
     // Large integer parts get no fraction limb, or even lose integer digits.
     assert_eq!(
@@ -9160,7 +9162,7 @@ mod arbitrary_precision_transcendentals {
     );
     assert_eq!(
       interpret("ArcSinh[N[1/2, 20]]").unwrap(),
-      "0.48121182505960344749775891342436842314`20.031821293103135"
+      "0.48121182505960344749775891342436842313`20.031821293103135"
     );
     assert_eq!(
       interpret("ArcTanh[N[1/2, 20]]").unwrap(),
