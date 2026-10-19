@@ -24039,6 +24039,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // value before the body or any display reads it.
   for spec in &arg_items {
     collect_bare_setterbar_state(spec, &sibling_names, &mut state);
+    collect_display_module_state(spec, &sibling_names, &mut state);
   }
   // Filled in on demand by the spec loop below, when a spec only parses
   // once the body has run (see the retry there).
@@ -25732,6 +25733,137 @@ fn collect_bare_setterbar_state(
       }
     }
     _ => {}
+  }
+}
+
+/// Whether a `DynamicModule` local's initializer is a plain literal (number,
+/// string, boolean, or a list of those), so it can seed a state variable.
+fn is_literal_init(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_) | Expr::Real(_) | Expr::String(_) => true,
+    Expr::Identifier(s) => s == "True" || s == "False",
+    Expr::List(items) => items.iter().all(is_literal_init),
+    _ => false,
+  }
+}
+
+/// Seed `state` with the literal-initialized locals of every
+/// `DynamicModule[{v = init, …}, …]` written inside an extra display
+/// argument. Its locals are the display's own persistent state — e.g. the
+/// value of a `Manipulator[Dynamic[v], …]` slider drawn there — which only
+/// survives from one frame to the next, and can only be written back by
+/// that slider, when it is a named state variable of the Manipulate
+/// instead of a fresh `Module` local on every re-evaluation (see
+/// [`strip_bound_dynamic_modules`]).
+fn collect_display_module_state(
+  spec: &Expr,
+  known: &[String],
+  state: &mut Vec<(String, String)>,
+) {
+  match spec {
+    Expr::FunctionCall { name, args } => {
+      if name == "DynamicModule"
+        && args.len() >= 2
+        && let Expr::List(locals) = &args[0]
+      {
+        for local in locals {
+          if let Expr::FunctionCall {
+            name: set_name,
+            args: set_args,
+          } = local
+            && set_name == "Set"
+            && set_args.len() == 2
+            && let Expr::Identifier(var) = &set_args[0]
+            && is_literal_init(&set_args[1])
+            && !known.contains(var)
+            && !state.iter().any(|(n, _)| n == var)
+          {
+            state.push((
+              var.clone(),
+              crate::syntax::expr_to_source_form(&set_args[1]),
+            ));
+          }
+        }
+      }
+      for a in args {
+        collect_display_module_state(a, known, state);
+      }
+    }
+    Expr::List(items) => {
+      for it in items {
+        collect_display_module_state(it, known, state);
+      }
+    }
+    Expr::CompoundExpr(items) => {
+      for it in items {
+        collect_display_module_state(it, known, state);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Whether `name` is a live state variable: listed in `bindings`, or (when
+/// the caller has installed the bindings as scoped globals instead) holding
+/// a value of its own.
+fn is_bound_state_var(name: &str, bindings: &[(String, String)]) -> bool {
+  bindings.iter().any(|(b, _)| b == name)
+    || matches!(
+      crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(
+        name.to_string()
+      )),
+      Ok(v) if !matches!(&v, Expr::Identifier(s) if s == name)
+    )
+}
+
+/// Replace every `DynamicModule[{v = init, …}, body]` whose locals are all
+/// bound in `bindings` (seeded by [`collect_display_module_state`]) with its
+/// bare `body`, so those names stay the stable state variables they were
+/// seeded as. Evaluating the module instead would rename them to a fresh
+/// `v$n` on every rebuild, losing the value a slider wrote into them.
+fn strip_bound_dynamic_modules(
+  expr: &Expr,
+  bindings: &[(String, String)],
+) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      if name == "DynamicModule"
+        && args.len() >= 2
+        && let Expr::List(locals) = &args[0]
+        && locals.iter().all(|l| {
+          matches!(
+            l,
+            Expr::FunctionCall { name: n, args: a }
+              if n == "Set"
+                && a.len() == 2
+                && matches!(&a[0], Expr::Identifier(v)
+                  if is_bound_state_var(v, bindings))
+          )
+        })
+      {
+        return strip_bound_dynamic_modules(&args[1], bindings);
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args
+          .iter()
+          .map(|a| strip_bound_dynamic_modules(a, bindings))
+          .collect(),
+      }
+    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| strip_bound_dynamic_modules(a, bindings))
+        .collect(),
+    ),
+    Expr::CompoundExpr(items) => Expr::CompoundExpr(
+      items
+        .iter()
+        .map(|a| strip_bound_dynamic_modules(a, bindings))
+        .collect(),
+    ),
+    other => other.clone(),
   }
 }
 
@@ -28710,7 +28842,16 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       if arithmetic_label_operator(*op).is_some()
         && contains_presentation_head(expr) =>
     {
-      let (text, group) = arithmetic_label_operator(*op).unwrap_or_default();
+      let (mut text, group) =
+        arithmetic_label_operator(*op).unwrap_or_default();
+      // Typeset pieces multiplied together set side by side.
+      let is_styled = |e: &Expr| {
+        is_style_call(e)
+          || matches!(e, Expr::FunctionCall { name, .. } if name == "Text")
+      };
+      if text == "*" && is_styled(left) && is_styled(right) {
+        text = " ";
+      }
       let side = |e: &Expr| {
         if group {
           grouped_label_runs(e, italic)
@@ -28847,7 +28988,14 @@ fn product_label_runs(factors: &[Expr], italic: bool) -> Vec<LabelRun> {
   let (denominators, numerators): (Vec<&Expr>, Vec<&Expr>) =
     factors.iter().partition(|f| reciprocal_base(f).is_some());
   let numerators: Vec<Expr> = numerators.into_iter().cloned().collect();
-  let mut runs = joined_label_runs(&numerators, "*", true, italic);
+  // Typeset pieces (`Style[…] Text[…]`) set side by side, as the front end
+  // shows them; a product of plain symbols keeps its `*`.
+  let sep = if numerators.iter().all(contains_presentation_head) {
+    " "
+  } else {
+    "*"
+  };
+  let mut runs = joined_label_runs(&numerators, sep, true, italic);
   if denominators.is_empty() {
     return runs;
   }
@@ -31152,8 +31300,13 @@ pub fn apply_manipulate_mutations(
   if mutations.is_empty() {
     return Vec::new();
   }
+  // A mutation may chain several statements (`a = 1; b = a`, a slider's
+  // write-back plus its `EventHandler` action); every one of them can
+  // change a state variable.
+  let statements: Vec<String> =
+    mutations.iter().flat_map(|m| split_statements(m)).collect();
   let mut vars: Vec<String> = Vec::new();
-  for m in mutations {
+  for m in &statements {
     if let Some(v) = mutation_target_symbol(m)
       && !vars.contains(&v)
     {
@@ -31163,7 +31316,7 @@ pub fn apply_manipulate_mutations(
   if vars.is_empty() {
     return Vec::new();
   }
-  let body = format!("{}; {{{}}}", mutations.join("; "), vars.join(", "));
+  let body = format!("{}; {{{}}}", statements.join("; "), vars.join(", "));
   let code = manipulate_block_code(&body, bindings);
   match crate::interpret_to_expr(&code) {
     Ok(Expr::List(ref vals)) if vals.len() == vars.len() => vars
@@ -31225,13 +31378,60 @@ pub fn read_manipulate_state(names: &[String]) -> Vec<(String, String)> {
     .collect()
 }
 
+/// Split source code at its top-level `;` (outside brackets and strings).
+fn split_statements(code: &str) -> Vec<String> {
+  let mut out = Vec::new();
+  let mut depth = 0i32;
+  let mut in_string = false;
+  let mut escaped = false;
+  let mut cur = String::new();
+  for c in code.chars() {
+    if in_string {
+      cur.push(c);
+      if escaped {
+        escaped = false;
+      } else if c == '\\' {
+        escaped = true;
+      } else if c == '"' {
+        in_string = false;
+      }
+      continue;
+    }
+    match c {
+      '"' => {
+        in_string = true;
+        cur.push(c);
+      }
+      '[' | '(' | '{' => {
+        depth += 1;
+        cur.push(c);
+      }
+      ']' | ')' | '}' => {
+        depth -= 1;
+        cur.push(c);
+      }
+      ';' if depth == 0 => {
+        if !cur.trim().is_empty() {
+          out.push(cur.trim().to_string());
+        }
+        cur.clear();
+      }
+      _ => cur.push(c),
+    }
+  }
+  if !cur.trim().is_empty() {
+    out.push(cur.trim().to_string());
+  }
+  out
+}
+
 /// The distinct target variables of a set of write-back assignments, in first-
 /// seen order. Used to read back the mutated state values after applying the
 /// assignments to the (globally-installed) bindings.
 pub fn mutation_target_symbols(mutations: &[String]) -> Vec<String> {
   let mut vars: Vec<String> = Vec::new();
-  for m in mutations {
-    if let Some(v) = mutation_target_symbol(m)
+  for m in mutations.iter().flat_map(|m| split_statements(m)) {
+    if let Some(v) = mutation_target_symbol(&m)
       && !vars.contains(&v)
     {
       vars.push(v);
@@ -31802,6 +32002,22 @@ pub enum DisplayNode {
     choices: Vec<(String, String)>,
     enabled: bool,
   },
+  /// A `Manipulator[Dynamic[lval], {min, max, step}]` (or `Slider`) drawn as
+  /// a display element: dragging it writes `lval = <value>` back. `after`
+  /// holds the statements of an enclosing `EventHandler`'s
+  /// `"MouseClicked"`/`"MouseDragged"` actions, run right after the
+  /// write-back (the Demonstrations idiom for copying a module-local slider
+  /// value into the persistent state once the user has touched it).
+  /// `enabled` is a trailing `Enabled -> cond` option's live value.
+  Slider {
+    target: String,
+    min: f64,
+    max: f64,
+    step: f64,
+    current: f64,
+    enabled: bool,
+    after: Vec<String>,
+  },
   /// A `Spacer[w]`: `w` printer's points of horizontal space.
   Spacer { width: f64 },
   /// A text leaf with its styled runs, so `Style["…", Bold, Red]` renders
@@ -31831,7 +32047,17 @@ pub fn build_manipulate_display(
   display_code: &str,
   bindings: &[(String, String)],
 ) -> DisplayNode {
-  let Ok(expr) = crate::interpret_to_expr(display_code) else {
+  // Only displays with a `DynamicModule` are re-serialized: the round trip
+  // through source form is otherwise needless and can reshape precedence.
+  let code = match crate::syntax::string_to_expr(display_code) {
+    Ok(parsed) if display_code.contains("DynamicModule") => {
+      crate::syntax::expr_to_source_form(&strip_bound_dynamic_modules(
+        &parsed, bindings,
+      ))
+    }
+    _ => display_code.to_string(),
+  };
+  let Ok(expr) = crate::interpret_to_expr(&code) else {
     return DisplayNode::Static {
       svg: None,
       text: String::new(),
@@ -31957,6 +32183,63 @@ fn display_expr_to_node(
         DisplayNode::Row(list_children(&args[0], bindings, probes, ons))
       }
       "Checkbox" => checkbox_node(args, probes, ons),
+      // `Tooltip[content, tip]` draws as its content; the tip is only shown
+      // on hover.
+      "Tooltip" if !args.is_empty() => {
+        display_expr_to_node(&args[0], bindings, probes, ons)
+      }
+      // `Manipulator[Dynamic[lval], {min, max, step}, …]` / `Slider[…]`
+      // written inside a display element: a live slider writing back to
+      // `lval`.
+      "Manipulator" | "Slider" if args.len() >= 2 => {
+        match slider_node(args, Vec::new()) {
+          Some(node) => node,
+          None => static_leaf_node(expr, bindings),
+        }
+      }
+      // `EventHandler[content, "MouseClicked" :> action, …]`: draws as its
+      // content. When the content is a slider, the click/drag actions run
+      // after each of its write-backs.
+      "EventHandler" if args.len() >= 2 => {
+        let after: Vec<String> = args[1..]
+          .iter()
+          .filter_map(|ev| match ev {
+            Expr::Rule {
+              pattern,
+              replacement,
+            }
+            | Expr::RuleDelayed {
+              pattern,
+              replacement,
+            } if matches!(
+              pattern.as_ref(),
+              Expr::String(e) if e == "MouseClicked" || e == "MouseDragged"
+            ) =>
+            {
+              Some(held_action_statements(replacement))
+            }
+            _ => None,
+          })
+          .flatten()
+          .fold(Vec::new(), |mut acc, st| {
+            if !acc.contains(&st) {
+              acc.push(st);
+            }
+            acc
+          });
+        match &args[0] {
+          Expr::FunctionCall {
+            name: n,
+            args: sargs,
+          } if (n == "Manipulator" || n == "Slider") && sargs.len() >= 2 => {
+            match slider_node(sargs, after) {
+              Some(node) => node,
+              None => static_leaf_node(&args[0], bindings),
+            }
+          }
+          inner => display_expr_to_node(inner, bindings, probes, ons),
+        }
+      }
       // `Button[label, action]` — the action is held, so its source is
       // taken verbatim and evaluated only when the button is pressed.
       "Button" if args.len() >= 2 => DisplayNode::Button {
@@ -32734,6 +33017,69 @@ fn action_menu_node(
   })
 }
 
+/// The statements of a held event/button action: `(a = 1; b = 2)` gives
+/// `["a = 1", "b = 2"]`, a lone statement gives itself.
+fn held_action_statements(action: &Expr) -> Vec<String> {
+  match action {
+    Expr::CompoundExpr(items) => items
+      .iter()
+      .map(crate::syntax::expr_to_source_form)
+      .collect(),
+    other => vec![crate::syntax::expr_to_source_form(other)],
+  }
+}
+
+/// `Manipulator[Dynamic[lval], {min, max, step}, …]` as a display slider.
+/// Bounds are evaluated against the live bindings (the caller has already
+/// released the enclosing `Dynamic`, so they are numbers); a missing step
+/// falls back to a continuous slider.
+fn slider_node(args: &[Expr], after: Vec<String>) -> Option<DisplayNode> {
+  let lval = match args.first() {
+    Some(Expr::FunctionCall { name, args: dargs })
+      if name == "Dynamic" && !dargs.is_empty() =>
+    {
+      &dargs[0]
+    }
+    _ => return None,
+  };
+  let target = crate::syntax::expr_to_source_form(lval);
+  let range = crate::evaluator::evaluate_expr_to_expr(&args[1]).ok()?;
+  let Expr::List(bounds) = &range else {
+    return None;
+  };
+  if bounds.len() < 2 {
+    return None;
+  }
+  let min = expr_to_f64(&bounds[0]).filter(|v| v.is_finite())?;
+  let max = expr_to_f64(&bounds[1]).filter(|v| v.is_finite())?;
+  let step = bounds
+    .get(2)
+    .and_then(expr_to_f64)
+    .filter(|v| v.is_finite() && *v > 0.0)
+    .unwrap_or(0.0);
+  let current = crate::evaluator::evaluate_expr_to_expr(lval)
+    .ok()
+    .and_then(|e| expr_to_f64(&e))
+    .filter(|v| v.is_finite())
+    .unwrap_or(min)
+    .clamp(min.min(max), max.max(min));
+  let enabled = extract_enabled_condition(&args[2..]).is_none_or(|cond| {
+    !matches!(
+      crate::evaluator::evaluate_expr_to_expr(cond),
+      Ok(Expr::Identifier(ref s)) if s == "False"
+    )
+  });
+  Some(DisplayNode::Slider {
+    target,
+    min,
+    max,
+    step,
+    current,
+    enabled,
+    after,
+  })
+}
+
 fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
   let lval = match args.first() {
     Some(Expr::FunctionCall { name, args: dargs })
@@ -32814,6 +33160,7 @@ fn assign_checkbox_state(
     DisplayNode::Spacer { .. }
     | DisplayNode::Text { .. }
     | DisplayNode::Static { .. }
+    | DisplayNode::Slider { .. }
     | DisplayNode::Popup { .. } => {}
   }
 }
@@ -32974,6 +33321,25 @@ fn display_node_to_json(node: &DisplayNode) -> String {
         json_escape_manipulate(current),
         choices_json.join(","),
         enabled,
+      )
+    }
+    DisplayNode::Slider {
+      target,
+      min,
+      max,
+      step,
+      current,
+      enabled,
+      after,
+    } => {
+      let after_json: Vec<String> = after
+        .iter()
+        .map(|a| format!("\"{}\"", json_escape_manipulate(a)))
+        .collect();
+      format!(
+        r#"{{"kind":"slider","target":"{}","min":{min},"max":{max},"step":{step},"current":{current},"enabled":{enabled},"after":[{}]}}"#,
+        json_escape_manipulate(target),
+        after_json.join(","),
       )
     }
     DisplayNode::Spacer { width } => {
