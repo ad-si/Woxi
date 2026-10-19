@@ -2190,6 +2190,84 @@ pub fn audio_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
+/// QuantilePlot[data, opts] — quantiles of each dataset against the quantiles
+/// of the standard normal distribution; `QuantilePlot[{d1, d2, ...}]` plots
+/// several datasets, and `QuantilePlot[d1, d2]` compares two datasets with
+/// each other. Each series gets a reference line through its quartile points.
+/// Delegates to `Quantile`, `InverseCDF`, `ListPlot` and `Show`.
+pub fn quantile_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let is_option = |e: &Expr| {
+    matches!(e, Expr::Rule { .. })
+      || matches!(e, Expr::FunctionCall { name, .. }
+        if name == "Rule" || name == "RuleDelayed")
+  };
+  let is_numeric_list = |e: &Expr| match e {
+    Expr::List(items) => {
+      !items.is_empty()
+        && items.iter().all(|x| {
+          crate::functions::math_ast::numeric_utils::try_eval_to_f64(x)
+            .is_some()
+        })
+    }
+    _ => false,
+  };
+  let is_dataset_list = |e: &Expr| match e {
+    Expr::List(items) => !items.is_empty() && items.iter().all(is_numeric_list),
+    _ => false,
+  };
+  let is_dataset = |e: &Expr| is_numeric_list(e) || is_dataset_list(e);
+
+  let data_count = args.iter().take_while(|e| !is_option(e)).count();
+  if data_count == 0
+    || data_count > 2
+    || !args[..data_count].iter().all(is_dataset)
+  {
+    return Ok(unevaluated("QuantilePlot", args));
+  }
+  let opts: Vec<String> =
+    args[data_count..].iter().map(expr_to_string).collect();
+  let opts = if opts.is_empty() {
+    String::new()
+  } else {
+    format!(", {}", opts.join(", "))
+  };
+
+  // `series$qp` is a list of {points, reference line endpoints}.
+  let series = if data_count == 1 {
+    "Map[Function[d$qp, With[{s$qp = Sort[N[d$qp]], \
+     n$qp = Length[d$qp]}, With[{xs$qp = InverseCDF[NormalDistribution[], \
+     (Range[n$qp] - 1/2)/n$qp]}, {Transpose[{xs$qp, s$qp}], \
+     With[{q1$qp = Quantile[s$qp, 1/4], q3$qp = Quantile[s$qp, 3/4], \
+     z1$qp = InverseCDF[NormalDistribution[], 1/4], \
+     z3$qp = InverseCDF[NormalDistribution[], 3/4]}, \
+     With[{m$qp = (q3$qp - q1$qp)/(z3$qp - z1$qp)}, \
+     {{First[xs$qp], q1$qp + m$qp (First[xs$qp] - z1$qp)}, \
+     {Last[xs$qp], q1$qp + m$qp (Last[xs$qp] - z1$qp)}}]]}]]], \
+     If[VectorQ[data$qp], {data$qp}, data$qp]]"
+      .to_string()
+  } else {
+    "With[{a$qp = Sort[N[data$qp]], b$qp = Sort[N[data2$qp]]}, \
+     With[{k$qp = Min[Length[a$qp], Length[b$qp]]}, \
+     With[{ps$qp = (Range[k$qp] - 1/2)/k$qp}, \
+     With[{pts$qp = Transpose[{Quantile[a$qp, ps$qp], Quantile[b$qp, ps$qp]}]}, \
+     {{pts$qp, {First[pts$qp], Last[pts$qp]}}}]]]]"
+      .to_string()
+  };
+
+  let code = format!(
+    "Module[{{data$qp = {data}, data2$qp = {data2}, series$qp}}, \
+     series$qp = {series}; \
+     Show[ListPlot[series$qp[[All, 1]]{opts}], \
+     Graphics[{{GrayLevel[0.5], Line /@ series$qp[[All, 2]]}}]]]",
+    data = expr_to_string(&args[0]),
+    data2 = args
+      .get(1)
+      .filter(|_| data_count == 2)
+      .map_or("Null".to_string(), expr_to_string),
+  );
+  evaluate_expr_to_expr(&crate::syntax::string_to_expr(&code)?)
+}
+
 /// ListFitPlot[data, model, opts] — the data points together with the curve
 /// of the model fitted to them. Delegates to `Fit`, `ListPlot` and `Plot`.
 ///
