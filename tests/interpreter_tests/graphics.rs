@@ -27586,6 +27586,30 @@ mod manipulate {
     }
   }
 
+  // A bare color inside a slider label typesets as a swatch in the notebook;
+  // the widget label shows it as a solid square in that color, not the
+  // source of the `RGBColor[…]` head.
+  #[test]
+  fn spec_label_color_swatch_in_row() {
+    let expr = interpret_to_expr(
+      "Manipulate[x, {{x, 1, Row[{RGBColor[0, 0, 1], Style[\"A\", Italic]}]}, 0, 2}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Continuous {
+        label, label_runs, ..
+      } => {
+        assert_eq!(label, "\u{25A0}A");
+        assert_eq!(label_runs[0].text, "\u{25A0}");
+        assert_eq!(label_runs[0].color, Some((0.0, 0.0, 1.0)));
+        assert_eq!(label_runs[1].text, "A");
+        assert!(label_runs[1].italic);
+      }
+      _ => panic!("expected continuous control"),
+    }
+  }
+
   // Wolfram keeps a Manipulate slider's variable machine-real for its whole
   // lifetime once any of `{min, max, step, initial}` was written as an
   // inexact number — even while the slider sits at a "round" position, so

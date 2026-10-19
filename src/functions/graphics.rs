@@ -29146,6 +29146,23 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
         }
         runs
       }
+      // A bare color (`Row[{RGBColor[0, 0, 1], Style["A", Italic]}]`) typesets
+      // as a swatch in the notebook. A label has no box to fill, so the
+      // swatch becomes a solid square in that color rather than the source
+      // of the color head.
+      "RGBColor" | "Hue" | "GrayLevel" | "CMYKColor" | "XYZColor"
+      | "LABColor" | "LCHColor" | "LUVColor"
+        if parse_color(expr).is_some() =>
+      {
+        let color =
+          parse_color(expr).map(|c| (c.r as f32, c.g as f32, c.b as f32));
+        vec![LabelRun {
+          text: "\u{25A0}".to_string(),
+          italic: false,
+          color,
+          ..Default::default()
+        }]
+      }
       // `Spacer[w]` — pure layout, a label can only carry it as one blank
       // (so `Row[{a, Spacer[8], b}]` keeps its words apart) rather than
       // spelling out the head.
