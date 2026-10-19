@@ -498,7 +498,7 @@ const DEFAULT_RECURSION_LIMIT = 1024;
 const RAISED_RECURSION_LIMIT = 4096;
 
 function buildWolframScript(
-  cases: { expr: string; woxiResult: string; idx: number }[]
+  cases: { expr: string; key: string; woxiResult: string; idx: number }[]
 ): string {
   const lines: string[] = [];
   // Deeply nested test expressions need more headroom than a fresh kernel's
@@ -621,7 +621,7 @@ function buildWolframScript(
     );
   }
 
-  for (const { expr, woxiResult, idx } of cases) {
+  for (const { expr, key, woxiResult, idx } of cases) {
     // A `Protect[x]` case leaves `x` protected for the rest of the batch,
     // and `ClearAll` refuses to touch a protected symbol — so a later
     // `Protect[x]` would answer `{}` (nothing left to protect) where a
@@ -689,9 +689,11 @@ function buildWolframScript(
     const wLabel = '"FAIL #' + (idx + 1) + ": " + exprEscaped + '"';
     // Approx cases compare within a numeric tolerance; all others by exact
     // string equality.
-    const mismatchTest = APPROX_MATCH.has(expr)
+    // The tolerance sets are keyed by the case's own expression, which is
+    // `expr` without the setup statements joined in front of it.
+    const mismatchTest = APPROX_MATCH.has(key)
       ? "!WX`ApproxQ[WX`ee$$, WX`rr$$]"
-      : NEAR_MATCH.has(expr)
+      : NEAR_MATCH.has(key)
         ? "!WX`NearQ[WX`ee$$, WX`rr$$]"
         : "WX`rr$$ =!= WX`ee$$";
     // Wrap in CheckAbort so Abort[]/Interrupt[] calls inside test cases
@@ -868,7 +870,7 @@ function truncateStderr(stderr: string, maxLines = 40): string {
  * Returns the raw output string, or throws on failure.
  */
 function runWolframBatch(
-  batch: { expr: string; woxiResult: string; idx: number }[],
+  batch: { expr: string; key: string; woxiResult: string; idx: number }[],
   timeoutMs = 300_000
 ): string {
   const wolframProgram = buildWolframScript(batch);
@@ -908,7 +910,7 @@ function runWolframBatch(
   return res.stdout ?? "";
 }
 
-type BatchCase = { expr: string; woxiResult: string; idx: number };
+type BatchCase = { expr: string; key: string; woxiResult: string; idx: number };
 
 /**
  * How long a (sub-)batch may take. Some single expressions are legitimately
@@ -2548,6 +2550,18 @@ function main() {
       !IMPL_SPECIFIC_PATTERNS.some((p) => p.test(c.expr)) &&
       !EXACT_EXPR_SKIP.has(c.expr)
   );
+  // `WX_MATCH=<regex>` keeps only the cases whose expression (or a setup
+  // statement) matches — enough to re-check a handful of fixes against
+  // wolframscript without running whole files.
+  if (process.env.WX_MATCH) {
+    const re = new RegExp(process.env.WX_MATCH);
+    const kept = cases.filter(
+      (c) => re.test(c.expr) || (c.setup ?? []).some((s) => re.test(s))
+    );
+    cases.length = 0;
+    cases.push(...kept);
+  }
+
   const skipped = allCases.length - cases.length;
   const tested = cases.length;
 
@@ -2564,7 +2578,7 @@ function main() {
   // Step 1: Run each expression through woxi eval with ToString[_, InputForm]
   // Woxi is fast (~20ms per call), so this takes ~10s for 500 tests.
   console.log(`Running ${tested} test cases through woxi eval (${skipped} skipped)...`);
-  const woxiResults: { expr: string; woxiResult: string; idx: number }[] = [];
+  const woxiResults: { expr: string; key: string; woxiResult: string; idx: number }[] = [];
   for (let i = 0; i < tested; i++) {
     const { expr, setup } = cases[i];
     // For expressions with setup, prepend setup code. Drop setup entries that
@@ -2580,7 +2594,7 @@ function main() {
         ])
       : expr;
     const result = runWoxi(fullExpr);
-    woxiResults.push({ expr: fullExpr, woxiResult: result, idx: i });
+    woxiResults.push({ expr: fullExpr, key: expr, woxiResult: result, idx: i });
   }
 
   // Filter out rendered-object placeholders: Graphics/Image objects render

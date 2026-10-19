@@ -7937,14 +7937,14 @@ mod graph_utilities_package {
     );
   }
 
+  // The package's VertexList and ClosenessCentrality only exist once it is
+  // loaded in an *earlier* input: read in the same line as the `Needs`, the
+  // names are created before it runs (wolframscript leaves them unevaluated).
   #[test]
   fn vertex_list_of_rule_list() {
+    interpret("Needs[\"GraphUtilities`\"]").unwrap();
     assert_eq!(
-      interpret(
-        "Needs[\"GraphUtilities`\"]; \
-         GraphUtilities`VertexList[{a -> b, b -> c, c -> a}]"
-      )
-      .unwrap(),
+      interpret("GraphUtilities`VertexList[{a -> b, b -> c, c -> a}]").unwrap(),
       "{a, b, c}"
     );
   }
@@ -7989,20 +7989,17 @@ mod graph_utilities_package {
   // built-in's (n - 1)/Σd, and 0. for a vertex that cannot reach the rest.
   #[test]
   fn closeness_centrality_is_reciprocal_distance_sum() {
+    interpret("Needs[\"GraphUtilities`\"]").unwrap();
     assert_eq!(
       interpret(
-        "Needs[\"GraphUtilities`\"]; \
-         GraphUtilities`ClosenessCentrality[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1, 1 -> 3}]"
+        "GraphUtilities`ClosenessCentrality[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1, 1 -> 3}]"
       )
       .unwrap(),
       "{0.25, 0.16666666666666666, 0.16666666666666666, 0.2}"
     );
     assert_eq!(
-      interpret(
-        "Needs[\"GraphUtilities`\"]; \
-         GraphUtilities`ClosenessCentrality[{1 -> 2, 2 -> 3}]"
-      )
-      .unwrap(),
+      interpret("GraphUtilities`ClosenessCentrality[{1 -> 2, 2 -> 3}]")
+        .unwrap(),
       "{0.3333333333333333, 0., 0.}"
     );
   }

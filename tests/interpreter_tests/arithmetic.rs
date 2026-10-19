@@ -1339,6 +1339,15 @@ mod plus_numeric_contagion {
     assert_eq!(interpret("ToString[2. I - 2. I]").unwrap(), "0. + 0. I");
   }
 
+  // A machine pure imaginary is Complex[0., b]: its real part is 0.
+  #[test]
+  fn real_part_of_machine_imaginary() {
+    assert_eq!(
+      interpret("{Re[1.5 I], Re[2. I - 2. I], Re[I Pi], Re[3 I]}").unwrap(),
+      "{0., 0., 0, 0}"
+    );
+  }
+
   // A nested sum is bracketed in InputForm wherever it stands.
   #[test]
   fn nested_plus_input_form() {
