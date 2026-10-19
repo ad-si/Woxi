@@ -9018,7 +9018,7 @@ mod region_centroid_difference {
          Disk[{1/2, 0}, 1/4]]]"
       )
       .unwrap(),
-      "{-(Pi/(2*(64 - Pi))), 0}"
+      "{-1/32*Pi/(4 - Pi/16), 0}"
     );
   }
 

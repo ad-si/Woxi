@@ -1262,6 +1262,21 @@ pub fn random_permutation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Whether `expr` holds an `==` anywhere.
+fn contains_equality(expr: &Expr) -> bool {
+  match expr {
+    Expr::Comparison { operators, .. }
+      if operators.contains(&crate::syntax::ComparisonOp::Equal) =>
+    {
+      true
+    }
+    Expr::FunctionCall { name, .. } if name == "Equal" => true,
+    _ => crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(contains_equality),
+  }
+}
+
 /// Cumulative weight table for sampling `ProbabilityDistribution[f, range]`.
 struct SamplingTable {
   /// Left edges of the grid cells (continuous) or the support points.
@@ -1583,8 +1598,38 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Tabulate the density (continuous `{x, lo, hi}`) on a fine grid, or
       // the mass function (discrete `{x, lo, hi, step}`) at its support
       // points, and draw by inverse transform on the cumulative weights.
+      //
+      // wolframscript cannot sample a discrete distribution whose mass is a
+      // Piecewise of point conditions (`x == 1 || x == 3`) and says so.
+      if let Expr::List(range) = &dargs[1]
+        && range.len() == 4
+        && let Expr::FunctionCall {
+          name: pw,
+          args: pw_args,
+        } = &dargs[0]
+        && pw == "Piecewise"
+        && contains_equality(pw_args.first().unwrap_or(&dargs[0]))
+      {
+        crate::emit_message(&format!(
+          "RandomVariate::noimp: Sampling from {} is not implemented.",
+          crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+        ));
+        return Ok(unevaluated("RandomVariate", args));
+      }
       let Some(table) = probability_distribution_table(dargs) else {
         return Ok(unevaluated("RandomVariate", args));
+      };
+      // A discrete support on an exact grid gives exact values.
+      let exact_grid = match &dargs[1] {
+        Expr::List(range) if range.len() == 4 => {
+          let exact = |e: &Expr| {
+            matches!(e, Expr::Integer(_))
+              || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+          };
+          (exact(&range[1]) && exact(&range[3]))
+            .then(|| (range[1].clone(), range[3].clone()))
+        }
+        _ => None,
       };
       let sample = || -> Expr {
         let u: f64 = crate::with_rng(|rng| rng.gen_range(0.0..table.total));
@@ -1592,6 +1637,14 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .cumulative
           .partition_point(|&c| c <= u)
           .min(table.cumulative.len() - 1);
+        if let Some((lo, step)) = &exact_grid {
+          let point = crate::helpers::plus2(
+            lo.clone(),
+            crate::helpers::times2(Expr::Integer(i as i128), step.clone()),
+          );
+          return crate::evaluator::evaluate_expr_to_expr(&point)
+            .unwrap_or(point);
+        }
         let x = match table.width {
           // Continuous: uniform within the selected grid cell.
           Some(w) => {

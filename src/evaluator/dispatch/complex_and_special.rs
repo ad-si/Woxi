@@ -1217,6 +1217,11 @@ pub fn dispatch_complex_and_special(
     "TagBox" if args.len() == 2 => {
       return Some(Ok(unevaluated(name, args)));
     }
+    // TemplateBox[{…}, "name"] — a front-end display template (a `Row` is
+    // `TemplateBox[{…}, "RowDefault"]`). Inert.
+    "TemplateBox" if args.len() >= 2 => {
+      return Some(Ok(unevaluated(name, args)));
+    }
     "InterpretationBox" if args.len() == 2 => {
       return Some(Ok(unevaluated(name, args)));
     }
@@ -3864,8 +3869,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       if (name == "StandardForm" || name == "TraditionalForm")
         && args.len() == 1 =>
     {
+      // These boxes are what `ToBoxes`/`MakeBoxes` hand back, so they take
+      // the box-text shapes wolframscript writes (`TemplateBox[…,
+      // "RowDefault"]` for a `Row`), not those of Woxi's own renderers.
       let inner_box = if name == "TraditionalForm" {
-        expr_to_box_form_traditional(&args[0])
+        expr_to_box_form_traditional_text(&args[0])
       } else {
         expr_to_box_form(&args[0])
       };
@@ -5420,6 +5428,49 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         tf_row(vec![tf_string("det"), tf_parens(tf(&args[0]))])
       }
     }
+    // In box text a matrix is wolframscript's MatrixForm template: the
+    // bracketed grid with its spacing options, word joiners inside the
+    // parentheses, tagged with the function that reads it back.
+    "MatrixForm" if args.len() == 1 && TF_BOX_TEXT.get() => {
+      if let Expr::List(rows) = &args[0]
+        && tf_is_matrix(rows)
+      {
+        let mut grid = tf_matrix_grid(rows);
+        if let Expr::FunctionCall {
+          args: grid_args, ..
+        } = &mut grid
+        {
+          let mut extended = grid_args.to_vec();
+          for (option, value) in [
+            ("RowSpacings", Expr::Integer(1)),
+            ("ColumnSpacings", Expr::Integer(1)),
+            ("RowAlignments", id_expr("Baseline")),
+            ("ColumnAlignments", id_expr("Center")),
+          ] {
+            extended.push(rule_expr(id_expr(option), value));
+          }
+          *grid_args = extended.into();
+        }
+        let joiner = tf_string("\u{2060}");
+        let bracketed = tf_row(vec![
+          tf_string("("),
+          joiner.clone(),
+          grid,
+          joiner,
+          tf_string(")"),
+        ]);
+        let e = id_expr("BoxForm`e$");
+        tf_box(
+          "TagBox",
+          vec![
+            bracketed,
+            call("Function", vec![e.clone(), call1("MatrixForm", e)]),
+          ],
+        )
+      } else {
+        tf(&args[0])
+      }
+    }
     "MatrixForm" | "TableForm" if args.len() == 1 => {
       if let Expr::List(rows) = &args[0]
         && tf_is_matrix(rows)
@@ -5546,6 +5597,10 @@ fn tf(expr: &Expr) -> Expr {
     // which the box renderers take care of; the places where a string
     // contributes bare display text (a `Row` item, a `Style` body) go
     // through `tf_display`.
+    // In box text it is spelled with its escapes too (`"\"a\\n\""`).
+    Expr::String(_) if TF_BOX_TEXT.get() => {
+      tf_string(&crate::syntax::expr_to_input_form(expr))
+    }
     Expr::String(s) => tf_string(&format!("\"{s}\"")),
     Expr::FunctionCall { name, args } => tf_call(name, args),
     // A computed head — `HoldForm[f][x]`, which is how a Demonstration
@@ -11655,16 +11710,15 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
             let coords: Vec<Expr> = c1
               .iter()
               .zip(c2.iter())
+              // Left as the quotient it is, the way wolframscript prints it:
+              // `-1/32*Pi/(4 - Pi/16)`.
               .map(|(p, q)| {
-                call1(
-                  "Together",
-                  div2(
-                    plus(vec![
-                      times(vec![a1.clone(), p.clone()]),
-                      times(vec![Expr::Integer(-1), a2.clone(), q.clone()]),
-                    ]),
-                    plus(vec![a1.clone(), neg(a2.clone())]),
-                  ),
+                div2(
+                  plus(vec![
+                    times(vec![a1.clone(), p.clone()]),
+                    times(vec![Expr::Integer(-1), a2.clone(), q.clone()]),
+                  ]),
+                  plus(vec![a1.clone(), neg(a2.clone())]),
                 )
               })
               .collect();

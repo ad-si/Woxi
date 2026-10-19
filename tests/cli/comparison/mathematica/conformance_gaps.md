@@ -905,6 +905,30 @@ last-factor rule), but `canonical_cmp` and `sort_symbolic_factors` put the
 power first; `Order[x, (a x)^n]` is right. So `Integrate[(a x)^n, x]` prints
 `((a*x)^n*x)/(1 + n)` where WL prints `(x*(a*x)^n)/(1 + n)`.
 
+### RegionCentroid of a region difference
+
+`RegionCentroid[RegionDifference[outer, hole]]` is worked out exactly only
+when the hole lies inside `outer`. wolframscript also handles a hole that
+sticks out (`Disk[{2, 2}, 1]` at a corner of `Rectangle[{0, 0}, {2, 2}]` gives
+`{(2*(26 - 3*Pi))/(3*(16 - Pi)), …}`), where Woxi stays unevaluated; and for
+an inexact disk it integrates over a discretized disk, so
+`Disk[{0.38, 0.38}, 0.55]` gives `-0.11783686539341964` against the exact
+`-0.11841487309694458`.
+
+### HighlightImage returns the image at its own size
+
+```sh
+wolframscript -code 'ImageDimensions[HighlightImage[ConstantImage[Black, {200, 100}], {Red, Point[{5, 5}]}]]'
+# {400, 200}
+woxi eval 'ImageDimensions[HighlightImage[ConstantImage[Black, {200, 100}], {Red, Point[{5, 5}]}]]'
+# {200, 100}
+```
+
+wolframscript rasterizes the highlighted picture through the front end, at
+the display's scale — twice the pixels on a Retina Mac — and with a minimum
+height (`{20, 10}` becomes `{40, 33}`). Woxi draws onto the image's own
+pixels. **Not reproducible** across machines.
+
 ### Machine eigenvectors have other signs
 
 ```sh

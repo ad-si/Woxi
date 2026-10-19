@@ -4482,7 +4482,17 @@ mod wigner_semicircle_distribution {
   fn marchenko_pastur_pdf() {
     assert_eq!(
       interpret("PDF[MarchenkoPasturDistribution[1/4], x]").unwrap(),
-      "Piecewise[{{(2*Sqrt[(9/4 - x)*(-1/4 + x)])/(Pi*x), 1/4 <= x <= 9/4}}, 0]"
+      "Piecewise[{{(2*Sqrt[1 - (-5/4 + x)^2])/(Pi*x), 1/4 <= x <= 9/4}}, 0]"
+    );
+    // A scale is applied as PDF[…[l], x/s^2]/s^2, left in that shape.
+    assert_eq!(
+      interpret("PDF[MarchenkoPasturDistribution[1/9, 3], x]").unwrap(),
+      "Piecewise[{{(81*Sqrt[4/9 - (-10/9 + x/9)^2])/(2*Pi*x), \
+       4/9 <= x/9 <= 16/9}}, 0]/9"
+    );
+    assert_eq!(
+      interpret("PDF[MarchenkoPasturDistribution[1/4, 2], 3]").unwrap(),
+      "1/(Sqrt[3]*Pi)"
     );
     // Outside the support
     assert_eq!(
@@ -4501,6 +4511,20 @@ mod wigner_semicircle_distribution {
     assert_eq!(
       interpret("PDF[MarchenkoPasturDistribution[2, 1], x]").unwrap(),
       "PDF[MarchenkoPasturDistribution[2, 1], x]"
+    );
+  }
+
+  // The scale defaults to 1 and is written out; mean s^2, variance l s^4.
+  #[test]
+  fn marchenko_pastur_moments() {
+    assert_eq!(
+      interpret(
+        "{MarchenkoPasturDistribution[l], Mean[MarchenkoPasturDistribution[l]], \
+          Variance[MarchenkoPasturDistribution[l, s]], \
+          StandardDeviation[MarchenkoPasturDistribution[1/4, 2]]}"
+      )
+      .unwrap(),
+      "{MarchenkoPasturDistribution[l, 1], 1, l*s^4, 2}"
     );
   }
 
@@ -8837,14 +8861,35 @@ mod custom_probability_distribution_random_variate {
     );
   }
 
+  // A discrete support on an exact grid gives exact values.
   #[test]
   fn discrete_values() {
     assert_eq!(
       interpret(
-        "Union[RandomVariate[ProbabilityDistribution[Piecewise[{{1/2, x == 1 || x == 3}}], {x, 1, 3, 2}], 200]]"
+        "Union[RandomVariate[ProbabilityDistribution[If[x == 1 || x == 3, 1/2, 0], {x, 1, 3, 2}], 200]]"
       )
       .unwrap(),
-      "{1., 3.}"
+      "{1, 3}"
+    );
+    assert_eq!(
+      interpret(
+        "Head[RandomVariate[ProbabilityDistribution[1/3, {x, 1, 3, 1}]]]"
+      )
+      .unwrap(),
+      "Integer"
+    );
+  }
+
+  // wolframscript cannot sample a discrete mass given as a Piecewise of point
+  // conditions (RandomVariate::noimp) and leaves the call.
+  #[test]
+  fn discrete_piecewise_of_points_is_not_sampled() {
+    assert_eq!(
+      interpret(
+        "Quiet[Head[RandomVariate[ProbabilityDistribution[Piecewise[{{1/2, x == 1 || x == 3}}], {x, 1, 3, 2}]]]]"
+      )
+      .unwrap(),
+      "RandomVariate"
     );
   }
 }

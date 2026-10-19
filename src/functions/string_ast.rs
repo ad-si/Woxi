@@ -4948,10 +4948,23 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // loses the wrapper and only the content is printed: `ToString[Unevaluated[
   // 1 + 1], InputForm]` is "1 + 1". A wrapper further in (`{0, Unevaluated[
   // 1 + 1], 9}`) is part of the expression and prints as itself.
-  let args: Vec<Expr> =
-    std::iter::once(crate::evaluator::strip_unevaluated(&args[0]))
-      .chain(args[1..].iter().cloned())
-      .collect();
+  // `FormatType -> form` names the form as an option: `ToString[x,
+  // FormatType -> TraditionalForm]` is `ToString[x, TraditionalForm]`.
+  let args: Vec<Expr> = std::iter::once(crate::evaluator::strip_unevaluated(
+    &args[0],
+  ))
+  .chain(args[1..].iter().map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FormatType")
+      && matches!(replacement.as_ref(), Expr::Identifier(_)) =>
+    {
+      replacement.as_ref().clone()
+    }
+    other => other.clone(),
+  }))
+  .collect();
   let args = &args[..];
 
   // The optional second argument must be a format symbol (InputForm,
@@ -5595,7 +5608,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Machine reals typeset at the 6 significant digits the
         // FrontEnd displays: `0.7967806891350713` becomes `0.796781`.
         let rounded = truncate_machine_reals_for_to_string(&args[0]);
-        return Ok(Expr::String(traditional_form_box_escape(&rounded, false)));
+        return Ok(Expr::String(traditional_form_box_escape(&rounded, true)));
       }
       "StandardForm" => {
         // Build the box AST via MakeBoxes (which dispatches user-defined

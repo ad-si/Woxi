@@ -15974,6 +15974,10 @@ fn operator_call_node(expr: &Expr) -> Option<Expr> {
     ("Divide", 2) => Some(binary(BinaryOperator::Divide)),
     ("Subtract", 2) => Some(binary(BinaryOperator::Minus)),
     ("List", _) => Some(Expr::List(args.clone())),
+    ("Rule", 2) => Some(rule_expr(args[0].clone(), args[1].clone())),
+    ("RuleDelayed", 2) => {
+      Some(rule_delayed_expr(args[0].clone(), args[1].clone()))
+    }
     _ => None,
   }
 }
@@ -16294,6 +16298,59 @@ pub fn format_message_pieces(pieces: &[MessagePiece]) -> String {
   TextBox::hconcat(&boxes).to_string()
 }
 
+/// Rewrite every `Rule[a, b]` / `RuleDelayed[a, b]` call in box text as
+/// `a -> b` / `a :> b`.
+fn rule_calls_as_arrows(text: &str) -> String {
+  let chars: Vec<char> = text.chars().collect();
+  let mut out = String::with_capacity(text.len());
+  let mut i = 0;
+  while i < chars.len() {
+    let at_word_start =
+      i == 0 || !(chars[i - 1].is_alphanumeric() || chars[i - 1] == '`');
+    let head = ["RuleDelayed[", "Rule["].into_iter().find(|h| {
+      at_word_start && chars[i..].iter().take(h.len()).copied().eq(h.chars())
+    });
+    let Some(head) = head else {
+      out.push(chars[i]);
+      i += 1;
+      continue;
+    };
+    // The argument list up to the matching bracket, split at its one
+    // top-level comma.
+    let start = i + head.len();
+    let mut depth = 0i32;
+    let mut comma = None;
+    let mut end = None;
+    for (j, &c) in chars.iter().enumerate().skip(start) {
+      match c {
+        '[' | '{' | '(' => depth += 1,
+        ']' | '}' | ')' if depth > 0 => depth -= 1,
+        ']' => {
+          end = Some(j);
+          break;
+        }
+        ',' if depth == 0 && comma.is_none() => comma = Some(j),
+        _ => {}
+      }
+    }
+    let (Some(comma), Some(end)) = (comma, end) else {
+      out.push(chars[i]);
+      i += 1;
+      continue;
+    };
+    let lhs: String = chars[start..comma].iter().collect();
+    let rhs: String = chars[comma + 1..end].iter().collect();
+    let arrow = if head == "Rule[" { "->" } else { ":>" };
+    out.push_str(&format!(
+      "{} {arrow} {}",
+      rule_calls_as_arrows(lhs.trim()),
+      rule_calls_as_arrows(rhs.trim())
+    ));
+    i = end + 1;
+  }
+  out
+}
+
 /// Convert a string containing Wolfram box-syntax Unicode markers to the
 /// `DisplayForm[<box>]` representation used in OutputForm.
 /// The box expression is shown with quoted atoms unquoted.
@@ -16304,7 +16361,9 @@ fn box_string_to_display_form(s: &str) -> String {
     .into_iter()
     .map(|seg| {
       if seg.is_box {
-        format!("DisplayForm[{}]", seg.text)
+        // Options print as rules, the way wolframscript shows the boxes:
+        // `RowSpacings -> 1` for the box text's `Rule[RowSpacings, 1]`.
+        format!("DisplayForm[{}]", rule_calls_as_arrows(&seg.text))
       } else {
         seg.text
       }

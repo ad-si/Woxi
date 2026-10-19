@@ -11013,6 +11013,32 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
     }
 
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // `TemplateBox[{…}, "RowDefault"]`, the box text of a `Row`, draws as
+      // its parts in a row, a string part as its text.
+      "TemplateBox"
+        if args.len() == 2
+          && matches!(&args[1], Expr::String(t) if t == "RowDefault")
+          && matches!(&args[0], Expr::List(_)) =>
+      {
+        let Expr::List(items) = &args[0] else {
+          unreachable!("guarded by the match arm")
+        };
+        let parts: Vec<Expr> = items
+          .iter()
+          .map(|item| match item {
+            Expr::String(s)
+              if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') =>
+            {
+              crate::syntax::string_to_expr(s)
+                .ok()
+                .filter(|e| matches!(e, Expr::String(_)))
+                .unwrap_or_else(|| str_expr(&s[1..s.len() - 1]))
+            }
+            other => other.clone(),
+          })
+          .collect();
+        layout_box(&call1("RowBox", Expr::List(parts.into())), font_size)
+      }
       // RowBox: lay out children left-to-right, align baselines
       "RowBox" if args.len() == 1 => {
         let items = match &args[0] {
@@ -14282,6 +14308,22 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
         .first()
         .map(|a| box_expr_to_plain_in(a, spaced))
         .unwrap_or_default(),
+      // A row template draws its parts; a string part (`"\"abc\""`, as box
+      // text writes it) as its text.
+      "TemplateBox" if args.len() == 2 => match &args[0] {
+        Expr::List(items) => items
+          .iter()
+          .map(|item| match item {
+            Expr::String(s)
+              if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') =>
+            {
+              s[1..s.len() - 1].to_string()
+            }
+            other => box_expr_to_plain_in(other, spaced),
+          })
+          .collect(),
+        other => box_expr_to_plain_in(other, spaced),
+      },
       // An accent that has a combining mark is drawn over (under) its base
       // as that mark, `ÿ` for a double dot over `y`.
       "OverscriptBox" | "UnderscriptBox" if args.len() >= 2 => accent_text(

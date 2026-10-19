@@ -2505,6 +2505,16 @@ function main() {
     // When Reduce factors a shared equation out of its disjunction is not
     // decoded (see "Reduce keeps a common equation inside each branch").
     "Reduce[z == Sin[t] && Sin[t] == 1/2 && 0 <= t < 2 Pi && z > 0, {z, t}, Reals]",
+    // RegionCentroid of a difference: wolframscript discretizes an inexact
+    // disk (…11784 against the exact …11841), and works out the part of a
+    // hole that sticks out, which Woxi leaves unevaluated (see
+    // "RegionCentroid of a region difference" in conformance_gaps.md).
+    "RegionCentroid[RegionDifference[Rectangle[{-1, -1}, {1, 1}], Disk[{0.38, 0.38}, 0.55]]]",
+    "RegionCentroid[RegionDifference[Rectangle[{0, 0}, {2, 2}], Disk[{2, 2}, 1]]]",
+    // HighlightImage rasterizes through the front end at the display's
+    // scale (twice the pixels on a Retina Mac, with a minimum height), see
+    // "HighlightImage returns the image at its own size".
+    "img = ConstantImage[Black, {20, 10}]; r = HighlightImage[img, ImageMarker[{{10, 0}, {10, 10}}, Graphics[{White, Thick, Line[{{0, 0}, {0, 10}}]}]]]; {ImageDimensions[r], ImageData[r][[5, 10]][[1]] > 0.5, ImageData[r][[5, 3]][[1]]}",
   ]);
 
   /** Names whose meaning depends on where one input unit ends and the next

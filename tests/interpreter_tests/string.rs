@@ -5933,12 +5933,21 @@ mod tex_form {
       interpret("ToString[MatrixForm[{{1, 2}, {3, 4}}]/7]").unwrap(),
       "1   2\n\n3   4\n-----\n  7"
     );
+    // `FormatType -> TraditionalForm` is the TraditionalForm box string, a
+    // matrix the MatrixForm template.
     assert_eq!(
       interpret(
         "ToString[MatrixForm[{{1, -20}, {-20, 1}}]/MatrixForm[{{-3}}], FormatType -> TraditionalForm]"
       )
       .unwrap(),
-      "1     -20\n\n-20   1\n---------\n   -3"
+      "DisplayForm[FormBox[FractionBox[TagBox[RowBox[{(, \u{2060}, \
+       GridBox[{{1, RowBox[{-, 20}]}, {RowBox[{-, 20}], 1}}, RowSpacings -> 1, \
+       ColumnSpacings -> 1, RowAlignments -> Baseline, ColumnAlignments -> \
+       Center], \u{2060}, )}], Function[BoxForm`e$, MatrixForm[BoxForm`e$]]], \
+       TagBox[RowBox[{(, \u{2060}, GridBox[{{RowBox[{-, 3}]}}, RowSpacings -> \
+       1, ColumnSpacings -> 1, RowAlignments -> Baseline, ColumnAlignments -> \
+       Center], \u{2060}, )}], Function[BoxForm`e$, MatrixForm[BoxForm`e$]]]], \
+       TraditionalForm]]"
     );
   }
 
@@ -7460,7 +7469,7 @@ mod make_boxes {
     );
     assert_eq!(
       interpret("ToBoxes[TraditionalForm[Row[{2, x, t}]]]").unwrap(),
-      "TagBox[FormBox[RowBox[{2, x, t}], TraditionalForm], TraditionalForm, \
+      "TagBox[FormBox[TemplateBox[{2, x, t}, RowDefault], TraditionalForm], TraditionalForm, \
        Editable -> True]"
     );
   }
