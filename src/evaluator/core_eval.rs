@@ -1168,8 +1168,8 @@ pub fn evaluate_expr_to_expr_inner(
       // flat namespace, so the spelled-out package context is dropped
       // (`DifferentialEquations`InterpolatingFunctionAnatomy`
       // InterpolatingFunctionDomain[f]` is `InterpolatingFunctionDomain[f]`).
-      if let Some(short) = name
-        .strip_prefix("DifferentialEquations`InterpolatingFunctionAnatomy`")
+      if let Some(short) =
+        name.strip_prefix("DifferentialEquations`InterpolatingFunctionAnatomy`")
         && matches!(short, "InterpolatingFunctionDomain")
       {
         return evaluate_expr_to_expr(&Expr::FunctionCall {
