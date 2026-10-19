@@ -1377,7 +1377,12 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             _ => return Ok(random_array_dims_error("RandomVariate", args)),
           }
         }
-        let total: usize = dims.iter().product();
+        // Dimensions whose product overflows can never be allocated.
+        let Some(total) =
+          dims.iter().try_fold(1usize, |acc, &d| acc.checked_mul(d))
+        else {
+          return Ok(random_array_dims_error("RandomVariate", args));
+        };
         // A zero total means some dimension is 0; build the empty nested
         // shape directly (ArrayReshape does not reduce zero-size specs).
         if total == 0 {
@@ -1776,6 +1781,72 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(count) => Ok(Expr::List(
           (0..count).map(|_| sample()).collect::<Vec<_>>().into(),
         )),
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
+      if name == "GeometricDistribution" && dargs.len() == 1 =>
+    {
+      // Number of failures before the first success: floor(ln u / ln(1 - p))
+      // for u uniform on (0, 1].
+      let Some(p) = try_eval_to_f64(&dargs[0]).filter(|p| *p > 0.0 && *p < 1.0)
+      else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      let sample = || -> Expr {
+        let u: f64 = 1.0 - crate::with_rng(|rng| rng.gen_range(0.0..1.0));
+        Expr::Integer((u.ln() / (-p).ln_1p()).floor() as i128)
+      };
+      match n {
+        None => Ok(sample()),
+        Some(count) => Ok(Expr::List(
+          (0..count).map(|_| sample()).collect::<Vec<_>>().into(),
+        )),
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
+      if name == "TruncatedDistribution" && dargs.len() == 2 =>
+    {
+      // Rejection sampling: draw from the base distribution until the value
+      // falls inside {lo, hi}. A truncation keeping (almost) no mass would
+      // never terminate, so give up after a bounded number of rejections.
+      let Expr::List(bounds) = &dargs[0] else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      let bound = |e: &Expr| -> Option<f64> {
+        match expr_to_string(e).as_str() {
+          "Infinity" => Some(f64::INFINITY),
+          "-Infinity" => Some(f64::NEG_INFINITY),
+          _ => try_eval_to_f64(e),
+        }
+      };
+      let (true, Some(lo), Some(hi)) = (
+        bounds.len() == 2,
+        bounds.first().and_then(bound),
+        bounds.get(1).and_then(bound),
+      ) else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      let draw = || -> Result<Option<Expr>, InterpreterError> {
+        for _ in 0..100_000 {
+          let candidate = random_variate_ast(&[dargs[1].clone()])?;
+          match try_eval_to_f64(&candidate) {
+            Some(x) if (lo..=hi).contains(&x) => return Ok(Some(candidate)),
+            Some(_) => {}
+            None => return Ok(None),
+          }
+        }
+        Ok(None)
+      };
+      let mut out = Vec::with_capacity(n.unwrap_or(1));
+      for _ in 0..n.unwrap_or(1) {
+        match draw()? {
+          Some(v) => out.push(v),
+          None => return Ok(unevaluated("RandomVariate", args)),
+        }
+      }
+      match n {
+        None => Ok(out.remove(0)),
+        Some(_) => Ok(Expr::List(out.into())),
       }
     }
     Expr::FunctionCall { name, args: dargs }
