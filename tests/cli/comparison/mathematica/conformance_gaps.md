@@ -905,6 +905,34 @@ last-factor rule), but `canonical_cmp` and `sort_symbolic_factors` put the
 power first; `Order[x, (a x)^n]` is right. So `Integrate[(a x)^n, x]` prints
 `((a*x)^n*x)/(1 + n)` where WL prints `(x*(a*x)^n)/(1 + n)`.
 
+### Machine eigenvectors have other signs
+
+```sh
+wolframscript -code 'Eigenvectors[{{2., 1.}, {1., 2.}}]'   # {{0.707…, 0.707…}, {-0.707…, 0.707…}}
+woxi eval 'Eigenvectors[{{2., 1.}, {1., 2.}}]'             # {{-0.707…, -0.707…}, {-0.707…, 0.707…}}
+```
+
+An eigenvector's sign is LAPACK's choice in wolframscript and follows no
+normalization of its components that Woxi could copy (`{{-1., 0.}, {0.,
+-1.}}` for `{{4., 0.}, {0., 1.}}`, `{{0., 1.}, {-1., 0.}}` for `{{2., 0.},
+{0., 3.}}`). Anything built on them inherits it, e.g. the directions of
+`MultivariateStatistics`EllipsoidQuantile`. **Not reproducible.**
+
+### Equations in a radical and its reciprocal
+
+```sh
+wolframscript -code 'Solve[Sqrt[x] + 1/Sqrt[x] == 3, x]'
+# {{x -> (7 - 3*Sqrt[5])/2}, {x -> (7 + 3*Sqrt[5])/2}}
+woxi eval 'Solve[Sqrt[x] + 1/Sqrt[x] == 3, x]'
+# {{x -> Root[-1 + 18*#1 - 79*#1^2 + 18*#1^3 - #1^4 & , 2, 0]}, …}
+```
+
+Woxi does not substitute `u = Sqrt[x]` (or `u = (2 + y)^(1/3)`), so `Solve`
+answers with `Root` objects or stays unevaluated, and `NSolve` falls back to
+a numeric search that lands a few ULPs off (`159.83316151184493` for
+`79 + 33 Sqrt[6]`, correctly `159.83316151184488`). wolframscript's
+`NSolve` also lists such roots in the reverse of `Solve`'s order.
+
 ### `Sort` puts a sum before a lone monomial of a call
 
 ```sh

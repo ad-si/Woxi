@@ -862,26 +862,62 @@ fn evaluate_function_call_ast_inner(
 
   // `MultivariateStatistics`EllipsoidQuantile[dist, p]` is the smallest
   // ellipsoid holding probability p of a multinormal distribution: the
-  // Mahalanobis ball of squared radius InverseCDF[ChiSquareDistribution[d], p],
-  // i.e. Ellipsoid[mean, c Covariance].
+  // Mahalanobis ball of squared radius q = InverseCDF[ChiSquareDistribution[d],
+  // p]. Written the way the package writes it: semi-axes Sqrt[q λ] along the
+  // covariance's eigenvectors, `Ellipsoid[mean, radii, directions]` — or just
+  // `Ellipsoid[mean, radii]` for an exact diagonal covariance.
   if name == "MultivariateStatistics`EllipsoidQuantile"
     && args.len() == 2
     && matches!(&args[0], Expr::FunctionCall { name: d, .. }
       if d == "MultinormalDistribution")
   {
-    let mean = call1("Mean", args[0].clone());
-    let radius = call(
+    let eval = crate::evaluator::evaluate_expr_to_expr;
+    let mean = eval(&call1("Mean", args[0].clone()))?;
+    let q = eval(&call(
       "InverseCDF",
       vec![
         call1("ChiSquareDistribution", call1("Length", mean.clone())),
         args[1].clone(),
       ],
-    );
-    let cov = call1("Covariance", args[0].clone());
-    return crate::evaluator::evaluate_expr_to_expr(&call(
-      "Ellipsoid",
-      vec![mean, times(vec![radius, cov])],
-    ));
+    ))?;
+    let cov = eval(&call1("Covariance", args[0].clone()))?;
+    // An approximate probability makes the whole ellipsoid approximate.
+    let cov = if matches!(args[1], Expr::Real(_)) {
+      eval(&call1("N", cov))?
+    } else {
+      cov
+    };
+    let radius =
+      |variance: &Expr| call1("Sqrt", times(vec![q.clone(), variance.clone()]));
+    let exact_diagonal = match &cov {
+      Expr::List(rows) => rows.iter().enumerate().all(|(i, row)| {
+        matches!(row, Expr::List(cells) if cells.iter().enumerate().all(
+          |(j, c)| i == j || matches!(c, Expr::Integer(0))))
+      }),
+      _ => false,
+    };
+    if exact_diagonal && let Expr::List(rows) = &cov {
+      let radii: Vec<Expr> = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(i, row)| match row {
+          Expr::List(cells) => cells.get(i).map(radius),
+          _ => None,
+        })
+        .collect();
+      return eval(&call("Ellipsoid", vec![mean, Expr::List(radii.into())]));
+    }
+    let system = eval(&call1("Eigensystem", cov))?;
+    if let Expr::List(parts) = &system
+      && let [Expr::List(values), directions] = parts.as_slice()
+    {
+      let radii: Vec<Expr> = values.iter().map(radius).collect();
+      return eval(&call(
+        "Ellipsoid",
+        vec![mean, Expr::List(radii.into()), directions.clone()],
+      ));
+    }
+    return Ok(unevaluated(name, args));
   }
 
   // `GraphUtilities\`` works on a graph given as a plain list of rules

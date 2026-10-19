@@ -15745,6 +15745,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // DataRange places the cell centers, so the raster reaches half a cell
+    // beyond it; without one the cells sit on the integer grid.
     #[test]
     fn array_plot_data_range_places_raster() {
       clear_state();
@@ -15753,7 +15755,18 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "First[ArrayPlot[{{1, 2}, {3, 4}}, DataRange -> {{-2, 2}, {-1, 1}}]][[2]]"
         )
         .unwrap(),
-        "{{-2., -1.}, {2., 1.}}"
+        "{{-4., -2.}, {4., 2.}}"
+      );
+      assert_eq!(
+        interpret(
+          "First[ArrayPlot[{{1, 2, 3}, {3, 4, 5}}, DataRange -> {{0, 1}, {0, 10}}]][[2]]"
+        )
+        .unwrap(),
+        "{{-0.25, -5.}, {1.25, 15.}}"
+      );
+      assert_eq!(
+        interpret("First[ArrayPlot[{{1, 2}, {3, 4}}]][[2]]").unwrap(),
+        "{{0, 0}, {2, 2}}"
       );
     }
 

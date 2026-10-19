@@ -2426,6 +2426,35 @@ function main() {
     "p = ParametricPlot[{Sin[t], Cos[t]}, {t, 0, 3}][[1]]; {Head[p], Head[p[[1, 2]]]}",
     "Head[First[RevolutionPlot3D[{Cos[t], 1 + Sin[t]}, {t, -Pi/2, 0}, Mesh -> None]]]",
     "First[RevolutionPlot3D[{Cos[t], 1 + Sin[t]}, {t, -Pi/2, 0}, Mesh -> None, PlotStyle -> Opacity[0.2]]][[2, 1]]",
+    "Length[DeleteDuplicates[Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}, ColorFunction -> Function[{x, y, z}, ColorData[\"SouthwestColors\"][z]]][[1]], _RGBColor, Infinity]]] > 10",
+    "Length[Cases[ParametricPlot3D[{t, Cos[u], Sin[u]}, {t, -3, 3}, {u, 0, 2 Pi}, RegionFunction -> (Abs[#1] < 1 &)], _Polygon, Infinity]] < Length[Cases[ParametricPlot3D[{t, Cos[u], Sin[u]}, {t, -3, 3}, {u, 0, 2 Pi}], _Polygon, Infinity]]",
+    "Max[Abs[Cases[ParametricPlot3D[{t, Cos[u], Sin[u]}, {t, -3, 3}, {u, 0, 2 Pi}, RegionFunction -> (Abs[#1] < 1 &)], GraphicsComplex[pts_, _] :> pts[[All, 1]], Infinity][[1]]]] < 1",
+    "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, PlotPoints -> 3][[1]], _RGBColor]",
+    "Map[Length, Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, Mesh -> 3][[1]], Line[l_] :> l, Infinity]]",
+    "Length[ParametricPlot3D[{t, 0, 0}, {t, 0, 1}, PlotRange -> {{0, 0.5}, {-1, 1}, {-1, 1}}][[1]]]",
+    "RevolutionPlot3D[{Sin[t], Cos[t]}, {t, 0, Pi}, {z, 0, 1}][[1, 2, 1]]",
+    "Head[First[RevolutionPlot3D[{{-Sin[s], s}, {Sin[s], s}}, {s, 0, 1}]][[1]]]",
+    "First[RevolutionPlot3D[{Cos[t], 1 + Sin[t]}, {t, -Pi/2, 0}, Mesh -> None, PlotStyle -> Opacity[0.2]]][[2, 2]]",
+    "MemberQ[Part[SphericalPlot3D[1, {u, 0, Pi}, {v, 0, 2 Pi}], 1, 2], EdgeForm[]]",
+    "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, 0, 1}, {y, 0, 1}, {z, 0, 1}, Mesh -> None, PlotPoints -> 4][[1, 2, 1]]",
+    "d = DensityPlot[x y, {x, -3, 3}, {y, -2, 2}]; r = First[d][[1]]; {Head[r], Dimensions[r[[1]]], r[[2]], AspectRatio /. Options[d], Frame /. Options[d]}",
+    "d = DensityPlot[x, {x, 0, 1}, {y, 0, 1}, PlotRange -> {-3, 1}, ColorFunction -> \"TemperatureMap\", PlotLegends -> Automatic]; {Head[d], d[[2]]}",
+    "Round[Cases[RegionPlot[y > x/2 + 1 && y < 3 x/2 - 1, {x, -5, 5}, {y, -5, 5}][[1]], Polygon[p_] :> p, Infinity], 1/1000]",
+    "Cases[RegionPlot[x < 0, {x, -2, 2}, {y, -2, 2}][[1]], Polygon[p_] :> p, Infinity]",
+    "Length[Cases[RegionPlot[{y > x/2 + 1, y < 3 x/2 - 1}, {x, -5, 5}, {y, -5, 5}][[1]], _Polygon, Infinity]]",
+    "Cases[RegionPlot[{y > x/2 + 1, y < 3 x/2 - 1}, {x, -5, 5}, {y, -5, 5}][[1]], RGBColor[c__] :> Round[{c}, 1/100], {3}]",
+    "Length[RegionPlot[{y > x/2 + 1 && y < 3 x/2 - 1}, {x, -5, 5}, {y, -5, 5}][[1]]]",
+    "Cases[RegionPlot[y > x, {x, -1, 1}, {y, -1, 1}, PlotStyle -> Red][[1]], _EdgeForm, Infinity]",
+    "Length[Cases[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]], _Polygon, Infinity]]",
+    "Cases[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}, BoundaryStyle -> Thick][[1]], _EdgeForm, Infinity]",
+    "diskCond = x^2 + y^2 < 1; Length[Cases[RegionPlot[diskCond, {x, -2, 2}, {y, -2, 2}][[1]], _Polygon, Infinity]]",
+    "Cases[RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}][[1]], Polygon[outer_ -> holes_] :> {Length[outer], Length[holes]}, Infinity]",
+    "s = StreamPlot[{x + 2, 0}, {x, -1, 1}, {y, -1, 1}]; segs = SortBy[Cases[s, {Arrowheads[{{a_, _}}], c_RGBColor, Arrow[p_]} :> {Mean[p][[1]], List @@ c, a}, Infinity], First]; {Round[segs[[1, 2]], 0.25], Round[segs[[-1, 2]], 0.25], Max[segs[[All, 3]]]}",
+    "Max[Flatten[Cases[StreamPlot[{x, y}, {x, 0, 1}, {y, 0, 1}, RegionFunction -> Function[{x, y}, x + y < 0.5]][[1]], (Line[p_] | Arrow[p_]) :> (#[[1]] + #[[2]] & /@ p), Infinity]]] < 0.5",
+    // Charts expose no symbolic primitive list (see "Chart functions have no
+    // symbolic primitive list at all" in conformance_gaps.md).
+    "Head[BarChart[{0.3, 0.7}][[1]] /. Disk[c_, r_, a_] :> Disk[c, r*2, a]]",
+    "Length[PieChart[{1, 2, 3}][[1]]]",
 
     // Manipulate's Initialization: Woxi has no DynamicModule to scope it
     // to, and its controls re-resolve the body on every frame, so the
@@ -2511,6 +2540,16 @@ function main() {
   );
   const skipped = allCases.length - cases.length;
   const tested = cases.length;
+
+  // `WX_LIST=1` prints the cases that would be compared — `file:line` and
+  // the exact expression a skip-list entry has to name — and stops before
+  // running anything.
+  if (process.env.WX_LIST) {
+    for (const c of cases) {
+      console.log(`${c.file.replace(ROOT + "/", "")}:${c.line}\t${JSON.stringify(c.expr)}`);
+    }
+    return;
+  }
 
   // Step 1: Run each expression through woxi eval with ToString[_, InputForm]
   // Woxi is fast (~20ms per call), so this takes ~10s for 500 tests.

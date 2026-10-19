@@ -4845,8 +4845,40 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The symbolic content, as `First`/`Part` see it: a `Raster` of the cell
   // colors with the first row at the top (`Raster` rows run bottom-up, so a
   // default plot lists them reversed) over the `DataRange` rectangle.
-  let ((x0, x1), (y0, y1)) =
-    data_range.unwrap_or(((0.0, n_cols as f64), (0.0, n_rows as f64)));
+  // `DataRange` places the cell *centers*, so the raster reaches half a
+  // cell beyond it (a single cell spans the whole range); without one the
+  // cells sit on the integer grid {{0, 0}, {cols, rows}}.
+  let rect = match data_range {
+    Some(((x0, x1), (y0, y1))) => {
+      let widen = |lo: f64, hi: f64, n: usize| {
+        if n > 1 {
+          let half = (hi - lo) / (n - 1) as f64 / 2.0;
+          (lo - half, hi + half)
+        } else {
+          (lo, hi)
+        }
+      };
+      let (x0, x1) = widen(x0, x1, n_cols);
+      let (y0, y1) = widen(y0, y1, n_rows);
+      Expr::List(
+        vec![
+          Expr::List(vec![Expr::Real(x0), Expr::Real(y0)].into()),
+          Expr::List(vec![Expr::Real(x1), Expr::Real(y1)].into()),
+        ]
+        .into(),
+      )
+    }
+    None => Expr::List(
+      vec![
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+        Expr::List(
+          vec![Expr::Integer(n_cols as i128), Expr::Integer(n_rows as i128)]
+            .into(),
+        ),
+      ]
+      .into(),
+    ),
+  };
   let channel = |v: u8| Expr::Real(f64::from(v) / 255.0);
   let mut raster_rows: Vec<Expr> = cell_rgb
     .iter()
@@ -4865,13 +4897,6 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !data_reversed {
     raster_rows.reverse();
   }
-  let rect = Expr::List(
-    vec![
-      Expr::List(vec![Expr::Real(x0), Expr::Real(y0)].into()),
-      Expr::List(vec![Expr::Real(x1), Expr::Real(y1)].into()),
-    ]
-    .into(),
-  );
   let structure = call1(
     "Graphics",
     call("Raster", vec![Expr::List(raster_rows.into()), rect]),

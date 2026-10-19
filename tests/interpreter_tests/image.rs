@@ -865,22 +865,26 @@ mod image_processing {
   }
 
   #[test]
-  fn colorize_automatic_background_is_white() {
+  fn colorize_background_is_black() {
     clear_state();
     assert_eq!(
       interpret("ImageData[Colorize[{{0, 1}, {1, 2}}]][[1, 1]]").unwrap(),
-      "{1., 1., 1.}"
+      "{0., 0., 0.}"
+    );
+    assert_eq!(
+      interpret("ImageType[Colorize[{{0, 1}, {1, 2}}]]").unwrap(),
+      "Byte"
     );
   }
 
   #[test]
   fn colorize_hue_color_function() {
     clear_state();
-    // Label 0 maps to t = 0 -> Hue[0] (red); label 2 maps to t = 1.
+    // Label 0 is the black background; label k of m takes the color at
+    // (k - 1/2)/m, here Hue[3/4].
     assert_eq!(
-      interpret("ImageData[Colorize[{{0, 2}}, ColorFunction -> Hue]][[1, 1]]")
-        .unwrap(),
-      "{1., 0., 0.}"
+      interpret("ImageData[Colorize[{{0, 2}}, ColorFunction -> Hue]]").unwrap(),
+      "{{{0., 0., 0.}, {0.4980392156862745, 0., 1.}}}"
     );
   }
 
@@ -892,7 +896,30 @@ mod image_processing {
         "ImageData[Colorize[{{1, 3}}, ColorFunction -> (GrayLevel[1 - #] &)]][[1]]"
       )
       .unwrap(),
-      "{{1., 1., 1.}, {0., 0., 0.}}"
+      "{{0.8352941176470589, 0.8352941176470589, 0.8352941176470589}, \
+       {0.16470588235294117, 0.16470588235294117, 0.16470588235294117}}"
+    );
+  }
+
+  // A channel value v lands in byte ceil(256 v) - 1.
+  #[test]
+  fn colorize_byte_quantization() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "255 ImageData[Colorize[{{0, 1, 2, 3, 4}}, \
+         ColorFunction -> (GrayLevel[#] &)]][[1, All, 1]]"
+      )
+      .unwrap(),
+      "{0., 31., 95., 159., 223.}"
+    );
+    assert_eq!(
+      interpret(
+        "255 ImageData[Colorize[{{0, 1, 5}}, \
+         ColorFunction -> (GrayLevel[#] &)]][[1, All, 1]]"
+      )
+      .unwrap(),
+      "{0., 25., 230.}"
     );
   }
 
@@ -8514,8 +8541,26 @@ mod demonstration_image_filters {
     );
     assert_eq!(
       interpret(
-        "ImageDimensions[ImagePad[Image[RandomReal[1, {6, 8, 3}]], 2, \
+        "ImageDimensions[ImagePad[Image[RandomReal[1, {6, 8}]], 2, \
          GrayLevel[0, 0]]]"
+      )
+      .unwrap(),
+      "{12, 10}"
+    );
+    // A color with more channels than one, but not the image's own, does
+    // not fit: ImagePad::incpad, and the call stays.
+    assert_eq!(
+      interpret(
+        "Quiet[Head[ImagePad[Image[ConstantArray[0.5, {6, 8, 3}]], 2, \
+         GrayLevel[0, 0]]]]"
+      )
+      .unwrap(),
+      "ImagePad"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImagePad[Image[ConstantArray[0.5, {6, 8, 4}]], 2, \
+         RGBColor[1, 0, 0, 0.5]]]"
       )
       .unwrap(),
       "{12, 10}"
@@ -8573,6 +8618,12 @@ mod demonstration_image_filters {
     assert_eq!(
       interpret("ImageLevels[Binarize[Image[{{0, 1, 1}, {0, 0, 1}}]], 2]")
         .unwrap(),
+      "{{0., 3}, {0.5, 3}}"
+    );
+    // A bit image on its own counts its two values.
+    assert_eq!(
+      interpret("ImageLevels[Binarize[Image[{{0, 1, 1}, {0, 0, 1}}]]]")
+        .unwrap(),
       "{{0, 3}, {1, 3}}"
     );
     assert_eq!(
@@ -8582,7 +8633,21 @@ mod demonstration_image_filters {
     );
     assert_eq!(
       interpret("ImageLevels[Image[{{0, 1}, {1, 1}}], 2]").unwrap(),
-      "{{0., 1}, {1., 3}}"
+      "{{0., 1}, {0.5, 3}}"
+    );
+    // n bins [k/n, (k+1)/n) labelled by their lower edge; 256 of them by
+    // default even for a byte image; "Byte" and All count values.
+    assert_eq!(
+      interpret(
+        "{ImageLevels[Image[{{0, 0.2, 0.5}, {0.7, 1, 0.9}}], 3], \
+          ImageLevels[Image[{{0, 128}, {255, 7}}, \"Byte\"]][[;; 2]], \
+          ImageLevels[Image[{{0, 0.5}, {1, 0.2}}], \"Byte\"][[;; 2]], \
+          ImageLevels[Image[{{0, 0.5}, {1, 0.5}}], All]}"
+      )
+      .unwrap(),
+      "{{{0., 2}, {0.3333333333333333, 1}, {0.6666666666666666, 3}}, \
+       {{0., 1}, {0.00390625, 0}}, {{0, 1}, {1, 0}}, \
+       {{0., 1}, {0.5, 2}, {1., 1}}}"
     );
     assert_eq!(
       interpret("Length[ImageLevels[Image[{{0, 1}, {1, 1}}]]]").unwrap(),

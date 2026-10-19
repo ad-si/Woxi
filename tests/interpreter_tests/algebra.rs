@@ -8864,18 +8864,28 @@ mod nsolve {
   // cube root and its reciprocal.
   #[test]
   fn nsolve_falls_back_to_numeric_search_for_reciprocal_fractional_powers() {
+    // The roots are 79 ∓ 33 Sqrt[6]. wolframscript lists them the other way
+    // round and the numeric search lands a few ULPs off, so they are
+    // compared sorted and rounded (see conformance_gaps.md).
     assert_eq!(
-      interpret("NSolve[(2 + y)^(1/3) + 3/(2 + y)^(1/3) == 6, y]").unwrap(),
-      "{{y -> -1.8331615118448772}, {y -> 159.83316151184493}}"
+      interpret(
+        "Round[Sort[y /. NSolve[(2 + y)^(1/3) + 3/(2 + y)^(1/3) == 6, y]], \
+         10^-10]"
+      )
+      .unwrap(),
+      "{-9165807559/5000000000, 799165807559/5000000000}"
     );
     // The generated constant `Solve` itself introduces for an equation it
     // cannot solve in closed form, `C[1]`, is exactly this kind of
     // non-identifier "variable" — confirm the numeric fallback solves for
     // it too, not only for a plain symbol.
     assert_eq!(
-      interpret("NSolve[(2 + C[1])^(1/3) + 3/(2 + C[1])^(1/3) == 6, C[1]]")
-        .unwrap(),
-      "{{C[1] -> -1.8331615118448772}, {C[1] -> 159.83316151184493}}"
+      interpret(
+        "Round[Sort[C[1] /. NSolve[(2 + C[1])^(1/3) + 3/(2 + C[1])^(1/3) \
+         == 6, C[1]]], 10^-10]"
+      )
+      .unwrap(),
+      "{-9165807559/5000000000, 799165807559/5000000000}"
     );
   }
 

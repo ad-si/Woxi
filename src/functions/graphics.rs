@@ -2340,7 +2340,7 @@ fn collect_primitives(
         "Sphere" | "Ball" => {
           parse_sphere(name == "Ball", args, style, prims);
         }
-        "Ellipsoid" if args.len() == 2 => {
+        "Ellipsoid" if args.len() == 2 || args.len() == 3 => {
           parse_ellipsoid(args, style, prims);
         }
         "Rectangle" => {
@@ -3254,6 +3254,44 @@ fn parse_ellipsoid(
   let Expr::List(second) = &args[1] else {
     return;
   };
+  // `Ellipsoid[c, {r1, r2}, {d1, d2}]`: semi-axes r1, r2 along the
+  // directions d1, d2.
+  if args.len() == 3 {
+    let radii: Option<Vec<f64>> = second.iter().map(expr_to_f64).collect();
+    let directions: Option<Vec<(f64, f64)>> = match &args[2] {
+      Expr::List(dirs) => dirs.iter().map(expr_to_point).collect(),
+      _ => None,
+    };
+    let (Some(radii), Some(dirs)) = (radii, directions) else {
+      return;
+    };
+    if radii.len() != 2 || dirs.len() != 2 {
+      return;
+    }
+    let unit = |(x, y): (f64, f64)| {
+      let n = x.hypot(y);
+      if n > 0.0 { (x / n, y / n) } else { (x, y) }
+    };
+    let (u, v) = (unit(dirs[0]), unit(dirs[1]));
+    const STEPS: usize = 120;
+    let points = (0..STEPS)
+      .map(|i| {
+        let t = std::f64::consts::TAU * i as f64 / STEPS as f64;
+        let (s, c) = t.sin_cos();
+        (
+          cx + radii[0] * c * u.0 + radii[1] * s * v.0,
+          cy + radii[0] * c * u.1 + radii[1] * s * v.1,
+        )
+      })
+      .collect();
+    prims.push(Primitive::PolygonPrim {
+      points,
+      holes: Vec::new(),
+      vertex_colors: None,
+      style: style.clone(),
+    });
+    return;
+  }
   // Semi-axes: an axis-aligned ellipse is exactly a `Disk`.
   if second.len() == 2 && second.iter().all(|e| !matches!(e, Expr::List(_))) {
     if let (Some(rx), Some(ry)) =
