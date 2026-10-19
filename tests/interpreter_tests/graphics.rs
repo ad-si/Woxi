@@ -37472,3 +37472,72 @@ mod animate_result_display {
     assert_eq!(out, "Animate");
   }
 }
+
+mod grid_repeating_decimal_alignment {
+  use super::*;
+
+  /// x positions of the full-height vertical frame lines, left to right.
+  fn vertical_line_xs(svg: &str) -> Vec<f64> {
+    let attr = |tag: &str, name: &str| -> Option<f64> {
+      let rest = tag.split_once(&format!("{name}=\""))?.1;
+      rest.split('"').next()?.parse().ok()
+    };
+    let mut xs: Vec<f64> = svg
+      .split("<line ")
+      .skip(1)
+      .filter_map(|tag| {
+        let (x1, x2) = (attr(tag, "x1")?, attr(tag, "x2")?);
+        (x1 == x2).then_some(x1)
+      })
+      .collect();
+    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    xs
+  }
+
+  fn text_x(svg: &str, label: &str) -> f64 {
+    let tag = svg
+      .split("<text ")
+      .skip(1)
+      .find(|t| {
+        t.split_once('>')
+          .is_some_and(|(_, rest)| rest.starts_with(label))
+      })
+      .unwrap_or_else(|| panic!("no <text> for {label} in {svg}"));
+    let rest = tag.split_once("x=\"").unwrap().1;
+    rest.split('"').next().unwrap().parse().unwrap()
+  }
+
+  /// Regression: `Alignment -> {{Left, {"."}}}` repeats the `"."` alignment
+  /// over every column after the first. The repeating pattern was expanded
+  /// after the column widths were measured, so decimal columns were sized
+  /// as if they were not aligned and their numbers spilled over the
+  /// neighbouring frame line.
+  #[test]
+  fn decimal_cells_stay_inside_their_column() {
+    let svg = export_svg(
+      "Grid[{{\"a\", 37., N[-13, 4]}, {\"b\", 7., N[7, 4]}}, \
+       Frame -> All, Alignment -> {{Left, {\".\"}}}]",
+    );
+    let lines = vertical_line_xs(&svg);
+    assert_eq!(lines.len(), 4, "{svg}");
+    // Column 1 holds 37. and 7.; column 2 holds -13.00 and 7.000.
+    for (label, col) in [("37.", 1), ("7.", 1), ("-13.00", 2), ("7.000", 2)] {
+      let x = text_x(&svg, label);
+      assert!(
+        x >= lines[col] && x < lines[col + 1],
+        "{label} at x={x} is outside its column {:?}",
+        (lines[col], lines[col + 1])
+      );
+    }
+  }
+
+  #[test]
+  fn decimal_points_line_up_within_a_column() {
+    let svg = export_svg(
+      "Grid[{{\"a\", 37.5}, {\"b\", 7.25}}, Alignment -> {{Left, {\".\"}}}]",
+    );
+    // 37.5 has one more integer digit than 7.25, so it starts one
+    // character further left; the dot is shared.
+    assert!(text_x(&svg, "37.5") < text_x(&svg, "7.25"), "{svg}");
+  }
+}

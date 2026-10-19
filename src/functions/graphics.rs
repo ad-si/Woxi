@@ -17476,6 +17476,22 @@ fn grid_svg_styled_internal(
     }
   }
 
+  // Expand repeating column alignment pattern (before the decimal pass below,
+  // which needs to know which columns align on ".")
+  if col_align_has_repeating && !col_align_repeating.is_empty() {
+    let start_len = col_align_explicit_start.len();
+    let rep_len = col_align_repeating.len();
+    col_alignments = Vec::with_capacity(num_cols);
+    for j in 0..num_cols {
+      if j < start_len {
+        col_alignments.push(col_align_explicit_start[j]);
+      } else {
+        let rep_idx = (j - start_len) % rep_len;
+        col_alignments.push(col_align_repeating[rep_idx]);
+      }
+    }
+  }
+
   // Decimal-point alignment: for each column aligned on ".", find the widest
   // integer part and the widest fractional part across its cells. The dot sits
   // at `max_int` chars from the content's left edge, so the column must be
@@ -17654,21 +17670,6 @@ fn grid_svg_styled_internal(
       } else {
         let rep_idx = (i - start_len) % rep_len;
         col_dividers.push(col_div_repeating[rep_idx]);
-      }
-    }
-  }
-
-  // Expand repeating column alignment pattern
-  if col_align_has_repeating && !col_align_repeating.is_empty() {
-    let start_len = col_align_explicit_start.len();
-    let rep_len = col_align_repeating.len();
-    col_alignments = Vec::with_capacity(num_cols);
-    for j in 0..num_cols {
-      if j < start_len {
-        col_alignments.push(col_align_explicit_start[j]);
-      } else {
-        let rep_idx = (j - start_len) % rep_len;
-        col_alignments.push(col_align_repeating[rep_idx]);
       }
     }
   }
