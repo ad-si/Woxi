@@ -37044,6 +37044,43 @@ fn list_fit_plot_draws_data_and_fitted_curve() {
   );
 }
 
+/// A `Filling -> Top` region keeps covering the plot area where the curve
+/// has left the clipped `PlotRange`, instead of stopping at the last
+/// in-range sample.
+#[test]
+fn plot_filling_covers_domain_where_curve_leaves_plot_range() {
+  let svg = export_svg(
+    "Plot[-5/2 x + 7, {x, -13, 13}, Filling -> Top, PlotRange -> 13]",
+  );
+  let (left, _, right, _) = plot_area(&svg);
+  let tag = svg
+    .lines()
+    .find(|l| l.starts_with("<polygon") && l.contains("opacity=\"0.2\""))
+    .expect("fill polygon");
+  let points = tag
+    .split("points=\"")
+    .nth(1)
+    .unwrap()
+    .split('"')
+    .next()
+    .unwrap();
+  let xs: Vec<f64> = points
+    .split_whitespace()
+    .map(|p| p.split(',').next().unwrap().parse().unwrap())
+    .collect();
+  let max_x = xs.iter().copied().fold(f64::MIN, f64::max);
+  let min_x = xs.iter().copied().fold(f64::MAX, f64::min);
+  // Right of the visible curve (x > 8) the whole height is filled.
+  assert!(
+    (max_x - right).abs() < 1.5,
+    "fill ends at {max_x}, area at {right}"
+  );
+  assert!(
+    min_x < left + (right - left) * 0.45,
+    "fill starts at {min_x}"
+  );
+}
+
 #[test]
 fn tooltip_around_a_graphic_displays_the_graphic_in_visual_mode() {
   for code in [
