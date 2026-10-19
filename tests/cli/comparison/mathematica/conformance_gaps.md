@@ -852,6 +852,36 @@ WL continues ψ⁽ⁿ⁾ to non-integer orders by fractional calculus; neither
 Espinosa–Moll's `e^(-γs) ∂s[e^(γs) ζ(s+1, z)/Γ(-s)]` (0.8274… here) nor
 `Γ(ν+1) ζ(ν+1, z)` reproduces its values, so Woxi leaves the call unevaluated.
 
+### Trig equations whose roots wolframscript leaves as ArcTan forms
+
+```sh
+wolframscript -code 'Solve[Sin[t] == Sin[t + 2 Pi/5], t]'
+# {{t -> ConditionalExpression[ArcTan[Sqrt[2*(3 + Sqrt[5])]/(3*Sqrt[5 + 2*Sqrt[5]]
+#   - Sqrt[5*(5 + 2*Sqrt[5])])] + 2*Pi*C[1], …]}, {t -> … -Pi - ArcTan[…] …}}
+woxi eval 'Solve[Sin[t] == Sin[t + 2 Pi/5], t]'
+# {{t -> ConditionalExpression[(-7*Pi)/10 + 2*Pi*C[1], …]},
+#  {t -> ConditionalExpression[(3*Pi)/10 + 2*Pi*C[1], …]}}
+```
+
+The ArcTan expressions are 3π/10 and -7π/10; Woxi solves `Sin[A] == Sin[B]`
+through `A == B + 2πk || A == π - B + 2πk` and gets the multiples of π
+directly. `Reduce` over a bounded interval differs the same way.
+
+### Reduce keeps a common equation inside each branch
+
+```sh
+wolframscript -code 'Reduce[z == Sin[t] && Sin[t] == 1/2 && 0 <= t < 2 Pi && z > 0, {z, t}, Reals]'
+# z == 1/2 && (t == Pi/6 || t == (5*Pi)/6)
+woxi eval 'Reduce[z == Sin[t] && Sin[t] == 1/2 && 0 <= t < 2 Pi && z > 0, {z, t}, Reals]'
+# (z == 1/2 && t == Pi/6) || (z == 1/2 && t == (5*Pi)/6)
+```
+
+When to factor a shared equation out of the disjunction is not decoded:
+`Reduce[{x == 2, y^2 == x + 2}, {x, y}]` factors (`x == 2 && (y == -2 ||
+y == 2)`), but `Reduce[{x^2 == 1, y == 1}, {x, y}]` distributes and puts `y`
+first (`(y == 1 && x == -1) || (y == 1 && x == 1)`), and Woxi does the
+opposite in both.
+
 ### A definite integral up to a symbol carries no condition
 
 ```sh
@@ -874,6 +904,19 @@ A power of a product compares by its base, and `x` precedes `a*x` (the
 last-factor rule), but `canonical_cmp` and `sort_symbolic_factors` put the
 power first; `Order[x, (a x)^n]` is right. So `Integrate[(a x)^n, x]` prints
 `((a*x)^n*x)/(1 + n)` where WL prints `(x*(a*x)^n)/(1 + n)`.
+
+### `Sort` puts a sum before a lone monomial of a call
+
+```sh
+wolframscript -code 'Sort[{Pi + 2 Pi C[1], 2 Pi C[1], -Pi/3 + 2 Pi C[1]}]'
+# {2*Pi*C[1], -1/3*Pi + 2*Pi*C[1], Pi + 2*Pi*C[1]}
+woxi eval 'Sort[{Pi + 2 Pi C[1], 2 Pi C[1], -Pi/3 + 2 Pi C[1]}]'
+# {-1/3*Pi + 2*Pi*C[1], Pi + 2*Pi*C[1], 2*Pi*C[1]}
+```
+
+`canonical_cmp`'s class rule for sums (decoded on polynomials in `x`) sorts
+these sums before the monomial; `Order[2 Pi C[1], Pi + 2 Pi C[1]]` is `1`
+in both. Solve's trig families sort with their own key for this reason.
 
 ### NDSolve does not integrate complex-valued equations
 

@@ -2465,6 +2465,17 @@ function main() {
     // (-0.0033354818…; mpmath and Woxi agree on -0.0033395080…). See
     // "Machine `PolyGamma` and Hurwitz `Zeta` values" in conformance_gaps.md.
     "Zeta[-5.817415911509695, 0.1295065568974257]",
+
+    // Sin[t] == Sin[t + 2 Pi/5]: wolframscript writes the roots 3 Pi/10 and
+    // -7 Pi/10 as unsimplified ArcTan expressions in nested radicals (see
+    // "Trig equations whose roots wolframscript leaves as ArcTan forms" in
+    // conformance_gaps.md).
+    "Solve[Sin[t] == Sin[t + 2 Pi/5], t]",
+    "Reduce[Sin[t] == Sin[t + 2 Pi/5] && 0 <= t < 2 Pi, t, Reals]",
+    "Reduce[z == Sin[t] && Sin[t] == Sin[t + 2 Pi/5] && Inequality[0, LessEqual, t, Less, 2 Pi] && z > 0, {z, t}, Reals]",
+    // When Reduce factors a shared equation out of its disjunction is not
+    // decoded (see "Reduce keeps a common equation inside each branch").
+    "Reduce[z == Sin[t] && Sin[t] == 1/2 && 0 <= t < 2 Pi && z > 0, {z, t}, Reals]",
   ]);
 
   /** Names whose meaning depends on where one input unit ends and the next
