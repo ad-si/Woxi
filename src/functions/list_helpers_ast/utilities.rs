@@ -64,21 +64,10 @@ pub fn apply_func_to_args(
       let substituted = crate::syntax::substitute_variables(body, &bindings);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
-    // Inert function objects are applied to the arguments, not extended
-    // by them: InterpolatingFunction[…][x, y], never
-    // InterpolatingFunction[…, x, y].
-    Expr::FunctionCall { name, .. }
-      if name == "InterpolatingFunction" || name == "ParametricFunction" =>
-    {
+    // A compound head is applied to the arguments, never extended by them:
+    // g[h] applied to (a, b) is g[h][a, b], not g[h, a, b].
+    Expr::FunctionCall { .. } => {
       crate::evaluator::apply_curried_call(func, call_args)
-    }
-    Expr::FunctionCall { name, args } => {
-      // Curried function: f[a] applied to (b, c, …) becomes f[a, b, c, …]
-      let mut new_args = args.clone();
-      for a in call_args {
-        new_args.push(a.clone());
-      }
-      crate::evaluator::evaluate_function_call_ast(name, &new_args)
     }
     _ => {
       let func_str = expr_to_string(func);
