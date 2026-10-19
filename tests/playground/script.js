@@ -761,6 +761,29 @@ function renderManipulate(item) {
         }
         return select
       }
+      case "slider": {
+        // A `Manipulator[Dynamic[lval], {min, max, step}]` display element:
+        // dragging writes `lval = <value>` back, then runs the enclosing
+        // `EventHandler`'s click/drag statements (`node.after`).
+        const input = document.createElement("input")
+        input.type = "range"
+        input.className = "manipulate-display-slider"
+        input.min = node.min
+        input.max = node.max
+        input.step = node.step > 0 ? node.step : "any"
+        input.value = node.current
+        input.disabled = node.enabled === false
+        if (!input.disabled) {
+          input.addEventListener("change", () => {
+            requestUpdate([
+              [`${node.target} = ${input.value}`, ...(node.after || [])].join(
+                "; ",
+              ),
+            ])
+          })
+        }
+        return input
+      }
       case "static": {
         const div = document.createElement("div")
         if (node.svg) {
