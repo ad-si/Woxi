@@ -1035,6 +1035,39 @@ fn build_complex_float_result(
   )
 }
 
+/// Correctly rounded `sin`/`cos`/`sinh`/`cosh` of a machine real. The
+/// platform libm's versions differ by ULPs between macOS, glibc and MSVC, which
+/// would move the last digit of the complex machine values built from them.
+mod cr {
+  use astro_float::{BigFloat, Consts, RoundingMode};
+
+  fn eval(
+    x: f64,
+    f: impl Fn(&BigFloat, &mut Consts) -> BigFloat,
+    fallback: fn(f64) -> f64,
+  ) -> f64 {
+    const BITS: usize = 192;
+    let Ok(mut cc) = Consts::new() else {
+      return fallback(x);
+    };
+    let r = f(&BigFloat::from_f64(x, BITS), &mut cc);
+    super::super::numerical::bigfloat_to_f64_approx(&r).unwrap_or(fallback(x))
+  }
+
+  pub(super) fn sin(x: f64) -> f64 {
+    eval(x, |v, cc| v.sin(192, RoundingMode::ToEven, cc), f64::sin)
+  }
+  pub(super) fn cos(x: f64) -> f64 {
+    eval(x, |v, cc| v.cos(192, RoundingMode::ToEven, cc), f64::cos)
+  }
+  pub(super) fn sinh(x: f64) -> f64 {
+    eval(x, |v, cc| v.sinh(192, RoundingMode::ToEven, cc), f64::sinh)
+  }
+  pub(super) fn cosh(x: f64) -> f64 {
+    eval(x, |v, cc| v.cosh(192, RoundingMode::ToEven, cc), f64::cosh)
+  }
+}
+
 /// Evaluate one of the circular/hyperbolic functions at a complex float
 /// `re + im*I` by combining the complex sine/cosine (or sinh/cosh).
 /// Returns `None` for a pure real argument or an unknown name.
@@ -1057,8 +1090,8 @@ fn complex_float_trig(
   // reciprocals: those are the roundings wolframscript's machine values have, to
   // the last bit, where a quotient of the complex sinh/cosh drifts by one.
   let tanh = || {
-    let d = (2.0 * a).cosh() + (2.0 * b).cos();
-    ((2.0 * a).sinh() / d, (2.0 * b).sin() / d)
+    let d = cr::cosh(2.0 * a) + cr::cos(2.0 * b);
+    (cr::sinh(2.0 * a) / d, cr::sin(2.0 * b) / d)
   };
   match name {
     "Tanh" => return Some(build_complex_float_result(tanh().0, tanh().1)),
@@ -1067,8 +1100,8 @@ fn complex_float_trig(
       return Some(build_complex_float_result(r.0, r.1));
     }
     "Tan" | "Cot" => {
-      let d = (2.0 * a).cos() + (2.0 * b).cosh();
-      let tan = ((2.0 * a).sin() / d, (2.0 * b).sinh() / d);
+      let d = cr::cos(2.0 * a) + cr::cosh(2.0 * b);
+      let tan = (cr::sin(2.0 * a) / d, cr::sinh(2.0 * b) / d);
       let r = if name == "Tan" { tan } else { recip(tan) };
       return Some(build_complex_float_result(r.0, r.1));
     }
@@ -1076,12 +1109,12 @@ fn complex_float_trig(
   }
   let (s, c) = match name {
     "Tanh" | "Coth" | "Sech" | "Csch" => (
-      (a.sinh() * b.cos(), a.cosh() * b.sin()),
-      (a.cosh() * b.cos(), a.sinh() * b.sin()),
+      (cr::sinh(a) * cr::cos(b), cr::cosh(a) * cr::sin(b)),
+      (cr::cosh(a) * cr::cos(b), cr::sinh(a) * cr::sin(b)),
     ),
     "Cot" | "Sec" | "Csc" => (
-      (a.sin() * b.cosh(), a.cos() * b.sinh()),
-      (a.cos() * b.cosh(), -(a.sin() * b.sinh())),
+      (cr::sin(a) * cr::cosh(b), cr::cos(a) * cr::sinh(b)),
+      (cr::cos(a) * cr::cosh(b), -(cr::sin(a) * cr::sinh(b))),
     ),
     _ => return None,
   };
