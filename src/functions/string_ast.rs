@@ -9110,9 +9110,14 @@ fn is_spaced_plain_text(chars: &[char]) -> bool {
 }
 
 /// The text of a box group with each linear-syntax escaped space (`\ `)
-/// turned into the plain space it stands for.
+/// turned into the plain space it stands for. Grouping markers of nested
+/// plain-text groups (`\(2, \(-2\)\)`) are dropped: they only delimit text.
 fn unescape_box_spaces(chars: &[char]) -> String {
-  chars.iter().collect::<String>().replace("\\ ", " ")
+  chars
+    .iter()
+    .filter(|c| **c != BOX_OPEN && **c != BOX_CLOSE)
+    .collect::<String>()
+    .replace("\\ ", " ")
 }
 
 /// Drop the grouping markers inside a box segment and unwrap the quotes
