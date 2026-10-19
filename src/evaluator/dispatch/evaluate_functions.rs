@@ -711,6 +711,12 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     // the path; the rest stay named but empty, as before.
     crate::prepend_to_context_path(ctx);
   }
+  if ctx == "ComputationalGeometry`" {
+    // Like Combinatorica, it only shadows bare names (`ConvexHull`), which
+    // `evaluate_function_call_ast_inner` redirects while the context is on
+    // `$ContextPath`.
+    crate::prepend_to_context_path(ctx);
+  }
   if ctx == "Combinatorica`" {
     // Combinatorica has no values to pre-create (its functions are ordinary
     // dispatch entries, not symbol-table lookups), but putting it on
@@ -1041,8 +1047,14 @@ fn evaluate_function_call_ast_inner(
   let combinatorica_active = crate::current_context_path()
     .iter()
     .any(|c| c == "Combinatorica`");
+  let computational_geometry_active = crate::current_context_path()
+    .iter()
+    .any(|c| c == "ComputationalGeometry`");
   let original_name = name;
   let name = match name {
+    "ConvexHull" if computational_geometry_active => {
+      "ComputationalGeometry`ConvexHull"
+    }
     "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
     "PieCharts`PieChart" => "PieChart",
     "Derangements" if combinatorica_active => "Combinatorica`Derangements",
@@ -5284,6 +5296,12 @@ fn evaluate_function_call_ast_inner(
   // (e.g. MeshCellStyle) through to the result.
   if name == "ConvexHullMesh" && !args.is_empty() {
     return crate::functions::convex_hull::convex_hull_mesh_ast(args);
+  }
+
+  // ComputationalGeometry`ConvexHull[{{x1,y1},...}] → indices of the hull
+  // corners, counter-clockwise.
+  if name == "ComputationalGeometry`ConvexHull" && args.len() == 1 {
+    return crate::functions::convex_hull::convex_hull_indices_ast(args);
   }
 
   // ExpressionGraph[expr] → Graph of the expression tree
