@@ -37329,6 +37329,26 @@ mod list_plot_frame {
     .unwrap();
     assert!(svg.contains("font-family=\"Courier\""), "got: {svg}");
   }
+
+  #[test]
+  fn long_plot_label_shrinks_to_fit_image_width() {
+    let svg = interpret(
+      "ExportString[Graphics[Circle[], ImageSize -> {200, 200}, PlotLabel -> \"A rather long title that cannot fit at full size\"], \"SVG\"]",
+    )
+    .unwrap();
+    let size: f64 = svg
+      .split("font-size=\"")
+      .nth(1)
+      .and_then(|r| r.split('"').next())
+      .and_then(|v| v.parse().ok())
+      .expect("title font size");
+    assert!((9.0..16.0).contains(&size), "font size {size}");
+    let short = interpret(
+      "ExportString[Graphics[Circle[], ImageSize -> {200, 200}, PlotLabel -> \"Hi\"], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(short.contains("font-size=\"16\""));
+  }
 }
 
 mod show_plot_opacity {
