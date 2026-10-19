@@ -1036,10 +1036,12 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // character token (not a real string that merely starts with one)
       // takes this path, so an actual quoted string styled this way still
       // renders as prose.
+      //
+      // The FrontEnd also colors operators with option-only wrappers
+      // (`StyleBox["\[Equal]", FontColor -> GrayLevel[0]]`, as in a
+      // Demonstration's code cells), which need the same treatment.
       "StyleBox"
-        if args.len() >= 2
-          && args[1].trim().trim_matches('"') == "OperatorCharacter"
-          && stylebox_bare_operator(&args[0]).is_some() =>
+        if !args.is_empty() && stylebox_bare_operator(&args[0]).is_some() =>
       {
         stylebox_bare_operator(&args[0]).unwrap().to_string()
       }
@@ -1490,7 +1492,13 @@ fn big_operator_call(s: &str) -> Option<(&'static str, String)> {
 /// `SubscriptBox["\\[PartialD]", RowBox[{"x", ",", "x"}]] f[x]` as
 /// `D[f[x], x, x]`, so the operand is whatever follows in the row.
 fn partial_derivative_vars(s: &str) -> Option<String> {
-  let args = positional_box_args("SubscriptBox", s).filter(|a| a.len() == 2)?;
+  // The FrontEnd's syntax coloring may wrap the operator in a `StyleBox`
+  // (`StyleBox[SubscriptBox["\[PartialD]", "x"], FontColor -> …]`).
+  let s = positional_box_args("StyleBox", s.trim())
+    .filter(|a| !a.is_empty())
+    .map_or_else(|| s.to_string(), |a| a[0].trim().to_string());
+  let args =
+    positional_box_args("SubscriptBox", &s).filter(|a| a.len() == 2)?;
   let base = extract_cell_content(&args[0]);
   (base.trim() == "\u{2202}").then(|| extract_cell_content(&args[1]))
 }
@@ -4758,6 +4766,21 @@ mod tests {
   fn test_extract_cell_content_stylebox_wrapped_equal() {
     let s = r#"BoxData[RowBox[{"o1", StyleBox["\[Equal]", "OperatorCharacter"], "\"yes\""}]]"#;
     assert_eq!(extract_cell_content(s), r#"o1=="yes""#);
+  }
+
+  /// Regression: the FrontEnd's syntax coloring also wraps operators in
+  /// option-only `StyleBox`es (`StyleBox["\[Equal]", FontColor -> …]`), which
+  /// reconstructed as `=` (assignment) like the `"OperatorCharacter"` form,
+  /// and wraps a partial-derivative operator the same way
+  /// (`StyleBox[SubscriptBox["\[PartialD]", "t"], …] f[t]`), which then
+  /// read as a product with a `Subscript` instead of `D[f[t], t]`.
+  #[test]
+  fn test_extract_cell_content_option_stylebox_equal_and_derivative() {
+    let s = r#"BoxData[RowBox[{"a", StyleBox["\[Equal]", FontColor -> GrayLevel[0]], "1"}]]"#;
+    assert_eq!(extract_cell_content(s), "a==1");
+    let s = r#"BoxData[RowBox[{RowBox[{"b", " ", RowBox[{StyleBox[SubscriptBox["\[PartialD]", "t"], FontColor -> GrayLevel[0]], RowBox[{"f", "[", "t", "]"}]}]}], StyleBox["\[Equal]", FontColor -> GrayLevel[0]], "2"}]]"#;
+    let code = extract_cell_content(s);
+    assert!(code.contains("D[f[t], t]") && code.contains("=="), "{code}");
   }
 
   /// Regression: an earlier fix for the `StyleBox` case above routed

@@ -1718,8 +1718,11 @@ missing:
 - The hyperbolic branch only supports a single dependent function — no
   coupled hyperbolic systems (the parabolic branch supports coupled
   systems).
-- `NeumannValue` and `DirichletCondition` exist only as symbols; boundary
-  conditions must be written as plain equalities.
+- `DirichletCondition` exists only as a symbol; Dirichlet conditions must be
+  written as plain equalities. `NeumannValue[g, x == x0]` terms are lowered
+  to Neumann flux conditions (`n·(c ∇u) = g`), and the resulting solutions
+  take the space variable first, then time (unverified against
+  `wolframscript` for the `Method -> "FiniteElement"` form).
 
 On the symbolic side `DSolve` recognises three first-order two-variable PDE
 shapes; Laplace, which WL solves as `C[1][I x + y] + C[2][-I x + y]`, is not

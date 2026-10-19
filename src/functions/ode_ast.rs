@@ -676,7 +676,27 @@ fn try_pde_evolution_term(
       .unwrap_or(Expr::Integer(1));
     Some((coeff, other.clone()))
   };
-  try_side(lhs, rhs).or_else(|| try_side(rhs, lhs))
+  // `u_t - u_xx == 0`: the time-derivative term is one summand of a side
+  // that carries other terms too; those move to the other side.
+  let try_summand = |side: &Expr, other: &Expr| -> Option<(Expr, Expr)> {
+    let terms = flatten_plus_terms(side);
+    if terms.len() < 2 {
+      return None;
+    }
+    let at = terms.iter().position(|t| try_side(t, other).is_some())?;
+    let (coeff, _) = try_side(&terms[at], other)?;
+    let moved = terms
+      .iter()
+      .enumerate()
+      .filter(|(j, _)| *j != at)
+      .map(|(_, t)| neg1(t.clone()))
+      .fold(other.clone(), plus2);
+    Some((coeff, moved))
+  };
+  try_side(lhs, rhs)
+    .or_else(|| try_side(rhs, lhs))
+    .or_else(|| try_summand(lhs, rhs))
+    .or_else(|| try_summand(rhs, lhs))
 }
 
 /// Recognise `Derivative[2, 0][u][t, x] == rhs` (or the reverse) — the
@@ -947,6 +967,280 @@ fn rewrite_pde_bc_rhs(
   if failed.get() { None } else { Some(mapped) }
 }
 
+/// The additive terms of `expr` — a `Plus` call or the parser's `+`
+/// `BinaryOp` chain — or `expr` itself as the single term.
+fn flatten_plus_terms(expr: &Expr) -> Vec<Expr> {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let mut out = flatten_plus_terms(left);
+      out.extend(flatten_plus_terms(right));
+      out
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().flat_map(flatten_plus_terms).collect()
+    }
+    other => vec![other.clone()],
+  }
+}
+
+/// `Derivative[orders][u][args]` — the parsed form of a partial derivative.
+fn pde_derivative_call(u_name: &str, orders: &[i64], args: Vec<Expr>) -> Expr {
+  Expr::CurriedCall {
+    func: Box::new(Expr::CurriedCall {
+      func: Box::new(Expr::FunctionCall {
+        name: "Derivative".to_string(),
+        args: orders.iter().map(|o| Expr::Integer(*o as _)).collect(),
+      }),
+      args: vec![Expr::Identifier(u_name.to_string())],
+    }),
+    args,
+  }
+}
+
+/// Replace every `Derivative[orders][u][…]` call in `expr` by `with`.
+fn replace_pde_derivative(
+  expr: &Expr,
+  u_name: &str,
+  orders: &[i64],
+  with: &Expr,
+) -> Expr {
+  if let Expr::CurriedCall { func, args } = expr
+    && let Expr::CurriedCall {
+      func: head,
+      args: fname,
+    } = func.as_ref()
+    && matches!(fname.as_slice(), [Expr::Identifier(n)] if n == u_name)
+    && let Expr::FunctionCall { name, args: o } = head.as_ref()
+    && name == "Derivative"
+    && o.len() == orders.len()
+    && o
+      .iter()
+      .zip(orders)
+      .all(|(a, b)| matches!(a, Expr::Integer(i) if *i as i64 == *b))
+    && !args.is_empty()
+  {
+    return with.clone();
+  }
+  map_children(expr, &|c| replace_pde_derivative(c, u_name, orders, with))
+}
+
+/// The call-argument position at which `u_name` is called with the plain
+/// identifier `x_name` somewhere in `expr` (the space variable's slot).
+fn pde_space_position(
+  expr: &Expr,
+  u_name: &str,
+  x_name: &str,
+) -> Option<usize> {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == u_name
+    && let Some(p) = args
+      .iter()
+      .position(|a| matches!(a, Expr::Identifier(n) if n == x_name))
+  {
+    return Some(p);
+  }
+  if let Expr::CurriedCall { func, args } = expr
+    && let Expr::CurriedCall { args: fname, .. } = func.as_ref()
+    && matches!(fname.as_slice(), [Expr::Identifier(n)] if n == u_name)
+    && let Some(p) = args
+      .iter()
+      .position(|a| matches!(a, Expr::Identifier(n) if n == x_name))
+  {
+    return Some(p);
+  }
+  expr_children(expr)
+    .iter()
+    .find_map(|c| pde_space_position(c, u_name, x_name))
+}
+
+/// Lower `NeumannValue[g, x == x0]` terms in PDE equations to explicit
+/// Neumann boundary equations. A term `NeumannValue[g, x == x0]` on the
+/// right-hand side of `… - c u_xx … == rest + NeumannValue[…]` is the
+/// natural boundary condition `n·(c ∇u) = g` with `n` the outward normal,
+/// i.e. `c u_x = -g` at the lower end and `c u_x = g` at the upper end of
+/// the space domain. The PDE keeps `rest`. An unknown that has no spatial
+/// derivative at all (a coupled ODE evolving independently at every grid
+/// point) gets a homogeneous Neumann condition at both ends, which the
+/// method-of-lines grid needs but which does not influence it.
+///
+/// Returns `None` when there is no `NeumannValue` or it is not in the
+/// supported shape.
+fn lower_neumann_values(
+  eqs: &[Expr],
+  u_names: &[String],
+  doms: &[&PdeDomain],
+) -> Option<(Vec<Expr>, String)> {
+  if !eqs.iter().any(|e| mentions_head(e, "NeumannValue")) {
+    return None;
+  }
+  let mut out: Vec<Expr> = Vec::new();
+  let mut x_info: Option<(String, f64, f64)> = None;
+  let mut has_bc = vec![false; u_names.len()];
+  for eq in eqs {
+    if !mentions_head(eq, "NeumannValue") {
+      out.push(eq.clone());
+      continue;
+    }
+    let (lhs, rhs) = as_equal_pair(eq)?;
+    let (lhs, rhs) = if flatten_plus_terms(rhs)
+      .iter()
+      .any(|t| matches!(t, Expr::FunctionCall { name, .. } if name == "NeumannValue"))
+    {
+      (lhs, rhs)
+    } else {
+      (rhs, lhs)
+    };
+    let (mut nvs, mut rest) = (Vec::new(), Vec::new());
+    for t in flatten_plus_terms(rhs) {
+      match &t {
+        Expr::FunctionCall { name, args }
+          if name == "NeumannValue" && args.len() == 2 =>
+        {
+          nvs.push((args[0].clone(), args[1].clone()));
+        }
+        _ => rest.push(t),
+      }
+    }
+    if mentions_head(lhs, "NeumannValue") {
+      return None;
+    }
+    let rest_expr = if rest.is_empty() {
+      Expr::Integer(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: rest.into(),
+      }
+    };
+    let residual = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        lhs.clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), rest_expr.clone()].into(),
+        },
+      ]
+      .into(),
+    };
+    for (g, pred) in nvs {
+      let (x_name, x0_expr) = match as_equal_pair(&pred)? {
+        (Expr::Identifier(n), v) | (v, Expr::Identifier(n)) => {
+          (n.clone(), v.clone())
+        }
+        _ => return None,
+      };
+      let dom = doms.iter().find(|d| d.name == x_name)?;
+      let x0 = nval_to_f64(&x0_expr)?;
+      let is_lo = (x0 - dom.min).abs() <= 1e-9 * dom.min.abs().max(1.0);
+      let is_hi = (x0 - dom.max).abs() <= 1e-9 * dom.max.abs().max(1.0);
+      if !is_lo && !is_hi {
+        return None;
+      }
+      // The unknown whose equation this is, and the coefficient c of its
+      // second space derivative (`-c u_xx` in the residual).
+      let mut found = None;
+      for (i, u) in u_names.iter().enumerate() {
+        let Some(p) = pde_space_position(&residual, u, &x_name) else {
+          continue;
+        };
+        let mut orders = vec![0i64; 2];
+        orders[p] = 2;
+        let sym = Expr::Identifier("NDSolve$Uxx".to_string());
+        let replaced = replace_pde_derivative(&residual, u, &orders, &sym);
+        let coef =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "D".to_string(),
+            args: vec![replaced, sym.clone()].into(),
+          })
+          .ok()?;
+        if !matches!(&coef, Expr::Integer(0))
+          && !expr_contains_ident(&coef, "NDSolve$Uxx")
+        {
+          found = Some((i, p, coef));
+          break;
+        }
+      }
+      let (ui, p, coef) = found?;
+      let c = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), coef].into(),
+      })
+      .ok()?;
+      let at_x0 =
+        |e: &Expr| crate::syntax::substitute_variable(e, &x_name, &x0_expr);
+      let flux = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::Integer(if is_lo { -1 } else { 1 }),
+          at_x0(&g),
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![at_x0(&c), Expr::Integer(-1)].into(),
+          },
+        ]
+        .into(),
+      })
+      .ok()?;
+      // The call arguments of the unknown, with the space slot fixed to x0.
+      let t_name = doms.iter().find(|d| d.name != x_name)?.name.clone();
+      let mut call_args = vec![Expr::Identifier(t_name); 2];
+      call_args[p] = x0_expr.clone();
+      let mut orders = vec![0i64; 2];
+      orders[p] = 1;
+      out.push(Expr::Comparison {
+        operands: vec![
+          pde_derivative_call(&u_names[ui], &orders, call_args),
+          flux,
+        ],
+        operators: vec![ComparisonOp::Equal],
+      });
+      has_bc[ui] = true;
+      x_info = Some((x_name, dom.min, dom.max));
+    }
+    out.push(Expr::Comparison {
+      operands: vec![lhs.clone(), rest_expr],
+      operators: vec![ComparisonOp::Equal],
+    });
+  }
+  let (x_name, x_min, x_max) = x_info?;
+  let t_name = doms.iter().find(|d| d.name != x_name)?.name.clone();
+  for (i, u) in u_names.iter().enumerate() {
+    if has_bc[i] {
+      continue;
+    }
+    let p = out.iter().find_map(|e| pde_space_position(e, u, &x_name))?;
+    // A spatially coupled unknown needs boundary conditions of its own.
+    let mut orders = vec![0i64; 2];
+    orders[p] = 1;
+    let probe = Expr::Identifier("NDSolve$Ux".to_string());
+    if out.iter().any(|e| {
+      expr_contains_ident(
+        &replace_pde_derivative(e, u, &orders, &probe),
+        "NDSolve$Ux",
+      )
+    }) {
+      return None;
+    }
+    for x0 in [x_min, x_max] {
+      let mut call_args = vec![Expr::Identifier(t_name.clone()); 2];
+      call_args[p] = Expr::Real(x0);
+      out.push(Expr::Comparison {
+        operands: vec![
+          pde_derivative_call(u, &orders, call_args),
+          Expr::Integer(0),
+        ],
+        operators: vec![ComparisonOp::Equal],
+      });
+    }
+  }
+  Some((out, x_name))
+}
+
 /// `NDSolve[eqns, u, {v1, v1min, v1max}, {v2, v2min, v2max}]` — one or
 /// several coupled parabolic PDEs in one space dimension (a
 /// diffusion/reaction/convection shape), solved by the method of lines:
@@ -996,15 +1290,26 @@ fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
     other => vec![other.clone()],
   };
   let eq_items = flatten_chained_equalities(&eq_items);
+  // The finite-element form (`NeumannValue`) returns its solutions as
+  // functions of the space variable first, then time, like the unknowns'
+  // own `u[x, t]` calls, whatever order the domains were declared in.
+  let (eq_items, dim0_dom) =
+    match lower_neumann_values(&eq_items, &u_names, &[&dom_a, &dom_b]) {
+      Some((lowered, x_name)) => {
+        let dim0 = if dom_a.name == x_name { &dom_a } else { &dom_b };
+        (lowered, dim0.clone())
+      }
+      None => (eq_items, dom_a.clone()),
+    };
   if eq_items.len() != 4 * u_names.len() {
     return ndsolve_pde_components(args, &u_names, &eq_items, &dom_a, &dom_b);
   }
 
   for (t_dom, x_dom) in [(&dom_a, &dom_b), (&dom_b, &dom_a)] {
     for swap in [false, true] {
-      if let Some(result) =
-        try_solve_pde_system(&eq_items, &u_names, t_dom, x_dom, &dom_a, swap)?
-      {
+      if let Some(result) = try_solve_pde_system(
+        &eq_items, &u_names, t_dom, x_dom, &dim0_dom, swap,
+      )? {
         return Ok(Some(result));
       }
     }

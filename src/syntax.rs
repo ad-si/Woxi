@@ -3485,6 +3485,11 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           if let Some(base) = factors.pop() {
             factors.push(apply_part_index_suffix(base, inners[i].clone()));
           }
+        } else if inners[i].as_rule() == Rule::BracketArgs {
+          // A call on a part: `2 s[[2]][x]` -> Times[2, s[[2]][x]]
+          if let Some(base) = factors.pop() {
+            factors.push(apply_implicit_factor_call(base, inners[i].clone()));
+          }
         } else if inners[i].as_rule() == Rule::ImplicitPowerSuffix {
           // Power suffix follows the previous factor
           if let Some(base) = factors.pop() {
@@ -3595,6 +3600,19 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       // Fallback: store as raw text
       Expr::Raw(pair.as_str().to_string())
     }
+  }
+}
+
+/// Apply a `BracketArgs` pair to the factor of an implicit product it
+/// follows: the call on an extracted part, `s[[2]][x]` in `2 s[[2]][x]`.
+fn apply_implicit_factor_call(base: Expr, args: Pair<Rule>) -> Expr {
+  Expr::CurriedCall {
+    func: Box::new(base),
+    args: args
+      .into_inner()
+      .filter(|c| c.as_str() != "[" && c.as_str() != "]" && c.as_str() != ",")
+      .map(pair_to_expr)
+      .collect(),
   }
 }
 
@@ -3921,6 +3939,10 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
             // bracket text as the index instead of the parsed `1` — see
             // `apply_part_index_suffix`.
             factors.push(apply_part_index_suffix(base, inners[i].clone()));
+          }
+        } else if inners[i].as_rule() == Rule::BracketArgs {
+          if let Some(base) = factors.pop() {
+            factors.push(apply_implicit_factor_call(base, inners[i].clone()));
           }
         } else if inners[i].as_rule() == Rule::ImplicitPowerSuffix {
           if let Some(base) = factors.pop() {

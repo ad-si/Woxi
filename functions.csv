@@ -1014,7 +1014,7 @@ UpSetDelayed,Assign delayed upvalues to symbols appearing in the LHS,✅,side_ef
 Hypergeometric1F1,Kummer confluent hypergeometric function 1F1(a; b; z),✅,pure,1.0,993
 SuperscriptBox,Low-level box construct for superscript display,✅,pure,3.0,994
 Erfi,Returns the imaginary error function value,✅,pure,1.0,995
-NeumannValue,,🚫,,10.0,996
+NeumannValue,Neumann boundary value term in a PDE; NDSolve lowers it to a boundary flux condition for 1-D PDEs,✅,none,10.0,996
 Activate,Replaces Inactive[f] wrappers with the active function f and evaluates,✅,pure,10.0,997
 Lookup,Looks up a key in an association; supports the operator form Lookup[key][assoc],✅,pure,10.0,998
 ComplexListPlot,Plots complex numbers as points in the complex plane,✅,pure,12.0,999
