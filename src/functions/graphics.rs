@@ -325,6 +325,10 @@ struct StyleState {
   /// text — the same panel `Text[…, Background -> colour]` asks for — and
   /// means nothing to the other primitives, which never read it.
   text_background: Option<Color>,
+  /// How the lines of a multi-line label (`Text[Column[…, Left]]`) line up
+  /// against each other: the SVG `text-anchor` of the block's left or right
+  /// edge. `None` centers every line on the anchor.
+  text_line_anchor: Option<&'static str>,
   /// `Arrowheads[…]`: where the heads of the arrows that follow sit, how
   /// big they are and — for a custom head — what to draw there. `None`
   /// keeps Wolfram's default: one head at the tip.
@@ -573,6 +577,7 @@ impl Default for StyleState {
       font_style: "normal".to_string(),
       font_family: String::new(),
       text_background: None,
+      text_line_anchor: None,
       arrowheads: None,
       cap_form: None,
       join_form: None,
@@ -5247,6 +5252,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // setting alone.
   apply_agreed_row_part_styles(content, &mut local_style);
   let text = graphics_text_content(content);
+  local_style.text_line_anchor = column_line_anchor(content);
 
   let (x, y, scaled) = if args.len() >= 2 {
     expr_to_anchor(&args[1]).unwrap_or((0.0, 0.0, false))
@@ -5317,6 +5323,36 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     italic_ranges,
     style: local_style,
   });
+}
+
+/// The horizontal alignment `Column[{…}, Left | Right]` (or
+/// `Alignment -> …`) gives the lines of a label, as the SVG `text-anchor` of
+/// the block's edge; `None` for centered lines and for anything but a
+/// `Column`.
+fn column_line_anchor(content: &Expr) -> Option<&'static str> {
+  fn anchor_of(spec: &Expr) -> Option<&'static str> {
+    match spec {
+      Expr::Identifier(s) if s == "Left" => Some("start"),
+      Expr::Identifier(s) if s == "Right" => Some("end"),
+      Expr::List(items) => items.first().and_then(anchor_of),
+      _ => None,
+    }
+  }
+  let Expr::FunctionCall { name, args } = content else {
+    return None;
+  };
+  if name != "Column" {
+    return None;
+  }
+  args.iter().skip(1).find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Alignment") => {
+      anchor_of(replacement)
+    }
+    other => anchor_of(other),
+  })
 }
 
 /// The rotation direction of `Text[expr, pos, offset, direction]`: a plain
@@ -9128,8 +9164,15 @@ fn render_primitive(
       if text.contains('\n') {
         // Multi-line text with tspan
         let lines: Vec<&str> = text.split('\n').collect();
+        // Left/right-aligned lines hang from the block's edge, half of its
+        // (estimated) width either side of the anchor.
+        let (line_anchor, sx) = match style.text_line_anchor {
+          Some("start") => ("start", sx - longest as f64 * fs * 0.5 / 2.0),
+          Some(_) => ("end", sx + longest as f64 * fs * 0.5 / 2.0),
+          None => ("middle", sx),
+        };
         out.push_str(&format!(
-          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{}{rotate_attr}>",
+          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{line_anchor}\" dominant-baseline=\"central\"{}{rotate_attr}>",
           color.to_svg_rgb(),
           style.font_weight,
           style.font_style,

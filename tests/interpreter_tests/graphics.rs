@@ -37253,6 +37253,20 @@ mod list_plot_frame {
       ["20"]
     );
   }
+
+  #[test]
+  fn text_column_alignment_anchors_the_lines() {
+    let left =
+      export_svg(r#"Graphics[Text[Column[{"ab", "abcdefgh"}, Left], {0, 0}]]"#);
+    assert!(left.contains("text-anchor=\"start\""), "{left}");
+    let right = export_svg(
+      r#"Graphics[Text[Column[{"ab", "abcdefgh"}, Alignment -> Right], {0, 0}]]"#,
+    );
+    assert!(right.contains("text-anchor=\"end\""), "{right}");
+    let centered =
+      export_svg(r#"Graphics[Text[Column[{"ab", "abcdefgh"}], {0, 0}]]"#);
+    assert!(centered.contains("text-anchor=\"middle\""), "{centered}");
+  }
 }
 
 mod show_plot_opacity {
