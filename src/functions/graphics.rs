@@ -4293,8 +4293,17 @@ fn graphics_text_content(expr: &Expr) -> String {
         && args.len() >= 2)
         || (name == "Subsuperscript" && args.len() == 3) =>
     {
-      crate::functions::chart::expr_to_label(expr)
-        .unwrap_or_else(|| expr_to_string(expr))
+      // Flatten through the styled runs (with unmapped subscripts marked so
+      // the SVG writer lowers them) — the same text `italic_text_ranges`
+      // measures its italic ranges against.
+      let runs = with_marked_subscripts(|| manipulate_label_runs(expr, false));
+      let text = flatten_label_runs(&runs);
+      if text.is_empty() {
+        crate::functions::chart::expr_to_label(expr)
+          .unwrap_or_else(|| expr_to_string(expr))
+      } else {
+        text
+      }
     }
     // `ScientificForm`/`EngineeringForm` typeset as `mantissa×10ⁿ` on one
     // line, with the exponent as a superscript — not the two-line OutputForm
@@ -8244,7 +8253,7 @@ fn italic_text_ranges(content: &Expr, text: &str) -> Vec<(usize, usize)> {
   if text.contains('\n') {
     return Vec::new();
   }
-  let runs = manipulate_label_runs(content, false);
+  let runs = with_marked_subscripts(|| manipulate_label_runs(content, false));
   if flatten_label_runs(&runs) != text
     || !runs.iter().any(|r| r.italic)
     || runs.iter().all(|r| r.italic || r.text.is_empty())
@@ -29390,6 +29399,15 @@ thread_local! {
   /// can lower it with a `<tspan>` instead of leaving it at full size.
   static MARK_UNMAPPED_SUBSCRIPTS: std::cell::Cell<bool> =
     const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with unmapped subscript letters wrapped in the
+/// [`SUBSCRIPT_START`]/[`SUBSCRIPT_END`] markers.
+fn with_marked_subscripts<T>(f: impl FnOnce() -> T) -> T {
+  let prev = MARK_UNMAPPED_SUBSCRIPTS.with(|flag| flag.replace(true));
+  let out = f();
+  MARK_UNMAPPED_SUBSCRIPTS.with(|flag| flag.set(prev));
+  out
 }
 
 const SUBSCRIPT_START: char = '\u{E0F2}';
