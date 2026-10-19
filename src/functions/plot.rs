@@ -1075,6 +1075,16 @@ pub(crate) fn axes_label_svg_at(
 /// reads `-1.0, -0.5, 0.0, 0.5, 1.0`, not `-1, -0.5, 0, 0.5, 1`, while one
 /// stepping by 2 reads `0, 2, 4`.
 pub(crate) fn format_tick_with_step(v: f64, step: f64) -> String {
+  // A tick set spaced finer than `10^-5` lives entirely in scientific
+  // notation: its labels are not integers however close to one they sit
+  // (`2*10^-36` is not the axis zero), only a tick a hair off zero
+  // relative to the step is.
+  if step.is_finite() && step != 0.0 && step.abs() < 1e-5 {
+    if v.abs() < step.abs() * 1e-6 {
+      return "0".to_string();
+    }
+    return format_scientific_tick(v);
+  }
   let decimals = tick_step_decimals(step);
   if decimals == 0 {
     return format_tick(v);
@@ -1107,6 +1117,22 @@ fn tick_step_decimals(step: f64) -> usize {
     .unwrap_or(6)
 }
 
+/// `v` as `m×10^e` with Unicode superscript exponent digits.
+fn format_scientific_tick(v: f64) -> String {
+  let exp = v.abs().log10().floor() as i32;
+  let mantissa = v / 10f64.powi(exp);
+  let mantissa = if (mantissa - mantissa.round()).abs() < 1e-9 {
+    format!("{}", mantissa.round() as i64)
+  } else {
+    let s = format!("{mantissa:.3}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+  };
+  format!(
+    "{mantissa}\u{d7}10{}",
+    crate::functions::graphics::to_unicode_script(&exp.to_string(), true)
+  )
+}
+
 pub(crate) fn format_tick(v: f64) -> String {
   // Outside `[10^-5, 10^6)` the Wolfram Language labels a tick in
   // scientific notation — a frequency axis running to 6*10^15 is labelled
@@ -1123,18 +1149,7 @@ pub(crate) fn format_tick(v: f64) -> String {
   }
   let magnitude = v.abs();
   if magnitude >= 1e6 || (magnitude > 0.0 && magnitude < 1e-5) {
-    let exp = magnitude.log10().floor() as i32;
-    let mantissa = v / 10f64.powi(exp);
-    let mantissa = if (mantissa - mantissa.round()).abs() < 1e-9 {
-      format!("{}", mantissa.round() as i64)
-    } else {
-      let s = format!("{mantissa:.3}");
-      s.trim_end_matches('0').trim_end_matches('.').to_string()
-    };
-    return format!(
-      "{mantissa}\u{d7}10{}",
-      crate::functions::graphics::to_unicode_script(&exp.to_string(), true)
-    );
+    return format_scientific_tick(v);
   }
   // Enough decimals to tell neighbouring ticks apart — a 0.0002 step used
   // to render every label as `0.0`.
