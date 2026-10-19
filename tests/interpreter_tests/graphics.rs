@@ -37117,6 +37117,26 @@ fn list_fit_plot_draws_data_and_fitted_curve() {
 }
 
 #[test]
+fn quantile_plot_draws_points_and_reference_line() {
+  for call in [
+    "QuantilePlot[{3, 5, 4, 8, 9, 12}]",
+    "QuantilePlot[{{3, 5, 4, 8}, {1, 2, 7, 9, 10}}, PlotStyle -> {Blue, Red}]",
+    "QuantilePlot[{3, 5, 4, 8, 9}, {1, 2, 7, 9, 10, 11}]",
+  ] {
+    assert_eq!(
+      interpret(&format!("Head[{call}]")).unwrap(),
+      "Graphics",
+      "{call}"
+    );
+  }
+  // One dot per data point plus the reference line.
+  let svg = export_svg("QuantilePlot[{3, 5, 4, 8, 9, 12}]");
+  assert!(svg.contains("<polyline"), "{svg}");
+  // Non-numeric data stays unevaluated.
+  assert_eq!(interpret("QuantilePlot[x]").unwrap(), "QuantilePlot[x]");
+}
+
+#[test]
 fn text_subscript_of_styled_base_keeps_italic_and_lowers_script() {
   // A letter without a Unicode subscript form is lowered with a tspan, and
   // the italic base keeps its slant in both cases.

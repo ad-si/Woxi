@@ -316,6 +316,9 @@ pub fn dispatch_plotting(
     "ListFitPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::list_plot::list_fit_plot_ast(args)
     })),
+    "QuantilePlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::list_plot::quantile_plot_ast(args)
+    })),
     "AudioPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::list_plot::audio_plot_ast(args)
     })),
