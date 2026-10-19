@@ -401,6 +401,18 @@ pub fn elliptic_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(elliptic_f(phi, m)));
   }
 
+  // Machine-complex amplitude and/or parameter, e.g. the argument produced
+  // by `ArcSin` of a complex number.
+  if (expr_is_inexact(phi_expr) || expr_is_inexact(m_expr))
+    && let (Some(phi), Some(m)) = (
+      try_extract_complex_float(phi_expr),
+      try_extract_complex_float(m_expr),
+    )
+  {
+    let (re, im) = elliptic_f_complex(phi, m);
+    return Ok(build_complex_float_expr(re, im));
+  }
+
   Ok(unevaluated("EllipticF", args))
 }
 
@@ -420,6 +432,77 @@ pub(crate) fn elliptic_param_zero_reduces_to_first(
     return Some(Expr::Real(v));
   }
   Some(first.clone())
+}
+
+type C64 = (f64, f64);
+
+fn c_mul(a: C64, b: C64) -> C64 {
+  (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+}
+
+fn c_exp(a: C64) -> C64 {
+  let r = a.0.exp();
+  (r * a.1.cos(), r * a.1.sin())
+}
+
+fn c_ln(a: C64) -> C64 {
+  (a.0.hypot(a.1).ln(), a.1.atan2(a.0))
+}
+
+fn c_sin(a: C64) -> C64 {
+  (a.0.sin() * a.1.cosh(), a.0.cos() * a.1.sinh())
+}
+
+fn c_cos(a: C64) -> C64 {
+  (a.0.cos() * a.1.cosh(), -a.0.sin() * a.1.sinh())
+}
+
+fn c_sqrt(a: C64) -> C64 {
+  let r = a.0.hypot(a.1);
+  let re = f64::midpoint(r, a.0).sqrt();
+  let im = ((r - a.0) / 2.0).sqrt();
+  (re, if a.1 < 0.0 { -im } else { im })
+}
+
+fn c_recip(a: C64) -> C64 {
+  let d = a.0 * a.0 + a.1 * a.1;
+  (a.0 / d, -a.1 / d)
+}
+
+/// F(phi, m) for complex phi and m: integrates 1/Sqrt[1 - m Sin[t]^2] along
+/// the straight segment from 0 to phi (Simpson's rule). The square root
+/// branch is followed continuously so the path may leave the real axis.
+fn elliptic_f_complex(phi: C64, m: C64) -> C64 {
+  let n = 2000usize;
+  let mut prev: Option<C64> = None;
+  let mut f = |t: f64| -> C64 {
+    let s = c_sin((phi.0 * t, phi.1 * t));
+    let s2 = c_mul(s, s);
+    let ms2 = c_mul(m, s2);
+    let mut root = c_sqrt((1.0 - ms2.0, -ms2.1));
+    if let Some(p) = prev {
+      let flipped = (-root.0, -root.1);
+      let dist = |a: C64| (a.0 - p.0).hypot(a.1 - p.1);
+      if dist(flipped) < dist(root) {
+        root = flipped;
+      }
+    }
+    prev = Some(root);
+    c_recip(root)
+  };
+  let h = 1.0 / n as f64;
+  let mut sum = f(0.0);
+  for i in 1..n {
+    let w = if i % 2 == 0 { 2.0 } else { 4.0 };
+    let v = f(i as f64 * h);
+    sum.0 += w * v.0;
+    sum.1 += w * v.1;
+  }
+  let last = f(1.0);
+  sum.0 += last.0;
+  sum.1 += last.1;
+  let scale = h / 3.0;
+  c_mul((sum.0 * scale, sum.1 * scale), phi)
 }
 
 /// Compute incomplete elliptic integral F(phi, m) via Gauss-Legendre quadrature
@@ -594,8 +677,60 @@ pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(elliptic_theta_numeric(a_val, z_f, q_f)));
   }
 
+  // Machine-complex z and/or nome q.
+  if (expr_is_inexact(z) || expr_is_inexact(q))
+    && let (Some(z_c), Some(q_c)) =
+      (try_extract_complex_float(z), try_extract_complex_float(q))
+  {
+    let (re, im) = elliptic_theta_complex(a_val, z_c, q_c);
+    return Ok(build_complex_float_expr(re, im));
+  }
+
   // Unevaluated (symbolic)
   Ok(unevaluated("EllipticTheta", args))
+}
+
+/// Jacobi theta function for complex z and nome q (principal branch of
+/// q^e = Exp[e Log[q]]).
+fn elliptic_theta_complex(a: u32, z: C64, q: C64) -> C64 {
+  let lq = c_ln(q);
+  let qpow = |e: f64| c_exp((lq.0 * e, lq.1 * e));
+  let mut sum = (0.0, 0.0);
+  for n in 0..100 {
+    let nf = n as f64;
+    let term = if a <= 2 {
+      let e = (nf + 0.5) * (nf + 0.5);
+      let w = 2.0 * nf + 1.0;
+      let arg = (w * z.0, w * z.1);
+      let trig = if a == 1 { c_sin(arg) } else { c_cos(arg) };
+      let t = c_mul(qpow(e), trig);
+      if a == 1 && n % 2 == 1 {
+        (-t.0, -t.1)
+      } else {
+        t
+      }
+    } else {
+      if n == 0 {
+        continue;
+      }
+      let w = 2.0 * nf;
+      let t = c_mul(qpow(nf * nf), c_cos((w * z.0, w * z.1)));
+      if a == 4 && n % 2 == 1 {
+        (-t.0, -t.1)
+      } else {
+        t
+      }
+    };
+    sum.0 += 2.0 * term.0;
+    sum.1 += 2.0 * term.1;
+    if term.0.hypot(term.1) < 1e-17 {
+      break;
+    }
+  }
+  if a >= 3 {
+    sum.0 += 1.0;
+  }
+  sum
 }
 
 /// Compute Jacobi theta function numerically via series expansion
