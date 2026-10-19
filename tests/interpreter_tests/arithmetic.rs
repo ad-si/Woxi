@@ -1311,6 +1311,43 @@ mod plus_numeric_contagion {
     assert_eq!(interpret("0. + 0. I").unwrap(), "0. + 0.*I");
   }
 
+  // A complex number prints as one unit: a machine pure-imaginary one keeps
+  // its `0.` real part and a complex summand or factor is bracketed.
+  // Regression: `ToString[2. I - 2. I, InputForm]` was `0.*I` and
+  // `x + 2 + 3 I` printed as `2 + x + 3*I`.
+  #[test]
+  fn complex_number_prints_as_one_unit() {
+    assert_eq!(interpret("3.5 I").unwrap(), "0. + 3.5*I");
+    assert_eq!(interpret("-1.5 I").unwrap(), "0. - 1.5*I");
+    assert_eq!(interpret("x + 1.5 I").unwrap(), "(0. + 1.5*I) + x");
+    assert_eq!(interpret("x - 1.5 I").unwrap(), "(0. - 1.5*I) + x");
+    assert_eq!(interpret("x + 2. + 1.5 I").unwrap(), "(2. + 1.5*I) + x");
+    assert_eq!(interpret("x + 2 + 3 I").unwrap(), "(2 + 3*I) + x");
+    assert_eq!(interpret("x + 3 I").unwrap(), "3*I + x");
+    assert_eq!(interpret("1.5 I x + y").unwrap(), "(0. + 1.5*I)*x + y");
+    assert_eq!(interpret("Sqrt[x] 2. I").unwrap(), "(0. + 2.*I)*Sqrt[x]");
+    assert_eq!(interpret("x^(1.5 I)").unwrap(), "x^(0. + 1.5*I)");
+    assert_eq!(interpret("{f[1.5 I]}").unwrap(), "{f[0. + 1.5*I]}");
+    assert_eq!(interpret("Hold[1.5 I]").unwrap(), "Hold[1.5*I]");
+    assert_eq!(
+      interpret(
+        "ToString[{2. I - 2. I, 1.5 I + I Pi, x + 2 + 3 I}, InputForm]"
+      )
+      .unwrap(),
+      "{0. + 0.*I, 0. + 4.641592653589793*I, (2 + 3*I) + x}"
+    );
+    assert_eq!(interpret("ToString[2. I - 2. I]").unwrap(), "0. + 0. I");
+  }
+
+  // A nested sum is bracketed in InputForm wherever it stands.
+  #[test]
+  fn nested_plus_input_form() {
+    assert_eq!(
+      interpret("ToString[Hold[Plus[Plus[a, b], c]], InputForm]").unwrap(),
+      "Hold[(a + b) + c]"
+    );
+  }
+
   // A machine number makes the sum machine precision, so an arbitrary-
   // precision summand joins the machine fold. Regression: it was dropped
   // (`1.5 + 2.5`30` gave 1.5).
@@ -1368,6 +1405,10 @@ mod plus_arbitrary_precision_terms {
   #[test]
   fn negative_coefficient_prints_as_minus() {
     assert_eq!(interpret("1 + Times[-1.5`30, I]").unwrap(), "1 - 1.5`30.*I");
+    assert_eq!(
+      interpret("ToString[x - 2.5`20 y, InputForm]").unwrap(),
+      "x - 2.5`20.*y"
+    );
   }
 
   // `N` builds a complex result as the evaluated `Plus[re, Times[im, I]]`,

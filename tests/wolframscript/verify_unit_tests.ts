@@ -1527,10 +1527,6 @@ function main() {
     // entire RHS, producing the bizarre `Information["a", LongForm -> True]
     // *(Plus[b])`. Woxi parses ?? as a unary information query on `a`.
     "Hold[??a + b]",
-    // `3.5 I` — Wolfram's REPL prints a pure-imaginary machine real as
-    // `0. + 3.5*I` (the inexact-zero Complex form). Woxi shows just
-    // `3.5*I`. Both are mathematically the same value.
-    "3.5 I",
     // `(I/2)*Pi` parens differ between formatters — Wolfram inserts
     // explicit parens around the rational coefficient, Woxi omits them.
     "ArcCosh[0]",

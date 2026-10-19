@@ -7428,7 +7428,9 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
     // outermost call, keeps every renderer consistent without each of them
     // having to know about contexts. Formatting re-enters this function for
     // sub-expressions, so the guard keeps it to a single pass.
-    with_display_names(expr, |e| format_expr_impl(e, form))
+    with_display_names(expr, |e| {
+      with_complex_display(e, |e| format_expr_impl(e, form))
+    })
   })
 }
 
@@ -7461,6 +7463,210 @@ pub(crate) fn with_display_names<T>(
   DISPLAY_PASS.with(|p| p.set(true));
   let _guard = DisplayPass;
   render(&displayed)
+}
+
+thread_local! {
+  /// Set while a formatting call is already rendering the complex-number
+  /// display shape produced by `complex_display_shape`.
+  static COMPLEX_DISPLAY_PASS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Render `expr` with its complex numbers in the shape wolframscript prints
+/// them. Complex numbers are stored as `Plus`/`Times` trees, so a machine
+/// pure-imaginary `Complex[0., 1.5]` is `Times[1.5, I]`, and the numeric part
+/// of `x + 2 + 3 I` is spread over the sum's terms. wolframscript shows the
+/// number as one unit: `0. + 1.5*I`, `(0. + 1.5*I)*x`, `(2 + 3*I) + x`. The
+/// rewrite runs once, at the outermost call, like `with_display_names`.
+fn with_complex_display<T>(expr: &Expr, render: impl FnOnce(&Expr) -> T) -> T {
+  if COMPLEX_DISPLAY_PASS.with(std::cell::Cell::get) || !contains_imag_i(expr) {
+    return render(expr);
+  }
+  struct Pass;
+  impl Drop for Pass {
+    fn drop(&mut self) {
+      COMPLEX_DISPLAY_PASS.with(|p| p.set(false));
+    }
+  }
+  let shaped = complex_display_shape(expr);
+  COMPLEX_DISPLAY_PASS.with(|p| p.set(true));
+  let _guard = Pass;
+  render(&shaped)
+}
+
+fn contains_imag_i(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(s) => s == "I",
+    _ => expr_children(expr).iter().any(|c| contains_imag_i(c)),
+  }
+}
+
+fn is_imag_unit(e: &Expr) -> bool {
+  matches!(e, Expr::Identifier(s) if s == "I")
+}
+
+fn is_real_numeric_term(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) | Expr::BigFloat(..)
+  ) || matches!(e, Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2)
+}
+
+/// `Some(is_machine)` when `e` is a numeric multiple of `I` — the imaginary
+/// part of a complex number — and `is_machine` tells whether its coefficient
+/// is a machine Real.
+fn imag_term_kind(e: &Expr) -> Option<bool> {
+  let pair = |a: &Expr, b: &Expr| {
+    if is_imag_unit(b) && is_real_numeric_term(a) {
+      Some(matches!(a, Expr::Real(_)))
+    } else if is_imag_unit(a) && is_real_numeric_term(b) {
+      Some(matches!(b, Expr::Real(_)))
+    } else {
+      None
+    }
+  };
+  match e {
+    _ if is_imag_unit(e) => Some(false),
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      pair(&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => pair(left, right),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } if is_imag_unit(operand) => Some(false),
+    _ => None,
+  }
+}
+
+fn complex_display_shape(expr: &Expr) -> Expr {
+  // Held and structural forms show the expression as written.
+  if let Expr::FunctionCall { name, .. } = expr
+    && matches!(
+      name.as_str(),
+      "Hold"
+        | "HoldForm"
+        | "HoldComplete"
+        | "HoldPattern"
+        | "Unevaluated"
+        | "Defer"
+        | "Verbatim"
+        | "FullForm"
+        | "TreeForm"
+        | "Function"
+    )
+  {
+    return expr.clone();
+  }
+  if matches!(expr, Expr::Function { .. })
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "Complex")
+  {
+    return expr.clone();
+  }
+  if imag_term_kind(expr) == Some(true) {
+    return call("Plus", vec![Expr::Real(0.0), expr.clone()]);
+  }
+  let numeric =
+    |e: &Expr| is_real_numeric_term(e) || imag_term_kind(e).is_some();
+  match expr {
+    // `re ± im*I` written with the binary operator is already one number.
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      left,
+      right,
+    } if numeric(left) && numeric(right) => expr.clone(),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } if imag_term_kind(operand) == Some(true) => {
+      let coeff = expr_children(operand)
+        .into_iter()
+        .find_map(|c| match c {
+          Expr::Real(r) => Some(-*r),
+          _ => None,
+        })
+        .unwrap_or(-1.0);
+      call(
+        "Plus",
+        vec![
+          Expr::Real(0.0),
+          call("Times", vec![Expr::Real(coeff), id_expr("I")]),
+        ],
+      )
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      let mut reals = Vec::new();
+      let mut imags = Vec::new();
+      let mut others = Vec::new();
+      let mut machine_imag = false;
+      for a in args {
+        if is_real_numeric_term(a) {
+          reals.push(a.clone());
+        } else if let Some(m) = imag_term_kind(a) {
+          machine_imag |= m;
+          imags.push(a.clone());
+        } else {
+          others.push(complex_display_shape(a));
+        }
+      }
+      if !imags.is_empty()
+        && !others.is_empty()
+        && (machine_imag || !reals.is_empty())
+      {
+        let mut number = if reals.is_empty() {
+          vec![Expr::Real(0.0)]
+        } else {
+          reals
+        };
+        number.extend(imags);
+        let mut new_args = vec![call("Plus", number)];
+        new_args.extend(others);
+        return call("Plus", new_args);
+      }
+      // The terms that are part of the sum's number stay as they are.
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args
+          .iter()
+          .map(|a| {
+            if imag_term_kind(a).is_some() {
+              a.clone()
+            } else {
+              complex_display_shape(a)
+            }
+          })
+          .collect(),
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 3 => {
+      let coeff = args.iter().position(|a| matches!(a, Expr::Real(_)));
+      let unit = args.iter().position(is_imag_unit);
+      if let (Some(c), Some(u)) = (coeff, unit) {
+        let number = call(
+          "Plus",
+          vec![
+            Expr::Real(0.0),
+            call("Times", vec![args[c].clone(), args[u].clone()]),
+          ],
+        );
+        let mut new_args = vec![number];
+        new_args.extend(
+          args
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != c && *i != u)
+            .map(|(_, a)| complex_display_shape(a)),
+        );
+        return call("Times", new_args);
+      }
+      map_children(expr, &complex_display_shape)
+    }
+    _ => map_children(expr, &complex_display_shape),
+  }
 }
 
 /// Whether `e` prints with a leading `!`. `Not` binds looser than arithmetic,
@@ -7752,7 +7958,7 @@ fn is_bare_pattern(e: &Expr) -> bool {
   )
 }
 
-/// Whether the *leading* term of a `Plus`/`Subtract` chain must be
+/// Whether a term of a `Plus`/`Subtract` chain must be
 /// parenthesized in InputForm so the printed form re-parses to the same
 /// tree. `+`/`-` bind tighter than every looser operator (`Rule`,
 /// `ReplaceAll`, `Or`, `And`, `CompoundExpression`, …), so a term printing
@@ -7762,25 +7968,11 @@ fn is_bare_pattern(e: &Expr) -> bool {
 /// (precedence 7) binds far looser than `Plus`/`Minus` (precedence 30).
 ///
 /// A term at precedence exactly 30 (a nested `Plus`/`Minus`/`StringJoin`)
-/// does *not* need parens here: text re-parses `+`/`-` left-associatively,
-/// so a left-nested chain round-trips whether or not the leading term was
-/// itself a `Plus` — unlike a *non*-leading term at the same precedence,
-/// see `plus_nonleading_term_needs_parens`.
+/// needs parens too, wherever it stands: re-parsing `a + b + c` gives the
+/// flat `Plus[a, b, c]`, so wolframscript prints `Hold[Plus[Plus[a, b], c]]`
+/// as `(a + b) + c`. After a `-` it is a value change, not just a shape one:
+/// printing `Plus[a, -(b + c)]` as `a - b + c` drops the sign of `c`.
 fn plus_term_needs_parens(e: &Expr) -> bool {
-  is_bare_pattern(e) || printed_infix_precedence(e).is_some_and(|p| p < 30)
-}
-
-/// Whether a *non-leading* term of a `Plus`/`Subtract` chain — one printed
-/// after a `+` or `-` — must be parenthesized in InputForm. Unlike the
-/// leading term (`plus_term_needs_parens`), a term at precedence exactly 30
-/// (a nested `Plus`/`Minus`/`StringJoin`) also needs parens here:
-/// left-associative re-parsing only reconstructs a *left*-nested tree, so a
-/// bare non-leading `Plus`/`Minus` term — which can only have survived
-/// un-flattened under `Hold` — silently regroups. Following a `-` this is
-/// not just a shape change but a value change: printing `Plus[a,
-/// -(b + c)]` as `a - b + c` drops the sign that should apply to `c`
-/// (`a - b + c` re-parses as `Plus[a, -b, c]`, not `Plus[a, -b, -c]`).
-fn plus_nonleading_term_needs_parens(e: &Expr) -> bool {
   is_bare_pattern(e) || printed_infix_precedence(e).is_some_and(|p| p <= 30)
 }
 
@@ -11750,6 +11942,9 @@ fn ring_operand_needs_parens(e: &Expr) -> bool {
 fn negate_neg_numeric_coeff(e: &Expr) -> Option<Expr> {
   match e {
     Expr::Real(r) if *r < 0.0 => Some(Expr::Real(-r)),
+    Expr::BigFloat(digits, prec) if digits.starts_with('-') => {
+      Some(Expr::BigFloat(digits[1..].to_string(), *prec))
+    }
     Expr::BigInteger(n) if n.sign() == Sign::Minus => {
       Some(Expr::BigInteger(-n))
     }
@@ -11794,7 +11989,7 @@ fn input_form_subtracted_term(term: &Expr) -> String {
   if matches!(
     term,
     Expr::FunctionCall { name, args } if name == "MinusPlus" && args.len() == 1
-  ) || plus_nonleading_term_needs_parens(term)
+  ) || plus_term_needs_parens(term)
   {
     format!("({s})")
   } else {
@@ -11827,7 +12022,9 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
   // not overflow. The recursion re-enters this public entry, so every level is
   // checked. Mirrors the guard on format_expr / evaluate_expr_to_expr.
   stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
-    with_display_names(expr, expr_to_input_form_impl)
+    with_display_names(expr, |e| {
+      with_complex_display(e, expr_to_input_form_impl)
+    })
   })
 }
 
@@ -12832,7 +13029,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         {
           result.push_str(" - ");
           let operand_str = expr_to_input_form(operand);
-          if plus_nonleading_term_needs_parens(operand) {
+          if plus_term_needs_parens(operand) {
             result.push_str(&format!("({operand_str})"));
           } else {
             result.push_str(&operand_str);
@@ -12878,40 +13075,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           && tname == "Times"
           && !targs.is_empty()
         {
-          // Check if leading factor is negative (Integer, Real, or Rational)
-          let neg_coeff = match &targs[0] {
-            Expr::Integer(n) if *n < 0 => Some(if *n == -1 {
-              None // coefficient of -1 means just negate
-            } else {
-              Some(Expr::Integer(-n))
-            }),
-            Expr::BigInteger(n) if n.sign() == Sign::Minus => {
-              Some(Some(Expr::BigInteger(-n)))
-            }
-            Expr::Real(r) if *r < 0.0 => Some(Some(Expr::Real(-r))),
-            Expr::FunctionCall { name: rn, args: ra }
-              if rn == "Rational"
-                && ra.len() == 2
-                && matches!(&ra[0], Expr::Integer(n) if *n < 0) =>
-            {
-              if let Expr::Integer(n) = &ra[0] {
-                if *n == -1 {
-                  Some(Some(call(
-                    "Rational",
-                    vec![Expr::Integer(1), ra[1].clone()],
-                  )))
-                } else {
-                  Some(Some(call(
-                    "Rational",
-                    vec![Expr::Integer(-n), ra[1].clone()],
-                  )))
-                }
-              } else {
-                None
-              }
-            }
-            _ => None,
-          };
+          // A negative leading coefficient prints as a subtraction.
+          let neg_coeff = neg_times_coeff(&targs[0]);
           if let Some(pos_coeff) = neg_coeff {
             // Negative Times: -n * ... → " - n*..."
             let pos_term = match pos_coeff {
@@ -12958,7 +13123,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         } else {
           result.push_str(" + ");
           let arg_str = expr_to_input_form(arg);
-          if plus_nonleading_term_needs_parens(arg) {
+          if plus_term_needs_parens(arg) {
             result.push_str(&format!("({arg_str})"));
           } else {
             result.push_str(&arg_str);
@@ -15934,7 +16099,9 @@ fn render_times_textbox(args: &[Expr]) -> TextBox {
 
 /// Render an expression in 2D OutputForm.
 pub fn expr_to_output_form_2d(expr: &Expr) -> String {
-  with_display_names(expr, |e| expr_to_textbox(e).to_string())
+  with_display_names(expr, |e| {
+    with_complex_display(e, |e| expr_to_textbox(e).to_string())
+  })
 }
 
 /// Render a box tree (`RowBox`, `FractionBox`, `SuperscriptBox`, …) as the
