@@ -3946,6 +3946,34 @@ mod high_level_functions {
     }
 
     #[test]
+    fn test_rotate_elliptical_circle_is_tilted_polyline() {
+      // Circle[{0,0},{1,3}] turned by Pi/2 is an ellipse tilted off-axis: the stored radii can't carry the tilt, so it must be
+      // drawn as an outline rather than an unrotated <ellipse>.
+      let svg = interpret(
+        "ExportString[Graphics[Rotate[Circle[{0, 0}, {1, 3}], Pi/3]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        !svg.contains("<ellipse"),
+        "must not stay axis-aligned: {svg}"
+      );
+      assert!(svg.contains("<polyline"), "should trace an outline: {svg}");
+    }
+
+    #[test]
+    fn test_rotate_elliptical_disk_is_tilted_polygon() {
+      let svg = interpret(
+        "ExportString[Graphics[Rotate[Disk[{0, 0}, {1, 3}], Pi/4]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        !svg.contains("<ellipse"),
+        "must not stay axis-aligned: {svg}"
+      );
+      assert!(svg.contains("<polygon"), "should trace an outline: {svg}");
+    }
+
+    #[test]
     fn test_rectangle_reversed_corners_render() {
       // Wolfram accepts corners in any order. A reversed pair must still
       // produce a positive-size rect, not a dropped negative-height one.
