@@ -10320,9 +10320,36 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // arrives already typeset as SVG markup (sub/superscript tspans included).
   if let Some(lines) = &plot_label {
     let cx = margin_left + svg_w / 2.0;
+    // A title wider than the picture (a long `Row` of text and numbers)
+    // shrinks to fit instead of being clipped at both edges.
+    let widest = lines
+      .iter()
+      .map(|l| {
+        let mut in_tag = false;
+        l.chars()
+          .filter(|c| match c {
+            '<' => {
+              in_tag = true;
+              false
+            }
+            '>' => {
+              in_tag = false;
+              false
+            }
+            _ => !in_tag,
+          })
+          .count()
+      })
+      .max()
+      .unwrap_or(0);
+    let label_font = if widest == 0 {
+      16.0
+    } else {
+      (16.0_f64).min(((total_width - 8.0) / (widest as f64 * 0.52)).max(9.0))
+    };
     svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"16\" fill=\"#333333\">",
+       font-family=\"sans-serif\" font-size=\"{label_font}\" fill=\"#333333\">",
     ));
     for (i, line) in lines.iter().enumerate() {
       if i == 0 {
