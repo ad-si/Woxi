@@ -2370,6 +2370,24 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_image3d_stack_renders_clipped_projection_in_visual_mode() {
+    // Visual hosts flatten a stacked Image3D; ClipRange picks the slices.
+    clear_state();
+    let setup = "a = Image[{{0, 0}, {0, 0}}]; b = Image[{{1, 1}, {1, 1}}]; ";
+    let full =
+      interpret_with_stdout(&format!("{setup}Image3D[{{a, b}}]")).unwrap();
+    let clipped = interpret_with_stdout(&format!(
+      "{setup}Image3D[{{a, b}}, ClipRange -> {{All, All, {{1, 1}}}}]"
+    ))
+    .unwrap();
+    let full_svg = full.graphics.expect("stacked Image3D should render");
+    let clipped_svg = clipped.graphics.expect("clipped stack should render");
+    assert!(full_svg.contains("<image"));
+    assert_ne!(full_svg, clipped_svg);
+    assert_eq!(full.result, "-Image-");
+  }
+
+  #[test]
   fn test_play_synthesizes_audio_in_visual_mode() {
     // In visual mode (playground / woxi-studio), Play[f, {t, …}] synthesizes a
     // playable WAV exposed via the `sound` channel instead of the -Sound- echo.

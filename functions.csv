@@ -847,7 +847,7 @@ ConvexHullMesh,Convex hull of a 2D or 3D point set as a BoundaryMeshRegion,✅,p
 RevolutionAxis,Option for axis of revolution,✅,none,7.0,815
 Above,Placement symbol representing above position,✅,pure,1.0,816
 DifferentialD,Differential d notation symbol,✅,none,3.0,819
-Image3D,Three-dimensional image — recognised by ImageQ; full pipeline not implemented,🚧,io,9.0,819
+Image3D,Three-dimensional image — ImageQ and ImageDimensions work on arrays and stacks of images; visual hosts show a clipped flat projection; no volume rendering,🚧,io,9.0,819
 FractionalPart,Returns the fractional part of a number,✅,pure,3.0,820
 CloudDeploy,Requires external services or GUI infrastructure,🚫,io,10.0,821
 HighlightGraph,Returns a graph with the given vertices/edges/subgraphs drawn in the highlight style (red by default; a Style wrapper picks the style per part) expressed as VertexStyle/EdgeStyle rules so the graph itself is unchanged,✅,pure,8.0,822
