@@ -7950,6 +7950,20 @@ mod plot3d {
       assert_eq!(labels(", FrameTicks -> {None, None}"), 0);
     }
 
+    // `Plot` with explicit `FrameTicks` lists labels only the stated
+    // positions on that edge; `{}` leaves an edge without ticks.
+    #[test]
+    fn plot_frame_ticks_explicit_lists() {
+      let svg = export_svg(
+        r#"Plot[Sin[x], {x, 0, 4}, Frame -> True, Axes -> False,
+          FrameTicks -> {{{}, {}}, {{{1, "one"}, {3, "three"}}, {}}}]"#,
+      );
+      assert!(svg.contains(">one<"), "{svg}");
+      assert!(svg.contains(">three<"), "{svg}");
+      assert!(!svg.contains(">0.5<"), "left edge must stay bare: {svg}");
+      assert!(!svg.contains(">2<"), "automatic x ticks must be replaced");
+    }
+
     // With a single series a `PlotStyle` list is one combined style rather
     // than a per-series cycle, so `{PointSize[…], Red}` gives one red
     // series. With several series the list still cycles.
