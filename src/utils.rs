@@ -22,6 +22,11 @@ pub fn temporary_directory() -> std::path::PathBuf {
   canonicalize(&tmp).unwrap_or(tmp)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn temporary_directory() -> std::path::PathBuf {
+  std::path::PathBuf::from("/tmp")
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn create_file(
   filename_opt: Option<String>,
