@@ -374,14 +374,34 @@ mod row_visual_mode {
     assert!(fraction < one * 3.0, "one = {one}, fraction = {fraction}");
   }
 
+  // ToBoxes hands back wolframscript's row template; Woxi's own renderers
+  // still stack the lines of a newline string (see the SVG tests above).
   #[test]
-  fn traditional_form_row_newline_boxes_are_stacked() {
+  fn traditional_form_row_newline_boxes_are_a_row_template() {
     clear_state();
     assert_eq!(
       interpret("ToBoxes[TraditionalForm[Row[{\"a\\n\", x, \" = \", y}]]]")
         .unwrap(),
-      "TagBox[FormBox[GridBox[{{a}, {RowBox[{x,  = , y}]}}], TraditionalForm], TraditionalForm, Editable -> True]"
+      "TagBox[FormBox[TemplateBox[{\"a\\n\", x, \" = \", y}, RowDefault], \
+       TraditionalForm], TraditionalForm, Editable -> True]"
     );
+  }
+
+  // The row template draws as its parts, a string part as its text.
+  #[test]
+  fn row_template_box_draws_its_parts() {
+    clear_state();
+    for code in [
+      "ExportString[DisplayForm[TemplateBox[{\"\\\"abc\\\"\", \"x\"}, \
+       \"RowDefault\"]], \"SVG\"]",
+      "ExportString[Graphics[Text[DisplayForm[TemplateBox[{\"\\\"abc\\\"\", \
+       \"x\"}, \"RowDefault\"]]]], \"SVG\"]",
+    ] {
+      let svg = interpret(code).unwrap();
+      assert!(svg.contains("abc"), "{svg}");
+      assert!(!svg.contains("&quot;"), "{svg}");
+      assert!(!svg.contains("RowDefault"), "{svg}");
+    }
   }
 
   #[test]

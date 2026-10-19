@@ -621,11 +621,18 @@ fn polynomial_lcm_modulus(
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&product)?))
 }
 
-/// Together[expr, Modulus -> p] for a univariate rational function: combine
-/// over Q, reduce numerator and denominator mod p, cancel their GF(p) gcd and
-/// make the denominator monic (e.g. `(2 + 7 x)/(2 x)` → `1/x` mod 7).
-/// None when `p` is not a supported prime or the combined fraction is not a
-/// univariate integer-coefficient quotient (or its denominator vanishes mod p).
+/// Together[expr, Modulus -> p] for a univariate rational function, the way
+/// wolframscript does it. A single fraction is combined over Q and its
+/// coefficients reduced mod p, keeping its shape: `1/(2 x)` stays, and only
+/// a common GF(p) factor of numerator and denominator cancels (`(x^2 + 1)/
+/// (x + 1)` is `1 + x` mod 2). A sum is combined over GF(p): every term's
+/// denominator is made monic, so its constants are inverted
+/// (`x + 3/(2 x)` is `(4 + x^2)/x` mod 5); the common denominator is built
+/// from a gcd-free basis of the terms' square-free parts (`x (2 + 3 x +
+/// x^2)`, `(1 + x) (2 + x)`), and the numerator is its leading coefficient
+/// times a monic polynomial (`(6 (3 + x))/(x (4 + x))`). None when `p` is
+/// not a supported prime or the input is not a univariate rational function
+/// with integer coefficients (or a denominator vanishes mod p).
 pub fn together_modulus(
   expr: &Expr,
   p: i128,
@@ -635,6 +642,21 @@ pub fn together_modulus(
   {
     return Ok(None);
   }
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      together_modulus_sum(args, p)
+    }
+    _ => together_modulus_fraction(expr, p),
+  }
+}
+
+/// A term's numerator and denominator after Together over Q, as
+/// coefficient vectors of one variable (`""` for a constant).
+type ModFraction = (String, Vec<i128>, Vec<i128>, Expr, Expr);
+
+fn fraction_parts(
+  expr: &Expr,
+) -> Result<Option<ModFraction>, InterpreterError> {
   let combined = super::together_ast(std::slice::from_ref(expr))?;
   let num = crate::evaluator::evaluate_expr_to_expr(&call1(
     "Numerator",
@@ -642,7 +664,7 @@ pub fn together_modulus(
   ))?;
   let den =
     crate::evaluator::evaluate_expr_to_expr(&call1("Denominator", combined))?;
-  let (Some((nvar, ncoeffs)), Some((dvar, dcoeffs))) =
+  let (Some((nvar, n)), Some((dvar, d))) =
     (univariate_int_coeffs(&num)?, univariate_int_coeffs(&den)?)
   else {
     return Ok(None);
@@ -653,12 +675,56 @@ pub fn together_modulus(
     (false, false) if nvar == dvar => nvar,
     _ => return Ok(None),
   };
-  let reduce = |v: &[i128]| -> Vec<i128> {
-    let mut out: Vec<i128> = v.iter().map(|c| c.rem_euclid(p)).collect();
-    trim(&mut out);
-    out
+  Ok(Some((var, n, d, num, den)))
+}
+
+fn reduce_mod(v: &[i128], p: i128) -> Vec<i128> {
+  let mut out: Vec<i128> = v.iter().map(|c| c.rem_euclid(p)).collect();
+  trim(&mut out);
+  out
+}
+
+/// `expr`'s own numerator and denominator when both are univariate integer
+/// polynomials in one variable, without combining anything.
+fn direct_fraction_parts(
+  expr: &Expr,
+) -> Result<Option<(String, Vec<i128>, Vec<i128>)>, InterpreterError> {
+  let num =
+    crate::evaluator::evaluate_expr_to_expr(&call1("Numerator", expr.clone()))?;
+  let den = crate::evaluator::evaluate_expr_to_expr(&call1(
+    "Denominator",
+    expr.clone(),
+  ))?;
+  let (Some((nvar, n)), Some((dvar, d))) =
+    (univariate_int_coeffs(&num)?, univariate_int_coeffs(&den)?)
+  else {
+    return Ok(None);
   };
-  let (n, d) = (reduce(&ncoeffs), reduce(&dcoeffs));
+  let var = match (nvar.is_empty(), dvar.is_empty()) {
+    (_, true) => nvar,
+    (true, false) => dvar,
+    (false, false) if nvar == dvar => nvar,
+    _ => return Ok(None),
+  };
+  Ok(Some((var, n, d)))
+}
+
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  if b == 0 { a.abs() } else { gcd_i128(b, a % b) }
+}
+
+fn together_modulus_fraction(
+  expr: &Expr,
+  p: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  let (var, n, d) = match direct_fraction_parts(expr)? {
+    Some(parts) => parts,
+    None => match fraction_parts(expr)? {
+      Some((var, n, d, ..)) => (var, n, d),
+      None => return Ok(None),
+    },
+  };
+  let (n, d) = (reduce_mod(&n, p), reduce_mod(&d, p));
   if is_zero(&d) {
     return Ok(None);
   }
@@ -666,16 +732,148 @@ pub fn together_modulus(
     return Ok(Some(Expr::Integer(0)));
   }
   let g = poly_gcd(&n, &d, p);
-  let (n, d) = (poly_div_exact(&n, &g, p), poly_div_exact(&d, &g, p));
-  // Scale so the denominator is monic.
-  let inv_lc = mod_inv(*d.last().unwrap(), p);
-  let n: Vec<i128> = n.iter().map(|&c| (c * inv_lc).rem_euclid(p)).collect();
-  let d = make_monic(&d, p);
-  let num_expr = gf_poly_to_expr(&n, &var)?;
+  let (n, d) = if deg(&g) > 0 {
+    (poly_div_exact(&n, &g, p), poly_div_exact(&d, &g, p))
+  } else {
+    (n, d)
+  };
   if deg(&d) == 0 {
-    return Ok(Some(num_expr));
+    let inv = mod_inv(d[0], p);
+    let n: Vec<i128> = n.iter().map(|&c| c * inv).collect();
+    return Ok(Some(gf_poly_to_expr(&reduce_mod(&n, p), &var)?));
   }
-  let den_expr = gf_poly_to_expr(&d, &var)?;
-  let quotient = times2(num_expr, pow2(den_expr, Expr::Integer(-1)));
-  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&quotient)?))
+  // The denominator shows its integer content outside: `2*(2 + x^2)`.
+  let content = d.iter().fold(0, |acc, &c| gcd_i128(acc, c));
+  let den_expr = if content > 1 {
+    let primitive: Vec<i128> = d.iter().map(|&c| c / content).collect();
+    times2(Expr::Integer(content), gf_poly_to_expr(&primitive, &var)?)
+  } else {
+    gf_poly_to_expr(&d, &var)?
+  };
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&div2(
+    gf_poly_to_expr(&n, &var)?,
+    den_expr,
+  ))?))
+}
+
+/// How often `piece` divides `poly`.
+fn multiplicity(poly: &[i128], piece: &[i128], p: i128) -> usize {
+  let mut count = 0;
+  let mut rest = poly.to_vec();
+  while deg(&rest) >= deg(piece) && is_zero(&poly_rem(&rest, piece, p)) {
+    rest = poly_div_exact(&rest, piece, p);
+    count += 1;
+  }
+  count
+}
+
+/// Add the square-free monic `q` to a gcd-free basis, splitting it and any
+/// element it shares a factor with.
+fn refine_basis(basis: &mut Vec<Vec<i128>>, q: Vec<i128>, p: i128) {
+  let mut pending = vec![q];
+  while let Some(q) = pending.pop() {
+    if deg(&q) == 0 {
+      continue;
+    }
+    match basis.iter().position(|b| deg(&poly_gcd(b, &q, p)) > 0) {
+      Some(i) => {
+        let b = basis.remove(i);
+        let g = poly_gcd(&b, &q, p);
+        pending.push(poly_div_exact(&b, &g, p));
+        pending.push(poly_div_exact(&q, &g, p));
+        pending.push(g);
+      }
+      None => basis.push(q),
+    }
+  }
+}
+
+fn together_modulus_sum(
+  terms: &[Expr],
+  p: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  let mut var = String::new();
+  let mut fractions: Vec<(Vec<i128>, Vec<i128>)> = Vec::new();
+  for term in terms {
+    let Some((v, n, d, ..)) = fraction_parts(term)? else {
+      return Ok(None);
+    };
+    if !v.is_empty() {
+      if !var.is_empty() && var != v {
+        return Ok(None);
+      }
+      var = v;
+    }
+    let d = reduce_mod(&d, p);
+    if is_zero(&d) {
+      return Ok(None);
+    }
+    // A monic denominator: its leading coefficient's inverse moves up.
+    let inv = mod_inv(*d.last().unwrap(), p);
+    let n: Vec<i128> = n.iter().map(|&c| c * inv).collect();
+    fractions.push((reduce_mod(&n, p), make_monic(&d, p)));
+  }
+  let mut basis: Vec<Vec<i128>> = Vec::new();
+  for (_, d) in &fractions {
+    for (piece, _) in squarefree_decomposition(d, p) {
+      refine_basis(&mut basis, piece, p);
+    }
+  }
+  let mut den = vec![1i128];
+  for b in &basis {
+    let m = fractions
+      .iter()
+      .map(|(_, d)| multiplicity(d, b, p))
+      .max()
+      .unwrap_or(0);
+    for _ in 0..m {
+      den = poly_mul(&den, b, p);
+    }
+  }
+  let mut num = vec![0i128];
+  for (n, d) in &fractions {
+    let scaled = poly_mul(n, &poly_div_exact(&den, d, p), p);
+    let len = num.len().max(scaled.len());
+    num.resize(len, 0);
+    for (i, c) in scaled.iter().enumerate() {
+      num[i] = (num[i] + c).rem_euclid(p);
+    }
+    trim(&mut num);
+  }
+  if is_zero(&num) {
+    return Ok(Some(Expr::Integer(0)));
+  }
+  let g = poly_gcd(&num, &den, p);
+  if deg(&g) > 0 {
+    num = poly_div_exact(&num, &g, p);
+    den = poly_div_exact(&den, &g, p);
+  }
+  if deg(&den) == 0 {
+    return Ok(Some(gf_poly_to_expr(&num, &var)?));
+  }
+  let lc = *num.last().unwrap();
+  let num_expr = if lc == 1 || deg(&num) == 0 {
+    gf_poly_to_expr(&num, &var)?
+  } else {
+    times2(
+      Expr::Integer(lc),
+      gf_poly_to_expr(&make_monic(&num, p), &var)?,
+    )
+  };
+  let mut den_factors = Vec::new();
+  for b in &basis {
+    let m = multiplicity(&den, b, p);
+    if m > 0 {
+      let base = gf_poly_to_expr(b, &var)?;
+      den_factors.push(if m == 1 {
+        base
+      } else {
+        pow2(base, Expr::Integer(m as i128))
+      });
+    }
+  }
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&div2(
+    num_expr,
+    times(den_factors),
+  ))?))
 }

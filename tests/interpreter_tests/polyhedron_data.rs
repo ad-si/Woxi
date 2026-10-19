@@ -961,8 +961,7 @@ mod polyhedron_data_tests {
       "{True}"
     );
     // Euler's formula holds for all of them, so no face or edge is lost.
-    // The stella octangula is two disjoint tetrahedra (sum 4) and the
-    // small stellated dodecahedron a genus-4 surface (sum -6).
+    // The small stellated dodecahedron is a genus-4 surface (sum -6).
     assert_eq!(
       interpret(
         r#"Union @ Table[
@@ -970,7 +969,7 @@ mod polyhedron_data_tests {
                PolyhedronData[s, "EdgeCount"] +
                PolyhedronData[s, "FaceCount"],
              {s, DeleteCases[PolyhedronData[All],
-               "StellaOctangula" | "SmallStellatedDodecahedron"]}]"#
+               "SmallStellatedDodecahedron"]}]"#
       )
       .unwrap(),
       "{2}"
@@ -1077,38 +1076,42 @@ mod polyhedron_data_tests {
     );
   }
 
-  // The stella octangula (compound of two tetrahedra) is a known entity.
+  // The stella octangula as Wolfram catalogues it: the outer surface of the
+  // compound of two tetrahedra, 8 tips around an octahedron of edge 1/2.
   #[test]
   fn polyhedron_data_stella_octangula() {
     assert_eq!(
       interpret(r#"PolyhedronData["StellaOctangula", "VertexCount"]"#).unwrap(),
-      "8"
+      "14"
     );
     assert_eq!(
       interpret(r#"PolyhedronData["StellaOctangula", "EdgeCount"]"#).unwrap(),
-      "12"
+      "36"
     );
     assert_eq!(
-      interpret(r#"PolyhedronData["StellaOctangula", "EdgeIndices"]"#).unwrap(),
-      "{{1, 2}, {1, 3}, {1, 4}, {2, 3}, {2, 4}, {3, 4}, {5, 6}, {5, 7}, {5, 8}, {6, 7}, {6, 8}, {7, 8}}"
+      interpret(r#"Take[PolyhedronData["StellaOctangula", "EdgeIndices"], 4]"#)
+        .unwrap(),
+      "{{1, 5}, {1, 9}, {1, 10}, {2, 7}}"
     );
     assert_eq!(
       interpret(r#"PolyhedronData["StellaOctangula", "FaceCountRules"]"#)
         .unwrap(),
-      "{3 -> 8}"
+      "{3 -> 24}"
     );
-    // Every vertex is on the circumsphere, every edge has unit length, and
-    // every face is wound outward.
     assert_eq!(
       interpret(
-        r#"With[{v = PolyhedronData["StellaOctangula", "VertexCoordinates"],
-          f = PolyhedronData["StellaOctangula", "FaceIndices"]},
-          {Simplify[Norm /@ v == ConstantArray[PolyhedronData["StellaOctangula", "Circumradius"], 8]],
-           Simplify[(Norm[v[[#[[1]]]] - v[[#[[2]]]]] & /@ PolyhedronData["StellaOctangula", "EdgeIndices"]) == ConstantArray[1, 12]],
-           AllTrue[f, Simplify[Cross[v[[#[[2]]]] - v[[#[[1]]]], v[[#[[3]]]] - v[[#[[1]]]]] . (v[[#[[1]]]] + v[[#[[2]]]] + v[[#[[3]]]]) > 0] &]}]"#
+        r#"PolyhedronData["StellaOctangula", #] & /@ {"Volume", "SurfaceArea", "Inradius"}"#
       )
       .unwrap(),
-      "{True, True, True}"
+      "{Sqrt[2], 6*Sqrt[3], 1/Sqrt[6]}"
+    );
+    // Every edge has unit length and every face is wound outward.
+    assert_eq!(
+      interpret(
+        r#"With[{v = PolyhedronData["StellaOctangula", "VertexCoordinates"], f = PolyhedronData["StellaOctangula", "FaceIndices"]}, {Simplify[(Norm[v[[#[[1]]]] - v[[#[[2]]]]] & /@ PolyhedronData["StellaOctangula", "EdgeIndices"]) == ConstantArray[1, 36]], AllTrue[f, Simplify[Cross[v[[#[[2]]]] - v[[#[[1]]]], v[[#[[3]]]] - v[[#[[1]]]]] . (v[[#[[1]]]] + v[[#[[2]]]] + v[[#[[3]]]]) > 0] &]}]"#
+      )
+      .unwrap(),
+      "{True, True}"
     );
     // The notebook idiom: build graphics from the vertex/face data.
     assert_eq!(

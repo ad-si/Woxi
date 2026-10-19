@@ -2292,12 +2292,13 @@ pub fn image_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
-/// ImageLevels[image] / ImageLevels[image, n] — `{value, count}` pairs for
+/// ImageLevels[image] / ImageLevels[image, spec] — `{value, count}` pairs for
 /// the pixel values of each channel. A single-channel image gives one flat
-/// list of pairs, a multichannel image one such list per channel. Without
-/// `n` the levels are the image type's own (`0, 1` for bit images, `0..255`
-/// for byte images, 256 levels for the others); with `n` the range is split
-/// into `n` evenly spaced levels and every pixel is counted at its nearest one.
+/// list of pairs, a multichannel image one such list per channel. With `n`
+/// the range splits into n bins `[k/n, (k+1)/n)` labelled by their lower
+/// edge (the top value counting in the last); without a spec a bit image
+/// counts its two values `0` and `1` and every other image uses 256 bins;
+/// `"Byte"` counts the 256 byte values and `All` every distinct value.
 pub fn image_levels_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Ok(unevaluated("ImageLevels", args));
@@ -2318,48 +2319,86 @@ pub fn image_levels_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("ImageLevels", args));
   };
 
-  let default_levels = match image_type {
-    ImageType::Bit => 2,
-    ImageType::Byte => 256,
-    ImageType::Bit16 => 65536,
-    _ => 256,
-  };
-  let levels = match args.get(1) {
-    None => default_levels,
-    Some(Expr::Integer(n)) if *n >= 2 => *n as usize,
-    Some(_) => return Ok(unevaluated("ImageLevels", args)),
+  enum Spec {
+    Bins(usize),
+    Bits,
+    Bytes,
+    Distinct,
+  }
+  let spec = match args.get(1) {
+    None if matches!(image_type, ImageType::Bit) => Spec::Bits,
+    None => Spec::Bins(256),
+    Some(Expr::Integer(n)) if *n >= 1 => Spec::Bins(*n as usize),
+    Some(Expr::String(s)) if s == "Byte" => Spec::Bytes,
+    Some(Expr::Identifier(s)) if s == "All" => Spec::Distinct,
+    Some(other) => {
+      crate::emit_message(&format!(
+        "ImageLevels::arg2: {} is not a positive integer, \"Byte\" or All.",
+        expr_to_string(other)
+      ));
+      return Ok(unevaluated("ImageLevels", args));
+    }
   };
 
   let pixels = (*width as usize) * (*height as usize);
   let ch = (*channels as usize).max(1);
-  let top = (levels - 1) as f64;
-  let level_value = |k: usize| -> Expr {
-    match image_type {
-      ImageType::Bit | ImageType::Byte | ImageType::Bit16
-        if levels == default_levels =>
-      {
-        Expr::Integer(k as i128)
-      }
-      _ => Expr::Real(k as f64 / top),
-    }
+  let pair = |value: Expr, count: i128| {
+    Expr::List(vec![value, Expr::Integer(count)].into())
   };
 
   let per_channel: Vec<Expr> = (0..ch)
     .map(|c| {
-      let mut counts = vec![0i128; levels];
-      for i in 0..pixels {
-        let v = data[i * ch + c].clamp(0.0, 1.0);
-        counts[(v * top).round() as usize] += 1;
+      let values = (0..pixels).map(|i| data[i * ch + c].clamp(0.0, 1.0));
+      match spec {
+        Spec::Distinct => {
+          let mut sorted: Vec<f64> = values.collect();
+          sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+          let mut out: Vec<(f64, i128)> = Vec::new();
+          for v in sorted {
+            match out.last_mut() {
+              Some((last, n)) if *last == v => *n += 1,
+              _ => out.push((v, 1)),
+            }
+          }
+          Expr::List(
+            out
+              .into_iter()
+              .map(|(v, n)| pair(Expr::Real(v), n))
+              .collect(),
+          )
+        }
+        Spec::Bits | Spec::Bytes => {
+          let top = if matches!(spec, Spec::Bits) {
+            1.0
+          } else {
+            255.0
+          };
+          let mut counts = vec![0i128; top as usize + 1];
+          for v in values {
+            counts[(v * top).round() as usize] += 1;
+          }
+          Expr::List(
+            counts
+              .iter()
+              .enumerate()
+              .map(|(k, n)| pair(Expr::Integer(k as i128), *n))
+              .collect(),
+          )
+        }
+        Spec::Bins(n) => {
+          let mut counts = vec![0i128; n];
+          for v in values {
+            counts[((v * n as f64).floor() as usize).min(n - 1)] += 1;
+          }
+          Expr::List(
+            counts
+              .iter()
+              .enumerate()
+              .map(|(k, count)| pair(Expr::Real(k as f64 / n as f64), *count))
+              .collect(),
+          )
+        }
       }
-      Expr::List(
-        counts
-          .iter()
-          .enumerate()
-          .map(|(k, n)| {
-            Expr::List(vec![level_value(k), Expr::Integer(*n)].into())
-          })
-          .collect(),
-      )
     })
     .collect();
 
@@ -2929,7 +2968,25 @@ fn image_crop_sides(spec: &Expr) -> Option<(f64, f64)> {
   Some((horizontal, vertical))
 }
 
-pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+pub fn image_crop_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A trailing `Padding -> value` option fills the pixels added when the
+  // requested size exceeds the image.
+  let mut args = all_args;
+  let mut padding: Option<&Expr> = None;
+  while let Some((
+    Expr::Rule {
+      pattern,
+      replacement,
+    },
+    rest,
+  )) = args.split_last()
+  {
+    if matches!(&**pattern, Expr::Identifier(n) | Expr::String(n) if n == "Padding")
+    {
+      padding.get_or_insert(&**replacement);
+    }
+    args = rest;
+  }
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "ImageCrop expects 1, 2 or 3 arguments".into(),
@@ -2954,12 +3011,20 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // ImageCrop[image, size] / ImageCrop[image, size, spec] — crop (or, when the
   // requested size is larger, pad) to an explicit width and height.
   if args.len() >= 2 {
-    let echo = || Ok(unevaluated("ImageCrop", args));
+    let echo = || Ok(unevaluated("ImageCrop", all_args));
+    // Non-integer sizes (e.g. `{300, 300}/zoom`) are rounded to whole pixels.
+    let pixels = |e: &Expr| {
+      as_int(e).or_else(|| {
+        crate::functions::math_ast::try_eval_to_f64(e)
+          .filter(|v| v.is_finite())
+          .map(|v| v.round() as i64)
+      })
+    };
     let (Some(target_w), Some(target_h)) = (match &args[1] {
       Expr::List(size) if size.len() == 2 => {
-        (as_int(&size[0]), as_int(&size[1]))
+        (pixels(&size[0]), pixels(&size[1]))
       }
-      other => (as_int(other), as_int(other)),
+      other => (pixels(other), pixels(other)),
     }) else {
       return echo();
     };
@@ -2983,9 +3048,9 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         -(remove_w - left),
         -bottom,
         -(remove_h - bottom),
-        None,
+        padding,
       )
-      .unwrap_or_else(|| unevaluated("ImageCrop", args)),
+      .unwrap_or_else(|| unevaluated("ImageCrop", all_args)),
     );
   }
 
@@ -3161,6 +3226,34 @@ pub fn image_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
   };
 
+  // A color fills an image only with as many channels as the image has (or
+  // just one, a gray level); any color fits a single-channel image.
+  if let (Some(padding), Expr::Image { channels, .. }) = (args.get(2), &args[0])
+    && *channels > 1
+  {
+    let color_channels = match padding {
+      Expr::FunctionCall { name, args: c } => match (name.as_str(), c.len()) {
+        ("GrayLevel", 1) => Some(1),
+        ("GrayLevel", 2) => Some(2),
+        ("RGBColor" | "Hue", 3) => Some(3),
+        ("RGBColor" | "Hue", 4) => Some(4),
+        _ => None,
+      },
+      _ => None,
+    };
+    if let Some(n) = color_channels
+      && n != 1
+      && n != *channels as usize
+    {
+      crate::emit_message(&format!(
+        "ImagePad::incpad: The specified padding value {} is not compatible \
+         with a {}-channel image with Automatic color space.",
+        crate::syntax::format_expr(padding, crate::syntax::ExprForm::Output),
+        channels
+      ));
+      return echo();
+    }
+  }
   if let Some(image) =
     image_pad_extents(&args[0], left, right, bottom, top, args.get(2))
   {
@@ -6434,10 +6527,10 @@ fn symbolic_gaussian_matrix(args: &[Expr]) -> Expr {
 }
 
 /// Colorize[matrix, opts] — colorize an integer-label matrix as an RGB
-/// image. With the default `ColorFunction -> Automatic`, background
-/// label 0 is white and every other label gets a distinct hue. With an
-/// explicit `ColorFunction -> f`, `f` is applied to each label rescaled
-/// to `[0, 1]`; `f` may be a function, a named `ColorData` gradient
+/// byte image. Background label 0 is black. With the default
+/// `ColorFunction -> Automatic` every other label gets a distinct hue; with
+/// an explicit `ColorFunction -> f`, `f` is applied to each label's place
+/// in `[0, 1]`; `f` may be a function, a named `ColorData` gradient
 /// string, or a color-function head such as `Hue`. Non-matrix /
 /// non-image arguments emit `Colorize::invinput` and stay symbolic,
 /// matching wolframscript.
@@ -6464,19 +6557,32 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
-    let (min, max) = labels
-      .iter()
-      .fold((i64::MAX, i64::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
-    let span = (max - min).max(1) as f64;
+    let max = labels.iter().copied().max().unwrap_or(0).max(1) as f64;
     let color_function = option_value(&args[1..], "ColorFunction")
       .filter(|f| !matches!(f, Expr::Identifier(n) if n == "Automatic"));
-    // Each distinct label is colored once and reused for every pixel.
+    // Each distinct label is colored once and reused for every pixel. Label
+    // k of m takes the color at the middle (k - 1/2)/m of its share of
+    // [0, 1]; label 0 is the black background. The result is a byte image
+    // whose channel value v falls in byte ceil(256 v) - 1, the way
+    // wolframscript quantizes it (0.125 is byte 31, 0.9 byte 230).
     let mut palette: std::collections::HashMap<i64, (f64, f64, f64)> =
       std::collections::HashMap::new();
     let mut data: Vec<f64> = Vec::with_capacity(labels.len() * 3);
+    let to_byte = |c: f64| {
+      if c <= 0.0 {
+        0.0
+      } else {
+        ((c * 256.0).ceil() - 1.0).clamp(0.0, 255.0) / 255.0
+      }
+    };
     for v in &labels {
       let (r, g, b) = *palette.entry(*v).or_insert_with(|| {
-        colorize_label(*v, (*v - min) as f64 / span, color_function)
+        if *v == 0 {
+          return (0.0, 0.0, 0.0);
+        }
+        let t = (*v as f64 - 0.5) / max;
+        let (r, g, b) = colorize_label(*v, t, color_function);
+        (to_byte(r), to_byte(g), to_byte(b))
       });
       data.extend([r, g, b]);
     }
@@ -6487,7 +6593,7 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       height,
       channels: 3,
       data: Arc::new(data),
-      image_type: ImageType::Real64,
+      image_type: ImageType::Byte,
     });
   }
   let is_image = matches!(&args[0], Expr::Image { .. });
@@ -6508,9 +6614,6 @@ fn colorize_label(
   color_function: Option<&Expr>,
 ) -> (f64, f64, f64) {
   let Some(f) = color_function else {
-    if label == 0 {
-      return (1.0, 1.0, 1.0);
-    }
     // Golden-ratio hue steps keep neighboring labels visually distinct.
     let hue = (label as f64 * 0.618_033_988_749_895).rem_euclid(1.0);
     return hsv_to_rgb(hue, 0.6, 0.9);

@@ -2096,8 +2096,8 @@ mod polygamma {
   use super::*;
 
   // Machine values are rounded from an arbitrary-precision evaluation, so
-  // they are correctly rounded. wolframscript agrees on these; elsewhere it
-  // can be a few ulps off itself (see conformance_gaps.md).
+  // they are correctly rounded. wolframscript agrees on the first three; on
+  // the others it is a few ulps off itself (see conformance_gaps.md).
   #[test]
   fn machine_values_correctly_rounded() {
     assert_eq!(interpret("PolyGamma[1.9]").unwrap(), "0.35618416116405965");
@@ -2125,10 +2125,11 @@ mod polygamma {
       interpret("PolyGamma[1., 1.9]").unwrap(),
       interpret("PolyGamma[1, 1.9]").unwrap()
     );
-    // A fractional order is not implemented: unevaluated, not ψ(z).
-    assert_eq!(
+    // A fractional order is not implemented (see conformance_gaps.md), and
+    // in particular not ψ(z).
+    assert_ne!(
       interpret("PolyGamma[0.5, 1.9]").unwrap(),
-      "PolyGamma[0.5, 1.9]"
+      interpret("PolyGamma[1.9]").unwrap()
     );
   }
 

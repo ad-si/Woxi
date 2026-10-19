@@ -811,6 +811,25 @@ mod compile {
   }
 
   #[test]
+  fn compile_explicit_blank_integer_type() {
+    clear_state();
+    // `Blank[Integer]` (how saved notebooks spell `_Integer`) must keep the
+    // argument an exact integer, not coerce it to a Real.
+    assert_eq!(
+      interpret("cf = Compile[{{n, Blank[Integer]}}, Mod[n, 3]]; cf[80]")
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "cf = Compile[{{n, Blank[Integer]}, {d, Blank[Integer], 1}}, Table[Mod[n, d[[k]]], {k, Length[d]}]]; cf[80, {3, 5}]"
+      )
+      .unwrap(),
+      "{2, 0}"
+    );
+  }
+
+  #[test]
   fn compile_complex_body() {
     clear_state();
     assert_eq!(

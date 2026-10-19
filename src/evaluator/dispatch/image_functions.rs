@@ -200,33 +200,52 @@ fn gradient_strip_image(controls: &[(f64, f64, f64)]) -> Expr {
   )
 }
 
+/// Wolfram's "VisibleSpectrum" gradient: piecewise linear between these
+/// (wavelength in nm, r, g, b) knots, black outside 380–750 nm. The knots
+/// were read off wolframscript's `ColorData["VisibleSpectrum", w]`.
+const VISIBLE_SPECTRUM_KNOTS: [(f64, f64, f64, f64); 25] = [
+  (380.0, 0.0, 0.0, 0.0),
+  (430.0, 0.4744513369704753, 0.0, 1.0),
+  (440.0, 0.4812997627779147, 0.0, 1.0),
+  (450.0, 0.3852118779771466, 0.0, 1.0),
+  (455.0, 0.2837943951348853, 0.0, 1.0),
+  (465.0, 0.0, 0.0, 1.0),
+  (470.0, 0.0, 0.1763006526677175, 1.0),
+  (475.0, 0.0, 0.36799242017191025, 1.0),
+  (480.0, 0.0, 0.48449418286510887, 1.0),
+  (495.0, 0.0, 0.8978593823560532, 0.8042310312204397),
+  (510.0, 0.0, 0.982210818520001, 0.3620321472504943),
+  (520.0, 0.0, 1.0, 0.0),
+  (550.0, 0.0, 1.0, 0.0),
+  (560.0, 0.5394416079798189, 1.0, 0.0),
+  (565.0, 0.7626168031212038, 1.0, 0.0),
+  (570.0, 0.9299689875333503, 1.0, 0.0),
+  (573.0, 1.0, 0.9719495680768989, 0.0),
+  (580.0, 1.0, 0.8912722682805861, 0.0),
+  (600.0, 1.0, 0.44854054699533813, 0.0),
+  (605.0, 1.0, 0.2777211925446866, 0.0),
+  (610.0, 1.0, 0.0, 0.0),
+  (640.0, 1.0, 0.0, 0.0),
+  (645.0, 0.9580637484636693, 0.0, 0.0),
+  (660.0, 0.6786210159793107, 0.0, 0.0),
+  (750.0, 0.0, 0.0, 0.0),
+];
+
+fn visible_spectrum_rgb(w: f64) -> (f64, f64, f64) {
+  for pair in VISIBLE_SPECTRUM_KNOTS.windows(2) {
+    let ((w0, r0, g0, b0), (w1, r1, g1, b1)) = (pair[0], pair[1]);
+    if (w0..=w1).contains(&w) {
+      let at = |v0: f64, v1: f64| v0 + (v1 - v0) * (w - w0) / (w1 - w0);
+      return (at(r0, r1), at(g0, g1), at(b0, b1));
+    }
+  }
+  (0.0, 0.0, 0.0)
+}
+
 /// The k-th color of an indexed scheme. Scheme 1 is generated rather than
 /// tabulated: its hues start at 0.67 and advance by √5 - 2 turns, and every
 /// component is mapped into 0.24 … 0.6 — so it never repeats and accepts any
 /// index. The tabulated schemes cycle.
-/// RGB of monochromatic light of wavelength `w` nm (piecewise-linear
-/// approximation with intensity roll-off at the ends and gamma 0.8).
-fn visible_spectrum_rgb(w: f64) -> (f64, f64, f64) {
-  let (r, g, b) = match w {
-    w if (380.0..440.0).contains(&w) => (-(w - 440.0) / 60.0, 0.0, 1.0),
-    w if (440.0..490.0).contains(&w) => (0.0, (w - 440.0) / 50.0, 1.0),
-    w if (490.0..510.0).contains(&w) => (0.0, 1.0, -(w - 510.0) / 20.0),
-    w if (510.0..580.0).contains(&w) => ((w - 510.0) / 70.0, 1.0, 0.0),
-    w if (580.0..645.0).contains(&w) => (1.0, -(w - 645.0) / 65.0, 0.0),
-    w if (645.0..=750.0).contains(&w) => (1.0, 0.0, 0.0),
-    _ => (0.0, 0.0, 0.0),
-  };
-  let factor = if (380.0..420.0).contains(&w) {
-    0.3 + 0.7 * (w - 380.0) / 40.0
-  } else if (700.0..=750.0).contains(&w) {
-    0.3 + 0.7 * (750.0 - w) / 50.0
-  } else {
-    1.0
-  };
-  let adjust = |c: f64| (c * factor).powf(0.8);
-  (adjust(r), adjust(g), adjust(b))
-}
-
 fn indexed_scheme_color(n: i128, k: i128) -> Option<(f64, f64, f64)> {
   if n == 1 {
     let hue = (0.67 + (k - 1) as f64 * (5.0_f64.sqrt() - 2.0)).rem_euclid(1.0);
@@ -841,7 +860,7 @@ pub fn dispatch_image_functions(
     "ImageTrim" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_trim_ast(args));
     }
-    "ImageCrop" if !args.is_empty() && args.len() <= 3 => {
+    "ImageCrop" if !args.is_empty() => {
       return Some(crate::functions::image_ast::image_crop_ast(args));
     }
     "ImageForwardTransformation" if args.len() >= 2 => {

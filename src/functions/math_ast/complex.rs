@@ -192,9 +192,15 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Handle I * real_expr: Re[I * real] = 0. Run the exact extractors before
   // the float collapse below, so an exact factor like Pi isn't downgraded to a
   // machine Real — e.g. Re[I Pi] must be the exact 0, not 0. (float).
+  // A machine pure imaginary is Complex[0., b], so its real part is the
+  // machine zero: Re[1.5 I] is 0., as in wolframscript.
   if let Some(real_part) = extract_i_times_real(&args[0]) {
     let _ = real_part; // only need to know it's purely imaginary
-    return Ok(Expr::Integer(0));
+    return Ok(if contains_machine_real(&args[0]) {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
   }
 
   // Handle I * expr (symbolic): Re[I * expr] = -Im[expr]

@@ -175,9 +175,23 @@ fn resolve_param_default(default: &Expr) -> Option<Expr> {
   Some(evaluated)
 }
 
+/// The outcome of evaluating a call that a pattern rule rewrites to itself
+/// (`g[x_] := g[x]` applied to `g[3]`): wolframscript keeps applying the
+/// rule until `$IterationLimit` stops it, and the call evaluates to
+/// `TerminatedEvaluation["IterationLimit"]`. Only a rule *with patterns*
+/// does that — a literal one (`f[x] := f[x]`) is a fixed point.
+pub(crate) fn iteration_limit_exceeded() -> Expr {
+  crate::emit_message(
+    "$IterationLimit::itlim: Iteration limit of 4096 exceeded.",
+  );
+  crate::helpers::call1(
+    "TerminatedEvaluation",
+    Expr::String("IterationLimit".to_string()),
+  )
+}
+
 /// True when a rule body, after substitution, is exactly the call being
-/// evaluated (`g[x_] := g[x]` applied to `g[3]`). Wolfram stops at such a
-/// fixed point rather than recursing.
+/// evaluated (`g[x_] := g[x]` applied to `g[3]`).
 fn is_identity_rewrite(name: &str, args: &[Expr], body: &Expr) -> bool {
   match body {
     Expr::FunctionCall {
@@ -848,26 +862,62 @@ fn evaluate_function_call_ast_inner(
 
   // `MultivariateStatistics`EllipsoidQuantile[dist, p]` is the smallest
   // ellipsoid holding probability p of a multinormal distribution: the
-  // Mahalanobis ball of squared radius InverseCDF[ChiSquareDistribution[d], p],
-  // i.e. Ellipsoid[mean, c Covariance].
+  // Mahalanobis ball of squared radius q = InverseCDF[ChiSquareDistribution[d],
+  // p]. Written the way the package writes it: semi-axes Sqrt[q λ] along the
+  // covariance's eigenvectors, `Ellipsoid[mean, radii, directions]` — or just
+  // `Ellipsoid[mean, radii]` for an exact diagonal covariance.
   if name == "MultivariateStatistics`EllipsoidQuantile"
     && args.len() == 2
     && matches!(&args[0], Expr::FunctionCall { name: d, .. }
       if d == "MultinormalDistribution")
   {
-    let mean = call1("Mean", args[0].clone());
-    let radius = call(
+    let eval = crate::evaluator::evaluate_expr_to_expr;
+    let mean = eval(&call1("Mean", args[0].clone()))?;
+    let q = eval(&call(
       "InverseCDF",
       vec![
         call1("ChiSquareDistribution", call1("Length", mean.clone())),
         args[1].clone(),
       ],
-    );
-    let cov = call1("Covariance", args[0].clone());
-    return crate::evaluator::evaluate_expr_to_expr(&call(
-      "Ellipsoid",
-      vec![mean, times(vec![radius, cov])],
-    ));
+    ))?;
+    let cov = eval(&call1("Covariance", args[0].clone()))?;
+    // An approximate probability makes the whole ellipsoid approximate.
+    let cov = if matches!(args[1], Expr::Real(_)) {
+      eval(&call1("N", cov))?
+    } else {
+      cov
+    };
+    let radius =
+      |variance: &Expr| call1("Sqrt", times(vec![q.clone(), variance.clone()]));
+    let exact_diagonal = match &cov {
+      Expr::List(rows) => rows.iter().enumerate().all(|(i, row)| {
+        matches!(row, Expr::List(cells) if cells.iter().enumerate().all(
+          |(j, c)| i == j || matches!(c, Expr::Integer(0))))
+      }),
+      _ => false,
+    };
+    if exact_diagonal && let Expr::List(rows) = &cov {
+      let radii: Vec<Expr> = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(i, row)| match row {
+          Expr::List(cells) => cells.get(i).map(radius),
+          _ => None,
+        })
+        .collect();
+      return eval(&call("Ellipsoid", vec![mean, Expr::List(radii.into())]));
+    }
+    let system = eval(&call1("Eigensystem", cov))?;
+    if let Expr::List(parts) = &system
+      && let [Expr::List(values), directions] = parts.as_slice()
+    {
+      let radii: Vec<Expr> = values.iter().map(radius).collect();
+      return eval(&call(
+        "Ellipsoid",
+        vec![mean, Expr::List(radii.into()), directions.clone()],
+      ));
+    }
+    return Ok(unevaluated(name, args));
   }
 
   // `GraphUtilities\`` works on a graph given as a plain list of rules
@@ -888,10 +938,36 @@ fn evaluate_function_call_ast_inner(
     ))?;
     return match short {
       "VertexList" => Ok(vertices),
-      "ClosenessCentrality" => crate::evaluator::evaluate_expr_to_expr(&call1(
-        "ClosenessCentrality",
-        graph,
-      )),
+      // Not the built-in's (n - 1)/Σd: the package's closeness is the
+      // reciprocal of the distance sum, and 0. for a vertex that cannot
+      // reach every other one.
+      "ClosenessCentrality" => {
+        let distances = crate::evaluator::evaluate_expr_to_expr(&call1(
+          "GraphDistanceMatrix",
+          graph,
+        ))?;
+        let Expr::List(rows) = &distances else {
+          return Ok(unevaluated(name, args));
+        };
+        let closeness = rows.iter().map(|row| {
+          let Expr::List(ds) = row else {
+            return None;
+          };
+          let mut total = 0.0;
+          for d in ds {
+            total += match d {
+              Expr::Integer(n) => *n as f64,
+              Expr::Real(r) => *r,
+              _ => return Some(Expr::Real(0.0)),
+            };
+          }
+          Some(Expr::Real(if total > 0.0 { 1.0 / total } else { 0.0 }))
+        });
+        match closeness.collect::<Option<Vec<_>>>() {
+          Some(c) => Ok(Expr::List(c.into())),
+          None => Ok(unevaluated(name, args)),
+        }
+      }
       _ => {
         let ranks = crate::evaluator::evaluate_expr_to_expr(&call1(
           "PageRankCentrality",
@@ -1614,14 +1690,21 @@ fn evaluate_function_call_ast_inner(
           });
         }
         if is_identity_rewrite(name, &effective_args, &substituted) {
-          // The rule rewrites the call to itself (`g[x_] := g[x]`): the
-          // evaluator reached a fixed point, so stop instead of recursing.
+          // The rule rewrites the call to itself (`g[x_] := g[x]`), which
+          // only `$IterationLimit` stops.
           if opt_bindings.is_some() {
             crate::OPTION_VALUE_CONTEXT.with(|ctx| {
               ctx.borrow_mut().pop();
             });
           }
-          return Ok(substituted);
+          // A literal rule (every slot a `_dvN` literal) is a fixed point.
+          let literal = structural_bindings.is_empty()
+            && params.iter().all(|p| p.starts_with("_dv"));
+          return Ok(if literal {
+            substituted
+          } else {
+            iteration_limit_exceeded()
+          });
         }
         let mut body = substituted;
         let result = loop {
@@ -1972,14 +2055,21 @@ fn evaluate_function_call_ast_inner(
         // Tail-call: return body for the trampoline to evaluate.
         // Catch Return[] at the function call boundary via local trampoline.
         if is_identity_rewrite(name, &effective_args, &substituted) {
-          // The rule rewrites the call to itself (`g[x_] := g[x]`): the
-          // evaluator reached a fixed point, so stop instead of recursing.
+          // The rule rewrites the call to itself (`g[x_] := g[x]`), which
+          // only `$IterationLimit` stops.
           if opt_bindings.is_some() {
             crate::OPTION_VALUE_CONTEXT.with(|ctx| {
               ctx.borrow_mut().pop();
             });
           }
-          return Ok(substituted);
+          // A literal rule (every slot a `_dvN` literal) is a fixed point.
+          let literal = structural_bindings.is_empty()
+            && params.iter().all(|p| p.starts_with("_dv"));
+          return Ok(if literal {
+            substituted
+          } else {
+            iteration_limit_exceeded()
+          });
         }
         let mut body = substituted;
         let result = loop {
@@ -9867,30 +9957,48 @@ fn evaluate_function_call_ast_inner(
         return Ok(finish(history));
       }
     } else if let Expr::List(init_list) = &args[1] {
-      // 2D mode: every cell expands into a block and the blocks tile, so an
-      // m x n grid whose cells expand to p x q becomes (m*p) x (n*q).
+      // 2D mode: every cell expands into its block and the blocks are glued
+      // with `ArrayFlatten`, so an m x n grid whose cells expand to p x q
+      // becomes (m*p) x (n*q). Blocks that do not tile leave that
+      // `ArrayFlatten` unevaluated, and so does every later step.
       if let Expr::List(rule_list) = &args[0]
         && let Some(blocks) =
           two_d_substitution_blocks(&extract_rules(rule_list))
         && init_list.iter().all(|row| matches!(row, Expr::List(_)))
       {
-        let mut grid: Vec<Vec<Expr>> = init_list
-          .iter()
-          .map(|row| match row {
-            Expr::List(cells) => cells.to_vec(),
-            _ => Vec::new(),
-          })
-          .collect();
-        let as_expr = |g: &[Vec<Expr>]| -> Expr {
-          Expr::List(g.iter().map(|r| Expr::List(r.clone().into())).collect())
+        let block_of = |cell: &Expr| {
+          let key = expr_to_string(cell);
+          blocks
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map_or_else(|| cell.clone(), |(_, b)| b.clone())
         };
-        let mut history: Vec<Expr> = vec![as_expr(&grid)];
+        let mut state = Expr::List(init_list.clone());
+        let mut history: Vec<Expr> = vec![state.clone()];
         for _ in 0..n {
-          let Some(next) = substitute_grid(&grid, &blocks) else {
-            return Ok(unevaluated(name, args));
+          let blocked = match &state {
+            Expr::List(rows)
+              if rows.iter().all(|r| matches!(r, Expr::List(_))) =>
+            {
+              Expr::List(
+                rows
+                  .iter()
+                  .map(|row| match row {
+                    Expr::List(cells) => {
+                      Expr::List(cells.iter().map(block_of).collect())
+                    }
+                    other => other.clone(),
+                  })
+                  .collect(),
+              )
+            }
+            other => other.clone(),
           };
-          grid = next;
-          history.push(as_expr(&grid));
+          state = evaluate_function_call_ast(
+            "ArrayFlatten",
+            &[blocked, Expr::Integer(2)],
+          )?;
+          history.push(state.clone());
         }
         return Ok(finish(history));
       }
@@ -10134,7 +10242,7 @@ fn evaluate_function_call_ast_inner(
       for _ in 0..1000 {
         let n =
           NEXT_TEMP_DIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
+        let path = crate::utils::temporary_directory().join(format!(
           "woxi_{}_{}",
           std::process::id(),
           n
@@ -11656,6 +11764,10 @@ fn evaluate_function_call_ast_inner(
         // in input boxes parses to these and they stay unevaluated.
         | "BracketingBar"
         | "DoubleBracketingBar"
+        // Array domains (`Element[v, Vectors[3, Reals]]`): inert symbolic
+        // domain specifications, like `Reals` itself.
+        | "Vectors"
+        | "Matrices"
     )
   {
     let args_str = args
@@ -13859,77 +13971,24 @@ fn bspline_structured(
 /// The `cell -> block` replacements of a 2D substitution system, keyed by the
 /// cell's rendered form. Returns `None` unless every rule replaces a cell with
 /// a non-empty rectangular block. Blocks may differ in size; whether they fit
-/// together is decided per grid by `substitute_grid`.
+/// together is for `ArrayFlatten` to decide.
 fn two_d_substitution_blocks(
   rules: &[(Expr, Expr)],
-) -> Option<Vec<(String, Vec<Vec<Expr>>)>> {
-  let mut out: Vec<(String, Vec<Vec<Expr>>)> = Vec::new();
+) -> Option<Vec<(String, Expr)>> {
+  let mut out: Vec<(String, Expr)> = Vec::new();
   for (from, to) in rules {
     let Expr::List(rows) = to else { return None };
-    let mut block = Vec::with_capacity(rows.len());
+    let mut width = None;
     for row in rows {
       let Expr::List(cells) = row else { return None };
-      block.push(cells.to_vec());
-    }
-    let width = block.first()?.len();
-    if width == 0 || block.iter().any(|r| r.len() != width) {
-      return None;
-    }
-    out.push((expr_to_string(from), block));
-  }
-  (!out.is_empty()).then_some(out)
-}
-
-/// Expand every cell of `grid` into its block and tile the results. Blocks may
-/// differ in size as long as all cells of a grid row expand to the same height
-/// and all cells of a grid column to the same width; otherwise the blocks
-/// cannot tile and `None` is returned. A cell without a rule stands for a
-/// block of copies of itself.
-fn substitute_grid(
-  grid: &[Vec<Expr>],
-  blocks: &[(String, Vec<Vec<Expr>>)],
-) -> Option<Vec<Vec<Expr>>> {
-  let width = grid.first()?.len();
-  if grid.iter().any(|r| r.len() != width) {
-    return None;
-  }
-  let block_of = |cell: &Expr| {
-    let key = expr_to_string(cell);
-    blocks.iter().find(|(k, _)| *k == key).map(|(_, b)| b)
-  };
-  let mut heights: Vec<Option<usize>> = vec![None; grid.len()];
-  let mut widths: Vec<Option<usize>> = vec![None; width];
-  for (i, row) in grid.iter().enumerate() {
-    for (j, cell) in row.iter().enumerate() {
-      let Some(block) = block_of(cell) else {
-        continue;
-      };
-      let (h, w) = (block.len(), block[0].len());
-      if *heights[i].get_or_insert(h) != h || *widths[j].get_or_insert(w) != w {
+      if cells.is_empty() || *width.get_or_insert(cells.len()) != cells.len() {
         return None;
       }
     }
+    width?;
+    out.push((expr_to_string(from), to.clone()));
   }
-  let heights: Vec<usize> = heights.iter().map(|h| h.unwrap_or(1)).collect();
-  let widths: Vec<usize> = widths.iter().map(|w| w.unwrap_or(1)).collect();
-  let mut out: Vec<Vec<Expr>> = Vec::with_capacity(heights.iter().sum());
-  for (i, row) in grid.iter().enumerate() {
-    let first = out.len();
-    out
-      .extend((0..heights[i]).map(|_| Vec::with_capacity(widths.iter().sum())));
-    for (j, cell) in row.iter().enumerate() {
-      let block = block_of(cell);
-      for a in 0..heights[i] {
-        for b in 0..widths[j] {
-          out[first + a].push(match block {
-            Some(block) => block[a][b].clone(),
-            None => cell.clone(),
-          });
-        }
-      }
-    }
-  }
-  Some(out)
+  (!out.is_empty()).then_some(out)
 }
 
 /// Collapse a `Piecewise` whose clause values are themselves `Piecewise` into
