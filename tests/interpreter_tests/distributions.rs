@@ -2063,6 +2063,19 @@ mod quantile_distribution_extended {
   use super::*;
 
   #[test]
+  fn quantile_lognormal_machine_precision() {
+    assert_eq!(
+      interpret("Quantile[LogNormalDistribution[0, 1], 0.5]").unwrap(),
+      "1."
+    );
+    assert_eq!(
+      interpret("Round[Quantile[LogNormalDistribution[2, 1/2], 0.95], 0.001]")
+        .unwrap(),
+      "16.818"
+    );
+  }
+
+  #[test]
   fn quantile_matches_inverse_cdf() {
     // Quantile gained the same closed forms
     assert_eq!(
