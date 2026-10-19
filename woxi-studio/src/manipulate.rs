@@ -1859,6 +1859,28 @@ mod tests {
     }
   }
 
+  /// A body that calls a helper returning an `Animate[…]` (defined in the
+  /// Manipulate's own `Initialization`) draws the animation's first frame
+  /// rather than an empty picture.
+  #[test]
+  fn body_returning_animate_draws_first_frame() {
+    woxi::clear_state();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[frameOf[r], {{r, 2, \"radius\"}, 1, 3}, \
+       Initialization :> (frameOf[q_] := Animate[Graphics[{Red, Disk[{T, 0}, q]}], {T, 0, 1}])]",
+    )
+    .expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert!(state.graphics_handle.is_some());
+    let render =
+      woxi::with_scoped_globals(&[("r".to_string(), "2".to_string())], || {
+        woxi::interpret_with_stdout(&state.body)
+      })
+      .expect("evaluate body");
+    let svg = render.graphics.expect("body draws a graphic");
+    assert!(svg.contains("<ellipse"), "{svg}");
+  }
+
   /// An exact but non-integer bound (`Pi`) makes the slider continuous,
   /// even though no bound was written as a machine real.
   #[test]

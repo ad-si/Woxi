@@ -222,6 +222,10 @@ pub struct PlotSeriesData {
   /// ones fractions of the image width. `None` = a solid line. Travels with
   /// the series so a dashed curve stays dashed when `Show` merges it.
   pub dashing: Option<Vec<f64>>,
+  /// Curve opacity from `PlotStyle` (`Opacity[a]`); `None` = fully opaque.
+  /// Travels with the series so a faded (or fully transparent) curve keeps
+  /// its opacity when `Show` merges it into another graphic.
+  pub opacity: Option<f64>,
 }
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its

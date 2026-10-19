@@ -2574,6 +2574,7 @@ fn contour_plot_equations(
           thickness: series_thickness,
           point_size: None,
           dashing: None,
+          opacity: None,
         });
       }
     }

@@ -15028,6 +15028,14 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         Expr::Real(sd.color.2 as f64 / 255.0),
       ],
     ));
+    // `Opacity[a]` from `PlotStyle`; once any series is faded, the rest
+    // state their own (opaque) level so the directive can't leak onto them.
+    if let Some(a) = sd
+      .opacity
+      .or_else(|| ps.series.iter().any(|s| s.opacity.is_some()).then_some(1.0))
+    {
+      series_prims.push(call1("Opacity", Expr::Real(a)));
+    }
     if sd.is_scatter
       && let Some(marker) = &sd.marker
     {
