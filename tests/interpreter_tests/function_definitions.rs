@@ -6093,3 +6093,28 @@ mod nested_pattern_tests_in_definitions {
     );
   }
 }
+
+mod lhs_argument_collapses_to_literal {
+  use super::*;
+
+  // `0 Blank[]` evaluates to `0`, so the slot is the literal `0` and the
+  // memoizing recursion terminates instead of hitting $RecursionLimit.
+  #[test]
+  fn zero_times_blank_is_literal_base_case() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[0 Blank[], m_] := 1; f[n_, m_] := f[n, m] = f[n - 1, m] + 1; \
+         {f[3, x], DownValues[f][[1]]}"
+      )
+      .unwrap(),
+      "{4, HoldPattern[f[0, m_]] :> 1}"
+    );
+  }
+
+  #[test]
+  fn other_zero_product_pattern() {
+    clear_state();
+    assert_eq!(interpret("g[0 BlankSequence[]] := 5; g[0]").unwrap(), "5");
+  }
+}

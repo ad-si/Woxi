@@ -2514,6 +2514,20 @@ fn downvalue_arg_info(
           conditions.push(None);
           blank_types.push(blank_type);
         } else if pat_name.is_empty() && head.is_none() {
+          // A pattern-looking argument can still evaluate down to a plain
+          // literal (`0 _` is `0`, as in `f[0 Blank[], m_] := …`), in which
+          // case it is a literal slot, exactly as if `0` had been written.
+          let collapsed =
+            if crate::evaluator::pattern_matching::contains_pattern(arg)
+              && !lhs_slot_is_held(func_name, i)
+            {
+              evaluate_expr_to_expr(arg).ok().filter(|v| {
+                !crate::evaluator::pattern_matching::contains_pattern(v)
+              })
+            } else {
+              None
+            };
+          let arg = collapsed.as_ref().unwrap_or(arg);
           if crate::evaluator::pattern_matching::contains_pattern(arg) {
             // Structural pattern (e.g., 1/x_, a_ + b_) — normalize and store
             // the pattern AST in a __StructuralPattern__ marker for dispatch-time matching.
