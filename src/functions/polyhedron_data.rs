@@ -1527,32 +1527,32 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
   },
   PolyhedronInfo {
     name: "StellaOctangula",
-    vertex_count: 8,
-    edge_count: 12,
-    face_count: 8,
-    // The compound of two dual regular tetrahedra, whose union is the
-    // stellated octahedron. The metrics of the union are not catalogued
-    // (see conformance_gaps.md); only the geometry is.
-    volume: "Missing[\"NotAvailable\"]",
-    surface_area: "Missing[\"NotAvailable\"]",
-    circumradius: "Sqrt[3/8]",
-    inradius: "Missing[\"NotApplicable\"]",
+    vertex_count: 14,
+    edge_count: 36,
+    face_count: 24,
+    // The stellated octahedron as Wolfram catalogues it: the outer surface
+    // of the compound of two unit-edge tetrahedra, i.e. an octahedron of
+    // edge 1/2 with a tetrahedral cap on each face — 8 tips plus the 6
+    // octahedron corners, 24 triangles. Data copied from wolframscript.
+    volume: "Sqrt[2]",
+    surface_area: "6*Sqrt[3]",
+    circumradius: "Missing[\"NotApplicable\"]",
+    inradius: "1/Sqrt[6]",
     midradius: "Missing[\"NotApplicable\"]",
-    // The eight corners of the cube of side 1/Sqrt[2]: the first four
-    // span one unit-edge tetrahedron, the last four its point reflection.
     vertices_src: "{\
-      {1/(2*Sqrt[2]), 1/(2*Sqrt[2]), 1/(2*Sqrt[2])}, \
-      {1/(2*Sqrt[2]), -1/(2*Sqrt[2]), -1/(2*Sqrt[2])}, \
-      {-1/(2*Sqrt[2]), 1/(2*Sqrt[2]), -1/(2*Sqrt[2])}, \
-      {-1/(2*Sqrt[2]), -1/(2*Sqrt[2]), 1/(2*Sqrt[2])}, \
-      {-1/(2*Sqrt[2]), -1/(2*Sqrt[2]), -1/(2*Sqrt[2])}, \
-      {-1/(2*Sqrt[2]), 1/(2*Sqrt[2]), 1/(2*Sqrt[2])}, \
-      {1/(2*Sqrt[2]), -1/(2*Sqrt[2]), 1/(2*Sqrt[2])}, \
-      {1/(2*Sqrt[2]), 1/(2*Sqrt[2]), -1/(2*Sqrt[2])}}",
-    // Outward-wound triangles of both tetrahedra.
-    faces_src: "{{1, 2, 3}, {1, 4, 2}, {1, 3, 4}, {2, 4, 3}, \
-      {5, 7, 6}, {5, 6, 8}, {5, 8, 7}, {6, 7, 8}}",
-    classes_src: "{\"Amphichiral\", \"Compound\"}",
+      {0, 0, -Sqrt[3/2]}, {0, 0, Sqrt[3/2]}, {-2/Sqrt[3], 0, 1/Sqrt[6]}, \
+      {-(1/Sqrt[3]), -1, -(1/Sqrt[6])}, {-(1/Sqrt[3]), 0, -(1/Sqrt[6])}, \
+      {-(1/Sqrt[3]), 1, -(1/Sqrt[6])}, {-1/2*1/Sqrt[3], -1/2, 1/Sqrt[6]}, \
+      {-1/2*1/Sqrt[3], 1/2, 1/Sqrt[6]}, {1/(2*Sqrt[3]), -1/2, -(1/Sqrt[6])}, \
+      {1/(2*Sqrt[3]), 1/2, -(1/Sqrt[6])}, {1/Sqrt[3], -1, 1/Sqrt[6]}, \
+      {1/Sqrt[3], 0, 1/Sqrt[6]}, {1/Sqrt[3], 1, 1/Sqrt[6]}, \
+      {2/Sqrt[3], 0, -(1/Sqrt[6])}}",
+    faces_src: "{{4, 5, 9}, {6, 10, 5}, {14, 9, 10}, {5, 10, 1}, \
+      {10, 9, 1}, {9, 5, 1}, {6, 5, 8}, {4, 7, 5}, {2, 8, 7}, {5, 7, 3}, \
+      {7, 8, 3}, {8, 5, 3}, {14, 12, 9}, {2, 7, 12}, {4, 9, 7}, {12, 7, 11}, \
+      {7, 9, 11}, {9, 12, 11}, {2, 12, 8}, {14, 10, 12}, {6, 8, 10}, \
+      {12, 10, 13}, {10, 8, 13}, {8, 12, 13}}",
+    classes_src: "{\"Equilateral\", \"Stellation\", \"Simple\"}",
   },
   PolyhedronInfo {
     name: "BilinskiDodecahedron",
@@ -2206,7 +2206,7 @@ fn classes() -> Result<Expr, InterpreterError> {
   ))
 }
 
-/// Entities belonging to `class`, sorted by name; `None` when no built-in
+/// Entities belonging to `class`, in Wolfram's order; `None` when no built-in
 /// solid is in that class.
 fn class_members(class: &str) -> Result<Option<Expr>, InterpreterError> {
   let mut names: Vec<&str> = Vec::new();
@@ -2223,6 +2223,22 @@ fn class_members(class: &str) -> Result<Option<Expr>, InterpreterError> {
     return Ok(None);
   }
   names.sort_unstable();
+  // Wolfram lists the five Platonic solids by face count, every other class
+  // alphabetically.
+  if class == "Platonic" {
+    let rank = |n: &&str| {
+      [
+        "Tetrahedron",
+        "Cube",
+        "Octahedron",
+        "Dodecahedron",
+        "Icosahedron",
+      ]
+      .iter()
+      .position(|p| p == n)
+    };
+    names.sort_by_key(rank);
+  }
   Ok(Some(string_list(&names)))
 }
 
@@ -2351,7 +2367,7 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let Some(info) = info else {
     crate::emit_message(&format!(
-      "PolyhedronData::notent: {name} is not a known entity, class, or tag for PolyhedronData. Use PolyhedronData[] for a list of entities."
+      "PolyhedronData::notent: {name} is not a known entity, class or tag for PolyhedronData. Use PolyhedronData[] for a list of entities."
     ));
     // Wolfram emits the message but leaves the call unevaluated.
     return unevaluated();

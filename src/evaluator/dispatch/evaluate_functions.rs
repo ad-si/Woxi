@@ -175,9 +175,23 @@ fn resolve_param_default(default: &Expr) -> Option<Expr> {
   Some(evaluated)
 }
 
+/// The outcome of evaluating a call that a pattern rule rewrites to itself
+/// (`g[x_] := g[x]` applied to `g[3]`): wolframscript keeps applying the
+/// rule until `$IterationLimit` stops it, and the call evaluates to
+/// `TerminatedEvaluation["IterationLimit"]`. Only a rule *with patterns*
+/// does that — a literal one (`f[x] := f[x]`) is a fixed point.
+pub(crate) fn iteration_limit_exceeded() -> Expr {
+  crate::emit_message(
+    "$IterationLimit::itlim: Iteration limit of 4096 exceeded.",
+  );
+  crate::helpers::call1(
+    "TerminatedEvaluation",
+    Expr::String("IterationLimit".to_string()),
+  )
+}
+
 /// True when a rule body, after substitution, is exactly the call being
-/// evaluated (`g[x_] := g[x]` applied to `g[3]`). Wolfram stops at such a
-/// fixed point rather than recursing.
+/// evaluated (`g[x_] := g[x]` applied to `g[3]`).
 fn is_identity_rewrite(name: &str, args: &[Expr], body: &Expr) -> bool {
   match body {
     Expr::FunctionCall {
@@ -888,10 +902,36 @@ fn evaluate_function_call_ast_inner(
     ))?;
     return match short {
       "VertexList" => Ok(vertices),
-      "ClosenessCentrality" => crate::evaluator::evaluate_expr_to_expr(&call1(
-        "ClosenessCentrality",
-        graph,
-      )),
+      // Not the built-in's (n - 1)/Σd: the package's closeness is the
+      // reciprocal of the distance sum, and 0. for a vertex that cannot
+      // reach every other one.
+      "ClosenessCentrality" => {
+        let distances = crate::evaluator::evaluate_expr_to_expr(&call1(
+          "GraphDistanceMatrix",
+          graph,
+        ))?;
+        let Expr::List(rows) = &distances else {
+          return Ok(unevaluated(name, args));
+        };
+        let closeness = rows.iter().map(|row| {
+          let Expr::List(ds) = row else {
+            return None;
+          };
+          let mut total = 0.0;
+          for d in ds {
+            total += match d {
+              Expr::Integer(n) => *n as f64,
+              Expr::Real(r) => *r,
+              _ => return Some(Expr::Real(0.0)),
+            };
+          }
+          Some(Expr::Real(if total > 0.0 { 1.0 / total } else { 0.0 }))
+        });
+        match closeness.collect::<Option<Vec<_>>>() {
+          Some(c) => Ok(Expr::List(c.into())),
+          None => Ok(unevaluated(name, args)),
+        }
+      }
       _ => {
         let ranks = crate::evaluator::evaluate_expr_to_expr(&call1(
           "PageRankCentrality",
@@ -1614,14 +1654,21 @@ fn evaluate_function_call_ast_inner(
           });
         }
         if is_identity_rewrite(name, &effective_args, &substituted) {
-          // The rule rewrites the call to itself (`g[x_] := g[x]`): the
-          // evaluator reached a fixed point, so stop instead of recursing.
+          // The rule rewrites the call to itself (`g[x_] := g[x]`), which
+          // only `$IterationLimit` stops.
           if opt_bindings.is_some() {
             crate::OPTION_VALUE_CONTEXT.with(|ctx| {
               ctx.borrow_mut().pop();
             });
           }
-          return Ok(substituted);
+          // A literal rule (every slot a `_dvN` literal) is a fixed point.
+          let literal = structural_bindings.is_empty()
+            && params.iter().all(|p| p.starts_with("_dv"));
+          return Ok(if literal {
+            substituted
+          } else {
+            iteration_limit_exceeded()
+          });
         }
         let mut body = substituted;
         let result = loop {
@@ -1972,14 +2019,21 @@ fn evaluate_function_call_ast_inner(
         // Tail-call: return body for the trampoline to evaluate.
         // Catch Return[] at the function call boundary via local trampoline.
         if is_identity_rewrite(name, &effective_args, &substituted) {
-          // The rule rewrites the call to itself (`g[x_] := g[x]`): the
-          // evaluator reached a fixed point, so stop instead of recursing.
+          // The rule rewrites the call to itself (`g[x_] := g[x]`), which
+          // only `$IterationLimit` stops.
           if opt_bindings.is_some() {
             crate::OPTION_VALUE_CONTEXT.with(|ctx| {
               ctx.borrow_mut().pop();
             });
           }
-          return Ok(substituted);
+          // A literal rule (every slot a `_dvN` literal) is a fixed point.
+          let literal = structural_bindings.is_empty()
+            && params.iter().all(|p| p.starts_with("_dv"));
+          return Ok(if literal {
+            substituted
+          } else {
+            iteration_limit_exceeded()
+          });
         }
         let mut body = substituted;
         let result = loop {

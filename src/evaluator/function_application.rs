@@ -1242,14 +1242,21 @@ fn try_sub_value_curried_match(
     if let Some(bindings) =
       crate::evaluator::pattern_matching::match_pattern(&actual, lhs)
     {
-      // A rule that rewrites the call to itself (`Subscript[l, a][x_] :=
-      // Subscript[l, a][x]`) is a fixed point; stop rather than recurse.
+      // A rule that rewrites the call to itself is a fixed point when it is
+      // literal (`Subscript[l, a][x] = Subscript[l, a][x]`); one with
+      // patterns (`Subscript[l, a][x_] := Subscript[l, a][x]`) is applied
+      // again and again until `$IterationLimit` stops it.
       if let Ok(raw) =
         crate::evaluator::pattern_matching::substitute_bindings_unevaluated(
           body, &bindings,
         )
         && expr_to_string(&raw) == expr_to_string(&actual)
       {
+        if crate::evaluator::pattern_matching::contains_pattern(lhs) {
+          return Some(Ok(
+            crate::evaluator::dispatch::evaluate_functions::iteration_limit_exceeded(),
+          ));
+        }
         return Some(Ok(raw));
       }
       return Some(crate::evaluator::pattern_matching::apply_bindings(

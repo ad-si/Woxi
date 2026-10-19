@@ -1596,7 +1596,7 @@ pub(crate) fn take_termination() -> Option<&'static str> {
 fn terminated_evaluation_expr(tag: &'static str) -> syntax::Expr {
   helpers::call1(
     "TerminatedEvaluation",
-    syntax::Expr::Identifier(tag.to_string()),
+    syntax::Expr::String(tag.to_string()),
   )
 }
 

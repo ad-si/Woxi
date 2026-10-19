@@ -15307,20 +15307,27 @@ fn region_line_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
       }
     }
   }
-  Some(match points.len() {
-    0 => call1("EmptyRegion", Expr::Integer(dims as i128)),
-    1 => call1("Point", Expr::List(points.remove(0).into())),
-    _ => call1(
-      "Point",
-      Expr::List(
-        points
-          .into_iter()
-          .map(|p| Expr::List(p.into()))
-          .collect::<Vec<_>>()
-          .into(),
-      ),
-    ),
-  })
+  if points.is_empty() {
+    return Some(call1("EmptyRegion", Expr::Integer(dims as i128)));
+  }
+  // Wolfram lists the crossings in reverse canonical order, and as a
+  // multi-point `Point[{p1, …}]` even when there is only one — except for a
+  // single inexact crossing, which is a plain `Point[p]`.
+  let inexact = points
+    .iter()
+    .flatten()
+    .any(|c| matches!(c, Expr::Real(_) | Expr::BigFloat(..)));
+  if inexact && points.len() == 1 {
+    return Some(call1("Point", Expr::List(points.remove(0).into())));
+  }
+  let list = Expr::List(
+    points
+      .into_iter()
+      .map(|p| Expr::List(p.into()))
+      .collect::<Vec<_>>()
+      .into(),
+  );
+  Some(call1("Point", ev(call1("Reverse", call1("Sort", list)))?))
 }
 
 /// Render coordinates back as integers when the source region used integers,

@@ -7448,8 +7448,12 @@ pub(crate) fn with_display_names<T>(
   expr: &Expr,
   render: impl FnOnce(&Expr) -> T,
 ) -> T {
-  if !crate::evaluator::contexts::contexts_active()
-    || DISPLAY_PASS.with(std::cell::Cell::get)
+  if DISPLAY_PASS.with(std::cell::Cell::get)
+    // With the default contexts every symbol is already stored under the
+    // name it reads back as — except one written out in System`
+    // (`System`NotABuiltin`), which still displays bare.
+    || (!crate::evaluator::contexts::contexts_active()
+      && !mentions_system_context(expr))
   {
     return render(expr);
   }
@@ -7666,6 +7670,16 @@ fn complex_display_shape(expr: &Expr) -> Expr {
       map_children(expr, &complex_display_shape)
     }
     _ => map_children(expr, &complex_display_shape),
+  }
+}
+
+fn mentions_system_context(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(s) => s.starts_with("System`") && !s.ends_with('`'),
+    Expr::FunctionCall { name, .. } if name.starts_with("System`") => true,
+    _ => expr_children(expr)
+      .iter()
+      .any(|c| mentions_system_context(c)),
   }
 }
 
