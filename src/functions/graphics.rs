@@ -23072,7 +23072,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // either (a Demonstration's "choose a motif" menu is commonly written
       // this way).
       Expr::FunctionCall { name, args: inner }
-        if name == "Pane"
+        if (name == "Pane" || name == "Labeled")
           && inner
             .first()
             .is_some_and(|c| expr_contains_call(c, &["Control"])) =>
@@ -24154,7 +24154,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       // `Pane[Control@{…}, width]` fixes the width of a control row; the
       // pane only sizes it, so the control inside is the real spec.
       Expr::FunctionCall { name, args: inner }
-        if name == "Pane"
+        if (name == "Pane" || name == "Labeled")
           && !inner.is_empty()
           && expr_contains_call(&inner[0], &["Control"]) =>
       {
@@ -26853,6 +26853,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
         || name == "Text"
         || name == "Panel"
         || name == "ExpressionCell"
+        || name == "Labeled"
         || name == "Style")
         && !args.is_empty() =>
     {
@@ -26977,6 +26978,20 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     // more than one pane is registered once, from the first pane that
     // declares it. `collect_pane_visibility` records which pane each one
     // came from, so the frontend can still show one panel at a time.)
+    // `TabView[{{value, label -> pane}, …}, Dynamic[v]]`: a pane may be
+    // spelled as a `{value, label -> pane}` list; its content is the pane.
+    let item = match (name.as_str(), item) {
+      ("TabView", Expr::List(pair))
+        if pair.len() == 2
+          && matches!(
+            &pair[1],
+            Expr::Rule { .. } | Expr::RuleDelayed { .. }
+          ) =>
+      {
+        &pair[1]
+      }
+      _ => item,
+    };
     let item = match (name.as_str(), item) {
       (
         "TabView" | "PaneSelector",
@@ -27126,6 +27141,7 @@ fn unwrap_control_wrapper(spec: Expr) -> Expr {
       if (name == "Framed"
         || name == "Panel"
         || name == "Tooltip"
+        || name == "Labeled"
         || name == "Item")
         && matches!(
           args.first(),

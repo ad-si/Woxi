@@ -11764,6 +11764,10 @@ fn evaluate_function_call_ast_inner(
         // in input boxes parses to these and they stay unevaluated.
         | "BracketingBar"
         | "DoubleBracketingBar"
+        // Array domains (`Element[v, Vectors[3, Reals]]`): inert symbolic
+        // domain specifications, like `Reals` itself.
+        | "Vectors"
+        | "Matrices"
     )
   {
     let args_str = args
