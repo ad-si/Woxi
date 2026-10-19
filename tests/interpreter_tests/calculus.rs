@@ -20119,12 +20119,30 @@ mod extremum_partial_derivatives {
     );
   }
 
+  // The partial is 1 where its slot holds the first extremal argument, so a
+  // tie goes to the earlier slot; symbolic arguments give the Piecewise
+  // form wolframscript writes.
   #[test]
-  fn tie_stays_unevaluated() {
+  fn tie_goes_to_the_first_slot() {
+    assert_eq!(interpret("Derivative[0, 1][Max][2, 2]").unwrap(), "0");
+    assert_eq!(interpret("Derivative[1, 0][Max][2, 2]").unwrap(), "1");
+  }
+
+  #[test]
+  fn symbolic_partials_of_max_and_min() {
     assert_eq!(
-      interpret("Derivative[0, 1][Max][2, 2]").unwrap(),
-      "Derivative[0, 1][Max][2, 2]"
+      interpret("Derivative[0, 1][Max][x, y]").unwrap(),
+      "Piecewise[{{0, x - y >= 0}}, 1]"
     );
+    assert_eq!(
+      interpret("Derivative[0, 1, 0][Max][x, y, z]").unwrap(),
+      "Piecewise[{{0, x - y >= 0 && x - z >= 0}, {1, x - y < 0 && y - z >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("Derivative[0, 0, 1][Min][x, y, z]").unwrap(),
+      "Piecewise[{{0, (x - y <= 0 && x - z <= 0) || (x - y > 0 && y - z <= 0)}}, 1]"
+    );
+    assert_eq!(interpret("Derivative[1, 1][Max][x, y]").unwrap(), "0");
   }
 
   #[test]

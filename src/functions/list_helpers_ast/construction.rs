@@ -2311,6 +2311,49 @@ fn expand_pattern_rule_list(data: &Expr, dims: &[usize]) -> Option<Expr> {
   Some(Expr::List(rules.into()))
 }
 
+/// The dimensions a rule list's explicit integer positions span, when the
+/// list also holds pattern rules (which say nothing about the size).
+fn infer_dims_from_explicit_positions(data: &Expr) -> Option<Vec<usize>> {
+  let Expr::List(items) = data else {
+    return None;
+  };
+  let mut dims: Option<Vec<usize>> = None;
+  let mut has_pattern = false;
+  for item in items {
+    let lhs = match item {
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+        pattern.as_ref()
+      }
+      _ => return None,
+    };
+    let Expr::List(pos) = lhs else {
+      if expr_contains_pattern(lhs) {
+        has_pattern = true;
+        continue;
+      }
+      return None;
+    };
+    let explicit: Option<Vec<usize>> = pos
+      .iter()
+      .map(|p| expr_to_i128(p).filter(|n| *n > 0).map(|n| n as usize))
+      .collect();
+    match explicit {
+      Some(p) => match dims.as_mut() {
+        Some(d) if d.len() == p.len() => {
+          for (dk, pk) in d.iter_mut().zip(p) {
+            *dk = (*dk).max(pk);
+          }
+        }
+        Some(_) => return None,
+        None => dims = Some(p),
+      },
+      None if expr_contains_pattern(lhs) => has_pattern = true,
+      None => return None,
+    }
+  }
+  if has_pattern { dims } else { None }
+}
+
 /// Build `{p1, p2, …} -> value` for an explicit integer position.
 fn explicit_rule(pos: &[i128], value: Expr) -> Expr {
   rule_expr(
@@ -2532,11 +2575,15 @@ fn sparse_rules_with_background(data: &Expr) -> Option<(Expr, Option<Expr>)> {
     let is_blank_position = matches!(&lhs, Expr::List(pos)
       if !pos.is_empty() && pos.iter().all(|p| expr_to_string(p) == "_"));
     if is_blank_position {
+      // It matches every position, so — the first matching rule winning —
+      // no rule after it can take effect, nor count towards the
+      // dimensions: `SparseArray[{{1, 1} -> 1, {_, _} -> 5, {2, 2} -> 3}]`
+      // is the 1×1 array {{1}}.
       changed = true;
-      background.get_or_insert(rhs);
-    } else {
-      kept.push(rule);
+      background = Some(rhs);
+      break;
     }
+    kept.push(rule);
   }
   changed.then(|| (Expr::List(kept.into()), background))
 }
@@ -2581,6 +2628,13 @@ pub fn sparse_array_normalize_ast(
     }
     if rewritten.len() == 3 {
       // dims are inferred from the remaining rules
+      if matches!(&rewritten[0], Expr::List(kept) if kept.is_empty()) {
+        crate::emit_message(
+          "SparseArray::exdims: The dimensions cannot be determined from \
+           the positions {}.",
+        );
+        return Ok(unevaluated("SparseArray", args));
+      }
       let Some((_, inferred)) = parse_sparse_data(&rewritten[0], &rewritten[2])
       else {
         return Ok(unevaluated("SparseArray", args));
@@ -2606,6 +2660,15 @@ pub fn sparse_array_normalize_ast(
   } else {
     None
   };
+  // Pattern rules (`{i_, i_} -> v`) mixed with explicit positions take the
+  // dimensions from those positions: `SparseArray[{{1, 1} -> 1, {i_, i_}
+  // -> 5, {3, 3} -> 3}]` is 3×3.
+  let pattern_inferred_dims: Option<Vec<usize>> =
+    if explicit_dims.is_none() && band_inferred_dims.is_none() {
+      infer_dims_from_explicit_positions(&args[0])
+    } else {
+      None
+    };
   let resolved_arg0: Option<Expr> = explicit_dims
     .as_ref()
     .and_then(|dims| resolve_negative_positions(&args[0], dims));
@@ -2628,6 +2691,11 @@ pub fn sparse_array_normalize_ast(
     } else {
       &args[0]
     }
+  } else if let Some(ref dims) = pattern_inferred_dims
+    && let Some(expanded) = expand_pattern_rule_list(&args[0], dims)
+  {
+    expanded_data = expanded;
+    &expanded_data
   } else {
     &args[0]
   };
@@ -3067,13 +3135,14 @@ pub fn try_sparse_array_divide(a: &Expr, b: &Expr) -> Option<Expr> {
 }
 
 /// Expand a SparseArray (any recognized form) into a dense nested list.
-/// Called by `Normal[SparseArray[...]]`.
+/// Called by `Normal[SparseArray[...]]`. A SparseArray that cannot be built
+/// comes back as itself, which is what `Normal` gives for it.
 pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let normalized = sparse_array_normalize_ast(args)?;
   let sa_args = match &normalized {
     Expr::FunctionCall { name, args } if name == "SparseArray" => args,
     _ => {
-      return Ok(call1("Normal", normalized));
+      return Ok(normalized);
     }
   };
   // After normalize, either canonical (4 args starting with Automatic) or
@@ -3081,7 +3150,7 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if sa_args.len() != 4
     || !matches!(&sa_args[0], Expr::Identifier(s) if s == "Automatic")
   {
-    return Ok(call1("Normal", normalized));
+    return Ok(normalized);
   }
   let dims: Vec<usize> = match &sa_args[1] {
     Expr::List(items) => {
@@ -3090,14 +3159,14 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         match expr_to_i128(it) {
           Some(n) if n >= 0 => d.push(n as usize),
           _ => {
-            return Ok(call1("Normal", normalized.clone()));
+            return Ok(normalized.clone());
           }
         }
       }
       d
     }
     _ => {
-      return Ok(call1("Normal", normalized));
+      return Ok(normalized);
     }
   };
   let default = &sa_args[2];

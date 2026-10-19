@@ -9921,30 +9921,48 @@ fn evaluate_function_call_ast_inner(
         return Ok(finish(history));
       }
     } else if let Expr::List(init_list) = &args[1] {
-      // 2D mode: every cell expands into a block and the blocks tile, so an
-      // m x n grid whose cells expand to p x q becomes (m*p) x (n*q).
+      // 2D mode: every cell expands into its block and the blocks are glued
+      // with `ArrayFlatten`, so an m x n grid whose cells expand to p x q
+      // becomes (m*p) x (n*q). Blocks that do not tile leave that
+      // `ArrayFlatten` unevaluated, and so does every later step.
       if let Expr::List(rule_list) = &args[0]
         && let Some(blocks) =
           two_d_substitution_blocks(&extract_rules(rule_list))
         && init_list.iter().all(|row| matches!(row, Expr::List(_)))
       {
-        let mut grid: Vec<Vec<Expr>> = init_list
-          .iter()
-          .map(|row| match row {
-            Expr::List(cells) => cells.to_vec(),
-            _ => Vec::new(),
-          })
-          .collect();
-        let as_expr = |g: &[Vec<Expr>]| -> Expr {
-          Expr::List(g.iter().map(|r| Expr::List(r.clone().into())).collect())
+        let block_of = |cell: &Expr| {
+          let key = expr_to_string(cell);
+          blocks
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map_or_else(|| cell.clone(), |(_, b)| b.clone())
         };
-        let mut history: Vec<Expr> = vec![as_expr(&grid)];
+        let mut state = Expr::List(init_list.clone());
+        let mut history: Vec<Expr> = vec![state.clone()];
         for _ in 0..n {
-          let Some(next) = substitute_grid(&grid, &blocks) else {
-            return Ok(unevaluated(name, args));
+          let blocked = match &state {
+            Expr::List(rows)
+              if rows.iter().all(|r| matches!(r, Expr::List(_))) =>
+            {
+              Expr::List(
+                rows
+                  .iter()
+                  .map(|row| match row {
+                    Expr::List(cells) => {
+                      Expr::List(cells.iter().map(block_of).collect())
+                    }
+                    other => other.clone(),
+                  })
+                  .collect(),
+              )
+            }
+            other => other.clone(),
           };
-          grid = next;
-          history.push(as_expr(&grid));
+          state = evaluate_function_call_ast(
+            "ArrayFlatten",
+            &[blocked, Expr::Integer(2)],
+          )?;
+          history.push(state.clone());
         }
         return Ok(finish(history));
       }
@@ -13913,77 +13931,24 @@ fn bspline_structured(
 /// The `cell -> block` replacements of a 2D substitution system, keyed by the
 /// cell's rendered form. Returns `None` unless every rule replaces a cell with
 /// a non-empty rectangular block. Blocks may differ in size; whether they fit
-/// together is decided per grid by `substitute_grid`.
+/// together is for `ArrayFlatten` to decide.
 fn two_d_substitution_blocks(
   rules: &[(Expr, Expr)],
-) -> Option<Vec<(String, Vec<Vec<Expr>>)>> {
-  let mut out: Vec<(String, Vec<Vec<Expr>>)> = Vec::new();
+) -> Option<Vec<(String, Expr)>> {
+  let mut out: Vec<(String, Expr)> = Vec::new();
   for (from, to) in rules {
     let Expr::List(rows) = to else { return None };
-    let mut block = Vec::with_capacity(rows.len());
+    let mut width = None;
     for row in rows {
       let Expr::List(cells) = row else { return None };
-      block.push(cells.to_vec());
-    }
-    let width = block.first()?.len();
-    if width == 0 || block.iter().any(|r| r.len() != width) {
-      return None;
-    }
-    out.push((expr_to_string(from), block));
-  }
-  (!out.is_empty()).then_some(out)
-}
-
-/// Expand every cell of `grid` into its block and tile the results. Blocks may
-/// differ in size as long as all cells of a grid row expand to the same height
-/// and all cells of a grid column to the same width; otherwise the blocks
-/// cannot tile and `None` is returned. A cell without a rule stands for a
-/// block of copies of itself.
-fn substitute_grid(
-  grid: &[Vec<Expr>],
-  blocks: &[(String, Vec<Vec<Expr>>)],
-) -> Option<Vec<Vec<Expr>>> {
-  let width = grid.first()?.len();
-  if grid.iter().any(|r| r.len() != width) {
-    return None;
-  }
-  let block_of = |cell: &Expr| {
-    let key = expr_to_string(cell);
-    blocks.iter().find(|(k, _)| *k == key).map(|(_, b)| b)
-  };
-  let mut heights: Vec<Option<usize>> = vec![None; grid.len()];
-  let mut widths: Vec<Option<usize>> = vec![None; width];
-  for (i, row) in grid.iter().enumerate() {
-    for (j, cell) in row.iter().enumerate() {
-      let Some(block) = block_of(cell) else {
-        continue;
-      };
-      let (h, w) = (block.len(), block[0].len());
-      if *heights[i].get_or_insert(h) != h || *widths[j].get_or_insert(w) != w {
+      if cells.is_empty() || *width.get_or_insert(cells.len()) != cells.len() {
         return None;
       }
     }
+    width?;
+    out.push((expr_to_string(from), to.clone()));
   }
-  let heights: Vec<usize> = heights.iter().map(|h| h.unwrap_or(1)).collect();
-  let widths: Vec<usize> = widths.iter().map(|w| w.unwrap_or(1)).collect();
-  let mut out: Vec<Vec<Expr>> = Vec::with_capacity(heights.iter().sum());
-  for (i, row) in grid.iter().enumerate() {
-    let first = out.len();
-    out
-      .extend((0..heights[i]).map(|_| Vec::with_capacity(widths.iter().sum())));
-    for (j, cell) in row.iter().enumerate() {
-      let block = block_of(cell);
-      for a in 0..heights[i] {
-        for b in 0..widths[j] {
-          out[first + a].push(match block {
-            Some(block) => block[a][b].clone(),
-            None => cell.clone(),
-          });
-        }
-      }
-    }
-  }
-  Some(out)
+  (!out.is_empty()).then_some(out)
 }
 
 /// Collapse a `Piecewise` whose clause values are themselves `Piecewise` into
