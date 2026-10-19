@@ -37165,7 +37165,7 @@ mod list_plot_frame {
       .and_then(|r| r.split('"').next())
       .and_then(|v| v.parse().ok())
       .expect("title font size");
-    assert!(size < 16.0 && size >= 9.0, "font size {size}");
+    assert!((9.0..16.0).contains(&size), "font size {size}");
     let short = interpret(
       "ExportString[Graphics[Circle[], ImageSize -> {200, 200}, PlotLabel -> \"Hi\"], \"SVG\"]",
     )
