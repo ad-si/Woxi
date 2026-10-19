@@ -2431,7 +2431,12 @@ mod graphics {
         "Graphics[{Text[Subscript[\"N\", \"D\"], {0, 0}], \
          Text[Superscript[\"x\", 2], {1, 0}]}]",
       );
-      assert!(svg.contains(">ND<"), "the subscripted label: {svg}");
+      assert!(
+        svg.contains(
+          ">N<tspan baseline-shift=\"sub\" font-size=\"70%\">D</tspan><"
+        ),
+        "the subscripted label: {svg}"
+      );
       assert!(svg.contains(">x\u{00B2}<"), "the exponent label: {svg}");
       assert!(
         !svg.contains("Subscript["),
@@ -36986,5 +36991,27 @@ fn list_fit_plot_draws_data_and_fitted_curve() {
   assert_eq!(
     interpret("ListFitPlot[{1, 2, 3}, \"Bogus\"]").unwrap(),
     "ListFitPlot[{1, 2, 3}, Bogus]"
+  );
+}
+
+#[test]
+fn text_subscript_of_styled_base_keeps_italic_and_lowers_script() {
+  // A letter without a Unicode subscript form is lowered with a tspan, and
+  // the italic base keeps its slant in both cases.
+  for script in ["a", "b", "c", "k"] {
+    let svg = export_svg(&format!(
+      "Graphics[Text[Subscript[Style[\"d\", Italic], \"{script}\"], {{0, 0}}]]"
+    ));
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">d</tspan>"),
+      "{svg}"
+    );
+  }
+  let svg = export_svg(
+    "Graphics[Text[Subscript[Style[\"d\", Italic], \"b\"], {0, 0}]]",
+  );
+  assert!(
+    svg.contains("<tspan baseline-shift=\"sub\" font-size=\"70%\">b</tspan>"),
+    "{svg}"
   );
 }
