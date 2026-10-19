@@ -7136,6 +7136,48 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .flatten();
 
+  // ANOVA table ("ANOVATableEntries" and its constituent properties): the
+  // model/error/total decomposition of the sum of squares and the overall
+  // F-test. A model with a constant term is centered on the response mean
+  // (`n - 1` total degrees of freedom); one without is uncentered. `None`
+  // when no error degrees of freedom remain or the F-test is undefined.
+  let anova: Option<AnovaTable> = (n > m)
+    .then(|| {
+      let has_constant = basis.iter().any(|b| matches!(b, Expr::Integer(1)));
+      let (df_model, df_total, ss_total) = if has_constant {
+        (m - 1, n - 1, ss_tot)
+      } else {
+        (m, n, y_vals.iter().map(|y| y * y).sum::<f64>())
+      };
+      if df_model == 0 {
+        return None;
+      }
+      let df_error = n - m;
+      let ss_model = ss_total - ss_res;
+      let ms_model = ss_model / df_model as f64;
+      let ms_error = ss_res / df_error as f64;
+      let f_stat = ms_model / ms_error;
+      let dist = call(
+        "FRatioDistribution",
+        vec![
+          Expr::Integer(df_model as i128),
+          Expr::Integer(df_error as i128),
+        ],
+      );
+      let cdf =
+        evaluate_expr_to_expr(&call("CDF", vec![dist, Expr::Real(f_stat)]))
+          .ok()
+          .and_then(|e| try_eval_to_f64(&e))?;
+      Some(AnovaTable {
+        df: [df_model, df_error, df_total],
+        ss: [ss_model, ss_res, ss_total],
+        ms: [ms_model, ms_error],
+        f_stat,
+        p_value: 1.0 - cdf,
+      })
+    })
+    .flatten();
+
   // Build the fitted expression: c[0]*basis[0] + c[1]*basis[1] + ...
   let mut terms = Vec::new();
   for (j, c) in coeffs.iter().enumerate() {
@@ -7282,7 +7324,47 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     assoc.push((str_expr("ParameterTableEntries"), entries));
   }
 
+  if let Some(t) = anova {
+    let int = |v: usize| Expr::Integer(v as i128);
+    let reals =
+      |vs: &[f64]| Expr::List(vs.iter().map(|v| Expr::Real(*v)).collect());
+    let row = |items: Vec<Expr>| Expr::List(items.into());
+    assoc.push((
+      str_expr("ANOVATableEntries"),
+      row(vec![
+        row(vec![
+          int(t.df[0]),
+          Expr::Real(t.ss[0]),
+          Expr::Real(t.ms[0]),
+          Expr::Real(t.f_stat),
+          Expr::Real(t.p_value),
+        ]),
+        row(vec![int(t.df[1]), Expr::Real(t.ss[1]), Expr::Real(t.ms[1])]),
+        row(vec![int(t.df[2]), Expr::Real(t.ss[2])]),
+      ]),
+    ));
+    assoc.push((
+      str_expr("ANOVATableDegreesOfFreedom"),
+      row(t.df.iter().map(|d| int(*d)).collect()),
+    ));
+    assoc.push((str_expr("ANOVATableSumsOfSquares"), reals(&t.ss)));
+    assoc.push((str_expr("ANOVATableMeanSquares"), reals(&t.ms)));
+    assoc.push((str_expr("ANOVATableFStatistics"), reals(&[t.f_stat])));
+    assoc.push((str_expr("ANOVATablePValues"), reals(&[t.p_value])));
+  }
+
   Ok(call1("FittedModel", Expr::Association(assoc)))
+}
+
+/// The overall-significance ANOVA decomposition of a linear least-squares
+/// fit: model/error/total degrees of freedom and sums of squares, the
+/// model/error mean squares, and the F statistic with its p-value.
+struct AnovaTable {
+  df: [usize; 3],
+  ss: [f64; 3],
+  ms: [f64; 2],
+  f_stat: f64,
+  p_value: f64,
 }
 
 /// Invert a square matrix by solving `A x_j = e_j` for each standard basis
