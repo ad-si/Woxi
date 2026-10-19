@@ -7872,6 +7872,12 @@ pub fn interpolation_ast(
     return Ok(result);
   }
 
+  // Vector- or tensor-valued data `{{x1, {…}}, {x2, {…}}, …}` interpolates
+  // every component separately; see `evaluate_tensor_interpolating_function`.
+  if let Some(tensor_fn) = build_tensor_interpolation(data_list, interp_order) {
+    return Ok(tensor_fn);
+  }
+
   // Determine format: list of values or list of {x, y} pairs
   let mut points: Vec<(f64, f64)> = Vec::new();
   // The exact coordinate expressions alongside their f64 values, so that
@@ -7963,6 +7969,122 @@ pub fn interpolation_ast(
   );
 
   Ok(interp_func)
+}
+
+/// The shape (nested list lengths) of a tensor value, or `None` when it is a
+/// ragged list or has a non-numeric leaf.
+fn numeric_tensor_dims(e: &Expr) -> Option<Vec<usize>> {
+  match e {
+    Expr::List(items) => {
+      let first = numeric_tensor_dims(items.first()?)?;
+      for it in items.iter().skip(1) {
+        if numeric_tensor_dims(it)? != first {
+          return None;
+        }
+      }
+      let mut dims = vec![items.len()];
+      dims.extend(first);
+      Some(dims)
+    }
+    other => interp_value_to_f64(other).ok().map(|_| Vec::new()),
+  }
+}
+
+/// `Interpolation[{{x1, t1}, {x2, t2}, …}]` where every `ti` is a list (or
+/// nested list) of numbers of one common shape. The data is stored as given
+/// (sorted by `x`); evaluation maps the scalar interpolation over the leaves.
+fn build_tensor_interpolation(
+  data_list: &[Expr],
+  interp_order: i128,
+) -> Option<Expr> {
+  let mut rows: Vec<(f64, Expr, Expr)> = Vec::with_capacity(data_list.len());
+  let mut dims: Option<Vec<usize>> = None;
+  for item in data_list {
+    let Expr::List(pair) = item else {
+      return None;
+    };
+    if pair.len() != 2 || !matches!(&pair[1], Expr::List(_)) {
+      return None;
+    }
+    let x = interp_value_to_f64(&pair[0]).ok()?;
+    let d = numeric_tensor_dims(&pair[1])?;
+    if *dims.get_or_insert_with(|| d.clone()) != d {
+      return None;
+    }
+    rows.push((x, exact_coordinate(&pair[0], x), pair[1].clone()));
+  }
+  rows.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+  let n = rows.len();
+  let mut order = interp_order.max(1) as usize;
+  if order >= n {
+    order = n.saturating_sub(1);
+    crate::emit_message(&format!(
+      "Interpolation::inhr: Requested order is too high; order has been reduced to {{{order}}}."
+    ));
+  }
+  let domain = Expr::List(
+    vec![Expr::List(
+      vec![Expr::Real(rows[0].0), Expr::Real(rows[n - 1].0)].into(),
+    )]
+    .into(),
+  );
+  let data_expr = Expr::List(
+    rows
+      .into_iter()
+      .map(|(_, x, t)| Expr::List(vec![x, t].into()))
+      .collect(),
+  );
+  Some(call(
+    "InterpolatingFunction",
+    vec![domain, data_expr, Expr::Integer(order as i128)],
+  ))
+}
+
+/// Evaluate a tensor-valued `InterpolatingFunction` by interpolating each
+/// leaf of the stored tensors through the scalar code path.
+fn evaluate_tensor_interpolating_function(
+  func_args: &[Expr],
+  rows: &[Expr],
+  call_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  fn map_leaves(
+    func_args: &[Expr],
+    rows: &[Expr],
+    path: &mut Vec<usize>,
+    call_args: &[Expr],
+  ) -> Result<Expr, InterpreterError> {
+    let mut leaf_rows = Vec::with_capacity(rows.len());
+    let mut sample: &Expr = &Expr::Integer(0);
+    for row in rows {
+      let Expr::List(pair) = row else {
+        return Err(InterpreterError::EvaluationError(
+          "InterpolatingFunction: invalid data point format".into(),
+        ));
+      };
+      let mut v = &pair[1];
+      for &i in path.iter() {
+        let Expr::List(items) = v else {
+          unreachable!("tensor shapes are validated at construction");
+        };
+        v = &items[i];
+      }
+      sample = v;
+      leaf_rows.push(Expr::List(vec![pair[0].clone(), v.clone()].into()));
+    }
+    if let Expr::List(items) = sample {
+      let mut out = Vec::with_capacity(items.len());
+      for i in 0..items.len() {
+        path.push(i);
+        out.push(map_leaves(func_args, rows, path, call_args)?);
+        path.pop();
+      }
+      return Ok(Expr::List(out.into()));
+    }
+    let mut scalar_args = func_args.to_vec();
+    scalar_args[1] = Expr::List(leaf_rows.into());
+    evaluate_interpolating_function(&scalar_args, call_args)
+  }
+  map_leaves(func_args, rows, &mut Vec::new(), call_args)
 }
 
 /// A rectangular numeric matrix (≥2 rows, ≥2 columns, all rows the same length,
@@ -8631,6 +8753,14 @@ pub fn evaluate_interpolating_function(
       "InterpolatingFunction expects domain and data, called with one argument"
         .into(),
     ));
+  }
+
+  // Tensor-valued data: `{{x, {…}}, …}` interpolates component-wise.
+  if let Expr::List(rows) = &func_args[1]
+    && matches!(rows.first(), Some(Expr::List(p)) if p.len() == 2 && matches!(&p[1], Expr::List(_)))
+    && !matches!(&call_args[0], Expr::String(_))
+  {
+    return evaluate_tensor_interpolating_function(func_args, rows, call_args);
   }
 
   let data = &func_args[1];

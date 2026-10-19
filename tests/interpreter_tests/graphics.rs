@@ -11890,6 +11890,26 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// used to be mistaken for an option, leaving the second parameter
     /// symbolic and the picture empty.
     #[test]
+    fn parametric_plot_two_parameters_list_of_regions_and_region_function() {
+      // Two bodies make two filled meshes in the first two plot colours.
+      let svg = export_svg(
+        "ParametricPlot[{{u, v}, {u + 3, v}}, {u, 0, 1}, {v, 0, 1}]",
+      );
+      assert!(svg.matches("<polygon").count() > 200, "{svg}");
+      // `RegionFunction` receives {x, y, u, v} and drops failing cells.
+      let all = export_svg("ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}]")
+        .matches("<polygon")
+        .count();
+      let half = export_svg(
+        "ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}, \
+         RegionFunction -> Function[{x, y, u, v}, x >= 0.5]]",
+      )
+      .matches("<polygon")
+      .count();
+      assert!(half > 0 && half < all, "{half} of {all}");
+    }
+
+    #[test]
     fn parametric_plot_two_parameters_draws_the_image_region() {
       // The unit square maps to the square [0,2]x[0,2] under {u+v, u+v'}.
       let svg = export_svg(
