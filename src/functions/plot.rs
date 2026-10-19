@@ -8771,37 +8771,10 @@ pub(crate) fn apply_markers_to_source(
 pub(crate) fn parse_plot_style(replacement: &Expr) -> Vec<SeriesStyle> {
   let val = evaluate_expr_to_expr(replacement).unwrap_or(replacement.clone());
   if let Expr::List(items) = &val {
-    // Check if this is a list of per-series styles or a single compound style.
-    // If any item is itself a Directive or a List, treat as per-series.
-    // If all items are simple directives (colors, Thick, etc.), treat as
-    // a single compound style applied to all series.
-    let has_per_series = items.iter().any(|item| {
-      matches!(
-        item,
-        Expr::FunctionCall { name, .. } if name == "Directive"
-      ) || matches!(item, Expr::List(_))
-        || matches!(
-          item,
-          Expr::FunctionCall { name, .. }
-            if name == "RGBColor"
-              || name == "Hue"
-              || name == "GrayLevel"
-              || name == "Darker"
-              || name == "Lighter"
-              || name == "Blend"
-        )
-        || matches!(item, Expr::Identifier(s) if crate::functions::graphics::named_color(s).is_some())
-    });
-    if has_per_series {
-      items.iter().map(parse_one_series_style).collect()
-    } else {
-      // Single compound style: {Purple, Thick, Dashed}
-      let mut style = SeriesStyle::default();
-      for item in items {
-        apply_style_directive(item, &mut style);
-      }
-      vec![style]
-    }
+    // A list is one style per series (`{Thin, Thick}` strokes the first
+    // curve thin and the second thick). Callers drawing a single series
+    // merge the entries into one compound style (`{Purple, Thick, Dashed}`).
+    items.iter().map(parse_one_series_style).collect()
   } else {
     let style = parse_one_series_style(&val);
     if style.color.is_some()

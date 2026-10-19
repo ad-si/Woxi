@@ -37152,4 +37152,40 @@ mod list_plot_frame {
     .unwrap();
     assert_eq!(out, "Graphics");
   }
+
+  #[test]
+  fn plot_style_directive_list_styles_each_series() {
+    let widths = |code: &str| -> Vec<String> {
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      svg
+        .split("<polyline")
+        .skip(1)
+        .map(|p| {
+          p.split("stroke-width=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .to_string()
+        })
+        .collect()
+    };
+    // `{Thin, Thick}` is one style per curve, not one compound style.
+    assert_eq!(
+      widths("Plot[{x, 2 x}, {x, 0, 1}, PlotStyle -> {Thin, Thick}]"),
+      ["5", "20"]
+    );
+    assert_eq!(
+      widths(
+        "ListPlot[{{{0, 1}, {1, 2}}, {{0, 2}, {1, 3}}}, Joined -> True, PlotStyle -> {Thin, Thick}]"
+      ),
+      ["5", "20"]
+    );
+    // A single curve still merges the list into one compound style.
+    assert_eq!(
+      widths("Plot[x, {x, 0, 1}, PlotStyle -> {Purple, Thick}]"),
+      ["20"]
+    );
+  }
 }
