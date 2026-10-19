@@ -720,8 +720,9 @@ mod system_context_heads {
     );
     assert_eq!(
       interpret("System`NotABuiltin[1]").unwrap(),
-      "System`NotABuiltin[1]"
+      "NotABuiltin[1]"
     );
+    assert_eq!(interpret("Context[System`NotABuiltin]").unwrap(), "System`");
   }
 }
 

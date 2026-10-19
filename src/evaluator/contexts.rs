@@ -380,7 +380,8 @@ pub fn resolve_existing(name: &str) -> String {
 /// as the same symbol, its full name otherwise. `P`pub` prints as `pub`
 /// while `P`` is on `$ContextPath`, and as `P`pub` once it is not.
 pub fn display_name(full_name: &str) -> String {
-  if !full_name.contains('`') {
+  // A context name (`System``) is not a symbol: it has no short name.
+  if !full_name.contains('`') || full_name.ends_with('`') {
     return full_name.to_string();
   }
   let bare = short_name(full_name);

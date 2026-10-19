@@ -4557,6 +4557,14 @@ pub fn distribution_mean_variance(
     "SkewNormalDistribution" => skew_normal_mean_variance(dargs),
     "SechDistribution" => sech_mean_variance(dargs),
     "WignerSemicircleDistribution" => wigner_mean_variance(dargs),
+    // Mean s^2 and variance l s^4.
+    "MarchenkoPasturDistribution" if dargs.len() == 2 => {
+      let s2 = pow2(dargs[1].clone(), int(2));
+      Ok((
+        eval(&s2)?,
+        eval(&times(vec![dargs[0].clone(), pow2(s2, int(2))]))?,
+      ))
+    }
     "TriangularDistribution" => triangular_mean_variance(dargs),
     "MaxStableDistribution" => {
       if dargs.len() != 3 {
@@ -15798,11 +15806,12 @@ pub fn maxwell_mean_variance(
   Ok((mean, var))
 }
 
-/// PDF[MarchenkoPasturDistribution[l, s], x] for 0 < l <= 1 =
-/// Piecewise[{{Sqrt[(b - x) (x - a)]/(2 Pi l s^2 x), a <= x <= b}}, 0]
-/// with a = s^2 (1 - Sqrt[l])^2 and b = s^2 (1 + Sqrt[l])^2.
-/// The scale s defaults to 1. For l > 1 the distribution has an atom at 0,
-/// which is left unevaluated.
+/// PDF[MarchenkoPasturDistribution[l], x] for 0 < l <= 1 =
+/// Piecewise[{{Sqrt[4 l - (x - (1 + l))^2]/(2 Pi l x), a <= x <= b}}, 0]
+/// with a = (1 - Sqrt[l])^2 and b = (1 + Sqrt[l])^2 — the semicircle form
+/// wolframscript writes. A scale s is applied as PDF[…[l], x/s^2]/s^2, left
+/// in that shape. For l > 1 the distribution has an atom at 0, which is left
+/// unevaluated.
 fn pdf_marchenko_pastur(
   dargs: &[Expr],
   x: Expr,
@@ -15824,56 +15833,51 @@ fn pdf_marchenko_pastur(
   if !(lv > 0.0 && lv <= 1.0 && sv > 0.0) {
     return Ok(unevaluated(dargs, x));
   }
-  let sigma2 = pow2(sigma.clone(), int(2));
-  let root = call1("Sqrt", lambda.clone());
-  let edge = |sign: i128| -> Result<Expr, InterpreterError> {
-    eval(&times(vec![
-      sigma2.clone(),
-      pow2(
-        plus(vec![int(1), times(vec![int(sign), root.clone()])]),
-        int(2),
-      ),
-    ]))
-  };
-  let (lo, hi) = (edge(-1)?, edge(1)?);
-  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
-    eval(&div2(
-      call1(
-        "Sqrt",
-        times(vec![
-          plus(vec![hi.clone(), neg(at.clone())]),
-          plus(vec![at.clone(), neg(lo.clone())]),
-        ]),
-      ),
-      times(vec![
-        int(2),
-        pi(),
-        lambda.clone(),
-        sigma2.clone(),
-        at.clone(),
-      ]),
-    ))
-  };
-  if let Some(xv) = ms_numeric(&x) {
-    let (a, b) = (ms_numeric(&lo), ms_numeric(&hi));
-    if let (Some(a), Some(b)) = (a, b)
-      && (xv < a || xv > b)
-    {
-      return Ok(int(0));
-    }
-    return body(&x);
-  }
-  if !matches!(&x, Expr::Identifier(_)) {
+  if !matches!(&x, Expr::Identifier(_)) && ms_numeric(&x).is_none() {
     return Ok(unevaluated(dargs, x));
   }
-  let cond = comparison3(
-    lo.clone(),
-    ComparisonOp::LessEqual,
-    x.clone(),
-    ComparisonOp::LessEqual,
-    hi.clone(),
-  );
-  Ok(piecewise(vec![(body(&x)?, cond)], int(0)))
+  let unit_scale = matches!(&sigma, Expr::Integer(1));
+  let sigma2 = eval(&pow2(sigma.clone(), int(2)))?;
+  // The unit-scale density at `y` (x itself, or x/s^2).
+  let y = if unit_scale {
+    x.clone()
+  } else {
+    eval(&div2(x.clone(), sigma2.clone()))?
+  };
+  let root = call1("Sqrt", lambda.clone());
+  let edge = |sign: i128| -> Result<Expr, InterpreterError> {
+    eval(&pow2(
+      plus(vec![int(1), times(vec![int(sign), root.clone()])]),
+      int(2),
+    ))
+  };
+  let (lo, hi) = (edge(-1)?, edge(1)?);
+  let center = eval(&plus(vec![int(1), lambda.clone()]))?;
+  let body = eval(&div2(
+    call1(
+      "Sqrt",
+      plus(vec![
+        times(vec![int(4), lambda.clone()]),
+        neg(pow2(plus(vec![y.clone(), neg(center)]), int(2))),
+      ]),
+    ),
+    times(vec![int(2), pi(), lambda.clone(), y.clone()]),
+  ))?;
+  let density = if let Some(yv) = ms_numeric(&y) {
+    match (ms_numeric(&lo), ms_numeric(&hi)) {
+      (Some(a), Some(b)) if yv < a || yv > b => int(0),
+      _ => body,
+    }
+  } else {
+    let cond =
+      comparison3(lo, ComparisonOp::LessEqual, y, ComparisonOp::LessEqual, hi);
+    piecewise(vec![(body, cond)], int(0))
+  };
+  if unit_scale {
+    Ok(density)
+  } else {
+    eval(&div2(density, sigma2))
+  }
 }
 
 /// Parse WignerSemicircleDistribution arguments: [r] or [a, r].

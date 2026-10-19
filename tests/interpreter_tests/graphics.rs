@@ -2371,6 +2371,16 @@ mod graphics {
     }
 
     #[test]
+    fn number_form_of_nested_list_is_typeset() {
+      // Regression: `NumberForm[matrix, {3, 2}]` (a Manipulate readout of a
+      // 2x2 matrix) printed the raw `NumberForm[{{…}}, {3, 2}]` call because
+      // only flat lists were threaded.
+      let svg = export_svg("NumberForm[{{0.953939, 0}, {0, 0.3}}, {3, 2}]");
+      assert!(!svg.contains("NumberForm"), "{svg}");
+      assert!(svg.contains("0.95"), "{svg}");
+    }
+
+    #[test]
     fn traditional_form_padded_form_complex_label() {
       // Regression: `Text[TraditionalForm[PaddedForm[z, {4, 3}]]]` (the Argand
       // Diagram readout) printed the raw `PaddedForm(…)` call with unrounded
@@ -2431,7 +2441,12 @@ mod graphics {
         "Graphics[{Text[Subscript[\"N\", \"D\"], {0, 0}], \
          Text[Superscript[\"x\", 2], {1, 0}]}]",
       );
-      assert!(svg.contains(">ND<"), "the subscripted label: {svg}");
+      assert!(
+        svg.contains(
+          ">N<tspan baseline-shift=\"sub\" font-size=\"70%\">D</tspan><"
+        ),
+        "the subscripted label: {svg}"
+      );
       assert!(svg.contains(">x\u{00B2}<"), "the exponent label: {svg}");
       assert!(
         !svg.contains("Subscript["),
@@ -7869,6 +7884,25 @@ mod plot3d {
       );
     }
 
+    // `Frame -> False` on a density or contour plot leaves out the box and
+    // its tick labels, so only the coloured image remains.
+    #[test]
+    fn frame_false_on_density_and_contour_plots() {
+      for plot in ["DensityPlot", "ContourPlot"] {
+        let framed =
+          export_svg(&format!("{plot}[x y, {{x, -1, 1}}, {{y, -1, 1}}]"));
+        let bare = export_svg(&format!(
+          "{plot}[x y, {{x, -1, 1}}, {{y, -1, 1}}, Frame -> False]"
+        ));
+        assert!(framed.contains("<text"), "{plot} default has tick labels");
+        assert!(!bare.contains("<text"), "{plot}: {bare}");
+        assert!(
+          !bare.contains("stroke=\"rgb(102,102,102)\""),
+          "{plot} must draw no frame box: {bare}"
+        );
+      }
+    }
+
     // `FrameTicks -> None` on a field plot keeps the frame box but draws
     // neither tick marks nor tick labels.
     #[test]
@@ -10905,6 +10939,19 @@ mod plot3d {
       // A grouped list that holds anything but rules is still not a rule
       // list, and falls back to the whole-plot reading (here: no fill).
       assert_eq!(fills(&format!("{curves}, Filling -> {{{{1, 2}}}}]")), 0);
+    }
+
+    /// A bare series number in a `Filling` list (`Filling -> {1}`) shades
+    /// that curve down to the axis, like `{1 -> Axis}`; the other curves
+    /// stay unshaded. A Demonstration fills the mean curve of a
+    /// confidence band this way.
+    #[test]
+    fn bare_series_numbers_in_a_filling_list_fill_to_the_axis() {
+      let fills = |code: &str| export_svg(code).matches("<polygon").count();
+      let curves = "ListLinePlot[{{1, 2, 3}, {2, 3, 4}, {3, 4, 5}}";
+      assert_eq!(fills(&format!("{curves}, Filling -> {{1}}]")), 1);
+      assert_eq!(fills(&format!("{curves}, Filling -> {{1, 3}}]")), 2);
+      assert_eq!(fills(&format!("{curves}, Filling -> {{1 -> Axis}}]")), 1);
     }
 
     /// `Show` merging several filled plots keeps each one's own
@@ -15745,6 +15792,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // DataRange places the cell centers, so the raster reaches half a cell
+    // beyond it; without one the cells sit on the integer grid.
     #[test]
     fn array_plot_data_range_places_raster() {
       clear_state();
@@ -15753,7 +15802,18 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "First[ArrayPlot[{{1, 2}, {3, 4}}, DataRange -> {{-2, 2}, {-1, 1}}]][[2]]"
         )
         .unwrap(),
-        "{{-2., -1.}, {2., 1.}}"
+        "{{-4., -2.}, {4., 2.}}"
+      );
+      assert_eq!(
+        interpret(
+          "First[ArrayPlot[{{1, 2, 3}, {3, 4, 5}}, DataRange -> {{0, 1}, {0, 10}}]][[2]]"
+        )
+        .unwrap(),
+        "{{-0.25, -5.}, {1.25, 15.}}"
+      );
+      assert_eq!(
+        interpret("First[ArrayPlot[{{1, 2}, {3, 4}}]][[2]]").unwrap(),
+        "{{0, 0}, {2, 2}}"
       );
     }
 
@@ -35948,42 +36008,18 @@ fn graphics3d_view_vertical_turns_the_picture() {
   assert!(dy < 1e-6 && dx > 1.0, "tilted: {dx} {dy}");
 }
 
-mod gosper_curve_tests {
+/// `GosperCurve` is not a Wolfram Language function (Wolfram 15 has no
+/// `*Gosper*` symbol at all), so it stays unevaluated and a notebook can
+/// define it itself.
+mod gosper_curve_is_not_built_in {
   use woxi::interpret;
 
-  // GosperCurve[n] is a Line with 7^n + 1 vertices on the triangular lattice.
   #[test]
-  fn vertex_counts() {
-    assert_eq!(interpret("Head[GosperCurve[2]]").unwrap(), "Line");
-    assert_eq!(interpret("Length[GosperCurve[1][[1]]]").unwrap(), "8");
-    assert_eq!(interpret("Length[GosperCurve[2][[1]]]").unwrap(), "50");
-    assert_eq!(interpret("Length[GosperCurve[3][[1]]]").unwrap(), "344");
-  }
-
-  // Every step has unit length.
-  #[test]
-  fn unit_steps() {
+  fn stays_unevaluated_and_can_be_defined() {
+    assert_eq!(interpret("GosperCurve[2]").unwrap(), "GosperCurve[2]");
     assert_eq!(
-      interpret(
-        "Union[Round[Norm /@ Differences[GosperCurve[2][[1]]], 0.0001]]"
-      )
-      .unwrap(),
-      "{1.}"
-    );
-  }
-
-  #[test]
-  fn invalid_order() {
-    assert_eq!(interpret("GosperCurve[0]").unwrap(), "GosperCurve[0]");
-  }
-
-  // Usable inside Graphics.
-  #[test]
-  fn renders() {
-    assert_eq!(
-      interpret("Head[ExportString[Graphics[GosperCurve[2]], \"SVG\"]]")
-        .unwrap(),
-      "String"
+      interpret("GosperCurve[n_] := {n}; GosperCurve[2]").unwrap(),
+      "{2}"
     );
   }
 }
@@ -36602,7 +36638,10 @@ mod bracketing_bar_labels {
   #[test]
   fn bracketing_bar_is_not_reported_unimplemented() {
     clear_state();
-    assert_eq!(interpret("BracketingBar[x]").unwrap(), "BracketingBar[x]");
+    assert_eq!(
+      interpret("BracketingBar[x]").unwrap(),
+      "\u{f603} x \u{f604}"
+    );
     assert_eq!(woxi::get_captured_warnings(), Vec::<String>::new());
   }
 
@@ -36762,11 +36801,15 @@ mod static_dynamic_controls {
   fn color_data_visible_spectrum_maps_wavelength_to_rgb() {
     assert_eq!(
       interpret("ColorData[\"VisibleSpectrum\", 510]").unwrap(),
-      "RGBColor[0., 1., 0.]"
+      "RGBColor[0., 0.982210818520001, 0.3620321472504943]"
     );
     assert_eq!(
       interpret("ColorData[\"VisibleSpectrum\", 700]").unwrap(),
-      "RGBColor[1., 0., 0.]"
+      "RGBColor[0.37701167554406145, 0., 0.]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", 525]").unwrap(),
+      "RGBColor[0., 1., 0.]"
     );
     assert_eq!(
       interpret("ColorData[\"VisibleSpectrum\", 300]").unwrap(),
@@ -37060,6 +37103,28 @@ fn list_fit_plot_draws_data_and_fitted_curve() {
   );
 }
 
+#[test]
+fn text_subscript_of_styled_base_keeps_italic_and_lowers_script() {
+  // A letter without a Unicode subscript form is lowered with a tspan, and
+  // the italic base keeps its slant in both cases.
+  for script in ["a", "b", "c", "k"] {
+    let svg = export_svg(&format!(
+      "Graphics[Text[Subscript[Style[\"d\", Italic], \"{script}\"], {{0, 0}}]]"
+    ));
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">d</tspan>"),
+      "{svg}"
+    );
+  }
+  let svg = export_svg(
+    "Graphics[Text[Subscript[Style[\"d\", Italic], \"b\"], {0, 0}]]",
+  );
+  assert!(
+    svg.contains("<tspan baseline-shift=\"sub\" font-size=\"70%\">b</tspan>"),
+    "{svg}"
+  );
+}
+
 /// A `Filling -> Top` region keeps covering the plot area where the curve
 /// has left the clipped `PlotRange`, instead of stopping at the last
 /// in-range sample.
@@ -37153,6 +37218,56 @@ mod list_plot_frame {
     assert_eq!(out, "Graphics");
   }
 
+  #[test]
+  fn plot_style_directive_list_styles_each_series() {
+    let widths = |code: &str| -> Vec<String> {
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      svg
+        .split("<polyline")
+        .skip(1)
+        .map(|p| {
+          p.split("stroke-width=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .to_string()
+        })
+        .collect()
+    };
+    // `{Thin, Thick}` is one style per curve, not one compound style.
+    assert_eq!(
+      widths("Plot[{x, 2 x}, {x, 0, 1}, PlotStyle -> {Thin, Thick}]"),
+      ["5", "20"]
+    );
+    assert_eq!(
+      widths(
+        "ListPlot[{{{0, 1}, {1, 2}}, {{0, 2}, {1, 3}}}, Joined -> True, PlotStyle -> {Thin, Thick}]"
+      ),
+      ["5", "20"]
+    );
+    // A single curve still merges the list into one compound style.
+    assert_eq!(
+      widths("Plot[x, {x, 0, 1}, PlotStyle -> {Purple, Thick}]"),
+      ["20"]
+    );
+  }
+
+  #[test]
+  fn text_column_alignment_anchors_the_lines() {
+    let left =
+      export_svg(r#"Graphics[Text[Column[{"ab", "abcdefgh"}, Left], {0, 0}]]"#);
+    assert!(left.contains("text-anchor=\"start\""), "{left}");
+    let right = export_svg(
+      r#"Graphics[Text[Column[{"ab", "abcdefgh"}, Alignment -> Right], {0, 0}]]"#,
+    );
+    assert!(right.contains("text-anchor=\"end\""), "{right}");
+    let centered =
+      export_svg(r#"Graphics[Text[Column[{"ab", "abcdefgh"}], {0, 0}]]"#);
+    assert!(centered.contains("text-anchor=\"middle\""), "{centered}");
+  }
+
   /// A `Column` that is a cell of a styled `Grid` is set in the grid's
   /// face and size — not as a free-standing monospace column at the base
   /// size — and a column of text lines is one text run with line breaks.
@@ -37180,5 +37295,56 @@ mod list_plot_frame {
     .graphics
     .unwrap();
     assert!(svg.contains("font-family=\"Courier\""), "got: {svg}");
+  }
+}
+
+mod show_plot_opacity {
+  use super::*;
+
+  #[test]
+  fn show_keeps_curve_opacity_from_plot_style() {
+    let svg = export_svg(
+      "Show[ParametricPlot[{Sin[t], Cos[t]}, {t, 0, 3}, PlotStyle -> Opacity[0.3], Axes -> None], Graphics[{Red, Disk[]}]]",
+    );
+    assert!(svg.contains("opacity=\"0.3\""), "{svg}");
+  }
+
+  #[test]
+  fn show_keeps_fully_transparent_curve() {
+    let svg = export_svg(
+      "Show[Plot[Sin[x], {x, 0, 3}, PlotStyle -> Opacity[0], Axes -> None], Graphics[{Red, Disk[]}]]",
+    );
+    assert!(svg.contains("opacity=\"0\""), "{svg}");
+  }
+
+  #[test]
+  fn show_leaves_unstyled_curve_opaque() {
+    let svg = export_svg(
+      "Show[Plot[Sin[x], {x, 0, 3}, Axes -> None], Graphics[{Red, Disk[]}]]",
+    );
+    assert!(!svg.contains("opacity=\"0"), "{svg}");
+  }
+}
+
+mod animate_result_display {
+  use super::*;
+
+  #[test]
+  fn animate_returned_by_helper_displays_first_frame() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "mk[r_] := Animate[Graphics[{Red, Disk[{T, 0}, r]}], {T, 0, 1}]; mk[2]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("Animate result should draw a frame");
+    assert!(svg.contains("<ellipse"), "{svg}");
+  }
+
+  #[test]
+  fn animate_result_stays_symbolic_in_script_mode() {
+    clear_state();
+    let out =
+      interpret("Head[Animate[Graphics[{Disk[{T, 0}]}], {T, 0, 1}]]").unwrap();
+    assert_eq!(out, "Animate");
   }
 }

@@ -3446,108 +3446,46 @@ pub fn evaluate_expr_to_expr_inner(
               crate::evaluator::pattern_matching::expr_equal(left, right)
             } else if let Some(ord) = exact_integer_ord(left, right) {
               matches!(ord, std::cmp::Ordering::Equal)
+            } else if let (Some(_), Some(_)) =
+              (try_eval_to_f64(left), try_eval_to_f64(right))
+            {
+              // Numbers: the tolerance rules (machine guard bits, low
+              // BigFloat precision, exact radicals that round apart) live
+              // in `Equal`'s single implementation.
+              let pair = [left.clone(), right.clone()];
+              matches!(
+                crate::functions::boolean_ast::equal_ast(&pair)?,
+                Expr::Identifier(ref s) if s == "True"
+              )
+            } else if expr_to_string(left) == expr_to_string(right) {
+              true
+            } else if let Some(ord) =
+              crate::functions::quantity_ast::try_quantity_compare(left, right)
+            {
+              ord == std::cmp::Ordering::Equal
+            } else if crate::functions::boolean_ast::all_components_equal(
+              left, right,
+            ) {
+              // Same head and arity with every leaf determinably equal,
+              // e.g. `RGBColor[0., 0., 1.] == RGBColor[0, 0, 1]`.
+              true
+            } else if crate::functions::boolean_ast::structurally_unequal(
+              left, right,
+            ) {
+              // A structural shape mismatch (different list lengths, or a
+              // `List` lined up against a `Rule`) decides `Equal` no
+              // matter what free symbol is nested inside — e.g.
+              // `{{x -> 1}} == {{}}` is `False` even though `x` is
+              // unbound.
+              false
+            } else if has_free_symbols(left) || has_free_symbols(right) {
+              // Symbolic: return unevaluated
+              return Ok(Expr::Comparison {
+                operands: values,
+                operators: operators.clone(),
+              });
             } else {
-              // Two BigFloats with > ~16 digits of precision can carry
-              // distinct stored digit strings even though both collapse
-              // to the same f64. Compare the digit strings truncated to
-              // the *shared* precision so genuinely-different literals
-              // are False but values that agree to the shared precision
-              // (e.g. `N[E, 100]` vs `N[E, 150]`) stay equal.
-              if let (Expr::BigFloat(d_l, p_l), Expr::BigFloat(d_r, p_r)) =
-                (left, right)
-                && p_l.min(*p_r) > 16.0
-              {
-                // Compare to (shared - 1) digits so a 1-ULP difference at
-                // the last shared digit stays equal-within-tolerance.
-                let shared = (p_l.min(*p_r).floor() as usize).saturating_sub(1);
-                if shared > 0
-                  && !crate::functions::boolean_ast::bigfloat_digits_match_to(
-                    d_l, d_r, shared,
-                  )
-                {
-                  return Ok(bool_expr(false));
-                }
-              }
-              if let (Some(l), Some(r)) =
-                (try_eval_to_f64(left), try_eval_to_f64(right))
-              {
-                // Machine-precision Reals are compared up to the last ~7 bits
-                // (matches wolframscript, which treats the f64 guard bits as
-                // "insignificant"). Exact-vs-exact comparisons stay strict.
-                // When a BigFloat with low precision p is involved, also
-                // widen the tolerance to `10^-p · max(|l|, |r|)` so e.g.
-                // `3.1416 == 3.14`2` is True (the shorter operand only
-                // commits to ~2 significant decimals).
-                let involves_real =
-                  matches!(left, Expr::Real(_) | Expr::BigFloat(_, _))
-                    || matches!(right, Expr::Real(_) | Expr::BigFloat(_, _))
-                    || matches!(left, Expr::UnaryOp { operand, .. }
-                if matches!(operand.as_ref(), Expr::Real(_)))
-                    || matches!(right, Expr::UnaryOp { operand, .. }
-                  if matches!(operand.as_ref(), Expr::Real(_)));
-                if involves_real {
-                  let mut tol =
-                    f64::max(l.abs(), r.abs()) * (2.0_f64).powi(-46);
-                  let bigfloat_prec = [left, right]
-                    .iter()
-                    .filter_map(|e| match e {
-                      Expr::BigFloat(_, p) => Some(*p),
-                      _ => None,
-                    })
-                    .reduce(f64::min);
-                  if let Some(p) = bigfloat_prec {
-                    // wolframscript's `Equal` is more lenient than
-                    // `|a - b| < 10^-p`: it returns True whenever
-                    // the precision of the difference is below 1
-                    // (no significant digit). Practically that's
-                    // roughly an extra decade of slack — use
-                    // `10^-(p - 1)` so accuracy-form literals like
-                    // `13.1416``4 == 13.1413``4` match (diff
-                    // 3e-4 within 10^-4.12 ≈ 7.6e-5? no, within
-                    // 10^-(5.12 - 1) ≈ 7.6e-4).
-                    let widened_p = (p - 1.0).max(0.0);
-                    let prec_tol =
-                      f64::max(l.abs(), r.abs()) * 10.0_f64.powf(-widened_p);
-                    if prec_tol > tol {
-                      tol = prec_tol;
-                    }
-                  }
-                  (l - r).abs() <= tol
-                } else {
-                  l == r
-                }
-              } else if expr_to_string(left) == expr_to_string(right) {
-                true
-              } else if let Some(ord) =
-                crate::functions::quantity_ast::try_quantity_compare(
-                  left, right,
-                )
-              {
-                ord == std::cmp::Ordering::Equal
-              } else if crate::functions::boolean_ast::all_components_equal(
-                left, right,
-              ) {
-                // Same head and arity with every leaf determinably equal,
-                // e.g. `RGBColor[0., 0., 1.] == RGBColor[0, 0, 1]`.
-                true
-              } else if crate::functions::boolean_ast::structurally_unequal(
-                left, right,
-              ) {
-                // A structural shape mismatch (different list lengths, or a
-                // `List` lined up against a `Rule`) decides `Equal` no
-                // matter what free symbol is nested inside — e.g.
-                // `{{x -> 1}} == {{}}` is `False` even though `x` is
-                // unbound.
-                false
-              } else if has_free_symbols(left) || has_free_symbols(right) {
-                // Symbolic: return unevaluated
-                return Ok(Expr::Comparison {
-                  operands: values,
-                  operators: operators.clone(),
-                });
-              } else {
-                false
-              }
+              false
             }
           }
           ComparisonOp::UnsameQ => {

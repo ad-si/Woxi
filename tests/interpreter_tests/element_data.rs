@@ -434,14 +434,15 @@ mod element_data_tests {
 
   // The three-argument form, `ElementData[element, property, annotation]`,
   // answers something about the *property* rather than the element — the
-  // element argument only needs to resolve to a real element. Found while
+  // element argument is not even looked at. Found while
   // checking a Wolfram Demonstrations Project notebook ("Properties of
   // Chemical Elements") whose PopupMenu control builds its option labels
   // from `ElementData[1, prop, "Description"]` for a couple dozen
   // properties; only the "Description" annotation is implemented.
   #[test]
   fn element_data_description_annotation_is_general_across_properties() {
-    // A plain decamelization of the property name…
+    // wolframscript's own names for the properties, not decamelizations of
+    // them; a legacy property without one is Missing["UnknownType", …].
     assert_eq!(
       interpret(r#"ElementData[1, "AtomicNumber", "Description"]"#).unwrap(),
       "atomic number"
@@ -449,37 +450,43 @@ mod element_data_tests {
     assert_eq!(
       interpret(r#"ElementData[1, "AbsoluteBoilingPoint", "Description"]"#)
         .unwrap(),
-      "absolute boiling point"
+      "Missing[UnknownType, AbsoluteBoilingPoint]"
     );
     assert_eq!(
       interpret(r#"ElementData[1, "ThermalConductivity", "Description"]"#)
         .unwrap(),
       "thermal conductivity"
     );
-    // …and a few properties named after a person or a compound term keep
-    // that eponym's capitalization/possessive or hyphenated form instead.
+    assert_eq!(
+      interpret(r#"ElementData[1, "NeelPoint", "Description"]"#).unwrap(),
+      "N\u{e9}el point"
+    );
+    assert_eq!(
+      interpret(r#"ElementData[1, "FusionHeat", "Description"]"#).unwrap(),
+      "molar heat of fusion"
+    );
     assert_eq!(
       interpret(r#"ElementData[1, "YoungModulus", "Description"]"#).unwrap(),
-      "Young's modulus"
+      "Young modulus"
     );
     assert_eq!(
       interpret(r#"ElementData[1, "VanDerWaalsRadius", "Description"]"#)
         .unwrap(),
-      "Van der Waals radius"
+      "van der Waals radius"
     );
     assert_eq!(
       interpret(r#"ElementData[1, "HalfLife", "Description"]"#).unwrap(),
-      "half-life"
+      "half\u{2010}life"
     );
     // The annotation doesn't depend on which element (or how it's spelled)
     // was passed, only on the property.
     assert_eq!(
       interpret(r#"ElementData["Gold", "Density", "Description"]"#).unwrap(),
-      "density"
+      "mass density"
     );
     assert_eq!(
       interpret(r#"ElementData["Fe", "Density", "Description"]"#).unwrap(),
-      "density"
+      "mass density"
     );
   }
 
@@ -488,7 +495,7 @@ mod element_data_tests {
     assert_eq!(
       interpret(r#"ElementData[1, "NotAnElementDataProperty", "Description"]"#)
         .unwrap(),
-      "Missing[NotFound]"
+      "ElementData[1, NotAnElementDataProperty, Description]"
     );
   }
 
@@ -496,7 +503,7 @@ mod element_data_tests {
   fn element_data_description_annotation_unrecognized_element() {
     assert_eq!(
       interpret(r#"ElementData[999, "Density", "Description"]"#).unwrap(),
-      "ElementData[999, Density, Description]"
+      "mass density"
     );
   }
 

@@ -32852,4 +32852,41 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       }
     }
   }
+
+  /// Controls written as `Labeled[Control[…], …]` and a `TabView` whose panes
+  /// are `{value, label -> content}` lists (bound to `Dynamic[v]`) must both
+  /// contribute real controls instead of being treated as static display.
+  #[test]
+  fn labeled_control_and_listed_tabview_panes_yield_controls() {
+    let code = r#"Manipulate[
+      Graphics[Circle[{0, 0}, a + b + c]],
+      {{tab, "p"}, None},
+      Labeled[Control[{{mode, "x", ""}, {"x" -> "ex", "y" -> "why"}}], "mode"],
+      Labeled[TabView[{
+        {"p", "P" -> Column[{Control[{{a, 1, "a"}, 0, 2, 0.1}]}]},
+        {"q", "Q" -> Column[{Control[{{b, 1, "b"}, 0, 2, 0.1}],
+                              Control[{{c, 1, "c"}, 0, 2, 0.1}]}]}},
+        Dynamic[tab]], "tabs"]]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut widget =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    widget.reevaluate();
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some(), "the scene must draw");
+    let names: Vec<String> = widget
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. }
+        | manipulate::ControlState::Discrete { name, .. } => Some(name.clone()),
+        _ => None,
+      })
+      .collect();
+    for n in ["mode", "a", "b", "c"] {
+      assert!(
+        names.iter().any(|x| x == n),
+        "missing control {n}: {names:?}"
+      );
+    }
+  }
 }

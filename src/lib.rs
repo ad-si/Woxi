@@ -1324,6 +1324,18 @@ fn promote_result_graphics(expr: &syntax::Expr) {
     }
     return;
   }
+  // A cell whose value is an `Animate[…]` (typically built by a helper
+  // function a Demonstration defines in its Initialization) shows the
+  // animation's first frame. Script mode keeps the symbolic form.
+  if VISUAL_MODE.with(|v| *v.borrow())
+    && let syntax::Expr::FunctionCall { name, args } = expr
+    && name == "Animate"
+    && args.len() >= 2
+    && let Some(svg) = functions::graphics::animate_snapshot_svg(args)
+  {
+    capture_graphics(&svg);
+    return;
+  }
   if let syntax::Expr::FunctionCall { name, args } = expr
     && name == "TabView"
     && let Some(items) =
@@ -1596,7 +1608,7 @@ pub(crate) fn take_termination() -> Option<&'static str> {
 fn terminated_evaluation_expr(tag: &'static str) -> syntax::Expr {
   helpers::call1(
     "TerminatedEvaluation",
-    syntax::Expr::Identifier(tag.to_string()),
+    syntax::Expr::String(tag.to_string()),
   )
 }
 

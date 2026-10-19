@@ -450,14 +450,20 @@ pub fn nominal_bits(precision: usize) -> usize {
 /// `N[1/7, 9]` 38 — and turns negative when even the units limb lies below
 /// the precision: `N[10^40/7, 3]` rounds away 19 integer digits.
 pub fn wl_fraction_digits(bf: &astro_float::BigFloat, precision: f64) -> i64 {
+  let fraction_limbs = wl_fraction_limbs(bf, precision);
+  ((64 * fraction_limbs + 1) as f64 * std::f64::consts::LOG10_2).floor() as i64
+}
+
+/// The number of 64-bit limbs below the binary point WL keeps for `bf` at
+/// `precision` (see [`wl_fraction_digits`]).
+fn wl_fraction_limbs(bf: &astro_float::BigFloat, precision: f64) -> i64 {
   // `bf` is `0.1… × 2^e` (leading mantissa bit set), so it has `e` bits
   // above the binary point.
   let int_bits = bf.exponent().map_or(0, |e| e as i64);
   let kept_bits =
     (precision.max(0.0) * std::f64::consts::LOG2_10).ceil() as i64 + 33;
-  let fraction_limbs = (kept_bits - int_bits).div_euclid(64)
-    + i64::from((kept_bits - int_bits).rem_euclid(64) != 0);
-  ((64 * fraction_limbs + 1) as f64 * std::f64::consts::LOG10_2).floor() as i64
+  (kept_bits - int_bits).div_euclid(64)
+    + i64::from((kept_bits - int_bits).rem_euclid(64) != 0)
 }
 
 /// Extract an integer value from an Expr, if it is one.
@@ -1322,7 +1328,34 @@ fn leaf_to_bigfloat(
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> Result<Expr, InterpreterError> {
-  let bf = expr_to_bigfloat(expr, bits, rm, cc)?;
+  wl_bigfloat_expr(expr, precision, bits, rm, cc)
+}
+
+/// `expr` as the arbitrary-precision number WL makes of it at `precision`,
+/// evaluated with (at least) `bits` of mantissa.
+fn wl_bigfloat_expr(
+  expr: &Expr,
+  precision: f64,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<Expr, InterpreterError> {
+  let mut bf = expr_to_bigfloat(expr, bits, rm, cc)?;
+  // WL's value is the number rounded to its limb grid below the binary
+  // point, and the shown digits are that binary value's. For a small
+  // magnitude the grid is finer than `bits` resolve (`N[10^-8/7, 20]` keeps
+  // 192 fraction bits of a number whose leading bit is 2^-30), so the value
+  // is computed afresh at the grid's resolution before being rounded to it.
+  let limbs = wl_fraction_limbs(&bf, precision);
+  if limbs > 0 {
+    let fraction_bits = 64 * limbs as usize;
+    let int_bits = bf.exponent().map_or(0, |e| e as i64);
+    let needed = (fraction_bits as i64 + int_bits + 64).max(0) as usize;
+    if needed > bits {
+      bf = expr_to_bigfloat(expr, (needed + 63) & !63, rm, cc)?;
+    }
+    bf = bf.round(fraction_bits, rm);
+  }
   let digits = wl_fraction_digits(&bf, precision);
   let decimal = bigfloat_to_string(&bf, Some(digits), rm, cc)?;
   Ok(Expr::BigFloat(decimal, precision))
@@ -1538,10 +1571,8 @@ pub fn n_eval_arbitrary(
   let bits = nominal_bits(prec_usize) + 64;
 
   // Try full conversion to BigFloat first (fast path for purely numeric expressions)
-  if let Ok(result) = expr_to_bigfloat(expr, bits, rm, &mut cc) {
-    let digits = wl_fraction_digits(&result, precision);
-    let decimal = bigfloat_to_string(&result, Some(digits), rm, &mut cc)?;
-    Ok(Expr::BigFloat(decimal, precision))
+  if let Ok(result) = wl_bigfloat_expr(expr, precision, bits, rm, &mut cc) {
+    Ok(result)
   } else {
     // Try complex BigFloat evaluation (handles expressions with I)
     if let Ok((re, im)) = expr_to_complex_bigfloat(expr, bits, rm, &mut cc) {
@@ -1623,10 +1654,8 @@ fn n_eval_arbitrary_partial(
     }
   }
   // If the whole expression can be converted to BigFloat, do it
-  if let Ok(result) = expr_to_bigfloat(expr, bits, rm, cc) {
-    let digits = wl_fraction_digits(&result, precision);
-    let decimal = bigfloat_to_string(&result, Some(digits), rm, cc)?;
-    return Ok(Expr::BigFloat(decimal, precision));
+  if let Ok(result) = wl_bigfloat_expr(expr, precision, bits, rm, cc) {
+    return Ok(result);
   }
 
   match expr {

@@ -5933,12 +5933,21 @@ mod tex_form {
       interpret("ToString[MatrixForm[{{1, 2}, {3, 4}}]/7]").unwrap(),
       "1   2\n\n3   4\n-----\n  7"
     );
+    // `FormatType -> TraditionalForm` is the TraditionalForm box string, a
+    // matrix the MatrixForm template.
     assert_eq!(
       interpret(
         "ToString[MatrixForm[{{1, -20}, {-20, 1}}]/MatrixForm[{{-3}}], FormatType -> TraditionalForm]"
       )
       .unwrap(),
-      "1     -20\n\n-20   1\n---------\n   -3"
+      "DisplayForm[FormBox[FractionBox[TagBox[RowBox[{(, \u{2060}, \
+       GridBox[{{1, RowBox[{-, 20}]}, {RowBox[{-, 20}], 1}}, RowSpacings -> 1, \
+       ColumnSpacings -> 1, RowAlignments -> Baseline, ColumnAlignments -> \
+       Center], \u{2060}, )}], Function[BoxForm`e$, MatrixForm[BoxForm`e$]]], \
+       TagBox[RowBox[{(, \u{2060}, GridBox[{{RowBox[{-, 3}]}}, RowSpacings -> \
+       1, ColumnSpacings -> 1, RowAlignments -> Baseline, ColumnAlignments -> \
+       Center], \u{2060}, )}], Function[BoxForm`e$, MatrixForm[BoxForm`e$]]]], \
+       TraditionalForm]]"
     );
   }
 
@@ -7460,7 +7469,7 @@ mod make_boxes {
     );
     assert_eq!(
       interpret("ToBoxes[TraditionalForm[Row[{2, x, t}]]]").unwrap(),
-      "TagBox[FormBox[RowBox[{2, x, t}], TraditionalForm], TraditionalForm, \
+      "TagBox[FormBox[TemplateBox[{2, x, t}, RowDefault], TraditionalForm], TraditionalForm, \
        Editable -> True]"
     );
   }
@@ -12930,11 +12939,36 @@ mod padded_form {
   fn list_spec_pads_arbitrary_precision_reals() {
     assert_eq!(
       interpret("ToString[PaddedForm[N[1, 20], {4, 4}]]").unwrap(),
-      "1.0000"
+      " 1.0000"
     );
     assert_eq!(
       interpret("ToString[PaddedForm[N[Pi, 20], {4, 3}]]").unwrap(),
       " 3.142"
+    );
+    assert_eq!(
+      interpret("ToString[PaddedForm[N[12.345678, 20], {4, 3}]]").unwrap(),
+      " 12.350"
+    );
+  }
+
+  // `{n, f}` shows at most n significant digits, rounded half up on the
+  // shortest decimal digits, then pads with zeros to f places.
+  #[test]
+  fn list_spec_limits_significant_digits() {
+    assert_eq!(
+      interpret(
+        "ToString /@ {NumberForm[12.345678, {4, 3}], \
+         NumberForm[0.00123456, {3, 6}], NumberForm[9.996, {3, 2}], \
+         NumberForm[99.96, {3, 2}], NumberForm[-5.25, {3, 1}], \
+         NumberForm[1.005, {4, 2}], NumberForm[0.006, {3, 2}], \
+         PaddedForm[1/3., {3, 5}]}"
+      )
+      .unwrap(),
+      "{12.350, 0.001230, 10.00, 100.00, -5.3, 1.01, 0.01,  0.33300}"
+    );
+    assert_eq!(
+      interpret("ToString[NumberForm[123456.7, {4, 2}]]").unwrap(),
+      "123500.00"
     );
   }
 

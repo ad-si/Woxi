@@ -538,13 +538,14 @@ pub fn bigfloat_digits_match_to(d0: &str, d1: &str, n: usize) -> bool {
 /// Whether two numeric leaves are equal under `Equal` semantics: exactly,
 /// or — when either is a machine Real — up to the last ~7 bits
 /// (`2^-46 · max(|a|, |b|)`), so `0.9338094023943001 == 0.9338094023943`.
+/// Numeric leaves compare by `Equal`'s own rules (machine guard bits,
+/// exact radicals that round apart).
 fn leaves_numerically_equal(a: &Expr, b: &Expr, va: f64, vb: f64) -> bool {
-  if va == vb {
-    return true;
-  }
-  let is_real = |e: &Expr| matches!(e, Expr::Real(_));
-  (is_real(a) || is_real(b))
-    && (va - vb).abs() <= f64::max(va.abs(), vb.abs()) * (2.0_f64).powi(-46)
+  va == vb
+    || matches!(
+      equal_ast(&[a.clone(), b.clone()]),
+      Ok(Expr::Identifier(ref s)) if s == "True"
+    )
 }
 
 pub fn all_components_equal(a: &Expr, b: &Expr) -> bool {
@@ -692,6 +693,47 @@ pub fn structurally_unequal(a: &Expr, b: &Expr) -> bool {
     // data-dependent.
     (Some(_), None) | (None, Some(_)) => false,
   }
+}
+
+/// Whether two exact numeric quantities whose machine values `fa` and `fb`
+/// differ are nonetheless equal. Radicals such as `Sqrt[3/2] - 1/Sqrt[6]`
+/// and `Sqrt[2/3]` round differently in machine arithmetic, so a difference
+/// within a few ULPs is settled the way wolframscript settles it: by the
+/// difference at high precision.
+fn exact_numbers_coincide(a: &Expr, b: &Expr, fa: f64, fb: f64) -> bool {
+  let scale = fa.abs().max(fb.abs());
+  if (fa - fb).abs() > scale * 1e-12 {
+    return false;
+  }
+  let difference = crate::helpers::call(
+    "N",
+    vec![
+      crate::helpers::plus2(
+        a.clone(),
+        crate::helpers::times2(Expr::Integer(-1), b.clone()),
+      ),
+      Expr::Integer(80),
+    ],
+  );
+  let magnitude = match &crate::evaluator::evaluate_expr_to_expr(&difference) {
+    Ok(Expr::Integer(n)) => *n as f64,
+    Ok(Expr::Real(r)) => *r,
+    Ok(Expr::BigFloat(digits, _)) => {
+      // `1.23…*^-97` is beyond f64's range for very small differences.
+      let (mantissa, exponent) =
+        digits.split_once("*^").unwrap_or((digits.as_str(), "0"));
+      let mantissa: f64 = mantissa.parse().unwrap_or(f64::NAN);
+      let exponent: i32 = exponent.parse().unwrap_or(0);
+      if mantissa == 0.0 {
+        0.0
+      } else {
+        return mantissa.abs().log10() + f64::from(exponent)
+          < scale.max(f64::MIN_POSITIVE).log10() - 70.0;
+      }
+    }
+    _ => return false,
+  };
+  magnitude.abs() <= scale * 1e-70
 }
 
 pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -844,7 +886,9 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if (first - v).abs() > tol && first != v {
           return Ok(bool_expr(false));
         }
-      } else if v != first {
+      } else if v != first
+        && !exact_numbers_coincide(&args[0], &args[i], first, v)
+      {
         return Ok(bool_expr(false));
       }
     }
