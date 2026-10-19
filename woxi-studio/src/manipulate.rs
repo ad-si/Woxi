@@ -1502,11 +1502,13 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           step.map(f64::abs).filter(|s| *s > 0.0).unwrap_or_else(|| {
             let span = (*max - *min).abs();
             let integral = min.fract() == 0.0 && max.fract() == 0.0;
-            if !*is_real && integral && span > 1.0 {
-              // An all-exact-integer range makes an integer slider; an
-              // exact non-integer bound (`Pi`, `1/2`) keeps it continuous,
-              // and so does the unit range `{t, 0, 1}`, which only has
-              // two integer positions and is used as a fraction.
+            if !*is_real && integral && span >= 100.0 {
+              // A wide all-exact-integer range (one whose continuous
+              // granularity span/100 would reach a whole unit) makes an
+              // integer slider; an exact non-integer bound (`Pi`, `1/2`)
+              // keeps it continuous, and so do narrow integer ranges like
+              // `{t, 0, 1}` or `{r, 0, 2}`, which a saved Manipulate shows
+              // stepping through fractional values (r = 1.01).
               1.0
             } else if span > 0.0 {
               span / 100.0
@@ -1841,6 +1843,33 @@ mod tests {
     };
     assert_eq!(step_of("n"), 1.0);
     assert_eq!(step_of("x"), 0.01);
+  }
+
+  /// Regression: a narrow exact-integer range such as `{r, 0, 2}` or
+  /// `{pr, 1, 10}` is a continuous slider (a saved Steiner-chain
+  /// Manipulate records `r = 1.01`, `pr = 3.26`), not an integer one.
+  #[test]
+  fn narrow_exact_integer_range_slider_is_continuous() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{r, p}, {{r, 1, \"radius\"}, 0, 2}, {{p, 3, \"range\"}, 1, 10}]",
+    )
+    .expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    for c in &state.controls {
+      if let ControlState::Continuous {
+        name,
+        step,
+        min,
+        max,
+        ..
+      } = c
+      {
+        assert!(
+          (*step - (*max - *min) / 100.0).abs() < 1e-12,
+          "{name} should be continuous, got step {step}"
+        );
+      }
+    }
   }
 
   /// A unit range with exact integer bounds (`{t, 0, 1}`) is a continuous
