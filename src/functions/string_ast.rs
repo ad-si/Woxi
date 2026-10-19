@@ -4146,9 +4146,10 @@ pub(crate) fn number_form_parts(
 /// exponent is always `None`.
 pub(crate) fn number_form_fixed_parts(
   x: &Expr,
+  n: i64,
   f: i64,
 ) -> Option<(String, Option<i64>)> {
-  Some((number_form_fixed_to_string(x, f)?, None))
+  Some((number_form_fixed_to_string(x, n, f)?, None))
 }
 
 /// Group a digit string into blocks of `block`, counting from the RIGHT (used
@@ -4421,7 +4422,10 @@ pub(crate) fn engineering_form_parts(
 /// Render `NumberForm[x, {n, f}]`: a real `x` shown with exactly `f` digits
 /// after the decimal point (zero-padded), e.g. `3.0 -> 3.00`. An integer `x`
 /// is shown unchanged.
-fn number_form_fixed_to_string(x: &Expr, f: i64) -> Option<String> {
+/// `NumberForm[x, {n, f}]` digits: at most `n` significant digits, padded
+/// with zeros to `f` places after the point — `{4, 3}` turns 12.345678 into
+/// "12.350" and `{4, 2}` turns 123456.7 into "123500.00".
+fn number_form_fixed_to_string(x: &Expr, n: i64, f: i64) -> Option<String> {
   if let Expr::Integer(i) = x {
     return Some(i.to_string());
   }
@@ -4429,11 +4433,85 @@ fn number_form_fixed_to_string(x: &Expr, f: i64) -> Option<String> {
     Expr::Real(v) => *v,
     _ => return None,
   };
-  if f < 0 {
+  if f < 0 || n < 0 || !val.is_finite() {
     return None;
   }
   let f = f as usize;
-  let mut s = format!("{val:.f$}");
+  // Decimal places the significant-digit budget leaves; the rounding may
+  // carry into a new leading digit (9.996 → 10.0), which then only has to
+  // be re-checked once.
+  let places = |v: f64| -> i64 {
+    if v == 0.0 {
+      f as i64
+    } else {
+      (n - 1 - v.abs().log10().floor() as i64).min(f as i64)
+    }
+  };
+  // `v` is a magnitude, rounded half up on its shortest decimal digits the
+  // way wolframscript does: 5.25 → 5.3 and 1.005 → 1.01 (Rust's formatting
+  // would round the first to even and the second by its binary value).
+  let round_to = |v: f64, d: i64| -> f64 {
+    let sci = format!("{v:e}");
+    let (mantissa, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
+    let exp: i64 = exp.parse().unwrap_or(0);
+    let digits: Vec<u8> = mantissa
+      .bytes()
+      .filter(u8::is_ascii_digit)
+      .map(|b| b - b'0')
+      .collect();
+    // Digits kept: those before the point plus `d` after it.
+    let keep = exp + 1 + d;
+    if keep < 0 {
+      return 0.0;
+    }
+    let keep = keep as usize;
+    if keep >= digits.len() {
+      return v;
+    }
+    let mut kept: Vec<u8> = digits[..keep].to_vec();
+    let mut scale = exp + 1 - keep as i64;
+    if digits[keep] >= 5 {
+      let mut i = kept.len();
+      loop {
+        if i == 0 {
+          kept.insert(0, 1);
+          break;
+        }
+        i -= 1;
+        if kept[i] == 9 {
+          kept[i] = 0;
+        } else {
+          kept[i] += 1;
+          break;
+        }
+      }
+    }
+    if kept.is_empty() {
+      return 0.0;
+    }
+    let text: String = kept.iter().map(|d| (b'0' + d) as char).collect();
+    if scale == 0 {
+      return text.parse().unwrap_or(v);
+    }
+    let sign = if scale < 0 { "-" } else { "" };
+    scale = scale.abs();
+    format!("{text}e{sign}{scale}").parse().unwrap_or(v)
+  };
+  let mut d = places(val);
+  let mut rounded = round_to(val, d);
+  let d2 = places(rounded);
+  if d2 < d {
+    d = d2;
+    rounded = round_to(val, d);
+  }
+  let shown = d.max(0) as usize;
+  let mut s = format!("{rounded:.shown$}");
+  if f > shown {
+    if shown == 0 {
+      s.push('.');
+    }
+    s.push_str(&"0".repeat(f - shown));
+  }
   // `{:.0}` omits the decimal point; NumberForm keeps a trailing one (3.).
   if f == 0 {
     s.push('.');
@@ -4870,10 +4948,23 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // loses the wrapper and only the content is printed: `ToString[Unevaluated[
   // 1 + 1], InputForm]` is "1 + 1". A wrapper further in (`{0, Unevaluated[
   // 1 + 1], 9}`) is part of the expression and prints as itself.
-  let args: Vec<Expr> =
-    std::iter::once(crate::evaluator::strip_unevaluated(&args[0]))
-      .chain(args[1..].iter().cloned())
-      .collect();
+  // `FormatType -> form` names the form as an option: `ToString[x,
+  // FormatType -> TraditionalForm]` is `ToString[x, TraditionalForm]`.
+  let args: Vec<Expr> = std::iter::once(crate::evaluator::strip_unevaluated(
+    &args[0],
+  ))
+  .chain(args[1..].iter().map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FormatType")
+      && matches!(replacement.as_ref(), Expr::Identifier(_)) =>
+    {
+      replacement.as_ref().clone()
+    }
+    other => other.clone(),
+  }))
+  .collect();
   let args = &args[..];
 
   // The optional second argument must be a format symbol (InputForm,
@@ -5517,7 +5608,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Machine reals typeset at the 6 significant digits the
         // FrontEnd displays: `0.7967806891350713` becomes `0.796781`.
         let rounded = truncate_machine_reals_for_to_string(&args[0]);
-        return Ok(Expr::String(traditional_form_box_escape(&rounded, false)));
+        return Ok(Expr::String(traditional_form_box_escape(&rounded, true)));
       }
       "StandardForm" => {
         // Build the box AST via MakeBoxes (which dispatches user-defined
@@ -15872,6 +15963,16 @@ fn number_form_family_scalar(
   let (neg, magnitude) = match value {
     Expr::Integer(i) => (*i < 0, Expr::Integer(i.abs())),
     Expr::Real(f) => (*f < 0.0, Expr::Real(f.abs())),
+    // An arbitrary-precision real shows no more digits under a fixed
+    // `{n, f}` spec than a machine one holds, so it is laid out the same way
+    // (the f64 payload of `BigFloat` is its precision, not its value).
+    Expr::BigFloat(digits, _)
+      if matches!(spec, Some(Expr::List(parts)) if parts.len() == 2
+        && matches!(&parts[0], Expr::Integer(n) if *n <= 15)) =>
+    {
+      let v = digits.parse::<f64>().ok()?;
+      (v < 0.0, Expr::Real(v.abs()))
+    }
     _ => return None,
   };
   let is_integer = matches!(magnitude, Expr::Integer(_));
@@ -15890,7 +15991,7 @@ fn number_form_family_scalar(
   };
   // Body digits, and the exponent when the value goes to scientific notation.
   let (body, exp) = match (fixed, spec) {
-    (Some((_, f)), _) => (number_form_fixed_to_string(&magnitude, f)?, None),
+    (Some((n, f)), _) => (number_form_fixed_to_string(&magnitude, n, f)?, None),
     (None, Some(Expr::Integer(n))) => {
       if head == "AccountingForm" || opts.suppress_exponent {
         // AccountingForm never switches to scientific notation.
@@ -16094,13 +16195,10 @@ pub(crate) fn number_form_family_to_string(
       );
     }
     merged.extend(inner[1..].iter().filter(|a| is_rule(a)).cloned());
-    // The inner wrapper decides how the digits are laid out; an outer
-    // AccountingForm only turns a leading minus sign into brackets.
-    let rendered = number_form_family_to_string(inner_head, &merged)?;
-    return Some(match rendered.strip_prefix('-') {
-      Some(digits) if head == "AccountingForm" => format!("({digits})"),
-      _ => rendered,
-    });
+    // The inner wrapper alone decides how the number is laid out, its sign
+    // included: `AccountingForm[NumberForm[-1234.5, {12, 2}], 12]` is
+    // "-1234.50", not "(1234.50)".
+    return number_form_family_to_string(inner_head, &merged);
   }
   let positional: Vec<&Expr> = inner
     .iter()
@@ -16172,6 +16270,16 @@ pub(crate) fn number_form_family_to_string(
 
   // Requesting fewer significant figures than the number has integer digits
   // pads them with zeros, which wolframscript reports.
+  if let Some(Expr::List(parts)) = spec
+    && head != "AccountingForm"
+    && let [Expr::Integer(n), Expr::Integer(_)] = parts.as_slice()
+    && number_form_reqsigz(value, *n as i64)
+  {
+    crate::emit_message(&format!(
+      "{head}::reqsigz: Requested number precision is lower than number of \
+       digits shown; padding with zeros.",
+    ));
+  }
   if let Some(Expr::Integer(n)) = spec {
     let reqsigz = if head == "AccountingForm" {
       integer_digit_count(value).is_some_and(|d| (*n as i64) < d)
@@ -16489,14 +16597,6 @@ fn padded_form_to_string(
       .collect();
     return Some(format!("{{{}}}", parts?.join(", ")));
   }
-  // An arbitrary-precision real is padded from its digit string, like a
-  // machine real (the f64 payload of `BigFloat` is its precision, not its value).
-  if let Expr::BigFloat(digits, _) = value
-    && let Ok(v) = digits.parse::<f64>()
-    && matches!(spec, Expr::List(_))
-  {
-    return padded_form_to_string(&Expr::Real(v), spec, lpad, rpad);
-  }
   match spec {
     Expr::Integer(n) if *n >= 0 => match value {
       Expr::Integer(i) => {
@@ -16544,10 +16644,11 @@ fn padded_form_to_string(
               for _ in keep..f_usize {
                 frac_out.push_str(rpad);
               }
-              // The integer field spans n - f digit columns plus one sign
-              // column, left-padded with `lpad`; the fractional part follows
-              // the decimal point and shrinks as trailing digits are dropped.
-              let int_field = n_usize.saturating_sub(f_usize) + 1;
+              // The integer field spans n - f digit columns (at least the one
+              // a leading `0` or digit needs) plus one sign column,
+              // left-padded with `lpad`; the fractional part follows the
+              // decimal point and shrinks as trailing digits are dropped.
+              let int_field = n_usize.saturating_sub(f_usize).max(1) + 1;
               let padded_int = pad_left(int_str, int_field, lpad);
               Some(format!("{padded_int}.{frac_out}"))
             } else {

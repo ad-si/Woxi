@@ -245,9 +245,6 @@ pub fn dispatch_plotting(
     "PeanoCurve" if !args.is_empty() => {
       Some(crate::functions::graphics::peano_curve_ast(args))
     }
-    "GosperCurve" if !args.is_empty() => {
-      Some(crate::functions::graphics::gosper_curve_ast(args))
-    }
     "SierpinskiCurve" if !args.is_empty() => {
       Some(crate::functions::graphics::sierpinski_curve_ast(args))
     }
@@ -318,6 +315,9 @@ pub fn dispatch_plotting(
     }
     "ListFitPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::list_plot::list_fit_plot_ast(args)
+    })),
+    "QuantilePlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::list_plot::quantile_plot_ast(args)
     })),
     "AudioPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::list_plot::audio_plot_ast(args)

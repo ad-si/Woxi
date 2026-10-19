@@ -673,7 +673,16 @@ mod accounting_form {
     assert_eq!(
       interpret("ToString[AccountingForm[NumberForm[-1234.5, {12, 2}], 12]]")
         .unwrap(),
-      "(1234.50)"
+      "-1234.50"
+    );
+    assert_eq!(
+      interpret("ToString[NumberForm[AccountingForm[-1234.5], 3]]").unwrap(),
+      "(1230.)"
+    );
+    assert_eq!(
+      interpret("ToString[AccountingForm[NumberForm[-5.25, {3, 1}], 2]]")
+        .unwrap(),
+      "-5.3"
     );
   }
 

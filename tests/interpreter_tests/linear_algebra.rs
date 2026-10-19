@@ -4205,6 +4205,34 @@ mod linear_model_fit {
     assert!((parts[1] - 0.09775636132189414).abs() < 1e-10);
   }
 
+  // Regression test: `lm["ANOVATableEntries"]` (and its constituent
+  // properties) used to be unimplemented, aborting any Manipulate body that
+  // tests a fit's overall significance with it. Expected values: for a
+  // single-predictor fit the overall F-test equals the slope's squared
+  // t-test, so its p-value is the slope's "ParameterPValues" entry.
+  #[test]
+  fn anova_table_entries() {
+    assert_eq!(
+      interpret(
+        "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; \
+         {lm[\"ANOVATableDegreesOfFreedom\"], Length[lm[\"ANOVATableEntries\"]], \
+         Map[Length, lm[\"ANOVATableEntries\"]]}"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, 3, {5, 3, 2}}"
+    );
+    assert_eq!(
+      interpret(
+        "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; \
+         {Abs[lm[\"ANOVATableEntries\"][[1, 5]] - lm[\"ParameterPValues\"][[2]]] < 10^-10, \
+         Abs[lm[\"ANOVATableFStatistics\"][[1]] - lm[\"ParameterTStatistics\"][[2]]^2] < 10^-10, \
+         Abs[lm[\"ANOVATableSumsOfSquares\"][[1]] / lm[\"ANOVATableSumsOfSquares\"][[3]] - lm[\"RSquared\"]] < 10^-10}"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+  }
+
   #[test]
   fn parameter_table_entries() {
     // Each row is {Estimate, StandardError, TStatistic, PValue} for one
@@ -10305,6 +10333,23 @@ mod dollar_pattern_names {
     assert_eq!(
       interpret("Normal[SparseArray[{{i$_, i$_} -> 1}, {2, 2}]]").unwrap(),
       "{{1, 0}, {0, 1}}"
+    );
+  }
+}
+
+mod array_domains {
+  use super::*;
+
+  #[test]
+  fn vectors_and_matrices_domains_stay_inert_without_warning() {
+    use woxi::interpret_with_stdout;
+    assert_eq!(interpret("Vectors[3, Reals]").unwrap(), "Vectors[3, Reals]");
+    let r = interpret_with_stdout("Matrices[{2, 3}, Integers]").unwrap();
+    assert_eq!(r.result, "Matrices[{2, 3}, Integers]");
+    assert!(
+      !r.warnings.iter().any(|w| w.contains("not yet implemented")),
+      "{:?}",
+      r.warnings
     );
   }
 }

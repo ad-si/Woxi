@@ -498,7 +498,7 @@ const DEFAULT_RECURSION_LIMIT = 1024;
 const RAISED_RECURSION_LIMIT = 4096;
 
 function buildWolframScript(
-  cases: { expr: string; woxiResult: string; idx: number }[]
+  cases: { expr: string; key: string; woxiResult: string; idx: number }[]
 ): string {
   const lines: string[] = [];
   // Deeply nested test expressions need more headroom than a fresh kernel's
@@ -526,6 +526,7 @@ function buildWolframScript(
   // empties symbols, it does not remove them), so the harness creates no
   // `Global`` symbol at all.
   lines.push("WX`DateTol = 90");
+  lines.push("WX`NearRelTol = 10^-8");
   lines.push("WX`RelTol = 0.02");
   lines.push("WX`AbsTol = 0.01");
   lines.push(
@@ -549,6 +550,18 @@ function buildWolframScript(
       " If[Length[WX`a$] =!= Length[WX`b$] || Length[WX`a$] == 0, Return[False]];" +
       " TrueQ[And @@ MapThread[" +
       "Abs[#1 - #2] <= Max[WX`AbsTol, WX`RelTol*Max[Abs[#1], Abs[#2]]] &," +
+      " {WX`a$, WX`b$}]]]"
+  );
+
+  // `WX`NearQ` is `WX`ApproxQ` for values that only differ in their last
+  // digits (see NEAR_MATCH): same skeleton, numbers within 1e-8 relative.
+  lines.push(
+    "WX`NearQ[WX`woxi$_, WX`ws$_] := Module[{WX`a$, WX`b$}," +
+      " If[WX`Skeleton[WX`woxi$] =!= WX`Skeleton[WX`ws$], Return[False]];" +
+      " WX`a$ = WX`Nums[WX`woxi$]; WX`b$ = WX`Nums[WX`ws$];" +
+      " If[Length[WX`a$] =!= Length[WX`b$] || Length[WX`a$] == 0, Return[False]];" +
+      " TrueQ[And @@ MapThread[" +
+      "Abs[#1 - #2] <= WX`NearRelTol*Max[Abs[#1], Abs[#2]] &," +
       " {WX`a$, WX`b$}]]]"
   );
 
@@ -608,7 +621,7 @@ function buildWolframScript(
     );
   }
 
-  for (const { expr, woxiResult, idx } of cases) {
+  for (const { expr, key, woxiResult, idx } of cases) {
     // A `Protect[x]` case leaves `x` protected for the rest of the batch,
     // and `ClearAll` refuses to touch a protected symbol — so a later
     // `Protect[x]` would answer `{}` (nothing left to protect) where a
@@ -676,9 +689,13 @@ function buildWolframScript(
     const wLabel = '"FAIL #' + (idx + 1) + ": " + exprEscaped + '"';
     // Approx cases compare within a numeric tolerance; all others by exact
     // string equality.
-    const mismatchTest = APPROX_MATCH.has(expr)
+    // The tolerance sets are keyed by the case's own expression, which is
+    // `expr` without the setup statements joined in front of it.
+    const mismatchTest = APPROX_MATCH.has(key)
       ? "!WX`ApproxQ[WX`ee$$, WX`rr$$]"
-      : "WX`rr$$ =!= WX`ee$$";
+      : NEAR_MATCH.has(key)
+        ? "!WX`NearQ[WX`ee$$, WX`rr$$]"
+        : "WX`rr$$ =!= WX`ee$$";
     // Wrap in CheckAbort so Abort[]/Interrupt[] calls inside test cases
     // don't kill the entire script run.
     // Strip trailing newlines from both sides before comparison,
@@ -766,6 +783,32 @@ const APPROX_MATCH = new Set([
   "FindMinimum[(x - 3)^2 + (y - 2)^2, {{x, 0, 0, 1}, {y, 0, -10, 10}}]",
 ]);
 
+// Machine values that differ from wolframscript's in their last digits only,
+// compared with `WX`NearQ` (same printed structure, every number within 1e-8
+// relative) instead of being skipped. Each is a case where Woxi's double is
+// the correctly rounded (or exact) one and wolframscript's is not — see
+// "Machine special-function values differ in the last digits" and its
+// neighbours in conformance_gaps.md — or where both engines iterate to a
+// root and stop in different places.
+const NEAR_MATCH = new Set([
+  "PolyGamma[-7.7]",
+  "PolyGamma[2, 0.3]",
+  "PolyGamma[1.46]",
+  "Zeta[3, -2.5]",
+  "HurwitzZeta[0.5, -0.5]",
+  "ExpIntegralEi[1. + 2. I]",
+  // Woxi's inverse transform of the transform is exact, wolframscript's
+  // carries FFT round-off (0.9999999999999999, 3.0000000000000004, …).
+  "InverseFourier[Fourier[{{1, 2, 3}, {3, 4, 7}}]]",
+  // The event time comes out as 6.000000000000001 in wolframscript.
+  "Reap[NDSolve[{x'[t] == 1, x[0] == 0, WhenEvent[Mod[t, 2] == 0, Sow[{t, x[t]}]]}, x, {t, 0, 7}]][[2]]",
+  // Woxi projects onto the circle exactly; wolframscript's iterative
+  // minimisation stops ~3e-10 short.
+  "RegionNearest[ImplicitRegion[x^2 + y^2 == 1, {x, y}], {3., 4.}]",
+  // 1 - Sqrt[3] rounded at the last digit (…772 against …773).
+  "Solve[Norm[{x, y} - {1., 1.}] == Norm[{x, y} - {3., 1.}] == 2, {x, y}]",
+]);
+
 /**
  * Astronomy heads that wolframscript evaluates inside `Block[{$AllowInternet =
  * False}, …]` (see buildWolframScript).
@@ -827,7 +870,7 @@ function truncateStderr(stderr: string, maxLines = 40): string {
  * Returns the raw output string, or throws on failure.
  */
 function runWolframBatch(
-  batch: { expr: string; woxiResult: string; idx: number }[],
+  batch: { expr: string; key: string; woxiResult: string; idx: number }[],
   timeoutMs = 300_000
 ): string {
   const wolframProgram = buildWolframScript(batch);
@@ -867,7 +910,7 @@ function runWolframBatch(
   return res.stdout ?? "";
 }
 
-type BatchCase = { expr: string; woxiResult: string; idx: number };
+type BatchCase = { expr: string; key: string; woxiResult: string; idx: number };
 
 /**
  * How long a (sub-)batch may take. Some single expressions are legitimately
@@ -1527,10 +1570,6 @@ function main() {
     // entire RHS, producing the bizarre `Information["a", LongForm -> True]
     // *(Plus[b])`. Woxi parses ?? as a unary information query on `a`.
     "Hold[??a + b]",
-    // `3.5 I` — Wolfram's REPL prints a pure-imaginary machine real as
-    // `0. + 3.5*I` (the inexact-zero Complex form). Woxi shows just
-    // `3.5*I`. Both are mathematically the same value.
-    "3.5 I",
     // `(I/2)*Pi` parens differ between formatters — Wolfram inserts
     // explicit parens around the rational coefficient, Woxi omits them.
     "ArcCosh[0]",
@@ -2219,6 +2258,13 @@ function main() {
     // solution do conform.
     "NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]",
     "NDSolve[{y'[t] == -y[t], y[1] == 1}, y, {t, 1, 3.5}]",
+    // The same for a ParametricFunction: Wolfram prints its internal state
+    // (an Internal`Bag, a HashTable of the parameters, the solver options).
+    "pf = y /. ParametricNDSolve[{y'[t] == -k y[t]^n, y[0] == 1}, y, {t, 0, 10}, {k, n}]; pf[a, b][2.]",
+    "y /. ParametricNDSolve[{y'[t] == -k y[t], y[0] == 1}, y, {t, 0, 1}, {k}]",
+    // A genuinely complex-valued ODE is unimplemented (see "NDSolve does not
+    // integrate complex-valued equations" in conformance_gaps.md).
+    "NDSolve[{x'[t] == I x[t], x[0] == 1}, x[t], {t, 0, 1}]",
 
     // DynamicModule: Wolfram keeps the wrapper around the evaluated body
     // (`DynamicModule[{x = 2}, 4, DynamicModuleValues :> {}]`) because the
@@ -2382,6 +2428,35 @@ function main() {
     "p = ParametricPlot[{Sin[t], Cos[t]}, {t, 0, 3}][[1]]; {Head[p], Head[p[[1, 2]]]}",
     "Head[First[RevolutionPlot3D[{Cos[t], 1 + Sin[t]}, {t, -Pi/2, 0}, Mesh -> None]]]",
     "First[RevolutionPlot3D[{Cos[t], 1 + Sin[t]}, {t, -Pi/2, 0}, Mesh -> None, PlotStyle -> Opacity[0.2]]][[2, 1]]",
+    "Length[DeleteDuplicates[Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}, ColorFunction -> Function[{x, y, z}, ColorData[\"SouthwestColors\"][z]]][[1]], _RGBColor, Infinity]]] > 10",
+    "Length[Cases[ParametricPlot3D[{t, Cos[u], Sin[u]}, {t, -3, 3}, {u, 0, 2 Pi}, RegionFunction -> (Abs[#1] < 1 &)], _Polygon, Infinity]] < Length[Cases[ParametricPlot3D[{t, Cos[u], Sin[u]}, {t, -3, 3}, {u, 0, 2 Pi}], _Polygon, Infinity]]",
+    "Max[Abs[Cases[ParametricPlot3D[{t, Cos[u], Sin[u]}, {t, -3, 3}, {u, 0, 2 Pi}, RegionFunction -> (Abs[#1] < 1 &)], GraphicsComplex[pts_, _] :> pts[[All, 1]], Infinity][[1]]]] < 1",
+    "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, PlotPoints -> 3][[1]], _RGBColor]",
+    "Map[Length, Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, Mesh -> 3][[1]], Line[l_] :> l, Infinity]]",
+    "Length[ParametricPlot3D[{t, 0, 0}, {t, 0, 1}, PlotRange -> {{0, 0.5}, {-1, 1}, {-1, 1}}][[1]]]",
+    "RevolutionPlot3D[{Sin[t], Cos[t]}, {t, 0, Pi}, {z, 0, 1}][[1, 2, 1]]",
+    "Head[First[RevolutionPlot3D[{{-Sin[s], s}, {Sin[s], s}}, {s, 0, 1}]][[1]]]",
+    "First[RevolutionPlot3D[{Cos[t], 1 + Sin[t]}, {t, -Pi/2, 0}, Mesh -> None, PlotStyle -> Opacity[0.2]]][[2, 2]]",
+    "MemberQ[Part[SphericalPlot3D[1, {u, 0, Pi}, {v, 0, 2 Pi}], 1, 2], EdgeForm[]]",
+    "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, 0, 1}, {y, 0, 1}, {z, 0, 1}, Mesh -> None, PlotPoints -> 4][[1, 2, 1]]",
+    "d = DensityPlot[x y, {x, -3, 3}, {y, -2, 2}]; r = First[d][[1]]; {Head[r], Dimensions[r[[1]]], r[[2]], AspectRatio /. Options[d], Frame /. Options[d]}",
+    "d = DensityPlot[x, {x, 0, 1}, {y, 0, 1}, PlotRange -> {-3, 1}, ColorFunction -> \"TemperatureMap\", PlotLegends -> Automatic]; {Head[d], d[[2]]}",
+    "Round[Cases[RegionPlot[y > x/2 + 1 && y < 3 x/2 - 1, {x, -5, 5}, {y, -5, 5}][[1]], Polygon[p_] :> p, Infinity], 1/1000]",
+    "Cases[RegionPlot[x < 0, {x, -2, 2}, {y, -2, 2}][[1]], Polygon[p_] :> p, Infinity]",
+    "Length[Cases[RegionPlot[{y > x/2 + 1, y < 3 x/2 - 1}, {x, -5, 5}, {y, -5, 5}][[1]], _Polygon, Infinity]]",
+    "Cases[RegionPlot[{y > x/2 + 1, y < 3 x/2 - 1}, {x, -5, 5}, {y, -5, 5}][[1]], RGBColor[c__] :> Round[{c}, 1/100], {3}]",
+    "Length[RegionPlot[{y > x/2 + 1 && y < 3 x/2 - 1}, {x, -5, 5}, {y, -5, 5}][[1]]]",
+    "Cases[RegionPlot[y > x, {x, -1, 1}, {y, -1, 1}, PlotStyle -> Red][[1]], _EdgeForm, Infinity]",
+    "Length[Cases[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]], _Polygon, Infinity]]",
+    "Cases[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}, BoundaryStyle -> Thick][[1]], _EdgeForm, Infinity]",
+    "diskCond = x^2 + y^2 < 1; Length[Cases[RegionPlot[diskCond, {x, -2, 2}, {y, -2, 2}][[1]], _Polygon, Infinity]]",
+    "Cases[RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}][[1]], Polygon[outer_ -> holes_] :> {Length[outer], Length[holes]}, Infinity]",
+    "s = StreamPlot[{x + 2, 0}, {x, -1, 1}, {y, -1, 1}]; segs = SortBy[Cases[s, {Arrowheads[{{a_, _}}], c_RGBColor, Arrow[p_]} :> {Mean[p][[1]], List @@ c, a}, Infinity], First]; {Round[segs[[1, 2]], 0.25], Round[segs[[-1, 2]], 0.25], Max[segs[[All, 3]]]}",
+    "Max[Flatten[Cases[StreamPlot[{x, y}, {x, 0, 1}, {y, 0, 1}, RegionFunction -> Function[{x, y}, x + y < 0.5]][[1]], (Line[p_] | Arrow[p_]) :> (#[[1]] + #[[2]] & /@ p), Infinity]]] < 0.5",
+    // Charts expose no symbolic primitive list (see "Chart functions have no
+    // symbolic primitive list at all" in conformance_gaps.md).
+    "Head[BarChart[{0.3, 0.7}][[1]] /. Disk[c_, r_, a_] :> Disk[c, r*2, a]]",
+    "Length[PieChart[{1, 2, 3}][[1]]]",
 
     // Manipulate's Initialization: Woxi has no DynamicModule to scope it
     // to, and its controls re-resolve the body on every frame, so the
@@ -2416,6 +2491,32 @@ function main() {
     // cases whose *setup* is a context construct; here the construct is in
     // the expression itself.
     'Needs["DifferentialEquations`InterpolatingFunctionAnatomy`"]; InterpolatingFunctionDomain[Interpolation[{1, 4, 9, 16}]]',
+
+    // wolframscript's Hurwitz zeta at a negative s is off in the third digit
+    // (-0.0033354818…; mpmath and Woxi agree on -0.0033395080…). See
+    // "Machine `PolyGamma` and Hurwitz `Zeta` values" in conformance_gaps.md.
+    "Zeta[-5.817415911509695, 0.1295065568974257]",
+
+    // Sin[t] == Sin[t + 2 Pi/5]: wolframscript writes the roots 3 Pi/10 and
+    // -7 Pi/10 as unsimplified ArcTan expressions in nested radicals (see
+    // "Trig equations whose roots wolframscript leaves as ArcTan forms" in
+    // conformance_gaps.md).
+    "Solve[Sin[t] == Sin[t + 2 Pi/5], t]",
+    "Reduce[Sin[t] == Sin[t + 2 Pi/5] && 0 <= t < 2 Pi, t, Reals]",
+    "Reduce[z == Sin[t] && Sin[t] == Sin[t + 2 Pi/5] && Inequality[0, LessEqual, t, Less, 2 Pi] && z > 0, {z, t}, Reals]",
+    // When Reduce factors a shared equation out of its disjunction is not
+    // decoded (see "Reduce keeps a common equation inside each branch").
+    "Reduce[z == Sin[t] && Sin[t] == 1/2 && 0 <= t < 2 Pi && z > 0, {z, t}, Reals]",
+    // RegionCentroid of a difference: wolframscript discretizes an inexact
+    // disk (…11784 against the exact …11841), and works out the part of a
+    // hole that sticks out, which Woxi leaves unevaluated (see
+    // "RegionCentroid of a region difference" in conformance_gaps.md).
+    "RegionCentroid[RegionDifference[Rectangle[{-1, -1}, {1, 1}], Disk[{0.38, 0.38}, 0.55]]]",
+    "RegionCentroid[RegionDifference[Rectangle[{0, 0}, {2, 2}], Disk[{2, 2}, 1]]]",
+    // HighlightImage rasterizes through the front end at the display's
+    // scale (twice the pixels on a Retina Mac, with a minimum height), see
+    // "HighlightImage returns the image at its own size".
+    "img = ConstantImage[Black, {20, 10}]; r = HighlightImage[img, ImageMarker[{{10, 0}, {10, 10}}, Graphics[{White, Thick, Line[{{0, 0}, {0, 10}}]}]]]; {ImageDimensions[r], ImageData[r][[5, 10]][[1]] > 0.5, ImageData[r][[5, 3]][[1]]}",
   ]);
 
   /** Names whose meaning depends on where one input unit ends and the next
@@ -2449,13 +2550,35 @@ function main() {
       !IMPL_SPECIFIC_PATTERNS.some((p) => p.test(c.expr)) &&
       !EXACT_EXPR_SKIP.has(c.expr)
   );
+  // `WX_MATCH=<regex>` keeps only the cases whose expression (or a setup
+  // statement) matches — enough to re-check a handful of fixes against
+  // wolframscript without running whole files.
+  if (process.env.WX_MATCH) {
+    const re = new RegExp(process.env.WX_MATCH);
+    const kept = cases.filter(
+      (c) => re.test(c.expr) || (c.setup ?? []).some((s) => re.test(s))
+    );
+    cases.length = 0;
+    cases.push(...kept);
+  }
+
   const skipped = allCases.length - cases.length;
   const tested = cases.length;
+
+  // `WX_LIST=1` prints the cases that would be compared — `file:line` and
+  // the exact expression a skip-list entry has to name — and stops before
+  // running anything.
+  if (process.env.WX_LIST) {
+    for (const c of cases) {
+      console.log(`${c.file.replace(ROOT + "/", "")}:${c.line}\t${JSON.stringify(c.expr)}`);
+    }
+    return;
+  }
 
   // Step 1: Run each expression through woxi eval with ToString[_, InputForm]
   // Woxi is fast (~20ms per call), so this takes ~10s for 500 tests.
   console.log(`Running ${tested} test cases through woxi eval (${skipped} skipped)...`);
-  const woxiResults: { expr: string; woxiResult: string; idx: number }[] = [];
+  const woxiResults: { expr: string; key: string; woxiResult: string; idx: number }[] = [];
   for (let i = 0; i < tested; i++) {
     const { expr, setup } = cases[i];
     // For expressions with setup, prepend setup code. Drop setup entries that
@@ -2471,7 +2594,7 @@ function main() {
         ])
       : expr;
     const result = runWoxi(fullExpr);
-    woxiResults.push({ expr: fullExpr, woxiResult: result, idx: i });
+    woxiResults.push({ expr: fullExpr, key: expr, woxiResult: result, idx: i });
   }
 
   // Filter out rendered-object placeholders: Graphics/Image objects render

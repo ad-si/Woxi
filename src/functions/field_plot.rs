@@ -280,6 +280,8 @@ struct DensityContourOptions {
   /// `FrameTicks`: whether the bottom (x) and left (y) edges keep their
   /// tick marks and labels.
   frame_ticks: (bool, bool),
+  /// `Frame -> False` leaves out the box (and its ticks) around the plot.
+  frame: bool,
   /// `Epilog -> {…}`: graphics primitives drawn over the finished plot,
   /// in data coordinates.
   epilog: Vec<Expr>,
@@ -422,6 +424,7 @@ fn parse_density_contour_options(
   let mut contour_styles = Vec::new();
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
   let mut frame_ticks = (true, true);
+  let mut frame = true;
   let mut epilog: Vec<Expr> = Vec::new();
   let mut region_function: Option<Expr> = None;
   let mut color_function_expr: Option<Expr> = None;
@@ -513,6 +516,9 @@ fn parse_density_contour_options(
         "FrameLabel" => {
           frame_labels = crate::functions::plot::parse_frame_label(replacement);
         }
+        "Frame" => {
+          frame = !matches!(replacement, Expr::Identifier(v) if v == "False");
+        }
         "FrameTicks" => {
           frame_ticks =
             crate::functions::plot::frame_tick_axes_visible(replacement);
@@ -546,6 +552,9 @@ fn parse_density_contour_options(
       }
     }
   }
+  if !frame {
+    frame_ticks = (false, false);
+  }
   DensityContourOptions {
     svg_width,
     svg_height,
@@ -561,6 +570,7 @@ fn parse_density_contour_options(
     contour_styles,
     frame_labels,
     frame_ticks,
+    frame,
     epilog,
     prolog: parse_overlay_primitives(args, start, "Prolog"),
     plot_label: parse_field_plot_label(args, start),
@@ -1957,13 +1967,15 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       area.plot_h,
     );
   }
-  push_frame(
-    &mut svg,
-    area.plot_x0,
-    area.plot_y0,
-    area.plot_w,
-    area.plot_h,
-  );
+  if opts.frame {
+    push_frame(
+      &mut svg,
+      area.plot_x0,
+      area.plot_y0,
+      area.plot_w,
+      area.plot_h,
+    );
+  }
   push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
@@ -2400,13 +2412,15 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     contour_weight,
     "",
   );
-  push_frame(
-    &mut svg,
-    area.plot_x0,
-    area.plot_y0,
-    area.plot_w,
-    area.plot_h,
-  );
+  if opts.frame {
+    push_frame(
+      &mut svg,
+      area.plot_x0,
+      area.plot_y0,
+      area.plot_w,
+      area.plot_h,
+    );
+  }
   push_field_plot_overlays(&mut svg, &area, &opts);
   if opts.contour_labels {
     push_contour_labels(&mut svg, &grid, &levels, &area);
@@ -2574,19 +2588,22 @@ fn contour_plot_equations(
           thickness: series_thickness,
           point_size: None,
           dashing: None,
+          opacity: None,
         });
       }
     }
     series_per_body.push(first_series..series.len());
   }
 
-  push_frame(
-    &mut svg,
-    area.plot_x0,
-    area.plot_y0,
-    area.plot_w,
-    area.plot_h,
-  );
+  if opts.frame {
+    push_frame(
+      &mut svg,
+      area.plot_x0,
+      area.plot_y0,
+      area.plot_w,
+      area.plot_h,
+    );
+  }
   push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
@@ -3984,13 +4001,15 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.color_function.as_deref(),
     opts.cf_expr(),
   );
-  push_frame(
-    &mut svg,
-    area.plot_x0,
-    area.plot_y0,
-    area.plot_w,
-    area.plot_h,
-  );
+  if opts.frame {
+    push_frame(
+      &mut svg,
+      area.plot_x0,
+      area.plot_y0,
+      area.plot_w,
+      area.plot_h,
+    );
+  }
   push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
@@ -4299,13 +4318,15 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     contour_weight,
     "",
   );
-  push_frame(
-    &mut svg,
-    area.plot_x0,
-    area.plot_y0,
-    area.plot_w,
-    area.plot_h,
-  );
+  if opts.frame {
+    push_frame(
+      &mut svg,
+      area.plot_x0,
+      area.plot_y0,
+      area.plot_w,
+      area.plot_h,
+    );
+  }
   push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
@@ -4845,8 +4866,40 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The symbolic content, as `First`/`Part` see it: a `Raster` of the cell
   // colors with the first row at the top (`Raster` rows run bottom-up, so a
   // default plot lists them reversed) over the `DataRange` rectangle.
-  let ((x0, x1), (y0, y1)) =
-    data_range.unwrap_or(((0.0, n_cols as f64), (0.0, n_rows as f64)));
+  // `DataRange` places the cell *centers*, so the raster reaches half a
+  // cell beyond it (a single cell spans the whole range); without one the
+  // cells sit on the integer grid {{0, 0}, {cols, rows}}.
+  let rect = match data_range {
+    Some(((x0, x1), (y0, y1))) => {
+      let widen = |lo: f64, hi: f64, n: usize| {
+        if n > 1 {
+          let half = (hi - lo) / (n - 1) as f64 / 2.0;
+          (lo - half, hi + half)
+        } else {
+          (lo, hi)
+        }
+      };
+      let (x0, x1) = widen(x0, x1, n_cols);
+      let (y0, y1) = widen(y0, y1, n_rows);
+      Expr::List(
+        vec![
+          Expr::List(vec![Expr::Real(x0), Expr::Real(y0)].into()),
+          Expr::List(vec![Expr::Real(x1), Expr::Real(y1)].into()),
+        ]
+        .into(),
+      )
+    }
+    None => Expr::List(
+      vec![
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+        Expr::List(
+          vec![Expr::Integer(n_cols as i128), Expr::Integer(n_rows as i128)]
+            .into(),
+        ),
+      ]
+      .into(),
+    ),
+  };
   let channel = |v: u8| Expr::Real(f64::from(v) / 255.0);
   let mut raster_rows: Vec<Expr> = cell_rgb
     .iter()
@@ -4865,13 +4918,6 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !data_reversed {
     raster_rows.reverse();
   }
-  let rect = Expr::List(
-    vec![
-      Expr::List(vec![Expr::Real(x0), Expr::Real(y0)].into()),
-      Expr::List(vec![Expr::Real(x1), Expr::Real(y1)].into()),
-    ]
-    .into(),
-  );
   let structure = call1(
     "Graphics",
     call("Raster", vec![Expr::List(raster_rows.into()), rect]),

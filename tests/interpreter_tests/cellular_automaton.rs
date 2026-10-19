@@ -186,6 +186,30 @@ mod cellular_automaton {
   }
 
   #[test]
+  fn function_rule_one_dimensional_cyclic() {
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{Total[#] &, {}, {{-1}, {0}, {1}}}, {1, 2, 3, 4}, 2]"
+      )
+      .unwrap(),
+      "{{1, 2, 3, 4}, {7, 6, 9, 8}, {21, 22, 23, 24}}"
+    );
+  }
+
+  #[test]
+  fn function_rule_two_dimensional_negative_cells() {
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{If[#[[1]] == #[[5]], 1, -7] &, {}, \
+         {{-1, 0}, {0, -1}, {1, 0}, {0, 1}, {0, 0}}}, \
+         {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}, 1]"
+      )
+      .unwrap(),
+      "{{{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}, {{1, 1, 1}, {-7, 1, -7}, {-7, 1, -7}}}"
+    );
+  }
+
+  #[test]
   fn two_dimensional_growth_rule() {
     // Outer totalistic 5-neighbor code 942: a dead cell with exactly one
     // (or all four) live orthogonal neighbors is born, live cells survive.

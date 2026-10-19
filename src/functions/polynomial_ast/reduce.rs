@@ -2961,19 +2961,26 @@ fn normalize_solution_branches(expr: &Expr, vars: &[String]) -> Expr {
   let mut seen = std::collections::HashSet::new();
   let mut branches = Vec::new();
   for mut conj in dnf(expr) {
-    let mut keyed: Vec<(usize, Expr)> = conj
-      .drain(..)
-      .map(|lit| {
-        let comparison = extract_comparison(&lit);
-        let idx = match comparison.as_ref() {
-          Some((Expr::Identifier(v), _, CompOp::Equal)) => {
-            vars.iter().position(|w| w == v).unwrap_or(vars.len())
-          }
-          _ => vars.len(),
-        };
-        (idx, lit)
+    let solved_index = |lit: &Expr| match &extract_comparison(lit) {
+      Some((Expr::Identifier(v), _, CompOp::Equal)) => {
+        vars.iter().position(|w| w == v)
+      }
+      _ => None,
+    };
+    // A condition such as `x != 0` stays in front of the solution it was
+    // generated with (`x != 0 && y == 2/x`, `A == 0 && C != 0 && B ==
+    // C^(-1)`); one that precedes none sits with the last unknown it
+    // mentions.
+    let keys: Vec<usize> = (0..conj.len())
+      .map(|i| {
+        solved_index(&conj[i])
+          .or_else(|| conj[i + 1..].iter().find_map(&solved_index))
+          .or_else(|| vars.iter().rposition(|w| contains_var(&conj[i], w)))
+          .unwrap_or(vars.len())
       })
       .collect();
+    let mut keyed: Vec<(usize, Expr)> =
+      keys.into_iter().zip(conj.drain(..)).collect();
     keyed.sort_by_key(|(idx, _)| *idx);
     let lits: Vec<Expr> = keyed.into_iter().map(|(_, l)| l).collect();
     let key = lits
@@ -3176,6 +3183,7 @@ fn reduce_multi_var_and_inner(
   });
   let mut solved_any_system = false;
   for (i, var, lhs, rhs, _deg) in candidates {
+    let mut degenerate_results: Vec<Expr> = Vec::new();
     let eq = Expr::Comparison {
       operands: vec![lhs, rhs],
       operators: vec![ComparisonOp::Equal],
@@ -3191,8 +3199,38 @@ fn reduce_multi_var_and_inner(
             if let Expr::Rule { replacement, .. } = rule {
               let value = replacement.as_ref();
 
+              // A value with the other unknowns in its denominator only
+              // holds where that denominator does not vanish
+              // (`x != 0 && y == 2/x`); where it does, the equation is
+              // solved afresh (`a == 0 && b == 0` for `a y == b`).
+              let dens = vanishing_denominators(value, vars);
+              for d in &dens {
+                let key = expr_to_string(d);
+                if ASSUMED_ZERO_DENOMINATORS.with(|z| z.borrow().contains(&key))
+                {
+                  continue;
+                }
+                ASSUMED_ZERO_DENOMINATORS.with(|z| z.borrow_mut().push(key));
+                let mut degenerate = constraints.to_vec();
+                degenerate.push(make_equality(d, &Expr::Integer(0)));
+                let branch =
+                  reduce_multi_var_and_inner(&degenerate, vars, domain);
+                ASSUMED_ZERO_DENOMINATORS.with(|z| z.borrow_mut().pop());
+                let branch = branch?;
+                if !matches!(&branch, Expr::Identifier(s) if s == "False") {
+                  degenerate_results.push(branch);
+                }
+              }
+              let nonzero: Vec<Expr> = dens
+                .iter()
+                .map(|d| Expr::Comparison {
+                  operands: vec![d.clone(), Expr::Integer(0)],
+                  operators: vec![ComparisonOp::NotEqual],
+                })
+                .collect();
+
               // Substitute into remaining constraints
-              let remaining: Vec<Expr> = constraints
+              let mut remaining: Vec<Expr> = constraints
                 .iter()
                 .enumerate()
                 .filter(|(j, _)| *j != i)
@@ -3204,6 +3242,9 @@ fn reduce_multi_var_and_inner(
                     .unwrap_or(substituted)
                 })
                 .collect();
+              if !remaining.is_empty() {
+                remaining.extend(nonzero.iter().cloned());
+              }
 
               let remaining_vars: Vec<String> = vars
                 .iter()
@@ -3216,7 +3257,9 @@ fn reduce_multi_var_and_inner(
                 // remaining variables (if any) or is a constant solution.
                 let var_eq =
                   make_equality(&Expr::Identifier(var.clone()), value);
-                all_results.push(var_eq);
+                let mut parts = nonzero.clone();
+                parts.push(var_eq);
+                all_results.push(and_chain(&parts));
               } else if remaining_vars.is_empty() {
                 // Check if remaining constraints are satisfied
                 let combined = remaining
@@ -3290,8 +3333,9 @@ fn reduce_multi_var_and_inner(
       }
 
       solved_any_system = true;
-      if !all_results.is_empty() {
-        return Ok(build_or(all_results));
+      if !all_results.is_empty() || !degenerate_results.is_empty() {
+        degenerate_results.extend(all_results);
+        return Ok(build_or(degenerate_results));
       }
     }
   }
@@ -3316,6 +3360,52 @@ fn reduce_multi_var_and_inner(
       vec![combined, vars_expr]
     }
   }))
+}
+
+thread_local! {
+  /// Denominators a degenerate Reduce branch is solving under `d == 0`, so
+  /// that branch does not split on the same denominator again.
+  static ASSUMED_ZERO_DENOMINATORS: std::cell::RefCell<Vec<String>> =
+    const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The factors of `value`'s denominator that involve one of `vars` — those
+/// whose vanishing the solution excludes. A power counts as its base.
+fn vanishing_denominators(value: &Expr, vars: &[String]) -> Vec<Expr> {
+  let Ok(den) = crate::evaluator::evaluate_expr_to_expr(&call1(
+    "Denominator",
+    value.clone(),
+  )) else {
+    return Vec::new();
+  };
+  let factors: Vec<Expr> = match &den {
+    Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+    other => vec![other.clone()],
+  };
+  let mut out: Vec<Expr> = Vec::new();
+  for f in factors {
+    let base = match &f {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        args[0].clone()
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        ..
+      } => left.as_ref().clone(),
+      _ => f,
+    };
+    if vars.iter().any(|v| contains_var(&base, v))
+      && !out
+        .iter()
+        .any(|o| expr_to_string(o) == expr_to_string(&base))
+    {
+      out.push(base);
+    }
+  }
+  out
 }
 
 /// Check if a value is in a given domain.

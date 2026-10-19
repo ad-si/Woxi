@@ -2731,69 +2731,178 @@ static SUPPORTED_PROPERTIES: &[&str] = &[
   "YoungModulus",
 ];
 
-// Properties `get_property` answers (with real data or `Missing[NotAvailable]`)
-// but that are kept out of `SUPPORTED_PROPERTIES` because it isn't verified
-// whether wolframscript's `ElementData["Properties"]` enumeration lists them
-// (see `StableIsotopes`'s own carve-out in `get_property` above). Recognised
-// here so `ElementData[…, property, "Description"]` still answers for them.
-static PROPERTIES_EXCLUDED_FROM_ENUMERATION: &[&str] = &[
-  "CriticalPressure",
-  "CriticalTemperature",
-  "ElectricalConductivity",
-  "HalfLife",
-  "HumanAbundance",
-  "MeteoriteAbundance",
-  "NeutronCrossSection",
-  "NeutronMassAbsorption",
-  "OceanAbundance",
-  "SolarAbundance",
-  "StableIsotopes",
-  "ThermalExpansion",
-  "UniverseAbundance",
-  "Valence",
+/// What `ElementData[elem, property, "Description"]` answers: wolframscript's
+/// own name for the property, independent of the element. Sorted by
+/// property, for the binary search in `property_description`. Besides the
+/// canonical properties of `ElementData["Properties"]` it holds the legacy
+/// names wolframscript still describes (`"Density"` is "mass density").
+static PROPERTY_DESCRIPTIONS: &[(&str, &str)] = &[
+  ("Abbreviation", "atomic symbol"),
+  ("AdiabaticIndex", "adiabatic index"),
+  ("AllotropeNames", "allotropes"),
+  ("AllotropicMultiplicities", "allotropic multiplicities"),
+  ("AlternateNames", "alternate names"),
+  ("AtomicMass", "atomic mass"),
+  ("AtomicNumber", "atomic number"),
+  ("AtomicRadius", "atomic radius"),
+  ("AtomicSymbol", "atomic symbol"),
+  ("AtomicWeight", "atomic mass"),
+  ("Block", "block"),
+  ("BohrModelPlot", "Bohr model plot"),
+  ("BoilingPoint", "boiling point"),
+  ("BrinellHardness", "Brinell hardness"),
+  ("BulkModulus", "bulk modulus"),
+  ("CASNumber", "CAS number"),
+  ("Color", "color"),
+  ("CommonCompounds", "common compound names"),
+  ("CovalentRadius", "covalent radius"),
+  ("CriticalPressure", "critical pressure"),
+  ("CriticalTemperature", "critical temperature"),
+  ("CrustAbundance", "crust abundance"),
+  ("CrustMolarAbundance", "crust molar abundance"),
+  ("CrystalStructure", "Bravais lattice"),
+  ("CrystalStructureImage", "lattice schematic"),
+  ("CuriePoint", "Curie point"),
+  (
+    "DebyeCharacteristicTemperature",
+    "Debye characteristic temperature",
+  ),
+  ("DecayMode", "decay mode"),
+  ("Density", "mass density"),
+  ("Discoverers", "discoverers"),
+  ("DiscoveryCountries", "discovery country"),
+  ("DiscoveryDate", "discovery date"),
+  ("DiscoveryYear", "discovery date"),
+  ("ElectricalConductivity", "electrical conductivity"),
+  ("ElectricalType", "electrical type"),
+  ("ElectronAffinity", "electron affinity"),
+  ("ElectronConfiguration", "orbital occupation list"),
+  (
+    "ElectronConfigurationString",
+    "electron configuration string",
+  ),
+  ("ElectronCount", "electron count"),
+  ("ElectronShellConfiguration", "electron shell configuration"),
+  ("Electronegativity", "electronegativity"),
+  ("ElectronicConfiguration", "electronic configuration"),
+  ("EntityClasses", "entity classes"),
+  ("EntityTypeList", "entity type list"),
+  ("FusionHeat", "molar heat of fusion"),
+  ("GasAtomicMultiplicities", "gas atomic multiplicities"),
+  ("Group", "group"),
+  ("HalfLife", "half‐life"),
+  ("HumanAbundance", "human abundance"),
+  ("HumanMolarAbundance", "human molar abundance"),
+  ("IconColor", "icon color"),
+  ("Image", "image"),
+  ("IonizationEnergies", "ionization energies"),
+  ("IsotopeAbundances", "isotope abundances"),
+  ("IsotopeHalfLives", "isotope half-lives"),
+  ("IsotopeLifetimes", "isotope lifetimes"),
+  ("KnownIsotopes", "known isotopes"),
+  ("KnownOxidationStates", "known oxidation states"),
+  ("LatticeAngles", "lattice angles"),
+  ("LatticeConstants", "lattice constants"),
+  ("LewisDotStructureDiagram", "Lewis dot structure"),
+  ("LiquidDensity", "liquid density"),
+  ("MagneticType", "magnetic type"),
+  ("MassDensity", "mass density"),
+  ("MassMagneticSusceptibility", "mass magnetic susceptibility"),
+  ("MeltingPoint", "melting point"),
+  ("Memberships", "memberships"),
+  ("MeteoriteAbundance", "meteorite abundance"),
+  ("MeteoriteMolarAbundance", "meteorite molar abundance"),
+  ("MohsHardness", "Mohs hardness"),
+  ("MolarHeatCapacity", "molar heat capacity"),
+  (
+    "MolarMagneticSusceptibility",
+    "molar magnetic susceptibility",
+  ),
+  ("MolarMass", "molar mass"),
+  ("MolarRadioactivity", "molar radioactivity"),
+  ("MolarVolume", "molar volume"),
+  ("MostCommonOxidationStates", "most common oxidation states"),
+  ("Name", "name"),
+  ("NeelPoint", "Néel point"),
+  ("NeutronCount", "number of neutrons per isotope"),
+  ("NeutronCrossSection", "neutron cross-section"),
+  ("NeutronMassAbsorption", "neutron mass absorption"),
+  ("NuclearDiameter", "nuclear diameter"),
+  ("NuclearRadius", "nuclear radius"),
+  ("OceanAbundance", "ocean abundance"),
+  ("OceanMolarAbundance", "ocean molar abundance"),
+  ("OrbitalOccupationList", "orbital occupation list"),
+  ("Origins", "origins"),
+  ("Period", "period"),
+  ("Phase", "phase at STP"),
+  ("PoissonRatio", "Poisson ratio"),
+  ("Price", "price"),
+  ("ProtonCount", "proton count"),
+  ("RefractiveIndex", "refractive index"),
+  ("Resistivity", "resistivity"),
+  ("Series", "series"),
+  ("ShearModulus", "shear modulus"),
+  (
+    "ShortElectronicConfiguration",
+    "short electronic configuration",
+  ),
+  ("SolarAbundance", "solar abundance"),
+  ("SolarMolarAbundance", "solar molar abundance"),
+  ("SolidificationHeat", "molar heat of solidification"),
+  ("SoundSpeed", "sound speed"),
+  ("SpaceGroup", "space group"),
+  ("SpaceGroupNumber", "IUCr space group number"),
+  ("SpecificFusionHeat", "specific heat of fusion"),
+  ("SpecificHeat", "specific heat capacity"),
+  ("SpecificIonizationEnergies", "specific ionization energies"),
+  ("SpecificRadioactivity", "specific radioactivity"),
+  (
+    "SpecificSolidificationHeat",
+    "specific heat of solidification",
+  ),
+  ("StableIsotopes", "stable isotopes"),
+  ("SuperconductingPoint", "superconducting point"),
+  ("TensileYieldStrength", "tensile yield strength"),
+  ("TermSymbol", "term symbol"),
+  ("ThermalConductivity", "thermal conductivity"),
+  ("ThermalExpansion", "thermal expansion"),
+  ("ThresholdFrequency", "threshold frequency"),
+  ("UltimateTensileStrength", "ultimate tensile strength"),
+  ("UniverseAbundance", "universe abundance"),
+  ("UniverseMolarAbundance", "universe molar abundance"),
+  ("UnstableIsotopes", "unstable isotopes"),
+  ("Valence", "valence"),
+  ("ValenceElectronCount", "valence electron count"),
+  ("VanDerWaalsRadius", "van der Waals radius"),
+  ("VaporizationHeat", "molar heat of vaporization"),
+  ("VickersHardness", "Vickers hardness"),
+  (
+    "VolumeMagneticSusceptibility",
+    "volume magnetic susceptibility",
+  ),
+  ("WorkFunction", "work function"),
+  ("YoungModulus", "Young modulus"),
 ];
 
-fn is_recognized_property(property: &str) -> bool {
-  SUPPORTED_PROPERTIES.contains(&property)
-    || PROPERTIES_EXCLUDED_FROM_ENUMERATION.contains(&property)
-}
+/// Legacy property names wolframscript recognizes but has no description
+/// for: their annotation is `Missing["UnknownType", property]`.
+static UNDESCRIBED_PROPERTIES: &[&str] = &[
+  "AbsoluteBoilingPoint",
+  "AbsoluteMeltingPoint",
+  "StandardName",
+];
 
-/// A human-readable name for an `ElementData` property, independent of
-/// which element it's asked about — what `ElementData[elem, property,
-/// "Description"]` answers. Most properties are just their CamelCase name
-/// decamelized to lowercase words; a handful keep the capitalization and
-/// possessive/hyphenated form of the eponym or compound term they're
-/// commonly known by (e.g. "Young's modulus", "half-life") the way
-/// reference works on materials science and chemistry name them.
-fn property_description(property: &str) -> String {
-  match property {
-    "YoungModulus" => "Young's modulus".to_string(),
-    "BrinellHardness" => "Brinell hardness".to_string(),
-    "MohsHardness" => "Mohs hardness".to_string(),
-    "VickersHardness" => "Vickers hardness".to_string(),
-    "VanDerWaalsRadius" => "Van der Waals radius".to_string(),
-    "VaporizationHeat" => "heat of vaporization".to_string(),
-    "HalfLife" => "half-life".to_string(),
-    "NeutronCrossSection" => "neutron cross-section".to_string(),
-    _ => decamelize(property),
+/// `ElementData[_, property, "Description"]`, or `None` for a property
+/// wolframscript does not know.
+fn property_description(property: &str) -> Option<Expr> {
+  if let Ok(i) =
+    PROPERTY_DESCRIPTIONS.binary_search_by(|(p, _)| (*p).cmp(property))
+  {
+    return Some(str_expr(PROPERTY_DESCRIPTIONS[i].1));
   }
-}
-
-/// Splits a CamelCase identifier into lowercase words: `"AbsoluteBoilingPoint"`
-/// → `"absolute boiling point"`.
-fn decamelize(name: &str) -> String {
-  let mut out = String::with_capacity(name.len() + 4);
-  for (i, c) in name.chars().enumerate() {
-    if c.is_uppercase() {
-      if i > 0 {
-        out.push(' ');
-      }
-      out.extend(c.to_lowercase());
-    } else {
-      out.push(c);
-    }
-  }
-  out
+  UNDESCRIBED_PROPERTIES
+    .contains(&property)
+    .then(|| call("Missing", vec![str_expr("UnknownType"), str_expr(property)]))
 }
 
 pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2855,21 +2964,22 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     3 => {
       // ElementData[element, property, annotation] — an annotation *about*
-      // the property itself, not a per-element datum. Only "Description"
-      // is implemented, matching the one annotation the Demonstrations
-      // site's Manipulate controls build their PopupMenu labels from.
-      if find_element(&args[0]).is_none() {
-        return Ok(unevaluated("ElementData", args));
-      }
+      // the property itself, not a per-element datum, so the element is not
+      // looked at. Only "Description" is implemented, the annotation the
+      // Demonstrations site's Manipulate controls build their PopupMenu
+      // labels from.
       match (&args[1], &args[2]) {
         (Expr::String(prop), Expr::String(annotation))
           if annotation == "Description" =>
         {
-          if is_recognized_property(prop) {
-            Ok(Expr::String(property_description(prop)))
-          } else {
-            Ok(missing_not_found())
-          }
+          Ok(property_description(prop).unwrap_or_else(|| {
+            crate::emit_message(&format!(
+              "ElementData::notprop: {prop} is not a known property for \
+               ElementData. Use ElementData[\"Properties\"] for a list of \
+               properties."
+            ));
+            unevaluated("ElementData", args)
+          }))
         }
         _ => Ok(unevaluated("ElementData", args)),
       }

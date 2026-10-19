@@ -2759,17 +2759,46 @@ mod interpreter_tests {
     );
   }
 
+  // The package writes the quantile ellipsoid with semi-axes Sqrt[q λ] along
+  // the covariance's eigenvectors — or, for an exact diagonal covariance,
+  // with just the semi-axes.
   #[test]
   fn test_ellipsoid_quantile_is_scaled_covariance_ellipsoid() {
     clear_state();
     assert_eq!(
       interpret(
-        "MultivariateStatistics`EllipsoidQuantile[\
+        "Needs[\"MultivariateStatistics`\"]; \
+         MultivariateStatistics`EllipsoidQuantile[\
          MultinormalDistribution[{1, 2}, {{4., 0.}, {0., 1.}}], 0.5]"
       )
       .unwrap(),
-      "Ellipsoid[{1, 2}, {{5.545177444479556, 0.}, {0., 1.386294361119889}}]"
+      "Ellipsoid[{1, 2}, {2.3548200450309493, 1.1774100225154747}, \
+       {{-1., 0.}, {0., -1.}}]"
     );
+    assert_eq!(
+      interpret(
+        "Needs[\"MultivariateStatistics`\"]; \
+         MultivariateStatistics`EllipsoidQuantile[\
+         MultinormalDistribution[{0, 0}, {{1, 0}, {0, 4}}], 1/2]"
+      )
+      .unwrap(),
+      "Ellipsoid[{0, 0}, {Sqrt[2*InverseGammaRegularized[1, 0, 1/2]], \
+       2*Sqrt[2*InverseGammaRegularized[1, 0, 1/2]]}]"
+    );
+    assert_eq!(
+      interpret("InverseGammaRegularized[1, 0, 0.5] == Log[2.]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn test_graphics_draws_ellipsoid_with_directions() {
+    let svg = interpret(
+      "ExportString[Graphics[Ellipsoid[{0, 0}, {2, 1}, \
+       {{1, 1}, {-1, 1}}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("<polygon"), "{svg}");
   }
 
   #[test]

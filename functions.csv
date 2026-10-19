@@ -1038,7 +1038,7 @@ MeshPrimitives,Cells of a mesh region of a given dimension with their coordinate
 CircleTimes,Symbolic tensor product operator with Unicode display,✅,pure,3.0,1017
 VectorPlot3D,Creates a 3D vector field plot,✅,pure,7.0,1018
 RandomPoint,,🚫,,10.2,1020
-TemplateBox,,🚫,,7.0,1020
+TemplateBox,Front-end display template box such as the RowDefault template of a Row,✅,pure,7.0,1020
 ExpressionCell,Requires external services or GUI infrastructure,🚫,io,6.0,1021
 StartOfString,Represents the start of a string in string patterns,✅,1,5.1,1022
 SameTest,,🚫,,2.0,1024
@@ -1603,7 +1603,7 @@ HoldRest,Attribute holding all but first argument,✅,pure,1.0,1600
 LineSpacing,Line spacing specification,,unevaluated,3.0,1601
 FunctionRange,Range of a real function as a condition on the output variable,✅,pure,10.0,1604
 StringInsert,Inserts a string at a specified position,✅,pure,2.0,1604
-Vectors,Vector space domain,,unevaluated,9.0,1604
+Vectors,Vector space domain,✅,none,9.0,1604
 SectorOrigin,Sector origin in pie charts,,unevaluated,7.0,1605
 JacobiSymbol,Compute the Jacobi symbol for quadratic residue testing,✅,pure,1.0,1606
 MaxTrainingRounds,Max training iterations,,unevaluated,11.0,1607
@@ -1748,7 +1748,7 @@ Language,Language option,,unevaluated,3.0,1749
 SequenceCases,Finds matching subsequences in a list (supports a count limit and the Overlaps option),✅,pure,10.1,1751
 TimeConstraint,Time constraint option,,unevaluated,3.0,1751
 DoubleRightTee,Inert operator displayed with the ⊨ symbol,✅,pure,3.0,1752
-Matrices,Matrix domain,,unevaluated,9.0,1753
+Matrices,Matrix domain,✅,none,9.0,1753
 JoinedCurve,Joined curve graphics primitive,✅,unevaluated,8.0,1754
 DefaultButton,Default button control,,unevaluated,6.0,1760
 GeoMarker,Geographic marker primitive for GeoGraphics,✅,pure,10.0,1760
@@ -1833,7 +1833,7 @@ ViewCenter,View center option,,unevaluated,2.0,1838
 FileType,Returns the type of a file (File Directory or None),✅,filesystem,2.0,1842
 FourierSinSeries,Fourier sine series,,unevaluated,7.0,1842
 MathieuCharacteristicA,Mathieu characteristic A,,unevaluated,3.0,1842
-QuantilePlot,Quantile plot,,unevaluated,8.0,1842
+QuantilePlot,Plots dataset quantiles against standard normal quantiles (or against a second dataset) with a reference line,✅,pure,8.0,1842
 ResourceObject,Resource object,,unevaluated,11.0,1844
 StieltjesGamma,Stieltjes constants (gamma_0 is EulerGamma; generalized order-0 is -PolyGamma; N gives machine values up to order 10),✅,pure,3.0,1844
 DynamicWrapper,Dynamic wrapper (stays symbolic in script mode),✅,unevaluated,8.0,1846
@@ -3536,7 +3536,6 @@ Dialog,,🚫,,2.0,3612
 DiscreteShift,Discrete shift of an expression (n -> n+1),✅,pure,7.0,3612
 GaugeFaceStyle,,🚫,,9.0,3612
 HilbertCurve,Line through all cells of the 2^n x 2^n grid in Hilbert order (integer grid; DataRange maps to reals),✅,pure,11.1,3612
-GosperCurve,Line through the 7^n + 1 vertices of the order-n Gosper curve on the triangular lattice (L-system generated; orientation not verified against wolframscript),✅,pure,11.1,
 KumaraswamyDistribution,Kumaraswamy continuous distribution on the unit interval,✅,pure,8.0,3612
 LogLogisticDistribution,Log-logistic distribution with shape g and scale s,✅,pure,8.0,3612
 LongestCommonSequence,Returns the longest noncontiguous subsequence common to two strings or lists,✅,pure,7.0,3612

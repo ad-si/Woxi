@@ -2355,11 +2355,11 @@ mod complex_float_trig_tests {
   fn hyperbolic_reciprocals_of_complex_floats() {
     assert_eq!(
       interpret("Tanh[1.+I]").unwrap(),
-      "1.0839233273386946 + 0.2717525853195117*I"
+      "1.0839233273386946 + 0.27175258531951174*I"
     );
     assert_eq!(
       interpret("Coth[1.+I]").unwrap(),
-      "0.8680141428959249 - 0.21762156185440265*I"
+      "0.8680141428959249 - 0.2176215618544027*I"
     );
     assert_eq!(
       interpret("Sech[1.+I]").unwrap(),
@@ -2371,11 +2371,27 @@ mod complex_float_trig_tests {
     );
   }
 
+  // Tan/Tanh use the double-angle forms and Cot/Coth their reciprocals,
+  // which round like wolframscript's machine values to the last bit.
+  #[test]
+  fn tan_family_rounds_like_wolframscript() {
+    assert_eq!(
+      interpret(
+        "{Tan[1.+I], Tan[2. + 0.5 I], Cot[-0.7 + 3. I], Coth[2.5 + 0.1 I]}"
+      )
+      .unwrap(),
+      "{0.27175258531951174 + 1.0839233273386946*I, \
+       -0.8508781211449379 + 1.3212865837711918*I, \
+       -0.004889461207367459 - 1.0008310195479346*I, \
+       1.0132914133542823 - 0.0027129544048561036*I}"
+    );
+  }
+
   #[test]
   fn circular_reciprocals_of_complex_floats() {
     assert_eq!(
       interpret("Cot[1.+I]").unwrap(),
-      "0.21762156185440265 - 0.8680141428959249*I"
+      "0.2176215618544027 - 0.8680141428959249*I"
     );
     assert_eq!(
       interpret("Sec[1.+I]").unwrap(),

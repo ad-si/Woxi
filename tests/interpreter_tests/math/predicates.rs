@@ -852,6 +852,25 @@ mod symbolic_comparison_function_form {
 mod equal_edge_cases {
   use super::*;
 
+  // Exact radicals that round apart in machine arithmetic are compared at
+  // high precision. Regression: `Sqrt[3/2] - 1/Sqrt[6] == Sqrt[2/3]` was
+  // False, and the `==` operator and `Equal[…]` disagreed.
+  #[test]
+  fn exact_radicals_that_round_apart() {
+    assert_eq!(
+      interpret(
+        "{Sqrt[3/2] - 1/Sqrt[6] == Sqrt[2/3], \
+         Equal[Sqrt[3/2] - 1/Sqrt[6], Sqrt[2/3]], \
+         1/3 + (Sqrt[3/2] - 1/Sqrt[6])^2 == 1, \
+         Sqrt[2] + Sqrt[3] == Sqrt[5 + 2 Sqrt[6]], \
+         Sqrt[3/2] - 1/Sqrt[6] != Sqrt[2/3], \
+         Sqrt[2] == 1414213562373095/10^15}"
+      )
+      .unwrap(),
+      "{True, True, True, True, False, False}"
+    );
+  }
+
   #[test]
   fn equal_zero_args() {
     assert_eq!(interpret("Equal[]").unwrap(), "True");
