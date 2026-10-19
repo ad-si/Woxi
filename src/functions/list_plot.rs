@@ -974,6 +974,11 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "Frame" => {
           opts.frame = crate::functions::plot::parse_frame_option(replacement);
         }
+        "FrameTicks" => {
+          let (x, y) =
+            crate::functions::plot::frame_tick_axes_visible(replacement);
+          opts.frame_ticks = x || y;
+        }
         "Axes" => {
           if let Some(axes) =
             crate::functions::plot::parse_axes_option(replacement)

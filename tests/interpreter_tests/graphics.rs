@@ -36988,3 +36988,42 @@ fn list_fit_plot_draws_data_and_fitted_curve() {
     "ListFitPlot[{1, 2, 3}, Bogus]"
   );
 }
+
+mod list_plot_frame {
+  use super::*;
+
+  #[test]
+  fn framed_list_plot_closes_all_four_edges() {
+    // The scatter renderer used to draw only the left and bottom edges.
+    let svg = interpret(
+      "ExportString[ListPlot[{{1, 1}, {2, 2}, {3, 1}}, Frame -> True], \"SVG\"]",
+    )
+    .unwrap();
+    let framed = svg.split("<polyline").any(|p| {
+      p.matches(',').count() >= 5 && p.contains("points=\"") && {
+        let pts = p.split("points=\"").nth(1).unwrap_or("");
+        let pts = pts.split('"').next().unwrap_or("");
+        let v: Vec<&str> = pts.split_whitespace().collect();
+        v.len() == 5 && v.first() == v.last()
+      }
+    });
+    assert!(framed, "expected a closed 5-point frame polyline");
+  }
+
+  #[test]
+  fn unframed_list_plot_has_no_closed_frame() {
+    let svg =
+      interpret("ExportString[ListPlot[{{1, 1}, {2, 2}, {3, 1}}], \"SVG\"]")
+        .unwrap();
+    assert!(!svg.contains("points=\"750,1749 3499,1749 3499,100"));
+  }
+
+  #[test]
+  fn list_plot_accepts_frame_ticks_option() {
+    let out = interpret(
+      "Head[ListPlot[{{1, 1}, {2, 2}}, Frame -> True, FrameTicks -> {{None, None}, {Range[0, 3], None}}]]",
+    )
+    .unwrap();
+    assert_eq!(out, "Graphics");
+  }
+}
