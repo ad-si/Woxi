@@ -6106,6 +6106,32 @@ fn rotation_angle(spec: &Expr) -> Option<f64> {
   Some(vy.atan2(vx) - uy.atan2(ux))
 }
 
+/// True when the radii differ, i.e. the shape is a proper ellipse whose
+/// rotation can't be expressed by moving its centre alone.
+fn is_elliptical(rx: f64, ry: f64) -> bool {
+  (rx - ry).abs() > 1e-12 * rx.abs().max(ry.abs())
+}
+
+/// Points along the ellipse `(cx + rx cos t, cy + ry sin t)` for `t` from
+/// `t1` to `t2`, each mapped through `map` (e.g. a rotation).
+fn ellipse_outline(
+  cx: f64,
+  cy: f64,
+  rx: f64,
+  ry: f64,
+  t1: f64,
+  t2: f64,
+  map: &impl Fn(f64, f64) -> (f64, f64),
+) -> Vec<(f64, f64)> {
+  const STEPS: usize = 180;
+  (0..=STEPS)
+    .map(|i| {
+      let t = t1 + (t2 - t1) * i as f64 / STEPS as f64;
+      map(cx + rx * t.cos(), cy + ry * t.sin())
+    })
+    .collect()
+}
+
 fn rotate_primitive(
   prim: &Primitive,
   cx: f64,
@@ -6114,6 +6140,7 @@ fn rotate_primitive(
 ) -> Primitive {
   let cos = angle.cos();
   let sin = angle.sin();
+  const TAU: f64 = std::f64::consts::TAU;
   let rp = |x: f64, y: f64| rotate_point(x, y, cx, cy, cos, sin);
   // Rotate a direction vector (no translation).
   let rv = |x: f64, y: f64| (x * cos - y * sin, x * sin + y * cos);
@@ -6220,6 +6247,54 @@ fn rotate_primitive(
       vertex_colors: None,
       style: style.clone(),
     },
+    // An elliptical Disk/Circle/sector has no rotation field, so once it is
+    // turned off-axis it becomes a polygon/polyline tracing its outline.
+    Primitive::Disk {
+      cx: dcx,
+      cy: dcy,
+      rx,
+      ry,
+      style,
+    } if is_elliptical(*rx, *ry) => Primitive::PolygonPrim {
+      points: ellipse_outline(*dcx, *dcy, *rx, *ry, 0.0, TAU, &rp),
+      holes: Vec::new(),
+      vertex_colors: None,
+      style: style.clone(),
+    },
+    Primitive::CircleArc {
+      cx: dcx,
+      cy: dcy,
+      rx,
+      ry,
+      angles,
+      style,
+    } if is_elliptical(*rx, *ry) => {
+      let (a1, a2) = angles.unwrap_or((0.0, TAU));
+      Primitive::Line {
+        segments: vec![ellipse_outline(*dcx, *dcy, *rx, *ry, a1, a2, &rp)],
+        vertex_colors: None,
+        style: style.clone(),
+      }
+    }
+    Primitive::DiskSector {
+      cx: dcx,
+      cy: dcy,
+      rx,
+      ry,
+      angle1,
+      angle2,
+      style,
+    } if is_elliptical(*rx, *ry) => {
+      let mut points = vec![rp(*dcx, *dcy)];
+      points
+        .extend(ellipse_outline(*dcx, *dcy, *rx, *ry, *angle1, *angle2, &rp));
+      Primitive::PolygonPrim {
+        points,
+        holes: Vec::new(),
+        vertex_colors: None,
+        style: style.clone(),
+      }
+    }
     Primitive::Disk {
       cx: dcx,
       cy: dcy,
