@@ -12764,4 +12764,18 @@ mod sum_collects_terms_in_one_plus {
       "{14, 17}"
     );
   }
+
+  #[test]
+  fn sqrt_of_exact_square_bigfloat_terminates() {
+    // The generic pow routine never terminated when the root was exact.
+    assert_eq!(interpret("Sqrt[4.`3.]").unwrap(), "2.`3.3010299956639813");
+    assert_eq!(
+      interpret("Sqrt[2.25`3.]").unwrap(),
+      "1.5`3.3010299956639813"
+    );
+    assert_eq!(
+      interpret("Sqrt[Abs[2.75`3. - 5]]").unwrap(),
+      "1.5`3.213879819945081"
+    );
+  }
 }
