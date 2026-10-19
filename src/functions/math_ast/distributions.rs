@@ -1113,6 +1113,22 @@ pub fn quantile_distribution_closed_form(
       let z = inverse_erf_f64(2.0 * q_num - 1.0);
       Some(Expr::Real(m_num + s_num * std::f64::consts::SQRT_2 * z))
     }
+    // Quantile[LogNormalDistribution[m, s], q] = E^(m + Sqrt[2] s InverseErf[2q - 1]).
+    // Only the machine-precision form is handled; exact q stays symbolic.
+    "LogNormalDistribution" if dargs.len() == 2 && !is_exact_q => {
+      let m_num = expr_to_num(&dargs[0])?;
+      let s_num = expr_to_num(&dargs[1])?;
+      if q_num == 0.0 {
+        return Some(Expr::Integer(0));
+      }
+      if q_num == 1.0 {
+        return Some(infinity());
+      }
+      let z = inverse_erf_f64(2.0 * q_num - 1.0);
+      Some(Expr::Real(
+        (m_num + s_num * std::f64::consts::SQRT_2 * z).exp(),
+      ))
+    }
     // Quantile[GammaDistribution[a, b], q] = b InverseGammaRegularized[a, 0, q]
     "GammaDistribution" if dargs.len() == 2 => {
       if is_exact_q {
