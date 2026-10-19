@@ -265,6 +265,21 @@ pub fn country_entities() -> Vec<Expr> {
     .collect()
 }
 
+/// Countries (by canonical name) in which each language is an official
+/// language; backs the `"<Language>Speaking"` properties.
+#[rustfmt::skip]
+static LANGUAGE_COUNTRIES: &[(&str, &[&str])] = &[
+  ("Arabic", &["Algeria", "Bahrain", "Chad", "Comoros", "Djibouti", "Egypt", "Eritrea", "Iraq", "Israel", "Jordan", "Kuwait", "Lebanon", "Libya", "Mauritania", "Morocco", "Oman", "Palestine", "Qatar", "Saudi Arabia", "Somalia", "South Sudan", "Sudan", "Syria", "Tunisia", "United Arab Emirates", "Yemen"]),
+  ("Danish", &["Denmark"]),
+  ("Dutch", &["Belgium", "Netherlands", "Suriname"]),
+  ("English", &["Antigua and Barbuda", "Australia", "Bahamas", "Barbados", "Belize", "Botswana", "Burundi", "Cameroon", "Canada", "Dominica", "Eritrea", "Eswatini", "Fiji", "Gambia", "Ghana", "Grenada", "Guyana", "India", "Ireland", "Jamaica", "Kenya", "Kiribati", "Lesotho", "Liberia", "Malawi", "Malta", "Marshall Islands", "Mauritius", "Micronesia", "Namibia", "Nauru", "New Zealand", "Nigeria", "Pakistan", "Palau", "Papua New Guinea", "Philippines", "Rwanda", "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines", "Samoa", "Seychelles", "Sierra Leone", "Singapore", "Solomon Islands", "South Africa", "South Sudan", "Sudan", "Tanzania", "Tonga", "Trinidad and Tobago", "Tuvalu", "Uganda", "United Kingdom", "United States", "Zambia", "Zimbabwe"]),
+  ("French", &["Belgium", "Benin", "Burkina Faso", "Burundi", "Cameroon", "Canada", "Central African Republic", "Chad", "Comoros", "Congo", "Democratic Republic of the Congo", "Djibouti", "Equatorial Guinea", "France", "Gabon", "Guinea", "Haiti", "Ivory Coast", "Luxembourg", "Madagascar", "Mali", "Monaco", "Niger", "Rwanda", "Senegal", "Seychelles", "Switzerland", "Togo", "Vanuatu"]),
+  ("German", &["Austria", "Belgium", "Germany", "Liechtenstein", "Luxembourg", "Switzerland"]),
+  ("Italian", &["Italy", "San Marino", "Switzerland", "Vatican City"]),
+  ("Portuguese", &["Angola", "Brazil", "Cape Verde", "Equatorial Guinea", "Guinea-Bissau", "Mozambique", "Portugal", "Sao Tome and Principe", "Timor-Leste"]),
+  ("Spanish", &["Argentina", "Bolivia", "Chile", "Colombia", "Costa Rica", "Cuba", "Dominican Republic", "Ecuador", "El Salvador", "Equatorial Guinea", "Guatemala", "Honduras", "Mexico", "Nicaragua", "Panama", "Paraguay", "Peru", "Spain", "Uruguay", "Venezuela"]),
+];
+
 /// Resolve a free-form country name to its dataset entry.
 fn lookup(name: &str) -> Option<&'static Country> {
   let key = normalize(name);
@@ -289,6 +304,28 @@ fn missing(reason: &str, name: &str) -> Expr {
 /// fall back to its own handling; an unknown *property* returns `Missing`.
 pub fn country_property(name: &str, property: &str) -> Option<Expr> {
   let country = lookup(name)?;
+  if let Some(lang) = property.strip_suffix("Speaking")
+    && let Some(countries) = LANGUAGE_COUNTRIES
+      .iter()
+      .find_map(|(l, cs)| (*l == lang).then_some(cs))
+  {
+    return Some(Expr::Identifier(
+      if countries.contains(&country.canonical) {
+        "True"
+      } else {
+        "False"
+      }
+      .to_string(),
+    ));
+  }
+  if property == "SchematicPolygon" {
+    return Some(
+      crate::functions::geographics::country_schematic_polygon(
+        country.canonical,
+      )
+      .unwrap_or_else(|| missing("NotAvailable", property)),
+    );
+  }
   Some(match property {
     "Population" => {
       make_quantity(Expr::Integer(country.population as i128), "People")
@@ -301,7 +338,24 @@ pub fn country_property(name: &str, property: &str) -> Option<Expr> {
 /// `CountryData[name, property]` — currently `"Population"` and `"Name"`.
 /// `CountryData[name]` returns the canonical `Entity["Country", name]`.
 pub fn country_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Entity["Country", name] is accepted wherever a country name is.
+  let normalized: Vec<Expr> = args
+    .iter()
+    .enumerate()
+    .map(|(i, a)| match (i, a) {
+      (0, Expr::FunctionCall { name, args: ea })
+        if name == "Entity"
+          && ea.len() == 2
+          && matches!(&ea[0], Expr::String(t) if t == "Country") =>
+      {
+        ea[1].clone()
+      }
+      _ => a.clone(),
+    })
+    .collect();
+  let args = &normalized[..];
   match args {
+    [] => Ok(Expr::List(country_entities().into())),
     [Expr::String(name)] => Ok(match lookup(name) {
       Some(c) => entity(c.canonical),
       None => missing("UnknownCountry", name),
@@ -422,6 +476,15 @@ pub fn apply_interpreter(
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn language_tables_use_canonical_names() {
+    for (lang, countries) in LANGUAGE_COUNTRIES {
+      for c in *countries {
+        assert_eq!(canonical_name(c), Some(*c), "{lang}: {c}");
+      }
+    }
+  }
 
   #[test]
   fn resolves_common_aliases() {
