@@ -445,7 +445,7 @@ ImplicitPowerSuffix = { "^" ~ (NegSimpleTerm ~ FactorialSuffix? | SimpleTerm ~ P
 // as `Repeated[0] * 1` rather than splitting into two statements.
 // FactorialSuffix on each factor lets `a b!` parse as `a*(b!)` and
 // `a! b!` as `(a!)*(b!)`.
-ImplicitTimesFactor = _{ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? }
+ImplicitTimesFactor = _{ SimpleTerm ~ (PartIndexSuffix ~ BracketArgs*)? ~ ImplicitPowerSuffix? ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? }
 // NegativeImplicitFirst allows -N as the first factor in implicit multiplication
 // so that "-90 Degree" parses as Times[-90, Degree] instead of failing.
 NegativeImplicitFirst = { "-" ~ UnsignedNumericValue }

@@ -13257,3 +13257,22 @@ mod context_named_characters {
     );
   }
 }
+
+mod implicit_times_with_part_call {
+  use super::*;
+
+  // `2 s[[2]][x]` is a product whose second factor applies an extracted
+  // function; the call used to end the implicit product and fail to parse.
+  #[test]
+  fn call_on_an_extracted_part_is_a_product_factor() {
+    assert_eq!(interpret("s = {f, g}; 2 s[[2]][3]").unwrap(), "2*g[3]");
+    assert_eq!(
+      interpret("s = {f, g}; a (1 + 2 s[[1]][x, y])").unwrap(),
+      "a*(1 + 2*f[x, y])"
+    );
+    assert_eq!(
+      interpret("s = {{f, g}}; 2 s[[1]][[2]][3] x^2").unwrap(),
+      "2*x^2*g[3]"
+    );
+  }
+}

@@ -9575,6 +9575,42 @@ mod ndsolve {
     );
   }
 
+  /// `NeumannValue[g, x == x0]` on the right-hand side is the natural
+  /// boundary condition `n·(c ∇u) = g` (outward normal `n`), so a constant
+  /// inflow `g` at one end of a diffusing bar with an insulated other end
+  /// raises the total heat by exactly `g` per unit time, for any diffusion
+  /// coefficient `c`. The solution takes the space variable first.
+  #[test]
+  fn ndsolve_neumann_value_conserves_total_heat() {
+    for (c, g) in [("1", "1"), ("2", "3"), ("1/2", "1")] {
+      let code = format!(
+        "u = NDSolveValue[{{D[w[x, t], t] - {c} D[w[x, t], x, x] == \
+         NeumannValue[{g}, x == 0] + NeumannValue[0, x == 1], \
+         w[x, 0] == 0}}, w, {{t, 0, 1}}, {{x, 0, 1}}]; \
+         Round[100 NIntegrate[u[x, 1.], {{x, 0, 1}}] / {g}]"
+      );
+      assert_eq!(interpret(&code).unwrap(), "100", "c = {c}, g = {g}");
+    }
+  }
+
+  /// A `NeumannValue` flux can depend on the unknown itself and on a
+  /// second unknown that only evolves in time (no space derivative), the
+  /// coupled bar/reservoir shape: the heat the bar gains is the heat the
+  /// reservoir loses, `∫Θ dx + β Θr = β` for `Θ(x, 0) = 0`, `Θr(0) = 1`.
+  #[test]
+  fn ndsolve_neumann_value_couples_a_time_only_unknown() {
+    let result = interpret(
+      "sol = NDSolveValue[{D[a[x, t], t] - D[a[x, t], x, x] == \
+       NeumannValue[-(a[x, t] - b[x, t]), x == 0] + NeumannValue[0, x == 1], \
+       a[x, 0] == 0, 2 D[b[x, t], t] == -(b[x, t] - a[x, t]), b[x, 0] == 1}, \
+       {a, b}, {t, 0, 2}, {x, 0, 1}]; \
+       Round[100 (NIntegrate[sol[[1]][x, 1.5], {x, 0, 1}] + \
+       2 sol[[2]][0, 1.5])]",
+    )
+    .unwrap();
+    assert_eq!(result, "200");
+  }
+
   /// A PDE missing one of its two Dirichlet boundary conditions doesn't
   /// match the one recognised shape, so the call is left unevaluated —
   /// the same fallback NDSolve gives any equation system it can't classify
