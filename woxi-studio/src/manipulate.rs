@@ -2510,6 +2510,38 @@ mod tests {
     );
   }
 
+  /// A control column whose entries are `If[cond, Identity, Invisible]@
+  /// Control[…]` — controls shown only in one mode. They must be real,
+  /// bound controls (the body reads `w`), each visible only in its mode.
+  /// Before, the whole `If[…]@Control[…]` was treated as a display, so `w`
+  /// stayed unbound and the body drew with a symbolic value.
+  #[test]
+  fn conditionally_invisible_controls_in_a_column_are_real_controls() {
+    let code = r#"Manipulate[
+      If[mode, Text[w], Text[v]],
+      {mode, True, ControlType -> None},
+      Dynamic[Column[{
+        If[mode, Identity, Invisible]@Control[{{v, 2, "v"}, 0, 5, 1}],
+        If[!mode, Identity, Invisible]@Control[{{w, 3, "w"}, 0, 5, 1}]}]]
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the conditional controls should build a ManipulateState");
+    assert_eq!(state.error, None, "body must evaluate cleanly");
+    let names: Vec<_> = state.controls.iter().map(|c| c.name()).collect();
+    assert!(
+      names.contains(&"v") && names.contains(&"w"),
+      "both conditional controls must be real controls, got {names:?}"
+    );
+    let vis = |n: &str| {
+      let i = names.iter().position(|x| *x == n).unwrap();
+      state.control_is_visible[i]
+    };
+    assert!(vis("v"), "`v` is shown while mode is True");
+    assert!(!vis("w"), "`w` is hidden while mode is True");
+  }
+
   /// A `TabView` whose panes are `Grid`s with `SetterBar[Dynamic[var],
   /// choices] /. labels` cells (a key picker showing note names for numeric
   /// choices) and a `Sound[…]` row. The bars are lifted into the control
