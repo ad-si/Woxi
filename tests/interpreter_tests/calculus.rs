@@ -9233,6 +9233,22 @@ mod ndsolve {
   }
 
   #[test]
+  fn interpolating_function_domain_accepts_package_context() {
+    // Spelling out the package context, as notebooks saved from the
+    // Demonstrations project do, is the same call.
+    let sol = "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 3}]; \
+       if = y /. s[[1]];";
+    assert_eq!(
+      interpret(&format!(
+        "{sol} DifferentialEquations`InterpolatingFunctionAnatomy`\
+         InterpolatingFunctionDomain[if][[1, -1]]"
+      ))
+      .unwrap(),
+      "3."
+    );
+  }
+
+  #[test]
   fn interpolating_function_domain_reports_event_stop_time() {
     // Chained with an `EventLocator` stop (as the Demonstrations-project
     // "stroboscopic bounce" pattern does): the reported domain's upper end
