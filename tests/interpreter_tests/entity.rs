@@ -461,7 +461,7 @@ mod country_data_tests {
     );
     assert_eq!(
       interpret(
-        "StringContainsQ[ExportString[Graphics[{Orange, CountryData[\"Italy\", \"SchematicPolygon\"]}], \"SVG\"], \"<path\"]"
+        "StringContainsQ[ExportString[Graphics[{Orange, CountryData[\"Italy\", \"SchematicPolygon\"]}], \"SVG\"], \"<polygon\"]"
       )
       .unwrap(),
       "True"
