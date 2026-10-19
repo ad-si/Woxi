@@ -22343,10 +22343,25 @@ pub(crate) fn clip_svg_to_pane_box(
   svg: &str,
   width: f64,
   height: f64,
+  align: Option<(f64, f64)>,
 ) -> String {
   let (natural_w, natural_h) = parse_svg_wh(svg);
   if natural_w <= width && natural_h <= height {
-    return svg.to_string();
+    // Content that fits keeps its natural canvas, unless the Pane states
+    // an `Alignment`: then it sits where that puts it in the whole box.
+    let Some(align) = align else {
+      return svg.to_string();
+    };
+    if natural_w == width && natural_h == height {
+      return svg.to_string();
+    }
+    let x = (width - natural_w) * align.0;
+    let y = (height - natural_h) * align.1;
+    let root = svg.find("<svg").unwrap_or(0);
+    return format!(
+      "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"translate({x:.1} {y:.1})\">\n{}\n</g>\n</svg>",
+      &svg[root..]
+    );
   }
   // A graphic that carries its own `viewBox` (a `Plot`, `Graphics`, …) is a
   // scalable picture: the FrontEnd shrinks it to fit the Pane instead of

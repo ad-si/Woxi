@@ -4205,7 +4205,9 @@ fn render_dynamic_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // the hold; on error keep the symbolic form rather than failing
       // the whole rendering pipeline.
       match evaluator::evaluate_expr_to_expr(&args[0]) {
-        Ok(inner) => inner,
+        // The released content is displayed like any other result, so a
+        // `Dynamic[Tooltip[Graphics[…], tip]]` shows its picture.
+        Ok(inner) => render_visual_display_pipeline(&inner),
         Err(_) => expr,
       }
     }
@@ -4255,10 +4257,12 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // Graphics[…]}]] renders the column with its embedded graphic). CLI
   // mode keeps the symbolic Pane[…] echo to match wolframscript.
   let expr = unwrap_display_pass_through(expr);
+  // `Tooltip[expr, tip]` only adds a hover label; the notebook shows `expr`.
+  let expr = unwrap_tooltips(expr);
   // A grid wider than that box squeezes its automatically sized pictures
   // (a plot's legend) to fit, instead of pushing the other columns out.
   let expr = pane_box
-    .and_then(|(w, _)| {
+    .and_then(|(w, _, _)| {
       functions::graphics::fit_grid_to_pane_width(&expr, w, &|c| {
         functions::graphics::parse_svg_wh(&evaluator::expr_to_svg(c)).0
       })
@@ -4287,8 +4291,8 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let result = render_highlighted_if_needed(expr);
 
   match (pane_box, &result) {
-    (Some((w, h)), syntax::Expr::Graphics { svg, .. }) => {
-      let clipped = functions::graphics::clip_svg_to_pane_box(svg, w, h);
+    (Some((w, h, align)), syntax::Expr::Graphics { svg, .. }) => {
+      let clipped = functions::graphics::clip_svg_to_pane_box(svg, w, h, align);
       let mut clipped_result = result.clone();
       if let syntax::Expr::Graphics { svg, .. } = &mut clipped_result {
         *svg = clipped;
@@ -4297,6 +4301,30 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
     }
     _ => result,
   }
+}
+
+/// Peel `Tooltip[picture, tip]` down to the picture (visual mode only): a
+/// notebook shows the drawing, the tip is just a hover label. Tooltips
+/// around ordinary expressions stay symbolic.
+fn unwrap_tooltips(mut expr: syntax::Expr) -> syntax::Expr {
+  while let syntax::Expr::FunctionCall { name, args } = &expr
+    && name == "Tooltip"
+    && !args.is_empty()
+  {
+    let inner = unwrap_display_pass_through(&args[0]);
+    let is_picture = match &inner {
+      syntax::Expr::Graphics { .. } => true,
+      syntax::Expr::FunctionCall { name, .. } => {
+        matches!(name.as_str(), "Graphics" | "Graphics3D" | "Tooltip")
+      }
+      _ => false,
+    } || evaluator::lays_out_a_graphic(&inner);
+    if !is_picture {
+      break;
+    }
+    expr = inner;
+  }
+  expr
 }
 
 /// The `{width, height}` a top-level `Pane[content, {width, height}]`
@@ -4308,7 +4336,9 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
 /// width, `Automatic`, or `Full` leave the box unconstrained here, the
 /// same as `unwrap_display_wrappers`' unconditional peel handles every
 /// other Pane shape.
-fn pane_fixed_size(expr: &syntax::Expr) -> Option<(f64, f64)> {
+fn pane_fixed_size(
+  expr: &syntax::Expr,
+) -> Option<(f64, f64, Option<(f64, f64)>)> {
   let mut current = expr;
   loop {
     let syntax::Expr::FunctionCall { name, args } = current else {
@@ -4332,7 +4362,11 @@ fn pane_fixed_size(expr: &syntax::Expr) -> Option<(f64, f64)> {
           evaluator::dispatch::io_functions::pane_size_component(&size[0])?;
         let h =
           evaluator::dispatch::io_functions::pane_size_component(&size[1])?;
-        return Some((w, h));
+        return Some((
+          w,
+          h,
+          evaluator::dispatch::io_functions::pane_alignment(&args[2..]),
+        ));
       }
       _ => return None,
     }

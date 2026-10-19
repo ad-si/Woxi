@@ -4921,6 +4921,24 @@ pub(crate) fn generate_scatter_svg_with_options(
         .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
     }
 
+    // A framed plot closes its plotting area on all four sides, as in the
+    // line renderer; the mesh above only draws the left and bottom edges.
+    if opts.frame {
+      let frame_style = dark_gray.stroke_width(RESOLUTION_SCALE);
+      chart
+        .draw_series(std::iter::once(PathElement::new(
+          vec![
+            (x_min, y_min),
+            (x_max, y_min),
+            (x_max, y_max),
+            (x_min, y_max),
+            (x_min, y_min),
+          ],
+          frame_style,
+        )))
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }
+
     // Grid lines, drawn before the points so they sit behind the data.
     // Same rules as the line renderer: explicit positions beat the evenly
     // spaced automatic ones, dashed lines are deferred to stroke-dasharray

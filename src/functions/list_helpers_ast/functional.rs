@@ -1029,45 +1029,26 @@ pub fn apply_at_level_ast(
   expr: &Expr,
   level_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // Compute depth so we can resolve negative level values:
-  //   `-k` selects subexpressions whose Depth is k, i.e. level (D - k)
-  // where D = Depth[expr] (atoms have Depth 1).
-  let depth = expr_depth(expr);
-  let resolve = |n: i128| -> usize {
-    if n < 0 {
-      let k = -n;
-      let pos = depth as i128 - k;
-      if pos < 0 { 0 } else { pos as usize }
-    } else {
-      n as usize
-    }
-  };
-
   // Parse level spec. For the integer form, `Apply[f, expr, n]` is
   // equivalent to `Apply[f, expr, {1, n}]` — levels 1 through n — not
-  // {0, n} as Woxi previously assumed.
-  let (min_level, max_level) = match level_spec {
-    Expr::Identifier(s) if s == "Infinity" => (1usize, usize::MAX),
-    Expr::Integer(n) => (1usize, resolve(*n)),
+  // {0, n} as Woxi previously assumed. Negative bounds are kept as they are:
+  // level `-k` selects subexpressions whose Depth is k, wherever they sit, so
+  // they are resolved per subexpression rather than against the whole tree.
+  let (min_level, max_level): (i128, i128) = match level_spec {
+    Expr::Identifier(s) if s == "Infinity" => (1, i128::MAX),
+    Expr::Integer(n) => (1, *n),
     Expr::List(levels) => {
       if levels.len() == 1 {
         if let Some(n) = expr_to_i128(&levels[0]) {
-          let r = resolve(n);
-          (r, r)
+          (n, n)
         } else {
           (1, 1)
         }
       } else if levels.len() == 2 {
-        let min = match expr_to_i128(&levels[0]) {
-          Some(n) => resolve(n),
-          None => 0,
-        };
+        let min = expr_to_i128(&levels[0]).unwrap_or(0);
         let max = match &levels[1] {
-          Expr::Identifier(s) if s == "Infinity" => usize::MAX,
-          other => match expr_to_i128(other) {
-            Some(n) => resolve(n),
-            None => 1,
-          },
+          Expr::Identifier(s) if s == "Infinity" => i128::MAX,
+          other => expr_to_i128(other).unwrap_or(1),
         };
         (min, max)
       } else {
@@ -1105,8 +1086,8 @@ fn apply_at_level_recursive(
   func: &Expr,
   expr: &Expr,
   current_level: usize,
-  min_level: usize,
-  max_level: usize,
+  min_level: i128,
+  max_level: i128,
 ) -> Result<Expr, InterpreterError> {
   // Normalize BinaryOp / UnaryOp into a FunctionCall so Apply can descend
   // into Plus/Times/Power and other operators that the parser sometimes
@@ -1158,8 +1139,10 @@ fn apply_at_level_recursive(
     _ => return Ok(expr.clone()),
   };
 
-  // Recurse into children first if we haven't reached max_level
-  let new_items: Vec<Expr> = if current_level < max_level {
+  // Recurse into children first unless a positive max_level is reached
+  // (a negative one is a depth bound and can be met at any level).
+  let descend = max_level < 0 || (current_level as i128) < max_level;
+  let new_items: Vec<Expr> = if descend {
     items
       .iter()
       .map(|item| {
@@ -1179,7 +1162,7 @@ fn apply_at_level_recursive(
   // A child whose head became `Sequence` splices into its parent, exactly as
   // it would when the parent is evaluated: Apply[Sequence, {{a}, {b, c}}, {1}]
   // is {a, b, c}.
-  let new_items: Vec<Expr> = if current_level < max_level
+  let new_items: Vec<Expr> = if descend
     && new_items.iter().any(
       |i| matches!(i, Expr::FunctionCall { name, .. } if name == "Sequence"),
     ) {
@@ -1197,7 +1180,19 @@ fn apply_at_level_recursive(
   };
 
   // Replace head at this level if in range
-  if current_level >= min_level && current_level <= max_level {
+  let level = current_level as i128;
+  let depth = || expr_depth(&normalized) as i128;
+  let above_min = if min_level >= 0 {
+    level >= min_level
+  } else {
+    depth() <= -min_level
+  };
+  let below_max = if max_level >= 0 {
+    level <= max_level
+  } else {
+    depth() >= -max_level
+  };
+  if above_min && below_max {
     apply_func_as_head(func, &new_items)
   } else if is_list {
     Ok(Expr::List(new_items.into()))

@@ -8330,6 +8330,39 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(state.error, None, "the compiled body must evaluate cleanly");
   }
 
+  /// A Manipulate whose body is `Dynamic@Tooltip[Graphics[…], "text"]`
+  /// preceded by statements that mutate hidden `ControlType -> None` state
+  /// (a particle-simulation shape found in a Demonstrations notebook,
+  /// independently written). Regression: `Tooltip` was not looked through,
+  /// so the widget showed `Tooltip[, text]` instead of the drawing.
+  #[test]
+  fn manipulate_dynamic_tooltip_wrapped_graphics_with_hidden_state() {
+    let code = r#"Manipulate[
+      If[reset, steps = 0];
+      Dynamic@Tooltip[
+        Graphics[{Blue, Circle[{0., 0.}, rad],
+          If[run, steps += 1;],
+          EdgeForm[Black], Disk[#, 0.3] & /@ pts},
+          PlotRange -> {{-rad, rad}, {-rad, rad}},
+          PlotLabel -> Style[StringForm["step = ``", steps]]],
+        "hover text"],
+      Row@{Control@{{run, False, Tooltip["go", "start"]}, {False, True}},
+        Spacer[20],
+        Control@{{reset, False, "reset"}, {False, True}}},
+      {{steps, 0}, ControlType -> None},
+      {{rad, 4.}, ControlType -> None},
+      {{pts, {{1, 1}, {-1, 2}}}, ControlType -> None},
+      TrackedSymbols -> True
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("Manipulate should build a ManipulateState");
+    assert_eq!(state.error, None);
+    assert!(state.graphics_handle.is_some(), "the drawing must render");
+    assert_eq!(state.text_output, None);
+  }
+
   /// A Manipulate whose body composites two independently computed plots
   /// with `Overlay[{…}, Alignment -> {0.5, 0.5}]` — the shape a Wolfram
   /// Demonstrations Project notebook uses to draw one plot directly on top
