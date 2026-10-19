@@ -4490,6 +4490,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut data_range: Option<((f64, f64), (f64, f64))> = None;
   // `DataReversed -> True`: first row at the bottom instead of the top.
   let mut data_reversed = false;
+  // `AspectRatio -> r` (height / width) overrides the default of matching
+  // the matrix shape.
+  let mut aspect_ratio: Option<f64> = None;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -4516,6 +4519,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             data_range = Some(((x0, x1), (y0, y1)));
           }
+        }
+        "AspectRatio" => {
+          aspect_ratio = try_eval_to_f64(replacement).filter(|r| *r > 0.0);
         }
         "DataReversed" => {
           if let Expr::Identifier(v) = replacement.as_ref()
@@ -4611,11 +4617,17 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
 
   // Aspect ratio: match the matrix shape (wider if more cols, taller if more rows)
-  let aspect = n_rows as f64 / n_cols as f64;
+  let aspect = aspect_ratio.unwrap_or(n_rows as f64 / n_cols as f64);
   let (svg_width, svg_height) = if aspect <= 1.0 {
-    (svg_width, (svg_width as f64 * aspect).round() as u32)
+    (
+      svg_width,
+      ((svg_width as f64 * aspect).round() as u32).max(1),
+    )
   } else {
-    ((svg_height as f64 / aspect).round() as u32, svg_height)
+    (
+      ((svg_height as f64 / aspect).round() as u32).max(1),
+      svg_height,
+    )
   };
 
   let s = RESOLUTION_SCALE;

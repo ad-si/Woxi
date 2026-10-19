@@ -24198,6 +24198,18 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
       continue;
     }
+    // `Item[Button[…], Alignment -> …]` only positions a button in the
+    // panel; the button itself is the control.
+    let spec = match spec {
+      Expr::FunctionCall { name, args }
+        if name == "Item"
+          && !args.is_empty()
+          && matches!(&args[0], Expr::FunctionCall { name: n, .. } if n == "Button") =>
+      {
+        &args[0]
+      }
+      _ => spec,
+    };
     // `Delimiter` and string / `Style[…]` / `Text[…]` arguments are static
     // annotation rows between controls (Wolfram's `ThisIsNotAControl`),
     // keeping their position among the control rows.

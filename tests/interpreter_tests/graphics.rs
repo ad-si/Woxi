@@ -15656,6 +15656,22 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_aspect_ratio() {
+      // Regression: `AspectRatio -> r` shapes the plot; a one-row, very wide
+      // array used to collapse to zero height.
+      let svg = export_svg(
+        "ArrayPlot[{Range[0, 1000]}, AspectRatio -> 1/4, ImageSize -> {500, 200}]",
+      );
+      assert!(
+        svg.starts_with("<svg width=\"500\" height=\"125\""),
+        "unexpected header: {}",
+        svg.lines().next().unwrap_or("")
+      );
+      let tall = export_svg("ArrayPlot[{{1, 2}, {3, 4}}, AspectRatio -> 2]");
+      assert!(!tall.starts_with("<svg width=\"0\""));
+    }
+
+    #[test]
     fn array_plot_integer_scaling() {
       // Regression: values > 1 must be auto-scaled, not clamped to [0,1]
       let svg = export_svg("ArrayPlot[{{1, 2, 3, 4}, {5, 6, 7, 8}}]");
