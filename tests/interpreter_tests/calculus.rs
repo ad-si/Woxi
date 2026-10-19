@@ -8576,6 +8576,29 @@ mod ndsolve {
     );
   }
 
+  /// `Interpolation` of vector- or matrix-valued data interpolates every
+  /// component: `{{x1, {a, b}}, …}` gives a function returning `{a, b}`.
+  #[test]
+  fn interpolation_of_tensor_valued_data_interpolates_componentwise() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, {0, 10}}, {1, {2, 20}}, {2, {4, 30}}}, \
+         InterpolationOrder -> 1]; {f[0], f[1/2], f[3/2]}"
+      )
+      .unwrap(),
+      "{{0, 10}, {1, 15}, {3, 25}}"
+    );
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, {{0, 1}, {2, 3}}}, {1, {{4, 5}, {6, 7}}}}, \
+         InterpolationOrder -> 1]; f[1/2]"
+      )
+      .unwrap(),
+      "{{2, 3}, {4, 5}}"
+    );
+  }
+
   /// Applying a stored `InterpolatingFunction` looks the interval up by
   /// binary search and returns grid values exactly, at both ends of the data
   /// and in the interior (sampling a large NDSolve result used to scan and

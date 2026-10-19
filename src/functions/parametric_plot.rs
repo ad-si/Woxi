@@ -820,9 +820,86 @@ fn parametric_region_ast(
   v_spec: &Expr,
   opt_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  let (plot_opts, _) = parse_options(opt_args);
+  // `{{fx1, fy1}, {fx2, fy2}, …}` is several regions drawn in one plot, each
+  // in the next colour of the cycle.
+  let bodies: Vec<&Expr> = match body {
+    Expr::List(items)
+      if items.len() > 1
+        && items
+          .iter()
+          .all(|b| matches!(b, Expr::List(p) if p.len() == 2)) =>
+    {
+      items.iter().collect()
+    }
+    _ => vec![body],
+  };
+  let mut items = Vec::with_capacity(bodies.len());
+  for (i, b) in bodies.iter().enumerate() {
+    items.push(parametric_region_layer(
+      b, u_spec, v_spec, opt_args, &plot_opts, i,
+    )?);
+  }
+
+  // Wolfram draws a ParametricPlot with axes and equally scaled ones; the
+  // caller's own options come last so they win.
+  let mut graphics_args = vec![Expr::List(items.into())];
+  graphics_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
+  graphics_args.push(rule_expr(id_expr("AspectRatio"), id_expr("Automatic")));
+  graphics_args.extend(opt_args.iter().cloned());
+  let mut result = crate::functions::graphics::graphics_ast(&graphics_args)?;
+  // Keep the primitives on the rendering so `Show` can draw the region
+  // together with the other layers of a composite figure instead of
+  // dropping it for having no plot data.
+  if let Expr::Graphics { structure, .. } = &mut result {
+    *structure = Some(Box::new(call("Graphics", graphics_args)));
+  }
+  Ok(result)
+}
+
+/// The colour cycle `Plot`-family functions assign to successive curves.
+const REGION_COLORS: [(f64, f64, f64); 6] = [
+  (0.24, 0.6, 0.8),
+  (0.88, 0.58, 0.17),
+  (0.56, 0.69, 0.20),
+  (0.85, 0.32, 0.10),
+  (0.42, 0.28, 0.61),
+  (0.56, 0.69, 0.80),
+];
+
+/// Whether `region` (a `RegionFunction -> f` value, called as
+/// `f[x, y, u, v]`) accepts the point.
+fn parametric_region_allows(
+  region: &Expr,
+  (x, y): (f64, f64),
+  u: f64,
+  v: f64,
+) -> bool {
+  let call = Expr::CurriedCall {
+    func: Box::new(region.clone()),
+    args: vec![Expr::Real(x), Expr::Real(y), Expr::Real(u), Expr::Real(v)],
+  };
+  matches!(
+    evaluate_expr_to_expr(&call),
+    Ok(Expr::Identifier(ref s)) if s == "True"
+  )
+}
+
+/// The primitives (filled quads plus stroked boundary) of one region body.
+fn parametric_region_layer(
+  body: &Expr,
+  u_spec: &Expr,
+  v_spec: &Expr,
+  opt_args: &[Expr],
+  plot_opts: &PlotOptions,
+  layer: usize,
+) -> Result<Expr, InterpreterError> {
   let (uvar, u_min, u_max) = parse_iterator(u_spec, "ParametricPlot")?;
   let (vvar, v_min, v_max) = parse_iterator(v_spec, "ParametricPlot")?;
-  let (plot_opts, _) = parse_options(opt_args);
+  let region_function = opt_args.iter().find_map(|opt| {
+    let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+    (name == "RegionFunction").then(|| value.into_owned())
+  });
 
   // An explicit `PlotPoints` sets the grid; the option's plot default is a
   // curve-sample count, so it cannot be used as the grid size directly.
@@ -845,7 +922,11 @@ fn parametric_region_ast(
     let mut row = Vec::with_capacity(grid);
     for j in 0..grid {
       let v = v_min + j as f64 * dv;
-      row.push(evaluate_at_uv(body, &uvar, u, &vvar, v));
+      row.push(evaluate_at_uv(body, &uvar, u, &vvar, v).filter(|&pt| {
+        region_function
+          .as_ref()
+          .is_none_or(|rf| parametric_region_allows(rf, pt, u, v))
+      }));
     }
     points.push(row);
   }
@@ -899,9 +980,11 @@ fn parametric_region_ast(
 
   let (r, g, b) = plot_opts
     .plot_style
-    .first()
+    .get(layer)
     .and_then(|s| s.color.as_ref())
-    .map_or((0.24, 0.6, 0.8), |c| (c.r, c.g, c.b));
+    .map_or(REGION_COLORS[layer % REGION_COLORS.len()], |c| {
+      (c.r, c.g, c.b)
+    });
   let color = call(
     "RGBColor",
     vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
@@ -935,20 +1018,7 @@ fn parametric_region_ast(
     ));
   }
 
-  // Wolfram draws a ParametricPlot with axes and equally scaled ones; the
-  // caller's own options come last so they win.
-  let mut graphics_args = vec![Expr::List(items.into())];
-  graphics_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
-  graphics_args.push(rule_expr(id_expr("AspectRatio"), id_expr("Automatic")));
-  graphics_args.extend(opt_args.iter().cloned());
-  let mut result = crate::functions::graphics::graphics_ast(&graphics_args)?;
-  // Keep the primitives on the rendering so `Show` can draw the region
-  // together with the other layers of a composite figure instead of
-  // dropping it for having no plot data.
-  if let Expr::Graphics { structure, .. } = &mut result {
-    *structure = Some(Box::new(call("Graphics", graphics_args)));
-  }
-  Ok(result)
+  Ok(Expr::List(items.into()))
 }
 
 /// PolarPlot[r[theta], {theta, tmin, tmax}]
