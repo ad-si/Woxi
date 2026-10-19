@@ -2371,6 +2371,16 @@ mod graphics {
     }
 
     #[test]
+    fn number_form_of_nested_list_is_typeset() {
+      // Regression: `NumberForm[matrix, {3, 2}]` (a Manipulate readout of a
+      // 2x2 matrix) printed the raw `NumberForm[{{…}}, {3, 2}]` call because
+      // only flat lists were threaded.
+      let svg = export_svg("NumberForm[{{0.953939, 0}, {0, 0.3}}, {3, 2}]");
+      assert!(!svg.contains("NumberForm"), "{svg}");
+      assert!(svg.contains("0.95"), "{svg}");
+    }
+
+    #[test]
     fn traditional_form_padded_form_complex_label() {
       // Regression: `Text[TraditionalForm[PaddedForm[z, {4, 3}]]]` (the Argand
       // Diagram readout) printed the raw `PaddedForm(…)` call with unrounded
