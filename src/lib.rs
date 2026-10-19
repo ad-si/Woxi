@@ -3661,6 +3661,17 @@ fn render_image_if_needed(expr: syntax::Expr) -> syntax::Expr {
     );
     capture_graphics(&html);
     helpers::id_expr("-Image-")
+  } else if VISUAL_MODE.with(|v| *v.borrow())
+    && let Some((width, height, channels, data)) =
+      functions::image_ast::image3d_stack_projection(&expr)
+  {
+    // A stacked Image3D has no volume renderer; visual hosts show the flat
+    // projection of the (clipped) stack instead of the bare expression.
+    let html = functions::image_ast::image_to_html_img(
+      width, height, channels, &data, None,
+    );
+    capture_graphics(&html);
+    helpers::id_expr("-Image-")
   } else {
     expr
   }

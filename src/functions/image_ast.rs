@@ -622,6 +622,122 @@ pub fn image_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bool_expr(is_image))
 }
 
+/// `Image3D[{img1, img2, …}]` stacks equally sized 2D images into a volume.
+/// Returns `{width, height, depth}`, the channel count and the shared type.
+fn image_stack_info(e: &Expr) -> Option<(Vec<i128>, usize, ImageType)> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "Image3D" || args.is_empty() {
+    return None;
+  }
+  let Expr::List(items) = &args[0] else {
+    return None;
+  };
+  let Some(Expr::Image {
+    width,
+    height,
+    channels,
+    image_type,
+    ..
+  }) = items.first()
+  else {
+    return None;
+  };
+  let same = items.iter().all(|it| {
+    matches!(it, Expr::Image { width: w, height: h, channels: c, .. }
+      if w == width && h == height && c == channels)
+  });
+  same.then(|| {
+    (
+      vec![*width as i128, *height as i128, items.len() as i128],
+      *channels as usize,
+      *image_type,
+    )
+  })
+}
+
+/// Flatten a stacked `Image3D[{img1, img2, …}]` into a 2D picture for hosts
+/// that can only show flat images: the mean of the slices inside `ClipRange`
+/// along the depth axis. `ClipRange -> {{x0, x1}, {y0, y1}, {z0, z1}}` is in
+/// voxel coordinates and `All` keeps an axis whole. Returns
+/// `(width, height, channels, data)`.
+pub fn image3d_stack_projection(e: &Expr) -> Option<(u32, u32, u8, Vec<f64>)> {
+  let (dims, channels, _) = image_stack_info(e)?;
+  let Expr::FunctionCall { args, .. } = e else {
+    return None;
+  };
+  let Expr::List(slices) = &args[0] else {
+    return None;
+  };
+  let (w, h, d) = (dims[0] as usize, dims[1] as usize, dims[2] as usize);
+  let ch = channels;
+
+  let mut clip: [(f64, f64); 3] = [
+    (f64::NEG_INFINITY, f64::INFINITY),
+    (f64::NEG_INFINITY, f64::INFINITY),
+    (f64::NEG_INFINITY, f64::INFINITY),
+  ];
+  for opt in &args[1..] {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      continue;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ClipRange") {
+      continue;
+    }
+    if let Expr::List(axes) = replacement.as_ref() {
+      for (i, axis) in axes.iter().take(3).enumerate() {
+        if let Expr::List(range) = axis
+          && range.len() == 2
+          && let (Some(lo), Some(hi)) = (
+            crate::functions::math_ast::try_eval_to_f64(&range[0]),
+            crate::functions::math_ast::try_eval_to_f64(&range[1]),
+          )
+        {
+          clip[i] = (lo, hi);
+        }
+      }
+    }
+  }
+  // Voxel `i` (1-based) is inside when it lies within the closed range.
+  let inside = |axis: usize, i: usize| {
+    let v = (i + 1) as f64;
+    v >= clip[axis].0.floor().max(1.0) && v <= clip[axis].1.ceil()
+  };
+
+  let mut acc = vec![0.0; w * h * ch];
+  let mut count = 0usize;
+  for (z, slice) in slices.iter().enumerate().take(d) {
+    if !inside(2, z) {
+      continue;
+    }
+    let Expr::Image { data, .. } = slice else {
+      return None;
+    };
+    count += 1;
+    for y in 0..h {
+      for x in 0..w {
+        if inside(0, x) && inside(1, y) {
+          for c in 0..ch {
+            let k = (y * w + x) * ch + c;
+            acc[k] += data.get(k).copied().unwrap_or(0.0);
+          }
+        }
+      }
+    }
+  }
+  if count > 0 {
+    for v in &mut acc {
+      *v /= count as f64;
+    }
+  }
+  Some((w as u32, h as u32, ch as u8, acc))
+}
+
 /// Image3D[arg] is a valid Image when `arg` is a rank-3 or rank-4 nested
 /// list, or a NumericArray of rank 3 or 4. Image3D itself isn't fully
 /// implemented, but ImageQ can still classify it correctly.
@@ -631,6 +747,9 @@ fn is_valid_image3d(e: &Expr) -> bool {
   };
   if name != "Image3D" || args.is_empty() {
     return false;
+  }
+  if image_stack_info(e).is_some() {
+    return true;
   }
   let inner = match &args[0] {
     Expr::FunctionCall {
@@ -710,6 +829,9 @@ pub fn image_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// None if `arg` isn't a rank-3 or rank-4 nested list (peeling through
 /// a NumericArray wrapper).
 fn image3d_dimensions(e: &Expr) -> Option<Vec<i128>> {
+  if let Some((dims, _, _)) = image_stack_info(e) {
+    return Some(dims);
+  }
   let Expr::FunctionCall { name, args } = e else {
     return None;
   };
@@ -807,6 +929,9 @@ pub fn image_channels_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Channel count for a valid Image3D[arg]; None for invalid shapes.
 fn image3d_channels(e: &Expr) -> Option<usize> {
+  if let Some((_, ch, _)) = image_stack_info(e) {
+    return Some(ch);
+  }
   let Expr::FunctionCall { name, args } = e else {
     return None;
   };
@@ -867,6 +992,9 @@ pub fn image_type_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Resolve the underlying type tag for a valid Image3D[arg]. Defaults
 /// to Real32 if there's no NumericArray wrapper.
 fn image3d_type(e: &Expr) -> Option<ImageType> {
+  if let Some((_, _, t)) = image_stack_info(e) {
+    return Some(t);
+  }
   let Expr::FunctionCall { name, args } = e else {
     return None;
   };

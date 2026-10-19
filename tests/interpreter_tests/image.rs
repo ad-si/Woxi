@@ -343,6 +343,24 @@ mod image_core {
     );
   }
 
+  // Image3D of a list of equally sized 2D images is a stacked volume.
+  #[test]
+  fn image3d_from_image_stack() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img = Image[{{0, 1, 1}, {1, 0, 1}}]; v = Image3D[{img, img, img, img}]; {ImageQ[v], ImageDimensions[v], ImageChannels[v], ImageType[v]}"
+      )
+      .unwrap(),
+      "{True, {3, 2, 4}, 1, Real32}"
+    );
+    assert_eq!(
+      interpret("Image3D[{Image[{{0, 1}}], Image[{{0, 1, 1}}]}] // ImageQ")
+        .unwrap(),
+      "False"
+    );
+  }
+
   // ImageDimensions on a valid Image3D returns {width, height, depth}.
   #[test]
   fn image_dimensions_image3d_rank3_nested_list() {
