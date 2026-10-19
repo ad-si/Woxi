@@ -10941,6 +10941,19 @@ mod plot3d {
       assert_eq!(fills(&format!("{curves}, Filling -> {{{{1, 2}}}}]")), 0);
     }
 
+    /// A bare series number in a `Filling` list (`Filling -> {1}`) shades
+    /// that curve down to the axis, like `{1 -> Axis}`; the other curves
+    /// stay unshaded. A Demonstration fills the mean curve of a
+    /// confidence band this way.
+    #[test]
+    fn bare_series_numbers_in_a_filling_list_fill_to_the_axis() {
+      let fills = |code: &str| export_svg(code).matches("<polygon").count();
+      let curves = "ListLinePlot[{{1, 2, 3}, {2, 3, 4}, {3, 4, 5}}";
+      assert_eq!(fills(&format!("{curves}, Filling -> {{1}}]")), 1);
+      assert_eq!(fills(&format!("{curves}, Filling -> {{1, 3}}]")), 2);
+      assert_eq!(fills(&format!("{curves}, Filling -> {{1 -> Axis}}]")), 1);
+    }
+
     /// `Show` merging several filled plots keeps each one's own
     /// `FillingStyle`: three normal curves shaded in three colours stay
     /// three colours, where the first plot's style used to be applied to

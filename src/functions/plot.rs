@@ -1725,6 +1725,15 @@ fn parse_filling_rules(
   flatten_rules(replacement, &mut items);
   let mut rules = Vec::new();
   for item in items {
+    // A bare series number `i` directly in the list (`Filling -> {1, 3}`)
+    // is shorthand for `i -> Axis`.
+    if let Expr::Integer(n) = item
+      && *n >= 1
+      && matches!(replacement, Expr::List(top) if top.iter().any(|t| std::ptr::eq(t, item)))
+    {
+      rules.push((*n as usize - 1, FillTarget::Level(Filling::Axis), None));
+      continue;
+    }
     let (pattern, rhs) = match item {
       Expr::Rule {
         pattern,
