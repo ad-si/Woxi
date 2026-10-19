@@ -37152,4 +37152,33 @@ mod list_plot_frame {
     .unwrap();
     assert_eq!(out, "Graphics");
   }
+
+  /// A `Column` that is a cell of a styled `Grid` is set in the grid's
+  /// face and size — not as a free-standing monospace column at the base
+  /// size — and a column of text lines is one text run with line breaks.
+  #[test]
+  fn grid_column_cell_inherits_grid_style() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Style[Grid[{{\"a\", Column[{\"x\", Row[{\"p \", NumberForm[k, {3, 1}]}]}]}}], 17]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(!svg.contains("monospace"), "got: {svg}");
+    assert!(!svg.contains("font-size=\"14\""), "got: {svg}");
+    assert!(svg.contains(">x</tspan>"), "got: {svg}");
+  }
+
+  #[test]
+  fn grid_column_cell_keeps_grid_font_family() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Style[Grid[{{Column[{\"x\", \"y\"}]}}], FontFamily -> \"Courier\"]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(svg.contains("font-family=\"Courier\""), "got: {svg}");
+  }
 }
