@@ -1164,6 +1164,19 @@ pub fn evaluate_expr_to_expr_inner(
           args: args.clone(),
         });
       }
+      // The `InterpolatingFunctionAnatomy` package symbols live in Woxi's
+      // flat namespace, so the spelled-out package context is dropped
+      // (`DifferentialEquations`InterpolatingFunctionAnatomy`
+      // InterpolatingFunctionDomain[f]` is `InterpolatingFunctionDomain[f]`).
+      if let Some(short) =
+        name.strip_prefix("DifferentialEquations`InterpolatingFunctionAnatomy`")
+        && matches!(short, "InterpolatingFunctionDomain")
+      {
+        return evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: short.to_string(),
+          args: args.clone(),
+        });
+      }
       // Track function calls on the evaluation stack for stack traces.
       crate::push_eval_stack(name);
       // A literal `Sequence[…]` argument splices into the enclosing call
