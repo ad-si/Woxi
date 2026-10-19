@@ -9075,6 +9075,19 @@ mod plot3d {
       assert!(svg.contains(">\n0.0\n</text>") || svg.contains(">0.0<"));
     }
 
+    // A tick set spaced far below 10^-5 is labelled in scientific
+    // notation. Regression: every label of a `0` to `1.2*10^-35` axis
+    // rounded to an integer and read `0`.
+    #[test]
+    fn tiny_scale_ticks_use_scientific_notation() {
+      let svg = export_svg(
+        "Plot[{1/10^36, 2/10^36}, {x, 0, 6}, PlotRange -> {0, 1.2/10^35}, Axes -> {False, True}]",
+      );
+      for label in ["2×10⁻³⁶", "4×10⁻³⁶", "1.2×10⁻³⁵"] {
+        assert!(svg.contains(label), "missing tick {label}: {svg}");
+      }
+    }
+
     // Enough decimals to tell neighbouring ticks apart. Regression: a
     // 0.0002 step rendered every label as `0.0`.
     #[test]
