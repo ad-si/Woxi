@@ -5214,3 +5214,11 @@ traversal/shortest path, and the `Level`/`Edge` flags of
 order, face order and orientation of `PolyhedronData[{"Prism", n}, …]` are a
 guess; `"InsphereRadius"`/`"Midradius"` report `Missing["NotApplicable"]`.
 
+
+## `Mean` of a `TruncatedDistribution` over a discrete base
+
+`Mean[TruncatedDistribution[{1, Infinity}, GeometricDistribution[0.25]]]`
+integrates the density instead of summing the probability mass, so it gives
+`5.186…` rather than `4` (found while sampling the distribution for the
+`Block Bootstrap for Time Series` Demonstration). `Quantile`/`CDF` of a
+truncated discrete distribution likewise exclude the lower bound's own mass.

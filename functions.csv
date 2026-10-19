@@ -1478,7 +1478,7 @@ GeoGridPosition,Geographic grid coordinate position,✅,pure,7.0,1471
 OpenerView,Expandable view widget,✅,pure,6.0,1471
 DeleteDuplicatesBy,Deletes duplicates based on a function criterion,✅,pure,10.0,1472
 HypoexponentialDistribution,Hypoexponential distribution,✅,pure,9.0,1473
-GeometricDistribution,Geometric probability distribution,✅,pure,6.0,1474
+GeometricDistribution,Geometric probability distribution (RandomVariate supported),✅,pure,6.0,1474
 Thumbnail,Thumbnail image wrapper,✅,pure,7.0,1475
 Ellipsoid,Ellipsoid geometric region,✅,pure,10.0,1476
 TransformedRegion,Apply transformation to a geometric region,✅,pure,10.0,1477
@@ -1564,7 +1564,7 @@ NotebookGet,Get notebook expression,✅,pure,3.0,1562
 StringToStream,Creates an input stream from a string,✅,pure,2.0,1562
 SubsetQ,Tests if one list or association is a subset of another,✅,pure,10.0,1562
 Visible,Visibility option,✅,pure,3.0,1563
-TruncatedDistribution,Distribution restricted to an interval and renormalized,✅,pure,8.0,1564
+TruncatedDistribution,Distribution restricted to an interval and renormalized (RandomVariate by rejection sampling),✅,pure,8.0,1564
 NotebookFind,Search in a notebook,,unevaluated,3.0,1565
 ElementwiseLayer,Neural net elementwise layer,,unevaluated,11.0,1566
 ClassifierMeasurements,Classifier performance measurements,,unevaluated,10.0,1569

@@ -8847,6 +8847,47 @@ mod weibull_gamma_random_variate {
       "RandomVariate[WeibullDistribution[-1, 2], 3]"
     );
   }
+
+  #[test]
+  fn geometric_samples_are_non_negative_integers_with_right_mean() {
+    assert_eq!(
+      interpret(
+        "s = RandomVariate[GeometricDistribution[0.25], 20000]; \
+         {Min[s] >= 0, Round[Mean[s]]}"
+      )
+      .unwrap(),
+      "{True, 3}"
+    );
+  }
+
+  #[test]
+  fn truncated_distribution_samples_stay_inside_bounds() {
+    assert_eq!(
+      interpret(
+        "s = RandomVariate[TruncatedDistribution[{1, Infinity}, \
+         GeometricDistribution[0.25]], 2000]; {Length[s], Min[s] >= 1}"
+      )
+      .unwrap(),
+      "{2000, True}"
+    );
+    assert_eq!(
+      interpret(
+        "s = RandomVariate[TruncatedDistribution[{-1, 2}, \
+         NormalDistribution[0, 1]], 500]; {Min[s] >= -1, Max[s] <= 2}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
+  fn overflowing_dimension_list_does_not_panic() {
+    assert!(
+      interpret("RandomVariate[NormalDistribution[], Range[40]]")
+        .unwrap()
+        .starts_with("RandomVariate[")
+    );
+  }
 }
 
 mod custom_probability_distribution_random_variate {
