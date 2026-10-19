@@ -648,6 +648,78 @@ mod parabolic_cylinder_d {
   }
 }
 
+mod elliptic_complex_arguments {
+  use super::*;
+
+  #[test]
+  fn theta1_complex_z() {
+    assert_eq!(
+      interpret("Round[Re[EllipticTheta[1, 0.3 + 0.4 I, 0.5]], 10^-9]")
+        .unwrap(),
+      "9165867/250000000"
+    );
+  }
+
+  #[test]
+  fn theta2_complex_z() {
+    assert_eq!(
+      interpret("Round[Im[EllipticTheta[2, 0.3 + 0.4 I, 0.5]], 10^-9]")
+        .unwrap(),
+      "-799268041/1000000000"
+    );
+  }
+
+  #[test]
+  fn theta4_complex_nome() {
+    assert_eq!(
+      interpret(
+        "Round[Re[EllipticTheta[4, 0.3 + 0.4 I, 0.026 + 0.044 I]], 10^-9]"
+      )
+      .unwrap(),
+      "898439667/1000000000"
+    );
+  }
+
+  #[test]
+  fn theta3_real_z_complex_nome() {
+    assert_eq!(
+      interpret("Round[Im[EllipticTheta[3, 0.3, 0.026 + 0.044 I]], 10^-9]")
+        .unwrap(),
+      "18156339/250000000"
+    );
+  }
+
+  #[test]
+  fn theta_complex_with_zero_imaginary_matches_real() {
+    assert_eq!(
+      interpret(
+        "EllipticTheta[3, 0.3 + 0. I, 0.5] == EllipticTheta[3, 0.3, 0.5]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn elliptic_f_complex_amplitude() {
+    assert_eq!(
+      interpret("Round[Re[EllipticF[0.5 + 0.4 I, 0.17]], 10^-9]").unwrap(),
+      "497109259/1000000000"
+    );
+  }
+
+  #[test]
+  fn elliptic_f_complex_amplitude_from_arcsin() {
+    assert_eq!(
+      interpret(
+        "Round[Im[EllipticF[1.18148830882 + 1.46465359332 I, 0.1692798]], 10^-9]"
+      )
+      .unwrap(),
+      "329816523/200000000"
+    );
+  }
+}
+
 mod elliptic_theta_prime {
   use super::*;
 
