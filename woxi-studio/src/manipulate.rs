@@ -1732,6 +1732,38 @@ mod tests {
     );
   }
 
+  /// Regression: `Item[Button[…], Alignment -> Center]` in a Manipulate's
+  /// control list is a pressable button, not a static annotation row that
+  /// shows the button's source text as a heading.
+  #[test]
+  fn item_wrapped_button_is_a_button_control() {
+    let code = r#"Manipulate[
+      Range[n],
+      {{n, 2}, 1, 4, 1},
+      Item[Button["Reset", n = 1, ImageSize -> 300], Alignment -> Center]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "build must not report an error");
+    assert!(
+      state.controls.iter().any(|c| matches!(
+        c,
+        ControlState::Button { label, action, .. }
+          if label == "Reset" && action == "n = 1"
+      )),
+      "expected a Reset button control, got {:?}",
+      state.controls
+    );
+    assert!(
+      !state
+        .controls
+        .iter()
+        .any(|c| matches!(c, ControlState::Heading { .. })),
+      "the button must not be frozen into a heading"
+    );
+  }
+
   /// A choice list `Dynamic[Range[top]]` that follows a free variable the
   /// body itself assigns (not a control): switching the mode makes the body
   /// assign a different `top`, and the offered choices must follow it.
