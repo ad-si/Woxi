@@ -8210,6 +8210,12 @@ pub fn interpolation_ast(
     // spaced across [xmin, xmax] when a domain was supplied.
     let count = data_list.len();
     for (i, item) in data_list.iter().enumerate() {
+      // A one-element row `{v}` (e.g. from `Accumulate[{f[#]} & /@ ...]`)
+      // carries the single value `v`.
+      let item = match item {
+        Expr::List(inner) if inner.len() == 1 => &inner[0],
+        other => other,
+      };
       let y = interp_value_to_f64(item)?;
       let (x, x_expr) = match domain_spec {
         Some((xmin, xmax)) if count > 1 => {

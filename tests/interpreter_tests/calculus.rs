@@ -9272,6 +9272,20 @@ mod ndsolve {
   }
 
   #[test]
+  fn interpolation_of_one_element_rows_is_scalar_valued() {
+    // `{v}` rows (as produced by `Accumulate[{f[#]} & /@ ...]`) are values.
+    assert_eq!(
+      interpret("Interpolation[{{1}, {4}, {9}, {16}}][3]").unwrap(),
+      "9"
+    );
+    assert_eq!(
+      interpret("InterpolatingFunctionDomain[Interpolation[{{1}, {4}, {9}}]]")
+        .unwrap(),
+      "{{1, 3}}"
+    );
+  }
+
+  #[test]
   fn interpolating_function_domain_of_non_interpolating_function() {
     // An argument that isn't an `InterpolatingFunction` is left unevaluated,
     // like a pattern-mismatched built-in.
