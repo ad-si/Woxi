@@ -7859,6 +7859,43 @@ mod plot3d {
       assert!(nested.contains("text-anchor=\"start\""), "{nested}");
     }
 
+    // `FrameTicks` with explicit tick positions on a framed `Graphics` (and a
+    // `Show` that overlays one on a `ListPlot`) labels exactly those ticks.
+    #[test]
+    fn frame_ticks_explicit_positions_in_graphics_and_show() {
+      let labels = |svg: &str| -> Vec<String> {
+        svg
+          .split("<text")
+          .skip(1)
+          .filter_map(|t| {
+            let body = t.split_once('>')?.1;
+            Some(body.split('<').next()?.to_string())
+          })
+          .collect()
+      };
+      let plain = export_svg(
+        r#"Graphics[{Line[{{0, 0}, {40, 40}}]}, Frame -> True,
+          PlotRange -> {{0, 40}, {0, 40}},
+          FrameTicks -> {{0, 15, 30}, {0, 5, 35}, None, None}]"#,
+      );
+      assert_eq!(
+        labels(&plain),
+        vec!["0", "15", "30", "0", "5", "35"],
+        "{plain}"
+      );
+      let shown = export_svg(
+        r#"Show[ListPlot[{{1, 2}, {3, 9}}, Frame -> True,
+          PlotRange -> {{-3, 40}, {-3, 40}},
+          FrameTicks -> {{0, 5, 10}, {0, 5, 10}, None, None}],
+          Graphics[{Line[{{0, 0}, {40, 40}}]}]]"#,
+      );
+      assert_eq!(
+        labels(&shown),
+        vec!["0", "5", "10", "0", "5", "10"],
+        "{shown}"
+      );
+    }
+
     // `FrameTicks -> False` keeps the border but drops the tick marks and
     // their labels, and with them the gutter the labels needed.
     #[test]

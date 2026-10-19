@@ -7831,6 +7831,38 @@ fn parse_frame_tick_modes(value: &Expr) -> [EdgeTicks; 4] {
   }
 }
 
+/// Explicit tick lists (`{pos, …}` / `{pos, label}` entries) a `FrameTicks`
+/// value gives per edge, in bottom, left, top, right order. Edges given as
+/// anything else (`Automatic`, `None`, `All`) hold `None`.
+fn parse_frame_tick_lists(value: &Expr) -> [Option<Vec<(f64, String)>>; 4] {
+  let one = |e: &Expr| match e {
+    Expr::List(_) => crate::functions::plot::parse_explicit_ticks(e),
+    _ => None,
+  };
+  // An edge pair holds specs, never the bare numbers / strings of a tick.
+  let is_pair = |e: &Expr| match e {
+    Expr::List(p) if p.len() == 2 => p.iter().all(|x| {
+      !matches!(x, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))
+    }),
+    _ => false,
+  };
+  match value {
+    Expr::List(items) if items.len() == 4 => [
+      one(&items[0]),
+      one(&items[1]),
+      one(&items[2]),
+      one(&items[3]),
+    ],
+    Expr::List(items) if items.len() == 2 && items.iter().all(is_pair) => {
+      let (Expr::List(lr), Expr::List(bt)) = (&items[0], &items[1]) else {
+        return [None, None, None, None];
+      };
+      [one(&bt[0]), one(&lr[0]), one(&bt[1]), one(&lr[1])]
+    }
+    _ => [None, None, None, None],
+  }
+}
+
 /// Render the requested frame edges around the plot area with their tick
 /// marks and labels.
 fn render_frame(
@@ -7840,6 +7872,7 @@ fn render_frame(
   svg_h: f64,
   edges: [bool; 4],
   ticks: [EdgeTicks; 4],
+  explicit: &[Option<Vec<(f64, String)>>; 4],
 ) {
   let t = theme();
   let frame_stroke = t.framed_border;
@@ -7891,7 +7924,14 @@ fn render_frame(
     if ticks[i] == EdgeTicks::None {
       continue;
     }
-    for &t_val in &x_ticks {
+    let listed: Vec<(f64, String)> = match &explicit[i] {
+      Some(list) => list.clone(),
+      None => x_ticks
+        .iter()
+        .map(|&v| (v, svg_escape(&format_tick_in_sequence(v, x_step))))
+        .collect(),
+    };
+    for (t_val, label) in listed {
       let x = coord_x(t_val, bb, svg_w);
       if !x.is_finite() {
         continue;
@@ -7902,10 +7942,8 @@ fn render_frame(
         tick_coord(y_hi)
       ));
       if ticks[i] == EdgeTicks::Labels {
-        let label = format_tick_in_sequence(t_val, x_step);
         svg.push_str(&format!(
-          "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"{baseline}\">{}</text>\n",
-          svg_escape(&label),
+          "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"{baseline}\">{label}</text>\n",
         ));
       }
     }
@@ -7919,7 +7957,14 @@ fn render_frame(
     if ticks[i] == EdgeTicks::None {
       continue;
     }
-    for &t_val in &y_ticks {
+    let listed: Vec<(f64, String)> = match &explicit[i] {
+      Some(list) => list.clone(),
+      None => y_ticks
+        .iter()
+        .map(|&v| (v, svg_escape(&format_tick_in_sequence(v, y_step))))
+        .collect(),
+    };
+    for (t_val, label) in listed {
       let y = coord_y(t_val, bb, svg_h);
       if !y.is_finite() {
         continue;
@@ -7930,10 +7975,8 @@ fn render_frame(
         tick_coord(x_hi)
       ));
       if ticks[i] == EdgeTicks::Labels {
-        let label = format_tick_in_sequence(t_val, y_step);
         svg.push_str(&format!(
-          "<text x=\"{anchor_x:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"{anchor}\" dominant-baseline=\"middle\">{}</text>\n",
-          svg_escape(&label),
+          "<text x=\"{anchor_x:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"{anchor}\" dominant-baseline=\"middle\">{label}</text>\n",
         ));
       }
     }
@@ -9857,6 +9900,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut frame_edges = [false; 4];
   // What each frame edge carries (see `parse_frame_tick_modes`).
   let mut frame_tick_modes = DEFAULT_FRAME_TICKS;
+  let mut frame_tick_lists: [Option<Vec<(f64, String)>>; 4] =
+    [None, None, None, None];
   let mut grid_x = GridSpec::None;
   let mut grid_y = GridSpec::None;
   let mut grid_style: Option<StyleState> = None;
@@ -10002,6 +10047,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         "FrameTicks" => {
           frame_tick_modes = parse_frame_tick_modes(replacement);
+          frame_tick_lists = parse_frame_tick_lists(replacement);
         }
         "ImagePadding" => {
           image_padding =
@@ -10530,7 +10576,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   svg.push_str("</g>\n");
 
   if frame {
-    render_frame(&mut svg, &bb, svg_w, svg_h, frame_edges, frame_tick_modes);
+    render_frame(
+      &mut svg,
+      &bb,
+      svg_w,
+      svg_h,
+      frame_edges,
+      frame_tick_modes,
+      &frame_tick_lists,
+    );
   }
 
   // Frame captions: the bottom/top ones centred outside their edge, the
