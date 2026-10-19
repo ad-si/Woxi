@@ -10308,3 +10308,20 @@ mod dollar_pattern_names {
     );
   }
 }
+
+mod array_domains {
+  use super::*;
+
+  #[test]
+  fn vectors_and_matrices_domains_stay_inert_without_warning() {
+    use woxi::interpret_with_stdout;
+    assert_eq!(interpret("Vectors[3, Reals]").unwrap(), "Vectors[3, Reals]");
+    let r = interpret_with_stdout("Matrices[{2, 3}, Integers]").unwrap();
+    assert_eq!(r.result, "Matrices[{2, 3}, Integers]");
+    assert!(
+      !r.warnings.iter().any(|w| w.contains("not yet implemented")),
+      "{:?}",
+      r.warnings
+    );
+  }
+}
