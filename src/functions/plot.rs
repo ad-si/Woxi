@@ -7910,6 +7910,29 @@ pub(crate) fn frame_tick_axes_visible(value: &Expr) -> (bool, bool) {
   }
 }
 
+/// The bottom and left edge specs of a `FrameTicks` value written as
+/// `{{l, r}, {b, t}}`, `{b, l, t, r}` or `{xspec, yspec}`.
+fn frame_tick_edge_specs(value: &Expr) -> (Option<&Expr>, Option<&Expr>) {
+  // An edge pair holds specs, never the bare numbers / strings of a tick.
+  let is_pair = |e: &Expr| match e {
+    Expr::List(p) if p.len() == 2 => p.iter().all(|x| {
+      !matches!(x, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))
+    }),
+    _ => false,
+  };
+  match value {
+    Expr::List(items) if items.len() == 4 => (Some(&items[0]), Some(&items[1])),
+    Expr::List(items) if items.len() == 2 && items.iter().all(is_pair) => {
+      match (&items[0], &items[1]) {
+        (Expr::List(lr), Expr::List(bt)) => (bt.first(), lr.first()),
+        _ => (None, None),
+      }
+    }
+    Expr::List(items) if items.len() == 2 => (Some(&items[0]), Some(&items[1])),
+    _ => (None, None),
+  }
+}
+
 /// Create a plotters chart with axes drawn, returning the SVG and coordinate info.
 /// Callers can then append custom SVG elements using the coordinate transform.
 pub(crate) fn generate_axes_only(
@@ -9555,6 +9578,20 @@ pub(crate) fn apply_common_plot_option(
     "FrameTicks" => {
       let (x, y) = frame_tick_axes_visible(replacement);
       plot_opts.frame_ticks = x || y;
+      // Explicit tick lists (`{pos, label}` entries) on the bottom / left
+      // edge replace the automatic ticks; an empty list leaves that edge bare.
+      let (bottom, left) = frame_tick_edge_specs(replacement);
+      let explicit = |spec: Option<&Expr>| match spec {
+        Some(Expr::List(l)) if l.is_empty() => Some(Some(Vec::new())),
+        Some(e @ Expr::List(_)) => parse_explicit_ticks(e).map(Some),
+        _ => None,
+      };
+      if let Some(t) = explicit(bottom) {
+        plot_opts.ticks_x = t;
+      }
+      if let Some(t) = explicit(left) {
+        plot_opts.ticks_y = t;
+      }
     }
     "Evaluated" => {
       plot_opts.evaluated =
