@@ -5804,6 +5804,43 @@ fn style_font_size(directives: &[Expr]) -> Option<f64> {
   })
 }
 
+/// Where a `Pane`'s content sits in its fixed box, as the fraction of the
+/// spare width / height left before it: `Alignment -> {Center, Center}`
+/// gives `(0.5, 0.5)`. A lone horizontal keyword (`Alignment -> Center`)
+/// pins the content to the top. `None` when the Pane states no
+/// `Alignment`: its content then keeps its natural canvas.
+pub(crate) fn pane_alignment(options: &[Expr]) -> Option<(f64, f64)> {
+  let fraction = |e: &Expr| match e {
+    Expr::Identifier(n) => match n.as_str() {
+      "Center" => Some(0.5),
+      "Right" | "Bottom" => Some(1.0),
+      "Left" | "Top" => Some(0.0),
+      _ => None,
+    },
+    _ => None,
+  };
+  for opt in options {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      continue;
+    };
+    if !matches!(&**pattern, Expr::Identifier(n) if n == "Alignment") {
+      continue;
+    }
+    return Some(match &**replacement {
+      Expr::List(pair) if pair.len() == 2 => (
+        fraction(&pair[0]).unwrap_or(0.0),
+        fraction(&pair[1]).unwrap_or(0.0),
+      ),
+      single => (fraction(single).unwrap_or(0.0), 0.0),
+    });
+  }
+  None
+}
+
 pub(crate) fn pane_size_component(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
@@ -5873,7 +5910,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         ("Pane", Some(Expr::List(size))) if size.len() == 2 => {
           match (pane_size_component(&size[0]), pane_size_component(&size[1])) {
             (Some(w), Some(h)) => {
-              crate::functions::graphics::clip_svg_to_pane_box(&inner_svg, w, h)
+              crate::functions::graphics::clip_svg_to_pane_box(
+                &inner_svg,
+                w,
+                h,
+                pane_alignment(&args[2..]),
+              )
             }
             _ => inner_svg,
           }
