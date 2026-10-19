@@ -146,6 +146,14 @@ fn compile_arg_spec(spec: &Expr, body: &Expr) -> Option<(String, bool)> {
       };
       let real = match items.get(1) {
         Some(Expr::Pattern { head, .. }) => head.as_deref() != Some("Integer"),
+        // The explicit `Blank[Integer]` form a saved notebook stores for
+        // `_Integer`.
+        Some(Expr::FunctionCall { name: blank, args })
+          if blank == "Blank"
+            && matches!(args.as_slice(), [Expr::Identifier(t)] if t == "Integer") =>
+        {
+          false
+        }
         // No declared type — infer from usage, defaulting to `_Real`.
         _ => !compile_param_used_as_integer_count(name, body),
       };
