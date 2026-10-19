@@ -14349,11 +14349,18 @@ fn try_bigfloat_power(
     if base_bf.is_negative() {
       return None;
     }
-    let exp_bf = match expr_to_bigfloat(exp, bits, rm, &mut cc) {
-      Ok(e) => e,
-      Err(e) => return Some(Err(e)),
-    };
-    base_bf.pow(&exp_bf, bits, rm, &mut cc)
+    // Square roots go through the dedicated routine: `pow` never terminates
+    // when the root is exact (e.g. Sqrt[4.`3.]) since the rounding test
+    // cannot be decided.
+    if exp_val == 0.5 {
+      base_bf.sqrt(bits, rm)
+    } else {
+      let exp_bf = match expr_to_bigfloat(exp, bits, rm, &mut cc) {
+        Ok(e) => e,
+        Err(e) => return Some(Err(e)),
+      };
+      base_bf.pow(&exp_bf, bits, rm, &mut cc)
+    }
   };
 
   let result_prec = base_prec - exp_val.abs().log10();
