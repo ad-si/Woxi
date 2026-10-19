@@ -9409,6 +9409,15 @@ mod mod_exact_symbolic {
     assert_eq!(interpret("Mod[Pi, 1, 1]").unwrap(), "-2 + Pi");
     assert_eq!(interpret("Mod[7 Pi/2, Pi, 1]").unwrap(), "Pi/2");
   }
+
+  // Gaussian Mod also applies when the complex operand has machine-real
+  // parts (it used to stay unevaluated, which blanked ComplexPlot of Mod).
+  #[test]
+  fn gaussian_mod_machine_reals() {
+    assert_eq!(interpret("Mod[3.5 + 4.5 I, 2]").unwrap(), "-0.5 + 0.5*I");
+    assert_eq!(interpret("Mod[2.5 I, 2]").unwrap(), "0. + 0.5*I");
+    assert_eq!(interpret("Mod[1.5 + 0.5 I, 1]").unwrap(), "-0.5 + 0.5*I");
+  }
 }
 
 // Division-by-zero behavior for Mod / Quotient / QuotientRemainder.

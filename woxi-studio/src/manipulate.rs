@@ -3188,6 +3188,21 @@ mod tests {
     assert!(dump("k$$").contains("label: \"freq\""), "{}", dump("k$$"));
   }
 
+  /// A slider label whose subscript holds a negative index
+  /// (`\!\(\*SubscriptBox[\(c\), \(2, \(-2\)\)]\)`) nests a second
+  /// `\(…\)` group inside the first; it must typeset as a subscript like
+  /// the flat `\(0, 0\)` form, not leak the raw `SubscriptBox[c, 2, -2]`.
+  #[test]
+  fn control_label_typesets_subscript_with_negative_index() {
+    let code = r#"Manipulate[c5, {{c5, 0, "\!\(\*SubscriptBox[\(c\), \(2, \(-2\)\)]\)"}, 0, 1, 0.01}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls[0]);
+    assert!(!dump.contains("SubscriptBox"), "{dump}");
+    assert!(dump.contains("-2"), "{dump}");
+  }
+
   /// A caption can apply a compound head to an argument —
   /// `TraditionalForm[Subscript[f, a][x]]` — which must typeset as the head's
   /// script followed by `(x)`, not leak the raw `Subscript[f, a][x]` source.

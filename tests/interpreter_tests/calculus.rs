@@ -2037,6 +2037,25 @@ mod differentiate_piecewise {
   }
 }
 
+mod differentiate_equations {
+  use super::*;
+
+  // D threads over both sides of an equation: D[lhs == rhs, x] is
+  // D[lhs, x] == D[rhs, x].
+  #[test]
+  fn threads_over_equal() {
+    assert_eq!(interpret("D[x^2 == 3 x, x]").unwrap(), "2*x == 3");
+    assert_eq!(
+      interpret("D[f[u] == g[u]^2, u]").unwrap(),
+      "Derivative[1][f][u] == 2*g[u]*Derivative[1][g][u]"
+    );
+    assert_eq!(
+      interpret("D[y[u] == 2 u, {u, 2}]").unwrap(),
+      "Derivative[2][y][u] == 0"
+    );
+  }
+}
+
 mod differentiate_nonconstants {
   use super::*;
 

@@ -16250,6 +16250,36 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   mod complex_plot {
     use super::*;
 
+    /// `Mod` of a complex function used to stay unevaluated, so every sample
+    /// was dropped and the domain colouring came out fully transparent.
+    #[test]
+    fn complex_plot_of_complex_mod_is_coloured() {
+      let svg = export_svg("ComplexPlot[Mod[z^-2, 2], {z, -1 - I, 1 + I}]");
+      let b64 = svg
+        .split("data:image/png;base64,")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("embedded bitmap");
+      use base64::Engine as _;
+      let png = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+      let img = ::image::load_from_memory(&png).unwrap().to_rgba8();
+      let opaque = img.pixels().filter(|p| p.0[3] == 255).count();
+      assert!(
+        opaque * 2 > img.pixels().count(),
+        "expected most samples to be coloured, got {opaque}"
+      );
+    }
+
+    #[test]
+    fn complex_plot_draws_plot_label() {
+      let svg = export_svg(
+        "ComplexPlot[z^2, {z, -1 - I, 1 + I}, PlotLabel -> \"Domain\"]",
+      );
+      assert!(svg.contains(">Domain</text>"), "missing label");
+    }
+
     #[test]
     fn complex_plot_identity() {
       insta::assert_snapshot!(export_svg(
@@ -36913,6 +36943,31 @@ fn explicit_plot_range_clips_content_in_widened_drawing_area() {
 }
 
 #[test]
+fn pane_pads_small_content_to_its_fixed_box() {
+  // Regression: `Pane[content, {w, h}]` reserves the whole box, so content
+  // smaller than it is placed by an explicit `Alignment`, not left in the
+  // top-left corner of its natural size.
+  let centred = export_svg(
+    "Pane[Graphics[Circle[], ImageSize -> {100, 60}], {400, 300}, \
+     Alignment -> {Center, Center}]",
+  );
+  assert!(
+    centred.contains("<svg width=\"400\" height=\"300\""),
+    "{centred}"
+  );
+  assert!(centred.contains("translate(150.0 120.0)"), "{centred}");
+  let default =
+    export_svg("Pane[Graphics[Circle[], ImageSize -> {100, 60}], {400, 300}]");
+  // Without an `Alignment` the content keeps its natural canvas.
+  assert!(!default.contains("<svg width=\"400\""), "{default}");
+  let right = export_svg(
+    "Pane[Graphics[Circle[], ImageSize -> {100, 60}], {400, 300}, \
+     Alignment -> {Right, Bottom}]",
+  );
+  assert!(right.contains("translate(300.0 240.0)"), "{right}");
+}
+
+#[test]
 fn labeled_blank_slot_in_grid_draws_its_caption() {
   // Regression: a control Woxi Studio lifts into its panel leaves `""`
   // behind, and `Labeled["", caption, Left]` then printed as source text
@@ -37005,4 +37060,43 @@ fn tooltip_around_a_graphic_displays_the_graphic_in_visual_mode() {
     interpret("Head[Tooltip[Graphics[Circle[]], \"tip\"]]").unwrap(),
     "Tooltip"
   );
+}
+
+mod list_plot_frame {
+  use super::*;
+
+  #[test]
+  fn framed_list_plot_closes_all_four_edges() {
+    // The scatter renderer used to draw only the left and bottom edges.
+    let svg = interpret(
+      "ExportString[ListPlot[{{1, 1}, {2, 2}, {3, 1}}, Frame -> True], \"SVG\"]",
+    )
+    .unwrap();
+    let framed = svg.split("<polyline").any(|p| {
+      p.matches(',').count() >= 5 && p.contains("points=\"") && {
+        let pts = p.split("points=\"").nth(1).unwrap_or("");
+        let pts = pts.split('"').next().unwrap_or("");
+        let v: Vec<&str> = pts.split_whitespace().collect();
+        v.len() == 5 && v.first() == v.last()
+      }
+    });
+    assert!(framed, "expected a closed 5-point frame polyline");
+  }
+
+  #[test]
+  fn unframed_list_plot_has_no_closed_frame() {
+    let svg =
+      interpret("ExportString[ListPlot[{{1, 1}, {2, 2}, {3, 1}}], \"SVG\"]")
+        .unwrap();
+    assert!(!svg.contains("points=\"750,1749 3499,1749 3499,100"));
+  }
+
+  #[test]
+  fn list_plot_accepts_frame_ticks_option() {
+    let out = interpret(
+      "Head[ListPlot[{{1, 1}, {2, 2}}, Frame -> True, FrameTicks -> {{None, None}, {Range[0, 3], None}}]]",
+    )
+    .unwrap();
+    assert_eq!(out, "Graphics");
+  }
 }

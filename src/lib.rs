@@ -4262,7 +4262,7 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // A grid wider than that box squeezes its automatically sized pictures
   // (a plot's legend) to fit, instead of pushing the other columns out.
   let expr = pane_box
-    .and_then(|(w, _)| {
+    .and_then(|(w, _, _)| {
       functions::graphics::fit_grid_to_pane_width(&expr, w, &|c| {
         functions::graphics::parse_svg_wh(&evaluator::expr_to_svg(c)).0
       })
@@ -4291,8 +4291,8 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let result = render_highlighted_if_needed(expr);
 
   match (pane_box, &result) {
-    (Some((w, h)), syntax::Expr::Graphics { svg, .. }) => {
-      let clipped = functions::graphics::clip_svg_to_pane_box(svg, w, h);
+    (Some((w, h, align)), syntax::Expr::Graphics { svg, .. }) => {
+      let clipped = functions::graphics::clip_svg_to_pane_box(svg, w, h, align);
       let mut clipped_result = result.clone();
       if let syntax::Expr::Graphics { svg, .. } = &mut clipped_result {
         *svg = clipped;
@@ -4336,7 +4336,9 @@ fn unwrap_tooltips(mut expr: syntax::Expr) -> syntax::Expr {
 /// width, `Automatic`, or `Full` leave the box unconstrained here, the
 /// same as `unwrap_display_wrappers`' unconditional peel handles every
 /// other Pane shape.
-fn pane_fixed_size(expr: &syntax::Expr) -> Option<(f64, f64)> {
+fn pane_fixed_size(
+  expr: &syntax::Expr,
+) -> Option<(f64, f64, Option<(f64, f64)>)> {
   let mut current = expr;
   loop {
     let syntax::Expr::FunctionCall { name, args } = current else {
@@ -4360,7 +4362,11 @@ fn pane_fixed_size(expr: &syntax::Expr) -> Option<(f64, f64)> {
           evaluator::dispatch::io_functions::pane_size_component(&size[0])?;
         let h =
           evaluator::dispatch::io_functions::pane_size_component(&size[1])?;
-        return Some((w, h));
+        return Some((
+          w,
+          h,
+          evaluator::dispatch::io_functions::pane_alignment(&args[2..]),
+        ));
       }
       _ => return None,
     }
