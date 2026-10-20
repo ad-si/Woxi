@@ -9670,6 +9670,33 @@ fn list_correlate_overhang(
   Ok(Expr::List(result.into()))
 }
 
+/// Fast path for the plain 1-D `ListCorrelate[ker, list]` when every entry
+/// is a machine number and at least one is a real: each output is formed
+/// directly (as in `nd_numeric_dot`) instead of building and evaluating a
+/// symbolic `Plus[Times[…]]` per element, which is quadratic-slow on long
+/// lists. `None` otherwise, so exact arithmetic stays with the evaluator.
+fn numeric_correlate_1d(ker: &[Expr], data: &[Expr]) -> Option<Vec<Expr>> {
+  let as_f64 = |e: &Expr| match e {
+    Expr::Real(x) => Some(*x),
+    Expr::Integer(n) => Some(*n as f64),
+    _ => None,
+  };
+  let kf: Vec<f64> = ker.iter().map(as_f64).collect::<Option<_>>()?;
+  let df: Vec<f64> = data.iter().map(as_f64).collect::<Option<_>>()?;
+  let any_real = ker
+    .iter()
+    .chain(data.iter())
+    .any(|e| matches!(e, Expr::Real(_)));
+  if !any_real {
+    return None;
+  }
+  Some(
+    df.windows(kf.len())
+      .map(|w| Expr::Real(kf.iter().zip(w).map(|(a, b)| a * b).sum()))
+      .collect(),
+  )
+}
+
 fn list_correlate_ast(
   kernel: &Expr,
   list: &Expr,
@@ -9694,6 +9721,10 @@ fn list_correlate_ast(
 
   let out_len = n - k + 1;
   let mut result = Vec::with_capacity(out_len);
+
+  if let Some(fast) = numeric_correlate_1d(ker, data) {
+    return Ok(Expr::List(fast.into()));
+  }
 
   for i in 0..out_len {
     // Sum kernel[j] * data[i+j] for j in 0..k (no reversal)

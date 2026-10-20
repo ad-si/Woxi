@@ -1319,6 +1319,20 @@ mod graphics {
       ));
     }
 
+    /// A dashed curve on a log axis used to loop forever: the per-dash
+    /// fallback never advanced past a named (absolute-pixel) dash length.
+    /// It now goes through the same single `stroke-dasharray` polyline as
+    /// the linear plots, with the points placed at the log of their values.
+    #[test]
+    fn dashed_log_plots_terminate_with_a_dasharray() {
+      for plot in ["LogLogPlot", "LogPlot"] {
+        let svg = export_svg(&format!(
+          "{plot}[t/2, {{t, 1, 1000}}, PlotStyle -> Directive[{{Thick, Dashed}}]]"
+        ));
+        assert!(svg.contains("stroke-dasharray=\"40.0,40.0\""), "{svg}");
+      }
+    }
+
     /// Wolfram measures dash lengths two different ways: a named size is
     /// absolute pixels — `Dashed` is 4 on / 4 off whatever the image size —
     /// while a numeric `Dashing[{f, …}]` is a fraction of the image width.

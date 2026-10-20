@@ -14398,6 +14398,28 @@ mod list_convolve {
     );
   }
 
+  // Machine-number data takes a direct numeric path (the symbolic one is
+  // far too slow for a kernel of a thousand entries); exact data must not.
+  #[test]
+  fn one_dimensional_correlate_numeric_and_exact() {
+    assert_eq!(
+      interpret("ListCorrelate[{-1, 0, 1}, {1.5, 2, 4, 8.25}]").unwrap(),
+      "{2.5, 6.25}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{-1, 0, 1}, {1, 2, 4, 8}]").unwrap(),
+      "{3, 6}"
+    );
+    assert_eq!(
+      interpret(
+        "Length[ListCorrelate[Append[PadRight[{-1}, 1000], 1], \
+         Range[4000] + 0.5]]"
+      )
+      .unwrap(),
+      "3000"
+    );
+  }
+
   // Two-dimensional cross-correlation applies the kernel without reversal.
   #[test]
   fn two_dimensional_correlate() {

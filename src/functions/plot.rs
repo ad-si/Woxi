@@ -2422,73 +2422,6 @@ fn draw_interval_band<
   Ok(())
 }
 
-/// Draw a dashed/dotted line on a chart.
-/// `dash_pattern` contains alternating dash/gap lengths as fractions of the
-/// data range (matching Wolfram's Dashing convention where 0.01 ≈ 1% of width).
-fn draw_dashed_line<
-  DB: plotters::prelude::DrawingBackend,
-  CT: plotters::prelude::CoordTranslate<From = (f64, f64)>,
->(
-  chart: &mut plotters::prelude::ChartContext<DB, CT>,
-  segment: &[(f64, f64)],
-  color: RGBColor,
-  stroke_w: u32,
-  dash_pattern: &[f64],
-  x_span: f64,
-) -> Result<(), InterpreterError> {
-  if segment.len() < 2 || dash_pattern.is_empty() {
-    return Ok(());
-  }
-  // Convert fractional dash lengths to data-space lengths
-  let dashes: Vec<f64> = dash_pattern.iter().map(|d| d * x_span).collect();
-  let style = color.stroke_width(stroke_w);
-
-  let mut dash_idx = 0; // index into dashes array
-  let mut remaining = dashes[0]; // remaining length in current dash/gap
-  let mut drawing = true; // true = dash, false = gap
-  let mut current_start = segment[0];
-
-  for i in 1..segment.len() {
-    let (x0, y0) = current_start;
-    let (x1, y1) = segment[i];
-    let dx = x1 - x0;
-    let dy = y1 - y0;
-    let seg_len = (dx * dx + dy * dy).sqrt();
-    if seg_len < 1e-12 {
-      current_start = segment[i];
-      continue;
-    }
-
-    let mut consumed = 0.0;
-    while consumed < seg_len {
-      let available = seg_len - consumed;
-      let take = remaining.min(available);
-      let t0 = consumed / seg_len;
-      let t1 = (consumed + take) / seg_len;
-      let p0 = (x0 + dx * t0, y0 + dy * t0);
-      let p1 = (x0 + dx * t1, y0 + dy * t1);
-
-      if drawing && take > 1e-12 {
-        chart
-          .draw_series(std::iter::once(PathElement::new(vec![p0, p1], style)))
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!("Plot: {e}"))
-          })?;
-      }
-
-      consumed += take;
-      remaining -= take;
-      if remaining < 1e-12 {
-        drawing = !drawing;
-        dash_idx = (dash_idx + 1) % dashes.len();
-        remaining = dashes[dash_idx];
-      }
-    }
-    current_start = segment[i];
-  }
-  Ok(())
-}
-
 /// Default Wolfram plot color palette (ColorData[97]).
 pub(crate) const PLOT_COLORS: [(u8, u8, u8); 6] = [
   (0x5E, 0x81, 0xB5), // blue
@@ -2557,10 +2490,18 @@ fn render_dash_overlays(
   x_max: f64,
   y_min: f64,
   y_max: f64,
+  log_x: bool,
+  log_y: bool,
 ) -> String {
+  // Log axes place data at the logarithm of its value, so map through `ln`
+  // before the linear transform to the plotting area.
+  let to_axis = |v: f64, log: bool| if log { v.ln() } else { v };
+  let (x_min, x_max) = (to_axis(x_min, log_x), to_axis(x_max, log_x));
+  let (y_min, y_max) = (to_axis(y_min, log_y), to_axis(y_max, log_y));
   let xr = x_max - x_min;
   let yr = y_max - y_min;
-  if xr.abs() < 1e-12 || yr.abs() < 1e-12 {
+  if !xr.is_finite() || !yr.is_finite() || xr.abs() < 1e-12 || yr.abs() < 1e-12
+  {
     return String::new();
   }
   let mut svg = String::new();
@@ -2572,8 +2513,8 @@ fn render_dash_overlays(
       .points
       .iter()
       .map(|&(x, y)| {
-        let px = plot_x0 + (x - x_min) / xr * plot_w;
-        let py = plot_y0 + (y_max - y) / yr * plot_h;
+        let px = plot_x0 + (to_axis(x, log_x) - x_min) / xr * plot_w;
+        let py = plot_y0 + (y_max - to_axis(y, log_y)) / yr * plot_h;
         format!("{px:.1},{py:.1}")
       })
       .collect();
@@ -3770,32 +3711,19 @@ fn generate_svg_with_options(
             }
 
             if let Some(ref dash_pattern) = dashing {
-              if opts.log_x || opts.log_y {
-                // Log axes use a non-linear transform; keep the per-dash
-                // fallback that lets plotters map each segment.
-                for segment in &segments {
-                  draw_dashed_line(
-                    &mut chart,
-                    segment,
-                    color,
+              // Defer to a single <polyline stroke-dasharray> per segment,
+              // emitted after the plot is drawn.
+              // Defer to a single <polyline stroke-dasharray> per segment,
+              // emitted after the plot is drawn.
+              for segment in &segments {
+                if segment.len() >= 2 {
+                  dashed_overlays.push(DashedOverlay {
+                    color: (r, g, b),
+                    opacity: series_opacity(&opts.plot_style, series_idx),
                     stroke_w,
-                    dash_pattern,
-                    x_max - x_min,
-                  )?;
-                }
-              } else {
-                // Defer to a single <polyline stroke-dasharray> per segment,
-                // emitted after the plot is drawn.
-                for segment in &segments {
-                  if segment.len() >= 2 {
-                    dashed_overlays.push(DashedOverlay {
-                      color: (r, g, b),
-                      opacity: series_opacity(&opts.plot_style, series_idx),
-                      stroke_w,
-                      dashes: dash_pattern.clone(),
-                      points: segment.clone(),
-                    });
-                  }
+                    dashes: dash_pattern.clone(),
+                    points: segment.clone(),
+                  });
                 }
               }
             } else if let Some(cf) = &opts.color_function {
@@ -4003,6 +3931,8 @@ fn generate_svg_with_options(
       x_max,
       y_min,
       y_max,
+      opts.log_x,
+      opts.log_y,
     );
     if let Some(pos) = buf.rfind("</svg>") {
       buf.insert_str(pos, &series_svg);
@@ -5124,6 +5054,8 @@ pub(crate) fn generate_scatter_svg_with_options(
       x_max,
       y_min,
       y_max,
+      false,
+      false,
     );
     buf.insert_str(pos, &overlay_svg);
   }
