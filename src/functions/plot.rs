@@ -1575,6 +1575,43 @@ pub(crate) enum Mesh {
   None,
   All,
   Full,
+  /// `Mesh -> n`: `n` marks equally spaced along the curve.
+  Count(usize),
+}
+
+/// The `n` interior points that split a curve into `n + 1` equal parts. The
+/// split is by x when the curve is a function graph (x never decreases) and
+/// by position along the point list for a parametric curve.
+pub(crate) fn mesh_count_points(
+  points: &[(f64, f64)],
+  n: usize,
+) -> Vec<(f64, f64)> {
+  let pts: Vec<(f64, f64)> = points
+    .iter()
+    .copied()
+    .filter(|(x, y)| x.is_finite() && y.is_finite())
+    .collect();
+  if pts.len() < 2 {
+    return Vec::new();
+  }
+  let by_x =
+    pts.windows(2).all(|w| w[0].0 <= w[1].0) && pts[pts.len() - 1].0 > pts[0].0;
+  let param = |i: usize| if by_x { pts[i].0 } else { i as f64 };
+  let (lo, hi) = (param(0), param(pts.len() - 1));
+  (1..=n)
+    .map(|k| {
+      let t = lo + (hi - lo) * k as f64 / (n + 1) as f64;
+      let seg = (0..pts.len() - 1)
+        .find(|&i| param(i + 1) >= t)
+        .unwrap_or(pts.len() - 2);
+      let (t0, t1) = (param(seg), param(seg + 1));
+      let f = if t1 > t0 { (t - t0) / (t1 - t0) } else { 0.0 };
+      (
+        pts[seg].0 + (pts[seg + 1].0 - pts[seg].0) * f,
+        pts[seg].1 + (pts[seg + 1].1 - pts[seg].1) * f,
+      )
+    })
+    .collect()
 }
 
 impl Filling {
@@ -3811,14 +3848,18 @@ fn generate_svg_with_options(
           // Draw mesh dots: at every curve point for Mesh -> All, at the
           // original data points for Mesh -> Full.
           if opts.mesh != Mesh::None {
-            let mesh_src: &[(f64, f64)] = if opts.mesh == Mesh::Full {
-              opts
+            let counted;
+            let mesh_src: &[(f64, f64)] = match opts.mesh {
+              Mesh::Full => opts
                 .data_points
                 .get(series_idx)
                 .map(|v| v.as_slice())
-                .unwrap_or(points)
-            } else {
-              points
+                .unwrap_or(points),
+              Mesh::Count(n) => {
+                counted = mesh_count_points(points, n);
+                &counted
+              }
+              _ => points,
             };
             let marker_size = 3 * RESOLUTION_SCALE;
             let finite_pts: Vec<(f64, f64)> = mesh_src

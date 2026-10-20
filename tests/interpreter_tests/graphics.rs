@@ -10318,6 +10318,25 @@ mod plot3d {
       assert_eq!(svg.matches("<circle").count(), 7);
     }
 
+    // `Mesh -> n` on a joined list plot marks n equally spaced points along
+    // the curve, whether it is a function graph or loops back on itself.
+    #[test]
+    fn list_plot_joined_mesh_count() {
+      let svg = export_svg(
+        "ListPlot[Table[{t, t^2}, {t, 0, 5, 0.5}], Joined -> True, Mesh -> 4]",
+      );
+      assert_eq!(svg.matches("<circle").count(), 4);
+      let svg = export_svg(
+        "ListPlot[Table[{Cos[t], Sin[t]}, {t, 0, 6, 0.1}], Joined -> True, \
+         Mesh -> 25]",
+      );
+      assert_eq!(svg.matches("<circle").count(), 25);
+      let svg = export_svg(
+        "ListPlot[Table[{t, t^2}, {t, 0, 5, 0.5}], Joined -> True, Mesh -> None]",
+      );
+      assert_eq!(svg.matches("<circle").count(), 0);
+    }
+
     // `Mesh -> All` marks every point of the drawn curve, including the
     // corners the step interpolation introduces.
     #[test]
