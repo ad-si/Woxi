@@ -209,7 +209,7 @@ fn e_scaled(scale: &num_bigint::BigInt) -> num_bigint::BigInt {
 
 /// First `n` continued-fraction terms of `numerator / denominator`.
 fn continued_fraction_of_ratio(
-  numerator: num_bigint::BigInt,
+  numerator: &num_bigint::BigInt,
   denominator: num_bigint::BigUint,
   n: usize,
 ) -> Vec<i128> {
@@ -269,7 +269,7 @@ fn try_constant_continued_fraction(
   };
   let numerator = if negative { -scaled } else { scaled };
   Some(continued_fraction_of_ratio(
-    numerator,
+    &numerator,
     scale.magnitude().clone(),
     n_terms,
   ))
