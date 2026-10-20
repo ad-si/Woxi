@@ -24372,6 +24372,19 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // it so the panes' controls are visible to everything below.
     let spliced_spec = splice_sequence_applies(spec);
     let spec = &spliced_spec;
+    // `If[cond, Identity, Invisible][Control[…]]`: the control itself is the
+    // spec, shown only under `cond`.
+    let switched = visibility_switched_control(spec);
+    if let Some((control, conditional)) = &switched {
+      collect_pane_visibility(
+        conditional,
+        &place_map,
+        &mut control_visible,
+        None,
+      );
+      arg_items.push(control.clone());
+      continue;
+    }
     // A `PaneSelector` argument shows one pane's controls at a time; the
     // flattened list holds every pane's, so each pane's controls also pick
     // up the condition under which they are on screen.
@@ -26998,6 +27011,9 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       Expr::Apply { func, list } => {
         contains_control(func) || contains_control(list)
       }
+      Expr::CurriedCall { func, args } => {
+        contains_control(func) || args.iter().any(contains_control)
+      }
       Expr::BinaryOp { left, right, .. } => {
         contains_control(left) || contains_control(right)
       }
@@ -27032,6 +27048,10 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       }
       Expr::Apply { func, list } => {
         contains_explicit_control(func) || contains_explicit_control(list)
+      }
+      Expr::CurriedCall { func, args } => {
+        contains_explicit_control(func)
+          || args.iter().any(contains_explicit_control)
       }
       _ => false,
     }
@@ -27222,18 +27242,14 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
         for cell in row {
           match control_group_items(cell) {
             Some(nested) => out.extend(nested),
-            None => out
-              .push(dynamic_control_spec(cell).unwrap_or_else(|| cell.clone())),
+            None => out.push(layout_control_leaf(cell)),
           }
         }
       }
       // Nested layout containers flatten recursively.
       other => match control_group_items(other) {
         Some(nested) => out.extend(nested),
-        None => {
-          out
-            .push(dynamic_control_spec(other).unwrap_or_else(|| other.clone()));
-        }
+        None => out.push(layout_control_leaf(other)),
       },
     }
   }
@@ -27326,6 +27342,71 @@ pub(crate) fn tabview_pane_parts(item: &Expr) -> (Option<Expr>, &Expr, &Expr) {
     },
     other => (None, other, other),
   }
+}
+
+/// A leaf item of a control layout as the control it stands for: a bare
+/// `Dynamic[v]` front-end control, or a `If[cond, Identity, Invisible]@
+/// Control[…]` conditionally shown control, else the item itself.
+fn layout_control_leaf(item: &Expr) -> Expr {
+  dynamic_control_spec(item)
+    .or_else(|| visibility_switched_control(item).map(|(control, _)| control))
+    .unwrap_or_else(|| item.clone())
+}
+
+/// `If[cond, Identity, Invisible][Control[…]]` (optionally inside
+/// `Dynamic[…]`) is the Demonstrations idiom for a control that is only on
+/// screen while `cond` holds (or, with the heads swapped, only while it
+/// fails). Returns the wrapped control together with the equivalent
+/// `If[cond, control, Null]` / `If[cond, Null, control]`, which is the shape
+/// `collect_pane_visibility` turns into a visibility condition.
+fn visibility_switched_control(spec: &Expr) -> Option<(Expr, Expr)> {
+  let spec = match spec {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && args.len() == 1 =>
+    {
+      &args[0]
+    }
+    _ => spec,
+  };
+  let Expr::CurriedCall { func, args } = spec else {
+    return None;
+  };
+  let (
+    [target],
+    Expr::FunctionCall {
+      name,
+      args: branches,
+    },
+  ) = (args.as_slice(), func.as_ref())
+  else {
+    return None;
+  };
+  if name != "If" || branches.len() != 3 {
+    return None;
+  }
+  let head = |e: &Expr| match e {
+    Expr::Identifier(h) if h == "Identity" || h == "Invisible" => {
+      Some(h.clone())
+    }
+    _ => None,
+  };
+  let (shown_when_true, hidden_when_true) =
+    (head(&branches[1])?, head(&branches[2])?);
+  if shown_when_true == hidden_when_true
+    || !expr_contains_call(target, &["Control"])
+  {
+    return None;
+  }
+  let null = id_expr("Null");
+  let (then_branch, else_branch) = if shown_when_true == "Identity" {
+    (target.clone(), null)
+  } else {
+    (null, target.clone())
+  };
+  Some((
+    target.clone(),
+    call("If", vec![branches[0].clone(), then_branch, else_branch]),
+  ))
 }
 
 /// `Dynamic[Control[…]]` (the Demonstrations idiom `Dynamic@Control@{…}`)
@@ -27564,6 +27645,10 @@ fn collect_pane_visibility(
     for item in items {
       collect_pane_visibility(item, place_map, out, outer);
     }
+    return;
+  }
+  if let Some((_, conditional)) = visibility_switched_control(spec) {
+    collect_pane_visibility(&conditional, place_map, out, outer);
     return;
   }
   let Expr::FunctionCall { name, args } = spec else {
