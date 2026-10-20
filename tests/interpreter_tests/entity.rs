@@ -423,6 +423,50 @@ mod country_data_tests {
       "Quantity[2695122, People]"
     );
   }
+
+  #[test]
+  fn country_data_language_speaking() {
+    clear_state();
+    assert_eq!(
+      interpret("CountryData[\"France\", \"FrenchSpeaking\"]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("CountryData[\"France\", \"GermanSpeaking\"]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "CountryData[Entity[\"Country\", \"Brazil\"], \"PortugueseSpeaking\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn country_data_list_and_schematic_polygon() {
+    clear_state();
+    assert_eq!(
+      interpret("MemberQ[CountryData[], Entity[\"Country\", \"Japan\"]]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Head[CountryData[\"Japan\", \"SchematicPolygon\"]] === List || Head[CountryData[\"Japan\", \"SchematicPolygon\"]] === Polygon"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[Graphics[{Orange, CountryData[\"Italy\", \"SchematicPolygon\"]}], \"SVG\"], \"<polygon\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod interpreter_scalar_tests {
