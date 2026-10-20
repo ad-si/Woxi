@@ -4478,6 +4478,21 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   let data = crate::functions::list_helpers_ast::densify_sparse_array(&data)
     .unwrap_or(data);
+  // A list of SparseArray rows (possibly of differing lengths) plots as the
+  // ragged list of their dense forms.
+  let data = match &data {
+    Expr::List(rows) => Expr::List(
+      rows
+        .iter()
+        .map(|r| {
+          crate::functions::list_helpers_ast::densify_sparse_array(r)
+            .unwrap_or_else(|| r.clone())
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    _ => data,
+  };
   let Expr::List(rows) = &data else {
     return Err(InterpreterError::EvaluationError(
       "ArrayPlot: first argument must be a matrix (list of lists)".into(),
