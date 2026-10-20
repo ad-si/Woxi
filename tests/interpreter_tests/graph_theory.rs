@@ -1129,6 +1129,35 @@ mod voronoi_mesh {
   }
 }
 
+mod show_graph {
+  use super::*;
+
+  #[test]
+  fn show_graph_is_graphics() {
+    assert_eq!(
+      interpret("Head[Show[Graph[{1 -> 2, 2 -> 3}]]]").unwrap(),
+      "Graphics"
+    );
+    assert_eq!(
+      interpret(
+        "Head[Show[{PolyhedronData[\"Cube\", \"Skeleton\"], {}}, ImageSize -> {450, 450}]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
+  #[test]
+  fn show_graph_keeps_graph_and_overlay() {
+    let result = interpret(
+      "ExportString[Show[Graph[{1 -> 2, 2 -> 3}], Graphics[{Blue, Point[{{3, 3}}]}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(result.contains("<ellipse"), "graph vertices missing");
+    assert!(result.contains("<circle"), "overlay point missing");
+  }
+}
+
 mod expression_graph {
   use super::*;
 
