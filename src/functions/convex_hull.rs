@@ -49,6 +49,46 @@ pub fn convex_hull_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Legacy `ComputationalGeometry`ConvexHull[{{x, y}, ...}]` → the 1-based
+/// indices of the strict hull corners in counter-clockwise order, starting at
+/// the leftmost (then lowest) corner. Shares the hull computation with
+/// `ConvexHullMesh`; anything but a 2D numeric point list stays unevaluated.
+pub fn convex_hull_indices_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let uneval = || unevaluated("ComputationalGeometry`ConvexHull", args);
+  let Expr::List(pts) = &args[0] else {
+    return Ok(uneval());
+  };
+  let mut unique: Vec<(f64, f64, usize)> = Vec::new();
+  for (i, p) in pts.iter().enumerate() {
+    let Expr::List(c) = p else {
+      return Ok(uneval());
+    };
+    if c.len() != 2 {
+      return Ok(uneval());
+    }
+    let (Some(x), Some(y)) = (try_eval_to_f64(&c[0]), try_eval_to_f64(&c[1]))
+    else {
+      return Ok(uneval());
+    };
+    if !unique
+      .iter()
+      .any(|&(ux, uy, _)| (ux - x).abs() <= EPS && (uy - y).abs() <= EPS)
+    {
+      unique.push((x, y, i));
+    }
+  }
+  let hull = convex_hull_ccw(&unique);
+  Ok(Expr::List(
+    hull
+      .iter()
+      .map(|&i| Expr::Integer(i as i128 + 1))
+      .collect::<Vec<_>>()
+      .into(),
+  ))
+}
+
 fn convex_hull_mesh_2d(pts: &[Expr], args: &[Expr], opts: &[Expr]) -> Expr {
   // Parse points, keeping the original coordinate expressions (to preserve
   // exact display) and tracking whether every coordinate is exact.

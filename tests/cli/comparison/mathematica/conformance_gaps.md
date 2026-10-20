@@ -5225,3 +5225,13 @@ integrates the density instead of summing the probability mass, so it gives
 `5.186…` rather than `4` (found while sampling the distribution for the
 `Block Bootstrap for Time Series` Demonstration). `Quantile`/`CDF` of a
 truncated discrete distribution likewise exclude the lower bound's own mass.
+
+
+## `ColorData[n]` for most indexed schemes
+
+Only some indexed schemes are tabulated (see `ColorData` in `functions.csv`);
+e.g. `ColorData[61][k]` stays unevaluated, so the `Manipulate` of the
+`A Minimal Circumcircle Measure of District Compactness` Demonstration loses
+its fill/line colors. The scheme's values could not be checked against a real
+kernel. `ComputationalGeometry`ConvexHull` starts its index list at the
+leftmost corner, which is likewise unverified.

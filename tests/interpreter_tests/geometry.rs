@@ -2843,6 +2843,34 @@ mod delaunay_mesh {
   }
 }
 
+mod computational_geometry_convex_hull {
+  use super::*;
+
+  // Indices of the strict corners, counter-clockwise from the leftmost one.
+  #[test]
+  fn qualified_name() {
+    assert_eq!(
+      interpret(
+        "ComputationalGeometry`ConvexHull[{{0,0},{1,1},{2,0},{1,0.5},{1,-1}}]"
+      )
+      .unwrap(),
+      "{1, 5, 3, 2}"
+    );
+  }
+
+  // Loading the package puts the bare name in scope.
+  #[test]
+  fn bare_name_after_get() {
+    assert_eq!(
+      interpret(
+        "<<\"ComputationalGeometry`\"; ConvexHull[{{0,0},{4,0},{4,3},{1,1},{0,3}}]"
+      )
+      .unwrap(),
+      "{1, 2, 3, 5}"
+    );
+  }
+}
+
 mod convex_hull_mesh {
   use super::*;
 
