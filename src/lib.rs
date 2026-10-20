@@ -3193,6 +3193,16 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         _ => expr,
       }
     }
+    // `Deploy[Grid[…]]` — `Deploy` only freezes the interface, so the table
+    // inside is drawn as if it stood alone.
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Deploy" && args.len() == 1 =>
+    {
+      match render_grid_if_needed(args[0].clone()) {
+        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        _ => expr,
+      }
+    }
     // `Panel[Pane[image]]` — the Demonstrations idiom for showing a
     // computed raster. The panel only frames the picture it wraps, so it is
     // drawn as that picture (a pane around an image already is).

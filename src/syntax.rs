@@ -5897,6 +5897,41 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
         && name == "Pattern"
         && args.len() == 2
       {
+        // `x : a | b : v` — the right operand was read as the named pattern
+        // `Pattern[b, v]`, but its colon is the trailing default of the whole
+        // `x : (a | b)` pattern: `Optional[Pattern[x, a | b], v]`.
+        if let Expr::FunctionCall {
+          name: rn,
+          args: rargs,
+        } = right
+          && rn == "Pattern"
+          && rargs.len() == 2
+          && matches!(rargs[0], Expr::Identifier(_))
+        {
+          let alts = match &args[1] {
+            Expr::BinaryOp {
+              op: BinaryOperator::Alternatives,
+              left: l,
+              right: r,
+            } => binop(
+              BinaryOperator::Alternatives,
+              *l.clone(),
+              binop(BinaryOperator::Alternatives, *r.clone(), rargs[0].clone()),
+            ),
+            body => binop(
+              BinaryOperator::Alternatives,
+              body.clone(),
+              rargs[0].clone(),
+            ),
+          };
+          return call(
+            "Optional",
+            vec![
+              call("Pattern", vec![args[0].clone(), alts]),
+              rargs[1].clone(),
+            ],
+          );
+        }
         let inner_alts = match &args[1] {
           Expr::BinaryOp {
             op: BinaryOperator::Alternatives,

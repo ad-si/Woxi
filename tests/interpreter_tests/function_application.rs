@@ -3811,3 +3811,51 @@ mod setting {
     );
   }
 }
+
+// Regressions from the "Sudoku Game" Demonstration notebook.
+mod sudoku_game_regressions {
+  use super::*;
+
+  // `n:_Integer|Infinity:1` is `Optional[Pattern[n, _Integer|Infinity], 1]`.
+  #[test]
+  fn named_alternatives_with_trailing_default() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[a_, n:_Integer|Infinity:1] := {a, n}; {f[1], f[1, 5], f[1, Infinity]}"
+      )
+      .unwrap(),
+      "{{1, 1}, {1, 5}, {1, Infinity}}"
+    );
+  }
+
+  #[test]
+  fn negative_level_counts_empty_lists_at_depth_two() {
+    clear_state();
+    assert_eq!(interpret("Count[{{}, {1}, {}}, {}, {-2}]").unwrap(), "2");
+    assert_eq!(interpret("Count[{{}, {1}, {}}, {}, {-1}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn replace_part_with_source_positions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ReplacePart[{a, b, c, d}, {{x, y}, {z}}, {{2}, {4}}, {{1}, {2}}]"
+      )
+      .unwrap(),
+      "{a, {x, y}, c, {z}}"
+    );
+  }
+
+  #[test]
+  fn popup_menu_grid_cell_shows_chosen_item() {
+    clear_state();
+    let svg = interpret(
+      "x = 3; ExportString[Grid[{{PopupMenu[Dynamic[x], {1, 3}, Appearance -> None]}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">3</text>"), "{svg}");
+    assert!(!svg.contains("PopupMenu"), "{svg}");
+  }
+}

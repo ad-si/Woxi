@@ -847,10 +847,12 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       return Some(piecewise);
     }
     return Some(match head {
-      // `FractionBox[a, b]` → `(a)/(b)`. The parentheses preserve operator
-      // precedence around composite numerators / denominators.
+      // `FractionBox[a, b]` → `((a)/(b))`. The parentheses preserve operator
+      // precedence around composite numerators / denominators, and the outer
+      // pair keeps the quotient one operand of a tighter-binding neighbour
+      // (`Ceiling /@ FractionBox[l, d]` is `Ceiling /@ (l/d)`).
       "FractionBox" if args.len() == 2 => {
-        format!("({})/({})", conv(&args[0]), conv(&args[1]))
+        format!("(({})/({}))", conv(&args[0]), conv(&args[1]))
       }
       // `SuperscriptBox[f, "\[Prime]"]` is the typeset form of the
       // derivative `f'` — emit prime characters, not exponentiation.
@@ -5831,7 +5833,7 @@ Cell["Chapter 2", "Chapter"]
   #[test]
   fn test_traditional_form_single_argument_function_call() {
     let s = r#"BoxData[RowBox[{"100", " ", RowBox[{"exp", "(", RowBox[{"-", FractionBox["4000", "T"]}], ")"}]}]]"#;
-    assert_eq!(extract_cell_content(s), "100 Exp[-(4000)/(T)]");
+    assert_eq!(extract_cell_content(s), "100 Exp[-((4000)/(T))]");
     let s = r#"BoxData[RowBox[{"ln", "(", "x", ")"}]]"#;
     assert_eq!(extract_cell_content(s), "Log[x]");
     let s = r#"BoxData[RowBox[{"sin", "(", "x", ")"}]]"#;
@@ -5947,8 +5949,18 @@ Cell["Chapter 2", "Chapter"]
     let s = r#"BoxData[TemplateBox[{"9.8", RowBox[{"\"m\"", "/", SuperscriptBox["\"s\"", "2"]}], "meters per second squared", FractionBox["\"Meters\"", SuperscriptBox["\"Seconds\"", "2"]]}, "Quantity"]]"#;
     assert_eq!(
       extract_cell_content(s),
-      "Quantity[9.8, (\"Meters\")/((\"Seconds\")^(2))]"
+      "Quantity[9.8, ((\"Meters\")/((\"Seconds\")^(2)))]"
     );
+  }
+
+  #[test]
+  fn test_extract_cell_content_fraction_box_is_one_operand() {
+    // `Ceiling /@ FractionBox[l, d]` maps over the quotient; without the
+    // outer parentheses it became `(Ceiling /@ l) / d`.
+    let s = r#"BoxData[RowBox[{"Ceiling", "/@", FractionBox[RowBox[{"{", RowBox[{"i", ",", "j"}], "}"}], SqrtBox["s"]]}]]"#;
+    let out = extract_cell_content(s);
+    assert!(out.starts_with("Ceiling/@(("), "{out}");
+    assert!(out.ends_with(")/(Sqrt[s]))"), "{out}");
   }
 
   #[test]
@@ -7822,7 +7834,7 @@ Cell[TextData[{
   FractionBox[RowBox[{"Sin", "[", "t", "]"}], SuperscriptBox["n", "2"]]}]]"#;
     assert_eq!(
       extract_cell_content(s),
-      "Sum[(Sin[t])/((n)^(2)), {n, 1, m}]"
+      "Sum[((Sin[t])/((n)^(2))), {n, 1, m}]"
     );
     // `∏` is the same shape, and the operator may be preceded by factors
     // that are *not* part of the body (the FrontEnd groups the operator

@@ -5528,6 +5528,12 @@ pub fn dispatch_list_operations(
         &args[0], &args[1], &args[2],
       ));
     }
+    // ReplacePart[expr, new, pos, npos] — part `pos_k` becomes `new[[npos_k]]`.
+    "ReplacePart" if args.len() == 4 => {
+      return Some(list_helpers_ast::replace_part_indexed_ast(
+        &args[0], &args[1], &args[2], &args[3],
+      ));
+    }
     "Nearest" if (2..=5).contains(&args.len()) => {
       return Some(nearest_ast(args));
     }
