@@ -2028,6 +2028,20 @@ mod differentiate_piecewise {
     );
   }
 
+  // Conditions independent of the differentiation variable have no boundary
+  // points, so the default is differentiated too.
+  #[test]
+  fn conditions_free_of_variable() {
+    assert_eq!(
+      interpret("D[Piecewise[{{x^2, y < 1}}, 3 x], x]").unwrap(),
+      "Piecewise[{{2*x, y < 1}}, 3]"
+    );
+    assert_eq!(
+      interpret("D[Piecewise[{{a x, y < 1}}], x]").unwrap(),
+      "Piecewise[{{a, y < 1}}, 0]"
+    );
+  }
+
   #[test]
   fn second_derivative() {
     assert_eq!(
@@ -20822,6 +20836,37 @@ mod ndsolve_descending_and_compound_domain {
       )
       .unwrap(),
       "5.115"
+    );
+  }
+}
+
+mod stored_multi_derivative {
+  use super::*;
+
+  // A multi-index derivative operator stored in a variable applies to
+  // arguments just like the inline `Derivative[1, 0][f][x, y]` form.
+  #[test]
+  fn variable_holding_partial_derivative() {
+    assert_eq!(
+      interpret("f[x_, y_] := x^2 y; g = Derivative[1, 0][f]; g[3, 4]")
+        .unwrap(),
+      "24"
+    );
+    assert_eq!(
+      interpret("f[x_, y_] := x^2 y; g = Derivative[0, 1][f]; g[a, b]")
+        .unwrap(),
+      "a^2"
+    );
+  }
+
+  #[test]
+  fn partial_derivative_of_piecewise_definition() {
+    assert_eq!(
+      interpret(
+        "f[s_, t_] := Piecewise[{{s^2 t, t < 5}}, 3]; g = Derivative[1, 0][f]; {g[2, 1], g[2, 7]}"
+      )
+      .unwrap(),
+      "{4, 0}"
     );
   }
 }

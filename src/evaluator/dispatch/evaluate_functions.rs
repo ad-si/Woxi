@@ -2538,6 +2538,22 @@ fn evaluate_function_call_ast_inner(
       }
       crate::StoredValue::Association(_) => None,
     };
+    // `g = Derivative[1, 0][f]; g[x, y]` applies the stored derivative operator.
+    if let Some(Expr::CurriedCall {
+      func,
+      args: targets,
+    }) = &parsed
+      && matches!(func.as_ref(), Expr::FunctionCall { name: n, .. } if n == "Derivative")
+      && targets.len() == 1
+    {
+      let target = Expr::CurriedCall {
+        func: func.clone(),
+        args: targets.clone(),
+      };
+      return crate::evaluator::function_application::apply_curried_call(
+        &target, args,
+      );
+    }
     if let Some(Expr::Function { body }) = &parsed {
       let substituted = crate::syntax::substitute_slots(body, args);
       // Tail-call: return body for the trampoline to evaluate.

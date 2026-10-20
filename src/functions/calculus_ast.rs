@@ -2501,6 +2501,32 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         // splitting a discontinuous default region) is not reproduced.
         "Piecewise" if !args.is_empty() => {
           if let Expr::List(pieces) = &args[0] {
+            // When no condition mentions `var`, the piece boundaries are
+            // independent of it, so the default is differentiated as well
+            // instead of becoming `Indeterminate`.
+            let conditions_free_of_var = pieces.iter().all(|piece| {
+              matches!(piece, Expr::List(pair) if pair.len() == 2
+                && !contains_var(&pair[1], var))
+            });
+            if conditions_free_of_var {
+              let mut diffed_pieces: Vec<Expr> =
+                Vec::with_capacity(pieces.len());
+              for piece in pieces {
+                if let Expr::List(pair) = piece {
+                  diffed_pieces.push(Expr::List(
+                    vec![differentiate(&pair[0], var)?, pair[1].clone()].into(),
+                  ));
+                }
+              }
+              let default = match args.get(1) {
+                Some(d) => differentiate(d, var)?,
+                None => Expr::Integer(0),
+              };
+              return Ok(call(
+                "Piecewise",
+                vec![Expr::List(diffed_pieces.into()), default],
+              ));
+            }
             let mut diffed_pieces: Vec<Expr> = Vec::with_capacity(pieces.len());
             for piece in pieces {
               if let Expr::List(pair) = piece
