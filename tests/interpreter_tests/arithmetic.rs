@@ -12778,4 +12778,14 @@ mod sum_collects_terms_in_one_plus {
       "1.5`3.213879819945081"
     );
   }
+
+  #[test]
+  fn plus_single_list_argument_is_unchanged() {
+    assert_eq!(interpret("Plus[{1, 2}]").unwrap(), "{1, 2}");
+    assert_eq!(
+      interpret("Sum[{a[i], b[i]}, {i, 1}]").unwrap(),
+      "{a[1], b[1]}"
+    );
+    assert_eq!(interpret("Sum[{i, 2 i}, {i, 3, 3}]").unwrap(), "{3, 6}");
+  }
 }
