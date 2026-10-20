@@ -942,7 +942,10 @@ pub fn hurwitz_zeta_f64(s: f64, a: f64, signed: bool) -> Option<f64> {
   })
 }
 
-/// B₂ₖ/(2k) as a BigFloat of `bits` bits, cached per precision.
+/// B₂ₖ/(2k) as a BigFloat of `bits` bits, cached per precision. A value
+/// cached at a higher precision is rounded down rather than rederived from
+/// the exact rational, so callers stepping through many precisions (each
+/// term of a series to its own accuracy) pay for each B₂ₖ only once.
 fn bernoulli_over_index(
   k: usize,
   bits: usize,
@@ -956,6 +959,16 @@ fn bernoulli_over_index(
   }
   CACHE.with(|cache| {
     let mut cache = cache.borrow_mut();
+    if cache.get(&bits).is_none_or(|values| values.len() <= k)
+      && let Some(mut v) = cache
+        .iter()
+        .filter(|(b, values)| **b > bits && values.len() > k)
+        .min_by_key(|(b, _)| **b)
+        .map(|(_, values)| values[k].clone())
+      && v.set_precision(bits, rm).is_ok()
+    {
+      return v;
+    }
     let values = cache.entry(bits).or_default();
     while values.len() <= k {
       // Index 0 is an unused placeholder, so that index k holds B₂ₖ/(2k).
@@ -5924,8 +5937,15 @@ fn compute_glaisher(
 }
 
 /// Khinchin's constant K₀ to `bits` bits: a 102-digit literal up to 330 bits,
-/// beyond that ln K₀ · ln 2 = Σ_{n≥1} ζ(2n, 2)/n · Σ_{k=1}^{2n−1} (−1)^(k+1)/k,
-/// where the Hurwitz ζ(2n, 2) = ζ(2n) − 1 shrinks like 4^(−n).
+/// beyond that ln K₀ · ln 2 = Σ_{n≥1} ζ(2n, 2)/n · A_n with
+/// A_n = Σ_{k=1}^{2n−1} (−1)^(k+1)/k. Since Σ_{n≥1} A_n x^(2n)/n =
+/// −ln(1 − x) ln(1 + x), the terms k < N of ζ(2n, 2) sum in closed form
+/// (Bailey, Borwein and Crandall):
+/// ln K₀ · ln 2 = −Σ_{k=2}^{N−1} ln(1 − 1/k) ln(1 + 1/k) + Σ_{n≥1} ζ(2n, N)/n · A_n,
+/// where ζ(2n, N) shrinks like N^(−2n), so it needs only about
+/// bits/(2 log₂ N) terms, each to correspondingly fewer bits. N stays above
+/// the Euler–Maclaurin shift of [`hurwitz_zeta_bigfloat`], so no ζ(2n, N)
+/// sums any terms directly.
 fn compute_khinchin(
   bits: usize,
   rm: astro_float::RoundingMode,
@@ -5946,9 +5966,31 @@ fn compute_khinchin(
   }
   let w = bits + 64;
   let one = BigFloat::from_i32(1, w);
-  let two = BigFloat::from_i32(2, w);
+  let shift = (w / 4).max(64) as u64;
+  let shift_bf = BigFloat::from_u64(shift, w);
+  let log2_shift = (shift as f64).log2();
+  // ln k for k ≤ N: only a prime needs a logarithm, a composite k = p·m
+  // adds up ln p + ln m.
+  let mut ln_table: Vec<BigFloat> = vec![BigFloat::from_i32(0, w); 2];
+  for k in 2..=shift {
+    let factor = (2..).take_while(|p| p * p <= k).find(|p| k % p == 0);
+    let ln_k = match factor {
+      Some(p) => ln_table[p as usize].add(&ln_table[(k / p) as usize], w, rm),
+      None => BigFloat::from_u64(k, w).ln(w, rm, cc),
+    };
+    ln_table.push(ln_k);
+  }
+  // −Σ_{k=2}^{N−1} ln(1 − 1/k) ln(1 + 1/k), from ln(k − 1), ln k, ln(k + 1).
   let mut sum = BigFloat::from_i32(0, w);
-  let mut alternating = BigFloat::from_i32(0, w); // Σ_{k=1}^{2n−1} (−1)^(k+1)/k
+  for k in 2..shift as usize {
+    let product = ln_table[k].sub(&ln_table[k - 1], w, rm).mul(
+      &ln_table[k + 1].sub(&ln_table[k], w, rm),
+      w,
+      rm,
+    );
+    sum = sum.add(&product, w, rm);
+  }
+  let mut alternating = BigFloat::from_i32(0, w); // A_n
   for n in 1u64.. {
     let k_odd = BigFloat::from_u64(2 * n - 1, w);
     if n > 1 {
@@ -5960,7 +6002,11 @@ fn compute_khinchin(
     }
     alternating = alternating.add(&one.div(&k_odd, w, rm), w, rm);
     let s = BigFloat::from_u64(2 * n, w);
-    let Some(zeta_tail) = hurwitz_zeta_bigfloat(&s, &two, false, w, rm, cc)
+    // ζ(2n, N) ≈ N^(−2n) only has to reach the 2^(−w) of the sum.
+    let term_bits =
+      (w as f64 - 2.0 * n as f64 * log2_shift).max(0.0) as usize + 64;
+    let Some(zeta_tail) =
+      hurwitz_zeta_bigfloat(&s, &shift_bf, false, term_bits, rm, cc)
     else {
       break;
     };

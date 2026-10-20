@@ -516,3 +516,21 @@ mod row_visual_mode {
     assert!(!svg.contains("width=\"360\" height=\"45\""));
   }
 }
+
+/// Regression: a `Row` of `Button`s built with `Map` and placed in a `Grid`
+/// cell was written out as the buttons' source text instead of a row of
+/// button plates.
+#[test]
+fn row_of_buttons_in_grid_cell_draws_plates() {
+  let svg = interpret(
+    r#"ExportString[Grid[{{Row[Map[Button[Grid[{{#}}], 1] &, {"a", "b"}]]}}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert!(!svg.contains("Button["), "button source leaked: {svg}");
+  assert_eq!(
+    svg.matches("<rect").count(),
+    2,
+    "one plate per button: {svg}"
+  );
+}

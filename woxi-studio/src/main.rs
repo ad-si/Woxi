@@ -7337,6 +7337,19 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+  /// A planetary-motion Manipulate labels its sky chart with the Moon
+  /// symbol (U+263E) as a bare `Style[☾, 8]` argument. The character was
+  /// not accepted as a symbol name, so the whole Input cell failed to parse
+  /// and the notebook opened without its widget.
+  #[test]
+  fn manipulate_with_moon_symbol_label_opens_live() {
+    let src = "Manipulate[Graphics[{Rotate[Text[Style[\u{263E}, 8], {0, 1}], 10 Degree], Circle[{0, 0}, r]}], {{r, 1}, 0.5, 2}]";
+    let expr = woxi::interpret_to_expr(src)
+      .expect("the Moon symbol must parse as a symbol name");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate must instantiate");
+    assert_eq!(state.error, None, "{:?}", state.error);
+  }
   /// A random-walk Manipulate whose plot pins `AxesOrigin -> {0, 0}` and
   /// titles itself with a `Framed` message opens with the plot rendered
   /// (the walk's helper is an initialization cell).

@@ -1466,6 +1466,12 @@ fn split_iterator_assignment(s: &str) -> Option<(&str, &str)> {
 /// iterator forms mirror what the FrontEnd's own parser produces —
 /// `∑_i^m f` → `Sum[f, {i, m}]` and `∑_(n=1) f` → `Sum[f, n = 1]`.
 fn big_operator_call(s: &str) -> Option<(&'static str, String)> {
+  // The operator may be wrapped in a `StyleBox` (`StyleBox[…, ScriptLevel
+  // -> 0]` keeps the limits full-size inside a fraction).
+  let s = positional_box_args("StyleBox", s.trim())
+    .filter(|a| !a.is_empty())
+    .map_or_else(|| s.to_string(), |a| a[0].trim().to_string());
+  let s = s.as_str();
   let args = positional_box_args("UnderoverscriptBox", s)
     .filter(|a| a.len() == 3)
     .or_else(|| {
@@ -7849,6 +7855,9 @@ Cell[TextData[{
     assert_eq!(extract_cell_content(s), "Sum[f, {i, m}]");
     let s = r#"BoxData[RowBox[{UnderscriptBox["\[Sum]", RowBox[{"n", "=", "1"}]], "f"}]]"#;
     assert_eq!(extract_cell_content(s), "Sum[f, n=1]");
+    // A `StyleBox` around the operator (`ScriptLevel -> 0`) is transparent.
+    let s = r#"BoxData[RowBox[{StyleBox[UnderoverscriptBox["\[Sum]", RowBox[{"j", "=", "1"}], "2"], ScriptLevel->0], StyleBox[" ", ScriptLevel->0], RowBox[{"(", RowBox[{"t", "[", "j", "]"}], ")"}]}]]"#;
+    assert_eq!(extract_cell_content(s), "Sum[ (t[j]), {j, 1, 2}]");
     // A non-operator base keeps its box (nothing to evaluate here).
     let s = r#"BoxData[RowBox[{UnderoverscriptBox["x", "a", "b"], "f"}]]"#;
     assert!(!extract_cell_content(s).starts_with("Sum["));

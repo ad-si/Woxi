@@ -20790,4 +20790,38 @@ mod ndsolve_descending_and_compound_domain {
       );
     }
   }
+
+  /// An algebraic constraint that is transcendental in its unknown has no
+  /// closed-form solution; the unknown is found numerically at every step,
+  /// so the returned solution satisfies the constraint along the whole
+  /// domain.
+  #[test]
+  fn transcendental_algebraic_constraint() {
+    assert_eq!(
+      interpret(
+        "sol = First[NDSolve[{x'[t] == -x[t] + T[t]/10, \
+         Exp[T[t]/5] + T[t] + x[t] == 5, T[0] == 2.4, x[0] == 1}, \
+         {x, T}, {t, 0, 2}]]; \
+         Table[Abs[Exp[T[s]/5] + T[s] + x[s] - 5] < 10^-6 /. sol, \
+         {s, {0.5, 1., 2.}}]"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+  }
+
+  /// The constraint-defined unknown is returned like any other dependent
+  /// function, and its value agrees with the root of the constraint.
+  #[test]
+  fn transcendental_constraint_unknown_value() {
+    assert_eq!(
+      interpret(
+        "sol = First[NDSolve[{x'[t] == -x[t], x[t] + Log[y[t]] == 2, \
+         y[0] == E, x[0] == 1}, {x, y}, {t, 0, 1}]]; \
+         Round[y[1.] /. sol, 0.001]"
+      )
+      .unwrap(),
+      "5.115"
+    );
+  }
 }
