@@ -11060,6 +11060,32 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_permutation_groups() {
+    assert_eq!(
+      interpret("Combinatorica`SymmetricGroup[3]").unwrap(),
+      "{{1, 2, 3}, {1, 3, 2}, {2, 1, 3}, {2, 3, 1}, {3, 1, 2}, {3, 2, 1}}"
+    );
+    assert_eq!(
+      interpret("Combinatorica`AlternatingGroup[3]").unwrap(),
+      "{{1, 2, 3}, {2, 3, 1}, {3, 1, 2}}"
+    );
+    assert_eq!(
+      interpret("Combinatorica`CyclicGroup[4]").unwrap(),
+      "{{1, 2, 3, 4}, {2, 3, 4, 1}, {3, 4, 1, 2}, {4, 1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("Length /@ {Combinatorica`DihedralGroup[3], Combinatorica`DihedralGroup[5], Combinatorica`AlternatingGroup[5]}")
+        .unwrap(),
+      "{6, 10, 60}"
+    );
+    assert_eq!(
+      interpret("Needs[\"Combinatorica`\"]; Length[AlternatingGroup[4]]")
+        .unwrap(),
+      "12"
+    );
+  }
+
+  #[test]
   fn combinatorica_graph_functions_by_bare_name_once_loaded() {
     assert_eq!(
       interpret(
