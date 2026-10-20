@@ -1012,6 +1012,18 @@ mod graphics {
       assert!(!svg.contains("&quot;"), "no quoted strings: {svg}");
     }
 
+    /// A `Dynamic[...]` item in a plot's `Epilog` list draws its current
+    /// value (here a label chosen by `If`) rather than being dropped.
+    #[test]
+    fn a_plot_epilog_dynamic_text_is_drawn() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Epilog -> {Point[{0.5, 0.5}], \
+         Dynamic[Text[If[0.5 > 0.4, \"zzhigh\", \"zzlow\"], {0.5, 0.5}]]}]",
+      );
+      assert!(svg.contains(">zzhigh</text>"), "{svg}");
+      assert!(!svg.contains("zzlow"), "{svg}");
+    }
+
     /// A positionless `Text[label]` in a plot's `Epilog` sits at the origin,
     /// as it does in `Graphics`, instead of being dropped.
     #[test]

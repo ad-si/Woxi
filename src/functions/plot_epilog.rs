@@ -504,6 +504,13 @@ fn render_item(
       }
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // `Dynamic[expr]` shows the current value of `expr`; in a static
+      // render that is just `expr` evaluated (Dynamic holds its argument).
+      "Dynamic" if !args.is_empty() => {
+        if let Ok(inner) = crate::evaluator::evaluate_expr_to_expr(&args[0]) {
+          render_item(&inner, style, area, out);
+        }
+      }
       "Line" if !args.is_empty() => {
         for pts in collect_point_lists(&args[0]) {
           out.push_str(&format!(
