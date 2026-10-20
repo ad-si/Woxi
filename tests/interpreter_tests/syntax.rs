@@ -13284,4 +13284,18 @@ mod implicit_times_with_part_call {
     assert_eq!(interpret("f[\u{263E}, 8]").unwrap(), "f[\u{263E}, 8]");
     assert_eq!(interpret("\u{263E} = 3; \u{263E} + 1").unwrap(), "4");
   }
+
+  // Regression: the Gothic alphabets (`\[GothicE]`, `\[GothicCapitalA]`)
+  // decode to private-use characters in the gaps between the script and
+  // double-struck ranges. They are legal letters in symbol names, as a
+  // Demonstration's `\[GothicE]Lot = {-1, 1}` variable showed.
+  #[test]
+  fn gothic_letters_are_symbol_characters() {
+    assert_eq!(
+      interpret("\u{F6D0}Lot = {-1, 1}; \u{F6D0}Lot[[1]]").unwrap(),
+      "-1"
+    );
+    assert_eq!(interpret("\u{F78A}x = 2; \u{F78A}x + 1").unwrap(), "3");
+    assert_eq!(interpret("a\u{F6E5}b = 5; a\u{F6E5}b").unwrap(), "5");
+  }
 }

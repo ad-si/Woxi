@@ -549,10 +549,8 @@ fn named_char_to_expr(s: &str) -> Expr {
 /// area the same way. Mirrors `PrivateUseLetter` in wolfram.pest.
 pub fn is_symbol_letter(c: char) -> bool {
   c.is_alphabetic()
-    || ('\u{F6B2}'..='\u{F6CB}').contains(&c)
-    || ('\u{F770}'..='\u{F789}').contains(&c)
-    || ('\u{F6E6}'..='\u{F6FF}').contains(&c)
-    || ('\u{F7A4}'..='\u{F7BD}').contains(&c)
+    || ('\u{F6B2}'..='\u{F6FF}').contains(&c)
+    || ('\u{F770}'..='\u{F7BD}').contains(&c)
     || ('\u{F800}'..='\u{F8FF}').contains(&c)
     || ('\u{FA000}'..='\u{FA0FF}').contains(&c)
     || is_letterlike_symbol_char(c)
