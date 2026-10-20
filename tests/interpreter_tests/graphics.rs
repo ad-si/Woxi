@@ -12706,6 +12706,17 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn polar_plot_single_curve_style_list_is_one_directive_set() {
+      // `{Thickness[..], Blue}` styles the one curve, rather than cycling
+      // Thickness to the first curve and Blue to a nonexistent second one.
+      let svg = export_svg(
+        "PolarPlot[1 + Cos[t], {t, 0, 2 Pi}, PlotStyle -> {Thickness[.03], Blue}]",
+      );
+      assert!(svg.contains("stroke=\"#0000FF\""), "{svg}");
+      assert!(svg.contains("stroke-width=\"108\""), "{svg}");
+    }
+
+    #[test]
     fn polar_plot_rose() {
       insta::assert_snapshot!(export_svg("PolarPlot[Cos[3 t], {t, 0, 2 Pi}]"));
     }
