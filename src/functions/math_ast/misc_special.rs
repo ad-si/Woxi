@@ -78,32 +78,43 @@ fn q_pochhammer_infinite(a: &Expr, q: &Expr) -> Result<Expr, InterpreterError> {
   // Only evaluate numerically when at least one argument is inexact, exactly
   // like wolframscript (QPochhammer[1/2, 1/2] stays symbolic; the 0.5 form
   // and N[...] evaluate).
-  let any_real = matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
-    || matches!(q, Expr::Real(_) | Expr::BigFloat(_, _));
-  if !any_real {
+  if !super::elliptic::expr_is_inexact(a)
+    && !super::elliptic::expr_is_inexact(q)
+  {
     return unevaluated();
   }
 
-  let (Some(af), Some(qf)) = (try_eval_to_f64(a), try_eval_to_f64(q)) else {
+  // Machine-complex a and/or q: multiply the factors (1 - a*q^k) in complex
+  // arithmetic; a purely real result is returned as a plain Real.
+  let (Some((a_re, a_im)), Some((q_re, q_im))) =
+    (try_extract_complex_float(a), try_extract_complex_float(q))
+  else {
     return unevaluated();
   };
   // The infinite product converges only for |q| < 1.
-  if qf.abs() >= 1.0 {
+  if q_re.hypot(q_im) >= 1.0 {
     return unevaluated();
   }
 
-  let mut product = 1.0_f64;
-  let mut qk = 1.0_f64; // q^k, starting at q^0
+  let mul = |x: (f64, f64), y: (f64, f64)| {
+    (x.0 * y.0 - x.1 * y.1, x.0 * y.1 + x.1 * y.0)
+  };
+  let mut product = (1.0_f64, 0.0_f64);
+  let mut aqk = (a_re, a_im); // a*q^k, starting at k = 0
   for _ in 0..1_000_000 {
-    product *= 1.0 - af * qk;
-    qk *= qf;
+    product = mul(product, (1.0 - aqk.0, -aqk.1));
+    aqk = mul(aqk, (q_re, q_im));
     // Remaining factors are (1 - a*q^k); once a*q^k is below machine epsilon
     // they no longer change the product.
-    if (af * qk).abs() < 1e-18 {
+    if aqk.0.hypot(aqk.1) < 1e-18 {
       break;
     }
   }
-  Ok(Expr::Real(product))
+  if product.1 == 0.0 && a_im == 0.0 && q_im == 0.0 {
+    Ok(Expr::Real(product.0))
+  } else {
+    Ok(build_complex_float_expr(product.0, product.1))
+  }
 }
 
 /// Return Some(n) when `e` is an exact integer (Integer, or a Rational that
