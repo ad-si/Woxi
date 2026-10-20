@@ -8145,7 +8145,7 @@ pub fn fptd_variance(dargs: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
 
 /// Parses DiscreteMarkovProcess[i0 | p0, m] into the initial probability
 /// row vector and the (square, expression-valued) transition matrix.
-fn dmp_parts(dargs: &[Expr]) -> Option<(Vec<Expr>, Expr, usize)> {
+pub fn dmp_parts(dargs: &[Expr]) -> Option<(Vec<Expr>, Expr, usize)> {
   if dargs.len() != 2 {
     return None;
   }

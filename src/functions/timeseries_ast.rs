@@ -601,6 +601,62 @@ fn time_series(pairs: Vec<Expr>) -> Expr {
   call1("TimeSeries", Expr::List(pairs.into()))
 }
 
+/// One realization of `DiscreteMarkovProcess[i0 | p0, m]` over the integer
+/// times `{tmin, tmax}`, as `{{t, state}, …}` pairs. The state at `tmin` is
+/// `i0` (or drawn from the initial distribution `p0`); each later state is
+/// drawn from the row of `m` belonging to the previous one. Rows are
+/// normalized by their sum, so non-exact floating-point input still works.
+fn discrete_markov_path(dargs: &[Expr], spec: &[Expr]) -> Option<Vec<Expr>> {
+  let (p0, matrix, n) = crate::functions::math_ast::dmp_parts(dargs)?;
+  let [Expr::Integer(tmin), Expr::Integer(tmax)] = spec else {
+    return None;
+  };
+  if tmax < tmin {
+    return None;
+  }
+  let to_weights = |items: &[Expr]| -> Option<Vec<f64>> {
+    let w: Vec<f64> = items
+      .iter()
+      .map(|e| try_eval_to_f64(e).filter(|x| *x >= 0.0))
+      .collect::<Option<_>>()?;
+    (w.iter().sum::<f64>() > 0.0).then_some(w)
+  };
+  let Expr::List(rows) = &matrix else {
+    return None;
+  };
+  let rows: Vec<Vec<f64>> = rows
+    .iter()
+    .map(|r| match r {
+      Expr::List(c) => to_weights(c),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let draw = |w: &[f64]| -> usize {
+    use rand::Rng;
+    let total: f64 = w.iter().sum();
+    let mut r = crate::with_rng(|rng| rng.gen_range(0.0..total));
+    for (k, wk) in w.iter().enumerate() {
+      if r < *wk {
+        return k;
+      }
+      r -= wk;
+    }
+    w.len() - 1
+  };
+  let mut state = draw(&to_weights(&p0)?);
+  debug_assert!(state < n);
+  let mut pairs = Vec::with_capacity((tmax - tmin + 1) as usize);
+  for t in *tmin..=*tmax {
+    if t > *tmin {
+      state = draw(&rows[state]);
+    }
+    pairs.push(Expr::List(
+      vec![Expr::Integer(t), Expr::Integer(state as i128 + 1)].into(),
+    ));
+  }
+  Some(pairs)
+}
+
 /// `RandomFunction[proc, {t0, t1, dt}]` — one realization of a random
 /// process, sampled at `t0, t0 + dt, …` up to `t1`. Returned as a
 /// `TimeSeries[{{t0, v0}, …}]` object (Woxi's canonical internal form for
@@ -637,6 +693,12 @@ pub fn random_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Expr::List(spec) = &args[1] else {
     return unchanged();
   };
+  if proc_name == "DiscreteMarkovProcess" {
+    return match discrete_markov_path(dargs, spec) {
+      Some(path) => Ok(time_series(path)),
+      None => unchanged(),
+    };
+  }
   let [t0, t1, dt] = spec.as_slice() else {
     return unchanged();
   };

@@ -971,7 +971,12 @@ fn cases_visit(
 ) -> Result<bool, InterpreterError> {
   use crate::functions::expr_form::{ExprForm, decompose_expr};
 
+  // Parts deeper than a non-negative `max` level can never match, so don't
+  // even decompose (clone) them. Negative bounds count from the leaves and
+  // need the full walk.
+  let too_deep = max >= 0 && level as i64 >= max;
   let (head, kids): (Option<Expr>, Vec<Expr>) = match expr {
+    _ if too_deep => (None, Vec::new()),
     // Rational / Complex are atoms: do not descend into their parts.
     _ if is_atomic_number(expr) => (None, Vec::new()),
     Expr::Association(pairs) => (

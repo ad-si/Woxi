@@ -10607,6 +10607,42 @@ mod random_function_simulation {
   use super::*;
 
   #[test]
+  fn discrete_markov_process_path() {
+    // Integer times tmin..tmax, each paired with a 1-based state.
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; p = RandomFunction[DiscreteMarkovProcess[1, \
+         {{0.7, 0.1, 0.2}, {0.1, 0.5, 0.4}, {0.5, 0.2, 0.3}}], {0, 49}]\
+         [\"Path\"]; {Length[p], p[[All, 1]] == Range[0, 49], \
+         p[[1, 2]], Complement[p[[All, 2]], {1, 2, 3}]}"
+      )
+      .unwrap(),
+      "{50, True, 1, {}}"
+    );
+    // A deterministic chain alternates between its states; the start time
+    // may be nonzero.
+    assert_eq!(
+      interpret(
+        "RandomFunction[DiscreteMarkovProcess[2, {{0, 1}, {1, 0}}], {1, 5}]\
+         [\"Path\"]"
+      )
+      .unwrap(),
+      "{{1, 2}, {2, 1}, {3, 2}, {4, 1}, {5, 2}}"
+    );
+    // The same seed reproduces the same realization.
+    assert_eq!(
+      interpret(
+        "m = {{0.5, 0.5}, {0.3, 0.7}}; \
+         SeedRandom[9]; a = RandomFunction[DiscreteMarkovProcess[1, m], {0, 30}][\"Values\"]; \
+         SeedRandom[9]; b = RandomFunction[DiscreteMarkovProcess[1, m], {0, 30}][\"Values\"]; \
+         a == b"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn wiener_process_path() {
     let path = interpret(
       "SeedRandom[1]; \
@@ -11346,6 +11382,29 @@ mod seed_random_method_option {
     assert_eq!(
       interpret("SeedRandom[3, Method -> \"Legacy\"]").unwrap(),
       "\0"
+    );
+  }
+}
+
+// `Count` only looks at the requested levels, so it must give the same
+// answer whether or not deeper parts exist.
+mod count_level_pruning {
+  use super::*;
+
+  #[test]
+  fn counts_only_requested_levels() {
+    assert_eq!(
+      interpret("Count[{{1, 2}, {1, 2}, {2, 1}}, {1, 2}]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Count[{{1, 2}, {1, {2}}}, 2, {1, 3}]").unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("Count[{{1, 2}, {1, {2}}}, 2]").unwrap(), "0");
+    assert_eq!(
+      interpret("Count[{{1, 2}, f[3]}, _Integer, -1]").unwrap(),
+      "3"
     );
   }
 }
