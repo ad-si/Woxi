@@ -5232,6 +5232,8 @@ truncated discrete distribution likewise exclude the lower bound's own mass.
 Only some indexed schemes are tabulated (see `ColorData` in `functions.csv`);
 e.g. `ColorData[61][k]` stays unevaluated, so the `Manipulate` of the
 `A Minimal Circumcircle Measure of District Compactness` Demonstration loses
-its fill/line colors. The scheme's values could not be checked against a real
-kernel. `ComputationalGeometry`ConvexHull` starts its index list at the
+its fill/line colors. The same holds for `ColorData[7, k]` and
+`ColorData[13, k]` (the `Circumcircles of Two Midpoints and an Altitude`
+Demonstration colors its triangle, discs and background with them). The
+schemes' values could not be checked against a real kernel. `ComputationalGeometry`ConvexHull` starts its index list at the
 leftmost corner, which is likewise unverified.
