@@ -16900,6 +16900,25 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    // `Text[Style[Column[{Style[x, 40], …}], 14]]`: the item's own size wins
+    // over the enclosing one, so the row is as tall as the text drawn in it
+    // (it used to be measured at 14 and the 40pt text spilled out of it).
+    #[test]
+    fn inner_style_size_wins_over_outer_style_in_a_column() {
+      let svg = export_svg("Text[Style[Column[{Style[13, 40], \"ab\"}], 14]]");
+      assert!(
+        svg.contains("font-size=\"40\"") && !svg.contains("<tspan"),
+        "item should be drawn at its own size: {svg}"
+      );
+      let big_y = svg
+        .split("y=\"")
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .and_then(|v| v.parse::<f64>().ok())
+        .expect("first text y");
+      assert!(big_y >= 20.0, "40pt row is too short, y={big_y}: {svg}");
+    }
+
     // A `Spacer[n]` *between* a row's items is blank horizontal space, the
     // same as one used as the separator — the typeset row used to print it
     // as the literal text "Spacer[50]".
