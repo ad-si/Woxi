@@ -7337,6 +7337,18 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+  /// A Manipulate's helper variables written with Gothic letters
+  /// (`\[GothicE]Lot`, U+F6D0) must parse: those private-use characters
+  /// were not accepted in symbol names, so the whole Input cell failed.
+  #[test]
+  fn manipulate_with_gothic_letter_variable_opens_live() {
+    let src = "Manipulate[Graphics[{Circle[{0, 0}, r], Text[\"a\", \u{F6D0}Lot r]}], {{r, 1}, 0.5, 2}, Initialization :> (\u{F6D0}Lot = {-1, 1};)]";
+    let expr = woxi::interpret_to_expr(src)
+      .expect("Gothic letters must parse as symbol characters");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate must instantiate");
+    assert_eq!(state.error, None, "{:?}", state.error);
+  }
   /// A planetary-motion Manipulate labels its sky chart with the Moon
   /// symbol (U+263E) as a bare `Style[☾, 8]` argument. The character was
   /// not accepted as a symbol name, so the whole Input cell failed to parse

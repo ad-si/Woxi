@@ -158,7 +158,7 @@ UnsignedNumericValue = { BasePrefix | UnsignedPrecisionReal | UnsignedReal | Uns
 // names (e.g. a pure function's own bound variable), so a notebook's box
 // form stores them as the bare character just like the other PUA letters
 // below.
-PrivateUseLetter = _{ '\u{F6B2}'..'\u{F6CB}' | '\u{F770}'..'\u{F789}' | '\u{F6E6}'..'\u{F6FF}' | '\u{F7A4}'..'\u{F7BD}' | '\u{F800}'..'\u{F8FF}' | '\u{FA000}'..'\u{FA0FF}' }
+PrivateUseLetter = _{ '\u{F6B2}'..'\u{F6FF}' | '\u{F770}'..'\u{F7BD}' | '\u{F800}'..'\u{F8FF}' | '\u{FA000}'..'\u{FA0FF}' }
 
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores
