@@ -15618,6 +15618,14 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .unwrap_or_else(|_| expr_owned.clone())
         }
       }
+      // A `Graph` is drawn like any other picture: render it so `Show`
+      // can overlay it (`Show[PolyhedronData[…, "Skeleton"], Graphics[…]]`).
+      Expr::FunctionCall { name, args: gargs } if name == "Graph" => {
+        crate::functions::graph::graph_ast(gargs)
+          .ok()
+          .filter(|g| matches!(g, Expr::Graphics { .. }))
+          .unwrap_or_else(|| expr_owned.clone())
+      }
       _ => expr_owned,
     };
     if let Expr::List(items) = &expr_owned {
