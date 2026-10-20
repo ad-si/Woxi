@@ -3673,6 +3673,41 @@ mod tests {
 }
 
 #[cfg(test)]
+mod scoped_button_tests {
+  use super::*;
+
+  /// Regression: a `Button` under `Module`/`With`/`If` in a Manipulate body
+  /// was lifted out into the persistent display list, where the local
+  /// variables it uses (`pair`, `n`) were unbound and every `If` branch was
+  /// shown at once, leaving `Nothing` behind in the body. It must stay in
+  /// the body, drawn as plates (also when it sits in a `Row` built by
+  /// `Map` inside a `Grid`).
+  #[test]
+  fn buttons_under_scoping_and_conditionals_stay_in_the_body() {
+    let code = r#"Manipulate[
+      Module[{half},
+        half[k_] := Quotient[k, 2];
+        With[{n = half[m]},
+          Grid[{
+            {"header", SpanFromLeft},
+            If[n > 2, {Button["big", Print[n]], SpanFromLeft},
+              {Button["small", Print[n]], SpanFromLeft}],
+            {Row[Map[Button[Grid[{{#}}], Print[#, n]] &, Range[n]]],
+              SpanFromLeft}}]]],
+      {{m, 8}, 0, 12, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.displays.is_empty(),
+      "buttons must not be lifted out of their scope: {:?}",
+      state.displays
+    );
+    assert!(state.graphics_handle.is_some(), "the body should render");
+  }
+}
+
+#[cfg(test)]
 mod textcell_tests {
   use super::*;
 

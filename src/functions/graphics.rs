@@ -16719,6 +16719,11 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
       match name.as_str() {
         "Grid" if !args.is_empty() => grid_svg_with_gaps(&args, &[]).ok()?,
         "Column" if !args.is_empty() => column_to_svg(&args)?,
+        // A `Row` of `Button`s (built with `Map`) is a row of plates, not
+        // the text of the buttons' source.
+        "Row" if !args.is_empty() && contains_body_button(cell) => {
+          row_to_svg(&args)?
+        }
         _ => return None,
       }
     }
@@ -26655,6 +26660,19 @@ fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
   }
 }
 
+/// Whether `expr` has a `Button[label, action, …]` anywhere inside it.
+fn contains_body_button(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      (name == "Button" && args.len() >= 2)
+        || args.iter().any(contains_body_button)
+    }
+    Expr::List(items) => items.iter().any(contains_body_button),
+    Expr::CompoundExpr(items) => items.iter().any(contains_body_button),
+    _ => false,
+  }
+}
+
 /// Replace every `TogglerBar[Dynamic[var], …]` or bare `Checkbox[Dynamic[var],
 /// …]` in a Manipulate body with `Nothing`, pushing each one's InputForm onto
 /// `displays` so the front-end renders it as a live widget instead of a
@@ -26723,6 +26741,27 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
         name: name.clone(),
         args: new_args.into(),
       }
+    }
+    // A `Button` under a scoping construct (`Module`/`With`/`Block`/
+    // `DynamicModule`) may use that construct's local variables, and one
+    // under `If`/`Which`/`Switch` is only drawn when its branch is taken.
+    // Lifting it into the persistent display list would evaluate it
+    // outside both (locals unbound, every branch shown at once) and blank
+    // its slot in the body. Leave it in place so it renders where the
+    // body puts it.
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "Module"
+          | "With"
+          | "Block"
+          | "DynamicModule"
+          | "If"
+          | "Which"
+          | "Switch"
+      ) && contains_body_button(expr) =>
+    {
+      expr.clone()
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
