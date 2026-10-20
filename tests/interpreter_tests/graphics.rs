@@ -1035,6 +1035,21 @@ mod graphics {
       assert!(svg.contains(">zzlabel</text>"), "{svg}");
     }
 
+    /// Regression: `ListPlot` ignored `Prolog` entirely (only `Epilog` was
+    /// forwarded to the shared plot-option reader), so orbit ellipses drawn
+    /// as a rotated prolog never showed up. The prolog is drawn under the
+    /// points, rotated ellipse included.
+    #[test]
+    fn a_list_plot_prolog_is_drawn_under_the_points() {
+      let svg = export_svg(
+        "ListPlot[{{0, 0}}, PlotRange -> {{-12, 12}, {-12, 12}}, \
+         Prolog -> {Rotate[{Blue, Circle[{0, 0}, {5, 2}]}, 0.5]}]",
+      );
+      let prolog = svg.find("prologClip").expect(&svg);
+      let point = svg.find("<circle").expect(&svg);
+      assert!(prolog < point, "prolog must sit under the points: {svg}");
+    }
+
     /// A `Tooltip` around a primitive in a plot's `Epilog` draws the
     /// primitive; the tip only shows on hover.
     #[test]
