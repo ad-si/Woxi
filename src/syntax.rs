@@ -608,6 +608,7 @@ fn is_letterlike_symbol_char(c: char) -> bool {
       | '\u{2609}'
       | '\u{263F}'
       | '\u{2640}'
+      | '\u{263E}'
       | '\u{F3DF}'
       | '\u{2642}'
       | '\u{2643}'
