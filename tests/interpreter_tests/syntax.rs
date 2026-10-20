@@ -13275,4 +13275,13 @@ mod implicit_times_with_part_call {
       "2*x^2*g[3]"
     );
   }
+
+  // Regression: the Moon symbol (☾, U+263E) is a legal symbol name, like the
+  // other astronomical symbols (☉ ♀ ♂ …).
+  #[test]
+  fn moon_symbol_is_a_symbol_name() {
+    assert_eq!(interpret("\u{263E}").unwrap(), "\u{263E}");
+    assert_eq!(interpret("f[\u{263E}, 8]").unwrap(), "f[\u{263E}, 8]");
+    assert_eq!(interpret("\u{263E} = 3; \u{263E} + 1").unwrap(), "4");
+  }
 }
