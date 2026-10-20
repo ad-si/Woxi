@@ -37729,6 +37729,18 @@ mod grid_repeating_decimal_alignment {
     assert!(svg.contains("<polyline"), "{svg}");
   }
 
+  /// A list of `SparseArray` rows of differing lengths is a ragged array
+  /// of their dense forms; `ArrayPlot` used to return an empty SVG.
+  #[test]
+  fn array_plot_of_list_of_sparse_array_rows() {
+    let svg = export_svg(
+      "ArrayPlot[Table[SparseArray[Thread[Union[Mod[Range[n]^2, n, 1]] -> 1], \
+       {n}], {n, 1, 5}]]",
+    );
+    assert!(svg.contains("<rect"), "{svg}");
+    assert!(svg.contains("viewBox"), "{svg}");
+  }
+
   /// A contour plot has no axes: layering unframed `ContourPlot`s with
   /// `Show` (a family of level curves) must not grow a set of axes, and a
   /// framed pair keeps its frame ticks.
