@@ -1004,6 +1004,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "Mesh" => match replacement {
           Expr::Identifier(v) if v == "All" => opts.mesh = Mesh::All,
           Expr::Identifier(v) if v == "Full" => opts.mesh = Mesh::Full,
+          Expr::Integer(n) if *n > 0 => opts.mesh = Mesh::Count(*n as usize),
           Expr::List(per_function) => {
             if let Some(Expr::List(levels)) = per_function.first() {
               out.mesh_levels =
