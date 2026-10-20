@@ -1777,6 +1777,54 @@ fn part_at_path(expr: &Expr, path: &[i128]) -> Option<Expr> {
   Some(current)
 }
 
+/// `ReplacePart[expr, new, {i1, i2, …}, {j1, j2, …}]` — part `i_k` of `expr`
+/// becomes part `j_k` of `new`. Each position is a part index or a list of
+/// them; a bare position list names a single position. Written as the rule
+/// form `i_k -> new[[j_k]]`, so the single replacement code does the work.
+pub fn replace_part_indexed_ast(
+  expr: &Expr,
+  new: &Expr,
+  pos: &Expr,
+  npos: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    call(
+      "ReplacePart",
+      vec![expr.clone(), new.clone(), pos.clone(), npos.clone()],
+    )
+  };
+  // The individual positions: `{{1}, {2, 3}}` is two, `{1, 2}` is one, and a
+  // bare index is one.
+  let positions = |e: &Expr| -> Vec<Expr> {
+    match e {
+      Expr::List(items)
+        if !items.is_empty()
+          && items.iter().all(|i| matches!(i, Expr::List(_))) =>
+      {
+        items.iter().cloned().collect()
+      }
+      other => vec![other.clone()],
+    }
+  };
+  let (targets, sources) = (positions(pos), positions(npos));
+  if targets.len() != sources.len() {
+    return Ok(unevaluated());
+  }
+  let mut rules = Vec::with_capacity(targets.len());
+  for (target, source) in targets.into_iter().zip(sources) {
+    let source_args = match &source {
+      Expr::List(idx) => idx.iter().cloned().collect::<Vec<Expr>>(),
+      single => vec![single.clone()],
+    };
+    let mut part_args = vec![new.clone()];
+    part_args.extend(source_args);
+    let value =
+      crate::evaluator::evaluate_expr_to_expr(&call("Part", part_args))?;
+    rules.push(call("Rule", vec![target, value]));
+  }
+  replace_part_ast(expr, &Expr::List(rules.into()))
+}
+
 pub fn replace_part_ast(
   expr: &Expr,
   rule: &Expr,

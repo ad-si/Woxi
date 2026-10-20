@@ -848,7 +848,9 @@ fn position_depth(expr: &Expr) -> i64 {
     _ => match decompose_expr(expr) {
       ExprForm::Atom(_) => 1,
       ExprForm::Composite { children, .. } => {
-        1 + children.iter().map(position_depth).max().unwrap_or(0)
+        // An empty `f[]` is as deep as `Depth[f[]]` says (2): the empty
+        // maximum is the depth of an atom, not 0.
+        1 + children.iter().map(position_depth).max().unwrap_or(1)
       }
     },
   }

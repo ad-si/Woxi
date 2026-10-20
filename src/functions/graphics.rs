@@ -4426,6 +4426,64 @@ fn spacer_gap_text(expr: &Expr) -> Option<String> {
   Some(" ".repeat((width.max(0.0).round() as usize).max(1)))
 }
 
+/// A static `PopupMenu[Dynamic[var], items, opts…]` cell: the chosen item as
+/// text, set in the `BaseStyle` colour, inside a menu plate unless
+/// `Appearance -> None` asks for the bare value. While `var` holds none of
+/// the items the menu is blank, as it is in a notebook.
+fn popup_menu_cell_svg(args: &[Expr]) -> String {
+  let current = dynamic_current_value(&args[0]);
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Input);
+  let chosen = matches!(&args[1], Expr::List(items) if items.iter().any(|i| show(i) == show(&current)));
+  let label = if chosen {
+    graphics_text_content(&current)
+  } else {
+    String::new()
+  };
+  let mut bare = false;
+  let mut fill = String::from("#000000");
+  for (key, value) in args[2..].iter().filter_map(option_kv) {
+    match key {
+      "Appearance" => {
+        bare = matches!(value, Expr::Identifier(v) if v == "None");
+      }
+      "BaseStyle" => {
+        let styles: Vec<&Expr> = match value {
+          Expr::List(items) => items.iter().collect(),
+          single => vec![single],
+        };
+        if let Some(color) = styles.into_iter().find_map(parse_color) {
+          fill = color.to_svg_rgb();
+        }
+      }
+      _ => {}
+    }
+  }
+  let (plate_w, h) = button_plate_size(&label);
+  let w = if bare {
+    (label.chars().count().max(1) as f64 * 8.4).max(10.0)
+  } else {
+    plate_w
+  };
+  let plate = if bare {
+    String::new()
+  } else {
+    format!(
+      "<rect x=\"0.5\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" rx=\"4\" ry=\"4\" fill=\"#FDFDFD\" stroke=\"#BFBFBF\" stroke-width=\"1\"/>\n",
+      w - 1.0,
+      h - 1.0
+    )
+  };
+  format!(
+    "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+     {plate}<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"14\" fill=\"{fill}\" text-anchor=\"middle\" dominant-baseline=\"central\" xml:space=\"preserve\">{}</text>\n\
+     </svg>\n",
+    w / 2.0,
+    h / 2.0,
+    svg_escape(&label)
+  )
+}
+
 /// The primitives an `Inset[obj, pos, opos, size, dirs]` contributes when
 /// `obj` is itself a picture: the object's own primitives, scaled into the
 /// inset's box, turned to face `dirs`, and moved to `pos`. Returns `None`
@@ -16531,6 +16589,14 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
       if name == "Button" && args.len() >= 2 =>
     {
       button_plate_svg(&graphics_text_content(&args[0]))
+    }
+    // A bare `PopupMenu[Dynamic[var], items, …]` cell (a puzzle board's
+    // fill-in squares) shows the item `var` currently holds — blank while
+    // nothing is chosen — instead of its source text.
+    Expr::FunctionCall { name, args }
+      if name == "PopupMenu" && args.len() >= 2 =>
+    {
+      popup_menu_cell_svg(args)
     }
     // A bare `ProgressIndicator[x]` cell (a per-row fill bar in a table of
     // brackets or tasks) draws as its track and fill, not source text.
