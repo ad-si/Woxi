@@ -27292,6 +27292,9 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     }
     _ => spec,
   };
+  if let Some(selector) = switch_as_pane_selector(spec) {
+    return control_group_items(&selector);
+  }
   let Expr::FunctionCall { name, args } = spec else {
     return None;
   };
@@ -27558,6 +27561,49 @@ fn layout_control_leaf(item: &Expr) -> Expr {
   dynamic_control_spec(item)
     .or_else(|| visibility_switched_control(item).map(|(control, _)| control))
     .unwrap_or_else(|| item.clone())
+}
+
+/// `Dynamic[Switch[sel, v1, body1, v2, body2, …]]` holding `Control[…]`s —
+/// the Demonstrations idiom for a control area whose rows depend on a mode
+/// selector — is the same construct as `PaneSelector[{v1 -> body1, …},
+/// Dynamic[sel]]`, so rewrite it to that and let the single `PaneSelector`
+/// implementation flatten the controls and record their visibility.
+/// `None` for anything else (including a `Switch` with a trailing default
+/// or one without any explicit control).
+fn switch_as_pane_selector(spec: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = spec else {
+    return None;
+  };
+  if name != "Dynamic" || args.len() != 1 {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: head,
+    args: cases,
+  } = &args[0]
+  else {
+    return None;
+  };
+  if head != "Switch"
+    || cases.len() < 3
+    || cases.len() % 2 == 0
+    || !cases[1..]
+      .iter()
+      .any(|c| expr_contains_call(c, &["Control"]))
+  {
+    return None;
+  }
+  let panes = cases[1..]
+    .chunks(2)
+    .map(|pair| Expr::Rule {
+      pattern: Box::new(pair[0].clone()),
+      replacement: Box::new(pair[1].clone()),
+    })
+    .collect::<Vec<_>>();
+  Some(call(
+    "PaneSelector",
+    vec![Expr::List(panes.into()), call1("Dynamic", cases[0].clone())],
+  ))
 }
 
 /// `If[cond, Identity, Invisible][Control[…]]` (optionally inside
@@ -27858,6 +27904,10 @@ fn collect_pane_visibility(
     collect_pane_visibility(&conditional, place_map, out, outer);
     return;
   }
+  if let Some(selector) = switch_as_pane_selector(spec) {
+    collect_pane_visibility(&selector, place_map, out, outer);
+    return;
+  }
   let Expr::FunctionCall { name, args } = spec else {
     return;
   };
@@ -27955,6 +28005,9 @@ fn pane_or_tab_governed_names(
     place_map: &[Option<String>],
     out: &mut std::collections::HashSet<String>,
   ) {
+    if let Some(selector) = switch_as_pane_selector(e) {
+      return walk(&selector, place_map, out);
+    }
     match e {
       Expr::FunctionCall { name, args } => {
         if (name == "PaneSelector" || name == "TabView")
@@ -34637,6 +34690,26 @@ mod manipulate_dynamic_control_list_tests {
     let s = spec("Manipulate[x, Dynamic[{Control[{{x, 0}, -1, 1}]}]]");
     assert_eq!(names(&s), vec!["x"]);
     assert_eq!(s.displays, [] as [std::string::String; 0]);
+  }
+
+  /// `Dynamic[Switch[mode, …]]` choosing between control groups behaves
+  /// like a `PaneSelector` over the same cases: every case's controls are
+  /// real controls, shown only while their case is selected.
+  #[test]
+  fn dynamic_switch_of_control_groups_flattens_to_controls() {
+    let s = spec(
+      "Manipulate[{x, y}, {mode, {\"a\", \"b\"}}, \
+       Item[Dynamic[Switch[mode, \"a\", Column[{Panel[Column[{\"first\", \
+       Control[{{x, 1, \"x\"}, {1 -> \"p\", 2 -> \"q\"}}]}]]}], \"b\", \
+       Column[{Control[{{y, 3, \"y\"}, 0, 5, 1}]}]]]]]",
+    );
+    assert_eq!(names(&s), vec!["mode", "", "x", "y"]);
+    assert_eq!(s.displays, [] as [std::string::String; 0]);
+    assert!(
+      s.control_visible
+        .iter()
+        .any(|(n, c)| n == "x" && c.contains("mode"))
+    );
   }
 
   /// `Dynamic[Column[{Control[…], …}]]` (the Demonstrations idiom for a
