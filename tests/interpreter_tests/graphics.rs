@@ -12061,6 +12061,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(half > 0 && half < all, "{half} of {all}");
     }
 
+    /// A strongly curved parametrization (`u^2`) on a coarse `PlotPoints`
+    /// grid used to give jagged quads spanning several wing lobes;
+    /// `MaxRecursion` now refines the bent cells, while a linear map and
+    /// `MaxRecursion -> 0` keep the plain grid.
+    #[test]
+    fn parametric_plot_two_parameters_refines_bent_cells() {
+      let curved = |rec: &str| {
+        export_svg(&format!(
+          "ParametricPlot[{{5 Cos[u^2], v Sin[2 u^2]}}, {{u, 0, 6}}, \
+           {{v, 0, 5}}, PlotPoints -> 8, MaxRecursion -> {rec}]"
+        ))
+        .matches("<polygon")
+        .count()
+      };
+      let plain = curved("0");
+      assert_eq!(plain, 49, "no refinement keeps the 7x7 grid");
+      assert!(curved("3") > 4 * plain, "bent cells were not refined");
+      let linear = export_svg(
+        "ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}, PlotPoints -> 8, \
+         MaxRecursion -> 3]",
+      )
+      .matches("<polygon")
+      .count();
+      assert_eq!(linear, 49, "a linear map needs no refinement");
+    }
+
     #[test]
     fn parametric_plot_two_parameters_draws_the_image_region() {
       // The unit square maps to the square [0,2]x[0,2] under {u+v, u+v'}.
