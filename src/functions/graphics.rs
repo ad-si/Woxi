@@ -21462,11 +21462,43 @@ fn form_box_svg(expr: &Expr) -> Option<String> {
   Some(layout_to_svg(&layout, theme().text_primary))
 }
 
+/// A (possibly `Style`d) string whose inline box notation holds a fraction,
+/// typeset through the box layout so the numerator stacks over the
+/// denominator. `None` for any other item, which keeps its text rendering.
+fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
+  let (content, size) = match expr {
+    Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
+      let style = extract_cell_style(expr);
+      (style.content, style.font_size.unwrap_or(14.0))
+    }
+    other => (other, 14.0),
+  };
+  let Expr::String(text) = content else {
+    return None;
+  };
+  let boxes = inline_box_string_to_box_expr(text)?;
+  if !box_has_fraction(&boxes) {
+    return None;
+  }
+  let boxes = crate::strip_number_precision_markers(&boxes);
+  let layout = layout_box(&boxes, size);
+  if layout.width <= 0.0 || layout.height <= 0.0 {
+    return None;
+  }
+  Some(layout_to_svg(&layout, theme().text_primary))
+}
+
 /// Render a resolved `Column`/`Row` item that is itself a layout construct
 /// (`Row[…]` / `Column[…]`) to a nested SVG, so mixed text/graphics rows
 /// compose instead of printing as raw InputForm text. `None` for other
 /// expressions (rendered as a plain text line by the caller).
 fn nested_layout_svg(expr: &Expr) -> Option<String> {
+  // A string with inline `\!\(\*FractionBox[…]\)` notation stacks its
+  // fraction instead of flattening it to `a/b` text; a `Style[…]` around it
+  // sets the type size.
+  if let Some(svg) = inline_fraction_string_svg(expr) {
+    return Some(svg);
+  }
   // `picture -> picture` is laid out the way a grid cell holding one is.
   if matches!(expr, Expr::Rule { .. })
     && crate::evaluator::lays_out_a_graphic(expr)
