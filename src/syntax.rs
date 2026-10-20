@@ -3740,47 +3740,21 @@ fn parse_list_extended(pair: &Pair<Rule>) -> Expr {
   // First inner pair is always List
   let list_expr = pair_to_expr(inner_pairs[0].clone());
 
-  // Check for suffix types
-  let has_part_index = inner_pairs
-    .iter()
-    .any(|p| matches!(p.as_rule(), Rule::PartIndexSuffix));
-  let has_list_call = inner_pairs
-    .iter()
-    .any(|p| matches!(p.as_rule(), Rule::ListCallSuffix));
-
-  if has_part_index {
-    // List[[...]]: PartExtract with List base
-    inner_pairs
-      .iter()
-      .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
-      .fold(list_expr, |acc, p| apply_part_index_suffix(acc, p.clone()))
-  } else if has_list_call {
-    // List[...]: ListCall
-    let suffix_pair = inner_pairs
-      .iter()
-      .find(|p| matches!(p.as_rule(), Rule::ListCallSuffix))
-      .unwrap();
-    let bracket_sequences: Vec<Vec<Expr>> = suffix_pair
-      .clone()
-      .into_inner()
-      .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-      .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
-      .collect();
-    let mut result = Expr::CurriedCall {
-      func: Box::new(list_expr),
-      args: bracket_sequences[0].clone(),
-    };
-    for args in bracket_sequences.into_iter().skip(1) {
-      result = Expr::CurriedCall {
-        func: Box::new(result),
-        args,
-      };
+  // Suffixes apply left to right: `{f, g}[[2]][x]` is a part, then a call.
+  inner_pairs[1..].iter().fold(list_expr, |acc, suffix| {
+    match suffix.as_rule() {
+      Rule::PartIndexSuffix => apply_part_index_suffix(acc, suffix.clone()),
+      Rule::ListCallSuffix => suffix
+        .clone()
+        .into_inner()
+        .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+        .fold(acc, |func, bracket| Expr::CurriedCall {
+          func: Box::new(func),
+          args: bracket.into_inner().map(pair_to_expr).collect(),
+        }),
+      _ => acc,
     }
-    result
-  } else {
-    // Plain List
-    list_expr
-  }
+  })
 }
 
 fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
