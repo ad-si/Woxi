@@ -8404,6 +8404,19 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// Regression: the flat `{bottom, left, top, right}` form of
+    /// `FrameLabel` dropped its top and right captions.
+    #[test]
+    fn list_plot_flat_four_element_frame_label() {
+      let svg = export_svg(
+        "ListPlot[{{0, 1}, {1, 2}}, Frame -> True, \
+         FrameLabel -> {\"fb\", \"fl\", \"ft\", \"fr\"}]",
+      );
+      for label in ["fb", "fl", "ft", "fr"] {
+        assert!(svg.contains(&format!(">{label}</text>")), "{label}: {svg}");
+      }
+    }
+
     /// Regression: a top `FrameLabel` containing a line break was drawn as
     /// one `<text>` element, so SVG collapsed the break and the caption
     /// ran off the image. Each line now gets its own element.

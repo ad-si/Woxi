@@ -9375,6 +9375,13 @@ pub(crate) fn parse_frame_label(value: &Expr) -> FrameLabels {
     if let Some(e) = items.get(1) {
       out.left = frame_label_entry(e);
     }
+    // Flat 4-element form `{bottom, left, top, right}`.
+    if let Some(e) = items.get(2) {
+      out.top = frame_label_entry(e);
+    }
+    if let Some(e) = items.get(3) {
+      out.right = frame_label_entry(e);
+    }
   } else {
     // A bare label labels the bottom edge.
     out.bottom = frame_label_entry(&val);
