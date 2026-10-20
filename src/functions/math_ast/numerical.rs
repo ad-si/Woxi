@@ -5973,7 +5973,7 @@ fn compute_khinchin(
   // adds up ln p + ln m.
   let mut ln_table: Vec<BigFloat> = vec![BigFloat::from_i32(0, w); 2];
   for k in 2..=shift {
-    let factor = (2..).take_while(|p| p * p <= k).find(|p| k % p == 0);
+    let factor = (2..=k).take_while(|p| p * p <= k).find(|p| k % p == 0);
     let ln_k = match factor {
       Some(p) => ln_table[p as usize].add(&ln_table[(k / p) as usize], w, rm),
       None => BigFloat::from_u64(k, w).ln(w, rm, cc),
