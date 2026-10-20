@@ -1059,6 +1059,12 @@ fn evaluate_function_call_ast_inner(
     "PieCharts`PieChart" => "PieChart",
     "Derangements" if combinatorica_active => "Combinatorica`Derangements",
     "RandomKSubset" if combinatorica_active => "Combinatorica`RandomKSubset",
+    "SymmetricGroup" if combinatorica_active => "Combinatorica`SymmetricGroup",
+    "AlternatingGroup" if combinatorica_active => {
+      "Combinatorica`AlternatingGroup"
+    }
+    "CyclicGroup" if combinatorica_active => "Combinatorica`CyclicGroup",
+    "DihedralGroup" if combinatorica_active => "Combinatorica`DihedralGroup",
     "Backtrack" if combinatorica_active => "Combinatorica`Backtrack",
     "FromUnorderedPairs" | "ToAdjacencyLists" | "BreadthFirstTraversal"
       if combinatorica_active =>

@@ -2913,6 +2913,14 @@ pub fn dispatch_list_operations(
         ),
       );
     }
+    "Combinatorica`SymmetricGroup"
+    | "Combinatorica`AlternatingGroup"
+    | "Combinatorica`CyclicGroup"
+    | "Combinatorica`DihedralGroup"
+      if args.len() == 1 =>
+    {
+      return Some(list_helpers_ast::combinatorica_group_ast(name, args));
+    }
     "Combinatorica`Derangements" if args.len() == 1 => {
       return Some(list_helpers_ast::combinatorica_derangements_ast(args));
     }

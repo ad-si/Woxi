@@ -307,6 +307,83 @@ pub fn combinatorica_derangements_ast(
   Ok(Expr::List(kept.into()))
 }
 
+/// `Combinatorica\`SymmetricGroup[n]`, `AlternatingGroup[n]`,
+/// `CyclicGroup[n]` and `DihedralGroup[n]` — the elements of the group as a
+/// list of permutations of `Range[n]`. The symmetric group lists every
+/// permutation in lexicographic order, the alternating group keeps the even
+/// ones, the cyclic group the `n` left rotations of `Range[n]` and the
+/// dihedral group those rotations followed by their reversals (without
+/// repeating a permutation that already appeared).
+pub fn combinatorica_group_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated(name, args);
+  let n = match args {
+    [Expr::Integer(n)] if *n >= 1 => *n as usize,
+    _ => return Ok(original()),
+  };
+  let to_list = |perm: &[i128]| {
+    Expr::List(perm.iter().map(|&k| Expr::Integer(k)).collect())
+  };
+  let identity: Vec<i128> = (1..=n as i128).collect();
+  let rotations: Vec<Vec<i128>> = (0..n)
+    .map(|k| {
+      let mut r = identity.clone();
+      r.rotate_left(k);
+      r
+    })
+    .collect();
+  let perms: Vec<Vec<i128>> = match name {
+    "Combinatorica`CyclicGroup" => rotations,
+    "Combinatorica`DihedralGroup" => {
+      let mut out = rotations.clone();
+      for r in rotations {
+        let mut rev = r;
+        rev.reverse();
+        if !out.contains(&rev) {
+          out.push(rev);
+        }
+      }
+      out
+    }
+    _ => {
+      let all = permutations_ast(&[to_list(&identity)])?;
+      let Expr::List(all) = &all else {
+        return Ok(original());
+      };
+      let as_ints: Vec<Vec<i128>> = all
+        .iter()
+        .filter_map(|p| match p {
+          Expr::List(items) => items
+            .iter()
+            .map(|e| match e {
+              Expr::Integer(k) => Some(*k),
+              _ => None,
+            })
+            .collect(),
+          _ => None,
+        })
+        .collect();
+      if name == "Combinatorica`AlternatingGroup" {
+        as_ints
+          .into_iter()
+          .filter(|p| {
+            let inversions = (0..p.len())
+              .flat_map(|i| (i + 1..p.len()).map(move |j| (i, j)))
+              .filter(|&(i, j)| p[i] > p[j])
+              .count();
+            inversions % 2 == 0
+          })
+          .collect()
+      } else {
+        as_ints
+      }
+    }
+  };
+  Ok(Expr::List(perms.iter().map(|p| to_list(p)).collect()))
+}
+
 /// Largest `Permutations` result, counted in `Expr` nodes (each
 /// permutation's elements plus its own `List`), that is built rather than
 /// refused with ::toobig. WL's bound is the machine's free memory; an
