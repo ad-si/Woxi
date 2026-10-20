@@ -3054,6 +3054,27 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn thermometer_gauge_renders_graphics() {
+    assert_eq!(
+      interpret("ThermometerGauge[5.5, {0, 10}]").unwrap(),
+      "-Graphics-"
+    );
+    assert_eq!(interpret("ThermometerGauge[x]").unwrap(), "-Graphics-");
+    assert_eq!(
+      interpret("Head[ThermometerGauge[4, {0, 10}, GaugeLabels -> \"Value\"]]")
+        .unwrap(),
+      "Graphics"
+    );
+    // The mercury column grows with the value.
+    assert_eq!(
+      interpret(
+        "ExportString[ThermometerGauge[2, {0, 10}], \"SVG\"] != ExportString[ThermometerGauge[8, {0, 10}], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+  #[test]
   fn horizontal_gauge_without_range_gauges_against_zero_to_one() {
     // The `{min, max}` argument is optional: wolframscript gauges a bare
     // value against `{0, 1}` and still returns a Graphics, even when the
