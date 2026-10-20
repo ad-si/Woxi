@@ -35590,7 +35590,7 @@ mod manipulate_traditional_form_choice_svg_tests {
     };
     assert_eq!(values.len(), 5);
     let has_icon: Vec<bool> =
-      value_label_svgs.iter().map(|s| s.is_some()).collect();
+      value_label_svgs.iter().map(Option::is_some).collect();
     assert_eq!(has_icon, vec![true, true, false, false, true]);
   }
 
