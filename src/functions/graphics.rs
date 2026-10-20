@@ -31619,11 +31619,74 @@ fn is_text_layout_head(name: &str) -> bool {
   )
 }
 
+/// Whether a choice label is written as arithmetic (`-Pi/4`, `x + 1`,
+/// `Sqrt[2]`), the only labels worth evaluating just to typeset the result.
+fn is_arithmetic_label(label: &Expr) -> bool {
+  // Operands must be numbers or symbols all the way down: a quotient of
+  // `Row`s or a sum with a string piece is laid out by the text renderer.
+  fn operand(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::Constant(_)
+      | Expr::Identifier(_) => true,
+      _ => is_arithmetic_label(e),
+    }
+  }
+  match label {
+    Expr::BinaryOp {
+      op:
+        crate::syntax::BinaryOperator::Plus
+        | crate::syntax::BinaryOperator::Minus
+        | crate::syntax::BinaryOperator::Times
+        | crate::syntax::BinaryOperator::Divide
+        | crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => operand(left) && operand(right),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: e,
+    } => operand(e),
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Times"
+          | "Plus"
+          | "Power"
+          | "Rational"
+          | "Sqrt"
+          | "Divide"
+          | "Subtract"
+      ) && args.iter().all(operand)
+    }
+    _ => false,
+  }
+}
+
 /// Rendered SVG for a discrete-choice label that is a graphic (e.g.
 /// `"+" -> myIcon[2]` in a Demonstrations crosshair picker) or a
 /// `TraditionalForm[…]`-typeset expression. A held `Graphics[…]` call or a
 /// call producing one is evaluated; anything else text-like yields `None`.
 fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
+  // An arithmetic label (`-1 -> -Pi/4`) is typeset the way the FrontEnd
+  // shows a computed value — a stacked fraction with real `π` — instead of
+  // its flat InputForm (`-1/4*Pi`).
+  if is_arithmetic_label(label) {
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(label).ok()?;
+    // A label that collapses to a plain number or symbol stays text.
+    return match &evaluated {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::String(_)
+      | Expr::Identifier(_)
+      | Expr::Graphics { .. }
+      | Expr::Image { .. } => None,
+      _ => form_box_svg(&evaluated),
+    };
+  }
   match label {
     Expr::Graphics { svg, .. } => Some(svg.clone()),
     // A raster image label (e.g. the `ColorData[…, "Image"]` swatches of a
@@ -35515,6 +35578,28 @@ mod manipulate_traditional_form_choice_svg_tests {
     let expr = crate::parse_to_expr(code).expect("parse");
     let spec = extract_manipulate_spec(&expr).expect("extract spec");
     spec.controls.into_iter().next().expect("one control")
+  }
+
+  /// A rule label written as arithmetic (`-1 -> -Pi/4`, the rotation picker
+  /// of a cellular-automaton Demonstration) typesets as an icon rather
+  /// than showing the flat InputForm `-1/4*Pi`; a plain string or integer
+  /// label stays text.
+  #[test]
+  fn arithmetic_choice_labels_typeset_as_icons() {
+    let ManipulateControl::Discrete {
+      values,
+      value_label_svgs,
+      ..
+    } = discrete_control(
+      "Manipulate[x, {{x, -1, \"r\"}, {-1 -> -Pi/4, 1 -> Pi/4, 2 -> \"two\", 3 -> 3, 4 -> Sqrt[2]}}]",
+    )
+    else {
+      panic!("expected a discrete control");
+    };
+    assert_eq!(values.len(), 5);
+    let has_icon: Vec<bool> =
+      value_label_svgs.iter().map(Option::is_some).collect();
+    assert_eq!(has_icon, vec![true, true, false, false, true]);
   }
 
   /// `TraditionalForm[Row[{…, Invisible[pad]}]]` (padding that keeps a
