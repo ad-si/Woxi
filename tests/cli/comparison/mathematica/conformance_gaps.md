@@ -2983,6 +2983,23 @@ Woxi. Every other `{0, n}` errors in WL too, so the rule there is obscure.
 - `AdjacencyMatrix[g]` returns a dense matrix rather than a `SparseArray`, so
   `AdjacencyMatrix[g] // MatrixForm` prints differently.
 
+### `CoefficientArrays` linear-term entries are stored in an unsorted order
+
+**Not reproducible.** For a single polynomial WL stores the degree-1
+`SparseArray` entries in an internal order that is not the variable order, so
+the raw `SparseArray[…]` (e.g. its `InputForm`) differs while `Normal` agrees:
+
+```sh
+wolframscript -code 'CoefficientArrays[x + y + z, {x, y, z}] // InputForm'
+# {0, SparseArray[Automatic, {3}, 0, {1, {{0, 3}, {{2}, {3}, {1}}}, {1, 1, 1}}]}
+woxi eval 'CoefficientArrays[x + y + z, {x, y, z}] // InputForm'
+# {0, SparseArray[Automatic, {3}, 0, {1, {{0, 3}, {{1}, {2}, {3}}}, {1, 1, 1}}]}
+```
+
+The order depends on the variable count and the order the variables are
+listed in (`{x, y, z}` → `2, 3, 1`; `{z, x, y}` → `2, 1, 3`;
+`{x, y, z, w}` → `2, 3, 1, 4`), not on the polynomial's terms. Woxi sorts.
+
 ### `Threaded[scalar]` gives garbage
 
 ```sh

@@ -7516,6 +7516,138 @@ mod cases {
       r#"{{-5, 0}, {{2, 3}, {1, -1}}}"#,
     );
   }
+  // A linear system stores its constants plainly; only a nonlinear one wraps
+  // them as `0 + c`.
+  #[test]
+  fn coefficient_arrays_linear_system_constants() {
+    assert_case(
+      r#"First[CoefficientArrays[{x + y == 1, 2 x - y == 3}, {x, y}]]"#,
+      r#"SparseArray[Automatic, {2}, 0, {1, {{0, 2}, {{1}, {2}}}, {-1, -3}}]"#,
+    );
+    assert_case(
+      r#"First[CoefficientArrays[{1 + x, 2 + x^2}, {x}]]"#,
+      r#"SparseArray[Automatic, {2}, 0, {1, {{0, 2}, {{1}, {2}}}, {0 + 1, 0 + 2}}]"#,
+    );
+  }
+  // Non-symbol forms such as f[x] are variables in their own right (#1564).
+  #[test]
+  fn coefficient_arrays_generalized_variables() {
+    assert_case(
+      r#"CoefficientArrays[f[x], {f[x]}]"#,
+      r#"{0, SparseArray[Automatic, {1}, 0, {1, {{0, 1}, {{1}}}, {1}}]}"#,
+    );
+    for (input, expected) in [
+      ("CoefficientArrays[f[x] + y f[x], f[x]]", "{0, {1 + y}}"),
+      (
+        "CoefficientArrays[a f[x]^2 + b f[x] g[y] + c, {f[x], g[y]}]",
+        "{c, {0, 0}, {{a, b}, {0, 0}}}",
+      ),
+      (
+        "CoefficientArrays[{f[x] + 2 g[x], 3 f[x] - 1}, {f[x], g[x]}]",
+        "{{0, -1}, {{1, 2}, {3, 0}}}",
+      ),
+      (
+        "CoefficientArrays[x^2 + Sin[x]^2 + 2 Sin[x], {Sin[x]}]",
+        "{x^2, {2}, {{1}}}",
+      ),
+      ("CoefficientArrays[(f[x] + 1)^2, {f[x]}]", "{1, {2}, {{1}}}"),
+      ("CoefficientArrays[x + f[x], {x, f[x]}]", "{0, {1, 1}}"),
+      (
+        "CoefficientArrays[f[g[x]] + 2 g[x]^2 + 3, {f[g[x]], g[x]}]",
+        "{3, {1, 0}, {{0, 0}, {0, 2}}}",
+      ),
+      ("CoefficientArrays[x + f[1], {f[1]}]", "{x, {1}}"),
+      ("CoefficientArrays[x == 1, f[x]]", "{-1 + x}"),
+      // Forms are taken literally: patterns match nothing.
+      (
+        "CoefficientArrays[a f[x]^2 + b g[y] + c, {f[_], g[_]}]",
+        "{c + a*f[x]^2 + b*g[y]}",
+      ),
+      ("CoefficientArrays[x + y^2, {x, _}]", "{y^2, {1, 0}}"),
+    ] {
+      assert_case(&format!("Normal[{input}]"), expected);
+    }
+  }
+  #[test]
+  fn coefficient_arrays_default_variables() {
+    assert_case(
+      "Normal[CoefficientArrays[x + 2 y^2]]",
+      "{0, {1, 0}, {{0, 0}, {0, 2}}}",
+    );
+    assert_case("Normal[CoefficientArrays[x + y, {}]]", "{0, {1, 1}}");
+    assert_case("CoefficientArrays[{}, {x}]", "{{}}");
+  }
+  #[test]
+  fn coefficient_arrays_not_a_polynomial() {
+    for (input, poly) in [
+      ("CoefficientArrays[x + f[x], {x}]", "x + f[x]"),
+      ("CoefficientArrays[Sqrt[x] + x, {x}]", "Sqrt[x] + x"),
+      ("CoefficientArrays[1/x + x, {x}]", "x^(-1) + x"),
+      (
+        "CoefficientArrays[Sqrt[f[x]] + f[x]^2, {f[x]}]",
+        "Sqrt[f[x]] + f[x]^2",
+      ),
+      (
+        "CoefficientArrays[x + Sin[x]^2, {x, Sin[_]}]",
+        "x + Sin[x]^2",
+      ),
+      ("CoefficientArrays[{x, 1/x}, {x}]", "x^(-1)"),
+    ] {
+      woxi::clear_state();
+      let result = woxi::interpret(input).unwrap();
+      assert!(
+        result.starts_with("CoefficientArrays["),
+        "for {input}: {result}"
+      );
+      let expected =
+        format!("CoefficientArrays::poly: {poly} is not a polynomial.");
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {expected:?} for {input}, got {msgs:?}"
+      );
+    }
+  }
+  #[test]
+  fn coefficient_arrays_invalid_variables() {
+    for (input, bad) in [
+      ("CoefficientArrays[x + y, 2]", "2"),
+      ("CoefficientArrays[x + Pi, {Pi}]", "Pi"),
+      ("CoefficientArrays[x + Sin[2], {Sin[2]}]", "Sin[2]"),
+      ("CoefficientArrays[x + I, {I}]", "I"),
+      ("CoefficientArrays[x^2 + y, {x^2}]", "x^2"),
+      ("CoefficientArrays[(x + 1)^2 + y, {x + 1}]", "1 + x"),
+      ("CoefficientArrays[x + Sqrt[y], {Sqrt[y]}]", "Sqrt[y]"),
+      ("CoefficientArrays[x + y, {{x}}]", "{x}"),
+      ("CoefficientArrays[x + y, {x, Infinity}]", "Infinity"),
+    ] {
+      woxi::clear_state();
+      let result = woxi::interpret(input).unwrap();
+      assert!(
+        result.starts_with("CoefficientArrays["),
+        "for {input}: {result}"
+      );
+      let expected =
+        format!("CoefficientArrays::ivar: {bad} is not a valid variable.");
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {expected:?} for {input}, got {msgs:?}"
+      );
+    }
+    woxi::clear_state();
+    assert_eq!(
+      woxi::interpret("CoefficientArrays[x + y, {x, x}]").unwrap(),
+      "CoefficientArrays[x + y, {x, x}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "CoefficientArrays::dupv: Duplicate variable x found in CoefficientArrays[x + y, {x, x}]."
+      )),
+      "got {msgs:?}"
+    );
+  }
   #[test]
   fn expand_all() {
     assert_case(

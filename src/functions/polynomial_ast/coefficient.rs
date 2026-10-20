@@ -1238,11 +1238,6 @@ pub fn from_coefficient_rules_ast(
 
 // ─── CoefficientArrays ─────────────────────────────────────────────────
 
-/// CoefficientArrays[poly, var] or CoefficientArrays[poly, {x, y, …}]
-/// Returns `{c_0, c_1, …, c_d}` where `c_k` is a sparse rank-k tensor of
-/// shape `[n, …, n]` (with `n` = number of variables) holding the
-/// coefficients of all degree-k monomials at their sorted-index slot,
-/// matching wolframscript's `SparseArray[Automatic, dims, 0, …]` shape.
 /// Rewrite an equation `lhs == rhs` as the polynomial `lhs - rhs`; any other
 /// expression is returned unchanged. CoefficientArrays extracts coefficients
 /// from the difference so that equations and plain polynomials behave alike.
@@ -1266,111 +1261,209 @@ fn equation_to_poly(e: &Expr) -> Expr {
   }
 }
 
+/// Whether `v` can serve as a CoefficientArrays variable. Symbols and
+/// non-arithmetic applications (`f[x]`, `Sin[x]`, `a[[1]]`) and patterns
+/// (`_`, taken literally) qualify;
+/// numbers, strings, numeric constants and quantities (`Pi`, `Sin[2]`, `I`,
+/// `Infinity`), lists and arithmetic forms (`x^2`, `1 + x`, `Sqrt[y]`) do not.
+fn is_coefficient_arrays_variable(v: &Expr) -> bool {
+  if crate::functions::predicate_ast::is_numeric_q(v) {
+    return false;
+  }
+  match v {
+    Expr::Identifier(name) => !matches!(
+      name.as_str(),
+      "Infinity" | "ComplexInfinity" | "Indeterminate"
+    ),
+    Expr::FunctionCall { name, .. } => !matches!(
+      name.as_str(),
+      "Plus"
+        | "Times"
+        | "Power"
+        | "Sqrt"
+        | "Rational"
+        | "Complex"
+        | "DirectedInfinity"
+        | "List"
+    ),
+    Expr::String(_)
+    | Expr::List(_)
+    | Expr::BinaryOp { .. }
+    | Expr::UnaryOp { .. } => false,
+    _ => true,
+  }
+}
+
+/// CoefficientArrays[poly], CoefficientArrays[poly, var] or
+/// CoefficientArrays[poly, {form1, form2, …}]
+/// Returns `{c_0, c_1, …, c_d}` where `c_k` is a sparse rank-k tensor of
+/// shape `[n, …, n]` (with `n` = number of variables) holding the
+/// coefficients of all degree-k monomials at their sorted-index slot,
+/// matching wolframscript's `SparseArray[Automatic, dims, 0, …]` shape.
+/// A form may be any non-arithmetic expression such as `f[x]`; it is taken
+/// literally (patterns like `f[_]` match nothing, as in wolframscript).
 pub fn coefficient_arrays_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // One-argument form and an empty variable list both use Variables[poly].
+  let needs_variables = match args {
+    [_] => true,
+    [_, Expr::List(items)] => items.is_empty(),
+    _ => false,
+  };
+  if needs_variables {
+    let vars = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Variables",
+      args[0].clone(),
+    ))?;
+    return coefficient_arrays_ast(&[args[0].clone(), vars]);
+  }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
-      "CoefficientArrays expects 2 arguments".into(),
+      "CoefficientArrays expects 1 or 2 arguments".into(),
     ));
   }
-  let vars: Vec<String> = match &args[1] {
-    Expr::List(items) => {
-      let mut v = Vec::with_capacity(items.len());
-      for item in items {
-        match item {
-          Expr::Identifier(name) => v.push(name.clone()),
-          _ => {
-            return Ok(unevaluated("CoefficientArrays", args));
-          }
-        }
-      }
-      v
-    }
-    Expr::Identifier(name) => vec![name.clone()],
-    _ => {
-      return Ok(unevaluated("CoefficientArrays", args));
-    }
+  let forms: Vec<Expr> = match &args[1] {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
   };
-  if vars.is_empty() {
+  if let Some(bad) = forms.iter().find(|v| !is_coefficient_arrays_variable(v)) {
+    crate::emit_message(&format!(
+      "CoefficientArrays::ivar: {} is not a valid variable.",
+      crate::syntax::expr_to_message_form(bad)
+    ));
     return Ok(unevaluated("CoefficientArrays", args));
   }
+  for (i, v) in forms.iter().enumerate() {
+    if forms[..i].iter().any(|w| expr_equal(w, v)) {
+      crate::emit_message(&format!(
+        "CoefficientArrays::dupv: Duplicate variable {} found in {}.",
+        crate::syntax::expr_to_message_form(v),
+        crate::syntax::expr_to_message_form(&unevaluated(
+          "CoefficientArrays",
+          args
+        ))
+      ));
+      return Ok(unevaluated("CoefficientArrays", args));
+    }
+  }
+
+  // Generalized variables: replace every non-symbol form (`f[x]`) by a fresh
+  // symbol so the monomial decomposition below only deals with symbols.
+  // Larger forms go first so `f[g[x]]` is not broken up by `g[x]`.
+  let context =
+    format!("{}{}", expr_to_string(&args[0]), expr_to_string(&args[1]));
+  let mut vars: Vec<String> = Vec::with_capacity(forms.len());
+  let mut subs: Vec<(Expr, Expr)> = Vec::new();
+  for (i, form) in forms.iter().enumerate() {
+    if let Expr::Identifier(name) = form {
+      vars.push(name.clone());
+    } else {
+      let mut k = i;
+      let mut name = format!("CoefficientArraysVar{k}");
+      while context.contains(&name) {
+        k += forms.len();
+        name = format!("CoefficientArraysVar{k}");
+      }
+      subs.push((form.clone(), id_expr(&name)));
+      vars.push(name);
+    }
+  }
+  subs.sort_by_key(|(form, _)| std::cmp::Reverse(expr_to_string(form).len()));
+  let abstract_forms = |e: &Expr| {
+    subs.iter().fold(e.clone(), |acc, (form, sym)| {
+      super::solve::substitute_expr(&acc, form, sym)
+    })
+  };
+
   // An equation `lhs == rhs` contributes the coefficients of `lhs - rhs`, so
   // `CoefficientArrays[{x + y == 1, …}, vars]` matches the polynomial form.
-  let poly_arg = match &args[0] {
-    Expr::List(items) => {
-      Expr::List(items.iter().map(equation_to_poly).collect())
-    }
-    other => equation_to_poly(other),
-  };
   // Multi-polynomial form: `CoefficientArrays[{p1, p2, …}, vars]` returns
   // SparseArrays of shape `[m, n, …, n]` where `m` is the polynomial
   // count and the leading multi-index component is the polynomial index.
-  if let Expr::List(polys) = &poly_arg {
-    return coefficient_arrays_multi(polys, &vars);
-  }
-  let n = vars.len();
-  let expanded = super::expand::expand_and_combine(&poly_arg);
-  let expanded = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
-  let terms = collect_additive_terms(&expanded);
-  // Each entry: (degree, sorted_indices_1based, coefficient_expr).
-  let mut entries: Vec<(usize, Vec<usize>, Expr)> = Vec::new();
-  let mut max_degree = 0usize;
-  for term in &terms {
-    let evaled = crate::evaluator::evaluate_expr_to_expr(term)?;
-    let mut exponents: Vec<i128> = Vec::with_capacity(n);
-    let mut remaining = evaled.clone();
-    for var in &vars {
-      let power = term_power_of_var(&remaining, var);
-      exponents.push(power);
-      let (_, coeff) = term_var_power_and_coeff(&remaining, var);
-      remaining = crate::evaluator::evaluate_expr_to_expr(&coeff)?;
+  if let Expr::List(items) = &args[0] {
+    if items.is_empty() {
+      return Ok(Expr::List(vec![Expr::List(vec![].into())].into()));
     }
-    let degree: usize = exponents
-      .iter()
-      .map(|&e| if e < 0 { 0 } else { e as usize })
-      .sum();
-    if degree > max_degree {
-      max_degree = degree;
-    }
-    let mut indices = Vec::with_capacity(degree);
-    for (i, &p) in exponents.iter().enumerate() {
-      let p = if p < 0 { 0 } else { p as usize };
-      for _ in 0..p {
-        indices.push(i + 1);
+    let mut per_poly = Vec::with_capacity(items.len());
+    for item in items {
+      let poly = abstract_forms(&equation_to_poly(item));
+      match coefficient_array_entries(&poly, &vars)? {
+        Some(entries) => per_poly.push(entries),
+        None => return Ok(not_a_polynomial(item, args)),
       }
     }
-    indices.sort_unstable();
-    entries.push((degree, indices, remaining));
+    return Ok(coefficient_arrays_multi(per_poly, vars.len()));
   }
-  // Group entries by degree. Sum coefficients for duplicate index lists.
-  let mut by_degree: Vec<Vec<(Vec<usize>, Expr)>> =
-    (0..=max_degree).map(|_| Vec::new()).collect();
-  for (deg, idx, coef) in entries {
-    let bucket = &mut by_degree[deg];
-    if let Some(existing) = bucket.iter_mut().find(|(i, _)| *i == idx) {
-      existing.1 = add_exprs(&existing.1, &coef);
-    } else {
-      bucket.push((idx, coef));
-    }
-  }
+  let poly = abstract_forms(&equation_to_poly(&args[0]));
+  let Some(entries) = coefficient_array_entries(&poly, &vars)? else {
+    return Ok(not_a_polynomial(&args[0], args));
+  };
+  let n = vars.len();
+  let max_degree = entries.iter().map(|(d, _, _)| *d).max().unwrap_or(0);
   let mut output: Vec<Expr> = Vec::with_capacity(max_degree + 1);
-  // c_0: sum of constant terms (degree 0 → empty index list).
-  let c0 = by_degree[0]
+  // c_0: the constant term (degree 0 → empty index list).
+  let c0 = entries
     .iter()
-    .map(|(_, c)| c.clone())
-    .reduce(|a, b| add_exprs(&a, &b))
-    .unwrap_or(Expr::Integer(0));
-  let c0 = crate::evaluator::evaluate_expr_to_expr(&c0)?;
+    .find(|(d, _, _)| *d == 0)
+    .map_or(Expr::Integer(0), |(_, _, c)| c.clone());
   output.push(c0);
   for k in 1..=max_degree {
-    let bucket = &by_degree[k];
-    let non_zero: Vec<(Vec<usize>, Expr)> = bucket
+    let non_zero: Vec<(Vec<usize>, Expr)> = entries
       .iter()
-      .filter(|(_, c)| !matches!(c, Expr::Integer(0)))
-      .cloned()
+      .filter(|(d, _, c)| *d == k && !matches!(c, Expr::Integer(0)))
+      .map(|(_, idx, c)| (idx.clone(), c.clone()))
       .collect();
     output.push(build_sparse_array_for_coefficients(n, k, &non_zero));
   }
   Ok(Expr::List(output.into()))
+}
+
+/// Emit `CoefficientArrays::poly` for `poly` and return the call unevaluated.
+fn not_a_polynomial(poly: &Expr, args: &[Expr]) -> Expr {
+  crate::emit_message(&format!(
+    "CoefficientArrays::poly: {} is not a polynomial.",
+    crate::syntax::expr_to_message_form(poly)
+  ));
+  unevaluated("CoefficientArrays", args)
+}
+
+/// Decompose `poly` into its monomials in the symbols `vars`. Each entry is
+/// `(degree, sorted 1-based variable indices, coefficient)`, with the
+/// coefficients of equal monomials summed and evaluated. Returns `None` when
+/// `poly` is not a polynomial in `vars`: a monomial has a negative or
+/// non-integer power of a variable, or a coefficient still depends on one
+/// (`Sqrt[x]`, `f[x]` for the variable `x`).
+fn coefficient_array_entries(
+  poly: &Expr,
+  vars: &[String],
+) -> Result<Option<Vec<(usize, Vec<usize>, Expr)>>, InterpreterError> {
+  let expanded = super::expand::expand_and_combine(poly);
+  let expanded = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
+  let mut entries: Vec<(usize, Vec<usize>, Expr)> = Vec::new();
+  for term in &collect_additive_terms(&expanded) {
+    let mut remaining = crate::evaluator::evaluate_expr_to_expr(term)?;
+    let mut indices = Vec::new();
+    for (i, var) in vars.iter().enumerate() {
+      let power = term_power_of_var(&remaining, var);
+      if power < 0 {
+        return Ok(None);
+      }
+      let (_, coeff) = term_var_power_and_coeff(&remaining, var);
+      remaining = crate::evaluator::evaluate_expr_to_expr(&coeff)?;
+      indices.extend(std::iter::repeat_n(i + 1, power as usize));
+    }
+    if vars.iter().any(|var| !is_constant_wrt(&remaining, var)) {
+      return Ok(None);
+    }
+    if let Some(existing) = entries.iter_mut().find(|(_, i, _)| *i == indices) {
+      existing.2 = add_exprs(&existing.2, &remaining);
+    } else {
+      entries.push((indices.len(), indices, remaining));
+    }
+  }
+  for entry in &mut entries {
+    entry.2 = crate::evaluator::evaluate_expr_to_expr(&entry.2)?;
+  }
+  Ok(Some(entries))
 }
 
 /// Build a `SparseArray[Automatic, [n; k], 0, …]` expression from a list
@@ -1477,71 +1570,27 @@ fn build_sparse_array_for_coefficients(
 /// Multi-polynomial CoefficientArrays. Returns a list of SparseArrays
 /// where `c_d` has shape `[m, n, …, n]` (with `d` copies of `n`, plus
 /// the leading polynomial dimension of size `m`). The `c_0` SparseArray
-/// has shape `[m]` and (matching wolframscript's quirk) wraps each
-/// non-zero constant as an unevaluated `Plus[0, value]` so its surface
-/// form is `0 + value` instead of just `value`.
+/// has shape `[m]`; in a nonlinear system (degree ≥ 2) it wraps each
+/// non-zero constant as an unevaluated `Plus[0, value]` (wolframscript's
+/// quirk) so its surface form is `0 + value` instead of just `value`.
 fn coefficient_arrays_multi(
-  polys: &[Expr],
-  vars: &[String],
-) -> Result<Expr, InterpreterError> {
-  let m = polys.len();
-  let n = vars.len();
-  // For each poly, collect (degree, sorted_indices, coefficient).
-  let mut per_poly: Vec<Vec<(usize, Vec<usize>, Expr)>> = Vec::with_capacity(m);
-  let mut max_degree = 0usize;
-  for poly in polys {
-    let expanded = super::expand::expand_and_combine(poly);
-    let expanded = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
-    let terms = collect_additive_terms(&expanded);
-    let mut entries: Vec<(usize, Vec<usize>, Expr)> = Vec::new();
-    for term in &terms {
-      let evaled = crate::evaluator::evaluate_expr_to_expr(term)?;
-      let mut exponents: Vec<i128> = Vec::with_capacity(n);
-      let mut remaining = evaled.clone();
-      for var in vars {
-        let power = term_power_of_var(&remaining, var);
-        exponents.push(power);
-        let (_, coeff) = term_var_power_and_coeff(&remaining, var);
-        remaining = crate::evaluator::evaluate_expr_to_expr(&coeff)?;
-      }
-      let degree: usize = exponents
-        .iter()
-        .map(|&e| if e < 0 { 0 } else { e as usize })
-        .sum();
-      if degree > max_degree {
-        max_degree = degree;
-      }
-      let mut indices = Vec::with_capacity(degree);
-      for (i, &p) in exponents.iter().enumerate() {
-        let p = if p < 0 { 0 } else { p as usize };
-        for _ in 0..p {
-          indices.push(i + 1);
-        }
-      }
-      indices.sort_unstable();
-      entries.push((degree, indices, remaining));
-    }
-    // Sum coefficients sharing the same (degree, indices) — same as the
-    // single-poly path but kept per-polynomial here.
-    let mut grouped: Vec<(usize, Vec<usize>, Expr)> = Vec::new();
-    for (deg, idx, coef) in entries {
-      if let Some(existing) =
-        grouped.iter_mut().find(|(d, i, _)| *d == deg && *i == idx)
-      {
-        existing.2 = add_exprs(&existing.2, &coef);
-      } else {
-        grouped.push((deg, idx, coef));
-      }
-    }
-    // Drop zero coefficients.
-    grouped.retain(|(_, _, c)| !matches!(c, Expr::Integer(0)));
-    per_poly.push(grouped);
+  mut per_poly: Vec<Vec<(usize, Vec<usize>, Expr)>>,
+  n: usize,
+) -> Expr {
+  let m = per_poly.len();
+  for entries in &mut per_poly {
+    entries.retain(|(_, _, c)| !matches!(c, Expr::Integer(0)));
   }
-  let mut output: Vec<Expr> = Vec::with_capacity(max_degree + 1);
-  for d in 0..=max_degree {
-    output.push(build_sparse_array_multi(d, m, n, &per_poly));
-  }
-  Ok(Expr::List(output.into()))
+  let max_degree = per_poly
+    .iter()
+    .flatten()
+    .map(|(d, _, _)| *d)
+    .max()
+    .unwrap_or(0);
+  let output: Vec<Expr> = (0..=max_degree)
+    .map(|d| build_sparse_array_multi(d, m, n, &per_poly, max_degree >= 2))
+    .collect();
+  Expr::List(output.into())
 }
 
 /// Build the degree-`d` SparseArray for the multi-polynomial form. The
@@ -1553,6 +1602,7 @@ fn build_sparse_array_multi(
   m: usize,
   n: usize,
   per_poly: &[Vec<(usize, Vec<usize>, Expr)>],
+  nonlinear: bool,
 ) -> Expr {
   // dims: [m] for d=0, [m, n, n, …] (d copies of n) for d >= 1.
   let mut dims_vec = vec![Expr::Integer(m as i128)];
@@ -1590,9 +1640,10 @@ fn build_sparse_array_multi(
         idx.iter().map(|&j| Expr::Integer(j as i128)).collect()
       };
       col_indices_list.push(Expr::List(col.into()));
-      // c_0's stored value is `Plus[0, coef]` — wolframscript's quirk
-      // surfaces this accumulator as `0 + value` in the printed form.
-      let value = if d == 0 {
+      // In a nonlinear system c_0's stored value is `Plus[0, coef]` —
+      // wolframscript's quirk surfaces this accumulator as `0 + value` in
+      // the printed form. Linear systems store the plain constant.
+      let value = if d == 0 && nonlinear {
         plus(vec![Expr::Integer(0), coef.clone()])
       } else {
         coef.clone()
