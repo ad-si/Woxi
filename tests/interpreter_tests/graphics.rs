@@ -12782,6 +12782,24 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A computed multiple of Pi (`n Pi/4` evaluates to `Rational[n, 4] Pi`)
+    /// labels its tick as one fraction, `π/2` / `3 π/4`, not "1/2 π".
+    #[test]
+    fn rational_multiple_of_pi_tick_labels_read_as_fractions() {
+      for graphic in [
+        "Plot[Sin[x], {x, 0, 2 Pi}, Ticks -> {Table[{n Pi/4, n Pi/4}, \
+         {n, 1, 3}], Automatic}]",
+        "Show[Plot[Sin[x], {x, 0, 2 Pi}, Ticks -> {Table[{n Pi/4, n Pi/4}, \
+         {n, 1, 3}], Automatic}], Graphics[{Point[{0, 0}]}]]",
+      ] {
+        let svg = export_svg(graphic);
+        assert!(svg.contains(">π/4<"), "expected π/4: {svg}");
+        assert!(svg.contains(">π/2<"), "expected π/2: {svg}");
+        assert!(svg.contains(">3 π/4<"), "expected 3 π/4: {svg}");
+        assert!(!svg.contains("1/2 π"), "unexpected 1/2 π: {svg}");
+      }
+    }
+
     #[test]
     fn polar_plot_cardioid() {
       insta::assert_snapshot!(export_svg(

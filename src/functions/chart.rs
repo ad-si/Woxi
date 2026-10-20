@@ -846,6 +846,26 @@ fn arithmetic_label(e: &Expr) -> Option<String> {
         factors(left, num, den, inverted);
         factors(right, num, den, !inverted);
       }
+      // A rational coefficient splits across the fraction bar (`Pi/2`
+      // evaluates to `Rational[1, 2] Pi`, which reads "π/2", not "1/2 π").
+      Expr::FunctionCall { name, args }
+        if name == "Rational"
+          && let [Expr::Integer(n), Expr::Integer(d)] = args.as_slice()
+          && *d > 1 =>
+      {
+        if *n != 1 {
+          if inverted {
+            den.push(Expr::Integer(*n));
+          } else {
+            num.push(Expr::Integer(*n));
+          }
+        }
+        if inverted {
+          num.push(Expr::Integer(*d));
+        } else {
+          den.push(Expr::Integer(*d));
+        }
+      }
       other => match crate::functions::graphics::as_power(other) {
         Some((base, Expr::Integer(n))) if *n < 0 => {
           let positive = if *n == -1 {
@@ -910,6 +930,11 @@ fn arithmetic_label(e: &Expr) -> Option<String> {
     "1".to_string()
   } else {
     join(&num)?
+  };
+  // A bare `-1` coefficient is just a sign (`-π/2`, not `-1 π/2`).
+  let numerator = match numerator.strip_prefix("-1 ") {
+    Some(rest) => format!("-{rest}"),
+    None => numerator,
   };
   if den.is_empty() {
     return Some(numerator);

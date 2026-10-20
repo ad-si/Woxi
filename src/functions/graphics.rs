@@ -10768,6 +10768,54 @@ fn is_additive_expr(e: &Expr) -> bool {
   ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
 }
 
+/// `Rational[n, d] * factor` set as one fraction, `n factor` over `d` — the
+/// way `Pi/2` and `3 Pi/4` typeset. A numerator other than 1 is the
+/// coefficient in front of the factor; a negative one moves its sign out
+/// front. `None` when `coefficient` is not such a rational.
+fn rational_coefficient_markup(
+  coefficient: &Expr,
+  factor: &Expr,
+) -> Option<String> {
+  let Expr::FunctionCall { name, args } = coefficient else {
+    return None;
+  };
+  let [Expr::Integer(n), Expr::Integer(d)] = args.as_slice() else {
+    return None;
+  };
+  if name != "Rational" || *n == 0 || *d <= 0 {
+    return None;
+  }
+  let scaled = if n.abs() == 1 {
+    factor.clone()
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(n.abs())),
+      right: Box::new(factor.clone()),
+    }
+  };
+  // `stacked_fraction_svg` joins its arguments with a literal `/`, not a
+  // vinculum, so a `Plus`/`Minus` numerator needs its own parens here —
+  // otherwise `1/2*(tau^2 - sigma^2)` prints as `-sigma^2 + tau^2/2` (only
+  // the last term divided) instead of `(-sigma^2 + tau^2)/2`.
+  let num_markup = expr_to_svg_markup(&scaled);
+  let num_markup = if is_additive_expr(&scaled) {
+    format!("({num_markup})")
+  } else {
+    num_markup
+  };
+  let sign = if *n < 0 { "-" } else { "" };
+  Some(format!(
+    "{sign}{}",
+    stacked_fraction_svg(
+      &num_markup,
+      &expr_to_svg_markup(&args[1]),
+      estimate_display_width(&scaled),
+      estimate_display_width(&args[1]),
+    )
+  ))
+}
+
 /// Determine the separator between two adjacent factors in Times SVG rendering.
 /// Returns `""` (no separator) or `" "` (space) — never `"*"`.
 fn times_svg_separator(_left: &Expr, right: &Expr) -> &'static str {
@@ -12579,6 +12627,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           "{base_fmt}<tspan baseline-shift=\"super\" font-size=\"70%\">{exp_markup}</tspan>"
         );
       }
+      if matches!(op, BinaryOperator::Times)
+        && let Some(markup) = rational_coefficient_markup(left, right)
+      {
+        return markup;
+      }
       let (op_str, needs_space) = match op {
         BinaryOperator::Plus => ("+", true),
         BinaryOperator::Minus => ("-", true),
@@ -12741,37 +12794,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 
         // Times[a, b, ...] with -1 coefficient and Rational handling
         "Times" if args.len() >= 2 => {
-          // Times[Rational[1, d], expr] → stacked fraction expr/d
+          // Times[Rational[n, d], expr] → stacked fraction n expr/d
           if args.len() == 2
-            && let Expr::FunctionCall {
-              name: rname,
-              args: rargs,
-            } = &args[0]
-            && rname == "Rational"
-            && rargs.len() == 2
-            && matches!(&rargs[0], Expr::Integer(1))
-            && matches!(&rargs[1], Expr::Integer(d) if *d > 0)
+            && let Some(markup) = rational_coefficient_markup(&args[0], &args[1])
           {
-            // `stacked_fraction_svg` joins its arguments with a literal
-            // `/`, not a vinculum, so a `Plus`/`Minus` numerator needs its
-            // own parens here — otherwise `1/2*(tau^2 - sigma^2)` prints as
-            // `-sigma^2 + tau^2/2` (only the last term divided) instead of
-            // `(-sigma^2 + tau^2)/2`.
-            let num_markup = expr_to_svg_markup(&args[1]);
-            let num_markup = if is_additive_expr(&args[1]) {
-              format!("({num_markup})")
-            } else {
-              num_markup
-            };
-            let den_markup = expr_to_svg_markup(&rargs[1]);
-            let num_w = estimate_display_width(&args[1]);
-            let den_w = estimate_display_width(&rargs[1]);
-            return stacked_fraction_svg(
-              &num_markup,
-              &den_markup,
-              num_w,
-              den_w,
-            );
+            return markup;
           }
           // Times[…, base^-k, …] → a fraction: every reciprocal factor
           // (a negative-exponent `Power`) moves to the denominator, and
