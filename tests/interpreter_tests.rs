@@ -2904,6 +2904,23 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_row_item_with_inline_fraction_box_stacks_fraction() {
+    // Regression: a `Row`/`Column` item holding linear-syntax
+    // `\!\(\*FractionBox[…]\)` (a Demonstration's "percentage change =
+    // amount of change / original amount" caption) was flattened to the
+    // text `x/y` instead of a numerator stacked over a fraction line.
+    clear_state();
+    for code in [
+      "ExportString[Row[{\"a = \\!\\(\\*FractionBox[\\(x\\), \\(y\\)]\\) b\"}], \"SVG\"]",
+      "ExportString[Column[{\"a\", Style[\"q = \\!\\(\\*FractionBox[\\(x\\), \\(y\\)]\\)\", 20]}], \"SVG\"]",
+    ] {
+      let svg = interpret(code).unwrap();
+      assert!(svg.contains("<line"), "expected a fraction line: {svg}");
+      assert!(!svg.contains("x/y"), "fraction was flattened: {svg}");
+    }
+  }
+
+  #[test]
   fn test_graphics_text_lowers_subscript_without_unicode_form() {
     // Unicode has no subscript capital N, so `F_N` used to draw as a flat
     // "FN". The subscript is now lowered with a `<tspan>` instead.
