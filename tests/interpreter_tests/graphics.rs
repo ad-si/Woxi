@@ -31697,6 +31697,23 @@ mod cases {
     );
   }
   #[test]
+  fn color_data_reversed_gradient() {
+    assert_case(
+      r#"ColorData[{"Rainbow", "Reverse"}]"#,
+      r#"ColorDataFunction[Rainbow, Gradients, {0, 1}, Blend["Rainbow", 1 - #1] & ]"#,
+    );
+    // Applying it runs the gradient backwards.
+    assert_case(
+      r#"ColorData[{"DarkRainbow", "Reverse"}][0.2] === ColorData["DarkRainbow"][0.8]"#,
+      "True",
+    );
+    // ArrayPlot colors cells through the reversed gradient.
+    assert_case(
+      r#"ExportString[ArrayPlot[{{0, 1}}, ColorFunction -> ColorData[{"Rainbow", "Reverse"}]], "SVG"] =!= ExportString[ArrayPlot[{{0, 1}}, ColorFunction -> "Rainbow"], "SVG"]"#,
+      "True",
+    );
+  }
+  #[test]
   fn color_data_1() {
     assert_case(
       r#"ColorData[]"#,
@@ -37726,5 +37743,22 @@ mod grid_repeating_decimal_alignment {
     );
     assert!(!svg.contains("inf"), "{svg}");
     assert!(svg.contains("<polyline"), "{svg}");
+  }
+
+  /// A contour plot has no axes: layering unframed `ContourPlot`s with
+  /// `Show` (a family of level curves) must not grow a set of axes, and a
+  /// framed pair keeps its frame ticks.
+  #[test]
+  fn show_of_contour_plots_draws_no_axes() {
+    let unframed = export_svg(
+      "Show[ContourPlot[x^2 + y^2 == 1, {x, -2, 2}, {y, -2, 2}, Frame -> False], \
+       ContourPlot[x^2 + y^2 == 2, {x, -2, 2}, {y, -2, 2}, Frame -> False]]",
+    );
+    assert!(!unframed.contains("<text"), "{unframed}");
+    let framed = export_svg(
+      "Show[ContourPlot[x^2 + y^2 == 1, {x, -2, 2}, {y, -2, 2}], \
+       ContourPlot[x^2 + y^2 == 2, {x, -2, 2}, {y, -2, 2}]]",
+    );
+    assert!(framed.contains("<text"), "{framed}");
   }
 }

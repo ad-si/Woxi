@@ -2632,12 +2632,28 @@ fn contour_plot_equations(
     }
   }
   let structure = call1("Graphics", Expr::List(structure_items.into()));
+  // A contour plot is framed and has no axes unless asked otherwise, so a
+  // `Show` of several of them (`Frame -> False` or not) must not grow the
+  // axes that `Show` otherwise gives a plot.
+  let mut source_options = crate::functions::plot::explicit_options(args);
+  let has = |opts: &[Expr], n: &str| {
+    opts.iter().any(|o| {
+      crate::functions::graphics::option_name_value(o).map(|(name, _)| name)
+        == Some(n)
+    })
+  };
+  if !has(&source_options, "Axes") {
+    source_options.push(rule_expr(id_expr("Axes"), bool_expr(false)));
+  }
+  if !has(&source_options, "Frame") {
+    source_options.push(rule_expr(id_expr("Frame"), bool_expr(true)));
+  }
   let source = crate::syntax::PlotSource {
     series,
     x_range: (x_min, x_max),
     y_range: (y_min, y_max),
     image_size: (opts.svg_width, opts.svg_height),
-    options: crate::functions::plot::explicit_options(args),
+    options: source_options,
   };
   let mut result = crate::graphics_result_with_source(svg, source);
   if let Expr::Graphics {
@@ -4351,12 +4367,28 @@ enum ArrayCell {
 pub(crate) fn color_function_scheme_name(val: &Expr) -> Option<String> {
   match val {
     Expr::String(s) => Some(s.clone()),
+    // Only the plain gradient: a ranged or reversed `ColorDataFunction`
+    // (`ColorData[{"Rainbow", "Reverse"}]`) carries a different blend and
+    // is applied per value instead.
     Expr::FunctionCall { name, args }
-      if (name == "ColorData" || name == "ColorDataFunction")
-        && !args.is_empty() =>
+      if name == "ColorData" && args.len() == 1 =>
     {
       match &args[0] {
         Expr::String(s) => Some(s.clone()),
+        _ => None,
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "ColorDataFunction" && args.len() == 4 =>
+    {
+      match (&args[0], &args[2], &args[3]) {
+        (Expr::String(s), Expr::List(r), Expr::Function { body })
+          if matches!(r.as_slice(), [Expr::Integer(0), Expr::Integer(1)])
+            && matches!(body.as_ref(), Expr::FunctionCall { name: b, args: ba }
+              if b == "Blend" && matches!(ba.as_slice(), [_, Expr::Slot(1)])) =>
+        {
+          Some(s.clone())
+        }
         _ => None,
       }
     }
