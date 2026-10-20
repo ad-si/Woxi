@@ -1764,6 +1764,16 @@ mod big_integer {
   }
 
   #[test]
+  fn divisible_gaussian_integers() {
+    assert_eq!(interpret("Divisible[5 + 5 I, 5]").unwrap(), "True");
+    assert_eq!(interpret("Divisible[5 + 5 I, 2]").unwrap(), "False");
+    assert_eq!(interpret("Divisible[5, 2 + I]").unwrap(), "True");
+    assert_eq!(interpret("Divisible[7, 2 + I]").unwrap(), "False");
+    assert_eq!(interpret("Divisible[3 + I, 1 + I]").unwrap(), "True");
+    assert_eq!(interpret("Divisible[2 I, 2]").unwrap(), "True");
+  }
+
+  #[test]
   fn composite_q_big_integer() {
     assert_eq!(interpret("CompositeQ[2^128]").unwrap(), "True");
   }
