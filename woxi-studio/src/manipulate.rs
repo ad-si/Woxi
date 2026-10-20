@@ -1706,6 +1706,34 @@ fn format_f64_real(v: f64) -> String {
 mod tests {
   /// A slider whose bounds and initial value are exact integers and that
   /// has no explicit step is an integer slider (step 1), not span/100.
+  /// A button that stores a *list* of pictures in a state variable (a puzzle
+  /// and its solution, as in "Polygonal Sudoku") must keep them as pictures:
+  /// flattening the list to source text turned `wr[[1]]` into a `Part` error.
+  #[test]
+  fn button_action_storing_list_of_graphics_keeps_pictures() {
+    let code = r#"Manipulate[
+      If[new, "choose!", If[!alt, wr[[1]], wr[[2]]]],
+      Row[{
+        Control@{{new, True}, ControlType -> None},
+        Button["new", wr = {Show[Graphics[Disk[]]], Show[Graphics[Circle[]]]}; new = False],
+        Control@{{alt, False}, {True, False}}
+      }],
+      {{wr, Graphics[Disk[]]}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.apply_button_action(
+      "wr = {Show[Graphics[Disk[]]], Show[Graphics[Circle[]]]}; new = False",
+    );
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "wr[[1]] must render a picture, got text {:?}",
+      state.text_output
+    );
+  }
+
   /// A pad of note buttons generated with `Map` whose action is
   /// `EmitSound[Sound[SoundNote[…]]]` (a "name that pitch" quiz shape):
   /// pressing one must hand its synthesized audio to the host instead of

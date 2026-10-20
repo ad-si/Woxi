@@ -31777,7 +31777,13 @@ pub fn apply_manipulate_button_action(
     Ok(Expr::List(ref vals)) if vals.len() == names.len() => names
       .into_iter()
       .map(str::to_string)
-      .zip(vals.iter().map(crate::syntax::expr_to_source_form))
+      .zip(vals)
+      .map(|(name, v)| {
+        // A picture (or list of pictures) has no re-parseable source.
+        let source = crate::freeze_graphic(&name, v)
+          .unwrap_or_else(|| crate::syntax::expr_to_source_form(v));
+        (name, source)
+      })
       .collect(),
     _ => Vec::new(),
   }

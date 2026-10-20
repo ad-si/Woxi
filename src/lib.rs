@@ -2098,9 +2098,17 @@ const FROZEN_GRAPHIC_PREFIX: &str = "\u{0}frozen-graphic:";
 
 /// Binding value for a state variable that holds a rendered graphic: a marker
 /// [`with_scoped_globals`] resolves back to the graphic itself. `None` when
-/// `value` is not a graphic.
+/// `value` is not a graphic or a (nested) list holding one — e.g. the
+/// `{problem, solution}` pair of pictures a button action stores.
 pub fn freeze_graphic(name: &str, value: &syntax::Expr) -> Option<String> {
-  if !matches!(value, syntax::Expr::Graphics { .. }) {
+  fn holds_graphic(e: &syntax::Expr) -> bool {
+    match e {
+      syntax::Expr::Graphics { .. } => true,
+      syntax::Expr::List(items) => items.iter().any(holds_graphic),
+      _ => false,
+    }
+  }
+  if !holds_graphic(value) {
     return None;
   }
   FROZEN_GRAPHICS
