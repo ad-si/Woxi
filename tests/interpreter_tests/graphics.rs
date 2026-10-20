@@ -31697,6 +31697,23 @@ mod cases {
     );
   }
   #[test]
+  fn color_data_reversed_gradient() {
+    assert_case(
+      r#"ColorData[{"Rainbow", "Reverse"}]"#,
+      r#"ColorDataFunction[Rainbow, Gradients, {0, 1}, Blend["Rainbow", 1 - #1] & ]"#,
+    );
+    // Applying it runs the gradient backwards.
+    assert_case(
+      r#"ColorData[{"DarkRainbow", "Reverse"}][0.2] === ColorData["DarkRainbow"][0.8]"#,
+      "True",
+    );
+    // ArrayPlot colors cells through the reversed gradient.
+    assert_case(
+      r#"ExportString[ArrayPlot[{{0, 1}}, ColorFunction -> ColorData[{"Rainbow", "Reverse"}]], "SVG"] =!= ExportString[ArrayPlot[{{0, 1}}, ColorFunction -> "Rainbow"], "SVG"]"#,
+      "True",
+    );
+  }
+  #[test]
   fn color_data_1() {
     assert_case(
       r#"ColorData[]"#,

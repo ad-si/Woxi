@@ -4351,12 +4351,28 @@ enum ArrayCell {
 pub(crate) fn color_function_scheme_name(val: &Expr) -> Option<String> {
   match val {
     Expr::String(s) => Some(s.clone()),
+    // Only the plain gradient: a ranged or reversed `ColorDataFunction`
+    // (`ColorData[{"Rainbow", "Reverse"}]`) carries a different blend and
+    // is applied per value instead.
     Expr::FunctionCall { name, args }
-      if (name == "ColorData" || name == "ColorDataFunction")
-        && !args.is_empty() =>
+      if name == "ColorData" && args.len() == 1 =>
     {
       match &args[0] {
         Expr::String(s) => Some(s.clone()),
+        _ => None,
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "ColorDataFunction" && args.len() == 4 =>
+    {
+      match (&args[0], &args[2], &args[3]) {
+        (Expr::String(s), Expr::List(r), Expr::Function { body })
+          if matches!(r.as_slice(), [Expr::Integer(0), Expr::Integer(1)])
+            && matches!(body.as_ref(), Expr::FunctionCall { name: b, args: ba }
+              if b == "Blend" && matches!(ba.as_slice(), [_, Expr::Slot(1)])) =>
+        {
+          Some(s.clone())
+        }
         _ => None,
       }
     }
