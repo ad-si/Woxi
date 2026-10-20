@@ -4985,6 +4985,36 @@ mod cases {
     );
   }
   #[test]
+  fn continued_fraction_large_term_counts_are_fast() {
+    // Regression: 10000 terms of Pi used to take minutes (exact big-rational
+    // series with a gcd per step), which hung notebooks that call it.
+    assert_case(r#"Length[ContinuedFraction[Pi, 10000]]"#, "10000");
+    assert_case(r#"Length[ContinuedFraction[E, 10000]]"#, "10000");
+  }
+  #[test]
+  fn continued_fraction_constant_prefix_is_stable() {
+    assert_case(
+      r#"ContinuedFraction[Pi, 6000][[1 ;; 5000]] === ContinuedFraction[Pi, 12000][[1 ;; 5000]]"#,
+      "True",
+    );
+    assert_case(
+      r#"ContinuedFraction[E, 3000][[1 ;; 2900]] === ContinuedFraction[E, 6000][[1 ;; 2900]]"#,
+      "True",
+    );
+  }
+  #[test]
+  fn continued_fraction_e_pattern() {
+    assert_case(
+      r#"ContinuedFraction[E, 12]"#,
+      r#"{2, 1, 2, 1, 1, 4, 1, 1, 6, 1, 1, 8}"#,
+    );
+    assert_case(r#"Take[ContinuedFraction[E, 1000], -3]"#, r#"{1, 666, 1}"#);
+  }
+  #[test]
+  fn continued_fraction_negative_pi() {
+    assert_case(r#"ContinuedFraction[-Pi, 6]"#, r#"{-4, 1, 6, 15, 1, 292}"#);
+  }
+  #[test]
   fn continued_fraction_2() {
     assert_case(
       r#"ContinuedFraction[Pi, 10]; ContinuedFraction[(1 + 2 Sqrt[3])/5]"#,
