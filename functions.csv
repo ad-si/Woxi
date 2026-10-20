@@ -2836,7 +2836,7 @@ HankelTransform,,🚫,,11.1,2867
 MixedMagnitude,Magnitude list paired with MixedUnit inside Quantity (inert canonical form),✅,pure,10.4,2867
 NonNegativeIntegers,Domain of non-negative integers,✅,pure,12.0,2867
 SARMAProcess,,🚫,,9.0,2867
-ThermometerGauge,,🚫,,9.0,2867
+ThermometerGauge,Display a value on a thermometer scale as a Graphics gauge,✅,pure,9.0,2867
 TransformationClass,,🚫,,10.0,2867
 UndirectedGraphQ,True if all edges are undirected,✅,1,8.0,2867
 WordDefinition,,🚫,,10.3,2867

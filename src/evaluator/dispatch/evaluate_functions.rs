@@ -5283,6 +5283,41 @@ fn evaluate_function_call_ast_inner(
     return Ok(call("Graphics", graphics_args));
   }
 
+  // ThermometerGauge[value, {min, max}, opts...] → Graphics thermometer: a
+  // bulb at the bottom, a tube outline above it, and a column filled up to
+  // `value` on the scale from `min` to `max`. Options are kept on the
+  // resulting Graphics; the range is optional (`{0, 1}`) like the other
+  // gauges.
+  if name == "ThermometerGauge" && !args.is_empty() {
+    let value = crate::functions::math_ast::try_eval_to_f64(&args[0]);
+    let (lo, hi) = gauge_range(args.get(1));
+    let pt =
+      |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+    let mut primitives: Vec<Expr> = vec![
+      call("Circle", vec![pt(0.0, 0.0), Expr::Real(0.3)]),
+      call1(
+        "Line",
+        Expr::List(
+          vec![pt(-0.1, 0.28), pt(-0.1, 1.5), pt(0.1, 1.5), pt(0.1, 0.28)]
+            .into(),
+        ),
+      ),
+    ];
+    if let (Some(v), Some(lo), Some(hi)) = (value, lo, hi)
+      && hi != lo
+    {
+      let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
+      primitives.push(call("Disk", vec![pt(0.0, 0.0), Expr::Real(0.2)]));
+      primitives.push(call(
+        "Rectangle",
+        vec![pt(-0.05, 0.0), pt(0.05, 0.2 + t * 1.3)],
+      ));
+    }
+    let mut graphics_args = vec![Expr::List(primitives.into())];
+    graphics_args.extend(gauge_options(args));
+    return Ok(call("Graphics", graphics_args));
+  }
+
   // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as MeshRegion
   if name == "DelaunayMesh" && args.len() == 1 {
     return crate::functions::delaunay::delaunay_mesh_ast(args);
