@@ -8539,6 +8539,33 @@ mod plot3d {
       assert!(y >= 0.0, "title starts above the image: {line}");
     }
 
+    /// A `PlotLabel` stacked above a top `FrameLabel` under a tight explicit
+    /// `ImagePadding` used to be drawn above the canvas, so the title was
+    /// invisible.
+    #[test]
+    fn plot_label_above_top_frame_label_stays_inside_the_image() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, ImageSize -> {400, 240}, \
+         ImagePadding -> {{50, 10}, {40, 20}}, \
+         PlotLabel -> \"title text\", \
+         FrameLabel -> {{\"left\", \"\"}, {\"bottom\", \"top text\"}}]",
+      );
+      let line = svg
+        .lines()
+        .find(|l| l.contains("title text"))
+        .expect("title text");
+      let y: f64 = line
+        .split_once(" y=\"")
+        .unwrap()
+        .1
+        .split_once('"')
+        .unwrap()
+        .0
+        .parse()
+        .unwrap();
+      assert!(y >= 0.0, "title starts above the image: {line}");
+    }
+
     /// Every label of a tick set carries the decimals its spacing needs, so
     /// a framed `Graphics` stepping by 0.5 reads `-1.0, -0.5, 0.0, …` —
     /// the same as the plot renderer, and as wolframscript.
