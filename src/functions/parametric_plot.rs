@@ -788,6 +788,9 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// refinement machinery.
 const REGION_GRID: usize = 33;
 
+/// How many times a bent grid cell of a region plot may split by default.
+const REGION_MAX_RECURSION: usize = 2;
+
 /// Evaluate a `{fx, fy}` body at one point of the parameter rectangle.
 fn evaluate_at_uv(
   body: &Expr,
@@ -885,6 +888,78 @@ fn parametric_region_allows(
   )
 }
 
+/// Emit the quad with `corners` (images of the parameter cell starting at
+/// `origin` with size `step`, in the order `(0,0) (1,0) (1,1) (0,1)`), first
+/// splitting it into four while the image of its centre or an edge midpoint
+/// strays more than `tolerance` from the bilinear interpolation of the
+/// corners and `depth` allows.
+fn refine_region_cell(
+  corners: [(f64, f64); 4],
+  origin: (f64, f64),
+  step: (f64, f64),
+  depth: usize,
+  tolerance: f64,
+  sample: &dyn Fn(f64, f64) -> Option<(f64, f64)>,
+  emit: &mut dyn FnMut([(f64, f64); 4]),
+) {
+  if depth > 0 {
+    let (u0, v0) = origin;
+    let (hu, hv) = (step.0 / 2.0, step.1 / 2.0);
+    let mid = |a: (f64, f64), b: (f64, f64)| {
+      (f64::midpoint(a.0, b.0), f64::midpoint(a.1, b.1))
+    };
+    // (parameter point, bilinear estimate of its image)
+    let probes = [
+      ((u0 + hu, v0), mid(corners[0], corners[1])),
+      ((u0 + step.0, v0 + hv), mid(corners[1], corners[2])),
+      ((u0 + hu, v0 + step.1), mid(corners[3], corners[2])),
+      ((u0, v0 + hv), mid(corners[0], corners[3])),
+      (
+        (u0 + hu, v0 + hv),
+        mid(mid(corners[0], corners[2]), mid(corners[1], corners[3])),
+      ),
+    ];
+    let mut images = [(0.0, 0.0); 5];
+    let mut bent = false;
+    let mut holed = false;
+    for (k, ((u, v), estimate)) in probes.iter().enumerate() {
+      match sample(*u, *v) {
+        Some(p) => {
+          images[k] = p;
+          bent |= (p.0 - estimate.0).hypot(p.1 - estimate.1) > tolerance;
+        }
+        // A hole inside the cell: keep the cell as the grid has it.
+        None => {
+          holed = true;
+          break;
+        }
+      }
+    }
+    if bent && !holed {
+      let [bottom, right, top, left, centre] = images;
+      let sub = [
+        ([corners[0], bottom, centre, left], (u0, v0)),
+        ([bottom, corners[1], right, centre], (u0 + hu, v0)),
+        ([centre, right, corners[2], top], (u0 + hu, v0 + hv)),
+        ([left, centre, top, corners[3]], (u0, v0 + hv)),
+      ];
+      for (quad, o) in sub {
+        refine_region_cell(
+          quad,
+          o,
+          (hu, hv),
+          depth - 1,
+          tolerance,
+          sample,
+          emit,
+        );
+      }
+      return;
+    }
+  }
+  emit(corners);
+}
+
 /// The primitives (filled quads plus stroked boundary) of one region body.
 fn parametric_region_layer(
   body: &Expr,
@@ -934,9 +1009,44 @@ fn parametric_region_layer(
   let pt_expr =
     |(x, y): (f64, f64)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
 
-  // One quad per grid cell; a cell with a point the body could not be
-  // evaluated at (a singularity, a complex value) is left out.
+  // `MaxRecursion -> n` lets a grid cell whose image bends away from its
+  // bilinear interpolation split into four, up to `n` times — a
+  // parametrization such as `u^2` is far too curved for the coarse grid.
+  let max_recursion = opt_args
+    .iter()
+    .find_map(|opt| {
+      let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+      match (name, &*value) {
+        ("MaxRecursion", Expr::Integer(n)) if *n >= 0 => Some(*n as usize),
+        _ => None,
+      }
+    })
+    .unwrap_or(REGION_MAX_RECURSION);
+  let finite =
+    |p: Option<(f64, f64)>| p.filter(|(x, y)| x.is_finite() && y.is_finite());
+  let sample = |u: f64, v: f64| {
+    finite(evaluate_at_uv(body, &uvar, u, &vvar, v).filter(|&pt| {
+      region_function
+        .as_ref()
+        .is_none_or(|rf| parametric_region_allows(rf, pt, u, v))
+    }))
+  };
+  let (mut lo, mut hi) = ((f64::MAX, f64::MAX), (f64::MIN, f64::MIN));
+  for pt in points.iter().flatten().filter_map(|p| finite(*p)) {
+    lo = (lo.0.min(pt.0), lo.1.min(pt.1));
+    hi = (hi.0.max(pt.0), hi.1.max(pt.1));
+  }
+  let tolerance = 0.005 * ((hi.0 - lo.0).hypot(hi.1 - lo.1));
+
+  // One quad per (possibly refined) cell; a cell with a point the body could
+  // not be evaluated at (a singularity, a complex value) is left out.
   let mut quads = Vec::new();
+  let mut emit = |corners: [(f64, f64); 4]| {
+    quads.push(call1(
+      "Polygon",
+      Expr::List(corners.iter().map(|c| pt_expr(*c)).collect()),
+    ));
+  };
   for i in 0..grid - 1 {
     for j in 0..grid - 1 {
       let corners = [
@@ -945,16 +1055,19 @@ fn parametric_region_layer(
         points[i + 1][j + 1],
         points[i][j + 1],
       ];
-      if corners
-        .iter()
-        .any(|c| c.is_none_or(|(x, y)| !x.is_finite() || !y.is_finite()))
-      {
+      let Some(c) = corners.map(finite).into_iter().collect::<Option<Vec<_>>>()
+      else {
         continue;
-      }
-      quads.push(call1(
-        "Polygon",
-        Expr::List(corners.iter().map(|c| pt_expr(c.unwrap())).collect()),
-      ));
+      };
+      refine_region_cell(
+        [c[0], c[1], c[2], c[3]],
+        (u_min + i as f64 * du, v_min + j as f64 * dv),
+        (du, dv),
+        max_recursion,
+        tolerance,
+        &sample,
+        &mut emit,
+      );
     }
   }
   if quads.is_empty() {
@@ -964,17 +1077,21 @@ fn parametric_region_layer(
   }
 
   // The boundary of the picture is the image of the parameter rectangle's
-  // boundary, walked once counter-clockwise.
-  let last = grid - 1;
-  let mut border_idx: Vec<(usize, usize)> = Vec::with_capacity(4 * grid);
-  border_idx.extend((0..grid).map(|j| (0, j)));
-  border_idx.extend((1..grid).map(|i| (i, last)));
-  border_idx.extend((0..last).rev().map(|j| (last, j)));
-  border_idx.extend((0..last).rev().map(|i| (i, 0)));
-  let border: Vec<Expr> = border_idx
+  // boundary, walked once counter-clockwise, sampled as finely as the
+  // refined cells so it follows them.
+  let per_edge = (grid - 1) << max_recursion.min(4);
+  let along =
+    |t0: f64, t1: f64, k: usize| t0 + (t1 - t0) * k as f64 / per_edge as f64;
+  let mut border_uv: Vec<(f64, f64)> = Vec::with_capacity(4 * per_edge + 1);
+  border_uv.extend((0..=per_edge).map(|k| (u_min, along(v_min, v_max, k))));
+  border_uv.extend((1..=per_edge).map(|k| (along(u_min, u_max, k), v_max)));
+  border_uv
+    .extend((0..per_edge).rev().map(|k| (u_max, along(v_min, v_max, k))));
+  border_uv
+    .extend((0..per_edge).rev().map(|k| (along(u_min, u_max, k), v_min)));
+  let border: Vec<Expr> = border_uv
     .iter()
-    .filter_map(|&(i, j)| points[i][j])
-    .filter(|(x, y)| x.is_finite() && y.is_finite())
+    .filter_map(|&(u, v)| sample(u, v))
     .map(pt_expr)
     .collect();
 
