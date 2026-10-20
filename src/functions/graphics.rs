@@ -9559,6 +9559,19 @@ fn is_axis_range_spec(expr: &Expr) -> bool {
     || matches!(expr, Expr::Identifier(s) if s == "All" || s == "Automatic")
 }
 
+/// A bare `{min, max}` PlotRange pair with one side left open
+/// (`{0, Automatic}`, `{All, 5}`): a vertical range whose open side follows
+/// the data, not a `{xrange, yrange}` pair of axis specs.
+fn is_open_ended_range_pair(expr: &Expr) -> bool {
+  let Expr::List(items) = expr else {
+    return false;
+  };
+  let is_open = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All" || s == "Automatic");
+  items.len() == 2
+    && items.iter().any(is_open)
+    && items.iter().any(|e| expr_to_f64(e).is_some())
+}
+
 fn parse_plot_range(
   expr: &Expr,
 ) -> (
@@ -9567,6 +9580,8 @@ fn parse_plot_range(
 ) {
   match expr {
     Expr::Identifier(s) if s == "All" || s == "Automatic" => (None, None),
+    // The open side follows the data, so the whole vertical range does.
+    _ if is_open_ended_range_pair(expr) => (None, None),
     Expr::List(items)
       if items.len() == 2
         && (is_axis_range_spec(&items[0]) || is_axis_range_spec(&items[1])) =>
@@ -15872,6 +15887,15 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           **replacement = Expr::List(
             vec![id_expr("All"), replacement.as_ref().clone()].into(),
           );
+        }
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = opt
+          && option_name(pattern) == Some("PlotRange")
+          && is_open_ended_range_pair(replacement)
+        {
+          **replacement = id_expr("All");
         }
       }
       // A framed plot draws no interior axes, so the merged graphic must
