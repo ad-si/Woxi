@@ -16361,7 +16361,7 @@ fn extract_cell_style(cell: &Expr) -> CellTextStyle<'_> {
         }
       }
     }
-    return CellTextStyle {
+    let outer = CellTextStyle {
       content,
       font_size: fs,
       font_weight: fw,
@@ -16370,6 +16370,31 @@ fn extract_cell_style(cell: &Expr) -> CellTextStyle<'_> {
       color,
       hidden: invisible,
     };
+    // `Style[Style[x, 40], 14]`: the inner directives win over the outer
+    // ones, so the cell is measured at the size it is drawn at.
+    if matches!(content, Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty())
+    {
+      let inner = extract_cell_style(content);
+      return CellTextStyle {
+        content: inner.content,
+        font_size: inner.font_size.or(outer.font_size),
+        font_weight: if inner.font_weight == "normal" {
+          outer.font_weight
+        } else {
+          inner.font_weight
+        },
+        font_style: if inner.font_style == "normal" {
+          outer.font_style
+        } else {
+          inner.font_style
+        },
+        font_family: inner.font_family.or(outer.font_family),
+        color: inner.color.or(outer.color),
+        hidden: inner.hidden || outer.hidden,
+      };
+    }
+    return outer;
   }
   CellTextStyle {
     content: cell,
