@@ -21,23 +21,39 @@ thread_local! {
   /// `True` or any unevaluated result (because some variables are still
   /// unbound at this recursion level) allows the match to propagate
   /// upward for a final check at the outermost level.
-  static OUTER_LHS_CONDITION: RefCell<Vec<Expr>> = const { RefCell::new(Vec::new()) };
+  ///
+  /// Each entry records the evaluation depth (`crate::RECURSION_DEPTH`) at
+  /// which it was pushed: only matching at that same depth belongs to the
+  /// guarded pattern. Matching reached through a nested evaluation — the
+  /// condition's own `MatchQ[h[a], h[__g]]`, a `PatternTest`, a sequence
+  /// test — is an unrelated match and must not see the guard.
+  static OUTER_LHS_CONDITION: RefCell<Vec<(Expr, usize)>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Returns `true` when an LHS Condition is on the stack and the current
-/// partial bindings make it definitively evaluate to `False`. In that
-/// case the caller should skip this branch and continue backtracking.
+fn push_outer_lhs_condition(cond: Expr) {
+  let depth = crate::RECURSION_DEPTH.with(std::cell::Cell::get);
+  OUTER_LHS_CONDITION.with(|s| s.borrow_mut().push((cond, depth)));
+}
+
+/// Returns `true` when an LHS Condition is active for the current match and
+/// the current partial bindings make it definitively evaluate to `False`.
+/// In that case the caller should skip this branch and continue
+/// backtracking.
 fn lhs_condition_definitely_fails(bindings: &[(String, Expr)]) -> bool {
-  OUTER_LHS_CONDITION.with(|stack| {
-    let stack = stack.borrow();
-    let Some(cond) = stack.last() else {
-      return false;
-    };
-    let Ok(evaluated) = apply_bindings(cond, bindings) else {
-      return false;
-    };
-    matches!(evaluated, Expr::Identifier(ref s) if s == "False")
-  })
+  let cond = OUTER_LHS_CONDITION.with(|stack| {
+    let depth = crate::RECURSION_DEPTH.with(std::cell::Cell::get);
+    match stack.borrow().last() {
+      Some((cond, pushed_at)) if *pushed_at == depth => Some(cond.clone()),
+      _ => None,
+    }
+  });
+  let Some(cond) = cond else {
+    return false;
+  };
+  let Ok(evaluated) = apply_bindings(&cond, bindings) else {
+    return false;
+  };
+  matches!(evaluated, Expr::Identifier(ref s) if s == "False")
 }
 
 pub fn push_match_context(bindings: &[(String, Expr)]) {
@@ -1024,7 +1040,7 @@ fn try_ast_pattern_replace_single(
       pushed: combined_cond.is_some(),
     };
     if let Some(ref c) = combined_cond {
-      OUTER_LHS_CONDITION.with(|s| s.borrow_mut().push(c.clone()));
+      push_outer_lhs_condition(c.clone());
     }
     match match_pattern(value, pattern) {
       Some(bindings) => Some(bindings),
@@ -5036,8 +5052,7 @@ fn match_pattern_impl(
       );
       let bindings = {
         if !defers_to_final_check {
-          OUTER_LHS_CONDITION
-            .with(|s| s.borrow_mut().push(pat_args[1].clone()));
+          push_outer_lhs_condition(pat_args[1].clone());
         }
         struct G(bool);
         impl Drop for G {

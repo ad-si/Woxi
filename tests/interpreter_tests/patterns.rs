@@ -6606,3 +6606,65 @@ mod implicit_times_before_named_pattern {
     );
   }
 }
+
+/// Pattern matching done while evaluating a Condition (its own `MatchQ`, a
+/// `PatternTest`, …) is a separate match and must not be guarded by the
+/// outer Condition (issue #1563).
+mod condition_with_nested_matching {
+  use super::*;
+
+  #[test]
+  fn sequence_binding_tested_with_match_q() {
+    assert_eq!(
+      interpret("f[g[x, y]] /. (f[a__] /; MatchQ[h[a], h[__g]]) :> True")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("f[g[x]] /. (f[a__] /; MatchQ[h[a], h[__g]]) :> True").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("f[g[x], g[y, z]] /. (f[a__] /; MatchQ[h[a], h[__g]]) :> True")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("f[g[x], y] /. (f[a__] /; MatchQ[h[a], h[__g]]) :> True")
+        .unwrap(),
+      "f[g[x], y]"
+    );
+  }
+
+  #[test]
+  fn replace_and_match_q() {
+    assert_eq!(
+      interpret("Replace[f[g[x]], (f[a__] /; MatchQ[h[a], h[__g]]) :> True]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[g[x]], f[a__] /; MatchQ[h[a], h[__g]]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn plain_blank_sequence_does_not_recurse() {
+    assert_eq!(
+      interpret("f[g[x]] /. (f[a__] /; MatchQ[h[a], h[__]]) :> True").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn definition_with_condition() {
+    assert_eq!(
+      interpret(
+        "k[a__] /; MatchQ[h[a], h[__g]] := ok; {k[g[1], g[2]], k[g[1], 2]}"
+      )
+      .unwrap(),
+      "{ok, k[g[1], 2]}"
+    );
+  }
+}
