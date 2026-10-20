@@ -31,6 +31,27 @@ fn stacked_title_room(label: Option<&StyledLabel>, sf: f64) -> i32 {
   (plot_label_extra_lines(label) as f64 * font * 1.2 * sf).ceil() as i32
 }
 
+/// Extra top room, in render pixels, a `PlotLabel` needs when a top
+/// `FrameLabel` or a y `AxesLabel` shares the top margin with it. The title
+/// is drawn above whatever it stacks on, so with a tight explicit
+/// `ImagePadding` its baseline would land above the canvas; this is the
+/// shortfall between the padding and the room title and label need.
+fn stacked_label_shortfall(
+  label: Option<&StyledLabel>,
+  stacked_below: usize,
+  top_padding: i32,
+  sf: f64,
+) -> i32 {
+  if stacked_below == 0 || plot_label_extra_lines(label) > 0 {
+    return 0;
+  }
+  if label.is_none_or(|sl| sl.text.is_empty()) {
+    return 0;
+  }
+  let needed = (17.0 * 1.4 + stacked_below as f64 * 14.0 * 1.2) * sf;
+  (needed.ceil() as i32 - top_padding).max(0)
+}
+
 pub(crate) const DEFAULT_WIDTH: u32 = 360;
 pub(crate) const DEFAULT_HEIGHT: u32 = 225;
 /// Internal rendering resolution multiplier for sub-pixel precision.
@@ -3338,7 +3359,14 @@ fn generate_svg_with_options(
         sf,
       );
       (
-        m.top as i32 + stacked_title_room(opts.plot_label.as_ref(), sf),
+        m.top as i32
+          + stacked_title_room(opts.plot_label.as_ref(), sf)
+          + stacked_label_shortfall(
+            opts.plot_label.as_ref(),
+            usize::from(has_top_label) + usize::from(axes_label_y.is_some()),
+            m.top as i32,
+            sf,
+          ),
         m.bottom,
         m.left,
         0u32,
