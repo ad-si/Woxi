@@ -1036,6 +1036,9 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Check for list threading
   let has_list = flat_args.iter().any(|a| matches!(a, Expr::List(_)));
+  if has_list && flat_args.len() == 1 {
+    return Ok(flat_args[0].clone());
+  }
   if has_list && flat_args.len() > 2 {
     // Threading is pairwise: fold the terms left to right.
     let mut acc = flat_args[0].clone();
