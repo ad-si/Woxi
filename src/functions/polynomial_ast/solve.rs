@@ -12434,6 +12434,22 @@ pub fn nminimize_ast(
   let (positional, opts) = args.split_at(args.len().min(2));
   let step_monitor = monitor_after_noopmon(func_name, opts);
 
+  // The optimizer probes the objective at the edges of the search region
+  // (e.g. the excluded endpoint of `x < 1`), which would print Power::infy
+  // and similar messages; wolframscript's NMinimize stays silent there.
+  struct QuietGuard(crate::WarningSnapshot);
+  impl Drop for QuietGuard {
+    fn drop(&mut self) {
+      crate::pop_quiet();
+      crate::restore_warnings(std::mem::take(&mut self.0));
+    }
+  }
+  let _quiet = QuietGuard({
+    let saved = crate::snapshot_warnings();
+    crate::push_quiet();
+    saved
+  });
+
   // An indexed variable like `n[1]` (a FunctionCall, not a plain Identifier)
   // is a valid variable for Minimize/Maximize's symbolic solver; NMinimize
   // should accept the same shape. Rename each such variable to a fresh

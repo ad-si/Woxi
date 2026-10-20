@@ -10843,6 +10843,20 @@ mod nmaximize {
   }
 
   #[test]
+  fn nminimize_open_bounds_at_singular_endpoints_emits_no_messages() {
+    // The search probes the excluded endpoints (x -> 1 here), where the
+    // objective is singular; wolframscript prints no Power::infy there.
+    let result =
+      interpret("f[x_] := 3/x + 5/(1 - x); NMinimize[{f[x], 1 > x > 0.1}, x]")
+        .unwrap();
+    assert!(result.starts_with("{"), "got: {result}");
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      [] as [std::string::String; 0]
+    );
+  }
+
+  #[test]
   fn nminimize_quartic_saddle_point() {
     // x^4 - 3x^2 + 2 has a local max at x=0 (value 2) and
     // global minima at x=±sqrt(3/2) (value -0.25).
