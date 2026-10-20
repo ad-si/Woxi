@@ -7092,3 +7092,31 @@ mod create_uuid {
     assert_eq!(prefixed.len(), 4 + 36);
   }
 }
+
+mod list_literal_part_then_call {
+  use super::*;
+
+  #[test]
+  fn applies_a_function_picked_from_a_list_literal() {
+    assert_eq!(interpret("{Sin, Cos}[[2]][0]").unwrap(), "1");
+    assert_eq!(interpret("{Plus, Times}[[2]][3, 4]").unwrap(), "12");
+  }
+
+  #[test]
+  fn part_index_may_itself_contain_parts() {
+    assert_eq!(
+      interpret(
+        "Fold[({Plus, Times}[[#2[[1]]]][#1, #2[[2]]] &), 1, {{1, 5}, {2, 3}}]"
+      )
+      .unwrap(),
+      "18"
+    );
+  }
+
+  #[test]
+  fn parts_and_calls_alternate() {
+    assert_eq!(interpret("{{1, 2}, {3, 4}}[[2]][[1]]").unwrap(), "3");
+    assert_eq!(interpret("{f, g}[x][y]").unwrap(), "{f, g}[x][y]");
+    assert_eq!(interpret("{{Sin, Cos}}[[1]][[2]][0]").unwrap(), "1");
+  }
+}

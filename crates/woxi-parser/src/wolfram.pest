@@ -240,7 +240,8 @@ NumericCall = { (Real | IntegerScientific | Integer) ~ BracketArgs+ }
 StringCall = { String ~ BracketArgs+ }
 // ListExtended merges List, ListCall, and List-based PartExtract into a single
 // rule to avoid exponential backtracking. Parses List ONCE, then checks for
-// optional Part or Call suffixes.
+// Part or Call suffixes, which may alternate: `{f, g}[[2]][x]` picks a
+// function out of a literal list and applies it.
 // Note: The anonymous-function suffix (&) is NOT consumed here — it is handled
 // at the Expression level via AnonymousFunctionSuffix so that `&` has the
 // correct low precedence (binds the whole infix chain, not just the list).
@@ -249,7 +250,7 @@ ListExtended = {
     List ~ (
         PartIndexSuffix   // List[[...]]
       | ListCallSuffix    // List[...] (ListCall)
-    )?
+    )*
 }
 // ParenExtended handles Part extraction, bracket-call, and derivative
 // prime on parenthesized expressions:
