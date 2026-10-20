@@ -89,6 +89,23 @@ slow-timeout = { period = "120s", terminate-after = 1 }
 filter = 'test(compiled_function_serialized_form_in_density_plot_does_not_unroll)'
 slow-timeout = { period = "120s", terminate-after = 1 }
 
+# `compiled_iteration_in_density_plot_is_not_unrolled_symbolically` samples
+# DensityPlot's fixed 100x100 grid, each point a 10-iteration compiled loop
+# run by the interpreter: ~3s standalone, but past the 20s default on the
+# slower Windows runner of the nightly job under full parallel load. Give it
+# a wider window.
+[[profile.default.overrides]]
+filter = 'test(compiled_iteration_in_density_plot_is_not_unrolled_symbolically)'
+slow-timeout = { period = "120s", terminate-after = 1 }
+
+# `fast_path_is_canonical_and_correct` expands 500 random polynomials and
+# evaluates each twice more at a point: ~4s standalone, but it reached the
+# 20s default under the load of a full local `make test`. Give it a wider
+# window.
+[[profile.default.overrides]]
+filter = 'test(fast_path_is_canonical_and_correct)'
+slow-timeout = { period = "120s", terminate-after = 1 }
+
 # `rolling_polygon_on_catenary_notebook_rolls_its_polygon` re-solves the
 # rolling polygon's contact geometry and rasterizes the traced curve for every
 # animation step: ~12s standalone in debug builds, which the 20s default does

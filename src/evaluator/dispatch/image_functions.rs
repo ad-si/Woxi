@@ -79,6 +79,37 @@ fn gradient_color_function(scheme: &str) -> Expr {
   )
 }
 
+/// The color function of a reversed named gradient,
+/// `ColorData[{scheme, "Reverse"}]`:
+///   `ColorDataFunction[scheme, "Gradients", {0, 1},
+///     Blend[scheme, 1 - #1] &]`.
+fn reversed_gradient_color_function(scheme: &str) -> Expr {
+  let blend = Expr::Function {
+    body: Box::new(call(
+      "Blend",
+      vec![
+        str_expr(scheme),
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            call("Times", vec![Expr::Integer(-1), Expr::Slot(1)]),
+          ],
+        ),
+      ],
+    )),
+  };
+  call(
+    "ColorDataFunction",
+    vec![
+      str_expr(scheme),
+      str_expr("Gradients"),
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
+      blend,
+    ],
+  )
+}
+
 /// The color function of a named gradient stretched over a custom range,
 /// `ColorData[{scheme, {min, max}}]`:
 ///   `ColorDataFunction[scheme, "Gradients", {min, max},
@@ -1224,6 +1255,14 @@ pub fn dispatch_image_functions(
         && crate::functions::chart::named_color_scheme(scheme).is_some()
       {
         return Some(Ok(ranged_gradient_color_function(scheme, range)));
+      }
+      // ColorData[{"scheme", "Reverse"}]: the gradient run backwards.
+      if let Expr::List(items) = &args[0]
+        && let [Expr::String(scheme), Expr::String(modifier)] = items.as_slice()
+        && modifier == "Reverse"
+        && crate::functions::chart::named_color_scheme(scheme).is_some()
+      {
+        return Some(Ok(reversed_gradient_color_function(scheme)));
       }
       // ColorData[n]: the indexed scheme's color function, echoed in the
       // same structured form as the named-gradient case above. Applying it

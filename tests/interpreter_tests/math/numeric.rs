@@ -323,6 +323,18 @@ mod n_arbitrary_precision {
     );
   }
 
+  // Regression: every term of Khinchin's ζ series was a full-precision
+  // Hurwitz ζ(2n, 2), so N[Khinchin, 300] alone took ~6s in a release build
+  // and timed out the Windows nightly. The digits read stay clear of the
+  // last one, whose rounding WL does not settle consistently.
+  #[test]
+  fn n_khinchin_high_precision() {
+    assert_eq!(
+      interpret("RealDigits[N[Khinchin, 620]][[1, 590 ;; 610]]").unwrap(),
+      "{1, 3, 6, 6, 5, 0, 9, 6, 9, 6, 5, 8, 3, 1, 4, 6, 9, 9, 5, 2, 7}"
+    );
+  }
+
   #[test]
   fn n_catalan_arbitrary() {
     // N[Catalan, 20] — Catalan's constant G at arbitrary precision.

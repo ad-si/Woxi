@@ -3570,10 +3570,67 @@ fn find_algebraic_constraint(
     }) else {
       continue;
     };
+    // A constraint transcendental in the unknown (`Exp[-b/T[t]]`) has no
+    // closed form: `Solve` would only burn time before giving up, so it is
+    // left to the numerical elimination in [`find_numeric_constraint`].
+    if function_in_transcendental_context(eq, &funcs[fi].name, false) {
+      continue;
+    }
     let Some(solved) = solve_for_function(eq, &funcs[fi].name) else {
       continue;
     };
     return Some((ei, fi, solved));
+  }
+  None
+}
+
+/// Whether `fname[…]` occurs inside anything other than sums, products and
+/// integer powers — an `Exp`, a `Log`, a symbolic exponent, … — i.e. whether
+/// solving for it in closed form is hopeless in general.
+fn function_in_transcendental_context(
+  expr: &Expr,
+  fname: &str,
+  inside: bool,
+) -> bool {
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == fname) {
+    return inside;
+  }
+  let now_inside = inside
+    || match expr {
+      Expr::FunctionCall { name, .. } => {
+        !matches!(name.as_str(), "Plus" | "Times" | "Subtract" | "Divide")
+          && name != fname
+          && expr_mentions_function(expr, fname)
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        right,
+        ..
+      } => !matches!(right.as_ref(), Expr::Integer(_)),
+      _ => false,
+    };
+  expr_children(expr)
+    .into_iter()
+    .any(|c| function_in_transcendental_context(c, fname, now_inside))
+}
+
+/// Like [`find_algebraic_constraint`], but for a constraint that cannot be
+/// solved in closed form: returns the equation's and the unknown's indices,
+/// leaving the unknown to be found numerically at every evaluation.
+fn find_numeric_constraint(
+  odes: &[Expr],
+  funcs: &[SysFunc],
+) -> Option<(usize, usize)> {
+  for (ei, eq) in odes.iter().enumerate() {
+    if funcs.iter().any(|f| max_derivative_order(eq, &f.name) > 0) {
+      continue;
+    }
+    if let Some(fi) = funcs.iter().position(|f| {
+      expr_mentions_function(eq, &f.name)
+        && odes.iter().all(|o| max_derivative_order(o, &f.name) == 0)
+    }) {
+      return Some((ei, fi));
+    }
   }
   None
 }
@@ -3878,6 +3935,18 @@ fn ndsolve_system(
     eliminated.push((f, solved));
   }
 
+  // A constraint with no closed-form solution (index-1 DAE): its unknown is
+  // found by Newton iteration whenever the residuals are evaluated.
+  let mut implicit: Option<(SysFunc, Expr)> = None;
+  if let Some((eq_idx, fi)) = find_numeric_constraint(&odes, &funcs) {
+    if event.is_some() || !eliminated.is_empty() {
+      return Ok(None);
+    }
+    let f = funcs.remove(fi);
+    let eq = odes.remove(eq_idx);
+    implicit = Some((f, eq));
+  }
+
   if odes.len() != funcs.len() {
     return Ok(None);
   }
@@ -4063,6 +4132,44 @@ fn ndsolve_system(
   // numeric residual functions.
   let mut residuals: Vec<NumFn> = Vec::with_capacity(odes.len());
   let delay_found = std::cell::Cell::new(false);
+  // The numerically-eliminated unknown lives in one extra slot past the
+  // placeholders; each residual solves its constraint for that slot first.
+  let implicit_slot = var_names.len();
+  let mut ext_names = var_names.clone();
+  let mut implicit_constraint: Option<(NExpr, f64)> = None;
+  let mut ext_funcs: Vec<SysFunc> = Vec::new();
+  let mut implicit_funcs: Vec<SysFunc> = Vec::new();
+  if let Some((zf, eq)) = &implicit {
+    ext_names.push(placeholder_name(&zf.name, 0));
+    ext_funcs.push(SysFunc {
+      name: zf.name.clone(),
+      order: 0,
+      function_form: zf.function_form,
+      ics: Vec::new(),
+    });
+    implicit_funcs = ext_funcs
+      .iter()
+      .chain(funcs.iter())
+      .map(|f| SysFunc {
+        name: f.name.clone(),
+        order: f.order,
+        function_form: f.function_form,
+        ics: Vec::new(),
+      })
+      .collect();
+    let Ok(norm) = normalize_equation(eq) else {
+      return Ok(None);
+    };
+    let rewritten = substitute_function_values(&norm, &implicit_funcs, x_name);
+    let Some(c) = compile_numeric(&rewritten, &ext_names) else {
+      return Ok(None);
+    };
+    let guess = raw_ics
+      .iter()
+      .find(|(n, o, _, _)| n == &zf.name && *o == 0)
+      .map_or(1.0, |(_, _, _, v)| *v);
+    implicit_constraint = Some((c, guess));
+  }
   for ode in &odes {
     let normalized = normalize_equation(ode).ok();
     let Some(normalized) = normalized else {
@@ -4075,6 +4182,28 @@ fn ndsolve_system(
       x_name,
       &delay_found,
     );
+    if let Some((_, guess)) = &implicit_constraint {
+      let rewritten =
+        substitute_function_values(&normalized, &implicit_funcs, x_name);
+      let (Some(body), Some(constraint)) = (
+        compile_numeric(&rewritten, &ext_names),
+        implicit.as_ref().and_then(|(_, eq)| {
+          let norm = normalize_equation(eq).ok()?;
+          let r = substitute_function_values(&norm, &implicit_funcs, x_name);
+          compile_numeric(&r, &ext_names)
+        }),
+      ) else {
+        return Ok(None);
+      };
+      residuals.push(NumFn::Compiled(NExpr::Implicit {
+        constraint: Box::new(constraint),
+        slot: implicit_slot,
+        guess: std::cell::Cell::new(*guess),
+        init: *guess,
+        body: Box::new(body),
+      }));
+      continue;
+    }
     let rewritten = substitute_function_values(&normalized, &funcs, x_name);
     residuals.push(NumFn::new(rewritten, &var_names));
   }
@@ -4403,6 +4532,59 @@ fn ndsolve_system(
       rule_expr(
         Expr::FunctionCall {
           name: f.name.clone(),
+          args: vec![Expr::Identifier(x_name.clone())].into(),
+        },
+        Expr::CurriedCall {
+          func: Box::new(interp),
+          args: vec![Expr::Identifier(x_name.clone())],
+        },
+      )
+    });
+  }
+  // The numerically-eliminated unknown is recovered at the same grid.
+  if let Some((zf, eq)) = &implicit {
+    let norm = normalize_equation(eq).ok();
+    let guess = implicit_constraint.as_ref().map_or(1.0, |(_, g)| *g);
+    let value_fn = norm.and_then(|norm| {
+      let r = substitute_function_values(&norm, &implicit_funcs, x_name);
+      let c = compile_numeric(&r, &ext_names)?;
+      Some(NExpr::Implicit {
+        constraint: Box::new(c),
+        slot: implicit_slot,
+        guess: std::cell::Cell::new(guess),
+        init: guess,
+        body: Box::new(NExpr::Var(implicit_slot)),
+      })
+    });
+    let Some(value_fn) = value_fn else {
+      return Ok(None);
+    };
+    let mut vars = vec![0.0; var_names.len()];
+    let data = Expr::List(
+      points
+        .iter()
+        .map(|(x, state)| {
+          vars[0] = *x;
+          vars[1..=n_state].copy_from_slice(&state[..n_state]);
+          Expr::List(
+            vec![Expr::Real(*x), Expr::Real(value_fn.eval(&vars))].into(),
+          )
+        })
+        .collect(),
+    );
+    let domain = Expr::List(
+      vec![Expr::List(vec![Expr::Real(x_lo), Expr::Real(x_hi)].into())].into(),
+    );
+    let interp = call(
+      "InterpolatingFunction",
+      vec![domain, data, Expr::Integer(NDSOLVE_INTERPOLATION_ORDER)],
+    );
+    rules.push(if zf.function_form {
+      rule_expr(Expr::Identifier(zf.name.clone()), interp)
+    } else {
+      rule_expr(
+        Expr::FunctionCall {
+          name: zf.name.clone(),
           args: vec![Expr::Identifier(x_name.clone())].into(),
         },
         Expr::CurriedCall {
@@ -5637,11 +5819,93 @@ enum NExpr {
     idx: usize,
     lag: f64,
   },
+  /// `body`, evaluated with `vars[slot]` set to the root of
+  /// `constraint == 0` — the unknown of an algebraic equation that has no
+  /// closed-form solution (index-1 DAE). `slot` is the first index past
+  /// the caller's variable vector. Newton iteration starts from the last
+  /// root found (`guess`) and falls back to the initial value (`init`).
+  Implicit {
+    constraint: Box<Self>,
+    slot: usize,
+    guess: std::cell::Cell<f64>,
+    init: f64,
+    body: Box<Self>,
+  },
+}
+
+/// Root of `constraint(vars with vars[slot] = z)` near `z0` by damped Newton
+/// iteration with a finite-difference slope; `None` when it fails to
+/// converge.
+fn newton_root(
+  constraint: &NExpr,
+  vars: &mut [f64],
+  slot: usize,
+  z0: f64,
+) -> Option<f64> {
+  let mut z = z0;
+  let mut f = {
+    vars[slot] = z;
+    constraint.eval(vars)
+  };
+  for _ in 0..100 {
+    if !f.is_finite() {
+      return None;
+    }
+    if f == 0.0 {
+      return Some(z);
+    }
+    let h = 1e-7 * z.abs().max(1.0);
+    vars[slot] = z + h;
+    let d = (constraint.eval(vars) - f) / h;
+    if !d.is_finite() || d == 0.0 {
+      return None;
+    }
+    let step = f / d;
+    let mut lambda = 1.0;
+    let mut accepted = false;
+    for _ in 0..40 {
+      let zn = z - lambda * step;
+      vars[slot] = zn;
+      let fnew = constraint.eval(vars);
+      if fnew.is_finite() && fnew.abs() < f.abs() {
+        z = zn;
+        f = fnew;
+        accepted = true;
+        break;
+      }
+      lambda *= 0.5;
+    }
+    if !accepted {
+      return None;
+    }
+    if lambda * step.abs() <= 1e-13 * z.abs().max(1.0) {
+      return Some(z);
+    }
+  }
+  Some(z)
 }
 
 impl NExpr {
   fn eval(&self, vars: &[f64]) -> f64 {
     match self {
+      Self::Implicit {
+        constraint,
+        slot,
+        guess,
+        init,
+        body,
+      } => {
+        let mut local = vars.to_vec();
+        local.resize(slot + 1, 0.0);
+        let root = newton_root(constraint, &mut local, *slot, guess.get())
+          .or_else(|| newton_root(constraint, &mut local, *slot, *init));
+        let Some(root) = root else {
+          return f64::NAN;
+        };
+        guess.set(root);
+        local[*slot] = root;
+        body.eval(&local)
+      }
       Self::Const(v) => *v,
       Self::Var(i) => vars[*i],
       Self::Add(items) => items.iter().map(|e| e.eval(vars)).sum(),

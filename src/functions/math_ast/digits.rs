@@ -143,474 +143,136 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bigint_to_expr(sum))
 }
 
-// --- Minimal arbitrary-precision unsigned integer for high-precision ContinuedFraction ---
+// --- High-precision constants for ContinuedFraction ---
 
-/// Little-endian base-2^64 unsigned integer.
-#[derive(Clone, Debug)]
-pub struct BigUint {
-  digits: Vec<u64>,
+/// Decimal digits of working precision for the first `n` continued-fraction
+/// terms of `name`. The expansion is only trusted while the truncation error
+/// stays below `1/q_n²`, where `q_n` is the denominator of the n-th
+/// convergent. For a generic irrational like π a term costs about 0.515
+/// digits of `log10 q_n`, so `1.1 n` digits leave a margin. The terms of `e`
+/// grow (`1, 2k, 1, …`), so `log10 q_n` is about `(n/3)·log10(2n/3)` and the
+/// precision has to grow superlinearly. The constant offset covers small `n`.
+fn cf_working_digits(name: &str, n: usize) -> usize {
+  let n_f = n as f64;
+  let digits = if name == "E" {
+    let third = (n_f / 3.0).max(1.0);
+    2.0 * third * (2.0 * third).max(10.0).log10()
+  } else {
+    1.1 * n_f
+  };
+  digits.ceil() as usize + 40
 }
 
-impl BigUint {
-  fn zero() -> Self {
-    Self { digits: vec![0] }
-  }
-
-  fn from_u64(n: u64) -> Self {
-    Self { digits: vec![n] }
-  }
-
-  fn from_u128(n: u128) -> Self {
-    let lo = n as u64;
-    let hi = (n >> 64) as u64;
-    let mut b = Self {
-      digits: vec![lo, hi],
-    };
-    b.trim();
-    b
-  }
-
-  fn is_zero(&self) -> bool {
-    self.digits.iter().all(|&d| d == 0)
-  }
-
-  fn trim(&mut self) {
-    while self.digits.len() > 1 && *self.digits.last().unwrap() == 0 {
-      self.digits.pop();
+/// `atan(1/k) · scale`, truncated, from the Taylor series
+/// `1/k − 1/(3k³) + 1/(5k⁵) − …`.
+fn atan_recip_scaled(k: u32, scale: &num_bigint::BigInt) -> num_bigint::BigInt {
+  use num_bigint::BigInt;
+  let k2 = BigInt::from(k as u64 * k as u64);
+  let mut power = scale / BigInt::from(k);
+  let mut sum = power.clone();
+  let mut n: u64 = 1;
+  loop {
+    power /= &k2;
+    if power.is_zero() {
+      return sum;
     }
-  }
-
-  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-    use std::cmp::Ordering;
-    let a_len = self.digits.len();
-    let b_len = other.digits.len();
-    if a_len != b_len {
-      return a_len.cmp(&b_len);
-    }
-    for i in (0..a_len).rev() {
-      match self.digits[i].cmp(&other.digits[i]) {
-        Ordering::Equal => {}
-        ord => return ord,
-      }
-    }
-    Ordering::Equal
-  }
-
-  /// self + other
-  fn add(&self, other: &Self) -> Self {
-    let max_len = self.digits.len().max(other.digits.len());
-    let mut result = Vec::with_capacity(max_len + 1);
-    let mut carry: u64 = 0;
-    for i in 0..max_len {
-      let a = if i < self.digits.len() {
-        self.digits[i]
-      } else {
-        0
-      };
-      let b = if i < other.digits.len() {
-        other.digits[i]
-      } else {
-        0
-      };
-      let (s1, c1) = a.overflowing_add(b);
-      let (s2, c2) = s1.overflowing_add(carry);
-      result.push(s2);
-      carry = (c1 as u64) + (c2 as u64);
-    }
-    if carry > 0 {
-      result.push(carry);
-    }
-    let mut r = Self { digits: result };
-    r.trim();
-    r
-  }
-
-  /// self - other (assumes self >= other)
-  fn sub(&self, other: &Self) -> Self {
-    let mut result = Vec::with_capacity(self.digits.len());
-    let mut borrow: u64 = 0;
-    for i in 0..self.digits.len() {
-      let a = self.digits[i];
-      let b = if i < other.digits.len() {
-        other.digits[i]
-      } else {
-        0
-      };
-      let (s1, c1) = a.overflowing_sub(b);
-      let (s2, c2) = s1.overflowing_sub(borrow);
-      result.push(s2);
-      borrow = (c1 as u64) + (c2 as u64);
-    }
-    let mut r = Self { digits: result };
-    r.trim();
-    r
-  }
-
-  /// self * other
-  fn mul(&self, other: &Self) -> Self {
-    let n = self.digits.len() + other.digits.len();
-    let mut result = vec![0u64; n];
-    for i in 0..self.digits.len() {
-      let mut carry: u128 = 0;
-      for j in 0..other.digits.len() {
-        let prod = (self.digits[i] as u128) * (other.digits[j] as u128)
-          + (result[i + j] as u128)
-          + carry;
-        result[i + j] = prod as u64;
-        carry = prod >> 64;
-      }
-      if carry > 0 {
-        result[i + other.digits.len()] += carry as u64;
-      }
-    }
-    let mut r = Self { digits: result };
-    r.trim();
-    r
-  }
-
-  /// self * scalar
-  fn mul_u64(&self, scalar: u64) -> Self {
-    let mut result = Vec::with_capacity(self.digits.len() + 1);
-    let mut carry: u128 = 0;
-    for &d in &self.digits {
-      let prod = (d as u128) * (scalar as u128) + carry;
-      result.push(prod as u64);
-      carry = prod >> 64;
-    }
-    if carry > 0 {
-      result.push(carry as u64);
-    }
-    let mut r = Self { digits: result };
-    r.trim();
-    r
-  }
-
-  /// Division: returns (quotient, remainder)
-  fn divmod(&self, other: &Self) -> (Self, Self) {
-    use std::cmp::Ordering;
-    assert!(!other.is_zero(), "BigUint division by zero");
-    match self.cmp(other) {
-      Ordering::Less => return (Self::zero(), self.clone()),
-      Ordering::Equal => return (Self::from_u64(1), Self::zero()),
-      Ordering::Greater => {}
-    }
-    if other.digits.len() == 1 {
-      let d = other.digits[0];
-      let (q, r) = self.divmod_u64(d);
-      return (q, Self::from_u64(r));
-    }
-    // Long division
-    self.long_divmod(other)
-  }
-
-  /// Divide by a single u64, returns (quotient, remainder)
-  fn divmod_u64(&self, d: u64) -> (Self, u64) {
-    let mut result = vec![0u64; self.digits.len()];
-    let mut rem: u128 = 0;
-    for i in (0..self.digits.len()).rev() {
-      rem = (rem << 64) | (self.digits[i] as u128);
-      result[i] = (rem / d as u128) as u64;
-      rem %= d as u128;
-    }
-    let mut q = Self { digits: result };
-    q.trim();
-    (q, rem as u64)
-  }
-
-  /// Long division for multi-digit divisors
-  fn long_divmod(&self, other: &Self) -> (Self, Self) {
-    // Shift-and-subtract algorithm operating on bits
-    let mut remainder = Self::zero();
-    let self_bits = self.bit_len();
-    let mut quotient_digits = vec![0u64; self_bits.div_ceil(64)];
-    for i in (0..self_bits).rev() {
-      // remainder = remainder << 1 | bit_i(self)
-      remainder = remainder.shl1();
-      if self.bit(i) {
-        remainder.digits[0] |= 1;
-      }
-      if remainder.cmp(other) != std::cmp::Ordering::Less {
-        remainder = remainder.sub(other);
-        quotient_digits[i / 64] |= 1u64 << (i % 64);
-      }
-    }
-    let mut q = Self {
-      digits: quotient_digits,
-    };
-    q.trim();
-    (q, remainder)
-  }
-
-  fn bit_len(&self) -> usize {
-    if self.is_zero() {
-      return 0;
-    }
-    let top = self.digits.len() - 1;
-    top * 64 + (64 - self.digits[top].leading_zeros() as usize)
-  }
-
-  fn bit(&self, i: usize) -> bool {
-    let word = i / 64;
-    let bit = i % 64;
-    if word >= self.digits.len() {
-      false
+    let term = &power / BigInt::from(2 * n + 1);
+    if n % 2 == 1 {
+      sum -= term;
     } else {
-      (self.digits[word] >> bit) & 1 == 1
+      sum += term;
     }
-  }
-
-  fn shl1(&self) -> Self {
-    let mut result = Vec::with_capacity(self.digits.len() + 1);
-    let mut carry = 0u64;
-    for &d in &self.digits {
-      result.push((d << 1) | carry);
-      carry = d >> 63;
-    }
-    if carry > 0 {
-      result.push(carry);
-    }
-    let mut r = Self { digits: result };
-    r.trim();
-    r
-  }
-
-  /// Convert to i128 if it fits
-  fn to_i128(&self) -> Option<i128> {
-    match self.digits.len() {
-      1 => Some(self.digits[0] as i128),
-      2 => {
-        let val = (self.digits[1] as u128) << 64 | (self.digits[0] as u128);
-        if val <= i128::MAX as u128 {
-          Some(val as i128)
-        } else {
-          None
-        }
-      }
-      _ => None,
-    }
-  }
-
-  fn gcd(a: &Self, b: &Self) -> Self {
-    let (mut a, mut b) = (a.clone(), b.clone());
-    while !b.is_zero() {
-      let (_, r) = a.divmod(&b);
-      (a, b) = (b, r);
-    }
-    a
+    n += 1;
   }
 }
 
-/// Signed big rational number: numerator/denominator with sign.
-#[derive(Clone)]
-pub struct BigRational {
-  num: BigUint,
-  den: BigUint,
-  negative: bool,
+/// `π · scale` from Machin's formula `π = 16·atan(1/5) − 4·atan(1/239)`.
+fn pi_scaled(scale: &num_bigint::BigInt) -> num_bigint::BigInt {
+  atan_recip_scaled(5, scale) * 16 - atan_recip_scaled(239, scale) * 4
 }
 
-impl BigRational {
-  fn zero() -> Self {
-    Self {
-      num: BigUint::zero(),
-      den: BigUint::from_u64(1),
-      negative: false,
+/// `e · scale` from the series `Σ 1/k!`.
+fn e_scaled(scale: &num_bigint::BigInt) -> num_bigint::BigInt {
+  use num_bigint::BigInt;
+  let mut term = scale.clone();
+  let mut sum = scale.clone();
+  let mut k: u64 = 1;
+  loop {
+    term /= BigInt::from(k);
+    if term.is_zero() {
+      return sum;
     }
-  }
-
-  fn from_i64(n: i64) -> Self {
-    Self {
-      num: BigUint::from_u64(n.unsigned_abs()),
-      den: BigUint::from_u64(1),
-      negative: n < 0,
-    }
-  }
-
-  fn reduce(&mut self) {
-    if self.num.is_zero() {
-      self.negative = false;
-      self.den = BigUint::from_u64(1);
-      return;
-    }
-    let g = BigUint::gcd(&self.num, &self.den);
-    if !g.is_zero() && g.digits != vec![1] {
-      let (qn, _) = self.num.divmod(&g);
-      let (qd, _) = self.den.divmod(&g);
-      self.num = qn;
-      self.den = qd;
-    }
-  }
-
-  /// self + other
-  fn add(&self, other: &Self) -> Self {
-    // a/b + c/d = (a*d + c*b) / (b*d) respecting signs
-    let ad = self.num.mul(&other.den);
-    let cb = other.num.mul(&self.den);
-    let bd = self.den.mul(&other.den);
-    let (num, negative) = if self.negative == other.negative {
-      (ad.add(&cb), self.negative)
-    } else {
-      match ad.cmp(&cb) {
-        std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => {
-          (ad.sub(&cb), self.negative)
-        }
-        std::cmp::Ordering::Less => (cb.sub(&ad), other.negative),
-      }
-    };
-    let mut r = Self {
-      num,
-      den: bd,
-      negative,
-    };
-    r.reduce();
-    r
-  }
-
-  /// self - other
-  fn sub(&self, other: &Self) -> Self {
-    let neg_other = Self {
-      num: other.num.clone(),
-      den: other.den.clone(),
-      negative: !other.negative,
-    };
-    self.add(&neg_other)
-  }
-
-  /// self * scalar (positive integer)
-  fn mul_u64(&self, s: u64) -> Self {
-    let mut r = Self {
-      num: self.num.mul_u64(s),
-      den: self.den.clone(),
-      negative: self.negative,
-    };
-    r.reduce();
-    r
-  }
-
-  /// Floor division: returns (floor, remainder) such that self = floor + remainder/1
-  /// where 0 <= remainder < 1 (for positive self)
-  fn floor_and_remainder(&self) -> (i128, Self) {
-    let (q, r) = self.num.divmod(&self.den);
-    let q_i128 = q.to_i128().unwrap_or(0);
-    let floor_val = if self.negative && !r.is_zero() {
-      -(q_i128 + 1)
-    } else if self.negative {
-      -q_i128
-    } else {
-      q_i128
-    };
-    // remainder = self - floor_val
-    let floor_rat = Self::from_i64(floor_val as i64);
-    let rem = self.sub(&floor_rat);
-    (floor_val, rem)
-  }
-
-  /// 1 / self
-  fn reciprocal(&self) -> Self {
-    Self {
-      num: self.den.clone(),
-      den: self.num.clone(),
-      negative: self.negative,
-    }
+    sum += &term;
+    k += 1;
   }
 }
 
-/// Compute atan(1/k) as a BigRational using the Taylor series:
-/// atan(x) = x - x^3/3 + x^5/5 - ...
-/// For x = 1/k: atan(1/k) = 1/k - 1/(3*k^3) + 1/(5*k^5) - ...
-fn big_atan_recip(k: u64, terms: usize) -> BigRational {
-  let mut result = BigRational::zero();
-  let k2 = k as u128 * k as u128; // k^2 as u128
-  // power_denom tracks k^(2n+1) as BigUint
-  let mut power_denom = BigUint::from_u64(k);
-  let k2_big = BigUint::from_u128(k2);
-  for n in 0..terms {
-    let divisor = (2 * n + 1) as u64;
-    // term = 1 / (divisor * power_denom)
-    let term = BigRational {
-      num: BigUint::from_u64(1),
-      den: power_denom.mul_u64(divisor),
-      negative: n % 2 != 0,
-    };
-    result = result.add(&term);
-    power_denom = power_denom.mul(&k2_big);
-  }
-  result
-}
-
-/// Compute Pi as a BigRational using Machin's formula:
-/// Pi/4 = 4*atan(1/5) - atan(1/239)
-fn pi_as_big_rational(terms: usize) -> BigRational {
-  let atan5 = big_atan_recip(5, terms);
-  let atan239 = big_atan_recip(239, terms);
-  // Pi = 4 * (4*atan(1/5) - atan(1/239))
-  let four_atan5 = atan5.mul_u64(4);
-  let diff = four_atan5.sub(&atan239);
-  diff.mul_u64(4)
-}
-
-/// Compute E as a BigRational using the series: e = sum(1/k!, k=0..terms)
-fn e_as_big_rational(terms: usize) -> BigRational {
-  let mut result = BigRational::zero();
-  let mut factorial = BigUint::from_u64(1);
-  for k in 0..terms {
-    if k > 0 {
-      factorial = factorial.mul_u64(k as u64);
-    }
-    let term = BigRational {
-      num: BigUint::from_u64(1),
-      den: factorial.clone(),
-      negative: false,
-    };
-    result = result.add(&term);
-  }
-  result
-}
-
-/// Compute the continued fraction of a BigRational, returning up to n terms.
-fn continued_fraction_from_big_rational(
-  val: &BigRational,
+/// First `n` continued-fraction terms of `numerator / denominator`.
+fn continued_fraction_of_ratio(
+  numerator: &num_bigint::BigInt,
+  denominator: num_bigint::BigUint,
   n: usize,
 ) -> Vec<i128> {
+  use num_bigint::{BigInt, Sign};
+  use num_traits::{One, ToPrimitive};
   let mut result = Vec::new();
-  let mut current = val.clone();
-  for _ in 0..n {
-    let (floor_val, rem) = current.floor_and_remainder();
-    result.push(floor_val);
-    if rem.num.is_zero() {
-      break;
+  if n == 0 {
+    return result;
+  }
+  // The first term is a floor, which rounds away from zero for a negative
+  // value; every later remainder is positive.
+  let negative = numerator.sign() == Sign::Minus;
+  let magnitude = numerator.magnitude();
+  let (q, r) = (magnitude / &denominator, magnitude % &denominator);
+  let (mut a, mut b) = (denominator, r);
+  let first: BigInt = if negative {
+    if b.is_zero() {
+      -BigInt::from(q)
+    } else {
+      b = &a - &b;
+      -BigInt::from(q) - BigInt::one()
     }
-    current = rem.reciprocal();
+  } else {
+    BigInt::from(q)
+  };
+  result.push(first.to_i128().unwrap_or(0));
+  while result.len() < n && !b.is_zero() {
+    // current value is a / b with a > b
+    let (q, r) = (&a / &b, &a % &b);
+    result.push(q.to_i128().unwrap_or(0));
+    (a, b) = (b, r);
   }
   result
 }
 
-/// Try to compute a constant expression as a high-precision BigRational.
-/// Returns None if the expression is not a recognized constant.
-fn try_constant_as_big_rational(
+/// Try to compute a constant expression's first `n_terms` continued-fraction
+/// terms. Returns None if the expression is not a recognized constant.
+fn try_constant_continued_fraction(
   expr: &Expr,
   n_terms: usize,
-) -> Option<BigRational> {
-  // Use n_terms + 10 series terms for safety margin
-  let series_terms = n_terms + 10;
-  match expr {
-    Expr::Constant(name) if name == "Pi" => {
-      Some(pi_as_big_rational(series_terms))
-    }
-    Expr::Constant(name) if name == "E" => {
-      Some(e_as_big_rational(series_terms))
-    }
-    Expr::Constant(name) if name == "-Pi" => {
-      let mut pi = pi_as_big_rational(series_terms);
-      pi.negative = true;
-      Some(pi)
-    }
-    Expr::Constant(name) if name == "-E" => {
-      let mut e = e_as_big_rational(series_terms);
-      e.negative = true;
-      Some(e)
-    }
-    _ => None,
-  }
+) -> Option<Vec<i128>> {
+  use num_bigint::BigInt;
+  let (name, negative) = match expr {
+    Expr::Constant(name) => (name.as_str(), false),
+    _ => return None,
+  };
+  let (name, negative) = match name.strip_prefix('-') {
+    Some(rest) => (rest, !negative),
+    None => (name, negative),
+  };
+  let digits = cf_working_digits(name, n_terms);
+  let scale = BigInt::from(10u32).pow(digits as u32);
+  let scaled = match name {
+    "Pi" => pi_scaled(&scale),
+    "E" => e_scaled(&scale),
+    _ => return None,
+  };
+  let numerator = if negative { -scaled } else { scaled };
+  Some(continued_fraction_of_ratio(
+    &numerator,
+    scale.magnitude().clone(),
+    n_terms,
+  ))
 }
 
 /// Extract the integer D from a Sqrt[D] expression. Handles both the
@@ -1197,8 +859,7 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // Try high-precision computation for known constants
-    if let Some(big_rat) = try_constant_as_big_rational(&args[0], n) {
-      let cf = continued_fraction_from_big_rational(&big_rat, n);
+    if let Some(cf) = try_constant_continued_fraction(&args[0], n) {
       return Ok(Expr::List(cf.into_iter().map(Expr::Integer).collect()));
     }
 
