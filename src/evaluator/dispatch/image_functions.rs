@@ -1206,6 +1206,27 @@ pub fn dispatch_image_functions(
           names.iter().map(|n| str_expr(n)).collect(),
         )));
       }
+      // ColorData["VisibleSpectrum"]: the wavelength-to-color function over
+      // 380–750 nm. Applying it (`ColorData["VisibleSpectrum"][w]`, the way
+      // Demonstrations tint a plot by wavelength) delegates to the
+      // two-argument form.
+      if matches!(&args[0], Expr::String(s) if s == "VisibleSpectrum") {
+        let sample = Expr::Function {
+          body: Box::new(call(
+            "ColorData",
+            vec![str_expr("VisibleSpectrum"), Expr::Slot(1)],
+          )),
+        };
+        return Some(Ok(call(
+          "ColorDataFunction",
+          vec![
+            str_expr("VisibleSpectrum"),
+            str_expr("Gradients"),
+            Expr::List(vec![Expr::Integer(380), Expr::Integer(750)].into()),
+            sample,
+          ],
+        )));
+      }
       // ColorData["scheme"]: the gradient's color function, echoed in
       // wolframscript's structured form
       //   ColorDataFunction[scheme, "Gradients", {0, 1}, Blend[scheme, #1] &].
