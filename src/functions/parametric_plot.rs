@@ -923,16 +923,13 @@ fn refine_region_cell(
     let mut bent = false;
     let mut holed = false;
     for (k, ((u, v), estimate)) in probes.iter().enumerate() {
-      match sample(*u, *v) {
-        Some(p) => {
-          images[k] = p;
-          bent |= (p.0 - estimate.0).hypot(p.1 - estimate.1) > tolerance;
-        }
+      if let Some(p) = sample(*u, *v) {
+        images[k] = p;
+        bent |= (p.0 - estimate.0).hypot(p.1 - estimate.1) > tolerance;
+      } else {
         // A hole inside the cell: keep the cell as the grid has it.
-        None => {
-          holed = true;
-          break;
-        }
+        holed = true;
+        break;
       }
     }
     if bent && !holed {
