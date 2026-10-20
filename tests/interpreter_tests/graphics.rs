@@ -37540,4 +37540,19 @@ mod grid_repeating_decimal_alignment {
     // character further left; the dot is shared.
     assert!(text_x(&svg, "37.5") < text_x(&svg, "7.25"), "{svg}");
   }
+
+  /// A half-open `PlotRange -> {0, Automatic}` on a plot is a vertical
+  /// range, not an `{x, y}` pair; layering a `Graphics` on it with `Show`
+  /// used to collapse the horizontal range and drop the whole curve
+  /// (`inf` coordinates).
+  #[test]
+  fn show_plot_with_half_open_plot_range_keeps_curve() {
+    let svg = export_svg(
+      "Show[ListLinePlot[Table[Sin[a]^2, {a, 0., 6.25, 0.05}], \
+       PlotRange -> {0, Automatic}, Filling -> Bottom], \
+       Graphics[{Red, Point[{20, 0.5}]}]]",
+    );
+    assert!(!svg.contains("inf"), "{svg}");
+    assert!(svg.contains("<polyline"), "{svg}");
+  }
 }
