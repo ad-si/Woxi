@@ -1207,6 +1207,18 @@ impl ManipulateState {
       {
         render = Ok(table);
       }
+      // A `Pane[text, size, …]` body only sizes and pads its text (the
+      // terminal prints it as the `Pane[…]` call); the widget shows the
+      // text the pane wraps.
+      if matches!(&render, Ok(r) if r.graphics.is_none()
+        && r.result.starts_with("Pane["))
+        && code.trim_start().starts_with("Pane[")
+        && let Ok(content) =
+          woxi::interpret_with_stdout(&format!("First[{}]", code.trim()))
+        && !content.result.starts_with("Pane[")
+      {
+        render = Ok(content);
+      }
       let updated_bindings = read_manipulate_state(&binding_names);
       let trees: Vec<_> = displays
         .iter()
@@ -1936,6 +1948,22 @@ mod tests {
       .expect("evaluate body");
     let svg = render.graphics.expect("body draws a graphic");
     assert!(svg.contains("<ellipse"), "{svg}");
+  }
+
+  /// A body that is a sized, padded `Pane` around styled text shows the
+  /// text itself rather than the `Pane[…, {400, 80}, ImageMargins -> 20]`
+  /// call it prints as in a terminal.
+  #[test]
+  fn pane_around_text_body_shows_the_text() {
+    woxi::clear_state();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Pane[Style[w <> \"!\", Bold, 16], {400, 80}, \
+       ImageMargins -> 20], {{w, \"hello\", \"word\"}, {\"hello\", \"bye\"}, \
+       ControlType -> PopupMenu}]",
+    )
+    .expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.text_output.as_deref(), Some("hello!"));
   }
 
   /// An exact but non-integer bound (`Pi`) makes the slider continuous,
