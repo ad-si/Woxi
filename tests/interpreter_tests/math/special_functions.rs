@@ -6747,6 +6747,23 @@ mod q_pochhammer {
   use super::*;
 
   #[test]
+  fn infinite_complex_argument() {
+    assert_eq!(
+      interpret("QPochhammer[0.3 I, 0.5]").unwrap(),
+      "0.8804113527329037 - 0.589722248489631*I"
+    );
+    // Complex q is evaluated too; exact arguments stay symbolic.
+    assert_eq!(
+      interpret("QPochhammer[0.3 + 0.2 I, 0.5 I]").unwrap(),
+      "0.790191578412587 - 0.285399761035981*I"
+    );
+    assert_eq!(
+      interpret("QPochhammer[1/2, 1/2]").unwrap(),
+      "QPochhammer[1/2, 1/2]"
+    );
+  }
+
+  #[test]
   fn n_zero() {
     assert_eq!(interpret("QPochhammer[a, q, 0]").unwrap(), "1");
   }

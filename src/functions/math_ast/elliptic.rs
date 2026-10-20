@@ -5,7 +5,7 @@ use super::*;
 /// numericize only when an argument is inexact; exact (integer/rational)
 /// arguments stay symbolic, matching wolframscript (`N[...]` makes the
 /// arguments inexact first via the NumericFunction path).
-fn expr_is_inexact(e: &Expr) -> bool {
+pub(super) fn expr_is_inexact(e: &Expr) -> bool {
   match e {
     Expr::Real(_) | Expr::BigFloat(_, _) => true,
     Expr::BinaryOp { left, right, .. } => {
