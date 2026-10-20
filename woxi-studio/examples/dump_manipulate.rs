@@ -193,6 +193,28 @@ fn main() {
           println!("wrote {}", out.display());
         }
       }
+      if std::env::var("PRESS_BUTTONS").is_ok() {
+        let mut st = state;
+        let actions: Vec<String> = st
+          .controls
+          .iter()
+          .filter_map(|c| match c {
+            manipulate::ControlState::Button { action, .. } => {
+              Some(action.clone())
+            }
+            _ => None,
+          })
+          .collect();
+        for a in actions {
+          st.apply_button_action(&a);
+          println!(
+            "after `{a}`: graphics={} text={:?} error={:?}",
+            st.graphics_handle.is_some(),
+            st.text_output,
+            st.error
+          );
+        }
+      }
       println!();
     }
   }
