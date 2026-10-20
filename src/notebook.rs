@@ -835,7 +835,21 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     // Drop trailing display options (`MultilineFunction -> None`, …) so the
     // positional-argument matches below see the box's real arity.
     args.retain(|a| !is_option_arg(a));
-    let conv = |a: &str| extract_cell_content(a);
+    // A bare string operand (`FractionBox["x", X
+    // symbol name, so it reads as code: the private-use letter keeps its
+    // code point instead of becoming the Unicode glyph a prose cell draws.
+    let conv = |a: &str| {
+      let a = a.trim();
+      if a.len() >= 2
+        && a.starts_with('"')
+        && a.ends_with('"')
+        && !a[1..a.len() - 1].contains("\\\"")
+      {
+        unescape_code_string(&a[1..a.len() - 1])
+      } else {
+        extract_cell_content(a)
+      }
+    };
     // The `⎧` brace a `Piecewise` is typeset with is a `GridBox` holding the
     // `\[Piecewise]` character beside a `GridBox` of value/condition rows —
     // reading it as a plain nested list would hand a plot a list where it
@@ -5714,6 +5728,19 @@ Cell["Chapter 2", "Chapter"]
     // Demonstrations code (`list = listi[[RandomInteger[{1, n}]]]`).
     let s = r#"BoxData[RowBox[{"list", "=", RowBox[{"listi", "\[LeftDoubleBracket]", RowBox[{"RandomInteger", "[", "n", "]"}], "\[RightDoubleBracket]"}]}]]"#;
     assert_eq!(extract_cell_content(s), "list=listi[[RandomInteger[n]]]");
+  }
+
+  /// A bare string operand of a `FractionBox` is a symbol name, so
+  /// `\[ScriptCapitalD]` keeps its private-use code point (U+F773) like it
+  /// does inside a `RowBox`; the Unicode glyph U+1D49F would be a different
+  /// symbol. Regression: Studio's chemical transport Demonstration mixed
+  /// both spellings of the dispersion coefficient.
+  #[test]
+  fn test_fraction_box_symbol_operand_keeps_private_use_code_point() {
+    let s = r#"BoxData[RowBox[{FractionBox[RowBox[{"v", " ", "x"}], "\[ScriptCapitalD]"], "+", "\[ScriptCapitalD]"}]]"#;
+    let out = extract_cell_content(s);
+    assert_eq!(out.matches('\u{F773}').count(), 2, "{out:?}");
+    assert!(!out.contains('\u{1D49F}'), "{out:?}");
   }
 
   /// A subscript can also be a bare display glyph rather than a real index

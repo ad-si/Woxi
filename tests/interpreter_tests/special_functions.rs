@@ -5523,3 +5523,24 @@ mod bessel_complex_argument {
     assert_eq!(interpret("BesselJ[2, 1 + I]").unwrap(), "BesselJ[2, 1 + I]");
   }
 }
+
+mod erfc_machine_tail {
+  use super::*;
+
+  // `1 - Erf[x]` cancels to 0. for x > ~6; Wolfram keeps the tail.
+  #[test]
+  fn large_positive_argument_keeps_tail() {
+    assert_eq!(interpret("Erfc[10.] > 10^-46").unwrap(), "True");
+    assert_eq!(interpret("Erfc[10.] < 10^-44").unwrap(), "True");
+    assert_eq!(interpret("Erfc[20.] > 0").unwrap(), "True");
+  }
+
+  #[test]
+  fn negative_argument_is_reflected() {
+    assert_eq!(interpret("Erfc[-10.]").unwrap(), "2.");
+    assert_eq!(
+      interpret("Abs[Erfc[-3.] + Erfc[3.] - 2] < 10^-14").unwrap(),
+      "True"
+    );
+  }
+}

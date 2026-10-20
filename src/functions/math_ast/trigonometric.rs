@@ -2564,7 +2564,12 @@ pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Numeric evaluation for Real arguments
     // (Wolfram keeps Erfc[-x] and Erfc[-n] unevaluated — no symbolic
     // 2 - Erfc[x] rewrite.)
-    Expr::Real(f) => Ok(Expr::Real(1.0 - erf_f64(*f))),
+    // `1 - Erf[x]` cancels to 0 for x > ~6, so use the tail expansion.
+    Expr::Real(f) => Ok(Expr::Real(if *f >= 0.0 {
+      erfc_f64(*f)
+    } else {
+      2.0 - erfc_f64(-*f)
+    })),
     // Otherwise symbolic
     _ => Ok(unevaluated("Erfc", args)),
   }
