@@ -28996,6 +28996,9 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     return runs;
   }
   match expr {
+    // `Null` — what a trailing comma in a `Row`/`Column` item list leaves
+    // behind — is drawn as nothing, not as the word "Null".
+    Expr::Identifier(s) if s == "Null" => vec![],
     // An evaluated picture (`-Graphics-`, `-Graphics3D-`, `-Image-`).
     Expr::Graphics { .. } => vec![],
     Expr::Raw(s) | Expr::Identifier(s)

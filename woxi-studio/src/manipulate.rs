@@ -3271,6 +3271,22 @@ mod tests {
     assert!(dump("k$$").contains("label: \"freq\""), "{}", dump("k$$"));
   }
 
+  /// A heading `Row[{"parameter ", Style[a, Italic], Spacer[10], }]` ends in
+  /// a trailing comma, i.e. a `Null` item; it is drawn as nothing, so the
+  /// heading reads "parameter a" rather than "parameter a Null".
+  #[test]
+  fn heading_row_with_trailing_comma_drops_null() {
+    let code = r#"Manipulate[Plot[a x, {x, 0, 1}],
+      Row[{"parameter ", Style["a", Italic], Spacer[10], }],
+      {a, 1, 2}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(dump.contains("parameter"), "{dump}");
+    assert!(!dump.contains("Null"), "{dump}");
+  }
+
   /// A slider label whose subscript holds a negative index
   /// (`\!\(\*SubscriptBox[\(c\), \(2, \(-2\)\)]\)`) nests a second
   /// `\(…\)` group inside the first; it must typeset as a subscript like
