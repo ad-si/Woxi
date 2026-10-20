@@ -1551,6 +1551,36 @@ mod graphics {
       );
     }
 
+    /// `FaceForm[Opacity[a]]` makes only area primitives translucent: the
+    /// current colour is kept, a `Text` after it stays opaque, and a later
+    /// general `Opacity` directive supersedes it. Hit by the Quotients and
+    /// Remainders Wheel demo, whose wedges rendered fully opaque.
+    #[test]
+    fn face_form_opacity_applies_to_faces_only() {
+      let svg = export_svg(
+        "Graphics[{Blue, FaceForm[Opacity[0.4]], Disk[{0, 0}, 1, {0, Pi/2}], Text[\"a\", {0, 0}], Opacity[1], Disk[{0, 0}, 1, {Pi, 3 Pi/2}]}]",
+      );
+      let faces: Vec<&str> =
+        svg.lines().filter(|l| l.starts_with("<path")).collect();
+      assert_eq!(faces.len(), 2, "{svg}");
+      assert!(
+        faces[0].contains("fill=\"rgb(0,0,255)\"")
+          && faces[0].contains("fill-opacity=\"0.4\""),
+        "FaceForm opacity should apply to the first disk: {}",
+        faces[0]
+      );
+      assert!(
+        !faces[1].contains("fill-opacity"),
+        "a later Opacity[1] should supersede FaceForm's: {}",
+        faces[1]
+      );
+      let text = svg
+        .lines()
+        .find(|l| l.starts_with("<text"))
+        .expect("a text label");
+      assert!(!text.contains("opacity"), "Text stays opaque: {text}");
+    }
+
     /// A bare colour directive (not wrapped in `FaceForm`) is the general
     /// "current colour" and does recolour the `Text` that follows it,
     /// unlike `FaceForm`.

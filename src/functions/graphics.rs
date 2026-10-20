@@ -309,6 +309,9 @@ struct StyleState {
   /// Point and everything else read) untouched. `None` means those
   /// primitives fall back to `color` too, matching a bare color directive.
   face_color: Option<Color>,
+  /// `FaceForm[Opacity[a]]` likewise sets only the opacity of area
+  /// primitives; `None` falls back to the general `opacity`.
+  face_opacity: Option<f64>,
   opacity: f64,
   thickness: f64, // fraction of plot width; negative = absolute pixels
   point_size: f64, // fraction of plot width, default ~0.012
@@ -561,6 +564,7 @@ impl Default for StyleState {
       texture: None,
       color: BLACK,
       face_color: None,
+      face_opacity: None,
       opacity: 1.0,
       // Wolfram strokes an undirected primitive 1 pixel wide whatever the
       // image size — measured from wolframscript at four sizes — so the
@@ -669,7 +673,7 @@ impl StyleState {
   /// the same fallback a bare color directive gives every primitive.
   fn effective_face_color(&self) -> Color {
     let c = self.face_color.unwrap_or(self.color);
-    c.with_alpha(c.a * self.opacity)
+    c.with_alpha(c.a * self.face_opacity.unwrap_or(self.opacity))
   }
 }
 
@@ -1678,6 +1682,8 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       "Opacity" if !args.is_empty() => {
         if let Some(o) = expr_to_f64(&args[0]) {
           style.opacity = o.clamp(0.0, 1.0);
+          // A later general opacity supersedes an earlier `FaceForm`'s.
+          style.face_opacity = None;
           // If a color follows as second arg, apply it too
           if args.len() >= 2
             && let Some(c) = parse_color(&args[1])
@@ -1859,8 +1865,20 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         // FaceForm[color] sets the fill color of area primitives only —
         // unlike a bare color directive, it must not recolor Text, Line
         // or Point primitives that follow it.
-        if let Some(c) = args.first().and_then(parse_color) {
+        for a in args {
+          if let Expr::FunctionCall { name, args: oa } = a
+            && name == "Opacity"
+            && let Some(o) = oa.first().and_then(expr_to_f64)
+          {
+            style.face_opacity = Some(o.clamp(0.0, 1.0));
+          }
+        }
+        if let Some(c) = args.iter().find_map(parse_color) {
           style.face_color = Some(c);
+        } else if args.iter().any(
+          |a| matches!(a, Expr::FunctionCall { name, .. } if name == "Opacity"),
+        ) {
+          // `FaceForm[Opacity[a]]` keeps the current fill color.
         } else if args.is_empty()
           || matches!(&args[0], Expr::Identifier(s) if s == "None")
         {
