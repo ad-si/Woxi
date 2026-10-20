@@ -2063,6 +2063,42 @@ pub fn palindrome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Divisibility test for exact complex (Gaussian rational) arguments.
+/// Returns None when an argument is not an exact complex number.
+fn gaussian_divisible(
+  a: &Expr,
+  b: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  use super::math_ast::try_extract_complex_exact;
+  use num_traits::Zero;
+
+  let ((arn, ard), (ain, aid)) = try_extract_complex_exact(a)?;
+  let ((brn, brd), (bin, bid)) = try_extract_complex_exact(b)?;
+  let big = |n: i128| BigInt::from(n);
+  // Bring each number to the form (p1 + p2*I)/den over a common denominator.
+  let scale = |rn: i128, rd: i128, in_: i128, id: i128| {
+    let den = big(rd) * big(id);
+    let p1 = big(rn) * (&den / big(rd));
+    let p2 = big(in_) * (&den / big(id));
+    (p1, p2, den)
+  };
+  let (p1, p2, da) = scale(arn, ard, ain, aid);
+  let (q1, q2, db) = scale(brn, brd, bin, bid);
+  let norm = &q1 * &q1 + &q2 * &q2;
+  if norm.is_zero() {
+    return Some(Err(InterpreterError::EvaluationError(
+      "Divisible: divisor cannot be zero".into(),
+    )));
+  }
+  // a/b = (p * conj(q) * db) / (da * |q|^2)
+  let re = (&p1 * &q1 + &p2 * &q2) * &db;
+  let im = (&p2 * &q1 - &p1 * &q2) * &db;
+  let denom = &da * &norm;
+  Some(Ok(bool_expr(
+    (&re % &denom).is_zero() && (&im % &denom).is_zero(),
+  )))
+}
+
 /// Divisible[n, m] - Tests if n is divisible by m
 /// Returns unevaluated if arguments are not exact numbers (non-integer Reals)
 pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2111,6 +2147,13 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       expr_to_output(&unevaluated())
     ));
   };
+
+  // Gaussian rationals: Divisible[a, b] is True iff a/b is a Gaussian integer.
+  if (is_complex_number(&args[0]) || is_complex_number(&args[1]))
+    && let Some(r) = gaussian_divisible(&args[0], &args[1])
+  {
+    return r;
+  }
 
   // wolframscript reports the FIRST non-exact argument.
   let (na, da) = match classify(&args[0]) {
