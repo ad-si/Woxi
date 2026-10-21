@@ -3715,7 +3715,7 @@ mod plot3d {
     // A cube has 12 edges; each is drawn once per adjoining triangle at
     // most, but never the 12 face diagonals as well.
     assert!(
-      lines >= 12 && lines <= 24,
+      (12..=24).contains(&lines),
       "{lines} outline segments\n{svg}"
     );
   }
