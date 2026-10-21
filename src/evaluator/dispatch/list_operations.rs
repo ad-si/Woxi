@@ -5070,7 +5070,9 @@ pub fn dispatch_list_operations(
     // Parallelize[expr] evaluates expr in parallel and returns the same result
     // as the sequential evaluation. Woxi runs single-threaded, so the argument
     // (already evaluated by the time it reaches here) is returned unchanged.
-    "Parallelize" if args.len() == 1 => {
+    // WaitAll[expr] waits for any asynchronous tasks in expr; with none
+    // (the only case without a parallel kernel) it is the same identity.
+    "Parallelize" | "WaitAll" if args.len() == 1 => {
       return Some(Ok(args[0].clone()));
     }
     // ParallelDo has no real parallel kernels in Woxi, so it evaluates
