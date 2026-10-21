@@ -1321,6 +1321,40 @@ pub fn try_eval_to_f64_lenient(expr: &Expr) -> Option<f64> {
   (im == 0.0).then_some(re)
 }
 
+/// True when `e` is a machine complex number `re + im*I` with an inexact
+/// imaginary part, including a `0.` one (`-2.2 + 0.*I`), which
+/// `try_extract_complex_float` alone cannot tell from a plain real.
+pub fn has_inexact_imag_term(e: &Expr) -> bool {
+  fn is_real_times_i(e: &Expr) -> bool {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        matches!(**left, Expr::Real(_))
+          && matches!(&**right, Expr::Identifier(n) if n == "I")
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        matches!(args.as_slice(),
+          [Expr::Real(_), Expr::Identifier(n)] if n == "I")
+      }
+      _ => false,
+    }
+  }
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      left,
+      right,
+    } => is_real_times_i(left) || is_real_times_i(right),
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().any(is_real_times_i)
+    }
+    _ => false,
+  }
+}
+
 /// Try to extract float complex parts (re, im) from an expression.
 /// Returns Some((re, im)) if the expression contains float components with I.
 pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {

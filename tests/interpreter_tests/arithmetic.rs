@@ -1335,6 +1335,31 @@ mod plus_numeric_contagion {
     assert_eq!(interpret("0. + 0. I").unwrap(), "0. + 0.*I");
   }
 
+  // Regression: a machine complex number whose imaginary part is `0.` was
+  // not folded by Times, so `(-2.2 + 0.*I)/2` stayed an unevaluated
+  // quotient and `ArcCos` of it (and `Sin`/`Cos`/`Tan`) never evaluated.
+  #[test]
+  fn machine_complex_with_zero_imaginary_part() {
+    assert_eq!(interpret("(-2.2 + 0.*I)/2").unwrap(), "-1.1 + 0.*I");
+    assert_eq!(interpret("2*(1. + 0.*I)").unwrap(), "2. + 0.*I");
+    assert_eq!(
+      interpret("Sin[1. + 0.*I]").unwrap(),
+      "0.8414709848078965 + 0.*I"
+    );
+    assert_eq!(
+      interpret("Cos[1. + 0.*I]").unwrap(),
+      "0.5403023058681398 + 0.*I"
+    );
+    assert_eq!(
+      interpret("ArcCos[(-2.2 + 0.*I)/2]").unwrap(),
+      "3.141592653589793 - 0.4435682543851153*I"
+    );
+    assert_eq!(
+      interpret("ArcSin[0.5 + 0.*I]").unwrap(),
+      "0.5235987755982989 + 0.*I"
+    );
+  }
+
   // A complex number prints as one unit: a machine pure-imaginary one keeps
   // its `0.` real part and a complex summand or factor is bracketed.
   // Regression: `ToString[2. I - 2. I, InputForm]` was `0.*I` and

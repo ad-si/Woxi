@@ -5293,3 +5293,11 @@ proportional face the FrontEnd uses for digits and spaces. A `Pane[…, {450,
 300}]` holding `Row[{Grid[…], Graphics[…], Grid[…]}]` captions (the
 `Power versus Work` Demonstration) therefore lays out wider than the pane and
 clips its right-hand column, where the FrontEnd fits it.
+
+
+## Machine complex numbers with a `0.` imaginary part
+
+`Sinh`, `Sqrt`, `Log` and the other elementary functions still leave an
+argument like `2. + 0.*I` unevaluated, where the kernel returns a complex
+machine number. Arithmetic, `Sin`, `Cos`, `Tan` and the inverse circular
+functions keep the `0.` imaginary part correctly.

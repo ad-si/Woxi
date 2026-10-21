@@ -8899,7 +8899,12 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let float_parts: Vec<Option<(f64, f64)>> =
       args.iter().map(try_extract_complex_float).collect();
     if float_parts.iter().all(std::option::Option::is_some) {
-      let any_imag = float_parts.iter().any(|c| c.unwrap().1 != 0.0);
+      // A machine complex number keeps its imaginary part even when it is
+      // `0.` (`-2.2 + 0.*I`), so such a factor still makes the product
+      // complex: `(-2.2 + 0.*I)/2` is `-1.1 + 0.*I`, not an unevaluated
+      // quotient.
+      let any_imag = float_parts.iter().any(|c| c.unwrap().1 != 0.0)
+        || args.iter().any(super::numeric_utils::has_inexact_imag_term);
       // Trigger on a machine Real (so the product is genuinely machine
       // precision), but bail if any factor carries a precision-tagged
       // BigFloat — collapsing those to f64 would silently drop precision
