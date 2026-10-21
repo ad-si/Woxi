@@ -13385,7 +13385,7 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
     Expr::String(s) if s.contains('\n') => {
       s.split('\n').map(str::len).max().unwrap_or(0) as f64
     }
-    Expr::String(s) => s.len() as f64,
+    Expr::String(s) => s.chars().count() as f64,
     Expr::Identifier(s) => s.len() as f64,
     Expr::BigFloat(digits, prec) => {
       let parts = bigfloat_display_parts(digits, *prec);

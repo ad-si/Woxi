@@ -2921,6 +2921,23 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_row_width_counts_non_ascii_characters_once() {
+    // Regression: a string item's display width was its UTF-8 byte length,
+    // so each `×`/`÷` counted as two characters and a Row/Grid holding
+    // arithmetic captions came out wider than the same ASCII text.
+    clear_state();
+    let width = |code: &str| -> u32 {
+      let svg = interpret(code).unwrap();
+      let w = svg.split("width=\"").nth(1).unwrap();
+      w.split('"').next().unwrap().parse().unwrap()
+    };
+    assert_eq!(
+      width("ExportString[Row[{\"a × b ÷ c\"}], \"SVG\"]"),
+      width("ExportString[Row[{\"a x b / c\"}], \"SVG\"]")
+    );
+  }
+
+  #[test]
   fn test_graphics_text_lowers_subscript_without_unicode_form() {
     // Unicode has no subscript capital N, so `F_N` used to draw as a flat
     // "FN". The subscript is now lowered with a `<tspan>` instead.
