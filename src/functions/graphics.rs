@@ -15493,6 +15493,9 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut is_3d = false;
   // Pre-rendered Graphics objects (e.g. from Plot[], Plot3D[])
   let mut rendered_graphics: Vec<Expr> = Vec::new();
+  // How many of them came before any primitive or plot layer: they sit
+  // beneath the primitives and set the canvas, as the first graphic does.
+  let mut leading_rendered = 0usize;
   // Plot source data for re-rendering via plotters
   let mut plot_sources: Vec<crate::syntax::PlotSource> = Vec::new();
   // The layers in the order `Show` was given them, so a mixture of plots
@@ -15747,6 +15750,9 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           plot_sources.push(src.as_ref().clone());
         } else {
           // No source data — collect as opaque pre-rendered graphic
+          if merged_primitives.is_empty() && plot_sources.is_empty() {
+            leading_rendered += 1;
+          }
           rendered_graphics.push(expr_ref.clone());
         }
       }
@@ -16079,8 +16085,14 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // this, `rendered_graphics` was computed and then never looked at again
   // once `merged_primitives` had anything in it, so a `Show[{regionPlot,
   // labelGraphic}]` silently dropped `regionPlot` entirely.
-  let mut layers_to_overlay = vec![primitives_result.clone()];
-  layers_to_overlay.extend(rendered_graphics.iter().cloned());
+  let mut layers_to_overlay: Vec<Expr> = rendered_graphics
+    .iter()
+    .take(leading_rendered)
+    .cloned()
+    .collect();
+  layers_to_overlay.push(primitives_result.clone());
+  layers_to_overlay
+    .extend(rendered_graphics.iter().skip(leading_rendered).cloned());
   match overlay_rendered_graphics_svgs(&layers_to_overlay) {
     Some(svg) => Ok(crate::graphics_result(svg)),
     None => Ok(primitives_result),
