@@ -37846,3 +37846,59 @@ mod grid_repeating_decimal_alignment {
     assert!(framed.contains("<text"), "{framed}");
   }
 }
+
+mod surface_vertex_colors {
+  use super::*;
+
+  #[test]
+  fn parametric_plot3d_color_function_colors_facets() {
+    clear_state();
+    // `ColorFunction -> f` receives `{x, y, z, u, v}` (raw with
+    // `ColorFunctionScaling -> False`) and colours each facet.
+    let r = interpret(
+      "p = ParametricPlot3D[{Cos[t] Sin[q], Sin[t] Sin[q], -Cos[q]}, \
+       {t, 0, 2 Pi}, {q, 0, Pi}, Mesh -> None, \
+       ColorFunction -> (RGBColor[#4/7, #5/4, 0.3] &), \
+       ColorFunctionScaling -> False, PlotPoints -> 4]; \
+       Take[p[[1, 2]], {2, 3}]",
+    )
+    .unwrap();
+    assert_eq!(
+      r,
+      "{{RGBColor[0.14901960784313725, 0.12941176470588237, 0.30196078431372547], Polygon[{1, 5, 6, 2}]}, {RGBColor[0.14901960784313725, 0.39215686274509803, 0.30196078431372547], Polygon[{2, 6, 7, 3}]}}"
+    );
+  }
+
+  #[test]
+  fn parametric_plot3d_scaled_color_function_gets_unit_arguments() {
+    clear_state();
+    // Scaled arguments stay in 0..1, so every facet's red channel is too.
+    let r = interpret(
+      "p = ParametricPlot3D[{3 Cos[t], 3 Sin[t], u}, {t, 0, 2 Pi}, {u, 5, 9}, \
+       ColorFunction -> (RGBColor[#4, #5, #3] &), PlotPoints -> 3]; \
+       Cases[p[[1, 2]], RGBColor[r_, g_, b_] /; 0 <= r <= 1 && 0 <= g <= 1 \
+       && 0 <= b <= 1, Infinity] // Length",
+    )
+    .unwrap();
+    assert_eq!(r, "4");
+  }
+
+  #[test]
+  fn graphics_complex_vertex_colors_color_polygons_in_3d() {
+    clear_state();
+    // A stored complex colours its facets by their vertices' `VertexColors`
+    // (given as bare `{r, g, b}` triples too) instead of the default fill.
+    for colors in [
+      "{Red, Green, Blue, Yellow}",
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 1, 0}}",
+    ] {
+      let code = format!(
+        "ExportString[Graphics3D[GraphicsComplex[{{{{0, 0, 0}}, {{1, 0, 0}}, \
+         {{0, 1, 0}}, {{0, 0, 1}}}}, Polygon[{{{{1, 2, 3}}, {{1, 2, 4}}}}], \
+         VertexColors -> {colors}]], \"SVG\"]"
+      );
+      let svg = interpret(&code).unwrap();
+      assert!(svg.contains("fill=\"rgb(115,115,0)\""), "{svg}");
+    }
+  }
+}
