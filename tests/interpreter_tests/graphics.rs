@@ -2932,6 +2932,20 @@ mod graphics {
         );
       }
 
+      // `Disk[c, Scaled[r]]` has a radius of `r` times the plot width, not
+      // the default unit radius.
+      #[test]
+      fn disk_with_scaled_radius_is_a_fraction_of_the_plot_width() {
+        let svg = export_svg(
+          "Graphics[{Disk[{1, 1}, Scaled[.1]]}, \
+           PlotRange -> {{0, 2}, {0, 2}}, ImageSize -> {200, 200}]",
+        );
+        assert!(
+          svg.contains("rx=\"20.00\" ry=\"20.00\""),
+          "expected a 20px round disk, got {svg}"
+        );
+      }
+
       // `{xSpec, ySpec}` pads each axis independently: no room on x, a full
       // unit on y, so the corner point stays flush on x but moves inward
       // on y. `AspectRatio -> Full` keeps the two axes independently
