@@ -122,6 +122,9 @@ pub enum ControlState {
     y_max: f64,
     points: Vec<(f64, f64)>,
     auto_create: bool,
+    /// The variable follows the dragged points through a callback instead of
+    /// holding them (see `woxi::functions::graphics::LocatorDerived`).
+    derived: Option<woxi::functions::graphics::LocatorDerived>,
   },
   /// A `ControlType -> Trigger` control: a play/pause pair sweeping its
   /// variable from `min` towards `max` in `step` increments while the
@@ -233,9 +236,16 @@ impl ControlState {
       }
       // Locator positions are machine reals (dragging produces fractional
       // coordinates); delegate so integral values keep their trailing dot.
-      ControlState::Locator { points, .. } => {
-        woxi::functions::graphics::format_point_list_input(points)
-      }
+      ControlState::Locator {
+        name,
+        points,
+        derived,
+        ..
+      } => woxi::functions::graphics::locator_binding_code(
+        name,
+        points,
+        derived.as_ref(),
+      ),
       ControlState::Color { current, .. } => current.clone(),
       // Annotation and button rows bind no variable; never substituted.
       ControlState::Button { .. }
@@ -319,6 +329,11 @@ impl ControlState {
           *high = b;
         }
       }
+      // A derived variable's value is not the point list, so a write to it
+      // cannot be mapped back onto the draggable points.
+      ControlState::Locator {
+        derived: Some(_), ..
+      } => {}
       ControlState::Locator { points, .. } => {
         if let Expr::List(items) = &expr
           && let Some(new_points) =
@@ -1628,6 +1643,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         y_max,
         auto_create,
         label,
+        derived,
       } => ControlState::Locator {
         name: name.clone(),
         label: label.clone(),
@@ -1637,6 +1653,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         y_max: *y_max,
         points: points.clone(),
         auto_create: *auto_create,
+        derived: derived.clone(),
       },
       ManipulateControl::Trigger {
         name,
@@ -1716,6 +1733,82 @@ fn format_f64_real(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+  /// A contour-line explorer: a photo picked from a setter bar of images,
+  /// contour levels set by a custom `Dynamic[slider[##]] &` control built on
+  /// a `LocatorPane`, a color-scheme popup that is disabled while
+  /// "contours only" is on, and a body interpolating the rotated pixel data.
+  #[test]
+  fn contour_explorer_with_custom_locator_slider_renders() {
+    let code = r#"Manipulate[
+      Module[{dens, im = ImageRotate[photos[[i]], -Pi/2]},
+        dens = ListInterpolation[ImageData[im]];
+        Framed[ContourPlot[dens[x, y], {x, 1, 4}, {y, 1, 4},
+          PlotPoints -> ControlActive[20, 40], Contours -> levels,
+          ContourStyle -> Black,
+          ContourShading -> If[cnt, None, Automatic],
+          ColorFunction -> scheme, Frame -> False,
+          AspectRatio -> Automatic, ImageSize -> 350], FrameMargins -> 0]],
+      Style["select an image", Bold],
+      {{i, 2, ""}, {1 -> Image[{{0, 1, 0, 1}, {1, 0, 1, 0}, {0, 1, 0, 1}, {1, 0, 1, 0}}],
+        2 -> Image[{{0, 0.3, 0.6, 1}, {0.2, 0.4, 0.7, 0.9}, {0.1, 0.5, 0.8, 1}, {0, 0.2, 0.5, 0.7}}]}},
+      Delimiter,
+      Row[{Style["move the ", Bold], Style["\[FilledDiamond]", Red, 14]}],
+      {{levels, {1/7, 2/7, 3/7}, ""}, Dynamic[slider[##]] &},
+      Delimiter,
+      {{scheme, "SunsetColors", ""}, {"Rainbow", "SunsetColors", "Pastel"},
+        Enabled :> Dynamic[If[cnt, False, True]]},
+      {{cnt, False, ""}, {True, False}},
+      Initialization :> (
+        photos = {
+          Image[{{0, 1, 0, 1}, {1, 0, 1, 0}, {0, 1, 0, 1}, {1, 0, 1, 0}}],
+          Image[{{0, 0.3, 0.6, 1}, {0.2, 0.4, 0.7, 0.9}, {0.1, 0.5, 0.8, 1}, {0, 0.2, 0.5, 0.7}}]};
+        slider[Dynamic[Pattern[locs, Blank[]]]] := DynamicModule[
+          {pts = Map[{#, 0} &, Range[1/7, 1 - 1/7, 1/7]]},
+          LocatorPane[
+            Dynamic[pts, Function[{val, expr},
+              locs = Part[val, All, 1]; expr = Map[{#, 0} &, locs], HoldAll]],
+            Dynamic[Graphics[{}, Frame -> True, PlotRange -> {{0, 1}, {-1, 1}},
+              AspectRatio -> 0.1, ImageSize -> 200]],
+            {{0, 0}, {1, 0}}, Appearance -> Style["\[FilledDiamond]", Red, 14],
+            LocatorAutoCreate -> {1, 16}]])
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "contour plot must render, got text {:?}",
+      state.text_output
+    );
+    assert!(
+      state
+        .controls
+        .iter()
+        .any(|c| matches!(c, ControlState::Locator { .. })),
+      "the custom slider must expose a locator control"
+    );
+    // The variable holds the markers' x positions (the callback's result),
+    // not the {x, y} points themselves, and follows a drag.
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| matches!(c, ControlState::Locator { .. }))
+      .unwrap();
+    let before = state.controls[idx].current_code();
+    assert!(
+      !before.contains("{{"),
+      "levels must be plain numbers: {before}"
+    );
+    let mut state = state;
+    if let ControlState::Locator { points, .. } = &mut state.controls[idx] {
+      points[0].0 = 0.05;
+    }
+    let after = state.controls[idx].current_code();
+    assert_ne!(before, after);
+    assert!(after.starts_with("{0.05,"), "got {after}");
+  }
+
   /// A slider whose bounds and initial value are exact integers and that
   /// has no explicit step is an integer slider (step 1), not span/100.
   /// A button that stores a *list* of pictures in a state variable (a puzzle
