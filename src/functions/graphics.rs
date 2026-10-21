@@ -25317,6 +25317,21 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }
   }
 
+  // A bare `{v, ControlType -> None}` has no initial value of its own, but
+  // another variable's initial expression may assign it as a side effect
+  // (`{{puzzle, (solution = gen[]; mk[solution])}, …}` seeding `solution`),
+  // which leaves the value in the global of that name rather than in the
+  // spec. Start the variable from it instead of `Null`.
+  for (name, value) in state.iter_mut().filter(|(_, v)| v == "Null") {
+    if let Some((_, assigned)) =
+      read_manipulate_state(std::slice::from_ref(name))
+        .into_iter()
+        .next()
+    {
+      *value = assigned;
+    }
+  }
+
   // A `LocatorPane[Dynamic[var], graphic]` drawn directly in the body — the
   // Demonstrations "drag the point on the picture" pattern — gets its own
   // draggable stand-in row here, alongside whatever row (if any) the
@@ -35969,6 +35984,25 @@ mod manipulate_hidden_state_var_tests {
     .expect("parse");
     let spec = extract_manipulate_spec(&expr).expect("extract spec");
     assert_eq!(spec.state, vec![("accum".to_string(), "Null".to_string())]);
+  }
+
+  /// A bare hidden variable that a later variable's initial expression
+  /// assigns as a side effect starts at that assigned value, not `Null`.
+  #[test]
+  fn bare_hidden_state_var_takes_value_assigned_by_later_initial() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[x, {{x, 0}, -1, 1}, {seeded, ControlType -> None}, \
+       {{other, (seeded = {3, 4}; Length[seeded])}, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(
+      spec.state,
+      vec![
+        ("seeded".to_string(), "{3, 4}".to_string()),
+        ("other".to_string(), "2".to_string())
+      ]
+    );
   }
 
   /// The same spec with an explicit initial value (`{{accum, 0}, ControlType
