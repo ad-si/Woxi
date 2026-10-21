@@ -24,6 +24,25 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 fn main() -> iced::Result {
+  // `woxi-studio --check FILE.nb` loads the notebook the way the editor
+  // does, renders every widget once at its initial values, and prints a
+  // report instead of opening a window.
+  let args: Vec<String> = std::env::args().collect();
+  if let Some(pos) = args.iter().position(|a| a == "--check") {
+    let Some(file) = args.get(pos + 1) else {
+      eprintln!("Usage: woxi-studio --check FILE.nb");
+      std::process::exit(2);
+    };
+    let file = PathBuf::from(file);
+    // Same reasoning as the CLI: the interpreter recurses deeply, and the
+    // main thread's stack cannot be grown reliably on macOS.
+    let worker = std::thread::Builder::new()
+      .stack_size(512 * 1024 * 1024)
+      .spawn(move || check_notebook(&file))
+      .expect("failed to spawn worker thread");
+    std::process::exit(worker.join().unwrap_or(101));
+  }
+
   #[cfg(target_os = "macos")]
   macos_open::register();
 
@@ -5488,6 +5507,7 @@ fn evaluate_pending_initialization(pending: &mut Vec<String>) {
   let cells: Vec<String> = pending.drain(..).collect();
   for code in woxi::notebook::join_continuation_cells(&cells) {
     for stmt in woxi::split_into_statements(&code) {
+      trace_evaluation(&stmt);
       let _ = woxi::interpret_with_stdout(&stmt);
     }
   }
@@ -5555,10 +5575,14 @@ fn instantiate_stored_manipulate(
     let names =
       woxi::notebook::saved_initialization_context_symbols(stored_output);
     if !names.is_empty() {
-      let _ = woxi::interpret(&format!("Unprotect[{}]", names.join(", ")));
+      let unprotect = format!("Unprotect[{}]", names.join(", "));
+      trace_evaluation(&unprotect);
+      let _ = woxi::interpret(&unprotect);
     }
+    trace_evaluation(&init);
     let _ = woxi::interpret(&init);
   }
+  trace_evaluation(&statements[0]);
   let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
   let mut state = manipulate::ManipulateState::from_expr(&expr)?;
   // A control whose choices come from a notebook variable that never
@@ -6698,6 +6722,77 @@ const CELL_STYLES: &[CellStyle] = &[
   CellStyle::Output,
   CellStyle::Code,
 ];
+
+// ── Headless check mode ──────────────────────────────────────────────
+
+/// With `WOXI_STUDIO_TRACE` set, print every piece of code the notebook
+/// loader evaluates to stderr before running it, so a load that crashes or
+/// hangs can be replayed as a plain script with `woxi run`.
+pub(crate) fn trace_evaluation(code: &str) {
+  if std::env::var_os("WOXI_STUDIO_TRACE").is_some() {
+    eprintln!("{};\n", code.trim_end().trim_end_matches(';'));
+  }
+}
+
+/// Load `path` as the editor would and report, per stored widget, whether
+/// it was rebuilt and what its first render produced. Returns the process
+/// exit code: 0 when every widget renders without warnings, 1 otherwise,
+/// 3 when the file cannot be read or parsed.
+fn check_notebook(path: &std::path::Path) -> i32 {
+  let content = match std::fs::read_to_string(path) {
+    Ok(c) => c,
+    Err(e) => {
+      println!("read error: {e}");
+      return 3;
+    }
+  };
+  let notebook = match notebook::parse_notebook(&content) {
+    Ok(nb) => nb,
+    Err(e) => {
+      println!("parse error: {e}");
+      return 3;
+    }
+  };
+  if let Some(parent) = path.parent() {
+    woxi::set_notebook_directory(Some(parent.to_string_lossy().into_owned()));
+  }
+  let dumps = notebook
+    .flat_cells()
+    .iter()
+    .filter(|(_, cell)| is_dynamic_box_dump(&cell.content))
+    .count();
+  let editors = WoxiStudio::editors_from_notebook(&notebook);
+  let widgets: Vec<_> = editors
+    .iter()
+    .filter_map(|e| e.manipulate_state.as_ref())
+    .collect();
+  println!("widgets: {}/{}", widgets.len(), dumps);
+  let mut ok = widgets.len() >= dumps;
+  for (i, state) in widgets.iter().enumerate() {
+    match state.check_render() {
+      Ok(result) => {
+        if result.graphics.is_some() {
+          println!("widget {i}: graphics");
+        } else if result.result == "\0" || result.result.trim().is_empty() {
+          println!("widget {i}: empty");
+          ok = false;
+        } else {
+          let text: String = result.result.chars().take(300).collect();
+          println!("widget {i}: text: {text}");
+        }
+        for w in &result.warnings {
+          println!("warning: {w}");
+          ok = false;
+        }
+      }
+      Err(e) => {
+        println!("widget {i}: error: {e}");
+        ok = false;
+      }
+    }
+  }
+  if ok { 0 } else { 1 }
+}
 
 // ── CLI argument parsing ─────────────────────────────────────────────
 

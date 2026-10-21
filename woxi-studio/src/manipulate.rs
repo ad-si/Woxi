@@ -1155,6 +1155,19 @@ impl ManipulateState {
     self.reevaluate_inner(true);
   }
 
+  /// Evaluate the body once for the current control values and return the
+  /// raw interpreter result, including the warnings that [`reevaluate`]
+  /// discards. Used by the headless `--check` mode.
+  ///
+  /// [`reevaluate`]: Self::reevaluate
+  pub fn check_render(
+    &self,
+  ) -> Result<woxi::InterpretResult, woxi::InterpreterError> {
+    woxi::with_scoped_globals(&self.bindings(), || {
+      woxi::interpret_with_stdout(&self.body)
+    })
+  }
+
   /// Replay each promoted `LocatorPane` variable's reset expression that
   /// [`request_reeval`] marked pending — i.e. whose default depends on a
   /// control that changed since the last re-evaluation — against the
@@ -1231,6 +1244,9 @@ impl ManipulateState {
       // may assign to the widget's own variables (`{v, e} = ve[[n]]`),
       // and a `Dynamic[…]` caption showing them must display what this
       // frame computed, not the previous frame's values.
+      crate::trace_evaluation(
+        &woxi::functions::graphics::manipulate_block_code(&code, &bindings),
+      );
       let mut render = woxi::interpret_with_stdout(&code);
       // A `Pane[Grid[…], size]` body of plain text prints as source text in
       // the terminal; the widget shows the table the pane wraps instead.
