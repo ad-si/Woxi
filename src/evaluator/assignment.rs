@@ -2265,6 +2265,7 @@ fn downvalue_arg_info(
         if patterns.iter().any(|p| {
           contains_mutating_head(p)
             || crate::evaluator::pattern_matching::is_optional_slot(p)
+            || is_options_or_repeated_element(p)
         }) =>
       {
         // An element like `x_ = expr_` (the `HoldFirst` "let"-binding
@@ -4405,6 +4406,27 @@ fn collect_element_bindings(
         out.push((name, accessor.clone()));
       }
     }
+  }
+}
+
+/// A list-pattern element that consumes a variable number of elements without
+/// being a plain trailing blank sequence — `OptionsPattern[]`, `p..`, `p...`,
+/// each optionally named (`o : OptionsPattern[]`). The `Length`/`Part`
+/// lowering cannot express these, so such lists use the structural matcher.
+fn is_options_or_repeated_element(p: &Expr) -> bool {
+  match p {
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      is_options_or_repeated_element(&args[1])
+    }
+    Expr::FunctionCall { name, .. } => {
+      matches!(
+        name.as_str(),
+        "OptionsPattern" | "Repeated" | "RepeatedNull"
+      )
+    }
+    _ => false,
   }
 }
 

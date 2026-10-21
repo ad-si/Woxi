@@ -2377,6 +2377,40 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
 
+      // {i, a, b, s} with symbolic bounds or step: reindex as i = a + s j
+      // over {j, 0, (b - a)/s}, which the unit-step symbolic machinery
+      // handles. Only done when the trip count simplifies to a
+      // division-free expression, i.e. the step divides the span.
+      if items.len() == 4
+        && (expr_to_i128(&items[1]).is_none()
+          || expr_to_i128(&items[2]).is_none()
+          || expr_to_i128(&items[3]).is_none())
+        && !matches!(expr_to_i128(&items[3]), Some(0))
+        && crate::functions::math_ast::try_eval_to_f64(&items[1]).is_none()
+      {
+        let (a, b, s) = (&items[1], &items[2], &items[3]);
+        let span = crate::evaluator::evaluate_expr_to_expr(&div2(
+          minus2(b.clone(), a.clone()),
+          s.clone(),
+        ))?;
+        if !crate::syntax::expr_to_string(&span).contains('/') {
+          let index = plus2(
+            a.clone(),
+            times2(s.clone(), Expr::Identifier(var_name.clone())),
+          );
+          let reindexed =
+            crate::syntax::substitute_variable(body, &var_name, &index);
+          return sum_ast(&[
+            reindexed,
+            Expr::List(crate::ExprList::from(vec![
+              Expr::Identifier(var_name.clone()),
+              Expr::Integer(0),
+              span,
+            ])),
+          ]);
+        }
+      }
+
       // Try real-valued iteration when bounds are numeric but not integers
       if items.len() == 3 {
         let min_int = expr_to_i128(&items[1]);
@@ -2490,6 +2524,12 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (min_val, max_val, 1i128)
       } else {
         // items.len() == 4: {i, min, max, step}
+        if expr_to_i128(&items[1]).is_none()
+          || expr_to_i128(&items[2]).is_none()
+          || expr_to_i128(&items[3]).is_none()
+        {
+          return Ok(unevaluated("Sum", args));
+        }
         let min_val = expr_to_i128(&items[1]).ok_or_else(|| {
           InterpreterError::EvaluationError(
             "Sum: iterator bounds must be integers".into(),

@@ -5301,3 +5301,12 @@ clips its right-hand column, where the FrontEnd fits it.
 argument like `2. + 0.*I` unevaluated, where the kernel returns a complex
 machine number. Arithmetic, `Sin`, `Cos`, `Tan` and the inverse circular
 functions keep the `0.` imaginary part correctly.
+
+
+## `Sum` over symbolic bounds with a step stays unreduced
+
+`Sum[k^i, {i, q h, 0, -q}]` is re-indexed to `Sum[k^(h q - q i), {i, 0, h}]`
+but not summed in closed form (the kernel gives `(-1 + k^(q + h q))/(-1 +
+k^q)`). Applying a definition stored from it to numbers evaluates correctly.
+Steps that do not divide a symbolic span (`Sum[k^i, {i, 0, n, 2}]`) stay
+unevaluated.

@@ -3749,6 +3749,20 @@ fn full_form_head_args(expr: &Expr) -> Option<(Expr, Vec<Expr>)> {
   }
 }
 
+/// `name : OptionsPattern[…]` as `(name, OptionsPattern[…])`.
+fn named_options_pattern(pat: &Expr) -> Option<(&str, &Expr)> {
+  if let Expr::FunctionCall { name, args } = pat
+    && name == "Pattern"
+    && args.len() == 2
+    && let Expr::Identifier(var) = &args[0]
+    && match_options_pattern(&args[1]).is_some()
+  {
+    Some((var.as_str(), &args[1]))
+  } else {
+    None
+  }
+}
+
 /// Match a slice of expression args against a slice of pattern args,
 /// handling BlankSequence (__) and BlankNullSequence (___) patterns
 /// that can consume variable numbers of arguments.
@@ -3758,6 +3772,7 @@ fn full_form_head_args(expr: &Expr) -> Option<(Expr, Vec<Expr>)> {
 fn acts_as_sequence(pattern: &Expr) -> bool {
   if get_sequence_info(pattern).is_some()
     || match_options_pattern(pattern).is_some()
+    || named_options_pattern(pattern).is_some()
   {
     return true;
   }
@@ -3988,7 +4003,10 @@ fn match_args_with_sequences(
   // reserved key `__OptionsPattern__` so that `apply_bindings` can push
   // the merged option bindings onto OPTION_VALUE_CONTEXT before evaluating
   // the replacement (so `OptionValue[…]` lookups inside resolve).
-  if let Some(opt_defaults) = match_options_pattern(pat) {
+  let named_options = named_options_pattern(pat);
+  if let Some(opt_defaults) =
+    match_options_pattern(named_options.map_or(pat, |(_, inner)| inner))
+  {
     if !rest_pats.is_empty() {
       return None;
     }
@@ -4002,10 +4020,19 @@ fn match_args_with_sequences(
       }
     }
     let merged = merge_option_rules(&opt_defaults, &explicit_rules);
-    return Some(vec![(
-      "__OptionsPattern__".to_string(),
-      Expr::List(merged.into()),
-    )]);
+    let mut bindings =
+      vec![("__OptionsPattern__".to_string(), Expr::List(merged.into()))];
+    // `o : OptionsPattern[]` also names the options it consumed.
+    if let Some((name, _)) = named_options {
+      bindings.push((
+        name.to_string(),
+        Expr::FunctionCall {
+          name: "Sequence".to_string(),
+          args: explicit_rules.into(),
+        },
+      ));
+    }
+    return Some(bindings);
   }
 
   // `PatternSequence[p1, …, pk] ..` (and `...`) repeats a *group* of k
