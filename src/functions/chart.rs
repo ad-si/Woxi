@@ -83,6 +83,18 @@ fn markup_and_extra_lines(expr: &Expr) -> (String, Vec<String>) {
   (first, lines.collect())
 }
 
+/// The visible text of a (possibly stacked) label: its lines joined by a
+/// space, so a label whose first line is blank (`Row[{"\nTitle"}]`) still
+/// counts as non-empty and is drawn.
+fn stacked_visible_text(first: &str, rest: &[String]) -> String {
+  let mut text = svg_markup_visible_text(first);
+  for line in rest {
+    text.push(' ');
+    text.push_str(&svg_markup_visible_text(line));
+  }
+  text.trim().to_string()
+}
+
 /// A label with optional styling (bold, italic, color, font-size).
 #[derive(Clone)]
 pub(crate) struct StyledLabel {
@@ -471,7 +483,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         other => {
           let (markup, rest) = markup_and_extra_lines(other);
           extra_lines = rest;
-          (svg_markup_visible_text(&markup), Some(markup))
+          (stacked_visible_text(&markup, &extra_lines), Some(markup))
         }
       };
       let (bold, italic, color, font_size) =
@@ -491,7 +503,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     // plot with its OutputForm text, matching wolframscript.
     other => {
       let (markup, extra_lines) = markup_and_extra_lines(other);
-      let text = svg_markup_visible_text(&markup);
+      let text = stacked_visible_text(&markup, &extra_lines);
       if text.is_empty() {
         None
       } else {
