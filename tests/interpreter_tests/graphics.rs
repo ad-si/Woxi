@@ -14265,6 +14265,16 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn date_list_plot_plot_label_and_legends() {
+      let svg = export_svg(
+        r#"DateListPlot[{{{{2000, 1, 1}, 1}, {{2010, 1, 1}, 3}}, {{{2000, 1, 1}, 2}, {{2010, 1, 1}, 1}}}, PlotLabel -> "Per capita", PlotLegends -> Placed[{"First", "Second"}, Bottom]]"#,
+      );
+      for text in ["Per capita", "First", "Second"] {
+        assert!(svg.contains(&format!(">{text}<")), "missing {text}");
+      }
+    }
+
+    #[test]
     fn date_list_plot_invalid_returns_unevaluated() {
       assert_eq!(
         interpret("DateListPlot[{1, 3, 2, 5, 4}]").unwrap(),
