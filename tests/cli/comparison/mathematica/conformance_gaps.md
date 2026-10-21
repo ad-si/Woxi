@@ -5252,7 +5252,9 @@ e.g. `ColorData[61][k]` stays unevaluated, so the `Manipulate` of the
 its fill/line colors. The same holds for `ColorData[7, k]` and
 `ColorData[13, k]` (the `Circumcircles of Two Midpoints and an Altitude`
 Demonstration colors its triangle, discs and background with them). The
-schemes' values could not be checked against a real kernel. `ComputationalGeometry`ConvexHull` starts its index list at the
+schemes' values could not be checked against a real kernel. `ColorData[8][k]`
+(the row backgrounds of the `Grid` in the `The Perfect Venn Diagram`
+Demonstration's plot title) is in the same state. `ComputationalGeometry`ConvexHull` starts its index list at the
 leftmost corner, which is likewise unverified.
 
 

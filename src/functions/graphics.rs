@@ -12362,6 +12362,30 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
   {
     return expr_to_svg_markup_lines(&args[0]);
   }
+  // `Labeled[content, label]` / `Labeled[content, label, Top]` stacks the
+  // label's lines above (`Top`) or below (the default, `Bottom`) the
+  // content's lines. Side positions have no line-based layout and fall
+  // through to the generic rendering.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Labeled"
+    && (args.len() == 2 || args.len() == 3)
+  {
+    let on_top = match args.get(2) {
+      None => Some(false),
+      Some(Expr::Identifier(p)) if p == "Bottom" => Some(false),
+      Some(Expr::Identifier(p)) if p == "Top" => Some(true),
+      _ => None,
+    };
+    if let Some(on_top) = on_top {
+      let content = expr_to_svg_markup_lines(&args[0]);
+      let label = expr_to_svg_markup_lines(&args[1]);
+      return if on_top {
+        label.into_iter().chain(content).collect()
+      } else {
+        content.into_iter().chain(label).collect()
+      };
+    }
+  }
   // `Row[{…}]` whose parts stack into several lines (a `Column`/`Grid`/
   // `TableForm` among plain text) sets those blocks side by side: line `i`
   // of the label joins line `i` of every part, shorter blocks centred

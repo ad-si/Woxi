@@ -2094,6 +2094,27 @@ mod graphics {
   }
 
   mod text_styles {
+    /// A `Labeled` plot title stacks its label above (`Top`) or below (the
+    /// default) the content instead of printing the raw `Labeled[…]` call.
+    #[test]
+    fn plot_label_labeled_positions() {
+      let top = interpret(
+        "ExportString[Graphics[Disk[], PlotLabel -> Labeled[Grid[{{\"a\", \"b\"}, {1, 2}}], \"cap\", Top]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(!top.contains("Labeled["), "SVG: {top}");
+      let cap = top.find("cap").unwrap();
+      let row = top.find("a b").unwrap();
+      assert!(cap < row, "label should come first: {top}");
+
+      let bottom = interpret(
+        "ExportString[Graphics[Disk[], PlotLabel -> Labeled[\"body\", \"cap\"]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(!bottom.contains("Labeled["), "SVG: {bottom}");
+      assert!(bottom.find("body").unwrap() < bottom.find("cap").unwrap());
+    }
+
     use super::*;
 
     /// A list of directives inside `Style` is the same as the directives
