@@ -21468,8 +21468,10 @@ fn traditionalize_layout_items(expr: &Expr) -> Expr {
       }
     }
     Expr::FunctionCall { name, args }
-      if matches!(name.as_str(), "Style" | "Item" | "Pane" | "Invisible")
-        && !args.is_empty() =>
+      if matches!(
+        name.as_str(),
+        "Style" | "Item" | "Pane" | "Invisible" | "Framed"
+      ) && !args.is_empty() =>
     {
       let mut new_args = args.clone();
       new_args[0] = traditionalize_layout_items(&args[0]);
@@ -21483,7 +21485,7 @@ fn traditionalize_layout_items(expr: &Expr) -> Expr {
     }
     Expr::Identifier(s) if s == "Null" => expr.clone(),
     Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Grid" | "Framed" | "TraditionalForm") =>
+      if matches!(name.as_str(), "Grid" | "TraditionalForm") =>
     {
       expr.clone()
     }
@@ -22060,6 +22062,26 @@ fn with_text(item: &Expr, text: &str) -> Expr {
   }
 }
 
+/// Characters a one-line SVG text markup draws: tags are skipped and an
+/// entity (`&lt;`) counts once.
+fn markup_visible_chars(markup: &str) -> usize {
+  let (mut count, mut in_tag, mut in_entity) = (0, false, false);
+  for c in markup.chars() {
+    match c {
+      '<' => in_tag = true,
+      '>' => in_tag = false,
+      '&' if !in_tag => {
+        in_entity = true;
+        count += 1;
+      }
+      ';' if in_entity => in_entity = false,
+      _ if !in_tag && !in_entity => count += 1,
+      _ => {}
+    }
+  }
+  count
+}
+
 pub fn row_to_svg(args: &[Expr]) -> Option<String> {
   if args.is_empty() {
     return None;
@@ -22234,9 +22256,17 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
     // line's worth of height per line, or the cell is sized for a single
     // line and the rest overflows/overlaps its neighbours.
     let line_count = markup.matches('\n').count() + 1;
+    // A single drawn line is as wide as its visible characters: the
+    // structural estimate stacks a fraction (`t/2`) that a flat text
+    // line spells out in full, which would clip the row's last item.
+    let chars = if line_count == 1 {
+      estimate_display_width(item).max(markup_visible_chars(&markup) as f64)
+    } else {
+      estimate_display_width(item)
+    };
     Cell::Text {
       markup,
-      width: estimate_display_width(item) * char_width * scale,
+      width: chars * char_width * scale,
       height: line_count as f64 * st.font_size + pad_y,
       fill: if hidden {
         "none".to_string()

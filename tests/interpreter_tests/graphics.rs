@@ -2633,6 +2633,71 @@ mod graphics {
   mod options {
     use super::*;
 
+    /// `TraditionalForm` around a `Framed` row typesets the framed items in
+    /// conventional notation (`cos(t)`), and the frame is wide enough for
+    /// the last item (`t/2`) instead of clipping it.
+    #[test]
+    fn traditional_form_framed_row_is_typeset_and_not_clipped() {
+      let svg = export_svg(
+        "Column[{TraditionalForm[Framed[Style[Row[{Style[Row[{\"z = \", Cos[t]}], Red], \" , \", \
+         Style[Row[{\"z = \", t/2}], Blue]}], 20]]], \"b\"}]",
+      );
+      assert!(svg.contains("cos(t)"), "{svg}");
+      assert!(svg.contains("t/2"), "{svg}");
+      let rect_w = |s: &str| -> f64 {
+        let i = s.find("<rect").unwrap();
+        let r = &s[i..];
+        let k = r.find("width=\"").unwrap() + 7;
+        r[k..k + r[k..].find('"').unwrap()].parse().unwrap()
+      };
+      // 20 characters of text at 20pt (12pt per character).
+      assert!(rect_w(&svg) >= 20.0 * 12.0, "{svg}");
+    }
+
+    /// In an unboxed `Graphics3D`, `AxesOrigin` makes the three axes cross
+    /// at that point (the midpoint of each axis for a symmetric range)
+    /// instead of running along the edges of the box.
+    #[test]
+    fn graphics3d_axes_origin_crosses_axes_at_the_point() {
+      let midpoints = |svg: &str| -> Vec<(f64, f64)> {
+        svg
+          .lines()
+          .filter(|l| {
+            l.starts_with("<line") && l.contains("stroke-width=\"1\"")
+          })
+          .map(|l| {
+            let attr = |name: &str| -> f64 {
+              let key = format!("{name}=\"");
+              let rest = &l[l.find(&key).unwrap() + key.len()..];
+              rest[..rest.find('"').unwrap()].parse().unwrap()
+            };
+            (
+              f64::midpoint(attr("x1"), attr("x2")),
+              f64::midpoint(attr("y1"), attr("y2")),
+            )
+          })
+          .collect()
+      };
+      let scene = "Graphics3D[Line[{{-1, -1, -1}, {1, 1, 1}}], Axes -> True, \
+                   Boxed -> False";
+      let crossing =
+        midpoints(&export_svg(&format!("{scene}, AxesOrigin -> {{0, 0, 0}}]")));
+      assert_eq!(crossing.len(), 3, "{crossing:?}");
+      for m in &crossing[1..] {
+        assert!(
+          (m.0 - crossing[0].0).abs() < 0.2
+            && (m.1 - crossing[0].1).abs() < 0.2,
+          "{crossing:?}"
+        );
+      }
+      let edges = midpoints(&export_svg(&format!("{scene}]")));
+      assert!(
+        (edges[0].0 - edges[1].0).abs() > 1.0
+          || (edges[0].1 - edges[1].1).abs() > 1.0,
+        "{edges:?}"
+      );
+    }
+
     /// Explicit ticks outside the plot range are not drawn.
     #[test]
     fn explicit_ticks_outside_the_range_are_dropped() {

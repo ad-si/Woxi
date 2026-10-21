@@ -1468,6 +1468,7 @@ fn draw_axes_on_box(
     z_range,
     axes_labels,
     &[None, None, None],
+    None,
   );
 }
 
@@ -1512,6 +1513,7 @@ fn draw_axes_on_box_with_ticks(
   z_range: (f64, f64),
   axes_labels: &[Option<String>; 3],
   ticks: &[Option<Vec<f64>>; 3],
+  crossing: Option<&[Option<f64>; 3]>,
 ) {
   let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
   let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
@@ -1597,6 +1599,66 @@ fn draw_axes_on_box_with_ticks(
     (origin, y_end, y_range, origin.y > y_end.y),
     (z_origin, z_end, z_range, false), // z always runs from floor to ceiling
   ];
+
+  // An unboxed scene with an explicit `AxesOrigin` draws its three axes
+  // crossing at that point, each running the full extent of its range,
+  // instead of along the edges of the box.
+  let axes: [(Point3D, Point3D, (f64, f64), bool); 3] = match crossing {
+    Some(at) => {
+      // Data value -> normalized box coordinate along one axis.
+      let norm =
+        |v: Option<f64>, (lo, hi): (f64, f64), (b0, b1): (f64, f64)| match v {
+          Some(v) if (hi - lo).abs() > 1e-15 => {
+            b0 + ((v - lo) / (hi - lo)).clamp(0.0, 1.0) * (b1 - b0)
+          }
+          _ => b0,
+        };
+      let cross = Point3D {
+        x: norm(at[0], x_range, (box_x_lo, box_x_hi)),
+        y: norm(at[1], y_range, (box_y_lo, box_y_hi)),
+        z: norm(at[2], z_range, (box_z_lo, box_z_hi)),
+      };
+      [
+        (
+          Point3D {
+            x: box_x_lo,
+            ..cross
+          },
+          Point3D {
+            x: box_x_hi,
+            ..cross
+          },
+          x_range,
+          false,
+        ),
+        (
+          Point3D {
+            y: box_y_lo,
+            ..cross
+          },
+          Point3D {
+            y: box_y_hi,
+            ..cross
+          },
+          y_range,
+          false,
+        ),
+        (
+          Point3D {
+            z: box_z_lo,
+            ..cross
+          },
+          Point3D {
+            z: box_z_hi,
+            ..cross
+          },
+          z_range,
+          false,
+        ),
+      ]
+    }
+    None => axes,
+  };
 
   // Project the box center so we can orient tick labels outward
   let box_center = Point3D {
@@ -6560,6 +6622,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
   };
   let mut show_axes = false;
+  let mut axes_origin: Option<[Option<f64>; 3]> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut tick_spec: [Option<Vec<f64>>; 3] = [None, None, None];
   // `AspectRatio -> r`: the picture is `r` times as tall as it is wide.
@@ -6684,6 +6747,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && r.is_finite()
           {
             aspect_ratio = Some(r);
+          }
+        }
+        "AxesOrigin" => {
+          // `{x, y, z}` where the axes cross; `Automatic` (or anything
+          // non-numeric) leaves that coordinate at the box's low end.
+          if let Expr::List(items) = replacement.as_ref()
+            && items.len() == 3
+          {
+            let mut at = [None; 3];
+            for (slot, item) in at.iter_mut().zip(items.iter()) {
+              *slot = try_eval_to_f64(
+                &evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone()),
+              );
+            }
+            axes_origin = Some(at);
           }
         }
         "Axes" => match replacement.as_ref() {
@@ -7756,6 +7834,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (z3_min / axis_scale[2], z3_max / axis_scale[2]),
       &axes_labels,
       &tick_spec,
+      axes_origin.as_ref().filter(|_| !show_box),
     );
   }
 
