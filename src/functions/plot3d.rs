@@ -4170,7 +4170,14 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
 /// Replace the 1-based vertex indices inside a `GraphicsComplex` primitive
 /// (`Polygon`/`Line`/`Point`/`Arrow` arguments) with the coordinates they
 /// refer to, leaving everything else untouched.
-fn resolve_complex_indices(expr: &Expr, points: &[Expr]) -> Expr {
+///
+/// With `colors` (the complex's `VertexColors`, one colour per point) each
+/// `Polygon` facet is drawn in the mean colour of its vertices.
+fn resolve_complex_indices(
+  expr: &Expr,
+  points: &[Expr],
+  colors: Option<&[(f64, f64, f64)]>,
+) -> Expr {
   fn substitute(expr: &Expr, points: &[Expr]) -> Expr {
     match expr {
       Expr::Integer(i) if *i >= 1 && (*i as usize) <= points.len() => {
@@ -4186,7 +4193,59 @@ fn resolve_complex_indices(expr: &Expr, points: &[Expr]) -> Expr {
       other => other.clone(),
     }
   }
+  // The facet's mean vertex colour as an `RGBColor`, for the 1-based index
+  // list `indices`.
+  fn facet_color(indices: &Expr, colors: &[(f64, f64, f64)]) -> Option<Expr> {
+    let Expr::List(items) = indices else {
+      return None;
+    };
+    let picked: Vec<(f64, f64, f64)> = items
+      .iter()
+      .filter_map(|i| match i {
+        Expr::Integer(i) if *i >= 1 => colors.get(*i as usize - 1).copied(),
+        _ => None,
+      })
+      .collect();
+    if picked.is_empty() {
+      return None;
+    }
+    let n = picked.len() as f64;
+    let mean = |f: fn(&(f64, f64, f64)) -> f64| {
+      Expr::Real(picked.iter().map(f).sum::<f64>() / n)
+    };
+    Some(call(
+      "RGBColor",
+      vec![mean(|c| c.0), mean(|c| c.1), mean(|c| c.2)],
+    ))
+  }
   match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Polygon"
+        && !args.is_empty()
+        && let Some(colors) = colors =>
+    {
+      let facet = |indices: &Expr| -> Expr {
+        let mut new_args = args.to_vec();
+        new_args[0] = substitute(indices, points);
+        let polygon = Expr::FunctionCall {
+          name: name.clone(),
+          args: new_args.into(),
+        };
+        match facet_color(indices, colors) {
+          Some(color) => Expr::List(vec![color, polygon].into()),
+          None => polygon,
+        }
+      };
+      match &args[0] {
+        Expr::List(items)
+          if !items.is_empty()
+            && items.iter().all(|e| matches!(e, Expr::List(_))) =>
+        {
+          Expr::List(items.iter().map(facet).collect::<Vec<_>>().into())
+        }
+        single => facet(single),
+      }
+    }
     Expr::FunctionCall { name, args }
       if matches!(name.as_str(), "Polygon" | "Line" | "Point" | "Arrow")
         && !args.is_empty() =>
@@ -4201,7 +4260,7 @@ fn resolve_complex_indices(expr: &Expr, points: &[Expr]) -> Expr {
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|e| resolve_complex_indices(e, points))
+        .map(|e| resolve_complex_indices(e, points, colors))
         .collect::<Vec<_>>()
         .into(),
     ),
@@ -4209,12 +4268,55 @@ fn resolve_complex_indices(expr: &Expr, points: &[Expr]) -> Expr {
       name: name.clone(),
       args: args
         .iter()
-        .map(|e| resolve_complex_indices(e, points))
+        .map(|e| resolve_complex_indices(e, points, colors))
         .collect::<Vec<_>>()
         .into(),
     },
     other => other.clone(),
   }
+}
+
+/// The per-point colours of a `GraphicsComplex`'s `VertexColors -> {…}`
+/// option, as unit-range RGB triples.
+fn complex_vertex_colors(options: &[Expr]) -> Option<Vec<(f64, f64, f64)>> {
+  options.iter().find_map(|opt| {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      return None;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexColors") {
+      return None;
+    }
+    let value = evaluate_expr_to_expr(replacement).ok()?;
+    let Expr::List(items) = &value else {
+      return None;
+    };
+    items
+      .iter()
+      .map(|c| {
+        // A bare `{r, g, b}` triple (what a stored complex holds) is an
+        // RGB colour too.
+        if let Expr::List(rgb) = c
+          && rgb.len() == 3
+          && let Some(v) = rgb
+            .iter()
+            .map(crate::functions::math_ast::expr_to_f64)
+            .collect::<Option<Vec<f64>>>()
+        {
+          return Some((v[0], v[1], v[2]));
+        }
+        crate::functions::graphics::parse_color(c).map(|c| (c.r, c.g, c.b))
+      })
+      .map(|c| {
+        c.map(|(r, g, b)| {
+          (r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0))
+        })
+      })
+      .collect()
+  })
 }
 
 /// The alignment offset of `Text[expr, pos, offset]`: a pair running from
@@ -4814,7 +4916,9 @@ fn collect_3d_primitives(
         // coordinate list by 1-based index.
         "GraphicsComplex" if args.len() >= 2 => {
           if let Ok(Expr::List(ref points)) = evaluate_expr_to_expr(&args[0]) {
-            let resolved = resolve_complex_indices(&args[1], points);
+            let colors = complex_vertex_colors(&args[2..]);
+            let resolved =
+              resolve_complex_indices(&args[1], points, colors.as_deref());
             let saved = style.clone();
             collect_3d_primitives(&resolved, style, prims);
             *style = saved;
@@ -12362,6 +12466,11 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `RegionFunction -> f`: keep only the parts of the surface where
   // `f[x, y, z, u, v]` is `True`.
   let mut region_fn: Option<Expr> = None;
+  // `ColorFunction -> f`: colour each facet by `f[x, y, z, u, v]`. With
+  // `ColorFunctionScaling` (the default) x, y and z arrive rescaled to 0..1
+  // over the plotted region and u, v over their parameter intervals.
+  let mut surface_color_fn: Option<Expr> = None;
+  let mut color_scaling = true;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -12387,6 +12496,12 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             plot_points = Some(n as usize);
           }
+        }
+        Expr::Identifier(name) if name == "ColorFunction" => {
+          surface_color_fn = Some(replacement.as_ref().clone());
+        }
+        Expr::Identifier(name) if name == "ColorFunctionScaling" => {
+          color_scaling = !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False");
         }
         Expr::Identifier(name) if name == "RegionFunction" => {
           region_fn = Some(
@@ -12622,6 +12737,67 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let box_ratios: [f64; 3] = box_ratios_explicit.unwrap_or([rx, ry, rz]);
 
+  // `ColorFunction`: the colour of facet `(i, j)`, from `f` at the facet's
+  // mean point and its centre in parameter space.
+  let facet_colors: Vec<Vec<Vec<Option<(u8, u8, u8)>>>> = all_surface_points
+    .iter()
+    .map(|sg| {
+      (0..grid_n)
+        .map(|i| {
+          (0..grid_n)
+            .map(|j| {
+              let cf = surface_color_fn.as_ref()?;
+              let pts: Vec<(f64, f64, f64)> =
+                [sg[i][j], sg[i + 1][j], sg[i + 1][j + 1], sg[i][j + 1]]
+                  .iter()
+                  .filter_map(|p| *p)
+                  .collect();
+              if pts.is_empty() {
+                return None;
+              }
+              let n = pts.len() as f64;
+              let x = pts.iter().map(|p| p.0).sum::<f64>() / n;
+              let y = pts.iter().map(|p| p.1).sum::<f64>() / n;
+              let z = pts.iter().map(|p| p.2).sum::<f64>() / n;
+              let u = u_min + (i as f64 + 0.5) * u_step;
+              let v = v_min + (j as f64 + 0.5) * v_step;
+              let args = if color_scaling {
+                let unit = |t: f64, lo: f64, hi: f64| {
+                  if (hi - lo).abs() < 1e-15 {
+                    0.0
+                  } else {
+                    (t - lo) / (hi - lo)
+                  }
+                };
+                [
+                  unit(x, gx_min, gx_max),
+                  unit(y, gy_min, gy_max),
+                  unit(z, gz_min, gz_max),
+                  unit(u, u_min, u_max),
+                  unit(v, v_min, v_max),
+                ]
+              } else {
+                [x, y, z, u, v]
+              };
+              let call = Expr::CurriedCall {
+                func: Box::new(cf.clone()),
+                args: args.iter().map(|a| Expr::Real(*a)).collect(),
+              };
+              let value = evaluate_expr_to_expr(&call).ok()?;
+              crate::functions::graphics::parse_color(&value).map(|c| {
+                (
+                  (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+                  (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+                  (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+                )
+              })
+            })
+            .collect()
+        })
+        .collect()
+    })
+    .collect();
+
   // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
   // `Show` merges the *primitives* of the graphics it is given, so a
   // surface that exists only as a rendering is dropped when it is shown
@@ -12705,11 +12881,12 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // into a facet. Facets of the default look carry none, like
             // wolframscript's `ParametricPlot3D[…][[1]]`, so a colour
             // directive placed before the extracted complex still applies.
-            let explicit =
+            let explicit = facet_colors[surface_idx][i][j].or_else(|| {
               match plot_style_for_surface(&plot_styles, surface_idx) {
                 Some(style) => style.color,
                 None => mesh_color.flatten(),
-              };
+              }
+            });
             let polygon = call1(
               "Polygon",
               Expr::List(
@@ -12859,7 +13036,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v1 = normalize(b);
           let v2 = normalize(c);
           let avg_z_norm = (z_norm(a.2) + z_norm(b.2) + z_norm(c.2)) / 3.0;
-          let default_color = mesh_facet_color(a, b, c)
+          let default_color = facet_colors[surface_idx][i][j]
+            .or_else(|| mesh_facet_color(a, b, c))
             .unwrap_or_else(|| height_color(avg_z_norm));
           let normal = triangle_normal(v0, v1, v2);
           let (color, opacity) =
@@ -12891,7 +13069,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v1 = normalize(b);
           let v2 = normalize(c);
           let avg_z_norm = (z_norm(a.2) + z_norm(b.2) + z_norm(c.2)) / 3.0;
-          let default_color = mesh_facet_color(a, b, c)
+          let default_color = facet_colors[surface_idx][i][j]
+            .or_else(|| mesh_facet_color(a, b, c))
             .unwrap_or_else(|| height_color(avg_z_norm));
           let normal = triangle_normal(v0, v1, v2);
           let (color, opacity) =
