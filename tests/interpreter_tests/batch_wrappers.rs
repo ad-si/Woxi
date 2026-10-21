@@ -5691,6 +5691,11 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn wait_all_returns_value() {
+    assert_eq!(interpret("WaitAll[{1 + 1, 2 * 3}]").unwrap(), "{2, 6}");
+    assert_eq!(interpret("WaitAll[Do[x = i, {i, 1, 3}]]; x").unwrap(), "3");
+  }
+  #[test]
   fn parallelize_scalar() {
     assert_eq!(interpret("Parallelize[1 + 1]").unwrap(), "2");
   }

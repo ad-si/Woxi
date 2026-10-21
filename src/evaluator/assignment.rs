@@ -4396,6 +4396,9 @@ fn collect_element_bindings(
         collect_element_bindings(arg, &arg_accessor, out);
       }
     }
+    // A bare symbol without a blank is a literal element (`f[{a, b}]`), not
+    // a pattern variable, so it must stay untouched in the body.
+    Expr::Identifier(n) if !n.contains('_') => {}
     _ => {
       let (name, _, _) = extract_pattern_info(pat);
       if !name.is_empty() {

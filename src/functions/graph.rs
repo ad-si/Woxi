@@ -4616,8 +4616,11 @@ pub fn vertex_component_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     list.dedup();
   }
 
+  // A list that is itself a vertex of the graph is a single seed.
   let seeds: Vec<&Expr> = match &args[1] {
-    Expr::List(items) => items.iter().collect(),
+    Expr::List(items) if !index.contains_key(&key(&args[1])) => {
+      items.iter().collect()
+    }
     single => vec![single],
   };
   let mut seed_indices = Vec::with_capacity(seeds.len());
@@ -4733,8 +4736,11 @@ pub fn vertex_reach_component_ast(
     list.dedup();
   }
 
+  // A list that is itself a vertex of the graph is a single seed.
   let seeds: Vec<&Expr> = match &args[1] {
-    Expr::List(items) => items.iter().collect(),
+    Expr::List(items) if !index.contains_key(&key(&args[1])) => {
+      items.iter().collect()
+    }
     single => vec![single],
   };
   let mut seed_indices = Vec::with_capacity(seeds.len());

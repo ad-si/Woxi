@@ -1698,7 +1698,21 @@ pub fn together_expr(expr: &Expr) -> Expr {
     if matches!(den, Expr::Integer(1)) {
       continue;
     }
-    let den_factors = extract_den_factors(den);
+    // Factors of one denominator that share a base multiply (2 * 2^(1/2) is
+    // 2^(3/2)); only across denominators does the larger exponent win.
+    let mut den_factors: Vec<(Expr, Rat)> = Vec::new();
+    for (base, exp) in extract_den_factors(den) {
+      let key = expr_to_string(&base);
+      if let Some(entry) = den_factors
+        .iter_mut()
+        .find(|(b, _)| expr_to_string(b) == key)
+      {
+        entry.1 =
+          rat_reduce(entry.1.0 * exp.1 + exp.0 * entry.1.1, entry.1.1 * exp.1);
+      } else {
+        den_factors.push((base, exp));
+      }
+    }
     for (base, exp) in &den_factors {
       if matches!(base, Expr::Integer(_)) && exp.1 != 1 {
         fractional_int_exponent = true;
@@ -1769,7 +1783,15 @@ pub fn together_expr(expr: &Expr) -> Expr {
   let combined_den = {
     let mut canonical_dens: Vec<Expr> = base_exp_map
       .iter()
-      .map(|(_, base, exp)| rebuild_power(&expand_and_combine(base), *exp))
+      .map(|(_, base, exp)| {
+        let power = rebuild_power(&expand_and_combine(base), *exp);
+        // 2^(3/2) is written 2 Sqrt[2].
+        if matches!(base, Expr::Integer(_)) && exp.1 != 1 {
+          crate::evaluator::evaluate_expr_to_expr(&power).unwrap_or(power)
+        } else {
+          power
+        }
+      })
       .collect();
     // Fold integer factors together so the numeric part of the common
     // denominator is a single number: Together[x/2 + y/3] → (3x + 2y)/6,
@@ -1815,6 +1837,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
       }
     }
     canonical_dens = split_dens;
+    crate::functions::math_ast::sort_symbolic_factors(&mut canonical_dens);
     if int_prod != BigInt::from(1) {
       let folded = match i128::try_from(&int_prod) {
         Ok(n) => Expr::Integer(n),
@@ -1822,7 +1845,6 @@ pub fn together_expr(expr: &Expr) -> Expr {
       };
       canonical_dens.insert(0, folded);
     }
-    crate::functions::math_ast::sort_symbolic_factors(&mut canonical_dens);
     if canonical_dens.len() == 1 {
       canonical_dens.remove(0)
     } else {

@@ -5254,3 +5254,12 @@ its fill/line colors. The same holds for `ColorData[7, k]` and
 Demonstration colors its triangle, discs and background with them). The
 schemes' values could not be checked against a real kernel. `ComputationalGeometry`ConvexHull` starts its index list at the
 leftmost corner, which is likewise unverified.
+
+
+## Text width of `Row`/`Grid` captions is overestimated
+
+Text is measured at a fixed 8.4 px per character, which is wider than the
+proportional face the FrontEnd uses for digits and spaces. A `Pane[…, {450,
+300}]` holding `Row[{Grid[…], Graphics[…], Grid[…]}]` captions (the
+`Power versus Work` Demonstration) therefore lays out wider than the pane and
+clips its right-hand column, where the FrontEnd fits it.

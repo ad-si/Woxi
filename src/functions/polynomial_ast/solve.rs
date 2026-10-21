@@ -3661,7 +3661,10 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           left,
           ..
         } => matches!(left.as_ref(), Expr::Integer(n) if *n < 0),
-        _ => false,
+        // Machine-precision and rational coefficients flip the order just
+        // the same; a symbolic one has no sign to go by.
+        Expr::Real(r) => *r < 0.0,
+        _ => try_eval_to_f64(a).is_some_and(|v| v < 0.0),
       };
       if leading_negative {
         Ok(Expr::List(vec![make_rule(sol2), make_rule(sol1)].into()))

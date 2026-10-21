@@ -1646,7 +1646,7 @@ TextureCoordinateFunction,Option mapping surface points to Texture image coordin
 TextCases,Extract text units of a given type from a string (Word mirrors TextWords and Sentence mirrors TextSentences; optional third arg keeps the first n),✅,pure,10.2,1644
 DirectoryName,Extract the directory name from a file path,✅,pure,3.0,1646
 DominantColors,Finds dominant colors in an image using k-means clustering,✅,pure,9.0,1646
-Multicolumn,Multi-column layout,,unevaluated,10.0,1648
+Multicolumn,Lists items down n columns; stays symbolic and is drawn as a Column or Grid in notebooks,✅,unevaluated,10.0,1648
 Record,Record data structure,,unevaluated,2.0,1648
 FlattenAt,Flatten at specific positions,✅,computation,2.0,1649
 InversePermutation,Inverse of a permutation list or Cycles object,✅,pure,8.0,1650
@@ -2220,7 +2220,7 @@ Threshold,Replaces array values below a threshold with zero,✅,pure,8.0,2229
 Hexahedron,Symbolic hexahedron (8 corners); stays unevaluated and is drawn as six faces in Graphics3D,✅,unevaluated,10.0,2233
 Nand,Logical NAND,✅,pure,4.1,2233
 TimeSeriesShift,Shifts every time stamp of a series by a given amount,✅,pure,10.0,2233
-WaitAll,Async parallel computation,🚫,None,7.0,2233
+WaitAll,Waits for asynchronous tasks and returns the value of its argument (single Woxi kernel),✅,pure,7.0,2233
 ClickPane,Clickable pane feeding a handler; renders as an interactive 2D pane,✅,unevaluated,6.0,2236
 DiamondMatrix,Gives the diamond (L1-ball) structuring element for a scalar radius or list of radii (n-D) optionally centred in a grid of a given width,✅,pure,7.0,2236
 MaxItems,Display option,🚫,None,10.1,2236

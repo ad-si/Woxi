@@ -461,6 +461,20 @@ mod coefficient {
 mod expand {
   use super::*;
 
+  // Squaring `Sqrt[a + b] r` leaves `(a + b) r^2`; the sum is distributed
+  // so the `r^2` terms merge (here to a unit coefficient).
+  #[test]
+  fn radical_square_coefficient_merges() {
+    assert_eq!(
+      interpret(
+        "Coefficient[Expand[(Cos[9 Pi/10] r - a)^2 + (Sin[9 Pi/10] r - b)^2], \
+         r, 2]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
   // Large polynomial powers are multiplied out on exponent vectors; this one
   // has 4368 terms and used to take seconds.
   #[test]
@@ -2927,6 +2941,20 @@ mod collect_tests {
 mod together {
   use super::*;
 
+  // A denominator carrying both 2 and 2^(1/2) is 2^(3/2), not 2.
+  #[test]
+  fn together_keeps_radical_denominator_factor() {
+    assert_eq!(
+      interpret("Together[r Sqrt[5/8 + x/8] + 1] - (r Sqrt[5/8 + x/8] + 1) /. {r -> 2, x -> 3}")
+        .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Together[x/3 + y/(2 Sqrt[2])]").unwrap(),
+      "(2*x*Sqrt[2] + 3*y)/(6*Sqrt[2])"
+    );
+  }
+
   #[test]
   fn together_basic() {
     assert_eq!(interpret("Together[1/x + 1/y]").unwrap(), "(x + y)/(x*y)");
@@ -4810,6 +4838,20 @@ mod symbolic_equal {
 
 mod solve {
   use super::*;
+
+  // Radical equation whose coefficients are exact trigonometric values: both
+  // roots must satisfy the original equation.
+  #[test]
+  fn radical_equation_with_exact_trig_coefficients() {
+    assert_eq!(
+      interpret(
+        "f = Sqrt[(r Cos[9 Pi/10] - 3/10)^2 + (r Sin[9 Pi/10] - 6/5)^2]; \
+         Round[10^6 (f /. Solve[f == 4, r])]"
+      )
+      .unwrap(),
+      "{4000000, 4000000}"
+    );
+  }
 
   #[test]
   fn linear_equation() {
