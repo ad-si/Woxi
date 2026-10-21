@@ -3674,6 +3674,52 @@ mod plot3d {
     assert_eq!(glass, 24);
   }
 
+  /// `Glow[White]` makes a face plain white whatever its angle to the lamp.
+  #[test]
+  fn glow_lights_polygon_faces() {
+    let white_faces = |code: &str| {
+      export_svg(code)
+        .lines()
+        .filter(|l| {
+          l.starts_with("<polygon") && l.contains("fill=\"rgb(255,255,255)\"")
+        })
+        .count()
+    };
+    let face = "Polygon[{{0,0,0},{1,0,0},{0,0,1}}]";
+    let opts = "Boxed -> False, ViewPoint -> {0,-20,0}";
+    assert_eq!(white_faces(&format!("Graphics3D[{{{face}}}, {opts}]")), 0);
+    assert_eq!(
+      white_faces(&format!("Graphics3D[{{Glow[White], {face}}}, {opts}]")),
+      1
+    );
+  }
+
+  /// `Cuboid[{pmin, pmax}]` is the box `Cuboid[pmin, pmax]`.
+  #[test]
+  fn cuboid_accepts_corner_pair_in_one_list() {
+    let pair =
+      export_svg("Graphics3D[{Cuboid[{{0,0,0},{2,1,1}}]}, Boxed -> False]");
+    let two_args =
+      export_svg("Graphics3D[{Cuboid[{0,0,0},{2,1,1}]}, Boxed -> False]");
+    assert_eq!(pair, two_args);
+  }
+
+  /// A tilted box keeps the outline of its faces and none of the cuts
+  /// between the two triangles each face is split into.
+  #[test]
+  fn rotated_cuboid_is_outlined_along_its_edges() {
+    let svg = export_svg(
+      "Graphics3D[{EdgeForm[Black], Rotate[Cuboid[{0,0,0},{1,1,1}], 0.5, {1,1,0}]}, Boxed -> False]",
+    );
+    let lines = svg.matches("<line").count();
+    // A cube has 12 edges; each is drawn once per adjoining triangle at
+    // most, but never the 12 face diagonals as well.
+    assert!(
+      (12..=24).contains(&lines),
+      "{lines} outline segments\n{svg}"
+    );
+  }
+
   use super::*;
 
   mod basic {
@@ -6349,6 +6395,22 @@ mod plot3d {
         above, default,
         "ViewPoint -> Above must change the projection"
       );
+    }
+
+    // Infinite components pick the direction: `{0, 0, Infinity}` is
+    // `Above`, `{0, 0, -Infinity}` is `Below` and `{Infinity, 0, 0}` is
+    // `Right` (a Demonstration's "closed" view of a tetrahedron fractal).
+    #[test]
+    fn graphics3d_view_point_infinite_components() {
+      let view = |vp: &str| {
+        export_svg(&format!(
+          "Graphics3D[Cuboid[], ViewPoint -> {vp}, Boxed -> False]"
+        ))
+      };
+      assert_eq!(view("{0, 0, Infinity}"), view("Above"));
+      assert_eq!(view("{0, 0, -Infinity}"), view("Below"));
+      assert_eq!(view("{Infinity, 0, 0}"), view("Right"));
+      assert_ne!(view("{0, 0, Infinity}"), view("{1.3, -2.4, 2}"));
     }
 
     /// Straight down the z axis the screen basis is degenerate — the
@@ -16199,6 +16261,25 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn matrix_plot_honors_color_function_and_color_rules() {
+      // Regression: ColorFunction / ColorRules were ignored, so every plot
+      // used the default blue-red gradient.
+      let svg = export_svg(
+        "MatrixPlot[{{50, 0}, {3, 2}}, ColorFunction -> \"Rainbow\", \
+         ColorRules -> {50 -> Lighter[Gray]}, Mesh -> False]",
+      );
+      assert!(svg.contains("#AAAAAA"), "ColorRules cell: {svg}");
+      assert!(svg.contains("#781C86"), "Rainbow cell: {svg}");
+      assert_eq!(
+        svg,
+        export_svg(
+          "ArrayPlot[{{50, 0}, {3, 2}}, ColorFunction -> \"Rainbow\", \
+           ColorRules -> {50 -> Lighter[Gray]}, Mesh -> False]"
+        )
+      );
+    }
+
+    #[test]
     fn matrix_plot_sparse_array() {
       // Regression: same SparseArray-densification bug as ArrayPlot.
       let dense = export_svg("MatrixPlot[{{1, 0}, {0, 2}}]");
@@ -16206,6 +16287,34 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "MatrixPlot[SparseArray[{{1, 1} -> 1, {2, 2} -> 2}, {2, 2}]]",
       );
       assert_eq!(sparse, dense);
+    }
+
+    #[test]
+    fn matrix_plot_color_entries() {
+      // Entries that are colors are drawn as given, not scaled as values.
+      let svg = export_svg(
+        "MatrixPlot[{{Pink, RGBColor[1, 0, 0]}, {RGBColor[0, 0.5, 0], GrayLevel[0.3]}}]",
+      );
+      for fill in [
+        "rgb(255,128,128)",
+        "rgb(255,0,0)",
+        "rgb(0,128,0)",
+        "rgb(77,77,77)",
+      ] {
+        assert!(svg.contains(&format!("fill=\"{fill}\"")), "{fill}: {svg}");
+      }
+    }
+
+    #[test]
+    fn show_matrix_plot_keeps_primitives_on_top() {
+      // The first graphic is the bottom layer: the arrow's SVG comes after
+      // the matrix plot's cells, so it is painted over them.
+      let svg = export_svg(
+        "Show[MatrixPlot[Table[Pink, {2}, {2}]], Graphics[Arrow[{{0.5, 1.5}, {1.5, 0.5}}]]]",
+      );
+      let cells = svg.rfind("fill=\"rgb(255,128,128)\"").unwrap();
+      let arrow = svg.find("<polygon").unwrap();
+      assert!(cells < arrow, "{svg}");
     }
 
     #[test]
@@ -20508,6 +20617,47 @@ mod graphics_grid {
     // side by side or stacked in a column.
     assert_eq!(svg.matches("<svg x=").count(), 2, "{svg}");
     assert!(svg.contains("rgb(255,0,0)"), "the red cell must render");
+  }
+
+  /// `Multicolumn[{e1, e2, …}, n]` is a display wrapper like `Column`: the
+  /// head stays symbolic, while a notebook host draws the items down `n`
+  /// columns (one column is a plain vertical stack).
+  #[test]
+  fn multicolumn_draws_items_in_columns() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[Multicolumn[{Graphics[{Disk[]}], Graphics[{Circle[]}]}, 1]]"
+      )
+      .unwrap(),
+      "Multicolumn"
+    );
+    let one = interpret_with_stdout(
+      "Multicolumn[{Graphics[{Disk[]}, ImageSize -> 100], \
+       Graphics[{Red, Rectangle[]}, ImageSize -> 100]}, 1]",
+    )
+    .unwrap();
+    assert_eq!(one.result, "-Graphics-");
+    let one_svg = one.graphics.unwrap();
+    assert!(one_svg.contains("rgb(255,0,0)"), "{one_svg}");
+    let two = interpret_with_stdout(
+      "Multicolumn[{Graphics[{Disk[]}, ImageSize -> 100], \
+       Graphics[{Red, Rectangle[]}, ImageSize -> 100]}, 2]",
+    )
+    .unwrap();
+    let two_svg = two.graphics.unwrap();
+    // Two columns are wider (and shorter) than the single stacked column.
+    let size = |svg: &str| -> (f64, f64) {
+      let attr = |key: &str| -> f64 {
+        let start = svg.find(&format!("{key}=\"")).unwrap() + key.len() + 2;
+        let end = start + svg[start..].find('"').unwrap();
+        svg[start..end].parse().unwrap()
+      };
+      (attr("width"), attr("height"))
+    };
+    let (w1, h1) = size(&one_svg);
+    let (w2, h2) = size(&two_svg);
+    assert!(w2 > w1 && h2 < h1, "{w1}x{h1} vs {w2}x{h2}");
   }
 
   /// `Overlay`'s `Alignment -> {h, v}` positions a smaller item within the
@@ -37844,5 +37994,61 @@ mod grid_repeating_decimal_alignment {
        ContourPlot[x^2 + y^2 == 2, {x, -2, 2}, {y, -2, 2}]]",
     );
     assert!(framed.contains("<text"), "{framed}");
+  }
+}
+
+mod surface_vertex_colors {
+  use super::*;
+
+  #[test]
+  fn parametric_plot3d_color_function_colors_facets() {
+    clear_state();
+    // `ColorFunction -> f` receives `{x, y, z, u, v}` (raw with
+    // `ColorFunctionScaling -> False`) and colours each facet.
+    let r = interpret(
+      "p = ParametricPlot3D[{Cos[t] Sin[q], Sin[t] Sin[q], -Cos[q]}, \
+       {t, 0, 2 Pi}, {q, 0, Pi}, Mesh -> None, \
+       ColorFunction -> (RGBColor[#4/7, #5/4, 0.3] &), \
+       ColorFunctionScaling -> False, PlotPoints -> 4]; \
+       Take[p[[1, 2]], {2, 3}]",
+    )
+    .unwrap();
+    assert_eq!(
+      r,
+      "{{RGBColor[0.14901960784313725, 0.12941176470588237, 0.30196078431372547], Polygon[{1, 5, 6, 2}]}, {RGBColor[0.14901960784313725, 0.39215686274509803, 0.30196078431372547], Polygon[{2, 6, 7, 3}]}}"
+    );
+  }
+
+  #[test]
+  fn parametric_plot3d_scaled_color_function_gets_unit_arguments() {
+    clear_state();
+    // Scaled arguments stay in 0..1, so every facet's red channel is too.
+    let r = interpret(
+      "p = ParametricPlot3D[{3 Cos[t], 3 Sin[t], u}, {t, 0, 2 Pi}, {u, 5, 9}, \
+       ColorFunction -> (RGBColor[#4, #5, #3] &), PlotPoints -> 3]; \
+       Cases[p[[1, 2]], RGBColor[r_, g_, b_] /; 0 <= r <= 1 && 0 <= g <= 1 \
+       && 0 <= b <= 1, Infinity] // Length",
+    )
+    .unwrap();
+    assert_eq!(r, "4");
+  }
+
+  #[test]
+  fn graphics_complex_vertex_colors_color_polygons_in_3d() {
+    clear_state();
+    // A stored complex colours its facets by their vertices' `VertexColors`
+    // (given as bare `{r, g, b}` triples too) instead of the default fill.
+    for colors in [
+      "{Red, Green, Blue, Yellow}",
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 1, 0}}",
+    ] {
+      let code = format!(
+        "ExportString[Graphics3D[GraphicsComplex[{{{{0, 0, 0}}, {{1, 0, 0}}, \
+         {{0, 1, 0}}, {{0, 0, 1}}}}, Polygon[{{{{1, 2, 3}}, {{1, 2, 4}}}}], \
+         VertexColors -> {colors}]], \"SVG\"]"
+      );
+      let svg = interpret(&code).unwrap();
+      assert!(svg.contains("fill=\"rgb(115,115,0)\""), "{svg}");
+    }
   }
 }

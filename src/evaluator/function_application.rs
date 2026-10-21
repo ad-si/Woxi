@@ -2140,7 +2140,7 @@ pub fn apply_curried_call(
       name,
       args: func_args,
     } if name == "InterpolatingFunction"
-      && (2..=4).contains(&func_args.len()) =>
+      && (2..=5).contains(&func_args.len()) =>
     {
       // InterpolatingFunction[domain, data][x] — interpolate at x
       crate::functions::ode_ast::evaluate_interpolating_function(

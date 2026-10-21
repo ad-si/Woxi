@@ -5077,6 +5077,20 @@ fn frame_labelled_svg(
 
 /// MatrixPlot[matrix] - like ArrayPlot with automatic color scaling
 pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Options that choose how cells are colored or captioned are handled by
+  // the one canonical grid renderer, ArrayPlot.
+  let styled = crate::functions::graphics::splice_option_lists(args)
+    .iter()
+    .skip(1)
+    .any(|opt| {
+      matches!(opt, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n)
+          if matches!(n.as_str(),
+            "ColorFunction" | "ColorRules" | "PlotLabel" | "Mesh")))
+    });
+  if styled {
+    return array_plot_ast(args);
+  }
   let data = evaluate_expr_to_expr(&args[0])?;
   let data = crate::functions::list_helpers_ast::densify_sparse_array(&data)
     .unwrap_or(data);
@@ -5087,25 +5101,33 @@ pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let mut matrix: Vec<Vec<f64>> = Vec::new();
+  // Entries that are themselves colors (`Pink`, `RGBColor[…]`) are drawn as
+  // given and take no part in the automatic value scaling.
+  let mut direct: Vec<Vec<Option<GfxColor>>> = Vec::new();
   let mut v_min = f64::INFINITY;
   let mut v_max = f64::NEG_INFINITY;
 
   for row in rows {
     if let Expr::List(items) = row {
-      let vals: Vec<f64> = items
-        .iter()
-        .map(|item| {
-          let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+      let mut vals = Vec::with_capacity(items.len());
+      let mut colors = Vec::with_capacity(items.len());
+      for item in items {
+        let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+        let color = parse_color(&v);
+        let val = if color.is_some() {
+          0.0
+        } else {
           try_eval_to_f64(&v).unwrap_or(0.0)
-        })
-        .collect();
-      for &v in &vals {
-        if v.is_finite() {
-          v_min = v_min.min(v);
-          v_max = v_max.max(v);
+        };
+        if color.is_none() && val.is_finite() {
+          v_min = v_min.min(val);
+          v_max = v_max.max(val);
         }
+        vals.push(val);
+        colors.push(color);
       }
       matrix.push(vals);
+      direct.push(colors);
     }
   }
 
@@ -5127,11 +5149,16 @@ pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for (i, row) in matrix.iter().enumerate() {
     for (j, &val) in row.iter().enumerate() {
-      let (r, g, b) = value_to_color(val, v_min, v_max);
+      let fill = if let Some(c) = direct[i][j] {
+        c.to_svg_rgb()
+      } else {
+        let (r, g, b) = value_to_color(val, v_min, v_max);
+        format!("rgb({r},{g},{b})")
+      };
       let sx = j as f64 * cell_w;
       let sy = i as f64 * cell_h;
       svg.push_str(&format!(
-        "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
+        "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"{fill}\" stroke=\"none\"/>\n",
         cell_w + 0.5, cell_h + 0.5
       ));
     }

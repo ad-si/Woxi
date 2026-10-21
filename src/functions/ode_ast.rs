@@ -9288,10 +9288,71 @@ fn interpolating_function_property(
 
 /// Evaluate InterpolatingFunction[domain, data][x_val]
 /// or InterpolatingFunction[domain, data, order][x_val]
+/// Rewrites the kernel's stored 1-D form `InterpolatingFunction[domain,
+/// {version, …, {npoints}, {order + 1}, …}, {grid}, {values}, {methods}]`
+/// (what `Save` / a notebook's saved definitions hold) into the
+/// `InterpolatingFunction[domain, {{x, y}, …}, order]` form evaluated here.
+/// `values` is either a plain list or `{Developer`PackedArrayForm, offsets,
+/// {y, …}}`. Returns `None` for anything that is not that exact shape.
+fn kernel_interpolating_function_to_pairs(
+  func_args: &[Expr],
+) -> Option<Vec<Expr>> {
+  let [domain, Expr::List(info), Expr::List(grids), values, _] = func_args
+  else {
+    return None;
+  };
+  let Expr::List(domain_ranges) = domain else {
+    return None;
+  };
+  let [Expr::List(xs)] = grids.as_slice() else {
+    return None;
+  };
+  if domain_ranges.len() != 1 {
+    return None;
+  }
+  let ys = match values {
+    Expr::List(items) => match items.as_slice() {
+      [Expr::Identifier(tag), _, Expr::List(ys)]
+        if tag == "Developer`PackedArrayForm" =>
+      {
+        ys.clone()
+      }
+      _ => items.clone(),
+    },
+    _ => return None,
+  };
+  if xs.len() != ys.len() || xs.len() < 2 {
+    return None;
+  }
+  let order = match info.get(4) {
+    Some(Expr::List(o)) => match o.as_slice() {
+      [Expr::Integer(k)] if *k >= 2 => *k - 1,
+      _ => return None,
+    },
+    _ => return None,
+  };
+  let mut out: Vec<Expr> = xs
+    .iter()
+    .zip(ys.iter())
+    .map(|(x, y)| Expr::List(vec![x.clone(), y.clone()].into()))
+    .collect();
+  out.push(Expr::Integer(order));
+  Some(out)
+}
+
 pub fn evaluate_interpolating_function(
   func_args: &[Expr],
   call_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  if func_args.len() == 5
+    && let Some(mut pairs) = kernel_interpolating_function_to_pairs(func_args)
+  {
+    let order = pairs.pop().unwrap_or(Expr::Integer(3));
+    return evaluate_interpolating_function(
+      &[func_args[0].clone(), Expr::List(pairs.into()), order],
+      call_args,
+    );
+  }
   // 2-D grid form: InterpolatingFunction[{{1,nr},{1,nc}}, grid, {orderR, orderC}].
   // The `{orderR, orderC}` list marks it as 2-D.
   if func_args.len() == 3

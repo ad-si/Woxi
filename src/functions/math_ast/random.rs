@@ -1040,6 +1040,42 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // RandomSample[<|k1 -> v1, ...|>, n] samples whole key-value pairs and
+  // returns them as an Association.
+  if let Expr::Association(pairs) = &args[0] {
+    let mut rest = args.to_vec();
+    rest[0] = Expr::List(
+      pairs
+        .iter()
+        .map(|(k, v)| Expr::Rule {
+          pattern: Box::new(k.clone()),
+          replacement: Box::new(v.clone()),
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    );
+    let sampled_expr = random_sample_ast(&rest)?;
+    return match &sampled_expr {
+      Expr::List(sampled) => {
+        let mut out = Vec::with_capacity(sampled.len());
+        for item in sampled {
+          match item {
+            Expr::Rule {
+              pattern,
+              replacement,
+            } => {
+              out
+                .push((pattern.as_ref().clone(), replacement.as_ref().clone()));
+            }
+            _ => return Ok(unevaluated("RandomSample", args)),
+          }
+        }
+        Ok(Expr::Association(out))
+      }
+      _ => Ok(unevaluated("RandomSample", args)),
+    };
+  }
+
   // Weighted form: RandomSample[weights -> values, n]. Sample without
   // replacement using the standard "exponential trick" (Efraimidis–Spirakis):
   // assign each item a key u_i^(1/w_i) where u_i ~ Uniform(0, 1), then pick

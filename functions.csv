@@ -1646,7 +1646,7 @@ TextureCoordinateFunction,Option mapping surface points to Texture image coordin
 TextCases,Extract text units of a given type from a string (Word mirrors TextWords and Sentence mirrors TextSentences; optional third arg keeps the first n),✅,pure,10.2,1644
 DirectoryName,Extract the directory name from a file path,✅,pure,3.0,1646
 DominantColors,Finds dominant colors in an image using k-means clustering,✅,pure,9.0,1646
-Multicolumn,Multi-column layout,,unevaluated,10.0,1648
+Multicolumn,Lists items down n columns; stays symbolic and is drawn as a Column or Grid in notebooks,✅,unevaluated,10.0,1648
 Record,Record data structure,,unevaluated,2.0,1648
 FlattenAt,Flatten at specific positions,✅,computation,2.0,1649
 InversePermutation,Inverse of a permutation list or Cycles object,✅,pure,8.0,1650
