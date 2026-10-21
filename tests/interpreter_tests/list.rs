@@ -104,6 +104,77 @@ mod list_threading {
       "unexpected tdlen message: {msgs:?}"
     );
   }
+
+  // Regression (nightly fuzz): three ragged lists overflowed the stack. The
+  // pairwise fold left `{a} + {b, c}` unevaluated, which flattened back into
+  // the three-term sum and folded into itself again.
+  #[test]
+  fn unequal_length_three_lists_plus() {
+    clear_state();
+    assert_eq!(
+      interpret("Plus[{a}, {b, c}, {d, e, f}]").unwrap(),
+      "{a} + {b, c} + {d, e, f}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert_eq!(
+      msgs,
+      vec![
+        "Thread::tdlen: Objects of unequal length in {a} + {b, c} + {d, e, f} cannot be combined."
+      ]
+    );
+    // The infix chain still combines pairwise and reports `{a} + {b, c}`
+    // first (see conformance_gaps.md), but the result is the same.
+    assert_eq!(
+      interpret("{a} + {b, c} + {d, e, f}").unwrap(),
+      "{a} + {b, c} + {d, e, f}"
+    );
+  }
+
+  #[test]
+  fn unequal_length_three_lists_times() {
+    assert_eq!(
+      interpret("{a} {b, c} {d, e, f}").unwrap(),
+      "{a}*{b, c}*{d, e, f}"
+    );
+    assert_eq!(
+      interpret("Times[{a}, {b, c}, {d, e, f}]").unwrap(),
+      "{a}*{b, c}*{d, e, f}"
+    );
+  }
+
+  #[test]
+  fn unequal_length_lists_negated_sum() {
+    assert_eq!(
+      interpret("-({a} + {b, c} + {d, e, f})").unwrap(),
+      "{-a} + {-b, -c} + {-d, -e, -f}"
+    );
+  }
+
+  // The non-list term is not broadcast into the lists before the length
+  // check, and the unevaluated sum is canonically ordered.
+  #[test]
+  fn unequal_length_lists_with_scalar_term() {
+    assert_eq!(interpret("{a} + {b, c} + d").unwrap(), "d + {a} + {b, c}");
+    assert_eq!(
+      interpret("Plus[d, {b, c}, {a}]").unwrap(),
+      "d + {a} + {b, c}"
+    );
+    assert_eq!(interpret("{b, c} + {a}").unwrap(), "{a} + {b, c}");
+  }
+
+  #[test]
+  fn unequal_length_nested_lists_plus() {
+    assert_eq!(
+      interpret("{{a}} + {{b, c}} + {{d, e, f}}").unwrap(),
+      "{{a} + {b, c} + {d, e, f}}"
+    );
+  }
+
+  #[test]
+  fn equal_length_lists_with_scalar_terms() {
+    assert_eq!(interpret("{1, 2} + {3, 4} + 5").unwrap(), "{9, 11}");
+    assert_eq!(interpret("Times[{1, 2}, x, {3, 4}]").unwrap(), "{3*x, 8*x}");
+  }
 }
 
 mod table_with_list_iterator {

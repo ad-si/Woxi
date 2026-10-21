@@ -123,7 +123,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Between" => Some((1, 2)),
     "Binarize" => Some((1, 3)),
     "BinaryDistance" => Some((2, 2)),
-    "BinCounts" => Some((1, 2)),
+    "BinCounts" => Some((1, usize::MAX)),
     "BinLists" => Some((1, 2)),
     "BernsteinBasis" => Some((3, 3)),
     "CardinalBSplineBasis" => Some((2, 2)),

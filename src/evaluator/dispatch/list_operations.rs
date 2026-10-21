@@ -2329,7 +2329,7 @@ pub fn dispatch_list_operations(
     "Counts" if args.len() == 1 => {
       return Some(list_helpers_ast::counts_ast(&args[0]));
     }
-    "BinCounts" if !args.is_empty() && args.len() <= 2 => {
+    "BinCounts" if !args.is_empty() => {
       return Some(list_helpers_ast::bin_counts_ast(args));
     }
     "BinLists" if !args.is_empty() && args.len() <= 2 => {

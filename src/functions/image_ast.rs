@@ -2081,11 +2081,103 @@ pub fn thumbnail_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 /// ImageAdjust[img] or ImageAdjust[img, contrast]
 /// Auto-rescale to [0,1]; optional contrast adjustment
+/// A scalar volume `Image3D[{{{v, …}, …}, …}, opts]`: its dimensions
+/// (depth, rows, columns as nested), the values in row-major order and the
+/// trailing options. Leaves may be any exact or inexact numeric constant.
+/// `None` for anything else (stacks of images, colour volumes, …).
+fn image3d_scalar_volume(
+  e: &Expr,
+) -> Option<([usize; 3], Vec<f64>, Vec<Expr>)> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "Image3D" || args.is_empty() {
+    return None;
+  }
+  let Expr::List(planes) = &args[0] else {
+    return None;
+  };
+  let mut vals = Vec::new();
+  let mut dims = [planes.len(), 0, 0];
+  for (i, plane) in planes.iter().enumerate() {
+    let Expr::List(rows) = plane else {
+      return None;
+    };
+    if i == 0 {
+      dims[1] = rows.len();
+    } else if rows.len() != dims[1] {
+      return None;
+    }
+    for (j, row) in rows.iter().enumerate() {
+      let Expr::List(cells) = row else {
+        return None;
+      };
+      if i == 0 && j == 0 {
+        dims[2] = cells.len();
+      } else if cells.len() != dims[2] {
+        return None;
+      }
+      for c in cells {
+        vals.push(crate::functions::math_ast::try_eval_to_f64(c)?);
+      }
+    }
+  }
+  if vals.is_empty() {
+    return None;
+  }
+  Some((dims, vals, args[1..].to_vec()))
+}
+
+/// Rebuild `Image3D[volume, opts]` from row-major values.
+fn image3d_from_volume(
+  dims: [usize; 3],
+  vals: &[f64],
+  opts: Vec<Expr>,
+) -> Expr {
+  let [d0, d1, d2] = dims;
+  let volume = Expr::List(
+    (0..d0)
+      .map(|i| {
+        Expr::List(
+          (0..d1)
+            .map(|j| {
+              Expr::List(
+                (0..d2)
+                  .map(|k| Expr::Real(vals[(i * d1 + j) * d2 + k]))
+                  .collect(),
+              )
+            })
+            .collect(),
+        )
+      })
+      .collect(),
+  );
+  let mut args = vec![volume];
+  args.extend(opts);
+  Expr::FunctionCall {
+    name: "Image3D".to_string(),
+    args: args.into(),
+  }
+}
+
 pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "ImageAdjust expects 1 or 2 arguments".into(),
     ));
+  }
+  // A scalar volume is stretched to the full [0, 1] range, like a 2D image.
+  if args.len() == 1
+    && let Some((dims, vals, opts)) = image3d_scalar_volume(&args[0])
+  {
+    let lo = vals.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = vals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let scaled: Vec<f64> = if hi > lo {
+      vals.iter().map(|v| (v - lo) / (hi - lo)).collect()
+    } else {
+      vals
+    };
+    return Ok(image3d_from_volume(dims, &scaled, opts));
   }
   let coerced;
   let args: &[Expr] = if !matches!(&args[0], Expr::Image { .. })
@@ -6413,6 +6505,33 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (radius, sigma) = (axis.radius, axis.sigma);
 
   let kernel = gaussian_filter_kernel(radius, sigma);
+
+  // Scalar volume: the separable kernel runs along each of the three axes.
+  if let Some((dims, vals, opts)) = image3d_scalar_volume(&args[0]) {
+    let [d0, d1, d2] = dims;
+    let strides = [d1 * d2, d2, 1];
+    let mut cur = vals;
+    for (axis, &len) in dims.iter().enumerate() {
+      let stride = strides[axis];
+      let mut next = cur.clone();
+      for start in 0..cur.len() {
+        // Visit each line once, from its first element along `axis`.
+        if (start / stride) % len != 0 {
+          continue;
+        }
+        let line: Vec<f64> =
+          (0..len).map(|t| cur[start + t * stride]).collect();
+        let out =
+          crate::functions::math_ast::convolve_edge_padded(&line, &kernel);
+        for (t, v) in out.into_iter().enumerate() {
+          next[start + t * stride] = v;
+        }
+      }
+      cur = next;
+    }
+    debug_assert_eq!(cur.len(), d0 * d1 * d2);
+    return Ok(image3d_from_volume(dims, &cur, opts));
+  }
 
   // List input (1D).
   if let Expr::List(items) = &args[0] {

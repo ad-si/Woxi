@@ -3013,6 +3013,34 @@ The `Threaded` argument must be rank ≥ 1; a scalar inner is invalid. A
 two-argument special case was tried and reverted because it turned the
 three-argument case from garbage into a crash.
 
+### `Threaded` of a shorter list is not rejected
+
+```sh
+wolframscript -code '{1, 2} + Threaded[{1}]'
+# Threaded::thrdims … and {1, 2} + Threaded[{1}] unevaluated
+woxi eval 'Plus[{1, 2}, Threaded[{1}]]'
+# {Threaded[{2}], Threaded[{3}]}
+```
+
+The infix form emits `Thread::tdlen` instead. `Threaded[list]` must match
+the trailing dimensions of the other operand, and `try_threaded_op` does not
+check that.
+
+### An infix `Plus`/`Times` chain threads over lists pairwise
+
+```sh
+wolframscript -code 'd + {b, c} + {a}'
+# Thread::tdlen … d + {a} + {b, c}
+woxi eval 'd + {b, c} + {a}'
+# Thread::tdlen … {a} + {b + d, c + d}
+```
+
+The parser keeps `a + b + c` as a chain of `BinaryOp` nodes and
+`evaluate_binary_op_chain` combines them two at a time, so `d` is broadcast
+into `{b, c}` before the length mismatch with `{a}` is seen. `Plus[d, {b, c},
+{a}]` threads all three at once and matches. Fixing it means making the chain
+evaluator n-ary for the Flat heads.
+
 ### `ReplaceAll` head replacement in two exotic corners
 
 - Association under a symbol blank: Woxi descends into keys and values keeping

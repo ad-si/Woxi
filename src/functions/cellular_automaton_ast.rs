@@ -187,9 +187,9 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// `CellularAutomaton[{f, {}, neighborhood}, init, steps]` — a rule given as
 /// a function of the list of neighbor values (in offset order). The cells are
-/// arbitrary expressions and the init is cyclic: a flat list for a 1D
-/// neighborhood, a matrix for a 2D one. `None` when the rule is not of this
-/// form; background inits are left unevaluated.
+/// arbitrary expressions and the init is cyclic (a flat list for a 1D
+/// neighborhood, a matrix for a 2D one) or `{cells, background}`. `None` when
+/// the rule is not of this form.
 fn function_rule_automaton(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
@@ -210,12 +210,23 @@ fn function_rule_automaton(
   let Expr::List(rows_in) = &args[1] else {
     return keep();
   };
-  let matrix_init = rows_in.iter().all(|r| matches!(r, Expr::List(_)));
-  if rows_in.is_empty() || matrix_init != nbhd.two_d {
+  // `{cells, bg}` — the cells sit on an infinite background that evolves
+  // too (every background cell sees an all-background neighborhood).
+  let (cells_in, background): (&[Expr], Option<Expr>) = match rows_in.as_ref() {
+    [cells @ Expr::List(_), bg] if !matches!(bg, Expr::List(_)) => {
+      let Expr::List(cells) = cells else {
+        unreachable!()
+      };
+      (cells.as_ref(), Some(bg.clone()))
+    }
+    _ => (rows_in.as_ref(), None),
+  };
+  let matrix_init = cells_in.iter().all(|r| matches!(r, Expr::List(_)));
+  if cells_in.is_empty() || matrix_init != nbhd.two_d {
     return keep();
   }
-  let mut grid: Vec<Vec<Expr>> = if nbhd.two_d {
-    rows_in
+  let init_rows: Vec<Vec<Expr>> = if nbhd.two_d {
+    cells_in
       .iter()
       .map(|r| match r {
         Expr::List(cells) => cells.to_vec(),
@@ -223,15 +234,25 @@ fn function_rule_automaton(
       })
       .collect()
   } else {
-    vec![rows_in.to_vec()]
+    vec![cells_in.to_vec()]
   };
-  let width = grid[0].len();
-  if width == 0 || grid.iter().any(|r| r.len() != width) {
+  let (init_h, init_w) = (init_rows.len(), init_rows[0].len());
+  if init_w == 0 || init_rows.iter().any(|r| r.len() != init_w) {
     return keep();
   }
-  let height = grid.len();
   let t_max = *steps.times.last()?;
-  if height.checked_mul(width)?.checked_mul(t_max.max(1))? > 10_000_000 {
+  let has_bg = background.is_some();
+  let row_axis =
+    axis_layout(has_bg, init_h, nbhd.offsets.iter().map(|o| o.0), t_max)?;
+  let col_axis =
+    axis_layout(has_bg, init_w, nbhd.offsets.iter().map(|o| o.1), t_max)?;
+  let (height, width) = (row_axis.len, col_axis.len);
+  if height
+    .checked_mul(width)?
+    .checked_mul(t_max.max(1))?
+    .checked_mul(nbhd.offsets.len().max(1))?
+    > 10_000_000
+  {
     return keep();
   }
   let (rows_win, cols_win) = match (steps.windows.as_slice(), nbhd.two_d) {
@@ -242,11 +263,25 @@ fn function_rule_automaton(
     _ => return keep(),
   };
 
-  let mut snapshots = Vec::new();
+  let mut bg = background.clone().unwrap_or(Expr::Integer(0));
+  let mut grid: Vec<Vec<Expr>> = if has_bg {
+    let mut grid = vec![vec![bg.clone(); width]; height];
+    for (i, row) in init_rows.iter().enumerate() {
+      for (j, cell) in row.iter().enumerate() {
+        grid[row_axis.origin as usize + i][col_axis.origin as usize + j] =
+          cell.clone();
+      }
+    }
+    grid
+  } else {
+    init_rows
+  };
+
+  let mut snapshots: Vec<(Vec<Vec<Expr>>, Expr)> = Vec::new();
   let mut next_time = 0;
   for t in 0..=t_max {
     if steps.times.get(next_time) == Some(&t) {
-      snapshots.push(grid.clone());
+      snapshots.push((grid.clone(), bg.clone()));
       next_time += 1;
     }
     if t == t_max {
@@ -260,9 +295,18 @@ fn function_rule_automaton(
           .offsets
           .iter()
           .map(|&(dr, dc)| {
-            grid[(x + dr).rem_euclid(height as i64) as usize]
-              [(y + dc).rem_euclid(width as i64) as usize]
-              .clone()
+            let (r, c) = (x + dr, y + dc);
+            if has_bg {
+              if r < 0 || c < 0 || r >= height as i64 || c >= width as i64 {
+                bg.clone()
+              } else {
+                grid[r as usize][c as usize].clone()
+              }
+            } else {
+              grid[r.rem_euclid(height as i64) as usize]
+                [c.rem_euclid(width as i64) as usize]
+                .clone()
+            }
           })
           .collect();
         match crate::evaluator::apply_function_to_arg(
@@ -276,24 +320,67 @@ fn function_rule_automaton(
       next.push(row);
     }
     grid = next;
+    if has_bg {
+      let all_bg = Expr::List(vec![bg.clone(); nbhd.offsets.len()].into());
+      bg = match crate::evaluator::apply_function_to_arg(func, &all_bg) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+    }
   }
 
-  let indices = |window: Window, len: usize| -> Vec<usize> {
+  // Auto windows keep the rows/columns holding a non-background cell at a
+  // returned step; cyclic inits keep their full size.
+  let differs = |cell: &Expr, bg: &Expr| {
+    crate::syntax::expr_to_string(cell) != crate::syntax::expr_to_string(bg)
+  };
+  let row_active = |r: usize| {
+    snapshots
+      .iter()
+      .any(|(g, bg)| g[r].iter().any(|c| differs(c, bg)))
+  };
+  let col_active = |c: usize| {
+    snapshots
+      .iter()
+      .any(|(g, bg)| g.iter().any(|row| differs(&row[c], bg)))
+  };
+  let indices = |window: Window,
+                 axis: &AxisLayout,
+                 active: &dyn Fn(usize) -> bool|
+   -> Vec<i64> {
     match window {
       Window::Range(from, to, step) => (from..=to)
         .step_by(step)
-        .map(|off| off.rem_euclid(len as i64) as usize)
+        .map(|off| axis.origin + off)
         .collect(),
-      Window::Auto | Window::All => (0..len).collect(),
+      Window::Auto if has_bg => {
+        let first = (0..axis.len).find(|&i| active(i)).unwrap_or(0);
+        let last = (0..axis.len).rfind(|&i| active(i)).unwrap_or(0);
+        (first..=last).map(|i| i as i64).collect()
+      }
+      Window::Auto | Window::All => (0..axis.len as i64).collect(),
     }
   };
-  let row_idx = indices(rows_win, height);
-  let col_idx = indices(cols_win, width);
+  let row_idx = indices(rows_win, &row_axis, &row_active);
+  let col_idx = indices(cols_win, &col_axis, &col_active);
   let mut states: Vec<Expr> = snapshots
     .iter()
-    .map(|g| {
-      let pick = |r: usize| -> Expr {
-        Expr::List(col_idx.iter().map(|&c| g[r][c].clone()).collect())
+    .map(|(g, bg)| {
+      let cell = |r: i64, c: i64| -> Expr {
+        if has_bg {
+          if r < 0 || r >= height as i64 || c < 0 || c >= width as i64 {
+            bg.clone()
+          } else {
+            g[r as usize][c as usize].clone()
+          }
+        } else {
+          g[r.rem_euclid(height as i64) as usize]
+            [c.rem_euclid(width as i64) as usize]
+            .clone()
+        }
+      };
+      let pick = |r: i64| -> Expr {
+        Expr::List(col_idx.iter().map(|&c| cell(r, c)).collect())
       };
       if nbhd.two_d {
         Expr::List(row_idx.iter().map(|&r| pick(r)).collect())

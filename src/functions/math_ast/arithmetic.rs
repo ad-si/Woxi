@@ -1039,35 +1039,10 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if has_list && flat_args.len() == 1 {
     return Ok(flat_args[0].clone());
   }
-  if has_list && flat_args.len() > 2 {
-    // Threading is pairwise: fold the terms left to right.
-    let mut acc = flat_args[0].clone();
-    for term in &flat_args[1..] {
-      acc = plus_ast(&[acc, term.clone()])?;
-    }
-    return Ok(acc);
-  }
   if has_list {
-    let result = thread_binary_over_lists(&flat_args, |a, b| {
-      // Delegate to plus_ast so rationals, bigints, symbolic terms,
-      // etc. are handled consistently with the non-list path.
-      plus_ast(&[a.clone(), b.clone()])
-    });
-    // Adding two lists of unequal length surfaces as an internal error;
-    // turn it into Thread::tdlen and leave `a + b` unevaluated, matching the
-    // infix path and wolframscript (e.g. Plus[{1, 2}, {3, 4, 5}]).
-    if let Err(InterpreterError::EvaluationError(ref m)) = result
-      && m == "Lists must have the same length"
-      && flat_args.len() == 2
-    {
-      let unevaluated = plus2(flat_args[0].clone(), flat_args[1].clone());
-      crate::emit_message(&format!(
-        "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-        expr_to_string(&unevaluated)
-      ));
-      return Ok(unevaluated);
-    }
-    return result;
+    // Delegate each element sum to plus_ast so rationals, bigints, symbolic
+    // terms, etc. are handled consistently with the non-list path.
+    return thread_listable_over_lists("Plus", &flat_args, plus_ast);
   }
 
   // Check if any argument needs BigInt arithmetic (BigInteger or large Integer exceeding f64 precision)
@@ -8268,6 +8243,27 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return times_ast(&flat);
   }
 
+  // An exact zero absorbs approximate numbers: `0*1.5` is the exact `0`,
+  // not `0.`. Lists (which thread) and infinite / indeterminate factors
+  // (where `0*x` is not 0) are left to the general path.
+  if args.iter().any(|a| matches!(a, Expr::Integer(0)))
+    && args
+      .iter()
+      .any(|a| matches!(a, Expr::Real(_) | Expr::BigFloat(..)))
+    && !args.iter().any(|a| match a {
+      Expr::List(_) => true,
+      Expr::Identifier(n) => {
+        matches!(n.as_str(), "Infinity" | "ComplexInfinity" | "Indeterminate")
+      }
+      Expr::FunctionCall { name, .. } => {
+        matches!(name.as_str(), "DirectedInfinity" | "Indeterminate")
+      }
+      _ => false,
+    })
+  {
+    return Ok(Expr::Integer(0));
+  }
+
   // Exact numeric product: when every factor is an Integer, BigInteger, or
   // Rational, multiply them with BigInt-aware Coeff arithmetic and return a
   // single reduced number. Without this, a product of rationals whose parts
@@ -8956,11 +8952,9 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Check for list threading
   let has_list = args.iter().any(|a| matches!(a, Expr::List(_)));
   if has_list {
-    return thread_binary_over_lists(args, |a, b| {
-      // Delegate to times_ast so rationals, bigints, symbolic factors,
-      // etc. are handled consistently with the non-list path.
-      times_ast(&[a.clone(), b.clone()])
-    });
+    // Delegate each element product to times_ast so rationals, bigints,
+    // symbolic factors, etc. are handled consistently with the non-list path.
+    return thread_listable_over_lists("Times", args, times_ast);
   }
 
   // Times is exempt from the dispatch Orderless pre-sort so the machine
@@ -13735,6 +13729,57 @@ fn negative_base_rational_power(
     1 => Ok(factors.remove(0)),
     _ => times_ast(&factors),
   }
+}
+
+/// Thread a Listable, Orderless head (`Plus`, `Times`) over its list
+/// arguments in one step, the way the Wolfram Language threads a Listable
+/// function: element `i` of the result is `head` applied to element `i` of
+/// every list argument, with the non-list arguments broadcast unchanged.
+///
+/// Lists of unequal length raise `Thread::tdlen` and leave the whole call
+/// unevaluated (in canonical order, as an Orderless head prints). Folding
+/// the arguments pairwise instead recursed without bound: the unevaluated
+/// `{a} + {b, c}` flattened back into `{a} + {b, c} + {d, e, f}`, which
+/// folded into itself again.
+fn thread_listable_over_lists<F>(
+  head: &str,
+  args: &[Expr],
+  op: F,
+) -> Result<Expr, InterpreterError>
+where
+  F: Fn(&[Expr]) -> Result<Expr, InterpreterError>,
+{
+  let mut lengths = args.iter().filter_map(|a| match a {
+    Expr::List(items) => Some(items.len()),
+    _ => None,
+  });
+  let Some(len) = lengths.next() else {
+    return op(args);
+  };
+  if lengths.any(|l| l != len) {
+    crate::emit_message(&format!(
+      "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
+      expr_to_string(&unevaluated(head, args))
+    ));
+    let mut sorted = args.to_vec();
+    sorted.sort_by(|a, b| {
+      crate::functions::list_helpers_ast::compare_exprs(b, a).cmp(&0)
+    });
+    return Ok(unevaluated(head, &sorted));
+  }
+  let results: Result<Vec<Expr>, _> = (0..len)
+    .map(|i| {
+      let elements: Vec<Expr> = args
+        .iter()
+        .map(|a| match a {
+          Expr::List(items) => items[i].clone(),
+          scalar => scalar.clone(),
+        })
+        .collect();
+      op(&elements)
+    })
+    .collect();
+  Ok(Expr::List(results?.into()))
 }
 
 /// Thread a binary operation over lists

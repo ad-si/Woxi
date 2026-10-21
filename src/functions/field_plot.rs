@@ -767,7 +767,26 @@ fn push_bar_legend(
   (v_min, v_max): (f64, f64),
 ) {
   let sf = RESOLUTION_SCALE as f64;
-  let new_w = opts.svg_width + BAR_LEGEND_STRIP;
+  // Label every other level once there are too many to fit.
+  let stride = levels.len().div_ceil(8).max(1);
+  let labels: Vec<(f64, String)> = levels
+    .iter()
+    .step_by(stride)
+    .map(|&l| (l, crate::functions::plot::format_tick(l)))
+    .collect();
+  // The strip must reach past the widest label; a tight right margin (an
+  // explicit `ImagePadding`) would otherwise clip it at the canvas edge.
+  let widest = labels
+    .iter()
+    .map(|(_, t)| t.chars().count())
+    .max()
+    .unwrap_or(0) as f64;
+  let right_margin =
+    (area.render_width as f64 - area.plot_x0 - area.plot_w) / sf;
+  let needed = 27.0 + 13.0 + 6.0 + widest * 14.0 * 0.6 + 4.0;
+  let strip =
+    BAR_LEGEND_STRIP.max((needed - right_margin).ceil().max(0.0) as u32);
+  let new_w = opts.svg_width + strip;
   let new_render_w = new_w * RESOLUTION_SCALE;
   let render_h = opts.svg_height * RESOLUTION_SCALE;
   // The background rectangle spans the old canvas; stretch it first.
@@ -820,15 +839,13 @@ fn push_bar_legend(
     "<rect x=\"{bar_x:.1}\" y=\"{bar_y:.1}\" width=\"{bar_w:.1}\" height=\"{bar_h:.1}\" fill=\"none\" stroke=\"rgb(110,110,110)\" stroke-width=\"{:.1}\"/>\n",
     0.8 * sf
   ));
-  // Label every other level once there are too many to fit.
-  let stride = levels.len().div_ceil(8).max(1);
-  for &level in levels.iter().step_by(stride) {
+  for (level, text) in &labels {
     svg.push_str(&format!(
       "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{:.0}\" fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
       bar_x + bar_w + 6.0 * sf,
-      bar_y + bar_h * (1.0 - frac(level)),
+      bar_y + bar_h * (1.0 - frac(*level)),
       sf * 14.0,
-      crate::functions::plot::format_tick(level)
+      text
     ));
   }
 }

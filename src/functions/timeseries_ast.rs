@@ -1216,10 +1216,13 @@ fn resample_times(
   let count = ((t1 - t0) / dt + 1e-9).floor() as usize;
   let mut times = Vec::with_capacity(count + 1);
   for k in 0..=count {
-    times.push(
-      arith("Times", &Expr::Integer(k as i128), &step)
-        .and_then(|offset| arith("Plus", &start, &offset))?,
-    );
+    // An exact `0*step` would vanish, but a Real step keeps the whole
+    // time axis approximate, first stamp included.
+    let offset = match &step {
+      Expr::Real(_) if k == 0 => Expr::Real(0.0),
+      _ => arith("Times", &Expr::Integer(k as i128), &step)?,
+    };
+    times.push(arith("Plus", &start, &offset)?);
   }
   Ok(Some(times))
 }
