@@ -38381,4 +38381,35 @@ mod surface_vertex_colors {
       assert!(svg.contains("fill=\"rgb(115,115,0)\""), "{svg}");
     }
   }
+
+  #[test]
+  fn text_past_automatic_range_keeps_label_inside_canvas() {
+    clear_state();
+    // A label centred beyond the primitives' extent widens the picture
+    // instead of being cut off at the left edge.
+    for (x, side) in [(-0.4, "left"), (1.4, "right")] {
+      let svg = interpret(&format!(
+        "ExportString[Graphics[{{Rectangle[{{0, 0}}, {{1, 2}}], \
+         Text[\"a fairly long label\", {{{x}, 1}}]}}], \"SVG\"]"
+      ))
+      .unwrap();
+      let width: f64 = svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .unwrap();
+      let tx: f64 = svg
+        .split("<text x=\"")
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .unwrap();
+      // 18 characters at the default 14 pt are about 150 px wide.
+      assert!(
+        tx - 75.0 >= -0.5 && tx + 75.0 <= width + 0.5,
+        "{side} label cut off: x = {tx}, width = {width}"
+      );
+    }
+  }
 }

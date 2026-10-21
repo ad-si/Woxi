@@ -679,7 +679,7 @@ impl StyleState {
 
 // ── Bounding Box ─────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct BBox {
   x_min: f64,
   x_max: f64,
@@ -10351,6 +10351,62 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       bb.y_min = lo;
       bb.y_max = hi;
     }
+  }
+
+  // A label that sticks out past an automatically-sized range is not cut
+  // off in Wolfram: the picture grows to hold it. Its width is only known
+  // in pixels, so the range is widened by the label's share of the canvas.
+  for _ in 0..3 {
+    let kx = svg_width as f64 / bb.width();
+    let ky = if explicit_height {
+      svg_height as f64 / bb.height()
+    } else {
+      kx
+    };
+    let k = if aspect_ratio_full {
+      None
+    } else {
+      Some(kx.min(ky))
+    };
+    let (kx, ky) = k.map_or((kx, ky), |k| (k, k));
+    if !(kx.is_finite() && ky.is_finite() && kx > 0.0 && ky > 0.0) {
+      break;
+    }
+    let mut grown = bb;
+    for prim in &primitives {
+      let Primitive::TextPrim {
+        text,
+        x,
+        y,
+        offset,
+        scaled: false,
+        direction: None,
+        glyph_map: None,
+        style,
+        ..
+      } = prim
+      else {
+        continue;
+      };
+      let fs = style.font_size;
+      let longest = text.split('\n').map(|l| l.chars().count()).max();
+      let text_w = longest.unwrap_or(0) as f64 * fs * 0.6;
+      let text_h = text.split('\n').count() as f64 * fs;
+      let cx = x - offset.0 * text_w / 2.0 / kx;
+      let cy = y - offset.1 * text_h / 2.0 / ky;
+      if plot_range_x.is_none() {
+        grown.x_min = grown.x_min.min(cx - text_w / 2.0 / kx);
+        grown.x_max = grown.x_max.max(cx + text_w / 2.0 / kx);
+      }
+      if plot_range_y.is_none() {
+        grown.y_min = grown.y_min.min(cy - text_h / 2.0 / ky);
+        grown.y_max = grown.y_max.max(cy + text_h / 2.0 / ky);
+      }
+    }
+    if grown == bb {
+      break;
+    }
+    bb = grown;
   }
 
   // The plot range is settled, so the Prolog's and Epilog's own primitives
