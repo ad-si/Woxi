@@ -4554,6 +4554,27 @@ mod plot3d {
       assert_eq!(result, "Graphics3D");
     }
 
+    /// A curve that winds many times over a long parameter range is refined
+    /// where the polyline turns sharply, instead of being drawn from a
+    /// fixed 200 samples (a few points per turn, i.e. a coarse polygon).
+    #[test]
+    fn parametric_curve_refines_fast_oscillation() {
+      clear_state();
+      let result = interpret(
+        "Length[Cases[ParametricPlot3D[{Cos[t], Sin[t], t/50}, \
+         {t, 0, 150}], Line[p_] :> p, Infinity][[1]]] > 600",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+      // A smooth curve keeps the plain uniform sampling.
+      let result = interpret(
+        "Length[Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}], \
+         Line[p_] :> p, Infinity][[1]]]",
+      )
+      .unwrap();
+      assert_eq!(result, "201");
+    }
+
     /// Regression: `ColorFunction` on a `ParametricPlot3D` curve was dropped,
     /// so the curve was always drawn in one flat color instead of being
     /// colored along its length.
