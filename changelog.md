@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `Disk[c, Scaled[r]]` ignored the scaled radius and drew a unit-radius disk.
+    The radius is now `r` times the plot width. Found via the scheduled
+    Wolfram Demonstrations check opening "Bounce Time for a Bouncing Ball",
+    whose Manipulate marks the ball with a `Scaled[.01]` disk.
 - A `Tooltip[graphic, hint]` inside a `Column` (or other layout) was typeset
     as the `-Graphics-` placeholder instead of drawing the picture. It now
     draws like its content. Found via the scheduled Wolfram Demonstrations

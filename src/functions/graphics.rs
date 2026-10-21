@@ -803,6 +803,14 @@ enum Primitive {
     ry: f64,
     style: StyleState,
   },
+  /// `Disk[c, Scaled[r]]`: a round disk whose radius is the fraction `frac`
+  /// of the plot width, known only once the plot range is.
+  ScaledDisk {
+    cx: f64,
+    cy: f64,
+    frac: f64,
+    style: StyleState,
+  },
   DiskSector {
     cx: f64,
     cy: f64,
@@ -948,6 +956,7 @@ impl Primitive {
       | Self::Line { style, .. }
       | Self::CircleArc { style, .. }
       | Self::Disk { style, .. }
+      | Self::ScaledDisk { style, .. }
       | Self::DiskSector { style, .. }
       | Self::RectPrim { style, .. }
       | Self::PolygonPrim { style, .. }
@@ -3239,6 +3248,20 @@ fn parse_disk(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   } else {
     expr_to_point(&args[0]).unwrap_or((0.0, 0.0))
   };
+  if let Some(Expr::FunctionCall { name, args: r }) = args.get(1)
+    && name == "Scaled"
+    && r.len() == 1
+    && args.len() == 2
+    && let Some(frac) = expr_to_f64(&r[0])
+  {
+    prims.push(Primitive::ScaledDisk {
+      cx,
+      cy,
+      frac,
+      style: style.clone(),
+    });
+    return;
+  }
   let (rx, ry) = if args.len() >= 2 {
     if let Some((a, b)) = expr_to_point(&args[1]) {
       (a, b)
@@ -6009,6 +6032,9 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
       bb.include_point(cx - rx, cy - ry);
       bb.include_point(cx + rx, cy + ry);
     }
+    Primitive::ScaledDisk { cx, cy, .. } => {
+      bb.include_point(*cx, *cy);
+    }
     // A marker is a screen-space icon: only its anchor point occupies data
     // space.
     Primitive::MarkerPrim { x, y, .. } => {
@@ -6315,6 +6341,20 @@ fn rotate_primitive(
   // Rotate a direction vector (no translation).
   let rv = |x: f64, y: f64| (x * cos - y * sin, x * sin + y * cos);
   match prim {
+    Primitive::ScaledDisk {
+      cx,
+      cy,
+      frac,
+      style,
+    } => {
+      let (nx, ny) = rp(*cx, *cy);
+      Primitive::ScaledDisk {
+        cx: nx,
+        cy: ny,
+        frac: *frac,
+        style: style.clone(),
+      }
+    }
     // An inset keeps its own orientation and size; only its anchor moves.
     Primitive::InsetGraphic {
       svg,
@@ -6610,6 +6650,17 @@ fn rotate_primitive(
 fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
   let tp = |x: f64, y: f64| (x + dx, y + dy);
   match prim {
+    Primitive::ScaledDisk {
+      cx,
+      cy,
+      frac,
+      style,
+    } => Primitive::ScaledDisk {
+      cx: cx + dx,
+      cy: cy + dy,
+      frac: *frac,
+      style: style.clone(),
+    },
     Primitive::InsetGraphic {
       svg,
       x,
@@ -6844,6 +6895,20 @@ fn scale_primitive(
     }
   };
   match prim {
+    Primitive::ScaledDisk {
+      cx,
+      cy,
+      frac,
+      style,
+    } => {
+      let (nx, ny) = sp(*cx, *cy);
+      Primitive::ScaledDisk {
+        cx: nx,
+        cy: ny,
+        frac: *frac,
+        style: style.clone(),
+      }
+    }
     Primitive::InsetGraphic {
       svg,
       x,
@@ -8679,6 +8744,24 @@ fn render_primitive(
         ));
       }
     }
+    Primitive::ScaledDisk {
+      cx,
+      cy,
+      frac,
+      style,
+    } => {
+      // A circle on screen: `frac` of the width in both directions.
+      let rx = frac * bb.width();
+      let ry = rx * (bb.height() / svg_h) / (bb.width() / svg_w);
+      let disk = Primitive::Disk {
+        cx: *cx,
+        cy: *cy,
+        rx,
+        ry,
+        style: style.clone(),
+      };
+      render_primitive(&disk, prim_index, bb, svg_w, svg_h, out);
+    }
     Primitive::Disk {
       cx,
       cy,
@@ -9904,6 +9987,9 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
       }
       Primitive::MarkerPrim { .. } => {
         // Screen-space marker icons have no box form; skip
+      }
+      Primitive::ScaledDisk { .. } => {
+        // The radius depends on the final plot range; skip
       }
     }
   }
