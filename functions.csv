@@ -1830,7 +1830,7 @@ RandomPermutation,Random permutation of n points returned as a Cycles object,✅
 TooltipDelay,Tooltip delay option,,unevaluated,7.0,1833
 FactorialMoment,Computes the r-th factorial moment of data or a distribution (mean of falling factorials),✅,pure,8.0,1836
 WatershedComponents,Watershed components,,unevaluated,8.0,1836
-ViewCenter,View center option,,unevaluated,2.0,1838
+ViewCenter,Option specifying the point of the displayed box a 3D camera looks at,✅,pure,2.0,1838
 FileType,Returns the type of a file (File Directory or None),✅,filesystem,2.0,1842
 FourierSinSeries,Fourier sine series,,unevaluated,7.0,1842
 MathieuCharacteristicA,Mathieu characteristic A,,unevaluated,3.0,1842
