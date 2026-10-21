@@ -5726,6 +5726,28 @@ fn evaluated_wrapper_svg(expr: &Expr) -> Option<String> {
   }
 }
 
+/// The text of one `Row` item that `wrap_pane_text` can re-flow — a string,
+/// a number, or either under `Style` — with the `Style` directives to put
+/// back around the pieces of it.
+fn pane_row_piece(item: &Expr) -> Option<(String, Option<Vec<Expr>>)> {
+  match item {
+    Expr::String(s) => Some((s.clone(), None)),
+    Expr::Integer(_) | Expr::Real(_) => {
+      Some((crate::syntax::expr_to_string(item), None))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let (text, inner) = pane_row_piece(&args[0])?;
+      if inner.is_some() {
+        return None;
+      }
+      Some((text, Some(args[1..].to_vec())))
+    }
+    _ => None,
+  }
+}
+
 /// A numeric `Pane` size component (`Expr::Integer`/`Expr::Real`). `None`
 /// for `Automatic`, `Full`, or anything else that leaves that dimension
 /// unconstrained, so a size like `{400, Automatic}` is left for the
@@ -5734,7 +5756,11 @@ fn evaluated_wrapper_svg(expr: &Expr) -> Option<String> {
 /// rather than running it off the edge. `content` is a `Row` of strings
 /// (optionally under `Text` and `Style`); it is re-flowed into a `Column`
 /// of lines whose length follows the font size, keeping the `Style`.
-fn wrap_pane_text(content: &Expr, width: f64, font_size: f64) -> Option<Expr> {
+pub(crate) fn wrap_pane_text(
+  content: &Expr,
+  width: f64,
+  font_size: f64,
+) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = content else {
     return None;
   };
@@ -5747,28 +5773,82 @@ fn wrap_pane_text(content: &Expr, width: f64, font_size: f64) -> Option<Expr> {
       Some(call("Style", new_args))
     }
     "Text" if args.len() == 1 => wrap_pane_text(&args[0], width, font_size),
+    // An inner size-less `Pane` (e.g. a `Switch` branch under a sized outer
+    // `Pane[Text[…], {w, h}]`) is looked through; its options are kept.
+    "Pane" if !args.is_empty() => {
+      let inner = wrap_pane_text(&args[0], width, font_size)?;
+      let mut new_args = vec![inner];
+      new_args.extend(args[1..].iter().cloned());
+      Some(call("Pane", new_args))
+    }
     "Row" if args.len() == 1 => {
       let Expr::List(items) = &args[0] else {
         return None;
       };
-      let mut text = String::new();
+      // Every character remembers which item (and so which `Style`) it
+      // came from, so the styling survives the re-flow.
+      let mut styles: Vec<Option<Vec<Expr>>> = Vec::new();
+      let mut chars: Vec<(char, usize)> = Vec::new();
       for item in items {
-        match item {
-          Expr::String(s) => text.push_str(s),
-          _ => return None,
-        }
+        let (text, directives) = pane_row_piece(item)?;
+        let idx = styles.len();
+        styles.push(directives);
+        chars.extend(text.chars().map(|c| (c, idx)));
       }
       // A glyph is about 0.6 em wide.
       let per_line = ((width / (font_size * 0.6)).floor() as usize).max(1);
-      let chars: Vec<char> = text.chars().collect();
-      if chars.len() <= per_line {
+      if chars.len() <= per_line && !chars.iter().any(|(c, _)| *c == '\n') {
         return None;
       }
-      let lines: Vec<Expr> = chars
-        .chunks(per_line)
-        .map(|c| Expr::String(c.iter().collect()))
+      let mut lines: Vec<Vec<(char, usize)>> = Vec::new();
+      for hard in chars.split(|(c, _)| *c == '\n') {
+        let mut rest = hard;
+        while rest.len() > per_line {
+          // Break after the last space that fits, else mid-word.
+          match rest[..=per_line].iter().rposition(|(c, _)| *c == ' ') {
+            Some(p) if p > 0 => {
+              lines.push(rest[..p].to_vec());
+              rest = &rest[p + 1..];
+            }
+            _ => {
+              lines.push(rest[..per_line].to_vec());
+              rest = &rest[per_line..];
+            }
+          }
+        }
+        lines.push(rest.to_vec());
+      }
+      let rows: Vec<Expr> = lines
+        .iter()
+        .map(|line| {
+          let mut pieces: Vec<Expr> = Vec::new();
+          let mut i = 0;
+          while i < line.len() {
+            let idx = line[i].1;
+            let run: String = line[i..]
+              .iter()
+              .take_while(|(_, k)| *k == idx)
+              .map(|(c, _)| *c)
+              .collect();
+            i += run.chars().count();
+            let text = Expr::String(run);
+            pieces.push(match &styles[idx] {
+              Some(d) => {
+                let mut a = vec![text];
+                a.extend(d.iter().cloned());
+                call("Style", a)
+              }
+              None => text,
+            });
+          }
+          match pieces.len() {
+            0 => Expr::String(" ".to_string()),
+            1 => pieces.remove(0),
+            _ => call1("Row", Expr::List(pieces.into())),
+          }
+        })
         .collect();
-      Some(call1("Column", Expr::List(lines.into())))
+      Some(call1("Column", Expr::List(rows.into())))
     }
     _ => None,
   }

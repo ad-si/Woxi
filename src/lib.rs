@@ -4301,6 +4301,13 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = unwrap_display_pass_through(expr);
   // `Tooltip[expr, tip]` only adds a hover label; the notebook shows `expr`.
   let expr = unwrap_tooltips(expr);
+  // Prose built from a `Row` of strings re-flows to the box width rather
+  // than running off its right edge.
+  let expr = pane_box
+    .and_then(|(w, _, _)| {
+      evaluator::dispatch::io_functions::wrap_pane_text(&expr, w, 14.0)
+    })
+    .unwrap_or(expr);
   // A grid wider than that box squeezes its automatically sized pictures
   // (a plot's legend) to fit, instead of pushing the other columns out.
   let expr = pane_box
