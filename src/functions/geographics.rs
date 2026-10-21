@@ -422,6 +422,27 @@ enum GeoRange {
   },
 }
 
+/// Requested map background (the `GeoBackground` option).
+enum GeoBackground {
+  /// Shaded land and ocean with country borders (the default).
+  Default,
+  /// Only the country borders, on a white canvas.
+  CountryBorders,
+  /// No background map at all.
+  None,
+}
+
+fn parse_geo_background(expr: &Expr) -> Option<GeoBackground> {
+  match expr {
+    Expr::String(s) if s == "CountryBorders" => {
+      Some(GeoBackground::CountryBorders)
+    }
+    Expr::Identifier(s) if s == "None" => Some(GeoBackground::None),
+    Expr::Identifier(s) if s == "Automatic" => Some(GeoBackground::Default),
+    _ => None,
+  }
+}
+
 fn parse_geo_range(expr: &Expr) -> Option<GeoRange> {
   match expr {
     Expr::String(s) | Expr::Identifier(s) => match s.as_str() {
@@ -730,6 +751,41 @@ fn render_country(
   ));
 }
 
+/// Fill a country outline opaquely with `color`, stroked by the `EdgeForm`.
+fn render_entity_polygon(
+  svg: &mut String,
+  polys: &[Polygon],
+  proj: &GeoView,
+  color: &Color,
+  edge: Option<(Option<Color>, f64)>,
+) {
+  let mut d = String::new();
+  for ring in polys.iter().flatten() {
+    for (k, (lon, lat)) in ring.iter().enumerate() {
+      let (x, y) = proj.project(*lon as f64, *lat as f64);
+      d.push_str(&format!(
+        "{} {x:.1} {y:.1} ",
+        if k == 0 { "M" } else { "L" }
+      ));
+    }
+    d.push_str("Z ");
+  }
+  if d.is_empty() {
+    return;
+  }
+  let fill = color.to_svg_rgb();
+  let stroke = match edge {
+    Some((c, w)) => format!(
+      "stroke=\"{}\" stroke-width=\"{w}\" stroke-linejoin=\"round\"",
+      c.as_ref().unwrap_or(color).to_svg_rgb()
+    ),
+    None => "stroke=\"none\"".to_string(),
+  };
+  svg.push_str(&format!(
+    "<path d=\"{d}\" fill=\"{fill}\" fill-rule=\"evenodd\" {stroke}/>\n"
+  ));
+}
+
 /// Sample a geodesic circle of radius `radius_m` meters around `(lat, lon)` as
 /// a closed list of boundary points, used by `GeoCircle` / `GeoDisk`.
 fn geo_circle_points(
@@ -849,6 +905,95 @@ fn pin_scale(point_size: Option<&Expr>) -> f64 {
 struct GeoStyle {
   color: Color,
   point_size: Option<Expr>,
+  /// The current `EdgeForm`: stroke color (`None` = the fill color) and
+  /// width in pixels. `None` draws filled polygons without an edge.
+  edge: Option<(Option<Color>, f64)>,
+}
+
+/// Parse `EdgeForm[spec]` into the edge `GeoStyle` keeps. `EdgeForm[]` and
+/// `EdgeForm[None]` turn edges off; colors and (absolute) thicknesses may be
+/// given alone, in a list or in a `Directive`.
+fn parse_edge_form(args: &[Expr], width: f64) -> Option<(Option<Color>, f64)> {
+  fn flatten<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+    match e {
+      Expr::List(items) => items.iter().for_each(|i| flatten(i, out)),
+      Expr::FunctionCall { name, args } if name == "Directive" => {
+        args.iter().for_each(|i| flatten(i, out));
+      }
+      other => out.push(other),
+    }
+  }
+  let mut directives = Vec::new();
+  for a in args {
+    flatten(a, &mut directives);
+  }
+  if directives.is_empty()
+    || directives
+      .iter()
+      .any(|d| matches!(d, Expr::Identifier(s) if s == "None"))
+  {
+    return None;
+  }
+  let mut color = None;
+  let mut thickness = 1.0;
+  for d in directives {
+    if let Some(c) = parse_color(d) {
+      color = Some(c);
+      continue;
+    }
+    // Named thicknesses (`Thin` arrives as `Thickness[Tiny]`) are absolute;
+    // numeric `Thickness[t]` is a fraction of the image width.
+    let named = |e: &Expr| match e {
+      Expr::Identifier(n) => {
+        crate::functions::graphics::symbolic_thickness(n).map(f64::abs)
+      }
+      _ => None,
+    };
+    match d {
+      Expr::FunctionCall { name, args } if args.len() == 1 => {
+        let t = match name.as_str() {
+          "Thickness" => {
+            named(&args[0]).or_else(|| expr_to_f64(&args[0]).map(|t| t * width))
+          }
+          "AbsoluteThickness" => {
+            named(&args[0]).or_else(|| expr_to_f64(&args[0]))
+          }
+          _ => None,
+        };
+        if let Some(t) = t {
+          thickness = t;
+        }
+      }
+      other => {
+        if let Some(t) = named(other) {
+          thickness = t;
+        }
+      }
+    }
+  }
+  Some((color, thickness))
+}
+
+/// The country polygons named by a `Polygon[…]` argument: one
+/// `Entity["Country", …]` or a list of them.
+fn polygon_entities(expr: &Expr) -> Vec<&'static [Polygon]> {
+  match expr {
+    Expr::List(items) => items.iter().flat_map(polygon_entities).collect(),
+    _ => entity_country_name(expr)
+      .and_then(country_polygons)
+      .into_iter()
+      .collect(),
+  }
+}
+
+/// Whether a `Polygon[…]` argument names entities rather than positions.
+fn is_entity_polygon(expr: &Expr) -> bool {
+  match expr {
+    Expr::List(items) => {
+      !items.is_empty() && items.iter().all(is_entity_polygon)
+    }
+    _ => entity_country_name(expr).is_some(),
+  }
 }
 
 /// Collect every data position (from `GeoMarker`/`Point`) in the content tree,
@@ -865,6 +1010,9 @@ fn collect_positions(expr: &Expr, out: &mut Vec<(f64, f64)>) {
         for a in args {
           collect_positions(a, out);
         }
+      }
+      "Polygon" if args.len() == 1 && is_entity_polygon(&args[0]) => {
+        collect_positions(&args[0], out);
       }
       "GeoMarker"
       | "Point"
@@ -946,6 +1094,16 @@ fn render_content(
       }
       "PointSize" | "AbsolutePointSize" if args.len() == 1 => {
         style.point_size = Some(args[0].clone());
+      }
+      "EdgeForm" => {
+        style.edge = parse_edge_form(args, proj.w);
+      }
+      // `Polygon[Entity["Country", …]]` fills the country's outline with the
+      // current color (opaque, unlike a bare entity) and the current EdgeForm.
+      "Polygon" if args.len() == 1 && is_entity_polygon(&args[0]) => {
+        for polys in polygon_entities(&args[0]) {
+          render_entity_polygon(svg, polys, proj, &style.color, style.edge);
+        }
       }
       "GeoMarker" if !args.is_empty() => {
         let scale = pin_scale(style.point_size.as_ref());
@@ -1628,6 +1786,7 @@ fn geographics_impl(
   let mut range = GeoRange::Auto;
   let mut projection = Projection::EquidistantCylindrical;
   let mut gridlines = false;
+  let mut background = GeoBackground::Default;
   for raw in opt_args {
     let opt = crate::evaluator::evaluate_expr_to_expr(raw)
       .unwrap_or_else(|_| raw.clone());
@@ -1639,16 +1798,16 @@ fn geographics_impl(
     {
       match name.as_str() {
         "ImageSize" => {
-          if let Some(w) = expr_to_f64(replacement) {
-            if w > 0.0 {
-              width = w;
-            }
-          } else if let Expr::List(items) = replacement.as_ref()
-            && !items.is_empty()
-            && let Some(w) = expr_to_f64(&items[0])
-            && w > 0.0
+          // Numbers, `{w, h}` and named sizes (`Small`, `Large`, …).
+          if let Some((w, _, _)) =
+            crate::functions::plot::parse_image_size(replacement, 360, 360)
           {
-            width = w;
+            width = w as f64;
+          }
+        }
+        "GeoBackground" => {
+          if let Some(b) = parse_geo_background(replacement) {
+            background = b;
           }
         }
         "GeoRange" => {
@@ -1704,13 +1863,19 @@ fn geographics_impl(
      <g clip-path=\"url(#geomap)\">\n"
   ));
 
-  // Ocean background.
+  // Ocean, land and border colors of the requested background (`None` draws
+  // nothing but a white canvas).
+  let (ocean, land, border) = match background {
+    GeoBackground::Default => (OCEAN_FILL, LAND_FILL, BORDER_STROKE),
+    GeoBackground::CountryBorders => ("white", "white", BORDER_STROKE),
+    GeoBackground::None => ("white", "", ""),
+  };
   svg.push_str(&format!(
-    "<rect width=\"{width:.0}\" height=\"{height:.0}\" fill=\"{OCEAN_FILL}\"/>\n"
+    "<rect width=\"{width:.0}\" height=\"{height:.0}\" fill=\"{ocean}\"/>\n"
   ));
 
   // Landmasses with country borders (even-odd fill handles lakes/holes).
-  for poly in world_polygons() {
+  for poly in world_polygons().filter(|_| !land.is_empty()) {
     let mut d = String::new();
     for ring in poly {
       for (k, (lon, lat)) in ring.iter().enumerate() {
@@ -1724,8 +1889,8 @@ fn geographics_impl(
       d.push_str("Z ");
     }
     svg.push_str(&format!(
-      "<path d=\"{d}\" fill=\"{LAND_FILL}\" fill-rule=\"evenodd\" \
-       stroke=\"{BORDER_STROKE}\" stroke-width=\"0.4\"/>\n"
+      "<path d=\"{d}\" fill=\"{land}\" fill-rule=\"evenodd\" \
+       stroke=\"{border}\" stroke-width=\"0.4\"/>\n"
     ));
   }
 
@@ -1738,6 +1903,7 @@ fn geographics_impl(
   let mut style = GeoStyle {
     color: Color::new(0.85, 0.18, 0.16),
     point_size: None,
+    edge: None,
   };
   render_content(content, &mut style, &proj, &mut svg);
 

@@ -7244,7 +7244,7 @@ fn coord_y(y: f64, bb: &BBox, svg_h: f64) -> f64 {
 /// module uses for `AbsoluteThickness`. `Thin` evaluates to
 /// `Thickness[Tiny]` and `Thick` to `Thickness[Large]`, and Wolfram
 /// strokes those 0.2 and 2 wide respectively.
-fn symbolic_thickness(name: &str) -> Option<f64> {
+pub(crate) fn symbolic_thickness(name: &str) -> Option<f64> {
   match name {
     "Tiny" | "Thin" => Some(-0.2),
     "Small" => Some(-0.5),

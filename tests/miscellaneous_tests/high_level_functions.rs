@@ -7341,6 +7341,75 @@ mod high_level_functions {
     }
 
     #[test]
+    fn test_geographics_named_imagesize() {
+      // Named sizes work like in other plots (`Large` is 480 wide).
+      let svg = interpret(
+        "ExportString[GeoGraphics[{GeoMarker[GeoPosition[{0, 0}]]}, \
+         ImageSize -> Large, GeoRange -> \"World\"], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("width=\"480\""), "Large not honored");
+      assert!(svg.contains("height=\"240\""), "height not derived");
+    }
+
+    #[test]
+    fn test_geographics_polygon_entities_with_edgeform() {
+      // `Polygon[Entity["Country", …]]` fills each country opaquely with the
+      // current color and strokes it with the current EdgeForm.
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Red, EdgeForm[{Black, Thin}], \
+         Polygon /@ (Entity[\"Country\", #] & /@ {\"Germany\", \"Austria\", \
+         \"Belgium\"})}, GeoRange -> {{45, 56}, {2, 18}}], \"SVG\"]",
+      )
+      .unwrap();
+      let filled = "fill=\"rgb(255,0,0)\" fill-rule=\"evenodd\" \
+                    stroke=\"rgb(0,0,0)\" stroke-width=\"0.2\"";
+      assert_eq!(svg.matches(filled).count(), 3, "country polygons missing");
+    }
+
+    #[test]
+    fn test_geographics_polygon_entity_without_edgeform() {
+      // Without EdgeForm the polygon has no edge; a lone entity polygon also
+      // frames the view around the country (auto GeoRange).
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Blue, Polygon[Entity[\"Country\", \
+         \"France\"]]}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains(
+          "fill=\"rgb(0,0,255)\" fill-rule=\"evenodd\" stroke=\"none\""
+        ),
+        "edgeless polygon missing"
+      );
+      let list = interpret(
+        "ExportString[GeoGraphics[{Blue, EdgeForm[None], \
+         Polygon[{Entity[\"Country\", \"France\"], \
+         Entity[\"Country\", \"Spain\"]}]}], \"SVG\"]",
+      )
+      .unwrap();
+      assert_eq!(list.matches("stroke=\"none\"").count(), 2);
+    }
+
+    #[test]
+    fn test_geographics_background_country_borders() {
+      // "CountryBorders" draws only the borders on white; None drops the map.
+      let svg = interpret(
+        "ExportString[GeoGraphics[{GeoMarker[GeoPosition[{0, 0}]]}, \
+         GeoBackground -> \"CountryBorders\"], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(!svg.contains("rgb(214,232,245)"), "ocean still shaded");
+      assert!(svg.contains("fill=\"white\" fill-rule=\"evenodd\""));
+      let none = interpret(
+        "ExportString[GeoGraphics[{GeoMarker[GeoPosition[{0, 0}]]}, \
+         GeoBackground -> None], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(!none.contains("fill-rule=\"evenodd\""), "basemap drawn");
+    }
+
+    #[test]
     fn test_geographics_bare_latlon_and_point() {
       // Bare {lat, lon} positions and Point primitives also render.
       let svg = interpret(
