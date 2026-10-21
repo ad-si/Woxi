@@ -8268,6 +8268,27 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return times_ast(&flat);
   }
 
+  // An exact zero absorbs approximate numbers: `0*1.5` is the exact `0`,
+  // not `0.`. Lists (which thread) and infinite / indeterminate factors
+  // (where `0*x` is not 0) are left to the general path.
+  if args.iter().any(|a| matches!(a, Expr::Integer(0)))
+    && args
+      .iter()
+      .any(|a| matches!(a, Expr::Real(_) | Expr::BigFloat(..)))
+    && !args.iter().any(|a| match a {
+      Expr::List(_) => true,
+      Expr::Identifier(n) => {
+        matches!(n.as_str(), "Infinity" | "ComplexInfinity" | "Indeterminate")
+      }
+      Expr::FunctionCall { name, .. } => {
+        matches!(name.as_str(), "DirectedInfinity" | "Indeterminate")
+      }
+      _ => false,
+    })
+  {
+    return Ok(Expr::Integer(0));
+  }
+
   // Exact numeric product: when every factor is an Integer, BigInteger, or
   // Rational, multiply them with BigInt-aware Coeff arithmetic and return a
   // single reduced number. Without this, a product of rationals whose parts

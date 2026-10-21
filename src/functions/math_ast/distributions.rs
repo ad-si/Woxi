@@ -13074,7 +13074,15 @@ fn histogram_pdf_cdf(
     }
     let sum = plus(terms);
     if numeric_point.is_some() {
-      eval(&sum)
+      // The bins outside the point contribute `w*0` with an approximate
+      // weight `w`; the result stays an approximate number even when every
+      // such term collapses against the exact `Boole` zeros.
+      let value = eval(&sum)?;
+      let approximate = weights.iter().any(|w| matches!(w, Expr::Real(_)));
+      Ok(match value {
+        Expr::Integer(n) if approximate => Expr::Real(n as f64),
+        other => other,
+      })
     } else {
       Ok(sum)
     }
