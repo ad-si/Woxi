@@ -755,10 +755,10 @@ mod wavelets {
   fn map_indexed_applies_to_all_coefficients() {
     assert_eq!(
       interpret(
-        "WaveletMapIndexed[#1*0 &, DiscreteWaveletTransform[{1, 2, 3, 4}]][All]"
+        "WaveletMapIndexed[Length[#1] &, DiscreteWaveletTransform[{1, 2, 3, 4}]][All]"
       )
       .unwrap(),
-      "{{0} -> {0, 0}, {1} -> {0, 0}, {0, 0} -> {0}, {0, 1} -> {0}}"
+      "{{0} -> 2, {1} -> 2, {0, 0} -> 1, {0, 1} -> 1}"
     );
   }
 
