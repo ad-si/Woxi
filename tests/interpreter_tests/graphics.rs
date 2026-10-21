@@ -27122,22 +27122,64 @@ mod manipulate {
     }
   }
 
-  /// `{u, colour}` with no explicit initial has only one possible value —
-  /// the variable is baked into the body as a fixed binding rather than
-  /// building a one-swatch control with nothing to pick between.
+  /// `{u, colour}` names no domain: the bare `{u, uinit}` form picks the
+  /// widget from the type of `uinit`, and for a colour that is the
+  /// full-gradient colour control starting on that colour — not a fixed
+  /// binding baked into the body.
   #[test]
-  fn spec_single_color_form_without_explicit_initial_stays_fixed() {
+  fn spec_single_color_form_without_explicit_initial_is_a_color_control() {
     let expr =
       interpret_to_expr("Manipulate[c, {c, RGBColor[0.49, 0, 0]}]").unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[..] {
+      [
+        ManipulateControl::Color {
+          name,
+          initial,
+          label,
+          ..
+        },
+      ] => {
+        assert_eq!(name, "c");
+        assert_eq!(initial, "RGBColor[0.49, 0, 0]");
+        // With no labelled head the variable's own name is the label.
+        assert_eq!(label, "c");
+      }
+      other => panic!("expected a colour control, got {other:?}"),
+    }
+  }
+
+  /// The same bare colour spec carrying a trailing control option
+  /// (`ImageSize -> Tiny`, the Demonstrations idiom for a compact swatch)
+  /// is still a colour control: options are stripped before the domain is
+  /// read, so they never turn the spec into a fixed binding.
+  #[test]
+  fn spec_single_color_form_with_trailing_option_is_a_color_control() {
+    let expr = interpret_to_expr(
+      "Manipulate[Graphics3D[{shade, Sphere[]}], \
+       {shade, RGBColor[0.1, 0.2, 0.9], ImageSize -> Tiny}, \
+       {{opacity, 0.5}, 0.2, 0.9, 0.1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[..] {
+      [
+        ManipulateControl::Color { name, initial, .. },
+        ManipulateControl::Continuous {
+          name: slider_name, ..
+        },
+      ] => {
+        assert_eq!(name, "shade");
+        assert_eq!(initial, "RGBColor[0.1, 0.2, 0.9]");
+        assert_eq!(slider_name, "opacity");
+      }
+      other => panic!("expected a colour control and a slider, got {other:?}"),
+    }
+    // The colour is driven by the control, so it must not be bound as a
+    // constant in the body the way a fixed value would be.
     assert!(
-      spec.controls.is_empty(),
-      "a single fixed colour is baked into the body, not a visible control: {:?}",
-      spec.controls
-    );
-    assert!(
-      spec.body_code.contains("0.49"),
-      "the fixed colour should be baked into the body: {}",
+      !spec.body_code.contains("RGBColor"),
+      "the colour must stay a live control variable: {}",
       spec.body_code
     );
   }

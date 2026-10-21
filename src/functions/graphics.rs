@@ -31612,7 +31612,10 @@ fn parse_manipulate_control(
   // a full `ColorSlider` over the whole hue gradient instead (the same
   // widget the explicit `ColorSlider`/`ColorSetter` marker produces above) —
   // there being nothing to swatch-toggle between is exactly what makes the
-  // domain "any colour" rather than "one of these two".
+  // domain "any colour" rather than "one of these two". The bare
+  // `{u, colour}` form names no domain at all: there the colour is the
+  // *initial value* of `u` (`{u, uinit}` picks the widget from the type of
+  // `uinit`), which for a colour is again that full-gradient control.
   if bounds.len() == 1
     && crate::functions::graphics::parse_color(bounds[0]).is_some()
   {
@@ -31651,17 +31654,12 @@ fn parse_manipulate_control(
       });
     }
     // With no explicit initial at all — the bare `{u, colour}` form, not the
-    // labelled triple — there is only the one literal value `colour` ever
-    // named in the spec: it is baked into the body as a fixed constant, the
-    // same as any other single-valued domain, rather than promoted to a
-    // widget.
-    let Some(init) = explicit_initial.as_ref() else {
-      return Some(ParsedControl::Fixed {
-        name,
-        value: alt_code,
-      });
+    // labelled triple — the lone colour is what `u` starts on, so the widget
+    // is the same full-gradient colour control opened on that colour.
+    let initial = match explicit_initial.as_ref() {
+      Some(init) => manipulate_value_to_input_form(init),
+      None => manipulate_value_to_input_form(bounds[0]),
     };
-    let initial = manipulate_value_to_input_form(init);
     return Some(ParsedControl::Visible {
       control: ManipulateControl::Color {
         name,
