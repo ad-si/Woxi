@@ -4616,9 +4616,14 @@ fn collect_3d_primitives(
             style.texture_coords = parse_texture_coords3d(&args[1..])
               .filter(|c| c.len() == pts.len())
               .map(std::sync::Arc::new);
+            let (points, holes) = if style.texture_coords.is_some() {
+              (pts, Vec::new())
+            } else {
+              split_nested_loops(pts)
+            };
             prims.push(Primitive3D::Polygon3D {
-              points: pts,
-              holes: Vec::new(),
+              points,
+              holes,
               style,
             });
           } else if let Some((outer, holes)) =
@@ -5366,6 +5371,81 @@ fn collect_raster3d(
       }
     }
   }
+}
+
+/// Split a polygon whose point list revisits a vertex into its closed
+/// loops (`{a, b, c, a, d, e, f, d}` is the loops `a b c` and `d e f`).
+/// Wolfram fills such a polygon with the even-odd rule, so a loop lying
+/// inside the first one is a hole; any loop that does not is kept as part
+/// of the outline, leaving the polygon untouched.
+fn split_nested_loops(
+  points: Vec<Point3D>,
+) -> (Vec<Point3D>, Vec<Vec<Point3D>>) {
+  let same = |a: &Point3D, b: &Point3D| {
+    (a.x - b.x).abs() < 1e-12
+      && (a.y - b.y).abs() < 1e-12
+      && (a.z - b.z).abs() < 1e-12
+  };
+  let mut loops: Vec<Vec<Point3D>> = Vec::new();
+  let mut current: Vec<Point3D> = Vec::new();
+  for p in &points {
+    if let Some(start) = current.iter().position(|q| same(q, p)) {
+      // Back at an earlier vertex: the points since then form a loop.
+      let ring = current.split_off(start);
+      if ring.len() >= 3 {
+        loops.push(ring);
+      }
+      current.push(*p);
+    } else {
+      current.push(*p);
+    }
+  }
+  if current.len() >= 3 {
+    loops.push(current);
+  }
+  if loops.len() < 2 {
+    return (points, Vec::new());
+  }
+  // Drop the axis the outer loop's normal points along; containment is
+  // then a 2D ray cast.
+  let outer = &loops[0];
+  let mut n = [0.0f64; 3];
+  for i in 0..outer.len() {
+    let a = outer[i];
+    let b = outer[(i + 1) % outer.len()];
+    n[0] += (a.y - b.y) * (a.z + b.z);
+    n[1] += (a.z - b.z) * (a.x + b.x);
+    n[2] += (a.x - b.x) * (a.y + b.y);
+  }
+  let drop = (0..3)
+    .max_by(|&i, &j| n[i].abs().total_cmp(&n[j].abs()))
+    .unwrap_or(2);
+  let flat = |p: &Point3D| match drop {
+    0 => (p.y, p.z),
+    1 => (p.x, p.z),
+    _ => (p.x, p.y),
+  };
+  let inside = |ring: &[Point3D], p: &Point3D| {
+    let (px, py) = flat(p);
+    let mut hit = false;
+    for i in 0..ring.len() {
+      let (x1, y1) = flat(&ring[i]);
+      let (x2, y2) = flat(&ring[(i + 1) % ring.len()]);
+      if (y1 > py) != (y2 > py) && px < (x2 - x1) * (py - y1) / (y2 - y1) + x1 {
+        hit = !hit;
+      }
+    }
+    hit
+  };
+  if !loops[1..]
+    .iter()
+    .all(|l| l.iter().all(|p| inside(&loops[0], p)))
+  {
+    return (points, Vec::new());
+  }
+  let mut it = loops.into_iter();
+  let outer = it.next().unwrap_or_default();
+  (outer, it.collect())
 }
 
 /// Whether a polygon's corners all turn the same way, so a fan from the
