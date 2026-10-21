@@ -14648,6 +14648,16 @@ fn contains_visible_style(e: &Expr) -> bool {
       Some(Expr::List(items)) => items.iter().any(contains_visible_style),
       _ => false,
     },
+    // `Subscript[Style["T", Italic], "r"]`: the script's base (or the
+    // script itself) carries the styling.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Subscript" | "Superscript" | "Subsuperscript"
+      ) =>
+    {
+      args.iter().any(contains_visible_style)
+    }
     _ => false,
   }
 }
