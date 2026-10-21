@@ -6160,6 +6160,25 @@ mod plot3d {
       );
     }
 
+    // A `Tube` inside a GraphicsComplex takes its centre lines as vertex
+    // indices, so it must draw exactly like the same tubes on explicit
+    // coordinates instead of vanishing.
+    #[test]
+    fn graphics3d_complex_tube_resolves_vertex_indices() {
+      let indexed = interpret(
+        "ExportString[Graphics3D[GraphicsComplex[{{0,0,0},{1,0,0},{1,1,1}}, \
+         Tube[{{1,2},{2,3}}, 0.1]]], \"SVG\"]",
+      )
+      .unwrap();
+      let explicit = interpret(
+        "ExportString[Graphics3D[Tube[{{{0,0,0},{1,0,0}},{{1,0,0},{1,1,1}}}, \
+         0.1]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(indexed.contains("<line") || indexed.contains("<path"));
+      assert_eq!(indexed, explicit);
+    }
+
     // GraphicsComplex primitives resolve their 1-based vertex indices,
     // for both single- and multi-polygon/line forms.
     #[test]
