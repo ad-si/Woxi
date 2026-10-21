@@ -3858,4 +3858,14 @@ mod sudoku_game_regressions {
     assert!(svg.contains(">3</text>"), "{svg}");
     assert!(!svg.contains("PopupMenu"), "{svg}");
   }
+
+  #[test]
+  fn variable_holding_unicode_function_name_is_callable() {
+    clear_state();
+    assert_eq!(interpret("ρh[z_] := z^2; g = ρh; g[3]").unwrap(), "9");
+    assert_eq!(
+      interpret("fé[z_, w_] := z + w; Module[{ρ}, ρ = fé; ρ[5, 2]]").unwrap(),
+      "7"
+    );
+  }
 }

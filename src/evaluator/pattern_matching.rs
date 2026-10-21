@@ -5631,9 +5631,9 @@ pub fn resolve_identifier_to_func_name(name: &str) -> Option<String> {
           && s
             .chars()
             .next()
-            .is_some_and(|c| c.is_ascii_alphabetic() || c == '$')
+            .is_some_and(|c| c.is_alphabetic() || c == '$')
           && s.chars().all(|c| {
-            c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '`'
+            c.is_alphanumeric() || c == '_' || c == '$' || c == '`'
           })
           && !s.ends_with('`') =>
       {
