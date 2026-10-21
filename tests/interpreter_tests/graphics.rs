@@ -6397,6 +6397,22 @@ mod plot3d {
       );
     }
 
+    // Infinite components pick the direction: `{0, 0, Infinity}` is
+    // `Above`, `{0, 0, -Infinity}` is `Below` and `{Infinity, 0, 0}` is
+    // `Right` (a Demonstration's "closed" view of a tetrahedron fractal).
+    #[test]
+    fn graphics3d_view_point_infinite_components() {
+      let view = |vp: &str| {
+        export_svg(&format!(
+          "Graphics3D[Cuboid[], ViewPoint -> {vp}, Boxed -> False]"
+        ))
+      };
+      assert_eq!(view("{0, 0, Infinity}"), view("Above"));
+      assert_eq!(view("{0, 0, -Infinity}"), view("Below"));
+      assert_eq!(view("{Infinity, 0, 0}"), view("Right"));
+      assert_ne!(view("{0, 0, Infinity}"), view("{1.3, -2.4, 2}"));
+    }
+
     /// Straight down the z axis the screen basis is degenerate — the
     /// vertical the camera levels against points at the viewer — and
     /// Wolfram falls back to the plain top view: x to the right, y up,
