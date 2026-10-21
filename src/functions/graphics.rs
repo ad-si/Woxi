@@ -29900,8 +29900,10 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
         italic,
         ..Default::default()
       }],
-      // Row[{a, b, …}] — concatenate the (recursively rendered) parts.
-      "Row" => match layout_parts(args.first()) {
+      // Row[{a, b, …}] — concatenate the (recursively rendered) parts. A
+      // typeset `RowBox[{…}]` (what `ToString[f[x], TraditionalForm]`
+      // holds, e.g. `{sin, (, x, )}`) reads the same way.
+      "Row" | "RowBox" => match layout_parts(args.first()) {
         Some(parts) => parts
           .iter()
           .flat_map(|p| manipulate_label_runs(p, italic))
@@ -29939,6 +29941,8 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
         Some(rows) => grid_label_runs(&rows, italic),
         _ => output_run(italic),
       },
+      // `FormBox[boxes, form]` only records how its boxes were formatted.
+      "FormBox" if !args.is_empty() => manipulate_label_runs(&args[0], italic),
       "Subscript" | "SubscriptBox" => script_runs(args, italic, false),
       "Superscript" | "SuperscriptBox" => script_runs(args, italic, true),
       // `Subsuperscript[base, sub, sup]` — a Demonstration's slider label for
@@ -30315,7 +30319,8 @@ fn box_has_spaced_text(e: &Expr) -> bool {
 /// folds into the Unicode `p₀`). Returns None when the string has no box
 /// segment, leaving plain strings on the normal path.
 fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
-  let segments = crate::functions::string_ast::split_inline_boxes(s);
+  let segments =
+    crate::functions::string_ast::split_inline_boxes_keeping_punctuation(s);
   if !segments.iter().any(|seg| seg.is_box) {
     return None;
   }
@@ -30340,6 +30345,19 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
     // as display text.
     if let Ok(boxes) = crate::parse_to_expr(&seg.text)
       && box_has_spaced_text(&boxes)
+    {
+      runs.push(LabelRun {
+        text: crate::notebook::render_boxes_text(&seg.text),
+        italic,
+        ..Default::default()
+      });
+      continue;
+    }
+    // A `ToString[expr, TraditionalForm]` segment is typeset display text
+    // (`sin(x)`), not source to evaluate: reading `sin(x)` back as an
+    // expression would give `Sin[x]` or a product.
+    if seg.text.starts_with("FormBox[RowBox[")
+      && seg.text.ends_with(", TraditionalForm]")
     {
       runs.push(LabelRun {
         text: crate::notebook::render_boxes_text(&seg.text),

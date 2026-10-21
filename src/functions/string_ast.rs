@@ -9055,6 +9055,23 @@ pub struct InlineBoxSegment {
 /// b\)`) rather than a box expression; parsing that needs a linear-syntax
 /// parser, so it stays a literal segment.
 pub fn split_inline_boxes(s: &str) -> Vec<InlineBoxSegment> {
+  split_inline_boxes_with(s, false)
+}
+
+/// Like [`split_inline_boxes`], but a box segment keeps the quotes of string
+/// atoms made only of bracket punctuation (`RowBox[{sin, "(", x, ")"}]`),
+/// so a reader of the segment can tell them from the segment's own
+/// structure.
+pub fn split_inline_boxes_keeping_punctuation(
+  s: &str,
+) -> Vec<InlineBoxSegment> {
+  split_inline_boxes_with(s, true)
+}
+
+fn split_inline_boxes_with(
+  s: &str,
+  keep_punct_quotes: bool,
+) -> Vec<InlineBoxSegment> {
   let chars: Vec<char> = s.chars().collect();
   let mut segments: Vec<InlineBoxSegment> = Vec::new();
   let mut literal = String::new();
@@ -9074,7 +9091,10 @@ pub fn split_inline_boxes(s: &str) -> Vec<InlineBoxSegment> {
         });
       }
       segments.push(InlineBoxSegment {
-        text: strip_box_markup(&rowify_mixed_groups(&chars[i + 3..end])),
+        text: strip_box_markup(
+          &rowify_mixed_groups(&chars[i + 3..end]),
+          keep_punct_quotes,
+        ),
         is_box: true,
       });
       i = end + 1;
@@ -9217,7 +9237,7 @@ fn unescape_box_spaces(chars: &[char]) -> String {
 /// A box segment spells a list of boxes `List[…]` where displaying it shows
 /// `{…}` — the segment is box *source*, and what it displays is the box
 /// expression it parses into.
-fn strip_box_markup(chars: &[char]) -> String {
+fn strip_box_markup(chars: &[char], keep_punct_quotes: bool) -> String {
   let mut out = String::with_capacity(chars.len());
   // One entry per `[` still open, set for the ones a `List` head opened.
   // Only the box source's own brackets count — a box holding text keeps
@@ -9258,6 +9278,23 @@ fn strip_box_markup(chars: &[char]) -> String {
         continue;
       }
       BOX_OPEN | BOX_CLOSE | BOX_SEP | BOX_START => {}
+      // A quoted atom made only of bracket punctuation (`"("` in
+      // `RowBox[{"sin", "(", "x", ")"}]`) keeps its quotes, like the
+      // `\()\)` group above: bare, its brackets and commas would be read as
+      // the surrounding box source's own structure.
+      '"'
+        if keep_punct_quotes
+          && !in_box_text
+          && let Some(len) = chars[i + 1..].iter().position(|&c| c == '"')
+          && len > 0
+          && chars[i + 1..i + 1 + len]
+            .iter()
+            .all(|c| "()[]{},".contains(*c)) =>
+      {
+        out.extend(&chars[i..i + len + 2]);
+        i += len + 2;
+        continue;
+      }
       '"' => in_box_text = !in_box_text,
       '\\' if matches!(chars.get(i + 1), Some('"' | '\\')) => {
         out.push(chars[i + 1]);

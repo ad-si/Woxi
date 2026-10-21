@@ -10391,6 +10391,32 @@ Manipulate[
     assert_eq!(state.display_trees.len(), 1);
   }
 
+  /// A Setter whose choices are `ToString[f[x], TraditionalForm]` typesets
+  /// as `sin(x)`, not as the box row's elements joined by commas
+  /// (`sin(, x, )`).
+  #[test]
+  fn setter_labels_from_traditionalform_tostring_read_as_text() {
+    let state = instantiate_stored_manipulate(
+      "Manipulate[Plot[Sin[a x], {x, 0, 1}], \
+       {{a, 1, \"function\"}, {1 -> ToString[Sin[x], TraditionalForm], \
+       2 -> ToString[Abs[Sin[x]], TraditionalForm], \
+       3 -> ToString[x^2, TraditionalForm]}, ControlType -> Setter}]",
+      "",
+    )
+    .expect("Manipulate must build a widget");
+    let labels = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Discrete { value_labels, .. } => {
+          Some(value_labels.clone())
+        }
+        _ => None,
+      })
+      .expect("setter control");
+    assert_eq!(labels, vec!["sin(x)", "|sin(x)|", "x\u{00B2}"]);
+  }
+
   #[test]
   fn stored_manipulate_is_instantiated_on_load() {
     let state =
