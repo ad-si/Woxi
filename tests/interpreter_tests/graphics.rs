@@ -16199,6 +16199,25 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn matrix_plot_honors_color_function_and_color_rules() {
+      // Regression: ColorFunction / ColorRules were ignored, so every plot
+      // used the default blue-red gradient.
+      let svg = export_svg(
+        "MatrixPlot[{{50, 0}, {3, 2}}, ColorFunction -> \"Rainbow\", \
+         ColorRules -> {50 -> Lighter[Gray]}, Mesh -> False]",
+      );
+      assert!(svg.contains("#AAAAAA"), "ColorRules cell: {svg}");
+      assert!(svg.contains("#781C86"), "Rainbow cell: {svg}");
+      assert_eq!(
+        svg,
+        export_svg(
+          "ArrayPlot[{{50, 0}, {3, 2}}, ColorFunction -> \"Rainbow\", \
+           ColorRules -> {50 -> Lighter[Gray]}, Mesh -> False]"
+        )
+      );
+    }
+
+    #[test]
     fn matrix_plot_sparse_array() {
       // Regression: same SparseArray-densification bug as ArrayPlot.
       let dense = export_svg("MatrixPlot[{{1, 0}, {0, 2}}]");

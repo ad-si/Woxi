@@ -5077,6 +5077,20 @@ fn frame_labelled_svg(
 
 /// MatrixPlot[matrix] - like ArrayPlot with automatic color scaling
 pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Options that choose how cells are colored or captioned are handled by
+  // the one canonical grid renderer, ArrayPlot.
+  let styled = crate::functions::graphics::splice_option_lists(args)
+    .iter()
+    .skip(1)
+    .any(|opt| {
+      matches!(opt, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n)
+          if matches!(n.as_str(),
+            "ColorFunction" | "ColorRules" | "PlotLabel" | "Mesh")))
+    });
+  if styled {
+    return array_plot_ast(args);
+  }
   let data = evaluate_expr_to_expr(&args[0])?;
   let data = crate::functions::list_helpers_ast::densify_sparse_array(&data)
     .unwrap_or(data);
