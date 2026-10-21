@@ -1506,6 +1506,33 @@ pub fn wavelet_threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // WaveletMapIndexed
 // ---------------------------------------------------------------------------
 
+/// `N` of `e` when it has the same shape as the machine-real coefficient
+/// array `coef` and all its leaves are numbers; `None` otherwise.
+fn machine_real_like(e: &Expr, coef: &Expr) -> Option<Expr> {
+  fn all_real(e: &Expr) -> bool {
+    match e {
+      Expr::List(items) => items.iter().all(all_real),
+      Expr::Real(_) => true,
+      _ => false,
+    }
+  }
+  fn same_shape(a: &Expr, b: &Expr) -> bool {
+    match (a, b) {
+      (Expr::List(x), Expr::List(y)) => {
+        x.len() == y.len()
+          && x.iter().zip(y.iter()).all(|(p, q)| same_shape(p, q))
+      }
+      (Expr::List(_), _) | (_, Expr::List(_)) => false,
+      _ => true,
+    }
+  }
+  if !all_real(coef) || !same_shape(e, coef) {
+    return None;
+  }
+  let n = crate::functions::math_ast::numerical::n_eval(e).ok()?;
+  all_real(&n).then_some(n)
+}
+
 pub fn wavelet_map_indexed_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -1552,8 +1579,12 @@ pub fn wavelet_map_indexed_ast(
         f,
         &[coef, wind_to_expr(w)],
       )?;
-      // An image-valued result is stored back as its pixel matrix.
-      new_rules[pos].1 = image_to_matrix(&mapped).unwrap_or(mapped);
+      // An image-valued result is stored back as its pixel matrix. A numeric
+      // result shaped like the machine-real coefficients it replaces stays
+      // machine real, as Wolfram's packed arrays do (`#*0 &` gives `0.`).
+      let mapped = image_to_matrix(&mapped).unwrap_or(mapped);
+      new_rules[pos].1 =
+        machine_real_like(&mapped, &new_rules[pos].1).unwrap_or(mapped);
     }
     let new_dwd = Dwd {
       image: dwd.image,

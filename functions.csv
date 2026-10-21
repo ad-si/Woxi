@@ -1437,7 +1437,7 @@ SetAlphaChannel,Set image alpha channel,🚫,io,8.0,1426
 CreateDialog,Create a dialog window,🚫,io,6.0,1427
 MinimalPolynomial,Computes the minimal polynomial of an algebraic number over the rationals,✅,pure,6.0,1428
 SynchronousInitialization,Notebook synchronous initialization,🚫,io,6.0,1429
-GeoBackground,Background for geographic plots,🚫,pure,10.0,1430
+GeoBackground,Background for geographic plots,✅,pure,10.0,1430
 ItemStyle,Style specification for items,🚫,pure,6.0,1431
 GeoStyling,Styling for geographic regions,🚫,pure,10.0,1432
 CharacterEncoding,Character encoding specification,🚫,io,3.0,1434

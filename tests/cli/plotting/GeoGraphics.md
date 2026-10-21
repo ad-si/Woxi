@@ -58,6 +58,15 @@ $ wo 'Head[GeoGraphics[Entity["Country", "France"]]]'
 GeoGraphics
 ```
 
+`Polygon[Entity["Country", …]]` fills a country's outline with the current
+color, edged by `EdgeForm`. `GeoBackground -> "CountryBorders"` draws only the
+country borders behind it:
+
+```scrut
+$ wo 'Head[GeoGraphics[{Red, EdgeForm[{Black, Thin}], Polygon /@ (Entity["Country", #] & /@ {"Germany", "Austria", "Switzerland"})}, GeoRange -> {{45, 56}, {2, 18}}, GeoBackground -> "CountryBorders", ImageSize -> Large]]'
+GeoGraphics
+```
+
 ### Geographic entities
 
 A position may be given as an `Entity[…]`, resolved to coordinates through the
