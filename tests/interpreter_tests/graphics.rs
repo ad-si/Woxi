@@ -16209,6 +16209,34 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn matrix_plot_color_entries() {
+      // Entries that are colors are drawn as given, not scaled as values.
+      let svg = export_svg(
+        "MatrixPlot[{{Pink, RGBColor[1, 0, 0]}, {RGBColor[0, 0.5, 0], GrayLevel[0.3]}}]",
+      );
+      for fill in [
+        "rgb(255,128,128)",
+        "rgb(255,0,0)",
+        "rgb(0,128,0)",
+        "rgb(77,77,77)",
+      ] {
+        assert!(svg.contains(&format!("fill=\"{fill}\"")), "{fill}: {svg}");
+      }
+    }
+
+    #[test]
+    fn show_matrix_plot_keeps_primitives_on_top() {
+      // The first graphic is the bottom layer: the arrow's SVG comes after
+      // the matrix plot's cells, so it is painted over them.
+      let svg = export_svg(
+        "Show[MatrixPlot[Table[Pink, {2}, {2}]], Graphics[Arrow[{{0.5, 1.5}, {1.5, 0.5}}]]]",
+      );
+      let cells = svg.rfind("fill=\"rgb(255,128,128)\"").unwrap();
+      let arrow = svg.find("<polygon").unwrap();
+      assert!(cells < arrow, "{svg}");
+    }
+
+    #[test]
     fn list_density_plot_matrix() {
       insta::assert_snapshot!(export_svg(
         "ListDensityPlot[{{1, 1, 1, 1}, {1, 2, 1, 2}, {1, 1, 3, 1}, {1, 2, 1, 4}}]"

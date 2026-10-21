@@ -3068,6 +3068,32 @@ mod vertex_component {
   }
 
   #[test]
+  fn list_valued_vertex_is_a_single_seed() {
+    // A list that is itself a vertex is one seed, not a set of seeds
+    assert_eq!(
+      interpret(
+        "VertexComponent[Graph[{{1, 1} <-> {2, 3}, {2, 3} <-> {4, 4}, {7, 7} <-> {8, 8}}], {2, 3}]"
+      )
+      .unwrap(),
+      "{{2, 3}, {1, 1}, {4, 4}}"
+    );
+    assert_eq!(
+      interpret(
+        "VertexInComponent[Graph[{{1, 1} -> {2, 3}, {2, 3} -> {4, 4}}], {4, 4}]"
+      )
+      .unwrap(),
+      "{{4, 4}, {2, 3}, {1, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "VertexOutComponent[Graph[{{1, 1} -> {2, 3}, {2, 3} -> {4, 4}}], {1, 1}]"
+      )
+      .unwrap(),
+      "{{1, 1}, {2, 3}, {4, 4}}"
+    );
+  }
+
+  #[test]
   fn directed_in_components() {
     // Directed graphs return the vertices that can REACH the seed
     assert_eq!(
