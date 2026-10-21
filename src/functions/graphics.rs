@@ -10016,6 +10016,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // range (the primitives' bounding box, or an explicit `PlotRange`).
   // Unset keeps the existing flat-4%-on-automatic-axes default.
   let mut plot_range_padding: Option<Expr> = None;
+  // `PlotRangeClipping -> False`: primitives past the plot range are drawn
+  // into the image's margins instead of being cut off at the frame edge.
+  let mut clip_primitives = true;
 
   for raw_opt in &args[1..] {
     let opt =
@@ -10049,6 +10052,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         "PlotRangePadding" => {
           plot_range_padding = Some(replacement.clone());
+        }
+        "PlotRangeClipping" => {
+          clip_primitives =
+            !matches!(replacement, Expr::Identifier(n) if n == "False");
         }
         "Prolog" => prolog = Some(replacement.clone()),
         "Epilog" => epilog = Some(replacement.clone()),
@@ -10653,7 +10660,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // group is clipped to the drawing area so a primitive that falls outside
   // the plot range is cut off at the frame edge instead of spilling into
   // the margins or off the canvas.
-  svg.push_str(&format!("<g clip-path=\"url(#{clip_id})\">\n"));
+  if clip_primitives {
+    svg.push_str(&format!("<g clip-path=\"url(#{clip_id})\">\n"));
+  } else {
+    svg.push_str("<g>\n");
+  }
   for (prim_index, prim) in primitives.iter().enumerate() {
     let shadow = prim.style().and_then(|s| s.drop_shadow.as_ref());
     if let Some(ds) = shadow {
