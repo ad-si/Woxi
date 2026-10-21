@@ -3049,6 +3049,14 @@ fn evaluate_function_call_ast_inner(
     return Ok(result);
   }
 
+  // ToColor[color, head] — the color converted to the space `head` names.
+  if name == "ToColor"
+    && args.len() == 2
+    && let Some(result) = crate::functions::color_blend::to_color(args)
+  {
+    return Ok(result);
+  }
+
   // Refresh[expr, opts…] — the FrontEnd refresh wrapper displays (and
   // returns) its first argument; the update-interval options only matter
   // inside a Dynamic FrontEnd context.
@@ -12449,11 +12457,6 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
   ))
 }
 
-/// Check if an expression is a GrayLevel color.
-fn is_graylevel(expr: &Expr) -> bool {
-  matches!(expr, Expr::FunctionCall { name, args } if name == "GrayLevel" && !args.is_empty())
-}
-
 /// Match `NDEigenvalues[DiffusionPDETerm[{u[x], {x}}], u, Element[{x}, Line[{{a}, {b}}]], n]`
 /// and return the closed-form list of `n` Neumann eigenvalues of
 /// `-d²/dx²` on `[a, b]`: `(k π / (b - a))²` for `k = 0, …, n - 1`.
@@ -12556,234 +12559,12 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
     _ => return None,
   };
 
-  // Explicit-position form: Blend[{{p1, c1}, {p2, c2}, …}, t] places the
-  // colors at parameter positions p_i and interpolates piecewise-linearly at
-  // t (clamped to [p1, p_last]). Detected when every entry is a {pos, color}
-  // pair; falls through to the uniform form otherwise.
-  if args.len() == 2
-    && colors
-      .iter()
-      .all(|item| matches!(item, Expr::List(pair) if pair.len() == 2))
-    && let Some(result) = evaluate_blend_positioned(colors, &args[1])
-  {
-    return Some(result);
-  }
-
   // Image blend: linearly interpolate matching-shape Images per pixel.
   if colors.iter().all(|c| matches!(c, Expr::Image { .. })) {
     return blend_images(colors, args.get(1));
   }
 
-  // Check if all colors are GrayLevel (to preserve output type)
-  let all_graylevel = colors.iter().all(is_graylevel);
-
-  // Extract RGB rationals for all colors
-  let rgbs: Vec<[(i128, i128); 3]> = colors
-    .iter()
-    .map(extract_rgb_rational)
-    .collect::<Option<Vec<_>>>()?;
-
-  let n = rgbs.len();
-
-  if args.len() == 1 {
-    // Blend[{c1, c2, ...}] — equal blend (average)
-    let mut sum = [(0i128, 1i128); 3];
-    for rgb in &rgbs {
-      for ch in 0..3 {
-        // sum[ch] += rgb[ch]: a/b + c/d = (a*d + c*b) / (b*d)
-        let (sn, sd) = sum[ch];
-        let (cn, cd) = rgb[ch];
-        sum[ch] = (sn * cd + cn * sd, sd * cd);
-      }
-    }
-    // Divide by n
-    let n_i128 = n as i128;
-    if all_graylevel {
-      let (num, den) = sum[0];
-      Some(call("GrayLevel", vec![rational_to_expr(num, den * n_i128)]))
-    } else {
-      Some(call(
-        "RGBColor",
-        (0..3)
-          .map(|ch| {
-            let (num, den) = sum[ch];
-            rational_to_expr(num, den * n_i128)
-          })
-          .collect(),
-      ))
-    }
-  } else {
-    // Blend[{c1, c2, ...}, weights] where weights is a list of the wrong
-    // length: wolframscript emits Blend::argl and returns the call
-    // unevaluated (with named colors expanded to RGBColor).
-    if let Expr::List(weights) = &args[1]
-      && weights.len() != n
-    {
-      let colors_expr = Expr::List(colors.clone());
-      crate::emit_message(&format!(
-        "Blend::argl: {} should be a real number or a list of non-negative numbers, which has the same length as {}.",
-        expr_to_string(&args[1]),
-        expr_to_string(&colors_expr),
-      ));
-      return None;
-    }
-    // Blend[{c1, c2, ...}, t] — interpolation along the color list.
-    // If `t` is an inexact Real, fall back to float arithmetic so the
-    // resulting RGBColor components are reals, matching wolframscript.
-    let is_real_t = matches!(&args[1], Expr::Real(_));
-    if is_real_t {
-      let t = match &args[1] {
-        Expr::Real(r) => *r,
-        _ => return None,
-      };
-      return Some(blend_two_float(&rgbs, t, all_graylevel));
-    }
-    let (t_num, t_den) = expr_to_rational(&args[1])?;
-
-    if n == 2 {
-      // Simple case: c1*(1-t) + c2*t
-      Some(blend_two_rational(
-        &rgbs[0],
-        &rgbs[1],
-        t_num,
-        t_den,
-        all_graylevel,
-      ))
-    } else {
-      // Multi-color: map t in [0,1] to segments
-      // t=0 → first color, t=1 → last color
-      // segment_len = 1/(n-1), segment_index = floor(t * (n-1))
-      let segments = (n - 1) as i128;
-      // position = t * (n-1) = t_num * segments / t_den
-      let pos_num = t_num * segments;
-      let pos_den = t_den;
-
-      // segment index = floor(pos_num / pos_den)
-      let seg_idx = if pos_num <= 0 {
-        0usize
-      } else {
-        let idx = (pos_num / pos_den) as usize;
-        idx.min(n - 2)
-      };
-
-      // local t within the segment: local_t = pos - seg_idx
-      // = pos_num/pos_den - seg_idx = (pos_num - seg_idx*pos_den) / pos_den
-      let local_t_num = pos_num - (seg_idx as i128) * pos_den;
-      let local_t_den = pos_den;
-
-      Some(blend_two_rational(
-        &rgbs[seg_idx],
-        &rgbs[seg_idx + 1],
-        local_t_num,
-        local_t_den,
-        all_graylevel,
-      ))
-    }
-  }
-}
-
-/// Blend[{{p1, c1}, {p2, c2}, …}, t] — interpolate colors at explicit
-/// parameter positions. Returns None (to fall through) if any entry is not a
-/// numeric-position / color pair. Exact when t and all positions are exact
-/// (rational output); float when any is inexact; endpoints returned unchanged
-/// when t is outside [p1, p_last].
-fn evaluate_blend_positioned(pairs: &[Expr], t_arg: &Expr) -> Option<Expr> {
-  let n = pairs.len();
-  let mut pos_f64: Vec<f64> = Vec::with_capacity(n);
-  let mut rgbs: Vec<[(i128, i128); 3]> = Vec::with_capacity(n);
-  let mut all_graylevel = true;
-  let mut all_pos_exact = true;
-  for item in pairs {
-    let Expr::List(pair) = item else {
-      return None;
-    };
-    if pair.len() != 2 {
-      return None;
-    }
-    pos_f64.push(crate::functions::math_ast::expr_to_f64(&pair[0])?);
-    if matches!(&pair[0], Expr::Real(_)) {
-      all_pos_exact = false;
-    }
-    if !is_graylevel(&pair[1]) {
-      all_graylevel = false;
-    }
-    rgbs.push(extract_rgb_rational(&pair[1])?);
-  }
-
-  let build_exact = |rgb: &[(i128, i128); 3]| -> Expr {
-    if all_graylevel {
-      call("GrayLevel", vec![rational_to_expr(rgb[0].0, rgb[0].1)])
-    } else {
-      call(
-        "RGBColor",
-        (0..3)
-          .map(|ch| rational_to_expr(rgb[ch].0, rgb[ch].1))
-          .collect(),
-      )
-    }
-  };
-
-  let t_f64 = crate::functions::math_ast::expr_to_f64(t_arg)?;
-  // Outside the parameter range: clamp to the endpoint color (unchanged).
-  if t_f64 <= pos_f64[0] {
-    return Some(build_exact(&rgbs[0]));
-  }
-  if t_f64 >= pos_f64[n - 1] {
-    return Some(build_exact(&rgbs[n - 1]));
-  }
-  // Locate the segment [p_seg, p_{seg+1}] containing t.
-  let mut seg = 0;
-  for i in 0..n - 1 {
-    if t_f64 >= pos_f64[i] && t_f64 <= pos_f64[i + 1] {
-      seg = i;
-      break;
-    }
-  }
-
-  let t_exact = all_pos_exact && !matches!(t_arg, Expr::Real(_));
-  if t_exact {
-    let (tn, td) = expr_to_rational(t_arg)?;
-    let Expr::List(lo) = &pairs[seg] else {
-      return None;
-    };
-    let Expr::List(hi) = &pairs[seg + 1] else {
-      return None;
-    };
-    let (an, ad) = expr_to_rational(&lo[0])?;
-    let (bn, bd) = expr_to_rational(&hi[0])?;
-    // local_t = (t - p_seg) / (p_{seg+1} - p_seg), as a rational.
-    let num_diff = tn * ad - an * td; // over td*ad
-    let den_diff = td * ad;
-    let num_span = bn * ad - an * bd; // over bd*ad
-    let den_span = bd * ad;
-    if num_span == 0 {
-      return None;
-    }
-    let lt_num = num_diff * den_span;
-    let lt_den = den_diff * num_span;
-    return Some(blend_two_rational(
-      &rgbs[seg],
-      &rgbs[seg + 1],
-      lt_num,
-      lt_den,
-      all_graylevel,
-    ));
-  }
-
-  // Inexact: interpolate the two segment colors in f64.
-  let local = (t_f64 - pos_f64[seg]) / (pos_f64[seg + 1] - pos_f64[seg]);
-  let c1 = &rgbs[seg];
-  let c2 = &rgbs[seg + 1];
-  let build_channel = |ch: usize| -> Expr {
-    let v1 = c1[ch].0 as f64 / c1[ch].1 as f64;
-    let v2 = c2[ch].0 as f64 / c2[ch].1 as f64;
-    Expr::Real(v1 * (1.0 - local) + v2 * local)
-  };
-  if all_graylevel {
-    Some(call1("GrayLevel", build_channel(0)))
-  } else {
-    Some(call("RGBColor", (0..3).map(build_channel).collect()))
-  }
+  crate::functions::color_blend::blend_color_list(colors, args.get(1))
 }
 
 /// Blend a list of Images (already known to be all images) per-pixel.
@@ -12854,72 +12635,6 @@ fn blend_images(colors: &[Expr], weight: Option<&Expr>) -> Option<Expr> {
     data: std::sync::Arc::new(new_data),
     image_type,
   })
-}
-
-/// Blend colors with a float weight t. Matches wolframscript's behaviour of
-/// returning RGBColor components as reals when `t` is an inexact number.
-fn blend_two_float(
-  rgbs: &[[(i128, i128); 3]],
-  t: f64,
-  as_graylevel: bool,
-) -> Expr {
-  let t = t.clamp(0.0, 1.0);
-  let n = rgbs.len();
-  // Map t in [0, 1] to segments.
-  let (c1, c2, local_t) = if n == 2 {
-    (&rgbs[0], &rgbs[1], t)
-  } else {
-    let segments = (n - 1) as f64;
-    let pos = t * segments;
-    let mut seg_idx = pos.floor() as usize;
-    if seg_idx >= n - 1 {
-      seg_idx = n - 2;
-    }
-    let local = pos - seg_idx as f64;
-    (&rgbs[seg_idx], &rgbs[seg_idx + 1], local)
-  };
-
-  let build_channel = |ch: usize| -> Expr {
-    let (c1n, c1d) = c1[ch];
-    let (c2n, c2d) = c2[ch];
-    let v1 = c1n as f64 / c1d as f64;
-    let v2 = c2n as f64 / c2d as f64;
-    Expr::Real(v1 * (1.0 - local_t) + v2 * local_t)
-  };
-
-  if as_graylevel {
-    call1("GrayLevel", build_channel(0))
-  } else {
-    call("RGBColor", (0..3).map(build_channel).collect())
-  }
-}
-
-/// Blend two colors with rational weight: c1*(1-t) + c2*t
-fn blend_two_rational(
-  c1: &[(i128, i128); 3],
-  c2: &[(i128, i128); 3],
-  t_num: i128,
-  t_den: i128,
-  as_graylevel: bool,
-) -> Expr {
-  // (1-t) = (t_den - t_num) / t_den
-  let one_minus_t_num = t_den - t_num;
-
-  let build_channel = |ch: usize| -> Expr {
-    // c1[ch] * (1-t) + c2[ch] * t
-    // = c1n/c1d * omt_n/t_den + c2n/c2d * t_num/t_den
-    let (c1n, c1d) = c1[ch];
-    let (c2n, c2d) = c2[ch];
-    let num = c1n * one_minus_t_num * c2d + c2n * t_num * c1d;
-    let den = c1d * c2d * t_den;
-    rational_to_expr(num, den)
-  };
-
-  if as_graylevel {
-    call1("GrayLevel", build_channel(0))
-  } else {
-    call("RGBColor", (0..3).map(build_channel).collect())
-  }
 }
 
 /// FunctionInterpolation[expr, {x, xmin, xmax}] — sample a function and build

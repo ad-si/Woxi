@@ -14,6 +14,13 @@
 //! finite upper bound becomes one more `<=` constraint — so the simplex below
 //! only ever sees non-negative variables.
 //!
+//! `LinearProgramming[c, m, b, l, dom]` restricts variables to `Integers`
+//! (`dom` is `Reals`, `Integers` or a per-variable list of them). The integer
+//! variables are found by best-first branch and bound over the same exact
+//! simplex: a node branches on its first fractional integer variable, both
+//! children are solved straight away (the `<=` side first), and an integral
+//! child only replaces the incumbent when it is strictly better.
+//!
 //! The solver is an exact two-phase simplex over `BigInt` rationals. It uses
 //! Dantzig's entering rule — which reproduces the vertex wolframscript reports
 //! when a problem has multiple optima — and falls back to Bland's rule after a
@@ -292,7 +299,7 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
        vectors or matrices must match.",
     );
   };
-  if args.len() != 3 && args.len() != 4 {
+  if !(3..=5).contains(&args.len()) {
     return call();
   }
   let (Expr::List(c_items), Expr::List(m_rows), Expr::List(b_items)) =
@@ -489,8 +496,26 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     rel2.push(Rel::Le);
   }
 
+  let integer = match args.get(4) {
+    Some(dom) => parse_domains(dom, n),
+    None => vec![false; n],
+  };
+  let any_integer = integer.iter().any(|&b| b);
+  if any_integer
+    && !args[..args.len() - 1]
+      .iter()
+      .any(crate::functions::predicate_ast::contains_real_literal)
+  {
+    crate::emit_message(
+      "LinearProgramming::lpip: Warning: integer linear programming will use \
+       a machine-precision approximation of the inputs.",
+    );
+  }
+
   let outcome = if unsatisfiable {
     LpResult::Infeasible
+  } else if any_integer {
+    solve_branch_and_bound(&c2, &a2, &b2, &rel2, width, &maps, &integer)
   } else {
     solve_simplex(&c2, &a2, &b2, &rel2, width)
   };
@@ -498,9 +523,16 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     LpResult::Optimal(y) => {
       let values: Vec<Expr> = maps
         .iter()
-        .map(|map| match map {
-          VarMap::Shifted { col, offset } => offset.add(&y[*col]).to_expr(),
-          VarMap::Free { pos, neg } => y[*pos].sub(&y[*neg]).to_expr(),
+        .zip(&integer)
+        .map(|(map, &is_int)| {
+          let value = original_value(map, &y);
+          // A mixed problem is solved in machine precision in Wolfram, so
+          // its continuous variables come back as machine reals.
+          if any_integer && !is_int {
+            Expr::Real(rat_to_f64(&value))
+          } else {
+            value.to_expr()
+          }
         })
         .collect();
       Ok(Expr::List(values.into()))
@@ -518,6 +550,181 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
       call()
     }
+  }
+}
+
+/// Which variables the domain argument restricts to the integers. A list
+/// shorter than the variable count leaves the rest real; anything that is not
+/// `Reals`, `Integers` or a list of them is reported and ignored.
+fn parse_domains(dom: &Expr, n: usize) -> Vec<bool> {
+  let single = |e: &Expr| match e {
+    Expr::Identifier(s) if s == "Integers" => Some(true),
+    Expr::Identifier(s) if s == "Reals" => Some(false),
+    _ => None,
+  };
+  let parsed = match dom {
+    Expr::List(items) => {
+      items.iter().map(single).collect::<Option<Vec<bool>>>().map(
+        |mut flags| {
+          flags.resize(n, false);
+          flags
+        },
+      )
+    }
+    other => single(other).map(|flag| vec![flag; n]),
+  };
+  parsed.unwrap_or_else(|| {
+    crate::emit_message(&format!(
+      "LinearProgramming::lpdom: Warning: {} is not a valid domain \
+       specification and is ignored. Domain specification must be Reals, \
+       Integers or of the form {{dom1, dom2, ...}}, where dom1, dom2, etc. are \
+       either Reals or Integers.",
+      crate::syntax::format_expr(dom, crate::syntax::ExprForm::Output)
+    ));
+    vec![false; n]
+  })
+}
+
+/// The value of an original variable given the simplex's non-negative ones.
+fn original_value(map: &VarMap, y: &[Rat]) -> Rat {
+  match map {
+    VarMap::Shifted { col, offset } => offset.add(&y[*col]),
+    VarMap::Free { pos, neg } => y[*pos].sub(&y[*neg]),
+  }
+}
+
+fn rat_to_f64(r: &Rat) -> f64 {
+  use num_traits::ToPrimitive;
+  let (n, d) = (r.num.to_f64(), r.den.to_f64());
+  match (n, d) {
+    (Some(n), Some(d)) if n.is_finite() && d.is_finite() => n / d,
+    // Too large for f64 on its own: scale both down first.
+    _ => {
+      let shift = r.num.bits().max(r.den.bits()).saturating_sub(1000);
+      let n = (&r.num >> shift).to_f64().unwrap_or(f64::NAN);
+      let d = (&r.den >> shift).to_f64().unwrap_or(f64::NAN);
+      n / d
+    }
+  }
+}
+
+fn rat_floor(r: &Rat) -> Rat {
+  // The denominator is positive, so only a negative numerator rounds the
+  // truncating quotient the wrong way.
+  let q = &r.num / &r.den;
+  if r.num.is_negative() && (&q * &r.den != r.num) {
+    Rat::from_int(q - 1)
+  } else {
+    Rat::from_int(q)
+  }
+}
+
+/// Best-first branch and bound for the integer-restricted variables. Each node
+/// is the root problem plus a list of branching rows over the simplex columns.
+fn solve_branch_and_bound(
+  c: &[Rat],
+  a: &[Vec<Rat>],
+  b: &[Rat],
+  rel: &[Rel],
+  width: usize,
+  maps: &[VarMap],
+  integer: &[bool],
+) -> LpResult {
+  /// Wolfram gives up on a hard integer program too; this bounds the work.
+  const MAX_NODES: usize = 20_000;
+  type Branch = (Vec<Rat>, Rat, Rel);
+  let objective = |y: &[Rat]| {
+    c.iter()
+      .zip(y)
+      .fold(Rat::zero(), |acc, (ci, yi)| acc.add(&ci.mul(yi)))
+  };
+  let solve = |extra: &[Branch]| {
+    let mut a2 = a.to_vec();
+    let mut b2 = b.to_vec();
+    let mut rel2 = rel.to_vec();
+    for (row, rhs, r) in extra {
+      a2.push(row.clone());
+      b2.push(rhs.clone());
+      rel2.push(*r);
+    }
+    solve_simplex(c, &a2, &b2, &rel2, width)
+  };
+  // The first integer variable whose value is fractional, with that value.
+  let fractional = |y: &[Rat]| {
+    maps
+      .iter()
+      .zip(integer)
+      .enumerate()
+      .filter(|(_, (_, is_int))| **is_int)
+      .map(|(j, (map, _))| (j, original_value(map, y)))
+      .find(|(_, v)| !v.den.is_one())
+  };
+
+  let root = match solve(&[]) {
+    LpResult::Optimal(y) => y,
+    other => return other,
+  };
+  if fractional(&root).is_none() {
+    return LpResult::Optimal(root);
+  }
+  let mut incumbent: Option<(Rat, Vec<Rat>)> = None;
+  // Open nodes: (bound, branching rows, relaxed solution).
+  let mut open: Vec<(Rat, Vec<Branch>, Vec<Rat>)> =
+    vec![(objective(&root), Vec::new(), root)];
+  let mut nodes = 0usize;
+  while !open.is_empty() && nodes < MAX_NODES {
+    // Lowest bound first; the earliest-opened node wins a tie.
+    let best = (0..open.len())
+      .min_by(|&i, &j| open[i].0.cmp(&open[j].0).then(i.cmp(&j)))
+      .unwrap();
+    let (bound, rows, y) = open.remove(best);
+    if incumbent
+      .as_ref()
+      .is_some_and(|(inc, _)| bound.cmp(inc) != std::cmp::Ordering::Less)
+    {
+      continue;
+    }
+    let Some((j, value)) = fractional(&y) else {
+      continue;
+    };
+    let mut var_row = vec![Rat::zero(); width];
+    let shift = match &maps[j] {
+      VarMap::Shifted { col, offset } => {
+        var_row[*col] = Rat::one();
+        offset.clone()
+      }
+      VarMap::Free { pos, neg } => {
+        var_row[*pos] = Rat::one();
+        var_row[*neg] = Rat::one().neg();
+        Rat::zero()
+      }
+    };
+    let down = rat_floor(&value);
+    let up = down.add(&Rat::one());
+    for (limit, r) in [(down, Rel::Le), (up, Rel::Ge)] {
+      nodes += 1;
+      let mut child = rows.clone();
+      child.push((var_row.clone(), limit.sub(&shift), r));
+      let LpResult::Optimal(cy) = solve(&child) else {
+        continue;
+      };
+      let obj = objective(&cy);
+      if incumbent
+        .as_ref()
+        .is_some_and(|(inc, _)| obj.cmp(inc) != std::cmp::Ordering::Less)
+      {
+        continue;
+      }
+      if fractional(&cy).is_none() {
+        incumbent = Some((obj, cy));
+      } else {
+        open.push((obj, child, cy));
+      }
+    }
+  }
+  match incumbent {
+    Some((_, y)) => LpResult::Optimal(y),
+    None => LpResult::Infeasible,
   }
 }
 

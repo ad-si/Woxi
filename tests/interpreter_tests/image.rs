@@ -7811,9 +7811,53 @@ mod color_data_gradients {
     }
   }
 
+  /// Every indexed scheme comes from Wolfram's own definition: cycling
+  /// palettes wrap (index 0 is the last color), generated ones keep going.
+  #[test]
+  fn color_data_all_indexed_schemes() {
+    assert_eq!(
+      woxi::interpret("ColorData[10, 3]").unwrap(),
+      "RGBColor[0.9372549019607843, 0.6274509803921569, 0.16862745098039217]"
+    );
+    assert_eq!(
+      woxi::interpret("ColorData[17, 0] === ColorData[17, 10]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      woxi::interpret("ColorData[3, 2.5]").unwrap(),
+      "RGBColor[0.996078431372549, 0.3607843137254902, 0.027450980392156862]"
+    );
+    assert_eq!(woxi::interpret("ColorData[0, 3]").unwrap(), "GrayLevel[0]");
+    assert_eq!(
+      woxi::interpret("ColorData[97, 11]").unwrap(),
+      "RGBColor[0.915, 0.3325, 0.2125]"
+    );
+    assert_eq!(
+      woxi::interpret("ColorData[63, 4]").unwrap(),
+      "RGBColor[0.5712760641980676, 0.1971, 0.73]"
+    );
+    assert_eq!(
+      woxi::interpret("Length[ColorData[61, \"ColorList\"]]").unwrap(),
+      "9"
+    );
+    assert_eq!(
+      woxi::interpret("ColorData[3, \"Range\"]").unwrap(),
+      "{1, 10, 1}"
+    );
+    assert_eq!(
+      woxi::interpret("ColorData[17][2] === ColorData[17, 2]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      woxi::interpret("Union[Head /@ Table[ColorData[n], {n, 0, 119}]]")
+        .unwrap(),
+      "{ColorDataFunction}"
+    );
+  }
+
   /// Indexed scheme 17: only the entries seen in Wolfram's own rendered
-  /// output are known (1, 2 and 4); the others stay unevaluated instead of
-  /// being guessed.
+  /// output were known at first (1, 2 and 4); the rest now come from the
+  /// scheme's definition.
   #[test]
   fn color_data_indexed_scheme_17() {
     assert_eq!(
@@ -7837,7 +7881,7 @@ mod color_data_gradients {
     );
     assert_eq!(
       woxi::interpret("ColorData[17, 3]").unwrap(),
-      "ColorData[17, 3]"
+      "RGBColor[0.6392156862745098, 0.39215686274509803, 0.3333333333333333]"
     );
   }
 

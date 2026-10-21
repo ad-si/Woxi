@@ -274,7 +274,7 @@ While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
 FindRoot,Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honours MaxIterations and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored); a {var; x0; xmin; xmax} spec confines the search to the given bounds,✅,pure,1.0,222
 Image,Constructs an image from pixel data,✅,pure,7.0,223
-ColorData,"Named color data: the ""VisibleSpectrum"" scheme maps a wavelength in nm to a color (approximation; ColorData[""VisibleSpectrum""] gives a ColorDataFunction over 380-750 nm); the ""BlackBodySpectrum"" scheme maps a temperature in K to the color of a glowing black body (approximation); the categories; the CSS colours of the ""HTML"" scheme; the web-safe hex codes of the ""WebSafe"" scheme (ColorData[""WebSafe""][""#99CC00""]) and the pre-v6 Graphics`Colors` palette under the ""Legacy"" scheme; the colors of indexed schemes 1 (generated) 2 3 30 35 and 97, plus the known entries 1 2 and 4 of scheme 17; named gradients (optionally stretched over a custom range via ColorData[{name, {min, max}}] or run backwards via ColorData[{name, ""Reverse""}]) give a ColorDataFunction sampling the scheme (e.g. ColorData[""TemperatureMap""][0.5]), sample directly via ColorData[name, t], read the ""ColorFunction"" and ""Range"" properties, and render ""Image"" swatches (Rainbow-family control points sampled from Wolfram; the remaining gradients are approximations)",✅,pure,6.0,224
+ColorData,Named color data: every indexed scheme 0-119 from its Wolfram definition (ColorData[n] ColorData[n; k] and the ColorList/ColorFunction/Range properties); the HTML CSS colours; the WebSafe hex codes (ColorData["WebSafe"]["#99CC00"]) and the pre-v6 Legacy palette; the VisibleSpectrum wavelength scheme and the BlackBodySpectrum temperature scheme (approximations); named gradients as a ColorDataFunction (optionally over a custom range or reversed) sampled via ColorData[name; t] with ColorFunction/Range/Image properties,✅,pure,6.0,224
 Binomial,Returns the binomial coefficient,✅,pure,1.0,225
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1.0,226
 Replace,Applies transformation rules to an expression,✅,pure,1.0,227
@@ -302,7 +302,7 @@ PDF,Probability density function,✅,pure,6.0,254
 TableForm,Formats data as a table,✅,pure,1.0,255
 Circle,Represents a circle graphics primitive,✅,pure,2.0,256
 AbsoluteTiming,Returns the time taken to evaluate an expression,✅,contextual,5.0,257
-Blend,Blend colors together using linear interpolation; also samples named ColorData gradient schemes,✅,none,6.0,258
+Blend,Blend colors in their own color space (or RGB when the heads differ) by position weights or explicit positions with alpha; also samples named ColorData gradient schemes,✅,none,6.0,258
 Tooltip,Tooltip display wrapper (stays symbolic in script mode),✅,unevaluated,6.0,260
 Spacings,Spacing specification for grids and layouts,✅,none,6.0,261
 Assumptions,Specify assumptions for symbolic computation,✅,none,3.0,262
@@ -1933,7 +1933,7 @@ IsomorphicGraphQ,Test whether two graphs are isomorphic,✅,pure,8.0,1930
 Resampling,Signal processing option for resampling methods,🚫,,8.0,1930
 DumpSave,Serialization of definitions to a binary file,🚫,,3.0,1932
 RecordLists,Data import option for structuring records as lists,🚫,,2.0,1932
-ImageEffect,Applies an effect to an image (SaltPepperNoise, GaussianNoise, Noise, Solarization, OilPainting and Charcoal),✅,contextual,7.0,1935
+ImageEffect,Applies an effect to an image (SaltPepperNoise GaussianNoise Noise Solarization OilPainting and Charcoal),✅,contextual,7.0,1935
 VertexDelete,Delete one or more vertices from a graph along with their incident edges,✅,pure,8.0,1935
 FileNameSplit,Splits a file name into a list of path components,✅,pure,7.0,1938
 SmallCircle,Symbolic small-circle operator with Unicode display,✅,pure,3.0,1938
@@ -6295,7 +6295,7 @@ ThemeColor,Represents a named color of the current notebook theme,✅,pure,14.3,
 FindShortestCurve,Shortest curve (minimizing geodesic) between two points on a region (Circle arcs; straight segments in convex solids; paths along Line chains),✅,pure,14.3,
 ShortestCurveDistance,Geodesic distance between two points on a region (Circle/Sphere great-circle distance; Euclidean distance in convex solids; length along Line chains),✅,pure,14.3,
 MidDate,Gives the date at the midpoint of a date interval or list of dates,✅,pure,14.2,
-LinearProgramming,Finds a vector minimizing a linear objective subject to linear constraints solved with an exact simplex — takes per-variable lower bounds or lower/upper pairs that may be infinite,✅,pure,2.0,
+LinearProgramming,Finds a vector minimizing a linear objective subject to linear constraints solved with an exact simplex — takes per-variable lower bounds or lower/upper pairs that may be infinite and an Integers or Reals domain solved by branch and bound,✅,pure,2.0,
 CardinalBSplineBasis,Centered cardinal B-spline basis function of a given degree,✅,pure,9.0,
 PropertyValue,Value a property carries for a vertex or an edge of a graph,✅,pure,8.0,
 PropertyList,Annotations a graph offers,✅,pure,8.0,
@@ -6356,7 +6356,7 @@ GraphUtilities`VertexList,Vertices of a graph given as a list of rules,✅,pure,
 GraphUtilities`ClosenessCentrality,Closeness centrality of every vertex of a graph given as a list of rules,✅,pure,8.0,
 GraphUtilities`GraphPath,Shortest path between two vertices of a graph given as a list of rules,✅,pure,8.0,
 GraphUtilities`HamiltonianCycles,Hamiltonian cycle of a graph given as a list of rules as a vertex list (only one cycle is reported),🚧,pure,8.0,
-MultivariateStatistics`EllipsoidQuantile,Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean, c Covariance],✅,pure,8.0,
+MultivariateStatistics`EllipsoidQuantile,Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean; c Covariance],✅,pure,8.0,
 Combinatorica`FromUnorderedPairs,Builds a Combinatorica graph with one edge per distinct vertex pair on a circular embedding,✅,pure,6.0,
 Combinatorica`StableMarriage,Man-optimal stable matching from men's and women's preference lists (Gale-Shapley),✅,pure,6.0,
 Combinatorica`SymmetricGroup,All permutations of Range[n] as the elements of the symmetric group,✅,pure,6.0,
@@ -6368,3 +6368,4 @@ Combinatorica`ToAdjacencyLists,Sorted neighbour lists of a Combinatorica graph,�
 Combinatorica`ConnectedComponents,Connected components of a Combinatorica graph as sorted vertex lists,✅,pure,6.0,
 Combinatorica`BreadthFirstTraversal,Vertices of a Combinatorica graph in breadth-first order from a start vertex,✅,pure,6.0,
 Combinatorica`ShortestPath,Shortest vertex path between two vertices of a Combinatorica graph,✅,pure,6.0,
+ToColor,Converts a color directive to RGBColor GrayLevel Hue CMYKColor or another color space head,✅,pure,2.0,

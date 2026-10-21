@@ -1162,13 +1162,12 @@ pub(crate) fn format_tick(v: f64) -> String {
   // A value that is an integer within float noise prints as that integer —
   // a tick that lands on `-1.11*10^-16` is the axis zero, not a tiny
   // scientific value.
-  if (v - v.round()).abs() < 1e-9 {
-    let rounded = v.round() as i64;
-    if rounded.abs() < 1_000_000 {
-      return format!("{rounded}");
-    }
-  }
   let magnitude = v.abs();
+  // Checked before the cast: a value past the i64 range would saturate to
+  // `i64::MIN`, whose `abs` overflows.
+  if magnitude < 1e6 && (v - v.round()).abs() < 1e-9 {
+    return format!("{}", v.round() as i64);
+  }
   if magnitude >= 1e6 || (magnitude > 0.0 && magnitude < 1e-5) {
     return format_scientific_tick(v);
   }

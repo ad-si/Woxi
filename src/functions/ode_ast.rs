@@ -224,7 +224,7 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Determine max order
   let max_order = terms.iter().map(|t| t.order).max().unwrap_or(0);
-  if max_order == 0 {
+  if max_order <= 0 {
     // Not actually an ODE
     return Ok(unevaluated("DSolve", args));
   }

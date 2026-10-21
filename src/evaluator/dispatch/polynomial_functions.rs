@@ -344,7 +344,7 @@ pub fn dispatch_polynomial_functions(
       }
       return Some(minimize_or_numeric_fallback(args, name == "Maximize"));
     }
-    "LinearProgramming" if args.len() == 3 || args.len() == 4 => {
+    "LinearProgramming" if (3..=5).contains(&args.len()) => {
       return Some(crate::functions::polynomial_ast::linear_programming_ast(
         args,
       ));

@@ -22,6 +22,7 @@ pub mod caputo_d;
 pub mod cellular_automaton_ast;
 pub mod chart;
 pub mod code_parser;
+pub mod color_blend;
 pub mod combinatorica_graph;
 pub mod confirm_ast;
 pub mod control_flow_ast;

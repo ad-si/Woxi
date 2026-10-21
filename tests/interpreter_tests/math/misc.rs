@@ -1921,6 +1921,98 @@ mod machine_real_division {
   }
 }
 
+mod power_of_power_branch_rules {
+  use super::*;
+
+  // (a^b)^c only becomes a^(b c) when c is an integer, when -1 < b < 1, or
+  // when a is a positive real and b a real number. `E^x` with a symbolic x
+  // is not known to be positive, so its root stays a root.
+  #[test]
+  fn symbolic_exponent_of_positive_base_stays() {
+    assert_eq!(
+      interpret("ToString[Sqrt[E^x], InputForm]").unwrap(),
+      "Sqrt[E^x]"
+    );
+    assert_eq!(
+      interpret("ToString[(2^x)^(1/3), InputForm]").unwrap(),
+      "(2^x)^(1/3)"
+    );
+    assert_eq!(
+      interpret("ToString[Sqrt[Pi^x], InputForm]").unwrap(),
+      "Sqrt[Pi^x]"
+    );
+    assert_eq!(
+      interpret("ToString[(E^x)^(-1/2), InputForm]").unwrap(),
+      "1/Sqrt[E^x]"
+    );
+    assert_eq!(
+      interpret("ToString[(E^x)^0.5, InputForm]").unwrap(),
+      "(E^x)^0.5"
+    );
+    assert_eq!(
+      interpret("ToString[Sqrt[E^(I x)], InputForm]").unwrap(),
+      "Sqrt[E^(I*x)]"
+    );
+  }
+
+  #[test]
+  fn symbolic_outer_exponent_combines() {
+    assert_eq!(
+      interpret("ToString[(2^(1/3))^x, InputForm]").unwrap(),
+      "2^(x/3)"
+    );
+    assert_eq!(
+      interpret("ToString[(x^(1/3))^y, InputForm]").unwrap(),
+      "x^(y/3)"
+    );
+    assert_eq!(
+      interpret("ToString[(Pi^2)^x, InputForm]").unwrap(),
+      "Pi^(2*x)"
+    );
+    assert_eq!(
+      interpret("ToString[(E^Pi)^x, InputForm]").unwrap(),
+      "E^(Pi*x)"
+    );
+    assert_eq!(
+      interpret("ToString[(E^x)^2, InputForm]").unwrap(),
+      "E^(2*x)"
+    );
+  }
+
+  #[test]
+  fn equal_power_bases_merge_in_products() {
+    assert_eq!(
+      interpret("ToString[Sqrt[E^x] Sqrt[E^x], InputForm]").unwrap(),
+      "E^x"
+    );
+    assert_eq!(
+      interpret("ToString[Sqrt[a^x] Sqrt[a^x], InputForm]").unwrap(),
+      "a^x"
+    );
+  }
+
+  // `Sqrt[Pi Exp[x]/(2 x)]` used to recurse until the stack overflowed.
+  #[test]
+  fn radicand_with_exponential_splits_off_numeric_factor() {
+    assert_eq!(
+      interpret("ToString[Sqrt[Pi Exp[x]/(2 x)], InputForm]").unwrap(),
+      "Sqrt[Pi/2]*Sqrt[E^x/x]"
+    );
+    assert_eq!(
+      interpret("ToString[Sqrt[Exp[x]/2], InputForm]").unwrap(),
+      "Sqrt[E^x]/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("ToString[Sqrt[a E^x/2], InputForm]").unwrap(),
+      "Sqrt[a*E^x]/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("ToString[Sqrt[Pi E^x], InputForm]").unwrap(),
+      "Sqrt[E^x]*Sqrt[Pi]"
+    );
+  }
+}
+
 mod radical_coefficient_merge {
   use super::*;
 

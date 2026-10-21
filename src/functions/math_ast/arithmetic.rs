@@ -7141,6 +7141,34 @@ pub fn flip_unit_fraction_radicand(
 /// power of those. Free symbols are excluded, since nothing is known about
 /// their sign. Identities that need a positive base — `Sqrt[a]/Sqrt[b]` =
 /// `Sqrt[a/b]`, `(a^p)^q` = `a^(p q)` — are gated on this.
+/// Whether `e` is, structurally, an explicit real number: a numeric literal,
+/// a positive constant expression ([`is_pos_numeric`]), or a sum, product or
+/// negation of those. A symbol is never one, even if it might hold a real.
+pub fn is_real_numeric(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::BigFloat(_, _) => true,
+    Expr::Real(r) => r.is_finite(),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      true
+    }
+    Expr::FunctionCall { name, args } if name == "Times" || name == "Plus" => {
+      args.iter().all(is_real_numeric)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times | BinaryOperator::Plus | BinaryOperator::Minus,
+      left,
+      right,
+    } => is_real_numeric(left) && is_real_numeric(right),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_real_numeric(operand),
+    _ => is_pos_numeric(e),
+  }
+}
+
 pub fn is_pos_numeric(e: &Expr) -> bool {
   match e {
     Expr::Integer(n) => *n > 0,
@@ -7159,8 +7187,10 @@ pub fn is_pos_numeric(e: &Expr) -> bool {
       left,
       right,
     } => is_pos_numeric(left) && is_pos_numeric(right),
+    // A positive base stays positive only under a real exponent: `E^x` is
+    // not known to be positive (or even real).
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      is_pos_numeric(&args[0])
+      is_pos_numeric(&args[0]) && is_real_numeric(&args[1])
     }
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
       is_pos_numeric(&args[0])
@@ -7168,8 +7198,8 @@ pub fn is_pos_numeric(e: &Expr) -> bool {
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
-      ..
-    } => is_pos_numeric(left),
+      right,
+    } => is_pos_numeric(left) && is_real_numeric(right),
     _ => false,
   }
 }
@@ -7256,12 +7286,9 @@ fn combine_like_bases_depth(
       // branch-sensitive rule handled in the second pass.
       Expr::Integer(_) | Expr::BigInteger(_) => true,
       Expr::FunctionCall { .. } => true,
+      // A power base too: `Sqrt[E^x] Sqrt[E^x]` is `E^x`.
       Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        ..
-      }
-      | Expr::BinaryOp {
-        op: BinaryOperator::Minus,
+        op: BinaryOperator::Plus | BinaryOperator::Minus | BinaryOperator::Power,
         ..
       } => true,
       _ => false,
@@ -12049,9 +12076,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // power: `Sqrt[Sqrt[z]]` → `z^(1/4)` and `(z^(-3/4))^(1/2)` → `z^(-3/8)`,
   // while inner exponents with |p| ≥ 1 are left as-is (`(a^2)^3.` stays
   // `(a^2)^3.`, `Sqrt[z^(5/4)]` stays `Sqrt[z^(5/4)]`).
-  if matches!(exp, Expr::Real(_))
-    || matches!(exp, Expr::FunctionCall { name, .. } if name == "Rational")
-  {
+  // Any other outer exponent — symbolic, irrational or complex — combines
+  // under the same conditions: `(x^(1/3))^y` is `x^(y/3)` and
+  // `(2^(1/3))^x` is `2^(x/3)`, while `(2^x)^(1/3)` stays put.
+  if !matches!(exp, Expr::Integer(_) | Expr::BigInteger(_)) {
     let inner = match base {
       Expr::BinaryOp {
         op: BinaryOperator::Power,
@@ -12073,7 +12101,8 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // `Sqrt[Pi^2]` = `Pi`) — the |p| < 1 restriction only guards bases whose
     // sign is unknown.
     if let Some((inner_base, inner_exp)) = inner
-      && (inner_exp_abs_lt_one(inner_exp) || is_pos_numeric(inner_base))
+      && (inner_exp_abs_lt_one(inner_exp)
+        || is_pos_numeric(inner_base) && is_real_numeric(inner_exp))
     {
       let new_exp = times_ast(&[inner_exp.clone(), exp.clone()])?;
       return power_two(inner_base, &new_exp);

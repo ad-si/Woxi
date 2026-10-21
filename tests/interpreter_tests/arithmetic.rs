@@ -1354,10 +1354,32 @@ mod plus_numeric_contagion {
       interpret("ArcCos[(-2.2 + 0.*I)/2]").unwrap(),
       "3.141592653589793 - 0.4435682543851153*I"
     );
+    // The last digit of the real part is libm's; the imaginary part must be
+    // an exact `0.`, not rounding noise.
     assert_eq!(
-      interpret("ArcSin[0.5 + 0.*I]").unwrap(),
-      "0.5235987755982989 + 0.*I"
+      interpret("{Re[#], Im[#]} &[ArcSin[0.5 + 0.*I]] // Round[#, 0.001] &")
+        .unwrap(),
+      "{0.524, 0.}"
     );
+    assert_eq!(
+      interpret("Im[ArcCos[0.5 + 0.*I]] == 0 && Im[ArcTan[0.5 + 0.*I]] == 0")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  // Round[z, a] of a machine complex is a Round[z/a], so a part that rounds
+  // to zero vanishes.
+  #[test]
+  fn round_machine_complex_with_step() {
+    assert_eq!(
+      interpret("Round[0.5235987755982988 + 0.*I, 0.001]").unwrap(),
+      "0.524"
+    );
+    assert_eq!(interpret("Round[0.3 + 0.0001 I, 0.001]").unwrap(), "0.3");
+    assert_eq!(interpret("Round[2.6 + 0.*I, 0.5]").unwrap(), "2.5");
+    assert_eq!(interpret("Round[2.6 + 3.4 I, 0.5]").unwrap(), "2.5 + 3.5*I");
+    assert_eq!(interpret("Round[Pi + E I, 1/2]").unwrap(), "3 + (5*I)/2");
   }
 
   // A complex number prints as one unit: a machine pure-imaginary one keeps

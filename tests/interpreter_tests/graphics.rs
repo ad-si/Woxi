@@ -23619,6 +23619,157 @@ mod blend {
     );
   }
 
+  // Tick values past the i64 range used to panic while being labelled.
+  #[test]
+  fn plot_with_huge_values_renders() {
+    assert_eq!(
+      interpret("Head[ExportString[Plot[-10^20 x, {x, 0, 1}], \"SVG\"]]")
+        .unwrap(),
+      "String"
+    );
+  }
+
+  #[test]
+  fn blend_in_own_color_space() {
+    // Colors sharing a head blend in that space; a hue past one turn keeps
+    // only its fractional part first.
+    assert_eq!(
+      interpret("Blend[{Hue[0.1], Hue[0.5]}, 0.5]").unwrap(),
+      "Hue[0.30000000000000004, 1., 1.]"
+    );
+    assert_eq!(
+      interpret("Blend[{Hue[1.3, 0.5, 0.5], Hue[0.2]}, 0.5]").unwrap(),
+      "Hue[0.25, 0.75, 0.75]"
+    );
+    assert_eq!(
+      interpret("Blend[{Hue[1], Hue[0.5]}, 0.5]").unwrap(),
+      "Hue[0.75, 1., 1.]"
+    );
+    assert_eq!(
+      interpret("Blend[{Hue[1/3], Hue[1/2]}, 1/3]").unwrap(),
+      "Hue[7/18, 1, 1]"
+    );
+    assert_eq!(
+      interpret("Blend[{CMYKColor[1, 0, 0, 0], CMYKColor[0, 1, 0, 0]}, 0.5]")
+        .unwrap(),
+      "CMYKColor[0.5, 0.5, 0., 0.]"
+    );
+    // Mixed heads blend in RGB.
+    assert_eq!(
+      interpret("Blend[{Hue[0.2], CMYKColor[0, 1, 0, 0]}, 0.5]").unwrap(),
+      "RGBColor[0.8999999999999999, 0.5, 0.5]"
+    );
+    assert_eq!(
+      interpret("Blend[{{0, Red}, {1, Hue[0.5]}}, 0.5]").unwrap(),
+      "RGBColor[0.5, 0.5, 0.5]"
+    );
+  }
+
+  #[test]
+  fn blend_machine_arithmetic() {
+    // `a + t (b - a)` as one fused multiply-add, like Wolfram.
+    assert_eq!(
+      interpret(
+        "Blend[{RGBColor[0.1, 0.37, 0.93], RGBColor[0.7, 0.11, 0.29]}, 0.3]"
+      )
+      .unwrap(),
+      "RGBColor[0.27999999999999997, 0.292, 0.738]"
+    );
+    assert_eq!(
+      interpret(
+        "Blend[{RGBColor[0.123, 0.377, 0.931], RGBColor[0.713, 0.117, \
+         0.291], RGBColor[0.4, 0.9, 0.3]}, 0.77]"
+      )
+      .unwrap(),
+      "RGBColor[0.54398, 0.5398200000000001, 0.29586]"
+    );
+    // Previously floats were rounded to three decimals before blending.
+    assert_eq!(
+      interpret(
+        "Blend[{RGBColor[0.368417, 0.506779, 0.709798], \
+         RGBColor[0.368417, 0.506779, 0.709798]}, 0.5]"
+      )
+      .unwrap(),
+      "RGBColor[0.368417, 0.506779, 0.709798]"
+    );
+  }
+
+  #[test]
+  fn blend_weights_alpha_and_clamping() {
+    assert_eq!(
+      interpret("Blend[{Red, Blue}, {1, 3}]").unwrap(),
+      "RGBColor[1/4, 0, 3/4]"
+    );
+    assert_eq!(
+      interpret("Blend[{Hue[0.1], Hue[0.3]}, {1, 3}]").unwrap(),
+      "Hue[0.24999999999999997, 1, 1]"
+    );
+    assert_eq!(
+      interpret("Blend[{Hue[0.2], Hue[0.4]}]").unwrap(),
+      "Hue[0.30000000000000004, 1, 1]"
+    );
+    assert_eq!(
+      interpret("Blend[{RGBColor[1, 0, 0, 1/2], Blue}, 1/2]").unwrap(),
+      "RGBColor[1/2, 0, 1/2, 3/4]"
+    );
+    assert_eq!(
+      interpret("Blend[{GrayLevel[0, 0.5], GrayLevel[1]}, 0.5]").unwrap(),
+      "GrayLevel[0.5, 0.75]"
+    );
+    assert_eq!(
+      interpret("Blend[{Red, Blue}, 2]").unwrap(),
+      "RGBColor[0, 0, 1]"
+    );
+    assert_eq!(
+      interpret("Blend[{Red, Blue}, -1]").unwrap(),
+      "RGBColor[1, 0, 0]"
+    );
+  }
+
+  #[test]
+  fn blend_invalid_arguments() {
+    let r = interpret_with_stdout("Blend[{Red, x}, 0.5]").unwrap();
+    assert_eq!(r.result, "Blend[{RGBColor[1, 0, 0], x}, 0.5]");
+    assert!(r.warnings.iter().any(|w| w.starts_with("Blend::arg:")));
+    let r = interpret_with_stdout("Blend[{Red, Blue}, x]").unwrap();
+    assert_eq!(r.result, "Blend[{RGBColor[1, 0, 0], RGBColor[0, 0, 1]}, x]");
+    assert!(r.warnings.iter().any(|w| w.starts_with("Blend::argl:")));
+  }
+
+  #[test]
+  fn to_color() {
+    assert_eq!(
+      interpret("ToColor[Hue[0.4, 0.7, 0.7], RGBColor]").unwrap(),
+      "RGBColor[0.21000000000000002, 0.7, 0.4060000000000002]"
+    );
+    assert_eq!(
+      interpret("ToColor[RGBColor[1, 0, 0], RGBColor]").unwrap(),
+      "RGBColor[1, 0, 0]"
+    );
+    assert_eq!(
+      interpret("ToColor[GrayLevel[0.5], RGBColor]").unwrap(),
+      "RGBColor[0.5, 0.5, 0.5]"
+    );
+    assert_eq!(
+      interpret("ToColor[RGBColor[1, 0, 0], GrayLevel]").unwrap(),
+      "GrayLevel[0.299]"
+    );
+    assert_eq!(
+      interpret("ToColor[RGBColor[1, 0, 0], CMYKColor]").unwrap(),
+      "CMYKColor[0., 1., 1., 0.]"
+    );
+    let r = interpret_with_stdout("ToColor[1, RGBColor]").unwrap();
+    assert_eq!(r.result, "ToColor[1, RGBColor]");
+    assert!(r.warnings.iter().any(|w| w.starts_with("ToColor::tocol:")));
+    let r = interpret_with_stdout("ToColor[Hue[0.4], f]").unwrap();
+    assert_eq!(r.result, "ToColor[Hue[0.4], f]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.starts_with("ToColor::colconv:"))
+    );
+  }
+
   #[test]
   fn blend_weight_list_length_mismatch_emits_argl() {
     // wolframscript: emits Blend::argl when weight-list length != color-list
@@ -23631,7 +23782,7 @@ mod blend {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains(
-        "Blend::argl: {1, 0.5} should be a real number or a list of non-negative numbers, which has the same length as {RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1]}."
+        "Blend::argl: {1, 0.5} should be a real number or a list of non-negative numbers that has the same length as {RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1]}."
       )),
       "expected Blend::argl message, got {msgs:?}"
     );
@@ -32575,11 +32726,13 @@ mod cases {
   }
   #[test]
   fn color_data_indexed_color_list() {
-    // ColorData[97, "ColorList"] is the default plot palette (10 colors).
+    // ColorData[97, "ColorList"] is the default plot palette: its ten fixed
+    // colors, then five of the colors it generates past them.
     assert_case(
-      r#"ColorData[97, "ColorList"]"#,
-      r#"{RGBColor[0.368417, 0.506779, 0.709798], RGBColor[0.880722, 0.611041, 0.142051], RGBColor[0.560181, 0.691569, 0.194885], RGBColor[0.922526, 0.385626, 0.209179], RGBColor[0.528488, 0.470624, 0.701351], RGBColor[0.772079, 0.431554, 0.102387], RGBColor[0.363898, 0.618501, 0.782349], RGBColor[1., 0.75, 0.], RGBColor[0.647624, 0.37816, 0.614037], RGBColor[0.571589, 0.586483, 0.]}"#,
+      r#"Take[ColorData[97, "ColorList"], 11]"#,
+      r#"{RGBColor[0.368417, 0.506779, 0.709798], RGBColor[0.880722, 0.611041, 0.142051], RGBColor[0.560181, 0.691569, 0.194885], RGBColor[0.922526, 0.385626, 0.209179], RGBColor[0.528488, 0.470624, 0.701351], RGBColor[0.772079, 0.431554, 0.102387], RGBColor[0.363898, 0.618501, 0.782349], RGBColor[1, 0.75, 0], RGBColor[0.647624, 0.37816, 0.614037], RGBColor[0.571589, 0.586483, 0.], RGBColor[0.915, 0.3325, 0.2125]}"#,
     );
+    assert_case(r#"Length[ColorData[97, "ColorList"]]"#, "15");
   }
   #[test]
   fn histogram_1() {

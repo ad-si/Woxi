@@ -784,7 +784,9 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     if let Some((base, e)) = nested
-      && (inner_exp_abs_lt_one(&e) || is_pos_numeric(&base))
+      && (inner_exp_abs_lt_one(&e)
+        || is_pos_numeric(&base)
+          && crate::functions::math_ast::is_real_numeric(&e))
     {
       return power_two(&args[0], &make_rational(1, 2));
     }
@@ -2096,7 +2098,10 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // Complex x with a real step: round the real and imaginary parts
     // componentwise (Round[a + b I, c] = Round[a, c] + Round[b, c] I).
+    // A machine complex goes through `a Round[x/a]` instead, so a part that
+    // rounds to zero vanishes: `Round[0.3 + 0.0001 I, 0.001]` is `0.3`.
     if !is_complex_number(&eval_a)
+      && !has_inexact_imag_term(&eval_x)
       && let Some((re, im)) = complex_parts_for_rounding(&eval_x)
     {
       let re_r = round_ast(&[re, eval_a.clone()])?;
@@ -2104,8 +2109,11 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return build_complex_result(re_r, im_r);
     }
 
-    // Complex step: Round[x, a] = a * Round[x/a]
-    if is_complex_number(&eval_a) || is_complex_number(&eval_x) {
+    // Complex step or machine complex x: Round[x, a] = a * Round[x/a]
+    if is_complex_number(&eval_a)
+      || is_complex_number(&eval_x)
+      || has_inexact_imag_term(&eval_x)
+    {
       let quotient = crate::evaluator::evaluate_function_call_ast(
         "Divide",
         &[eval_x.clone(), eval_a.clone()],

@@ -3388,6 +3388,21 @@ fn try_complex_inverse_trig(
     (re, im)
   };
   let cln = |a: f64, b: f64| (a.hypot(b).ln(), b.atan2(a));
+  // On the real segment where the function is real, the imaginary part is
+  // exactly zero; the general formula leaves rounding noise there instead
+  // (`Log[Abs[…]]` of a modulus that is 1 up to the last ULP).
+  if y == 0.0 {
+    let real = match name {
+      "ArcSin" if x.abs() <= 1.0 => Some(x.asin()),
+      "ArcCos" if x.abs() <= 1.0 => Some(x.acos()),
+      "ArcTan" => Some(x.atan()),
+      "ArcSinh" => Some(x.asinh()),
+      _ => None,
+    };
+    if let Some(re) = real {
+      return Some(build_complex_float_result(re, 0.0));
+    }
+  }
   let (rr, ri) = match name {
     // ArcSin[z] = -I Log[I z + Sqrt[1 - z^2]]
     "ArcSin" => {

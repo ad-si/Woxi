@@ -9246,6 +9246,98 @@ mod linear_programming {
   use super::*;
 
   #[test]
+  fn integer_domain() {
+    // Ties between equally good integer points resolve the way Wolfram's
+    // branch and bound does.
+    assert_eq!(
+      interpret("LinearProgramming[{1, 1}, {{3, 2}}, {7}, 0, Integers]")
+        .unwrap(),
+      "{3, 0}"
+    );
+    assert_eq!(
+      interpret("LinearProgramming[{-1, -1}, {{-3, -2}}, {-7}, 0, Integers]")
+        .unwrap(),
+      "{0, 3}"
+    );
+    assert_eq!(
+      interpret("LinearProgramming[{1, 2}, {{1, 1}}, {5/2}, 0, Integers]")
+        .unwrap(),
+      "{3, 0}"
+    );
+    // A 0/1 knapsack: bounds {0, 1} on every variable.
+    assert_eq!(
+      interpret(
+        "LinearProgramming[-{3, 4, 5}, -{{2, 3, 4}}, {-7}, \
+         Table[{0, 1}, {3}], Integers]"
+      )
+      .unwrap(),
+      "{0, 1, 1}"
+    );
+    // A free integer variable.
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{1, 1}, {{1, 1}}, {7}, {-Infinity, 0}, Integers]"
+      )
+      .unwrap(),
+      "{7, 0}"
+    );
+  }
+
+  #[test]
+  fn integer_domain_infeasible() {
+    assert_eq!(
+      interpret("LinearProgramming[{1, 1}, {{2, 2}}, {{3, 0}}, 0, Integers]")
+        .unwrap(),
+      "LinearProgramming[{1, 1}, {{2, 2}}, {{3, 0}}, 0, Integers]"
+    );
+  }
+
+  #[test]
+  fn mixed_domains() {
+    // Continuous variables of a mixed problem come back as machine reals; a
+    // short domain list leaves the remaining variables real.
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{1, 1}, {{3, 2}}, {7}, 0, {Integers, Reals}]"
+      )
+      .unwrap(),
+      "{2, 0.5}"
+    );
+    assert_eq!(
+      interpret("LinearProgramming[{1, 1}, {{3, 2}}, {7}, 0, {Integers}]")
+        .unwrap(),
+      "{2, 0.5}"
+    );
+    assert_eq!(
+      interpret("LinearProgramming[{1, 1}, {{3, 2}}, {7}, 0, Reals]").unwrap(),
+      "{7/3, 0}"
+    );
+  }
+
+  #[test]
+  fn integer_domain_messages() {
+    let exact = interpret_with_stdout(
+      "LinearProgramming[{1, 1}, {{3, 2}}, {7}, 0, Integers]",
+    )
+    .unwrap();
+    assert!(exact.warnings.iter().any(|w| w.contains("::lpip")));
+    // Inputs that are already machine numbers give no precision warning.
+    let inexact = interpret_with_stdout(
+      "LinearProgramming[{1., 1}, {{3, 2}}, {7}, 0, Integers]",
+    )
+    .unwrap();
+    assert_eq!(inexact.result, "{3, 0}");
+    assert!(!inexact.warnings.iter().any(|w| w.contains("::lpip")));
+    // An unknown domain is reported and ignored.
+    let bad = interpret_with_stdout(
+      "LinearProgramming[{1, 1}, {{3, 2}}, {7}, 0, Rationals]",
+    )
+    .unwrap();
+    assert_eq!(bad.result, "{7/3, 0}");
+    assert!(bad.warnings.iter().any(|w| w.contains("::lpdom")));
+  }
+
+  #[test]
   fn default_ge_constraints() {
     assert_eq!(
       interpret("LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 3}]").unwrap(),
