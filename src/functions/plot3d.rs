@@ -6662,6 +6662,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // is `|ViewPoint|`, which Wolfram measures in units of the longest side
   // of the displayed box.
   let mut view_angle: Option<f64> = None;
+  // `ViewCenter -> {a, b, c}`: the point the camera looks at, as fractions
+  // of the displayed box along each axis (`{1/2, 1/2, 1/2}` is its middle).
+  let mut view_center: Option<[f64; 3]> = None;
   let mut view_distance = {
     let d = Camera::DEFAULT_VIEW_POINT;
     (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
@@ -6753,6 +6756,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && a < std::f64::consts::PI
           {
             view_angle = Some(a);
+          }
+        }
+        "ViewCenter" => {
+          if let Some(c) = eval_vec3(replacement) {
+            view_center = Some(c);
           }
         }
         "PlotRange" => {
@@ -7467,6 +7475,22 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Measured against wolframscript over a sweep of angles, distances and
   // plot ranges: a world length `l` covers `(l / L) / (2 d tan(θ/2))` of
   // the frame.
+  // `ViewCenter` moves the point the camera looks at off the box middle.
+  let look_at = |c: [f64; 3]| {
+    project(
+      Point3D {
+        x: x3_min + c[0] * (x3_max - x3_min),
+        y: y3_min + c[1] * (y3_max - y3_min),
+        z: z3_min + c[2] * (z3_max - z3_min),
+      },
+      &camera,
+    )
+  };
+  if let Some(c) = view_center
+    && view_angle.is_none()
+  {
+    (p_cx, p_cy) = look_at(c);
+  }
   if let Some(theta) = view_angle {
     let span = 2.0 * view_distance * (theta / 2.0).tan() * view_box_side;
     if span > 0.0 && span.is_finite() {
@@ -7483,6 +7507,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
       p_cx = bcx;
       p_cy = bcy;
+      if let Some(c) = view_center {
+        (p_cx, p_cy) = look_at(c);
+      }
     }
   }
 

@@ -6741,6 +6741,21 @@ mod plot3d {
       assert_eq!(literal_angle, dynamic_angle);
     }
 
+    // `ViewCenter` moves the point the camera looks at; the box middle is
+    // the default, so naming it changes nothing.
+    #[test]
+    fn graphics3d_view_center_moves_the_look_at_point() {
+      let plain = export_svg("Graphics3D[Cuboid[], ViewAngle -> 0.3]");
+      let middle = export_svg(
+        "Graphics3D[Cuboid[], ViewAngle -> 0.3, ViewCenter -> {1/2, 1/2, 1/2}]",
+      );
+      let shifted = export_svg(
+        "Graphics3D[Cuboid[], ViewAngle -> 0.3, ViewCenter -> {0.9, 0.1, 1/2}]",
+      );
+      assert_eq!(plain, middle);
+      assert_ne!(plain, shifted);
+    }
+
     // `AspectRatio` sets the height of a Graphics3D picture relative to
     // its width.
     #[test]
