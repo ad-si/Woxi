@@ -1045,6 +1045,18 @@ mod graphics {
       assert!(!svg.contains("zzlow"), "{svg}");
     }
 
+    /// A `Dynamic[x]` nested in a `Text` label (`Row[{"n = ", Dynamic[n]}]`)
+    /// shows the current value of `x`, not the held `Dynamic[x]` call.
+    #[test]
+    fn a_dynamic_inside_a_text_label_shows_its_value() {
+      let svg = export_svg(
+        "zq = 41; Graphics[Text[Row[{\"zzn: \", Dynamic[zq], \", \", \
+         Dynamic[zq + 1]}], {0, 0}]]",
+      );
+      assert!(svg.contains(">zzn: 41, 42</text>"), "{svg}");
+      assert!(!svg.contains("Dynamic"), "{svg}");
+    }
+
     /// A positionless `Text[label]` in a plot's `Epilog` sits at the origin,
     /// as it does in `Graphics`, instead of being dropped.
     #[test]

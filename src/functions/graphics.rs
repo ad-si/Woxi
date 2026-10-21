@@ -2406,6 +2406,17 @@ fn collect_primitives(
           }
         }
         "Text" if !args.is_empty() => {
+          // A `Dynamic[x]` inside the label (`Row[{"n = ", Dynamic[n]}]`)
+          // shows the current value of `x`, not the held call.
+          let released;
+          let args = if contains_dynamic(&args[0]) {
+            let mut owned = args.to_vec();
+            owned[0] = release_dynamics(&args[0]);
+            released = owned;
+            released.as_slice()
+          } else {
+            args
+          };
           // `Text[picture, pos]` embeds an already-rendered `Graphics` or
           // `Image` the same way `Inset` does — either primitive can hold a
           // picture, not just a string label — instead of printing the
@@ -4576,6 +4587,37 @@ fn dynamic_current_value(expr: &Expr) -> Expr {
       if name == "Dynamic" && !args.is_empty() =>
     {
       evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone())
+    }
+    other => other.clone(),
+  }
+}
+
+/// Whether `expr` holds a `Dynamic[…]` anywhere inside it.
+fn contains_dynamic(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      (name == "Dynamic" && !args.is_empty())
+        || args.iter().any(contains_dynamic)
+    }
+    Expr::List(items) => items.iter().any(contains_dynamic),
+    _ => false,
+  }
+}
+
+/// `expr` with every `Dynamic[x, …]` replaced by the current value of `x`.
+fn release_dynamics(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      dynamic_current_value(expr)
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(release_dynamics).collect(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(release_dynamics).collect())
     }
     other => other.clone(),
   }
