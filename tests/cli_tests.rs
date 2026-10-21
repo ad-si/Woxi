@@ -385,6 +385,25 @@ Cell[BoxData[RowBox[{"Print[\"hi\"]", "\n", "x = 5"}]], "Code"]
 }
 
 #[test]
+fn run_notebook_joins_definition_split_across_input_cells() {
+  // The FrontEnd continues an incomplete input in the next cell, so one
+  // definition may be split over several Input cells.
+  let nb = r#"Notebook[{
+Cell[BoxData["f[x_] := Module[{a = 2},"], "Input"],
+Cell[BoxData["a * x]"], "Input"],
+Cell[BoxData["f[21]"], "Input"]
+}]
+"#;
+  let path = std::env::temp_dir().join("woxi_cli_test_split_cells.nb");
+  std::fs::write(&path, nb).expect("write temp notebook");
+  let (stdout, stderr, ok) = run_file(&path);
+  let _ = std::fs::remove_file(&path);
+  assert!(ok, "woxi run notebook failed: stderr={stderr}");
+  assert!(stderr.is_empty(), "unexpected stderr: {stderr}");
+  assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn run_notebook_manipulate_epilog_label_has_no_precision_marker() {
   // Regression for a Wolfram Demonstrations Project notebook pattern: a
   // Manipulate body computes a value with `NIntegrate`, then builds a
