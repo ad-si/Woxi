@@ -3808,4 +3808,26 @@ mod textcell_tests {
     assert_eq!(value(&state, "n"), "0");
     assert_eq!(value(&state, "s"), "{{1, 0}, {2, 0}}");
   }
+
+  /// A `Row` carrying an option inside a `Module` body must survive the
+  /// body-source round trip with its `Row` head, or its items print as a
+  /// scrambled product of strings in a plot label.
+  #[test]
+  fn module_body_keeps_row_with_options_in_plot_label() {
+    let code = r#"Manipulate[
+      Module[{P = 1, opt1},
+        opt1 = Sequence[Axes -> False,
+          PlotLabel -> Style[Row[{"a", " = ", P, " bar", Spacer@50, Subscript[Style["f", Italic], "B"], Superscript[" P", If[z < 1, "s", ""]], NumberForm[z, {2, 2}]}, ImageMargins -> 1], 17]];
+        Plot[x, {x, 0, 1}, Evaluate[opt1]]],
+      {z, 0, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(
+      state.body.contains("Row[{"),
+      "body lost its Row: {}",
+      state.body
+    );
+  }
 }

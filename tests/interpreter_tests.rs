@@ -2921,6 +2921,49 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_label_row_with_option_does_not_print_the_option() {
+    // Regression: `Row[{…}, ImageMargins -> 1]` in a `PlotLabel` took the
+    // option for a separator and wrote `ImageMargins -> 1` between items.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, PlotLabel -> Style[Row[{\"a\", \" = \", 1, \" bar\"}, ImageMargins -> 1], 17]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("ImageMargins"), "option leaked: {svg}");
+    assert!(svg.contains("a = 1 bar"), "label lost its text: {svg}");
+  }
+
+  #[test]
+  fn test_input_form_of_sequence_keeps_nested_row() {
+    // Regression: InputForm of `Sequence[…]` used the OutputForm renderer,
+    // which concatenates its items and flattened a nested `Row[{…}]` into
+    // plain text (breaking a Manipulate body that assigns `opts = Sequence[…]`).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[Hold[o = Sequence[a -> Row[{\"a\", 1}]]], InputForm]"
+      )
+      .unwrap(),
+      "Hold[o = Sequence[a -> Row[{\"a\", 1}]]]"
+    );
+  }
+
+  #[test]
+  fn test_solve_quadratic_negative_leading_coefficient_ascending() {
+    // Regression: machine-real and rational negative leading coefficients
+    // listed the roots in descending order; Solve lists them ascending.
+    clear_state();
+    assert_eq!(
+      interpret("Solve[-1.5*x^2 - 2*x + 3 == 0, x]").unwrap(),
+      "{{x -> -2.2301385866078096}, {x -> 0.8968052532744766}}"
+    );
+    assert_eq!(
+      interpret("Solve[-3/2*x^2 - 2*x + 3 == 0, x]").unwrap(),
+      "{{x -> (-2 - Sqrt[22])/3}, {x -> (-2 + Sqrt[22])/3}}"
+    );
+  }
+
+  #[test]
   fn test_row_width_counts_non_ascii_characters_once() {
     // Regression: a string item's display width was its UTF-8 byte length,
     // so each `×`/`÷` counted as two characters and a Row/Grid holding
