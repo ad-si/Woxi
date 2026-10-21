@@ -24115,6 +24115,36 @@ pub struct LabelRun {
   pub color: Option<(f32, f32, f32)>,
 }
 
+/// How a [`ManipulateControl::Locator`] turns dragged points into the value
+/// of the variable it controls (see its `derived` field).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocatorDerived {
+  /// Variable holding the dragged points (the `local` of `Dynamic[local, f]`).
+  pub local: String,
+  /// InputForm of the callback `f`, applied as `f[points, local]`.
+  pub callback: String,
+}
+
+/// The InputForm value a Locator control binds its variable to: the point
+/// list itself, or what its derived callback computes from it.
+pub fn locator_binding_code(
+  name: &str,
+  points: &[(f64, f64)],
+  derived: Option<&LocatorDerived>,
+) -> String {
+  let points_code = format_point_list_input(points);
+  let Some(d) = derived else {
+    return points_code;
+  };
+  apply_manipulate_callback(
+    &[(name.to_string(), "Null".to_string())],
+    &d.callback,
+    &format!("{points_code}, {}", d.local),
+    name,
+  )
+  .unwrap_or(points_code)
+}
+
 /// A single control inside a Manipulate expression.
 ///
 /// Continuous controls correspond to `{u, umin, umax}` or
@@ -24246,6 +24276,12 @@ pub enum ManipulateControl {
     y_max: f64,
     auto_create: bool,
     label: String,
+    /// Set when the pane drives a *derived* variable: the pane's own
+    /// `Dynamic[local, f]` callback (`Function[{val, expr}, var = …]`) turns
+    /// the dragged points into the control variable's value, and `local`
+    /// names the variable that holds the points themselves. Without it the
+    /// variable is bound to the point list directly.
+    derived: Option<LocatorDerived>,
   },
   /// A `ControlType -> Trigger` control: a play/pause button pair that
   /// sweeps its variable from `min` towards `max` in `step` increments
@@ -25635,6 +25671,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         y_max,
         auto_create: false,
         label: var.clone(),
+        derived: None,
       });
       dynamic_locator_defaults.push((var.clone(), reset_code));
       locator_reset_vars.push(var);
@@ -25948,6 +25985,31 @@ fn spec_marks_locator(items: &[Expr]) -> bool {
 /// {xmin, ymin}, {xmax, ymax}, (LocatorPane[Dynamic[pts], …] &)}`. Such a
 /// control is a draggable-points Locator whose options (`LocatorAutoCreate`)
 /// live on the pane rather than on the spec.
+/// The `Dynamic[local, f]` a custom control's `LocatorPane` uses to drive
+/// `var` *indirectly*: dragging stores the points in `local`, and the
+/// callback `f` (which mentions `var`) derives the variable's value from
+/// them — e.g. a row of 1D markers whose x positions form a list of levels.
+fn locator_pane_derived(dargs: &[Expr], var: &str) -> Option<LocatorDerived> {
+  // Whole-identifier match on the callback's source form (the expression
+  // tree has too many node kinds — compound bodies, named functions — to
+  // walk by hand).
+  fn mentions(code: &str, var: &str) -> bool {
+    code.match_indices(var).any(|(i, _)| {
+      let is_ident = |c: char| c.is_alphanumeric() || c == '$' || c == '`';
+      !code[..i].chars().next_back().is_some_and(is_ident)
+        && !code[i + var.len()..].chars().next().is_some_and(is_ident)
+    })
+  }
+  let [Expr::Identifier(local), callback, ..] = dargs else {
+    return None;
+  };
+  let callback = crate::syntax::expr_to_source_form(callback);
+  (local != var && mentions(&callback, var)).then(|| LocatorDerived {
+    local: local.clone(),
+    callback,
+  })
+}
+
 fn custom_locator_pane_options(items: &[Expr]) -> Option<Vec<Expr>> {
   fn find(expr: &Expr, var: &str) -> Option<Vec<Expr>> {
     match expr {
@@ -25958,7 +26020,8 @@ fn custom_locator_pane_options(items: &[Expr]) -> Option<Vec<Expr>> {
             args: dargs,
           }) = args.first()
           && dname == "Dynamic"
-          && matches!(dargs.first(), Some(Expr::Identifier(v)) if v == var)
+          && (matches!(dargs.first(), Some(Expr::Identifier(v)) if v == var)
+            || locator_pane_derived(dargs, var).is_some())
         {
           return Some(args.to_vec());
         }
@@ -26002,6 +26065,16 @@ fn custom_locator_pane_options(items: &[Expr]) -> Option<Vec<Expr>> {
         .into(),
       };
       let built = crate::evaluator::evaluate_expr_to_expr(&applied).ok()?;
+      // `Dynamic[helper[##]] &` leaves the helper call held inside the
+      // `Dynamic`; the pane only appears once that call is evaluated.
+      let built = match &built {
+        Expr::FunctionCall { name, args }
+          if name == "Dynamic" && args.len() == 1 =>
+        {
+          crate::evaluator::evaluate_expr_to_expr(&args[0]).ok()?
+        }
+        _ => built,
+      };
       find(&built, &var)
     })
   })
@@ -27985,10 +28058,13 @@ fn unwrap_control_wrapper(spec: Expr) -> Expr {
     _ => spec,
   };
   match &spec {
+    // `Control[{{v, init, label}, Checkbox}]`: the bare control-type symbol
+    // is the `ControlType -> …` option it abbreviates, exactly as in a
+    // top-level spec.
     Expr::FunctionCall { name, args }
       if name == "Control" && !args.is_empty() =>
     {
-      args[0].clone()
+      bare_control_type_as_option(args[0].clone())
     }
     _ => spec,
   }
@@ -30871,6 +30947,47 @@ fn parse_manipulate_control(
             }
       )
     });
+    // A pane bound to a local `Dynamic[local, f]` whose callback derives this
+    // variable (`DynamicModule[{pts = …}, LocatorPane[Dynamic[pts, f], …]]`):
+    // the draggable points are `local`'s, and the variable follows through `f`.
+    if let Some(Expr::FunctionCall { args: dargs, .. }) =
+      pane.as_ref().and_then(|p| p.first())
+      && let Some(var) = manipulate_spec_var_name(items)
+      && let Some(derived) = locator_pane_derived(dargs, &var)
+      && let Some(points) = crate::interpret_to_expr(&derived.local)
+        .ok()
+        .and_then(|e| point_list_f64(&e))
+    {
+      let (x_min, x_max, y_min, y_max) = locator_range(&corner_bounds, &points);
+      let auto_create = pane.as_ref().is_some_and(|p| {
+        p.iter().skip(1).any(|it| {
+          matches!(
+            it,
+            Expr::Rule { pattern, .. }
+              if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "LocatorAutoCreate")
+          )
+        })
+      });
+      return Some(ParsedControl::Visible {
+        control: ManipulateControl::Locator {
+          name,
+          points,
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          auto_create,
+          label,
+          derived: Some(derived),
+        },
+        enabled,
+        min_code: None,
+        max_code: None,
+        values_code: None,
+        animate: None,
+        tracking: tracking.clone(),
+      });
+    }
     if let Some((x, y)) = list2_f64(&evaluated) {
       let (x_min, x_max, y_min, y_max) =
         if pane.is_some() && corner_bounds.len() < 2 {
@@ -30915,6 +31032,7 @@ fn parse_manipulate_control(
           y_max,
           auto_create,
           label,
+          derived: None,
         },
         enabled,
         min_code: None,
@@ -32154,9 +32272,15 @@ pub fn manipulate_initial_bindings(
           format_f64_input(*high_initial)
         ),
       )),
-      ManipulateControl::Locator { name, points, .. } => {
-        Some((name.clone(), format_point_list_input(points)))
-      }
+      ManipulateControl::Locator {
+        name,
+        points,
+        derived,
+        ..
+      } => Some((
+        name.clone(),
+        locator_binding_code(name, points, derived.as_ref()),
+      )),
       ManipulateControl::Color { name, initial, .. } => {
         Some((name.clone(), initial.clone()))
       }
@@ -32852,6 +32976,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         y_max,
         auto_create,
         label,
+        ..
       } => {
         let point_parts: Vec<String> =
           points.iter().map(|(x, y)| format!("[{x},{y}]")).collect();
@@ -35193,6 +35318,37 @@ mod manipulate_dynamic_control_list_tests {
         assert_eq!(points.len(), 3);
         assert_eq!(*x_max, 3.0);
         assert!(*auto_create);
+      }
+      other => panic!("expected a Locator control, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn locator_pane_on_local_with_callback_derives_the_variable() {
+    // Evaluating the Manipulate runs its Initialization (defining `sl`).
+    let expr = crate::interpret_to_expr(
+      "Manipulate[Length[lv], {{lv, {1/4, 1/2}, \"\"}, Dynamic[sl[##]] &}, \
+       Initialization :> (sl[Dynamic[Pattern[q, Blank[]]]] := \
+       DynamicModule[{pp = Map[{#, 0} &, {1/4, 1/2}]}, \
+       LocatorPane[Dynamic[pp, Function[{v, e}, q = v[[All, 1]]; \
+       e = Map[{#, 0} &, q], HoldAll]], Graphics[{}], {{0, 0}, {1, 0}}]])]",
+    )
+    .expect("evaluate");
+    let s = extract_manipulate_spec(&expr).expect("extract spec");
+    match &s.controls[0] {
+      ManipulateControl::Locator {
+        name,
+        points,
+        derived,
+        ..
+      } => {
+        assert_eq!(name, "lv");
+        assert_eq!(points.len(), 2);
+        let d = derived.as_ref().expect("derived callback");
+        assert_eq!(
+          locator_binding_code("lv", &[(0.5, 0.0), (0.75, 0.0)], Some(d)),
+          "{0.5, 0.75}"
+        );
       }
       other => panic!("expected a Locator control, got {other:?}"),
     }
