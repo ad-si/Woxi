@@ -229,6 +229,30 @@ mod arithmetic {
     }
   }
 
+  mod exact_zero_times_real {
+    use super::*;
+
+    #[test]
+    fn exact_zero_absorbs_machine_real() {
+      assert_eq!(interpret("0*1.5").unwrap(), "0");
+      assert_eq!(interpret("2.5*0").unwrap(), "0");
+      assert_eq!(interpret("0*0.").unwrap(), "0");
+      assert_eq!(interpret("Times[0, 2.5, x]").unwrap(), "0");
+      assert_eq!(interpret("0.3*Sin[2 Pi 1]").unwrap(), "0");
+    }
+
+    #[test]
+    fn recurrence_with_exact_zero_term_stays_exact() {
+      assert_eq!(
+        interpret(
+          "RecurrenceTable[{x[n+1]==x[n]+0.3 Sin[2 Pi y[n]], y[n+1]==y[n]+0.3 Sin[2 Pi x[n+1]], x[1]==1, y[1]==1}, {x, y}, {n, 1, 3}]"
+        )
+        .unwrap(),
+        "{{1, 1}, {1, 1}, {1, 1}}"
+      );
+    }
+  }
+
   mod head_of_comparisons {
     use super::*;
 

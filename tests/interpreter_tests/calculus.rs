@@ -20215,7 +20215,7 @@ mod extremum_partial_derivatives {
       (
         "g[t_] := Min[2.25, Max[1.25, t^3]]; \
          {Derivative[2][g][0.5], Derivative[2][g][1.2]}",
-        "{0., 7.199999999999999}",
+        "{0, 7.199999999999999}",
       ),
     ] {
       assert_eq!(interpret(code).unwrap(), expected, "for {code}");

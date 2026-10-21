@@ -2619,10 +2619,10 @@ mod list {
 
   #[test]
   fn stable_mean_numeric_branches() {
-    // Concrete alpha > 1, beta = 0, mu = 0 collapses to 0 (or 0.).
+    // Concrete alpha > 1, beta = 0, mu = 0 collapses to the exact 0 (an exact zero absorbs reals).
     assert_eq!(
       interpret("Mean[StableDistribution[0, 1.5, 0, 0, 1]]").unwrap(),
-      "0."
+      "0"
     );
     // alpha = 2 (Gaussian) collapses to mu.
     assert_eq!(
