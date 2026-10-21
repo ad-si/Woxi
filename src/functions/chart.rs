@@ -4610,14 +4610,28 @@ fn date_list_plot_ast_impl(
   };
 
   // `date_axis` labels the x axis with calendar dates.
-  let plot_opts = crate::functions::plot::PlotOptions {
+  let mut plot_opts = crate::functions::plot::PlotOptions {
     svg_width: chart_opts.svg_width,
     svg_height: chart_opts.svg_height,
     full_width: chart_opts.full_width,
     date_axis: true,
     log_y,
+    plot_label: chart_opts.plot_label.clone(),
     ..Default::default()
   };
+  for opt in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotLegends")
+    {
+      let (labels, _auto, _expressions, position) =
+        crate::functions::plot::parse_plot_legends(replacement);
+      plot_opts.plot_legends = labels;
+      plot_opts.legend_position = position;
+    }
+  }
 
   let svg = crate::functions::plot::generate_svg_with_filling(
     &all_series,
