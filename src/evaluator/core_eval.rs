@@ -4427,14 +4427,16 @@ fn evaluate_binary_op_pair(
   let has_list =
     matches!(&left_val, Expr::List(_)) || matches!(&right_val, Expr::List(_));
 
+  // Plus and Times are Flat: an operand that is itself an unevaluated sum
+  // (`{a} + {b, c}` after Thread::tdlen) must splice into this one rather
+  // than be broadcast as a scalar, so delegate to the n-ary implementations.
+  if has_list && let Some(name @ ("Plus" | "Times")) = func_name {
+    return evaluate_function_call_ast(name, &[left_val, right_val]);
+  }
   if has_list
     && matches!(
       op,
-      BinaryOperator::Plus
-        | BinaryOperator::Minus
-        | BinaryOperator::Times
-        | BinaryOperator::Divide
-        | BinaryOperator::Power
+      BinaryOperator::Minus | BinaryOperator::Divide | BinaryOperator::Power
     )
   {
     return thread_binary_op(&left_val, &right_val, op);

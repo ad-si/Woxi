@@ -9820,6 +9820,15 @@ mod sparse_array_arithmetic {
     );
   }
 
+  // The function-call form keeps the product sparse like the infix form.
+  #[test]
+  fn sparse_times_dense_vector_function_form() {
+    assert_eq!(
+      interpret("Times[{1, 2}, SparseArray[{1 -> 3}, 2]]").unwrap(),
+      "SparseArray[Automatic, {2}, 0, {1, {{0, 1}, {{1}}}, {3}}]"
+    );
+  }
+
   #[test]
   fn sparse_minus_dense_vector() {
     assert_eq!(

@@ -311,15 +311,27 @@ pub fn thread_listable(
     return Ok(None);
   }
 
+  // A `Threaded[…]` operand broadcasts right-aligned, which Plus and Times
+  // implement themselves (`try_threaded_op`); splitting the lists apart here
+  // first would pair the whole Threaded with each element.
+  if matches!(name, "Plus" | "Times")
+    && args.iter().any(|a| {
+      matches!(a, Expr::FunctionCall { name, args } if name == "Threaded" && args.len() == 1)
+    })
+  {
+    return Ok(None);
+  }
+
   // A SparseArray threaded against a genuine dense list behaves as its dense
   // form (e.g. `SparseArray[{1->5,2->3},3] + {1,1,1}` == `{6,4,1}`); without
   // this the opaque SparseArray would be paired whole with each list element.
   // Only densify when a real list is present, so a lone SparseArray argument is
   // left for the sparse-aware handlers.
-  let densified: Vec<Expr>;
-  let args: &[Expr] = if args.iter().any(
+  let has_sparse = args.iter().any(
     |a| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray"),
-  ) {
+  );
+  let densified: Vec<Expr>;
+  let args: &[Expr] = if has_sparse {
     densified = args
       .iter()
       .map(|a| match a {
@@ -367,7 +379,20 @@ pub fn thread_listable(
       .collect();
     results.push(evaluate_function_call_ast(name, &threaded_args)?);
   }
-  Ok(Some(Expr::List(results.into())))
+  let product = Expr::List(results.into());
+  // Times preserves a SparseArray's zero pattern (0 * x == 0), so the
+  // product with a dense list is another SparseArray, matching wolframscript
+  // (`SparseArray[{1->5,2->3},3] * {2,2,2}` -> SparseArray[…, {10, 6}]).
+  if has_sparse && name == "Times" {
+    return Ok(Some(
+      crate::evaluator::dispatch::list_operations::dense_to_sparse_array_with_default(
+        &product,
+        &Expr::Integer(0),
+      )
+      .unwrap_or(product),
+    ));
+  }
+  Ok(Some(product))
 }
 
 /// Append the relative `sub` to the directory `base` using the host's path

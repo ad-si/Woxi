@@ -1207,13 +1207,6 @@ fn evaluate_function_call_ast_inner(
     return Ok(result);
   }
 
-  // Thread Listable functions over list arguments
-  let is_listable = is_builtin_listable(name)
-    || crate::func_attrs_contains(name, Attributes::Listable);
-  if is_listable && let Some(result) = thread_listable(name, args)? {
-    return Ok(result);
-  }
-
   // Propagate uncertainty through an elementary unary function applied to an
   // Around value: f[Around[a, δ]] = Around[f[a], |f'[a]|·δ].
   if let Some(result) = crate::functions::try_around_unary(name, args) {
@@ -1274,6 +1267,15 @@ fn evaluate_function_call_ast_inner(
   } else {
     args
   };
+
+  // Thread Listable functions over list arguments. This runs after Flat, as
+  // in the Wolfram Language: a nested unevaluated `{a} + {b, c}` must splice
+  // into `{a} + {b, c} + {d, e, f}` rather than be broadcast as a scalar.
+  let is_listable = is_builtin_listable(name)
+    || crate::func_attrs_contains(name, Attributes::Listable);
+  if is_listable && let Some(result) = thread_listable(name, args)? {
+    return Ok(result);
+  }
 
   // Apply Orderless attribute: sort arguments into canonical order.
   // Plus and Times are exempt: Wolfram's machine-precision fold is
