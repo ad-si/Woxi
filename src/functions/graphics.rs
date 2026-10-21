@@ -24761,7 +24761,30 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // variable interactively: a hidden `ControlType -> None` spec for such a
   // variable is promoted to a visible Locator-style control below (with
   // `cb` as its write-back callback).
-  let body_locators = collect_body_locator_callbacks(&args[0]);
+  let mut body_locators = collect_body_locator_callbacks(&args[0]);
+  // A custom control function (`{{dummy, Null, ""}, Dynamic[LocatorPane[
+  // Dynamic[{a, b}], …] &]}`) can draw the pane over *other* hidden state
+  // variables; those are driven interactively exactly like a pane in the body.
+  for spec in &args[1..] {
+    let Expr::List(items) = spec else { continue };
+    for item in items.iter().skip(1) {
+      let item = match item {
+        Expr::FunctionCall { name, args: a }
+          if name == "Dynamic" && a.len() == 1 =>
+        {
+          &a[0]
+        }
+        other => other,
+      };
+      if let Expr::Function { body } = item {
+        for (var, callback) in collect_body_locator_callbacks(body) {
+          if !body_locators.iter().any(|(n, _)| *n == var) {
+            body_locators.push((var, callback));
+          }
+        }
+      }
+    }
+  }
   // `PopupMenu[Dynamic[var], choices]` drawn by the body likewise drives its
   // variable: a hidden `ControlType -> None` spec for such a variable turns
   // into a visible pick list, with the body's own choice list behind it.
@@ -35320,6 +35343,33 @@ mod manipulate_dynamic_control_list_tests {
         assert!(*auto_create);
       }
       other => panic!("expected a Locator control, got {other:?}"),
+    }
+  }
+
+  /// A hidden `ControlType -> None` point whose only draggable handle is a
+  /// `LocatorPane` drawn by another spec's custom control function (a dummy
+  /// `{{pad, Null, ""}, Dynamic[LocatorPane[Dynamic[{a, b}], …] &]}` row)
+  /// still gets a draggable 2D control, one per bound variable.
+  #[test]
+  fn locator_pane_in_a_dummy_control_function_promotes_hidden_points() {
+    let s = spec(
+      "Manipulate[{a, b, c}, {{a, {1, 2}}, {0, 0}, {6, 6}, ControlType -> None}, \
+       {{b, {3, 3}}, {0, 0}, {6, 6}, ControlType -> None}, \
+       {{c, {1, 1}}, {0, 0}, {3, 3}, ControlType -> None}, \
+       {{pad, Null, \"\"}, Dynamic[LocatorPane[Dynamic[{a, b}], \
+       Graphics[{}, PlotRange -> {{0, 6}, {0, 6}}]] &], \
+       ControlPlacement -> Left}, \
+       {{pad2, Null, \"\"}, Dynamic[LocatorPane[Dynamic[c], \
+       Graphics[{}, PlotRange -> {{0, 3}, {0, 3}}]]] &}]",
+    );
+    for (name, hi) in [("a", 6.0), ("b", 6.0), ("c", 3.0)] {
+      let found = s.controls.iter().find(|c| c.name() == name);
+      match found {
+        Some(ManipulateControl::Slider2D { x_max, y_max, .. }) => {
+          assert_eq!((*x_max, *y_max), (hi, hi), "range of {name}");
+        }
+        other => panic!("expected a Slider2D for {name}, got {other:?}"),
+      }
     }
   }
 
