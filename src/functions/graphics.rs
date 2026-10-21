@@ -13269,7 +13269,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // following content has no such last-character special case.
         "Row" if !args.is_empty() => match &args[0] {
           Expr::List(parts) => {
-            let sep_gap = match args.get(1) {
+            // A second argument that is an option (`ImageMargins -> 1`)
+            // is not a separator.
+            let separator =
+              args.get(1).filter(|s| !crate::syntax::is_rule_expr(s));
+            let sep_gap = match separator {
               Some(Expr::FunctionCall { name, args: sargs })
                 if name == "Spacer" =>
               {
@@ -13278,7 +13282,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               _ => None,
             };
             let sep_markup =
-              if sep_gap.is_none() { args.get(1).map(expr_to_svg_markup) }
+              if sep_gap.is_none() { separator.map(expr_to_svg_markup) }
               else { None };
 
             let mut out = String::new();
@@ -13630,12 +13634,15 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       // Row[{a, b, …}] concatenates its parts, joined by the separator.
       "Row" if !args.is_empty() => match &args[0] {
         Expr::List(parts) => {
-          let sep = args.get(1).map_or(0.0, |s| match s {
-            Expr::FunctionCall { name, args: sargs } if name == "Spacer" => {
-              sargs.first().and_then(expr_to_f64).unwrap_or(1.0)
-            }
-            other => estimate_display_width(other),
-          });
+          let sep = args
+            .get(1)
+            .filter(|s| !crate::syntax::is_rule_expr(s))
+            .map_or(0.0, |s| match s {
+              Expr::FunctionCall { name, args: sargs } if name == "Spacer" => {
+                sargs.first().and_then(expr_to_f64).unwrap_or(1.0)
+              }
+              other => estimate_display_width(other),
+            });
           let inner: f64 = parts.iter().map(estimate_display_width).sum();
           inner + sep * parts.len().saturating_sub(1) as f64
         }
