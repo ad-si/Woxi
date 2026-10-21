@@ -26526,6 +26526,31 @@ mod manipulate {
     }
   }
 
+  // A bare Locator moves over the picture the body draws, so the body's
+  // explicit PlotRange bounds the pad instead of a box padded around the
+  // start point.
+  #[test]
+  fn spec_bare_locator_uses_body_plot_range() {
+    let expr = interpret_to_expr(
+      "Manipulate[Graphics[Disk[p, .1], PlotRange -> {{-3, 4}, {-1, 5}}], \
+       {{p, {0, .5}}, Locator}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (-3.0, 4.0, -1.0, 5.0));
+      }
+      other => panic!("expected Slider2D, got {other:?}"),
+    }
+  }
+
   // A string-tagged variable spec (`"tag" -> {var, min, max}`) is the
   // control itself — including one whose bounds name sibling controls.
   #[test]
