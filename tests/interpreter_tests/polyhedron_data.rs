@@ -226,6 +226,7 @@ mod polyhedron_data_tests {
       "Icosahedron",
       "TruncatedTetrahedron",
       "TruncatedOctahedron",
+      "TruncatedCube",
       "SmallRhombicuboctahedron",
     ] {
       let result = interpret(&format!(
@@ -467,8 +468,8 @@ mod polyhedron_data_tests {
        RhombicDodecahedron, RhombicHexecontahedron, RhombicIcosahedron, \
        RhombicTriacontahedron, SmallRhombicosidodecahedron, \
        SmallRhombicuboctahedron, SmallStellatedDodecahedron, StellaOctangula, Tetrahedron, \
-       TriangularOrthobicupola, TruncatedDodecahedron, TruncatedIcosahedron, TruncatedOctahedron, \
-       TruncatedTetrahedron}"
+       TriangularOrthobicupola, TruncatedCube, TruncatedDodecahedron, TruncatedIcosahedron, \
+       TruncatedOctahedron, TruncatedTetrahedron}"
     );
   }
 
@@ -862,6 +863,39 @@ mod polyhedron_data_tests {
   }
 
   // The Archimedean solids with cubic (octahedral) symmetry: each is a
+  // The truncated cube: 6 octagons + 8 triangles, unit edges.
+  #[test]
+  fn polyhedron_data_truncated_cube() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["TruncatedCube", "VertexCount"],
+            PolyhedronData["TruncatedCube", "EdgeCount"],
+            PolyhedronData["TruncatedCube", "FaceCount"],
+            Sort[Length /@ PolyhedronData["TruncatedCube", "Faces"][[2, 1]]]}"#
+      )
+      .unwrap(),
+      "{24, 36, 14, {3, 3, 3, 3, 3, 3, 3, 3, 8, 8, 8, 8, 8, 8}}"
+    );
+    // Every edge of the faces has unit length and the volume matches the
+    // closed form for edge length 1.
+    assert_eq!(
+      interpret(
+        r#"Module[{d = N[PolyhedronData["TruncatedCube", "Faces"]]},
+          {Union[Round[Flatten[Table[
+              Norm[d[[1, f[[i]]]] - d[[1, f[[Mod[i, Length[f]] + 1]]]]],
+              {f, d[[2, 1]]}, {i, Length[f]}]], 10^-8]],
+           Chop[N[PolyhedronData["TruncatedCube", "Volume"]] -
+                (21 + 14 Sqrt[2])/3]}]"#
+      )
+      .unwrap(),
+      "{{1.}, 0}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["TruncatedCube", "Inradius"]"#).unwrap(),
+      "Missing[NotApplicable]"
+    );
+  }
+
   // Platonic solid with its corners truncated.
   #[test]
   fn polyhedron_data_cubic_archimedean_solids() {

@@ -386,6 +386,54 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       \"SpaceFilling\", \"Uniform\", \"Zalgaller\"}",
   },
   PolyhedronInfo {
+    name: "TruncatedCube",
+    vertex_count: 24,
+    edge_count: 36,
+    face_count: 14,
+    volume: "(7*(3 + 2*Sqrt[2]))/3",
+    surface_area: "2*(6 + 6*Sqrt[2] + Sqrt[3])",
+    circumradius: "Sqrt[7 + 4*Sqrt[2]]/2",
+    inradius: "Missing[\"NotApplicable\"]",
+    midradius: "(2 + Sqrt[2])/2",
+    // All permutations of {±1/2, ±(1 + Sqrt[2])/2, ±(1 + Sqrt[2])/2} —
+    // a cube with each corner cut off at the ratio that makes the new
+    // triangles equilateral and the faces regular octagons.
+    vertices_src: "{\
+      {-1/2, (1 + Sqrt[2])/2, (1 + Sqrt[2])/2}, \
+      {-1/2, (1 + Sqrt[2])/2, -1/2*(1 + Sqrt[2])}, \
+      {-1/2, -1/2*(1 + Sqrt[2]), (1 + Sqrt[2])/2}, \
+      {-1/2, -1/2*(1 + Sqrt[2]), -1/2*(1 + Sqrt[2])}, \
+      {1/2, (1 + Sqrt[2])/2, (1 + Sqrt[2])/2}, \
+      {1/2, (1 + Sqrt[2])/2, -1/2*(1 + Sqrt[2])}, \
+      {1/2, -1/2*(1 + Sqrt[2]), (1 + Sqrt[2])/2}, \
+      {1/2, -1/2*(1 + Sqrt[2]), -1/2*(1 + Sqrt[2])}, \
+      {(1 + Sqrt[2])/2, -1/2, (1 + Sqrt[2])/2}, \
+      {(1 + Sqrt[2])/2, -1/2, -1/2*(1 + Sqrt[2])}, \
+      {(1 + Sqrt[2])/2, 1/2, (1 + Sqrt[2])/2}, \
+      {(1 + Sqrt[2])/2, 1/2, -1/2*(1 + Sqrt[2])}, \
+      {(1 + Sqrt[2])/2, (1 + Sqrt[2])/2, -1/2}, \
+      {(1 + Sqrt[2])/2, (1 + Sqrt[2])/2, 1/2}, \
+      {(1 + Sqrt[2])/2, -1/2*(1 + Sqrt[2]), -1/2}, \
+      {(1 + Sqrt[2])/2, -1/2*(1 + Sqrt[2]), 1/2}, \
+      {-1/2*(1 + Sqrt[2]), -1/2, (1 + Sqrt[2])/2}, \
+      {-1/2*(1 + Sqrt[2]), -1/2, -1/2*(1 + Sqrt[2])}, \
+      {-1/2*(1 + Sqrt[2]), 1/2, (1 + Sqrt[2])/2}, \
+      {-1/2*(1 + Sqrt[2]), 1/2, -1/2*(1 + Sqrt[2])}, \
+      {-1/2*(1 + Sqrt[2]), (1 + Sqrt[2])/2, -1/2}, \
+      {-1/2*(1 + Sqrt[2]), (1 + Sqrt[2])/2, 1/2}, \
+      {-1/2*(1 + Sqrt[2]), -1/2*(1 + Sqrt[2]), -1/2}, \
+      {-1/2*(1 + Sqrt[2]), -1/2*(1 + Sqrt[2]), 1/2}}",
+    faces_src: "{{6, 12, 10, 8, 4, 18, 20, 2}, {1, 19, 17, 3, 7, 9, 11, 5}, \
+      {3, 24, 23, 4, 8, 15, 16, 7}, {5, 14, 13, 6, 2, 21, 22, 1}, \
+      {9, 16, 15, 10, 12, 13, 14, 11}, {19, 22, 21, 20, 18, 23, 24, 17}, \
+      {16, 9, 7}, {5, 11, 14}, {3, 17, 24}, {22, 19, 1}, {8, 10, 15}, \
+      {13, 12, 6}, {23, 18, 4}, {2, 20, 21}}",
+    classes_src: "\
+      {\"Amphichiral\", \"Archimedean\", \"Canonical\", \"Convex\", \
+      \"Equilateral\", \"Rigid\", \"Rupert\", \"Simple\", \
+      \"Uniform\", \"Zalgaller\"}",
+  },
+  PolyhedronInfo {
     name: "SmallRhombicuboctahedron",
     vertex_count: 24,
     edge_count: 48,
