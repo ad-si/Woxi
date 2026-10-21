@@ -5456,6 +5456,7 @@ pub(crate) fn generate_bar_svg(
   bar_labels: &[String],
   stacked: bool,
   show_ticks: bool,
+  epilog: &[Expr],
 ) -> Result<String, InterpreterError> {
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
@@ -5731,6 +5732,28 @@ pub(crate) fn generate_bar_svg(
 
   let font_size = sf * 18.0;
   let title_font_size = sf * 22.0;
+
+  // `Epilog` primitives are written in chart coordinates, where the first bar
+  // group is centred at `x = 1`; the axis here puts it at `0.5`.
+  if !epilog.is_empty()
+    && let Some(pos) = buf.rfind("</svg>")
+  {
+    let area = crate::functions::plot_epilog::PlotArea {
+      x0: plot_x0,
+      y0: plot_y0,
+      w: plot_w,
+      h: plot_h,
+      x_min: x_min + 0.5,
+      x_max: x_max + 0.5,
+      y_min,
+      y_max,
+      scale: sf,
+    };
+    let overlay = crate::functions::plot_epilog::render_overlay_svg(
+      epilog, &area, "epilog", true,
+    );
+    buf.insert_str(pos, &overlay);
+  }
 
   // Insert label SVG elements before </svg>
   if let Some(insert_pos) = buf.rfind("</svg>") {

@@ -2430,6 +2430,7 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     ticks_y: None,
     ticks: true,
     stacked: false,
+    epilog: Vec::new(),
   }
 }
 
