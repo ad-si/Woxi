@@ -2651,8 +2651,8 @@ mod graphics {
               rest[..rest.find('"').unwrap()].parse().unwrap()
             };
             (
-              (attr("x1") + attr("x2")) / 2.0,
-              (attr("y1") + attr("y2")) / 2.0,
+              f64::midpoint(attr("x1"), attr("x2")),
+              f64::midpoint(attr("y1"), attr("y2")),
             )
           })
           .collect()
