@@ -3493,7 +3493,10 @@ mod tests {
           &vec![
             "atomic number".to_string(),
             "atomic radius".to_string(),
-            "density".to_string(),
+            // wolframscript's own description of the legacy `"Density"`
+            // property (see `PROPERTY_DESCRIPTIONS` in
+            // `src/functions/element_data.rs`).
+            "mass density".to_string(),
           ]
         );
       }
@@ -3994,5 +3997,81 @@ mod textcell_tests {
       "body lost its Row: {}",
       state.body
     );
+  }
+
+  /// A rotating shaded solid driven by a bare colour spec
+  /// (`{c, RGBColor[…], ImageSize -> Tiny}`), an opacity slider, an
+  /// edge checkbox and a `Trigger` spinning it about the z axis — the
+  /// Demonstrations idiom for a turntable view of a polyhedron.
+  /// The colour spec names no domain, so it is the control's *initial
+  /// value*: it must build a colour swatch, not get baked into the body as
+  /// a constant (which silently dropped the control, leaving the panel one
+  /// row short of what Wolfram draws).
+  #[test]
+  fn rotating_solid_with_bare_color_spec_builds_a_color_control() {
+    let code = r#"Manipulate[
+      Graphics3D[
+        Rotate[{shade, Specularity[White, 10], Opacity[opacity],
+          EdgeForm[If[edge, Thickness[0.001], None]],
+          Polygon /@ faces}, spin, {0, 0, 1}],
+        Lighting -> "Neutral", Boxed -> False, ImageSize -> {200, 180}],
+      {shade, RGBColor[0.3, 0.4, 0.8], ImageSize -> Tiny},
+      {{opacity, 0.5}, 0.2, 0.9, 0.1, ImageSize -> Tiny},
+      Delimiter,
+      {edge, {False, True}, ControlType -> Checkbox},
+      Delimiter,
+      {spin, 0, 2 Pi, Pi/90, ControlType -> Trigger},
+      ControlPlacement -> Left,
+      Initialization :> (faces = {
+        {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}},
+        {{-1, 0, 0}, {0, -1, 0}, {0, 0, -1}},
+        {{1, 0, 0}, {0, -1, 0}, {0, 0, 1}},
+        {{-1, 0, 0}, {0, 1, 0}, {0, 0, -1}}})
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "the solid must render, got text {:?}",
+      state.text_output
+    );
+    assert_eq!(state.control_placement, ControlPlacement::Left);
+    match &state.controls[..] {
+      [
+        ControlState::Color {
+          name: colour,
+          current,
+          ..
+        },
+        ControlState::Continuous { name: alpha, .. },
+        ControlState::Divider,
+        ControlState::Discrete { name: flag, .. },
+        ControlState::Divider,
+        ControlState::Trigger {
+          name: angle,
+          min,
+          max,
+          ..
+        },
+      ] => {
+        assert_eq!(colour, "shade");
+        assert_eq!(current, "RGBColor[0.3, 0.4, 0.8]");
+        assert_eq!(alpha, "opacity");
+        assert_eq!(flag, "edge");
+        assert_eq!(angle, "spin");
+        assert_eq!(*min, 0.0);
+        assert!((*max - 2.0 * std::f64::consts::PI).abs() < 1e-12);
+      }
+      other => panic!("unexpected control panel: {other:?}"),
+    }
+    // Picking a new colour re-renders the body with it bound.
+    let mut state = state;
+    state.color_change(0, 0.75);
+    assert_eq!(state.controls[0].current_code(), "Hue[0.75]");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert!(state.graphics_handle.is_some());
   }
 }

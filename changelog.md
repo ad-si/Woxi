@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- A `Manipulate` control written `{u, colour}` — a colour as the initial
+    value, with no range or choice list — was baked into the body as a fixed
+    constant, so its swatch never appeared in the control panel. It now
+    builds the same colour control the labelled `{{u, uinit, ulbl}, colour}`
+    form does, opened on that colour. Found via the scheduled Wolfram
+    Demonstrations check opening a rotating 3D gemstone whose `Manipulate`
+    picks the stone's colour that way.
 - `Disk[c, Scaled[r]]` ignored the scaled radius and drew a unit-radius disk.
     The radius is now `r` times the plot width. Found via the scheduled
     Wolfram Demonstrations check opening "Bounce Time for a Bouncing Ball",

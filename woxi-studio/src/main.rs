@@ -16291,10 +16291,13 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 5}, \"…\"]"], "Output"]
     let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
     let editors = WoxiStudio::editors_from_notebook(&nb);
 
-    // The typeset sums come back as evaluable `Sum[…]` calls.
+    // The typeset sums come back as evaluable `Sum[…]` calls. The summand
+    // keeps the parentheses `extract_cell_content` puts around a
+    // `FractionBox` body (see `test_big_operator_boxes_become_sum_and_product`
+    // in `src/notebook.rs`).
     let definitions = editors[0].content.text();
     assert!(
-      definitions.contains("Sum[(Sin[(n)^(2) t])/((n)^(2)), {n, 1, m}]"),
+      definitions.contains("Sum[((Sin[(n)^(2) t])/((n)^(2))), {n, 1, m}]"),
       "the ∑ box must become a Sum: {definitions}"
     );
 
