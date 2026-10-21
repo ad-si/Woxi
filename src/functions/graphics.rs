@@ -1061,7 +1061,18 @@ fn expr_to_anchor(expr: &Expr) -> Option<(f64, f64, bool)> {
 /// symbolic corners `{Left, Top}` … are understood; `None` otherwise.
 fn inset_object_anchor(args: &[Expr]) -> Option<(f64, f64)> {
   let (x, y, scaled) = expr_to_anchor(args.get(2)?)?;
-  scaled.then_some((x, 1.0 - y))
+  if scaled {
+    return Some((x, 1.0 - y));
+  }
+  // An `Image` is measured in its own pixels, origin at the lower left, so
+  // `{0, 0}` is its bottom-left corner rather than its centre.
+  if let Expr::Image { width, height, .. } = peel_style_wrapper(args.first()?)
+    && *width > 0
+    && *height > 0
+  {
+    return Some((x / *width as f64, 1.0 - y / *height as f64));
+  }
+  None
 }
 
 /// A primitive's anchor in data coordinates, turning a scaled fraction into
