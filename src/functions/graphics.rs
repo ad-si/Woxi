@@ -15865,12 +15865,15 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // If there are also Graphics[...] primitives, render them as an
     // overlay by converting to plot source entries is not feasible,
     // so we render the plot sources alone for now.
+    // Like the other options, the axis scales come from the first graphic.
     let merged = crate::syntax::PlotSource {
       series: all_series,
       x_range: (x_min, x_max),
       y_range: (y_min, y_max),
       image_size,
       options: merged_options.clone(),
+      log_x: plot_sources[0].log_x,
+      log_y: plot_sources[0].log_y,
     };
 
     let svg = crate::functions::plot::render_merged_plot_source(&merged)?;

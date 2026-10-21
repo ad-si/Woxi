@@ -37995,6 +37995,28 @@ mod grid_repeating_decimal_alignment {
     );
     assert!(framed.contains("<text"), "{framed}");
   }
+
+  /// `Show` of several `LogPlot`s / `LogLogPlot`s keeps every curve on the
+  /// shared logarithmic axis (they used to be dropped, leaving only the
+  /// last plot's curve on a linear-range frame), along with the first
+  /// plot's labels.
+  #[test]
+  fn show_of_log_plots_keeps_every_curve_and_labels() {
+    let svg = export_svg(
+      "Show[LogPlot[100 Exp[-t/5], {t, 0, 20}, PlotStyle -> Blue, \
+       Frame -> True, PlotLabel -> \"first\"], \
+       LogPlot[3 Exp[t/9], {t, 0, 20}, PlotStyle -> Red, Frame -> True]]",
+    );
+    assert!(svg.contains("#0000FF"), "{svg}");
+    assert!(svg.contains("#FF0000"), "{svg}");
+    assert!(svg.contains("first</text>"), "{svg}");
+    let loglog = export_svg(
+      "Show[LogLogPlot[x^2, {x, 1, 100}, PlotStyle -> Blue], \
+       LogLogPlot[x^3, {x, 1, 100}, PlotStyle -> Red]]",
+    );
+    assert!(loglog.contains("#0000FF"), "{loglog}");
+    assert!(loglog.contains("#FF0000"), "{loglog}");
+  }
 }
 
 mod surface_vertex_colors {
