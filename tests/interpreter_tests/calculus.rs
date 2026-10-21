@@ -20870,3 +20870,36 @@ mod stored_multi_derivative {
     );
   }
 }
+
+mod kernel_format_interpolating_function {
+  use super::*;
+
+  #[test]
+  fn linear_stored_form_is_applied() {
+    // The five-argument form a saved notebook holds (packed values,
+    // `{order + 1}` in the info list) evaluates like `Interpolation` does.
+    assert_eq!(
+      interpret(
+        "InterpolatingFunction[{{0., 4.}}, {3, 3, 0, {4}, {2}, 0, 0, 0, 0}, \
+         {{0., 1., 2., 4.}}, {Developer`PackedArrayForm, {0, 1, 2, 3, 4}, \
+         {1., 3., 2., 6.}}, {Automatic}][3]"
+      )
+      .unwrap(),
+      "4."
+    );
+  }
+
+  #[test]
+  fn stored_form_matches_interpolation() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 1.}, {1, 3.}, {2, 2.}}, InterpolationOrder -> 1]; \
+         g = InterpolatingFunction[{{0, 2}}, {3, 3, 0, {3}, {2}, 0, 0, 0, 0}, \
+         {{0, 1, 2}}, {Developer`PackedArrayForm, {0, 1, 2, 3}, {1., 3., 2.}}, \
+         {Automatic}]; g[0.25] == f[0.25] && g[1.5] == f[1.5]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
