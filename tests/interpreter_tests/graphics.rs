@@ -3740,6 +3740,21 @@ mod graphics {
 }
 
 mod plot3d {
+  /// `ColorFunction -> Function[{x, y, z}, Directive[Opacity[o], colour]]`
+  /// colours and thins out the surface, both when drawn on its own and when
+  /// `Show` re-renders it from its symbolic form.
+  #[test]
+  fn color_function_directive_sets_color_and_opacity() {
+    let plot = "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, Mesh -> None, \
+       ColorFunction -> Function[{x, y, z}, Directive[Opacity[0.2], Blue]]]";
+    let svg = export_svg(plot);
+    assert!(svg.contains("opacity=\"0.2\""), "{svg}");
+    assert!(svg.contains("fill=\"rgb(0,0,"), "{svg}");
+    let shown = export_svg(&format!("Show[{plot}, Graphics3D[{{}}]]"));
+    assert!(shown.contains("opacity=\"0.2\""), "{shown}");
+    assert!(shown.contains("fill=\"rgb(0,0,"), "{shown}");
+  }
+
   /// A translucent `PlotStyle` surface must stay translucent when `Show`
   /// re-renders it from its symbolic form together with other graphics,
   /// for every surface plot that carries one.
@@ -4486,6 +4501,43 @@ mod plot3d {
         insta::assert_snapshot!(export_svg(
           "RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None]"
         ));
+      }
+
+      #[test]
+      fn color_function_directive_sets_color_and_opacity() {
+        let svg = export_svg(
+          "RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, ColorFunction -> Function[{x, y, z}, Directive[Opacity[0.2], Red]]]",
+        );
+        assert!(svg.contains(" opacity=\"0.2\""), "{svg}");
+        assert!(svg.contains("fill=\"rgb("), "{svg}");
+        assert!(!svg.contains("rgb(94,129,181)"), "{svg}");
+      }
+
+      #[test]
+      fn color_function_sees_scaled_coordinates() {
+        // Red where the scaled x is above 1/2, i.e. on half of the cube.
+        let svg = export_svg(
+          "RegionPlot3D[True, {x, 0, 1}, {y, 0, 1}, {z, 0, 1}, ColorFunction -> Function[{x, y, z}, If[x > 0.5, Red, Blue]]]",
+        );
+        let reddish = svg.matches("fill=\"rgb(2").count();
+        let bluish = svg.matches("fill=\"rgb(0,0,").count();
+        assert!(reddish > 0 && bluish > 0, "{svg}");
+      }
+
+      #[test]
+      fn axes_label() {
+        let svg = export_svg(
+          "RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, AxesLabel -> {\"alpha\", \"beta\", \"gamma\"}]",
+        );
+        assert!(svg.contains("alpha") && svg.contains("gamma"), "{svg}");
+      }
+
+      #[test]
+      fn axes_label_given_to_show() {
+        let svg = export_svg(
+          "Show[{RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}], Graphics3D[{}]}, AxesLabel -> {\"alpha\", \"beta\", \"gamma\"}]",
+        );
+        assert!(svg.contains("alpha") && svg.contains("gamma"), "{svg}");
       }
     }
 
