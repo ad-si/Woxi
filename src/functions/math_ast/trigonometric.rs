@@ -1079,7 +1079,7 @@ fn complex_float_trig(
     return None;
   }
   let (a, b) = try_extract_complex_float(arg)?;
-  if b == 0.0 {
+  if b == 0.0 && !has_inexact_imag_term(arg) {
     return None;
   }
   let recip = |(re, im): (f64, f64)| {
@@ -1759,7 +1759,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Only use float path when the argument actually contains a float value
   if contains_float(&args[0])
     && let Some((re, im)) = try_extract_complex_float(&args[0])
-    && im != 0.0
+    && (im != 0.0 || has_inexact_imag_term(&args[0]))
   {
     let sin_re = re.sin() * im.cosh();
     let cos_re = re.cos() * im.sinh();
@@ -1939,7 +1939,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Complex float: cos(a+bi) = cos(a)cosh(b) - i*sin(a)sinh(b)
   if contains_float(&args[0])
     && let Some((re, im)) = try_extract_complex_float(&args[0])
-    && im != 0.0
+    && (im != 0.0 || has_inexact_imag_term(&args[0]))
   {
     let cos_re = re.cos() * im.cosh();
     let sin_re = -(re.sin() * im.sinh());
@@ -3374,7 +3374,7 @@ fn try_complex_inverse_trig(
     return None;
   }
   let (x, y) = try_extract_complex_float(arg)?;
-  if y == 0.0 {
+  if y == 0.0 && !has_inexact_imag_term(arg) {
     return None;
   }
   let cmul = |a: (f64, f64), b: (f64, f64)| {
