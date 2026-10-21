@@ -623,6 +623,27 @@ mod graphics {
       assert!(!solid.contains("evenodd"), "{solid}");
     }
 
+    /// A 3D polygon whose point list closes the outer loop and then
+    /// traces an inner loop (a frame) has a hole, like the explicit
+    /// `outer -> hole` form.
+    #[test]
+    fn polygon3d_nested_loops_are_a_hole() {
+      let bridged = export_svg(
+        "Graphics3D[Polygon[{{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, {-1, 1, 0}, \
+         {-1, -1, 0}, {-0.5, -0.5, 0}, {0.5, -0.5, 0}, {0.5, 0.5, 0}, \
+         {-0.5, 0.5, 0}, {-0.5, -0.5, 0}}]]",
+      );
+      let holed = export_svg(
+        "Graphics3D[Polygon[{{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, {-1, 1, 0}} \
+         -> {{-0.5, -0.5, 0}, {0.5, -0.5, 0}, {0.5, 0.5, 0}, {-0.5, 0.5, 0}}]]",
+      );
+      let solid = export_svg(
+        "Graphics3D[Polygon[{{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, {-1, 1, 0}}]]",
+      );
+      assert_eq!(bridged, holed);
+      assert_ne!(bridged, solid);
+    }
+
     #[test]
     fn arrow() {
       insta::assert_snapshot!(export_svg(
