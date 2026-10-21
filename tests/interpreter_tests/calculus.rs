@@ -8613,6 +8613,42 @@ mod ndsolve {
     );
   }
 
+  /// A flat `{x, y, z}` list with complex `z` is a complex-valued 2-D grid:
+  /// the real and imaginary parts interpolate independently, and the partial
+  /// derivatives `Derivative[a, b][f]` act on the local polynomial exactly.
+  #[test]
+  fn interpolation_2d_complex_values_and_partial_derivatives() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Flatten[Table[{i, j, i*j + I*(i - j)}, \
+         {i, 1, 4}, {j, 1, 4}], 1]]; {f[2.5, 3.5], f[2, 3]}"
+      )
+      .unwrap(),
+      "{8.75 - 1.*I, 6. - 1.*I}"
+    );
+    // Polynomial data is reproduced exactly by the order-3 local fit, so the
+    // partial derivatives match the analytic ones.
+    assert_eq!(
+      interpret(
+        "g = Interpolation[Flatten[Table[{i, j, i^2*j^3}, {i, 1, 6}, \
+         {j, 1, 6}], 1]]; {Derivative[1, 0][g][2.5, 3.5], \
+         Derivative[0, 2][g][2.5, 3.5], Derivative[1, 1][g][2.5, 3.5]}"
+      )
+      .unwrap(),
+      "{214.375, 131.25, 183.75}"
+    );
+    assert_eq!(
+      interpret(
+        "h = Interpolation[Flatten[Table[{i, j, Exp[I*(i + 2 j)]}, \
+         {i, 1, 5}, {j, 1, 5}], 1]]; \
+         Round[Im[D[h[x, y], x]/h[x, y]] /. {x -> 2., y -> 3.}]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
   /// Applying a stored `InterpolatingFunction` looks the interval up by
   /// binary search and returns grid values exactly, at both ends of the data
   /// and in the interior (sampling a large NDSolve result used to scan and

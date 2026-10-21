@@ -2787,6 +2787,37 @@ pub fn apply_curried_call(
             });
           }
         }
+        // `Derivative[a, b][InterpolatingFunction[…]]` of a 2-D grid
+        // interpolation is the same interpolation tagged with its partial
+        // derivative orders, which the evaluator differentiates exactly.
+        if args.len() == 1
+          && func_args.len() == 2
+          && let (Expr::Integer(da), Expr::Integer(db)) =
+            (&func_args[0], &func_args[1])
+          && *da >= 0
+          && *db >= 0
+          && let Expr::FunctionCall {
+            name: interp_name,
+            args: interp_args,
+          } = &args[0]
+          && interp_name == "InterpolatingFunction"
+          && matches!(interp_args.len(), 4 | 5)
+          && matches!(&interp_args[2], Expr::List(o) if o.len() == 2)
+          && matches!(&interp_args[3], Expr::List(c) if c.len() == 2)
+        {
+          let (pa, pb) = match interp_args.get(4) {
+            Some(Expr::List(prev)) => match prev.as_slice() {
+              [Expr::Integer(a), Expr::Integer(b)] => (*a, *b),
+              _ => (0, 0),
+            },
+            _ => (0, 0),
+          };
+          let mut new_args: Vec<Expr> = interp_args[..4].to_vec();
+          new_args.push(Expr::List(
+            vec![Expr::Integer(pa + da), Expr::Integer(pb + db)].into(),
+          ));
+          return Ok(call("InterpolatingFunction", new_args));
+        }
         // Multi-index derivative: Derivative[n1, n2, ...][f] — keep as
         // CurriedCall since the flattened form is ambiguous with
         // Derivative[n, f, x] (nth derivative of f at x).

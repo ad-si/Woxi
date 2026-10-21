@@ -8260,6 +8260,11 @@ fn eval_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
 /// wolframscript's Interpolation accepts exact symbolic data by numericising
 /// it, so `Interpolation[Table[{x, Sin[x]}, {x, 0, 10}]]` must work.
 fn interp_value_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
+  match expr {
+    Expr::Real(v) => return Ok(*v),
+    Expr::Integer(n) => return Ok(*n as f64),
+    _ => {}
+  }
   let evaluated = crate::evaluator::evaluate_expr_to_expr(expr)
     .unwrap_or_else(|_| expr.clone());
   if let Ok(v) = expr_to_f64(&evaluated) {
@@ -8271,6 +8276,28 @@ fn interp_value_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
   let numericized = crate::evaluator::evaluate_expr_to_expr(&n_expr)
     .unwrap_or_else(|_| expr.clone());
   expr_to_f64(&numericized)
+}
+
+/// Real and imaginary parts of an interpolation data value. Complex-valued
+/// data (e.g. a wave function sampled on a grid) interpolates its real and
+/// imaginary parts independently.
+fn interp_complex_to_parts(expr: &Expr) -> Option<(f64, f64)> {
+  if let Ok(v) = interp_value_to_f64(expr) {
+    return Some((v, 0.0));
+  }
+  if let Some(parts) =
+    crate::functions::math_ast::numeric_utils::try_extract_complex_f64(expr)
+  {
+    return Some(parts);
+  }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(expr)
+    .unwrap_or_else(|_| expr.clone());
+  let numericized =
+    crate::evaluator::evaluate_expr_to_expr(&call1("N", evaluated.clone()))
+      .unwrap_or(evaluated);
+  crate::functions::math_ast::numeric_utils::try_extract_complex_f64(
+    &numericized,
+  )
 }
 
 // ─── Interpolation ─────────────────────────────────────────────────────
@@ -8784,21 +8811,23 @@ fn try_2d_scattered_interpolation(
     if parts.len() != 3 {
       return None;
     }
-    let (Ok(x), Ok(y), Ok(z)) = (
+    let (Ok(x), Ok(y), Some((z, z_im))) = (
       interp_value_to_f64(&parts[0]),
       interp_value_to_f64(&parts[1]),
-      interp_value_to_f64(&parts[2]),
+      interp_complex_to_parts(&parts[2]),
     ) else {
       return None;
     };
-    triples.push((
-      parts[0].clone(),
-      x,
-      parts[1].clone(),
-      y,
-      parts[2].clone(),
-      z,
-    ));
+    // A complex value is stored as its (numericised) complex expression; the
+    // evaluator interpolates the real and imaginary parts separately.
+    let z_expr = if z_im == 0.0 {
+      parts[2].clone()
+    } else {
+      crate::functions::math_ast::numeric_utils::build_complex_float_expr(
+        z, z_im,
+      )
+    };
+    triples.push((parts[0].clone(), x, parts[1].clone(), y, z_expr, z));
   }
 
   // Distinct x/y values, sorted, each keeping the first expression seen for
@@ -8835,7 +8864,13 @@ fn try_2d_scattered_interpolation(
       // Duplicate (x, y) — not a well-formed grid.
       return None;
     }
-    grid[i][j] = Some(exact_coordinate(ze, *z));
+    grid[i][j] = Some(
+      if interp_complex_to_parts(ze).is_some_and(|(_, im)| im != 0.0) {
+        ze.clone()
+      } else {
+        exact_coordinate(ze, *z)
+      },
+    );
   }
   if grid.iter().flatten().any(Option::is_none) {
     // A combination of some x with some y is missing — a partial grid,
@@ -8907,6 +8942,7 @@ fn evaluate_interpolating_function_2d_explicit(
   grid_rows: &[Expr],
   orders: &[Expr],
   coords: &[Expr],
+  derivative: (usize, usize),
   call_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let order_r = match &orders[0] {
@@ -8954,25 +8990,35 @@ fn evaluate_interpolating_function_2d_explicit(
       )
     })
   };
-  let cell_f64 = |i: usize, j: usize| -> Result<f64, InterpreterError> {
-    Ok(match cell(i, j)? {
-      Expr::Integer(n) => *n as f64,
-      Expr::Real(f) => *f,
-      other => interp_value_to_f64(other).unwrap_or(f64::NAN),
-    })
-  };
+  let cell_parts =
+    |i: usize, j: usize| -> Result<(f64, f64), InterpreterError> {
+      Ok(match cell(i, j)? {
+        Expr::Integer(n) => (*n as f64, 0.0),
+        Expr::Real(f) => (*f, 0.0),
+        other => interp_complex_to_parts(other).unwrap_or((f64::NAN, 0.0)),
+      })
+    };
 
-  let unevaluated = || Expr::CurriedCall {
-    func: Box::new(call(
-      "InterpolatingFunction",
-      vec![
-        domain.clone(),
-        Expr::List(grid_rows.to_vec().into()),
-        Expr::List(orders.to_vec().into()),
-        Expr::List(coords.to_vec().into()),
-      ],
-    )),
-    args: call_args.to_vec(),
+  let unevaluated = || {
+    let mut parts = vec![
+      domain.clone(),
+      Expr::List(grid_rows.to_vec().into()),
+      Expr::List(orders.to_vec().into()),
+      Expr::List(coords.to_vec().into()),
+    ];
+    if derivative != (0, 0) {
+      parts.push(Expr::List(
+        vec![
+          Expr::Integer(derivative.0 as i128),
+          Expr::Integer(derivative.1 as i128),
+        ]
+        .into(),
+      ));
+    }
+    Expr::CurriedCall {
+      func: Box::new(call("InterpolatingFunction", parts)),
+      args: call_args.to_vec(),
+    }
   };
 
   if nr == 0 || nc == 0 {
@@ -9038,14 +9084,17 @@ fn evaluate_interpolating_function_2d_explicit(
   // when both query coordinates were given as exact integers (matching
   // `evaluate_interpolating_function_2d`).
   let int_coords = coord_exprs.iter().all(|a| matches!(a, Expr::Integer(_)));
-  if let (Some(i), Some(j)) = (
-    xs.iter().position(|&xv| same_coordinate(xv, x)),
-    ys.iter().position(|&yv| same_coordinate(yv, y)),
-  ) {
+  if derivative == (0, 0)
+    && let (Some(i), Some(j)) = (
+      xs.iter().position(|&xv| same_coordinate(xv, x)),
+      ys.iter().position(|&yv| same_coordinate(yv, y)),
+    )
+  {
     if int_coords {
       return Ok(cell(i, j)?.clone());
     }
-    return Ok(Expr::Real(cell_f64(i, j)?));
+    let (re, im) = cell_parts(i, j)?;
+    return Ok(real_or_machine_complex(re, im));
   }
 
   let (x_lo, x_hi) = (xs[0].min(xs[nr - 1]), xs[0].max(xs[nr - 1]));
@@ -9073,17 +9122,32 @@ fn evaluate_interpolating_function_2d_explicit(
   let (c_start, c_end) =
     lagrange_window(nc, bracket_index_f64(&ys, y), eff_order_c);
   let ys_window = &ys[c_start..c_end];
-  let mut col_interp: Vec<f64> = Vec::with_capacity(r_end - r_start);
+  let mut col_re: Vec<f64> = Vec::with_capacity(r_end - r_start);
+  let mut col_im: Vec<f64> = Vec::with_capacity(r_end - r_start);
   for i in r_start..r_end {
-    let mut row_vals: Vec<f64> = Vec::with_capacity(c_end - c_start);
+    let mut row_re: Vec<f64> = Vec::with_capacity(c_end - c_start);
+    let mut row_im: Vec<f64> = Vec::with_capacity(c_end - c_start);
     for j in c_start..c_end {
-      row_vals.push(cell_f64(i, j)?);
+      let (re, im) = cell_parts(i, j)?;
+      row_re.push(re);
+      row_im.push(im);
     }
-    col_interp.push(interp_1d_xy_f64(ys_window, &row_vals, y, eff_order_c));
+    col_re.push(interp_1d_xy_deriv_f64(ys_window, &row_re, y, derivative.1));
+    col_im.push(interp_1d_xy_deriv_f64(ys_window, &row_im, y, derivative.1));
   }
-  let result =
-    interp_1d_xy_f64(&xs[r_start..r_end], &col_interp, x, eff_order_r);
-  Ok(Expr::Real(result))
+  let xs_window = &xs[r_start..r_end];
+  let re = interp_1d_xy_deriv_f64(xs_window, &col_re, x, derivative.0);
+  let im = interp_1d_xy_deriv_f64(xs_window, &col_im, x, derivative.0);
+  Ok(real_or_machine_complex(re, im))
+}
+
+/// A machine real when the imaginary part vanishes, else the machine complex.
+fn real_or_machine_complex(re: f64, im: f64) -> Expr {
+  if im == 0.0 {
+    Expr::Real(re)
+  } else {
+    crate::functions::math_ast::numeric_utils::build_complex_float_expr(re, im)
+  }
 }
 
 /// Binary search for the interval bracketing `x_val` in an ascending or
@@ -9150,6 +9214,65 @@ fn interp_1d_xy_f64(xs: &[f64], ys: &[f64], x_val: f64, order: usize) -> f64 {
     result += ys[start + i] * basis;
   }
   result
+}
+
+/// `d`-th derivative at `x_val` of the Lagrange polynomial through the whole
+/// sample window `(xs[i], ys[i])` (the window `lagrange_window` selected).
+/// The derivative of each basis polynomial is the sum, over every choice of
+/// `d` distinct factors to differentiate, of `d!` times the product of the
+/// remaining factors.
+fn interp_1d_xy_deriv_f64(xs: &[f64], ys: &[f64], x_val: f64, d: usize) -> f64 {
+  let m = xs.len();
+  if m == 1 {
+    return if d == 0 { ys[0] } else { 0.0 };
+  }
+  if d >= m {
+    return 0.0;
+  }
+  let factorial: f64 = (1..=d).map(|k| k as f64).product();
+  let mut total = 0.0;
+  for i in 0..m {
+    let others: Vec<usize> = (0..m).filter(|&j| j != i).collect();
+    // Sum over the size-`d` subsets of `others` that get differentiated.
+    let mut basis_deriv = 0.0;
+    let mut chosen = vec![false; others.len()];
+    fn walk(
+      pos: usize,
+      left: usize,
+      chosen: &mut Vec<bool>,
+      others: &[usize],
+      xs: &[f64],
+      i: usize,
+      x_val: f64,
+      acc: &mut f64,
+    ) {
+      if left > others.len() - pos {
+        return;
+      }
+      if pos == others.len() {
+        let mut term = 1.0;
+        for (k, &j) in others.iter().enumerate() {
+          let denom = xs[i] - xs[j];
+          term *= if chosen[k] {
+            1.0 / denom
+          } else {
+            (x_val - xs[j]) / denom
+          };
+        }
+        *acc += term;
+        return;
+      }
+      if left > 0 {
+        chosen[pos] = true;
+        walk(pos + 1, left - 1, chosen, others, xs, i, x_val, acc);
+        chosen[pos] = false;
+      }
+      walk(pos + 1, left, chosen, others, xs, i, x_val, acc);
+    }
+    walk(0, d, &mut chosen, &others, xs, i, x_val, &mut basis_deriv);
+    total += ys[i] * basis_deriv * factorial;
+  }
+  total
 }
 
 /// 1-D local Lagrange interpolation of `values` (sampled at positions
@@ -9344,6 +9467,27 @@ pub fn evaluate_interpolating_function(
   func_args: &[Expr],
   call_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  // 2-D explicit-coordinate grid carrying partial-derivative orders, as left
+  // by `Derivative[a, b][f]`: InterpolatingFunction[domain, grid, orders,
+  // coords, {a, b}].
+  if func_args.len() == 5
+    && let Expr::List(orders) = &func_args[2]
+    && orders.len() == 2
+    && let Expr::List(grid_rows) = &func_args[1]
+    && let Expr::List(coords) = &func_args[3]
+    && coords.len() == 2
+    && let Expr::List(deriv) = &func_args[4]
+    && let [Expr::Integer(dx), Expr::Integer(dy)] = deriv.as_slice()
+  {
+    return evaluate_interpolating_function_2d_explicit(
+      &func_args[0],
+      grid_rows,
+      orders,
+      coords,
+      (*dx as usize, *dy as usize),
+      call_args,
+    );
+  }
   if func_args.len() == 5
     && let Some(mut pairs) = kernel_interpolating_function_to_pairs(func_args)
   {
@@ -9380,6 +9524,7 @@ pub fn evaluate_interpolating_function(
       grid_rows,
       orders,
       coords,
+      (0, 0),
       call_args,
     );
   }
