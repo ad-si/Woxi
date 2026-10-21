@@ -6668,3 +6668,53 @@ mod condition_with_nested_matching {
     );
   }
 }
+
+mod named_options_pattern_in_list_pattern {
+  use super::*;
+
+  #[test]
+  fn matches_an_empty_list() {
+    assert_eq!(
+      interpret("MatchQ[{}, {o : OptionsPattern[]}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("f[{o : OptionsPattern[]}] := done; f[{}]").unwrap(),
+      "done"
+    );
+  }
+
+  #[test]
+  fn matches_several_options() {
+    assert_eq!(
+      interpret("f[{OptionsPattern[]}] := done; f[{a -> 1, b -> 2}]").unwrap(),
+      "done"
+    );
+    assert_eq!(
+      interpret("f[x_, {o : OptionsPattern[]}] := x; f[2, {a -> 1, b -> 2}]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn name_stands_for_the_options() {
+    assert_eq!(
+      interpret("g[{o : OptionsPattern[]}] := h[o, 1]; g[{a -> 1, b -> 2}]")
+        .unwrap(),
+      "h[a -> 1, b -> 2, 1]"
+    );
+    assert_eq!(
+      interpret("g[{o : OptionsPattern[]}] := h[o, 1]; g[{}]").unwrap(),
+      "h[1]"
+    );
+  }
+
+  #[test]
+  fn rejects_non_options() {
+    assert_eq!(
+      interpret("f[{o : OptionsPattern[]}] := done; f[{x}]").unwrap(),
+      "f[{x}]"
+    );
+  }
+}

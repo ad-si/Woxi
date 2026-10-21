@@ -19991,3 +19991,29 @@ mod decompose {
     );
   }
 }
+
+mod sum_with_symbolic_bounds_and_step {
+  use super::*;
+
+  #[test]
+  fn stepped_symbolic_bounds_are_not_an_error() {
+    assert_eq!(
+      interpret("Sum[k^i, {i, 0, n, 2}]").unwrap(),
+      "Sum[k^i, {i, 0, n, 2}]"
+    );
+  }
+
+  #[test]
+  fn symbolic_step_dividing_the_span_evaluates_once_numeric() {
+    assert_eq!(
+      interpret("len[k_, h_, q_] = Sum[k^i, {i, q h, 0, -q}]; len[2, 2, 2]")
+        .unwrap(),
+      "21"
+    );
+    assert_eq!(
+      interpret("len[k_, h_, q_] = Sum[k^i, {i, q h, 0, -q}]; len[3, 1, 2]")
+        .unwrap(),
+      "10"
+    );
+  }
+}

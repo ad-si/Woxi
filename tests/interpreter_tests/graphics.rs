@@ -38504,3 +38504,28 @@ mod surface_vertex_colors {
     }
   }
 }
+
+mod grid_cell_labeled_layout {
+  use super::*;
+
+  #[test]
+  fn labeled_grid_cell_is_laid_out_not_printed() {
+    let svg =
+      export_svg("Grid[{{Labeled[Grid[{{1, 2}, {3, 4}}], \"cap\"], 5}}]");
+    assert!(!svg.contains("Labeled["), "{svg}");
+    for text in ["cap", ">1<", ">4<", ">5<"] {
+      assert!(svg.contains(text), "missing {text}: {svg}");
+    }
+  }
+
+  #[test]
+  fn label_sits_below_by_default_and_above_on_request() {
+    // The column stacks its items in document order, top to bottom.
+    let before_grid =
+      |svg: &str| svg.find(">cap<").unwrap() < svg.find(">1<").unwrap();
+    let below = export_svg("Grid[{{Labeled[Grid[{{1}, {2}}], \"cap\"]}}]");
+    assert!(!before_grid(&below), "{below}");
+    let above = export_svg("Grid[{{Labeled[Grid[{{1}, {2}}], \"cap\", Top]}}]");
+    assert!(before_grid(&above), "{above}");
+  }
+}

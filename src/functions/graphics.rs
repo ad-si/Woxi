@@ -16930,6 +16930,44 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     {
       return grid_cell_graphic(&unwrap_display_wrappers(cell));
     }
+    // `Labeled[content, label, pos]` around a block layout or picture sets
+    // the label beside it (Bottom by default), centred on the content.
+    Expr::FunctionCall { name, args }
+      if name == "Labeled"
+        && (args.len() == 2 || args.len() == 3)
+        && (grid_cell_graphic(&args[0]).is_some()
+          || grid_cell_graphic(&args[1]).is_some()) =>
+    {
+      let position = match args.get(2) {
+        Some(Expr::Identifier(p)) => p.as_str(),
+        _ => "Bottom",
+      };
+      let list = |items: Vec<Expr>| Expr::List(items.into());
+      let svg = match position {
+        "Top" | "Bottom" => {
+          let (first, second) = if position == "Top" {
+            (&args[1], &args[0])
+          } else {
+            (&args[0], &args[1])
+          };
+          column_to_svg(&[
+            list(vec![first.clone(), second.clone()]),
+            Expr::Identifier("Center".to_string()),
+          ])?
+        }
+        "Left" | "Right" => {
+          let (first, second) = if position == "Left" {
+            (&args[1], &args[0])
+          } else {
+            (&args[0], &args[1])
+          };
+          row_to_svg(&[list(vec![first.clone(), second.clone()])])?
+        }
+        _ => return None,
+      };
+      let parsed = parse_svg_dimensions(&svg)?;
+      return Some((svg, parsed.nat_w, parsed.nat_h));
+    }
     // A cell may itself be a block layout, which the text pass cannot
     // set: lay it out on its own and place the result as a picture.
     Expr::FunctionCall { name, args } => {
