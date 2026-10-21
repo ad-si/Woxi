@@ -6502,6 +6502,22 @@ mod cases {
     );
   }
   #[test]
+  fn singular_value_decomposition_rank_deficient() {
+    // A zero singular value must not produce Indeterminate entries in U,
+    // and U.Σ.V' must still reproduce the matrix.
+    assert_case(
+      r#"{u, s, v} = SingularValueDecomposition[{{0, 0}, {2, 1}}]; {FreeQ[u, Indeterminate], s[[2, 2]], Chop[u . s . Transpose[v]]}"#,
+      r#"{True, 0., {{0, 0}, {2., 1.}}}"#,
+    );
+  }
+  #[test]
+  fn singular_value_decomposition_zero_matrix() {
+    assert_case(
+      r#"{u, s, v} = SingularValueDecomposition[{{0, 0}, {0, 0}}]; {FreeQ[{u, v}, Indeterminate], s, Chop[u . s . Transpose[v]]}"#,
+      r#"{True, {{0., 0.}, {0., 0.}}, {{0, 0}, {0, 0}}}"#,
+    );
+  }
+  #[test]
   fn singular_value_list_exact() {
     assert_case(
       r#"SingularValueList[{{1, 2}, {3, 4}}]"#,

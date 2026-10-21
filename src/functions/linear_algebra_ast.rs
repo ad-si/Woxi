@@ -8680,11 +8680,36 @@ pub fn singular_value_decomposition_ast(
   } else {
     (v2x_raw, v2y_raw)
   };
-  // U_i = A v_i / σ_i.
-  let u1x = (a * v1x + b * v1y) / sigma1;
-  let u1y = (c * v1x + d * v1y) / sigma1;
-  let u2x = (a * v2x + b * v2y) / sigma2;
-  let u2y = (c * v2x + d * v2y) / sigma2;
+  // U_i = A v_i / σ_i. A (numerically) zero singular value carries no
+  // direction, so that column of U is completed to an orthonormal basis.
+  let tol = 1e-12 * sigma1;
+  let (sigma1, sigma2) = (
+    if sigma1 > tol.max(f64::MIN_POSITIVE) {
+      sigma1
+    } else {
+      0.0
+    },
+    if sigma2 > tol { sigma2 } else { 0.0 },
+  );
+  let (u1x, u1y, u2x, u2y) = if sigma1 > 0.0 && sigma2 > 0.0 {
+    (
+      (a * v1x + b * v1y) / sigma1,
+      (c * v1x + d * v1y) / sigma1,
+      (a * v2x + b * v2y) / sigma2,
+      (c * v2x + d * v2y) / sigma2,
+    )
+  } else if sigma1 > 0.0 {
+    let (ux, uy) = ((a * v1x + b * v1y) / sigma1, (c * v1x + d * v1y) / sigma1);
+    let (ox, oy) = (-uy, ux);
+    let (ox, oy) = if needs_flip(ox, oy) {
+      (-ox, -oy)
+    } else {
+      (ox, oy)
+    };
+    (ux, uy, ox, oy)
+  } else {
+    (1.0, 0.0, 0.0, 1.0)
+  };
   let real = Expr::Real;
   // Build U with rows {U[1,1] U[1,2]} = {u1x, u2x} (columns are u1, u2).
   let u = Expr::List(
