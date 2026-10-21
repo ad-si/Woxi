@@ -20510,6 +20510,47 @@ mod graphics_grid {
     assert!(svg.contains("rgb(255,0,0)"), "the red cell must render");
   }
 
+  /// `Multicolumn[{e1, e2, …}, n]` is a display wrapper like `Column`: the
+  /// head stays symbolic, while a notebook host draws the items down `n`
+  /// columns (one column is a plain vertical stack).
+  #[test]
+  fn multicolumn_draws_items_in_columns() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[Multicolumn[{Graphics[{Disk[]}], Graphics[{Circle[]}]}, 1]]"
+      )
+      .unwrap(),
+      "Multicolumn"
+    );
+    let one = interpret_with_stdout(
+      "Multicolumn[{Graphics[{Disk[]}, ImageSize -> 100], \
+       Graphics[{Red, Rectangle[]}, ImageSize -> 100]}, 1]",
+    )
+    .unwrap();
+    assert_eq!(one.result, "-Graphics-");
+    let one_svg = one.graphics.unwrap();
+    assert!(one_svg.contains("rgb(255,0,0)"), "{one_svg}");
+    let two = interpret_with_stdout(
+      "Multicolumn[{Graphics[{Disk[]}, ImageSize -> 100], \
+       Graphics[{Red, Rectangle[]}, ImageSize -> 100]}, 2]",
+    )
+    .unwrap();
+    let two_svg = two.graphics.unwrap();
+    // Two columns are wider (and shorter) than the single stacked column.
+    let size = |svg: &str| -> (f64, f64) {
+      let attr = |key: &str| -> f64 {
+        let start = svg.find(&format!("{key}=\"")).unwrap() + key.len() + 2;
+        let end = start + svg[start..].find('"').unwrap();
+        svg[start..end].parse().unwrap()
+      };
+      (attr("width"), attr("height"))
+    };
+    let (w1, h1) = size(&one_svg);
+    let (w2, h2) = size(&two_svg);
+    assert!(w2 > w1 && h2 < h1, "{w1}x{h1} vs {w2}x{h2}");
+  }
+
   /// `Overlay`'s `Alignment -> {h, v}` positions a smaller item within the
   /// larger items' shared canvas — the same fractional positioning `Column`
   /// uses, but on both axes at once since items overlap rather than stack.
