@@ -37845,4 +37845,22 @@ mod grid_repeating_decimal_alignment {
     );
     assert!(framed.contains("<text"), "{framed}");
   }
+
+  /// `PlotRangeClipping -> False` lets a primitive past the plot range be
+  /// drawn into the margins; by default it is cut off at the frame edge.
+  #[test]
+  fn plot_range_clipping_false_leaves_primitives_unclipped() {
+    let clipped = export_svg(
+      "Graphics[{Text[\"edge\", {1.05, 0.5}, {-1, 0}]}, \
+       PlotRange -> {{0, 1}, {0, 1}}, ImagePadding -> {{50, 50}, {20, 20}}]",
+    );
+    assert!(clipped.contains("<g clip-path="), "{clipped}");
+    let unclipped = export_svg(
+      "Graphics[{Text[\"edge\", {1.05, 0.5}, {-1, 0}]}, \
+       PlotRange -> {{0, 1}, {0, 1}}, ImagePadding -> {{50, 50}, {20, 20}}, \
+       PlotRangeClipping -> False]",
+    );
+    assert!(!unclipped.contains("<g clip-path="), "{unclipped}");
+    assert!(unclipped.contains("edge"), "{unclipped}");
+  }
 }
