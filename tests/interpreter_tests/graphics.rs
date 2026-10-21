@@ -3674,6 +3674,52 @@ mod plot3d {
     assert_eq!(glass, 24);
   }
 
+  /// `Glow[White]` makes a face plain white whatever its angle to the lamp.
+  #[test]
+  fn glow_lights_polygon_faces() {
+    let white_faces = |code: &str| {
+      export_svg(code)
+        .lines()
+        .filter(|l| {
+          l.starts_with("<polygon") && l.contains("fill=\"rgb(255,255,255)\"")
+        })
+        .count()
+    };
+    let face = "Polygon[{{0,0,0},{1,0,0},{0,0,1}}]";
+    let opts = "Boxed -> False, ViewPoint -> {0,-20,0}";
+    assert_eq!(white_faces(&format!("Graphics3D[{{{face}}}, {opts}]")), 0);
+    assert_eq!(
+      white_faces(&format!("Graphics3D[{{Glow[White], {face}}}, {opts}]")),
+      1
+    );
+  }
+
+  /// `Cuboid[{pmin, pmax}]` is the box `Cuboid[pmin, pmax]`.
+  #[test]
+  fn cuboid_accepts_corner_pair_in_one_list() {
+    let pair =
+      export_svg("Graphics3D[{Cuboid[{{0,0,0},{2,1,1}}]}, Boxed -> False]");
+    let two_args =
+      export_svg("Graphics3D[{Cuboid[{0,0,0},{2,1,1}]}, Boxed -> False]");
+    assert_eq!(pair, two_args);
+  }
+
+  /// A tilted box keeps the outline of its faces and none of the cuts
+  /// between the two triangles each face is split into.
+  #[test]
+  fn rotated_cuboid_is_outlined_along_its_edges() {
+    let svg = export_svg(
+      "Graphics3D[{EdgeForm[Black], Rotate[Cuboid[{0,0,0},{1,1,1}], 0.5, {1,1,0}]}, Boxed -> False]",
+    );
+    let lines = svg.matches("<line").count();
+    // A cube has 12 edges; each is drawn once per adjoining triangle at
+    // most, but never the 12 face diagonals as well.
+    assert!(
+      lines >= 12 && lines <= 24,
+      "{lines} outline segments\n{svg}"
+    );
+  }
+
   use super::*;
 
   mod basic {
