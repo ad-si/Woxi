@@ -16308,6 +16308,23 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_custom_frame_ticks() {
+      // Explicit FrameTicks labels are drawn outside the grid, so the
+      // canvas widens and every label shows up as text.
+      let plain = export_svg("ArrayPlot[{{1, 0, 1}, {0, 1, 0}}]");
+      let svg = export_svg(
+        r#"ArrayPlot[{{1, 0, 1}, {0, 1, 0}}, Frame -> True,
+          FrameTicks -> {{{{1, "row1", 0}, {2, "row2", 0}}, None},
+            {{{1.5, p, 0}, {3, Style[q + r, Red, 20], 0}}, None}}]"#,
+      );
+      assert_ne!(svg, plain);
+      for label in ["row1", "row2", ">p<", "q + r"] {
+        assert!(svg.contains(label), "missing {label}: {svg}");
+      }
+      assert!(svg.contains("rgb(255,0,0)"));
+    }
+
+    #[test]
     fn array_plot_color_function_rainbow() {
       // ColorFunction -> "Rainbow" uses a rainbow gradient
       insta::assert_snapshot!(export_svg(
