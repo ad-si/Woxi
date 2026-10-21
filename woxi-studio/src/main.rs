@@ -5484,7 +5484,8 @@ fn is_dynamic_box_dump(output: &str) -> bool {
 /// and errors are discarded — the cells keep their stored outputs until
 /// the user explicitly evaluates them.
 fn evaluate_pending_initialization(pending: &mut Vec<String>) {
-  for code in pending.drain(..) {
+  let cells: Vec<String> = pending.drain(..).collect();
+  for code in woxi::notebook::join_continuation_cells(&cells) {
     for stmt in woxi::split_into_statements(&code) {
       let _ = woxi::interpret_with_stdout(&stmt);
     }

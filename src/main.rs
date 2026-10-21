@@ -86,14 +86,18 @@ fn run_notebook(content: &str) {
     }
   };
 
-  for (_group, cell) in notebook.flat_cells() {
-    if !matches!(cell.style, CellStyle::Input | CellStyle::Code) {
-      continue;
-    }
-    if cell.content.trim().is_empty() {
-      continue;
-    }
-    match interpret(&cell.content) {
+  let sources: Vec<String> = notebook
+    .flat_cells()
+    .into_iter()
+    .filter(|(_, cell)| {
+      matches!(cell.style, CellStyle::Input | CellStyle::Code)
+    })
+    .filter(|(_, cell)| !cell.content.trim().is_empty())
+    .map(|(_, cell)| cell.content.clone())
+    .collect();
+
+  for source in woxi::notebook::join_continuation_cells(&sources) {
+    match interpret(&source) {
       Ok(result) => {
         // "\0" marks suppressed output (Null, trailing semicolon, …).
         if result != "\0" && !result.is_empty() {

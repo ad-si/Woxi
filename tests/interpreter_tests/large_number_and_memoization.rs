@@ -19,6 +19,27 @@ mod large_number_and_memoization {
     }
 
     #[test]
+    fn list_argument_of_symbols_is_not_treated_as_pattern_variables() {
+      assert_eq!(
+        interpret("g[list_List, k_] := g[list, k] = list; g[{a, b}, 2]")
+          .unwrap(),
+        "{a, b}"
+      );
+      assert_eq!(interpret("f[{a, b}] = 5; f[{a, b}]").unwrap(), "5");
+      assert_eq!(
+        interpret(
+          "kv[list_List, 1] := Partition[list, 1]; \
+           kv[list_List, k_Integer?Positive] := kv[list, k] = \
+             Flatten[Table[Flatten[{list[[i]], kv[list, k - 1][[j]]}], \
+               {i, 1, Length[list]}, {j, 1, Length[kv[list, k - 1]]}], 1]; \
+           kv[{x, y}, 2]"
+        )
+        .unwrap(),
+        "{{x, x}, {x, y}, {y, x}, {y, y}}"
+      );
+    }
+
+    #[test]
     fn fibonacci_with_base_cases() {
       assert_eq!(
         interpret(

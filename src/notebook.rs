@@ -3053,6 +3053,73 @@ fn strip_saved_contexts(s: &str) -> String {
     .replace("DemonstrationsTools`", "")
 }
 
+/// Net open-bracket depth of Wolfram source: `(`, `[` and `{` open, their
+/// closers close; string literals and `(* … *)` comments are skipped.
+fn open_bracket_depth(code: &str) -> i32 {
+  let chars: Vec<char> = code.chars().collect();
+  let mut depth = 0;
+  let mut comment_depth = 0;
+  let mut in_string = false;
+  let mut i = 0;
+  while i < chars.len() {
+    let c = chars[i];
+    let next = chars.get(i + 1).copied();
+    if in_string {
+      match c {
+        '\\' => i += 1,
+        '"' => in_string = false,
+        _ => {}
+      }
+    } else if comment_depth > 0 {
+      if c == '*' && next == Some(')') {
+        comment_depth -= 1;
+        i += 1;
+      } else if c == '(' && next == Some('*') {
+        comment_depth += 1;
+        i += 1;
+      }
+    } else if c == '(' && next == Some('*') {
+      comment_depth += 1;
+      i += 1;
+    } else {
+      match c {
+        '"' => in_string = true,
+        '(' | '[' | '{' => depth += 1,
+        ')' | ']' | '}' => depth -= 1,
+        _ => {}
+      }
+    }
+    i += 1;
+  }
+  depth
+}
+
+/// Join notebook input cells whose source is left open (unclosed brackets)
+/// with the cells that follow, until the expression is complete. The
+/// FrontEnd continues an incomplete input across cells, so authors can
+/// split one long definition over several cells; evaluating each cell on
+/// its own would fail to parse every part.
+pub fn join_continuation_cells<S: AsRef<str>>(cells: &[S]) -> Vec<String> {
+  let mut joined = Vec::new();
+  let mut pending: Option<String> = None;
+  for cell in cells {
+    let cell = cell.as_ref();
+    let combined = match pending.take() {
+      Some(prev) => format!("{prev}\n{cell}"),
+      None => cell.to_string(),
+    };
+    if open_bracket_depth(&combined) > 0 {
+      pending = Some(combined);
+    } else {
+      joined.push(combined);
+    }
+  }
+  // A trailing cell that never closes is kept as-is so the caller reports
+  // the syntax error.
+  joined.extend(pending);
+  joined
+}
+
 /// Extract the `Initialization :> ( … )` code from a saved FrontEnd
 /// dynamic-widget dump (the `DynamicModuleBox[…]` text stored in the Output
 /// cell of an evaluated `Manipulate[…]`).
@@ -4740,6 +4807,23 @@ pub fn stored_output_vector_graphics_svg(content: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+  #[test]
+  fn test_join_continuation_cells() {
+    let cells = ["f[x_] := Module[{a = 1},", "a + x]", "g = 2;"];
+    assert_eq!(
+      join_continuation_cells(&cells),
+      vec!["f[x_] := Module[{a = 1},\na + x]", "g = 2;"]
+    );
+    // Brackets in strings and comments do not count.
+    let cells = ["s = \"[\";", "(* { *) t = 1;"];
+    assert_eq!(
+      join_continuation_cells(&cells),
+      vec!["s = \"[\";", "(* { *) t = 1;"]
+    );
+    // An unterminated trailing cell is kept for error reporting.
+    assert_eq!(join_continuation_cells(&["f[", "x"]), vec!["f[\nx"]);
+  }
+
   use super::*;
 
   /// Regression: a control variable named with a private-use-area letter
