@@ -21259,6 +21259,14 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       // exactly as the content does.
       "Deploy" => args.len() == 1,
       "Item" | "Pane" => !args.is_empty(),
+      // `PaddedForm[Grid[…], spec]` & co. format the numbers inside the
+      // layout; the layout itself is drawn as usual.
+      "NumberForm" | "PaddedForm" | "AccountingForm"
+        if !args.is_empty() && is_number_form_layout(&args[0]) =>
+      {
+        current = number_form_layout_items(name, &args[1..], &args[0]);
+        continue;
+      }
       _ => false,
     };
     if !pass_through {
@@ -21283,6 +21291,49 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
     current = traditionalize_layout_items(&current);
   }
   current
+}
+
+fn is_number_form_layout(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "Grid" | "Column" | "Row"))
+}
+
+/// Apply a `NumberForm`-family wrapper (head `head`, extra arguments
+/// `spec`) to every number in the cells of a `Grid`/`Column`/`Row`,
+/// leaving layout options and non-numeric cells untouched.
+fn number_form_layout_items(head: &str, spec: &[Expr], expr: &Expr) -> Expr {
+  match expr {
+    Expr::Integer(_) | Expr::Real(_) => {
+      let mut inner = vec![expr.clone()];
+      inner.extend(spec.iter().cloned());
+      match crate::functions::string_ast::number_form_family_to_string(
+        head, &inner,
+      ) {
+        Some(s) => Expr::String(s.trim().to_string()),
+        None => expr.clone(),
+      }
+    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| number_form_layout_items(head, spec, e))
+        .collect(),
+    ),
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Grid" | "Column" | "Row" | "Item" | "Style"
+      ) && !args.is_empty() =>
+    {
+      let mut new_args = args.clone();
+      new_args[0] = number_form_layout_items(head, spec, &args[0]);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    _ => expr.clone(),
+  }
 }
 
 /// `TraditionalForm[Column[{…}]]` typesets every item of the layout in
