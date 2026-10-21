@@ -14727,18 +14727,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(bar_xs.len(), 20, "expected 20 bars");
 
       // Plot area left edge ~749, right edge ~3499 (width 2750). With
-      // x ∈ [0, 50], bar i spans [i + 0.1, i + 0.9] in data space, so
-      // the first bar starts at ~749 + 0.1/50 * 2750 ≈ 754.5 and the
-      // last (i=19) at ~749 + 19.1/50 * 2750 ≈ 1799.5 — i.e. the bars
-      // only cover ~38% of the plot width.
+      // x ∈ [0, 50] in chart coordinates (bar i centred at i + 1), bar i
+      // spans [i + 0.6, i + 1.4], so the first bar starts at
+      // ~749 + 0.6/50 * 2750 ≈ 782 and the last (i=19) at
+      // ~749 + 19.6/50 * 2750 ≈ 1827 — i.e. the bars only cover ~38% of
+      // the plot width.
       assert!(
-        (bar_xs[0] - 754.5).abs() < 5.0,
-        "first bar x {} should be near 754.5",
+        (bar_xs[0] - 782.0).abs() < 5.0,
+        "first bar x {} should be near 782",
         bar_xs[0]
       );
       assert!(
-        (bar_xs[19] - 1799.5).abs() < 5.0,
-        "last bar x {} should be near 1799.5",
+        (bar_xs[19] - 1827.0).abs() < 5.0,
+        "last bar x {} should be near 1827",
         bar_xs[19]
       );
 
@@ -14760,6 +14761,39 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         (last_h - 547.0).abs() < 5.0,
         "last bar height {last_h} should be near 547"
       );
+    }
+
+    /// `ChartStyle -> {{c1, c2, …}}` (one wrapped style list) colors the
+    /// bars by position, exactly like the unwrapped `{c1, c2, …}`.
+    #[test]
+    fn bar_chart_nested_chart_style_list() {
+      let svg = export_svg(
+        "BarChart[{{1, 2, 3}, {0, 0, 0, 4}}, ChartLayout -> \"Stacked\", \
+         ChartStyle -> {{Red, Green, Blue, Gray}}]",
+      );
+      assert!(svg.contains("rgb(255,0,0)") || svg.contains("#FF0000"));
+      assert!(svg.contains("rgb(0,255,0)") || svg.contains("#00FF00"));
+      assert!(svg.contains("rgb(0,0,255)") || svg.contains("#0000FF"));
+    }
+
+    /// `Ticks -> False` drops the y-axis tick labels like `Ticks -> None`.
+    #[test]
+    fn bar_chart_ticks_false() {
+      let with = export_svg("BarChart[{1, 2, 3}]");
+      let without = export_svg("BarChart[{1, 2, 3}, Ticks -> False]");
+      assert!(with.contains(">\n2\n"));
+      assert!(!without.contains(">\n2\n"));
+    }
+
+    /// `Epilog` primitives are drawn over a bar chart, in chart coordinates.
+    #[test]
+    fn bar_chart_epilog() {
+      let plain = export_svg("BarChart[{1, 2, 3}]");
+      let svg = export_svg(
+        "BarChart[{1, 2, 3}, Epilog -> {Dashed, Line[{{0, 2}, {3, 2}}]}]",
+      );
+      assert!(svg.len() > plain.len());
+      assert!(svg.contains("epilogClip"));
     }
 
     /// PlotRange -> {ymin, ymax} should override only the y-axis; the

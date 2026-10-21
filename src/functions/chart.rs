@@ -575,6 +575,10 @@ pub(crate) struct ChartOptions {
   /// `ChartLayout -> "Stacked"`: the bars of each group are piled on top of
   /// one another in a single column instead of drawn side by side.
   pub stacked: bool,
+  /// `Epilog -> {…}` graphics primitives (already evaluated), drawn over the
+  /// finished chart. Coordinates are the chart's own: the first bar group is
+  /// centred at `x = 1`, values run along `y`.
+  pub epilog: Vec<Expr>,
 }
 
 /// A chart label with optional rotation angle (in radians).
@@ -1735,6 +1739,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     ticks_y: None,
     ticks: true,
     stacked: false,
+    epilog: Vec::new(),
   };
   for opt in &args[1..] {
     if let Some((name, replacement)) =
@@ -1864,7 +1869,9 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           );
         }
         "Ticks" => match replacement {
-          Expr::Identifier(s) if s == "None" => opts.ticks = false,
+          Expr::Identifier(s) if s == "None" || s == "False" => {
+            opts.ticks = false;
+          }
           Expr::Identifier(s) if s == "Automatic" || s == "All" => {
             opts.ticks = true;
           }
@@ -1887,11 +1894,26 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           // Stored unevaluated (it's a pure function applied per value).
           opts.labeling_function = Some(replacement.clone());
         }
+        "Epilog" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          opts.epilog = match &val {
+            Expr::List(items) => items.to_vec(),
+            Expr::Identifier(s) if s == "None" => Vec::new(),
+            _ => vec![val],
+          };
+        }
         "ChartStyle" => {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.clone());
           match &val {
             Expr::List(items) => {
+              // `{{c1, c2, …}}` wraps the per-element colors of a single
+              // style list; unwrap it so it reads like `{c1, c2, …}`.
+              let items = match items.as_slice() {
+                [Expr::List(inner)] => inner.as_slice(),
+                _ => items.as_slice(),
+              };
               for item in items {
                 if let Some(c) = parse_color(item) {
                   opts.chart_style.push(c);
@@ -2002,11 +2024,13 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|(x, y)| (x.as_str(), y.as_str())),
     &opts.chart_style,
     &opts.chart_legends,
-    opts.plot_range_x,
+    // PlotRange is in chart coordinates (first bar centred at x = 1).
+    opts.plot_range_x.map(|(lo, hi)| (lo - 0.5, hi - 0.5)),
     opts.plot_range_y,
     &bar_labels,
     opts.stacked,
     opts.ticks,
+    &opts.epilog,
   )?;
   Ok(crate::graphics_result(svg))
 }
