@@ -29647,7 +29647,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
 /// can reach a held label as: the bare `Infinity` symbol, `-Infinity`
 /// (`Times[-1, Infinity]` or a unary minus), or `DirectedInfinity[±1]`.
 /// `None` when `expr` is not an infinity at all.
-fn directed_infinity_glyph(expr: &Expr) -> Option<&'static str> {
+pub(crate) fn directed_infinity_glyph(expr: &Expr) -> Option<&'static str> {
   if !crate::functions::predicate_ast::is_directed_infinity(expr) {
     return None;
   }

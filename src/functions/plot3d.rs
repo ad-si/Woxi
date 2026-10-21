@@ -3926,6 +3926,38 @@ fn strip_dynamic(expr: &Expr) -> &Expr {
   }
 }
 
+/// A `ViewPoint` containing infinite components, e.g. `{0, 0, Infinity}`
+/// (the same as `Above`). The infinite components decide the direction;
+/// finite ones vanish in the limit. Returns a vector of length 2 along that
+/// direction, or `None` when no component is infinite.
+fn eval_view_direction(expr: &Expr) -> Option<[f64; 3]> {
+  let Expr::List(items) = &evaluate_expr_to_expr(strip_dynamic(expr)).ok()?
+  else {
+    return None;
+  };
+  if items.len() != 3 {
+    return None;
+  }
+  let mut dir = [0.0; 3];
+  let mut any_infinite = false;
+  for (slot, item) in dir.iter_mut().zip(items.iter()) {
+    match crate::functions::graphics::directed_infinity_glyph(item) {
+      Some(glyph) => {
+        *slot = if glyph.starts_with('-') { -1.0 } else { 1.0 };
+        any_infinite = true;
+      }
+      None => {
+        try_eval_to_f64(item)?;
+      }
+    }
+  }
+  if !any_infinite {
+    return None;
+  }
+  let len = dir.iter().map(|c| c * c).sum::<f64>().sqrt();
+  Some(dir.map(|c| 2.0 * c / len))
+}
+
 fn eval_vec3(expr: &Expr) -> Option<[f64; 3]> {
   let Expr::List(items) = &evaluate_expr_to_expr(strip_dynamic(expr)).ok()?
   else {
@@ -6302,7 +6334,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             },
             _ => None,
           };
-          if let Some(vp) = symbolic.or_else(|| eval_vec3(replacement)) {
+          if let Some(vp) = symbolic
+            .or_else(|| eval_view_direction(replacement))
+            .or_else(|| eval_vec3(replacement))
+          {
             camera.azimuth = vp[1].atan2(vp[0]);
             camera.elevation = vp[2].atan2(vp[0].hypot(vp[1]));
             view_distance =
