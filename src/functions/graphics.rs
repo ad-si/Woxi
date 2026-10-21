@@ -27985,10 +27985,13 @@ fn unwrap_control_wrapper(spec: Expr) -> Expr {
     _ => spec,
   };
   match &spec {
+    // `Control[{{v, init, label}, Checkbox}]`: the bare control-type symbol
+    // is the `ControlType -> …` option it abbreviates, exactly as in a
+    // top-level spec.
     Expr::FunctionCall { name, args }
       if name == "Control" && !args.is_empty() =>
     {
-      args[0].clone()
+      bare_control_type_as_option(args[0].clone())
     }
     _ => spec,
   }
