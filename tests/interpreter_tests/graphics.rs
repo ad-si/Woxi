@@ -4927,6 +4927,21 @@ mod plot3d {
       }
 
       #[test]
+      fn axes_label_is_drawn_for_each_axis() {
+        // `AxesLabel` entries (plain strings, `Style`, `Text[Style[…]]`,
+        // or a variable holding the list) label the three axes.
+        let svg = export_svg(
+          "labs = {Text[Style[\"xx\", Italic]], \"yy\", \"zz\"}; SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Axes -> True, AxesLabel -> labs]",
+        );
+        assert!(svg.contains("font-style=\"italic\">xx"));
+        assert!(svg.contains(">yy</text>"));
+        assert!(svg.contains(">zz</text>"));
+        let plain =
+          export_svg("SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]");
+        assert!(!plain.contains(">yy</text>"));
+      }
+
+      #[test]
       fn bumpy_sphere() {
         insta::assert_snapshot!(export_svg(
           "SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta, 0, Pi}, {phi, 0, 2 Pi}]"

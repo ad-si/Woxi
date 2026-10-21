@@ -11321,6 +11321,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
+  let mut axes_labels: [Option<String>; 3] = [None, None, None];
   // `PlotPoints -> n`: number of samples per direction (n - 1 grid cells),
   // as in Wolfram. Low values matter: Demonstrations use PlotPoints -> 2
   // with MaxRecursion -> 0 to get intentionally flat facets.
@@ -11370,6 +11371,17 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False")
           {
             show_axes = false;
+          }
+        }
+        Expr::Identifier(name) if name == "AxesLabel" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          let items: Vec<Expr> = match &value {
+            Expr::List(items) => items.to_vec(),
+            other => vec![other.clone()],
+          };
+          for (i, item) in items.iter().take(3).enumerate() {
+            axes_labels[i] = axis_label_markup(item);
           }
         }
         Expr::Identifier(name) if name == "PlotPoints" => {
@@ -11996,7 +12008,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     mesh_mode,
     show_axes,
     [1.0, 1.0, Z_SCALE],
-    &[None, None, None],
+    &axes_labels,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
