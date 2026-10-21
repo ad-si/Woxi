@@ -5632,6 +5632,94 @@ pub fn linear_solve_method_ok(
   }
 }
 
+/// Solve a square system whose entries are all machine numbers (real or
+/// complex, with at least one inexact entry) by LU decomposition with partial
+/// pivoting on plain `f64` pairs. Exact symbolic elimination is orders of
+/// magnitude slower on the dense numeric systems that grid-based simulations
+/// build. Returns `None` when the data is not purely numeric or the matrix is
+/// (numerically) singular, so the general path can report it.
+fn linear_solve_machine(matrix: &[Vec<Expr>], b: &[Expr]) -> Option<Expr> {
+  use crate::functions::math_ast::numeric_utils::{
+    build_complex_float_expr, try_extract_complex_f64,
+  };
+  fn has_real(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) => true,
+      Expr::BinaryOp { left, right, .. } => has_real(left) || has_real(right),
+      Expr::UnaryOp { operand, .. } => has_real(operand),
+      Expr::FunctionCall { args, .. } => args.iter().any(has_real),
+      _ => false,
+    }
+  }
+  let n = matrix.len();
+  if !matrix.iter().flatten().chain(b.iter()).any(has_real) {
+    return None;
+  }
+  let mut a: Vec<Vec<(f64, f64)>> = Vec::with_capacity(n);
+  for (row, rhs) in matrix.iter().zip(b) {
+    let mut parts = Vec::with_capacity(n + 1);
+    for e in row.iter().chain(std::iter::once(rhs)) {
+      let (re, im) = try_extract_complex_f64(e)?;
+      if !re.is_finite() || !im.is_finite() {
+        return None;
+      }
+      parts.push((re, im));
+    }
+    a.push(parts);
+  }
+  let mul = |x: (f64, f64), y: (f64, f64)| {
+    (x.0 * y.0 - x.1 * y.1, x.0 * y.1 + x.1 * y.0)
+  };
+  let div = |x: (f64, f64), y: (f64, f64)| {
+    let d = y.0 * y.0 + y.1 * y.1;
+    ((x.0 * y.0 + x.1 * y.1) / d, (x.1 * y.0 - x.0 * y.1) / d)
+  };
+  let norm = |x: (f64, f64)| x.0.hypot(x.1);
+  for col in 0..n {
+    let pivot_row = (col..n)
+      .max_by(|&r1, &r2| norm(a[r1][col]).total_cmp(&norm(a[r2][col])))?;
+    if norm(a[pivot_row][col]) == 0.0 {
+      return None;
+    }
+    a.swap(col, pivot_row);
+    let pivot = a[col][col];
+    for row in (col + 1)..n {
+      if a[row][col] == (0.0, 0.0) {
+        continue;
+      }
+      let factor = div(a[row][col], pivot);
+      for j in col..=n {
+        let p = mul(factor, a[col][j]);
+        a[row][j] = (a[row][j].0 - p.0, a[row][j].1 - p.1);
+      }
+    }
+  }
+  let mut x = vec![(0.0, 0.0); n];
+  for i in (0..n).rev() {
+    let mut sum = a[i][n];
+    for j in (i + 1)..n {
+      let p = mul(a[i][j], x[j]);
+      sum = (sum.0 - p.0, sum.1 - p.1);
+    }
+    x[i] = div(sum, a[i][i]);
+    if !x[i].0.is_finite() || !x[i].1.is_finite() {
+      return None;
+    }
+  }
+  Some(Expr::List(
+    x.into_iter()
+      .map(|(re, im)| {
+        if im == 0.0 {
+          Expr::Real(re)
+        } else {
+          build_complex_float_expr(re, im)
+        }
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  ))
+}
+
 pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -5678,6 +5766,10 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "LinearSolve::lslc: Coefficient matrix and target vector(s) or matrix do not have the same dimensions.",
     );
     return Ok(unevaluated("LinearSolve", args));
+  }
+
+  if let Some(solution) = linear_solve_machine(&matrix, &b) {
+    return Ok(solution);
   }
 
   // Build augmented matrix [A | b]

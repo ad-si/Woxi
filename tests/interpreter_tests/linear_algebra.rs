@@ -2514,6 +2514,36 @@ mod linear_solve {
     );
   }
 
+  // Machine-number systems (real or complex) take the numeric LU path.
+  #[test]
+  fn linear_solve_machine_real_and_complex() {
+    assert_eq!(
+      interpret("LinearSolve[{{2., 1}, {1, 3}}, {1, 2}]").unwrap(),
+      "{0.2, 0.6}"
+    );
+    assert_eq!(
+      interpret(
+        "Chop[LinearSolve[{{2. + I, 1}, {1, 3}}, {1, 2}] - \
+         {0.1470588235294118 - 0.08823529411764706 I, \
+         0.6176470588235293 + 0.029411764705882342 I}]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+    // A tridiagonal complex system, solved and checked by substitution.
+    assert_eq!(
+      interpret(
+        "m = SparseArray[{Band[{1, 2}] -> Table[0.5 + 0.1 I, {5}], \
+         Band[{1, 1}] -> Table[2. + I, {6}], \
+         Band[{2, 1}] -> Table[0.5 + 0.1 I, {5}]}]; \
+         x = LinearSolve[m, Table[1. + I, {6}]]; \
+         Chop[Normal[m] . x - Table[1. + I, {6}]]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0, 0, 0}"
+    );
+  }
+
   // Operator form: LinearSolve[m][b] == LinearSolve[m, b], and it can be
   // mapped over several right-hand sides.
   #[test]
