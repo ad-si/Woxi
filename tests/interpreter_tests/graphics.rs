@@ -38503,4 +38503,15 @@ mod surface_vertex_colors {
       );
     }
   }
+
+  #[test]
+  fn rule_between_framed_text_is_drawn_not_printed() {
+    let svg = interpret(
+      "ExportString[Pane[Framed[Text[TraditionalForm[a + b]]] -> \
+       Text[TraditionalForm[c + d]], {600, 450}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains('\u{2192}'), "no arrow drawn");
+    assert!(!svg.contains(">Framed<"), "source text printed");
+  }
 }
