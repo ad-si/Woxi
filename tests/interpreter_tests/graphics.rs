@@ -1208,6 +1208,25 @@ mod graphics {
       );
     }
 
+    /// `Inset[image, pos, {0, 0}, size]` puts the image's own lower-left
+    /// pixel corner on `pos` (an image is measured in pixels), not its
+    /// centre; `{w, h}` names its upper-right corner.
+    #[test]
+    fn an_image_inset_with_a_numeric_object_anchor_pins_that_pixel() {
+      let inset = |opos: &str| {
+        export_svg(&format!(
+          "Graphics[{{Inset[Image[{{{{0.2, 0.8}}, {{0.9, 0.1}}}}], {{0, 0}}, \
+           {opos}, 1]}}, PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}]"
+        ))
+      };
+      // The picture is centred in a copy padded to twice its far side of the
+      // anchor; the shift says which half of that pad the image occupies.
+      // Lower-left corner on the origin: the image lies up and to the right.
+      assert!(inset("{0, 0}").contains("translate(2.00,0.00)"));
+      // Upper-right pixel corner on the origin: down and to the left.
+      assert!(inset("{2, 2}").contains("translate(0.00,2.00)"));
+    }
+
     /// A symbolic `Graphics[…]` inset with no `size` keeps the size it would
     /// have on its own. It used to be folded into the enclosing picture's
     /// coordinates, so a unit-radius scene inset into a picture measured in
