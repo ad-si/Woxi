@@ -3752,6 +3752,32 @@ mod plot3d {
     }
   }
 
+  /// The primitives of a textured `SphericalPlot3D` keep their `Texture` and
+  /// per-vertex `VertexTextureCoordinates`, so a `Graphics3D` built from
+  /// `plot[[1]]` is still textured.
+  #[test]
+  fn spherical_plot3d_texture_survives_extraction() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "gc = SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}, PlotPoints -> 5, \
+         TextureCoordinateFunction -> ({#5, 1 - #4} &), \
+         PlotStyle -> Directive[Texture[Image[{{0, 1}, {1, 0}}]]]][[1]]; \
+         {Length[Cases[gc[[2]], _Texture]], Length[gc[[3]][[2]]] == Length[gc[[1]]]}"
+      )
+      .unwrap(),
+      "{1, True}"
+    );
+    assert!(
+      interpret(
+        "ExportString[Graphics3D[SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}, \
+         PlotPoints -> 6, PlotStyle -> Directive[Texture[Image[{{0, 1}, {1, 0}}]]]][[1]]], \"SVG\"]"
+      )
+      .unwrap()
+      .contains("clipPath")
+    );
+  }
+
   /// A `Texture` in a `SphericalPlot3D` `PlotStyle` paints the surface with
   /// the image, placed by `TextureCoordinateFunction` (repeating outside the
   /// unit square) — not with the plot's default height colouring.

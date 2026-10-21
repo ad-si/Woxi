@@ -343,6 +343,30 @@ mod image_core {
     );
   }
 
+  // A scalar volume is filtered along all three axes and stretched to
+  // [0, 1] by ImageAdjust, keeping its Image3D options.
+  #[test]
+  fn image3d_volume_gaussian_filter_and_adjust() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageAdjust[Image3D[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 9}}}, Background -> Black]]"
+      )
+      .unwrap(),
+      "Image3D[{{{0., 0.125}, {0.25, 0.375}}, {{0.5, 0.625}, {0.75, 1.}}}, Background -> GrayLevel[0]]"
+    );
+    // The filter preserves the total mass of a single bright voxel and
+    // spreads it symmetrically over the neighbouring voxels.
+    assert_eq!(
+      interpret(
+        "v = GaussianFilter[Image3D[Table[If[{i, j, k} == {2, 2, 2}, 9, 0], {i, 3}, {j, 3}, {k, 3}]], 1][[1]]; \
+         {Dimensions[v], Round[Total[Flatten[v]], 0.001], v[[1, 2, 2]] == v[[3, 2, 2]]}"
+      )
+      .unwrap(),
+      "{{3, 3, 3}, 9., True}"
+    );
+  }
+
   // Image3D of a list of equally sized 2D images is a stacked volume.
   #[test]
   fn image3d_from_image_stack() {

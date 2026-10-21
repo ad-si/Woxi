@@ -17,6 +17,7 @@
 //! | `n` | integer raw array: `<i32 type>?<i32 rank><i32 dims><packed ints>`  |
 //! | `e` | real packed array: `<i32 rank><i32 dims><packed f64>`               |
 //! | `b` | byte raw array: `<i32 rank><i32 dims><raw u8>`                      |
+//! | `l` | single-precision real array: `<i32 rank><i32 dims><packed f32>`     |
 //!
 //! The `b` token carries raster pixel payloads — the `RawArray` data inside
 //! `RasterBox[CompressedData["…"]]` and inline `Image[…]` literals; its
@@ -111,6 +112,7 @@ fn read_expr(data: &[u8], pos: &mut usize) -> Option<Expr> {
     b'e' => read_real_array(data, pos),
     b'b' => read_byte_array(data, pos),
     b'h' => read_int16_array(data, pos),
+    b'l' => read_real32_array(data, pos),
     _ => None,
   }
 }
@@ -326,6 +328,27 @@ fn read_real_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   Some(nest(&dims, &mut vals.into_iter()))
 }
 
+/// `l` token — packed single-precision real array (the pixel data of a
+/// `"Real32"` image). Each element widens exactly to a machine real.
+fn read_real32_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
+  let rank = read_i32(data, pos)?;
+  let dims = read_dims(data, pos, rank)?;
+  let count: usize = dims_product(&dims)?;
+  let end = pos.checked_add(count.checked_mul(4)?)?;
+  if end > data.len() {
+    return None;
+  }
+  let vals: Vec<Expr> = (0..count)
+    .map(|i| {
+      let at = *pos + 4 * i;
+      let b = [data[at], data[at + 1], data[at + 2], data[at + 3]];
+      Expr::Real(f32::from_le_bytes(b) as f64)
+    })
+    .collect();
+  *pos = end;
+  Some(nest(&dims, &mut vals.into_iter()))
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -350,6 +373,16 @@ mod tests {
   fn reads_big_integer_token() {
     // I token: length-prefixed ASCII decimal
     assert_eq!(render(b"!boRI\x02\x00\x00\x0010"), "10");
+  }
+
+  #[test]
+  fn reads_real32_array_token() {
+    // l token: rank 2, dims {1, 2}, then two little-endian f32 values.
+    let mut data =
+      b"!boRl\x02\x00\x00\x00\x01\x00\x00\x00\x02\x00\x00\x00".to_vec();
+    data.extend_from_slice(&0.5f32.to_le_bytes());
+    data.extend_from_slice(&(-2.0f32).to_le_bytes());
+    assert_eq!(render(&data), "{{0.5, -2.}}");
   }
 
   #[test]
