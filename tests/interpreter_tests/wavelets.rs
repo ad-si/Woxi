@@ -758,7 +758,7 @@ mod wavelets {
         "WaveletMapIndexed[#1*0 &, DiscreteWaveletTransform[{1, 2, 3, 4}]][All]"
       )
       .unwrap(),
-      "{{0} -> {0., 0.}, {1} -> {0., 0.}, {0, 0} -> {0.}, {0, 1} -> {0.}}"
+      "{{0} -> {0, 0}, {1} -> {0, 0}, {0, 0} -> {0}, {0, 1} -> {0}}"
     );
   }
 
@@ -780,7 +780,7 @@ mod wavelets {
         "dwd = DiscreteWaveletTransform[{1., 2., 3., 4.}, HaarWavelet[], 1]; m = WaveletMapIndexed[#1*0 &, dwd, {1}]; {m[{0}, \"Values\"] === dwd[{0}, \"Values\"], m[{1}, \"Values\"]}"
       )
       .unwrap(),
-      "{True, {{0., 0.}}}"
+      "{True, {{0, 0}}}"
     );
   }
 

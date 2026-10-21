@@ -2354,6 +2354,37 @@ mod tests {
     }
   }
 
+  /// A row of `Control[{{var, default, "label"}, Checkbox}]` cells inside a
+  /// `Grid` (with `Spacer` separators and a trailing empty cell left by a
+  /// dangling comma) must produce one real checkbox control per variable,
+  /// not static displays of their current values.
+  #[test]
+  fn checkbox_controls_in_a_grid_row_become_real_controls() {
+    let code = r#"Manipulate[
+      If[a || b, {t, c}, {}],
+      Delimiter,
+      Grid[{{
+        Control[{{a, True, "first"}, Checkbox}],
+        Spacer[15],
+        Control[{{b, False, "second"}, Checkbox}],
+        Spacer[15],
+        Control[{{c, False, "third"}, Checkbox}],
+      }}],
+      {{t, 1, "turn"}, 0, 2, Enabled -> Dynamic[(a || b)]}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let names: Vec<String> = state
+      .controls
+      .iter()
+      .map(|c| c.name().to_string())
+      .collect();
+    for n in ["a", "b", "c", "t"] {
+      assert!(names.iter().any(|x| x == n), "missing {n}: {names:?}");
+    }
+  }
+
   /// A Demonstrations idiom declares a control's own default
   /// (`Control[{{n, 2, "n"}, …}]`) and then redeclares the same variable's
   /// *actual* starting value via a separate, hidden `{{n, 3}, None}` spec —
