@@ -289,6 +289,28 @@ mod column_visual_mode {
     assert!(svg.contains(">b</tspan>"), "{svg}");
   }
 
+  /// A fixed-size `Pane` re-flows prose built from a `Row` that mixes strings,
+  /// numbers and `Style`d words — even through a nested size-less `Pane` and
+  /// `Text` — breaking at spaces and at explicit newlines instead of running
+  /// off the edge of the box.
+  #[test]
+  fn sized_pane_wraps_mixed_row_prose_at_word_boundaries() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Pane[Text[Pane[Row[{\"alpha beta gamma \", 12, \" delta \", \
+       Style[\"epsilon\", Italic], \" zeta eta theta\\nsecond paragraph\"}]]], \
+       {120, 200}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    // 120 / (14 * 0.6) = 14 characters per line.
+    assert!(!svg.contains("alpha beta gamma"), "{svg}");
+    assert!(svg.contains(">alpha beta<"), "{svg}");
+    assert!(svg.contains(">second<"), "{svg}");
+    assert!(svg.contains("font-style=\"italic\""), "{svg}");
+  }
+
   /// `Style[Column[{…, Pane[text, w]}, opts], "Label", 12]` pushes the style
   /// onto each item; a `Pane` item used to come out as its own source text.
   #[test]
