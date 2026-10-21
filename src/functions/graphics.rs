@@ -27717,6 +27717,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       if (name == "Item"
         || name == "Text"
         || name == "Panel"
+        || name == "Framed"
         || name == "ExpressionCell"
         || name == "Labeled"
         || name == "Style")
@@ -31591,6 +31592,29 @@ fn parse_manipulate_control(
   } else {
     None
   };
+  // `Slider[Dynamic[v], {min, max, step}, opts…]&` builds exactly the
+  // slider the plain `{{v, init, label}, min, max, step, opts…}` spec
+  // declares, so restate the spec that way.
+  if let Some(Expr::FunctionCall {
+    name: built_name,
+    args: built_args,
+  }) = &built
+    && built_name == "Slider"
+    && built_args.len() >= 2
+    && matches!(
+      &built_args[0],
+      Expr::FunctionCall { name: d, args: da }
+        if d == "Dynamic"
+          && matches!(da.as_slice(), [Expr::Identifier(v)] if *v == name)
+    )
+    && let Expr::List(range) = &built_args[1]
+    && (2..=3).contains(&range.len())
+  {
+    let mut restated = vec![items[0].clone()];
+    restated.extend(range.iter().cloned());
+    restated.extend(built_args[2..].iter().cloned());
+    return parse_manipulate_control(&Expr::List(restated.into()), siblings);
+  }
   if let Some(Expr::FunctionCall {
     name: built_name,
     args: built_args,
