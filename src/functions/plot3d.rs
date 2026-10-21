@@ -645,6 +645,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut z_clip: Option<(f64, f64)> = None;
   let mut plot_style_expr: Option<&Expr> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
+  let mut color_fn = FacetColorFunction::default();
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -652,6 +653,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       replacement,
     } = opt
     {
+      color_fn.read_option(pattern, replacement);
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "PlotStyle" => {
           plot_style_expr = Some(replacement.as_ref());
@@ -781,6 +783,30 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut all_triangles: Vec<Triangle> = Vec::new();
   let num_surfaces = grids.len();
 
+  // The style `ColorFunction` gives the facet over grid cell `(i, j)`,
+  // evaluated at the cell's centre.
+  let cell_color_style = |grid: &[Vec<f64>], i: usize, j: usize| {
+    color_fn.function.as_ref()?;
+    let corners = [
+      grid[i][j],
+      grid[i + 1][j],
+      grid[i + 1][j + 1],
+      grid[i][j + 1],
+    ];
+    if corners.iter().any(|z| !z.is_finite()) {
+      return None;
+    }
+    let z = corners.iter().map(|z| z.clamp(z_lo, z_hi)).sum::<f64>() / 4.0;
+    color_fn.style_at(
+      [
+        x_min + (i as f64 + 0.5) * x_step,
+        y_min + (j as f64 + 0.5) * y_step,
+        z,
+      ],
+      [(x_min, x_max), (y_min, y_max), (z_lo, z_hi)],
+    )
+  };
+
   // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
   // `Show` merges the *primitives* of the graphics it is given, so a
   // surface that exists only as a rendering is dropped when it is shown
@@ -841,36 +867,41 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               / 4.0;
             let height_color =
               surface_height_color(avg_z_norm, surface_idx, num_surfaces);
-            let (cr, cg, cb) =
-              match plot_style_for_surface(&plot_styles, surface_idx) {
-                Some(style) => style.color.unwrap_or(height_color),
-                None => height_color,
-              };
+            let facet_style = cell_color_style(grid, i, j);
+            let (cr, cg, cb) = match facet_style
+              .as_ref()
+              .or(plot_style_for_surface(&plot_styles, surface_idx))
+            {
+              Some(style) => style.color.unwrap_or(height_color),
+              None => height_color,
+            };
             // Colour and polygon travel in a sublist so the directive does
             // not leak onto the quads drawn after it.
-            content.push(Expr::List(
+            let mut quad: Vec<Expr> = Vec::new();
+            if let Some(style) = &facet_style
+              && style.opacity < 1.0
+            {
+              quad.push(call1("Opacity", Expr::Real(style.opacity)));
+            }
+            quad.push(call(
+              "RGBColor",
               vec![
-                call(
-                  "RGBColor",
-                  vec![
-                    Expr::Real(cr as f64 / 255.0),
-                    Expr::Real(cg as f64 / 255.0),
-                    Expr::Real(cb as f64 / 255.0),
-                  ],
-                ),
-                call1(
-                  "Polygon",
-                  Expr::List(
-                    [a, b, c, d]
-                      .iter()
-                      .map(|&k| Expr::Integer(k as i128 + 1))
-                      .collect::<Vec<_>>()
-                      .into(),
-                  ),
-                ),
-              ]
-              .into(),
+                Expr::Real(cr as f64 / 255.0),
+                Expr::Real(cg as f64 / 255.0),
+                Expr::Real(cb as f64 / 255.0),
+              ],
             ));
+            quad.push(call1(
+              "Polygon",
+              Expr::List(
+                [a, b, c, d]
+                  .iter()
+                  .map(|&k| Expr::Integer(k as i128 + 1))
+                  .collect::<Vec<_>>()
+                  .into(),
+              ),
+            ));
+            content.push(Expr::List(quad.into()));
           }
         }
         // The mesh, at the spacing the standalone render rules it with.
@@ -956,6 +987,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let z10 = grid[i + 1][j];
         let z01 = grid[i][j + 1];
         let z11 = grid[i + 1][j + 1];
+        let cell_style = cell_color_style(grid, i, j);
 
         let nx = |ii: usize| -> f64 { (ii as f64 / GRID_N as f64) * 2.0 - 1.0 };
         let ny = |jj: usize| -> f64 { (jj as f64 / GRID_N as f64) * 2.0 - 1.0 };
@@ -991,7 +1023,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let default_color =
             surface_height_color(avg_z_norm, surface_idx, num_surfaces);
           let normal = triangle_normal(v0, v1, v2);
-          let style = plot_style_for_surface(&plot_styles, surface_idx);
+          let style = cell_style
+            .as_ref()
+            .or(plot_style_for_surface(&plot_styles, surface_idx));
           let (color, opacity) =
             shade_facet(default_color, style, normal, view_dir);
 
@@ -1045,7 +1079,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let default_color =
             surface_height_color(avg_z_norm, surface_idx, num_surfaces);
           let normal = triangle_normal(v0, v1, v2);
-          let style = plot_style_for_surface(&plot_styles, surface_idx);
+          let style = cell_style
+            .as_ref()
+            .or(plot_style_for_surface(&plot_styles, surface_idx));
           let (color, opacity) =
             shade_facet(default_color, style, normal, view_dir);
 
@@ -3612,6 +3648,62 @@ fn parse_specularity(args: &[Expr]) -> Option<((u8, u8, u8), f64)> {
     .filter(|n| *n > 0.0)
     .unwrap_or(1.0);
   Some((rgb, exponent))
+}
+
+/// `ColorFunction -> Function[{x, y, z}, …]` of a `Plot3D`/`RegionPlot3D`:
+/// the style (colour and, for `Directive[Opacity[o], colour]`, opacity) it
+/// gives the facet at a point. Named schemes are not handled here.
+#[derive(Default)]
+struct FacetColorFunction {
+  function: Option<Expr>,
+  /// `ColorFunctionScaling -> False` hands the function raw coordinates
+  /// instead of ones rescaled to 0..1 over the plotted range.
+  unscaled: bool,
+}
+
+impl FacetColorFunction {
+  fn read_option(&mut self, pattern: &Expr, replacement: &Expr) {
+    match pattern {
+      Expr::Identifier(name) if name == "ColorFunction" => {
+        self.function = matches!(replacement,
+          Expr::FunctionCall { name, .. } if name == "Function")
+        .then(|| replacement.clone());
+      }
+      Expr::Identifier(name) if name == "ColorFunctionScaling" => {
+        self.unscaled =
+          matches!(replacement, Expr::Identifier(n) if n == "False");
+      }
+      _ => {}
+    }
+  }
+
+  /// The style at `point`, given the `(lo, hi)` range of each axis.
+  fn style_at(
+    &self,
+    point: [f64; 3],
+    ranges: [(f64, f64); 3],
+  ) -> Option<StyleState3D> {
+    let function = self.function.as_ref()?;
+    let args = (0..3)
+      .map(|k| {
+        let (lo, hi) = ranges[k];
+        let t = if self.unscaled || (hi - lo).abs() < 1e-15 {
+          point[k]
+        } else {
+          (point[k] - lo) / (hi - lo)
+        };
+        Expr::Real(t)
+      })
+      .collect();
+    let value = evaluate_expr_to_expr(&Expr::CurriedCall {
+      func: Box::new(function.clone()),
+      args,
+    })
+    .ok()?;
+    let mut style = StyleState3D::default();
+    apply_3d_directive(&value, &mut style);
+    (style.color.is_some() || style.opacity < 1.0).then_some(style)
+  }
 }
 
 /// Resolve which entry of a `PlotStyle` style list a surface uses, cycling
@@ -9371,6 +9463,8 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
+  let mut axes_labels: [Option<String>; 3] = [None, None, None];
+  let mut color_fn = FacetColorFunction::default();
 
   for opt in &args[4..] {
     if let Expr::Rule {
@@ -9378,7 +9472,19 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       replacement,
     } = opt
     {
+      color_fn.read_option(pattern, replacement);
       match pattern.as_ref() {
+        Expr::Identifier(name) if name == "AxesLabel" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          let items: Vec<Expr> = match &value {
+            Expr::List(items) => items.to_vec(),
+            other => vec![other.clone()],
+          };
+          for (i, item) in items.iter().take(3).enumerate() {
+            axes_labels[i] = axis_label_markup(item);
+          }
+        }
         Expr::Identifier(name) if name == "ImageSize" => {
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
@@ -9445,6 +9551,8 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // One world-space quad per face emitted below, mirrored 1:1 against the
   // (normalized, screen-projected) triangles pushed into `all_triangles`.
   let mut world_quads: Vec<[Point3D; 4]> = Vec::new();
+  // The `ColorFunction` style of each of those quads.
+  let mut quad_styles: Vec<Option<StyleState3D>> = Vec::new();
 
   // Default surface color (Mathematica-like blue with opacity)
   let base_r = 0x5E_u8;
@@ -9658,10 +9766,21 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ]
           });
 
+          let face_style = color_fn.style_at(
+            [wcx, wcy, wcz],
+            [(x_min, x_max), (y_min, y_max), (z_min, z_max)],
+          );
+          let face_base = face_style
+            .as_ref()
+            .and_then(|s| s.color)
+            .unwrap_or((base_r, base_g, base_b));
+          let face_opacity = face_style.as_ref().map_or(1.0, |s| s.opacity);
+          quad_styles.push(face_style);
+
           // Triangle 1: v0, v1, v2
           {
             let normal = triangle_normal(v0, v1, v2);
-            let color = apply_lighting((base_r, base_g, base_b), normal);
+            let color = apply_lighting(face_base, normal);
             let p0 = project(v0, &camera);
             let p1 = project(v1, &camera);
             let p2 = project(v2, &camera);
@@ -9677,7 +9796,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               projected: [p0, p1, p2],
               depth: depth(center, &camera),
               color,
-              opacity: 1.0,
+              opacity: face_opacity,
               texture: None,
             });
           }
@@ -9685,7 +9804,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // Triangle 2: v0, v2, v3
           {
             let normal = triangle_normal(v0, v2, v3);
-            let color = apply_lighting((base_r, base_g, base_b), normal);
+            let color = apply_lighting(face_base, normal);
             let p0 = project(v0, &camera);
             let p2 = project(v2, &camera);
             let p3 = project(v3, &camera);
@@ -9701,7 +9820,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               projected: [p0, p2, p3],
               depth: depth(center, &camera),
               color,
-              opacity: 1.0,
+              opacity: face_opacity,
               texture: None,
             });
           }
@@ -9737,7 +9856,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     mesh_mode,
     show_axes,
     [1.0, 1.0, Z_SCALE],
-    &[None, None, None],
+    &axes_labels,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -9771,22 +9890,50 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .into(),
       ));
     }
-    call1(
-      "Graphics3D",
-      call(
-        "GraphicsComplex",
-        vec![
-          Expr::List(point_exprs.into()),
-          Expr::List(
-            {
-              complex_content.push(call1("Polygon", Expr::List(quads.into())));
-              complex_content
-            }
-            .into(),
-          ),
-        ],
-      ),
-    )
+    // A `ColorFunction` colours each face on its own; otherwise one polygon
+    // holds every face.
+    if color_fn.function.is_some() {
+      for (quad, style) in quads.into_iter().zip(&quad_styles) {
+        let mut face: Vec<Expr> = Vec::new();
+        if let Some(style) = style {
+          if style.opacity < 1.0 {
+            face.push(call1("Opacity", Expr::Real(style.opacity)));
+          }
+          if let Some((r, g, b)) = style.color {
+            face.push(call(
+              "RGBColor",
+              vec![
+                Expr::Real(r as f64 / 255.0),
+                Expr::Real(g as f64 / 255.0),
+                Expr::Real(b as f64 / 255.0),
+              ],
+            ));
+          }
+        }
+        face.push(call1("Polygon", Expr::List(vec![quad].into())));
+        complex_content.push(Expr::List(face.into()));
+      }
+    } else {
+      complex_content.push(call1("Polygon", Expr::List(quads.into())));
+    }
+    // `RegionPlot3D` draws its axes where a bare `Graphics3D` does not, so
+    // the default is spelled out for a plot shown inside another graphic.
+    let mut structure_args = vec![call(
+      "GraphicsComplex",
+      vec![
+        Expr::List(point_exprs.into()),
+        Expr::List(complex_content.into()),
+      ],
+    )];
+    structure_args.extend(args[4..].iter().cloned());
+    let names_axes = structure_args.iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes"))
+    });
+    if show_axes && !names_axes {
+      structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
+    }
+    call("Graphics3D", structure_args)
   };
 
   Ok(crate::graphics3d_result_with_structure(svg, structure))
