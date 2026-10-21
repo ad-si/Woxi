@@ -37694,6 +37694,38 @@ mod static_dynamic_controls {
   }
 
   #[test]
+  fn color_data_black_body_spectrum_runs_from_red_to_blue() {
+    let channels = |code: &str| -> Vec<f64> {
+      let out = interpret(code).unwrap();
+      out
+        .trim_start_matches("RGBColor[")
+        .trim_end_matches(']')
+        .split(", ")
+        .map(|c| c.parse().unwrap())
+        .collect()
+    };
+    let cool = channels("ColorData[\"BlackBodySpectrum\", 2000]");
+    let hot = channels("ColorData[\"BlackBodySpectrum\"][10000]");
+    assert!((cool[0] - 1.0).abs() < 1e-9);
+    assert!(cool[2] < cool[0]);
+    assert!((hot[2] - 1.0).abs() < 1e-9);
+    assert!(hot[0] < hot[2]);
+    assert_eq!(
+      interpret("ColorData[\"BlackBodySpectrum\"][5000]").unwrap(),
+      interpret("ColorData[\"BlackBodySpectrum\", 5000]").unwrap()
+    );
+  }
+
+  #[test]
+  fn graphics3d_sphere_colored_by_black_body_temperature_renders() {
+    let svg = export_svg(
+      "Graphics3D[{ColorData[\"BlackBodySpectrum\"][4000], \
+       Sphere[{0, 0, 0}, 1]}]",
+    );
+    assert!(!svg.contains("ColorData"), "no source text: {svg}");
+  }
+
+  #[test]
   fn plot_style_with_visible_spectrum_color_draws_the_curve() {
     let svg = export_svg(
       "ParametricPlot[{2.5, x}, {x, 0, 8.5}, \
