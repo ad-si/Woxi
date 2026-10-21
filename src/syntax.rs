@@ -167,6 +167,10 @@ pub struct PlotSource {
   /// them into the combined graphic the way Wolfram does — the result
   /// keeps the options of the graphics it was given.
   pub options: Vec<Expr>,
+  /// Whether the x / y axis is logarithmic (`LogLogPlot`, `LogPlot`, …).
+  /// The series stay in data space; the renderer scales them.
+  pub log_x: bool,
+  pub log_y: bool,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging

@@ -4446,6 +4446,8 @@ pub(crate) fn build_plot_source(
     y_range,
     image_size,
     options,
+    log_x: false,
+    log_y: false,
   }
 }
 
@@ -5267,6 +5269,8 @@ pub(crate) fn render_merged_plot_source(
   if let Some(ar) = overrides.aspect_ratio {
     opts.aspect_ratio = Some(ar);
   }
+  opts.log_x = source.log_x;
+  opts.log_y = source.log_y;
   let x_range = overrides.x.unwrap_or(source.x_range);
   let y_range = overrides.y.unwrap_or(source.y_range);
 
@@ -7513,6 +7517,8 @@ pub(crate) fn histogram_plot_source(
     y_range: (0.0, y_hi),
     image_size,
     options: Vec::new(),
+    log_x: false,
+    log_y: false,
   })
 }
 
@@ -10458,5 +10464,19 @@ fn log_scale_plot_ast(
     &plot_opts,
   )?;
 
-  Ok(crate::graphics_result(svg))
+  // Keep the sampled curves so `Show` can merge this plot with others.
+  let mut source = build_plot_source(
+    &all_points,
+    &plot_opts.plot_style,
+    (x_min_display, x_max_display),
+    (y_display_min, y_display_max),
+    (plot_opts.svg_width, plot_opts.svg_height),
+    &[false],
+    plot_opts.filling,
+    plot_opts.filling_style,
+    explicit_options(args),
+  );
+  source.log_x = log_x;
+  source.log_y = log_y;
+  Ok(crate::graphics_result_with_source(svg, source))
 }
