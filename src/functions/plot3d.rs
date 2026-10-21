@@ -12508,11 +12508,11 @@ fn parametric_plot3d_curve_ast(
       }
     };
     let mut prev: Option<(f64, f64, f64, f64)> = None;
-    for i in 0..=SAMPLE_N {
-      let t = t_min + i as f64 * dt;
-      if let Some((x, y, z)) =
-        evaluate_parametric_at_t(&curve.fx, &curve.fy, &curve.fz, tvar, t)
-      {
+    let samples = sample_parametric_curve_adaptive(
+      &curve.fx, &curve.fy, &curve.fz, tvar, t_min, t_max, SAMPLE_N,
+    );
+    for (t, point) in samples {
+      if let Some((x, y, z)) = point {
         if color_function.is_some() {
           // One colored segment per step, joined to the previous vertex.
           if let Some((px, py, pz, pt)) = prev
@@ -12586,6 +12586,84 @@ fn parametric_plot3d_curve_ast(
   }
 
   Ok(call("Graphics3D", g3d_args))
+}
+
+/// Sample a parametric space curve on `initial_n + 1` uniform parameter
+/// values, then bisect the intervals around every vertex where the polyline
+/// turns sharply, so a curve that winds many times over a long parameter
+/// range (an ODE trajectory, say) is drawn smoothly instead of as a coarse
+/// polygon. Mathematica refines the same way. Non-finite points are kept as
+/// `None` so the caller can break the line there.
+fn sample_parametric_curve_adaptive(
+  fx: &Expr,
+  fy: &Expr,
+  fz: &Expr,
+  tvar: &str,
+  t_min: f64,
+  t_max: f64,
+  initial_n: usize,
+) -> Vec<(f64, Option<(f64, f64, f64)>)> {
+  // Total sample cap and the cosine of the largest turning angle that
+  // still counts as smooth (about 14 degrees).
+  const MAX_TOTAL: usize = 6000;
+  const MAX_PASSES: usize = 8;
+  const SMOOTH_COS: f64 = 0.97;
+
+  let dt = (t_max - t_min) / initial_n as f64;
+  let eval = |t: f64| evaluate_parametric_at_t(fx, fy, fz, tvar, t);
+  let mut samples: Vec<(f64, Option<(f64, f64, f64)>)> = (0..=initial_n)
+    .map(|i| {
+      let t = t_min + i as f64 * dt;
+      (t, eval(t))
+    })
+    .collect();
+
+  for _ in 0..MAX_PASSES {
+    if samples.len() >= MAX_TOTAL {
+      break;
+    }
+    let n = samples.len();
+    let mut split = vec![false; n - 1];
+    for i in 1..n - 1 {
+      let (Some(a), Some(b), Some(c)) =
+        (samples[i - 1].1, samples[i].1, samples[i + 1].1)
+      else {
+        continue;
+      };
+      let u = [b.0 - a.0, b.1 - a.1, b.2 - a.2];
+      let v = [c.0 - b.0, c.1 - b.1, c.2 - b.2];
+      let nu = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
+      let nv = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+      if nu == 0.0 || nv == 0.0 {
+        continue;
+      }
+      let cos = (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (nu * nv);
+      if cos < SMOOTH_COS {
+        split[i - 1] = true;
+        split[i] = true;
+      }
+    }
+    let mut refined = Vec::with_capacity(n * 2);
+    let mut added = 0;
+    for i in 0..n - 1 {
+      refined.push(samples[i]);
+      let (t0, t1) = (samples[i].0, samples[i + 1].0);
+      if split[i]
+        && (t1 - t0).abs() > (t_max - t_min).abs() * 1e-9
+        && samples.len() + added < MAX_TOTAL
+      {
+        let tm = f64::midpoint(t0, t1);
+        refined.push((tm, eval(tm)));
+        added += 1;
+      }
+    }
+    refined.push(samples[n - 1]);
+    if added == 0 {
+      break;
+    }
+    samples = refined;
+  }
+  samples
 }
 
 /// Evaluate a parametric triple {fx(t), fy(t), fz(t)} at a given t value.
