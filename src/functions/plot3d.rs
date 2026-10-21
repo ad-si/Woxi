@@ -3082,6 +3082,10 @@ struct StyleState3D {
   /// back at the viewer, as `(colour, exponent)`. `None` is the default
   /// matte surface. A larger exponent tightens the highlight.
   specular: Option<((u8, u8, u8), f64)>,
+  /// `Glow[colour]`: light the surface emits on its own, added on top of
+  /// the lit colour (`Glow[White]` renders a face plain white whatever its
+  /// angle to the lamp). `None` is a non-emissive surface.
+  glow: Option<(u8, u8, u8)>,
   /// `Dashing[{d1, d2, ...}]`/`Dashed`/`Dotted`/`DotDashed` for `Line3D`
   /// primitives, in the same units `dash_size_to_f64` uses for 2D: negative
   /// is literal pixels (a named size), positive is a fraction of the image
@@ -3112,6 +3116,7 @@ impl Default for StyleState3D {
       edge_color: None,
       edge_width: None,
       specular: None,
+      glow: None,
       dashing: None,
       point_size: None,
       texture: None,
@@ -3320,6 +3325,12 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         style.specular = parse_specularity(args);
         return true;
       }
+      // `Glow[colour]` makes the surfaces that follow emit light of their
+      // own; like `Specularity` its colour never repaints the face.
+      "Glow" if args.len() == 1 => {
+        style.glow = parse_glow(&args[0]);
+        return true;
+      }
       // `Texture[image]` paints the surfaces that follow with the image.
       "Texture" if args.len() == 1 => {
         let img = crate::functions::image_ast::texture_source_image(&args[0]);
@@ -3478,6 +3489,38 @@ fn dash3d_attr(
   )
 }
 
+/// Read a `Glow[…]` colour (or grey level) into the emitted RGB; black emits
+/// nothing and so is `None`.
+fn parse_glow(arg: &Expr) -> Option<(u8, u8, u8)> {
+  use crate::functions::graphics::parse_color;
+  use crate::functions::math_ast::expr_to_f64;
+
+  let color = if let Some(c) = parse_color(arg) {
+    c
+  } else {
+    let g = expr_to_f64(arg)?;
+    crate::functions::graphics::Color::new(g, g, g)
+  };
+  let rgb = (
+    (color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+    (color.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+    (color.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+  );
+  (rgb != (0, 0, 0)).then_some(rgb)
+}
+
+/// Add a `Glow` emission to an already lit colour.
+fn add_glow(color: (u8, u8, u8), glow: Option<(u8, u8, u8)>) -> (u8, u8, u8) {
+  match glow {
+    Some(g) => (
+      color.0.saturating_add(g.0),
+      color.1.saturating_add(g.1),
+      color.2.saturating_add(g.2),
+    ),
+    None => color,
+  }
+}
+
 /// Read a `Specularity[…]` argument list into `(highlight colour, exponent)`.
 /// The reflectance may be a colour (`Specularity[White, 10]`) or a plain
 /// number standing for that grey level (`Specularity[.5]`); the exponent
@@ -3612,7 +3655,10 @@ fn shade_facet(
         _ => s.color.unwrap_or(default_color),
       };
       (
-        apply_lighting_specular(base, normal, s.specular, view_dir),
+        add_glow(
+          apply_lighting_specular(base, normal, s.specular, view_dir),
+          s.glow,
+        ),
         s.opacity,
       )
     }
@@ -3926,6 +3972,38 @@ fn strip_dynamic(expr: &Expr) -> &Expr {
   }
 }
 
+/// A `ViewPoint` containing infinite components, e.g. `{0, 0, Infinity}`
+/// (the same as `Above`). The infinite components decide the direction;
+/// finite ones vanish in the limit. Returns a vector of length 2 along that
+/// direction, or `None` when no component is infinite.
+fn eval_view_direction(expr: &Expr) -> Option<[f64; 3]> {
+  let Expr::List(items) = &evaluate_expr_to_expr(strip_dynamic(expr)).ok()?
+  else {
+    return None;
+  };
+  if items.len() != 3 {
+    return None;
+  }
+  let mut dir = [0.0; 3];
+  let mut any_infinite = false;
+  for (slot, item) in dir.iter_mut().zip(items.iter()) {
+    match crate::functions::graphics::directed_infinity_glyph(item) {
+      Some(glyph) => {
+        *slot = if glyph.starts_with('-') { -1.0 } else { 1.0 };
+        any_infinite = true;
+      }
+      None => {
+        try_eval_to_f64(item)?;
+      }
+    }
+  }
+  if !any_infinite {
+    return None;
+  }
+  let len = dir.iter().map(|c| c * c).sum::<f64>().sqrt();
+  Some(dir.map(|c| 2.0 * c / len))
+}
+
 fn eval_vec3(expr: &Expr) -> Option<[f64; 3]> {
   let Expr::List(items) = &evaluate_expr_to_expr(strip_dynamic(expr)).ok()?
   else {
@@ -4104,7 +4182,9 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
         .map(|(a, b, c)| (xf.apply(a), xf.apply(b), xf.apply(c)))
         .collect(),
       style,
-      smooth: true,
+      // A tilted box keeps its flat faces and their outline, unlike the
+      // curved solids, whose facet cuts must stay invisible.
+      smooth: !matches!(prim, Primitive3D::Cuboid { .. }),
     };
     return;
   }
@@ -4170,7 +4250,14 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
 /// Replace the 1-based vertex indices inside a `GraphicsComplex` primitive
 /// (`Polygon`/`Line`/`Point`/`Arrow` arguments) with the coordinates they
 /// refer to, leaving everything else untouched.
-fn resolve_complex_indices(expr: &Expr, points: &[Expr]) -> Expr {
+///
+/// With `colors` (the complex's `VertexColors`, one colour per point) each
+/// `Polygon` facet is drawn in the mean colour of its vertices.
+fn resolve_complex_indices(
+  expr: &Expr,
+  points: &[Expr],
+  colors: Option<&[(f64, f64, f64)]>,
+) -> Expr {
   fn substitute(expr: &Expr, points: &[Expr]) -> Expr {
     match expr {
       Expr::Integer(i) if *i >= 1 && (*i as usize) <= points.len() => {
@@ -4186,7 +4273,59 @@ fn resolve_complex_indices(expr: &Expr, points: &[Expr]) -> Expr {
       other => other.clone(),
     }
   }
+  // The facet's mean vertex colour as an `RGBColor`, for the 1-based index
+  // list `indices`.
+  fn facet_color(indices: &Expr, colors: &[(f64, f64, f64)]) -> Option<Expr> {
+    let Expr::List(items) = indices else {
+      return None;
+    };
+    let picked: Vec<(f64, f64, f64)> = items
+      .iter()
+      .filter_map(|i| match i {
+        Expr::Integer(i) if *i >= 1 => colors.get(*i as usize - 1).copied(),
+        _ => None,
+      })
+      .collect();
+    if picked.is_empty() {
+      return None;
+    }
+    let n = picked.len() as f64;
+    let mean = |f: fn(&(f64, f64, f64)) -> f64| {
+      Expr::Real(picked.iter().map(f).sum::<f64>() / n)
+    };
+    Some(call(
+      "RGBColor",
+      vec![mean(|c| c.0), mean(|c| c.1), mean(|c| c.2)],
+    ))
+  }
   match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Polygon"
+        && !args.is_empty()
+        && let Some(colors) = colors =>
+    {
+      let facet = |indices: &Expr| -> Expr {
+        let mut new_args = args.to_vec();
+        new_args[0] = substitute(indices, points);
+        let polygon = Expr::FunctionCall {
+          name: name.clone(),
+          args: new_args.into(),
+        };
+        match facet_color(indices, colors) {
+          Some(color) => Expr::List(vec![color, polygon].into()),
+          None => polygon,
+        }
+      };
+      match &args[0] {
+        Expr::List(items)
+          if !items.is_empty()
+            && items.iter().all(|e| matches!(e, Expr::List(_))) =>
+        {
+          Expr::List(items.iter().map(facet).collect::<Vec<_>>().into())
+        }
+        single => facet(single),
+      }
+    }
     Expr::FunctionCall { name, args }
       if matches!(name.as_str(), "Polygon" | "Line" | "Point" | "Arrow")
         && !args.is_empty() =>
@@ -4201,7 +4340,7 @@ fn resolve_complex_indices(expr: &Expr, points: &[Expr]) -> Expr {
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|e| resolve_complex_indices(e, points))
+        .map(|e| resolve_complex_indices(e, points, colors))
         .collect::<Vec<_>>()
         .into(),
     ),
@@ -4209,12 +4348,55 @@ fn resolve_complex_indices(expr: &Expr, points: &[Expr]) -> Expr {
       name: name.clone(),
       args: args
         .iter()
-        .map(|e| resolve_complex_indices(e, points))
+        .map(|e| resolve_complex_indices(e, points, colors))
         .collect::<Vec<_>>()
         .into(),
     },
     other => other.clone(),
   }
+}
+
+/// The per-point colours of a `GraphicsComplex`'s `VertexColors -> {…}`
+/// option, as unit-range RGB triples.
+fn complex_vertex_colors(options: &[Expr]) -> Option<Vec<(f64, f64, f64)>> {
+  options.iter().find_map(|opt| {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      return None;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexColors") {
+      return None;
+    }
+    let value = evaluate_expr_to_expr(replacement).ok()?;
+    let Expr::List(items) = &value else {
+      return None;
+    };
+    items
+      .iter()
+      .map(|c| {
+        // A bare `{r, g, b}` triple (what a stored complex holds) is an
+        // RGB colour too.
+        if let Expr::List(rgb) = c
+          && rgb.len() == 3
+          && let Some(v) = rgb
+            .iter()
+            .map(crate::functions::math_ast::expr_to_f64)
+            .collect::<Option<Vec<f64>>>()
+        {
+          return Some((v[0], v[1], v[2]));
+        }
+        crate::functions::graphics::parse_color(c).map(|c| (c.r, c.g, c.b))
+      })
+      .map(|c| {
+        c.map(|(r, g, b)| {
+          (r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0))
+        })
+      })
+      .collect()
+  })
 }
 
 /// The alignment offset of `Text[expr, pos, offset]`: a pair running from
@@ -4355,7 +4537,17 @@ fn collect_3d_primitives(
           }
         }
         "Cuboid" => {
-          let p_min = if args.is_empty() {
+          // `Cuboid[{pmin, pmax}]` names the two opposite corners in one
+          // list, the same box as `Cuboid[pmin, pmax]`.
+          let corner_pair = match &args[..] {
+            [Expr::List(pair)] if pair.len() == 2 => {
+              parse_point3d(&pair[0]).zip(parse_point3d(&pair[1]))
+            }
+            _ => None,
+          };
+          let p_min = if let Some((lo, _)) = corner_pair {
+            lo
+          } else if args.is_empty() {
             Point3D {
               x: 0.0,
               y: 0.0,
@@ -4368,7 +4560,9 @@ fn collect_3d_primitives(
               z: 0.0,
             })
           };
-          let p_max = if args.len() >= 2 {
+          let p_max = if let Some((_, hi)) = corner_pair {
+            hi
+          } else if args.len() >= 2 {
             parse_point3d(&args[1]).unwrap_or(Point3D {
               x: 1.0,
               y: 1.0,
@@ -4814,7 +5008,9 @@ fn collect_3d_primitives(
         // coordinate list by 1-based index.
         "GraphicsComplex" if args.len() >= 2 => {
           if let Ok(Expr::List(ref points)) = evaluate_expr_to_expr(&args[0]) {
-            let resolved = resolve_complex_indices(&args[1], points);
+            let colors = complex_vertex_colors(&args[2..]);
+            let resolved =
+              resolve_complex_indices(&args[1], points, colors.as_deref());
             let saved = style.clone();
             collect_3d_primitives(&resolved, style, prims);
             *style = saved;
@@ -5471,6 +5667,45 @@ fn box_edge_flags(tri: &(Point3D, Point3D, Point3D)) -> [bool; 3] {
     is_edge(corners[1], corners[2]),
     is_edge(corners[2], corners[0]),
   ]
+}
+
+/// Which edges of a flat-faced mesh's triangles outline a face: an edge is an
+/// internal cut, not an outline, when the triangle on its other side lies in
+/// the same plane. Unlike [`box_edge_flags`] this holds for a box turned in
+/// any direction.
+fn coplanar_cut_flags(tris: &[(Point3D, Point3D, Point3D)]) -> Vec<[bool; 3]> {
+  use std::collections::HashMap;
+  let key = |p: Point3D| {
+    let q = |v: f64| (v * 1e8).round() as i64;
+    (q(p.x), q(p.y), q(p.z))
+  };
+  let edge_key = |a: Point3D, b: Point3D| {
+    let (ka, kb) = (key(a), key(b));
+    if ka <= kb { (ka, kb) } else { (kb, ka) }
+  };
+  let normals: Vec<[f64; 3]> = tris
+    .iter()
+    .map(|t| triangle_normal(t.0, t.1, t.2))
+    .collect();
+  let mut seen: HashMap<_, Vec<usize>> = HashMap::new();
+  for (i, t) in tris.iter().enumerate() {
+    for (a, b) in [(t.0, t.1), (t.1, t.2), (t.2, t.0)] {
+      seen.entry(edge_key(a, b)).or_default().push(i);
+    }
+  }
+  tris
+    .iter()
+    .enumerate()
+    .map(|(i, t)| {
+      let outline = |a: Point3D, b: Point3D| {
+        !seen[&edge_key(a, b)].iter().any(|&j| {
+          let (n, m) = (normals[i], normals[j]);
+          j != i && (n[0] * m[0] + n[1] * m[1] + n[2] * m[2]).abs() > 1.0 - 1e-9
+        })
+      };
+      [outline(t.0, t.1), outline(t.1, t.2), outline(t.2, t.0)]
+    })
+    .collect()
 }
 
 /// Bounds how elongated a single tessellated side face can be. Without
@@ -6302,7 +6537,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             },
             _ => None,
           };
-          if let Some(vp) = symbolic.or_else(|| eval_vec3(replacement)) {
+          if let Some(vp) = symbolic
+            .or_else(|| eval_view_direction(replacement))
+            .or_else(|| eval_vec3(replacement))
+          {
             camera.azimuth = vp[1].atan2(vp[0]);
             camera.elevation = vp[2].atan2(vp[0].hypot(vp[1]));
             view_distance =
@@ -6693,7 +6931,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } => {
           // A Raster3D voxel is a box, so only its own edges are outlined.
           if !*smooth {
-            holed_boundaries = tris.iter().map(box_edge_flags).collect();
+            holed_boundaries = coplanar_cut_flags(tris);
           }
           (tris.clone(), style)
         }
@@ -6710,6 +6948,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             edge_color: None,
             edge_width: None,
             specular: None,
+            glow: None,
             dashing: None,
             point_size: None,
             texture: None,
@@ -6778,11 +7017,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(back) if facing < 0.0 => back,
         _ => prim_color,
       };
-      let color = apply_lighting_specular(
-        side_color,
-        normal,
-        prim_style.specular,
-        view_dir,
+      let color = add_glow(
+        apply_lighting_specular(
+          side_color,
+          normal,
+          prim_style.specular,
+          view_dir,
+        ),
+        prim_style.glow,
       );
       let p0 = project(v0, &camera);
       let p1 = project(v1, &camera);
@@ -12362,6 +12604,11 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `RegionFunction -> f`: keep only the parts of the surface where
   // `f[x, y, z, u, v]` is `True`.
   let mut region_fn: Option<Expr> = None;
+  // `ColorFunction -> f`: colour each facet by `f[x, y, z, u, v]`. With
+  // `ColorFunctionScaling` (the default) x, y and z arrive rescaled to 0..1
+  // over the plotted region and u, v over their parameter intervals.
+  let mut surface_color_fn: Option<Expr> = None;
+  let mut color_scaling = true;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -12387,6 +12634,12 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             plot_points = Some(n as usize);
           }
+        }
+        Expr::Identifier(name) if name == "ColorFunction" => {
+          surface_color_fn = Some(replacement.as_ref().clone());
+        }
+        Expr::Identifier(name) if name == "ColorFunctionScaling" => {
+          color_scaling = !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False");
         }
         Expr::Identifier(name) if name == "RegionFunction" => {
           region_fn = Some(
@@ -12622,6 +12875,67 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let box_ratios: [f64; 3] = box_ratios_explicit.unwrap_or([rx, ry, rz]);
 
+  // `ColorFunction`: the colour of facet `(i, j)`, from `f` at the facet's
+  // mean point and its centre in parameter space.
+  let facet_colors: Vec<Vec<Vec<Option<(u8, u8, u8)>>>> = all_surface_points
+    .iter()
+    .map(|sg| {
+      (0..grid_n)
+        .map(|i| {
+          (0..grid_n)
+            .map(|j| {
+              let cf = surface_color_fn.as_ref()?;
+              let pts: Vec<(f64, f64, f64)> =
+                [sg[i][j], sg[i + 1][j], sg[i + 1][j + 1], sg[i][j + 1]]
+                  .iter()
+                  .filter_map(|p| *p)
+                  .collect();
+              if pts.is_empty() {
+                return None;
+              }
+              let n = pts.len() as f64;
+              let x = pts.iter().map(|p| p.0).sum::<f64>() / n;
+              let y = pts.iter().map(|p| p.1).sum::<f64>() / n;
+              let z = pts.iter().map(|p| p.2).sum::<f64>() / n;
+              let u = u_min + (i as f64 + 0.5) * u_step;
+              let v = v_min + (j as f64 + 0.5) * v_step;
+              let args = if color_scaling {
+                let unit = |t: f64, lo: f64, hi: f64| {
+                  if (hi - lo).abs() < 1e-15 {
+                    0.0
+                  } else {
+                    (t - lo) / (hi - lo)
+                  }
+                };
+                [
+                  unit(x, gx_min, gx_max),
+                  unit(y, gy_min, gy_max),
+                  unit(z, gz_min, gz_max),
+                  unit(u, u_min, u_max),
+                  unit(v, v_min, v_max),
+                ]
+              } else {
+                [x, y, z, u, v]
+              };
+              let call = Expr::CurriedCall {
+                func: Box::new(cf.clone()),
+                args: args.iter().map(|a| Expr::Real(*a)).collect(),
+              };
+              let value = evaluate_expr_to_expr(&call).ok()?;
+              crate::functions::graphics::parse_color(&value).map(|c| {
+                (
+                  (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+                  (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+                  (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+                )
+              })
+            })
+            .collect()
+        })
+        .collect()
+    })
+    .collect();
+
   // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
   // `Show` merges the *primitives* of the graphics it is given, so a
   // surface that exists only as a rendering is dropped when it is shown
@@ -12705,11 +13019,12 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // into a facet. Facets of the default look carry none, like
             // wolframscript's `ParametricPlot3D[…][[1]]`, so a colour
             // directive placed before the extracted complex still applies.
-            let explicit =
+            let explicit = facet_colors[surface_idx][i][j].or_else(|| {
               match plot_style_for_surface(&plot_styles, surface_idx) {
                 Some(style) => style.color,
                 None => mesh_color.flatten(),
-              };
+              }
+            });
             let polygon = call1(
               "Polygon",
               Expr::List(
@@ -12859,7 +13174,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v1 = normalize(b);
           let v2 = normalize(c);
           let avg_z_norm = (z_norm(a.2) + z_norm(b.2) + z_norm(c.2)) / 3.0;
-          let default_color = mesh_facet_color(a, b, c)
+          let default_color = facet_colors[surface_idx][i][j]
+            .or_else(|| mesh_facet_color(a, b, c))
             .unwrap_or_else(|| height_color(avg_z_norm));
           let normal = triangle_normal(v0, v1, v2);
           let (color, opacity) =
@@ -12891,7 +13207,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v1 = normalize(b);
           let v2 = normalize(c);
           let avg_z_norm = (z_norm(a.2) + z_norm(b.2) + z_norm(c.2)) / 3.0;
-          let default_color = mesh_facet_color(a, b, c)
+          let default_color = facet_colors[surface_idx][i][j]
+            .or_else(|| mesh_facet_color(a, b, c))
             .unwrap_or_else(|| height_color(avg_z_norm));
           let normal = triangle_normal(v0, v1, v2);
           let (color, opacity) =

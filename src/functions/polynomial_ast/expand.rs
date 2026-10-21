@@ -588,7 +588,18 @@ pub fn expand_and_combine(expr: &Expr) -> Expr {
   }
   let expanded = expand_expr(expr);
   let terms = collect_additive_terms(&expanded);
-  combine_and_build(&terms)
+  let combined = combine_and_build(&terms);
+  // Multiplying out can leave a sum as a coefficient factor: squaring
+  // `Sqrt[a + b] x` evaluates to `(a + b) x^2`. Distribute it once more so
+  // it merges with the other `x^2` terms.
+  if collect_additive_terms(&combined)
+    .iter()
+    .any(|term| collect_multiplicative_factors(term).iter().any(is_sum))
+  {
+    let terms = collect_additive_terms(&expand_expr(&combined));
+    return combine_and_build(&terms);
+  }
+  combined
 }
 
 /// Build a sum from distributed terms, collapsing like ones first — but only

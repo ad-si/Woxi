@@ -167,6 +167,10 @@ pub struct PlotSource {
   /// them into the combined graphic the way Wolfram does — the result
   /// keeps the options of the graphics it was given.
   pub options: Vec<Expr>,
+  /// Whether the x / y axis is logarithmic (`LogLogPlot`, `LogPlot`, …).
+  /// The series stay in data space; the renderer scales them.
+  pub log_x: bool,
+  pub log_y: bool,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging
@@ -13407,6 +13411,14 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       }
       indices.reverse();
       format_part_brackets(base, &expr_to_input_form(base), &indices)
+    }
+    // `Sequence[a, b]` keeps its head and quoted children in InputForm (the
+    // OutputForm renderer concatenates the elements, which would also flatten
+    // a nested `Row[…]` into plain text when the result is re-parsed as code,
+    // e.g. a Manipulate body assigning `opts = Sequence[…]`).
+    Expr::FunctionCall { name, args } if name == "Sequence" => {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      format!("Sequence[{}]", parts.join(", "))
     }
     // For all other cases (infix operators, simple literals), delegate to expr_to_output
     _ => expr_to_output(expr),

@@ -13280,7 +13280,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // following content has no such last-character special case.
         "Row" if !args.is_empty() => match &args[0] {
           Expr::List(parts) => {
-            let sep_gap = match args.get(1) {
+            // A second argument that is an option (`ImageMargins -> 1`)
+            // is not a separator.
+            let separator =
+              args.get(1).filter(|s| !crate::syntax::is_rule_expr(s));
+            let sep_gap = match separator {
               Some(Expr::FunctionCall { name, args: sargs })
                 if name == "Spacer" =>
               {
@@ -13289,7 +13293,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               _ => None,
             };
             let sep_markup =
-              if sep_gap.is_none() { args.get(1).map(expr_to_svg_markup) }
+              if sep_gap.is_none() { separator.map(expr_to_svg_markup) }
               else { None };
 
             let mut out = String::new();
@@ -13396,7 +13400,7 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
     Expr::String(s) if s.contains('\n') => {
       s.split('\n').map(str::len).max().unwrap_or(0) as f64
     }
-    Expr::String(s) => s.len() as f64,
+    Expr::String(s) => s.chars().count() as f64,
     Expr::Identifier(s) => s.len() as f64,
     Expr::BigFloat(digits, prec) => {
       let parts = bigfloat_display_parts(digits, *prec);
@@ -13641,12 +13645,15 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       // Row[{a, b, …}] concatenates its parts, joined by the separator.
       "Row" if !args.is_empty() => match &args[0] {
         Expr::List(parts) => {
-          let sep = args.get(1).map_or(0.0, |s| match s {
-            Expr::FunctionCall { name, args: sargs } if name == "Spacer" => {
-              sargs.first().and_then(expr_to_f64).unwrap_or(1.0)
-            }
-            other => estimate_display_width(other),
-          });
+          let sep = args
+            .get(1)
+            .filter(|s| !crate::syntax::is_rule_expr(s))
+            .map_or(0.0, |s| match s {
+              Expr::FunctionCall { name, args: sargs } if name == "Spacer" => {
+                sargs.first().and_then(expr_to_f64).unwrap_or(1.0)
+              }
+              other => estimate_display_width(other),
+            });
           let inner: f64 = parts.iter().map(estimate_display_width).sum();
           inner + sep * parts.len().saturating_sub(1) as f64
         }
@@ -15504,6 +15511,9 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut is_3d = false;
   // Pre-rendered Graphics objects (e.g. from Plot[], Plot3D[])
   let mut rendered_graphics: Vec<Expr> = Vec::new();
+  // How many of them came before any primitive or plot layer: they sit
+  // beneath the primitives and set the canvas, as the first graphic does.
+  let mut leading_rendered = 0usize;
   // Plot source data for re-rendering via plotters
   let mut plot_sources: Vec<crate::syntax::PlotSource> = Vec::new();
   // The layers in the order `Show` was given them, so a mixture of plots
@@ -15758,6 +15768,9 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           plot_sources.push(src.as_ref().clone());
         } else {
           // No source data — collect as opaque pre-rendered graphic
+          if merged_primitives.is_empty() && plot_sources.is_empty() {
+            leading_rendered += 1;
+          }
           rendered_graphics.push(expr_ref.clone());
         }
       }
@@ -15863,12 +15876,15 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // If there are also Graphics[...] primitives, render them as an
     // overlay by converting to plot source entries is not feasible,
     // so we render the plot sources alone for now.
+    // Like the other options, the axis scales come from the first graphic.
     let merged = crate::syntax::PlotSource {
       series: all_series,
       x_range: (x_min, x_max),
       y_range: (y_min, y_max),
       image_size,
       options: merged_options.clone(),
+      log_x: plot_sources[0].log_x,
+      log_y: plot_sources[0].log_y,
     };
 
     let svg = crate::functions::plot::render_merged_plot_source(&merged)?;
@@ -16090,8 +16106,14 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // this, `rendered_graphics` was computed and then never looked at again
   // once `merged_primitives` had anything in it, so a `Show[{regionPlot,
   // labelGraphic}]` silently dropped `regionPlot` entirely.
-  let mut layers_to_overlay = vec![primitives_result.clone()];
-  layers_to_overlay.extend(rendered_graphics.iter().cloned());
+  let mut layers_to_overlay: Vec<Expr> = rendered_graphics
+    .iter()
+    .take(leading_rendered)
+    .cloned()
+    .collect();
+  layers_to_overlay.push(primitives_result.clone());
+  layers_to_overlay
+    .extend(rendered_graphics.iter().skip(leading_rendered).cloned());
   match overlay_rendered_graphics_svgs(&layers_to_overlay) {
     Some(svg) => Ok(crate::graphics_result(svg)),
     None => Ok(primitives_result),
@@ -25328,6 +25350,21 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }
   }
 
+  // A bare `{v, ControlType -> None}` has no initial value of its own, but
+  // another variable's initial expression may assign it as a side effect
+  // (`{{puzzle, (solution = gen[]; mk[solution])}, …}` seeding `solution`),
+  // which leaves the value in the global of that name rather than in the
+  // spec. Start the variable from it instead of `Null`.
+  for (name, value) in state.iter_mut().filter(|(_, v)| v == "Null") {
+    if let Some((_, assigned)) =
+      read_manipulate_state(std::slice::from_ref(name))
+        .into_iter()
+        .next()
+    {
+      *value = assigned;
+    }
+  }
+
   // A `LocatorPane[Dynamic[var], graphic]` drawn directly in the body — the
   // Demonstrations "drag the point on the picture" pattern — gets its own
   // draggable stand-in row here, alongside whatever row (if any) the
@@ -27335,6 +27372,9 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     }
     _ => spec,
   };
+  if let Some(selector) = switch_as_pane_selector(spec) {
+    return control_group_items(&selector);
+  }
   let Expr::FunctionCall { name, args } = spec else {
     return None;
   };
@@ -27601,6 +27641,49 @@ fn layout_control_leaf(item: &Expr) -> Expr {
   dynamic_control_spec(item)
     .or_else(|| visibility_switched_control(item).map(|(control, _)| control))
     .unwrap_or_else(|| item.clone())
+}
+
+/// `Dynamic[Switch[sel, v1, body1, v2, body2, …]]` holding `Control[…]`s —
+/// the Demonstrations idiom for a control area whose rows depend on a mode
+/// selector — is the same construct as `PaneSelector[{v1 -> body1, …},
+/// Dynamic[sel]]`, so rewrite it to that and let the single `PaneSelector`
+/// implementation flatten the controls and record their visibility.
+/// `None` for anything else (including a `Switch` with a trailing default
+/// or one without any explicit control).
+fn switch_as_pane_selector(spec: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = spec else {
+    return None;
+  };
+  if name != "Dynamic" || args.len() != 1 {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: head,
+    args: cases,
+  } = &args[0]
+  else {
+    return None;
+  };
+  if head != "Switch"
+    || cases.len() < 3
+    || cases.len() % 2 == 0
+    || !cases[1..]
+      .iter()
+      .any(|c| expr_contains_call(c, &["Control"]))
+  {
+    return None;
+  }
+  let panes = cases[1..]
+    .chunks(2)
+    .map(|pair| Expr::Rule {
+      pattern: Box::new(pair[0].clone()),
+      replacement: Box::new(pair[1].clone()),
+    })
+    .collect::<Vec<_>>();
+  Some(call(
+    "PaneSelector",
+    vec![Expr::List(panes.into()), call1("Dynamic", cases[0].clone())],
+  ))
 }
 
 /// `If[cond, Identity, Invisible][Control[…]]` (optionally inside
@@ -27901,6 +27984,10 @@ fn collect_pane_visibility(
     collect_pane_visibility(&conditional, place_map, out, outer);
     return;
   }
+  if let Some(selector) = switch_as_pane_selector(spec) {
+    collect_pane_visibility(&selector, place_map, out, outer);
+    return;
+  }
   let Expr::FunctionCall { name, args } = spec else {
     return;
   };
@@ -27998,6 +28085,9 @@ fn pane_or_tab_governed_names(
     place_map: &[Option<String>],
     out: &mut std::collections::HashSet<String>,
   ) {
+    if let Some(selector) = switch_as_pane_selector(e) {
+      return walk(&selector, place_map, out);
+    }
     match e {
       Expr::FunctionCall { name, args } => {
         if (name == "PaneSelector" || name == "TabView")
@@ -29658,7 +29748,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
 /// can reach a held label as: the bare `Infinity` symbol, `-Infinity`
 /// (`Times[-1, Infinity]` or a unary minus), or `DirectedInfinity[±1]`.
 /// `None` when `expr` is not an infinity at all.
-fn directed_infinity_glyph(expr: &Expr) -> Option<&'static str> {
+pub(crate) fn directed_infinity_glyph(expr: &Expr) -> Option<&'static str> {
   if !crate::functions::predicate_ast::is_directed_infinity(expr) {
     return None;
   }
@@ -34682,6 +34772,26 @@ mod manipulate_dynamic_control_list_tests {
     assert_eq!(s.displays, [] as [std::string::String; 0]);
   }
 
+  /// `Dynamic[Switch[mode, …]]` choosing between control groups behaves
+  /// like a `PaneSelector` over the same cases: every case's controls are
+  /// real controls, shown only while their case is selected.
+  #[test]
+  fn dynamic_switch_of_control_groups_flattens_to_controls() {
+    let s = spec(
+      "Manipulate[{x, y}, {mode, {\"a\", \"b\"}}, \
+       Item[Dynamic[Switch[mode, \"a\", Column[{Panel[Column[{\"first\", \
+       Control[{{x, 1, \"x\"}, {1 -> \"p\", 2 -> \"q\"}}]}]]}], \"b\", \
+       Column[{Control[{{y, 3, \"y\"}, 0, 5, 1}]}]]]]]",
+    );
+    assert_eq!(names(&s), vec!["mode", "", "x", "y"]);
+    assert_eq!(s.displays, [] as [std::string::String; 0]);
+    assert!(
+      s.control_visible
+        .iter()
+        .any(|(n, c)| n == "x" && c.contains("mode"))
+    );
+  }
+
   /// `Dynamic[Column[{Control[…], …}]]` (the Demonstrations idiom for a
   /// group of controls — e.g. one `ColorSetter` per face — laid out via a
   /// nested `Column` rather than a bare list, wrapped in `Dynamic` for live
@@ -35980,6 +36090,25 @@ mod manipulate_hidden_state_var_tests {
     .expect("parse");
     let spec = extract_manipulate_spec(&expr).expect("extract spec");
     assert_eq!(spec.state, vec![("accum".to_string(), "Null".to_string())]);
+  }
+
+  /// A bare hidden variable that a later variable's initial expression
+  /// assigns as a side effect starts at that assigned value, not `Null`.
+  #[test]
+  fn bare_hidden_state_var_takes_value_assigned_by_later_initial() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[x, {{x, 0}, -1, 1}, {seeded, ControlType -> None}, \
+       {{other, (seeded = {3, 4}; Length[seeded])}, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(
+      spec.state,
+      vec![
+        ("seeded".to_string(), "{3, 4}".to_string()),
+        ("other".to_string(), "2".to_string())
+      ]
+    );
   }
 
   /// The same spec with an explicit initial value (`{{accum, 0}, ControlType

@@ -4459,6 +4459,32 @@ mod random_sample {
   use super::*;
 
   #[test]
+  fn association_is_shuffled_with_pairs_intact() {
+    assert_eq!(
+      interpret("Sort[Normal[RandomSample[<|1 -> a, 2 -> b, 3 -> c|>]]]")
+        .unwrap(),
+      "{1 -> a, 2 -> b, 3 -> c}"
+    );
+    assert_eq!(
+      interpret("Head[RandomSample[<|1 -> a, 2 -> b, 3 -> c|>]]").unwrap(),
+      "Association"
+    );
+  }
+
+  #[test]
+  fn association_with_count() {
+    assert_eq!(
+      interpret("Length[RandomSample[<|1 -> a, 2 -> b, 3 -> c|>, 2]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("SubsetQ[{a, b, c}, Values[RandomSample[<|1 -> a, 2 -> b, 3 -> c|>, 2]]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn sample_count() {
     assert_eq!(
       interpret("Length[RandomSample[{1, 2, 3, 4, 5}, 3]]").unwrap(),

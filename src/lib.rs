@@ -4198,6 +4198,7 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);
   let expr = render_event_handler_if_needed(expr);
+  let expr = render_multicolumn_if_needed(expr);
   let expr = render_grid_if_needed(expr);
   let expr = render_dataset_if_needed(expr);
   let expr = render_tabular_if_needed(expr);
@@ -4322,6 +4323,7 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = render_tableform_if_needed(expr);
   let expr = render_matrixform_if_needed(expr);
   let expr = render_traditionalform_list_if_needed(expr);
+  let expr = render_multicolumn_if_needed(expr);
   let expr = render_styled_layout_if_needed(expr);
   let expr = render_overlay_if_needed(expr);
   let expr = render_column_if_needed(expr);
@@ -4441,6 +4443,52 @@ fn render_overlay_if_needed(expr: syntax::Expr) -> syntax::Expr {
       }
     }
     _ => expr,
+  }
+}
+
+/// `Multicolumn[{e1, e2, …}, n]` lists its items down `n` columns, filling
+/// each column before starting the next. Like `Column` and `Grid` it stays
+/// symbolic through evaluation; only the notebook display is the layout,
+/// so it is drawn as the `Column` (one column) or `Grid` (several) with the
+/// same arrangement and left to the existing layout renderers.
+fn render_multicolumn_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  let syntax::Expr::FunctionCall { name, args } = &expr else {
+    return expr;
+  };
+  if name != "Multicolumn" || args.is_empty() || args.len() > 2 {
+    return expr;
+  }
+  let syntax::Expr::List(items) = &args[0] else {
+    return expr;
+  };
+  let columns = match args.get(1) {
+    Some(syntax::Expr::Integer(n)) if *n >= 1 => *n as usize,
+    None => 1,
+    _ => return expr,
+  };
+  if columns == 1 || items.len() <= 1 {
+    return syntax::Expr::FunctionCall {
+      name: "Column".to_string(),
+      args: vec![args[0].clone()].into(),
+    };
+  }
+  let rows = items.len().div_ceil(columns);
+  let grid_rows: Vec<syntax::Expr> = (0..rows)
+    .map(|r| {
+      let cells: Vec<syntax::Expr> = (0..columns)
+        .map(|c| {
+          items
+            .get(c * rows + r)
+            .cloned()
+            .unwrap_or_else(|| syntax::Expr::String(String::new()))
+        })
+        .collect();
+      syntax::Expr::List(cells.into())
+    })
+    .collect();
+  syntax::Expr::FunctionCall {
+    name: "Grid".to_string(),
+    args: vec![syntax::Expr::List(grid_rows.into())].into(),
   }
 }
 
