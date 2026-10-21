@@ -714,6 +714,25 @@ impl ManipulateState {
         .find(|c| c.name() == name || c.name() == suffixed)
       {
         control.set_current_from_code(code);
+      } else if let Some(slot) = self
+        .state
+        .iter_mut()
+        .find(|(n, _)| n == name || *n == suffixed)
+      {
+        // A hidden `ControlType -> None` variable (a cached puzzle, a
+        // generated picture) reopens on what it held at save time too: the
+        // helper code that would recompute it may be unavailable here.
+        // Pictures freeze to a marker, the same as after any other update.
+        let value = woxi::with_scoped_globals(&[], || {
+          let expr = woxi::interpret_to_expr(code).ok()?;
+          Some(
+            woxi::freeze_graphic(&slot.0, &expr)
+              .unwrap_or_else(|| woxi::syntax::expr_to_source_form(&expr)),
+          )
+        });
+        if let Some(value) = value {
+          slot.1 = value;
+        }
       }
     }
     self.reevaluate();
@@ -2142,6 +2161,28 @@ mod tests {
       .expect("pts state variable");
     assert!(!value.contains("-Graphics-"), "got {value}");
     assert!(value.starts_with("helper[Graphics["), "got {value}");
+  }
+
+  /// A hidden `ControlType -> None` variable whose default needs helper code
+  /// the Studio cannot run reopens on the value saved in the notebook's
+  /// widget dump, not on the failed recomputation.
+  #[test]
+  fn saved_value_restores_hidden_state_variable() {
+    let code = r#"Manipulate[
+      If[flag, pics[[1]], pics[[2]]],
+      {{pics, unavailableHelper[3]}, ControlType -> None},
+      {{flag, True}, {True, False}}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(state.graphics_handle.is_none());
+    state.apply_saved_variables(&[(
+      "pics".to_string(),
+      "{Graphics[Circle[{0, 0}, 1]], Graphics[Disk[{0, 0}, 2]]}".to_string(),
+    )]);
+    assert_eq!(state.error, None);
+    assert!(state.graphics_handle.is_some(), "saved picture is shown");
   }
 
   /// A body that caches a rendered plot in hidden state (recomputing it only
