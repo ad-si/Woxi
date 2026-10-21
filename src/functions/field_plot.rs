@@ -4580,6 +4580,10 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `AspectRatio -> r` (height / width) overrides the default of matching
   // the matrix shape.
   let mut aspect_ratio: Option<f64> = None;
+  // `FrameTicks -> {{left, right}, {bottom, top}}` with explicit
+  // `{position, label}` ticks, and the `FrameTicksStyle` they default to.
+  let mut frame_ticks = FrameTickLabels::default();
+  let mut tick_style = TickStyle::default();
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -4646,6 +4650,16 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // `FrameLabel` a framed plot does — on any of the four edges.
         "FrameLabel" => {
           frame_labels = crate::functions::plot::parse_frame_label(replacement);
+        }
+        "FrameTicks" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          frame_ticks = parse_frame_tick_labels(&val);
+        }
+        "FrameTicksStyle" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          tick_style = parse_tick_style(&val, TickStyle::default());
         }
         "Epilog" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -4923,6 +4937,14 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
   );
 
+  let (buf, svg_width, svg_height) = frame_ticked_svg(
+    &buf,
+    svg_width,
+    svg_height,
+    (n_cols, n_rows),
+    &frame_ticks,
+    &tick_style,
+  );
   let buf = frame_labelled_svg(&buf, svg_width, svg_height, &frame_labels);
   let buf = match parse_field_plot_label(args, 1) {
     Some(label) => with_plot_label_above(&buf, &label),
@@ -4989,6 +5011,205 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     call("Raster", vec![Expr::List(raster_rows.into()), rect]),
   );
   Ok(crate::graphics_result_with_structure(buf, structure))
+}
+
+/// One explicit frame tick: a position in the plot's coordinates, its label
+/// text, and the label's own `Style` overrides.
+struct FrameTickLabel {
+  pos: f64,
+  text: String,
+  style: TickStyle,
+}
+
+#[derive(Clone, Copy, Default)]
+struct TickStyle {
+  size: Option<f64>,
+  color: Option<(u8, u8, u8)>,
+}
+
+#[derive(Default)]
+struct FrameTickLabels {
+  left: Vec<FrameTickLabel>,
+  right: Vec<FrameTickLabel>,
+  bottom: Vec<FrameTickLabel>,
+  top: Vec<FrameTickLabel>,
+}
+
+/// Fold a number (font size) and color directives into `base`.
+fn parse_tick_style(value: &Expr, base: TickStyle) -> TickStyle {
+  let mut style = base;
+  let items: Vec<&Expr> = match value {
+    Expr::List(items) => items.iter().collect(),
+    other => vec![other],
+  };
+  for item in items {
+    if let Some(size) = try_eval_to_f64(item) {
+      style.size = Some(size);
+    } else if let Some(c) = parse_color(item) {
+      style.color = Some((
+        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+      ));
+    }
+  }
+  style
+}
+
+/// The explicit ticks of one frame edge: a list of `{pos, label, …}`.
+/// `None` / `Automatic` / a bare list of positions draw no custom labels.
+fn parse_edge_tick_labels(edge: &Expr) -> Vec<FrameTickLabel> {
+  let Expr::List(ticks) = edge else {
+    return Vec::new();
+  };
+  ticks
+    .iter()
+    .filter_map(|tick| {
+      let Expr::List(parts) = tick else {
+        return None;
+      };
+      if parts.len() < 2 {
+        return None;
+      }
+      let pos = try_eval_to_f64(&parts[0])?;
+      let (label, style) = match &parts[1] {
+        Expr::FunctionCall { name, args }
+          if name == "Style" && !args.is_empty() =>
+        {
+          let style = args[1..]
+            .iter()
+            .fold(TickStyle::default(), |st, a| parse_tick_style(a, st));
+          (&args[0], style)
+        }
+        other => (other, TickStyle::default()),
+      };
+      let text = match label {
+        Expr::String(s) => s.clone(),
+        other => crate::syntax::expr_to_output(other),
+      };
+      Some(FrameTickLabel { pos, text, style })
+    })
+    .collect()
+}
+
+/// `FrameTicks -> {{left, right}, {bottom, top}}` (also `{bottom, left}`
+/// pairs of plain tick lists apply to the bottom and left edges).
+fn parse_frame_tick_labels(value: &Expr) -> FrameTickLabels {
+  let mut out = FrameTickLabels::default();
+  let Expr::List(items) = value else {
+    return out;
+  };
+  if items.len() != 2 {
+    return out;
+  }
+  // An edge pair holds tick lists (lists of lists) or `None`/`Automatic`.
+  let pair = |e: &Expr| match e {
+    Expr::List(p) if p.len() == 2 => Some((p[0].clone(), p[1].clone())),
+    _ => None,
+  };
+  if let (Some((l, r)), Some((b, t))) = (pair(&items[0]), pair(&items[1])) {
+    out.left = parse_edge_tick_labels(&l);
+    out.right = parse_edge_tick_labels(&r);
+    out.bottom = parse_edge_tick_labels(&b);
+    out.top = parse_edge_tick_labels(&t);
+  } else {
+    out.bottom = parse_edge_tick_labels(&items[0]);
+    out.left = parse_edge_tick_labels(&items[1]);
+  }
+  out
+}
+
+/// Draw explicit `FrameTicks` labels around a finished array plot. Positions
+/// are in `ArrayPlot` coordinates: the center of the cell at column `j`
+/// (resp. row `i`, counted from the top) is `j` (resp. `i`). The picture is
+/// inset into a canvas widened by the label extents; returns the new size.
+fn frame_ticked_svg(
+  svg: &str,
+  width: u32,
+  height: u32,
+  (n_cols, n_rows): (usize, usize),
+  ticks: &FrameTickLabels,
+  default_style: &TickStyle,
+) -> (String, u32, u32) {
+  let all = [&ticks.left, &ticks.right, &ticks.bottom, &ticks.top];
+  if all.iter().all(|e| e.is_empty()) {
+    return (svg.to_string(), width, height);
+  }
+  const DEFAULT_SIZE: f64 = 12.0;
+  const GAP: f64 = 6.0;
+  let size_of = |t: &FrameTickLabel| {
+    t.style.size.or(default_style.size).unwrap_or(DEFAULT_SIZE)
+  };
+  let text_w =
+    |t: &FrameTickLabel| 0.55 * size_of(t) * t.text.chars().count() as f64;
+  let side = |edge: &[FrameTickLabel], horizontal: bool| -> f64 {
+    edge
+      .iter()
+      .map(|t| {
+        if horizontal {
+          text_w(t)
+        } else {
+          size_of(t) * 1.2
+        }
+      })
+      .fold(0.0, f64::max)
+      + if edge.is_empty() { 0.0 } else { GAP }
+  };
+  let (ml, mr) = (side(&ticks.left, true), side(&ticks.right, true));
+  let (mt, mb) = (side(&ticks.top, false), side(&ticks.bottom, false));
+  let (w, h) = (width as f64, height as f64);
+  let (total_w, total_h) = ((w + ml + mr).ceil(), (h + mt + mb).ceil());
+  let fill_default = crate::functions::graphics::theme().text_primary;
+  let label = |t: &FrameTickLabel, x: f64, y: f64, anchor: &str| {
+    let fill = t
+      .style
+      .color
+      .or(default_style.color)
+      .map_or(fill_default.to_string(), |(r, g, b)| {
+        format!("rgb({r},{g},{b})")
+      });
+    format!(
+      "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"{anchor}\" \
+       dominant-baseline=\"central\" font-family=\"sans-serif\" \
+       font-size=\"{:.0}\" fill=\"{fill}\">{}</text>\n",
+      size_of(t),
+      crate::functions::graphics::svg_escape(&t.text)
+    )
+  };
+  let mut out = format!(
+    "<svg width=\"{total_w:.0}\" height=\"{total_h:.0}\" \
+     viewBox=\"0 0 {total_w:.0} {total_h:.0}\" \
+     xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <svg x=\"{ml:.1}\" y=\"{mt:.1}\" width=\"{w:.0}\" height=\"{h:.0}\" \
+     overflow=\"visible\">\n{}\n</svg>\n",
+    svg.trim()
+  );
+  let x_of = |pos: f64| ml + (pos - 0.5) / n_cols as f64 * w;
+  let y_of = |pos: f64| mt + (pos - 0.5) / n_rows as f64 * h;
+  for t in &ticks.left {
+    out.push_str(&label(t, ml - GAP, y_of(t.pos), "end"));
+  }
+  for t in &ticks.right {
+    out.push_str(&label(t, ml + w + GAP, y_of(t.pos), "start"));
+  }
+  for t in &ticks.bottom {
+    out.push_str(&label(
+      t,
+      x_of(t.pos),
+      mt + h + GAP + size_of(t) * 0.6,
+      "middle",
+    ));
+  }
+  for t in &ticks.top {
+    out.push_str(&label(
+      t,
+      x_of(t.pos),
+      mt - GAP - size_of(t) * 0.6,
+      "middle",
+    ));
+  }
+  out.push_str("</svg>\n");
+  (out, total_w as u32, total_h as u32)
 }
 
 /// Set a `PlotLabel` caption above a finished picture: the picture keeps its
