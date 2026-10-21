@@ -3082,6 +3082,10 @@ struct StyleState3D {
   /// back at the viewer, as `(colour, exponent)`. `None` is the default
   /// matte surface. A larger exponent tightens the highlight.
   specular: Option<((u8, u8, u8), f64)>,
+  /// `Glow[colour]`: light the surface emits on its own, added on top of
+  /// the lit colour (`Glow[White]` renders a face plain white whatever its
+  /// angle to the lamp). `None` is a non-emissive surface.
+  glow: Option<(u8, u8, u8)>,
   /// `Dashing[{d1, d2, ...}]`/`Dashed`/`Dotted`/`DotDashed` for `Line3D`
   /// primitives, in the same units `dash_size_to_f64` uses for 2D: negative
   /// is literal pixels (a named size), positive is a fraction of the image
@@ -3112,6 +3116,7 @@ impl Default for StyleState3D {
       edge_color: None,
       edge_width: None,
       specular: None,
+      glow: None,
       dashing: None,
       point_size: None,
       texture: None,
@@ -3320,6 +3325,12 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         style.specular = parse_specularity(args);
         return true;
       }
+      // `Glow[colour]` makes the surfaces that follow emit light of their
+      // own; like `Specularity` its colour never repaints the face.
+      "Glow" if args.len() == 1 => {
+        style.glow = parse_glow(&args[0]);
+        return true;
+      }
       // `Texture[image]` paints the surfaces that follow with the image.
       "Texture" if args.len() == 1 => {
         let img = crate::functions::image_ast::texture_source_image(&args[0]);
@@ -3478,6 +3489,38 @@ fn dash3d_attr(
   )
 }
 
+/// Read a `Glow[…]` colour (or grey level) into the emitted RGB; black emits
+/// nothing and so is `None`.
+fn parse_glow(arg: &Expr) -> Option<(u8, u8, u8)> {
+  use crate::functions::graphics::parse_color;
+  use crate::functions::math_ast::expr_to_f64;
+
+  let color = if let Some(c) = parse_color(arg) {
+    c
+  } else {
+    let g = expr_to_f64(arg)?;
+    crate::functions::graphics::Color::new(g, g, g)
+  };
+  let rgb = (
+    (color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+    (color.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+    (color.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+  );
+  (rgb != (0, 0, 0)).then_some(rgb)
+}
+
+/// Add a `Glow` emission to an already lit colour.
+fn add_glow(color: (u8, u8, u8), glow: Option<(u8, u8, u8)>) -> (u8, u8, u8) {
+  match glow {
+    Some(g) => (
+      color.0.saturating_add(g.0),
+      color.1.saturating_add(g.1),
+      color.2.saturating_add(g.2),
+    ),
+    None => color,
+  }
+}
+
 /// Read a `Specularity[…]` argument list into `(highlight colour, exponent)`.
 /// The reflectance may be a colour (`Specularity[White, 10]`) or a plain
 /// number standing for that grey level (`Specularity[.5]`); the exponent
@@ -3612,7 +3655,10 @@ fn shade_facet(
         _ => s.color.unwrap_or(default_color),
       };
       (
-        apply_lighting_specular(base, normal, s.specular, view_dir),
+        add_glow(
+          apply_lighting_specular(base, normal, s.specular, view_dir),
+          s.glow,
+        ),
         s.opacity,
       )
     }
@@ -4104,7 +4150,9 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
         .map(|(a, b, c)| (xf.apply(a), xf.apply(b), xf.apply(c)))
         .collect(),
       style,
-      smooth: true,
+      // A tilted box keeps its flat faces and their outline, unlike the
+      // curved solids, whose facet cuts must stay invisible.
+      smooth: !matches!(prim, Primitive3D::Cuboid { .. }),
     };
     return;
   }
@@ -4457,7 +4505,17 @@ fn collect_3d_primitives(
           }
         }
         "Cuboid" => {
-          let p_min = if args.is_empty() {
+          // `Cuboid[{pmin, pmax}]` names the two opposite corners in one
+          // list, the same box as `Cuboid[pmin, pmax]`.
+          let corner_pair = match &args[..] {
+            [Expr::List(pair)] if pair.len() == 2 => {
+              parse_point3d(&pair[0]).zip(parse_point3d(&pair[1]))
+            }
+            _ => None,
+          };
+          let p_min = if let Some((lo, _)) = corner_pair {
+            lo
+          } else if args.is_empty() {
             Point3D {
               x: 0.0,
               y: 0.0,
@@ -4470,7 +4528,9 @@ fn collect_3d_primitives(
               z: 0.0,
             })
           };
-          let p_max = if args.len() >= 2 {
+          let p_max = if let Some((_, hi)) = corner_pair {
+            hi
+          } else if args.len() >= 2 {
             parse_point3d(&args[1]).unwrap_or(Point3D {
               x: 1.0,
               y: 1.0,
@@ -5575,6 +5635,45 @@ fn box_edge_flags(tri: &(Point3D, Point3D, Point3D)) -> [bool; 3] {
     is_edge(corners[1], corners[2]),
     is_edge(corners[2], corners[0]),
   ]
+}
+
+/// Which edges of a flat-faced mesh's triangles outline a face: an edge is an
+/// internal cut, not an outline, when the triangle on its other side lies in
+/// the same plane. Unlike [`box_edge_flags`] this holds for a box turned in
+/// any direction.
+fn coplanar_cut_flags(tris: &[(Point3D, Point3D, Point3D)]) -> Vec<[bool; 3]> {
+  use std::collections::HashMap;
+  let key = |p: Point3D| {
+    let q = |v: f64| (v * 1e8).round() as i64;
+    (q(p.x), q(p.y), q(p.z))
+  };
+  let edge_key = |a: Point3D, b: Point3D| {
+    let (ka, kb) = (key(a), key(b));
+    if ka <= kb { (ka, kb) } else { (kb, ka) }
+  };
+  let normals: Vec<[f64; 3]> = tris
+    .iter()
+    .map(|t| triangle_normal(t.0, t.1, t.2))
+    .collect();
+  let mut seen: HashMap<_, Vec<usize>> = HashMap::new();
+  for (i, t) in tris.iter().enumerate() {
+    for (a, b) in [(t.0, t.1), (t.1, t.2), (t.2, t.0)] {
+      seen.entry(edge_key(a, b)).or_default().push(i);
+    }
+  }
+  tris
+    .iter()
+    .enumerate()
+    .map(|(i, t)| {
+      let outline = |a: Point3D, b: Point3D| {
+        !seen[&edge_key(a, b)].iter().any(|&j| {
+          let (n, m) = (normals[i], normals[j]);
+          j != i && (n[0] * m[0] + n[1] * m[1] + n[2] * m[2]).abs() > 1.0 - 1e-9
+        })
+      };
+      [outline(t.0, t.1), outline(t.1, t.2), outline(t.2, t.0)]
+    })
+    .collect()
 }
 
 /// Bounds how elongated a single tessellated side face can be. Without
@@ -6797,7 +6896,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } => {
           // A Raster3D voxel is a box, so only its own edges are outlined.
           if !*smooth {
-            holed_boundaries = tris.iter().map(box_edge_flags).collect();
+            holed_boundaries = coplanar_cut_flags(tris);
           }
           (tris.clone(), style)
         }
@@ -6814,6 +6913,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             edge_color: None,
             edge_width: None,
             specular: None,
+            glow: None,
             dashing: None,
             point_size: None,
             texture: None,
@@ -6882,11 +6982,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(back) if facing < 0.0 => back,
         _ => prim_color,
       };
-      let color = apply_lighting_specular(
-        side_color,
-        normal,
-        prim_style.specular,
-        view_dir,
+      let color = add_glow(
+        apply_lighting_specular(
+          side_color,
+          normal,
+          prim_style.specular,
+          view_dir,
+        ),
+        prim_style.glow,
       );
       let p0 = project(v0, &camera);
       let p1 = project(v1, &camera);
