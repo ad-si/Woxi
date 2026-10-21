@@ -924,7 +924,9 @@ fn parse_edge_form(args: &[Expr], width: f64) -> Option<(Option<Color>, f64)> {
     }
   }
   let mut directives = Vec::new();
-  args.iter().for_each(|a| flatten(a, &mut directives));
+  for a in args {
+    flatten(a, &mut directives);
+  }
   if directives.is_empty()
     || directives
       .iter()
