@@ -2426,6 +2426,41 @@ mod tests {
     }
   }
 
+  /// A `Framed[Column[…]]` / `Framed[Grid[…]]` control panel holds real
+  /// controls, including `ControlType -> Checkbox` cells and sliders written
+  /// as `Slider[Dynamic[v], {min, max, step}, …]&` builders.
+  #[test]
+  fn framed_panel_holds_checkbox_and_slider_builder_controls() {
+    let code = r#"Manipulate[
+      {flag, ang, size},
+      Framed[Grid[{
+        {Style["options", Bold], SpanFromLeft},
+        {Control[{{flag, True, "flag"}, {True, False}, ControlType -> Checkbox}]}}]],
+      Framed[Column[{
+        Control[{{ang, 0, "angle"},
+          Slider[Dynamic[ang], {0, 359, 1}, Appearance -> "Labeled"] &}],
+        Control@{{size, 5, "size"},
+          Slider[Dynamic[size], {1, 15, 2}, ImageSize -> 80] &}}]]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    for n in ["flag", "ang", "size"] {
+      assert!(state.controls.iter().any(|c| c.name() == n), "missing {n}");
+    }
+    let bounds = state.controls.iter().find_map(|c| match c {
+      ControlState::Continuous {
+        name,
+        min,
+        max,
+        step,
+        ..
+      } if name == "size" => Some((*min, *max, *step)),
+      _ => None,
+    });
+    assert_eq!(bounds, Some((1.0, 15.0, 2.0)));
+  }
+
   /// A Demonstrations idiom declares a control's own default
   /// (`Control[{{n, 2, "n"}, …}]`) and then redeclares the same variable's
   /// *actual* starting value via a separate, hidden `{{n, 3}, None}` spec —
