@@ -1235,7 +1235,7 @@ Minors,Matrix minors (determinants of submatrices),✅,pure,1.0,1221
 VoronoiMesh,Voronoi tessellation mesh from 2D points,✅,pure,10.0,1221
 UpTo,Represents a limit specification,✅,1,10.3,1222
 ChartLayout,Grouped vs Stacked layout for multi-dataset SectorChart3D,✅,none,7.0,1223
-BinCounts,Counts data points in equal-width bins,✅,pure,6.0,1225
+BinCounts,Counts data points in equal-width bins; one bin spec per coordinate bins multidimensional data into nested counts,✅,pure,6.0,1225
 VertexCount,Returns the number of vertices in a graph (optionally matching a pattern),✅,pure,8.0,1225
 LetterCharacter,String pattern for letter characters,✅,1,5.1,1226
 FormatType,Option for output format type,✅,pure,1.0,1227

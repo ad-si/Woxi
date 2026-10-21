@@ -3666,6 +3666,20 @@ fn shade_facet(
   }
 }
 
+/// The first `Texture[image]` inside a style expression.
+fn find_texture_expr(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Texture" && args.len() == 1 =>
+    {
+      Some(expr.clone())
+    }
+    Expr::FunctionCall { args, .. } => args.iter().find_map(find_texture_expr),
+    Expr::List(items) => items.iter().find_map(find_texture_expr),
+    _ => None,
+  }
+}
+
 /// `VertexTextureCoordinates -> {{u, v}, …}` among a `Polygon`'s options.
 fn parse_texture_coords3d(opts: &[Expr]) -> Option<Vec<(f64, f64)>> {
   opts.iter().find_map(|o| match o {
@@ -4252,11 +4266,14 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
 /// refer to, leaving everything else untouched.
 ///
 /// With `colors` (the complex's `VertexColors`, one colour per point) each
-/// `Polygon` facet is drawn in the mean colour of its vertices.
+/// `Polygon` facet is drawn in the mean colour of its vertices. With
+/// `tex` (its `VertexTextureCoordinates`, one `(u, v)` per point) each
+/// facet carries the coordinates of its own corners.
 fn resolve_complex_indices(
   expr: &Expr,
   points: &[Expr],
   colors: Option<&[(f64, f64, f64)]>,
+  tex: Option<&[(f64, f64)]>,
 ) -> Expr {
   fn substitute(expr: &Expr, points: &[Expr]) -> Expr {
     match expr {
@@ -4302,16 +4319,39 @@ fn resolve_complex_indices(
     Expr::FunctionCall { name, args }
       if name == "Polygon"
         && !args.is_empty()
-        && let Some(colors) = colors =>
+        && (colors.is_some() || tex.is_some()) =>
     {
       let facet = |indices: &Expr| -> Expr {
         let mut new_args = args.to_vec();
         new_args[0] = substitute(indices, points);
+        if let Some(tex) = tex
+          && let Expr::List(items) = indices
+        {
+          let uvs: Option<Vec<Expr>> = items
+            .iter()
+            .map(|i| match i {
+              Expr::Integer(i) if *i >= 1 => {
+                tex.get(*i as usize - 1).map(|&(u, v)| {
+                  Expr::List(vec![Expr::Real(u), Expr::Real(v)].into())
+                })
+              }
+              _ => None,
+            })
+            .collect();
+          if let Some(uvs) = uvs {
+            new_args.push(Expr::Rule {
+              pattern: Box::new(Expr::Identifier(
+                "VertexTextureCoordinates".to_string(),
+              )),
+              replacement: Box::new(Expr::List(uvs.into())),
+            });
+          }
+        }
         let polygon = Expr::FunctionCall {
           name: name.clone(),
           args: new_args.into(),
         };
-        match facet_color(indices, colors) {
+        match colors.and_then(|c| facet_color(indices, c)) {
           Some(color) => Expr::List(vec![color, polygon].into()),
           None => polygon,
         }
@@ -4340,7 +4380,7 @@ fn resolve_complex_indices(
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|e| resolve_complex_indices(e, points, colors))
+        .map(|e| resolve_complex_indices(e, points, colors, tex))
         .collect::<Vec<_>>()
         .into(),
     ),
@@ -4348,7 +4388,7 @@ fn resolve_complex_indices(
       name: name.clone(),
       args: args
         .iter()
-        .map(|e| resolve_complex_indices(e, points, colors))
+        .map(|e| resolve_complex_indices(e, points, colors, tex))
         .collect::<Vec<_>>()
         .into(),
     },
@@ -5009,8 +5049,13 @@ fn collect_3d_primitives(
         "GraphicsComplex" if args.len() >= 2 => {
           if let Ok(Expr::List(ref points)) = evaluate_expr_to_expr(&args[0]) {
             let colors = complex_vertex_colors(&args[2..]);
-            let resolved =
-              resolve_complex_indices(&args[1], points, colors.as_deref());
+            let tex = parse_texture_coords3d(&args[2..]);
+            let resolved = resolve_complex_indices(
+              &args[1],
+              points,
+              colors.as_deref(),
+              tex.as_deref(),
+            );
             let saved = style.clone();
             collect_3d_primitives(&resolved, style, prims);
             *style = saved;
@@ -11219,6 +11264,10 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The (theta, phi) centroid of each triangle, for texture coordinates.
   let mut surface_tri_params: Vec<Vec<(f64, f64)>> =
     Vec::with_capacity(bodies.len());
+  // The (theta, phi) of each triangle's three corners, for the per-vertex
+  // `VertexTextureCoordinates` of the symbolic structure.
+  let mut surface_tri_vparams: Vec<Vec<[(f64, f64); 3]>> =
+    Vec::with_capacity(bodies.len());
   for surface_body in &evaluated_bodies {
     // Evaluate the surface point at arbitrary (theta, phi) parameters.
     let surface_at = |theta: f64, phi: f64| -> Option<(Point3D, f64)> {
@@ -11320,6 +11369,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     let mut tris: Vec<[Point3D; 3]> = Vec::new();
     let mut tri_params: Vec<(f64, f64)> = Vec::new();
+    let mut tri_vparams: Vec<[(f64, f64); 3]> = Vec::new();
     for i in 0..n_theta {
       for j in 0..n_phi {
         // The cell's two triangles in grid corners:
@@ -11369,6 +11419,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               continue;
             }
             tris.push([a, b, c]);
+            tri_vparams.push([params[0], params[k], params[k + 1]]);
             tri_params.push((
               (params[0].0 + params[k].0 + params[k + 1].0) / 3.0,
               (params[0].1 + params[k].1 + params[k + 1].1) / 3.0,
@@ -11379,6 +11430,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     surface_tris.push(tris);
     surface_tri_params.push(tri_params);
+    surface_tri_vparams.push(tri_vparams);
   }
 
   if surface_tris.iter().all(std::vec::Vec::is_empty) {
@@ -11387,6 +11439,77 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Find coordinate ranges across every surface
+  let mut x_min = f64::INFINITY;
+  let mut x_max = f64::NEG_INFINITY;
+  let mut y_min = f64::INFINITY;
+  let mut y_max = f64::NEG_INFINITY;
+  let mut z_min = f64::INFINITY;
+  let mut z_max = f64::NEG_INFINITY;
+
+  for tris in &surface_tris {
+    for tri in tris {
+      for p in tri {
+        x_min = x_min.min(p.x);
+        x_max = x_max.max(p.x);
+        y_min = y_min.min(p.y);
+        y_max = y_max.max(p.y);
+        z_min = z_min.min(p.z);
+        z_max = z_max.max(p.z);
+      }
+    }
+  }
+
+  if !x_min.is_finite() || !z_min.is_finite() {
+    return Err(InterpreterError::EvaluationError(
+      "SphericalPlot3D: no valid points computed".into(),
+    ));
+  }
+
+  let x_range_v = (x_max - x_min).max(1e-15);
+  let y_range_v = (y_max - y_min).max(1e-15);
+  let z_range_v = (z_max - z_min).max(1e-15);
+
+  // Texture coordinates of a surface point `p` at parameters (theta, phi):
+  // the `TextureCoordinateFunction` applied to the point scaled to the
+  // unit cube over the plot (as `TextureCoordinateScaling -> True` does),
+  // or the scaled (theta, phi) by default.
+  let texture_uv = |p: Point3D, theta: f64, phi: f64| -> Option<(f64, f64)> {
+    let scaled = |v: f64, lo: f64, range: f64| {
+      if range.abs() < 1e-15 {
+        0.0
+      } else {
+        (v - lo) / range
+      }
+    };
+    let u_theta = scaled(theta, theta_min, theta_range);
+    let u_phi = scaled(phi, phi_min, phi_range);
+    match &texture_fn {
+      None => Some((u_theta, u_phi)),
+      Some(f) => {
+        let call = Expr::CurriedCall {
+          func: Box::new(f.clone()),
+          args: vec![
+            Expr::Real(scaled(p.x, x_min, x_range_v)),
+            Expr::Real(scaled(p.y, y_min, y_range_v)),
+            Expr::Real(scaled(p.z, z_min, z_range_v)),
+            Expr::Real(u_theta),
+            Expr::Real(u_phi),
+            Expr::Real((p.x * p.x + p.y * p.y + p.z * p.z).sqrt()),
+          ],
+        };
+        match evaluate_expr_to_expr(&call).ok()? {
+          Expr::List(ref uv) if uv.len() == 2 => {
+            Some((try_eval_to_f64(&uv[0])?, try_eval_to_f64(&uv[1])?))
+          }
+          _ => None,
+        }
+      }
+    }
+  };
+  // The `Texture[…]` of the `PlotStyle`, carried into the symbolic structure.
+  let texture_expr: Option<Expr> = plot_style_expr.and_then(find_texture_expr);
+
   // ── Symbolic structure: one GraphicsComplex[points, {Polygon[…], …}]
   // per surface ──
   let complexes: Vec<Expr> = surface_tris
@@ -11394,27 +11517,44 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .enumerate()
     .filter(|(_, tris)| !tris.is_empty())
     .map(|(surface_idx, tris)| {
-      // Deduplicate shared vertices into an indexed coordinate list.
-      let mut point_index: std::collections::HashMap<(i64, i64, i64), usize> =
-        std::collections::HashMap::new();
+      // Deduplicate shared vertices into an indexed coordinate list. A
+      // textured surface keeps vertices apart that differ in their texture
+      // coordinates (the seam of a wrapped texture, the poles).
+      let textured = texture_expr.is_some()
+        && plot_style_for_surface(&plot_styles, surface_idx)
+          .is_some_and(|s| s.texture.is_some());
+      let mut point_index: std::collections::HashMap<
+        (i64, i64, i64, i64, i64),
+        usize,
+      > = std::collections::HashMap::new();
       let mut points: Vec<Point3D> = Vec::new();
-      let mut index_of = |p: Point3D| -> usize {
+      let mut point_uvs: Vec<(f64, f64)> = Vec::new();
+      let mut index_of = |p: Point3D, param: (f64, f64)| -> usize {
+        let uv = if textured {
+          texture_uv(p, param.0, param.1).unwrap_or((0.0, 0.0))
+        } else {
+          (0.0, 0.0)
+        };
         let key = (
           (p.x * 1e9).round() as i64,
           (p.y * 1e9).round() as i64,
           (p.z * 1e9).round() as i64,
+          (uv.0 * 1e9).round() as i64,
+          (uv.1 * 1e9).round() as i64,
         );
         *point_index.entry(key).or_insert_with(|| {
           points.push(p);
+          point_uvs.push(uv);
           points.len() - 1
         })
       };
       let mut tri_indices: Vec<[usize; 3]> = Vec::new();
-      for tri in tris {
+      for (tri_idx, tri) in tris.iter().enumerate() {
+        let vparams = surface_tri_vparams[surface_idx][tri_idx];
         tri_indices.push([
-          index_of(tri[0]),
-          index_of(tri[1]),
-          index_of(tri[2]),
+          index_of(tri[0], vparams[0]),
+          index_of(tri[1], vparams[1]),
+          index_of(tri[2], vparams[2]),
         ]);
       }
 
@@ -11495,6 +11635,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // shows, so their outlines are suppressed — otherwise extracting
       // the primitives (`plot[[1]]`) into a `Graphics3D` would turn the
       // surface into a wireframe.
+      if textured && let Some(texture) = &texture_expr {
+        gc_content.insert(0, texture.clone());
+      }
       if !matches!(mesh_mode, MeshMode::All) {
         gc_content.insert(0, call0("EdgeForm"));
       }
@@ -11529,13 +11672,27 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         );
         gc_content.push(Expr::List(vec![color_expr, line_expr].into()));
       }
-      call(
-        "GraphicsComplex",
-        vec![
-          Expr::List(point_exprs.into()),
-          Expr::List(gc_content.into()),
-        ],
-      )
+      let mut complex_args = vec![
+        Expr::List(point_exprs.into()),
+        Expr::List(gc_content.into()),
+      ];
+      if textured {
+        complex_args.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier(
+            "VertexTextureCoordinates".to_string(),
+          )),
+          replacement: Box::new(Expr::List(
+            point_uvs
+              .iter()
+              .map(|&(u, v)| {
+                Expr::List(vec![Expr::Real(u), Expr::Real(v)].into())
+              })
+              .collect::<Vec<_>>()
+              .into(),
+          )),
+        });
+      }
+      call("GraphicsComplex", complex_args)
     })
     .collect();
 
@@ -11552,37 +11709,6 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   // ── Standalone rendering (the plot's own SVG) ──
-  // Find coordinate ranges across every surface
-  let mut x_min = f64::INFINITY;
-  let mut x_max = f64::NEG_INFINITY;
-  let mut y_min = f64::INFINITY;
-  let mut y_max = f64::NEG_INFINITY;
-  let mut z_min = f64::INFINITY;
-  let mut z_max = f64::NEG_INFINITY;
-
-  for tris in &surface_tris {
-    for tri in tris {
-      for p in tri {
-        x_min = x_min.min(p.x);
-        x_max = x_max.max(p.x);
-        y_min = y_min.min(p.y);
-        y_max = y_max.max(p.y);
-        z_min = z_min.min(p.z);
-        z_max = z_max.max(p.z);
-      }
-    }
-  }
-
-  if !x_min.is_finite() || !z_min.is_finite() {
-    return Err(InterpreterError::EvaluationError(
-      "SphericalPlot3D: no valid points computed".into(),
-    ));
-  }
-
-  let x_range_v = (x_max - x_min).max(1e-15);
-  let y_range_v = (y_max - y_min).max(1e-15);
-  let z_range_v = (z_max - z_min).max(1e-15);
-
   let camera = Camera::default();
   // Direction from the scene towards the viewer, used to place a
   // `Specularity` highlight from `PlotStyle`.
@@ -11620,44 +11746,12 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // texture coordinates instead of from its height.
       let textured = style.and_then(|s| s.texture.as_ref()).and_then(|tex| {
         let (theta, phi) = surface_tri_params[surface_idx][tri_idx];
-        // Coordinates are scaled to the unit interval over the plot, as
-        // `TextureCoordinateScaling -> True` does.
-        let scaled = |v: f64, lo: f64, range: f64| {
-          if range.abs() < 1e-15 {
-            0.0
-          } else {
-            (v - lo) / range
-          }
+        let centroid = Point3D {
+          x: (a.x + b.x + c.x) / 3.0,
+          y: (a.y + b.y + c.y) / 3.0,
+          z: (a.z + b.z + c.z) / 3.0,
         };
-        let (cx, cy, cz) = (
-          (a.x + b.x + c.x) / 3.0,
-          (a.y + b.y + c.y) / 3.0,
-          (a.z + b.z + c.z) / 3.0,
-        );
-        let u_theta = scaled(theta, theta_min, theta_range);
-        let u_phi = scaled(phi, phi_min, phi_range);
-        let (u, v) = match &texture_fn {
-          None => (u_theta, u_phi),
-          Some(f) => {
-            let call = Expr::CurriedCall {
-              func: Box::new(f.clone()),
-              args: vec![
-                Expr::Real(scaled(cx, x_min, x_range_v)),
-                Expr::Real(scaled(cy, y_min, y_range_v)),
-                Expr::Real(scaled(cz, z_min, z_range_v)),
-                Expr::Real(u_theta),
-                Expr::Real(u_phi),
-                Expr::Real((cx * cx + cy * cy + cz * cz).sqrt()),
-              ],
-            };
-            match evaluate_expr_to_expr(&call).ok()? {
-              Expr::List(ref uv) if uv.len() == 2 => {
-                (try_eval_to_f64(&uv[0])?, try_eval_to_f64(&uv[1])?)
-              }
-              _ => return None,
-            }
-          }
-        };
+        let (u, v) = texture_uv(centroid, theta, phi)?;
         texture_color(tex, u, v)
       });
       let (color, opacity) = match (style, textured) {

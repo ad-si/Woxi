@@ -886,6 +886,18 @@ mod rescale {
   }
 
   #[test]
+  fn rescale_list_of_exact_constants() {
+    assert_eq!(
+      interpret("Rescale[{Log[2], Log[3], 0}]").unwrap(),
+      "{Log[2]/Log[3], 1, 0}"
+    );
+    assert_eq!(
+      interpret("Rescale[Log[{{1, 2}, {3, 4}}]]").unwrap(),
+      "{{0, Log[2]/Log[4]}, {Log[3]/Log[4], 1}}"
+    );
+  }
+
+  #[test]
   fn rescale_real_input_stays_real() {
     assert_eq!(interpret("Rescale[2.0, {0, 10}]").unwrap(), "0.2");
   }
@@ -926,6 +938,28 @@ mod bin_counts {
       "{1, 2, 2}"
     );
     assert_eq!(interpret("BinCounts[{3, 4, 5}, 2]").unwrap(), "{1, 2}");
+  }
+
+  #[test]
+  fn bin_counts_multidimensional() {
+    assert_eq!(
+      interpret("BinCounts[{{1, 1}, {3, 3}, {5, 5}}, {0, 4, 2}, {0, 4, 2}]")
+        .unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+    // The first coordinate is the outermost level; a point on an upper
+    // bound of any coordinate lies outside the bins.
+    assert_eq!(
+      interpret(
+        "BinCounts[{{1, 1, 1}, {2, 3, 4}, {1.5, 1.5, 1.5}}, {0, 4, 2}, {0, 4, 2}, {0, 4, 2}]"
+      )
+      .unwrap(),
+      "{{{2, 0}, {0, 0}}, {{0, 0}, {0, 0}}}"
+    );
+    assert_eq!(
+      interpret("BinCounts[{{1, 5}}, {0, 4, 2}, {0, 6, 3}]").unwrap(),
+      "{{0, 1}, {0, 0}}"
+    );
   }
 
   #[test]

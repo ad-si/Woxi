@@ -1484,9 +1484,89 @@ fn edge_to_f64(e: &Expr) -> Option<f64> {
   None
 }
 
+/// BinCounts[{{x1, y1, ...}, ...}, {xmin, xmax, dx}, {ymin, ymax, dy}, ...]
+/// — multidimensional bin counts. The result nests one level per
+/// coordinate (first coordinate outermost); points outside any spec's
+/// range are ignored.
+fn bin_counts_nd(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated_result = || Ok(unevaluated("BinCounts", args));
+  let Expr::List(data) = &args[0] else {
+    return unevaluated_result();
+  };
+  let dims = args.len() - 1;
+  // (min, dx, number of whole bins) per coordinate.
+  let mut specs: Vec<(f64, f64, usize)> = Vec::with_capacity(dims);
+  for spec in &args[1..] {
+    let Expr::List(parts) = spec else {
+      return unevaluated_result();
+    };
+    let nums: Option<Vec<f64>> =
+      parts.iter().map(numeric_expr_to_f64).collect();
+    let Some(&[min_v, max_v, dx]) = nums.as_deref() else {
+      return unevaluated_result();
+    };
+    if dx <= 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "BinCounts: bin width must be positive".into(),
+      ));
+    }
+    let n = ((max_v - min_v) / dx + 1e-9).floor().max(0.0) as usize;
+    specs.push((min_v, dx, n));
+  }
+  let mut total = 1usize;
+  for &(_, _, n) in &specs {
+    total = total.saturating_mul(n);
+  }
+  if total > 100_000_000 {
+    return unevaluated_result();
+  }
+  let mut counts = vec![0i128; total];
+  for point in data {
+    let Expr::List(coords) = point else {
+      return unevaluated_result();
+    };
+    if coords.len() != dims {
+      return unevaluated_result();
+    }
+    let mut flat = 0usize;
+    let mut inside = true;
+    for (c, &(min_v, dx, n)) in coords.iter().zip(&specs) {
+      let Some(v) = numeric_expr_to_f64(c) else {
+        return unevaluated_result();
+      };
+      let idx = ((v - min_v) / dx).floor();
+      if v < min_v || idx < 0.0 || idx as usize >= n {
+        inside = false;
+        break;
+      }
+      flat = flat * n + idx as usize;
+    }
+    if inside {
+      counts[flat] += 1;
+    }
+  }
+  fn build(
+    specs: &[(f64, f64, usize)],
+    counts: &[i128],
+    offset: &mut usize,
+  ) -> Expr {
+    let Some((&(_, _, n), rest)) = specs.split_first() else {
+      let v = counts[*offset];
+      *offset += 1;
+      return Expr::Integer(v);
+    };
+    Expr::List((0..n).map(|_| build(rest, counts, offset)).collect())
+  }
+  let mut offset = 0;
+  Ok(build(&specs, &counts, &mut offset))
+}
+
 /// BinCounts[data, {min, max, dx}] - count data points in equal-width bins
 /// Bins are [min, min+dx), [min+dx, min+2dx), ..., [max-dx, max)
 pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() > 2 {
+    return bin_counts_nd(args);
+  }
   let Expr::List(data) = &args[0] else {
     return Ok(unevaluated("BinCounts", args));
   };

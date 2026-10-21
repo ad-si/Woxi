@@ -2740,6 +2740,73 @@ fn rescale_rebuild(
   }
 }
 
+/// Collect the numeric leaves of a nested list together with their values;
+/// `None` when a leaf has no numeric value.
+fn collect_numeric_leaves<'a>(
+  expr: &'a Expr,
+  out: &mut Vec<(&'a Expr, f64)>,
+) -> Option<()> {
+  match expr {
+    Expr::List(items) => {
+      for it in items {
+        collect_numeric_leaves(it, out)?;
+      }
+      Some(())
+    }
+    leaf => {
+      out.push((leaf, try_eval_to_f64(leaf)?));
+      Some(())
+    }
+  }
+}
+
+/// Rescale[list] for exact numeric constants such as `Log[3]` or `Pi`:
+/// each leaf `x` becomes `(x - min)/(max - min)`, kept symbolic.
+fn rescale_symbolic_numeric_list(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let mut leaves = Vec::new();
+  if collect_numeric_leaves(&args[0], &mut leaves).is_none()
+    || leaves.is_empty()
+  {
+    return Ok(unevaluated("Rescale", args));
+  }
+  let (mut min_e, mut min_v) = leaves[0];
+  let (mut max_e, mut max_v) = leaves[0];
+  for &(e, v) in &leaves[1..] {
+    if v < min_v {
+      (min_e, min_v) = (e, v);
+    }
+    if v > max_v {
+      (max_e, max_v) = (e, v);
+    }
+  }
+  if (max_v - min_v).abs() < f64::EPSILON {
+    return Ok(unevaluated("Rescale", args));
+  }
+  let span = plus(vec![max_e.clone(), neg(min_e.clone())]);
+  fn rebuild(
+    expr: &Expr,
+    min_e: &Expr,
+    span: &Expr,
+  ) -> Result<Expr, InterpreterError> {
+    match expr {
+      Expr::List(items) => Ok(Expr::List(
+        items
+          .iter()
+          .map(|it| rebuild(it, min_e, span))
+          .collect::<Result<Vec<_>, _>>()?
+          .into(),
+      )),
+      leaf => crate::evaluator::evaluate_expr_to_expr(&times(vec![
+        plus(vec![leaf.clone(), neg(min_e.clone())]),
+        pow(span.clone(), Expr::Integer(-1)),
+      ])),
+    }
+  }
+  rebuild(&args[0], min_e, &span)
+}
+
 pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -2765,7 +2832,10 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &mut all_int,
         &mut ok,
       );
-      if !ok || vals.is_empty() {
+      if !ok {
+        return rescale_symbolic_numeric_list(args);
+      }
+      if vals.is_empty() {
         return Ok(unevaluated("Rescale", args));
       }
       let min_f = vals.iter().copied().fold(f64::INFINITY, f64::min);
