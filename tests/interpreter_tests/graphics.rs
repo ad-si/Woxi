@@ -8203,6 +8203,50 @@ mod plot3d {
       }
     }
 
+    // A tight explicit right `ImagePadding` must not clip the bar legend's
+    // tick labels: the canvas widens until the widest label fits.
+    #[test]
+    fn bar_legend_labels_fit_under_tight_image_padding() {
+      let svg = export_svg(
+        "ContourPlot[1/(1 + x^2 + y), {x, 0, 1}, {y, 0, 1}, \
+         PlotLegends -> Automatic, \
+         ImagePadding -> {{Automatic, 10}, {Automatic, 10}}]",
+      );
+      let vb_w: f64 = svg
+        .split("viewBox=\"0 0 ")
+        .nth(1)
+        .and_then(|r| r.split_whitespace().next())
+        .and_then(|w| w.parse().ok())
+        .unwrap();
+      let mut widest_end = 0.0_f64;
+      for tag in svg.split("<text ").skip(1) {
+        if !tag.contains("dominant-baseline=\"central\"") {
+          continue;
+        }
+        let Some((head, rest)) = tag.split_once('>') else {
+          continue;
+        };
+        let attr = |name: &str| -> f64 {
+          head
+            .split(&format!("{name}=\""))
+            .nth(1)
+            .and_then(|r| r.split('"').next())
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0)
+        };
+        let label = rest.split('<').next().unwrap_or("");
+        if attr("font-size") > 130.0 && attr("x") > vb_w * 0.8 {
+          widest_end = widest_end
+            .max(attr("x") + label.len() as f64 * attr("font-size") * 0.5);
+        }
+      }
+      assert!(widest_end > 0.0, "no legend labels found: {svg}");
+      assert!(
+        widest_end <= vb_w,
+        "legend labels end at {widest_end}, past canvas {vb_w}"
+      );
+    }
+
     // `FrameTicks -> {xspec, yspec}` keeps the ticks of one axis only, and
     // the nested `{{left, right}, {bottom, top}}` form says the same per
     // edge.
