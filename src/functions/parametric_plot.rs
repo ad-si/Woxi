@@ -597,6 +597,11 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .as_ref()
     .is_some_and(|ev| collect_curves(ev, &mut nonlist_curves));
 
+  // A body that is a group of curves keeps its per-slot `PlotStyle` cycle
+  // even when only one slot ended up drawn (`{c[t], If[cond, d[t]]}` with
+  // the condition false): the visible curve still takes the first style.
+  let from_group = body_is_group || evaluated_group_ok;
+
   let curves: Vec<CurveSrc> = if nonlist_ok {
     nonlist_curves
   } else if evaluated_group_ok {
@@ -715,7 +720,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `PlotStyle` list applied to a single curve is one combined directive
   // set, not a per-curve cycle: `ParametricPlot[c, …, PlotStyle -> {Thick,
   // Red}]` draws one thick red curve.
-  if all_points.len() == 1 {
+  if all_points.len() == 1 && !from_group {
     plot_opts.plot_style =
       crate::functions::plot::collapse_style_for_single_series(
         &plot_opts.plot_style,

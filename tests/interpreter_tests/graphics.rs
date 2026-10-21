@@ -6984,6 +6984,44 @@ mod plot3d {
     }
   }
 
+  mod parametric_plot_hidden_slot {
+    use super::*;
+
+    /// A curve group whose second slot is hidden (`If[cond, …]` with a false
+    /// condition) keeps the per-slot `PlotStyle` cycle: the visible curve
+    /// takes the first style, here just a thickness, so it stays the default
+    /// blue instead of inheriting the second slot's orange.
+    #[test]
+    fn hidden_slot_keeps_first_style() {
+      let svg = export_svg(
+        "ParametricPlot[{{Sin[x], Cos[x]}, If[False, {x, x}]}, {x, 0, 3}, \
+         PlotStyle -> {Thickness[0.005], {Blue, Orange}}]",
+      );
+      assert!(svg.contains("stroke=\"#5E81B5\""));
+      assert!(!svg.contains("stroke=\"#FF8000\""));
+    }
+
+    /// A single curve still treats a `PlotStyle` list as one directive set.
+    #[test]
+    fn single_curve_style_list_is_combined() {
+      let svg = export_svg(
+        "ParametricPlot[{Sin[x], Cos[x]}, {x, 0, 3}, \
+         PlotStyle -> {Thickness[0.005], Orange}]",
+      );
+      assert!(svg.contains("stroke=\"#FF8000\""));
+    }
+
+    /// A title whose first line is blank (`Row[{"\nTitle"}]`) is still drawn.
+    #[test]
+    fn plot_label_with_leading_newline_is_drawn() {
+      let svg = export_svg(
+        "ParametricPlot[{t, t^2}, {t, 0, 3}, \
+         PlotLabel -> Style[Row[{\"\\nTitle \", Style[\"t\", Italic]}], White]]",
+      );
+      assert!(svg.contains("Title "));
+    }
+  }
+
   mod parametric_plot3d_curve {
     use super::*;
 
