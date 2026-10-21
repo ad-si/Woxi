@@ -2921,6 +2921,23 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_grid_cell_padded_form_of_grid_draws_the_grid() {
+    // Regression: `Text[PaddedForm[Grid[…], spec]]` as a grid cell printed
+    // the inner `Grid[…]` source instead of drawing the table with its
+    // numbers formatted.
+    clear_state();
+    for head in ["PaddedForm", "NumberForm"] {
+      let svg = interpret(&format!(
+        "ExportString[Grid[{{{{Text[{head}[Grid[{{{{\"a\", Item[\"b\", Background -> LightGray]}}, {{\"c\", 0.5}}}}], {{4, 4}}]]}}}}], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(!svg.contains("Grid["), "grid source printed: {svg}");
+      assert!(!svg.contains("Item["), "item source printed: {svg}");
+      assert!(svg.contains(">0.5000<"), "number not formatted: {svg}");
+    }
+  }
+
+  #[test]
   fn test_graphics_text_lowers_subscript_without_unicode_form() {
     // Unicode has no subscript capital N, so `F_N` used to draw as a flat
     // "FN". The subscript is now lowered with a `<tspan>` instead.
