@@ -124,6 +124,14 @@ fn main() {
         }
         continue;
       };
+      let mut state = state;
+      if let Some(next) = all_cells.get(idx + 1)
+        && next.style == CellStyle::Output
+      {
+        state.apply_saved_variables(
+          &woxi::notebook::extract_saved_manipulate_variables(&next.content),
+        );
+      }
       widget_count += 1;
       println!("=== Interactive widget #{widget_count} ===");
       println!("animated: {}", state.animated);
