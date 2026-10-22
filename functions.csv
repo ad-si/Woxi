@@ -2350,7 +2350,7 @@ ExponentialMovingAverage,Computes exponential moving average of a list,✅,None,
 GeoDirection,Initial bearing from one geo position to another,✅,pure,7.0,2367
 MeanDeviation,Mean absolute deviation from the mean,✅,1,6.0,2367
 RegionEmbeddingDimension,Dimension of the space a region is embedded in,✅,pure,10.0,2367
-TriangulateMesh,mesh generation,🚫,None,10.0,2367
+TriangulateMesh,Ear-clips a planar mesh region or boundary mesh into a MeshRegion of triangles,✅,pure,10.0,2367
 CloseKernels,parallel computing,🚫,None,7.0,2371
 DefaultBaseStyle,styling option,🚫,None,7.0,2371
 ImageDeconvolve,Restores an image blurred by a point spread function (spectral methods DampedLS/Tikhonov/Wiener; iterative methods TSVD/Hybrid/RichardsonLucy/SteepestDescent/TotalVariation not implemented),🚧,pure,8.0,2371
