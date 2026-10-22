@@ -1,5 +1,4 @@
 use super::*;
-use crate::functions::math_ast::rat_reduce;
 
 /// Result of decomposing an expression into its canonical form.
 pub enum ExprForm {
@@ -516,17 +515,6 @@ pub fn compose_expr(head: &str, children: &[Expr]) -> Expr {
   }
 }
 
-/// Helper: render a rational (num, denom) pair in FullForm notation.
-fn render_rational_full_form(numer: i128, denom: i128) -> String {
-  // Reduce to lowest terms
-  let (n, d) = rat_reduce(numer, denom);
-  if d == 1 {
-    n.to_string()
-  } else {
-    format!("Rational[{n}, {d}]")
-  }
-}
-
 /// The real and imaginary parts of a complex number, as FullForm sees it.
 ///
 /// Woxi stores `2 + 3 I` as a Plus/Times tree, but its head is `Complex`
@@ -538,7 +526,7 @@ fn render_rational_full_form(numer: i128, denom: i128) -> String {
 /// Returns exact parts as `(numerator, denominator)` pairs, or machine
 /// floats, mirroring the two shapes Woxi stores.
 pub enum ComplexParts {
-  Exact { re: (i128, i128), im: (i128, i128) },
+  Exact { re: Expr, im: Expr },
   Float { re: f64, im: f64 },
 }
 
@@ -548,7 +536,19 @@ pub fn complex_full_form_parts(expr: &Expr) -> Option<ComplexParts> {
     crate::functions::math_ast::try_extract_complex_exact(expr)
     && im.0 != 0
   {
-    return Some(ComplexParts::Exact { re, im });
+    return Some(ComplexParts::Exact {
+      re: make_rational(re.0, re.1),
+      im: make_rational(im.0, im.1),
+    });
+  }
+  if let Some(((rn, rd), (in_, id))) =
+    crate::functions::math_ast::try_extract_complex_exact_beyond_i128(expr)
+  {
+    use crate::functions::math_ast::make_rational_expr;
+    return Some(ComplexParts::Exact {
+      re: make_rational_expr(&rn, &rd),
+      im: make_rational_expr(&in_, &id),
+    });
   }
   // Machine-precision: `Real + Real*I`, including `0. + 0.*I`. Requires a
   // syntactic `I` and at least one Real component, so pure Reals are not
@@ -569,8 +569,8 @@ pub fn render_full_form(expr: &Expr) -> String {
   // as Complex[re, im], so this must come before the general decomposition.
   match complex_full_form_parts(expr) {
     Some(ComplexParts::Exact { re, im }) => {
-      let re = render_rational_full_form(re.0, re.1);
-      let im = render_rational_full_form(im.0, im.1);
+      let re = render_full_form(&re);
+      let im = render_full_form(&im);
       return format!("Complex[{re}, {im}]");
     }
     Some(ComplexParts::Float { re, im }) => {

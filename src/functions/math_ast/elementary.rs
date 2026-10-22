@@ -177,6 +177,14 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return sqrt_ast(&[make_rational(num2, den2)]);
     }
   }
+  // The same magnitude once a part passes i128.
+  if let Some(((rn, rd), (in_, id))) =
+    try_extract_complex_exact_beyond_i128(&args[0])
+  {
+    let num2 = &rn * &rn * &id * &id + &in_ * &in_ * &rd * &rd;
+    let den2 = &rd * &rd * &id * &id;
+    return sqrt_ast(&[make_rational_expr(&num2, &den2)]);
+  }
   // Handle floating-point complex numbers: Abs[3.0 + I] = sqrt(10)
   if let Some((re, im)) = try_extract_complex_f64(&args[0]) {
     if im != 0.0 {
@@ -826,6 +834,13 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return result;
     }
   }
+  // Sqrt[-q] for a negative exact rational q → I * Sqrt[q]
+  if let Some((n, d)) = expr_to_big_rational(&args[0])
+    && n.sign() == num_bigint::Sign::Minus
+  {
+    let sqrt_pos = sqrt_ast(&[make_rational_expr(&-n, &d)])?;
+    return times_ast(&[id_expr("I"), sqrt_pos]);
+  }
   match &args[0] {
     // Perfect squares: Sqrt[0]=0, Sqrt[1]=1, Sqrt[4]=2, etc.
     Expr::Integer(n) if *n >= 0 => {
@@ -898,12 +913,6 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(make_sqrt(args[0].clone()))
     }
-    // Sqrt[-n] for negative integer → I * Sqrt[n]
-    Expr::Integer(n) if *n < 0 => {
-      let pos = -*n;
-      let sqrt_pos = sqrt_ast(&[Expr::Integer(pos)])?;
-      times_ast(&[id_expr("I"), sqrt_pos])
-    }
     Expr::Real(f) if *f >= 0.0 => Ok(Expr::Real(f.sqrt())),
     // Sqrt of a negative machine real is the numeric imaginary 0. + Sqrt[|f|] I
     // (an inexact base forces a numeric complex result, matching wolframscript).
@@ -955,28 +964,19 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return split;
       }
       // Separate into: integer part, squared symbolic factors, remainder
-      let mut int_product: i128 = 1;
+      let mut int_product = BigInt::from(1);
       // The denominator of a rational factor, whose square part comes out of
       // the radical just like the numerator's: Sqrt[Pi/18] → Sqrt[Pi/2]/3.
-      let mut den_product: i128 = 1;
+      let mut den_product = BigInt::from(1);
       let mut outside: Vec<Expr> = Vec::new(); // factors to move outside sqrt
       let mut inside: Vec<Expr> = Vec::new(); // factors to keep inside sqrt
 
       for f in &factors {
         match f {
-          Expr::Integer(n) => {
+          _ if expr_to_big_rational(f).is_some() => {
+            let (n, d) = expr_to_big_rational(f).unwrap();
             int_product *= n;
-          }
-          Expr::FunctionCall { name, args: rargs }
-            if name == "Rational" && rargs.len() == 2 =>
-          {
-            match (&rargs[0], &rargs[1]) {
-              (Expr::Integer(n), Expr::Integer(d)) if *d > 0 => {
-                int_product *= n;
-                den_product *= d;
-              }
-              _ => inside.push(f.clone()),
-            }
+            den_product *= d;
           }
           // expr^2 → move expr outside only if expr is known non-negative
           Expr::BinaryOp {
@@ -1033,25 +1033,13 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       // Handle the rational part: extract perfect square factors from the
       // numerator and the denominator separately.
-      let extract_square = |value: u64| -> (u64, u64) {
-        let mut out = 1u64;
-        let mut inside = value;
-        let mut factor = 2u64;
-        while factor * factor <= inside {
-          while inside.is_multiple_of(factor * factor) {
-            out *= factor;
-            inside /= factor * factor;
-          }
-          factor += 1;
-        }
-        (out, inside)
-      };
-      let sign = if int_product < 0 { -1i128 } else { 1i128 };
+      let one = BigInt::from(1);
+      let negative = int_product.sign() == num_bigint::Sign::Minus;
       let (int_outside, int_inside) =
-        extract_square((int_product * sign) as u64);
-      let (den_outside, den_inside) = extract_square(den_product as u64);
+        extract_square_factor_big(&num_traits::Signed::abs(&int_product));
+      let (den_outside, den_inside) = extract_square_factor_big(&den_product);
 
-      if int_outside <= 1 && den_outside <= 1 && outside.is_empty() {
+      if int_outside <= one && den_outside <= one && outside.is_empty() {
         // No simplification possible
         if let Some(result) = try_sqrt_gaussian(&args[0]) {
           return Ok(result);
@@ -1060,15 +1048,15 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       // Build outside factors
-      if int_outside > 1 || den_outside > 1 {
-        outside
-          .insert(0, make_rational(int_outside as i128, den_outside as i128));
+      if int_outside > one || den_outside > one {
+        outside.insert(0, make_rational_expr(&int_outside, &den_outside));
       }
 
       // Build inside factors
-      if int_inside > 1 || den_inside > 1 {
-        inside.insert(0, make_rational(int_inside as i128, den_inside as i128));
+      if int_inside > one || den_inside > one {
+        inside.insert(0, make_rational_expr(&int_inside, &den_inside));
       }
+      let sign = if negative { -1 } else { 1 };
       if sign < 0 {
         inside.insert(0, Expr::Integer(-1));
       }
@@ -1082,10 +1070,12 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if inside.is_empty() {
         Ok(outside_expr)
       } else {
+        // The radicand is an evaluated product, so it has the canonical
+        // shape later passes (the coefficient-into-radical merge) recognise.
         let inside_expr = if inside.len() == 1 {
           inside.remove(0)
         } else {
-          crate::functions::polynomial_ast::build_product(inside)
+          times_ast(&inside)?
         };
         let sqrt_part = make_sqrt(inside_expr);
         times_ast(&[outside_expr, sqrt_part])

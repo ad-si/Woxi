@@ -1362,6 +1362,20 @@ pub fn comparison_head_and_args(
 }
 
 use crate::Rule;
+
+/// The numerator and denominator of `Rational[n, d]`'s arguments, either of
+/// which may be a BigInteger.
+fn rational_int_parts(args: &[Expr]) -> Option<(BigInt, BigInt)> {
+  let part = |e: &Expr| match e {
+    Expr::Integer(n) => Some(BigInt::from(*n)),
+    Expr::BigInteger(n) => Some(n.clone()),
+    _ => None,
+  };
+  match args {
+    [n, d] => Some((part(n)?, part(d)?)),
+    _ => None,
+  }
+}
 use pest::iterators::Pair;
 
 /// Extract the exponent expression from an `ImplicitPowerSuffix` pair.
@@ -7945,16 +7959,12 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
       Expr::FunctionCall { name, args }
         if name == "Rational"
           && args.len() == 2
-          && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+          && negated_negative_integer(&args[0]).is_some() =>
       {
-        let n = if let Expr::Integer(n) = &args[0] {
-          *n
-        } else {
-          return None;
-        };
-        let pos_rat =
-          call("Rational", vec![Expr::Integer(-n), args[1].clone()]);
-        if -n == 1 {
+        let pos = negated_negative_integer(&args[0])?;
+        let is_one = matches!(pos, Expr::Integer(1));
+        let pos_rat = call("Rational", vec![pos, args[1].clone()]);
+        if is_one {
           // Rational[-1, d] * x → x/d
           Some(div2(*right.clone(), args[1].clone()))
         } else {
@@ -7995,15 +8005,10 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
         Expr::FunctionCall { name: rn, args: ra }
           if rn == "Rational"
             && ra.len() == 2
-            && matches!(&ra[0], Expr::Integer(n) if *n < 0) =>
+            && negated_negative_integer(&ra[0]).is_some() =>
         {
-          let n = if let Expr::Integer(n) = &ra[0] {
-            *n
-          } else {
-            return None;
-          };
-          let pos_rat =
-            call("Rational", vec![Expr::Integer(-n), ra[1].clone()]);
+          let pos = negated_negative_integer(&ra[0])?;
+          let pos_rat = call("Rational", vec![pos, ra[1].clone()]);
           let mut new_args = vec![pos_rat];
           new_args.extend_from_slice(&args[1..]);
           Some(if new_args.len() == 1 {
@@ -10905,11 +10910,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           } = &args[0]
           && rname == "Rational"
           && rargs.len() == 2
-          && let Expr::Integer(n) = &rargs[0]
-          && let Expr::Integer(d) = &rargs[1]
-          && *n != 1
-          && *n != -1
-          && *d > 0
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && n.magnitude() != &num_bigint::BigUint::from(1u32)
+          && d.sign() == Sign::Plus
         {
           let inner = fmt(&args[1]);
           let inner_str = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
@@ -11573,27 +11576,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 Expr::BigFloat(digits, prec) if digits.starts_with('-') => {
                   Some(Some(Expr::BigFloat(digits[1..].to_string(), *prec)))
                 }
-                Expr::FunctionCall { name: rn, args: ra }
-                  if rn == "Rational"
-                    && ra.len() == 2
-                    && matches!(&ra[0], Expr::Integer(n) if *n < 0) =>
-                {
-                  if let Expr::Integer(n) = &ra[0] {
-                    if *n == -1 {
-                      // Rational[-1, d] → just Rational[1, d] = 1/d
-                      Some(Some(call(
-                        "Rational",
-                        vec![Expr::Integer(1), ra[1].clone()],
-                      )))
-                    } else {
-                      Some(Some(call(
-                        "Rational",
-                        vec![Expr::Integer(-n), ra[1].clone()],
-                      )))
-                    }
-                  } else {
-                    None
-                  }
+                Expr::FunctionCall { name: rn, .. } if rn == "Rational" => {
+                  negate_negative_rational(&fn_args[0]).map(Some)
                 }
                 _ => None,
               };
@@ -11967,11 +11951,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         } = left.as_ref()
         && rname == "Rational"
         && rargs.len() == 2
-        && let Expr::Integer(num) = &rargs[0]
-        && let Expr::Integer(den) = &rargs[1]
-        && *num != 1
-        && *num != -1
-        && *den > 0
+        && let Some((num, den)) = rational_int_parts(rargs)
+        && num.magnitude() != &num_bigint::BigUint::from(1u32)
+        && den.sign() == Sign::Plus
       {
         // Check if the right side is a Times containing I
         let right_has_i = |e: &Expr| -> bool {
@@ -17142,12 +17124,22 @@ fn negate_negative_rational(e: &Expr) -> Option<Expr> {
   if let Expr::FunctionCall { name, args } = e
     && name == "Rational"
     && args.len() == 2
-    && let Expr::Integer(n) = &args[0]
-    && *n < 0
+    && let Some(pos) = negated_negative_integer(&args[0])
   {
-    return Some(call("Rational", vec![Expr::Integer(-n), args[1].clone()]));
+    return Some(call("Rational", vec![pos, args[1].clone()]));
   }
   None
+}
+
+/// `-n` for a negative Integer or BigInteger `n`.
+fn negated_negative_integer(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+    Expr::BigInteger(n) if n.sign() == Sign::Minus => {
+      Some(Expr::BigInteger(-n))
+    }
+    _ => None,
+  }
 }
 
 fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {

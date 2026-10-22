@@ -8913,6 +8913,23 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // The same product once a part passes i128 (a factor with BigInteger
+  // parts, or an overflowing product of small ones).
+  if args.len() >= 2 {
+    let big_parts: Option<Vec<_>> =
+      args.iter().map(try_extract_complex_exact_big).collect();
+    if let Some(parts) = big_parts
+      && parts
+        .iter()
+        .any(|(_, im)| !num_traits::Zero::is_zero(&im.0))
+    {
+      let product = parts[1..]
+        .iter()
+        .fold(parts[0].clone(), |acc, c| big_complex_mul(&acc, c));
+      return Ok(big_complex_to_expr(&product));
+    }
+  }
+
   // Float complex multiplication: when every factor extracts as a machine
   // complex number, at least one factor is inexact (Real/BigFloat), and at
   // least one factor has a nonzero imaginary part, fold into a single machine
@@ -9089,8 +9106,13 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Check if any argument needs BigInt arithmetic (BigInteger or large Integer exceeding f64 precision)
-  let has_bigint = args.iter().any(needs_bigint_arithmetic);
+  // Check if any argument needs BigInt arithmetic (BigInteger or large Integer
+  // exceeding f64 precision), alone or as a part of a Rational.
+  let has_bigint = args.iter().any(|a| {
+    needs_bigint_arithmetic(a)
+      || matches!(a, Expr::FunctionCall { name, args: ra }
+        if name == "Rational" && ra.iter().any(needs_bigint_arithmetic))
+  });
 
   if has_bigint {
     use num_traits::ToPrimitive;
@@ -9258,6 +9280,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(product);
     }
     sort_symbolic_factors(&mut symbolic_args);
+    if let Some(merged) =
+      merge_coefficient_into_radical(&coeff_expr, &symbolic_args)?
+    {
+      return Ok(merged);
+    }
     let mut final_args: Vec<Expr> = Vec::new();
     if !(coeff_is_int && big_numer == BigInt::from(1)) {
       final_args.push(coeff_expr);
@@ -9759,18 +9786,52 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build final args: coefficient (if not 1) + sorted symbolic terms
   sort_symbolic_factors(&mut symbolic_args);
 
-  // Final-pass canonicalization: a rational coefficient times a square root
-  // of a positive rational merges into one canonical radical, wolframscript
-  // style — square the coefficient into the radicand, reduce the fraction,
-  // then pull the largest square factor back out of the numerator and the
-  // denominator separately:
-  //   30*Sqrt[23/15] → 2*Sqrt[345]      2/Sqrt[30]        → Sqrt[2/15]
-  //   6*Sqrt[5/3]    → 2*Sqrt[15]       (1/3)*Sqrt[15/11] → Sqrt[5/33]
-  //   (2/5)/Sqrt[14] → Sqrt[2/7]/5     (13/35)*Sqrt[35/6] → 13/Sqrt[210]
-  // Already-canonical shapes are fixed points (2*Sqrt[3], 2/Sqrt[3],
-  // Sqrt[5/3]/2, (1/3)*Sqrt[5/11] all reproduce themselves) and are left
-  // untouched to avoid rewrite recursion. Other factors ride along
-  // unchanged: `Sqrt[6] x/4` → `(Sqrt[3/2] x)/2`.
+  if let Some(merged) = merge_coefficient_into_radical(&coeff, &symbolic_args)?
+  {
+    return Ok(merged);
+  }
+
+  // Drop multiplicative-identity factors left behind by radical cancellation,
+  // e.g. Sqrt[1/3]*Sqrt[3] collapses to Sqrt[1] = 1 in combine_like_bases. Left
+  // in place it survives into the product as a stray factor, so
+  // `(-1/2)*Sqrt[1/3]*Sqrt[3]` printed `-1/2*1` instead of `-1/2`.
+  symbolic_args.retain(|f| !matches!(f, Expr::Integer(1)));
+
+  let mut final_args: Vec<Expr> = Vec::new();
+  let is_unit = matches!(&coeff, Expr::Integer(1));
+  if !is_unit {
+    final_args.push(coeff);
+  }
+  final_args.extend(symbolic_args);
+
+  if final_args.is_empty() {
+    return Ok(Expr::Integer(1));
+  }
+
+  if final_args.len() == 1 {
+    Ok(final_args.remove(0))
+  } else {
+    Ok(times(final_args))
+  }
+}
+
+/// Final-pass canonicalization: a rational coefficient times a square root
+/// of a positive rational merges into one canonical radical, wolframscript
+/// style — square the coefficient into the radicand, reduce the fraction,
+/// then pull the largest square factor back out of the numerator and the
+/// denominator separately:
+///   30*Sqrt[23/15] → 2*Sqrt[345]      2/Sqrt[30]        → Sqrt[2/15]
+///   6*Sqrt[5/3]    → 2*Sqrt[15]       (1/3)*Sqrt[15/11] → Sqrt[5/33]
+///   (2/5)/Sqrt[14] → Sqrt[2/7]/5     (13/35)*Sqrt[35/6] → 13/Sqrt[210]
+/// Already-canonical shapes are fixed points (2*Sqrt[3], 2/Sqrt[3],
+/// Sqrt[5/3]/2, (1/3)*Sqrt[5/11] all reproduce themselves) and are left
+/// untouched to avoid rewrite recursion. Other factors ride along
+/// unchanged: `Sqrt[6] x/4` → `(Sqrt[3/2] x)/2`.
+/// Returns the rewritten product, or None when nothing changes.
+fn merge_coefficient_into_radical(
+  coeff: &Expr,
+  symbolic_args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
   let radical_positions: Vec<usize> = symbolic_args
     .iter()
     .enumerate()
@@ -9785,20 +9846,10 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .map(|(i, _)| i)
     .collect();
+  // In big integers: squaring a coefficient past ~10^19 leaves i128.
   if let [radical_idx] = radical_positions[..]
-    && let Some((cn, cd)) = (match &coeff {
-      Expr::Integer(n) => Some((*n, 1i128)),
-      Expr::FunctionCall { name, args }
-        if name == "Rational" && args.len() == 2 =>
-      {
-        match (&args[0], &args[1]) {
-          (Expr::Integer(n), Expr::Integer(d)) if *d > 0 => Some((*n, *d)),
-          _ => None,
-        }
-      }
-      _ => None,
-    })
-    && cn != 0
+    && let Some((cn, cd)) = expr_to_big_rational(coeff)
+    && !num_traits::Zero::is_zero(&cn)
   {
     let others: Vec<Expr> = symbolic_args
       .iter()
@@ -9833,31 +9884,32 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Radicand of the whole product squared: cn^2*bn / (cd^2*bd), with
       // the base fraction inverted for a -1/2 exponent.
       let (rn, rd) = if half > 0 { (bn, bd) } else { (bd, bn) };
-      let merged = cn
-        .checked_mul(cn)
-        .and_then(|c2| c2.checked_mul(rn))
-        .zip(cd.checked_mul(cd).and_then(|d2| d2.checked_mul(rd)));
-      if let Some((mut num, mut den)) = merged {
-        (num, den) = rat_reduce(num, den);
-        let (s, p1) = extract_square_factor_i128(num.abs());
-        let (t, q1) = extract_square_factor_i128(den);
-        let sign = if cn < 0 { -1 } else { 1 };
-        let new_coeff = make_rational(sign * s, t);
-        if p1 == 1 && q1 == 1 && rest.is_empty() {
+      let one = BigInt::from(1);
+      {
+        let (num, den) = rat_reduce_bigint(
+          &(&cn * &cn * BigInt::from(rn)),
+          &(&cd * &cd * BigInt::from(rd)),
+        );
+        let (s, p1) = extract_square_factor_big(&num_traits::Signed::abs(&num));
+        let (t, q1) = extract_square_factor_big(&den);
+        let s = if cn.sign() == num_bigint::Sign::Minus {
+          -s
+        } else {
+          s
+        };
+        let new_coeff = make_rational_expr(&s, &t);
+        if p1 == one && q1 == one && rest.is_empty() {
           // The radical vanished entirely — c*Sqrt[r] is exactly rational.
-          return with_others(vec![new_coeff]);
+          return with_others(vec![new_coeff]).map(Some);
         }
         // A radicand that would come out a pure reciprocal keeps the
         // reciprocal-radical spelling instead: wolframscript writes
         // `3/Sqrt[2 Pi]`, not `3 Sqrt[1/(2 Pi)]`, and only flips once the
         // numerator carries something (`6/Sqrt[2 Pi]` → `3 Sqrt[2/Pi]`).
-        let pure_reciprocal = !rest.is_empty() && half < 0 && p1 == 1 && q1 > 1;
+        let pure_reciprocal =
+          !rest.is_empty() && half < 0 && p1 == one && q1 > one;
         if !pure_reciprocal {
-          let radicand: Expr = if q1 == 1 {
-            Expr::Integer(p1)
-          } else {
-            make_rational(p1, q1)
-          };
+          let radicand = make_rational_expr(&p1, &q1);
           let rebuilt: Expr = if rest.is_empty() {
             sqrt_ast(&[radicand])?
           } else {
@@ -9881,43 +9933,21 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
           // Only rewrite when something actually changed; canonical inputs
           // are fixed points and must return through the generic path.
-          let coeff_str = expr_to_string(&coeff);
+          let coeff_str = expr_to_string(coeff);
           let new_coeff_str = expr_to_string(&new_coeff);
           let factor_str = expr_to_string(&symbolic_args[radical_idx]);
           let rebuilt_str = expr_to_string(&rebuilt);
           if coeff_str != new_coeff_str || factor_str != rebuilt_str {
             if matches!(&new_coeff, Expr::Integer(1)) {
-              return with_others(vec![rebuilt]);
+              return with_others(vec![rebuilt]).map(Some);
             }
-            return with_others(vec![new_coeff, rebuilt]);
+            return with_others(vec![new_coeff, rebuilt]).map(Some);
           }
         }
       }
     }
   }
-
-  // Drop multiplicative-identity factors left behind by radical cancellation,
-  // e.g. Sqrt[1/3]*Sqrt[3] collapses to Sqrt[1] = 1 in combine_like_bases. Left
-  // in place it survives into the product as a stray factor, so
-  // `(-1/2)*Sqrt[1/3]*Sqrt[3]` printed `-1/2*1` instead of `-1/2`.
-  symbolic_args.retain(|f| !matches!(f, Expr::Integer(1)));
-
-  let mut final_args: Vec<Expr> = Vec::new();
-  let is_unit = matches!(&coeff, Expr::Integer(1));
-  if !is_unit {
-    final_args.push(coeff);
-  }
-  final_args.extend(symbolic_args);
-
-  if final_args.is_empty() {
-    return Ok(Expr::Integer(1));
-  }
-
-  if final_args.len() == 1 {
-    Ok(final_args.remove(0))
-  } else {
-    Ok(times(final_args))
-  }
+  Ok(None)
 }
 
 /// Minus[a] - Unary negation only
@@ -10704,6 +10734,19 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
         }
       }
     }
+  }
+
+  // The same quotient once a part passes i128 (BigInteger parts, or an
+  // overflowing intermediate product — repeated Newton steps on an exact
+  // complex grid point get there in a few iterations).
+  if let (Some(x), Some(y)) = (
+    try_extract_complex_exact_big(a),
+    try_extract_complex_exact_big(b),
+  ) && (!num_traits::Zero::is_zero(&x.1.0)
+    || !num_traits::Zero::is_zero(&y.1.0))
+    && let Some(q) = big_complex_div(&x, &y)
+  {
+    return Ok(big_complex_to_expr(&q));
   }
 
   // Exact rational division: Rational/Rational, Rational/Integer, Integer/Rational
@@ -12200,102 +12243,29 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // `1/(1 + I)` evaluated long before `(1 + I)^(-1)` did.
   if let Expr::Integer(n) = exp
     && (*n >= 2 || *n <= -1)
-    && let Some(((re_n, re_d), (im_n, im_d))) = try_extract_complex_exact(base)
-    && im_n != 0
+    && let Some(base_c) = try_extract_complex_exact_big(base)
+    && !num_traits::Zero::is_zero(&base_c.1.0)
   {
-    use num_traits::{ToPrimitive, Zero};
-
-    // Normalize denominators to be positive
-    let (re_n, re_d) = if re_d < 0 {
-      (-re_n, -re_d)
-    } else {
-      (re_n, re_d)
-    };
-    let (im_n, im_d) = if im_d < 0 {
-      (-im_n, -im_d)
-    } else {
-      (im_n, im_d)
-    };
-
-    // Common denominator: k = lcm(re_d, im_d)
-    let g = gcd_i128(re_d, im_d);
-    let k_val = re_d / g * im_d;
-    let a = re_n * (k_val / re_d);
-    let b_val = im_n * (k_val / im_d);
-
-    // Compute (a + b*I)^n using BigInt exponentiation by squaring
-    let a_big = BigInt::from(a);
-    let b_big = BigInt::from(b_val);
-    let mut result_re = BigInt::from(1);
-    let mut result_im = BigInt::from(0);
-    let mut sq_re = a_big.clone();
-    let mut sq_im = b_big.clone();
-    let magnitude = n.unsigned_abs();
-    let mut remaining = magnitude;
+    // Exponentiation by squaring in exact big rationals.
+    let one = (BigInt::from(1), BigInt::from(1));
+    let mut result = (one, (BigInt::from(0), BigInt::from(1)));
+    let mut square = base_c;
+    let mut remaining = n.unsigned_abs();
     while remaining > 0 {
       if remaining & 1 == 1 {
-        let new_re = &result_re * &sq_re - &result_im * &sq_im;
-        let new_im = &result_re * &sq_im + &result_im * &sq_re;
-        result_re = new_re;
-        result_im = new_im;
+        result = big_complex_mul(&result, &square);
       }
       remaining >>= 1;
       if remaining > 0 {
-        let new_re = &sq_re * &sq_re - &sq_im * &sq_im;
-        let new_im = BigInt::from(2) * &sq_re * &sq_im;
-        sq_re = new_re;
-        sq_im = new_im;
+        square = big_complex_mul(&square, &square);
       }
     }
-
-    // Result = result_re / k^|n| + (result_im / k^|n|) * I
-    let k_big = BigInt::from(k_val);
-    let k_n = num_traits::pow::pow(k_big, magnitude as usize);
-
-    // Reduce fractions
-    let (final_re_n, final_re_d) = rat_reduce_bigint(&result_re, &k_n);
-    let (final_im_n, final_im_d) = rat_reduce_bigint(&result_im, &k_n);
-
-    // Try to convert back to i128
-    let raised = if let (Some(rn), Some(rd), Some(imn), Some(imd)) = (
-      final_re_n.to_i128(),
-      final_re_d.to_i128(),
-      final_im_n.to_i128(),
-      final_im_d.to_i128(),
-    ) {
-      Some(complex_rational_to_expr(rn, rd, imn, imd))
-    } else if final_re_d == BigInt::from(1) && final_im_d == BigInt::from(1) {
-      // BigInt result: build expression for integer denominators
-      let re_expr = bigint_to_expr(final_re_n);
-      let i_expr = id_expr("I");
-      if result_im.is_zero() {
-        Some(re_expr)
-      } else {
-        let im_expr = bigint_to_expr(final_im_n);
-        let imag_term = if matches!(&im_expr, Expr::Integer(1)) {
-          i_expr.clone()
-        } else if matches!(&im_expr, Expr::Integer(-1)) {
-          negate_expr(i_expr.clone())
-        } else {
-          times2(im_expr, i_expr)
-        };
-        if result_re.is_zero() {
-          Some(imag_term)
-        } else {
-          Some(plus2(re_expr, imag_term))
-        }
-      }
+    let raised = big_complex_to_expr(&result);
+    return if *n < 0 {
+      divide_two(&Expr::Integer(1), &raised)
     } else {
-      None
+      Ok(raised)
     };
-
-    if let Some(raised) = raised {
-      return if *n < 0 {
-        divide_two(&Expr::Integer(1), &raised)
-      } else {
-        Ok(raised)
-      };
-    }
   }
 
   // E^(k*I*Pi) → Cos[k*Pi] + I*Sin[k*Pi] for integer and half-integer multiples of Pi.

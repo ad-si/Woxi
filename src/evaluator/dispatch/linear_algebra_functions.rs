@@ -1571,6 +1571,19 @@ pub fn dispatch_linear_algebra_functions(
         vec![args[0].clone(), transform],
       )));
     }
+    // A numeric matrix with any approximate entry is numericized as a whole:
+    // TransformationFunction[{{1., 0}, {0, 1}}] → {{1., 0.}, {0., 1.}}.
+    "TransformationFunction"
+      if args.len() == 1
+        && crate::functions::math_ast::contains_inexact_real(&args[0])
+        && is_numeric_matrix(&args[0])
+        && !is_machine_matrix(&args[0]) =>
+    {
+      return Some(
+        crate::evaluator::evaluate_function_call_ast("N", args)
+          .map(|m| call1("TransformationFunction", m)),
+      );
+    }
     // RotationTransform[angle] → TransformationFunction[2D rotation matrix in homogeneous coords]
     // RotationTransform[angle, {cx, cy}] → rotation about point {cx, cy}
     // RotationTransform[angle, {x, y, z}, {px, py, pz}] → 3D rotation about
@@ -4840,4 +4853,21 @@ fn control_structure_matrix(
     }
     Ok(Expr::List(out_rows.into()))
   }
+}
+
+/// A matrix of machine reals only (already numericized).
+fn is_machine_matrix(m: &Expr) -> bool {
+  let Expr::List(rows) = m else { return false };
+  rows.iter().all(|r| {
+    matches!(r, Expr::List(cells) if cells.iter().all(|c| matches!(c, Expr::Real(_))))
+  })
+}
+
+/// A matrix whose every entry is a numeric quantity (`NumericQ`).
+fn is_numeric_matrix(m: &Expr) -> bool {
+  let Expr::List(rows) = m else { return false };
+  rows.iter().all(|r| {
+    matches!(r, Expr::List(cells)
+      if cells.iter().all(crate::functions::predicate_ast::is_numeric_q))
+  })
 }

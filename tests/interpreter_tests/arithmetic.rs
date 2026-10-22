@@ -3719,6 +3719,54 @@ mod sqrt_negative {
     assert_eq!(interpret("Sqrt[-12]").unwrap(), "(2*I)*Sqrt[3]");
   }
 
+  // The square factor of a product's rational part past i128 used to be
+  // computed on a truncated u64.
+  #[test]
+  fn sqrt_of_product_with_big_rational() {
+    assert_eq!(
+      interpret("Sqrt[Pi/2615113087333005558800036120]").unwrap(),
+      "Sqrt[Pi/653778271833251389700009030]/2"
+    );
+    assert_eq!(
+      interpret("Sqrt[41/2615113087333005558800036120/Pi]").unwrap(),
+      "Sqrt[41/(653778271833251389700009030*Pi)]/2"
+    );
+    assert_eq!(
+      interpret("Sqrt[10^41 x]").unwrap(),
+      "100000000000000000000*Sqrt[10]*Sqrt[x]"
+    );
+  }
+
+  // A big coefficient folds into a radical like a small one does.
+  #[test]
+  fn big_coefficient_merges_into_radical() {
+    assert_eq!(
+      interpret(
+        "Times[8200794532637891559375/2, 1/2432902008176640000, Sqrt[41/(176726319 Pi)], x]"
+      )
+      .unwrap(),
+      "(5*Sqrt[7245779079/Pi]*x)/524288"
+    );
+    assert_eq!(
+      interpret("10^30 Sqrt[2/3]").unwrap(),
+      "1000000000000000000000000000000*Sqrt[2/3]"
+    );
+  }
+
+  #[test]
+  fn sqrt_negative_rational_and_big_integer() {
+    assert_eq!(interpret("Sqrt[-4/9]").unwrap(), "(2*I)/3");
+    assert_eq!(interpret("Sqrt[-2/3]").unwrap(), "I*Sqrt[2/3]");
+    assert_eq!(
+      interpret("Sqrt[-10^40]").unwrap(),
+      "100000000000000000000*I"
+    );
+    assert_eq!(
+      interpret("Sqrt[-10^41/3]").unwrap(),
+      "(100000000000000000000*I)*Sqrt[10/3]"
+    );
+  }
+
   #[test]
   fn sqrt_equals_i() {
     assert_eq!(interpret("I == Sqrt[-1]").unwrap(), "True");
@@ -6621,6 +6669,27 @@ mod complex_division {
     assert_eq!(interpret("1/I").unwrap(), "-I");
   }
 
+  // An intermediate product past i128 used to recurse until the stack
+  // overflowed (Newton steps on an exact complex starting point).
+  #[test]
+  fn quotient_with_products_past_i128() {
+    assert_eq!(
+      interpret("1/(-11410801/25431849 - (195863200*I)/228886641)").unwrap(),
+      "-8318473929/17308296721 + (15864919200*I)/17308296721"
+    );
+  }
+
+  #[test]
+  fn quotient_with_big_integer_parts() {
+    assert_eq!(
+      interpret(
+        "(123456789012345678901/7 + 3 I)/(98765432109876543210/11 - 5 I)"
+      )
+      .unwrap(),
+      "26825178850144794949441487575089525984321/13656454811790885535948483462890595949975 + (19501234433970123443323*I)/13656454811790885535948483462890595949975"
+    );
+  }
+
   #[test]
   fn plus_sort_total_order_with_opaque_fn() {
     // Regression test for #107: sorting Plus terms with a mix of
@@ -7284,15 +7353,17 @@ mod cases {
   #[test]
   fn get_environment_1() {
     assert_case(
-      r#"SetEnvironment["FOO" -> "bar"]; GetEnvironment["FOO"]"#,
-      r#""FOO" -> "bar""#,
+      // Each test uses its own variable: the environment is process-wide and
+      // tests run in parallel.
+      r#"SetEnvironment["WOXI_GET_ENV_1" -> "bar"]; GetEnvironment["WOXI_GET_ENV_1"]"#,
+      r#""WOXI_GET_ENV_1" -> "bar""#,
     );
   }
   #[test]
   fn get_environment_2() {
     assert_case(
-      r#"SetEnvironment["FOO" -> "bar"]; GetEnvironment["FOO"]; SetEnvironment[{"FOO" -> "baz", "A" -> "B"}]; GetEnvironment["FOO"]"#,
-      r#""FOO" -> "baz""#,
+      r#"SetEnvironment["WOXI_GET_ENV_2" -> "bar"]; GetEnvironment["WOXI_GET_ENV_2"]; SetEnvironment[{"WOXI_GET_ENV_2" -> "baz", "A" -> "B"}]; GetEnvironment["WOXI_GET_ENV_2"]"#,
+      r#""WOXI_GET_ENV_2" -> "baz""#,
     );
   }
   #[test]
@@ -13000,5 +13071,65 @@ mod sum_collects_terms_in_one_plus {
       "{a[1], b[1]}"
     );
     assert_eq!(interpret("Sum[{i, 2 i}, {i, 3, 3}]").unwrap(), "{3, 6}");
+  }
+}
+
+mod big_exact_complex {
+  use super::*;
+
+  #[test]
+  fn product_and_power() {
+    assert_eq!(
+      interpret("(1 + 10^40 I)(1 - 10^40 I)").unwrap(),
+      "100000000000000000000000000000000000000000000000000000000000000000000000000000001"
+    );
+    assert_eq!(
+      interpret("(1 + 10^40 I)^2").unwrap(),
+      "-99999999999999999999999999999999999999999999999999999999999999999999999999999999 + 20000000000000000000000000000000000000000*I"
+    );
+    assert_eq!(
+      interpret("(1 + 10^40 I)^-1").unwrap(),
+      "1/100000000000000000000000000000000000000000000000000000000000000000000000000000001 - (10000000000000000000000000000000000000000*I)/100000000000000000000000000000000000000000000000000000000000000000000000000000001"
+    );
+    assert_eq!(interpret("(2/3 + I/2)^3").unwrap(), "-11/54 + (13*I)/24");
+  }
+
+  #[test]
+  fn display_and_structure() {
+    assert_eq!(
+      interpret("(10^40/7) I").unwrap(),
+      "(10000000000000000000000000000000000000000*I)/7"
+    );
+    assert_eq!(
+      interpret("2 - (10^40/3) I").unwrap(),
+      "2 - (10000000000000000000000000000000000000000*I)/3"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[(10^40/7) I]]").unwrap(),
+      "Complex[0, Rational[10000000000000000000000000000000000000000, 7]]"
+    );
+    assert_eq!(interpret("Head[2 + (10^40/7) I]").unwrap(), "Complex");
+    assert_eq!(interpret("ExactNumberQ[10^40 I + 1]").unwrap(), "True");
+  }
+
+  #[test]
+  fn abs() {
+    assert_eq!(
+      interpret("Abs[3 + 10^40 I]").unwrap(),
+      "Sqrt[100000000000000000000000000000000000000000000000000000000000000000000000000000009]"
+    );
+    assert_eq!(
+      interpret("Abs[(3*10^40 + 4*10^40 I)/7]").unwrap(),
+      "50000000000000000000000000000000000000000/7"
+    );
+  }
+
+  #[test]
+  fn big_rational_coefficients_fold_and_display() {
+    assert_eq!(
+      interpret("y - (10^40/3) x").unwrap(),
+      "(-10000000000000000000000000000000000000000*x)/3 + y"
+    );
+    assert_eq!(interpret("(10^40/3) (3/10^40) x").unwrap(), "x");
   }
 }

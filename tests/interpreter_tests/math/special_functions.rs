@@ -5214,6 +5214,19 @@ mod inverse_fourier {
 mod spherical_harmonic_y {
   use super::*;
 
+  // (l - m + 1)…(l + m) passes i128 here; the product used to overflow.
+  #[test]
+  fn high_order_normalization_in_big_integers() {
+    assert_eq!(
+      interpret("SphericalHarmonicY[20, 18, t, p]").unwrap(),
+      "(5*E^((18*I)*p)*Sqrt[7245779079/Pi]*(-1 + 39*Cos[t]^2)*Sin[t]^18)/524288"
+    );
+    assert_eq!(
+      interpret("SphericalHarmonicY[20, -18, t, p]").unwrap(),
+      "(5*Sqrt[7245779079/Pi]*(-1 + 39*Cos[t]^2)*Sin[t]^18)/(524288*E^((18*I)*p))"
+    );
+  }
+
   #[test]
   fn y00() {
     // Y_0^0 = 1/sqrt(4*Pi)

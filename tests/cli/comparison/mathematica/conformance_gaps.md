@@ -624,6 +624,26 @@ in WL, which keeps integer coefficients.
 
 ## Numeric precision and floating point
 
+### `Rationalize[x, 0]` and `ContinuedFraction[x]` of a machine real stop one convergent off
+
+```sh
+wolframscript -code 'Rationalize[0.64894397210534, 0]'   # 204604909/315289020
+woxi eval 'Rationalize[0.64894397210534, 0]'             # 25217905/38859911
+wolframscript -code 'ContinuedFraction[Sqrt[2.]]'        # {1, 2, … (20 twos)}
+woxi eval 'ContinuedFraction[Sqrt[2.]]'                  # {1, 2, … (19 twos)}
+```
+
+**Not reproducible** from the output alone. WL's results are always
+continued-fraction convergents of the double's exact binary value, but
+neither function stops by a fixed error bound. No symmetric interval
+(relative or in ulps) and no float-equality test fits all the samples.
+Woxi accepts the first convergent within `0.65 $MachineEpsilon |x|`.
+That matched 41 of 42 random reals sampled across magnitudes.
+`ContinuedFraction` usually equals the `Rationalize` list with its last term
+dropped, which Woxi always returns. On the same sample it matched 35 of 42. In the misses WL's list is one term
+longer or shorter (`Sqrt[2.]`), or is the full `Rationalize` list
+(`469.4554167169332`).
+
 ### Inexact zero loses WL's accuracy tracking
 
 ```sh

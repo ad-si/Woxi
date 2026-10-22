@@ -907,6 +907,9 @@ fn has_nonzero_imag_part(expr: &Expr) -> bool {
   {
     return true;
   }
+  if super::math_ast::try_extract_complex_exact_beyond_i128(expr).is_some() {
+    return true;
+  }
   if let Some((_, im)) = try_extract_complex_float(expr)
     && im != 0.0
     && expr_has_real_or_i(expr)
@@ -2203,6 +2206,9 @@ pub fn is_complex_number(expr: &Expr) -> bool {
     super::math_ast::try_extract_complex_exact(expr)
     && im_num != 0
   {
+    return true;
+  }
+  if super::math_ast::try_extract_complex_exact_beyond_i128(expr).is_some() {
     return true;
   }
   // Float complex extraction: only treat as Complex when the expression
