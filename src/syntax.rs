@@ -2750,6 +2750,8 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       Expr::Constant(pair.as_str().trim().to_string())
     }
     Rule::BaseFunctionCall => {
+      let src_start = pair.as_span().start();
+      let src_text = pair.as_str().to_string();
       let inner_pairs: Vec<_> = pair.into_inner().collect();
       let name_pair = &inner_pairs[0];
       let name = resolve_head_name(name_pair);
@@ -2778,10 +2780,37 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           args,
         }
       } else {
-        Expr::FunctionCall {
-          name,
-          args: args.into(),
+        // `f[a][b]` is the curried call `(f[a])[b]`, not `f[a, b]`: the
+        // children carry no bracket tokens, so a `]` in the gap between two
+        // consecutive arguments marks where one bracket group ends.
+        let arg_pairs: Vec<_> = inner_pairs
+          .iter()
+          .skip(1)
+          .filter(|p| p.as_str() != ",")
+          .collect();
+        let mut groups: Vec<Vec<Expr>> = vec![Vec::new()];
+        for (idx, p) in arg_pairs.iter().enumerate() {
+          if idx > 0 {
+            let gap = &src_text[arg_pairs[idx - 1].as_span().end() - src_start
+              ..p.as_span().start() - src_start];
+            if gap.contains(']') {
+              groups.push(Vec::new());
+            }
+          }
+          groups.last_mut().unwrap().push(pair_to_expr((*p).clone()));
         }
+        let mut groups = groups.into_iter();
+        let mut result = Expr::FunctionCall {
+          name,
+          args: groups.next().unwrap_or_default().into(),
+        };
+        for group in groups {
+          result = Expr::CurriedCall {
+            func: Box::new(result),
+            args: group,
+          };
+        }
+        result
       }
     }
     Rule::LeadingMinus => {

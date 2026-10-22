@@ -2500,6 +2500,30 @@ mod append_to_association {
   use super::*;
 
   #[test]
+  fn append_and_prepend_accept_rule_lists_and_associations() {
+    clear_state();
+    assert_eq!(
+      interpret("Append[<|a -> 1|>, {b -> 2, c -> 3}]").unwrap(),
+      "<|a -> 1, b -> 2, c -> 3|>"
+    );
+    assert_eq!(
+      interpret("Append[<|a -> 1, b -> 0|>, <|b -> 2|>]").unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+    assert_eq!(
+      interpret("Prepend[<|a -> 1|>, {b -> 2, c -> 3}]").unwrap(),
+      "<|b -> 2, c -> 3, a -> 1|>"
+    );
+    assert_eq!(
+      interpret(
+        "MapThread[Append, {{<||>, <|x -> 1|>}, {{a -> 1}, {c -> 3}}}]"
+      )
+      .unwrap(),
+      "{<|a -> 1|>, <|x -> 1, c -> 3|>}"
+    );
+  }
+
+  #[test]
   fn append_to_adds_an_entry() {
     clear_state();
     assert_eq!(

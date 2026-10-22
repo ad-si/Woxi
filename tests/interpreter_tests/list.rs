@@ -15384,6 +15384,39 @@ mod through {
   use super::*;
 
   #[test]
+  fn through_evaluates_the_threaded_head() {
+    // The threaded `And[f[x], g[x]]` must evaluate rather than stay inert.
+    assert_eq!(interpret("Through[And[EvenQ, OddQ][2]]").unwrap(), "False");
+    assert_eq!(interpret("Through[Plus[Sin, Cos][0]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn through_keeps_held_heads_lazy() {
+    // `And` is HoldAll, so the second function must not run once the first
+    // has returned False (Part[m, 0, 1] would otherwise raise Part::partd).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "m = {{1, 1}, {1, 1}}; \
+         ok = And[First /* Curry[Between][{1, 2}], \
+           Apply[Curry[Part, {1, 2, 3}][m]] /* EqualTo[1]] /* Through; \
+         {ok[{0, 1}], ok[{1, 1}]}"
+      )
+      .unwrap(),
+      "{False, True}"
+    );
+  }
+
+  #[test]
+  fn through_rule_head() {
+    assert_eq!(
+      interpret("Through[(Identity -> Sin)[0]]").unwrap(),
+      "0 -> 0"
+    );
+    assert_eq!(interpret("Through[(a :> b)[x]]").unwrap(), "a[x] :> b[x]");
+  }
+
+  #[test]
   fn through_list_of_functions() {
     assert_eq!(
       interpret("Through[{Sin, Cos, Tan}[Pi/4]]").unwrap(),

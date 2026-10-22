@@ -163,6 +163,38 @@ mod user_defined_functions {
 mod conditional_definitions {
   use super::*;
 
+  #[test]
+  fn guarded_rule_stays_ahead_of_later_unguarded_list_rule() {
+    // The guarded rule is defined first; the later, fixed-arity rule must
+    // not be sorted ahead of it just because its blanks score tighter.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s[tn_, {cn_, ___}, c_, ___] /; (cn == tn) := R; \
+         s[tn_, {cn_, r___}, c_, d_] := T; \
+         {s[1, {1, 2}, 3, 4], s[1, {2, 2}, 3, 4]}"
+      )
+      .unwrap(),
+      "{R, T}"
+    );
+  }
+
+  #[test]
+  fn anonymous_null_sequence_after_literal_argument() {
+    clear_state();
+    assert_eq!(
+      interpret("f[7, ___] := 1; {f[7], f[7, 3], f[7, 3, 4], f[8, 3]}")
+        .unwrap(),
+      "{1, 1, 1, f[8, 3]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("g[a_, h[b_], ___] := a; {g[1, h[2]], g[1, h[2], 3, 4]}")
+        .unwrap(),
+      "{1, 1}"
+    );
+  }
+
   /// Regression: a condition on a *named* sequence-list pattern
   /// (`g:{__h} /; Length[g] == 2`) was tested while `g` was still unbound,
   /// so `Length[g] == 2` read as a definite False and nothing matched.

@@ -1861,6 +1861,22 @@ fn resolve_through_head(head: &Expr) -> Option<(String, Vec<Expr>)> {
   match head {
     Expr::FunctionCall { name, args } => Some((name.clone(), args.to_vec())),
     Expr::List(items) => Some(("List".to_string(), items.to_vec())),
+    // `Rule`/`RuleDelayed` have dedicated AST nodes rather than being
+    // `FunctionCall`s, but are ordinary two-argument heads for `Through`.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Some((
+      "Rule".to_string(),
+      vec![pattern.as_ref().clone(), replacement.as_ref().clone()],
+    )),
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Some((
+      "RuleDelayed".to_string(),
+      vec![pattern.as_ref().clone(), replacement.as_ref().clone()],
+    )),
     _ => None,
   }
 }
@@ -1891,7 +1907,10 @@ pub fn through_ast(
       Expr::CurriedCall { func, args } => {
         let evaluated_func;
         let func_ref: &Expr = match func.as_ref() {
-          Expr::List(_) | Expr::FunctionCall { .. } => func.as_ref(),
+          Expr::List(_)
+          | Expr::FunctionCall { .. }
+          | Expr::Rule { .. }
+          | Expr::RuleDelayed { .. } => func.as_ref(),
           _ => {
             evaluated_func = crate::evaluator::evaluate_expr_to_expr(func)?;
             &evaluated_func
@@ -1932,27 +1951,32 @@ pub fn through_ast(
     return Ok(expr.clone());
   }
 
-  // Thread: apply each function to the outer args. Uses the general
-  // curried-call applier so compound function values (e.g.
-  // `TransformationFunction[matrix]`) are actually invoked rather than
-  // stringified into a bogus function name.
+  // Thread: build `f[args...]` for each function *unevaluated* and let the
+  // final evaluation of the wrapped head apply them. This keeps held heads
+  // lazy (`Through[And[f, g][x]]` must not evaluate `g[x]` once `f[x]` is
+  // `False`) and lets compound function values (e.g.
+  // `TransformationFunction[matrix]`) be invoked by the evaluator rather
+  // than stringified into a bogus function name.
   let threaded: Vec<Expr> = functions
     .iter()
-    .map(|f| {
-      crate::evaluator::apply_curried_call(f, outer_args).unwrap_or_else(|_| {
-        Expr::CurriedCall {
-          func: Box::new(f.clone()),
-          args: outer_args.to_vec(),
-        }
-      })
+    .map(|f| match f {
+      Expr::Identifier(name) => Expr::FunctionCall {
+        name: name.clone(),
+        args: outer_args.to_vec().into(),
+      },
+      _ => Expr::CurriedCall {
+        func: Box::new(f.clone()),
+        args: outer_args.to_vec(),
+      },
     })
     .collect();
 
-  // Wrap in the head
+  // Wrap in the head and evaluate, so `Through[And[f, g][x]]` collapses
+  // `And[True, False]` instead of leaving the threaded call inert.
   if head_name == "List" {
-    Ok(Expr::List(threaded.into()))
+    crate::evaluator::evaluate_expr_to_expr(&Expr::List(threaded.into()))
   } else {
-    Ok(call(&head_name, threaded))
+    crate::evaluator::evaluate_expr_to_expr(&call(&head_name, threaded))
   }
 }
 
