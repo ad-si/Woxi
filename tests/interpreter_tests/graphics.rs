@@ -20437,6 +20437,55 @@ mod tree_form_graphics {
 mod graphics_row {
   use super::*;
 
+  /// The `<svg width height>` of the outermost element.
+  fn outer_size(code: &str) -> (u32, u32) {
+    let svg = interpret_with_stdout(code)
+      .unwrap()
+      .graphics
+      .expect("layout should render");
+    let root = svg.lines().next().unwrap();
+    let attr = |name: &str| -> u32 {
+      let tail = root.split(&format!(" {name}=\"")).nth(1).unwrap();
+      tail.split('"').next().unwrap().parse().unwrap()
+    };
+    (attr("width"), attr("height"))
+  }
+
+  /// `ImageSize -> {w, h}` with `AspectRatio -> Full` makes the layout fill
+  /// the whole rectangle, whether its cells are inline plots or finished
+  /// ones held in variables.
+  #[test]
+  fn aspect_ratio_full_fills_image_size() {
+    clear_state();
+    for code in [
+      "GraphicsRow[{Plot[x, {x, 0, 1}], Plot[x, {x, 0, 1}]}, \
+         ImageSize -> {600, 400}, AspectRatio -> Full]",
+      "p = Plot[x, {x, 0, 1}, AspectRatio -> Full]; \
+         GraphicsRow[{p, p}, Spacings -> 0, ImageSize -> {600, 400}, \
+         AspectRatio -> Full]",
+    ] {
+      assert_eq!(outer_size(code), (600, 400), "{code}");
+    }
+    assert_eq!(
+      outer_size(
+        "GraphicsColumn[{Plot[x, {x, 0, 1}], Plot[x, {x, 0, 1}]}, \
+         ImageSize -> {300, 500}, AspectRatio -> Full]"
+      ),
+      (300, 500)
+    );
+  }
+
+  /// An explicit width is the width of the whole row, gaps included.
+  #[test]
+  fn explicit_width_includes_zero_spacing() {
+    clear_state();
+    let (w, _) = outer_size(
+      "GraphicsRow[{Plot[x, {x, 0, 1}], Plot[x, {x, 0, 1}]}, \
+       Spacings -> 0, ImageSize -> 600]",
+    );
+    assert_eq!(w, 600);
+  }
+
   #[test]
   fn basic_inline() {
     clear_state();
