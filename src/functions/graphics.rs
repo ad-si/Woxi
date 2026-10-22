@@ -13476,6 +13476,16 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           expr_to_svg_markup(&args[0])
         }
 
+        // Invisible[content] keeps the room `content` takes but paints
+        // nothing, so the run is typeset as usual with a fully transparent
+        // fill rather than as the wrapper's own `Invisible[…]` text.
+        "Invisible" if args.len() == 1 => {
+          format!(
+            "<tspan fill-opacity=\"0\">{}</tspan>",
+            expr_to_svg_markup(&args[0])
+          )
+        }
+
         // Rotate[content, angle] — a Demonstration's idiom for a vertical
         // axis label (`Rotate["concentration", Pi/2]`). The label renderer
         // here has no notion of a rotated run of text, so this typesets
