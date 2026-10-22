@@ -2612,7 +2612,10 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn substitute_captures(expr: &Expr, captures: &Captures) -> Expr {
   match expr {
     Expr::Identifier(name) => {
-      if let Some(m) = captures.name(name) {
+      if let Some(m) = regex_capture_name(name)
+        .as_deref()
+        .and_then(|group| captures.name(group))
+      {
         str_expr(m.as_str())
       } else {
         expr.clone()
@@ -2822,17 +2825,29 @@ fn char_class_difference(excluded: &str, base: &str) -> Option<String> {
   Some(format!("[{}]", kept.join("")))
 }
 
-/// True if `name` is usable as a Rust regex named-capture identifier
-/// (`[A-Za-z_][A-Za-z0-9_]*`). Wolfram pattern variables that contain
-/// special characters can't round-trip as regex group names — fall back
-/// to a non-capturing group in that case.
-fn is_valid_regex_capture_name(name: &str) -> bool {
+/// Encode a Wolfram pattern-variable name as a Rust regex named-capture
+/// identifier (`[A-Za-z_][A-Za-z0-9_]*`). Characters outside that set —
+/// notably the `$` in Module-renamed variables like `x$12` — and `_` itself
+/// are escaped as `_<hex>_`, so distinct names stay distinct and the same
+/// name always maps to the same group. Returns `None` for names that can't
+/// be encoded (non-ASCII), which fall back to a non-capturing group.
+fn regex_capture_name(name: &str) -> Option<String> {
   let mut chars = name.chars();
   match chars.next() {
-    Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
-    _ => return false,
+    Some(c) if c.is_ascii_alphabetic() || c == '$' => {}
+    _ => return None,
   }
-  chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+  let mut out = String::with_capacity(name.len() + 2);
+  for c in name.chars() {
+    if c.is_ascii_alphanumeric() {
+      out.push(c);
+    } else if c.is_ascii() {
+      out.push_str(&format!("_{:x}_", c as u32));
+    } else {
+      return None;
+    }
+  }
+  Some(out)
 }
 
 /// Tracks pattern-variable bindings while translating a Wolfram string
@@ -2915,9 +2930,10 @@ fn maybe_named_group(
   body: &str,
   state: &mut PatternState,
 ) -> String {
-  if !is_valid_regex_capture_name(name) {
+  let Some(group) = regex_capture_name(name) else {
     return format!("(?:{body})");
-  }
+  };
+  let name = group.as_str();
   if let Some(first_body) = state.first_body.get(name).cloned() {
     let dup_name = format!("{}__dup{}", name, state.dup_counter);
     state.dup_counter += 1;
