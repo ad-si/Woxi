@@ -38770,6 +38770,8 @@ mod short_in_boxes {
     let svg = svg_of("Row[{Short[10^200, 1/2]}]");
     assert!(svg.contains("&lt;&lt;"), "{svg}");
     assert!(!svg.contains("Short"), "{svg}");
+  }
+}
 
 mod framed_graphics_fits_data_shape {
   use super::*;
