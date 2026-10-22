@@ -4402,12 +4402,7 @@ fn pane_fixed_size(
         current = &args[0];
       }
       "Pane" if args.len() >= 2 => {
-        let syntax::Expr::List(size) = &args[1] else {
-          return None;
-        };
-        if size.len() != 2 {
-          return None;
-        }
+        let size = evaluator::dispatch::io_functions::pane_fixed_size(args)?;
         let w =
           evaluator::dispatch::io_functions::pane_size_component(&size[0])?;
         let h =
@@ -4415,7 +4410,7 @@ fn pane_fixed_size(
         return Some((
           w,
           h,
-          evaluator::dispatch::io_functions::pane_alignment(&args[2..]),
+          evaluator::dispatch::io_functions::pane_alignment(&args[1..]),
         ));
       }
       _ => return None,
