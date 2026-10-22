@@ -26242,6 +26242,48 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     });
   }
 
+  // A `LocatorPane[Dynamic[var], graphic]` that a display element only
+  // produces by evaluating a user-defined helper (e.g. a small "focus"
+  // picture bound to a hidden point) drives `var` the same way: give the
+  // hidden state variable a draggable stand-in row.
+  let display_pane_vars: Vec<_> = displays
+    .iter()
+    .filter_map(|d| crate::interpret_to_expr(d).ok())
+    .flat_map(|e| {
+      crate::with_scoped_globals(&initial_bindings, || {
+        collect_display_locator_pane_vars(&e)
+      })
+    })
+    .collect();
+  for (var, range_arg, graphic) in display_pane_vars {
+    if controls.iter().any(|c| c.name() == var) {
+      continue;
+    }
+    let Some((_, code)) = state.iter().find(|(n, _)| *n == var) else {
+      continue;
+    };
+    let initial = crate::with_scoped_globals(&initial_bindings, || {
+      let expr = crate::interpret_to_expr(code).ok()?;
+      list2_f64(&evaluate_expr_to_expr(&expr).ok()?)
+    });
+    let Some((x_initial, y_initial)) = initial else {
+      continue;
+    };
+    let ((x_min, y_min), (x_max, y_max)) =
+      pane_range(range_arg.as_ref(), &graphic);
+    controls.push(ManipulateControl::Slider2D {
+      name: var.clone(),
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      x_initial,
+      y_initial,
+      label: var,
+      write_callback: None,
+    });
+  }
+
   // A Manipulate with no controls or state at all (e.g. `Manipulate[x^2,
   // badspec]`, where `badspec` is neither a spec nor an option) isn't
   // renderable as an interactive widget — fall back to the plain path.
@@ -26823,6 +26865,51 @@ fn collect_body_locator_pane_vars(
           && !found.iter().any(|(n, _, _)| n == var)
         {
           found.push((var.clone(), args.get(2).cloned(), args[1].clone()));
+        }
+        for a in args {
+          walk(a, found);
+        }
+      }
+      Expr::List(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      Expr::CompoundExpr(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  walk(expr, &mut found);
+  found
+}
+
+/// The `LocatorPane[Dynamic[var], graphic, …]` a display element yields once
+/// its user-defined helper calls are evaluated — `Dynamic[helper[…]]` holds
+/// its argument, so the call inside is evaluated here (under the caller's
+/// scoped bindings) and the result searched like a body. Same result shape
+/// as [`collect_body_locator_pane_vars`].
+fn collect_display_locator_pane_vars(
+  expr: &Expr,
+) -> Vec<(String, Option<Expr>, Expr)> {
+  fn walk(expr: &Expr, found: &mut Vec<(String, Option<Expr>, Expr)>) {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        if name == "Dynamic"
+          && let Some(inner @ Expr::FunctionCall { name: head, .. }) =
+            args.first()
+          && head != "LocatorPane"
+          && let Ok(evaluated) = evaluate_expr_to_expr(inner)
+        {
+          for item in collect_body_locator_pane_vars(&evaluated) {
+            if !found.iter().any(|(n, _, _)| *n == item.0) {
+              found.push(item);
+            }
+          }
         }
         for a in args {
           walk(a, found);
@@ -29756,6 +29843,17 @@ fn find_plot_range(expr: &Expr) -> Option<((f64, f64), (f64, f64))> {
       (list2_f64(&axes[0]), list2_f64(&axes[1]))
   {
     return Some(((x_min, y_min), (x_max, y_max)));
+  }
+  // `PlotRange -> r` is the symmetric square `{{-r, r}, {-r, r}}`.
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = expr
+    && matches!(pattern.as_ref(), Expr::Identifier(key) if key == "PlotRange")
+    && let Some(r) = expr_to_f64(replacement)
+    && r > 0.0
+  {
+    return Some(((-r, -r), (r, r)));
   }
   match expr {
     Expr::FunctionCall { args, .. } => {

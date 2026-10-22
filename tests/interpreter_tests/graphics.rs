@@ -27064,6 +27064,32 @@ mod manipulate {
     );
   }
 
+  // A hidden `ControlType -> None` point driven only by a `LocatorPane` that
+  // a user-defined display helper produces still gets a draggable control,
+  // with the pane's `PlotRange -> r` giving the symmetric `[-r, r]` square.
+  #[test]
+  fn spec_display_helper_locator_pane_drives_hidden_point() {
+    let expr = interpret_to_expr(
+      "Manipulate[Graphics[Point[pt]], \
+       Item[Dynamic[focusPane[Dynamic[pt]]]], \
+       {{pt, {0, 0}}, {-0.9, 0.5}, {1, -0.9}, ControlType -> None}, \
+       Initialization :> (focusPane[Dynamic[q_]] := LocatorPane[Dynamic[q], \
+         Graphics[{}, PlotRange -> 2]];)]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let found = spec.controls.iter().any(|c| {
+      matches!(
+        c,
+        ManipulateControl::Slider2D {
+          name, x_min, x_max, y_min, y_max, ..
+        } if name == "pt"
+          && (*x_min, *x_max, *y_min, *y_max) == (-2.0, 2.0, -2.0, 2.0)
+      )
+    });
+    assert!(found, "controls: {:?}", spec.controls);
+  }
+
   // A Demonstration-style control panel combining a `RadioButtonBar`
   // (picking a target constant) with a `ButtonBar` (a row of held-action
   // buttons, e.g. incrementing a counter) side by side: both control kinds
