@@ -2980,7 +2980,7 @@ pub fn densify_sparse_array(expr: &Expr) -> Option<Expr> {
 }
 
 /// The background (default) element of a canonical SparseArray.
-fn sparse_array_background(expr: &Expr) -> Option<Expr> {
+pub(crate) fn sparse_array_background(expr: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = expr else {
     return None;
   };

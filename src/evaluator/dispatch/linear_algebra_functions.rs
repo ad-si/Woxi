@@ -112,6 +112,7 @@ pub fn dispatch_linear_algebra_functions(
       | "CharacteristicPolynomial"
       | "LinearSolve"
       | "Minors"
+      | "Inverse"
   ) {
     let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
     if args.iter().any(is_sparse) {
@@ -129,7 +130,19 @@ pub fn dispatch_linear_algebra_functions(
       // Only retry if densification actually removed every SparseArray, to
       // avoid recursing forever on a form we could not expand.
       if !dense.iter().any(is_sparse) {
-        return dispatch_linear_algebra_functions(name, &dense);
+        let result = dispatch_linear_algebra_functions(name, &dense);
+        // The inverse of a SparseArray is itself a SparseArray.
+        if name == "Inverse"
+          && let Some(Ok(inv @ Expr::List(_))) = &result
+          && let Some(sparse) =
+            super::list_operations::dense_to_sparse_array_with_default(
+              inv,
+              &Expr::Integer(0),
+            )
+        {
+          return Some(Ok(sparse));
+        }
+        return result;
       }
     }
   }

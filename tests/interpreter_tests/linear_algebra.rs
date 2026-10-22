@@ -10408,3 +10408,43 @@ mod array_domains {
     );
   }
 }
+
+mod sparse_array_part_set_and_inverse {
+  use super::*;
+
+  #[test]
+  fn part_assignment_keeps_sparse_array() {
+    assert_eq!(
+      interpret(
+        "m = SparseArray[{Band[{1, 1}] -> 1}, {3, 3}]; m[[3, 1]] = 5; \
+         {Head[m], Normal[m]}"
+      )
+      .unwrap(),
+      "{SparseArray, {{1, 0, 0}, {0, 1, 0}, {5, 0, 1}}}"
+    );
+  }
+
+  #[test]
+  fn part_assignment_to_background_value_removes_entry() {
+    assert_eq!(
+      interpret(
+        "m = SparseArray[{{1, 1} -> 2, {2, 2} -> 3}, {2, 2}]; m[[1, 1]] = 0; \
+         Normal[m]"
+      )
+      .unwrap(),
+      "{{0, 0}, {0, 3}}"
+    );
+  }
+
+  #[test]
+  fn inverse_of_sparse_array() {
+    assert_eq!(
+      interpret(
+        "m = SparseArray[{Band[{1, 1}] -> 1, Band[{1, 2}] -> 1}, {3, 3}]; \
+         m[[3, 1]] = 1; {Head[Inverse[m]], Normal[Inverse[m]]}"
+      )
+      .unwrap(),
+      "{SparseArray, {{1/2, -1/2, 1/2}, {1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}}}"
+    );
+  }
+}
