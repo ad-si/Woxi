@@ -8939,3 +8939,37 @@ mod image_size_option {
     );
   }
 }
+
+mod rasterize_any_expression {
+  use super::*;
+
+  // Text and other non-graphics expressions used to be refused
+  // ("Rasterize: unsupported expression type").
+  #[test]
+  fn text_rasterizes() {
+    assert_eq!(interpret("Head[Rasterize[\"Hello\"]]").unwrap(), "Image");
+    assert_eq!(
+      interpret("Head[Rasterize[Style[\"A\", FontFamily -> \"Courier\"]]]")
+        .unwrap(),
+      "Image"
+    );
+  }
+
+  #[test]
+  fn raster_size_sets_the_pixel_dimensions() {
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Rasterize[Graphics[Disk[]], RasterSize -> 25]]"
+      )
+      .unwrap(),
+      "{25, 25}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Rasterize[Style[\"A\", 40], RasterSize -> {20, 30}]]"
+      )
+      .unwrap(),
+      "{20, 30}"
+    );
+  }
+}

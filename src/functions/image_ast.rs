@@ -10126,15 +10126,33 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )
         })?
       }
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Rasterize: unsupported expression type".into(),
-        ));
-      }
+      // Anything else (strings, `Style`d text, formulas) renders the way
+      // `ExportString[expr, "SVG"]` draws it.
+      _ => crate::evaluator::dispatch::io_functions::expr_to_svg(&args[0]),
     }
   };
 
-  rasterize_svg(&svg_str, dpi)
+  // RasterSize -> w fixes the width (the height follows the aspect ratio);
+  // RasterSize -> {w, h} fixes both.
+  let raster_size = args[1..].iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "RasterSize") => {
+      match replacement.as_ref() {
+        Expr::Integer(w) if *w > 0 => Some((*w as u32, None)),
+        Expr::List(d) => match d.as_slice() {
+          [Expr::Integer(w), Expr::Integer(h)] if *w > 0 && *h > 0 => {
+            Some((*w as u32, Some(*h as u32)))
+          }
+          _ => None,
+        },
+        _ => None,
+      }
+    }
+    _ => None,
+  });
+  rasterize_svg_to(&svg_str, dpi, raster_size)
 }
 
 /// Rasterize an SVG string to an Expr::Image at the given DPI.
@@ -10142,6 +10160,18 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn rasterize_svg(
   svg_str: &str,
   dpi: f64,
+) -> Result<Expr, InterpreterError> {
+  rasterize_svg_to(svg_str, dpi, None)
+}
+
+/// [`rasterize_svg`] at an explicit pixel size: `(w, None)` scales the
+/// drawing to `w` pixels wide keeping its aspect ratio, `(w, Some(h))`
+/// stretches it to exactly `w` x `h` (Rasterize's `RasterSize`).
+#[cfg(not(target_arch = "wasm32"))]
+fn rasterize_svg_to(
+  svg_str: &str,
+  dpi: f64,
+  raster_size: Option<(u32, Option<u32>)>,
 ) -> Result<Expr, InterpreterError> {
   use std::sync::Arc as StdArc;
 
@@ -10168,8 +10198,20 @@ pub fn rasterize_svg(
   // Compute output pixel dimensions scaled by DPI
   let svg_size = tree.size();
   let scale = dpi / 96.0; // usvg default DPI is 96
-  let pix_w = (svg_size.width() as f64 * scale).ceil() as u32;
-  let pix_h = (svg_size.height() as f64 * scale).ceil() as u32;
+  let (svg_w, svg_h) = (svg_size.width() as f64, svg_size.height() as f64);
+  let (pix_w, pix_h, scale_x, scale_y) = match raster_size {
+    Some((w, Some(h))) => (w, h, w as f64 / svg_w, h as f64 / svg_h),
+    Some((w, None)) => {
+      let k = w as f64 / svg_w;
+      (w, ((svg_h * k).round() as u32).max(1), k, k)
+    }
+    None => (
+      (svg_w * scale).ceil() as u32,
+      (svg_h * scale).ceil() as u32,
+      scale,
+      scale,
+    ),
+  };
 
   if pix_w == 0 || pix_h == 0 {
     return Err(InterpreterError::EvaluationError(
@@ -10188,7 +10230,7 @@ pub fn rasterize_svg(
 
   // Render SVG into pixmap
   let transform =
-    resvg::tiny_skia::Transform::from_scale(scale as f32, scale as f32);
+    resvg::tiny_skia::Transform::from_scale(scale_x as f32, scale_y as f32);
   resvg::render(&tree, transform, &mut pixmap.as_mut());
 
   // Convert RGBA pixel data to Expr::Image (normalized f64 values)

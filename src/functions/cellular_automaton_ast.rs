@@ -551,8 +551,9 @@ fn resolve_legacy_tspec(offt: &Expr, t: i64) -> Result<Expr, i128> {
 }
 
 struct RuleSpec {
-  n: u128,
-  k: u128,
+  /// The rule number's base-`k` digits, least significant first: digit `s`
+  /// is the new value of a cell whose weighted neighborhood sum is `s`.
+  digits: Vec<u128>,
   /// The neighborhood: the cell `(drow, dcol)` away from the updated cell
   /// adds `weight * value` to the weighted sum. 1D rules use `drow = 0`.
   neighbors: Vec<(i64, i64, u128)>,
@@ -738,11 +739,20 @@ fn parse_rule(expr: &Expr) -> Result<RuleSpec, String> {
     )
   };
   let (n, k, neighbors, two_d) = match expr {
-    Expr::Integer(n) if *n >= 0 => {
-      (*n as u128, 2, vec![(0, -1, 4), (0, 0, 2), (0, 1, 1)], false)
-    }
+    Expr::Integer(n) if *n >= 0 => (
+      BigInt::from(*n),
+      2,
+      vec![(0, -1, 4), (0, 0, 2), (0, 1, 1)],
+      false,
+    ),
     Expr::List(items) if items.len() == 2 || items.len() == 3 => {
-      let n = as_nonneg_int(&items[0]).ok_or_else(nspecnl)?;
+      // The rule number may be arbitrarily large: a 2-color range-1 2D
+      // outer-totalistic rule already needs some 2^512.
+      let n = match &items[0] {
+        Expr::Integer(n) if *n >= 0 => BigInt::from(*n),
+        Expr::BigInteger(n) if n.sign() != num_bigint::Sign::Minus => n.clone(),
+        _ => return Err(nspecnl()),
+      };
       let nbhd = match items.get(2) {
         Some(r) => parse_neighborhood(r, expr)
           .map_err(|msg| msg.unwrap_or_else(nspecnl))?,
@@ -782,24 +792,35 @@ fn parse_rule(expr: &Expr) -> Result<RuleSpec, String> {
 
   // The weighted sum runs from 0 to (k - 1) * (total weight), so a rule has
   // that many plus one base-k digits.
-  let largest = neighbors
+  let digit_count = neighbors
     .iter()
     .try_fold(0u128, |acc, &(_, _, w)| acc.checked_add(w))
     .and_then(|total| total.checked_mul(k - 1))
-    .and_then(|max_sum| u32::try_from(max_sum.checked_add(1)?).ok())
-    .and_then(|digits| k.checked_pow(digits))
-    .map(|p| p - 1);
-  if let Some(largest) = largest
-    && n > largest
+    .and_then(|max_sum| max_sum.checked_add(1));
+  if let Some(count) = digit_count
+    && count <= 1_000_000
   {
-    return Err(format!(
-      "CellularAutomaton::rsize: The specified rule number {n} is greater than the largest possible rule number ({largest})."
-    ));
+    let largest =
+      num_traits::pow::pow(BigInt::from(k), count as usize) - BigInt::from(1);
+    if n > largest {
+      return Err(format!(
+        "CellularAutomaton::rsize: The specified rule number {n} is greater than the largest possible rule number ({largest})."
+      ));
+    }
+  }
+  let mut digits: Vec<u128> = Vec::new();
+  if k > 1 {
+    use num_traits::{ToPrimitive, Zero};
+    let base = BigInt::from(k);
+    let mut rest = n;
+    while !rest.is_zero() {
+      digits.push((&rest % &base).to_u128().unwrap_or(0));
+      rest /= &base;
+    }
   }
 
   Ok(RuleSpec {
-    n,
-    k,
+    digits,
     neighbors,
     two_d,
   })
@@ -1038,18 +1059,11 @@ fn parse_init(
 
 /// Digit `s` (base `k`) of the rule number — the new value of a cell whose
 /// neighborhood has weighted sum `s`.
-fn rule_digit(n: u128, k: u128, s: u128) -> u128 {
-  if k == 1 {
-    return 0;
-  }
-  let Ok(exp) = u32::try_from(s) else {
-    return 0;
-  };
-  match k.checked_pow(exp) {
-    // k^s overflowing u128 implies k^s > n, so the digit is 0.
-    Some(p) => (n / p) % k,
-    None => 0,
-  }
+fn rule_digit(rule: &RuleSpec, s: u128) -> u128 {
+  usize::try_from(s)
+    .ok()
+    .and_then(|i| rule.digits.get(i).copied())
+    .unwrap_or(0)
 }
 
 /// Where one axis of the evolution grid sits: `origin` is the grid index of
@@ -1191,7 +1205,7 @@ fn evolve(
       break;
     }
 
-    let next_bg = rule_digit(rule.n, rule.k, bg.saturating_mul(weight_total));
+    let next_bg = rule_digit(rule, bg.saturating_mul(weight_total));
     // With a background that stays put, only cells within reach of a
     // non-background cell can change: the init's box grown by the
     // neighborhood radius once per step. Everything else stays background.
@@ -1218,7 +1232,7 @@ fn evolve(
               };
             s = s.saturating_add(w.saturating_mul(value));
           }
-          next[x][y] = rule_digit(rule.n, rule.k, s);
+          next[x][y] = rule_digit(rule, s);
         }
       }
       grid = next;
@@ -1245,11 +1259,11 @@ fn evolve(
           };
           s = s.saturating_add(w.saturating_mul(value));
         }
-        *next_cell = rule_digit(rule.n, rule.k, s);
+        *next_cell = rule_digit(rule, s);
       }
     }
     grid = next;
-    bg = rule_digit(rule.n, rule.k, bg.saturating_mul(weight_total));
+    bg = rule_digit(rule, bg.saturating_mul(weight_total));
   }
 
   // Each axis independently keeps its explicit window (wrapping around for

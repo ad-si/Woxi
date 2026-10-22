@@ -1141,4 +1141,17 @@ mod long_background_evolutions {
       "816"
     );
   }
+
+  // Rule numbers past i128 (a 2D range-1 rule has 2^9 digits) used to be
+  // rejected as CellularAutomaton::nspecnl.
+  #[test]
+  fn rule_number_beyond_i128() {
+    assert_eq!(
+      interpret(
+        "Total[CellularAutomaton[{32394872774543797972936492374692374655623746273645726354, 2, {1, 1}}, {{{1}}, 0}, 10], 3]"
+      )
+      .unwrap(),
+      "139"
+    );
+  }
 }

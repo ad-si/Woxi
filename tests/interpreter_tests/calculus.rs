@@ -20994,6 +20994,42 @@ mod stored_multi_derivative {
 mod kernel_format_interpolating_function {
   use super::*;
 
+  // NDSolve stores each point's derivatives after its value (here y, y',
+  // y''); only the value used to be skipped for the packed form, which then
+  // had three times too many entries and failed to apply.
+  #[test]
+  fn values_with_stored_derivatives() {
+    assert_eq!(
+      interpret(
+        "InterpolatingFunction[{{0., 0.3}}, {5, 7, 2, {4}, {4}, 0, 0, 0, 0, Automatic, {}, {}, False}, \
+         {{0., 0.1, 0.2, 0.3}}, {Developer`PackedArrayForm, {0, 3, 6, 9, 12}, \
+         {1., 0., -1., 0.995004, -0.0998334, -0.995004, 0.980067, -0.198669, -0.980067, \
+         0.955336, -0.29552, -0.955336}}, {Automatic}][0.2]"
+      )
+      .unwrap(),
+      "0.980067"
+    );
+    // Unpacked per-point lists: {value} for Interpolation, {value, value'}
+    // for a vector NDSolve solution.
+    assert_eq!(
+      interpret(
+        "InterpolatingFunction[{{1, 5}}, {5, 3, 0, {5}, {4}, 0, 0, 0, 0, Automatic, {}, {}, False}, \
+         {{1, 2, 3, 4, 5}}, {{1}, {4}, {9}, {16}, {25}}, {Automatic}][5/2]"
+      )
+      .unwrap(),
+      "25/4"
+    );
+    assert_eq!(
+      interpret(
+        "InterpolatingFunction[{{0., 0.3}}, {5, 3, 1, {3}, {4}, 0, 0, 0, 0, Automatic, {}, {}, False}, \
+         {{0., 0.15, 0.3}}, {{{1., 0.}, {0., -1.}}, {{0.988, -0.149}, {-0.149, -0.988}}, \
+         {{0.955, -0.296}, {-0.296, -0.955}}}, {Automatic}][0.15]"
+      )
+      .unwrap(),
+      "{0.988, -0.149}"
+    );
+  }
+
   #[test]
   fn linear_stored_form_is_applied() {
     // The five-argument form a saved notebook holds (packed values,

@@ -9892,14 +9892,49 @@ fn kernel_interpolating_function_to_pairs(
   if domain_ranges.len() != 1 {
     return None;
   }
-  let ys = match values {
+  // Each grid point stores its value followed by `info[[3]]` derivatives:
+  // `{v, v', …}` per point, or packed as `{Developer`PackedArrayForm,
+  // offsets, flat}` where point i owns flat[[offsets[[i]] + 1 ;;
+  // offsets[[i + 1]]]] (a vector value's components come first).
+  let stored = match info.get(2) {
+    Some(Expr::Integer(d)) if *d >= 0 => *d as usize + 1,
+    _ => 1,
+  };
+  let ys: Vec<Expr> = match values {
     Expr::List(items) => match items.as_slice() {
-      [Expr::Identifier(tag), _, Expr::List(ys)]
+      [Expr::Identifier(tag), Expr::List(offsets), Expr::List(flat)]
         if tag == "Developer`PackedArrayForm" =>
       {
-        ys.clone()
+        let offsets: Vec<usize> = offsets
+          .iter()
+          .map(|o| match o {
+            Expr::Integer(o) if *o >= 0 => Some(*o as usize),
+            _ => None,
+          })
+          .collect::<Option<_>>()?;
+        offsets
+          .windows(2)
+          .map(|w| {
+            let width = w[1].checked_sub(w[0])?;
+            let dim = (width / stored).max(1);
+            let part: Vec<Expr> = (0..dim)
+              .map(|j| flat.get(w[0] + j).cloned())
+              .collect::<Option<_>>()?;
+            Some(if dim == 1 {
+              part[0].clone()
+            } else {
+              Expr::List(part.into())
+            })
+          })
+          .collect::<Option<_>>()?
       }
-      _ => items.clone(),
+      _ => items
+        .iter()
+        .map(|item| match item {
+          Expr::List(per_point) => per_point.first().cloned(),
+          other => Some(other.clone()),
+        })
+        .collect::<Option<_>>()?,
     },
     _ => return None,
   };

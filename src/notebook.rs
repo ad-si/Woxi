@@ -1594,17 +1594,24 @@ fn partial_derivative_vars(s: &str) -> Option<String> {
 /// single undefined symbol `πIntegrate`. Mirrors the juxtaposition rule
 /// applied to ordinary sibling box pieces below: a trailing run of word
 /// characters that contains a letter, followed by a piece starting with a
-/// letter, needs a `*` between them (a `#` prefix needs a space instead,
-/// for named-slot syntax); a trailing digit run is left alone since digits
-/// can't extend into letters on re-parse.
+/// letter or a digit, needs a `*` between them (`RowBox[{"d", "400"}]` is
+/// `d*400`, not the symbol `d400`), as does a number followed by a number
+/// (`RowBox[{"2", "400"}]`); a `#` prefix needs a space instead, for
+/// named-slot syntax. A number followed by a letter (`2x`) already reads
+/// as a product.
 fn push_juxtaposed(result: &mut String, piece: &str) {
   let piece_starts_alpha =
     piece.chars().next().is_some_and(char::is_alphabetic);
-  let trailing_run_has_letter = result
+  let piece_starts_digit =
+    piece.chars().next().is_some_and(|c| c.is_ascii_digit());
+  let trailing_run: Vec<char> = result
     .chars()
     .rev()
     .take_while(|c| c.is_alphanumeric() || *c == '_')
-    .any(char::is_alphabetic);
+    .collect();
+  let trailing_run_has_letter = trailing_run.iter().any(|c| c.is_alphabetic());
+  let trailing_run_is_number =
+    !trailing_run.is_empty() && trailing_run.iter().all(char::is_ascii_digit);
   if result.ends_with('#') && piece_starts_alpha {
     result.push(' ');
   } else if result.ends_with("/.")
@@ -1613,7 +1620,10 @@ fn push_juxtaposed(result: &mut String, piece: &str) {
     // `x /. 0 -> y`: glued as `x/.0->y` the tokenizer reads `/` then the
     // real number `.0` instead of the `/.` (ReplaceAll) operator.
     result.push(' ');
-  } else if trailing_run_has_letter && piece_starts_alpha {
+  } else if trailing_run_has_letter
+    && (piece_starts_alpha || piece_starts_digit)
+    || trailing_run_is_number && piece_starts_digit
+  {
     result.push('*');
   }
   result.push_str(piece);
@@ -5966,6 +5976,19 @@ Cell["Chapter 2", "Chapter"]
     // An ordinary subscript is untouched.
     let s = r#"BoxData[RowBox[{SubscriptBox["a", "x"], "b"}]]"#;
     assert_eq!(extract_cell_content(s), "Subscript[a, x]b");
+  }
+
+  /// Separate box tokens never fuse: a symbol then a number, or two
+  /// numbers, are a product (`Round[d 400]` is `d*400`, not the symbol
+  /// `d400`).
+  #[test]
+  fn test_juxtaposed_tokens_with_digits_multiply() {
+    let s = r#"BoxData[RowBox[{"Round", "[", RowBox[{"d", "400"}], "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "Round[d*400]");
+    let s = r#"BoxData[RowBox[{"2", "400"}]]"#;
+    assert_eq!(extract_cell_content(s), "2*400");
+    let s = r#"BoxData[RowBox[{"2", "x"}]]"#;
+    assert_eq!(extract_cell_content(s), "2x");
   }
 
   /// Nested definite integrals take their differentials innermost-first
