@@ -419,6 +419,42 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
   }
+  // An unknown the equations never mention is solved as itself (`w -> w`),
+  // the others as usual.
+  if let Expr::List(unknowns) = &args[1] {
+    let mentions = |name: &str| mentions_symbol(&args[0], name);
+    let (absent, present): (Vec<&Expr>, Vec<&Expr>) = unknowns
+      .iter()
+      .partition(|u| matches!(u, Expr::Identifier(name) if !mentions(name)));
+    if !absent.is_empty() && !present.is_empty() {
+      let mut reduced = args.to_vec();
+      reduced[1] = Expr::List(present.into_iter().cloned().collect());
+      let solved = ndsolve_ast_inner(&reduced)?;
+      let Expr::List(solutions) = &solved else {
+        return Ok(solved);
+      };
+      let complete = solutions
+        .iter()
+        .map(|sol| {
+          let Expr::List(rules) = sol else {
+            return sol.clone();
+          };
+          let rule_for = |u: &Expr| {
+            rules
+              .iter()
+              .find(|r| matches!(r, Expr::Rule { pattern, .. } if crate::syntax::expr_to_string(pattern) == crate::syntax::expr_to_string(u)))
+              .cloned()
+              .unwrap_or_else(|| Expr::Rule {
+                pattern: Box::new(u.clone()),
+                replacement: Box::new(u.clone()),
+              })
+          };
+          Expr::List(unknowns.iter().map(rule_for).collect())
+        })
+        .collect();
+      return Ok(Expr::List(complete));
+    }
+  }
   // An independent variable written as a compound expression
   // (`{Subscript[A, m], 0, w}`) is keyed by a fresh symbol while
   // integrating, then restored in the result.
@@ -2468,6 +2504,16 @@ fn rewrite_pde_rhs_hyperbolic(
 /// linear expression really did lose all dependence on the variable
 /// differentiated against (see `try_solve_hyperbolic_pde`'s linearity
 /// check).
+/// Whether `name` occurs in `expr` as a symbol or as the head of a call
+/// (`w`, `w[t]`, `w'[t]`).
+fn mentions_symbol(expr: &Expr, name: &str) -> bool {
+  match expr {
+    Expr::Identifier(n) => n == name,
+    Expr::FunctionCall { name: head, .. } if head == name => true,
+    _ => expr_children(expr).iter().any(|c| mentions_symbol(c, name)),
+  }
+}
+
 fn expr_contains_ident(expr: &Expr, name: &str) -> bool {
   if matches!(expr, Expr::Identifier(n) if n == name) {
     return true;

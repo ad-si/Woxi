@@ -113,6 +113,12 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
 
+  if let Some(spec) = replacement_rule_spec(&args[0]) {
+    let mut rewritten = args.to_vec();
+    rewritten[0] = spec;
+    return cellular_automaton_ast(&rewritten);
+  }
+
   if let Some(result) = function_rule_automaton(args) {
     return result;
   }
@@ -183,6 +189,64 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::List(exprs.into()))
+}
+
+/// `CellularAutomaton[{lhs1 -> rhs1, …}, init, steps]` — replacement rules
+/// applied to each cell's neighborhood, a list of `2r + 1` cells (or a matrix
+/// of them in 2D). It is the function rule `{Replace[#, rules] &, {}, r}`
+/// with the range read off the left-hand sides; a neighborhood no rule
+/// matches is left as it is, exactly like `Replace`.
+fn replacement_rule_spec(rule: &Expr) -> Option<Expr> {
+  let Expr::List(rules) = rule else {
+    return None;
+  };
+  let lhs = |r: &Expr| match r {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      match pattern.as_ref() {
+        Expr::List(items) => Some(items.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let first = lhs(rules.first()?)?;
+  if first.is_empty() || !rules.iter().all(|r| lhs(r).is_some()) {
+    return None;
+  }
+  // `m` cells span the range (m - 1)/2.
+  let range = |m: usize| {
+    if m % 2 == 1 {
+      Expr::Integer((m as i128 - 1) / 2)
+    } else {
+      crate::functions::math_ast::make_rational(m as i128 - 1, 2)
+    }
+  };
+  let two_d = first.iter().all(|row| matches!(row, Expr::List(_)));
+  let (body, radius) = if two_d {
+    let Expr::List(row) = &first[0] else {
+      return None;
+    };
+    // The neighbors arrive as one flat list; the rules see them as rows.
+    let shaped = Expr::FunctionCall {
+      name: "Partition".into(),
+      args: vec![Expr::Slot(1), Expr::Integer(row.len() as i128)].into(),
+    };
+    (
+      shaped,
+      Expr::List(vec![range(first.len()), range(row.len())].into()),
+    )
+  } else {
+    (Expr::Slot(1), range(first.len()))
+  };
+  let func = Expr::Function {
+    body: Box::new(Expr::FunctionCall {
+      name: "Replace".into(),
+      args: vec![body, rule.clone()].into(),
+    }),
+  };
+  Some(Expr::List(
+    vec![func, Expr::List(vec![].into()), radius].into(),
+  ))
 }
 
 /// `CellularAutomaton[{f, {}, neighborhood}, init, steps]` — a rule given as

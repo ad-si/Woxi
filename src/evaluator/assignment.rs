@@ -2973,23 +2973,20 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
           ),
         )
       });
-    } else if matches!(
+    } else if !matches!(
       &rhs_value,
-      Expr::List(_)
-        | Expr::FunctionCall { .. }
-        | Expr::String(_)
-        | Expr::Function { .. }
-        | Expr::NamedFunction { .. }
-        | Expr::Image { .. }
-        | Expr::Graphics { .. }
-        | Expr::Rule { .. }
-        | Expr::RuleDelayed { .. }
+      Expr::Identifier(_)
+        | Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(_, _)
+        | Expr::Constant(_)
     ) {
-      // Store lists, function calls, functions, strings and rules as
-      // ExprVal for faithful roundtrip. Rules in particular must not be
-      // stored as Raw — `(p /; c) :> b` would reparse without the parens
-      // as `Condition[p, RuleDelayed[c, b]]` because `:>` binds tighter
-      // than `/;`.
+      // Store every compound value as ExprVal for a faithful roundtrip.
+      // Text does not survive one: rules lose parentheses (`(p /; c) :> b`
+      // would reparse as `Condition[p, RuleDelayed[c, b]]`), and a rendered
+      // graphic inside an unevaluated `Part` prints as `-Graphics-`, which
+      // does not parse at all.
       let stored = own_value_expr(&rhs_value);
       ENV.with(|e| {
         e.borrow_mut()

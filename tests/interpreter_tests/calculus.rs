@@ -8340,6 +8340,27 @@ Round[N[closed] - N[numeric], 10^-6]"
 mod ndsolve {
   use super::*;
 
+  // An unknown no equation mentions comes back as itself, in the requested
+  // position.
+  #[test]
+  fn unknown_absent_from_equations() {
+    assert_eq!(
+      interpret(
+        "Map[First, NDSolve[{x'[t] == -x[t], x[0] == 1}, {w, x}, {t, 0, 1}], {2}]"
+      )
+      .unwrap(),
+      "{{w, x}}"
+    );
+    assert_eq!(
+      interpret(
+        "{w, Round[x[1.], 0.001]} /. First[NDSolve[{x'[t] == -x[t], x[0] == 1}, \
+         {x, w}, {t, 0, 1}]]"
+      )
+      .unwrap(),
+      "{w, 0.368}"
+    );
+  }
+
   /// An algebraic constraint that determines one unknown explicitly is
   /// eliminated — the constraint is solved for it, substituted into the
   /// remaining equations, and the unknown rebuilt from the solution

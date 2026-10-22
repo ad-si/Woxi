@@ -5182,94 +5182,52 @@ fn parse_association_item(pair: Pair<Rule>) -> Expr {
 }
 
 fn parse_paren_extended(pair: Pair<Rule>) -> Expr {
-  let inner_pairs: Vec<_> = pair.into_inner().collect();
-  let base_expr = pair_to_expr(inner_pairs[0].clone());
-  // Check for derivative prime first: (expr)' -> Derivative[n][expr]
-  // and (expr)'[args] -> Derivative[n][expr][args].
-  let prime_pair = inner_pairs
-    .iter()
-    .find(|p| matches!(p.as_rule(), Rule::DerivativePrime));
-  if let Some(prime) = prime_pair {
-    let order = prime.as_str().chars().filter(|c| *c == '\'').count();
-    let derivative_head =
-      call("Derivative", vec![Expr::Integer(order as i128)]);
-    let derivative_call = Expr::CurriedCall {
-      func: Box::new(derivative_head),
-      args: vec![base_expr],
-    };
-    // Optional bracket call: (expr)'[args]
-    let call_suffix = inner_pairs
-      .iter()
-      .find(|p| matches!(p.as_rule(), Rule::ParenCallSuffix));
-    if let Some(suffix) = call_suffix {
-      let bracket_sequences: Vec<Vec<Expr>> = suffix
-        .clone()
-        .into_inner()
-        .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-        .map(|bracket| {
-          bracket
+  // `(expr)` followed by any chain of suffixes, applied left to right:
+  // `(expr)'` is Derivative[n][expr], `(expr)[args]` a call on the
+  // parenthesized head and `(expr)[[i]]` a Part — so `(f &)[x][[i]]` takes
+  // part i of the call's result.
+  let mut inner_pairs = pair.into_inner();
+  let Some(base) = inner_pairs.next() else {
+    return Expr::Identifier("Null".into());
+  };
+  let mut result = pair_to_expr(base);
+  for suffix in inner_pairs {
+    match suffix.as_rule() {
+      Rule::DerivativePrime => {
+        let order = suffix.as_str().chars().filter(|c| *c == '\'').count();
+        result = Expr::CurriedCall {
+          func: Box::new(call(
+            "Derivative",
+            vec![Expr::Integer(order as i128)],
+          )),
+          args: vec![result],
+        };
+      }
+      Rule::ParenCallSuffix => {
+        for bracket in suffix
+          .into_inner()
+          .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+        {
+          let args: Vec<Expr> = bracket
             .into_inner()
             .filter(|p| {
               p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
             })
             .map(pair_to_expr)
-            .collect()
-        })
-        .collect();
-      let mut result = derivative_call;
-      for args in bracket_sequences {
-        result = Expr::CurriedCall {
-          func: Box::new(result),
-          args,
-        };
+            .collect();
+          result = Expr::CurriedCall {
+            func: Box::new(result),
+            args,
+          };
+        }
       }
-      return result;
+      Rule::PartIndexSuffix => {
+        result = apply_part_index_suffix(result, suffix);
+      }
+      _ => {}
     }
-    return derivative_call;
   }
-  // Check whether this is a Part extraction or a bracket call
-  let has_call_suffix = inner_pairs
-    .iter()
-    .any(|p| matches!(p.as_rule(), Rule::ParenCallSuffix));
-  if has_call_suffix {
-    // (expr)[args] -> CurriedCall: treat parenthesized expr as function head
-    let bracket_sequences: Vec<Vec<Expr>> = inner_pairs
-      .iter()
-      .filter(|p| matches!(p.as_rule(), Rule::ParenCallSuffix))
-      .flat_map(|p| p.clone().into_inner())
-      .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-      .map(|bracket| {
-        bracket
-          .into_inner()
-          .filter(|p| {
-            p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
-          })
-          .map(pair_to_expr)
-          .collect()
-      })
-      .collect();
-    let mut result = Expr::CurriedCall {
-      func: Box::new(base_expr),
-      args: bracket_sequences[0].clone(),
-    };
-    for args in bracket_sequences.into_iter().skip(1) {
-      result = Expr::CurriedCall {
-        func: Box::new(result),
-        args,
-      };
-    }
-    result
-  } else {
-    // (expr)[[index]] -> Part[expr, index]
-    let part_suffixes: Vec<Pair<Rule>> = inner_pairs
-      .iter()
-      .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
-      .cloned()
-      .collect();
-    part_suffixes
-      .iter()
-      .fold(base_expr, |acc, p| apply_part_index_suffix(acc, p.clone()))
-  }
+  result
 }
 
 /// Build a call to a Flat logical head, collapsing a same-head left
@@ -9233,12 +9191,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 op: BinaryOperator::And,
                 ..
               }
-            ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And");
-            if is_and {
-              format!("({s})")
-            } else {
-              s
-            }
+            ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And")
+              || printed_infix_precedence(arg).is_some_and(|p| p < 15);
+            if is_and { format!("({s})") } else { s }
           })
           .collect();
         return parts.join(" || ");
@@ -9256,7 +9211,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 op: BinaryOperator::Or,
                 ..
               }
-            ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or");
+            ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or")
+              || printed_infix_precedence(arg).is_some_and(|p| p < 18);
             if is_or { format!("({s})") } else { s }
           })
           .collect();
@@ -10873,6 +10829,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           ) || matches!(e, Expr::FunctionCall { name, .. } if name == "And")
+            || (!is_loose_assignment(e)
+              && printed_infix_precedence(e).is_some_and(|p| p < 15))
         };
         let lf = if is_and_expr(left) {
           format!("({left_str})")
@@ -10897,6 +10855,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Or")
+            || (!is_loose_assignment(e)
+              && printed_infix_precedence(e).is_some_and(|p| p < 18))
         };
         let lf = if is_or_expr(left) {
           format!("({left_str})")
@@ -11167,6 +11127,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             ..
           }
         );
+        // So does anything else that binds looser than `!`: ` !(a /. b)`.
+        let needs_parens = needs_parens
+          || printed_infix_precedence(operand).is_some_and(|p| p < 20);
         if needs_parens {
           format!(" !({inner})")
         } else {
@@ -11196,7 +11159,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           operand.as_ref(),
           Expr::Function { .. }
         ) || prints_as_not(operand.as_ref())
-          || is_loose_assignment(operand);
+          || is_loose_assignment(operand)
+          // Anything printing with an operator looser than unary minus:
+          // `-(a /. b)`, `-(a -> b)`, `-(a == b)`, `-(a | b)`.
+          || printed_infix_precedence(operand).is_some_and(|p| p < 39);
         if needs_parens {
           format!("-({inner})")
         } else {
@@ -11353,10 +11319,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // dropping them would silently turn `key -> (v1; v2)` into two
       // top-level statements instead of one rule).
       let rhs_str = fmt(replacement);
-      let rhs_final = match replacement.as_ref() {
-        Expr::Function { .. } | Expr::CompoundExpr(_) => format!("({rhs_str})"),
-        r if is_replace_operator(r) => format!("({rhs_str})"),
-        _ => rhs_str,
+      let rhs_final = if binds_looser_than_rule(replacement) {
+        format!("({rhs_str})")
+      } else {
+        rhs_str
       };
       format!("{lhs} -> {rhs_final}")
     }
@@ -11553,6 +11519,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     Expr::Constant(s) => s.clone(),
     Expr::Raw(s) => s.clone(),
     Expr::Image { .. } => "-Image-".to_string(),
+    // Genuine InputForm writes out the symbolic graphic it was rendered
+    // from, so the text re-parses (`ToString[Plot[…], InputForm]`, and the
+    // values Woxi Studio round-trips through source form).
+    Expr::Graphics {
+      structure: Some(structure),
+      ..
+    } if in_true_input_form() => expr_to_input_form(structure),
     Expr::Graphics { is_3d, .. } => {
       if *is_3d {
         "-Graphics3D-".to_string()
@@ -11904,12 +11877,37 @@ fn input_form_rule_lhs(e: &Expr) -> String {
 /// parens — printing `x -> (a; b)` bare would silently split one rule into
 /// a rule plus a stray top-level statement once re-parsed.
 fn input_form_rule_rhs(e: &Expr) -> String {
+  if binds_looser_than_rule(e) {
+    format!("({})", expr_to_input_form(e))
+  } else {
+    expr_to_input_form(e)
+  }
+}
+
+/// Whether `e`, as the right-hand side of `->`, needs parentheses: a pure
+/// function, a `;`-sequence, or an assignment all bind looser than a rule, so
+/// `a -> (b = c)` written without them re-reads as `(a -> b) = c`.
+fn binds_looser_than_rule(e: &Expr) -> bool {
   match e {
-    Expr::Function { .. } | Expr::CompoundExpr(_) => {
-      format!("({})", expr_to_input_form(e))
+    Expr::Function { .. } | Expr::CompoundExpr(_) => true,
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Set"
+          | "SetDelayed"
+          | "UpSet"
+          | "UpSetDelayed"
+          | "TagSet"
+          | "TagSetDelayed"
+          | "AddTo"
+          | "SubtractFrom"
+          | "TimesBy"
+          | "DivideBy"
+          | "CompoundExpression"
+      ) && args.len() >= 2
     }
-    _ if is_replace_operator(e) => format!("({})", expr_to_input_form(e)),
-    _ => expr_to_input_form(e),
+    // `a -> (b /. c)`: a replacement operator on the right of `->`.
+    other => is_replace_operator(other),
   }
 }
 
@@ -12688,7 +12686,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
               op: BinaryOperator::And,
               ..
             }
-          ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And");
+          ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And")
+            || printed_infix_precedence(arg).is_some_and(|p| p < 15);
           if is_and { format!("({s})") } else { s }
         })
         .collect();
@@ -12706,7 +12705,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
               op: BinaryOperator::Or,
               ..
             }
-          ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or");
+          ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or")
+            || printed_infix_precedence(arg).is_some_and(|p| p < 18);
           if is_or { format!("({s})") } else { s }
         })
         .collect();

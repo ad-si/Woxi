@@ -3,6 +3,58 @@ use super::*;
 mod cellular_automaton {
   use super::*;
 
+  // Replacement rules act on each neighborhood like `Replace`: the range
+  // comes from the length of the left-hand sides, and a neighborhood no rule
+  // matches stays a list.
+  #[test]
+  fn replacement_rules() {
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{{1, _, _} -> 1, {_, _, _} -> 0}, {0, 1, 0, 0}, 2]"
+      )
+      .unwrap(),
+      "{{0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[{{1, _, _} -> 1}, {0, 1, 0, 0}, 1]")
+        .unwrap(),
+      "{{0, 1, 0, 0}, {{0, 0, 1}, {0, 1, 0}, 1, {0, 0, 0}}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[{{a_, b_} :> Mod[a + b, 2]}, {{1}, 0}, 3]")
+        .unwrap(),
+      "{{1, 0, 0, 0}, {1, 1, 0, 0}, {1, 0, 1, 0}, {1, 1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{{1, _, _} -> 1, {_, _, _} -> 0}, {{1}, 0}, {{0, 3}, All}]"
+      )
+      .unwrap(),
+      "{{0, 0, 0, 1, 0, 0, 0}, {0, 0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 0, 1, 0}, {0, 0, 0, 0, 0, 0, 1}}"
+    );
+    // Named patterns and alternatives, as Demonstrations write them.
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{{p:0 | 1, 1, _} -> 1 - p, {_, _, _} -> 0}, {0, 1, 1, 0}, 1]"
+      )
+      .unwrap(),
+      "{{0, 1, 1, 0}, {0, 1, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn replacement_rules_2d() {
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{{{_, 1, _}, {_, _, _}, {_, _, _}} -> 1, \
+         {{_, _, _}, {_, _, _}, {_, _, _}} -> 0}, \
+         {{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, 1]"
+      )
+      .unwrap(),
+      "{{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, {{0, 0, 0}, {0, 0, 0}, {0, 1, 0}}}"
+    );
+  }
+
   #[test]
   fn rule_30_expanding_small() {
     assert_eq!(

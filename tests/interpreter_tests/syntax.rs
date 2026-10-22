@@ -13351,3 +13351,65 @@ mod implicit_times_with_part_call {
     );
   }
 }
+
+// Shapes found in Wolfram Demonstrations that Woxi failed to parse or
+// printed in a form that did not parse back (Woxi Studio round-trips a
+// Manipulate body through InputForm).
+mod demonstration_round_trips {
+  use super::*;
+
+  #[test]
+  fn replace_all_with_part_of_literal_list() {
+    assert_eq!(interpret("y /. {y -> 2, y -> 3}[[2]]").unwrap(), "3");
+    assert_eq!(interpret("f[y /. {y -> 2}[[1]], 3]").unwrap(), "f[2, 3]");
+    assert_eq!(interpret("x /. {{x -> 1}, {x -> 2}}").unwrap(), "{1, 2}");
+  }
+
+  #[test]
+  fn compound_expression_in_part_index() {
+    assert_eq!(interpret("x = {5, 6, 7}; x[[k = 1; k + 1]]").unwrap(), "6");
+    assert_eq!(
+      interpret("ToString[Hold[x[[If[a, b]; c]]], InputForm]").unwrap(),
+      "Hold[x[[If[a, b]; c]]]"
+    );
+  }
+
+  #[test]
+  fn suffix_chains_on_parenthesized_heads() {
+    assert_eq!(interpret("(#^2 &)[{1, 2, 3}][[2]]").unwrap(), "4");
+    assert_eq!(interpret("(# &)[{a, b}][[1]][c]").unwrap(), "a[c]");
+    assert_eq!(interpret("({{1, 2}})[[1]][[2]]").unwrap(), "2");
+  }
+
+  #[test]
+  fn loose_operands_keep_parentheses() {
+    let cases = [
+      ("Hold[f[a -> (b = c)]]", "Hold[f[a -> (b = c)]]"),
+      ("Hold[{a -> (b := c)}]", "Hold[{a -> (b := c)}]"),
+      ("Hold[-(a /. b)]", "Hold[-(a /. b)]"),
+      ("Hold[-(a -> b)]", "Hold[-(a -> b)]"),
+      ("Hold[-(a == b)]", "Hold[-(a == b)]"),
+      ("Hold[!(a /. b)]", "Hold[ !(a /. b)]"),
+      ("Hold[(a /. b) && c]", "Hold[(a /. b) && c]"),
+      ("Hold[(a -> b) || c]", "Hold[(a -> b) || c]"),
+      ("Hold[(a = b) && c]", "Hold[(a = b) && c]"),
+    ];
+    for (input, expected) in cases {
+      assert_eq!(
+        interpret(&format!("ToString[{input}, InputForm]")).unwrap(),
+        expected,
+        "{input}"
+      );
+    }
+  }
+
+  // A compound value holding a rendered graphic used to be stored as text
+  // and failed to parse when read back.
+  #[test]
+  fn compound_value_with_graphic_survives_assignment() {
+    assert_eq!(
+      interpret("r = Quiet[foo[Plot[x, {x, 0, 1}]][[5]]]; Head[r]").unwrap(),
+      "Part"
+    );
+  }
+}

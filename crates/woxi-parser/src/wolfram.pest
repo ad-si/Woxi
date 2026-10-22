@@ -30,7 +30,7 @@ SpanNoRhsSep     = @{ ";;" }   // nothing after it: `3;;`, the gap in `1;;;;3`
 SpanNoOperandSep = @{ ";;" }   // nothing on either side: `;;`, `;; ;; 2`
 // PartIndex: an index inside [[ ]] — an ordinary Expression, which covers
 // `m[[2 ;; 5]]` because `;;` is one of its operators.
-PartIndex = _{ Expression }
+PartIndex = _{ &HasSemicolon ~ CompoundExpression | Expression }
 
 // Part bracket openers/closers: both ASCII "[[" / "]]" and the Unicode
 // double-struck brackets. We accept the MATHEMATICAL LEFT/RIGHT WHITE
@@ -267,6 +267,7 @@ ParenExtended = {
     &(BalancedParens ~ (DerivativePrime | PartOpen | "["))
     ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
     ~ (DerivativePrime ~ ParenCallSuffix? | PartIndexSuffix | ParenCallSuffix)
+    ~ (PartIndexSuffix | ParenCallSuffix)*
 }
 // RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
 RuleAnonymousFunction = { ReplacementRule ~ "&" ~ !"&" }
@@ -495,8 +496,8 @@ TildeInfix = { "~" ~ !"~" ~ (BaseFunctionCall | Identifier) ~ "~" ~ !"~" }
 // This avoids redundant parsing by checking for special operators after the main parse
 // Postfix application (//) has lowest precedence and can follow any expression form
 // ReplaceAll (/.) and ReplaceRepeated (//.) can appear after operator chains: x = y /. rules
-ReplaceAllSuffix = { "/." ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
-ReplaceRepeatedSuffix = { "//." ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
+ReplaceAllSuffix = { "/." ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^") | ConditionExpr) }
+ReplaceRepeatedSuffix = { "//." ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^") | ConditionExpr) }
 // Repeated (..) and RepeatedNull (...) are postfix pattern operators
 // "..." must be tried before ".." since PEG is ordered-choice
 RepeatedNullSuffix = { "..." }
@@ -978,8 +979,8 @@ RuleOperand = _{ ConditionExpr }
 ReplacementRule = { RuleOperand ~ ("/;" ~ ConditionExpr)? ~ ("->" | "\u{2192}" | ":>") ~ (ReplacementRule | RuleOperand ~ ("/;" ~ ConditionExpr)*) }
 
 // Replacement expressions: expr /. rule or expr //. rule
-ReplaceAllExpr = { Term ~ "/." ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
-ReplaceRepeatedExpr = { Term ~ "//." ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
+ReplaceAllExpr = { Term ~ "/." ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^") | ConditionExpr) }
+ReplaceRepeatedExpr = { Term ~ "//." ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^") | ConditionExpr) }
 
 // An element or argument may be left out: `{a,,b}` is `{a, Null, b}` and
 // `f[a,,b]` is `f[a, Null, b]`. Both rules match nothing, and the
@@ -1013,7 +1014,7 @@ RuleAnonSuffix = { "&" ~ !"&" }
 ListItemRule = { ReplacementRule ~ RuleReplaceSuffix* ~ ("//" ~ PostfixFunction)* ~ (RuleAnonSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ RuleOperatorTerm)* ~ ("//" ~ PostfixFunction)*)? }
 // `/.` and `//.` bind looser than `->`, so a rule written as an argument may
 // itself be replaced in: `f[a -> 5 /. 5 -> 6]` is `f[(a -> 5) /. (5 -> 6)]`.
-RuleReplaceSuffix = { ("//." | "/.") ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
+RuleReplaceSuffix = { ("//." | "/.") ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^") | ConditionExpr) }
 // Comments must be skipped explicitly by the balanced scans below.  They are
 // reachable from atomic rules (`HasSemicolon`), where pest disables the
 // implicit COMMENT rule, so a comment holding an unbalanced bracket, quote or
