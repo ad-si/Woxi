@@ -17,6 +17,14 @@ use std::path::PathBuf;
 #[path = "../src/manipulate.rs"]
 mod manipulate;
 
+/// `manipulate.rs` reports the code it evaluates through this crate-root
+/// hook (the Studio binary prints it under `WOXI_STUDIO_TRACE`).
+pub(crate) fn trace_evaluation(code: &str) {
+  if std::env::var_os("WOXI_STUDIO_TRACE").is_some() {
+    eprintln!("{};\n", code.trim_end().trim_end_matches(';'));
+  }
+}
+
 use woxi::notebook::{CellEntry, CellStyle, parse_notebook};
 
 fn main() {

@@ -2297,6 +2297,11 @@ fn apply_text_style_rule(
   }
 }
 
+/// `Point[{}]`, `Line[{}]`, … are empty primitive sets, not bad coordinates.
+fn is_empty_list(e: &Expr) -> bool {
+  matches!(e, Expr::List(items) if items.is_empty())
+}
+
 // ── AST walker ───────────────────────────────────────────────────────────
 
 fn collect_primitives(
@@ -2366,14 +2371,14 @@ fn collect_primitives(
         "Point" if !args.is_empty() => {
           let before = prims.len();
           parse_point(args, style, prims);
-          if prims.len() == before {
+          if prims.len() == before && !is_empty_list(&args[0]) {
             errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
           }
         }
         "Line" if !args.is_empty() => {
           let before = prims.len();
           parse_line(args, style, prims);
-          if prims.len() == before {
+          if prims.len() == before && !is_empty_list(&args[0]) {
             errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
           }
         }
@@ -2396,15 +2401,14 @@ fn collect_primitives(
           let before = prims.len();
           parse_polygon(args, style, prims);
           // `Polygon[{}]` is an empty set of polygons, not a bad coordinate.
-          let empty = matches!(&args[0], Expr::List(items) if items.is_empty());
-          if prims.len() == before && !empty {
+          if prims.len() == before && !is_empty_list(&args[0]) {
             errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
           }
         }
         "Arrow" if !args.is_empty() => {
           let before = prims.len();
           parse_arrow(args, style, prims);
-          if prims.len() == before {
+          if prims.len() == before && !is_empty_list(&args[0]) {
             errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
           }
         }

@@ -37531,6 +37531,25 @@ mod empty_plot {
   }
 
   #[test]
+  fn empty_point_line_and_arrow_lists_draw_nothing_without_a_message() {
+    for empty in [
+      "Point[{}]",
+      "Line[{}]",
+      "Arrow[{}]",
+      "Point[Drop[{{1, 2}}, 1]]",
+    ] {
+      let svg = export_svg(&format!(
+        "Graphics[{{{empty}, Line[{{{{0, 0}}, {{1, 1}}}}]}}]"
+      ));
+      assert!(
+        !svg.contains("should be a pair of numbers"),
+        "{empty}: {svg}"
+      );
+      assert_eq!(svg.matches("<polyline").count(), 1, "{empty}: {svg}");
+    }
+  }
+
+  #[test]
   fn textured_polygon_without_coordinates_falls_back_to_plain_fill() {
     let svg = export_svg(
       "Graphics[{Texture[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]], \
