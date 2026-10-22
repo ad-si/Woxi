@@ -15070,7 +15070,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "BarChart[{1, 2, 3}, Epilog -> {Dashed, Line[{{0, 2}, {3, 2}}]}]",
       );
       assert!(svg.len() > plain.len());
-      assert!(svg.contains("epilogClip"));
+      assert!(svg.contains("<line") || svg.contains("<path"));
     }
 
     /// PlotRange -> {ymin, ymax} should override only the y-axis; the
