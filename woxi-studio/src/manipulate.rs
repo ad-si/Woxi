@@ -40,6 +40,9 @@ pub enum ControlState {
     /// `ControlType -> VerticalSlider`: rendered with `vertical_slider`
     /// instead of the default horizontal `slider`.
     orientation: ControlOrientation,
+    /// The range runs along the imaginary axis; `min`/`max`/`current` hold
+    /// imaginary coefficients and the variable binds `Complex[0, current]`.
+    imaginary: bool,
   },
   Discrete {
     name: String,
@@ -208,14 +211,13 @@ impl ControlState {
   pub fn current_code(&self) -> String {
     match self {
       ControlState::Continuous {
-        current, is_real, ..
-      } => {
-        if *is_real {
-          format_f64_real(*current)
-        } else {
-          woxi::functions::graphics::format_f64_exact(*current)
-        }
-      }
+        current,
+        is_real,
+        imaginary,
+        ..
+      } => woxi::functions::graphics::continuous_binding_code(
+        *current, *is_real, *imaginary,
+      ),
       ControlState::Trigger { current, .. } => format_f64(*current),
       ControlState::Discrete {
         values,
@@ -1560,6 +1562,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         initial,
         is_real,
         orientation,
+        imaginary,
       } => {
         // Wolfram treats a negative step like its magnitude, and a zero
         // step like an omitted one.
@@ -1591,6 +1594,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           current: *initial,
           is_real: *is_real,
           orientation: *orientation,
+          imaginary: *imaginary,
         }
       }
       ManipulateControl::Discrete {

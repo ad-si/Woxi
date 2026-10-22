@@ -26928,6 +26928,72 @@ mod manipulate {
     }
   }
 
+  // A slider whose range runs along the imaginary axis is a control over the
+  // imaginary coefficient; the variable binds the complex number.
+  #[test]
+  fn spec_imaginary_axis_slider_binds_complex_value() {
+    let expr = interpret_to_expr(
+      "Manipulate[w, {{w, 0 I, \"imag\"}, -2 I, 2 I}, {{k, 1}, 0, 3}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(spec.controls.len(), 2);
+    match &spec.controls[0] {
+      ManipulateControl::Continuous {
+        name,
+        min,
+        max,
+        initial,
+        imaginary,
+        ..
+      } => {
+        assert_eq!(name, "w");
+        assert_eq!((*min, *max, *initial), (-2.0, 2.0, 0.0));
+        assert!(*imaginary);
+        assert_eq!(
+          woxi::functions::graphics::continuous_binding_code(
+            1.5, false, *imaginary
+          ),
+          "Complex[0, 3/2]"
+        );
+      }
+      other => panic!("expected Continuous, got {other:?}"),
+    }
+    match &spec.controls[1] {
+      ManipulateControl::Continuous { imaginary, .. } => assert!(!*imaginary),
+      other => panic!("expected Continuous, got {other:?}"),
+    }
+  }
+
+  // Corner points given as `{re, im I}` pairs make a 2D pad over the real
+  // and imaginary extents.
+  #[test]
+  fn spec_slider2d_corners_with_imaginary_bounds() {
+    let expr = interpret_to_expr(
+      "Manipulate[z, {{z, {3, 0}, \"p\"}, {-100, -2 I}, {100, 2 I}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        ..
+      } => {
+        assert_eq!(
+          (*x_min, *x_max, *y_min, *y_max),
+          (-100.0, 100.0, -2.0, 2.0)
+        );
+        assert_eq!((*x_initial, *y_initial), (3.0, 0.0));
+      }
+      other => panic!("expected Slider2D, got {other:?}"),
+    }
+  }
+
   // A bare Locator moves over the picture the body draws, so the body's
   // explicit PlotRange bounds the pad instead of a box padded around the
   // start point.
@@ -28837,6 +28903,7 @@ mod manipulate {
         label_runs,
         is_real,
         orientation,
+        ..
       } => {
         assert_eq!(name, "x");
         assert_eq!(*min, 0.0);
