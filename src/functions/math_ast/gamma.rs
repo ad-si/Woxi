@@ -1922,7 +1922,7 @@ fn barnes_g_float(z: f64) -> f64 {
 
 /// ln G(z) for z away from the non-positive integers (where G vanishes
 /// and the logarithm diverges); shared by BarnesG and LogBarnesG.
-fn log_barnes_g_float(z: f64) -> f64 {
+pub(crate) fn log_barnes_g_float(z: f64) -> f64 {
   // Shift z to [1, 2] using recurrence G(z+1) = Gamma(z) * G(z)
   let mut z_shifted = z;
   let mut log_correction = 0.0_f64;

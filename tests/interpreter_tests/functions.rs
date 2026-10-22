@@ -4944,6 +4944,29 @@ mod byte_array_to_string {
     assert_eq!(interpret("Hyperfactorial[3]").unwrap(), "108");
   }
   #[test]
+  fn hyperfactorial_real_integer_valued() {
+    assert_eq!(interpret("Hyperfactorial[4.]").unwrap(), "27648.");
+    assert_eq!(interpret("Hyperfactorial[0.]").unwrap(), "1.");
+  }
+  #[test]
+  fn hyperfactorial_real_recurrence() {
+    // H(z) == z^z H(z - 1) for non-integer reals
+    assert_eq!(
+      interpret(
+        "Abs[Hyperfactorial[2.5]/(2.5^2.5 Hyperfactorial[1.5]) - 1] < 10^-10"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[Hyperfactorial[0.7]/(0.7^0.7 Hyperfactorial[-0.3]) - 1] < 10^-10"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+  #[test]
   fn hyperfactorial_4() {
     assert_eq!(interpret("Hyperfactorial[4]").unwrap(), "27648");
   }
