@@ -2039,13 +2039,17 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // Every label of one chart shares its `Placed` position; `Above` puts the
   // labels over the bars.
-  let bar_labels_above = match &opts.labeling_function {
-    Some(func) => groups
-      .iter()
-      .flat_map(|g| g.iter())
-      .filter_map(|&v| labeling_function_label(func, v))
-      .any(|(_, pos)| pos.as_deref() == Some("Above")),
-    None => false,
+  let bar_label_placement = match &opts.labeling_function {
+    Some(func)
+      if groups
+        .iter()
+        .flat_map(|g| g.iter())
+        .filter_map(|&v| labeling_function_label(func, v))
+        .any(|(_, pos)| pos.as_deref() == Some("Above")) =>
+    {
+      crate::functions::plot::BarLabelPlacement::Above
+    }
+    _ => crate::functions::plot::BarLabelPlacement::Below,
   };
 
   if opts.bar_origin_left {
@@ -2090,7 +2094,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.plot_range_x.map(|(lo, hi)| (lo - 0.5, hi - 0.5)),
     opts.plot_range_y,
     &bar_labels,
-    bar_labels_above,
+    bar_label_placement,
     opts.stacked,
     opts.ticks,
     &opts.epilog,

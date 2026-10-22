@@ -5446,6 +5446,13 @@ fn scatter_overlay_primitives(
   prims
 }
 
+/// Where a vertical bar chart draws the labels produced by `LabelingFunction`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BarLabelPlacement {
+  Below,
+  Above,
+}
+
 /// Generate SVG for a bar chart using plotters.
 pub(crate) fn generate_bar_svg(
   groups: &[Vec<f64>],
@@ -5462,7 +5469,7 @@ pub(crate) fn generate_bar_svg(
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
   bar_labels: &[String],
-  bar_labels_above: bool,
+  bar_label_placement: BarLabelPlacement,
   stacked: bool,
   show_ticks: bool,
   epilog: &[Expr],
@@ -5876,12 +5883,13 @@ pub(crate) fn generate_bar_svg(
           let cx =
             map_x_val(group_x0 + (bar_x_offset(bi) as f64 + 0.5) * bar_w);
           // `Placed[…, Above]` puts the label over the bar's top instead.
-          let ly = if bar_labels_above && !stacked {
-            plot_y0 + (y_max - group[bi]) / (y_max - y_min) * plot_h
-              - fit_font * 0.4
-          } else {
-            axis_y + fit_font * 1.3
-          };
+          let ly =
+            if bar_label_placement == BarLabelPlacement::Above && !stacked {
+              plot_y0 + (y_max - group[bi]) / (y_max - y_min) * plot_h
+                - fit_font * 0.4
+            } else {
+              axis_y + fit_font * 1.3
+            };
           labels_svg.push_str(&format!(
             "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{fit_font:.0}\" \
