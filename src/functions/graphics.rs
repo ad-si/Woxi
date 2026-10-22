@@ -4774,6 +4774,13 @@ fn peel_style_wrapper(expr: &Expr) -> &Expr {
   }
 }
 
+/// A chart (`PieChart`, …) renders to a fixed-size frame with its own
+/// margins, and an inset `size` names the width of that whole picture — not
+/// of the bare pie inside it — so it is embedded whole and scaled as one.
+fn is_chart_svg(svg: &str) -> bool {
+  svg.contains("<title>") && svg.contains("<path d=\"M")
+}
+
 /// `Inset[obj, pos, opos, size]`'s `size` argument: `{w, h}`, a single
 /// number (both sides), or absent/`Automatic` (the object's natural size).
 /// Given in the coordinate system of the enclosing graphic, regardless of
@@ -4989,6 +4996,16 @@ fn inset_primitives(
       is_3d: false,
       ..
     } if natural_size => Some(svg),
+    // The chart's own white plate would hide whatever it overlaps.
+    Expr::Graphics {
+      svg,
+      structure: Some(_),
+      is_3d: false,
+      ..
+    } if is_chart_svg(svg) => {
+      plate_free = strip_default_background_plate(svg);
+      Some(&plate_free)
+    }
     // A rasterized picture (e.g. from `Rasterize[…]` or `Import`) draws at
     // its own pixel size, the same as a rendered `Graphics` above — there is
     // no symbolic content to fold into this picture's coordinate system.

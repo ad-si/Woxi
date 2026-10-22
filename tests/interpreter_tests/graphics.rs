@@ -1132,6 +1132,26 @@ mod graphics {
       );
     }
 
+    /// An inset `size` is the width of the whole chart picture, and the
+    /// chart's white plate must not paint over what it overlaps — a pie
+    /// inset used to fill its whole `size` and hide its neighbours.
+    #[test]
+    fn a_chart_inset_is_scaled_as_a_whole_without_its_plate() {
+      let svg = export_svg(
+        "Graphics[{Inset[PieChart[{1, 2, 3}], {2, 1.5}, {Center, Center}, 1.5], \
+         Inset[PieChart[{3, 2}], {1, 1}, {Center, Center}, 1.]}, \
+         ImageSize -> {390, 390}]",
+      );
+      assert!(
+        svg.contains("viewBox=\"0 0 360 360\""),
+        "the chart is embedded whole: {svg}"
+      );
+      assert!(
+        !svg.contains("<rect width=\"360\""),
+        "without its background plate: {svg}"
+      );
+    }
+
     /// `Inset[Graphics3D[…], pos]` embeds a whole three-dimensional
     /// picture in a flat one, at its own size — a Demonstration puts a
     /// little schematic of its apparatus in the corner that way. It used
