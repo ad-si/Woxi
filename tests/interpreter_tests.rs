@@ -2881,7 +2881,7 @@ mod interpreter_tests {
        \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains(">1.2<") == false, "axes must stop at 1: {svg}");
+    assert!(!svg.contains(">1.2<"), "axes must stop at 1: {svg}");
     assert!(
       svg.contains("translate(80,85)"),
       "square plot centred: {svg:.300}"

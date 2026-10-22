@@ -213,7 +213,9 @@ fn try_solve(
 
   // Periodic Fourier grid: the right end repeats the left one.
   let period = x_dom.max - x_dom.min;
-  if !(period > 0.0) || !(t_dom.max > t_dom.min) {
+  if period.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater)
+    || t_dom.max.partial_cmp(&t_dom.min) != Some(std::cmp::Ordering::Greater)
+  {
     return Ok(None);
   }
   let n = ((period / TARGET_SPACING).ceil() as usize)
