@@ -3405,7 +3405,7 @@ pub fn extract_saved_manipulate_variables(
       // value matches the plain symbol the live source's spec defines
       // (`scale1[abc]`), not a distinct `$CellContext`abc` that resolves
       // to nothing.
-      let value = strip_saved_contexts(rhs);
+      let value = collapse_dump_line_breaks(&strip_saved_contexts(rhs));
       Some((name, unescape_code_string(&value)))
     })
     .collect();
@@ -3481,10 +3481,22 @@ fn extract_dynamic_module_variables(box_dump: &str) -> Vec<(String, String)> {
       // See the matching strip in `extract_saved_manipulate_variables`: a
       // bare-symbol default value is context-qualified too, not just the
       // variable name.
-      let value = strip_saved_contexts(rhs);
+      let value = collapse_dump_line_breaks(&strip_saved_contexts(rhs));
       Some((unescape_code_string(name), unescape_code_string(&value)))
     })
     .collect()
+}
+
+/// The front end wraps long box dumps at arbitrary spaces
+/// (`Rational[23, 90] \n    Pi`). A line break inside a saved value is
+/// just that wrapping — read as a statement separator it would truncate the
+/// value to its last line — so fold it back into a single space (implicit
+/// multiplication). Values holding string literals are left untouched.
+fn collapse_dump_line_breaks(value: &str) -> String {
+  if value.contains('"') || !value.contains('\n') {
+    return value.to_string();
+  }
+  value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// The prefix of `s` up to (excluding) the `)` matching an already-consumed
@@ -7543,6 +7555,21 @@ yf4GL4DwC5VA4w
     assert_eq!(
       extract_saved_manipulate_variables(dump),
       vec![("n".to_string(), "33.".to_string())]
+    );
+  }
+
+  #[test]
+  fn test_extract_saved_manipulate_variables_joins_wrapped_values() {
+    // The front end wraps long dumps mid-value (`Rational[23, 90] \n Pi`);
+    // the line break must not split the value into two statements.
+    let dump = "DynamicModuleBox[{$CellContext`a$$ = Rational[23, 90] \n    Pi, \
+      $CellContext`s$$ = \"x\ny\"}, DynamicBox[…]]";
+    assert_eq!(
+      extract_saved_manipulate_variables(dump),
+      vec![
+        ("a".to_string(), "Rational[23, 90] Pi".to_string()),
+        ("s".to_string(), "\"x\ny\"".to_string()),
+      ]
     );
   }
 
