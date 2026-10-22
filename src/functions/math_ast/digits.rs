@@ -1091,11 +1091,34 @@ pub fn from_continued_fraction_ast(
   // the last term, so accumulate in `BigInt`.
   let mut ints: Vec<BigInt> = Vec::new();
   for elem in elements {
-    match expr_to_bigint(elem) {
-      Some(n) => ints.push(n),
-      None => {
+    if let Some(n) = expr_to_bigint(elem) {
+      ints.push(n)
+    } else {
+      // Symbolic terms: fold from the right, combining into a single
+      // fraction at every step (the convergent recurrence).
+      if elements.iter().any(|e| matches!(e, Expr::List(_))) {
         return Ok(unevaluated("FromContinuedFraction", args));
       }
+      let mut acc = elements.last().unwrap().clone();
+      for e in elements[..elements.len() - 1].iter().rev() {
+        let step = Expr::FunctionCall {
+          name: "Together".to_string(),
+          args: vec![Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              e.clone(),
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![acc, Expr::Integer(-1)].into(),
+              },
+            ]
+            .into(),
+          }]
+          .into(),
+        };
+        acc = crate::evaluator::evaluate_expr_to_expr(&step)?;
+      }
+      return Ok(acc);
     }
   }
 
