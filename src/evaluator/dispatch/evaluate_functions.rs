@@ -1059,6 +1059,7 @@ fn evaluate_function_call_ast_inner(
     "PieCharts`PieChart" => "PieChart",
     "Derangements" if combinatorica_active => "Combinatorica`Derangements",
     "RandomKSubset" if combinatorica_active => "Combinatorica`RandomKSubset",
+    "StableMarriage" if combinatorica_active => "Combinatorica`StableMarriage",
     "SymmetricGroup" if combinatorica_active => "Combinatorica`SymmetricGroup",
     "AlternatingGroup" if combinatorica_active => {
       "Combinatorica`AlternatingGroup"

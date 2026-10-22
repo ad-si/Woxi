@@ -11486,6 +11486,51 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_stable_marriage() {
+    // Both men prefer woman 1, who prefers man 2.
+    assert_eq!(
+      interpret(
+        "Combinatorica`StableMarriage[{{1, 2}, {1, 2}}, {{2, 1}, {2, 1}}]"
+      )
+      .unwrap(),
+      "{2, 1}"
+    );
+    // Man-optimal: every man gets his first choice when they are distinct.
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"Combinatorica`\"]]; \
+         StableMarriage[{{2, 1, 3}, {3, 1, 2}, {1, 2, 3}}, \
+         {{1, 2, 3}, {1, 2, 3}, {1, 2, 3}}]"
+      )
+      .unwrap(),
+      "{2, 3, 1}"
+    );
+    // No blocking pair for a 4x4 instance.
+    assert_eq!(
+      interpret(
+        "Module[{m = {{1, 2, 3, 4}, {1, 3, 2, 4}, {2, 1, 4, 3}, {4, 3, 2, 1}}, \
+         f = {{2, 3, 1, 4}, {4, 1, 3, 2}, {1, 2, 3, 4}, {3, 4, 2, 1}}, s}, \
+         s = Combinatorica`StableMarriage[m, f]; \
+         Sort[s] === Range[4] && \
+         NoneTrue[Tuples[Range[4], 2], Function[{p}, With[{i = p[[1]], w = p[[2]]}, \
+         s[[i]] =!= w && \
+         Position[m[[i]], w][[1, 1]] < Position[m[[i]], s[[i]]][[1, 1]] && \
+         Position[f[[w]], i][[1, 1]] < Position[f[[w]], First[Flatten[Position[s, w]]]][[1, 1]]]]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Non-preference input stays symbolic.
+    assert_eq!(
+      interpret(
+        "Combinatorica`StableMarriage[{{1, 1}, {1, 2}}, {{1, 2}, {1, 2}}]"
+      )
+      .unwrap(),
+      "StableMarriage[{{1, 1}, {1, 2}}, {{1, 2}, {1, 2}}]"
+    );
+  }
+
+  #[test]
   fn get_combinatorica_exposes_derangements_and_integer_permutations_unqualified()
    {
     // Regression test: this is the pattern used by the "Permutations,
