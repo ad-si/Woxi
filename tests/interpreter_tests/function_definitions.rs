@@ -6144,3 +6144,39 @@ mod lhs_argument_collapses_to_literal {
     assert_eq!(interpret("g[0 BlankSequence[]] := 5; g[0]").unwrap(), "5");
   }
 }
+
+mod nested_part_parsing {
+  use super::*;
+
+  // Part specifications that themselves contain parts used to be re-parsed
+  // by several Term alternatives per level, so a few levels of nesting hit
+  // the parser call limit.
+  #[test]
+  fn deeply_nested_part_specs() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "m = {10, 20, 30, 40, 50, 60}; i = {2, 3, 4, 5, 6, 1}; \
+         m[[i[[i[[i[[i[[i[[1]]]]]]]]]]]]"
+      )
+      .unwrap(),
+      "60"
+    );
+  }
+
+  #[test]
+  fn nested_part_with_compound_assignment() {
+    clear_state();
+    assert_eq!(
+      interpret("m = {1, 2, 3}; i = {2, 3, 1}; m[[i[[i[[i[[1]]]]]]]] += 10; m")
+        .unwrap(),
+      "{11, 2, 3}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("m = {1, 2, 3}; i = {2, 3, 1}; m[[i[[i[[i[[1]]]]]]]]++; m")
+        .unwrap(),
+      "{2, 2, 3}"
+    );
+  }
+}
