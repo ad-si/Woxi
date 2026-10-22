@@ -1831,6 +1831,51 @@ mod tests {
     assert!(after.starts_with("{0.05,"), "got {after}");
   }
 
+  /// A complex wave-equation explorer: the body solves a periodic nonlinear
+  /// Schrödinger-type PDE with `NDSolve` and draws `Abs[u]` either as a
+  /// density plot or a surface, chosen with a setter bar. The solution is
+  /// complex-valued, so every control change re-solves and re-plots.
+  #[test]
+  fn complex_pde_explorer_renders_both_plot_types() {
+    let code = r#"Manipulate[
+      If[flat, DensityPlot, Plot3D][
+        Evaluate[Abs[w[s, y]] /. Quiet[NDSolve[{
+          I D[w[s, y], s] + 0.5 D[w[s, y], y, y] + Abs[w[s, y]]^2 w[s, y] == 0,
+          w[0, y] == Exp[-(y - sep)^2] + Exp[-(y + sep)^2],
+          w[s, -half] == w[s, half]},
+          w, {s, 0, 2}, {y, -half, half}]]],
+        {y, -half, half}, {s, 0, 2},
+        Mesh -> mesh, PlotRange -> Full, PlotPoints -> 8,
+        MaxRecursion -> ControlActive[0, 1], ImageSize -> {300, 200}],
+      {{sep, 1., "separation"}, 0, 3, Appearance -> "Labeled"},
+      {{half, 4., "range"}, 2, 8, Appearance -> "Labeled"},
+      {{mesh, Automatic, "show mesh"}, {False, Automatic}, ControlType -> Checkbox},
+      {{flat, True, "plot type"}, {True -> "2D", False -> "3D"}, ControlType -> SetterBar},
+      ControlPlacement -> Top
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "density plot must render, got text {:?}",
+      state.text_output
+    );
+    let flat = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "flat")
+      .expect("plot type control");
+    assert!(state.select_discrete(flat, "3D"));
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "surface plot must render, got text {:?}",
+      state.text_output
+    );
+  }
+
   /// An `Epilog -> (list /. rule)` option is parenthesised in the source; the
   /// body is printed back to text for every re-evaluation, and without the
   /// parentheses the option became `(Epilog -> list) /. rule`, so the
