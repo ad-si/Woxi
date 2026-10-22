@@ -16608,6 +16608,17 @@ fn annotation_contains_dynamic(expr: &Expr) -> bool {
   }
 }
 
+/// Whether `expr` has a `Control[…]` call anywhere inside it.
+fn contains_control_call(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "Control" || args.iter().any(contains_control_call)
+    }
+    Expr::List(items) => items.iter().any(contains_control_call),
+    _ => false,
+  }
+}
+
 /// Whether a `Row[…]`/`Column[…]` argument is Wolfram's custom
 /// control-layout template rather than a static annotation row: it places
 /// each already-declared control by number with `Place[n]` (e.g.
@@ -24506,6 +24517,23 @@ impl ManipulateControl {
       Self::Button { .. } | Self::Heading { .. } | Self::Divider => "",
     }
   }
+
+  /// The key a `PaneSelector` pane's visibility condition is filed under in
+  /// `ManipulateSpec::control_visible`: the bound variable name, or — for a
+  /// static text row, which binds none — a key derived from its label so the
+  /// text of a hidden pane is hidden along with that pane's controls.
+  pub fn visibility_key(&self) -> String {
+    match self {
+      Self::Heading { label, .. } => heading_visibility_key(label),
+      _ => self.name().to_string(),
+    }
+  }
+}
+
+/// The `control_visible` key of a static text row labelled `label`. The
+/// leading control character keeps it from ever colliding with a variable.
+pub fn heading_visibility_key(label: &str) -> String {
+  format!("\u{1}heading:{label}")
 }
 
 /// A parsed Manipulate expression ready for interactive rendering.
@@ -28650,13 +28678,35 @@ fn pane_control_variables(
           out.push(var);
           return;
         }
+        // Static text next to a pane's controls (`Style[" +", 15]` in a
+        // `Row`) becomes a text row of the panel, shown under the pane's
+        // condition as well.
+        if is_manipulate_annotation_head(name)
+          && !annotation_contains_dynamic(e)
+          && !annotation_contains_place(e)
+          && !contains_control_call(e)
+        {
+          let label = flatten_label_runs(&manipulate_label_runs(e, false));
+          if !label.is_empty() {
+            out.push(heading_visibility_key(&label));
+          }
+          return;
+        }
         for a in args {
           walk(a, place_map, out);
         }
       }
       Expr::List(items) => {
         for it in items {
-          walk(it, place_map, out);
+          // A string item of a layout list is a text row; a bare string
+          // pane (a placeholder) leaves no row behind.
+          if let Expr::String(s) = it {
+            if !s.is_empty() {
+              out.push(heading_visibility_key(s));
+            }
+          } else {
+            walk(it, place_map, out);
+          }
         }
       }
       _ => {}
@@ -33378,8 +33428,10 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
     // A control belonging to a `PaneSelector` pane rides along with the
     // condition under which its pane is on screen, so the frontend can hide
     // the rows of the panes the selector is not showing.
-    if let Some((_, cond)) =
-      spec.control_visible.iter().find(|(n, _)| n == c.name())
+    if let Some((_, cond)) = spec
+      .control_visible
+      .iter()
+      .find(|(n, _)| *n == c.visibility_key())
       && part.ends_with('}')
     {
       let field =
