@@ -4288,6 +4288,58 @@ mod region_member {
 
   // RegionMember tests whether a point lies in a (closed) region.
   #[test]
+  fn half_plane_membership() {
+    assert_eq!(
+      interpret("RegionMember[HalfPlane[{0, 0}, {1, 0}, {0, 1}], {3, 2}]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionMember[HalfPlane[{0, 0}, {1, 0}, {0, 1}], {3, -2}]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionMember[HalfPlane[{{0, 0}, {1, 0}}, {0, 1}], {-3, 0}]")
+        .unwrap(),
+      "True"
+    );
+    // A point off the plane is not a member.
+    assert_eq!(
+      interpret(
+        "RegionMember[HalfPlane[{0, 0, 0}, {1, 0, 0}, {0, 1, 0}], {3, 2, 1}]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn boolean_region_membership() {
+    assert_eq!(
+      interpret(
+        "RegionMember[RegionIntersection[HalfPlane[{0, 0}, {1, 0}, {0, 1}], HalfPlane[{0, 0}, {0, 1}, {1, 0}]], {1, 2}]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "RegionMember[RegionIntersection[Disk[], Rectangle[{0, 0}, {2, 2}]], {-0.5, 0.5}]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "RegionMember[RegionUnion[Disk[], Rectangle[{3, 3}, {4, 4}]], {3.5, 3.5}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn disk_interior_boundary_exterior() {
     assert_eq!(
       interpret("RegionMember[Disk[{0, 0}, 1], {0.5, 0.5}]").unwrap(),
