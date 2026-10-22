@@ -10656,9 +10656,29 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   // The size asked for is the whole picture, so the drawing area is what
   // is left of it once the axes and their labels have taken their room.
+  let (mut margin_left, mut margin_right, mut margin_bottom, mut margin_top) =
+    (margin_left, margin_right, margin_bottom, margin_top);
   let (svg_w, svg_h) = if explicit_size {
     let w = (svg_w - margin_left - margin_right).max(1.0);
     match aspect_ratio {
+      // With both `ImageSize -> {w, h}` and `ImagePadding` the padding is
+      // only a minimum: the drawing area keeps its `AspectRatio` inside
+      // what the padding leaves, and the room left over is split evenly
+      // between the two sides of the short axis.
+      Some(r) if size_names_height && image_padding.is_some() => {
+        let avail_h = (svg_h - margin_bottom - margin_top).max(1.0);
+        let (pw, ph) = if w * r <= avail_h {
+          (w, w * r)
+        } else {
+          (avail_h / r, avail_h)
+        };
+        let (slack_w, slack_h) = ((w - pw) / 2.0, (avail_h - ph) / 2.0);
+        margin_left += slack_w;
+        margin_right += slack_w;
+        margin_bottom += slack_h;
+        margin_top += slack_h;
+        (pw.max(1.0), ph.max(1.0))
+      }
       // `AspectRatio -> r` shapes the drawing area itself, not the whole
       // picture, so the height follows from the width left over after the
       // margins (unless `ImageSize -> {w, h}` fixed the height outright).
@@ -12088,6 +12108,24 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         BoxLayout::text(&text, font_size)
       }
 
+      // Ordinary expressions inside a box tree (the cells of a
+      // `FractionBox` built from `Row`, `Style` and `Short`) lay out as
+      // the boxes they stand for.
+      "Row" if args.len() == 1 && matches!(&args[0], Expr::List(_)) => {
+        layout_box(&args[0], font_size)
+      }
+      "Style" if !args.is_empty() => layout_box(
+        &Expr::FunctionCall {
+          name: "StyleBox".to_string(),
+          args: args.clone(),
+        },
+        font_size,
+      ),
+      "Short" if args.len() == 1 || args.len() == 2 => {
+        let lines = args.get(1).and_then(expr_to_f64).unwrap_or(1.0);
+        layout_box(&shorten_for_display(&args[0], lines), font_size)
+      }
+
       // Unknown function: render as text
       _ => {
         let text = expr_to_output(expr);
@@ -12738,6 +12776,42 @@ fn inline_graphic_glyph(args: &[Expr]) -> Option<String> {
   })
 }
 
+/// Characters on one line of `Short`'s output.
+const SHORT_LINE_WIDTH: f64 = 78.0;
+
+/// What `Short[expr, lines]` shows: an integer too long for `lines` lines
+/// keeps its outer digits around a `<<k>>` count of the omitted ones.
+/// Styling wrapped around it is kept; anything that fits is unchanged.
+fn shorten_for_display(expr: &Expr, lines: f64) -> Expr {
+  let budget = (lines * SHORT_LINE_WIDTH).max(0.0) as usize;
+  let digits = match expr {
+    Expr::Integer(n) => n.to_string(),
+    Expr::BigInteger(n) => n.to_string(),
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let mut inner = args.clone();
+      inner[0] = shorten_for_display(&args[0], lines);
+      return Expr::FunctionCall {
+        name: name.clone(),
+        args: inner,
+      };
+    }
+    _ => return expr.clone(),
+  };
+  if digits.len() <= budget {
+    return expr.clone();
+  }
+  let sign = usize::from(digits.starts_with('-'));
+  let keep = budget.saturating_sub(8) / 2;
+  let omitted = digits.len().saturating_sub(2 * keep + sign);
+  if keep == 0 || omitted == 0 {
+    return expr.clone();
+  }
+  let (head, tail) = (&digits[..sign + keep], &digits[digits.len() - keep..]);
+  Expr::String(format!("{head}<<{omitted}>>{tail}"))
+}
+
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
   // `StringForm["template", args…]` substitutes its placeholders wherever
   // it is *typeset* — a graphic's label is exactly that (unlike
@@ -13330,6 +13404,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           }
         }
 
+        // Short[expr, n] shows `expr` abbreviated to about `n` lines of
+        // text; an expression that fits is drawn whole.
+        "Short" if args.len() == 1 || args.len() == 2 => {
+          let lines = args.get(1).and_then(expr_to_f64).unwrap_or(1.0);
+          expr_to_svg_markup(&shorten_for_display(&args[0], lines))
+        }
+
         // A small inline `Graphics[{color, Disk[]}]` (a legend swatch in
         // a label) can't nest an `<svg>` inside `<text>`, so it is typeset
         // as the glyph it draws, in the colour it is drawn with.
@@ -13885,6 +13966,10 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       {
         estimate_display_width(&args[0])
       }
+      "Short" if args.len() == 1 || args.len() == 2 => {
+        let lines = args.get(1).and_then(expr_to_f64).unwrap_or(1.0);
+        estimate_display_width(&shorten_for_display(&args[0], lines))
+      }
       // Subscript[base, i, …] / Superscript[base, e, …] typeset as shifted
       // tspans at 70% size, the scripts comma-separated.
       "Subscript" | "Superscript" if args.len() >= 2 => {
@@ -14318,6 +14403,10 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
           boxes_to_svg(&args[0])
         }
       }
+
+      // An ordinary expression inside a box tree (`Row`, `Style`, `Short`
+      // around the cells of a `FractionBox`) is typeset as itself.
+      n if !n.ends_with("Box") => expr_to_svg_markup(expr),
 
       // Unknown box type: render as Name[arg1, arg2, ...]
       _ => {
@@ -17538,6 +17627,9 @@ fn grid_svg_styled_internal(
   // (1-based from the start, negative from the end).
   let mut col_div_rules: Vec<(i64, Option<Color>)> = Vec::new();
   let mut row_div_rules: Vec<(i64, Option<Color>)> = Vec::new();
+  // `ItemStyle -> {cols, rows}`: text colours per column / row, cycled.
+  let mut item_col_colors: Vec<Option<Color>> = Vec::new();
+  let mut item_row_colors: Vec<Option<Color>> = Vec::new();
   let mut background_color: Option<Color> = None; // uniform background
   let mut col_backgrounds: Vec<Option<Color>> = Vec::new(); // per-column bg
   // Index-rule lists name positions, so they do not cycle over the rest.
@@ -17801,6 +17893,29 @@ fn grid_svg_styled_internal(
           }
           _ => {}
         },
+        "ItemStyle" => {
+          let colors_of = |spec: &Expr| -> Vec<Option<Color>> {
+            match spec {
+              Expr::List(items) => items.iter().map(parse_color).collect(),
+              single => vec![parse_color(single)],
+            }
+          };
+          match replacement.as_ref() {
+            Expr::List(specs)
+              if specs.len() == 2
+                && specs.iter().any(|s| matches!(s, Expr::List(_))) =>
+            {
+              item_col_colors = colors_of(&specs[0]);
+              item_row_colors = colors_of(&specs[1]);
+            }
+            // A lone colour styles every item.
+            single => {
+              if let Some(c) = parse_color(single) {
+                item_col_colors = vec![Some(c)];
+              }
+            }
+          }
+        }
         "Spacings" => {
           // Spacings -> {h, v} or Spacings -> n
           match replacement.as_ref() {
@@ -18576,6 +18691,18 @@ fn grid_svg_styled_internal(
         let text_fill = if cell_hidden {
           "none".to_string()
         } else if let Some(ref c) = cell_color {
+          c.to_svg_rgb()
+        } else if let Some(c) = item_row_colors
+          .get(i % item_row_colors.len().max(1))
+          .copied()
+          .flatten()
+          .or_else(|| {
+            item_col_colors
+              .get(j % item_col_colors.len().max(1))
+              .copied()
+              .flatten()
+          })
+        {
           c.to_svg_rgb()
         } else if link_href.is_some() {
           "#1a73e8".to_string()
@@ -32729,6 +32856,35 @@ pub fn format_f64_exact(v: f64) -> String {
   if !v.is_finite() || v.fract() == 0.0 || v.abs() >= 1e9 {
     return format_f64_input(v);
   }
+  if let Some(s) = rational_form(v, 10_000, 1e-9) {
+    return s;
+  }
+  // An angle written as a degree conversion (`Pi/180 60`) is a small
+  // rational multiple of `Pi`; keep it exact so the body's trigonometry
+  // stays symbolic, as in Wolfram.
+  if let Some(s) = rational_form(v / std::f64::consts::PI, 1_000, 1e-12) {
+    return match s.split_once('/') {
+      Some((num, den)) => match num {
+        "1" => format!("Pi/{den}"),
+        "-1" => format!("-Pi/{den}"),
+        _ => format!("{num}*Pi/{den}"),
+      },
+      None => match s.as_str() {
+        "1" => "Pi".to_string(),
+        "-1" => "-Pi".to_string(),
+        _ => format!("{s}*Pi"),
+      },
+    };
+  }
+  format_f64_input(v)
+}
+
+/// `v` as `p/q` (or `p`) via continued fractions, when a denominator of at
+/// most `max_den` reproduces it within relative tolerance `tol`.
+fn rational_form(v: f64, max_den: i64, tol: f64) -> Option<String> {
+  if v == 0.0 {
+    return None;
+  }
   let (mut h0, mut h1) = (0i64, 1i64);
   let (mut k0, mut k1) = (1i64, 0i64);
   let mut x = v.abs();
@@ -32736,13 +32892,17 @@ pub fn format_f64_exact(v: f64) -> String {
     let a = x.floor();
     let ai = a as i64;
     let (h2, k2) = (ai * h1 + h0, ai * k1 + k0);
-    if k2 > 10_000 {
+    if k2 > max_den {
       break;
     }
     (h0, h1, k0, k1) = (h1, h2, k1, k2);
-    if (v.abs() - h1 as f64 / k1 as f64).abs() <= 1e-9 * v.abs() {
+    if (v.abs() - h1 as f64 / k1 as f64).abs() <= tol * v.abs() {
       let sign = if v < 0.0 { "-" } else { "" };
-      return format!("{sign}{h1}/{k1}");
+      return Some(if k1 == 1 {
+        format!("{sign}{h1}")
+      } else {
+        format!("{sign}{h1}/{k1}")
+      });
     }
     let frac = x - a;
     if frac < 1e-12 {
@@ -32750,7 +32910,7 @@ pub fn format_f64_exact(v: f64) -> String {
     }
     x = 1.0 / frac;
   }
-  format_f64_input(v)
+  None
 }
 
 /// Format a list of 2D points as Wolfram input code, e.g.
@@ -36966,8 +37126,63 @@ mod format_f64_exact_tests {
     // A tiny value must not collapse to `0/1`.
     assert_eq!(format_f64_exact(1e-9), format!("{}", 1e-9));
     assert_eq!(
-      format_f64_exact(std::f64::consts::PI),
-      format!("{}", std::f64::consts::PI)
+      format_f64_exact(std::f64::consts::SQRT_2),
+      format!("{}", std::f64::consts::SQRT_2)
     );
+    // A rational multiple of `Pi` stays exact.
+    assert_eq!(format_f64_exact(std::f64::consts::PI), "Pi");
+  }
+}
+
+#[cfg(test)]
+mod manipulate_symbolic_angle_control_tests {
+  use super::*;
+
+  fn first_continuous(code: &str) -> (f64, f64, Option<f64>, f64) {
+    let expr = crate::interpret_to_expr(code).expect("evaluate");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    match spec.controls.first() {
+      Some(ManipulateControl::Continuous {
+        min,
+        max,
+        step,
+        initial,
+        ..
+      }) => (*min, *max, *step, *initial),
+      other => panic!("expected a continuous control, got {other:?}"),
+    }
+  }
+
+  /// Bounds, step and initial value written as symbolic multiples of `Pi`
+  /// (degrees converted to radians) all resolve to their numeric values.
+  #[test]
+  fn pi_multiples_resolve_for_bounds_step_and_initial() {
+    let (min, max, step, initial) = first_continuous(
+      r#"Manipulate[a, {{a, Pi/180 60, "angle"}, Pi/180 46, Pi/180 89, Pi/180, Appearance -> "Labeled"}]"#,
+    );
+    let deg = std::f64::consts::PI / 180.0;
+    assert!((min - 46.0 * deg).abs() < 1e-12, "min {min}");
+    assert!((max - 89.0 * deg).abs() < 1e-12, "max {max}");
+    assert!((step.expect("step") - deg).abs() < 1e-12, "step {step:?}");
+    assert!((initial - 60.0 * deg).abs() < 1e-12, "initial {initial}");
+  }
+
+  /// A degree-converted initial angle binds exactly (`Pi/3`), so the body's
+  /// trigonometry stays symbolic and the slider stays an exact-valued one.
+  #[test]
+  fn pi_multiple_initial_binds_exactly() {
+    let expr = crate::interpret_to_expr(
+      r#"Manipulate[a, {{a, Pi/180 60, "angle"}, Pi/180 46, Pi/180 89, Pi/180}]"#,
+    )
+    .expect("evaluate");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let bindings = manipulate_initial_bindings(&spec);
+    assert_eq!(bindings, vec![("a".to_string(), "Pi/3".to_string())]);
+    assert_eq!(format_f64_exact(-std::f64::consts::PI), "-Pi");
+    assert_eq!(
+      format_f64_exact(23.0 * std::f64::consts::PI / 90.0),
+      "23*Pi/90"
+    );
+    assert_eq!(format_f64_exact(0.3), "3/10");
   }
 }

@@ -9302,6 +9302,25 @@ mod complex_expand {
     }
   }
 
+  // Sin/Cos/Sinh/Cosh of a real argument are real, and Re/Im of such a
+  // function with a complex argument expand through the argument first.
+  #[test]
+  fn re_im_of_real_trig_functions() {
+    assert_eq!(interpret("ComplexExpand[Im[Cos[2 x]]]").unwrap(), "0");
+    assert_eq!(
+      interpret("ComplexExpand[Re[Sin[x^2]]]").unwrap(),
+      "Sin[x^2]"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Re[Cos[a + I b]]]").unwrap(),
+      "Cos[a]*Cosh[b]"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Im[Cos[a + I b]]]").unwrap(),
+      "-(Sin[a]*Sinh[b])"
+    );
+  }
+
   // ComplexExpand assumes every symbol is real, so Re/Im/Conjugate of a bare
   // symbol (and of a symbolic complex) collapse. Verified against wolframscript.
   #[test]

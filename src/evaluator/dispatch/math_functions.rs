@@ -5835,6 +5835,17 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
         Some((div(re_num, denom.clone()), div(im_num, denom)))
       }
     }
+    // Sin/Cos/Sinh/Cosh of a real argument are real (every symbol is real
+    // under ComplexExpand): `Im[Cos[x]]` is 0, `Re[Sin[2 x]]` is `Sin[2 x]`.
+    // The quotient functions are excluded — they expand to rational forms
+    // of these, see `reciprocal_trig_parts`.
+    Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(name.as_str(), "Sin" | "Cos" | "Sinh" | "Cosh") =>
+    {
+      let (re, im) = split_real_imag(&args[0])?;
+      is_expr_zero(&im).then(|| (call1(name, re), Expr::Integer(0)))
+    }
     // A Rational is a real-valued atom (e.g. the 3/2 in `(3*I)/2`).
     Expr::FunctionCall { name, .. } if name == "Rational" => {
       Some((expr.clone(), Expr::Integer(0)))
@@ -6281,6 +6292,19 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
             return ce_simplify(minus2(re, times2(id_expr("I"), im)));
           }
           _ => {}
+        }
+      }
+
+      // Re/Im/Conjugate of a function that only splits once expanded
+      // (`Re[Cos[a + I b]]`): expand the argument first, then split it.
+      if matches!(name.as_str(), "Re" | "Im" | "Conjugate") {
+        let inner = complex_expand_recursive(arg);
+        if let Some((re, im)) = split_real_imag(&inner) {
+          return ce_simplify(match name.as_str() {
+            "Re" => re,
+            "Im" => im,
+            _ => minus2(re, times2(id_expr("I"), im)),
+          });
         }
       }
 

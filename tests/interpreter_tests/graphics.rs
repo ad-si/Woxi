@@ -8379,6 +8379,27 @@ mod plot3d {
       );
     }
 
+    // `ListPlot` honours explicit `{position, label}` ticks on the bottom
+    // and left frame edges, as `Plot` does, instead of the automatic ones.
+    #[test]
+    fn list_plot_frame_ticks_use_explicit_labels() {
+      let svg = export_svg(
+        r#"ListPlot[{{1, 1}, {2, 2}}, Frame -> True,
+          FrameTicks -> {{{{1.5, "lo"}, {1.8, "hi"}}, None},
+            {{{1, "one"}, {2, "two"}}, None}}]"#,
+      );
+      for label in ["lo", "hi", "one", "two"] {
+        assert!(
+          svg.contains(&format!(">{label}</text>")),
+          "missing tick label {label}: {svg}"
+        );
+      }
+      assert!(
+        !svg.contains(">1.2</text>"),
+        "automatic ticks must be replaced: {svg}"
+      );
+    }
+
     // `FrameTicks -> False` keeps the border but drops the tick marks and
     // their labels, and with them the gutter the labels needed.
     #[test]
@@ -38734,6 +38755,42 @@ mod grid_cell_labeled_layout {
     assert!(!before_grid(&below), "{below}");
     let above = export_svg("Grid[{{Labeled[Grid[{{1}, {2}}], \"cap\", Top]}}]");
     assert!(before_grid(&above), "{above}");
+  }
+}
+
+mod short_in_boxes {
+  use super::*;
+
+  fn svg_of(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  #[test]
+  fn fraction_box_cells_typeset_row_style_and_short() {
+    let svg = svg_of(
+      "DisplayForm[FractionBox[Row[{4, Short[Style[5714, Red], 1/2]}], \
+       Row[{Style[3, Red], 5}]]]",
+    );
+    assert!(!svg.contains("Row["), "{svg}");
+    assert!(!svg.contains("Short["), "{svg}");
+    assert!(!svg.contains("Style["), "{svg}");
+    assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+    assert!(svg.contains(">5714<"), "{svg}");
+  }
+
+  #[test]
+  fn short_draws_a_fitting_integer_whole() {
+    let svg = svg_of("Row[{4, Short[Style[571428, Red], 1/2]}]");
+    assert!(svg.contains("571"), "{svg}");
+    assert!(!svg.contains("Short"), "{svg}");
+  }
+
+  #[test]
+  fn short_abbreviates_an_integer_longer_than_its_line_budget() {
+    let svg = svg_of("Row[{Short[10^200, 1/2]}]");
+    assert!(svg.contains("&lt;&lt;"), "{svg}");
+    assert!(!svg.contains("Short"), "{svg}");
   }
 }
 

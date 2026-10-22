@@ -2789,11 +2789,10 @@ pub fn evaluate_expr_to_expr_inner(
           for a in args {
             prepared.push(evaluate_expr_to_expr(a)?);
           }
-          if prepared.len() == 1
-            && matches!(
-              prepared[0],
-              Expr::Integer(_) | Expr::Real(_) | Expr::String(_)
-            )
+          if (1..=2).contains(&prepared.len())
+            && prepared.iter().all(|p| {
+              matches!(p, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))
+            })
           {
             let applied = ENV.with(|e| match e.borrow().get(name) {
               Some(StoredValue::ExprVal(Expr::FunctionCall {
@@ -4222,6 +4221,26 @@ pub fn evaluate_expr_to_expr_inner(
       // tabulated points are already numbers), so re-evaluating it would
       // only walk every data point again on each call — making sampling an
       // NDSolve result cost O(points) per sample instead of a binary search.
+      if let Expr::FunctionCall {
+        name,
+        args: func_args,
+      } = &**func
+        && name == "InterpolatingFunction"
+        && (2..=5).contains(&func_args.len())
+        && matches!(func_args[0], Expr::List(_))
+      {
+        // Applied straight from the borrowed data: copying the tabulated
+        // points just to call it made every sample O(grid size).
+        let mut prepared: Vec<Expr> = Vec::with_capacity(args.len());
+        for a in args {
+          prepared.push(evaluate_expr_to_expr(a)?);
+        }
+        let prepared =
+          crate::evaluator::listable::flatten_sequences("Function", &prepared);
+        return crate::functions::ode_ast::evaluate_interpolating_function(
+          func_args, &prepared,
+        );
+      }
       let evaluated_func = match &**func {
         Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => {
           (**func).clone()

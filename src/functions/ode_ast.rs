@@ -8,6 +8,7 @@ use crate::functions::calculus_ast::differentiate_expr;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
 use crate::syntax::{expr_children, map_children};
 
+mod complex_pde;
 mod dde;
 
 // ─── DSolve ────────────────────────────────────────────────────────────
@@ -405,7 +406,11 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
       Ok(None) => match ndsolve_pde_hyperbolic(&positional) {
         Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
-        Ok(None) => Ok(unevaluated("NDSolve", args)),
+        Ok(None) => match complex_pde::ndsolve_pde_complex(&positional) {
+          Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
+          Ok(None) => Ok(unevaluated("NDSolve", args)),
+          Err(e) => Err(e),
+        },
         Err(e) => Err(e),
       },
       Err(e) => Err(e),
