@@ -3580,6 +3580,22 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graph_plot_vertex_shape_function_and_all_labels() {
+    // A function-valued `VertexShapeFunction` draws each vertex as
+    // `f[pos, name, size]`, and `VertexLabels -> All` still labels them.
+    clear_state();
+    let svg = interpret(
+      "ExportString[GraphPlot[{{0, 1, 1}, {1, 0, 1}, {1, 1, 0}}, \
+       VertexLabels -> All, \
+       VertexShapeFunction -> ({If[#2 == 1, Red, Green], Disk[#1, .08]} &)], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1, "{svg}");
+    assert_eq!(svg.matches("fill=\"rgb(0,255,0)\"").count(), 2, "{svg}");
+    assert_eq!(svg.matches("<text").count(), 3, "{svg}");
+  }
+
+  #[test]
   fn test_treeplot_rejects_non_position_second_argument() {
     // `TreePlot[rules, pos, …]`'s second positional argument must be one of
     // Top/Bottom/Left/Right/Center, a vertex of the graph (the older
