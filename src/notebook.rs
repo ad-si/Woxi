@@ -1545,6 +1545,12 @@ fn push_juxtaposed(result: &mut String, piece: &str) {
     .any(char::is_alphabetic);
   if result.ends_with('#') && piece_starts_alpha {
     result.push(' ');
+  } else if result.ends_with("/.")
+    && piece.chars().next().is_some_and(|c| c.is_ascii_digit())
+  {
+    // `x /. 0 -> y`: glued as `x/.0->y` the tokenizer reads `/` then the
+    // real number `.0` instead of the `/.` (ReplaceAll) operator.
+    result.push(' ');
   } else if trailing_run_has_letter && piece_starts_alpha {
     result.push('*');
   }
@@ -8151,6 +8157,24 @@ Cell[BoxData[
     match &parsed.cells[0] {
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "drawfig= \"1:eJzsdata==\"");
+      }
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
+  }
+
+  /// `RowBox[{x, "/.", "0", "\[Rule]", y}]` is a replacement of the integer
+  /// `0`; glued as `x/.0->y` it tokenized as division by the real `.0`.
+  #[test]
+  fn test_replace_all_followed_by_digit_keeps_operator() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{"{", RowBox[{"0", ",", "1"}], "}", "/.", "0", "\[Rule]", "\"\""}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert!(cell.content.contains("/. 0"), "{}", cell.content);
+        assert_eq!(crate::interpret(&cell.content).unwrap(), "{, 1}");
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }
