@@ -10636,9 +10636,29 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   // The size asked for is the whole picture, so the drawing area is what
   // is left of it once the axes and their labels have taken their room.
+  let (mut margin_left, mut margin_right, mut margin_bottom, mut margin_top) =
+    (margin_left, margin_right, margin_bottom, margin_top);
   let (svg_w, svg_h) = if explicit_size {
     let w = (svg_w - margin_left - margin_right).max(1.0);
     match aspect_ratio {
+      // With both `ImageSize -> {w, h}` and `ImagePadding` the padding is
+      // only a minimum: the drawing area keeps its `AspectRatio` inside
+      // what the padding leaves, and the room left over is split evenly
+      // between the two sides of the short axis.
+      Some(r) if size_names_height && image_padding.is_some() => {
+        let avail_h = (svg_h - margin_bottom - margin_top).max(1.0);
+        let (pw, ph) = if w * r <= avail_h {
+          (w, w * r)
+        } else {
+          (avail_h / r, avail_h)
+        };
+        let (slack_w, slack_h) = ((w - pw) / 2.0, (avail_h - ph) / 2.0);
+        margin_left += slack_w;
+        margin_right += slack_w;
+        margin_bottom += slack_h;
+        margin_top += slack_h;
+        (pw.max(1.0), ph.max(1.0))
+      }
       // `AspectRatio -> r` shapes the drawing area itself, not the whole
       // picture, so the height follows from the width left over after the
       // margins (unless `ImageSize -> {w, h}` fixed the height outright).
