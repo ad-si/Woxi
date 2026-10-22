@@ -11589,16 +11589,17 @@ pub fn find_minimum_ast(
       "{func_name} expects at least 2 arguments"
     )));
   }
-  // A `{f, cons}` first argument states a constrained problem, which the
+  // A `{f, cons…}` first argument states a constrained problem, which the
   // constrained solver handles; the starting values are only a hint and it
   // takes the variables on their own. wolframscript reports the same
   // `{value, {var -> …}}` shape from either.
   if let Expr::List(items) = &args[0]
-    && items.len() == 2
+    && items.len() >= 2
     && let Some(vars) = optimization_variable_names(&args[1])
     && !vars.is_empty()
   {
     let step_monitor = monitor_after_noopmon(func_name, &args[2..]);
+    let _quiet = QuietGuard::new();
     return nminimize_ast_impl(
       &[
         args[0].clone(),
@@ -12427,6 +12428,27 @@ fn fire_step_monitor(monitor: Option<&Expr>, vars: &[String], x: &[f64]) {
   let _ = crate::evaluator::evaluate_expr_to_expr(&e);
 }
 
+/// Silences messages for as long as it lives. The numeric optimizer probes
+/// the objective at points where it may complain (edges of the search
+/// region, speculative symbolic gradients) and wolframscript reports none
+/// of that.
+struct QuietGuard(crate::WarningSnapshot);
+
+impl QuietGuard {
+  fn new() -> Self {
+    let saved = crate::snapshot_warnings();
+    crate::push_quiet();
+    Self(saved)
+  }
+}
+
+impl Drop for QuietGuard {
+  fn drop(&mut self) {
+    crate::pop_quiet();
+    crate::restore_warnings(std::mem::take(&mut self.0));
+  }
+}
+
 pub fn nminimize_ast(
   args: &[Expr],
   maximize: bool,
@@ -12440,18 +12462,7 @@ pub fn nminimize_ast(
   // The optimizer probes the objective at the edges of the search region
   // (e.g. the excluded endpoint of `x < 1`), which would print Power::infy
   // and similar messages; wolframscript's NMinimize stays silent there.
-  struct QuietGuard(crate::WarningSnapshot);
-  impl Drop for QuietGuard {
-    fn drop(&mut self) {
-      crate::pop_quiet();
-      crate::restore_warnings(std::mem::take(&mut self.0));
-    }
-  }
-  let _quiet = QuietGuard({
-    let saved = crate::snapshot_warnings();
-    crate::push_quiet();
-    saved
-  });
+  let _quiet = QuietGuard::new();
 
   // An indexed variable like `n[1]` (a FunctionCall, not a plain Identifier)
   // is a valid variable for Minimize/Maximize's symbolic solver; NMinimize

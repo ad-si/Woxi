@@ -16324,6 +16324,27 @@ mod cases {
     );
   }
   #[test]
+  fn find_maximum_several_constraints() {
+    assert_case(
+      r#"FindMaximum[{9 - x^2 - y^2, -3 <= x <= 3, -3 <= y <= 3}, {{x, 0.1}, {y, 0.1}}]"#,
+      r#"{9., {x -> 0., y -> 0.}}"#,
+    );
+  }
+  #[test]
+  fn find_minimum_several_constraints() {
+    assert_case(
+      r#"FindMinimum[{(x - 5)^2, x >= 1, x <= 3}, {x, 2}]"#,
+      r#"{4., {x -> 3.}}"#,
+    );
+  }
+  #[test]
+  fn find_maximum_boole_objective_is_silent() {
+    assert_case(
+      r#"FindMaximum[{(9 - x^2 - y^2) Boole[x^2 + y^2 < 9], -3 <= x <= 3, -3 <= y <= 3}, {x, y}]"#,
+      r#"{9., {x -> 0., y -> 0.}}"#,
+    );
+  }
+  #[test]
   fn find_minimum_1() {
     assert_case(r#"FindMinimum[(x-3)^2+2., {x, 1}]"#, r#"{2., {x -> 3.}}"#);
   }

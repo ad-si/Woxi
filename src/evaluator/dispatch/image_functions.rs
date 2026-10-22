@@ -1126,6 +1126,24 @@ pub fn dispatch_image_functions(
           vec![channel(r), channel(g), channel(b)],
         )));
       }
+      // ColorData["WebSafe", "#RRGGBB"]: the web-safe colour with that hex
+      // code (each channel a multiple of 0x33).
+      if let (Expr::String(scheme), Expr::String(code)) = (&args[0], &args[1])
+        && scheme == "WebSafe"
+        && let Some((r, g, b)) = web_safe_hex_color(code)
+      {
+        let channel = |v: f64| {
+          if v == 0.0 {
+            Expr::Integer(0)
+          } else {
+            Expr::Real(v)
+          }
+        };
+        return Some(Ok(call(
+          "RGBColor",
+          vec![channel(r), channel(g), channel(b)],
+        )));
+      }
       // ColorData["VisibleSpectrum", wavelength]: the color of light with
       // the given wavelength in nm (380–750 nm; black outside that range).
       if let Expr::String(scheme) = &args[0]
@@ -1290,6 +1308,25 @@ pub fn dispatch_image_functions(
         ];
         return Some(Ok(Expr::List(
           names.iter().map(|n| str_expr(n)).collect(),
+        )));
+      }
+      // ColorData["WebSafe"]: applying it to a hex code (`"#99CC00"`) gives
+      // the web-safe colour, via the two-argument form.
+      if matches!(&args[0], Expr::String(s) if s == "WebSafe") {
+        let sample = Expr::Function {
+          body: Box::new(call(
+            "ColorData",
+            vec![str_expr("WebSafe"), Expr::Slot(1)],
+          )),
+        };
+        return Some(Ok(call(
+          "ColorDataFunction",
+          vec![
+            str_expr("WebSafe"),
+            str_expr("Named"),
+            Expr::List(vec![].into()),
+            sample,
+          ],
         )));
       }
       // ColorData["VisibleSpectrum"] (wavelength, 380–750 nm) and
@@ -2453,6 +2490,20 @@ const HTML_COLORS: &[(&str, f64, f64, f64)] = &[
   ("Yellow", 1.0, 1.0, 0.0),
   ("YellowGreen", 0.6039215686274509, 0.803921568627451, 0.19607843137254902),
 ];
+
+/// `ColorData["WebSafe", "#RRGGBB"]` → the channels in 0–1. Only the 216
+/// web-safe codes (every channel 00, 33, 66, 99, CC or FF) are accepted.
+fn web_safe_hex_color(code: &str) -> Option<(f64, f64, f64)> {
+  let hex = code.strip_prefix('#')?;
+  if hex.len() != 6 || !hex.is_ascii() {
+    return None;
+  }
+  let channel = |i: usize| {
+    let v = u8::from_str_radix(&hex[i..i + 2], 16).ok()?;
+    (v % 0x33 == 0).then(|| v as f64 / 255.0)
+  };
+  Some((channel(0)?, channel(2)?, channel(4)?))
+}
 
 /// `ColorData["HTML", name]` → the named CSS colour as an `RGBColor`.
 fn html_named_color(name: &str) -> Option<(f64, f64, f64)> {

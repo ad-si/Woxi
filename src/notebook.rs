@@ -1545,6 +1545,12 @@ fn push_juxtaposed(result: &mut String, piece: &str) {
     .any(char::is_alphabetic);
   if result.ends_with('#') && piece_starts_alpha {
     result.push(' ');
+  } else if result.ends_with("/.")
+    && piece.chars().next().is_some_and(|c| c.is_ascii_digit())
+  {
+    // `x /. 0 -> y`: glued as `x/.0->y` the tokenizer reads `/` then the
+    // real number `.0` instead of the `/.` (ReplaceAll) operator.
+    result.push(' ');
   } else if trailing_run_has_letter && piece_starts_alpha {
     result.push('*');
   }
@@ -3405,7 +3411,7 @@ pub fn extract_saved_manipulate_variables(
       // value matches the plain symbol the live source's spec defines
       // (`scale1[abc]`), not a distinct `$CellContext`abc` that resolves
       // to nothing.
-      let value = strip_saved_contexts(rhs);
+      let value = collapse_dump_line_breaks(&strip_saved_contexts(rhs));
       Some((name, unescape_code_string(&value)))
     })
     .collect();
@@ -3481,10 +3487,22 @@ fn extract_dynamic_module_variables(box_dump: &str) -> Vec<(String, String)> {
       // See the matching strip in `extract_saved_manipulate_variables`: a
       // bare-symbol default value is context-qualified too, not just the
       // variable name.
-      let value = strip_saved_contexts(rhs);
+      let value = collapse_dump_line_breaks(&strip_saved_contexts(rhs));
       Some((unescape_code_string(name), unescape_code_string(&value)))
     })
     .collect()
+}
+
+/// The front end wraps long box dumps at arbitrary spaces
+/// (`Rational[23, 90] \n    Pi`). A line break inside a saved value is
+/// just that wrapping — read as a statement separator it would truncate the
+/// value to its last line — so fold it back into a single space (implicit
+/// multiplication). Values holding string literals are left untouched.
+fn collapse_dump_line_breaks(value: &str) -> String {
+  if value.contains('"') || !value.contains('\n') {
+    return value.to_string();
+  }
+  value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// The prefix of `s` up to (excluding) the `)` matching an already-consumed
@@ -7547,6 +7565,21 @@ yf4GL4DwC5VA4w
   }
 
   #[test]
+  fn test_extract_saved_manipulate_variables_joins_wrapped_values() {
+    // The front end wraps long dumps mid-value (`Rational[23, 90] \n Pi`);
+    // the line break must not split the value into two statements.
+    let dump = "DynamicModuleBox[{$CellContext`a$$ = Rational[23, 90] \n    Pi, \
+      $CellContext`s$$ = \"x\ny\"}, DynamicBox[…]]";
+    assert_eq!(
+      extract_saved_manipulate_variables(dump),
+      vec![
+        ("a".to_string(), "Rational[23, 90] Pi".to_string()),
+        ("s".to_string(), "\"x\ny\"".to_string()),
+      ]
+    );
+  }
+
+  #[test]
   fn test_extract_saved_manipulate_variables_resolves_default_references() {
     // A control initialised from its own default variable, which is listed
     // later (and a chain through two defaults), must open on that default
@@ -8151,6 +8184,24 @@ Cell[BoxData[
     match &parsed.cells[0] {
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "drawfig= \"1:eJzsdata==\"");
+      }
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
+  }
+
+  /// `RowBox[{x, "/.", "0", "\[Rule]", y}]` is a replacement of the integer
+  /// `0`; glued as `x/.0->y` it tokenized as division by the real `.0`.
+  #[test]
+  fn test_replace_all_followed_by_digit_keeps_operator() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{"{", RowBox[{"0", ",", "1"}], "}", "/.", "0", "\[Rule]", "\"\""}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert!(cell.content.contains("/. 0"), "{}", cell.content);
+        assert_eq!(crate::interpret(&cell.content).unwrap(), "{, 1}");
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }

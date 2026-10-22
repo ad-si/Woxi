@@ -790,6 +790,29 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     {
       arithmetic_label(e)
     }
+    // A comparison reads as its sides joined by the operator, each side set
+    // as a label itself — `PlotLegends -> {Subscript[v, 1] == Sin[x]}` shows
+    // `v₁ == Sin[x]`, not the raw `Subscript[v, 1]` call.
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let mut out = expr_to_label(operands.first()?)?;
+      for (op, operand) in operators.iter().zip(&operands[1..]) {
+        let sym = match op {
+          ComparisonOp::Equal => "==",
+          ComparisonOp::NotEqual => "!=",
+          ComparisonOp::Less => "<",
+          ComparisonOp::LessEqual => "<=",
+          ComparisonOp::Greater => ">",
+          ComparisonOp::GreaterEqual => ">=",
+          ComparisonOp::SameQ => "===",
+          ComparisonOp::UnsameQ => "=!=",
+        };
+        out.push_str(&format!(" {sym} {}", expr_to_label(operand)?));
+      }
+      Some(out)
+    }
     // A label written as a function of the plot's variable — a Demonstration
     // writes `AxesLabel -> {t, y[t]}` and `FrameLabel -> {y[t], y'[t]}` —
     // typesets the way a graphic's labels do, with the argument in
@@ -973,6 +996,24 @@ fn arithmetic_label(e: &Expr) -> Option<String> {
 /// A label for a function application of an unknown head: `y[t]` → `y(t)`,
 /// `y'[t]` → `y′(t)`, `y''` → `y″`. `None` for anything else, including
 /// applications of built-in functions, whose own formatting rules apply.
+/// Whether `e` contains a `Subscript`/`Superscript` call, whose typeset form
+/// differs from the raw `expr_to_string` text.
+fn contains_script_call(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Subscript" | "Superscript" | "Subsuperscript"
+      ) || args.iter().any(contains_script_call)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_script_call(left) || contains_script_call(right)
+    }
+    Expr::List(items) => items.iter().any(contains_script_call),
+    _ => false,
+  }
+}
+
 fn applied_label(e: &Expr) -> Option<String> {
   use crate::functions::graphics::{as_derivative_of, derivative_prime_marks};
   // `Derivative[n][f]`, with or without an argument applied to it.
@@ -1008,6 +1049,17 @@ fn applied_label(e: &Expr) -> Option<String> {
         .is_none() =>
     {
       (name.clone(), &args[..])
+    }
+    // A built-in head stays in StandardForm bracket notation (`Sin[x]`), with
+    // its arguments set as labels so `Sin[Subscript[k, 1] x]` reads
+    // `Sin[k₁ x]`.
+    Expr::FunctionCall { name, args }
+      if !args.is_empty()
+        && args.iter().any(contains_script_call)
+        && args.iter().all(|a| expr_to_label(a).is_some()) =>
+    {
+      let parts: Vec<String> = args.iter().filter_map(expr_to_label).collect();
+      return Some(format!("{name}[{}]", parts.join(", ")));
     }
     _ => return None,
   };

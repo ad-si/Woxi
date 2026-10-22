@@ -20939,3 +20939,121 @@ mod kernel_format_interpolating_function {
     );
   }
 }
+
+mod ndsolve_complex_periodic_pde {
+  use super::*;
+
+  /// A plane wave `Exp[I k x]` of the free Schrödinger equation on a
+  /// periodic interval keeps its shape and only picks up the phase
+  /// `Exp[-I k^2 t]`.
+  #[test]
+  fn free_schroedinger_plane_wave_matches_exact_solution() {
+    assert_eq!(
+      interpret(
+        "k = 2 Pi/10.; \
+         s = NDSolve[{I D[u[t, x], t] + D[u[t, x], x, x] == 0, \
+           u[0, x] == E^(I k x), u[t, -5.] == u[t, 5.]}, \
+           u, {t, 0, 2}, {x, -5., 5.}]; \
+         (Abs[u[1.5, 0.7] - E^(I (k 0.7 - k^2 1.5))] /. First[s]) < 10^-4"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// A nonlinear, forced equation with a complex coefficient on the time
+  /// derivative: the solution is complex, and without forcing the
+  /// discrete mass `Sum[Abs[u]^2]` is conserved.
+  #[test]
+  fn nonlinear_schroedinger_conserves_mass() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{I D[u[t, x], t] + D[u[t, x], x, x] + 2 Abs[u[t, x]]^2 u[t, x] == 0, \
+           u[0, x] == E^(-(x - 1.)^2) + E^(-(x + 1.)^2), u[t, -5.] == u[t, 5.]}, \
+           u, {t, 0, 2}, {x, -5., 5.}]; \
+         m[t_] := Total[Table[Abs[u[t, x]]^2, {x, -5., 4.9, 0.1}]] /. First[s]; \
+         Abs[m[2.] - m[0.]]/m[0.] < 10^-2"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// The forcing term and initial profile may be complex expressions of
+  /// `x`, and the result is complex (not just its absolute value).
+  #[test]
+  fn complex_initial_profile_gives_complex_solution() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{I D[u[t, x], t] + D[u[t, x], x, x] == 0, \
+           u[0, x] == E^(-x^2) E^(2 I x), u[t, -5.] == u[t, 5.]}, \
+           u, {t, 0, 1}, {x, -5., 5.}]; \
+         (Im[u[0.5, 0.3]] != 0 && Abs[u[0, 0.] - 1.] < 10^-6) /. First[s]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// With the space variable declared first, the solution takes its
+  /// arguments in that order.
+  #[test]
+  fn space_variable_declared_first() {
+    assert_eq!(
+      interpret(
+        "k = 2 Pi/10.; \
+         s = NDSolve[{I D[u[x, t], t] + D[u[x, t], x, x] == 0, \
+           u[x, 0] == E^(I k x), u[-5., t] == u[5., t]}, \
+           u, {x, -5., 5.}, {t, 0, 2}]; \
+         (Abs[u[0.7, 1.5] - E^(I (k 0.7 - k^2 1.5))] /. First[s]) < 10^-4"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// A real periodic diffusion problem keeps a real solution.
+  #[test]
+  fn real_periodic_diffusion_stays_real() {
+    assert_eq!(
+      interpret(
+        "k = 2 Pi/10.; \
+         s = NDSolve[{D[u[t, x], t] == D[u[t, x], x, x], \
+           u[0, x] == Cos[k x], u[t, -5.] == u[t, 5.]}, \
+           u, {t, 0, 1}, {x, -5., 5.}]; \
+         v = u[0.5, 1.2] /. First[s]; \
+         {Head[v], Abs[v - E^(-k^2 0.5) Cos[k 1.2]] < 10^-4}"
+      )
+      .unwrap(),
+      "{Real, True}"
+    );
+  }
+}
+
+mod integrate_negative_scaled_power {
+  use super::*;
+
+  #[test]
+  fn fractional_power_of_negative_multiple() {
+    assert_eq!(
+      interpret("Integrate[(-2 p)^(3/2), p]").unwrap(),
+      "-1/5*(-2*p)^(5/2)"
+    );
+  }
+
+  #[test]
+  fn monomial_times_fractional_power_of_negative_multiple() {
+    assert_eq!(
+      interpret("Integrate[p^2 (-2 p)^(3/2), p]").unwrap(),
+      "-1/36*(-2*p)^(9/2)"
+    );
+  }
+
+  #[test]
+  fn linear_factor_times_power_of_negative_multiple() {
+    assert_eq!(
+      interpret("Integrate[p (-3 p)^(5/2), p]").unwrap(),
+      "(2*(-3*p)^(9/2))/81"
+    );
+  }
+}
