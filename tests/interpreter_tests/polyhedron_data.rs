@@ -881,9 +881,9 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(
         r#"Module[{d = N[PolyhedronData["TruncatedCube", "Faces"]]},
-          {Union[Round[Flatten[Table[
+          {Union[N[Round[Flatten[Table[
               Norm[d[[1, f[[i]]]] - d[[1, f[[Mod[i, Length[f]] + 1]]]]],
-              {f, d[[2, 1]]}, {i, Length[f]}]], 10^-8]],
+              {f, d[[2, 1]]}, {i, Length[f]}]], 10^-8]]],
            Chop[N[PolyhedronData["TruncatedCube", "Volume"]] -
                 (21 + 14 Sqrt[2])/3]}]"#
       )

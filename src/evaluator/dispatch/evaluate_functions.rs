@@ -1059,6 +1059,7 @@ fn evaluate_function_call_ast_inner(
     "PieCharts`PieChart" => "PieChart",
     "Derangements" if combinatorica_active => "Combinatorica`Derangements",
     "RandomKSubset" if combinatorica_active => "Combinatorica`RandomKSubset",
+    "StableMarriage" if combinatorica_active => "Combinatorica`StableMarriage",
     "SymmetricGroup" if combinatorica_active => "Combinatorica`SymmetricGroup",
     "AlternatingGroup" if combinatorica_active => {
       "Combinatorica`AlternatingGroup"
@@ -5348,6 +5349,19 @@ fn evaluate_function_call_ast_inner(
   }
   if name == "VoronoiMesh" && args.len() == 1 {
     return crate::functions::voronoi::voronoi_mesh_ast(args);
+  }
+
+  // HighlightMesh[mesh, spec] displays the mesh itself; the highlighting
+  // (and the cell labels `Labeled[…]` would add) is not drawn.
+  if name == "HighlightMesh"
+    && args.len() == 2
+    && crate::functions::mesh_region::is_mesh_region(&args[0])
+  {
+    return Ok(args[0].clone());
+  }
+
+  if name == "TriangulateMesh" && args.len() == 1 {
+    return crate::functions::mesh_region::triangulate_mesh_ast(args);
   }
 
   // ConvexHullMesh[{{x1,y1},...}, opts...] → convex hull as a

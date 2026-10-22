@@ -11315,6 +11315,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         | Expr::Function { .. } => {
           format!("({})", fmt(pattern))
         }
+        _ if is_replace_operator(pattern) => format!("({})", fmt(pattern)),
         _ => fmt(pattern),
       };
       // Parenthesize RHS if it's a pure function (& has low precedence) or a
@@ -11325,6 +11326,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       let rhs_str = fmt(replacement);
       let rhs_final = match replacement.as_ref() {
         Expr::Function { .. } | Expr::CompoundExpr(_) => format!("({rhs_str})"),
+        r if is_replace_operator(r) => format!("({rhs_str})"),
         _ => rhs_str,
       };
       format!("{lhs} -> {rhs_final}")
@@ -11341,6 +11343,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         | Expr::Function { .. } => {
           format!("({})", fmt(pattern))
         }
+        _ if is_replace_operator(pattern) => format!("({})", fmt(pattern)),
         _ => fmt(pattern),
       };
       // Parenthesize RHS if it's an assignment so the := operator is
@@ -11361,6 +11364,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           format!("({rhs_str})")
         }
         Expr::CompoundExpr(_) => format!("({rhs_str})"),
+        r if is_replace_operator(r) => format!("({rhs_str})"),
         _ => rhs_str,
       };
       format!("{lhs} :> {rhs_final}")
@@ -11840,6 +11844,14 @@ fn escape_string_for_input_form(s: &str) -> String {
   escaped
 }
 
+/// `/.` and `//.` bind looser than `->` and `:>`, so a replacement operator
+/// used as either side of a rule needs parentheses to print back to the same
+/// tree: `Epilog -> ({a} /. r -> y)` would otherwise re-parse as
+/// `(Epilog -> {a}) /. r -> y`.
+fn is_replace_operator(e: &Expr) -> bool {
+  matches!(e, Expr::ReplaceAll { .. } | Expr::ReplaceRepeated { .. })
+}
+
 /// Render the left-hand side of a rule for InputForm, parenthesizing it when
 /// it is itself a rule (`->` is right-associative, so `(a -> b) -> c` must
 /// keep its parentheses).
@@ -11851,6 +11863,7 @@ fn input_form_rule_lhs(e: &Expr) -> String {
     Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::Function { .. } => {
       format!("({})", expr_to_input_form(e))
     }
+    _ if is_replace_operator(e) => format!("({})", expr_to_input_form(e)),
     _ => expr_to_input_form(e),
   }
 }
@@ -11866,6 +11879,7 @@ fn input_form_rule_rhs(e: &Expr) -> String {
     Expr::Function { .. } | Expr::CompoundExpr(_) => {
       format!("({})", expr_to_input_form(e))
     }
+    _ if is_replace_operator(e) => format!("({})", expr_to_input_form(e)),
     _ => expr_to_input_form(e),
   }
 }
@@ -12263,6 +12277,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           format!("({rhs_str})")
         }
         Expr::Function { .. } | Expr::CompoundExpr(_) => format!("({rhs_str})"),
+        r if is_replace_operator(r) => format!("({rhs_str})"),
         _ => rhs_str,
       };
       format!("{} :> {}", input_form_rule_lhs(pattern), rhs_final)
@@ -12281,6 +12296,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           format!("({rhs_str})")
         }
         Expr::Function { .. } | Expr::CompoundExpr(_) => format!("({rhs_str})"),
+        r if is_replace_operator(r) => format!("({rhs_str})"),
         _ => rhs_str,
       };
       format!("{} :> {}", input_form_rule_lhs(&args[0]), rhs_final)

@@ -8847,4 +8847,28 @@ mod image_size_option {
       "<svg xmlns='http://www.w3.org/2000/svg' width='2' height='4'"
     );
   }
+
+  // `ColorData["WebSafe"]["#RRGGBB"]` tints Demonstrations graphics with a
+  // web-safe colour. Regression: it stayed unevaluated.
+  #[test]
+  fn color_data_web_safe_hex_colors() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorData[\"WebSafe\", \"#99CC00\"]").unwrap(),
+      "RGBColor[0.6, 0.8, 0]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"WebSafe\"][\"#3399CC\"]").unwrap(),
+      "RGBColor[0.2, 0.6, 0.8]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"WebSafe\"][\"#FF9933\"]").unwrap(),
+      "RGBColor[1., 0.6, 0.2]"
+    );
+    // A code that is not web-safe stays unevaluated.
+    assert_eq!(
+      interpret("ColorData[\"WebSafe\", \"#123456\"]").unwrap(),
+      "ColorData[WebSafe, #123456]"
+    );
+  }
 }
