@@ -38613,4 +38613,44 @@ mod grid_cell_labeled_layout {
     let above = export_svg("Grid[{{Labeled[Grid[{{1}, {2}}], \"cap\", Top]}}]");
     assert!(before_grid(&above), "{above}");
   }
+
+  mod append_to_graphics {
+    use crate::interpreter_tests::case_helpers::assert_case;
+
+    #[test]
+    fn append_option_to_graphics3d() {
+      assert_case(
+        r#"Append[Graphics3D[{Cuboid[]}], Axes -> True][[2]]"#,
+        "Axes -> True",
+      );
+      assert_case(
+        r#"Head[Append[Graphics3D[{Cuboid[]}], Axes -> True]]"#,
+        "Graphics3D",
+      );
+    }
+
+    #[test]
+    fn fold_append_options_onto_graphics3d() {
+      assert_case(
+        r#"Length[Fold[Append, Graphics3D[{Cuboid[]}], {Axes -> True, Boxed -> False}]]"#,
+        "3",
+      );
+    }
+
+    #[test]
+    fn append_option_to_plot() {
+      assert_case(
+        r#"Head[Append[Plot[x, {x, 0, 1}], ImageSize -> 100]]"#,
+        "Graphics",
+      );
+    }
+
+    #[test]
+    fn prepend_primitive_to_graphics3d() {
+      assert_case(
+        r#"Prepend[Graphics3D[{Cuboid[]}], {Sphere[]}][[1]]"#,
+        "{Sphere[{0, 0, 0}]}",
+      );
+    }
+  }
 }

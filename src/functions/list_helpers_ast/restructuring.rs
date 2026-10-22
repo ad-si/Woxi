@@ -2076,6 +2076,15 @@ pub fn join_at_level_ast(
 
 /// AST-based Append: append element to list.
 pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
+  // A rendered graphic is `Graphics[…]`/`Graphics3D[…]` underneath, so
+  // appending (an option, say) edits that form and renders it again.
+  if let Some(symbolic) =
+    crate::evaluator::part_extraction::graphics_symbolic_form(list)
+  {
+    return crate::evaluator::evaluate_expr_to_expr(&append_ast(
+      &symbolic, elem,
+    )?);
+  }
   match list {
     Expr::Association(pairs) => {
       // Append a rule to an association
@@ -2112,6 +2121,15 @@ pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
 
 /// AST-based Prepend: prepend element to list.
 pub fn prepend_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
+  // A rendered graphic is `Graphics[…]`/`Graphics3D[…]` underneath, so
+  // appending (an option, say) edits that form and renders it again.
+  if let Some(symbolic) =
+    crate::evaluator::part_extraction::graphics_symbolic_form(list)
+  {
+    return crate::evaluator::evaluate_expr_to_expr(&prepend_ast(
+      &symbolic, elem,
+    )?);
+  }
   match list {
     Expr::Association(pairs) => {
       // Prepend a rule to an association
