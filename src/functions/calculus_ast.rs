@@ -15578,6 +15578,30 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results.into()));
   }
 
+  // `NIntegrate[f, Element[{x, y}, region]]` over a planar mesh region.
+  if let Expr::FunctionCall { name, args: eargs } = &args[1]
+    && name == "Element"
+    && eargs.len() == 2
+    && let Expr::List(var_items) = &eargs[0]
+    && let Ok(region) = crate::evaluator::evaluate_expr_to_expr(&eargs[1])
+    && crate::functions::mesh_region::is_mesh_region(&region)
+  {
+    let vars: Vec<String> = var_items
+      .iter()
+      .filter_map(|v| match v {
+        Expr::Identifier(s) => Some(s.clone()),
+        _ => None,
+      })
+      .collect();
+    if vars.len() == var_items.len()
+      && let Some(result) = crate::functions::mesh_region::nintegrate_over_mesh(
+        &args[0], &vars, &region,
+      )
+    {
+      return Ok(result);
+    }
+  }
+
   // Parse options from additional arguments (Tolerance, Method, MaxRecursion, etc.)
   let mut tolerance = 1e-10_f64;
   let mut max_recursion = 50_u32;
