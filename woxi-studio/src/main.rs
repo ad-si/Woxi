@@ -6798,6 +6798,10 @@ fn check_notebook(path: &std::path::Path) -> i32 {
       many => format!("{} statements", many.len()),
     };
     println!("unbuilt: {reason}");
+    // `WOXI_CHECK_DUMP=FILE` saves the cell's source for a closer look.
+    if let Some(dump) = std::env::var_os("WOXI_CHECK_DUMP") {
+      let _ = std::fs::write(dump, &code);
+    }
   }
   for (i, state) in widgets.iter().enumerate() {
     match state.check_render() {

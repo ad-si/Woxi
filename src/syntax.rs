@@ -3373,6 +3373,58 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       }
       call1("DifferentialD", operand)
     }
+    Rule::TightPrefix => {
+      let inners: Vec<_> = pair.into_inner().collect();
+      let head = prefix_operator_head(inners[0].as_str());
+      let mut operand = pair_to_expr(inners[1].clone());
+      for suffix in &inners[2..] {
+        match suffix.as_rule() {
+          Rule::PartIndexSuffix => {
+            operand = apply_part_index_suffix(operand, suffix.clone());
+          }
+          Rule::ImplicitPowerSuffix => {
+            operand = pow2(operand, implicit_power_exponent(suffix.clone()));
+          }
+          _ => {}
+        }
+      }
+      call1(head, operand)
+    }
+    // `∫ f ⅆx` is `Integrate[f, x]`: the last differential factor of the
+    // product names the variable. Without one it stays `Integral[f]`.
+    Rule::LoosePrefix => {
+      let inners: Vec<_> = pair.into_inner().collect();
+      let head = prefix_operator_head(inners[0].as_str());
+      let operand = pair_to_expr(inners[1].clone());
+      if head == "Integral" {
+        let mut factors = match &operand {
+          Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            ..
+          } => {
+            crate::functions::polynomial_ast::collect_multiplicative_factors(
+              &operand,
+            )
+          }
+          other => vec![other.clone()],
+        };
+        if let Some(Expr::FunctionCall { name, args }) = factors.last()
+          && name == "DifferentialD"
+          && args.len() == 1
+        {
+          let var = args[0].clone();
+          factors.pop();
+          let integrand = match factors.len() {
+            0 => Expr::Integer(1),
+            1 => factors.remove(0),
+            _ => call("Times", factors),
+          };
+          return call("Integrate", vec![integrand, var]);
+        }
+      }
+      call1(head, operand)
+    }
     // `\[Piecewise]{{v1,c1},{v2,c2},…}` is the special-character input form
     // for `Piecewise[{{v1,c1},{v2,c2},…}]` (the way the front end writes the
     // piecewise brace notation). It binds to the following factor like a
@@ -4305,7 +4357,13 @@ fn parse_expression_inner(
           &mut terms,
           &mut term_was_implicit_times,
         );
-        operators.push(item.as_str().trim().to_string());
+        // `\[Minus]` is `-` typeset.
+        let op = item.as_str().trim();
+        operators.push(if op == "\u{2212}" || op == "\\[Minus]" {
+          "-".to_string()
+        } else {
+          op.to_string()
+        });
       }
       Rule::UnsetSuffix => {
         // f[x] =. → Unset[f[x]]: push "=." as an operator with a dummy
@@ -6279,6 +6337,36 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       op_str,
       expr_to_string(right)
     )),
+  }
+}
+
+/// The head a named-character prefix operator (its character or its
+/// `\[Name]` escape) applies.
+fn prefix_operator_head(op: &str) -> &'static str {
+  let name = op
+    .strip_prefix("\\[")
+    .and_then(|r| r.strip_suffix(']'))
+    .unwrap_or(op);
+  match name {
+    "\u{00B1}" | "PlusMinus" => "PlusMinus",
+    "\u{2213}" | "MinusPlus" => "MinusPlus",
+    "\u{2207}" | "Del" => "Del",
+    "\u{F520}" | "Square" => "Square",
+    "\u{F74B}" | "CapitalDifferentialD" => "CapitalDifferentialD",
+    "\u{F3B3}" | "InvisiblePrefixScriptBase" => "InvisiblePrefixScriptBase",
+    "\u{222B}" | "Integral" => "Integral",
+    "\u{222E}" | "ContourIntegral" => "ContourIntegral",
+    "\u{222F}" | "DoubleContourIntegral" => "DoubleContourIntegral",
+    "\u{2232}" | "ClockwiseContourIntegral" => "ClockwiseContourIntegral",
+    "\u{2233}" | "CounterClockwiseContourIntegral" => {
+      "CounterClockwiseContourIntegral"
+    }
+    "\u{2200}" | "ForAll" => "ForAll",
+    "\u{2203}" | "Exists" => "Exists",
+    "\u{2204}" | "NotExists" => "NotExists",
+    "\u{F3DD}" | "ExpectationE" => "ExpectationE",
+    "\u{F3DC}" | "ProbabilityPr" => "ProbabilityPr",
+    _ => "ContinuedFractionK",
   }
 }
 

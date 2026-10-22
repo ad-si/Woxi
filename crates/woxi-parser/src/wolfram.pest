@@ -217,7 +217,7 @@ LetterlikeSymbolChar = _{ "\u{2026}" | "\u{22EF}" | "\u{22EE}" | "\u{22F0}" | "\
 // handling in notebook.rs and the glyph list in graphics.rs.
 BigOperatorChar = _{ "\u{2211}" | "\u{220F}" }
 
-NamedCharBase = _{ !(GenericInfixOperatorName | "\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Piecewise]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[Conjugate]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Intersection]" | "\\[Union]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[LongEqual]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]" | "\\[TildeTilde]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
+NamedCharBase = _{ !(GenericInfixOperatorName | "\\[Minus]" | TightPrefixOp | LoosePrefixOp | "\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Piecewise]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[Conjugate]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Intersection]" | "\\[Union]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[LongEqual]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]" | "\\[TildeTilde]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
 // Adjacent `\[Name]` segments (or named char + identifier chars)
 // concatenate into a single identifier — `\[CapitalGamma]\[Beta]` → `Γβ`,
 // `\[Angle]XYZ` → `∠XYZ`, `i\[Ellipsis]j` (when `i` then `\[Ellipsis]j`
@@ -377,7 +377,7 @@ Operator = @{
   // then. Must precede the bare `+`/`-`/`*`/`/` spellings below.
   | "+=" | "-=" | "*=" | "/="
   | "**"   // NonCommutativeMultiply (must be before *)
-  | "+" | "-" | "*" | "/" | "^"
+  | "+" | "-" | "\u{2212}" | "\\[Minus]" | "*" | "/" | "^"
   | "." ~ !ASCII_DIGIT ~ !"."  // Dot operator (not decimal point, not .. or ...)
   | "<" | ">"
   | "=" | "@"
@@ -477,7 +477,7 @@ DivideBy = { (&PartAssignScan ~ PartExtract | Identifier | NumericValue) ~ "/=" 
 // y^(-m) instead of y^0 - m (Wolfram's implicit-power semantics).
 // The optional `PartIndexSuffix?` after the exponent term lets `y^-m[[1]]`
 // parse as `y^(-Part[m, 1])`, matching Wolfram's `Part` precedence.
-NegSimpleTerm = { "-" ~ SimpleTerm ~ PartIndexSuffix? }
+NegSimpleTerm = { ("-" | "\u{2212}") ~ SimpleTerm ~ PartIndexSuffix? }
 // FactorialSuffix may follow the exponent because `!` (Factorial) binds
 // tighter than `^` (Power) in Wolfram, so `a^b!` parses as `a^(b!)`.
 ImplicitPowerSuffix = { "^" ~ (NegSimpleTerm ~ FactorialSuffix? | SimpleTerm ~ PartIndexSuffix? ~ FactorialSuffix?) }
@@ -488,7 +488,7 @@ ImplicitPowerSuffix = { "^" ~ (NegSimpleTerm ~ FactorialSuffix? | SimpleTerm ~ P
 ImplicitTimesFactor = _{ SimpleTerm ~ (PartIndexSuffix ~ BracketArgs*)? ~ ImplicitPowerSuffix? ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? }
 // NegativeImplicitFirst allows -N as the first factor in implicit multiplication
 // so that "-90 Degree" parses as Times[-90, Degree] instead of failing.
-NegativeImplicitFirst = { "-" ~ UnsignedNumericValue }
+NegativeImplicitFirst = { ("-" | "\u{2212}") ~ UnsignedNumericValue }
 // `ImplicitTimes` is tried before the plain list/association/parenthesis rules,
 // so a term that is just a bracket group gets that group parsed once here (as a
 // candidate first factor), thrown away when no second factor follows, and then
@@ -503,7 +503,7 @@ BracketGroupScan = _{ BalancedAssociation | BalancedBraces | BalancedParens }
 // the (slower) ImplicitTimes path rather than being mis-rejected.
 GroupTerminator = _{
     EOI | "," | "]" | "}" | ")" | "|>" | ";" | "&"
-  | "+" | "-" | "*" | "/" | "<" | ">" | "=" | "@" | "~" | "|"
+  | "+" | "-" | "\u{2212}" | "*" | "/" | "<" | ">" | "=" | "@" | "~" | "|"
 }
 // A symbol, slot or literal followed only by bracket groups (`a[[b[[1]]]]`)
 // is the same situation: `PartExtract` parses it again after `ImplicitTimes`.
@@ -548,7 +548,9 @@ AnonymousFunctionSuffix = { "&" ~ !"&" ~ BracketArgs* }
 // minus (`NegLiteralTail`): we peel off the unary minus so that
 // `-10^8 = -(10^8) = -100000000` (Wolfram precedence) — the Integer and
 // Real rules have a matching lookahead to release the `-`.
-LeadingMinus = @{ "-" ~ !"-" ~ ((!ASCII_DIGIT) | &(RealBody ~ NegLiteralTail) | &(ASCII_DIGIT+ ~ NegLiteralTail)) }
+// `\[Minus]` (U+2212) is the typeset minus sign; it never starts a
+// number literal, so it is always the unary operator.
+LeadingMinus = @{ "-" ~ !"-" ~ ((!ASCII_DIGIT) | &(RealBody ~ NegLiteralTail) | &(ASCII_DIGIT+ ~ NegLiteralTail)) | "\u{2212}" | "\\[Minus]" }
 // LeadingPlus marks a leading "+" in an expression: +x, +f[x], +(a+b), etc.
 // Only matches when NOT followed by a digit or "+" (so +3 parses as positive Integer,
 // ++ would be Increment). Semantically +expr is just expr.
@@ -732,6 +734,8 @@ Term = _{
   | ImplicitTimes
   | RadicalPrefix
   | DifferentialPrefix
+  | TightPrefix
+  | LoosePrefix
   | PiecewisePrefix
   | FloorBrackets
   | CeilingBrackets
@@ -793,6 +797,25 @@ PiecewisePrefix = { PiecewiseOp ~ SimpleTerm }
 // The zero-width scan confirms the `@` before parsing the head: without it a
 // factor like `g[…]` is parsed here as a candidate head, thrown away when no
 // `@` follows, and parsed again as a `FunctionCall` — 2^n for `2 g[2 g[…]]`.
+// Named-character prefix operators. The tight ones take the next factor
+// (with its power), like unary minus: `±a b` is `PlusMinus[a] b` and `∇f^2`
+// is `Del[f^2]`. The loose ones — integrals, quantifiers — take the whole
+// product that follows: `∫ x y ⅆx` is `Integral[x y ⅆx]` (read back as
+// `Integrate[x y, x]`).
+TightPrefixOp = {
+    "\u{00B1}" | "\\[PlusMinus]" | "\u{2213}" | "\\[MinusPlus]" | "\u{2207}" | "\\[Del]"
+  | "\u{F520}" | "\\[Square]" | "\u{F74B}" | "\\[CapitalDifferentialD]" | "\u{F3B3}"
+  | "\\[InvisiblePrefixScriptBase]"
+}
+TightPrefix = { TightPrefixOp ~ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? }
+LoosePrefixOp = {
+    "\u{222B}" | "\\[Integral]" | "\u{222E}" | "\\[ContourIntegral]" | "\u{222F}"
+  | "\\[DoubleContourIntegral]" | "\u{2232}" | "\\[ClockwiseContourIntegral]" | "\u{2233}"
+  | "\\[CounterClockwiseContourIntegral]" | "\u{2200}" | "\\[ForAll]" | "\u{2203}" | "\\[Exists]"
+  | "\u{2204}" | "\\[NotExists]" | "\u{F3DD}" | "\\[ExpectationE]" | "\u{F3DC}"
+  | "\\[ProbabilityPr]" | "\u{F3D9}" | "\\[ContinuedFractionK]"
+}
+LoosePrefix = { LoosePrefixOp ~ (ImplicitTimes | ImplicitTimesFactor) }
 PrefixApplySimple = {
     &((Identifier | NamedCharIdentifier) ~ DerivativePrime? ~ BalancedBrackets* ~ "@" ~ !"@")
     ~ (FunctionCall | Identifier) ~ "@" ~ SimpleTerm
@@ -805,6 +828,8 @@ SimpleTerm = _{
   | Decrement
   | RadicalPrefix
   | DifferentialPrefix
+  | TightPrefix
+  | LoosePrefix
   | PiecewisePrefix
   | FloorBrackets
   | CeilingBrackets
@@ -946,7 +971,7 @@ ConditionOp = @{
   | "@@"                          // Apply (must be before @)
   | "@"                           // Prefix application
   | "**"                          // NonCommutativeMultiply (must be before *)
-  | "+" | "-" | "*" | "/" | "^"   // Arithmetic
+  | "+" | "-" | "\u{2212}" | "\\[Minus]" | "*" | "/" | "^"   // Arithmetic
   | "&&" | "||"                   // Logical
   | "|"                           // Alternatives
   | "~~"                          // StringExpression
@@ -1143,7 +1168,7 @@ HasSemicolon = @{ (
   | ScanString
   | !(";" | "<|" | "|>" | "}" | "," | "]" | ")" | "\u{27E7}" | "\u{301B}" | "\"") ~ ANY
 )* ~ ";" ~ !";" }
-ListItem = _{ &HasLeadingRuleOperator ~ ListItemRule | &HasSemicolon ~ CompoundExpression | Expression }
+ListItem = _{ &HasSemicolon ~ CompoundExpression | &HasLeadingRuleOperator ~ ListItemRule | Expression }
 
 AssociationItem = { RuleOperand ~ ("->" | "\u{2192}" | ":>") ~ RuleOperand }
 // Non-rule items inside <|...|> are rare but legal — Wolfram parses <|a, b|>
@@ -1174,7 +1199,10 @@ AssociationExtended = {
 // RuleReplaceSuffix* before it lets `pat -> repl /. rules &` absorb the
 // `/.` into the function body instead.
 FunctionArgRule = { ReplacementRule ~ RuleReplaceSuffix* ~ ("//" ~ PostfixFunction)* ~ (RuleAnonSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ RuleOperatorTerm)* ~ ("//" ~ PostfixFunction)*)? }
-FunctionArg = _{ &HasLeadingRuleOperator ~ FunctionArgRule | &HasSemicolon ~ CompoundExpression | Expression }
+// A `;`-sequence is tried before a rule so that `f[a -> 1; b]` — a rule
+// followed by more statements in one argument — is one CompoundExpression
+// rather than a rule that leaves `; b` unparsed.
+FunctionArg = _{ &HasSemicolon ~ CompoundExpression | &HasLeadingRuleOperator ~ FunctionArgRule | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 FunctionArgOrOmitted = _{ FunctionArg | OmittedArg }
 FunctionArgOrOmittedLast = _{ FunctionArg | OmittedArg | OmittedTrailingArg }

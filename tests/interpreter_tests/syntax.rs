@@ -13406,6 +13406,45 @@ mod demonstration_round_trips {
     }
   }
 
+  #[test]
+  fn named_character_prefix_operators() {
+    let cases = [
+      ("\u{00B1}a b + c", "Hold[Plus[Times[PlusMinus[a], b], c]]"),
+      ("\u{00B1}a^2", "Hold[PlusMinus[Power[a, 2]]]"),
+      ("\u{2213}a + b", "Hold[Plus[MinusPlus[a], b]]"),
+      ("f[\u{2207}f g]", "Hold[f[Times[Del[f], g]]]"),
+      ("\u{222B} x \u{F74C}x", "Hold[Integrate[x, x]]"),
+      (
+        "a + \\[Integral] b \\[DifferentialD]x",
+        "Hold[Plus[a, Integrate[b, x]]]",
+      ),
+      ("\u{2200} x", "Hold[ForAll[x]]"),
+      ("3 \u{2212} 1", "Hold[Plus[3, Times[-1, 1]]]"),
+      ("x^(\u{2212}2)", "Hold[Power[x, Times[-1, 2]]]"),
+    ];
+    for (input, expected) in cases {
+      assert_eq!(
+        interpret(&format!("ToString[FullForm[Hold[{input}]]]")).unwrap(),
+        expected,
+        "{input}"
+      );
+    }
+    assert_eq!(interpret("\u{222B} x^2 \u{F74C}x").unwrap(), "x^3/3");
+  }
+
+  // A rule followed by more statements in one argument is a `;`-sequence.
+  #[test]
+  fn rule_then_semicolon_in_argument() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[f[x, a -> 1; b -> 2, y]]]]").unwrap(),
+      "Hold[f[x, CompoundExpression[Rule[a, 1], Rule[b, 2]], y]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[{c = 0, s -> True;}]]]").unwrap(),
+      "Hold[List[Set[c, 0], CompoundExpression[Rule[s, True], Null]]]"
+    );
+  }
+
   // Signs, currency and typographic marks are symbol characters, and the
   // FrontEnd's spacing characters are white space.
   #[test]
