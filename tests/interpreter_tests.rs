@@ -2908,6 +2908,24 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_epilog_rotate_wraps_content_in_svg_rotation() {
+    // Regression: `Rotate[Text[…], θ]` inside a Plot's Epilog was dropped
+    // entirely, so rotated labels (e.g. a vertical "therapeutic window"
+    // caption along the right edge) vanished from the render.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x, {x, 0, 10}, Epilog -> \
+       {Rotate[Text[\"hello\", {5, 5}], (3*Pi)/2]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">hello</text>"), "rotated text missing: {svg}");
+    assert!(
+      svg.contains("rotate(-270.000 "),
+      "rotation transform missing: {svg}"
+    );
+  }
+
+  #[test]
   fn test_plot_prolog_draws_under_background_not_behind_it() {
     // Regression: `Plot`'s Prolog primitives were spliced in right after
     // the opening `<svg …>` tag, landing *before* the plot's own opaque

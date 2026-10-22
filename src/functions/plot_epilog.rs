@@ -485,6 +485,28 @@ fn affine_map_points(expr: &Expr, m: [[f64; 2]; 2], v: (f64, f64)) -> Expr {
   }
 }
 
+/// Every 2-element numeric list in `expr`, in order — the points of any
+/// primitive, however its arguments are shaped.
+fn collect_numeric_points(expr: &Expr, out: &mut Vec<(f64, f64)>) {
+  if let Some(p) = point2(expr) {
+    out.push(p);
+    return;
+  }
+  match expr {
+    Expr::List(items) => {
+      for it in items {
+        collect_numeric_points(it, out);
+      }
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_numeric_points(a, out);
+      }
+    }
+    _ => {}
+  }
+}
+
 /// Render one Epilog item (directive, primitive, or nested scoped list).
 fn render_item(
   expr: &Expr,
@@ -647,6 +669,42 @@ fn render_item(
             render_item(&affine_map_points(&args[0], m, v), style, area, out);
           }
         }
+      }
+      // `Rotate[content, θ]` turns `content` counter-clockwise by `θ`
+      // radians about the centre of its bounding box (`Rotate[content, θ,
+      // {x, y}]` about the given point). Rendering the content as usual and
+      // wrapping it in an SVG rotation keeps every primitive — text
+      // included — working without per-primitive rotation support.
+      "Rotate" if args.len() >= 2 => {
+        let Some(theta) = try_eval_to_f64(&args[1]) else {
+          return;
+        };
+        let center = if let Some(c) = args.get(2) {
+          point2(c)
+        } else {
+          let mut pts = Vec::new();
+          collect_numeric_points(&args[0], &mut pts);
+          if pts.is_empty() {
+            None
+          } else {
+            let (mut lo, mut hi) = (pts[0], pts[0]);
+            for &(x, y) in &pts {
+              lo = (lo.0.min(x), lo.1.min(y));
+              hi = (hi.0.max(x), hi.1.max(y));
+            }
+            Some((f64::midpoint(lo.0, hi.0), f64::midpoint(lo.1, hi.1)))
+          }
+        };
+        let (cx, cy) = center.unwrap_or((0.0, 0.0));
+        let mut inner = String::new();
+        render_item(&args[0], style, area, &mut inner);
+        out.push_str(&format!(
+          "<g transform=\"rotate({:.3} {:.1} {:.1})\">\n{}</g>\n",
+          -theta.to_degrees(),
+          area.px(cx),
+          area.py(cy),
+          inner,
+        ));
       }
       "Text" if !args.is_empty() => {
         // `Text[label]` sits at the origin, as in `Graphics`.
