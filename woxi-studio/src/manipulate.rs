@@ -587,13 +587,16 @@ impl ManipulateState {
       .collect();
     let control_is_enabled = vec![true; controls.len()];
     // …and with the pane it belongs to, for a `PaneSelector` control panel.
-    let control_visible: Vec<Option<String>> = controls
+    // (a static text row has no variable, so it is filed under its label).
+    let control_visible: Vec<Option<String>> = spec
+      .controls
       .iter()
-      .map(|c| {
+      .map(|raw| {
+        let key = raw.visibility_key();
         spec
           .control_visible
           .iter()
-          .find(|(n, _)| n == c.name())
+          .find(|(n, _)| *n == key)
           .map(|(_, cond)| cond.clone())
       })
       .collect();
@@ -1826,6 +1829,30 @@ mod tests {
     let after = state.controls[idx].current_code();
     assert_ne!(before, after);
     assert!(after.starts_with("{0.05,"), "got {after}");
+  }
+
+  /// An `Epilog -> (list /. rule)` option is parenthesised in the source; the
+  /// body is printed back to text for every re-evaluation, and without the
+  /// parentheses the option became `(Epilog -> list) /. rule`, so the
+  /// annotations vanished from the plot.
+  #[test]
+  fn epilog_with_replacement_survives_reevaluation() {
+    let code = r#"Manipulate[
+      Plot[a x, {x, 0, 1},
+        Epilog -> ({Red, Line[{{0, 0}, {t, a t}}], Point[{t, a t}]} /. a -> aa),
+        ImageSize -> 200],
+      {{aa, 2, "slope"}, 1, 3, 1}, {{t, 0.5, "t"}, 0, 1, 0.1},
+      Initialization :> (a = 5)]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert!(
+      state.body.contains("Epilog -> ({"),
+      "the replacement must stay parenthesised, got {}",
+      state.body
+    );
   }
 
   /// A slider whose bounds and initial value are exact integers and that
@@ -3560,6 +3587,21 @@ mod tests {
       dump("amp$$")
     );
     assert!(dump("k$$").contains("label: \"freq\""), "{}", dump("k$$"));
+  }
+
+  /// A slider caption built with `StringJoin`/`ToString` shows the text it
+  /// produces, not the unevaluated call.
+  #[test]
+  fn control_label_evaluates_string_join() {
+    let code = r#"Manipulate[Plot[a x, {x, 0, 1}],
+      {{a, 0, "pairs (0 to " <> ToString[z] <> ")"}, 0, z, 2},
+      Initialization :> (z = 5)]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(dump.contains("label: \"pairs (0 to 5)\""), "{dump}");
+    assert!(!dump.contains("StringJoin"), "{dump}");
   }
 
   /// A heading `Row[{"parameter ", Style[a, Italic], Spacer[10], }]` ends in

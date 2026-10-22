@@ -792,6 +792,32 @@ mod default_values {
 mod compile {
   use super::*;
 
+  // A serialized `CompiledFunction` (as saved in a notebook) with a Listable
+  // pure-function fallback threads only over the excess rank, so a
+  // `{Blank[Real], 1}` vector argument of the same length as the batch is
+  // not split.
+  #[test]
+  fn serialized_compiled_function_listable_rank_aware() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f = CompiledFunction[{10, 10.1, 5848}, {{Blank[Real], 1}, {Blank[Real], 1}}, {{3, 1, 0}}, {{0., {3, 0, 4}}}, {0, 3, 5, 0, 5}, {{1}}, Function[{a, b}, Cross[{-Part[a, 2] + Part[b, 2], Part[a, 1] - Part[b, 1], 0.}, a/Norm[a]], Listable], Evaluate]; {f[{{1., 0., 0.}, {0., 1., 0.}}, {0., 0.}], f[{1., 0., 0.}, {0., 0.}]}"
+      )
+      .unwrap(),
+      "{{{0., 0., -1.}, {0., 0., -1.}}, {0., 0., -1.}}"
+    );
+  }
+
+  #[test]
+  fn function_with_listable_attribute_threads() {
+    clear_state();
+    assert_eq!(
+      interpret("Function[{x, y}, Cross[{x, y, 0}, {1, 0, 0}], Listable][{{1, 2}, {3, 4}}, 5]")
+        .unwrap(),
+      "{{{0, 0, -5}, {0, 0, -5}}, {{0, 0, -5}, {0, 0, -5}}}"
+    );
+  }
+
   #[test]
   fn compile_basic() {
     clear_state();

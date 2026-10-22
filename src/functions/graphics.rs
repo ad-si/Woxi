@@ -4135,6 +4135,10 @@ pub(crate) fn strip_style_wrappers(expr: &Expr) -> &Expr {
 
 fn graphics_text_content(expr: &Expr) -> String {
   match expr {
+    // A `Dynamic[x]` inside text reads as the value `x` currently has.
+    Expr::FunctionCall { name, args } if name == "Dynamic" && args.len() == 1 => {
+      graphics_text_content(&release_dynamics(expr))
+    }
     // A string carrying inline `\!\(\*…\)` box notation — the front end's
     // linear-syntax form for a typeset sub-expression, e.g. the label a
     // Demonstration writes as `Text["\!\(\*SubscriptBox[\(X\), \(3\)]\)",
@@ -4208,7 +4212,7 @@ fn graphics_text_content(expr: &Expr) -> String {
         }
         held => box_expr_to_plain(
           &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
-            held,
+            &release_dynamics(held),
           ),
         ),
       }
@@ -4594,17 +4598,15 @@ fn dynamic_current_value(expr: &Expr) -> Expr {
 
 /// Whether `expr` holds a `Dynamic[…]` anywhere inside it.
 fn contains_dynamic(expr: &Expr) -> bool {
-  match expr {
-    Expr::FunctionCall { name, args } => {
-      (name == "Dynamic" && !args.is_empty())
-        || args.iter().any(contains_dynamic)
-    }
-    Expr::List(items) => items.iter().any(contains_dynamic),
-    _ => false,
-  }
+  matches!(expr, Expr::FunctionCall { name, args }
+    if name == "Dynamic" && !args.is_empty())
+    || crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(contains_dynamic)
 }
 
 /// `expr` with every `Dynamic[x, …]` replaced by the current value of `x`.
+/// The rest stays unevaluated, so a `HoldForm` keeps its written shape.
 fn release_dynamics(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
@@ -4612,14 +4614,7 @@ fn release_dynamics(expr: &Expr) -> Expr {
     {
       dynamic_current_value(expr)
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(release_dynamics).collect(),
-    },
-    Expr::List(items) => {
-      Expr::List(items.iter().map(release_dynamics).collect())
-    }
-    other => other.clone(),
+    other => crate::syntax::map_children(other, &release_dynamics),
   }
 }
 
@@ -7993,6 +7988,17 @@ fn parse_frame_edges(value: &Expr) -> [bool; 4] {
   }
 }
 
+/// An edge pair (`{left, right}` / `{bottom, top}`) holds specs, never the
+/// bare numbers / strings of a tick.
+fn is_edge_pair(e: &Expr) -> bool {
+  match e {
+    Expr::List(p) if p.len() == 2 => p.iter().all(|x| {
+      !matches!(x, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))
+    }),
+    _ => false,
+  }
+}
+
 /// Parse `FrameTicks -> None | All | {b, l, t, r} | {{l, r}, {b, t}}`: per
 /// edge, `None`/`False` bares it, `Automatic` keeps Wolfram's default and
 /// anything else (`All`, `True`, explicit tick lists) labels it.
@@ -8010,6 +8016,15 @@ fn parse_frame_tick_modes(value: &Expr) -> [EdgeTicks; 4] {
       one(&items[2], d[2]),
       one(&items[3], d[3]),
     ],
+    // `{xticks, yticks}`: plain tick lists label the bottom and left edges
+    // and leave the top and right at their default marks.
+    Expr::List(items)
+      if items.len() == 2
+        && items.iter().all(|e| matches!(e, Expr::List(_)))
+        && !items.iter().all(is_edge_pair) =>
+    {
+      [EdgeTicks::Labels, EdgeTicks::Labels, d[2], d[3]]
+    }
     Expr::List(items) if items.len() == 2 => {
       let pair = |e: &Expr, d0: EdgeTicks, d1: EdgeTicks| match e {
         Expr::List(p) if p.len() == 2 => (one(&p[0], d0), one(&p[1], d1)),
@@ -8033,13 +8048,6 @@ fn parse_frame_tick_lists(value: &Expr) -> [Option<Vec<(f64, String)>>; 4] {
     Expr::List(_) => crate::functions::plot::parse_explicit_ticks(e),
     _ => None,
   };
-  // An edge pair holds specs, never the bare numbers / strings of a tick.
-  let is_pair = |e: &Expr| match e {
-    Expr::List(p) if p.len() == 2 => p.iter().all(|x| {
-      !matches!(x, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))
-    }),
-    _ => false,
-  };
   match value {
     Expr::List(items) if items.len() == 4 => [
       one(&items[0]),
@@ -8047,11 +8055,15 @@ fn parse_frame_tick_lists(value: &Expr) -> [Option<Vec<(f64, String)>>; 4] {
       one(&items[2]),
       one(&items[3]),
     ],
-    Expr::List(items) if items.len() == 2 && items.iter().all(is_pair) => {
+    Expr::List(items) if items.len() == 2 && items.iter().all(is_edge_pair) => {
       let (Expr::List(lr), Expr::List(bt)) = (&items[0], &items[1]) else {
         return [None, None, None, None];
       };
       [one(&bt[0]), one(&lr[0]), one(&bt[1]), one(&lr[1])]
+    }
+    // `{xticks, yticks}`: plain tick lists for the bottom and left edges.
+    Expr::List(items) if items.len() == 2 => {
+      [one(&items[0]), one(&items[1]), None, None]
     }
     _ => [None, None, None, None],
   }
@@ -10496,7 +10508,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the clip rectangle below.
   let clip_x = plot_range_x.map(|_| (bb.x_min, bb.x_max));
   let clip_y = plot_range_y.map(|_| (bb.y_min, bb.y_max));
-  if !aspect_ratio_full {
+  // A frame under `ImageSize -> {w, h}` with an automatic aspect ratio
+  // hugs the data instead: the frame keeps the shape of the plot range and
+  // sits centred in the requested size, rather than the range being
+  // widened until the frame fills it.
+  let fit_frame_to_data = explicit_size
+    && size_names_height
+    && aspect_ratio.is_none()
+    && frame_edges.iter().any(|&e| e);
+  if !aspect_ratio_full && !fit_frame_to_data {
     expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
   }
 
@@ -10644,6 +10664,25 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // margins (unless `ImageSize -> {w, h}` fixed the height outright).
       Some(r) if !size_names_height => (w, (w * r).round().max(1.0)),
       _ => (w, (svg_h - margin_bottom - margin_top).max(1.0)),
+    }
+  } else {
+    (svg_w, svg_h)
+  };
+  let (mut margin_left, mut margin_right) = (margin_left, margin_right);
+  let (mut margin_bottom, mut margin_top) = (margin_bottom, margin_top);
+  let (svg_w, svg_h) = if fit_frame_to_data {
+    let data_aspect = bb.height() / bb.width();
+    if data_aspect.is_finite() && data_aspect > 0.0 {
+      let fitted_h = (svg_w * data_aspect).min(svg_h);
+      let fitted_w = fitted_h / data_aspect;
+      let (dx, dy) = ((svg_w - fitted_w) / 2.0, (svg_h - fitted_h) / 2.0);
+      margin_left += dx;
+      margin_right += dx;
+      margin_bottom += dy;
+      margin_top += dy;
+      (fitted_w, fitted_h)
+    } else {
+      (svg_w, svg_h)
     }
   } else {
     (svg_w, svg_h)
@@ -14717,6 +14756,16 @@ fn contains_visible_style(e: &Expr) -> bool {
       Some(Expr::List(items)) => items.iter().any(contains_visible_style),
       _ => false,
     },
+    // `Subscript[Style["T", Italic], "r"]`: the script's base (or the
+    // script itself) carries the styling.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Subscript" | "Superscript" | "Subsuperscript"
+      ) =>
+    {
+      args.iter().any(contains_visible_style)
+    }
     _ => false,
   }
 }
@@ -15184,8 +15233,32 @@ pub(crate) fn mesh_region_to_graphics_prims(
     return None;
   }
 
-  let Expr::List(prims) = primitives_expr else {
-    return None;
+  // A single cell primitive may stand without the enclosing list.
+  let single_prim;
+  let prims: &[Expr] = match primitives_expr {
+    Expr::List(prims) => prims,
+    prim @ Expr::FunctionCall { .. } => {
+      single_prim = [prim.clone()];
+      &single_prim
+    }
+    _ => return None,
+  };
+
+  let to_points = |indices: &[Expr]| -> Vec<Expr> {
+    indices
+      .iter()
+      .filter_map(|idx| {
+        expr_to_f64(idx).and_then(|i| {
+          let i = i as usize;
+          if i >= 1 && i <= vertices.len() {
+            let (x, y) = vertices[i - 1];
+            Some(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+          } else {
+            None
+          }
+        })
+      })
+      .collect()
   };
 
   let mut result = Vec::new();
@@ -15194,31 +15267,38 @@ pub(crate) fn mesh_region_to_graphics_prims(
   result.push(call1("FaceForm", Color::new(0.626, 0.836, 0.919).to_expr()));
 
   for prim in prims {
-    if let Expr::FunctionCall { name, args } = prim
-      && name == "Polygon"
-      && args.len() == 1
-      && let Expr::List(index_lists) = &args[0]
+    let Expr::FunctionCall { name, args } = prim else {
+      continue;
+    };
+    if args.len() != 1
+      || !matches!(name.as_str(), "Polygon" | "Triangle" | "Line")
     {
-      for idx_list in index_lists {
-        if let Expr::List(indices) = idx_list {
-          let points: Vec<Expr> = indices
-            .iter()
-            .filter_map(|idx| {
-              expr_to_f64(idx).and_then(|i| {
-                let i = i as usize;
-                if i >= 1 && i <= vertices.len() {
-                  let (x, y) = vertices[i - 1];
-                  Some(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
-                } else {
-                  None
-                }
-              })
-            })
-            .collect();
-          if points.len() >= 3 {
-            result.push(call1("Polygon", Expr::List(points.into())));
-          }
+      continue;
+    }
+    let Expr::List(entries) = &args[0] else {
+      continue;
+    };
+    // One index list, or a list of them.
+    let index_lists: Vec<&[Expr]> =
+      if entries.iter().all(|e| matches!(e, Expr::List(_))) {
+        entries
+          .iter()
+          .filter_map(|e| match e {
+            Expr::List(indices) => Some(&indices[..]),
+            _ => None,
+          })
+          .collect()
+      } else {
+        vec![&entries[..]]
+      };
+    for indices in index_lists {
+      let points = to_points(indices);
+      if name == "Line" {
+        if points.len() >= 2 {
+          result.push(call1("Line", Expr::List(points.into())));
         }
+      } else if points.len() >= 3 {
+        result.push(call1("Polygon", Expr::List(points.into())));
       }
     }
   }
@@ -16663,6 +16743,17 @@ fn annotation_contains_dynamic(expr: &Expr) -> bool {
       annotation_contains_dynamic(left) || annotation_contains_dynamic(right)
     }
     Expr::UnaryOp { operand, .. } => annotation_contains_dynamic(operand),
+    _ => false,
+  }
+}
+
+/// Whether `expr` has a `Control[…]` call anywhere inside it.
+fn contains_control_call(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "Control" || args.iter().any(contains_control_call)
+    }
+    Expr::List(items) => items.iter().any(contains_control_call),
     _ => false,
   }
 }
@@ -21773,6 +21864,14 @@ fn resolve_display_item(expr: &Expr) -> Expr {
   {
     current = Expr::Raw(crate::syntax::expr_to_input_form(&args[0]));
   }
+  // A `Dynamic[…]` inside running text — a readout in a `Row`, or in the
+  // `HoldForm` a `With` fills — shows the value it currently has.
+  if matches!(&current, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "Row" | "Column" | "Style" | "HoldForm"))
+    && contains_dynamic(&current)
+  {
+    current = release_dynamics(&current);
+  }
   current
 }
 
@@ -24565,6 +24664,23 @@ impl ManipulateControl {
       Self::Button { .. } | Self::Heading { .. } | Self::Divider => "",
     }
   }
+
+  /// The key a `PaneSelector` pane's visibility condition is filed under in
+  /// `ManipulateSpec::control_visible`: the bound variable name, or — for a
+  /// static text row, which binds none — a key derived from its label so the
+  /// text of a hidden pane is hidden along with that pane's controls.
+  pub fn visibility_key(&self) -> String {
+    match self {
+      Self::Heading { label, .. } => heading_visibility_key(label),
+      _ => self.name().to_string(),
+    }
+  }
+}
+
+/// The `control_visible` key of a static text row labelled `label`. The
+/// leading control character keeps it from ever colliding with a variable.
+pub fn heading_visibility_key(label: &str) -> String {
+  format!("\u{1}heading:{label}")
 }
 
 /// A parsed Manipulate expression ready for interactive rendering.
@@ -25524,6 +25640,33 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if let Some((orig, orig_form, synth)) = &rename {
           patch_default_label(&mut c, orig, synth);
           renames.push((orig_form.clone(), synth.clone()));
+        }
+        // A bare `Locator` (no corner bounds) moves over the picture the body
+        // draws, so an explicit `PlotRange -> {{x0, x1}, {y0, y1}}` there
+        // bounds the pad rather than a box padded around the start point.
+        if bare_locator_spec(&spec)
+          && let Some(((x0, y0), (x1, y1))) =
+            args.first().and_then(find_plot_range)
+        {
+          match &mut c {
+            ManipulateControl::Slider2D {
+              x_min,
+              x_max,
+              y_min,
+              y_max,
+              ..
+            }
+            | ManipulateControl::Locator {
+              x_min,
+              x_max,
+              y_min,
+              y_max,
+              ..
+            } => {
+              (*x_min, *x_max, *y_min, *y_max) = (x0, x1, y0, y1);
+            }
+            _ => {}
+          }
         }
         // A `Trigger`/`Animator` control spec animates its variable: the
         // widget auto-plays (paused for a Trigger, running for an Animator)
@@ -28682,13 +28825,35 @@ fn pane_control_variables(
           out.push(var);
           return;
         }
+        // Static text next to a pane's controls (`Style[" +", 15]` in a
+        // `Row`) becomes a text row of the panel, shown under the pane's
+        // condition as well.
+        if is_manipulate_annotation_head(name)
+          && !annotation_contains_dynamic(e)
+          && !annotation_contains_place(e)
+          && !contains_control_call(e)
+        {
+          let label = flatten_label_runs(&manipulate_label_runs(e, false));
+          if !label.is_empty() {
+            out.push(heading_visibility_key(&label));
+          }
+          return;
+        }
         for a in args {
           walk(a, place_map, out);
         }
       }
       Expr::List(items) => {
         for it in items {
-          walk(it, place_map, out);
+          // A string item of a layout list is a text row; a bare string
+          // pane (a placeholder) leaves no row behind.
+          if let Expr::String(s) = it {
+            if !s.is_empty() {
+              out.push(heading_visibility_key(s));
+            }
+          } else {
+            walk(it, place_map, out);
+          }
         }
       }
       _ => {}
@@ -29390,6 +29555,33 @@ fn pane_range(arg: Option<&Expr>, graphic: &Expr) -> ((f64, f64), (f64, f64)) {
   find_plot_range(graphic).unwrap_or(((0.0, 0.0), (1.0, 1.0)))
 }
 
+/// Whether a Manipulate control spec is `{{p, init}, Locator, …options}`
+/// with no explicit corner bounds and no pane drawn around it.
+fn bare_locator_spec(spec: &Expr) -> bool {
+  let Expr::List(items) = spec else {
+    return false;
+  };
+  let is_locator = |it: &Expr| match it {
+    Expr::Identifier(s) => s == "Locator",
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => matches!(
+      (pattern.as_ref(), replacement.as_ref()),
+      (Expr::Identifier(k), Expr::Identifier(v))
+        if k == "ControlType" && v == "Locator"
+    ),
+    _ => false,
+  };
+  items.len() >= 2
+    && items[1..].iter().any(is_locator)
+    && items[1..].iter().all(|it| {
+      is_locator(it)
+        || matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        || matches!(it, Expr::Identifier(s) if s == "Automatic")
+    })
+}
+
 /// The first `PlotRange -> {{xmin, xmax}, {ymin, ymax}}` option found
 /// anywhere inside `expr`, searched depth-first. Used to infer a pane's
 /// coordinate system from the plot it displays when nothing states it
@@ -29926,6 +30118,32 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     }];
     runs.extend(grouped_label_runs(radicand, italic));
     return runs;
+  }
+  // A string-building label — `"pairs (0 to " <> ToString[n] <> ")"` — is a
+  // caption computed from other values. The widget shows the text it
+  // produces, not the source of the call.
+  let builds_string = match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::StringJoin,
+      ..
+    } => true,
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "StringJoin" | "ToString" | "StringRiffle")
+    }
+    _ => false,
+  };
+  if builds_string
+    && let Ok(Expr::String(ref text)) = evaluate_expr_to_expr(expr)
+  {
+    return if text.is_empty() {
+      vec![]
+    } else {
+      vec![LabelRun {
+        text: text.clone(),
+        italic,
+        ..Default::default()
+      }]
+    };
   }
   match expr {
     // `Null` — what a trailing comma in a `Row`/`Column` item list leaves
@@ -33357,8 +33575,10 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
     // A control belonging to a `PaneSelector` pane rides along with the
     // condition under which its pane is on screen, so the frontend can hide
     // the rows of the panes the selector is not showing.
-    if let Some((_, cond)) =
-      spec.control_visible.iter().find(|(n, _)| n == c.name())
+    if let Some((_, cond)) = spec
+      .control_visible
+      .iter()
+      .find(|(n, _)| *n == c.visibility_key())
       && part.ends_with('}')
     {
       let field =
