@@ -527,6 +527,24 @@ fn parse_iterator(
   }
 }
 
+/// A `{var, lo, hi}` iterator whose bounds are expressions in the outer
+/// iterator variable `outer` (`{v, 0, h - Sin[u]}`); they are evaluated
+/// per sample later, so they are returned unevaluated.
+fn parse_dependent_iterator(
+  spec: &Expr,
+  outer: &str,
+) -> Option<(String, Expr, Expr)> {
+  match spec {
+    Expr::List(items) if items.len() == 3 => match &items[0] {
+      Expr::Identifier(name) if name != outer => {
+        Some((name.clone(), items[1].clone(), items[2].clone()))
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
 /// Generate mesh lines from a sampled grid.
 ///
 /// For `Default` mode, draws lines along the x- and y-parameter directions
@@ -13076,13 +13094,16 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // iterator, fall through to the surface (2-iterator) implementation.
   // Otherwise treat as a curve and return early.
   let (uvar, u_min, u_max) = parse_iterator(&args[1], "first")?;
-  let surface_iter = args.get(2).and_then(|a| parse_iterator(a, "second").ok());
+  let surface_iter = args.get(2).and_then(|a| {
+    parse_iterator(a, "second")
+      .ok()
+      .map(|(v, lo, hi)| (v, Expr::Real(lo), Expr::Real(hi)))
+      .or_else(|| parse_dependent_iterator(a, &uvar))
+  });
 
-  if surface_iter.is_none() {
+  let Some((vvar, v_lo_expr, v_hi_expr)) = surface_iter else {
     return parametric_plot3d_curve_ast(body, &uvar, u_min, u_max, &args[2..]);
-  }
-
-  let (vvar, v_min, v_max) = surface_iter.unwrap();
+  };
 
   // Parse options
   let mut svg_width = DEFAULT_SIZE;
@@ -13302,7 +13323,29 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let grid_n = plot_points.map_or(GRID_N, |p| p - 1);
   let u_step = (u_max - u_min) / grid_n as f64;
-  let v_step = (v_max - v_min) / grid_n as f64;
+  // The `v` range may depend on `u` (`{v, 0, h - Sin[u]}`), so each grid
+  // column `i` gets its own `(lo, hi)`; a column whose bounds do not
+  // evaluate to numbers stays empty.
+  let v_ranges: Vec<(f64, f64)> = (0..=grid_n)
+    .map(|i| {
+      let uval = u_min + i as f64 * u_step;
+      let bound = |e: &Expr| {
+        let sub = substitute_var(e, &uvar, &Expr::Real(uval));
+        evaluate_expr_to_expr(&sub)
+          .ok()
+          .and_then(|r| try_eval_to_f64(&r))
+          .unwrap_or(f64::NAN)
+      };
+      (bound(&v_lo_expr), bound(&v_hi_expr))
+    })
+    .collect();
+  let v_step_at = |i: usize| (v_ranges[i].1 - v_ranges[i].0) / grid_n as f64;
+  let (v_min, v_max) = v_ranges
+    .iter()
+    .filter(|(lo, hi)| lo.is_finite() && hi.is_finite())
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), (lo, hi)| {
+      (a.min(*lo), b.max(*hi))
+    });
 
   // Phase 1: Sample all parametric surfaces and compute global ranges
   let mut all_surface_points: Vec<Vec<Vec<Option<(f64, f64, f64)>>>> =
@@ -13319,7 +13362,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for i in 0..=grid_n {
       let uval = u_min + i as f64 * u_step;
       for j in 0..=grid_n {
-        let vval = v_min + j as f64 * v_step;
+        let vval = v_ranges[i].0 + j as f64 * v_step_at(i);
         if let Some((x, y, z)) = evaluate_parametric_at_uv(
           &surface.fx,
           &surface.fy,
@@ -13419,7 +13462,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               let y = pts.iter().map(|p| p.1).sum::<f64>() / n;
               let z = pts.iter().map(|p| p.2).sum::<f64>() / n;
               let u = u_min + (i as f64 + 0.5) * u_step;
-              let v = v_min + (j as f64 + 0.5) * v_step;
+              let v = v_ranges[i].0 + (j as f64 + 0.5) * v_step_at(i);
               let args = if color_scaling {
                 let unit = |t: f64, lo: f64, hi: f64| {
                   if (hi - lo).abs() < 1e-15 {
