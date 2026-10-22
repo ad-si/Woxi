@@ -4196,4 +4196,70 @@ mod textcell_tests {
     assert_eq!(state.error, None);
     assert!(state.graphics_handle.is_some());
   }
+
+  /// Frame-history browser: a button appends to a list held in a hidden
+  /// state variable, a "frame index" slider's upper bound is
+  /// `Dynamic[Length[frames]]`, and a `ProgressIndicator` display follows a
+  /// counter variable with a `Dynamic` upper limit. Generic, self-authored
+  /// construct (not taken from any particular Demonstration).
+  ///
+  /// Regression: the `Dynamic[total]` limit inside the progress indicator
+  /// stayed unevaluated, so the bar printed as `ProgressIndicator[…]`
+  /// source text instead of a filled track.
+  #[test]
+  fn button_grows_dynamic_slider_bound_and_progress_indicator_follows() {
+    let code = r#"Manipulate[
+      Graphics[{Disk[{0, 0}, frames[[idx]]]}],
+      Dynamic[ProgressIndicator[done, {0, Dynamic[total]}, ImageSize -> 160]],
+      Button["append",
+        frames = Append[frames, Last[frames] + 1];
+        idx = Length[frames]; done = 3; total = 6;
+        ImageSize -> Automatic, Method -> "Queued"],
+      {{idx, 1, ""}, 1, Dynamic[Length[frames]], 1, Appearance -> "Labeled"},
+      {{done, 0}, ControlType -> None},
+      {{total, 10}, ControlType -> None},
+      {{frames, {1}}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let progress_svg =
+      |state: &ManipulateState| match state.display_trees.first() {
+        Some(DisplayNode::Static { svg, .. }) => svg.clone(),
+        other => panic!("expected a static progress display, got {other:?}"),
+      };
+    let before = progress_svg(&state).expect("progress bar drawn as SVG");
+    let action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("button");
+    state.apply_button_action(&action);
+    state.apply_button_action(&action);
+    // Done = 3 of total = 6: half of the track is filled, unlike the empty
+    // bar shown before the button ran.
+    let after = progress_svg(&state).expect("progress bar drawn as SVG");
+    assert_ne!(before, after);
+    assert!(after.contains("width=\"74.5\""), "{after}");
+    let (min, max, current) = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        ControlState::Continuous {
+          name,
+          min,
+          max,
+          current,
+          ..
+        } if name == "idx" => Some((*min, *max, *current)),
+        _ => None,
+      })
+      .expect("idx slider");
+    // Two appends: the Dynamic upper bound follows `Length[frames]`.
+    assert_eq!((min, max, current), (1.0, 3.0, 3.0));
+  }
 }
