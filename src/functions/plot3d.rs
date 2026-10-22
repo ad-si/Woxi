@@ -4416,7 +4416,7 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
 }
 
 /// Replace the 1-based vertex indices inside a `GraphicsComplex` primitive
-/// (`Polygon`/`Line`/`Point`/`Arrow` arguments) with the coordinates they
+/// (`Polygon`/`Line`/`Point`/`Arrow`/`Tube` arguments) with the coordinates they
 /// refer to, leaving everything else untouched.
 ///
 /// With `colors` (the complex's `VertexColors`, one colour per point) each
@@ -4521,8 +4521,10 @@ fn resolve_complex_indices(
       }
     }
     Expr::FunctionCall { name, args }
-      if matches!(name.as_str(), "Polygon" | "Line" | "Point" | "Arrow")
-        && !args.is_empty() =>
+      if matches!(
+        name.as_str(),
+        "Polygon" | "Line" | "Point" | "Arrow" | "Tube"
+      ) && !args.is_empty() =>
     {
       let mut new_args = args.to_vec();
       new_args[0] = substitute(&args[0], points);
