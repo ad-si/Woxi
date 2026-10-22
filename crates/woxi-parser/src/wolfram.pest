@@ -637,7 +637,9 @@ ConjugateTransposeSuffix = @{ "\\[ConjugateTranspose]" | "\u{F3C9}" }
 // TermSuffix: postfix suffix tokens that can follow a Term (after
 // FactorialSuffix). Silent choice rule — the underlying named rules
 // are the ones that appear in the parse tree.
-TermSuffix = _{ TransposeSuffix | ConjugateSuffix | ConjugateTransposeSuffix | PatternTestSuffix }
+// A part index may follow too (`m\[Transpose][[2]]` is
+// Part[Transpose[m], 2]); right after a Term the Term takes it itself.
+TermSuffix = _{ TransposeSuffix | ConjugateSuffix | ConjugateTransposeSuffix | PatternTestSuffix | PartIndexSuffix }
 // One operand of an expression chain: an optional prefix operator, a Term and
 // the suffixes that bind to it. Spelled out as one alternative per prefix
 // rather than `(LeadingNot | LeadingPlus | LeadingMinus)? ~ Term ~ …` because
@@ -693,7 +695,10 @@ CompoundStatement = _{ Expression }
 // named rule so `parse_compound_expression` can tell the continuation's
 // operands apart from the statements that follow.
 CompoundAnonSuffix = { AnonymousFunctionSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ SpanOrExprOperand)* ~ ("//" ~ PostfixFunction)* }
-CompoundExpression = { CompoundStatement ~ (";" ~ CompoundStatement?)+ ~ (CompoundAnonSuffix ~ (";" ~ CompoundStatement?)*)? }
+// Likewise a `//` right after the last `;` applies to the whole sequence:
+// `sol = 0; // Quiet` is `Quiet[sol = 0;]`.
+CompoundPostfixSuffix = { ("//" ~ PostfixFunction)+ }
+CompoundExpression = { CompoundStatement ~ (";" ~ CompoundStatement?)+ ~ ((CompoundAnonSuffix | CompoundPostfixSuffix) ~ (";" ~ CompoundStatement?)*)? }
 
 // DerivativeNumeric: numeric literal followed by '...' (e.g. 1', (-1.4)', I via Constant)
 DerivativeNumeric = { (PrecisionReal | Real | IntegerScientific | Integer | Constant) ~ DerivativePrime }
@@ -786,11 +791,11 @@ FloorBrackets = { "\u{230A}" ~ Expression ~ "\u{230B}" }
 CeilingBrackets = { "\u{2308}" ~ Expression ~ "\u{2309}" }
 // 〈a, b, …〉: `\[LeftAngleBracket]…\[RightAngleBracket]` (also written with
 // the CJK brackets U+3008/U+3009) is AngleBracket[a, b, …].
-AngleBrackets = { ("\u{2329}" | "\u{3008}") ~ Expression ~ ("," ~ Expression)* ~ ("\u{232A}" | "\u{3009}") }
+AngleBrackets = { ("\u{2329}" | "\u{3008}") ~ Expression ~ ("," ~ Expression)* ~ ("\u{232A}" | "\u{3009}") ~ BracketArgs* }
 // |a|, ‖a‖: `\[LeftBracketingBar]…\[RightBracketingBar]` is BracketingBar[a, …]
 // and the double form DoubleBracketingBar[a, …] (no built-in meaning).
-BracketingBars = { ("\\[LeftBracketingBar]" | "\u{F603}") ~ Expression ~ ("," ~ Expression)* ~ ("\\[RightBracketingBar]" | "\u{F604}") }
-DoubleBracketingBars = { ("\\[LeftDoubleBracketingBar]" | "\u{F605}") ~ Expression ~ ("," ~ Expression)* ~ ("\\[RightDoubleBracketingBar]" | "\u{F606}") }
+BracketingBars = { ("\\[LeftBracketingBar]" | "\u{F603}") ~ Expression ~ ("," ~ Expression)* ~ ("\\[RightBracketingBar]" | "\u{F604}") ~ BracketArgs* }
+DoubleBracketingBars = { ("\\[LeftDoubleBracketingBar]" | "\u{F605}") ~ Expression ~ ("," ~ Expression)* ~ ("\\[RightDoubleBracketingBar]" | "\u{F606}") ~ BracketArgs* }
 
 Term = _{
     DisplayedBoxes

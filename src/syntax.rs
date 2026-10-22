@@ -3459,18 +3459,11 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       call1("Ceiling", operand)
     }
     // `〈a, b, …〉`: the typeset bracket form for AngleBracket[a, b, …].
-    Rule::AngleBrackets => Expr::FunctionCall {
-      name: "AngleBracket".to_string(),
-      args: pair.into_inner().map(pair_to_expr).collect(),
-    },
-    Rule::BracketingBars => Expr::FunctionCall {
-      name: "BracketingBar".to_string(),
-      args: pair.into_inner().map(pair_to_expr).collect(),
-    },
-    Rule::DoubleBracketingBars => Expr::FunctionCall {
-      name: "DoubleBracketingBar".to_string(),
-      args: pair.into_inner().map(pair_to_expr).collect(),
-    },
+    Rule::AngleBrackets => bracket_pair_call("AngleBracket", pair),
+    Rule::BracketingBars => bracket_pair_call("BracketingBar", pair),
+    Rule::DoubleBracketingBars => {
+      bracket_pair_call("DoubleBracketingBar", pair)
+    }
     Rule::Increment => {
       // x++ -> Increment[x]; chained `x++++` -> Increment[Increment[x]].
       // Grammar emits one base pair followed by N `IncrementOp` pairs
@@ -3708,6 +3701,29 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       Expr::Raw(pair.as_str().to_string())
     }
   }
+}
+
+/// `Head[items…]` for a bracket pair (〈a, b〉, |a|, ‖a‖), applied to any
+/// `[args]` that follow it: `〈a〉[t]` is `AngleBracket[a][t]`.
+fn bracket_pair_call(head: &str, pair: Pair<Rule>) -> Expr {
+  let (items, calls): (Vec<Pair<Rule>>, Vec<Pair<Rule>>) = pair
+    .into_inner()
+    .partition(|p| p.as_rule() != Rule::BracketArgs);
+  let mut result = Expr::FunctionCall {
+    name: head.to_string(),
+    args: items.into_iter().map(pair_to_expr).collect(),
+  };
+  for call in calls {
+    result = Expr::CurriedCall {
+      func: Box::new(result),
+      args: call
+        .into_inner()
+        .filter(|c| c.as_str() != "[" && c.as_str() != "]" && c.as_str() != ",")
+        .map(pair_to_expr)
+        .collect(),
+    };
+  }
+  result
 }
 
 /// Apply a `BracketArgs` pair to the factor of an implicit product it
@@ -4493,6 +4509,14 @@ fn parse_expression_inner(
           term_was_implicit_times.push(false);
         }
       }
+      Rule::PartIndexSuffix => {
+        // A part of a suffixed term: m\[Transpose][[2]].
+        if let Some(last) = terms.pop() {
+          term_was_implicit_times.pop();
+          terms.push(apply_part_index_suffix(last, item));
+          term_was_implicit_times.push(false);
+        }
+      }
       Rule::TransposeSuffix => {
         // expr \[Transpose] → Transpose[expr]
         if let Some(last) = terms.pop() {
@@ -5098,6 +5122,26 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
   let mut prev_end = src_start;
   for (idx, child) in children.iter().enumerate() {
     let span = child.as_span();
+    if child.as_rule() == Rule::CompoundPostfixSuffix {
+      let trailing = count_separators(prev_end, span.start());
+      for _ in 0..trailing {
+        exprs.push(null_expr());
+      }
+      let mut body = if exprs.len() == 1 {
+        exprs.pop().unwrap()
+      } else {
+        Expr::CompoundExpr(std::mem::take(&mut exprs))
+      };
+      for func in child.clone().into_inner() {
+        body = Expr::Postfix {
+          expr: Box::new(body),
+          func: Box::new(parse_postfix_function(func)),
+        };
+      }
+      exprs.push(body);
+      prev_end = span.end();
+      continue;
+    }
     if child.as_rule() == Rule::CompoundAnonSuffix {
       // Every `;` between the last statement and the `&` is a statement of
       // its own — `a; &` is `Function[CompoundExpression[a, Null]]`, the

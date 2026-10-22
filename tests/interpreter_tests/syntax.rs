@@ -13631,4 +13631,38 @@ mod named_and_private_use_characters {
       "Hold[BracketingBar[a, b]]"
     );
   }
+
+  #[test]
+  fn bracket_pairs_take_call_arguments() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[f[\u{2329}a\u{232A}[t]]]]]").unwrap(),
+      "Hold[f[AngleBracket[a][t]]]"
+    );
+  }
+
+  // `m\[Transpose][[2]]` used to be a parse error.
+  #[test]
+  fn part_after_postfix_transpose() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[m\\[Transpose][[2]]]]]").unwrap(),
+      "Hold[Part[Transpose[m], 2]]"
+    );
+    assert_eq!(
+      interpret("{{1, 2}, {3, 4}}\\[Transpose][[1]]").unwrap(),
+      "{1, 3}"
+    );
+  }
+
+  // A `//` right after the last `;` applies to the whole sequence.
+  #[test]
+  fn postfix_after_trailing_semicolon() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[sol = 0; // Quiet]]]").unwrap(),
+      "Hold[Quiet[CompoundExpression[Set[sol, 0], Null]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a; // f // g]]]").unwrap(),
+      "Hold[g[f[CompoundExpression[a, Null]]]]"
+    );
+  }
 }
