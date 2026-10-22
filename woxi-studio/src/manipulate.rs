@@ -1246,9 +1246,9 @@ impl ManipulateState {
       // may assign to the widget's own variables (`{v, e} = ve[[n]]`),
       // and a `Dynamic[…]` caption showing them must display what this
       // frame computed, not the previous frame's values.
-      crate::trace_evaluation(
-        &woxi::functions::graphics::manipulate_block_code(&code, &bindings),
-      );
+      trace_evaluation(&woxi::functions::graphics::manipulate_block_code(
+        &code, &bindings,
+      ));
       let mut render = woxi::interpret_with_stdout(&code);
       // A `Pane[Grid[…], size]` body of plain text prints as source text in
       // the terminal; the widget shows the table the pane wraps instead.
@@ -4281,5 +4281,14 @@ mod textcell_tests {
       .expect("idx slider");
     // Two appends: the Dynamic upper bound follows `Length[frames]`.
     assert_eq!((min, max, current), (1.0, 3.0, 3.0));
+  }
+}
+
+/// With `WOXI_STUDIO_TRACE` set, print every piece of code the notebook
+/// loader evaluates to stderr before running it, so a load that crashes or
+/// hangs can be replayed as a plain script with `woxi run`.
+pub fn trace_evaluation(code: &str) {
+  if std::env::var_os("WOXI_STUDIO_TRACE").is_some() {
+    eprintln!("{};\n", code.trim_end().trim_end_matches(';'));
   }
 }
