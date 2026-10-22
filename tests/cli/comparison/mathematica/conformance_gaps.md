@@ -5350,3 +5350,19 @@ options, but only `Method -> "Canny"` (or `Automatic`) with
 `"StraightEdges" -> 0` is computed. The `"ShenCastan"` and `"Sobel"` methods
 and non-zero `"StraightEdges"` leave the call unevaluated.
 
+
+### `DSolve` has no Riccati / Bessel-type solutions
+
+`DSolve[α y'[x] + γ y[x]^2 == x^(k-2), y[x], x]` stays unevaluated. wolframscript
+reduces it to the linear equation `u'' == (γ/α^2) x^(k-2) u` and returns ratios
+of `Bessel*` / `Hypergeometric0F1Regularized` functions (elementary for special
+`k`). Notebooks that wrap it in `y[x] /. DSolve[…]` (e.g. Riccati-equation
+Manipulates) therefore only draw the equation panel, and `ReplaceAll::reps`
+fires for the unevaluated `DSolve`.
+
+### `ToString[TraditionalForm[…]]` is not a linear-syntax string
+
+wolframscript returns the string `"\!\(TraditionalForm\`…\)"` (box markup in
+linear syntax, e.g. `x\^\(k - 2\)`); Woxi returns an unevaluated
+`DisplayForm[FormBox[…]]`, so `Text[ToString[TraditionalForm[…]]]` in a
+Manipulate shows the raw box structure.
