@@ -24637,6 +24637,10 @@ pub enum ManipulateControl {
     /// `ControlType -> VerticalSlider`: draw the slider running bottom-to-top
     /// instead of Wolfram's default left-to-right rail.
     orientation: ControlOrientation,
+    /// The range runs along the imaginary axis (`{zi, 0 I}, -2 I, 2 I`):
+    /// `min`/`max`/`initial` hold the imaginary coefficients, and the
+    /// variable binds the complex number `Complex[0, value]`.
+    imaginary: bool,
   },
   Discrete {
     name: String,
@@ -29326,6 +29330,20 @@ fn eval_manipulate_bound(expr: &Expr) -> Option<(f64, bool)> {
     .map(|v| (v, true))
 }
 
+/// [`eval_manipulate_bound`] extended to bounds on the imaginary axis: a
+/// purely imaginary value (`-2 I`) resolves to its imaginary coefficient and
+/// is flagged (third element) so the control binds `Complex[0, value]`.
+fn eval_manipulate_axis_bound(expr: &Expr) -> Option<(f64, bool, bool)> {
+  if let Some((v, dynamic)) = eval_manipulate_bound(expr) {
+    return Some((v, dynamic, false));
+  }
+  let (expr, is_dynamic) = manipulate_bound_expr_deep(expr);
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
+  let (re, im) =
+    crate::functions::math_ast::try_extract_complex_float(&evaluated)?;
+  (re == 0.0 && im.is_finite()).then_some((im, is_dynamic, true))
+}
+
 /// Whether a Manipulate bound expression (a `min`/`max`/step/initial-value
 /// term) is an inexact (machine-real) number rather than an exact integer or
 /// rational — `0.01` or `N[Pi]`, not `1` or `1/2`. Mirrors
@@ -29680,6 +29698,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }],
     is_real: false,
     orientation: ControlOrientation::Horizontal,
+    imaginary: false,
   };
   Some(ManipulateSpec {
     body_code,
@@ -29768,6 +29787,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }],
     is_real,
     orientation: ControlOrientation::Horizontal,
+    imaginary: false,
   };
   Some(ManipulateSpec {
     body_code: var,
@@ -30131,8 +30151,8 @@ fn list2_f64(e: &Expr) -> Option<(f64, f64)> {
   let (e, _) = manipulate_bound_expr(e);
   match e {
     Expr::List(l) if l.len() == 2 => {
-      let a = eval_manipulate_bound(&l[0])?.0;
-      let b = eval_manipulate_bound(&l[1])?.0;
+      let a = eval_manipulate_axis_bound(&l[0])?.0;
+      let b = eval_manipulate_axis_bound(&l[1])?.0;
       Some((a, b))
     }
     _ => None,
@@ -32485,8 +32505,13 @@ fn parse_manipulate_control(
   if bounds.len() < 2 {
     return None;
   }
-  let (mut min, min_dynamic) = eval_manipulate_bound(bounds[0])?;
-  let (mut max, max_dynamic) = eval_manipulate_bound(bounds[1])?;
+  let (mut min, min_dynamic, min_imaginary) =
+    eval_manipulate_axis_bound(bounds[0])?;
+  let (mut max, max_dynamic, max_imaginary) =
+    eval_manipulate_axis_bound(bounds[1])?;
+  // A range written along the imaginary axis (`-2 I` … `2 I`) is a slider
+  // over the imaginary coefficient; the variable binds `Complex[0, value]`.
+  let imaginary = min_imaginary || max_imaginary;
   // A bound that only resolved through the environment references another
   // control variable (Kepler's `{{t, 0, …}, 0, P, .01}`), as does one
   // written `Dynamic[…]`; keep its code — the bare expression, without the
@@ -32523,7 +32548,7 @@ fn parse_manipulate_control(
     .and_then(|e| eval_manipulate_bound(e))
     .map(|(v, _)| v);
   let initial = match explicit_initial.as_ref() {
-    Some(init) => eval_manipulate_bound(init).map_or(min, |(v, _)| v),
+    Some(init) => eval_manipulate_axis_bound(init).map_or(min, |(v, _, _)| v),
     None => min,
   };
   // The variable stays machine-real for the widget's whole lifetime once any
@@ -32581,6 +32606,7 @@ fn parse_manipulate_control(
       label_runs,
       is_real,
       orientation,
+      imaginary,
     },
     enabled,
     min_code,
@@ -32700,6 +32726,7 @@ fn parse_list_element_manipulator(
       label_runs: label_runs.to_vec(),
       is_real,
       orientation: ControlOrientation::Horizontal,
+      imaginary: false,
     },
   })
 }
@@ -32976,14 +33003,11 @@ pub fn manipulate_initial_bindings(
         name,
         initial,
         is_real,
+        imaginary,
         ..
       } => Some((
         name.clone(),
-        if *is_real {
-          format_f64_real(*initial)
-        } else {
-          format_f64_exact(*initial)
-        },
+        continuous_binding_code(*initial, *is_real, *imaginary),
       )),
       ManipulateControl::Trigger { name, initial, .. } => {
         Some((name.clone(), format_f64_input(*initial)))
@@ -33065,6 +33089,25 @@ fn format_f64_input(v: f64) -> String {
 /// exact (`{b, 3/2, -5, 5, 1/6}`) binds exact values in Wolfram, and a body
 /// doing exact arithmetic on them (`GCD`, `Sqrt`, `IntegerQ`) depends on it.
 /// A value with no small-denominator form falls back to the decimal literal.
+/// InputForm of a continuous control's value: a real number, or the
+/// complex number `Complex[0, value]` for a control along the imaginary axis.
+pub fn continuous_binding_code(
+  value: f64,
+  is_real: bool,
+  imaginary: bool,
+) -> String {
+  let inner = if is_real {
+    format_f64_real(value)
+  } else {
+    format_f64_exact(value)
+  };
+  if imaginary {
+    format!("Complex[0, {inner}]")
+  } else {
+    inner
+  }
+}
+
 pub fn format_f64_exact(v: f64) -> String {
   if !v.is_finite() || v.fract() == 0.0 || v.abs() >= 1e9 {
     return format_f64_input(v);

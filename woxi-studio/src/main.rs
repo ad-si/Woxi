@@ -16116,6 +16116,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       current: 0.0,
       is_real: false,
       orientation: manipulate::ControlOrientation::Horizontal,
+      imaginary: false,
     };
     let empty = manipulate::ControlState::Continuous {
       name: "theta".to_string(),
@@ -16127,9 +16128,33 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       current: 0.0,
       is_real: false,
       orientation: manipulate::ControlOrientation::Horizontal,
+      imaginary: false,
     };
     assert_eq!(manipulate_label_char_count(&m1), 2);
     assert_eq!(manipulate_label_char_count(&empty), 0);
+  }
+
+  // A slider along the imaginary axis substitutes its value as a complex
+  // number, not a bare real.
+  #[test]
+  fn imaginary_axis_slider_binds_complex_current_code() {
+    let mut c = manipulate::ControlState::Continuous {
+      name: "w".to_string(),
+      label: "w".to_string(),
+      label_runs: vec![],
+      min: -2.0,
+      max: 2.0,
+      step: 0.04,
+      current: 1.0,
+      is_real: false,
+      orientation: manipulate::ControlOrientation::Horizontal,
+      imaginary: true,
+    };
+    assert_eq!(c.current_code(), "Complex[0, 1]");
+    if let manipulate::ControlState::Continuous { imaginary, .. } = &mut c {
+      *imaginary = false;
+    }
+    assert_eq!(c.current_code(), "1");
   }
 
   // ── Result-output SVG rendering ──
@@ -20842,10 +20867,11 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
     .expect("the body must render")
     .graphics
     .expect("the body must produce a graphic");
-    // `ImagePadding -> {{25, 25}, {25, 25}}` puts the drawing area 25px in
-    // from the top left, leaving 320-50 by 300-50 for the frame.
+    // `ImagePadding -> {{25, 25}, {25, 25}}` leaves 320-50 by 300-50 for the
+    // frame; the field's square data keeps a square 250x250 drawing area,
+    // centred in that space (10px of slack on each side horizontally).
     assert!(
-      svg.contains("translate(25,25)"),
+      svg.contains("translate(35,25)"),
       "the padding must place the drawing area: {svg:.400}"
     );
     // Each arrow is coloured from the gradient, so the fill colours are
