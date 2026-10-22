@@ -23601,3 +23601,39 @@ mod table_machine_real_step {
     );
   }
 }
+
+mod transpose_sparse_array {
+  use super::*;
+
+  #[test]
+  fn transposes_like_its_dense_form() {
+    clear_state();
+    assert_eq!(
+      interpret("Normal[Transpose[SparseArray[{{1, 2} -> 5, {3, 3} -> 1}]]]")
+        .unwrap(),
+      "{{0, 0, 0}, {5, 0, 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn non_square_dimensions_swap() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Dimensions[Transpose[SparseArray[{{1, 4} -> 1, {2, 2} -> 3}]]]"
+      )
+      .unwrap(),
+      "{4, 2}"
+    );
+  }
+
+  #[test]
+  fn transposed_sparse_array_is_plottable() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[ArrayPlot[Transpose[SparseArray[{{1, 2} -> 5}]]]]")
+        .unwrap(),
+      "Graphics"
+    );
+  }
+}
