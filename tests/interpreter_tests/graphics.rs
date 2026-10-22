@@ -8878,6 +8878,11 @@ mod plot3d {
           .filter_map(|l| {
             let after = l.split_once('>')?.1;
             let text = after.split_once("</text>")?.0;
+            // A styled caption is wrapped in a sizing `<tspan>`.
+            let text = text
+              .strip_prefix("<tspan font-size=\"120\">")
+              .and_then(|t| t.strip_suffix("</tspan>"))
+              .unwrap_or(text);
             (!text.is_empty()
               && text.parse::<f64>().is_err()
               && !text.starts_with('<'))
@@ -9093,8 +9098,8 @@ mod plot3d {
                           {Style[\"diameter (cm)\", 12], None}}], \
          Graphics[{PointSize[0.04], Point[{0.5, 0.5}]}]]",
       );
-      assert!(svg.contains(">force (kN)</text>"), "{svg}");
-      assert!(svg.contains(">diameter (cm)</text>"), "{svg}");
+      assert!(svg.contains(">force (kN)</tspan></text>"), "{svg}");
+      assert!(svg.contains(">diameter (cm)</tspan></text>"), "{svg}");
       assert!(svg.contains("<circle"), "the merged point must draw: {svg}");
     }
 
@@ -10323,6 +10328,24 @@ mod plot3d {
       insta::assert_snapshot!(export_svg(
         r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> {"Sin", "Cos"}]"#
       ));
+    }
+
+    #[test]
+    fn plot_legends_and_frame_labels_typeset_styled_subscripts() {
+      let svg = export_svg(
+        r#"Plot[{x, 2 x}, {x, 0, 1}, Frame -> True,
+          PlotLegends -> {Subscript[Style["T", Italic], "r"], "b"},
+          FrameLabel -> {"t", Row[{Subscript[Style["Q", Italic], "c"], " (kJ/h)"}]}]"#,
+      );
+      let legend = "<tspan font-style=\"italic\">T</tspan>\
+        <tspan baseline-shift=\"sub\" font-size=\"70%\">r</tspan>";
+      assert!(svg.contains(legend), "legend keeps italic base + subscript");
+      let label = "<tspan font-style=\"italic\">Q</tspan>\
+        <tspan baseline-shift=\"sub\" font-size=\"70%\">c</tspan> (kJ/h)";
+      assert!(
+        svg.contains(label),
+        "frame label keeps italic base + subscript"
+      );
     }
 
     #[test]
