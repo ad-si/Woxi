@@ -7970,6 +7970,26 @@ pub(crate) fn frame_tick_axes_visible(value: &Expr) -> (bool, bool) {
   }
 }
 
+/// Explicit tick lists (`{pos, label}` entries) a `FrameTicks` value puts on
+/// the bottom and left edge, as `(bottom, left)`; they replace the automatic
+/// ticks, and an empty list leaves that edge bare. `None` for an edge that
+/// keeps its automatic ticks.
+#[allow(clippy::type_complexity)]
+pub(crate) fn frame_explicit_ticks(
+  value: &Expr,
+) -> (
+  Option<Option<Vec<(f64, String)>>>,
+  Option<Option<Vec<(f64, String)>>>,
+) {
+  let (bottom, left) = frame_tick_edge_specs(value);
+  let explicit = |spec: Option<&Expr>| match spec {
+    Some(Expr::List(l)) if l.is_empty() => Some(Some(Vec::new())),
+    Some(e @ Expr::List(_)) => parse_explicit_ticks(e).map(Some),
+    _ => None,
+  };
+  (explicit(bottom), explicit(left))
+}
+
 /// The bottom and left edge specs of a `FrameTicks` value written as
 /// `{{l, r}, {b, t}}`, `{b, l, t, r}` or `{xspec, yspec}`.
 fn frame_tick_edge_specs(value: &Expr) -> (Option<&Expr>, Option<&Expr>) {
@@ -9618,18 +9638,11 @@ pub(crate) fn apply_common_plot_option(
     "FrameTicks" => {
       let (x, y) = frame_tick_axes_visible(replacement);
       plot_opts.frame_ticks = x || y;
-      // Explicit tick lists (`{pos, label}` entries) on the bottom / left
-      // edge replace the automatic ticks; an empty list leaves that edge bare.
-      let (bottom, left) = frame_tick_edge_specs(replacement);
-      let explicit = |spec: Option<&Expr>| match spec {
-        Some(Expr::List(l)) if l.is_empty() => Some(Some(Vec::new())),
-        Some(e @ Expr::List(_)) => parse_explicit_ticks(e).map(Some),
-        _ => None,
-      };
-      if let Some(t) = explicit(bottom) {
+      let (bottom, left) = frame_explicit_ticks(replacement);
+      if let Some(t) = bottom {
         plot_opts.ticks_x = t;
       }
-      if let Some(t) = explicit(left) {
+      if let Some(t) = left {
         plot_opts.ticks_y = t;
       }
     }
