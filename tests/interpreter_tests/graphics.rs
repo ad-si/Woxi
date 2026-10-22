@@ -25158,6 +25158,26 @@ mod parametric_plot3d {
     ));
   }
 
+  /// The second iterator's bounds may depend on the first variable; the
+  /// triangle `0 <= v <= u` must be sampled, not mistaken for a curve.
+  #[test]
+  fn second_range_depends_on_first_variable() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Max[ParametricPlot3D[{u, v, 0}, {u, 0, 2}, {v, 0, u}, \
+         PlotPoints -> 5][[1, 1]][[All, 2]]]"
+      )
+      .unwrap(),
+      "2."
+    );
+    let svg = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, -Pi, Pi}, \
+       {v, 0, 1 - Sin[u]/2}, Mesh -> None]",
+    );
+    assert!(svg.contains("<polygon"), "expected a drawn surface: {svg}");
+  }
+
   /// A body that only yields a point once `u`/`v` are numeric (a
   /// `BSplineFunction` surface) must be sampled per point, not rejected.
   #[test]
