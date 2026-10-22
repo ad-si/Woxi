@@ -5446,6 +5446,16 @@ fn scatter_overlay_primitives(
   prims
 }
 
+/// Where a chart's legend goes relative to the plot.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum LegendLayout {
+  /// A column beside the plot (the default).
+  #[default]
+  Column,
+  /// A single row below the plot (`LegendAppearance -> "Row"`).
+  Row,
+}
+
 /// Generate SVG for a bar chart using plotters.
 pub(crate) fn generate_bar_svg(
   groups: &[Vec<f64>],
@@ -5459,7 +5469,7 @@ pub(crate) fn generate_bar_svg(
   frame_label: Option<(&str, &str)>,
   chart_style: &[WoxiColor],
   chart_legends: &[String],
-  legend_row: bool,
+  legend_layout: LegendLayout,
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
   bar_labels: &[String],
@@ -5548,7 +5558,8 @@ pub(crate) fn generate_bar_svg(
     bottom_extra += 30.0 * sf;
   }
   // A `LegendAppearance -> "Row"` legend runs along the bottom edge.
-  let row_legend = legend_row && !chart_legends.is_empty();
+  let row_legend =
+    legend_layout == LegendLayout::Row && !chart_legends.is_empty();
   if row_legend {
     bottom_extra += 30.0 * sf;
   }

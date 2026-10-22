@@ -3,9 +3,10 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::graphics::{Color, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  BinSpec, DEFAULT_HEIGHT, DEFAULT_WIDTH, HistogramHeight, MarginOverrides,
-  PLOT_COLORS, RESOLUTION_SCALE, generate_bar_svg, generate_histogram_svg,
-  html_escape, parse_image_size, plot_label_extra_lines, svg_header,
+  BinSpec, DEFAULT_HEIGHT, DEFAULT_WIDTH, HistogramHeight, LegendLayout,
+  MarginOverrides, PLOT_COLORS, RESOLUTION_SCALE, generate_bar_svg,
+  generate_histogram_svg, html_escape, parse_image_size,
+  plot_label_extra_lines, svg_header,
 };
 
 /// Extract grouped values from the first argument.
@@ -555,9 +556,8 @@ pub(crate) struct ChartOptions {
   /// how to derive default labels from the input (e.g. Association keys)
   /// should populate `chart_legends` themselves when this is true.
   pub chart_legends_auto: bool,
-  /// `LegendAppearance -> "Row"`: lay the legend out in one row below the
-  /// plot instead of in a column beside it.
-  pub legend_row: bool,
+  /// `LegendAppearance`: a column beside the plot, or one row below it.
+  pub legend_layout: LegendLayout,
   pub plot_range_x: Option<(f64, f64)>,
   pub plot_range_y: Option<(f64, f64)>,
   /// `BarOrigin -> Left` (or `Right`) renders horizontal bars.
@@ -1786,7 +1786,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     chart_style_scheme: None,
     chart_legends: Vec::new(),
     chart_legends_auto: false,
-    legend_row: false,
+    legend_layout: LegendLayout::Column,
     plot_range_x: None,
     plot_range_y: None,
     bar_origin_left: false,
@@ -1892,8 +1892,12 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           }
         }
         "LegendAppearance" => {
-          opts.legend_row =
-            matches!(replacement, Expr::String(s) if s == "Row");
+          opts.legend_layout = if matches!(replacement, Expr::String(s) if s == "Row")
+          {
+            LegendLayout::Row
+          } else {
+            LegendLayout::Column
+          };
         }
         "ChartLegends" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -2090,7 +2094,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|(x, y)| (x.as_str(), y.as_str())),
     &opts.chart_style,
     &opts.chart_legends,
-    opts.legend_row,
+    opts.legend_layout,
     // PlotRange is in chart coordinates (first bar centred at x = 1).
     opts.plot_range_x.map(|(lo, hi)| (lo - 0.5, hi - 0.5)),
     opts.plot_range_y,
