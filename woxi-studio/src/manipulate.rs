@@ -587,13 +587,16 @@ impl ManipulateState {
       .collect();
     let control_is_enabled = vec![true; controls.len()];
     // …and with the pane it belongs to, for a `PaneSelector` control panel.
-    let control_visible: Vec<Option<String>> = controls
+    // (a static text row has no variable, so it is filed under its label).
+    let control_visible: Vec<Option<String>> = spec
+      .controls
       .iter()
-      .map(|c| {
+      .map(|raw| {
+        let key = raw.visibility_key();
         spec
           .control_visible
           .iter()
-          .find(|(n, _)| n == c.name())
+          .find(|(n, _)| *n == key)
           .map(|(_, cond)| cond.clone())
       })
       .collect();
