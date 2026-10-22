@@ -5473,6 +5473,18 @@ mod plot3d {
       assert_ne!(with_default, with_degree_2);
     }
 
+    #[test]
+    fn graphics3d_tubebox_draws_like_tube() {
+      let tube = export_svg(
+        "Graphics3D[{CapForm[\"Butt\"], Tube[{{0, 0, 0}, {1, 0, 0}}, {3, 1}]}]",
+      );
+      let tube_box = export_svg(
+        "Graphics3D[{CapForm[\"Butt\"], TubeBox[{{0, 0, 0}, {1, 0, 0}}, {3, 1}]}]",
+      );
+      assert!(tube.contains("<polygon"));
+      assert_eq!(tube, tube_box);
+    }
+
     // Regression: a Grid/Column PlotLabel on a 3-D picture (as Demonstrations
     // commonly build, e.g. a multi-line caption of computed values) stacks
     // its rows as separate lines above the picture, matching the 2-D
