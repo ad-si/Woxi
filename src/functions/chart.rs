@@ -2037,6 +2037,16 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect(),
     None => Vec::new(),
   };
+  // Every label of one chart shares its `Placed` position; `Above` puts the
+  // labels over the bars.
+  let bar_labels_above = match &opts.labeling_function {
+    Some(func) => groups
+      .iter()
+      .flat_map(|g| g.iter())
+      .filter_map(|&v| labeling_function_label(func, v))
+      .any(|(_, pos)| pos.as_deref() == Some("Above")),
+    None => false,
+  };
 
   if opts.bar_origin_left {
     let svg = crate::functions::plot::generate_horizontal_bar_svg(
@@ -2080,6 +2090,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.plot_range_x.map(|(lo, hi)| (lo - 0.5, hi - 0.5)),
     opts.plot_range_y,
     &bar_labels,
+    bar_labels_above,
     opts.stacked,
     opts.ticks,
     &opts.epilog,
@@ -2122,6 +2133,20 @@ fn labeling_function_label(
     }
     other => (other, None),
   };
+  // `Style[expr, …]` only chooses how the label is set, so its content is
+  // what gets labelled (and therefore number-formatted); a result of `Null`
+  // (`If[#1 != 0, …]` with a false condition) means "no label here".
+  let mut inner = inner;
+  while let Expr::FunctionCall { name, args } = inner {
+    if name == "Style" && !args.is_empty() {
+      inner = &args[0];
+    } else {
+      break;
+    }
+  }
+  if matches!(inner, Expr::Identifier(s) if s == "Null") {
+    return None;
+  }
   let text = match inner {
     Expr::String(s) => s.clone(),
     // Bar values are carried as f64, so integer data arrives as e.g. `10904.0`.

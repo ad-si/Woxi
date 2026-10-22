@@ -11265,6 +11265,32 @@ mod plot3d {
     }
 
     #[test]
+    fn bar_chart_labeling_function_skips_null_and_styled_labels() {
+      // `If[#1 != 0, …]` yields Null for zero bars (no label, not the text
+      // "Null"), and `Style[#1, …]` labels read as the plain integer.
+      let svg = export_svg(
+        "BarChart[{0, 3, 2, 5}, LabelingFunction -> \
+         (If[#1 != 0, Placed[Style[#1, 16], Above]] &)]",
+      );
+      assert!(!svg.contains("Null"));
+      for v in ["3", "2", "5"] {
+        assert!(svg.contains(&format!(">{v}</text>")));
+      }
+      assert!(!svg.contains(">3.</text>"));
+    }
+
+    #[test]
+    fn bar_chart_epilog_text_is_not_clipped_to_plot_area() {
+      // Epilog text below the axis (tick labels of a frameless chart) must
+      // stay visible, so the epilog group carries no clip path.
+      let svg = export_svg(
+        "BarChart[{1, 2, 3}, Epilog -> {Text[\"tick\", {2, 0}, {0, 1.5}]}]",
+      );
+      assert!(svg.contains(">tick</text>"));
+      assert!(!svg.contains("epilogClip"));
+    }
+
+    #[test]
     fn list_plot_association_string_keys_labeling_function_none() {
       // LabelingFunction -> None hides the key labels but keeps the points.
       let svg = export_svg(
