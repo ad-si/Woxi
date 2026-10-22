@@ -16951,6 +16951,29 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// Regression: a `Plot` `ColorFunction` written as a slot function that
+    /// uses `#2` (the curve's y value) was handed only `x`, so `#2` stayed
+    /// unevaluated and the whole curve fell back to black.
+    #[test]
+    fn plot_color_function_slot_two_gets_y_value() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, ColorFunctionScaling -> False, \
+         ColorFunction -> (Hue[0.75 (1 - #2)] &)]",
+      );
+      assert!(
+        !svg.contains("stroke=\"#000000\" stroke-width=\"15\""),
+        "{svg}"
+      );
+      // y = 0 starts at Hue[0.75] (violet), y = 1 ends at Hue[0] (red).
+      let strokes: Vec<&str> = svg
+        .split("<polyline")
+        .filter(|p| p.contains("stroke-width=\"15\""))
+        .filter_map(|p| p.split("stroke=\"").nth(1)?.split('"').next())
+        .collect();
+      assert!(strokes.len() > 2, "{svg}");
+      assert_ne!(strokes.first(), strokes.last(), "{svg}");
+    }
+
     /// A `ColorFunction` returning a list of graphics directives (`{Hue[h],
     /// Opacity[o]}`, as a Demonstration commonly writes to fade a plot
     /// toward the background) picks the color out of the list instead of

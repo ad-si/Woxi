@@ -359,7 +359,7 @@ fn coerce_to_real(expr: &Expr) -> Expr {
   }
 }
 
-fn max_slot_index(expr: &Expr) -> usize {
+pub(crate) fn max_slot_index(expr: &Expr) -> usize {
   fn walk(e: &Expr, max: &mut usize) {
     match e {
       Expr::Slot(n) | Expr::SlotSequence(n) if *n > *max => {
