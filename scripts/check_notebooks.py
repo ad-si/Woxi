@@ -37,6 +37,15 @@ def rss_bytes(pid):
 
 
 def check(binary, path, timeout):
+    # One bad run must not stop the sweep from recording the others.
+    try:
+        return check_once(binary, path, timeout)
+    except Exception as e:
+        return {"file": os.path.basename(path), "status": "harness",
+                "code": None, "seconds": 0, "stdout": "", "stderr": repr(e)}
+
+
+def check_once(binary, path, timeout):
     start = time.monotonic()
     proc = subprocess.Popen(
         [binary, "--check", path],
@@ -60,7 +69,12 @@ def check(binary, path, timeout):
         elif rss_bytes(proc.pid) > MAX_RSS_BYTES:
             status = "memory"
         if status:
-            os.killpg(proc.pid, signal.SIGKILL)
+            # The group can already be gone (or a zombie, which macOS
+            # reports as EPERM) when the process exits as it is killed.
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
             break
         time.sleep(0.5)
     proc.wait()
