@@ -8442,6 +8442,22 @@ mod plot3d {
       );
     }
 
+    // Bare tick positions in a plot's `FrameTicks` are evaluated, so a tick
+    // set from variables is labelled with its value, not the expression.
+    #[test]
+    fn plot_frame_ticks_evaluate_bare_positions() {
+      let svg = export_svg(
+        r#"a = 0.3; b = 0.05;
+        Plot[x^2, {x, 0, 1}, Frame -> {True, True, False, False},
+          Axes -> {None, None},
+          FrameTicks -> {{a - b}, {N[0.5, 4]}}]"#,
+      );
+      assert!(svg.contains(">0.25<"), "{svg}");
+      assert!(svg.contains(">0.5<"), "{svg}");
+      assert!(!svg.contains("a - b"), "{svg}");
+      assert!(!svg.contains("N[0.5"), "{svg}");
+    }
+
     // `ListPlot` honours explicit `{position, label}` ticks on the bottom
     // and left frame edges, as `Plot` does, instead of the automatic ones.
     #[test]
