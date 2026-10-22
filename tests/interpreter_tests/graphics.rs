@@ -2743,9 +2743,8 @@ mod graphics {
     #[test]
     fn ticks_false_hides_the_tick_labels() {
       for spec in ["False", "{False, False}", "{None, False}", "None"] {
-        let svg = export_svg(&format!(
-          "Plot[x^2, {{x, 0, 1}}, Ticks -> {spec}]"
-        ));
+        let svg =
+          export_svg(&format!("Plot[x^2, {{x, 0, 1}}, Ticks -> {spec}]"));
         assert!(!svg.contains("<text"), "Ticks -> {spec}: {svg}");
       }
       let svg = export_svg("Plot[x^2, {x, 0, 1}]");

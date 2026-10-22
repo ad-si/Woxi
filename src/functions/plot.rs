@@ -9679,7 +9679,7 @@ pub(crate) fn apply_common_plot_option(
     }
     "Ticks" => match replacement {
       Expr::Identifier(s) if s == "None" || s == "False" => {
-        plot_opts.ticks = false
+        plot_opts.ticks = false;
       }
       Expr::Identifier(s) if s == "Automatic" || s == "All" => {
         plot_opts.ticks = true;
