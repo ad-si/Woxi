@@ -5987,6 +5987,20 @@ pub fn hyperfactorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(bigint_to_expr(product));
   }
+  // Machine reals: H(z) = Gamma(z+1)^z / BarnesG(z+1), which is real and
+  // positive for z > -1 (the K-function continuation).
+  if let Expr::Real(z) = &args[0]
+    && *z > -1.0
+    && z.is_finite()
+  {
+    if *z >= 0.0 && z.fract() == 0.0 && *z <= 150.0 {
+      let h: f64 = (1..=*z as u32).map(|k| (k as f64).powi(k as i32)).product();
+      return Ok(Expr::Real(h));
+    }
+    let log_h = z * super::gamma::lgamma(z + 1.0)
+      - super::gamma::log_barnes_g_float(z + 1.0);
+    return Ok(Expr::Real(log_h.exp()));
+  }
   Ok(unevaluated("Hyperfactorial", args))
 }
 
