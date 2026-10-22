@@ -5501,6 +5501,16 @@ pub fn get_expr_head(expr: &Expr) -> String {
     Expr::Real(_) | Expr::BigFloat(_, _) => "Real",
     Expr::String(_) => "String",
     Expr::List(_) => "List",
+    // `Nearest[data, opts…]` stands for a NearestFunction, so `f_NearestFunction`
+    // matches it and `Head` reports it as one.
+    Expr::FunctionCall { name, args }
+      if name == "Nearest"
+        && crate::evaluator::function_application::is_nearest_function_head(
+          args,
+        ) =>
+    {
+      "NearestFunction"
+    }
     Expr::FunctionCall { name, .. } => name.as_str(),
     Expr::Association(_) => "Association",
     Expr::BinaryOp { op, .. } => match op {

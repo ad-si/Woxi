@@ -2301,6 +2301,17 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // `y_ : 2` is the shorthand for Optional[y_, 2] (Blank / Pattern /
     // PatternTest already report their own heads further down).
     Expr::PatternOptional { .. } => "Optional",
+    // `Nearest[data, opts…]` stands for a NearestFunction.
+    Expr::FunctionCall {
+      name,
+      args: call_args,
+    } if name == "Nearest"
+      && crate::evaluator::function_application::is_nearest_function_head(
+        call_args,
+      ) =>
+    {
+      "NearestFunction"
+    }
     Expr::FunctionCall { name, .. } => {
       return Ok(Expr::Identifier(name.clone()));
     }
