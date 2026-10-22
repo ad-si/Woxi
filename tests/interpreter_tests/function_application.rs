@@ -3869,3 +3869,20 @@ mod sudoku_game_regressions {
     );
   }
 }
+
+mod postfix_with_curried_call {
+  use super::*;
+
+  #[test]
+  fn postfix_applies_a_curried_operator_form() {
+    // `x // f[a][b]` is `f[a][b][x]`, not `f[a, b][x]`.
+    clear_state();
+    assert_eq!(interpret("5 // Curry[Plus][{3, 4}]").unwrap(), "{8, 9}");
+    assert_eq!(interpret("3 // Curry[Rule][1]").unwrap(), "3 -> 1");
+    assert_eq!(
+      interpret("{1, 2} // Curry[Replace][{a_, b_} :> a]").unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("x // g[a][b]").unwrap(), "g[a][b][x]");
+  }
+}

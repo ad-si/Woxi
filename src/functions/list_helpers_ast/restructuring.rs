@@ -18,6 +18,23 @@ fn extract_rule_pair(expr: &Expr) -> Option<(Expr, Expr)> {
   }
 }
 
+/// Flatten `elem` into association entries when it is a rule, an
+/// association, or a (nested) list of those — the forms
+/// `Append`/`Prepend` accept for an association. `None` for anything else.
+fn association_entries(elem: &Expr) -> Option<Vec<(Expr, Expr)>> {
+  match elem {
+    Expr::Association(pairs) => Some(pairs.clone()),
+    Expr::List(items) => {
+      let mut out = Vec::new();
+      for item in items {
+        out.extend(association_entries(item)?);
+      }
+      Some(out)
+    }
+    _ => extract_rule_pair(elem).map(|pair| vec![pair]),
+  }
+}
+
 /// AST-based Partition: break a list (or any nonatomic expression,
 /// whose head is kept on the result and every sublist) into sublists
 /// of length n. Partition[{a, b, c, d, e}, 2] -> {{a, b}, {c, d}}
@@ -2089,14 +2106,13 @@ pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
     Expr::Association(pairs) => {
       // Append a rule to an association
       // If the key already exists, remove the old entry (new one goes to end)
-      if let Some((k, v)) = extract_rule_pair(elem) {
-        let key_str = expr_to_string(&k);
-        let mut result: Vec<(Expr, Expr)> = pairs
-          .iter()
-          .filter(|(ek, _)| expr_to_string(ek) != key_str)
-          .cloned()
-          .collect();
-        result.push((k, v));
+      if let Some(entries) = association_entries(elem) {
+        let mut result: Vec<(Expr, Expr)> = pairs.clone();
+        for (k, v) in entries {
+          let key_str = expr_to_string(&k);
+          result.retain(|(ek, _)| expr_to_string(ek) != key_str);
+          result.push((k, v));
+        }
         Ok(Expr::Association(result))
       } else {
         Ok(call("Append", vec![list.clone(), elem.clone()]))
@@ -2134,13 +2150,14 @@ pub fn prepend_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
     Expr::Association(pairs) => {
       // Prepend a rule to an association
       // If the key already exists, remove the old entry (new one goes to front)
-      if let Some((k, v)) = extract_rule_pair(elem) {
-        let key_str = expr_to_string(&k);
-        let mut result = vec![(k, v)];
+      if let Some(entries) = association_entries(elem) {
+        let keys: Vec<String> =
+          entries.iter().map(|(k, _)| expr_to_string(k)).collect();
+        let mut result = entries;
         result.extend(
           pairs
             .iter()
-            .filter(|(ek, _)| expr_to_string(ek) != key_str)
+            .filter(|(ek, _)| !keys.contains(&expr_to_string(ek)))
             .cloned(),
         );
         Ok(Expr::Association(result))

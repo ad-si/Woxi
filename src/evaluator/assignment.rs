@@ -296,6 +296,26 @@ fn pattern_specificity_score(
   (max_blank * 10).saturating_sub(head_bonus + cond_bonus + rule_cond_bonus)
 }
 
+/// Whether a rule carries a user-written `/;` guard, as opposed to only the
+/// synthetic conditions the definition reader derives from its arguments
+/// (literal `SameQ` checks, list-destructuring `MatchQ`/`Length` tests and
+/// `__StructuralPattern__` markers).
+fn has_explicit_guard(
+  params: &[String],
+  conditions: &[Option<Expr>],
+  body: &Expr,
+) -> bool {
+  body_has_condition(body)
+    || conditions.iter().enumerate().any(|(i, c)| {
+      c.as_ref().is_some_and(|c| {
+        !params.get(i).is_some_and(|p| p.starts_with("_lp"))
+          && !condition_is_literal_arg(params, c)
+          && !matches!(c, Expr::FunctionCall { name, .. }
+            if name == "__StructuralPattern__")
+      })
+    })
+}
+
 /// Whether two guard expressions are the same expression, node for node.
 /// Both come from the same reader, so a difference in representation is a
 /// difference in the guard; unlike `expr_equal` this never renders the
@@ -675,6 +695,8 @@ pub fn rule_dominates(
         matches!(c, Expr::FunctionCall { name, .. } if name == "__StructuralPattern__")
       })
   };
+  let has_guard =
+    |gs: &[&Expr], g: &Expr| gs.iter().any(|h| guards_equal(h, g));
   let (a_pos, a_guards) = rule_positions_and_guards(
     a_params, a_heads, a_bt, a_conds, a_defaults, a_body,
   );
@@ -692,8 +714,6 @@ pub fn rule_dominates(
     // definition order. Only list-destructuring rules, whose constraints
     // live in opaque `MatchQ` conditions, still fall back to the linear
     // specificity score.
-    let has_guard =
-      |gs: &[&Expr], g: &Expr| gs.iter().any(|h| guards_equal(h, g));
     if slots_reconstructible(a_params) && slots_reconstructible(b_params) {
       // Guards are compared first: they differ between most pairs of
       // rules, and rebuilding the patterns is what costs.
@@ -714,6 +734,14 @@ pub fn rule_dominates(
         Some(strictly) => strictly || a_extra_guard,
         None => false,
       };
+    }
+    // A `/;` guard on `b` that `a` lacks means `a` accepts inputs `b`
+    // rejects, so `a` cannot be the more specific rule whatever its blanks
+    // score — the guarded rule keeps its place ahead of it.
+    if has_explicit_guard(b_params, b_conds, b_body)
+      && !has_explicit_guard(a_params, a_conds, a_body)
+    {
+      return false;
     }
     return pattern_specificity_score(a_params, a_bt, a_heads, a_conds, a_body)
       < pattern_specificity_score(b_params, b_bt, b_heads, b_conds, b_body);
@@ -2544,7 +2572,9 @@ fn downvalue_arg_info(
               vec![Expr::Identifier(param_name.clone()), normalized],
             )));
             params.push(param_name);
-            blank_types.push(1);
+            // A sequence pattern (`___`) spans however many arguments it
+            // admits, not the single one a plain structural slot takes.
+            blank_types.push(pattern_blank_type(arg));
           } else {
             // Literal value (not a pattern) — create a SameQ condition
             // e.g., f[1] := ... should only match when arg === 1
