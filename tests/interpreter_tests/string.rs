@@ -15332,6 +15332,25 @@ mod to_expression_keeps_a_trailing_semicolon {
   }
 }
 
+mod number_form_base_form_infinite_precision {
+  use super::*;
+
+  #[test]
+  fn shows_every_digit_of_the_base_form() {
+    assert_eq!(
+      interpret(r#"ToString[NumberForm[BaseForm[228, 7], Infinity]]"#).unwrap(),
+      interpret(r#"ToString[BaseForm[228, 7]]"#).unwrap()
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[NumberForm[BaseForm[228.5, 2], Infinity, ExponentFunction -> ((Null &))]]"#
+      )
+      .unwrap(),
+      interpret(r#"ToString[BaseForm[228.5, 2]]"#).unwrap()
+    );
+  }
+}
+
 mod number_form_base_form_identity_format {
   use super::*;
 

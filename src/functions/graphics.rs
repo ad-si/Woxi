@@ -21697,6 +21697,26 @@ fn resolve_display_item(expr: &Expr) -> Expr {
       args: restyled.into(),
     };
   }
+  // `Style[Pane[content, …], directives…]` only sizes `content`, so the
+  // directives style the content rather than the source text of the `Pane`.
+  if let Expr::FunctionCall { name, args } = &current
+    && name == "Style"
+    && args.len() >= 2
+    && let Expr::FunctionCall {
+      name: wrapper,
+      args: wrapped,
+    } = &args[0]
+    && matches!(wrapper.as_str(), "Pane" | "Item")
+    && !wrapped.is_empty()
+  {
+    let restyled = call(
+      "Style",
+      std::iter::once(wrapped[0].clone())
+        .chain(args[1..].iter().cloned())
+        .collect(),
+    );
+    return resolve_display_item(&restyled);
+  }
   // `InputForm[expr]` displays as the InputForm text of `expr`.
   if let Expr::FunctionCall { name, args } = &current
     && name == "InputForm"

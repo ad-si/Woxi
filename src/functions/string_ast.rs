@@ -16302,6 +16302,15 @@ pub(crate) fn number_form_family_to_string(
   // A `BaseForm` value keeps its own (subscripted) rendering, padded by the
   // dedicated PaddedForm path.
   if matches!(value, Expr::FunctionCall { name, .. } if name == "BaseForm") {
+    // With unlimited precision (`NumberForm[BaseForm[x, b], Infinity]`) every
+    // base-b digit is shown, which is exactly the plain `BaseForm` rendering.
+    if head == "NumberForm"
+      && matches!(spec, Some(Expr::Identifier(s)) if s == "Infinity")
+      && let Ok(Expr::String(ref rendered)) =
+        to_string_ast(std::slice::from_ref(value))
+    {
+      return Some(rendered.clone());
+    }
     return None;
   }
 
