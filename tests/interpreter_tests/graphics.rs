@@ -2483,6 +2483,19 @@ mod graphics {
       assert_eq!(svg.matches("<ellipse").count(), 2, "{svg}");
     }
 
+    /// Regression: a `Spacer[n]` item in a `Column` inside a graphics `Text`
+    /// printed as the literal source `Spacer[1]` instead of a blank line.
+    #[test]
+    fn column_spacer_item_in_text_is_a_blank_line() {
+      let svg = export_svg(
+        "Graphics[Text[Column[{\"top\", Spacer[1], \"bottom\"}], {0, 0}]]",
+      );
+      assert!(!svg.contains("Spacer"), "{svg}");
+      assert!(svg.contains(">top</tspan>"), "{svg}");
+      assert!(svg.contains("></tspan>"), "{svg}");
+      assert!(svg.contains(">bottom</tspan>"), "{svg}");
+    }
+
     #[test]
     fn inset_row_of_styled_number_form_resolves_to_text() {
       // Regression: an Inset whose content is a Row of Styled text with a

@@ -4237,9 +4237,13 @@ fn graphics_text_content(expr: &Expr) -> String {
       let Some(Expr::List(items)) = args.first() else {
         unreachable!()
       };
+      // A `Spacer` item is a vertical gap — one blank line, not its source.
       items
         .iter()
-        .map(graphics_text_content)
+        .map(|item| match item {
+          Expr::FunctionCall { name, .. } if name == "Spacer" => String::new(),
+          other => graphics_text_content(other),
+        })
         .collect::<Vec<_>>()
         .join("\n")
     }
