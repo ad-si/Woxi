@@ -5125,7 +5125,8 @@ fn solve_dense_linear(
         .partial_cmp(&a[j][col].abs())
         .unwrap_or(std::cmp::Ordering::Equal)
     })?;
-    if !(a[pivot][col].abs() > 1e-300) {
+    let magnitude = a[pivot][col].abs();
+    if magnitude.is_nan() || magnitude <= 1e-300 {
       return None;
     }
     a.swap(col, pivot);
