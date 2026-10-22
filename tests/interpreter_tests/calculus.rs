@@ -21077,4 +21077,58 @@ mod integrate_negative_scaled_power {
       "(2*(-3*p)^(9/2))/81"
     );
   }
+
+  #[test]
+  fn ndsolve_vector_valued_unknown() {
+    // Projectile with linear drag: y'' = -1 - k y', x'' = -k x'.
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[{X''[t] == {0, -1} - 1/2 X'[t], X[0] == {0, 0}, \
+         X'[0] == {2, 0}}, X, {t, 0, 1}]; \
+         Head[X /. First[sol]]"
+      )
+      .unwrap(),
+      "InterpolatingFunction"
+    );
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[{X''[t] == {0, -1} - 1/2 X'[t], X[0] == {0, 0}, \
+         X'[0] == {2, 0}}, X, {t, 0, 1}]; \
+         Round[1000 (X[1] /. First[sol])]"
+      )
+      .unwrap(),
+      "{1574, -426}"
+    );
+  }
+
+  #[test]
+  fn ndsolve_vector_unknown_with_opaque_right_hand_side() {
+    // The right-hand side is a user function that only accepts numeric
+    // vectors, so it is evaluated per step rather than symbolically.
+    assert_eq!(
+      interpret(
+        "F[X_List, V_List, nf_NearestFunction] := {0, 0} - V + (nf[X][[1]] - X); \
+         nf = Nearest[{{0., 0.}, {5., 0.}}]; \
+         sol = NDSolve[{X''[t] == F[X[t], X'[t], nf], X[0] == {1., 0.}, \
+         X'[0] == {0., 0.}}, X, {t, 0, 4}]; \
+         Round[100 (X[4] /. First[sol])]"
+      )
+      .unwrap(),
+      "{-15, 0}"
+    );
+  }
+
+  #[test]
+  fn ndsolve_vector_unknown_event_locator() {
+    // The event is expressed on a component of the vector unknown.
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[{X''[t] == {0, -1}, X[0] == {0, 1}, X'[0] == {1, 0}}, \
+         X, {t, 0, 10}, Method :> {EventLocator, \"Event\" :> X[t][[2]]}]; \
+         Round[1000 sol[[1, 1, 2, 1, 1, 2]]]"
+      )
+      .unwrap(),
+      "1414"
+    );
+  }
 }

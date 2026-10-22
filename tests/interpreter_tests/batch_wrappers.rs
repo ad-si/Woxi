@@ -5817,6 +5817,30 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn nearest_function_head_and_pattern() {
+    assert_eq!(
+      interpret("Head[Nearest[{{0, 1}, {1, 2}}]]").unwrap(),
+      "NearestFunction"
+    );
+    assert_eq!(
+      interpret("MatchQ[Nearest[{1, 5, 9}], _NearestFunction]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("g[f_NearestFunction, x_] := f[x]; g[Nearest[{1, 5, 9}], 6]")
+        .unwrap(),
+      "{5}"
+    );
+  }
+  #[test]
+  fn nearest_function_applied_to_symbolic_point_stays_applied() {
+    // The target is the first part of the applied function, not the data.
+    assert_eq!(
+      interpret("Nearest[{{0, 1}, {1, 2}}][{a, b}][[1]]").unwrap(),
+      "{a, b}"
+    );
+  }
+  #[test]
   fn nearest_rule_returns_labels() {
     // Rule form: distances measured on the points list, result is drawn from
     // the corresponding labels (regression for mathics distance/clusters.py:405).

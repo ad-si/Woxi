@@ -419,6 +419,9 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
   }
+  if let Some(result) = ndsolve_vector_unknowns(args, n_pos)? {
+    return Ok(result);
+  }
   // An unknown the equations never mention is solved as itself (`w -> w`),
   // the others as usual.
   if let Expr::List(unknowns) = &args[1] {
@@ -521,6 +524,271 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(None) => Ok(unevaluated("NDSolve", args)),
     Err(e) => Err(e),
   }
+}
+
+/// A vector-valued unknown of an `NDSolve` system and the scalar symbols
+/// standing for its components while integrating.
+struct VectorUnknown {
+  name: String,
+  components: Vec<String>,
+}
+
+/// Number of components of the vector-valued unknown `name`, read off an
+/// initial condition `name[t0] == {…}` / `name'[t0] == {…}`.
+fn vector_unknown_dimension(eqs: &[Expr], name: &str) -> Option<usize> {
+  eqs.iter().find_map(|eq| {
+    let (a, b) = as_equal_pair(eq)?;
+    // `name[t0]` or `Derivative[k, name, t0]`.
+    let at_point = |e: &Expr| match e {
+      Expr::FunctionCall { name: n, args } if n == "Derivative" => {
+        args.len() == 3
+          && matches!(&args[1], Expr::Identifier(f) if f == name)
+          && nval_to_f64(&args[2]).is_some()
+      }
+      Expr::FunctionCall { name: n, args } => {
+        n == name && args.len() == 1 && nval_to_f64(&args[0]).is_some()
+      }
+      _ => false,
+    };
+    match (a, b) {
+      (lhs, Expr::List(items)) if at_point(lhs) => Some(items.len()),
+      (Expr::List(items), rhs) if at_point(rhs) => Some(items.len()),
+      _ => None,
+    }
+  })
+}
+
+/// The `(expression, index)` of `expr[[index]]`, whether parsed as a `Part`
+/// node or evaluated into `Part[expr, index]`.
+fn part_operands(expr: &Expr) -> Option<(&Expr, &Expr)> {
+  match expr {
+    Expr::Part { expr, index } => Some((expr, index)),
+    Expr::FunctionCall { name, args } if name == "Part" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    _ => None,
+  }
+}
+
+/// Replace every use of a vector-valued unknown by the list of its scalar
+/// components (`X[t]` -> `{X$1[t], X$2[t]}`, `X''[t]` likewise), folding the
+/// `[[i]]` picks that then select a component directly. With `pick` set only
+/// that component is substituted, for a list element that earlier listable
+/// arithmetic already threaded over the components.
+fn expand_vector_unknowns(
+  expr: &Expr,
+  vecs: &[VectorUnknown],
+  pick: Option<usize>,
+) -> Expr {
+  let components_of = |name: &str| vecs.iter().find(|v| v.name == name);
+  let gather = |v: &VectorUnknown, make: &dyn Fn(&String) -> Expr| match pick {
+    Some(i) => make(&v.components[i]),
+    None => Expr::List(v.components.iter().map(make).collect()),
+  };
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Derivative" => {
+      if let [k, Expr::Identifier(f), at] = args.as_slice()
+        && let Some(v) = components_of(f)
+      {
+        let at = expand_vector_unknowns(at, vecs, pick);
+        return gather(v, &|c| Expr::FunctionCall {
+          name: "Derivative".to_string(),
+          args: vec![k.clone(), Expr::Identifier(c.clone()), at.clone()].into(),
+        });
+      }
+    }
+    Expr::FunctionCall { name, args } if args.len() == 1 => {
+      if let Some(v) = components_of(name) {
+        let at = expand_vector_unknowns(&args[0], vecs, pick);
+        return gather(v, &|c| Expr::FunctionCall {
+          name: c.clone(),
+          args: vec![at.clone()].into(),
+        });
+      }
+    }
+    Expr::Part { .. } | Expr::FunctionCall { .. }
+      if let Some((base, index)) = part_operands(expr) =>
+    {
+      let base = expand_vector_unknowns(base, vecs, pick);
+      let index = expand_vector_unknowns(index, vecs, pick);
+      if let (Expr::List(items), Expr::Integer(i)) = (&base, &index)
+        && *i >= 1
+        && let Some(item) = items.get(*i as usize - 1)
+      {
+        return item.clone();
+      }
+      return call("Part", vec![base, index]);
+    }
+    _ => {}
+  }
+  map_children(expr, &|c| expand_vector_unknowns(c, vecs, pick))
+}
+
+/// `NDSolve` for unknowns that are vectors (`X''[t] == f[X[t], X'[t]]` with
+/// `X[0] == {x0, y0}`): each is split into scalar components, the vector
+/// equations are threaded over them, and the component solutions are
+/// recombined into one tensor-valued `InterpolatingFunction` per unknown.
+fn ndsolve_vector_unknowns(
+  args: &[Expr],
+  n_pos: usize,
+) -> Result<Option<Expr>, InterpreterError> {
+  let unknowns: Vec<&Expr> = match &args[1] {
+    Expr::List(items) => items.iter().collect(),
+    single => vec![single],
+  };
+  let mut eqs = Vec::new();
+  flatten_eq_list(&args[0], &mut eqs);
+  let mut vecs: Vec<VectorUnknown> = Vec::new();
+  for u in &unknowns {
+    if let Expr::Identifier(name) = u
+      && let Some(dim) = vector_unknown_dimension(&eqs, name)
+    {
+      vecs.push(VectorUnknown {
+        name: name.clone(),
+        components: (1..=dim).map(|i| format!("{name}$vec{i}")).collect(),
+      });
+    }
+  }
+  if vecs.is_empty() {
+    return Ok(None);
+  }
+
+  let mut scalar_eqs: Vec<Expr> = Vec::new();
+  for eq in &eqs {
+    let Some((lhs, rhs)) = as_equal_pair(eq) else {
+      scalar_eqs.push(expand_vector_unknowns(eq, &vecs, None));
+      continue;
+    };
+    let new_lhs = expand_vector_unknowns(lhs, &vecs, None);
+    let Expr::List(lhs_items) = &new_lhs else {
+      scalar_eqs.push(Expr::Comparison {
+        operands: vec![new_lhs, expand_vector_unknowns(rhs, &vecs, None)],
+        operators: vec![ComparisonOp::Equal],
+      });
+      continue;
+    };
+    // A right-hand side already written (or threaded) as one list element
+    // per component is read element-wise; anything else is a vector-valued
+    // expression whose components are picked out of it.
+    let whole = expand_vector_unknowns(rhs, &vecs, None);
+    for (i, l) in lhs_items.iter().enumerate() {
+      let r = match rhs {
+        Expr::List(items) if items.len() == lhs_items.len() => {
+          expand_vector_unknowns(&items[i], &vecs, Some(i))
+        }
+        _ => call("Part", vec![whole.clone(), Expr::Integer(i as i128 + 1)]),
+      };
+      scalar_eqs.push(Expr::Comparison {
+        operands: vec![l.clone(), r],
+        operators: vec![ComparisonOp::Equal],
+      });
+    }
+  }
+  let mut scalar_unknowns: Vec<Expr> = Vec::new();
+  for u in &unknowns {
+    match u {
+      Expr::Identifier(name) if vecs.iter().any(|v| v.name == *name) => {
+        let v = vecs.iter().find(|v| v.name == *name).unwrap();
+        scalar_unknowns
+          .extend(v.components.iter().map(|c| Expr::Identifier(c.clone())));
+      }
+      other => scalar_unknowns.push((*other).clone()),
+    }
+  }
+  let mut scalar_args: Vec<Expr> = vec![
+    Expr::List(scalar_eqs.into()),
+    Expr::List(scalar_unknowns.into()),
+    args[2].clone(),
+  ];
+  scalar_args.extend(
+    args[n_pos..]
+      .iter()
+      .map(|o| expand_vector_unknowns(o, &vecs, None)),
+  );
+
+  let solved = ndsolve_ast_inner(&scalar_args)?;
+  let Expr::List(solutions) = &solved else {
+    return Ok(Some(unevaluated("NDSolve", args)));
+  };
+  let mut merged_solutions = Vec::with_capacity(solutions.len());
+  for sol in solutions {
+    let Expr::List(rules) = sol else {
+      return Ok(Some(unevaluated("NDSolve", args)));
+    };
+    let interp_of = |name: &str| {
+      rules.iter().find_map(|r| match r {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+          match replacement.as_ref() {
+            Expr::FunctionCall { name: h, args }
+              if h == "InterpolatingFunction" =>
+            {
+              Some(args.clone())
+            }
+            _ => None,
+          }
+        }
+        _ => None,
+      })
+    };
+    let mut merged_rules = Vec::new();
+    for u in &unknowns {
+      let Expr::Identifier(name) = u else {
+        continue;
+      };
+      let Some(v) = vecs.iter().find(|v| v.name == *name) else {
+        // A scalar unknown keeps the rule the component solve produced.
+        if let Some(rule) = rules.iter().find(|r| {
+          matches!(r, Expr::Rule { pattern, .. } if expr_to_string(pattern) == *name)
+        }) {
+          merged_rules.push(rule.clone());
+        }
+        continue;
+      };
+      let parts: Option<Vec<_>> =
+        v.components.iter().map(|c| interp_of(c)).collect();
+      let Some(parts) = parts else {
+        return Ok(Some(unevaluated("NDSolve", args)));
+      };
+      let columns: Vec<&[Expr]> = parts
+        .iter()
+        .map(|p| match p.get(1) {
+          Some(Expr::List(rows)) => rows.as_slice(),
+          _ => &[],
+        })
+        .collect();
+      let n_rows = columns.first().map_or(0, |c| c.len());
+      if n_rows == 0 || columns.iter().any(|c| c.len() != n_rows) {
+        return Ok(Some(unevaluated("NDSolve", args)));
+      }
+      let mut rows = Vec::with_capacity(n_rows);
+      for r in 0..n_rows {
+        let mut t = None;
+        let mut ys = Vec::with_capacity(columns.len());
+        for col in &columns {
+          let Expr::List(pair) = &col[r] else {
+            return Ok(Some(unevaluated("NDSolve", args)));
+          };
+          let [x, y] = pair.as_slice() else {
+            return Ok(Some(unevaluated("NDSolve", args)));
+          };
+          t.get_or_insert_with(|| x.clone());
+          ys.push(y.clone());
+        }
+        rows.push(Expr::List(vec![t.unwrap(), Expr::List(ys.into())].into()));
+      }
+      let mut interp_args: Vec<Expr> = parts[0].to_vec();
+      interp_args[1] = Expr::List(rows.into());
+      merged_rules.push(rule_expr(
+        Expr::Identifier(name.clone()),
+        call("InterpolatingFunction", interp_args),
+      ));
+    }
+    merged_solutions.push(Expr::List(merged_rules.into()));
+  }
+  Ok(Some(Expr::List(merged_solutions.into())))
 }
 
 // ─── PDE NDSolve (method of lines) ─────────────────────────────────────
@@ -3457,7 +3725,7 @@ fn parse_event_locator_option(opts: &[Expr]) -> Option<EventSpec> {
     };
     let is_event_locator = items
       .first()
-      .is_some_and(|i| matches!(i, Expr::String(s) if s == "EventLocator"));
+      .is_some_and(|i| matches!(i, Expr::String(s) | Expr::Identifier(s) if s == "EventLocator"));
     if !is_event_locator {
       continue;
     }

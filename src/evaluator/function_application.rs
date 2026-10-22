@@ -876,7 +876,13 @@ pub fn apply_function_to_arg(
       if name == "Nearest" && is_nearest_function_head(args) {
         let mut new_args = vec![args[0].clone(), arg.clone()];
         new_args.extend(args[1..].iter().cloned());
-        return evaluate_function_call_ast("Nearest", &new_args);
+        let result = evaluate_function_call_ast("Nearest", &new_args)?;
+        return Ok(keep_nearest_function_applied(
+          result,
+          name,
+          args,
+          std::slice::from_ref(arg),
+        ));
       }
       // Distribution operator forms: CDF[dist][x] -> CDF[dist, x], and the
       // same for PDF / Quantile / InverseCDF / SurvivalFunction /
@@ -2662,7 +2668,10 @@ pub fn apply_curried_call(
         let mut new_args = vec![func_args[0].clone()];
         new_args.extend(args.iter().cloned());
         new_args.extend(func_args[1..].iter().cloned());
-        return evaluate_function_call_ast("Nearest", &new_args);
+        let result = evaluate_function_call_ast("Nearest", &new_args)?;
+        return Ok(keep_nearest_function_applied(
+          result, name, func_args, args,
+        ));
       }
       if is_subject_first_operator(name)
         && func_args.len() == 1
@@ -3472,10 +3481,32 @@ fn apply_transformation_function(
   Ok(Expr::List(result.into()))
 }
 
+/// A `NearestFunction` applied to a target it cannot measure (a symbolic
+/// point) stays applied — `Nearest[data][x]` — instead of decaying into the
+/// unevaluated direct form `Nearest[data, x]`, whose first part would be the
+/// data rather than the target.
+fn keep_nearest_function_applied(
+  result: Expr,
+  name: &str,
+  head_args: &[Expr],
+  call_args: &[Expr],
+) -> Expr {
+  match &result {
+    Expr::FunctionCall { name: n, .. } if n == "Nearest" => Expr::CurriedCall {
+      func: Box::new(Expr::FunctionCall {
+        name: name.to_string(),
+        args: head_args.to_vec().into(),
+      }),
+      args: call_args.to_vec(),
+    },
+    _ => result,
+  }
+}
+
 /// True for the arguments of a `NearestFunction`-style head
 /// `Nearest[data, opts…]`: the data followed only by options, so applying it
 /// to a target forwards to `Nearest[data, x, opts…]`.
-fn is_nearest_function_head(args: &[Expr]) -> bool {
+pub(crate) fn is_nearest_function_head(args: &[Expr]) -> bool {
   !args.is_empty()
     && args[1..].iter().all(|a| {
       matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
