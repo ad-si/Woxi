@@ -1828,6 +1828,30 @@ mod tests {
     assert!(after.starts_with("{0.05,"), "got {after}");
   }
 
+  /// An `Epilog -> (list /. rule)` option is parenthesised in the source; the
+  /// body is printed back to text for every re-evaluation, and without the
+  /// parentheses the option became `(Epilog -> list) /. rule`, so the
+  /// annotations vanished from the plot.
+  #[test]
+  fn epilog_with_replacement_survives_reevaluation() {
+    let code = r#"Manipulate[
+      Plot[a x, {x, 0, 1},
+        Epilog -> ({Red, Line[{{0, 0}, {t, a t}}], Point[{t, a t}]} /. a -> aa),
+        ImageSize -> 200],
+      {{aa, 2, "slope"}, 1, 3, 1}, {{t, 0.5, "t"}, 0, 1, 0.1},
+      Initialization :> (a = 5)]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert!(
+      state.body.contains("Epilog -> ({"),
+      "the replacement must stay parenthesised, got {}",
+      state.body
+    );
+  }
+
   /// A slider whose bounds and initial value are exact integers and that
   /// has no explicit step is an integer slider (step 1), not span/100.
   /// A button that stores a *list* of pictures in a state variable (a puzzle
