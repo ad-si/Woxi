@@ -199,7 +199,15 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ode_normalized = normalize_equation(&ode_expr)?;
 
   // Collect terms: classify each additive term by derivative order
-  let terms = match collect_ode_terms(&ode_normalized, &y_name, &x_name) {
+  // A product such as `k*(a - y[x] + f[x])` hides the linear terms inside a
+  // parenthesised sum, so retry on the expanded form before giving up.
+  let collected =
+    collect_ode_terms(&ode_normalized, &y_name, &x_name).or_else(|err| {
+      let expanded =
+        crate::functions::polynomial_ast::expand_and_combine(&ode_normalized);
+      collect_ode_terms(&expanded, &y_name, &x_name).map_err(|_| err)
+    });
+  let terms = match collected {
     Ok(terms) => terms,
     // The term classifier only understands equations that are linear in y.
     // An equation it rejects may still be separable (`y' == g(x) h(y)`), so
@@ -8069,10 +8077,31 @@ fn solve_first_order_linear(
   // (E^(3x)/3 + C[1])/E^(2x) -> E^x/3 + C[1]/E^(2x). Each product is simplified
   // (not fully expanded), so a grouped particular like (-Cos[x]+3Sin[x])/10
   // stays grouped rather than splitting into separate terms.
-  let particular = crate::functions::calculus_ast::simplify(times2(
-    inv_mu.clone(),
-    mu_q_integral,
-  ));
+  let mu_q_integral = crate::evaluator::evaluate_expr_to_expr(&mu_q_integral)
+    .unwrap_or(mu_q_integral);
+  let particular = match &mu_q_integral {
+    // A sum of several antiderivative terms: scale each one so the
+    // exponentials cancel term by term instead of staying nested.
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let scaled: Vec<Expr> = args
+        .iter()
+        .map(|t| {
+          crate::functions::calculus_ast::simplify(times2(
+            inv_mu.clone(),
+            t.clone(),
+          ))
+        })
+        .collect();
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: scaled.into(),
+      })?
+    }
+    _ => crate::functions::calculus_ast::simplify(times2(
+      inv_mu.clone(),
+      mu_q_integral,
+    )),
+  };
   let homogeneous =
     crate::functions::calculus_ast::simplify(times2(inv_mu, make_c(1)));
   Ok(plus2(particular, homogeneous))

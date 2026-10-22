@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 16248
 expression: "export_svg(\"ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}, {{-1, 1}, {-1, 0}}}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 3600 3600" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -182,10 +183,10 @@ expression: "export_svg(\"ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}, {{
 <line x1="710.0" y1="700.0" x2="680.0" y2="700.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="100.0" x2="680.0" y2="100.0" stroke="#666" stroke-width="10"/>
 <text x="3500.0" y="3180.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">1.0</text>
-<line x1="2125.0" y1="3100.0" x2="2788.3" y2="3100.0" stroke="rgb(250,50,100)" stroke-width="5.4"/>
-<polygon points="2788.3,3100.0 2589.3,3179.6 2589.3,3020.4" fill="rgb(250,50,100)"/>
+<line x1="2125.0" y1="3100.0" x2="2429.0" y2="3100.0" stroke="rgb(250,50,100)" stroke-width="5.4"/>
+<polygon points="2429.0,3100.0 2337.8,3136.5 2337.8,3063.5" fill="rgb(250,50,100)"/>
 <line x1="3500.0" y1="100.0" x2="3500.0" y2="-563.3" stroke="rgb(250,50,100)" stroke-width="5.4"/>
 <polygon points="3500.0,-563.3 3579.6,-364.3 3420.4,-364.3" fill="rgb(250,50,100)"/>
-<line x1="750.0" y1="100.0" x2="86.7" y2="100.0" stroke="rgb(250,50,100)" stroke-width="5.4"/>
-<polygon points="86.7,100.0 285.7,20.4 285.7,179.6" fill="rgb(250,50,100)"/>
+<line x1="750.0" y1="100.0" x2="446.0" y2="100.0" stroke="rgb(250,50,100)" stroke-width="5.4"/>
+<polygon points="446.0,100.0 537.2,63.5 537.2,136.5" fill="rgb(250,50,100)"/>
 </svg>

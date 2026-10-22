@@ -3379,10 +3379,77 @@ fn region_plot_polygons(loops: &[Vec<(f64, f64)>]) -> Vec<Expr> {
   polygons
 }
 
+/// How `VectorPlot` draws its vectors, from `ColorFunction` and
+/// `VectorStyle`.
+#[derive(Default)]
+struct VectorArrowStyle {
+  /// `ColorFunction -> f`: `f` maps each vector's scaled magnitude to a color.
+  color_function: Option<Expr>,
+  /// `VectorStyle -> color`: one color for every vector.
+  color: Option<(u8, u8, u8)>,
+  /// `VectorStyle -> "Segment"`: plain segments without arrowheads.
+  segments: bool,
+}
+
+/// The `ColorFunction` and `VectorStyle` options among `args[start..]`.
+fn parse_vector_arrow_style(args: &[Expr], start: usize) -> VectorArrowStyle {
+  let mut style = VectorArrowStyle::default();
+  for opt in args.iter().skip(start) {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      continue;
+    };
+    let Expr::Identifier(name) = pattern.as_ref() else {
+      continue;
+    };
+    match name.as_str() {
+      "ColorFunction" => {
+        if !matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Automatic" || s == "None")
+        {
+          style.color_function = Some((**replacement).clone());
+        }
+      }
+      "VectorStyle" => {
+        let directives: Vec<Expr> = match replacement.as_ref() {
+          Expr::List(items) => items.to_vec(),
+          other => vec![other.clone()],
+        };
+        for d in &directives {
+          if matches!(d, Expr::String(s) if s == "Segment") {
+            style.segments = true;
+          } else if let Some(c) = crate::functions::graphics::parse_color(d) {
+            style.color = Some((
+              (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+              (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+              (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+            ));
+          }
+        }
+      }
+      _ => {}
+    }
+  }
+  style
+}
+
+/// `VectorPoints -> n`: the number of sample points across each axis.
+fn parse_vector_points(args: &[Expr], start: usize) -> Option<usize> {
+  let value = option_rule(&args[start..], "VectorPoints")?;
+  let n = try_eval_to_f64(&evaluate_expr_to_expr(value).ok()?)?;
+  (n >= 2.0).then(|| n.round() as usize)
+}
+
 /// Draws arrows for a set of `(x, y, vx, vy, magnitude)` vectors onto `svg`,
 /// scaled so the largest arrow spans about `cell_size * 0.4` pixels, and
 /// returns the `{color, Arrow[...]}` primitives drawn (so callers can hand
 /// them back as `Graphics[{…}]`, e.g. for `VectorPlot[…][[1]]`).
+///
+/// Each vector points along the direction it has in the plot's own data
+/// coordinates, so a slope field stays tangent to the curves plotted over it
+/// even when the two axes have different scales.
 ///
 /// Shared by `VectorPlot` (vectors sampled from a symbolic field over a
 /// regular grid) and `ListVectorPlot` (vectors supplied as literal data), so
@@ -3392,6 +3459,7 @@ fn render_vector_arrows(
   max_mag: f64,
   cell_size: f64,
   area: &crate::functions::plot::PlotArea,
+  style: &VectorArrowStyle,
   svg: &mut String,
 ) -> Vec<Expr> {
   let mut primitives: Vec<Expr> = Vec::new();
@@ -3407,29 +3475,66 @@ fn render_vector_arrows(
     (sx, sy)
   };
 
-  let arrow_scale = cell_size * 0.4 / max_mag;
+  // Pixels per unit of each axis: the vector's on-screen direction.
+  let px_per_x = area.plot_w / (area.x_max - area.x_min);
+  let px_per_y = area.plot_h / (area.y_max - area.y_min);
+  let longest_px = vectors
+    .iter()
+    .map(|&(_, _, vx, vy, _)| (vx * px_per_x).hypot(vy * px_per_y))
+    .fold(0.0_f64, f64::max);
+  if longest_px <= 0.0 {
+    return primitives;
+  }
+  let arrow_scale = cell_size * 0.4 / longest_px;
   let stroke_w = area.render_width as f64 / 1000.0 * 1.5;
   // The pixel-space arrow length maps back to a data-space length so the
   // symbolic arrows have the same footprint as the drawn ones.
-  let data_scale_x = arrow_scale * (area.x_max - area.x_min) / area.plot_w;
-  let data_scale_y = arrow_scale * (area.y_max - area.y_min) / area.plot_h;
+  let min_mag = vectors.iter().map(|v| v.4).fold(f64::INFINITY, f64::min);
   for &(x, y, vx, vy, mag) in vectors {
     if mag < 1e-15 {
       continue;
     }
 
     let (sx, sy) = to_px(x, y);
-    let dx = vx * arrow_scale;
-    let dy = -vy * arrow_scale; // SVG y is flipped
+    let dx = vx * px_per_x * arrow_scale;
+    let dy = -vy * px_per_y * arrow_scale; // SVG y is flipped
 
     let ex = sx + dx;
     let ey = sy + dy;
 
-    // Color based on magnitude
+    // Color: an explicit `VectorStyle` color, else `ColorFunction` of the
+    // scaled magnitude, else a magnitude gradient.
     let t = (mag / max_mag).clamp(0.0, 1.0);
-    let r = (t * 200.0) as u8 + 50;
-    let g = ((1.0 - t) * 150.0) as u8 + 50;
-    let b = 100_u8;
+    let default_color = (
+      (t * 200.0) as u8 + 50,
+      ((1.0 - t) * 150.0) as u8 + 50,
+      100_u8,
+    );
+    let (r, g, b) = style.color.unwrap_or_else(|| {
+      style
+        .color_function
+        .as_ref()
+        .and_then(|f| {
+          let scaled = if max_mag > min_mag {
+            (mag - min_mag) / (max_mag - min_mag)
+          } else {
+            0.0
+          };
+          let call = Expr::CurriedCall {
+            func: Box::new(f.clone()),
+            args: vec![Expr::Real(scaled)],
+          };
+          let c = crate::functions::graphics::parse_color(
+            &evaluate_expr_to_expr(&call).ok()?,
+          )?;
+          Some((
+            (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+          ))
+        })
+        .unwrap_or(default_color)
+    });
 
     primitives.push(Expr::List(
       vec![
@@ -3441,8 +3546,8 @@ fn render_vector_arrows(
               Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
               Expr::List(
                 vec![
-                  Expr::Real(x + vx * data_scale_x),
-                  Expr::Real(y + vy * data_scale_y),
+                  Expr::Real(x + dx / px_per_x),
+                  Expr::Real(y - dy / px_per_y),
                 ]
                 .into(),
               ),
@@ -3461,7 +3566,7 @@ fn render_vector_arrows(
 
     // Arrowhead
     let len = (dx * dx + dy * dy).sqrt();
-    if len > 2.0 {
+    if len > 2.0 && !style.segments {
       let ux = dx / len;
       let uy = dy / len;
       let head_len = len * 0.3;
@@ -3498,15 +3603,18 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let prolog = parse_overlay_primitives(args, 3, "Prolog");
   let plot_label = parse_field_plot_label(args, 3);
 
-  let x_step = (x_max - x_min) / VECTOR_GRID as f64;
-  let y_step = (y_max - y_min) / VECTOR_GRID as f64;
+  let arrow_style = parse_vector_arrow_style(args, 3);
+  // `VectorPoints -> n` samples n points across each axis.
+  let grid = parse_vector_points(args, 3).map_or(VECTOR_GRID, |n| n - 1);
+  let x_step = (x_max - x_min) / grid as f64;
+  let y_step = (y_max - y_min) / grid as f64;
 
   // Sample vectors and find max magnitude
   let mut vectors = Vec::new();
   let mut max_mag = 0.0_f64;
-  for i in 0..=VECTOR_GRID {
+  for i in 0..=grid {
     let x = x_min + i as f64 * x_step;
-    for j in 0..=VECTOR_GRID {
+    for j in 0..=grid {
       let y = y_min + j as f64 * y_step;
       if let Some((vx, vy)) = evaluate_vector(body, &xvar, &yvar, x, y) {
         let mag = (vx * vx + vy * vy).sqrt();
@@ -3537,13 +3645,18 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     inject_field_plot_label(&mut svg, &area, label);
   }
 
-  let cell_size =
-    (area.plot_w / VECTOR_GRID as f64).min(area.plot_h / VECTOR_GRID as f64);
+  let cell_size = (area.plot_w / grid as f64).min(area.plot_h / grid as f64);
 
   // Arrows in data coordinates, kept so `VectorPlot[…][[1]]` yields the
   // primitives a surrounding `Graphics[{…}]` can redraw.
-  let primitives =
-    render_vector_arrows(&vectors, max_mag, cell_size, &area, &mut svg);
+  let primitives = render_vector_arrows(
+    &vectors,
+    max_mag,
+    cell_size,
+    &area,
+    &arrow_style,
+    &mut svg,
+  );
 
   if !epilog.is_empty() {
     let epilog_area = crate::functions::plot_epilog::PlotArea {
@@ -3662,8 +3775,15 @@ pub fn list_vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // instead of `VectorPlot`'s fixed sampling grid.
   let cell_size =
     (area.plot_w * area.plot_h / vectors.len().max(1) as f64).sqrt();
-  let primitives =
-    render_vector_arrows(&vectors, max_mag, cell_size, &area, &mut svg);
+  let arrow_style = parse_vector_arrow_style(args, 1);
+  let primitives = render_vector_arrows(
+    &vectors,
+    max_mag,
+    cell_size,
+    &area,
+    &arrow_style,
+    &mut svg,
+  );
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result_with_structure(

@@ -16044,6 +16044,43 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn vector_plot_color_function_and_segment_style() {
+      // Regression: VectorPlot ignored ColorFunction, VectorStyle and
+      // VectorPoints, so a red slope field with plain segments came out as
+      // a multicolored field of arrows on the default 16-point grid.
+      let svg = export_svg(
+        "VectorPlot[{1, y}, {t, 0, 1}, {y, 0, 1}, ColorFunction -> (Hue[0] &), VectorStyle -> \"Segment\", VectorPoints -> 4]",
+      );
+      assert_eq!(svg.matches("stroke=\"rgb(255,0,0)\"").count(), 16, "{svg}");
+      assert!(!svg.contains("<polygon"), "{svg}");
+    }
+
+    #[test]
+    fn vector_plot_direction_follows_axis_scales() {
+      // Regression: arrow directions ignored the axes' scales, so a slope
+      // field over very different axis ranges was drawn at the raw
+      // component ratio instead of the slope the displayed axes show.
+      // Stretching y by 2.5 must flatten the on-screen slope by 2.5.
+      let slope = |y_max: &str| -> f64 {
+        let svg = export_svg(&format!(
+          "VectorPlot[{{1, 40}}, {{t, 0, 1}}, {{y, 0, {y_max}}}, VectorStyle -> \"Segment\", VectorPoints -> 2]"
+        ));
+        let line = svg
+          .lines()
+          .find(|l| l.starts_with("<line") && l.contains("stroke=\"rgb("))
+          .expect("arrow shaft");
+        let attr = |n: &str| -> f64 {
+          let key = format!("{n}=\"");
+          let rest = &line[line.find(&key).unwrap() + key.len()..];
+          rest[..rest.find('"').unwrap()].parse().unwrap()
+        };
+        (attr("y1") - attr("y2")) / (attr("x2") - attr("x1"))
+      };
+      let ratio = slope("40") / slope("100");
+      assert!((ratio - 2.5).abs() < 0.01, "ratio = {ratio}");
+    }
+
+    #[test]
     fn vector_plot3d_basic() {
       insta::assert_snapshot!(export_svg(
         "VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]"
