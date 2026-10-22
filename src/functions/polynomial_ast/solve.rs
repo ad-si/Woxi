@@ -7654,6 +7654,38 @@ fn find_root_eval_complex_at(
 /// Newton's method on the complex plane. Mirrors the real-only path
 /// but works in (re, im) pairs throughout. Uses a numerical derivative
 /// when the symbolic derivative isn't available.
+/// The real-valued search failed because an iterate left the function's real
+/// domain (`x Hypergeometric2F1[1/2, 1/2, 2, x]` past x = 1): Wolfram's
+/// Newton iteration simply continues in the complex plane. Retries a
+/// single-variable `FindRoot[f, {x, x0}]` that way when the function is a
+/// number at the (real) start; None when that does not apply.
+pub fn find_root_complex_retry(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::List(spec) = args.get(1)? else {
+    return None;
+  };
+  let [Expr::Identifier(var), start] = spec.as_slice() else {
+    return None;
+  };
+  if matches!(&args[0], Expr::List(eqs) if eqs.len() != 1) {
+    return None;
+  }
+  let (re0, im0) = try_extract_complex_f64(start)?;
+  let func = build_find_root_func(&args[0], &[var]);
+  find_root_eval_complex_at(&func, var, re0, im0)?;
+  let deriv = crate::functions::calculus_ast::differentiate_expr(&func, var)
+    .ok()
+    .map(simplify);
+  Some(find_root_complex_newton(
+    &func,
+    deriv.as_ref(),
+    var,
+    re0,
+    im0,
+  ))
+}
+
 fn find_root_complex_newton(
   func: &Expr,
   deriv: Option<&Expr>,
@@ -7664,6 +7696,7 @@ fn find_root_complex_newton(
   let max_iter = 100;
   let tol = 1e-15;
   let (mut re, mut im) = (re0, im0);
+  let mut iterations = 0;
   // Complex helpers
   let cabs = |a: f64, b: f64| (a * a + b * b).sqrt();
   let cdiv = |ar: f64, ai: f64, br: f64, bi: f64| -> Option<(f64, f64)> {
@@ -7708,8 +7741,36 @@ fn find_root_complex_newton(
         "FindRoot: derivative is zero, cannot converge".into(),
       ));
     };
-    re -= sr;
-    im -= si;
+    // Damped like the real iteration: a step that makes |f| worse (or
+    // leaves the function's domain) is halved until it does not.
+    let current = cabs(fr, fi);
+    let mut lambda = 1.0;
+    let mut accepted = false;
+    for _ in 0..40 {
+      let (nr, ni) = (re - lambda * sr, im - lambda * si);
+      if let Some((gr, gi)) = find_root_eval_complex_at(func, var, nr, ni)
+        && cabs(gr, gi) <= current
+      {
+        re = nr;
+        im = ni;
+        accepted = true;
+        break;
+      }
+      lambda *= 0.5;
+    }
+    if !accepted {
+      re -= sr;
+      im -= si;
+    }
+    iterations += 1;
+  }
+  if iterations == max_iter
+    && find_root_eval_complex_at(func, var, re, im)
+      .is_none_or(|(fr, fi)| cabs(fr, fi) >= tol)
+  {
+    crate::emit_message(&format!(
+      "FindRoot::cvmit: Failed to converge to the requested accuracy or precision within {max_iter} iterations."
+    ));
   }
   // Build the complex result. Drop the imaginary part if it collapsed
   // to zero so the rule reads like a real solution. Otherwise build

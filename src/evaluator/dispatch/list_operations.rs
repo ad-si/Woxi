@@ -1729,16 +1729,21 @@ pub fn dispatch_list_operations(
       Ok(n) => n,
       Err(e) => return Some(Err(e)),
     };
-    let mut new_args = args.to_vec();
-    new_args[0] = normal;
-    let result = dispatch_list_operations(name, &new_args)?;
-    return Some(result.and_then(|r| {
-      if matches!(&r, Expr::List(_)) {
-        crate::evaluator::evaluate_function_call_ast("SparseArray", &[r])
-      } else {
-        Ok(r)
-      }
-    }));
+    // An invalid SparseArray (positions that are not integers) does not
+    // densify: Normal hands it back, redispatching it recursed forever, and
+    // it is treated as the plain expression it is instead.
+    if matches!(&normal, Expr::List(_)) {
+      let mut new_args = args.to_vec();
+      new_args[0] = normal;
+      let result = dispatch_list_operations(name, &new_args)?;
+      return Some(result.and_then(|r| {
+        if matches!(&r, Expr::List(_)) {
+          crate::evaluator::evaluate_function_call_ast("SparseArray", &[r])
+        } else {
+          Ok(r)
+        }
+      }));
+    }
   }
 
   match name {

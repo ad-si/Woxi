@@ -14107,6 +14107,33 @@ mod array_reshape {
 mod sparse_array_list_ops {
   use super::*;
 
+  // A SparseArray whose positions are not integers does not densify; list
+  // operations on it used to recurse until the stack overflowed.
+  #[test]
+  fn invalid_positions_stay_symbolic() {
+    assert_eq!(
+      interpret(
+        "Append[SparseArray[{{1, 1} -> 0, {1 + a, 2} -> 5}, {4, 3}, 0], x]"
+      )
+      .unwrap(),
+      "SparseArray[{{1, 1} -> 0, {1 + a, 2} -> 5}, {4, 3}, 0, x]"
+    );
+  }
+
+  #[test]
+  fn too_many_arguments() {
+    assert_eq!(
+      interpret("SparseArray[{{1, 1} -> 0}, {4, 3}, 0, x, y]").unwrap(),
+      "SparseArray[{{1, 1} -> 0}, {4, 3}, 0, x, y]"
+    );
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      [
+        "SparseArray::argb: SparseArray called with 5 arguments; between 1 and 4 arguments are expected."
+      ]
+    );
+  }
+
   // Part with a full multi-index into a higher-rank SparseArray yields the
   // scalar entry (densifying under the hood). Previously the SparseArray was
   // treated as an ordinary expression and Part wrongly indexed its stored

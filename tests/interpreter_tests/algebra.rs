@@ -9699,6 +9699,38 @@ mod linear_programming {
 mod find_root {
   use super::*;
 
+  fn root_value(code: &str) -> (f64, f64) {
+    let re: f64 = interpret(&format!("Re[x /. {code}]"))
+      .unwrap()
+      .parse()
+      .unwrap();
+    let im: f64 = interpret(&format!("Im[x /. {code}]"))
+      .unwrap()
+      .parse()
+      .unwrap();
+    (re, im)
+  }
+
+  // An iterate that leaves the function's real domain used to abort the
+  // search with a spurious FindRoot::nlnum. Wolfram continues the damped
+  // Newton iteration in the complex plane.
+  #[test]
+  fn iterate_leaving_the_real_domain() {
+    let (re, im) = root_value(
+      "FindRoot[x Hypergeometric2F1[1/2, 1/2, 2, x] - 7/2/Pi, {x, 0}]",
+    );
+    assert!(
+      (re - 0.9212998367788913).abs() < 1e-12 && im.abs() < 1e-12,
+      "{re} {im}"
+    );
+    // The damping keeps this one real: the full step to -0.65 makes |f| worse.
+    let (re, im) = root_value("FindRoot[Log[x] + 3, {x, 0.5}]");
+    assert!(
+      (re - 0.04978706836786395).abs() < 1e-15 && im == 0.0,
+      "{re} {im}"
+    );
+  }
+
   // A one-equation system in a list is that equation.
   #[test]
   fn single_equation_in_a_list() {
