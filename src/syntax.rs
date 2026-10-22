@@ -286,7 +286,7 @@ fn private_use_glyph(c: char) -> Option<&'static str> {
     '\u{F3D4}' => "\u{2194}",              // UndirectedEdge: ↔
     '\u{F3D3}' => "\u{2223}",              // Conditioned: ∣
     '\u{F3D2}' => "\u{223C}",              // Distributed: ∼
-    '\u{F4A0}' | '\u{F3C4}' => "\u{2A2F}", // Cross: ⨯
+    '\u{F4A0}' => "\u{2A2F}", // Cross: ⨯
     '\u{F3DA}' => "\u{2297}",              // TensorProduct: ⊗
     '\u{F424}' => "\u{2270}",              // NotLessSlantEqual: ≰
     '\u{F429}' => "\u{2271}",              // NotGreaterSlantEqual: ≱
@@ -3463,6 +3463,14 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       name: "AngleBracket".to_string(),
       args: pair.into_inner().map(pair_to_expr).collect(),
     },
+    Rule::BracketingBars => Expr::FunctionCall {
+      name: "BracketingBar".to_string(),
+      args: pair.into_inner().map(pair_to_expr).collect(),
+    },
+    Rule::DoubleBracketingBars => Expr::FunctionCall {
+      name: "DoubleBracketingBar".to_string(),
+      args: pair.into_inner().map(pair_to_expr).collect(),
+    },
     Rule::Increment => {
       // x++ -> Increment[x]; chained `x++++` -> Increment[Increment[x]].
       // Grammar emits one base pair followed by N `IncrementOp` pairs
@@ -5350,7 +5358,6 @@ pub const CONTINUING_NAMED_OPERATORS: &[&str] = &[
   "\u{F4A1}",
   "\\[Cross]",
   "\u{F4A0}",
-  "\u{F3C4}",
   "\u{2A2F}",
   "\\[TensorProduct]",
   "\u{F3DA}",
@@ -5496,7 +5503,7 @@ fn base_operator_precedence(op: &str) -> u8 {
     "\\[TildeTilde]" | "\u{2248}" => 21, // TildeTilde (same level as comparisons)
     // Cross and TensorProduct bind tighter than Dot in Wolfram
     // (Precedence 500 and 495 vs Dot's 490): a.b\[Cross]c is a.(b\[Cross]c).
-    "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" => 43, // Cross (above TensorProduct)
+    "\\[Cross]" | "\u{F4A0}" | "\u{2A2F}" => 43, // Cross (above TensorProduct)
     "\\[TensorProduct]" | "\u{F3DA}" => 42, // TensorProduct (just above Dot)
     "\\[Cap]" | "\u{2322}" => 36,           // Cap (⌢, infix → Cap[a, b])
     "\\[Cup]" | "\u{2323}" => 36,           // Cup (⌣, infix → Cup[a, b])
@@ -5793,7 +5800,7 @@ fn build_expr_with_precedence(
 /// Is this operator token one of the spellings of the `⨯` (`Cross`) infix
 /// operator?
 fn is_cross_op(op_str: &str) -> bool {
-  matches!(op_str, "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}")
+  matches!(op_str, "\\[Cross]" | "\u{F4A0}" | "\u{2A2F}")
 }
 
 /// `p : v` where `p` is not a bare name: `Optional[p, v]`, and `sym : v`:
@@ -6057,7 +6064,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     // Wedge and Vee are flat: a ⋀ b ⋀ c -> Wedge[a, b, c].
     "\\[Wedge]" | "\u{22C0}" => build_flat_op("Wedge", left, right),
     "\\[Vee]" | "\u{22C1}" => build_flat_op("Vee", left, right),
-    "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" => {
+    "\\[Cross]" | "\u{F4A0}" | "\u{2A2F}" => {
       // Cross is Flat/associative — flatten chains: a ⨯ b ⨯ c → Cross[a, b, c].
       let mut parts = Vec::new();
       match left {

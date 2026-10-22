@@ -1429,22 +1429,64 @@ fn differential_variable(s: &str) -> Option<String> {
     .then(|| extract_cell_content(args[1]))
 }
 
-/// Split the boxes that follow an integral sign into the integrand and the
-/// variable of the `ⅆx` that closes them. The FrontEnd normally groups the
-/// whole body in a row of its own, so a single `RowBox` is unwrapped first.
-fn split_integral_body(parts: &[&str]) -> Option<(String, String)> {
-  if let [only] = parts
-    && let Some(inner) = only.trim().strip_prefix("RowBox[")
-    && let Some(inner) = inner.strip_suffix(']')
-    && let Some(inner) = inner.trim().strip_prefix('{')
-    && let Some(inner) = inner.strip_suffix('}')
-  {
-    return split_integral_body(&split_top_level_commas(inner));
+/// `Integrate[…]` for an integral sign with limits `limits` followed by the
+/// boxes `parts`. Nested signs (`∫_0^π ∫_a^b ρ ⅆρ ⅆθ`) all take their body
+/// from the innermost row, whose trailing differentials pair with the signs
+/// innermost-first; the iterators are listed outermost-first, as Wolfram's
+/// own parser does: `Integrate[ρ, {θ, 0, π}, {ρ, a, b}]`.
+fn nested_integral(
+  limits: Option<(String, String)>,
+  parts: &[&str],
+) -> Option<String> {
+  fn unwrap_row(parts: &[&str]) -> Vec<String> {
+    if let [only] = parts
+      && let Some(inner) = only.trim().strip_prefix("RowBox[")
+      && let Some(inner) = inner.strip_suffix(']')
+      && let Some(inner) = inner.trim().strip_prefix('{')
+      && let Some(inner) = inner.strip_suffix('}')
+    {
+      let inner: Vec<&str> = split_top_level_commas(inner);
+      return unwrap_row(&inner);
+    }
+    parts.iter().map(std::string::ToString::to_string).collect()
   }
-  let (last, rest) = parts.split_last()?;
-  let var = differential_variable(last)?;
-  let integrand = extract_rowbox_content(&rest.join(","));
-  (!integrand.trim().is_empty()).then_some((integrand, var))
+  let mut signs = vec![limits];
+  let mut body = unwrap_row(parts);
+  while body.len() > 1
+    && let Some(inner_limits) = integral_limits(&body[0])
+  {
+    signs.push(inner_limits);
+    let rest: Vec<&str> = body[1..].iter().map(String::as_str).collect();
+    body = unwrap_row(&rest);
+  }
+  // Trailing differentials, popped from the end: the outermost sign's
+  // first, matching `signs`.
+  let mut vars: Vec<String> = Vec::new();
+  while vars.len() < signs.len()
+    && let Some(last) = body.last()
+    && let Some(var) = differential_variable(last)
+  {
+    vars.push(var);
+    body.pop();
+  }
+  if vars.len() != signs.len() {
+    return None;
+  }
+  let integrand = extract_rowbox_content(&body.join(","));
+  if integrand.trim().is_empty() {
+    return None;
+  }
+  let iterators: Vec<String> = signs
+    .iter()
+    .zip(vars.iter())
+    .map(|(limits, var)| match limits {
+      Some((lo, hi)) => {
+        format!("{{{}, {}, {}}}", var.trim(), lo.trim(), hi.trim())
+      }
+      None => var.trim().to_string(),
+    })
+    .collect();
+  Some(format!("Integrate[{integrand}, {}]", iterators.join(", ")))
 }
 
 /// Split an iterator underscript (`n=1`) at its top-level `=`, ignoring
@@ -1506,6 +1548,26 @@ fn big_operator_call(s: &str) -> Option<(&'static str, String)> {
     None => under.trim().to_string(),
   };
   Some((head, iterator))
+}
+
+/// The head and variables of a typeset `∇` operator:
+/// `SubscriptBox["\\[Del]", vars]` is the gradient and
+/// `SubsuperscriptBox["\\[Del]", vars, "2"]` the Laplacian.
+fn del_operator(s: &str) -> Option<(&'static str, String)> {
+  let is_del = |b: &str| {
+    let b = extract_cell_content(b);
+    let b = b.trim();
+    b == "\u{2207}" || b == r"\[Del]"
+  };
+  if let Some(args) =
+    positional_box_args("SubsuperscriptBox", s.trim()).filter(|a| a.len() == 3)
+  {
+    return (is_del(&args[0]) && extract_cell_content(&args[2]).trim() == "2")
+      .then(|| ("Laplacian", extract_cell_content(&args[1])));
+  }
+  let args =
+    positional_box_args("SubscriptBox", s.trim()).filter(|a| a.len() == 2)?;
+  is_del(&args[0]).then(|| ("Grad", extract_cell_content(&args[1])))
 }
 
 /// The variables of a `SubscriptBox["\\[PartialD]", vars]` — the typeset
@@ -1739,24 +1801,28 @@ fn extract_rowbox_content(s: &str) -> String {
     // `SubsuperscriptBox` sign carries the limits of a definite integral.
     if i + 1 < parts.len()
       && let Some(limits) = integral_limits(part)
-      && let Some((integrand, var)) = split_integral_body(
+      && let Some(integral) = nested_integral(
+        limits,
         &parts[i + 1..]
           .iter()
           .map(String::as_str)
           .collect::<Vec<_>>(),
       )
     {
-      let iterator = match limits {
-        Some((lo, hi)) => {
-          format!("{{{}, {}, {}}}", var.trim(), lo.trim(), hi.trim())
-        }
-        None => var.trim().to_string(),
-      };
-      push_juxtaposed(
-        &mut result,
-        &format!("Integrate[{integrand}, {iterator}]"),
-      );
+      push_juxtaposed(&mut result, &integral);
       break;
+    }
+    // `∇` with a subscript of variables is the typeset gradient,
+    // `Grad[u, vars]`, and with a superscript 2 the Laplacian,
+    // `Laplacian[u, vars]`; the operand is the box that follows (as in
+    // Wolfram's parser: `∇²u == 0` is `Laplacian[u, …] == 0`).
+    if i + 1 < parts.len()
+      && let Some((head, vars)) = del_operator(part)
+    {
+      let operand = extract_cell_content(parts[i + 1].trim());
+      push_juxtaposed(&mut result, &format!("{head}[{operand}, {vars}]"));
+      i += 2;
+      continue;
     }
     // The partial-derivative operator takes the rest of the row as its
     // operand, the same way a big operator does.
@@ -5900,6 +5966,27 @@ Cell["Chapter 2", "Chapter"]
     // An ordinary subscript is untouched.
     let s = r#"BoxData[RowBox[{SubscriptBox["a", "x"], "b"}]]"#;
     assert_eq!(extract_cell_content(s), "Subscript[a, x]b");
+  }
+
+  /// Nested definite integrals take their differentials innermost-first
+  /// and list their iterators outermost-first, as Wolfram's parser does.
+  #[test]
+  fn test_nested_definite_integrals() {
+    let s = r#"BoxData[RowBox[{SubsuperscriptBox["\[Integral]", "0", "\[Pi]"], RowBox[{SubsuperscriptBox["\[Integral]", "a", "b"], RowBox[{"\[Rho]", RowBox[{"\[DifferentialD]", "\[Rho]"}], RowBox[{"\[DifferentialD]", "\[Theta]"}]}]}]}]]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Integrate[\u{3C1}, {\u{3B8}, 0, \u{3C0}}, {\u{3C1}, a, b}]"
+    );
+  }
+
+  /// `∇` with variables is the gradient, and with a superscript 2 the
+  /// Laplacian, of the box that follows.
+  #[test]
+  fn test_del_operators() {
+    let s = r#"BoxData[RowBox[{RowBox[{SubsuperscriptBox["\[Del]", RowBox[{"{", RowBox[{"x", ",", "y"}], "}"}], "2"], RowBox[{"u", "[", RowBox[{"x", ",", "y"}], "]"}]}], "\[Equal]", "0"}]]"#;
+    assert_eq!(extract_cell_content(s), "Laplacian[u[x,y], {x,y}]==0");
+    let s = r#"BoxData[RowBox[{SubscriptBox["\[Del]", RowBox[{"{", RowBox[{"x", ",", "y"}], "}"}]], "f"}]]"#;
+    assert_eq!(extract_cell_content(s), "Grad[f, {x,y}]");
   }
 
   /// `\[LeftBracketingBar] body \[RightBracketingBar]` is the typeset form

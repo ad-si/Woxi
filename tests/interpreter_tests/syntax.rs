@@ -13583,3 +13583,52 @@ mod literal_data_fast_path {
     );
   }
 }
+
+mod named_and_private_use_characters {
+  use super::*;
+
+  // A named infix operator on the right of `->` used to be a parse error
+  // (rule operands had their own, drifted, operator list).
+  #[test]
+  fn named_infix_operators_in_rules() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[{0 -> x \\[UndirectedEdge] y}]]]")
+        .unwrap(),
+      "Hold[List[Rule[0, UndirectedEdge[x, y]]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[PlotLabel -> a \u{2248} b]]]").unwrap(),
+      "Hold[Rule[PlotLabel, TildeTilde[a, b]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a /. x_\\[UndirectedEdge]y_ -> 0]]]")
+        .unwrap(),
+      "Hold[ReplaceAll[a, Rule[UndirectedEdge[Pattern[x, Blank[]], Pattern[y, Blank[]]], 0]]]"
+    );
+  }
+
+  // Wolfram reads most private-use characters as letters.
+  #[test]
+  fn private_use_letters() {
+    assert_eq!(
+      interpret("Head[Unevaluated[s[\u{F044}x, k]]]").unwrap(),
+      "s"
+    );
+    assert_eq!(
+      interpret("Length[Unevaluated[s[\u{F044}x, k]]]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn bracketing_bars() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[\\[LeftDoubleBracketingBar]f + g\\[RightDoubleBracketingBar]]]]").unwrap(),
+      "Hold[DoubleBracketingBar[Plus[f, g]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[\\[LeftBracketingBar]a, b\\[RightBracketingBar]]]]").unwrap(),
+      "Hold[BracketingBar[a, b]]"
+    );
+  }
+}
