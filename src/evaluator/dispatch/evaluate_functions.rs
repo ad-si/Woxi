@@ -5350,6 +5350,19 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::voronoi::voronoi_mesh_ast(args);
   }
 
+  // HighlightMesh[mesh, spec] displays the mesh itself; the highlighting
+  // (and the cell labels `Labeled[…]` would add) is not drawn.
+  if name == "HighlightMesh"
+    && args.len() == 2
+    && crate::functions::mesh_region::is_mesh_region(&args[0])
+  {
+    return Ok(args[0].clone());
+  }
+
+  if name == "TriangulateMesh" && args.len() == 1 {
+    return crate::functions::mesh_region::triangulate_mesh_ast(args);
+  }
+
   // ConvexHullMesh[{{x1,y1},...}, opts...] → convex hull as a
   // BoundaryMeshRegion (2D or 3D), carrying any trailing options
   // (e.g. MeshCellStyle) through to the result.

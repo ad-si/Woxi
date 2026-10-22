@@ -504,8 +504,14 @@ fn parse_density_contour_options(
         // `MeshFunctions -> {f1, f2, …}`: the mesh lines are level curves
         // of each function, the way the contours are of the plotted one.
         "MeshFunctions" => {
-          if let Expr::List(items) = replacement {
-            mesh_functions = items.iter().cloned().collect();
+          match replacement {
+            Expr::List(items) => {
+              mesh_functions = items.iter().cloned().collect();
+            }
+            // A lone function stands for a list of one: `MeshFunctions ->
+            // (f[#1, #2] &)`.
+            f @ Expr::Function { .. } => mesh_functions = vec![f.clone()],
+            _ => {}
           }
         }
         "ContourStyle" => {
@@ -1827,6 +1833,84 @@ fn sample_mesh_grid(
   Some(MeshGrid { grid, levels })
 }
 
+/// The mesh functions a `Mesh`/`MeshFunctions` pair asks for, each sampled
+/// over the plot's grid with the levels its lines are drawn at. The default
+/// mesh functions are the coordinates themselves.
+fn sample_mesh_grids(
+  opts: &DensityContourOptions,
+  xvar: &str,
+  yvar: &str,
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  region_mask: &[Vec<f64>],
+) -> Vec<MeshGrid> {
+  let Some(count) = opts.mesh.filter(|&c| c > 0) else {
+    return Vec::new();
+  };
+  let functions: Vec<Expr> = if opts.mesh_functions.is_empty() {
+    vec![
+      Expr::Identifier(xvar.to_string()),
+      Expr::Identifier(yvar.to_string()),
+    ]
+  } else {
+    opts.mesh_functions.clone()
+  };
+  functions
+    .iter()
+    .filter_map(|f| {
+      sample_mesh_grid(
+        f,
+        xvar,
+        yvar,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        count,
+        Some(region_mask),
+      )
+    })
+    .collect()
+}
+
+/// The mesh lines as data-space `Line` primitives under a light grey
+/// thin-line style, in their own list so the grey does not leak onto
+/// whatever is drawn after them. Empty when there are no mesh lines.
+fn mesh_structure_items(
+  mesh_grids: &[MeshGrid],
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+) -> Option<Expr> {
+  let span = (x_max - x_min).abs().max((y_max - y_min).abs());
+  let key_scale = if span > 0.0 { 4096.0 / span } else { 16.0 };
+  let step_x = (x_max - x_min) / FIELD_GRID as f64;
+  let step_y = (y_max - y_min) / FIELD_GRID as f64;
+  let mut mesh_items: Vec<Expr> = vec![
+    call1("GrayLevel", Expr::Real(0.69)),
+    call1("AbsoluteThickness", Expr::Real(0.4)),
+  ];
+  for mesh_grid in mesh_grids {
+    for &level in &mesh_grid.levels {
+      let segments = marching_squares_segments(
+        &mesh_grid.grid,
+        level,
+        x_min,
+        y_max,
+        step_x,
+        -step_y,
+      );
+      for chain in chain_segments_scaled(&segments, key_scale) {
+        let points: Vec<Expr> = chain
+          .iter()
+          .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
+          .collect();
+        mesh_items.push(call1("Line", Expr::List(points.into())));
+      }
+    }
+  }
+  (mesh_items.len() > 2).then(|| Expr::List(mesh_items.into()))
+}
+
 /// Evaluate a mesh function at one grid point, whether it is written as a
 /// pure function of the coordinates or as an expression in them.
 fn mesh_function_value(
@@ -1885,7 +1969,13 @@ fn render_contour_lines_styled(
 /// other graphics. It keeps the call's options too, so the merged picture is
 /// still drawn on the axes and range the plot asked for, and spells out the
 /// plot's own defaults where `Graphics` differs: framed, and square.
-fn field_plot_structure(items: Vec<Expr>, args: &[Expr]) -> Expr {
+fn field_plot_structure(
+  items: Vec<Expr>,
+  args: &[Expr],
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  pin_range: bool,
+) -> Expr {
   fn name_of(o: &Expr) -> Option<&str> {
     crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
   }
@@ -1893,12 +1983,21 @@ fn field_plot_structure(items: Vec<Expr>, args: &[Expr]) -> Expr {
   let mut explicit = crate::functions::plot::explicit_options(args);
   // The plot's own `PlotRange` clips the *function values* — its x/y axes
   // are already fixed by the `{x,xmin,xmax}`/`{y,ymin,ymax}` iterators and
-  // stay put regardless of it. But `Graphics`/`Show` read a `PlotRange`
-  // rule as an axis-range spec, so forwarding the call's value verbatim
-  // would let it crop the axes of the merged picture. Drop it instead: the
-  // primitives already span the sampled domain, which is the range `Show`
-  // should use.
+  // stay put regardless of it. But `Graphics`/`Show` read a `PlotRange` rule
+  // as an axis-range spec, so forwarding the call's value verbatim would let
+  // it crop the axes of the merged picture. `pin_range` replaces it with
+  // the iterator ranges: `Show` then keeps the plotted domain as its axes,
+  // and labels placed beyond it (`PlotRangeClipping -> False`) lie outside
+  // the frame instead of stretching it.
   explicit.retain(|o| name_of(o) != Some("PlotRange"));
+  let pair =
+    |lo: f64, hi: f64| Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into());
+  if pin_range {
+    explicit.push(rule_expr(
+      id_expr("PlotRange"),
+      Expr::List(vec![pair(x_min, x_max), pair(y_min, y_max)].into()),
+    ));
+  }
   if !explicit.iter().any(|o| name_of(o) == Some("Frame")) {
     structure_args.push(rule_expr(id_expr("Frame"), bool_expr(true)));
   }
@@ -1984,6 +2083,31 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       area.plot_h,
     );
   }
+  // Mesh lines lie over the density, the level curves of each mesh
+  // function (the coordinates themselves by default).
+  let mesh_grids = sample_mesh_grids(
+    &opts,
+    &xvar,
+    &yvar,
+    (x_min, x_max),
+    (y_min, y_max),
+    &grid,
+  );
+  for mesh_grid in &mesh_grids {
+    render_contour_lines_styled(
+      &mut svg,
+      &mesh_grid.grid,
+      &mesh_grid.levels,
+      area.plot_x0,
+      area.plot_y0,
+      area.plot_w / FIELD_GRID as f64,
+      area.plot_h / FIELD_GRID as f64,
+      area.render_width,
+      "#b0b0b0",
+      0.4,
+      "",
+    );
+  }
   if opts.frame {
     push_frame(
       &mut svg,
@@ -2031,7 +2155,19 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
     ],
   );
-  let structure = field_plot_structure(vec![raster], args);
+  let mut structure_items = vec![raster];
+  structure_items.extend(mesh_structure_items(
+    &mesh_grids,
+    (x_min, x_max),
+    (y_min, y_max),
+  ));
+  let structure = field_plot_structure(
+    structure_items,
+    args,
+    (x_min, x_max),
+    (y_min, y_max),
+    true,
+  );
   let graphic = crate::graphics_result_with_structure(svg, structure);
   if !opts.bar_legend {
     return Ok(graphic);
@@ -2254,36 +2390,14 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
 
   // Sample each mesh function over the same grid and pick its levels.
-  let mesh_grids: Vec<MeshGrid> = match opts.mesh {
-    Some(count) if count > 0 => {
-      let functions: Vec<Expr> = if opts.mesh_functions.is_empty() {
-        // The default mesh functions are the coordinates themselves.
-        vec![
-          Expr::Identifier(xvar.clone()),
-          Expr::Identifier(yvar.clone()),
-        ]
-      } else {
-        opts.mesh_functions.clone()
-      };
-      functions
-        .iter()
-        .filter_map(|f| {
-          sample_mesh_grid(
-            f,
-            &xvar,
-            &yvar,
-            x_min,
-            x_max,
-            y_min,
-            y_max,
-            count,
-            Some(&grid),
-          )
-        })
-        .collect()
-    }
-    _ => Vec::new(),
-  };
+  let mesh_grids = sample_mesh_grids(
+    &opts,
+    &xvar,
+    &yvar,
+    (x_min, x_max),
+    (y_min, y_max),
+    &grid,
+  );
 
   // Data-space contour polylines for the symbolic `structure`, so
   // `ContourPlot[…][[1]]` yields primitives (with the ContourStyle
@@ -2311,40 +2425,11 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Mesh lines next, in their own list so their grey does not leak onto
   // the contours drawn after them.
-  {
-    let span = (x_max - x_min).abs().max((y_max - y_min).abs());
-    let key_scale = if span > 0.0 { 4096.0 / span } else { 16.0 };
-    let step_x = (x_max - x_min) / FIELD_GRID as f64;
-    let step_y = (y_max - y_min) / FIELD_GRID as f64;
-    let mut mesh_items: Vec<Expr> = vec![
-      call1("GrayLevel", Expr::Real(0.69)),
-      call1("AbsoluteThickness", Expr::Real(0.4)),
-    ];
-    for mesh_grid in &mesh_grids {
-      for &level in &mesh_grid.levels {
-        let segments = marching_squares_segments(
-          &mesh_grid.grid,
-          level,
-          x_min,
-          y_max,
-          step_x,
-          -step_y,
-        );
-        for chain in chain_segments_scaled(&segments, key_scale) {
-          let points: Vec<Expr> = chain
-            .iter()
-            .map(|(x, y)| {
-              Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into())
-            })
-            .collect();
-          mesh_items.push(call1("Line", Expr::List(points.into())));
-        }
-      }
-    }
-    if mesh_items.len() > 2 {
-      structure_items.push(Expr::List(mesh_items.into()));
-    }
-  }
+  structure_items.extend(mesh_structure_items(
+    &mesh_grids,
+    (x_min, x_max),
+    (y_min, y_max),
+  ));
   structure_items.extend(contour_style_directives(args, 3));
   {
     let step_x = (x_max - x_min) / FIELD_GRID as f64;
@@ -2367,7 +2452,13 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  let structure = field_plot_structure(structure_items, args);
+  let structure = field_plot_structure(
+    structure_items,
+    args,
+    (x_min, x_max),
+    (y_min, y_max),
+    false,
+  );
 
   // Use plotters for axes
   let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;

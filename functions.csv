@@ -212,7 +212,7 @@ Total,Sums the elements of a list down to a level spec — AllowedHeads -> All d
 ColorFunction,Option specifying the color function for visualization,✅,none,2.0,152
 ContourPlot,Creates a contour plot of a function,✅,pure,1.0,155
 RandomInteger,Generate random integers — RandomInteger[n] draws from 0 through n so a negative n draws downwards,✅,contextual,6.0,156
-NDSolve,Solves ordinary differential equations numerically (including delay equations with constant history and coupled systems compound unknowns and EventLocator events) and 1-D PDEs via the method of lines (systems may mix parabolic groups with groups that only differentiate in the evolution variable): parabolic (single or coupled reaction-diffusion-convection systems) and hyperbolic (single second-order-in-time wave-type equations even with an implicit mixed space/time derivative on the right) with Dirichlet Neumann or (hyperbolic-only) periodic boundaries,✅,contextual,2.0,157
+NDSolve,Solves ordinary differential equations numerically (including delay equations with constant history and coupled systems compound unknowns and EventLocator events) and 1-D PDEs via the method of lines (systems may mix parabolic groups with groups that only differentiate in the evolution variable): parabolic (single or coupled reaction-diffusion-convection systems) and hyperbolic (single second-order-in-time wave-type equations even with an implicit mixed space/time derivative on the right) with Dirichlet Neumann or (hyperbolic-only) periodic boundaries; and complex-valued first-order-in-time 1-D PDEs with periodic boundaries (e.g. nonlinear Schroedinger) via a Fourier pseudospectral discretisation,✅,contextual,2.0,157
 Integers,Domain symbol representing the set of integers,✅,pure,4.0,158
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6.0,159
 Limit,Computes the limit of an expression,✅,pure,1.0,160
@@ -274,7 +274,7 @@ While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
 FindRoot,Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honours MaxIterations and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored); a {var; x0; xmin; xmax} spec confines the search to the given bounds,✅,pure,1.0,222
 Image,Constructs an image from pixel data,✅,pure,7.0,223
-ColorData,"Named color data: the ""VisibleSpectrum"" scheme maps a wavelength in nm to a color (approximation; ColorData[""VisibleSpectrum""] gives a ColorDataFunction over 380-750 nm); the categories; the CSS colours of the ""HTML"" scheme; the web-safe hex codes of the ""WebSafe"" scheme (ColorData[""WebSafe""][""#99CC00""]) and the pre-v6 Graphics`Colors` palette under the ""Legacy"" scheme; the colors of indexed schemes 1 (generated) 2 3 30 35 and 97, plus the known entries 1 2 and 4 of scheme 17; named gradients (optionally stretched over a custom range via ColorData[{name, {min, max}}] or run backwards via ColorData[{name, ""Reverse""}]) give a ColorDataFunction sampling the scheme (e.g. ColorData[""TemperatureMap""][0.5]), sample directly via ColorData[name, t], read the ""ColorFunction"" and ""Range"" properties, and render ""Image"" swatches (Rainbow-family control points sampled from Wolfram; the remaining gradients are approximations)",✅,pure,6.0,224
+ColorData,"Named color data: the ""VisibleSpectrum"" scheme maps a wavelength in nm to a color (approximation; ColorData[""VisibleSpectrum""] gives a ColorDataFunction over 380-750 nm); the ""BlackBodySpectrum"" scheme maps a temperature in K to the color of a glowing black body (approximation); the categories; the CSS colours of the ""HTML"" scheme; the web-safe hex codes of the ""WebSafe"" scheme (ColorData[""WebSafe""][""#99CC00""]) and the pre-v6 Graphics`Colors` palette under the ""Legacy"" scheme; the colors of indexed schemes 1 (generated) 2 3 30 35 and 97, plus the known entries 1 2 and 4 of scheme 17; named gradients (optionally stretched over a custom range via ColorData[{name, {min, max}}] or run backwards via ColorData[{name, ""Reverse""}]) give a ColorDataFunction sampling the scheme (e.g. ColorData[""TemperatureMap""][0.5]), sample directly via ColorData[name, t], read the ""ColorFunction"" and ""Range"" properties, and render ""Image"" swatches (Rainbow-family control points sampled from Wolfram; the remaining gradients are approximations)",✅,pure,6.0,224
 Binomial,Returns the binomial coefficient,✅,pure,1.0,225
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1.0,226
 Replace,Applies transformation rules to an expression,✅,pure,1.0,227
@@ -1438,7 +1438,7 @@ CreateDialog,Create a dialog window,🚫,io,6.0,1427
 MinimalPolynomial,Computes the minimal polynomial of an algebraic number over the rationals,✅,pure,6.0,1428
 SynchronousInitialization,Notebook synchronous initialization,🚫,io,6.0,1429
 GeoBackground,Background for geographic plots,✅,pure,10.0,1430
-ItemStyle,Style specification for items,🚫,pure,6.0,1431
+ItemStyle,Style specification for items (text colours of Grid rows and columns),✅,pure,6.0,1431
 GeoStyling,Styling for geographic regions,🚫,pure,10.0,1432
 CharacterEncoding,Character encoding specification,🚫,io,3.0,1434
 InfinitePlane,Infinite plane geometric region; symbolic region consumed by region functions and rendered in Graphics; drawn in Graphics3D clipped to the plot range,✅,unevaluated,10.0,1434
@@ -2350,7 +2350,7 @@ ExponentialMovingAverage,Computes exponential moving average of a list,✅,None,
 GeoDirection,Initial bearing from one geo position to another,✅,pure,7.0,2367
 MeanDeviation,Mean absolute deviation from the mean,✅,1,6.0,2367
 RegionEmbeddingDimension,Dimension of the space a region is embedded in,✅,pure,10.0,2367
-TriangulateMesh,mesh generation,🚫,None,10.0,2367
+TriangulateMesh,Ear-clips a planar mesh region or boundary mesh into a MeshRegion of triangles,✅,pure,10.0,2367
 CloseKernels,parallel computing,🚫,None,7.0,2371
 DefaultBaseStyle,styling option,🚫,None,7.0,2371
 ImageDeconvolve,Restores an image blurred by a point spread function (spectral methods DampedLS/Tikhonov/Wiener; iterative methods TSVD/Hybrid/RichardsonLucy/SteepestDescent/TotalVariation not implemented),🚧,pure,8.0,2371
