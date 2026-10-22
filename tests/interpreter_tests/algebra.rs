@@ -2941,6 +2941,33 @@ mod collect_tests {
 mod together {
   use super::*;
 
+  // Combining terms rationalizes a numeric radical denominator.
+  #[test]
+  fn rationalizes_numeric_radical_denominators() {
+    assert_eq!(
+      interpret("Together[a + b/Sqrt[3]]").unwrap(),
+      "(3*a + Sqrt[3]*b)/3"
+    );
+    assert_eq!(
+      interpret("Together[a + b/3^(1/3)]").unwrap(),
+      "(3*a + 3^(2/3)*b)/3"
+    );
+    assert_eq!(
+      interpret("Together[a/Sqrt[2] + b/Sqrt[3]]").unwrap(),
+      "(3*Sqrt[2]*a + 2*Sqrt[3]*b)/6"
+    );
+    assert_eq!(
+      interpret("Together[1/Sqrt[2] + 1/x]").unwrap(),
+      "(2 + Sqrt[2]*x)/(2*x)"
+    );
+    // A lone term and symbolic radicals are left alone.
+    assert_eq!(interpret("Together[b/Sqrt[2]]").unwrap(), "b/Sqrt[2]");
+    assert_eq!(
+      interpret("Together[a + b/Sqrt[x]]").unwrap(),
+      "(b + a*Sqrt[x])/Sqrt[x]"
+    );
+  }
+
   // A denominator carrying both 2 and 2^(1/2) is 2^(3/2), not 2.
   #[test]
   fn together_keeps_radical_denominator_factor() {
@@ -2951,7 +2978,7 @@ mod together {
     );
     assert_eq!(
       interpret("Together[x/3 + y/(2 Sqrt[2])]").unwrap(),
-      "(2*x*Sqrt[2] + 3*y)/(6*Sqrt[2])"
+      "(4*x + 3*Sqrt[2]*y)/12"
     );
   }
 
@@ -5725,6 +5752,28 @@ mod solve {
   // Regression: the negated reciprocal root of x^2 == 1/2 was left as a raw
   // `UnaryOp[Minus, …]` wrapper that printed as `-2^(-1/2)`; wolframscript
   // shows `-(1/Sqrt[2])`. Both roots must share the canonical reciprocal form.
+  // A radical over a negative integer kept its sign only on paper:
+  // Sqrt[2]/(-1) evaluated to Sqrt[2], so these roots came out negated.
+  #[test]
+  fn linear_root_with_negative_radical_constant() {
+    assert_eq!(
+      interpret("Solve[-Sqrt[2] - y == 0, y]").unwrap(),
+      "{{y -> -Sqrt[2]}}"
+    );
+    assert_eq!(
+      interpret("Reduce[-Sqrt[2] - y == 0, y]").unwrap(),
+      "y == -Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Solve[{x^2 + y^2 == 1, x == 2 y}, {x, y}]").unwrap(),
+      "{{x -> -2/Sqrt[5], y -> -(1/Sqrt[5])}, {x -> 2/Sqrt[5], y -> 1/Sqrt[5]}}"
+    );
+    assert_eq!(
+      interpret("Solve[5 x^2 == 4, x]").unwrap(),
+      "{{x -> -2/Sqrt[5]}, {x -> 2/Sqrt[5]}}"
+    );
+  }
+
   #[test]
   fn solve_negated_reciprocal_root() {
     assert_eq!(

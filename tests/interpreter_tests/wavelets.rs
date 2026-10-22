@@ -915,8 +915,10 @@ mod wavelets {
   #[test]
   fn mexican_hat_psi_formula() {
     assert_eq!(
+      // wolframscript writes the numerator as -2*(-1 + t^2); see
+      // conformance_gaps.md.
       interpret("WaveletPsi[MexicanHatWavelet[1], t]").unwrap(),
-      "(2*E^(-1/2*t^2)*(1 - t^2))/(Sqrt[3]*Pi^(1/4))"
+      "(2*(1 - t^2))/(Sqrt[3]*E^(t^2/2)*Pi^(1/4))"
     );
   }
 

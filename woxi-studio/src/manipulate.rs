@@ -1758,21 +1758,6 @@ fn format_f64(v: f64) -> String {
   }
 }
 
-/// Format a f64 as a Wolfram machine-real InputForm literal: a whole number
-/// keeps a trailing dot (`0.`, `20.`) so it substitutes as Real rather than
-/// Integer. Used for a continuous control whose spec was written with an
-/// inexact bound/step — Wolfram keeps such a variable real-valued even while
-/// the slider sits at a "round" position, which a caption formatting it with
-/// `NumberForm[…, {n, f}]` depends on (that wrapper pads a real's fraction
-/// but leaves an exact integer unchanged).
-fn format_f64_real(v: f64) -> String {
-  if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
-    format!("{}.", v as i64)
-  } else {
-    format!("{v}")
-  }
-}
-
 #[cfg(test)]
 mod tests {
   /// A contour-line explorer: a photo picked from a setter bar of images,

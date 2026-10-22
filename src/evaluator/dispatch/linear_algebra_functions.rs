@@ -1664,6 +1664,62 @@ pub fn dispatch_linear_algebra_functions(
         }
         return Some(Ok(unevaluated("RotationTransform", args)));
       }
+      // RotationTransform[theta, {u, v}] and RotationTransform[theta, {u, v}, p]:
+      // rotation by theta in the plane spanned by u and v (any dimension),
+      // about the origin or the point p.
+      if args.len() >= 2
+        && let Expr::List(plane) = &args[1]
+        && plane.len() == 2
+        && let (Expr::List(u), Expr::List(v)) = (&plane[0], &plane[1])
+        && u.len() == v.len()
+        && u.len() >= 2
+      {
+        let n = u.len();
+        let point = match args.get(2) {
+          None => None,
+          Some(Expr::List(p)) if p.len() == n => Some(Expr::List(p.clone())),
+          Some(_) => return Some(Ok(unevaluated("RotationTransform", args))),
+        };
+        return Some((|| {
+          let m = rotation_matrix_plane(&args[0], &plane[0], &plane[1])?;
+          let Expr::List(m_rows) = &m else {
+            return Ok(unevaluated("RotationTransform", args));
+          };
+          // Translation column p - m.p, entrywise Together.
+          let shift = match &point {
+            Some(p) => {
+              let moved = evaluate_expr_to_expr(&call(
+                "Subtract",
+                vec![p.clone(), call("Dot", vec![m.clone(), p.clone()])],
+              ))?;
+              evaluate_expr_to_expr(&call(
+                "Map",
+                vec![id_expr("Together"), moved],
+              ))?
+            }
+            None => Expr::List(vec![Expr::Integer(0); n].into()),
+          };
+          let Expr::List(shift) = &shift else {
+            return Ok(unevaluated("RotationTransform", args));
+          };
+          let mut rows: Vec<Expr> = Vec::with_capacity(n + 1);
+          for (row, t) in m_rows.iter().zip(shift.iter()) {
+            let Expr::List(cells) = row else {
+              return Ok(unevaluated("RotationTransform", args));
+            };
+            let mut cells = cells.to_vec();
+            cells.push(t.clone());
+            rows.push(Expr::List(cells.into()));
+          }
+          let mut last = vec![Expr::Integer(0); n];
+          last.push(Expr::Integer(1));
+          rows.push(Expr::List(last.into()));
+          evaluate_expr_to_expr(&call1(
+            "TransformationFunction",
+            Expr::List(rows.into()),
+          ))
+        })());
+      }
       if args.len() == 3 {
         return Some(Ok(unevaluated("RotationTransform", args)));
       }
@@ -4334,7 +4390,17 @@ fn rotation_matrix_plane(
   let sym = plus(vec![outer(&e1, &e1), outer(&e2, &e2)]);
   let id = call1("IdentityMatrix", Expr::Integer(n as i128));
   let r = plus(vec![id, times(vec![sin, anti]), times(vec![cos_m1, sym])]);
-  evaluate_expr_to_expr(&r)
+  // Entrywise Together, as wolframscript prints them: (1 + Cos[t])/2 rather
+  // than 1 + (-1 + Cos[t])/2.
+  let r = evaluate_expr_to_expr(&r)?;
+  evaluate_expr_to_expr(&call(
+    "Map",
+    vec![
+      id_expr("Together"),
+      r,
+      Expr::List(vec![Expr::Integer(2)].into()),
+    ],
+  ))
 }
 
 /// Shared solver for LyapunovSolve / DiscreteLyapunovSolve. The two-argument

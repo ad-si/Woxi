@@ -10526,48 +10526,32 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Simplify (n * expr) / d where n, d are integers → simplify coefficient
+  // (n * expr) / d with integers n, d: the product with n/d, through
+  // times_ast so the result is canonical (2 Sqrt[5]/5 → 2/Sqrt[5]).
   if let Expr::Integer(d) = b
     && *d != 0
   {
-    // BinaryOp form
-    if let Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left,
-      right,
-    } = a
-    {
-      // (Integer * expr) / Integer → (n/d) * expr
-      if let Expr::Integer(n) = left.as_ref() {
-        let coeff = make_rational(*n, *d);
-        return multiply_scalar_by_expr(&coeff, right);
+    let factors: Option<Vec<Expr>> = match a {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } if matches!(left.as_ref(), Expr::Integer(_))
+        || matches!(right.as_ref(), Expr::Integer(_)) =>
+      {
+        Some(vec![(**left).clone(), (**right).clone()])
       }
-      // (expr * Integer) / Integer → expr * (n/d)
-      if let Expr::Integer(n) = right.as_ref() {
-        let coeff = make_rational(*n, *d);
-        return multiply_scalar_by_expr(&coeff, left);
+      Expr::FunctionCall { name, args: targs }
+        if name == "Times"
+          && targs.iter().any(|t| matches!(t, Expr::Integer(_))) =>
+      {
+        Some(targs.to_vec())
       }
-    }
-    // FunctionCall("Times", ...) form
-    if let Expr::FunctionCall { name, args: targs } = a
-      && name == "Times"
-    {
-      for (i, arg) in targs.iter().enumerate() {
-        if let Expr::Integer(n) = arg {
-          let coeff = make_rational(*n, *d);
-          let mut rest: Vec<Expr> = targs
-            .iter()
-            .enumerate()
-            .filter(|(j, _)| *j != i)
-            .map(|(_, e)| e.clone())
-            .collect();
-          if rest.len() == 1 {
-            return multiply_scalar_by_expr(&coeff, &rest.remove(0));
-          }
-          let rest_expr = times(rest);
-          return multiply_scalar_by_expr(&coeff, &rest_expr);
-        }
-      }
+      _ => None,
+    };
+    if let Some(mut factors) = factors {
+      factors.push(make_rational(1, *d));
+      return times_ast(&factors);
     }
   }
 
@@ -10583,72 +10567,28 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     return times_ast(&[Expr::Integer(*n), b_inv]);
   }
 
-  // Sqrt[n] / d → Sqrt[n/d^2] for integer n and d
-  // E.g. Sqrt[6]/2 → Sqrt[3/2], matching Wolfram's canonical form
-  // Only apply when the reduced denominator has no perfect square factors,
-  // to avoid infinite loops (e.g. Sqrt[3]/4 would loop through Sqrt[3/16] → (1/4)*Sqrt[3] → ...)
+  // A radical (or c times one) over an integer: times_ast owns the
+  // coefficient-into-radical merge (Sqrt[6]/2 → Sqrt[3/2], Sqrt[15/11]/3 →
+  // Sqrt[5/33]) and keeps the sign of a negative divisor (Sqrt[2]/(-1) is
+  // -Sqrt[2]; a former Sqrt[n/d^2] shortcut dropped it).
   if let Expr::Integer(d) = b
     && *d != 0
-    && is_sqrt(a).is_some()
-    && let Expr::Integer(n) = is_sqrt(a).unwrap()
-    && *n > 0
   {
-    let denom = d * d;
-    let g = gcd_i128(*n, denom);
-    let reduced_d = (denom / g) as u64;
-    // Check that the reduced denominator has no perfect square factors
-    let mut has_sq_factor = false;
-    {
-      let val = reduced_d;
-      let mut f = 2u64;
-      while f * f <= val {
-        if val.is_multiple_of(f * f) {
-          has_sq_factor = true;
-          break;
-        }
-        f += 1;
-      }
-    }
-    if !has_sq_factor {
-      return sqrt_ast(&[make_rational(*n, denom)]);
-    }
-  }
-
-  // Sqrt[p/q] / d → Sqrt[p/(q*d^2)] for positive rational p/q and integer d
-  // E.g. Sqrt[15/11]/3 → Sqrt[15/99] = Sqrt[5/33]
-  if let Expr::Integer(d) = b
-    && *d != 0
-    && is_sqrt(a).is_some()
-    && let Expr::FunctionCall {
-      name: rname,
-      args: rargs,
-    } = is_sqrt(a).unwrap()
-    && rname == "Rational"
-    && rargs.len() == 2
-    && let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1])
-    && *p > 0
-    && *q > 0
-  {
-    let new_q = q.checked_mul(*d).and_then(|v| v.checked_mul(*d));
-    if let Some(new_q) = new_q {
-      return sqrt_ast(&[make_rational(*p, new_q)]);
-    }
-  }
-
-  // c*Sqrt[n] / d → (c/d)*Sqrt[n] → absorbed form via times_ast
-  if let Expr::Integer(d) = b
-    && *d != 0
-    && let Expr::FunctionCall { name, args: targs } = a
-    && name == "Times"
-    && targs.len() == 2
-  {
-    let has_sqrt_int = is_sqrt(&targs[1]).is_some()
-      && matches!(is_sqrt(&targs[1]).unwrap(), Expr::Integer(n) if *n > 0);
-    let has_numeric_coeff = matches!(&targs[0], Expr::Integer(_))
-      || matches!(&targs[0], Expr::FunctionCall { name: rn, .. } if rn == "Rational");
-    if has_sqrt_int && has_numeric_coeff {
-      let coeff = make_rational(1, *d);
-      return times_ast(&[targs[0].clone(), coeff, targs[1].clone()]);
+    let is_radical = |e: &Expr| {
+      is_sqrt(e).is_some_and(|r| {
+        matches!(r, Expr::Integer(n) if *n > 0)
+          || matches!(r, Expr::FunctionCall { name, args }
+            if name == "Rational" && args.len() == 2
+              && matches!(&args[0], Expr::Integer(p) if *p > 0))
+      })
+    };
+    let coefficient_times_radical = matches!(a, Expr::FunctionCall { name, args: targs }
+      if name == "Times" && targs.len() == 2
+        && (matches!(&targs[0], Expr::Integer(_))
+          || matches!(&targs[0], Expr::FunctionCall { name: rn, .. } if rn == "Rational"))
+        && is_radical(&targs[1]));
+    if is_radical(a) || coefficient_times_radical {
+      return times_ast(&[a.clone(), make_rational(1, *d)]);
     }
   }
 

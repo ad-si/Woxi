@@ -3754,6 +3754,18 @@ mod sqrt_negative {
   }
 
   #[test]
+  fn radical_over_integer() {
+    assert_eq!(interpret("Sqrt[2]/(-1)").unwrap(), "-Sqrt[2]");
+    assert_eq!(interpret("Sqrt[6]/(-2)").unwrap(), "-Sqrt[3/2]");
+    assert_eq!(interpret("Sqrt[6]/2").unwrap(), "Sqrt[3/2]");
+    assert_eq!(interpret("Sqrt[3]/4").unwrap(), "Sqrt[3]/4");
+    assert_eq!(interpret("Sqrt[15/11]/3").unwrap(), "Sqrt[5/33]");
+    assert_eq!(interpret("2 Sqrt[5]/5").unwrap(), "2/Sqrt[5]");
+    assert_eq!(interpret("3 Sqrt[2]/6").unwrap(), "1/Sqrt[2]");
+    assert_eq!(interpret("(4 x y)/6").unwrap(), "(2*x*y)/3");
+  }
+
+  #[test]
   fn sqrt_negative_rational_and_big_integer() {
     assert_eq!(interpret("Sqrt[-4/9]").unwrap(), "(2*I)/3");
     assert_eq!(interpret("Sqrt[-2/3]").unwrap(), "I*Sqrt[2/3]");

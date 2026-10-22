@@ -3500,11 +3500,13 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
               };
               binop(join_op, nb_expr, sqrt_part.clone())
             };
-            if den == 1 {
+            let root = if den == 1 {
               num
             } else {
               div2(num, Expr::Integer(den))
-            }
+            };
+            // Evaluated, so the root is canonical (2 Sqrt[5]/5 is 2/Sqrt[5]).
+            crate::evaluator::evaluate_expr_to_expr(&root).unwrap_or(root)
           };
           let sol1 = make_sol(true);
           let sol2 = make_sol(false);

@@ -8929,6 +8929,32 @@ mod rotation_matrix {
   use super::*;
 
   #[test]
+  fn plane_form_entries_are_together() {
+    assert_eq!(
+      interpret("RotationMatrix[t, {{1,0,0},{0,1,1}}]").unwrap(),
+      "{{Cos[t], -(Sin[t]/Sqrt[2]), -(Sin[t]/Sqrt[2])}, {Sin[t]/Sqrt[2], (1 + Cos[t])/2, (-1 + Cos[t])/2}, {Sin[t]/Sqrt[2], (-1 + Cos[t])/2, (1 + Cos[t])/2}}"
+    );
+  }
+
+  // RotationTransform[t, {u, v}] rotates in the plane of u and v in any
+  // dimension; it used to read {u, v} as a 2D centre.
+  #[test]
+  fn rotation_transform_in_a_plane() {
+    assert_eq!(
+      interpret("RotationTransform[t, {{1,0,0,0},{0,1,0,0}}]").unwrap(),
+      "TransformationFunction[{{Cos[t], -Sin[t], 0, 0, 0}, {Sin[t], Cos[t], 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 0, 1, 0}, {0, 0, 0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("RotationTransform[t, {{1,0,0},{0,1,1}}, {1,2,3}]").unwrap(),
+      "TransformationFunction[{{Cos[t], -(Sin[t]/Sqrt[2]), -(Sin[t]/Sqrt[2]), (2 - 2*Cos[t] + 5*Sqrt[2]*Sin[t])/2}, {Sin[t]/Sqrt[2], (1 + Cos[t])/2, (-1 + Cos[t])/2, (5 - 5*Cos[t] - Sqrt[2]*Sin[t])/2}, {Sin[t]/Sqrt[2], (-1 + Cos[t])/2, (1 + Cos[t])/2, (5 - 5*Cos[t] - Sqrt[2]*Sin[t])/2}, {0, 0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("RotationTransform[t, {1, 2}]").unwrap(),
+      "TransformationFunction[{{Cos[t], -Sin[t], 1 - Cos[t] + 2*Sin[t]}, {Sin[t], Cos[t], 2 - 2*Cos[t] - Sin[t]}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
   fn symbolic_2d() {
     assert_eq!(
       interpret("RotationMatrix[theta]").unwrap(),

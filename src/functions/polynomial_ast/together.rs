@@ -32,7 +32,11 @@ pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let results: Vec<Expr> = items
       .iter()
-      .map(|e| canonicalize_together_result(&together_expr(e)))
+      .map(|e| {
+        order_numerator_factors(&canonicalize_together_result(&together_expr(
+          e,
+        )))
+      })
       .collect();
     return Ok(Expr::List(results.into()));
   }
@@ -60,7 +64,37 @@ pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(value);
     }
   }
-  Ok(canonicalize_together_result(&together_expr(&args[0])))
+  Ok(order_numerator_factors(&canonicalize_together_result(
+    &together_expr(&args[0]),
+  )))
+}
+
+/// A combined numerator is assembled from raw products, so its terms can
+/// carry factors out of canonical order (`b*Sqrt[3]` for `Sqrt[3]*b`).
+/// Evaluating a sum numerator on its own reorders them without touching the
+/// quotient shape (evaluating the whole quotient would split it again).
+fn order_numerator_factors(expr: &Expr) -> Expr {
+  let (num, den) = extract_num_den(expr);
+  if matches!(&den, Expr::Integer(1)) {
+    return expr.clone();
+  }
+  let is_sum = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+      || matches!(
+        e,
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
+          ..
+        }
+      )
+  };
+  if !is_sum(&num) {
+    return expr.clone();
+  }
+  match crate::evaluator::evaluate_expr_to_expr(&num) {
+    Ok(ordered) if is_sum(&ordered) => div2(ordered, den),
+    _ => expr.clone(),
+  }
 }
 
 /// Apply the wolframscript quotient-sign canonicalization to a Together
@@ -1527,6 +1561,69 @@ fn shares_cancelable_factor(num: &Expr, den: &Expr) -> bool {
   num_bases.iter().any(|b| den_bases.contains(b))
 }
 
+/// When terms are combined, a numeric radical in a denominator is made
+/// rational first, as wolframscript does: a + b/Sqrt[2] → (2 a + Sqrt[2] b)/2,
+/// a + b/3^(1/3) → (3 a + 3^(2/3) b)/3. Each factor n^(p/q) (integer n > 1,
+/// non-integer p/q > 0) becomes n^Ceiling[p/q], the numerator taking the
+/// complementary n^(Ceiling[p/q] - p/q).
+fn rationalize_numeric_radical_denominator(
+  (num, den): (Expr, Expr),
+) -> (Expr, Expr) {
+  let radical = |f: &Expr| -> Option<(i128, i128, i128)> {
+    let (base, exp) = match f {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (left.as_ref(), right.as_ref()),
+      _ => return None,
+    };
+    let (Expr::Integer(n), Expr::FunctionCall { name, args }) = (base, exp)
+    else {
+      return None;
+    };
+    if *n <= 1 || name != "Rational" || args.len() != 2 {
+      return None;
+    }
+    match (&args[0], &args[1]) {
+      (Expr::Integer(p), Expr::Integer(q)) if *p > 0 && *q > 1 => {
+        Some((*n, *p, *q))
+      }
+      _ => None,
+    }
+  };
+  let factors = flatten_times_args(std::slice::from_ref(&den));
+  if !factors.iter().any(|f| radical(f).is_some()) {
+    return (num, den);
+  }
+  let mut new_den: Vec<Expr> = Vec::new();
+  let mut extra: Vec<Expr> = Vec::new();
+  for f in factors {
+    match radical(&f) {
+      Some((n, p, q)) => {
+        let k = (p + q - 1) / q;
+        match n.checked_pow(k as u32) {
+          Some(nk) => new_den.push(Expr::Integer(nk)),
+          None => return (num, den),
+        }
+        extra.push(pow(Expr::Integer(n), make_rational(k * q - p, q)));
+      }
+      None => new_den.push(f),
+    }
+  }
+  extra.insert(0, num.clone());
+  let num =
+    crate::evaluator::evaluate_expr_to_expr(&times(extra)).unwrap_or(num);
+  let den =
+    crate::evaluator::evaluate_expr_to_expr(&times(new_den)).unwrap_or(den);
+  (num, den)
+}
+
 pub fn together_expr(expr: &Expr) -> Expr {
   // First recursively apply Together to sub-expressions so that nested
   // fractions (e.g. `1/(1 + 1/x)` or continued-fraction-like forms) get
@@ -1687,7 +1784,9 @@ pub fn together_expr(expr: &Expr) -> Expr {
   // Extract numerator and denominator for each term
   let mut fractions: Vec<(Expr, Expr)> = Vec::new();
   for term in &terms {
-    fractions.push(extract_num_den(term));
+    fractions.push(rationalize_numeric_radical_denominator(extract_num_den(
+      term,
+    )));
   }
 
   // Compute the common denominator (LCM of all denominators)

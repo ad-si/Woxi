@@ -317,6 +317,17 @@ because it makes the two layers disagree with each other.
 
 ## Canonical ordering of Plus and Times
 
+### `WaveletPsi[MexicanHatWavelet[1], t]` keeps the polynomial factor's sign
+
+```sh
+wolframscript -code 'WaveletPsi[MexicanHatWavelet[1], t]'  # (-2*(-1 + t^2))/(Sqrt[3]*E^(t^2/2)*Pi^(1/4))
+woxi eval 'WaveletPsi[MexicanHatWavelet[1], t]'            # (2*(1 - t^2))/(Sqrt[3]*E^(t^2/2)*Pi^(1/4))
+```
+
+The values are equal, and Woxi's form is what both engines print for the
+product typed in directly. WL builds it from the second derivative of a
+Gaussian, which leaves `-2 (-1 + t^2)` unexpanded.
+
 Woxi has three independent canonical-order comparators (one for `Sort`, one for
 `Order`, one for `Plus` terms) and they drift from each other as well as from
 Wolfram. Diagnose an ordering divergence by testing `Sort[…]`, `Order[a, b]`
