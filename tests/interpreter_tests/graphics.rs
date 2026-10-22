@@ -38847,3 +38847,20 @@ mod framed_graphics_fits_data_shape {
     assert!(!svg.contains(">-1.5<"), "{svg}");
   }
 }
+
+mod style_around_pane_in_layout {
+  use super::*;
+
+  #[test]
+  fn styled_pane_in_column_shows_content_not_source() {
+    for code in [
+      "Column[{Style[Pane[\"abc\", 250], 18]}]",
+      "Column[{Style[Item[\"abc\"], 18]}]",
+    ] {
+      let svg = export_svg(code);
+      assert!(svg.contains(">abc<"), "{svg}");
+      assert!(!svg.contains("Pane["), "{svg}");
+      assert!(!svg.contains("Item["), "{svg}");
+    }
+  }
+}
