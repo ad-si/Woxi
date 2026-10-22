@@ -25315,6 +25315,54 @@ mod find_spanning_tree {
 mod parametric_plot3d {
   use super::*;
 
+  // A plot body naming a Module-local symbol whose value depends on the plot
+  // variables is read through that value.
+  #[test]
+  fn module_local_indirect_bodies() {
+    for (plot, head) in [
+      (
+        "ParametricPlot3D[{X, u, v}, {u, 0, 1}, {v, 0, 1}]",
+        "Graphics3D",
+      ),
+      ("ParametricPlot[{X, u}, {u, 0, 1}, {v, 0, 1}]", "Graphics"),
+      (
+        "ContourPlot3D[X + w == 1, {u, 0, 1}, {v, 0, 1}, {w, 0, 1}]",
+        "Graphics3D",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "Head[Module[{{X, u, v, w}}, X = Sin[v] + u; {plot}]]"
+        ))
+        .unwrap(),
+        head,
+        "{plot}"
+      );
+    }
+  }
+
+  // A compiled curve function stays unevaluated on the free plot variable,
+  // so its shape — one curve, or a list of several — is read at a sample.
+  #[test]
+  fn compiled_curve_functions() {
+    let setup = "f = Compile[{{t, _Real}, {a, _Real}}, {Cos[t], Sin[t], a t}]; \
+      g = Compile[{{t, _Real}, {a, _Real}}, {Sin[t], Cos[t], -a t}];";
+    for body in [
+      "f[t, 1.]",
+      "Through[{f, g}[t, 1.]]",
+      "{{}, Through[{f, g}[#1, #2]] &[t, 1.]}",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "{setup} Head[ParametricPlot3D[{body}, {{t, 0, 2 Pi}}]]"
+        ))
+        .unwrap(),
+        "Graphics3D",
+        "{body}"
+      );
+    }
+  }
+
   #[test]
   fn parametric_surface() {
     insta::assert_snapshot!(export_svg(

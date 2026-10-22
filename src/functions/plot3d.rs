@@ -10173,6 +10173,16 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .unwrap_or_else(|| other.clone()),
     ],
   };
+  // A body naming a symbol whose value depends on the plot variables is
+  // read through that value first (see `resolve_indirect_plot_body`).
+  let plot_vars = [xvar.as_str(), yvar.as_str(), zvar.as_str()];
+  let bodies: Vec<Expr> = bodies
+    .into_iter()
+    .map(|b| {
+      crate::functions::plot::resolve_indirect_plot_body(&b, &plot_vars)
+        .unwrap_or(b)
+    })
+    .collect();
 
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
@@ -12962,7 +12972,39 @@ fn resolve_one_parametric_item_to_curves(
   }
   let resolved =
     crate::functions::plot::eval_body_vars_symbolic(item, shadow_vars);
-  parametric_curves_from_list(unwrap_singleton_list(&resolved))
+  if let Some(curves) =
+    parametric_curves_from_list(unwrap_singleton_list(&resolved))
+  {
+    return Some(curves);
+  }
+  // A body that only takes shape for numbers — a compiled function, which
+  // stays unevaluated on free plot variables — is probed at a sample point:
+  // one numeric 3-vector is one curve, a list of them that many, read off
+  // with `Part` so each still varies with the plot variables.
+  let mut probe = item.clone();
+  for (i, var) in shadow_vars.iter().enumerate() {
+    probe = substitute_var(&probe, var, &Expr::Real(0.37 + 0.24 * i as f64));
+  }
+  let value = evaluate_expr_to_expr(&probe).ok()?;
+  let is_point = |e: &Expr| {
+    matches!(e, Expr::List(c) if c.len() == 3
+      && c.iter().all(|x| try_eval_to_f64(x).is_some()))
+  };
+  match &value {
+    Expr::List(sub) if sub.is_empty() => Some(vec![]),
+    v if is_point(v) => {
+      Some(vec![(part_of(item, 1), part_of(item, 2), part_of(item, 3))])
+    }
+    Expr::List(sub) if sub.iter().all(is_point) => Some(
+      (1..=sub.len() as i128)
+        .map(|i| {
+          let curve = part_of(item, i);
+          (part_of(&curve, 1), part_of(&curve, 2), part_of(&curve, 3))
+        })
+        .collect(),
+    ),
+    _ => None,
+  }
 }
 
 /// Resolve `body` into one or more `{fx, fy, fz}` triples for
@@ -12978,6 +13020,30 @@ fn resolve_one_parametric_item_to_curves(
 /// a single point instead of leaving `u`/`v` symbolic for the later
 /// per-sample substitution.
 fn resolve_parametric_triples(
+  body: &Expr,
+  shadow_vars: &[&str],
+) -> Result<Vec<(Expr, Expr, Expr)>, InterpreterError> {
+  // A component written as a symbol whose value depends on the plot
+  // variables (`Module[{x, u, v}, x = Sin[v]; ParametricPlot3D[{x, u, v},
+  // …]]`) would never see the per-sample substitution; read its value first.
+  // Only a bare symbol: a `Part[item, k]` read-off must stay as it is, or
+  // evaluating it symbolically takes a part of the unevaluated `If` itself.
+  let resolve = |c: Expr| match c {
+    Expr::Identifier(_) => {
+      crate::functions::plot::resolve_indirect_plot_body(&c, shadow_vars)
+        .unwrap_or(c)
+    }
+    other => other,
+  };
+  Ok(
+    resolve_parametric_triples_raw(body, shadow_vars)?
+      .into_iter()
+      .map(|(x, y, z)| (resolve(x), resolve(y), resolve(z)))
+      .collect(),
+  )
+}
+
+fn resolve_parametric_triples_raw(
   body: &Expr,
   shadow_vars: &[&str],
 ) -> Result<Vec<(Expr, Expr, Expr)>, InterpreterError> {

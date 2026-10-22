@@ -829,6 +829,44 @@ fn parametric_region_ast(
   opt_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let (plot_opts, _) = parse_options(opt_args);
+  // A body naming a symbol whose value depends on `u`/`v` is read through
+  // that value first (see `resolve_indirect_plot_body`).
+  let var_of = |spec: &Expr| match spec {
+    Expr::List(items) => match items.first() {
+      Some(Expr::Identifier(name)) => Some(name.clone()),
+      _ => None,
+    },
+    _ => None,
+  };
+  let resolved_body;
+  let body = match (var_of(u_spec), var_of(v_spec)) {
+    (Some(u), Some(v)) => {
+      let vars = [u.as_str(), v.as_str()];
+      let resolve = |e: &Expr| match e {
+        Expr::Identifier(_) => {
+          crate::functions::plot::resolve_indirect_plot_body(e, &vars)
+            .unwrap_or_else(|| e.clone())
+        }
+        other => other.clone(),
+      };
+      resolved_body = match body {
+        Expr::List(items) => Expr::List(
+          items
+            .iter()
+            .map(|it| match it {
+              Expr::List(pair) => {
+                Expr::List(pair.iter().map(resolve).collect())
+              }
+              other => resolve(other),
+            })
+            .collect(),
+        ),
+        other => resolve(other),
+      };
+      &resolved_body
+    }
+    _ => body,
+  };
   // `{{fx1, fy1}, {fx2, fy2}, …}` is several regions drawn in one plot, each
   // in the next colour of the cycle.
   let bodies: Vec<&Expr> = match body {
