@@ -3586,6 +3586,21 @@ mod tests {
     assert!(dump("k$$").contains("label: \"freq\""), "{}", dump("k$$"));
   }
 
+  /// A slider caption built with `StringJoin`/`ToString` shows the text it
+  /// produces, not the unevaluated call.
+  #[test]
+  fn control_label_evaluates_string_join() {
+    let code = r#"Manipulate[Plot[a x, {x, 0, 1}],
+      {{a, 0, "pairs (0 to " <> ToString[z] <> ")"}, 0, z, 2},
+      Initialization :> (z = 5)]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(dump.contains("label: \"pairs (0 to 5)\""), "{dump}");
+    assert!(!dump.contains("StringJoin"), "{dump}");
+  }
+
   /// A heading `Row[{"parameter ", Style[a, Italic], Spacer[10], }]` ends in
   /// a trailing comma, i.e. a `Null` item; it is drawn as nothing, so the
   /// heading reads "parameter a" rather than "parameter a Null".

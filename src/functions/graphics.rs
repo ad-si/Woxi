@@ -29912,6 +29912,32 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     runs.extend(grouped_label_runs(radicand, italic));
     return runs;
   }
+  // A string-building label — `"pairs (0 to " <> ToString[n] <> ")"` — is a
+  // caption computed from other values. The widget shows the text it
+  // produces, not the source of the call.
+  let builds_string = match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::StringJoin,
+      ..
+    } => true,
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "StringJoin" | "ToString" | "StringRiffle")
+    }
+    _ => false,
+  };
+  if builds_string
+    && let Ok(Expr::String(ref text)) = evaluate_expr_to_expr(expr)
+  {
+    return if text.is_empty() {
+      vec![]
+    } else {
+      vec![LabelRun {
+        text: text.clone(),
+        italic,
+        ..Default::default()
+      }]
+    };
+  }
   match expr {
     // `Null` — what a trailing comma in a `Row`/`Column` item list leaves
     // behind — is drawn as nothing, not as the word "Null".
