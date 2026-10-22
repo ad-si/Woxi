@@ -1125,7 +1125,9 @@ fn evolve(
     .checked_mul(t_max.max(1))?
     .checked_mul(rule.neighbors.len())?;
   let result_cells = cells.checked_mul(times.len())?;
-  if cells > 4_000_000 || work > 1_000_000_000 || result_cells > 64_000_000 {
+  // The work bound is generous: on a background init the evolution only
+  // computes the region the pattern can have reached (see below).
+  if cells > 4_000_000 || work > 10_000_000_000 || result_cells > 64_000_000 {
     return None;
   }
 
@@ -1155,6 +1157,31 @@ fn evolve(
 
   let mut snapshots: Vec<(Vec<Vec<u128>>, u128)> = Vec::new();
   let mut next_time = 0;
+  // Rows r0..=r1 and columns c0..=c1 that can hold a non-background cell
+  // (background inits only; None once the background itself evolves).
+  let radius = (
+    rule
+      .neighbors
+      .iter()
+      .map(|n| n.0.unsigned_abs() as usize)
+      .max()
+      .unwrap_or(0),
+    rule
+      .neighbors
+      .iter()
+      .map(|n| n.1.unsigned_abs() as usize)
+      .max()
+      .unwrap_or(0),
+  );
+  let mut active: Option<(usize, usize, usize, usize)> = background.map(|_| {
+    let (r0, c0) = (row_axis.origin as usize, col_axis.origin as usize);
+    (
+      r0,
+      r0 + init.len().max(1) - 1,
+      c0,
+      c0 + init.first().map_or(1, |row| row.len().max(1)) - 1,
+    )
+  });
   for t in 0..=t_max {
     if next_time < times.len() && times[next_time] == t {
       snapshots.push((grid.clone(), bg));
@@ -1163,6 +1190,41 @@ fn evolve(
     if t == t_max {
       break;
     }
+
+    let next_bg = rule_digit(rule.n, rule.k, bg.saturating_mul(weight_total));
+    // With a background that stays put, only cells within reach of a
+    // non-background cell can change: the init's box grown by the
+    // neighborhood radius once per step. Everything else stays background.
+    if let (Some(_), Some(reach)) = (background, active.as_mut())
+      && next_bg == bg
+    {
+      reach.0 = reach.0.saturating_sub(radius.0);
+      reach.1 = (reach.1 + radius.0).min(height - 1);
+      reach.2 = reach.2.saturating_sub(radius.1);
+      reach.3 = (reach.3 + radius.1).min(width - 1);
+      let (r0, r1, c0, c1) = *reach;
+      let mut next = grid.clone();
+      for x in r0..=r1 {
+        for y in c0..=c1 {
+          let mut s: u128 = 0;
+          for &(dr, dc, w) in &rule.neighbors {
+            let r = x as i64 + dr;
+            let c = y as i64 + dc;
+            let value =
+              if r < 0 || c < 0 || r >= height as i64 || c >= width as i64 {
+                bg
+              } else {
+                grid[r as usize][c as usize]
+              };
+            s = s.saturating_add(w.saturating_mul(value));
+          }
+          next[x][y] = rule_digit(rule.n, rule.k, s);
+        }
+      }
+      grid = next;
+      continue;
+    }
+    active = None;
 
     let mut next = vec![vec![0u128; width]; height];
     for (x, next_row) in next.iter_mut().enumerate() {

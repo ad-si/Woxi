@@ -2070,9 +2070,10 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       result
     }
     Rule::FunctionCall => parse_function_call(&pair),
-    Rule::Expression | Rule::ExpressionNoImplicit | Rule::ConditionExpr => {
-      parse_expression(pair)
-    }
+    Rule::Expression
+    | Rule::ExpressionNoImplicit
+    | Rule::ConditionExpr
+    | Rule::PostfixExpression => parse_expression(pair),
     _ => pair_to_expr_inner(pair),
   }
 }
@@ -3724,7 +3725,10 @@ fn parse_postfix_function(pair: Pair<Rule>) -> Expr {
   // SimpleAnonymousFunction (`#&`, `#+1&`) already parses itself into a
   // Function{body} and consumes its own trailing "&" — wrapping it again
   // would nest a second Slot scope and break `#` binding.
-  if matches!(inner.as_rule(), Rule::SimpleAnonymousFunction) {
+  if matches!(
+    inner.as_rule(),
+    Rule::SimpleAnonymousFunction | Rule::PostfixExpression
+  ) {
     return pair_to_expr(inner);
   }
   let func = pair_to_expr(inner);

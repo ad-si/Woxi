@@ -1117,3 +1117,28 @@ mod step_and_cell_specs {
     );
   }
 }
+
+mod long_background_evolutions {
+  use super::*;
+
+  // 400 steps of a 2D totalistic rule on a background used to exceed the
+  // work bound and stay unevaluated; only the region the pattern can reach
+  // is evolved now.
+  #[test]
+  fn many_steps_on_a_background() {
+    assert_eq!(
+      interpret(
+        "Dimensions[CellularAutomaton[{746, {2, {{2, 2, 2}, {2, 1, 2}, {2, 2, 2}}}, {1, 1}}, {Table[1, {5}, {1}], 0}, {{{400}}}]]"
+      )
+      .unwrap(),
+      "{297, 297}"
+    );
+    assert_eq!(
+      interpret(
+        "Total[CellularAutomaton[{746, {2, {{2, 2, 2}, {2, 1, 2}, {2, 2, 2}}}, {1, 1}}, {Table[1, {5}, {1}], 0}, {{{60}}}], 2]"
+      )
+      .unwrap(),
+      "816"
+    );
+  }
+}

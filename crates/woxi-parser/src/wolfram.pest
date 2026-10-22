@@ -400,8 +400,20 @@ Operator = @{
 // unlike the other branches doesn't start with `(`, a list, or an
 // identifier, so it needs an explicit path here.
 PostfixFunction = {
-    SimpleAnonymousFunction
+    PostfixExpression
+  | SimpleAnonymousFunction
   | (&BalancedParens ~ "(" ~ Expression ~ ")" | List | BaseFunctionCall | Identifier) ~ ("&" ~ !"&")?
+}
+// The right side of `//`: everything that binds tighter than `//` itself —
+// operator chains, `/.`, `&` (`x // f /@ # &` is `(f /@ # &)[x]`) — but not
+// the assignments and `>>`, which bind looser (`x // f = 3` is
+// `Set[f[x], 3]`), and not a further `//`.
+PostfixAssignOp = _{ ":=" | "^:=" | "^=" | "+=" | "-=" | "*=" | "/=" | "=." | "=" ~ !("=" | "!") | ">>" }
+PostfixOperator = _{ !PostfixAssignOp ~ (Operator | TildeInfix) }
+PostfixExpression = {
+    SpanOrExprOperand ~ (PostfixOperator ~ SpanOrExprOperand)*
+    ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)*
+    ~ (AnonymousFunctionSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | PostfixOperator ~ SpanOrExprOperand)*)*
 }
 
 // Increment/Decrement: x++ or x-- (postfix operators)
