@@ -6077,14 +6077,26 @@ fn try_integrate_linear_power(expr: &Expr, var: &str) -> Option<Expr> {
   if matches!(offset, Expr::Integer(0) | Expr::Real(0.0)) {
     // (a·x)^p with a symbolic p: x (a·x)^p/(p+1). A numeric p is left to
     // the power rules, which split the constant factor out.
-    if numeric_exponent {
+    // A negative constant cannot be split out of a fractional power, so
+    // `(-2 x)^(3/2)` takes the general `base^(p+1)/(a (p+1))` form below.
+    let negative_coefficient = match &a {
+      Expr::Integer(n) => *n < 0,
+      Expr::Real(f) => *f < 0.0,
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        matches!(args.first(), Some(Expr::Integer(n)) if *n < 0)
+      }
+      _ => false,
+    };
+    if numeric_exponent && !negative_coefficient {
       return None;
     }
-    return crate::evaluator::evaluate_expr_to_expr(&div2(
-      times2(var_expr, expr.clone()),
-      exponent_plus_one,
-    ))
-    .ok();
+    if !numeric_exponent {
+      return crate::evaluator::evaluate_expr_to_expr(&div2(
+        times2(var_expr, expr.clone()),
+        exponent_plus_one,
+      ))
+      .ok();
+    }
   }
   let result = if matches!(exponent_plus_one, Expr::Integer(0)) {
     div2(call1("Log", base.clone()), a)
@@ -6095,6 +6107,86 @@ fn try_integrate_linear_power(expr: &Expr, var: &str) -> Option<Expr> {
     )
   };
   crate::evaluator::evaluate_expr_to_expr(&result).ok()
+}
+
+/// ∫ c · x^k · (a·x)^q dx for a negative constant `a`, an integer k >= 0 and
+/// a numeric q. A negative constant cannot be split out of a fractional
+/// power, so `x^k` is rewritten as `(a·x)^k/a^k` and the factors merge into
+/// the single power `(a·x)^(k+q)`.
+fn try_integrate_monomial_times_negative_power(
+  expr: &Expr,
+  var: &str,
+) -> Option<Expr> {
+  let factors = flatten_times_factors(expr);
+  if factors.len() < 2 {
+    return None;
+  }
+  let mut constants: Vec<Expr> = Vec::new();
+  let mut k_total: i128 = 0;
+  let mut scaled: Option<(Expr, Expr, Expr)> = None; // (base, a, q)
+  for f in &factors {
+    if is_constant_wrt(f, var) {
+      constants.push(f.clone());
+    } else if matches!(f, Expr::Identifier(n) if n == var) {
+      k_total += 1;
+    } else if let Some(k) = match_pure_power_of_var(f, var) {
+      if k < 0 {
+        return None;
+      }
+      k_total += k;
+    } else {
+      let (base, q) = match f {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } => (left.as_ref(), right.as_ref()),
+        Expr::FunctionCall { name, args }
+          if name == "Power" && args.len() == 2 =>
+        {
+          (&args[0], &args[1])
+        }
+        _ => return None,
+      };
+      let numeric_q = matches!(q, Expr::Integer(_) | Expr::Real(_))
+        || matches!(q, Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2);
+      if scaled.is_some() || !numeric_q || contains_var(q, var) {
+        return None;
+      }
+      let a = extract_linear_coefficient(base, var)?;
+      let offset = crate::evaluator::evaluate_expr_to_expr(&minus2(
+        base.clone(),
+        times2(a.clone(), id_expr(var)),
+      ))
+      .ok()?;
+      let negative = match &a {
+        Expr::Integer(n) => *n < 0,
+        Expr::Real(x) => *x < 0.0,
+        Expr::FunctionCall { name, args } if name == "Rational" => {
+          matches!(args.first(), Some(Expr::Integer(n)) if *n < 0)
+        }
+        _ => false,
+      };
+      if !matches!(offset, Expr::Integer(0)) || !negative {
+        return None;
+      }
+      scaled = Some((base.clone(), a, q.clone()));
+    }
+  }
+  let (base, a, q) = scaled?;
+  if k_total == 0 {
+    return None;
+  }
+  // c · (a·x)^(k+q) / a^k, then integrate the single power.
+  let merged = pow2(
+    base,
+    crate::evaluator::evaluate_expr_to_expr(&plus2(q, Expr::Integer(k_total)))
+      .ok()?,
+  );
+  let scale = div2(times(constants), pow2(a, Expr::Integer(k_total)));
+  let inner = try_integrate_linear_power(&merged, var)?;
+  crate::evaluator::evaluate_expr_to_expr(&times2(scale, inner)).ok()
 }
 
 /// Split `n > 0` into `(k, m)` with `n == k*k*m` and `m` square-free, so
@@ -8144,6 +8236,10 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
 
   // ∫ (a·x + b)^p dx for a constant exponent p (non-integer, or negative).
   if let Some(result) = try_integrate_linear_power(expr, var) {
+    return Some(result);
+  }
+
+  if let Some(result) = try_integrate_monomial_times_negative_power(expr, var) {
     return Some(result);
   }
 

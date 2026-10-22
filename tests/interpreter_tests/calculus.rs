@@ -20939,3 +20939,31 @@ mod kernel_format_interpolating_function {
     );
   }
 }
+
+mod integrate_negative_scaled_power {
+  use super::*;
+
+  #[test]
+  fn fractional_power_of_negative_multiple() {
+    assert_eq!(
+      interpret("Integrate[(-2 p)^(3/2), p]").unwrap(),
+      "-1/5*(-2*p)^(5/2)"
+    );
+  }
+
+  #[test]
+  fn monomial_times_fractional_power_of_negative_multiple() {
+    assert_eq!(
+      interpret("Integrate[p^2 (-2 p)^(3/2), p]").unwrap(),
+      "-1/36*(-2*p)^(9/2)"
+    );
+  }
+
+  #[test]
+  fn linear_factor_times_power_of_negative_multiple() {
+    assert_eq!(
+      interpret("Integrate[p (-3 p)^(5/2), p]").unwrap(),
+      "(2*(-3*p)^(9/2))/81"
+    );
+  }
+}
