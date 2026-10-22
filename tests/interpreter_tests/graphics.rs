@@ -15902,7 +15902,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "RegionPlot[y > x, {{x, -2, 2}}, {{y, -2, 2}}, PlotLabel -> {expr}]"
         ));
         svg
-          .split("fill=\"#333333\">")
+          .split("xml:space=\"preserve\">")
           .nth(1)
           .and_then(|t| t.split("</text>").next())
           .unwrap_or_default()
@@ -16539,6 +16539,15 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">Caption</text>"));
       // The picture keeps its 360x360 size; the canvas grows by the caption.
       assert!(svg.starts_with("<svg width=\"360\" height=\"385\""));
+    }
+
+    #[test]
+    fn array_plot_plot_label_keeps_runs_of_spaces() {
+      // Regression: SVG collapses whitespace unless told otherwise, which
+      // squashed labels that are spaced out with padding.
+      let svg =
+        export_svg("ArrayPlot[{{0, 1}, {1, 0}}, PlotLabel -> \"P      Q\"]");
+      assert!(svg.contains("xml:space=\"preserve\">P      Q</text>"));
     }
 
     #[test]
