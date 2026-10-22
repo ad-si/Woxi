@@ -207,6 +207,22 @@ mod column_visual_mode {
     }
   }
 
+  #[test]
+  fn grid_cell_row_dynamic_parts_show_current_values() {
+    // `Dynamic[…]` parts of a `Row` in a Grid cell — a readout line such as
+    // "a = w × h = 3 × 4 = 12" — display their values, also inside the
+    // `HoldForm` a `With` fills, which keeps its written (unevaluated) shape.
+    clear_state();
+    let result = interpret_with_stdout(
+      "p = {3, 0}; Grid[{{Text[Style[Row[{With[{w = Dynamic[p[[1]]]}, \
+       HoldForm[2 (w + w)]], \" = \", Dynamic[p[[1]] (7 - p[[1]])]}], 12]]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("2(3 + 3) = 12"), "{svg}");
+    assert!(!svg.contains("Dynamic"), "{svg}");
+  }
+
   /// A `Style` wrapping a layout is inherited by everything inside it, so
   /// `Style[Column[{…}], 65, Hue[…]]` — the shape of a Demonstration's
   /// `Manipulate` body — is a large, coloured column. It used to fall back

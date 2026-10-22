@@ -4135,6 +4135,10 @@ pub(crate) fn strip_style_wrappers(expr: &Expr) -> &Expr {
 
 fn graphics_text_content(expr: &Expr) -> String {
   match expr {
+    // A `Dynamic[x]` inside text reads as the value `x` currently has.
+    Expr::FunctionCall { name, args } if name == "Dynamic" && args.len() == 1 => {
+      graphics_text_content(&release_dynamics(expr))
+    }
     // A string carrying inline `\!\(\*…\)` box notation — the front end's
     // linear-syntax form for a typeset sub-expression, e.g. the label a
     // Demonstration writes as `Text["\!\(\*SubscriptBox[\(X\), \(3\)]\)",
@@ -4208,7 +4212,7 @@ fn graphics_text_content(expr: &Expr) -> String {
         }
         held => box_expr_to_plain(
           &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
-            held,
+            &release_dynamics(held),
           ),
         ),
       }
@@ -4594,17 +4598,15 @@ fn dynamic_current_value(expr: &Expr) -> Expr {
 
 /// Whether `expr` holds a `Dynamic[…]` anywhere inside it.
 fn contains_dynamic(expr: &Expr) -> bool {
-  match expr {
-    Expr::FunctionCall { name, args } => {
-      (name == "Dynamic" && !args.is_empty())
-        || args.iter().any(contains_dynamic)
-    }
-    Expr::List(items) => items.iter().any(contains_dynamic),
-    _ => false,
-  }
+  matches!(expr, Expr::FunctionCall { name, args }
+    if name == "Dynamic" && !args.is_empty())
+    || crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(contains_dynamic)
 }
 
 /// `expr` with every `Dynamic[x, …]` replaced by the current value of `x`.
+/// The rest stays unevaluated, so a `HoldForm` keeps its written shape.
 fn release_dynamics(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
@@ -4612,14 +4614,7 @@ fn release_dynamics(expr: &Expr) -> Expr {
     {
       dynamic_current_value(expr)
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(release_dynamics).collect(),
-    },
-    Expr::List(items) => {
-      Expr::List(items.iter().map(release_dynamics).collect())
-    }
-    other => other.clone(),
+    other => crate::syntax::map_children(other, &release_dynamics),
   }
 }
 
@@ -21768,6 +21763,14 @@ fn resolve_display_item(expr: &Expr) -> Expr {
     && args.len() == 1
   {
     current = Expr::Raw(crate::syntax::expr_to_input_form(&args[0]));
+  }
+  // A `Dynamic[…]` inside running text — a readout in a `Row`, or in the
+  // `HoldForm` a `With` fills — shows the value it currently has.
+  if matches!(&current, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "Row" | "Column" | "Style" | "HoldForm"))
+    && contains_dynamic(&current)
+  {
+    current = release_dynamics(&current);
   }
   current
 }
