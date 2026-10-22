@@ -29986,12 +29986,6 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // reads "initial condition".
       "Graphics" | "Graphics3D" | "Image" | "Image3D" | "Graphics3DBox"
       | "GraphicsBox" | "RasterBox" => vec![],
-      "Dynamic" if args.len() == 1 => {
-        manipulate_label_runs(&release_dynamics(expr), italic)
-      }
-      "HoldForm" if args.len() == 1 => {
-        manipulate_label_runs(&release_dynamics(&args[0]), italic)
-      }
       "Text" | "Item" | "DisplayForm" | "TraditionalForm" | "Tooltip"
       | "Framed" | "Dynamic" | "HoldForm" | "Pane" | "Panel" => args
         .first()
