@@ -19,6 +19,10 @@ mod manipulate;
 
 use woxi::notebook::{CellEntry, CellStyle, parse_notebook};
 
+// `manipulate.rs` traces the code it evaluates through the binary's
+// `trace_evaluation`; the diagnostic example has no tracing.
+pub(crate) fn trace_evaluation(_code: &str) {}
+
 fn main() {
   let path: PathBuf = std::env::args()
     .nth(1)

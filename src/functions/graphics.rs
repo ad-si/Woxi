@@ -17117,6 +17117,13 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     Expr::FunctionCall { name, .. } if is_graphics_producing_head(name) => {
       crate::evaluator::expr_to_svg(cell)
     }
+    // A `Panel[content]` cell (a Demonstration's readout beside its plots)
+    // is the light-gray box around its content, not the call's source text.
+    Expr::FunctionCall { name, args }
+      if name == "Panel" && !args.is_empty() =>
+    {
+      panel_to_svg(args)?
+    }
     // A `LocatorPane[…]` over a picture is drawn by its own renderer — the
     // body with the locators on it — so the cell is that picture rather
     // than the pane's source text.

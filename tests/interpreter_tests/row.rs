@@ -534,3 +534,21 @@ fn row_of_buttons_in_grid_cell_draws_plates() {
     "one plate per button: {svg}"
   );
 }
+
+/// Regression: a `Panel` in a `Grid` cell (a readout beside plots) printed
+/// its `Panel[…]` source text instead of the light-gray box around its
+/// content.
+#[test]
+fn panel_in_grid_cell_draws_box() {
+  let svg = interpret(
+    r#"ExportString[Grid[{{Panel[Row[{"x", " = ", "1"}]], Panel["y"]}}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert!(!svg.contains("Panel"), "panel source leaked: {svg}");
+  assert_eq!(
+    svg.matches("fill=\"rgb(242,242,242)\"").count(),
+    2,
+    "one box per panel: {svg}"
+  );
+}
