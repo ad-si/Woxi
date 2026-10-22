@@ -2942,14 +2942,37 @@ pub fn boolean_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(truth_table_to_expr(&table, &vars[..n]))
 }
 
-/// BooleanMinimize[expr] - Find the minimal sum-of-products form.
+/// BooleanMinimize[expr] or BooleanMinimize[expr, form] - Find the minimal
+/// sum-of-products form, or with `"CNF"` the minimal product-of-sums form.
 pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
-    return Ok(unevaluated("BooleanMinimize", args));
+  match args {
+    [expr] => minimize_dnf(expr, args),
+    [expr, Expr::String(form)] => match form.as_str() {
+      "DNF" | "SOP" => minimize_dnf(expr, args),
+      // Minimize the complement and negate the result back into a CNF.
+      "CNF" | "POS" => {
+        let dnf = minimize_dnf(&call1("Not", expr.clone()), args)?;
+        if matches!(&dnf, Expr::FunctionCall { name, .. } if name == "BooleanMinimize")
+        {
+          return Ok(Expr::FunctionCall {
+            name: "BooleanMinimize".to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+        evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "BooleanConvert".to_string(),
+          args: vec![call1("Not", dnf), Expr::String("CNF".to_string())].into(),
+        })
+      }
+      _ => Ok(unevaluated("BooleanMinimize", args)),
+    },
+    _ => Ok(unevaluated("BooleanMinimize", args)),
   }
+}
 
-  let expr = &args[0];
-
+/// The minimal sum-of-products form of `expr`; `args` is what the call
+/// returns unevaluated when `expr` has too many variables to minimize.
+fn minimize_dnf(expr: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Handle trivial cases
   if matches!(expr, Expr::Identifier(s) if s == "True") {
     return Ok(bool_expr(true));

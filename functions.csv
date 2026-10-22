@@ -2482,7 +2482,7 @@ HilbertMatrix,Generate a Hilbert matrix of given size,✅,1,6.0,2503
 MenuSortingValue,,🚫,,8.0,2503
 Messages,Returns the messages associated with a symbol,✅,pure,1.0,2503
 MorphologicalPerimeter,Binary image of foreground pixels touching the background,✅,pure,7.0,2503
-BooleanMinimize,Find the minimal sum-of-products Boolean expression; terms are ordered by their literal pattern,✅,pure,7.0,2509
+BooleanMinimize,Find the minimal sum-of-products (or with "CNF" product-of-sums) Boolean expression; terms are ordered by their literal pattern,✅,pure,7.0,2509
 ChiDistribution,represents a chi distribution with n degrees of freedom,✅,none,6.0,2509
 CloudPublish,,🚫,,10.2,2509
 Glaisher,Glaisher-Kinkelin constant,✅,none,4.0,2509

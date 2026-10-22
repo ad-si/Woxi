@@ -6758,6 +6758,42 @@ mod boolean_counting_function_operator {
   }
 }
 
+/// `BooleanMinimize[expr, form]` takes the normal form to minimize into.
+mod boolean_minimize_forms {
+  use super::*;
+
+  #[test]
+  fn dnf_and_cnf_forms() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "BooleanMinimize[(a && b) || (a && c), \"DNF\"]",
+        "(a && b) || (a && c)",
+      ),
+      (
+        "BooleanMinimize[(a && b) || (a && c), \"CNF\"]",
+        "a && (b || c)",
+      ),
+      (
+        "BooleanMinimize[(a && b) || (!a && c), \"CNF\"]",
+        "( !a || b) && (a || c)",
+      ),
+      ("BooleanMinimize[a || !a, \"CNF\"]", "True"),
+      // An unknown form stays unevaluated instead of raising ::argx.
+      (
+        "BooleanMinimize[a && b, \"Foo\"]",
+        "BooleanMinimize[a && b, \"Foo\"]",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+}
+
 /// `BooleanMinimize` writes its terms the way wolframscript does: descending
 /// by the literal pattern, reading the variables left to right with a
 /// positive literal ranked above a negative one and an absent variable below
