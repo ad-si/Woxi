@@ -1258,6 +1258,77 @@ pub fn combinatorica_random_permutation_ast(
   Ok(Expr::List(items.into()))
 }
 
+/// `Combinatorica\`StableMarriage[mpref, fpref]` — the man-optimal stable
+/// matching (Gale–Shapley, men proposing). `mpref[[i]]` lists the women in
+/// man `i`'s order of preference and `fpref[[j]]` the men in woman `j`'s;
+/// the result's `i`-th entry is the woman engaged to man `i`. Left symbolic
+/// unless both are square lists of permutations of `Range[n]`.
+pub fn combinatorica_stable_marriage_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("Combinatorica`StableMarriage", args);
+  if args.len() != 2 {
+    return Ok(original());
+  }
+  let parse = |e: &Expr| -> Option<Vec<Vec<usize>>> {
+    let Expr::List(rows) = e else { return None };
+    let n = rows.len();
+    let mut out = Vec::with_capacity(n);
+    for row in rows {
+      let Expr::List(items) = row else { return None };
+      if items.len() != n {
+        return None;
+      }
+      let mut seen = vec![false; n];
+      let mut v = Vec::with_capacity(n);
+      for it in items {
+        let Expr::Integer(k) = it else { return None };
+        if *k < 1 || *k as usize > n || seen[*k as usize - 1] {
+          return None;
+        }
+        seen[*k as usize - 1] = true;
+        v.push(*k as usize - 1);
+      }
+      out.push(v);
+    }
+    Some(out)
+  };
+  let (Some(mpref), Some(fpref)) = (parse(&args[0]), parse(&args[1])) else {
+    return Ok(original());
+  };
+  let n = mpref.len();
+  if fpref.len() != n {
+    return Ok(original());
+  }
+  // rank[w][m]: position of man m in woman w's list (lower is better).
+  let mut rank = vec![vec![0usize; n]; n];
+  for (w, prefs) in fpref.iter().enumerate() {
+    for (pos, &m) in prefs.iter().enumerate() {
+      rank[w][m] = pos;
+    }
+  }
+  let mut next = vec![0usize; n];
+  let mut fiance: Vec<Option<usize>> = vec![None; n];
+  let mut free: Vec<usize> = (0..n).rev().collect();
+  while let Some(m) = free.pop() {
+    let w = mpref[m][next[m]];
+    next[m] += 1;
+    match fiance[w] {
+      None => fiance[w] = Some(m),
+      Some(cur) if rank[w][m] < rank[w][cur] => {
+        fiance[w] = Some(m);
+        free.push(cur);
+      }
+      Some(_) => free.push(m),
+    }
+  }
+  let mut wife = vec![0i128; n];
+  for (w, m) in fiance.iter().enumerate() {
+    wife[m.expect("every woman is matched")] = w as i128 + 1;
+  }
+  Ok(Expr::List(wife.into_iter().map(Expr::Integer).collect()))
+}
+
 /// `Combinatorica\`RandomKSubset[l, k]` — a uniformly random `k`-element
 /// subset of `l` (or of `Range[l]` for an integer), kept in `l`'s own order.
 /// Left symbolic unless `0 <= k <= Length[l]`.
