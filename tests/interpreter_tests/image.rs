@@ -4114,6 +4114,29 @@ mod image_advanced {
   // positions where the gradient peaks -- immediately either side of it,
   // not one step further out.
   #[test]
+  fn edge_detect_accepts_canny_options() {
+    clear_state();
+    let plain = interpret(
+      "ImageData[EdgeDetect[Image[{{0., 0., 0., 1., 0., 0., 0.}}], 2, .15]]",
+    )
+    .unwrap();
+    assert_eq!(
+      interpret(
+        "ImageData[EdgeDetect[Image[{{0., 0., 0., 1., 0., 0., 0.}}], 2, .15, \
+         Method -> \"Canny\", \"StraightEdges\" -> 0]]"
+      )
+      .unwrap(),
+      plain
+    );
+    // Methods that are not implemented stay unevaluated.
+    assert_eq!(
+      interpret("Head[EdgeDetect[Image[{{0., 1.}}], Method -> \"Sobel\"]]")
+        .unwrap(),
+      "EdgeDetect"
+    );
+  }
+
+  #[test]
   fn edge_detect_marks_the_gradient_ridge() {
     clear_state();
     assert_eq!(

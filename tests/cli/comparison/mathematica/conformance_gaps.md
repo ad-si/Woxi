@@ -5342,3 +5342,11 @@ Further entities (e.g. `"SquashedDodecahedron"`, the Johnson solids,
 `"Antiprism"` / `"Dipyramid"` / `"Pyramid"` families, `"TriakisTetrahedron"`)
 give `PolyhedronData::notent`, so notebooks that offer them in a menu
 (such as polyhedron projection demonstrations) fail on those entries.
+
+### EdgeDetect only implements `Method -> "Canny"`
+
+`EdgeDetect[image, r, t, Method -> m, "StraightEdges" -> s]` accepts the
+options, but only `Method -> "Canny"` (or `Automatic`) with
+`"StraightEdges" -> 0` is computed. The `"ShenCastan"` and `"Sobel"` methods
+and non-zero `"StraightEdges"` leave the call unevaluated.
+
