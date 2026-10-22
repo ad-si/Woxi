@@ -390,8 +390,19 @@ DecrementOp = { "--" }
 // `Increment[5]` and reports `::rvalue` at evaluation time, and reads
 // `1++2` as `Increment[1] 2` rather than as `1 + (+2)`. The `++` literal
 // is atomic, so a spaced `1 + +2` is still addition.
-Increment = { (PartExtract | Identifier | NumericValue) ~ IncrementOp ~ IncrementOp* }
-Decrement = { (PartExtract | Identifier | NumericValue) ~ DecrementOp ~ DecrementOp* }
+//
+// `PartExtract` is only attempted once a linear scan of the bracket groups
+// has found the `++` / `--` after them. Otherwise every `x[[…]]` would be
+// parsed here, thrown away, and parsed again by the plain `PartExtract`
+// alternative; nested parts (`a[[b[[c[[1]]]]]]`) multiply that waste at every
+// level and exhaust the parser call limit.
+// One `[…]` or Unicode part-bracket group, skipped without parsing it.
+UnicodePartScan = _{ ("\u{27E6}" | "\u{301A}") ~ (UnicodePartScan | !("\u{27E7}" | "\u{301B}") ~ ANY)* ~ ("\u{27E7}" | "\u{301B}") }
+PartScanGroup = _{ BalancedBrackets | UnicodePartScan }
+PartIncScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanGroup+ ~ (DerivativePrime? ~ PartScanGroup+)* ~ "++" }
+PartDecScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanGroup+ ~ (DerivativePrime? ~ PartScanGroup+)* ~ "--" }
+Increment = { (&PartIncScan ~ PartExtract | Identifier | NumericValue) ~ IncrementOp ~ IncrementOp* }
+Decrement = { (&PartDecScan ~ PartExtract | Identifier | NumericValue) ~ DecrementOp ~ DecrementOp* }
 
 // PreIncrement/PreDecrement: ++x or --x (prefix operators)
 // Also supports Part extraction: ++x[[i]] or --x[[i]]
@@ -425,11 +436,14 @@ Unset = { Identifier ~ "=" ~ "." ~ !ASCII_DIGIT }
 UnsetSuffix = { "=" ~ "." ~ !ASCII_DIGIT }
 
 // Compound assignment: x += y, x -= y, x *= y, x /= y
-ApplyToOp = { (PartExtract | Identifier) ~ "//=" ~ Expression }
-AddTo = { (PartExtract | Identifier | NumericValue) ~ "+=" ~ Expression }
-SubtractFrom = { (PartExtract | Identifier | NumericValue) ~ "-=" ~ Expression }
-TimesBy = { (PartExtract | Identifier | NumericValue) ~ "*=" ~ Expression }
-DivideBy = { (PartExtract | Identifier | NumericValue) ~ "/=" ~ Expression }
+// Same guard as for `++` / `--` above: the compound-assignment forms only
+// parse a `PartExtract` target when one of their operators follows it.
+PartAssignScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanGroup+ ~ (DerivativePrime? ~ PartScanGroup+)* ~ ("//=" | "+=" | "-=" | "*=" | "/=") }
+ApplyToOp = { (&PartAssignScan ~ PartExtract | Identifier) ~ "//=" ~ Expression }
+AddTo = { (&PartAssignScan ~ PartExtract | Identifier | NumericValue) ~ "+=" ~ Expression }
+SubtractFrom = { (&PartAssignScan ~ PartExtract | Identifier | NumericValue) ~ "-=" ~ Expression }
+TimesBy = { (&PartAssignScan ~ PartExtract | Identifier | NumericValue) ~ "*=" ~ Expression }
+DivideBy = { (&PartAssignScan ~ PartExtract | Identifier | NumericValue) ~ "/=" ~ Expression }
 
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
 // Each factor can have a Part suffix ([[...]]) and/or power suffix so that
@@ -466,7 +480,10 @@ GroupTerminator = _{
     EOI | "," | "]" | "}" | ")" | "|>" | ";" | "&"
   | "+" | "-" | "*" | "/" | "<" | ">" | "=" | "@" | "~" | "|"
 }
-SoloBracketGroup = _{ BracketGroupScan ~ GroupTerminator }
+// A symbol, slot or literal followed only by bracket groups (`a[[b[[1]]]]`)
+// is the same situation: `PartExtract` parses it again after `ImplicitTimes`.
+PartGroupScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanGroup+ ~ (DerivativePrime? ~ PartScanGroup+)* }
+SoloBracketGroup = _{ (BracketGroupScan | PartGroupScan) ~ GroupTerminator }
 ImplicitTimes = { !SoloBracketGroup ~ (NegativeImplicitFirst | ImplicitTimesFactor) ~ ImplicitTimesFactor+ }
 
 // TildeInfix: a ~f~ b means f[a, b] — infix function application syntax

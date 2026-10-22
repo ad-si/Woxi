@@ -5334,3 +5334,11 @@ printed form of the result differs.
 `HighlightMesh[mesh, spec]` evaluates to the bare mesh. wolframscript also
 highlights the cells `spec` names and, for `Labeled[0, "Index"]`, writes each
 vertex's index next to it; Woxi draws neither.
+
+## `PolyhedronData` covers only a subset of the polyhedron entities
+
+Only the polyhedra listed in `src/functions/polyhedron_data.rs` are known.
+Further entities (e.g. `"SquashedDodecahedron"`, the Johnson solids,
+`"Antiprism"` / `"Dipyramid"` / `"Pyramid"` families, `"TriakisTetrahedron"`)
+give `PolyhedronData::notent`, so notebooks that offer them in a menu
+(such as polyhedron projection demonstrations) fail on those entries.
