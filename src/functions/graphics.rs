@@ -37475,3 +37475,90 @@ mod manipulate_symbolic_angle_control_tests {
     assert_eq!(format_f64_exact(0.3), "3/10");
   }
 }
+
+/// The plot range a 2D graphic is drawn over, before padding — what
+/// `PlotRange[g]` and `AbsoluteOptions[g, PlotRange]` report: an explicit
+/// `PlotRange` where one was given, the content's bounding box otherwise.
+pub fn absolute_plot_range(g: &Expr) -> Option<((f64, f64), (f64, f64))> {
+  match g {
+    Expr::Graphics {
+      is_3d: false,
+      structure: Some(structure),
+      ..
+    } => absolute_plot_range(structure),
+    // A plot: the domain across, and the data's own extent up — the stored
+    // y range carries the drawing padding — unless `PlotRange` fixed it.
+    Expr::Graphics {
+      is_3d: false,
+      source: Some(source),
+      ..
+    } => {
+      let explicit = source.options.iter().find_map(|opt| match opt {
+        Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange") =>
+        {
+          Some(parse_plot_range(replacement))
+        }
+        _ => None,
+      });
+      let ys = source
+        .series
+        .iter()
+        .flat_map(|s| s.points.iter().map(|p| p.1))
+        .filter(|y| y.is_finite());
+      let data_y = ys.fold(None, |acc: Option<(f64, f64)>, y| {
+        Some(acc.map_or((y, y), |(lo, hi)| (lo.min(y), hi.max(y))))
+      });
+      let (ex, ey) = explicit.unwrap_or((None, None));
+      Some((
+        ex.unwrap_or(source.x_range),
+        ey.or(data_y).unwrap_or(source.y_range),
+      ))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Graphics" && !args.is_empty() =>
+    {
+      let mut x_range = None;
+      let mut y_range = None;
+      for opt in &args[1..] {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = opt
+          && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange")
+        {
+          (x_range, y_range) = parse_plot_range(replacement);
+        }
+      }
+      let content = evaluate_expr_to_expr(&args[0]).ok()?;
+      let mut style = StyleState::default();
+      let mut primitives = Vec::new();
+      let mut errors = Vec::new();
+      collect_primitives(&content, &mut style, &mut primitives, &mut errors);
+      let mut bb = BBox::empty();
+      for prim in &primitives {
+        bb.merge(&primitive_bbox(prim));
+      }
+      if bb.is_empty() {
+        bb = BBox {
+          x_min: -1.0,
+          x_max: 1.0,
+          y_min: -1.0,
+          y_max: 1.0,
+        };
+      }
+      Some((
+        x_range.unwrap_or((bb.x_min, bb.x_max)),
+        y_range.unwrap_or((bb.y_min, bb.y_max)),
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// `{{xmin, xmax}, {ymin, ymax}}` for [`absolute_plot_range`].
+pub fn plot_range_expr(range: ((f64, f64), (f64, f64))) -> Expr {
+  let pair =
+    |(a, b): (f64, f64)| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  Expr::List(vec![pair(range.0), pair(range.1)].into())
+}

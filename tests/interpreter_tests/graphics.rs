@@ -23706,6 +23706,38 @@ mod blend {
     );
   }
 
+  // The effective plot range of a graphic, before padding.
+  #[test]
+  fn absolute_options_plot_range() {
+    assert_eq!(
+      interpret("AbsoluteOptions[Graphics[Circle[]], PlotRange]").unwrap(),
+      "{PlotRange -> {{-1., 1.}, {-1., 1.}}}"
+    );
+    assert_eq!(
+      interpret(
+        "AbsoluteOptions[Graphics[Circle[], PlotRange -> {{0, 2}, {0, 3}}], PlotRange]"
+      )
+      .unwrap(),
+      "{PlotRange -> {{0., 2.}, {0., 3.}}}"
+    );
+    assert_eq!(
+      interpret("PlotRange[Plot[x^2, {x, 0, 1}]]").unwrap(),
+      "{{0., 1.}, {0., 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "Last[PlotRange[Plot[Sin[x], {x, 0, 2 Pi}, PlotRange -> {-2, 2}]]]"
+      )
+      .unwrap(),
+      "{-2., 2.}"
+    );
+    assert_eq!(
+      interpret("AbsoluteOptions[Graphics[Circle[], Frame -> True], Frame]")
+        .unwrap(),
+      "{Frame -> True}"
+    );
+  }
+
   // Tick values past the i64 range used to panic while being labelled.
   #[test]
   fn plot_with_huge_values_renders() {

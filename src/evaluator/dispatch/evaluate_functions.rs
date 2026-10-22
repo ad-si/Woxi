@@ -3049,6 +3049,61 @@ fn evaluate_function_call_ast_inner(
     return Ok(result);
   }
 
+  // PlotRange[g] — the range a graphic is drawn over (before padding).
+  if name == "PlotRange"
+    && args.len() == 1
+    && let Some(range) =
+      crate::functions::graphics::absolute_plot_range(&args[0])
+  {
+    return Ok(crate::functions::graphics::plot_range_expr(range));
+  }
+
+  // AbsoluteOptions[g, PlotRange] — the effective option values of a
+  // graphic. Only the plot range is computed; any other option reports the
+  // value it was given.
+  if name == "AbsoluteOptions"
+    && args.len() == 2
+    && matches!(&args[0], Expr::Graphics { is_3d: false, .. })
+    || name == "AbsoluteOptions"
+      && args.len() == 2
+      && matches!(&args[0], Expr::FunctionCall { name: g, .. } if g == "Graphics")
+  {
+    let names: Vec<Expr> = match &args[1] {
+      Expr::List(items) => items.to_vec(),
+      other => vec![other.clone()],
+    };
+    let given = crate::evaluator::evaluate_function_call_ast(
+      "Options",
+      &[args[0].clone()],
+    )
+    .ok();
+    let mut rules = Vec::new();
+    for opt in names {
+      if matches!(&opt, Expr::Identifier(n) if n == "PlotRange") {
+        if let Some(range) =
+          crate::functions::graphics::absolute_plot_range(&args[0])
+        {
+          rules.push(Expr::Rule {
+            pattern: Box::new(opt.clone()),
+            replacement: Box::new(crate::functions::graphics::plot_range_expr(
+              range,
+            )),
+          });
+        }
+        continue;
+      }
+      if let Some(Expr::List(given)) = &given
+        && let Some(rule) = given.iter().find(|r| {
+          matches!(r, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+            if crate::syntax::expr_to_string(pattern) == crate::syntax::expr_to_string(&opt))
+        })
+      {
+        rules.push(rule.clone());
+      }
+    }
+    return Ok(Expr::List(rules.into()));
+  }
+
   // ToColor[color, head] — the color converted to the space `head` names.
   if name == "ToColor"
     && args.len() == 2
