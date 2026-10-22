@@ -1092,7 +1092,7 @@ pub fn from_continued_fraction_ast(
   let mut ints: Vec<BigInt> = Vec::new();
   for elem in elements {
     if let Some(n) = expr_to_bigint(elem) {
-      ints.push(n)
+      ints.push(n);
     } else {
       // Symbolic terms: fold from the right, combining into a single
       // fraction at every step (the convergent recurrence).
