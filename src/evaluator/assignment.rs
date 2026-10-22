@@ -2143,6 +2143,35 @@ enum UpvalueOutcome {
   NotClaimed(Option<Expr>),
 }
 
+fn is_sparse_array(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. } if name == "SparseArray")
+}
+
+/// `sa[[i, j]] = v` on a `SparseArray`: densify, assign, and re-sparsify
+/// against the same background so the value stays a `SparseArray`.
+fn set_part_sparse(
+  expr: &mut Expr,
+  indices: &[Expr],
+  value: &Expr,
+) -> Result<(), InterpreterError> {
+  use crate::functions::{densify_sparse_array, sparse_array_background};
+  let (Some(mut dense), Some(background)) =
+    (densify_sparse_array(expr), sparse_array_background(expr))
+  else {
+    return set_part_deep(expr, indices, value);
+  };
+  set_part_deep(&mut dense, indices, value)?;
+  if let Some(sparse) =
+    crate::evaluator::dispatch::list_operations::dense_to_sparse_array_with_default(
+      &dense,
+      &background,
+    )
+  {
+    *expr = sparse;
+  }
+  Ok(())
+}
+
 /// Report a Part assignment that could not be carried out, the way
 /// wolframscript does, and answer whether the failure was one of those: a
 /// specification that runs past an atom is `Set::partd` and names the
@@ -2835,6 +2864,9 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     let modified_in_place = crate::ENV.with(|e| {
       let mut env = e.borrow_mut();
       if let Some(StoredValue::ExprVal(expr)) = env.get_mut(&var_name) {
+        if is_sparse_array(expr) {
+          return set_part_sparse(expr, &eval_indices, &rhs_value);
+        }
         // Modify directly in place — no clone needed
         set_part_deep(expr, &eval_indices, &rhs_value)
       } else {
