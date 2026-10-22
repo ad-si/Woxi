@@ -5964,6 +5964,14 @@ pub(crate) fn pane_size_component(expr: &Expr) -> Option<f64> {
   }
 }
 
+/// A `Framed[…]` / `Panel[…]` / `Text[…]` call: a display box the FrontEnd
+/// typesets rather than prints, so a `Rule` between them is drawn as the
+/// boxes around an arrow.
+fn is_display_box(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if matches!(name.as_str(), "Framed" | "Panel" | "Text") && !args.is_empty())
+}
+
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   if let Some(svg) = evaluated_wrapper_svg(expr) {
     return svg;
@@ -5973,17 +5981,22 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::Rule {
       pattern,
       replacement,
-    } if lays_out_a_graphic(expr) => expr_to_svg(&call1(
-      "Row",
-      Expr::List(
-        vec![
-          (**pattern).clone(),
-          str_expr("\u{2192}"),
-          (**replacement).clone(),
-        ]
-        .into(),
-      ),
-    )),
+    } if lays_out_a_graphic(expr)
+      || is_display_box(pattern)
+      || is_display_box(replacement) =>
+    {
+      expr_to_svg(&call1(
+        "Row",
+        Expr::List(
+          vec![
+            (**pattern).clone(),
+            str_expr("\u{2192}"),
+            (**replacement).clone(),
+          ]
+          .into(),
+        ),
+      ))
+    }
     Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
     // `Pane[content, opts…]` only constrains its content's size; the
     // FrontEnd displays the content, so exporting one exports what it
