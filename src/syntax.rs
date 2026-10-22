@@ -18317,3 +18317,140 @@ fn build_pattern_test<'i>(
   }
   result
 }
+
+/// Parse source text that is nothing but a literal — nested lists of
+/// integers, machine reals, strings and plain symbols — without the grammar.
+/// `None` for anything else (an operator, a call, a number the grammar
+/// reads in a special way), which then takes the ordinary parser.
+pub fn parse_literal_data(src: &str) -> Option<Expr> {
+  struct P<'a> {
+    s: &'a [u8],
+    i: usize,
+  }
+  impl P<'_> {
+    fn ws(&mut self) {
+      while self.i < self.s.len()
+        && matches!(self.s[self.i], b' ' | b'\t' | b'\n' | b'\r')
+      {
+        self.i += 1;
+      }
+    }
+    fn value(&mut self, depth: usize) -> Option<Expr> {
+      if depth > 64 {
+        return None;
+      }
+      self.ws();
+      match *self.s.get(self.i)? {
+        b'{' => {
+          self.i += 1;
+          let mut items = Vec::new();
+          self.ws();
+          if self.s.get(self.i) == Some(&b'}') {
+            self.i += 1;
+            return Some(Expr::List(items.into()));
+          }
+          loop {
+            items.push(self.value(depth + 1)?);
+            self.ws();
+            match *self.s.get(self.i)? {
+              b',' => self.i += 1,
+              b'}' => {
+                self.i += 1;
+                return Some(Expr::List(items.into()));
+              }
+              _ => return None,
+            }
+          }
+        }
+        b'"' => {
+          self.i += 1;
+          let start = self.i;
+          while *self.s.get(self.i)? != b'"' {
+            // Escapes have their own readings; leave them to the grammar.
+            if self.s[self.i] == b'\\' {
+              return None;
+            }
+            self.i += 1;
+          }
+          let text = std::str::from_utf8(&self.s[start..self.i]).ok()?;
+          self.i += 1;
+          Some(Expr::String(text.to_string()))
+        }
+        b'-' | b'0'..=b'9' => self.number(),
+        c if c.is_ascii_alphabetic() || c == b'$' => {
+          let start = self.i;
+          while self.i < self.s.len()
+            && (self.s[self.i].is_ascii_alphanumeric()
+              || self.s[self.i] == b'$')
+          {
+            self.i += 1;
+          }
+          let name = std::str::from_utf8(&self.s[start..self.i]).ok()?;
+          // Names the grammar reads as constants or numbers.
+          if matches!(
+            name,
+            "Pi" | "E" | "Degree" | "I" | "Infinity" | "ComplexInfinity"
+          ) {
+            return None;
+          }
+          Some(Expr::Identifier(name.to_string()))
+        }
+        _ => None,
+      }
+    }
+    fn number(&mut self) -> Option<Expr> {
+      let start = self.i;
+      if self.s[self.i] == b'-' {
+        self.i += 1;
+      }
+      let digits_start = self.i;
+      while self.i < self.s.len() && self.s[self.i].is_ascii_digit() {
+        self.i += 1;
+      }
+      if self.i == digits_start {
+        return None;
+      }
+      let mut is_real = false;
+      if self.s.get(self.i) == Some(&b'.') {
+        is_real = true;
+        self.i += 1;
+        while self.i < self.s.len() && self.s[self.i].is_ascii_digit() {
+          self.i += 1;
+        }
+      }
+      // Precision marks, exponents and the like: the grammar's business.
+      if matches!(
+        self.s.get(self.i),
+        Some(b'`' | b'*' | b'^' | b'.' | b'e' | b'E')
+      ) || self.s.get(self.i).is_some_and(u8::is_ascii_alphabetic)
+      {
+        return None;
+      }
+      let text = std::str::from_utf8(&self.s[start..self.i]).ok()?;
+      let significant = text.bytes().filter(u8::is_ascii_digit).count();
+      if is_real {
+        // More digits than a machine real holds make an arbitrary-precision
+        // number.
+        if significant > 15 {
+          return None;
+        }
+        text.parse::<f64>().ok().map(Expr::Real)
+      } else {
+        if significant > 30 {
+          return None;
+        }
+        text.parse::<i128>().ok().map(Expr::Integer)
+      }
+    }
+  }
+  let mut p = P {
+    s: src.as_bytes(),
+    i: 0,
+  };
+  if !src.trim_start().starts_with('{') {
+    return None;
+  }
+  let value = p.value(0)?;
+  p.ws();
+  (p.i == p.s.len()).then_some(value)
+}

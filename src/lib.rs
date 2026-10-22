@@ -6676,6 +6676,14 @@ fn parse_statements(
   input: &str,
 ) -> Result<Vec<syntax::Expr>, InterpreterError> {
   let normalized = normalize_source(input);
+  // A large literal — the data matrix a Manipulate control holds, or a
+  // table a notebook defines — parses directly; pest's per-character rule
+  // calls make it seconds per megabyte.
+  if normalized.len() > 512
+    && let Some(expr) = syntax::parse_literal_data(&normalized)
+  {
+    return Ok(vec![expr]);
+  }
   let mut pairs = parse(&normalized).map_err(|e| {
     InterpreterError::EvaluationError(format!("Parse error: {e}"))
   })?;

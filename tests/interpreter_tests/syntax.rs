@@ -13517,3 +13517,43 @@ mod demonstration_round_trips {
     );
   }
 }
+
+// Large literals take a direct parser; they must read exactly like the
+// grammar reads them.
+mod literal_data_fast_path {
+  use super::*;
+
+  #[test]
+  fn large_literal_round_trips() {
+    assert_eq!(
+      interpret(
+        "big = Table[{i, -i, 1.5 i, \"s\" <> ToString[i], True, x}, {i, 200}]; \
+         r = ToExpression[ToString[big, InputForm]]; \
+         {r === big, Head /@ First[r], r[[3]]}"
+      )
+      .unwrap(),
+      "{True, {Integer, Integer, Real, String, Symbol, Symbol}, {3, -3, 4.5, s3, True, x}}"
+    );
+  }
+
+  #[test]
+  fn literal_with_special_forms_falls_back_to_grammar() {
+    // Constants, precision marks and long reals keep the grammar's reading.
+    assert_eq!(
+      interpret(&format!(
+        "ToExpression[\"{{{}Pi}}\"][[-1]]",
+        "1, ".repeat(300)
+      ))
+      .unwrap(),
+      "Pi"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "Precision[ToExpression[\"{{{}0.12345678901234567890}}\"][[-1]]] > 16",
+        "1, ".repeat(300)
+      ))
+      .unwrap(),
+      "True"
+    );
+  }
+}
