@@ -28659,12 +28659,17 @@ fn pane_control_variables(
           walk(a, place_map, out);
         }
       }
-      Expr::String(s) if !s.is_empty() => {
-        out.push(heading_visibility_key(s));
-      }
       Expr::List(items) => {
         for it in items {
-          walk(it, place_map, out);
+          // A string item of a layout list is a text row; a bare string
+          // pane (a placeholder) leaves no row behind.
+          if let Expr::String(s) = it {
+            if !s.is_empty() {
+              out.push(heading_visibility_key(s));
+            }
+          } else {
+            walk(it, place_map, out);
+          }
         }
       }
       _ => {}
