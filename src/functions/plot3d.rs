@@ -12853,10 +12853,10 @@ fn evaluate_parametric_at_t(
   tvar: &str,
   tval: f64,
 ) -> Option<(f64, f64, f64)> {
+  // The plot sampler's own evaluator: it also resolves a component that
+  // depends on `t` only through a variable's value (`c = ArcTan[t/5]`).
   let eval_one = |body: &Expr| -> Option<f64> {
-    let sub = substitute_var(body, tvar, &Expr::Real(tval));
-    let result = evaluate_expr_to_expr(&sub).ok()?;
-    try_eval_to_f64(&result)
+    crate::functions::plot::evaluate_at_point(body, tvar, tval)
   };
   let x = eval_one(fx)?;
   let y = eval_one(fy)?;
@@ -13123,10 +13123,7 @@ fn evaluate_parametric_at_uv(
   vval: f64,
 ) -> Option<(f64, f64, f64)> {
   let eval_one = |body: &Expr| -> Option<f64> {
-    let sub1 = substitute_var(body, uvar, &Expr::Real(uval));
-    let sub2 = substitute_var(&sub1, vvar, &Expr::Real(vval));
-    let result = evaluate_expr_to_expr(&sub2).ok()?;
-    try_eval_to_f64(&result)
+    crate::functions::plot::evaluate_at_xy(body, uvar, vvar, uval, vval)
   };
   let x = eval_one(fx)?;
   let y = eval_one(fy)?;

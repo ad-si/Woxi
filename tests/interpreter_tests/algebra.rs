@@ -20267,3 +20267,36 @@ mod rgbcolor_channels_clip {
     assert_eq!(svg("RGBColor[2, -1, 0.5]"), svg("RGBColor[1, 0, 0.5]"));
   }
 }
+
+mod find_minimum_variable_specs {
+  use super::*;
+
+  // Indexed variables (`n[j]`) used to be rejected as a bad variable spec.
+  #[test]
+  fn indexed_variables() {
+    assert_eq!(
+      interpret(
+        "FindMinimum[(n[1] - 1)^2 + (n[2] - 2)^2, {{n[1], 0.5}, {n[2], 0.5}}]"
+      )
+      .unwrap(),
+      "{0., {n[1] -> 1., n[2] -> 2.}}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[n[1] /. Last[FindMinimum[{(n[1] - 1)^2 + (n[2] - 2)^2, n[1] >= 0}, {{n[1], 0.5}, {n[2], 0.5}}]], 10^-6]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  // `{x, x0, x1}` names two starting values.
+  #[test]
+  fn two_starting_values() {
+    assert_eq!(
+      interpret("Round[x /. Last[FindMaximum[Sin[x], {x, 1, 2}]], 10^-6]")
+        .unwrap(),
+      "392699/250000"
+    );
+  }
+}

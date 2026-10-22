@@ -635,6 +635,18 @@ in WL, which keeps integer coefficients.
 
 ## Numeric precision and floating point
 
+### `FindMinimum`/`FindMaximum` with two starting values stop at a different last digit
+
+```sh
+wolframscript -code 'FindMaximum[Sin[x], {x, 1, 2}]'   # {1., {x -> 1.5707963267114806}}
+woxi eval 'FindMaximum[Sin[x], {x, 1, 2}]'             # {1., {x -> 1.5707963267948966}}
+```
+
+`{x, x0, x1}` makes Wolfram use a derivative-free method that stops at its
+own tolerance. Woxi runs its Newton search from `x0` and lands on the
+extremum to machine precision. The extremum is the same; the digits past
+about 1e-10 are not.
+
 ### `Rationalize[x, 0]` and `ContinuedFraction[x]` of a machine real stop one convergent off
 
 ```sh

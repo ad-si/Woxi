@@ -11675,6 +11675,67 @@ fn nelder_mead_minimize(
   simplex[best_i].clone()
 }
 
+/// `FindMinimum`/`FindMaximum` over indexed variables (`{n[j], 0.15}`):
+/// the objective (and constraints) are evaluated with the variables free,
+/// every variable is renamed to a fresh symbol the way `FindRoot` does, and
+/// the result's rules are mapped back. None when every variable is already
+/// a symbol.
+fn find_minimum_indexed_variables(
+  args: &[Expr],
+  maximize: bool,
+) -> Option<Result<Expr, InterpreterError>> {
+  let specs: Vec<Expr> = match &args[1] {
+    Expr::List(items) if items.iter().all(|i| matches!(i, Expr::List(_))) => {
+      items.to_vec()
+    }
+    single @ Expr::List(_) => vec![single.clone()],
+    _ => return None,
+  };
+  let vars: Vec<Expr> = specs
+    .iter()
+    .map(|spec| match spec {
+      Expr::List(parts) => parts.first().cloned(),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  if !vars
+    .iter()
+    .any(|v| matches!(v, Expr::FunctionCall { .. } | Expr::CurriedCall { .. }))
+  {
+    return None;
+  }
+  let fresh: Vec<Expr> = (0..vars.len())
+    .map(|i| Expr::Identifier(format!("$FindMinimumVar{i}$")))
+    .collect();
+  let objective = crate::evaluator::evaluate_expr_to_expr(&args[0])
+    .unwrap_or_else(|_| args[0].clone());
+  let renamed = find_root_rename_vars(&objective, &vars, &fresh);
+  let new_specs: Vec<Expr> = specs
+    .iter()
+    .zip(&fresh)
+    .map(|(spec, name)| match spec {
+      Expr::List(parts) => {
+        let mut parts = parts.to_vec();
+        parts[0] = name.clone();
+        Expr::List(parts.into())
+      }
+      other => other.clone(),
+    })
+    .collect();
+  let spec_arg = if matches!(&args[1], Expr::List(items) if items.iter().all(|i| matches!(i, Expr::List(_))))
+  {
+    Expr::List(new_specs.into())
+  } else {
+    new_specs.into_iter().next()?
+  };
+  let mut new_args = vec![renamed, spec_arg];
+  new_args.extend_from_slice(&args[2..]);
+  Some(
+    find_minimum_ast(&new_args, maximize)
+      .map(|result| find_root_rename_vars(&result, &fresh, &vars)),
+  )
+}
+
 pub fn find_minimum_ast(
   args: &[Expr],
   maximize: bool,
@@ -11688,6 +11749,9 @@ pub fn find_minimum_ast(
     return Err(InterpreterError::EvaluationError(format!(
       "{func_name} expects at least 2 arguments"
     )));
+  }
+  if let Some(result) = find_minimum_indexed_variables(args, maximize) {
+    return result;
   }
   // A `{f, cons…}` first argument states a constrained problem, which the
   // constrained solver handles; the starting values are only a hint and it
@@ -11745,7 +11809,9 @@ pub fn find_minimum_ast(
       return None;
     };
     match pair.len() {
-      2 => {
+      // `{x, x0, x1}` names two starting values; the search starts from
+      // the first (Wolfram's derivative-free method uses both).
+      2 | 3 => {
         Some(find_root_eval_number(&pair[1]).map(|x0| (name.clone(), x0, None)))
       }
       4 => Some((|| {
@@ -11824,8 +11890,8 @@ pub fn find_minimum_ast(
         })
         .collect()
     }
-    // Single variable: {x, x0} or {x, x0, xmin, xmax}
-    Expr::List(items) if items.len() == 2 || items.len() == 4 => {
+    // Single variable: {x, x0}, {x, x0, x1} or {x, x0, xmin, xmax}
+    Expr::List(items) if (2..=4).contains(&items.len()) => {
       match parse_bounded_var_spec(items) {
         Some(spec) => vec![spec?],
         None => {

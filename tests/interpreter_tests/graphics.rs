@@ -25414,6 +25414,24 @@ mod find_spanning_tree {
 mod parametric_plot3d {
   use super::*;
 
+  // A component that depends on the parameter only through a variable's
+  // value (`c = ArcTan[t/5]`) used to give "no finite values".
+  #[test]
+  fn components_depending_on_the_parameter_indirectly() {
+    assert_eq!(
+      interpret(
+        "c = ArcTan[t/5]; Head[ParametricPlot3D[{Cos[t] Cos[c], Sin[t] Cos[c], -Sin[c]}, {t, -40, 0}]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+    assert_eq!(
+      interpret("r = u + v; Head[ParametricPlot3D[{Cos[u] r, Sin[u] r, v}, {u, 0, 1}, {v, 0, 1}]]")
+        .unwrap(),
+      "Graphics3D"
+    );
+  }
+
   // A plot body naming a Module-local symbol whose value depends on the plot
   // variables is read through that value.
   #[test]
