@@ -3705,7 +3705,47 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// threshold is `FindThreshold[GradientFilter[image, r]]`, the same
 /// 256-bin cluster-variance split wolframscript uses; an explicit `t`
 /// is compared against the gradient magnitude directly.
-pub fn edge_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+///
+/// Trailing rules are options: `Method -> "Canny"` (or `Automatic`) and
+/// `"StraightEdges" -> 0` describe what is computed here; any other
+/// option value leaves the call unevaluated.
+pub fn edge_detect_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let option_start = all_args
+    .iter()
+    .position(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .unwrap_or(all_args.len());
+  let (args, opts) = all_args.split_at(option_start);
+  if opts
+    .iter()
+    .any(|o| !matches!(o, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+  {
+    return Ok(unevaluated("EdgeDetect", all_args));
+  }
+  let is_str = |e: &Expr, v: &str| matches!(e, Expr::String(s) if s == v);
+  let supported = opts.iter().all(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => match pattern.as_ref() {
+      Expr::Identifier(k) if k == "Method" => {
+        is_str(replacement, "Canny")
+          || matches!(replacement.as_ref(), Expr::Identifier(a) if a == "Automatic")
+      }
+      p if is_str(p, "StraightEdges") => {
+        crate::functions::math_ast::try_eval_to_f64(replacement) == Some(0.0)
+          || matches!(replacement.as_ref(), Expr::Identifier(a) if a == "Automatic")
+      }
+      _ => false,
+    },
+    _ => false,
+  });
+  if !supported {
+    return Ok(unevaluated("EdgeDetect", all_args));
+  }
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "EdgeDetect expects 1 to 3 arguments".into(),
