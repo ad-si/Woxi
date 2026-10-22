@@ -15115,8 +15115,32 @@ pub(crate) fn mesh_region_to_graphics_prims(
     return None;
   }
 
-  let Expr::List(prims) = primitives_expr else {
-    return None;
+  // A single cell primitive may stand without the enclosing list.
+  let single_prim;
+  let prims: &[Expr] = match primitives_expr {
+    Expr::List(prims) => prims,
+    prim @ Expr::FunctionCall { .. } => {
+      single_prim = [prim.clone()];
+      &single_prim
+    }
+    _ => return None,
+  };
+
+  let to_points = |indices: &[Expr]| -> Vec<Expr> {
+    indices
+      .iter()
+      .filter_map(|idx| {
+        expr_to_f64(idx).and_then(|i| {
+          let i = i as usize;
+          if i >= 1 && i <= vertices.len() {
+            let (x, y) = vertices[i - 1];
+            Some(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+          } else {
+            None
+          }
+        })
+      })
+      .collect()
   };
 
   let mut result = Vec::new();
@@ -15125,31 +15149,38 @@ pub(crate) fn mesh_region_to_graphics_prims(
   result.push(call1("FaceForm", Color::new(0.626, 0.836, 0.919).to_expr()));
 
   for prim in prims {
-    if let Expr::FunctionCall { name, args } = prim
-      && name == "Polygon"
-      && args.len() == 1
-      && let Expr::List(index_lists) = &args[0]
+    let Expr::FunctionCall { name, args } = prim else {
+      continue;
+    };
+    if args.len() != 1
+      || !matches!(name.as_str(), "Polygon" | "Triangle" | "Line")
     {
-      for idx_list in index_lists {
-        if let Expr::List(indices) = idx_list {
-          let points: Vec<Expr> = indices
-            .iter()
-            .filter_map(|idx| {
-              expr_to_f64(idx).and_then(|i| {
-                let i = i as usize;
-                if i >= 1 && i <= vertices.len() {
-                  let (x, y) = vertices[i - 1];
-                  Some(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
-                } else {
-                  None
-                }
-              })
-            })
-            .collect();
-          if points.len() >= 3 {
-            result.push(call1("Polygon", Expr::List(points.into())));
-          }
+      continue;
+    }
+    let Expr::List(entries) = &args[0] else {
+      continue;
+    };
+    // One index list, or a list of them.
+    let index_lists: Vec<&[Expr]> =
+      if entries.iter().all(|e| matches!(e, Expr::List(_))) {
+        entries
+          .iter()
+          .filter_map(|e| match e {
+            Expr::List(indices) => Some(&indices[..]),
+            _ => None,
+          })
+          .collect()
+      } else {
+        vec![&entries[..]]
+      };
+    for indices in index_lists {
+      let points = to_points(indices);
+      if name == "Line" {
+        if points.len() >= 2 {
+          result.push(call1("Line", Expr::List(points.into())));
         }
+      } else if points.len() >= 3 {
+        result.push(call1("Polygon", Expr::List(points.into())));
       }
     }
   }

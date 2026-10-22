@@ -9086,3 +9086,84 @@ mod region_centroid_difference {
     );
   }
 }
+
+mod triangulate_mesh {
+  use super::*;
+
+  const L_SHAPE: &str = "BoundaryMeshRegion[{{0,0},{4,0},{4,1},{1,1},{1,3},{0,3}}, \
+     Line[{1, 2, 3, 4, 5, 6, 1}]]";
+
+  #[test]
+  fn tiles_an_l_shape_with_triangles() {
+    assert_eq!(
+      interpret(&format!("TriangulateMesh[{L_SHAPE}]")).unwrap(),
+      "MeshRegion[{{0, 0}, {4, 0}, {4, 1}, {1, 1}, {1, 3}, {0, 3}}, Triangle[{{1, 2, 3}, {1, 3, 4}, {6, 1, 4}, {4, 5, 6}}]]"
+    );
+  }
+
+  #[test]
+  fn keeps_the_area() {
+    assert_eq!(
+      interpret(&format!("RegionMeasure[TriangulateMesh[{L_SHAPE}]]")).unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn clockwise_boundary_gives_the_same_area() {
+    assert_eq!(
+      interpret(
+        "RegionMeasure[TriangulateMesh[BoundaryMeshRegion[\
+         {{0,3},{1,3},{1,1},{4,1},{4,0},{0,0}}, Line[{1,2,3,4,5,6,1}]]]]"
+      )
+      .unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn nintegrate_over_the_mesh_measures_area() {
+    assert_eq!(
+      interpret(&format!(
+        "NIntegrate[1, Element[{{x, y}}, TriangulateMesh[{L_SHAPE}]]]"
+      ))
+      .unwrap(),
+      "6."
+    );
+  }
+
+  #[test]
+  fn nintegrate_over_the_mesh_integrates_a_polynomial() {
+    assert_eq!(
+      interpret(&format!(
+        "NIntegrate[x*y, Element[{{x, y}}, TriangulateMesh[{L_SHAPE}]]]"
+      ))
+      .unwrap(),
+      "6."
+    );
+  }
+
+  #[test]
+  fn nintegrate_over_a_stored_mesh() {
+    assert_eq!(
+      interpret(&format!(
+        "m = TriangulateMesh[{L_SHAPE}]; NIntegrate[x^2, Element[{{x, y}}, m]]"
+      ))
+      .unwrap(),
+      "22."
+    );
+  }
+
+  #[test]
+  fn highlight_mesh_shows_the_mesh() {
+    assert_eq!(
+      interpret(
+        "HighlightMesh[MeshRegion[{{0,0},{1,0},{0,1}}, Triangle[{{1,2,3}}]], \
+         Labeled[0, \"Index\"]] === MeshRegion[{{0,0},{1,0},{0,1}}, \
+         Triangle[{{1,2,3}}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
