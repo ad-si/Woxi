@@ -34646,11 +34646,44 @@ fn assign_checkbox_state(
 /// typeset context (a control panel caption, not a terminal), so it gets
 /// the same treatment before falling back to the plain OutputForm text.
 fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
+  // A progress bar only reads its value and range limits, so a `Dynamic[…]`
+  // limit (`ProgressIndicator[done, {0, Dynamic[total]}]`) is just the
+  // current value of its variable.
+  let released;
+  let expr = match expr {
+    Expr::FunctionCall { name, args } if name == "ProgressIndicator" => {
+      fn release(e: &Expr) -> Expr {
+        match e {
+          Expr::FunctionCall { name, args }
+            if name == "Dynamic" && args.len() == 1 =>
+          {
+            release(&args[0])
+          }
+          Expr::List(items) => Expr::List(items.iter().map(release).collect()),
+          other => other.clone(),
+        }
+      }
+      released = Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(release).collect(),
+      };
+      &released
+    }
+    other => other,
+  };
   let code =
     manipulate_block_code(&crate::syntax::expr_to_source_form(expr), bindings);
   match crate::interpret_with_stdout(&code) {
     Ok(r) => {
       if let Some(svg) = r.graphics {
+        DisplayNode::Static {
+          svg: Some(svg),
+          text: String::new(),
+        }
+      } else if let Some(Expr::FunctionCall { name, args }) = &r.expr
+        && name == "ProgressIndicator"
+        && let Some(svg) = progress_indicator_svg(args)
+      {
         DisplayNode::Static {
           svg: Some(svg),
           text: String::new(),
