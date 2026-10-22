@@ -1008,6 +1008,18 @@ mod high_level_functions {
       assert_eq!(interpret("FromContinuedFraction[{}]").unwrap(), "Infinity");
     }
     #[test]
+    fn test_symbolic_terms() {
+      assert_eq!(
+        interpret("FromContinuedFraction[{a, b, c}]").unwrap(),
+        "(a + c + a*b*c)/(1 + b*c)"
+      );
+      assert_eq!(
+        interpret("FromContinuedFraction[{1, x}]").unwrap(),
+        "(1 + x)/x"
+      );
+      assert_eq!(interpret("FromContinuedFraction[{a}]").unwrap(), "a");
+    }
+    #[test]
     fn test_fibonacci_convergent() {
       assert_eq!(
         interpret("FromContinuedFraction[{1, 1, 1, 1, 1, 1, 1, 1}]").unwrap(),
