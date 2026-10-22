@@ -5832,6 +5832,41 @@ mod high_level_functions {
       );
     }
 
+    // Trailing graph options are forwarded to the Graph, and trees are
+    // drawn in layers with the labels placed where `Placed` asks.
+    #[test]
+    fn test_kary_trees_accept_graph_options() {
+      assert_eq!(
+        interpret(
+          "g = CompleteKaryTree[3, VertexSize -> Small, ImageSize -> 400]; \
+           {Head[g], VertexCount[g], EdgeCount[g]}"
+        )
+        .unwrap(),
+        "{Graph, 7, 6}"
+      );
+      assert_eq!(
+        interpret("g = KaryTree[5, 3, ImageSize -> 200]; EdgeCount[g]")
+          .unwrap(),
+        "4"
+      );
+      assert_eq!(
+        interpret("g = KaryTree[5, ImageSize -> 200]; EdgeCount[g]").unwrap(),
+        "4"
+      );
+      let svg = interpret(
+        "ExportString[CompleteKaryTree[2, VertexLabels -> \
+         {2 -> Placed[a, Below], 3 -> Placed[b, Above]}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains(">a<") && svg.contains(">b<"));
+      // `"Name"` labels every vertex.
+      let plain = interpret(
+        "ExportString[CompleteKaryTree[2, VertexLabels -> \"Name\"], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(plain.contains(">1<") && plain.contains(">3<"));
+    }
+
     // WheelGraph[n]: hub vertex 1 joined to rim vertices 2..n, plus a cycle
     // on the rim. Vertex/edge ordering verified against wolframscript.
     #[test]
