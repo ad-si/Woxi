@@ -1637,6 +1637,34 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let mut squared_abs = false;
+  // An unknown written as a curried call (`c[1][t]`, a method-of-lines
+  // grid value) is solved for as a fresh symbol and put back afterwards.
+  let curried: Vec<Expr> = match positional.get(1) {
+    Some(Expr::List(vars)) => vars.to_vec(),
+    Some(v) => vec![v.clone()],
+    None => vec![],
+  }
+  .into_iter()
+  .filter(|v| matches!(v, Expr::CurriedCall { .. }))
+  .collect();
+  if !curried.is_empty() {
+    let renames: Vec<(Expr, String)> = curried
+      .into_iter()
+      .enumerate()
+      .map(|(i, v)| (v, format!("Solve$var${i}")))
+      .collect();
+    let mut renamed: Vec<Expr> = args
+      .iter()
+      .map(|a| crate::functions::ode_ast::rename_compound_heads(a, &renames))
+      .collect();
+    // The renamed unknowns are plain symbols now; evaluate the equations
+    // again so they simplify around them.
+    renamed[0] = crate::evaluator::evaluate_expr_to_expr(&renamed[0])?;
+    let solved = solve_ast(&renamed)?;
+    return Ok(crate::functions::ode_ast::restore_compound_heads(
+      &solved, &renames,
+    ));
+  }
   let several_unknowns =
     matches!(positional.get(1), Some(Expr::List(vars)) if vars.len() >= 2);
   if let Some(first) = positional.first_mut() {
@@ -7032,6 +7060,15 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       return find_root_multivariate(&args[0], &candidate_specs, max_iter);
     }
+  }
+
+  // `FindRoot[{eqn}, {x, x0}]`: a one-equation system is that equation.
+  if let Expr::List(eqs) = &args[0]
+    && eqs.len() == 1
+  {
+    let mut single = args.to_vec();
+    single[0] = eqs[0].clone();
+    return find_root_ast(&single);
   }
 
   // Parse the options we honour: Method -> "Secant" picks the secant iteration,

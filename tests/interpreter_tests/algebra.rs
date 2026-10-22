@@ -4839,6 +4839,26 @@ mod symbolic_equal {
 mod solve {
   use super::*;
 
+  // Unknowns written as curried calls, as method-of-lines code names its
+  // grid values.
+  #[test]
+  fn curried_call_unknowns() {
+    assert_eq!(
+      interpret("Solve[{c[1][t] == 0, c[35][t] == 1}, {c[1][t], c[35][t]}]")
+        .unwrap(),
+      "{{c[1][t] -> 0, c[35][t] -> 1}}"
+    );
+    assert_eq!(
+      interpret("Solve[c[1][t]^2 == 4, c[1][t]]").unwrap(),
+      "{{c[1][t] -> -2}, {c[1][t] -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[{a + c[1][t] == 3, c[1][t] - a == 1}, {a, c[1][t]}]")
+        .unwrap(),
+      "{{a -> 1, c[1][t] -> 2}}"
+    );
+  }
+
   // Radical equation whose coefficients are exact trigonometric values: both
   // roots must satisfy the original equation.
   #[test]
@@ -9629,6 +9649,22 @@ mod linear_programming {
 
 mod find_root {
   use super::*;
+
+  // A one-equation system in a list is that equation.
+  #[test]
+  fn single_equation_in_a_list() {
+    assert_eq!(
+      interpret(
+        "f1[x_] := Sin[x] - x/10; FindRoot[{f1[x] == 0}, {x, 8.4}, AccuracyGoal -> 30]"
+      )
+      .unwrap(),
+      "{x -> 8.423203932360492}"
+    );
+    assert_eq!(
+      interpret("FindRoot[{x^2 - 2}, {x, 1}]").unwrap(),
+      "{x -> 1.4142135623730951}"
+    );
+  }
 
   /// Regression: an equation wrapped in `/.` (`eq /. z -> c[i]`) was not
   /// evaluated before FindRoot rewrote it, so the residual never became a

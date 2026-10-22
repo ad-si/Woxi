@@ -8362,6 +8362,24 @@ Round[N[closed] - N[numeric], 10^-6]"
 mod ndsolve {
   use super::*;
 
+  // Derivatives can be asked for as unknowns; each gets its own rule.
+  #[test]
+  fn derivative_unknowns() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y''[t] == -y[t], y'[0] == 0, y[0] == 1}, \
+         {y''[t], y'[t], y[t]}, {t, 0, 1}]; Map[First, s, {2}]"
+      )
+      .unwrap(),
+      "{{Derivative[2][y][t], Derivative[1][y][t], y[t]}}"
+    );
+    assert_eq!(
+      interpret("Round[{y''[t], y'[t], y[t]} /. First[s] /. t -> 1., 0.0001]")
+        .unwrap(),
+      "{-0.5403, -0.8415, 0.5403}"
+    );
+  }
+
   // An unknown no equation mentions comes back as itself, in the requested
   // position.
   #[test]

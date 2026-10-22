@@ -365,6 +365,10 @@ pub fn contains_pattern(expr: &Expr) -> bool {
     Expr::BinaryOp { left, right, .. } => {
       contains_pattern(left) || contains_pattern(right)
     }
+    // A pattern as the head (`x_[t]`, `h_[3]`) is stored in the call's name,
+    // and `x_'` keeps `x_` as a name; no symbol name contains `_`.
+    Expr::FunctionCall { name, .. } if name.contains('_') => true,
+    Expr::Identifier(name) if name.contains('_') => true,
     Expr::FunctionCall { args, .. } => args.iter().any(contains_pattern),
     Expr::CurriedCall { func, args } => {
       contains_pattern(func) || args.iter().any(contains_pattern)
@@ -5109,6 +5113,19 @@ fn match_pattern_impl(
         None
       }
     }
+    // The other direction: a pattern stored flattened (`Derivative[1, x_,
+    // t]`, what `x_'[t]` normalizes to in a definition) against a call that
+    // still reads curried, `Derivative[1][y][t]`.
+    Expr::FunctionCall {
+      name: pat_name,
+      args: pat_args,
+    } if pat_name == "Derivative"
+      && pat_args.len() >= 2
+      && matches!(expr, Expr::CurriedCall { .. })
+      && let Some(flat) = flatten_curried_derivative(expr) =>
+    {
+      match_pattern(&flat, pattern)
+    }
     Expr::FunctionCall {
       name: pat_name,
       args: pat_args,
@@ -5300,6 +5317,27 @@ fn match_pattern_impl(
       func: pat_func,
       args: pat_args,
     } => {
+      // Woxi keeps an evaluated `Derivative[n][f]` flattened as
+      // `Derivative[n, f]` (and `Derivative[n][f][x]` as `Derivative[n, f,
+      // x]`); a pattern written the curried way, `Derivative[1][x_]`, sees it
+      // in that curried shape.
+      if let Expr::FunctionCall { name, args } = expr
+        && name == "Derivative"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::Integer(_))
+      {
+        let mut curried = Expr::CurriedCall {
+          func: Box::new(call("Derivative", vec![args[0].clone()])),
+          args: vec![args[1].clone()],
+        };
+        if args.len() > 2 {
+          curried = Expr::CurriedCall {
+            func: Box::new(curried),
+            args: args[2..].to_vec(),
+          };
+        }
+        return match_pattern(&curried, pattern);
+      }
       if let Expr::CurriedCall {
         func: expr_func,
         args: expr_args,
@@ -6160,5 +6198,30 @@ fn apply_replace_all_multi_ast_impl(
     }),
     // Atoms and other nodes without children — return unchanged
     _ => Ok(expr.clone()),
+  }
+}
+
+/// `Derivative[n][f]` → `Derivative[n, f]` and `Derivative[n][f][x…]` →
+/// `Derivative[n, f, x…]`, the flattened shape Woxi evaluates them to.
+fn flatten_curried_derivative(expr: &Expr) -> Option<Expr> {
+  let Expr::CurriedCall { func, args } = expr else {
+    return None;
+  };
+  match func.as_ref() {
+    Expr::FunctionCall { name, args: order }
+      if name == "Derivative" && order.len() == 1 && args.len() == 1 =>
+    {
+      Some(call("Derivative", vec![order[0].clone(), args[0].clone()]))
+    }
+    inner @ Expr::CurriedCall { .. } => {
+      let inner_flat = flatten_curried_derivative(inner)?;
+      let Expr::FunctionCall { name, args: flat } = &inner_flat else {
+        return None;
+      };
+      let mut flat = flat.to_vec();
+      flat.extend(args.iter().cloned());
+      Some(call(name, flat))
+    }
+    _ => None,
   }
 }
