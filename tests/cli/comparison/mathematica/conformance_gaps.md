@@ -5319,3 +5319,9 @@ nonlinear Schrödinger equation) is returned as
 `InterpolatingFunction`s, where `wolframscript` returns a single complex
 `InterpolatingFunction`. Values agree to the solver tolerance, but the
 printed form of the result differs.
+
+## HighlightMesh draws no highlighting
+
+`HighlightMesh[mesh, spec]` evaluates to the bare mesh. wolframscript also
+highlights the cells `spec` names and, for `Labeled[0, "Index"]`, writes each
+vertex's index next to it; Woxi draws neither.

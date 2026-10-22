@@ -2791,7 +2791,10 @@ pub(crate) fn plot_labels_svg(
       "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
          fill=\"{label_fill}\">{}</text>\n",
-      crate::functions::graphics::box_string_to_svg(x_label)
+      crate::functions::graphics::box_string_to_svg_scaled(
+        x_label,
+        RESOLUTION_SCALE as f64
+      )
     ));
   }
   // A `FrameLabel` that is a `Grid[…]`/`TableForm[…]` is embedded as a
@@ -2838,7 +2841,7 @@ pub(crate) fn plot_labels_svg(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
          fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-      crate::functions::graphics::box_string_to_svg(y_label)
+      crate::functions::graphics::box_string_to_svg_scaled(y_label, RESOLUTION_SCALE as f64)
     ));
   }
 
@@ -2883,7 +2886,10 @@ pub(crate) fn plot_labels_svg(
         "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
            fill=\"{label_fill}\">{}</text>\n",
-        crate::functions::graphics::box_string_to_svg(line)
+        crate::functions::graphics::box_string_to_svg_scaled(
+          line,
+          RESOLUTION_SCALE as f64
+        )
       ));
     }
   }
@@ -2898,7 +2904,7 @@ pub(crate) fn plot_labels_svg(
       "<text x=\"{rx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
          fill=\"{label_fill}\" transform=\"rotate(90,{rx:.1},{cy:.1})\">{}</text>\n",
-      crate::functions::graphics::box_string_to_svg(right_label)
+      crate::functions::graphics::box_string_to_svg_scaled(right_label, RESOLUTION_SCALE as f64)
     ));
   }
 
@@ -7203,7 +7209,10 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
             "<text x=\"{text_x:.1}\" y=\"{text_y:.1}\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
              fill=\"{label_fill}\">{}</text>\n",
-            crate::functions::graphics::box_string_to_svg(label),
+            crate::functions::graphics::box_string_to_svg_scaled(
+              label,
+              RESOLUTION_SCALE as f64
+            ),
           ));
 
           cursor_x += entry_widths[i] + entry_spacing;
@@ -7306,7 +7315,10 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
             "<text x=\"{text_x:.1}\" y=\"{text_y:.1}\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
              fill=\"{label_fill}\">{}</text>\n",
-            crate::functions::graphics::box_string_to_svg(label),
+            crate::functions::graphics::box_string_to_svg_scaled(
+              label,
+              RESOLUTION_SCALE as f64
+            ),
           ));
         }
 
@@ -9148,7 +9160,7 @@ fn frame_label_entry(e: &Expr) -> String {
   if matches!(e, Expr::Identifier(s) if s == "None") {
     return String::new();
   }
-  crate::functions::chart::expr_to_label(e).unwrap_or_default()
+  crate::functions::graphics::styled_axis_label(e).unwrap_or_default()
 }
 
 /// A `FrameLabel` entry that is a `Grid[…]`/`TableForm[…]` — a table meant
@@ -9458,7 +9470,7 @@ pub(crate) fn parse_plot_legends(
       let labels = items
         .iter()
         .map(|item| {
-          crate::functions::chart::expr_to_label(item)
+          crate::functions::graphics::styled_axis_label(item)
             .unwrap_or_else(|| expr_to_string(item))
         })
         .collect();

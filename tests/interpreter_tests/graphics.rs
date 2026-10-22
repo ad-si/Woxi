@@ -5473,6 +5473,18 @@ mod plot3d {
       assert_ne!(with_default, with_degree_2);
     }
 
+    #[test]
+    fn graphics3d_tubebox_draws_like_tube() {
+      let tube = export_svg(
+        "Graphics3D[{CapForm[\"Butt\"], Tube[{{0, 0, 0}, {1, 0, 0}}, {3, 1}]}]",
+      );
+      let tube_box = export_svg(
+        "Graphics3D[{CapForm[\"Butt\"], TubeBox[{{0, 0, 0}, {1, 0, 0}}, {3, 1}]}]",
+      );
+      assert!(tube.contains("<polygon"));
+      assert_eq!(tube, tube_box);
+    }
+
     // Regression: a Grid/Column PlotLabel on a 3-D picture (as Demonstrations
     // commonly build, e.g. a multi-line caption of computed values) stacks
     // its rows as separate lines above the picture, matching the 2-D
@@ -6158,6 +6170,25 @@ mod plot3d {
         .unwrap(),
         "True"
       );
+    }
+
+    // A `Tube` inside a GraphicsComplex takes its centre lines as vertex
+    // indices, so it must draw exactly like the same tubes on explicit
+    // coordinates instead of vanishing.
+    #[test]
+    fn graphics3d_complex_tube_resolves_vertex_indices() {
+      let indexed = interpret(
+        "ExportString[Graphics3D[GraphicsComplex[{{0,0,0},{1,0,0},{1,1,1}}, \
+         Tube[{{1,2},{2,3}}, 0.1]]], \"SVG\"]",
+      )
+      .unwrap();
+      let explicit = interpret(
+        "ExportString[Graphics3D[Tube[{{{0,0,0},{1,0,0}},{{1,0,0},{1,1,1}}}, \
+         0.1]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(indexed.contains("<line") || indexed.contains("<path"));
+      assert_eq!(indexed, explicit);
     }
 
     // GraphicsComplex primitives resolve their 1-based vertex indices,
@@ -8878,6 +8909,11 @@ mod plot3d {
           .filter_map(|l| {
             let after = l.split_once('>')?.1;
             let text = after.split_once("</text>")?.0;
+            // A styled caption is wrapped in a sizing `<tspan>`.
+            let text = text
+              .strip_prefix("<tspan font-size=\"120\">")
+              .and_then(|t| t.strip_suffix("</tspan>"))
+              .unwrap_or(text);
             (!text.is_empty()
               && text.parse::<f64>().is_err()
               && !text.starts_with('<'))
@@ -9093,8 +9129,8 @@ mod plot3d {
                           {Style[\"diameter (cm)\", 12], None}}], \
          Graphics[{PointSize[0.04], Point[{0.5, 0.5}]}]]",
       );
-      assert!(svg.contains(">force (kN)</text>"), "{svg}");
-      assert!(svg.contains(">diameter (cm)</text>"), "{svg}");
+      assert!(svg.contains(">force (kN)</tspan></text>"), "{svg}");
+      assert!(svg.contains(">diameter (cm)</tspan></text>"), "{svg}");
       assert!(svg.contains("<circle"), "the merged point must draw: {svg}");
     }
 
@@ -10323,6 +10359,24 @@ mod plot3d {
       insta::assert_snapshot!(export_svg(
         r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> {"Sin", "Cos"}]"#
       ));
+    }
+
+    #[test]
+    fn plot_legends_and_frame_labels_typeset_styled_subscripts() {
+      let svg = export_svg(
+        r#"Plot[{x, 2 x}, {x, 0, 1}, Frame -> True,
+          PlotLegends -> {Subscript[Style["T", Italic], "r"], "b"},
+          FrameLabel -> {"t", Row[{Subscript[Style["Q", Italic], "c"], " (kJ/h)"}]}]"#,
+      );
+      let legend = "<tspan font-style=\"italic\">T</tspan>\
+        <tspan baseline-shift=\"sub\" font-size=\"70%\">r</tspan>";
+      assert!(svg.contains(legend), "legend keeps italic base + subscript");
+      let label = "<tspan font-style=\"italic\">Q</tspan>\
+        <tspan baseline-shift=\"sub\" font-size=\"70%\">c</tspan> (kJ/h)";
+      assert!(
+        svg.contains(label),
+        "frame label keeps italic base + subscript"
+      );
     }
 
     #[test]
@@ -26526,6 +26580,31 @@ mod manipulate {
     }
   }
 
+  // A bare Locator moves over the picture the body draws, so the body's
+  // explicit PlotRange bounds the pad instead of a box padded around the
+  // start point.
+  #[test]
+  fn spec_bare_locator_uses_body_plot_range() {
+    let expr = interpret_to_expr(
+      "Manipulate[Graphics[Disk[p, .1], PlotRange -> {{-3, 4}, {-1, 5}}], \
+       {{p, {0, .5}}, Locator}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (-3.0, 4.0, -1.0, 5.0));
+      }
+      other => panic!("expected Slider2D, got {other:?}"),
+    }
+  }
+
   // A string-tagged variable spec (`"tag" -> {var, min, max}`) is the
   // control itself — including one whose bounds name sibling controls.
   #[test]
@@ -37779,6 +37858,38 @@ mod static_dynamic_controls {
   }
 
   #[test]
+  fn color_data_black_body_spectrum_runs_from_red_to_blue() {
+    let channels = |code: &str| -> Vec<f64> {
+      let out = interpret(code).unwrap();
+      out
+        .trim_start_matches("RGBColor[")
+        .trim_end_matches(']')
+        .split(", ")
+        .map(|c| c.parse().unwrap())
+        .collect()
+    };
+    let cool = channels("ColorData[\"BlackBodySpectrum\", 2000]");
+    let hot = channels("ColorData[\"BlackBodySpectrum\"][10000]");
+    assert!((cool[0] - 1.0).abs() < 1e-9);
+    assert!(cool[2] < cool[0]);
+    assert!((hot[2] - 1.0).abs() < 1e-9);
+    assert!(hot[0] < hot[2]);
+    assert_eq!(
+      interpret("ColorData[\"BlackBodySpectrum\"][5000]").unwrap(),
+      interpret("ColorData[\"BlackBodySpectrum\", 5000]").unwrap()
+    );
+  }
+
+  #[test]
+  fn graphics3d_sphere_colored_by_black_body_temperature_renders() {
+    let svg = export_svg(
+      "Graphics3D[{ColorData[\"BlackBodySpectrum\"][4000], \
+       Sphere[{0, 0, 0}, 1]}]",
+    );
+    assert!(!svg.contains("ColorData"), "no source text: {svg}");
+  }
+
+  #[test]
   fn plot_style_with_visible_spectrum_color_draws_the_curve() {
     let svg = export_svg(
       "ParametricPlot[{2.5, x}, {x, 0, 8.5}, \
@@ -38588,6 +38699,17 @@ mod surface_vertex_colors {
       );
     }
   }
+
+  #[test]
+  fn rule_between_framed_text_is_drawn_not_printed() {
+    let svg = interpret(
+      "ExportString[Pane[Framed[Text[TraditionalForm[a + b]]] -> \
+       Text[TraditionalForm[c + d]], {600, 450}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains('\u{2192}'), "no arrow drawn");
+    assert!(!svg.contains(">Framed<"), "source text printed");
+  }
 }
 
 mod grid_cell_labeled_layout {
@@ -38612,5 +38734,95 @@ mod grid_cell_labeled_layout {
     assert!(!before_grid(&below), "{below}");
     let above = export_svg("Grid[{{Labeled[Grid[{{1}, {2}}], \"cap\", Top]}}]");
     assert!(before_grid(&above), "{above}");
+  }
+}
+
+mod short_in_boxes {
+  use super::*;
+
+  fn svg_of(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  #[test]
+  fn fraction_box_cells_typeset_row_style_and_short() {
+    let svg = svg_of(
+      "DisplayForm[FractionBox[Row[{4, Short[Style[5714, Red], 1/2]}], \
+       Row[{Style[3, Red], 5}]]]",
+    );
+    assert!(!svg.contains("Row["), "{svg}");
+    assert!(!svg.contains("Short["), "{svg}");
+    assert!(!svg.contains("Style["), "{svg}");
+    assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+    assert!(svg.contains(">5714<"), "{svg}");
+  }
+
+  #[test]
+  fn short_draws_a_fitting_integer_whole() {
+    let svg = svg_of("Row[{4, Short[Style[571428, Red], 1/2]}]");
+    assert!(svg.contains("571"), "{svg}");
+    assert!(!svg.contains("Short"), "{svg}");
+  }
+
+  #[test]
+  fn short_abbreviates_an_integer_longer_than_its_line_budget() {
+    let svg = svg_of("Row[{Short[10^200, 1/2]}]");
+    assert!(svg.contains("&lt;&lt;"), "{svg}");
+    assert!(!svg.contains("Short"), "{svg}");
+  }
+}
+
+mod framed_graphics_fits_data_shape {
+  use super::*;
+
+  fn frame_rect(svg: &str) -> (f64, f64) {
+    // The border is the unclipped `<rect x="0" y="0" …>` of the frame.
+    let at = svg.find("<rect x=\"0\" y=\"0\"").unwrap();
+    let rest = &svg[at..];
+    let attr = |name: &str| -> f64 {
+      let key = format!("{name}=\"");
+      let i = rest.find(&key).unwrap() + key.len();
+      rest[i..i + rest[i..].find('"').unwrap()].parse().unwrap()
+    };
+    (attr("width"), attr("height"))
+  }
+
+  #[test]
+  fn square_range_gives_square_frame_inside_wide_image_size() {
+    let svg = export_svg(
+      "Graphics[{Rectangle[]}, Frame -> True, \
+       PlotRange -> {{-2, 2}, {-2, 2}}, ImageSize -> {500, 300}]",
+    );
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"300\""),
+      "{svg}"
+    );
+    let (w, h) = frame_rect(&svg);
+    assert!((w - h).abs() < 0.01, "frame {w} x {h}: {svg}");
+    // Ticks stay within the plot range instead of reaching past it.
+    assert!(!svg.contains(">-3<") && !svg.contains(">3<"), "{svg}");
+  }
+
+  #[test]
+  fn wide_range_gives_wide_frame_inside_tall_image_size() {
+    let svg = export_svg(
+      "Graphics[{Rectangle[]}, Frame -> True, \
+       PlotRange -> {{0, 4}, {0, 1}}, ImageSize -> {200, 300}]",
+    );
+    let (w, h) = frame_rect(&svg);
+    assert!((w / h - 4.0).abs() < 0.01, "frame {w} x {h}: {svg}");
+  }
+
+  #[test]
+  fn xticks_yticks_pair_of_plain_lists_labels_bottom_and_left_only() {
+    let svg = export_svg(
+      "Graphics[{Rectangle[]}, Frame -> True, \
+       PlotRange -> {{-2, 2}, {-2, 2}}, ImageSize -> {500, 300}, \
+       FrameTicks -> {Range[-2, 2], Range[-2, 2]}]",
+    );
+    // Five labels per labelled edge, none on top / right, no automatic ones.
+    assert_eq!(svg.matches("</text>").count(), 10, "{svg}");
+    assert!(!svg.contains(">-1.5<"), "{svg}");
   }
 }

@@ -13317,4 +13317,37 @@ mod implicit_times_with_part_call {
     assert_eq!(interpret("\u{F78A}x = 2; \u{F78A}x + 1").unwrap(), "3");
     assert_eq!(interpret("a\u{F6E5}b = 5; a\u{F6E5}b").unwrap(), "5");
   }
+
+  // Regression: `/.` and `//.` bind looser than `->` and `:>`, so a
+  // replacement used as either side of a rule keeps its parentheses when
+  // printed. Without them `Epilog -> ({a} /. r -> y)` re-parsed as
+  // `(Epilog -> {a}) /. r -> y`, silently dropping the option.
+  #[test]
+  fn replace_operator_inside_rule_keeps_parentheses() {
+    assert_eq!(
+      interpret("Hold[Epilog -> ({a} /. r -> y)]").unwrap(),
+      "Hold[Epilog -> ({a} /. r -> y)]"
+    );
+    assert_eq!(
+      interpret("Hold[(a /. b) -> c]").unwrap(),
+      "Hold[(a /. b) -> c]"
+    );
+    assert_eq!(
+      interpret("Hold[k :> (v //. r -> s)]").unwrap(),
+      "Hold[k :> (v //. r -> s)]"
+    );
+    assert_eq!(
+      interpret("Hold[(a //. b) :> c]").unwrap(),
+      "Hold[(a //. b) :> c]"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[f[x -> (y /. z -> 1)]], InputForm]").unwrap(),
+      "Hold[f[x -> (y /. z -> 1)]]"
+    );
+    // The usual direction needs no parentheses.
+    assert_eq!(
+      interpret("Hold[(a -> b) /. c -> d]").unwrap(),
+      "Hold[a -> b /. c -> d]"
+    );
+  }
 }

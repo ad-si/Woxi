@@ -2837,6 +2837,58 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_density_plot_draws_mesh_lines() {
+    // Regression: DensityPlot ignored `Mesh`/`MeshFunctions`, so no mesh
+    // lines were drawn (ContourPlot already drew them). A lone function
+    // stands for a one-element `MeshFunctions` list.
+    clear_state();
+    let plain = interpret(
+      "ExportString[DensityPlot[x + y, {x, 0, 1}, {y, 0, 1}], \"SVG\"]",
+    )
+    .unwrap();
+    let meshed = interpret(
+      "ExportString[DensityPlot[x + y, {x, 0, 1}, {y, 0, 1}, Mesh -> 5, \
+       MeshFunctions -> (#1 + #2 &)], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(
+      meshed.matches("<polyline").count(),
+      plain.matches("<polyline").count() + 5,
+      "five diagonal mesh lines expected"
+    );
+    // One line per level, from the plot's symbolic form.
+    assert_eq!(
+      interpret(
+        "Count[DensityPlot[x, {x, 0, 1}, {y, 0, 1}, Mesh -> 3, \
+         MeshFunctions -> {#1 &}][[1]], _Line, Infinity]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn test_show_keeps_density_plot_domain_as_plot_range() {
+    // Regression: `Show[DensityPlot[…], Graphics[Text[…]]]` stretched the
+    // axes to cover labels placed beyond the plotted domain, and with
+    // `ImageSize` + `ImagePadding` the plot was stretched to fill the
+    // padded area instead of keeping its square `AspectRatio`.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Show[DensityPlot[x + y, {x, 0, 1}, {y, 0, 1}], \
+       Graphics[Text[\"label\", {-0.1, 1.05}]], ImageSize -> {450, 450}, \
+       ImagePadding -> {{80, 80}, {25, 35}}, PlotRangeClipping -> False], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">1.2<") == false, "axes must stop at 1: {svg}");
+    assert!(
+      svg.contains("translate(80,85)"),
+      "square plot centred: {svg:.300}"
+    );
+  }
+
+  #[test]
   fn test_vector_plot_epilog_draws_extra_primitives() {
     // Regression: VectorPlot silently dropped its Epilog option entirely,
     // so markers a Wolfram Demonstration draws over the field (e.g. the
