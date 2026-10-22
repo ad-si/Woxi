@@ -5332,7 +5332,7 @@ fn with_plot_label_above(
      overflow=\"visible\">\n{}\n</svg>\n\
      <text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
      dominant-baseline=\"central\" font-family=\"sans-serif\" \
-     font-size=\"{font:.0}\" fill=\"{fill}\">{label}</text>\n</svg>\n",
+     font-size=\"{font:.0}\" fill=\"{fill}\" xml:space=\"preserve\">{label}</text>\n</svg>\n",
     svg.trim(),
     w / 2.0,
     gutter / 2.0,

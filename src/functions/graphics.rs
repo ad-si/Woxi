@@ -10841,7 +10841,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{label_font}\" fill=\"#333333\">",
+       font-family=\"sans-serif\" font-size=\"{label_font}\" fill=\"#333333\" \
+       xml:space=\"preserve\">",
     ));
     for (i, line) in lines.iter().enumerate() {
       if i == 0 {
