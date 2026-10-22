@@ -888,7 +888,7 @@ mod polyhedron_data_tests {
                 (21 + 14 Sqrt[2])/3]}]"#
       )
       .unwrap(),
-      "{{1}, 0}"
+      "{{1.}, 0}"
     );
     assert_eq!(
       interpret(r#"PolyhedronData["TruncatedCube", "Inradius"]"#).unwrap(),
