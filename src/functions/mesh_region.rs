@@ -56,8 +56,15 @@ pub fn parse_mesh(expr: &Expr) -> Option<Mesh> {
   let Expr::List(coords) = &args[0] else {
     return None;
   };
-  let Expr::List(cell_specs) = &args[1] else {
-    return None;
+  // A single cell primitive may stand without the enclosing list.
+  let single_spec;
+  let cell_specs: &[Expr] = match &args[1] {
+    Expr::List(specs) => specs,
+    spec @ Expr::FunctionCall { .. } => {
+      single_spec = [spec.clone()];
+      &single_spec
+    }
+    _ => return None,
   };
   let mut cells: Vec<Vec<Vec<usize>>> =
     vec![Vec::new(), Vec::new(), Vec::new()];
@@ -72,7 +79,7 @@ pub fn parse_mesh(expr: &Expr) -> Option<Mesh> {
     let dimension = match head.as_str() {
       "Point" => 0,
       "Line" => 1,
-      "Polygon" => 2,
+      "Polygon" | "Triangle" => 2,
       _ => return None,
     };
     if spec_args.len() != 1 {
@@ -80,7 +87,12 @@ pub fn parse_mesh(expr: &Expr) -> Option<Mesh> {
     }
     // Either one index list, or a list of them.
     if let Some(single) = index_list(&spec_args[0]) {
-      cells[dimension].push(single);
+      if dimension == 1 && single.len() > 2 {
+        // A polyline `Line[{1, 2, 3}]` stands for its consecutive edges.
+        cells[1].extend(single.windows(2).map(<[usize]>::to_vec));
+      } else {
+        cells[dimension].push(single);
+      }
     } else if let Expr::List(groups) = &spec_args[0] {
       for group in groups {
         cells[dimension].push(index_list(group)?);
@@ -569,4 +581,202 @@ pub fn mesh_accessor_ast(
     },
     _ => Ok(original()),
   }
+}
+
+/// Twice the signed area of the triangle `a b c` (positive when it winds
+/// counter-clockwise).
+fn cross(a: (f64, f64), b: (f64, f64), c: (f64, f64)) -> f64 {
+  (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
+}
+
+/// Ear-clip a simple polygon, given as indices into `pts` in either winding,
+/// into counter-clockwise triangles. Vertices that sit on a straight edge
+/// are dropped rather than emitted as zero-area triangles.
+fn ear_clip(pts: &[(f64, f64)], indices: &[usize]) -> Option<Vec<[usize; 3]>> {
+  let mut ring: Vec<usize> = indices.to_vec();
+  let at = |i: usize| pts.get(i - 1).copied();
+  let mut area2 = 0.0;
+  for k in 0..ring.len() {
+    let a = at(ring[k])?;
+    let b = at(ring[(k + 1) % ring.len()])?;
+    area2 += a.0 * b.1 - b.0 * a.1;
+  }
+  if area2 < 0.0 {
+    ring.reverse();
+  }
+  let mut triangles = Vec::new();
+  while ring.len() > 3 {
+    let n = ring.len();
+    let mut clipped = false;
+    for k in 0..n {
+      let (ia, ib, ic) = (ring[(k + n - 1) % n], ring[k], ring[(k + 1) % n]);
+      let (a, b, c) = (at(ia)?, at(ib)?, at(ic)?);
+      let turn = cross(a, b, c);
+      if turn == 0.0 {
+        ring.remove(k);
+        clipped = true;
+        break;
+      }
+      if turn < 0.0 {
+        continue;
+      }
+      let blocked = ring.iter().any(|&other| {
+        if other == ia || other == ib || other == ic {
+          return false;
+        }
+        let Some(p) = at(other) else { return false };
+        if p == a || p == b || p == c {
+          return false;
+        }
+        cross(a, b, p) >= 0.0 && cross(b, c, p) >= 0.0 && cross(c, a, p) >= 0.0
+      });
+      if !blocked {
+        triangles.push([ia, ib, ic]);
+        ring.remove(k);
+        clipped = true;
+        break;
+      }
+    }
+    if !clipped {
+      return None;
+    }
+  }
+  if ring.len() == 3 && cross(at(ring[0])?, at(ring[1])?, at(ring[2])?) != 0.0 {
+    triangles.push([ring[0], ring[1], ring[2]]);
+  }
+  Some(triangles)
+}
+
+impl Mesh {
+  fn planar_points(&self) -> Option<Vec<(f64, f64)>> {
+    self
+      .coordinates
+      .iter()
+      .map(|c| match c {
+        Expr::List(xy) if xy.len() == 2 => Some((
+          crate::functions::math_ast::try_eval_to_f64(&xy[0])?,
+          crate::functions::math_ast::try_eval_to_f64(&xy[1])?,
+        )),
+        _ => None,
+      })
+      .collect()
+  }
+
+  /// Triangles (1-based vertex indices) that tile a planar region: each
+  /// 2-cell, or the loop a boundary mesh of lines encloses, ear-clipped.
+  fn triangle_indices(&self) -> Option<Vec<[usize; 3]>> {
+    let pts = self.planar_points()?;
+    let loops: Vec<Vec<usize>> = if !self.cells[2].is_empty() {
+      self.cells[2].clone()
+    } else if self.boundary {
+      vec![self.boundary_loop()?]
+    } else {
+      return None;
+    };
+    let mut triangles = Vec::new();
+    for ring in loops {
+      if ring.len() < 3 {
+        return None;
+      }
+      triangles.extend(ear_clip(&pts, &ring)?);
+    }
+    Some(triangles)
+  }
+}
+
+/// `TriangulateMesh[mesh]`: the planar region as a `MeshRegion` of triangles.
+pub fn triangulate_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let Some(mesh) = parse_mesh(&args[0]) else {
+    return Ok(unevaluated("TriangulateMesh", args));
+  };
+  let Some(triangles) = mesh.triangle_indices() else {
+    return Ok(unevaluated("TriangulateMesh", args));
+  };
+  let cells: Vec<Expr> = triangles
+    .iter()
+    .map(|t| Expr::List(t.iter().map(|&i| Expr::Integer(i as i128)).collect()))
+    .collect();
+  Ok(call(
+    "MeshRegion",
+    vec![
+      Expr::List(mesh.coordinates.clone().into()),
+      call1("Triangle", Expr::List(cells.into())),
+    ],
+  ))
+}
+
+/// Gauss–Legendre nodes and weights on `[0, 1]`.
+fn gauss_legendre_unit(n: usize) -> Vec<(f64, f64)> {
+  (0..n)
+    .map(|i| {
+      let mut x =
+        (std::f64::consts::PI * (i as f64 + 0.75) / (n as f64 + 0.5)).cos();
+      let mut dp = 1.0;
+      for _ in 0..100 {
+        let (mut p0, mut p1) = (1.0, x);
+        for k in 2..=n {
+          let kf = k as f64;
+          let p2 = ((2.0 * kf - 1.0) * x * p1 - (kf - 1.0) * p0) / kf;
+          p0 = p1;
+          p1 = p2;
+        }
+        dp = n as f64 * (x * p1 - p0) / (x * x - 1.0);
+        let dx = p1 / dp;
+        x -= dx;
+        if dx.abs() < 1e-15 {
+          break;
+        }
+      }
+      (f64::midpoint(x, 1.0), 1.0 / ((1.0 - x * x) * dp * dp))
+    })
+    .collect()
+}
+
+/// `NIntegrate[f, Element[{x, y}, mesh]]`: Gauss–Legendre quadrature over
+/// the triangles tiling a planar mesh region. `None` when the region is not a
+/// planar mesh or the integrand does not evaluate to a number.
+pub fn nintegrate_over_mesh(
+  integrand: &Expr,
+  vars: &[String],
+  region: &Expr,
+) -> Option<Expr> {
+  let mesh = parse_mesh(region)?;
+  if vars.len() != 2 {
+    return None;
+  }
+  let pts = mesh.planar_points()?;
+  let nodes = gauss_legendre_unit(8);
+  let mut total = 0.0;
+  for [ia, ib, ic] in mesh.triangle_indices()? {
+    let (a, b, c) = (pts[ia - 1], pts[ib - 1], pts[ic - 1]);
+    let area2 = cross(a, b, c).abs();
+    for &(s, ws) in &nodes {
+      for &(t, wt) in &nodes {
+        let x = a.0 + s * ((b.0 - a.0) + t * (c.0 - b.0));
+        let y = a.1 + s * ((b.1 - a.1) + t * (c.1 - b.1));
+        let value = crate::syntax::substitute_variable(
+          &crate::syntax::substitute_variable(
+            integrand,
+            &vars[0],
+            &Expr::Real(x),
+          ),
+          &vars[1],
+          &Expr::Real(y),
+        );
+        let value = crate::evaluator::evaluate_expr_to_expr(&value).ok()?;
+        let f = crate::functions::math_ast::try_eval_to_f64(&value)?;
+        total += area2 * ws * wt * s * f;
+      }
+    }
+  }
+  // Quadrature round-off (`6.000000000000004` for an exact `6`) is below
+  // the precision the integral is good to; keep twelve significant digits.
+  if total != 0.0 && total.is_finite() {
+    let scale = 10f64.powi(11 - total.abs().log10().floor() as i32);
+    let rounded = (total * scale).round() / scale;
+    if (rounded - total).abs() <= 1e-12 * total.abs() {
+      total = rounded;
+    }
+  }
+  Some(Expr::Real(total))
 }

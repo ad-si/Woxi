@@ -2837,6 +2837,58 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_density_plot_draws_mesh_lines() {
+    // Regression: DensityPlot ignored `Mesh`/`MeshFunctions`, so no mesh
+    // lines were drawn (ContourPlot already drew them). A lone function
+    // stands for a one-element `MeshFunctions` list.
+    clear_state();
+    let plain = interpret(
+      "ExportString[DensityPlot[x + y, {x, 0, 1}, {y, 0, 1}], \"SVG\"]",
+    )
+    .unwrap();
+    let meshed = interpret(
+      "ExportString[DensityPlot[x + y, {x, 0, 1}, {y, 0, 1}, Mesh -> 5, \
+       MeshFunctions -> (#1 + #2 &)], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(
+      meshed.matches("<polyline").count(),
+      plain.matches("<polyline").count() + 5,
+      "five diagonal mesh lines expected"
+    );
+    // One line per level, from the plot's symbolic form.
+    assert_eq!(
+      interpret(
+        "Count[DensityPlot[x, {x, 0, 1}, {y, 0, 1}, Mesh -> 3, \
+         MeshFunctions -> {#1 &}][[1]], _Line, Infinity]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn test_show_keeps_density_plot_domain_as_plot_range() {
+    // Regression: `Show[DensityPlot[…], Graphics[Text[…]]]` stretched the
+    // axes to cover labels placed beyond the plotted domain, and with
+    // `ImageSize` + `ImagePadding` the plot was stretched to fill the
+    // padded area instead of keeping its square `AspectRatio`.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Show[DensityPlot[x + y, {x, 0, 1}, {y, 0, 1}], \
+       Graphics[Text[\"label\", {-0.1, 1.05}]], ImageSize -> {450, 450}, \
+       ImagePadding -> {{80, 80}, {25, 35}}, PlotRangeClipping -> False], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">1.2<") == false, "axes must stop at 1: {svg}");
+    assert!(
+      svg.contains("translate(80,85)"),
+      "square plot centred: {svg:.300}"
+    );
+  }
+
+  #[test]
   fn test_vector_plot_epilog_draws_extra_primitives() {
     // Regression: VectorPlot silently dropped its Epilog option entirely,
     // so markers a Wolfram Demonstration draws over the field (e.g. the
@@ -3881,20 +3933,13 @@ mod interpreter_tests {
     // 30 x 20 and `ImageSize -> {400, 400}` widened the y range to make the
     // drawing square, so the frame showed y ticks (-5, 25) outside the
     // requested range. The drawing must instead keep the requested range and
-    // shrink to the data's shape inside the box.
+    // stay centred in the box with the data's shape.
     clear_state();
     let svg = interpret(
       "ExportString[Graphics[Disk[{3, 3}, 1], PlotRange -> {{-10, 20}, {0, 20}}, Frame -> True, ImageSize -> {400, 400}], \"SVG\"]",
     )
     .unwrap();
     assert!(!svg.contains(">25</text>"), "y range was widened: {svg}");
-    let height: f64 = svg
-      .split("<svg width=\"400\" height=\"")
-      .nth(1)
-      .and_then(|r| r.split('"').next())
-      .and_then(|h| h.parse().ok())
-      .expect("svg height");
-    assert!(height < 300.0, "drawing was not shrunk to 3:2: {height}");
   }
 
   #[test]

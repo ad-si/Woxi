@@ -5310,3 +5310,18 @@ but not summed in closed form (the kernel gives `(-1 + k^(q + h q))/(-1 +
 k^q)`). Applying a definition stored from it to numbers evaluates correctly.
 Steps that do not divide a symbolic span (`Sum[k^i, {i, 0, n, 2}]`) stay
 unevaluated.
+
+## `NDSolve` of complex periodic PDEs
+
+A complex-valued solution of a 1-D PDE with periodic boundaries (e.g. the
+nonlinear Schrödinger equation) is returned as
+`u -> Function[{t, x}, re[t, x] + I im[t, x]]` built from two real
+`InterpolatingFunction`s, where `wolframscript` returns a single complex
+`InterpolatingFunction`. Values agree to the solver tolerance, but the
+printed form of the result differs.
+
+## HighlightMesh draws no highlighting
+
+`HighlightMesh[mesh, spec]` evaluates to the bare mesh. wolframscript also
+highlights the cells `spec` names and, for `Labeled[0, "Index"]`, writes each
+vertex's index next to it; Woxi draws neither.
