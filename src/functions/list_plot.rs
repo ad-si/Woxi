@@ -982,6 +982,14 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           let (x, y) =
             crate::functions::plot::frame_tick_axes_visible(replacement);
           opts.frame_ticks = x || y;
+          let (bottom, left) =
+            crate::functions::plot::frame_explicit_ticks(replacement);
+          if let Some(t) = bottom {
+            opts.ticks_x = t;
+          }
+          if let Some(t) = left {
+            opts.ticks_y = t;
+          }
         }
         "Axes" => {
           if let Some(axes) =

@@ -8379,6 +8379,27 @@ mod plot3d {
       );
     }
 
+    // `ListPlot` honours explicit `{position, label}` ticks on the bottom
+    // and left frame edges, as `Plot` does, instead of the automatic ones.
+    #[test]
+    fn list_plot_frame_ticks_use_explicit_labels() {
+      let svg = export_svg(
+        r#"ListPlot[{{1, 1}, {2, 2}}, Frame -> True,
+          FrameTicks -> {{{{1.5, "lo"}, {1.8, "hi"}}, None},
+            {{{1, "one"}, {2, "two"}}, None}}]"#,
+      );
+      for label in ["lo", "hi", "one", "two"] {
+        assert!(
+          svg.contains(&format!(">{label}</text>")),
+          "missing tick label {label}: {svg}"
+        );
+      }
+      assert!(
+        !svg.contains(">1.2</text>"),
+        "automatic ticks must be replaced: {svg}"
+      );
+    }
+
     // `FrameTicks -> False` keeps the border but drops the tick marks and
     // their labels, and with them the gutter the labels needed.
     #[test]
