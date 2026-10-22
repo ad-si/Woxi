@@ -2738,6 +2738,37 @@ mod graphics {
       assert!(!svg.contains(">yout</text>"), "{svg}");
     }
 
+    /// `Ticks -> False` (alone or on both sides) hides every tick label,
+    /// the same as `Ticks -> None`.
+    #[test]
+    fn ticks_false_hides_the_tick_labels() {
+      for spec in ["False", "{False, False}", "{None, False}", "None"] {
+        let svg = export_svg(&format!(
+          "Plot[x^2, {{x, 0, 1}}, Ticks -> {spec}]"
+        ));
+        assert!(!svg.contains("<text"), "Ticks -> {spec}: {svg}");
+      }
+      let svg = export_svg("Plot[x^2, {x, 0, 1}]");
+      assert!(svg.contains("<text"), "{svg}");
+    }
+
+    /// A machine real inside a `TraditionalForm` caption of a labeled plot
+    /// is shown to six significant figures, not with its full digits.
+    #[test]
+    fn traditional_form_caption_rounds_reals() {
+      // The picture a notebook front end (Woxi Studio) shows for a bare
+      // `Labeled`, not the `ExportString` route.
+      let svg = woxi::interpret_with_stdout(
+        "Labeled[Plot[x, {x, 0, 1}], Style[Text[TraditionalForm[\
+         (1 + 1/x)^(x + 0.09999999999999998)]], Blue, 15]]",
+      )
+      .unwrap()
+      .graphics
+      .expect("a labeled plot renders as a graphic");
+      assert!(!svg.contains("0.0999999"), "{svg}");
+      assert!(svg.contains("0.1"), "{svg}");
+    }
+
     /// Explicit tick positions that depend on variables are evaluated, so a
     /// plot whose range and ticks both follow a variable keeps its labels.
     #[test]

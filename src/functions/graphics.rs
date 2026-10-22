@@ -4180,10 +4180,10 @@ fn graphics_text_content(expr: &Expr) -> String {
         && args.len() == 1
         && !matches!(args[0], Expr::String(_)) =>
     {
-      box_expr_to_plain(
+      box_expr_to_plain(&crate::strip_number_precision_markers(
         &crate::evaluator::dispatch::complex_and_special::
           expr_to_box_form_traditional(&args[0]),
-      )
+      ))
     }
     // `StandardForm[expr]` / `OutputForm[expr]` ask for `expr` to be set in
     // that form; inside a picture everything is typeset already, so the
@@ -13440,10 +13440,10 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         "TraditionalForm"
           if args.len() == 1 && !matches!(args[0], Expr::String(_)) =>
         {
-          boxes_to_svg(
+          boxes_to_svg(&crate::strip_number_precision_markers(
             &crate::evaluator::dispatch::complex_and_special::
               expr_to_box_form_traditional(&args[0]),
-          )
+          ))
         }
 
         // Presentation wrappers display their content only.

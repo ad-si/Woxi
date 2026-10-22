@@ -9678,9 +9678,20 @@ pub(crate) fn apply_common_plot_option(
       }
     }
     "Ticks" => match replacement {
-      Expr::Identifier(s) if s == "None" => plot_opts.ticks = false,
+      Expr::Identifier(s) if s == "None" || s == "False" => {
+        plot_opts.ticks = false
+      }
       Expr::Identifier(s) if s == "Automatic" || s == "All" => {
         plot_opts.ticks = true;
+      }
+      // `None` and `False` on both sides is `Ticks -> None`.
+      Expr::List(items)
+        if items.len() == 2
+          && items.iter().all(
+            |i| matches!(i, Expr::Identifier(s) if s == "None" || s == "False"),
+          ) =>
+      {
+        plot_opts.ticks = false;
       }
       // `Ticks -> {xspec, yspec}`: each side is None, Automatic, or an
       // explicit list of positions (each optionally `{pos, label}`).
