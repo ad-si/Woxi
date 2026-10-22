@@ -17607,6 +17607,9 @@ fn grid_svg_styled_internal(
   // (1-based from the start, negative from the end).
   let mut col_div_rules: Vec<(i64, Option<Color>)> = Vec::new();
   let mut row_div_rules: Vec<(i64, Option<Color>)> = Vec::new();
+  // `ItemStyle -> {cols, rows}`: text colours per column / row, cycled.
+  let mut item_col_colors: Vec<Option<Color>> = Vec::new();
+  let mut item_row_colors: Vec<Option<Color>> = Vec::new();
   let mut background_color: Option<Color> = None; // uniform background
   let mut col_backgrounds: Vec<Option<Color>> = Vec::new(); // per-column bg
   // Index-rule lists name positions, so they do not cycle over the rest.
@@ -17870,6 +17873,29 @@ fn grid_svg_styled_internal(
           }
           _ => {}
         },
+        "ItemStyle" => {
+          let colors_of = |spec: &Expr| -> Vec<Option<Color>> {
+            match spec {
+              Expr::List(items) => items.iter().map(parse_color).collect(),
+              single => vec![parse_color(single)],
+            }
+          };
+          match replacement.as_ref() {
+            Expr::List(specs)
+              if specs.len() == 2
+                && specs.iter().any(|s| matches!(s, Expr::List(_))) =>
+            {
+              item_col_colors = colors_of(&specs[0]);
+              item_row_colors = colors_of(&specs[1]);
+            }
+            // A lone colour styles every item.
+            single => {
+              if let Some(c) = parse_color(single) {
+                item_col_colors = vec![Some(c)];
+              }
+            }
+          }
+        }
         "Spacings" => {
           // Spacings -> {h, v} or Spacings -> n
           match replacement.as_ref() {
@@ -18645,6 +18671,18 @@ fn grid_svg_styled_internal(
         let text_fill = if cell_hidden {
           "none".to_string()
         } else if let Some(ref c) = cell_color {
+          c.to_svg_rgb()
+        } else if let Some(c) = item_row_colors
+          .get(i % item_row_colors.len().max(1))
+          .copied()
+          .flatten()
+          .or_else(|| {
+            item_col_colors
+              .get(j % item_col_colors.len().max(1))
+              .copied()
+              .flatten()
+          })
+        {
           c.to_svg_rgb()
         } else if link_href.is_some() {
           "#1a73e8".to_string()
