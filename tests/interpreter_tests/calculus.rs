@@ -7831,6 +7831,28 @@ mod dsolve {
     );
   }
 
+  // Regression: a constant factor in front of a parenthesised sum, as in
+  // `y'[t] == k (a - y[t] + f[t])` (Newton's law of cooling with a driven
+  // ambient temperature), made the term classifier give up, so DSolve
+  // returned unevaluated. Checked by substituting the solution back.
+  #[test]
+  fn first_order_linear_factored_rhs() {
+    assert_eq!(
+      interpret(
+        "sol = y[t] /. First[DSolve[{y'[t] == 2 (3 - y[t] + Sin[t]), y[0] == 1}, y[t], t]]; {sol /. t -> 0, Abs[N[(D[sol, t] - 2 (3 - sol + Sin[t])) /. t -> 7/10]] < 10^-9}"
+      )
+      .unwrap(),
+      "{1, True}"
+    );
+    assert_eq!(
+      interpret(
+        "sol = y[t] /. First[DSolve[{y'[t] == k (60 - y[t] + 15 Sin[2 Pi t]), y[0] == 50}, y[t], t]]; {sol /. {t -> 0, k -> 3/2}, N[(D[sol, t] - k (60 - sol + 15 Sin[2 Pi t])) /. {t -> 7/10, k -> 3/2}] < 10^-9}"
+      )
+      .unwrap(),
+      "{60 - (45*Pi)/(9/4 + 4*Pi^2) - (10*(9/4 - (9*Pi)/2 + 4*Pi^2))/(9/4 + 4*Pi^2), True}"
+    );
+  }
+
   // First-order linear inhomogeneous ODEs: the integrating factor is
   // distributed over the particular and homogeneous parts, matching
   // wolframscript, while a grouped particular (e.g. a trig combination) stays
