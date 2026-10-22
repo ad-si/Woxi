@@ -81,6 +81,16 @@ pub fn dispatch_datetime_functions(
     "DateValue" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::date_value_ast(args));
     }
+    // DateValue[elem]: the element of the current date.
+    "DateValue"
+      if args.len() == 1
+        && matches!(&args[0], Expr::String(_) | Expr::List(_)) =>
+    {
+      return Some(crate::functions::datetime_ast::date_value_ast(&[
+        Expr::Identifier("Now".into()),
+        args[0].clone(),
+      ]));
+    }
     "DateWithinQ" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::date_within_q_ast(args));
     }

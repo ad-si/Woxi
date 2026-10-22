@@ -542,6 +542,14 @@ pub(crate) fn extract_date_components(expr: &Expr) -> Option<Vec<f64>> {
     {
       extract_date_components(&args[0])
     }
+    // A date string: "2012-01-01", "Jan 1 2012", "Wed 4 Jan 2012 00:00:00".
+    Expr::String(text) => {
+      if let Some(parts) = parse_iso_date_components(text) {
+        return extract_date_components(&Expr::List(parts.into()));
+      }
+      let (y, m, d) = parse_date_string(text)?;
+      Some(vec![y as f64, m as f64, d as f64])
+    }
     _ => None,
   }
 }
@@ -575,6 +583,105 @@ pub(crate) fn parse_date_string(s: &str) -> Option<(i64, i64, i64)> {
       .unwrap_or(t);
     t.parse::<i64>().ok()
   };
+
+  // Letters and digits written together are separate tokens: "Jan1" is
+  // "Jan 1". A two-digit year is in this century or the last ("26" is
+  // 2026, "85" is 1985), and a date without a year is in the current one.
+  let mut tokens: Vec<String> = Vec::new();
+  for word in s.split(|c: char| c.is_whitespace() || c == ',') {
+    // A clock time ("00:00:00") does not change the day.
+    if word.contains(':') {
+      continue;
+    }
+    let mut cur = String::new();
+    for c in word.chars() {
+      if cur
+        .chars()
+        .last()
+        .is_some_and(|l| l.is_ascii_digit() != c.is_ascii_digit())
+      {
+        tokens.push(std::mem::take(&mut cur));
+      }
+      cur.push(c);
+    }
+    if !cur.is_empty() {
+      tokens.push(cur);
+    }
+  }
+  // An ordinal suffix belongs to its number: "21st" stays one token.
+  let mut merged: Vec<String> = Vec::new();
+  for tok in tokens {
+    if matches!(tok.to_lowercase().as_str(), "st" | "nd" | "rd" | "th")
+      && merged
+        .last()
+        .is_some_and(|p| p.chars().all(|c| c.is_ascii_digit()))
+    {
+      merged.last_mut().unwrap().push_str(&tok);
+    } else {
+      merged.push(tok);
+    }
+  }
+  // A weekday name and a clock time ("Wed 4 Jan 2012 00:00:00", the way
+  // DateString writes a date) do not change the day.
+  let weekdays = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+  ];
+  let tokens: Vec<String> = merged
+    .into_iter()
+    .filter(|tok| {
+      let lower = tok.to_lowercase();
+      !(lower.len() >= 3 && weekdays.iter().any(|w| w.starts_with(&*lower)))
+    })
+    .collect();
+  let year_of = |tok: &str| -> Option<i64> {
+    if !tok.chars().all(|c| c.is_ascii_digit()) {
+      return None;
+    }
+    let y = tok.parse::<i64>().ok()?;
+    Some(if tok.len() == 2 {
+      if y >= 69 { 1900 + y } else { 2000 + y }
+    } else {
+      y
+    })
+  };
+  let is_month = |tok: &str| {
+    tok.len() >= 3
+      && tok.chars().all(char::is_alphabetic)
+      && months.iter().any(|m| m.starts_with(&*tok.to_lowercase()))
+  };
+  let month_of = |tok: &str| {
+    let lower = tok.to_lowercase();
+    months
+      .iter()
+      .position(|m| m.starts_with(&*lower))
+      .map(|i| i as i64 + 1)
+  };
+  let current_year = || {
+    use chrono::Datelike;
+    chrono::Local::now().year() as i64
+  };
+  let toks: Vec<&str> = tokens.iter().map(String::as_str).collect();
+  match toks.as_slice() {
+    [d, m, y] | [m, d, y] if is_month(m) && !is_month(d) => {
+      if let (Some(day), Some(month), Some(year)) =
+        (parse_day(d), month_of(m), year_of(y))
+      {
+        return Some((year, month, day));
+      }
+    }
+    [d, m] | [m, d] if is_month(m) && !is_month(d) => {
+      if let (Some(day), Some(month)) = (parse_day(d), month_of(m)) {
+        return Some((current_year(), month, day));
+      }
+    }
+    _ => {}
+  }
 
   let parts: Vec<&str> = s.split_whitespace().collect();
   if parts.len() == 3 {
@@ -1549,6 +1656,33 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let date_arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
   let delta_arg = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
 
+  // A date string comes back as a date string, in DateString's form:
+  // DatePlus["Jan 1 2012", 3] is "Wed 4 Jan 2012 00:00:00".
+  if matches!(date_arg, Expr::String(_))
+    && let Some(components) = extract_date_components(&date_arg)
+  {
+    let list = Expr::List(
+      components
+        .iter()
+        .map(|c| {
+          if c.fract() == 0.0 {
+            Expr::Integer(*c as i128)
+          } else {
+            Expr::Real(*c)
+          }
+        })
+        .collect(),
+    );
+    let moved = date_plus_ast(&[list, delta_arg.clone()])?;
+    if matches!(moved, Expr::List(_)) {
+      return crate::evaluator::evaluate_function_call_ast(
+        "DateString",
+        &[moved],
+      );
+    }
+    return Ok(moved);
+  }
+
   // Track whether the input is a DateObject so we can wrap the result
   let input_is_date_object = matches!(&date_arg, Expr::FunctionCall { name, .. } if name == "DateObject");
 
@@ -2235,6 +2369,22 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return date_string_ast(&[date_list, args[0].clone()]);
     }
     return Ok(Expr::String(s.clone()));
+  }
+
+  // DateString[dateString, fmt]: read the string as a date first.
+  if args.len() >= 2
+    && let Expr::String(_) = &date_arg
+    && let Some(components) = extract_date_components(&date_arg)
+  {
+    let list = Expr::List(
+      components
+        .iter()
+        .map(|c| Expr::Integer(*c as i128))
+        .collect(),
+    );
+    let mut new_args = vec![list];
+    new_args.extend(args[1..].iter().cloned());
+    return date_string_ast(&new_args);
   }
 
   // Extract date components — handle DateObject[{y,m,d,...}, ...] by extracting first arg

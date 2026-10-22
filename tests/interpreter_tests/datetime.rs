@@ -4484,3 +4484,56 @@ mod retagging_an_existing_date {
     );
   }
 }
+
+// Date strings as Demonstrations write them: no year, letters and digits run
+// together, two-digit years, and DateString's own output read back.
+mod date_strings {
+  use super::*;
+
+  #[test]
+  fn string_dates_in_date_arithmetic() {
+    assert_eq!(
+      interpret("DayCount[\"Jan 1 2012\", \"01 Jan 26\"]").unwrap(),
+      "5114"
+    );
+    assert_eq!(
+      interpret("DateDifference[\"Jan 1 2012\", \"2026-01-01\"]").unwrap(),
+      "Quantity[5114, Days]"
+    );
+    assert_eq!(
+      interpret("DatePlus[\"Jan 1 2012\", 3]").unwrap(),
+      "Wed 4 Jan 2012 00:00:00"
+    );
+    assert_eq!(
+      interpret("DatePlus[\"2012-01-01\", {3, \"Month\"}]").unwrap(),
+      "Sun 1 Apr 2012 00:00:00"
+    );
+    assert_eq!(
+      interpret(
+        "DateString[\"Wed 4 Jan 2012 00:00:00\", {\"Day\", \" \", \
+         \"MonthNameShort\", \" \", \"YearShort\"}]"
+      )
+      .unwrap(),
+      "04 Jan 12"
+    );
+  }
+
+  #[test]
+  fn date_strings_without_a_year_are_this_year() {
+    assert_eq!(
+      interpret("DateObject[\"Jan1\"][[1, 2 ;;]]").unwrap(),
+      "{1, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "DateObject[\"Jan1\"][[1, 1]] == DateValue[\"Year\"] == DateList[][[1]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DateObject[\"August 21st, 2017\"]").unwrap(),
+      "DateObject[{2017, 8, 21}, Day]"
+    );
+  }
+}
