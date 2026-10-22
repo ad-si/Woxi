@@ -10326,6 +10326,19 @@ mod plot3d {
     }
 
     #[test]
+    fn plot_legends_typeset_expressions() {
+      let svg = export_svg(
+        "ListPlot[{{1, 2}, {2, 3}}, PlotLegends -> \
+         {Subscript[v, 1] == Subscript[k, 2] Sin[Subscript[k, 1] x], \
+          Cos[Subscript[a, 3]], a < b}]",
+      );
+      assert!(svg.contains("v₁ == Sin[x k₁] k₂"), "{svg}");
+      assert!(svg.contains("Cos[a₃]"), "{svg}");
+      assert!(svg.contains("a &lt; b"), "{svg}");
+      assert!(!svg.contains("Subscript["), "{svg}");
+    }
+
+    #[test]
     fn plot_legends_automatic() {
       let svg = export_svg(
         "Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> Automatic]",
