@@ -38860,6 +38860,50 @@ mod short_in_boxes {
   }
 }
 
+mod popup_menu_in_layout_tests {
+  use super::*;
+
+  /// A `PopupMenu` placed in a `Row` or `Grid` shows the item its variable
+  /// holds, not its own source text.
+  #[test]
+  fn popup_menu_in_row_draws_as_a_menu() {
+    clear_state();
+    let svg =
+      export_svg("Row[{\"q\", PopupMenu[Dynamic[p], {\"?\", 1, 2}], \"r\"}]");
+    assert!(!svg.contains("PopupMenu"), "{svg}");
+    assert!(!svg.contains("Dynamic"), "{svg}");
+  }
+
+  #[test]
+  fn popup_menu_shows_current_choice_in_grid() {
+    clear_state();
+    let svg = export_svg(
+      "Grid[{{\"a\"}, {Row[{\"q\", PopupMenu[Dynamic[menuPick], {\"?\", 7, 8}]}]}}]",
+    );
+    assert!(!svg.contains("PopupMenu"), "{svg}");
+    let with_choice = {
+      interpret("menuPick = 7").unwrap();
+      export_svg(
+        "Grid[{{\"a\"}, {Row[{\"q\", PopupMenu[Dynamic[menuPick], {\"?\", 7, 8}]}]}}]",
+      )
+    };
+    assert!(with_choice.contains(">7</text>"), "{with_choice}");
+  }
+
+  /// A grid row written `"\n" * {cell}` is the one-cell row `cell`; the
+  /// newline string is invisible space, not text to print.
+  #[test]
+  fn blank_string_times_row_draws_as_the_cell() {
+    clear_state();
+    let svg = export_svg(
+      "Grid[{{\"a\"}, \"\\n\" {Row[{\"q\", PopupMenu[Dynamic[p], {\"?\", 1}]}]}}]",
+    );
+    assert!(!svg.contains("Times"), "{svg}");
+    assert!(!svg.contains("PopupMenu"), "{svg}");
+    assert!(svg.contains(">q</text>"), "{svg}");
+  }
+}
+
 mod framed_graphics_fits_data_shape {
   use super::*;
 
