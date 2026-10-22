@@ -1035,6 +1035,35 @@ mod interpreter_tests {
     assert!(svg.contains("Coin"));
   }
 
+  /// `Legended[Row[{Labeled[g1, …], Labeled[g2, …]}], SwatchLegend[…]]` is
+  /// one composed picture: both panels and the legend. It used to show only
+  /// the last graphic drawn, dropping the other panel and the legend.
+  #[test]
+  fn test_legended_row_of_graphics_shows_every_panel_and_legend() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Legended[Row[{\
+         Labeled[Graphics[Circle[], ImageSize -> {100, 80}], \"left\"], \
+         Labeled[Graphics[Rectangle[], ImageSize -> {120, 80}], \"right\"]}, \
+         Spacer[10]], \
+       SwatchLegend[{Red, Blue}, {\"alpha\", \"beta\"}]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    let width: f64 = svg
+      .strip_prefix("<svg width=\"")
+      .and_then(|rest| rest.split('"').next())
+      .and_then(|w| w.parse().ok())
+      .expect("svg width");
+    assert!(
+      width > 220.0,
+      "both panels should be drawn, got width {width}"
+    );
+    for text in ["left", "right", "alpha", "beta"] {
+      assert!(svg.contains(text), "missing {text} in the picture");
+    }
+  }
+
   /// The picture a cell shows is the one its value *is*, not the last one
   /// drawn while getting there. A Manipulate body that builds several plots
   /// and then picks one — the standard Demonstrations "which view?" control
