@@ -4544,7 +4544,7 @@ fn parse_expression_inner(
   // already correct (e.g. `!a && b` → `And[Not[a], b]`).
   let leading_not_on_first = leading_not_at_start && !operators.is_empty() && {
     let first_op_prec = operator_precedence(&operators[0]);
-    first_op_prec > 18
+    first_op_prec > 180
   };
   if leading_not_on_first {
     // Undo the term-level wrap: terms[0] was set to Not[orig]; unwrap it.
@@ -4579,6 +4579,8 @@ fn parse_expression_inner(
           | "\u{2A75}"
           | "\\[Equal]"
           | "\u{F431}"
+          | "\\[LongEqual]"
+          | "\u{F7D9}"
           | "!="
           | "\u{2260}"
           | "\\[NotEqual]"
@@ -4602,7 +4604,8 @@ fn parse_expression_inner(
       let comp_ops: Vec<ComparisonOp> = operators
         .iter()
         .map(|op| match op.as_str() {
-          "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" => ComparisonOp::Equal,
+          "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "\\[LongEqual]"
+          | "\u{F7D9}" => ComparisonOp::Equal,
           "!=" | "\u{2260}" | "\\[NotEqual]" => ComparisonOp::NotEqual,
           "<" => ComparisonOp::Less,
           "<=" | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" => {
@@ -5360,7 +5363,18 @@ pub fn ends_with_continuing_named_operator(code_tail: &str) -> bool {
 
 /// Get precedence of an operator (higher = binds tighter).
 /// Matches Wolfram Language operator precedence ordering.
-fn operator_precedence(op: &str) -> u8 {
+fn operator_precedence(op: &str) -> u16 {
+  // The scale is ten times `base_operator_precedence`, so the generated
+  // operators can sit between two of the hand-placed levels.
+  if let Some(op) =
+    generic_infix_operator(op.strip_suffix("_NEG").unwrap_or(op))
+  {
+    return op.3;
+  }
+  u16::from(base_operator_precedence(op)) * 10
+}
+
+fn base_operator_precedence(op: &str) -> u8 {
   // `op_NEG` (`@_NEG`, `@@_NEG`, `/@_NEG`, …) is the same operator with a
   // unary-minus'd right operand — see the `_NEG` arm of `make_binary_op` —
   // and always binds exactly like its base. `^_NEG` predates this generic
@@ -5370,7 +5384,7 @@ fn operator_precedence(op: &str) -> u8 {
   if op != "^_NEG"
     && let Some(base) = op.strip_suffix("_NEG")
   {
-    return operator_precedence(base);
+    return base_operator_precedence(base);
   }
   match op {
     ">>" | ">>>" => 0,      // Put/PutAppend (lowest precedence)
@@ -5418,10 +5432,10 @@ fn operator_precedence(op: &str) -> u8 {
     // the right operand absorbs y, y = 1, y /; z, y -> 1. Place at TagSet
     // level so its rhs stays maximally permissive.
     "\\[Function]" | "\u{F4A1}" | "|->" => 3,
-    "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "!=" | "\u{2260}"
-    | "\\[NotEqual]" | "<" | "<=" | "\u{2264}" | "\u{2A7D}"
-    | "\\[LessEqual]" | ">" | ">=" | "\u{2265}" | "\u{2A7E}"
-    | "\\[GreaterEqual]" | "===" | "=!=" => 21, // Comparisons
+    "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "\\[LongEqual]"
+    | "\u{F7D9}" | "!=" | "\u{2260}" | "\\[NotEqual]" | "<" | "<="
+    | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" | ">" | ">=" | "\u{2265}"
+    | "\u{2A7E}" | "\\[GreaterEqual]" | "===" | "=!=" => 21, // Comparisons
     // `;;` (Span, Wolfram precedence 305) sits just below `+` (310) and
     // above every operator Wolfram places under it — `|` (160), `~~` (135),
     // the comparisons, `&&`, `||`, `->`, `/;` and the assignments. Without a
@@ -5550,7 +5564,7 @@ fn build_expr_with_precedence(
   terms: &[Expr],
   operators: &[String],
   term_start: usize,
-  min_prec: u8,
+  min_prec: u16,
 ) -> Expr {
   if term_start >= terms.len() {
     return Expr::Raw(String::new());
@@ -5641,6 +5655,8 @@ fn build_expr_with_precedence(
       || assoc_op_str == "\u{F523}"
       || assoc_op_str == "\\[DoubleRightTee]"
       || assoc_op_str == "\u{22A8}"
+      || generic_infix_operator(assoc_op_str)
+        .is_some_and(|op| op.4 == InfixGrouping::Right)
     {
       prec
     } else {
@@ -5660,7 +5676,9 @@ fn build_expr_with_precedence(
       build_expr_with_precedence(terms, operators, op_idx + 1, next_min_prec);
 
     // Create the binary operation
-    let is_flat_chain_op = matches!(assoc_op_str, "." | "**");
+    let is_flat_chain_op = matches!(assoc_op_str, "." | "**")
+      || generic_infix_operator(assoc_op_str)
+        .is_some_and(|op| op.4 == InfixGrouping::Flat);
     result = if is_cross_op(op_str) && !in_cross_chain {
       // First ⨯ of a chain: group binary, so `(a ⨯ b) ⨯ c` and
       // `Cross[a, b] ⨯ c` both stay `Cross[Cross[a, b], c]`.
@@ -6189,12 +6207,13 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
         }
       }
     }
-    "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "!=" | "\u{2260}"
-    | "\\[NotEqual]" | "<" | "<=" | "\u{2264}" | "\u{2A7D}"
-    | "\\[LessEqual]" | ">" | ">=" | "\u{2265}" | "\u{2A7E}"
-    | "\\[GreaterEqual]" | "===" | "=!=" => {
+    "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "\\[LongEqual]"
+    | "\u{F7D9}" | "!=" | "\u{2260}" | "\\[NotEqual]" | "<" | "<="
+    | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" | ">" | ">=" | "\u{2265}"
+    | "\u{2A7E}" | "\\[GreaterEqual]" | "===" | "=!=" => {
       let comp_op = match op_str {
-        "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" => ComparisonOp::Equal,
+        "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "\\[LongEqual]"
+        | "\u{F7D9}" => ComparisonOp::Equal,
         "!=" | "\u{2260}" | "\\[NotEqual]" => ComparisonOp::NotEqual,
         "<" => ComparisonOp::Less,
         "<=" | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" => {
@@ -6250,6 +6269,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
         call(func_name, vec![left.clone(), right.clone()])
       }
     }
+    _ if generic_infix_operator(op_str).is_some() => {
+      let head = generic_infix_operator(op_str).map(|op| op.2).unwrap();
+      call(head, vec![left.clone(), right.clone()])
+    }
     _ => Expr::Raw(format!(
       "{} {} {}",
       expr_to_string(left),
@@ -6258,6 +6281,1273 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     )),
   }
 }
+
+/// How a chain `a op b op c` of a generated infix operator groups.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum InfixGrouping {
+  /// `Head[a, b, c]`.
+  Flat,
+  /// `Head[Head[a, b], c]`.
+  Left,
+  /// `Head[a, Head[b, c]]`.
+  Right,
+  /// Not chained in Wolfram either.
+  None,
+}
+
+/// The generated infix operator a token spells — its character, or its
+/// `\[Name]` escape.
+fn generic_infix_operator(
+  op: &str,
+) -> Option<&'static (
+  &'static str,
+  &'static str,
+  &'static str,
+  u16,
+  InfixGrouping,
+)> {
+  if let Some(name) = op.strip_prefix("\\[").and_then(|r| r.strip_suffix(']')) {
+    return GENERIC_INFIX_OPERATORS.iter().find(|row| row.1 == name);
+  }
+  GENERIC_INFIX_OPERATORS.iter().find(|row| row.0 == op)
+}
+
+/// Infix operators written with a named character and read as `Head[a, b]`,
+/// beyond the ones the grammar spells out individually: `(character, name,
+/// head, precedence, grouping)`. Generated from wolframscript — each row is
+/// `ToExpression["a\\[Name]b\\[Name]d", InputForm, Hold]` and
+/// `Precedence[Head]` — with the precedence mapped onto the parser's scale
+/// (`operator_precedence`, ×10) by interpolating between operators both
+/// share. Regenerate rather than edit by hand.
+pub static GENERIC_INFIX_OPERATORS: &[(
+  &str,
+  &str,
+  &str,
+  u16,
+  InfixGrouping,
+)] = &[
+  (
+    "\u{F530}",
+    "Application",
+    "Application",
+    565,
+    InfixGrouping::Flat,
+  ), // 645
+  ("\u{2235}", "Because", "Because", 66, InfixGrouping::Left), // 50
+  ("\u{2236}", "Colon", "Colon", 85, InfixGrouping::Flat),     // 80
+  (
+    "\u{2261}",
+    "Congruent",
+    "Congruent",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2210}",
+    "Coproduct",
+    "Coproduct",
+    317,
+    InfixGrouping::Flat,
+  ), // 360
+  ("\u{224D}", "CupCap", "CupCap", 210, InfixGrouping::Flat),  // 290
+  ("\u{2250}", "DotEqual", "DotEqual", 210, InfixGrouping::Flat), // 290
+  (
+    "\u{21D3}",
+    "DoubleDownArrow",
+    "DoubleDownArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{21D0}",
+    "DoubleLeftArrow",
+    "DoubleLeftArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{21D4}",
+    "DoubleLeftRightArrow",
+    "DoubleLeftRightArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{27F8}",
+    "DoubleLongLeftArrow",
+    "DoubleLongLeftArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{27FA}",
+    "DoubleLongLeftRightArrow",
+    "DoubleLongLeftRightArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{27F9}",
+    "DoubleLongRightArrow",
+    "DoubleLongRightArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{21D2}",
+    "DoubleRightArrow",
+    "DoubleRightArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{21D1}",
+    "DoubleUpArrow",
+    "DoubleUpArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{21D5}",
+    "DoubleUpDownArrow",
+    "DoubleUpDownArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2225}",
+    "DoubleVerticalBar",
+    "DoubleVerticalBar",
+    204,
+    InfixGrouping::Flat,
+  ), // 280
+  (
+    "\u{2193}",
+    "DownArrow",
+    "DownArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2913}",
+    "DownArrowBar",
+    "DownArrowBar",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{21F5}",
+    "DownArrowUpArrow",
+    "DownArrowUpArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2950}",
+    "DownLeftRightVector",
+    "DownLeftRightVector",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{295E}",
+    "DownLeftTeeVector",
+    "DownLeftTeeVector",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{21BD}",
+    "DownLeftVector",
+    "DownLeftVector",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{2956}",
+    "DownLeftVectorBar",
+    "DownLeftVectorBar",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{295F}",
+    "DownRightTeeVector",
+    "DownRightTeeVector",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{21C1}",
+    "DownRightVector",
+    "DownRightVector",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{2957}",
+    "DownRightVectorBar",
+    "DownRightVectorBar",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  ("\u{22A4}", "DownTee", "DownTee", 152, InfixGrouping::Left), // 190
+  (
+    "\u{21A7}",
+    "DownTeeArrow",
+    "DownTeeArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2242}",
+    "EqualTilde",
+    "EqualTilde",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{21CC}",
+    "Equilibrium",
+    "Equilibrium",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{22DB}",
+    "GreaterEqualLess",
+    "GreaterEqualLess",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2267}",
+    "GreaterFullEqual",
+    "GreaterFullEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{226B}",
+    "GreaterGreater",
+    "GreaterGreater",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2277}",
+    "GreaterLess",
+    "GreaterLess",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2273}",
+    "GreaterTilde",
+    "GreaterTilde",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{224E}",
+    "HumpDownHump",
+    "HumpDownHump",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{224F}",
+    "HumpEqual",
+    "HumpEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  ("\u{F39E}", "ImplicitPlus", "Plus", 300, InfixGrouping::Left), // 310
+  (
+    "\u{2062}",
+    "InvisibleTimes",
+    "Times",
+    330,
+    InfixGrouping::Flat,
+  ), // 400
+  (
+    "\u{2190}",
+    "LeftArrow",
+    "LeftArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{21E4}",
+    "LeftArrowBar",
+    "LeftArrowBar",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{21C6}",
+    "LeftArrowRightArrow",
+    "LeftArrowRightArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{2961}",
+    "LeftDownTeeVector",
+    "LeftDownTeeVector",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{21C3}",
+    "LeftDownVector",
+    "LeftDownVector",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2959}",
+    "LeftDownVectorBar",
+    "LeftDownVectorBar",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2194}",
+    "LeftRightArrow",
+    "LeftRightArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{294E}",
+    "LeftRightVector",
+    "LeftRightVector",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{21A4}",
+    "LeftTeeArrow",
+    "LeftTeeArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{295A}",
+    "LeftTeeVector",
+    "LeftTeeVector",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{22B2}",
+    "LeftTriangle",
+    "LeftTriangle",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{29CF}",
+    "LeftTriangleBar",
+    "LeftTriangleBar",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{22B4}",
+    "LeftTriangleEqual",
+    "LeftTriangleEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2951}",
+    "LeftUpDownVector",
+    "LeftUpDownVector",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2960}",
+    "LeftUpTeeVector",
+    "LeftUpTeeVector",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{21BF}",
+    "LeftUpVector",
+    "LeftUpVector",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2958}",
+    "LeftUpVectorBar",
+    "LeftUpVectorBar",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{21BC}",
+    "LeftVector",
+    "LeftVector",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{2952}",
+    "LeftVectorBar",
+    "LeftVectorBar",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{22DA}",
+    "LessEqualGreater",
+    "LessEqualGreater",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2266}",
+    "LessFullEqual",
+    "LessFullEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2276}",
+    "LessGreater",
+    "LessGreater",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  ("\u{226A}", "LessLess", "LessLess", 210, InfixGrouping::Flat), // 290
+  (
+    "\u{2272}",
+    "LessTilde",
+    "LessTilde",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{27F5}",
+    "LongLeftArrow",
+    "LongLeftArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{27F7}",
+    "LongLeftRightArrow",
+    "LongLeftRightArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{27F6}",
+    "LongRightArrow",
+    "LongRightArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2199}",
+    "LowerLeftArrow",
+    "LowerLeftArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{2198}",
+    "LowerRightArrow",
+    "LowerRightArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{2213}",
+    "MinusPlus",
+    "MinusPlus",
+    300,
+    InfixGrouping::Left,
+  ), // 310
+  (
+    "\u{2AA2}",
+    "NestedGreaterGreater",
+    "NestedGreaterGreater",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2AA1}",
+    "NestedLessLess",
+    "NestedLessLess",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2262}",
+    "NotCongruent",
+    "NotCongruent",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{226D}",
+    "NotCupCap",
+    "NotCupCap",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2226}",
+    "NotDoubleVerticalBar",
+    "NotDoubleVerticalBar",
+    204,
+    InfixGrouping::Flat,
+  ), // 280
+  (
+    "\u{F400}",
+    "NotEqualTilde",
+    "NotEqualTilde",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{226F}",
+    "NotGreater",
+    "NotGreater",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2271}",
+    "NotGreaterEqual",
+    "NotGreaterEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2269}",
+    "NotGreaterFullEqual",
+    "NotGreaterFullEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F427}",
+    "NotGreaterGreater",
+    "NotGreaterGreater",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2279}",
+    "NotGreaterLess",
+    "NotGreaterLess",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F429}",
+    "NotGreaterSlantEqual",
+    "NotGreaterSlantEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2275}",
+    "NotGreaterTilde",
+    "NotGreaterTilde",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F402}",
+    "NotHumpDownHump",
+    "NotHumpDownHump",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F401}",
+    "NotHumpEqual",
+    "NotHumpEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{22EA}",
+    "NotLeftTriangle",
+    "NotLeftTriangle",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F412}",
+    "NotLeftTriangleBar",
+    "NotLeftTriangleBar",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{22EC}",
+    "NotLeftTriangleEqual",
+    "NotLeftTriangleEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  ("\u{226E}", "NotLess", "NotLess", 210, InfixGrouping::Flat), // 290
+  (
+    "\u{2270}",
+    "NotLessEqual",
+    "NotLessEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2268}",
+    "NotLessFullEqual",
+    "NotLessFullEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2278}",
+    "NotLessGreater",
+    "NotLessGreater",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F422}",
+    "NotLessLess",
+    "NotLessLess",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F424}",
+    "NotLessSlantEqual",
+    "NotLessSlantEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2274}",
+    "NotLessTilde",
+    "NotLessTilde",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F428}",
+    "NotNestedGreaterGreater",
+    "NotNestedGreaterGreater",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F423}",
+    "NotNestedLessLess",
+    "NotNestedLessLess",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2280}",
+    "NotPrecedes",
+    "NotPrecedes",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F42B}",
+    "NotPrecedesEqual",
+    "NotPrecedesEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{22E0}",
+    "NotPrecedesSlantEqual",
+    "NotPrecedesSlantEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{22E8}",
+    "NotPrecedesTilde",
+    "NotPrecedesTilde",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{220C}",
+    "NotReverseElement",
+    "NotReverseElement",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  (
+    "\u{22EB}",
+    "NotRightTriangle",
+    "NotRightTriangle",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F413}",
+    "NotRightTriangleBar",
+    "NotRightTriangleBar",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{22ED}",
+    "NotRightTriangleEqual",
+    "NotRightTriangleEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F42E}",
+    "NotSquareSubset",
+    "NotSquareSubset",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  (
+    "\u{22E2}",
+    "NotSquareSubsetEqual",
+    "NotSquareSubsetEqual",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  (
+    "\u{F42F}",
+    "NotSquareSuperset",
+    "NotSquareSuperset",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  (
+    "\u{22E3}",
+    "NotSquareSupersetEqual",
+    "NotSquareSupersetEqual",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  (
+    "\u{2284}",
+    "NotSubset",
+    "NotSubset",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  (
+    "\u{2288}",
+    "NotSubsetEqual",
+    "NotSubsetEqual",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  (
+    "\u{2281}",
+    "NotSucceeds",
+    "NotSucceeds",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F42D}",
+    "NotSucceedsEqual",
+    "NotSucceedsEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{22E1}",
+    "NotSucceedsSlantEqual",
+    "NotSucceedsSlantEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{22E9}",
+    "NotSucceedsTilde",
+    "NotSucceedsTilde",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2285}",
+    "NotSuperset",
+    "NotSuperset",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  (
+    "\u{2289}",
+    "NotSupersetEqual",
+    "NotSupersetEqual",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  ("\u{2241}", "NotTilde", "NotTilde", 210, InfixGrouping::Flat), // 290
+  (
+    "\u{2244}",
+    "NotTildeEqual",
+    "NotTildeEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2247}",
+    "NotTildeFullEqual",
+    "NotTildeFullEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2249}",
+    "NotTildeTilde",
+    "NotTildeTilde",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F3D1}",
+    "NotVerticalBar",
+    "NotVerticalBar",
+    204,
+    InfixGrouping::Flat,
+  ), // 280
+  (
+    "\u{F3DE}",
+    "PermutationProduct",
+    "PermutationProduct",
+    448,
+    InfixGrouping::Flat,
+  ), // 520
+  (
+    "\u{27C2}",
+    "Perpendicular",
+    "Perpendicular",
+    152,
+    InfixGrouping::Left,
+  ), // 190
+  (
+    "\u{00B1}",
+    "PlusMinus",
+    "PlusMinus",
+    300,
+    InfixGrouping::Left,
+  ), // 310
+  ("\u{227A}", "Precedes", "Precedes", 210, InfixGrouping::Flat), // 290
+  (
+    "\u{2AAF}",
+    "PrecedesEqual",
+    "PrecedesEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{227C}",
+    "PrecedesSlantEqual",
+    "PrecedesSlantEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{227E}",
+    "PrecedesTilde",
+    "PrecedesTilde",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2237}",
+    "Proportion",
+    "Proportion",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{221D}",
+    "Proportional",
+    "Proportional",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{21CB}",
+    "ReverseEquilibrium",
+    "ReverseEquilibrium",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{296F}",
+    "ReverseUpEquilibrium",
+    "ReverseUpEquilibrium",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{21E5}",
+    "RightArrowBar",
+    "RightArrowBar",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{21C4}",
+    "RightArrowLeftArrow",
+    "RightArrowLeftArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{295D}",
+    "RightDownTeeVector",
+    "RightDownTeeVector",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{21C2}",
+    "RightDownVector",
+    "RightDownVector",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2955}",
+    "RightDownVectorBar",
+    "RightDownVectorBar",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{21A6}",
+    "RightTeeArrow",
+    "RightTeeArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{295B}",
+    "RightTeeVector",
+    "RightTeeVector",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{22B3}",
+    "RightTriangle",
+    "RightTriangle",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{29D0}",
+    "RightTriangleBar",
+    "RightTriangleBar",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{22B5}",
+    "RightTriangleEqual",
+    "RightTriangleEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{294F}",
+    "RightUpDownVector",
+    "RightUpDownVector",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{295C}",
+    "RightUpTeeVector",
+    "RightUpTeeVector",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{21BE}",
+    "RightUpVector",
+    "RightUpVector",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2954}",
+    "RightUpVectorBar",
+    "RightUpVectorBar",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{21C0}",
+    "RightVector",
+    "RightVector",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{2953}",
+    "RightVectorBar",
+    "RightVectorBar",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{2970}",
+    "RoundImplies",
+    "RoundImplies",
+    180,
+    InfixGrouping::Right,
+  ), // 240
+  (
+    "\u{F52B}",
+    "ShortDownArrow",
+    "ShortDownArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{F526}",
+    "ShortLeftArrow",
+    "ShortLeftArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{F525}",
+    "ShortRightArrow",
+    "ShortRightArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{F52A}",
+    "ShortUpArrow",
+    "ShortUpArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2293}",
+    "SquareIntersection",
+    "SquareIntersection",
+    290,
+    InfixGrouping::Flat,
+  ), // 305
+  (
+    "\u{228F}",
+    "SquareSubset",
+    "SquareSubset",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  (
+    "\u{2291}",
+    "SquareSubsetEqual",
+    "SquareSubsetEqual",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  (
+    "\u{2290}",
+    "SquareSuperset",
+    "SquareSuperset",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  (
+    "\u{2292}",
+    "SquareSupersetEqual",
+    "SquareSupersetEqual",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  (
+    "\u{2294}",
+    "SquareUnion",
+    "SquareUnion",
+    280,
+    InfixGrouping::Flat,
+  ), // 300
+  ("\u{2282}", "Subset", "Subset", 186, InfixGrouping::Flat),  // 250
+  (
+    "\u{2286}",
+    "SubsetEqual",
+    "SubsetEqual",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  ("\u{227B}", "Succeeds", "Succeeds", 210, InfixGrouping::Flat), // 290
+  (
+    "\u{2AB0}",
+    "SucceedsEqual",
+    "SucceedsEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{227D}",
+    "SucceedsSlantEqual",
+    "SucceedsSlantEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{227F}",
+    "SucceedsTilde",
+    "SucceedsTilde",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{220D}",
+    "SuchThat",
+    "SuchThat",
+    146,
+    InfixGrouping::Right,
+  ), // 180
+  ("\u{2283}", "Superset", "Superset", 186, InfixGrouping::Flat), // 250
+  (
+    "\u{2287}",
+    "SupersetEqual",
+    "SupersetEqual",
+    186,
+    InfixGrouping::Flat,
+  ), // 250
+  (
+    "\u{F3DB}",
+    "TensorWedge",
+    "TensorWedge",
+    425,
+    InfixGrouping::Flat,
+  ), // 500
+  (
+    "\u{2234}",
+    "Therefore",
+    "Therefore",
+    66,
+    InfixGrouping::Right,
+  ), // 50
+  ("\u{223C}", "Tilde", "Tilde", 210, InfixGrouping::Flat),    // 290
+  (
+    "\u{2243}",
+    "TildeEqual",
+    "TildeEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{2245}",
+    "TildeFullEqual",
+    "TildeFullEqual",
+    210,
+    InfixGrouping::Flat,
+  ), // 290
+  (
+    "\u{F120}",
+    "TwoWayRule",
+    "TwoWayRule",
+    115,
+    InfixGrouping::Right,
+  ), // 125
+  (
+    "\u{228E}",
+    "UnionPlus",
+    "UnionPlus",
+    280,
+    InfixGrouping::Flat,
+  ), // 300
+  ("\u{2191}", "UpArrow", "UpArrow", 492, InfixGrouping::Flat), // 580
+  (
+    "\u{2912}",
+    "UpArrowBar",
+    "UpArrowBar",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{21C5}",
+    "UpArrowDownArrow",
+    "UpArrowDownArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2195}",
+    "UpDownArrow",
+    "UpDownArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{296E}",
+    "UpEquilibrium",
+    "UpEquilibrium",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  ("\u{22A5}", "UpTee", "UpTee", 152, InfixGrouping::Left),    // 190
+  (
+    "\u{21A5}",
+    "UpTeeArrow",
+    "UpTeeArrow",
+    492,
+    InfixGrouping::Flat,
+  ), // 580
+  (
+    "\u{2196}",
+    "UpperLeftArrow",
+    "UpperLeftArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{2197}",
+    "UpperRightArrow",
+    "UpperRightArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
+  (
+    "\u{F3D0}",
+    "VerticalBar",
+    "VerticalBar",
+    204,
+    InfixGrouping::Flat,
+  ), // 280
+  (
+    "\u{F432}",
+    "VerticalSeparator",
+    "VerticalSeparator",
+    72,
+    InfixGrouping::Flat,
+  ), // 60
+  (
+    "\u{2240}",
+    "VerticalTilde",
+    "VerticalTilde",
+    320,
+    InfixGrouping::Flat,
+  ), // 370
+  ("\u{F4A2}", "Xnor", "Xnor", 165, InfixGrouping::Flat),      // 215
+];
 
 /// Parse the body of an anonymous function using the pest parser
 fn parse_anonymous_body(s: &str) -> Expr {

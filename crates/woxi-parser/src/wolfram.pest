@@ -2,9 +2,14 @@
 // U+200A, no-break space U+00A0, four-per-em U+2005, medium math
 // space U+205F) appear in FrontEnd-typeset code (\[ThinSpace],
 // \[VeryThinSpace], ...) and are whitespace in Wolfram input.
+// Besides the ordinary spaces: the line and paragraph separators, the
+// zero-width joiners, and the FrontEnd's own spacing and page-break
+// characters, all of which Wolfram reads as white space.
 WHITESPACE = _{
   " " | "\t" | "\r" | "\n" | "\u{00A0}" | '\u{2000}'..'\u{200A}' |
-  "\u{205F}"
+  "\u{205F}" | "\u{2028}" | "\u{2029}" | "\u{2060}" | "\u{2423}" | "\u{F360}" |
+  '\u{F380}'..'\u{F384}' | "\u{F3A3}" | "\u{F3AD}" | "\u{F3B1}" | "\u{F3B2}" |
+  '\u{F3BD}'..'\u{F3BF}' | "\u{F3C6}" | "\u{F760}"
 }
 COMMENT = _{ "(*" ~ (COMMENT | (!"(*" ~ !"*)" ~ ANY))* ~ "*)" }
 
@@ -186,6 +191,24 @@ LetterlikeSymbolChar = _{ "\u{2026}" | "\u{22EF}" | "\u{22EE}" | "\u{22F0}" | "\
   | "\u{2609}" | "\u{263F}" | "\u{2640}" | "\u{263E}" | "\u{F3DF}" | "\u{2642}" | "\u{2643}" | "\u{2644}"
   | "\u{26E2}" | "\u{2646}" | "\u{2647}"
   | "\u{2639}" | "\u{263A}" | '\u{2660}'..'\u{2663}' | '\u{F720}'..'\u{F729}'
+  // Every other named character Wolfram reads as part of a symbol name
+  // (`ToExpression["a\\[Name]b"]` is one symbol): signs, currency,
+  // typographic marks, and the FrontEnd's own private-use glyphs.
+  | '\u{00A1}'..'\u{00A5}' | '\u{00A7}'..'\u{00A9}' | "\u{00AB}"
+  | '\u{00AD}'..'\u{00AE}' | "\u{00B6}" | "\u{00B8}" | "\u{00BB}" | "\u{00BF}"
+  | "\u{02D8}" | "\u{2010}" | '\u{2013}'..'\u{2014}' | '\u{2020}'..'\u{2022}'
+  | '\u{2032}'..'\u{2033}' | '\u{2035}'..'\u{2036}' | "\u{20B9}" | "\u{2118}"
+  | "\u{2122}" | "\u{2127}" | "\u{21B5}" | "\u{2205}" | "\u{221F}"
+  | '\u{2221}'..'\u{2222}' | "\u{2300}" | "\u{2318}" | '\u{23B4}'..'\u{23B5}'
+  | "\u{2500}" | "\u{2502}" | '\u{25AE}'..'\u{25AF}' | "\u{25B4}" | "\u{25B8}"
+  | "\u{25BE}" | "\u{25C2}" | '\u{2611}'..'\u{2612}' | '\u{2648}'..'\u{265F}'
+  | '\u{2669}'..'\u{266C}' | '\u{F11D}'..'\u{F11F}' | '\u{F351}'..'\u{F352}'
+  | "\u{F3A0}" | "\u{F3A4}" | '\u{F3AE}'..'\u{F3AF}' | '\u{F3B8}'..'\u{F3BC}'
+  | '\u{F3CA}'..'\u{F3CD}' | "\u{F700}" | "\u{F72A}" | '\u{F730}'..'\u{F731}'
+  | '\u{F749}'..'\u{F74A}' | '\u{F751}'..'\u{F758}' | "\u{F75F}"
+  | '\u{F763}'..'\u{F764}' | "\u{F766}" | '\u{F768}'..'\u{F76C}'
+  | '\u{F7BE}'..'\u{F7BF}' | '\u{F7D0}'..'\u{F7D7}' | '\u{F7DA}'..'\u{F7ED}'
+  | '\u{F7EF}'..'\u{F7FC}' | '\u{FE35}'..'\u{FE38}' | "\u{FFFD}"
 }
 
 // Bare big-operator glyphs (∑, ∏) used purely for display inside a
@@ -194,7 +217,7 @@ LetterlikeSymbolChar = _{ "\u{2026}" | "\u{22EF}" | "\u{22EE}" | "\u{22F0}" | "\
 // handling in notebook.rs and the glyph list in graphics.rs.
 BigOperatorChar = _{ "\u{2211}" | "\u{220F}" }
 
-NamedCharBase = _{ !("\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Piecewise]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[Conjugate]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Intersection]" | "\\[Union]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]" | "\\[TildeTilde]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
+NamedCharBase = _{ !(GenericInfixOperatorName | "\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Piecewise]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[Conjugate]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Intersection]" | "\\[Union]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[LongEqual]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]" | "\\[TildeTilde]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
 // Adjacent `\[Name]` segments (or named char + identifier chars)
 // concatenate into a single identifier — `\[CapitalGamma]\[Beta]` → `Γβ`,
 // `\[Angle]XYZ` → `∠XYZ`, `i\[Ellipsis]j` (when `i` then `\[Ellipsis]j`
@@ -321,6 +344,7 @@ Operator = @{
   | "\\[Xor]" | "\u{22BB}" // Xor operator
   | "\\[And]" | "\u{2227}" // And operator (named form of &&)
   | "\\[Or]" | "\u{2228}" // Or operator (named form of ||)
+  | GenericInfixOperator
   | "//@"    // MapAll operator (must be before /@ and the // postfix)
   | "/@"     // keep first
   | ";;"     // Span (Wolfram precedence 305: tighter than =, ==, &&, |, ~~ and ->, looser than + and *)
@@ -333,7 +357,7 @@ Operator = @{
   | "&&"     // And operator (must be before single &)
   | "||"     // Or operator (must be before single |)
   | "|"      // Alternatives operator
-  | "===" | "=!=" | "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "!=" | "\u{2260}" | "\\[NotEqual]"  // SameQ, UnsameQ (must be before == and !=), Equal, ⩵, Unequal, ≠
+  | "===" | "=!=" | "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "\\[LongEqual]" | "\u{F7D9}" | "!=" | "\u{2260}" | "\\[NotEqual]"  // SameQ, UnsameQ (must be before == and !=), Equal, ⩵, Unequal, ≠
   | "<=" | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" | ">=" | "\u{2265}" | "\u{2A7E}" | "\\[GreaterEqual]"  // LessEqual, ≤, ⩽, GreaterEqual, ≥, ⩾
   | ">>>" ~ !(">" | "=")   // PutAppend operator (must be before >> and >)
   | ">>" ~ !(">" | "=")    // Put operator (must be before > and >=)
@@ -484,7 +508,12 @@ GroupTerminator = _{
 // A symbol, slot or literal followed only by bracket groups (`a[[b[[1]]]]`)
 // is the same situation: `PartExtract` parses it again after `ImplicitTimes`.
 PartGroupScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanGroup+ ~ (DerivativePrime? ~ PartScanGroup+)* }
-SoloBracketGroup = _{ (BracketGroupScan | PartGroupScan) ~ GroupTerminator }
+// A call (`f[x]`, `f[x][y]`) or a prefix-application chain ending in one
+// (`f@g@h[x]`) followed by a terminator is likewise a whole term on its own.
+// Without this, `ImplicitTimes` parses `f@g[…]` once through
+// `PrefixApplySimple` and throws it away, so nested `f@g[f@g[…]]` cost 3^n.
+CallChainScan = _{ (Identifier ~ "@" ~ !"@")* ~ Identifier ~ BalancedBrackets+ }
+SoloBracketGroup = _{ (BracketGroupScan ~ BalancedBrackets* | PartGroupScan | CallChainScan) ~ GroupTerminator }
 ImplicitTimes = { !SoloBracketGroup ~ (NegativeImplicitFirst | ImplicitTimesFactor) ~ ImplicitTimesFactor+ }
 
 // TildeInfix: a ~f~ b means f[a, b] — infix function application syntax
@@ -761,7 +790,13 @@ DifferentialPrefix = { DifferentialOp ~ SimpleTerm ~ PartIndexSuffix? ~ Implicit
 // prefix function application to the following factor (normally a list).
 PiecewiseOp = { "\\[Piecewise]" }
 PiecewisePrefix = { PiecewiseOp ~ SimpleTerm }
-PrefixApplySimple = { (FunctionCall | Identifier) ~ "@" ~ SimpleTerm }
+// The zero-width scan confirms the `@` before parsing the head: without it a
+// factor like `g[…]` is parsed here as a candidate head, thrown away when no
+// `@` follows, and parsed again as a `FunctionCall` — 2^n for `2 g[2 g[…]]`.
+PrefixApplySimple = {
+    &((Identifier | NamedCharIdentifier) ~ DerivativePrime? ~ BalancedBrackets* ~ "@" ~ !"@")
+    ~ (FunctionCall | Identifier) ~ "@" ~ SimpleTerm
+}
 SimpleTerm = _{
   // Increment/Decrement come first so a postfix `++` binds to its operand
   // before the operand is taken on its own: `2 a++` is `2 (a++)`, and
@@ -885,7 +920,8 @@ ConditionExpr = {
 // Operators allowed in conditions - excludes -> and :> which mark rule boundaries
 // Atomic so that WHITESPACE/COMMENT tokens are not consumed within the operator span.
 ConditionOp = @{
-    "\\[NotElement]" | "\u{2209}"       // Named character operator: NotElement (∉)
+    GenericInfixOperator
+  | "\\[NotElement]" | "\u{2209}"       // Named character operator: NotElement (∉)
   | "\\[ReverseElement]" | "\u{220B}"   // Named character operator: ReverseElement (∋)
   | "\\[Element]" | "\u{2208}"          // Named character operator: Element (∈)
   | "\\[Distributed]" | "\u{F3D2}"      // Named character operator: Distributed
@@ -899,7 +935,7 @@ ConditionOp = @{
   | "::" ~ !":"                   // MessageName: `a :> f::tag` is a rule
                                   // whose replacement is `MessageName[f, "tag"]`,
                                   // since `::` binds tighter than everything here
-  | "===" | "=!=" | "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "!=" | "\u{2260}" | "\\[NotEqual]"  // Comparison, ⩵, ≠
+  | "===" | "=!=" | "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "\\[LongEqual]" | "\u{F7D9}" | "!=" | "\u{2260}" | "\\[NotEqual]"  // Comparison, ⩵, ≠
   | "<->"                         // TwoWayRule (must be before <>, <=, <)
   | "<>"                          // StringJoin (must be before < to avoid partial match)
   | "<=" | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" | ">=" | "\u{2265}" | "\u{2A7E}" | "\\[GreaterEqual]" | "<" | ">"       // Order comparison, ≤, ≥, ⩽, ⩾
@@ -976,7 +1012,10 @@ Pattern = { PatternCondition | PatternTest | PatternOptionalNamedBlank | Pattern
 RuleOperand = _{ ConditionExpr }
 // The replacement may carry its own conditions: `a :> b /; c` is
 // `RuleDelayed[a, Condition[b, c]]`, since `/;` binds tighter than the arrow.
-ReplacementRule = { RuleOperand ~ ("/;" ~ ConditionExpr)? ~ ("->" | "\u{2192}" | ":>") ~ (ReplacementRule | RuleOperand ~ ("/;" ~ ConditionExpr)*) }
+// The right-hand side is only tried as a further rule when a rule operator
+// actually follows at this level; otherwise a nested operand such as
+// `{a -> {a -> …}}` is parsed twice per level.
+ReplacementRule = { RuleOperand ~ ("/;" ~ ConditionExpr)? ~ ("->" | "\u{2192}" | ":>") ~ (&HasRuleOperator ~ ReplacementRule | RuleOperand ~ ("/;" ~ ConditionExpr)*) }
 
 // Replacement expressions: expr /. rule or expr //. rule
 ReplaceAllExpr = { Term ~ "/." ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^") | ConditionExpr) }
@@ -1062,6 +1101,22 @@ BalancedAssociation = _{ "<|" ~ NestedContent ~ "|>" }
 BalancedBraces      = _{ "{" ~ NestedContent ~ "}" }
 BalancedBrackets    = _{ "[" ~ NestedContent ~ "]" }
 BalancedParens      = _{ "(" ~ NestedContent ~ ")" }
+// Like `HasRuleOperator`, but fails when a top-level `/.` or `//.` comes
+// first: in `x /. a -> b` the rule is the replacement's right operand, so the
+// argument is an ordinary expression and trying it as a rule first only
+// parses `x` twice.
+HasLeadingRuleOperator = _{ (
+    ScanComment
+  | BalancedAssociation
+  | BalancedBraces
+  | BalancedBrackets
+  | BalancedParens
+  | "\u{27E6}" ~ NestedContent ~ "\u{27E7}"
+  | "\u{301A}" ~ NestedContent ~ "\u{301B}"
+  | ScanString
+  | "<->"
+  | !("->" | "\u{2192}" | ":>" | "//." | "/." ~ !ASCII_DIGIT | "<|" | "|>" | "}" | "," | "]" | ")" | "\u{27E7}" | "\u{301B}" | "\"") ~ ANY
+)* ~ ("->" | "\u{2192}" | ":>") }
 HasRuleOperator = _{ (
     ScanComment
   | BalancedAssociation
@@ -1088,7 +1143,7 @@ HasSemicolon = @{ (
   | ScanString
   | !(";" | "<|" | "|>" | "}" | "," | "]" | ")" | "\u{27E7}" | "\u{301B}" | "\"") ~ ANY
 )* ~ ";" ~ !";" }
-ListItem = _{ &HasRuleOperator ~ ListItemRule | &HasSemicolon ~ CompoundExpression | Expression }
+ListItem = _{ &HasLeadingRuleOperator ~ ListItemRule | &HasSemicolon ~ CompoundExpression | Expression }
 
 AssociationItem = { RuleOperand ~ ("->" | "\u{2192}" | ":>") ~ RuleOperand }
 // Non-rule items inside <|...|> are rare but legal — Wolfram parses <|a, b|>
@@ -1119,7 +1174,7 @@ AssociationExtended = {
 // RuleReplaceSuffix* before it lets `pat -> repl /. rules &` absorb the
 // `/.` into the function body instead.
 FunctionArgRule = { ReplacementRule ~ RuleReplaceSuffix* ~ ("//" ~ PostfixFunction)* ~ (RuleAnonSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ RuleOperatorTerm)* ~ ("//" ~ PostfixFunction)*)? }
-FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | &HasSemicolon ~ CompoundExpression | Expression }
+FunctionArg = _{ &HasLeadingRuleOperator ~ FunctionArgRule | &HasSemicolon ~ CompoundExpression | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 FunctionArgOrOmitted = _{ FunctionArg | OmittedArg }
 FunctionArgOrOmittedLast = _{ FunctionArg | OmittedArg | OmittedTrailingArg }
@@ -1132,7 +1187,7 @@ FunctionArgOrOmittedLast = _{ FunctionArg | OmittedArg | OmittedTrailingArg }
 // finding); with the guard it is rejected on the first scan.  `NestedContent`
 // skips strings and comments, so a `"]"` or a `(* ] *)` inside the group does
 // not count as the closer.
-BracketArgs = { &BalancedBrackets ~ "[" ~ (FunctionArgOrOmitted ~ ("," ~ FunctionArgOrOmittedLast)*)? ~ "]" }
+BracketArgs = { !PartOpen ~ &BalancedBrackets ~ "[" ~ (FunctionArgOrOmitted ~ ("," ~ FunctionArgOrOmittedLast)*)? ~ "]" }
 // A trailing prime may itself be applied to further bracket args, same as
 // FunctionCallExtended: `x[i]''[t]` -> `Derivative[2][x[i]][t]`. This matters
 // inside implicit multiplication (`m x[i]''[t]`), where SimpleTerm uses this
@@ -1182,3 +1237,9 @@ StatementSeparator = @{ (";" ~ !";" ~ ((WHITESPACE | COMMENT)+ ~ ";" ~ !";")*)? 
 TrailingSemicolon = @{ ";" ~ !";" ~ ((WHITESPACE | COMMENT)+ ~ ";" ~ !";")* }
 
 Program = { SOI ~ (Statement ~ (StatementSeparator ~ Statement)* ~ TrailingSemicolon?)? ~ EOI }
+
+// Infix operators written with a named character beyond the ones spelled out
+// above, each read as `Head[a, b]` (see `GENERIC_INFIX_OPERATORS` in
+// syntax.rs, which this list mirrors and which says how each one groups).
+GenericInfixOperator = { "\\[Application]" | "\u{F530}" | "\\[Because]" | "\u{2235}" | "\\[Colon]" | "\u{2236}" | "\\[Congruent]" | "\u{2261}" | "\\[Coproduct]" | "\u{2210}" | "\\[CupCap]" | "\u{224D}" | "\\[DotEqual]" | "\u{2250}" | "\\[DoubleDownArrow]" | "\u{21D3}" | "\\[DoubleLeftArrow]" | "\u{21D0}" | "\\[DoubleLeftRightArrow]" | "\u{21D4}" | "\\[DoubleLongLeftArrow]" | "\u{27F8}" | "\\[DoubleLongLeftRightArrow]" | "\u{27FA}" | "\\[DoubleLongRightArrow]" | "\u{27F9}" | "\\[DoubleRightArrow]" | "\u{21D2}" | "\\[DoubleUpArrow]" | "\u{21D1}" | "\\[DoubleUpDownArrow]" | "\u{21D5}" | "\\[DoubleVerticalBar]" | "\u{2225}" | "\\[DownArrow]" | "\u{2193}" | "\\[DownArrowBar]" | "\u{2913}" | "\\[DownArrowUpArrow]" | "\u{21F5}" | "\\[DownLeftRightVector]" | "\u{2950}" | "\\[DownLeftTeeVector]" | "\u{295E}" | "\\[DownLeftVector]" | "\u{21BD}" | "\\[DownLeftVectorBar]" | "\u{2956}" | "\\[DownRightTeeVector]" | "\u{295F}" | "\\[DownRightVector]" | "\u{21C1}" | "\\[DownRightVectorBar]" | "\u{2957}" | "\\[DownTee]" | "\u{22A4}" | "\\[DownTeeArrow]" | "\u{21A7}" | "\\[EqualTilde]" | "\u{2242}" | "\\[Equilibrium]" | "\u{21CC}" | "\\[GreaterEqualLess]" | "\u{22DB}" | "\\[GreaterFullEqual]" | "\u{2267}" | "\\[GreaterGreater]" | "\u{226B}" | "\\[GreaterLess]" | "\u{2277}" | "\\[GreaterTilde]" | "\u{2273}" | "\\[HumpDownHump]" | "\u{224E}" | "\\[HumpEqual]" | "\u{224F}" | "\\[ImplicitPlus]" | "\u{F39E}" | "\\[InvisibleTimes]" | "\u{2062}" | "\\[LeftArrow]" | "\u{2190}" | "\\[LeftArrowBar]" | "\u{21E4}" | "\\[LeftArrowRightArrow]" | "\u{21C6}" | "\\[LeftDownTeeVector]" | "\u{2961}" | "\\[LeftDownVector]" | "\u{21C3}" | "\\[LeftDownVectorBar]" | "\u{2959}" | "\\[LeftRightArrow]" | "\u{2194}" | "\\[LeftRightVector]" | "\u{294E}" | "\\[LeftTeeArrow]" | "\u{21A4}" | "\\[LeftTeeVector]" | "\u{295A}" | "\\[LeftTriangle]" | "\u{22B2}" | "\\[LeftTriangleBar]" | "\u{29CF}" | "\\[LeftTriangleEqual]" | "\u{22B4}" | "\\[LeftUpDownVector]" | "\u{2951}" | "\\[LeftUpTeeVector]" | "\u{2960}" | "\\[LeftUpVector]" | "\u{21BF}" | "\\[LeftUpVectorBar]" | "\u{2958}" | "\\[LeftVector]" | "\u{21BC}" | "\\[LeftVectorBar]" | "\u{2952}" | "\\[LessEqualGreater]" | "\u{22DA}" | "\\[LessFullEqual]" | "\u{2266}" | "\\[LessGreater]" | "\u{2276}" | "\\[LessLess]" | "\u{226A}" | "\\[LessTilde]" | "\u{2272}" | "\\[LongLeftArrow]" | "\u{27F5}" | "\\[LongLeftRightArrow]" | "\u{27F7}" | "\\[LongRightArrow]" | "\u{27F6}" | "\\[LowerLeftArrow]" | "\u{2199}" | "\\[LowerRightArrow]" | "\u{2198}" | "\\[MinusPlus]" | "\u{2213}" | "\\[NestedGreaterGreater]" | "\u{2AA2}" | "\\[NestedLessLess]" | "\u{2AA1}" | "\\[NotCongruent]" | "\u{2262}" | "\\[NotCupCap]" | "\u{226D}" | "\\[NotDoubleVerticalBar]" | "\u{2226}" | "\\[NotEqualTilde]" | "\u{F400}" | "\\[NotGreater]" | "\u{226F}" | "\\[NotGreaterEqual]" | "\u{2271}" | "\\[NotGreaterFullEqual]" | "\u{2269}" | "\\[NotGreaterGreater]" | "\u{F427}" | "\\[NotGreaterLess]" | "\u{2279}" | "\\[NotGreaterSlantEqual]" | "\u{F429}" | "\\[NotGreaterTilde]" | "\u{2275}" | "\\[NotHumpDownHump]" | "\u{F402}" | "\\[NotHumpEqual]" | "\u{F401}" | "\\[NotLeftTriangle]" | "\u{22EA}" | "\\[NotLeftTriangleBar]" | "\u{F412}" | "\\[NotLeftTriangleEqual]" | "\u{22EC}" | "\\[NotLess]" | "\u{226E}" | "\\[NotLessEqual]" | "\u{2270}" | "\\[NotLessFullEqual]" | "\u{2268}" | "\\[NotLessGreater]" | "\u{2278}" | "\\[NotLessLess]" | "\u{F422}" | "\\[NotLessSlantEqual]" | "\u{F424}" | "\\[NotLessTilde]" | "\u{2274}" | "\\[NotNestedGreaterGreater]" | "\u{F428}" | "\\[NotNestedLessLess]" | "\u{F423}" | "\\[NotPrecedes]" | "\u{2280}" | "\\[NotPrecedesEqual]" | "\u{F42B}" | "\\[NotPrecedesSlantEqual]" | "\u{22E0}" | "\\[NotPrecedesTilde]" | "\u{22E8}" | "\\[NotReverseElement]" | "\u{220C}" | "\\[NotRightTriangle]" | "\u{22EB}" | "\\[NotRightTriangleBar]" | "\u{F413}" | "\\[NotRightTriangleEqual]" | "\u{22ED}" | "\\[NotSquareSubset]" | "\u{F42E}" | "\\[NotSquareSubsetEqual]" | "\u{22E2}" | "\\[NotSquareSuperset]" | "\u{F42F}" | "\\[NotSquareSupersetEqual]" | "\u{22E3}" | "\\[NotSubset]" | "\u{2284}" | "\\[NotSubsetEqual]" | "\u{2288}" | "\\[NotSucceeds]" | "\u{2281}" | "\\[NotSucceedsEqual]" | "\u{F42D}" | "\\[NotSucceedsSlantEqual]" | "\u{22E1}" | "\\[NotSucceedsTilde]" | "\u{22E9}" | "\\[NotSuperset]" | "\u{2285}" | "\\[NotSupersetEqual]" | "\u{2289}" | "\\[NotTilde]" | "\u{2241}" | "\\[NotTildeEqual]" | "\u{2244}" | "\\[NotTildeFullEqual]" | "\u{2247}" | "\\[NotTildeTilde]" | "\u{2249}" | "\\[NotVerticalBar]" | "\u{F3D1}" | "\\[PermutationProduct]" | "\u{F3DE}" | "\\[Perpendicular]" | "\u{27C2}" | "\\[PlusMinus]" | "\u{00B1}" | "\\[Precedes]" | "\u{227A}" | "\\[PrecedesEqual]" | "\u{2AAF}" | "\\[PrecedesSlantEqual]" | "\u{227C}" | "\\[PrecedesTilde]" | "\u{227E}" | "\\[Proportion]" | "\u{2237}" | "\\[Proportional]" | "\u{221D}" | "\\[ReverseEquilibrium]" | "\u{21CB}" | "\\[ReverseUpEquilibrium]" | "\u{296F}" | "\\[RightArrowBar]" | "\u{21E5}" | "\\[RightArrowLeftArrow]" | "\u{21C4}" | "\\[RightDownTeeVector]" | "\u{295D}" | "\\[RightDownVector]" | "\u{21C2}" | "\\[RightDownVectorBar]" | "\u{2955}" | "\\[RightTeeArrow]" | "\u{21A6}" | "\\[RightTeeVector]" | "\u{295B}" | "\\[RightTriangle]" | "\u{22B3}" | "\\[RightTriangleBar]" | "\u{29D0}" | "\\[RightTriangleEqual]" | "\u{22B5}" | "\\[RightUpDownVector]" | "\u{294F}" | "\\[RightUpTeeVector]" | "\u{295C}" | "\\[RightUpVector]" | "\u{21BE}" | "\\[RightUpVectorBar]" | "\u{2954}" | "\\[RightVector]" | "\u{21C0}" | "\\[RightVectorBar]" | "\u{2953}" | "\\[RoundImplies]" | "\u{2970}" | "\\[ShortDownArrow]" | "\u{F52B}" | "\\[ShortLeftArrow]" | "\u{F526}" | "\\[ShortRightArrow]" | "\u{F525}" | "\\[ShortUpArrow]" | "\u{F52A}" | "\\[SquareIntersection]" | "\u{2293}" | "\\[SquareSubset]" | "\u{228F}" | "\\[SquareSubsetEqual]" | "\u{2291}" | "\\[SquareSuperset]" | "\u{2290}" | "\\[SquareSupersetEqual]" | "\u{2292}" | "\\[SquareUnion]" | "\u{2294}" | "\\[Subset]" | "\u{2282}" | "\\[SubsetEqual]" | "\u{2286}" | "\\[Succeeds]" | "\u{227B}" | "\\[SucceedsEqual]" | "\u{2AB0}" | "\\[SucceedsSlantEqual]" | "\u{227D}" | "\\[SucceedsTilde]" | "\u{227F}" | "\\[SuchThat]" | "\u{220D}" | "\\[Superset]" | "\u{2283}" | "\\[SupersetEqual]" | "\u{2287}" | "\\[TensorWedge]" | "\u{F3DB}" | "\\[Therefore]" | "\u{2234}" | "\\[Tilde]" | "\u{223C}" | "\\[TildeEqual]" | "\u{2243}" | "\\[TildeFullEqual]" | "\u{2245}" | "\\[TwoWayRule]" | "\u{F120}" | "\\[UnionPlus]" | "\u{228E}" | "\\[UpArrow]" | "\u{2191}" | "\\[UpArrowBar]" | "\u{2912}" | "\\[UpArrowDownArrow]" | "\u{21C5}" | "\\[UpDownArrow]" | "\u{2195}" | "\\[UpEquilibrium]" | "\u{296E}" | "\\[UpTee]" | "\u{22A5}" | "\\[UpTeeArrow]" | "\u{21A5}" | "\\[UpperLeftArrow]" | "\u{2196}" | "\\[UpperRightArrow]" | "\u{2197}" | "\\[VerticalBar]" | "\u{F3D0}" | "\\[VerticalSeparator]" | "\u{F432}" | "\\[VerticalTilde]" | "\u{2240}" | "\\[Xnor]" | "\u{F4A2}" }
+GenericInfixOperatorName = _{ "\\[Application]" | "\\[Because]" | "\\[Colon]" | "\\[Congruent]" | "\\[Coproduct]" | "\\[CupCap]" | "\\[DotEqual]" | "\\[DoubleDownArrow]" | "\\[DoubleLeftArrow]" | "\\[DoubleLeftRightArrow]" | "\\[DoubleLongLeftArrow]" | "\\[DoubleLongLeftRightArrow]" | "\\[DoubleLongRightArrow]" | "\\[DoubleRightArrow]" | "\\[DoubleUpArrow]" | "\\[DoubleUpDownArrow]" | "\\[DoubleVerticalBar]" | "\\[DownArrow]" | "\\[DownArrowBar]" | "\\[DownArrowUpArrow]" | "\\[DownLeftRightVector]" | "\\[DownLeftTeeVector]" | "\\[DownLeftVector]" | "\\[DownLeftVectorBar]" | "\\[DownRightTeeVector]" | "\\[DownRightVector]" | "\\[DownRightVectorBar]" | "\\[DownTee]" | "\\[DownTeeArrow]" | "\\[EqualTilde]" | "\\[Equilibrium]" | "\\[GreaterEqualLess]" | "\\[GreaterFullEqual]" | "\\[GreaterGreater]" | "\\[GreaterLess]" | "\\[GreaterTilde]" | "\\[HumpDownHump]" | "\\[HumpEqual]" | "\\[ImplicitPlus]" | "\\[InvisibleTimes]" | "\\[LeftArrow]" | "\\[LeftArrowBar]" | "\\[LeftArrowRightArrow]" | "\\[LeftDownTeeVector]" | "\\[LeftDownVector]" | "\\[LeftDownVectorBar]" | "\\[LeftRightArrow]" | "\\[LeftRightVector]" | "\\[LeftTeeArrow]" | "\\[LeftTeeVector]" | "\\[LeftTriangle]" | "\\[LeftTriangleBar]" | "\\[LeftTriangleEqual]" | "\\[LeftUpDownVector]" | "\\[LeftUpTeeVector]" | "\\[LeftUpVector]" | "\\[LeftUpVectorBar]" | "\\[LeftVector]" | "\\[LeftVectorBar]" | "\\[LessEqualGreater]" | "\\[LessFullEqual]" | "\\[LessGreater]" | "\\[LessLess]" | "\\[LessTilde]" | "\\[LongLeftArrow]" | "\\[LongLeftRightArrow]" | "\\[LongRightArrow]" | "\\[LowerLeftArrow]" | "\\[LowerRightArrow]" | "\\[MinusPlus]" | "\\[NestedGreaterGreater]" | "\\[NestedLessLess]" | "\\[NotCongruent]" | "\\[NotCupCap]" | "\\[NotDoubleVerticalBar]" | "\\[NotEqualTilde]" | "\\[NotGreater]" | "\\[NotGreaterEqual]" | "\\[NotGreaterFullEqual]" | "\\[NotGreaterGreater]" | "\\[NotGreaterLess]" | "\\[NotGreaterSlantEqual]" | "\\[NotGreaterTilde]" | "\\[NotHumpDownHump]" | "\\[NotHumpEqual]" | "\\[NotLeftTriangle]" | "\\[NotLeftTriangleBar]" | "\\[NotLeftTriangleEqual]" | "\\[NotLess]" | "\\[NotLessEqual]" | "\\[NotLessFullEqual]" | "\\[NotLessGreater]" | "\\[NotLessLess]" | "\\[NotLessSlantEqual]" | "\\[NotLessTilde]" | "\\[NotNestedGreaterGreater]" | "\\[NotNestedLessLess]" | "\\[NotPrecedes]" | "\\[NotPrecedesEqual]" | "\\[NotPrecedesSlantEqual]" | "\\[NotPrecedesTilde]" | "\\[NotReverseElement]" | "\\[NotRightTriangle]" | "\\[NotRightTriangleBar]" | "\\[NotRightTriangleEqual]" | "\\[NotSquareSubset]" | "\\[NotSquareSubsetEqual]" | "\\[NotSquareSuperset]" | "\\[NotSquareSupersetEqual]" | "\\[NotSubset]" | "\\[NotSubsetEqual]" | "\\[NotSucceeds]" | "\\[NotSucceedsEqual]" | "\\[NotSucceedsSlantEqual]" | "\\[NotSucceedsTilde]" | "\\[NotSuperset]" | "\\[NotSupersetEqual]" | "\\[NotTilde]" | "\\[NotTildeEqual]" | "\\[NotTildeFullEqual]" | "\\[NotTildeTilde]" | "\\[NotVerticalBar]" | "\\[PermutationProduct]" | "\\[Perpendicular]" | "\\[PlusMinus]" | "\\[Precedes]" | "\\[PrecedesEqual]" | "\\[PrecedesSlantEqual]" | "\\[PrecedesTilde]" | "\\[Proportion]" | "\\[Proportional]" | "\\[ReverseEquilibrium]" | "\\[ReverseUpEquilibrium]" | "\\[RightArrowBar]" | "\\[RightArrowLeftArrow]" | "\\[RightDownTeeVector]" | "\\[RightDownVector]" | "\\[RightDownVectorBar]" | "\\[RightTeeArrow]" | "\\[RightTeeVector]" | "\\[RightTriangle]" | "\\[RightTriangleBar]" | "\\[RightTriangleEqual]" | "\\[RightUpDownVector]" | "\\[RightUpTeeVector]" | "\\[RightUpVector]" | "\\[RightUpVectorBar]" | "\\[RightVector]" | "\\[RightVectorBar]" | "\\[RoundImplies]" | "\\[ShortDownArrow]" | "\\[ShortLeftArrow]" | "\\[ShortRightArrow]" | "\\[ShortUpArrow]" | "\\[SquareIntersection]" | "\\[SquareSubset]" | "\\[SquareSubsetEqual]" | "\\[SquareSuperset]" | "\\[SquareSupersetEqual]" | "\\[SquareUnion]" | "\\[Subset]" | "\\[SubsetEqual]" | "\\[Succeeds]" | "\\[SucceedsEqual]" | "\\[SucceedsSlantEqual]" | "\\[SucceedsTilde]" | "\\[SuchThat]" | "\\[Superset]" | "\\[SupersetEqual]" | "\\[TensorWedge]" | "\\[Therefore]" | "\\[Tilde]" | "\\[TildeEqual]" | "\\[TildeFullEqual]" | "\\[TwoWayRule]" | "\\[UnionPlus]" | "\\[UpArrow]" | "\\[UpArrowBar]" | "\\[UpArrowDownArrow]" | "\\[UpDownArrow]" | "\\[UpEquilibrium]" | "\\[UpTee]" | "\\[UpTeeArrow]" | "\\[UpperLeftArrow]" | "\\[UpperRightArrow]" | "\\[VerticalBar]" | "\\[VerticalSeparator]" | "\\[VerticalTilde]" | "\\[Xnor]" }

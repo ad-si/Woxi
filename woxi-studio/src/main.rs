@@ -6768,6 +6768,37 @@ fn check_notebook(path: &std::path::Path) -> i32 {
     .collect();
   println!("widgets: {}/{}", widgets.len(), dumps);
   let mut ok = widgets.len() >= dumps;
+  // Say why an interactive cell did not become a widget.
+  for editor in editors.iter().filter(|e| e.manipulate_state.is_none()) {
+    let code = editor.content.text();
+    let trimmed = code.trim_start();
+    if !["Manipulate[", "Animate[", "ListAnimate["]
+      .iter()
+      .any(|h| trimmed.starts_with(h))
+    {
+      continue;
+    }
+    let statements = woxi::split_into_statements(&code);
+    let reason = match statements.as_slice() {
+      [single] => match woxi::interpret_to_expr(single) {
+        Ok(expr) => {
+          let head = match &expr {
+            woxi::syntax::Expr::FunctionCall { name, args } => {
+              format!("{name}[{} args]", args.len())
+            }
+            other => woxi::syntax::expr_to_string(other)
+              .chars()
+              .take(80)
+              .collect(),
+          };
+          format!("evaluates to {head}, no widget spec")
+        }
+        Err(e) => format!("evaluation error: {e}"),
+      },
+      many => format!("{} statements", many.len()),
+    };
+    println!("unbuilt: {reason}");
+  }
   for (i, state) in widgets.iter().enumerate() {
     match state.check_render() {
       Ok(result) => {

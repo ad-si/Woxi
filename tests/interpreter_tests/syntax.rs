@@ -13358,6 +13358,71 @@ mod implicit_times_with_part_call {
 mod demonstration_round_trips {
   use super::*;
 
+  // `\[LongEqual]` (U+F7D9) is an infix spelling of `==`.
+  #[test]
+  fn long_equal_operator() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a \\[LongEqual] b]]]").unwrap(),
+      "Hold[Equal[a, b]]"
+    );
+    assert_eq!(interpret("1 \u{F7D9} 1").unwrap(), "True");
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x\u{F7D9}(y)]]]").unwrap(),
+      "Hold[Equal[x, y]]"
+    );
+  }
+
+  // Infix operators written with a named character read as `Head[a, b]`,
+  // grouping as Wolfram does (flat, left or right).
+  #[test]
+  fn named_character_infix_operators() {
+    let cases = [
+      ("x \u{2194} y", "Hold[LeftRightArrow[x, y]]"),
+      (
+        "a \\[LeftRightArrow] b \\[LeftRightArrow] c",
+        "Hold[LeftRightArrow[a, b, c]]",
+      ),
+      (
+        "a \\[Because] b \\[Because] c",
+        "Hold[Because[Because[a, b], c]]",
+      ),
+      ("a + b \u{2245} c", "Hold[TildeFullEqual[Plus[a, b], c]]"),
+      ("{X \u{2190} 2}", "Hold[List[LeftArrow[X, 2]]]"),
+      (
+        "f[a -> b \\[LeftRightArrow] c]",
+        "Hold[f[Rule[a, LeftRightArrow[b, c]]]]",
+      ),
+      (
+        "a \\[DoubleRightArrow] b \\[DoubleRightArrow] c",
+        "Hold[DoubleRightArrow[a, b, c]]",
+      ),
+    ];
+    for (input, expected) in cases {
+      assert_eq!(
+        interpret(&format!("ToString[FullForm[Hold[{input}]]]")).unwrap(),
+        expected,
+        "{input}"
+      );
+    }
+  }
+
+  // Signs, currency and typographic marks are symbol characters, and the
+  // FrontEnd's spacing characters are white space.
+  #[test]
+  fn named_character_letters_and_spaces() {
+    assert_eq!(interpret("Head[\u{2205}]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[a\u{2652}b]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[\\[Bullet]]").unwrap(), "Symbol");
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a\u{F360}b]]]").unwrap(),
+      "Hold[Times[a, b]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[f[a,\u{2028}b]]]]").unwrap(),
+      "Hold[f[a, b]]"
+    );
+  }
+
   #[test]
   fn replace_all_with_part_of_literal_list() {
     assert_eq!(interpret("y /. {y -> 2, y -> 3}[[2]]").unwrap(), "3");

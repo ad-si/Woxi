@@ -30930,7 +30930,12 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
       });
       continue;
     }
-    let rendered = crate::notebook::box_source_to_expression(&seg.text)
+    // A `GridBox` is a layout of formulas (a `Column` or matrix of
+    // equations), drawn as the display text it typesets to rather than read
+    // back as an expression.
+    let rendered = (!seg.text.contains("GridBox["))
+      .then(|| crate::notebook::box_source_to_expression(&seg.text))
+      .flatten()
       .and_then(|code| crate::parse_to_expr(&code).ok())
       .map(|expr| manipulate_label_runs(&expr, italic));
     match rendered {

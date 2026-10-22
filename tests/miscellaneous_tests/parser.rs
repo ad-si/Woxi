@@ -161,6 +161,32 @@ mod tests {
   }
 
   #[test]
+  fn test_parse_valid_nesting_stays_within_call_limit() {
+    // Each of these used to be parsed two to eight times per nesting level
+    // (an alternative parsed the same text and then failed), so Wolfram
+    // Demonstrations of ordinary depth hit the parser's call limit and were
+    // rejected as syntax errors. Depth 12 is far past the old cliff.
+    let templates = [
+      "f@g[X, a -> b]",
+      "2 g[X]",
+      "{a -> X}",
+      "f[a :> X]",
+      "f[X /. a -> b]",
+      "g[X] //. a -> b",
+      "x[[X]]",
+      "x[[1, X]]",
+      "{x}[[X]]",
+    ];
+    for template in templates {
+      let mut input = "x".to_string();
+      for _ in 0..12 {
+        input = template.replace('X', &input);
+      }
+      assert!(parse(&input).is_ok(), "should parse: {input}");
+    }
+  }
+
+  #[test]
   fn test_parse_pathological_nesting_rejected_quickly() {
     // Regression (fuzz finding): deeply nested invalid input made pest
     // backtrack exponentially — depth 20 previously took hours to reject.
