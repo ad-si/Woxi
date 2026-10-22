@@ -32856,6 +32856,35 @@ pub fn format_f64_exact(v: f64) -> String {
   if !v.is_finite() || v.fract() == 0.0 || v.abs() >= 1e9 {
     return format_f64_input(v);
   }
+  if let Some(s) = rational_form(v, 10_000, 1e-9) {
+    return s;
+  }
+  // An angle written as a degree conversion (`Pi/180 60`) is a small
+  // rational multiple of `Pi`; keep it exact so the body's trigonometry
+  // stays symbolic, as in Wolfram.
+  if let Some(s) = rational_form(v / std::f64::consts::PI, 1_000, 1e-12) {
+    return match s.split_once('/') {
+      Some((num, den)) => match num {
+        "1" => format!("Pi/{den}"),
+        "-1" => format!("-Pi/{den}"),
+        _ => format!("{num}*Pi/{den}"),
+      },
+      None => match s.as_str() {
+        "1" => "Pi".to_string(),
+        "-1" => "-Pi".to_string(),
+        _ => format!("{s}*Pi"),
+      },
+    };
+  }
+  format_f64_input(v)
+}
+
+/// `v` as `p/q` (or `p`) via continued fractions, when a denominator of at
+/// most `max_den` reproduces it within relative tolerance `tol`.
+fn rational_form(v: f64, max_den: i64, tol: f64) -> Option<String> {
+  if v == 0.0 {
+    return None;
+  }
   let (mut h0, mut h1) = (0i64, 1i64);
   let (mut k0, mut k1) = (1i64, 0i64);
   let mut x = v.abs();
@@ -32863,13 +32892,17 @@ pub fn format_f64_exact(v: f64) -> String {
     let a = x.floor();
     let ai = a as i64;
     let (h2, k2) = (ai * h1 + h0, ai * k1 + k0);
-    if k2 > 10_000 {
+    if k2 > max_den {
       break;
     }
     (h0, h1, k0, k1) = (h1, h2, k1, k2);
-    if (v.abs() - h1 as f64 / k1 as f64).abs() <= 1e-9 * v.abs() {
+    if (v.abs() - h1 as f64 / k1 as f64).abs() <= tol * v.abs() {
       let sign = if v < 0.0 { "-" } else { "" };
-      return format!("{sign}{h1}/{k1}");
+      return Some(if k1 == 1 {
+        format!("{sign}{h1}")
+      } else {
+        format!("{sign}{h1}/{k1}")
+      });
     }
     let frac = x - a;
     if frac < 1e-12 {
@@ -32877,7 +32910,7 @@ pub fn format_f64_exact(v: f64) -> String {
     }
     x = 1.0 / frac;
   }
-  format_f64_input(v)
+  None
 }
 
 /// Format a list of 2D points as Wolfram input code, e.g.
@@ -37093,8 +37126,63 @@ mod format_f64_exact_tests {
     // A tiny value must not collapse to `0/1`.
     assert_eq!(format_f64_exact(1e-9), format!("{}", 1e-9));
     assert_eq!(
-      format_f64_exact(std::f64::consts::PI),
-      format!("{}", std::f64::consts::PI)
+      format_f64_exact(std::f64::consts::SQRT_2),
+      format!("{}", std::f64::consts::SQRT_2)
     );
+    // A rational multiple of `Pi` stays exact.
+    assert_eq!(format_f64_exact(std::f64::consts::PI), "Pi");
+  }
+}
+
+#[cfg(test)]
+mod manipulate_symbolic_angle_control_tests {
+  use super::*;
+
+  fn first_continuous(code: &str) -> (f64, f64, Option<f64>, f64) {
+    let expr = crate::interpret_to_expr(code).expect("evaluate");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    match spec.controls.first() {
+      Some(ManipulateControl::Continuous {
+        min,
+        max,
+        step,
+        initial,
+        ..
+      }) => (*min, *max, *step, *initial),
+      other => panic!("expected a continuous control, got {other:?}"),
+    }
+  }
+
+  /// Bounds, step and initial value written as symbolic multiples of `Pi`
+  /// (degrees converted to radians) all resolve to their numeric values.
+  #[test]
+  fn pi_multiples_resolve_for_bounds_step_and_initial() {
+    let (min, max, step, initial) = first_continuous(
+      r#"Manipulate[a, {{a, Pi/180 60, "angle"}, Pi/180 46, Pi/180 89, Pi/180, Appearance -> "Labeled"}]"#,
+    );
+    let deg = std::f64::consts::PI / 180.0;
+    assert!((min - 46.0 * deg).abs() < 1e-12, "min {min}");
+    assert!((max - 89.0 * deg).abs() < 1e-12, "max {max}");
+    assert!((step.expect("step") - deg).abs() < 1e-12, "step {step:?}");
+    assert!((initial - 60.0 * deg).abs() < 1e-12, "initial {initial}");
+  }
+
+  /// A degree-converted initial angle binds exactly (`Pi/3`), so the body's
+  /// trigonometry stays symbolic and the slider stays an exact-valued one.
+  #[test]
+  fn pi_multiple_initial_binds_exactly() {
+    let expr = crate::interpret_to_expr(
+      r#"Manipulate[a, {{a, Pi/180 60, "angle"}, Pi/180 46, Pi/180 89, Pi/180}]"#,
+    )
+    .expect("evaluate");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let bindings = manipulate_initial_bindings(&spec);
+    assert_eq!(bindings, vec![("a".to_string(), "Pi/3".to_string())]);
+    assert_eq!(format_f64_exact(-std::f64::consts::PI), "-Pi");
+    assert_eq!(
+      format_f64_exact(23.0 * std::f64::consts::PI / 90.0),
+      "23*Pi/90"
+    );
+    assert_eq!(format_f64_exact(0.3), "3/10");
   }
 }
