@@ -15400,4 +15400,28 @@ mod number_form_base_form_identity_format {
       "0100 0000"
     );
   }
+
+  // Module renames `x` to `x$n`; a repeated renamed pattern name must still
+  // act as a back-reference.
+  #[test]
+  fn string_pattern_back_reference_with_module_local_name() {
+    assert_eq!(
+      interpret(
+        "Module[{x}, {StringMatchQ[\"---t-q------\", StartOfString ~~ x : (\"-\"..) ~~ \"t-q\" ~~ x__ ~~ EndOfString], StringMatchQ[\"---t-q---\", StartOfString ~~ x : (\"-\"..) ~~ \"t-q\" ~~ x__ ~~ EndOfString]}]"
+      )
+      .unwrap(),
+      "{False, True}"
+    );
+  }
+
+  #[test]
+  fn string_replace_module_local_pattern_names() {
+    assert_eq!(
+      interpret(
+        "Module[{x, y}, StringReplace[\"-t--q\", StartOfString ~~ x : (\"-\"..) ~~ \"t\" ~~ y : (\"-\"...) ~~ \"-q\" ~~ EndOfString :> y <> \"|\" <> x]]"
+      )
+      .unwrap(),
+      "-|-"
+    );
+  }
 }
