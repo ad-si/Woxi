@@ -1718,6 +1718,7 @@ pub fn dispatch_list_operations(
       | "PadRight"
       | "ArrayPad"
       | "Diagonal"
+      | "Transpose"
   ) && !args.is_empty()
     && matches!(&args[0], Expr::FunctionCall { name: h, .. } if h == "SparseArray")
   {
