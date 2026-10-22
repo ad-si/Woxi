@@ -3774,6 +3774,28 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_invisible_in_row_plot_label_paints_nothing() {
+    // `PlotLabel -> Row[{"text", Invisible[Framed[""]]}]` — a Demonstration
+    // pads a label with an invisible item to hold its height steady.
+    // Regression: the inline label typesetter had no `Invisible` case, so
+    // the wrapper's own text (`Invisible[]`) was drawn after the label.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, PlotLabel -> Row[{\"hello \", Invisible[\"gone\"]}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("hello "), "visible label lost: {svg}");
+    assert!(
+      !svg.contains("Invisible"),
+      "Invisible[…] leaked as literal text: {svg}"
+    );
+    assert!(
+      svg.contains("<tspan fill-opacity=\"0\">gone</tspan>"),
+      "hidden content should keep its space but be transparent: {svg}"
+    );
+  }
+
+  #[test]
   fn test_inset_labeled_graphic_embeds_picture() {
     // `Inset[Labeled[Graphics[…], caption], pos, opos, size]` — a
     // Demonstration's usual way to caption a small diagram composited into
