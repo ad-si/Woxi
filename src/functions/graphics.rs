@@ -1309,6 +1309,9 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
           } else {
             1.0
           };
+          // Out-of-range channels clip to [0, 1], as in the front end.
+          let (r, g, b) =
+            (r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0));
           Some(Color::new(r, g, b).with_alpha(a))
         } else if args.len() == 1 {
           // RGBColor["#hex"] or RGBColor[gray]

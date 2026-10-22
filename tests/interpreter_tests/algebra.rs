@@ -20017,3 +20017,23 @@ mod sum_with_symbolic_bounds_and_step {
     );
   }
 }
+
+mod rgbcolor_channels_clip {
+  use super::*;
+
+  #[test]
+  fn out_of_range_channels_render_like_clipped_ones_in_3d() {
+    let svg = |color: &str| {
+      interpret(&format!(
+        "ExportString[Graphics3D[{{{color}, Polygon[{{{{0, 0, 0}}, \
+         {{1, 0, 0}}, {{1, 1, 0}}}}]}}, Boxed -> False], \"SVG\"]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(
+      svg("RGBColor[0.48, 0.11, 56]"),
+      svg("RGBColor[0.48, 0.11, 1]")
+    );
+    assert_eq!(svg("RGBColor[2, -1, 0.5]"), svg("RGBColor[1, 0, 0.5]"));
+  }
+}
