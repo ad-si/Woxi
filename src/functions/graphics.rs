@@ -10496,9 +10496,30 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the clip rectangle below.
   let clip_x = plot_range_x.map(|_| (bb.x_min, bb.x_max));
   let clip_y = plot_range_y.map(|_| (bb.y_min, bb.y_max));
-  if !aspect_ratio_full {
-    expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
-  }
+  // With a frame or axes the expanded range would show up as ticks beyond
+  // the requested one, so there the drawing shrinks to the data's shape
+  // inside the `{w, h}` box instead.
+  let fit_inside = explicit_size
+    && size_names_height
+    && !aspect_ratio_full
+    && (frame_edges.iter().any(|&e| e) || axes.0 || axes.1);
+  let (svg_w, svg_h) = if fit_inside {
+    let data_aspect = bb.height() / bb.width();
+    if data_aspect.is_finite() && data_aspect > 0.0 {
+      if svg_h / svg_w > data_aspect {
+        (svg_w, (svg_w * data_aspect).round().max(1.0))
+      } else {
+        ((svg_h / data_aspect).round().max(1.0), svg_h)
+      }
+    } else {
+      (svg_w, svg_h)
+    }
+  } else {
+    if !aspect_ratio_full {
+      expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
+    }
+    (svg_w, svg_h)
+  };
 
   // Compute margins for axis/frame tick labels. A PlotLabel reserves an
   // extra strip above the drawing area for its centered title text.

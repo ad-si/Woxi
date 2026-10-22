@@ -3876,6 +3876,28 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_framed_graphics_fits_data_shape_inside_image_size_box() {
+    // Regression: a framed `Graphics` with an explicit `PlotRange` of
+    // 30 x 20 and `ImageSize -> {400, 400}` widened the y range to make the
+    // drawing square, so the frame showed y ticks (-5, 25) outside the
+    // requested range. The drawing must instead keep the requested range and
+    // shrink to the data's shape inside the box.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Disk[{3, 3}, 1], PlotRange -> {{-10, 20}, {0, 20}}, Frame -> True, ImageSize -> {400, 400}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains(">25</text>"), "y range was widened: {svg}");
+    let height: f64 = svg
+      .split("<svg width=\"400\" height=\"")
+      .nth(1)
+      .and_then(|r| r.split('"').next())
+      .and_then(|h| h.parse().ok())
+      .expect("svg height");
+    assert!(height < 300.0, "drawing was not shrunk to 3:2: {height}");
+  }
+
+  #[test]
   fn test_graphics_grid_uses_golden_ratio_default_for_bare_graphics_cell() {
     // Regression: `g1 = Graphics[...]` with an elongated bounding box (a
     // vertical stack of shapes, say) rendered standalone at whatever tall,
