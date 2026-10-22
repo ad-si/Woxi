@@ -12088,6 +12088,24 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         BoxLayout::text(&text, font_size)
       }
 
+      // Ordinary expressions inside a box tree (the cells of a
+      // `FractionBox` built from `Row`, `Style` and `Short`) lay out as
+      // the boxes they stand for.
+      "Row" if args.len() == 1 && matches!(&args[0], Expr::List(_)) => {
+        layout_box(&args[0], font_size)
+      }
+      "Style" if !args.is_empty() => layout_box(
+        &Expr::FunctionCall {
+          name: "StyleBox".to_string(),
+          args: args.clone(),
+        },
+        font_size,
+      ),
+      "Short" if args.len() == 1 || args.len() == 2 => {
+        let lines = args.get(1).and_then(expr_to_f64).unwrap_or(1.0);
+        layout_box(&shorten_for_display(&args[0], lines), font_size)
+      }
+
       // Unknown function: render as text
       _ => {
         let text = expr_to_output(expr);
@@ -12738,6 +12756,42 @@ fn inline_graphic_glyph(args: &[Expr]) -> Option<String> {
   })
 }
 
+/// Characters on one line of `Short`'s output.
+const SHORT_LINE_WIDTH: f64 = 78.0;
+
+/// What `Short[expr, lines]` shows: an integer too long for `lines` lines
+/// keeps its outer digits around a `<<k>>` count of the omitted ones.
+/// Styling wrapped around it is kept; anything that fits is unchanged.
+fn shorten_for_display(expr: &Expr, lines: f64) -> Expr {
+  let budget = (lines * SHORT_LINE_WIDTH).max(0.0) as usize;
+  let digits = match expr {
+    Expr::Integer(n) => n.to_string(),
+    Expr::BigInteger(n) => n.to_string(),
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let mut inner = args.clone();
+      inner[0] = shorten_for_display(&args[0], lines);
+      return Expr::FunctionCall {
+        name: name.clone(),
+        args: inner,
+      };
+    }
+    _ => return expr.clone(),
+  };
+  if digits.len() <= budget {
+    return expr.clone();
+  }
+  let sign = usize::from(digits.starts_with('-'));
+  let keep = budget.saturating_sub(8) / 2;
+  let omitted = digits.len().saturating_sub(2 * keep + sign);
+  if keep == 0 || omitted == 0 {
+    return expr.clone();
+  }
+  let (head, tail) = (&digits[..sign + keep], &digits[digits.len() - keep..]);
+  Expr::String(format!("{head}<<{omitted}>>{tail}"))
+}
+
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
   // `StringForm["template", args…]` substitutes its placeholders wherever
   // it is *typeset* — a graphic's label is exactly that (unlike
@@ -13330,6 +13384,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           }
         }
 
+        // Short[expr, n] shows `expr` abbreviated to about `n` lines of
+        // text; an expression that fits is drawn whole.
+        "Short" if args.len() == 1 || args.len() == 2 => {
+          let lines = args.get(1).and_then(expr_to_f64).unwrap_or(1.0);
+          expr_to_svg_markup(&shorten_for_display(&args[0], lines))
+        }
+
         // A small inline `Graphics[{color, Disk[]}]` (a legend swatch in
         // a label) can't nest an `<svg>` inside `<text>`, so it is typeset
         // as the glyph it draws, in the colour it is drawn with.
@@ -13885,6 +13946,10 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       {
         estimate_display_width(&args[0])
       }
+      "Short" if args.len() == 1 || args.len() == 2 => {
+        let lines = args.get(1).and_then(expr_to_f64).unwrap_or(1.0);
+        estimate_display_width(&shorten_for_display(&args[0], lines))
+      }
       // Subscript[base, i, …] / Superscript[base, e, …] typeset as shifted
       // tspans at 70% size, the scripts comma-separated.
       "Subscript" | "Superscript" if args.len() >= 2 => {
@@ -14318,6 +14383,10 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
           boxes_to_svg(&args[0])
         }
       }
+
+      // An ordinary expression inside a box tree (`Row`, `Style`, `Short`
+      // around the cells of a `FractionBox`) is typeset as itself.
+      n if !n.ends_with("Box") => expr_to_svg_markup(expr),
 
       // Unknown box type: render as Name[arg1, arg2, ...]
       _ => {
