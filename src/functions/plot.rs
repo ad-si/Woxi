@@ -4541,6 +4541,9 @@ fn color_function_rgb(
     Expr::FunctionCall { name, args } if name == "Function" => {
       matches!(args.first(), Some(Expr::List(ps)) if ps.len() >= 2)
     }
+    Expr::Function { body } => {
+      crate::evaluator::function_application::max_slot_index(body) >= 2
+    }
     _ => false,
   };
   if two_params {
