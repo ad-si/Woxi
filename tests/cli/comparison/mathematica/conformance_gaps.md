@@ -5310,3 +5310,13 @@ but not summed in closed form (the kernel gives `(-1 + k^(q + h q))/(-1 +
 k^q)`). Applying a definition stored from it to numbers evaluates correctly.
 Steps that do not divide a symbolic span (`Sum[k^i, {i, 0, n, 2}]`) stay
 unevaluated.
+
+
+## Automatically sized `Graphics` in a `Row` inside a fixed `Pane`
+
+A `Pane[Grid[{{Row[{Graphics[…], Graphics[…], …}]}, …}], {300, 300}]` cell
+keeps each automatically sized picture at its default width, so the row is far
+wider than the pane (arrows 330 points long). The FrontEnd shrinks those
+pictures to fit the pane. `fit_grid_to_pane_width` only squeezes pictures that
+are direct `Grid` cells or nested `Grid` columns, not pictures inside a `Row`
+cell.

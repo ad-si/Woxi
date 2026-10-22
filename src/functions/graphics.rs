@@ -4493,7 +4493,7 @@ fn spacer_gap_text(expr: &Expr) -> Option<String> {
 /// text, set in the `BaseStyle` colour, inside a menu plate unless
 /// `Appearance -> None` asks for the bare value. While `var` holds none of
 /// the items the menu is blank, as it is in a notebook.
-fn popup_menu_cell_svg(args: &[Expr]) -> String {
+pub(crate) fn popup_menu_cell_svg(args: &[Expr]) -> String {
   let current = dynamic_current_value(&args[0]);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Input);
@@ -17019,7 +17019,12 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
         "Column" if !args.is_empty() => column_to_svg(&args)?,
         // A `Row` of `Button`s (built with `Map`) is a row of plates, not
         // the text of the buttons' source.
-        "Row" if !args.is_empty() && contains_body_button(cell) => {
+        // Likewise a `Row` holding a `PopupMenu` (a fill-in-the-blank
+        // equation like `[menu] x + [menu] = y`).
+        "Row"
+          if !args.is_empty()
+            && (contains_body_button(cell) || contains_popup_menu(cell)) =>
+        {
           row_to_svg(&args)?
         }
         _ => return None,
@@ -21505,6 +21510,27 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       // exactly as the content does.
       "Deploy" => args.len() == 1,
       "Item" | "Pane" => !args.is_empty(),
+      // A blank-string factor (`"\n" * cell`, a newline typed into a layout
+      // by mistake) only adds invisible space; the cell draws as the
+      // single other factor.
+      "Times" => {
+        let blank =
+          |e: &Expr| matches!(e, Expr::String(s) if s.trim().is_empty());
+        let only: Option<Expr> = {
+          let mut others = args.iter().filter(|a| !blank(a));
+          match (others.next(), others.next()) {
+            (Some(only), None) if args.len() > 1 => Some(only.clone()),
+            _ => None,
+          }
+        };
+        match only {
+          Some(only) => {
+            current = only;
+            continue;
+          }
+          None => false,
+        }
+      }
       // `PaddedForm[Grid[…], spec]` & co. format the numbers inside the
       // layout; the layout itself is drawn as usual.
       "NumberForm" | "PaddedForm" | "AccountingForm"
@@ -21873,6 +21899,11 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // printed as its raw `Button[…]` source text instead of a button.
       "Button" if args.len() >= 2 => {
         return Some(button_plate_svg(&graphics_text_content(&args[0])));
+      }
+      // Likewise a `PopupMenu[Dynamic[var], items, …]` item shows the choice
+      // `var` holds rather than its source text.
+      "PopupMenu" if args.len() >= 2 => {
+        return Some(popup_menu_cell_svg(&args));
       }
       // A progress bar drawn as a track with its filled fraction rather
       // than as `ProgressIndicator[…]` source text.
@@ -27179,6 +27210,19 @@ fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
         .collect(),
     ),
     other => other.clone(),
+  }
+}
+
+/// Whether `expr` has a `PopupMenu[Dynamic[var], items, …]` anywhere inside it.
+fn contains_popup_menu(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      (name == "PopupMenu" && args.len() >= 2)
+        || args.iter().any(contains_popup_menu)
+    }
+    Expr::List(items) => items.iter().any(contains_popup_menu),
+    Expr::CompoundExpr(items) => items.iter().any(contains_popup_menu),
+    _ => false,
   }
 }
 

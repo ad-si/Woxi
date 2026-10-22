@@ -5050,6 +5050,15 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
+  // A bare `PopupMenu[Dynamic[var], items, …]` drawn inside a layout shows
+  // the item `var` holds (see `popup_menu_cell_svg`), so it is a picture.
+  if matches!(expr, Expr::FunctionCall { name, args }
+    if name == "PopupMenu"
+      && args.len() >= 2
+      && matches!(&args[0], Expr::FunctionCall { name: d, .. } if d == "Dynamic"))
+  {
+    return true;
+  }
   // A bare `LineLegend[…]` is a picture too — a Demonstration placing a
   // legend beside its plot rather than attached via `Legended`.
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "LineLegend") {
@@ -5572,7 +5581,17 @@ fn layout_rows(name: &str, args: &[Expr]) -> Vec<Vec<Expr>> {
     "Grid" => items
       .iter()
       .map(|row| match row {
-        Expr::List(cells) => cells.to_vec(),
+        Expr::List(cells) => cells.iter().map(strip_blank_times).collect(),
+        // A row written as an unevaluated product that threads over a list
+        // (`"\n" * {cell}`) is the one-cell row `{"\n" * cell}`.
+        Expr::FunctionCall { name, .. } if name == "Times" => {
+          match &crate::evaluator::evaluate_expr_to_expr(row) {
+            Ok(Expr::List(cells)) => {
+              cells.iter().map(strip_blank_times).collect()
+            }
+            _ => vec![row.clone()],
+          }
+        }
         other => vec![other.clone()],
       })
       .filter(|cells| !cells.is_empty())
@@ -5580,6 +5599,22 @@ fn layout_rows(name: &str, args: &[Expr]) -> Vec<Vec<Expr>> {
     "Column" => items.iter().map(|c| vec![c.clone()]).collect(),
     _ => vec![items.to_vec()],
   }
+}
+
+/// `"\n" * cell` (a newline typed into a layout) draws as `cell`: the
+/// blank-string factors only add invisible space.
+fn strip_blank_times(cell: &Expr) -> Expr {
+  if let Expr::FunctionCall { name, args } = cell
+    && name == "Times"
+    && args.len() > 1
+  {
+    let blank = |e: &Expr| matches!(e, Expr::String(s) if s.trim().is_empty());
+    let mut others = args.iter().filter(|a| !blank(a));
+    if let (Some(only), None) = (others.next(), others.next()) {
+      return only.clone();
+    }
+  }
+  cell.clone()
 }
 
 /// True if the expression is (or, within nested lists, contains) a `Framed`
@@ -6007,6 +6042,15 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // it displays is `expr`.
     Expr::FunctionCall { name, args } if name == "Item" && !args.is_empty() => {
       expr_to_svg(&args[0])
+    }
+    // A `PopupMenu[Dynamic[var], items, …]` shows the item `var` holds, as
+    // a menu plate, rather than its source text.
+    Expr::FunctionCall { name, args }
+      if name == "PopupMenu"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: d, .. } if d == "Dynamic") =>
+    {
+      crate::functions::graphics::popup_menu_cell_svg(args)
     }
     // `Tooltip[picture, tip]` displays the picture; the tip only appears
     // on hover, so it has no place in a static export. (Without this arm a
