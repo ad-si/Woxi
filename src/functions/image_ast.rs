@@ -2422,6 +2422,7 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     chart_style_scheme: None,
     chart_legends: Vec::new(),
     chart_legends_auto: false,
+    legend_row: false,
     plot_range_x: Some((0.0, 255.0)),
     plot_range_y: None,
     bar_origin_left: false,

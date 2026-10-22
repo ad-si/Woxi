@@ -17480,6 +17480,82 @@ fn grid_svg_internal(
   grid_svg_styled_internal(args, group_gaps, parens, &GridStyle::default())
 }
 
+/// Is this `ItemStyle` value the plain `{columnColors, rowColors}` form that
+/// the grid paints through its per-column / per-row colour lists?
+fn is_color_only_item_style(specs: &[Expr]) -> bool {
+  specs.len() == 2
+    && specs.iter().any(|s| matches!(s, Expr::List(_)))
+    && specs.iter().all(|s| match s {
+      Expr::List(items) => items.iter().all(|i| parse_color(i).is_some()),
+      single => parse_color(single).is_some(),
+    })
+}
+
+/// The `Style` directives of one `ItemStyle` entry: `Directive[…]` and plain
+/// lists contribute their members, anything else is a directive itself.
+fn item_style_entry_directives(entry: &Expr, out: &mut Vec<Expr>) {
+  match entry {
+    Expr::List(items) => {
+      for item in items {
+        item_style_entry_directives(item, out);
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      for arg in args {
+        item_style_entry_directives(arg, out);
+      }
+    }
+    Expr::Identifier(name) if name == "None" || name == "Automatic" => {}
+    other => out.push(other.clone()),
+  }
+}
+
+/// The directives `ItemStyle -> {columnSpec, rowSpec, {{i, j} -> style, …}}`
+/// gives the cell in (1-based) row `i`, column `j`. A column or row spec is a
+/// single style for every position, a list cycled over the positions, or a
+/// list of `k -> style` rules. Cell rules apply last.
+fn item_style_directives(specs: &[Expr], i: usize, j: usize) -> Vec<Expr> {
+  let mut out = Vec::new();
+  for (spec, pos) in specs.iter().take(2).zip([j, i]) {
+    match spec {
+      Expr::List(items)
+        if items.iter().any(|e| matches!(e, Expr::Rule { .. })) =>
+      {
+        for item in items {
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          } = item
+            && matches!(pattern.as_ref(), Expr::Integer(k) if *k as usize == pos)
+          {
+            item_style_entry_directives(replacement, &mut out);
+          }
+        }
+      }
+      Expr::List(items) if !items.is_empty() => {
+        item_style_entry_directives(&items[(pos - 1) % items.len()], &mut out);
+      }
+      single => item_style_entry_directives(single, &mut out),
+    }
+  }
+  if let Some(Expr::List(rules)) = specs.get(2) {
+    for rule in rules {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = rule
+        && let Expr::List(p) = pattern.as_ref()
+        && p.len() == 2
+        && matches!(&p[0], Expr::Integer(r) if *r as usize == i)
+        && matches!(&p[1], Expr::Integer(c) if *c as usize == j)
+      {
+        item_style_entry_directives(replacement, &mut out);
+      }
+    }
+  }
+  out
+}
+
 /// `outer` overlaid with the directives of a `BaseStyle` option found in
 /// the `Grid` options `opts`.
 fn grid_base_style(opts: &[Expr], outer: &GridStyle) -> GridStyle {
@@ -17681,6 +17757,9 @@ fn grid_svg_styled_internal(
   // `ItemStyle -> {cols, rows}`: text colours per column / row, cycled.
   let mut item_col_colors: Vec<Option<Color>> = Vec::new();
   let mut item_row_colors: Vec<Option<Color>> = Vec::new();
+  // `ItemStyle` specs beyond plain colours (sizes, weights, `{i, j} -> style`
+  // rules) are applied by wrapping each cell in `Style[…]`.
+  let mut item_style_spec: Option<Vec<Expr>> = None;
   let mut background_color: Option<Color> = None; // uniform background
   let mut col_backgrounds: Vec<Option<Color>> = Vec::new(); // per-column bg
   // Index-rule lists name positions, so they do not cycle over the rest.
@@ -17952,6 +18031,9 @@ fn grid_svg_styled_internal(
             }
           };
           match replacement.as_ref() {
+            Expr::List(specs) if !is_color_only_item_style(specs) => {
+              item_style_spec = Some(specs.to_vec());
+            }
             Expr::List(specs)
               if specs.len() == 2
                 && specs.iter().any(|s| matches!(s, Expr::List(_))) =>
@@ -18051,6 +18133,22 @@ fn grid_svg_styled_internal(
           }
         }
         _ => {}
+      }
+    }
+  }
+
+  if let Some(specs) = &item_style_spec {
+    for (i, row) in rows.iter_mut().enumerate() {
+      for (j, cell) in row.iter_mut().enumerate() {
+        let directives = item_style_directives(specs, i + 1, j + 1);
+        if !directives.is_empty() {
+          let mut style_args = vec![cell.clone()];
+          style_args.extend(directives);
+          *cell = Expr::FunctionCall {
+            name: "Style".to_string(),
+            args: style_args.into(),
+          };
+        }
       }
     }
   }

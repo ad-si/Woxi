@@ -5459,6 +5459,7 @@ pub(crate) fn generate_bar_svg(
   frame_label: Option<(&str, &str)>,
   chart_style: &[WoxiColor],
   chart_legends: &[String],
+  legend_row: bool,
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
   bar_labels: &[String],
@@ -5546,6 +5547,11 @@ pub(crate) fn generate_bar_svg(
   if has_value_labels {
     bottom_extra += 30.0 * sf;
   }
+  // A `LegendAppearance -> "Row"` legend runs along the bottom edge.
+  let row_legend = legend_row && !chart_legends.is_empty();
+  if row_legend {
+    bottom_extra += 30.0 * sf;
+  }
   if frame_label_x.is_some() {
     bottom_extra += 24.0 * sf;
   }
@@ -5565,7 +5571,7 @@ pub(crate) fn generate_bar_svg(
         * sf
         * 18.0
   }) as u32;
-  let legend_margin_right = if chart_legends.is_empty() {
+  let legend_margin_right = if chart_legends.is_empty() || row_legend {
     10 * s as u32
   } else {
     let max_label_len = chart_legends
@@ -5960,11 +5966,24 @@ pub(crate) fn generate_bar_svg(
       ));
     }
 
-    // ChartLegends: color swatch + label, positioned to the right of the plot
+    // ChartLegends: color swatch + label, positioned to the right of the
+    // plot (or in a single row below it for `LegendAppearance -> "Row"`)
     if !chart_legends.is_empty() {
       let legend_font = sf * 16.0;
       let swatch_size = sf * 12.0;
       let swatch_gap = sf * 6.0;
+      let entry_gap = sf * 14.0;
+      let entry_width = |label: &String| {
+        swatch_size
+          + swatch_gap
+          + crate::functions::graphics::box_string_visible_len(label) as f64
+            * sf
+            * 8.5
+      };
+      let row_width = chart_legends.iter().map(entry_width).sum::<f64>()
+        + entry_gap * (chart_legends.len() - 1) as f64;
+      let mut row_x = plot_x0 + (plot_w - row_width) / 2.0;
+      let row_y = render_height as f64 - sf * 24.0;
       let legend_x = plot_x0 + plot_w + sf * 16.0;
       let legend_y_start = plot_y0 + sf * 8.0;
       let line_height = sf * 22.0;
@@ -5980,7 +5999,13 @@ pub(crate) fn generate_bar_svg(
             (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
           )
         };
-        let ly = legend_y_start + i as f64 * line_height;
+        let (legend_x, ly) = if row_legend {
+          let x = row_x;
+          row_x += entry_width(label) + entry_gap;
+          (x, row_y)
+        } else {
+          (legend_x, legend_y_start + i as f64 * line_height)
+        };
         // Color swatch
         labels_svg.push_str(&format!(
           "<rect x=\"{legend_x:.1}\" y=\"{ly:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \

@@ -555,6 +555,9 @@ pub(crate) struct ChartOptions {
   /// how to derive default labels from the input (e.g. Association keys)
   /// should populate `chart_legends` themselves when this is true.
   pub chart_legends_auto: bool,
+  /// `LegendAppearance -> "Row"`: lay the legend out in one row below the
+  /// plot instead of in a column beside it.
+  pub legend_row: bool,
   pub plot_range_x: Option<(f64, f64)>,
   pub plot_range_y: Option<(f64, f64)>,
   /// `BarOrigin -> Left` (or `Right`) renders horizontal bars.
@@ -1783,6 +1786,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     chart_style_scheme: None,
     chart_legends: Vec::new(),
     chart_legends_auto: false,
+    legend_row: false,
     plot_range_x: None,
     plot_range_y: None,
     bar_origin_left: false,
@@ -1849,7 +1853,13 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             let val = evaluate_expr_to_expr(replacement)
               .unwrap_or_else(|_| replacement.clone());
             if let Expr::List(items) = &val {
-              for item in items {
+              // `{groupLabels, barLabels}` — the first sublist names the
+              // groups, which are what the category axis shows.
+              let labels = match items.first() {
+                Some(Expr::List(group_labels)) => group_labels,
+                _ => items,
+              };
+              for item in labels {
                 if let Some(cl) = expr_to_chart_label(item) {
                   opts.chart_labels.push(cl);
                 }
@@ -1880,6 +1890,10 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
               opts.axes_label = Some((x, y));
             }
           }
+        }
+        "LegendAppearance" => {
+          opts.legend_row =
+            matches!(replacement, Expr::String(s) if s == "Row");
         }
         "ChartLegends" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -2076,6 +2090,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|(x, y)| (x.as_str(), y.as_str())),
     &opts.chart_style,
     &opts.chart_legends,
+    opts.legend_row,
     // PlotRange is in chart coordinates (first bar centred at x = 1).
     opts.plot_range_x.map(|(lo, hi)| (lo - 0.5, hi - 0.5)),
     opts.plot_range_y,
