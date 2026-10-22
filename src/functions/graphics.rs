@@ -25456,6 +25456,33 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           patch_default_label(&mut c, orig, synth);
           renames.push((orig_form.clone(), synth.clone()));
         }
+        // A bare `Locator` (no corner bounds) moves over the picture the body
+        // draws, so an explicit `PlotRange -> {{x0, x1}, {y0, y1}}` there
+        // bounds the pad rather than a box padded around the start point.
+        if bare_locator_spec(&spec)
+          && let Some(((x0, y0), (x1, y1))) =
+            args.first().and_then(find_plot_range)
+        {
+          match &mut c {
+            ManipulateControl::Slider2D {
+              x_min,
+              x_max,
+              y_min,
+              y_max,
+              ..
+            }
+            | ManipulateControl::Locator {
+              x_min,
+              x_max,
+              y_min,
+              y_max,
+              ..
+            } => {
+              (*x_min, *x_max, *y_min, *y_max) = (x0, x1, y0, y1);
+            }
+            _ => {}
+          }
+        }
         // A `Trigger`/`Animator` control spec animates its variable: the
         // widget auto-plays (paused for a Trigger, running for an Animator)
         // and the animation targets this variable.
@@ -29319,6 +29346,33 @@ fn pane_range(arg: Option<&Expr>, graphic: &Expr) -> ((f64, f64), (f64, f64)) {
     return (lo, hi);
   }
   find_plot_range(graphic).unwrap_or(((0.0, 0.0), (1.0, 1.0)))
+}
+
+/// Whether a Manipulate control spec is `{{p, init}, Locator, …options}`
+/// with no explicit corner bounds and no pane drawn around it.
+fn bare_locator_spec(spec: &Expr) -> bool {
+  let Expr::List(items) = spec else {
+    return false;
+  };
+  let is_locator = |it: &Expr| match it {
+    Expr::Identifier(s) => s == "Locator",
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => matches!(
+      (pattern.as_ref(), replacement.as_ref()),
+      (Expr::Identifier(k), Expr::Identifier(v))
+        if k == "ControlType" && v == "Locator"
+    ),
+    _ => false,
+  };
+  items.len() >= 2
+    && items[1..].iter().any(is_locator)
+    && items[1..].iter().all(|it| {
+      is_locator(it)
+        || matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        || matches!(it, Expr::Identifier(s) if s == "Automatic")
+    })
 }
 
 /// The first `PlotRange -> {{xmin, xmax}, {ymin, ymax}}` option found
