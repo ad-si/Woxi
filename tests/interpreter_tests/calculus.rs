@@ -8861,6 +8861,29 @@ mod ndsolve {
   }
 
   #[test]
+  fn ndsolve_coupled_first_order_boundary_value_problem() {
+    // A counterflow heat exchanger: two coupled first-order equations with
+    // one condition at each end of the domain. Both temperatures change by
+    // the same amount per length, so th - tc is the constant D with
+    // th(0) = 400, tc(15) = 300, tc(0) = 300 + 15 D and D = 400 - tc(0),
+    // i.e. D = 6.25.
+    let result = interpret(
+      "sol = NDSolve[{th'[z] == -(th[z] - tc[z]), \
+       tc'[z] == -(th[z] - tc[z]), th[0] == 400, tc[15] == 300}, \
+       {th, tc}, {z, 0, 15}][[1]]; \
+       {th[15], tc[0]} /. sol /. {th -> th, tc -> tc}",
+    )
+    .unwrap();
+    let vals: Vec<f64> = result
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|v| v.parse().expect("should be a number"))
+      .collect();
+    assert!((vals[0] - 306.25).abs() < 1e-4, "got {result}");
+    assert!((vals[1] - 393.75).abs() < 1e-4, "got {result}");
+  }
+
+  #[test]
   fn ndsolve_boundary_value_problem_requires_conditions_at_the_domain_ends() {
     // Regression guard: conditions at two points that *aren't* the solved
     // domain's own endpoints aren't a boundary value problem this solver
