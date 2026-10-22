@@ -4090,3 +4090,44 @@ mod tests {
     }
   }
 }
+
+mod grid_item_style_tests {
+  use woxi::interpret;
+
+  fn fills(code: &str) -> Vec<String> {
+    let svg = interpret(code).unwrap();
+    svg
+      .split("<text")
+      .skip(1)
+      .filter_map(|t| t.split("fill=\"").nth(1))
+      .filter_map(|t| t.split('"').next())
+      .map(String::from)
+      .collect()
+  }
+
+  #[test]
+  fn row_colours_apply_to_each_row() {
+    let f = fills(
+      "ExportString[Grid[{{1, 2}, {3, 4}}, ItemStyle -> {Automatic, {Red, White}}], \"SVG\"]",
+    );
+    assert_eq!(
+      f,
+      vec![
+        "rgb(255,0,0)",
+        "rgb(255,0,0)",
+        "rgb(255,255,255)",
+        "rgb(255,255,255)"
+      ]
+    );
+  }
+
+  #[test]
+  fn column_colours_apply_to_each_column() {
+    let f = fills(
+      "ExportString[Grid[{{1, 2}, {3, 4}}, ItemStyle -> {{Blue, Green}, Automatic}], \"SVG\"]",
+    );
+    assert_eq!(f[0], "rgb(0,0,255)");
+    assert_eq!(f[1], "rgb(0,255,0)");
+    assert_eq!(f[2], "rgb(0,0,255)");
+  }
+}

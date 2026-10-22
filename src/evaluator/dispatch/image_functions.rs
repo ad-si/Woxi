@@ -273,6 +273,48 @@ fn visible_spectrum_rgb(w: f64) -> (f64, f64, f64) {
   (0.0, 0.0, 0.0)
 }
 
+/// The color of a black body glowing at `kelvin`: the Planckian locus
+/// chromaticity (Kim et al.'s cubic approximation, valid 1667–25000 K)
+/// converted to sRGB and scaled so the brightest channel is 1.
+fn black_body_rgb(kelvin: f64) -> (f64, f64, f64) {
+  let t = kelvin.clamp(1667.0, 25000.0);
+  let x = if t <= 4000.0 {
+    -0.2661239e9 / t.powi(3) - 0.2343589e6 / t.powi(2)
+      + 0.8776956e3 / t
+      + 0.179910
+  } else {
+    -3.0258469e9 / t.powi(3)
+      + 2.1070379e6 / t.powi(2)
+      + 0.2226347e3 / t
+      + 0.240390
+  };
+  let y = if t <= 2222.0 {
+    -1.1063814 * x.powi(3) - 1.34811020 * x.powi(2) + 2.18555832 * x
+      - 0.20219683
+  } else if t <= 4000.0 {
+    -0.9549476 * x.powi(3) - 1.37418593 * x.powi(2) + 2.09137015 * x
+      - 0.16748867
+  } else {
+    3.0817580 * x.powi(3) - 5.87338670 * x.powi(2) + 3.75112997 * x - 0.37001483
+  };
+  let (big_x, big_z) = (x / y, (1.0 - x - y) / y);
+  let linear = [
+    3.2406 * big_x - 1.5372 + -0.4986 * big_z,
+    -0.9689 * big_x + 1.8758 + 0.0415 * big_z,
+    0.0557 * big_x - 0.2040 + 1.0570 * big_z,
+  ];
+  let peak = linear.iter().copied().fold(f64::MIN, f64::max);
+  let encode = |v: f64| {
+    let v = (v / peak).clamp(0.0, 1.0);
+    if v <= 0.0031308 {
+      12.92 * v
+    } else {
+      1.055 * v.powf(1.0 / 2.4) - 0.055
+    }
+  };
+  (encode(linear[0]), encode(linear[1]), encode(linear[2]))
+}
+
 /// The k-th color of an indexed scheme. Scheme 1 is generated rather than
 /// tabulated: its hues start at 0.67 and advance by √5 - 2 turns, and every
 /// component is mapped into 0.24 … 0.6 — so it never repeats and accepts any
@@ -1084,6 +1126,24 @@ pub fn dispatch_image_functions(
           vec![channel(r), channel(g), channel(b)],
         )));
       }
+      // ColorData["WebSafe", "#RRGGBB"]: the web-safe colour with that hex
+      // code (each channel a multiple of 0x33).
+      if let (Expr::String(scheme), Expr::String(code)) = (&args[0], &args[1])
+        && scheme == "WebSafe"
+        && let Some((r, g, b)) = web_safe_hex_color(code)
+      {
+        let channel = |v: f64| {
+          if v == 0.0 {
+            Expr::Integer(0)
+          } else {
+            Expr::Real(v)
+          }
+        };
+        return Some(Ok(call(
+          "RGBColor",
+          vec![channel(r), channel(g), channel(b)],
+        )));
+      }
       // ColorData["VisibleSpectrum", wavelength]: the color of light with
       // the given wavelength in nm (380–750 nm; black outside that range).
       if let Expr::String(scheme) = &args[0]
@@ -1092,6 +1152,19 @@ pub fn dispatch_image_functions(
         && let Some(w) = crate::functions::math_ast::try_eval_to_f64(&args[1])
       {
         let (r, g, b) = visible_spectrum_rgb(w);
+        return Some(Ok(call(
+          "RGBColor",
+          vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+        )));
+      }
+      // ColorData["BlackBodySpectrum", kelvin]: the color of a black body at
+      // the given temperature.
+      if let Expr::String(scheme) = &args[0]
+        && scheme == "BlackBodySpectrum"
+        && !matches!(&args[1], Expr::String(_))
+        && let Some(t) = crate::functions::math_ast::try_eval_to_f64(&args[1])
+      {
+        let (r, g, b) = black_body_rgb(t);
         return Some(Ok(call(
           "RGBColor",
           vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
@@ -1237,23 +1310,52 @@ pub fn dispatch_image_functions(
           names.iter().map(|n| str_expr(n)).collect(),
         )));
       }
-      // ColorData["VisibleSpectrum"]: the wavelength-to-color function over
-      // 380–750 nm. Applying it (`ColorData["VisibleSpectrum"][w]`, the way
-      // Demonstrations tint a plot by wavelength) delegates to the
-      // two-argument form.
-      if matches!(&args[0], Expr::String(s) if s == "VisibleSpectrum") {
+      // ColorData["WebSafe"]: applying it to a hex code (`"#99CC00"`) gives
+      // the web-safe colour, via the two-argument form.
+      if matches!(&args[0], Expr::String(s) if s == "WebSafe") {
         let sample = Expr::Function {
           body: Box::new(call(
             "ColorData",
-            vec![str_expr("VisibleSpectrum"), Expr::Slot(1)],
+            vec![str_expr("WebSafe"), Expr::Slot(1)],
           )),
         };
         return Some(Ok(call(
           "ColorDataFunction",
           vec![
-            str_expr("VisibleSpectrum"),
+            str_expr("WebSafe"),
+            str_expr("Named"),
+            Expr::List(vec![].into()),
+            sample,
+          ],
+        )));
+      }
+      // ColorData["VisibleSpectrum"] (wavelength, 380–750 nm) and
+      // ColorData["BlackBodySpectrum"] (temperature in K): the color
+      // function of the scheme. Applying it (`ColorData["VisibleSpectrum"][w]`, the way
+      // Demonstrations tint a plot by wavelength) delegates to the
+      // two-argument form.
+      if let Expr::String(scheme) = &args[0]
+        && (scheme == "VisibleSpectrum" || scheme == "BlackBodySpectrum")
+      {
+        let domain = if scheme == "VisibleSpectrum" {
+          (380, 750)
+        } else {
+          (1000, 12000)
+        };
+        let sample = Expr::Function {
+          body: Box::new(call(
+            "ColorData",
+            vec![str_expr(scheme), Expr::Slot(1)],
+          )),
+        };
+        return Some(Ok(call(
+          "ColorDataFunction",
+          vec![
+            str_expr(scheme),
             str_expr("Gradients"),
-            Expr::List(vec![Expr::Integer(380), Expr::Integer(750)].into()),
+            Expr::List(
+              vec![Expr::Integer(domain.0), Expr::Integer(domain.1)].into(),
+            ),
             sample,
           ],
         )));
@@ -2388,6 +2490,20 @@ const HTML_COLORS: &[(&str, f64, f64, f64)] = &[
   ("Yellow", 1.0, 1.0, 0.0),
   ("YellowGreen", 0.6039215686274509, 0.803921568627451, 0.19607843137254902),
 ];
+
+/// `ColorData["WebSafe", "#RRGGBB"]` → the channels in 0–1. Only the 216
+/// web-safe codes (every channel 00, 33, 66, 99, CC or FF) are accepted.
+fn web_safe_hex_color(code: &str) -> Option<(f64, f64, f64)> {
+  let hex = code.strip_prefix('#')?;
+  if hex.len() != 6 || !hex.is_ascii() {
+    return None;
+  }
+  let channel = |i: usize| {
+    let v = u8::from_str_radix(&hex[i..i + 2], 16).ok()?;
+    (v % 0x33 == 0).then(|| v as f64 / 255.0)
+  };
+  Some((channel(0)?, channel(2)?, channel(4)?))
+}
 
 /// `ColorData["HTML", name]` → the named CSS colour as an `RGBColor`.
 fn html_named_color(name: &str) -> Option<(f64, f64, f64)> {

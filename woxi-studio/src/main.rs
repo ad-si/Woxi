@@ -9655,6 +9655,54 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(state.control_is_visible, vec![true, false, true]);
   }
 
+  /// Static text inside a `PaneSelector` pane (the words and `Style[…]`
+  /// glyphs of a `Row` that surrounds that pane's controls) belongs to the
+  /// pane: it must disappear with the pane's controls rather than stay on
+  /// screen as stray captions for sliders that are not showing.
+  #[test]
+  fn manipulate_pane_selector_hides_static_text_of_inactive_pane() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{mode, a, b}, \
+       {{mode, \"plain\"}, {\"plain\", \"sum\"}, ControlType -> RadioButton}, \
+       PaneSelector[{\"plain\" -> Control[{{a, 1, \"a\"}, 0, 5, 1}], \
+       \"sum\" -> Row[{\"first\", Control[{{a, 1, None}, 0, 5, 1}], \
+       Style[\" plus\", 12], Control[{{b, 2, None}, 0, 5, 1}], \"second\"}]}, \
+       Dynamic[mode]]]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.error.is_none(), "unexpected error: {:?}", state.error);
+    let is_text = |c: &manipulate::ControlState| {
+      matches!(c, manipulate::ControlState::Heading { .. })
+    };
+    let texts: Vec<usize> = (0..state.controls.len())
+      .filter(|&i| is_text(&state.controls[i]))
+      .collect();
+    assert_eq!(texts.len(), 3, "\"first\", \" plus\" and \"second\"");
+
+    // In the "plain" pane none of the other pane's text shows.
+    for &i in &texts {
+      assert!(
+        !state.control_is_visible[i],
+        "text {i} leaked from its pane"
+      );
+    }
+
+    // Switching to "sum" shows its text rows with its controls.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    for &i in &texts {
+      assert!(
+        state.control_is_visible[i],
+        "text {i} should show in its pane"
+      );
+    }
+  }
+
   /// A Demonstration whose `Manipulate` body picks between two analogies
   /// via a string-keyed `PaneSelector` — each pane a `Row` of one or more
   /// `Control`s, the body a `Pane[If[…], size]` that nests a `With` block

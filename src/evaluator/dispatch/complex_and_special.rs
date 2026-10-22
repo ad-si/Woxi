@@ -6223,6 +6223,25 @@ fn compute_region_member(
   };
 
   match name.as_str() {
+    // BooleanRegion[f, {r1, r2, ...}] — apply the Boolean function f to the
+    // membership of the point in each constituent region.
+    "BooleanRegion" if args.len() == 2 => {
+      let Expr::List(regions) = &args[1] else {
+        return unevaluated();
+      };
+      let mut members = Vec::with_capacity(regions.len());
+      for r in regions {
+        let m = compute_region_member(strip_region_wrapper(r), point)?;
+        if !matches!(&m, Expr::Identifier(b) if b == "True" || b == "False") {
+          return unevaluated();
+        }
+        members.push(m);
+      }
+      crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
+        func: Box::new(args[0].clone()),
+        args: members,
+      })
+    }
     // Point-in-stadium: distance from the point to the segment is at
     // most r (closed region). Numeric data only.
     "StadiumShape" if stadium_parts(args).is_some() => {
@@ -6335,6 +6354,52 @@ fn compute_region_member(
       let dot: f64 = n_f.iter().zip(&pt).map(|(a, b)| a * b).sum();
       let scale = n_f.iter().map(|x| x.abs()).fold(1.0f64, f64::max);
       boolean(dot <= c_f + EPS * scale.max(c_f.abs()))
+    }
+    // HalfPlane[{p1, p2}, w] / HalfPlane[p, v, w] — the closed set
+    // p + a v + b w with b >= 0.
+    "HalfPlane" => {
+      let (base, v, w) = match args.as_slice() {
+        [Expr::List(ps), w] if ps.len() == 2 => {
+          let (Some(p1), Some(p2)) = (to_vec(&ps[0]), to_vec(&ps[1])) else {
+            return unevaluated();
+          };
+          let v: Vec<f64> = p1.iter().zip(&p2).map(|(a, b)| b - a).collect();
+          (p1, v, w)
+        }
+        [p, v, w] => {
+          let (Some(p), Some(v)) = (to_vec(p), to_vec(v)) else {
+            return unevaluated();
+          };
+          (p, v, w)
+        }
+        _ => return unevaluated(),
+      };
+      let Some(w) = to_vec(w) else {
+        return unevaluated();
+      };
+      let n = pt.len();
+      if base.len() != n || v.len() != n || w.len() != n {
+        return unevaluated();
+      }
+      let d: Vec<f64> = pt.iter().zip(&base).map(|(a, b)| a - b).collect();
+      let dot = |a: &[f64], b: &[f64]| -> f64 {
+        a.iter().zip(b).map(|(x, y)| x * y).sum()
+      };
+      // Solve d ≈ a v + b w via the 2x2 normal equations.
+      let (vv, vw, ww) = (dot(&v, &v), dot(&v, &w), dot(&w, &w));
+      let (dv, dw) = (dot(&d, &v), dot(&d, &w));
+      let det = vv * ww - vw * vw;
+      if det.abs() <= EPS * (vv * ww).max(1.0) {
+        return unevaluated();
+      }
+      let a = (dv * ww - dw * vw) / det;
+      let b = (dw * vv - dv * vw) / det;
+      let resid: f64 = (0..n)
+        .map(|i| (d[i] - a * v[i] - b * w[i]).powi(2))
+        .sum::<f64>()
+        .sqrt();
+      let scale = d.iter().map(|x| x.abs()).fold(1.0f64, f64::max);
+      boolean(resid <= EPS * scale && b >= -EPS * scale)
     }
     // Triangle/Polygon: a closed 2D region. A point is a member when it is
     // inside or on the boundary.

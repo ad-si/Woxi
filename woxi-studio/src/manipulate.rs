@@ -587,13 +587,16 @@ impl ManipulateState {
       .collect();
     let control_is_enabled = vec![true; controls.len()];
     // …and with the pane it belongs to, for a `PaneSelector` control panel.
-    let control_visible: Vec<Option<String>> = controls
+    // (a static text row has no variable, so it is filed under its label).
+    let control_visible: Vec<Option<String>> = spec
+      .controls
       .iter()
-      .map(|c| {
+      .map(|raw| {
+        let key = raw.visibility_key();
         spec
           .control_visible
           .iter()
-          .find(|(n, _)| n == c.name())
+          .find(|(n, _)| *n == key)
           .map(|(_, cond)| cond.clone())
       })
       .collect();
@@ -1826,6 +1829,75 @@ mod tests {
     let after = state.controls[idx].current_code();
     assert_ne!(before, after);
     assert!(after.starts_with("{0.05,"), "got {after}");
+  }
+
+  /// A complex wave-equation explorer: the body solves a periodic nonlinear
+  /// Schrödinger-type PDE with `NDSolve` and draws `Abs[u]` either as a
+  /// density plot or a surface, chosen with a setter bar. The solution is
+  /// complex-valued, so every control change re-solves and re-plots.
+  #[test]
+  fn complex_pde_explorer_renders_both_plot_types() {
+    let code = r#"Manipulate[
+      If[flat, DensityPlot, Plot3D][
+        Evaluate[Abs[w[s, y]] /. Quiet[NDSolve[{
+          I D[w[s, y], s] + 0.5 D[w[s, y], y, y] + Abs[w[s, y]]^2 w[s, y] == 0,
+          w[0, y] == Exp[-(y - sep)^2] + Exp[-(y + sep)^2],
+          w[s, -half] == w[s, half]},
+          w, {s, 0, 2}, {y, -half, half}]]],
+        {y, -half, half}, {s, 0, 2},
+        Mesh -> mesh, PlotRange -> Full, PlotPoints -> 8,
+        MaxRecursion -> ControlActive[0, 1], ImageSize -> {300, 200}],
+      {{sep, 1., "separation"}, 0, 3, Appearance -> "Labeled"},
+      {{half, 4., "range"}, 2, 8, Appearance -> "Labeled"},
+      {{mesh, Automatic, "show mesh"}, {False, Automatic}, ControlType -> Checkbox},
+      {{flat, True, "plot type"}, {True -> "2D", False -> "3D"}, ControlType -> SetterBar},
+      ControlPlacement -> Top
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "density plot must render, got text {:?}",
+      state.text_output
+    );
+    let flat = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "flat")
+      .expect("plot type control");
+    assert!(state.select_discrete(flat, "3D"));
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "surface plot must render, got text {:?}",
+      state.text_output
+    );
+  }
+
+  /// An `Epilog -> (list /. rule)` option is parenthesised in the source; the
+  /// body is printed back to text for every re-evaluation, and without the
+  /// parentheses the option became `(Epilog -> list) /. rule`, so the
+  /// annotations vanished from the plot.
+  #[test]
+  fn epilog_with_replacement_survives_reevaluation() {
+    let code = r#"Manipulate[
+      Plot[a x, {x, 0, 1},
+        Epilog -> ({Red, Line[{{0, 0}, {t, a t}}], Point[{t, a t}]} /. a -> aa),
+        ImageSize -> 200],
+      {{aa, 2, "slope"}, 1, 3, 1}, {{t, 0.5, "t"}, 0, 1, 0.1},
+      Initialization :> (a = 5)]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert!(
+      state.body.contains("Epilog -> ({"),
+      "the replacement must stay parenthesised, got {}",
+      state.body
+    );
   }
 
   /// A slider whose bounds and initial value are exact integers and that
@@ -3562,6 +3634,21 @@ mod tests {
     assert!(dump("k$$").contains("label: \"freq\""), "{}", dump("k$$"));
   }
 
+  /// A slider caption built with `StringJoin`/`ToString` shows the text it
+  /// produces, not the unevaluated call.
+  #[test]
+  fn control_label_evaluates_string_join() {
+    let code = r#"Manipulate[Plot[a x, {x, 0, 1}],
+      {{a, 0, "pairs (0 to " <> ToString[z] <> ")"}, 0, z, 2},
+      Initialization :> (z = 5)]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(dump.contains("label: \"pairs (0 to 5)\""), "{dump}");
+    assert!(!dump.contains("StringJoin"), "{dump}");
+  }
+
   /// A heading `Row[{"parameter ", Style[a, Italic], Spacer[10], }]` ends in
   /// a trailing comma, i.e. a `Null` item; it is drawn as nothing, so the
   /// heading reads "parameter a" rather than "parameter a Null".
@@ -4108,5 +4195,71 @@ mod textcell_tests {
     state.reevaluate();
     assert_eq!(state.error, None);
     assert!(state.graphics_handle.is_some());
+  }
+
+  /// Frame-history browser: a button appends to a list held in a hidden
+  /// state variable, a "frame index" slider's upper bound is
+  /// `Dynamic[Length[frames]]`, and a `ProgressIndicator` display follows a
+  /// counter variable with a `Dynamic` upper limit. Generic, self-authored
+  /// construct (not taken from any particular Demonstration).
+  ///
+  /// Regression: the `Dynamic[total]` limit inside the progress indicator
+  /// stayed unevaluated, so the bar printed as `ProgressIndicator[…]`
+  /// source text instead of a filled track.
+  #[test]
+  fn button_grows_dynamic_slider_bound_and_progress_indicator_follows() {
+    let code = r#"Manipulate[
+      Graphics[{Disk[{0, 0}, frames[[idx]]]}],
+      Dynamic[ProgressIndicator[done, {0, Dynamic[total]}, ImageSize -> 160]],
+      Button["append",
+        frames = Append[frames, Last[frames] + 1];
+        idx = Length[frames]; done = 3; total = 6;
+        ImageSize -> Automatic, Method -> "Queued"],
+      {{idx, 1, ""}, 1, Dynamic[Length[frames]], 1, Appearance -> "Labeled"},
+      {{done, 0}, ControlType -> None},
+      {{total, 10}, ControlType -> None},
+      {{frames, {1}}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let progress_svg =
+      |state: &ManipulateState| match state.display_trees.first() {
+        Some(DisplayNode::Static { svg, .. }) => svg.clone(),
+        other => panic!("expected a static progress display, got {other:?}"),
+      };
+    let before = progress_svg(&state).expect("progress bar drawn as SVG");
+    let action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("button");
+    state.apply_button_action(&action);
+    state.apply_button_action(&action);
+    // Done = 3 of total = 6: half of the track is filled, unlike the empty
+    // bar shown before the button ran.
+    let after = progress_svg(&state).expect("progress bar drawn as SVG");
+    assert_ne!(before, after);
+    assert!(after.contains("width=\"74.5\""), "{after}");
+    let (min, max, current) = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        ControlState::Continuous {
+          name,
+          min,
+          max,
+          current,
+          ..
+        } if name == "idx" => Some((*min, *max, *current)),
+        _ => None,
+      })
+      .expect("idx slider");
+    // Two appends: the Dynamic upper bound follows `Length[frames]`.
+    assert_eq!((min, max, current), (1.0, 3.0, 3.0));
   }
 }

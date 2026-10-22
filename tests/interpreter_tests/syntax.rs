@@ -9302,6 +9302,25 @@ mod complex_expand {
     }
   }
 
+  // Sin/Cos/Sinh/Cosh of a real argument are real, and Re/Im of such a
+  // function with a complex argument expand through the argument first.
+  #[test]
+  fn re_im_of_real_trig_functions() {
+    assert_eq!(interpret("ComplexExpand[Im[Cos[2 x]]]").unwrap(), "0");
+    assert_eq!(
+      interpret("ComplexExpand[Re[Sin[x^2]]]").unwrap(),
+      "Sin[x^2]"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Re[Cos[a + I b]]]").unwrap(),
+      "Cos[a]*Cosh[b]"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Im[Cos[a + I b]]]").unwrap(),
+      "-(Sin[a]*Sinh[b])"
+    );
+  }
+
   // ComplexExpand assumes every symbol is real, so Re/Im/Conjugate of a bare
   // symbol (and of a symbolic complex) collapse. Verified against wolframscript.
   #[test]
@@ -13297,5 +13316,38 @@ mod implicit_times_with_part_call {
     );
     assert_eq!(interpret("\u{F78A}x = 2; \u{F78A}x + 1").unwrap(), "3");
     assert_eq!(interpret("a\u{F6E5}b = 5; a\u{F6E5}b").unwrap(), "5");
+  }
+
+  // Regression: `/.` and `//.` bind looser than `->` and `:>`, so a
+  // replacement used as either side of a rule keeps its parentheses when
+  // printed. Without them `Epilog -> ({a} /. r -> y)` re-parsed as
+  // `(Epilog -> {a}) /. r -> y`, silently dropping the option.
+  #[test]
+  fn replace_operator_inside_rule_keeps_parentheses() {
+    assert_eq!(
+      interpret("Hold[Epilog -> ({a} /. r -> y)]").unwrap(),
+      "Hold[Epilog -> ({a} /. r -> y)]"
+    );
+    assert_eq!(
+      interpret("Hold[(a /. b) -> c]").unwrap(),
+      "Hold[(a /. b) -> c]"
+    );
+    assert_eq!(
+      interpret("Hold[k :> (v //. r -> s)]").unwrap(),
+      "Hold[k :> (v //. r -> s)]"
+    );
+    assert_eq!(
+      interpret("Hold[(a //. b) :> c]").unwrap(),
+      "Hold[(a //. b) :> c]"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[f[x -> (y /. z -> 1)]], InputForm]").unwrap(),
+      "Hold[f[x -> (y /. z -> 1)]]"
+    );
+    // The usual direction needs no parentheses.
+    assert_eq!(
+      interpret("Hold[(a -> b) /. c -> d]").unwrap(),
+      "Hold[a -> b /. c -> d]"
+    );
   }
 }

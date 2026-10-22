@@ -1100,6 +1100,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Combinatorica`Partitions" => Some((1, 1)),
     "Combinatorica`Permutations" => Some((1, 1)),
     "Combinatorica`Derangements" => Some((1, 1)),
+    "Combinatorica`StableMarriage" => Some((2, 2)),
     "Combinatorica`SymmetricGroup" => Some((1, 1)),
     "Combinatorica`AlternatingGroup" => Some((1, 1)),
     "Combinatorica`CyclicGroup" => Some((1, 1)),
