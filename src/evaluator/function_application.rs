@@ -176,6 +176,65 @@ fn compile_spec_rank(spec: &Expr) -> usize {
   }
 }
 
+/// Rank of a parameter in the serialized `{Blank[Real], rank}` argument
+/// pattern list of a `CompiledFunction` restored from a saved notebook.
+fn serialized_spec_rank(spec: &Expr) -> usize {
+  match spec {
+    Expr::List(items) if items.len() == 2 => match &items[1] {
+      Expr::Integer(n) if *n >= 0 => *n as usize,
+      _ => 0,
+    },
+    _ => 0,
+  }
+}
+
+/// Whether the attribute argument of `Function[params, body, attrs]` (a
+/// symbol or a list of symbols) contains `Listable`.
+fn function_attrs_listable(attrs: &Expr) -> bool {
+  match attrs {
+    Expr::Identifier(s) => s == "Listable",
+    Expr::List(items) => items
+      .iter()
+      .any(|i| matches!(i, Expr::Identifier(s) if s == "Listable")),
+    _ => false,
+  }
+}
+
+/// Listable threading: for the arguments flagged in `threads`, peel one list
+/// dimension and return one argument vector per element, broadcasting the
+/// other arguments. `None` when no flagged argument is a list or the lengths
+/// of the flagged lists disagree.
+fn listable_thread_args(
+  args: &[Expr],
+  threads: &[bool],
+) -> Option<Vec<Vec<Expr>>> {
+  let len = args.iter().zip(threads).find_map(|(a, &t)| match a {
+    Expr::List(items) if t => Some(items.len()),
+    _ => None,
+  })?;
+  let consistent = args.iter().zip(threads).all(|(a, &t)| match a {
+    Expr::List(items) if t => items.len() == len,
+    _ => true,
+  });
+  if !consistent {
+    return None;
+  }
+  Some(
+    (0..len)
+      .map(|i| {
+        args
+          .iter()
+          .zip(threads)
+          .map(|(a, &t)| match a {
+            Expr::List(items) if t => items[i].clone(),
+            _ => a.clone(),
+          })
+          .collect()
+      })
+      .collect(),
+  )
+}
+
 /// The nesting depth of a rectangular list expression: 0 for a non-list
 /// value, otherwise 1 + the depth of its first element. `Compile`'s
 /// arguments are always rectangular arrays in practice, so checking just
@@ -2386,32 +2445,11 @@ pub fn apply_curried_call(
         .zip(ranks.iter())
         .map(|(a, &r)| expr_array_depth(a) > r)
         .collect();
-      let list_len =
-        args
-          .iter()
-          .zip(threads.iter())
-          .find_map(|(a, &thread)| match a {
-            Expr::List(items) if thread => Some(items.len()),
-            _ => None,
-          });
-      match list_len {
-        Some(len)
-          if args.iter().zip(threads.iter()).all(|(a, &thread)| match a {
-            Expr::List(items) if thread => items.len() == len,
-            _ => true,
-          }) =>
-        {
-          let mut results = Vec::with_capacity(len);
-          for i in 0..len {
-            let threaded_args: Vec<Expr> = args
-              .iter()
-              .zip(threads.iter())
-              .map(|(a, &thread)| match a {
-                Expr::List(items) if thread => items[i].clone(),
-                _ => a.clone(),
-              })
-              .collect();
-            results.push(apply_curried_call(func, &threaded_args)?);
+      match listable_thread_args(args, &threads) {
+        Some(rows) => {
+          let mut results = Vec::with_capacity(rows.len());
+          for threaded_args in &rows {
+            results.push(apply_curried_call(func, threaded_args)?);
           }
           Ok(Expr::List(results.into()))
         }
@@ -2525,6 +2563,43 @@ pub fn apply_curried_call(
           args: args.to_vec(),
         }),
         Some(pure_fn) => {
+          // A `Compile[…, RuntimeAttributes -> {Listable}]` dump embeds
+          // `Function[params, body, Listable]`; threading it over *every*
+          // list argument would also split arguments that are declared
+          // with a rank (`{Blank[Real], 1}` is a whole vector). Thread only
+          // over the excess depth, as the plain `Compile` form does, then
+          // apply the function without its attribute.
+          if let Expr::FunctionCall {
+            name: fname,
+            args: fargs,
+          } = pure_fn
+            && fname == "Function"
+            && fargs.len() == 3
+            && function_attrs_listable(&fargs[2])
+          {
+            let ranks: Vec<usize> = match func_args.get(1) {
+              Some(Expr::List(items)) => {
+                items.iter().map(serialized_spec_rank).collect()
+              }
+              _ => Vec::new(),
+            };
+            let threads: Vec<bool> = args
+              .iter()
+              .zip(ranks.iter())
+              .map(|(a, &r)| expr_array_depth(a) > r)
+              .collect();
+            return if let Some(rows) = listable_thread_args(args, &threads) {
+              let mut results = Vec::with_capacity(rows.len());
+              for row in &rows {
+                results.push(apply_curried_call(func, row)?);
+              }
+              Ok(Expr::List(results.into()))
+            } else {
+              let plain =
+                evaluate_expr_to_expr(&call("Function", fargs[..2].to_vec()))?;
+              apply_curried_call(&plain, args)
+            };
+          }
           let pure_fn = evaluate_expr_to_expr(pure_fn)?;
           apply_curried_call(&pure_fn, args)
         }
@@ -2943,6 +3018,16 @@ pub fn apply_curried_call(
           Expr::Identifier(n) => vec![n.clone()],
           _ => Vec::new(),
         };
+        if func_args.len() == 3 && function_attrs_listable(&func_args[2]) {
+          let threads = vec![true; args.len()];
+          if let Some(rows) = listable_thread_args(args, &threads) {
+            let mut results = Vec::with_capacity(rows.len());
+            for row in &rows {
+              results.push(apply_curried_call(func, row)?);
+            }
+            return Ok(Expr::List(results.into()));
+          }
+        }
         let body = &func_args[1];
         if params.is_empty() {
           let substituted = crate::syntax::substitute_slots(body, args);
