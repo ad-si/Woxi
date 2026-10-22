@@ -7993,6 +7993,17 @@ fn parse_frame_edges(value: &Expr) -> [bool; 4] {
   }
 }
 
+/// An edge pair (`{left, right}` / `{bottom, top}`) holds specs, never the
+/// bare numbers / strings of a tick.
+fn is_edge_pair(e: &Expr) -> bool {
+  match e {
+    Expr::List(p) if p.len() == 2 => p.iter().all(|x| {
+      !matches!(x, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))
+    }),
+    _ => false,
+  }
+}
+
 /// Parse `FrameTicks -> None | All | {b, l, t, r} | {{l, r}, {b, t}}`: per
 /// edge, `None`/`False` bares it, `Automatic` keeps Wolfram's default and
 /// anything else (`All`, `True`, explicit tick lists) labels it.
@@ -8010,6 +8021,15 @@ fn parse_frame_tick_modes(value: &Expr) -> [EdgeTicks; 4] {
       one(&items[2], d[2]),
       one(&items[3], d[3]),
     ],
+    // `{xticks, yticks}`: plain tick lists label the bottom and left edges
+    // and leave the top and right at their default marks.
+    Expr::List(items)
+      if items.len() == 2
+        && items.iter().all(|e| matches!(e, Expr::List(_)))
+        && !items.iter().all(is_edge_pair) =>
+    {
+      [EdgeTicks::Labels, EdgeTicks::Labels, d[2], d[3]]
+    }
     Expr::List(items) if items.len() == 2 => {
       let pair = |e: &Expr, d0: EdgeTicks, d1: EdgeTicks| match e {
         Expr::List(p) if p.len() == 2 => (one(&p[0], d0), one(&p[1], d1)),
@@ -8033,13 +8053,6 @@ fn parse_frame_tick_lists(value: &Expr) -> [Option<Vec<(f64, String)>>; 4] {
     Expr::List(_) => crate::functions::plot::parse_explicit_ticks(e),
     _ => None,
   };
-  // An edge pair holds specs, never the bare numbers / strings of a tick.
-  let is_pair = |e: &Expr| match e {
-    Expr::List(p) if p.len() == 2 => p.iter().all(|x| {
-      !matches!(x, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))
-    }),
-    _ => false,
-  };
   match value {
     Expr::List(items) if items.len() == 4 => [
       one(&items[0]),
@@ -8047,11 +8060,15 @@ fn parse_frame_tick_lists(value: &Expr) -> [Option<Vec<(f64, String)>>; 4] {
       one(&items[2]),
       one(&items[3]),
     ],
-    Expr::List(items) if items.len() == 2 && items.iter().all(is_pair) => {
+    Expr::List(items) if items.len() == 2 && items.iter().all(is_edge_pair) => {
       let (Expr::List(lr), Expr::List(bt)) = (&items[0], &items[1]) else {
         return [None, None, None, None];
       };
       [one(&bt[0]), one(&lr[0]), one(&bt[1]), one(&lr[1])]
+    }
+    // `{xticks, yticks}`: plain tick lists for the bottom and left edges.
+    Expr::List(items) if items.len() == 2 => {
+      [one(&items[0]), one(&items[1]), None, None]
     }
     _ => [None, None, None, None],
   }
@@ -10496,7 +10513,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the clip rectangle below.
   let clip_x = plot_range_x.map(|_| (bb.x_min, bb.x_max));
   let clip_y = plot_range_y.map(|_| (bb.y_min, bb.y_max));
-  if !aspect_ratio_full {
+  // A frame under `ImageSize -> {w, h}` with an automatic aspect ratio
+  // hugs the data instead: the frame keeps the shape of the plot range and
+  // sits centred in the requested size, rather than the range being
+  // widened until the frame fills it.
+  let fit_frame_to_data = explicit_size
+    && size_names_height
+    && aspect_ratio.is_none()
+    && frame_edges.iter().any(|&e| e);
+  if !aspect_ratio_full && !fit_frame_to_data {
     expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
   }
 
@@ -10644,6 +10669,25 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // margins (unless `ImageSize -> {w, h}` fixed the height outright).
       Some(r) if !size_names_height => (w, (w * r).round().max(1.0)),
       _ => (w, (svg_h - margin_bottom - margin_top).max(1.0)),
+    }
+  } else {
+    (svg_w, svg_h)
+  };
+  let (mut margin_left, mut margin_right) = (margin_left, margin_right);
+  let (mut margin_bottom, mut margin_top) = (margin_bottom, margin_top);
+  let (svg_w, svg_h) = if fit_frame_to_data {
+    let data_aspect = bb.height() / bb.width();
+    if data_aspect.is_finite() && data_aspect > 0.0 {
+      let fitted_h = (svg_w * data_aspect).min(svg_h);
+      let fitted_w = fitted_h / data_aspect;
+      let (dx, dy) = ((svg_w - fitted_w) / 2.0, (svg_h - fitted_h) / 2.0);
+      margin_left += dx;
+      margin_right += dx;
+      margin_bottom += dy;
+      margin_top += dy;
+      (fitted_w, fitted_h)
+    } else {
+      (svg_w, svg_h)
     }
   } else {
     (svg_w, svg_h)
