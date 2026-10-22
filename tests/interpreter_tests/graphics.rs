@@ -38614,3 +38614,57 @@ mod grid_cell_labeled_layout {
     assert!(before_grid(&above), "{above}");
   }
 }
+
+mod framed_graphics_fits_data_shape {
+  use super::*;
+
+  fn frame_rect(svg: &str) -> (f64, f64) {
+    // The border is the unclipped `<rect x="0" y="0" …>` of the frame.
+    let at = svg.find("<rect x=\"0\" y=\"0\"").unwrap();
+    let rest = &svg[at..];
+    let attr = |name: &str| -> f64 {
+      let key = format!("{name}=\"");
+      let i = rest.find(&key).unwrap() + key.len();
+      rest[i..i + rest[i..].find('"').unwrap()].parse().unwrap()
+    };
+    (attr("width"), attr("height"))
+  }
+
+  #[test]
+  fn square_range_gives_square_frame_inside_wide_image_size() {
+    let svg = export_svg(
+      "Graphics[{Rectangle[]}, Frame -> True, \
+       PlotRange -> {{-2, 2}, {-2, 2}}, ImageSize -> {500, 300}]",
+    );
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"300\""),
+      "{svg}"
+    );
+    let (w, h) = frame_rect(&svg);
+    assert!((w - h).abs() < 0.01, "frame {w} x {h}: {svg}");
+    // Ticks stay within the plot range instead of reaching past it.
+    assert!(!svg.contains(">-3<") && !svg.contains(">3<"), "{svg}");
+  }
+
+  #[test]
+  fn wide_range_gives_wide_frame_inside_tall_image_size() {
+    let svg = export_svg(
+      "Graphics[{Rectangle[]}, Frame -> True, \
+       PlotRange -> {{0, 4}, {0, 1}}, ImageSize -> {200, 300}]",
+    );
+    let (w, h) = frame_rect(&svg);
+    assert!((w / h - 4.0).abs() < 0.01, "frame {w} x {h}: {svg}");
+  }
+
+  #[test]
+  fn xticks_yticks_pair_of_plain_lists_labels_bottom_and_left_only() {
+    let svg = export_svg(
+      "Graphics[{Rectangle[]}, Frame -> True, \
+       PlotRange -> {{-2, 2}, {-2, 2}}, ImageSize -> {500, 300}, \
+       FrameTicks -> {Range[-2, 2], Range[-2, 2]}]",
+    );
+    // Five labels per labelled edge, none on top / right, no automatic ones.
+    assert_eq!(svg.matches("</text>").count(), 10, "{svg}");
+    assert!(!svg.contains(">-1.5<"), "{svg}");
+  }
+}
