@@ -1280,21 +1280,6 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Rationalize threads element-wise over lists (including nested lists),
-  // carrying along the optional tolerance argument. WL does this via built-in
-  // list handling rather than a Listable attribute, so we replicate it here.
-  if let Expr::List(items) = &args[0] {
-    let mut out = Vec::with_capacity(items.len());
-    for item in items {
-      let mut sub = vec![item.clone()];
-      if args.len() == 2 {
-        sub.push(args[1].clone());
-      }
-      out.push(rationalize_ast(&sub)?);
-    }
-    return Ok(Expr::List(out.into()));
-  }
-
   // Rationalize leaves exact values (integers, rationals, symbolic
   // constants like Pi, symbolic expressions) alone unless a non-zero
   // tolerance is given. With a tolerance, we numerically evaluate the
@@ -1320,13 +1305,16 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (Pi, E, Sqrt[2], a bare symbol) is returned unchanged rather than being
   // numericized into a spurious approximation. A non-zero tolerance still
   // numerically approximates such values further down.
-  if args.len() == 2 {
-    let tol_is_zero = matches!(&args[1], Expr::Integer(0))
-      || matches!(&args[1], Expr::Real(t) if *t == 0.0);
-    if tol_is_zero && !matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
-    {
-      return Ok(args[0].clone());
-    }
+  let tol_is_zero = args.len() == 2
+    && (matches!(&args[1], Expr::Integer(0))
+      || matches!(&args[1], Expr::Real(t) if *t == 0.0));
+  if tol_is_zero
+    && !matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
+    && !crate::functions::math_ast::numeric_utils::contains_inexact_real(
+      &args[0],
+    )
+  {
+    return Ok(args[0].clone());
   }
 
   // Complex argument: rationalize the real and imaginary parts. Following
@@ -1359,57 +1347,85 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
-  // A composite symbolic expression is handled structurally (1-arg form):
-  // an all-exact expression is already rational where possible and stays
-  // unchanged (Rationalize[-432/(5 Pi)] → -432/(5 Pi), NOT a float), and
-  // approximate reals inside are rationalized in place
-  // (Rationalize[0.5 x] → x/2). A nonzero tolerance keeps the numeric
-  // path below so Rationalize[Pi, 1*^-2] still gives 22/7-style output.
-  if args.len() == 1
-    && !matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
-  {
-    fn has_inexact_leaf(e: &Expr) -> bool {
-      match e {
-        Expr::Real(_) | Expr::BigFloat(_, _) => true,
-        Expr::BinaryOp { left, right, .. } => {
-          has_inexact_leaf(left) || has_inexact_leaf(right)
-        }
-        Expr::UnaryOp { operand, .. } => has_inexact_leaf(operand),
-        Expr::FunctionCall { args, .. } | Expr::List(args) => {
-          args.iter().any(has_inexact_leaf)
-        }
-        _ => false,
-      }
-    }
-    fn map_reals(e: &Expr) -> Result<Expr, InterpreterError> {
-      match e {
-        Expr::Real(_) | Expr::BigFloat(_, _) => {
-          rationalize_ast(std::slice::from_ref(e))
-        }
-        Expr::BinaryOp { op, left, right } => {
-          Ok(binop(*op, map_reals(left)?, map_reals(right)?))
-        }
-        Expr::UnaryOp { op, operand } => Ok(Expr::UnaryOp {
-          op: *op,
-          operand: Box::new(map_reals(operand)?),
-        }),
-        Expr::FunctionCall { name, args } => {
-          let mapped: Result<Vec<Expr>, InterpreterError> =
-            args.iter().map(map_reals).collect();
-          Ok(Expr::FunctionCall {
+  // A composite symbolic expression is handled structurally: an all-exact
+  // expression is already rational where possible and stays unchanged
+  // (Rationalize[-432/(5 Pi)] → -432/(5 Pi), NOT a float), and approximate
+  // reals anywhere inside — arguments, equations, rules — are rationalized in
+  // place with the same tolerance (Rationalize[0.5 x] → x/2,
+  // Rationalize[x == 0.9 y, 0] → x == 9 y/10).
+  if !matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _)) {
+    let tol = args.get(1);
+    let map_reals = |e: &Expr| -> Result<Expr, InterpreterError> {
+      fn walk(e: &Expr, tol: Option<&Expr>) -> Result<Expr, InterpreterError> {
+        let w = |x: &Expr| walk(x, tol);
+        Ok(match e {
+          Expr::Real(_) | Expr::BigFloat(_, _) => {
+            let mut a = vec![e.clone()];
+            a.extend(tol.cloned());
+            rationalize_ast(&a)?
+          }
+          Expr::BinaryOp { op, left, right } => binop(*op, w(left)?, w(right)?),
+          Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+            op: *op,
+            operand: Box::new(w(operand)?),
+          },
+          Expr::FunctionCall { name, args } => Expr::FunctionCall {
             name: name.clone(),
-            args: mapped?.into(),
-          })
-        }
-        other => Ok(other.clone()),
+            args: args.iter().map(w).collect::<Result<Vec<_>, _>>()?.into(),
+          },
+          Expr::List(items) => Expr::List(
+            items.iter().map(w).collect::<Result<Vec<_>, _>>()?.into(),
+          ),
+          Expr::Comparison {
+            operands,
+            operators,
+          } => Expr::Comparison {
+            operands: operands.iter().map(w).collect::<Result<_, _>>()?,
+            operators: operators.clone(),
+          },
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => Expr::Rule {
+            pattern: Box::new(w(pattern)?),
+            replacement: Box::new(w(replacement)?),
+          },
+          Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => Expr::RuleDelayed {
+            pattern: Box::new(w(pattern)?),
+            replacement: Box::new(w(replacement)?),
+          },
+          Expr::Association(pairs) => Expr::Association(
+            pairs
+              .iter()
+              .map(|(k, v)| Ok((w(k)?, w(v)?)))
+              .collect::<Result<_, InterpreterError>>()?,
+          ),
+          other => other.clone(),
+        })
       }
-    }
-    if !has_inexact_leaf(&args[0]) {
-      return Ok(args[0].clone());
-    }
-    // Composite with reals inside — only map when there is symbolic
-    // structure; a purely numeric composite keeps the numeric path.
-    if crate::evaluator::has_free_symbols(&args[0]) {
+      walk(e, tol)
+    };
+    // With a nonzero tolerance a numeric expression (Pi, Sqrt[2] + 0.5) is
+    // approximated as a whole by the numeric path below; anything else only
+    // has its machine numbers rationalized.
+    let numeric_with_tolerance = args.len() == 2
+      && !tol_is_zero
+      && matches!(
+        crate::evaluator::evaluate_function_call_ast(
+          "NumericQ",
+          std::slice::from_ref(&args[0]),
+        ),
+        Ok(Expr::Identifier(ref t)) if t == "True"
+      );
+    if !numeric_with_tolerance {
+      if !crate::functions::math_ast::numeric_utils::contains_inexact_real(
+        &args[0],
+      ) {
+        return Ok(args[0].clone());
+      }
       let mapped = map_reals(&args[0])?;
       return crate::evaluator::evaluate_expr_to_expr(&mapped);
     }

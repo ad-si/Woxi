@@ -2265,17 +2265,7 @@ pub fn is_atomic_number(expr: &Expr) -> bool {
 
 /// Check whether the expression contains any actual Real/BigFloat node.
 pub fn contains_real_literal(expr: &Expr) -> bool {
-  match expr {
-    Expr::Real(_) | Expr::BigFloat(_, _) => true,
-    Expr::BinaryOp { left, right, .. } => {
-      contains_real_literal(left) || contains_real_literal(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_real_literal(operand),
-    Expr::FunctionCall { args, .. } | Expr::List(args) => {
-      args.iter().any(contains_real_literal)
-    }
-    _ => false,
-  }
+  crate::functions::math_ast::numeric_utils::contains_inexact_real(expr)
 }
 
 /// Head[expr] - Returns the head of an expression

@@ -23778,3 +23778,34 @@ mod shared_own_value_lists {
     );
   }
 }
+
+mod part_of_pure_functions {
+  use super::*;
+
+  #[test]
+  fn parts_of_a_function_are_its_body_and_parameters() {
+    assert_eq!(interpret("(#1 + 1 &)[[1]]").unwrap(), "1 + #1");
+    assert_eq!(interpret("(x + 1 &)[[0]]").unwrap(), "Function");
+    assert_eq!(interpret("Function[{a}, a + 1][[1]]").unwrap(), "{a}");
+    assert_eq!(interpret("Function[{a}, a + 1][[2]]").unwrap(), "1 + a");
+    // The SphereIntersection idiom from the VanDerWaalsSurface Demonstration.
+    assert_eq!(
+      interpret("t = -50. + #1 &; Evaluate[t[[1]] < 0] &").unwrap(),
+      "-50. + #1 < 0 & "
+    );
+  }
+
+  #[test]
+  fn missing_part_of_a_held_expression_does_not_loop() {
+    assert_eq!(interpret("(#1 &)[[2]]").unwrap(), "(#1 & )[[2]]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("Part::partw: Part 2 of #1 &  does not exist.")),
+      "{msgs:?}"
+    );
+    assert_eq!(interpret("Hold[a][[5]]").unwrap(), "Hold[a][[5]]");
+    assert_eq!(interpret("Hold[1 + 1][[1]]").unwrap(), "2");
+  }
+}

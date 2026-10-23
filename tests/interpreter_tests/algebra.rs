@@ -20448,3 +20448,82 @@ mod reduce_bounded_integers {
     );
   }
 }
+
+mod solve_with_max_min {
+  use super::*;
+
+  #[test]
+  fn extrema_are_split_into_cases() {
+    assert_eq!(
+      interpret("Solve[x == Max[x/2, 1], x]").unwrap(),
+      "{{x -> 1}}"
+    );
+    assert_eq!(
+      interpret("Solve[x == Max[2 - x, x/2 + 1/2], x]").unwrap(),
+      "{{x -> 1}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x == Max[y, 1], y == 2 - x}, {x, y}]").unwrap(),
+      "{{x -> 1, y -> 1}}"
+    );
+    assert_eq!(interpret("Solve[Max[x, 2] == 3, x]").unwrap(), "{{x -> 3}}");
+    assert_eq!(
+      interpret("Solve[Min[x, 2] == 1 && x > -5, x]").unwrap(),
+      "{{x -> 1}}"
+    );
+  }
+
+  #[test]
+  fn inexact_bellman_system_is_solved_exactly_then_numericized() {
+    // The RecyclingRobotInReinforcementLearning Demonstration's Bellman
+    // optimality equations.
+    assert_eq!(
+      interpret(
+        "rwait = 0; alpha = 0.3; rsearch = 1; beta = 0.1; rrescue = -3; gamma = 0.9; rrecharge = 0; Solve[qhwo == rwait + gamma*Max[qhwo, qhso] && qhso == alpha*(rsearch + gamma*Max[qhwo, qhso]) + (1 - alpha)*(rsearch + gamma*Max[qlro, qlwo, qlso]) && qlso == beta*(rsearch + gamma*Max[qlro, qlwo, qlso]) + (1 - beta)*(rrescue + gamma*Max[qhwo, qhso]) && qlwo == rwait + gamma*Max[qlro, qlwo, qlso] && qlro == rrecharge + gamma*Max[qhwo, qhso], {qhwo, qhso, qlro, qlwo, qlso}]"
+      )
+      .unwrap(),
+      "{{qhwo -> 5.521472392638037, qhso -> 6.134969325153374, qlro -> 5.521472392638037, qlwo -> 4.969325153374233, qlso -> 2.8662576687116563}}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.starts_with("Solve::ratnz")),
+      "{msgs:?}"
+    );
+  }
+}
+
+mod rationalize_structural {
+  use super::*;
+
+  #[test]
+  fn machine_numbers_inside_any_expression() {
+    assert_eq!(interpret("Rationalize[f[0.5], 0]").unwrap(), "f[1/2]");
+    assert_eq!(interpret("Rationalize[x == 0.5]").unwrap(), "x == 1/2");
+    assert_eq!(interpret("Rationalize[{a -> 0.5}]").unwrap(), "{a -> 1/2}");
+    assert_eq!(
+      interpret("Rationalize[x == 0.9*Max[x, y] && y == 0.3 x, 0]").unwrap(),
+      "x == (9*Max[x, y])/10 && y == (3*x)/10"
+    );
+  }
+
+  #[test]
+  fn tolerance_approximates_only_numeric_expressions() {
+    assert_eq!(interpret("Rationalize[Sqrt[2], 1/1000]").unwrap(), "41/29");
+    assert_eq!(
+      interpret("Rationalize[Sqrt[2] x, 1/1000]").unwrap(),
+      "Sqrt[2]*x"
+    );
+    assert_eq!(
+      interpret("Rationalize[f[Sqrt[2]], 1/1000]").unwrap(),
+      "f[Sqrt[2]]"
+    );
+    assert_eq!(
+      interpret("Rationalize[{Pi, 0.5}, 1/100]").unwrap(),
+      "{Pi, 1/2}"
+    );
+    assert_eq!(
+      interpret("Rationalize[{0.333, 0.5}, 1/100]").unwrap(),
+      "{1/3, 1/2}"
+    );
+  }
+}

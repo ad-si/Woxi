@@ -1128,9 +1128,13 @@ fn extract_part_ast_rest(
     }
     // A pattern is an ordinary expression, not an atom: `x_Symbol` is
     // `Pattern[x, Blank[Symbol]]`, so `[[1]]` is `x` and `[[2]]` is `_Symbol`.
+    // A pure function is likewise `Function[body]` (or `Function[params,
+    // body]`), so `(#1 + 1 &)[[1]]` is its body.
     Expr::Pattern { .. }
     | Expr::PatternTest { .. }
-    | Expr::PatternOptional { .. } => {
+    | Expr::PatternOptional { .. }
+    | Expr::Function { .. }
+    | Expr::NamedFunction { .. } => {
       let crate::functions::expr_form::ExprForm::Composite { head, children } =
         crate::functions::expr_form::decompose_expr(expr)
       else {
