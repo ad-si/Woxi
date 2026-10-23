@@ -4252,6 +4252,13 @@ fn graphics_text_content(expr: &Expr) -> String {
     {
       graphics_text_content(&args[0])
     }
+    // An unevaluated `Integrate` is typeset as an integral, the same runs a
+    // widget label draws, so the measured width matches the drawing.
+    Expr::FunctionCall { name, args }
+      if name == "Integrate" && integral_label_runs(args, false).is_some() =>
+    {
+      flatten_label_runs(&integral_label_runs(args, false).unwrap_or_default())
+    }
     // `HoldForm[expr]` shows `expr` unevaluated as it was written, so a held
     // assignment reads `θ = ω t`, not `Set[θ, ω t]` — the same box text a
     // notebook typesets it from.
@@ -31037,6 +31044,12 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // `m/\!\(\*SuperscriptBox[\(s\), \(2\)]\)`, and it must show as
       // `m/s²`, not `m/s^2`.
       "Power" if args.len() == 2 => script_runs(args, italic, true),
+      // An `Integrate` that stayed unevaluated typesets as the integral
+      // sign with its limits beside it, the integrand, and the ⅆ-prefixed
+      // variable: `∫₋₅⁵ √(1+Erf′(x)²) ⅆx`.
+      "Integrate" if integral_label_runs(args, italic).is_some() => {
+        integral_label_runs(args, italic).unwrap_or_default()
+      }
       // The evaluated shapes of the same arithmetic the `BinaryOp` arms
       // below handle: a quotient of typeset pieces reaches here as
       // `Times[a, b^-1]`. Only worth recursing into when there is something
@@ -31281,6 +31294,7 @@ fn contains_presentation_head(expr: &Expr) -> bool {
           | "StyleForm"
           | "Text"
           | "Tooltip"
+          | "HoldForm"
           | "DisplayForm"
           | "TraditionalForm"
           | "Subscript"
@@ -31313,6 +31327,54 @@ fn arithmetic_label_operator(
     Op::Divide => ("/", true),
     _ => return None,
   })
+}
+
+/// The typeset runs of an unevaluated `Integrate[f, {x, a, b}, …]` (or
+/// `Integrate[f, x]`): one `∫` per iterator with its limits as script
+/// characters, then the integrand and a `ⅆ` before each variable. `None`
+/// when the specs are not iterators or variables.
+fn integral_label_runs(args: &[Expr], italic: bool) -> Option<Vec<LabelRun>> {
+  let plain = |text: &str| LabelRun {
+    text: text.to_string(),
+    italic: false,
+    ..Default::default()
+  };
+  let script = |e: &Expr, superscript: bool| {
+    to_unicode_script(
+      &flatten_label_runs(&manipulate_label_runs(e, false)),
+      superscript,
+    )
+  };
+  if args.len() < 2 {
+    return None;
+  }
+  let mut signs = Vec::new();
+  let mut diffs = Vec::new();
+  for spec in &args[1..] {
+    let (var, limits) = match spec {
+      Expr::List(parts) if parts.len() == 3 => (
+        &parts[0],
+        Some((script(&parts[1], false), script(&parts[2], true))),
+      ),
+      Expr::List(parts) if parts.len() == 1 => (&parts[0], None),
+      Expr::Identifier(_) => (spec, None),
+      _ => return None,
+    };
+    let mut sign = String::from("\u{222B}");
+    if let Some((lo, hi)) = limits {
+      sign.push_str(&lo);
+      sign.push_str(&hi);
+    }
+    signs.push(sign);
+    diffs.push(var);
+  }
+  let mut runs = vec![plain(&signs.concat())];
+  runs.extend(grouped_label_runs(&args[0], italic));
+  for var in diffs {
+    runs.push(plain(" \u{2146}"));
+    runs.extend(manipulate_label_runs(var, true));
+  }
+  Some(runs)
 }
 
 /// Label runs for a piece sitting under a radical or on one side of a
@@ -36199,6 +36261,38 @@ mod manipulate_label_tests {
     let row = call1("Row", Expr::List(vec![italic_a, str_expr("b")].into()));
     assert_eq!(runs(&row), vec![run("a", true), run("b", false)]);
     assert_eq!(flatten_label_runs(&runs(&row)), "ab");
+  }
+
+  #[test]
+  fn unevaluated_integrate_label_is_typeset_with_limits() {
+    let integral = call(
+      "Integrate",
+      vec![
+        id_expr("f"),
+        Expr::List(
+          vec![id_expr("t"), Expr::Integer(-2), Expr::Integer(3)].into(),
+        ),
+      ],
+    );
+    assert_eq!(
+      flatten_label_runs(&runs(&integral)),
+      "\u{222B}\u{208B}\u{2082}\u{00B3}f \u{2146}t"
+    );
+    assert_eq!(
+      graphics_text_content(&integral),
+      "\u{222B}\u{208B}\u{2082}\u{00B3}f \u{2146}t"
+    );
+  }
+
+  #[test]
+  fn integrate_label_keeps_italic_parts_of_its_row() {
+    let svg = crate::interpret(
+      "ExportString[Graphics[Text[Row[{Style[\"S\", Italic], \" = \", \
+Integrate[HoldForm[g[x]], {x, a, b}]}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("<tspan font-style=\"italic\">S</tspan> = \u{222B}"));
+    assert!(!svg.contains("Integrate["));
   }
 
   /// `Derivative[n][f]` — a slider labelled `y'(0)` in a Demonstration.
