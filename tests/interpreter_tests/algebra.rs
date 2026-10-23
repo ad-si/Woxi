@@ -20551,6 +20551,36 @@ mod solve_with_max_min {
       "{msgs:?}"
     );
   }
+
+  #[test]
+  fn inexact_quartic_system_does_not_overflow() {
+    // CentreDunTriangleequilateralCirconscritaUneParaboleFrench: solving the
+    // rationalized system multiplied two machine-size integers past i128.
+    let v = interpret(
+      r#"eq1[a_,b_,x_,y_] :=(((a)^(2)) (1+Sqrt[3] y)==((1)/(2)) (Sqrt[3]-2 b) b x+a (x+Sqrt[3] b x-((Sqrt[3] y)/(2))+b y));eq2[a_,b_,x_,y_] :=(a ((2-2 Sqrt[3] b) x+(Sqrt[3]+2 b) y+2 a (-1+Sqrt[3] y))==b (Sqrt[3]+2 b) x); eq3[a_,b_,x_,y_] :=(27 ((a)^(2))+36 ((a)^(3))+12 ((a)^(4))-18 Sqrt[3] a b-36 Sqrt[3] ((a)^(2)) b-16 Sqrt[3] ((a)^(3)) b+9 ((b)^(2))-12 a ((b)^(2))-8 ((a)^(2)) ((b)^(2))+12 Sqrt[3] ((b)^(3))+16 Sqrt[3] a ((b)^(3))+12 ((b)^(4))+(2 ((a)^(2))+24 ((a)^(3))+72 ((a)^(4))+4 Sqrt[3] a b+40 Sqrt[3] ((a)^(2)) b+96 Sqrt[3] ((a)^(3)) b+6 ((b)^(2))+56 a ((b)^(2))+144 ((a)^(2)) ((b)^(2))+8 Sqrt[3] ((b)^(3))+32 Sqrt[3] a ((b)^(3))+8 ((b)^(4))) x+(-6 Sqrt[3] ((a)^(2))-40 Sqrt[3] ((a)^(3))-24 Sqrt[3] ((a)^(4))-12 a b-40 ((a)^(2)) b+6 Sqrt[3] ((b)^(2))+24 Sqrt[3] a ((b)^(2))+48 Sqrt[3] ((a)^(2)) ((b)^(2))+24 ((b)^(3))+64 a ((b)^(3))+8 Sqrt[3] ((b)^(4))) y==0); g[al_] := Module[{x,y},(Plus @@ Map[({x,y}/.First[Solve[#]]&), {{eq1[al,Sqrt[3al^2+5al+3/4],x,y], eq2[al,Sqrt[3al^2+5al+3/4],x,y]}, {eq2[al,Sqrt[3al^2+5al+3/4],x,y], eq3[al,Sqrt[3al^2+5al+3/4],x,y]}, {eq3[al,Sqrt[3al^2+5al+3/4],x,y], eq1[al,Sqrt[3al^2+5al+3/4],x,y]}}])/3]; g[-0.16]"#,
+    )
+    .unwrap();
+    assert!(v.contains(", -2.61931288699918"), "{v}");
+  }
+
+  #[test]
+  fn inexact_linear_system_with_alternatives_is_solved_directly() {
+    // An `Or` of linear equations is no nonlinear system, so wolframscript
+    // solves it without Solve::ratnz (BilliardsInRegularPolygons).
+    assert_eq!(
+      interpret(
+        "Length[Solve[{y - 0.1 == 0.3*(x - 0.2), Or[y - 0.5 == 0.3 (x - 1.5), \
+         y == 2. x + 0.7]}, {x, y}]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      !msgs.iter().any(|m| m.starts_with("Solve::ratnz")),
+      "{msgs:?}"
+    );
+  }
 }
 
 mod rationalize_structural {

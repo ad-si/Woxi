@@ -1840,7 +1840,28 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(vs) => vs.to_vec(),
       v => vec![v.clone()],
     };
-    let nonlinear = eqs.iter().any(|eq| {
+    // `Or[eq1, eq2]` and `And[…]` are read through to their equations: a
+    // logical head is not itself nonlinear.
+    fn equations(e: &Expr, out: &mut Vec<Expr>) {
+      match e {
+        Expr::FunctionCall { name, args } if name == "Or" || name == "And" => {
+          args.iter().for_each(|a| equations(a, out));
+        }
+        Expr::BinaryOp {
+          op:
+            crate::syntax::BinaryOperator::And | crate::syntax::BinaryOperator::Or,
+          left,
+          right,
+        } => {
+          equations(left, out);
+          equations(right, out);
+        }
+        other => out.push(other.clone()),
+      }
+    }
+    let mut parts = Vec::new();
+    eqs.iter().for_each(|eq| equations(eq, &mut parts));
+    let nonlinear = parts.iter().any(|eq| {
       let g = match eq {
         Expr::Comparison { operands, .. } if operands.len() == 2 => call(
           "Plus",
