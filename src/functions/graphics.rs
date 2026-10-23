@@ -4190,6 +4190,27 @@ fn graphics_text_content(expr: &Expr) -> String {
     {
       typeset_constant_glyph(name).unwrap().to_string()
     }
+    // `StringForm["template", args…]` typesets with each slot replaced by
+    // its argument's own label text (so a `NumberForm` argument shows its
+    // number); the filled template is then folded like any other string,
+    // which resolves inline `\!\(\*…\)` box notation in its literal text.
+    Expr::FunctionCall { name, args }
+      if name == "StringForm" && matches!(args.first(), Some(Expr::String(_))) =>
+    {
+      let Some(Expr::String(template)) = args.first() else {
+        unreachable!()
+      };
+      let filled = crate::functions::string_ast::format_string_form_with(
+        template,
+        &args[1..],
+        graphics_text_content,
+      );
+      graphics_text_content(&Expr::String(filled))
+    }
+    // A one-argument `Text[label]` nested in a label is just the label.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      graphics_text_content(&args[0])
+    }
     // A `Tooltip` shows its content; the hint appears only on hover.
     Expr::FunctionCall { name, args }
       if (is_style_wrapper(name) || name == "Tooltip") && !args.is_empty() =>
