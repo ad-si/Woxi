@@ -5299,9 +5299,9 @@ mod logit_model_fit {
     .unwrap();
 
     // At x=-5, should be close to 0
-    let low = interpret("model[-5.0]").unwrap();
-    let low_val: f64 = low.parse().unwrap();
-    assert!(low_val < 0.1, "expected p < 0.1 at x=-5, got {low_val}");
+    // (the probability is below the machine range, so it is an
+    // arbitrary-precision number rather than a machine real)
+    assert_eq!(interpret("model[-5.0] < 0.1").unwrap(), "True");
 
     // At x=10, should be close to 1
     let high = interpret("model[10.0]").unwrap();

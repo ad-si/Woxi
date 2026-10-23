@@ -2921,6 +2921,46 @@ mod infinity_arithmetic {
   }
 
   #[test]
+  fn machine_exp_overflow_promotes_to_arbitrary_precision() {
+    // Past the machine range the result is an arbitrary-precision number
+    // instead of `Infinity`, and it keeps combining with others.
+    assert_eq!(interpret("Head[Exp[1000.]]").unwrap(), "Real");
+    assert_eq!(
+      interpret("Exp[1000.]/Exp[999.] // N").unwrap(),
+      "2.718281828459045"
+    );
+  }
+
+  #[test]
+  fn machine_overflow_in_products_sums_and_powers() {
+    assert_eq!(
+      interpret("1.*^200 * 1.*^200 / (1.*^300 * 1.*^100) // N").unwrap(),
+      "1."
+    );
+    assert_eq!(
+      interpret("(10.^400 + 10.^400) / 10.^399 // N").unwrap(),
+      "20."
+    );
+    assert_eq!(interpret("1.5^3000 / 1.5^2999 // N").unwrap(), "1.5");
+    assert_eq!(
+      interpret("Total[{1.7*^308, 1.7*^308, -1.7*^308}] // N").unwrap(),
+      "1.7*^308"
+    );
+  }
+
+  #[test]
+  fn machine_overflow_ratio_of_exponentials() {
+    // Each exponential overflows on its own, their ratio does not.
+    assert_eq!(
+      interpret(
+        "(3. E^(29248./10.) + 2. E^(29240./10.)) / (3. E^(29248./10.)) // N"
+      )
+      .unwrap(),
+      "1.2995526427448143"
+    );
+  }
+
+  #[test]
   fn exp_neg_infinity() {
     assert_eq!(interpret("Exp[-Infinity]").unwrap(), "0");
   }
