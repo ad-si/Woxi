@@ -55,6 +55,49 @@ fn table_unevaluated(body: &Expr, iter_spec: &Expr) -> Expr {
 /// unevaluated (matching wolframscript's `::iterb` / `::nliter`). `name` is the
 /// enclosing head (e.g. "Table", "Do"). `iters` are the iterator specs (the
 /// arguments after the body).
+/// The iterator specs with every bound evaluated once — except bounds that
+/// reference an earlier iterator's variable, which only mean something
+/// during iteration. The validity check and the iteration both read these,
+/// so an expensive bound (`{x, someLongComputation}`) is not computed twice,
+/// and a bound with side effects runs once, as in Wolfram.
+pub fn table_preevaluate_iterators(iters: &[Expr]) -> Vec<Expr> {
+  let eval = |e: &Expr| {
+    crate::evaluator::evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone())
+  };
+  let mut bound_vars: Vec<String> = Vec::new();
+  iters
+    .iter()
+    .map(|iter| match iter {
+      Expr::List(items) if items.len() >= 2 => {
+        let earlier = bound_vars.clone();
+        let mut out = Vec::with_capacity(items.len());
+        out.push(items[0].clone());
+        for b in &items[1..] {
+          out.push(if expr_references_any(b, &earlier) {
+            b.clone()
+          } else {
+            eval(b)
+          });
+        }
+        if let Expr::Identifier(v) = &items[0] {
+          bound_vars.push(v.clone());
+        }
+        Expr::List(out.into())
+      }
+      Expr::List(items) if items.len() == 1 => {
+        if expr_references_any(&items[0], &bound_vars) {
+          iter.clone()
+        } else {
+          Expr::List(vec![eval(&items[0])].into())
+        }
+      }
+      Expr::List(_) => iter.clone(),
+      other if expr_references_any(other, &bound_vars) => other.clone(),
+      other => eval(other),
+    })
+    .collect()
+}
+
 pub fn table_iterators_invalid(name: &str, iters: &[Expr]) -> Option<String> {
   let iterb = |iter: &Expr| {
     Some(format!(

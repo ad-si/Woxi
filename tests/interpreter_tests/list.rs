@@ -351,6 +351,27 @@ mod table_do_bare_count {
 mod table_symbolic_bounds {
   use super::*;
 
+  // Bounds are evaluated once: the validity check used to evaluate them a
+  // second time (a side effect ran twice, an expensive bound cost double).
+  #[test]
+  fn bounds_evaluate_once() {
+    assert_eq!(interpret("n = 0; Table[k, {k, n++; 3}]; n").unwrap(), "1");
+    assert_eq!(
+      interpret("n = 0; Table[k, {k, (n++; {a, b})}]; n").unwrap(),
+      "1"
+    );
+    // The message quotes the iterator with its bounds evaluated, as Wolfram
+    // does.
+    assert_eq!(
+      interpret("a = \"x\"; Table[1, {i, a, 3}]").unwrap(),
+      "Table[1, {i, a, 3}]"
+    );
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      ["Table::iterb: Iterator {i, x, 3} does not have appropriate bounds."]
+    );
+  }
+
   // A non-numeric iterator bound leaves Table unevaluated (::iterb) instead of
   // raising an evaluation error.
   #[test]

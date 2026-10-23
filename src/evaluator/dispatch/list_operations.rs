@@ -2545,19 +2545,22 @@ pub fn dispatch_list_operations(
       return Some(crate::evaluator::evaluate_expr_to_expr(&args[0]));
     }
     "Table" | "ParallelTable" if args.len() >= 2 => {
+      // Bounds are evaluated once and shared by the check and the iteration.
+      let iters = list_helpers_ast::table_preevaluate_iterators(&args[1..]);
       // An iterator with non-numeric bounds leaves the whole call unevaluated
       // (matching wolframscript's ::iterb / ::nliter) rather than erroring.
-      if let Some(msg) =
-        list_helpers_ast::table_iterators_invalid(name, &args[1..])
+      if let Some(msg) = list_helpers_ast::table_iterators_invalid(name, &iters)
       {
+        // Like Wolfram, the message quotes the iterator with its bounds
+        // evaluated (`a = "x"` shows `{i, x, 3}`).
         crate::emit_message(&msg);
         return Some(Ok(unevaluated(name, args)));
       }
-      if args.len() == 2 {
-        return Some(list_helpers_ast::table_ast(&args[0], &args[1]));
+      if iters.len() == 1 {
+        return Some(list_helpers_ast::table_ast(&args[0], &iters[0]));
       }
       // Multi-dimensional Table: Table[expr, iter1, iter2, ...]
-      return Some(list_helpers_ast::table_multi_ast(&args[0], &args[1..]));
+      return Some(list_helpers_ast::table_multi_ast(&args[0], &iters));
     }
     "MapThread" if args.len() == 2 || args.len() == 3 => {
       let level = if args.len() == 3 {
