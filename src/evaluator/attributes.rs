@@ -626,7 +626,7 @@ pub fn get_builtin_attributes(name: &str) -> Attributes {
 
     // Listable + NumericFunction + Protected + ReadProtected
     "Exp"
-    | "AiryAi" | "AiryBi"
+    | "AiryAi" | "AiryBi" | "AiryAiZero" | "AiryBiZero"
     | "ArcSin" | "ArcCos" | "ArcTan"
     | "ArcCot" | "ArcSec" | "ArcCsc"
     | "JacobiAmplitude" | "JacobiEpsilon"

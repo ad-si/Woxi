@@ -791,6 +791,8 @@ pub fn is_builtin_numeric(name: &str) -> bool {
       | "StruveL"
       | "HurwitzZeta"
       | "AiryAi"
+      | "AiryAiZero"
+      | "AiryBiZero"
       | "AiryBi"
       | "EllipticE"
       | "EllipticF"

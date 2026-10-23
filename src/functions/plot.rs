@@ -9340,7 +9340,9 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
       }
     })
     .collect();
-  (!ticks.is_empty()).then_some(ticks)
+  // An empty list (`Ticks -> {{}, {}}`) is an explicit request for no ticks
+  // on that axis, not a fall-back to the automatic ones.
+  (!ticks.is_empty() || entries.is_empty()).then_some(ticks)
 }
 
 /// A bare tick position that evaluates to a plain number (`rate - vac` with

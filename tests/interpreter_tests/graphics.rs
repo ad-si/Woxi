@@ -2771,6 +2771,15 @@ mod graphics {
       assert!(svg.contains("<text"), "{svg}");
     }
 
+    /// An empty tick list means "no ticks on that axis", not "automatic".
+    #[test]
+    fn ticks_empty_lists_hide_the_tick_labels() {
+      let svg = export_svg("Plot[x^2, {x, 0, 1}, Ticks -> {{}, {}}]");
+      assert!(!svg.contains("<text"), "{svg}");
+      let svg = export_svg("Plot[x^2, {x, 0, 1}, Ticks -> {{}, Automatic}]");
+      assert!(svg.contains("<text"), "{svg}");
+    }
+
     /// A machine real inside a `TraditionalForm` caption of a labeled plot
     /// is shown to six significant figures, not with its full digits.
     #[test]

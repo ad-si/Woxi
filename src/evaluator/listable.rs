@@ -213,6 +213,8 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "HurwitzZeta"
       | "AiryAi"
       | "AiryBi"
+      | "AiryAiZero"
+      | "AiryBiZero"
       | "LegendreP"
       | "LegendreQ"
       | "ChebyshevT"
