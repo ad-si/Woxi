@@ -13770,3 +13770,26 @@ mod named_character_inside_a_call_head {
     );
   }
 }
+
+mod numeric_list_literals {
+  use super::*;
+
+  #[test]
+  fn nested_numeric_lists_read_as_lists() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[f[{{1, -2}, {3.5, 4}}, {}, {{}}]]]]")
+        .unwrap(),
+      "Hold[f[List[List[1, -2], List[3.5`, 4]], List[], List[List[]]]]"
+    );
+  }
+
+  #[test]
+  fn a_numeric_list_followed_by_an_operator_still_groups() {
+    assert_eq!(
+      interpret("Hold[{{{1, 2}}[[1]], {1, 2} x, {1, 2} . {3, 4}, f[{1} + 1]}] // FullForm // ToString")
+        .unwrap(),
+      "Hold[List[Part[List[List[1, 2]], 1], Times[List[1, 2], x], \
+       Dot[List[1, 2], List[3, 4]], f[Plus[List[1], 1]]]]"
+    );
+  }
+}

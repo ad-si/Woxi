@@ -1248,7 +1248,12 @@ HasSemicolon = @{ (
 // `Image[…]`, a table of coordinates) are long runs of them, and going
 // through `Expression` tries every operand form and lookahead first.
 PlainNumberItem = _{ (Real | Integer) ~ &("," | "}") }
-ListItem = _{ PlainNumberItem | &HasSemicolon ~ CompoundExpression | &HasLeadingRuleOperator ~ ListItemRule | Expression }
+// A (nested) list of bare numbers — a row of a matrix, a pixel, a whole
+// image's data — is read in one pass the same way; it is a `List` to the
+// AST builder.
+NumericList = { "{" ~ (NumericListElement ~ ("," ~ NumericListElement)*)? ~ "}" }
+NumericListElement = _{ (Real | Integer) ~ &("," | "}") | NumericList ~ &("," | "}") }
+ListItem = _{ PlainNumberItem | NumericList ~ &("," | "}") | &HasSemicolon ~ CompoundExpression | &HasLeadingRuleOperator ~ ListItemRule | Expression }
 
 AssociationItem = { RuleOperand ~ ("->" | "\u{2192}" | ":>") ~ RuleOperand }
 // Non-rule items inside <|...|> are rare but legal — Wolfram parses <|a, b|>
@@ -1282,7 +1287,7 @@ FunctionArgRule = { ReplacementRule ~ RuleReplaceSuffix* ~ ("//" ~ PostfixFuncti
 // A `;`-sequence is tried before a rule so that `f[a -> 1; b]` — a rule
 // followed by more statements in one argument — is one CompoundExpression
 // rather than a rule that leaves `; b` unparsed.
-FunctionArg = _{ &HasSemicolon ~ CompoundExpression | &HasLeadingRuleOperator ~ FunctionArgRule | Expression }
+FunctionArg = _{ NumericList ~ &("," | "]") | &HasSemicolon ~ CompoundExpression | &HasLeadingRuleOperator ~ FunctionArgRule | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 FunctionArgOrOmitted = _{ FunctionArg | OmittedArg }
 FunctionArgOrOmittedLast = _{ FunctionArg | OmittedArg | OmittedTrailingArg }

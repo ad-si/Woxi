@@ -2362,7 +2362,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       let args: Vec<Expr> = pair.into_inner().map(pair_to_expr).collect();
       call(name, args)
     }
-    Rule::List => parse_list(pair),
+    Rule::List | Rule::NumericList => parse_list(pair),
     Rule::ListExtended => parse_list_extended(&pair),
     Rule::FunctionCallExtended => {
       let mut result = parse_function_call_extended(&pair);
