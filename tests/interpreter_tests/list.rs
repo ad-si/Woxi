@@ -24029,3 +24029,80 @@ mod map_over_held_heads {
     );
   }
 }
+
+mod small_gaps_from_notebooks {
+  use super::*;
+
+  // Values from wolframscript.
+  #[test]
+  fn permutation_cycles_with_head() {
+    assert_eq!(
+      interpret(
+        "{PermutationCycles[{2, 1, 3, 5, 4}, Identity], \
+         PermutationCycles[{1, 2, 3}, f]}"
+      )
+      .unwrap(),
+      "{{{1, 2}, {3}, {4, 5}}, f[{{1}, {2}, {3}}]}"
+    );
+  }
+
+  #[test]
+  fn exponent_is_listable() {
+    assert_eq!(
+      interpret("{Exponent[x^2 y + y^5, {x, y}], Exponent[{x^2, x^3}, x]}")
+        .unwrap(),
+      "{{2, 5}, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn find_root_secant_with_bounds_and_nested_residual() {
+    assert_eq!(
+      interpret(
+        "Chop[{x /. FindRoot[x^2 - 2, {x, 1, 2, 0, 3}], \
+         x /. FindRoot[{{x^2}} == 4, {x, 1}]} - {Sqrt[2], 2}, 10^-10]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+    assert_eq!(
+      interpret("Quiet[FindRoot[Exp[x] - 5, {x, 1, 2, 0, 1}]]").unwrap(),
+      "FindRoot[Exp[x] - 5, {x, 1, 2, 0, 1}]"
+    );
+  }
+
+  #[test]
+  fn legacy_real_image_type() {
+    assert_eq!(
+      interpret("ImageType[Image[{{0.1, 0.5}, {0.2, 1.}}, \"Real\"]]").unwrap(),
+      "Real64"
+    );
+  }
+
+  #[test]
+  fn color_convert_spaces_lists_and_messages() {
+    assert_eq!(
+      interpret(
+        "InputForm[{ColorConvert[{Red, Blue}, \"Grayscale\"], \
+         ColorConvert[RGBColor[0.2, 0.4, 0.6], \"GrayLevel\"], \
+         ImageColorSpace[ColorConvert[Image[{{{0.1, 0.2, 0.3}}}], \"RGBColor\"]]}]"
+      )
+      .unwrap(),
+      "InputForm[{{GrayLevel[0.299], GrayLevel[0.114]}, \
+       GrayLevel[0.36300000000000004], RGB}]"
+    );
+    assert_eq!(
+      interpret(
+        "Chop[List @@ ColorConvert[RGBColor[1, 0, 0], \"XYZColor\"] - \
+         {0.43602191242669813, 0.22247517260243593, 0.013928134067434789}, 10^-12]"
+      )
+      .unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("Quiet[ColorConvert[Image[{{0.5}}], \"Foo\"]] // Head")
+        .unwrap(),
+      "ColorConvert"
+    );
+  }
+}

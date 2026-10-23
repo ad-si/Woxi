@@ -291,7 +291,8 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Byte" | "UnsignedInteger8" => Some(ImageType::Byte),
       "Bit16" | "UnsignedInteger16" => Some(ImageType::Bit16),
       "Real32" => Some(ImageType::Real32),
-      "Real64" => Some(ImageType::Real64),
+      // "Real" is the legacy spelling of "Real64".
+      "Real64" | "Real" => Some(ImageType::Real64),
       _ => None,
     }
   };
@@ -4457,19 +4458,47 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // Wolfram accepts color-space names case-insensitively — older notebooks
   // commonly write "GrayScale" — so normalize to the canonical spelling.
-  let target_space = if target_space.eq_ignore_ascii_case("grayscale") {
+  // The color-directive heads name their spaces too ("RGBColor" is RGB,
+  // "GrayLevel" is Grayscale, …), as in wolframscript.
+  let target_space = if target_space.eq_ignore_ascii_case("grayscale")
+    || target_space == "GrayLevel"
+  {
     "Grayscale"
-  } else if target_space.eq_ignore_ascii_case("rgb") {
+  } else if target_space.eq_ignore_ascii_case("rgb")
+    || target_space == "RGBColor"
+  {
     "RGB"
-  } else if target_space.eq_ignore_ascii_case("cmyk") {
+  } else if target_space.eq_ignore_ascii_case("cmyk")
+    || target_space == "CMYKColor"
+  {
     "CMYK"
   } else if target_space.eq_ignore_ascii_case("hsb") {
     "HSB"
   } else if target_space.eq_ignore_ascii_case("hue") {
     "Hue"
+  } else if target_space == "LABColor" {
+    "LAB"
+  } else if target_space == "XYZColor" {
+    "XYZ"
+  } else if target_space == "LCHColor" {
+    "LCH"
+  } else if target_space == "LUVColor" {
+    "LUV"
   } else {
     target_space
   };
+
+  // A list of colors converts each one.
+  if let Expr::List(items) = &args[0]
+    && !items.is_empty()
+    && items.iter().all(|c| color_directive_to_rgb(c).is_some())
+  {
+    return items
+      .iter()
+      .map(|c| color_convert_ast(&[c.clone(), args[1].clone()]))
+      .collect::<Result<Vec<_>, _>>()
+      .map(|v| Expr::List(v.into()));
+  }
 
   // Color directives: RGBColor[r, g, b(, a)] / GrayLevel[v(, a)].
   // Conversion preserves the alpha channel when present. GrayLevel
@@ -4519,8 +4548,46 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         return Ok(call("Hue", hargs));
       }
+      "LAB" | "XYZ" => {
+        let (p, q, t) = if target_space == "LAB" {
+          srgb_to_lab(r, g, b)
+        } else {
+          linear_rgb_to_xyz_d50(
+            srgb_to_linear(r),
+            srgb_to_linear(g),
+            srgb_to_linear(b),
+          )
+        };
+        let mut cargs = vec![Expr::Real(p), Expr::Real(q), Expr::Real(t)];
+        if let Some(a) = alpha {
+          cargs.push(Expr::Real(a));
+        }
+        let head = if target_space == "LAB" {
+          "LABColor"
+        } else {
+          "XYZColor"
+        };
+        return Ok(call(head, cargs));
+      }
       _ => {}
     }
+  }
+  if !matches!(
+    target_space,
+    "Grayscale"
+      | "RGB"
+      | "CMYK"
+      | "HSB"
+      | "Hue"
+      | "LAB"
+      | "XYZ"
+      | "LCH"
+      | "LUV"
+  ) {
+    crate::emit_message(&format!(
+      "ColorConvert::imgcstype: {target_space} is an invalid color space specification."
+    ));
+    return Ok(unevaluated("ColorConvert", args));
   }
 
   match &args[0] {
@@ -4655,9 +4722,15 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ))),
       }
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "ColorConvert: first argument is not an Image".into(),
-    )),
+    // Anything else (a symbol, a non-color expression) is reported and the
+    // call stays unevaluated, as in wolframscript.
+    other => {
+      crate::emit_message(&format!(
+        "ColorConvert::ccvinput: {} should be a valid image, a color directive, a list of machine-sized real numbers of length up to 5 or a list of such objects.",
+        crate::syntax::expr_to_string(other)
+      ));
+      Ok(unevaluated("ColorConvert", args))
+    }
   }
 }
 

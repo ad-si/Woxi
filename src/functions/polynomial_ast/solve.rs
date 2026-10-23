@@ -7768,7 +7768,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // evaluates to a complex number we route to a complex Newton iteration
   // before the real-only path below.
   let (var_name, x_start_expr) = match arg1 {
-    Expr::List(items) if (2..=4).contains(&items.len()) => {
+    Expr::List(items) if (2..=5).contains(&items.len()) => {
       let name = match &items[0] {
         Expr::Identifier(n) => n.clone(),
         _ => {
@@ -7821,6 +7821,36 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let hi = find_root_eval_number(&items[3])?;
       bounds = Some((lo.min(hi), lo.max(hi)));
       (var_name, x0, None)
+    }
+    Expr::List(items) if items.len() == 5 => {
+      // {var, x0, x1, xmin, xmax}: secant search confined to [xmin, xmax].
+      let var_name = match &items[0] {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "FindRoot: variable must be a symbol".into(),
+          ));
+        }
+      };
+      let x0 = find_root_eval_number(&items[1])?;
+      let x1 = find_root_eval_number(&items[2])?;
+      let lo = find_root_eval_number(&items[3])?;
+      let hi = find_root_eval_number(&items[4])?;
+      let (lo, hi) = (lo.min(hi), lo.max(hi));
+      // A start outside the search region is reported, not clamped.
+      let outside = [x0, x1].into_iter().find(|v| *v < lo || *v > hi);
+      if let Some(v) = outside {
+        let real = |x: f64| crate::syntax::expr_to_string(&Expr::Real(x));
+        crate::emit_message(&format!(
+          "FindRoot::streg: The starting point {{{}}} is not in the search region {{{{{}}}, {{{}}}}}.",
+          real(v),
+          real(lo),
+          real(hi)
+        ));
+        return Ok(unevaluated("FindRoot", args));
+      }
+      bounds = Some((lo, hi));
+      (var_name, x0, Some(x1))
     }
     Expr::List(items) if items.len() == 2 => {
       let var_name = match &items[0] {
@@ -8459,8 +8489,11 @@ fn find_root_complex_newton(
 /// derivative of a replacement by a list of solution rules) stands for the
 /// residual itself.
 fn unwrap_singleton_list(e: Expr) -> Expr {
+  // Every level: a residual such as `{{x^2}} == 4` is one number.
   match &e {
-    Expr::List(items) if items.len() == 1 => items[0].clone(),
+    Expr::List(items) if items.len() == 1 => {
+      unwrap_singleton_list(items[0].clone())
+    }
     _ => e,
   }
 }

@@ -681,7 +681,7 @@ pub fn get_builtin_attributes(name: &str) -> Attributes {
     | "JacobiSymbol" | "IntegerExponent" | "CarmichaelLambda"
     | "IntegerLength" | "ContinuedFraction" | "MinimalPolynomial"
     | "Discriminant" | "BernoulliB" | "Prime" | "EulerPhi"
-    | "ToExpression" => A::Listable | A::Protected,
+    | "ToExpression" | "Exponent" => A::Listable | A::Protected,
 
     // HoldAllComplete + Protected
     "HoldComplete" | "HoldCompleteForm" | "Unevaluated"

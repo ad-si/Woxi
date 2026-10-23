@@ -3577,8 +3577,11 @@ fn evaluate_function_call_ast_inner(
     return Ok(unevaluated(name, args));
   }
 
-  // PermutationCycles[{p1, p2, ...}] — convert permutation list to cycle notation
-  if name == "PermutationCycles" && args.len() == 1 {
+  // PermutationCycles[{p1, p2, ...}] — convert permutation list to cycle
+  // notation. PermutationCycles[perm, h] applies the head `h` to the list of
+  // every cycle, fixed points included (`h[{{1, 2}, {3}}]`).
+  if name == "PermutationCycles" && (args.len() == 1 || args.len() == 2) {
+    let with_singletons = args.len() == 2;
     // A list has to be a genuine permutation of 1..n; a repeat used to be
     // read as the identity.
     if matches!(&args[0], Expr::List(_))
@@ -3614,8 +3617,8 @@ fn evaluate_function_call_ast_inner(
         let mut visited = vec![false; n + 1];
         let mut cycles: Vec<Expr> = Vec::new();
         for i in 1..=n {
-          if !visited[i] && perm_vals[i - 1] != i {
-            // Found start of a non-trivial cycle
+          if !visited[i] && (with_singletons || perm_vals[i - 1] != i) {
+            // Found start of a cycle
             let mut cycle = Vec::new();
             let mut j = i;
             while !visited[j] {
@@ -3623,12 +3626,18 @@ fn evaluate_function_call_ast_inner(
               cycle.push(Expr::Integer(j as i128));
               j = perm_vals[j - 1];
             }
-            if cycle.len() >= 2 {
+            if cycle.len() >= 2 || with_singletons {
               cycles.push(Expr::List(cycle.into()));
             }
           } else {
             visited[i] = true;
           }
+        }
+        if with_singletons {
+          return crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
+            func: Box::new(args[1].clone()),
+            args: vec![Expr::List(cycles.into())],
+          });
         }
         return Ok(call1("Cycles", Expr::List(cycles.into())));
       }
