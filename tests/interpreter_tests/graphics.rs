@@ -7305,6 +7305,29 @@ mod plot3d {
     }
   }
 
+  mod parametric_plot_point_valued_slots {
+    use super::*;
+
+    /// A two-slot body whose slots are calls returning a point per sample
+    /// (`{c[t] + v, c[t]}`) is two curves, not an `{fx, fy}` pair; it
+    /// used to draw nothing.
+    #[test]
+    fn point_valued_slots_draw_two_curves() {
+      let svg = export_svg(
+        "c[t_] := {Cos[t], Sin[t]}; \
+         ParametricPlot[{c[t] + {2, 0}, c[t]}, {t, 0, 2 Pi}]",
+      );
+      let literal = export_svg(
+        "ParametricPlot[{{Cos[t] + 2, Sin[t]}, {Cos[t], Sin[t]}}, {t, 0, 2 Pi}]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 2);
+      assert_eq!(
+        svg.matches("<polyline").count(),
+        literal.matches("<polyline").count()
+      );
+    }
+  }
+
   mod parametric_plot_hidden_slot {
     use super::*;
 
