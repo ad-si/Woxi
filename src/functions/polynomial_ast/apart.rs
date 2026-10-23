@@ -45,6 +45,19 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Short-circuit: if the expression has no denominator, Apart is a no-op.
   let (_num, den_check) = super::together::extract_num_den(&args[0]);
   if matches!(&den_check, Expr::Integer(1)) {
+    // A polynomial has no partial fractions, but Apart still multiplies it
+    // out: Apart[(x - 1)^2] → 1 - 2*x + x^2.
+    let mut vars = std::collections::HashSet::new();
+    super::simplify::collect_variables(&args[0], &mut vars);
+    if !vars.is_empty()
+      && vars
+        .iter()
+        .all(|v| super::polynomial_q::is_polynomial(&args[0], v))
+    {
+      return crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(
+        &args[0],
+      ));
+    }
     return Ok(args[0].clone());
   }
 
