@@ -5821,6 +5821,29 @@ fn apply_bindings_with(
     }
     filtered_refs.push((name.as_str(), value));
   }
+  // A large list is shared before it is substituted: every occurrence of
+  // its name then costs a pointer copy instead of a deep copy, and so does
+  // every later evaluation that copies it (`pove[[k]]` in a loop).
+  let shared: Vec<Expr>;
+  if filtered_refs.iter().any(|(_, v)| {
+    matches!(v, Expr::List(items) if items.len() >= 16 && !items.is_shared())
+  }) {
+    shared = filtered_refs
+      .iter()
+      .map(|(_, v)| {
+        let mut v = (*v).clone();
+        if let Expr::List(items) = &mut v
+          && items.len() >= 16
+        {
+          items.share();
+        }
+        v
+      })
+      .collect();
+    for (slot, value) in filtered_refs.iter_mut().zip(&shared) {
+      slot.1 = value;
+    }
+  }
   let result =
     crate::syntax::substitute_pattern_bindings(replacement, &filtered_refs);
   if !evaluate {

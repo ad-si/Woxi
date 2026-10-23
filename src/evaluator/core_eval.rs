@@ -1209,9 +1209,14 @@ pub fn evaluate_expr_to_expr_inner(
     // A list of numbers and strings is already its own value; a shared one
     // (a symbol's array, substituted into a function body) is returned as
     // the pointer it is instead of being rebuilt element by element.
+    // A shared list answers from its cached inert flag in O(1), the same
+    // test a symbol's stored value is given (`needs_reevaluation`).
     Expr::List(items)
-      if items.iter().all(is_evaluated_data)
-        && !arith_rules_may_apply("List", items) =>
+      if (if items.is_shared() {
+        is_inert_list(items)
+      } else {
+        items.iter().all(is_evaluated_data)
+      }) && !arith_rules_may_apply("List", items) =>
     {
       Ok(expr.clone())
     }
