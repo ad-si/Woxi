@@ -239,22 +239,6 @@ fn symbol_obj(py: Python<'_>, name: &str) -> PyResult<Py<PyAny>> {
   )
 }
 
-/// A `(numerator, denominator)` pair as FullForm spells it: reduced to
-/// lowest terms, a bare integer when the denominator is 1, otherwise
-/// `Rational[n, d]`. Mirrors `render_rational_full_form`, which does the
-/// same for the textual FullForm.
-fn rational(parts: (i128, i128)) -> WExpr {
-  let (numer, denom) = woxi::functions::math_ast::rat_reduce(parts.0, parts.1);
-  if denom == 1 {
-    WExpr::Integer(numer)
-  } else {
-    WExpr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![WExpr::Integer(numer), WExpr::Integer(denom)].into(),
-    }
-  }
-}
-
 fn composite_obj(
   py: Python<'_>,
   head: Py<PyAny>,
@@ -291,7 +275,7 @@ fn expr_to_py_at(
   // FullForm shows.
   if let Some(parts) = complex_full_form_parts(expr) {
     let (re, im) = match parts {
-      ComplexParts::Exact { re, im } => (rational(re), rational(im)),
+      ComplexParts::Exact { re, im } => (re, im),
       ComplexParts::Float { re, im } => (WExpr::Real(re), WExpr::Real(im)),
     };
     let head = symbol_obj(py, "Complex")?;

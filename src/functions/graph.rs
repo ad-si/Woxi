@@ -445,6 +445,11 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `EdgeRenderingFunction` receives the label as its third argument.
   let mut edge_labels: Vec<(Expr, Expr)> = Vec::new();
   let mut vertex_labels = false;
+  // `VertexLabels -> {v -> label, …}` names the label of individual
+  // vertices; a bare spec (`"Name"`, `Placed[…]`) applies to all of them.
+  let mut vertex_label_rules: Vec<(Expr, Expr)> = Vec::new();
+  let mut vertex_label_default: Option<Expr> = None;
+  let name_label_spec = Expr::String("Name".to_string());
   // `EdgeLabeling -> False` (GraphPlot's legacy switch) hides the labels.
   let mut edge_labeling = true;
   let mut vertex_shape: Option<String> = None;
@@ -526,6 +531,21 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Identifier(s) if s == "All" => vertex_labels = true,
           _ => {}
         },
+
+        "VertexLabels" => {
+          let specs: &[Expr] = match replacement {
+            Expr::List(items) => items,
+            other => std::slice::from_ref(other),
+          };
+          for spec in specs {
+            match crate::evaluator::dispatch::list_operations::as_rule(spec) {
+              Some((target, label)) => {
+                vertex_label_rules.push((target.clone(), label.clone()));
+              }
+              None => vertex_label_default = Some(spec.clone()),
+            }
+          }
+        }
         // `VertexLabeling -> True/False`: `GraphPlot`'s own legacy option
         // (predating `Graph`'s `VertexLabels -> "Name"`) for turning each
         // vertex's name into a label next to it.
@@ -1265,6 +1285,39 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     if vertex_labels {
       push_vertex_label(&mut primitives, &vertices[i], x, y, vertex_radius);
+
+    let label_spec = vertex_label_rules
+      .iter()
+      .find(|(target, _)| vertex_matches_rule(&vertices[i], target))
+      .map(|(_, l)| l)
+      .or(vertex_label_default.as_ref())
+      .or(if vertex_labels {
+        Some(&name_label_spec)
+      } else {
+        None
+      });
+    if let Some((label, placement)) = label_spec.and_then(|spec| {
+      resolve_vertex_label(spec, unwrap_vertex_style(&vertices[i]).0)
+    }) {
+      // The label keeps the vertex name as an expression (rather than
+      // pre-stringifying it) so a structured name like `Subscript[x, 1]`
+      // still typesets instead of showing its literal head name.
+      primitives.push(call(
+        "RGBColor",
+        vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+      ));
+      let styled = call("Style", vec![label, Expr::Integer(10)]);
+      let gap = vertex_radius + 0.08;
+      let (dx, dy) = match placement.as_str() {
+        "Below" => (0.0, -gap),
+        "Left" => (-gap, 0.0),
+        "Right" => (gap, 0.0),
+        "Center" => (0.0, 0.0),
+        _ => (0.0, gap),
+      };
+      let point =
+        Expr::List(vec![Expr::Real(x + dx), Expr::Real(y + dy)].into());
+      primitives.push(call("Text", vec![styled, point]));
     }
   }
 
@@ -3702,6 +3755,32 @@ fn split_style_rules(expr: &Expr) -> (Vec<(Expr, Expr)>, Vec<Expr>) {
     }
   }
   (rules, directives)
+}
+
+/// What a `VertexLabels` spec shows for `vertex` and where it goes
+/// (`Above` unless `Placed[label, pos]` says otherwise). `"Name"` and
+/// `Automatic` stand for the vertex itself; `None` shows nothing.
+fn resolve_vertex_label(spec: &Expr, vertex: &Expr) -> Option<(Expr, String)> {
+  let (inner, placement) = match spec {
+    Expr::FunctionCall { name, args }
+      if name == "Placed" && !args.is_empty() =>
+    {
+      let placement = match args.get(1) {
+        Some(Expr::Identifier(p)) => p.clone(),
+        _ => "Above".to_string(),
+      };
+      (&args[0], placement)
+    }
+    other => (other, "Above".to_string()),
+  };
+  match inner {
+    Expr::Identifier(s) if s == "None" => None,
+    Expr::Identifier(s) if s == "Automatic" => {
+      Some((vertex.clone(), placement))
+    }
+    Expr::String(s) if s == "Name" => Some((vertex.clone(), placement)),
+    other => Some((other.clone(), placement)),
+  }
 }
 
 /// Whether a vertex expression is the one a `VertexStyle` rule names.

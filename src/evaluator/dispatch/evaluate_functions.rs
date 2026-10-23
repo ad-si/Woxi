@@ -3049,6 +3049,61 @@ fn evaluate_function_call_ast_inner(
     return Ok(result);
   }
 
+  // PlotRange[g] — the range a graphic is drawn over (before padding).
+  if name == "PlotRange"
+    && args.len() == 1
+    && let Some(range) =
+      crate::functions::graphics::absolute_plot_range(&args[0])
+  {
+    return Ok(crate::functions::graphics::plot_range_expr(range));
+  }
+
+  // AbsoluteOptions[g, PlotRange] — the effective option values of a
+  // graphic. Only the plot range is computed; any other option reports the
+  // value it was given.
+  if name == "AbsoluteOptions"
+    && args.len() == 2
+    && matches!(&args[0], Expr::Graphics { is_3d: false, .. })
+    || name == "AbsoluteOptions"
+      && args.len() == 2
+      && matches!(&args[0], Expr::FunctionCall { name: g, .. } if g == "Graphics")
+  {
+    let names: Vec<Expr> = match &args[1] {
+      Expr::List(items) => items.to_vec(),
+      other => vec![other.clone()],
+    };
+    let given = crate::evaluator::evaluate_function_call_ast(
+      "Options",
+      &[args[0].clone()],
+    )
+    .ok();
+    let mut rules = Vec::new();
+    for opt in names {
+      if matches!(&opt, Expr::Identifier(n) if n == "PlotRange") {
+        if let Some(range) =
+          crate::functions::graphics::absolute_plot_range(&args[0])
+        {
+          rules.push(Expr::Rule {
+            pattern: Box::new(opt.clone()),
+            replacement: Box::new(crate::functions::graphics::plot_range_expr(
+              range,
+            )),
+          });
+        }
+        continue;
+      }
+      if let Some(Expr::List(given)) = &given
+        && let Some(rule) = given.iter().find(|r| {
+          matches!(r, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+            if crate::syntax::expr_to_string(pattern) == crate::syntax::expr_to_string(&opt))
+        })
+      {
+        rules.push(rule.clone());
+      }
+    }
+    return Ok(Expr::List(rules.into()));
+  }
+
   // ToColor[color, head] — the color converted to the space `head` names.
   if name == "ToColor"
     && args.len() == 2
@@ -4223,11 +4278,18 @@ fn evaluate_function_call_ast_inner(
 
   // KaryTree[n] or KaryTree[n, k] — k-ary tree with n vertices (default k=2)
   if name == "KaryTree"
-    && (args.len() == 1 || args.len() == 2)
+    && !args.is_empty()
+    && let n_positional = args
+      .iter()
+      .take_while(|a| !crate::syntax::is_rule_expr(a))
+      .count()
+    && (n_positional == 1 || n_positional == 2)
+    && args[n_positional..].iter().all(crate::syntax::is_rule_expr)
     && let Expr::Integer(n) = &args[0]
   {
     let n = *n as usize;
-    let k = if args.len() == 2 {
+    let tree_options = &args[n_positional..];
+    let k = if n_positional == 2 {
       if let Expr::Integer(kv) = &args[1] {
         *kv as usize
       } else {
@@ -4250,21 +4312,29 @@ fn evaluate_function_call_ast_inner(
           }
         }
       }
-      return Ok(call(
-        "Graph",
-        vec![Expr::List(vertices.into()), Expr::List(edges.into())],
-      ));
+      let mut graph_args =
+        vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+      graph_args.extend(tree_options.iter().cloned());
+      push_tree_layout(&mut graph_args, tree_options);
+      return Ok(call("Graph", graph_args));
     }
   }
 
   // CompleteKaryTree[n] or CompleteKaryTree[n, k] — complete k-ary tree
   // with n levels (depth n-1, default branching factor k=2).
   if name == "CompleteKaryTree"
-    && (args.len() == 1 || args.len() == 2)
+    && !args.is_empty()
+    && let n_positional = args
+      .iter()
+      .take_while(|a| !crate::syntax::is_rule_expr(a))
+      .count()
+    && (n_positional == 1 || n_positional == 2)
+    && args[n_positional..].iter().all(crate::syntax::is_rule_expr)
     && let Expr::Integer(n) = &args[0]
   {
     let n = *n;
-    let k = if args.len() == 2 {
+    let tree_options = &args[n_positional..];
+    let k = if n_positional == 2 {
       if let Expr::Integer(kv) = &args[1] {
         *kv
       } else {
@@ -4304,10 +4374,11 @@ fn evaluate_function_call_ast_inner(
           }
         }
       }
-      return Ok(call(
-        "Graph",
-        vec![Expr::List(vertices.into()), Expr::List(edges.into())],
-      ));
+      let mut graph_args =
+        vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+      graph_args.extend(tree_options.iter().cloned());
+      push_tree_layout(&mut graph_args, tree_options);
+      return Ok(call("Graph", graph_args));
     }
   }
 
@@ -13966,4 +14037,30 @@ fn combinatorica_graph_name(name: &str) -> &'static str {
     "ConnectedComponents" => "Combinatorica`ConnectedComponents",
     _ => "Combinatorica`ShortestPath",
   }
+}
+
+/// Trees are drawn in layers growing down from vertex 1 unless the caller
+/// picked a `GraphLayout` of their own.
+fn push_tree_layout(graph_args: &mut Vec<Expr>, options: &[Expr]) {
+  let has_layout = options.iter().any(|o| {
+    crate::evaluator::dispatch::list_operations::as_rule(o).is_some_and(
+      |(p, _)| matches!(p, Expr::Identifier(n) if n == "GraphLayout"),
+    )
+  });
+  if has_layout {
+    return;
+  }
+  graph_args.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("GraphLayout".to_string())),
+    replacement: Box::new(Expr::List(
+      vec![
+        Expr::String("LayeredEmbedding".to_string()),
+        Expr::Rule {
+          pattern: Box::new(Expr::String("RootVertex".to_string())),
+          replacement: Box::new(Expr::Integer(1)),
+        },
+      ]
+      .into(),
+    )),
+  });
 }

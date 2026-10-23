@@ -559,12 +559,45 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(original());
   };
 
-  let mut result: Vec<Expr> = Vec::new();
-  for k in sizes {
-    if (0..=len).contains(&k) {
-      generate_combinations(items, k as usize, 0, &mut vec![], &mut result);
+  // Subsets come in size order, each size in lexicographic order of
+  // positions. A take spec picks some of them by index; those are unranked
+  // directly rather than enumerating them all (`Subsets[Range[32], {16},
+  // {k}]` names one of 601080390).
+  let layers: Vec<usize> = sizes
+    .iter()
+    .filter(|k| (0..=len).contains(*k))
+    .map(|&k| k as usize)
+    .collect();
+  let layer_counts: Option<Vec<u128>> = layers
+    .iter()
+    .map(|&k| binomial_u128(items.len(), k))
+    .collect();
+  let total_count: Option<u128> = layer_counts
+    .as_ref()
+    .and_then(|c| c.iter().try_fold(0u128, |a, &b| a.checked_add(b)));
+  let materialize = || {
+    let mut all = Vec::new();
+    for &k in &layers {
+      generate_combinations(items, k, 0, &mut vec![], &mut all);
     }
-  }
+    all
+  };
+  let nth_subset = |mut rank: u128| -> Expr {
+    let counts = layer_counts.as_deref().unwrap_or(&[]);
+    for (&k, &count) in layers.iter().zip(counts) {
+      if rank < count {
+        return Expr::List(unrank_combination(items, k, rank).into());
+      }
+      rank -= count;
+    }
+    Expr::List(Vec::new().into())
+  };
+  let mut result: Vec<Expr> = if args.get(2).is_some() && total_count.is_some()
+  {
+    Vec::new()
+  } else {
+    materialize()
+  };
 
   // The take argument follows Take semantics, clipping with a warning.
   if let Some(take) = args.get(2) {
@@ -611,10 +644,18 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(original());
     };
     match parsed {
-      TakeSpec::All => {}
+      TakeSpec::All => {
+        if result.is_empty() {
+          result = materialize();
+        }
+      }
       TakeSpec::Nothing => result.clear(),
       TakeSpec::Triple(m, n, s) => {
-        let total = result.len() as i128;
+        let total = match total_count {
+          Some(t) => i128::try_from(t).unwrap_or(i128::MAX),
+          None => result.len() as i128,
+        };
+        let lazy = total_count.is_some();
         let resolve = |x: i128| if x < 0 { total + 1 + x } else { x };
         let (mr, nr) = (resolve(m), resolve(n));
         let mut taken: Vec<Expr> = Vec::new();
@@ -622,7 +663,11 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut i = mr;
         while (s > 0 && i <= nr) || (s < 0 && i >= nr) {
           if i >= 1 && i <= total {
-            taken.push(result[(i - 1) as usize].clone());
+            taken.push(if lazy {
+              nth_subset((i - 1) as u128)
+            } else {
+              result[(i - 1) as usize].clone()
+            });
           } else {
             clipped = true;
           }
@@ -659,6 +704,46 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
   }
   Ok(Expr::List(result.into()))
+}
+
+/// C(n, k) in u128, None on overflow.
+fn binomial_u128(n: usize, k: usize) -> Option<u128> {
+  if k > n {
+    return Some(0);
+  }
+  let k = k.min(n - k);
+  let mut acc: u128 = 1;
+  for i in 0..k {
+    // acc * (n - i) / (i + 1) stays an integer at every step.
+    acc = acc.checked_mul((n - i) as u128)? / (i as u128 + 1);
+  }
+  Some(acc)
+}
+
+/// The size-`k` subset of `items` at 0-based `rank` in lexicographic order of
+/// positions (the order `Subsets` lists them in).
+fn unrank_combination(items: &[Expr], k: usize, mut rank: u128) -> Vec<Expr> {
+  let n = items.len();
+  let mut out = Vec::with_capacity(k);
+  let mut next = 0;
+  for slot in 0..k {
+    let remaining = k - slot - 1;
+    while next < n {
+      let with_next =
+        binomial_u128(n - next - 1, remaining).unwrap_or(u128::MAX);
+      if rank < with_next {
+        break;
+      }
+      rank -= with_next;
+      next += 1;
+    }
+    if next >= n {
+      break;
+    }
+    out.push(items[next].clone());
+    next += 1;
+  }
+  out
 }
 
 /// Helper to generate combinations (subsets of size k)

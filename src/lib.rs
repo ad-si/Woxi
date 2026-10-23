@@ -1674,6 +1674,35 @@ pub fn pop_context() -> Option<String> {
 
 /// The currently active context — the top of the Begin/BeginPackage
 /// stack, or `"Global`"` when nothing has been pushed.
+/// Whether `$Context`, `$ContextPath` and `$ContextAliases` are all at their
+/// defaults (`Global``, `{System`, Global`}`, none), checked without
+/// allocating: symbol resolution asks this for nearly every symbol it
+/// touches.
+pub fn contexts_are_default() -> bool {
+  let context_default =
+    CONTEXT_STACK.with(|s| s.borrow().last().is_none_or(|c| c == "Global`"));
+  if !context_default {
+    return false;
+  }
+  // An assigned `$ContextPath` still has to be folded in; let the general
+  // path handle it.
+  let path_assigned = ENV.with(|e| {
+    e.try_borrow()
+      .map_or(true, |env| env.contains_key("$ContextPath"))
+  });
+  if path_assigned {
+    return false;
+  }
+  let is_default_path =
+    |p: &[String]| p.len() == 2 && p[0] == "System`" && p[1] == "Global`";
+  let path_default = CONTEXT_PATH_STACK.with(|s| match s.borrow().last() {
+    Some(top) => is_default_path(top),
+    None => CONTEXT_PATH_BASE
+      .with(|b| b.borrow().as_deref().is_none_or(is_default_path)),
+  });
+  path_default && !has_context_aliases()
+}
+
 pub fn current_context() -> String {
   CONTEXT_STACK.with(|s| {
     s.borrow()
@@ -4959,6 +4988,7 @@ fn composed_layout_svg(expr: &syntax::Expr) -> Option<String> {
       | "Column"
       | "Row"
       | "Labeled"
+      | "Legended"
       | "Overlay"
       | "Pane"
       | "Item"
@@ -4967,6 +4997,20 @@ fn composed_layout_svg(expr: &syntax::Expr) -> Option<String> {
     return None;
   }
   if !evaluator::lays_out_a_graphic(expr) {
+    return None;
+  }
+  // A legend around a single picture is already one graphic: it keeps its
+  // own display (and its symbolic echo), only a legend around a *layout*
+  // of pictures needs composing.
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && name == "Legended"
+    && args.first().is_none_or(|g| {
+      matches!(
+        g,
+        syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
+      )
+    })
+  {
     return None;
   }
   let svg = evaluator::expr_to_svg(expr);

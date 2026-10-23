@@ -187,3 +187,67 @@ mod periodic_background {
     );
   }
 }
+
+mod explicit_rules {
+  use super::*;
+
+  #[test]
+  fn rule_list_on_a_cyclic_tape() {
+    assert_eq!(
+      interpret(
+        "TuringMachine[{{1,0}->{2,1,1},{2,0}->{1,1,2}}, {{1, 1}, {0,0,0,0,0}}, 4]"
+      )
+      .unwrap(),
+      "{{{1, 1, 0}, {0, 0, 0, 0, 0}}, {{2, 2, 1}, {1, 0, 0, 0, 0}}, {{1, 4, 3}, {1, 1, 0, 0, 0}}, {{2, 5, 4}, {1, 1, 0, 1, 0}}, {{1, 2, 6}, {1, 1, 0, 1, 1}}}"
+    );
+  }
+
+  #[test]
+  fn offsets_larger_than_one_on_an_infinite_tape() {
+    assert_eq!(
+      interpret(
+        "TuringMachine[{{1,0}->{2,1,1},{2,0}->{1,1,2}}, {{1, 1}, {{0}, 0}}, 4]"
+      )
+      .unwrap(),
+      "{{{1, 1, 0}, {0, 0, 0, 0, 0, 0, 0}}, {{2, 2, 1}, {1, 0, 0, 0, 0, 0, 0}}, {{1, 4, 3}, {1, 1, 0, 0, 0, 0, 0}}, {{2, 5, 4}, {1, 1, 0, 1, 0, 0, 0}}, {{1, 7, 6}, {1, 1, 0, 1, 1, 0, 0}}}"
+    );
+  }
+
+  // With no matching rule the machine stays where it is.
+  #[test]
+  fn unmatched_configuration_halts() {
+    assert_eq!(
+      interpret(
+        "TuringMachine[{{1,0}->{1,1,1}}, {{1,2}, {{5,0,7}, {3,4}}}, 3]"
+      )
+      .unwrap(),
+      "{{{1, 2, 0}, {5, 0, 7}}, {{1, 3, 1}, {5, 1, 7}}, {{1, 3, 1}, {5, 1, 7}}, {{1, 3, 1}, {5, 1, 7}}}"
+    );
+  }
+
+  // Patterns in the rules, compound states, and a head that does not start
+  // on the first cell (the Collatz machine from the Demonstrations).
+  #[test]
+  fn pattern_rules_with_compound_states() {
+    assert_eq!(
+      interpret(
+        "TuringMachine[{{0, 0} :> {0, 2, -1}, {0, 1} :> {{0, 1, 1}, 0, -1}, \
+         {{1, 0}, 2} :> {1, 2, 1}, {{1, 1}, 2} :> {1, 1, 1}, {1, 2} :> {0, 2, -1}, \
+         {1, x_} :> {1, x, 1}, {{0, x_, r_}, 2} :> {{1, (x + r) /. {1 -> 0, 2 -> 1}}, Mod[x + r, 2], -1}, \
+         {{0, x_, r_}, y_} :> {{0, y, (x + y + r) /. {1 -> 0, 2 | 3 -> 1}}, Mod[x + y + r, 2], -1}}, \
+         {{0, 3}, {{1, 1, 0}, 2}}, 6]"
+      )
+      .unwrap(),
+      "{{{0, 5, 0}, {2, 2, 1, 1, 0}}, {{0, 4, -1}, {2, 2, 1, 1, 2}}, {{{0, 1, 1}, 3, -2}, {2, 2, 1, 0, 2}}, {{{0, 1, 1}, 2, -3}, {2, 2, 1, 0, 2}}, {{{1, 1}, 1, -4}, {2, 0, 1, 0, 2}}, {{1, 2, -3}, {1, 0, 1, 0, 2}}, {{1, 3, -2}, {1, 0, 1, 0, 2}}}"
+    );
+  }
+
+  // A state outside a numbered rule's range used to index past the table.
+  #[test]
+  fn numbered_rule_with_out_of_range_state_halts() {
+    assert_eq!(
+      interpret("TuringMachine[2506, {{5, 1}, {0, 0}}, 1]").unwrap(),
+      "{{{5, 1, 0}, {0, 0}}, {{5, 1, 0}, {0, 0}}}"
+    );
+  }
+}
