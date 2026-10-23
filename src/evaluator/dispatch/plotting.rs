@@ -571,6 +571,13 @@ pub fn dispatch_plotting(
     "BarChart" if !args.is_empty() => {
       Some(crate::functions::chart::bar_chart_ast(args))
     }
+    // The 3-D charts render quietly, but a first argument that is no
+    // dataset still reports `head::ldata` and stays unevaluated.
+    "BarChart3D" | "PieChart3D" | "SectorChart3D"
+      if !args.is_empty() && !matches!(&args[0], Expr::List(_)) =>
+    {
+      Some(Ok(crate::functions::chart::invalid_dataset(name, args)))
+    }
     "BarChart3D" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::chart::bar_chart_3d_ast(args)
     })),

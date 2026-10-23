@@ -2025,9 +2025,21 @@ pub(crate) fn format_chart_value(v: f64) -> String {
   }
 }
 
+/// `head::ldata` for a first argument that is no dataset (`BarChart[x]`);
+/// the call stays unevaluated, as in wolframscript.
+pub(crate) fn invalid_dataset(head: &str, args: &[Expr]) -> Expr {
+  crate::emit_message(&format!(
+    "{head}::ldata: {} is not a valid dataset or list of datasets.",
+    crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+  ));
+  unevaluated(head, args)
+}
+
 /// BarChart[{v1, v2, ...}] or BarChart[{{v1, v2}, {v3, v4}, ...}]
 pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let groups = extract_grouped_values(&args[0])?;
+  let Ok(groups) = extract_grouped_values(&args[0]) else {
+    return Ok(invalid_dataset("BarChart", args));
+  };
   if groups.is_empty() {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
@@ -2246,7 +2258,9 @@ fn extract_pie_rows(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
 /// concentric rings, one ring per sublist, innermost first — matching
 /// the multi-dataset convention used by Wolfram's PieChart.
 pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let rows = extract_pie_rows(&args[0])?;
+  let Ok(rows) = extract_pie_rows(&args[0]) else {
+    return Ok(invalid_dataset("PieChart", args));
+  };
   let has_data = rows.iter().any(|r| r.iter().sum::<f64>() > 0.0);
   if !has_data {
     return Ok(crate::graphics_result(
@@ -2620,8 +2634,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let Ok(groups) = extract_grouped_values(&args[0]) else {
-    // Return unevaluated for invalid (non-list) input, matching wolframscript.
-    return Ok(unevaluated("BarChart3D", args));
+    return Ok(invalid_dataset("BarChart3D", args));
   };
   if groups.is_empty() {
     return Ok(crate::graphics3d_result(
@@ -2768,7 +2781,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::functions::plot3d::Triangle;
 
   let Ok(rows) = extract_pie_rows(&args[0]) else {
-    return Ok(unevaluated("PieChart3D", args));
+    return Ok(invalid_dataset("PieChart3D", args));
   };
   let has_data = rows.iter().any(|r| r.iter().sum::<f64>() > 0.0);
   if !has_data {
@@ -3363,7 +3376,7 @@ pub fn sector_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::functions::plot3d::Triangle;
 
   let Ok(datasets) = extract_sector_rows(&args[0]) else {
-    return Ok(unevaluated("SectorChart3D", args));
+    return Ok(invalid_dataset("SectorChart3D", args));
   };
   let n_categories = datasets.iter().map(std::vec::Vec::len).max().unwrap_or(0);
   if datasets.is_empty() || n_categories == 0 {
@@ -3550,7 +3563,9 @@ pub fn sector_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A flat list `{v1, v2, ...}` is one dataset; a list of lists
   // `{{...}, {...}}` is several datasets drawn overlaid.
-  let datasets = parse_datasets(&args[0])?;
+  let Ok(datasets) = parse_datasets(&args[0]) else {
+    return Ok(invalid_dataset("Histogram", args));
+  };
   if datasets.is_empty() || datasets.iter().all(std::vec::Vec::is_empty) {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
@@ -3731,7 +3746,9 @@ fn parse_datasets(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
 
 /// BoxWhiskerChart[{d1, d2, ...}] or BoxWhiskerChart[{{d1,...}, {d2,...}, ...}]
 pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let mut datasets = parse_datasets(&args[0])?;
+  let Ok(mut datasets) = parse_datasets(&args[0]) else {
+    return Ok(invalid_dataset("BoxWhiskerChart", args));
+  };
   if datasets.is_empty() {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
@@ -4091,11 +4108,7 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (gs, Some(labels))
   } else {
     let Expr::List(items) = &data else {
-      return Err(InterpreterError::EvaluationError(
-        "BubbleChart: first argument must be a list of {x, y, z} triples \
-             or an Association"
-          .into(),
-      ));
+      return Ok(invalid_dataset("BubbleChart", args));
     };
 
     // Detect shape: if every top-level item is itself a list of triples
@@ -4236,9 +4249,7 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn bubble_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   let Expr::List(items) = &data else {
-    return Err(InterpreterError::EvaluationError(
-      "BubbleHistogram: first argument must be a list of {x, y} pairs".into(),
-    ));
+    return Ok(invalid_dataset("BubbleHistogram", args));
   };
 
   // Parse the {x, y} pairs, silently skipping entries that aren't numeric
@@ -4424,9 +4435,7 @@ pub fn bubble_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   let Expr::List(items) = &data else {
-    return Err(InterpreterError::EvaluationError(
-      "SectorChart: first argument must be a list".into(),
-    ));
+    return Ok(invalid_dataset("SectorChart", args));
   };
 
   let mut sectors: Vec<(f64, f64)> = Vec::new();
@@ -4594,14 +4603,14 @@ fn date_list_plot_ast_impl(
     None => data,
   };
   let Expr::List(items) = &data else {
-    return Err(InterpreterError::EvaluationError(format!(
-      "{}: first argument must be a list",
+    return Ok(invalid_dataset(
       if log_y {
         "DateListLogPlot"
       } else {
         "DateListPlot"
-      }
-    )));
+      },
+      args,
+    ));
   };
 
   // `DateListPlot[{y1, y2, …}, datespec]` — plain values plus a starting

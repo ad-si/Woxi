@@ -39991,3 +39991,51 @@ mod setting_of_dynamic_objects {
     );
   }
 }
+
+mod chart_invalid_dataset {
+  use super::*;
+
+  #[test]
+  fn non_list_data_reports_ldata_and_stays_unevaluated() {
+    for head in [
+      "BarChart",
+      "PieChart",
+      "Histogram",
+      "BoxWhiskerChart",
+      "BarChart3D",
+      "PieChart3D",
+      "SectorChart",
+      "SectorChart3D",
+      "BubbleChart",
+      "BubbleHistogram",
+      "DateListPlot",
+      "DateListLogPlot",
+      "RectangleChart",
+    ] {
+      assert_eq!(
+        interpret(&format!("{head}[x]")).unwrap(),
+        format!("{head}[x]")
+      );
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m
+          == &format!(
+            "{head}::ldata: x is not a valid dataset or list of datasets."
+          )),
+        "{head}: {msgs:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn rectangle_chart_skips_invalid_entries() {
+    assert_eq!(
+      interpret("Head[RectangleChart[{{1, 2}, x}]]").unwrap(),
+      "Graphics"
+    );
+    assert_eq!(
+      interpret("RectangleChart[{1, 2, 3}]").unwrap(),
+      "RectangleChart[{1, 2, 3}]"
+    );
+  }
+}

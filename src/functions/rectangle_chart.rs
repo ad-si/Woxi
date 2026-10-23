@@ -67,24 +67,30 @@ fn parse_item(e: &Expr, arity: usize) -> Option<Item> {
 }
 
 /// A single dataset `{{w, h}, …}` or a list of datasets.
+/// A single dataset `{{w, h}, …}` or a list of datasets; entries that are no
+/// rectangle are skipped, as in wolframscript. `None` when nothing usable is
+/// left.
 fn parse_datasets(data: &Expr, arity: usize) -> Option<Vec<Vec<Item>>> {
   let Expr::List(items) = data else {
     return None;
   };
-  if let Some(set) = items
-    .iter()
-    .map(|e| parse_item(e, arity))
-    .collect::<Option<Vec<_>>>()
-  {
+  let set: Vec<Item> =
+    items.iter().filter_map(|e| parse_item(e, arity)).collect();
+  if !set.is_empty() {
     return Some(vec![set]);
   }
-  items
+  let sets: Vec<Vec<Item>> = items
     .iter()
-    .map(|set| match set {
-      Expr::List(xs) => xs.iter().map(|e| parse_item(e, arity)).collect(),
+    .filter_map(|set| match set {
+      Expr::List(xs) => {
+        let set: Vec<Item> =
+          xs.iter().filter_map(|e| parse_item(e, arity)).collect();
+        (!set.is_empty()).then_some(set)
+      }
       _ => None,
     })
-    .collect()
+    .collect();
+  (!sets.is_empty()).then_some(sets)
 }
 
 fn palette_color(i: usize) -> Expr {
@@ -129,7 +135,7 @@ pub fn rectangle_chart_ast(
     return Ok(unevaluated(head, args));
   };
   let Some(sets) = parse_datasets(data, arity) else {
-    return Ok(unevaluated(head, args));
+    return Ok(crate::functions::chart::invalid_dataset(head, args));
   };
 
   let mut chart_style = None;
