@@ -35307,7 +35307,12 @@ pub fn unset_checkbox_defaults(
   }
   let mut found = Vec::new();
   for d in displays {
-    walk(&build_manipulate_display(d, &[]), &mut found);
+    // Only a display that mentions a checkbox can bind one. Building the
+    // others here would evaluate their `Dynamic[…]` captions before any
+    // control is bound, printing messages the front end never shows.
+    if d.contains("Checkbox") {
+      walk(&build_manipulate_display(d, &[]), &mut found);
+    }
   }
   let mut out: Vec<(String, String)> = Vec::new();
   for (name, off) in found {

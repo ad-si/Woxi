@@ -3547,6 +3547,36 @@ mod tests {
     );
   }
 
+  /// A `Dynamic[…]` caption that reads a control (`Row[{"x", " " <>
+  /// unit[lookup[sel, …]]}]`) was evaluated once while the widget was being
+  /// built, before `sel` held its choice. `lookup` then returned `None` and
+  /// `StringJoin` printed a bogus `StringJoin::string` message.
+  #[test]
+  fn dynamic_caption_is_not_evaluated_before_controls_are_bound() {
+    let code = r#"Manipulate[
+      Graphics[Disk[]],
+      Dynamic[Row[{"unit", " " <> captionUnit[captionPick[captionSel]]}]],
+      {{captionSel, "b"}, {"a", "b"}}
+    ]"#;
+    woxi::interpret(
+      "captionPick[x_] := If[MemberQ[{\"a\", \"b\"}, x], x, None]",
+    )
+    .unwrap();
+    // Records every evaluation that happens with the control still unbound.
+    woxi::interpret("captionUnit[None] := (captionUnboundSeen = True; \"\")")
+      .unwrap();
+    woxi::interpret("captionUnit[x_String] := \"[\" <> x <> \"]\"").unwrap();
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+    assert_eq!(state.error, None);
+    assert_eq!(
+      woxi::interpret("ValueQ[captionUnboundSeen]").unwrap(),
+      "False",
+      "the caption was evaluated before its control was bound"
+    );
+  }
+
   #[test]
   fn demonstration_polyhedrondata_overlay_checkboxes_toggle_live() {
     let code = r#"Manipulate[
