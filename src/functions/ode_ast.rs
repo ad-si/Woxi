@@ -430,6 +430,52 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(result) = ndsolve_vector_unknowns(args, n_pos)? {
     return Ok(result);
   }
+  // Derivatives asked for as unknowns (`{x''[t], x'[t], x[t]}`): solve for
+  // the functions themselves, then give a rule for each requested form in
+  // order, its value read off the solution.
+  if let Expr::List(unknowns) = &args[1]
+    && unknowns
+      .iter()
+      .any(|u| derivative_unknown_base(u).is_some())
+  {
+    let mut bases: Vec<String> = Vec::new();
+    for u in unknowns {
+      let base = derivative_unknown_base(u).or_else(|| match u {
+        Expr::Identifier(name) => Some(name.clone()),
+        Expr::FunctionCall { name, .. } => Some(name.clone()),
+        _ => None,
+      });
+      let Some(base) = base else {
+        return Ok(unevaluated("NDSolve", args));
+      };
+      if !bases.contains(&base) {
+        bases.push(base);
+      }
+    }
+    let mut reduced = args.to_vec();
+    reduced[1] =
+      Expr::List(bases.iter().map(|b| Expr::Identifier(b.clone())).collect());
+    let solved = ndsolve_ast_inner(&reduced)?;
+    let Expr::List(solutions) = &solved else {
+      return Ok(solved);
+    };
+    let mut out = Vec::new();
+    for sol in solutions {
+      let mut rules = Vec::new();
+      for u in unknowns {
+        let value = crate::evaluator::evaluate_function_call_ast(
+          "ReplaceAll",
+          &[u.clone(), sol.clone()],
+        )?;
+        rules.push(Expr::Rule {
+          pattern: Box::new(u.clone()),
+          replacement: Box::new(value),
+        });
+      }
+      out.push(Expr::List(rules.into()));
+    }
+    return Ok(Expr::List(out.into()));
+  }
   // An unknown the equations never mention is solved as itself (`w -> w`),
   // the others as usual.
   if let Expr::List(unknowns) = &args[1] {
@@ -2780,6 +2826,24 @@ fn rewrite_pde_rhs_hyperbolic(
 /// linear expression really did lose all dependence on the variable
 /// differentiated against (see `try_solve_hyperbolic_pde`'s linearity
 /// check).
+/// The function a derivative unknown differentiates: `x` for `x'[t]` or
+/// `x''`, which evaluate to `Derivative[n, x, t]` and `Derivative[n, x]`.
+fn derivative_unknown_base(u: &Expr) -> Option<String> {
+  match u {
+    Expr::FunctionCall { name, args }
+      if name == "Derivative"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::Integer(_)) =>
+    {
+      match &args[1] {
+        Expr::Identifier(f) => Some(f.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 /// Whether `name` occurs in `expr` as a symbol or as the head of a call
 /// (`w`, `w[t]`, `w'[t]`).
 fn mentions_symbol(expr: &Expr, name: &str) -> bool {
@@ -3487,7 +3551,10 @@ fn compound_head_renamings(vars: &Expr, domain: &Expr) -> Vec<(Expr, String)> {
 /// Rewrite every occurrence of a compound head to its fresh symbol, turning
 /// `Subscript[c, 1][t]` into `NDSolve$fn$1[t]` and
 /// `Derivative[1][Subscript[c, 1]][t]` into `Derivative[1][NDSolve$fn$1][t]`.
-fn rename_compound_heads(expr: &Expr, renames: &[(Expr, String)]) -> Expr {
+pub(crate) fn rename_compound_heads(
+  expr: &Expr,
+  renames: &[(Expr, String)],
+) -> Expr {
   let key = expr_to_string(expr);
   for (head, fresh) in renames {
     if expr_to_string(head) == key {
@@ -3512,7 +3579,10 @@ fn rename_compound_heads(expr: &Expr, renames: &[(Expr, String)]) -> Expr {
 /// The inverse of [`rename_compound_heads`], applied to the solution rules:
 /// `NDSolve$fn$1 -> InterpolatingFunction[…]` becomes
 /// `Subscript[c, 1] -> InterpolatingFunction[…]`.
-fn restore_compound_heads(expr: &Expr, renames: &[(Expr, String)]) -> Expr {
+pub(crate) fn restore_compound_heads(
+  expr: &Expr,
+  renames: &[(Expr, String)],
+) -> Expr {
   if renames.is_empty() {
     return expr.clone();
   }
@@ -9822,14 +9892,49 @@ fn kernel_interpolating_function_to_pairs(
   if domain_ranges.len() != 1 {
     return None;
   }
-  let ys = match values {
+  // Each grid point stores its value followed by `info[[3]]` derivatives:
+  // `{v, v', …}` per point, or packed as `{Developer`PackedArrayForm,
+  // offsets, flat}` where point i owns flat[[offsets[[i]] + 1 ;;
+  // offsets[[i + 1]]]] (a vector value's components come first).
+  let stored = match info.get(2) {
+    Some(Expr::Integer(d)) if *d >= 0 => *d as usize + 1,
+    _ => 1,
+  };
+  let ys: Vec<Expr> = match values {
     Expr::List(items) => match items.as_slice() {
-      [Expr::Identifier(tag), _, Expr::List(ys)]
+      [Expr::Identifier(tag), Expr::List(offsets), Expr::List(flat)]
         if tag == "Developer`PackedArrayForm" =>
       {
-        ys.clone()
+        let offsets: Vec<usize> = offsets
+          .iter()
+          .map(|o| match o {
+            Expr::Integer(o) if *o >= 0 => Some(*o as usize),
+            _ => None,
+          })
+          .collect::<Option<_>>()?;
+        offsets
+          .windows(2)
+          .map(|w| {
+            let width = w[1].checked_sub(w[0])?;
+            let dim = (width / stored).max(1);
+            let part: Vec<Expr> = (0..dim)
+              .map(|j| flat.get(w[0] + j).cloned())
+              .collect::<Option<_>>()?;
+            Some(if dim == 1 {
+              part[0].clone()
+            } else {
+              Expr::List(part.into())
+            })
+          })
+          .collect::<Option<_>>()?
       }
-      _ => items.clone(),
+      _ => items
+        .iter()
+        .map(|item| match item {
+          Expr::List(per_point) => per_point.first().cloned(),
+          other => Some(other.clone()),
+        })
+        .collect::<Option<_>>()?,
     },
     _ => return None,
   };

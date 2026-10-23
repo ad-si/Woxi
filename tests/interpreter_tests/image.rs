@@ -8939,3 +8939,62 @@ mod image_size_option {
     );
   }
 }
+
+mod rasterize_any_expression {
+  use super::*;
+
+  // Text and other non-graphics expressions used to be refused
+  // ("Rasterize: unsupported expression type").
+  #[test]
+  fn text_rasterizes() {
+    assert_eq!(interpret("Head[Rasterize[\"Hello\"]]").unwrap(), "Image");
+    assert_eq!(
+      interpret("Head[Rasterize[Style[\"A\", FontFamily -> \"Courier\"]]]")
+        .unwrap(),
+      "Image"
+    );
+  }
+
+  #[test]
+  fn raster_size_sets_the_pixel_dimensions() {
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Rasterize[Graphics[Disk[]], RasterSize -> 25]]"
+      )
+      .unwrap(),
+      "{25, 25}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Rasterize[Style[\"A\", 40], RasterSize -> {20, 30}]]"
+      )
+      .unwrap(),
+      "{20, 30}"
+    );
+  }
+
+  // Wolfram's Rasterize gives an RGB image (the drawing is composited on
+  // white); Woxi's used to carry a redundant alpha channel.
+  #[test]
+  fn rasterized_graphics_are_rgb() {
+    assert_eq!(
+      interpret("{ImageChannels[Rasterize[Graphics[Disk[]]]], ImageColorSpace[Rasterize[Graphics[Disk[]]]]}").unwrap(),
+      "{3, RGB}"
+    );
+  }
+
+  // A graphic where an image is expected is rasterized first.
+  #[test]
+  fn image_functions_accept_graphics() {
+    assert_eq!(
+      interpret(
+        "g = Graphics[{Disk[{0, 0}, 0.2]}, PlotRange -> {{-1, 1}, {-1, 1}}]; \
+         {Head[ColorNegate[g]], Head[ColorConvert[g, \"Grayscale\"]], Head[ImageApply[# &, g]], \
+          ImageDimensions[ImageResize[ColorNegate[ColorConvert[g, \"Grayscale\"]], 20]], \
+          Head[ColorNegate[Red]]}"
+      )
+      .unwrap(),
+      "{Image, Image, Image, {20, 20}, RGBColor}"
+    );
+  }
+}

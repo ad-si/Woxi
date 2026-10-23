@@ -1571,6 +1571,19 @@ pub fn dispatch_linear_algebra_functions(
         vec![args[0].clone(), transform],
       )));
     }
+    // A numeric matrix with any approximate entry is numericized as a whole:
+    // TransformationFunction[{{1., 0}, {0, 1}}] → {{1., 0.}, {0., 1.}}.
+    "TransformationFunction"
+      if args.len() == 1
+        && crate::functions::math_ast::contains_inexact_real(&args[0])
+        && is_numeric_matrix(&args[0])
+        && !is_machine_matrix(&args[0]) =>
+    {
+      return Some(
+        crate::evaluator::evaluate_function_call_ast("N", args)
+          .map(|m| call1("TransformationFunction", m)),
+      );
+    }
     // RotationTransform[angle] → TransformationFunction[2D rotation matrix in homogeneous coords]
     // RotationTransform[angle, {cx, cy}] → rotation about point {cx, cy}
     // RotationTransform[angle, {x, y, z}, {px, py, pz}] → 3D rotation about
@@ -1578,6 +1591,29 @@ pub fn dispatch_linear_algebra_functions(
     "RotationTransform"
       if args.len() == 1 || args.len() == 2 || args.len() == 3 =>
     {
+      // RotationTransform[{u, v}] and RotationTransform[{u, v}, p] beyond 2D:
+      // the rotation taking u's direction to v's (RotationMatrix[{u, v}]),
+      // about the origin or p.
+      if let Expr::List(pair) = &args[0]
+        && pair.len() == 2
+        && let (Expr::List(u), Expr::List(v)) = (&pair[0], &pair[1])
+        && u.len() == v.len()
+        && u.len() >= 3
+        && args.len() <= 2
+      {
+        let n = u.len();
+        let point = match args.get(1) {
+          None => None,
+          Some(Expr::List(p)) if p.len() == n => Some(Expr::List(p.clone())),
+          Some(_) => return Some(Ok(unevaluated("RotationTransform", args))),
+        };
+        return Some(
+          evaluate_expr_to_expr(&call1("RotationMatrix", args[0].clone()))
+            .and_then(|m| {
+              homogeneous_transformation(&m, point.as_ref(), n, args)
+            }),
+        );
+      }
       // Two-vector form RotationTransform[{u, v}] (2D): the rotation taking the
       // direction of u to the direction of v. Build it directly from the
       // normalized dot/cross products so the angle is never materialized.
@@ -1650,6 +1686,28 @@ pub fn dispatch_linear_algebra_functions(
           return Some(result);
         }
         return Some(Ok(unevaluated("RotationTransform", args)));
+      }
+      // RotationTransform[theta, {u, v}] and RotationTransform[theta, {u, v}, p]:
+      // rotation by theta in the plane spanned by u and v (any dimension),
+      // about the origin or the point p.
+      if args.len() >= 2
+        && let Expr::List(plane) = &args[1]
+        && plane.len() == 2
+        && let (Expr::List(u), Expr::List(v)) = (&plane[0], &plane[1])
+        && u.len() == v.len()
+        && u.len() >= 2
+      {
+        let n = u.len();
+        let point = match args.get(2) {
+          None => None,
+          Some(Expr::List(p)) if p.len() == n => Some(Expr::List(p.clone())),
+          Some(_) => return Some(Ok(unevaluated("RotationTransform", args))),
+        };
+        return Some(
+          rotation_matrix_plane(&args[0], &plane[0], &plane[1]).and_then(|m| {
+            homogeneous_transformation(&m, point.as_ref(), n, args)
+          }),
+        );
       }
       if args.len() == 3 {
         return Some(Ok(unevaluated("RotationTransform", args)));
@@ -4321,7 +4379,17 @@ fn rotation_matrix_plane(
   let sym = plus(vec![outer(&e1, &e1), outer(&e2, &e2)]);
   let id = call1("IdentityMatrix", Expr::Integer(n as i128));
   let r = plus(vec![id, times(vec![sin, anti]), times(vec![cos_m1, sym])]);
-  evaluate_expr_to_expr(&r)
+  // Entrywise Together, as wolframscript prints them: (1 + Cos[t])/2 rather
+  // than 1 + (-1 + Cos[t])/2.
+  let r = evaluate_expr_to_expr(&r)?;
+  evaluate_expr_to_expr(&call(
+    "Map",
+    vec![
+      id_expr("Together"),
+      r,
+      Expr::List(vec![Expr::Integer(2)].into()),
+    ],
+  ))
 }
 
 /// Shared solver for LyapunovSolve / DiscreteLyapunovSolve. The two-argument
@@ -4840,4 +4908,63 @@ fn control_structure_matrix(
     }
     Ok(Expr::List(out_rows.into()))
   }
+}
+
+/// A matrix of machine reals only (already numericized).
+fn is_machine_matrix(m: &Expr) -> bool {
+  let Expr::List(rows) = m else { return false };
+  rows.iter().all(|r| {
+    matches!(r, Expr::List(cells) if cells.iter().all(|c| matches!(c, Expr::Real(_))))
+  })
+}
+
+/// A matrix whose every entry is a numeric quantity (`NumericQ`).
+fn is_numeric_matrix(m: &Expr) -> bool {
+  let Expr::List(rows) = m else { return false };
+  rows.iter().all(|r| {
+    matches!(r, Expr::List(cells)
+      if cells.iter().all(crate::functions::predicate_ast::is_numeric_q))
+  })
+}
+
+/// `TransformationFunction` of the n×n matrix `m` acting about `point` (the
+/// origin when None): translation column p - m.p, entrywise Together.
+fn homogeneous_transformation(
+  m: &Expr,
+  point: Option<&Expr>,
+  n: usize,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Expr::List(m_rows) = m else {
+    return Ok(unevaluated("RotationTransform", args));
+  };
+  let shift = match point {
+    Some(p) => {
+      let moved = evaluate_expr_to_expr(&call(
+        "Subtract",
+        vec![p.clone(), call("Dot", vec![m.clone(), p.clone()])],
+      ))?;
+      evaluate_expr_to_expr(&call("Map", vec![id_expr("Together"), moved]))?
+    }
+    None => Expr::List(vec![Expr::Integer(0); n].into()),
+  };
+  let Expr::List(shift) = &shift else {
+    return Ok(unevaluated("RotationTransform", args));
+  };
+  let mut rows: Vec<Expr> = Vec::with_capacity(n + 1);
+  for (row, t) in m_rows.iter().zip(shift.iter()) {
+    let Expr::List(cells) = row else {
+      return Ok(unevaluated("RotationTransform", args));
+    };
+    let mut cells = cells.to_vec();
+    cells.push(t.clone());
+    rows.push(Expr::List(cells.into()));
+  }
+  let mut last = vec![Expr::Integer(0); n];
+  last.push(Expr::Integer(1));
+  rows.push(Expr::List(last.into()));
+  evaluate_expr_to_expr(&call1(
+    "TransformationFunction",
+    Expr::List(rows.into()),
+  ))
 }

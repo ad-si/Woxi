@@ -1050,29 +1050,21 @@ pub fn spherical_harmonic_y_ast(
   // (l - |m| + 1) to (l + |m|). For m < 0, (l-m)!/(l+m)! is the reciprocal
   // of this — (l+|m|)!/(l-|m|)! — so `prod` is multiplied in below instead
   // of dividing.
-  let mut fact_ratio_den: i128 = 1;
+  // In big integers: the product passes i128 already for l + |m| around 34.
   let l_u = l.unsigned_abs() as i128;
   let m_u = m_abs as i128;
+  let mut fact_ratio_den = BigInt::from(1);
   for i in (l_u - m_u + 1)..=(l_u + m_u) {
     fact_ratio_den *= i;
   }
   // norm = Sqrt[(2l+1) / (4 * Pi * fact_ratio_den)]
   //      = Sqrt[(2l+1) / (Pi * fact_ratio_den)] / 2
   // Pulling out the 4 factor matches Wolfram's canonical Sqrt-based form.
-  let two_l_plus_1 = 2 * l_u + 1;
+  let two_l_plus_1 = BigInt::from(2 * l_u + 1);
   let norm_inner = if m < 0 {
-    call(
-      "Rational",
-      vec![
-        Expr::Integer(two_l_plus_1 * fact_ratio_den),
-        Expr::Integer(1),
-      ],
-    )
+    bigint_to_expr(two_l_plus_1 * fact_ratio_den)
   } else {
-    call(
-      "Rational",
-      vec![Expr::Integer(two_l_plus_1), Expr::Integer(fact_ratio_den)],
-    )
+    make_rational_expr(&two_l_plus_1, &fact_ratio_den)
   };
   // Sqrt[Rational[2l+1, fact_ratio_den] / Pi] = Sqrt[arg]
   let sqrt_arg =
@@ -1103,297 +1095,11 @@ pub fn spherical_harmonic_y_ast(
       times(vec![id_expr("I"), Expr::Integer(m), args[3].clone()]),
     )
   };
-  let result = times(vec![norm_expr, plm, imp]);
-  let evaluated = crate::evaluator::evaluate_expr_to_expr(&result)?;
-  Ok(simplify_spherical_harmonic_form(&evaluated))
-}
-
-/// Post-process a symbolic SphericalHarmonicY result to match Wolfram's
-/// canonical form. Two transformations:
-///   1. Combine `Rational[a, b] * Sqrt[Times[Rational[c, d], Pi^-1]]` by
-///      absorbing the rational under the radical and pulling out perfect
-///      squares; e.g. `-3/4 * Sqrt[7/(12 Pi)] → -1/8 * Sqrt[21/Pi]`.
-///   2. Reorder the resulting Times factors so the leading rational is
-///      followed by `Power[E, ...]`, then the sqrt, then the polynomial,
-///      then `Sin[θ]` — matching wolframscript's canonical printout.
-fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
-  let Expr::FunctionCall { name, args } = expr else {
-    return expr.clone();
-  };
-  if name != "Times" {
-    return expr.clone();
-  }
-  // Decompose a `Power[base, exp]` whether represented as FunctionCall or
-  // BinaryOp::Power into `(base, exp)`.
-  let as_power = |e: &Expr| -> Option<(Expr, Expr)> {
-    match e {
-      Expr::FunctionCall { name, args }
-        if name == "Power" && args.len() == 2 =>
-      {
-        Some((args[0].clone(), args[1].clone()))
-      }
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left,
-        right,
-      } => Some(((**left).clone(), (**right).clone())),
-      _ => None,
-    }
-  };
-
-  // ── Step 1: locate the leading Rational and the Sqrt[Rational/Pi] factor.
-  let mut rat_idx: Option<usize> = None;
-  let mut ra_n = 0_i128;
-  let mut ra_d = 1_i128;
-  for (i, a) in args.iter().enumerate() {
-    if let Expr::FunctionCall { name: rn, args: ra } = a
-      && rn == "Rational"
-      && ra.len() == 2
-      && let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1])
-    {
-      rat_idx = Some(i);
-      ra_n = *n;
-      ra_d = *d;
-      break;
-    }
-  }
-
-  let mut sqrt_idx: Option<usize> = None;
-  let (mut sqrt_n, mut sqrt_d) = (0_i128, 1_i128);
-  for (i, a) in args.iter().enumerate() {
-    if Some(i) == rat_idx {
-      continue;
-    }
-    let Some((base, exp)) = as_power(a) else {
-      continue;
-    };
-    let exp_is_half = matches!(&exp, Expr::FunctionCall { name: en, args: ea }
-      if en == "Rational" && ea.len() == 2
-      && matches!((&ea[0], &ea[1]), (Expr::Integer(1), Expr::Integer(2))));
-    if !exp_is_half {
-      continue;
-    }
-    let Expr::FunctionCall { name: tn, args: ta } = &base else {
-      continue;
-    };
-    if tn != "Times" {
-      continue;
-    }
-    let mut found_rat: Option<(i128, i128)> = None;
-    let mut has_pi_inv = false;
-    for f in ta {
-      if let Expr::FunctionCall {
-        name: rn,
-        args: rargs,
-      } = f
-        && rn == "Rational"
-        && rargs.len() == 2
-        && let (Expr::Integer(c), Expr::Integer(d)) = (&rargs[0], &rargs[1])
-      {
-        found_rat = Some((*c, *d));
-        continue;
-      }
-      if let Some((pb, pe)) = as_power(f)
-        && matches!(&pb, Expr::Constant(s) if s == "Pi")
-        && matches!(&pe, Expr::Integer(-1))
-      {
-        has_pi_inv = true;
-      }
-    }
-    if let Some((c, d)) = found_rat
-      && has_pi_inv
-    {
-      sqrt_idx = Some(i);
-      (sqrt_n, sqrt_d) = (c, d);
-      break;
-    }
-  }
-
-  // ── Step 2: build the simplified Rational and Sqrt if both are present.
-  let (new_coeff, new_sqrt) = if let (Some(_), Some(_)) = (rat_idx, sqrt_idx) {
-    let Some(comb_n_pre) =
-      ra_n.checked_pow(2).and_then(|x| x.checked_mul(sqrt_n))
-    else {
-      return expr.clone();
-    };
-    let Some(comb_d_pre) =
-      ra_d.checked_pow(2).and_then(|x| x.checked_mul(sqrt_d))
-    else {
-      return expr.clone();
-    };
-    let mut comb_n = comb_n_pre.abs();
-    let mut comb_d = comb_d_pre.abs();
-    (comb_n, comb_d) = rat_reduce(comb_n, comb_d);
-    let (extract_n, residual_n) = extract_largest_square(comb_n);
-    let (extract_d, residual_d) = extract_largest_square(comb_d);
-    let (coeff_n_abs, coeff_d) = rat_reduce(extract_n, extract_d);
-    let sign: i128 = if (ra_n.signum() * ra_d.signum()) < 0 {
-      -1
-    } else {
-      1
-    };
-    let coeff_n = sign * coeff_n_abs;
-    let new_coeff = if coeff_d == 1 {
-      Expr::Integer(coeff_n)
-    } else {
-      call(
-        "Rational",
-        vec![Expr::Integer(coeff_n), Expr::Integer(coeff_d)],
-      )
-    };
-    let new_radicand_rat = if residual_d == 1 {
-      Expr::Integer(residual_n)
-    } else {
-      call(
-        "Rational",
-        vec![Expr::Integer(residual_n), Expr::Integer(residual_d)],
-      )
-    };
-    let new_sqrt_arg = times(vec![
-      new_radicand_rat,
-      pow(const_expr("Pi"), Expr::Integer(-1)),
-    ]);
-    let new_sqrt = pow(
-      new_sqrt_arg,
-      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-    );
-    (Some(new_coeff), Some(new_sqrt))
-  } else {
-    (None, None)
-  };
-
-  // ── Step 3: split args into the coefficient slot (replaced if applicable)
-  // and the sortable factors.
-  let mut coeff_slot: Option<Expr> = None;
-  let mut others: Vec<Expr> = Vec::new();
-  for (i, a) in args.iter().enumerate() {
-    if Some(i) == rat_idx {
-      coeff_slot = Some(new_coeff.clone().unwrap_or_else(|| a.clone()));
-    } else if Some(i) == sqrt_idx {
-      others.push(new_sqrt.clone().unwrap_or_else(|| a.clone()));
-    } else {
-      others.push(a.clone());
-    }
-  }
-
-  // ── Step 4: sort the symbolic factors by Wolfram canonical key.
-  // Each factor's key is derived from its head/base structure:
-  //   - Power[atom, _]: the atom name (e.g. E^x → "E").
-  //   - Power[Times[..., Pi^-1], 1/2]: take the deepest atomic base ("Pi").
-  //   - Plus[…]: the head name ("Plus").
-  //   - FunctionCall like Sin, Cos: the head name ("Sin", "Cos").
-  let sort_key = |e: &Expr| -> String {
-    if let Some((base, _)) = as_power(e) {
-      // Power: drill down through compound bases to find the deepest atomic name.
-      fn deepest_atomic(b: &Expr) -> Option<String> {
-        if let Expr::Constant(s) | Expr::Identifier(s) = b {
-          return Some(s.clone());
-        }
-        if let Expr::FunctionCall { name, args } = b
-          && (name == "Times" || name == "Plus")
-          && let Some(last) = args.last()
-        {
-          // Skip plain integers/rationals at the end.
-          for a in args.iter().rev() {
-            if matches!(a, Expr::Integer(_) | Expr::Real(_)) {
-              continue;
-            }
-            if matches!(a, Expr::FunctionCall { name: rn, .. } if rn == "Rational")
-            {
-              continue;
-            }
-            if let Some(s) = deepest_atomic(a) {
-              return Some(s);
-            }
-          }
-          return deepest_atomic(last);
-        }
-        if let Expr::FunctionCall { name, args } = b {
-          if name == "Power" && args.len() == 2 {
-            return deepest_atomic(&args[0]);
-          }
-          return Some(name.clone());
-        }
-        if let Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left,
-          ..
-        } = b
-        {
-          return deepest_atomic(left);
-        }
-        None
-      }
-      return deepest_atomic(&base).unwrap_or_else(|| "~".to_string());
-    }
-    if let Expr::FunctionCall { name, .. } = e {
-      return name.clone();
-    }
-    "~".to_string()
-  };
-
-  // Wolfram orders the symbolic factors of a spherical harmonic as
-  //   E^(i m φ)  <  Sqrt[…/Pi]  <  Cos-polynomial  <  Sin[θ]
-  // which a plain alphabetical key gets wrong whenever a bare `Cos[θ]` factor
-  // is present (it would sort before `E`/`Pi`). Bucket each factor into a
-  // category first, then fall back to the alphabetical key within a bucket.
-  let category = |e: &Expr| -> u8 {
-    if let Some((base, _)) = as_power(e) {
-      if matches!(&base, Expr::Constant(s) if s == "E") {
-        return 0; // E^(i m φ)
-      }
-      if let Expr::FunctionCall { name: bn, args: ba } = &base
-        && bn == "Times"
-        && ba.iter().any(|f| {
-          matches!(as_power(f), Some((pb, pe))
-            if matches!(&pb, Expr::Constant(s) if s == "Pi")
-              && matches!(&pe, Expr::Integer(-1)))
-        })
-      {
-        return 1; // normalization Sqrt[…/Pi]
-      }
-      if matches!(&base, Expr::FunctionCall { name, .. } if name == "Sin") {
-        return 3; // Sin[θ]^k sorts last
-      }
-    }
-    if matches!(e, Expr::FunctionCall { name, .. } if name == "Sin") {
-      return 3; // Sin[θ] sorts last
-    }
-    2 // Cos[θ] and the Cos-polynomial
-  };
-  others.sort_by(|a, b| {
-    category(a).cmp(&category(b)).then_with(|| {
-      let ka = sort_key(a);
-      let kb = sort_key(b);
-      ka.to_lowercase()
-        .cmp(&kb.to_lowercase())
-        .then_with(|| ka.cmp(&kb))
-    })
-  });
-
-  let mut new_args: Vec<Expr> = Vec::with_capacity(args.len());
-  if let Some(c) = coeff_slot {
-    new_args.push(c);
-  }
-  new_args.extend(others);
-  times(new_args)
-}
-
-fn extract_largest_square(n: i128) -> (i128, i128) {
-  if n <= 0 {
-    return (1, n);
-  }
-  let mut k: i128 = 1;
-  let mut residual = n;
-  let mut p: i128 = 2;
-  while p.checked_mul(p).is_some_and(|s| s <= residual) {
-    while residual % (p * p) == 0 {
-      k *= p;
-      residual /= p * p;
-    }
-    p += 1;
-  }
-  (k, residual)
+  // The normalization is evaluated first so its radical is in canonical
+  // form when the product folds the rational coefficients into it.
+  let norm = crate::evaluator::evaluate_expr_to_expr(&norm_expr)?;
+  let imp = crate::evaluator::evaluate_expr_to_expr(&imp)?;
+  times_ast(&[norm, plm, imp])
 }
 
 /// Build the symbolic Legendre polynomial expression for P_n(x)

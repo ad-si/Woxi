@@ -334,6 +334,20 @@ mod byte_count {
 mod subsets {
   use super::*;
 
+  // Indexed subsets are unranked directly: this one is the 522485487th of
+  // 601080390, which used to be enumerated in full (out of memory).
+  #[test]
+  fn index_into_a_huge_subset_family() {
+    assert_eq!(
+      interpret("Subsets[Range[32], {16}, {522485487}]").unwrap(),
+      "{{3, 6, 8, 10, 11, 12, 14, 15, 16, 19, 20, 21, 22, 27, 30, 31}}"
+    );
+    assert_eq!(
+      interpret("Subsets[{a, b, c, d}, All, {3, 9, 2}]").unwrap(),
+      "{{b}, {d}, {a, c}, {b, c}}"
+    );
+  }
+
   #[test]
   fn all_subsets() {
     assert_eq!(

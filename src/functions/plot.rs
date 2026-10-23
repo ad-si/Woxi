@@ -351,6 +351,17 @@ pub(crate) fn svg_header(w: u32, h: u32, full_width: bool) -> String {
   }
 }
 
+/// Whether a data-point marker should be drawn: finite and within one plot
+/// span of the visible range. Markers outside the range are not shown, and
+/// one far outside it (a 1e300 value) overflows plotters' pixel arithmetic.
+fn marker_in_view(x: f64, y: f64, xr: (f64, f64), yr: (f64, f64)) -> bool {
+  let near = |v: f64, (lo, hi): (f64, f64)| {
+    let span = (hi - lo).abs().max(f64::MIN_POSITIVE);
+    v >= lo.min(hi) - span && v <= lo.max(hi) + span
+  };
+  x.is_finite() && y.is_finite() && near(x, xr) && near(y, yr)
+}
+
 pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
   let substituted = substitute_var(body, var, &Expr::Real(x));
   let result = evaluate_expr_to_expr(&substituted).ok()?;
@@ -3870,7 +3881,7 @@ fn generate_svg_with_options(
             let finite_pts: Vec<(f64, f64)> = mesh_src
               .iter()
               .copied()
-              .filter(|(x, y)| x.is_finite() && y.is_finite())
+              .filter(|&(x, y)| marker_in_view(x, y, (x_min, x_max), (y_min, y_max)))
               .collect();
             chart
               .draw_series(
@@ -3907,7 +3918,9 @@ fn generate_svg_with_options(
                 marker_src
                   .iter()
                   .copied()
-                  .filter(|(x, y)| x.is_finite() && y.is_finite())
+                  .filter(|&(x, y)| {
+                    marker_in_view(x, y, (x_min, x_max), (y_min, y_max))
+                  })
                   .map(|(x, y)| {
                     plotters::element::Text::new(
                       marker.glyph.clone(),

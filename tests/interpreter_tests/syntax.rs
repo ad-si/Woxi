@@ -7765,6 +7765,22 @@ mod tableform_headings {
 mod boolean_table {
   use super::*;
 
+  // Indexed variables used to be rejected ("variables must be symbols").
+  #[test]
+  fn indexed_variables() {
+    assert_eq!(
+      interpret("BooleanTable[x[1] && !x[2], {x[1], x[2]}]").unwrap(),
+      "{False, True, False, False}"
+    );
+    assert_eq!(
+      interpret(
+        "BooleanTable[BooleanCountingFunction[{1, 3}, 3] @@ Array[x, 3], Array[x, 1], Array[x, 2, 2]]"
+      )
+      .unwrap(),
+      "{{True, True, True, True}, {True, True, True, False}}"
+    );
+  }
+
   #[test]
   fn or_two_vars() {
     assert_eq!(
@@ -8927,6 +8943,52 @@ mod batch_inert_symbols_2 {
 
 mod rotation_matrix {
   use super::*;
+
+  // The two-vector form beyond 2D: the rotation taking u's direction to
+  // v's. It used to read {u, v} as an angle and build a garbage matrix.
+  #[test]
+  fn rotation_transform_two_vectors_3d() {
+    assert_eq!(
+      interpret("RotationTransform[{{0, 0, 1}, {1, 0, 0}}]").unwrap(),
+      "TransformationFunction[{{0, 0, 1, 0}, {0, 1, 0, 0}, {-1, 0, 0, 0}, {0, 0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("RotationTransform[{{0, 0, 1}, {1, 0, 0}}][{1, 2, 3}]")
+        .unwrap(),
+      "{3, 2, -1}"
+    );
+    assert_eq!(
+      interpret("RotationTransform[{{0, 0, 1}, {1, 0, 0}}, {1, 1, 1}]")
+        .unwrap(),
+      "TransformationFunction[{{0, 0, 1, 0}, {0, 1, 0, 0}, {-1, 0, 0, 2}, {0, 0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn plane_form_entries_are_together() {
+    assert_eq!(
+      interpret("RotationMatrix[t, {{1,0,0},{0,1,1}}]").unwrap(),
+      "{{Cos[t], -(Sin[t]/Sqrt[2]), -(Sin[t]/Sqrt[2])}, {Sin[t]/Sqrt[2], (1 + Cos[t])/2, (-1 + Cos[t])/2}, {Sin[t]/Sqrt[2], (-1 + Cos[t])/2, (1 + Cos[t])/2}}"
+    );
+  }
+
+  // RotationTransform[t, {u, v}] rotates in the plane of u and v in any
+  // dimension; it used to read {u, v} as a 2D centre.
+  #[test]
+  fn rotation_transform_in_a_plane() {
+    assert_eq!(
+      interpret("RotationTransform[t, {{1,0,0,0},{0,1,0,0}}]").unwrap(),
+      "TransformationFunction[{{Cos[t], -Sin[t], 0, 0, 0}, {Sin[t], Cos[t], 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 0, 1, 0}, {0, 0, 0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("RotationTransform[t, {{1,0,0},{0,1,1}}, {1,2,3}]").unwrap(),
+      "TransformationFunction[{{Cos[t], -(Sin[t]/Sqrt[2]), -(Sin[t]/Sqrt[2]), (2 - 2*Cos[t] + 5*Sqrt[2]*Sin[t])/2}, {Sin[t]/Sqrt[2], (1 + Cos[t])/2, (-1 + Cos[t])/2, (5 - 5*Cos[t] - Sqrt[2]*Sin[t])/2}, {Sin[t]/Sqrt[2], (-1 + Cos[t])/2, (1 + Cos[t])/2, (5 - 5*Cos[t] - Sqrt[2]*Sin[t])/2}, {0, 0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("RotationTransform[t, {1, 2}]").unwrap(),
+      "TransformationFunction[{{Cos[t], -Sin[t], 1 - Cos[t] + 2*Sin[t]}, {Sin[t], Cos[t], 2 - 2*Cos[t] - Sin[t]}, {0, 0, 1}}]"
+    );
+  }
 
   #[test]
   fn symbolic_2d() {
@@ -13554,6 +13616,89 @@ mod literal_data_fast_path {
       ))
       .unwrap(),
       "True"
+    );
+  }
+}
+
+mod named_and_private_use_characters {
+  use super::*;
+
+  // A named infix operator on the right of `->` used to be a parse error
+  // (rule operands had their own, drifted, operator list).
+  #[test]
+  fn named_infix_operators_in_rules() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[{0 -> x \\[UndirectedEdge] y}]]]")
+        .unwrap(),
+      "Hold[List[Rule[0, UndirectedEdge[x, y]]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[PlotLabel -> a \u{2248} b]]]").unwrap(),
+      "Hold[Rule[PlotLabel, TildeTilde[a, b]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a /. x_\\[UndirectedEdge]y_ -> 0]]]")
+        .unwrap(),
+      "Hold[ReplaceAll[a, Rule[UndirectedEdge[Pattern[x, Blank[]], Pattern[y, Blank[]]], 0]]]"
+    );
+  }
+
+  // Wolfram reads most private-use characters as letters.
+  #[test]
+  fn private_use_letters() {
+    assert_eq!(
+      interpret("Head[Unevaluated[s[\u{F044}x, k]]]").unwrap(),
+      "s"
+    );
+    assert_eq!(
+      interpret("Length[Unevaluated[s[\u{F044}x, k]]]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn bracketing_bars() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[\\[LeftDoubleBracketingBar]f + g\\[RightDoubleBracketingBar]]]]").unwrap(),
+      "Hold[DoubleBracketingBar[Plus[f, g]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[\\[LeftBracketingBar]a, b\\[RightBracketingBar]]]]").unwrap(),
+      "Hold[BracketingBar[a, b]]"
+    );
+  }
+
+  #[test]
+  fn bracket_pairs_take_call_arguments() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[f[\u{2329}a\u{232A}[t]]]]]").unwrap(),
+      "Hold[f[AngleBracket[a][t]]]"
+    );
+  }
+
+  // `m\[Transpose][[2]]` used to be a parse error.
+  #[test]
+  fn part_after_postfix_transpose() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[m\\[Transpose][[2]]]]]").unwrap(),
+      "Hold[Part[Transpose[m], 2]]"
+    );
+    assert_eq!(
+      interpret("{{1, 2}, {3, 4}}\\[Transpose][[1]]").unwrap(),
+      "{1, 3}"
+    );
+  }
+
+  // A `//` right after the last `;` applies to the whole sequence.
+  #[test]
+  fn postfix_after_trailing_semicolon() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[sol = 0; // Quiet]]]").unwrap(),
+      "Hold[Quiet[CompoundExpression[Set[sol, 0], Null]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a; // f // g]]]").unwrap(),
+      "Hold[g[f[CompoundExpression[a, Null]]]]"
     );
   }
 }

@@ -2400,6 +2400,106 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Erf of a complex machine number. Where |Re z| < 2 the Maclaurin series
+/// is summed: its cancellation only grows like e^(2 Re(z)^2), so at most
+/// about 3.5 digits are lost however large Im z is. Farther out the
+/// continued fraction for Erfc (Lentz's method) converges quickly, and odd
+/// symmetry covers Re z < 0.
+pub fn erf_complex(z: (f64, f64)) -> (f64, f64) {
+  if z.0 >= 2.0 {
+    let c = erfc_complex_cf(z);
+    return (1.0 - c.0, -c.1);
+  }
+  if z.0 <= -2.0 {
+    let c = erfc_complex_cf((-z.0, -z.1));
+    return (c.0 - 1.0, c.1);
+  }
+  let mul = |a: (f64, f64), b: (f64, f64)| {
+    (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+  };
+  let neg_z2 = {
+    let z2 = mul(z, z);
+    (-z2.0, -z2.1)
+  };
+  let mut term = z; // (-z^2)^n z / n!
+  let mut sum = z;
+  let mag2 = z.0 * z.0 + z.1 * z.1;
+  for n in 1..10_000 {
+    let nf = n as f64;
+    term = mul(term, neg_z2);
+    term = (term.0 / nf, term.1 / nf);
+    let add = (term.0 / (2.0 * nf + 1.0), term.1 / (2.0 * nf + 1.0));
+    sum = (sum.0 + add.0, sum.1 + add.1);
+    if nf > mag2 && add.0.hypot(add.1) <= 1e-17 * sum.0.hypot(sum.1) {
+      break;
+    }
+  }
+  let k = 2.0 / std::f64::consts::PI.sqrt();
+  (k * sum.0, k * sum.1)
+}
+
+/// Erfc of a complex machine number with Re z >= 2, by the continued
+/// fraction Erfc(z) = Exp(-z^2)/Sqrt(Pi) / (z + (1/2)/(z + 1/(z + (3/2)/(z + …)))).
+fn erfc_complex_cf(z: (f64, f64)) -> (f64, f64) {
+  let mul = |a: (f64, f64), b: (f64, f64)| {
+    (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+  };
+  let inv = |a: (f64, f64)| {
+    let d = a.0 * a.0 + a.1 * a.1;
+    (a.0 / d, -a.1 / d)
+  };
+  let tiny = 1e-300;
+  let mut f = z;
+  let mut c = z;
+  let mut d = (0.0, 0.0);
+  for n in 1..5000 {
+    let a = n as f64 / 2.0;
+    d = (z.0 + a * d.0, z.1 + a * d.1);
+    if d.0.hypot(d.1) < tiny {
+      d = (tiny, 0.0);
+    }
+    d = inv(d);
+    let ac = mul((a, 0.0), inv(c));
+    c = (z.0 + ac.0, z.1 + ac.1);
+    if c.0.hypot(c.1) < tiny {
+      c = (tiny, 0.0);
+    }
+    let delta = mul(c, d);
+    f = mul(f, delta);
+    if (delta.0 - 1.0).hypot(delta.1) < 1e-16 {
+      break;
+    }
+  }
+  let z2 = mul(z, z);
+  let e = (-z2.0).exp();
+  let pref = (e * (-z2.1).cos(), e * (-z2.1).sin());
+  let k = 1.0 / std::f64::consts::PI.sqrt();
+  let r = mul(pref, inv(f));
+  (k * r.0, k * r.1)
+}
+
+/// Erfc of a complex machine number.
+pub fn erfc_complex(z: (f64, f64)) -> (f64, f64) {
+  if z.0 >= 2.0 {
+    return erfc_complex_cf(z);
+  }
+  if z.0 <= -2.0 {
+    let c = erfc_complex_cf((-z.0, -z.1));
+    return (2.0 - c.0, -c.1);
+  }
+  let e = erf_complex(z);
+  (1.0 - e.0, -e.1)
+}
+
+/// The machine complex argument of an error function, when it is one with
+/// a nonzero imaginary part (real arguments keep their real-valued paths).
+fn inexact_complex_argument(arg: &Expr) -> Option<(f64, f64)> {
+  if !contains_inexact_real(arg) {
+    return None;
+  }
+  try_extract_complex_float(arg).filter(|(_, im)| *im != 0.0)
+}
+
 pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -2448,6 +2548,10 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Otherwise keep the symbolic two-argument form.
     return Ok(unevaluated("Erf", args));
+  }
+  if let Some(z) = inexact_complex_argument(&args[0]) {
+    let (re, im) = erf_complex(z);
+    return Ok(build_complex_float_expr(re, im));
   }
   // Erf is odd: Erf[-x] = -Erf[x]. Fold every negated argument form (including
   // negative rational coefficients, e.g. Erf[-x/2]) via the shared helper;
@@ -2541,6 +2645,10 @@ pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Erfc expects 1 argument".into(),
     ));
   }
+  if let Some(z) = inexact_complex_argument(&args[0]) {
+    let (re, im) = erfc_complex(z);
+    return Ok(build_complex_float_expr(re, im));
+  }
   match &args[0] {
     // Erfc[0] = 1
     Expr::Integer(0) => Ok(Expr::Integer(1)),
@@ -2580,6 +2688,11 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Erfi expects 1 argument".into(),
     ));
+  }
+  // Erfi(z) = -I Erf(I z).
+  if let Some((x, y)) = inexact_complex_argument(&args[0]) {
+    let (re, im) = erf_complex((-y, x));
+    return Ok(build_complex_float_expr(im, -re));
   }
   // Erfi is odd: Erfi[-x] = -Erfi[x]. Fold every negated argument form
   // (including negative rational coefficients, e.g. Erfi[-x/2]) via the shared

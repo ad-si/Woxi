@@ -20044,6 +20044,10 @@ struct LayoutOptions {
   /// `Background -> colour`: painted behind the whole layout, the gaps
   /// between cells included.
   background: Option<Color>,
+  /// `AspectRatio -> Full`: together with an `ImageSize -> {w, h}` the
+  /// layout fills that whole rectangle instead of keeping the cells' own
+  /// proportions.
+  aspect_full: bool,
 }
 
 /// Parse Spacings and ImageSize options from rule arguments.
@@ -20080,6 +20084,10 @@ fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
         }
         Expr::Identifier(name) if name == "Background" => {
           opts.background = parse_background(replacement);
+        }
+        Expr::Identifier(name) if name == "AspectRatio" => {
+          opts.aspect_full =
+            matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Full");
         }
         Expr::Identifier(name) if name == "Frame" => {
           opts.frame = match replacement.as_ref() {
@@ -20190,6 +20198,7 @@ fn compute_grid_layout(
         frame: opts.frame,
         spacings_explicit: opts.spacings_explicit,
         background: opts.background,
+        aspect_full: opts.aspect_full,
       };
       &opts_owned
     } else {
@@ -20256,24 +20265,28 @@ fn compute_grid_layout(
     .fold(0.0_f64, f64::max)
     .max(10.0);
 
-  // Default total width: widest natural row + padding for Scaled[0.1]
-  // gaps so cells aren't compressed below their native resolution.
   let max_cols = parsed_rows
     .iter()
     .map(std::vec::Vec::len)
     .max()
     .unwrap_or(1);
-  let gap_pad = if max_cols > 1 {
-    1.0 + 0.1 * (max_cols as f64 - 1.0) / max_cols as f64
-  } else {
-    1.0
-  };
-  let default_total_w = max_nat_row_w * gap_pad;
-  let target_w = opts.target_width.unwrap_or(default_total_w);
 
   // Uniform scale: the same factor applies to every cell so relative
-  // proportions across rows stay intact.
-  let mut scale = target_w / default_total_w;
+  // proportions across rows stay intact. An explicit width is the width of
+  // the whole layout, gaps included: a `Scaled` gap grows with the cells,
+  // while a gap in points stays fixed and only the cells share the rest.
+  let mut scale = match opts.target_width {
+    None => 1.0,
+    Some(target_w) => {
+      let cols = max_cols as f64;
+      let (scaled_gap, fixed_gap) = match opts.h_spacing {
+        SpacingSpec::Scaled(f) => (f.max(0.0), 0.0),
+        SpacingSpec::Points(_) => (0.0, opts.h_spacing.to_px(0.0)),
+      };
+      let cells_w = (target_w - (cols - 1.0) * fixed_gap).max(1.0);
+      cells_w / (max_nat_row_w * (1.0 + scaled_gap * (cols - 1.0) / cols))
+    }
+  };
 
   // If an explicit height is also given, shrink further so the whole
   // grid fits. The natural total height is sum of row maxes plus the
@@ -20561,6 +20574,7 @@ fn default_layout_options() -> LayoutOptions {
     frame: FrameSetting::None,
     spacings_explicit: false,
     background: None,
+    aspect_full: false,
   }
 }
 
@@ -20584,6 +20598,46 @@ fn compute_per_cell_width(n: usize, explicit_total: Option<f64>) -> i128 {
     explicit_total.unwrap_or_else(|| (natural * n_f).min(GRID_ROW_CAP_WIDTH));
   let per = (total / n_f).round() as i128;
   per.max(1)
+}
+
+/// The `{width, height}` each cell of a layout with `rows` × `cols` cells
+/// is rendered at. The width is always known (see `compute_per_cell_width`,
+/// where `n_for_default` is the number of cells a row's default width is
+/// split among); the height only for `AspectRatio -> Full` with an explicit
+/// `ImageSize -> {w, h}`, where the cells divide that whole rectangle
+/// between them once the gaps are taken out.
+fn layout_cell_size(
+  opts: &LayoutOptions,
+  cols: usize,
+  rows: usize,
+  n_for_default: usize,
+) -> (i128, Option<i128>) {
+  let (Some(total_w), Some(total_h), true) =
+    (opts.target_width, opts.target_height, opts.aspect_full)
+  else {
+    return (
+      compute_per_cell_width(n_for_default, opts.target_width),
+      None,
+    );
+  };
+  let (h_spacing, v_spacing) =
+    if opts.frame != FrameSetting::None && !opts.spacings_explicit {
+      (SpacingSpec::Points(0.0), SpacingSpec::Points(0.0))
+    } else {
+      (opts.h_spacing, opts.v_spacing)
+    };
+  let divide = |total: f64, n: usize, spacing: SpacingSpec| {
+    let n = n.max(1) as f64;
+    let size = match spacing {
+      SpacingSpec::Scaled(f) => total / (n + (n - 1.0) * f.max(0.0)),
+      SpacingSpec::Points(_) => (total - (n - 1.0) * spacing.to_px(0.0)) / n,
+    };
+    (size.round() as i128).max(1)
+  };
+  (
+    divide(total_w, cols, h_spacing),
+    Some(divide(total_h, rows, v_spacing)),
+  )
 }
 
 /// Whitelist of function heads that are known to produce graphics and
@@ -20818,6 +20872,40 @@ fn with_cell_image_size(expr: &Expr, size: i128) -> Expr {
   with_default_image_size(expr, size)
 }
 
+/// `with_cell_image_size` for a cell that has to fill exactly `w` × `h`
+/// pixels: any `ImageSize` of its own gives way to the layout's.
+fn with_fixed_image_size(expr: &Expr, w: i128, h: i128) -> Expr {
+  let inner = match expr {
+    Expr::Graphics {
+      structure: Some(inner),
+      ..
+    } => inner.as_ref(),
+    other => other,
+  };
+  let Expr::FunctionCall { name, args } = inner else {
+    return expr.clone();
+  };
+  if !is_graphics_producing_head(name) {
+    return expr.clone();
+  }
+  let mut new_args: Vec<Expr> = args
+    .iter()
+    .filter(|a| {
+      !matches!(a, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize"))
+    })
+    .cloned()
+    .collect();
+  new_args.push(rule_expr(
+    id_expr("ImageSize"),
+    Expr::List(vec![Expr::Integer(w), Expr::Integer(h)].into()),
+  ));
+  Expr::FunctionCall {
+    name: name.clone(),
+    args: new_args.into(),
+  }
+}
+
 /// If `expr` is a top-level list that looks like a list of graphics
 /// (1-D `{p1, p2, ...}` or 2-D `{{p1, p2}, {p3, p4}}`), return a new
 /// expression with `ImageSize -> per_cell_w` injected on each child so
@@ -21009,7 +21097,15 @@ fn is_span_placeholder_svg(svg: &str) -> bool {
 /// item is a rewritable FunctionCall) and collect the resulting SVGs.
 /// Items that are already evaluated (variables, literals) pass through
 /// unchanged and are rendered at their natural size.
-fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
+///
+/// With `per_cell_h` every cell is instead rendered at exactly that
+/// `{width, height}`, which is how an `AspectRatio -> Full` layout makes
+/// its cells fill the rectangle it was given.
+fn render_items_at_size(
+  items: &[Expr],
+  per_cell_w: i128,
+  per_cell_h: Option<i128>,
+) -> Vec<String> {
   // A cell followed by `SpanFromLeft` markers is laid out across the
   // columns they occupy, so it is rendered that many cells wide.
   let spans: Vec<i128> = (0..items.len())
@@ -21053,6 +21149,27 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
       } else {
         evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone())
       };
+      // A finished plot (`p = Plot[…]` collected into a layout) can't take
+      // an `ImageSize` through its expression, but it keeps the sampled
+      // curves and its options, so it is drawn again at the cell's size.
+      if let (
+        Some(h),
+        Expr::Graphics {
+          source: Some(source),
+          ..
+        },
+      ) = (per_cell_h, &target)
+      {
+        let resized = crate::syntax::PlotSource {
+          image_size: (
+            (per_cell_w * spans[item_idx]).max(1) as u32,
+            h.max(1) as u32,
+          ),
+          ..source.as_ref().clone()
+        };
+        return crate::functions::plot::render_merged_plot_source(&resized)
+          .ok();
+      }
       // `Button[Graphics[…], action]` in a graphics grid (a board game's
       // clickable squares) shows the picture it wraps. The action is inert
       // in a static rendering, but the cell carries an invisible hit
@@ -21087,8 +21204,12 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
         }
         _ => target,
       };
-      let rewritten =
-        with_cell_image_size(&target, per_cell_w * spans[item_idx]);
+      let rewritten = match per_cell_h {
+        Some(h) => {
+          with_fixed_image_size(&target, per_cell_w * spans[item_idx], h)
+        }
+        None => with_cell_image_size(&target, per_cell_w * spans[item_idx]),
+      };
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
       let svg = crate::evaluator::expr_to_svg(&evaluated);
       if svg.is_empty() {
@@ -21122,8 +21243,9 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
       ));
     }
-    let per_cell_w = compute_per_cell_width(items.len(), opts.target_width);
-    render_items_at_size(items, per_cell_w)
+    let (per_cell_w, per_cell_h) =
+      layout_cell_size(&opts, items.len(), 1, items.len());
+    render_items_at_size(items, per_cell_w, per_cell_h)
   } else {
     let list_expr = evaluate_expr_to_expr(&args[0])?;
     let items = match &list_expr {
@@ -21169,8 +21291,8 @@ pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
       ));
     }
-    let per_cell_w = compute_per_cell_width(1, opts.target_width);
-    render_items_at_size(items, per_cell_w)
+    let (per_cell_w, per_cell_h) = layout_cell_size(&opts, 1, items.len(), 1);
+    render_items_at_size(items, per_cell_w, per_cell_h)
   } else {
     let list_expr = evaluate_expr_to_expr(&args[0])?;
     let items = match &list_expr {
@@ -21367,12 +21489,19 @@ pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
   }
-  let per_cell_w = compute_per_cell_width(max_cols, opts.target_width);
+  let (per_cell_w, per_cell_h) =
+    layout_cell_size(&opts, max_cols, outer_items.len(), max_cols);
   let rows: Vec<Vec<String>> = outer_items
     .iter()
     .map(|item| match item {
-      Expr::List(row_items) => render_items_at_size(row_items, per_cell_w),
-      other => render_items_at_size(std::slice::from_ref(other), per_cell_w),
+      Expr::List(row_items) => {
+        render_items_at_size(row_items, per_cell_w, per_cell_h)
+      }
+      other => render_items_at_size(
+        std::slice::from_ref(other),
+        per_cell_w,
+        per_cell_h,
+      ),
     })
     .collect();
 
@@ -26303,9 +26432,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // badspec]`, where `badspec` is neither a spec nor an option) isn't
   // renderable as an interactive widget — fall back to the plain path.
   // Annotation rows alone don't make a widget either.
+  // A Manipulate whose only trailing arguments are options
+  // (`Manipulate[DynamicModule[…], ControlType -> None, …]`) is valid,
+  // though: Wolfram shows its body in the frame, so it stays a widget with
+  // no controls.
+  let options_only = args[1..]
+    .iter()
+    .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
   if !controls.iter().any(|c| !c.name().is_empty())
     && fixed.is_empty()
     && state.is_empty()
+    && !options_only
   {
     return None;
   }
@@ -37474,4 +37611,91 @@ mod manipulate_symbolic_angle_control_tests {
     );
     assert_eq!(format_f64_exact(0.3), "3/10");
   }
+}
+
+/// The plot range a 2D graphic is drawn over, before padding — what
+/// `PlotRange[g]` and `AbsoluteOptions[g, PlotRange]` report: an explicit
+/// `PlotRange` where one was given, the content's bounding box otherwise.
+pub fn absolute_plot_range(g: &Expr) -> Option<((f64, f64), (f64, f64))> {
+  match g {
+    Expr::Graphics {
+      is_3d: false,
+      structure: Some(structure),
+      ..
+    } => absolute_plot_range(structure),
+    // A plot: the domain across, and the data's own extent up — the stored
+    // y range carries the drawing padding — unless `PlotRange` fixed it.
+    Expr::Graphics {
+      is_3d: false,
+      source: Some(source),
+      ..
+    } => {
+      let explicit = source.options.iter().find_map(|opt| match opt {
+        Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange") =>
+        {
+          Some(parse_plot_range(replacement))
+        }
+        _ => None,
+      });
+      let ys = source
+        .series
+        .iter()
+        .flat_map(|s| s.points.iter().map(|p| p.1))
+        .filter(|y| y.is_finite());
+      let data_y = ys.fold(None, |acc: Option<(f64, f64)>, y| {
+        Some(acc.map_or((y, y), |(lo, hi)| (lo.min(y), hi.max(y))))
+      });
+      let (ex, ey) = explicit.unwrap_or((None, None));
+      Some((
+        ex.unwrap_or(source.x_range),
+        ey.or(data_y).unwrap_or(source.y_range),
+      ))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Graphics" && !args.is_empty() =>
+    {
+      let mut x_range = None;
+      let mut y_range = None;
+      for opt in &args[1..] {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = opt
+          && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange")
+        {
+          (x_range, y_range) = parse_plot_range(replacement);
+        }
+      }
+      let content = evaluate_expr_to_expr(&args[0]).ok()?;
+      let mut style = StyleState::default();
+      let mut primitives = Vec::new();
+      let mut errors = Vec::new();
+      collect_primitives(&content, &mut style, &mut primitives, &mut errors);
+      let mut bb = BBox::empty();
+      for prim in &primitives {
+        bb.merge(&primitive_bbox(prim));
+      }
+      if bb.is_empty() {
+        bb = BBox {
+          x_min: -1.0,
+          x_max: 1.0,
+          y_min: -1.0,
+          y_max: 1.0,
+        };
+      }
+      Some((
+        x_range.unwrap_or((bb.x_min, bb.x_max)),
+        y_range.unwrap_or((bb.y_min, bb.y_max)),
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// `{{xmin, xmax}, {ymin, ymax}}` for [`absolute_plot_range`].
+pub fn plot_range_expr(range: ((f64, f64), (f64, f64))) -> Expr {
+  let pair =
+    |(a, b): (f64, f64)| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  Expr::List(vec![pair(range.0), pair(range.1)].into())
 }

@@ -299,6 +299,11 @@ pub fn dispatch_polynomial_functions(
         Err(InterpreterError::EvaluationError(msg))
           if msg.contains("cannot evaluate expression numerically") =>
         {
+          if let Some(Ok(result)) =
+            crate::functions::polynomial_ast::find_root_complex_retry(args)
+          {
+            return Some(Ok(result));
+          }
           crate::emit_message(
             "FindRoot::nlnum: The function value is not a number at the starting point.",
           );
