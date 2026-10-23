@@ -5460,3 +5460,12 @@ same one in the other direction. Examples:
 Above 12 points Woxi uses iterated 2-opt/Or-opt local search. On random
 instances the tour comes within about 0.4% of WL's length and is sometimes
 shorter. `FindShortestTour[graph]` is not implemented.
+
+### `RectangleChart` spacing and 3D layout are approximations
+
+The default gap between rectangles in WL drifts slightly with the number of
+rectangles: 0.098 for two, 0.097 for three, and 0.096 within datasets when
+there are several. Woxi uses a fixed 0.0975. Woxi also renders neither WL's
+hover tooltips nor the `"RoundingRadius"` option. `RectangleChart3D` stacks
+plain cuboids from y = 0 and leaves out WL's shaded base plate, face grids,
+`ViewPoint -> {2, -10, 2}` and box ratios.

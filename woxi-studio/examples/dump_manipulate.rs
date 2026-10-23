@@ -95,8 +95,10 @@ fn main() {
     {
       let _ = woxi::interpret(&init);
     }
-    let code = reconstructed.as_deref().unwrap_or(cell.content.trim());
-    for stmt in woxi::split_into_statements(code) {
+    let code = woxi::notebook::strip_cell_context_prefix(
+      reconstructed.as_deref().unwrap_or(cell.content.trim()),
+    );
+    for stmt in woxi::split_into_statements(&code) {
       // Evaluate for side effects (definitions) exactly like the studio.
       let eval = woxi::interpret_with_stdout(&stmt);
       let Ok(expr) = woxi::interpret_to_expr(&stmt) else {

@@ -34,6 +34,7 @@ mod polynomial_mod;
 mod polynomial_q;
 mod reduce;
 mod reduce_backend;
+mod reduce_integer_box;
 mod resultant;
 mod simplify;
 pub mod solve;

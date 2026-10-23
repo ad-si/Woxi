@@ -10282,6 +10282,15 @@ fn minimize_constrained(
     result
   };
 
+  // A linear objective under linear constraints is a linear program, solved
+  // exactly when its coefficients are integers.
+  if vars.len() > 1
+    && let Some(result) =
+      minimize_linear_program(f, &constraints, vars, maximize, false)
+  {
+    return Ok(result);
+  }
+
   // Try ILP if any Element[x, Integers] constraint is present
   if constraints
     .iter()
@@ -10314,6 +10323,321 @@ fn minimize_constrained(
   )))
 }
 
+/// Collect the symbols an `Element[…, dom]` subject names: a single
+/// identifier, a list, `Alternatives[…]` or the `x | y` chain.
+fn collect_element_symbols(
+  e: &Expr,
+  out: &mut std::collections::HashSet<String>,
+) {
+  match e {
+    Expr::Identifier(var) => {
+      out.insert(var.clone());
+    }
+    Expr::List(items) => {
+      for a in items {
+        collect_element_symbols(a, out);
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Alternatives" || name == "List" =>
+    {
+      for a in args {
+        collect_element_symbols(a, out);
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Alternatives,
+      left,
+      right,
+    } => {
+      collect_element_symbols(left, out);
+      collect_element_symbols(right, out);
+    }
+    _ => {}
+  }
+}
+
+/// `expr` as `Σ cᵢ varᵢ + k` in one pass over its expanded terms, sparse in
+/// the variables; `None` when some term is not a numeric multiple of a single
+/// variable (or a number).
+fn sparse_linear_form(
+  expr: &Expr,
+  index: &std::collections::HashMap<&str, usize>,
+) -> Option<(Vec<(usize, f64)>, f64)> {
+  // Evaluated so every term is in canonical `Times[c, v]` form.
+  let expanded =
+    crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(expr)).ok()?;
+  let mut coeffs: Vec<(usize, f64)> = Vec::new();
+  let mut constant = 0.0;
+  for term in collect_additive_terms(&expanded) {
+    if let Some(v) = try_eval_to_f64(&term) {
+      constant += v;
+      continue;
+    }
+    let factors: Vec<Expr> = match &term {
+      Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => vec![(**left).clone(), (**right).clone()],
+      other => vec![other.clone()],
+    };
+    let mut var = None;
+    let mut c = 1.0;
+    for f in &factors {
+      if let Expr::Identifier(name) = f
+        && let Some(&i) = index.get(name.as_str())
+      {
+        if var.is_some() {
+          return None;
+        }
+        var = Some(i);
+      } else {
+        c *= try_eval_to_f64(f)?;
+      }
+    }
+    coeffs.push((var?, c));
+  }
+  Some((coeffs, constant))
+}
+
+/// Minimize/NMinimize of a linear objective under linear constraints (some
+/// variables possibly restricted by `Element[…, Integers]`), solved exactly by
+/// `LinearProgramming`'s simplex / branch and bound. Returns
+/// `{value, {var -> val, …}}`, or `None` when the problem is not linear, is
+/// infeasible or unbounded, or (with `numeric` false) has a non-integral
+/// coefficient whose machine value would not be exact.
+fn minimize_linear_program(
+  objective: &Expr,
+  constraints: &[Expr],
+  vars: &[String],
+  maximize: bool,
+  numeric: bool,
+) -> Option<Expr> {
+  use std::collections::{HashMap, HashSet};
+  let index: HashMap<&str, usize> = vars
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (v.as_str(), i))
+    .collect();
+  let n = vars.len();
+  let mut flat = Vec::new();
+  for c in constraints {
+    flatten_and_expr(c, &mut flat);
+  }
+  let mut integer: HashSet<String> = HashSet::new();
+  let mut lo = vec![f64::NEG_INFINITY; n];
+  let mut hi = vec![f64::INFINITY; n];
+  let mut rows: Vec<(Vec<(usize, f64)>, f64, i32)> = Vec::new();
+  let mut linear = Vec::new();
+  for c in &flat {
+    match c {
+      Expr::FunctionCall { name, args }
+        if name == "Element" && args.len() == 2 =>
+      {
+        match &args[1] {
+          Expr::Identifier(d) if d == "Integers" => {
+            collect_element_symbols(&args[0], &mut integer);
+          }
+          Expr::Identifier(d) if d == "Reals" => {}
+          _ => return None,
+        }
+      }
+      Expr::Identifier(t) if t == "True" => {}
+      other => linear.push(other),
+    }
+  }
+  let all_integer = |terms: &[(usize, f64)]| {
+    terms
+      .iter()
+      .all(|&(i, c)| integer.contains(&vars[i]) && c.fract() == 0.0)
+  };
+  for c in linear {
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = c
+    else {
+      return None;
+    };
+    let ([l, r], [op]) = (operands.as_slice(), operators.as_slice()) else {
+      return None;
+    };
+    let (terms, k) = sparse_linear_form(&minus2(l.clone(), r.clone()), &index)?;
+    // terms + k op 0  ⇒  terms op -k
+    let mut rhs = -k;
+    let sense = match op {
+      ComparisonOp::Equal => 0,
+      ComparisonOp::GreaterEqual => 1,
+      ComparisonOp::LessEqual => -1,
+      // A strict inequality over integer terms is the next integer bound.
+      ComparisonOp::Greater if all_integer(&terms) => {
+        rhs = rhs.floor() + 1.0;
+        1
+      }
+      ComparisonOp::Less if all_integer(&terms) => {
+        rhs = rhs.ceil() - 1.0;
+        -1
+      }
+      _ => return None,
+    };
+    let nonzero: Vec<(usize, f64)> =
+      terms.iter().copied().filter(|(_, c)| *c != 0.0).collect();
+    match (nonzero.as_slice(), sense) {
+      ([], _) => {
+        let ok = match sense {
+          0 => rhs == 0.0,
+          1 => 0.0 >= rhs,
+          _ => 0.0 <= rhs,
+        };
+        if !ok {
+          return None;
+        }
+      }
+      (&[(i, a)], s) if s != 0 => {
+        let bound = rhs / a;
+        if (s == 1) == (a > 0.0) {
+          lo[i] = lo[i].max(bound);
+        } else {
+          hi[i] = hi[i].min(bound);
+        }
+      }
+      _ => rows.push((terms, rhs, sense)),
+    }
+  }
+  let (obj_terms, obj_const) = sparse_linear_form(objective, &index)?;
+  if !numeric {
+    let exact = obj_terms.iter().all(|(_, c)| c.fract() == 0.0)
+      && obj_const.fract() == 0.0
+      && rows.iter().all(|(t, r, _)| {
+        r.fract() == 0.0 && t.iter().all(|(_, c)| c.fract() == 0.0)
+      })
+      && lo
+        .iter()
+        .chain(&hi)
+        .all(|b| !b.is_finite() || b.fract() == 0.0);
+    if !exact {
+      return None;
+    }
+  }
+  let num = |x: f64| {
+    if x.fract() == 0.0 && x.abs() < 1e15 {
+      Expr::Integer(x as i128)
+    } else {
+      Expr::Real(x)
+    }
+  };
+  let bound = |x: f64| {
+    if x == f64::INFINITY {
+      Expr::Identifier("Infinity".into())
+    } else if x == f64::NEG_INFINITY {
+      negate_expr(&Expr::Identifier("Infinity".into()))
+    } else {
+      num(x)
+    }
+  };
+  let sign = if maximize { -1.0 } else { 1.0 };
+  let mut cvec = vec![0.0; n];
+  for &(i, c) in &obj_terms {
+    cvec[i] += sign * c;
+  }
+  if rows.is_empty() {
+    rows.push((Vec::new(), 0.0, 1));
+  }
+  let m: Vec<Expr> = rows
+    .iter()
+    .map(|(t, _, _)| {
+      let mut row = vec![0.0; n];
+      for &(i, c) in t {
+        row[i] += c;
+      }
+      Expr::List(row.into_iter().map(num).collect())
+    })
+    .collect();
+  let b: Vec<Expr> = rows
+    .iter()
+    .map(|(_, r, s)| {
+      Expr::List(vec![num(*r), Expr::Integer(*s as i128)].into())
+    })
+    .collect();
+  let lu: Vec<Expr> = (0..n)
+    .map(|i| Expr::List(vec![bound(lo[i]), bound(hi[i])].into()))
+    .collect();
+  let dom: Vec<Expr> = vars
+    .iter()
+    .map(|v| {
+      Expr::Identifier(
+        if integer.contains(v) {
+          "Integers"
+        } else {
+          "Reals"
+        }
+        .into(),
+      )
+    })
+    .collect();
+  let solution = {
+    let _quiet = QuietGuard::new();
+    crate::functions::polynomial_ast::linear_programming_ast(&[
+      Expr::List(cvec.into_iter().map(num).collect()),
+      Expr::List(m.into()),
+      Expr::List(b.into()),
+      Expr::List(lu.into()),
+      Expr::List(dom.into()),
+    ])
+    .ok()?
+  };
+  let Expr::List(values) = &solution else {
+    return None;
+  };
+  if values.len() != n
+    || values
+      .iter()
+      .any(|v| matches!(v, Expr::Identifier(s) if s == "Indeterminate"))
+  {
+    return None;
+  }
+  let values: Vec<Expr> = values
+    .iter()
+    .zip(vars)
+    .map(|(v, name)| {
+      if numeric && !integer.contains(name) {
+        Expr::Real(try_eval_to_f64(v).unwrap_or(f64::NAN))
+      } else {
+        v.clone()
+      }
+    })
+    .collect();
+  let mut value = num(obj_const);
+  for &(i, c) in &obj_terms {
+    value = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".into(),
+      args: vec![
+        value,
+        Expr::FunctionCall {
+          name: "Times".into(),
+          args: vec![num(c), values[i].clone()].into(),
+        },
+      ]
+      .into(),
+    })
+    .ok()?;
+  }
+  if numeric {
+    value = Expr::Real(try_eval_to_f64(&value)?);
+  }
+  let rules: Vec<Expr> = vars
+    .iter()
+    .zip(values)
+    .map(|(v, x)| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(v.clone())),
+      replacement: Box::new(x),
+    })
+    .collect();
+  Some(Expr::List(vec![value, Expr::List(rules.into())].into()))
+}
+
 /// Try Integer Linear Programming. Returns Some(result) if ILP was solved, None if unsupported.
 fn minimize_try_ilp(
   f: &Expr,
@@ -10323,39 +10647,6 @@ fn minimize_try_ilp(
   func_name: &str,
 ) -> std::option::Option<Expr> {
   use std::collections::HashSet;
-
-  // Walk an `Element[…, Integers]` subject and collect identifier leaves.
-  // `Element` may carry the symbols as: a single Identifier, a List, an
-  // `Alternatives` FunctionCall, or the BinaryOp Alternatives chain that
-  // `x | y | z` parses to.
-  fn collect_element_symbols(e: &Expr, out: &mut HashSet<String>) {
-    match e {
-      Expr::Identifier(var) => {
-        out.insert(var.clone());
-      }
-      Expr::List(items) => {
-        for a in items {
-          collect_element_symbols(a, out);
-        }
-      }
-      Expr::FunctionCall { name, args }
-        if name == "Alternatives" || name == "List" =>
-      {
-        for a in args {
-          collect_element_symbols(a, out);
-        }
-      }
-      Expr::BinaryOp {
-        op: BinaryOperator::Alternatives,
-        left,
-        right,
-      } => {
-        collect_element_symbols(left, out);
-        collect_element_symbols(right, out);
-      }
-      _ => {}
-    }
-  }
 
   // Separate Element[x, Integers] from actual constraints.
   let mut integer_vars: HashSet<String> = HashSet::new();
@@ -12833,6 +13124,15 @@ fn nminimize_ast_impl(
     .any(|c| matches!(c, Expr::Identifier(s) if s == "False"))
   {
     return Ok(nminimize_infeasible_result(&constraints, &vars, maximize));
+  }
+
+  // Linear objective and constraints: solve the linear (integer) program
+  // directly instead of searching numerically.
+  if !constraints.is_empty()
+    && let Some(result) =
+      minimize_linear_program(&objective, &constraints, &vars, maximize, true)
+  {
+    return Ok(result);
   }
 
   // Equality constraints that are linear in the optimization variables

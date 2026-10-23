@@ -22,6 +22,43 @@ pub fn or2(a: Expr, b: Expr) -> Expr {
 ///
 /// Reduces equations and inequalities to a canonical disjunctive form.
 pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Reduce[expr, dom]: a domain in the variable slot reduces over every
+  // variable of `expr`, listed in canonical order.
+  if args.len() == 2
+    && let Expr::Identifier(dom) = &args[1]
+    && matches!(
+      dom.as_str(),
+      "Reals"
+        | "Integers"
+        | "Complexes"
+        | "Rationals"
+        | "Algebraics"
+        | "Booleans"
+        | "Primes"
+    )
+  {
+    let mut vars = Vec::new();
+    constraint_variables(&args[0], &mut vars);
+    vars.sort_by(|a, b| {
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(
+        &Expr::Identifier(a.clone()),
+        &Expr::Identifier(b.clone()),
+      )
+    });
+    let vars = Expr::List(vars.into_iter().map(Expr::Identifier).collect());
+    return reduce_ast(&[args[0].clone(), vars, args[1].clone()]);
+  }
+  // Over the integers, a condition that bounds every variable has finitely
+  // many solutions, which are listed outright.
+  if args.len() == 3
+    && matches!(&args[2], Expr::Identifier(d) if d == "Integers")
+    && let Some(result) = super::reduce_integer_box::reduce_bounded_integer_box(
+      &args[0],
+      &extract_reduce_vars(&args[1]),
+    )
+  {
+    return result;
+  }
   if let Some(result) = try_linear_integer_reduce(args) {
     return Ok(result);
   }

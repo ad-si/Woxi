@@ -5522,7 +5522,8 @@ fn instantiate_stored_manipulate(
   code: &str,
   stored_output: &str,
 ) -> Option<manipulate::ManipulateState> {
-  let statements = woxi::split_into_statements(code);
+  let code = woxi::notebook::strip_cell_context_prefix(code);
+  let statements = woxi::split_into_statements(&code);
   if statements.len() != 1 {
     return None;
   }
@@ -5649,7 +5650,8 @@ fn evaluate_cell_statements(
   // typeset output reads against the current background.
   woxi::set_dark_mode(is_dark);
 
-  let statements = woxi::split_into_statements(code);
+  let code = woxi::notebook::strip_cell_context_prefix(code);
+  let statements = woxi::split_into_statements(&code);
 
   let mut outputs: Vec<String> = Vec::new();
   // Typeset SVG per result statement (the same rendering the Playground shows),
@@ -33030,6 +33032,26 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
       .map(|c| c.name())
       .collect();
     assert_eq!(names, ["a", "b"]);
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose Input cell keeps
+  /// the Manipulate's own `Initialization` with the helper's body spelled in
+  /// `` $CellContext` ``-qualified symbols while its pattern heads stay bare.
+  /// Regression: the body never saw the arguments (a plot range bound to
+  /// the qualified `` $CellContext`lo `` failed to evaluate to a number).
+  /// This is a self-authored, construct-equivalent example.
+  #[test]
+  fn context_qualified_initialization_body_sees_head_arguments() {
+    let code = "Manipulate[\
+      curve[lo, hi], {{lo, -2}, -3, -1}, {{hi, 2}, 1, 3}, \
+      Initialization :> (curve[lo_, hi_] := Module[{$CellContext`s}, \
+        Plot[Sin[$CellContext`s], {$CellContext`s, $CellContext`lo, \
+          $CellContext`hi}]])]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert!(state.graphics_handle.is_some());
   }
 
   /// A Demonstration saved with `SaveDefinitions -> True` restores

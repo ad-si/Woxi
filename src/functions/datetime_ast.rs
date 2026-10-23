@@ -663,8 +663,15 @@ pub(crate) fn parse_date_string(s: &str) -> Option<(i64, i64, i64)> {
       .map(|i| i as i64 + 1)
   };
   let current_year = || {
-    use chrono::Datelike;
-    chrono::Local::now().year() as i64
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+      use chrono::Datelike;
+      chrono::Local::now().year() as i64
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+      js_sys::Date::new_0().get_full_year() as i64
+    }
   };
   let toks: Vec<&str> = tokens.iter().map(String::as_str).collect();
   match toks.as_slice() {
@@ -4785,6 +4792,7 @@ pub fn clock_ast(args: &[Expr]) -> Option<Expr> {
     Some(p) => expr_to_f64(p)?,
     None => 1.0,
   };
+  // `partial_cmp` so NaN is rejected too.
   let positive =
     |x: f64| x.partial_cmp(&0.0) == Some(std::cmp::Ordering::Greater);
   if !positive(period) || dt.is_some_and(|d| !positive(d)) {

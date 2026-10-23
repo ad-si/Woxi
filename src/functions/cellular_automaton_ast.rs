@@ -1139,9 +1139,10 @@ fn evolve(
   // use). The work bound covers cells x steps x neighborhood size; the
   // result bound covers the memory held by the returned states.
   let cells = height.checked_mul(width)?;
-  let work = cells
-    .checked_mul(t_max.max(1))?
-    .checked_mul(rule.neighbors.len())?;
+  // u64 so the bound below also holds on 32-bit targets (wasm32).
+  let work = (cells as u64)
+    .checked_mul(t_max.max(1) as u64)?
+    .checked_mul(rule.neighbors.len() as u64)?;
   let result_cells = cells.checked_mul(times.len())?;
   // The work bound is generous: on a background init the evolution only
   // computes the region the pattern can have reached (see below).

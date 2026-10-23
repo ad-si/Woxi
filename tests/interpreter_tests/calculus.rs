@@ -21298,3 +21298,60 @@ mod integrate_negative_scaled_power {
     );
   }
 }
+
+mod linear_programs_in_minimize {
+  use super::*;
+
+  #[test]
+  fn nminimize_integer_program_keeps_integer_values() {
+    assert_eq!(
+      interpret(
+        "NMinimize[{x + 2 y, x + y >= 3/2, x >= 0, y >= 0, Element[x | y, Integers]}, {x, y}]"
+      )
+      .unwrap(),
+      "{2., {x -> 2, y -> 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "NMinimize[{x[1] + 2 x[2], x[1] + x[2] == 1, 0 <= x[1] <= 1, 0 <= x[2] <= 1, Element[x[1] | x[2], Integers]}, {x[1], x[2]}]"
+      )
+      .unwrap(),
+      "{1., {x[1] -> 1, x[2] -> 0}}"
+    );
+  }
+
+  #[test]
+  fn continuous_linear_programs() {
+    assert_eq!(
+      interpret("NMinimize[{x + 2 y, x + y >= 1, x >= 0, y >= 0}, {x, y}]")
+        .unwrap(),
+      "{1., {x -> 1., y -> 0.}}"
+    );
+    assert_eq!(
+      interpret(
+        "NMaximize[{3 x + 2 y, x + y <= 4, x + 3 y <= 6, x >= 0, y >= 0}, {x, y}]"
+      )
+      .unwrap(),
+      "{12., {x -> 4., y -> 0.}}"
+    );
+    assert_eq!(
+      interpret(
+        "Maximize[{3 x + 2 y, x + y <= 4, x + 3 y <= 6, x >= 0, y >= 0}, {x, y}]"
+      )
+      .unwrap(),
+      "{12, {x -> 4, y -> 0}}"
+    );
+  }
+
+  #[test]
+  fn facility_location_assignment() {
+    // Each point is served by an open facility; two of four corners open.
+    assert_eq!(
+      interpret(
+        "pts = {{0., 0.}, {1., 0.}, {0., 1.}, {1., 1.}}; n = 4; var = Flatten@Join[Table[x[i, j], {i, n}, {j, n}], Table[y[j], {j, n}]]; obj = Sum[EuclideanDistance[pts[[i]], pts[[j]]] x[i, j], {i, n}, {j, n}]; First[NMinimize[{obj, Flatten@{Thread[0 <= var <= 1], Element[var, Integers], Table[x[i, j] <= y[j], {i, n}, {j, n}], Sum[y[j], {j, n}] <= 2, Table[Sum[x[i, j], {j, n}] == 1, {i, n}]}}, var]]"
+      )
+      .unwrap(),
+      "2."
+    );
+  }
+}

@@ -3116,6 +3116,40 @@ mod graphics {
         );
       }
 
+      // `Disk[c, Offset[r]]` is a fixed screen size in points, however large
+      // the plot range is — not a data-space radius of `r`.
+      #[test]
+      fn disk_with_offset_radius_has_a_fixed_screen_size() {
+        for range in ["{{0, 2}, {0, 2}}", "{{0, 40}, {0, 40}}"] {
+          let svg = export_svg(&format!(
+            "Graphics[{{Disk[{{1, 1}}, Offset[{{2, 3}}]]}}, \
+             PlotRange -> {range}, ImageSize -> {{200, 200}}]"
+          ));
+          assert!(
+            svg.contains("rx=\"2.00\" ry=\"3.00\""),
+            "expected a 2x3 point disk, got {svg}"
+          );
+        }
+        let svg = export_svg(
+          "Graphics[{Disk[{1, 1}, Offset[5]]}, \
+           PlotRange -> {{0, 2}, {0, 2}}, ImageSize -> {200, 200}]",
+        );
+        assert!(svg.contains("rx=\"5.00\" ry=\"5.00\""), "{svg}");
+      }
+
+      // A `TableForm` of `Grid`s labelling a point lays the grids out as a
+      // table, not as the literal source `Grid[{{…}}]`.
+      #[test]
+      fn text_label_table_form_of_grids_is_laid_out() {
+        let svg = export_svg(
+          "Graphics[Text[TableForm[{Grid[{{\"max utility=\", 0.79}}], \
+           Grid[{{\"MRS =\", 1.1}}]}], {1, 1}]]",
+        );
+        assert!(svg.contains(">max utility=</text>"), "{svg}");
+        assert!(svg.contains(">1.1</text>"), "{svg}");
+        assert!(!svg.contains("Grid["), "{svg}");
+      }
+
       // `{xSpec, ySpec}` pads each axis independently: no room on x, a full
       // unit on y, so the corner point stays flush on x but moves inward
       // on y. `AspectRatio -> Full` keeps the two axes independently
@@ -39823,5 +39857,94 @@ mod grid_item_style_rules {
       one.contains("rgb(0,0,255)") && one.contains("bold"),
       "{svg}"
     );
+  }
+}
+
+mod rectangle_chart {
+  use super::*;
+
+  #[test]
+  fn rectangles_stand_side_by_side() {
+    assert_eq!(
+      interpret(
+        "Cases[RectangleChart[{{1, 2}, {2, 3}}], _Rectangle, Infinity]"
+      )
+      .unwrap(),
+      "{Rectangle[{0., 0.}, {1., 2.}], Rectangle[{1.0975, 0.}, {3.0975, 3.}]}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[RectangleChart[{{1, 2}, {1, 3}}, BarSpacing -> 0.5], _Rectangle, Infinity]"
+      )
+      .unwrap(),
+      "{Rectangle[{0., 0.}, {1., 2.}], Rectangle[{1.5, 0.}, {2.5, 3.}]}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[RectangleChart[{{1, 2}, {1, 3}}, BarSpacing -> None], _Rectangle, Infinity]"
+      )
+      .unwrap(),
+      "{Rectangle[{0., 0.}, {1., 2.}], Rectangle[{1., 0.}, {2., 3.}]}"
+    );
+  }
+
+  #[test]
+  fn several_datasets_are_inset_and_coloured_by_position() {
+    assert_eq!(
+      interpret(
+        "Cases[RectangleChart[{{{1, 2}, {1, 3}}, {{1, 1}, {2, 2}}}], Rectangle[a_, _] :> a[[1]], Infinity]"
+      )
+      .unwrap(),
+      "{0.1, 1.1975, 2.3975, 3.495}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[RectangleChart[{{{1, 2}, {1, 3}}, {{1, 1}, {2, 2}}}], {c_RGBColor, _Rectangle} :> c, Infinity]"
+      )
+      .unwrap(),
+      "{RGBColor[1., 0.835, 0.25], RGBColor[0., 0.665, 0.95], RGBColor[1., 0.835, 0.25], RGBColor[0., 0.665, 0.95]}"
+    );
+    // A single dataset uses the first colour throughout.
+    assert_eq!(
+      interpret(
+        "Union[Cases[RectangleChart[{{1, 2}, {1, 3}}], {c_RGBColor, _Rectangle} :> c, Infinity]]"
+      )
+      .unwrap(),
+      "{RGBColor[1., 0.835, 0.25]}"
+    );
+  }
+
+  #[test]
+  fn chart_style_and_legends() {
+    assert_eq!(
+      interpret(
+        "Cases[RectangleChart[{{1, 2}, {1, 3}}, ChartStyle -> {Red, {Opacity[0.5], Blue}}], {c_, _Rectangle} :> c, Infinity]"
+      )
+      .unwrap(),
+      "{RGBColor[1, 0, 0], Directive[Opacity[0.5], RGBColor[0, 0, 1]]}"
+    );
+    assert_eq!(
+      interpret(
+        "Head[RectangleChart[{{1, 2}, {2, 3}}, ChartLegends -> {\"a\", \"b\"}]]"
+      )
+      .unwrap(),
+      "Legended"
+    );
+  }
+
+  #[test]
+  fn three_d_chart_uses_cuboids() {
+    assert_eq!(
+      interpret(
+        "Cases[RectangleChart3D[{{1, 2, 3}, {2, 1, 1}}], _Cuboid, Infinity]"
+      )
+      .unwrap(),
+      "{Cuboid[{0., 0., 0.}, {1., 2., 3.}], Cuboid[{1.0975, 0., 0.}, {3.0975, 1., 1.}]}"
+    );
+  }
+
+  #[test]
+  fn non_data_stays_unevaluated() {
+    assert_eq!(interpret("RectangleChart[x]").unwrap(), "RectangleChart[x]");
   }
 }
