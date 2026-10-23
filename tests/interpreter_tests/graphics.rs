@@ -39948,3 +39948,35 @@ mod rectangle_chart {
     assert_eq!(interpret("RectangleChart[x]").unwrap(), "RectangleChart[x]");
   }
 }
+
+mod setting_of_dynamic_objects {
+  use super::*;
+
+  #[test]
+  fn dynamic_objects_give_their_values() {
+    assert_eq!(
+      interpret("rs = {1, 2}; Setting[Dynamic[rs]]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("a = 5; Setting[{Dynamic[a], Dynamic[a + 1], f[Dynamic[a]]}]")
+        .unwrap(),
+      "{5, 6, f[5]}"
+    );
+    assert_eq!(interpret("Clear[b]; Setting[Dynamic[b, f]]").unwrap(), "b");
+    assert_eq!(interpret("Setting[x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn controls_give_their_settings() {
+    assert_eq!(
+      interpret("c = 0.3; Setting[Slider[Dynamic[c], {0, 1}]]").unwrap(),
+      "0.3"
+    );
+    assert_eq!(interpret("Setting[Checkbox[True]]").unwrap(), "True");
+    assert_eq!(
+      interpret("Setting[ColorSetter[Red]]").unwrap(),
+      "RGBColor[1, 0, 0]"
+    );
+  }
+}

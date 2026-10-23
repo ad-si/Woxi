@@ -1416,6 +1416,15 @@ pub fn canonicalize_divide_in_expr(expr: &Expr) -> Expr {
         Err(_) => div2(left, right),
       }
     }
+    // A holding head (`HoldForm[x_/0]`) keeps its contents as written: they
+    // are matched against equally unevaluated input, and computing pieces
+    // of them (`Power[0, -1]`) would report messages the program never
+    // asked for.
+    Expr::FunctionCall { .. }
+      if crate::evaluator::core_eval::head_holds_arguments(expr) =>
+    {
+      expr.clone()
+    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args.iter().map(canonicalize_divide_in_expr).collect(),
