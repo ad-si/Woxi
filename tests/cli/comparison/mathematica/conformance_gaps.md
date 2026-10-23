@@ -709,16 +709,23 @@ tracking through the Gamma-ratio path starting from a machine-real argument.
 
 ### Machine floats overflow where wolframscript promotes to arbitrary precision
 
+Overflow of `Exp[x.]`, `a.^b`, products, quotients and sums of machine reals
+is promoted to an arbitrary-precision number (up to a decimal exponent of
+10000), but not everywhere:
+
 ```sh
 wolframscript -code 'Exp[1000] // N'   # 1.97007111401704699388887935224`12.95…*^434
 woxi eval 'Exp[1000] // N'             # Infinity
 
-wolframscript -code '1.0*^308 * 10'    # 1.00000000000000001097906362944`15.95…*^309
-woxi eval '1.0*^308 * 10'              # Infinity
+wolframscript -code 'Exp[-1000.]'      # 5.07595889754946`12.95*^-435
+woxi eval 'Exp[-1000.]'                # 0.  (underflow is not promoted)
+
+wolframscript -code 'Exp[1000.] > 10^433'   # True
+woxi eval 'Exp[1000.] > 10^433'             # False (comparison goes through f64)
 ```
 
-Anything that grows past ~1.8*^308 is affected, so `Exp`/`Power` of a few
-hundred silently loses the answer rather than approximating it.
+Exact input made inexact by `N` and underflow still collapse to `Infinity` /
+`0.`, and results beyond the 10000-digit bound stay `Infinity`.
 
 ### `Overflow[]` is not absorbing, and its head is not `Real`
 

@@ -511,8 +511,7 @@ pub(crate) fn bigfloat_powi(
 /// Largest decimal exponent an overflowed machine real is promoted to.
 pub const MAX_PROMOTED_DECIMAL_EXPONENT: f64 = 10_000.0;
 
-/// `a^b` for a positive machine real `a` whose machine result left the
-/// machine range (overflowed or underflowed to zero):
+/// `a^b` for a positive machine real `a` whose machine result overflowed:
 /// WL promotes it to an arbitrary-precision number whose precision is the
 /// machine precision less the digits `b·ln a` amplifies the input error by.
 pub fn machine_power_out_of_range(
@@ -525,7 +524,7 @@ pub fn machine_power_out_of_range(
   }
   const MACHINE_PREC: f64 = 15.954589770191003;
   // The promoted number stores every decimal digit, so a result with an
-  // absurd magnitude stays a machine overflow (`Infinity`/`0.`).
+  // absurd magnitude stays a machine overflow (`Infinity`).
   if (b * a.log10()).abs() > MAX_PROMOTED_DECIMAL_EXPONENT {
     return None;
   }
@@ -560,6 +559,15 @@ pub fn bigfloat_exp(
   let x_val: f64 = digits.parse().ok()?;
   if x_val == 0.0 {
     return None;
+  }
+  // Past the representable decimal exponent the result is a machine
+  // overflow or underflow, as for a machine real.
+  if x_val.abs() * std::f64::consts::LOG10_E > MAX_PROMOTED_DECIMAL_EXPONENT {
+    return Some(Ok(if x_val > 0.0 {
+      Expr::Identifier("Infinity".to_string())
+    } else {
+      Expr::Real(0.0)
+    }));
   }
   let rm = RoundingMode::ToEven;
   let bits = nominal_bits(prec.ceil() as usize);

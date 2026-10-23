@@ -2384,6 +2384,9 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // we let f64 do its thing (returns Infinity past x ≈ 709), so
       // downstream formulas like 1/(1+Exp[x]) — common in logistic
       // models — still collapse to 0 instead of breaking on Overflow[].
+      if *f <= -1.0e15 {
+        return Ok(Expr::Real(0.0));
+      }
       if f.abs() >= 1.0e15 {
         crate::emit_message("General::ovfl: Overflow occurred in computation.");
         return Ok(call0("Overflow"));
@@ -2391,8 +2394,8 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let r = f.exp();
       // A result past the machine range is promoted to an arbitrary-
       // precision number (`Exp[1000.]` is `1.97…*^434`) rather than
-      // collapsing to `Infinity` or `0.`.
-      if (r.is_infinite() || r == 0.0)
+      // collapsing to `Infinity`.
+      if r.is_infinite()
         && f.abs() * std::f64::consts::LOG10_E
           <= super::numerical::MAX_PROMOTED_DECIMAL_EXPONENT
         && let Some(result) =

@@ -8258,13 +8258,13 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(product);
   }
   let product = times_ast_inner(args)?;
-  // Nonzero finite machine reals whose product leaves the machine range
-  // promote to an arbitrary-precision number (`1.*^200 * 1.*^200` is
-  // `1.*^400`) rather than overflowing to `Infinity` or underflowing to `0.`.
-  if matches!(product, Expr::Real(r) if r.is_infinite() || r == 0.0)
+  // Finite machine reals whose product overflows the machine range promote
+  // to an arbitrary-precision number (`1.*^200 * 1.*^200` is `1.*^400`)
+  // rather than becoming `Infinity`.
+  if matches!(product, Expr::Real(r) if r.is_infinite())
     && args.iter().all(|a| match a {
-      Expr::Real(r) => r.is_finite() && *r != 0.0,
-      other => expr_to_coeff(other).is_some_and(|c| !c.is_zero()),
+      Expr::Real(r) => r.is_finite(),
+      other => expr_to_coeff(other).is_some(),
     })
   {
     let promoted: Vec<Expr> = args
@@ -13014,8 +13014,8 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       }
     } else if has_real {
       // A power past the machine range is promoted to an arbitrary-
-      // precision number rather than collapsing to `Infinity` or `0.`.
-      if (result.is_infinite() || (result == 0.0 && a != 0.0))
+      // precision number rather than collapsing to `Infinity`.
+      if result.is_infinite()
         && let Some(promoted) =
           crate::functions::math_ast::numerical::machine_power_out_of_range(
             a, b,
