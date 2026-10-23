@@ -15643,6 +15643,7 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut tolerance = 1e-10_f64;
   let mut max_recursion = 50_u32;
   let mut goal_tolerance: Option<f64> = None;
+  let mut max_points: Option<u32> = None;
   let mut working_precision: Option<i128> = None;
   // `EvaluationMonitor :> expr` — evaluated (with the integration variable
   // bound) at every sampled point, e.g. to `Sow` the abscissae.
@@ -15715,6 +15716,13 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
             goal_tolerance
               .map_or(10f64.powf(-g), |t: f64| t.max(10f64.powf(-g))),
           );
+        }
+      }
+      "MaxPoints" => {
+        if let Some(n) = crate::functions::math_ast::expr_to_i128(opt_value)
+          && n > 0
+        {
+          max_points = Some(u32::try_from(n).unwrap_or(u32::MAX));
         }
       }
       "MaxRecursion" => {
@@ -15810,6 +15818,26 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("NIntegrate", args));
     }
     let integrand0 = args[0].clone();
+    // `MaxPoints` bounds the *total* number of samples, so an iterated
+    // integral gives each of its `d` dimensions the `d`-th root of it. The
+    // inner integrals are handed the matching share of the remaining
+    // dimensions.
+    let dims = 1 + inner_ranges.len();
+    let per_dim_points = max_points
+      .map(|n| (f64::from(n).powf(1.0 / dims as f64).ceil() as u32).max(1));
+    let max_points = per_dim_points;
+    if let Some(p) = per_dim_points {
+      options.retain(|o| {
+        !matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "MaxPoints"))
+      });
+      options.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("MaxPoints".to_string())),
+        replacement: Box::new(Expr::Integer(
+          i128::from(p).pow(inner_ranges.len() as u32),
+        )),
+      });
+    }
     let inner_eval = |x: f64| -> Option<f64> {
       let x_expr = Expr::Real(x);
       let mut inner_args: Vec<Expr> =
@@ -15823,6 +15851,20 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
         inner_args.push(crate::syntax::substitute_variable(r, &ovar, &x_expr));
       }
       inner_args.extend(options.iter().cloned());
+      // Each outer sample is a whole inner integration, and the outer
+      // reduction only asks for `outer_tolerance`, so an inner solve tighter
+      // than that is wasted work (it multiplies the cost of the whole
+      // iterated integral). Cap it unless the caller set an explicit goal.
+      if !options.iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(s)
+            if matches!(s.as_str(), "Tolerance" | "AccuracyGoal" | "PrecisionGoal")))
+      }) {
+        inner_args.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier("PrecisionGoal".to_string())),
+          replacement: Box::new(Expr::Integer(8)),
+        });
+      }
       let result = nintegrate_ast(&inner_args).ok()?;
       crate::functions::math_ast::try_eval_to_f64(&result)
         .filter(|v| v.is_finite())
@@ -15966,16 +16008,17 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if b <= a {
         continue;
       }
-      let piece = tanh_sinh(&eval_for_quadrature, a, b, outer_tolerance)
-        .or_else(|| {
-          adaptive_simpson(
-            &eval_for_quadrature,
-            a,
-            b,
-            outer_tolerance,
-            max_recursion,
-          )
-        });
+      let piece =
+        tanh_sinh(&eval_for_quadrature, a, b, outer_tolerance, max_points)
+          .or_else(|| {
+            adaptive_simpson(
+              &eval_for_quadrature,
+              a,
+              b,
+              outer_tolerance,
+              max_recursion,
+            )
+          });
       match piece {
         Some(v) => total += v,
         None => {
@@ -16185,7 +16228,7 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Tanh-sinh first: it is the only one of the two that copes with an
       // endpoint singularity. It converges slowly on a strongly oscillatory
       // integrand, so fall back to the adaptive rule when it does not settle.
-      tanh_sinh(&eval_at, a, b, tolerance)
+      tanh_sinh(&eval_at, a, b, tolerance, max_points)
         .or_else(|| adaptive_simpson(&eval_at, a, b, tolerance, max_recursion))
     }
   };
@@ -16453,6 +16496,7 @@ fn tanh_sinh(
   a: f64,
   b: f64,
   tol: f64,
+  max_points: Option<u32>,
 ) -> Option<f64> {
   if !a.is_finite() || !b.is_finite() || a == b {
     return None;
@@ -16473,6 +16517,10 @@ fn tanh_sinh(
   // gives back whatever this call didn't spend when it drops, covering
   // every `return` below (including the early ones) uniformly.
   let max_evaluations = nintegrate_budget_take(20_000) as u32;
+  // `MaxPoints -> n` stops refining once `n` samples are spent and keeps the
+  // best estimate so far (Wolfram does the same, with an `NIntegrate::maxp`
+  // warning), trading accuracy for a bounded cost per dimension.
+  let point_cap = max_points.unwrap_or(u32::MAX);
   struct ReturnUnspent<'a> {
     taken: u32,
     evaluations: &'a std::cell::Cell<u32>,
@@ -16557,6 +16605,9 @@ fn tanh_sinh(
     }
     if evaluations.get() > max_evaluations {
       return None;
+    }
+    if evaluations.get() >= point_cap {
+      return Some(estimate);
     }
     previous = Some(estimate);
     h *= 0.5;
