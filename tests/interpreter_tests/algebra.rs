@@ -8899,6 +8899,21 @@ mod nsolve {
   // Freese-dissection Demonstration notebook, whose `p8 = sol[[2]]` is the
   // smaller root {-0.16669911088252198, -0.8090169943749475}.
   #[test]
+  fn line_circle_with_simple_decimals_numericizes_the_closed_form() {
+    // The rationalized system's quadratic is numericized from its closed
+    // form instead of being solved and simplified in radicals, which cost
+    // seconds per intersection (AConcurrencyOfLinesJoiningOrthocenters).
+    assert_eq!(
+      interpret(
+        "Round[{x, y} /. NSolve[{(y - 0.2) 1.5 == 0.5 (x - 0.1), \
+         (x - 0.3)^2 + (y - 0.4)^2 == 1.2^2}, {x, y}], 10.^-12]"
+      )
+      .unwrap(),
+      "{{1.472077735847, 0.657359245282}, {-0.792077735847, -0.097359245282}}"
+    );
+  }
+
+  #[test]
   fn system_solutions_larger_root_first() {
     assert_eq!(
       interpret(
@@ -20561,6 +20576,25 @@ mod solve_with_max_min {
     )
     .unwrap();
     assert!(v.contains(", -2.61931288699918"), "{v}");
+  }
+
+  #[test]
+  fn inexact_vector_line_plane_intersection_is_solved_directly() {
+    // A vector equation is linear when its second derivatives are all lists
+    // of zeros (BezdeksUnistablePolyhedronWith18Faces).
+    assert_eq!(
+      interpret(
+        "Length[Solve[{({x,y,z}-{0.1,0.2,0.3}).{1.,2.,0.5}==0, \
+         {x,y,z}=={1.,0.,0.}+t{0.3,0.2,0.1}}, {x,y,z,t}]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      !msgs.iter().any(|m| m.starts_with("Solve::ratnz")),
+      "{msgs:?}"
+    );
   }
 
   #[test]
