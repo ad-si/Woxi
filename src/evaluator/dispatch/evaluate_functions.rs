@@ -1710,7 +1710,7 @@ fn evaluate_function_call_ast_inner(
             ctx.borrow_mut().push((name.to_string(), bindings.clone()));
           });
         }
-        if is_identity_rewrite(name, &effective_args, &substituted) {
+        if is_identity_rewrite(name, args, &substituted) {
           // The rule rewrites the call to itself (`g[x_] := g[x]`), which
           // only `$IterationLimit` stops.
           if opt_bindings.is_some() {
@@ -2075,7 +2075,7 @@ fn evaluate_function_call_ast_inner(
         }
         // Tail-call: return body for the trampoline to evaluate.
         // Catch Return[] at the function call boundary via local trampoline.
-        if is_identity_rewrite(name, &effective_args, &substituted) {
+        if is_identity_rewrite(name, args, &substituted) {
           // The rule rewrites the call to itself (`g[x_] := g[x]`), which
           // only `$IterationLimit` stops.
           if opt_bindings.is_some() {

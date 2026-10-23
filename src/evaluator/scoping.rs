@@ -137,7 +137,8 @@ fn parse_local_vars(
     };
     let var = if let Some((target, value, delayed)) = as_local_assignment(item)
     {
-      let Expr::Identifier(name) = target else {
+      // Built-in constants (`E`, `Pi`) are symbols and may be localized.
+      let (Expr::Identifier(name) | Expr::Constant(name)) = target else {
         return Err(LocalSpecError::BadAssignment {
           item: Box::new(item.clone()),
           target: Box::new(target.clone()),
@@ -148,7 +149,7 @@ fn parse_local_vars(
         init: Some(value.clone()),
         delayed,
       }
-    } else if let Expr::Identifier(name) = item {
+    } else if let Expr::Identifier(name) | Expr::Constant(name) = item {
       if needs_value {
         return Err(LocalSpecError::NeedsValue(item.clone()));
       }

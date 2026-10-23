@@ -6738,6 +6738,28 @@ fn generic_infix_operator(
   GENERIC_INFIX_OPERATORS.iter().find(|row| row.0 == op)
 }
 
+/// The character an operator-only head (`Equilibrium`, `RightArrow`,
+/// `Subset`, …) is displayed with between its arguments, `a ⇌ b`. These
+/// heads have no built-in meaning; heads that evaluate (Plus, Times, …) or
+/// whose character is invisible or private-use keep the call form.
+pub fn inert_infix_char(name: &str) -> Option<&'static str> {
+  if name == "RightArrow" {
+    return Some("\u{2192}");
+  }
+  if matches!(
+    name,
+    "Plus" | "Times" | "InvisibleTimes" | "ImplicitPlus" | "Application"
+  ) {
+    return None;
+  }
+  let row = GENERIC_INFIX_OPERATORS.iter().find(|row| row.2 == name)?;
+  let visible = row.0.chars().all(|c| {
+    let c = c as u32;
+    !(0xE000..=0xF8FF).contains(&c) && !(0x2060..=0x206F).contains(&c)
+  });
+  visible.then_some(row.0)
+}
+
 /// Infix operators written with a named character and read as `Head[a, b]`,
 /// beyond the ones the grammar spells out individually: `(character, name,
 /// head, precedence, grouping)`. Generated from wolframscript — each row is
@@ -10290,15 +10312,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if is_output && name == "Style" && !args.is_empty() {
         return fmt(&args[0]);
       }
-      // Special case: LongRightArrow[a, b, ...] displays as a ⟶ b ⟶ ...
-      if name == "LongRightArrow" && args.len() >= 2 {
+      // Operator-only heads display infix: Equilibrium[a, b] is a ⇌ b,
+      // LongRightArrow[a, b, c] is a ⟶ b ⟶ c.
+      if args.len() >= 2
+        && let Some(op) = inert_infix_char(name)
+      {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
-        return parts.join(" \u{27F6} ");
-      }
-      // Special case: Proportional[a, b, ...] displays as a ∝ b ∝ ...
-      if name == "Proportional" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(&fmt).collect();
-        return parts.join(" \u{221D} ");
+        return parts.join(&format!(" {op} "));
       }
       // Blank[] → _, Blank[h] → _h
       if name == "Blank" {
@@ -14475,16 +14495,11 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       parts.join(" \u{2AE4} ")
     }
     Expr::FunctionCall { name, args }
-      if name == "LongRightArrow" && args.len() >= 2 =>
+      if args.len() >= 2 && inert_infix_char(name).is_some() =>
     {
+      let op = inert_infix_char(name).unwrap_or_default();
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
-      parts.join(" \u{27F6} ")
-    }
-    Expr::FunctionCall { name, args }
-      if name == "Proportional" && args.len() >= 2 =>
-    {
-      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
-      parts.join(" \u{221D} ")
+      parts.join(&format!(" {op} "))
     }
     Expr::FunctionCall { name, args } if name == "PlusMinus" => {
       if args.len() == 1 {
@@ -15956,7 +15971,9 @@ fn substitute_variable_impl(
   rename_heads: bool,
 ) -> Expr {
   match expr {
-    Expr::Identifier(name) if name == var_name => value.clone(),
+    Expr::Identifier(name) | Expr::Constant(name) if name == var_name => {
+      value.clone()
+    }
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -16657,7 +16674,9 @@ fn substitute_variables_impl(
     return expr.clone();
   }
   match expr {
-    Expr::Identifier(name) => {
+    // A built-in constant (`E`, `Pi`, …) is a symbol like any other, so it
+    // is replaced where it is bound — a pattern `E_`, a `With[{E = 2}, …]`.
+    Expr::Identifier(name) | Expr::Constant(name) => {
       for &(var_name, value) in bindings {
         if name == var_name {
           return value.clone();

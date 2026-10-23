@@ -6872,3 +6872,49 @@ mod redefinition_replaces_same_lhs {
     );
   }
 }
+
+mod constants_as_bound_symbols {
+  use super::*;
+
+  // E, Pi, … are symbols: they may be localized and used as pattern names
+  // (values from wolframscript).
+  #[test]
+  fn scoping_constructs() {
+    assert_eq!(
+      interpret(
+        "{Block[{E = 0.302, c = 1}, E + c], Block[{Pi = 3}, Pi], \
+         Module[{E = 2}, E], With[{E = 2}, E], Block[{E}, E = 2; E]}"
+      )
+      .unwrap(),
+      "{1.302, 3, 2, 2, 2}"
+    );
+    assert_eq!(interpret("Block[{E = 2}, E]; E").unwrap(), "E");
+  }
+
+  #[test]
+  fn pattern_names() {
+    assert_eq!(interpret("f[E_] := E^2; f[3]").unwrap(), "9");
+    assert_eq!(interpret("g[Pi_] := Pi + 1; g[2]").unwrap(), "3");
+  }
+}
+
+mod definition_lhs_normalization {
+  use super::*;
+
+  #[test]
+  fn sequence_is_spliced() {
+    assert_eq!(
+      interpret("f[Sequence[a__]] := {a}; {f[1, 2], DownValues[f]}").unwrap(),
+      "{{1, 2}, {HoldPattern[f[a__]] :> {a}}}"
+    );
+  }
+
+  // `v[]` fills the default and rewrites to `v[12]`, a different call.
+  #[test]
+  fn default_filled_call_is_not_an_identity_rewrite() {
+    assert_eq!(
+      interpret("v[n_Integer] := {n}; v[n_:12] := v[n]; v[]").unwrap(),
+      "{12}"
+    );
+  }
+}

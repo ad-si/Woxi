@@ -1957,7 +1957,35 @@ fn normalize_symbol_lhs(lhs: &Expr) -> Expr {
   {
     return Expr::Identifier(s.clone());
   }
-  crate::evaluator::pattern_matching::with_short_form_blanks(lhs).into_owned()
+  let lhs = crate::evaluator::pattern_matching::with_short_form_blanks(lhs)
+    .into_owned();
+  // `f[Sequence[a__]]` is `f[a__]`: the left-hand side is evaluated far
+  // enough to splice sequences into its head's arguments.
+  match &lhs {
+    Expr::FunctionCall { name, args }
+      if args.iter().any(
+        |a| matches!(a, Expr::FunctionCall { name, .. } if name == "Sequence"),
+      ) =>
+    {
+      let mut spliced = Vec::with_capacity(args.len());
+      for a in args {
+        match a {
+          Expr::FunctionCall {
+            name: n,
+            args: inner,
+          } if n == "Sequence" => {
+            spliced.extend(inner.iter().cloned());
+          }
+          other => spliced.push(other.clone()),
+        }
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: spliced.into(),
+      }
+    }
+    _ => lhs,
+  }
 }
 
 /// Split `a : f[x_]` into the alias `a` and the call `f[x_]` it names.
