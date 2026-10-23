@@ -8998,3 +8998,72 @@ mod rasterize_any_expression {
     );
   }
 }
+
+mod image_arithmetic_and_identity {
+  use super::*;
+
+  // Values from wolframscript: sums and products are Real32 images, a
+  // power is Real64.
+  #[test]
+  fn pixelwise_arithmetic() {
+    assert_eq!(
+      interpret(
+        "i1 = Image[{{0.2, 0.5}, {0.8, 1.}}]; i2 = Image[{{1, 0}, {0, 1}}]; \
+         {ImageData[i1 + i2], ImageData[i1 + 0.1], ImageData[2 i1], \
+          ImageData[i1 i2], ImageType[i1 + i2]}"
+      )
+      .unwrap(),
+      "{{{1.2000000476837158, 0.5}, {0.800000011920929, 2.}}, \
+       {{0.30000001192092896, 0.6000000238418579}, {0.9000000357627869, 1.100000023841858}}, \
+       {{0.4000000059604645, 1.}, {1.600000023841858, 2.}}, \
+       {{0.20000000298023224, 0.}, {0., 1.}}, Real32}"
+    );
+    assert_eq!(
+      interpret(
+        "i1 = Image[{{0.2, 0.5}, {0.8, 1.}}]; {ImageData[i1^2], ImageType[i1^2]}"
+      )
+      .unwrap(),
+      "{{{0.040000001192092904, 0.25}, {0.6400000190734865, 1.}}, Real64}"
+    );
+  }
+
+  #[test]
+  fn distinct_images_stay_distinct() {
+    assert_eq!(
+      interpret(
+        "a = Image[{{0.2}}]; b = Image[{{0.9}}]; \
+         {Length[Union[{a, b}]], Length[DeleteDuplicates[{a, b}]], \
+          Length[Tally[{a, b}]], Length[Union[{a, a}]]}"
+      )
+      .unwrap(),
+      "{2, 2, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn channel_first_data() {
+    assert_eq!(
+      interpret(
+        "i = Image[{{{1, 0.5}, {0, 0.25}}, {{1, 1}, {0, 0}}, {{0.2, 0.2}, \
+         {0.3, 0.3}}}, Interleaving -> False]; \
+         {ImageDimensions[i], ImageChannels[i], ImageData[i][[1, 2]]}"
+      )
+      .unwrap(),
+      "{{2, 2}, 3, {0.5, 1., 0.20000000298023224}}"
+    );
+  }
+
+  #[test]
+  fn options_of_an_image() {
+    assert_eq!(
+      interpret(
+        "img = Image[Table[{i/4., j/4., 0.5}, {i, 4}, {j, 4}], ColorSpace -> \"RGB\"]; \
+         {Options[img, ImageSize], Options[Image[{{0.1}}]], \
+          Options[Image[{{0.1}}], ColorSpace]}"
+      )
+      .unwrap(),
+      "{{ImageSize -> Automatic}, {ColorSpace -> Automatic, Interleaving -> None}, \
+       {ColorSpace -> Automatic}}"
+    );
+  }
+}

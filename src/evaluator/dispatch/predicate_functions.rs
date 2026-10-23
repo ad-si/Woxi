@@ -1463,6 +1463,63 @@ pub fn dispatch_predicate_functions(
           Err(e) => return Some(Err(e)),
         },
       };
+      // An image's options: its color space, display size (when set) and
+      // interleaving (None for a single channel), in that sorted order.
+      if let Expr::Image {
+        channels,
+        color_space,
+        display_size,
+        ..
+      } = &func_arg
+      {
+        let rule = |n: &str, v: Expr| Expr::Rule {
+          pattern: Box::new(Expr::Identifier(n.to_string())),
+          replacement: Box::new(v),
+        };
+        let mut opts = vec![rule(
+          "ColorSpace",
+          match color_space {
+            Some(cs) => Expr::String(cs.to_string()),
+            None => Expr::Identifier("Automatic".into()),
+          },
+        )];
+        if let Some((w, _)) = display_size {
+          opts.push(rule("ImageSize", Expr::Integer(*w as i128)));
+        }
+        opts.push(rule(
+          "Interleaving",
+          Expr::Identifier(if *channels > 1 { "True" } else { "None" }.into()),
+        ));
+        if args.len() == 1 {
+          return Some(Ok(Expr::List(opts.into())));
+        }
+        let names: Vec<String> = match &evaluate_expr_to_expr(&args[1]) {
+          Ok(Expr::Identifier(n)) => vec![n.clone()],
+          Ok(Expr::List(items)) => items
+            .iter()
+            .filter_map(|i| match i {
+              Expr::Identifier(n) => Some(n.clone()),
+              _ => None,
+            })
+            .collect(),
+          Ok(_) => return Some(Ok(Expr::List(vec![].into()))),
+          Err(_) => return Some(evaluate_expr_to_expr(&args[1])),
+        };
+        let picked: Vec<Expr> = names
+          .iter()
+          .map(|n| {
+            opts
+              .iter()
+              .find(|o| {
+                matches!(o, Expr::Rule { pattern, .. }
+                if matches!(pattern.as_ref(), Expr::Identifier(p) if p == n))
+              })
+              .cloned()
+              .unwrap_or_else(|| rule(n, Expr::Identifier("Automatic".into())))
+          })
+          .collect();
+        return Some(Ok(Expr::List(picked.into())));
+      }
       // A rendered graphic carries the options it was drawn with.
       if let Some(opts) =
         crate::functions::graphics::graphics_options(&func_arg)

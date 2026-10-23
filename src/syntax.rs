@@ -13400,6 +13400,27 @@ pub fn graphics_identity_suffix(expr: &Expr) -> String {
         out.push('\u{0}');
         out.push_str(svg);
       }
+      // An image prints as `-Image-` whatever its pixels; its identity is
+      // its type, size, channels and data.
+      Expr::Image {
+        width,
+        height,
+        channels,
+        data,
+        image_type,
+        color_space,
+        ..
+      } => {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for v in data.iter() {
+          v.to_bits().hash(&mut hasher);
+        }
+        out.push_str(&format!(
+          "\u{0}{width}x{height}x{channels}:{image_type:?}:{color_space:?}:{:x}",
+          hasher.finish()
+        ));
+      }
       Expr::List(items) => items.iter().for_each(|e| collect(e, out)),
       Expr::FunctionCall { args, .. } => {
         args.iter().for_each(|e| collect(e, out));

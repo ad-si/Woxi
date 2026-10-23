@@ -814,9 +814,115 @@ fn args_mention_music_object(args: &[Expr]) -> bool {
   args.iter().any(|a| is_music(a, 2))
 }
 
+/// Arithmetic on images is pixelwise: `img1 + img2`, `2 img`, `img + 0.1`
+/// and `img^2` are images whose pixels combine under `op`, as in
+/// wolframscript (where the result is a Real32 image). Operands are images
+/// of one size or real numbers; a one-channel image combines with every
+/// channel of a multi-channel one. `None` when the operands are anything
+/// else.
+pub(crate) fn image_arithmetic(
+  args: &[Expr],
+  op: impl Fn(f64, f64) -> f64,
+) -> Option<Expr> {
+  image_arithmetic_rounded(args, op, true)
+}
+
+/// [`image_arithmetic`], choosing whether each result is rounded to single
+/// precision: sums and products are (a Real32 image), while wolframscript's
+/// `img^p` is a Real64 image of the double-precision power.
+pub(crate) fn image_arithmetic_rounded(
+  args: &[Expr],
+  op: impl Fn(f64, f64) -> f64,
+  round_result: bool,
+) -> Option<Expr> {
+  if args.len() < 2 || !args.iter().any(|a| matches!(a, Expr::Image { .. })) {
+    return None;
+  }
+  enum Operand<'a> {
+    Scalar(f64),
+    Pixels { data: &'a [f64], channels: usize },
+  }
+  let mut size: Option<(u32, u32)> = None;
+  let mut channels = 1usize;
+  let mut color_space = None;
+  let mut operands = Vec::with_capacity(args.len());
+  for a in args {
+    match a {
+      Expr::Image {
+        width,
+        height,
+        channels: ch,
+        data,
+        color_space: cs,
+        ..
+      } => {
+        if size.is_some_and(|s| s != (*width, *height)) {
+          return None;
+        }
+        size = Some((*width, *height));
+        let ch = *ch as usize;
+        if ch != 1 && channels != 1 && ch != channels {
+          return None;
+        }
+        if ch > channels {
+          channels = ch;
+          color_space = *cs;
+        }
+        operands.push(Operand::Pixels { data, channels: ch });
+      }
+      Expr::Integer(_) | Expr::Real(_) | Expr::BigFloat(..) => {
+        operands.push(Operand::Scalar(try_eval_to_f64(a)?));
+      }
+      Expr::FunctionCall { name, .. } if name == "Rational" => {
+        operands.push(Operand::Scalar(try_eval_to_f64(a)?));
+      }
+      _ => return None,
+    }
+  }
+  let (width, height) = size?;
+  let pixels = width as usize * height as usize;
+  let value = |o: &Operand, pixel: usize, channel: usize| match o {
+    Operand::Scalar(v) => *v,
+    Operand::Pixels { data, channels: 1 } => data[pixel],
+    Operand::Pixels { data, channels: ch } => data[pixel * ch + channel],
+  };
+  // Real32 arithmetic: every operand and every partial result is rounded
+  // to single precision, so `0.8 + 0.1` is the Real32 sum 0.90000004.
+  let f32r = |v: f64| v as f32 as f64;
+  let mut out = Vec::with_capacity(pixels * channels);
+  for pixel in 0..pixels {
+    for channel in 0..channels {
+      let mut acc = f32r(value(&operands[0], pixel, channel));
+      for o in &operands[1..] {
+        acc = op(acc, f32r(value(o, pixel, channel)));
+        if round_result {
+          acc = f32r(acc);
+        }
+      }
+      out.push(acc);
+    }
+  }
+  Some(Expr::Image {
+    width,
+    height,
+    channels: channels as u8,
+    data: std::sync::Arc::new(out),
+    image_type: if round_result {
+      crate::syntax::ImageType::Real32
+    } else {
+      crate::syntax::ImageType::Real64
+    },
+    color_space,
+    display_size: None,
+  })
+}
+
 pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(0));
+  }
+  if let Some(image) = image_arithmetic(args, |a, b| a + b) {
+    return Ok(image);
   }
   if let Some(sum) = super::canonical_polynomial::canonical_polynomial_sum(args)
   {
@@ -8240,6 +8346,9 @@ fn absorb_coefficient_into_power(
 }
 
 pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(image) = image_arithmetic(args, |a, b| a * b) {
+    return Ok(image);
+  }
   if let Some(product) =
     super::canonical_polynomial::canonical_monomial_product(args)
   {
@@ -11268,6 +11377,11 @@ fn try_power_overflow(base: &Expr, exp: &Expr) -> Option<Expr> {
 
 /// Helper for Power of two arguments
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  if let Some(image) =
+    image_arithmetic_rounded(&[base.clone(), exp.clone()], f64::powf, false)
+  {
+    return Ok(image);
+  }
   // A negative integer power of a trig or hyperbolic function is its
   // reciprocal partner raised to the positive power: `Sin[x]^-1` is
   // `Csc[x]`, `Cot[x]^-2` is `Tan[x]^2`, `Sech[x]^-1` is `Cosh[x]`

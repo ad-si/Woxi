@@ -317,6 +317,33 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // `Interleaving -> False` gives the data channel-first, `{c, h, w}`:
+  // transpose it to the interleaved `{h, w, c}` layout and build from that.
+  let interleaving_false = |o: &Expr| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Interleaving")
+        && matches!(replacement.as_ref(), Expr::Identifier(b) if b == "False"))
+  };
+  if args[opt_start..].iter().any(interleaving_false)
+    && matches!(&args[0], Expr::List(planes)
+      if planes.iter().all(|p| matches!(p, Expr::List(rows)
+        if rows.iter().all(|r| matches!(r, Expr::List(_))))))
+  {
+    let interleaved = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Transpose",
+      vec![
+        args[0].clone(),
+        Expr::List(
+          vec![Expr::Integer(3), Expr::Integer(1), Expr::Integer(2)].into(),
+        ),
+      ],
+    ))?;
+    let mut new_args = vec![interleaved];
+    new_args
+      .extend(args[1..].iter().filter(|o| !interleaving_false(o)).cloned());
+    return image_constructor_ast(&new_args);
+  }
+
   // Treat the remaining args as options. Only Rule/RuleDelayed shapes are
   // accepted; anything else aborts to keep nonsense calls from sneaking
   // through.
@@ -484,6 +511,18 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // wolframscript rejects the pair outright rather than reinterpreting the
   // data, so `Image[{{0, 128, 255}, {255, 128, 0}}, ColorSpace -> "RGB"]`
   // (a one-channel 3x2 image) is an error, not a 1x2 RGB image.
+  let explicit_space = args[opt_start..].iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) | Expr::String(n) if n == "ColorSpace") => {
+      match replacement.as_ref() {
+        Expr::String(s) | Expr::Identifier(s) => Some(s.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  });
   if let Some(space) = args[opt_start..].iter().find_map(|opt| match opt {
     Expr::Rule {
       pattern,
@@ -521,7 +560,8 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::Image {
-    color_space: None,
+    // An explicit color space is remembered (ImageColorSpace, Options).
+    color_space: explicit_space.as_deref().and_then(color_space_tag),
     display_size: None,
     width,
     height,
