@@ -39426,3 +39426,33 @@ mod style_around_pane_in_layout {
     }
   }
 }
+
+mod circle_arc_extent {
+  use super::*;
+
+  fn view_box(code: &str) -> (f64, f64) {
+    let svg = export_svg(code);
+    let rest = svg.split("viewBox=\"0 0 ").nth(1).unwrap();
+    let mut it = rest.split('"').next().unwrap().split(' ');
+    (
+      it.next().unwrap().parse().unwrap(),
+      it.next().unwrap().parse().unwrap(),
+    )
+  }
+
+  /// An arc only occupies the angles it sweeps, so a half circle is twice
+  /// as wide as it is tall and a full circle is square.
+  #[test]
+  fn half_circle_arc_fits_its_swept_extent() {
+    let (w, h) = view_box("Graphics[Circle[{0, 0}, 1, {0, Pi}]]");
+    assert!((w - 2.0 * h).abs() < 1.0, "{w} x {h}");
+    let (w, h) = view_box("Graphics[Circle[{0, 0}, 1]]");
+    assert!((w - h).abs() < 1.0, "{w} x {h}");
+  }
+
+  #[test]
+  fn quarter_arc_with_offset_centre_is_square() {
+    let (w, h) = view_box("Graphics[Circle[{3, 5}, 2, {0, Pi/2}]]");
+    assert!((w - h).abs() < 1.0, "{w} x {h}");
+  }
+}
