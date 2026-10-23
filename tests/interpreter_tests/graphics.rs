@@ -39426,3 +39426,38 @@ mod style_around_pane_in_layout {
     }
   }
 }
+
+mod cylinder_axis_lists {
+  use super::*;
+
+  fn polygon_count(svg: &str) -> usize {
+    svg.matches("<polygon").count()
+  }
+
+  #[test]
+  fn list_of_axes_draws_one_cylinder_per_axis() {
+    let one = export_svg("Graphics3D[Cylinder[{{0,0,0},{1,1,1}}, 0.2]]");
+    let two = export_svg(
+      "Graphics3D[Cylinder[{{{0,0,0},{1,1,1}},{{1,0,0},{1,0,1}}}, 0.2]]",
+    );
+    assert!(polygon_count(&one) > 0, "{one}");
+    assert!(polygon_count(&two) > polygon_count(&one), "{two}");
+  }
+
+  #[test]
+  fn dynamic_radius_uses_its_current_value() {
+    let plain = export_svg("Graphics3D[Cylinder[{{0,0,0},{0,0,1}}, 0.2]]");
+    let dynamic =
+      export_svg("Graphics3D[Cylinder[{{0,0,0},{0,0,1}}, Dynamic[0.2]]]");
+    assert_eq!(plain, dynamic);
+  }
+
+  #[test]
+  fn list_of_axes_for_cones() {
+    let one = export_svg("Graphics3D[Cone[{{0,0,0},{1,1,1}}, 0.2]]");
+    let two = export_svg(
+      "Graphics3D[Cone[{{{0,0,0},{1,1,1}},{{1,0,0},{1,0,1}}}, 0.2]]",
+    );
+    assert!(polygon_count(&two) > polygon_count(&one), "{two}");
+  }
+}

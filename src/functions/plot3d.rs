@@ -4950,145 +4950,86 @@ fn collect_3d_primitives(
             push_text3d_label(label_expr, pos, (0.0, 0.0), style, prims);
           }
         }
-        "Cylinder" => {
-          let (p1, p2) = if args.is_empty() {
-            (
-              Point3D {
-                x: 0.0,
-                y: 0.0,
-                z: -1.0,
-              },
-              Point3D {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0,
-              },
-            )
-          } else if let Expr::List(items) = &args[0] {
-            if items.len() == 2 {
-              let a = parse_point3d(&items[0]).unwrap_or(Point3D {
-                x: 0.0,
-                y: 0.0,
-                z: -1.0,
-              });
-              let b = parse_point3d(&items[1]).unwrap_or(Point3D {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0,
-              });
-              (a, b)
-            } else {
-              (
-                Point3D {
-                  x: 0.0,
-                  y: 0.0,
-                  z: -1.0,
-                },
-                Point3D {
-                  x: 0.0,
-                  y: 0.0,
-                  z: 1.0,
-                },
-              )
+        // `Cylinder[{p1, p2}, r]` and `Cone[{p1, p2}, r]`; a list of
+        // `{p1, p2}` pairs draws one solid per axis, all with radius `r`
+        // (a `Dynamic[r]` radius is drawn at its current value).
+        "Cylinder" | "Cone" => {
+          let default_axis = (
+            Point3D {
+              x: 0.0,
+              y: 0.0,
+              z: -1.0,
+            },
+            Point3D {
+              x: 0.0,
+              y: 0.0,
+              z: 1.0,
+            },
+          );
+          let axes: Vec<(Point3D, Point3D)> = match args.first() {
+            None => vec![default_axis],
+            Some(first) => {
+              let first = evaluate_expr_to_expr(first).unwrap_or(first.clone());
+              match &first {
+                Expr::List(items)
+                  if !items.is_empty()
+                    && items.iter().all(|it| {
+                      matches!(it, Expr::List(pair) if pair.len() == 2
+                      && parse_point3d(&pair[0]).is_some()
+                      && parse_point3d(&pair[1]).is_some())
+                    }) =>
+                {
+                  items
+                    .iter()
+                    .filter_map(|it| match it {
+                      Expr::List(pair) => Some((
+                        parse_point3d(&pair[0])?,
+                        parse_point3d(&pair[1])?,
+                      )),
+                      _ => None,
+                    })
+                    .collect()
+                }
+                Expr::List(items) if items.len() == 2 => vec![(
+                  parse_point3d(&items[0]).unwrap_or(default_axis.0),
+                  parse_point3d(&items[1]).unwrap_or(default_axis.1),
+                )],
+                _ => vec![default_axis],
+              }
             }
-          } else {
-            (
-              Point3D {
-                x: 0.0,
-                y: 0.0,
-                z: -1.0,
-              },
-              Point3D {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0,
-              },
-            )
           };
-          let radius = if args.len() >= 2 {
-            try_eval_to_f64(
-              &evaluate_expr_to_expr(&args[1]).unwrap_or(args[1].clone()),
-            )
-            .unwrap_or(1.0)
-          } else {
-            1.0
-          };
-          prims.push(Primitive3D::Cylinder {
-            p1,
-            p2,
-            radius,
-            style: style.clone(),
-          });
-        }
-        "Cone" => {
-          let (p1, p2) = if args.is_empty() {
-            (
-              Point3D {
-                x: 0.0,
-                y: 0.0,
-                z: -1.0,
-              },
-              Point3D {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0,
-              },
-            )
-          } else if let Expr::List(items) = &args[0] {
-            if items.len() == 2 {
-              let a = parse_point3d(&items[0]).unwrap_or(Point3D {
-                x: 0.0,
-                y: 0.0,
-                z: -1.0,
-              });
-              let b = parse_point3d(&items[1]).unwrap_or(Point3D {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0,
-              });
-              (a, b)
-            } else {
-              (
-                Point3D {
-                  x: 0.0,
-                  y: 0.0,
-                  z: -1.0,
-                },
-                Point3D {
-                  x: 0.0,
-                  y: 0.0,
-                  z: 1.0,
-                },
-              )
+          let radius = match args.get(1) {
+            Some(r) => {
+              let r = match r {
+                Expr::FunctionCall { name, args: inner }
+                  if name == "Dynamic" && !inner.is_empty() =>
+                {
+                  &inner[0]
+                }
+                other => other,
+              };
+              try_eval_to_f64(&evaluate_expr_to_expr(r).unwrap_or(r.clone()))
+                .unwrap_or(1.0)
             }
-          } else {
-            (
-              Point3D {
-                x: 0.0,
-                y: 0.0,
-                z: -1.0,
-              },
-              Point3D {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0,
-              },
-            )
+            None => 1.0,
           };
-          let radius = if args.len() >= 2 {
-            try_eval_to_f64(
-              &evaluate_expr_to_expr(&args[1]).unwrap_or(args[1].clone()),
-            )
-            .unwrap_or(1.0)
-          } else {
-            1.0
-          };
-          prims.push(Primitive3D::Cone {
-            p1,
-            p2,
-            radius,
-            style: style.clone(),
-          });
+          for (p1, p2) in axes {
+            prims.push(if name == "Cylinder" {
+              Primitive3D::Cylinder {
+                p1,
+                p2,
+                radius,
+                style: style.clone(),
+              }
+            } else {
+              Primitive3D::Cone {
+                p1,
+                p2,
+                radius,
+                style: style.clone(),
+              }
+            });
+          }
         }
         // Tube[curve], Tube[curve, r] and Tube[curve, {r1, …, rn}] — a
         // surface of revolution about a polyline, one radius per vertex.
