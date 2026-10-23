@@ -2769,6 +2769,18 @@ mod graphics {
       assert!(!svg.contains(">yout</text>"), "{svg}");
     }
 
+    /// A tick label wrapped in `FormBox[…, TraditionalForm]` (as notebooks
+    /// store typeset labels) draws its content, not the wrapper.
+    #[test]
+    fn form_box_tick_labels_draw_their_content() {
+      let svg = export_svg(
+        "Plot[x^2, {x, 0, 1}, Ticks -> {Automatic, \
+         {{0.5, FormBox[\"half\", TraditionalForm]}}}]",
+      );
+      assert!(svg.contains(">half</text>"), "{svg}");
+      assert!(!svg.contains("FormBox"), "{svg}");
+    }
+
     /// `Ticks -> False` (alone or on both sides) hides every tick label,
     /// the same as `Ticks -> None`.
     #[test]
