@@ -791,6 +791,29 @@ fn coeff_tree_fold(xs: &[Coeff], op: fn(&Coeff, &Coeff) -> Coeff) -> Coeff {
   }
 }
 
+/// Whether a summand of a Plus is (a multiple of, or a sum holding) a
+/// `Music…` object. Shallow on purpose: it runs for every Plus.
+fn args_mention_music_object(args: &[Expr]) -> bool {
+  fn is_music(e: &Expr, depth: usize) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        name.starts_with("Music")
+          || (depth > 0
+            && matches!(name.as_str(), "Times" | "Plus")
+            && args.iter().any(|a| is_music(a, depth - 1)))
+      }
+      Expr::BinaryOp { left, right, .. } if depth > 0 => {
+        is_music(left, depth - 1) || is_music(right, depth - 1)
+      }
+      Expr::UnaryOp { operand, .. } if depth > 0 => {
+        is_music(operand, depth - 1)
+      }
+      _ => false,
+    }
+  }
+  args.iter().any(|a| is_music(a, 2))
+}
+
 pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(0));
@@ -875,50 +898,55 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return result;
     }
 
-    // Handle MusicChord transposition (WL 15): `MusicChord[{…}] + MusicInterval[…]`
-    // shifts every chord tone by the interval span. Checked before the pitch sum
-    // since a chord summand is not itself a pitch.
-    if let Some(result) =
-      crate::functions::music_ast::try_music_chord_plus_interval(args)
-    {
-      return Ok(result);
-    }
+    // Music arithmetic (WL 15) only applies when a summand is a music
+    // object; the handlers flatten and clone every term, so they are not
+    // run for ordinary sums.
+    if args_mention_music_object(args) {
+      // Handle MusicChord transposition (WL 15): `MusicChord[{…}] + MusicInterval[…]`
+      // shifts every chord tone by the interval span. Checked before the pitch sum
+      // since a chord summand is not itself a pitch.
+      if let Some(result) =
+        crate::functions::music_ast::try_music_chord_plus_interval(args)
+      {
+        return Ok(result);
+      }
 
-    // Handle music container/event transposition (WL 15): adding a MusicInterval
-    // to a MusicNote/MusicMeasure/MusicVoice/MusicScore/MusicScale shifts every
-    // pitch it contains by the interval span.
-    if let Some(result) =
-      crate::functions::music_ast::try_music_container_plus_interval(args)
-    {
-      return Ok(result);
-    }
+      // Handle music container/event transposition (WL 15): adding a MusicInterval
+      // to a MusicNote/MusicMeasure/MusicVoice/MusicScore/MusicScale shifts every
+      // pitch it contains by the interval span.
+      if let Some(result) =
+        crate::functions::music_ast::try_music_container_plus_interval(args)
+      {
+        return Ok(result);
+      }
 
-    // Handle MusicPitch arithmetic (WL 15): adding/subtracting pitch objects
-    // combines them along the diatonic-position and MIDI-number axes; adding a
-    // MusicInterval transposes the pitch.
-    if let Some(result) =
-      crate::functions::music_ast::try_music_pitch_plus(args)
-    {
-      return Ok(result);
-    }
+      // Handle MusicPitch arithmetic (WL 15): adding/subtracting pitch objects
+      // combines them along the diatonic-position and MIDI-number axes; adding a
+      // MusicInterval transposes the pitch.
+      if let Some(result) =
+        crate::functions::music_ast::try_music_pitch_plus(args)
+      {
+        return Ok(result);
+      }
 
-    // Handle MusicDuration arithmetic (WL 15): a sum of (scaled) durations
-    // combines their rhythmic values, e.g. `3 MusicDuration[1/2] + MusicDuration[1/4]`
-    // → `MusicDuration[<|"Duration" -> 7/4|>]`.
-    if let Some(products) =
-      crate::functions::music_ast::music_duration_plus_terms(args)
-    {
-      // Evaluate each `Times[coeff, value]` product before summing, then add the
-      // resulting rhythmic values exactly.
-      let values: Result<Vec<Expr>, _> = products
-        .iter()
-        .map(crate::evaluator::evaluate_expr_to_expr)
-        .collect();
-      let total =
-        crate::evaluator::evaluate_function_call_ast("Plus", &values?)?;
-      return Ok(crate::functions::music_ast::music_duration_from_value(
-        total,
-      ));
+      // Handle MusicDuration arithmetic (WL 15): a sum of (scaled) durations
+      // combines their rhythmic values, e.g. `3 MusicDuration[1/2] + MusicDuration[1/4]`
+      // → `MusicDuration[<|"Duration" -> 7/4|>]`.
+      if let Some(products) =
+        crate::functions::music_ast::music_duration_plus_terms(args)
+      {
+        // Evaluate each `Times[coeff, value]` product before summing, then add the
+        // resulting rhythmic values exactly.
+        let values: Result<Vec<Expr>, _> = products
+          .iter()
+          .map(crate::evaluator::evaluate_expr_to_expr)
+          .collect();
+        let total =
+          crate::evaluator::evaluate_function_call_ast("Plus", &values?)?;
+        return Ok(crate::functions::music_ast::music_duration_from_value(
+          total,
+        ));
+      }
     }
 
     // Around (uncertain-value) error propagation.

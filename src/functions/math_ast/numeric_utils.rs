@@ -1448,16 +1448,36 @@ pub fn try_extract_complex_exact_big(expr: &Expr) -> Option<BigComplex> {
   }
 }
 
-fn contains_big_integer(expr: &Expr) -> bool {
-  match expr {
-    Expr::BigInteger(_) => true,
-    Expr::UnaryOp { operand, .. } => contains_big_integer(operand),
-    Expr::BinaryOp { left, right, .. } => {
-      contains_big_integer(left) || contains_big_integer(right)
+/// Whether `expr` is built only from numbers, `I`, `Rational`, `Plus`,
+/// `Times` and negation, with at least one BigInteger among them: the only
+/// shape [`try_extract_complex_exact_beyond_i128`] can succeed on. Stops at
+/// the first leaf that is not a number, so a large symbolic expression costs
+/// next to nothing — this runs for every Head/pattern check.
+fn numeric_with_big_integer(expr: &Expr) -> bool {
+  fn walk(e: &Expr, big: &mut bool) -> bool {
+    match e {
+      Expr::BigInteger(_) => {
+        *big = true;
+        true
+      }
+      Expr::Integer(_) => true,
+      Expr::Identifier(name) => name == "I",
+      Expr::UnaryOp { operand, .. } => walk(operand, big),
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus | BinaryOperator::Times,
+        left,
+        right,
+      } => walk(left, big) && walk(right, big),
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Plus" | "Times" | "Rational") =>
+      {
+        args.iter().all(|a| walk(a, big))
+      }
+      _ => false,
     }
-    Expr::FunctionCall { args, .. } => args.iter().any(contains_big_integer),
-    _ => false,
   }
+  let mut big = false;
+  walk(expr, &mut big) && big
 }
 
 /// A non-real exact complex number with a part past i128, the case
@@ -1466,7 +1486,7 @@ fn contains_big_integer(expr: &Expr) -> bool {
 pub fn try_extract_complex_exact_beyond_i128(
   expr: &Expr,
 ) -> Option<BigComplex> {
-  if !contains_big_integer(expr) {
+  if !numeric_with_big_integer(expr) {
     return None;
   }
   try_extract_complex_exact_big(expr).filter(|(_, im)| !im.0.is_zero())
