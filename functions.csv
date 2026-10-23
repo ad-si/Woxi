@@ -1684,7 +1684,7 @@ WordBoundary,Represents a word boundary in string patterns (like regex \b),✅,p
 Mouseover,Mouseover display wrapper (stays symbolic),✅,unevaluated,6.0,1683
 AffineStateSpaceModel,Affine state-space model,,unevaluated,10.0,1687
 LogLikelihood,Log-likelihood of numeric observations under a distribution,✅,pure,8.0,1687
-RectangleChart,Rectangle chart,,unevaluated,7.0,1687
+RectangleChart,Chart of rectangles with given widths and heights,✅,pure,7.0,1687
 SpanFromAbove,Grid element that merges into the cell above it,✅,none,6.0,1687
 Cubics,Option for solving cubic equations using radical formulas,✅,pure,1.0,1688
 MinValue,Global symbolic minimum value of a function over variables with optional constraints and an optional Reals or Integers domain,✅,pure,7.0,1690
@@ -3154,7 +3154,7 @@ CalendarType,,,,9.0,3200
 EntityPropertyClass,,🚫,,10.0,3200
 FoldWhile,Folds while a test holds returning the first failing value,✅,pure,12.2,3200
 MouseAnnotation,,🚫,,6.0,3200
-RectangleChart3D,,🚫,,7.0,3200
+RectangleChart3D,3D chart of cuboids with given widths depths and heights,✅,pure,7.0,3200
 RegionMoment,Polynomial moment integral of coordinates over a region,✅,pure,10.4,3200
 StringPadRight,Pads a string on the right to a specified length; a bare list of strings is padded to the longest,✅,pure,10.1,3200
 CellLabelAutoDelete,,🚫,,3.0,3215

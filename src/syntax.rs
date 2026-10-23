@@ -642,20 +642,21 @@ fn is_childless_variant(expr: &Expr) -> bool {
   )
 }
 
-fn push_compound_children(
-  children: impl IntoIterator<Item = Expr>,
-  stack: &mut Vec<Expr>,
-) {
-  for child in children {
-    if !is_childless_variant(&child) {
-      stack.push(child);
-    }
-  }
+/// Move a boxed child out, leaving a childless placeholder in the same
+/// allocation (replacing the `Box` itself would allocate a new one).
+fn take_boxed(b: &mut Expr) -> Expr {
+  std::mem::replace(b, Expr::Integer(0))
 }
 
-/// Extract all child `Expr` nodes from a variant, leaving it childless.
-/// Used by the iterative `Drop` implementation.
-fn take_expr_children(expr: &mut Expr, stack: &mut Vec<Expr>) {
+/// Detach every child `Expr` of `expr`, leaving it childless, and hand each
+/// compound one to `sink` (leaves are dropped on the spot). A shared list
+/// that other clones still hold only loses a reference.
+fn take_expr_children(expr: &mut Expr, sink: &mut dyn FnMut(Expr)) {
+  let mut give = |child: Expr| {
+    if !is_childless_variant(&child) {
+      sink(child);
+    }
+  };
   match expr {
     // Leaf variants — no children
     Expr::Integer(_)
@@ -672,109 +673,225 @@ fn take_expr_children(expr: &mut Expr, stack: &mut Vec<Expr>) {
     | Expr::Image { .. }
     | Expr::Graphics { .. } => {}
 
-    // Vec<Expr> children
-    Expr::CompoundExpr(children) => {
-      stack.append(children);
+    Expr::CompoundExpr(children)
+    | Expr::Comparison {
+      operands: children, ..
+    } => {
+      for c in std::mem::take(children) {
+        give(c);
+      }
     }
-    // Only children that own further children go on the work stack; leaves
-    // (the numbers of a large data array) are dropped right here, so freeing
-    // a packed-array-like list does not copy every element through `stack`.
-    // A shared list that other clones still hold only loses a reference.
-    Expr::List(children) => {
+    Expr::List(children) | Expr::FunctionCall { args: children, .. } => {
       if let Some(items) = std::mem::take(children).into_unique_elements() {
-        push_compound_children(items, stack);
+        for c in items {
+          give(c);
+        }
       }
-    }
-    Expr::FunctionCall { args, .. } => {
-      if let Some(items) = std::mem::take(args).into_unique_elements() {
-        push_compound_children(items, stack);
-      }
-    }
-    Expr::Comparison { operands, .. } => {
-      stack.append(operands);
     }
 
-    // Box<Expr> children (two boxes)
-    Expr::BinaryOp { left, right, .. } => {
-      stack.push(*std::mem::replace(left, Box::new(Expr::Integer(0))));
-      stack.push(*std::mem::replace(right, Box::new(Expr::Integer(0))));
+    Expr::BinaryOp {
+      left: a, right: b, ..
     }
-    Expr::Rule {
-      pattern,
-      replacement,
+    | Expr::Rule {
+      pattern: a,
+      replacement: b,
     }
     | Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } => {
-      stack.push(*std::mem::replace(pattern, Box::new(Expr::Integer(0))));
-      stack.push(*std::mem::replace(replacement, Box::new(Expr::Integer(0))));
+      pattern: a,
+      replacement: b,
     }
-    Expr::ReplaceAll { expr, rules }
-    | Expr::ReplaceRepeated { expr, rules } => {
-      stack.push(*std::mem::replace(expr, Box::new(Expr::Integer(0))));
-      stack.push(*std::mem::replace(rules, Box::new(Expr::Integer(0))));
-    }
-    Expr::Map { func, list }
-    | Expr::Apply { func, list }
-    | Expr::MapApply { func, list } => {
-      stack.push(*std::mem::replace(func, Box::new(Expr::Integer(0))));
-      stack.push(*std::mem::replace(list, Box::new(Expr::Integer(0))));
-    }
-    Expr::PrefixApply { func, arg } => {
-      stack.push(*std::mem::replace(func, Box::new(Expr::Integer(0))));
-      stack.push(*std::mem::replace(arg, Box::new(Expr::Integer(0))));
-    }
-    Expr::Postfix { expr, func } => {
-      stack.push(*std::mem::replace(expr, Box::new(Expr::Integer(0))));
-      stack.push(*std::mem::replace(func, Box::new(Expr::Integer(0))));
-    }
-    Expr::Part { expr, index } => {
-      stack.push(*std::mem::replace(expr, Box::new(Expr::Integer(0))));
-      stack.push(*std::mem::replace(index, Box::new(Expr::Integer(0))));
+    | Expr::ReplaceAll { expr: a, rules: b }
+    | Expr::ReplaceRepeated { expr: a, rules: b }
+    | Expr::Map { func: a, list: b }
+    | Expr::Apply { func: a, list: b }
+    | Expr::MapApply { func: a, list: b }
+    | Expr::PrefixApply { func: a, arg: b }
+    | Expr::Postfix { expr: a, func: b }
+    | Expr::Part { expr: a, index: b } => {
+      give(take_boxed(a));
+      give(take_boxed(b));
     }
 
-    // Single Box<Expr>
-    Expr::UnaryOp { operand, .. } => {
-      stack.push(*std::mem::replace(operand, Box::new(Expr::Integer(0))));
-    }
-    Expr::Function { body } => {
-      stack.push(*std::mem::replace(body, Box::new(Expr::Integer(0))));
-    }
-    Expr::NamedFunction { body, .. } => {
-      stack.push(*std::mem::replace(body, Box::new(Expr::Integer(0))));
-    }
+    Expr::UnaryOp { operand: a, .. }
+    | Expr::Function { body: a }
+    | Expr::NamedFunction { body: a, .. }
+    | Expr::PatternTest { test: a, .. } => give(take_boxed(a)),
     Expr::PatternOptional { default, .. } => {
       if let Some(d) = default {
-        stack.push(*std::mem::replace(d, Box::new(Expr::Integer(0))));
+        give(take_boxed(d));
       }
     }
-    Expr::PatternTest { test, .. } => {
-      stack.push(*std::mem::replace(test, Box::new(Expr::Integer(0))));
-    }
 
-    // Box<Expr> + Vec<Expr>
     Expr::CurriedCall { func, args } => {
-      stack.push(*std::mem::replace(func, Box::new(Expr::Integer(0))));
-      stack.append(args);
+      give(take_boxed(func));
+      for c in std::mem::take(args) {
+        give(c);
+      }
     }
 
-    // Vec<(Expr, Expr)>
     Expr::Association(pairs) => {
-      for (k, v) in pairs.drain(..) {
-        stack.push(k);
-        stack.push(v);
+      for (k, v) in std::mem::take(pairs) {
+        give(k);
+        give(v);
       }
     }
   }
 }
 
+thread_local! {
+  static DROP_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+  static CLONE_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+impl Expr {
+  /// One level of `Clone` for a compound variant; the children's own
+  /// `clone` calls recurse (and track the depth).
+  fn clone_children_recursively(&self) -> Self {
+    let bx = |b: &Self| Box::new(b.clone());
+    match self {
+      Self::List(items) => Self::List(items.clone()),
+      Self::FunctionCall { name, args } => Self::FunctionCall {
+        name: name.clone(),
+        args: args.clone(),
+      },
+      Self::BinaryOp { op, left, right } => Self::BinaryOp {
+        op: *op,
+        left: bx(left),
+        right: bx(right),
+      },
+      Self::UnaryOp { op, operand } => Self::UnaryOp {
+        op: *op,
+        operand: bx(operand),
+      },
+      Self::Comparison {
+        operands,
+        operators,
+      } => Self::Comparison {
+        operands: operands.clone(),
+        operators: operators.clone(),
+      },
+      Self::CompoundExpr(items) => Self::CompoundExpr(items.clone()),
+      Self::Association(pairs) => Self::Association(pairs.clone()),
+      Self::Rule {
+        pattern,
+        replacement,
+      } => Self::Rule {
+        pattern: bx(pattern),
+        replacement: bx(replacement),
+      },
+      Self::RuleDelayed {
+        pattern,
+        replacement,
+      } => Self::RuleDelayed {
+        pattern: bx(pattern),
+        replacement: bx(replacement),
+      },
+      Self::ReplaceAll { expr, rules } => Self::ReplaceAll {
+        expr: bx(expr),
+        rules: bx(rules),
+      },
+      Self::ReplaceRepeated { expr, rules } => Self::ReplaceRepeated {
+        expr: bx(expr),
+        rules: bx(rules),
+      },
+      Self::Map { func, list } => Self::Map {
+        func: bx(func),
+        list: bx(list),
+      },
+      Self::Apply { func, list } => Self::Apply {
+        func: bx(func),
+        list: bx(list),
+      },
+      Self::MapApply { func, list } => Self::MapApply {
+        func: bx(func),
+        list: bx(list),
+      },
+      Self::PrefixApply { func, arg } => Self::PrefixApply {
+        func: bx(func),
+        arg: bx(arg),
+      },
+      Self::Postfix { expr, func } => Self::Postfix {
+        expr: bx(expr),
+        func: bx(func),
+      },
+      Self::Part { expr, index } => Self::Part {
+        expr: bx(expr),
+        index: bx(index),
+      },
+      Self::CurriedCall { func, args } => Self::CurriedCall {
+        func: bx(func),
+        args: args.clone(),
+      },
+      Self::Function { body } => Self::Function { body: bx(body) },
+      Self::NamedFunction {
+        params,
+        body,
+        bracketed,
+      } => Self::NamedFunction {
+        params: params.clone(),
+        body: bx(body),
+        bracketed: *bracketed,
+      },
+      Self::PatternOptional {
+        name,
+        head,
+        default,
+      } => Self::PatternOptional {
+        name: name.clone(),
+        head: head.clone(),
+        default: default.as_deref().map(bx),
+      },
+      Self::PatternTest {
+        name,
+        head,
+        blank_type,
+        test,
+      } => Self::PatternTest {
+        name: name.clone(),
+        head: head.clone(),
+        blank_type: *blank_type,
+        test: bx(test),
+      },
+      // Leaves are cloned by the fast path in `clone`.
+      Self::Integer(_)
+      | Self::BigInteger(_)
+      | Self::Real(_)
+      | Self::BigFloat(_, _)
+      | Self::String(_)
+      | Self::Identifier(_)
+      | Self::Slot(_)
+      | Self::SlotSequence(_)
+      | Self::Pattern { .. }
+      | Self::Constant(_)
+      | Self::Raw(_)
+      | Self::Image { .. }
+      | Self::Graphics { .. } => unreachable!("leaf variants clone directly"),
+    }
+  }
+}
+
+/// Nesting up to which `Expr` drops and clones recurse directly; deeper trees
+/// switch to an explicit work stack so they cannot overflow the call stack.
+const SHALLOW_RECURSION_LIMIT: u32 = 128;
+
 impl Drop for Expr {
   fn drop(&mut self) {
+    if is_childless_variant(self) {
+      return;
+    }
+    let depth = DROP_DEPTH.with(std::cell::Cell::get);
+    if depth < SHALLOW_RECURSION_LIMIT {
+      // Children are dropped (recursively) inside the depth bracket, which
+      // costs no allocation for the common shallow expression.
+      DROP_DEPTH.with(|d| d.set(depth + 1));
+      take_expr_children(self, &mut drop);
+      DROP_DEPTH.with(|d| d.set(depth));
+      return;
+    }
     let mut work = Vec::new();
-    take_expr_children(self, &mut work);
+    take_expr_children(self, &mut |c| work.push(c));
     while let Some(mut child) = work.pop() {
-      take_expr_children(&mut child, &mut work);
+      take_expr_children(&mut child, &mut |c| work.push(c));
       // child now has no Expr children, so its recursive drop is trivial
     }
   }
@@ -839,7 +956,18 @@ impl Clone for Expr {
           structure: structure.clone(),
         };
       }
-      _ => {} // fall through to iterative clone
+      _ => {}
+    }
+
+    // Shallow trees clone recursively, which needs no work-stack
+    // allocations; past the depth limit the iterative clone below takes
+    // over so deep trees cannot overflow the call stack.
+    let depth = CLONE_DEPTH.with(std::cell::Cell::get);
+    if depth < SHALLOW_RECURSION_LIMIT {
+      CLONE_DEPTH.with(|d| d.set(depth + 1));
+      let cloned = self.clone_children_recursively();
+      CLONE_DEPTH.with(|d| d.set(depth));
+      return cloned;
     }
 
     // Iterative clone for non-leaf variants
