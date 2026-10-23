@@ -641,6 +641,11 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     // it says — a Demonstration writes `AxesLabel -> TraditionalForm /@ {t,
     // y}`, and dropping the wrapper would leave both axes unlabelled.
     Expr::FunctionCall { name, args }
+      if name == "FormBox" && args.len() == 2 =>
+    {
+      expr_to_label(&args[0])
+    }
+    Expr::FunctionCall { name, args }
       if matches!(
         name.as_str(),
         "TraditionalForm"
