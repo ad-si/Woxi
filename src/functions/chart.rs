@@ -1884,7 +1884,17 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
         "AxesLabel" | "FrameLabel" => {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.clone());
-          if let Expr::List(items) = &val
+          // The nested `{{left, right}, {bottom, top}}` form of a
+          // `FrameLabel` goes through the shared parser; only its bottom and
+          // left edges are drawn on a chart.
+          if name == "FrameLabel"
+            && let Expr::List(items) = &val
+            && items.len() == 2
+            && items.iter().all(|i| matches!(i, Expr::List(_)))
+          {
+            let fl = crate::functions::plot::parse_frame_label(&val);
+            opts.frame_label = Some((fl.bottom, fl.left));
+          } else if let Expr::List(items) = &val
             && items.len() >= 2
           {
             let x = expr_to_label(&items[0]).unwrap_or_default();
