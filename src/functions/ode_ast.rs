@@ -55,14 +55,106 @@ fn retag_unevaluated(expr: Expr, from: &str, to: &str) -> Expr {
   expr
 }
 
+/// The name of the (first) unknown function in DSolve's second argument:
+/// `y`, `y[x]`, or the first of a list of them.
+fn dsolve_function_name(dep: &Expr) -> Option<String> {
+  match dep {
+    Expr::Identifier(name) => Some(name.clone()),
+    Expr::FunctionCall { name, .. } => Some(name.clone()),
+    Expr::List(items) => items.first().and_then(dsolve_function_name),
+    _ => None,
+  }
+}
+
+/// Rewrite each equation `lhs == rhs` whose common denominator involves the
+/// unknown function `fname` in explicit form, solved for its highest
+/// derivative: `u'[x]/u[x] == x` becomes `u'[x] == x u[x]`. The classifiers
+/// read explicit and polynomial forms; substituting into the quotient gave
+/// 0/0. Equations already explicit in that derivative are left alone.
+fn clear_unknown_denominators(
+  eqns: &Expr,
+  fname: &str,
+) -> Result<Expr, InterpreterError> {
+  if let Expr::List(items) = eqns {
+    Ok(Expr::List(
+      items
+        .iter()
+        .map(|e| clear_unknown_denominators(e, fname))
+        .collect::<Result<Vec<_>, _>>()?
+        .into(),
+    ))
+  } else {
+    let Some((lhs, rhs)) = as_equal_pair(eqns) else {
+      return Ok(eqns.clone());
+    };
+    let order = max_derivative_order(eqns, fname);
+    if order == 0 {
+      return Ok(eqns.clone());
+    }
+    let ev = crate::evaluator::evaluate_expr_to_expr;
+    let together = ev(&call(
+      "Together",
+      vec![call(
+        "Plus",
+        vec![
+          lhs.clone(),
+          call("Times", vec![Expr::Integer(-1), rhs.clone()]),
+        ],
+      )],
+    ))?;
+    let denominator = ev(&call("Denominator", vec![together]))?;
+    if !mentions_symbol(&denominator, fname) {
+      return Ok(eqns.clone());
+    }
+    // The highest derivative `Derivative[order][fname][x]` as it appears.
+    fn find_derivative(e: &Expr, fname: &str, order: usize) -> Option<Expr> {
+      if let Some((k, _)) = extract_derivative_order_and_point(e, fname)
+        && k == order
+      {
+        return Some(e.clone());
+      }
+      expr_children(e)
+        .into_iter()
+        .find_map(|c| find_derivative(c, fname, order))
+    }
+    let Some(top) = find_derivative(eqns, fname, order) else {
+      return Ok(eqns.clone());
+    };
+    let solved = crate::functions::solve_ast(&[eqns.clone(), top.clone()])?;
+    if let Expr::List(sols) = &solved
+      && let [Expr::List(rules)] = sols.as_slice()
+      && let [Expr::Rule { replacement, .. }] = rules.as_slice()
+    {
+      return Ok(Expr::Comparison {
+        operands: vec![top, replacement.as_ref().clone()],
+        operators: vec![ComparisonOp::Equal],
+      });
+    }
+    Ok(eqns.clone())
+  }
+}
+
 fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Ok(unevaluated("DSolve", args));
   }
 
-  let eqns_arg = &args[0];
   let dep_arg = &args[1];
   let indep_var = &args[2];
+
+  // An ODE with the unknown in a denominator (`u'[x]/u[x] == x`,
+  // `-k u'[x]/u''[x] == x`) is solved as its numerator over a common
+  // denominator, `u'[x] - x u[x] == 0`: the classifiers below read
+  // polynomial forms, and substituting into the quotient gave 0/0.
+  let cleared;
+  let eqns_arg = if matches!(indep_var, Expr::Identifier(_))
+    && let Some(fname) = dsolve_function_name(dep_arg)
+  {
+    cleared = clear_unknown_denominators(&args[0], &fname)?;
+    &cleared
+  } else {
+    &args[0]
+  };
 
   // Purely algebraic case: when the equation(s) contain no derivatives of the
   // dependent function, DSolve reduces to Solve for the dependent function(s),

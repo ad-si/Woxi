@@ -21842,3 +21842,73 @@ mod ndsolve_option_lists_and_nested_equations {
     );
   }
 }
+
+mod lambert_w_solutions {
+  use super::*;
+
+  // Exact forms from wolframscript.
+  #[test]
+  fn product_times_exponential() {
+    assert_eq!(
+      interpret("Quiet[Solve[x Exp[-x] == 18/100, x]]").unwrap(),
+      "{{x -> -ProductLog[-9/50]}, {x -> -ProductLog[-1, -9/50]}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[x^2 Exp[x] == 1, x]]").unwrap(),
+      "{{x -> 2*ProductLog[-1/2]}, {x -> 2*ProductLog[1/2]}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[x Exp[2 x + 1] == 3, x]]").unwrap(),
+      "{{x -> ProductLog[6/E]/2}}"
+    );
+  }
+
+  #[test]
+  fn exponential_against_linear() {
+    assert_eq!(
+      interpret("Quiet[Solve[Exp[x] == 3 x + 2, x]]").unwrap(),
+      "{{x -> (-2 - 3*ProductLog[-1/3*1/E^(2/3)])/3}, \
+       {x -> (-2 - 3*ProductLog[-1, -1/3*1/E^(2/3)])/3}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[Exp[-x/2] == x, x]]").unwrap(),
+      "{{x -> 2*ProductLog[1/2]}}"
+    );
+  }
+
+  #[test]
+  fn machine_input_gives_numbers() {
+    assert_eq!(
+      interpret(
+        "Chop[(x /. Quiet[Solve[-4 x Exp[-x] == -0.72, x]]) - \
+         {0.22553980315892086, 2.712767911179645}, 10^-12]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn product_log_branches_numerically() {
+    assert_eq!(
+      interpret(
+        "Chop[{N[ProductLog[-1, -9/50]] + 2.712767911179645, \
+         ProductLog[1, 2.] - (-0.8343103666311101 + 4.5302659985550084 I)}, 10^-12]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+}
+
+mod dsolve_unknown_in_denominator {
+  use super::*;
+
+  #[test]
+  fn solved_for_the_derivative_first() {
+    assert_eq!(
+      interpret("DSolve[u'[x]/u[x] == x, u[x], x]").unwrap(),
+      "{{u[x] -> E^(x^2/2)*C[1]}}"
+    );
+  }
+}

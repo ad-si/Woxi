@@ -3414,6 +3414,12 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // `x^p E^(b x + c) == k` and `β E^(b x + c) + α x + d == 0` are solved
+  // with ProductLog.
+  if let Some(result) = try_solve_lambert(&poly, var)? {
+    return Ok(result);
+  }
+
   // Try to solve equations with invertible functions:
   // Log[expr] == a → expr == E^a, Sqrt[expr] == a → expr == a^2, etc.
   if let Some(result) = try_solve_inverse_function(&args[0], var) {
@@ -5742,6 +5748,334 @@ fn try_solve_isolated_invertible_atom(
     return Some(Ok(result));
   }
   None
+}
+
+/// Solve `g == 0` for `var` with the Lambert W function when `g` is
+/// `a x^p E^(b x + c) + d` (p a positive integer) or
+/// `β E^(b x + c) + α x + d`, the shapes wolframscript answers with
+/// `ProductLog`. Every root gets the principal branch, and a real argument
+/// in (-1/e, 0) the `-1` branch as well. Machine-real input gives numbers.
+fn try_solve_lambert(
+  g: &Expr,
+  var: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  fn has_var_exponential(e: &Expr, var: &str) -> bool {
+    let here = match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        matches!(left.as_ref(), Expr::Constant(c) | Expr::Identifier(c) if c == "E")
+          && contains_var(right, var)
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        matches!(&args[0], Expr::Constant(c) | Expr::Identifier(c) if c == "E")
+          && contains_var(&args[1], var)
+      }
+      Expr::FunctionCall { name, args } if name == "Exp" && args.len() == 1 => {
+        contains_var(&args[0], var)
+      }
+      _ => false,
+    };
+    here
+      || crate::syntax::expr_children(e)
+        .into_iter()
+        .any(|c| has_var_exponential(c, var))
+  }
+  if !has_var_exponential(g, var) {
+    return Ok(None);
+  }
+  let ev = crate::evaluator::evaluate_expr_to_expr;
+  let x = Expr::Identifier(var.to_string());
+  let free = |e: &Expr| !contains_var(e, var);
+  let expanded = ev(&call("Expand", vec![g.clone()]))?;
+  let terms: Vec<Expr> = match ev(&call(
+    "Apply",
+    vec![Expr::Identifier("List".into()), expanded.clone()],
+  ))? {
+    Expr::List(ref items)
+      if matches!(&expanded, Expr::FunctionCall { name, .. } if name == "Plus")
+        || matches!(
+          &expanded,
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus | BinaryOperator::Minus,
+            ..
+          }
+        ) =>
+    {
+      items.to_vec()
+    }
+    _ => vec![expanded.clone()],
+  };
+  let (var_terms, const_terms): (Vec<Expr>, Vec<Expr>) =
+    terms.into_iter().partition(|t| !free(t));
+  let d = ev(&call("Plus", const_terms))?;
+
+  // `t` as `a x^p E^(b x + c)`: (a, p, b, c).
+  let split_exp_term = |t: &Expr| -> Result<
+    Option<(Expr, i128, Expr, Expr)>,
+    InterpreterError,
+  > {
+    let factors: Vec<Expr> = match ev(&call(
+      "Apply",
+      vec![Expr::Identifier("List".into()), t.clone()],
+    ))? {
+      Expr::List(ref items)
+        if matches!(t, Expr::FunctionCall { name, .. } if name == "Times")
+          || matches!(
+            t,
+            Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              ..
+            }
+          ) =>
+      {
+        items.to_vec()
+      }
+      _ => vec![t.clone()],
+    };
+    let mut exponent: Option<Expr> = None;
+    let mut rest: Vec<Expr> = Vec::new();
+    for f in factors {
+      let e = match &f {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } if matches!(left.as_ref(), Expr::Constant(c) | Expr::Identifier(c) if c == "E")
+          && contains_var(right, var) =>
+        {
+          Some(right.as_ref().clone())
+        }
+        Expr::FunctionCall { name, args }
+          if name == "Power"
+            && args.len() == 2
+            && matches!(&args[0], Expr::Constant(c) | Expr::Identifier(c) if c == "E")
+            && contains_var(&args[1], var) =>
+        {
+          Some(args[1].clone())
+        }
+        _ => None,
+      };
+      match e {
+        Some(e) if exponent.is_none() => exponent = Some(e),
+        Some(_) => return Ok(None),
+        None => rest.push(f),
+      }
+    }
+    let Some(e) = exponent else { return Ok(None) };
+    let b = ev(&call(
+      "Coefficient",
+      vec![e.clone(), x.clone(), Expr::Integer(1)],
+    ))?;
+    let c = ev(&call(
+      "Expand",
+      vec![call(
+        "Plus",
+        vec![
+          e.clone(),
+          call("Times", vec![Expr::Integer(-1), b.clone(), x.clone()]),
+        ],
+      )],
+    ))?;
+    if !free(&b) || !free(&c) || matches!(b, Expr::Integer(0)) {
+      return Ok(None);
+    }
+    let rest = ev(&call("Times", rest))?;
+    let p = match ev(&call("Exponent", vec![rest.clone(), x.clone()]))? {
+      Expr::Integer(p) if p >= 0 => p,
+      _ => return Ok(None),
+    };
+    let a = ev(&call(
+      "Times",
+      vec![rest, call("Power", vec![x.clone(), Expr::Integer(-p)])],
+    ))?;
+    if !free(&a) {
+      return Ok(None);
+    }
+    Ok(Some((a, p, b, c)))
+  };
+
+  // The roots `(scale, z, shift)`: solutions `scale W(z) + shift`.
+  let mut roots: Vec<(Expr, Expr, Expr)> = Vec::new();
+  match var_terms.as_slice() {
+    // a x^p E^(b x + c) = -d  ⇒  x E^(b x / p) = r, r^p = -d / (a E^c)
+    //   ⇒  x = (p/b) W((b/p) r)
+    [t] => {
+      let Some((a, p, b, c)) = split_exp_term(t)? else {
+        return Ok(None);
+      };
+      if p == 0 {
+        return Ok(None);
+      }
+      let k = ev(&call(
+        "Times",
+        vec![
+          Expr::Integer(-1),
+          d.clone(),
+          call("Power", vec![a, Expr::Integer(-1)]),
+          call(
+            "Power",
+            vec![
+              Expr::Constant("E".into()),
+              call("Times", vec![Expr::Integer(-1), c]),
+            ],
+          ),
+        ],
+      ))?;
+      let rs: Vec<Expr> = if p == 1 {
+        vec![k]
+      } else {
+        let y = Expr::Identifier("Solve$lambertRoot".into());
+        match ev(&call(
+          "Solve",
+          vec![
+            Expr::Comparison {
+              operands: vec![
+                call("Power", vec![y.clone(), Expr::Integer(p)]),
+                k,
+              ],
+              operators: vec![ComparisonOp::Equal],
+            },
+            y.clone(),
+          ],
+        ))? {
+          Expr::List(ref sols) => sols
+            .iter()
+            .filter_map(|s| match s {
+              Expr::List(rules) => rules.first().and_then(|r| match r {
+                Expr::Rule { replacement, .. } => {
+                  Some(replacement.as_ref().clone())
+                }
+                _ => None,
+              }),
+              _ => None,
+            })
+            .collect(),
+          _ => return Ok(None),
+        }
+      };
+      let pb = ev(&call(
+        "Times",
+        vec![
+          Expr::Integer(p),
+          call("Power", vec![b.clone(), Expr::Integer(-1)]),
+        ],
+      ))?;
+      for r in rs {
+        let z = ev(&call(
+          "Times",
+          vec![
+            b.clone(),
+            call("Power", vec![Expr::Integer(p), Expr::Integer(-1)]),
+            r,
+          ],
+        ))?;
+        roots.push((pb.clone(), z, Expr::Integer(0)));
+      }
+    }
+    // β E^(b x + c) + α x + d = 0. With y = x + d/α:
+    //   y E^(-b y) = -(β/α) E^(c - b d/α) = k  ⇒  y = -(1/b) W(-b k)
+    [t1, t2] => {
+      let (exp_term, lin_term) =
+        match (split_exp_term(t1)?, split_exp_term(t2)?) {
+          (Some(e), None) => (e, t2),
+          (None, Some(e)) => (e, t1),
+          _ => return Ok(None),
+        };
+      let (beta, p, b, c) = exp_term;
+      if p != 0 {
+        return Ok(None);
+      }
+      let alpha = ev(&call(
+        "Coefficient",
+        vec![lin_term.clone(), x.clone(), Expr::Integer(1)],
+      ))?;
+      let check = ev(&call(
+        "Expand",
+        vec![call(
+          "Plus",
+          vec![
+            lin_term.clone(),
+            call("Times", vec![Expr::Integer(-1), alpha.clone(), x.clone()]),
+          ],
+        )],
+      ))?;
+      if !free(&alpha)
+        || matches!(alpha, Expr::Integer(0))
+        || !matches!(check, Expr::Integer(0))
+      {
+        return Ok(None);
+      }
+      let shift = ev(&call(
+        "Times",
+        vec![
+          Expr::Integer(-1),
+          d.clone(),
+          call("Power", vec![alpha.clone(), Expr::Integer(-1)]),
+        ],
+      ))?;
+      let k = ev(&call(
+        "Times",
+        vec![
+          Expr::Integer(-1),
+          beta,
+          call("Power", vec![alpha, Expr::Integer(-1)]),
+          call(
+            "Power",
+            vec![
+              Expr::Constant("E".into()),
+              call(
+                "Plus",
+                vec![c, call("Times", vec![b.clone(), shift.clone()])],
+              ),
+            ],
+          ),
+        ],
+      ))?;
+      let z = ev(&call("Times", vec![Expr::Integer(-1), b.clone(), k]))?;
+      let scale = ev(&call(
+        "Times",
+        vec![Expr::Integer(-1), call("Power", vec![b, Expr::Integer(-1)])],
+      ))?;
+      roots.push((scale, z, shift));
+    }
+    _ => return Ok(None),
+  }
+
+  let inexact =
+    crate::functions::math_ast::numeric_utils::contains_inexact_real(g);
+  let inv_e = -1.0 / std::f64::consts::E;
+  let mut solutions: Vec<Expr> = Vec::new();
+  for (scale, z, shift) in roots {
+    let mut branches = vec![call("ProductLog", vec![z.clone()])];
+    if let Some(zv) = try_eval_to_f64(&z)
+      && zv > inv_e
+      && zv < 0.0
+    {
+      branches.push(call("ProductLog", vec![Expr::Integer(-1), z.clone()]));
+    }
+    for w in branches {
+      let mut sol = ev(&call(
+        "Plus",
+        vec![call("Times", vec![scale.clone(), w]), shift.clone()],
+      ))?;
+      if !matches!(shift, Expr::Integer(0)) {
+        sol = ev(&call("Together", vec![sol]))?;
+      }
+      if inexact {
+        sol = ev(&call("N", vec![sol]))?;
+      }
+      solutions.push(Expr::List(vec![rule_expr(x.clone(), sol)].into()));
+    }
+  }
+  crate::emit_message(
+    "Solve::ifun: Inverse functions are being used by Solve, so some solutions may not be found; use Reduce for complete solution information.",
+  );
+  Ok(Some(Expr::List(solutions.into())))
 }
 
 fn try_solve_inverse_function(
