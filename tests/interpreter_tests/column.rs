@@ -305,6 +305,22 @@ mod column_visual_mode {
     assert!(svg.contains(">b</tspan>"), "{svg}");
   }
 
+  /// `Pane[content, ImageSize -> {w, h}]` is the same fixed-size box as
+  /// `Pane[content, {w, h}]`.
+  #[test]
+  fn pane_image_size_option_sets_the_box_size() {
+    clear_state();
+    for pane in [
+      "Pane[Text[Row[{\"a\", \"b\"}]], ImageSize -> {300, 100}, \
+       Alignment -> Center]",
+      "Pane[Text[Row[{\"a\", \"b\"}]], {300, 100}, Alignment -> Center]",
+    ] {
+      let code = format!("ExportString[{pane}, \"SVG\"]");
+      let svg = interpret(&code).unwrap();
+      assert!(svg.contains("width=\"300\" height=\"100\""), "{svg}");
+    }
+  }
+
   /// A fixed-size `Pane` re-flows prose built from a `Row` that mixes strings,
   /// numbers and `Style`d words — even through a nested size-less `Pane` and
   /// `Text` — breaking at spaces and at explicit newlines instead of running
