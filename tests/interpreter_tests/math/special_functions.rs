@@ -518,6 +518,65 @@ mod bessel_y {
 mod hypergeometric2f1 {
   use super::*;
 
+  /// Real and imaginary parts of a machine number, for a tolerance check
+  /// (WL's last digits come from different transformations).
+  fn parts(code: &str) -> (f64, f64) {
+    let re: f64 = interpret(&format!("Re[{code}]")).unwrap().parse().unwrap();
+    let im: f64 = interpret(&format!("Im[{code}]")).unwrap().parse().unwrap();
+    (re, im)
+  }
+
+  fn assert_parts(code: &str, re: f64, im: f64) {
+    let (r, i) = parts(code);
+    let scale = 1.0 + re.hypot(im);
+    assert!(
+      (r - re).abs() <= 1e-12 * scale && (i - im).abs() <= 1e-12 * scale,
+      "{code}: got {r} + {i} I, expected {re} + {im} I"
+    );
+  }
+
+  // Outside |z| < 1 the series diverges; the continuation used to recurse
+  // through Pfaff transformations until the stack overflowed (z > 2) and
+  // summed a truncated series near z = 1.
+  #[test]
+  fn analytic_continuation() {
+    assert_parts(
+      "Hypergeometric2F1[1/2, 1/2, 2, 1.2]",
+      1.3429527347959835,
+      -0.16278346463697926,
+    );
+    assert_parts("Hypergeometric2F1[1, 1, 2, 2.]", 0.0, -1.5707963267948966);
+    assert_parts(
+      "Hypergeometric2F1[1/2, 1/3, 2, -5.]",
+      0.8117695899017634,
+      0.0,
+    );
+    assert_parts(
+      "Hypergeometric2F1[0.3, 0.7, 1.5, 3. + 2. I]",
+      0.8534168822905136,
+      0.38668593403802426,
+    );
+    assert_parts(
+      "Hypergeometric2F1[3/2, 3/2, 3, 0.99]",
+      8.836974318749185,
+      0.0,
+    );
+    assert_parts(
+      "Hypergeometric2F1[1/2, 1/2, 2, 1.2 + 0.001 I]",
+      1.3422933106734938,
+      0.16279845700682424,
+    );
+  }
+
+  // A real z below 1 stays real along the continuation path.
+  #[test]
+  fn real_below_one_stays_real() {
+    assert_eq!(
+      interpret("Head[Hypergeometric2F1[1/2, 1/3, 2, -5.]]").unwrap(),
+      "Real"
+    );
+  }
+
   #[test]
   fn z_zero() {
     assert_eq!(interpret("Hypergeometric2F1[1, 2, 3, 0]").unwrap(), "1");
@@ -5213,6 +5272,19 @@ mod inverse_fourier {
 
 mod spherical_harmonic_y {
   use super::*;
+
+  // (l - m + 1)…(l + m) passes i128 here; the product used to overflow.
+  #[test]
+  fn high_order_normalization_in_big_integers() {
+    assert_eq!(
+      interpret("SphericalHarmonicY[20, 18, t, p]").unwrap(),
+      "(5*E^((18*I)*p)*Sqrt[7245779079/Pi]*(-1 + 39*Cos[t]^2)*Sin[t]^18)/524288"
+    );
+    assert_eq!(
+      interpret("SphericalHarmonicY[20, -18, t, p]").unwrap(),
+      "(5*Sqrt[7245779079/Pi]*(-1 + 39*Cos[t]^2)*Sin[t]^18)/(524288*E^((18*I)*p))"
+    );
+  }
 
   #[test]
   fn y00() {

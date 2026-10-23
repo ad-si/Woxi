@@ -24766,6 +24766,10 @@ pub enum ManipulateControl {
     /// `ControlType -> VerticalSlider`: draw the slider running bottom-to-top
     /// instead of Wolfram's default left-to-right rail.
     orientation: ControlOrientation,
+    /// The range runs along the imaginary axis (`{zi, 0 I}, -2 I, 2 I`):
+    /// `min`/`max`/`initial` hold the imaginary coefficients, and the
+    /// variable binds the complex number `Complex[0, value]`.
+    imaginary: bool,
   },
   Discrete {
     name: String,
@@ -26428,9 +26432,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // badspec]`, where `badspec` is neither a spec nor an option) isn't
   // renderable as an interactive widget — fall back to the plain path.
   // Annotation rows alone don't make a widget either.
+  // A Manipulate whose only trailing arguments are options
+  // (`Manipulate[DynamicModule[…], ControlType -> None, …]`) is valid,
+  // though: Wolfram shows its body in the frame, so it stays a widget with
+  // no controls.
+  let options_only = args[1..]
+    .iter()
+    .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
   if !controls.iter().any(|c| !c.name().is_empty())
     && fixed.is_empty()
     && state.is_empty()
+    && !options_only
   {
     return None;
   }
@@ -29455,6 +29467,20 @@ fn eval_manipulate_bound(expr: &Expr) -> Option<(f64, bool)> {
     .map(|v| (v, true))
 }
 
+/// [`eval_manipulate_bound`] extended to bounds on the imaginary axis: a
+/// purely imaginary value (`-2 I`) resolves to its imaginary coefficient and
+/// is flagged (third element) so the control binds `Complex[0, value]`.
+fn eval_manipulate_axis_bound(expr: &Expr) -> Option<(f64, bool, bool)> {
+  if let Some((v, dynamic)) = eval_manipulate_bound(expr) {
+    return Some((v, dynamic, false));
+  }
+  let (expr, is_dynamic) = manipulate_bound_expr_deep(expr);
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
+  let (re, im) =
+    crate::functions::math_ast::try_extract_complex_float(&evaluated)?;
+  (re == 0.0 && im.is_finite()).then_some((im, is_dynamic, true))
+}
+
 /// Whether a Manipulate bound expression (a `min`/`max`/step/initial-value
 /// term) is an inexact (machine-real) number rather than an exact integer or
 /// rational — `0.01` or `N[Pi]`, not `1` or `1/2`. Mirrors
@@ -29809,6 +29835,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }],
     is_real: false,
     orientation: ControlOrientation::Horizontal,
+    imaginary: false,
   };
   Some(ManipulateSpec {
     body_code,
@@ -29897,6 +29924,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }],
     is_real,
     orientation: ControlOrientation::Horizontal,
+    imaginary: false,
   };
   Some(ManipulateSpec {
     body_code: var,
@@ -30260,8 +30288,8 @@ fn list2_f64(e: &Expr) -> Option<(f64, f64)> {
   let (e, _) = manipulate_bound_expr(e);
   match e {
     Expr::List(l) if l.len() == 2 => {
-      let a = eval_manipulate_bound(&l[0])?.0;
-      let b = eval_manipulate_bound(&l[1])?.0;
+      let a = eval_manipulate_axis_bound(&l[0])?.0;
+      let b = eval_manipulate_axis_bound(&l[1])?.0;
       Some((a, b))
     }
     _ => None,
@@ -32614,8 +32642,13 @@ fn parse_manipulate_control(
   if bounds.len() < 2 {
     return None;
   }
-  let (mut min, min_dynamic) = eval_manipulate_bound(bounds[0])?;
-  let (mut max, max_dynamic) = eval_manipulate_bound(bounds[1])?;
+  let (mut min, min_dynamic, min_imaginary) =
+    eval_manipulate_axis_bound(bounds[0])?;
+  let (mut max, max_dynamic, max_imaginary) =
+    eval_manipulate_axis_bound(bounds[1])?;
+  // A range written along the imaginary axis (`-2 I` … `2 I`) is a slider
+  // over the imaginary coefficient; the variable binds `Complex[0, value]`.
+  let imaginary = min_imaginary || max_imaginary;
   // A bound that only resolved through the environment references another
   // control variable (Kepler's `{{t, 0, …}, 0, P, .01}`), as does one
   // written `Dynamic[…]`; keep its code — the bare expression, without the
@@ -32652,7 +32685,7 @@ fn parse_manipulate_control(
     .and_then(|e| eval_manipulate_bound(e))
     .map(|(v, _)| v);
   let initial = match explicit_initial.as_ref() {
-    Some(init) => eval_manipulate_bound(init).map_or(min, |(v, _)| v),
+    Some(init) => eval_manipulate_axis_bound(init).map_or(min, |(v, _, _)| v),
     None => min,
   };
   // The variable stays machine-real for the widget's whole lifetime once any
@@ -32710,6 +32743,7 @@ fn parse_manipulate_control(
       label_runs,
       is_real,
       orientation,
+      imaginary,
     },
     enabled,
     min_code,
@@ -32829,6 +32863,7 @@ fn parse_list_element_manipulator(
       label_runs: label_runs.to_vec(),
       is_real,
       orientation: ControlOrientation::Horizontal,
+      imaginary: false,
     },
   })
 }
@@ -33105,14 +33140,11 @@ pub fn manipulate_initial_bindings(
         name,
         initial,
         is_real,
+        imaginary,
         ..
       } => Some((
         name.clone(),
-        if *is_real {
-          format_f64_real(*initial)
-        } else {
-          format_f64_exact(*initial)
-        },
+        continuous_binding_code(*initial, *is_real, *imaginary),
       )),
       ManipulateControl::Trigger { name, initial, .. } => {
         Some((name.clone(), format_f64_input(*initial)))
@@ -33194,6 +33226,25 @@ fn format_f64_input(v: f64) -> String {
 /// exact (`{b, 3/2, -5, 5, 1/6}`) binds exact values in Wolfram, and a body
 /// doing exact arithmetic on them (`GCD`, `Sqrt`, `IntegerQ`) depends on it.
 /// A value with no small-denominator form falls back to the decimal literal.
+/// InputForm of a continuous control's value: a real number, or the
+/// complex number `Complex[0, value]` for a control along the imaginary axis.
+pub fn continuous_binding_code(
+  value: f64,
+  is_real: bool,
+  imaginary: bool,
+) -> String {
+  let inner = if is_real {
+    format_f64_real(value)
+  } else {
+    format_f64_exact(value)
+  };
+  if imaginary {
+    format!("Complex[0, {inner}]")
+  } else {
+    inner
+  }
+}
+
 pub fn format_f64_exact(v: f64) -> String {
   if !v.is_finite() || v.fract() == 0.0 || v.abs() >= 1e9 {
     return format_f64_input(v);
@@ -37560,4 +37611,91 @@ mod manipulate_symbolic_angle_control_tests {
     );
     assert_eq!(format_f64_exact(0.3), "3/10");
   }
+}
+
+/// The plot range a 2D graphic is drawn over, before padding — what
+/// `PlotRange[g]` and `AbsoluteOptions[g, PlotRange]` report: an explicit
+/// `PlotRange` where one was given, the content's bounding box otherwise.
+pub fn absolute_plot_range(g: &Expr) -> Option<((f64, f64), (f64, f64))> {
+  match g {
+    Expr::Graphics {
+      is_3d: false,
+      structure: Some(structure),
+      ..
+    } => absolute_plot_range(structure),
+    // A plot: the domain across, and the data's own extent up — the stored
+    // y range carries the drawing padding — unless `PlotRange` fixed it.
+    Expr::Graphics {
+      is_3d: false,
+      source: Some(source),
+      ..
+    } => {
+      let explicit = source.options.iter().find_map(|opt| match opt {
+        Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange") =>
+        {
+          Some(parse_plot_range(replacement))
+        }
+        _ => None,
+      });
+      let ys = source
+        .series
+        .iter()
+        .flat_map(|s| s.points.iter().map(|p| p.1))
+        .filter(|y| y.is_finite());
+      let data_y = ys.fold(None, |acc: Option<(f64, f64)>, y| {
+        Some(acc.map_or((y, y), |(lo, hi)| (lo.min(y), hi.max(y))))
+      });
+      let (ex, ey) = explicit.unwrap_or((None, None));
+      Some((
+        ex.unwrap_or(source.x_range),
+        ey.or(data_y).unwrap_or(source.y_range),
+      ))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Graphics" && !args.is_empty() =>
+    {
+      let mut x_range = None;
+      let mut y_range = None;
+      for opt in &args[1..] {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = opt
+          && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange")
+        {
+          (x_range, y_range) = parse_plot_range(replacement);
+        }
+      }
+      let content = evaluate_expr_to_expr(&args[0]).ok()?;
+      let mut style = StyleState::default();
+      let mut primitives = Vec::new();
+      let mut errors = Vec::new();
+      collect_primitives(&content, &mut style, &mut primitives, &mut errors);
+      let mut bb = BBox::empty();
+      for prim in &primitives {
+        bb.merge(&primitive_bbox(prim));
+      }
+      if bb.is_empty() {
+        bb = BBox {
+          x_min: -1.0,
+          x_max: 1.0,
+          y_min: -1.0,
+          y_max: 1.0,
+        };
+      }
+      Some((
+        x_range.unwrap_or((bb.x_min, bb.x_max)),
+        y_range.unwrap_or((bb.y_min, bb.y_max)),
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// `{{xmin, xmax}, {ymin, ymax}}` for [`absolute_plot_range`].
+pub fn plot_range_expr(range: ((f64, f64), (f64, f64))) -> Expr {
+  let pair =
+    |(a, b): (f64, f64)| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  Expr::List(vec![pair(range.0), pair(range.1)].into())
 }

@@ -67,6 +67,9 @@ pub fn created_symbols() -> Vec<String> {
 /// and `$ContextPath` is its default, every symbol resolves to itself and
 /// the whole mechanism stays out of the way.
 pub fn contexts_active() -> bool {
+  if crate::contexts_are_default() {
+    return false;
+  }
   crate::current_context() != "Global`"
     || crate::current_context_path()
       != vec!["System`".to_string(), "Global`".to_string()]

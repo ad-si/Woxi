@@ -32,18 +32,11 @@ pub fn with_enclose_scope<T>(body: impl FnOnce() -> T) -> T {
   result
 }
 
-fn string(s: &str) -> Expr {
-  str_expr(s)
-}
-
-fn symbol(s: &str) -> Expr {
-  id_expr(s)
-}
-
 fn failure(tag: &str, pairs: Vec<(&str, Expr)>) -> Expr {
-  let assoc =
-    Expr::Association(pairs.into_iter().map(|(k, v)| (string(k), v)).collect());
-  call("Failure", vec![string(tag), assoc])
+  let assoc = Expr::Association(
+    pairs.into_iter().map(|(k, v)| (str_expr(k), v)).collect(),
+  );
+  call("Failure", vec![str_expr(tag), assoc])
 }
 
 /// The `Failure[…]` a `Confirm*` throws, carrying the same keys wolframscript
@@ -57,9 +50,9 @@ fn confirmation_failure(
   extra: Vec<(&str, Expr)>,
 ) -> Expr {
   let mut pairs = vec![
-    ("MessageTemplate", string(template)),
+    ("MessageTemplate", str_expr(template)),
     ("MessageParameters", Expr::List(parameters.into())),
-    ("ConfirmationType", string(kind)),
+    ("ConfirmationType", str_expr(kind)),
     ("Expression", expression),
     ("Information", information),
   ];
@@ -79,9 +72,9 @@ pub fn no_enclose_failure(name: &str, held_call: Expr) -> Expr {
     vec![
       (
         "MessageTemplate",
-        call("MessageName", vec![symbol(name), string("confirmnotag")]),
+        call("MessageName", vec![id_expr(name), str_expr("confirmnotag")]),
       ),
-      ("MessageParameters", Expr::List(vec![symbol(name)].into())),
+      ("MessageParameters", Expr::List(vec![id_expr(name)].into())),
       ("HeldInput", call1("Hold", held_call)),
     ],
   )
@@ -99,7 +92,7 @@ pub fn is_failure_value(e: &Expr) -> bool {
 pub fn throw_failure(f: Expr) -> InterpreterError {
   InterpreterError::ThrowValue(
     Box::new(f),
-    Some(Box::new(symbol(CONFIRMATION_TAG))),
+    Some(Box::new(id_expr(CONFIRMATION_TAG))),
   )
 }
 
@@ -211,7 +204,7 @@ pub fn failure_property(args: &[Expr], property: &str) -> Option<Expr> {
       }
       names.sort();
       Some(Expr::List(
-        names.iter().map(|p| string(p)).collect::<Vec<_>>().into(),
+        names.iter().map(|p| str_expr(p)).collect::<Vec<_>>().into(),
       ))
     }
     "Message" => {
@@ -220,7 +213,7 @@ pub fn failure_property(args: &[Expr], property: &str) -> Option<Expr> {
         _ => {
           return Some(call(
             "Missing",
-            vec![string("NotAvailable"), string(property)],
+            vec![str_expr("NotAvailable"), str_expr(property)],
           ));
         }
       };
@@ -231,7 +224,10 @@ pub fn failure_property(args: &[Expr], property: &str) -> Option<Expr> {
       Some(Expr::String(fill_template(&template, &parameters)))
     }
     _ => Some(lookup(property).unwrap_or_else(|| {
-      call("Missing", vec![string("NotAvailable"), string(property)])
+      call(
+        "Missing",
+        vec![str_expr("NotAvailable"), str_expr(property)],
+      )
     })),
   }
 }
@@ -272,7 +268,7 @@ pub fn success_property(args: &[Expr], property: &str) -> Option<Expr> {
       pairs
         .iter()
         .filter_map(|(k, _)| match k {
-          Expr::String(s) => Some(string(s)),
+          Expr::String(s) => Some(str_expr(s)),
           _ => None,
         })
         .collect::<Vec<_>>()
@@ -284,7 +280,7 @@ pub fn success_property(args: &[Expr], property: &str) -> Option<Expr> {
       .iter()
       .find(|(k, _)| matches!(k, Expr::String(s) if s == property))
       .map_or_else(
-        || call("Missing", vec![string("KeyAbsent"), string(property)]),
+        || call("Missing", vec![str_expr("KeyAbsent"), str_expr(property)]),
         |(_, v)| v.clone(),
       ),
   )
@@ -301,7 +297,12 @@ pub fn exception_property(args: &[Expr], property: &str) -> Option<Expr> {
       .iter()
       .find(|(k, _)| matches!(k, Expr::String(s) if s == property))
       .map_or_else(
-        || call("Missing", vec![string("NotAvailable"), string(property)]),
+        || {
+          call(
+            "Missing",
+            vec![str_expr("NotAvailable"), str_expr(property)],
+          )
+        },
         |(_, v)| v.clone(),
       ),
   )
@@ -325,10 +326,10 @@ fn is_canonical_exception(e: &Expr) -> bool {
 fn exception_object(tags: Vec<Expr>, payload: Option<Expr>) -> Expr {
   let mut pairs: Vec<(Expr, Expr)> = Vec::new();
   if let Some(p) = payload {
-    pairs.push((string("ExceptionPayload"), p));
+    pairs.push((str_expr("ExceptionPayload"), p));
   }
-  pairs.push((string("ExceptionValidated"), symbol("True")));
-  pairs.push((string("ExceptionSystemVersion"), string("1")));
+  pairs.push((str_expr("ExceptionValidated"), id_expr("True")));
+  pairs.push((str_expr("ExceptionSystemVersion"), str_expr("1")));
   call(
     "Exception",
     vec![Expr::List(tags.into()), Expr::Association(pairs)],
@@ -345,30 +346,36 @@ fn untagged_exception(spec: &Expr) -> Expr {
     expr_to_output(spec)
   ));
   let pairs: Vec<(Expr, Expr)> = vec![
-    (string("ErrorType"), string("UnttaggedExceptionPayload")),
-    (string("ExceptionFailureTag"), string("ErrorHandlingError")),
-    (string("FailingFunction"), symbol("Exception")),
-    (string("FailingPayload"), spec.clone()),
+    (str_expr("ErrorType"), str_expr("UnttaggedExceptionPayload")),
+    (
+      str_expr("ExceptionFailureTag"),
+      str_expr("ErrorHandlingError"),
+    ),
+    (str_expr("FailingFunction"), id_expr("Exception")),
+    (str_expr("FailingPayload"), spec.clone()),
     // A delayed entry: the association convention is to store the value as
     // a RuleDelayed keyed by itself, which is what renders as `:>`.
     (
-      string("MessageTemplate"),
+      str_expr("MessageTemplate"),
       rule_delayed_expr(
-        string("MessageTemplate"),
-        call("MessageName", vec![symbol("Exception"), string("untagged")]),
+        str_expr("MessageTemplate"),
+        call(
+          "MessageName",
+          vec![id_expr("Exception"), str_expr("untagged")],
+        ),
       ),
     ),
     (
-      string("MessageParameters"),
+      str_expr("MessageParameters"),
       Expr::List(vec![spec.clone()].into()),
     ),
-    (string("ExceptionValidated"), symbol("True")),
-    (string("ExceptionSystemVersion"), string("1")),
+    (str_expr("ExceptionValidated"), id_expr("True")),
+    (str_expr("ExceptionSystemVersion"), str_expr("1")),
   ];
   call(
     "Exception",
     vec![
-      Expr::List(vec![string("ErrorHandlingException")].into()),
+      Expr::List(vec![str_expr("ErrorHandlingException")].into()),
       Expr::Association(pairs),
     ],
   )

@@ -907,6 +907,9 @@ fn has_nonzero_imag_part(expr: &Expr) -> bool {
   {
     return true;
   }
+  if super::math_ast::try_extract_complex_exact_beyond_i128(expr).is_some() {
+    return true;
+  }
   if let Some((_, im)) = try_extract_complex_float(expr)
     && im != 0.0
     && expr_has_real_or_i(expr)
@@ -2205,6 +2208,9 @@ pub fn is_complex_number(expr: &Expr) -> bool {
   {
     return true;
   }
+  if super::math_ast::try_extract_complex_exact_beyond_i128(expr).is_some() {
+    return true;
+  }
   // Float complex extraction: only treat as Complex when the expression
   // actually contains a Real / BigFloat literal — symbolic constants like
   // Pi or E should keep Times[Pi, I] as a Times expression, not coerce to
@@ -2281,7 +2287,8 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Length. Rubi's `FixRhsIntRule` decides whether a rule's right-hand side is
   // already an `Int[…]` this way, so without the strip every rule gets wrapped
   // in a spurious `Simp[…]`.
-  let args = &[crate::evaluator::strip_unevaluated(&args[0])];
+  let args =
+    std::slice::from_ref(crate::evaluator::strip_unevaluated_ref(&args[0]));
   // Check for complex number patterns before the general match
   if is_complex_number(&args[0]) {
     return Ok(id_expr("Complex"));
@@ -2400,11 +2407,11 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   // Unevaluated[expr] is consumed by Length: count elements of expr directly.
-  let stripped = crate::evaluator::strip_unevaluated(&args[0]);
+  let stripped = crate::evaluator::strip_unevaluated_ref(&args[0]);
   // A Tree and a BooleanFunction["BDD" -> …] object are atoms: they have no
   // parts to count.
-  if is_fully_atomic_object(&stripped)
-    || crate::functions::boolean_ast::bdd_from_object(&stripped).is_some()
+  if is_fully_atomic_object(stripped)
+    || crate::functions::boolean_ast::bdd_from_object(stripped).is_some()
   {
     return Ok(Expr::Integer(0));
   }
@@ -2414,7 +2421,7 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Length` of the `Graphics3D[primitives, opts…]` it displays as.
   if let Expr::Graphics { .. } = &stripped {
     return match crate::evaluator::part_extraction::graphics_symbolic_form(
-      &stripped,
+      stripped,
     ) {
       Some(symbolic) => length_ast(std::slice::from_ref(&symbolic)),
       None => Ok(Expr::Integer(0)),
@@ -2432,7 +2439,7 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Rational[n, d] and Complex[re, im] are atoms: Length is 0 however the
   // number is spelled (`2 + 3 I` as well as `Complex[2, 3]`).
-  if is_complex_number(&stripped) {
+  if is_complex_number(stripped) {
     return Ok(Expr::Integer(0));
   }
   let len = match &stripped {
@@ -2460,7 +2467,7 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall { args, .. } => args.len() as i128,
     Expr::BinaryOp { .. } | Expr::UnaryOp { .. } => {
       if let Some((_head, ha_args)) =
-        crate::functions::list_helpers_ast::expr_to_head_args(&stripped)
+        crate::functions::list_helpers_ast::expr_to_head_args(stripped)
       {
         ha_args.len() as i128
       } else {
@@ -2482,7 +2489,7 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // is Blank[Integer] (1), `a :> b` is RuleDelayed[a, b] (2). Genuine
     // atoms — Integer, Real, String, Identifier, … — come back as Atom and
     // have length 0.
-    _ => match crate::functions::expr_form::decompose_expr(&stripped) {
+    _ => match crate::functions::expr_form::decompose_expr(stripped) {
       crate::functions::expr_form::ExprForm::Composite { children, .. } => {
         children.len() as i128
       }

@@ -15560,6 +15560,43 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   with_nintegrate_budget(|| nintegrate_ast_impl(args))
 }
 
+/// Whether `integrand` takes complex values with a nonzero imaginary part at
+/// some sampled point of the real range [lo, hi].
+fn integrand_is_complex_on(
+  integrand: &Expr,
+  var: &str,
+  lo: f64,
+  hi: f64,
+) -> bool {
+  let probe = |x: f64| -> bool {
+    if !x.is_finite() {
+      return false;
+    }
+    let substituted =
+      crate::syntax::substitute_variable(integrand, var, &Expr::Real(x));
+    let snapshot = crate::snapshot_warnings();
+    crate::push_quiet();
+    let value = crate::evaluator::evaluate_expr_to_expr(&substituted);
+    crate::pop_quiet();
+    crate::restore_warnings(snapshot);
+    value.is_ok_and(|v| {
+      crate::functions::math_ast::try_eval_to_f64(&v).is_none()
+        && crate::functions::math_ast::try_extract_complex_float(&v)
+          .is_some_and(|(_, im)| im != 0.0 && im.is_finite())
+    })
+  };
+  let points: Vec<f64> = match (lo.is_finite(), hi.is_finite()) {
+    (true, true) => [0.27, 0.61, 0.83]
+      .iter()
+      .map(|t| lo + (hi - lo) * t)
+      .collect(),
+    (true, false) => [0.7, 2.3, 5.1].iter().map(|d| lo + d).collect(),
+    (false, true) => [0.7, 2.3, 5.1].iter().map(|d| hi - d).collect(),
+    (false, false) => vec![-1.3, 0.4, 2.1],
+  };
+  points.into_iter().any(probe)
+}
+
 fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -16018,6 +16055,27 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let hi = *bounds.last().unwrap();
 
   let integrand = &args[0];
+
+  // A complex-valued integrand over a real range: its real and imaginary
+  // parts are integrated separately (the real-valued quadrature below would
+  // read every complex sample as missing). Detected by probing a few
+  // interior points.
+  if integrand_is_complex_on(integrand, &var_name, lo, hi) {
+    let part = |head: &str| -> Result<Expr, InterpreterError> {
+      let mut part_args = args.to_vec();
+      part_args[0] = call1(head, integrand.clone());
+      nintegrate_ast_impl(&part_args)
+    };
+    let re = part("Re")?;
+    let im = part("Im")?;
+    if let (Some(re), Some(im)) = (
+      crate::functions::math_ast::try_eval_to_f64(&re),
+      crate::functions::math_ast::try_eval_to_f64(&im),
+    ) {
+      return Ok(build_complex_float_expr(re, im));
+    }
+    return Ok(unevaluated("NIntegrate", args));
+  }
 
   // Gaussian fast path: detect `Exp[α x²]` (or `E^(α x²)`) where α is a
   // numeric constant w.r.t. the integration variable. Use the closed
@@ -19054,11 +19112,9 @@ fn barnes_g_series_coefficient(k: i128) -> Expr {
     crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e)
   };
   let int = |n: i128| Expr::Integer(n);
-  let sym = |s: &str| id_expr(s);
-  let constant = |s: &str| Expr::Constant(s.to_string());
   let log = |arg: Expr| call1("Log", arg);
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
-  let two_pi = times(vec![int(2), constant("Pi")]);
+  let two_pi = times(vec![int(2), const_expr("Pi")]);
   let log_2pi = log(two_pi);
   // (-1 + Log[2*Pi]) / 2
   let half_term =
@@ -19066,10 +19122,10 @@ fn barnes_g_series_coefficient(k: i128) -> Expr {
 
   match k {
     1 => int(1),
-    2 => evaluated(plus(vec![sym("EulerGamma"), half_term])),
+    2 => evaluated(plus(vec![id_expr("EulerGamma"), half_term])),
     _ => call(
       "Derivative",
-      vec![call1("Derivative", int(k)), sym("BarnesG")],
+      vec![call1("Derivative", int(k)), id_expr("BarnesG")],
     ),
   }
 }
@@ -19078,20 +19134,18 @@ fn barnes_g_series_coefficient(k: i128) -> Expr {
 /// expressed with EulerGamma and Pi to match wolframscript's display.
 fn factorial_series_at_zero(var_name: &str, order: i128) -> Expr {
   let int = |n: i128| Expr::Integer(n);
-  let sym = |s: &str| id_expr(s);
-  let constant = |s: &str| Expr::Constant(s.to_string());
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
 
   let mut coeffs: Vec<Expr> = Vec::with_capacity(order.max(0) as usize + 1);
   for k in 0..=order {
     let raw = match k {
       0 => int(1),
-      1 => neg(sym("EulerGamma")),
+      1 => neg(id_expr("EulerGamma")),
       2 => {
         // (6 EulerGamma^2 + Pi^2) / 12.
         let num = plus(vec![
-          times(vec![int(6), pow(sym("EulerGamma"), int(2))]),
-          pow(constant("Pi"), int(2)),
+          times(vec![int(6), pow(id_expr("EulerGamma"), int(2))]),
+          pow(const_expr("Pi"), int(2)),
         ]);
         times(vec![rational(1, 12), num])
       }
@@ -19126,8 +19180,7 @@ fn weber_anger_series_at_zero(
   is_weber: bool,
 ) -> Expr {
   let int = |n: i128| Expr::Integer(n);
-  let constant = |s: &str| Expr::Constant(s.to_string());
-  let pi = constant("Pi");
+  let pi = const_expr("Pi");
   let nu_pi = times(vec![nu.clone(), pi.clone()]);
 
   // Build the numerator for coefficient k:
@@ -19201,8 +19254,6 @@ fn weber_anger_series_at_zero(
 /// Coefficients involve EulerGamma, Log[2], Log[Pi], Log[64], and Pi^2.
 fn factorial2_series_at_zero(var_name: &str, order: i128) -> Expr {
   let int = |n: i128| Expr::Integer(n);
-  let sym = |s: &str| id_expr(s);
-  let constant = |s: &str| Expr::Constant(s.to_string());
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
   let log = |arg: Expr| call1("Log", arg);
 
@@ -19214,19 +19265,19 @@ fn factorial2_series_at_zero(var_name: &str, order: i128) -> Expr {
         // (-EulerGamma + Log[2]) / 2
         times(vec![
           rational(1, 2),
-          plus(vec![neg(sym("EulerGamma")), log(int(2))]),
+          plus(vec![neg(id_expr("EulerGamma")), log(int(2))]),
         ])
       }
       2 => {
         // (6 (EulerGamma - Log[2])^2 + Pi^2 (1 + Log[64] - 6 Log[Pi])) / 48
-        let eg_minus_log2 = plus(vec![sym("EulerGamma"), neg(log(int(2)))]);
+        let eg_minus_log2 = plus(vec![id_expr("EulerGamma"), neg(log(int(2)))]);
         let part_a = times(vec![int(6), pow(eg_minus_log2, int(2))]);
         let part_b = times(vec![
-          pow(constant("Pi"), int(2)),
+          pow(const_expr("Pi"), int(2)),
           plus(vec![
             int(1),
             log(int(64)),
-            times(vec![int(-6), log(constant("Pi"))]),
+            times(vec![int(-6), log(const_expr("Pi"))]),
           ]),
         ]);
         times(vec![rational(1, 48), plus(vec![part_a, part_b])])
@@ -19285,8 +19336,7 @@ fn factorial_power_series_at_zero(
 ///   Pochhammer[x, 1/2] = Sqrt[π] x − Sqrt[π] Log[4] x² + O(x³).
 fn pochhammer_half_series_at_zero(var_name: &str, order: i128) -> Expr {
   let int = |n: i128| Expr::Integer(n);
-  let constant = |s: &str| Expr::Constant(s.to_string());
-  let sqrt_pi = call1("Sqrt", constant("Pi"));
+  let sqrt_pi = call1("Sqrt", const_expr("Pi"));
   let log = |arg: Expr| call1("Log", arg);
 
   // Coefficients starting at x^1 (so SeriesData min = 1).
@@ -19312,11 +19362,9 @@ fn pochhammer_half_series_at_zero(var_name: &str, order: i128) -> Expr {
 
 fn hyperfactorial_series_at_zero(var_name: &str, order: i128) -> Expr {
   let int = |n: i128| Expr::Integer(n);
-  let sym = |s: &str| id_expr(s);
-  let constant = |s: &str| Expr::Constant(s.to_string());
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
   let log = |arg: Expr| call1("Log", arg);
-  let two_pi = times(vec![int(2), constant("Pi")]);
+  let two_pi = times(vec![int(2), const_expr("Pi")]);
   let log_2pi = log(two_pi);
 
   let mut coeffs: Vec<Expr> = Vec::with_capacity(order.max(0) as usize + 1);
@@ -19336,7 +19384,7 @@ fn hyperfactorial_series_at_zero(var_name: &str, order: i128) -> Expr {
           rational(1, 8),
           plus(vec![
             int(5),
-            times(vec![int(-4), sym("EulerGamma")]),
+            times(vec![int(-4), id_expr("EulerGamma")]),
             times(vec![int(-2), log_2pi.clone()]),
             pow(log_2pi.clone(), int(2)),
           ]),

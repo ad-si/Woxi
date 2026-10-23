@@ -317,6 +317,17 @@ because it makes the two layers disagree with each other.
 
 ## Canonical ordering of Plus and Times
 
+### `WaveletPsi[MexicanHatWavelet[1], t]` keeps the polynomial factor's sign
+
+```sh
+wolframscript -code 'WaveletPsi[MexicanHatWavelet[1], t]'  # (-2*(-1 + t^2))/(Sqrt[3]*E^(t^2/2)*Pi^(1/4))
+woxi eval 'WaveletPsi[MexicanHatWavelet[1], t]'            # (2*(1 - t^2))/(Sqrt[3]*E^(t^2/2)*Pi^(1/4))
+```
+
+The values are equal, and Woxi's form is what both engines print for the
+product typed in directly. WL builds it from the second derivative of a
+Gaussian, which leaves `-2 (-1 + t^2)` unexpanded.
+
 Woxi has three independent canonical-order comparators (one for `Sort`, one for
 `Order`, one for `Plus` terms) and they drift from each other as well as from
 Wolfram. Diagnose an ordering divergence by testing `Sort[…]`, `Order[a, b]`
@@ -623,6 +634,65 @@ in WL, which keeps integer coefficients.
 
 
 ## Numeric precision and floating point
+
+### `FindMinimum`/`FindMaximum` with two starting values stop at a different last digit
+
+```sh
+wolframscript -code 'FindMaximum[Sin[x], {x, 1, 2}]'   # {1., {x -> 1.5707963267114806}}
+woxi eval 'FindMaximum[Sin[x], {x, 1, 2}]'             # {1., {x -> 1.5707963267948966}}
+```
+
+`{x, x0, x1}` makes Wolfram use a derivative-free method that stops at its
+own tolerance. Woxi runs its Newton search from `x0` and lands on the
+extremum to machine precision. The extremum is the same; the digits past
+about 1e-10 are not.
+
+### `Erf`, `Erfc` and `Erfi` of complex machine numbers differ in the last digits
+
+```sh
+wolframscript -code 'Erf[1. + 0.5 I]'   # 0.9507097283189574 + 0.18797346722338326*I
+woxi eval 'Erf[1. + 0.5 I]'             # 0.9507097283189571 + 0.18797346722338332*I
+```
+
+Woxi sums the Maclaurin series for |Re z| < 2 and uses the Erfc continued
+fraction beyond that. Both are correct to about 1e-13 relative, but not
+correctly rounded the way Wolfram's arbitrary-precision kernel is.
+
+### `NSolve` lists the solutions of a polynomial system in a different order
+
+```sh
+wolframscript -code 'NSolve[x == 0.47 ss + 0.13 && y == 0.85 ss + 0.99 && (-0.039 + x)^2 + (-1.015 + y)^2 == 0.034, {x, y, ss}]'
+# {{x -> 0.04187863964178423, …, ss -> -0.18749225608131015}, {x -> 0.19667891812798455, …}}
+woxi eval 'NSolve[x == 0.47 ss + 0.13 && y == 0.85 ss + 0.99 && (-0.039 + x)^2 + (-1.015 + y)^2 == 0.034, {x, y, ss}]'
+# {{x -> 0.19667891812798463, …}, {x -> 0.04187863964178421, …, ss -> -0.1874922560813102}}
+```
+
+**Not reproducible** from the output alone. The solution set is the same, but
+Wolfram's order comes from its internal polynomial-system solver. It is
+ascending in some samples and descending in others (`NSolve[x == 1 + ss && y
+== 2 ss && x^2 + y^2 == 3., {x, y, ss}]` lists the larger `x` first), with no
+consistent key. Code that picks a solution by position (`… [[2]]`) can see a
+different root.
+
+### `Rationalize[x, 0]` and `ContinuedFraction[x]` of a machine real stop one convergent off
+
+```sh
+wolframscript -code 'Rationalize[0.64894397210534, 0]'   # 204604909/315289020
+woxi eval 'Rationalize[0.64894397210534, 0]'             # 25217905/38859911
+wolframscript -code 'ContinuedFraction[Sqrt[2.]]'        # {1, 2, … (20 twos)}
+woxi eval 'ContinuedFraction[Sqrt[2.]]'                  # {1, 2, … (19 twos)}
+```
+
+**Not reproducible** from the output alone. WL's results are always
+continued-fraction convergents of the double's exact binary value, but
+neither function stops by a fixed error bound. No symmetric interval
+(relative or in ulps) and no float-equality test fits all the samples.
+Woxi accepts the first convergent within `0.65 $MachineEpsilon |x|`.
+That matched 41 of 42 random reals sampled across magnitudes.
+`ContinuedFraction` usually equals the `Rationalize` list with its last term
+dropped, which Woxi always returns. On the same sample it matched 35 of 42. In the misses WL's list is one term
+longer or shorter (`Sqrt[2.]`), or is the full `Rationalize` list
+(`469.4554167169332`).
 
 ### Inexact zero loses WL's accuracy tracking
 
@@ -5358,3 +5428,19 @@ coefficients (such as the equilibrium equations of a binary vapor–liquid
 mixture) returns ten solutions, mostly complex, with an unphysical real one
 (`x -> -1.2*^16`) first. `wolframscript` lists the physical solution first,
 so `sol[[1]]` — the usual way to pick it — gives a different value.
+
+### `DSolve` has no Riccati / Bessel-type solutions
+
+`DSolve[α y'[x] + γ y[x]^2 == x^(k-2), y[x], x]` stays unevaluated. wolframscript
+reduces it to the linear equation `u'' == (γ/α^2) x^(k-2) u` and returns ratios
+of `Bessel*` / `Hypergeometric0F1Regularized` functions (elementary for special
+`k`). Notebooks that wrap it in `y[x] /. DSolve[…]` (e.g. Riccati-equation
+Manipulates) therefore only draw the equation panel, and `ReplaceAll::reps`
+fires for the unevaluated `DSolve`.
+
+### `ToString[TraditionalForm[…]]` is not a linear-syntax string
+
+wolframscript returns the string `"\!\(TraditionalForm\`…\)"` (box markup in
+linear syntax, e.g. `x\^\(k - 2\)`); Woxi returns an unevaluated
+`DisplayForm[FormBox[…]]`, so `Text[ToString[TraditionalForm[…]]]` in a
+Manipulate shows the raw box structure.

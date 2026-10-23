@@ -858,6 +858,20 @@ pub fn contains_inexact_real(expr: &Expr) -> bool {
       contains_inexact_real(left) || contains_inexact_real(right)
     }
     Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(contains_inexact_real)
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => contains_inexact_real(pattern) || contains_inexact_real(replacement),
+    Expr::CurriedCall { func, args } => {
+      contains_inexact_real(func) || args.iter().any(contains_inexact_real)
+    }
     _ => false,
   }
 }
@@ -874,6 +888,20 @@ pub fn expr_contains_real(expr: &Expr) -> bool {
       expr_contains_real(left) || expr_contains_real(right)
     }
     Expr::UnaryOp { operand, .. } => expr_contains_real(operand),
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(expr_contains_real)
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => expr_contains_real(pattern) || expr_contains_real(replacement),
+    Expr::CurriedCall { func, args } => {
+      expr_contains_real(func) || args.iter().any(expr_contains_real)
+    }
     _ => false,
   }
 }
@@ -1303,6 +1331,186 @@ pub fn try_extract_complex_exact(
       Some(result)
     }
     _ => None,
+  }
+}
+
+/// An exact rational as a reduced `(numerator, denominator)` pair with a
+/// positive denominator.
+pub type BigRat = (BigInt, BigInt);
+
+/// An exact complex number as its real and imaginary [`BigRat`] parts.
+pub type BigComplex = (BigRat, BigRat);
+
+fn big_rat(n: BigInt, d: BigInt) -> BigRat {
+  rat_reduce_bigint(&n, &d)
+}
+
+fn big_rat_add(a: &BigRat, b: &BigRat) -> BigRat {
+  big_rat(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1)
+}
+
+fn big_rat_mul(a: &BigRat, b: &BigRat) -> BigRat {
+  big_rat(&a.0 * &b.0, &a.1 * &b.1)
+}
+
+fn big_rat_neg(a: &BigRat) -> BigRat {
+  (-&a.0, a.1.clone())
+}
+
+/// An Integer, BigInteger, or `Rational` of either as a [`BigRat`].
+pub fn expr_to_big_rational(e: &Expr) -> Option<BigRat> {
+  if let Some(n) = expr_to_bigint(e) {
+    return Some((n, BigInt::from(1)));
+  }
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      let d = expr_to_bigint(&args[1])?;
+      if d.is_zero() {
+        return None;
+      }
+      Some(big_rat(expr_to_bigint(&args[0])?, d))
+    }
+    _ => None,
+  }
+}
+
+pub fn big_complex_mul(a: &BigComplex, b: &BigComplex) -> BigComplex {
+  let ((ar, ai), (br, bi)) = (a, b);
+  (
+    big_rat_add(&big_rat_mul(ar, br), &big_rat_neg(&big_rat_mul(ai, bi))),
+    big_rat_add(&big_rat_mul(ar, bi), &big_rat_mul(ai, br)),
+  )
+}
+
+pub fn big_complex_add(a: &BigComplex, b: &BigComplex) -> BigComplex {
+  (big_rat_add(&a.0, &b.0), big_rat_add(&a.1, &b.1))
+}
+
+/// `a / b`, or None when `b` is zero.
+pub fn big_complex_div(a: &BigComplex, b: &BigComplex) -> Option<BigComplex> {
+  let ((br, bi), conj) = (b, (b.0.clone(), big_rat_neg(&b.1)));
+  let mag = big_rat_add(&big_rat_mul(br, br), &big_rat_mul(bi, bi));
+  if mag.0.is_zero() {
+    return None;
+  }
+  let inv_mag = (mag.1, mag.0);
+  let num = big_complex_mul(a, &conj);
+  Some((big_rat_mul(&num.0, &inv_mag), big_rat_mul(&num.1, &inv_mag)))
+}
+
+/// [`try_extract_complex_exact`] without the i128 limit: the parts of an
+/// exact complex number whose integers may be arbitrarily large.
+pub fn try_extract_complex_exact_big(expr: &Expr) -> Option<BigComplex> {
+  let zero = || (BigInt::zero(), BigInt::from(1));
+  let fold = |args: &[Expr], times: bool| -> Option<BigComplex> {
+    let mut acc = try_extract_complex_exact_big(args.first()?)?;
+    for arg in &args[1..] {
+      let rhs = try_extract_complex_exact_big(arg)?;
+      acc = if times {
+        big_complex_mul(&acc, &rhs)
+      } else {
+        big_complex_add(&acc, &rhs)
+      };
+    }
+    Some(acc)
+  };
+  match expr {
+    Expr::Identifier(name) if name == "I" => {
+      Some((zero(), (BigInt::from(1), BigInt::from(1))))
+    }
+    _ if expr_to_big_rational(expr).is_some() => {
+      Some((expr_to_big_rational(expr)?, zero()))
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let (re, im) = try_extract_complex_exact_big(operand)?;
+      Some((big_rat_neg(&re), big_rat_neg(&im)))
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let l = try_extract_complex_exact_big(left)?;
+      let r = try_extract_complex_exact_big(right)?;
+      match op {
+        BinaryOperator::Times => Some(big_complex_mul(&l, &r)),
+        BinaryOperator::Plus => Some(big_complex_add(&l, &r)),
+        BinaryOperator::Minus => {
+          Some(big_complex_add(&l, &(big_rat_neg(&r.0), big_rat_neg(&r.1))))
+        }
+        _ => None,
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => fold(args, true),
+    Expr::FunctionCall { name, args } if name == "Plus" => fold(args, false),
+    _ => None,
+  }
+}
+
+/// Whether `expr` is built only from numbers, `I`, `Rational`, `Plus`,
+/// `Times` and negation, with at least one BigInteger among them: the only
+/// shape [`try_extract_complex_exact_beyond_i128`] can succeed on. Stops at
+/// the first leaf that is not a number, so a large symbolic expression costs
+/// next to nothing — this runs for every Head/pattern check.
+fn numeric_with_big_integer(expr: &Expr) -> bool {
+  fn walk(e: &Expr, big: &mut bool) -> bool {
+    match e {
+      Expr::BigInteger(_) => {
+        *big = true;
+        true
+      }
+      Expr::Integer(_) => true,
+      Expr::Identifier(name) => name == "I",
+      Expr::UnaryOp { operand, .. } => walk(operand, big),
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus | BinaryOperator::Times,
+        left,
+        right,
+      } => walk(left, big) && walk(right, big),
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Plus" | "Times" | "Rational") =>
+      {
+        args.iter().all(|a| walk(a, big))
+      }
+      _ => false,
+    }
+  }
+  let mut big = false;
+  walk(expr, &mut big) && big
+}
+
+/// A non-real exact complex number with a part past i128, the case
+/// [`try_extract_complex_exact`] cannot represent. Cheap to call on
+/// anything: the BigInt extraction only runs when a BigInteger is present.
+pub fn try_extract_complex_exact_beyond_i128(
+  expr: &Expr,
+) -> Option<BigComplex> {
+  if !numeric_with_big_integer(expr) {
+    return None;
+  }
+  try_extract_complex_exact_big(expr).filter(|(_, im)| !im.0.is_zero())
+}
+
+/// The canonical expression for an exact complex number with big parts; the
+/// same shape [`complex_rational_to_expr`] builds for i128 parts.
+pub fn big_complex_to_expr(c: &BigComplex) -> Expr {
+  use num_traits::ToPrimitive;
+  let ((rn, rd), (in_, id)) = c;
+  if let (Some(rn), Some(rd), Some(in_), Some(id)) =
+    (rn.to_i128(), rd.to_i128(), in_.to_i128(), id.to_i128())
+  {
+    return complex_rational_to_expr(rn, rd, in_, id);
+  }
+  let real_part = make_rational_expr(rn, rd);
+  if in_.is_zero() {
+    return real_part;
+  }
+  let imag_term = times(vec![make_rational_expr(in_, id), id_expr("I")]);
+  if rn.is_zero() {
+    imag_term
+  } else {
+    plus(vec![real_part, imag_term])
   }
 }
 

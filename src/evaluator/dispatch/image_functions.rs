@@ -752,10 +752,98 @@ fn json_value_to_expr(value: &serde_json::Value, raw: bool) -> Expr {
   }
 }
 
+/// The argument positions at which an image function takes an image, for
+/// the functions Wolfram also hands a graphic to (rasterizing it first).
+fn image_argument_positions(name: &str, argc: usize) -> Vec<usize> {
+  match name {
+    "ImageApply" => vec![1],
+    "ImageAdd" | "ImageSubtract" | "ImageMultiply" | "ImageDifference" => {
+      (0..argc).collect()
+    }
+    "ImageCompose" => (0..argc.min(2)).collect(),
+    "ImageData"
+    | "Binarize"
+    | "ImageAdjust"
+    | "ColorQuantize"
+    | "ImageRotate"
+    | "ImageReflect"
+    | "Blur"
+    | "EdgeDetect"
+    | "ImageDimensions"
+    | "Sharpen"
+    | "DominantColors"
+    | "ColorNegate"
+    | "ColorConvert"
+    | "ImageCrop"
+    | "ImageTake"
+    | "ImagePad"
+    | "ImageTrim"
+    | "GaussianFilter"
+    | "MedianFilter"
+    | "Dilation"
+    | "Erosion"
+    | "Opening"
+    | "Closing"
+    | "ImageHistogram"
+    | "ImageLevels"
+    | "ImageMeasurements"
+    | "ImageColorSpace"
+    | "ImageChannels"
+    | "ImageType"
+    | "ColorSeparate"
+    | "ImageEffect"
+    | "ImageAspectRatio"
+    | "Thinning"
+    | "MorphologicalComponents"
+    | "FillingTransform"
+    | "DistanceTransform"
+    | "ImageConvolve"
+    | "ImageCorrelate"
+    | "ImageFilter"
+    | "ImageValue"
+    | "PixelValue"
+    | "ImageTransformation"
+    | "ColorDetect"
+    | "ImagePartition"
+    | "ImageResize"
+    | "RemoveAlphaChannel"
+    | "SetAlphaChannel" => vec![0],
+    _ => Vec::new(),
+  }
+}
+
 pub fn dispatch_image_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  // A graphic where an image is expected is rasterized first, as in
+  // Wolfram: ColorNegate[Graphics[…]] is an Image.
+  let positions = image_argument_positions(name, args.len());
+  if positions.iter().any(|&i| {
+    args.get(i).is_some_and(|a| {
+      matches!(a, Expr::Graphics { .. })
+        || matches!(a, Expr::FunctionCall { name, .. } if name == "Graphics")
+    })
+  }) {
+    let mut rasterized = args.to_vec();
+    let mut changed = false;
+    for &i in &positions {
+      let is_graphic = rasterized.get(i).is_some_and(|a| {
+        matches!(a, Expr::Graphics { .. })
+          || matches!(a, Expr::FunctionCall { name, .. } if name == "Graphics")
+      });
+      if is_graphic
+        && let Some(img) =
+          crate::functions::image_ast::coerce_graphics_to_image(&rasterized[i])
+      {
+        rasterized[i] = img;
+        changed = true;
+      }
+    }
+    if changed {
+      return dispatch_image_functions(name, &rasterized);
+    }
+  }
   match name {
     "CrossingDetect" => {
       return Some(crate::functions::image_ast::crossing_detect_ast(args));

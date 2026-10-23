@@ -87,7 +87,7 @@ NegLiteralTail = _{
         "^" ~ !("=" | ":=")
       | "**" | "@" | "/@" | "//@" | "<>" | "~" ~ !"~"
       | "\\[TensorProduct]" | "\u{F3DA}"
-      | "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}"
+      | "\\[Cross]" | "\u{F4A0}" | "\u{2A2F}"
       | "\\[CircleDot]" | "\u{2299}" | "\\[SmallCircle]" | "\u{2218}"
     )
   | (" " | "\t" | "\r" | "\n")+ ~ "." ~ !ASCII_DIGIT ~ !"."
@@ -163,7 +163,51 @@ UnsignedNumericValue = { BasePrefix | UnsignedPrecisionReal | UnsignedReal | Uns
 // names (e.g. a pure function's own bound variable), so a notebook's box
 // form stores them as the bare character just like the other PUA letters
 // below.
-PrivateUseLetter = _{ '\u{F6B2}'..'\u{F6FF}' | '\u{F770}'..'\u{F7BD}' | '\u{F800}'..'\u{F8FF}' | '\u{FA000}'..'\u{FA0FF}' }
+// The private-use characters Wolfram reads as letters (part of a symbol
+// name), measured with ToExpression["a" <> c <> "b", InputForm, Hold]
+// over U+E000..U+F8FF, plus the plane-15 formal letters.
+PrivateUseLetter = _{
+    '\u{E000}'..'\u{F112}'
+  | '\u{F115}'..'\u{F11F}'
+  | '\u{F121}'..'\u{F35F}'
+  | '\u{F362}'..'\u{F37F}'
+  | "\u{F381}"
+  | '\u{F385}'..'\u{F39D}'
+  | '\u{F39F}'..'\u{F3A1}'
+  | '\u{F3A4}'..'\u{F3A7}'
+  | '\u{F3AA}'..'\u{F3AC}'
+  | '\u{F3AE}'..'\u{F3B0}'
+  | '\u{F3B5}'..'\u{F3BC}'
+  | '\u{F3C0}'..'\u{F3C5}'
+  | '\u{F3CA}'..'\u{F3CD}'
+  | "\u{F3CF}"
+  | '\u{F3D6}'..'\u{F3D8}'
+  | '\u{F3DF}'..'\u{F3FF}'
+  | '\u{F403}'..'\u{F411}'
+  | '\u{F414}'..'\u{F421}'
+  | '\u{F425}'..'\u{F426}'
+  | "\u{F42A}"
+  | "\u{F42C}"
+  | "\u{F430}"
+  | "\u{F433}"
+  | '\u{F43B}'..'\u{F49F}'
+  | '\u{F4A6}'..'\u{F51D}'
+  | "\u{F521}"
+  | "\u{F524}"
+  | '\u{F527}'..'\u{F529}'
+  | '\u{F52C}'..'\u{F52F}'
+  | '\u{F531}'..'\u{F602}'
+  | '\u{F607}'..'\u{F74A}'
+  | '\u{F74D}'..'\u{F75F}'
+  | '\u{F763}'..'\u{F764}'
+  | "\u{F766}"
+  | '\u{F768}'..'\u{F76C}'
+  | '\u{F770}'..'\u{F7BF}'
+  | '\u{F7C3}'..'\u{F7C4}'
+  | '\u{F7CE}'..'\u{F7D8}'
+  | '\u{F7DA}'..'\u{F8FF}'
+  | '\u{FA000}'..'\u{FA0FF}'
+}
 
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores
@@ -217,7 +261,7 @@ LetterlikeSymbolChar = _{ "\u{2026}" | "\u{22EF}" | "\u{22EE}" | "\u{22F0}" | "\
 // handling in notebook.rs and the glyph list in graphics.rs.
 BigOperatorChar = _{ "\u{2211}" | "\u{220F}" }
 
-NamedCharBase = _{ !(GenericInfixOperatorName | "\\[Minus]" | TightPrefixOp | LoosePrefixOp | "\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Piecewise]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[Conjugate]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Intersection]" | "\\[Union]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[LongEqual]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]" | "\\[TildeTilde]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
+NamedCharBase = _{ !(GenericInfixOperatorName | "\\[LeftBracketingBar]" | "\\[RightBracketingBar]" | "\\[LeftDoubleBracketingBar]" | "\\[RightDoubleBracketingBar]" | "\\[Minus]" | TightPrefixOp | LoosePrefixOp | "\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Piecewise]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[Conjugate]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Intersection]" | "\\[Union]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[LongEqual]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]" | "\\[TildeTilde]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
 // Adjacent `\[Name]` segments (or named char + identifier chars)
 // concatenate into a single identifier — `\[CapitalGamma]\[Beta]` → `Γβ`,
 // `\[Angle]XYZ` → `∠XYZ`, `i\[Ellipsis]j` (when `i` then `\[Ellipsis]j`
@@ -304,7 +348,10 @@ BaseFunctionCall = { (Identifier | NamedCharIdentifier) ~ DerivativePrime? ~ (&B
 // the operator span — otherwise as_str() would include e.g. comments
 // between "/;" and the following negative lookahead, breaking operator
 // recognition in the AST builder.
-Operator = @{
+// The named-character infix operators: shared by `Operator` and
+// `ConditionOp` (rule operands), so the two cannot drift apart. All bind
+// tighter than `->`.
+NamedInfixOperator = @{
     "\\[NotElement]" | "\u{2209}" // Named character operator: NotElement (∉)
   | "\\[ReverseElement]" | "\u{220B}" // Named character operator: ReverseElement (∋)
   | "\\[Element]" | "\u{2208}" // Named character operator: Element (∈)
@@ -313,8 +360,7 @@ Operator = @{
   | "\\[Distributed]" | "\u{F3D2}" // Named character operator: Distributed
   | "\\[Conditioned]" | "\u{F3D3}" // Named character operator: Conditioned
   | "\\[TildeTilde]" | "\u{2248}" // TildeTilde operator: a ≈ b → TildeTilde[a, b]
-  | "\\[Function]" | "\u{F4A1}" | "|->" // Function-arrow operator: x \[Function] body / x |-> body → Function[x, body]
-  | "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" // Cross product operator: a ⨯ b → Cross[a, b]
+  | "\\[Cross]" | "\u{F4A0}" | "\u{2A2F}" // Cross product operator: a ⨯ b → Cross[a, b]
   | "\\[TensorProduct]" | "\u{F3DA}" // TensorProduct operator: a ⊗ b → TensorProduct[a, b]
   | "\\[CircleTimes]" | "\u{2297}" // CircleTimes operator: a ⊗ b → CircleTimes[a, b]
   | "\\[CirclePlus]" | "\u{2295}" // CirclePlus operator: a ⊕ b → CirclePlus[a, b]
@@ -344,6 +390,11 @@ Operator = @{
   | "\\[Xor]" | "\u{22BB}" // Xor operator
   | "\\[And]" | "\u{2227}" // And operator (named form of &&)
   | "\\[Or]" | "\u{2228}" // Or operator (named form of ||)
+}
+
+Operator = @{
+    NamedInfixOperator
+  | "\\[Function]" | "\u{F4A1}" | "|->" // Function-arrow operator: x \[Function] body / x |-> body → Function[x, body]
   | GenericInfixOperator
   | "//@"    // MapAll operator (must be before /@ and the // postfix)
   | "/@"     // keep first
@@ -400,8 +451,20 @@ Operator = @{
 // unlike the other branches doesn't start with `(`, a list, or an
 // identifier, so it needs an explicit path here.
 PostfixFunction = {
-    SimpleAnonymousFunction
+    PostfixExpression
+  | SimpleAnonymousFunction
   | (&BalancedParens ~ "(" ~ Expression ~ ")" | List | BaseFunctionCall | Identifier) ~ ("&" ~ !"&")?
+}
+// The right side of `//`: everything that binds tighter than `//` itself —
+// operator chains, `/.`, `&` (`x // f /@ # &` is `(f /@ # &)[x]`) — but not
+// the assignments and `>>`, which bind looser (`x // f = 3` is
+// `Set[f[x], 3]`), and not a further `//`.
+PostfixAssignOp = _{ ":=" | "^:=" | "^=" | "+=" | "-=" | "*=" | "/=" | "=." | "=" ~ !("=" | "!") | ">>" }
+PostfixOperator = _{ !PostfixAssignOp ~ (Operator | TildeInfix) }
+PostfixExpression = {
+    SpanOrExprOperand ~ (PostfixOperator ~ SpanOrExprOperand)*
+    ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)*
+    ~ (AnonymousFunctionSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | PostfixOperator ~ SpanOrExprOperand)*)*
 }
 
 // Increment/Decrement: x++ or x-- (postfix operators)
@@ -574,7 +637,9 @@ ConjugateTransposeSuffix = @{ "\\[ConjugateTranspose]" | "\u{F3C9}" }
 // TermSuffix: postfix suffix tokens that can follow a Term (after
 // FactorialSuffix). Silent choice rule — the underlying named rules
 // are the ones that appear in the parse tree.
-TermSuffix = _{ TransposeSuffix | ConjugateSuffix | ConjugateTransposeSuffix | PatternTestSuffix }
+// A part index may follow too (`m\[Transpose][[2]]` is
+// Part[Transpose[m], 2]); right after a Term the Term takes it itself.
+TermSuffix = _{ TransposeSuffix | ConjugateSuffix | ConjugateTransposeSuffix | PatternTestSuffix | PartIndexSuffix }
 // One operand of an expression chain: an optional prefix operator, a Term and
 // the suffixes that bind to it. Spelled out as one alternative per prefix
 // rather than `(LeadingNot | LeadingPlus | LeadingMinus)? ~ Term ~ …` because
@@ -630,7 +695,10 @@ CompoundStatement = _{ Expression }
 // named rule so `parse_compound_expression` can tell the continuation's
 // operands apart from the statements that follow.
 CompoundAnonSuffix = { AnonymousFunctionSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ SpanOrExprOperand)* ~ ("//" ~ PostfixFunction)* }
-CompoundExpression = { CompoundStatement ~ (";" ~ CompoundStatement?)+ ~ (CompoundAnonSuffix ~ (";" ~ CompoundStatement?)*)? }
+// Likewise a `//` right after the last `;` applies to the whole sequence:
+// `sol = 0; // Quiet` is `Quiet[sol = 0;]`.
+CompoundPostfixSuffix = { ("//" ~ PostfixFunction)+ }
+CompoundExpression = { CompoundStatement ~ (";" ~ CompoundStatement?)+ ~ ((CompoundAnonSuffix | CompoundPostfixSuffix) ~ (";" ~ CompoundStatement?)*)? }
 
 // DerivativeNumeric: numeric literal followed by '...' (e.g. 1', (-1.4)', I via Constant)
 DerivativeNumeric = { (PrecisionReal | Real | IntegerScientific | Integer | Constant) ~ DerivativePrime }
@@ -723,7 +791,11 @@ FloorBrackets = { "\u{230A}" ~ Expression ~ "\u{230B}" }
 CeilingBrackets = { "\u{2308}" ~ Expression ~ "\u{2309}" }
 // 〈a, b, …〉: `\[LeftAngleBracket]…\[RightAngleBracket]` (also written with
 // the CJK brackets U+3008/U+3009) is AngleBracket[a, b, …].
-AngleBrackets = { ("\u{2329}" | "\u{3008}") ~ Expression ~ ("," ~ Expression)* ~ ("\u{232A}" | "\u{3009}") }
+AngleBrackets = { ("\u{2329}" | "\u{3008}") ~ Expression ~ ("," ~ Expression)* ~ ("\u{232A}" | "\u{3009}") ~ BracketArgs* }
+// |a|, ‖a‖: `\[LeftBracketingBar]…\[RightBracketingBar]` is BracketingBar[a, …]
+// and the double form DoubleBracketingBar[a, …] (no built-in meaning).
+BracketingBars = { ("\\[LeftBracketingBar]" | "\u{F603}") ~ Expression ~ ("," ~ Expression)* ~ ("\\[RightBracketingBar]" | "\u{F604}") ~ BracketArgs* }
+DoubleBracketingBars = { ("\\[LeftDoubleBracketingBar]" | "\u{F605}") ~ Expression ~ ("," ~ Expression)* ~ ("\\[RightDoubleBracketingBar]" | "\u{F606}") ~ BracketArgs* }
 
 Term = _{
     DisplayedBoxes
@@ -740,6 +812,8 @@ Term = _{
   | FloorBrackets
   | CeilingBrackets
   | AngleBrackets
+  | BracketingBars
+  | DoubleBracketingBars
   | Unset
   | ApplyToOp
   | AddTo
@@ -834,6 +908,8 @@ SimpleTerm = _{
   | FloorBrackets
   | CeilingBrackets
   | AngleBrackets
+  | BracketingBars
+  | DoubleBracketingBars
   | UnsignedNumericValue
   | PrefixApplySimple
   | FunctionCall
@@ -863,6 +939,8 @@ TermNoImplicit = _{
   | FloorBrackets
   | CeilingBrackets
   | AngleBrackets
+  | BracketingBars
+  | DoubleBracketingBars
   | Unset
   | ApplyToOp
   | AddTo
@@ -946,17 +1024,7 @@ ConditionExpr = {
 // Atomic so that WHITESPACE/COMMENT tokens are not consumed within the operator span.
 ConditionOp = @{
     GenericInfixOperator
-  | "\\[NotElement]" | "\u{2209}"       // Named character operator: NotElement (∉)
-  | "\\[ReverseElement]" | "\u{220B}"   // Named character operator: ReverseElement (∋)
-  | "\\[Element]" | "\u{2208}"          // Named character operator: Element (∈)
-  | "\\[Distributed]" | "\u{F3D2}"      // Named character operator: Distributed
-  | "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" // Cross product (⨯)
-  | "\\[Cap]" | "\u{2322}"        // Cap (⌢)
-  | "\\[Cup]" | "\u{2323}"        // Cup (⌣)
-  | "\\[DoubleRightTee]" | "\u{22A8}" // DoubleRightTee (⊨)
-  | "\\[RightTee]" | "\u{22A2}"   // RightTee (⊢)
-  | "\\[DoubleLeftTee]" | "\u{2AE4}" // DoubleLeftTee (⫤)
-  | "\\[LeftTee]" | "\u{22A3}"    // LeftTee (⊣)
+  | NamedInfixOperator
   | "::" ~ !":"                   // MessageName: `a :> f::tag` is a rule
                                   // whose replacement is `MessageName[f, "tag"]`,
                                   // since `::` binds tighter than everything here

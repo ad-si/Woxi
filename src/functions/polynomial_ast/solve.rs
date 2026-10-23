@@ -172,6 +172,24 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args
     }
   };
+  // Equations that already carry a machine number are solved with every
+  // coefficient numericized: exact irrational coefficients (Sin[Pi/24],
+  // Sqrt[3]) mixed with machine numbers otherwise reach the symbolic
+  // elimination, which loses the roots (2FamiliesOfFourPointTouchingSquares).
+  let numericized_owned: Vec<Expr>;
+  let args = if crate::functions::math_ast::contains_inexact_real(&args[0])
+    && let Ok(numeric) =
+      crate::evaluator::evaluate_function_call_ast("N", &args[..1])
+    && crate::syntax::expr_to_string(&numeric)
+      != crate::syntax::expr_to_string(&args[0])
+  {
+    let mut new_args = args.to_vec();
+    new_args[0] = numeric;
+    numericized_owned = new_args;
+    numericized_owned.as_slice()
+  } else {
+    args
+  };
   // Try numerically stable quadratic formula for degree-2 polynomials
   if let Some(result) = try_nsolve_quadratic(args) {
     return result;
@@ -1637,6 +1655,34 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let mut squared_abs = false;
+  // An unknown written as a curried call (`c[1][t]`, a method-of-lines
+  // grid value) is solved for as a fresh symbol and put back afterwards.
+  let curried: Vec<Expr> = match positional.get(1) {
+    Some(Expr::List(vars)) => vars.to_vec(),
+    Some(v) => vec![v.clone()],
+    None => vec![],
+  }
+  .into_iter()
+  .filter(|v| matches!(v, Expr::CurriedCall { .. }))
+  .collect();
+  if !curried.is_empty() {
+    let renames: Vec<(Expr, String)> = curried
+      .into_iter()
+      .enumerate()
+      .map(|(i, v)| (v, format!("Solve$var${i}")))
+      .collect();
+    let mut renamed: Vec<Expr> = args
+      .iter()
+      .map(|a| crate::functions::ode_ast::rename_compound_heads(a, &renames))
+      .collect();
+    // The renamed unknowns are plain symbols now; evaluate the equations
+    // again so they simplify around them.
+    renamed[0] = crate::evaluator::evaluate_expr_to_expr(&renamed[0])?;
+    let solved = solve_ast(&renamed)?;
+    return Ok(crate::functions::ode_ast::restore_compound_heads(
+      &solved, &renames,
+    ));
+  }
   let several_unknowns =
     matches!(positional.get(1), Some(Expr::List(vars)) if vars.len() >= 2);
   if let Some(first) = positional.first_mut() {
@@ -3472,11 +3518,13 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
               };
               binop(join_op, nb_expr, sqrt_part.clone())
             };
-            if den == 1 {
+            let root = if den == 1 {
               num
             } else {
               div2(num, Expr::Integer(den))
-            }
+            };
+            // Evaluated, so the root is canonical (2 Sqrt[5]/5 is 2/Sqrt[5]).
+            crate::evaluator::evaluate_expr_to_expr(&root).unwrap_or(root)
           };
           let sol1 = make_sol(true);
           let sol2 = make_sol(false);
@@ -6998,7 +7046,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !specs.is_empty()
     && specs.iter().all(|s| {
       matches!(s, Expr::List(p)
-      if (p.len() == 2 || p.len() == 3) && is_findroot_var_expr(&p[0]))
+      if (2..=4).contains(&p.len()) && is_findroot_var_expr(&p[0]))
     })
   {
     let max_iter = match find_root_parse_max_iterations(&args[2..]) {
@@ -7020,7 +7068,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .take_while(|s| {
         matches!(s, Expr::List(p)
-        if (p.len() == 2 || p.len() == 3) && is_findroot_var_expr(&p[0]))
+        if (2..=4).contains(&p.len()) && is_findroot_var_expr(&p[0]))
       })
       .cloned()
       .collect();
@@ -7032,6 +7080,15 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       return find_root_multivariate(&args[0], &candidate_specs, max_iter);
     }
+  }
+
+  // `FindRoot[{eqn}, {x, x0}]`: a one-equation system is that equation.
+  if let Expr::List(eqs) = &args[0]
+    && eqs.len() == 1
+  {
+    let mut single = args.to_vec();
+    single[0] = eqs[0].clone();
+    return find_root_ast(&single);
   }
 
   // Parse the options we honour: Method -> "Secant" picks the secant iteration,
@@ -7615,6 +7672,38 @@ fn find_root_eval_complex_at(
 /// Newton's method on the complex plane. Mirrors the real-only path
 /// but works in (re, im) pairs throughout. Uses a numerical derivative
 /// when the symbolic derivative isn't available.
+/// The real-valued search failed because an iterate left the function's real
+/// domain (`x Hypergeometric2F1[1/2, 1/2, 2, x]` past x = 1): Wolfram's
+/// Newton iteration simply continues in the complex plane. Retries a
+/// single-variable `FindRoot[f, {x, x0}]` that way when the function is a
+/// number at the (real) start; None when that does not apply.
+pub fn find_root_complex_retry(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::List(spec) = args.get(1)? else {
+    return None;
+  };
+  let [Expr::Identifier(var), start] = spec.as_slice() else {
+    return None;
+  };
+  if matches!(&args[0], Expr::List(eqs) if eqs.len() != 1) {
+    return None;
+  }
+  let (re0, im0) = try_extract_complex_f64(start)?;
+  let func = build_find_root_func(&args[0], &[var]);
+  find_root_eval_complex_at(&func, var, re0, im0)?;
+  let deriv = crate::functions::calculus_ast::differentiate_expr(&func, var)
+    .ok()
+    .map(simplify);
+  Some(find_root_complex_newton(
+    &func,
+    deriv.as_ref(),
+    var,
+    re0,
+    im0,
+  ))
+}
+
 fn find_root_complex_newton(
   func: &Expr,
   deriv: Option<&Expr>,
@@ -7625,6 +7714,7 @@ fn find_root_complex_newton(
   let max_iter = 100;
   let tol = 1e-15;
   let (mut re, mut im) = (re0, im0);
+  let mut iterations = 0;
   // Complex helpers
   let cabs = |a: f64, b: f64| (a * a + b * b).sqrt();
   let cdiv = |ar: f64, ai: f64, br: f64, bi: f64| -> Option<(f64, f64)> {
@@ -7669,8 +7759,36 @@ fn find_root_complex_newton(
         "FindRoot: derivative is zero, cannot converge".into(),
       ));
     };
-    re -= sr;
-    im -= si;
+    // Damped like the real iteration: a step that makes |f| worse (or
+    // leaves the function's domain) is halved until it does not.
+    let current = cabs(fr, fi);
+    let mut lambda = 1.0;
+    let mut accepted = false;
+    for _ in 0..40 {
+      let (nr, ni) = (re - lambda * sr, im - lambda * si);
+      if let Some((gr, gi)) = find_root_eval_complex_at(func, var, nr, ni)
+        && cabs(gr, gi) <= current
+      {
+        re = nr;
+        im = ni;
+        accepted = true;
+        break;
+      }
+      lambda *= 0.5;
+    }
+    if !accepted {
+      re -= sr;
+      im -= si;
+    }
+    iterations += 1;
+  }
+  if iterations == max_iter
+    && find_root_eval_complex_at(func, var, re, im)
+      .is_none_or(|(fr, fi)| cabs(fr, fi) >= tol)
+  {
+    crate::emit_message(&format!(
+      "FindRoot::cvmit: Failed to converge to the requested accuracy or precision within {max_iter} iterations."
+    ));
   }
   // Build the complex result. Drop the imaginary part if it collapsed
   // to zero so the rule reads like a real solution. Otherwise build
@@ -8111,6 +8229,7 @@ fn find_root_multivariate(
   let mut raw_vars: Vec<Expr> = Vec::new();
   let mut x: Vec<f64> = Vec::new();
   let mut step_hint: Vec<Option<f64>> = Vec::new();
+  let mut bounds: Vec<Option<(f64, f64)>> = Vec::new();
   for spec in specs {
     if let Expr::List(p) = spec {
       if !is_findroot_var_expr(&p[0]) {
@@ -8128,9 +8247,27 @@ fn find_root_multivariate(
       } else {
         None
       });
+      // `{var, x0, xmin, xmax}` keeps the search within [xmin, xmax].
+      bounds.push(if p.len() == 4 {
+        let lo = find_root_eval_number(&p[2])?;
+        let hi = find_root_eval_number(&p[3])?;
+        Some((lo.min(hi), lo.max(hi)))
+      } else {
+        None
+      });
     }
   }
   let n = raw_vars.len();
+  let clamp_to_bounds = |v: Vec<f64>| -> Vec<f64> {
+    v.into_iter()
+      .zip(&bounds)
+      .map(|(xj, b)| match b {
+        Some((lo, hi)) => xj.clamp(*lo, *hi),
+        None => xj,
+      })
+      .collect()
+  };
+  let mut x = clamp_to_bounds(x);
 
   // Only plain-symbol variables can carry a stale global binding under a
   // literal name — an indexed variable like `u[1]` has no such binding to
@@ -8179,9 +8316,15 @@ fn find_root_multivariate(
     Expr::List(es) => es.to_vec(),
     other => vec![other.clone()],
   };
+  // An equation between lists (`{a, b} == {c, d}`) is one equation per
+  // component, as Equal threads over lists.
   let evaluated_eqns: Vec<Expr> = raw_eq_list
     .iter()
     .map(|e| build_find_root_func(e, &raw_var_refs))
+    .flat_map(|f| match &f {
+      Expr::List(items) => items.to_vec(),
+      _ => vec![f],
+    })
     .collect();
 
   // Every search variable — plain or indexed — is then renamed to a fresh
@@ -8372,6 +8515,7 @@ fn find_root_multivariate(
             .zip(&delta)
             .map(|(&xj, &dj)| xj + dj * shrink)
             .collect();
+          let x_trial = clamp_to_bounds(x_trial);
           // An opaque residual (e.g. one wrapping NDSolve) can fail outright
           // at a wild trial point rather than merely return a non-finite
           // value — treat that the same as a rejected trial (shrink and
@@ -8494,6 +8638,7 @@ fn find_root_multivariate(
           .zip(&delta)
           .map(|(&xj, &dj)| xj + dj * shrink)
           .collect();
+        let x_trial = clamp_to_bounds(x_trial);
         if let Ok((fv_trial, resid_trial)) = eval_residual(&x_trial)
           && fv_trial.iter().all(|v| v.is_finite())
           && merit(&fv_trial) < base_merit
@@ -9029,6 +9174,10 @@ pub(crate) fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
       substitute_expr(pattern, from, to),
       substitute_expr(replacement, from, to),
     ),
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(substitute_expr(func, from, to)),
+      args: args.iter().map(|e| substitute_expr(e, from, to)).collect(),
+    },
     _ => expr.clone(),
   }
 }
@@ -11575,6 +11724,67 @@ fn nelder_mead_minimize(
   simplex[best_i].clone()
 }
 
+/// `FindMinimum`/`FindMaximum` over indexed variables (`{n[j], 0.15}`):
+/// the objective (and constraints) are evaluated with the variables free,
+/// every variable is renamed to a fresh symbol the way `FindRoot` does, and
+/// the result's rules are mapped back. None when every variable is already
+/// a symbol.
+fn find_minimum_indexed_variables(
+  args: &[Expr],
+  maximize: bool,
+) -> Option<Result<Expr, InterpreterError>> {
+  let specs: Vec<Expr> = match &args[1] {
+    Expr::List(items) if items.iter().all(|i| matches!(i, Expr::List(_))) => {
+      items.to_vec()
+    }
+    single @ Expr::List(_) => vec![single.clone()],
+    _ => return None,
+  };
+  let vars: Vec<Expr> = specs
+    .iter()
+    .map(|spec| match spec {
+      Expr::List(parts) => parts.first().cloned(),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  if !vars
+    .iter()
+    .any(|v| matches!(v, Expr::FunctionCall { .. } | Expr::CurriedCall { .. }))
+  {
+    return None;
+  }
+  let fresh: Vec<Expr> = (0..vars.len())
+    .map(|i| Expr::Identifier(format!("$FindMinimumVar{i}$")))
+    .collect();
+  let objective = crate::evaluator::evaluate_expr_to_expr(&args[0])
+    .unwrap_or_else(|_| args[0].clone());
+  let renamed = find_root_rename_vars(&objective, &vars, &fresh);
+  let new_specs: Vec<Expr> = specs
+    .iter()
+    .zip(&fresh)
+    .map(|(spec, name)| match spec {
+      Expr::List(parts) => {
+        let mut parts = parts.to_vec();
+        parts[0] = name.clone();
+        Expr::List(parts.into())
+      }
+      other => other.clone(),
+    })
+    .collect();
+  let spec_arg = if matches!(&args[1], Expr::List(items) if items.iter().all(|i| matches!(i, Expr::List(_))))
+  {
+    Expr::List(new_specs.into())
+  } else {
+    new_specs.into_iter().next()?
+  };
+  let mut new_args = vec![renamed, spec_arg];
+  new_args.extend_from_slice(&args[2..]);
+  Some(
+    find_minimum_ast(&new_args, maximize)
+      .map(|result| find_root_rename_vars(&result, &fresh, &vars)),
+  )
+}
+
 pub fn find_minimum_ast(
   args: &[Expr],
   maximize: bool,
@@ -11588,6 +11798,9 @@ pub fn find_minimum_ast(
     return Err(InterpreterError::EvaluationError(format!(
       "{func_name} expects at least 2 arguments"
     )));
+  }
+  if let Some(result) = find_minimum_indexed_variables(args, maximize) {
+    return result;
   }
   // A `{f, cons…}` first argument states a constrained problem, which the
   // constrained solver handles; the starting values are only a hint and it
@@ -11645,7 +11858,9 @@ pub fn find_minimum_ast(
       return None;
     };
     match pair.len() {
-      2 => {
+      // `{x, x0, x1}` names two starting values; the search starts from
+      // the first (Wolfram's derivative-free method uses both).
+      2 | 3 => {
         Some(find_root_eval_number(&pair[1]).map(|x0| (name.clone(), x0, None)))
       }
       4 => Some((|| {
@@ -11724,8 +11939,8 @@ pub fn find_minimum_ast(
         })
         .collect()
     }
-    // Single variable: {x, x0} or {x, x0, xmin, xmax}
-    Expr::List(items) if items.len() == 2 || items.len() == 4 => {
+    // Single variable: {x, x0}, {x, x0, x1} or {x, x0, xmin, xmax}
+    Expr::List(items) if (2..=4).contains(&items.len()) => {
       match parse_bounded_var_spec(items) {
         Some(spec) => vec![spec?],
         None => {

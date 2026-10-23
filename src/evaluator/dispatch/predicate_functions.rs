@@ -29,6 +29,8 @@ fn is_exact_number(expr: &Expr) -> bool {
       // Both denominators must be non-zero for a meaningful exact rational.
       rd != 0 && id != 0
     })
+    || crate::functions::math_ast::try_extract_complex_exact_beyond_i128(expr)
+      .is_some()
 }
 
 /// InexactNumberQ[x]: True when `x` is a numeric value that contains a

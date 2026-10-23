@@ -40,6 +40,9 @@ pub enum ControlState {
     /// `ControlType -> VerticalSlider`: rendered with `vertical_slider`
     /// instead of the default horizontal `slider`.
     orientation: ControlOrientation,
+    /// The range runs along the imaginary axis; `min`/`max`/`current` hold
+    /// imaginary coefficients and the variable binds `Complex[0, current]`.
+    imaginary: bool,
   },
   Discrete {
     name: String,
@@ -208,14 +211,13 @@ impl ControlState {
   pub fn current_code(&self) -> String {
     match self {
       ControlState::Continuous {
-        current, is_real, ..
-      } => {
-        if *is_real {
-          format_f64_real(*current)
-        } else {
-          woxi::functions::graphics::format_f64_exact(*current)
-        }
-      }
+        current,
+        is_real,
+        imaginary,
+        ..
+      } => woxi::functions::graphics::continuous_binding_code(
+        *current, *is_real, *imaginary,
+      ),
       ControlState::Trigger { current, .. } => format_f64(*current),
       ControlState::Discrete {
         values,
@@ -1244,9 +1246,9 @@ impl ManipulateState {
       // may assign to the widget's own variables (`{v, e} = ve[[n]]`),
       // and a `Dynamic[…]` caption showing them must display what this
       // frame computed, not the previous frame's values.
-      crate::trace_evaluation(
-        &woxi::functions::graphics::manipulate_block_code(&code, &bindings),
-      );
+      trace_evaluation(&woxi::functions::graphics::manipulate_block_code(
+        &code, &bindings,
+      ));
       let mut render = woxi::interpret_with_stdout(&code);
       // A `Pane[Grid[…], size]` body of plain text prints as source text in
       // the terminal; the widget shows the table the pane wraps instead.
@@ -1560,6 +1562,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         initial,
         is_real,
         orientation,
+        imaginary,
       } => {
         // Wolfram treats a negative step like its magnitude, and a zero
         // step like an omitted one.
@@ -1591,6 +1594,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           current: *initial,
           is_real: *is_real,
           orientation: *orientation,
+          imaginary: *imaginary,
         }
       }
       ManipulateControl::Discrete {
@@ -1751,21 +1755,6 @@ fn format_f64(v: f64) -> String {
     format!("{}", v as i64)
   } else {
     format!("{}", v)
-  }
-}
-
-/// Format a f64 as a Wolfram machine-real InputForm literal: a whole number
-/// keeps a trailing dot (`0.`, `20.`) so it substitutes as Real rather than
-/// Integer. Used for a continuous control whose spec was written with an
-/// inexact bound/step — Wolfram keeps such a variable real-valued even while
-/// the slider sits at a "round" position, which a caption formatting it with
-/// `NumberForm[…, {n, f}]` depends on (that wrapper pads a real's fraction
-/// but leaves an exact integer unchanged).
-fn format_f64_real(v: f64) -> String {
-  if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
-    format!("{}.", v as i64)
-  } else {
-    format!("{v}")
   }
 }
 
@@ -4277,5 +4266,14 @@ mod textcell_tests {
       .expect("idx slider");
     // Two appends: the Dynamic upper bound follows `Length[frames]`.
     assert_eq!((min, max, current), (1.0, 3.0, 3.0));
+  }
+}
+
+/// With `WOXI_STUDIO_TRACE` set, print every piece of code the notebook
+/// loader evaluates to stderr before running it, so a load that crashes or
+/// hangs can be replayed as a plain script with `woxi run`.
+pub fn trace_evaluation(code: &str) {
+  if std::env::var_os("WOXI_STUDIO_TRACE").is_some() {
+    eprintln!("{};\n", code.trim_end().trim_end_matches(';'));
   }
 }

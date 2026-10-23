@@ -63,10 +63,6 @@ fn function_expand_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-fn mk_id(name: &str) -> Expr {
-  id_expr(name)
-}
-
 /// The numerator of `e` when it is a half-integer — `Rational[p, 2]` with an
 /// odd `p` — and None otherwise.
 fn half_integer_numerator(e: &Expr) -> Option<i128> {
@@ -643,11 +639,11 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
           return None;
         }
         let z = &args[1];
-        let exp_neg_z = pow(mk_id("E"), mk_times(mk_int(-1), z.clone()));
+        let exp_neg_z = pow(id_expr("E"), mk_times(mk_int(-1), z.clone()));
         let elementary =
           |a: i128| mk_times(pow(z.clone(), mk_ratio(a, 2)), exp_neg_z.clone());
         let mut acc = mk_times(
-          call1("Sqrt", mk_id("Pi")),
+          call1("Sqrt", id_expr("Pi")),
           mk_plus(
             mk_int(1),
             mk_times(mk_int(-1), call1("Erf", call1("Sqrt", z.clone()))),
@@ -693,7 +689,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
                 mk_int(-1),
                 mk_times(
                   pow(z.clone(), mk_int(a)),
-                  pow(mk_id("E"), mk_times(mk_int(-1), z.clone())),
+                  pow(id_expr("E"), mk_times(mk_int(-1), z.clone())),
                 ),
               ),
             ]),
@@ -734,7 +730,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       }
       Some(mk_div(
         plus(terms),
-        mk_times(pow(mk_id("E"), z.clone()), z.clone()),
+        mk_times(pow(id_expr("E"), z.clone()), z.clone()),
       ))
     }
 
@@ -896,7 +892,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
           call1("Gamma", mk_plus(mk_ratio(1, 2), n.clone())),
         ),
         mk_times(
-          call1("Sqrt", mk_id("Pi")),
+          call1("Sqrt", id_expr("Pi")),
           call1("Gamma", mk_plus(mk_int(2), n.clone())),
         ),
       ))
@@ -907,7 +903,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       let n = &args[0];
       Some(mk_div(
         call("Gamma", vec![mk_plus(mk_int(1), n.clone()), mk_int(-1)]),
-        mk_id("E"),
+        id_expr("E"),
       ))
     }
 
@@ -932,7 +928,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       vec![call(
         "Tan",
         vec![mk_plus(
-          mk_times(mk_ratio(1, 4), mk_id("Pi")),
+          mk_times(mk_ratio(1, 4), id_expr("Pi")),
           mk_times(mk_ratio(1, 2), args[0].clone()),
         )],
       )],
@@ -947,7 +943,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     "LogisticSigmoid" if args.len() == 1 => Some(pow(
       mk_plus(
         mk_int(1),
-        pow(mk_id("E"), mk_times(mk_int(-1), args[0].clone())),
+        pow(id_expr("E"), mk_times(mk_int(-1), args[0].clone())),
       ),
       mk_int(-1),
     )),
@@ -994,7 +990,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
             mk_int(-1),
             mk_times(
               pow(inv_golden, n.clone()),
-              call1("Cos", mk_times(n.clone(), mk_id("Pi"))),
+              call1("Cos", mk_times(n.clone(), id_expr("Pi"))),
             ),
           ),
         ),
@@ -1013,7 +1009,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         pow(golden, n.clone()),
         mk_times(
           pow(inv_golden, n.clone()),
-          call1("Cos", mk_times(n.clone(), mk_id("Pi"))),
+          call1("Cos", mk_times(n.clone(), id_expr("Pi"))),
         ),
       ))
     }
@@ -1025,14 +1021,14 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         && ra.len() == 2
         && let (Expr::Integer(1), Expr::Integer(2)) = (&ra[0], &ra[1])
       {
-        return Some(call1("Sqrt", mk_id("Pi")));
+        return Some(call1("Sqrt", id_expr("Pi")));
       }
       None
     }
 
     // HarmonicNumber[n] -> EulerGamma + PolyGamma[0, 1 + n].
     "HarmonicNumber" if args.len() == 1 => Some(mk_plus(
-      mk_id("EulerGamma"),
+      id_expr("EulerGamma"),
       call(
         "PolyGamma",
         vec![mk_int(0), mk_plus(mk_int(1), args[0].clone())],

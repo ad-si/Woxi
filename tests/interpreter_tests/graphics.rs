@@ -12471,6 +12471,17 @@ mod plot3d {
   mod parametric_plot {
     use super::*;
 
+    // A one-element list of pairs is one region; it used to give "no
+    // points over that region".
+    #[test]
+    fn single_region_in_a_list() {
+      assert_eq!(
+        interpret("Head[ParametricPlot[{{Re[r E^(I t)], Im[r E^(I t)]}}, {r, 0, 1}, {t, 0, 2 Pi}]]")
+          .unwrap(),
+        "Graphics"
+      );
+    }
+
     #[test]
     fn parametric_plot_circle() {
       insta::assert_snapshot!(export_svg(
@@ -16041,6 +16052,43 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "VectorPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}, PlotLabel -> \"field\"]",
       );
       assert!(svg.contains(">field<"), "{svg}");
+    }
+
+    #[test]
+    fn vector_plot_color_function_and_segment_style() {
+      // Regression: VectorPlot ignored ColorFunction, VectorStyle and
+      // VectorPoints, so a red slope field with plain segments came out as
+      // a multicolored field of arrows on the default 16-point grid.
+      let svg = export_svg(
+        "VectorPlot[{1, y}, {t, 0, 1}, {y, 0, 1}, ColorFunction -> (Hue[0] &), VectorStyle -> \"Segment\", VectorPoints -> 4]",
+      );
+      assert_eq!(svg.matches("stroke=\"rgb(255,0,0)\"").count(), 16, "{svg}");
+      assert!(!svg.contains("<polygon"), "{svg}");
+    }
+
+    #[test]
+    fn vector_plot_direction_follows_axis_scales() {
+      // Regression: arrow directions ignored the axes' scales, so a slope
+      // field over very different axis ranges was drawn at the raw
+      // component ratio instead of the slope the displayed axes show.
+      // Stretching y by 2.5 must flatten the on-screen slope by 2.5.
+      let slope = |y_max: &str| -> f64 {
+        let svg = export_svg(&format!(
+          "VectorPlot[{{1, 40}}, {{t, 0, 1}}, {{y, 0, {y_max}}}, VectorStyle -> \"Segment\", VectorPoints -> 2]"
+        ));
+        let line = svg
+          .lines()
+          .find(|l| l.starts_with("<line") && l.contains("stroke=\"rgb("))
+          .expect("arrow shaft");
+        let attr = |n: &str| -> f64 {
+          let key = format!("{n}=\"");
+          let rest = &line[line.find(&key).unwrap() + key.len()..];
+          rest[..rest.find('"').unwrap()].parse().unwrap()
+        };
+        (attr("y1") - attr("y2")) / (attr("x2") - attr("x1"))
+      };
+      let ratio = slope("40") / slope("100");
+      assert!((ratio - 2.5).abs() < 0.01, "ratio = {ratio}");
     }
 
     #[test]
@@ -23718,6 +23766,38 @@ mod blend {
     );
   }
 
+  // The effective plot range of a graphic, before padding.
+  #[test]
+  fn absolute_options_plot_range() {
+    assert_eq!(
+      interpret("AbsoluteOptions[Graphics[Circle[]], PlotRange]").unwrap(),
+      "{PlotRange -> {{-1., 1.}, {-1., 1.}}}"
+    );
+    assert_eq!(
+      interpret(
+        "AbsoluteOptions[Graphics[Circle[], PlotRange -> {{0, 2}, {0, 3}}], PlotRange]"
+      )
+      .unwrap(),
+      "{PlotRange -> {{0., 2.}, {0., 3.}}}"
+    );
+    assert_eq!(
+      interpret("PlotRange[Plot[x^2, {x, 0, 1}]]").unwrap(),
+      "{{0., 1.}, {0., 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "Last[PlotRange[Plot[Sin[x], {x, 0, 2 Pi}, PlotRange -> {-2, 2}]]]"
+      )
+      .unwrap(),
+      "{-2., 2.}"
+    );
+    assert_eq!(
+      interpret("AbsoluteOptions[Graphics[Circle[], Frame -> True], Frame]")
+        .unwrap(),
+      "{Frame -> True}"
+    );
+  }
+
   // Tick values past the i64 range used to panic while being labelled.
   #[test]
   fn plot_with_huge_values_renders() {
@@ -25394,6 +25474,24 @@ mod find_spanning_tree {
 mod parametric_plot3d {
   use super::*;
 
+  // A component that depends on the parameter only through a variable's
+  // value (`c = ArcTan[t/5]`) used to give "no finite values".
+  #[test]
+  fn components_depending_on_the_parameter_indirectly() {
+    assert_eq!(
+      interpret(
+        "c = ArcTan[t/5]; Head[ParametricPlot3D[{Cos[t] Cos[c], Sin[t] Cos[c], -Sin[c]}, {t, -40, 0}]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+    assert_eq!(
+      interpret("r = u + v; Head[ParametricPlot3D[{Cos[u] r, Sin[u] r, v}, {u, 0, 1}, {v, 0, 1}]]")
+        .unwrap(),
+      "Graphics3D"
+    );
+  }
+
   // A plot body naming a Module-local symbol whose value depends on the plot
   // variables is read through that value.
   #[test]
@@ -26904,6 +27002,20 @@ mod manipulate {
   };
   use woxi::interpret_to_expr;
 
+  // A Manipulate whose trailing arguments are all options shows its body
+  // with no controls; it used to fall back to an unrendered Manipulate.
+  #[test]
+  fn options_only_manipulate_is_a_widget() {
+    let expr =
+      interpret_to_expr("Manipulate[Graphics[Disk[]], ControlType -> None, SaveDefinitions -> True]")
+        .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("options-only Manipulate");
+    assert!(spec.controls.is_empty());
+    // An argument that is neither a control nor an option still is not.
+    let bad = interpret_to_expr("Manipulate[x^2, badspec]").unwrap();
+    assert!(extract_manipulate_spec(&bad).is_none());
+  }
+
   // A hand-built control panel — `ExpressionCell[Grid[…]]` holding bare
   // `Checkbox[Dynamic[v]]`/`Manipulator[Dynamic[v], …]`/`SetterBar[Dynamic[v],
   // …]` controls — is neither a vsform error nor inert text: each bound
@@ -26972,6 +27084,72 @@ mod manipulate {
             .is_some_and(|cb| cb.contains("Normalize")),
           "got {write_callback:?}"
         );
+      }
+      other => panic!("expected Slider2D, got {other:?}"),
+    }
+  }
+
+  // A slider whose range runs along the imaginary axis is a control over the
+  // imaginary coefficient; the variable binds the complex number.
+  #[test]
+  fn spec_imaginary_axis_slider_binds_complex_value() {
+    let expr = interpret_to_expr(
+      "Manipulate[w, {{w, 0 I, \"imag\"}, -2 I, 2 I}, {{k, 1}, 0, 3}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(spec.controls.len(), 2);
+    match &spec.controls[0] {
+      ManipulateControl::Continuous {
+        name,
+        min,
+        max,
+        initial,
+        imaginary,
+        ..
+      } => {
+        assert_eq!(name, "w");
+        assert_eq!((*min, *max, *initial), (-2.0, 2.0, 0.0));
+        assert!(*imaginary);
+        assert_eq!(
+          woxi::functions::graphics::continuous_binding_code(
+            1.5, false, *imaginary
+          ),
+          "Complex[0, 3/2]"
+        );
+      }
+      other => panic!("expected Continuous, got {other:?}"),
+    }
+    match &spec.controls[1] {
+      ManipulateControl::Continuous { imaginary, .. } => assert!(!*imaginary),
+      other => panic!("expected Continuous, got {other:?}"),
+    }
+  }
+
+  // Corner points given as `{re, im I}` pairs make a 2D pad over the real
+  // and imaginary extents.
+  #[test]
+  fn spec_slider2d_corners_with_imaginary_bounds() {
+    let expr = interpret_to_expr(
+      "Manipulate[z, {{z, {3, 0}, \"p\"}, {-100, -2 I}, {100, 2 I}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        ..
+      } => {
+        assert_eq!(
+          (*x_min, *x_max, *y_min, *y_max),
+          (-100.0, 100.0, -2.0, 2.0)
+        );
+        assert_eq!((*x_initial, *y_initial), (3.0, 0.0));
       }
       other => panic!("expected Slider2D, got {other:?}"),
     }
@@ -28886,6 +29064,7 @@ mod manipulate {
         label_runs,
         is_real,
         orientation,
+        ..
       } => {
         assert_eq!(name, "x");
         assert_eq!(*min, 0.0);
@@ -35877,6 +36056,20 @@ mod display_wrapper_export {
 /// mark measured data and the band it must stay inside.
 mod list_plot_markers_and_epilog {
   use super::*;
+
+  // A marker far outside the plot range overflowed plotters' pixel
+  // arithmetic and panicked; markers outside the range are not drawn.
+  #[test]
+  fn marker_far_outside_the_plot_range() {
+    assert_eq!(
+      interpret(
+        "StringQ[ExportString[ListPlot[{{1, 0.5}, {2, 1.*^300}}, PlotMarkers -> Style[\"\u{25CF}\", 14], \
+         Joined -> True, PlotRange -> {{-1, 50}, {-0.1, 1.1}}], \"SVG\"]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 
   /// The `<text>` glyphs a rendered plot draws, with their fill colour.
   fn marker_glyphs(svg: &str) -> Vec<(String, String)> {

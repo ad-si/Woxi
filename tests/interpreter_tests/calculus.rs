@@ -4924,6 +4924,33 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // A complex-valued integrand over a real range used to integrate to 0.:
+  // every complex sample was read as missing.
+  #[test]
+  fn complex_valued_integrand() {
+    assert_eq!(
+      interpret("NIntegrate[I x, {x, 0, 1}]").unwrap(),
+      "0. + 0.5*I"
+    );
+    for (code, re, im) in [
+      ("NIntegrate[Exp[I x], {x, 0, Pi}]", 0.0, 2.0),
+      ("NIntegrate[x + I x^2, {x, 0, 1}]", 0.5, 1.0 / 3.0),
+      (
+        "NIntegrate[Exp[I x], {x, 0, 1}]",
+        0.8414709848078965,
+        0.45969769413186023,
+      ),
+    ] {
+      let num = |e: String| -> f64 { e.replace("*^", "e").parse().unwrap() };
+      let got_re = num(interpret(&format!("Re[{code}]")).unwrap());
+      let got_im = num(interpret(&format!("Im[{code}]")).unwrap());
+      assert!(
+        (got_re - re).abs() < 1e-9 && (got_im - im).abs() < 1e-9,
+        "{code}: {got_re} {got_im}"
+      );
+    }
+  }
+
   fn assert_approx(code: &str, expected: f64, tol: f64) {
     let result = interpret(code).unwrap();
     let val: f64 = result.parse().unwrap_or_else(|_| {
@@ -5593,6 +5620,46 @@ mod trig_sec_csc_cot {
 
 mod erf {
   use super::*;
+
+  // Machine complex arguments used to stay unevaluated. The values are
+  // wolframscript's; the last digit or two may differ.
+  #[test]
+  fn complex_machine_arguments() {
+    for (code, expected) in [
+      (
+        "Erf[1. + 0.5 I]",
+        "0.9507097283189574 + 0.18797346722338326 I",
+      ),
+      (
+        "Erfc[1. + 0.5 I]",
+        "0.049290271681042636 - 0.18797346722338326 I",
+      ),
+      (
+        "Erfi[1. + 0.5 I]",
+        "1.0244008816084458 + 1.2048475583142182 I",
+      ),
+      (
+        "Erf[3. + 4. I]",
+        "-120.18699139507939 - 27.750337293623677 I",
+      ),
+      (
+        "Erf[-2.5 + 0.3 I]",
+        "-1.000015377425339 + 0.00044277444763273947 I",
+      ),
+      (
+        "Erf[2.1 + 3. I]",
+        "-7.826126944244235 + 12.524131379112822 I",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("Abs[{code} - ({expected})] < 1*^-12 Abs[{code}]"))
+          .unwrap(),
+        "True",
+        "{code}"
+      );
+    }
+    assert_eq!(interpret("Erf[1 + I]").unwrap(), "Erf[1 + I]");
+  }
 
   #[test]
   fn erf_zero() {
@@ -7831,6 +7898,28 @@ mod dsolve {
     );
   }
 
+  // Regression: a constant factor in front of a parenthesised sum, as in
+  // `y'[t] == k (a - y[t] + f[t])` (Newton's law of cooling with a driven
+  // ambient temperature), made the term classifier give up, so DSolve
+  // returned unevaluated. Checked by substituting the solution back.
+  #[test]
+  fn first_order_linear_factored_rhs() {
+    assert_eq!(
+      interpret(
+        "sol = y[t] /. First[DSolve[{y'[t] == 2 (3 - y[t] + Sin[t]), y[0] == 1}, y[t], t]]; {sol /. t -> 0, Abs[N[(D[sol, t] - 2 (3 - sol + Sin[t])) /. t -> 7/10]] < 10^-9}"
+      )
+      .unwrap(),
+      "{1, True}"
+    );
+    assert_eq!(
+      interpret(
+        "sol = y[t] /. First[DSolve[{y'[t] == k (60 - y[t] + 15 Sin[2 Pi t]), y[0] == 50}, y[t], t]]; {sol /. {t -> 0, k -> 3/2}, N[(D[sol, t] - k (60 - sol + 15 Sin[2 Pi t])) /. {t -> 7/10, k -> 3/2}] < 10^-9}"
+      )
+      .unwrap(),
+      "{60 - (45*Pi)/(9/4 + 4*Pi^2) - (10*(9/4 - (9*Pi)/2 + 4*Pi^2))/(9/4 + 4*Pi^2), True}"
+    );
+  }
+
   // First-order linear inhomogeneous ODEs: the integrating factor is
   // distributed over the particular and homogeneous parts, matching
   // wolframscript, while a grouped particular (e.g. a trig combination) stays
@@ -8339,6 +8428,24 @@ Round[N[closed] - N[numeric], 10^-6]"
 
 mod ndsolve {
   use super::*;
+
+  // Derivatives can be asked for as unknowns; each gets its own rule.
+  #[test]
+  fn derivative_unknowns() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y''[t] == -y[t], y'[0] == 0, y[0] == 1}, \
+         {y''[t], y'[t], y[t]}, {t, 0, 1}]; Map[First, s, {2}]"
+      )
+      .unwrap(),
+      "{{Derivative[2][y][t], Derivative[1][y][t], y[t]}}"
+    );
+    assert_eq!(
+      interpret("Round[{y''[t], y'[t], y[t]} /. First[s] /. t -> 1., 0.0001]")
+        .unwrap(),
+      "{-0.5403, -0.8415, 0.5403}"
+    );
+  }
 
   // An unknown no equation mentions comes back as itself, in the requested
   // position.
@@ -20953,6 +21060,42 @@ mod stored_multi_derivative {
 
 mod kernel_format_interpolating_function {
   use super::*;
+
+  // NDSolve stores each point's derivatives after its value (here y, y',
+  // y''); only the value used to be skipped for the packed form, which then
+  // had three times too many entries and failed to apply.
+  #[test]
+  fn values_with_stored_derivatives() {
+    assert_eq!(
+      interpret(
+        "InterpolatingFunction[{{0., 0.3}}, {5, 7, 2, {4}, {4}, 0, 0, 0, 0, Automatic, {}, {}, False}, \
+         {{0., 0.1, 0.2, 0.3}}, {Developer`PackedArrayForm, {0, 3, 6, 9, 12}, \
+         {1., 0., -1., 0.995004, -0.0998334, -0.995004, 0.980067, -0.198669, -0.980067, \
+         0.955336, -0.29552, -0.955336}}, {Automatic}][0.2]"
+      )
+      .unwrap(),
+      "0.980067"
+    );
+    // Unpacked per-point lists: {value} for Interpolation, {value, value'}
+    // for a vector NDSolve solution.
+    assert_eq!(
+      interpret(
+        "InterpolatingFunction[{{1, 5}}, {5, 3, 0, {5}, {4}, 0, 0, 0, 0, Automatic, {}, {}, False}, \
+         {{1, 2, 3, 4, 5}}, {{1}, {4}, {9}, {16}, {25}}, {Automatic}][5/2]"
+      )
+      .unwrap(),
+      "25/4"
+    );
+    assert_eq!(
+      interpret(
+        "InterpolatingFunction[{{0., 0.3}}, {5, 3, 1, {3}, {4}, 0, 0, 0, 0, Automatic, {}, {}, False}, \
+         {{0., 0.15, 0.3}}, {{{1., 0.}, {0., -1.}}, {{0.988, -0.149}, {-0.149, -0.988}}, \
+         {{0.955, -0.296}, {-0.296, -0.955}}}, {Automatic}][0.15]"
+      )
+      .unwrap(),
+      "{0.988, -0.149}"
+    );
+  }
 
   #[test]
   fn linear_stored_form_is_applied() {

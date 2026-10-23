@@ -5507,7 +5507,7 @@ fn evaluate_pending_initialization(pending: &mut Vec<String>) {
   let cells: Vec<String> = pending.drain(..).collect();
   for code in woxi::notebook::join_continuation_cells(&cells) {
     for stmt in woxi::split_into_statements(&code) {
-      trace_evaluation(&stmt);
+      manipulate::trace_evaluation(&stmt);
       let _ = woxi::interpret_with_stdout(&stmt);
     }
   }
@@ -5576,15 +5576,27 @@ fn instantiate_stored_manipulate(
       woxi::notebook::saved_initialization_context_symbols(stored_output);
     if !names.is_empty() {
       let unprotect = format!("Unprotect[{}]", names.join(", "));
-      trace_evaluation(&unprotect);
+      manipulate::trace_evaluation(&unprotect);
       let _ = woxi::interpret(&unprotect);
     }
-    trace_evaluation(&init);
+    manipulate::trace_evaluation(&init);
     let _ = woxi::interpret(&init);
   }
-  trace_evaluation(&statements[0]);
+  manipulate::trace_evaluation(&statements[0]);
   let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
-  let mut state = manipulate::ManipulateState::from_expr(&expr)?;
+  // A spec the live source cannot resolve — a control bounded by symbols
+  // the notebook never defines (`{{x, 70}, minx, maxx}`) — is rebuilt from
+  // the dump, whose "Specifications" hold the values the widget had.
+  let Some(mut state) =
+    manipulate::ManipulateState::from_expr(&expr).or_else(|| {
+      let rebuilt =
+        woxi::notebook::reconstruct_manipulate_from_box_dump(stored_output)?;
+      let rebuilt_expr = woxi::interpret_to_expr(&rebuilt).ok()?;
+      manipulate::ManipulateState::from_expr(&rebuilt_expr)
+    })
+  else {
+    return None;
+  };
   // A control whose choices come from a notebook variable that never
   // resolved here (`{{s, 4}, Labels, ControlType -> Setter}` with `Labels`
   // built by a cell that errors or reads differently outside the author's
@@ -6724,15 +6736,6 @@ const CELL_STYLES: &[CellStyle] = &[
 ];
 
 // ── Headless check mode ──────────────────────────────────────────────
-
-/// With `WOXI_STUDIO_TRACE` set, print every piece of code the notebook
-/// loader evaluates to stderr before running it, so a load that crashes or
-/// hangs can be replayed as a plain script with `woxi run`.
-pub(crate) fn trace_evaluation(code: &str) {
-  if std::env::var_os("WOXI_STUDIO_TRACE").is_some() {
-    eprintln!("{};\n", code.trim_end().trim_end_matches(';'));
-  }
-}
 
 /// Load `path` as the editor would and report, per stored widget, whether
 /// it was rebuilt and what its first render produced. Returns the process
@@ -8015,6 +8018,24 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
+  }
+
+  /// A control bounded by symbols the notebook never defines (the "Apple in
+  /// a Carnot Refrigerator" Demonstration) leaves the live source without a
+  /// widget spec; the dump's resolved "Specifications" build it instead.
+  #[test]
+  fn instantiate_stored_manipulate_falls_back_to_dump_for_unresolved_bounds() {
+    let code = "Manipulate[t^2, Control[{{t, 70, \"temperature\"}, \
+      undefinedMin, undefinedMax}], SaveDefinitions -> True]";
+    let stored = "DynamicModuleBox[{$CellContext`t$$ = 70}, \
+      DynamicBox[Manipulate`ManipulateBoxes[1, StandardForm, \
+      \"Variables\" :> {$CellContext`t$$ = 70}, \
+      \"Body\" :> $CellContext`t$$^2, \
+      \"Specifications\" :> {{{$CellContext`t$$, 70, \"temperature\"}, \
+      45.5, 90}}, \"Options\" :> {}, \"DefaultOptions\" :> {}]]]";
+    let state = instantiate_stored_manipulate(code, stored)
+      .expect("the widget is rebuilt from the dump");
+    assert_eq!(state.controls.len(), 1);
   }
 
   /// Regression for the "Hieroglyphs" Demonstration: its digit-to-symbol
@@ -16116,6 +16137,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       current: 0.0,
       is_real: false,
       orientation: manipulate::ControlOrientation::Horizontal,
+      imaginary: false,
     };
     let empty = manipulate::ControlState::Continuous {
       name: "theta".to_string(),
@@ -16127,9 +16149,33 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       current: 0.0,
       is_real: false,
       orientation: manipulate::ControlOrientation::Horizontal,
+      imaginary: false,
     };
     assert_eq!(manipulate_label_char_count(&m1), 2);
     assert_eq!(manipulate_label_char_count(&empty), 0);
+  }
+
+  // A slider along the imaginary axis substitutes its value as a complex
+  // number, not a bare real.
+  #[test]
+  fn imaginary_axis_slider_binds_complex_current_code() {
+    let mut c = manipulate::ControlState::Continuous {
+      name: "w".to_string(),
+      label: "w".to_string(),
+      label_runs: vec![],
+      min: -2.0,
+      max: 2.0,
+      step: 0.04,
+      current: 1.0,
+      is_real: false,
+      orientation: manipulate::ControlOrientation::Horizontal,
+      imaginary: true,
+    };
+    assert_eq!(c.current_code(), "Complex[0, 1]");
+    if let manipulate::ControlState::Continuous { imaginary, .. } = &mut c {
+      *imaginary = false;
+    }
+    assert_eq!(c.current_code(), "1");
   }
 
   // ── Result-output SVG rendering ──
@@ -20842,10 +20888,11 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
     .expect("the body must render")
     .graphics
     .expect("the body must produce a graphic");
-    // `ImagePadding -> {{25, 25}, {25, 25}}` puts the drawing area 25px in
-    // from the top left, leaving 320-50 by 300-50 for the frame.
+    // `ImagePadding -> {{25, 25}, {25, 25}}` leaves 320-50 by 300-50 for the
+    // frame; the field's square data keeps a square 250x250 drawing area,
+    // centred in that space (10px of slack on each side horizontally).
     assert!(
-      svg.contains("translate(25,25)"),
+      svg.contains("translate(35,25)"),
       "the padding must place the drawing area: {svg:.400}"
     );
     // Each arrow is coloured from the gradient, so the fill colours are
