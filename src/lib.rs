@@ -4073,7 +4073,9 @@ pub(crate) fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "MatrixForm" && args.len() == 1 =>
     {
-      let data = &args[0];
+      // A SparseArray is drawn as the dense matrix it stands for.
+      let dense = functions::list_helpers_ast::densify_sparse_array(&args[0]);
+      let data = dense.as_ref().unwrap_or(&args[0]);
       if contains_graphics_placeholder(data) {
         return expr;
       }

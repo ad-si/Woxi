@@ -3315,6 +3315,12 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     && args.len() == 1
     && !matches!(&args[0], Expr::List(_))
   {
+    // A SparseArray typesets as the dense matrix it stands for.
+    if let Some(dense) =
+      crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+    {
+      return expr_to_box_form(&call1("MatrixForm", dense));
+    }
     return expr_to_box_form(&args[0]);
   }
   // `f'[x]` is held as `Derivative[1][f][x]`, and no notebook shows that
@@ -5454,7 +5460,9 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     // bracketed grid with its spacing options, word joiners inside the
     // parentheses, tagged with the function that reads it back.
     "MatrixForm" if args.len() == 1 && TF_BOX_TEXT.get() => {
-      if let Expr::List(rows) = &args[0]
+      let dense =
+        crate::functions::list_helpers_ast::densify_sparse_array(&args[0]);
+      if let Expr::List(rows) = dense.as_ref().unwrap_or(&args[0])
         && tf_is_matrix(rows)
       {
         let mut grid = tf_matrix_grid(rows);
@@ -5494,7 +5502,9 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       }
     }
     "MatrixForm" | "TableForm" if args.len() == 1 => {
-      if let Expr::List(rows) = &args[0]
+      let dense =
+        crate::functions::list_helpers_ast::densify_sparse_array(&args[0]);
+      if let Expr::List(rows) = dense.as_ref().unwrap_or(&args[0])
         && tf_is_matrix(rows)
       {
         tf_row(vec![tf_string("("), tf_matrix_grid(rows), tf_string(")")])
