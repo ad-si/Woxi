@@ -25610,6 +25610,20 @@ mod find_spanning_tree {
 mod parametric_plot3d {
   use super::*;
 
+  // A surface winding many times around over a long parameter span is
+  // sampled more finely than a single-turn one, instead of the fixed grid
+  // leaving a few coarse facets per turn.
+  #[test]
+  fn long_parameter_span_is_sampled_finer() {
+    let facets = |u_max: &str| {
+      let code = format!(
+        "ExportString[ParametricPlot3D[{{Cos[u] (2 + Cos[v]), Sin[u] (2 + Cos[v]), Sin[v]}}, {{u, 0, {u_max}}}, {{v, 0, 2 Pi}}], \"SVG\"]"
+      );
+      interpret(&code).unwrap().matches("<polygon").count()
+    };
+    assert!(facets("30 Pi") > 2 * facets("2 Pi"));
+  }
+
   // A component that depends on the parameter only through a variable's
   // value (`c = ArcTan[t/5]`) used to give "no finite values".
   #[test]
