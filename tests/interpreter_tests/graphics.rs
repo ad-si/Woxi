@@ -9113,6 +9113,20 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// Regression: `Histogram` read the nested `{{left, right}, {bottom,
+    /// top}}` `FrameLabel` as `{bottom, left}`, printing each inner list
+    /// (`{p, overall risk}`) as one caption instead of one per edge.
+    #[test]
+    fn histogram_nested_frame_label_captions_bottom_and_left() {
+      let svg = export_svg(
+        "Histogram[{1, 2, 2, 3, 3, 3, 4}, Frame -> True, \
+         FrameLabel -> {{\"fl\", \"\"}, {\"fb\", \"ft\"}}]",
+      );
+      assert!(svg.contains(">fb</text>"), "{svg}");
+      assert!(svg.contains(">fl</text>"), "{svg}");
+      assert!(!svg.contains("{fl"), "{svg}");
+    }
+
     /// Regression: the flat `{bottom, left, top, right}` form of
     /// `FrameLabel` dropped its top and right captions.
     #[test]
