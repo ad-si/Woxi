@@ -2973,6 +2973,38 @@ fn unescape_string(s: &str) -> String {
 
 /// Unescape a string from a code cell (BoxData/RowBox), preferring
 /// ASCII operator forms (e.g. `\[Rule]` → `->`) for editability.
+/// Decode escapes in saved *code* (a dumped variable value): segments
+/// outside string literals are unescaped like Input-cell source, while a
+/// string literal is kept exactly as written — its `\"` and `\\` are the
+/// literal's own escapes, and decoding them would end the string early
+/// (`"\"JH …\" - Q "` read back as `""*JH*…`).
+fn unescape_code_outside_strings(s: &str) -> String {
+  let mut out = String::with_capacity(s.len());
+  let mut segment = String::new();
+  let mut chars = s.chars().peekable();
+  while let Some(c) = chars.next() {
+    if c == '"' {
+      out.push_str(&unescape_code_string(&segment));
+      segment.clear();
+      out.push('"');
+      while let Some(d) = chars.next() {
+        out.push(d);
+        if d == '\\' {
+          if let Some(e) = chars.next() {
+            out.push(e);
+          }
+        } else if d == '"' {
+          break;
+        }
+      }
+    } else {
+      segment.push(c);
+    }
+  }
+  out.push_str(&unescape_code_string(&segment));
+  out
+}
+
 fn unescape_code_string(s: &str) -> String {
   unescape_string_inner(s, true)
 }
@@ -3498,7 +3530,7 @@ pub fn extract_saved_manipulate_variables(
       // (`scale1[abc]`), not a distinct `$CellContext`abc` that resolves
       // to nothing.
       let value = collapse_dump_line_breaks(&strip_saved_contexts(rhs));
-      Some((name, unescape_code_string(&value)))
+      Some((name, unescape_code_outside_strings(&value)))
     })
     .collect();
   resolve_saved_variable_references(&pairs)
@@ -3616,7 +3648,10 @@ fn extract_dynamic_module_variables(box_dump: &str) -> Vec<(String, String)> {
       // bare-symbol default value is context-qualified too, not just the
       // variable name.
       let value = collapse_dump_line_breaks(&strip_saved_contexts(rhs));
-      Some((unescape_code_string(name), unescape_code_string(&value)))
+      Some((
+        unescape_code_string(name),
+        unescape_code_outside_strings(&value),
+      ))
     })
     .collect()
 }
@@ -5847,6 +5882,18 @@ Cell["Chapter 2", "Chapter"]
     // An incomplete/invalid escape is left untouched rather than eating
     // following characters.
     assert_eq!(unescape_string("a\\.zzb"), "a\\.zzb");
+  }
+
+  #[test]
+  fn saved_value_keeps_string_literal_escapes() {
+    // A saved Manipulate value holding a quote: the literal's own `\"`
+    // escapes stay, so it still reads back as one string.
+    let saved = r#""\"JH JW\" - QYJWH ""#;
+    assert_eq!(unescape_code_outside_strings(saved), saved);
+    assert_eq!(
+      unescape_code_outside_strings(r#"{\[Alpha], "a\\b"}"#),
+      "{\u{3B1}, \"a\\\\b\"}"
+    );
   }
 
   #[test]
