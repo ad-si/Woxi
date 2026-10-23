@@ -39606,3 +39606,76 @@ mod style_around_pane_in_layout {
     }
   }
 }
+
+mod chart_legend_row_and_group_labels {
+  use super::*;
+
+  const CHART: &str = "BarChart[{{1, 2}, {3, 4}, {5, 6}}, \
+     ChartLabels -> {{\"A\", \"B\", \"C\"}, None}, \
+     ChartLegends -> {\"first\", \"second\"}";
+
+  #[test]
+  fn nested_chart_labels_name_the_groups() {
+    let svg = export_svg(&format!("{CHART}]"));
+    for label in ["A", "B", "C"] {
+      assert!(svg.contains(&format!(">{label}<")), "{svg}");
+    }
+  }
+
+  /// Width of the first bar (the third `<rect>`, after background and frame).
+  fn first_bar_width(svg: &str) -> f64 {
+    let tag = svg.split("<rect").nth(3).expect(svg);
+    let start = tag.find(" width=\"").unwrap() + 8;
+    let end = start + tag[start..].find('"').unwrap();
+    tag[start..end].parse().unwrap()
+  }
+
+  #[test]
+  fn row_legend_sits_below_the_plot_and_keeps_bars_wide() {
+    let side = first_bar_width(&export_svg(&format!("{CHART}]")));
+    let svg = export_svg(&format!("{CHART}, LegendAppearance -> \"Row\"]"));
+    // Without a legend column on the right the plot is wider.
+    assert!(first_bar_width(&svg) > side, "{svg}");
+    assert!(svg.contains(">first<") && svg.contains(">second<"), "{svg}");
+  }
+}
+
+mod grid_item_style_rules {
+  use super::*;
+
+  const GRID: &str = "Grid[{{\"a\", \"b\"}, {1, 2}}, \
+     ItemStyle -> {Directive[16], {1 -> Bold}, \
+     {{2, 2} -> Red, {2, 1} -> {Blue, Bold}}}]";
+
+  fn text_of(svg: &str, content: &str) -> String {
+    let end = svg.find(&format!(">{content}</text>")).expect(svg);
+    let start = svg[..end].rfind("<text").unwrap();
+    svg[start..end].to_string()
+  }
+
+  #[test]
+  fn directive_sets_size_for_all_cells() {
+    let svg = export_svg(GRID);
+    for c in ["a", "b", "1", "2"] {
+      assert!(text_of(&svg, c).contains("font-size=\"16\""), "{svg}");
+    }
+  }
+
+  #[test]
+  fn row_rule_bolds_that_row_only() {
+    let svg = export_svg(GRID);
+    assert!(text_of(&svg, "a").contains("font-weight=\"bold\""));
+    assert!(!text_of(&svg, "2").contains("font-weight"));
+  }
+
+  #[test]
+  fn cell_rules_colour_individual_cells() {
+    let svg = export_svg(GRID);
+    assert!(text_of(&svg, "2").contains("rgb(255,0,0)"), "{svg}");
+    let one = text_of(&svg, "1");
+    assert!(
+      one.contains("rgb(0,0,255)") && one.contains("bold"),
+      "{svg}"
+    );
+  }
+}
