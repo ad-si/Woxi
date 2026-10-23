@@ -801,6 +801,19 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     if let Some(image) = extract_image_from_boxes(first) {
       return Some(image);
     }
+    // A typeset `Graph` is a `NamespaceBox["NetworkGraphics", …]` whose
+    // dynamic module keeps the graph itself as
+    // `Typeset\`graph = HoldComplete[Graph[…]]`: that is the value.
+    if first
+      .trim_start()
+      .starts_with("NamespaceBox[\"NetworkGraphics\"")
+      && let Some(i) = first.find("Typeset`graph = HoldComplete[")
+      && let Ok((graph, _)) = find_matching_bracket(
+        &first[i + "Typeset`graph = HoldComplete[".len()..],
+      )
+    {
+      return Some(graph.trim().to_string());
+    }
     // Not a raster snapshot — an inline `Graphics[…]` literal built from
     // vector primitives (`PointBox`, `FilledCurveBox`, …), e.g. a
     // precomputed point set a Demonstration's initialization code bakes in
@@ -935,8 +948,10 @@ fn extract_typeset_box(s: &str) -> Option<String> {
         )
       }
       // `SuperscriptBox[a, b]` → `(a)^(b)`.
+      // The outer pair keeps the power one operand of a tighter-binding
+      // neighbour: `f /@ SuperscriptBox[rx, n]` is `f /@ (rx^n)`.
       "SuperscriptBox" if args.len() == 2 => {
-        format!("({})^({})", conv(&args[0]), conv(&args[1]))
+        format!("(({})^({}))", conv(&args[0]), conv(&args[1]))
       }
       // `SubscriptBox[a, b]` → `Subscript[a, b]` (Wolfram's evaluable form),
       // except when the subscript is a `\[LeftDoubleBracket]…\]` group: the
@@ -945,8 +960,29 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       "SubscriptBox" if args.len() == 2 => {
         let sub = conv(&args[1]);
         let base = conv(&args[0]);
-        if let Some(spec) = part_spec_inside_double_brackets(&sub) {
+        // `Part` typed with ASCII brackets as the subscript, `c` over
+        // `[[1]]`, is `c[[1]]` too.
+        let ascii_part = sub
+          .trim()
+          .strip_prefix("[[")
+          .and_then(|r| r.strip_suffix("]]"))
+          .map(str::trim);
+        if let Some(spec) =
+          part_spec_inside_double_brackets(&sub).or(ascii_part)
+        {
           format_part_access(&base, spec)
+        } else if split_top_level_commas(&sub).len() > 1
+          && split_top_level_commas(&sub)
+            .iter()
+            .all(|p| crate::parse_to_expr(p.trim()).is_ok())
+        {
+          // `X` over `1,i` is `Subscript[X, 1, i]`: one index per entry.
+          let base = if crate::parse_to_expr(&base).is_ok() {
+            base
+          } else {
+            format!("\"{}\"", escape_string(&base))
+          };
+          format!("Subscript[{base}, {sub}]")
         } else {
           // The subscript is usually a real index (`Subscript[p, 0]`
           // stays evaluable, keeping `p` and `0` bare), but a
@@ -1001,7 +1037,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // `SubsuperscriptBox[a, b, c]` → `Subscript[a, b]^c`.
       "SubsuperscriptBox" if args.len() == 3 => {
         format!(
-          "(Subscript[{}, {}])^({})",
+          "((Subscript[{}, {}])^({}))",
           conv(&args[0]),
           conv(&args[1]),
           conv(&args[2])
@@ -1740,7 +1776,12 @@ fn has_real_predecessor(parts: &[String], i: usize) -> bool {
     ) {
       return false;
     }
-    if is_soft_whitespace_box_token(t) {
+    // A comment, `(* … *)` (a bare token or a RowBox around one), is no
+    // value either: whatever stands before it decides.
+    if is_soft_whitespace_box_token(t)
+      || t.starts_with("RowBox[{\"(*\"")
+      || t.starts_with("\"(*")
+    {
       continue;
     }
     if is_bare_char(t, '[')
@@ -3771,12 +3812,25 @@ fn split_top_level_commas(s: &str) -> Vec<&str> {
   let mut prev_backslash = false;
   let mut start = 0;
 
+  // Brackets inside a comment (`(* If[a … *)`) do not count.
+  let mut comment_depth = 0usize;
+  let bytes = s.as_bytes();
   for (i, c) in s.char_indices() {
     if in_string {
       if c == '"' && !prev_backslash {
         in_string = false;
       }
       prev_backslash = c == '\\' && !prev_backslash;
+      continue;
+    }
+    if c == '(' && bytes.get(i + 1) == Some(&b'*') {
+      comment_depth += 1;
+      continue;
+    }
+    if comment_depth > 0 {
+      if c == ')' && i > 0 && bytes[i - 1] == b'*' {
+        comment_depth -= 1;
+      }
       continue;
     }
 
@@ -6301,7 +6355,7 @@ Cell["Chapter 2", "Chapter"]
     let s = r#"BoxData[TemplateBox[{"9.8", RowBox[{"\"m\"", "/", SuperscriptBox["\"s\"", "2"]}], "meters per second squared", FractionBox["\"Meters\"", SuperscriptBox["\"Seconds\"", "2"]]}, "Quantity"]]"#;
     assert_eq!(
       extract_cell_content(s),
-      "Quantity[9.8, ((\"Meters\")/((\"Seconds\")^(2)))]"
+      "Quantity[9.8, ((\"Meters\")/(((\"Seconds\")^(2))))]"
     );
   }
 
@@ -7107,11 +7161,61 @@ Cell["Chapter 2", "Chapter"]
     );
   }
 
+  /// A power typeset as a superscript is one operand of its neighbours:
+  /// `f /@ rx^n` maps over the power, not the power of a map
+  /// (InversiveGeometryVIISpiderEyes).
+  #[test]
+  fn superscript_is_one_operand() {
+    let s = r#"BoxData[RowBox[{"f", "/@", SuperscriptBox["rx", "n"]}]]"#;
+    assert_eq!(extract_cell_content(s), "f/@((rx)^(n))");
+  }
+
+  /// `SubscriptBox["X", "1,i"]` is `Subscript[X, 1, i]`, and a subscript
+  /// typed as ASCII `[[1]]` is `Part` (DynamicsOfAContinuousDistillation…,
+  /// TaxIncidence).
+  #[test]
+  fn subscript_index_lists_and_ascii_parts() {
+    let s = r#"BoxData[SubscriptBox["X", RowBox[{"1", ",", "i"}]]]"#;
+    assert_eq!(extract_cell_content(s), "Subscript[X, 1,i]");
+    let s = r#"BoxData[SubscriptBox["x", RowBox[{"[", RowBox[{"[", "1", "]"}], "]"}]]]"#;
+    assert_eq!(extract_cell_content(s), "x[[1]]");
+  }
+
+  #[test]
+  fn comment_before_arguments_is_not_a_factor() {
+    let s = r#"BoxData[RowBox[{"f", "[", "\[IndentingNewLine]", RowBox[{"(*", "c", "*)"}], "\[IndentingNewLine]", RowBox[{RowBox[{RowBox[{"a", "=", "1"}], ";", RowBox[{"(*", RowBox[{"g", "["}], "*)"}], "a"}], ",", "b"}], "]"}]]"#;
+    let code = extract_cell_content(s);
+    assert!(crate::parse_to_expr(&code).is_ok(), "{code}");
+    assert!(!code.contains("(a=1"), "{code}");
+  }
+
+  /// A typeset Graph literal is the Graph kept in its NetworkGraphics
+  /// module (GraphProducts).
+  #[test]
+  fn network_graphics_box_is_its_graph() {
+    let s = r#"BoxData[GraphicsBox[NamespaceBox["NetworkGraphics", DynamicModuleBox[{Typeset`graph = HoldComplete[Graph[{1, 2}, {Null, SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{2}, {1}}}, Pattern}]}, {VertexCoordinates -> {{1, 0}, {2, 0}}}]], Typeset`boxes}, {}]]]]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Graph[{1, 2}, {Null, SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{2}, {1}}}, Pattern}]}, {VertexCoordinates -> {{1, 0}, {2, 0}}}]"
+    );
+  }
+
+  /// A comment between a call's bracket and its arguments neither makes
+  /// the arguments a product nor hides a top-level comma with the
+  /// brackets it contains (PolyhedralPlayground).
+  #[test]
+  fn comments_inside_argument_lists() {
+    assert_eq!(
+      split_top_level_commas("a=1;(*g[*)a, b"),
+      vec!["a=1;(*g[*)a", " b"]
+    );
+  }
+
   #[test]
   fn test_extract_cell_content_superscript_with_option() {
     // A plain power whose box carries a display option must still convert.
     let s = r#"BoxData[SuperscriptBox["x", "2", MultilineFunction->None]]"#;
-    assert_eq!(extract_cell_content(s), "(x)^(2)");
+    assert_eq!(extract_cell_content(s), "((x)^(2))");
   }
 
   /// `SuperscriptBox["H", "-"]` typesets the hydride ion "H⁻": a bare `-`
@@ -7133,7 +7237,7 @@ Cell["Chapter 2", "Chapter"]
       RowBox[{
        SuperscriptBox["\[Phi]", "\[Prime]",
         MultilineFunction->None], "[", "t", "]"}], "2"]]"#;
-    assert_eq!(extract_cell_content(s), "(ϕ'[t])^(2)");
+    assert_eq!(extract_cell_content(s), "((ϕ'[t])^(2))");
   }
 
   #[test]
@@ -7415,7 +7519,7 @@ Cell[BoxData[
     let CellEntry::Single(cell) = &parsed.cells[0] else {
       panic!("expected a single cell");
     };
-    assert_eq!(cell.content, "Integrate[((x)^(2)+1), {x, 0, 2}]");
+    assert_eq!(cell.content, "Integrate[(((x)^(2))+1), {x, 0, 2}]");
   }
 
   /// A coefficient ending in a named-character letter (`2 \[Pi]`, typeset
@@ -8219,7 +8323,7 @@ Cell[TextData[{
   FractionBox[RowBox[{"Sin", "[", "t", "]"}], SuperscriptBox["n", "2"]]}]]"#;
     assert_eq!(
       extract_cell_content(s),
-      "Sum[((Sin[t])/((n)^(2))), {n, 1, m}]"
+      "Sum[((Sin[t])/(((n)^(2)))), {n, 1, m}]"
     );
     // `∏` is the same shape, and the operator may be preceded by factors
     // that are *not* part of the body (the FrontEnd groups the operator
