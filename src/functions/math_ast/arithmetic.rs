@@ -1170,7 +1170,11 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && flat_args.iter().any(is_bigfloat_number)
   {
     let demote = |e: &Expr| match e {
-      Expr::BigFloat(digits, _) => digits.parse::<f64>().ok().map(Expr::Real),
+      Expr::BigFloat(digits, _) => digits
+        .parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite())
+        .map(Expr::Real),
       _ => None,
     };
     for arg in &mut flat_args {
@@ -1186,7 +1190,9 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     has_real = flat_args.iter().any(|a| matches!(a, Expr::Real(_)));
-    has_bigfloat = false;
+    // A BigFloat beyond the machine range cannot join the machine fold and
+    // keeps the sum arbitrary precision.
+    has_bigfloat = flat_args.iter().any(|a| matches!(a, Expr::BigFloat(..)));
   }
 
   // If all numeric and no Reals/BigFloats, use exact rational arithmetic.
@@ -1202,7 +1208,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // If all numeric with BigFloat (no machine Real), use precision-tracked arithmetic
-  if all_numeric && has_bigfloat && !has_real {
+  if all_numeric && has_bigfloat {
     return Ok(bigfloat_plus(&flat_args));
   }
 
@@ -1217,7 +1223,13 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         terms.push(c);
       }
     }
-    return Ok(Expr::Real(machine_sum(&terms)));
+    let sum = machine_sum(&terms);
+    // Finite machine reals that add up past the machine range promote to an
+    // arbitrary-precision sum rather than overflowing to `Infinity`.
+    if sum.is_infinite() && terms.iter().all(|t| t.to_f64().is_finite()) {
+      return Ok(bigfloat_plus(&flat_args));
+    }
+    return Ok(Expr::Real(sum));
   }
   if all_numeric {
     let mut sum = 0.0;
@@ -8245,7 +8257,28 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(product);
   }
-  Ok(flip_unit_negative_rational_product(times_ast_inner(args)?))
+  let product = times_ast_inner(args)?;
+  // Nonzero finite machine reals whose product leaves the machine range
+  // promote to an arbitrary-precision number (`1.*^200 * 1.*^200` is
+  // `1.*^400`) rather than overflowing to `Infinity` or underflowing to `0.`.
+  if matches!(product, Expr::Real(r) if r.is_infinite() || r == 0.0)
+    && args.iter().all(|a| match a {
+      Expr::Real(r) => r.is_finite() && *r != 0.0,
+      other => expr_to_coeff(other).is_some_and(|c| !c.is_zero()),
+    })
+  {
+    let promoted: Vec<Expr> = args
+      .iter()
+      .map(|a| match a {
+        Expr::Real(r) => {
+          Expr::BigFloat(format!("{r}"), MACHINE_PRECISION_DIGITS)
+        }
+        other => other.clone(),
+      })
+      .collect();
+    return bigfloat_times(&promoted);
+  }
+  Ok(flip_unit_negative_rational_product(product))
 }
 
 fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -10745,6 +10778,37 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A machine real over (or under) an arbitrary-precision number outside the
+  // machine range (an overflowed `Exp[1000.]`) cannot be divided in f64:
+  // take the product with the reciprocal, which keeps the full range.
+  if matches!(
+    (a, b),
+    (Expr::Real(_), Expr::BigFloat(..)) | (Expr::BigFloat(..), Expr::Real(_))
+  ) && let Expr::BigFloat(digits, _) = if matches!(a, Expr::BigFloat(..)) {
+    a
+  } else {
+    b
+  } && !digits
+    .parse::<f64>()
+    .is_ok_and(|v| v.is_finite() && v != 0.0)
+  {
+    let reciprocal = power_two(b, &Expr::Integer(-1))?;
+    return times_ast(&[a.clone(), reciprocal]);
+  }
+
+  // A quotient of machine reals past the machine range multiplies by the
+  // reciprocal instead, whose product promotes to arbitrary precision.
+  if let (Expr::Real(x), Expr::Real(y)) = (a, b)
+    && *y != 0.0
+    && x.is_finite()
+    && (x / y).is_infinite()
+  {
+    let reciprocal = power_two(b, &Expr::Integer(-1))?;
+    if matches!(reciprocal, Expr::Real(r) if r.is_finite()) {
+      return times_ast(&[a.clone(), reciprocal]);
+    }
+  }
+
   // For reals, perform floating-point division
   // Use try_eval_to_f64 when at least one operand is Real to handle constants like Pi/4.0
   let has_real = matches!(a, Expr::Real(_)) || matches!(b, Expr::Real(_));
@@ -11745,8 +11809,8 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // E^Real → numeric Real (matches Wolfram behavior: a machine-precision
     // exponent forces numeric evaluation). Does not apply to integer or
     // symbolic exponents, which stay symbolic (e.g. E^2, E^x).
-    if let Expr::Real(r) = exp {
-      return Ok(Expr::Real(r.exp()));
+    if matches!(exp, Expr::Real(_)) {
+      return crate::functions::math_ast::exp_ast(std::slice::from_ref(exp));
     }
   }
 
@@ -12949,6 +13013,16 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         }
       }
     } else if has_real {
+      // A power past the machine range is promoted to an arbitrary-
+      // precision number rather than collapsing to `Infinity` or `0.`.
+      if (result.is_infinite() || (result == 0.0 && a != 0.0))
+        && let Some(promoted) =
+          crate::functions::math_ast::numerical::machine_power_out_of_range(
+            a, b,
+          )
+      {
+        return promoted;
+      }
       Ok(Expr::Real(result))
     } else {
       // Both were integers - use num_to_expr to get Integer when result is whole
@@ -14102,21 +14176,87 @@ fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// `$MachinePrecision` in digits: the precision a machine real carries when
+/// it takes part in an arbitrary-precision computation.
+const MACHINE_PRECISION_DIGITS: f64 = 15.954589770191003;
+
+/// Split a numeric expression into `(m, k)` with value `m·10^k`, so that
+/// arbitrary-precision numbers beyond the f64 range (whose digit strings
+/// run to hundreds of digits) can still be compared and combined.
+fn scaled_parts(e: &Expr) -> Option<(f64, i64)> {
+  let decompose = |f: f64| {
+    if f == 0.0 || !f.is_finite() {
+      (f, 0)
+    } else {
+      let k = f.abs().log10().floor() as i64;
+      (f / 10f64.powi(k as i32), k)
+    }
+  };
+  match e {
+    Expr::BigFloat(digits, _) => {
+      if digits.contains(['e', 'E', '*']) {
+        return digits.parse::<f64>().ok().map(decompose);
+      }
+      let (neg, abs) = match digits.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, digits.as_str()),
+      };
+      let (int_part, frac_part) = abs.split_once('.').unwrap_or((abs, ""));
+      let int_trim = int_part.trim_start_matches('0');
+      let (sig, k) = if int_trim.is_empty() {
+        let frac_trim = frac_part.trim_start_matches('0');
+        if frac_trim.is_empty() {
+          return Some((0.0, 0));
+        }
+        let zeros = (frac_part.len() - frac_trim.len()) as i64;
+        (frac_trim.to_string(), -(zeros + 1))
+      } else {
+        (format!("{int_trim}{frac_part}"), int_trim.len() as i64 - 1)
+      };
+      let lead: String = sig.chars().take(17).collect();
+      let m: f64 = format!("{}.{}", &lead[..1], &lead[1..]).parse().ok()?;
+      Some((if neg { -m } else { m }, k))
+    }
+    other => try_eval_to_f64(other).map(decompose),
+  }
+}
+
 /// Sum BigFloat (precision-tagged) numbers with precision tracking.
 /// Handles BigFloat + BigFloat and BigFloat + Integer/Rational.
 fn bigfloat_plus(args: &[Expr]) -> Expr {
-  // Absolute error of the sum: each BigFloat contributes |v|·10^-p; exact
-  // summands (Integer, BigInteger, Rational) contribute none.
+  // The summands may lie far outside the machine range (an overflowed
+  // `Exp[1000.]` is `1.97*^434`), so the error and precision bookkeeping is
+  // done on mantissas scaled by the largest decimal exponent `scale`; the
+  // precision of a sum only depends on ratios, which the scaling keeps.
+  let parts: Vec<Option<(f64, i64)>> = args.iter().map(scaled_parts).collect();
+  let scale = parts
+    .iter()
+    .flatten()
+    .filter(|(m, _)| *m != 0.0)
+    .map(|(_, k)| *k)
+    .max()
+    .unwrap_or(0);
+  let at_scale = |(m, k): (f64, i64)| {
+    let d = k - scale;
+    if d < -300 {
+      0.0
+    } else {
+      m * 10f64.powi(d as i32)
+    }
+  };
+  // Absolute error of the sum: each inexact summand contributes |v|·10^-p;
+  // exact summands (Integer, BigInteger, Rational) contribute none.
   let mut sum_val: f64 = 0.0;
   let mut sum_error: f64 = 0.0;
-  for arg in args {
+  for (arg, part) in args.iter().zip(&parts) {
+    let v = part.map_or(0.0, at_scale);
+    sum_val += v;
     match arg {
-      Expr::BigFloat(digits, prec) => {
-        let v: f64 = digits.parse().unwrap_or(0.0);
-        sum_val += v;
-        sum_error += v.abs() * 10f64.powf(-*prec);
+      Expr::BigFloat(_, prec) => sum_error += v.abs() * 10f64.powf(-*prec),
+      Expr::Real(_) => {
+        sum_error += v.abs() * 10f64.powf(-MACHINE_PRECISION_DIGITS);
       }
-      other => sum_val += try_eval_to_f64(other).unwrap_or(0.0),
+      _ => {}
     }
   }
   let min_prec = || {
@@ -14124,12 +14264,14 @@ fn bigfloat_plus(args: &[Expr]) -> Expr {
       .iter()
       .filter_map(|a| match a {
         Expr::BigFloat(_, p) => Some(*p),
+        Expr::Real(_) => Some(MACHINE_PRECISION_DIGITS),
         _ => None,
       })
       .reduce(f64::min)
       .unwrap_or(1.0)
   };
-  // Precision of a sum of value `v`: the digits of `v` its error leaves.
+  // Precision of a sum of (scaled) value `v`: the digits of `v` its error
+  // leaves.
   let precision_of = |v: f64| {
     if v.abs() < 1e-300 || sum_error <= 0.0 {
       min_prec()
@@ -14150,16 +14292,12 @@ fn bigfloat_plus(args: &[Expr]) -> Expr {
     let rm = RoundingMode::ToEven;
     // Enough bits for the most precise summand at its magnitude, so the
     // exact parts of a cancelling sum survive.
-    let max_mag = args
-      .iter()
-      .filter_map(try_eval_to_f64)
-      .fold(0.0f64, |m, v| m.max(v.abs()))
-      .max(1.0)
-      .log10();
+    let max_mag = scale as f64;
     let max_prec = args
       .iter()
       .filter_map(|a| match a {
         Expr::BigFloat(_, p) => Some(*p),
+        Expr::Real(_) => Some(MACHINE_PRECISION_DIGITS),
         _ => None,
       })
       .fold(0.0f64, f64::max)
@@ -14180,7 +14318,8 @@ fn bigfloat_plus(args: &[Expr]) -> Expr {
       if ok {
         let mut sum_str =
           bigfloat_to_string(&sum, None, rm, &mut cc).unwrap_or_default();
-        let value: f64 = sum_str.parse().unwrap_or(sum_val);
+        let value: f64 = scaled_parts(&Expr::BigFloat(sum_str.clone(), 0.0))
+          .map_or(sum_val, at_scale);
         // A sum below its own error is a zero of that accuracy:
         // N[Pi, 30] - N[Pi, 20] is 0``19.5.
         if sum_error > 0.0 && value.abs() <= sum_error {

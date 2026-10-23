@@ -2357,6 +2357,8 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("Cot", args))
 }
 
+const MACHINE_PRECISION: f64 = 15.954589770191003;
+
 pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -2386,7 +2388,19 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::emit_message("General::ovfl: Overflow occurred in computation.");
         return Ok(call0("Overflow"));
       }
-      Ok(Expr::Real(f.exp()))
+      let r = f.exp();
+      // A result past the machine range is promoted to an arbitrary-
+      // precision number (`Exp[1000.]` is `1.97…*^434`) rather than
+      // collapsing to `Infinity` or `0.`.
+      if (r.is_infinite() || r == 0.0)
+        && f.abs() * std::f64::consts::LOG10_E
+          <= super::numerical::MAX_PROMOTED_DECIMAL_EXPONENT
+        && let Some(result) =
+          super::numerical::bigfloat_exp(&format!("{f}"), MACHINE_PRECISION)
+      {
+        return result;
+      }
+      Ok(Expr::Real(r))
     }
     // Arbitrary-precision argument: compute e^x at the tracked precision
     // instead of leaving `E^1.`30.` unevaluated.
