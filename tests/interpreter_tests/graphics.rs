@@ -38667,6 +38667,38 @@ mod static_dynamic_controls {
     assert!(svg.contains("rgb(255,0,0)"), "keeps the Red style: {svg}");
   }
 
+  /// `Style[prim, size, color]` in a Graphics3D list styles only its own
+  /// primitive: the colour must not leak onto the next label, and the size
+  /// applies to the `Text` inside.
+  #[test]
+  fn graphics3d_style_wrapped_text_is_scoped() {
+    let svg = export_svg(
+      "Graphics3D[{Style[Text[a, {1, 0, 0}], 18, Red], \
+       Style[Text[b, {0, 1, 0}], 20, Blue], Text[c, {0, 0, 1}]}]",
+    );
+    let text_tags: Vec<&str> =
+      svg.lines().filter(|l| l.contains("<text")).collect();
+    assert_eq!(text_tags.len(), 3, "three labels: {svg}");
+    assert!(
+      text_tags[0].contains("font-size=\"18.0\"")
+        && text_tags[0].contains("rgb(255,0,0)"),
+      "first label is red 18: {}",
+      text_tags[0]
+    );
+    assert!(
+      text_tags[1].contains("font-size=\"20.0\"")
+        && text_tags[1].contains("rgb(0,0,255)"),
+      "second label is blue 20: {}",
+      text_tags[1]
+    );
+    assert!(
+      text_tags[2].contains("font-size=\"12.0\"")
+        && !text_tags[2].contains("rgb(0,0,255)"),
+      "third label keeps defaults: {}",
+      text_tags[2]
+    );
+  }
+
   /// The same holds for an inset text label over a plot.
   #[test]
   fn inset_of_text_over_a_plot() {

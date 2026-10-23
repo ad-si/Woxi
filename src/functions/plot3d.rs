@@ -3218,6 +3218,9 @@ struct StyleState3D {
   /// `VertexTextureCoordinates` of the polygon being added: one `(u, v)`
   /// per corner, placing `texture` on it.
   texture_coords: Option<std::sync::Arc<Vec<(f64, f64)>>>,
+  /// The font size `Style[…, size]` gives the `Text` labels inside it.
+  /// `None` leaves the default 12.
+  font_size: Option<f64>,
 }
 
 impl Default for StyleState3D {
@@ -3237,6 +3240,7 @@ impl Default for StyleState3D {
       point_size: None,
       texture: None,
       texture_coords: None,
+      font_size: None,
     }
   }
 }
@@ -4665,7 +4669,7 @@ fn push_text3d_label(
     Some(s) => (
       s.svg(),
       s.visible_char_count(),
-      s.font_size.unwrap_or(12.0),
+      s.font_size.or(style.font_size).unwrap_or(12.0),
       s.color,
     ),
     None => (String::new(), 0, 12.0, None),
@@ -5264,6 +5268,24 @@ fn collect_3d_primitives(
             // rather than dropping them.
             None => prims.extend(sub),
           }
+        }
+        // `Style[prims, directives…]` applies its directives (colours, a
+        // numeric font size, …) to its first argument only, so they must
+        // not leak into the primitives that follow it in the enclosing list.
+        "Style" if args.len() >= 2 => {
+          let saved = style.clone();
+          for directive in &args[1..] {
+            let evaluated =
+              evaluate_expr_to_expr(directive).unwrap_or(directive.clone());
+            match try_eval_to_f64(&evaluated) {
+              Some(size) if size > 0.0 => style.font_size = Some(size),
+              _ => {
+                apply_3d_directive(&evaluated, style);
+              }
+            }
+          }
+          collect_3d_primitives(&args[0], style, prims);
+          *style = saved;
         }
         _ => {
           // Try as directive first
@@ -7278,6 +7300,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             point_size: None,
             texture: None,
             texture_coords: None,
+            font_size: None,
           },
         ),
       };
