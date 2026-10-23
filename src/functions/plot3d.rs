@@ -10640,7 +10640,8 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     .into(),
                   ));
                 });
-                if !emitted
+                if refine
+                  && !emitted
                   && depth_level < CONTOUR3D_REFINE_DEPTH
                   && refinement_budget > 0
                 {
