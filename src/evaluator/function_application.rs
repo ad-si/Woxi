@@ -2938,6 +2938,23 @@ pub fn apply_curried_call(
         // `Derivative[n][InterpolatingFunction[…]]` is another
         // InterpolatingFunction that carries the derivative order, so `f'`
         // stays an interpolating function the way wolframscript reports it.
+        // A kernel-layout one (as stored by wolframscript) is read into
+        // Woxi's own form first.
+        let native_interp = match &args[0] {
+          Expr::FunctionCall {
+            name: interp_name,
+            args: interp_args,
+          } if name == "Derivative"
+            && interp_name == "InterpolatingFunction"
+            && interp_args.len() == 5 =>
+          {
+            crate::functions::ode_ast::kernel_interpolating_function_to_native(
+              interp_args,
+            )
+            .map(|a| call("InterpolatingFunction", a))
+          }
+          _ => None,
+        };
         if name == "Derivative"
           && func_args.len() == 1
           && args.len() == 1
@@ -2946,7 +2963,7 @@ pub fn apply_curried_call(
           && let Expr::FunctionCall {
             name: interp_name,
             args: interp_args,
-          } = &args[0]
+          } = native_interp.as_ref().unwrap_or(&args[0])
           && interp_name == "InterpolatingFunction"
           && (2..=4).contains(&interp_args.len())
           && !matches!(interp_args.get(2), Some(Expr::List(_)))

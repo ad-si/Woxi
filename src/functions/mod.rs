@@ -51,6 +51,7 @@ pub mod graph_data;
 pub mod graphics;
 pub mod graphicsbox;
 pub mod groebner_ast;
+pub mod hermite_interpolation;
 pub mod http_ast;
 pub mod image_ast;
 pub mod information_render;

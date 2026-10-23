@@ -8862,6 +8862,35 @@ pub fn interpolation_ast(
     return Ok(unevaluated(head, args));
   }
 
+  // `{{x}, f, f', …}` rows: with any derivative given, Hermite interpolation;
+  // with values only, the same as `{x, f}` pairs.
+  let normalized_rows: Vec<Expr>;
+  let mut data_list: &[Expr] = data_list;
+  if head != "ListInterpolation"
+    && let Some(rows) =
+      crate::functions::hermite_interpolation::parse_rows(data_list)
+  {
+    if crate::functions::hermite_interpolation::has_derivatives(&rows) {
+      return Ok(crate::functions::hermite_interpolation::build(
+        &rows,
+        interp_order.max(1) as usize,
+      ));
+    }
+    normalized_rows = data_list
+      .iter()
+      .filter_map(|r| match r {
+        Expr::List(parts) => match parts.as_slice() {
+          [Expr::List(c), v] => {
+            Some(Expr::List(vec![c[0].clone(), v.clone()].into()))
+          }
+          _ => None,
+        },
+        _ => None,
+      })
+      .collect();
+    data_list = &normalized_rows;
+  }
+
   // ListInterpolation of a rectangular numeric matrix is a 2-D grid (values on
   // the integer grid 1..rows × 1..cols), not a list of {x, y} points.
   if head == "ListInterpolation"
@@ -8914,7 +8943,7 @@ pub fn interpolation_ast(
     flattened_2d_pairs.as_deref().or_else(|| {
       (head != "ListInterpolation"
         && matches!(&data_list[0], Expr::List(items) if items.len() == 3))
-      .then_some(data_list.as_slice())
+      .then_some(data_list)
     });
   if let Some(triples) = triples_2d
     && let Some(result) = try_2d_scattered_interpolation(
@@ -9559,17 +9588,7 @@ fn evaluate_interpolating_function_2d_explicit(
   let (x_lo, x_hi) = (xs[0].min(xs[nr - 1]), xs[0].max(xs[nr - 1]));
   let (y_lo, y_hi) = (ys[0].min(ys[nc - 1]), ys[0].max(ys[nc - 1]));
   if x < x_lo || x > x_hi || y < y_lo || y > y_hi {
-    crate::emit_message(&format!(
-      "InterpolatingFunction::dmval: Input value {{{}, {}}} lies outside the range of data in the interpolating function. Extrapolation will be used.",
-      crate::syntax::format_expr(
-        &coord_exprs[0],
-        crate::syntax::ExprForm::Output
-      ),
-      crate::syntax::format_expr(
-        &coord_exprs[1],
-        crate::syntax::ExprForm::Output
-      )
-    ));
+    emit_dmval(&coord_exprs);
   }
 
   // Only the local `(order + 1)`-point stencil on each axis feeds the
@@ -9598,6 +9617,18 @@ fn evaluate_interpolating_function_2d_explicit(
   let re = interp_1d_xy_deriv_f64(xs_window, &col_re, x, derivative.0);
   let im = interp_1d_xy_deriv_f64(xs_window, &col_im, x, derivative.0);
   Ok(real_or_machine_complex(re, im))
+}
+
+/// `InterpolatingFunction::dmval` for a query point outside the data.
+pub(crate) fn emit_dmval(point: &[Expr]) {
+  let coords: Vec<String> = point
+    .iter()
+    .map(|c| crate::syntax::format_expr(c, crate::syntax::ExprForm::Output))
+    .collect();
+  crate::emit_message(&format!(
+    "InterpolatingFunction::dmval: Input value {{{}}} lies outside the range of data in the interpolating function. Extrapolation will be used.",
+    coords.join(", ")
+  ));
 }
 
 /// A machine real when the imaginary part vanishes, else the machine complex.
@@ -9802,7 +9833,7 @@ fn exact_coordinate(source: &Expr, value: f64) -> Expr {
 
 /// Whether an interpolation coordinate is an exact number, so that exact
 /// arithmetic through it is worthwhile.
-fn is_exact_number(e: &Expr) -> bool {
+pub(crate) fn is_exact_number(e: &Expr) -> bool {
   match e {
     Expr::Integer(_) | Expr::BigInteger(_) => true,
     Expr::FunctionCall { name, args }
@@ -9876,6 +9907,16 @@ fn interpolating_function_property(
 /// `InterpolatingFunction[domain, {{x, y}, …}, order]` form evaluated here.
 /// `values` is either a plain list or `{Developer`PackedArrayForm, offsets,
 /// {y, …}}`. Returns `None` for anything that is not that exact shape.
+/// A kernel-layout `InterpolatingFunction` (as wolframscript stores it) in
+/// Woxi's own `{domain, data, order}` form, when it is one Woxi reads.
+pub(crate) fn kernel_interpolating_function_to_native(
+  func_args: &[Expr],
+) -> Option<Vec<Expr>> {
+  let mut pairs = kernel_interpolating_function_to_pairs(func_args)?;
+  let order = pairs.pop()?;
+  Some(vec![func_args[0].clone(), Expr::List(pairs.into()), order])
+}
+
 fn kernel_interpolating_function_to_pairs(
   func_args: &[Expr],
 ) -> Option<Vec<Expr>> {
@@ -9941,6 +9982,20 @@ fn kernel_interpolating_function_to_pairs(
   if xs.len() != ys.len() || xs.len() < 2 {
     return None;
   }
+  // Scalar values stored with their derivatives become Hermite rows.
+  let hermite_rows: Option<Vec<Expr>> = (stored > 1)
+    .then(|| hermite_blocks(values, xs.len(), stored))
+    .flatten()
+    .map(|blocks| {
+      xs.iter()
+        .zip(blocks)
+        .map(|(x, block)| {
+          let mut parts = vec![Expr::List(vec![x.clone()].into())];
+          parts.extend(block);
+          Expr::List(parts.into())
+        })
+        .collect()
+    });
   let order = match info.get(4) {
     Some(Expr::List(o)) => match o.as_slice() {
       [Expr::Integer(k)] if *k >= 2 => *k - 1,
@@ -9948,13 +10003,61 @@ fn kernel_interpolating_function_to_pairs(
     },
     _ => return None,
   };
-  let mut out: Vec<Expr> = xs
-    .iter()
-    .zip(ys.iter())
-    .map(|(x, y)| Expr::List(vec![x.clone(), y.clone()].into()))
-    .collect();
+  let mut out: Vec<Expr> = match hermite_rows {
+    Some(rows) => rows,
+    None => xs
+      .iter()
+      .zip(ys.iter())
+      .map(|(x, y)| Expr::List(vec![x.clone(), y.clone()].into()))
+      .collect(),
+  };
   out.push(Expr::Integer(order));
   Some(out)
+}
+
+/// The per-point `{f, f', …}` blocks of a kernel InterpolatingFunction's
+/// stored values, when every point holds exactly `stored` scalars.
+fn hermite_blocks(
+  values: &Expr,
+  n: usize,
+  stored: usize,
+) -> Option<Vec<Vec<Expr>>> {
+  let Expr::List(items) = values else {
+    return None;
+  };
+  let blocks: Vec<Vec<Expr>> = match items.as_slice() {
+    [Expr::Identifier(tag), Expr::List(offsets), Expr::List(flat)]
+      if tag == "Developer`PackedArrayForm" =>
+    {
+      let offsets: Vec<usize> = offsets
+        .iter()
+        .map(|o| match o {
+          Expr::Integer(o) if *o >= 0 => Some(*o as usize),
+          _ => None,
+        })
+        .collect::<Option<_>>()?;
+      offsets
+        .windows(2)
+        .map(|w| {
+          (w[0] <= w[1] && w[1] <= flat.len()).then(|| {
+            flat.iter().skip(w[0]).take(w[1] - w[0]).cloned().collect()
+          })
+        })
+        .collect::<Option<_>>()?
+    }
+    _ => items
+      .iter()
+      .map(|item| match item {
+        Expr::List(block) => Some(block.to_vec()),
+        _ => None,
+      })
+      .collect::<Option<_>>()?,
+  };
+  (blocks.len() == n
+    && blocks.iter().all(|b| {
+      b.len() == stored && !b.iter().any(|v| matches!(v, Expr::List(_)))
+    }))
+  .then_some(blocks)
 }
 
 pub fn evaluate_interpolating_function(
@@ -10053,6 +10156,28 @@ pub fn evaluate_interpolating_function(
     _ => 0,
   };
 
+  // Values with derivatives: `{{x}, f, f', …}` rows.
+  if let Expr::List(items) = data
+    && let Some(rows) =
+      crate::functions::hermite_interpolation::parse_rows(items)
+  {
+    use crate::functions::hermite_interpolation as hermite;
+    if let Expr::String(prop) = &call_args[0] {
+      if let Some(result) = hermite::property(&rows, order, prop) {
+        return Ok(result);
+      }
+    } else {
+      let x = crate::evaluator::evaluate_expr_to_expr(&call_args[0])?;
+      if let Some(v) = hermite::evaluate(&rows, order, derivative_order, &x)? {
+        return Ok(v);
+      }
+    }
+    return Ok(Expr::CurriedCall {
+      func: Box::new(unevaluated("InterpolatingFunction", func_args)),
+      args: call_args.to_vec(),
+    });
+  }
+
   // Property access: InterpolatingFunction[…]["Domain"], ["Grid"], etc.
   if let Expr::String(prop) = &call_args[0]
     && let Some(result) =
@@ -10093,10 +10218,7 @@ pub fn evaluate_interpolating_function(
     extract_point(&data_points[n - 1]),
   ) && (x_val < x_lo || x_val > x_hi)
   {
-    crate::emit_message(&format!(
-      "InterpolatingFunction::dmval: Input value {{{}}} lies outside the range of data in the interpolating function. Extrapolation will be used.",
-      crate::syntax::format_expr(&x_val_expr, crate::syntax::ExprForm::Output)
-    ));
+    emit_dmval(std::slice::from_ref(&x_val_expr));
   }
 
   if n == 1 {

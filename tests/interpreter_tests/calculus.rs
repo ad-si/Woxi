@@ -21355,3 +21355,92 @@ mod linear_programs_in_minimize {
     );
   }
 }
+
+mod interpolation_with_derivatives {
+  use super::*;
+
+  #[test]
+  fn first_derivatives_give_cubic_hermite_pieces() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{{0}, 1, 0}, {{1}, 3, 1}, {{2}, 2, 0}, {{3}, 5, 2}}]; {f[0.5], f'[0.5], f''[0.5], f[3], f'[3]}"
+      )
+      .unwrap(),
+      "{1.875, 2.75, 1., 5, 2}"
+    );
+    // Derivative data overrides a lower InterpolationOrder.
+    assert_eq!(
+      interpret(
+        "h = Interpolation[{{{0}, 1, 0}, {{1}, 3, 1}, {{2}, 2, 0}}, InterpolationOrder -> 1]; {h[0.5], h[1.5]}"
+      )
+      .unwrap(),
+      "{1.875, 2.625}"
+    );
+  }
+
+  #[test]
+  fn exact_queries_stay_exact() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{{0}, 1, 0}, {{1}, 3, 1}, {{2}, 2, 0}}]; {f[1/2], f[1], f'[1/2]}"
+      )
+      .unwrap(),
+      "{15/8, 3, 11/4}"
+    );
+  }
+
+  #[test]
+  fn higher_derivatives_and_missing_ones() {
+    assert_eq!(
+      interpret(
+        "g = Interpolation[{{{0}, 1, 0, 2}, {{1}, 3, 1, 0}, {{2}, 2, 0, 1}}]; {g[0.5], g'[0.5], g[1.5]}"
+      )
+      .unwrap(),
+      "{1.875, 3.25, 2.671875}"
+    );
+    assert_eq!(
+      interpret("m = Interpolation[{{{0}, 1, 0}, {{1}, 3}, {{2}, 2, 0}}]; {m[0.5], m[1.5]}")
+        .unwrap(),
+      "{2., 2.6875}"
+    );
+  }
+
+  #[test]
+  fn higher_order_draws_in_neighbours_right_first() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{{0}, 1, 0}, {{1}, 3, 1}, {{2}, 2, 0}, {{3}, 5, 2}, {{4}, 4, -1}}, InterpolationOrder -> 5]; {f[1.5], f[0.5], f[3.5], f[2.5]}"
+      )
+      .unwrap(),
+      "{2.6328125, 1.9296875, 5.0234375, 3.3203125}"
+    );
+  }
+
+  #[test]
+  fn values_only_rows_and_properties() {
+    assert_eq!(
+      interpret("v = Interpolation[{{{0}, 1}, {{1}, 3}, {{2}, 2}, {{3}, 5}}]; {v[0.5], v[1.5]}")
+        .unwrap(),
+      "{2.8125, 2.4375}"
+    );
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{{0}, 1, 0}, {{1}, 3, 1}, {{2}, 2, 0}}]; {f[\"Domain\"], f[\"InterpolationOrder\"], f[\"Grid\"], f[\"ValuesOnGrid\"]}"
+      )
+      .unwrap(),
+      "{{{0, 2}}, {3}, {{0}, {1}, {2}}, {1, 3, 2}}"
+    );
+  }
+
+  #[test]
+  fn stored_kernel_form_uses_its_derivatives() {
+    // An NDSolve result as wolframscript stores it: each point keeps the
+    // value and two derivatives (flag 2), packed.
+    let ifn = "InterpolatingFunction[{{0., 1.}}, {5, 7, 1, {3}, {4}, 0, 0, 0, 0, Automatic, {}, {}, False}, {{0., 0.5, 1.}}, {Developer`PackedArrayForm, {0, 2, 4, 6}, {1., 0., 1.25, 1., 2., 2.}}, {Automatic}]";
+    // The cubic Hermite pieces of f = 1 + t^2 (f' = 2 t).
+    assert_eq!(
+      interpret(&format!("s = {ifn}; {{s[0.25], s'[0.75], s[1.]}}")).unwrap(),
+      "{1.0625, 1.5, 2.}"
+    );
+  }
+}
