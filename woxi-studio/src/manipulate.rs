@@ -2457,6 +2457,57 @@ mod tests {
     );
   }
 
+  /// A slider whose whole range is one `Dynamic[Switch[…]]` handing back
+  /// both ends as a spliced `Apply[Sequence, {lo, hi}]` pair must be a real
+  /// slider over the active branch's range that follows the other control
+  /// (it used to vanish, with its variable frozen at the initial value). A
+  /// `HoldForm[m]` caption names the symbol rather than printing the call.
+  #[test]
+  fn single_dynamic_range_slider_follows_selector() {
+    let code = r#"Manipulate[
+      Plot[a x, {x, -1, 1}],
+      {{mode, small}, {small, large}},
+      {{pos, 1, "p"}, Dynamic[Switch[mode,
+        small, Apply[Sequence, {-2, 3}],
+        large, Apply[Sequence, {-20, 30}]]], ControlType -> LabeledSlider},
+      FrameLabel -> Row[{HoldForm[a], " caption"}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let range = |state: &ManipulateState| {
+      state.controls.iter().find_map(|c| match c {
+        ControlState::Continuous { name, min, max, .. } if name == "pos" => {
+          Some((*min, *max))
+        }
+        _ => None,
+      })
+    };
+    assert_eq!(range(&state), Some((-2.0, 3.0)));
+    assert!(
+      matches!(
+        state.display_trees.first(),
+        Some(DisplayNode::Row(parts))
+          if matches!(parts.first(), Some(DisplayNode::Static { text, .. }) if text == "a")
+      ),
+      "{:?}",
+      state.display_trees
+    );
+    let selector = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .expect("mode control");
+    let large = match &state.controls[selector] {
+      ControlState::Discrete { value_labels, .. } => value_labels[1].clone(),
+      other => panic!("expected a discrete control, got {other:?}"),
+    };
+    assert!(state.select_discrete(selector, &large));
+    state.reevaluate();
+    assert_eq!(range(&state), Some((-20.0, 30.0)));
+  }
+
   /// A control row followed by an empty string (`Row[{Control[…], …}] ""`,
   /// which the front end writes to keep a trailing blank) is the product of
   /// the row and `""`. Its controls must still become real, bound controls
