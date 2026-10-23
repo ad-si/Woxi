@@ -804,11 +804,17 @@ enum Primitive {
     style: StyleState,
   },
   /// `Disk[c, Scaled[r]]`: a round disk whose radius is the fraction `frac`
-  /// of the plot width, known only once the plot range is.
+  /// of the plot width, known only once the plot range is. `Offset` radii
+  /// are fixed screen sizes and share this primitive.
   ScaledDisk {
     cx: f64,
     cy: f64,
     frac: f64,
+    /// Vertical radius when `offset` (`Disk[c, Offset[{rx, ry}]]`).
+    frac_y: f64,
+    /// `Offset` radius: `frac`/`frac_y` are printer's points on screen, not
+    /// a fraction of the plot width.
+    offset: bool,
     style: StyleState,
   },
   DiskSector {
@@ -3267,18 +3273,34 @@ fn parse_disk(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     expr_to_point(&args[0]).unwrap_or((0.0, 0.0))
   };
   if let Some(Expr::FunctionCall { name, args: r }) = args.get(1)
-    && name == "Scaled"
-    && r.len() == 1
     && args.len() == 2
-    && let Some(frac) = expr_to_f64(&r[0])
+    && r.len() == 1
   {
-    prims.push(Primitive::ScaledDisk {
-      cx,
-      cy,
-      frac,
-      style: style.clone(),
-    });
-    return;
+    let scaled = name == "Scaled";
+    // `Offset[r]` / `Offset[{rx, ry}]`: a radius in screen points.
+    let offset = if name == "Offset" {
+      expr_to_f64(&r[0])
+        .map(|v| (v, v))
+        .or_else(|| expr_to_point(&r[0]))
+    } else {
+      None
+    };
+    let sizes = if scaled {
+      expr_to_f64(&r[0]).map(|f| (f, f))
+    } else {
+      offset
+    };
+    if let Some((frac, frac_y)) = sizes {
+      prims.push(Primitive::ScaledDisk {
+        cx,
+        cy,
+        frac,
+        frac_y,
+        offset: !scaled,
+        style: style.clone(),
+      });
+      return;
+    }
   }
   let (rx, ry) = if args.len() >= 2 {
     if let Some((a, b)) = expr_to_point(&args[1]) {
@@ -5275,7 +5297,7 @@ fn apply_agreed_row_part_styles(content: &Expr, style: &mut StyleState) {
   }
 }
 
-/// Whether `expr` is a `Row`/`Column` (possibly under a `Style`) that has a
+/// Whether `expr` is a `Row`/`Column`/`TableForm` (possibly under a `Style`) that has a
 /// `Grid` somewhere among its items.
 fn layout_holds_grid(expr: &Expr) -> bool {
   fn has_grid(e: &Expr) -> bool {
@@ -5291,7 +5313,9 @@ fn layout_holds_grid(expr: &Expr) -> bool {
     Expr::FunctionCall { name, args } if is_style_wrapper(name) => {
       args.first().is_some_and(layout_holds_grid)
     }
-    Expr::FunctionCall { name, args } if name == "Row" || name == "Column" => {
+    Expr::FunctionCall { name, args }
+      if name == "Row" || name == "Column" || name == "TableForm" =>
+    {
       args.iter().any(has_grid)
     }
     _ => false,
@@ -6433,6 +6457,8 @@ fn rotate_primitive(
       cx,
       cy,
       frac,
+      frac_y,
+      offset,
       style,
     } => {
       let (nx, ny) = rp(*cx, *cy);
@@ -6440,6 +6466,8 @@ fn rotate_primitive(
         cx: nx,
         cy: ny,
         frac: *frac,
+        frac_y: *frac_y,
+        offset: *offset,
         style: style.clone(),
       }
     }
@@ -6742,11 +6770,15 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       cx,
       cy,
       frac,
+      frac_y,
+      offset,
       style,
     } => Primitive::ScaledDisk {
       cx: cx + dx,
       cy: cy + dy,
       frac: *frac,
+      frac_y: *frac_y,
+      offset: *offset,
       style: style.clone(),
     },
     Primitive::InsetGraphic {
@@ -6987,6 +7019,8 @@ fn scale_primitive(
       cx,
       cy,
       frac,
+      frac_y,
+      offset,
       style,
     } => {
       let (nx, ny) = sp(*cx, *cy);
@@ -6994,6 +7028,8 @@ fn scale_primitive(
         cx: nx,
         cy: ny,
         frac: *frac,
+        frac_y: *frac_y,
+        offset: *offset,
         style: style.clone(),
       }
     }
@@ -8853,11 +8889,18 @@ fn render_primitive(
       cx,
       cy,
       frac,
+      frac_y,
+      offset,
       style,
     } => {
-      // A circle on screen: `frac` of the width in both directions.
-      let rx = frac * bb.width();
-      let ry = rx * (bb.height() / svg_h) / (bb.width() / svg_w);
+      let (rx, ry) = if *offset {
+        // Fixed screen size, in points.
+        (frac / svg_w * bb.width(), frac_y / svg_h * bb.height())
+      } else {
+        // A circle on screen: `frac` of the width in both directions.
+        let rx = frac * bb.width();
+        (rx, rx * (bb.height() / svg_h) / (bb.width() / svg_w))
+      };
       let disk = Primitive::Disk {
         cx: *cx,
         cy: *cy,
@@ -30713,6 +30756,12 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     // `Null` — what a trailing comma in a `Row`/`Column` item list leaves
     // behind — is drawn as nothing, not as the word "Null".
     Expr::Identifier(s) if s == "Null" => vec![],
+    // `Pi` — what a typeset `π` reads back as — sets as the glyph.
+    Expr::Identifier(s) | Expr::Constant(s) if s == "Pi" => vec![LabelRun {
+      text: "π".to_string(),
+      italic: false,
+      ..Default::default()
+    }],
     // An evaluated picture (`-Graphics-`, `-Graphics3D-`, `-Image-`).
     Expr::Graphics { .. } => vec![],
     Expr::Raw(s) | Expr::Identifier(s)

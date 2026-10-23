@@ -614,6 +614,12 @@ pub fn dispatch_plotting(
     "BoxWhiskerChart" if !args.is_empty() => {
       Some(crate::functions::chart::box_whisker_chart_ast(args))
     }
+    "RectangleChart" if !args.is_empty() => Some(
+      crate::functions::rectangle_chart::rectangle_chart_ast(args, false),
+    ),
+    "RectangleChart3D" if !args.is_empty() => Some(
+      crate::functions::rectangle_chart::rectangle_chart_ast(args, true),
+    ),
     "BubbleChart" if !args.is_empty() => {
       Some(crate::functions::chart::bubble_chart_ast(args))
     }

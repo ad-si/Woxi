@@ -90,6 +90,7 @@ pub mod predicate_ast;
 pub mod quantity_ast;
 pub mod query_ast;
 pub mod random_point;
+pub mod rectangle_chart;
 pub mod regex_engine;
 pub mod region;
 pub mod resolve_ast;
