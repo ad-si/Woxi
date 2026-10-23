@@ -14107,6 +14107,30 @@ mod array_reshape {
 mod sparse_array_list_ops {
   use super::*;
 
+  // `{pos1, pos2, …} -> v` gives every position v; with explicit
+  // dimensions the position-list forms used to stay unevaluated.
+  #[test]
+  fn position_list_rules() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{{1, 2}, {3, 4}} -> 1]]").unwrap(),
+      "{{0, 1, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{{1, 2}, {3, 4}} -> {5, 6}, {4, 5}]]")
+        .unwrap(),
+      "{{0, 5, 0, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, 0, 6, 0}, {0, 0, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{{1, 2}, {3, 4}} -> 1, {4, 5}, x]]")
+        .unwrap(),
+      "{{x, 1, x, x, x}, {x, x, x, x, x}, {x, x, x, 1, x}, {x, x, x, x, x}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{1, 3} -> 7]]").unwrap(),
+      "{{0, 0, 7}}"
+    );
+  }
+
   // A SparseArray whose positions are not integers does not densify; list
   // operations on it used to recurse until the stack overflowed.
   #[test]

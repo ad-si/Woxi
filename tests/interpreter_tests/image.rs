@@ -8972,4 +8972,29 @@ mod rasterize_any_expression {
       "{20, 30}"
     );
   }
+
+  // Wolfram's Rasterize gives an RGB image (the drawing is composited on
+  // white); Woxi's used to carry a redundant alpha channel.
+  #[test]
+  fn rasterized_graphics_are_rgb() {
+    assert_eq!(
+      interpret("{ImageChannels[Rasterize[Graphics[Disk[]]]], ImageColorSpace[Rasterize[Graphics[Disk[]]]]}").unwrap(),
+      "{3, RGB}"
+    );
+  }
+
+  // A graphic where an image is expected is rasterized first.
+  #[test]
+  fn image_functions_accept_graphics() {
+    assert_eq!(
+      interpret(
+        "g = Graphics[{Disk[{0, 0}, 0.2]}, PlotRange -> {{-1, 1}, {-1, 1}}]; \
+         {Head[ColorNegate[g]], Head[ColorConvert[g, \"Grayscale\"]], Head[ImageApply[# &, g]], \
+          ImageDimensions[ImageResize[ColorNegate[ColorConvert[g, \"Grayscale\"]], 20]], \
+          Head[ColorNegate[Red]]}"
+      )
+      .unwrap(),
+      "{Image, Image, Image, {20, 20}, RGBColor}"
+    );
+  }
 }

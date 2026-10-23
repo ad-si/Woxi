@@ -2560,6 +2560,21 @@ fn sparse_rules_with_background(data: &Expr) -> Option<(Expr, Option<Expr>)> {
             })
             .collect()
         }
+        // `{pos1, pos2, …} -> v` gives every position the same value.
+        (Expr::List(keys), value)
+          if !matches!(value, Expr::List(_))
+            && !keys.is_empty()
+            && keys.iter().all(|k| matches!(k, Expr::List(_))) =>
+        {
+          changed = true;
+          keys
+            .iter()
+            .map(|k| Expr::Rule {
+              pattern: Box::new(k.clone()),
+              replacement: Box::new(value.clone()),
+            })
+            .collect()
+        }
         _ => return None,
       }
     }
@@ -2610,6 +2625,19 @@ pub fn sparse_array_normalize_ast(
 
   if args.is_empty() || args.len() > 3 {
     return Ok(unevaluated("SparseArray", args));
+  }
+
+  // With explicit dimensions, a `{pos1, pos2, …} -> values` rule expands
+  // into its rule list the same way.
+  if args.len() >= 2
+    && matches!(&args[0], Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::List(keys)
+        if !keys.is_empty() && keys.iter().all(|k| matches!(k, Expr::List(_)))))
+    && let Some((rules, None)) = sparse_rules_with_background(&args[0])
+  {
+    let mut rewritten = args.to_vec();
+    rewritten[0] = rules;
+    return sparse_array_normalize_ast(&rewritten);
   }
 
   // `SparseArray[{pos1, pos2, …} -> {val1, val2, …}]` pairs positions with

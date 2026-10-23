@@ -647,6 +647,17 @@ own tolerance. Woxi runs its Newton search from `x0` and lands on the
 extremum to machine precision. The extremum is the same; the digits past
 about 1e-10 are not.
 
+### `Erf`, `Erfc` and `Erfi` of complex machine numbers differ in the last digits
+
+```sh
+wolframscript -code 'Erf[1. + 0.5 I]'   # 0.9507097283189574 + 0.18797346722338326*I
+woxi eval 'Erf[1. + 0.5 I]'             # 0.9507097283189571 + 0.18797346722338332*I
+```
+
+Woxi sums the Maclaurin series for |Re z| < 2 and uses the Erfc continued
+fraction beyond that. Both are correct to about 1e-13 relative, but not
+correctly rounded the way Wolfram's arbitrary-precision kernel is.
+
 ### `Rationalize[x, 0]` and `ContinuedFraction[x]` of a machine real stop one convergent off
 
 ```sh

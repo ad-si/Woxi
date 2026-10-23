@@ -10048,7 +10048,7 @@ fn graphics_svg(expr: &Expr) -> Option<String> {
 /// anything that isn't a renderable graphics expression, or on the
 /// wasm32 target where the SVG rasterizer is unavailable — callers fall
 /// back to their existing `imginv` handling in that case.
-fn coerce_graphics_to_image(expr: &Expr) -> Option<Expr> {
+pub(crate) fn coerce_graphics_to_image(expr: &Expr) -> Option<Expr> {
   #[cfg(target_arch = "wasm32")]
   {
     let _ = expr;
@@ -10233,16 +10233,22 @@ fn rasterize_svg_to(
     resvg::tiny_skia::Transform::from_scale(scale_x as f32, scale_y as f32);
   resvg::render(&tree, transform, &mut pixmap.as_mut());
 
-  // Convert RGBA pixel data to Expr::Image (normalized f64 values)
+  // The drawing sits on an opaque white background, so the alpha channel
+  // carries nothing: like Wolfram's Rasterize the result is an RGB image.
   let rgba_data = pixmap.data();
-  let data: Vec<f64> = rgba_data.iter().map(|&v| v as f64 / 255.0).collect();
+  let data: Vec<f64> = rgba_data
+    .as_chunks::<4>()
+    .0
+    .iter()
+    .flat_map(|px| px[..3].iter().map(|&v| v as f64 / 255.0))
+    .collect();
 
   Ok(Expr::Image {
-    color_space: None,
+    color_space: Some("RGB"),
     display_size: None,
     width: pix_w,
     height: pix_h,
-    channels: 4,
+    channels: 3,
     data: Arc::new(data),
     image_type: ImageType::Byte,
   })

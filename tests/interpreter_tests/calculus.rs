@@ -5594,6 +5594,46 @@ mod trig_sec_csc_cot {
 mod erf {
   use super::*;
 
+  // Machine complex arguments used to stay unevaluated. The values are
+  // wolframscript's; the last digit or two may differ.
+  #[test]
+  fn complex_machine_arguments() {
+    for (code, expected) in [
+      (
+        "Erf[1. + 0.5 I]",
+        "0.9507097283189574 + 0.18797346722338326 I",
+      ),
+      (
+        "Erfc[1. + 0.5 I]",
+        "0.049290271681042636 - 0.18797346722338326 I",
+      ),
+      (
+        "Erfi[1. + 0.5 I]",
+        "1.0244008816084458 + 1.2048475583142182 I",
+      ),
+      (
+        "Erf[3. + 4. I]",
+        "-120.18699139507939 - 27.750337293623677 I",
+      ),
+      (
+        "Erf[-2.5 + 0.3 I]",
+        "-1.000015377425339 + 0.00044277444763273947 I",
+      ),
+      (
+        "Erf[2.1 + 3. I]",
+        "-7.826126944244235 + 12.524131379112822 I",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("Abs[{code} - ({expected})] < 1*^-12 Abs[{code}]"))
+          .unwrap(),
+        "True",
+        "{code}"
+      );
+    }
+    assert_eq!(interpret("Erf[1 + I]").unwrap(), "Erf[1 + I]");
+  }
+
   #[test]
   fn erf_zero() {
     assert_eq!(interpret("Erf[0]").unwrap(), "0");
