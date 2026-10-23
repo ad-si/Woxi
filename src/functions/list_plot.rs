@@ -845,7 +845,8 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           _ => {}
         },
         "PlotRange" => {
-          let (rx, ry) = crate::functions::plot::parse_plot_range(replacement);
+          let (rx, ry) =
+            crate::functions::plot::parse_series_plot_range(replacement);
           out.plot_range_x = rx;
           out.plot_range_y = ry;
         }
