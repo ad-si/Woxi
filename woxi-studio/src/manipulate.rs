@@ -1836,6 +1836,42 @@ mod tests {
     assert!(after.starts_with("{0.05,"), "got {after}");
   }
 
+  /// The same contour explorer with the custom slider written the way the
+  /// Demonstrations Project does: `Dynamic[slider[##],
+  /// SynchronousUpdating -> False] &` as the control, and a definition
+  /// `slider[Dynamic@locs_] := …` using the prefix `Dynamic@` form.
+  #[test]
+  fn custom_locator_slider_with_dynamic_options_is_a_locator() {
+    let code = r#"Manipulate[
+      Framed[ListLinePlot[levels, ImageSize -> 100], FrameMargins -> 0],
+      Style["move the locators", Bold],
+      {{levels, {1/7, 2/7, 3/7}, ""},
+        Dynamic[slider[##], SynchronousUpdating -> False] &},
+      Initialization :> (
+        slider[Dynamic@locs_] := DynamicModule[
+          {pts = Map[{#, 0} &, Range[1/7, 1 - 1/7, 1/7]]},
+          LocatorPane[
+            Dynamic[pts, Function[{val, expr},
+              locs = val[[All, 1]]; expr = {#1, 0} & /@ locs, HoldAll]],
+            Dynamic[Graphics[{}, Frame -> True, PlotRange -> {{0, 1}, {-1, 1}},
+              AspectRatio -> .1, ImageSize -> 200]],
+            {{0, 0}, {1, 0}}, Appearance -> Style["\[FilledDiamond]", Red, 14],
+            LocatorAutoCreate -> {1, 16}]])
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state
+        .controls
+        .iter()
+        .any(|c| matches!(c, ControlState::Locator { .. })),
+      "the custom slider must expose a locator control, got {:?}",
+      state.controls
+    );
+  }
+
   /// A complex wave-equation explorer: the body solves a periodic nonlinear
   /// Schrödinger-type PDE with `NDSolve` and draws `Abs[u]` either as a
   /// density plot or a surface, chosen with a setter bar. The solution is

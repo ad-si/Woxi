@@ -25605,14 +25605,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   for spec in &args[1..] {
     let Expr::List(items) = spec else { continue };
     for item in items.iter().skip(1) {
-      let item = match item {
-        Expr::FunctionCall { name, args: a }
-          if name == "Dynamic" && a.len() == 1 =>
-        {
-          &a[0]
-        }
-        other => other,
-      };
+      let item = unwrap_dynamic_control(item);
       if let Expr::Function { body } = item {
         for (var, callback) in collect_body_locator_callbacks(body) {
           if !body_locators.iter().any(|(n, _)| *n == var) {
@@ -26947,6 +26940,25 @@ fn locator_pane_derived(dargs: &[Expr], var: &str) -> Option<LocatorDerived> {
   })
 }
 
+/// The control function inside a `Dynamic[f]` echo of a custom control.
+/// Options such as `SynchronousUpdating -> False` may follow the function
+/// (`Dynamic[slider[##], SynchronousUpdating -> False] &`); they don't
+/// change what the control draws.
+fn unwrap_dynamic_control(expr: &Expr) -> &Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic"
+        && !args.is_empty()
+        && args[1..].iter().all(|a| {
+          matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        }) =>
+    {
+      &args[0]
+    }
+    other => other,
+  }
+}
+
 fn custom_locator_pane_options(items: &[Expr]) -> Option<Vec<Expr>> {
   fn find(expr: &Expr, var: &str) -> Option<Vec<Expr>> {
     match expr {
@@ -26971,14 +26983,7 @@ fn custom_locator_pane_options(items: &[Expr]) -> Option<Vec<Expr>> {
   let var = manipulate_spec_var_name(items)?;
   items[1..].iter().find_map(|it| {
     // The echo holds a custom control function inside `Dynamic[…]`.
-    let it = match it {
-      Expr::FunctionCall { name, args }
-        if name == "Dynamic" && args.len() == 1 =>
-      {
-        &args[0]
-      }
-      other => other,
-    };
+    let it = unwrap_dynamic_control(it);
     let Expr::Function { body } = it else {
       return None;
     };
@@ -27004,13 +27009,11 @@ fn custom_locator_pane_options(items: &[Expr]) -> Option<Vec<Expr>> {
       let built = crate::evaluator::evaluate_expr_to_expr(&applied).ok()?;
       // `Dynamic[helper[##]] &` leaves the helper call held inside the
       // `Dynamic`; the pane only appears once that call is evaluated.
-      let built = match &built {
-        Expr::FunctionCall { name, args }
-          if name == "Dynamic" && args.len() == 1 =>
-        {
-          crate::evaluator::evaluate_expr_to_expr(&args[0]).ok()?
-        }
-        _ => built,
+      let unwrapped = unwrap_dynamic_control(&built);
+      let built = if std::ptr::eq(unwrapped, &raw const built) {
+        built
+      } else {
+        crate::evaluator::evaluate_expr_to_expr(unwrapped).ok()?
       };
       find(&built, &var)
     })
