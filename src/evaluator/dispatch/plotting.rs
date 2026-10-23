@@ -15,6 +15,46 @@ fn quiet_plot(
   result
 }
 
+/// A function plot whose function never evaluates to a number draws
+/// nothing: wolframscript returns the empty picture (`Graphics3D[{{}, {}}]`
+/// for `ParametricPlot3D[pos[t], {t, 0, 5}]` with `pos` undefined), not an
+/// error, so a Manipulate shows its axes and frame instead of failing.
+pub fn empty_plot_for_nothing_to_draw(
+  name: &str,
+  args: &[Expr],
+  result: Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  let Err(InterpreterError::EvaluationError(msg)) = &result else {
+    return result;
+  };
+  let nothing_drawn = [
+    "no finite values",
+    "no renderable",
+    "has no points",
+    "evaluates to no points",
+  ]
+  .iter()
+  .any(|m| msg.contains(m));
+  let function_plot = !name.starts_with("List") && name.contains("Plot");
+  if !nothing_drawn || !function_plot {
+    return result;
+  }
+  let options: Vec<Expr> = args
+    .iter()
+    .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .cloned()
+    .collect();
+  let mut gargs = vec![Expr::List(
+    vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into(),
+  )];
+  gargs.extend(options);
+  if name.contains("3D") {
+    crate::functions::plot3d::graphics3d_ast(&gargs)
+  } else {
+    crate::functions::graphics::graphics_ast(&gargs)
+  }
+}
+
 /// The plot heads that refuse an iterator whose endpoints coincide. Wolfram
 /// reports `head::plld` for each of these and leaves the call unevaluated.
 /// (`DensityPlot` prints the message under its own name but files it under

@@ -24875,13 +24875,14 @@ mod contour_plot_3d {
     #[test]
     fn no_surface_in_range() {
       // The field never reaches 100 inside this box (max is 3), so there is
-      // nothing to draw.
-      assert!(
+      // nothing to draw: an empty picture, as in wolframscript.
+      assert_eq!(
         interpret(
-          "ContourPlot3D[x^2 + y^2 + z^2 == 100, {x, -1, 1}, {y, -1, 1}, \
-           {z, -1, 1}]"
+          "Head[ContourPlot3D[x^2 + y^2 + z^2 == 100, {x, -1, 1}, {y, -1, 1}, \
+           {z, -1, 1}]]"
         )
-        .is_err()
+        .unwrap(),
+        "Graphics3D"
       );
     }
   }
@@ -40116,5 +40117,24 @@ mod plot_options_keep_their_values {
     .unwrap();
     assert_eq!(result.result, "Graphics");
     assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+}
+
+mod plots_with_nothing_to_draw {
+  use super::*;
+
+  // An undefined function draws nothing; wolframscript returns the empty
+  // picture rather than failing.
+  #[test]
+  fn empty_pictures() {
+    assert_eq!(
+      interpret(
+        "{Head[ParametricPlot3D[pos[t], {t, 0, 5}]], \
+         Head[Plot3D[f[x, y], {x, 0, 1}, {y, 0, 1}]], \
+         Head[ParametricPlot[{g[t], h[t]}, {t, 0, 1}]]}"
+      )
+      .unwrap(),
+      "{Graphics3D, Graphics3D, Graphics}"
+    );
   }
 }

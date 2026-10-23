@@ -2296,7 +2296,7 @@ fn evaluate_function_call_ast_inner(
     return result;
   }
   if let Some(result) = plotting::dispatch_plotting(name, args) {
-    return result;
+    return plotting::empty_plot_for_nothing_to_draw(name, args, result);
   }
   if let Some(result) =
     predicate_functions::dispatch_predicate_functions(name, args)
