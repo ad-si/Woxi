@@ -2251,6 +2251,13 @@ pub fn dispatch_linear_algebra_functions(
         }
       }
     }
+    "HessenbergDecomposition" if !args.is_empty() => {
+      return Some(
+        crate::functions::linear_algebra_ast::hessenberg_decomposition_ast(
+          args,
+        ),
+      );
+    }
     "SchurDecomposition" if !args.is_empty() => {
       return Some(
         crate::functions::linear_algebra_ast::schur_decomposition_ast(args),

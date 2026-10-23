@@ -12293,6 +12293,64 @@ fn real_schur(a: &[Vec<f64>]) -> Option<(Vec<Vec<f64>>, Vec<Vec<f64>>)> {
   Some((q, h))
 }
 
+/// The square machine-precision matrix a `head[m]` decomposition works on.
+/// Emits `head::matsq` for a non-square argument and `head::schurf` for an
+/// exact one, returning `None` in both cases.
+fn machine_square_matrix(head: &str, arg: &Expr) -> Option<Vec<Vec<f64>>> {
+  let matsq = || {
+    crate::emit_message(&format!(
+      "{head}::matsq: Argument {} at position 1 is not a nonempty square \
+       matrix.",
+      expr_to_output(arg)
+    ));
+    None
+  };
+  let Expr::List(rows) = arg else {
+    return matsq();
+  };
+  let n = rows.len();
+  if n == 0 {
+    return matsq();
+  }
+  let mut matrix: Vec<Vec<f64>> = Vec::with_capacity(n);
+  let mut exact = true;
+  for row in rows {
+    let Expr::List(entries) = row else {
+      return matsq();
+    };
+    if entries.len() != n {
+      return matsq();
+    }
+    let mut values = Vec::with_capacity(n);
+    for entry in entries {
+      if matches!(entry, Expr::Real(_) | Expr::BigFloat(..)) {
+        exact = false;
+      }
+      match crate::functions::math_ast::expr_to_num(entry) {
+        Some(v) => values.push(v),
+        None => return matsq(),
+      }
+    }
+    matrix.push(values);
+  }
+  // An exact matrix has no machine-precision decomposition to compute.
+  if exact {
+    crate::emit_message(&format!(
+      "{head}::schurf: {head} has received a matrix with infinite precision."
+    ));
+    return None;
+  }
+  Some(matrix)
+}
+
+fn real_matrix_expr(m: Vec<Vec<f64>>) -> Expr {
+  Expr::List(
+    m.into_iter()
+      .map(|row| Expr::List(row.into_iter().map(Expr::Real).collect()))
+      .collect(),
+  )
+}
+
 /// `SchurDecomposition[m]` — the real Schur decomposition `{q, t}` of a
 /// square machine-precision matrix, with `m == q · t · Transpose[q]`.
 pub fn schur_decomposition_ast(
@@ -12302,88 +12360,40 @@ pub fn schur_decomposition_ast(
   if args.len() != 1 {
     return Ok(original());
   }
-  let rows = match &args[0] {
-    Expr::List(rows) if !rows.is_empty() => rows,
-    _ => {
-      crate::emit_message(&format!(
-        "SchurDecomposition::matsq: Argument {} at position 1 is not a \
-         nonempty square matrix.",
-        expr_to_output(&args[0])
-      ));
-      return Ok(original());
-    }
+  let Some(matrix) = machine_square_matrix("SchurDecomposition", &args[0])
+  else {
+    return Ok(original());
   };
-  let n = rows.len();
-  let mut matrix: Vec<Vec<f64>> = Vec::with_capacity(n);
-  let mut exact = true;
-  for row in rows {
-    let Expr::List(entries) = row else {
-      matrix.clear();
-      break;
-    };
-    if entries.len() != n {
-      matrix.clear();
-      break;
-    }
-    let mut values = Vec::with_capacity(n);
-    for entry in entries {
-      match entry {
-        Expr::Real(v) => {
-          exact = false;
-          values.push(*v);
-        }
-        Expr::BigFloat(..) => {
-          exact = false;
-          if let Some(v) = crate::functions::math_ast::expr_to_num(entry) {
-            values.push(v);
-          } else {
-            matrix.clear();
-            break;
-          }
-        }
-        _ => {
-          if let Some(v) = crate::functions::math_ast::expr_to_num(entry) {
-            values.push(v);
-          } else {
-            matrix.clear();
-            break;
-          }
-        }
-      }
-    }
-    if values.len() != n {
-      matrix.clear();
-      break;
-    }
-    matrix.push(values);
-  }
-  if matrix.len() != n {
-    crate::emit_message(&format!(
-      "SchurDecomposition::matsq: Argument {} at position 1 is not a nonempty \
-       square matrix.",
-      expr_to_output(&args[0])
-    ));
-    return Ok(original());
-  }
-  // An exact matrix has no machine-precision Schur form to compute.
-  if exact {
-    crate::emit_message(
-      "SchurDecomposition::schurf: SchurDecomposition has received a matrix \
-       with infinite precision.",
-    );
-    return Ok(original());
-  }
   let Some((q, t)) = real_schur(&matrix) else {
     return Ok(original());
   };
-  let to_expr = |m: Vec<Vec<f64>>| {
-    Expr::List(
-      m.into_iter()
-        .map(|row| Expr::List(row.into_iter().map(Expr::Real).collect()))
-        .collect(),
-    )
+  Ok(Expr::List(
+    vec![real_matrix_expr(q), real_matrix_expr(t)].into(),
+  ))
+}
+
+/// `HessenbergDecomposition[m]` — `{p, h}` with `p` orthogonal, `h` upper
+/// Hessenberg and `m == p · h · Transpose[p]`, by Householder reflections
+/// (LAPACK's sign convention, as wolframscript uses).
+pub fn hessenberg_decomposition_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("HessenbergDecomposition", args);
+  if args.len() != 1 {
+    return Ok(original());
+  }
+  let Some(mut h) = machine_square_matrix("HessenbergDecomposition", &args[0])
+  else {
+    return Ok(original());
   };
-  Ok(Expr::List(vec![to_expr(q), to_expr(t)].into()))
+  let n = h.len();
+  let mut p: Vec<Vec<f64>> = (0..n)
+    .map(|i| (0..n).map(|j| if i == j { 1.0 } else { 0.0 }).collect())
+    .collect();
+  hessenberg_reduce_accumulating(&mut h, &mut p, n);
+  Ok(Expr::List(
+    vec![real_matrix_expr(p), real_matrix_expr(h)].into(),
+  ))
 }
 
 /// How the entries of a `SymmetrizedArray` transform under the permutations of

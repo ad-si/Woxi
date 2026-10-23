@@ -10472,3 +10472,45 @@ mod sparse_array_part_set_and_inverse {
     );
   }
 }
+
+mod hessenberg_decomposition {
+  use super::*;
+
+  // Values from wolframscript (LAPACK sign convention).
+  #[test]
+  fn three_by_three() {
+    assert_eq!(
+      interpret(
+        "{p, h} = HessenbergDecomposition[{{1., 2, 3}, {4, 5, 6}, {7, 8, 10.}}]; \
+         Chop[{p - {{1, 0, 0}, {0, -0.49613893835683376, -0.8682431421244592}, \
+         {0, -0.8682431421244592, 0.4961389383568338}}, \
+         h - {{1, -3.597007303087045, -0.24806946917841688}, \
+         {-8.06225774829855, 14.8, 2.4}, {0, 0.4, 0.2}}}, 10^-12]"
+      )
+      .unwrap(),
+      "{{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}, {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn reconstructs_matrix() {
+    assert_eq!(
+      interpret(
+        "m = {{2., 3, 5, 7}, {11, 13, 17, 19}, {23, 29, 31, 37}, {41, 43, 47, 53}}; \
+         {p, h} = HessenbergDecomposition[m]; \
+         {Chop[p . h . Transpose[p] - m, 10^-10] == ConstantArray[0, {4, 4}], \
+          Chop[h[[4, 1]]], Chop[h[[4, 2]]], Chop[h[[3, 1]]]}"
+      )
+      .unwrap(),
+      "{True, 0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn exact_matrix_stays_unevaluated() {
+    assert_eq!(
+      interpret("HessenbergDecomposition[{{1, 2}, {3, 4}}]").unwrap(),
+      "HessenbergDecomposition[{{1, 2}, {3, 4}}]"
+    );
+  }
+}
