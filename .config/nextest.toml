@@ -14,6 +14,13 @@ slow-timeout = { period = "20s", terminate-after = 1 }
 filter = 'test(high_order_derivative_of_x_x_does_not_panic)'
 slow-timeout = { period = "60s", terminate-after = 1 }
 
+# `sheet_thinner_than_a_cell_is_found_with_vertex_normals` subdivides cells
+# to find a sheet thinner than the grid: ~9s standalone, close enough to the
+# default 20s timeout to time out under full parallel load.
+[[profile.default.overrides]]
+filter = 'test(sheet_thinner_than_a_cell_is_found_with_vertex_normals)'
+slow-timeout = { period = "60s", terminate-after = 1 }
+
 # `demonstration_three_phase_field_manipulate_opens_with_its_widget` builds
 # its widget from a stored `SaveDefinitions -> True` Manipulate and renders
 # a `ParametricPlot`/`Show`/`GraphicsRow` twice (initial render plus one
