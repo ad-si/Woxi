@@ -8298,9 +8298,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return times_ast(&flat);
   }
 
-  // An exact zero absorbs approximate numbers: `0*1.5` is the exact `0`,
-  // not `0.`. Lists (which thread) and infinite / indeterminate factors
-  // (where `0*x` is not 0) are left to the general path.
+  // An exact zero times a machine number is the machine zero: `0*1.5` and
+  // `Times[0, 2.5, x]` are `0.` (wolframscript 15). Lists (which thread) and
+  // infinite / indeterminate factors (where `0*x` is not 0) are left to the
+  // general path. Arbitrary-precision factors keep the exact zero, since
+  // their product has no machine precision to carry.
   if args.iter().any(|a| matches!(a, Expr::Integer(0)))
     && args
       .iter()
@@ -8316,7 +8318,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => false,
     })
   {
-    return Ok(Expr::Integer(0));
+    return Ok(if args.iter().any(|a| matches!(a, Expr::Real(_))) {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
   }
 
   // Exact numeric product: when every factor is an Integer, BigInteger, or

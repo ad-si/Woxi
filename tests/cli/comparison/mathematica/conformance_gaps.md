@@ -1289,6 +1289,20 @@ last bit and never a formula to correct.
 
 ## Algebra and calculus
 
+### `D` of `Min`/`Max` stays in `Derivative[…][Max]` form instead of a `Piecewise`
+
+wolframscript differentiates `Min`/`Max` of a real variable into a
+`Piecewise` with rationalized breakpoints, so a flat branch yields the exact
+`0`. Woxi keeps `Derivative[0, 1][Max][…]` factors, which evaluate to `0`
+numerically but multiply against machine reals into `0.`.
+
+```sh
+wolframscript -code 'g[t_] := Min[2.25, Max[1.25, t^3]]; Derivative[2][g][0.5]'
+# 0
+woxi eval 'g[t_] := Min[2.25, Max[1.25, t^3]]; Derivative[2][g][0.5]'
+# 0.
+```
+
 ### `FullSimplify` nests a sum of radicals under one root
 
 ```sh
