@@ -21706,3 +21706,68 @@ mod interpolating_function_threads_over_lists {
     );
   }
 }
+
+mod nintegrate_symbolic_limits {
+  use super::*;
+
+  #[test]
+  fn symbolic_limit_stays_unevaluated() {
+    assert_eq!(
+      interpret("Quiet[NIntegrate[x, {x, 0, a}]]").unwrap(),
+      "NIntegrate[x, {x, 0, a}]"
+    );
+    assert_eq!(
+      interpret("Quiet[NIntegrate[x y, {x, 0, 1}, {y, 0, c}]]").unwrap(),
+      "NIntegrate[x*y, {x, 0, 1}, {y, 0, c}]"
+    );
+  }
+
+  #[test]
+  fn limit_depending_on_outer_variable_is_valid() {
+    assert_eq!(
+      interpret("NIntegrate[x y, {x, 0, 1}, {y, 0, x}]").unwrap(),
+      "0.125"
+    );
+  }
+}
+
+mod find_fit_variable_lists_and_damping {
+  use super::*;
+
+  #[test]
+  fn variable_list_forms() {
+    assert_eq!(
+      interpret(
+        "Chop[(a /. FindFit[{{1, 2.1}, {2, 3.9}, {3, 6.2}}, a x, {a}, {x}]) - \
+         2.035714285714286, 10^-10]"
+      )
+      .unwrap(),
+      "0"
+    );
+    // Rows {x, y, f} for two variables (values from wolframscript).
+    assert_eq!(
+      interpret(
+        "Chop[({a, b} /. FindFit[{{1, 1, 3.1}, {2, 1, 5.0}, {1, 2, 4.2}, \
+         {3, 3, 10.1}}, a x + b y, {a, b}, {x, y}]) - \
+         {2.0275862068965513, 1.2275862068965522}, 10^-10]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  // A full Gauss-Newton step from a = b = 1 overshoots the exponential's
+  // rate; the damped iteration reaches wolframscript's fit.
+  #[test]
+  fn exponential_fit_from_default_start() {
+    assert_eq!(
+      interpret(
+        "Chop[({a, b} /. FindFit[Table[{x, 3 Exp[-0.5 x] + 0.01 Sin[7 x]}, \
+         {x, 0, 5, 0.5}], a Exp[-b x], {a, b}, x]) - \
+         {2.999689681865526, 0.5000572368744901}, 10^-8]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+}

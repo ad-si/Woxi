@@ -6614,9 +6614,22 @@ fn find_fit_weighted(
   let params_expr = &args[2];
   let var_expr = &args[3];
 
-  // Extract variable name
-  let var_name = match var_expr {
-    Expr::Identifier(name) => name.clone(),
+  // The independent variable, or a list of them (`{x}`, `{x, y}`) for data
+  // rows `{x1, …, xn, f}`.
+  let var_names: Vec<String> = match var_expr {
+    Expr::Identifier(name) => vec![name.clone()],
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|v| matches!(v, Expr::Identifier(_))) =>
+    {
+      items
+        .iter()
+        .filter_map(|v| match v {
+          Expr::Identifier(name) => Some(name.clone()),
+          _ => None,
+        })
+        .collect()
+    }
     _ => {
       return Err(InterpreterError::EvaluationError(format!(
         "{caller}: fourth argument must be a variable"
@@ -6675,9 +6688,55 @@ fn find_fit_weighted(
     )));
   };
 
-  let (x_vals, y_vals) = extract_fit_data(data_list, caller)?;
+  let (x_vals, y_vals): (Vec<Vec<f64>>, Vec<f64>) = if var_names.len() == 1 {
+    let (xs, ys) = extract_fit_data(data_list, caller)?;
+    (xs.into_iter().map(|x| vec![x]).collect(), ys)
+  } else {
+    let mut xs = Vec::with_capacity(data_list.len());
+    let mut ys = Vec::with_capacity(data_list.len());
+    for row in data_list {
+      let values: Option<Vec<f64>> = match row {
+        Expr::List(items) if items.len() == var_names.len() + 1 => {
+          items.iter().map(try_eval_to_f64).collect()
+        }
+        _ => None,
+      };
+      let Some(mut values) = values else {
+        return Err(InterpreterError::EvaluationError(format!(
+          "{caller}: data rows must have one coordinate per variable and a value"
+        )));
+      };
+      ys.push(values.pop().unwrap_or(f64::NAN));
+      xs.push(values);
+    }
+    (xs, ys)
+  };
+  let at_point = |x: &[f64]| -> Expr {
+    let mut e = model.clone();
+    for (name, v) in var_names.iter().zip(x) {
+      e = crate::syntax::substitute_variable(&e, name, &Expr::Real(*v));
+    }
+    e
+  };
   let n_data = x_vals.len();
   let n_params = param_names.len();
+  let at_point_of = |e: &Expr, x: &[f64]| -> Expr {
+    let mut e = e.clone();
+    for (name, v) in var_names.iter().zip(x) {
+      e = crate::syntax::substitute_variable(&e, name, &Expr::Real(*v));
+    }
+    e
+  };
+  let partials: Vec<Option<Expr>> = param_names
+    .iter()
+    .map(|p| {
+      evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "D".to_string(),
+        args: vec![model.clone(), Expr::Identifier(p.clone())].into(),
+      })
+      .ok()
+    })
+    .collect();
 
   // `Weights -> {w₁, …}` scales each residual by `sqrt(wᵢ)`, so a point
   // counts `wᵢ` times in the sum of squares.
@@ -6710,11 +6769,7 @@ fn find_fit_weighted(
 
     for i in 0..n_data {
       // Substitute variable and parameters
-      let mut expr_at_x = crate::syntax::substitute_variable(
-        model,
-        &var_name,
-        &Expr::Real(x_vals[i]),
-      );
+      let mut expr_at_x = at_point(&x_vals[i]);
       for (j, pname) in param_names.iter().enumerate() {
         expr_at_x = crate::syntax::substitute_variable(
           &expr_at_x,
@@ -6728,31 +6783,41 @@ fn find_fit_weighted(
       };
       residuals[i] = (y_vals[i] - val) * scale[i];
 
-      // Compute Jacobian by finite differences
-      let h = 1e-8;
-      for j in 0..n_params {
-        let orig = param_values[j];
-        param_values[j] = orig + h;
-
-        let mut expr_h = crate::syntax::substitute_variable(
-          model,
-          &var_name,
-          &Expr::Real(x_vals[i]),
-        );
+      // Jacobian from the symbolic partial derivatives, falling back to a
+      // central difference where one does not evaluate to a number.
+      let point = at_point(&x_vals[i]);
+      let with_params = |e: &Expr, values: &[f64]| -> f64 {
+        let mut e = e.clone();
         for (k, pname) in param_names.iter().enumerate() {
-          expr_h = crate::syntax::substitute_variable(
-            &expr_h,
+          e = crate::syntax::substitute_variable(
+            &e,
             pname,
-            &Expr::Real(param_values[k]),
+            &Expr::Real(values[k]),
           );
         }
-        let val_h = match evaluate_expr_to_expr(&expr_h) {
-          Ok(ref e) => try_eval_to_f64(e).unwrap_or(f64::NAN),
+        match evaluate_expr_to_expr(&e) {
+          Ok(ref v) => try_eval_to_f64(v).unwrap_or(f64::NAN),
           Err(_) => f64::NAN,
+        }
+      };
+      for j in 0..n_params {
+        let exact = partials[j]
+          .as_ref()
+          .map(|d| with_params(&at_point_of(d, &x_vals[i]), &param_values))
+          .filter(|v| v.is_finite());
+        let slope = if let Some(v) = exact {
+          v
+        } else {
+          let orig = param_values[j];
+          let h = 1e-6 * orig.abs().max(1.0);
+          param_values[j] = orig + h;
+          let up = with_params(&point, &param_values);
+          param_values[j] = orig - h;
+          let down = with_params(&point, &param_values);
+          param_values[j] = orig;
+          (up - down) / (2.0 * h)
         };
-
-        jacobian[i][j] = (val_h - val) / h * scale[i];
-        param_values[j] = orig;
+        jacobian[i][j] = slope * scale[i];
       }
     }
 
@@ -6786,12 +6851,44 @@ fn find_fit_weighted(
       }
     }
 
-    // Update parameters, keeping them inside the constraint box.
+    // Update parameters, keeping them inside the constraint box. The
+    // Gauss-Newton direction always lowers the sum of squares for a short
+    // enough step, so the step is halved until it does: a full step from a
+    // poor start (an exponential's rate, say) can overshoot into a region
+    // the iteration never returns from.
     let before = param_values.clone();
-    for j in 0..n_params {
-      param_values[j] += delta[j];
+    let current_ssr: f64 = residuals.iter().map(|r| r * r).sum();
+    let ssr_at = |values: &[f64]| -> f64 {
+      let mut total = 0.0;
+      for i in 0..n_data {
+        let mut e = at_point(&x_vals[i]);
+        for (k, pname) in param_names.iter().enumerate() {
+          e = crate::syntax::substitute_variable(
+            &e,
+            pname,
+            &Expr::Real(values[k]),
+          );
+        }
+        let v = match evaluate_expr_to_expr(&e) {
+          Ok(ref v) => try_eval_to_f64(v).unwrap_or(f64::NAN),
+          Err(_) => f64::NAN,
+        };
+        let r = (y_vals[i] - v) * scale[i];
+        total += r * r;
+      }
+      if total.is_nan() { f64::INFINITY } else { total }
+    };
+    let mut step = 1.0;
+    for _ in 0..40 {
+      for j in 0..n_params {
+        param_values[j] = before[j] + step * delta[j];
+      }
+      clamp(&mut param_values);
+      if !current_ssr.is_finite() || ssr_at(&param_values) <= current_ssr {
+        break;
+      }
+      step *= 0.5;
     }
-    clamp(&mut param_values);
     let max_change = param_values
       .iter()
       .zip(before.iter())
