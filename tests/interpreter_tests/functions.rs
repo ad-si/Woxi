@@ -3501,6 +3501,34 @@ mod session_time {
   }
 }
 
+mod clock {
+  use super::*;
+
+  #[test]
+  fn stays_within_range() {
+    assert_eq!(interpret("Head[Clock[{2, 5}, 3]]").unwrap(), "Real");
+    assert_eq!(interpret("2 <= Clock[{2, 5}, 3] <= 5").unwrap(), "True");
+    assert_eq!(interpret("0 <= Clock[] <= 1").unwrap(), "True");
+    assert_eq!(interpret("0 <= Clock[7, 2] <= 7").unwrap(), "True");
+  }
+
+  #[test]
+  fn step_size_quantizes_value() {
+    assert_eq!(
+      interpret("Mod[Clock[{0, 4, 1}, 2], 1] == 0").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn symbolic_period_stays_unevaluated() {
+    assert_eq!(
+      interpret("Clock[{0, Pi}, 60/t]").unwrap(),
+      "Clock[{0, Pi}, 60/t]"
+    );
+  }
+}
+
 mod unix_time {
   use super::*;
 

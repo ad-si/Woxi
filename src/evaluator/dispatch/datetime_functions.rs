@@ -72,6 +72,9 @@ pub fn dispatch_datetime_functions(
     "SessionTime" if args.is_empty() => {
       return Some(Ok(Expr::Real(crate::session_time())));
     }
+    "Clock" if args.len() <= 2 => {
+      return crate::functions::datetime_ast::clock_ast(args).map(Ok);
+    }
     "TimeUsed" if args.is_empty() => {
       return Some(Ok(Expr::Real(crate::functions::memory::cpu_time_used())));
     }
