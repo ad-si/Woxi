@@ -23950,3 +23950,25 @@ mod part_assignment_real_positions {
     );
   }
 }
+
+mod list_valued_bare_iterator {
+  use super::*;
+
+  // `{v}` with v a list repeats once per element (wolframscript).
+  #[test]
+  fn table_and_do_repeat_per_element() {
+    assert_eq!(
+      interpret("v = {a, b}; {Table[k, {v}], Table[i, {i, 2}, {v}]}").unwrap(),
+      "{{k, k}, {{1, 1}, {2, 2}}}"
+    );
+    assert_eq!(
+      interpret("v = {a, b, c}; n = 0; Do[n++, {v}]; n").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn symbolic_bound_still_rejected() {
+    assert_eq!(interpret("Quiet[Do[1, {y}]]").unwrap(), "Do[1, {y}]");
+  }
+}
