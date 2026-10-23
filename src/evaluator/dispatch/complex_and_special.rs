@@ -4571,6 +4571,11 @@ fn tf_indexed_special(
     "GegenbauerC" => ("C", None, &[3]),
     "ZernikeR" => ("R", None, &[3]),
     "JacobiP" => ("P", None, &[4]),
+    // The polynomial generalisations of the number sequences below.
+    "BernoulliB" | "BellB" => ("B", None, &[2]),
+    "EulerE" => ("E", None, &[2]),
+    "Fibonacci" => ("F", None, &[2]),
+    "LucasL" => ("L", None, &[2]),
     _ => return None,
   };
   entry.2.contains(&arity).then_some((entry.0, entry.1))
@@ -5551,6 +5556,30 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     "Factorial" | "Factorial2" if args.len() == 1 => {
       let bang = if name == "Factorial" { "!" } else { "!!" };
       tf_row(vec![tf_factor_boxed(&args[0]), tf_string(bang)])
+    }
+    // Integer sequences are a letter indexed by the term: Cₙ, Fₙ, Lₙ, Hₙ,
+    // Bₙ, Eₙ — and the partition counts p(n) and q(n).
+    "CatalanNumber" | "Fibonacci" | "LucasL" | "HarmonicNumber"
+    | "BernoulliB" | "EulerE" | "BellB"
+      if args.len() == 1 =>
+    {
+      let letter = match name {
+        "CatalanNumber" => "C",
+        "Fibonacci" => "F",
+        "LucasL" => "L",
+        "HarmonicNumber" => "H",
+        "BernoulliB" | "BellB" => "B",
+        _ => "E",
+      };
+      tf_box("SubscriptBox", vec![tf_string(letter), tf(&args[0])])
+    }
+    "PartitionsP" | "PartitionsQ" if args.len() == 1 => {
+      let letter = if name == "PartitionsP" { "p" } else { "q" };
+      tf_applied(tf_string(letter), args)
+    }
+    // The subfactorial is a prefix bang: Subfactorial[n] → !n.
+    "Subfactorial" if args.len() == 1 => {
+      tf_row(vec![tf_string("!"), tf_factor_boxed(&args[0])])
     }
     // Indexed special functions: Jₙ(x), Pₙᵐ(x), hₙ⁽¹⁾(x), …
     _ if tf_indexed_special(name, args.len()).is_some() => {

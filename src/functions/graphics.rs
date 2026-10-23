@@ -14688,8 +14688,14 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
       i += 1;
       continue;
     }
+    // A quoted string (`"("`, `","`) is one atom: its brackets and commas
+    // neither nest nor split.
+    if c == '"' {
+      i = skip_quoted_box_literal(cs, i);
+      continue;
+    }
     match c {
-      '[' => {
+      '[' | '{' => {
         bdepth += 1;
         i += 1;
       }
@@ -14707,8 +14713,8 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
           i,
         );
       }
-      ']' => {
-        bdepth -= 1;
+      ']' | '}' => {
+        bdepth = bdepth.saturating_sub(1);
         i += 1;
       }
       ',' if bdepth == 0 => {
@@ -14883,12 +14889,99 @@ fn parse_box_to_expr(cs: &[char]) -> Expr {
     }
     return Expr::String(text);
   }
+  // A braced list (`RowBox[{"sin", "(", "x", ")"}]`'s argument, as
+  // `ToString[…, TraditionalForm]` writes it) is a list of boxes.
+  let trimmed = trim_char_slice(cs);
+  if trimmed.first() == Some(&'{')
+    && trimmed.last() == Some(&'}')
+    && braces_match_at_ends(trimmed)
+  {
+    let items = split_box_list(&trimmed[1..trimmed.len() - 1])
+      .into_iter()
+      .map(|item| parse_box_to_expr(trim_char_slice(item)))
+      .collect::<Vec<_>>();
+    return Expr::List(items.into());
+  }
   let mut units = parse_box_units(cs);
   match units.len() {
     0 => Expr::String(String::new()),
     1 => units.pop().unwrap(),
     _ => call1("RowBox", Expr::List(units.into())),
   }
+}
+
+/// The index just past the `"…"` literal starting at `start` (with `\"`
+/// and `\\` escapes), or the end of `cs` when it is unterminated.
+fn skip_quoted_box_literal(cs: &[char], start: usize) -> usize {
+  let mut i = start + 1;
+  while i < cs.len() {
+    match cs[i] {
+      '\\' if i + 1 < cs.len() => i += 2,
+      '"' => return i + 1,
+      _ => i += 1,
+    }
+  }
+  cs.len()
+}
+
+/// Splits the inside of a braced box list at its top-level commas, leaving
+/// strings, brackets, braces and `\(…\)` groups intact.
+fn split_box_list(cs: &[char]) -> Vec<&[char]> {
+  let mut parts = Vec::new();
+  let (mut depth, mut start, mut i) = (0usize, 0usize, 0usize);
+  while i < cs.len() {
+    match cs[i] {
+      '"' => {
+        i = skip_quoted_box_literal(cs, i);
+        continue;
+      }
+      '\\' if i + 1 < cs.len() && matches!(cs[i + 1], '(' | ')') => {
+        if cs[i + 1] == '(' {
+          depth += 1;
+        } else {
+          depth = depth.saturating_sub(1);
+        }
+        i += 2;
+        continue;
+      }
+      '[' | '{' => depth += 1,
+      ']' | '}' => depth = depth.saturating_sub(1),
+      ',' if depth == 0 => {
+        parts.push(&cs[start..i]);
+        start = i + 1;
+      }
+      _ => {}
+    }
+    i += 1;
+  }
+  if start < cs.len() || !parts.is_empty() {
+    parts.push(&cs[start..]);
+  }
+  parts
+}
+
+/// Whether the leading `{` of `cs` is closed by its trailing `}` (rather
+/// than `{a}, {b}` where the first brace closes early).
+fn braces_match_at_ends(cs: &[char]) -> bool {
+  let (mut depth, mut i) = (0usize, 0usize);
+  while i < cs.len() {
+    match cs[i] {
+      '"' => {
+        i = skip_quoted_box_literal(cs, i);
+        continue;
+      }
+      '{' => depth += 1,
+      '}' => {
+        depth = depth.saturating_sub(1);
+        if depth == 0 {
+          return i + 1 == cs.len();
+        }
+      }
+      _ => {}
+    }
+    i += 1;
+  }
+  false
 }
 
 /// Leads a label string that already holds finished SVG `<text>` markup (a

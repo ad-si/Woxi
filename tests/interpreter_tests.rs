@@ -1989,6 +1989,66 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_column_of_to_string_traditional_form_is_typeset() {
+    // Regression: a `Column`/`Row` item built from
+    // `ToString[f[n], TraditionalForm] <> " = "` carries a linear-syntax
+    // `FormBox[RowBox[{"sin", "(", "n", ")"}], TraditionalForm]` escape.
+    // The box parser split the braced `RowBox` list at its commas and drew
+    // the box source (`RowBox[{"sin", (, n, ")"}]`) instead of `sin(n)`.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Column[{ToString[Sin[n], TraditionalForm] <> \" = \", \
+       ToString[Cos[x], TraditionalForm]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("RowBox"),
+      "box source leaked into SVG:\n{svg}"
+    );
+    assert!(svg.contains(">sin(n) = <"), "SVG: {svg}");
+    assert!(svg.contains(">cos(x)<"), "SVG: {svg}");
+  }
+
+  #[test]
+  fn test_traditional_form_integer_sequences() {
+    // Integer sequences are a letter indexed by the term in TraditionalForm
+    // (`Cₙ`, `Fₙ`, …), partition counts are `p(n)`/`q(n)`, and the
+    // subfactorial is a prefix bang.
+    clear_state();
+    for (call, letter) in [
+      ("CatalanNumber", "C"),
+      ("Fibonacci", "F"),
+      ("LucasL", "L"),
+      ("HarmonicNumber", "H"),
+      ("BernoulliB", "B"),
+      ("EulerE", "E"),
+      ("BellB", "B"),
+    ] {
+      let svg = interpret(&format!(
+        "ExportString[Column[{{ToString[{call}[n], TraditionalForm]}}], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(
+        svg.contains(&format!(
+          ">{letter}<tspan baseline-shift=\"sub\" font-size=\"70%\">n</tspan><"
+        )),
+        "{call}: {svg}"
+      );
+    }
+    for (call, text) in [
+      ("PartitionsP", "p(n)"),
+      ("PartitionsQ", "q(n)"),
+      ("Subfactorial", "!n"),
+    ] {
+      let svg = interpret(&format!(
+        "ExportString[Column[{{ToString[{call}[n], TraditionalForm]}}], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(svg.contains(&format!(">{text}<")), "{call}: {svg}");
+    }
+  }
+
+  #[test]
   fn test_manipulate_style_text_differential_svg_uses_plain_d() {
     // Regression: a `Column[{Graphics[…], Style[Text[Row[{…}]], size]}]`
     // body — the shape Woxi Studio's Manipulate widgets render for a
