@@ -5421,6 +5421,14 @@ options, but only `Method -> "Canny"` (or `Automatic`) with
 and non-zero `"StraightEdges"` leave the call unevaluated.
 
 
+## `Solve` of a nonlinear numeric system returns spurious solutions first
+
+`Solve[{eq1, eq2}, {x, y}]` for two rational equations with machine-number
+coefficients (such as the equilibrium equations of a binary vapor–liquid
+mixture) returns ten solutions, mostly complex, with an unphysical real one
+(`x -> -1.2*^16`) first. `wolframscript` lists the physical solution first,
+so `sol[[1]]` — the usual way to pick it — gives a different value.
+
 ### `DSolve` has no Riccati / Bessel-type solutions
 
 `DSolve[α y'[x] + γ y[x]^2 == x^(k-2), y[x], x]` stays unevaluated. wolframscript
