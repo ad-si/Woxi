@@ -39990,4 +39990,22 @@ mod setting_of_dynamic_objects {
       "RGBColor[1, 0, 0]"
     );
   }
+
+  #[test]
+  fn scalar_plot_range_bounds_only_the_vertical_axis() {
+    let svg = export_svg("ListLinePlot[{1, 2, 3}, PlotRange -> 4000]");
+    assert_eq!(
+      y_tick_labels(&svg).first().map(String::as_str),
+      Some("4000")
+    );
+    assert!(
+      !x_tick_labels(&svg)
+        .iter()
+        .any(|t| t == "4000" || t == "-4000"),
+      "x axis must keep the data extent: {:?}",
+      x_tick_labels(&svg)
+    );
+    let svg = export_svg("Plot[Tan[x], {x, -6, 6}, PlotRange -> 5]");
+    assert!(x_tick_labels(&svg).iter().any(|t| t == "6"));
+  }
 }

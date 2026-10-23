@@ -1924,7 +1924,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           }
         }
         "PlotRange" => {
-          let (rx, ry) = crate::functions::plot::parse_plot_range(replacement);
+          let (rx, ry) =
+            crate::functions::plot::parse_series_plot_range(replacement);
           opts.plot_range_x = rx;
           opts.plot_range_y = ry;
         }

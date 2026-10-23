@@ -9254,6 +9254,21 @@ pub(crate) fn parse_plot_range(
   (None, None)
 }
 
+/// `PlotRange` for the function/list plots (`Plot`, `ListPlot`, charts, ...).
+/// Unlike graphics primitives, where a bare number `r` is a square window,
+/// the sampled x domain of a plot stays as is and `r` bounds only the
+/// vertical axis: `PlotRange -> r` is `PlotRange -> {-r, r}` on y.
+pub(crate) fn parse_series_plot_range(
+  value: &Expr,
+) -> (Option<(f64, f64)>, Option<(f64, f64)>) {
+  let (x, y) = parse_plot_range(value);
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  if try_eval_to_f64(&val).is_some_and(|r| r > 0.0) {
+    return (None, y);
+  }
+  (x, y)
+}
+
 /// Parsed `FrameLabel` edges. Empty strings mean "no label on that edge".
 #[derive(Default)]
 pub(crate) struct FrameLabels {
@@ -9717,7 +9732,7 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.grid_lines_style = parse_style_directives(replacement);
     }
     "PlotRange" => {
-      let (rx, ry) = parse_plot_range(replacement);
+      let (rx, ry) = parse_series_plot_range(replacement);
       overrides.x = rx;
       overrides.y = ry;
       overrides.y_all = plot_range_requests_all_y(replacement);
