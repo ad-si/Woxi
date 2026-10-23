@@ -563,19 +563,23 @@ fn try_ast_pattern_replace_impl(
     Expr::FunctionCall { name, args } => {
       let mut new_args = Vec::new();
       let mut any_matched = false;
-      let holds = is_hold_head(name);
-      if holds {
-        REPLACE_HOLD_DEPTH.with(|d| d.set(d.get() + 1));
-      }
+      // A replacement inside an argument the head holds (Hold, HoldForm, a
+      // HoldAll user head, Function, …) is left unevaluated.
+      let holds_all = is_hold_head(name);
       let recursed: Result<(), InterpreterError> = (|| {
-        for arg in args {
-          new_args.push(recurse(arg, &mut any_matched)?);
+        for (i, arg) in args.iter().enumerate() {
+          let holds = holds_all || crate::evaluator::holds_argument_at(name, i);
+          if holds {
+            REPLACE_HOLD_DEPTH.with(|d| d.set(d.get() + 1));
+          }
+          let result = recurse(arg, &mut any_matched);
+          if holds {
+            REPLACE_HOLD_DEPTH.with(|d| d.set(d.get() - 1));
+          }
+          new_args.push(result?);
         }
         Ok(())
       })();
-      if holds {
-        REPLACE_HOLD_DEPTH.with(|d| d.set(d.get() - 1));
-      }
       recursed?;
       // The head `name` is a subexpression too: `h[a] /. x_Symbol :> f[x]`
       // becomes `f[h][f[a]]`.
@@ -755,9 +759,13 @@ fn try_ast_pattern_replace_impl(
         Ok(None)
       }
     }
+    // A pure function holds its body.
     Expr::Function { body } => {
       let mut any = false;
-      let nb = recurse(body, &mut any)?;
+      REPLACE_HOLD_DEPTH.with(|d| d.set(d.get() + 1));
+      let nb = recurse(body, &mut any);
+      REPLACE_HOLD_DEPTH.with(|d| d.set(d.get() - 1));
+      let nb = nb?;
       if any {
         Ok(Some(Expr::Function { body: Box::new(nb) }))
       } else {
@@ -770,7 +778,10 @@ fn try_ast_pattern_replace_impl(
       bracketed,
     } => {
       let mut any = false;
-      let nb = recurse(body, &mut any)?;
+      REPLACE_HOLD_DEPTH.with(|d| d.set(d.get() + 1));
+      let nb = recurse(body, &mut any);
+      REPLACE_HOLD_DEPTH.with(|d| d.set(d.get() - 1));
+      let nb = nb?;
       if any {
         Ok(Some(Expr::NamedFunction {
           params: params.clone(),
@@ -6163,7 +6174,7 @@ fn apply_replace_all_multi_ast_impl(
     // body via HoldAll), but `/.` is structural so we still recurse for
     // replacement.
     Expr::Function { body } => {
-      let new_body = apply_replace_all_multi_ast_impl(body, rules, held)?;
+      let new_body = apply_replace_all_multi_ast_impl(body, rules, true)?;
       Ok(Expr::Function {
         body: Box::new(new_body),
       })
@@ -6175,7 +6186,7 @@ fn apply_replace_all_multi_ast_impl(
       body,
       bracketed,
     } => {
-      let new_body = apply_replace_all_multi_ast_impl(body, rules, held)?;
+      let new_body = apply_replace_all_multi_ast_impl(body, rules, true)?;
       Ok(Expr::NamedFunction {
         params: params.clone(),
         body: Box::new(new_body),

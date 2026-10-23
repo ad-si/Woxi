@@ -6960,3 +6960,31 @@ mod quick_wins_from_notebooks {
     );
   }
 }
+
+mod replacement_inside_held_positions {
+  use super::*;
+
+  // The instantiated right-hand side is not evaluated where the head holds
+  // it (wolframscript: no Part::partd).
+  #[test]
+  fn function_bodies_and_hold_all_heads() {
+    let result =
+      interpret_with_stdout("Function[w, {w[1]}] /. w[i_] :> w[[i]]").unwrap();
+    assert_eq!(result.result, "Function[w, {w[[1]]}]");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert_eq!(
+      interpret("SetAttributes[hh, HoldAll]; hh[w[1]] /. w[i_] :> w[[i]]")
+        .unwrap(),
+      "hh[w[[1]]]"
+    );
+    assert_eq!(interpret("f[1 + 1] /. 2 -> 3").unwrap(), "f[3]");
+  }
+
+  #[test]
+  fn literal_rule_reaches_function_body() {
+    assert_eq!(
+      interpret("Function[{x}, C[1] + 1] /. C[1] -> 2").unwrap(),
+      "Function[{x}, 2 + 1]"
+    );
+  }
+}

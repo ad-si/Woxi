@@ -14582,7 +14582,8 @@ pub(crate) fn map_expr_tree(
       expr: Box::new(go(e)),
       index: Box::new(go(index)),
     },
-    other => other.clone(),
+    // Pure-function bodies and the remaining structural nodes.
+    other => crate::syntax::map_children(other, &go),
   }
 }
 
