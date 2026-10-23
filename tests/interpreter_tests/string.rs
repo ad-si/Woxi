@@ -15291,6 +15291,17 @@ mod to_expression_keeps_a_trailing_semicolon {
   use super::*;
 
   #[test]
+  fn evaluating_one_returns_null() {
+    // The last statement is the empty one after the `;`, so the value is
+    // `Null`, not the value of the assignment.
+    assert_eq!(
+      interpret("ToString[ToExpression[\"a = 1;\"], InputForm]").unwrap(),
+      "Null"
+    );
+    assert_eq!(interpret("ToExpression[\"a = 1; b = 2\"]").unwrap(), "2");
+  }
+
+  #[test]
   fn a_trailing_semicolon_adds_a_null() {
     assert_eq!(
       interpret(

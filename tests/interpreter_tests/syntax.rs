@@ -13721,3 +13721,36 @@ mod prefix_apply_takes_part_of_its_argument {
     );
   }
 }
+
+mod plain_number_list_items {
+  use super::*;
+
+  #[test]
+  fn numbers_ending_an_item_read_as_literals() {
+    assert_eq!(
+      interpret(
+        "ToString[FullForm[Hold[{1 (* c *), -2, .5, 3.25`, 2*^2, -1.5, 7}]]]"
+      )
+      .unwrap(),
+      "Hold[List[1, -2, 0.5`, 3.25`, 200, -1.5`, 7]]"
+    );
+  }
+
+  #[test]
+  fn numbers_followed_by_an_operator_still_group() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[{-3^2, 2.^2, 4!, 1;2, x -> 1, 5 x}]]]")
+        .unwrap(),
+      "Hold[List[Times[-1, Power[3, 2]], Power[2.`, 2], Factorial[4], \
+       CompoundExpression[1, 2], Rule[x, 1], Times[5, x]]]"
+    );
+  }
+
+  #[test]
+  fn nested_numeric_lists() {
+    assert_eq!(
+      interpret("Dimensions[{{{1, 2.5}, {3, 4}}, {{5, 6}, {7, -8}}}]").unwrap(),
+      "{2, 2, 2}"
+    );
+  }
+}
