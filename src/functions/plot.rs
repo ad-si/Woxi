@@ -9272,12 +9272,29 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
         Some((pos, label))
       }
       other => {
+        let other = &numeric_tick_value(other);
         let pos = tick_position(other)?;
         Some((pos, bare_tick_label(other, pos)))
       }
     })
     .collect();
   (!ticks.is_empty()).then_some(ticks)
+}
+
+/// A bare tick position that evaluates to a plain number (`rate - vac` with
+/// both set, `N[f[x], 4]`) is that number, as plot options are evaluated
+/// before the plot reads them. A symbolic result (`3 Pi/2`) keeps the form it
+/// was written in so it is labelled as typed.
+fn numeric_tick_value(e: &Expr) -> Expr {
+  match evaluate_expr_to_expr(e) {
+    Ok(
+      v @ (Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)),
+    ) => v,
+    _ => e.clone(),
+  }
 }
 
 /// The numeric position of a tick. The spec is kept as written, so a position
