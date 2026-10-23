@@ -210,7 +210,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FindClusters" => Some((1, 3)),
     "Collect" => Some((2, 3)),
     "ColorCombine" => Some((1, 2)),
-    "DistanceTransform" => Some((1, 2)),
+    "DistanceTransform" => Some((1, 3)),
     "FillingTransform" => Some((1, 2)),
     "ColorConvert" => Some((2, 2)),
     "ColorData" => Some((0, 2)),

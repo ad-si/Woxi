@@ -40151,4 +40151,22 @@ mod plots_with_nothing_to_draw {
       "{Graphics3D, Graphics3D, Graphics}"
     );
   }
+
+  // ReliefPlot shades a matrix of heights: it is a framed raster, the first
+  // row sits at the top unless DataReversed is set, and the lighting
+  // changes the pixels but not the layout.
+  #[test]
+  fn relief_plot() {
+    let plot = "ReliefPlot[{{1, 2, 3}, {2, 5, 2}, {3, 2, 1}}";
+    let lit = export_svg(&format!("{plot}]"));
+    assert!(lit.contains("<image"), "{lit}");
+    assert_eq!(interpret(&format!("Head[{plot}]]")).unwrap(), "Graphics");
+    let flat = export_svg(&format!("{plot}, LightingAngle -> None]"));
+    assert_ne!(lit, flat);
+    let reversed = export_svg(&format!("{plot}, DataReversed -> True]"));
+    assert_ne!(lit, reversed);
+    let ranged =
+      export_svg(&format!("{plot}, DataRange -> {{{{-1, 1}}, {{-1, 1}}}}]"));
+    assert!(ranged.contains("-1"), "{ranged}");
+  }
 }

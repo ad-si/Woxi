@@ -1301,7 +1301,7 @@ ImageTake,Takes a rectangular region from an image,✅,pure,7.0,1285
 CanonicalName,,🚫,,10.0,1286
 VertexDegree,Returns the degree of vertices in a graph,✅,1,8.0,1287
 OverTilde,Displays expression with tilde above,✅,1,6.0,1288
-ReliefPlot,,🚫,,6.0,1289
+ReliefPlot,Shaded relief plot of a matrix of heights,✅,pure,6.0,1289
 TableSpacing,,🚫,,2.0,1290
 FindDivisions,Finds nice numbers dividing an interval into about n equal parts,✅,pure,7.0,1291
 FileExistsQ,Tests whether a file or directory exists,✅,2,7.0,1293
