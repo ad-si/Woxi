@@ -247,6 +247,44 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     .map(|index| table[index].1)
 }
 
+/// `s` written in ASCII the way `FullForm` writes it: a named character as
+/// `\\[Name]`, any other non-ASCII character as `\\:xxxx` (or `\\|xxxxxx`
+/// beyond the Basic Multilingual Plane).
+pub fn ascii_character_escapes(s: &str) -> std::borrow::Cow<'_, str> {
+  use std::collections::HashMap;
+  use std::fmt::Write;
+  use std::sync::OnceLock;
+  if s.is_ascii() {
+    return std::borrow::Cow::Borrowed(s);
+  }
+  static NAMES: OnceLock<HashMap<char, &'static str>> = OnceLock::new();
+  let names = NAMES.get_or_init(|| {
+    crate::named_characters::NAMED_CHARACTERS
+      .iter()
+      .filter_map(|(name, text)| {
+        let mut chars = text.chars();
+        match (chars.next(), chars.next()) {
+          (Some(c), None) => Some((c, *name)),
+          _ => None,
+        }
+      })
+      .collect()
+  });
+  let mut out = String::with_capacity(s.len() + 16);
+  for c in s.chars() {
+    if c.is_ascii() {
+      out.push(c);
+    } else if let Some(name) = names.get(&c) {
+      let _ = write!(out, "\\[{name}]");
+    } else if (c as u32) <= 0xFFFF {
+      let _ = write!(out, "\\:{:04x}", c as u32);
+    } else {
+      let _ = write!(out, "\\|{:06x}", c as u32);
+    }
+  }
+  std::borrow::Cow::Owned(out)
+}
+
 /// Wolfram keeps a large part of its character set in the Unicode private use
 /// area — `\[Rule]` is U+F522, `\[WarningSign]` is U+F725 — and only its own
 /// fonts draw those code points, so a label written with one comes out as a
@@ -13544,7 +13582,7 @@ fn contains_string(expr: &Expr) -> bool {
 /// escape-sequence equivalents (`\!`, `\(`, `\)`, `\*`).
 /// Named-character sequences (`\[Name]`) are preserved as-is, while
 /// other backslashes are doubled.
-fn escape_string_for_input_form(s: &str) -> String {
+pub(crate) fn escape_string_for_input_form(s: &str) -> String {
   use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START};
   let mut escaped = String::with_capacity(s.len() + 10);
   let chars: Vec<char> = s.chars().collect();

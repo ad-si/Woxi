@@ -5657,7 +5657,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "FullForm"
     && inner_args.len() == 1
   {
-    return Ok(Expr::String(crate::functions::expr_form::render_full_form(
+    return Ok(Expr::String(crate::functions::expr_form::full_form_text(
       &inner_args[0],
     )));
   }

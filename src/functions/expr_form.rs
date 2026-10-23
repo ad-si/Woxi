@@ -564,6 +564,11 @@ pub fn complex_full_form_parts(expr: &Expr) -> Option<ComplexParts> {
 }
 
 /// Recursively render an expression in FullForm notation.
+/// The text of `FullForm[expr]`: the structural form, written in ASCII.
+pub fn full_form_text(expr: &Expr) -> String {
+  crate::syntax::ascii_character_escapes(&render_full_form(expr)).into_owned()
+}
+
 pub fn render_full_form(expr: &Expr) -> String {
   // Complex numbers are stored as Plus/Times trees internally but display
   // as Complex[re, im], so this must come before the general decomposition.
@@ -589,10 +594,9 @@ pub fn render_full_form(expr: &Expr) -> String {
   if let Expr::Real(f) = expr {
     return format_real_full_form(*f);
   }
-  // String literals embedded in a FullForm result get backslash-escaped
-  // quotes so the surrounding `ToString` produces `"\"l\""`.
+  // A string is written as its quoted, escaped literal: `f["a\"b"]`.
   if let Expr::String(s) = expr {
-    return format!("\\\"{s}\\\"");
+    return format!("\"{}\"", crate::syntax::escape_string_for_input_form(s));
   }
 
   match decompose_expr(expr) {
