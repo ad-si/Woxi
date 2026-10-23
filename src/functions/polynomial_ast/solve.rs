@@ -3414,6 +3414,12 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // `b^g(x) * h(x) == 0` with a positive constant base: the exponential never
+  // vanishes, so only `h(x) == 0` contributes roots.
+  if let Some(result) = try_solve_peel_exponential_factors(&args[0], var) {
+    return result;
+  }
+
   // Try to solve equations with invertible functions:
   // Log[expr] == a → expr == E^a, Sqrt[expr] == a → expr == a^2, etc.
   if let Some(result) = try_solve_inverse_function(&args[0], var) {
@@ -5278,6 +5284,136 @@ fn strip_constant_factor(expr: &Expr, var: &str) -> Expr {
     }
     other => other.clone(),
   }
+}
+
+/// Whether `expr` is `b^g` with a positive constant base `b` and an exponent
+/// depending on `var` (`E^x`, `2^(1 - x/3)`): a factor that is never zero.
+fn is_nonvanishing_exponential(expr: &Expr, var: &str) -> bool {
+  let (base, exp) = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return false,
+  };
+  !contains_var(base, var)
+    && contains_var(exp, var)
+    && try_eval_to_f64(base).is_some_and(|b| b > 0.0)
+}
+
+/// Collect (deduplicated by printed form) the nonvanishing exponentials
+/// occurring anywhere inside `expr`.
+fn collect_nonvanishing_exponentials(
+  expr: &Expr,
+  var: &str,
+  out: &mut Vec<Expr>,
+) {
+  if is_nonvanishing_exponential(expr, var) {
+    if !out
+      .iter()
+      .any(|e| expr_to_string(e) == expr_to_string(expr))
+    {
+      out.push(expr.clone());
+    }
+    return;
+  }
+  match expr {
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_nonvanishing_exponentials(a, var, out);
+      }
+    }
+    Expr::List(items) => {
+      for a in items {
+        collect_nonvanishing_exponentials(a, var, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_nonvanishing_exponentials(left, var, out);
+      collect_nonvanishing_exponentials(right, var, out);
+    }
+    Expr::UnaryOp { operand, .. } => {
+      collect_nonvanishing_exponentials(operand, var, out);
+    }
+    _ => {}
+  }
+}
+
+/// For a sum whose terms all carry the same exponential (as `D` of
+/// `x^2 E^(1 - x/3)` returns), divide that exponential out: the quotient has
+/// the same roots. `None` unless some candidate divides out completely.
+fn peel_common_exponential(lhs: &Expr, var: &str) -> Option<Expr> {
+  let mut candidates = Vec::new();
+  collect_nonvanishing_exponentials(lhs, var, &mut candidates);
+  for c in candidates {
+    let quotient = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Expand",
+      div2(lhs.clone(), c),
+    ))
+    .ok()?;
+    let mut left = Vec::new();
+    collect_nonvanishing_exponentials(&quotient, var, &mut left);
+    if left.is_empty() {
+      return Some(quotient);
+    }
+  }
+  None
+}
+
+/// Solve `product == 0` by dropping the factors that can never vanish
+/// (exponentials with a positive constant base). Returns `None` when the
+/// product has no such factor.
+fn try_solve_peel_exponential_factors(
+  eq: &Expr,
+  var: &str,
+) -> Option<Result<Expr, InterpreterError>> {
+  let lhs = match eq {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == ComparisonOp::Equal
+      && matches!(operands[1], Expr::Integer(0)) =>
+    {
+      &operands[0]
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Equal"
+        && args.len() == 2
+        && matches!(args[1], Expr::Integer(0)) =>
+    {
+      &args[0]
+    }
+    _ => return None,
+  };
+  let factors = extract_times_factors(lhs);
+  if !factors.iter().any(|f| is_nonvanishing_exponential(f, var)) {
+    return peel_common_exponential(lhs, var).map(|reduced| {
+      let new_eq = Expr::Comparison {
+        operands: vec![reduced, Expr::Integer(0)],
+        operators: vec![ComparisonOp::Equal],
+      };
+      solve_ast(&[new_eq, id_expr(var)])
+    });
+  }
+  let rest: Vec<Expr> = factors
+    .into_iter()
+    .filter(|f| !is_nonvanishing_exponential(f, var))
+    .collect();
+  if rest.is_empty() {
+    return Some(Ok(Expr::List(vec![].into())));
+  }
+  let reduced = crate::evaluator::evaluate_expr_to_expr(&times(rest)).ok()?;
+  let new_eq = Expr::Comparison {
+    operands: vec![reduced, Expr::Integer(0)],
+    operators: vec![ComparisonOp::Equal],
+  };
+  Some(solve_ast(&[new_eq, id_expr(var)]))
 }
 
 fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {

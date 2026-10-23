@@ -4881,6 +4881,29 @@ mod symbolic_equal {
 mod solve {
   use super::*;
 
+  // An exponential with a positive constant base never vanishes, so it
+  // drops out of `product == 0`.
+  #[test]
+  fn nonvanishing_exponential_factors() {
+    assert_eq!(interpret("Solve[E^x == 0, x]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Solve[E^(1 - x) x (2 - x) == 0, x]").unwrap(),
+      "{{x -> 0}, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[2^x (x - 1) == 0, x]").unwrap(),
+      "{{x -> 1}}"
+    );
+    assert_eq!(
+      interpret("Solve[D[x^2 E^(1 - x), x] == 0, x]").unwrap(),
+      "{{x -> 0}, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[D[x^2 E^(1 - x/3), {x, 2}] == 0, x]").unwrap(),
+      "{{x -> 6 - 3*Sqrt[2]}, {x -> 6 + 3*Sqrt[2]}}"
+    );
+  }
+
   // Unknowns written as curried calls, as method-of-lines code names its
   // grid values.
   #[test]
