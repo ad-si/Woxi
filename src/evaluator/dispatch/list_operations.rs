@@ -5103,8 +5103,19 @@ pub fn dispatch_list_operations(
       if let Some(msg) =
         list_helpers_ast::table_iterators_invalid(name, &args[1..])
       {
-        crate::emit_message(&msg);
-        return Some(Ok(unevaluated(name, args)));
+        // `{list}` repeats once per element; anything else is invalid.
+        let iters = list_helpers_ast::table_preevaluate_iterators(&args[1..]);
+        if list_helpers_ast::table_iterators_invalid(name, &iters).is_some() {
+          crate::emit_message(&msg);
+          return Some(Ok(unevaluated(name, args)));
+        }
+        let mut lowered = vec![args[0].clone()];
+        lowered.extend(iters);
+        return Some(if lowered.len() == 2 {
+          list_helpers_ast::do_ast(&lowered[0], &lowered[1])
+        } else {
+          list_helpers_ast::do_multi_ast(&lowered[0], &lowered[1..])
+        });
       }
       if args.len() == 2 {
         return Some(list_helpers_ast::do_ast(&args[0], &args[1]));

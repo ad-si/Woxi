@@ -4497,10 +4497,26 @@ pub(crate) fn build_plot_source(
 /// The option rules a graphics function was called with, verbatim, so
 /// `Show` can carry them into a merged graphic.
 pub(crate) fn explicit_options(args: &[Expr]) -> Vec<Expr> {
+  // The plot remembers its options for a later `Show`, which may run after
+  // the scope that gave them their values is gone (`Table[Plot[…,
+  // PlotStyle -> c[[i]]], {i, 2}]`), so an immediate rule keeps the value
+  // it has now. A delayed rule stays delayed.
   args
     .iter()
-    .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
-    .cloned()
+    .filter_map(|a| match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => Some(Expr::Rule {
+        pattern: pattern.clone(),
+        replacement: Box::new(
+          crate::evaluator::evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone()),
+        ),
+      }),
+      Expr::RuleDelayed { .. } => Some(a.clone()),
+      _ => None,
+    })
     .collect()
 }
 

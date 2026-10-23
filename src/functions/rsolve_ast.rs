@@ -1700,6 +1700,13 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut values: std::collections::HashMap<(String, i128), Expr> =
     std::collections::HashMap::new();
 
+  // A machine real anywhere in the equations makes the whole table machine
+  // precision: wolframscript numericizes the initial values too, so
+  // `{a[n+1] == 0.5 a[n], a[1] == 1}` starts from `1.`.
+  let numericize = equations
+    .iter()
+    .any(crate::functions::math_ast::numeric_utils::contains_inexact_real);
+
   for eq in &equations {
     let Some((lhs, rhs)) = extract_equation(eq) else {
       return Ok(unevaluated());
@@ -1715,7 +1722,10 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|(name, idx)| (name, idx, lhs.clone()))
       });
     if let Some((name, idx, val)) = initial {
-      let val = crate::evaluator::evaluate_expr_to_expr(&val)?;
+      let mut val = crate::evaluator::evaluate_expr_to_expr(&val)?;
+      if numericize {
+        val = crate::evaluator::evaluate_expr_to_expr(&call("N", vec![val]))?;
+      }
       values.insert((name, idx), val);
       continue;
     }

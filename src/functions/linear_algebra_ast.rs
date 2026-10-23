@@ -989,6 +989,22 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(unevaluated("Dot", args))
   };
 
+  // A tensor of rank three or more contracts its last index with the
+  // other operand's first, which is ArrayDot at depth 1. (The matrix code
+  // below would take a rank-3 tensor for a matrix of vectors.)
+  if let (Some(da), Some(db)) = (tensor_dims(&args[0]), tensor_dims(&args[1]))
+    && (da.len() > 2 || db.len() > 2)
+  {
+    if da.last() != db.first() {
+      return dotsh();
+    }
+    return array_dot_ast(&[
+      args[0].clone(),
+      args[1].clone(),
+      Expr::Integer(1),
+    ]);
+  }
+
   // Vector . Vector -> scalar
   if let (Some(va), Some(vb)) =
     (expr_to_vector(&args[0]), expr_to_vector(&args[1]))
@@ -2368,9 +2384,21 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Extract variable name
-  let var_name = match &args[2] {
-    Expr::Identifier(name) => name.clone(),
+  // The variable, or a list of them for rows `{x1, …, xn, f}`.
+  let var_names: Vec<String> = match &args[2] {
+    Expr::Identifier(name) => vec![name.clone()],
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|v| matches!(v, Expr::Identifier(_))) =>
+    {
+      items
+        .iter()
+        .filter_map(|v| match v {
+          Expr::Identifier(name) => Some(name.clone()),
+          _ => None,
+        })
+        .collect()
+    }
     _ => {
       return Err(InterpreterError::EvaluationError(
         "Fit: third argument must be a variable".into(),
@@ -2388,23 +2416,29 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let (x_vals, y_vals) = extract_fit_data(data_list, "Fit")?;
+  let (x_vals, y_vals) =
+    extract_fit_data_multi(data_list, var_names.len(), "Fit")?;
   let n = x_vals.len(); // number of data points
   let m = basis.len(); // number of basis functions
 
   // Build design matrix A (n×m) where A[i][j] = basis[j] evaluated at x = x_vals[i]
   let mut a_matrix = vec![vec![0.0f64; m]; n];
   for i in 0..n {
-    let x_expr = Expr::Real(x_vals[i]);
     for j in 0..m {
-      let substituted =
-        crate::syntax::substitute_variable(&basis[j], &var_name, &x_expr);
+      let mut substituted = basis[j].clone();
+      for (name, v) in var_names.iter().zip(&x_vals[i]) {
+        substituted = crate::syntax::substitute_variable(
+          &substituted,
+          name,
+          &Expr::Real(*v),
+        );
+      }
       let evaluated = evaluate_expr_to_expr(&substituted)?;
       match try_eval_to_f64(&evaluated) {
         Some(v) => a_matrix[i][j] = v,
         None => {
           return Err(InterpreterError::EvaluationError(format!(
-            "Fit: could not evaluate basis function {:?} at x = {}",
+            "Fit: could not evaluate basis function {:?} at x = {:?}",
             basis[j], x_vals[i]
           )));
         }
@@ -6614,9 +6648,22 @@ fn find_fit_weighted(
   let params_expr = &args[2];
   let var_expr = &args[3];
 
-  // Extract variable name
-  let var_name = match var_expr {
-    Expr::Identifier(name) => name.clone(),
+  // The independent variable, or a list of them (`{x}`, `{x, y}`) for data
+  // rows `{x1, …, xn, f}`.
+  let var_names: Vec<String> = match var_expr {
+    Expr::Identifier(name) => vec![name.clone()],
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|v| matches!(v, Expr::Identifier(_))) =>
+    {
+      items
+        .iter()
+        .filter_map(|v| match v {
+          Expr::Identifier(name) => Some(name.clone()),
+          _ => None,
+        })
+        .collect()
+    }
     _ => {
       return Err(InterpreterError::EvaluationError(format!(
         "{caller}: fourth argument must be a variable"
@@ -6675,9 +6722,34 @@ fn find_fit_weighted(
     )));
   };
 
-  let (x_vals, y_vals) = extract_fit_data(data_list, caller)?;
+  let (x_vals, y_vals) =
+    extract_fit_data_multi(data_list, var_names.len(), caller)?;
+  let at_point = |x: &[f64]| -> Expr {
+    let mut e = model.clone();
+    for (name, v) in var_names.iter().zip(x) {
+      e = crate::syntax::substitute_variable(&e, name, &Expr::Real(*v));
+    }
+    e
+  };
   let n_data = x_vals.len();
   let n_params = param_names.len();
+  let at_point_of = |e: &Expr, x: &[f64]| -> Expr {
+    let mut e = e.clone();
+    for (name, v) in var_names.iter().zip(x) {
+      e = crate::syntax::substitute_variable(&e, name, &Expr::Real(*v));
+    }
+    e
+  };
+  let partials: Vec<Option<Expr>> = param_names
+    .iter()
+    .map(|p| {
+      evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "D".to_string(),
+        args: vec![model.clone(), Expr::Identifier(p.clone())].into(),
+      })
+      .ok()
+    })
+    .collect();
 
   // `Weights -> {w₁, …}` scales each residual by `sqrt(wᵢ)`, so a point
   // counts `wᵢ` times in the sum of squares.
@@ -6710,11 +6782,7 @@ fn find_fit_weighted(
 
     for i in 0..n_data {
       // Substitute variable and parameters
-      let mut expr_at_x = crate::syntax::substitute_variable(
-        model,
-        &var_name,
-        &Expr::Real(x_vals[i]),
-      );
+      let mut expr_at_x = at_point(&x_vals[i]);
       for (j, pname) in param_names.iter().enumerate() {
         expr_at_x = crate::syntax::substitute_variable(
           &expr_at_x,
@@ -6728,31 +6796,41 @@ fn find_fit_weighted(
       };
       residuals[i] = (y_vals[i] - val) * scale[i];
 
-      // Compute Jacobian by finite differences
-      let h = 1e-8;
-      for j in 0..n_params {
-        let orig = param_values[j];
-        param_values[j] = orig + h;
-
-        let mut expr_h = crate::syntax::substitute_variable(
-          model,
-          &var_name,
-          &Expr::Real(x_vals[i]),
-        );
+      // Jacobian from the symbolic partial derivatives, falling back to a
+      // central difference where one does not evaluate to a number.
+      let point = at_point(&x_vals[i]);
+      let with_params = |e: &Expr, values: &[f64]| -> f64 {
+        let mut e = e.clone();
         for (k, pname) in param_names.iter().enumerate() {
-          expr_h = crate::syntax::substitute_variable(
-            &expr_h,
+          e = crate::syntax::substitute_variable(
+            &e,
             pname,
-            &Expr::Real(param_values[k]),
+            &Expr::Real(values[k]),
           );
         }
-        let val_h = match evaluate_expr_to_expr(&expr_h) {
-          Ok(ref e) => try_eval_to_f64(e).unwrap_or(f64::NAN),
+        match evaluate_expr_to_expr(&e) {
+          Ok(ref v) => try_eval_to_f64(v).unwrap_or(f64::NAN),
           Err(_) => f64::NAN,
+        }
+      };
+      for j in 0..n_params {
+        let exact = partials[j]
+          .as_ref()
+          .map(|d| with_params(&at_point_of(d, &x_vals[i]), &param_values))
+          .filter(|v| v.is_finite());
+        let slope = if let Some(v) = exact {
+          v
+        } else {
+          let orig = param_values[j];
+          let h = 1e-6 * orig.abs().max(1.0);
+          param_values[j] = orig + h;
+          let up = with_params(&point, &param_values);
+          param_values[j] = orig - h;
+          let down = with_params(&point, &param_values);
+          param_values[j] = orig;
+          (up - down) / (2.0 * h)
         };
-
-        jacobian[i][j] = (val_h - val) / h * scale[i];
-        param_values[j] = orig;
+        jacobian[i][j] = slope * scale[i];
       }
     }
 
@@ -6786,12 +6864,44 @@ fn find_fit_weighted(
       }
     }
 
-    // Update parameters, keeping them inside the constraint box.
+    // Update parameters, keeping them inside the constraint box. The
+    // Gauss-Newton direction always lowers the sum of squares for a short
+    // enough step, so the step is halved until it does: a full step from a
+    // poor start (an exponential's rate, say) can overshoot into a region
+    // the iteration never returns from.
     let before = param_values.clone();
-    for j in 0..n_params {
-      param_values[j] += delta[j];
+    let current_ssr: f64 = residuals.iter().map(|r| r * r).sum();
+    let ssr_at = |values: &[f64]| -> f64 {
+      let mut total = 0.0;
+      for i in 0..n_data {
+        let mut e = at_point(&x_vals[i]);
+        for (k, pname) in param_names.iter().enumerate() {
+          e = crate::syntax::substitute_variable(
+            &e,
+            pname,
+            &Expr::Real(values[k]),
+          );
+        }
+        let v = match evaluate_expr_to_expr(&e) {
+          Ok(ref v) => try_eval_to_f64(v).unwrap_or(f64::NAN),
+          Err(_) => f64::NAN,
+        };
+        let r = (y_vals[i] - v) * scale[i];
+        total += r * r;
+      }
+      if total.is_nan() { f64::INFINITY } else { total }
+    };
+    let mut step = 1.0;
+    for _ in 0..40 {
+      for j in 0..n_params {
+        param_values[j] = before[j] + step * delta[j];
+      }
+      clamp(&mut param_values);
+      if !current_ssr.is_finite() || ssr_at(&param_values) <= current_ssr {
+        break;
+      }
+      step *= 0.5;
     }
-    clamp(&mut param_values);
     let max_change = param_values
       .iter()
       .zip(before.iter())
@@ -7077,23 +7187,62 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1 {
     return linear_model_fit_design_matrix_form(&args[0]);
   }
-  if args.len() != 3 {
+  if args.len() < 3 {
     return Err(InterpreterError::EvaluationError(
       "LinearModelFit expects 1 or 3 arguments".into(),
     ));
   }
+  // Options after the three positional arguments. Only
+  // `IncludeConstantBasis` changes the fit here; one that would change it in
+  // a way not implemented (weights, nominal variables, …) leaves the call
+  // unevaluated rather than fitting the wrong model.
+  let mut include_constant = true;
+  for opt in &args[3..] {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = opt
+    else {
+      return Ok(unevaluated("LinearModelFit", args));
+    };
+    match pattern.as_ref() {
+      Expr::Identifier(n) if n == "IncludeConstantBasis" => {
+        include_constant =
+          !matches!(replacement.as_ref(), Expr::Identifier(b) if b == "False");
+      }
+      Expr::Identifier(n)
+        if matches!(
+          n.as_str(),
+          "ConfidenceLevel"
+            | "WorkingPrecision"
+            | "Method"
+            | "VarianceEstimatorFunction"
+        ) => {}
+      _ => return Ok(unevaluated("LinearModelFit", args)),
+    }
+  }
+  let args = &args[..3];
 
-  // Extract basis functions. Wolfram's `LinearModelFit` always prepends
-  // the constant `1` (the `IncludeConstantBasis -> True` default), whether
-  // the basis is given as a single expression (`x`) or a list
-  // (`{Sin[x], Cos[y]}`).
+  // Extract basis functions. Wolfram's `LinearModelFit` prepends the
+  // constant `1` (the `IncludeConstantBasis -> True` default), whether the
+  // basis is given as a single expression (`x`) or a list
+  // (`{Sin[x], Cos[y]}`); with `IncludeConstantBasis -> False` only an
+  // explicit `1` in the basis is fitted.
   let user_basis: Vec<Expr> = match &args[1] {
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
   };
-  let mut basis: Vec<Expr> = vec![Expr::Integer(1)];
+  let mut basis: Vec<Expr> = if include_constant {
+    vec![Expr::Integer(1)]
+  } else {
+    Vec::new()
+  };
   for b in user_basis {
-    if !matches!(b, Expr::Integer(1)) {
+    if !(include_constant && matches!(b, Expr::Integer(1))) {
       basis.push(b);
     }
   }
@@ -12293,6 +12442,64 @@ fn real_schur(a: &[Vec<f64>]) -> Option<(Vec<Vec<f64>>, Vec<Vec<f64>>)> {
   Some((q, h))
 }
 
+/// The square machine-precision matrix a `head[m]` decomposition works on.
+/// Emits `head::matsq` for a non-square argument and `head::schurf` for an
+/// exact one, returning `None` in both cases.
+fn machine_square_matrix(head: &str, arg: &Expr) -> Option<Vec<Vec<f64>>> {
+  let matsq = || {
+    crate::emit_message(&format!(
+      "{head}::matsq: Argument {} at position 1 is not a nonempty square \
+       matrix.",
+      expr_to_output(arg)
+    ));
+    None
+  };
+  let Expr::List(rows) = arg else {
+    return matsq();
+  };
+  let n = rows.len();
+  if n == 0 {
+    return matsq();
+  }
+  let mut matrix: Vec<Vec<f64>> = Vec::with_capacity(n);
+  let mut exact = true;
+  for row in rows {
+    let Expr::List(entries) = row else {
+      return matsq();
+    };
+    if entries.len() != n {
+      return matsq();
+    }
+    let mut values = Vec::with_capacity(n);
+    for entry in entries {
+      if matches!(entry, Expr::Real(_) | Expr::BigFloat(..)) {
+        exact = false;
+      }
+      match crate::functions::math_ast::expr_to_num(entry) {
+        Some(v) => values.push(v),
+        None => return matsq(),
+      }
+    }
+    matrix.push(values);
+  }
+  // An exact matrix has no machine-precision decomposition to compute.
+  if exact {
+    crate::emit_message(&format!(
+      "{head}::schurf: {head} has received a matrix with infinite precision."
+    ));
+    return None;
+  }
+  Some(matrix)
+}
+
+fn real_matrix_expr(m: Vec<Vec<f64>>) -> Expr {
+  Expr::List(
+    m.into_iter()
+      .map(|row| Expr::List(row.into_iter().map(Expr::Real).collect()))
+      .collect(),
+  )
+}
+
 /// `SchurDecomposition[m]` — the real Schur decomposition `{q, t}` of a
 /// square machine-precision matrix, with `m == q · t · Transpose[q]`.
 pub fn schur_decomposition_ast(
@@ -12302,88 +12509,40 @@ pub fn schur_decomposition_ast(
   if args.len() != 1 {
     return Ok(original());
   }
-  let rows = match &args[0] {
-    Expr::List(rows) if !rows.is_empty() => rows,
-    _ => {
-      crate::emit_message(&format!(
-        "SchurDecomposition::matsq: Argument {} at position 1 is not a \
-         nonempty square matrix.",
-        expr_to_output(&args[0])
-      ));
-      return Ok(original());
-    }
+  let Some(matrix) = machine_square_matrix("SchurDecomposition", &args[0])
+  else {
+    return Ok(original());
   };
-  let n = rows.len();
-  let mut matrix: Vec<Vec<f64>> = Vec::with_capacity(n);
-  let mut exact = true;
-  for row in rows {
-    let Expr::List(entries) = row else {
-      matrix.clear();
-      break;
-    };
-    if entries.len() != n {
-      matrix.clear();
-      break;
-    }
-    let mut values = Vec::with_capacity(n);
-    for entry in entries {
-      match entry {
-        Expr::Real(v) => {
-          exact = false;
-          values.push(*v);
-        }
-        Expr::BigFloat(..) => {
-          exact = false;
-          if let Some(v) = crate::functions::math_ast::expr_to_num(entry) {
-            values.push(v);
-          } else {
-            matrix.clear();
-            break;
-          }
-        }
-        _ => {
-          if let Some(v) = crate::functions::math_ast::expr_to_num(entry) {
-            values.push(v);
-          } else {
-            matrix.clear();
-            break;
-          }
-        }
-      }
-    }
-    if values.len() != n {
-      matrix.clear();
-      break;
-    }
-    matrix.push(values);
-  }
-  if matrix.len() != n {
-    crate::emit_message(&format!(
-      "SchurDecomposition::matsq: Argument {} at position 1 is not a nonempty \
-       square matrix.",
-      expr_to_output(&args[0])
-    ));
-    return Ok(original());
-  }
-  // An exact matrix has no machine-precision Schur form to compute.
-  if exact {
-    crate::emit_message(
-      "SchurDecomposition::schurf: SchurDecomposition has received a matrix \
-       with infinite precision.",
-    );
-    return Ok(original());
-  }
   let Some((q, t)) = real_schur(&matrix) else {
     return Ok(original());
   };
-  let to_expr = |m: Vec<Vec<f64>>| {
-    Expr::List(
-      m.into_iter()
-        .map(|row| Expr::List(row.into_iter().map(Expr::Real).collect()))
-        .collect(),
-    )
+  Ok(Expr::List(
+    vec![real_matrix_expr(q), real_matrix_expr(t)].into(),
+  ))
+}
+
+/// `HessenbergDecomposition[m]` — `{p, h}` with `p` orthogonal, `h` upper
+/// Hessenberg and `m == p · h · Transpose[p]`, by Householder reflections
+/// (LAPACK's sign convention, as wolframscript uses).
+pub fn hessenberg_decomposition_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("HessenbergDecomposition", args);
+  if args.len() != 1 {
+    return Ok(original());
+  }
+  let Some(mut h) = machine_square_matrix("HessenbergDecomposition", &args[0])
+  else {
+    return Ok(original());
   };
-  Ok(Expr::List(vec![to_expr(q), to_expr(t)].into()))
+  let n = h.len();
+  let mut p: Vec<Vec<f64>> = (0..n)
+    .map(|i| (0..n).map(|j| if i == j { 1.0 } else { 0.0 }).collect())
+    .collect();
+  hessenberg_reduce_accumulating(&mut h, &mut p, n);
+  Ok(Expr::List(
+    vec![real_matrix_expr(p), real_matrix_expr(h)].into(),
+  ))
 }
 
 /// How the entries of a `SymmetrizedArray` transform under the permutations of

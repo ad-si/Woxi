@@ -1017,6 +1017,27 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         };
 
+        // A machine-real start or step makes every iterator value a machine
+        // real (`{i, 1., 3}` visits `1., 2., 3.`), exactly the values Table
+        // walks: multiply those.
+        if items.len() >= 3 {
+          let machine = |e: &Expr| {
+            matches!(
+              crate::evaluator::evaluate_expr_to_expr(e),
+              Ok(Expr::Real(_))
+            )
+          };
+          if machine(&items[1]) || items.get(3).is_some_and(machine) {
+            let terms = crate::evaluator::evaluate_function_call_ast(
+              "Table",
+              &[body.clone(), iter_spec.clone()],
+            )?;
+            if let Expr::List(terms) = &terms {
+              return crate::functions::math_ast::times_ast(terms);
+            }
+          }
+        }
+
         // Check for list iteration form: {i, list}
         if items.len() == 2 {
           let evaluated_second =
@@ -2261,6 +2282,33 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(unevaluated("Sum", args));
         }
       };
+
+      // A machine-real start or step over a finite range makes every
+      // iterator value a machine real (`{i, 1, 3, 1.}` visits `1., 2., 3.`),
+      // exactly the values Table walks: add those.
+      if items.len() >= 3 {
+        let machine = |e: &Expr| {
+          matches!(
+            crate::evaluator::evaluate_expr_to_expr(e),
+            Ok(Expr::Real(_))
+          )
+        };
+        let finite_max = crate::evaluator::evaluate_expr_to_expr(&items[2])
+          .ok()
+          .and_then(|m| crate::functions::math_ast::try_eval_to_f64(&m))
+          .is_some_and(f64::is_finite);
+        if finite_max
+          && (machine(&items[1]) || items.get(3).is_some_and(machine))
+        {
+          let terms = crate::evaluator::evaluate_function_call_ast(
+            "Table",
+            &[body.clone(), iter_spec.clone()],
+          )?;
+          if let Expr::List(terms) = &terms {
+            return crate::functions::math_ast::plus_ast(terms);
+          }
+        }
+      }
 
       // Check for list iteration form: {i, list}
       if items.len() == 2 {

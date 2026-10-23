@@ -4956,3 +4956,30 @@ mod if_evaluate_in_held_branches {
     );
   }
 }
+
+mod quiet_named_messages_are_not_printed {
+  use super::*;
+
+  // A message named in Quiet's list is silenced as it is issued, not only
+  // dropped from the buffers afterwards; others still print.
+  #[test]
+  fn listed_message_does_not_print() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Quiet[1/0; 0/0, {Power::infy}]").unwrap();
+    assert_eq!(result.result, "Indeterminate");
+    let shown = format!("{}{:?}", result.stdout, result.warnings);
+    assert!(!shown.contains("Power::infy"), "{shown}");
+    assert!(shown.contains("Infinity::indet"), "{shown}");
+  }
+
+  #[test]
+  fn third_argument_re_enables() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Quiet[1/0; 0/0, All, {Power::infy}]").unwrap();
+    let shown = format!("{}{:?}", result.stdout, result.warnings);
+    assert!(shown.contains("Power::infy"), "{shown}");
+    assert!(!shown.contains("Infinity::indet"), "{shown}");
+  }
+}
