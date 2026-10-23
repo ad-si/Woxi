@@ -13702,3 +13702,22 @@ mod named_and_private_use_characters {
     );
   }
 }
+
+mod prefix_apply_takes_part_of_its_argument {
+  use super::*;
+
+  // `[[…]]` binds tighter than `@`, also after an implicit factor
+  // (wolframscript).
+  #[test]
+  fn part_belongs_to_the_argument() {
+    assert_eq!(
+      interpret(
+        "{Hold[a f@b[[1]]], Hold[2 f@b[[1]][[2]]], Hold[a f@g@b[[1]]], \
+         Hold[a f@b^2]}"
+      )
+      .unwrap(),
+      "{Hold[a*f[b[[1]]]], Hold[2*f[b[[1]][[2]]]], Hold[a*f[g[b[[1]]]]], \
+       Hold[a*f[b]^2]}"
+    );
+  }
+}

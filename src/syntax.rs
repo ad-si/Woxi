@@ -3816,7 +3816,13 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let func_pair = inner.next().unwrap();
       let arg_pair = inner.next().unwrap();
       let func_expr = pair_to_expr(func_pair);
-      let arg_expr = pair_to_expr(arg_pair);
+      let mut arg_expr = pair_to_expr(arg_pair);
+      // A part suffix belongs to the argument: `f@b[[1]]` is `f[b[[1]]]`.
+      if let Some(suffix) = inner.next()
+        && suffix.as_rule() == Rule::PartIndexSuffix
+      {
+        arg_expr = apply_part_index_suffix(arg_expr, suffix);
+      }
       match func_expr {
         Expr::Identifier(ref name) => Expr::FunctionCall {
           name: name.clone(),

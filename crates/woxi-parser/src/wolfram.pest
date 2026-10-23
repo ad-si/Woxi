@@ -890,9 +890,10 @@ LoosePrefixOp = {
   | "\\[ProbabilityPr]" | "\u{F3D9}" | "\\[ContinuedFractionK]"
 }
 LoosePrefix = { LoosePrefixOp ~ (ImplicitTimes | ImplicitTimesFactor) }
+// `[[…]]` binds tighter than `@`: `a f@b[[1]]` is `a f[b[[1]]]`.
 PrefixApplySimple = {
     &((Identifier | NamedCharIdentifier) ~ DerivativePrime? ~ BalancedBrackets* ~ "@" ~ !"@")
-    ~ (FunctionCall | Identifier) ~ "@" ~ SimpleTerm
+    ~ (FunctionCall | Identifier) ~ "@" ~ SimpleTerm ~ PartIndexSuffix?
 }
 SimpleTerm = _{
   // Increment/Decrement come first so a postfix `++` binds to its operand
