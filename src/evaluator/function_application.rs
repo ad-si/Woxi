@@ -3423,7 +3423,7 @@ fn apply_transformation_function(
   let fits = |c: &Expr| matches!(c, Expr::List(v) if v.len() == dim);
   let is_point =
     coords.len() == dim && !coords.iter().any(|c| matches!(c, Expr::List(_)));
-  if !is_point && !(!coords.is_empty() && coords.iter().all(fits)) {
+  if !is_point && (coords.is_empty() || !coords.iter().all(fits)) {
     crate::emit_message(&format!(
       "TransformationFunction::fdim: {} is not a vector of length {dim} or a list of length {dim} vectors.",
       crate::syntax::expr_to_string(point)
