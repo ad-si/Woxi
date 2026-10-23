@@ -3909,3 +3909,29 @@ mod postfix_with_curried_call {
     assert_eq!(interpret("x // g[a][b]").unwrap(), "g[a][b][x]");
   }
 }
+
+mod literal_definition_value_is_evaluated {
+  use super::*;
+
+  #[test]
+  fn sees_values_assigned_later() {
+    assert_eq!(interpret("f[1] = g + 1; g = 5; f[1]").unwrap(), "6");
+    assert_eq!(
+      interpret(
+        "y[1] = 1 - y[2] - y[3]; y[3] = xs/(2 - xs); \
+         y[2] = (1 - xs)/(2 - xs); Together[y[1]]"
+      )
+      .unwrap(),
+      "(-1 + xs)/(-2 + xs)"
+    );
+  }
+
+  #[test]
+  fn memoized_numbers_still_work() {
+    assert_eq!(
+      interpret("fib[0] = 0; fib[1] = 1; fib[n_] := fib[n] = fib[n - 1] + fib[n - 2]; fib[80]")
+        .unwrap(),
+      "23416728348467685"
+    );
+  }
+}

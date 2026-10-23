@@ -122,7 +122,7 @@ fn is_inert_data(expr: &Expr) -> bool {
 /// Whether evaluating `expr` returns it unchanged: a number, a string, a
 /// rational in lowest terms, or a list of those. Unlike `is_inert_data` this
 /// rejects a `Rational[2, 4]` that still has to be reduced.
-fn is_evaluated_data(expr: &Expr) -> bool {
+pub(crate) fn is_evaluated_data(expr: &Expr) -> bool {
   match expr {
     Expr::Integer(_)
     | Expr::BigInteger(_)

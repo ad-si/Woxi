@@ -1404,7 +1404,14 @@ fn evaluate_function_call_ast_inner(
       .join("\u{1}");
     cache.get(&key).map(|(_, v)| v.clone())
   }) {
-    return Ok(v);
+    // The stored value is evaluated like any rule's right-hand side: it
+    // may mention symbols that have values by now (`f[1] = g + 1; g = 5;
+    // f[1]` is 6). Numbers, strings and lists of them are their own value.
+    return if crate::evaluator::core_eval::is_evaluated_data(&v) {
+      Ok(v)
+    } else {
+      evaluate_expr_to_expr(&v)
+    };
   }
 
   // Check for user-defined functions (before built-in dispatch, so user
