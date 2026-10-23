@@ -3713,6 +3713,21 @@ mod together {
 mod apart {
   use super::*;
 
+  // A polynomial has no denominator to split, but Apart multiplies it out.
+  #[test]
+  fn apart_expands_polynomials() {
+    assert_eq!(interpret("Apart[(x - 1)^2]").unwrap(), "1 - 2*x + x^2");
+    assert_eq!(
+      interpret("Apart[2 (x + 1) (x + 3)]").unwrap(),
+      "6 + 8*x + 2*x^2"
+    );
+    assert_eq!(
+      interpret("Apart[(x - a) (x - b)]").unwrap(),
+      "a*b - a*x - b*x + x^2"
+    );
+    assert_eq!(interpret("Apart[x]").unwrap(), "x");
+  }
+
   #[test]
   fn apart_basic() {
     assert_eq!(
