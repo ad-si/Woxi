@@ -23709,3 +23709,72 @@ mod transpose_sparse_array {
     );
   }
 }
+
+// A symbol's large lists are stored shared after the first lookup, so a read
+// copies a pointer instead of the array. These pin the copy-on-write and
+// re-evaluation semantics that sharing must keep.
+mod shared_own_value_lists {
+  use super::*;
+
+  #[test]
+  fn part_assignment_to_a_copy_leaves_the_original() {
+    assert_eq!(
+      interpret(
+        "T = Range[20]; U = T; Length[U]; U[[1]] = 0; {T[[1]], U[[1]], Total[T]}"
+      )
+      .unwrap(),
+      "{1, 0, 210}"
+    );
+  }
+
+  #[test]
+  fn nested_part_assignment_to_a_copy_leaves_the_original() {
+    assert_eq!(
+      interpret(
+        "m = Table[i + j, {i, 20}, {j, 20}]; n = m; n[[2, 3]] = -1; {m[[2, 3]], n[[2, 3]]}"
+      )
+      .unwrap(),
+      "{5, -1}"
+    );
+  }
+
+  #[test]
+  fn symbol_assigned_into_shared_list_is_reevaluated() {
+    assert_eq!(
+      interpret("T = Range[20]; Length[T]; T[[5]] = x; x = 3; T[[5]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn symbolic_list_picks_up_later_values() {
+    assert_eq!(
+      interpret("z = Table[y, {20}]; Length[z]; y = 2; Total[z]").unwrap(),
+      "40"
+    );
+  }
+
+  #[test]
+  fn append_to_shared_list() {
+    assert_eq!(
+      interpret(
+        "T = Range[20]; Length[T]; AppendTo[T, 21]; {Length[T], Last[T]}"
+      )
+      .unwrap(),
+      "{21, 21}"
+    );
+  }
+
+  #[test]
+  fn rational_and_complex_elements_stay_numbers() {
+    assert_eq!(
+      interpret("a = Table[i/2, {i, 20}]; Length[a]; {a[[3]], Head[a[[3]]]}")
+        .unwrap(),
+      "{3/2, Rational}"
+    );
+    assert_eq!(
+      interpret("c = Table[i + I, {i, 20}]; Length[c]; c[[2]]").unwrap(),
+      "2 + I"
+    );
+  }
+}

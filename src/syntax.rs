@@ -621,6 +621,38 @@ fn is_letterlike_symbol_char(c: char) -> bool {
   )
 }
 
+/// Whether `expr` is a variant without `Expr` children, whose drop never
+/// recurses.
+fn is_childless_variant(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(_, _)
+      | Expr::String(_)
+      | Expr::Identifier(_)
+      | Expr::Slot(_)
+      | Expr::SlotSequence(_)
+      | Expr::Pattern { .. }
+      | Expr::Constant(_)
+      | Expr::Raw(_)
+      | Expr::Image { .. }
+      | Expr::Graphics { .. }
+  )
+}
+
+fn push_compound_children(
+  children: impl IntoIterator<Item = Expr>,
+  stack: &mut Vec<Expr>,
+) {
+  for child in children {
+    if !is_childless_variant(&child) {
+      stack.push(child);
+    }
+  }
+}
+
 /// Extract all child `Expr` nodes from a variant, leaving it childless.
 /// Used by the iterative `Drop` implementation.
 fn take_expr_children(expr: &mut Expr, stack: &mut Vec<Expr>) {
@@ -644,11 +676,19 @@ fn take_expr_children(expr: &mut Expr, stack: &mut Vec<Expr>) {
     Expr::CompoundExpr(children) => {
       stack.append(children);
     }
+    // Only children that own further children go on the work stack; leaves
+    // (the numbers of a large data array) are dropped right here, so freeing
+    // a packed-array-like list does not copy every element through `stack`.
+    // A shared list that other clones still hold only loses a reference.
     Expr::List(children) => {
-      stack.extend(std::mem::take(children));
+      if let Some(items) = std::mem::take(children).into_unique_elements() {
+        push_compound_children(items, stack);
+      }
     }
     Expr::FunctionCall { args, .. } => {
-      stack.extend(std::mem::take(args));
+      if let Some(items) = std::mem::take(args).into_unique_elements() {
+        push_compound_children(items, stack);
+      }
     }
     Expr::Comparison { operands, .. } => {
       stack.append(operands);
@@ -889,6 +929,17 @@ impl Clone for Expr {
             head: head.clone(),
             structure: structure.clone(),
           }),
+
+          // A shared list clones by reference, however large.
+          Self::List(children) if children.is_shared() => {
+            results.push(Self::List(children.clone()));
+          }
+          Self::FunctionCall { name, args } if args.is_shared() => {
+            results.push(Self::FunctionCall {
+              name: name.clone(),
+              args: args.clone(),
+            });
+          }
 
           // Vec<Expr> children
           Self::List(children) => {
