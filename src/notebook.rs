@@ -3135,6 +3135,16 @@ fn strip_saved_contexts(s: &str) -> String {
     .replace("DemonstrationsTools`", "")
 }
 
+/// Drop the `` $CellContext` `` qualifier from the source of an Input cell.
+/// A `Manipulate[…, SaveDefinitions -> True]` saved by the FrontEnd carries
+/// an `Initialization` whose helper definitions spell the symbols its
+/// control variables share with the body as `` $CellContext`name `` while
+/// the pattern heads of the same definition stay bare, so left alone the
+/// body would refer to symbols the heads never bind.
+pub fn strip_cell_context_prefix(code: &str) -> String {
+  code.replace("$CellContext`", "")
+}
+
 /// Net open-bracket depth of Wolfram source: `(`, `[` and `{` open, their
 /// closers close; string literals and `(* … *)` comments are skipped.
 fn open_bracket_depth(code: &str) -> i32 {
@@ -4901,6 +4911,14 @@ pub fn stored_output_vector_graphics_svg(content: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+  #[test]
+  fn strip_cell_context_prefix_drops_only_the_qualifier() {
+    assert_eq!(
+      strip_cell_context_prefix("f[a_] := $CellContext`a + Global`b"),
+      "f[a_] := a + Global`b"
+    );
+  }
+
   #[test]
   fn test_join_continuation_cells() {
     let cells = ["f[x_] := Module[{a = 1},", "a + x]", "g = 2;"];
