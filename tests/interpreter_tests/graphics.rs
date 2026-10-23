@@ -24551,6 +24551,25 @@ mod log_linear_plot {
 mod contour_plot_3d {
   use super::*;
 
+  // A tube thinner than a grid cell leaves every sample on one side of the
+  // level; the surface must still be found, and — like the FrontEnd's
+  // output — carry `VertexNormals` so it can be transformed vertex-wise.
+  #[test]
+  fn sheet_thinner_than_a_cell_is_found_with_vertex_normals() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = ContourPlot3D[(x^2 + y^2 + z^2 + 0.9991)^2 == 4 (x^2 + z^2), \
+         {x, -1.2, 1.2}, {y, -3., 3.}, {z, -3., 3.}, PlotPoints -> 20]; \
+         c = First[g]; \
+         {Head[c], Length[c[[1]]] > 0, \
+          Length[c[[3, 2]]] == Length[c[[1]]], c[[3, 1]]}"
+      )
+      .unwrap(),
+      "{GraphicsComplex, True, True, VertexNormals}"
+    );
+  }
+
   #[test]
   fn background_option_repaints_the_backdrop() {
     for call in [
