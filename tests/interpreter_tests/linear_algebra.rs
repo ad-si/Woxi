@@ -10544,3 +10544,39 @@ mod dot_of_higher_rank_tensors {
     );
   }
 }
+
+mod machine_matrix_inverse_and_det {
+  use super::*;
+
+  #[test]
+  fn a_machine_real_matrix_is_factored_numerically() {
+    // LU with partial pivoting: a 40x40 machine matrix inverts quickly
+    // (cofactor expansion never finished).
+    assert_eq!(
+      interpret(
+        "m = Table[N[1/(i + j - 1)] + If[i == j, 1., 0.], {i, 40}, {j, 40}]; \
+         Max[Abs[Flatten[Inverse[m] . m - IdentityMatrix[40]]]] < 10.^-10"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Chop[Det[{{1.5, 2., 0.3}, {0.1, 4., 2.}, {3., 1., 1.}}] - 11.23]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn an_exactly_singular_machine_matrix() {
+    let r = interpret_with_stdout("Inverse[{{1., 2.}, {2., 4.}}]").unwrap();
+    assert_eq!(r.result, "Inverse[{{1., 2.}, {2., 4.}}]");
+    assert_eq!(
+      r.warnings,
+      vec!["Inverse::sing: Matrix {{1., 2.}, {2., 4.}} is singular."]
+    );
+    assert_eq!(interpret("Det[{{1., 2.}, {2., 4.}}]").unwrap(), "0.");
+  }
+}

@@ -1240,9 +1240,92 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(m) if is_nonempty_square(&m) => m,
     _ => return Ok(matsq_unevaluated("Det", args)),
   };
+  if let Some(m) = machine_real_matrix(&matrix) {
+    return Ok(Expr::Real(machine_determinant(&m)));
+  }
   let det = determinant(&matrix);
   let r = crate::functions::expand_and_combine(&det);
   Ok(simplify_expr(&r))
+}
+
+/// The matrix as machine reals when it holds a machine real and every
+/// entry is a real number — the matrices Wolfram inverts and factors
+/// numerically (LU with partial pivoting) instead of symbolically.
+fn machine_real_matrix(matrix: &[Vec<Expr>]) -> Option<Vec<Vec<f64>>> {
+  if !matrix.iter().flatten().any(|e| matches!(e, Expr::Real(_))) {
+    return None;
+  }
+  matrix
+    .iter()
+    .map(|row| row.iter().map(try_eval_to_f64).collect::<Option<Vec<_>>>())
+    .collect()
+}
+
+/// LU factorization with partial pivoting, in place: `a` becomes `L\U`
+/// (unit lower triangle implied). Returns the row permutation and its sign,
+/// or `None` when a pivot column is entirely zero (an exactly singular
+/// matrix).
+fn lu_partial_pivot(a: &mut [Vec<f64>]) -> Option<(Vec<usize>, f64)> {
+  let n = a.len();
+  let mut perm: Vec<usize> = (0..n).collect();
+  let mut sign = 1.0;
+  for k in 0..n {
+    let p = (k..n).max_by(|&i, &j| a[i][k].abs().total_cmp(&a[j][k].abs()))?;
+    if a[p][k] == 0.0 {
+      return None;
+    }
+    if p != k {
+      a.swap(p, k);
+      perm.swap(p, k);
+      sign = -sign;
+    }
+    for i in k + 1..n {
+      let factor = a[i][k] / a[k][k];
+      a[i][k] = factor;
+      for j in k + 1..n {
+        a[i][j] -= factor * a[k][j];
+      }
+    }
+  }
+  Some((perm, sign))
+}
+
+/// `Det` of a machine-real matrix: the product of the LU pivots.
+fn machine_determinant(m: &[Vec<f64>]) -> f64 {
+  let mut a = m.to_vec();
+  match lu_partial_pivot(&mut a) {
+    Some((_, sign)) => (0..a.len()).fold(sign, |acc, i| acc * a[i][i]),
+    None => 0.0,
+  }
+}
+
+/// `Inverse` of a machine-real matrix by LU, or `None` when singular.
+fn machine_inverse(m: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
+  let n = m.len();
+  let mut a = m.to_vec();
+  let (perm, _) = lu_partial_pivot(&mut a)?;
+  let mut inv = vec![vec![0.0; n]; n];
+  for col in 0..n {
+    // Solve L y = P e_col, then U x = y.
+    let mut x: Vec<f64> = (0..n)
+      .map(|i| if perm[i] == col { 1.0 } else { 0.0 })
+      .collect();
+    for i in 0..n {
+      for k in 0..i {
+        x[i] -= a[i][k] * x[k];
+      }
+    }
+    for i in (0..n).rev() {
+      for k in i + 1..n {
+        x[i] -= a[i][k] * x[k];
+      }
+      x[i] /= a[i][i];
+    }
+    for i in 0..n {
+      inv[i][col] = x[i];
+    }
+  }
+  Some(inv)
 }
 
 /// True for an exact rational scalar (Integer, BigInteger, or literal
@@ -1528,6 +1611,28 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(matsq_unevaluated("Inverse", args)),
   };
   let n = matrix.len();
+
+  if let Some(m) = machine_real_matrix(&matrix) {
+    return Ok(if let Some(inv) = machine_inverse(&m) {
+      Expr::List(
+        inv
+          .into_iter()
+          .map(|row| {
+            Expr::List(
+              row.into_iter().map(Expr::Real).collect::<Vec<_>>().into(),
+            )
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    } else {
+      crate::emit_message(&format!(
+        "Inverse::sing: Matrix {} is singular.",
+        expr_to_string(&args[0])
+      ));
+      unevaluated("Inverse", args)
+    });
+  }
 
   // Try integer matrix inverse via adjugate method
   let det = determinant(&matrix);
