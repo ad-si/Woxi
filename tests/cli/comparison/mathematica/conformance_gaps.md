@@ -5444,3 +5444,19 @@ wolframscript returns the string `"\!\(TraditionalForm\`…\)"` (box markup in
 linear syntax, e.g. `x\^\(k - 2\)`); Woxi returns an unevaluated
 `DisplayForm[FormBox[…]]`, so `Text[ToString[TraditionalForm[…]]]` in a
 Manipulate shows the raw box structure.
+
+### `FindShortestTour` picks a different tour among equally short ones
+
+The length always matches, and with at most 12 points the tour is optimal.
+When several tours are equally short, Woxi can return a different one, or the
+same one in the other direction. Examples:
+
+- Collinear `{{0,0},{3,0},{1,0},{2,0}}`: WL `{1, 4, 2, 3, 1}`, Woxi `{1, 3, 4, 2, 1}`.
+- A 7-point set where WL chose the direction whose second stop has the lower
+  index. Woxi always reports the direction whose second stop has the higher
+  index, which matches every other small case probed.
+- Duplicate points: WL starts at point 2 (`{2, 4, 1, 3, 2}`).
+
+Above 12 points Woxi uses iterated 2-opt/Or-opt local search. On random
+instances the tour comes within about 0.4% of WL's length and is sometimes
+shorter. `FindShortestTour[graph]` is not implemented.

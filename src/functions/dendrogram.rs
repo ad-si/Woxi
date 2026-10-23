@@ -247,7 +247,7 @@ fn expr_to_label(expr: &Expr) -> String {
 /// Compute the pairwise distance matrix for the data elements, using the
 /// given `DistanceFunction` or an automatic choice based on the data type.
 /// Returns `None` when a distance cannot be established for the data.
-fn distance_matrix(
+pub(crate) fn distance_matrix(
   elements: &[Expr],
   distance_fn: Option<&Expr>,
 ) -> Option<Vec<Vec<f64>>> {

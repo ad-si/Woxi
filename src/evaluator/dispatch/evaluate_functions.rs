@@ -5685,6 +5685,21 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::graph::find_cycle_ast(args);
   }
 
+  // ParametricRegion[f, {{u, a, b}, …}] → canonical {f, cond}, {vars} form
+  if name == "ParametricRegion" && args.len() == 2 {
+    return crate::functions::random_point::parametric_region_ast(args);
+  }
+
+  // RandomPoint[region[, n | {n1, …}]] → uniformly distributed point(s)
+  if name == "RandomPoint" && (1..=2).contains(&args.len()) {
+    return crate::functions::random_point::random_point_ast(args);
+  }
+
+  // FindShortestTour[points[, s, t], opts] → {length, order}
+  if name == "FindShortestTour" {
+    return crate::functions::shortest_tour::find_shortest_tour_ast(args);
+  }
+
   // FindHamiltonianCycle[graph] → length-1 list with one Hamiltonian cycle, or {}
   if name == "FindHamiltonianCycle" && args.len() == 1 {
     return crate::functions::graph::find_hamiltonian_cycle_ast(args);
@@ -11923,9 +11938,11 @@ fn evaluate_function_call_ast_inner(
         | "UpperTriangularMatrix"
         | "PermutationMatrix"
         // Inert region forms produced by the region set operations: the
-        // empty region and the Boolean combination they fall back to.
+        // empty region and the Boolean combination they fall back to. A
+        // ParametricRegion likewise stays as written (RandomPoint samples it).
         | "EmptyRegion"
         | "BooleanRegion"
+        | "ParametricRegion"
         // Template elements: inert markers that TemplateApply expands, so
         // seeing them unevaluated is not a missing implementation.
         | "TemplateIf"

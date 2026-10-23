@@ -9253,3 +9253,231 @@ mod transformation_function_normalization {
     );
   }
 }
+
+mod random_point {
+  use super::*;
+
+  #[test]
+  fn shapes_of_results() {
+    assert_eq!(interpret("RandomPoint[Point[{1, 2}]]").unwrap(), "{1., 2.}");
+    assert_eq!(
+      interpret("Dimensions[RandomPoint[Point[{{1, 2}, {3, 4}}], 3]]").unwrap(),
+      "{3, 2}"
+    );
+    assert_eq!(
+      interpret("Dimensions[RandomPoint[Disk[], {2, 3}]]").unwrap(),
+      "{2, 3, 2}"
+    );
+    assert_eq!(interpret("RandomPoint[Disk[], 0]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Dimensions[RandomPoint[Sphere[], 4]]").unwrap(),
+      "{4, 3}"
+    );
+    assert_eq!(
+      interpret("Dimensions[RandomPoint[Interval[{0, 1}, {3, 4}], 5]]")
+        .unwrap(),
+      "{5, 1}"
+    );
+    assert_eq!(
+      interpret("Length[RandomPoint[Ball[{0, 0, 0, 0}, 1]]]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("Precision[RandomPoint[Disk[]]]").unwrap(),
+      "MachinePrecision"
+    );
+  }
+
+  #[test]
+  fn points_lie_in_the_region() {
+    for (region, test) in [
+      (
+        "Disk[{0, 0}, 1, {0, Pi/2}]",
+        "Min[pts] >= 0 && Max[Norm /@ pts] <= 1",
+      ),
+      (
+        "Polygon[{{0, 0}, {2, 0}, {2, 2}, {1, 1}, {0, 2}}]",
+        "And @@ (RegionMember[Polygon[{{0, 0}, {2, 0}, {2, 2}, {1, 1}, {0, 2}}], #] & /@ pts)",
+      ),
+      (
+        "Circle[{1, 1}, 2]",
+        "Max[Abs[(Norm[# - {1, 1}] & /@ pts) - 2]] < 10^-12",
+      ),
+      (
+        "Sphere[{0, 0, 0}, 2]",
+        "Max[Abs[(Norm /@ pts) - 2]] < 10^-12",
+      ),
+      (
+        "Ball[{1, 2, 3}, 1/2]",
+        "Max[Norm[# - {1, 2, 3}] & /@ pts] <= 1/2",
+      ),
+      (
+        "Rectangle[{1, 2}, {3, 5}]",
+        "And @@ (1 <= #[[1]] <= 3 && 2 <= #[[2]] <= 5 & /@ pts)",
+      ),
+      (
+        "Cuboid[{0, 0, 0}, {1, 2, 3}]",
+        "Min[pts] >= 0 && Max[pts[[All, 3]]] <= 3",
+      ),
+      (
+        "Triangle[{{0, 0}, {3, 0}, {0, 3}}]",
+        "And @@ (Total[#] <= 3 & /@ pts)",
+      ),
+      (
+        "Line[{{0, 0}, {1, 0}, {1, 1}}]",
+        "And @@ (#[[1]] == 1 || #[[2]] == 0 & /@ pts)",
+      ),
+      (
+        "RegionDifference[Disk[], Disk[{0, 0}, 1/2]]",
+        "And @@ (1/2 <= Norm[#] <= 1 & /@ pts)",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("pts = RandomPoint[{region}, 200]; {test}"))
+          .unwrap(),
+        "True",
+        "{region}"
+      );
+    }
+  }
+
+  #[test]
+  fn uniform_in_area() {
+    // The centroid of a triangle is the mean of a uniform sample.
+    assert_eq!(
+      interpret(
+        "Norm[Mean[RandomPoint[Triangle[{{0, 0}, {3, 0}, {0, 3}}], 20000]] - {1, 1}] < 0.05"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn parametric_regions_are_sampled_by_their_measure() {
+    // On the unit-radius cylinder surface.
+    assert_eq!(
+      interpret(
+        "pts = RandomPoint[ParametricRegion[{Cos[u], 0.15*v, Sin[u]}, {{v, 0, 2 Pi}, {u, 0, 2 Pi}}], 50]; {Dimensions[pts], Max[Abs[(#[[1]]^2 + #[[3]]^2 & /@ pts) - 1]] < 10^-9}"
+      )
+      .unwrap(),
+      "{{50, 3}, True}"
+    );
+    // Uniform in area, not in (r, t): the mean radius of the unit disk is 2/3.
+    assert_eq!(
+      interpret(
+        "pts = RandomPoint[ParametricRegion[{r Cos[t], r Sin[t]}, {{r, 0, 1}, {t, 0, 2 Pi}}], 20000]; Abs[Mean[Norm /@ pts] - 2/3] < 0.01"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A chained condition both bounds the box and is checked per point.
+    assert_eq!(
+      interpret(
+        "pts = RandomPoint[ParametricRegion[{{s, t}, 0 <= s <= t <= 1}, {s, t}], 200]; And @@ (0 <= #[[1]] <= #[[2]] <= 1 & /@ pts)"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn reproducible_under_seed_random() {
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; a = RandomPoint[Disk[], 3]; SeedRandom[3]; a == RandomPoint[Disk[], 3]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments() {
+    assert_eq!(interpret("RandomPoint[x]").unwrap(), "RandomPoint[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.iter().any(|m| m.contains(
+      "RandomPoint::creg: The first argument x is expected to be a parameter-free region."
+    )));
+    assert_eq!(
+      interpret("RandomPoint[Disk[], -1]").unwrap(),
+      "RandomPoint[Disk[{0, 0}], -1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.iter().any(|m| m.contains(
+      "RandomPoint::array: The array dimensions -1 given in position 2 of RandomPoint[Disk[{0, 0}], -1] should be a list of non-negative machine-sized integers giving the dimensions for the result."
+    )));
+  }
+}
+
+mod parametric_region {
+  use super::*;
+
+  #[test]
+  fn ranges_become_conditions() {
+    assert_eq!(
+      interpret("ToString[ParametricRegion[{s, s^2}, {{s, 0, 1}}], InputForm]")
+        .unwrap(),
+      "ParametricRegion[{{s, s^2}, Inequality[0, LessEqual, s, LessEqual, 1]}, {s}]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ParametricRegion[{Cos[u], v, Sin[u]}, {{v, 0, 2 Pi}, {u, 0, 2 Pi}}], InputForm]"
+      )
+      .unwrap(),
+      "ParametricRegion[{{Cos[u], v, Sin[u]}, Inequality[0, LessEqual, v, LessEqual, 2*Pi] && Inequality[0, LessEqual, u, LessEqual, 2*Pi]}, {v, u}]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ParametricRegion[{{s, s^2}, 0 <= s <= 1}, {{s, 0, 2}}], InputForm]"
+      )
+      .unwrap(),
+      "ParametricRegion[{{s, s^2}, 0 <= s <= 1 && Inequality[0, LessEqual, s, LessEqual, 2]}, {s}]"
+    );
+  }
+
+  #[test]
+  fn infinite_ends_and_bare_parameters() {
+    assert_eq!(
+      interpret(
+        "ToString[ParametricRegion[{s, s^2}, {{s, -Infinity, 1}}], InputForm]"
+      )
+      .unwrap(),
+      "ParametricRegion[{{s, s^2}, s <= 1}, {s}]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ParametricRegion[{s, s^2}, {{s, 0, Infinity}}], InputForm]"
+      )
+      .unwrap(),
+      "ParametricRegion[{{s, s^2}, s >= 0}, {s}]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ParametricRegion[{s, s^2}, {{s, -Infinity, Infinity}}], InputForm]"
+      )
+      .unwrap(),
+      "ParametricRegion[{s, s^2}, {s}]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ParametricRegion[{s, t}, {{s, 0, 1}, t}], InputForm]"
+      )
+      .unwrap(),
+      "ParametricRegion[{{s, t}, Inequality[0, LessEqual, s, LessEqual, 1]}, {s, t}]"
+    );
+  }
+
+  #[test]
+  fn unused_parameters_and_empty_ranges() {
+    assert_eq!(
+      interpret("ToString[ParametricRegion[{s, s^2}, {{s, 0, 1}, {t, 0, 1}}], InputForm]")
+        .unwrap(),
+      "ParametricRegion[{{s, s^2}, Inequality[0, LessEqual, s, LessEqual, 1]}, {s}]"
+    );
+    assert_eq!(
+      interpret("ParametricRegion[{s, t, 1}, {{s, 1, 0}, {t, 0, 1}}]").unwrap(),
+      "EmptyRegion[3]"
+    );
+  }
+}

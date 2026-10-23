@@ -8131,3 +8131,161 @@ mod pareto_random_variate {
     );
   }
 }
+
+mod find_shortest_tour {
+  use super::*;
+
+  #[test]
+  fn square_exact_length_and_order() {
+    assert_eq!(
+      interpret("FindShortestTour[{{0, 0}, {1, 0}, {0, 1}, {1, 1}}]").unwrap(),
+      "{4, {1, 3, 4, 2, 1}}"
+    );
+    assert_eq!(
+      interpret("FindShortestTour[{{1, 1}, {0, 0}, {1, 0}, {0, 1}}]").unwrap(),
+      "{4, {1, 4, 2, 3, 1}}"
+    );
+  }
+
+  #[test]
+  fn machine_coordinates_give_machine_length() {
+    assert_eq!(
+      interpret("FindShortestTour[{{0., 0}, {1, 0}, {0, 1}, {1, 1}}]").unwrap(),
+      "{4., {1, 3, 4, 2, 1}}"
+    );
+  }
+
+  #[test]
+  fn radical_length() {
+    assert_eq!(
+      interpret("FindShortestTour[{{0, 0}, {2, 0}, {1, 1}}]").unwrap(),
+      "{2 + 2*Sqrt[2], {1, 3, 2, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "FindShortestTour[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {1, 1, 1}}]"
+      )
+      .unwrap(),
+      "{2 + 2*Sqrt[2], {1, 3, 4, 2, 1}}"
+    );
+  }
+
+  #[test]
+  fn degenerate_sizes() {
+    assert_eq!(interpret("FindShortestTour[{}]").unwrap(), "{}");
+    assert_eq!(interpret("FindShortestTour[{{0, 0}}]").unwrap(), "{0, {1}}");
+    assert_eq!(
+      interpret("FindShortestTour[{{0, 0}, {1, 0}}]").unwrap(),
+      "{2, {1, 2, 1}}"
+    );
+  }
+
+  #[test]
+  fn scalars_strings_and_distance_function() {
+    assert_eq!(
+      interpret("FindShortestTour[{1/2, 3, 7/3}]").unwrap(),
+      "{5, {1, 3, 2, 1}}"
+    );
+    assert_eq!(
+      interpret("FindShortestTour[{\"cat\", \"bat\", \"cart\", \"bar\"}]")
+        .unwrap(),
+      "{5, {1, 3, 4, 2, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "FindShortestTour[{1, 2, 3, 4}, DistanceFunction -> (Abs[#1 - #2] &)]"
+      )
+      .unwrap(),
+      "{6, {1, 4, 3, 2, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "FindShortestTour[{{0, 0}, {1, 0}, {0, 1}, {1, 1}}, DistanceFunction -> SquaredEuclideanDistance]"
+      )
+      .unwrap(),
+      "{4, {1, 3, 4, 2, 1}}"
+    );
+  }
+
+  #[test]
+  fn open_path_between_endpoints() {
+    assert_eq!(
+      interpret(
+        "FindShortestTour[{{0, 0}, {1, 0}, {2, 0}, {3, 0}, {4, 0}}, 1, 5]"
+      )
+      .unwrap(),
+      "{4, {1, 2, 3, 4, 5}}"
+    );
+    assert_eq!(
+      interpret("FindShortestTour[{{0, 0}, {1, 1}}, 1, 2]").unwrap(),
+      "{Sqrt[2], {1, 2}}"
+    );
+    // Equal endpoints ask for the closed tour; an out-of-range one gives {}.
+    assert_eq!(
+      interpret("FindShortestTour[{{0, 0}, {1, 0}, {0, 1}, {1, 1}}, 1, 1]")
+        .unwrap(),
+      "{4, {1, 3, 4, 2, 1}}"
+    );
+    assert_eq!(
+      interpret("FindShortestTour[{{0, 0}, {1, 0}, {0, 1}}, 5, 1]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn larger_instances_reach_the_optimum() {
+    // 25 points: past the exact solver, so this exercises the local search.
+    assert_eq!(
+      interpret(
+        "pts = Table[{Mod[i^2, 37]/37., Mod[i^3, 41]/41.}, {i, 25}]; Abs[First[FindShortestTour[pts]] - 4.466506346458865] < 10^-9"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Every point is visited once and the tour closes at point 1.
+    assert_eq!(
+      interpret(
+        "pts = Table[{Mod[i^2, 101]/101., Mod[i^3, 103]/103.}, {i, 80}]; t = Last[FindShortestTour[pts]]; {First[t], Last[t], Sort[Most[t]] == Range[80]}"
+      )
+      .unwrap(),
+      "{1, 1, True}"
+    );
+  }
+
+  #[test]
+  fn invalid_input_stays_unevaluated() {
+    assert_eq!(
+      interpret("FindShortestTour[x]").unwrap(),
+      "FindShortestTour[x]"
+    );
+    assert_eq!(
+      interpret("FindShortestTour[{{0, 0}, {1, a}}]").unwrap(),
+      "FindShortestTour[{{0, 0}, {1, a}}]"
+    );
+  }
+
+  #[test]
+  fn argument_count_messages() {
+    for (code, msg) in [
+      (
+        "FindShortestTour[{{0, 0}, {1, 1}}, 1]",
+        "FindShortestTour::argt: FindShortestTour called with 2 arguments; 1 or 3 arguments are expected.",
+      ),
+      (
+        "FindShortestTour[]",
+        "FindShortestTour::argb: FindShortestTour called with 0 arguments; between 1 and 3 arguments are expected.",
+      ),
+      (
+        "FindShortestTour[{{0, 0}, {1, 1}}, 1, 2, 3]",
+        "FindShortestTour::nonopt: Options expected (instead of 3) beyond position 3 in FindShortestTour[{{0, 0}, {1, 1}}, 1, 2, 3].",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), code);
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(msg)),
+        "expected {msg}, got {msgs:?}"
+      );
+    }
+  }
+}

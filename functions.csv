@@ -1038,7 +1038,7 @@ Callout,Annotates a plot element with a label,✅,pure,11.0,1015
 MeshPrimitives,Cells of a mesh region of a given dimension with their coordinates,✅,pure,10.0,1016
 CircleTimes,Symbolic tensor product operator with Unicode display,✅,pure,3.0,1017
 VectorPlot3D,Creates a 3D vector field plot,✅,pure,7.0,1018
-RandomPoint,,🚫,,10.2,1020
+RandomPoint,Uniformly distributed random points in a region (points lines polygons boxes disks balls spheres intervals and Boolean regions),✅,contextual,10.2,1020
 TemplateBox,Front-end display template box such as the RowDefault template of a Row,✅,pure,7.0,1020
 ExpressionCell,Requires external services or GUI infrastructure,🚫,io,6.0,1021
 StartOfString,Represents the start of a string in string patterns,✅,1,5.1,1022
@@ -1276,7 +1276,7 @@ Gather,Groups identical elements together (optional custom equivalence test),✅
 MapAll,Apply a function to every subexpression,✅,pure,1.0,1265
 HurwitzLerchPhi,Hurwitz-Lerch transcendent sum of z^k over (k+a)^s,✅,pure,7.0,1267
 WienerProcess,Wiener process with Normal time slices,✅,unevaluated,9.0,1268
-FindShortestTour,,🚫,,6.0,1269
+FindShortestTour,Find the shortest closed tour or open path through a list of points returning its length and visiting order,✅,pure,6.0,1269
 Null,Null expression producing no output,✅,pure,1.0,
 Indeterminate,Represents a numerical result of unknown magnitude — absorbs arithmetic and compares to nothing,✅,pure,1.0,
 Infinity,Positive infinity constant,✅,pure,1.0,
@@ -1408,7 +1408,7 @@ ExpIntegralE,Generalized exponential integral E_n(z); FunctionExpand gives z^(n-
 RootReduce,Reduce an algebraic number to a simplified radical or a minimal-polynomial Root object,✅,pure,3.0,1397
 DotDashed,Dot-dashed line style directive,✅,none,6.0,1399
 ListLogLinearPlot,Plots data with logarithmic x-axis,✅,pure,6.0,1399
-ParametricRegion,Represent a parametric region,🚫,pure,10.0,1400
+ParametricRegion,Represent a parametric region,✅,pure,10.0,1400
 DialogReturn,Return from a dialog,🚫,io,6.0,1401
 Skewness,Computes the skewness of a list or distribution,✅,pure,6.0,1402
 Speak,Text-to-speech output,🚫,io,7.0,1405
