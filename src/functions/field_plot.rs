@@ -958,6 +958,7 @@ fn push_frame_labels(
     RESOLUTION_SCALE as f64,
     label_fill,
     title_fill,
+    f64::INFINITY,
   ));
 }
 
