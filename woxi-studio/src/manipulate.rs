@@ -2349,6 +2349,19 @@ mod tests {
     assert_eq!(labels, vec!["A\u{2082}", "C\u{2083}\u{207A}", "B\u{00B2}"]);
   }
 
+  /// A slider label typed as a subscripted `π` reads back as the symbol
+  /// `Pi`; it must still be drawn as the glyph, not the word "Pi".
+  #[test]
+  fn control_label_typesets_pi_subscript_as_glyph() {
+    let code = r#"Manipulate[p, {{p, 0.5, "\!\(\*SubscriptBox[\(π\), \(1\)]\)"}, 0, 1, 0.1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let dump = format!("{:?}", state.controls);
+    assert!(dump.contains("π"), "{dump}");
+    assert!(!dump.contains("Pi"), "{dump}");
+  }
+
   /// A choice label whose box code typesets a lone closing parenthesis
   /// (`\!\(\*SubscriptBox[\()\), \(4\)]\)`, as in a chemical formula
   /// `C(CH3)4`) must fold into a subscript like any other script, not leak

@@ -3107,6 +3107,40 @@ mod graphics {
         );
       }
 
+      // `Disk[c, Offset[r]]` is a fixed screen size in points, however large
+      // the plot range is — not a data-space radius of `r`.
+      #[test]
+      fn disk_with_offset_radius_has_a_fixed_screen_size() {
+        for range in ["{{0, 2}, {0, 2}}", "{{0, 40}, {0, 40}}"] {
+          let svg = export_svg(&format!(
+            "Graphics[{{Disk[{{1, 1}}, Offset[{{2, 3}}]]}}, \
+             PlotRange -> {range}, ImageSize -> {{200, 200}}]"
+          ));
+          assert!(
+            svg.contains("rx=\"2.00\" ry=\"3.00\""),
+            "expected a 2x3 point disk, got {svg}"
+          );
+        }
+        let svg = export_svg(
+          "Graphics[{Disk[{1, 1}, Offset[5]]}, \
+           PlotRange -> {{0, 2}, {0, 2}}, ImageSize -> {200, 200}]",
+        );
+        assert!(svg.contains("rx=\"5.00\" ry=\"5.00\""), "{svg}");
+      }
+
+      // A `TableForm` of `Grid`s labelling a point lays the grids out as a
+      // table, not as the literal source `Grid[{{…}}]`.
+      #[test]
+      fn text_label_table_form_of_grids_is_laid_out() {
+        let svg = export_svg(
+          "Graphics[Text[TableForm[{Grid[{{\"max utility=\", 0.79}}], \
+           Grid[{{\"MRS =\", 1.1}}]}], {1, 1}]]",
+        );
+        assert!(svg.contains(">max utility=</text>"), "{svg}");
+        assert!(svg.contains(">1.1</text>"), "{svg}");
+        assert!(!svg.contains("Grid["), "{svg}");
+      }
+
       // `{xSpec, ySpec}` pads each axis independently: no room on x, a full
       // unit on y, so the corner point stays flush on x but moves inward
       // on y. `AspectRatio -> Full` keeps the two axes independently
