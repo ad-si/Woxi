@@ -458,9 +458,9 @@ fn table_over_iterator(
 
     // Keep exact integer iteration behavior when possible.
     if let (Some(min_val), Some(max_val), Some(step_val)) = (
-      expr_to_i128(&min_expr),
-      expr_to_i128(&max_expr),
-      expr_to_i128(&step_expr),
+      expr_to_exact_i128(&min_expr),
+      expr_to_exact_i128(&max_expr),
+      expr_to_exact_i128(&step_expr),
     ) {
       if step_val == 0 {
         return Err(InterpreterError::EvaluationError(

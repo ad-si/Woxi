@@ -147,6 +147,15 @@ pub(crate) fn expr_to_i128(expr: &Expr) -> Option<i128> {
   }
 }
 
+/// Like [`expr_to_i128`] but only for exact integers: a whole-valued Real
+/// such as `3.` stays a Real, so an iterator over it yields `3.`, `4.`, …
+pub(crate) fn expr_to_exact_i128(expr: &Expr) -> Option<i128> {
+  match expr {
+    Expr::Real(_) => None,
+    _ => expr_to_i128(expr),
+  }
+}
+
 /// One resolved `Do`/`Table`-style `{min, max, step}` numeric iterator spec.
 pub(crate) enum NumericSteps {
   /// All three bounds are exact integers — iterate `i128` directly.
@@ -180,9 +189,9 @@ pub(crate) fn resolve_numeric_steps(
   step_expr: Expr,
 ) -> Result<NumericSteps, InterpreterError> {
   if let (Some(min_val), Some(max_val), Some(step_val)) = (
-    expr_to_i128(&min_expr),
-    expr_to_i128(max_expr),
-    expr_to_i128(&step_expr),
+    expr_to_exact_i128(&min_expr),
+    expr_to_exact_i128(max_expr),
+    expr_to_exact_i128(&step_expr),
   ) {
     if step_val == 0 {
       return Err(InterpreterError::EvaluationError(

@@ -10095,6 +10095,12 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// cheaper in practice than the worst-case cube count suggests.
 const CONTOUR3D_GRID: usize = 24;
 
+/// How many times a grid cell that may hide a sheet thinner than itself is
+/// halved, and the total number of cells that may be halved per plot. Only
+/// used when the plain grid finds no surface at all.
+const CONTOUR3D_REFINE_DEPTH: usize = 2;
+const CONTOUR3D_REFINE_BUDGET: usize = 20_000;
+
 /// The vertices of a unit cube, sharing corner-to-corner diagonal 0–6, in
 /// the cyclic order that fans around that diagonal. Splitting a cube into
 /// the 6 tetrahedra `{0, 6, ring[w], ring[w+1]}` is the standard
@@ -10420,7 +10426,9 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let default_color = (0x5E_u8, 0x81_u8, 0xB5_u8);
   let mut all_triangles: Vec<Triangle> = Vec::new();
   let mut point_exprs: Vec<Expr> = Vec::new();
+  let mut normal_exprs: Vec<Expr> = Vec::new();
   let mut content: Vec<Expr> = Vec::new();
+  let mut refinement_budget = CONTOUR3D_REFINE_BUDGET;
 
   for (surf_idx, body) in bodies.iter().enumerate() {
     let mut field = vec![vec![vec![f64::NAN; n + 1]; n + 1]; n + 1];
@@ -10479,135 +10487,213 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![0.0]
     };
 
-    for &level in &levels {
-      for i in 0..n {
-        for j in 0..n {
-          for k in 0..n {
-            let cvals = [
-              field[i][j][k],
-              field[i + 1][j][k],
-              field[i + 1][j + 1][k],
-              field[i][j + 1][k],
-              field[i][j][k + 1],
-              field[i + 1][j][k + 1],
-              field[i + 1][j + 1][k + 1],
-              field[i][j + 1][k + 1],
-            ];
-            if cvals.iter().any(|v| !v.is_finite()) {
-              continue;
-            }
-            let xs =
-              [x_min + i as f64 * x_step, x_min + (i + 1) as f64 * x_step];
-            let ys =
-              [y_min + j as f64 * y_step, y_min + (j + 1) as f64 * y_step];
-            let zs =
-              [z_min + k as f64 * z_step, z_min + (k + 1) as f64 * z_step];
-            let corners_world: [Point3D; 8] = [
-              Point3D {
-                x: xs[0],
-                y: ys[0],
-                z: zs[0],
-              },
-              Point3D {
-                x: xs[1],
-                y: ys[0],
-                z: zs[0],
-              },
-              Point3D {
-                x: xs[1],
-                y: ys[1],
-                z: zs[0],
-              },
-              Point3D {
-                x: xs[0],
-                y: ys[1],
-                z: zs[0],
-              },
-              Point3D {
-                x: xs[0],
-                y: ys[0],
-                z: zs[1],
-              },
-              Point3D {
-                x: xs[1],
-                y: ys[0],
-                z: zs[1],
-              },
-              Point3D {
-                x: xs[1],
-                y: ys[1],
-                z: zs[1],
-              },
-              Point3D {
-                x: xs[0],
-                y: ys[1],
-                z: zs[1],
-              },
-            ];
+    let triangles_before = all_triangles.len();
+    for refine in [false, true] {
+      if refine && all_triangles.len() > triangles_before {
+        break;
+      }
+      for &level in &levels {
+        for i in 0..n {
+          for j in 0..n {
+            for k in 0..n {
+              let cvals = [
+                field[i][j][k],
+                field[i + 1][j][k],
+                field[i + 1][j + 1][k],
+                field[i][j + 1][k],
+                field[i][j][k + 1],
+                field[i + 1][j][k + 1],
+                field[i + 1][j + 1][k + 1],
+                field[i][j + 1][k + 1],
+              ];
+              let xs =
+                [x_min + i as f64 * x_step, x_min + (i + 1) as f64 * x_step];
+              let ys =
+                [y_min + j as f64 * y_step, y_min + (j + 1) as f64 * y_step];
+              let zs =
+                [z_min + k as f64 * z_step, z_min + (k + 1) as f64 * z_step];
+              // A sheet thinner than a cell leaves every corner on one side
+              // of the level; such cells are subdivided (below) so the
+              // surface is still found.
+              let mut stack = vec![(xs, ys, zs, cvals, 0_usize)];
+              while let Some((xs, ys, zs, cvals, depth_level)) = stack.pop() {
+                if cvals.iter().any(|v| !v.is_finite()) {
+                  continue;
+                }
+                let corners_world: [Point3D; 8] = [
+                  Point3D {
+                    x: xs[0],
+                    y: ys[0],
+                    z: zs[0],
+                  },
+                  Point3D {
+                    x: xs[1],
+                    y: ys[0],
+                    z: zs[0],
+                  },
+                  Point3D {
+                    x: xs[1],
+                    y: ys[1],
+                    z: zs[0],
+                  },
+                  Point3D {
+                    x: xs[0],
+                    y: ys[1],
+                    z: zs[0],
+                  },
+                  Point3D {
+                    x: xs[0],
+                    y: ys[0],
+                    z: zs[1],
+                  },
+                  Point3D {
+                    x: xs[1],
+                    y: ys[0],
+                    z: zs[1],
+                  },
+                  Point3D {
+                    x: xs[1],
+                    y: ys[1],
+                    z: zs[1],
+                  },
+                  Point3D {
+                    x: xs[0],
+                    y: ys[1],
+                    z: zs[1],
+                  },
+                ];
 
-            march_cube(&corners_world, &cvals, level, &mut |tri_world| {
-              let tri_norm = tri_world.map(|p| Point3D {
-                x: nx(p.x),
-                y: ny(p.y),
-                z: nz(p.z),
-              });
-              let normal =
-                triangle_normal(tri_norm[0], tri_norm[1], tri_norm[2]);
-              let (color, opacity) =
-                shade_facet(default_color, style, normal, view_dir);
-              let p0 = project(tri_norm[0], &camera);
-              let p1 = project(tri_norm[1], &camera);
-              let p2 = project(tri_norm[2], &camera);
-              let center = Point3D {
-                x: (tri_norm[0].x + tri_norm[1].x + tri_norm[2].x) / 3.0,
-                y: (tri_norm[0].y + tri_norm[1].y + tri_norm[2].y) / 3.0,
-                z: (tri_norm[0].z + tri_norm[1].z + tri_norm[2].z) / 3.0,
-              };
-              all_triangles.push(Triangle {
-                boundary: [true; 3],
-                edge_color: style.and_then(|s| s.edge_color),
-                edge_width: style.and_then(|s| s.edge_width),
-                projected: [p0, p1, p2],
-                depth: depth(center, &camera),
-                color,
-                opacity,
-                texture: None,
-              });
+                let mut emitted = false;
+                march_cube(&corners_world, &cvals, level, &mut |tri_world| {
+                  emitted = true;
+                  let tri_norm = tri_world.map(|p| Point3D {
+                    x: nx(p.x),
+                    y: ny(p.y),
+                    z: nz(p.z),
+                  });
+                  let normal =
+                    triangle_normal(tri_norm[0], tri_norm[1], tri_norm[2]);
+                  let (color, opacity) =
+                    shade_facet(default_color, style, normal, view_dir);
+                  let p0 = project(tri_norm[0], &camera);
+                  let p1 = project(tri_norm[1], &camera);
+                  let p2 = project(tri_norm[2], &camera);
+                  let center = Point3D {
+                    x: (tri_norm[0].x + tri_norm[1].x + tri_norm[2].x) / 3.0,
+                    y: (tri_norm[0].y + tri_norm[1].y + tri_norm[2].y) / 3.0,
+                    z: (tri_norm[0].z + tri_norm[1].z + tri_norm[2].z) / 3.0,
+                  };
+                  all_triangles.push(Triangle {
+                    boundary: [true; 3],
+                    edge_color: style.and_then(|s| s.edge_color),
+                    edge_width: style.and_then(|s| s.edge_width),
+                    projected: [p0, p1, p2],
+                    depth: depth(center, &camera),
+                    color,
+                    opacity,
+                    texture: None,
+                  });
 
-              // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
-              let base = point_exprs.len();
-              for p in &tri_world {
-                point_exprs.push(Expr::List(
-                  vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)]
-                    .into(),
-                ));
-              }
-              content.push(Expr::List(
-                {
-                  let mut item = vec![color_directive.clone()];
-                  // A translucent surface stays translucent when its
-                  // primitives are merged into another graphic.
-                  if let Some(st) = style
-                    && st.opacity < 1.0
-                  {
-                    item.push(call1("Opacity", Expr::Real(st.opacity)));
+                  // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
+                  let base = point_exprs.len();
+                  for p in &tri_world {
+                    point_exprs.push(Expr::List(
+                      vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)]
+                        .into(),
+                    ));
                   }
-                  item.push(call1(
-                    "Polygon",
-                    Expr::List(
+                  let wn =
+                    triangle_normal(tri_world[0], tri_world[1], tri_world[2]);
+                  for _ in 0..3 {
+                    normal_exprs.push(Expr::List(
                       vec![
-                        Expr::Integer(base as i128 + 1),
-                        Expr::Integer(base as i128 + 2),
-                        Expr::Integer(base as i128 + 3),
+                        Expr::Real(wn[0]),
+                        Expr::Real(wn[1]),
+                        Expr::Real(wn[2]),
                       ]
                       .into(),
-                    ),
+                    ));
+                  }
+                  content.push(Expr::List(
+                    {
+                      let mut item = vec![color_directive.clone()];
+                      // A translucent surface stays translucent when its
+                      // primitives are merged into another graphic.
+                      if let Some(st) = style
+                        && st.opacity < 1.0
+                      {
+                        item.push(call1("Opacity", Expr::Real(st.opacity)));
+                      }
+                      item.push(call1(
+                        "Polygon",
+                        Expr::List(
+                          vec![
+                            Expr::Integer(base as i128 + 1),
+                            Expr::Integer(base as i128 + 2),
+                            Expr::Integer(base as i128 + 3),
+                          ]
+                          .into(),
+                        ),
+                      ));
+                      item
+                    }
+                    .into(),
                   ));
-                  item
+                });
+                if !emitted
+                  && depth_level < CONTOUR3D_REFINE_DEPTH
+                  && refinement_budget > 0
+                {
+                  let (lo, hi) = cvals.iter().fold(
+                    (f64::INFINITY, f64::NEG_INFINITY),
+                    |(lo, hi), &v| (lo.min(v), hi.max(v)),
+                  );
+                  // The field dips no further below its corner values than it
+                  // varies across the cell, so a cell whose nearest corner is
+                  // within that range of the level may hide a thin sheet.
+                  let gap = (lo - level).abs().min((hi - level).abs());
+                  if gap <= hi - lo {
+                    refinement_budget -= 1;
+                    let mid = |a: [f64; 2]| f64::midpoint(a[0], a[1]);
+                    let pts = |a: [f64; 2]| [a[0], mid(a), a[1]];
+                    let (px, py, pz) = (pts(xs), pts(ys), pts(zs));
+                    let mut sub = [[[f64::NAN; 3]; 3]; 3];
+                    for (a, plane) in sub.iter_mut().enumerate() {
+                      for (b, row) in plane.iter_mut().enumerate() {
+                        for (c, cell) in row.iter_mut().enumerate() {
+                          *cell = evaluate_scalar_3d(
+                            body, &xvar, &yvar, &zvar, px[a], py[b], pz[c],
+                          )
+                          .unwrap_or(f64::NAN);
+                        }
+                      }
+                    }
+                    for a in 0..2 {
+                      for b in 0..2 {
+                        for c in 0..2 {
+                          stack.push((
+                            [px[a], px[a + 1]],
+                            [py[b], py[b + 1]],
+                            [pz[c], pz[c + 1]],
+                            [
+                              sub[a][b][c],
+                              sub[a + 1][b][c],
+                              sub[a + 1][b + 1][c],
+                              sub[a][b + 1][c],
+                              sub[a][b][c + 1],
+                              sub[a + 1][b][c + 1],
+                              sub[a + 1][b + 1][c + 1],
+                              sub[a][b + 1][c + 1],
+                            ],
+                            depth_level + 1,
+                          ));
+                        }
+                      }
+                    }
+                  }
                 }
-                .into(),
-              ));
-            });
+              }
+            }
           }
         }
       }
@@ -10656,7 +10742,11 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     content.insert(0, call0("EdgeForm"));
     let complex = call(
       "GraphicsComplex",
-      vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
+      vec![
+        Expr::List(point_exprs.into()),
+        Expr::List(content.into()),
+        rule_expr(id_expr("VertexNormals"), Expr::List(normal_exprs.into())),
+      ],
     );
     let mut structure_args = vec![complex];
     structure_args.extend(args[4..].iter().cloned());

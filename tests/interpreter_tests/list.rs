@@ -23587,6 +23587,29 @@ mod part_assignment_failures {
   }
 }
 
+mod table_whole_valued_real_bounds {
+  use super::*;
+
+  // `3.` is a Real, so iterating over it yields Reals (`3.`, `4.`, …) even
+  // though the value is whole.
+  #[test]
+  fn iterator_over_whole_valued_reals_stays_real() {
+    for (input, expected) in [
+      ("Table[i, {i, 3., 5., 1.}]", "{3., 4., 5.}"),
+      ("Table[i, {i, 1., 3}]", "{1., 2., 3.}"),
+      ("Table[i, {i, 1, 3., 1.}]", "{1, 2., 3.}"),
+      ("Table[i, {i, 1, 5, 2}]", "{1, 3, 5}"),
+      (
+        "Do[s[j, i] = j + i, {j, 0., 1., 0.5}, {i, 3., 4., 1.}]; s[0.5, 4.]",
+        "4.5",
+      ),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+}
+
 mod table_real_step_accumulated_rounding {
   use super::*;
 
