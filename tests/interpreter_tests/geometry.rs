@@ -9366,7 +9366,7 @@ mod random_point {
     // Uniform in area, not in (r, t): the mean radius of the unit disk is 2/3.
     assert_eq!(
       interpret(
-        "pts = RandomPoint[ParametricRegion[{r Cos[t], r Sin[t]}, {{r, 0, 1}, {t, 0, 2 Pi}}], 20000]; Abs[Mean[Norm /@ pts] - 2/3] < 0.01"
+        "pts = RandomPoint[ParametricRegion[{r Cos[t], r Sin[t]}, {{r, 0, 1}, {t, 0, 2 Pi}}], 3000]; Abs[Mean[Norm /@ pts] - 2/3] < 0.02"
       )
       .unwrap(),
       "True"

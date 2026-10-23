@@ -4183,8 +4183,10 @@ pub fn evaluate_expr_to_expr_inner(
       // that was suppressing evaluation, so the extracted piece evaluates:
       // `Hold[1 + 1][[1]]` is 2. Results that keep the holding head (such as
       // `Hold[1 + 1, 2 + 2][[{1, 2}]]`) are unaffected, since evaluating them
-      // just re-applies the same hold.
-      let result = if base_holds {
+      // just re-applies the same hold. A failed extraction comes back as the
+      // unevaluated Part itself, which must not be evaluated again: that
+      // would retry the same extraction forever.
+      let result = if base_holds && !matches!(result, Expr::Part { .. }) {
         evaluate_expr_to_expr(&result)?
       } else {
         result

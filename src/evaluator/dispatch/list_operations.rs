@@ -5284,23 +5284,32 @@ pub fn dispatch_list_operations(
     "Identity" if args.len() == 1 => {
       return Some(list_helpers_ast::identity_ast(&args[0]));
     }
-    // Setting[expr] evaluates to the value expr; for an inline colour control
-    // (ColorSetterBox[c, ...], ColorSetter[c, ...], ColorSlider[c, ...]) that
-    // is the colour it currently holds.
+    // Setting[expr] is expr with every Dynamic[x, …] replaced by x and every
+    // control (Slider[…], Checkbox[…], an inline colour control, …) by the
+    // setting it holds, then evaluated: Setting[Dynamic[rs]] is rs's value.
     "Setting" if args.len() == 1 => {
-      if let Expr::FunctionCall {
-        name: head,
-        args: inner,
-      } = &args[0]
-        && matches!(
-          head.as_str(),
-          "ColorSetterBox" | "ColorSetter" | "ColorSlider"
-        )
-        && let Some(color) = inner.first()
-      {
-        return Some(Ok(color.clone()));
+      fn settle(e: &Expr) -> Expr {
+        match e {
+          Expr::FunctionCall { name, args } if !args.is_empty() => {
+            match name.as_str() {
+              "Dynamic" => args[0].clone(),
+              "Slider" | "VerticalSlider" | "Slider2D" | "IntervalSlider"
+              | "Checkbox" | "CheckboxBar" | "InputField" | "PopupMenu"
+              | "ActionMenu" | "SetterBar" | "RadioButtonBar" | "Toggler"
+              | "TogglerBar" | "Opener" | "Manipulator" | "Animator"
+              | "ColorSetter" | "ColorSetterBox" | "ColorSlider"
+              | "ProgressIndicator" | "LocatorPane" => settle(&args[0]),
+              _ => Expr::FunctionCall {
+                name: name.clone(),
+                args: args.iter().map(settle).collect(),
+              },
+            }
+          }
+          Expr::List(items) => Expr::List(items.iter().map(settle).collect()),
+          other => other.clone(),
+        }
       }
-      return Some(Ok(args[0].clone()));
+      return Some(crate::evaluator::evaluate_expr_to_expr(&settle(&args[0])));
     }
     // Once[expr] / Once[expr, loc] evaluates expr once and returns the result.
     // Woxi is stateless per evaluation, so caching is a no-op: just unwrap the

@@ -1612,7 +1612,182 @@ fn report_inverse_function_use() {
 /// The rules inside one multivariate modular solution come out in the order the
 /// variables were given; wolframscript orders them by its own elimination path,
 /// which reverses them for a linear system but not otherwise.
+/// `Max[…]` / `Min[…]` calls in `e` whose arguments involve one of `vars`,
+/// each listed once.
+fn collect_variable_max_min(e: &Expr, vars: &[String], out: &mut Vec<Expr>) {
+  if let Expr::FunctionCall { name, args } = e
+    && (name == "Max" || name == "Min")
+    && args.len() >= 2
+    && vars.iter().any(|v| contains_var(e, v))
+  {
+    let key = crate::syntax::expr_to_string(e);
+    if !out.iter().any(|o| crate::syntax::expr_to_string(o) == key) {
+      out.push(e.clone());
+    }
+    return;
+  }
+  match e {
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      for a in args {
+        collect_variable_max_min(a, vars, out);
+      }
+    }
+    Expr::Comparison { operands, .. } => {
+      for a in operands {
+        collect_variable_max_min(a, vars, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_variable_max_min(left, vars, out);
+      collect_variable_max_min(right, vars, out);
+    }
+    Expr::UnaryOp { operand, .. } => {
+      collect_variable_max_min(operand, vars, out);
+    }
+    _ => {}
+  }
+}
+
+/// Solve a system whose equations contain `Max`/`Min` of the unknowns by
+/// splitting on which argument attains each extremum: every choice turns the
+/// system into an ordinary one, whose solutions are kept when the chosen
+/// argument really is the largest (smallest) there.
+fn solve_piecewise_max_min(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let vars: Vec<String> = match args.get(1)? {
+    Expr::Identifier(v) => vec![v.clone()],
+    Expr::List(vs) => vs
+      .iter()
+      .map(|v| match v {
+        Expr::Identifier(s) => Some(s.clone()),
+        _ => None,
+      })
+      .collect::<Option<_>>()?,
+    _ => return None,
+  };
+  let mut extrema = Vec::new();
+  collect_variable_max_min(&args[0], &vars, &mut extrema);
+  if extrema.is_empty() {
+    return None;
+  }
+  // Like Wolfram, an inexact system is solved exactly (its machine numbers
+  // rationalized) and the solutions are numericized afterwards.
+  let inexact =
+    crate::functions::predicate_ast::contains_real_literal(&args[0]);
+  if inexact {
+    let exact = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Rationalize".into(),
+      args: vec![args[0].clone(), Expr::Integer(0)].into(),
+    })
+    .ok()?;
+    if crate::functions::predicate_ast::contains_real_literal(&exact) {
+      return None;
+    }
+    let mut exact_args = args.to_vec();
+    exact_args[0] = exact;
+    let result = solve_piecewise_max_min(&exact_args)?;
+    return Some(result.and_then(|sols| {
+      crate::emit_message(
+        "Solve::ratnz: Solve was unable to solve the system with inexact \
+         coefficients. The answer was obtained by solving a corresponding \
+         exact system and numericizing the result.",
+      );
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "N".into(),
+        args: vec![sols].into(),
+      })
+    }));
+  }
+  let choices: Vec<usize> = extrema
+    .iter()
+    .map(|e| match e {
+      Expr::FunctionCall { args, .. } => args.len(),
+      _ => 1,
+    })
+    .collect();
+  if choices.iter().product::<usize>() > 512 {
+    return None;
+  }
+  let mut pick = vec![0usize; extrema.len()];
+  let mut solutions: Vec<Expr> = Vec::new();
+  loop {
+    let mut system = args[0].clone();
+    let mut conditions = Vec::new();
+    for (e, &k) in extrema.iter().zip(&pick) {
+      let Expr::FunctionCall { name, args: xs } = e else {
+        return None;
+      };
+      system = substitute_expr(&system, e, &xs[k]);
+      let op = if name == "Max" {
+        ComparisonOp::GreaterEqual
+      } else {
+        ComparisonOp::LessEqual
+      };
+      for (j, other) in xs.iter().enumerate() {
+        if j != k {
+          conditions.push(Expr::Comparison {
+            operands: vec![xs[k].clone(), other.clone()],
+            operators: vec![op],
+          });
+        }
+      }
+    }
+    let mut call_args = args.to_vec();
+    call_args[0] = system;
+    let solved = {
+      let _quiet = QuietGuard::new();
+      solve_ast(&call_args)
+    };
+    let solved = match solved {
+      Ok(e) => e,
+      Err(e) => return Some(Err(e)),
+    };
+    match &solved {
+      Expr::List(sols) => {
+        for sol in sols {
+          let holds = conditions.iter().all(|c| {
+            let test = Expr::FunctionCall {
+              name: "ReplaceAll".into(),
+              args: vec![c.clone(), sol.clone()].into(),
+            };
+            matches!(
+              crate::evaluator::evaluate_expr_to_expr(&test),
+              Ok(Expr::Identifier(ref t)) if t == "True"
+            )
+          });
+          let key = crate::syntax::expr_to_string(sol);
+          if holds
+            && !solutions
+              .iter()
+              .any(|o| crate::syntax::expr_to_string(o) == key)
+          {
+            solutions.push(sol.clone());
+          }
+        }
+      }
+      _ => return None,
+    }
+    // Next combination.
+    let mut i = 0;
+    loop {
+      if i == pick.len() {
+        return Some(Ok(Expr::List(solutions.into())));
+      }
+      pick[i] += 1;
+      if pick[i] < choices[i] {
+        break;
+      }
+      pick[i] = 0;
+      i += 1;
+    }
+  }
+}
+
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(result) = solve_piecewise_max_min(args) {
+    return result;
+  }
   // Only a trailing rule can be an option — `Solve[eqns, vars, Reals]` passes a
   // domain in the same slot.
   let mut modulus: Option<i128> = None;

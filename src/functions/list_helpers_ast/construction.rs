@@ -2303,17 +2303,51 @@ fn expand_pattern_rule_list(data: &Expr, dims: &[usize]) -> Option<Expr> {
   }
 
   let total: usize = dims.iter().product();
-  if total == 0 || total > 1_000_000 {
+  if total == 0 {
     return None;
   }
-  let mut rules: Vec<Expr> = Vec::new();
-  for flat in 0..total {
-    let mut rem = flat;
-    let mut pos = vec![0i128; dims.len()];
-    for k in (0..dims.len()).rev() {
-      pos[k] = (rem % dims[k]) as i128 + 1;
-      rem /= dims[k];
+  // When every pattern rule can name the few positions it may match (a
+  // diagonal or a band), only those — plus the explicit ones — are visited;
+  // otherwise every position of the array is tried.
+  let mut candidates: Option<Vec<Vec<i128>>> = Some(Vec::new());
+  for m in &matchers {
+    let found = match m {
+      Matcher::Explicit(p, _) => Some(vec![p.clone()]),
+      Matcher::Alternatives(set, _) => Some(set.iter().cloned().collect()),
+      Matcher::Pattern(rule) => match rule {
+        Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+          pattern_rule_candidates(pattern, dims)
+        }
+        _ => None,
+      },
+    };
+    match (candidates.as_mut(), found) {
+      (Some(all), Some(found)) => all.extend(found),
+      _ => candidates = None,
     }
+  }
+  let positions: Box<dyn Iterator<Item = Vec<i128>>> = match candidates {
+    Some(mut list) => {
+      list.sort();
+      list.dedup();
+      Box::new(list.into_iter())
+    }
+    None if total > 1_000_000 => return None,
+    None => {
+      let dims = dims.to_vec();
+      Box::new((0..total).map(move |flat| {
+        let mut rem = flat;
+        let mut pos = vec![0i128; dims.len()];
+        for k in (0..dims.len()).rev() {
+          pos[k] = (rem % dims[k]) as i128 + 1;
+          rem /= dims[k];
+        }
+        pos
+      }))
+    }
+  };
+  let mut rules: Vec<Expr> = Vec::new();
+  for pos in positions {
     for m in &matchers {
       match m {
         Matcher::Explicit(p, v) if *p == pos => {
@@ -2352,6 +2386,88 @@ fn expand_pattern_rule_list(data: &Expr, dims: &[usize]) -> Option<Expr> {
     }
   }
   Some(Expr::List(rules.into()))
+}
+
+/// The positions of a rank-2 array that a pattern rule's left side can
+/// match, when they are few and easy to name: `{i_, i_}` is the diagonal, and
+/// `{i_, j_} /; cond` is whatever `Solve[cond, j]` gives along each row
+/// (`Abs[i - j] == 1` is the band either side of it). Every candidate is
+/// still checked by the matcher; `None` means "try every position".
+fn pattern_rule_candidates(
+  lhs: &Expr,
+  dims: &[usize],
+) -> Option<Vec<Vec<i128>>> {
+  let [rows, cols] = *dims else {
+    return None;
+  };
+  let (inner, cond) = match lhs {
+    Expr::FunctionCall { name, args }
+      if name == "Condition" && args.len() == 2 =>
+    {
+      (&args[0], Some(&args[1]))
+    }
+    other => (other, None),
+  };
+  let Expr::List(slots) = inner else {
+    return None;
+  };
+  let names: Vec<&str> = slots
+    .iter()
+    .map(|s| match s {
+      Expr::Pattern {
+        name,
+        head: None,
+        blank_type: 1,
+      } if !name.is_empty() => Some(name.as_str()),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let [a, b] = names.as_slice() else {
+    return None;
+  };
+  if a == b {
+    return Some((1..=rows.min(cols) as i128).map(|i| vec![i, i]).collect());
+  }
+  let cond = cond?;
+  let solved = {
+    crate::push_quiet();
+    let r = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Solve",
+      vec![cond.clone(), Expr::Identifier((*b).to_string())],
+    ));
+    crate::pop_quiet();
+    r.ok()?
+  };
+  let Expr::List(solutions) = &solved else {
+    return None;
+  };
+  let mut columns_of = Vec::new();
+  for sol in solutions {
+    let Expr::List(rules) = sol else {
+      return None;
+    };
+    let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
+      return None;
+    };
+    columns_of.push(replacement.as_ref().clone());
+  }
+  let mut out = Vec::new();
+  for i in 1..=rows as i128 {
+    for f in &columns_of {
+      let at = crate::syntax::substitute_variable(f, a, &Expr::Integer(i));
+      match crate::evaluator::evaluate_expr_to_expr(&at) {
+        Ok(Expr::Integer(j)) => {
+          if (1..=cols as i128).contains(&j) {
+            out.push(vec![i, j]);
+          }
+        }
+        // A column that is not an integer is no array position.
+        Ok(Expr::Real(_) | Expr::FunctionCall { .. }) => {}
+        _ => return None,
+      }
+    }
+  }
+  Some(out)
 }
 
 /// The dimensions a rule list's explicit integer positions span, when the
