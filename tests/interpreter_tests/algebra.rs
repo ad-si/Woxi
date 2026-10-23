@@ -9699,6 +9699,35 @@ mod linear_programming {
 mod find_root {
   use super::*;
 
+  // An equation between lists is one equation per component.
+  #[test]
+  fn vector_equations_thread() {
+    assert_eq!(
+      interpret("FindRoot[{x, y} - {1, 1} == {1, 2}, {{x, 0}, {y, 0}}]")
+        .unwrap(),
+      "{x -> 2., y -> 3.}"
+    );
+  }
+
+  // `{var, x0, xmin, xmax}` specs in the multivariate form keep the search
+  // within the bounds; they used to be rejected as "variable must be a
+  // symbol".
+  #[test]
+  fn bounded_multivariate_specs() {
+    assert_eq!(
+      interpret(
+        "FindRoot[{x + y == 3, x - y == 1}, {{x, 1, 0, 5}, {y, 1, 0, 5}}]"
+      )
+      .unwrap(),
+      "{x -> 2., y -> 1.}"
+    );
+    assert_eq!(
+      interpret("Round[{x, y} /. FindRoot[{x^2 == 4, y == x}, {{x, 1, 0, 5}, {y, 1, 0, 5}}], 10^-9]")
+        .unwrap(),
+      "{2, 2}"
+    );
+  }
+
   fn root_value(code: &str) -> (f64, f64) {
     let re: f64 = interpret(&format!("Re[x /. {code}]"))
       .unwrap()

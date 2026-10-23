@@ -7028,7 +7028,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !specs.is_empty()
     && specs.iter().all(|s| {
       matches!(s, Expr::List(p)
-      if (p.len() == 2 || p.len() == 3) && is_findroot_var_expr(&p[0]))
+      if (2..=4).contains(&p.len()) && is_findroot_var_expr(&p[0]))
     })
   {
     let max_iter = match find_root_parse_max_iterations(&args[2..]) {
@@ -7050,7 +7050,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .take_while(|s| {
         matches!(s, Expr::List(p)
-        if (p.len() == 2 || p.len() == 3) && is_findroot_var_expr(&p[0]))
+        if (2..=4).contains(&p.len()) && is_findroot_var_expr(&p[0]))
       })
       .cloned()
       .collect();
@@ -8211,6 +8211,7 @@ fn find_root_multivariate(
   let mut raw_vars: Vec<Expr> = Vec::new();
   let mut x: Vec<f64> = Vec::new();
   let mut step_hint: Vec<Option<f64>> = Vec::new();
+  let mut bounds: Vec<Option<(f64, f64)>> = Vec::new();
   for spec in specs {
     if let Expr::List(p) = spec {
       if !is_findroot_var_expr(&p[0]) {
@@ -8228,9 +8229,27 @@ fn find_root_multivariate(
       } else {
         None
       });
+      // `{var, x0, xmin, xmax}` keeps the search within [xmin, xmax].
+      bounds.push(if p.len() == 4 {
+        let lo = find_root_eval_number(&p[2])?;
+        let hi = find_root_eval_number(&p[3])?;
+        Some((lo.min(hi), lo.max(hi)))
+      } else {
+        None
+      });
     }
   }
   let n = raw_vars.len();
+  let clamp_to_bounds = |v: Vec<f64>| -> Vec<f64> {
+    v.into_iter()
+      .zip(&bounds)
+      .map(|(xj, b)| match b {
+        Some((lo, hi)) => xj.clamp(*lo, *hi),
+        None => xj,
+      })
+      .collect()
+  };
+  let mut x = clamp_to_bounds(x);
 
   // Only plain-symbol variables can carry a stale global binding under a
   // literal name — an indexed variable like `u[1]` has no such binding to
@@ -8279,9 +8298,15 @@ fn find_root_multivariate(
     Expr::List(es) => es.to_vec(),
     other => vec![other.clone()],
   };
+  // An equation between lists (`{a, b} == {c, d}`) is one equation per
+  // component, as Equal threads over lists.
   let evaluated_eqns: Vec<Expr> = raw_eq_list
     .iter()
     .map(|e| build_find_root_func(e, &raw_var_refs))
+    .flat_map(|f| match &f {
+      Expr::List(items) => items.to_vec(),
+      _ => vec![f],
+    })
     .collect();
 
   // Every search variable — plain or indexed — is then renamed to a fresh
@@ -8472,6 +8497,7 @@ fn find_root_multivariate(
             .zip(&delta)
             .map(|(&xj, &dj)| xj + dj * shrink)
             .collect();
+          let x_trial = clamp_to_bounds(x_trial);
           // An opaque residual (e.g. one wrapping NDSolve) can fail outright
           // at a wild trial point rather than merely return a non-finite
           // value — treat that the same as a rejected trial (shrink and
@@ -8594,6 +8620,7 @@ fn find_root_multivariate(
           .zip(&delta)
           .map(|(&xj, &dj)| xj + dj * shrink)
           .collect();
+        let x_trial = clamp_to_bounds(x_trial);
         if let Ok((fv_trial, resid_trial)) = eval_residual(&x_trial)
           && fv_trial.iter().all(|v| v.is_finite())
           && merit(&fv_trial) < base_merit
