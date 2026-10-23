@@ -1035,6 +1035,7 @@ pub(crate) fn axes_label_svg(
     axes,
     font_size,
     label_fill,
+    None,
   )
 }
 
@@ -1047,17 +1048,36 @@ pub(crate) fn axes_label_svg_at(
   (show_x_axis, show_y_axis): (bool, bool),
   font_size: f64,
   label_fill: &str,
+  canvas_width: Option<f64>,
 ) -> String {
   let Some((x_label, y_label)) = axes_label else {
     return String::new();
   };
   let mut svg = String::new();
   if show_x_axis && !x_label.is_empty() {
+    let label_x = x0 + w + font_size * 0.6;
+    // A label wider than the room left of the canvas edge (an
+    // `ImagePadding` can state less than it needs) shrinks to fit rather
+    // than being clipped.
+    let label_font = match canvas_width {
+      Some(cw) => {
+        let width = crate::functions::graphics::box_string_visible_len(x_label)
+          as f64
+          * font_size
+          * 0.55;
+        let room = cw - label_x;
+        if width > room && room > 0.0 {
+          (font_size * room / width).max(font_size * 0.6)
+        } else {
+          font_size
+        }
+      }
+      None => font_size,
+    };
     svg.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{axis_y:.1}\" text-anchor=\"start\" \
+      "<text x=\"{label_x:.1}\" y=\"{axis_y:.1}\" text-anchor=\"start\" \
        dominant-baseline=\"central\" font-family=\"sans-serif\" \
-       font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
-      x0 + w + font_size * 0.6,
+       font-size=\"{label_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
       crate::functions::graphics::box_string_to_svg_scaled(
         x_label,
         RESOLUTION_SCALE as f64
@@ -2753,6 +2773,7 @@ pub(crate) fn plot_labels_svg(
   sf: f64,
   label_fill: &str,
   title_default_fill: &str,
+  canvas_width: f64,
 ) -> String {
   let axis_y = margin_top + plot_h;
   // `LabelStyle` overrides the frame/axes/title text's default size and
@@ -2868,6 +2889,7 @@ pub(crate) fn plot_labels_svg(
     opts.axes,
     font_size,
     label_fill,
+    Some(canvas_width),
   ));
 
   // Top FrameLabel (sits just above the plot's top edge)
@@ -4134,6 +4156,7 @@ fn generate_svg_with_options(
         sf,
         label_fill,
         title_default_fill,
+        render_width as f64,
       ));
 
       buf.insert_str(insert_pos, &labels_svg);
@@ -5225,6 +5248,7 @@ pub(crate) fn generate_scatter_svg_with_options(
       sf,
       label_fill,
       title_default_fill,
+      render_width as f64,
     );
     if !labels.is_empty() {
       buf.insert_str(pos, &labels);

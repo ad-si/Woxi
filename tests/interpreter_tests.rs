@@ -4254,6 +4254,44 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_axes_label_shrinks_to_fit_image_padding() {
+    // An x `AxesLabel` sits right of the axis; when `ImagePadding` leaves
+    // less room than the label needs it must shrink instead of running
+    // past the canvas edge, while a roomy padding keeps the 14px size (140 in the 10x-scaled SVG).
+    clear_state();
+    let tight = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, ImageSize -> 400, \
+         ImagePadding -> {{40, 60}, {30, 20}}, \
+         AxesLabel -> {\"a long axis label\", \"y\"}], \"SVG\"]",
+    )
+    .unwrap();
+    let label_tag = tight
+      .lines()
+      .find(|l| l.contains(">a long axis label"))
+      .expect("x label drawn");
+    assert!(
+      !label_tag.contains("font-size=\"140\""),
+      "label wider than the right padding must shrink: {label_tag}"
+    );
+
+    clear_state();
+    let roomy = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, ImageSize -> 400, \
+         ImagePadding -> {{40, 200}, {30, 20}}, \
+         AxesLabel -> {\"a long axis label\", \"y\"}], \"SVG\"]",
+    )
+    .unwrap();
+    let label_tag = roomy
+      .lines()
+      .find(|l| l.contains(">a long axis label"))
+      .expect("x label drawn");
+    assert!(
+      label_tag.contains("font-size=\"140\""),
+      "label that fits keeps its size: {label_tag}"
+    );
+  }
+
+  #[test]
   fn test_axes_label_none_suppresses_that_axis_label() {
     // `AxesLabel -> {label, None}` (or `{None, label}`) must omit the axis
     // whose entry is the bare symbol `None`, not print the literal text
