@@ -4404,6 +4404,7 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = render_column_if_needed(expr);
   let expr = render_row_if_needed(expr);
   let expr = render_treeform_if_needed(expr);
+  let expr = render_captioned_panel_if_needed(expr);
   let expr = render_framed_if_needed(expr);
   let expr = render_rotate_if_needed(expr);
   let result = render_highlighted_if_needed(expr);
@@ -4729,6 +4730,75 @@ fn panel_of_text_is_box(args: &[syntax::Expr]) -> bool {
       syntax::Expr::Rule { .. } | syntax::Expr::RuleDelayed { .. }
     )
   })
+}
+
+/// In visual (notebook) display mode, `Panel[content, Style[caption, …],
+/// opts…]` displays as a gray box holding the styled caption above the
+/// content — the shape of a Demonstration's `Manipulate` body that lists
+/// computed values under a heading. The styled caption is what marks the
+/// panel as a picture, as a `Text` caption does; a bare string caption
+/// leaves a plain list or table as selectable text.
+fn render_captioned_panel_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  let syntax::Expr::FunctionCall { name, args } = &expr else {
+    return expr;
+  };
+  if name != "Panel" || args.len() < 2 {
+    return expr;
+  }
+  let styled_caption = matches!(
+    &args[1],
+    syntax::Expr::FunctionCall { name, .. }
+      if functions::graphics::is_style_wrapper(name)
+  );
+  let only_options = args[2..].iter().all(|a| {
+    matches!(
+      a,
+      syntax::Expr::Rule { .. } | syntax::Expr::RuleDelayed { .. }
+    )
+  });
+  if !styled_caption || !only_options {
+    return expr;
+  }
+  // A sized `Pane` around a plain list re-flows the list's text to the
+  // pane width; the pipeline clips what a fixed-size pane cannot show.
+  let mut held = args[0].clone();
+  if let syntax::Expr::FunctionCall {
+    name: pane,
+    args: pane_args,
+  } = &held
+    && pane == "Pane"
+    && pane_args.len() >= 2
+    && let syntax::Expr::List(_) = &pane_args[0]
+  {
+    let mut flowed = pane_args.to_vec();
+    flowed[0] = syntax::Expr::FunctionCall {
+      name: "Row".to_string(),
+      args: vec![syntax::Expr::List(
+        vec![syntax::Expr::String(syntax::expr_to_string(&pane_args[0]))]
+          .into(),
+      )]
+      .into(),
+    };
+    held = syntax::Expr::FunctionCall {
+      name: "Pane".to_string(),
+      args: flowed.into(),
+    };
+  }
+  let content = match render_visual_display_pipeline(&held) {
+    drawn @ syntax::Expr::Graphics { .. } => drawn,
+    _ => functions::graphics::unwrap_display_wrappers(&args[0]),
+  };
+  let stacked = syntax::Expr::FunctionCall {
+    name: "Column".to_string(),
+    args: vec![syntax::Expr::List(vec![args[1].clone(), content].into())]
+      .into(),
+  };
+  let mut panel_args = vec![stacked];
+  panel_args.extend(args[2..].iter().cloned());
+  match functions::graphics::panel_to_svg(&panel_args) {
+    Some(svg) => graphics_result(svg),
+    None => expr,
+  }
 }
 
 fn render_framed_if_needed(expr: syntax::Expr) -> syntax::Expr {
