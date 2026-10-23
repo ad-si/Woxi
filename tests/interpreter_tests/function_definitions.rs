@@ -6212,3 +6212,34 @@ mod nested_part_parsing {
     );
   }
 }
+
+mod delayed_own_values_with_operator_forms {
+  use super::*;
+
+  // `x := f /@ list` stored the unevaluated `Map` form and returned it as
+  // is on lookup, so `x[[2]]` stayed a held `(f /@ list)[[2]]`.
+  #[test]
+  fn own_value_is_reevaluated_on_lookup() {
+    clear_state();
+    assert_eq!(
+      interpret("fn := Range /@ {1, 2}; fn").unwrap(),
+      "{{1}, {1, 2}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("fn := Range /@ {1, 2}; fn[[2]]").unwrap(),
+      "{1, 2}"
+    );
+    clear_state();
+    assert_eq!(interpret("a := Plus @@ {1, 2}; a").unwrap(), "3");
+    clear_state();
+    assert_eq!(interpret("a := x /. x -> 3; a").unwrap(), "3");
+    clear_state();
+    assert_eq!(
+      interpret("a := Range @@@ {{1}, {2}}; a").unwrap(),
+      "{{1}, {1, 2}}"
+    );
+    clear_state();
+    assert_eq!(interpret("a := Sqrt @ 4; a").unwrap(), "2");
+  }
+}

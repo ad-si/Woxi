@@ -204,6 +204,14 @@ pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
     // `line := lines[[i]]` reads the part afresh each time, like a call.
     Expr::Part { .. } => true,
     Expr::Comparison { .. } => true,
+    // Operator forms (`x := f /@ list`, `x := expr /. rules`) are calls too.
+    Expr::Map { .. }
+    | Expr::Apply { .. }
+    | Expr::MapApply { .. }
+    | Expr::ReplaceAll { .. }
+    | Expr::ReplaceRepeated { .. }
+    | Expr::PrefixApply { .. }
+    | Expr::Postfix { .. } => true,
     Expr::Rule {
       pattern,
       replacement,
