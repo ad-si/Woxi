@@ -103,6 +103,7 @@ pub mod scoping;
 pub mod shortest_tour;
 pub mod socket_ast;
 pub mod sound;
+pub mod spline_interpolation;
 pub mod streamlines;
 pub mod string_ast;
 pub mod sum_convergence_ast;

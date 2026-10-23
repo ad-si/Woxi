@@ -8776,6 +8776,13 @@ pub fn interpolation_ast(
   // integer applies to both.
   let mut interp_order: i128 = 3;
   let mut interp_orders: Option<Vec<i128>> = None;
+  // `Method -> "Spline"`: an interpolating B-spline instead of local
+  // polynomial pieces (1-D scalar data).
+  let spline = args.iter().skip(1).any(|opt| {
+    matches!(opt, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method")
+        && matches!(replacement.as_ref(), Expr::String(m) if m == "Spline"))
+  });
   let data_arg = &args[0];
 
   let mut apply_interpolation_order = |replacement: &Expr| {
@@ -9018,6 +9025,21 @@ pub fn interpolation_ast(
     )]
     .into(),
   );
+
+  if spline
+    && let Some(sp) =
+      crate::functions::spline_interpolation::Spline::interpolate(
+        points.iter().map(|p| p.0).collect(),
+        points.iter().map(|p| p.1).collect(),
+        order.max(1),
+      )
+  {
+    let degree = Expr::Integer(sp.degree as i128);
+    return Ok(call(
+      "InterpolatingFunction",
+      vec![domain, sp.to_data(), degree],
+    ));
+  }
 
   // Store data as list of {x, y} pairs, keeping exact coordinates exact (an
   // Integer grid, rational values) so that interpolating at an exact point
@@ -10064,11 +10086,34 @@ fn kernel_grid_interpolating_function(func_args: &[Expr]) -> Option<Vec<Expr>> {
   ])
 }
 
+/// A kernel-layout spline `InterpolatingFunction` (`Method -> "Spline"`,
+/// whose values are a `BSplineFunction`) in Woxi's spline form.
+fn kernel_spline_interpolating_function(
+  func_args: &[Expr],
+) -> Option<Vec<Expr>> {
+  let [domain, _, Expr::List(grids), values, _] = func_args else {
+    return None;
+  };
+  let [Expr::List(xs)] = grids.as_slice() else {
+    return None;
+  };
+  let sp =
+    crate::functions::spline_interpolation::Spline::from_kernel(values, xs)?;
+  Some(vec![
+    domain.clone(),
+    sp.to_data(),
+    Expr::Integer(sp.degree as i128),
+  ])
+}
+
 /// A kernel-layout `InterpolatingFunction` (as wolframscript stores it) in
 /// Woxi's own `{domain, data, order}` form, when it is one Woxi reads.
 pub(crate) fn kernel_interpolating_function_to_native(
   func_args: &[Expr],
 ) -> Option<Vec<Expr>> {
+  if let Some(native) = kernel_spline_interpolating_function(func_args) {
+    return Some(native);
+  }
   let mut pairs = kernel_interpolating_function_to_pairs(func_args)?;
   let order = pairs.pop()?;
   Some(vec![func_args[0].clone(), Expr::List(pairs.into()), order])
@@ -10264,6 +10309,11 @@ pub fn evaluate_interpolating_function(
     return evaluate_interpolating_function(&native, call_args);
   }
   if func_args.len() == 5
+    && let Some(native) = kernel_spline_interpolating_function(func_args)
+  {
+    return evaluate_interpolating_function(&native, call_args);
+  }
+  if func_args.len() == 5
     && let Some(mut pairs) = kernel_interpolating_function_to_pairs(func_args)
   {
     let order = pairs.pop().unwrap_or(Expr::Integer(3));
@@ -10311,6 +10361,29 @@ pub fn evaluate_interpolating_function(
     Some(Expr::Integer(n)) if *n >= 0 => *n as usize,
     _ => 0,
   };
+
+  // An interpolating B-spline (`Method -> "Spline"`).
+  if let Some(sp) =
+    crate::functions::spline_interpolation::Spline::from_data(data, order)
+  {
+    if let Expr::String(prop) = &call_args[0] {
+      if let Some(result) = sp.property(prop) {
+        return Ok(result);
+      }
+    } else {
+      let x_expr = crate::evaluator::evaluate_expr_to_expr(&call_args[0])?;
+      if let Ok(x) = interp_value_to_f64(&x_expr) {
+        if x < sp.xs[0] || x > sp.xs[sp.xs.len() - 1] {
+          emit_dmval(std::slice::from_ref(&x_expr));
+        }
+        return Ok(Expr::Real(sp.eval(x, derivative_order)));
+      }
+    }
+    return Ok(Expr::CurriedCall {
+      func: Box::new(unevaluated("InterpolatingFunction", func_args)),
+      args: call_args.to_vec(),
+    });
+  }
 
   // Values with derivatives: `{{x}, f, f', …}` rows.
   if let Expr::List(items) = data

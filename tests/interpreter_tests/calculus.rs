@@ -21528,3 +21528,63 @@ mod interpolation_n_dimensional {
     );
   }
 }
+
+mod interpolation_spline_method {
+  use super::*;
+
+  #[test]
+  fn spline_of_each_degree_interpolates_with_averaged_knots() {
+    // Values from wolframscript; compared to 10^-12 since the last bits of a
+    // banded solve can differ.
+    for (k, expected) in [
+      (
+        1,
+        "{2.4, 4.866666666666666, -0.6666666666666665, 1.8000000000000007}",
+      ),
+      (
+        2,
+        "{2.8634293193717277, 5.78564281559046, 2.9730657358929595, 1.5948429319371742}",
+      ),
+      (
+        3,
+        "{3.5748433301677576, 5.988886542506966, 4.1240520668008545, 1.5575792310717553}",
+      ),
+      (
+        4,
+        "{4.2738219041770735, 5.965172823716989, 4.075462059086599, 1.8052867078015604}",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "d = {{{{0,1}},{{1,3}},{{2.5,2}},{{3,5}},{{4.5,4}},{{6,0}},{{7,2}}}}; f = Interpolation[d, Method -> \"Spline\", InterpolationOrder -> {k}]; Max[Abs[{{f[0.7], f[3.2], f'[3.2], f[6.9]}} - {expected}]] < 10^-12"
+        ))
+        .unwrap(),
+        "True",
+        "degree {k}"
+      );
+    }
+  }
+
+  #[test]
+  fn spline_passes_through_the_data() {
+    assert_eq!(
+      interpret(
+        "d = {{0, 1}, {1, 3}, {2.5, 2}, {3, 5}, {4.5, 4}, {6, 0}, {7, 2}}; f = Interpolation[d, Method -> \"Spline\"]; {Max[Abs[(f /@ d[[All, 1]]) - d[[All, 2]]]] < 10^-12, f[\"InterpolationOrder\"]}"
+      )
+      .unwrap(),
+      "{True, {3}}"
+    );
+  }
+
+  #[test]
+  fn stored_kernel_spline() {
+    let ifn = "InterpolatingFunction[{{0, 3}}, {5, 39, 0, {4}, {4}, 0, 0, 0, 0, Automatic, {}, {}, False}, {{0, 1, 2, 3}}, {BSplineFunction[1, {{0., 3.}}, {3}, {False}, {{1., 6.833333333333334, -2.333333333333333, 5.}, {}}, {{0., 0., 0., 0., 3., 3., 3., 3.}}, {0}, MachinePrecision, Unevaluated], {}}, {Automatic}]";
+    assert_eq!(
+      interpret(&format!(
+        "s = {ifn}; Max[Abs[{{s[0.5], s[2.5], s'[1.5]}} - {{2.8124999999999996, 2.5624999999999996, -1.291666666666667}}]] < 10^-12"
+      ))
+      .unwrap(),
+      "True"
+    );
+  }
+}
