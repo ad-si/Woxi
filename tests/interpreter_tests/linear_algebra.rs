@@ -1449,11 +1449,11 @@ mod cross {
       interpret("ToCharacterCode[\"\\[Cross]\"]").unwrap(),
       "{62624}"
     );
-    // U+F3C4 is the code point earlier versions wrote the operator with;
-    // notebooks that carry it still parse.
+    // U+F3C4 is not the operator: wolframscript reads it as a letter, so
+    // between two lists it is a symbol in an implicit product.
     assert_eq!(
-      interpret("{1, 2, 3} \u{F3C4} {4, 5, 6}").unwrap(),
-      "{-3, 6, -3}"
+      interpret("Head[Unevaluated[{1, 2, 3} \u{F3C4} {4, 5, 6}]]").unwrap(),
+      "Times"
     );
   }
 

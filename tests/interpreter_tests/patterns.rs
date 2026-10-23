@@ -6718,3 +6718,37 @@ mod named_options_pattern_in_list_pattern {
     );
   }
 }
+
+// Patterns in head position and inside derivatives, as Demonstrations write
+// their helper functions (`F[x_[t], x_'[t], q_] := …`).
+mod head_and_derivative_patterns {
+  use super::*;
+
+  #[test]
+  fn definitions_with_pattern_heads() {
+    assert_eq!(interpret("G1[x_[t]] := x; G1[y[t]]").unwrap(), "y");
+    assert_eq!(interpret("G2[h_[3]] := h; G2[f[3]]").unwrap(), "f");
+    assert_eq!(interpret("G3[x_'[t]] := x; G3[y'[t]]").unwrap(), "y");
+    assert_eq!(
+      interpret("G4[x_[t], x_'[t], q_] := {x, q}; G4[y[t], y'[t], 1]").unwrap(),
+      "{y, 1}"
+    );
+  }
+
+  #[test]
+  fn curried_derivative_patterns() {
+    assert_eq!(
+      interpret("MatchQ[Derivative[1][y], Derivative[1][x_]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Cases[{Derivative[1][y]}, Derivative[1][x_] :> x]").unwrap(),
+      "{y}"
+    );
+    assert_eq!(
+      interpret("Derivative[2][f][x] /. Derivative[n_][g_][z_] :> {n, g, z}")
+        .unwrap(),
+      "{2, f, x}"
+    );
+  }
+}

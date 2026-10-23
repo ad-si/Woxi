@@ -8442,6 +8442,22 @@ mod plot3d {
       );
     }
 
+    // Bare tick positions in a plot's `FrameTicks` are evaluated, so a tick
+    // set from variables is labelled with its value, not the expression.
+    #[test]
+    fn plot_frame_ticks_evaluate_bare_positions() {
+      let svg = export_svg(
+        r#"a = 0.3; b = 0.05;
+        Plot[x^2, {x, 0, 1}, Frame -> {True, True, False, False},
+          Axes -> {None, None},
+          FrameTicks -> {{a - b}, {N[0.5, 4]}}]"#,
+      );
+      assert!(svg.contains(">0.25<"), "{svg}");
+      assert!(svg.contains(">0.5<"), "{svg}");
+      assert!(!svg.contains("a - b"), "{svg}");
+      assert!(!svg.contains("N[0.5"), "{svg}");
+    }
+
     // `ListPlot` honours explicit `{position, label}` ticks on the bottom
     // and left frame edges, as `Plot` does, instead of the automatic ones.
     #[test]
@@ -11265,6 +11281,32 @@ mod plot3d {
     }
 
     #[test]
+    fn bar_chart_labeling_function_skips_null_and_styled_labels() {
+      // `If[#1 != 0, …]` yields Null for zero bars (no label, not the text
+      // "Null"), and `Style[#1, …]` labels read as the plain integer.
+      let svg = export_svg(
+        "BarChart[{0, 3, 2, 5}, LabelingFunction -> \
+         (If[#1 != 0, Placed[Style[#1, 16], Above]] &)]",
+      );
+      assert!(!svg.contains("Null"));
+      for v in ["3", "2", "5"] {
+        assert!(svg.contains(&format!(">{v}</text>")));
+      }
+      assert!(!svg.contains(">3.</text>"));
+    }
+
+    #[test]
+    fn bar_chart_epilog_text_is_not_clipped_to_plot_area() {
+      // Epilog text below the axis (tick labels of a frameless chart) must
+      // stay visible, so the epilog group carries no clip path.
+      let svg = export_svg(
+        "BarChart[{1, 2, 3}, Epilog -> {Text[\"tick\", {2, 0}, {0, 1.5}]}]",
+      );
+      assert!(svg.contains(">tick</text>"));
+      assert!(!svg.contains("epilogClip"));
+    }
+
+    #[test]
     fn list_plot_association_string_keys_labeling_function_none() {
       // LabelingFunction -> None hides the key labels but keeps the points.
       let svg = export_svg(
@@ -12470,6 +12512,17 @@ mod plot3d {
 
   mod parametric_plot {
     use super::*;
+
+    // A one-element list of pairs is one region; it used to give "no
+    // points over that region".
+    #[test]
+    fn single_region_in_a_list() {
+      assert_eq!(
+        interpret("Head[ParametricPlot[{{Re[r E^(I t)], Im[r E^(I t)]}}, {r, 0, 1}, {t, 0, 2 Pi}]]")
+          .unwrap(),
+        "Graphics"
+      );
+    }
 
     #[test]
     fn parametric_plot_circle() {
@@ -15044,7 +15097,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "BarChart[{1, 2, 3}, Epilog -> {Dashed, Line[{{0, 2}, {3, 2}}]}]",
       );
       assert!(svg.len() > plain.len());
-      assert!(svg.contains("epilogClip"));
+      assert!(svg.contains("<line") || svg.contains("<path"));
     }
 
     /// PlotRange -> {ymin, ymax} should override only the y-axis; the
@@ -20474,6 +20527,55 @@ mod tree_form_graphics {
 mod graphics_row {
   use super::*;
 
+  /// The `<svg width height>` of the outermost element.
+  fn outer_size(code: &str) -> (u32, u32) {
+    let svg = interpret_with_stdout(code)
+      .unwrap()
+      .graphics
+      .expect("layout should render");
+    let root = svg.lines().next().unwrap();
+    let attr = |name: &str| -> u32 {
+      let tail = root.split(&format!(" {name}=\"")).nth(1).unwrap();
+      tail.split('"').next().unwrap().parse().unwrap()
+    };
+    (attr("width"), attr("height"))
+  }
+
+  /// `ImageSize -> {w, h}` with `AspectRatio -> Full` makes the layout fill
+  /// the whole rectangle, whether its cells are inline plots or finished
+  /// ones held in variables.
+  #[test]
+  fn aspect_ratio_full_fills_image_size() {
+    clear_state();
+    for code in [
+      "GraphicsRow[{Plot[x, {x, 0, 1}], Plot[x, {x, 0, 1}]}, \
+         ImageSize -> {600, 400}, AspectRatio -> Full]",
+      "p = Plot[x, {x, 0, 1}, AspectRatio -> Full]; \
+         GraphicsRow[{p, p}, Spacings -> 0, ImageSize -> {600, 400}, \
+         AspectRatio -> Full]",
+    ] {
+      assert_eq!(outer_size(code), (600, 400), "{code}");
+    }
+    assert_eq!(
+      outer_size(
+        "GraphicsColumn[{Plot[x, {x, 0, 1}], Plot[x, {x, 0, 1}]}, \
+         ImageSize -> {300, 500}, AspectRatio -> Full]"
+      ),
+      (300, 500)
+    );
+  }
+
+  /// An explicit width is the width of the whole row, gaps included.
+  #[test]
+  fn explicit_width_includes_zero_spacing() {
+    clear_state();
+    let (w, _) = outer_size(
+      "GraphicsRow[{Plot[x, {x, 0, 1}], Plot[x, {x, 0, 1}]}, \
+       Spacings -> 0, ImageSize -> 600]",
+    );
+    assert_eq!(w, 600);
+  }
+
   #[test]
   fn basic_inline() {
     clear_state();
@@ -23706,6 +23808,38 @@ mod blend {
     );
   }
 
+  // The effective plot range of a graphic, before padding.
+  #[test]
+  fn absolute_options_plot_range() {
+    assert_eq!(
+      interpret("AbsoluteOptions[Graphics[Circle[]], PlotRange]").unwrap(),
+      "{PlotRange -> {{-1., 1.}, {-1., 1.}}}"
+    );
+    assert_eq!(
+      interpret(
+        "AbsoluteOptions[Graphics[Circle[], PlotRange -> {{0, 2}, {0, 3}}], PlotRange]"
+      )
+      .unwrap(),
+      "{PlotRange -> {{0., 2.}, {0., 3.}}}"
+    );
+    assert_eq!(
+      interpret("PlotRange[Plot[x^2, {x, 0, 1}]]").unwrap(),
+      "{{0., 1.}, {0., 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "Last[PlotRange[Plot[Sin[x], {x, 0, 2 Pi}, PlotRange -> {-2, 2}]]]"
+      )
+      .unwrap(),
+      "{-2., 2.}"
+    );
+    assert_eq!(
+      interpret("AbsoluteOptions[Graphics[Circle[], Frame -> True], Frame]")
+        .unwrap(),
+      "{Frame -> True}"
+    );
+  }
+
   // Tick values past the i64 range used to panic while being labelled.
   #[test]
   fn plot_with_huge_values_renders() {
@@ -25382,6 +25516,24 @@ mod find_spanning_tree {
 mod parametric_plot3d {
   use super::*;
 
+  // A component that depends on the parameter only through a variable's
+  // value (`c = ArcTan[t/5]`) used to give "no finite values".
+  #[test]
+  fn components_depending_on_the_parameter_indirectly() {
+    assert_eq!(
+      interpret(
+        "c = ArcTan[t/5]; Head[ParametricPlot3D[{Cos[t] Cos[c], Sin[t] Cos[c], -Sin[c]}, {t, -40, 0}]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+    assert_eq!(
+      interpret("r = u + v; Head[ParametricPlot3D[{Cos[u] r, Sin[u] r, v}, {u, 0, 1}, {v, 0, 1}]]")
+        .unwrap(),
+      "Graphics3D"
+    );
+  }
+
   // A plot body naming a Module-local symbol whose value depends on the plot
   // variables is read through that value.
   #[test]
@@ -26891,6 +27043,20 @@ mod manipulate {
     manipulate_spec_to_json, parse_manipulate_bindings,
   };
   use woxi::interpret_to_expr;
+
+  // A Manipulate whose trailing arguments are all options shows its body
+  // with no controls; it used to fall back to an unrendered Manipulate.
+  #[test]
+  fn options_only_manipulate_is_a_widget() {
+    let expr =
+      interpret_to_expr("Manipulate[Graphics[Disk[]], ControlType -> None, SaveDefinitions -> True]")
+        .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("options-only Manipulate");
+    assert!(spec.controls.is_empty());
+    // An argument that is neither a control nor an option still is not.
+    let bad = interpret_to_expr("Manipulate[x^2, badspec]").unwrap();
+    assert!(extract_manipulate_spec(&bad).is_none());
+  }
 
   // A hand-built control panel — `ExpressionCell[Grid[…]]` holding bare
   // `Checkbox[Dynamic[v]]`/`Manipulator[Dynamic[v], …]`/`SetterBar[Dynamic[v],
@@ -35932,6 +36098,20 @@ mod display_wrapper_export {
 /// mark measured data and the band it must stay inside.
 mod list_plot_markers_and_epilog {
   use super::*;
+
+  // A marker far outside the plot range overflowed plotters' pixel
+  // arithmetic and panicked; markers outside the range are not drawn.
+  #[test]
+  fn marker_far_outside_the_plot_range() {
+    assert_eq!(
+      interpret(
+        "StringQ[ExportString[ListPlot[{{1, 0.5}, {2, 1.*^300}}, PlotMarkers -> Style[\"\u{25CF}\", 14], \
+         Joined -> True, PlotRange -> {{-1, 50}, {-0.1, 1.1}}], \"SVG\"]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 
   /// The `<text>` glyphs a rendered plot draws, with their fill colour.
   fn marker_glyphs(svg: &str) -> Vec<(String, String)> {

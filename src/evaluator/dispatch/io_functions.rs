@@ -5143,6 +5143,13 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     Expr::FunctionCall { name, args } if name == "Item" && !args.is_empty() => {
       lays_out_a_graphic(&args[0])
     }
+    // `Legended[expr, legend]` draws `expr` with the legend beside it, so it
+    // is a picture whenever `expr` is.
+    Expr::FunctionCall { name, args }
+      if name == "Legended" && !args.is_empty() =>
+    {
+      lays_out_a_graphic(&args[0])
+    }
     // `ClickPane[expr, …]` shows `expr`; clicking it is the affordance the
     // handler is for, and contributes nothing to the picture.
     Expr::FunctionCall { name, args }
@@ -5956,6 +5963,27 @@ pub(crate) fn pane_alignment(options: &[Expr]) -> Option<(f64, f64)> {
   None
 }
 
+/// The `{width, height}` of a `Pane[content, {w, h}]` or
+/// `Pane[content, ImageSize -> {w, h}]` call.
+pub(crate) fn pane_fixed_size(args: &[Expr]) -> Option<Vec<Expr>> {
+  let pair = |e: &Expr| match e {
+    Expr::List(size) if size.len() == 2 => Some(size.to_vec()),
+    _ => None,
+  };
+  if let Some(size) = args.get(1).and_then(pair) {
+    return Some(size);
+  }
+  args.iter().skip(1).find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(n) if n == "ImageSize") => {
+      pair(replacement)
+    }
+    _ => None,
+  })
+}
+
 pub(crate) fn pane_size_component(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
@@ -6013,36 +6041,36 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if (name == "Pane" || name == "Deploy") && !args.is_empty() =>
     {
-      let wrapped = match (name.as_str(), args.get(1)) {
-        ("Pane", Some(Expr::List(size))) if size.len() == 2 => {
-          pane_size_component(&size[0])
-            .and_then(|w| wrap_pane_text(&args[0], w, 14.0))
-        }
+      let pane_size = pane_fixed_size(args);
+      let wrapped = match (name.as_str(), pane_size.as_ref()) {
+        ("Pane", Some(size)) => pane_size_component(&size[0])
+          .and_then(|w| wrap_pane_text(&args[0], w, 14.0)),
         _ => None,
       };
       // A grid wider than the pane squeezes its automatically sized
       // pictures to fit.
-      let wrapped = wrapped.or_else(|| match (name.as_str(), args.get(1)) {
-        ("Pane", Some(Expr::List(size))) if size.len() == 2 => {
-          let w = pane_size_component(&size[0])?;
-          crate::functions::graphics::fit_grid_to_pane_width(
-            &args[0],
-            w,
-            &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
-          )
-        }
-        _ => None,
-      });
+      let wrapped =
+        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
+          ("Pane", Some(size)) => {
+            let w = pane_size_component(&size[0])?;
+            crate::functions::graphics::fit_grid_to_pane_width(
+              &args[0],
+              w,
+              &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
+            )
+          }
+          _ => None,
+        });
       let inner_svg = expr_to_svg(wrapped.as_ref().unwrap_or(&args[0]));
-      match (name.as_str(), args.get(1)) {
-        ("Pane", Some(Expr::List(size))) if size.len() == 2 => {
+      match (name.as_str(), pane_size.as_ref()) {
+        ("Pane", Some(size)) => {
           match (pane_size_component(&size[0]), pane_size_component(&size[1])) {
             (Some(w), Some(h)) => {
               crate::functions::graphics::clip_svg_to_pane_box(
                 &inner_svg,
                 w,
                 h,
-                pane_alignment(&args[2..]),
+                pane_alignment(&args[1..]),
               )
             }
             _ => inner_svg,
@@ -6364,6 +6392,15 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           let height = crate::functions::graphics::svg_natural_size(&graphic)
             .map_or(225.0, |(_, h)| h * 0.625);
           crate::functions::field_plot::bar_legend_svg(bar_args, height)
+        }
+        // A swatch or line legend is typeset beside the graphics the same
+        // way a bare one is drawn on its own.
+        Some(
+          legend @ Expr::FunctionCall {
+            name: legend_name, ..
+          },
+        ) if legend_name == "SwatchLegend" || legend_name == "LineLegend" => {
+          Some(expr_to_svg(legend)).filter(|svg| svg.starts_with("<svg"))
         }
         _ => None,
       };

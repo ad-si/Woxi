@@ -761,11 +761,20 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       None
     };
-    let rat = crate::evaluator::evaluate_function_call_ast(
+    let mut rat = crate::evaluator::evaluate_function_call_ast(
       "Rationalize",
       std::slice::from_ref(&args[0]),
     )?;
-    if matches!(rat, Expr::Integer(_)) {
+    // A number with no nearby simple fraction stays a Real under the
+    // default tolerance; then its exact binary value is expanded (and the
+    // recursion below must never see a Real again).
+    if matches!(rat, Expr::Real(_)) {
+      rat = crate::evaluator::evaluate_function_call_ast(
+        "Rationalize",
+        &[args[0].clone(), Expr::Integer(0)],
+      )?;
+    }
+    if matches!(rat, Expr::Integer(_) | Expr::Real(_)) {
       return unevaluated();
     }
     let full = continued_fraction_ast(&[rat])?;

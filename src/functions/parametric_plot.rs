@@ -869,9 +869,10 @@ fn parametric_region_ast(
   };
   // `{{fx1, fy1}, {fx2, fy2}, …}` is several regions drawn in one plot, each
   // in the next colour of the cycle.
+  // A one-element list `{{fx, fy}}` is a single region.
   let bodies: Vec<&Expr> = match body {
     Expr::List(items)
-      if items.len() > 1
+      if !items.is_empty()
         && items
           .iter()
           .all(|b| matches!(b, Expr::List(p) if p.len() == 2)) =>

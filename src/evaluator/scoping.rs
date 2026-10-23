@@ -175,10 +175,16 @@ fn parse_local_vars(
 /// AST-based Module implementation to avoid interpret() recursion
 pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(format!(
-      "Module expects 2 arguments; {} given",
-      args.len()
-    )));
+    // Wolfram's own wording for each count; the call stays unevaluated.
+    let message = match args.len() {
+      0 => "Module::argm: Module called with 0 arguments; 2 or more arguments are expected.".to_string(),
+      1 => "Module::argmu: Module called with 1 argument; 2 or more arguments are expected.".to_string(),
+      n => format!(
+        "Module::argrx: Module called with {n} arguments; 2 arguments are expected."
+      ),
+    };
+    crate::emit_message(&message);
+    return Ok(crate::helpers::unevaluated("Module", args));
   }
 
   let vars_expr = &args[0];

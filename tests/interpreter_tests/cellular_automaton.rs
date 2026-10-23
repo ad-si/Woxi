@@ -1117,3 +1117,57 @@ mod step_and_cell_specs {
     );
   }
 }
+
+mod long_background_evolutions {
+  use super::*;
+
+  // 400 steps of a 2D totalistic rule on a background used to exceed the
+  // work bound and stay unevaluated; only the region the pattern can reach
+  // is evolved now.
+  #[test]
+  fn many_steps_on_a_background() {
+    assert_eq!(
+      interpret(
+        "Dimensions[CellularAutomaton[{746, {2, {{2, 2, 2}, {2, 1, 2}, {2, 2, 2}}}, {1, 1}}, {Table[1, {5}, {1}], 0}, {{{400}}}]]"
+      )
+      .unwrap(),
+      "{297, 297}"
+    );
+    assert_eq!(
+      interpret(
+        "Total[CellularAutomaton[{746, {2, {{2, 2, 2}, {2, 1, 2}, {2, 2, 2}}}, {1, 1}}, {Table[1, {5}, {1}], 0}, {{{60}}}], 2]"
+      )
+      .unwrap(),
+      "816"
+    );
+  }
+
+  // Rule numbers past i128 (a 2D range-1 rule has 2^9 digits) used to be
+  // rejected as CellularAutomaton::nspecnl.
+  #[test]
+  fn rule_number_beyond_i128() {
+    assert_eq!(
+      interpret(
+        "Total[CellularAutomaton[{32394872774543797972936492374692374655623746273645726354, 2, {1, 1}}, {{{1}}, 0}, 10], 3]"
+      )
+      .unwrap(),
+      "139"
+    );
+  }
+
+  // `{1}` is a one-dimensional list of radii, i.e. range 1.
+  #[test]
+  fn single_radius_list_neighborhood() {
+    assert_eq!(
+      interpret("CellularAutomaton[{30, 2, {1}}, {0, 0, 1, 0, 0}, 2]").unwrap(),
+      "{{0, 0, 1, 0, 0}, {0, 1, 1, 1, 0}, {1, 1, 0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{Function[If[#[[1]] + #[[3]] == 1, 1, 0]], {}, {1}}, {0, 0, 1, 0, 0}, 1]"
+      )
+      .unwrap(),
+      "{{0, 0, 1, 0, 0}, {0, 1, 0, 1, 0}}"
+    );
+  }
+}

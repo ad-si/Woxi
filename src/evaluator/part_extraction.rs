@@ -319,13 +319,11 @@ fn was_part_assigned(var_name: &str) -> bool {
 /// and its elements were evaluated as they were assigned.
 pub fn eval_part_base(e: &Expr) -> Result<Expr, InterpreterError> {
   if let Expr::Identifier(var_name) = e {
-    let stored = ENV.with(|env| {
-      let env = env.borrow();
-      match env.get(var_name) {
-        Some(StoredValue::ExprVal(stored)) => Some(stored.clone()),
+    let stored =
+      match crate::evaluator::core_eval::stored_value_for_lookup(var_name) {
+        Some(StoredValue::ExprVal(stored)) => Some(stored),
         _ => None,
-      }
-    });
+      };
     if let Some(stored) = stored {
       // `x := body` (SetDelayed) stores `body` unevaluated — plain
       // identifier lookup re-evaluates it every access (see

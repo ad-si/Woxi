@@ -1306,6 +1306,34 @@ mod overflow_safety {
   // With an explicit zero tolerance, a symbolic value (constant, radical, or
   // bare symbol) is returned unchanged rather than numericized into a
   // spurious approximation. Only an actual machine Real is converted.
+  // Zero tolerance picks the first continued-fraction convergent of the
+  // machine number within about half a machine epsilon (relative), not the
+  // first one whose float merely rounds to x.
+  #[test]
+  fn rationalize_machine_real_zero_tolerance() {
+    assert_eq!(
+      interpret("Rationalize[Cos[0.3], 0]").unwrap(),
+      "58592581/61331878"
+    );
+    assert_eq!(
+      interpret("Rationalize[Sqrt[2.], 0]").unwrap(),
+      "77227930/54608393"
+    );
+    assert_eq!(
+      interpret("Rationalize[N[E], 0]").unwrap(),
+      "325368125/119696244"
+    );
+    assert_eq!(interpret("Rationalize[0.1, 0]").unwrap(), "1/10");
+    assert_eq!(
+      interpret("Rationalize[-2.548220134353387, 0]").unwrap(),
+      "-96384969/37824428"
+    );
+    assert_eq!(
+      interpret("Rationalize[6.801000117857864*^7, 0]").unwrap(),
+      "673707071675/9906"
+    );
+  }
+
   #[test]
   fn rationalize_symbolic_zero_tolerance_passes_through() {
     assert_eq!(interpret("Rationalize[Pi, 0]").unwrap(), "Pi");

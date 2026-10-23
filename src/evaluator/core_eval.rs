@@ -91,12 +91,96 @@ fn exact_integer_ord(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   Some((an * bd).cmp(&(bn * ad)))
 }
 
+/// Whether `expr` is finished data — numbers, strings, and lists of them —
+/// whose evaluation is itself whatever the environment holds.
+fn is_inert_data(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _)
+    | Expr::String(_) => true,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" || name == "Complex" =>
+    {
+      args.iter().all(|a| {
+        matches!(
+          a,
+          Expr::Integer(_)
+            | Expr::BigInteger(_)
+            | Expr::Real(_)
+            | Expr::BigFloat(_, _)
+        ) || matches!(a, Expr::FunctionCall { name, .. } if name == "Rational")
+          && is_inert_data(a)
+      })
+    }
+    Expr::List(items) => is_inert_list(items),
+    _ => false,
+  }
+}
+
+/// `is_inert_data` of a list's elements, memoized on shared lists so a
+/// symbol holding a large array answers in O(1) on every lookup.
+fn is_inert_list(items: &crate::ExprList) -> bool {
+  if items.is_shared() {
+    items.cached_flag(|xs| xs.iter().all(is_inert_data))
+  } else {
+    items.iter().all(is_inert_data)
+  }
+}
+
+/// Lists at least this long are switched to the O(1)-clone shared
+/// representation once they are a symbol's OwnValue.
+const SHARE_MIN_LEN: usize = 16;
+
+/// Switch `expr`'s large lists (and large argument lists) to the shared
+/// representation, stopping at lists that already are shared.
+fn share_large_lists(expr: &mut Expr, depth: usize) {
+  let list = match expr {
+    Expr::List(items) => items,
+    Expr::FunctionCall { args, .. } => args,
+    _ => return,
+  };
+  if list.is_shared() {
+    return;
+  }
+  if depth < 64 {
+    for child in list.iter_mut() {
+      share_large_lists(child, depth + 1);
+    }
+  }
+  if list.len() >= SHARE_MIN_LEN {
+    list.share();
+  }
+}
+
+/// A copy of `name`'s stored OwnValue. Its large lists are made shared on
+/// the first lookup, so later lookups copy a pointer instead of the array
+/// (`Length[data]` inside a loop over a 10^5-element table).
+pub(crate) fn stored_value_for_lookup(name: &str) -> Option<StoredValue> {
+  ENV.with(|e| {
+    // Some callers evaluate while still holding a shared borrow of ENV;
+    // they get a plain copy, and the sharing happens on a later lookup.
+    let Ok(mut env) = e.try_borrow_mut() else {
+      return e.borrow().get(name).cloned();
+    };
+    let value = env.get_mut(name)?;
+    if let StoredValue::ExprVal(x) = value {
+      share_large_lists(x, 0);
+    }
+    Some(value.clone())
+  })
+}
+
 pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
   match expr {
     Expr::Identifier(n) => {
       n != self_name && ENV.with(|e| e.borrow().contains_key(n))
     }
-    Expr::List(items) => items.iter().any(|a| needs_reevaluation(a, self_name)),
+    Expr::List(items) => {
+      !(items.is_shared() && is_inert_list(items))
+        && items.iter().any(|a| needs_reevaluation(a, self_name))
+    }
     // FunctionCall / BinaryOp / UnaryOp / CurriedCall stored via SetDelayed
     // (`x := expr`) must be re-evaluated on each lookup — that is the whole
     // point of `:=`. Set (`x = expr`) evaluates the RHS first, so the stored
@@ -108,6 +192,11 @@ pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
     // Interpolation result): re-evaluating it would walk every tabulated
     // point on each lookup of the symbol that holds it.
     Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => false,
+    Expr::FunctionCall { name, .. }
+      if (name == "Rational" || name == "Complex") && is_inert_data(expr) =>
+    {
+      false
+    }
     Expr::FunctionCall { .. } => true,
     Expr::BinaryOp { .. } => true,
     Expr::UnaryOp { .. } => true,
@@ -387,13 +476,19 @@ fn applies_unevaluated_bodied_function(arg: &Expr) -> bool {
 /// unchanged. Used by select built-ins (Length, Sqrt, etc.) that consume
 /// the Unevaluated wrapper before computing.
 pub fn strip_unevaluated(expr: &Expr) -> Expr {
+  strip_unevaluated_ref(expr).clone()
+}
+
+/// Borrowing form of `strip_unevaluated`, for callers that only inspect the
+/// stripped expression (copying a large list just to count it is O(n)).
+pub fn strip_unevaluated_ref(expr: &Expr) -> &Expr {
   if let Expr::FunctionCall { name, args } = expr
     && name == "Unevaluated"
     && args.len() == 1
   {
-    return args[0].clone();
+    return &args[0];
   }
-  expr.clone()
+  expr
 }
 
 /// If `arg` is `Evaluate[expr]`, evaluate `expr`. Otherwise return `arg`
@@ -844,7 +939,7 @@ pub fn evaluate_expr_to_expr_inner(
         return evaluate_expr_to_expr(&id_expr(plain));
       }
       // Look up in environment
-      if let Some(stored) = ENV.with(|e| e.borrow().get(name).cloned()) {
+      if let Some(stored) = stored_value_for_lookup(name) {
         match stored {
           // Re-evaluate the stored value so that later changes to free
           // symbols propagate, matching Wolfram's OwnValues semantics

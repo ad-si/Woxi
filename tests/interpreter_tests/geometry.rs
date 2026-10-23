@@ -9219,3 +9219,37 @@ mod triangulate_mesh {
     );
   }
 }
+
+mod transformation_function_normalization {
+  use super::*;
+
+  // A numeric matrix with an approximate entry is numericized as a whole.
+  #[test]
+  fn inexact_entry_numericizes_the_matrix() {
+    assert_eq!(
+      interpret("ScalingTransform[{2., 3}]").unwrap(),
+      "TransformationFunction[{{2., 0., 0.}, {0., 3., 0.}, {0., 0., 1.}}]"
+    );
+    assert_eq!(
+      interpret("TransformationFunction[{{1., Pi}, {0, 1}}]").unwrap(),
+      "TransformationFunction[{{1., 3.141592653589793}, {0., 1.}}]"
+    );
+    assert_eq!(
+      interpret("TransformationFunction[{{1., 0}, {0, x}}]").unwrap(),
+      "TransformationFunction[{{1., 0}, {0, x}}]"
+    );
+  }
+
+  // A point of the wrong length used to index past the matrix.
+  #[test]
+  fn point_of_wrong_dimension_stays_unevaluated() {
+    assert_eq!(
+      interpret("TranslationTransform[{1, 2}][{1, 2, 3}]").unwrap(),
+      "TransformationFunction[{{1, 0, 1}, {0, 1, 2}, {0, 0, 1}}][{1, 2, 3}]"
+    );
+    assert_eq!(
+      interpret("TranslationTransform[{1, 2}][{{1, 2}, {3, 4}}]").unwrap(),
+      "{{2, 4}, {4, 6}}"
+    );
+  }
+}

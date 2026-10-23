@@ -2,13 +2,17 @@
 //!
 //! See `/Users/adrian/.claude/plans/plan-the-refactor-delegated-panda.md`.
 //!
-//! # Design — hybrid Vec / Tree
+//! # Design — hybrid Vec / Shared / Tree
 //!
-//! `ExprList` has two internal representations:
+//! `ExprList` has three internal representations:
 //!
 //! - `Inner::Vec(Vec<Expr>)` — the default. Same shape and cost as the
 //!   pre-refactor storage. Index, slice, iter, push_back, len, etc. are
 //!   all O(1) (or O(N) where they were before). Clones are O(N).
+//!
+//! - `Inner::Shared(Arc<SharedList>)` — opted into via `share` for a
+//!   symbol's large OwnValue. O(1) clone; mutation goes through
+//!   `Arc::make_mut`, copying only while another clone is alive.
 //!
 //! - `Inner::Tree(Box<TreeData>)` — only used after a `push_front` is
 //!   performed. `imbl::Vector` is an RRB-tree-backed persistent vector:
@@ -40,7 +44,7 @@
 
 use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut, Index, IndexMut, RangeBounds};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use crate::syntax::Expr;
 
@@ -50,10 +54,35 @@ struct TreeData {
   cache: OnceLock<Box<[Expr]>>,
 }
 
+/// Payload of the shared representation: the elements plus a lazily computed
+/// flag that callers cache per list (see `cached_flag`). Both are reset when
+/// a mutation goes through `Arc::make_mut`.
+#[derive(Debug, Clone)]
+struct SharedList {
+  items: Vec<Expr>,
+  flag: OnceLock<bool>,
+}
+
 #[derive(Debug)]
 enum Inner {
   Vec(Vec<Expr>),
+  /// Copy-on-write vector: O(1) clone, mutation copies only while another
+  /// clone is still alive. Chosen explicitly via `share` for long-lived large
+  /// data (a symbol's OwnValue) that is read far more often than written.
+  Shared(Arc<SharedList>),
   Tree(Box<TreeData>),
+}
+
+/// Read view that folds `Shared` into `Vec`, so the methods below handle two
+/// representations instead of three.
+enum Repr<'a> {
+  Vec(&'a Vec<Expr>),
+  Tree(&'a TreeData),
+}
+
+enum ReprMut<'a> {
+  Vec(&'a mut Vec<Expr>),
+  Tree(&'a mut TreeData),
 }
 
 #[derive(Debug)]
@@ -68,6 +97,64 @@ impl Default for ExprList {
 }
 
 impl ExprList {
+  fn repr(&self) -> Repr<'_> {
+    match &self.inner {
+      Inner::Vec(v) => Repr::Vec(v),
+      Inner::Shared(s) => Repr::Vec(&s.items),
+      Inner::Tree(t) => Repr::Tree(t),
+    }
+  }
+
+  /// Mutable view; a `Shared` list is made unique first (copying it only if
+  /// another clone still refers to it) and its cached flag is dropped.
+  fn repr_mut(&mut self) -> ReprMut<'_> {
+    match &mut self.inner {
+      Inner::Vec(v) => ReprMut::Vec(v),
+      Inner::Shared(s) => {
+        let s = Arc::make_mut(s);
+        s.flag = OnceLock::new();
+        ReprMut::Vec(&mut s.items)
+      }
+      Inner::Tree(t) => ReprMut::Tree(t),
+    }
+  }
+
+  /// Switch a `Vec` list to the shared representation so later clones are
+  /// O(1). No-op for lists already shared or tree-backed.
+  pub fn share(&mut self) {
+    if let Inner::Vec(v) = &mut self.inner {
+      let items = std::mem::take(v);
+      self.inner = Inner::Shared(Arc::new(SharedList {
+        items,
+        flag: OnceLock::new(),
+      }));
+    }
+  }
+
+  pub fn is_shared(&self) -> bool {
+    matches!(self.inner, Inner::Shared(_))
+  }
+
+  /// `compute(self)`, memoized on a shared list until its next mutation.
+  /// Callers must pass a property of the elements alone (not of outside
+  /// state), since every clone of the list sees the same cached answer.
+  pub fn cached_flag(&self, compute: impl FnOnce(&[Expr]) -> bool) -> bool {
+    match &self.inner {
+      Inner::Shared(s) => *s.flag.get_or_init(|| compute(&s.items)),
+      _ => compute(self.as_slice_internal()),
+    }
+  }
+
+  /// The elements when this is the last reference to them, `None` when the
+  /// list is a shared clone (whose elements stay alive elsewhere). Used by
+  /// the iterative `Expr` drop, which must not copy shared data to free it.
+  pub fn into_unique_elements(self) -> Option<Vec<Expr>> {
+    match self.inner {
+      Inner::Shared(s) => Arc::try_unwrap(s).ok().map(|s| s.items),
+      _ => Some(self.into_inner()),
+    }
+  }
+
   pub fn new() -> Self {
     Self {
       inner: Inner::Vec(Vec::new()),
@@ -81,45 +168,45 @@ impl ExprList {
   }
 
   pub fn len(&self) -> usize {
-    match &self.inner {
-      Inner::Vec(v) => v.len(),
-      Inner::Tree(t) => t.data.len(),
+    match self.repr() {
+      Repr::Vec(v) => v.len(),
+      Repr::Tree(t) => t.data.len(),
     }
   }
 
   pub fn is_empty(&self) -> bool {
-    match &self.inner {
-      Inner::Vec(v) => v.is_empty(),
-      Inner::Tree(t) => t.data.is_empty(),
+    match self.repr() {
+      Repr::Vec(v) => v.is_empty(),
+      Repr::Tree(t) => t.data.is_empty(),
     }
   }
 
   pub fn first(&self) -> Option<&Expr> {
-    match &self.inner {
-      Inner::Vec(v) => v.first(),
-      Inner::Tree(t) => t.data.front(),
+    match self.repr() {
+      Repr::Vec(v) => v.first(),
+      Repr::Tree(t) => t.data.front(),
     }
   }
 
   pub fn last(&self) -> Option<&Expr> {
-    match &self.inner {
-      Inner::Vec(v) => v.last(),
-      Inner::Tree(t) => t.data.back(),
+    match self.repr() {
+      Repr::Vec(v) => v.last(),
+      Repr::Tree(t) => t.data.back(),
     }
   }
 
   pub fn get(&self, i: usize) -> Option<&Expr> {
-    match &self.inner {
-      Inner::Vec(v) => v.get(i),
-      Inner::Tree(t) => t.data.get(i),
+    match self.repr() {
+      Repr::Vec(v) => v.get(i),
+      Repr::Tree(t) => t.data.get(i),
     }
   }
 
   pub fn get_mut(&mut self, i: usize) -> Option<&mut Expr> {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => v.get_mut(i),
-      Inner::Tree(t) => t.data.get_mut(i),
+    match self.repr_mut() {
+      ReprMut::Vec(v) => v.get_mut(i),
+      ReprMut::Tree(t) => t.data.get_mut(i),
     }
   }
 
@@ -137,6 +224,12 @@ impl ExprList {
   /// If currently in `Vec` mode, upgrade to `Tree`. After this call the
   /// inner is guaranteed to be `Tree`. Used by `push_front`.
   pub fn upgrade_to_tree(&mut self) {
+    if matches!(self.inner, Inner::Shared(_)) {
+      let shared = std::mem::replace(&mut self.inner, Inner::Vec(Vec::new()));
+      if let Inner::Shared(s) = shared {
+        self.inner = Inner::Vec(Arc::unwrap_or_clone(s).items);
+      }
+    }
     if let Inner::Vec(v) = &mut self.inner {
       let v = std::mem::take(v);
       self.inner = Inner::Tree(Box::new(TreeData {
@@ -153,18 +246,18 @@ impl ExprList {
   }
 
   pub fn iter(&self) -> ExprListIter<'_> {
-    match &self.inner {
-      Inner::Vec(v) => ExprListIter::Vec(v.iter()),
-      Inner::Tree(t) => ExprListIter::Tree(Box::new(t.data.iter())),
+    match self.repr() {
+      Repr::Vec(v) => ExprListIter::Vec(v.iter()),
+      Repr::Tree(t) => ExprListIter::Tree(Box::new(t.data.iter())),
     }
   }
 
   /// Mutable iteration. Forces materialization for the Tree variant.
   pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, Expr> {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => v.iter_mut(),
-      Inner::Tree(t) => {
+    match self.repr_mut() {
+      ReprMut::Vec(v) => v.iter_mut(),
+      ReprMut::Tree(t) => {
         let _ = t.cache.get_or_init(|| {
           t.data
             .iter()
@@ -179,9 +272,9 @@ impl ExprList {
 
   pub fn push_back(&mut self, e: Expr) {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => v.push(e),
-      Inner::Tree(t) => t.data.push_back(e),
+    match self.repr_mut() {
+      ReprMut::Vec(v) => v.push(e),
+      ReprMut::Tree(t) => t.data.push_back(e),
     }
   }
 
@@ -198,23 +291,23 @@ impl ExprList {
 
   pub fn pop_back(&mut self) -> Option<Expr> {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => v.pop(),
-      Inner::Tree(t) => t.data.pop_back(),
+    match self.repr_mut() {
+      ReprMut::Vec(v) => v.pop(),
+      ReprMut::Tree(t) => t.data.pop_back(),
     }
   }
 
   pub fn pop_front(&mut self) -> Option<Expr> {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => {
+    match self.repr_mut() {
+      ReprMut::Vec(v) => {
         if v.is_empty() {
           None
         } else {
           Some(v.remove(0))
         }
       }
-      Inner::Tree(t) => t.data.pop_front(),
+      ReprMut::Tree(t) => t.data.pop_front(),
     }
   }
 
@@ -228,17 +321,17 @@ impl ExprList {
 
   pub fn insert(&mut self, i: usize, e: Expr) {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => v.insert(i, e),
-      Inner::Tree(t) => t.data.insert(i, e),
+    match self.repr_mut() {
+      ReprMut::Vec(v) => v.insert(i, e),
+      ReprMut::Tree(t) => t.data.insert(i, e),
     }
   }
 
   pub fn remove(&mut self, i: usize) -> Expr {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => v.remove(i),
-      Inner::Tree(t) => t.data.remove(i),
+    match self.repr_mut() {
+      ReprMut::Vec(v) => v.remove(i),
+      ReprMut::Tree(t) => t.data.remove(i),
     }
   }
 
@@ -248,9 +341,9 @@ impl ExprList {
 
   pub fn truncate(&mut self, len: usize) {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => v.truncate(len),
-      Inner::Tree(t) => {
+    match self.repr_mut() {
+      ReprMut::Vec(v) => v.truncate(len),
+      ReprMut::Tree(t) => {
         while t.data.len() > len {
           t.data.pop_back();
         }
@@ -260,9 +353,9 @@ impl ExprList {
 
   pub fn extend<I: IntoIterator<Item = Expr>>(&mut self, iter: I) {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => v.extend(iter),
-      Inner::Tree(t) => {
+    match self.repr_mut() {
+      ReprMut::Vec(v) => v.extend(iter),
+      ReprMut::Tree(t) => {
         for e in iter {
           t.data.push_back(e);
         }
@@ -272,9 +365,9 @@ impl ExprList {
 
   pub fn resize(&mut self, new_len: usize, value: Expr) {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => v.resize(new_len, value),
-      Inner::Tree(t) => {
+    match self.repr_mut() {
+      ReprMut::Vec(v) => v.resize(new_len, value),
+      ReprMut::Tree(t) => {
         let cur = t.data.len();
         if new_len > cur {
           for _ in cur..new_len - 1 {
@@ -292,9 +385,9 @@ impl ExprList {
 
   pub fn reverse(&mut self) {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => v.reverse(),
-      Inner::Tree(t) => {
+    match self.repr_mut() {
+      ReprMut::Vec(v) => v.reverse(),
+      ReprMut::Tree(t) => {
         let reversed: imbl::Vector<Expr> =
           t.data.iter().rev().cloned().collect();
         t.data = reversed;
@@ -305,11 +398,11 @@ impl ExprList {
   #[must_use]
   pub fn split_off(&mut self, at: usize) -> Self {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => Self {
+    match self.repr_mut() {
+      ReprMut::Vec(v) => Self {
         inner: Inner::Vec(v.split_off(at)),
       },
-      Inner::Tree(t) => {
+      ReprMut::Tree(t) => {
         let tail = t.data.split_off(at);
         Self {
           inner: Inner::Tree(Box::new(TreeData {
@@ -360,9 +453,9 @@ impl ExprList {
     range: R,
   ) -> std::vec::IntoIter<Expr> {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => v.drain(range).collect::<Vec<_>>().into_iter(),
-      Inner::Tree(t) => {
+    match self.repr_mut() {
+      ReprMut::Vec(v) => v.drain(range).collect::<Vec<_>>().into_iter(),
+      ReprMut::Tree(t) => {
         let len = t.data.len();
         let start = match range.start_bound() {
           std::ops::Bound::Included(&n) => n,
@@ -404,11 +497,11 @@ impl ExprList {
     if start >= end {
       Self::new()
     } else {
-      match &self.inner {
-        Inner::Vec(v) => Self {
+      match self.repr() {
+        Repr::Vec(v) => Self {
           inner: Inner::Vec(v[start..end].to_vec()),
         },
-        Inner::Tree(t) => {
+        Repr::Tree(t) => {
           let mut copy = t.data.clone();
           let _ = copy.slice(start..end);
           Self {
@@ -424,24 +517,25 @@ impl ExprList {
 
   /// Materialize as a `Vec<Expr>` — O(N) copy.
   pub fn to_vec(&self) -> Vec<Expr> {
-    match &self.inner {
-      Inner::Vec(v) => v.clone(),
-      Inner::Tree(t) => t.data.iter().cloned().collect(),
+    match self.repr() {
+      Repr::Vec(v) => v.clone(),
+      Repr::Tree(t) => t.data.iter().cloned().collect(),
     }
   }
 
   pub fn into_inner(self) -> Vec<Expr> {
     match self.inner {
       Inner::Vec(v) => v,
+      Inner::Shared(s) => Arc::unwrap_or_clone(s).items,
       Inner::Tree(t) => t.data.into_iter().collect(),
     }
   }
 
   /// Force materialization for the Tree variant; return `&[Expr]`.
   fn as_slice_internal(&self) -> &[Expr] {
-    match &self.inner {
-      Inner::Vec(v) => v,
-      Inner::Tree(t) => t.cache.get_or_init(|| {
+    match self.repr() {
+      Repr::Vec(v) => v,
+      Repr::Tree(t) => t.cache.get_or_init(|| {
         t.data
           .iter()
           .cloned()
@@ -501,6 +595,9 @@ impl Clone for ExprList {
       Inner::Vec(v) => Self {
         inner: Inner::Vec(v.clone()),
       },
+      Inner::Shared(s) => Self {
+        inner: Inner::Shared(Arc::clone(s)),
+      },
       Inner::Tree(t) => Self {
         // O(1) Arc::clone of the imbl backbone; the cache is reset.
         inner: Inner::Tree(Box::new(TreeData {
@@ -523,9 +620,9 @@ impl FromIterator<Expr> for ExprList {
 impl Extend<Expr> for ExprList {
   fn extend<I: IntoIterator<Item = Expr>>(&mut self, iter: I) {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => v.extend(iter),
-      Inner::Tree(t) => {
+    match self.repr_mut() {
+      ReprMut::Vec(v) => v.extend(iter),
+      ReprMut::Tree(t) => {
         for e in iter {
           t.data.push_back(e);
         }
@@ -561,9 +658,9 @@ impl<'a> IntoIterator for &'a mut ExprList {
 impl Index<usize> for ExprList {
   type Output = Expr;
   fn index(&self, i: usize) -> &Expr {
-    match &self.inner {
-      Inner::Vec(v) => &v[i],
-      Inner::Tree(t) => &t.data[i],
+    match self.repr() {
+      Repr::Vec(v) => &v[i],
+      Repr::Tree(t) => &t.data[i],
     }
   }
 }
@@ -571,9 +668,9 @@ impl Index<usize> for ExprList {
 impl IndexMut<usize> for ExprList {
   fn index_mut(&mut self, i: usize) -> &mut Expr {
     self.invalidate_tree_cache();
-    match &mut self.inner {
-      Inner::Vec(v) => &mut v[i],
-      Inner::Tree(t) => &mut t.data[i],
+    match self.repr_mut() {
+      ReprMut::Vec(v) => &mut v[i],
+      ReprMut::Tree(t) => &mut t.data[i],
     }
   }
 }
@@ -606,9 +703,9 @@ impl Deref for ExprList {
 
 impl DerefMut for ExprList {
   fn deref_mut(&mut self) -> &mut [Expr] {
-    match &mut self.inner {
-      Inner::Vec(v) => v,
-      Inner::Tree(t) => {
+    match self.repr_mut() {
+      ReprMut::Vec(v) => v,
+      ReprMut::Tree(t) => {
         let _ = t.cache.get_or_init(|| {
           t.data
             .iter()

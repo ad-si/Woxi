@@ -351,6 +351,17 @@ pub(crate) fn svg_header(w: u32, h: u32, full_width: bool) -> String {
   }
 }
 
+/// Whether a data-point marker should be drawn: finite and within one plot
+/// span of the visible range. Markers outside the range are not shown, and
+/// one far outside it (a 1e300 value) overflows plotters' pixel arithmetic.
+fn marker_in_view(x: f64, y: f64, xr: (f64, f64), yr: (f64, f64)) -> bool {
+  let near = |v: f64, (lo, hi): (f64, f64)| {
+    let span = (hi - lo).abs().max(f64::MIN_POSITIVE);
+    v >= lo.min(hi) - span && v <= lo.max(hi) + span
+  };
+  x.is_finite() && y.is_finite() && near(x, xr) && near(y, yr)
+}
+
 pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
   let substituted = substitute_var(body, var, &Expr::Real(x));
   let result = evaluate_expr_to_expr(&substituted).ok()?;
@@ -3870,7 +3881,7 @@ fn generate_svg_with_options(
             let finite_pts: Vec<(f64, f64)> = mesh_src
               .iter()
               .copied()
-              .filter(|(x, y)| x.is_finite() && y.is_finite())
+              .filter(|&(x, y)| marker_in_view(x, y, (x_min, x_max), (y_min, y_max)))
               .collect();
             chart
               .draw_series(
@@ -3907,7 +3918,9 @@ fn generate_svg_with_options(
                 marker_src
                   .iter()
                   .copied()
-                  .filter(|(x, y)| x.is_finite() && y.is_finite())
+                  .filter(|&(x, y)| {
+                    marker_in_view(x, y, (x_min, x_max), (y_min, y_max))
+                  })
                   .map(|(x, y)| {
                     plotters::element::Text::new(
                       marker.glyph.clone(),
@@ -5456,6 +5469,13 @@ pub(crate) enum LegendLayout {
   Row,
 }
 
+/// Where a vertical bar chart draws the labels produced by `LabelingFunction`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BarLabelPlacement {
+  Below,
+  Above,
+}
+
 /// Generate SVG for a bar chart using plotters.
 pub(crate) fn generate_bar_svg(
   groups: &[Vec<f64>],
@@ -5473,6 +5493,7 @@ pub(crate) fn generate_bar_svg(
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
   bar_labels: &[String],
+  bar_label_placement: BarLabelPlacement,
   stacked: bool,
   show_ticks: bool,
   epilog: &[Expr],
@@ -5775,7 +5796,7 @@ pub(crate) fn generate_bar_svg(
       scale: sf,
     };
     let overlay = crate::functions::plot_epilog::render_overlay_svg(
-      epilog, &area, "epilog", true,
+      epilog, &area, "epilog", false,
     );
     buf.insert_str(pos, &overlay);
   }
@@ -5858,7 +5879,8 @@ pub(crate) fn generate_bar_svg(
     }
 
     // Value labels from `LabelingFunction` (e.g. `Placed[#, Below] &`): one
-    // per bar, drawn just below the bar's base at the axis. `bar_labels` is a
+    // per bar, drawn just below the bar's base at the axis (or over its top
+    // for `Above`). `bar_labels` is a
     // flat list across all groups/bars, aligned with the bar draw order.
     if has_value_labels {
       let gap = 0.1;
@@ -5890,7 +5912,14 @@ pub(crate) fn generate_bar_svg(
           }
           let cx =
             map_x_val(group_x0 + (bar_x_offset(bi) as f64 + 0.5) * bar_w);
-          let ly = axis_y + fit_font * 1.3;
+          // `Placed[…, Above]` puts the label over the bar's top instead.
+          let ly =
+            if bar_label_placement == BarLabelPlacement::Above && !stacked {
+              plot_y0 + (y_max - group[bi]) / (y_max - y_min) * plot_h
+                - fit_font * 0.4
+            } else {
+              axis_y + fit_font * 1.3
+            };
           labels_svg.push_str(&format!(
             "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{fit_font:.0}\" \
@@ -9279,12 +9308,29 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
         Some((pos, label))
       }
       other => {
+        let other = &numeric_tick_value(other);
         let pos = tick_position(other)?;
         Some((pos, bare_tick_label(other, pos)))
       }
     })
     .collect();
   (!ticks.is_empty()).then_some(ticks)
+}
+
+/// A bare tick position that evaluates to a plain number (`rate - vac` with
+/// both set, `N[f[x], 4]`) is that number, as plot options are evaluated
+/// before the plot reads them. A symbolic result (`3 Pi/2`) keeps the form it
+/// was written in so it is labelled as typed.
+fn numeric_tick_value(e: &Expr) -> Expr {
+  match evaluate_expr_to_expr(e) {
+    Ok(
+      v @ (Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)),
+    ) => v,
+    _ => e.clone(),
+  }
 }
 
 /// The numeric position of a tick. The spec is kept as written, so a position
