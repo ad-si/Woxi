@@ -40090,3 +40090,19 @@ mod chart_invalid_dataset {
     );
   }
 }
+
+mod plot_options_keep_their_values {
+  use super::*;
+
+  // Show reuses a plot's options after the Table that bound `i` is gone.
+  #[test]
+  fn show_of_plots_built_in_a_table() {
+    let result = interpret_with_stdout(
+      "c = {Red, Blue}; t = Table[Plot[x, {x, i, i + 1}, PlotStyle -> c[[i]]], \
+       {i, 1, 2}]; Head[Show[t]]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "Graphics");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+}

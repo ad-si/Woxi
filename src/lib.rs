@@ -860,6 +860,44 @@ fn is_quiet() -> bool {
   QUIET_LEVEL.with(|level| *level.borrow() > 0)
 }
 
+/// One `Quiet[expr, moff, mon]` block that names messages: the
+/// `Symbol::tag` names it silences (`None` for all of them) and the ones it
+/// lets through again.
+struct QuietFilter {
+  off: Option<Vec<String>>,
+  on: Vec<String>,
+}
+
+thread_local! {
+    static QUIET_FILTERS: RefCell<Vec<QuietFilter>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Enter a `Quiet` block that silences the messages named in `off` (all of
+/// them for `None`) except those in `on`; names are `Symbol::tag`.
+pub fn push_quiet_filter(off: Option<Vec<String>>, on: Vec<String>) {
+  QUIET_FILTERS.with(|f| f.borrow_mut().push(QuietFilter { off, on }));
+}
+
+/// Leave the innermost `push_quiet_filter` block.
+pub fn pop_quiet_filter() {
+  QUIET_FILTERS.with(|f| {
+    f.borrow_mut().pop();
+  });
+}
+
+/// Whether an enclosing `Quiet[expr, {…}]` silences the message `name`.
+fn quiet_filters_silence(name: &str) -> bool {
+  QUIET_FILTERS.with(|f| {
+    f.borrow().iter().any(|q| {
+      let off = q
+        .off
+        .as_ref()
+        .is_none_or(|off| off.iter().any(|n| n == name));
+      off && !q.on.iter().any(|n| n == name)
+    })
+  })
+}
+
 /// Increment the quiet level (enter a Quiet[] block)
 pub fn push_quiet() {
   QUIET_LEVEL.with(|level| *level.borrow_mut() += 1);
@@ -1122,7 +1160,8 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
     });
     MESSAGE_LIST.with(|m| m.borrow_mut().push("General::stop".to_string()));
   }
-  if is_quiet() {
+  if is_quiet() || message_name(msg).is_some_and(|n| quiet_filters_silence(&n))
+  {
     return (false, None);
   }
   let to_stdout = MESSAGES_TO_STDOUT.with(|f| *f.borrow());
@@ -6951,7 +6990,6 @@ fn store_function_definition(
   let mut heads: Vec<Option<String>> = Vec::new();
   let mut blank_types: Vec<u8> = Vec::new();
   let mut body_pair = None;
-  let mut has_any_condition = false;
 
   // The dispatch condition for a `?test` slot. A plain Blank (`bt == 1`)
   // binds `param` to a single expression, so `test[param]` checks it
@@ -7007,7 +7045,6 @@ fn store_function_definition(
         defaults.push(None);
         heads.push(None);
         blank_types.push(1);
-        has_any_condition = true;
       }
       Rule::PatternOptionalSimple => {
         // PatternOptionalSimple = { PatternName ~ "_" ~ ":" ~ Term }
@@ -7119,7 +7156,6 @@ fn store_function_definition(
           defaults.push(None);
           heads.push(head);
           blank_types.push(bt);
-          has_any_condition = true;
           continue;
         }
         let (param_name, remaining) = if first.as_rule() == Rule::PatternName {
@@ -7161,7 +7197,6 @@ fn store_function_definition(
         defaults.push(None);
         heads.push(head);
         blank_types.push(bt);
-        has_any_condition = true;
       }
       Rule::PatternSimple => {
         // Extract parameter name and blank type from pattern
@@ -7203,7 +7238,6 @@ fn store_function_definition(
     raw_body_expr
     && name == "Condition"
   {
-    has_any_condition = true;
     raw_body_expr
   } else {
     raw_body_expr
@@ -7218,8 +7252,6 @@ fn store_function_definition(
     &heads,
     &blank_types,
   );
-  let has_any_condition =
-    has_any_condition || conditions.iter().any(std::option::Option::is_some);
 
   // Resolve the definition's symbols against the contexts open while the
   // line is read: the head, the pattern variables (symbols of their own in
@@ -7252,46 +7284,19 @@ fn store_function_definition(
   let snapshot: Vec<_> = FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
-    let arity = params.len();
-    if has_any_condition {
-      // Conditional definition: only remove existing definitions with same arity
-      // that have the exact same conditions (re-definition of same pattern)
-      // For simplicity, just append - Wolfram keeps all conditional defs
-    } else {
-      // Unconditional definition: remove only other unconditional defs with same arity,
-      // same blank_types, AND same head constraints (keep conditional definitions and defs
-      // with different blank patterns or different heads,
-      // e.g. f[u_] and f[u__] are distinct overloads,
-      // and f[x_Integer] and f[x_String] are distinct overloads).
-      //
-      // A `/;` guard (`f[x_] := body /; test`) is stored as a `Condition`
-      // wrapper on the BODY, not in the parameter `conds` slots, so it must
-      // be detected via the body too — otherwise a later same-pattern
-      // unconditional rule would wrongly delete the guarded rule. In Wolfram,
-      // `f[a_,b_] := f[b,a] /; a>b` and `f[a_,b_] := …` are distinct
-      // DownValues and both are retained.
-      let new_repeats =
-        evaluator::pattern_matching::repeated_param_pairs(&params);
-      entry.retain(|(p, conds, d, h, bt, body)| {
-        p.len() != arity
-          || bt != &blank_types
-          || h != &heads
-          // Repeated pattern variables are part of the pattern, not just a
-          // naming choice: `f[i_, i_]` constrains its two slots to be equal
-          // while `f[j_, k_]` does not, so they are distinct DownValues and
-          // neither redefines the other.
-          || evaluator::pattern_matching::repeated_param_pairs(p)
-            != new_repeats
-          // Optional (defaulted) positions distinguish overloads: `f[x_, y_]`
-          // and `f[x_, y_:0]` are separate DownValues, so keep an existing rule
-          // whose optional-arg pattern differs from the new one's.
-          || d.iter()
-            .map(std::option::Option::is_some)
-            .ne(defaults.iter().map(std::option::Option::is_some))
-          || conds.iter().any(std::option::Option::is_some)
-          || evaluator::assignment::body_is_conditional(body)
-      });
-    }
+    // A rule with the same left-hand side (up to the names of its pattern
+    // variables, and with the same guards) is replaced. Rules that differ in
+    // blank types, heads, defaults, repeated variables or guards are
+    // distinct overloads and stay.
+    let new_rule = (
+      params.clone(),
+      conditions.clone(),
+      defaults.clone(),
+      heads.clone(),
+      blank_types.clone(),
+      body_expr.clone(),
+    );
+    entry.retain(|r| !evaluator::assignment::same_rule_lhs(r, &new_rule));
     entry.clone()
   });
   // Add the new definition with parsed AST, conditions, defaults, and head constraints.

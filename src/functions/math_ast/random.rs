@@ -2196,6 +2196,74 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
+    // CategoricalDistribution[{c1, …}, {p1, …}] draws category ci with
+    // weight pi (uniformly when no weights are given).
+    Expr::FunctionCall { name, args: dargs }
+      if name == "CategoricalDistribution"
+        && matches!(dargs.len(), 1 | 2)
+        && matches!(&dargs[0], Expr::List(_)) =>
+    {
+      let spec = match dargs.get(1) {
+        Some(w) => Expr::Rule {
+          pattern: Box::new(w.clone()),
+          replacement: Box::new(dargs[0].clone()),
+        },
+        None => dargs[0].clone(),
+      };
+      let mut choice_args = vec![spec];
+      if let Some(count) = n {
+        choice_args.push(Expr::Integer(count as i128));
+      }
+      let drawn = random_choice_ast(&choice_args)?;
+      if matches!(&drawn, Expr::FunctionCall { name, .. } if name == "RandomChoice")
+      {
+        return Ok(unevaluated("RandomVariate", args));
+      }
+      Ok(drawn)
+    }
+    // Any other univariate distribution is sampled by inverse transform:
+    // Quantile[dist, u] for u uniform on (0, 1). The first draw decides
+    // whether Quantile knows the distribution at all.
+    Expr::FunctionCall { .. } => {
+      let draw = || -> Result<Option<Expr>, InterpreterError> {
+        let u = crate::with_rng(|rng| {
+          loop {
+            let u: f64 = rng.gen_range(0.0..1.0);
+            if u > 0.0 {
+              break u;
+            }
+          }
+        });
+        let q = crate::evaluator::evaluate_expr_to_expr(&call(
+          "Quantile",
+          vec![dist.clone(), Expr::Real(u)],
+        ))?;
+        Ok(match q {
+          Expr::Integer(_) | Expr::BigInteger(_) => Some(q),
+          Expr::Real(x) if x.is_finite() => Some(q),
+          _ => try_eval_to_f64(&q)
+            .filter(|x| x.is_finite())
+            .map(Expr::Real),
+        })
+      };
+      let Some(first) = draw()? else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      match n {
+        None => Ok(first),
+        Some(count) => {
+          let mut out = Vec::with_capacity(count);
+          out.push(first);
+          for _ in 1..count {
+            match draw()? {
+              Some(x) => out.push(x),
+              None => return Ok(unevaluated("RandomVariate", args)),
+            }
+          }
+          Ok(Expr::List(out.into()))
+        }
+      }
+    }
     _ => Ok(unevaluated("RandomVariate", args)),
   }
 }
@@ -2406,11 +2474,105 @@ pub fn seed_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Edges `{1≤i<j≤n}` of `m` distinct pairs drawn uniformly at random.
+fn uniform_random_edges(n: usize, m: usize) -> Vec<(usize, usize)> {
+  use rand::seq::SliceRandom;
+  let mut all_edges: Vec<(usize, usize)> = Vec::new();
+  for i in 1..=n {
+    for j in (i + 1)..=n {
+      all_edges.push((i, j));
+    }
+  }
+  crate::with_rng(|rng| all_edges.shuffle(rng));
+  all_edges.truncate(m);
+  all_edges.sort_unstable();
+  all_edges
+}
+
+/// Barabási–Albert preferential attachment: start from the complete graph
+/// on `k + 1` vertices, then attach every further vertex to `k` distinct
+/// existing vertices chosen with probability proportional to their degree.
+fn barabasi_albert_edges(n: usize, k: usize) -> Vec<(usize, usize)> {
+  use rand::Rng;
+  let mut edges: Vec<(usize, usize)> = Vec::new();
+  let seed = (k + 1).min(n);
+  for i in 1..=seed {
+    for j in (i + 1)..=seed {
+      edges.push((i, j));
+    }
+  }
+  // Every edge endpoint appears once per incident edge, so a uniform pick
+  // from this list is a degree-proportional pick of a vertex.
+  let mut endpoints: Vec<usize> =
+    edges.iter().flat_map(|&(a, b)| [a, b]).collect();
+  crate::with_rng(|rng| {
+    for v in (seed + 1)..=n {
+      let mut targets: Vec<usize> = Vec::with_capacity(k);
+      while targets.len() < k.min(v - 1) {
+        let t = if endpoints.is_empty() {
+          rng.gen_range(1..v)
+        } else {
+          endpoints[rng.gen_range(0..endpoints.len())]
+        };
+        if !targets.contains(&t) {
+          targets.push(t);
+        }
+      }
+      targets.sort_unstable();
+      for t in targets {
+        edges.push((t, v));
+        endpoints.push(t);
+        endpoints.push(v);
+      }
+    }
+  });
+  edges
+}
+
+/// Watts–Strogatz small world: the circulant ring where every vertex is
+/// joined to its `k` nearest neighbours on each side, with every edge's far
+/// endpoint rewired with probability `p` to a uniformly chosen vertex that
+/// keeps the graph simple.
+fn watts_strogatz_edges(n: usize, p: f64, k: usize) -> Vec<(usize, usize)> {
+  use rand::Rng;
+  use std::collections::HashSet;
+  let key = |a: usize, b: usize| (a.min(b), a.max(b));
+  let mut edges: Vec<(usize, usize)> = Vec::new();
+  let mut present: HashSet<(usize, usize)> = HashSet::new();
+  for d in 1..=k {
+    for i in 1..=n {
+      let j = (i - 1 + d) % n + 1;
+      if i != j && present.insert(key(i, j)) {
+        edges.push((i, j));
+      }
+    }
+  }
+  crate::with_rng(|rng| {
+    for e in &mut edges {
+      if !rng.gen_bool(p) {
+        continue;
+      }
+      let (u, v) = *e;
+      let free: Vec<usize> = (1..=n)
+        .filter(|&w| w != u && !present.contains(&key(u, w)))
+        .collect();
+      if free.is_empty() {
+        continue;
+      }
+      let w = free[rng.gen_range(0..free.len())];
+      present.remove(&key(u, v));
+      present.insert(key(u, w));
+      *e = (u, w);
+    }
+  });
+  edges
+}
+
 /// RandomGraph[{n, m}] — undirected graph with n vertices and m random edges.
-/// RandomGraph[{n, m}, k] — list of k such graphs.
+/// RandomGraph[gdist] — a graph drawn from a random graph distribution.
+/// RandomGraph[spec, k] — list of k such graphs.
 pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
-  use rand::seq::SliceRandom;
 
   let unevaluated = || unevaluated("RandomGraph", args);
 
@@ -2418,124 +2580,126 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut positional: Vec<&Expr> = Vec::new();
   let mut options: Vec<Expr> = Vec::new();
   for a in args {
-    if matches!(a, Expr::Rule { .. }) {
+    if matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }) {
       options.push(a.clone());
     } else {
       positional.push(a);
     }
   }
 
-  if positional.is_empty() {
+  if positional.is_empty() || positional.len() > 2 {
     return Ok(unevaluated());
   }
 
-  // RandomGraph[BernoulliGraphDistribution[n, p]] — Erdős–Rényi G(n, p):
-  // each potential edge is independently included with probability p.
-  if let Expr::FunctionCall { name, args: bargs } = positional[0]
-    && name == "BernoulliGraphDistribution"
-    && bargs.len() == 2
-  {
-    let n = match expr_to_i128(&bargs[0]) {
-      Some(n) if n >= 0 => n as usize,
-      _ => return Ok(unevaluated()),
-    };
-    let p = match try_eval_to_f64(&bargs[1]) {
-      Some(p) if (0.0..=1.0).contains(&p) => p,
-      _ => return Ok(unevaluated()),
-    };
-    let mut edges: Vec<(i128, i128)> = Vec::new();
-    crate::with_rng(|rng| {
-      for i in 1..=n {
-        for j in (i + 1)..=n {
-          if rng.gen_bool(p) {
-            edges.push((i as i128, j as i128));
-          }
-        }
-      }
-    });
-    let vertex_list: Vec<Expr> =
-      (1..=n).map(|v| Expr::Integer(v as i128)).collect();
-    let edge_list: Vec<Expr> = edges
-      .into_iter()
-      .map(|(a, b)| {
-        call("UndirectedEdge", vec![Expr::Integer(a), Expr::Integer(b)])
-      })
-      .collect();
-    let mut graph_args =
-      vec![Expr::List(vertex_list.into()), Expr::List(edge_list.into())];
-    if !options.is_empty() {
-      graph_args.push(Expr::List(options.into()));
-    }
-    return Ok(call("Graph", graph_args));
-  }
-
-  let (n, m) = match positional[0] {
-    Expr::List(items) if items.len() == 2 => {
-      match (expr_to_i128(&items[0]), expr_to_i128(&items[1])) {
-        (Some(n), Some(m)) if n >= 0 && m >= 0 => (n as usize, m as usize),
-        _ => return Ok(unevaluated()),
-      }
-    }
-    _ => return Ok(unevaluated()),
+  let count = |e: &Expr| match expr_to_i128(e) {
+    Some(n) if n >= 0 => Some(n as usize),
+    _ => None,
+  };
+  let probability = |e: &Expr| match try_eval_to_f64(e) {
+    Some(p) if (0.0..=1.0).contains(&p) => Some(p),
+    _ => None,
   };
 
-  // Max number of edges in K_n.
-  let max_edges = n.saturating_mul(n.saturating_sub(1)) / 2;
-  if m > max_edges {
-    return Ok(unevaluated());
-  }
-
-  let k = match positional.len() {
-    1 => None,
-    2 => match expr_to_i128(positional[1]) {
-      Some(k) if k >= 0 => Some(k as usize),
+  // Each spec becomes a vertex count plus a sampler for one edge set.
+  type Sampler = Box<dyn Fn() -> Vec<(usize, usize)>>;
+  let (n, sample): (usize, Sampler) = match positional[0] {
+    Expr::List(items) if items.len() == 2 => {
+      let (Some(n), Some(m)) = (count(&items[0]), count(&items[1])) else {
+        return Ok(unevaluated());
+      };
+      if m > n.saturating_mul(n.saturating_sub(1)) / 2 {
+        return Ok(unevaluated());
+      }
+      (n, Box::new(move || uniform_random_edges(n, m)))
+    }
+    Expr::FunctionCall { name, args: d } => match (name.as_str(), d.len()) {
+      ("UniformGraphDistribution", 2) => {
+        let (Some(n), Some(m)) = (count(&d[0]), count(&d[1])) else {
+          return Ok(unevaluated());
+        };
+        if m > n.saturating_mul(n.saturating_sub(1)) / 2 {
+          return Ok(unevaluated());
+        }
+        (n, Box::new(move || uniform_random_edges(n, m)))
+      }
+      // Erdős–Rényi G(n, p): each potential edge is independently
+      // included with probability p.
+      ("BernoulliGraphDistribution", 2) => {
+        let (Some(n), Some(p)) = (count(&d[0]), probability(&d[1])) else {
+          return Ok(unevaluated());
+        };
+        let sampler = move || {
+          let mut edges = Vec::new();
+          crate::with_rng(|rng| {
+            for i in 1..=n {
+              for j in (i + 1)..=n {
+                if rng.gen_bool(p) {
+                  edges.push((i, j));
+                }
+              }
+            }
+          });
+          edges
+        };
+        (n, Box::new(sampler))
+      }
+      ("BarabasiAlbertGraphDistribution", 2) => {
+        let (Some(n), Some(k)) = (count(&d[0]), count(&d[1])) else {
+          return Ok(unevaluated());
+        };
+        if k == 0 {
+          return Ok(unevaluated());
+        }
+        (n, Box::new(move || barabasi_albert_edges(n, k)))
+      }
+      ("WattsStrogatzGraphDistribution", 2 | 3) => {
+        let k = if d.len() == 3 { count(&d[2]) } else { Some(2) };
+        let (Some(n), Some(p), Some(k)) = (count(&d[0]), probability(&d[1]), k)
+        else {
+          return Ok(unevaluated());
+        };
+        if k == 0 || 2 * k >= n {
+          return Ok(unevaluated());
+        }
+        (n, Box::new(move || watts_strogatz_edges(n, p, k)))
+      }
       _ => return Ok(unevaluated()),
     },
     _ => return Ok(unevaluated()),
   };
 
-  // Pre-build all possible edges {1≤i<j≤n}. For practical n this fits.
-  let mut all_edges: Vec<(i128, i128)> = Vec::with_capacity(max_edges);
-  for i in 1..=n {
-    for j in (i + 1)..=n {
-      all_edges.push((i as i128, j as i128));
-    }
-  }
-
-  let opts_list = if options.is_empty() {
-    None
-  } else {
-    Some(Expr::List(options.into()))
+  let k = match positional.get(1) {
+    None => None,
+    Some(e) => match count(e) {
+      Some(k) => Some(k),
+      None => return Ok(unevaluated()),
+    },
   };
-  let make_graph = |edges: Vec<(i128, i128)>| -> Expr {
+
+  let make_graph = |edges: Vec<(usize, usize)>| -> Expr {
     let vertex_list: Vec<Expr> =
       (1..=n).map(|v| Expr::Integer(v as i128)).collect();
     let edge_list: Vec<Expr> = edges
       .into_iter()
       .map(|(a, b)| {
-        call("UndirectedEdge", vec![Expr::Integer(a), Expr::Integer(b)])
+        call(
+          "UndirectedEdge",
+          vec![Expr::Integer(a as i128), Expr::Integer(b as i128)],
+        )
       })
       .collect();
     let mut graph_args =
       vec![Expr::List(vertex_list.into()), Expr::List(edge_list.into())];
-    if let Some(opts) = &opts_list {
-      graph_args.push(opts.clone());
+    if !options.is_empty() {
+      graph_args.push(Expr::List(options.clone().into()));
     }
     call("Graph", graph_args)
   };
 
-  let one_graph = |all_edges: &[(i128, i128)]| -> Expr {
-    let mut shuffled = all_edges.to_vec();
-    crate::with_rng(|rng| shuffled.shuffle(rng));
-    shuffled.truncate(m);
-    shuffled.sort_unstable();
-    make_graph(shuffled)
-  };
-
   match k {
-    None => Ok(one_graph(&all_edges)),
+    None => Ok(make_graph(sample())),
     Some(k) => {
-      let graphs: Vec<Expr> = (0..k).map(|_| one_graph(&all_edges)).collect();
+      let graphs: Vec<Expr> = (0..k).map(|_| make_graph(sample())).collect();
       Ok(Expr::List(graphs.into()))
     }
   }

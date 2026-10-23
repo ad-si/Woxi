@@ -1180,6 +1180,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "QPochhammer" => Some((1, 3)),
     "QRDecomposition" => Some((1, 1)),
     "SchurDecomposition" => Some((1, 2)),
+    "HessenbergDecomposition" => Some((1, 1)),
     "QuadraticIrrationalQ" => Some((1, 1)),
     // Options (TargetStructure) ride beyond the matrix argument.
     "CholeskyDecomposition" => Some((1, usize::MAX)),
@@ -1678,12 +1679,44 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
 /// Checks if the argument count is valid for a known built-in function.
 /// If invalid, emits the appropriate Wolfram-style error message and returns
 /// the unevaluated expression. If valid or unknown, returns None.
+/// System symbols whose `Options` are non-empty (generated from
+/// wolframscript with
+/// `Select[Names["System`*"], Options[Symbol[#]] =!= {} &]`).
+static FUNCTIONS_WITH_OPTIONS: std::sync::LazyLock<
+  std::collections::HashSet<&'static str>,
+> = std::sync::LazyLock::new(|| {
+  include_str!("functions_with_options.txt")
+    .lines()
+    .map(str::trim)
+    .filter(|l| !l.is_empty())
+    .collect()
+});
+
+/// Whether `e` can be an option argument: a rule, or a list of them.
+fn is_option_arg(e: &Expr) -> bool {
+  match e {
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } => true,
+    Expr::List(items) => !items.is_empty() && items.iter().all(is_option_arg),
+    _ => false,
+  }
+}
+
 pub fn check_arg_count(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   let (min, max) = get_arg_count_range(name)?;
-  let n = args.len();
+  // A function that takes options counts only the arguments before its
+  // trailing options, as wolframscript does: `Fit[data, f, x,
+  // WorkingPrecision -> 20]` has three arguments.
+  let n = if FUNCTIONS_WITH_OPTIONS.contains(name) {
+    let trailing = args.iter().rev().take_while(|a| is_option_arg(a)).count();
+    // A rule may also be a positional argument (`ReplaceAll`-style or a
+    // data rule), so only discount options beyond what the minimum needs.
+    args.len() - trailing.min(args.len().saturating_sub(min))
+  } else {
+    args.len()
+  };
 
   if n >= min && (max == usize::MAX || n <= max) {
     return None; // arg count is valid

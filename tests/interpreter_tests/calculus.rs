@@ -20427,10 +20427,12 @@ mod extremum_partial_derivatives {
     for (code, expected) in [
       ("Derivative[0, 2][Max][0.5, 2.25]", "0"),
       ("Derivative[0, 3][Min][0.5, 2.25]", "0"),
+      // wolframscript gives the exact 0 for the flat branch via a
+      // Piecewise derivative (see conformance_gaps.md); compare by value.
       (
         "g[t_] := Min[2.25, Max[1.25, t^3]]; \
-         {Derivative[2][g][0.5], Derivative[2][g][1.2]}",
-        "{0, 7.199999999999999}",
+         {Derivative[2][g][0.5] == 0, Derivative[2][g][1.2]}",
+        "{True, 7.199999999999999}",
       ),
     ] {
       assert_eq!(interpret(code).unwrap(), expected, "for {code}");
@@ -21613,6 +21615,300 @@ mod interpolation_spline_method {
       ))
       .unwrap(),
       "True"
+    );
+  }
+}
+
+mod ndsolve_state_events {
+  use super::*;
+
+  #[test]
+  fn stop_integration_with_side_effect() {
+    // The integration ends where the condition turns true; the action's
+    // assignment sees the event time.
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x''[t] == -x[t], x[0] == 0, x'[0] == 1, \
+         WhenEvent[x[t] > 0.5, tm = t; \"StopIntegration\"]}, x, {t, 0, 3}]; \
+         {Chop[tm - Pi/6, 10^-6], Chop[(x[\"Domain\"] /. s[[1]]) - {{0, Pi/6}}, 10^-6]}"
+      )
+      .unwrap(),
+      "{0, {{0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn condition_built_with_apply_and_pure_functions() {
+    assert_eq!(
+      interpret(
+        "NDSolve[{x''[t] == -x[t], x[0] == 0, x'[0] == 1, \
+         WhenEvent[Or @@ (x[t] > # &) /@ {0.5, 2}, tm = t; \"StopIntegration\"]}, \
+         x, {t, 0, 3}]; Chop[tm - Pi/6, 10^-6]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn bouncing_ball_resets_velocity() {
+    // y'' = -9.81 from rest at height 1, bouncing with restitution 0.9
+    // (values from wolframscript).
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y''[t] == -9.81, y[0] == 1, y'[0] == 0, \
+         WhenEvent[y[t] == 0, y'[t] -> -0.9 y'[t]]}, y, {t, 0, 2}]; \
+         Chop[(y /. s[[1]])[{0.4, 0.5, 1., 1.5}] - \
+         {0.2152, 0.181725, 0.710949, 0.573205}, 10^-5]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn list_initial_conditions_thread() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x''[t] == -x[t], y''[t] == -y[t], {x[0], y[0]} == {0, 1}, \
+         {x'[0], y'[0]} == {1, 0}}, {x[t], y[t]}, {t, 0, 1}]; \
+         Chop[({x[t], y[t]} /. s[[1]] /. t -> 1) - {Sin[1], Cos[1]}, 10^-6]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn infinite_domain_stops_at_event() {
+    assert_eq!(
+      interpret(
+        "NDSolve[{x'[t] == 1, x[0] == 0, WhenEvent[x[t] == 5, \
+         te = t; \"StopIntegration\"]}, x, {t, 0, Infinity}]; Chop[te - 5, 10^-6]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+}
+
+mod interpolating_function_threads_over_lists {
+  use super::*;
+
+  #[test]
+  fn one_dimensional_function_maps_list_arguments() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{1, 4, 9, 16}]; {f[{1.5, 2.5}], f[{{1, 2}, {3, 4}}]}"
+      )
+      .unwrap(),
+      "{{2.25, 6.25}, {{1, 4}, {9, 16}}}"
+    );
+  }
+}
+
+mod nintegrate_symbolic_limits {
+  use super::*;
+
+  #[test]
+  fn symbolic_limit_stays_unevaluated() {
+    assert_eq!(
+      interpret("Quiet[NIntegrate[x, {x, 0, a}]]").unwrap(),
+      "NIntegrate[x, {x, 0, a}]"
+    );
+    assert_eq!(
+      interpret("Quiet[NIntegrate[x y, {x, 0, 1}, {y, 0, c}]]").unwrap(),
+      "NIntegrate[x*y, {x, 0, 1}, {y, 0, c}]"
+    );
+  }
+
+  #[test]
+  fn limit_depending_on_outer_variable_is_valid() {
+    assert_eq!(
+      interpret("NIntegrate[x y, {x, 0, 1}, {y, 0, x}]").unwrap(),
+      "0.125"
+    );
+  }
+}
+
+mod find_fit_variable_lists_and_damping {
+  use super::*;
+
+  #[test]
+  fn variable_list_forms() {
+    assert_eq!(
+      interpret(
+        "Chop[(a /. FindFit[{{1, 2.1}, {2, 3.9}, {3, 6.2}}, a x, {a}, {x}]) - \
+         2.035714285714286, 10^-10]"
+      )
+      .unwrap(),
+      "0"
+    );
+    // Rows {x, y, f} for two variables (values from wolframscript).
+    assert_eq!(
+      interpret(
+        "Chop[({a, b} /. FindFit[{{1, 1, 3.1}, {2, 1, 5.0}, {1, 2, 4.2}, \
+         {3, 3, 10.1}}, a x + b y, {a, b}, {x, y}]) - \
+         {2.0275862068965513, 1.2275862068965522}, 10^-10]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  // A full Gauss-Newton step from a = b = 1 overshoots the exponential's
+  // rate; the damped iteration reaches wolframscript's fit.
+  #[test]
+  fn exponential_fit_from_default_start() {
+    assert_eq!(
+      interpret(
+        "Chop[({a, b} /. FindFit[Table[{x, 3 Exp[-0.5 x] + 0.01 Sin[7 x]}, \
+         {x, 0, 5, 0.5}], a Exp[-b x], {a, b}, x]) - \
+         {2.999689681865526, 0.5000572368744901}, 10^-8]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+}
+
+mod fit_options_and_variable_lists {
+  use super::*;
+
+  #[test]
+  fn trailing_options_are_not_counted_as_arguments() {
+    assert_eq!(
+      interpret(
+        "Chop[(Fit[{{1, 2}, {2, 3}, {3, 5}}, {1, x}, x, WorkingPrecision -> 20] \
+         /. x -> 0) - 1/3, 10^-10]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  // Values from wolframscript.
+  #[test]
+  fn include_constant_basis_false() {
+    assert_eq!(
+      interpret(
+        "lm = LinearModelFit[{{1, 2}, {2, 3}, {3, 5}}, x, x, \
+         IncludeConstantBasis -> False]; Chop[lm[\"BestFitParameters\"] - \
+         {1.6428571428571428}, 10^-10]"
+      )
+      .unwrap(),
+      "{0}"
+    );
+  }
+
+  #[test]
+  fn fit_with_variable_lists() {
+    assert_eq!(
+      interpret(
+        "Chop[{Fit[{{1, 2}, {2, 3}, {3, 5}}, {1, x}, {x}] - (1/3 + 3/2 x), \
+         Fit[{{1, 1, 2}, {2, 1, 3}, {3, 2, 5}, {1, 3, 3}}, {1, x, y}, {x, y}] - \
+         (0.1 + 1.2333333333333338 x + 0.5666666666666663 y)} // Expand, 10^-10]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+}
+
+mod ndsolve_option_lists_and_nested_equations {
+  use super::*;
+
+  #[test]
+  fn options_given_as_a_list() {
+    assert_eq!(
+      interpret(
+        "Head[NDSolve[{y'[t] == 1, y[0] == 1}, y, {t, 0, 1}, {MaxSteps -> 100}]]"
+      )
+      .unwrap(),
+      "List"
+    );
+  }
+
+  #[test]
+  fn pde_equations_nested_in_lists() {
+    assert_eq!(
+      interpret(
+        "Head[NDSolve[{{D[a[x, t], t] == D[a[x, t], x, x], a[x, 0] == 1, \
+         a[5, t] == 1}, {Derivative[1, 0][a][0, t] == a[0, t]}}, a, {x, 0, 5}, \
+         {t, 0, 1}]]"
+      )
+      .unwrap(),
+      "List"
+    );
+  }
+}
+
+mod lambert_w_solutions {
+  use super::*;
+
+  // Exact forms from wolframscript.
+  #[test]
+  fn product_times_exponential() {
+    assert_eq!(
+      interpret("Quiet[Solve[x Exp[-x] == 18/100, x]]").unwrap(),
+      "{{x -> -ProductLog[-9/50]}, {x -> -ProductLog[-1, -9/50]}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[x^2 Exp[x] == 1, x]]").unwrap(),
+      "{{x -> 2*ProductLog[-1/2]}, {x -> 2*ProductLog[1/2]}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[x Exp[2 x + 1] == 3, x]]").unwrap(),
+      "{{x -> ProductLog[6/E]/2}}"
+    );
+  }
+
+  #[test]
+  fn exponential_against_linear() {
+    assert_eq!(
+      interpret("Quiet[Solve[Exp[x] == 3 x + 2, x]]").unwrap(),
+      "{{x -> (-2 - 3*ProductLog[-1/3*1/E^(2/3)])/3}, \
+       {x -> (-2 - 3*ProductLog[-1, -1/3*1/E^(2/3)])/3}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[Exp[-x/2] == x, x]]").unwrap(),
+      "{{x -> 2*ProductLog[1/2]}}"
+    );
+  }
+
+  #[test]
+  fn machine_input_gives_numbers() {
+    assert_eq!(
+      interpret(
+        "Chop[(x /. Quiet[Solve[-4 x Exp[-x] == -0.72, x]]) - \
+         {0.22553980315892086, 2.712767911179645}, 10^-12]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn product_log_branches_numerically() {
+    assert_eq!(
+      interpret(
+        "Chop[{N[ProductLog[-1, -9/50]] + 2.712767911179645, \
+         ProductLog[1, 2.] - (-0.8343103666311101 + 4.5302659985550084 I)}, 10^-12]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+}
+
+mod dsolve_unknown_in_denominator {
+  use super::*;
+
+  #[test]
+  fn solved_for_the_derivative_first() {
+    assert_eq!(
+      interpret("DSolve[u'[x]/u[x] == x, u[x], x]").unwrap(),
+      "{{u[x] -> E^(x^2/2)*C[1]}}"
     );
   }
 }

@@ -284,9 +284,9 @@ pub(crate) fn for_each_numeric_step(
         } else if current_num < max_num - f64::EPSILON {
           break;
         }
-        let current_expr = if k == 0 {
-          min_expr.clone()
-        } else {
+        // `min + k*step` for every k, the first included: a machine-real
+        // step makes `{i, 1, 2, 1.}` start at `1.`.
+        let current_expr = {
           let k_step = crate::evaluator::evaluate_function_call_ast(
             "Times",
             &[Expr::Integer(k), step_expr.clone()],

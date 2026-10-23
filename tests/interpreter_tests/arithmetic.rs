@@ -232,23 +232,54 @@ mod arithmetic {
   mod exact_zero_times_real {
     use super::*;
 
+    // An exact zero times a machine real is the machine zero `0.`
+    // (wolframscript 15); arbitrary-precision factors keep the exact 0.
     #[test]
-    fn exact_zero_absorbs_machine_real() {
-      assert_eq!(interpret("0*1.5").unwrap(), "0");
-      assert_eq!(interpret("2.5*0").unwrap(), "0");
-      assert_eq!(interpret("0*0.").unwrap(), "0");
-      assert_eq!(interpret("Times[0, 2.5, x]").unwrap(), "0");
-      assert_eq!(interpret("0.3*Sin[2 Pi 1]").unwrap(), "0");
+    fn exact_zero_times_machine_real_is_machine_zero() {
+      assert_eq!(interpret("0*1.5").unwrap(), "0.");
+      assert_eq!(interpret("2.5*0").unwrap(), "0.");
+      assert_eq!(interpret("0*0.").unwrap(), "0.");
+      assert_eq!(interpret("Times[0, 2.5, x]").unwrap(), "0.");
+      assert_eq!(interpret("0.3*Sin[2 Pi 1]").unwrap(), "0.");
+      assert_eq!(interpret("Head[0*1.5`20]").unwrap(), "Integer");
+    }
+
+    // Regression: `0` and `0.` are distinct to Union, so a coordinate
+    // computed as `j*0.5` with j = 0 must be `0.` like its neighbours.
+    #[test]
+    fn union_of_offsets_with_zero_step() {
+      assert_eq!(
+        interpret(
+          "Union[Flatten[Table[{2, 0} + {0.5, j*0.5}, {k, 2}, {j, -1, 1}], 1]]"
+        )
+        .unwrap(),
+        "{{2.5, -0.5}, {2.5, 0.}, {2.5, 0.5}}"
+      );
     }
 
     #[test]
-    fn recurrence_with_exact_zero_term_stays_exact() {
+    fn recurrence_with_machine_coefficients_numericizes_initial_values() {
       assert_eq!(
         interpret(
           "RecurrenceTable[{x[n+1]==x[n]+0.3 Sin[2 Pi y[n]], y[n+1]==y[n]+0.3 Sin[2 Pi x[n+1]], x[1]==1, y[1]==1}, {x, y}, {n, 1, 3}]"
         )
         .unwrap(),
-        "{{1, 1}, {1, 1}, {1, 1}}"
+        "{{1., 1.}, {0.9999999999999999, 0.9999999999999997}, \
+         {0.9999999999999993, 0.9999999999999982}}"
+      );
+      assert_eq!(
+        interpret(
+          "RecurrenceTable[{a[n+1] == 0.5 a[n], a[1] == 1}, a, {n, 1, 3}]"
+        )
+        .unwrap(),
+        "{1., 0.5, 0.25}"
+      );
+      assert_eq!(
+        interpret(
+          "RecurrenceTable[{a[n+1] == a[n]/2, a[1] == 1}, a, {n, 1, 3}]"
+        )
+        .unwrap(),
+        "{1, 1/2, 1/4}"
       );
     }
   }

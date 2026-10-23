@@ -15597,11 +15597,70 @@ fn integrand_is_complex_on(
   points.into_iter().any(probe)
 }
 
+/// A limit of integration that is not a number: wolframscript reports
+/// `NIntegrate::nlim` for the first such limit and leaves the call
+/// unevaluated.
+fn nintegrate_bad_limit(args: &[Expr], var: &str, bounds: &[Expr]) -> Expr {
+  let bad = bounds
+    .iter()
+    .find(|e| {
+      expr_to_bound(e).is_none()
+        && crate::functions::list_helpers_ast::expr_to_complex_parts(e)
+          .is_none()
+    })
+    .unwrap_or(&bounds[0]);
+  crate::emit_message(&format!(
+    "NIntegrate::nlim: {var} = {} is not a valid limit of integration.",
+    crate::syntax::expr_to_string(bad)
+  ));
+  unevaluated_nintegrate(args)
+}
+
+fn mentions_identifier(expr: &Expr, name: &str) -> bool {
+  matches!(expr, Expr::Identifier(n) if n == name)
+    || crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(|c| mentions_identifier(c, name))
+}
+
+fn unevaluated_nintegrate(args: &[Expr]) -> Expr {
+  Expr::FunctionCall {
+    name: "NIntegrate".to_string(),
+    args: args.to_vec().into(),
+  }
+}
+
 fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
       "NIntegrate expects at least 2 arguments".into(),
     ));
+  }
+
+  // Every limit must be numeric, or depend on an outer integration
+  // variable; the first one that is neither makes the call stay
+  // unevaluated, before any integration starts.
+  if args.len() > 2 {
+    let mut outer: Vec<String> = Vec::new();
+    for spec in &args[1..] {
+      let Expr::List(items) = spec else { break };
+      let Some(Expr::Identifier(var)) = items.first() else {
+        break;
+      };
+      for limit in items.iter().skip(1) {
+        if outer.iter().any(|v| mentions_identifier(limit, v)) {
+          continue;
+        }
+        let value = crate::evaluator::evaluate_expr_to_expr(limit)?;
+        if expr_to_bound(&value).is_none()
+          && crate::functions::list_helpers_ast::expr_to_complex_parts(&value)
+            .is_none()
+        {
+          return Ok(nintegrate_bad_limit(args, var, &[value]));
+        }
+      }
+      outer.push(var.clone());
+    }
   }
 
   // A list-valued integrand is integrated component-wise.
@@ -16072,11 +16131,9 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(crate::functions::list_helpers_ast::expr_to_complex_parts)
       .collect();
-    let waypoints = waypoints.ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "NIntegrate: integration bound must be numeric or Infinity".into(),
-      )
-    })?;
+    let Some(waypoints) = waypoints else {
+      return Ok(nintegrate_bad_limit(args, &var_name, &evaluated_bounds));
+    };
     return nintegrate_complex_path(
       &args[0],
       &var_name,
@@ -16088,11 +16145,10 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut bounds = Vec::with_capacity(evaluated_bounds.len());
   for e in &evaluated_bounds {
-    bounds.push(expr_to_bound(e).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "NIntegrate: integration bound must be numeric or Infinity".into(),
-      )
-    })?);
+    let Some(bound) = expr_to_bound(e) else {
+      return Ok(nintegrate_bad_limit(args, &var_name, &evaluated_bounds));
+    };
+    bounds.push(bound);
   }
   let lo = bounds[0];
   let hi = *bounds.last().unwrap();

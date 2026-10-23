@@ -395,6 +395,55 @@ fn lambert_w_m1_real(z: f64) -> Option<f64> {
   Some(w)
 }
 
+/// Branch `k` of the Lambert W function at the complex point `zr + i zi`,
+/// by Halley's method from the asymptotic guess
+/// `L1 - ln(L1)`, `L1 = ln z + 2πik`.
+fn lambert_w_complex(k: i128, zr: f64, zi: f64) -> Option<(f64, f64)> {
+  if !(zr.is_finite() && zi.is_finite()) || (zr == 0.0 && zi == 0.0) {
+    return None;
+  }
+  let cmul = |a: (f64, f64), b: (f64, f64)| {
+    (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+  };
+  let cdiv = |a: (f64, f64), b: (f64, f64)| {
+    let d = b.0 * b.0 + b.1 * b.1;
+    ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+  };
+  let cln =
+    |a: (f64, f64)| ((a.0 * a.0 + a.1 * a.1).sqrt().ln(), a.1.atan2(a.0));
+  let cexp = |a: (f64, f64)| {
+    let m = a.0.exp();
+    (m * a.1.cos(), m * a.1.sin())
+  };
+  let two_pi_k = 2.0 * std::f64::consts::PI * k as f64;
+  let l1 = {
+    let l = cln((zr, zi));
+    (l.0, l.1 + two_pi_k)
+  };
+  let l2 = cln(l1);
+  let mut w = (l1.0 - l2.0, l1.1 - l2.1);
+  for _ in 0..200 {
+    let ew = cexp(w);
+    let f = {
+      let p = cmul(w, ew);
+      (p.0 - zr, p.1 - zi)
+    };
+    if (f.0 * f.0 + f.1 * f.1).sqrt() <= 1e-15 * (zr.hypot(zi)).max(1e-300) {
+      break;
+    }
+    let wp1 = (w.0 + 1.0, w.1);
+    let wp2 = (w.0 + 2.0, w.1);
+    let d1 = cmul(ew, wp1);
+    let d2 = cdiv(cmul(wp2, f), (2.0 * wp1.0, 2.0 * wp1.1));
+    let step = cdiv(f, (d1.0 - d2.0, d1.1 - d2.1));
+    if !(step.0.is_finite() && step.1.is_finite()) {
+      return None;
+    }
+    w = (w.0 - step.0, w.1 - step.1);
+  }
+  Some(w)
+}
+
 pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -402,25 +451,39 @@ pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Two-argument form: ProductLog[k, z] — branch k of Lambert W
+  // Two-argument form: ProductLog[k, z] — branch k of Lambert W. `N` turns
+  // the branch index into a machine real, so `-1.` names branch -1 too.
   if args.len() == 2 {
+    let branch = match &args[0] {
+      Expr::Integer(k) => Some(*k),
+      Expr::Real(k) if k.fract() == 0.0 && k.abs() < 1e9 => Some(*k as i128),
+      _ => None,
+    };
     // ProductLog[0, z] == ProductLog[z] (principal branch)
-    if matches!(&args[0], Expr::Integer(0)) {
+    if branch == Some(0) {
       return product_log_ast(&args[1..]);
     }
-    // Branch k = -1 — the second real branch, W_{-1}, real on [-1/e, 0).
-    if matches!(&args[0], Expr::Integer(-1)) {
-      // Exact special value W_{-1}(-1/e) = -1.
-      if is_neg_inv_e(&args[1]) {
-        return Ok(Expr::Integer(-1));
-      }
-      // Numeric only for inexact arguments (matching wolframscript, which
-      // keeps exact arguments symbolic).
-      if product_log_is_inexact(&args[1])
+    // Exact special value W_{-1}(-1/e) = -1.
+    if branch == Some(-1) && is_neg_inv_e(&args[1]) {
+      return Ok(Expr::Integer(-1));
+    }
+    // Numeric only for inexact arguments (matching wolframscript, which
+    // keeps exact arguments symbolic).
+    if let Some(k) = branch
+      && (product_log_is_inexact(&args[1]) || product_log_is_inexact(&args[0]))
+    {
+      // W_{-1} is real on [-1/e, 0).
+      if k == -1
         && let Some(z) = try_eval_to_f64(&args[1])
         && let Some(w) = lambert_w_m1_real(z)
       {
         return Ok(Expr::Real(w));
+      }
+      if let Some((zr, zi)) =
+        crate::functions::math_ast::try_extract_complex_float(&args[1])
+        && let Some((wr, wi)) = lambert_w_complex(k, zr, zi)
+      {
+        return Ok(build_complex_float_expr(wr, wi));
       }
     }
     // Otherwise return unevaluated

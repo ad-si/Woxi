@@ -7192,6 +7192,65 @@ mod random_variate {
   use super::*;
 
   #[test]
+  fn inverse_transform_samples_quantile_distributions() {
+    // Distributions without a dedicated sampler draw via Quantile[dist, u].
+    assert_eq!(
+      interpret(
+        "Map[(s = RandomVariate[#, 200]; {Length[s], VectorQ[s, NumericQ]}) &, \
+         {ExponentialDistribution[1.], StudentTDistribution[3], \
+          BetaDistribution[2, 3], NegativeBinomialDistribution[3, 0.5]}]"
+      )
+      .unwrap(),
+      "{{200, True}, {200, True}, {200, True}, {200, True}}"
+    );
+    assert_eq!(
+      interpret(
+        "{Min[#] >= 0, Max[#] <= 1} &[RandomVariate[BetaDistribution[2, 3], 500]]"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+    assert_eq!(
+      interpret(
+        "Union[RandomVariate[DiscreteUniformDistribution[{1, 3}], 300]]"
+      )
+      .unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Dimensions[RandomReal[ExponentialDistribution[2], {3, 4}]]")
+        .unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
+  fn categorical_distribution() {
+    assert_eq!(
+      interpret(
+        "Union[RandomVariate[CategoricalDistribution[{a, b}, {0.3, 0.7}], 200]]"
+      )
+      .unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret(
+        "MemberQ[{x, y}, RandomVariate[CategoricalDistribution[{x, y}]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn unknown_distribution_stays_unevaluated() {
+    assert_eq!(
+      interpret("RandomVariate[FooDistribution[1], 2]").unwrap(),
+      "RandomVariate[FooDistribution[1], 2]"
+    );
+  }
+
+  #[test]
   fn uniform_single() {
     let result: f64 = interpret("RandomVariate[UniformDistribution[{0, 1}]]")
       .unwrap()
@@ -23597,7 +23656,7 @@ mod table_whole_valued_real_bounds {
     for (input, expected) in [
       ("Table[i, {i, 3., 5., 1.}]", "{3., 4., 5.}"),
       ("Table[i, {i, 1., 3}]", "{1., 2., 3.}"),
-      ("Table[i, {i, 1, 3., 1.}]", "{1, 2., 3.}"),
+      ("Table[i, {i, 1, 3., 1.}]", "{1., 2., 3.}"),
       ("Table[i, {i, 1, 5, 2}]", "{1, 3, 5}"),
       (
         "Do[s[j, i] = j + i, {j, 0., 1., 0.5}, {i, 3., 4., 1.}]; s[0.5, 4.]",
@@ -23862,6 +23921,111 @@ mod sparse_array_banded_patterns {
       )
       .unwrap(),
       "{2049, -1, 0}"
+    );
+  }
+}
+
+mod part_assignment_real_positions {
+  use super::*;
+
+  // wolframscript accepts integral machine reals as positions in a part
+  // assignment; a fractional one is rejected and leaves the value alone.
+  #[test]
+  fn integral_reals_are_positions() {
+    assert_eq!(
+      interpret("w = {{0, 0}, {0, 0}}; w[[2., 1.]] = 1; w").unwrap(),
+      "{{0, 0}, {1, 0}}"
+    );
+    assert_eq!(
+      interpret("v = {1, 2, 3}; v[[2.]] = 5; v").unwrap(),
+      "{1, 5, 3}"
+    );
+  }
+
+  #[test]
+  fn fractional_real_is_rejected() {
+    assert_eq!(
+      interpret("u = {1, 2}; {Quiet[u[[2.5]] = 9], u}").unwrap(),
+      "{9, {1, 2}}"
+    );
+  }
+}
+
+mod list_valued_bare_iterator {
+  use super::*;
+
+  // `{v}` with v a list repeats once per element (wolframscript).
+  #[test]
+  fn table_and_do_repeat_per_element() {
+    assert_eq!(
+      interpret("v = {a, b}; {Table[k, {v}], Table[i, {i, 2}, {v}]}").unwrap(),
+      "{{k, k}, {{1, 1}, {2, 2}}}"
+    );
+    assert_eq!(
+      interpret("v = {a, b, c}; n = 0; Do[n++, {v}]; n").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn symbolic_bound_still_rejected() {
+    assert_eq!(interpret("Quiet[Do[1, {y}]]").unwrap(), "Do[1, {y}]");
+  }
+}
+
+mod machine_real_iterators {
+  use super::*;
+
+  // Iterator values are min + k*step: machine reals as soon as min or step
+  // is one (values from wolframscript).
+  #[test]
+  fn table_do_sum_product() {
+    assert_eq!(
+      interpret(
+        "InputForm[{Table[i, {i, 3., 5., 1.}], Table[i, {i, 0., 2}], \
+         Table[i, {i, 1, 2, 1.}], Table[i, {i, 1, 2.}], Table[i, {i, 2.}], \
+         Sum[i, {i, 1, 3, 1.}], Product[i, {i, 1., 3}], Product[x + i, {i, 1., 2}]}]"
+      )
+      .unwrap(),
+      "InputForm[{{3., 4., 5.}, {0., 1., 2.}, {1., 2.}, {1, 2}, {1, 2}, 6., 6., \
+       (1. + x)*(2. + x)}]"
+    );
+    assert_eq!(
+      interpret("s = {}; Do[AppendTo[s, i], {i, 1., 2}]; InputForm[s]")
+        .unwrap(),
+      "InputForm[{1., 2.}]"
+    );
+  }
+
+  #[test]
+  fn machine_zero_exponent() {
+    assert_eq!(
+      interpret("InputForm[{x^0., (a + b)^0., 1^0., 1^2.5, {1, 2}^0.}]")
+        .unwrap(),
+      "InputForm[{1., 1., 1., 1., {1., 1.}}]"
+    );
+    assert_eq!(
+      interpret("Quiet[{Infinity^0., 0^0.}]").unwrap(),
+      "{Indeterminate, Indeterminate}"
+    );
+  }
+}
+
+mod map_over_held_heads {
+  use super::*;
+
+  // Map builds f[child] before evaluating, so a head that holds its
+  // arguments keeps them unevaluated (wolframscript).
+  #[test]
+  fn held_children_stay_unevaluated() {
+    assert_eq!(
+      interpret(
+        "{Reverse /@ Hold[m], Map[Print, Hold[1, 2]], Map[# + 1 &, Hold[x]], \
+         Reverse /@ Transpose /@ Dynamic[mm], Map[f, g[1 + 1]]}"
+      )
+      .unwrap(),
+      "{Hold[Reverse[m]], Hold[Print[1], Print[2]], Hold[(#1 + 1 & )[x]], \
+       Dynamic[Reverse[Transpose[mm]]], g[f[2]]}"
     );
   }
 }

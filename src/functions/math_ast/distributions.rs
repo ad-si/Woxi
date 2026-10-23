@@ -1445,11 +1445,8 @@ pub fn quantile_distribution_numeric(
   dargs: &[Expr],
   q: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
-  // Only handle ProbabilityDistribution numerically for now — the standard
-  // distributions have their own closed-form quantile elsewhere (or stay
-  // symbolic). Extending to LogNormal/Pareto/etc. is a future task.
   if dist_name != "ProbabilityDistribution" {
-    return Ok(None);
+    return Ok(quantile_continuous_by_bisection(dist_name, dargs, q));
   }
   if dargs.len() != 2 {
     return Ok(None);
@@ -1520,6 +1517,75 @@ pub fn quantile_distribution_numeric(
     }
   }
   Ok(Some(Expr::Real(f64::midpoint(lo_b, hi))))
+}
+
+/// Machine-precision quantile of a continuous distribution without a
+/// closed-form inverse: bisect its numeric CDF. Only machine-real
+/// probabilities qualify; exact ones stay symbolic, as in wolframscript.
+fn quantile_continuous_by_bisection(
+  dist_name: &str,
+  dargs: &[Expr],
+  q: &Expr,
+) -> Option<Expr> {
+  let continuous = matches!(
+    dist_name,
+    "TriangularDistribution"
+      | "ExtremeValueDistribution"
+      | "ChiDistribution"
+      | "MaxwellDistribution"
+      | "HalfNormalDistribution"
+      | "LevyDistribution"
+      | "InverseGaussianDistribution"
+      | "KumaraswamyDistribution"
+      | "FrechetDistribution"
+      | "LogLogisticDistribution"
+      | "WignerSemicircleDistribution"
+      | "NakagamiDistribution"
+      | "NoncentralChiSquareDistribution"
+      | "RiceDistribution"
+      | "DataDistribution"
+  );
+  let Expr::Real(q_val) = q else {
+    return None;
+  };
+  let q_val = *q_val;
+  if !continuous || !(q_val > 0.0 && q_val < 1.0) {
+    return None;
+  }
+  let dist = unevaluated(dist_name, dargs);
+  let cdf_at = |x: f64| -> Option<f64> {
+    let val = eval(&call("CDF", vec![dist.clone(), Expr::Real(x)])).ok()?;
+    try_eval_to_f64(&val).filter(|c| c.is_finite())
+  };
+  // Bracket the quantile by doubling outwards from [-1, 1].
+  let (mut lo, mut hi) = (-1.0_f64, 1.0_f64);
+  let mut grown = 0;
+  while cdf_at(hi)? < q_val {
+    hi *= 2.0;
+    grown += 1;
+    if grown > 1100 {
+      return None;
+    }
+  }
+  while cdf_at(lo)? >= q_val {
+    lo *= 2.0;
+    grown += 1;
+    if grown > 2200 {
+      return None;
+    }
+  }
+  for _ in 0..200 {
+    let mid = f64::midpoint(lo, hi);
+    if mid <= lo || mid >= hi {
+      break;
+    }
+    if cdf_at(mid)? < q_val {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  Some(Expr::Real(hi))
 }
 
 /// PDF[ProbabilityDistribution[pdf_expr, {var, lo, hi}], t] substitutes `t`

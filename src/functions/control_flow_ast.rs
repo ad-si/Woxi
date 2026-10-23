@@ -259,23 +259,6 @@ fn parse_message_name(expr: &Expr) -> Option<(String, String)> {
   }
 }
 
-/// Check if a warning message string matches a (symbol, tag) spec.
-/// Warning format: "Symbol::tag: ..."
-fn message_matches(warning: &str, specs: &[(String, String)]) -> bool {
-  for (sym, tag) in specs {
-    let prefix = format!("{sym}::{tag}: ");
-    if warning.starts_with(&prefix) {
-      return true;
-    }
-    // Also match without trailing space (in case message is just "Symbol::tag:")
-    let prefix2 = format!("{sym}::{tag}:");
-    if warning.starts_with(&prefix2) {
-      return true;
-    }
-  }
-  false
-}
-
 /// Quiet[expr] — evaluate expr, suppress all messages
 /// Quiet[expr, {msg1, msg2, ...}] — suppress only specific messages
 /// Quiet[expr, All] — suppress all messages
@@ -325,9 +308,26 @@ pub fn quiet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Save warning state
   let snapshot = crate::snapshot_warnings();
 
-  // Suppress message printing
+  // Suppress message printing: everything, or (checked as each message is
+  // issued) just the named ones minus any re-enabled by the third argument.
+  let names = |specs: &[(String, String)]| {
+    specs
+      .iter()
+      .map(|(sym, tag)| format!("{sym}::{tag}"))
+      .collect::<Vec<_>>()
+  };
+  let filtered = !effective_suppress_all;
   if effective_suppress_all {
     crate::push_quiet();
+  } else {
+    crate::push_quiet_filter(
+      if suppress_all {
+        None
+      } else {
+        Some(names(&suppress_msgs))
+      },
+      enable_spec.as_deref().map(names).unwrap_or_default(),
+    );
   }
 
   // Evaluate the expression
@@ -337,31 +337,39 @@ pub fn quiet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if effective_suppress_all {
     crate::pop_quiet();
   }
+  if filtered {
+    crate::pop_quiet_filter();
+  }
 
   // Handle warning cleanup based on suppression spec
   if effective_suppress_all {
     // Suppress all: restore all buffers to snapshot (discard everything added during eval)
     crate::restore_warnings(snapshot);
-  } else if !suppress_msgs.is_empty() {
-    // Suppress specific messages: remove only matching entries from the
-    // messages buffer and from `$MessageList` (entries already there when the
-    // block started are kept regardless of the filter).
+  } else {
+    // Named messages: remove the silenced ones from the messages buffer and
+    // from `$MessageList` (entries already there when the block started are
+    // kept regardless of the filter).
+    let off = names(&suppress_msgs);
+    let on = enable_spec.as_deref().map(names).unwrap_or_default();
+    let silenced = |name: &str| {
+      (suppress_all || off.iter().any(|n| n == name))
+        && !on.iter().any(|n| n == name)
+    };
     let snap_msgs = snapshot.messages().len();
     let snap_list = snapshot.message_list().len();
     let new_msgs: Vec<String> = crate::get_captured_messages_raw()
       .into_iter()
       .enumerate()
-      .filter(|(i, w)| *i < snap_msgs || !message_matches(w, &suppress_msgs))
+      .filter(|(i, w)| {
+        *i < snap_msgs
+          || !crate::message_name_of(w).is_some_and(|n| silenced(&n))
+      })
       .map(|(_, w)| w)
       .collect();
-    // `$MessageList` holds bare `Head::tag` names, so the filter matches
-    // against the name with a colon appended.
     let new_list: Vec<String> = crate::message_list_names()
       .into_iter()
       .enumerate()
-      .filter(|(i, n)| {
-        *i < snap_list || !message_matches(&format!("{n}:"), &suppress_msgs)
-      })
+      .filter(|(i, n)| *i < snap_list || !silenced(n))
       .map(|(_, n)| n)
       .collect();
     crate::restore_warnings_filtered(

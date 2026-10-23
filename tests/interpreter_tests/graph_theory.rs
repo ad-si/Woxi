@@ -2380,6 +2380,63 @@ mod random_graph {
       "0"
     );
   }
+
+  #[test]
+  fn uniform_graph_distribution_has_exact_edge_count() {
+    assert_eq!(
+      interpret(
+        "g = RandomGraph[UniformGraphDistribution[7, 9]]; \
+         {VertexCount[g], EdgeCount[g], SimpleGraphQ[g]}"
+      )
+      .unwrap(),
+      "{7, 9, True}"
+    );
+  }
+
+  #[test]
+  fn barabasi_albert_grows_from_complete_seed() {
+    // Seed K_{k+1}, then k edges per further vertex: k(k+1)/2 + (n-k-1)k.
+    assert_eq!(
+      interpret(
+        "Table[g = RandomGraph[BarabasiAlbertGraphDistribution[20, k]]; \
+         {EdgeCount[g], SimpleGraphQ[g], ConnectedGraphQ[g]}, {k, 3}]"
+      )
+      .unwrap(),
+      "{{19, True, True}, {37, True, True}, {54, True, True}}"
+    );
+  }
+
+  #[test]
+  fn watts_strogatz_without_rewiring_is_circulant() {
+    assert_eq!(
+      interpret(
+        "List @@@ EdgeList[RandomGraph[WattsStrogatzGraphDistribution[6, 0]]]"
+      )
+      .unwrap(),
+      "{{1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 6}, {6, 1}, \
+       {1, 3}, {2, 4}, {3, 5}, {4, 6}, {5, 1}, {6, 2}}"
+    );
+    assert_eq!(
+      interpret(
+        "g = RandomGraph[WattsStrogatzGraphDistribution[10, 0.5, 3]]; \
+         {EdgeCount[g], SimpleGraphQ[g]}"
+      )
+      .unwrap(),
+      "{30, True}"
+    );
+  }
+
+  #[test]
+  fn graph_distribution_with_count_and_options() {
+    assert_eq!(
+      interpret(
+        "gs = RandomGraph[BarabasiAlbertGraphDistribution[8, 2], 3, \
+         GraphLayout -> \"CircularEmbedding\"]; {Length[gs], Union[Head /@ gs]}"
+      )
+      .unwrap(),
+      "{3, {Graph}}"
+    );
+  }
 }
 
 mod graph_q {

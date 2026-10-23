@@ -10472,3 +10472,75 @@ mod sparse_array_part_set_and_inverse {
     );
   }
 }
+
+mod hessenberg_decomposition {
+  use super::*;
+
+  // Values from wolframscript (LAPACK sign convention).
+  #[test]
+  fn three_by_three() {
+    assert_eq!(
+      interpret(
+        "{p, h} = HessenbergDecomposition[{{1., 2, 3}, {4, 5, 6}, {7, 8, 10.}}]; \
+         Chop[{p - {{1, 0, 0}, {0, -0.49613893835683376, -0.8682431421244592}, \
+         {0, -0.8682431421244592, 0.4961389383568338}}, \
+         h - {{1, -3.597007303087045, -0.24806946917841688}, \
+         {-8.06225774829855, 14.8, 2.4}, {0, 0.4, 0.2}}}, 10^-12]"
+      )
+      .unwrap(),
+      "{{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}, {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn reconstructs_matrix() {
+    assert_eq!(
+      interpret(
+        "m = {{2., 3, 5, 7}, {11, 13, 17, 19}, {23, 29, 31, 37}, {41, 43, 47, 53}}; \
+         {p, h} = HessenbergDecomposition[m]; \
+         {Chop[p . h . Transpose[p] - m, 10^-10] == ConstantArray[0, {4, 4}], \
+          Chop[h[[4, 1]]], Chop[h[[4, 2]]], Chop[h[[3, 1]]]}"
+      )
+      .unwrap(),
+      "{True, 0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn exact_matrix_stays_unevaluated() {
+    assert_eq!(
+      interpret("HessenbergDecomposition[{{1, 2}, {3, 4}}]").unwrap(),
+      "HessenbergDecomposition[{{1, 2}, {3, 4}}]"
+    );
+  }
+}
+
+mod dot_of_higher_rank_tensors {
+  use super::*;
+
+  // Dot contracts the last index of the first operand with the first of
+  // the second (values from wolframscript).
+  #[test]
+  fn rank_three_times_matrix() {
+    assert_eq!(
+      interpret(
+        "{{{0, 0, 0}, {1, 0, 0}}, {{0, 0, 1}, {1, 0, 1}}} . \
+         {{2., 0, 0}, {0, 3., 0}, {0, 0, 4.}}"
+      )
+      .unwrap(),
+      "{{{0., 0., 0.}, {2., 0., 0.}}, {{0., 0., 4.}, {2., 0., 4.}}}"
+    );
+    assert_eq!(
+      interpret("(Array[a, {2, 2, 2}] . Array[b, {2, 2}])[[1, 1, 1]]").unwrap(),
+      "a[1, 1, 1]*b[1, 1] + a[1, 1, 2]*b[2, 1]"
+    );
+  }
+
+  #[test]
+  fn mismatched_contraction_is_dotsh() {
+    assert_eq!(
+      interpret("Quiet[Dimensions[Array[a, {2, 2, 2}] . {1, 2, 3}]]").unwrap(),
+      "{2}"
+    );
+  }
+}

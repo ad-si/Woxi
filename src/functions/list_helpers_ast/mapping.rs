@@ -105,9 +105,25 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
       use crate::functions::expr_form::{ExprForm, decompose_expr};
       match decompose_expr(list) {
         ExprForm::Composite { head, children } => {
+          // A child the head holds gets `f[child]` left unevaluated, the way
+          // Map rebuilds the expression before evaluating it:
+          // `Reverse /@ Hold[m]` is `Hold[Reverse[m]]`, with no message.
           let mapped: Result<Vec<Expr>, _> = children
             .iter()
-            .map(|child| apply_func_ast(func, child))
+            .enumerate()
+            .map(|(i, child)| {
+              if crate::evaluator::holds_argument_at(&head, i) {
+                Ok(match func {
+                  Expr::Identifier(f) => call(f, vec![child.clone()]),
+                  _ => Expr::CurriedCall {
+                    func: Box::new(func.clone()),
+                    args: vec![child.clone()],
+                  },
+                })
+              } else {
+                apply_func_ast(func, child)
+              }
+            })
             .collect();
           crate::evaluator::evaluate_function_call_ast(&head, &mapped?)
         }

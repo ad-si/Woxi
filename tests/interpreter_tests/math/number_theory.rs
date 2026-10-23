@@ -6864,3 +6864,37 @@ mod bessel_real_contagion {
     assert!(r.starts_with("9.7615851717300"), "got {r}");
   }
 }
+
+mod number_field_class_number {
+  use super::*;
+
+  #[test]
+  fn imaginary_quadratic_fields() {
+    assert_eq!(
+      interpret(
+        "NumberFieldClassNumber /@ {I Sqrt[3], Sqrt[-5], Sqrt[-14], \
+         Sqrt[-23], (1 + Sqrt[-163])/2}"
+      )
+      .unwrap(),
+      "{1, 2, 4, 3, 1}"
+    );
+  }
+
+  // Wide class numbers, including fields whose fundamental unit has norm +1
+  // (Sqrt[3], Sqrt[79]) where the narrow count is halved.
+  #[test]
+  fn real_quadratic_fields() {
+    assert_eq!(
+      interpret(
+        "NumberFieldClassNumber /@ Sqrt[{2, 3, 10, 79, 82, 226, 730, 1155, 4559}]"
+      )
+      .unwrap(),
+      "{1, 1, 2, 3, 4, 8, 12, 8, 4}"
+    );
+  }
+
+  #[test]
+  fn rationals_have_class_number_one() {
+    assert_eq!(interpret("NumberFieldClassNumber[3]").unwrap(), "1");
+  }
+}
