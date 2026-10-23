@@ -24106,3 +24106,55 @@ mod small_gaps_from_notebooks {
     );
   }
 }
+
+mod replace_part_position_patterns {
+  use super::*;
+
+  #[test]
+  fn a_condition_on_the_whole_position_list() {
+    assert_eq!(
+      interpret("ReplacePart[{{1, 2}, {3, 4}}, {i_, j_} /; i == j :> i]")
+        .unwrap(),
+      "{{1, 2}, {3, 2}}"
+    );
+    assert_eq!(
+      interpret("ReplacePart[{{1, 2}, {3, 4}}, {i_} /; i > 1 -> x]").unwrap(),
+      "{{1, 2}, x}"
+    );
+    assert_eq!(
+      interpret(
+        "ReplacePart[{{1, 2}, {3, 4}}, {i__} /; Length[{i}] == 2 && First[{i}] == 2 -> x]"
+      )
+      .unwrap(),
+      "{{1, 2}, {x, x}}"
+    );
+  }
+
+  #[test]
+  fn anonymous_blanks_are_independent() {
+    assert_eq!(
+      interpret("ReplacePart[{{1, 2}, {3, 4}}, {_, _} -> x]").unwrap(),
+      "{{x, x}, {x, x}}"
+    );
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c, d}, _?EvenQ -> x]").unwrap(),
+      "{a, x, c, x}"
+    );
+  }
+
+  #[test]
+  fn a_sparse_array_is_replaced_as_its_array() {
+    assert_eq!(
+      interpret(
+        "Normal[ReplacePart[SparseArray[{}, {3, 3}], {r_, c_} /; r + c < 4 -> 5]]"
+      )
+      .unwrap(),
+      "{{5, 5, 0}, {5, 0, 0}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("Head[ReplacePart[SparseArray[{}, {2, 2}], {1, 1} -> 5]]")
+        .unwrap(),
+      "SparseArray"
+    );
+  }
+}
