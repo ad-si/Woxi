@@ -2805,3 +2805,139 @@ fn dedekind_p_maximal(coeffs: &[i128], p: i128) -> Option<bool> {
   norm(&mut acc)?;
   Some(acc.len() == 1 && acc[0] != 0)
 }
+
+/// NumberFieldClassNumber[a] — the class number of Q(a). Rational numbers
+/// give 1; quadratic fields are counted with reduced binary quadratic forms
+/// of the field discriminant. Higher degrees stay unevaluated.
+pub fn number_field_class_number_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("NumberFieldClassNumber", args));
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  let ev = crate::evaluator::evaluate_expr_to_expr;
+  let var = id_expr("NumberFieldClassNumber$x");
+  let mp = minimal_polynomial_core(&[args[0].clone(), var.clone()])?;
+  if matches!(&mp, Expr::FunctionCall { name, .. } if name == "MinimalPolynomial")
+  {
+    return unevaluated();
+  }
+  let degree = ev(&call("Exponent", vec![mp, var]))?;
+  match degree {
+    Expr::Integer(1) => Ok(Expr::Integer(1)),
+    Expr::Integer(2) => {
+      let disc = number_field_discriminant_ast(args)?;
+      match disc {
+        Expr::Integer(d) if d.abs() < 1 << 40 => {
+          Ok(Expr::Integer(quadratic_class_number(d)))
+        }
+        _ => unevaluated(),
+      }
+    }
+    _ => unevaluated(),
+  }
+}
+
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  if b == 0 { a.abs() } else { gcd_i128(b, a % b) }
+}
+
+/// Class number of the quadratic field with fundamental discriminant `d`.
+/// Imaginary fields count reduced positive definite forms; real fields count
+/// cycles of reduced indefinite forms (the narrow class number) and halve it
+/// when the fundamental unit has norm +1.
+fn quadratic_class_number(d: i128) -> i128 {
+  if d < 0 {
+    let mut h = 0;
+    let mut a: i128 = 1;
+    while 3 * a * a <= -d {
+      for b in -a + 1..=a {
+        if (b * b - d) % (4 * a) != 0 {
+          continue;
+        }
+        let c = (b * b - d) / (4 * a);
+        if c < a || (c == a && b < 0) {
+          continue;
+        }
+        if gcd_i128(gcd_i128(a, b), c) == 1 {
+          h += 1;
+        }
+      }
+      a += 1;
+    }
+    return h;
+  }
+  let sqrt_d = (d as f64).sqrt();
+  let isqrt = {
+    let mut r = sqrt_d as i128;
+    while r * r > d {
+      r -= 1;
+    }
+    while (r + 1) * (r + 1) <= d {
+      r += 1;
+    }
+    r
+  };
+  // Reduced forms (a, b, c): 0 < b < √d and √d - b < 2|a| < √d + b.
+  let mut forms: Vec<(i128, i128, i128)> = Vec::new();
+  for b in 1..=isqrt {
+    if (b * b - d) % 4 != 0 || b * b == d {
+      continue;
+    }
+    let ac = (b * b - d) / 4; // negative
+    for a_abs in 1..=(-ac) {
+      if ac % a_abs != 0 {
+        continue;
+      }
+      let two_a = (2 * a_abs) as f64;
+      if !(sqrt_d - (b as f64) < two_a && two_a < sqrt_d + b as f64) {
+        continue;
+      }
+      for a in [a_abs, -a_abs] {
+        let c = ac / a;
+        if gcd_i128(gcd_i128(a, b), c) == 1 {
+          forms.push((a, b, c));
+        }
+      }
+    }
+  }
+  // ρ(a, b, c) = (c, b', (b'² - d) / 4c) with b' ≡ -b (mod 2c) and
+  // √d - 2|c| < b' < √d.
+  let rho = |(_, b, c): (i128, i128, i128)| {
+    let m = 2 * c.abs();
+    let mut b2 = (-b).rem_euclid(m);
+    // Largest b2 ≡ -b (mod m) below √d.
+    let top = if isqrt * isqrt == d { isqrt - 1 } else { isqrt };
+    b2 += ((top - b2).div_euclid(m)) * m;
+    (c, b2, (b2 * b2 - d) / (4 * c))
+  };
+  let mut seen = std::collections::HashSet::new();
+  let mut cycles = 0;
+  let mut unit_norm_minus_one = false;
+  for &f in &forms {
+    if seen.contains(&f) {
+      continue;
+    }
+    cycles += 1;
+    let mut g = f;
+    let mut cycle = Vec::new();
+    for _ in 0..=forms.len() {
+      if !seen.insert(g) {
+        break;
+      }
+      cycle.push(g);
+      g = rho(g);
+    }
+    if cycle.iter().any(|&(a, _, _)| a == 1)
+      && cycle.iter().any(|&(a, _, _)| a == -1)
+    {
+      unit_norm_minus_one = true;
+    }
+  }
+  if unit_norm_minus_one {
+    cycles
+  } else {
+    cycles / 2
+  }
+}
