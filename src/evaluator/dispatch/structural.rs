@@ -117,7 +117,16 @@ pub fn dispatch_structural(
     // keeps the wrapper around the result because the front end owns the
     // local state; we hand back the body's value instead, so every
     // display path (a Grid, a Graphics, a Column) renders it as itself.
-    "Module" | "DynamicModule" => return Some(module_ast(args)),
+    "Module" => return Some(module_ast(args)),
+    // DynamicModule[vars, body, opts…] scopes like Module; its options only
+    // concern the front end.
+    "DynamicModule" => {
+      let positional = args
+        .iter()
+        .position(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+        .unwrap_or(args.len());
+      return Some(module_ast(&args[..positional.max(2).min(args.len())]));
+    }
     "Block" => return Some(block_ast(args)),
     "BlockRandom" => return Some(block_random_ast(args)),
     "Assuming" if args.len() == 2 => return Some(assuming_ast(args)),

@@ -58,54 +58,164 @@ pub fn turing_machine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return turing_machine_infinite(args);
   }
 
-  // Parse rule specification
-  let (rule_num, num_states, num_colors) = parse_rule_spec(&args[0])?;
-
-  // Parse initial condition
-  let (init_state, init_pos, tape) = parse_init(&args[1])?;
-
-  // Parse steps
+  let rule = parse_rule(&args[0])?;
+  let (state, start_pos, tape) = parse_init(&args[1])?;
+  rule.warn_initial_state(&args[1], &state);
   let steps = match &args[2] {
     Expr::Integer(n) => *n as usize,
-    _ => {
-      return Ok(unevaluated("TuringMachine", args));
-    }
+    _ => return Ok(unevaluated("TuringMachine", args)),
   };
+  if tape.is_empty() || start_pos < 1 || start_pos > tape.len() {
+    return Ok(unevaluated("TuringMachine", args));
+  }
 
-  // Decode rule number to transition table
-  let transitions = decode_rule(rule_num, num_states, num_colors);
+  // A cyclic tape: the head wraps around at either end.
+  let len = tape.len() as i64;
+  let mut tape = tape;
+  let mut state = state;
+  let mut pos = start_pos as i64; // 1-indexed
+  let mut shift: i64 = 0;
+  let row = |state: &Expr, pos: i64, shift: i64, tape: &[Expr]| {
+    Expr::List(
+      vec![
+        Expr::List(
+          vec![
+            state.clone(),
+            Expr::Integer(pos as i128),
+            Expr::Integer(shift as i128),
+          ]
+          .into(),
+        ),
+        Expr::List(tape.to_vec().into()),
+      ]
+      .into(),
+    )
+  };
+  let mut out = Vec::with_capacity(steps + 1);
+  out.push(row(&state, pos, shift, &tape));
+  for _ in 0..steps {
+    let cell = (pos - 1) as usize;
+    if let Some((new_state, new_color, offset)) =
+      rule.apply(&state, &tape[cell])?
+    {
+      tape[cell] = new_color;
+      state = new_state;
+      shift += offset;
+      pos = (pos - 1 + offset).rem_euclid(len) + 1;
+    }
+    out.push(row(&state, pos, shift, &tape));
+  }
+  Ok(Expr::List(out.into()))
+}
 
-  // Simulate
-  let results = simulate(
-    &transitions,
+/// A machine's rule: a Wolfram rule number decoded into a transition table,
+/// or an explicit list of `{state, color} -> {state', color', offset}` rules
+/// (patterns allowed, states and colours any expressions).
+enum MachineRule {
+  Numbered {
+    rule_num: u64,
+    transitions: Vec<Transition>,
+    num_states: usize,
+    num_colors: usize,
+  },
+  Rules(Expr),
+}
+
+impl MachineRule {
+  /// The transition for `state` reading `color`, or None when no rule
+  /// applies (the machine then stays put, as in Wolfram).
+  fn apply(
+    &self,
+    state: &Expr,
+    color: &Expr,
+  ) -> Result<Option<(Expr, Expr, i64)>, InterpreterError> {
+    match self {
+      MachineRule::Numbered {
+        transitions,
+        num_states,
+        num_colors,
+        ..
+      } => {
+        let (Expr::Integer(s), Expr::Integer(c)) = (state, color) else {
+          return Ok(None);
+        };
+        if *s < 1
+          || *s as usize > *num_states
+          || *c < 0
+          || *c as usize >= *num_colors
+        {
+          return Ok(None);
+        }
+        let t =
+          &transitions[(*num_states - *s as usize) * num_colors + *c as usize];
+        Ok(Some((
+          Expr::Integer(t.new_state as i128),
+          Expr::Integer(t.new_color as i128),
+          t.direction as i64,
+        )))
+      }
+      MachineRule::Rules(rules) => {
+        let subject = Expr::List(vec![state.clone(), color.clone()].into());
+        let result = crate::evaluator::evaluate_function_call_ast(
+          "Replace",
+          &[subject, rules.clone()],
+        )?;
+        match &result {
+          Expr::List(parts) if parts.len() == 3 => match &parts[2] {
+            Expr::Integer(offset) => {
+              Ok(Some((parts[0].clone(), parts[1].clone(), *offset as i64)))
+            }
+            _ => Ok(None),
+          },
+          _ => Ok(None),
+        }
+      }
+    }
+  }
+}
+
+impl MachineRule {
+  /// Wolfram's warning for a numbered rule started in a state it has no
+  /// transitions for (the machine then never moves).
+  fn warn_initial_state(&self, init: &Expr, state: &Expr) {
+    if let MachineRule::Numbered {
+      rule_num,
+      num_states,
+      num_colors,
+      ..
+    } = self
+      && !matches!(state, Expr::Integer(s) if *s >= 1 && *s as usize <= *num_states)
+    {
+      crate::emit_message(&format!(
+        "TuringMachine::ninits: Warning: in the initial state {}, the state {} is not an integer in the range 1 <= state <= {num_states} indicated by the rule {{{rule_num}, {num_states}, {num_colors}, 1}}.",
+        expr_to_string(init),
+        expr_to_string(state)
+      ));
+    }
+  }
+}
+
+fn is_rule(e: &Expr) -> bool {
+  matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+    || matches!(e, Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2)
+}
+
+fn parse_rule(expr: &Expr) -> Result<MachineRule, InterpreterError> {
+  let explicit = match expr {
+    Expr::List(items) => !items.is_empty() && items.iter().all(is_rule),
+    e => is_rule(e),
+  };
+  if explicit {
+    return Ok(MachineRule::Rules(expr.clone()));
+  }
+  let (rule_num, num_states, num_colors) = parse_rule_spec(expr)?;
+  Ok(MachineRule::Numbered {
+    rule_num,
+    transitions: decode_rule(rule_num, num_states, num_colors),
     num_states,
     num_colors,
-    init_state,
-    init_pos,
-    &tape,
-    steps,
-  );
-
-  // Convert to Expr
-  let result_exprs: Vec<Expr> = results
-    .into_iter()
-    .map(|(state, pos, shift, tape)| {
-      let state_info = Expr::List(
-        vec![
-          Expr::Integer(state as i128),
-          Expr::Integer(pos as i128),
-          Expr::Integer(shift as i128),
-        ]
-        .into(),
-      );
-      let tape_expr = Expr::List(
-        tape.into_iter().map(|c| Expr::Integer(c as i128)).collect(),
-      );
-      Expr::List(vec![state_info, tape_expr].into())
-    })
-    .collect();
-
-  Ok(Expr::List(result_exprs.into()))
+  })
 }
 
 /// Parse rule: integer n or {n, s, k}
@@ -145,11 +255,12 @@ fn parse_rule_spec(
   }
 }
 
-/// Parse init: {{state_spec}, tape}
-/// state_spec: {s} or {s, pos}
+/// Parse init: `{state_spec, tape}` where state_spec is `s`, `{s}` or
+/// `{s, pos}`. Returns the state, the 1-indexed head position and the tape
+/// cells (empty when the tape is not a plain list).
 fn parse_init(
   expr: &Expr,
-) -> Result<(usize, usize, Vec<u8>), InterpreterError> {
+) -> Result<(Expr, usize, Vec<Expr>), InterpreterError> {
   let items = match expr {
     Expr::List(items) if items.len() == 2 => items,
     _ => {
@@ -158,66 +269,22 @@ fn parse_init(
       ));
     }
   };
-
-  // Parse state spec
   let (state, pos) = match &items[0] {
-    // The documented form names the state directly; the head starts at 1.
-    Expr::Integer(n) => (*n as usize, 1usize),
-    Expr::List(spec) if spec.len() == 1 => {
-      let s = match &spec[0] {
-        Expr::Integer(n) => *n as usize,
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "TuringMachine: state must be an integer".into(),
-          ));
-        }
-      };
-      (s, 1usize) // default position is 1
-    }
-    Expr::List(spec) if spec.len() == 2 => {
-      let s = match &spec[0] {
-        Expr::Integer(n) => *n as usize,
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "TuringMachine: state must be an integer".into(),
-          ));
-        }
-      };
-      let p = match &spec[1] {
-        Expr::Integer(n) => *n as usize,
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "TuringMachine: position must be an integer".into(),
-          ));
-        }
-      };
-      (s, p)
-    }
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "TuringMachine: state_spec must be {s} or {s, pos}".into(),
-      ));
-    }
+    Expr::List(spec) if spec.len() == 1 => (spec[0].clone(), 1usize),
+    Expr::List(spec) if spec.len() == 2 => match &spec[1] {
+      Expr::Integer(n) if *n >= 1 => (spec[0].clone(), *n as usize),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "TuringMachine: position must be a positive integer".into(),
+        ));
+      }
+    },
+    s => (s.clone(), 1usize),
   };
-
-  // Parse tape
   let tape = match &items[1] {
-    Expr::List(cells) => cells
-      .iter()
-      .map(|e| match e {
-        Expr::Integer(n) => Ok(*n as u8),
-        _ => Err(InterpreterError::EvaluationError(
-          "TuringMachine: tape cells must be integers".into(),
-        )),
-      })
-      .collect::<Result<Vec<u8>, _>>()?,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "TuringMachine: tape must be a list".into(),
-      ));
-    }
+    Expr::List(cells) => cells.to_vec(),
+    _ => Vec::new(),
   };
-
   Ok((state, pos, tape))
 }
 
@@ -261,70 +328,6 @@ fn decode_rule(
   transitions
 }
 
-/// Get transition for given (state, color).
-/// Transition index = (num_states - state) * num_colors + color
-fn get_transition(
-  transitions: &[Transition],
-  num_states: usize,
-  num_colors: usize,
-  state: usize,
-  color: u8,
-) -> &Transition {
-  let index = (num_states - state) * num_colors + color as usize;
-  &transitions[index]
-}
-
-/// Simulate the Turing machine.
-/// Returns Vec of (state, head_position_1indexed, cumulative_shift, tape).
-fn simulate(
-  transitions: &[Transition],
-  num_states: usize,
-  num_colors: usize,
-  init_state: usize,
-  init_pos: usize,
-  init_tape: &[u8],
-  steps: usize,
-) -> Vec<(usize, usize, i64, Vec<u8>)> {
-  let tape_len = init_tape.len();
-  let mut tape = init_tape.to_vec();
-  let mut state = init_state;
-  let mut pos = init_pos; // 1-indexed
-  let mut cumulative_shift: i64 = 0;
-
-  let mut results = Vec::with_capacity(steps + 1);
-  results.push((state, pos, cumulative_shift, tape.clone()));
-
-  for _ in 0..steps {
-    // Read current cell (1-indexed)
-    let color = tape[pos - 1];
-
-    // Get transition
-    let trans =
-      get_transition(transitions, num_states, num_colors, state, color);
-
-    // Write new color
-    tape[pos - 1] = trans.new_color;
-
-    // Update state
-    state = trans.new_state;
-
-    // Move head (periodic boundary)
-    cumulative_shift += trans.direction as i64;
-    let new_pos = pos as i64 + trans.direction as i64;
-    pos = if new_pos < 1 {
-      tape_len
-    } else if new_pos > tape_len as i64 {
-      1
-    } else {
-      new_pos as usize
-    };
-
-    results.push((state, pos, cumulative_shift, tape.clone()));
-  }
-
-  results
-}
-
 /// The background of an `{state, {cells, background}}` initial condition, or
 /// `None` when the tape is an ordinary finite (cyclic) list. The background is
 /// a single colour or a non-empty list of colours repeated periodically.
@@ -343,111 +346,104 @@ fn infinite_tape_background(init: &Expr) -> Option<Expr> {
   .then(|| tape[1].clone())
 }
 
-/// The colours of a background spec: one integer, or a non-empty integer list
-/// that repeats periodically in both directions.
-fn background_pattern(bg: &Expr) -> Option<Vec<u8>> {
+/// The colours of a background spec: one colour, or a non-empty list of
+/// colours that repeats periodically in both directions.
+fn background_pattern(bg: &Expr) -> Option<Vec<Expr>> {
   match bg {
-    Expr::Integer(n) => Some(vec![*n as u8]),
-    Expr::List(items) if !items.is_empty() => items
-      .iter()
-      .map(|e| match e {
-        Expr::Integer(n) => Some(*n as u8),
-        _ => None,
-      })
-      .collect(),
-    _ => None,
+    Expr::List(items) if !items.is_empty() => Some(items.to_vec()),
+    Expr::List(_) => None,
+    other => Some(vec![other.clone()]),
   }
 }
 
-/// Run a machine on an infinite background tape. The head can move at most one
-/// cell per step, so a pad of `steps` cells on either side is enough for the
-/// wrap-around simulation never to wrap; afterwards the tape is cut down to
-/// the cells the run actually touched, which is what Wolfram reports.
+/// Run a machine on an infinite background tape. Cells are addressed by their
+/// offset from the head's starting cell; only written cells are stored, the
+/// rest come from the initial content or the background. Wolfram reports the
+/// window spanning every offset the head reached plus the initial content.
 fn turing_machine_infinite(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let (rule_num, num_states, num_colors) = parse_rule_spec(&args[0])?;
+  let rule = parse_rule(&args[0])?;
   let steps = match &args[2] {
     Expr::Integer(n) => *n as usize,
     _ => return Ok(unevaluated("TuringMachine", args)),
   };
-
   let Expr::List(items) = &args[1] else {
     return Ok(unevaluated("TuringMachine", args));
   };
   let Expr::List(tape_spec) = &items[1] else {
     return Ok(unevaluated("TuringMachine", args));
   };
-  let (Expr::List(cells), Some(bg)) =
+  let (Expr::List(content), Some(bg)) =
     (&tape_spec[0], background_pattern(&tape_spec[1]))
   else {
     return Ok(unevaluated("TuringMachine", args));
   };
-  let content: Vec<u8> = cells
-    .iter()
-    .map(|e| match e {
-      Expr::Integer(n) => Ok(*n as u8),
-      _ => Err(InterpreterError::EvaluationError(
-        "TuringMachine: tape cells must be integers".into(),
-      )),
-    })
-    .collect::<Result<_, _>>()?;
-
   // The state spec is shared with the finite form; only the tape differs.
-  let (state, start_pos, _) = parse_init(&Expr::List(
+  let (mut state, start_pos, _) = parse_init(&Expr::List(
     vec![items[0].clone(), Expr::List(vec![].into())].into(),
   ))?;
+  rule.warn_initial_state(&args[1], &state);
 
-  // Offset 0 is the head's starting cell, and the given content starts there.
-  let pad = steps + 1;
-  // A periodic background is aligned so that the first cell of the initial
-  // content holds the first colour of the pattern.
-  let head = pad + start_pos - 1;
-  let total = pad + content.len().max(1) + pad;
-  let mut tape: Vec<u8> = (0..total)
-    .map(|i| bg[(i as i64 - pad as i64).rem_euclid(bg.len() as i64) as usize])
-    .collect();
-  tape[pad..pad + content.len()].copy_from_slice(&content);
+  // Content index of the cell at offset 0, and the initial colour anywhere:
+  // the background is aligned so the content's first cell holds the
+  // pattern's first colour.
+  let origin = start_pos as i64 - 1;
+  let initial = |x: i64| -> Expr {
+    let i = x + origin;
+    if i >= 0 && (i as usize) < content.len() {
+      content[i as usize].clone()
+    } else {
+      bg[i.rem_euclid(bg.len() as i64) as usize].clone()
+    }
+  };
 
-  let transitions = decode_rule(rule_num, num_states, num_colors);
-  let results = simulate(
-    &transitions,
-    num_states,
-    num_colors,
-    state,
-    head + 1,
-    &tape,
-    steps,
-  );
-
-  // The reported window spans every offset the head reached plus the cells
-  // the initial content occupies.
-  let mut lo = 0i64;
-  let mut hi = content.len().saturating_sub(1) as i64;
-  for (_, _, offset, _) in &results {
-    lo = lo.min(*offset);
-    hi = hi.max(*offset);
+  let mut written: std::collections::HashMap<i64, Expr> =
+    std::collections::HashMap::new();
+  let mut offset: i64 = 0;
+  // Per step: the state, the head offset, and the write made before it.
+  let mut history: Vec<(Expr, i64, Option<(i64, Expr)>)> =
+    vec![(state.clone(), 0, None)];
+  for _ in 0..steps {
+    let color = written
+      .get(&offset)
+      .cloned()
+      .unwrap_or_else(|| initial(offset));
+    let mut write = None;
+    if let Some((new_state, new_color, step)) = rule.apply(&state, &color)? {
+      written.insert(offset, new_color.clone());
+      write = Some((offset, new_color));
+      state = new_state;
+      offset += step;
+    }
+    history.push((state.clone(), offset, write));
   }
 
-  let out: Vec<Expr> = results
-    .into_iter()
-    .map(|(st, _, offset, full_tape)| {
-      let window: Vec<Expr> = (lo..=hi)
-        .map(|x| Expr::Integer(full_tape[(head as i64 + x) as usize] as i128))
-        .collect();
-      Expr::List(
-        vec![
-          Expr::List(
-            vec![
-              Expr::Integer(st as i128),
-              Expr::Integer((offset - lo + 1) as i128),
-              Expr::Integer(offset as i128),
-            ]
-            .into(),
-          ),
-          Expr::List(window.into()),
-        ]
-        .into(),
-      )
-    })
-    .collect();
+  let lo = history.iter().map(|h| h.1).min().unwrap_or(0).min(-origin);
+  let hi = history
+    .iter()
+    .map(|h| h.1)
+    .max()
+    .unwrap_or(0)
+    .max(content.len() as i64 - 1 - origin);
+  let mut window: Vec<Expr> = (lo..=hi).map(initial).collect();
+  let mut out = Vec::with_capacity(history.len());
+  for (st, off, write) in history {
+    if let Some((x, c)) = write {
+      window[(x - lo) as usize] = c;
+    }
+    out.push(Expr::List(
+      vec![
+        Expr::List(
+          vec![
+            st,
+            Expr::Integer((off - lo + 1) as i128),
+            Expr::Integer(off as i128),
+          ]
+          .into(),
+        ),
+        Expr::List(window.clone().into()),
+      ]
+      .into(),
+    ));
+  }
   Ok(Expr::List(out.into()))
 }

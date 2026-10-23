@@ -1436,12 +1436,16 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2 {
     // Rationalize[x, tol]: find rational with smallest denominator within tolerance
     let tolerance = expr_to_num(&args[1]).unwrap_or(f64::EPSILON);
-    let (num, denom) = if tolerance == 0.0 {
-      // Tolerance 0: find best rational approximation (exact float match)
-      find_rational(x, 0.0, i64::MAX)
-    } else {
-      find_rational_smallest_denom(x, tolerance)
-    };
+    if tolerance == 0.0 {
+      return Ok(match rationalize_machine_zero_tolerance(x) {
+        Some((n, d)) if d == BigInt::from(1) => bigint_to_expr(n),
+        Some((n, d)) => {
+          call("Rational", vec![bigint_to_expr(n), bigint_to_expr(d)])
+        }
+        None => num_to_expr(x),
+      });
+    }
+    let (num, denom) = find_rational_smallest_denom(x, tolerance);
     let approx = num as f64 / denom as f64;
     if tolerance > 0.0 && (approx - x).abs() >= tolerance {
       return Ok(num_to_expr(x));
@@ -1570,60 +1574,37 @@ fn rationalize_machine_default(x: f64) -> Option<(BigInt, BigInt)> {
   }
 }
 
-/// Find best rational approximation using continued fractions
-fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
-  if x == 0.0 {
-    return (0, 1);
+/// `Rationalize[x, 0]` for a machine real: the first continued-fraction
+/// convergent h/k of x's exact binary value with
+/// |x - h/k| <= 0.65 * $MachineEpsilon * |x|. The factor was fitted against
+/// wolframscript on 42 values across magnitudes (41 match; the rest of the
+/// rule is undocumented): 0.1 -> 1/10, N[Pi] -> 245850922/78256779,
+/// Cos[0.3] -> 58592581/61331878.
+fn rationalize_machine_zero_tolerance(x: f64) -> Option<(BigInt, BigInt)> {
+  use num_traits::{Signed, Zero};
+  let (num, den) = f64_exact_ratio(x)?;
+  let scale = BigInt::from(20u32) << 52usize;
+  let bound_factor = BigInt::from(13u32) * num.abs();
+  let (mut p, mut q) = (num.clone(), den.clone());
+  let (mut h_prev, mut k_prev) = (BigInt::zero(), BigInt::from(1));
+  let (mut h_cur, mut k_cur) = (BigInt::from(1), BigInt::zero());
+  while !q.is_zero() {
+    let mut a = &p / &q;
+    if !(&p % &q).is_zero() && p.is_negative() {
+      a -= 1;
+    }
+    let r = &p - &a * &q;
+    let h_next = &a * &h_cur + &h_prev;
+    let k_next = &a * &k_cur + &k_prev;
+    let err = (&num * &k_next - &h_next * &den).abs();
+    if &err * &scale <= &bound_factor * &k_next {
+      return Some((h_next, k_next));
+    }
+    h_prev = std::mem::replace(&mut h_cur, h_next);
+    k_prev = std::mem::replace(&mut k_cur, k_next);
+    p = std::mem::replace(&mut q, r);
   }
-
-  let sign = if x < 0.0 { -1 } else { 1 };
-  let x = x.abs();
-
-  let mut p0: i64 = 0;
-  let mut q0: i64 = 1;
-  let mut p1: i64 = 1;
-  let mut q1: i64 = 0;
-
-  let mut xi = x;
-
-  for _ in 0..50 {
-    let ai = xi.floor() as i64;
-    let Some(p2) = ai.checked_mul(p1).and_then(|v| v.checked_add(p0)) else {
-      break;
-    };
-    let Some(q2) = ai.checked_mul(q1).and_then(|v| v.checked_add(q0)) else {
-      break;
-    };
-
-    if q2 == 0 || q2 > max_denom {
-      break;
-    }
-
-    let approx = p2 as f64 / q2 as f64;
-    if tolerance > 0.0 {
-      if (approx - x).abs() < tolerance {
-        return (sign * p2, q2);
-      }
-    } else {
-      // tolerance == 0: stop when the approximation exactly equals x as a float
-      if approx == x {
-        return (sign * p2, q2);
-      }
-    }
-
-    let frac = xi - ai as f64;
-    if frac.abs() < 1e-15 {
-      break;
-    }
-    xi = 1.0 / frac;
-
-    p0 = p1;
-    q0 = q1;
-    p1 = p2;
-    q1 = q2;
-  }
-
-  (sign * p1, q1)
+  Some((h_cur, k_cur))
 }
 
 /// Find rational with smallest denominator within tolerance.

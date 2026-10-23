@@ -2145,19 +2145,12 @@ pub fn hypergeometric_2f1_complex(
   };
   let cabs = |(r, i): (f64, f64)| (r * r + i * i).sqrt();
 
-  // Pfaff transformation for |z| > 1.
-  if cabs(z) > 1.0 {
-    let one_minus_z = (1.0 - z.0, -z.1);
-    let z_over_zm1 = cdiv(z, (z.0 - 1.0, z.1));
-    // (1−z)^(−a)
-    let log_om = (cabs(one_minus_z).ln(), one_minus_z.1.atan2(one_minus_z.0));
-    let neg_a = (-a.0, -a.1);
-    let exponent = cmul(neg_a, log_om);
-    let mag = exponent.0.exp();
-    let prefactor = (mag * exponent.1.cos(), mag * exponent.1.sin());
-    let inner =
-      hypergeometric_2f1_complex(a, (c.0 - b.0, c.1 - b.1), c, z_over_zm1);
-    return cmul(prefactor, inner);
+  // Outside the disc where the series converges quickly, continue
+  // analytically. (A Pfaff transformation used to be applied here, but for
+  // real z > 2 it maps z to z/(z-1), again outside the disc, and recursed
+  // until the stack overflowed.)
+  if cabs(z) > HYP2F1_SERIES_RADIUS {
+    return hypergeometric_2f1_continued(a, b, c, z);
   }
 
   let mut sum = (1.0, 0.0);
@@ -2459,8 +2452,178 @@ fn hypergeometric2f1_1_b_c(
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
+/// Where the defining series is summed directly; beyond it 2F1 is continued
+/// along a path (see [`hypergeometric_2f1_continued`]).
+const HYP2F1_SERIES_RADIUS: f64 = 0.75;
+
+/// 2F1(a, b; c; z) and its derivative by the defining series (|z| small).
+fn hypergeometric_2f1_series_with_derivative(
+  a: (f64, f64),
+  b: (f64, f64),
+  c: (f64, f64),
+  z: (f64, f64),
+) -> ((f64, f64), (f64, f64)) {
+  let f = hypergeometric_2f1_complex(a, b, c, z);
+  // d/dz 2F1(a, b; c; z) = (a b / c) 2F1(a+1, b+1; c+1; z)
+  let ab = cmul(a, b);
+  let scale = cdiv(ab, c);
+  let g = hypergeometric_2f1_complex(
+    (a.0 + 1.0, a.1),
+    (b.0 + 1.0, b.1),
+    (c.0 + 1.0, c.1),
+    z,
+  );
+  (f, cmul(scale, g))
+}
+
+fn cmul((ar, ai): (f64, f64), (br, bi): (f64, f64)) -> (f64, f64) {
+  (ar * br - ai * bi, ar * bi + ai * br)
+}
+
+fn cdiv((ar, ai): (f64, f64), (br, bi): (f64, f64)) -> (f64, f64) {
+  let d = br * br + bi * bi;
+  ((ar * br + ai * bi) / d, (ai * br - ar * bi) / d)
+}
+
+fn cadd((ar, ai): (f64, f64), (br, bi): (f64, f64)) -> (f64, f64) {
+  (ar + br, ai + bi)
+}
+
+fn cabs((r, i): (f64, f64)) -> f64 {
+  r.hypot(i)
+}
+
+/// Analytic continuation of 2F1 by integrating the hypergeometric equation
+///   z (1 - z) w'' + (c - (a + b + 1) z) w' - a b w = 0
+/// along a path from a point where the series converges. Each step re-expands
+/// w in a Taylor series about the current point (its coefficients follow a
+/// three-term recurrence) and moves at most half the distance to the nearer
+/// singular point 0 or 1, so every expansion converges geometrically. The
+/// path stays on the real line for real z < 1. Otherwise it detours round
+/// z = 1 below the axis, which puts real z > 1 on the lower side of the branch
+/// cut, as Wolfram does.
+pub fn hypergeometric_2f1_continued(
+  a: (f64, f64),
+  b: (f64, f64),
+  c: (f64, f64),
+  z: (f64, f64),
+) -> (f64, f64) {
+  let r = cabs(z);
+  if !(r.is_finite()) {
+    return (f64::NAN, f64::NAN);
+  }
+  if cabs((z.0 - 1.0, z.1)) == 0.0 {
+    return (f64::NAN, f64::NAN);
+  }
+  // Start on the ray towards z, inside the series disc.
+  let start_r = 0.5;
+  let start = (z.0 / r * start_r, z.1 / r * start_r);
+  let (mut w, mut dw) =
+    hypergeometric_2f1_series_with_derivative(a, b, c, start);
+
+  // Waypoints: detour round z = 1 when the straight path passes near it.
+  let mut targets: Vec<(f64, f64)> = Vec::new();
+  let dist_to_one = |p: (f64, f64), q: (f64, f64)| -> f64 {
+    let (dx, dy) = (q.0 - p.0, q.1 - p.1);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 == 0.0 {
+      0.0
+    } else {
+      (((1.0 - p.0) * dx + (0.0 - p.1) * dy) / len2).clamp(0.0, 1.0)
+    };
+    (p.0 + t * dx - 1.0).hypot(p.1 + t * dy)
+  };
+  let real_below_one = z.1 == 0.0 && z.0 < 1.0;
+  if !real_below_one && dist_to_one(start, z) < 0.3 {
+    let side = if z.1 > 0.0 { 1.0 } else { -1.0 };
+    targets.push((0.75, 0.5 * side));
+    targets.push((1.25, 0.5 * side));
+  }
+  targets.push(z);
+
+  let ab = cmul(a, b);
+  let r_coef = (-ab.0, -ab.1);
+  let q1 = (-(a.0 + b.0 + 1.0), -(a.1 + b.1));
+  let mut pos = start;
+  for target in targets {
+    loop {
+      let remaining = (target.0 - pos.0, target.1 - pos.1);
+      let rem_len = cabs(remaining);
+      if rem_len == 0.0 {
+        break;
+      }
+      let radius = cabs(pos).min(cabs((pos.0 - 1.0, pos.1)));
+      let max_step = 0.5 * radius;
+      let h = if rem_len <= max_step {
+        remaining
+      } else {
+        (
+          remaining.0 / rem_len * max_step,
+          remaining.1 / rem_len * max_step,
+        )
+      };
+      // Taylor coefficients about `pos` in t = z - pos.
+      let p0 = cmul(pos, (1.0 - pos.0, -pos.1));
+      let p1 = (1.0 - 2.0 * pos.0, -2.0 * pos.1);
+      let q0 = cadd(c, cmul(q1, pos));
+      let mut prev = w; // w_n
+      let mut cur = dw; // w_{n+1}
+      let mut value = cadd(w, cmul(dw, h));
+      let mut deriv = dw;
+      let mut h_pow = h; // h^(n+1)
+      for n in 0..400 {
+        let nf = n as f64;
+        // w_{n+2} = -[(p1 n (n+1) + q0 (n+1)) w_{n+1}
+        //            + (-n (n-1) + q1 n + R) w_n] / (p0 (n+1)(n+2))
+        let k1 = cadd(
+          (p1.0 * nf * (nf + 1.0), p1.1 * nf * (nf + 1.0)),
+          (q0.0 * (nf + 1.0), q0.1 * (nf + 1.0)),
+        );
+        let k0 = cadd((-nf * (nf - 1.0) + q1.0 * nf, q1.1 * nf), r_coef);
+        let numer = cadd(cmul(k1, cur), cmul(k0, prev));
+        let denom = (
+          p0.0 * (nf + 1.0) * (nf + 2.0),
+          p0.1 * (nf + 1.0) * (nf + 2.0),
+        );
+        let next = cdiv((-numer.0, -numer.1), denom);
+        let h_pow_prev = h_pow;
+        h_pow = cmul(h_pow, h);
+        let term = cmul(next, h_pow);
+        let dterm = cmul(next, h_pow_prev);
+        let dterm = (dterm.0 * (nf + 2.0), dterm.1 * (nf + 2.0));
+        value = cadd(value, term);
+        deriv = cadd(deriv, dterm);
+        prev = cur;
+        cur = next;
+        if cabs(term) <= 1e-17 * cabs(value)
+          && cabs(dterm) <= 1e-17 * cabs(deriv)
+        {
+          break;
+        }
+      }
+      w = value;
+      dw = deriv;
+      pos = cadd(pos, h);
+      if rem_len <= max_step {
+        pos = target;
+        break;
+      }
+    }
+  }
+  w
+}
+
 /// Compute 2F1(a, b; c; z) using series expansion
 pub fn hypergeometric2f1(a: f64, b: f64, c: f64, z: f64) -> f64 {
+  if z.abs() > HYP2F1_SERIES_RADIUS {
+    return hypergeometric_2f1_continued(
+      (a, 0.0),
+      (b, 0.0),
+      (c, 0.0),
+      (z, 0.0),
+    )
+    .0;
+  }
   // Series: sum_{n=0}^{inf} (a)_n (b)_n / (c)_n / n! * z^n
   let mut sum = 1.0;
   let mut term = 1.0;

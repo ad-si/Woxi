@@ -351,6 +351,27 @@ mod table_do_bare_count {
 mod table_symbolic_bounds {
   use super::*;
 
+  // Bounds are evaluated once: the validity check used to evaluate them a
+  // second time (a side effect ran twice, an expensive bound cost double).
+  #[test]
+  fn bounds_evaluate_once() {
+    assert_eq!(interpret("n = 0; Table[k, {k, n++; 3}]; n").unwrap(), "1");
+    assert_eq!(
+      interpret("n = 0; Table[k, {k, (n++; {a, b})}]; n").unwrap(),
+      "1"
+    );
+    // The message quotes the iterator with its bounds evaluated, as Wolfram
+    // does.
+    assert_eq!(
+      interpret("a = \"x\"; Table[1, {i, a, 3}]").unwrap(),
+      "Table[1, {i, a, 3}]"
+    );
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      ["Table::iterb: Iterator {i, x, 3} does not have appropriate bounds."]
+    );
+  }
+
   // A non-numeric iterator bound leaves Table unevaluated (::iterb) instead of
   // raising an evaluation error.
   #[test]
@@ -14107,6 +14128,57 @@ mod array_reshape {
 mod sparse_array_list_ops {
   use super::*;
 
+  // `{pos1, pos2, …} -> v` gives every position v; with explicit
+  // dimensions the position-list forms used to stay unevaluated.
+  #[test]
+  fn position_list_rules() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{{1, 2}, {3, 4}} -> 1]]").unwrap(),
+      "{{0, 1, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{{1, 2}, {3, 4}} -> {5, 6}, {4, 5}]]")
+        .unwrap(),
+      "{{0, 5, 0, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, 0, 6, 0}, {0, 0, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{{1, 2}, {3, 4}} -> 1, {4, 5}, x]]")
+        .unwrap(),
+      "{{x, 1, x, x, x}, {x, x, x, x, x}, {x, x, x, 1, x}, {x, x, x, x, x}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{1, 3} -> 7]]").unwrap(),
+      "{{0, 0, 7}}"
+    );
+  }
+
+  // A SparseArray whose positions are not integers does not densify; list
+  // operations on it used to recurse until the stack overflowed.
+  #[test]
+  fn invalid_positions_stay_symbolic() {
+    assert_eq!(
+      interpret(
+        "Append[SparseArray[{{1, 1} -> 0, {1 + a, 2} -> 5}, {4, 3}, 0], x]"
+      )
+      .unwrap(),
+      "SparseArray[{{1, 1} -> 0, {1 + a, 2} -> 5}, {4, 3}, 0, x]"
+    );
+  }
+
+  #[test]
+  fn too_many_arguments() {
+    assert_eq!(
+      interpret("SparseArray[{{1, 1} -> 0}, {4, 3}, 0, x, y]").unwrap(),
+      "SparseArray[{{1, 1} -> 0}, {4, 3}, 0, x, y]"
+    );
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      [
+        "SparseArray::argb: SparseArray called with 5 arguments; between 1 and 4 arguments are expected."
+      ]
+    );
+  }
+
   // Part with a full multi-index into a higher-rank SparseArray yields the
   // scalar entry (densifying under the hood). Previously the SparseArray was
   // treated as an ordinary expression and Part wrongly indexed its stored
@@ -23634,6 +23706,75 @@ mod transpose_sparse_array {
       interpret("Head[ArrayPlot[Transpose[SparseArray[{{1, 2} -> 5}]]]]")
         .unwrap(),
       "Graphics"
+    );
+  }
+}
+
+// A symbol's large lists are stored shared after the first lookup, so a read
+// copies a pointer instead of the array. These pin the copy-on-write and
+// re-evaluation semantics that sharing must keep.
+mod shared_own_value_lists {
+  use super::*;
+
+  #[test]
+  fn part_assignment_to_a_copy_leaves_the_original() {
+    assert_eq!(
+      interpret(
+        "T = Range[20]; U = T; Length[U]; U[[1]] = 0; {T[[1]], U[[1]], Total[T]}"
+      )
+      .unwrap(),
+      "{1, 0, 210}"
+    );
+  }
+
+  #[test]
+  fn nested_part_assignment_to_a_copy_leaves_the_original() {
+    assert_eq!(
+      interpret(
+        "m = Table[i + j, {i, 20}, {j, 20}]; n = m; n[[2, 3]] = -1; {m[[2, 3]], n[[2, 3]]}"
+      )
+      .unwrap(),
+      "{5, -1}"
+    );
+  }
+
+  #[test]
+  fn symbol_assigned_into_shared_list_is_reevaluated() {
+    assert_eq!(
+      interpret("T = Range[20]; Length[T]; T[[5]] = x; x = 3; T[[5]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn symbolic_list_picks_up_later_values() {
+    assert_eq!(
+      interpret("z = Table[y, {20}]; Length[z]; y = 2; Total[z]").unwrap(),
+      "40"
+    );
+  }
+
+  #[test]
+  fn append_to_shared_list() {
+    assert_eq!(
+      interpret(
+        "T = Range[20]; Length[T]; AppendTo[T, 21]; {Length[T], Last[T]}"
+      )
+      .unwrap(),
+      "{21, 21}"
+    );
+  }
+
+  #[test]
+  fn rational_and_complex_elements_stay_numbers() {
+    assert_eq!(
+      interpret("a = Table[i/2, {i, 20}]; Length[a]; {a[[3]], Head[a[[3]]]}")
+        .unwrap(),
+      "{3/2, Rational}"
+    );
+    assert_eq!(
+      interpret("c = Table[i + I, {i, 20}]; Length[c]; c[[2]]").unwrap(),
+      "2 + I"
     );
   }
 }

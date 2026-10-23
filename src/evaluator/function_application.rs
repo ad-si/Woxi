@@ -3418,6 +3418,22 @@ fn apply_transformation_function(
     });
   };
 
+  // An (n+1)×(n+1) matrix acts on length-n points, or on a list of them.
+  let dim = rows.len().saturating_sub(1);
+  let fits = |c: &Expr| matches!(c, Expr::List(v) if v.len() == dim);
+  let is_point =
+    coords.len() == dim && !coords.iter().any(|c| matches!(c, Expr::List(_)));
+  if !is_point && !(!coords.is_empty() && coords.iter().all(fits)) {
+    crate::emit_message(&format!(
+      "TransformationFunction::fdim: {} is not a vector of length {dim} or a list of length {dim} vectors.",
+      crate::syntax::expr_to_string(point)
+    ));
+    return Ok(Expr::CurriedCall {
+      func: Box::new(call1("TransformationFunction", matrix.clone())),
+      args: args.to_vec(),
+    });
+  }
+
   // `point` may instead be a *list of points* (each itself a coordinate
   // list), e.g. `RotationTransform[angle, axis][{{x1,y1,z1}, {x2,y2,z2}}]`.
   // A genuine point's own coordinates are never themselves lists, so treat

@@ -166,7 +166,7 @@ pub fn dispatch_boolean_functions(
     "BooleanFunction" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::boolean_ast::boolean_function_ast(args));
     }
-    "BooleanMinimize" if args.len() == 1 => {
+    "BooleanMinimize" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::boolean_ast::boolean_minimize_ast(args));
     }
     "BooleanCountingFunction" if args.len() == 2 || args.len() == 3 => {

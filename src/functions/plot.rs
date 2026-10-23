@@ -351,6 +351,17 @@ pub(crate) fn svg_header(w: u32, h: u32, full_width: bool) -> String {
   }
 }
 
+/// Whether a data-point marker should be drawn: finite and within one plot
+/// span of the visible range. Markers outside the range are not shown, and
+/// one far outside it (a 1e300 value) overflows plotters' pixel arithmetic.
+fn marker_in_view(x: f64, y: f64, xr: (f64, f64), yr: (f64, f64)) -> bool {
+  let near = |v: f64, (lo, hi): (f64, f64)| {
+    let span = (hi - lo).abs().max(f64::MIN_POSITIVE);
+    v >= lo.min(hi) - span && v <= lo.max(hi) + span
+  };
+  x.is_finite() && y.is_finite() && near(x, xr) && near(y, yr)
+}
+
 pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
   let substituted = substitute_var(body, var, &Expr::Real(x));
   let result = evaluate_expr_to_expr(&substituted).ok()?;
@@ -1035,6 +1046,7 @@ pub(crate) fn axes_label_svg(
     axes,
     font_size,
     label_fill,
+    None,
   )
 }
 
@@ -1047,17 +1059,36 @@ pub(crate) fn axes_label_svg_at(
   (show_x_axis, show_y_axis): (bool, bool),
   font_size: f64,
   label_fill: &str,
+  canvas_width: Option<f64>,
 ) -> String {
   let Some((x_label, y_label)) = axes_label else {
     return String::new();
   };
   let mut svg = String::new();
   if show_x_axis && !x_label.is_empty() {
+    let label_x = x0 + w + font_size * 0.6;
+    // A label wider than the room left of the canvas edge (an
+    // `ImagePadding` can state less than it needs) shrinks to fit rather
+    // than being clipped.
+    let label_font = match canvas_width {
+      Some(cw) => {
+        let width = crate::functions::graphics::box_string_visible_len(x_label)
+          as f64
+          * font_size
+          * 0.55;
+        let room = cw - label_x;
+        if width > room && room > 0.0 {
+          (font_size * room / width).max(font_size * 0.6)
+        } else {
+          font_size
+        }
+      }
+      None => font_size,
+    };
     svg.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{axis_y:.1}\" text-anchor=\"start\" \
+      "<text x=\"{label_x:.1}\" y=\"{axis_y:.1}\" text-anchor=\"start\" \
        dominant-baseline=\"central\" font-family=\"sans-serif\" \
-       font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
-      x0 + w + font_size * 0.6,
+       font-size=\"{label_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
       crate::functions::graphics::box_string_to_svg_scaled(
         x_label,
         RESOLUTION_SCALE as f64
@@ -1991,6 +2022,8 @@ fn parse_filling(replacement: &Expr) -> Filling {
   match replacement {
     Expr::Identifier(v) if v == "Axis" => Filling::Axis,
     Expr::Identifier(v) if v == "Automatic" => Filling::Axis,
+    // `i -> True` is how a Demonstration switches a curve's shading on.
+    Expr::Identifier(v) if v == "True" => Filling::Axis,
     Expr::Identifier(v) if v == "Bottom" => Filling::Bottom,
     Expr::Identifier(v) if v == "Top" => Filling::Top,
     Expr::Identifier(v) if v == "None" => Filling::None,
@@ -2753,6 +2786,7 @@ pub(crate) fn plot_labels_svg(
   sf: f64,
   label_fill: &str,
   title_default_fill: &str,
+  canvas_width: f64,
 ) -> String {
   let axis_y = margin_top + plot_h;
   // `LabelStyle` overrides the frame/axes/title text's default size and
@@ -2868,6 +2902,7 @@ pub(crate) fn plot_labels_svg(
     opts.axes,
     font_size,
     label_fill,
+    Some(canvas_width),
   ));
 
   // Top FrameLabel (sits just above the plot's top edge)
@@ -3870,7 +3905,7 @@ fn generate_svg_with_options(
             let finite_pts: Vec<(f64, f64)> = mesh_src
               .iter()
               .copied()
-              .filter(|(x, y)| x.is_finite() && y.is_finite())
+              .filter(|&(x, y)| marker_in_view(x, y, (x_min, x_max), (y_min, y_max)))
               .collect();
             chart
               .draw_series(
@@ -3907,7 +3942,9 @@ fn generate_svg_with_options(
                 marker_src
                   .iter()
                   .copied()
-                  .filter(|(x, y)| x.is_finite() && y.is_finite())
+                  .filter(|&(x, y)| {
+                    marker_in_view(x, y, (x_min, x_max), (y_min, y_max))
+                  })
                   .map(|(x, y)| {
                     plotters::element::Text::new(
                       marker.glyph.clone(),
@@ -4134,6 +4171,7 @@ fn generate_svg_with_options(
         sf,
         label_fill,
         title_default_fill,
+        render_width as f64,
       ));
 
       buf.insert_str(insert_pos, &labels_svg);
@@ -5225,6 +5263,7 @@ pub(crate) fn generate_scatter_svg_with_options(
       sf,
       label_fill,
       title_default_fill,
+      render_width as f64,
     );
     if !labels.is_empty() {
       buf.insert_str(pos, &labels);
@@ -5446,6 +5485,23 @@ fn scatter_overlay_primitives(
   prims
 }
 
+/// Where a chart's legend goes relative to the plot.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum LegendLayout {
+  /// A column beside the plot (the default).
+  #[default]
+  Column,
+  /// A single row below the plot (`LegendAppearance -> "Row"`).
+  Row,
+}
+
+/// Where a vertical bar chart draws the labels produced by `LabelingFunction`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BarLabelPlacement {
+  Below,
+  Above,
+}
+
 /// Generate SVG for a bar chart using plotters.
 pub(crate) fn generate_bar_svg(
   groups: &[Vec<f64>],
@@ -5459,9 +5515,11 @@ pub(crate) fn generate_bar_svg(
   frame_label: Option<(&str, &str)>,
   chart_style: &[WoxiColor],
   chart_legends: &[String],
+  legend_layout: LegendLayout,
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
   bar_labels: &[String],
+  bar_label_placement: BarLabelPlacement,
   stacked: bool,
   show_ticks: bool,
   epilog: &[Expr],
@@ -5546,6 +5604,12 @@ pub(crate) fn generate_bar_svg(
   if has_value_labels {
     bottom_extra += 30.0 * sf;
   }
+  // A `LegendAppearance -> "Row"` legend runs along the bottom edge.
+  let row_legend =
+    legend_layout == LegendLayout::Row && !chart_legends.is_empty();
+  if row_legend {
+    bottom_extra += 30.0 * sf;
+  }
   if frame_label_x.is_some() {
     bottom_extra += 24.0 * sf;
   }
@@ -5565,7 +5629,7 @@ pub(crate) fn generate_bar_svg(
         * sf
         * 18.0
   }) as u32;
-  let legend_margin_right = if chart_legends.is_empty() {
+  let legend_margin_right = if chart_legends.is_empty() || row_legend {
     10 * s as u32
   } else {
     let max_label_len = chart_legends
@@ -5758,7 +5822,7 @@ pub(crate) fn generate_bar_svg(
       scale: sf,
     };
     let overlay = crate::functions::plot_epilog::render_overlay_svg(
-      epilog, &area, "epilog", true,
+      epilog, &area, "epilog", false,
     );
     buf.insert_str(pos, &overlay);
   }
@@ -5841,7 +5905,8 @@ pub(crate) fn generate_bar_svg(
     }
 
     // Value labels from `LabelingFunction` (e.g. `Placed[#, Below] &`): one
-    // per bar, drawn just below the bar's base at the axis. `bar_labels` is a
+    // per bar, drawn just below the bar's base at the axis (or over its top
+    // for `Above`). `bar_labels` is a
     // flat list across all groups/bars, aligned with the bar draw order.
     if has_value_labels {
       let gap = 0.1;
@@ -5873,7 +5938,14 @@ pub(crate) fn generate_bar_svg(
           }
           let cx =
             map_x_val(group_x0 + (bar_x_offset(bi) as f64 + 0.5) * bar_w);
-          let ly = axis_y + fit_font * 1.3;
+          // `Placed[…, Above]` puts the label over the bar's top instead.
+          let ly =
+            if bar_label_placement == BarLabelPlacement::Above && !stacked {
+              plot_y0 + (y_max - group[bi]) / (y_max - y_min) * plot_h
+                - fit_font * 0.4
+            } else {
+              axis_y + fit_font * 1.3
+            };
           labels_svg.push_str(&format!(
             "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{fit_font:.0}\" \
@@ -5960,11 +6032,24 @@ pub(crate) fn generate_bar_svg(
       ));
     }
 
-    // ChartLegends: color swatch + label, positioned to the right of the plot
+    // ChartLegends: color swatch + label, positioned to the right of the
+    // plot (or in a single row below it for `LegendAppearance -> "Row"`)
     if !chart_legends.is_empty() {
       let legend_font = sf * 16.0;
       let swatch_size = sf * 12.0;
       let swatch_gap = sf * 6.0;
+      let entry_gap = sf * 14.0;
+      let entry_width = |label: &String| {
+        swatch_size
+          + swatch_gap
+          + crate::functions::graphics::box_string_visible_len(label) as f64
+            * sf
+            * 8.5
+      };
+      let row_width = chart_legends.iter().map(entry_width).sum::<f64>()
+        + entry_gap * (chart_legends.len() - 1) as f64;
+      let mut row_x = plot_x0 + (plot_w - row_width) / 2.0;
+      let row_y = render_height as f64 - sf * 24.0;
       let legend_x = plot_x0 + plot_w + sf * 16.0;
       let legend_y_start = plot_y0 + sf * 8.0;
       let line_height = sf * 22.0;
@@ -5980,7 +6065,13 @@ pub(crate) fn generate_bar_svg(
             (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
           )
         };
-        let ly = legend_y_start + i as f64 * line_height;
+        let (legend_x, ly) = if row_legend {
+          let x = row_x;
+          row_x += entry_width(label) + entry_gap;
+          (x, row_y)
+        } else {
+          (legend_x, legend_y_start + i as f64 * line_height)
+        };
         // Color swatch
         labels_svg.push_str(&format!(
           "<rect x=\"{legend_x:.1}\" y=\"{ly:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \
@@ -9243,12 +9334,29 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
         Some((pos, label))
       }
       other => {
+        let other = &numeric_tick_value(other);
         let pos = tick_position(other)?;
         Some((pos, bare_tick_label(other, pos)))
       }
     })
     .collect();
   (!ticks.is_empty()).then_some(ticks)
+}
+
+/// A bare tick position that evaluates to a plain number (`rate - vac` with
+/// both set, `N[f[x], 4]`) is that number, as plot options are evaluated
+/// before the plot reads them. A symbolic result (`3 Pi/2`) keeps the form it
+/// was written in so it is labelled as typed.
+fn numeric_tick_value(e: &Expr) -> Expr {
+  match evaluate_expr_to_expr(e) {
+    Ok(
+      v @ (Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)),
+    ) => v,
+    _ => e.clone(),
+  }
 }
 
 /// The numeric position of a tick. The spec is kept as written, so a position
