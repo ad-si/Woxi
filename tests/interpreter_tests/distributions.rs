@@ -9154,3 +9154,28 @@ mod gamma_weibull_sampling {
     );
   }
 }
+
+mod quantile_by_cdf_bisection {
+  use super::*;
+
+  // Continuous distributions without a closed-form inverse invert their
+  // numeric CDF at machine-real probabilities (values from wolframscript).
+  #[test]
+  fn machine_real_probability() {
+    assert_eq!(
+      interpret(
+        "Chop[Map[Quantile[#, 0.3] &, {TriangularDistribution[{0, 1}], \
+         KumaraswamyDistribution[2, 3], LogLogisticDistribution[2, 1], \
+         WignerSemicircleDistribution[1]}] - {0.3872983346207417, \
+         0.33480740472307263, 0.6546536707079771, -0.31969150979050387}, \
+         10^-12]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("Quantile[HistogramDistribution[{1, 2, 3, 4}], 0.95]").unwrap(),
+      "5.6"
+    );
+  }
+}

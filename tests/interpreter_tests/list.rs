@@ -7192,6 +7192,65 @@ mod random_variate {
   use super::*;
 
   #[test]
+  fn inverse_transform_samples_quantile_distributions() {
+    // Distributions without a dedicated sampler draw via Quantile[dist, u].
+    assert_eq!(
+      interpret(
+        "Map[(s = RandomVariate[#, 200]; {Length[s], VectorQ[s, NumericQ]}) &, \
+         {ExponentialDistribution[1.], StudentTDistribution[3], \
+          BetaDistribution[2, 3], NegativeBinomialDistribution[3, 0.5]}]"
+      )
+      .unwrap(),
+      "{{200, True}, {200, True}, {200, True}, {200, True}}"
+    );
+    assert_eq!(
+      interpret(
+        "{Min[#] >= 0, Max[#] <= 1} &[RandomVariate[BetaDistribution[2, 3], 500]]"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+    assert_eq!(
+      interpret(
+        "Union[RandomVariate[DiscreteUniformDistribution[{1, 3}], 300]]"
+      )
+      .unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Dimensions[RandomReal[ExponentialDistribution[2], {3, 4}]]")
+        .unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
+  fn categorical_distribution() {
+    assert_eq!(
+      interpret(
+        "Union[RandomVariate[CategoricalDistribution[{a, b}, {0.3, 0.7}], 200]]"
+      )
+      .unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret(
+        "MemberQ[{x, y}, RandomVariate[CategoricalDistribution[{x, y}]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn unknown_distribution_stays_unevaluated() {
+    assert_eq!(
+      interpret("RandomVariate[FooDistribution[1], 2]").unwrap(),
+      "RandomVariate[FooDistribution[1], 2]"
+    );
+  }
+
+  #[test]
   fn uniform_single() {
     let result: f64 = interpret("RandomVariate[UniformDistribution[{0, 1}]]")
       .unwrap()
