@@ -5459,6 +5459,13 @@ fn scatter_overlay_primitives(
   prims
 }
 
+/// Where a vertical bar chart draws the labels produced by `LabelingFunction`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BarLabelPlacement {
+  Below,
+  Above,
+}
+
 /// Generate SVG for a bar chart using plotters.
 pub(crate) fn generate_bar_svg(
   groups: &[Vec<f64>],
@@ -5475,6 +5482,7 @@ pub(crate) fn generate_bar_svg(
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
   bar_labels: &[String],
+  bar_label_placement: BarLabelPlacement,
   stacked: bool,
   show_ticks: bool,
   epilog: &[Expr],
@@ -5771,7 +5779,7 @@ pub(crate) fn generate_bar_svg(
       scale: sf,
     };
     let overlay = crate::functions::plot_epilog::render_overlay_svg(
-      epilog, &area, "epilog", true,
+      epilog, &area, "epilog", false,
     );
     buf.insert_str(pos, &overlay);
   }
@@ -5854,7 +5862,8 @@ pub(crate) fn generate_bar_svg(
     }
 
     // Value labels from `LabelingFunction` (e.g. `Placed[#, Below] &`): one
-    // per bar, drawn just below the bar's base at the axis. `bar_labels` is a
+    // per bar, drawn just below the bar's base at the axis (or over its top
+    // for `Above`). `bar_labels` is a
     // flat list across all groups/bars, aligned with the bar draw order.
     if has_value_labels {
       let gap = 0.1;
@@ -5886,7 +5895,14 @@ pub(crate) fn generate_bar_svg(
           }
           let cx =
             map_x_val(group_x0 + (bar_x_offset(bi) as f64 + 0.5) * bar_w);
-          let ly = axis_y + fit_font * 1.3;
+          // `Placed[…, Above]` puts the label over the bar's top instead.
+          let ly =
+            if bar_label_placement == BarLabelPlacement::Above && !stacked {
+              plot_y0 + (y_max - group[bi]) / (y_max - y_min) * plot_h
+                - fit_font * 0.4
+            } else {
+              axis_y + fit_font * 1.3
+            };
           labels_svg.push_str(&format!(
             "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{fit_font:.0}\" \
