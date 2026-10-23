@@ -8775,20 +8775,19 @@ pub fn interpolation_ast(
   // order per axis (`InterpolationOrder -> {orderX, orderY}`); a bare
   // integer applies to both.
   let mut interp_order: i128 = 3;
-  let mut interp_order_xy: Option<(i128, i128)> = None;
+  let mut interp_orders: Option<Vec<i128>> = None;
   let data_arg = &args[0];
 
   let mut apply_interpolation_order = |replacement: &Expr| {
     if let Some(n) = crate::functions::math_ast::expr_to_i128(replacement) {
       interp_order = n;
     } else if let Expr::List(items) = replacement
-      && items.len() == 2
-      && let (Some(a), Some(b)) = (
-        crate::functions::math_ast::expr_to_i128(&items[0]),
-        crate::functions::math_ast::expr_to_i128(&items[1]),
-      )
+      && let Some(list) = items
+        .iter()
+        .map(crate::functions::math_ast::expr_to_i128)
+        .collect::<Option<Vec<i128>>>()
     {
-      interp_order_xy = Some((a, b));
+      interp_orders = Some(list);
     }
   };
   for opt in args.iter().skip(1) {
@@ -8899,61 +8898,40 @@ pub fn interpolation_ast(
     return Ok(build_2d_list_interpolation(&grid, interp_order, head));
   }
 
-  // `Interpolation` (not `ListInterpolation`, whose triples are raw grid
-  // rows — see above) of a flat `{x, y, z}` list — the shape
-  // `Flatten[Table[Table[{x, y, f[x, y]}, {y, ys}], {x, xs}], 1]` (or the
-  // equivalent built with `Join`) produces — is 2-D scattered data. It
-  // interpolates like `ListInterpolation`'s grid once the distinct x/y
-  // coordinates recover the grid structure; see `try_2d_scattered_interpolation`.
-  //
-  // The documented multidimensional form `{{{x1, y1}, f1}, {{x2, y2}, f2},
-  // ...}` — a list of `{coords, value}` pairs — carries the same grid, just
-  // nested rather than flattened; normalize it to the flat triple shape so
-  // both reach `try_2d_scattered_interpolation`.
-  let flattened_2d_pairs: Option<Vec<Expr>> = if head != "ListInterpolation"
-    && matches!(&data_list[0], Expr::List(items)
-      if items.len() == 2
-        && matches!(&items[0], Expr::List(coords) if coords.len() == 2)
-        && !matches!(&items[1], Expr::List(_)))
-  {
-    data_list
+  // Multidimensional data on a complete grid: `{{x1, …, xn}, f}` pairs (the
+  // documented form; `f` may be a vector) or flat `{x1, …, xn, f}` rows, as
+  // `Flatten[Table[{x, y, f[x, y]}, {x, xs}, {y, ys}], 1]` produces.
+  // (`ListInterpolation`'s rows are grid rows, handled above.)
+  if head != "ListInterpolation" {
+    let samples: Option<Vec<(Vec<Expr>, Expr)>> = data_list
       .iter()
       .map(|item| {
         let Expr::List(parts) = item else {
           return None;
         };
-        if parts.len() != 2 {
-          return None;
+        match parts.as_slice() {
+          [Expr::List(coords), value] if coords.len() >= 2 => {
+            Some((coords.to_vec(), value.clone()))
+          }
+          [coords @ .., value]
+            if coords.len() >= 2
+              && !parts.iter().any(|p| matches!(p, Expr::List(_))) =>
+          {
+            Some((coords.to_vec(), value.clone()))
+          }
+          _ => None,
         }
-        let Expr::List(coords) = &parts[0] else {
-          return None;
-        };
-        if coords.len() != 2 {
-          return None;
-        }
-        Some(Expr::List(
-          vec![coords[0].clone(), coords[1].clone(), parts[1].clone()].into(),
-        ))
       })
-      .collect::<Option<Vec<Expr>>>()
-  } else {
-    None
-  };
-  let triples_2d: Option<&[Expr]> =
-    flattened_2d_pairs.as_deref().or_else(|| {
-      (head != "ListInterpolation"
-        && matches!(&data_list[0], Expr::List(items) if items.len() == 3))
-      .then_some(data_list)
-    });
-  if let Some(triples) = triples_2d
-    && let Some(result) = try_2d_scattered_interpolation(
-      triples,
-      interp_order_xy.map_or(interp_order, |(a, _)| a),
-      interp_order_xy.map_or(interp_order, |(_, b)| b),
-      head,
-    )
-  {
-    return Ok(result);
+      .collect();
+    if let Some(samples) = samples
+      && let Some(result) = try_grid_interpolation(
+        &samples,
+        interp_orders.as_deref().unwrap_or(&[interp_order]),
+        head,
+      )
+    {
+      return Ok(result);
+    }
   }
 
   // Vector- or tensor-valued data `{{x1, {…}}, {x2, {…}}, …}` interpolates
@@ -9266,241 +9244,217 @@ fn same_coordinate(a: f64, b: f64) -> bool {
   (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0)
 }
 
-/// Detect a flat `{x, y, z}` triple list that tiles a complete rectangular
-/// grid over its distinct x and y coordinates — the shape
-/// `Flatten[Table[Table[{x, y, f[x, y]}, {y, ys}], {x, xs}], 1]` (or the
-/// equivalent built with `Join`) produces — and build the 2-D
-/// `InterpolatingFunction` for it: `InterpolatingFunction[{{xmin, xmax},
-/// {ymin, ymax}}, grid, {orderX, orderY}, {xcoords, ycoords}]`, the explicit-
-/// coordinate counterpart of `build_2d_list_interpolation`'s implicit
-/// integer grid.
+/// Build the `InterpolatingFunction` for `{coords, value}` samples that tile
+/// a complete grid in two or more dimensions: `InterpolatingFunction[{{x1min,
+/// x1max}, …}, values, {order1, …}, {x1coords, …}]`, where `values` is nested
+/// one level per axis. Values may be real, complex or vectors (each
+/// component interpolates on its own).
 ///
-/// Returns `Ok(None)` when the data isn't in this shape (a non-triple entry,
-/// a non-numeric coordinate, or coordinates that don't tile a full grid) so
-/// the caller falls back to its other formats. Genuinely scattered, non-grid
-/// 2-D data — which Wolfram interpolates via Delaunay triangulation — is not
-/// supported here.
-fn try_2d_scattered_interpolation(
-  data_list: &[Expr],
-  order_x: i128,
-  order_y: i128,
+/// Returns `None` when the samples are not such a grid (a non-numeric
+/// coordinate, a missing or repeated grid point) so the caller falls back to
+/// its other formats. Genuinely scattered data, which Wolfram interpolates
+/// over a Delaunay triangulation, is not supported here.
+fn try_grid_interpolation(
+  samples: &[(Vec<Expr>, Expr)],
+  orders: &[i128],
   head: &str,
 ) -> Option<Expr> {
-  // At least a 2x2 grid is needed for either axis to interpolate at all.
-  if data_list.len() < 4 {
+  let n = samples.first()?.0.len();
+  if n < 2 || samples.iter().any(|(c, _)| c.len() != n) {
     return None;
   }
-  let mut triples: Vec<(Expr, f64, Expr, f64, Expr, f64)> =
-    Vec::with_capacity(data_list.len());
-  for item in data_list {
-    let Expr::List(parts) = item else {
-      return None;
-    };
-    if parts.len() != 3 {
-      return None;
+  // Distinct coordinates per axis, sorted, each keeping the first expression
+  // seen for it (so an exact coordinate stays exact).
+  let mut axes: Vec<Vec<(f64, Expr)>> = vec![Vec::new(); n];
+  let mut numeric: Vec<Vec<f64>> = Vec::with_capacity(samples.len());
+  for (coords, value) in samples {
+    grid_value(value)?;
+    let mut point = Vec::with_capacity(n);
+    for (k, c) in coords.iter().enumerate() {
+      let v = interp_value_to_f64(c).ok()?;
+      if !axes[k].iter().any(|(a, _)| same_coordinate(*a, v)) {
+        axes[k].push((v, c.clone()));
+      }
+      point.push(v);
     }
-    let (Ok(x), Ok(y), Some((z, z_im))) = (
-      interp_value_to_f64(&parts[0]),
-      interp_value_to_f64(&parts[1]),
-      interp_complex_to_parts(&parts[2]),
-    ) else {
-      return None;
-    };
-    // A complex value is stored as its (numericised) complex expression; the
-    // evaluator interpolates the real and imaginary parts separately.
-    let z_expr = if z_im == 0.0 {
-      parts[2].clone()
-    } else {
-      crate::functions::math_ast::numeric_utils::build_complex_float_expr(
-        z, z_im,
-      )
-    };
-    triples.push((parts[0].clone(), x, parts[1].clone(), y, z_expr, z));
+    numeric.push(point);
   }
-
-  // Distinct x/y values, sorted, each keeping the first expression seen for
-  // it (so an exact/integer coordinate stays exact).
-  let mut xs_pairs: Vec<(f64, Expr)> = Vec::new();
-  let mut ys_pairs: Vec<(f64, Expr)> = Vec::new();
-  for (xe, x, ye, y, _ze, _z) in &triples {
-    if !xs_pairs.iter().any(|(xv, _)| same_coordinate(*xv, *x)) {
-      xs_pairs.push((*x, xe.clone()));
-    }
-    if !ys_pairs.iter().any(|(yv, _)| same_coordinate(*yv, *y)) {
-      ys_pairs.push((*y, ye.clone()));
-    }
+  for axis in &mut axes {
+    axis.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
   }
-  xs_pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-  ys_pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-  let nr = xs_pairs.len();
-  let nc = ys_pairs.len();
-  // Fewer than 2 distinct values along an axis, or a point count that isn't
-  // the full nr*nc product, means this isn't a complete rectangular grid.
-  if nr < 2 || nc < 2 || nr * nc != triples.len() {
+  let sizes: Vec<usize> = axes.iter().map(Vec::len).collect();
+  if sizes.iter().any(|&m| m < 2)
+    || sizes.iter().product::<usize>() != samples.len()
+  {
     return None;
   }
-
-  let mut grid: Vec<Vec<Option<Expr>>> = vec![vec![None; nc]; nr];
-  for (_xe, x, _ye, y, ze, z) in &triples {
-    let i = xs_pairs
-      .iter()
-      .position(|(xv, _)| same_coordinate(*xv, *x))?;
-    let j = ys_pairs
-      .iter()
-      .position(|(yv, _)| same_coordinate(*yv, *y))?;
-    if grid[i][j].is_some() {
-      // Duplicate (x, y) — not a well-formed grid.
+  let mut cells: Vec<Option<Expr>> = vec![None; samples.len()];
+  for ((_, value), point) in samples.iter().zip(&numeric) {
+    let mut flat = 0usize;
+    for (k, v) in point.iter().enumerate() {
+      let i = axes[k].iter().position(|(a, _)| same_coordinate(*a, *v))?;
+      flat = flat * sizes[k] + i;
+    }
+    if cells[flat].is_some() {
       return None;
     }
-    grid[i][j] = Some(
-      if interp_complex_to_parts(ze).is_some_and(|(_, im)| im != 0.0) {
-        ze.clone()
-      } else {
-        exact_coordinate(ze, *z)
-      },
-    );
+    cells[flat] = Some(stored_grid_value(value));
   }
-  if grid.iter().flatten().any(Option::is_none) {
-    // A combination of some x with some y is missing — a partial grid,
-    // which is genuinely scattered data this path does not support.
-    return None;
+  let cells: Vec<Expr> = cells.into_iter().collect::<Option<_>>()?;
+  fn nest(cells: &[Expr], sizes: &[usize]) -> Expr {
+    match sizes.split_first() {
+      Some((&m, rest)) if !rest.is_empty() => {
+        let chunk = cells.len() / m;
+        Expr::List(
+          (0..m)
+            .map(|i| nest(&cells[i * chunk..(i + 1) * chunk], rest))
+            .collect(),
+        )
+      }
+      _ => Expr::List(cells.to_vec().into()),
+    }
   }
+  let values = nest(&cells, &sizes);
 
-  let x_exprs: Vec<Expr> = xs_pairs
+  let wanted: Vec<usize> = (0..n)
+    .map(|k| {
+      orders.get(k).or(orders.last()).copied().unwrap_or(3).max(1) as usize
+    })
+    .collect();
+  let used: Vec<usize> = wanted
     .iter()
-    .map(|(v, e)| exact_coordinate(e, *v))
+    .zip(&sizes)
+    .map(|(&w, &m)| w.min(m - 1))
     .collect();
-  let y_exprs: Vec<Expr> = ys_pairs
-    .iter()
-    .map(|(v, e)| exact_coordinate(e, *v))
-    .collect();
-  let grid_exprs: Vec<Vec<Expr>> = grid
-    .into_iter()
-    .map(|row| row.into_iter().map(Option::unwrap).collect())
-    .collect();
-
-  let want_r = order_x.clamp(1, 3) as usize;
-  let want_c = order_y.clamp(1, 3) as usize;
-  let order_r = want_r.min(nr - 1);
-  let order_c = want_c.min(nc - 1);
-  if order_r < want_r || order_c < want_c {
+  if used != wanted {
+    let list: Vec<String> = used.iter().map(usize::to_string).collect();
     crate::emit_message(&format!(
-      "{head}::inhr: Requested order is too high; order has been reduced to {{{order_r}, {order_c}}}."
+      "{head}::inhr: Requested order is too high; order has been reduced to {{{}}}.",
+      list.join(", ")
     ));
   }
-
+  let coord_exprs: Vec<Vec<Expr>> = axes
+    .iter()
+    .map(|axis| axis.iter().map(|(v, e)| exact_coordinate(e, *v)).collect())
+    .collect();
   let domain = Expr::List(
-    vec![
-      Expr::List(vec![x_exprs[0].clone(), x_exprs[nr - 1].clone()].into()),
-      Expr::List(vec![y_exprs[0].clone(), y_exprs[nc - 1].clone()].into()),
-    ]
-    .into(),
-  );
-  let grid_expr = Expr::List(
-    grid_exprs
-      .into_iter()
-      .map(|row| Expr::List(row.into()))
+    coord_exprs
+      .iter()
+      .map(|c| Expr::List(vec![c[0].clone(), c[c.len() - 1].clone()].into()))
       .collect(),
   );
-  let orders = Expr::List(
-    vec![
-      Expr::Integer(order_r as i128),
-      Expr::Integer(order_c as i128),
-    ]
-    .into(),
-  );
-  let coords = Expr::List(
-    vec![Expr::List(x_exprs.into()), Expr::List(y_exprs.into())].into(),
-  );
-
   Some(call(
     "InterpolatingFunction",
-    vec![domain, grid_expr, orders, coords],
+    vec![
+      domain,
+      values,
+      Expr::List(used.iter().map(|&o| Expr::Integer(o as i128)).collect()),
+      Expr::List(
+        coord_exprs
+          .into_iter()
+          .map(|c| Expr::List(c.into()))
+          .collect(),
+      ),
+    ],
   ))
 }
 
-/// Evaluate a 2-D grid `InterpolatingFunction` whose coordinates are
-/// explicit (rather than the implicit integer grid
-/// `evaluate_interpolating_function_2d` assumes) — the form
-/// `try_2d_scattered_interpolation` builds from a flat `{x, y, z}` triple
-/// list. Otherwise identical: tensor-product local Lagrange interpolation,
-/// exact at grid points.
-fn evaluate_interpolating_function_2d_explicit(
+/// A grid sample: a (possibly complex) number, or a list of them for
+/// vector- and tensor-valued data.
+enum GridValue {
+  Num(f64, f64),
+  List(Vec<GridValue>),
+}
+
+fn grid_value(e: &Expr) -> Option<GridValue> {
+  match e {
+    Expr::List(items) if !items.is_empty() => Some(GridValue::List(
+      items.iter().map(grid_value).collect::<Option<_>>()?,
+    )),
+    Expr::List(_) => None,
+    other => {
+      interp_complex_to_parts(other).map(|(re, im)| GridValue::Num(re, im))
+    }
+  }
+}
+
+/// How a sample is kept in the grid: exact numbers stay exact, complex ones
+/// become machine complexes.
+fn stored_grid_value(e: &Expr) -> Expr {
+  match e {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(stored_grid_value).collect())
+    }
+    other => match interp_complex_to_parts(other) {
+      Some((re, im)) if im != 0.0 => {
+        crate::functions::math_ast::numeric_utils::build_complex_float_expr(
+          re, im,
+        )
+      }
+      Some((re, _)) => exact_coordinate(other, re),
+      None => other.clone(),
+    },
+  }
+}
+
+fn grid_components(v: &GridValue, out: &mut Vec<(f64, f64)>) {
+  match v {
+    GridValue::Num(re, im) => out.push((*re, *im)),
+    GridValue::List(items) => {
+      for i in items {
+        grid_components(i, out);
+      }
+    }
+  }
+}
+
+fn grid_rebuild(
+  template: &GridValue,
+  comps: &mut impl Iterator<Item = (f64, f64)>,
+) -> Expr {
+  match template {
+    GridValue::Num(..) => {
+      let (re, im) = comps.next().unwrap_or((f64::NAN, 0.0));
+      real_or_machine_complex(re, im)
+    }
+    GridValue::List(items) => {
+      Expr::List(items.iter().map(|t| grid_rebuild(t, comps)).collect())
+    }
+  }
+}
+
+/// Evaluate a grid `InterpolatingFunction` with explicit coordinates in two
+/// or more dimensions (`try_grid_interpolation`'s output, or a stored
+/// kernel-layout one): `InterpolatingFunction[domain, values, orders,
+/// coords]`, plus a fifth `{d1, …}` argument for a partial derivative.
+///
+/// The value is a tensor product of the 1-D local Lagrange pieces: along the
+/// last axis first, for every grid line in the other axes' stencils, then
+/// axis by axis outward. Only the `(order + 1)`-point stencil on each axis is
+/// read, so a query never touches the rest of a large grid (`NDSolve`'s PDE
+/// grids are resampled at every plot point).
+fn evaluate_grid_interpolating_function(
   domain: &Expr,
-  grid_rows: &[Expr],
+  values: &Expr,
   orders: &[Expr],
   coords: &[Expr],
-  derivative: (usize, usize),
+  derivative: &[usize],
   call_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let order_r = match &orders[0] {
-    Expr::Integer(n) => *n as usize,
-    _ => 1,
-  };
-  let order_c = match &orders[1] {
-    Expr::Integer(n) => *n as usize,
-    _ => 1,
-  };
-
-  let (Expr::List(x_coord_exprs), Expr::List(y_coord_exprs)) =
-    (&coords[0], &coords[1])
-  else {
-    return Err(InterpreterError::EvaluationError(
-      "InterpolatingFunction: invalid coordinates".into(),
-    ));
-  };
-  let xs: Vec<f64> = x_coord_exprs
-    .iter()
-    .map(|e| interp_value_to_f64(e).unwrap_or(f64::NAN))
-    .collect();
-  let ys: Vec<f64> = y_coord_exprs
-    .iter()
-    .map(|e| interp_value_to_f64(e).unwrap_or(f64::NAN))
-    .collect();
-  let nr = xs.len();
-  let nc = ys.len();
-
-  // A single grid cell, decoded lazily: a query only ever needs an
-  // `(order + 1) x (order + 1)` window of cells, not the full `nr x nc`
-  // grid — materializing the whole thing up front made every call
-  // `O(nr * nc)` regardless of interpolation order, which is ruinous for
-  // the grids `NDSolve`'s PDE branch produces (hundreds of time steps by
-  // tens of space steps, resampled at every `ContourPlot` point).
-  let cell = |i: usize, j: usize| -> Result<&Expr, InterpreterError> {
-    let Expr::List(cells) = &grid_rows[i] else {
-      return Err(InterpreterError::EvaluationError(
-        "InterpolatingFunction: invalid 2-D grid".into(),
-      ));
-    };
-    cells.get(j).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "InterpolatingFunction: invalid 2-D grid".into(),
-      )
-    })
-  };
-  let cell_parts =
-    |i: usize, j: usize| -> Result<(f64, f64), InterpreterError> {
-      Ok(match cell(i, j)? {
-        Expr::Integer(n) => (*n as f64, 0.0),
-        Expr::Real(f) => (*f, 0.0),
-        other => interp_complex_to_parts(other).unwrap_or((f64::NAN, 0.0)),
-      })
-    };
-
+  let n = coords.len();
   let unevaluated = || {
     let mut parts = vec![
       domain.clone(),
-      Expr::List(grid_rows.to_vec().into()),
+      values.clone(),
       Expr::List(orders.to_vec().into()),
       Expr::List(coords.to_vec().into()),
     ];
-    if derivative != (0, 0) {
+    if derivative.iter().any(|&d| d > 0) {
       parts.push(Expr::List(
-        vec![
-          Expr::Integer(derivative.0 as i128),
-          Expr::Integer(derivative.1 as i128),
-        ]
-        .into(),
+        derivative
+          .iter()
+          .map(|&d| Expr::Integer(d as i128))
+          .collect(),
       ));
     }
     Expr::CurriedCall {
@@ -9508,115 +9462,210 @@ fn evaluate_interpolating_function_2d_explicit(
       args: call_args.to_vec(),
     }
   };
-
-  if nr == 0 || nc == 0 {
+  let coord_exprs: Vec<&[Expr]> = coords
+    .iter()
+    .map(|c| match c {
+      Expr::List(items) => Some(items.as_slice()),
+      _ => None,
+    })
+    .collect::<Option<_>>()
+    .ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "InterpolatingFunction: invalid coordinates".into(),
+      )
+    })?;
+  let axes: Vec<Vec<f64>> = coord_exprs
+    .iter()
+    .map(|c| {
+      c.iter()
+        .map(|e| interp_value_to_f64(e).unwrap_or(f64::NAN))
+        .collect()
+    })
+    .collect();
+  if axes.iter().any(Vec::is_empty) {
     return Ok(unevaluated());
   }
 
-  if call_args.len() == 1
-    && let Expr::String(prop) = &call_args[0]
-  {
+  if let [Expr::String(prop)] = call_args {
     match prop.as_str() {
       "Domain" => return Ok(domain.clone()),
-      "Coordinates" => {
-        return Ok(Expr::List(
-          vec![
-            Expr::List(x_coord_exprs.clone()),
-            Expr::List(y_coord_exprs.clone()),
-          ]
-          .into(),
-        ));
-      }
+      "Coordinates" => return Ok(Expr::List(coords.to_vec().into())),
       "Grid" => {
-        let mut pts = Vec::with_capacity(nr * nc);
-        for xe in x_coord_exprs {
-          for ye in y_coord_exprs {
-            pts.push(Expr::List(vec![xe.clone(), ye.clone()].into()));
+        fn points(axes: &[&[Expr]], prefix: &mut Vec<Expr>) -> Expr {
+          match axes.split_first() {
+            None => Expr::List(prefix.clone().into()),
+            Some((axis, rest)) => Expr::List(
+              axis
+                .iter()
+                .map(|c| {
+                  prefix.push(c.clone());
+                  let p = points(rest, prefix);
+                  prefix.pop();
+                  p
+                })
+                .collect(),
+            ),
           }
         }
-        return Ok(Expr::List(pts.into()));
+        return Ok(points(&coord_exprs, &mut Vec::new()));
       }
-      "ValuesOnGrid" => return Ok(Expr::List(grid_rows.to_vec().into())),
+      "ValuesOnGrid" => return Ok(values.clone()),
       "InterpolationOrder" => return Ok(Expr::List(orders.to_vec().into())),
       _ => {}
     }
   }
 
-  let coord_args: Vec<Expr> = match call_args {
-    [Expr::List(pair)] if pair.len() == 2 => pair.to_vec(),
+  let query: Vec<Expr> = match call_args {
+    [Expr::List(point)] if point.len() == n => point.to_vec(),
     other => other.to_vec(),
   };
-  if coord_args.len() != 2 {
+  if query.len() != n {
     return Ok(unevaluated());
   }
-  let coord_exprs: Vec<Expr> = coord_args
+  let query: Vec<Expr> = query
     .iter()
     .map(|a| {
       crate::evaluator::evaluate_expr_to_expr(a).unwrap_or_else(|_| a.clone())
     })
     .collect();
-  let coord = |e: &Expr| -> Option<f64> {
-    match e {
-      Expr::Integer(n) => Some(*n as f64),
+  let Some(x): Option<Vec<f64>> = query
+    .iter()
+    .map(|e| match e {
+      Expr::Integer(k) => Some(*k as f64),
       Expr::Real(f) => Some(*f),
       _ if is_exact_number(e) => interp_value_to_f64(e).ok(),
       _ => None,
-    }
-  };
-  let (Some(x), Some(y)) = (coord(&coord_exprs[0]), coord(&coord_exprs[1]))
+    })
+    .collect()
   else {
     return Ok(unevaluated());
   };
 
-  // Exact grid point: return the stored entry, preserving its type only
-  // when both query coordinates were given as exact integers (matching
-  // `evaluate_interpolating_function_2d`).
-  let int_coords = coord_exprs.iter().all(|a| matches!(a, Expr::Integer(_)));
-  if derivative == (0, 0)
-    && let (Some(i), Some(j)) = (
-      xs.iter().position(|&xv| same_coordinate(xv, x)),
-      ys.iter().position(|&yv| same_coordinate(yv, y)),
+  let cell = |index: &[usize]| -> Result<&Expr, InterpreterError> {
+    let mut v = values;
+    for &i in index {
+      let Expr::List(items) = v else {
+        return Err(InterpreterError::EvaluationError(
+          "InterpolatingFunction: invalid grid".into(),
+        ));
+      };
+      v = items.get(i).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "InterpolatingFunction: invalid grid".into(),
+        )
+      })?;
+    }
+    Ok(v)
+  };
+  let template = grid_value(cell(&vec![0; n])?).ok_or_else(|| {
+    InterpreterError::EvaluationError(
+      "InterpolatingFunction: invalid grid value".into(),
     )
+  })?;
+
+  // A grid point itself gives the stored sample, kept as written when the
+  // query coordinates are exact integers.
+  if derivative.iter().all(|&d| d == 0)
+    && let Some(index) = axes
+      .iter()
+      .zip(&x)
+      .map(|(axis, &v)| axis.iter().position(|&a| same_coordinate(a, v)))
+      .collect::<Option<Vec<usize>>>()
   {
-    if int_coords {
-      return Ok(cell(i, j)?.clone());
+    let stored = cell(&index)?;
+    if query.iter().all(|a| matches!(a, Expr::Integer(_))) {
+      return Ok(stored.clone());
     }
-    let (re, im) = cell_parts(i, j)?;
-    return Ok(real_or_machine_complex(re, im));
+    if let Some(v) = grid_value(stored) {
+      let mut comps = Vec::new();
+      grid_components(&v, &mut comps);
+      return Ok(grid_rebuild(&template, &mut comps.into_iter()));
+    }
   }
 
-  let (x_lo, x_hi) = (xs[0].min(xs[nr - 1]), xs[0].max(xs[nr - 1]));
-  let (y_lo, y_hi) = (ys[0].min(ys[nc - 1]), ys[0].max(ys[nc - 1]));
-  if x < x_lo || x > x_hi || y < y_lo || y > y_hi {
-    emit_dmval(&coord_exprs);
+  if axes.iter().zip(&x).any(|(axis, &v)| {
+    let (lo, hi) = (
+      axis[0].min(axis[axis.len() - 1]),
+      axis[0].max(axis[axis.len() - 1]),
+    );
+    v < lo || v > hi
+  }) {
+    emit_dmval(&query);
   }
 
-  // Only the local `(order + 1)`-point stencil on each axis feeds the
-  // result, so the cells outside that window never need decoding.
-  let eff_order_r = order_r.min(nr - 1).max(1);
-  let eff_order_c = order_c.min(nc - 1).max(1);
-  let (r_start, r_end) =
-    lagrange_window(nr, bracket_index_f64(&xs, x), eff_order_r);
-  let (c_start, c_end) =
-    lagrange_window(nc, bracket_index_f64(&ys, y), eff_order_c);
-  let ys_window = &ys[c_start..c_end];
-  let mut col_re: Vec<f64> = Vec::with_capacity(r_end - r_start);
-  let mut col_im: Vec<f64> = Vec::with_capacity(r_end - r_start);
-  for i in r_start..r_end {
-    let mut row_re: Vec<f64> = Vec::with_capacity(c_end - c_start);
-    let mut row_im: Vec<f64> = Vec::with_capacity(c_end - c_start);
-    for j in c_start..c_end {
-      let (re, im) = cell_parts(i, j)?;
-      row_re.push(re);
-      row_im.push(im);
+  let windows: Vec<(usize, usize)> = axes
+    .iter()
+    .zip(&x)
+    .enumerate()
+    .map(|(k, (axis, &v))| {
+      let order = match orders.get(k) {
+        Some(Expr::Integer(o)) => (*o).max(1) as usize,
+        _ => 1,
+      };
+      let m = axis.len();
+      if m == 1 {
+        (0, 1)
+      } else {
+        lagrange_window(m, bracket_index_f64(axis, v), order.min(m - 1))
+      }
+    })
+    .collect();
+  let deriv = |k: usize| derivative.get(k).copied().unwrap_or(0);
+
+  fn along(
+    axis: usize,
+    index: &mut Vec<usize>,
+    ctx: &(
+      &dyn Fn(&[usize]) -> Result<Vec<(f64, f64)>, InterpreterError>,
+      &[(usize, usize)],
+      &[Vec<f64>],
+      &[f64],
+      &dyn Fn(usize) -> usize,
+    ),
+  ) -> Result<Vec<(f64, f64)>, InterpreterError> {
+    let (leaf, windows, axes, x, deriv) = ctx;
+    if axis == windows.len() {
+      return leaf(index);
     }
-    col_re.push(interp_1d_xy_deriv_f64(ys_window, &row_re, y, derivative.1));
-    col_im.push(interp_1d_xy_deriv_f64(ys_window, &row_im, y, derivative.1));
+    let (start, end) = windows[axis];
+    let mut samples = Vec::with_capacity(end - start);
+    for i in start..end {
+      index.push(i);
+      samples.push(along(axis + 1, index, ctx)?);
+      index.pop();
+    }
+    let width = samples[0].len();
+    if samples.iter().any(|s| s.len() != width) {
+      return Err(InterpreterError::EvaluationError(
+        "InterpolatingFunction: inconsistent grid values".into(),
+      ));
+    }
+    let xs = &axes[axis][start..end];
+    Ok(
+      (0..width)
+        .map(|c| {
+          let re: Vec<f64> = samples.iter().map(|s| s[c].0).collect();
+          let im: Vec<f64> = samples.iter().map(|s| s[c].1).collect();
+          (
+            interp_1d_xy_deriv_f64(xs, &re, x[axis], deriv(axis)),
+            interp_1d_xy_deriv_f64(xs, &im, x[axis], deriv(axis)),
+          )
+        })
+        .collect(),
+    )
   }
-  let xs_window = &xs[r_start..r_end];
-  let re = interp_1d_xy_deriv_f64(xs_window, &col_re, x, derivative.0);
-  let im = interp_1d_xy_deriv_f64(xs_window, &col_im, x, derivative.0);
-  Ok(real_or_machine_complex(re, im))
+  let leaf = |index: &[usize]| -> Result<Vec<(f64, f64)>, InterpreterError> {
+    let v = grid_value(cell(index)?).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "InterpolatingFunction: invalid grid value".into(),
+      )
+    })?;
+    let mut comps = Vec::new();
+    grid_components(&v, &mut comps);
+    Ok(comps)
+  };
+  let comps = along(0, &mut Vec::new(), &(&leaf, &windows, &axes, &x, &deriv))?;
+  Ok(grid_rebuild(&template, &mut comps.into_iter()))
 }
 
 /// `InterpolatingFunction::dmval` for a query point outside the data.
@@ -9907,6 +9956,114 @@ fn interpolating_function_property(
 /// `InterpolatingFunction[domain, {{x, y}, …}, order]` form evaluated here.
 /// `values` is either a plain list or `{Developer`PackedArrayForm, offsets,
 /// {y, …}}`. Returns `None` for anything that is not that exact shape.
+/// A kernel-layout grid `InterpolatingFunction` in two or more dimensions in
+/// Woxi's `{domain, values, orders, coords}` form. Each point stores its
+/// value (possibly a vector) first, then any derivatives, which the grid
+/// evaluator does not use.
+fn kernel_grid_interpolating_function(func_args: &[Expr]) -> Option<Vec<Expr>> {
+  let [domain, Expr::List(info), Expr::List(grids), values, _] = func_args
+  else {
+    return None;
+  };
+  let n = grids.len();
+  if n < 2 || !matches!(domain, Expr::List(d) if d.len() == n) {
+    return None;
+  }
+  let Some(Expr::List(order_plus_one)) = info.get(4) else {
+    return None;
+  };
+  if order_plus_one.len() != n {
+    return None;
+  }
+  let orders: Vec<Expr> = order_plus_one
+    .iter()
+    .map(|o| match o {
+      Expr::Integer(k) if *k >= 2 => Some(Expr::Integer(*k - 1)),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let sizes: Vec<usize> = grids
+    .iter()
+    .map(|g| match g {
+      Expr::List(items) if !items.is_empty() => Some(items.len()),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  fn strip(v: &Expr, depth: usize) -> Option<Expr> {
+    let Expr::List(items) = v else {
+      return None;
+    };
+    if depth == 0 {
+      return items.first().cloned();
+    }
+    Some(Expr::List(
+      items
+        .iter()
+        .map(|i| strip(i, depth - 1))
+        .collect::<Option<_>>()?,
+    ))
+  }
+  let values = match values {
+    Expr::List(items) if matches!(items.first(), Some(Expr::Identifier(t)) if t == "Developer`PackedArrayForm") =>
+    {
+      let [_, Expr::List(offsets), Expr::List(flat)] = items.as_slice() else {
+        return None;
+      };
+      let offs: Vec<usize> = offsets
+        .iter()
+        .map(|o| match o {
+          Expr::Integer(k) if *k >= 0 => Some(*k as usize),
+          _ => None,
+        })
+        .collect::<Option<_>>()?;
+      let stored = match info.get(2) {
+        Some(Expr::Integer(d)) if *d >= 0 => *d as usize + 1,
+        _ => 1,
+      };
+      let points: Vec<Expr> = offs
+        .windows(2)
+        .map(|w| {
+          let width = w[1].checked_sub(w[0])?;
+          let dim = (width / stored).max(1);
+          let part: Vec<Expr> =
+            flat.iter().skip(w[0]).take(dim).cloned().collect();
+          (part.len() == dim).then(|| {
+            if dim == 1 {
+              part[0].clone()
+            } else {
+              Expr::List(part.into())
+            }
+          })
+        })
+        .collect::<Option<_>>()?;
+      if points.len() != sizes.iter().product::<usize>() {
+        return None;
+      }
+      fn nest(points: &[Expr], sizes: &[usize]) -> Expr {
+        match sizes.split_first() {
+          Some((&m, rest)) if !rest.is_empty() => {
+            let chunk = points.len() / m;
+            Expr::List(
+              (0..m)
+                .map(|i| nest(&points[i * chunk..(i + 1) * chunk], rest))
+                .collect(),
+            )
+          }
+          _ => Expr::List(points.to_vec().into()),
+        }
+      }
+      nest(&points, &sizes)
+    }
+    other => strip(other, n)?,
+  };
+  Some(vec![
+    domain.clone(),
+    values,
+    Expr::List(orders.into()),
+    Expr::List(grids.clone()),
+  ])
+}
+
 /// A kernel-layout `InterpolatingFunction` (as wolframscript stores it) in
 /// Woxi's own `{domain, data, order}` form, when it is one Woxi reads.
 pub(crate) fn kernel_interpolating_function_to_native(
@@ -10067,23 +10224,44 @@ pub fn evaluate_interpolating_function(
   // 2-D explicit-coordinate grid carrying partial-derivative orders, as left
   // by `Derivative[a, b][f]`: InterpolatingFunction[domain, grid, orders,
   // coords, {a, b}].
-  if func_args.len() == 5
+  // Grid form with explicit coordinates in two or more dimensions:
+  // InterpolatingFunction[domain, values, {orders}, {coords}] and, as left by
+  // `Derivative[d1, …][f]`, a fifth {d1, …} argument.
+  if (func_args.len() == 4 || func_args.len() == 5)
     && let Expr::List(orders) = &func_args[2]
-    && orders.len() == 2
-    && let Expr::List(grid_rows) = &func_args[1]
     && let Expr::List(coords) = &func_args[3]
-    && coords.len() == 2
-    && let Expr::List(deriv) = &func_args[4]
-    && let [Expr::Integer(dx), Expr::Integer(dy)] = deriv.as_slice()
+    && orders.len() >= 2
+    && coords.len() == orders.len()
+    && coords.iter().all(|c| matches!(c, Expr::List(_)))
+    && orders.iter().all(|o| matches!(o, Expr::Integer(_)))
   {
-    return evaluate_interpolating_function_2d_explicit(
-      &func_args[0],
-      grid_rows,
-      orders,
-      coords,
-      (*dx as usize, *dy as usize),
-      call_args,
-    );
+    let derivative: Option<Vec<usize>> = match func_args.get(4) {
+      None => Some(vec![0; orders.len()]),
+      Some(Expr::List(d)) if d.len() == orders.len() => d
+        .iter()
+        .map(|e| match e {
+          Expr::Integer(k) if *k >= 0 => Some(*k as usize),
+          _ => None,
+        })
+        .collect(),
+      _ => None,
+    };
+    if let Some(derivative) = derivative {
+      return evaluate_grid_interpolating_function(
+        &func_args[0],
+        &func_args[1],
+        orders,
+        coords,
+        &derivative,
+        call_args,
+      );
+    }
+  }
+  // A kernel-layout grid in two or more dimensions.
+  if func_args.len() == 5
+    && let Some(native) = kernel_grid_interpolating_function(func_args)
+  {
+    return evaluate_interpolating_function(&native, call_args);
   }
   if func_args.len() == 5
     && let Some(mut pairs) = kernel_interpolating_function_to_pairs(func_args)
@@ -10102,28 +10280,6 @@ pub fn evaluate_interpolating_function(
     && let Expr::List(grid_rows) = &func_args[1]
   {
     return evaluate_interpolating_function_2d(grid_rows, orders, call_args);
-  }
-
-  // 2-D grid form with explicit coordinates: InterpolatingFunction[{{xmin,
-  // xmax}, {ymin, ymax}}, grid, {orderX, orderY}, {xcoords, ycoords}] —
-  // `try_2d_scattered_interpolation`'s output.
-  if func_args.len() == 4
-    && let Expr::List(orders) = &func_args[2]
-    && orders.len() == 2
-    && let Expr::List(grid_rows) = &func_args[1]
-    && let Expr::List(coords) = &func_args[3]
-    && coords.len() == 2
-    && matches!(&coords[0], Expr::List(_))
-    && matches!(&coords[1], Expr::List(_))
-  {
-    return evaluate_interpolating_function_2d_explicit(
-      &func_args[0],
-      grid_rows,
-      orders,
-      coords,
-      (0, 0),
-      call_args,
-    );
   }
 
   if !(2..=4).contains(&func_args.len()) || call_args.len() != 1 {

@@ -21444,3 +21444,87 @@ mod interpolation_with_derivatives {
     );
   }
 }
+
+mod interpolation_n_dimensional {
+  use super::*;
+
+  #[test]
+  fn three_dimensional_grid() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Flatten[Table[{x, y, z, x + y z}, {x, 0, 2}, {y, 0, 2}, {z, 0, 2}], 2]]; {f[0.5, 0.5, 0.5], f[1, 2, 1.5], f[1, 1, 1]}"
+      )
+      .unwrap(),
+      "{0.75, 4., 2}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Interpolation::inhr: Requested order is too high; order has been reduced to {2, 2, 2}."
+      )),
+      "{msgs:?}"
+    );
+  }
+
+  #[test]
+  fn coordinate_value_pairs_and_partial_derivatives() {
+    assert_eq!(
+      interpret(
+        "g = Interpolation[Flatten[Table[{{x, y, z}, x^2 y + z}, {x, 0, 3}, {y, 0, 3}, {z, 0, 3}], 2]]; Chop[{g[1.5, 2.5, 0.5], Derivative[1, 0, 0][g][1.5, 2.5, 0.5], Derivative[0, 1, 0][g][1.5, 2.5, 0.5]} - {6.125, 7.5, 2.25}, 10^-12]"
+      )
+      .unwrap(),
+      "{0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn vector_values() {
+    assert_eq!(
+      interpret(
+        "v = Interpolation[Flatten[Table[{{x, y}, {x + y, x y}}, {x, 0, 3}, {y, 0, 3}], 1]]; {v[1.5, 2.5], v[1, 2]}"
+      )
+      .unwrap(),
+      "{{4., 3.75}, {3, 2}}"
+    );
+  }
+
+  #[test]
+  fn four_dimensions_and_per_axis_orders() {
+    assert_eq!(
+      interpret(
+        "h = Interpolation[Flatten[Table[{x, y, z, w, x + y + z w}, {x, 0, 1}, {y, 0, 1}, {z, 0, 1}, {w, 0, 1}], 3]]; {h[0.5, 0.5, 0.5, 0.5], h[\"Domain\"], h[\"InterpolationOrder\"]}"
+      )
+      .unwrap(),
+      "{1.25, {{0, 1}, {0, 1}, {0, 1}, {0, 1}}, {1, 1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "k = Interpolation[Flatten[Table[{x, y, x^3 + y}, {x, 0, 6}, {y, 0, 3}], 1], InterpolationOrder -> {4, 1}]; {k[2.5, 1.5], k[\"InterpolationOrder\"]}"
+      )
+      .unwrap(),
+      "{17.125, {4, 1}}"
+    );
+  }
+
+  #[test]
+  fn grid_property_is_an_array_of_points() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Flatten[Table[{x, y, x + 2 y}, {x, 0, 2}, {y, 0, 1}], 1], InterpolationOrder -> 1]; {f[\"Grid\"], f[\"ValuesOnGrid\"], f[\"Coordinates\"]}"
+      )
+      .unwrap(),
+      "{{{{0, 0}, {0, 1}}, {{1, 0}, {1, 1}}, {{2, 0}, {2, 1}}}, {{0, 2}, {1, 3}, {2, 4}}, {{0, 1, 2}, {0, 1}}}"
+    );
+  }
+
+  #[test]
+  fn stored_kernel_layout_in_three_dimensions() {
+    assert_eq!(
+      interpret(
+        "k = InterpolatingFunction[{{0, 2}, {0, 1}, {0, 1}}, {5, 3, 0, {3, 2, 2}, {2, 2, 2}, 0, 0, 0, 0, Automatic, {}, {}, False}, {{0, 1, 2}, {0, 1}, {0, 1}}, {{{{0}, {0}}, {{0}, {1}}}, {{{1}, {1}}, {{1}, {2}}}, {{{2}, {2}}, {{2}, {3}}}}, {Automatic, Automatic, Automatic}]; {k[0.5, 0.5, 0.5], k[1.5, 1, 0.25], k[\"Domain\"]}"
+      )
+      .unwrap(),
+      "{0.75, 1.75, {{0, 2}, {0, 1}, {0, 1}}}"
+    );
+  }
+}
