@@ -1434,6 +1434,26 @@ pub(crate) fn expr_children(expr: &Expr) -> Vec<&Expr> {
       pattern,
       replacement,
     } => vec![pattern, replacement],
+    Expr::CompoundExpr(items) => items.iter().collect(),
+    Expr::Association(pairs) => {
+      pairs.iter().flat_map(|(k, v)| [k, v]).collect()
+    }
+    Expr::ReplaceAll { expr, rules }
+    | Expr::ReplaceRepeated { expr, rules } => {
+      vec![expr, rules]
+    }
+    Expr::Map { func, list }
+    | Expr::Apply { func, list }
+    | Expr::MapApply { func, list } => vec![func, list],
+    Expr::PrefixApply { func, arg } => vec![func, arg],
+    Expr::Postfix { expr, func } => vec![expr, func],
+    Expr::Part { expr, index } => vec![expr, index],
+    Expr::Function { body } | Expr::NamedFunction { body, .. } => vec![body],
+    Expr::PatternOptional {
+      default: Some(default),
+      ..
+    } => vec![default],
+    Expr::PatternTest { test, .. } => vec![test],
     _ => Vec::new(),
   }
 }
@@ -1447,8 +1467,8 @@ pub(crate) fn contains_inexact(expr: &Expr) -> bool {
     || expr_children(expr).into_iter().any(contains_inexact)
 }
 
-/// Rebuild an expression with `f` applied to each direct child. Nodes
-/// whose children aren't covered by [`expr_children`] are returned as-is.
+/// Rebuild an expression with `f` applied to each direct child, for every
+/// node kind [`expr_children`] lists children of; atoms are returned as-is.
 pub(crate) fn map_children(expr: &Expr, f: &dyn Fn(&Expr) -> Expr) -> Expr {
   match expr {
     Expr::List(items) => Expr::List(items.iter().map(f).collect()),
@@ -1480,6 +1500,76 @@ pub(crate) fn map_children(expr: &Expr, f: &dyn Fn(&Expr) -> Expr) -> Expr {
       pattern,
       replacement,
     } => rule_delayed_expr(f(pattern), f(replacement)),
+    Expr::CompoundExpr(items) => {
+      Expr::CompoundExpr(items.iter().map(f).collect())
+    }
+    Expr::Association(pairs) => {
+      Expr::Association(pairs.iter().map(|(k, v)| (f(k), f(v))).collect())
+    }
+    Expr::ReplaceAll { expr, rules } => Expr::ReplaceAll {
+      expr: Box::new(f(expr)),
+      rules: Box::new(f(rules)),
+    },
+    Expr::ReplaceRepeated { expr, rules } => Expr::ReplaceRepeated {
+      expr: Box::new(f(expr)),
+      rules: Box::new(f(rules)),
+    },
+    Expr::Map { func, list } => Expr::Map {
+      func: Box::new(f(func)),
+      list: Box::new(f(list)),
+    },
+    Expr::Apply { func, list } => Expr::Apply {
+      func: Box::new(f(func)),
+      list: Box::new(f(list)),
+    },
+    Expr::MapApply { func, list } => Expr::MapApply {
+      func: Box::new(f(func)),
+      list: Box::new(f(list)),
+    },
+    Expr::PrefixApply { func, arg } => Expr::PrefixApply {
+      func: Box::new(f(func)),
+      arg: Box::new(f(arg)),
+    },
+    Expr::Postfix { expr, func } => Expr::Postfix {
+      expr: Box::new(f(expr)),
+      func: Box::new(f(func)),
+    },
+    Expr::Part { expr, index } => Expr::Part {
+      expr: Box::new(f(expr)),
+      index: Box::new(f(index)),
+    },
+    Expr::Function { body } => Expr::Function {
+      body: Box::new(f(body)),
+    },
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => Expr::NamedFunction {
+      params: params.clone(),
+      body: Box::new(f(body)),
+      bracketed: *bracketed,
+    },
+    Expr::PatternOptional {
+      name,
+      head,
+      default: Some(default),
+    } => Expr::PatternOptional {
+      name: name.clone(),
+      head: head.clone(),
+      default: Some(Box::new(f(default))),
+    },
+    Expr::PatternTest {
+      name,
+      head,
+      blank_type,
+      test,
+    } => Expr::PatternTest {
+      name: name.clone(),
+      head: head.clone(),
+      blank_type: *blank_type,
+      test: Box::new(f(test)),
+    },
     other => other.clone(),
   }
 }

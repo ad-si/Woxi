@@ -21618,3 +21618,91 @@ mod interpolation_spline_method {
     );
   }
 }
+
+mod ndsolve_state_events {
+  use super::*;
+
+  #[test]
+  fn stop_integration_with_side_effect() {
+    // The integration ends where the condition turns true; the action's
+    // assignment sees the event time.
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x''[t] == -x[t], x[0] == 0, x'[0] == 1, \
+         WhenEvent[x[t] > 0.5, tm = t; \"StopIntegration\"]}, x, {t, 0, 3}]; \
+         {Chop[tm - Pi/6, 10^-6], Chop[(x[\"Domain\"] /. s[[1]]) - {{0, Pi/6}}, 10^-6]}"
+      )
+      .unwrap(),
+      "{0, {{0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn condition_built_with_apply_and_pure_functions() {
+    assert_eq!(
+      interpret(
+        "NDSolve[{x''[t] == -x[t], x[0] == 0, x'[0] == 1, \
+         WhenEvent[Or @@ (x[t] > # &) /@ {0.5, 2}, tm = t; \"StopIntegration\"]}, \
+         x, {t, 0, 3}]; Chop[tm - Pi/6, 10^-6]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn bouncing_ball_resets_velocity() {
+    // y'' = -9.81 from rest at height 1, bouncing with restitution 0.9
+    // (values from wolframscript).
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y''[t] == -9.81, y[0] == 1, y'[0] == 0, \
+         WhenEvent[y[t] == 0, y'[t] -> -0.9 y'[t]]}, y, {t, 0, 2}]; \
+         Chop[(y /. s[[1]])[{0.4, 0.5, 1., 1.5}] - \
+         {0.2152, 0.181725, 0.710949, 0.573205}, 10^-5]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn list_initial_conditions_thread() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x''[t] == -x[t], y''[t] == -y[t], {x[0], y[0]} == {0, 1}, \
+         {x'[0], y'[0]} == {1, 0}}, {x[t], y[t]}, {t, 0, 1}]; \
+         Chop[({x[t], y[t]} /. s[[1]] /. t -> 1) - {Sin[1], Cos[1]}, 10^-6]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn infinite_domain_stops_at_event() {
+    assert_eq!(
+      interpret(
+        "NDSolve[{x'[t] == 1, x[0] == 0, WhenEvent[x[t] == 5, \
+         te = t; \"StopIntegration\"]}, x, {t, 0, Infinity}]; Chop[te - 5, 10^-6]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+}
+
+mod interpolating_function_threads_over_lists {
+  use super::*;
+
+  #[test]
+  fn one_dimensional_function_maps_list_arguments() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{1, 4, 9, 16}]; {f[{1.5, 2.5}], f[{{1, 2}, {3, 4}}]}"
+      )
+      .unwrap(),
+      "{{2.25, 6.25}, {{1, 4}, {9, 16}}}"
+    );
+  }
+}

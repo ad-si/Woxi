@@ -3930,6 +3930,29 @@ fn flatten_eq_list(expr: &Expr, out: &mut Vec<Expr>) {
         flatten_eq_list(item, out);
       }
     }
+    // `{x[0], y[0]} == {0, 1}` states one condition per component.
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() == 1
+      && operators[0] == ComparisonOp::Equal
+      && matches!(
+        (&operands[0], &operands[1]),
+        (Expr::List(a), Expr::List(b)) if a.len() == b.len()
+      ) =>
+    {
+      if let (Expr::List(a), Expr::List(b)) = (&operands[0], &operands[1]) {
+        for (l, r) in a.iter().zip(b.iter()) {
+          flatten_eq_list(
+            &Expr::Comparison {
+              operands: vec![l.clone(), r.clone()],
+              operators: vec![ComparisonOp::Equal],
+            },
+            out,
+          );
+        }
+      }
+    }
     other => out.push(other.clone()),
   }
 }
@@ -4168,7 +4191,7 @@ fn ndsolve_system(
       // method when to quit, so without one it's left unevaluated like
       // any other pattern this solver doesn't cover.
       let max = if is_infinity(&domain_items[2]) {
-        if event.is_none() {
+        if event.is_none() && !mentions_head(&args[0], "WhenEvent") {
           return Ok(None);
         }
         f64::INFINITY
@@ -4257,21 +4280,27 @@ fn ndsolve_system(
   // `WhenEvent[Mod[x, p] == 0, action]` entries are periodic actions, not
   // equations: split them off before the equations are classified.
   let mut raw_time_events: Vec<RawTimeEvent> = Vec::new();
+  let mut raw_state_events: Vec<RawStateEvent> = Vec::new();
   let mut eq_items_no_events: Vec<Expr> = Vec::with_capacity(eq_items.len());
   for eq in eq_items {
     if let Expr::FunctionCall { name, args: wargs } = &eq
       && name == "WhenEvent"
     {
-      let Some(ev) = parse_periodic_when_event(wargs, x_name) else {
-        return Ok(None);
-      };
-      raw_time_events.push(ev);
+      match parse_periodic_when_event(wargs, x_name) {
+        Some(ev) => raw_time_events.push(ev),
+        None if wargs.len() == 2 => raw_state_events.push(RawStateEvent {
+          condition: wargs[0].clone(),
+          action: wargs[1].clone(),
+        }),
+        None => return Ok(None),
+      }
     } else {
       eq_items_no_events.push(eq);
     }
   }
   let eq_items = eq_items_no_events;
-  let time_events_empty = raw_time_events.is_empty();
+  let time_events_empty =
+    raw_time_events.is_empty() && raw_state_events.is_empty();
   let mut odes: Vec<Expr> = Vec::new();
   // (function name, derivative order, evaluation point, value) — by name,
   // not index: an eliminated constraint variable shifts the positions in
@@ -4620,6 +4649,15 @@ fn ndsolve_system(
     })
     .collect();
 
+  let state_events: Vec<StateEvent> = raw_state_events
+    .into_iter()
+    .map(|raw| StateEvent::new(raw, &funcs, x_name, &var_names))
+    .collect();
+  let event_ctx = StateEventCtx {
+    events: &state_events,
+    var_names: &var_names,
+  };
+
   let n_steps = 1000usize;
   let mut points: Vec<(f64, Vec<f64>)> = match kind {
     ProblemKind::Initial { .. } => {
@@ -4674,6 +4712,7 @@ fn ndsolve_system(
             event_fn.as_ref(),
             event.and_then(|e| e.action.as_ref()),
             &time_events,
+            event_ctx,
             x_name,
             cached_mass_matrix.as_deref(),
           )?
@@ -4686,6 +4725,7 @@ fn ndsolve_system(
             x0,
             event_fn.as_ref(),
             event.and_then(|e| e.action.as_ref()),
+            event_ctx,
             x_name,
             cached_mass_matrix.as_deref(),
           )?
@@ -4715,6 +4755,7 @@ fn ndsolve_system(
             None,
             None,
             &[],
+            StateEventCtx::none(),
             x_name,
             cached_mass_matrix.as_deref(),
           )?;
@@ -5023,6 +5064,7 @@ fn integrate_leg_until_event(
   x0: f64,
   event_fn: Option<&NumFn>,
   event_action: Option<&Expr>,
+  state_events: StateEventCtx,
   x_name: &str,
   cached_m: Option<&[Vec<f64>]>,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
@@ -5041,6 +5083,7 @@ fn integrate_leg_until_event(
       event_fn,
       event_action,
       &[],
+      state_events,
       x_name,
       cached_m,
     )?
@@ -5135,6 +5178,7 @@ fn solve_bvp_shooting(
       None,
       None,
       &[],
+      StateEventCtx::none(),
       x_name,
       cached_mass_matrix.as_deref(),
     )?;
@@ -5286,6 +5330,231 @@ impl TimeEvent {
   }
 }
 
+/// A `WhenEvent[condition, action]` on the solution's state, as parsed
+/// from the equation list (both still over the original `f[x]` calls).
+struct RawStateEvent {
+  condition: Expr,
+  action: Expr,
+}
+
+/// How a state event's condition is watched while integrating.
+enum StateTrigger {
+  /// `lhs == rhs`: fires whenever `lhs - rhs` changes sign.
+  Crossing(NumFn),
+  /// Any other condition: fires when it turns from False to True.
+  Condition(Expr),
+}
+
+/// A state event ready for integration. Its trigger is rewritten over the
+/// state placeholders; the action is kept as written, since a rule
+/// `f[x] -> value` in it names the state component it resets.
+struct StateEvent {
+  trigger: StateTrigger,
+  action: Expr,
+  active: std::cell::Cell<bool>,
+}
+
+/// What running a state event's action asks the integrator to do.
+struct EventOutcome {
+  stop: bool,
+  state: Vec<f64>,
+}
+
+impl StateEvent {
+  fn new(
+    raw: RawStateEvent,
+    funcs: &[SysFunc],
+    x_name: &str,
+    var_names: &[String],
+  ) -> Self {
+    let trigger = match as_equal_pair(&raw.condition) {
+      Some((lhs, rhs)) => {
+        let diff = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            lhs.clone(),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), rhs.clone()].into(),
+            },
+          ]
+          .into(),
+        };
+        let rewritten = substitute_function_values(&diff, funcs, x_name);
+        StateTrigger::Crossing(NumFn::new(rewritten, var_names))
+      }
+      None => StateTrigger::Condition(substitute_function_values(
+        &raw.condition,
+        funcs,
+        x_name,
+      )),
+    };
+    StateEvent {
+      trigger,
+      action: raw.action,
+      active: std::cell::Cell::new(true),
+    }
+  }
+
+  /// The trigger's value at `(x, state)`: the signed residual of a
+  /// crossing, or ±1 for a condition that is True/False. `None` when it
+  /// does not evaluate to a number or truth value.
+  fn value(
+    &self,
+    x: f64,
+    state: &[f64],
+    funcs: &[SysFunc],
+    var_names: &[String],
+  ) -> Option<f64> {
+    match &self.trigger {
+      StateTrigger::Crossing(f) => f
+        .eval_state(x, state, funcs.len())
+        .ok()
+        .filter(|g| g.is_finite()),
+      StateTrigger::Condition(cond) => {
+        let cond = substitute_state(cond, var_names, x, state);
+        match &crate::evaluator::evaluate_expr_to_expr(&cond).ok()? {
+          Expr::Identifier(b) if b == "True" => Some(1.0),
+          Expr::Identifier(b) if b == "False" => Some(-1.0),
+          _ => None,
+        }
+      }
+    }
+  }
+
+  /// Whether moving from trigger value `prev` to `next` fires the event.
+  fn fires(&self, prev: f64, next: f64) -> bool {
+    match self.trigger {
+      StateTrigger::Crossing(_) => {
+        (prev < 0.0 && next >= 0.0) || (prev > 0.0 && next <= 0.0)
+      }
+      StateTrigger::Condition(_) => prev < 0.0 && next > 0.0,
+    }
+  }
+
+  /// Run the action at event time `t`. A rule `f[x] -> v` (or
+  /// `f'[x] -> v`) resets that state component; any other part is
+  /// evaluated for its effect, and one that yields `"StopIntegration"`
+  /// ends the integration, `"RemoveEvent"` disarms the event.
+  fn run(
+    &self,
+    t: f64,
+    state: &[f64],
+    funcs: &[SysFunc],
+    state_offset: &[usize],
+    var_names: &[String],
+    x_name: &str,
+  ) -> Result<EventOutcome, InterpreterError> {
+    let items: Vec<Expr> = match &self.action {
+      Expr::List(items) => items.to_vec(),
+      other => vec![other.clone()],
+    };
+    let mut new_state = state.to_vec();
+    let mut stop = false;
+    let in_state = |e: &Expr| {
+      let rewritten = substitute_function_values(e, funcs, x_name);
+      substitute_state(&rewritten, var_names, t, state)
+    };
+    for item in &items {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = item
+        && let Some(slot) = state_slot(pattern, funcs, state_offset, x_name)
+      {
+        let value =
+          crate::evaluator::evaluate_expr_to_expr(&in_state(replacement))?;
+        if let Some(v) = try_eval_to_f64(&value) {
+          new_state[slot] = v;
+        }
+        continue;
+      }
+      match crate::evaluator::evaluate_expr_to_expr(&in_state(item)) {
+        Ok(value) => match &value {
+          Expr::String(s) if s == "StopIntegration" => stop = true,
+          Expr::String(s) if s == "RemoveEvent" => self.active.set(false),
+          _ => {}
+        },
+        Err(InterpreterError::ThrowValue(_, tag))
+          if matches!(
+            tag.as_deref(),
+            Some(Expr::String(s)) if s == "StopIntegration"
+          ) =>
+        {
+          stop = true;
+        }
+        Err(e) => return Err(e),
+      }
+    }
+    Ok(EventOutcome {
+      stop,
+      state: new_state,
+    })
+  }
+}
+
+/// The state events of one solve, with the variable names their triggers
+/// are written over.
+#[derive(Clone, Copy)]
+struct StateEventCtx<'a> {
+  events: &'a [StateEvent],
+  var_names: &'a [String],
+}
+
+impl StateEventCtx<'_> {
+  fn none() -> StateEventCtx<'static> {
+    StateEventCtx {
+      events: &[],
+      var_names: &[],
+    }
+  }
+}
+
+/// Replace the independent variable and the state placeholders in `expr`
+/// by their numeric values.
+fn substitute_state(
+  expr: &Expr,
+  var_names: &[String],
+  x: f64,
+  state: &[f64],
+) -> Expr {
+  let mut out =
+    crate::syntax::substitute_variable(expr, &var_names[0], &Expr::Real(x));
+  for (name, v) in var_names[1..].iter().zip(state) {
+    out = crate::syntax::substitute_variable(&out, name, &Expr::Real(*v));
+  }
+  out
+}
+
+/// The state-vector index that `f[x]` or `Derivative[k][f][x]` names, when
+/// `f` is one of the system's functions and `k` is below its order.
+fn state_slot(
+  expr: &Expr,
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  x_name: &str,
+) -> Option<usize> {
+  for (fi, f) in funcs.iter().enumerate() {
+    let k = match expr {
+      Expr::FunctionCall { name, args }
+        if name == &f.name
+          && args.len() == 1
+          && matches!(&args[0], Expr::Identifier(a) if a == x_name) =>
+      {
+        0
+      }
+      _ => match extract_derivative_order_and_point(expr, &f.name) {
+        Some((k, Expr::Identifier(ref a))) if a == x_name => k,
+        _ => continue,
+      },
+    };
+    if k < f.order.max(1) {
+      return Some(state_offset[fi] + k);
+    }
+  }
+  None
+}
+
 /// Parse `WhenEvent[Mod[x, p] == 0, action]`.
 fn parse_periodic_when_event(
   args: &[Expr],
@@ -5336,6 +5605,7 @@ fn integrate_leg(
   event_fn: Option<&NumFn>,
   event_action: Option<&Expr>,
   time_events: &[TimeEvent],
+  state_events: StateEventCtx,
   x_name: &str,
   cached_m: Option<&[Vec<f64>]>,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
@@ -5368,12 +5638,20 @@ fn integrate_leg(
     event_fn.and_then(|f| f.eval_state(x, state, funcs.len()).ok())
   };
   let mut prev_event = eval_event(x, &state);
+  let state_value = |ev: &StateEvent, x: f64, state: &[f64]| {
+    ev.value(x, state, funcs, state_events.var_names)
+  };
+  let mut prev_state_values: Vec<Option<f64>> = state_events
+    .events
+    .iter()
+    .map(|ev| state_value(ev, x, &state))
+    .collect();
 
   for i in 0..n_steps {
     let new_x = grid(i + 1);
     let h = new_x - x;
     let mut refined: Vec<(f64, Vec<f64>)> = Vec::new();
-    let Some(new_state) = rk4_step_refined(
+    let Some(mut new_state) = rk4_step_refined(
       residuals,
       funcs,
       state_offset,
@@ -5406,6 +5684,100 @@ fn integrate_leg(
       }
       return Ok(if points.len() > 1 { Some(points) } else { None });
     };
+
+    if !state_events.events.is_empty() {
+      // The earliest state event that fires inside (x, new_x], located by
+      // bisecting the step: a partial RK4 step from `x` gives the state at
+      // any time inside it.
+      let mut earliest: Option<(f64, Vec<f64>, usize)> = None;
+      for (ei, ev) in state_events.events.iter().enumerate() {
+        if !ev.active.get() {
+          continue;
+        }
+        let (Some(g0), Some(g1)) =
+          (prev_state_values[ei], state_value(ev, new_x, &new_state))
+        else {
+          continue;
+        };
+        if !ev.fires(g0, g1) {
+          continue;
+        }
+        let (mut lo, mut hi) = (0.0_f64, h);
+        let mut hi_state = new_state.clone();
+        for _ in 0..60 {
+          let mid = f64::midpoint(lo, hi);
+          if mid == lo || mid == hi {
+            break;
+          }
+          let Some(s_mid) = rk4_system_step(
+            residuals,
+            funcs,
+            state_offset,
+            &state,
+            x,
+            mid,
+            cached_m,
+          )?
+          else {
+            break;
+          };
+          match state_value(ev, x + mid, &s_mid) {
+            Some(g) if ev.fires(g0, g) => {
+              hi = mid;
+              hi_state = s_mid;
+            }
+            _ => lo = mid,
+          }
+        }
+        if earliest.as_ref().is_none_or(|(t, _, _)| x + hi < *t) {
+          earliest = Some((x + hi, hi_state, ei));
+        }
+      }
+      if let Some((te, state_at, ei)) = earliest {
+        points.extend(refined.drain(..).filter(|(xr, _)| *xr < te));
+        let outcome = state_events.events[ei].run(
+          te,
+          &state_at,
+          funcs,
+          state_offset,
+          state_events.var_names,
+          x_name,
+        )?;
+        points.push((te, outcome.state.clone()));
+        if outcome.stop {
+          return Ok(Some(points));
+        }
+        // Carry on from the event with the (possibly reset) state.
+        new_state = if new_x - te > f64::EPSILON * new_x.abs().max(1.0) {
+          match rk4_system_step(
+            residuals,
+            funcs,
+            state_offset,
+            &outcome.state,
+            te,
+            new_x - te,
+            cached_m,
+          )? {
+            Some(s) => s,
+            None => return Ok(Some(points)),
+          }
+        } else {
+          outcome.state.clone()
+        };
+        refined.clear();
+        refined.push((new_x, new_state.clone()));
+        // A condition that is already true after the event must turn
+        // false before it can fire again.
+        for (ej, ev) in state_events.events.iter().enumerate() {
+          prev_state_values[ej] = state_value(ev, te, &outcome.state);
+        }
+      }
+      for (ej, ev) in state_events.events.iter().enumerate() {
+        if let Some(g) = state_value(ev, new_x, &new_state) {
+          prev_state_values[ej] = Some(g);
+        }
+      }
+    }
 
     if !time_events.is_empty() {
       // Fire every periodic action whose time falls in (x, new_x], in
@@ -10266,6 +10638,18 @@ pub fn evaluate_interpolating_function(
   func_args: &[Expr],
   call_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  // A one-dimensional function threads over a list argument, at any depth.
+  if let [Expr::List(points)] = call_args
+    && matches!(func_args.first(), Some(Expr::List(domain)) if domain.len() == 1)
+  {
+    return points
+      .iter()
+      .map(|p| {
+        evaluate_interpolating_function(func_args, std::slice::from_ref(p))
+      })
+      .collect::<Result<Vec<_>, _>>()
+      .map(|values| Expr::List(values.into()));
+  }
   // 2-D explicit-coordinate grid carrying partial-derivative orders, as left
   // by `Derivative[a, b][f]`: InterpolatingFunction[domain, grid, orders,
   // coords, {a, b}].
