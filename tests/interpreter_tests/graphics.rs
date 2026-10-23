@@ -2203,6 +2203,17 @@ mod graphics {
       assert!(!svg.contains("Set"), "{svg}");
     }
 
+    /// A string inside a held equation is drawn without its quotes, the way
+    /// StandardForm typesets it: `f(x) = …`, not `"f(x)" = …`.
+    #[test]
+    fn held_equation_text_omits_string_quotes() {
+      let svg = export_svg(
+        "Graphics[Text[HoldForm[Style[\"f(x)\", Italic] = p], {0, 0}]]",
+      );
+      assert!(svg.contains(">f(x) = p</text>"), "{svg}");
+      assert!(!svg.contains("&quot;"), "{svg}");
+    }
+
     /// A held `a ≈ Sum[…]` label reads as an approximation with a sigma,
     /// not as the literal `TildeTilde[…]`/`Sum[…]` source.
     #[test]

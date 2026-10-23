@@ -15026,6 +15026,13 @@ fn box_expr_to_plain(e: &Expr) -> String {
 /// `spaced` is false inside a script, where a limit `n=0` stays tight.
 fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
   match e {
+    // A string typeset in StandardForm is drawn without its quotes; its box
+    // carries them as literal characters (`"\"f(x)\""`).
+    Expr::String(s)
+      if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') =>
+    {
+      s[1..s.len() - 1].to_string()
+    }
     Expr::String(s) | Expr::Identifier(s) => {
       strip_precision_marker(s).to_string()
     }
@@ -29190,6 +29197,14 @@ fn splice_sequence_applies(expr: &Expr) -> Expr {
   }
   match expr {
     Expr::List(items) => Expr::List(splice_items(items).into()),
+    // The result branches of `Switch`/`If`/`Which` are held: an
+    // `Apply[Sequence, {lo, hi}]` there only splices once its branch is
+    // taken, so splicing it here would change the call's argument count.
+    Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Switch" | "If" | "Which") =>
+    {
+      expr.clone()
+    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: splice_items(args).into(),
@@ -32256,6 +32271,45 @@ fn parse_manipulate_control(
         && !matches!(it, Expr::Identifier(s) if is_control_type_name(s))
     })
     .collect();
+  // `{{u, uinit, ulbl}, Dynamic[Switch[v, …, Sequence[lo, hi]]]}`: one
+  // `Dynamic` that yields both ends of the range at once (a `Sequence` of two
+  // numbers). It is the same control as `{u, Dynamic[lo], Dynamic[hi]}`, so
+  // split it into those two bounds, each re-resolved against the live
+  // bindings.
+  let split_range: Option<[Expr; 2]> = match bounds.as_slice() {
+    [only] => {
+      let (inner, dynamic) = manipulate_bound_expr(only);
+      let inner_src = crate::syntax::expr_to_source_form(inner);
+      let pair = dynamic
+        .then(|| {
+          crate::evaluator::evaluate_expr_to_expr(&Expr::List(
+            vec![inner.clone()].into(),
+          ))
+          .ok()
+        })
+        .flatten();
+      match pair {
+        Some(Expr::List(ref vals))
+          if vals.len() == 2
+            && vals.iter().all(|v| expr_to_f64(v).is_some()) =>
+        {
+          let part = |i: usize| {
+            crate::syntax::string_to_expr(&format!(
+              "Dynamic[{{{inner_src}}}[[{i}]]]"
+            ))
+            .ok()
+          };
+          part(1).zip(part(2)).map(|(lo, hi)| [lo, hi])
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let bounds: Vec<&Expr> = match &split_range {
+    Some([lo, hi]) => vec![lo, hi],
+    None => bounds,
+  };
 
   // `{{v, {a, b, …}, label}, lo, hi, MultiSlider[##] &}`: an N-handle slider
   // binding `v` to a *list*. Woxi has no multi-handle widget, so the list
@@ -34706,6 +34760,16 @@ fn display_expr_to_node(
         DisplayNode::Row(list_children(&args[0], bindings, probes, ons))
       }
       "Checkbox" => checkbox_node(args, probes, ons),
+      // `HoldForm[m]` draws as `m` itself — the symbol, not its value — so a
+      // caption naming a variable (`Row[{HoldForm[m], ", the rate"}]`) must
+      // not surface as the literal `HoldForm[…]` source.
+      "HoldForm" if args.len() == 1 => match &args[0] {
+        Expr::Identifier(_) => DisplayNode::Static {
+          svg: None,
+          text: crate::syntax::expr_to_string(&args[0]),
+        },
+        inner => display_expr_to_node(inner, bindings, probes, ons),
+      },
       // `Tooltip[content, tip]` draws as its content; the tip is only shown
       // on hover.
       "Tooltip" if !args.is_empty() => {
