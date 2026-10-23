@@ -10514,3 +10514,33 @@ mod hessenberg_decomposition {
     );
   }
 }
+
+mod dot_of_higher_rank_tensors {
+  use super::*;
+
+  // Dot contracts the last index of the first operand with the first of
+  // the second (values from wolframscript).
+  #[test]
+  fn rank_three_times_matrix() {
+    assert_eq!(
+      interpret(
+        "{{{0, 0, 0}, {1, 0, 0}}, {{0, 0, 1}, {1, 0, 1}}} . \
+         {{2., 0, 0}, {0, 3., 0}, {0, 0, 4.}}"
+      )
+      .unwrap(),
+      "{{{0., 0., 0.}, {2., 0., 0.}}, {{0., 0., 4.}, {2., 0., 4.}}}"
+    );
+    assert_eq!(
+      interpret("(Array[a, {2, 2, 2}] . Array[b, {2, 2}])[[1, 1, 1]]").unwrap(),
+      "a[1, 1, 1]*b[1, 1] + a[1, 1, 2]*b[2, 1]"
+    );
+  }
+
+  #[test]
+  fn mismatched_contraction_is_dotsh() {
+    assert_eq!(
+      interpret("Quiet[Dimensions[Array[a, {2, 2, 2}] . {1, 2, 3}]]").unwrap(),
+      "{2}"
+    );
+  }
+}

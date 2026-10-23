@@ -989,6 +989,22 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(unevaluated("Dot", args))
   };
 
+  // A tensor of rank three or more contracts its last index with the
+  // other operand's first, which is ArrayDot at depth 1. (The matrix code
+  // below would take a rank-3 tensor for a matrix of vectors.)
+  if let (Some(da), Some(db)) = (tensor_dims(&args[0]), tensor_dims(&args[1]))
+    && (da.len() > 2 || db.len() > 2)
+  {
+    if da.last() != db.first() {
+      return dotsh();
+    }
+    return array_dot_ast(&[
+      args[0].clone(),
+      args[1].clone(),
+      Expr::Integer(1),
+    ]);
+  }
+
   // Vector . Vector -> scalar
   if let (Some(va), Some(vb)) =
     (expr_to_vector(&args[0]), expr_to_vector(&args[1]))
