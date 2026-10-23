@@ -3913,6 +3913,20 @@ fn evaluate_curried_lhs_non_pattern_parts(
   }
 }
 
+/// The body stored for a delayed definition `lhs := Evaluate[inner]`: the
+/// evaluated `inner`, since `Evaluate` forces evaluation inside the held
+/// right-hand side. Any other body is returned unchanged.
+pub fn evaluate_forced_body(body: Expr) -> Result<Expr, InterpreterError> {
+  match &body {
+    Expr::FunctionCall { name, args }
+      if name == "Evaluate" && args.len() == 1 =>
+    {
+      evaluate_expr_to_expr(&args[0])
+    }
+    _ => Ok(body),
+  }
+}
+
 /// Handle SetDelayed[f[patterns...], body] — stores a function definition.
 /// This handles cases that the PEG FunctionDefinition rule doesn't parse,
 /// such as list-pattern arguments: f[{x_Integer, y_Integer}] := body.
@@ -3921,6 +3935,7 @@ pub fn set_delayed_ast(
   body: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let lhs = &normalize_symbol_lhs(lhs);
+  let body = &evaluate_forced_body(body.clone())?;
   // An upvalue on `SetDelayed` claims the definition before it is stored —
   // the delayed counterpart of the `Set` check in `set_ast`.
   if let UpvalueOutcome::Claimed(result) =

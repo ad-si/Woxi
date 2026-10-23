@@ -763,6 +763,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "QuartileSkewness" => Some((1, 2)),
     "SpearmanRho" => Some((2, 2)),
     "KendallTau" => Some((2, 2)),
+    "KendallTauTest" => Some((2, 3)),
     "IntersectingQ" => Some((2, 3)),
     "Inverse" => Some((1, 2)),
     "InverseChiSquareDistribution" => Some((1, 2)),

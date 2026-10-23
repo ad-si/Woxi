@@ -7228,6 +7228,11 @@ fn store_function_definition(
     InterpreterError::EvaluationError("Missing function body".into())
   })?);
 
+  // `f[x_] := Evaluate[body]` evaluates `body` once, when the definition is
+  // made, and stores the result.
+  let raw_body_expr =
+    evaluator::assignment::evaluate_forced_body(raw_body_expr)?;
+
   // f[x_] := body /; test parses as `body = Condition[actual_body, test]`.
   // Keep the Condition wrapper on the stored body so DownValues can show
   // the original `body /; test` form. Dispatch treats `Condition[expr,
