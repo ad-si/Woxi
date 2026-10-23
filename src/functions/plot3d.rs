@@ -72,6 +72,7 @@ impl Default for Camera {
   }
 }
 
+#[derive(Clone)]
 pub(crate) struct Triangle {
   pub projected: [(f64, f64); 3],
   pub depth: f64,
@@ -106,7 +107,11 @@ pub(crate) struct TriangleTexture {
 /// Largest scene `painter_order` refines: candidate pairs come from a sweep
 /// over the projected bounding boxes, but a dense scene can still be close
 /// to quadratic, so bigger scenes keep the plain centroid sort.
-const PAINTER_ORDER_MAX_TRIANGLES: usize = 60000;
+const PAINTER_ORDER_MAX_TRIANGLES: usize = 200000;
+
+/// Largest scene `split_interpenetrating` cuts up; splitting multiplies the
+/// triangle count, which must stay within `PAINTER_ORDER_MAX_TRIANGLES`.
+const SPLIT_MAX_TRIANGLES: usize = 60000;
 
 /// Whether two projected triangles share interior area (touching along an
 /// edge or at a corner does not count).
@@ -170,6 +175,196 @@ fn side_of_plane(
   }
 }
 
+/// Calls `f(i, j)` for every pair of triangles whose projections share
+/// interior area. Candidate pairs come from a sweep along x over the
+/// projected bounding boxes.
+fn for_each_overlapping_pair(
+  projected: &[[(f64, f64); 3]],
+  mut f: impl FnMut(usize, usize),
+) {
+  let n = projected.len();
+  let bbox: Vec<[f64; 4]> = projected
+    .iter()
+    .map(|t| {
+      let xs = t.iter().map(|p| p.0);
+      let ys = t.iter().map(|p| p.1);
+      [
+        xs.clone().fold(f64::MAX, f64::min),
+        xs.fold(f64::MIN, f64::max),
+        ys.clone().fold(f64::MAX, f64::min),
+        ys.fold(f64::MIN, f64::max),
+      ]
+    })
+    .collect();
+  let mut by_x: Vec<usize> = (0..n).collect();
+  by_x.sort_by(|&a, &b| {
+    bbox[a][0]
+      .partial_cmp(&bbox[b][0])
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  for (pos, &i) in by_x.iter().enumerate() {
+    for &j in &by_x[pos + 1..] {
+      let (a, b) = (&bbox[i], &bbox[j]);
+      if b[0] >= a[1] {
+        break;
+      }
+      if a[3] <= b[2] || b[3] <= a[2] {
+        continue;
+      }
+      if projected_triangles_overlap(&projected[i], &projected[j]) {
+        f(i, j);
+      }
+    }
+  }
+}
+
+/// The gradient of `depth` in scene coordinates: depth(p) = gradient . p.
+fn depth_gradient(camera: &Camera) -> [f64; 3] {
+  let unit = |x, y, z| Point3D { x, y, z };
+  let d0 = depth(unit(0.0, 0.0, 0.0), camera);
+  [
+    depth(unit(1.0, 0.0, 0.0), camera) - d0,
+    depth(unit(0.0, 1.0, 0.0), camera) - d0,
+    depth(unit(0.0, 0.0, 1.0), camera) - d0,
+  ]
+}
+
+/// Most cutting planes applied to a single triangle, bounding the growth of
+/// a scene whose surfaces cross each other heavily.
+const MAX_SPLIT_PLANES: usize = 256;
+
+/// Cuts a convex polygon (corner, flag of the edge to the next corner) by
+/// the plane through `plane`, returning the parts on its near and far side.
+/// Edges created by the cut carry a `false` flag.
+fn clip_polygon_by_plane(
+  poly: &[(Point3D, bool)],
+  plane: &[Point3D; 3],
+) -> (Vec<(Point3D, bool)>, Vec<(Point3D, bool)>) {
+  let n = triangle_normal(plane[0], plane[1], plane[2]);
+  let eps = 1e-9;
+  let dist = |p: Point3D| {
+    n[0] * (p.x - plane[0].x)
+      + n[1] * (p.y - plane[0].y)
+      + n[2] * (p.z - plane[0].z)
+  };
+  let mut pos: Vec<(Point3D, bool)> = Vec::new();
+  let mut neg: Vec<(Point3D, bool)> = Vec::new();
+  for k in 0..poly.len() {
+    let (a, flag) = poly[k];
+    let b = poly[(k + 1) % poly.len()].0;
+    let (da, db) = (dist(a), dist(b));
+    if da >= -eps {
+      pos.push((a, flag));
+    }
+    if da <= eps {
+      neg.push((a, flag));
+    }
+    if (da > eps && db < -eps) || (da < -eps && db > eps) {
+      let t = da / (da - db);
+      let m = Point3D {
+        x: a.x + t * (b.x - a.x),
+        y: a.y + t * (b.y - a.y),
+        z: a.z + t * (b.z - a.z),
+      };
+      // The first half of the split edge keeps its flag; the second half
+      // starts at the cut point.
+      if da > 0.0 {
+        pos.push((m, false));
+        neg.push((m, flag));
+      } else {
+        neg.push((m, false));
+        pos.push((m, flag));
+      }
+    }
+  }
+  (pos, neg)
+}
+
+/// Splits triangles that pass through one another where they overlap on
+/// screen, so each piece lies wholly on one side of every triangle it
+/// crosses and a back-to-front sort can order them (the cones of a
+/// Voronoi construction, for example, meet along curves).
+fn split_interpenetrating(
+  verts: &mut Vec<[Point3D; 3]>,
+  triangles: &mut Vec<Triangle>,
+  camera: &Camera,
+) {
+  let n = verts.len();
+  if !(2..=SPLIT_MAX_TRIANGLES).contains(&n) {
+    return;
+  }
+  let gradient = depth_gradient(camera);
+  let projected: Vec<_> = triangles.iter().map(|t| t.projected).collect();
+  let mut planes: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for_each_overlapping_pair(&projected, |i, j| {
+    if side_of_plane(&verts[i], &verts[j], gradient).is_none()
+      && side_of_plane(&verts[j], &verts[i], gradient).is_none()
+    {
+      if planes[i].len() < MAX_SPLIT_PLANES {
+        planes[i].push(j);
+      }
+      if planes[j].len() < MAX_SPLIT_PLANES {
+        planes[j].push(i);
+      }
+    }
+  });
+  if planes.iter().all(std::vec::Vec::is_empty) {
+    return;
+  }
+  let original = verts.clone();
+  let mut new_verts = Vec::with_capacity(n);
+  let mut new_tris = Vec::with_capacity(n);
+  for (k, tri) in triangles.drain(..).enumerate() {
+    if planes[k].is_empty() || tri.texture.is_some() {
+      new_verts.push(original[k]);
+      new_tris.push(tri);
+      continue;
+    }
+    let mut pieces = vec![
+      (0..3)
+        .map(|c| (original[k][c], tri.boundary[c]))
+        .collect::<Vec<_>>(),
+    ];
+    for &other in &planes[k] {
+      let mut next = Vec::with_capacity(pieces.len() + 1);
+      for piece in pieces {
+        let (a, b) = clip_polygon_by_plane(&piece, &original[other]);
+        if a.len() >= 3 && b.len() >= 3 {
+          next.push(a);
+          next.push(b);
+        } else {
+          next.push(piece);
+        }
+      }
+      pieces = next;
+    }
+    for poly in pieces {
+      let m = poly.len();
+      for c in 1..m - 1 {
+        let (v0, v1, v2) = (poly[0].0, poly[c].0, poly[c + 1].0);
+        let center = Point3D {
+          x: (v0.x + v1.x + v2.x) / 3.0,
+          y: (v0.y + v1.y + v2.y) / 3.0,
+          z: (v0.z + v1.z + v2.z) / 3.0,
+        };
+        let mut piece = tri.clone();
+        piece.projected = [
+          project(v0, camera),
+          project(v1, camera),
+          project(v2, camera),
+        ];
+        piece.depth = depth(center, camera);
+        piece.boundary =
+          [c == 1 && poly[0].1, poly[c].1, c + 2 == m && poly[m - 1].1];
+        new_verts.push([v0, v1, v2]);
+        new_tris.push(piece);
+      }
+    }
+  }
+  *verts = new_verts;
+  *triangles = new_tris;
+}
+
 /// Back-to-front draw order for the triangles. A centroid sort alone draws a
 /// large face that lies behind a small one on top of it (a cube inside a
 /// polyhedron pokes through its faces), so every overlapping pair is first
@@ -191,64 +386,25 @@ fn painter_order(
   if n > PAINTER_ORDER_MAX_TRIANGLES {
     return by_depth;
   }
-  // depth(p) = gradient . p
-  let unit = |x, y, z| Point3D { x, y, z };
-  let d0 = depth(unit(0.0, 0.0, 0.0), camera);
-  let gradient = [
-    depth(unit(1.0, 0.0, 0.0), camera) - d0,
-    depth(unit(0.0, 1.0, 0.0), camera) - d0,
-    depth(unit(0.0, 0.0, 1.0), camera) - d0,
-  ];
-  let bbox: Vec<[f64; 4]> = projected
-    .iter()
-    .map(|t| {
-      let xs = t.iter().map(|p| p.0);
-      let ys = t.iter().map(|p| p.1);
-      [
-        xs.clone().fold(f64::MAX, f64::min),
-        xs.fold(f64::MIN, f64::max),
-        ys.clone().fold(f64::MAX, f64::min),
-        ys.fold(f64::MIN, f64::max),
-      ]
-    })
-    .collect();
+  let gradient = depth_gradient(camera);
   // `after[i]` lists the triangles that must be drawn after `i`.
   let mut after: Vec<Vec<usize>> = vec![Vec::new(); n];
   let mut indegree = vec![0usize; n];
-  // Sweep along x so only triangles whose x extents overlap are paired.
-  let mut by_x: Vec<usize> = (0..n).collect();
-  by_x.sort_by(|&a, &b| {
-    bbox[a][0]
-      .partial_cmp(&bbox[b][0])
-      .unwrap_or(std::cmp::Ordering::Equal)
-  });
-  for (pos, &i) in by_x.iter().enumerate() {
-    for &j in &by_x[pos + 1..] {
-      let (a, b) = (&bbox[i], &bbox[j]);
-      if b[0] >= a[1] {
-        break;
+  for_each_overlapping_pair(projected, |i, j| {
+    let i_behind = side_of_plane(&verts[i], &verts[j], gradient)
+      .or_else(|| side_of_plane(&verts[j], &verts[i], gradient).map(|s| !s));
+    match i_behind {
+      Some(true) => {
+        after[i].push(j);
+        indegree[j] += 1;
       }
-      if a[3] <= b[2] || b[3] <= a[2] {
-        continue;
+      Some(false) => {
+        after[j].push(i);
+        indegree[i] += 1;
       }
-      if !projected_triangles_overlap(&projected[i], &projected[j]) {
-        continue;
-      }
-      let i_behind = side_of_plane(&verts[i], &verts[j], gradient)
-        .or_else(|| side_of_plane(&verts[j], &verts[i], gradient).map(|s| !s));
-      match i_behind {
-        Some(true) => {
-          after[i].push(j);
-          indegree[j] += 1;
-        }
-        Some(false) => {
-          after[j].push(i);
-          indegree[i] += 1;
-        }
-        None => {}
-      }
+      None => {}
     }
-  }
+  });
   let mut order = Vec::with_capacity(n);
   let mut done = vec![false; n];
   // Ready triangles, keyed by their far-to-near rank in `by_depth` so the
@@ -7338,6 +7494,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Painter's algorithm
+  split_interpenetrating(&mut triangle_vertices, &mut all_triangles, &camera);
   {
     let projected: Vec<_> = all_triangles.iter().map(|t| t.projected).collect();
     let depths: Vec<_> = all_triangles.iter().map(|t| t.depth).collect();
@@ -14139,6 +14296,60 @@ mod march_cube_orientation_tests {
 #[cfg(test)]
 mod painter_order_tests {
   use super::*;
+
+  fn flat_triangle(verts: [Point3D; 3], camera: &Camera) -> Triangle {
+    Triangle {
+      projected: std::array::from_fn(|i| project(verts[i], camera)),
+      depth: 0.0,
+      color: (0, 0, 0),
+      opacity: 1.0,
+      boundary: [true; 3],
+      edge_color: None,
+      edge_width: None,
+      texture: None,
+    }
+  }
+
+  /// Two triangles that pierce each other cannot be ordered as wholes, so
+  /// they are cut along the crossing; afterwards every overlapping pair of
+  /// pieces lies wholly on one side of the other.
+  #[test]
+  fn crossing_triangles_are_split_into_orderable_pieces() {
+    let camera = Camera::default();
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let mut verts = vec![
+      [p(-1.0, -1.0, 0.0), p(1.0, -1.0, 0.0), p(0.0, 1.0, 0.0)],
+      [p(-1.0, 0.0, -1.0), p(1.0, 0.0, -1.0), p(0.0, 0.0, 1.0)],
+    ];
+    let mut tris: Vec<Triangle> =
+      verts.iter().map(|v| flat_triangle(*v, &camera)).collect();
+    split_interpenetrating(&mut verts, &mut tris, &camera);
+    assert!(verts.len() > 2);
+    assert_eq!(verts.len(), tris.len());
+    let gradient = depth_gradient(&camera);
+    let projected: Vec<_> = tris.iter().map(|t| t.projected).collect();
+    for_each_overlapping_pair(&projected, |i, j| {
+      assert!(
+        side_of_plane(&verts[i], &verts[j], gradient).is_some()
+          || side_of_plane(&verts[j], &verts[i], gradient).is_some()
+      );
+    });
+  }
+
+  /// Triangles that never cross are left untouched.
+  #[test]
+  fn disjoint_triangles_are_not_split() {
+    let camera = Camera::default();
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let mut verts = vec![
+      [p(-1.0, -1.0, 0.0), p(1.0, -1.0, 0.0), p(0.0, 1.0, 0.0)],
+      [p(-1.0, -1.0, 1.0), p(1.0, -1.0, 1.0), p(0.0, 1.0, 1.0)],
+    ];
+    let mut tris: Vec<Triangle> =
+      verts.iter().map(|v| flat_triangle(*v, &camera)).collect();
+    split_interpenetrating(&mut verts, &mut tris, &camera);
+    assert_eq!(verts.len(), 2);
+  }
 
   /// A large face below a dense field of small faces (more than the old
   /// 2500-triangle cap) must still be drawn first, even though the small
