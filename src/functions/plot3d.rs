@@ -3406,6 +3406,9 @@ enum Primitive3D {
   Sphere {
     center: Point3D,
     radius: f64,
+    /// `Sphere[c, Scaled[r]]`: `radius` holds the fraction `r` of the plot
+    /// range until `resolve_scaled_sphere_radii` turns it into a length.
+    scaled: bool,
     style: StyleState3D,
   },
   Cuboid {
@@ -4892,7 +4895,18 @@ fn collect_3d_primitives(
           let radius_arg = args
             .get(1)
             .map(|a| evaluate_expr_to_expr(a).unwrap_or_else(|_| a.clone()));
+          let scaled_fraction = match &radius_arg {
+            Some(Expr::FunctionCall { name, args })
+              if name == "Scaled" && args.len() == 1 =>
+            {
+              try_eval_to_f64(&args[0])
+            }
+            _ => None,
+          };
           let radii: Vec<f64> = match &radius_arg {
+            Some(_) if scaled_fraction.is_some() => {
+              vec![scaled_fraction.unwrap_or(1.0); centers.len()]
+            }
             Some(Expr::List(items)) if items.len() == centers.len() => items
               .iter()
               .map(|i| try_eval_to_f64(i).unwrap_or(1.0))
@@ -4906,6 +4920,7 @@ fn collect_3d_primitives(
             prims.push(Primitive3D::Sphere {
               center,
               radius,
+              scaled: scaled_fraction.is_some(),
               style: style.clone(),
             });
           }
@@ -6614,6 +6629,54 @@ fn cone_edge_flags(n: usize, capped: bool) -> Vec<[bool; 3]> {
   }
 }
 
+/// Turn each `Sphere[c, Scaled[r]]` radius from the fraction `r` into a
+/// length: that fraction of the picture's widest extent — the explicit
+/// `PlotRange`, or else the box around everything but the scaled spheres.
+fn resolve_scaled_sphere_radii(
+  prims: &mut [Primitive3D],
+  plot_range: Option<[(f64, f64); 3]>,
+) {
+  let is_scaled =
+    |p: &Primitive3D| matches!(p, Primitive3D::Sphere { scaled: true, .. });
+  if !prims.iter().any(is_scaled) {
+    return;
+  }
+  let bounds = plot_range.unwrap_or_else(|| {
+    // Scaled spheres contribute their centres only.
+    let probe: Vec<Primitive3D> = prims
+      .iter()
+      .map(|p| match p {
+        Primitive3D::Sphere {
+          center,
+          scaled: true,
+          style,
+          ..
+        } => Primitive3D::Sphere {
+          center: *center,
+          radius: 0.0,
+          scaled: false,
+          style: style.clone(),
+        },
+        other => other.clone(),
+      })
+      .collect();
+    primitives_bounds(&probe)
+  });
+  let extent = bounds
+    .iter()
+    .map(|(lo, hi)| hi - lo)
+    .filter(|e| e.is_finite())
+    .fold(0.0_f64, f64::max);
+  for prim in prims {
+    if let Primitive3D::Sphere { radius, scaled, .. } = prim
+      && *scaled
+    {
+      *radius *= extent;
+      *scaled = false;
+    }
+  }
+}
+
 /// The world-coordinate bounding box of a set of 3D primitives, as
 /// `[(xlo, xhi), (ylo, yhi), (zlo, zhi)]`. Infinite when there is nothing
 /// to bound.
@@ -7103,6 +7166,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     collect_3d_primitives(&expanded, &mut style3d, &mut prims);
   }
 
+  resolve_scaled_sphere_radii(&mut prims, plot_range);
+
   // An explicit `PlotRange` cuts off whatever of a line lies outside it.
   if let Some(bounds) = plot_range {
     for prim in &mut prims {
@@ -7271,6 +7336,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           center,
           radius,
           style,
+          ..
         } => (
           tessellate_sphere(
             center,

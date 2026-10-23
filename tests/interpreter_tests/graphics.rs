@@ -6074,6 +6074,31 @@ mod plot3d {
       );
     }
 
+    /// `Sphere[c, Scaled[r]]` takes its radius as the fraction `r` of the
+    /// plot range. `Scaled[r]` used to fail to parse as a number and fall
+    /// back to radius 1, swamping the picture.
+    #[test]
+    fn sphere_radius_can_be_a_fraction_of_the_plot_range() {
+      // With `PlotRange -> 3` (width 6), `Scaled[0.05]` is a radius of 0.3.
+      assert_eq!(
+        export_svg(
+          "Graphics3D[{Sphere[{0, 0, 0}, Scaled[0.05]]}, PlotRange -> 3]"
+        ),
+        export_svg("Graphics3D[{Sphere[{0, 0, 0}, 0.3]}, PlotRange -> 3]")
+      );
+      // Without an explicit range, the fraction applies to the extent of
+      // the rest of the scene.
+      assert_eq!(
+        export_svg(
+          "Graphics3D[{Sphere[{0, 0, 0}, Scaled[0.1]], \
+           Line[{{-5, 0, 0}, {5, 0, 0}}]}]"
+        ),
+        export_svg(
+          "Graphics3D[{Sphere[{0, 0, 0}, 1], Line[{{-5, 0, 0}, {5, 0, 0}}]}]"
+        )
+      );
+    }
+
     /// `Sphere[{p1, p2, …}, {r1, r2, …}]` gives each centre its own radius,
     /// rather than one shared radius for the whole set — how a particle
     /// system with varying particle sizes is drawn in one call. A radius
