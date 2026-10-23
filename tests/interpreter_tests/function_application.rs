@@ -3935,3 +3935,38 @@ mod literal_definition_value_is_evaluated {
     );
   }
 }
+
+mod large_list_arguments {
+  use super::*;
+
+  #[test]
+  fn a_large_argument_is_shared_not_copied_into_the_caller() {
+    // The argument is passed as a shared list; changing the copy inside the
+    // function leaves the caller's list alone.
+    assert_eq!(
+      interpret(
+        "l = Range[100]; f[x_] := Module[{y = x}, y[[1]] = 0; y]; \
+         {f[l][[1]], l[[1]], Total[f[l]], Total[l]}"
+      )
+      .unwrap(),
+      "{0, 1, 5049, 5050}"
+    );
+    assert_eq!(
+      interpret("l = Range[100]; g[v_, i_] := v[[i]] + Length[v]; g[l, 7]")
+        .unwrap(),
+      "107"
+    );
+  }
+
+  #[test]
+  fn sub_value_rule_over_a_data_list() {
+    assert_eq!(
+      interpret(
+        "lis = Range[50]; adj[l_][x_, y_] := Abs[l[[x]] - l[[y]]] == 1; \
+         Length[Cases[Subsets[Range[50], {2}], {x_, y_} /; adj[lis][x, y]]]"
+      )
+      .unwrap(),
+      "49"
+    );
+  }
+}

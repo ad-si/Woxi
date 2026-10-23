@@ -52,12 +52,19 @@ pub fn flatten_alternatives_binop(expr: &Expr) -> Option<Expr> {
       false
     }
   }
-  let mut parts = Vec::new();
-  if gather(expr, &mut parts) {
-    Some(call("Alternatives", parts))
-  } else {
-    None
+  // Anything but an Alternatives node is left alone without copying it.
+  if !matches!(
+    expr,
+    Expr::BinaryOp {
+      op: BinaryOperator::Alternatives,
+      ..
+    }
+  ) {
+    return None;
   }
+  let mut parts = Vec::new();
+  gather(expr, &mut parts);
+  Some(call("Alternatives", parts))
 }
 
 fn part_take_warn(expr: &Expr, start: i64, end: i64) {
