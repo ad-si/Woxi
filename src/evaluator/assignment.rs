@@ -2816,6 +2816,23 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // Evaluate the RHS
     let rhs_value = evaluate_expr_to_expr(rhs)?;
 
+    // A machine real with an integral value is a valid position in a part
+    // assignment (`u[[2., 1.]] = 1`, as wolframscript accepts); any other
+    // real is rejected with Set::pkspec1 and leaves the target unchanged.
+    for idx in &mut eval_indices {
+      if let Expr::Real(r) = idx {
+        if r.fract() == 0.0 && r.abs() < 1e15 {
+          *idx = Expr::Integer(*r as i128);
+        } else {
+          crate::emit_message(&format!(
+            "Set::pkspec1: The expression {} cannot be used as a part specification.",
+            crate::syntax::expr_to_string(idx)
+          ));
+          return Ok(rhs_value);
+        }
+      }
+    }
+
     // Part assignment into a variable bound to an Association (stored in the
     // string-keyed `StoredValue::Association` form). Convert it to an
     // `Expr::Association`, apply the assignment via `set_part_deep` — which

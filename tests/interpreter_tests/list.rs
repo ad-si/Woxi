@@ -23924,3 +23924,29 @@ mod sparse_array_banded_patterns {
     );
   }
 }
+
+mod part_assignment_real_positions {
+  use super::*;
+
+  // wolframscript accepts integral machine reals as positions in a part
+  // assignment; a fractional one is rejected and leaves the value alone.
+  #[test]
+  fn integral_reals_are_positions() {
+    assert_eq!(
+      interpret("w = {{0, 0}, {0, 0}}; w[[2., 1.]] = 1; w").unwrap(),
+      "{{0, 0}, {1, 0}}"
+    );
+    assert_eq!(
+      interpret("v = {1, 2, 3}; v[[2.]] = 5; v").unwrap(),
+      "{1, 5, 3}"
+    );
+  }
+
+  #[test]
+  fn fractional_real_is_rejected() {
+    assert_eq!(
+      interpret("u = {1, 2}; {Quiet[u[[2.5]] = 9], u}").unwrap(),
+      "{9, {1, 2}}"
+    );
+  }
+}
