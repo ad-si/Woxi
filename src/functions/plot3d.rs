@@ -13348,12 +13348,24 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (se, ce) = camera.elevation.sin_cos();
     [ce * ca, ce * sa, se]
   };
-  let grid_n = plot_points.map_or(GRID_N, |p| p - 1);
-  let u_step = (u_max - u_min) / grid_n as f64;
+  // Without an explicit `PlotPoints` the grid is 50 samples per direction,
+  // refined to about 20 per full turn (2π) of a long parameter span, so a
+  // surface winding many times around (a Klein bottle over `{u, 0, 30 π}`)
+  // is not reduced to a handful of facets per turn.
+  let auto_grid = |span: f64| -> usize {
+    let turns = (span.abs() / std::f64::consts::TAU).ceil();
+    if turns.is_finite() {
+      ((turns as usize).saturating_mul(20)).clamp(GRID_N, 300)
+    } else {
+      GRID_N
+    }
+  };
+  let grid_u = plot_points.map_or_else(|| auto_grid(u_max - u_min), |p| p - 1);
+  let u_step = (u_max - u_min) / grid_u as f64;
   // The `v` range may depend on `u` (`{v, 0, h - Sin[u]}`), so each grid
   // column `i` gets its own `(lo, hi)`; a column whose bounds do not
   // evaluate to numbers stays empty.
-  let v_ranges: Vec<(f64, f64)> = (0..=grid_n)
+  let v_ranges: Vec<(f64, f64)> = (0..=grid_u)
     .map(|i| {
       let uval = u_min + i as f64 * u_step;
       let bound = |e: &Expr| {
@@ -13366,7 +13378,18 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (bound(&v_lo_expr), bound(&v_hi_expr))
     })
     .collect();
-  let v_step_at = |i: usize| (v_ranges[i].1 - v_ranges[i].0) / grid_n as f64;
+  let grid_v = plot_points.map_or_else(
+    || {
+      let span = v_ranges
+        .iter()
+        .filter(|(lo, hi)| lo.is_finite() && hi.is_finite())
+        .map(|(lo, hi)| hi - lo)
+        .fold(0.0_f64, f64::max);
+      auto_grid(span)
+    },
+    |p| p - 1,
+  );
+  let v_step_at = |i: usize| (v_ranges[i].1 - v_ranges[i].0) / grid_v as f64;
   let (v_min, v_max) = v_ranges
     .iter()
     .filter(|(lo, hi)| lo.is_finite() && hi.is_finite())
@@ -13385,10 +13408,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut gz_max = f64::NEG_INFINITY;
 
   for surface in &surfaces {
-    let mut points = vec![vec![None; grid_n + 1]; grid_n + 1];
-    for i in 0..=grid_n {
+    let mut points = vec![vec![None; grid_v + 1]; grid_u + 1];
+    for i in 0..=grid_u {
       let uval = u_min + i as f64 * u_step;
-      for j in 0..=grid_n {
+      for j in 0..=grid_v {
         let vval = v_ranges[i].0 + j as f64 * v_step_at(i);
         if let Some((x, y, z)) = evaluate_parametric_at_uv(
           &surface.fx,
@@ -13471,9 +13494,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let facet_colors: Vec<Vec<Vec<Option<(u8, u8, u8)>>>> = all_surface_points
     .iter()
     .map(|sg| {
-      (0..grid_n)
+      (0..grid_u)
         .map(|i| {
-          (0..grid_n)
+          (0..grid_v)
             .map(|j| {
               let cf = surface_color_fn.as_ref()?;
               let pts: Vec<(f64, f64, f64)> =
@@ -13539,7 +13562,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .enumerate()
       .map(|(surface_idx, sg)| {
         let mut index_of: Vec<Vec<Option<usize>>> =
-          vec![vec![None; grid_n + 1]; grid_n + 1];
+          vec![vec![None; grid_v + 1]; grid_u + 1];
         let mut point_exprs: Vec<Expr> = Vec::new();
         for (i, row) in sg.iter().enumerate() {
           for (j, p) in row.iter().enumerate() {
@@ -13562,8 +13585,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           content.push(call0("EdgeForm"));
         }
         content.extend(surface_opacity_directive(&plot_styles, surface_idx));
-        for i in 0..grid_n {
-          for j in 0..grid_n {
+        for i in 0..grid_u {
+          for j in 0..grid_v {
             let (Some(a), Some(b), Some(c), Some(d)) = (
               index_of[i][j],
               index_of[i + 1][j],
@@ -13660,10 +13683,13 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           };
           for m in 1..=n {
-            let k = (grid_n * m + n.div_ceil(2)) / (n + 1);
-            for i in 0..grid_n {
-              push_segment(index_of[i][k], index_of[i + 1][k]);
-              push_segment(index_of[k][i], index_of[k][i + 1]);
+            let ku = (grid_u * m + n.div_ceil(2)) / (n + 1);
+            let kv = (grid_v * m + n.div_ceil(2)) / (n + 1);
+            for i in 0..grid_u {
+              push_segment(index_of[i][kv], index_of[i + 1][kv]);
+            }
+            for j in 0..grid_v {
+              push_segment(index_of[ku][j], index_of[ku][j + 1]);
             }
           }
           if !segments.is_empty() {
@@ -13713,8 +13739,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for (surface_idx, sg) in all_surface_points.iter().enumerate() {
     let style = plot_style_for_surface(&plot_styles, surface_idx);
-    for i in 0..grid_n {
-      for j in 0..grid_n {
+    for i in 0..grid_u {
+      for j in 0..grid_v {
         let p00 = sg[i][j];
         let p10 = sg[i + 1][j];
         let p01 = sg[i][j + 1];
