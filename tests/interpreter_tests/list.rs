@@ -23972,3 +23972,41 @@ mod list_valued_bare_iterator {
     assert_eq!(interpret("Quiet[Do[1, {y}]]").unwrap(), "Do[1, {y}]");
   }
 }
+
+mod machine_real_iterators {
+  use super::*;
+
+  // Iterator values are min + k*step: machine reals as soon as min or step
+  // is one (values from wolframscript).
+  #[test]
+  fn table_do_sum_product() {
+    assert_eq!(
+      interpret(
+        "InputForm[{Table[i, {i, 3., 5., 1.}], Table[i, {i, 0., 2}], \
+         Table[i, {i, 1, 2, 1.}], Table[i, {i, 1, 2.}], Table[i, {i, 2.}], \
+         Sum[i, {i, 1, 3, 1.}], Product[i, {i, 1., 3}], Product[x + i, {i, 1., 2}]}]"
+      )
+      .unwrap(),
+      "InputForm[{{3., 4., 5.}, {0., 1., 2.}, {1., 2.}, {1, 2}, {1, 2}, 6., 6., \
+       (1. + x)*(2. + x)}]"
+    );
+    assert_eq!(
+      interpret("s = {}; Do[AppendTo[s, i], {i, 1., 2}]; InputForm[s]")
+        .unwrap(),
+      "InputForm[{1., 2.}]"
+    );
+  }
+
+  #[test]
+  fn machine_zero_exponent() {
+    assert_eq!(
+      interpret("InputForm[{x^0., (a + b)^0., 1^0., 1^2.5, {1, 2}^0.}]")
+        .unwrap(),
+      "InputForm[{1., 1., 1., 1., {1., 1.}}]"
+    );
+    assert_eq!(
+      interpret("Quiet[{Infinity^0., 0^0.}]").unwrap(),
+      "{Indeterminate, Indeterminate}"
+    );
+  }
+}

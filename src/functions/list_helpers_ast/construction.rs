@@ -555,7 +555,9 @@ fn table_over_iterator(
     }
 
     let mut results = Vec::new();
-    let mut current_expr = min_expr.clone();
+    // `min + 0*step`: a machine-real step makes even the first value a
+    // machine real (`{i, 1, 2, 1.}` starts at `1.`).
+    let mut current_expr = nth_iterator_value(&min_expr, &step_expr, 0)?;
     let mut safety_counter: usize = 0;
     // Accumulated rounding (0.25 + 14 * 0.05 = 0.9500000000000003) must not
     // push the last value past `max`, so compare with a slack proportional

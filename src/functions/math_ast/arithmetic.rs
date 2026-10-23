@@ -11323,6 +11323,23 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(base.clone());
   }
 
+  // A machine zero exponent gives the machine one (`x^0.`, `(a + b)^0.`)
+  // and the exact base 1 raised to a machine real is `1.` — wolframscript.
+  // Zero, infinite and indeterminate bases (`0^0.` is Indeterminate) and
+  // lists (which thread) take the general path.
+  let special_base = matches!(base, Expr::List(_))
+    || crate::functions::predicate_ast::is_directed_infinity(base)
+    || matches!(base, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
+    || try_eval_to_f64(base).is_some_and(|b| b == 0.0);
+  if matches!(exp, Expr::Real(e) if *e == 0.0) && !special_base {
+    return Ok(Expr::Real(1.0));
+  }
+  if matches!(base, Expr::Integer(1))
+    && matches!(exp, Expr::Real(e) if e.is_finite())
+  {
+    return Ok(Expr::Real(1.0));
+  }
+
   // A power past what wolframscript can represent is `Overflow[]` (or
   // `Underflow[]` on the way to zero), with a message — not a symbolic
   // result, and certainly not an attempt to materialise a number with 10^17
@@ -11718,10 +11735,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     matches!(exp, Expr::Identifier(s) if s == "ComplexInfinity");
 
   // Infinity^0 and ComplexInfinity^0 → Indeterminate
-  if matches!(exp, Expr::Integer(0))
+  if (matches!(exp, Expr::Integer(0))
+    || matches!(exp, Expr::Real(e) if *e == 0.0))
     && (base_is_pos_inf || base_is_neg_inf || base_is_complex_inf)
   {
-    emit_power_indet("Infinity", &expr_to_string(base), "0");
+    emit_power_indet("Infinity", &expr_to_string(base), &expr_to_string(exp));
     return Ok(id_expr("Indeterminate"));
   }
 
