@@ -674,7 +674,6 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     // no arity entry: the legacy package reports every wrong call — including
     // the empty one — as `::badargs` rather than `::argm`, so the functions
     // check their own arguments.
-    "HoldForm" => Some((1, 1)),
     "Hyperfactorial" => Some((1, 1)),
     "BinormalDistribution" => Some((1, 3)),
     "HypergeometricDistribution" => Some((3, 3)),
@@ -1252,6 +1251,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ReIm" => Some((1, 1)),
     "RelationGraph" => Some((2, usize::MAX)),
     "ReleaseHold" => Some((1, 1)),
+    "Release" => Some((1, 1)),
     "RemoveDiacritics" => Some((1, 1)),
     "RenameDirectory" => Some((2, 2)),
     "TimeZoneConvert" => Some((1, 2)),

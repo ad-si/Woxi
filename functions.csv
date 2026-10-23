@@ -651,6 +651,7 @@ Break,Exits a loop,✅,pure,1.0,610
 Dataset,Wraps data with type information and answers successive-level queries,✅,pure,10.0,610
 FoldList,Returns the list of intermediate results from Fold,✅,pure,2.0,611
 ReleaseHold,Removes Hold wrappers from an expression,✅,pure,2.0,612
+Release,Older name of ReleaseHold that removes Hold wrappers,✅,pure,1.0,
 ScriptSizeMultipliers,Option for subscript and superscript sizing,✅,none,3.0,614
 Split,Splits list at boundaries where consecutive elements differ,✅,pure,3.0,615
 GCD,Returns the greatest common divisor of integers and rationals (and Gaussian integers),✅,pure,1.0,616

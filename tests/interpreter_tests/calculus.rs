@@ -21912,3 +21912,19 @@ mod dsolve_unknown_in_denominator {
     );
   }
 }
+
+mod ndsolve_initial_point_just_inside_domain {
+  use super::*;
+
+  #[test]
+  fn short_backward_leg_reaches_the_domain_start() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y'[t] == -y[t], y[1/10000] == 1.25}, y, {t, 0, 100}]; \
+         {y[\"Domain\"] /. s[[1]], Chop[(y[0] /. s[[1]]) - 1.25 Exp[1/10000], 10^-8]}"
+      )
+      .unwrap(),
+      "{{{0., 100.}}, 0}"
+    );
+  }
+}

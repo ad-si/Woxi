@@ -2580,6 +2580,9 @@ fn downvalue_arg_info(
             if patterns.iter().any(|p| {
               contains_mutating_head(p)
                 || crate::evaluator::pattern_matching::is_optional_slot(p)
+                // `s : {_ ..}` — a repeated element has no fixed position to
+                // read, so it is matched structurally like the unnamed case.
+                || is_options_or_repeated_element(p)
             }) =>
           {
             conditions.push(Some(call(

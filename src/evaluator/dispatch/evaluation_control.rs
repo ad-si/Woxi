@@ -70,7 +70,8 @@ pub fn dispatch_evaluation_control(
     "Unevaluated" if !args.is_empty() => {
       return Some(Ok(unevaluated("Unevaluated", args)));
     }
-    "ReleaseHold" if args.len() == 1 => {
+    // `Release` is the older spelling of ReleaseHold, still in System`.
+    "ReleaseHold" | "Release" if args.len() == 1 => {
       // ReleaseHold removes Hold/HoldForm/HoldComplete/HoldPattern wrappers
       // wherever they appear (one top-down pass, like ReplaceAll — it does not
       // descend into the content it just released, so ReleaseHold[Hold[Hold[…]]]

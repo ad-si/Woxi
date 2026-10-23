@@ -2206,6 +2206,7 @@ static PROPERTIES: &[&str] = &[
   "Classes",
   "EdgeCount",
   "EdgeIndices",
+  "Edges",
   "FaceCount",
   "FaceCountRules",
   "FaceIndices",
@@ -2438,7 +2439,8 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Inradius" => eval_wl(info.inradius),
         "Midradius" => eval_wl(info.midradius),
         "VertexCoordinates" => eval_wl(info.vertices_src),
-        "EdgeIndices" => edge_indices(info),
+        // "Edges" is the same list of vertex-index pairs.
+        "EdgeIndices" | "Edges" => edge_indices(info),
         "FaceCountRules" => face_count_rules(info),
         "FaceIndices" => face_indices(info),
         "Faces" => faces_complex(info),

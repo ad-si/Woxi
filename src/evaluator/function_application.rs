@@ -2744,6 +2744,36 @@ pub fn apply_curried_call(
           }
         }
       } else if name == "Derivative"
+        && func_args.len() == 1
+        && args.len() == 1
+        && let Expr::Integer(n) = &func_args[0]
+        && *n >= 0
+        && let Expr::NamedFunction {
+          params,
+          body,
+          bracketed,
+        } = &args[0]
+        && params.len() == 1
+        && let Ok(result) = crate::evaluator::evaluate_function_call_ast(
+          "D",
+          &[
+            body.as_ref().clone(),
+            Expr::List(
+              vec![Expr::Identifier(params[0].clone()), Expr::Integer(*n)]
+                .into(),
+            ),
+          ],
+        )
+        && !matches!(&result, Expr::FunctionCall { name, .. } if name == "D")
+      {
+        // `Derivative[n][Function[{q}, body]]` (or `Function[q, body]`) is
+        // the function of the n-th derivative of its body.
+        Ok(Expr::NamedFunction {
+          params: params.clone(),
+          body: Box::new(result),
+          bracketed: *bracketed,
+        })
+      } else if name == "Derivative"
         && func_args.len() > 1
         && func_args.iter().all(|a| matches!(a, Expr::Integer(_)))
       {

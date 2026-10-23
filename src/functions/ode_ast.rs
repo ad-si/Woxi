@@ -5725,7 +5725,15 @@ fn integrate_leg(
   x_name: &str,
   cached_m: Option<&[Vec<f64>]>,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  // At least one step for a leg of any length: an initial point just inside
+  // the domain leaves a backward leg shorter than half a step, which would
+  // otherwise round to none and cut the domain short.
   let n_steps = ((x_to - x_from) / h).round() as usize;
+  let n_steps = if n_steps == 0 && x_to != x_from {
+    1
+  } else {
+    n_steps
+  };
   // Each grid point is computed from the leg's ends rather than by adding
   // `h` to the previous one, and the last one *is* `x_to`: accumulating
   // the step leaves the domain a few ulps short of where it was asked to

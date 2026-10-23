@@ -306,7 +306,7 @@ mod polyhedron_data_tests {
   fn polyhedron_data_properties_include_data_properties() {
     assert_eq!(
       interpret(r#"PolyhedronData["Properties"]"#).unwrap(),
-      "{Circumradius, Classes, EdgeCount, EdgeIndices, FaceCount, \
+      "{Circumradius, Classes, EdgeCount, EdgeIndices, Edges, FaceCount, \
        FaceCountRules, FaceIndices, Faces, Inradius, Insphere, Midradius, Name, NetCoordinates, NetFaceIndices, NetFaces, \
        Skeleton, SkeletonGraph, SurfaceArea, VertexCoordinates, VertexCount, Volume}"
     );

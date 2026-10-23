@@ -6918,3 +6918,45 @@ mod definition_lhs_normalization {
     );
   }
 }
+
+mod quick_wins_from_notebooks {
+  use super::*;
+
+  // Values from wolframscript.
+  #[test]
+  fn named_list_patterns_with_repeated_elements() {
+    assert_eq!(
+      interpret(
+        "{a2[s : {_ ..}] := 1; a2[{1, 2}], a4[s : {_Integer ..}] := Length[s]; \
+         a4[{1, 2, 3}], b[simplex : {{___} ..}, p : {___}] := {simplex, p}; \
+         b[{{1, 2}, {3}}, {4}], a4[{1, x}]}"
+      )
+      .unwrap(),
+      "{1, 3, {{{1, 2}, {3}}, {4}}, a4[{1, x}]}"
+    );
+  }
+
+  #[test]
+  fn hold_form_release_and_named_function_derivative() {
+    assert_eq!(
+      interpret(
+        "{HoldForm[{2, 1}, {3, 1}], Release[Hold[1 + 1]], \
+         Derivative[1][Function[{q}, q^2]], Derivative[1][Function[q, q^2]][x]}"
+      )
+      .unwrap(),
+      "{HoldForm[{2, 1}, {3, 1}], 2, Function[{q}, 2*q], 2*x}"
+    );
+  }
+
+  #[test]
+  fn polyhedron_edges() {
+    assert_eq!(
+      interpret(
+        "{Length[PolyhedronData[\"Icosahedron\", \"Edges\"]], \
+         PolyhedronData[\"Icosahedron\", \"Edges\"][[1]]}"
+      )
+      .unwrap(),
+      "{30, {1, 3}}"
+    );
+  }
+}
