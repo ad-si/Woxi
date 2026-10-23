@@ -3871,6 +3871,33 @@ mod tests {
       assert!(plain.graphics.is_none(), "{:?}", plain.graphics);
     }
 
+    /// `Panel[content, Style[caption, …], opts…]` is drawn as the caption
+    /// above the content, with a sized pane re-flowing a plain list to its
+    /// width instead of running it off the edge.
+    #[test]
+    fn panel_with_styled_caption_renders_list_under_caption() {
+      let result = woxi::interpret_with_stdout(
+        r#"Panel[Pane[Range[60], ImageSize -> {200, 100}], Style["Numbers", "Label", Medium], Alignment -> Center]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the panel is a graphic");
+      assert!(svg.contains("Numbers"), "{svg}");
+      assert!(!svg.contains(">Panel<"), "{svg}");
+      let width: f64 = svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .expect("svg width");
+      assert!(width < 400.0, "list should wrap to the pane: {width}");
+
+      let grid = woxi::interpret_with_stdout(
+        r#"Panel[Pane[Grid[{{1, 2}, {3, 4}}]], Style["Table", "Label"]]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(grid.graphics.is_some(), "{:?}", grid.graphics);
+    }
+
     /// `Text` around a `Pane` of a plain table draws the table: the pane
     /// only sizes it.
     #[test]
