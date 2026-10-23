@@ -328,6 +328,23 @@ pub fn ndsolve_ast_with_head(
   args: &[Expr],
   head: &str,
 ) -> Result<Expr, InterpreterError> {
+  // Options may come wrapped in a list (`NDSolve[eqns, u, {t, 0, 1},
+  // {MaxSteps -> 100}]`); splice such a list into the trailing options so it
+  // is not taken for a fourth (PDE) domain.
+  let is_rule =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let mut spliced: Vec<Expr> = Vec::with_capacity(args.len());
+  for (i, a) in args.iter().enumerate() {
+    match a {
+      Expr::List(items)
+        if i >= 3 && !items.is_empty() && items.iter().all(is_rule) =>
+      {
+        spliced.extend(items.iter().cloned());
+      }
+      other => spliced.push(other.clone()),
+    }
+  }
+  let args = &spliced[..];
   let evaluated = evaluate_ndsolve_args(args)?;
   ndsolve_ast_inner(&evaluated)
     .map(|expr| retag_unevaluated(expr, "NDSolve", head))
@@ -398,6 +415,13 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .take_while(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
     .count();
   if n_pos == 4 {
+    // The equations may nest (`{pdeAndIcs, {bcs}}`); the PDE solvers read a
+    // flat list.
+    let mut flat_eqs = Vec::new();
+    flatten_eq_list(&args[0], &mut flat_eqs);
+    let mut args = args.to_vec();
+    args[0] = Expr::List(flat_eqs.into());
+    let args = &args[..];
     // Unknowns written as compound expressions (`Subscript[c, A]`) are keyed
     // by a fresh symbol while integrating, then restored in the result —
     // same treatment as the ODE branch below.

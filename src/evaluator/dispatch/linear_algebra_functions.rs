@@ -882,7 +882,16 @@ pub fn dispatch_linear_algebra_functions(
     "Fit" if args.len() == 3 => {
       return Some(crate::functions::linear_algebra_ast::fit_ast(args));
     }
-    "LinearModelFit" if args.len() == 1 || args.len() == 3 => {
+    // Fit's options (`WorkingPrecision`, …) do not change a machine fit.
+    "Fit"
+      if args.len() > 3
+        && args[3..].iter().all(|a| {
+          matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        }) =>
+    {
+      return Some(crate::functions::linear_algebra_ast::fit_ast(&args[..3]));
+    }
+    "LinearModelFit" if args.len() == 1 || args.len() >= 3 => {
       return Some(crate::functions::linear_algebra_ast::linear_model_fit_ast(
         args,
       ));

@@ -21771,3 +21771,74 @@ mod find_fit_variable_lists_and_damping {
     );
   }
 }
+
+mod fit_options_and_variable_lists {
+  use super::*;
+
+  #[test]
+  fn trailing_options_are_not_counted_as_arguments() {
+    assert_eq!(
+      interpret(
+        "Chop[(Fit[{{1, 2}, {2, 3}, {3, 5}}, {1, x}, x, WorkingPrecision -> 20] \
+         /. x -> 0) - 1/3, 10^-10]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  // Values from wolframscript.
+  #[test]
+  fn include_constant_basis_false() {
+    assert_eq!(
+      interpret(
+        "lm = LinearModelFit[{{1, 2}, {2, 3}, {3, 5}}, x, x, \
+         IncludeConstantBasis -> False]; Chop[lm[\"BestFitParameters\"] - \
+         {1.6428571428571428}, 10^-10]"
+      )
+      .unwrap(),
+      "{0}"
+    );
+  }
+
+  #[test]
+  fn fit_with_variable_lists() {
+    assert_eq!(
+      interpret(
+        "Chop[{Fit[{{1, 2}, {2, 3}, {3, 5}}, {1, x}, {x}] - (1/3 + 3/2 x), \
+         Fit[{{1, 1, 2}, {2, 1, 3}, {3, 2, 5}, {1, 3, 3}}, {1, x, y}, {x, y}] - \
+         (0.1 + 1.2333333333333338 x + 0.5666666666666663 y)} // Expand, 10^-10]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+}
+
+mod ndsolve_option_lists_and_nested_equations {
+  use super::*;
+
+  #[test]
+  fn options_given_as_a_list() {
+    assert_eq!(
+      interpret(
+        "Head[NDSolve[{y'[t] == 1, y[0] == 1}, y, {t, 0, 1}, {MaxSteps -> 100}]]"
+      )
+      .unwrap(),
+      "List"
+    );
+  }
+
+  #[test]
+  fn pde_equations_nested_in_lists() {
+    assert_eq!(
+      interpret(
+        "Head[NDSolve[{{D[a[x, t], t] == D[a[x, t], x, x], a[x, 0] == 1, \
+         a[5, t] == 1}, {Derivative[1, 0][a][0, t] == a[0, t]}}, a, {x, 0, 5}, \
+         {t, 0, 1}]]"
+      )
+      .unwrap(),
+      "List"
+    );
+  }
+}

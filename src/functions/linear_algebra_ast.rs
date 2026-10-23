@@ -2368,9 +2368,21 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Extract variable name
-  let var_name = match &args[2] {
-    Expr::Identifier(name) => name.clone(),
+  // The variable, or a list of them for rows `{x1, …, xn, f}`.
+  let var_names: Vec<String> = match &args[2] {
+    Expr::Identifier(name) => vec![name.clone()],
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|v| matches!(v, Expr::Identifier(_))) =>
+    {
+      items
+        .iter()
+        .filter_map(|v| match v {
+          Expr::Identifier(name) => Some(name.clone()),
+          _ => None,
+        })
+        .collect()
+    }
     _ => {
       return Err(InterpreterError::EvaluationError(
         "Fit: third argument must be a variable".into(),
@@ -2388,23 +2400,29 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let (x_vals, y_vals) = extract_fit_data(data_list, "Fit")?;
+  let (x_vals, y_vals) =
+    extract_fit_data_multi(data_list, var_names.len(), "Fit")?;
   let n = x_vals.len(); // number of data points
   let m = basis.len(); // number of basis functions
 
   // Build design matrix A (n×m) where A[i][j] = basis[j] evaluated at x = x_vals[i]
   let mut a_matrix = vec![vec![0.0f64; m]; n];
   for i in 0..n {
-    let x_expr = Expr::Real(x_vals[i]);
     for j in 0..m {
-      let substituted =
-        crate::syntax::substitute_variable(&basis[j], &var_name, &x_expr);
+      let mut substituted = basis[j].clone();
+      for (name, v) in var_names.iter().zip(&x_vals[i]) {
+        substituted = crate::syntax::substitute_variable(
+          &substituted,
+          name,
+          &Expr::Real(*v),
+        );
+      }
       let evaluated = evaluate_expr_to_expr(&substituted)?;
       match try_eval_to_f64(&evaluated) {
         Some(v) => a_matrix[i][j] = v,
         None => {
           return Err(InterpreterError::EvaluationError(format!(
-            "Fit: could not evaluate basis function {:?} at x = {}",
+            "Fit: could not evaluate basis function {:?} at x = {:?}",
             basis[j], x_vals[i]
           )));
         }
@@ -6688,29 +6706,8 @@ fn find_fit_weighted(
     )));
   };
 
-  let (x_vals, y_vals): (Vec<Vec<f64>>, Vec<f64>) = if var_names.len() == 1 {
-    let (xs, ys) = extract_fit_data(data_list, caller)?;
-    (xs.into_iter().map(|x| vec![x]).collect(), ys)
-  } else {
-    let mut xs = Vec::with_capacity(data_list.len());
-    let mut ys = Vec::with_capacity(data_list.len());
-    for row in data_list {
-      let values: Option<Vec<f64>> = match row {
-        Expr::List(items) if items.len() == var_names.len() + 1 => {
-          items.iter().map(try_eval_to_f64).collect()
-        }
-        _ => None,
-      };
-      let Some(mut values) = values else {
-        return Err(InterpreterError::EvaluationError(format!(
-          "{caller}: data rows must have one coordinate per variable and a value"
-        )));
-      };
-      ys.push(values.pop().unwrap_or(f64::NAN));
-      xs.push(values);
-    }
-    (xs, ys)
-  };
+  let (x_vals, y_vals) =
+    extract_fit_data_multi(data_list, var_names.len(), caller)?;
   let at_point = |x: &[f64]| -> Expr {
     let mut e = model.clone();
     for (name, v) in var_names.iter().zip(x) {
@@ -7174,23 +7171,62 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1 {
     return linear_model_fit_design_matrix_form(&args[0]);
   }
-  if args.len() != 3 {
+  if args.len() < 3 {
     return Err(InterpreterError::EvaluationError(
       "LinearModelFit expects 1 or 3 arguments".into(),
     ));
   }
+  // Options after the three positional arguments. Only
+  // `IncludeConstantBasis` changes the fit here; one that would change it in
+  // a way not implemented (weights, nominal variables, …) leaves the call
+  // unevaluated rather than fitting the wrong model.
+  let mut include_constant = true;
+  for opt in &args[3..] {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = opt
+    else {
+      return Ok(unevaluated("LinearModelFit", args));
+    };
+    match pattern.as_ref() {
+      Expr::Identifier(n) if n == "IncludeConstantBasis" => {
+        include_constant =
+          !matches!(replacement.as_ref(), Expr::Identifier(b) if b == "False");
+      }
+      Expr::Identifier(n)
+        if matches!(
+          n.as_str(),
+          "ConfidenceLevel"
+            | "WorkingPrecision"
+            | "Method"
+            | "VarianceEstimatorFunction"
+        ) => {}
+      _ => return Ok(unevaluated("LinearModelFit", args)),
+    }
+  }
+  let args = &args[..3];
 
-  // Extract basis functions. Wolfram's `LinearModelFit` always prepends
-  // the constant `1` (the `IncludeConstantBasis -> True` default), whether
-  // the basis is given as a single expression (`x`) or a list
-  // (`{Sin[x], Cos[y]}`).
+  // Extract basis functions. Wolfram's `LinearModelFit` prepends the
+  // constant `1` (the `IncludeConstantBasis -> True` default), whether the
+  // basis is given as a single expression (`x`) or a list
+  // (`{Sin[x], Cos[y]}`); with `IncludeConstantBasis -> False` only an
+  // explicit `1` in the basis is fitted.
   let user_basis: Vec<Expr> = match &args[1] {
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
   };
-  let mut basis: Vec<Expr> = vec![Expr::Integer(1)];
+  let mut basis: Vec<Expr> = if include_constant {
+    vec![Expr::Integer(1)]
+  } else {
+    Vec::new()
+  };
   for b in user_basis {
-    if !matches!(b, Expr::Integer(1)) {
+    if !(include_constant && matches!(b, Expr::Integer(1))) {
       basis.push(b);
     }
   }
