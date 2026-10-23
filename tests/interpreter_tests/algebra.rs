@@ -5657,12 +5657,12 @@ mod solve {
     );
     assert_eq!(
       interpret(
-        "Solve[{yy^2 == 20 xx, {xx, yy} == t*{0.6, 0.8} + {5, 0}}, \
-         {t, xx, yy}]"
+        "Quiet[Solve[{yy^2 == 20 xx, {xx, yy} == t*{0.6, 0.8} + {5, 0}}, \
+         {t, xx, yy}]]"
       )
       .unwrap(),
-      "{{t -> -6.249999999999999, xx -> 1.2499999999999998, yy -> -5.}, \
-       {t -> 24.999999999999996, xx -> 19.999999999999996, yy -> 20.}}"
+      // wolframscript solves the exact system (Solve::ratnz) and numericizes.
+      "{{t -> -6.25, xx -> 1.25, yy -> -5.}, {t -> 25., xx -> 20., yy -> 20.}}"
     );
     // Threading composes with And-of-equations flattening.
     assert_eq!(
@@ -20575,6 +20575,60 @@ mod rationalize_structural {
     assert_eq!(
       interpret("Rationalize[{0.333, 0.5}, 1/100]").unwrap(),
       "{1/3, 1/2}"
+    );
+  }
+}
+
+mod inexact_systems_solved_exactly {
+  use super::*;
+
+  // Nonlinear systems with machine coefficients: rationalize, solve,
+  // numericize, in the exact solution's order (wolframscript).
+  #[test]
+  fn solve_and_nsolve_keep_every_branch() {
+    assert_eq!(
+      interpret(
+        "NSolve[{(0.5 x2/(1 + x2) - 0.25) x1 == 0, (3 - x2) - x2 x1/(1 + x2) == 0}, \
+         {x1, x2}]"
+      )
+      .unwrap(),
+      "{{x1 -> 4., x2 -> 1.}, {x1 -> 0., x2 -> 3.}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[{x y == 1.5, x + y == 3}, {x, y}]]").unwrap(),
+      "{{x -> 0.633975, y -> 2.36603}, {x -> 2.36603, y -> 0.633975}}"
+        .replace("0.633975", "0.6339745962155614")
+        .replace("2.36603", "2.3660254037844384")
+    );
+  }
+
+  #[test]
+  fn linear_inexact_system_stays_direct() {
+    let result =
+      interpret_with_stdout("Solve[{x + y == 1.5, x - y == 0.3}, {x, y}]")
+        .unwrap();
+    assert_eq!(result.result, "{{x -> 0.9, y -> 0.6}}");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+}
+
+mod option_value_with_head_in_definitions {
+  use super::*;
+
+  #[test]
+  fn matched_options_answer_option_value_f_name() {
+    assert_eq!(
+      interpret("k[x_, OptionsPattern[{a -> 1}]] := OptionValue[k, a]; {k[1], k[1, a -> 3]}")
+        .unwrap(),
+      "{1, 3}"
+    );
+    assert_eq!(
+      interpret(
+        "Options[k2] = {a -> 1}; k2[x_, OptionsPattern[]] := OptionValue[k2, a]; \
+         {k2[1], k2[1, a -> 3]}"
+      )
+      .unwrap(),
+      "{1, 3}"
     );
   }
 }

@@ -1695,6 +1695,50 @@ pub fn dispatch_predicate_functions(
         }
       }
 
+      // Inside a definition that matched `OptionsPattern[…]`, the options
+      // it matched (and the defaults the pattern supplies) answer
+      // `OptionValue[f, name]` first: the frame for `f`, else the innermost
+      // one — `g[h[x_, OptionsPattern[{"A" -> 1}]]] := OptionValue[h, "A"]`
+      // is defined on `g` but asks about `h`'s options.
+      if explicit.is_empty()
+        && let Some(f) = &head
+      {
+        let key = match &name_arg {
+          Expr::Identifier(n) | Expr::String(n) => Some(n.clone()),
+          _ => None,
+        };
+        if let Some(key) = key {
+          let found = crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+            let stack = ctx.borrow();
+            let lookup = |bindings: &Vec<(String, Expr)>| {
+              bindings
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v.clone())
+            };
+            stack
+              .iter()
+              .rev()
+              .find(|(name, _)| name == f)
+              .and_then(|(_, b)| lookup(b))
+              .or_else(|| stack.last().and_then(|(_, b)| lookup(b)))
+          });
+          if let Some(val) = found {
+            let val = match evaluate_expr_to_expr(&val) {
+              Ok(v) => v,
+              Err(e) => return Some(Err(e)),
+            };
+            return Some(Ok(match wrapper {
+              Some(w) => Expr::CurriedCall {
+                func: Box::new(w),
+                args: vec![val],
+              },
+              None => val,
+            }));
+          }
+        }
+      }
+
       // The option defaults of the head, if there is one.
       let defaults: Vec<Expr> = match &head {
         Some(name) => crate::FUNC_OPTIONS

@@ -172,6 +172,37 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args
     }
   };
+  // A system of several equations with machine coefficients is solved the
+  // way wolframscript does it: rationalize, solve exactly, numericize. The
+  // inexact elimination drops branches — a factor `x1` that a machine
+  // coefficient keeps from cancelling cleanly loses the `x1 -> 0` family
+  // (PhasePlaneAnalysisOfABiochemicalReactor).
+  if let Expr::List(eqs) = &args[0]
+    && eqs.len() >= 2
+    && crate::functions::math_ast::contains_inexact_real(&args[0])
+    && let Ok(exact) = crate::evaluator::evaluate_function_call_ast(
+      "Rationalize",
+      &[args[0].clone(), Expr::Integer(0)],
+    )
+    && !crate::functions::math_ast::contains_inexact_real(&exact)
+  {
+    let mut exact_args = args.to_vec();
+    exact_args[0] = exact;
+    let solved = solve_ast(&exact_args)?;
+    if let Expr::List(sols) = &solved
+      && !sols.is_empty()
+    {
+      let numerized = nsolve_numerize(&solved)?;
+      let filtered = if args.len() >= 2
+        && matches!(args.last(), Some(Expr::Identifier(d) | Expr::Constant(d)) if d == "Reals")
+      {
+        filter_real_nsolve_solutions(numerized)
+      } else {
+        numerized
+      };
+      return Ok(sort_nsolve_solutions(filtered));
+    }
+  }
   // Equations that already carry a machine number are solved with every
   // coefficient numericized: exact irrational coefficients (Sin[Pi/24],
   // Sqrt[3]) mixed with machine numbers otherwise reach the symbolic
@@ -1785,6 +1816,71 @@ fn solve_piecewise_max_min(
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let result = solve_ast_entry(args)?;
+  // A system with machine coefficients whose inexact elimination lost
+  // solutions is re-solved exactly and numericized, with Solve::ratnz, as
+  // wolframscript does (PhasePlaneAnalysisOfABiochemicalReactor).
+  if args.len() == 2
+    && let Expr::List(eqs) = &args[0]
+    && eqs.len() >= 2
+    && crate::functions::math_ast::contains_inexact_real(&args[0])
+    && let Ok(exact) = crate::evaluator::evaluate_function_call_ast(
+      "Rationalize",
+      &[args[0].clone(), Expr::Integer(0)],
+    )
+    && !crate::functions::math_ast::contains_inexact_real(&exact)
+  {
+    let found = |r: &Expr| match r {
+      Expr::List(sols) => sols.len(),
+      _ => 0,
+    };
+    // wolframscript takes the exact route for every nonlinear system
+    // (some second derivative of an equation is nonzero).
+    let vars: Vec<Expr> = match &args[1] {
+      Expr::List(vs) => vs.to_vec(),
+      v => vec![v.clone()],
+    };
+    let nonlinear = eqs.iter().any(|eq| {
+      let g = match eq {
+        Expr::Comparison { operands, .. } if operands.len() == 2 => call(
+          "Plus",
+          vec![
+            operands[0].clone(),
+            call("Times", vec![Expr::Integer(-1), operands[1].clone()]),
+          ],
+        ),
+        other => other.clone(),
+      };
+      vars.iter().any(|a| {
+        vars.iter().any(|b| {
+          !matches!(
+            crate::evaluator::evaluate_function_call_ast(
+              "D",
+              &[g.clone(), a.clone(), b.clone()]
+            ),
+            Ok(Expr::Integer(0))
+          )
+        })
+      })
+    });
+    let exact_result = solve_ast_entry(&[exact, args[1].clone()])?;
+    if found(&exact_result) > found(&result)
+      || (nonlinear && found(&exact_result) > 0)
+    {
+      crate::emit_message(
+        "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
+      );
+      // In the exact solution's order, as wolframscript numericizes it.
+      return crate::evaluator::evaluate_function_call_ast(
+        "N",
+        &[exact_result],
+      );
+    }
+  }
+  Ok(result)
+}
+
+fn solve_ast_entry(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(result) = solve_piecewise_max_min(args) {
     return result;
   }
