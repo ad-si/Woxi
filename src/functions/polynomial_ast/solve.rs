@@ -14204,6 +14204,16 @@ fn nminimize_ast_impl(
       if v.is_finite() {
         return Ok(v);
       }
+      // Pure arithmetic that is non-finite here (log of a negative, a
+      // fractional power of a negative base, a division by zero) is not a
+      // real number for the AST evaluator either, so skip its much slower
+      // second opinion — a wide unbounded search would otherwise spend
+      // nearly all its time in it.
+      if !node.has_fallback() {
+        return Err(InterpreterError::EvaluationError(
+          "objective is not a finite real number".into(),
+        ));
+      }
     }
     let mut e = expr.clone();
     for (i, var) in vars.iter().enumerate() {
@@ -14681,14 +14691,24 @@ fn nminimize_ast_impl(
   // first and a later candidate must improve by a real margin to displace it),
   // so the exact result wins over the numeric noise while genuinely better
   // numeric optima are still preferred.
+  //
+  // That cleanup only matters for small, closed-form objectives. On a large
+  // one (e.g. an option-pricing formula with nested `Erfc` terms) the exact
+  // solver's factoring and cancelling never finishes, so the numeric optimum
+  // stands on its own.
   let sym_name = if maximize { "Maximize" } else { "Minimize" };
-  let symbolic =
+  let symbolic = if super::simplify::leaf_count(&objective)
+    <= SYMBOLIC_REFINEMENT_MAX_LEAVES
+  {
     crate::evaluator::evaluate_expr_to_expr(&unevaluated(sym_name, args))
       .ok()
       .filter(|sym| matches!(sym, Expr::List(items) if items.len() == 2))
       .and_then(|sym| {
         crate::evaluator::evaluate_expr_to_expr(&call1("N", sym)).ok()
-      });
+      })
+  } else {
+    None
+  };
 
   let candidates: Vec<Expr> =
     [symbolic, Some(numeric)].into_iter().flatten().collect();
@@ -14700,6 +14720,10 @@ fn nminimize_ast_impl(
     maximize,
   ))
 }
+
+/// Largest objective (in leaves) for which `NMinimize`-style searches still
+/// consult the exact `Minimize`/`Maximize` solver to clean up float noise.
+const SYMBOLIC_REFINEMENT_MAX_LEAVES: usize = 150;
 
 /// A compiled numeric expression tree over the optimization variables.
 ///
@@ -14731,6 +14755,21 @@ enum NumNode {
 }
 
 impl NumNode {
+  /// Whether any subexpression is evaluated through the AST evaluator
+  /// rather than compiled arithmetic.
+  fn has_fallback(&self) -> bool {
+    match self {
+      Self::Const(_) | Self::Var(_) => false,
+      Self::Neg(a) | Self::Unary(_, a) => a.has_fallback(),
+      Self::Add(xs) | Self::Mul(xs) => xs.iter().any(Self::has_fallback),
+      Self::Sub(a, b)
+      | Self::Div(a, b)
+      | Self::Pow(a, b)
+      | Self::Binary(_, a, b) => a.has_fallback() || b.has_fallback(),
+      Self::Fallback(..) => true,
+    }
+  }
+
   fn eval(&self, point: &[f64]) -> f64 {
     match self {
       Self::Const(c) => *c,
@@ -14849,6 +14888,19 @@ fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
         "Tanh" => unary(f64::tanh, args),
         "Abs" => unary(f64::abs, args),
         "Sign" => unary(f64::signum, args),
+        "Erf" => {
+          unary(crate::functions::math_ast::numeric_utils::erf_f64, args)
+        }
+        "Erfc" => unary(
+          |x| {
+            if x >= 0.0 {
+              crate::functions::math_ast::numeric_utils::erfc_f64(x)
+            } else {
+              2.0 - crate::functions::math_ast::numeric_utils::erfc_f64(-x)
+            }
+          },
+          args,
+        ),
         "Log" if args.len() == 2 => Some(NumNode::Binary(
           |b, x| x.ln() / b.ln(),
           Box::new(c(&args[0])?),
