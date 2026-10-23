@@ -514,6 +514,24 @@ fn insert_exclusion_gaps(samples: &mut Vec<Sample>, roots: &[f64]) {
 }
 
 /// ParametricPlot[{fx[t], fy[t]}, {t, tmin, tmax}]
+/// Whether `body` is a two-slot list whose slots each evaluate, at the
+/// parameter value `t`, to a numeric coordinate pair — i.e. it denotes two
+/// curves (`{c1[t], c2[t]}`) rather than the components of one.
+fn slots_yield_points(body: &Expr, var: &str, t: f64) -> bool {
+  let Expr::List(items) = body else {
+    return false;
+  };
+  items.len() == 2
+    && items.iter().all(|item| {
+      let sub = substitute_var(item, var, &Expr::Real(t));
+      matches!(
+        evaluate_expr_to_expr(&sub),
+        Ok(Expr::List(ref pt)) if pt.len() == 2
+          && pt.iter().all(|c| try_eval_to_f64(c).is_some())
+      )
+    })
+}
+
 pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -600,10 +618,20 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A body that is a group of curves keeps its per-slot `PlotStyle` cycle
   // even when only one slot ended up drawn (`{c[t], If[cond, d[t]]}` with
   // the condition false): the visible curve still takes the first style.
-  let from_group = body_is_group || evaluated_group_ok;
+  // A `{p1[t], p2[t]}` body whose two slots are opaque calls (or sums with
+  // them) that return a *point* per sample is two curves, not an `{fx, fy}`
+  // pair; only a numeric probe can tell.
+  let vector_pair = is_list_body
+    && !nonlist_ok
+    && !body_is_group
+    && !evaluated_group_ok
+    && slots_yield_points(body, &var_name, 0.5 * (t_min + t_max));
+  let from_group = body_is_group || evaluated_group_ok || vector_pair;
 
   let curves: Vec<CurveSrc> = if nonlist_ok {
     nonlist_curves
+  } else if vector_pair {
+    vec![CurveSrc::Whole(body)]
   } else if evaluated_group_ok {
     evaluated_group
   } else if syntactic_ok {
