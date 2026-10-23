@@ -6775,3 +6775,47 @@ mod held_patterns_in_definitions {
     );
   }
 }
+
+mod comparison_patterns {
+  use super::*;
+
+  // Evaluated comparisons are Equal[…]/Less[…]/Inequality[…] to the
+  // matcher (values from wolframscript).
+  #[test]
+  fn heads_and_structural_patterns() {
+    assert_eq!(
+      interpret(
+        "{MatchQ[a == b, _Equal], MatchQ[a < b, Less[_, _]], \
+         MatchQ[a != b, _Unequal], MatchQ[a < b <= c, _Inequality], \
+         MatchQ[a < b <= c, Inequality[_, Less, __]]}"
+      )
+      .unwrap(),
+      "{True, True, True, True, True}"
+    );
+  }
+
+  #[test]
+  fn replace_and_cases_on_comparisons() {
+    assert_eq!(
+      interpret(
+        "{Cases[a == 1 && b == 2, Equal[_, z_] :> z, Infinity], \
+         {x == 1} /. (x == y_) :> y, Replace[a < b, Less[p_, q_] :> {p, q}], \
+         g[x == 1, y == 2] /. (u_ == v_) :> v}"
+      )
+      .unwrap(),
+      "{{1, 2}, {1}, {a, b}, g[1, 2]}"
+    );
+  }
+
+  #[test]
+  fn replacing_the_comparison_head() {
+    assert_eq!(
+      interpret(
+        "{(x == 3) /. Equal -> List, (a < b <= c) /. Inequality -> f, \
+         {x == 1, y == 2} /. Equal -> Rule}"
+      )
+      .unwrap(),
+      "{{x, 3}, f[a, Less, b, LessEqual, c], {x -> 1, y -> 2}}"
+    );
+  }
+}

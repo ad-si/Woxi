@@ -374,6 +374,7 @@ pub fn contains_pattern(expr: &Expr) -> bool {
       contains_pattern(func) || args.iter().any(contains_pattern)
     }
     Expr::List(items) => items.iter().any(contains_pattern),
+    Expr::Comparison { operands, .. } => operands.iter().any(contains_pattern),
     Expr::UnaryOp { operand, .. } => contains_pattern(operand),
     // Patterns can appear inside Rule/RuleDelayed operands (e.g. the
     // `x_` in `KeyValuePattern[{"a" -> x_}]`) and inside Association
@@ -2247,6 +2248,23 @@ fn try_symbol_replace_all(
       } else {
         None
       }
+    }
+
+    // A rule on the comparison's own head (`Equal -> List`) rewrites the
+    // call form `Equal[a, b]` / `Inequality[a, Less, b, …]`.
+    Expr::Comparison {
+      operands,
+      operators,
+    } if crate::syntax::comparison_head_and_args(operands, operators).0
+      == pattern_sym =>
+    {
+      let (_, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      let call_form = Expr::FunctionCall {
+        name: pattern_sym.to_string(),
+        args: args.into(),
+      };
+      try_symbol_replace_all(&call_form, pattern_sym, replacement)
     }
 
     // Recurse into Comparison
@@ -4752,6 +4770,31 @@ fn match_pattern_impl(
   {
     return match_pattern_impl(&canon_expr, pattern);
   }
+  // Comparisons likewise: `a == b` is `Equal[a, b]` and `a < b <= c` is
+  // `Inequality[a, Less, b, LessEqual, c]`, so `x == y_` and `Equal[_, z_]`
+  // match the evaluated comparison.
+  let comparison_to_call = |e: &Expr| -> Option<Expr> {
+    match e {
+      Expr::Comparison {
+        operands,
+        operators,
+      } => {
+        let (head, args) =
+          crate::syntax::comparison_head_and_args(operands, operators);
+        Some(call(&head, args))
+      }
+      _ => None,
+    }
+  };
+  if let Some(p) = comparison_to_call(pattern) {
+    let canon_expr = comparison_to_call(expr);
+    return match_pattern_impl(canon_expr.as_ref().unwrap_or(expr), &p);
+  }
+  if matches!(pattern, Expr::FunctionCall { .. })
+    && let Some(canon_expr) = comparison_to_call(expr)
+  {
+    return match_pattern_impl(&canon_expr, pattern);
+  }
   match pattern {
     Expr::Pattern { name, head, .. } => {
       // Check head constraint if present
@@ -5565,7 +5608,12 @@ pub fn get_expr_head(expr: &Expr) -> String {
       UnaryOperator::Minus => "Times",
       UnaryOperator::Not => "Not",
     },
-    Expr::Comparison { .. } => "Comparison",
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      return crate::syntax::comparison_head_and_args(operands, operators).0;
+    }
     Expr::CompoundExpr(_) => "CompoundExpression",
     Expr::Rule { .. } => "Rule",
     Expr::RuleDelayed { .. } => "RuleDelayed",
