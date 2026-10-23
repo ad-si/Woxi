@@ -3523,18 +3523,60 @@ fn resolve_saved_variable_references(
     .map(|(name, value)| {
       let mut value = value.clone();
       for _ in 0..pairs.len() {
-        let Some(next) = value
-          .strip_suffix("$$")
-          .filter(|r| !r.is_empty() && r.chars().all(char::is_alphanumeric))
-          .and_then(lookup)
-        else {
+        let next = substitute_saved_references(&value, &lookup);
+        if next == value {
           break;
-        };
+        }
         value = next;
       }
       (name.clone(), value)
     })
     .collect()
+}
+
+/// Replace every `name$$` token in `value` whose `name` the saved variable
+/// list defines with that variable's value — bare when the whole value is
+/// the reference (`n$$ = nDef$$`), parenthesized when it sits inside a
+/// larger expression (`t$$ = 0.75/f$$`) so operator precedence survives.
+/// Tokens naming no saved variable are left untouched.
+fn substitute_saved_references(
+  value: &str,
+  lookup: &dyn Fn(&str) -> Option<String>,
+) -> String {
+  let chars: Vec<char> = value.chars().collect();
+  let is_word = |c: char| c.is_alphanumeric();
+  let mut out = String::new();
+  let mut i = 0;
+  while i < chars.len() {
+    if !is_word(chars[i]) || (i > 0 && is_word(chars[i - 1])) {
+      out.push(chars[i]);
+      i += 1;
+      continue;
+    }
+    let start = i;
+    while i < chars.len() && is_word(chars[i]) {
+      i += 1;
+    }
+    let word: String = chars[start..i].iter().collect();
+    let has_suffix =
+      chars.get(i) == Some(&'$') && chars.get(i + 1) == Some(&'$');
+    match has_suffix.then(|| lookup(&word)).flatten() {
+      Some(resolved) => {
+        i += 2;
+        let whole = start == 0 && i == chars.len();
+        let atomic = resolved
+          .chars()
+          .all(|c| c.is_alphanumeric() || c == '.' || c == '_');
+        if whole || atomic {
+          out.push_str(&resolved);
+        } else {
+          out.push_str(&format!("({resolved})"));
+        }
+      }
+      None => out.push_str(&word),
+    }
+  }
+  out
 }
 
 /// The `(name, value)` pairs assigned directly in a `DynamicModuleBox[{…},
@@ -7722,6 +7764,24 @@ yf4GL4DwC5VA4w
         ("nDef".to_string(), "2".to_string()),
         ("k".to_string(), "2".to_string()),
         ("z".to_string(), "missing$$".to_string()),
+      ]
+    );
+  }
+
+  #[test]
+  fn test_extract_saved_manipulate_variables_resolves_embedded_references() {
+    // A default computed from another control (`t = 0.75/f`) must open on
+    // the computed value, not on an unbound `f$$` symbol.
+    let dump = "DynamicModuleBox[{$CellContext`f$$ = 0.3, \
+      $CellContext`t$$ = 0.75/$CellContext`f$$, \
+      $CellContext`u$$ = 2 $CellContext`t$$ + $CellContext`gone$$}, \
+      DynamicBox[…]]";
+    assert_eq!(
+      extract_saved_manipulate_variables(dump),
+      vec![
+        ("f".to_string(), "0.3".to_string()),
+        ("t".to_string(), "0.75/0.3".to_string()),
+        ("u".to_string(), "2 (0.75/0.3) + gone$$".to_string()),
       ]
     );
   }
