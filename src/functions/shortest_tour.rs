@@ -400,7 +400,6 @@ fn improve_tour(
           let k = (pos[c] + n - i) % n;
           k < seg_len
         };
-        let mut done = false;
         for &c in &neighbours[first] {
           if in_seg(c) {
             continue;
@@ -435,12 +434,8 @@ fn improve_tour(
             tour.copy_from_slice(&new_tour);
             sync(tour, &mut pos);
             improved = true;
-            done = true;
             break;
           }
-        }
-        if done {
-          continue;
         }
       }
     }

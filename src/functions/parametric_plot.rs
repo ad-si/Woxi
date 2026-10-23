@@ -625,7 +625,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !nonlist_ok
     && !body_is_group
     && !evaluated_group_ok
-    && slots_yield_points(body, &var_name, 0.5 * (t_min + t_max));
+    && slots_yield_points(body, &var_name, f64::midpoint(t_min, t_max));
   let from_group = body_is_group || evaluated_group_ok || vector_pair;
 
   let curves: Vec<CurveSrc> = if nonlist_ok {

@@ -545,7 +545,11 @@ mod hypergeometric2f1 {
       1.3429527347959835,
       -0.16278346463697926,
     );
-    assert_parts("Hypergeometric2F1[1, 1, 2, 2.]", 0.0, -1.5707963267948966);
+    assert_parts(
+      "Hypergeometric2F1[1, 1, 2, 2.]",
+      0.0,
+      -std::f64::consts::FRAC_PI_2,
+    );
     assert_parts(
       "Hypergeometric2F1[1/2, 1/3, 2, -5.]",
       0.8117695899017634,
