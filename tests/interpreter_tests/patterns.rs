@@ -6819,3 +6819,56 @@ mod comparison_patterns {
     );
   }
 }
+
+mod redefinition_replaces_same_lhs {
+  use super::*;
+
+  // One DownValue per left-hand side, up to the names of the pattern
+  // variables (values from wolframscript).
+  #[test]
+  fn evaluated_redefinitions_replace() {
+    assert_eq!(
+      interpret("SetDelayed[f[x_], 1]; SetDelayed[f[x_], 2]; DownValues[f]")
+        .unwrap(),
+      "{HoldPattern[f[x_]] :> 2}"
+    );
+    assert_eq!(
+      interpret("Module[{}, g[x_] := 1; g[x_] := 2]; {DownValues[g], g[0]}")
+        .unwrap(),
+      "{{HoldPattern[g[x_]] :> 2}, 2}"
+    );
+    assert_eq!(
+      interpret("h[x_] := 1; h[y_] = 2; DownValues[h]").unwrap(),
+      "{HoldPattern[h[y_]] :> 2}"
+    );
+  }
+
+  #[test]
+  fn long_form_patterns_replace_short_form() {
+    assert_eq!(
+      interpret(
+        "f[x_] := 1; f[Pattern[x, Blank[]]] := 2; {DownValues[f], f[3]}"
+      )
+      .unwrap(),
+      "{{HoldPattern[f[x_]] :> 2}, 2}"
+    );
+  }
+
+  #[test]
+  fn guards_and_structure_keep_rules_apart() {
+    assert_eq!(
+      interpret(
+        "{f[a_, b_] := f[b, a] /; a > b; f[a_, b_] := {a, b}; Length[DownValues[f]], \
+         g[i_, i_] := 1; g[j_, k_] := 2; Length[DownValues[g]], \
+         h[x_, y_:0] := 1; h[x_, y_] := 2; Length[DownValues[h]]}"
+      )
+      .unwrap(),
+      "{2, 2, 2}"
+    );
+    assert_eq!(
+      interpret("k[x_] := 1 /; x > 0; k[y_] := 2 /; y > 0; DownValues[k]")
+        .unwrap(),
+      "{HoldPattern[k[y_]] :> 2 /; y > 0}"
+    );
+  }
+}

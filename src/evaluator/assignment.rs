@@ -203,22 +203,109 @@ fn body_has_condition(body: &Expr) -> bool {
   )
 }
 
-/// Whether a definition's body carries a `/;` guard, looking through the
-/// scoping construct that binds the names the guard talks about.
-///
-/// `f[x_] := With[{k = …}, body /; test]` is a *conditional* definition, so a
-/// later unconditional `f[x_] := …` adds a second DownValue instead of
-/// replacing it — the guarded rule is tried first and the plain one catches
-/// what it turns down. Rubi writes most of its rule base in exactly that
-/// shape, three rules deep on the same left-hand side.
-pub(crate) fn body_is_conditional(body: &Expr) -> bool {
-  if body_has_condition(body) {
-    return true;
+/// One stored DownValue: parameter names, per-slot conditions (a body
+/// guard may sit in an extra slot past the parameters), defaults, heads,
+/// blank types and body.
+pub(crate) type StoredRule = (
+  Vec<String>,
+  Vec<Option<Expr>>,
+  Vec<Option<Expr>>,
+  Vec<Option<String>>,
+  Vec<u8>,
+  Expr,
+);
+
+/// Whether two stored rules have the same left-hand side up to the names of
+/// their pattern variables — `f[x_]` and `f[y_]`, or `f[x_] /; x > 0` and
+/// `f[y_] /; y > 0` — so the newer one replaces the older (wolframscript
+/// keeps one DownValue per left-hand side). A guarded rule only replaces a
+/// rule with the same guard; it never replaces an unguarded one, and vice
+/// versa.
+pub(crate) fn same_rule_lhs(a: &StoredRule, b: &StoredRule) -> bool {
+  let (pa, ca, da, ha, bta, ba) = a;
+  let (pb, cb, db, hb, btb, bb) = b;
+  if pa.len() != pb.len() || ha != hb || bta != btb {
+    return false;
   }
-  matches!(body, Expr::FunctionCall { name, args }
-    if matches!(name.as_str(), "With" | "Module" | "Block")
-      && args.len() == 2
-      && body_is_conditional(&args[1]))
+  // Rename every pattern variable to its position of first occurrence.
+  let canonical = |params: &[String]| -> Vec<(String, String)> {
+    let mut seen: Vec<String> = Vec::new();
+    params
+      .iter()
+      .filter(|p| !p.is_empty())
+      .filter_map(|p| {
+        if seen.contains(p) {
+          None
+        } else {
+          seen.push(p.clone());
+          Some((p.clone(), format!("Woxi`rulevar{}", seen.len())))
+        }
+      })
+      .collect()
+  };
+  let ra = canonical(pa);
+  let rb = canonical(pb);
+  let rename_param = |p: &String, map: &[(String, String)]| {
+    map
+      .iter()
+      .find(|(from, _)| from == p)
+      .map_or_else(|| p.clone(), |(_, to)| to.clone())
+  };
+  if pa
+    .iter()
+    .map(|p| rename_param(p, &ra))
+    .ne(pb.iter().map(|p| rename_param(p, &rb)))
+  {
+    return false;
+  }
+  let render = |e: &Expr, map: &[(String, String)]| {
+    let mut e = e.clone();
+    for (from, to) in map {
+      e = crate::syntax::substitute_variable(
+        &e,
+        from,
+        &Expr::Identifier(to.clone()),
+      );
+    }
+    expr_to_string(&e)
+  };
+  let renders = |items: &[Option<Expr>], map: &[(String, String)]| {
+    items
+      .iter()
+      .map(|c| c.as_ref().map(|c| render(c, map)))
+      .collect::<Vec<_>>()
+  };
+  // The `/;` guard a body carries, kept inside the With/Module/Block that
+  // binds the names it uses: `With[{k = …}, b /; t]` guards with
+  // `With[{k = …}, t]`.
+  fn body_guard(body: &Expr) -> Option<Expr> {
+    match body {
+      Expr::FunctionCall { name, args }
+        if name == "Condition" && args.len() == 2 =>
+      {
+        Some(args[1].clone())
+      }
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "With" | "Module" | "Block")
+          && args.len() == 2 =>
+      {
+        body_guard(&args[1]).map(|g| Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![args[0].clone(), g].into(),
+        })
+      }
+      _ => None,
+    }
+  }
+  // The guards of a rule: its condition slots plus a `/;` on the body.
+  let guards =
+    |conds: &[Option<Expr>], body: &Expr, map: &[(String, String)]| {
+      let mut g = renders(conds, map);
+      g.push(body_guard(body).map(|t| render(&t, map)));
+      g.into_iter().flatten().collect::<Vec<_>>()
+    };
+  renders(da, &ra) == renders(db, &rb)
+    && guards(ca, ba, &ra) == guards(cb, bb, &rb)
 }
 
 /// Whether a stored per-parameter condition marks a genuine literal-argument
@@ -1870,7 +1957,7 @@ fn normalize_symbol_lhs(lhs: &Expr) -> Expr {
   {
     return Expr::Identifier(s.clone());
   }
-  lhs.clone()
+  crate::evaluator::pattern_matching::with_short_form_blanks(lhs).into_owned()
 }
 
 /// Split `a : f[x_]` into the alias `a` and the call `f[x_]` it names.
@@ -3552,17 +3639,23 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         // A rule defined while the check ran stays after the old ones.
         let added = std::mem::replace(entry, existing);
         entry.extend(added);
-        entry.insert(
-          pos,
-          (
-            params,
-            conditions,
-            defaults,
-            heads,
-            blank_types,
-            rhs_value.clone(),
-          ),
+        let new_rule: StoredRule = (
+          params,
+          conditions,
+          defaults,
+          heads,
+          blank_types,
+          rhs_value.clone(),
         );
+        // A rule with the same left-hand side is replaced in place.
+        let pos = match entry.iter().position(|r| same_rule_lhs(r, &new_rule)) {
+          Some(old) => {
+            entry.remove(old);
+            old
+          }
+          None => pos.min(entry.len()),
+        };
+        entry.insert(pos, new_rule);
       }
     });
 
@@ -4219,7 +4312,21 @@ pub fn set_delayed_ast(
       let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
       // A guard evaluated during the scan above could itself have defined a
       // rule for the same symbol; never index past what is there now.
-      let insert_pos = insert_pos.min(entry.len());
+      let mut insert_pos = insert_pos.min(entry.len());
+      // A rule with the same left-hand side is replaced in place.
+      let new_rule: StoredRule = (
+        params.clone(),
+        conditions.clone(),
+        defaults.clone(),
+        heads.clone(),
+        blank_types.clone(),
+        final_body.clone(),
+      );
+      if let Some(old) = entry.iter().position(|r| same_rule_lhs(r, &new_rule))
+      {
+        entry.remove(old);
+        insert_pos = old.min(entry.len());
+      }
       entry.insert(
         insert_pos,
         (params, conditions, defaults, heads, blank_types, final_body),

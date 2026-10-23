@@ -4237,6 +4237,69 @@ fn match_args_with_sequences(
   }
 }
 
+/// Rewrite the FullForm spellings of named and anonymous blanks —
+/// `Pattern[x, Blank[]]`, `Pattern[x, Blank[h]]`, `BlankSequence[…]`,
+/// `BlankNullSequence[…]` and a bare `Blank[…]` — into the pattern nodes the
+/// `x_`, `x_h`, `x__`, `x___` and `_` shorthands parse to. Definitions
+/// replayed from a `SaveDefinitions` cell are written this way, and must
+/// replace (not sit beside) the equivalent short-form definition.
+pub fn long_form_blanks_to_patterns(expr: &Expr) -> Expr {
+  let blank = |e: &Expr| -> Option<(Option<String>, u8)> {
+    let Expr::FunctionCall { name, args } = e else {
+      return None;
+    };
+    let blank_type = match name.as_str() {
+      "Blank" => 1,
+      "BlankSequence" => 2,
+      "BlankNullSequence" => 3,
+      _ => return None,
+    };
+    match args.as_slice() {
+      [] => Some((None, blank_type)),
+      [Expr::Identifier(h)] => Some((Some(h.clone()), blank_type)),
+      _ => None,
+    }
+  };
+  if let Some((head, blank_type)) = blank(expr) {
+    return Expr::Pattern {
+      name: String::new(),
+      head,
+      blank_type,
+    };
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Pattern"
+    && args.len() == 2
+    && let Expr::Identifier(var) = &args[0]
+    && let Some((head, blank_type)) = blank(&args[1])
+  {
+    return Expr::Pattern {
+      name: var.clone(),
+      head,
+      blank_type,
+    };
+  }
+  crate::syntax::map_children(expr, &long_form_blanks_to_patterns)
+}
+
+fn contains_long_form_blank(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "Blank" | "BlankSequence" | "BlankNullSequence"))
+    || crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(contains_long_form_blank)
+}
+
+/// `long_form_blanks_to_patterns`, skipped (no copy) when there is nothing
+/// to rewrite.
+pub fn with_short_form_blanks(expr: &Expr) -> std::borrow::Cow<'_, Expr> {
+  if contains_long_form_blank(expr) {
+    std::borrow::Cow::Owned(long_form_blanks_to_patterns(expr))
+  } else {
+    std::borrow::Cow::Borrowed(expr)
+  }
+}
+
 /// Match a pattern against an expression, returning bindings if successful
 /// Rewrite a pattern into the matcher's canonical form, once, before matching:
 ///
