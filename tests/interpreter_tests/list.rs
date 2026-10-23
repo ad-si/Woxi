@@ -24010,3 +24010,22 @@ mod machine_real_iterators {
     );
   }
 }
+
+mod map_over_held_heads {
+  use super::*;
+
+  // Map builds f[child] before evaluating, so a head that holds its
+  // arguments keeps them unevaluated (wolframscript).
+  #[test]
+  fn held_children_stay_unevaluated() {
+    assert_eq!(
+      interpret(
+        "{Reverse /@ Hold[m], Map[Print, Hold[1, 2]], Map[# + 1 &, Hold[x]], \
+         Reverse /@ Transpose /@ Dynamic[mm], Map[f, g[1 + 1]]}"
+      )
+      .unwrap(),
+      "{Hold[Reverse[m]], Hold[Print[1], Print[2]], Hold[(#1 + 1 & )[x]], \
+       Dynamic[Reverse[Transpose[mm]]], g[f[2]]}"
+    );
+  }
+}
