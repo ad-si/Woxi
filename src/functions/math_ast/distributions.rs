@@ -1549,7 +1549,7 @@ fn quantile_continuous_by_bisection(
     return None;
   };
   let q_val = *q_val;
-  if !continuous || !(q_val > 0.0 && q_val < 1.0) {
+  if !(continuous && q_val > 0.0 && q_val < 1.0) {
     return None;
   }
   let dist = unevaluated(dist_name, dargs);
