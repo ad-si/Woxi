@@ -4792,7 +4792,10 @@ pub fn clock_ast(args: &[Expr]) -> Option<Expr> {
     Some(p) => expr_to_f64(p)?,
     None => 1.0,
   };
-  if !(period > 0.0) || dt.is_some_and(|d| !(d > 0.0)) {
+  // `partial_cmp` so NaN is rejected too.
+  let positive =
+    |x: f64| x.partial_cmp(&0.0) == Some(std::cmp::Ordering::Greater);
+  if !positive(period) || dt.is_some_and(|d| !positive(d)) {
     return None;
   }
   let phase = (crate::session_time() / period).fract();

@@ -1341,16 +1341,16 @@ pub type BigRat = (BigInt, BigInt);
 /// An exact complex number as its real and imaginary [`BigRat`] parts.
 pub type BigComplex = (BigRat, BigRat);
 
-fn big_rat(n: BigInt, d: BigInt) -> BigRat {
-  rat_reduce_bigint(&n, &d)
+fn big_rat(n: &BigInt, d: &BigInt) -> BigRat {
+  rat_reduce_bigint(n, d)
 }
 
 fn big_rat_add(a: &BigRat, b: &BigRat) -> BigRat {
-  big_rat(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1)
+  big_rat(&(&a.0 * &b.1 + &b.0 * &a.1), &(&a.1 * &b.1))
 }
 
 fn big_rat_mul(a: &BigRat, b: &BigRat) -> BigRat {
-  big_rat(&a.0 * &b.0, &a.1 * &b.1)
+  big_rat(&(&a.0 * &b.0), &(&a.1 * &b.1))
 }
 
 fn big_rat_neg(a: &BigRat) -> BigRat {
@@ -1370,7 +1370,7 @@ pub fn expr_to_big_rational(e: &Expr) -> Option<BigRat> {
       if d.is_zero() {
         return None;
       }
-      Some(big_rat(expr_to_bigint(&args[0])?, d))
+      Some(big_rat(&expr_to_bigint(&args[0])?, &d))
     }
     _ => None,
   }
