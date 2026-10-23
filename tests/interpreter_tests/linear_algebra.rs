@@ -4099,6 +4099,30 @@ mod lower_triangularize {
   }
 }
 
+mod generalized_linear_model_fit {
+  use super::*;
+
+  #[test]
+  fn gaussian_matches_linear_model_fit() {
+    assert_eq!(
+      interpret(
+        "GeneralizedLinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x, ExponentialFamily -> \"Gaussian\"][2.3] == LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x][2.3]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn default_family_evaluates_at_point() {
+    assert_eq!(
+      interpret("GeneralizedLinearModelFit[{{1, 2}, {2, 4}, {3, 6}}, x, x][4]")
+        .unwrap(),
+      "8."
+    );
+  }
+}
+
 mod linear_model_fit {
   use super::*;
 

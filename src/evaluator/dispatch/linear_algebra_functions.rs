@@ -887,6 +887,27 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    // GeneralizedLinearModelFit with the (default) Gaussian family and
+    // identity link is ordinary least squares, so it delegates to
+    // LinearModelFit. Other families stay unevaluated.
+    "GeneralizedLinearModelFit" if args.len() >= 3 => {
+      let gaussian_only = args[3..].iter().all(|a| match a {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => {
+          matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ExponentialFamily")
+            && matches!(replacement.as_ref(), Expr::String(f) if f == "Gaussian")
+        }
+        _ => false,
+      });
+      if !gaussian_only {
+        return None;
+      }
+      return Some(crate::functions::linear_algebra_ast::linear_model_fit_ast(
+        &args[..3],
+      ));
+    }
     "LogitModelFit" if args.len() == 3 => {
       return Some(crate::functions::linear_algebra_ast::logit_model_fit_ast(
         args,
