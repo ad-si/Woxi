@@ -2002,6 +2002,8 @@ fn parse_filling(replacement: &Expr) -> Filling {
   match replacement {
     Expr::Identifier(v) if v == "Axis" => Filling::Axis,
     Expr::Identifier(v) if v == "Automatic" => Filling::Axis,
+    // `i -> True` is how a Demonstration switches a curve's shading on.
+    Expr::Identifier(v) if v == "True" => Filling::Axis,
     Expr::Identifier(v) if v == "Bottom" => Filling::Bottom,
     Expr::Identifier(v) if v == "Top" => Filling::Top,
     Expr::Identifier(v) if v == "None" => Filling::None,

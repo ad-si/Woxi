@@ -11697,6 +11697,23 @@ mod plot3d {
       ));
     }
 
+    /// `Filling -> {i -> True}` shades series `i` down to the axis, as
+    /// `Filling -> {i -> Axis}` does (a Demonstration builds the rule list
+    /// with `Table[i -> True, {i, n}]`).
+    #[test]
+    fn filling_rule_true_shades_to_axis() {
+      let fills = |code: &str| export_svg(code).matches("<polygon").count();
+      assert_eq!(
+        fills("Plot[{x, x^2}, {x, 0, 1}, Filling -> {1 -> True, 2 -> True}]"),
+        2
+      );
+      assert_eq!(
+        fills("Plot[{x, x^2}, {x, 0, 1}, Filling -> {1 -> True}]"),
+        1
+      );
+      assert_eq!(fills("Plot[x, {x, 0, 1}, Filling -> True]"), 1);
+    }
+
     /// The value of `Filling` may be computed rather than named — a
     /// Demonstration switches its shading with
     /// `Filling -> If[b === Axis, Axis, None]` — so it is read evaluated.
