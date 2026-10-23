@@ -13754,3 +13754,19 @@ mod plain_number_list_items {
     );
   }
 }
+
+mod named_character_inside_a_call_head {
+  use super::*;
+
+  #[test]
+  fn names_the_same_symbol_as_the_bare_name() {
+    assert_eq!(
+      interpret("d\\[Theta][t_] := t^2; {d\\[Theta][3], dθ[4]}").unwrap(),
+      "{9, 16}"
+    );
+    assert_eq!(
+      interpret("SameQ[Head[Unevaluated[d\\[Theta][t]]], d\\[Theta]]").unwrap(),
+      "True"
+    );
+  }
+}

@@ -7043,7 +7043,7 @@ fn store_function_definition(
     )
   };
   let mut inner = pair.into_inner();
-  let func_name = inner.next().unwrap().as_str().to_owned(); // Identifier
+  let func_name = syntax::resolve_head_name(&inner.next().unwrap()); // Identifier
 
   // A symbol holding an association gains a key rather than a DownValue:
   // `s = <|"a" -> 1|>; s[n_Integer] := n + 100` writes the entry

@@ -2331,7 +2331,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     // when evaluated.
     Rule::FunctionDefinition => {
       let mut inner = pair.into_inner();
-      let name = inner.next().map(|p| p.as_str().to_string());
+      let name = inner.next().map(|p| resolve_head_name(&p));
       let mut parts: Vec<Expr> = inner.map(pair_to_expr).collect();
       match (name, parts.pop()) {
         (Some(name), Some(rhs)) => Expr::FunctionCall {
@@ -4472,8 +4472,13 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
 /// `Identifier` head uses its raw text; a `NamedCharIdentifier` head (e.g.
 /// `\[Psi]`) is decoded to its Unicode symbol (`ψ`) so `\[Psi][x, t]` calls
 /// the same symbol that `\[Psi]` denotes on its own.
-fn resolve_head_name(name_pair: &Pair<Rule>) -> String {
-  if matches!(name_pair.as_rule(), Rule::NamedCharIdentifier) {
+pub(crate) fn resolve_head_name(name_pair: &Pair<Rule>) -> String {
+  // A named character inside a symbol (`d\[Theta][t]`) is the same
+  // character as in the bare symbol `d\[Theta]`, which reads as `dθ`.
+  if matches!(name_pair.as_rule(), Rule::NamedCharIdentifier)
+    || (matches!(name_pair.as_rule(), Rule::Identifier)
+      && name_pair.as_str().contains("\\["))
+  {
     let decoded = pair_to_expr(name_pair.clone());
     if let Expr::Identifier(s) | Expr::Constant(s) = &decoded {
       return s.clone();
