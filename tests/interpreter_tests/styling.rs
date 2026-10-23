@@ -1417,3 +1417,27 @@ mod directive_in_style {
     }
   }
 }
+
+mod operator_only_heads_display_infix {
+  use super::*;
+
+  // Values from wolframscript.
+  #[test]
+  fn arrows_and_relations() {
+    assert_eq!(
+      interpret(
+        "{Equilibrium[a, b], RightArrowLeftArrow[a, b], LeftRightArrow[a, b], \
+         RightArrow[a, b], Equilibrium[a, b, c], Subset[a, b], RightArrow[a], \
+         LongRightArrow[a, b]}"
+      )
+      .unwrap(),
+      "{a ⇌ b, a ⇄ b, a ↔ b, a → b, a ⇌ b ⇌ c, a ⊂ b, RightArrow[a], a ⟶ b}"
+    );
+  }
+
+  #[test]
+  fn no_unimplemented_warning() {
+    let result = interpret_with_stdout("Equilibrium[a, b]").unwrap();
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+}

@@ -283,7 +283,7 @@ Head,Returns the head of an expression,✅,pure,1.0,229
 AppendTo,Appends an element to a list stored in a variable; a target without a value reports ::rvalue,✅,stateful,1.0,230
 Options,Returns the options associated with a symbol — the built-in defaults of the core symbolic and numeric functions or a list set with Options[f] = … or SetOptions,✅,pure,1.0,232
 Array,Generates a list by applying a function to successive indices,✅,pure,1.0,233
-RightArrow,Typesetting arrow symbol,🚫,none,3.0,235
+RightArrow,Typesetting arrow symbol,✅,none,3.0,235
 Interval,Represents a closed real interval with auto-merged sub-intervals,✅,pure,3.0,236
 Offset,Represents a position offset by a specified number of printers points,✅,pure,3.0,237
 ReplaceRepeated,Applies replacement rules repeatedly until fixed point or the MaxIterations bound,✅,pure,1.0,238
@@ -2202,7 +2202,7 @@ ComplexContourPlot,Visualization,🚫,None,12.1,2210
 GreenFunction,Differential equation Green's function,🚫,None,10.4,2210
 ContinuedFractionK,Evaluates a generalized continued fraction,✅,pure,7.0,2212
 InverseEllipticNomeQ,Inverse of the elliptic nome giving the parameter m for a nome q,✅,pure,3.0,2212
-DoubleLongRightArrow,Symbol notation,🚫,None,3.0,2214
+DoubleLongRightArrow,Symbol notation,✅,None,3.0,2214
 VectorMarkers,Visualization option,🚫,None,11.3,2214
 FindFaces,Image processing,🚫,None,9.0,2217
 NotebookInformation,Notebook UI,🚫,None,5.0,2217
@@ -2360,7 +2360,7 @@ IrreduciblePolynomialQ,Tests whether a polynomial is irreducible over the ration
 ToPolarCoordinates,Converts Cartesian coordinates to polar,✅,None,10.1,2374
 BubbleSizes,chart option,🚫,None,7.0,2380
 CountRoots,Count the real roots of a univariate polynomial with multiplicity over the reals or a closed interval,✅,pure,6.0,2380
-DoubleLongLeftRightArrow,symbol notation,🚫,None,3.0,2380
+DoubleLongLeftRightArrow,symbol notation,✅,None,3.0,2380
 InverseGammaRegularized,Inverse of the regularized upper incomplete gamma function Q(a z),✅,pure,3.0,2380
 MultivariateTDistribution,probability distribution,🚫,None,8.0,2380
 PartitionsQ,Number of partitions of n into distinct parts,✅,pure,1.0,2380
@@ -3034,7 +3034,7 @@ Postfix,Symbol for postfix display formatting,✅,pure,1.0,3070
 SeriesTermGoal,,,,12.1,3070
 ShowGroupOpener,,🚫,,6.0,3070
 SphericalShell,Filled spherical shell region between two radii consumed by Volume/SurfaceArea/RegionCentroid,✅,pure,10.2,3070
-UpArrow,,,,3.0,3070
+UpArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,3070
 AudioSampleRate,Sample rate of an audio object as a Quantity in Hertz,✅,pure,11.0,3083
 Canvas,,🚫,,12.2,3083
 CurrentDate,,,,11.1,3083
@@ -3127,7 +3127,7 @@ DimensionReduction,,🚫,,10.1,3176
 FactorialMomentGeneratingFunction,Expected value E[t^X] of a distribution (MGF at Log t),✅,pure,8.0,3176
 HadamardMatrix,Hadamard matrix of size n,✅,none,9.0,3176
 KeyIntersection,Restricts each association to the keys common to all,✅,pure,10.0,3176
-LeftRightArrow,,,,3.0,3176
+LeftRightArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,3176
 MellinTransform,Table-driven Mellin transform for classical integrands with shift and substitution rules,✅,pure,11.0,3176
 MeshCellCentroid,,🚫,,10.0,3176
 PermutationLength,Number of non-fixed points in a permutation,✅,1,8.0,3176
@@ -3237,7 +3237,7 @@ WignerSemicircleDistribution,Wigner semicircle distribution (ArcSin CDF),✅,pur
 AskFunction,,🚫,,10.4,3291
 Backslash,Symbolic backslash (set difference) operator with Unicode display,✅,pure,3.0,3291
 DeviceClose,,🚫,,10.0,3291
-DoubleLongLeftArrow,,,,3.0,3291
+DoubleLongLeftArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,3291
 HermiteDecomposition,Hermite normal form decomposition (unimodular u with u.m == h) for integer matrices,✅,pure,6.0,3291
 ListStreamDensityPlot,,🚫,,7.0,3291
 Majority,True when more than half the arguments are True (Orderless; symbolic simplifications),✅,pure,7.0,3291
@@ -3305,7 +3305,7 @@ SocketConnect,Connect to a TCP endpoint and return a SocketObject,✅,effectful,
 AlgebraicNumberPolynomial,,,,6.0,3363
 ArgumentsOptions,,,,12.2,3363
 DayRound,Rounds a date to a day of a given weekday or day-type class,✅,pure,9.0,3363
-Equilibrium,,,,3.0,3363
+Equilibrium,Operator without built-in meaning displayed infix,✅,pure,3.0,3363
 FindMeshDefects,,,,11.0,3363
 Interactive,,🚫,,9.0,3363
 NakagamiDistribution,Nakagami distribution with shape parameter m and spread w,✅,pure,8.0,3363
@@ -3466,7 +3466,7 @@ EntropyFilter,,🚫,,7.0,3537
 ExponentStep,,,,3.0,3537
 GeoDistanceList,,🚫,,10.4,3537
 InverseFourierCosTransform,Inverse Fourier cosine transform (the cosine transform is an involution),✅,pure,4.0,3537
-LessLess,,,,3.0,3537
+LessLess,Operator without built-in meaning displayed infix,✅,pure,3.0,3537
 LongestCommonSubsequencePositions,Returns the {start end} spans of the longest contiguous common subsequence in two strings or lists,✅,pure,10.2,3537
 PeriodogramArray,,🚫,,9.0,3537
 PoleZeroMarkers,,,,8.0,3537
@@ -3504,7 +3504,7 @@ VonMisesDistribution,Von Mises circular distribution,✅,pure,8.0,3566
 AbortKernels,,🚫,,7.0,3578
 CloudSymbol,,🚫,,10.0,3578
 DataDistribution,,,,8.0,3578
-DoubleRightArrow,,,,3.0,3578
+DoubleRightArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,3578
 FeedbackLinearize,,🚫,,10.0,3578
 FunctionInjective,,,,12.2,3578
 LinearFractionalTransform,Build a TransformationFunction for the projective map x -> (m.x + v)/(w.x + b),✅,none,6.0,3578
@@ -3552,7 +3552,7 @@ ButtonSource,,🚫,,3.0,3636
 CalloutStyle,,🚫,,11.0,3636
 ColorBalance,White-balance an image against a reference color,✅,pure,10.2,3636
 CompoundPoissonDistribution,Poisson-compounded sum distribution,✅,pure,9.0,3636
-DoubleLeftRightArrow,,,,3.0,3636
+DoubleLeftRightArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,3636
 EvaluationData,,🚫,,10.0,3636
 FailureQ,Tests whether an expression is a failure object such as $Failed or Failure[...],✅,pure,10.2,3636
 HessenbergDecomposition,Hessenberg decomposition {p; h} of a machine-precision square matrix with m == p . h . Transpose[p],✅,pure,5.1,3636
@@ -3639,7 +3639,7 @@ KarhunenLoeveDecomposition,,,,8.0,3717
 KuiperTest,,,,8.0,3717
 LUVColor,,,,10.0,3717
 LeastSquaresFilterKernel,,,,9.0,3717
-LessFullEqual,,,,3.0,3717
+LessFullEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,3717
 MorphologicalEulerNumber,,🚫,,7.0,3717
 NoncentralBetaDistribution,,,,8.0,3717
 PageBreakWithin,,🚫,,3.0,3717
@@ -3657,7 +3657,7 @@ DiagonalMatrixQ,True if a (possibly rectangular) matrix has nonzeros only on the
 DirichletL,Dirichlet L-function (Zeta and exact integer-s values),✅,pure,7.0,3737
 GeoImage,,🚫,,11.2,3737
 HatchShading,,,,12.1,3737
-LongLeftRightArrow,,,,3.0,3737
+LongLeftRightArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,3737
 ManagedLibraryExpressionID,,,,10.0,3737
 MathMLForm,Converts expression to MathML form,✅,pure,4.1,3737
 MomentEvaluate,,,,8.0,3737
@@ -3781,7 +3781,7 @@ KDistribution,,,,8.0,3862
 KVertexConnectedComponents,,,,10.0,3862
 PermutationListQ,True if list is a valid permutation,✅,1,8.0,3862
 QPolyGamma,,,,7.0,3862
-RightTeeArrow,,,,3.0,3862
+RightTeeArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,3862
 SkellamDistribution,Skellam distribution of the difference of two Poisson variables,✅,pure,8.0,3862
 SocketListen,Run handler functions for everything arriving on a socket,✅,effectful,11.2,3862
 SpecificityGoal,,🚫,,10.1,3862
@@ -3834,7 +3834,7 @@ MeyerWavelet,Meyer wavelet family defined in the frequency domain,✅,pure,8.0,3
 SearchQueryString,,🚫,,11.0,3916
 ShannonWavelet,Shannon (sinc) wavelet family,✅,pure,8.0,3916
 SpellingCorrection,,🚫,,2.0,3916
-SubsetEqual,,,,3.0,3916
+SubsetEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,3916
 SymmetrizedArrayRules,,,,9.0,3916
 VerifyTestAssumptions,,,,8.0,3916
 WeightedGraphQ,Tests whether a graph has explicit edge or vertex weights,✅,pure,8.0,3916
@@ -3996,7 +3996,7 @@ SolarEclipse,"Time of greatest eclipse and ""Type"" of the next solar eclipse af
 SystemsModelDimensions,,🚫,,8.0,4081
 TrimmedVariance,Variance after dropping the lowest and highest Floor[f n] values,✅,pure,11.1,4081
 URLDownloadSubmit,,🚫,,11.2,4081
-UpperRightArrow,,,,3.0,4081
+UpperRightArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,4081
 AskDisplay,,🚫,,10.4,4104
 AsymptoticEqual,Tests whether two expressions have the same asymptotic order at a limit point,✅,pure,11.3,4104
 AtomList,List of atoms in a molecule,✅,pure,12.0,4104
@@ -4091,7 +4091,7 @@ GeoHemisphereBoundary,,🚫,,10.1,4204
 GeoStylingImageFunction,,🚫,,10.0,4204
 HarmonicMeanFilter,,,,7.0,4204
 InnerPolygon,,,,12.0,4204
-LeftTeeArrow,,,,3.0,4204
+LeftTeeArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,4204
 ListFitPlot,Plots data together with a fitted model curve,✅,pure,14.0,4204
 ListFitPlot3D,,,,14.0,4204
 ListFormat,,,,10.0,4204
@@ -4222,7 +4222,7 @@ Chebyshev1FilterModel,,,,9.0,4356
 ColorToneMapping,,🚫,,10.2,4356
 DeleteChannel,,🚫,,11.0,4356
 DotLayer,,🚫,,11.1,4356
-DoubleVerticalBar,,,,3.0,4356
+DoubleVerticalBar,Operator without built-in meaning displayed infix,✅,pure,3.0,4356
 DualSystemsModel,,,,8.0,4356
 EccentricityCentrality,Eccentricity centrality of graph vertices,✅,pure,9.0,4356
 EdgeBetweennessCentrality,Betweenness centrality of each graph edge via Brandes algorithm,✅,pure,9.0,4356
@@ -4238,7 +4238,7 @@ HeatTemperatureCondition,,,,12.2,4356
 InputAssumptions,,🚫,,8.0,4356
 ItemAspectRatio,,,,6.0,4356
 KnownUnitQ,Tests whether an expression is a recognised unit specification,✅,pure,9.0,4356
-LeftVector,,,,3.0,4356
+LeftVector,Operator without built-in meaning displayed infix,✅,pure,3.0,4356
 LinearSolveFunction,,,,5.0,4356
 LossFunction,,,,11.3,4356
 NCache,Represents an expression tagged with a numeric approximation and evaluates to the expression,✅,pure,6.0,4356
@@ -4401,7 +4401,7 @@ OutputSizeLimit,,🚫,,6.0,4527
 PhaseRange,,,,10.0,4527
 PlantData,,🚫,,10.0,4527
 Pluralize,,,,10.0,4527
-PrecedesTilde,,,,3.0,4527
+PrecedesTilde,Operator without built-in meaning displayed infix,✅,pure,3.0,4527
 ProcessParameterAssumptions,,,,9.0,4527
 RightCosetRepresentative,,,,8.0,4527
 SemidefiniteOptimization,,,,12.0,4527
@@ -4439,7 +4439,7 @@ TimeObjectQ,,,,10.2,4567
 TrigFactorList,,,,3.0,4567
 TropicalStormData,,🚫,,10.0,4567
 URLDispatcher,,🚫,,10.4,4567
-UpTee,,,,3.0,4567
+UpTee,Operator without built-in meaning displayed infix,✅,pure,3.0,4567
 VerifySecurityCertificates,,🚫,,11.0,4567
 VideoFrameList,,🚫,,12.1,4567
 WeierstrassHalfPeriodW1,,,,11.2,4567
@@ -4484,7 +4484,7 @@ StringRotateLeft,Rotates characters in a string to the left,✅,pure,9.0,4612
 SubresultantPolynomialRemainders,Subresultant polynomial remainder sequence of two polynomials,✅,pure,9.0,4612
 Success,Represents a success of a type indicated by a tag with details in an association,✅,pure,11.3,4612
 TextContents,,🚫,,12.0,4612
-TildeEqual,,,,3.0,4612
+TildeEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,4612
 VectorLessEqual,Componentwise less-than-or-equal comparison of vectors,✅,pure,12.0,4612
 VideoTrim,,🚫,,12.1,4612
 AnimationTimeIndex,,🚫,,10.0,4660
@@ -4520,7 +4520,7 @@ ParallelProduct,,🚫,,7.0,4660
 PartProtection,,,,10.4,4660
 RadialityCentrality,Radiality centrality of each vertex based on shortest-path distances,✅,pure,9.0,4660
 RemoteConnect,,🚫,,11.3,4660
-RightTriangle,,,,3.0,4660
+RightTriangle,Operator without built-in meaning displayed infix,✅,pure,3.0,4660
 ScorerHi,Scorer inhomogeneous Airy function Hi solving y'' - x y = 1/Pi,✅,pure,10.0,4660
 ShowCursorTracker,,🚫,,4.0,4660
 SubsetCases,Finds non-overlapping subsets matching a pattern,✅,pure,12.1,4660
@@ -4596,7 +4596,7 @@ LongestCommonSequencePositions,Returns the {start end} spans in each argument co
 NotificationFunction,,🚫,,10.1,4747
 PhaseMargins,,,,8.0,4747
 QuadraticIrrationalQ,Tests whether a number is a real quadratic irrational,✅,pure,6.0,4747
-RightArrowBar,,,,3.0,4747
+RightArrowBar,Operator without built-in meaning displayed infix,✅,pure,3.0,4747
 SequenceReverseLayer,,🚫,,11.1,4747
 SpaceCurveData,,🚫,,10.0,4747
 SpatialTransformationLayer,,🚫,,11.1,4747
@@ -4647,7 +4647,7 @@ Processes,,🚫,,10.0,4809
 RollPitchYawAngles,,,,10.2,4809
 ScrollingOptions,,🚫,,4.0,4809
 SecuredAuthenticationKey,,🚫,,11.2,4809
-SquareIntersection,,,,3.0,4809
+SquareIntersection,Operator without built-in meaning displayed infix,✅,pure,3.0,4809
 StatusCentrality,,,,9.0,4809
 SubsetReplace,Replaces every non-overlapping subset matching a pattern in a list,✅,pure,12.1,4809
 SystemsModelLinearity,,🚫,,10.0,4809
@@ -4697,10 +4697,10 @@ MineralData,,🚫,,10.0,4881
 MissingStyle,,,,10.0,4881
 MixedRadixQuantity,Represents a quantity given as digits in a mixed-radix base,✅,Symbolic,9.0,4881
 MoleculeRecognize,,🚫,,12.1,4881
-NestedGreaterGreater,,,,3.0,4881
+NestedGreaterGreater,Operator without built-in meaning displayed infix,✅,pure,3.0,4881
 NonlocalMeansFilter,,,,9.0,4881
-NotCongruent,,,,3.0,4881
-NotSubset,,,,3.0,4881
+NotCongruent,Operator without built-in meaning displayed infix,✅,pure,3.0,4881
+NotSubset,Operator without built-in meaning displayed infix,✅,pure,3.0,4881
 NotVerticalBar,,,,3.0,4881
 OutputControllableModelQ,,,,8.0,4881
 PacletFindRemote,,🚫,,12.1,4881
@@ -4715,7 +4715,7 @@ ScorerGiPrime,,,,10.0,4881
 ScorerHiPrime,,,,10.0,4881
 ShowSpecialCharacters,,,,3.0,4881
 SpeciesData,,🚫,,10.0,4881
-SquareUnion,,,,3.0,4881
+SquareUnion,Operator without built-in meaning displayed infix,✅,pure,3.0,4881
 StarClusterData,,🚫,,10.0,4881
 StringFormat,,,,6.0,4881
 SupernovaData,,🚫,,10.0,4881
@@ -4725,7 +4725,7 @@ TaskWait,,🚫,,11.2,4881
 TestReportObject,,,,10.0,4881
 TimeDirection,,,,10.0,4881
 TokenWords,,🚫,,2.0,4881
-UnionPlus,,,,3.0,4881
+UnionPlus,Operator without built-in meaning displayed infix,✅,pure,3.0,4881
 VideoQ,,🚫,,12.1,4881
 WebElementObject,,🚫,,12.0,4881
 WindingPolygon,,,,12.0,4881
@@ -4751,7 +4751,7 @@ DiscreteLQEstimatorGains,,,,8.0,4947
 EvaluationEnvironment,,,,11.2,4947
 FollowRedirects,,,,11.0,4947
 HistoricalPeriodData,,🚫,,10.0,4947
-HumpDownHump,,,,3.0,4947
+HumpDownHump,Operator without built-in meaning displayed infix,✅,pure,3.0,4947
 ImageCases,,🚫,,12.0,4947
 ImageVectorscopePlot,,🚫,,12.2,4947
 ImageWaveformPlot,,🚫,,12.2,4947
@@ -4766,7 +4766,7 @@ MoleculeQ,Tests whether an expression is a valid molecule,✅,pure,12.0,4947
 OutputPorts,,,,12.2,4947
 ParticleAcceleratorData,,🚫,,10.0,4947
 PersistenceTime,,🚫,,11.1,4947
-Precedes,,,,3.0,4947
+Precedes,Operator without built-in meaning displayed infix,✅,pure,3.0,4947
 PublicKey,,🚫,,10.1,4947
 QuantityVariableDimensions,,,,10.0,4947
 RandomArrayLayer,,🚫,,12.2,4947
@@ -4779,7 +4779,7 @@ SearchAdjustment,,🚫,,11.0,4947
 SetCookies,,🚫,,11.0,4947
 StackBegin,,,,2.0,4947
 StandardOceanData,,🚫,,10.3,4947
-Succeeds,,,,3.0,4947
+Succeeds,Operator without built-in meaning displayed infix,✅,pure,3.0,4947
 TaskSuspend,,🚫,,11.2,4947
 TouchscreenAutoZoom,,🚫,,9.0,4947
 TunnelData,,🚫,,10.0,4947
@@ -4801,7 +4801,7 @@ CreateCellID,,🚫,,6.0,5013
 DeBruijnSequence,De Bruijn sequence over an alphabet,✅,pure,11.3,5013
 DefaultTicksStyle,,,,7.0,5013
 DeviceStreams,,🚫,,10.0,5013
-DownArrow,,,,3.0,5013
+DownArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5013
 EchoTiming,,,,12.2,5013
 EvaluationObject,,,,7.0,5013
 ExternalFunction,,🚫,,12.0,5013
@@ -4811,8 +4811,8 @@ FeatureSpacePlot3D,,🚫,,11.3,5013
 FindImageText,,🚫,,12.1,5013
 FischerGroupFi22,,,,8.0,5013
 FontSubstitutions,,🚫,,3.0,5013
-GreaterGreater,,,,3.0,5013
-GreaterTilde,,,,3.0,5013
+GreaterGreater,Operator without built-in meaning displayed infix,✅,pure,3.0,5013
+GreaterTilde,Operator without built-in meaning displayed infix,✅,pure,3.0,5013
 HeldGroupHe,,,,8.0,5013
 HeunC,,,,12.1,5013
 IconRules,,🚫,,10.0,5013
@@ -4822,7 +4822,7 @@ JankoGroupJ3,,,,8.0,5013
 KeyCollisionFunction,,,,10.3,5013
 LameEigenvalueA,,,,12.2,5013
 LameSPrime,,,,12.2,5013
-LeftTriangle,,,,3.0,5013
+LeftTriangle,Operator without built-in meaning displayed infix,✅,pure,3.0,5013
 LinkPatterns,,🚫,,3.0,5013
 LocalResponseNormalizationLayer,,🚫,,11.1,5013
 MergingFunction,,,,11.1,5013
@@ -4866,7 +4866,7 @@ DeliveryFunction,,,,10.1,5079
 DialogProlog,,🚫,,2.0,5079
 DialogSymbols,,🚫,,2.0,5079
 EdgeTags,Tags of the edges of a graph,✅,pure,12.1,5079
-EqualTilde,,,,3.0,5079
+EqualTilde,Operator without built-in meaning displayed infix,✅,pure,3.0,5079
 EstimatedPointProcess,,🚫,,12.2,5079
 GeoPolygon,Geographic polygon primitive for GeoGraphics,✅,pure,12.2,5079
 HigmanSimsGroupHS,,,,8.0,5079
@@ -4899,8 +4899,8 @@ SelectionCreateCell,,🚫,,3.0,5079
 ServiceDisconnect,,🚫,,10.0,5079
 Sockets,List the sockets currently open in this session,✅,effectful,11.2,5079
 StripWrapperBoxes,,🚫,,6.0,5079
-Superset,,,,3.0,5079
-SupersetEqual,,,,3.0,5079
+Superset,Operator without built-in meaning displayed infix,✅,pure,3.0,5079
+SupersetEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5079
 TextPacket,,🚫,,3.0,5079
 UpdateSearchIndex,,🚫,,10.2,5079
 VideoStream,,🚫,,12.1,5079
@@ -4929,7 +4929,7 @@ ConnectLibraryCallbackFunction,,,,10.0,5184
 ConnectSystemModelComponents,,,,11.3,5184
 ContentLocationFunction,,,,11.0,5184
 ConwayGroupCo1,,,,8.0,5184
-Coproduct,,,,3.0,5184
+Coproduct,Operator without built-in meaning displayed infix,✅,pure,3.0,5184
 CreateDataSystemModel,,,,11.3,5184
 Curry,Creates a curried operator form of a function that collects arguments across successive applications,✅,pure,11.3,5184
 CurryApplied,Operator that collects n curried arguments and applies f to them in order; CurryApplied[f;{perm}] uses an explicit permutation,✅,pure,12.1,5184
@@ -4953,7 +4953,7 @@ GeneratorDescription,,,,10.1,5184
 GeneratorOutputType,,,,10.1,5184
 GeoBoundsRegionBoundary,,🚫,,12.2,5184
 GeoVectorPlot,,🚫,,12.0,5184
-GreaterFullEqual,,,,3.0,5184
+GreaterFullEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5184
 HaradaNortonGroupHN,,,,8.0,5184
 HardcorePointProcess,,🚫,,12.2,5184
 HeatFluxValue,,,,12.2,5184
@@ -4969,10 +4969,10 @@ MoleculeContainsQ,,🚫,,12.0,5184
 NetReplace,,🚫,,11.3,5184
 NeymanScottPointProcess,,🚫,,12.2,5184
 NonPositiveIntegers,,,,12.0,5184
-NotCupCap,,,,3.0,5184
-NotRightTriangle,,,,3.0,5184
-NotSubsetEqual,,,,3.0,5184
-NotTildeEqual,,,,3.0,5184
+NotCupCap,Operator without built-in meaning displayed infix,✅,pure,3.0,5184
+NotRightTriangle,Operator without built-in meaning displayed infix,✅,pure,3.0,5184
+NotSubsetEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5184
+NotTildeEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5184
 ONanGroupON,,,,8.0,5184
 OptimumFlowData,,🚫,,9.0,5184
 OutputControllabilityMatrix,,,,8.0,5184
@@ -4997,7 +4997,7 @@ ThompsonGroupTh,,,,8.0,5184
 TotalWidth,Option specifying the total width for formatted output,✅,none,1.0,5184
 TraceOn,,,,2.0,5184
 VectorGreater,Componentwise strict greater-than comparison of vectors,✅,pure,12.0,5184
-VerticalTilde,,,,3.0,5184
+VerticalTilde,Operator without built-in meaning displayed infix,✅,pure,3.0,5184
 VideoPlay,,🚫,,12.1,5184
 WebSessionObject,,🚫,,12.0,5184
 AllowedCloudExtraParameters,,🚫,,11.1,5390
@@ -5023,7 +5023,7 @@ CombinatorB,,,,12.2,5390
 ConfirmAssert,Confirms that a test evaluates to True otherwise throwing to the enclosing Enclose,✅,pure,12.2,5390
 ConservativeConvectionPDETerm,,,,12.2,5390
 ContinuousTimeModelQ,,,,8.0,5390
-CupCap,,,,3.0,5390
+CupCap,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 DatabaseConnect,,🚫,,12.0,5390
 DefaultAxesStyle,,,,7.0,5390
 DefaultFrameStyle,,,,7.0,5390
@@ -5033,20 +5033,20 @@ DirichletLambda,Dirichlet lambda function (1 - 2^-s) Zeta[s],✅,pure,10.0,5390
 DiscreteTimeModelQ,,,,8.0,5390
 DisplayEndPacket,,🚫,,3.0,5390
 DisplayPacket,,🚫,,3.0,5390
-DoubleDownArrow,,,,3.0,5390
-DoubleLeftArrow,,,,3.0,5390
-DoubleUpArrow,,,,3.0,5390
-DoubleUpDownArrow,,,,3.0,5390
-DownArrowBar,,,,3.0,5390
-DownArrowUpArrow,,,,3.0,5390
-DownLeftRightVector,,,,3.0,5390
-DownLeftTeeVector,,,,3.0,5390
-DownLeftVector,,,,3.0,5390
-DownLeftVectorBar,,,,3.0,5390
-DownRightTeeVector,,,,3.0,5390
-DownRightVector,,,,3.0,5390
-DownRightVectorBar,,,,3.0,5390
-DownTeeArrow,,,,3.0,5390
+DoubleDownArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+DoubleLeftArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+DoubleUpArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+DoubleUpDownArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+DownArrowBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+DownArrowUpArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+DownLeftRightVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+DownLeftTeeVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+DownLeftVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+DownLeftVectorBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+DownRightTeeVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+DownRightVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+DownRightVectorBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+DownTeeArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 EchoEvaluation,,,,12.2,5390
 EntityPrefetch,,🚫,,11.3,5390
 ExternalSessionObject,,🚫,,11.2,5390
@@ -5060,83 +5060,83 @@ GeneratorHistoryLength,,,,10.1,5390
 GeoDensityPlot,,🚫,,12.1,5390
 GeoSmoothHistogram,,🚫,,11.3,5390
 GeoStreamPlot,,🚫,,12.0,5390
-GreaterEqualLess,,,,3.0,5390
-GreaterLess,,,,3.0,5390
+GreaterEqualLess,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+GreaterLess,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 HeatInsulationValue,,,,12.2,5390
-HumpEqual,,,,3.0,5390
+HumpEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 IgnorePunctuation,,,,10.3,5390
 ImagingDevice,,🚫,,10.0,5390
 InverseRadonTransform,,,,11.2,5390
-LeftArrowBar,,,,3.0,5390
-LeftArrowRightArrow,,,,3.0,5390
-LeftDownTeeVector,,,,3.0,5390
-LeftDownVector,,,,3.0,5390
-LeftDownVectorBar,,,,3.0,5390
-LeftRightVector,,,,3.0,5390
-LeftTeeVector,,,,3.0,5390
-LeftTriangleBar,,,,3.0,5390
-LeftTriangleEqual,,,,3.0,5390
-LeftUpDownVector,,,,3.0,5390
-LeftUpTeeVector,,,,3.0,5390
-LeftUpVector,,,,3.0,5390
-LeftUpVectorBar,,,,3.0,5390
-LeftVectorBar,,,,3.0,5390
-LessEqualGreater,,,,3.0,5390
-LessGreater,,,,3.0,5390
-LessTilde,,,,3.0,5390
+LeftArrowBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LeftArrowRightArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LeftDownTeeVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LeftDownVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LeftDownVectorBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LeftRightVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LeftTeeVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LeftTriangleBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LeftTriangleEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LeftUpDownVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LeftUpTeeVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LeftUpVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LeftUpVectorBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LeftVectorBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LessEqualGreater,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LessGreater,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LessTilde,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 LinkInterrupt,,🚫,,3.0,5390
-LongLeftArrow,,,,3.0,5390
-LowerLeftArrow,,,,3.0,5390
-LowerRightArrow,,,,3.0,5390
+LongLeftArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LowerLeftArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+LowerRightArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 MassSymmetryValue,,,,12.2,5390
 MeanPointDensity,,,,12.2,5390
 MeteorShowerData,,🚫,,10.0,5390
-NestedLessLess,,,,3.0,5390
+NestedLessLess,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 NetInsertSharedArrays,,🚫,,11.3,5390
 NetPrepend,,🚫,,11.3,5390
 NicholsGridLines,,,,8.0,5390
-NotDoubleVerticalBar,,,,3.0,5390
+NotDoubleVerticalBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 NotEqualTilde,,,,3.0,5390
-NotGreater,,,,3.0,5390
-NotGreaterEqual,,,,3.0,5390
-NotGreaterFullEqual,,,,3.0,5390
+NotGreater,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotGreaterEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotGreaterFullEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 NotGreaterGreater,,,,3.0,5390
-NotGreaterLess,,,,3.0,5390
+NotGreaterLess,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 NotGreaterSlantEqual,,,,3.0,5390
-NotGreaterTilde,,,,3.0,5390
+NotGreaterTilde,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 NotHumpDownHump,,,,3.0,5390
 NotHumpEqual,,,,3.0,5390
-NotLeftTriangle,,,,3.0,5390
+NotLeftTriangle,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 NotLeftTriangleBar,,,,3.0,5390
-NotLeftTriangleEqual,,,,3.0,5390
-NotLess,,,,3.0,5390
-NotLessEqual,,,,3.0,5390
-NotLessFullEqual,,,,3.0,5390
-NotLessGreater,,,,3.0,5390
+NotLeftTriangleEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotLess,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotLessEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotLessFullEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotLessGreater,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 NotLessLess,,,,3.0,5390
 NotLessSlantEqual,,,,3.0,5390
-NotLessTilde,,,,3.0,5390
+NotLessTilde,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 NotNestedGreaterGreater,,,,3.0,5390
 NotNestedLessLess,,,,3.0,5390
-NotPrecedes,,,,3.0,5390
+NotPrecedes,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 NotPrecedesEqual,,,,3.0,5390
-NotPrecedesSlantEqual,,,,3.0,5390
-NotPrecedesTilde,,,,3.0,5390
-NotReverseElement,,,,3.0,5390
-NotRightTriangleEqual,,,,3.0,5390
+NotPrecedesSlantEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotPrecedesTilde,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotReverseElement,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotRightTriangleEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 NotSquareSubset,,,,3.0,5390
-NotSquareSubsetEqual,,,,3.0,5390
+NotSquareSubsetEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 NotSquareSuperset,,,,3.0,5390
-NotSquareSupersetEqual,,,,3.0,5390
-NotSucceeds,,,,3.0,5390
+NotSquareSupersetEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotSucceeds,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 NotSucceedsEqual,,,,3.0,5390
-NotSucceedsSlantEqual,,,,3.0,5390
-NotSucceedsTilde,,,,3.0,5390
-NotSuperset,,,,3.0,5390
-NotSupersetEqual,,,,3.0,5390
-NotTilde,,,,3.0,5390
-NotTildeFullEqual,,,,3.0,5390
-NotTildeTilde,,,,3.0,5390
+NotSucceedsSlantEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotSucceedsTilde,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotSuperset,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotSupersetEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotTilde,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotTildeFullEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+NotTildeTilde,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 NumericArrayQ,,,,12.0,5390
 OrderingLayer,,🚫,,12.0,5390
 OverscriptBoxOptions,,🚫,,4.0,5390
@@ -5144,51 +5144,51 @@ PitchRecognize,,🚫,,12.0,5390
 PointProcessParameterAssumptions,,,,12.2,5390
 PointProcessParameterQ,,,,12.2,5390
 PolyhedronDecomposition,,🚫,,12.0,5390
-PrecedesEqual,,,,3.0,5390
-PrecedesSlantEqual,,,,3.0,5390
+PrecedesEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+PrecedesSlantEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 PreserveColor,,🚫,,11.2,5390
-Proportion,,,,3.0,5390
+Proportion,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 QuantityVariableIdentifier,,,,10.0,5390
 RemoteBatchSubmit,,🚫,,12.2,5390
 RemoveUsers,,🚫,,10.0,5390
-ReverseEquilibrium,,,,3.0,5390
+ReverseEquilibrium,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 ReverseUpEquilibrium,Reversed same-spin-pair upward harpoon notation symbol,✅,none,3.0,5390
-RightArrowLeftArrow,,,,3.0,5390
-RightDownTeeVector,,,,3.0,5390
-RightDownVector,,,,3.0,5390
-RightDownVectorBar,,,,3.0,5390
-RightTeeVector,,,,3.0,5390
-RightTriangleBar,,,,3.0,5390
-RightTriangleEqual,,,,3.0,5390
-RightUpDownVector,,,,3.0,5390
-RightUpTeeVector,,,,3.0,5390
-RightUpVector,,,,3.0,5390
-RightUpVectorBar,,,,3.0,5390
-RightVector,,,,3.0,5390
-RightVectorBar,,,,3.0,5390
+RightArrowLeftArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+RightDownTeeVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+RightDownVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+RightDownVectorBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+RightTeeVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+RightTriangleBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+RightTriangleEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+RightUpDownVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+RightUpTeeVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+RightUpVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+RightUpVectorBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+RightVector,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+RightVectorBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 ShortDownArrow,,,,3.0,5390
 ShortLeftArrow,,,,3.0,5390
 ShortUpArrow,,,,3.0,5390
 SocketWaitAll,Wait until every socket in a list sees activity,✅,effectful,11.2,5390
-SquareSubset,,,,3.0,5390
-SquareSubsetEqual,,,,3.0,5390
-SquareSuperset,,,,3.0,5390
-SquareSupersetEqual,,,,3.0,5390
+SquareSubset,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+SquareSubsetEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+SquareSuperset,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+SquareSupersetEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 SubscriptBoxOptions,,🚫,,4.0,5390
-SucceedsEqual,,,,3.0,5390
-SucceedsSlantEqual,,,,3.0,5390
-SucceedsTilde,,,,3.0,5390
-SuchThat,,,,3.0,5390
+SucceedsEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+SucceedsSlantEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+SucceedsTilde,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+SuchThat,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 SynthesizeMissingValues,,🚫,,12.0,5390
 SystemModels,,🚫,,11.3,5390
 TaskResume,,🚫,,11.2,5390
-TildeFullEqual,,,,3.0,5390
+TildeFullEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 TimeFormat,,,,10.0,5390
-UpArrowBar,,,,3.0,5390
-UpArrowDownArrow,,,,3.0,5390
-UpDownArrow,,,,3.0,5390
-UpTeeArrow,,,,3.0,5390
-UpperLeftArrow,,,,3.0,5390
+UpArrowBar,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+UpArrowDownArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+UpDownArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+UpTeeArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
+UpperLeftArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,5390
 ValenceFilling,,,,12.2,5390
 VideoDelete,,🚫,,12.2,5390
 WhitePoint,,🚫,,10.0,5390
@@ -5213,7 +5213,7 @@ CopyFunction,,,,12.2,5486
 DiggleGrattonPointProcess,,🚫,,12.2,5486
 DihedralAngle,Dihedral angle along an edge between two half-planes,✅,pure,12.0,5486
 DoubleLeftTee,Inert operator displayed with the ⫤ symbol,✅,pure,3.0,5486
-DownTee,,,,3.0,5486
+DownTee,Operator without built-in meaning displayed infix,✅,pure,3.0,5486
 EmptySpaceF,,,,12.2,5486
 EntityUnregister,Unregisters entities from a registered entity store,✅,effectful,11.3,5486
 EulerCharacteristic,,,,12.0,5486
