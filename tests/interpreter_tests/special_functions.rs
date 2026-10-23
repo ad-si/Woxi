@@ -3809,6 +3809,18 @@ mod cases {
     assert_case(r#"AiryAiZero[1]"#, r#"AiryAiZero[1]"#);
   }
   #[test]
+  fn airy_ai_zero_listable() {
+    assert_case(r#"AiryAiZero[{1, 2}]"#, r#"{AiryAiZero[1], AiryAiZero[2]}"#);
+    assert_case(
+      r#"N[AiryAiZero[Range[3]]]"#,
+      r#"{-2.338107410459767, -4.08794944413097, -5.520559828095551}"#,
+    );
+    assert_case(
+      r#"Attributes[AiryAiZero]"#,
+      r#"{Listable, NumericFunction, Protected, ReadProtected}"#,
+    );
+  }
+  #[test]
   fn airy_ai_zero_2() {
     assert_case(r#"AiryAiZero[1]; AiryAiZero[1.]"#, r#"AiryAiZero[1.]"#);
   }
