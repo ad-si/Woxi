@@ -2145,24 +2145,33 @@ fn needs_early_initialization(spec: &Expr) -> bool {
   })
 }
 
-/// A `Style[expr, …]` directive list in the order Wolfram applies it: a
-/// named style ("Label", "Section", …) supplies the base appearance and the
-/// explicit directives sit on top of it, whichever side of it they were
-/// written. `Style["A", 20, "Label"]` is 20-point text, not the 9-point the
-/// "Label" stylesheet entry gives on its own.
-fn style_directives_in_application_order(directives: &[Expr]) -> Vec<&Expr> {
-  // `Style[x, {RGBColor[…], 15}]` — a list of directives is the same as the
-  // directives written out one by one, so splice (nested) lists in place.
+/// `Style[x, {RGBColor[…], 15}]` and `Style[x, Directive[Red, 15]]` — lists
+/// and `Directive`s of directives are the same as the directives written out
+/// one by one, so splice (nested) ones in place.
+fn splice_directives(directives: &[Expr]) -> Vec<&Expr> {
   fn flatten<'a>(ds: &'a [Expr], out: &mut Vec<&'a Expr>) {
     for d in ds {
       match d {
         Expr::List(items) => flatten(items, out),
+        Expr::FunctionCall { name, args } if name == "Directive" => {
+          flatten(args, out);
+        }
         other => out.push(other),
       }
     }
   }
   let mut flat = Vec::new();
   flatten(directives, &mut flat);
+  flat
+}
+
+/// A `Style[expr, …]` directive list in the order Wolfram applies it: a
+/// named style ("Label", "Section", …) supplies the base appearance and the
+/// explicit directives sit on top of it, whichever side of it they were
+/// written. `Style["A", 20, "Label"]` is 20-point text, not the 9-point the
+/// "Label" stylesheet entry gives on its own.
+fn style_directives_in_application_order(directives: &[Expr]) -> Vec<&Expr> {
+  let flat = splice_directives(directives);
   let (named, explicit): (Vec<&Expr>, Vec<&Expr>) = flat.into_iter().partition(
     |d| matches!(d, Expr::String(s) if named_style_appearance(s).is_some()),
   );
@@ -16996,7 +17005,7 @@ fn extract_cell_style(cell: &Expr) -> CellTextStyle<'_> {
     let mut fst = "normal";
     let mut ff: Option<String> = None;
     let mut color: Option<Color> = None;
-    for directive in &args[1..] {
+    for directive in splice_directives(&args[1..]) {
       match directive {
         Expr::Identifier(s) if s == "Bold" => fw = "bold",
         Expr::Identifier(s) if s == "Italic" => fst = "italic",

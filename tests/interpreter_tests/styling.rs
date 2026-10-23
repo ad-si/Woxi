@@ -1396,3 +1396,24 @@ mod traditional_form_of_a_string {
     assert!(svg.contains(">a = 1<"), "{svg}");
   }
 }
+
+mod directive_in_style {
+  use super::*;
+
+  /// `Style[x, Directive[16, Bold, Red]]` styles like `Style[x, 16, Bold, Red]`
+  /// in a `Row` and in a `Grid` cell.
+  #[test]
+  fn directive_styles_row_and_grid_cells() {
+    for layout in [
+      r#"Row[{1, Style[4, Directive[16, Bold, Red]], 3}]"#,
+      r#"Grid[{{Style[4, Directive[16, Bold, Red]]}}]"#,
+    ] {
+      clear_state();
+      let svg =
+        interpret(&format!(r#"ExportString[{layout}, "SVG"]"#)).unwrap();
+      assert!(svg.contains("rgb(255,0,0)"), "no colour: {svg}");
+      assert!(svg.contains("font-weight=\"bold\""), "not bold: {svg}");
+      assert!(svg.contains("font-size=\"16\""), "wrong size: {svg}");
+    }
+  }
+}
