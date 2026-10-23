@@ -40152,3 +40152,32 @@ mod plots_with_nothing_to_draw {
     );
   }
 }
+
+mod array_plot_argument_errors {
+  use super::*;
+
+  #[test]
+  fn not_a_list_of_lists_reports_mat_and_stays_unevaluated() {
+    let r = interpret_with_stdout("ArrayPlot[{1, 2}]").unwrap();
+    assert_eq!(r.result, "ArrayPlot[{1, 2}]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "ArrayPlot::mat: Argument {1, 2} at position 1 is not a list of lists."
+      ]
+    );
+    assert_eq!(interpret("ArrayPlot[a]").unwrap(), "ArrayPlot[a]");
+  }
+
+  #[test]
+  fn ragged_rows_and_sparse_arrays_still_plot() {
+    assert_eq!(
+      interpret("Head[ArrayPlot[{{1, 2}, {3}}]]").unwrap(),
+      "Graphics"
+    );
+    assert_eq!(
+      interpret("Head[ArrayPlot[SparseArray[{{1, 1} -> 1}, {3, 3}]]]").unwrap(),
+      "Graphics"
+    );
+  }
+}
