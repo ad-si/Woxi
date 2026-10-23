@@ -2941,6 +2941,33 @@ mod collect_tests {
 mod together {
   use super::*;
 
+  // Combining terms rationalizes a numeric radical denominator.
+  #[test]
+  fn rationalizes_numeric_radical_denominators() {
+    assert_eq!(
+      interpret("Together[a + b/Sqrt[3]]").unwrap(),
+      "(3*a + Sqrt[3]*b)/3"
+    );
+    assert_eq!(
+      interpret("Together[a + b/3^(1/3)]").unwrap(),
+      "(3*a + 3^(2/3)*b)/3"
+    );
+    assert_eq!(
+      interpret("Together[a/Sqrt[2] + b/Sqrt[3]]").unwrap(),
+      "(3*Sqrt[2]*a + 2*Sqrt[3]*b)/6"
+    );
+    assert_eq!(
+      interpret("Together[1/Sqrt[2] + 1/x]").unwrap(),
+      "(2 + Sqrt[2]*x)/(2*x)"
+    );
+    // A lone term and symbolic radicals are left alone.
+    assert_eq!(interpret("Together[b/Sqrt[2]]").unwrap(), "b/Sqrt[2]");
+    assert_eq!(
+      interpret("Together[a + b/Sqrt[x]]").unwrap(),
+      "(b + a*Sqrt[x])/Sqrt[x]"
+    );
+  }
+
   // A denominator carrying both 2 and 2^(1/2) is 2^(3/2), not 2.
   #[test]
   fn together_keeps_radical_denominator_factor() {
@@ -2951,7 +2978,7 @@ mod together {
     );
     assert_eq!(
       interpret("Together[x/3 + y/(2 Sqrt[2])]").unwrap(),
-      "(2*x*Sqrt[2] + 3*y)/(6*Sqrt[2])"
+      "(4*x + 3*Sqrt[2]*y)/12"
     );
   }
 
@@ -4839,6 +4866,26 @@ mod symbolic_equal {
 mod solve {
   use super::*;
 
+  // Unknowns written as curried calls, as method-of-lines code names its
+  // grid values.
+  #[test]
+  fn curried_call_unknowns() {
+    assert_eq!(
+      interpret("Solve[{c[1][t] == 0, c[35][t] == 1}, {c[1][t], c[35][t]}]")
+        .unwrap(),
+      "{{c[1][t] -> 0, c[35][t] -> 1}}"
+    );
+    assert_eq!(
+      interpret("Solve[c[1][t]^2 == 4, c[1][t]]").unwrap(),
+      "{{c[1][t] -> -2}, {c[1][t] -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[{a + c[1][t] == 3, c[1][t] - a == 1}, {a, c[1][t]}]")
+        .unwrap(),
+      "{{a -> 1, c[1][t] -> 2}}"
+    );
+  }
+
   // Radical equation whose coefficients are exact trigonometric values: both
   // roots must satisfy the original equation.
   #[test]
@@ -5705,6 +5752,28 @@ mod solve {
   // Regression: the negated reciprocal root of x^2 == 1/2 was left as a raw
   // `UnaryOp[Minus, …]` wrapper that printed as `-2^(-1/2)`; wolframscript
   // shows `-(1/Sqrt[2])`. Both roots must share the canonical reciprocal form.
+  // A radical over a negative integer kept its sign only on paper:
+  // Sqrt[2]/(-1) evaluated to Sqrt[2], so these roots came out negated.
+  #[test]
+  fn linear_root_with_negative_radical_constant() {
+    assert_eq!(
+      interpret("Solve[-Sqrt[2] - y == 0, y]").unwrap(),
+      "{{y -> -Sqrt[2]}}"
+    );
+    assert_eq!(
+      interpret("Reduce[-Sqrt[2] - y == 0, y]").unwrap(),
+      "y == -Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Solve[{x^2 + y^2 == 1, x == 2 y}, {x, y}]").unwrap(),
+      "{{x -> -2/Sqrt[5], y -> -(1/Sqrt[5])}, {x -> 2/Sqrt[5], y -> 1/Sqrt[5]}}"
+    );
+    assert_eq!(
+      interpret("Solve[5 x^2 == 4, x]").unwrap(),
+      "{{x -> -2/Sqrt[5]}, {x -> 2/Sqrt[5]}}"
+    );
+  }
+
   #[test]
   fn solve_negated_reciprocal_root() {
     assert_eq!(
@@ -9629,6 +9698,83 @@ mod linear_programming {
 
 mod find_root {
   use super::*;
+
+  // An equation between lists is one equation per component.
+  #[test]
+  fn vector_equations_thread() {
+    assert_eq!(
+      interpret("FindRoot[{x, y} - {1, 1} == {1, 2}, {{x, 0}, {y, 0}}]")
+        .unwrap(),
+      "{x -> 2., y -> 3.}"
+    );
+  }
+
+  // `{var, x0, xmin, xmax}` specs in the multivariate form keep the search
+  // within the bounds; they used to be rejected as "variable must be a
+  // symbol".
+  #[test]
+  fn bounded_multivariate_specs() {
+    assert_eq!(
+      interpret(
+        "FindRoot[{x + y == 3, x - y == 1}, {{x, 1, 0, 5}, {y, 1, 0, 5}}]"
+      )
+      .unwrap(),
+      "{x -> 2., y -> 1.}"
+    );
+    assert_eq!(
+      interpret("Round[{x, y} /. FindRoot[{x^2 == 4, y == x}, {{x, 1, 0, 5}, {y, 1, 0, 5}}], 10^-9]")
+        .unwrap(),
+      "{2, 2}"
+    );
+  }
+
+  fn root_value(code: &str) -> (f64, f64) {
+    let re: f64 = interpret(&format!("Re[x /. {code}]"))
+      .unwrap()
+      .parse()
+      .unwrap();
+    let im: f64 = interpret(&format!("Im[x /. {code}]"))
+      .unwrap()
+      .parse()
+      .unwrap();
+    (re, im)
+  }
+
+  // An iterate that leaves the function's real domain used to abort the
+  // search with a spurious FindRoot::nlnum. Wolfram continues the damped
+  // Newton iteration in the complex plane.
+  #[test]
+  fn iterate_leaving_the_real_domain() {
+    let (re, im) = root_value(
+      "FindRoot[x Hypergeometric2F1[1/2, 1/2, 2, x] - 7/2/Pi, {x, 0}]",
+    );
+    assert!(
+      (re - 0.9212998367788913).abs() < 1e-12 && im.abs() < 1e-12,
+      "{re} {im}"
+    );
+    // The damping keeps this one real: the full step to -0.65 makes |f| worse.
+    let (re, im) = root_value("FindRoot[Log[x] + 3, {x, 0.5}]");
+    assert!(
+      (re - 0.04978706836786395).abs() < 1e-15 && im == 0.0,
+      "{re} {im}"
+    );
+  }
+
+  // A one-equation system in a list is that equation.
+  #[test]
+  fn single_equation_in_a_list() {
+    assert_eq!(
+      interpret(
+        "f1[x_] := Sin[x] - x/10; FindRoot[{f1[x] == 0}, {x, 8.4}, AccuracyGoal -> 30]"
+      )
+      .unwrap(),
+      "{x -> 8.423203932360492}"
+    );
+    assert_eq!(
+      interpret("FindRoot[{x^2 - 2}, {x, 1}]").unwrap(),
+      "{x -> 1.4142135623730951}"
+    );
+  }
 
   /// Regression: an equation wrapped in `/.` (`eq /. z -> c[i]`) was not
   /// evaluated before FindRoot rewrote it, so the residual never became a
@@ -13879,6 +14025,36 @@ mod interpolating_polynomial {
       interpret("Expand[InterpolatingPolynomial[{{1,1},{2,4},{3,9}}, x]]")
         .unwrap(),
       "x^2"
+    );
+  }
+
+  #[test]
+  fn hermite_value_and_slope_at_both_ends() {
+    assert_eq!(
+      interpret("Expand[InterpolatingPolynomial[{{{0},1,2},{{1},3,0}}, {x}]]")
+        .unwrap(),
+      "1 + 2*x + 2*x^2 - 2*x^3"
+    );
+  }
+
+  #[test]
+  fn hermite_slope_at_one_end_only() {
+    assert_eq!(
+      interpret("Expand[InterpolatingPolynomial[{{{0},1,2},{{1},3}}, {x}]]")
+        .unwrap(),
+      "1 + 2*x"
+    );
+  }
+
+  #[test]
+  fn hermite_second_derivative_and_plain_variable() {
+    // f(2)=1, f'(2)=0, f''(2)=2 and f(3)=5
+    assert_eq!(
+      interpret(
+        "With[{p = InterpolatingPolynomial[{{{2},1,0,2},{{3},5}}, x]}, {p /. x -> 2, D[p, x] /. x -> 2, D[p, {x, 2}] /. x -> 2, p /. x -> 3}]"
+      )
+      .unwrap(),
+      "{1, 0, 2, 5}"
     );
   }
 
@@ -20148,5 +20324,56 @@ mod rgbcolor_channels_clip {
       svg("RGBColor[0.48, 0.11, 1]")
     );
     assert_eq!(svg("RGBColor[2, -1, 0.5]"), svg("RGBColor[1, 0, 0.5]"));
+  }
+}
+
+mod find_minimum_variable_specs {
+  use super::*;
+
+  // Indexed variables (`n[j]`) used to be rejected as a bad variable spec.
+  #[test]
+  fn indexed_variables() {
+    assert_eq!(
+      interpret(
+        "FindMinimum[(n[1] - 1)^2 + (n[2] - 2)^2, {{n[1], 0.5}, {n[2], 0.5}}]"
+      )
+      .unwrap(),
+      "{0., {n[1] -> 1., n[2] -> 2.}}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[n[1] /. Last[FindMinimum[{(n[1] - 1)^2 + (n[2] - 2)^2, n[1] >= 0}, {{n[1], 0.5}, {n[2], 0.5}}]], 10^-6]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  // `{x, x0, x1}` names two starting values.
+  #[test]
+  fn two_starting_values() {
+    assert_eq!(
+      interpret("Round[x /. Last[FindMaximum[Sin[x], {x, 1, 2}]], 10^-6]")
+        .unwrap(),
+      "392699/250000"
+    );
+  }
+}
+
+mod nsolve_mixed_precision {
+  use super::*;
+
+  // Exact irrational coefficients mixed with machine numbers used to lose
+  // every root in the symbolic elimination.
+  #[test]
+  fn exact_and_machine_coefficients() {
+    assert_eq!(
+      interpret(
+        "Length[NSolve[x == ss (Sqrt[3] Cos[Pi/24] - Sin[Pi/24]) + Sin[Pi/24] && \
+         y == ss (Sqrt[2] - Cos[Pi/24]) + Cos[Pi/24] && (x - 0.04)^2 + (y - 1.0)^2 == 0.1, {x, y, ss}]]"
+      )
+      .unwrap(),
+      "2"
+    );
   }
 }

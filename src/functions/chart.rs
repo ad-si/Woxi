@@ -3,9 +3,10 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::graphics::{Color, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  BinSpec, DEFAULT_HEIGHT, DEFAULT_WIDTH, HistogramHeight, MarginOverrides,
-  PLOT_COLORS, RESOLUTION_SCALE, generate_bar_svg, generate_histogram_svg,
-  html_escape, parse_image_size, plot_label_extra_lines, svg_header,
+  BinSpec, DEFAULT_HEIGHT, DEFAULT_WIDTH, HistogramHeight, LegendLayout,
+  MarginOverrides, PLOT_COLORS, RESOLUTION_SCALE, generate_bar_svg,
+  generate_histogram_svg, html_escape, parse_image_size,
+  plot_label_extra_lines, svg_header,
 };
 
 /// Extract grouped values from the first argument.
@@ -555,6 +556,8 @@ pub(crate) struct ChartOptions {
   /// how to derive default labels from the input (e.g. Association keys)
   /// should populate `chart_legends` themselves when this is true.
   pub chart_legends_auto: bool,
+  /// `LegendAppearance`: a column beside the plot, or one row below it.
+  pub legend_layout: LegendLayout,
   pub plot_range_x: Option<(f64, f64)>,
   pub plot_range_y: Option<(f64, f64)>,
   /// `BarOrigin -> Left` (or `Right`) renders horizontal bars.
@@ -1783,6 +1786,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     chart_style_scheme: None,
     chart_legends: Vec::new(),
     chart_legends_auto: false,
+    legend_layout: LegendLayout::Column,
     plot_range_x: None,
     plot_range_y: None,
     bar_origin_left: false,
@@ -1849,7 +1853,13 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             let val = evaluate_expr_to_expr(replacement)
               .unwrap_or_else(|_| replacement.clone());
             if let Expr::List(items) = &val {
-              for item in items {
+              // `{groupLabels, barLabels}` — the first sublist names the
+              // groups, which are what the category axis shows.
+              let labels = match items.first() {
+                Some(Expr::List(group_labels)) => group_labels,
+                _ => items,
+              };
+              for item in labels {
                 if let Some(cl) = expr_to_chart_label(item) {
                   opts.chart_labels.push(cl);
                 }
@@ -1880,6 +1890,14 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
               opts.axes_label = Some((x, y));
             }
           }
+        }
+        "LegendAppearance" => {
+          opts.legend_layout = if matches!(replacement, Expr::String(s) if s == "Row")
+          {
+            LegendLayout::Row
+          } else {
+            LegendLayout::Column
+          };
         }
         "ChartLegends" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -2037,6 +2055,20 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect(),
     None => Vec::new(),
   };
+  // Every label of one chart shares its `Placed` position; `Above` puts the
+  // labels over the bars.
+  let bar_label_placement = match &opts.labeling_function {
+    Some(func)
+      if groups
+        .iter()
+        .flat_map(|g| g.iter())
+        .filter_map(|&v| labeling_function_label(func, v))
+        .any(|(_, pos)| pos.as_deref() == Some("Above")) =>
+    {
+      crate::functions::plot::BarLabelPlacement::Above
+    }
+    _ => crate::functions::plot::BarLabelPlacement::Below,
+  };
 
   if opts.bar_origin_left {
     let svg = crate::functions::plot::generate_horizontal_bar_svg(
@@ -2076,10 +2108,12 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|(x, y)| (x.as_str(), y.as_str())),
     &opts.chart_style,
     &opts.chart_legends,
+    opts.legend_layout,
     // PlotRange is in chart coordinates (first bar centred at x = 1).
     opts.plot_range_x.map(|(lo, hi)| (lo - 0.5, hi - 0.5)),
     opts.plot_range_y,
     &bar_labels,
+    bar_label_placement,
     opts.stacked,
     opts.ticks,
     &opts.epilog,
@@ -2122,6 +2156,20 @@ fn labeling_function_label(
     }
     other => (other, None),
   };
+  // `Style[expr, …]` only chooses how the label is set, so its content is
+  // what gets labelled (and therefore number-formatted); a result of `Null`
+  // (`If[#1 != 0, …]` with a false condition) means "no label here".
+  let mut inner = inner;
+  while let Expr::FunctionCall { name, args } = inner {
+    if name == "Style" && !args.is_empty() {
+      inner = &args[0];
+    } else {
+      break;
+    }
+  }
+  if matches!(inner, Expr::Identifier(s) if s == "Null") {
+    return None;
+  }
   let text = match inner {
     Expr::String(s) => s.clone(),
     // Bar values are carried as f64, so integer data arrives as e.g. `10904.0`.

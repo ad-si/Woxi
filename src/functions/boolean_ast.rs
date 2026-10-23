@@ -1276,24 +1276,25 @@ fn boolean_table_levels(
   Ok(Expr::List(results.into()))
 }
 
-/// Read one variable-group argument: a list of symbols, or a bare symbol
-/// standing for a one-element group.
-fn boolean_table_group(spec: &Expr) -> Result<Vec<String>, InterpreterError> {
+/// Read one variable-group argument: a list of variables, or a bare symbol
+/// standing for a one-element group. A variable may be indexed (`x[1]`).
+fn boolean_table_group(spec: &Expr) -> Result<Vec<Expr>, InterpreterError> {
   // BooleanTable holds nothing, so a group given as an expression
-  // (`Take[vars, 2]`, a symbol bound to a list, …) is the list it evaluates
-  // to. A symbol with no value evaluates to itself and stays a bare group.
+  // (`Take[vars, 2]`, a symbol bound to a list, `Array[x, 3]`, …) is the list
+  // it evaluates to. A symbol with no value evaluates to itself and stays a
+  // bare group.
   let spec = &evaluate_expr_to_expr(spec)?;
   match spec {
     Expr::List(items) => items
       .iter()
       .map(|item| match item {
-        Expr::Identifier(name) => Ok(name.clone()),
+        Expr::Identifier(_) | Expr::FunctionCall { .. } => Ok(item.clone()),
         _ => Err(InterpreterError::EvaluationError(
           "BooleanTable: variables must be symbols".into(),
         )),
       })
       .collect(),
-    Expr::Identifier(name) => Ok(vec![name.clone()]),
+    Expr::Identifier(_) => Ok(vec![spec.clone()]),
     _ => Err(InterpreterError::EvaluationError(
       "BooleanTable: variable arguments must be lists of symbols".into(),
     )),
@@ -1337,10 +1338,31 @@ pub fn boolean_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect(),
     ]
   } else {
-    args[1..]
-      .iter()
-      .map(boolean_table_group)
-      .collect::<Result<_, _>>()?
+    // Indexed variables (`x[1]`) are renamed to fresh symbols in the body,
+    // so the substitution below works on names alone.
+    let mut renamed_body = body.clone();
+    let mut fresh_count = 0usize;
+    let mut groups = Vec::with_capacity(args.len() - 1);
+    for spec in &args[1..] {
+      let mut names = Vec::new();
+      for var in boolean_table_group(spec)? {
+        match &var {
+          Expr::Identifier(name) => names.push(name.clone()),
+          other => {
+            let fresh = format!("$BooleanTableVar{fresh_count}$");
+            fresh_count += 1;
+            renamed_body = crate::functions::polynomial_ast::substitute_expr(
+              &renamed_body,
+              other,
+              &Expr::Identifier(fresh.clone()),
+            );
+            names.push(fresh);
+          }
+        }
+      }
+      groups.push(names);
+    }
+    return boolean_table_levels(&renamed_body, &groups);
   };
 
   boolean_table_levels(body, &groups)
@@ -2942,14 +2964,37 @@ pub fn boolean_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(truth_table_to_expr(&table, &vars[..n]))
 }
 
-/// BooleanMinimize[expr] - Find the minimal sum-of-products form.
+/// BooleanMinimize[expr] or BooleanMinimize[expr, form] - Find the minimal
+/// sum-of-products form, or with `"CNF"` the minimal product-of-sums form.
 pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
-    return Ok(unevaluated("BooleanMinimize", args));
+  match args {
+    [expr] => minimize_dnf(expr, args),
+    [expr, Expr::String(form)] => match form.as_str() {
+      "DNF" | "SOP" => minimize_dnf(expr, args),
+      // Minimize the complement and negate the result back into a CNF.
+      "CNF" | "POS" => {
+        let dnf = minimize_dnf(&call1("Not", expr.clone()), args)?;
+        if matches!(&dnf, Expr::FunctionCall { name, .. } if name == "BooleanMinimize")
+        {
+          return Ok(Expr::FunctionCall {
+            name: "BooleanMinimize".to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+        evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "BooleanConvert".to_string(),
+          args: vec![call1("Not", dnf), Expr::String("CNF".to_string())].into(),
+        })
+      }
+      _ => Ok(unevaluated("BooleanMinimize", args)),
+    },
+    _ => Ok(unevaluated("BooleanMinimize", args)),
   }
+}
 
-  let expr = &args[0];
-
+/// The minimal sum-of-products form of `expr`; `args` is what the call
+/// returns unevaluated when `expr` has too many variables to minimize.
+fn minimize_dnf(expr: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Handle trivial cases
   if matches!(expr, Expr::Identifier(s) if s == "True") {
     return Ok(bool_expr(true));

@@ -2827,6 +2827,39 @@ mod module_lexical_scoping {
 mod dynamic_module_scoping {
   use super::*;
 
+  // Trailing options are for the front end; the body evaluates as in Module.
+  #[test]
+  fn options_are_ignored() {
+    assert_eq!(
+      interpret("DynamicModule[{a = 1}, a + 1, SaveDefinitions -> True]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  // A Module with the wrong number of arguments stays unevaluated with
+  // Wolfram's message instead of aborting the evaluation.
+  #[test]
+  fn module_arity_messages() {
+    assert_eq!(
+      interpret("Module[{a = 1}, a + 1, x]").unwrap(),
+      "Module[{a = 1}, a + 1, x]"
+    );
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      [
+        "Module::argrx: Module called with 3 arguments; 2 arguments are expected."
+      ]
+    );
+    assert_eq!(interpret("Module[{a}]").unwrap(), "Module[{a}]");
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      [
+        "Module::argmu: Module called with 1 argument; 2 or more arguments are expected."
+      ]
+    );
+  }
+
   #[test]
   fn dynamic_module_returns_its_body() {
     clear_state();

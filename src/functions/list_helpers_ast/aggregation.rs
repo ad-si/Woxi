@@ -2233,7 +2233,88 @@ fn count_into_edges(values: &[f64], edges: &[f64]) -> Vec<i128> {
 /// HistogramList[data, n] - target bin count
 /// HistogramList[data, {dx}] - explicit bin width
 /// HistogramList[data, {min, max, dx}] - explicit bin specification
+/// The heights a `HistogramList` height specification asks for, from the
+/// bin edges and counts. Probabilities and cumulative heights are machine
+/// numbers in Wolfram even for exact counts, densities stay exact, and a
+/// function is applied to the edges and counts. Totals are over the binned
+/// points only. None for an unknown specification name.
+fn histogram_heights(
+  hspec: &Expr,
+  edges: &crate::ExprList,
+  counts: &crate::ExprList,
+) -> Result<Option<Expr>, InterpreterError> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let edges_list = Expr::List(edges.clone());
+  let counts_list = Expr::List(counts.clone());
+  let Expr::String(name) = hspec else {
+    return eval(Expr::CurriedCall {
+      func: Box::new(hspec.clone()),
+      args: vec![edges_list, counts_list],
+    })
+    .map(Some);
+  };
+  let total = eval(call("Total", vec![counts_list.clone()]))?;
+  let widths = || -> Vec<Expr> {
+    edges
+      .windows(2)
+      .map(|w| minus2(w[1].clone(), w[0].clone()))
+      .collect()
+  };
+  let per_bin =
+    |f: &dyn Fn(&Expr, &Expr) -> Expr| -> Result<Expr, InterpreterError> {
+      let items: Vec<Expr> = counts
+        .iter()
+        .zip(widths())
+        .map(|(c, w)| eval(f(c, &w)))
+        .collect::<Result<_, _>>()?;
+      Ok(Expr::List(items.into()))
+    };
+  let heights = match name.as_str() {
+    "Count" | "LogCount" => counts_list,
+    "Probability" => {
+      eval(call1("N", div2(counts_list.clone(), total.clone())))?
+    }
+    "PDF" | "ProbabilityDensity" => {
+      per_bin(&|c, w| div2(c.clone(), times2(total.clone(), w.clone())))?
+    }
+    "Intensity" => per_bin(&|c, w| div2(c.clone(), w.clone()))?,
+    "CDF" => eval(call1(
+      "Accumulate",
+      call1("N", div2(counts_list.clone(), total.clone())),
+    ))?,
+    "CumulativeCount" => {
+      eval(call1("Accumulate", call1("N", counts_list.clone())))?
+    }
+    // Wolfram leaves this one as an unevaluated call on the edges and counts.
+    "SurvivalFunction" => {
+      call("SurvivalFunction", vec![edges_list, counts_list])
+    }
+    _ => return Ok(None),
+  };
+  Ok(Some(heights))
+}
+
 pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // HistogramList[data, bspec, hspec]: the counts of the two-argument form,
+  // turned into the requested heights.
+  if args.len() == 3 {
+    let binned = if matches!(&args[1], Expr::Identifier(a) if a == "Automatic")
+    {
+      histogram_list_ast(&args[..1])?
+    } else {
+      histogram_list_ast(&args[..2])?
+    };
+    let Expr::List(parts) = &binned else {
+      return Ok(unevaluated("HistogramList", args));
+    };
+    let [Expr::List(edges), Expr::List(counts)] = parts.as_slice() else {
+      return Ok(unevaluated("HistogramList", args));
+    };
+    let Some(heights) = histogram_heights(&args[2], edges, counts)? else {
+      return Ok(unevaluated("HistogramList", args));
+    };
+    return Ok(Expr::List(vec![Expr::List(edges.clone()), heights].into()));
+  }
   let Expr::List(data) = &args[0] else {
     crate::emit_message(&format!(
       "HistogramList::ldata: {} is not a valid dataset or list of datasets.",

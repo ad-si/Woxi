@@ -15560,6 +15560,43 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   with_nintegrate_budget(|| nintegrate_ast_impl(args))
 }
 
+/// Whether `integrand` takes complex values with a nonzero imaginary part at
+/// some sampled point of the real range [lo, hi].
+fn integrand_is_complex_on(
+  integrand: &Expr,
+  var: &str,
+  lo: f64,
+  hi: f64,
+) -> bool {
+  let probe = |x: f64| -> bool {
+    if !x.is_finite() {
+      return false;
+    }
+    let substituted =
+      crate::syntax::substitute_variable(integrand, var, &Expr::Real(x));
+    let snapshot = crate::snapshot_warnings();
+    crate::push_quiet();
+    let value = crate::evaluator::evaluate_expr_to_expr(&substituted);
+    crate::pop_quiet();
+    crate::restore_warnings(snapshot);
+    value.is_ok_and(|v| {
+      crate::functions::math_ast::try_eval_to_f64(&v).is_none()
+        && crate::functions::math_ast::try_extract_complex_float(&v)
+          .is_some_and(|(_, im)| im != 0.0 && im.is_finite())
+    })
+  };
+  let points: Vec<f64> = match (lo.is_finite(), hi.is_finite()) {
+    (true, true) => [0.27, 0.61, 0.83]
+      .iter()
+      .map(|t| lo + (hi - lo) * t)
+      .collect(),
+    (true, false) => [0.7, 2.3, 5.1].iter().map(|d| lo + d).collect(),
+    (false, true) => [0.7, 2.3, 5.1].iter().map(|d| hi - d).collect(),
+    (false, false) => vec![-1.3, 0.4, 2.1],
+  };
+  points.into_iter().any(probe)
+}
+
 fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -16018,6 +16055,27 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let hi = *bounds.last().unwrap();
 
   let integrand = &args[0];
+
+  // A complex-valued integrand over a real range: its real and imaginary
+  // parts are integrated separately (the real-valued quadrature below would
+  // read every complex sample as missing). Detected by probing a few
+  // interior points.
+  if integrand_is_complex_on(integrand, &var_name, lo, hi) {
+    let part = |head: &str| -> Result<Expr, InterpreterError> {
+      let mut part_args = args.to_vec();
+      part_args[0] = call1(head, integrand.clone());
+      nintegrate_ast_impl(&part_args)
+    };
+    let re = part("Re")?;
+    let im = part("Im")?;
+    if let (Some(re), Some(im)) = (
+      crate::functions::math_ast::try_eval_to_f64(&re),
+      crate::functions::math_ast::try_eval_to_f64(&im),
+    ) {
+      return Ok(build_complex_float_expr(re, im));
+    }
+    return Ok(unevaluated("NIntegrate", args));
+  }
 
   // Gaussian fast path: detect `Exp[α x²]` (or `E^(α x²)`) where α is a
   // numeric constant w.r.t. the integration variable. Use the closed

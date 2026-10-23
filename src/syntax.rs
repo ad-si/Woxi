@@ -286,7 +286,7 @@ fn private_use_glyph(c: char) -> Option<&'static str> {
     '\u{F3D4}' => "\u{2194}",              // UndirectedEdge: ↔
     '\u{F3D3}' => "\u{2223}",              // Conditioned: ∣
     '\u{F3D2}' => "\u{223C}",              // Distributed: ∼
-    '\u{F4A0}' | '\u{F3C4}' => "\u{2A2F}", // Cross: ⨯
+    '\u{F4A0}' => "\u{2A2F}", // Cross: ⨯
     '\u{F3DA}' => "\u{2297}",              // TensorProduct: ⊗
     '\u{F424}' => "\u{2270}",              // NotLessSlantEqual: ≰
     '\u{F429}' => "\u{2271}",              // NotGreaterSlantEqual: ≱
@@ -621,6 +621,38 @@ fn is_letterlike_symbol_char(c: char) -> bool {
   )
 }
 
+/// Whether `expr` is a variant without `Expr` children, whose drop never
+/// recurses.
+fn is_childless_variant(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(_, _)
+      | Expr::String(_)
+      | Expr::Identifier(_)
+      | Expr::Slot(_)
+      | Expr::SlotSequence(_)
+      | Expr::Pattern { .. }
+      | Expr::Constant(_)
+      | Expr::Raw(_)
+      | Expr::Image { .. }
+      | Expr::Graphics { .. }
+  )
+}
+
+fn push_compound_children(
+  children: impl IntoIterator<Item = Expr>,
+  stack: &mut Vec<Expr>,
+) {
+  for child in children {
+    if !is_childless_variant(&child) {
+      stack.push(child);
+    }
+  }
+}
+
 /// Extract all child `Expr` nodes from a variant, leaving it childless.
 /// Used by the iterative `Drop` implementation.
 fn take_expr_children(expr: &mut Expr, stack: &mut Vec<Expr>) {
@@ -644,11 +676,19 @@ fn take_expr_children(expr: &mut Expr, stack: &mut Vec<Expr>) {
     Expr::CompoundExpr(children) => {
       stack.append(children);
     }
+    // Only children that own further children go on the work stack; leaves
+    // (the numbers of a large data array) are dropped right here, so freeing
+    // a packed-array-like list does not copy every element through `stack`.
+    // A shared list that other clones still hold only loses a reference.
     Expr::List(children) => {
-      stack.extend(std::mem::take(children));
+      if let Some(items) = std::mem::take(children).into_unique_elements() {
+        push_compound_children(items, stack);
+      }
     }
     Expr::FunctionCall { args, .. } => {
-      stack.extend(std::mem::take(args));
+      if let Some(items) = std::mem::take(args).into_unique_elements() {
+        push_compound_children(items, stack);
+      }
     }
     Expr::Comparison { operands, .. } => {
       stack.append(operands);
@@ -889,6 +929,17 @@ impl Clone for Expr {
             head: head.clone(),
             structure: structure.clone(),
           }),
+
+          // A shared list clones by reference, however large.
+          Self::List(children) if children.is_shared() => {
+            results.push(Self::List(children.clone()));
+          }
+          Self::FunctionCall { name, args } if args.is_shared() => {
+            results.push(Self::FunctionCall {
+              name: name.clone(),
+              args: args.clone(),
+            });
+          }
 
           // Vec<Expr> children
           Self::List(children) => {
@@ -1362,6 +1413,20 @@ pub fn comparison_head_and_args(
 }
 
 use crate::Rule;
+
+/// The numerator and denominator of `Rational[n, d]`'s arguments, either of
+/// which may be a BigInteger.
+fn rational_int_parts(args: &[Expr]) -> Option<(BigInt, BigInt)> {
+  let part = |e: &Expr| match e {
+    Expr::Integer(n) => Some(BigInt::from(*n)),
+    Expr::BigInteger(n) => Some(n.clone()),
+    _ => None,
+  };
+  match args {
+    [n, d] => Some((part(n)?, part(d)?)),
+    _ => None,
+  }
+}
 use pest::iterators::Pair;
 
 /// Extract the exponent expression from an `ImplicitPowerSuffix` pair.
@@ -2056,9 +2121,10 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       result
     }
     Rule::FunctionCall => parse_function_call(&pair),
-    Rule::Expression | Rule::ExpressionNoImplicit | Rule::ConditionExpr => {
-      parse_expression(pair)
-    }
+    Rule::Expression
+    | Rule::ExpressionNoImplicit
+    | Rule::ConditionExpr
+    | Rule::PostfixExpression => parse_expression(pair),
     _ => pair_to_expr_inner(pair),
   }
 }
@@ -3444,10 +3510,11 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       call1("Ceiling", operand)
     }
     // `〈a, b, …〉`: the typeset bracket form for AngleBracket[a, b, …].
-    Rule::AngleBrackets => Expr::FunctionCall {
-      name: "AngleBracket".to_string(),
-      args: pair.into_inner().map(pair_to_expr).collect(),
-    },
+    Rule::AngleBrackets => bracket_pair_call("AngleBracket", pair),
+    Rule::BracketingBars => bracket_pair_call("BracketingBar", pair),
+    Rule::DoubleBracketingBars => {
+      bracket_pair_call("DoubleBracketingBar", pair)
+    }
     Rule::Increment => {
       // x++ -> Increment[x]; chained `x++++` -> Increment[Increment[x]].
       // Grammar emits one base pair followed by N `IncrementOp` pairs
@@ -3687,6 +3754,29 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
   }
 }
 
+/// `Head[items…]` for a bracket pair (〈a, b〉, |a|, ‖a‖), applied to any
+/// `[args]` that follow it: `〈a〉[t]` is `AngleBracket[a][t]`.
+fn bracket_pair_call(head: &str, pair: Pair<Rule>) -> Expr {
+  let (items, calls): (Vec<Pair<Rule>>, Vec<Pair<Rule>>) = pair
+    .into_inner()
+    .partition(|p| p.as_rule() != Rule::BracketArgs);
+  let mut result = Expr::FunctionCall {
+    name: head.to_string(),
+    args: items.into_iter().map(pair_to_expr).collect(),
+  };
+  for call in calls {
+    result = Expr::CurriedCall {
+      func: Box::new(result),
+      args: call
+        .into_inner()
+        .filter(|c| c.as_str() != "[" && c.as_str() != "]" && c.as_str() != ",")
+        .map(pair_to_expr)
+        .collect(),
+    };
+  }
+  result
+}
+
 /// Apply a `BracketArgs` pair to the factor of an implicit product it
 /// follows: the call on an extracted part, `s[[2]][x]` in `2 s[[2]][x]`.
 fn apply_implicit_factor_call(base: Expr, args: Pair<Rule>) -> Expr {
@@ -3710,7 +3800,10 @@ fn parse_postfix_function(pair: Pair<Rule>) -> Expr {
   // SimpleAnonymousFunction (`#&`, `#+1&`) already parses itself into a
   // Function{body} and consumes its own trailing "&" — wrapping it again
   // would nest a second Slot scope and break `#` binding.
-  if matches!(inner.as_rule(), Rule::SimpleAnonymousFunction) {
+  if matches!(
+    inner.as_rule(),
+    Rule::SimpleAnonymousFunction | Rule::PostfixExpression
+  ) {
     return pair_to_expr(inner);
   }
   let func = pair_to_expr(inner);
@@ -4467,6 +4560,14 @@ fn parse_expression_inner(
           term_was_implicit_times.push(false);
         }
       }
+      Rule::PartIndexSuffix => {
+        // A part of a suffixed term: m\[Transpose][[2]].
+        if let Some(last) = terms.pop() {
+          term_was_implicit_times.pop();
+          terms.push(apply_part_index_suffix(last, item));
+          term_was_implicit_times.push(false);
+        }
+      }
       Rule::TransposeSuffix => {
         // expr \[Transpose] → Transpose[expr]
         if let Some(last) = terms.pop() {
@@ -5072,6 +5173,26 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
   let mut prev_end = src_start;
   for (idx, child) in children.iter().enumerate() {
     let span = child.as_span();
+    if child.as_rule() == Rule::CompoundPostfixSuffix {
+      let trailing = count_separators(prev_end, span.start());
+      for _ in 0..trailing {
+        exprs.push(null_expr());
+      }
+      let mut body = if exprs.len() == 1 {
+        exprs.pop().unwrap()
+      } else {
+        Expr::CompoundExpr(std::mem::take(&mut exprs))
+      };
+      for func in child.clone().into_inner() {
+        body = Expr::Postfix {
+          expr: Box::new(body),
+          func: Box::new(parse_postfix_function(func)),
+        };
+      }
+      exprs.push(body);
+      prev_end = span.end();
+      continue;
+    }
     if child.as_rule() == Rule::CompoundAnonSuffix {
       // Every `;` between the last statement and the `&` is a statement of
       // its own — `a; &` is `Function[CompoundExpression[a, Null]]`, the
@@ -5332,7 +5453,6 @@ pub const CONTINUING_NAMED_OPERATORS: &[&str] = &[
   "\u{F4A1}",
   "\\[Cross]",
   "\u{F4A0}",
-  "\u{F3C4}",
   "\u{2A2F}",
   "\\[TensorProduct]",
   "\u{F3DA}",
@@ -5478,7 +5598,7 @@ fn base_operator_precedence(op: &str) -> u8 {
     "\\[TildeTilde]" | "\u{2248}" => 21, // TildeTilde (same level as comparisons)
     // Cross and TensorProduct bind tighter than Dot in Wolfram
     // (Precedence 500 and 495 vs Dot's 490): a.b\[Cross]c is a.(b\[Cross]c).
-    "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" => 43, // Cross (above TensorProduct)
+    "\\[Cross]" | "\u{F4A0}" | "\u{2A2F}" => 43, // Cross (above TensorProduct)
     "\\[TensorProduct]" | "\u{F3DA}" => 42, // TensorProduct (just above Dot)
     "\\[Cap]" | "\u{2322}" => 36,           // Cap (⌢, infix → Cap[a, b])
     "\\[Cup]" | "\u{2323}" => 36,           // Cup (⌣, infix → Cup[a, b])
@@ -5775,7 +5895,7 @@ fn build_expr_with_precedence(
 /// Is this operator token one of the spellings of the `⨯` (`Cross`) infix
 /// operator?
 fn is_cross_op(op_str: &str) -> bool {
-  matches!(op_str, "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}")
+  matches!(op_str, "\\[Cross]" | "\u{F4A0}" | "\u{2A2F}")
 }
 
 /// `p : v` where `p` is not a bare name: `Optional[p, v]`, and `sym : v`:
@@ -6039,7 +6159,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     // Wedge and Vee are flat: a ⋀ b ⋀ c -> Wedge[a, b, c].
     "\\[Wedge]" | "\u{22C0}" => build_flat_op("Wedge", left, right),
     "\\[Vee]" | "\u{22C1}" => build_flat_op("Vee", left, right),
-    "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" => {
+    "\\[Cross]" | "\u{F4A0}" | "\u{2A2F}" => {
       // Cross is Flat/associative — flatten chains: a ⨯ b ⨯ c → Cross[a, b, c].
       let mut parts = Vec::new();
       match left {
@@ -7945,16 +8065,12 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
       Expr::FunctionCall { name, args }
         if name == "Rational"
           && args.len() == 2
-          && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+          && negated_negative_integer(&args[0]).is_some() =>
       {
-        let n = if let Expr::Integer(n) = &args[0] {
-          *n
-        } else {
-          return None;
-        };
-        let pos_rat =
-          call("Rational", vec![Expr::Integer(-n), args[1].clone()]);
-        if -n == 1 {
+        let pos = negated_negative_integer(&args[0])?;
+        let is_one = matches!(pos, Expr::Integer(1));
+        let pos_rat = call("Rational", vec![pos, args[1].clone()]);
+        if is_one {
           // Rational[-1, d] * x → x/d
           Some(div2(*right.clone(), args[1].clone()))
         } else {
@@ -7995,15 +8111,10 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
         Expr::FunctionCall { name: rn, args: ra }
           if rn == "Rational"
             && ra.len() == 2
-            && matches!(&ra[0], Expr::Integer(n) if *n < 0) =>
+            && negated_negative_integer(&ra[0]).is_some() =>
         {
-          let n = if let Expr::Integer(n) = &ra[0] {
-            *n
-          } else {
-            return None;
-          };
-          let pos_rat =
-            call("Rational", vec![Expr::Integer(-n), ra[1].clone()]);
+          let pos = negated_negative_integer(&ra[0])?;
+          let pos_rat = call("Rational", vec![pos, ra[1].clone()]);
           let mut new_args = vec![pos_rat];
           new_args.extend_from_slice(&args[1..]);
           Some(if new_args.len() == 1 {
@@ -10905,11 +11016,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           } = &args[0]
           && rname == "Rational"
           && rargs.len() == 2
-          && let Expr::Integer(n) = &rargs[0]
-          && let Expr::Integer(d) = &rargs[1]
-          && *n != 1
-          && *n != -1
-          && *d > 0
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && n.magnitude() != &num_bigint::BigUint::from(1u32)
+          && d.sign() == Sign::Plus
         {
           let inner = fmt(&args[1]);
           let inner_str = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
@@ -11573,27 +11682,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 Expr::BigFloat(digits, prec) if digits.starts_with('-') => {
                   Some(Some(Expr::BigFloat(digits[1..].to_string(), *prec)))
                 }
-                Expr::FunctionCall { name: rn, args: ra }
-                  if rn == "Rational"
-                    && ra.len() == 2
-                    && matches!(&ra[0], Expr::Integer(n) if *n < 0) =>
-                {
-                  if let Expr::Integer(n) = &ra[0] {
-                    if *n == -1 {
-                      // Rational[-1, d] → just Rational[1, d] = 1/d
-                      Some(Some(call(
-                        "Rational",
-                        vec![Expr::Integer(1), ra[1].clone()],
-                      )))
-                    } else {
-                      Some(Some(call(
-                        "Rational",
-                        vec![Expr::Integer(-n), ra[1].clone()],
-                      )))
-                    }
-                  } else {
-                    None
-                  }
+                Expr::FunctionCall { name: rn, .. } if rn == "Rational" => {
+                  negate_negative_rational(&fn_args[0]).map(Some)
                 }
                 _ => None,
               };
@@ -11967,11 +12057,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         } = left.as_ref()
         && rname == "Rational"
         && rargs.len() == 2
-        && let Expr::Integer(num) = &rargs[0]
-        && let Expr::Integer(den) = &rargs[1]
-        && *num != 1
-        && *num != -1
-        && *den > 0
+        && let Some((num, den)) = rational_int_parts(rargs)
+        && num.magnitude() != &num_bigint::BigUint::from(1u32)
+        && den.sign() == Sign::Plus
       {
         // Check if the right side is a Times containing I
         let right_has_i = |e: &Expr| -> bool {
@@ -17142,12 +17230,22 @@ fn negate_negative_rational(e: &Expr) -> Option<Expr> {
   if let Expr::FunctionCall { name, args } = e
     && name == "Rational"
     && args.len() == 2
-    && let Expr::Integer(n) = &args[0]
-    && *n < 0
+    && let Some(pos) = negated_negative_integer(&args[0])
   {
-    return Some(call("Rational", vec![Expr::Integer(-n), args[1].clone()]));
+    return Some(call("Rational", vec![pos, args[1].clone()]));
   }
   None
+}
+
+/// `-n` for a negative Integer or BigInteger `n`.
+fn negated_negative_integer(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+    Expr::BigInteger(n) if n.sign() == Sign::Minus => {
+      Some(Expr::BigInteger(-n))
+    }
+    _ => None,
+  }
 }
 
 fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {

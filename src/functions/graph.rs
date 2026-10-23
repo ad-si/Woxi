@@ -445,9 +445,17 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `EdgeRenderingFunction` receives the label as its third argument.
   let mut edge_labels: Vec<(Expr, Expr)> = Vec::new();
   let mut vertex_labels = false;
+  // `VertexLabels -> {v -> label, …}` names the label of individual
+  // vertices; a bare spec (`"Name"`, `Placed[…]`) applies to all of them.
+  let mut vertex_label_rules: Vec<(Expr, Expr)> = Vec::new();
+  let mut vertex_label_default: Option<Expr> = None;
+  let name_label_spec = Expr::String("Name".to_string());
   // `EdgeLabeling -> False` (GraphPlot's legacy switch) hides the labels.
   let mut edge_labeling = true;
   let mut vertex_shape: Option<String> = None;
+  // `VertexShapeFunction -> f` with a function draws each vertex as
+  // `f[{x, y}, name, {w, h}]`; the vertex label (if any) is still added.
+  let mut vertex_shape_func: Option<Expr> = None;
   // `VertexShape -> {v -> graphic, …}` (plus an optional bare default
   // applying to every vertex the list doesn't name) replaces a vertex's
   // default disk marker with an arbitrary picture — e.g. a Demonstration
@@ -519,10 +527,21 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "VertexLabels" => {
-          if let Expr::String(s) = replacement
-            && s == "Name"
-          {
-            vertex_labels = true;
+          let specs: &[Expr] = match replacement {
+            Expr::List(items) => items,
+            other => std::slice::from_ref(other),
+          };
+          for spec in specs {
+            if matches!(spec, Expr::Identifier(s) if s == "All") {
+              vertex_labels = true;
+              continue;
+            }
+            match crate::evaluator::dispatch::list_operations::as_rule(spec) {
+              Some((target, label)) => {
+                vertex_label_rules.push((target.clone(), label.clone()));
+              }
+              None => vertex_label_default = Some(spec.clone()),
+            }
           }
         }
         // `VertexLabeling -> True/False`: `GraphPlot`'s own legacy option
@@ -536,11 +555,11 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           edge_labeling =
             !matches!(replacement, Expr::Identifier(s) if s == "False");
         }
-        "VertexShapeFunction" => {
-          if let Expr::String(s) = replacement {
-            vertex_shape = Some(s.clone());
-          }
-        }
+        "VertexShapeFunction" => match replacement {
+          Expr::String(s) => vertex_shape = Some(s.clone()),
+          Expr::Identifier(s) if s == "None" || s == "Automatic" => {}
+          other => vertex_shape_func = Some(other.clone()),
+        },
         "VertexShape" => {
           let (rules, directives) = split_style_rules(replacement);
           vertex_shape_rules = rules;
@@ -1111,6 +1130,31 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {}
     }
 
+    // `VertexShapeFunction -> f` hands the drawing of the vertex to `f`.
+    if let Some(f) = &vertex_shape_func {
+      let point = Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+      let name = unwrap_vertex_style(&vertices[i]).0.clone();
+      let size = Expr::List(
+        vec![
+          Expr::Real(vertex_radius * 2.0),
+          Expr::Real(vertex_radius * 2.0),
+        ]
+        .into(),
+      );
+      if let Ok(drawn) =
+        crate::functions::list_helpers_ast::apply_func_to_n_args(
+          f,
+          &[point, name, size],
+        )
+      {
+        primitives.push(Expr::List(vec![drawn].into()));
+        if vertex_labels {
+          push_vertex_label(&mut primitives, &vertices[i], x, y, vertex_radius);
+        }
+        continue;
+      }
+    }
+
     // `VertexShape` replaces the default disk with a rendered picture
     // (typically a nested `Graph[…]`) inset at the vertex's position.
     let shape = vertex_shape_rules
@@ -1237,21 +1281,37 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
 
-    if vertex_labels {
-      // Strip any Style wrapper so the label shows the underlying vertex
-      // name (e.g. `3`, not `Style[3, Red]`), keeping the name itself as an
-      // expression (rather than pre-stringifying it) so a structured name
-      // like `Subscript[x, 1]` still typesets instead of showing its
-      // literal head name.
-      let label_expr = unwrap_vertex_style(&vertices[i]).0;
+    let label_spec = vertex_label_rules
+      .iter()
+      .find(|(target, _)| vertex_matches_rule(&vertices[i], target))
+      .map(|(_, l)| l)
+      .or(vertex_label_default.as_ref())
+      .or(if vertex_labels {
+        Some(&name_label_spec)
+      } else {
+        None
+      });
+    if let Some((label, placement)) = label_spec.and_then(|spec| {
+      resolve_vertex_label(spec, unwrap_vertex_style(&vertices[i]).0)
+    }) {
+      // The label keeps the vertex name as an expression (rather than
+      // pre-stringifying it) so a structured name like `Subscript[x, 1]`
+      // still typesets instead of showing its literal head name.
       primitives.push(call(
         "RGBColor",
         vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
       ));
-      let styled = call("Style", vec![label_expr.clone(), Expr::Integer(10)]);
-      let point = Expr::List(
-        vec![Expr::Real(x), Expr::Real(y + vertex_radius + 0.08)].into(),
-      );
+      let styled = call("Style", vec![label, Expr::Integer(10)]);
+      let gap = vertex_radius + 0.08;
+      let (dx, dy) = match placement.as_str() {
+        "Below" => (0.0, -gap),
+        "Left" => (-gap, 0.0),
+        "Right" => (gap, 0.0),
+        "Center" => (0.0, 0.0),
+        _ => (0.0, gap),
+      };
+      let point =
+        Expr::List(vec![Expr::Real(x + dx), Expr::Real(y + dy)].into());
       primitives.push(call("Text", vec![styled, point]));
     }
   }
@@ -1458,6 +1518,31 @@ enum EdgeShape {
   /// A function applied as `f[{pt, …}, edge]` whose result is used as
   /// the graphics for that edge.
   Func(Expr),
+}
+
+/// Append the name label drawn above a vertex.
+fn push_vertex_label(
+  primitives: &mut Vec<Expr>,
+  vertex: &Expr,
+  x: f64,
+  y: f64,
+  vertex_radius: f64,
+) {
+  // Strip any Style wrapper so the label shows the underlying vertex
+  // name (e.g. `3`, not `Style[3, Red]`), keeping the name itself as an
+  // expression (rather than pre-stringifying it) so a structured name
+  // like `Subscript[x, 1]` still typesets instead of showing its
+  // literal head name.
+  let label_expr = unwrap_vertex_style(vertex).0;
+  primitives.push(call(
+    "RGBColor",
+    vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+  ));
+  let styled = call("Style", vec![label_expr.clone(), Expr::Integer(10)]);
+  let point = Expr::List(
+    vec![Expr::Real(x), Expr::Real(y + vertex_radius + 0.08)].into(),
+  );
+  primitives.push(call("Text", vec![styled, point]));
 }
 
 /// How a vertex is drawn, as `VertexRenderingFunction -> …` asks for it.
@@ -3665,6 +3750,32 @@ fn split_style_rules(expr: &Expr) -> (Vec<(Expr, Expr)>, Vec<Expr>) {
     }
   }
   (rules, directives)
+}
+
+/// What a `VertexLabels` spec shows for `vertex` and where it goes
+/// (`Above` unless `Placed[label, pos]` says otherwise). `"Name"` and
+/// `Automatic` stand for the vertex itself; `None` shows nothing.
+fn resolve_vertex_label(spec: &Expr, vertex: &Expr) -> Option<(Expr, String)> {
+  let (inner, placement) = match spec {
+    Expr::FunctionCall { name, args }
+      if name == "Placed" && !args.is_empty() =>
+    {
+      let placement = match args.get(1) {
+        Some(Expr::Identifier(p)) => p.clone(),
+        _ => "Above".to_string(),
+      };
+      (&args[0], placement)
+    }
+    other => (other, "Above".to_string()),
+  };
+  match inner {
+    Expr::Identifier(s) if s == "None" => None,
+    Expr::Identifier(s) if s == "Automatic" => {
+      Some((vertex.clone(), placement))
+    }
+    Expr::String(s) if s == "Name" => Some((vertex.clone(), placement)),
+    other => Some((other.clone(), placement)),
+  }
 }
 
 /// Whether a vertex expression is the one a `VertexStyle` rule names.

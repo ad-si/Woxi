@@ -550,6 +550,29 @@ mod part_anonymous_function {
 mod postfix_with_anonymous_function {
   use super::*;
 
+  // The right side of `//` is any expression binding tighter than `//`;
+  // `x // f /@ # &` used to be a parse error.
+  #[test]
+  fn right_side_is_a_whole_operator_expression() {
+    for (code, full_form) in [
+      ("x // f /@ # &", "Function[Map[f, Slot[1]]][x]"),
+      ("x // f@#&", "Function[f[Slot[1]]][x]"),
+      ("x // a + b", "Plus[a, b][x]"),
+      ("x // f /. f -> g", "ReplaceAll[f, Rule[f, g]][x]"),
+      ("x // f[#]& /@ y", "Map[Function[f[Slot[1]]], y][x]"),
+      ("x // f & // g", "g[Function[f][x]]"),
+      ("x // f = 3", "Set[f[x], 3]"),
+      ("x // f === g", "SameQ[f, g][x]"),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[FullForm[Hold[{code}]]]")).unwrap(),
+        format!("Hold[{full_form}]"),
+        "{code}"
+      );
+    }
+    assert_eq!(interpret("{1, 2} // (# + 1 &) /@ # &").unwrap(), "{2, 3}");
+  }
+
   #[test]
   fn postfix_at_with_simple_anonymous() {
     assert_eq!(interpret("#^2& @ 3").unwrap(), "9");

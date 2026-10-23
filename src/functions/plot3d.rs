@@ -3218,6 +3218,9 @@ struct StyleState3D {
   /// `VertexTextureCoordinates` of the polygon being added: one `(u, v)`
   /// per corner, placing `texture` on it.
   texture_coords: Option<std::sync::Arc<Vec<(f64, f64)>>>,
+  /// The font size `Style[…, size]` gives the `Text` labels inside it.
+  /// `None` leaves the default 12.
+  font_size: Option<f64>,
 }
 
 impl Default for StyleState3D {
@@ -3237,6 +3240,7 @@ impl Default for StyleState3D {
       point_size: None,
       texture: None,
       texture_coords: None,
+      font_size: None,
     }
   }
 }
@@ -4665,7 +4669,7 @@ fn push_text3d_label(
     Some(s) => (
       s.svg(),
       s.visible_char_count(),
-      s.font_size.unwrap_or(12.0),
+      s.font_size.or(style.font_size).unwrap_or(12.0),
       s.color,
     ),
     None => (String::new(), 0, 12.0, None),
@@ -5205,6 +5209,24 @@ fn collect_3d_primitives(
             // rather than dropping them.
             None => prims.extend(sub),
           }
+        }
+        // `Style[prims, directives…]` applies its directives (colours, a
+        // numeric font size, …) to its first argument only, so they must
+        // not leak into the primitives that follow it in the enclosing list.
+        "Style" if args.len() >= 2 => {
+          let saved = style.clone();
+          for directive in &args[1..] {
+            let evaluated =
+              evaluate_expr_to_expr(directive).unwrap_or(directive.clone());
+            match try_eval_to_f64(&evaluated) {
+              Some(size) if size > 0.0 => style.font_size = Some(size),
+              _ => {
+                apply_3d_directive(&evaluated, style);
+              }
+            }
+          }
+          collect_3d_primitives(&args[0], style, prims);
+          *style = saved;
         }
         _ => {
           // Try as directive first
@@ -7219,6 +7241,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             point_size: None,
             texture: None,
             texture_coords: None,
+            font_size: None,
           },
         ),
       };
@@ -12794,10 +12817,10 @@ fn evaluate_parametric_at_t(
   tvar: &str,
   tval: f64,
 ) -> Option<(f64, f64, f64)> {
+  // The plot sampler's own evaluator: it also resolves a component that
+  // depends on `t` only through a variable's value (`c = ArcTan[t/5]`).
   let eval_one = |body: &Expr| -> Option<f64> {
-    let sub = substitute_var(body, tvar, &Expr::Real(tval));
-    let result = evaluate_expr_to_expr(&sub).ok()?;
-    try_eval_to_f64(&result)
+    crate::functions::plot::evaluate_at_point(body, tvar, tval)
   };
   let x = eval_one(fx)?;
   let y = eval_one(fy)?;
@@ -13064,10 +13087,7 @@ fn evaluate_parametric_at_uv(
   vval: f64,
 ) -> Option<(f64, f64, f64)> {
   let eval_one = |body: &Expr| -> Option<f64> {
-    let sub1 = substitute_var(body, uvar, &Expr::Real(uval));
-    let sub2 = substitute_var(&sub1, vvar, &Expr::Real(vval));
-    let result = evaluate_expr_to_expr(&sub2).ok()?;
-    try_eval_to_f64(&result)
+    crate::functions::plot::evaluate_at_xy(body, uvar, vvar, uval, vval)
   };
   let x = eval_one(fx)?;
   let y = eval_one(fy)?;

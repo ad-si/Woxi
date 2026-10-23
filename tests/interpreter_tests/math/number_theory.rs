@@ -5033,6 +5033,15 @@ mod cases {
     // Machine reals return only precision-justified terms.
     assert_case(r#"ContinuedFraction[3.245]"#, r#"{3, 4, 12}"#);
   }
+  // A real with no nearby simple fraction (Rationalize keeps it Real) used
+  // to recurse until the stack overflowed.
+  #[test]
+  fn continued_fraction_real_without_simple_fraction() {
+    assert_case(
+      r#"ContinuedFraction[Cos[0.3]]"#,
+      r#"{0, 1, 21, 2, 1, 1, 3, 3, 1, 4, 1, 1, 1, 3, 1, 5, 11, 2}"#,
+    );
+  }
   #[test]
   fn continued_fraction_real_2() {
     assert_case(r#"ContinuedFraction[2.5]"#, r#"{2}"#);

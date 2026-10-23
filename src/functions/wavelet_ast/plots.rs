@@ -378,11 +378,16 @@ fn matrix_or_image_plot(
       .collect::<Vec<_>>()
       .into(),
   );
-  if image {
-    call("Image", &[matrix_expr])
-  } else {
-    call("MatrixPlot", &[matrix_expr])
-  }
+  // Plot options (ColorFunction, Frame, ImageSize, …) go to the underlying
+  // plot / image constructor unchanged.
+  let mut plot_args = vec![matrix_expr];
+  plot_args.extend(
+    args
+      .iter()
+      .filter(|a| matches!(a, Expr::Rule { .. }))
+      .cloned(),
+  );
+  call(if image { "Image" } else { "MatrixPlot" }, &plot_args)
 }
 
 pub fn wavelet_matrix_plot_ast(

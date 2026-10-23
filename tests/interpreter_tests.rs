@@ -1035,6 +1035,35 @@ mod interpreter_tests {
     assert!(svg.contains("Coin"));
   }
 
+  /// `Legended[Row[{Labeled[g1, …], Labeled[g2, …]}], SwatchLegend[…]]` is
+  /// one composed picture: both panels and the legend. It used to show only
+  /// the last graphic drawn, dropping the other panel and the legend.
+  #[test]
+  fn test_legended_row_of_graphics_shows_every_panel_and_legend() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Legended[Row[{\
+         Labeled[Graphics[Circle[], ImageSize -> {100, 80}], \"left\"], \
+         Labeled[Graphics[Rectangle[], ImageSize -> {120, 80}], \"right\"]}, \
+         Spacer[10]], \
+       SwatchLegend[{Red, Blue}, {\"alpha\", \"beta\"}]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    let width: f64 = svg
+      .strip_prefix("<svg width=\"")
+      .and_then(|rest| rest.split('"').next())
+      .and_then(|w| w.parse().ok())
+      .expect("svg width");
+    assert!(
+      width > 220.0,
+      "both panels should be drawn, got width {width}"
+    );
+    for text in ["left", "right", "alpha", "beta"] {
+      assert!(svg.contains(text), "missing {text} in the picture");
+    }
+  }
+
   /// The picture a cell shows is the one its value *is*, not the last one
   /// drawn while getting there. A Manipulate body that builds several plots
   /// and then picks one — the standard Demonstrations "which view?" control
@@ -3580,6 +3609,22 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graph_plot_vertex_shape_function_and_all_labels() {
+    // A function-valued `VertexShapeFunction` draws each vertex as
+    // `f[pos, name, size]`, and `VertexLabels -> All` still labels them.
+    clear_state();
+    let svg = interpret(
+      "ExportString[GraphPlot[{{0, 1, 1}, {1, 0, 1}, {1, 1, 0}}, \
+       VertexLabels -> All, \
+       VertexShapeFunction -> ({If[#2 == 1, Red, Green], Disk[#1, .08]} &)], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1, "{svg}");
+    assert_eq!(svg.matches("fill=\"rgb(0,255,0)\"").count(), 2, "{svg}");
+    assert_eq!(svg.matches("<text").count(), 3, "{svg}");
+  }
+
+  #[test]
   fn test_treeplot_rejects_non_position_second_argument() {
     // `TreePlot[rules, pos, …]`'s second positional argument must be one of
     // Top/Bottom/Left/Right/Center, a vertex of the graph (the older
@@ -4250,6 +4295,44 @@ mod interpreter_tests {
       svg2.contains("H(eit)"),
       "a Power nested in a Row must render alongside the row's other text, \
        not leave a gap: {svg2}"
+    );
+  }
+
+  #[test]
+  fn test_axes_label_shrinks_to_fit_image_padding() {
+    // An x `AxesLabel` sits right of the axis; when `ImagePadding` leaves
+    // less room than the label needs it must shrink instead of running
+    // past the canvas edge, while a roomy padding keeps the 14px size (140 in the 10x-scaled SVG).
+    clear_state();
+    let tight = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, ImageSize -> 400, \
+         ImagePadding -> {{40, 60}, {30, 20}}, \
+         AxesLabel -> {\"a long axis label\", \"y\"}], \"SVG\"]",
+    )
+    .unwrap();
+    let label_tag = tight
+      .lines()
+      .find(|l| l.contains(">a long axis label"))
+      .expect("x label drawn");
+    assert!(
+      !label_tag.contains("font-size=\"140\""),
+      "label wider than the right padding must shrink: {label_tag}"
+    );
+
+    clear_state();
+    let roomy = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, ImageSize -> 400, \
+         ImagePadding -> {{40, 200}, {30, 20}}, \
+         AxesLabel -> {\"a long axis label\", \"y\"}], \"SVG\"]",
+    )
+    .unwrap();
+    let label_tag = roomy
+      .lines()
+      .find(|l| l.contains(">a long axis label"))
+      .expect("x label drawn");
+    assert!(
+      label_tag.contains("font-size=\"140\""),
+      "label that fits keeps its size: {label_tag}"
     );
   }
 
