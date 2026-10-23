@@ -25224,6 +25224,24 @@ fn is_track_everything_symbol(sym: &str) -> bool {
   matches!(sym, "All" | "Full" | "Manipulate" | "Automatic" | "True")
 }
 
+/// Looks through a purely decorative wrapper such as
+/// `Framed[Manipulate[…]]` (a Demonstration commonly frames its widget) to
+/// the `Manipulate`/`Animate` inside. The Studio draws its own control
+/// panel, so the wrapper is dropped; any other expression is returned as is.
+fn peel_manipulate_wrapper(expr: &Expr) -> &Expr {
+  const WRAPPERS: [&str; 4] = ["Framed", "Panel", "Pane", "Deploy"];
+  let mut cur = expr;
+  while let Expr::FunctionCall { name, args } = cur
+    && WRAPPERS.contains(&name.as_str())
+    && let Some(first @ Expr::FunctionCall { name: inner, .. }) = args.first()
+    && (WRAPPERS.contains(&inner.as_str())
+      || matches!(inner.as_str(), "Manipulate" | "Animate"))
+  {
+    cur = first;
+  }
+  cur
+}
+
 /// Whether a `Manipulate[…]`/`Animate[…]` call carries its own
 /// `Initialization :> …`/`Initialization -> …` option, checked structurally
 /// (no evaluation, no side effects) so a caller can decide whether a
@@ -25233,6 +25251,7 @@ fn is_track_everything_symbol(sym: &str) -> bool {
 /// for a Manipulate with its own `Initialization` too, so recovering and
 /// running it there would just duplicate what the live source already runs.
 pub fn manipulate_has_own_initialization(expr: &Expr) -> bool {
+  let expr = peel_manipulate_wrapper(expr);
   let Expr::FunctionCall { name, args } = expr else {
     return false;
   };
@@ -25266,6 +25285,7 @@ pub fn manipulate_has_own_initialization(expr: &Expr) -> bool {
 /// `Manipulate[expr]`, or a spec that isn't a list). In those cases the caller
 /// should fall back to the standard text/graphics output path.
 pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
+  let expr = peel_manipulate_wrapper(expr);
   let Expr::FunctionCall { name, args } = expr else {
     return None;
   };
@@ -36526,6 +36546,52 @@ mod manipulate_dynamic_control_list_tests {
       s.bookmarks,
       [] as [(std::string::String, std::string::String); 0]
     );
+  }
+}
+
+#[cfg(test)]
+mod manipulate_wrapper_tests {
+  use super::*;
+
+  fn parse(code: &str) -> Expr {
+    crate::parse_to_expr(code).expect("parse")
+  }
+
+  /// A Manipulate placed inside `Framed`/`Panel`/`Pane`/`Deploy` (even
+  /// nested) still yields its control spec, with the same body and controls
+  /// as the bare Manipulate.
+  #[test]
+  fn decorative_wrapper_is_looked_through() {
+    let bare = extract_manipulate_spec(&parse("Manipulate[x + a, {a, 1, 3}]"))
+      .expect("bare spec");
+    for wrapper in ["Framed", "Panel", "Pane", "Deploy"] {
+      let code = format!("{wrapper}[Manipulate[x + a, {{a, 1, 3}}]]");
+      let s = extract_manipulate_spec(&parse(&code)).expect(&code);
+      assert_eq!(s.body_code, bare.body_code, "{code}");
+      assert_eq!(s.controls.len(), bare.controls.len(), "{code}");
+    }
+    let nested =
+      extract_manipulate_spec(&parse("Framed[Panel[Animate[x, {x, 0, 1}]]]"))
+        .expect("nested spec");
+    assert!(nested.animated);
+  }
+
+  #[test]
+  fn wrapper_around_other_expressions_is_not_a_manipulate() {
+    assert!(extract_manipulate_spec(&parse("Framed[x + 1]")).is_none());
+    assert!(
+      extract_manipulate_spec(&parse("Framed[Plot[x, {x, 0, 1}]]")).is_none()
+    );
+  }
+
+  /// `manipulate_has_own_initialization` looks through the wrapper too.
+  #[test]
+  fn wrapped_manipulate_initialization_is_detected() {
+    let e =
+      parse("Framed[Manipulate[x, {x, 0, 1}, Initialization :> (k = 1)]]");
+    assert!(manipulate_has_own_initialization(&e));
+    let e = parse("Framed[Manipulate[x, {x, 0, 1}]]");
+    assert!(!manipulate_has_own_initialization(&e));
   }
 }
 
