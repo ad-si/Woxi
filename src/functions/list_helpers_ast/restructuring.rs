@@ -597,6 +597,19 @@ fn flatten_dims_ast(list: &Expr, dim_spec: &[Vec<usize>], head: &str) -> Expr {
 /// permutation specs are validated in order ::flpi (form), ::flrep
 /// (repeats), ::fldep (depth); all return the call unevaluated.
 pub fn flatten_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Operator-form expressions (`a -> b`, `x^2`, …) are non-atomic: flatten
+  // them through their canonical `Head[args…]` form.
+  if !matches!(args[0], Expr::List(_) | Expr::FunctionCall { .. })
+    && let Some((head, parts)) =
+      crate::functions::list_helpers_ast::expr_to_head_args(&args[0])
+  {
+    let mut canonical = args.to_vec();
+    canonical[0] = Expr::FunctionCall {
+      name: head,
+      args: parts.into(),
+    };
+    return flatten_unified_ast(&canonical);
+  }
   let original = || unevaluated("Flatten", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);

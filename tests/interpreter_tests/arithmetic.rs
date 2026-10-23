@@ -3368,6 +3368,15 @@ mod composition_flatten {
   use super::*;
 
   #[test]
+  fn flatten_rule_is_unchanged() {
+    assert_eq!(interpret("Flatten[a -> b]").unwrap(), "a -> b");
+    assert_eq!(
+      interpret("Flatten[Distribute[x -> y, List]]").unwrap(),
+      "{x -> y}"
+    );
+  }
+
+  #[test]
   fn flatten_nested() {
     clear_state();
     assert_eq!(

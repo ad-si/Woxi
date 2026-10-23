@@ -10503,6 +10503,19 @@ mod distribute {
   use super::*;
 
   #[test]
+  fn over_list_wraps_rule_without_lists() {
+    assert_eq!(interpret("Distribute[a -> b, List]").unwrap(), "{a -> b}");
+  }
+
+  #[test]
+  fn rule_distributes_over_list_values() {
+    assert_eq!(
+      interpret("Distribute[a -> {1, 2}, List]").unwrap(),
+      "{a -> 1, a -> 2}"
+    );
+  }
+
+  #[test]
   fn basic() {
     assert_eq!(
       interpret("Distribute[f[a + b, c]]").unwrap(),

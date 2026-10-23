@@ -52,10 +52,13 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (outer_name, outer_args) = match expr {
     Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
     Expr::List(items) => ("List".to_string(), items.clone()),
-    _ => {
+    // Operator forms such as `a -> b` distribute through their canonical
+    // `Head[args…]` shape.
+    _ => match crate::functions::list_helpers_ast::expr_to_head_args(expr) {
+      Some((name, parts)) => (name, parts.into()),
       // Not a function call - return as-is
-      return Ok(expr.clone());
-    }
+      None => return Ok(expr.clone()),
+    },
   };
 
   // If 3 args provided, check that outer head matches
