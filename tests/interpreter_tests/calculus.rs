@@ -21928,3 +21928,25 @@ mod ndsolve_initial_point_just_inside_domain {
     );
   }
 }
+
+mod numeric_searches_with_valued_variables {
+  use super::*;
+
+  // The search variable is free during the search even when it has a value;
+  // the Find* rules name it by that value (wolframscript).
+  #[test]
+  fn integration_and_optimization() {
+    assert_eq!(
+      interpret("th = 0.3; NIntegrate[th^2, {th, 0, 1}]").unwrap(),
+      "0.3333333333333333"
+    );
+    assert_eq!(
+      interpret("th = 0.3; FindMinimum[(th - 1)^2, {th, 0}]").unwrap(),
+      "{0., {0.3 -> 1.}}"
+    );
+    assert_eq!(
+      interpret("th = 0.3; FindRoot[th^2 - 2, {th, 1}]").unwrap(),
+      "{0.3 -> 1.4142135623730951}"
+    );
+  }
+}

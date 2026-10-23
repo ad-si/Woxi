@@ -2641,6 +2641,57 @@ pub fn evaluate_expr_to_expr_inner(
             return Ok(unevaluated(name, args));
           }
         }
+        // The numeric searches hold their arguments (HoldAll): the iterator
+        // variable is a free symbol while the arguments are evaluated, even
+        // when it has a value outside — `th = 0.3; NIntegrate[th^2, {th, 0,
+        // 1}]` integrates over `th`, it does not see `0.3`.
+        if matches!(
+          name.as_str(),
+          "NIntegrate"
+            | "FindMinimum"
+            | "FindMaximum"
+            | "FindMinValue"
+            | "FindMaxValue"
+            | "FindArgMin"
+            | "FindArgMax"
+        ) && args.len() >= 2
+        {
+          // The implementations evaluate parts of their arguments again
+          // (the start values, the function at each point), so the
+          // variables stay free for the whole search.
+          let result = with_local_iterators(name, args, || {
+            let evaluated: Vec<Expr> = args
+              .iter()
+              .map(evaluate_expr_to_expr)
+              .collect::<Result<_, _>>()?;
+            evaluate_function_call_ast(name, &evaluated)
+          })?;
+          // Like FindRoot, the Find* optimizers name a variable that has a
+          // value by that value in the solution rules
+          // (`th = 0.3; FindMinimum[…, {th, 0}]` is `{…, {0.3 -> 1.}}`).
+          if name == "NIntegrate" {
+            return Ok(result);
+          }
+          let names = local_iterator_names(name, args);
+          return Ok(crate::functions::string_ast::map_expr_tree(
+            &result,
+            &|node: &Expr| match node {
+              Expr::Rule {
+                pattern,
+                replacement,
+              } if matches!(pattern.as_ref(),
+                Expr::Identifier(v) if names.contains(v)) =>
+              {
+                let lhs = evaluate_expr_to_expr(pattern).ok()?;
+                Some(Expr::Rule {
+                  pattern: Box::new(lhs),
+                  replacement: replacement.clone(),
+                })
+              }
+              _ => None,
+            },
+          ));
+        }
         // Special handling for Quiet[expr], Quiet[expr, msgs], Quiet[expr, moff, mon]
         if name == "Quiet" {
           if (args.is_empty() || args.len() > 3)
@@ -4923,4 +4974,64 @@ pub fn has_free_symbols(expr: &Expr) -> bool {
     Expr::Function { .. } | Expr::NamedFunction { .. } => true,
     _ => false,
   }
+}
+
+/// The iterator variables of a numeric search: `{x, …}` specifications
+/// after the first argument for `NIntegrate`, and the variable
+/// specification (`x`, `{x, x0, …}`, `{{x, x0}, {y, y0}}`, a list of symbols)
+/// for `FindRoot` and the `Find*` optimizers.
+fn local_iterator_names(name: &str, args: &[Expr]) -> Vec<String> {
+  let mut names: Vec<String> = Vec::new();
+  let add_spec = |spec: &Expr, names: &mut Vec<String>| match spec {
+    Expr::Identifier(v) => names.push(v.clone()),
+    // `{x, x0, …}`: the variable is the first element (the start `x0` may
+    // itself be a symbol with a value); `{{x, x0}, {y, y0}}`: each first.
+    Expr::List(items) => match items.first() {
+      Some(Expr::Identifier(v)) => names.push(v.clone()),
+      _ => {
+        for item in items {
+          if let Expr::List(inner) = item
+            && let Some(Expr::Identifier(v)) = inner.first()
+          {
+            names.push(v.clone());
+          }
+        }
+      }
+    },
+    _ => {}
+  };
+  let is_option =
+    |a: &Expr| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  if name == "NIntegrate" {
+    for spec in args[1..].iter().take_while(|a| !is_option(a)) {
+      if let Expr::List(items) = spec
+        && let Some(Expr::Identifier(v)) = items.first()
+      {
+        names.push(v.clone());
+      }
+    }
+  } else if args.len() > 1 && !is_option(&args[1]) {
+    add_spec(&args[1], &mut names);
+  }
+  names.sort();
+  names.dedup();
+  names
+}
+
+/// Run `f` with the iterator variables of the numeric search `name` free,
+/// their values set aside the way `Block` does and restored afterwards.
+pub(crate) fn with_local_iterators<T>(
+  name: &str,
+  args: &[Expr],
+  f: impl FnOnce() -> T,
+) -> T {
+  let saved: Vec<_> = local_iterator_names(name, args)
+    .iter()
+    .map(|n| crate::evaluator::symbol_values::take_symbol_values(n))
+    .collect();
+  let result = f();
+  for s in saved {
+    crate::evaluator::symbol_values::restore_symbol_values(s);
+  }
+  result
 }
