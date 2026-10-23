@@ -4761,3 +4761,37 @@ pub fn from_julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ],
   ))
 }
+
+/// `Clock[]`, `Clock[tmax]`, `Clock[{tmin, tmax}]`, `Clock[{tmin, tmax, dt}]`,
+/// each optionally followed by a period in seconds (default 1): the value of
+/// a variable that cycles from `tmin` to `tmax` as session time passes.
+/// Returns `None` (stays unevaluated) when a limit or the period is not a
+/// number.
+pub fn clock_ast(args: &[Expr]) -> Option<Expr> {
+  use crate::functions::graphics::expr_to_f64;
+  let (tmin, tmax, dt) = match args.first() {
+    None => (0.0, 1.0, None),
+    Some(Expr::List(items)) if items.len() == 2 || items.len() == 3 => {
+      let dt = match items.get(2) {
+        Some(d) => Some(expr_to_f64(d)?),
+        None => None,
+      };
+      (expr_to_f64(&items[0])?, expr_to_f64(&items[1])?, dt)
+    }
+    Some(Expr::List(_)) => return None,
+    Some(max) => (0.0, expr_to_f64(max)?, None),
+  };
+  let period = match args.get(1) {
+    Some(p) => expr_to_f64(p)?,
+    None => 1.0,
+  };
+  if !(period > 0.0) || dt.is_some_and(|d| !(d > 0.0)) {
+    return None;
+  }
+  let phase = (crate::session_time() / period).fract();
+  let mut value = tmin + (tmax - tmin) * phase;
+  if let Some(d) = dt {
+    value = tmin + ((value - tmin) / d).floor() * d;
+  }
+  Some(Expr::Real(value))
+}
