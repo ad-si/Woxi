@@ -858,6 +858,20 @@ pub fn contains_inexact_real(expr: &Expr) -> bool {
       contains_inexact_real(left) || contains_inexact_real(right)
     }
     Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(contains_inexact_real)
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => contains_inexact_real(pattern) || contains_inexact_real(replacement),
+    Expr::CurriedCall { func, args } => {
+      contains_inexact_real(func) || args.iter().any(contains_inexact_real)
+    }
     _ => false,
   }
 }
@@ -874,6 +888,20 @@ pub fn expr_contains_real(expr: &Expr) -> bool {
       expr_contains_real(left) || expr_contains_real(right)
     }
     Expr::UnaryOp { operand, .. } => expr_contains_real(operand),
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(expr_contains_real)
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => expr_contains_real(pattern) || expr_contains_real(replacement),
+    Expr::CurriedCall { func, args } => {
+      expr_contains_real(func) || args.iter().any(expr_contains_real)
+    }
     _ => false,
   }
 }

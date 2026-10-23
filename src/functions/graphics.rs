@@ -26303,9 +26303,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // badspec]`, where `badspec` is neither a spec nor an option) isn't
   // renderable as an interactive widget — fall back to the plain path.
   // Annotation rows alone don't make a widget either.
+  // A Manipulate whose only trailing arguments are options
+  // (`Manipulate[DynamicModule[…], ControlType -> None, …]`) is valid,
+  // though: Wolfram shows its body in the frame, so it stays a widget with
+  // no controls.
+  let options_only = args[1..]
+    .iter()
+    .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
   if !controls.iter().any(|c| !c.name().is_empty())
     && fixed.is_empty()
     && state.is_empty()
+    && !options_only
   {
     return None;
   }

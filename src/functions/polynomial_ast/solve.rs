@@ -172,6 +172,24 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args
     }
   };
+  // Equations that already carry a machine number are solved with every
+  // coefficient numericized: exact irrational coefficients (Sin[Pi/24],
+  // Sqrt[3]) mixed with machine numbers otherwise reach the symbolic
+  // elimination, which loses the roots (2FamiliesOfFourPointTouchingSquares).
+  let numericized_owned: Vec<Expr>;
+  let args = if crate::functions::math_ast::contains_inexact_real(&args[0])
+    && let Ok(numeric) =
+      crate::evaluator::evaluate_function_call_ast("N", &args[..1])
+    && crate::syntax::expr_to_string(&numeric)
+      != crate::syntax::expr_to_string(&args[0])
+  {
+    let mut new_args = args.to_vec();
+    new_args[0] = numeric;
+    numericized_owned = new_args;
+    numericized_owned.as_slice()
+  } else {
+    args
+  };
   // Try numerically stable quadratic formula for degree-2 polynomials
   if let Some(result) = try_nsolve_quadratic(args) {
     return result;
@@ -9156,6 +9174,10 @@ pub(crate) fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
       substitute_expr(pattern, from, to),
       substitute_expr(replacement, from, to),
     ),
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(substitute_expr(func, from, to)),
+      args: args.iter().map(|e| substitute_expr(e, from, to)).collect(),
+    },
     _ => expr.clone(),
   }
 }

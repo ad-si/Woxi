@@ -25,6 +25,15 @@ fn is_known_non_negative(expr: &Expr) -> bool {
     }
     // Sqrt[anything] is always non-negative (for real results)
     expr if is_sqrt(expr).is_some() => true,
+    // A numeric quantity with a positive value (Sin[Pi/24], 3 - Sqrt[2]):
+    // Sqrt[Sin[Pi/24]^2] is Sin[Pi/24].
+    expr
+      if crate::functions::predicate_ast::is_numeric_q(expr)
+        && crate::functions::math_ast::try_eval_to_f64(expr)
+          .is_some_and(|v| v > 0.0) =>
+    {
+      true
+    }
     _ => false,
   }
 }
@@ -937,6 +946,26 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(pow2(*base.clone(), Expr::Integer(half)));
       }
       Ok(make_sqrt(args[0].clone()))
+    }
+    // Sqrt[b^(2n)] for a numeric quantity b with a negative value is
+    // (-b)^n: Sqrt[(1 - Sqrt[2])^2] is -1 + Sqrt[2].
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } if matches!(exp.as_ref(), Expr::Integer(n) if *n > 0 && n % 2 == 0)
+      && crate::functions::predicate_ast::is_numeric_q(base)
+      && crate::functions::math_ast::try_eval_to_f64(base)
+        .is_some_and(|v| v < 0.0) =>
+    {
+      let Expr::Integer(n) = exp.as_ref() else {
+        unreachable!()
+      };
+      let negated = times_ast(&[Expr::Integer(-1), *base.clone()])?;
+      if *n == 2 {
+        return Ok(negated);
+      }
+      power_two(&negated, &Expr::Integer(n / 2))
     }
     // Sqrt of a product: Sqrt[n * expr^2 * ...] → simplify factors.
     // Products reach here in either shape — `Times[…]` and the binary-operator

@@ -4924,6 +4924,33 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // A complex-valued integrand over a real range used to integrate to 0.:
+  // every complex sample was read as missing.
+  #[test]
+  fn complex_valued_integrand() {
+    assert_eq!(
+      interpret("NIntegrate[I x, {x, 0, 1}]").unwrap(),
+      "0. + 0.5*I"
+    );
+    for (code, re, im) in [
+      ("NIntegrate[Exp[I x], {x, 0, Pi}]", 0.0, 2.0),
+      ("NIntegrate[x + I x^2, {x, 0, 1}]", 0.5, 1.0 / 3.0),
+      (
+        "NIntegrate[Exp[I x], {x, 0, 1}]",
+        0.8414709848078965,
+        0.45969769413186023,
+      ),
+    ] {
+      let num = |e: String| -> f64 { e.replace("*^", "e").parse().unwrap() };
+      let got_re = num(interpret(&format!("Re[{code}]")).unwrap());
+      let got_im = num(interpret(&format!("Im[{code}]")).unwrap());
+      assert!(
+        (got_re - re).abs() < 1e-9 && (got_im - im).abs() < 1e-9,
+        "{code}: {got_re} {got_im}"
+      );
+    }
+  }
+
   fn assert_approx(code: &str, expected: f64, tol: f64) {
     let result = interpret(code).unwrap();
     let val: f64 = result.parse().unwrap_or_else(|_| {

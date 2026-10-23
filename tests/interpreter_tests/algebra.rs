@@ -20329,3 +20329,21 @@ mod find_minimum_variable_specs {
     );
   }
 }
+
+mod nsolve_mixed_precision {
+  use super::*;
+
+  // Exact irrational coefficients mixed with machine numbers used to lose
+  // every root in the symbolic elimination.
+  #[test]
+  fn exact_and_machine_coefficients() {
+    assert_eq!(
+      interpret(
+        "Length[NSolve[x == ss (Sqrt[3] Cos[Pi/24] - Sin[Pi/24]) + Sin[Pi/24] && \
+         y == ss (Sqrt[2] - Cos[Pi/24]) + Cos[Pi/24] && (x - 0.04)^2 + (y - 1.0)^2 == 0.1, {x, y, ss}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+}

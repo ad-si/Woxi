@@ -12471,6 +12471,17 @@ mod plot3d {
   mod parametric_plot {
     use super::*;
 
+    // A one-element list of pairs is one region; it used to give "no
+    // points over that region".
+    #[test]
+    fn single_region_in_a_list() {
+      assert_eq!(
+        interpret("Head[ParametricPlot[{{Re[r E^(I t)], Im[r E^(I t)]}}, {r, 0, 1}, {t, 0, 2 Pi}]]")
+          .unwrap(),
+        "Graphics"
+      );
+    }
+
     #[test]
     fn parametric_plot_circle() {
       insta::assert_snapshot!(export_svg(
@@ -26941,6 +26952,20 @@ mod manipulate {
     manipulate_spec_to_json, parse_manipulate_bindings,
   };
   use woxi::interpret_to_expr;
+
+  // A Manipulate whose trailing arguments are all options shows its body
+  // with no controls; it used to fall back to an unrendered Manipulate.
+  #[test]
+  fn options_only_manipulate_is_a_widget() {
+    let expr =
+      interpret_to_expr("Manipulate[Graphics[Disk[]], ControlType -> None, SaveDefinitions -> True]")
+        .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("options-only Manipulate");
+    assert!(spec.controls.is_empty());
+    // An argument that is neither a control nor an option still is not.
+    let bad = interpret_to_expr("Manipulate[x^2, badspec]").unwrap();
+    assert!(extract_manipulate_spec(&bad).is_none());
+  }
 
   // A hand-built control panel — `ExpressionCell[Grid[…]]` holding bare
   // `Checkbox[Dynamic[v]]`/`Manipulator[Dynamic[v], …]`/`SetterBar[Dynamic[v],

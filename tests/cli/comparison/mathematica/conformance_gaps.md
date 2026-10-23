@@ -658,6 +658,22 @@ Woxi sums the Maclaurin series for |Re z| < 2 and uses the Erfc continued
 fraction beyond that. Both are correct to about 1e-13 relative, but not
 correctly rounded the way Wolfram's arbitrary-precision kernel is.
 
+### `NSolve` lists the solutions of a polynomial system in a different order
+
+```sh
+wolframscript -code 'NSolve[x == 0.47 ss + 0.13 && y == 0.85 ss + 0.99 && (-0.039 + x)^2 + (-1.015 + y)^2 == 0.034, {x, y, ss}]'
+# {{x -> 0.04187863964178423, …, ss -> -0.18749225608131015}, {x -> 0.19667891812798455, …}}
+woxi eval 'NSolve[x == 0.47 ss + 0.13 && y == 0.85 ss + 0.99 && (-0.039 + x)^2 + (-1.015 + y)^2 == 0.034, {x, y, ss}]'
+# {{x -> 0.19667891812798463, …}, {x -> 0.04187863964178421, …, ss -> -0.1874922560813102}}
+```
+
+**Not reproducible** from the output alone. The solution set is the same, but
+Wolfram's order comes from its internal polynomial-system solver. It is
+ascending in some samples and descending in others (`NSolve[x == 1 + ss && y
+== 2 ss && x^2 + y^2 == 3., {x, y, ss}]` lists the larger `x` first), with no
+consistent key. Code that picks a solution by position (`… [[2]]`) can see a
+different root.
+
 ### `Rationalize[x, 0]` and `ContinuedFraction[x]` of a machine real stop one convergent off
 
 ```sh

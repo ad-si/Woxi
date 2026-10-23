@@ -3753,6 +3753,22 @@ mod sqrt_negative {
     );
   }
 
+  // Sqrt of the square of a numeric quantity with a known sign.
+  #[test]
+  fn sqrt_of_square_of_numeric_quantity() {
+    assert_eq!(interpret("Sqrt[Sin[Pi/24]^2]").unwrap(), "Sin[Pi/24]");
+    assert_eq!(
+      interpret("Norm[{-2 Sin[Pi/24], 0}]").unwrap(),
+      "2*Sin[Pi/24]"
+    );
+    assert_eq!(interpret("Sqrt[(1 - Sqrt[2])^2]").unwrap(), "-1 + Sqrt[2]");
+    assert_eq!(
+      interpret("Sqrt[(1 - Sqrt[2])^4]").unwrap(),
+      "(-1 + Sqrt[2])^2"
+    );
+    assert_eq!(interpret("Sqrt[x^2]").unwrap(), "Sqrt[x^2]");
+  }
+
   #[test]
   fn radical_over_integer() {
     assert_eq!(interpret("Sqrt[2]/(-1)").unwrap(), "-Sqrt[2]");

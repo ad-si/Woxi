@@ -7765,6 +7765,22 @@ mod tableform_headings {
 mod boolean_table {
   use super::*;
 
+  // Indexed variables used to be rejected ("variables must be symbols").
+  #[test]
+  fn indexed_variables() {
+    assert_eq!(
+      interpret("BooleanTable[x[1] && !x[2], {x[1], x[2]}]").unwrap(),
+      "{False, True, False, False}"
+    );
+    assert_eq!(
+      interpret(
+        "BooleanTable[BooleanCountingFunction[{1, 3}, 3] @@ Array[x, 3], Array[x, 1], Array[x, 2, 2]]"
+      )
+      .unwrap(),
+      "{{True, True, True, True}, {True, True, True, False}}"
+    );
+  }
+
   #[test]
   fn or_two_vars() {
     assert_eq!(
@@ -8927,6 +8943,26 @@ mod batch_inert_symbols_2 {
 
 mod rotation_matrix {
   use super::*;
+
+  // The two-vector form beyond 2D: the rotation taking u's direction to
+  // v's. It used to read {u, v} as an angle and build a garbage matrix.
+  #[test]
+  fn rotation_transform_two_vectors_3d() {
+    assert_eq!(
+      interpret("RotationTransform[{{0, 0, 1}, {1, 0, 0}}]").unwrap(),
+      "TransformationFunction[{{0, 0, 1, 0}, {0, 1, 0, 0}, {-1, 0, 0, 0}, {0, 0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("RotationTransform[{{0, 0, 1}, {1, 0, 0}}][{1, 2, 3}]")
+        .unwrap(),
+      "{3, 2, -1}"
+    );
+    assert_eq!(
+      interpret("RotationTransform[{{0, 0, 1}, {1, 0, 0}}, {1, 1, 1}]")
+        .unwrap(),
+      "TransformationFunction[{{0, 0, 1, 0}, {0, 1, 0, 0}, {-1, 0, 0, 2}, {0, 0, 0, 1}}]"
+    );
+  }
 
   #[test]
   fn plane_form_entries_are_together() {

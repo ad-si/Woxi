@@ -1591,6 +1591,29 @@ pub fn dispatch_linear_algebra_functions(
     "RotationTransform"
       if args.len() == 1 || args.len() == 2 || args.len() == 3 =>
     {
+      // RotationTransform[{u, v}] and RotationTransform[{u, v}, p] beyond 2D:
+      // the rotation taking u's direction to v's (RotationMatrix[{u, v}]),
+      // about the origin or p.
+      if let Expr::List(pair) = &args[0]
+        && pair.len() == 2
+        && let (Expr::List(u), Expr::List(v)) = (&pair[0], &pair[1])
+        && u.len() == v.len()
+        && u.len() >= 3
+        && args.len() <= 2
+      {
+        let n = u.len();
+        let point = match args.get(1) {
+          None => None,
+          Some(Expr::List(p)) if p.len() == n => Some(Expr::List(p.clone())),
+          Some(_) => return Some(Ok(unevaluated("RotationTransform", args))),
+        };
+        return Some(
+          evaluate_expr_to_expr(&call1("RotationMatrix", args[0].clone()))
+            .and_then(|m| {
+              homogeneous_transformation(&m, point.as_ref(), n, args)
+            }),
+        );
+      }
       // Two-vector form RotationTransform[{u, v}] (2D): the rotation taking the
       // direction of u to the direction of v. Build it directly from the
       // normalized dot/cross products so the angle is never materialized.
@@ -1680,45 +1703,11 @@ pub fn dispatch_linear_algebra_functions(
           Some(Expr::List(p)) if p.len() == n => Some(Expr::List(p.clone())),
           Some(_) => return Some(Ok(unevaluated("RotationTransform", args))),
         };
-        return Some((|| {
-          let m = rotation_matrix_plane(&args[0], &plane[0], &plane[1])?;
-          let Expr::List(m_rows) = &m else {
-            return Ok(unevaluated("RotationTransform", args));
-          };
-          // Translation column p - m.p, entrywise Together.
-          let shift = match &point {
-            Some(p) => {
-              let moved = evaluate_expr_to_expr(&call(
-                "Subtract",
-                vec![p.clone(), call("Dot", vec![m.clone(), p.clone()])],
-              ))?;
-              evaluate_expr_to_expr(&call(
-                "Map",
-                vec![id_expr("Together"), moved],
-              ))?
-            }
-            None => Expr::List(vec![Expr::Integer(0); n].into()),
-          };
-          let Expr::List(shift) = &shift else {
-            return Ok(unevaluated("RotationTransform", args));
-          };
-          let mut rows: Vec<Expr> = Vec::with_capacity(n + 1);
-          for (row, t) in m_rows.iter().zip(shift.iter()) {
-            let Expr::List(cells) = row else {
-              return Ok(unevaluated("RotationTransform", args));
-            };
-            let mut cells = cells.to_vec();
-            cells.push(t.clone());
-            rows.push(Expr::List(cells.into()));
-          }
-          let mut last = vec![Expr::Integer(0); n];
-          last.push(Expr::Integer(1));
-          rows.push(Expr::List(last.into()));
-          evaluate_expr_to_expr(&call1(
-            "TransformationFunction",
-            Expr::List(rows.into()),
-          ))
-        })());
+        return Some(
+          rotation_matrix_plane(&args[0], &plane[0], &plane[1]).and_then(|m| {
+            homogeneous_transformation(&m, point.as_ref(), n, args)
+          }),
+        );
       }
       if args.len() == 3 {
         return Some(Ok(unevaluated("RotationTransform", args)));
@@ -4936,4 +4925,46 @@ fn is_numeric_matrix(m: &Expr) -> bool {
     matches!(r, Expr::List(cells)
       if cells.iter().all(crate::functions::predicate_ast::is_numeric_q))
   })
+}
+
+/// `TransformationFunction` of the n×n matrix `m` acting about `point` (the
+/// origin when None): translation column p - m.p, entrywise Together.
+fn homogeneous_transformation(
+  m: &Expr,
+  point: Option<&Expr>,
+  n: usize,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Expr::List(m_rows) = m else {
+    return Ok(unevaluated("RotationTransform", args));
+  };
+  let shift = match point {
+    Some(p) => {
+      let moved = evaluate_expr_to_expr(&call(
+        "Subtract",
+        vec![p.clone(), call("Dot", vec![m.clone(), p.clone()])],
+      ))?;
+      evaluate_expr_to_expr(&call("Map", vec![id_expr("Together"), moved]))?
+    }
+    None => Expr::List(vec![Expr::Integer(0); n].into()),
+  };
+  let Expr::List(shift) = &shift else {
+    return Ok(unevaluated("RotationTransform", args));
+  };
+  let mut rows: Vec<Expr> = Vec::with_capacity(n + 1);
+  for (row, t) in m_rows.iter().zip(shift.iter()) {
+    let Expr::List(cells) = row else {
+      return Ok(unevaluated("RotationTransform", args));
+    };
+    let mut cells = cells.to_vec();
+    cells.push(t.clone());
+    rows.push(Expr::List(cells.into()));
+  }
+  let mut last = vec![Expr::Integer(0); n];
+  last.push(Expr::Integer(1));
+  rows.push(Expr::List(last.into()));
+  evaluate_expr_to_expr(&call1(
+    "TransformationFunction",
+    Expr::List(rows.into()),
+  ))
 }
