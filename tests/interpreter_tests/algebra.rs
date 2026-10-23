@@ -20377,3 +20377,74 @@ mod nsolve_mixed_precision {
     );
   }
 }
+
+mod reduce_bounded_integers {
+  use super::*;
+
+  #[test]
+  fn domain_alone_reduces_over_all_variables() {
+    assert_eq!(
+      interpret("Reduce[2 == x^2 + y^2, Integers]").unwrap(),
+      "(x == -1 && y == -1) || (x == -1 && y == 1) || (x == 1 && y == -1) || (x == 1 && y == 1)"
+    );
+    assert_eq!(
+      interpret("Reduce[b + a^2 == 2 && a > 0 && b >= 0, Integers]").unwrap(),
+      "a == 1 && b == 1"
+    );
+    assert_eq!(
+      interpret("Reduce[x^2 == 4, Reals]").unwrap(),
+      "x == -2 || x == 2"
+    );
+  }
+
+  #[test]
+  fn bounded_systems_are_enumerated() {
+    assert_eq!(
+      interpret("Reduce[x + y == 3 && x > 0 && y > 0, {x, y}, Integers]")
+        .unwrap(),
+      "(x == 1 && y == 2) || (x == 2 && y == 1)"
+    );
+    assert_eq!(
+      interpret("Reduce[y^2 + x == 1 && x > 0 && x < 3, {x, y}, Integers]")
+        .unwrap(),
+      "x == 1 && y == 0"
+    );
+    assert_eq!(
+      interpret("Reduce[x^2 < 5, x, Integers]").unwrap(),
+      "x == -2 || x == -1 || x == 0 || x == 1 || x == 2"
+    );
+    assert_eq!(
+      interpret("Reduce[x^3 == 27, x, Integers]").unwrap(),
+      "x == 3"
+    );
+    assert_eq!(
+      interpret("Reduce[11 == x^2 + y^2, {x, y}, Integers]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn definite_quadratic_forms_bound_their_variables() {
+    assert_eq!(
+      interpret("Reduce[1 == q^2 - q r + r^2, {q, r}, Integers]").unwrap(),
+      "(q == -1 && r == -1) || (q == -1 && r == 0) || (q == 0 && r == -1) || (q == 0 && r == 1) || (q == 1 && r == 0) || (q == 1 && r == 1)"
+    );
+    assert_eq!(
+      interpret("Reduce[-x^2 - y^2 + 2 x == -3, {x, y}, Integers]").unwrap(),
+      "(x == -1 && y == 0) || (x == 1 && y == -2) || (x == 1 && y == 2) || (x == 3 && y == 0)"
+    );
+  }
+
+  #[test]
+  fn sum_of_two_squares_parts_are_reachable() {
+    // The EquilateralTrianglesIn3DWithIntegerCoordinates Demonstration reads
+    // the representations through Part.
+    assert_eq!(
+      interpret(
+        "u = Reduce[25 == x^2 + y^2 && x > 0 && y > 0, {x, y}, Integers]; {Length[u], u[[1, 1, 2]], u[[2, 2, 2]]}"
+      )
+      .unwrap(),
+      "{2, 3, 3}"
+    );
+  }
+}
