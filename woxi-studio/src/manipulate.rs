@@ -552,6 +552,17 @@ pub struct ManipulateState {
   /// timer — this is what coalesces a burst of slider events into a single
   /// re-evaluation, mirroring the Playground's inflight/pending pipeline.
   reeval_scheduled: bool,
+  /// The body's raw result from the most recent re-evaluation (the error
+  /// kept as its message), which [`check_render`] reports instead of
+  /// evaluating the body once more.
+  ///
+  /// [`check_render`]: Self::check_render
+  last_render: Option<Result<woxi::InterpretResult, String>>,
+}
+
+thread_local! {
+  /// Set while [`ManipulateState::from_expr_unrendered`] builds a widget.
+  static UNRENDERED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 impl ManipulateState {
@@ -638,6 +649,7 @@ impl ManipulateState {
       reeval_pending: 0,
       reeval_applied: 0,
       reeval_scheduled: false,
+      last_render: None,
     };
     // Run the `Initialization :> …` code ONCE, before the first render.
     // Re-running it on every re-evaluation would reset any state the body
@@ -686,8 +698,22 @@ impl ManipulateState {
         state.sync_named_siblings(i);
       }
     }
-    state.reevaluate();
+    if !UNRENDERED.with(std::cell::Cell::get) {
+      state.reevaluate();
+    }
     Some(state)
+  }
+
+  /// [`from_expr`] without the first render, for a caller that renders
+  /// once it has applied the notebook's saved control values (rendering the
+  /// source defaults first would only be thrown away).
+  ///
+  /// [`from_expr`]: Self::from_expr
+  pub fn from_expr_unrendered(expr: &Expr) -> Option<Self> {
+    UNRENDERED.with(|u| u.set(true));
+    let state = Self::from_expr(expr);
+    UNRENDERED.with(|u| u.set(false));
+    state
   }
 
   /// Apply saved session values — e.g. a Wolfram Demonstration's cached
@@ -1165,6 +1191,12 @@ impl ManipulateState {
   pub fn check_render(
     &self,
   ) -> Result<woxi::InterpretResult, woxi::InterpreterError> {
+    // The widget was just rendered for exactly these bindings.
+    if let Some(last) = &self.last_render {
+      return last
+        .clone()
+        .map_err(woxi::InterpreterError::EvaluationError);
+    }
     woxi::with_scoped_globals(&self.bindings(), || {
       woxi::interpret_with_stdout(&self.body)
     })
@@ -1233,7 +1265,7 @@ impl ManipulateState {
     let binding_names: Vec<String> =
       bindings.iter().map(|(n, _)| n.clone()).collect();
     let (
-      render,
+      (render, raw_render),
       updated_bindings,
       display_trees,
       enabled,
@@ -1250,6 +1282,10 @@ impl ManipulateState {
         &code, &bindings,
       ));
       let mut render = woxi::interpret_with_stdout(&code);
+      let raw_render = match &render {
+        Ok(r) => Ok(r.clone()),
+        Err(e) => Err(e.to_string()),
+      };
       // A `Pane[Grid[…], size]` body of plain text prints as source text in
       // the terminal; the widget shows the table the pane wraps instead.
       if matches!(&render, Ok(r) if r.graphics.is_none())
@@ -1334,7 +1370,7 @@ impl ManipulateState {
         })
         .collect();
       (
-        render,
+        (render, raw_render),
         updated_bindings,
         trees,
         enabled,
@@ -1344,6 +1380,7 @@ impl ManipulateState {
         labels,
       )
     });
+    self.last_render = Some(raw_render);
     // Keep the body's writes to the widget's own variables, so the next
     // frame (and any caption) builds on them — whether that variable is
     // hidden state or a visible control's own slider/picker.

@@ -5588,12 +5588,15 @@ fn instantiate_stored_manipulate(
   // A spec the live source cannot resolve — a control bounded by symbols
   // the notebook never defines (`{{x, 70}, minx, maxx}`) — is rebuilt from
   // the dump, whose "Specifications" hold the values the widget had.
+  // Built without a first render: the saved control values applied below
+  // decide what is drawn, and rendering the source defaults first would be
+  // thrown away (it is also the slowest part of opening a notebook).
   let Some(mut state) =
-    manipulate::ManipulateState::from_expr(&expr).or_else(|| {
+    manipulate::ManipulateState::from_expr_unrendered(&expr).or_else(|| {
       let rebuilt =
         woxi::notebook::reconstruct_manipulate_from_box_dump(stored_output)?;
       let rebuilt_expr = woxi::interpret_to_expr(&rebuilt).ok()?;
-      manipulate::ManipulateState::from_expr(&rebuilt_expr)
+      manipulate::ManipulateState::from_expr_unrendered(&rebuilt_expr)
     })
   else {
     return None;
@@ -5608,7 +5611,7 @@ fn instantiate_stored_manipulate(
     woxi::notebook::reconstruct_manipulate_from_box_dump(stored_output)
     && let Ok(rebuilt_expr) = woxi::interpret_to_expr(&rebuilt)
     && let Some(rebuilt_state) =
-      manipulate::ManipulateState::from_expr(&rebuilt_expr)
+      manipulate::ManipulateState::from_expr_unrendered(&rebuilt_expr)
     && rebuilt_state.controls.len() > state.controls.len()
   {
     state = rebuilt_state;
@@ -5618,7 +5621,11 @@ fn instantiate_stored_manipulate(
   // when the file was last saved (see `apply_saved_variables`).
   let saved_vars =
     woxi::notebook::extract_saved_manipulate_variables(stored_output);
-  state.apply_saved_variables(&saved_vars);
+  if saved_vars.is_empty() {
+    state.reevaluate();
+  } else {
+    state.apply_saved_variables(&saved_vars);
+  }
   Some(state)
 }
 
@@ -16549,7 +16556,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 5}, \"…\"]"], "Output"]
     // in `src/notebook.rs`).
     let definitions = editors[0].content.text();
     assert!(
-      definitions.contains("Sum[((Sin[(n)^(2) t])/((n)^(2))), {n, 1, m}]"),
+      definitions.contains("Sum[((Sin[((n)^(2)) t])/(((n)^(2)))), {n, 1, m}]"),
       "the ∑ box must become a Sum: {definitions}"
     );
 
