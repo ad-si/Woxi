@@ -4426,16 +4426,31 @@ fn ndsolve_system(
   // shape (one shared point vs. exactly two) is decided once every
   // condition has been collected, below.
   let mut raw_ics: Vec<(String, usize, f64, f64)> = Vec::new();
+  // Conditions whose value refers to another initial value
+  // (`PD[0] == 1 - PB[0]`) wait until those values are known.
+  let mut pending: Vec<(Expr, String)> = Vec::new();
+  // `f[x0] -> value` for every condition read so far.
+  let mut known: Vec<Expr> = Vec::new();
+  let record_known = |eq: &Expr, value: f64, known: &mut Vec<Expr>| {
+    if let Some((a, b)) = as_equal_pair(eq) {
+      let lhs = if nval_to_f64(b).is_some() { a } else { b };
+      known.push(Expr::Rule {
+        pattern: Box::new(lhs.clone()),
+        replacement: Box::new(Expr::Real(value)),
+      });
+    }
+  };
   for eq in &eq_items {
     let mut is_ic = false;
     for f in &funcs {
       if is_initial_condition(eq, &f.name, x_name) {
-        let Some((order, x_val, y_val)) =
-          parse_numeric_initial_condition(eq, &f.name)
-        else {
-          return Ok(None);
-        };
-        raw_ics.push((f.name.clone(), order, x_val, y_val));
+        match parse_numeric_initial_condition(eq, &f.name) {
+          Some((order, x_val, y_val)) => {
+            raw_ics.push((f.name.clone(), order, x_val, y_val));
+            record_known(eq, y_val, &mut known);
+          }
+          None => pending.push((eq.clone(), f.name.clone())),
+        }
         is_ic = true;
         break;
       }
@@ -4443,6 +4458,54 @@ fn ndsolve_system(
     if !is_ic {
       odes.push(eq.clone());
     }
+  }
+  while !pending.is_empty() {
+    let before = pending.len();
+    let mut still = Vec::new();
+    for (eq, fname) in pending {
+      let substituted = match as_equal_pair(&eq) {
+        Some((a, b)) => {
+          let rules = Expr::List(known.clone().into());
+          let side = |e: &Expr| -> Expr {
+            crate::evaluator::evaluate_expr_to_expr(&Expr::ReplaceAll {
+              expr: Box::new(e.clone()),
+              rules: Box::new(rules.clone()),
+            })
+            .unwrap_or_else(|_| e.clone())
+          };
+          // Only the value side is rewritten; the side naming the unknown
+          // stays as it is.
+          let (a2, b2) = if is_initial_condition(
+            &Expr::Comparison {
+              operands: vec![a.clone(), Expr::Integer(0)],
+              operators: vec![ComparisonOp::Equal],
+            },
+            &fname,
+            x_name,
+          ) {
+            (a.clone(), side(b))
+          } else {
+            (side(a), b.clone())
+          };
+          Expr::Comparison {
+            operands: vec![a2, b2],
+            operators: vec![ComparisonOp::Equal],
+          }
+        }
+        None => eq.clone(),
+      };
+      match parse_numeric_initial_condition(&substituted, &fname) {
+        Some((order, x_val, y_val)) => {
+          raw_ics.push((fname.clone(), order, x_val, y_val));
+          record_known(&substituted, y_val, &mut known);
+        }
+        None => still.push((eq, fname)),
+      }
+    }
+    if still.len() == before {
+      return Ok(None);
+    }
+    pending = still;
   }
   // An algebraic constraint — an equation with no derivative in it — that
   // determines one unknown explicitly is eliminated: the constraint is
@@ -4765,9 +4828,52 @@ fn ndsolve_system(
     })
     .collect();
 
+  // An event on a highest derivative (`WhenEvent[x'[t] == 0, …]` for a
+  // first-order system) reads it from its equation, `x'[t] == rhs`: it is no
+  // state component the integrator tracks.
+  let mut highest: Vec<(String, usize, Expr)> = Vec::new();
+  for f in &funcs {
+    if f.order == 0 {
+      continue;
+    }
+    for ode in &odes {
+      if let Some((a, b)) = as_equal_pair(ode) {
+        for (lhs, rhs) in [(a, b), (b, a)] {
+          if let Some((k, Expr::Identifier(ref p))) =
+            extract_derivative_order_and_point(lhs, &f.name)
+            && k == f.order
+            && p == x_name
+            && max_derivative_order(rhs, &f.name) < f.order
+          {
+            highest.push((f.name.clone(), k, rhs.clone()));
+          }
+        }
+      }
+    }
+  }
+  let explicit_highest = |e: &Expr| -> Expr {
+    crate::functions::string_ast::map_expr_tree(e, &|node: &Expr| {
+      highest.iter().find_map(|(name, k, rhs)| {
+        match extract_derivative_order_and_point(node, name) {
+          Some((order, Expr::Identifier(ref p)))
+            if order == *k && p == x_name =>
+          {
+            Some(rhs.clone())
+          }
+          _ => None,
+        }
+      })
+    })
+  };
   let state_events: Vec<StateEvent> = raw_state_events
     .into_iter()
-    .map(|raw| StateEvent::new(raw, &funcs, x_name, &var_names))
+    .map(|raw| {
+      let raw = RawStateEvent {
+        condition: explicit_highest(&raw.condition),
+        action: raw.action,
+      };
+      StateEvent::new(raw, &funcs, x_name, &var_names)
+    })
     .collect();
   let event_ctx = StateEventCtx {
     events: &state_events,

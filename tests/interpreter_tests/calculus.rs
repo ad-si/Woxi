@@ -21950,3 +21950,39 @@ mod numeric_searches_with_valued_variables {
     );
   }
 }
+
+mod ndsolve_initial_conditions_referring_to_others {
+  use super::*;
+
+  // Value from wolframscript.
+  #[test]
+  fn condition_uses_another_initial_value() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{PB'[t] == -2 PB[t] + PD[t], PD'[t] == PB[t] - 2 PD[t], \
+         PB[0] == 0.5, PD[0] == 1 - PB[0]}, {PB, PD}, {t, 0, 10}]; \
+         Chop[({PB[1], PD[1]} /. s[[1]]) - {0.18393972058572117, \
+         0.18393972058572117}, 10^-6]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+}
+
+mod when_event_on_highest_derivative {
+  use super::*;
+
+  #[test]
+  fn derivative_condition_reads_the_equation() {
+    assert_eq!(
+      interpret(
+        "Chop[First[Reap[NDSolve[{x'[t] == Cos[t], x[0] == 0, \
+         WhenEvent[x'[t] == 0, Sow[t]]}, x, {t, 0, 10}]][[2]]] - \
+         {Pi/2, 3 Pi/2, 5 Pi/2}, 10^-8]"
+      )
+      .unwrap(),
+      "{0, 0, 0}"
+    );
+  }
+}
