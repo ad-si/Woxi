@@ -552,3 +552,17 @@ fn panel_in_grid_cell_draws_box() {
     "one box per panel: {svg}"
   );
 }
+
+/// A `Pane[…]` item of a `Row` inside a grid cell only sizes its content
+/// (a fixed-width numeric readout); the cell shows the content, not the
+/// `Pane[…]` call.
+#[test]
+fn pane_item_of_row_in_grid_cell_shows_content() {
+  let svg = interpret(
+    r#"ExportString[Grid[{{"Area:", Row[{Pane[NumberForm[0.744631, {6, 5}], {50, 32}, ImageSizeAction -> "ShrinkToFit", Alignment -> {Right, Center}], " r"}]}}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert!(!svg.contains("Pane"), "pane source leaked: {svg}");
+  assert!(svg.contains("0.74463"), "readout missing: {svg}");
+}

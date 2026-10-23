@@ -22351,6 +22351,36 @@ fn resolve_display_item(expr: &Expr) -> Expr {
   {
     current = Expr::Raw(crate::syntax::expr_to_input_form(&args[0]));
   }
+  // A `Pane[…]`/`Item[…]` item of a `Row` only sizes what it holds (a
+  // fixed-width numeric readout beside a caption), so the row shows the
+  // content; left wrapped, a `Row` in a grid cell printed the `Pane[…]` call.
+  if let Expr::FunctionCall { name, args } = &current
+    && name == "Row"
+    && let Some(Expr::List(items)) = args.first()
+    && items.iter().any(|item| {
+      matches!(item, Expr::FunctionCall { name, .. }
+        if matches!(name.as_str(), "Pane" | "Item"))
+    })
+  {
+    let mut peeled: Vec<Expr> = args.to_vec();
+    peeled[0] = Expr::List(
+      items
+        .iter()
+        .map(|item| match item {
+          Expr::FunctionCall { name, .. }
+            if matches!(name.as_str(), "Pane" | "Item") =>
+          {
+            unwrap_display_wrappers(item)
+          }
+          _ => item.clone(),
+        })
+        .collect(),
+    );
+    current = Expr::FunctionCall {
+      name: name.clone(),
+      args: peeled.into(),
+    };
+  }
   // A `Dynamic[…]` inside running text — a readout in a `Row`, or in the
   // `HoldForm` a `With` fills — shows the value it currently has.
   if matches!(&current, Expr::FunctionCall { name, .. }
