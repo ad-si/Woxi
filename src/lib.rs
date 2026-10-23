@@ -860,6 +860,44 @@ fn is_quiet() -> bool {
   QUIET_LEVEL.with(|level| *level.borrow() > 0)
 }
 
+/// One `Quiet[expr, moff, mon]` block that names messages: the
+/// `Symbol::tag` names it silences (`None` for all of them) and the ones it
+/// lets through again.
+struct QuietFilter {
+  off: Option<Vec<String>>,
+  on: Vec<String>,
+}
+
+thread_local! {
+    static QUIET_FILTERS: RefCell<Vec<QuietFilter>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Enter a `Quiet` block that silences the messages named in `off` (all of
+/// them for `None`) except those in `on`; names are `Symbol::tag`.
+pub fn push_quiet_filter(off: Option<Vec<String>>, on: Vec<String>) {
+  QUIET_FILTERS.with(|f| f.borrow_mut().push(QuietFilter { off, on }));
+}
+
+/// Leave the innermost `push_quiet_filter` block.
+pub fn pop_quiet_filter() {
+  QUIET_FILTERS.with(|f| {
+    f.borrow_mut().pop();
+  });
+}
+
+/// Whether an enclosing `Quiet[expr, {…}]` silences the message `name`.
+fn quiet_filters_silence(name: &str) -> bool {
+  QUIET_FILTERS.with(|f| {
+    f.borrow().iter().any(|q| {
+      let off = q
+        .off
+        .as_ref()
+        .is_none_or(|off| off.iter().any(|n| n == name));
+      off && !q.on.iter().any(|n| n == name)
+    })
+  })
+}
+
 /// Increment the quiet level (enter a Quiet[] block)
 pub fn push_quiet() {
   QUIET_LEVEL.with(|level| *level.borrow_mut() += 1);
@@ -1122,7 +1160,8 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
     });
     MESSAGE_LIST.with(|m| m.borrow_mut().push("General::stop".to_string()));
   }
-  if is_quiet() {
+  if is_quiet() || message_name(msg).is_some_and(|n| quiet_filters_silence(&n))
+  {
     return (false, None);
   }
   let to_stdout = MESSAGES_TO_STDOUT.with(|f| *f.borrow());
