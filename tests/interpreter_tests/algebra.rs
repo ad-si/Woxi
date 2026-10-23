@@ -16588,6 +16588,16 @@ mod cases {
     );
   }
   #[test]
+  fn find_maximum_constrained_large_erfc_objective() {
+    // A big objective with nested `Erfc` terms and non-integer powers: the
+    // constrained search stays on the compiled numeric path and skips the
+    // exact solver's clean-up, so it finishes instead of stalling.
+    assert_case(
+      r#"f = Sum[Exp[-a i] Erfc[-(L - i)/(i + 1)] L^(1/(i + 2)) Log[L + i a + 2], {i, 1, 8}] - (a - 1)^2 (L - 3)^2 Erfc[a L]; r = FindMaximum[{f, L >= 1 && a > 0}, {{L, 1}, {a, 0}}]; {LeafCount[f] > 150, Head[r], Length[r], NumberQ[r[[1]]], r[[2, 1, 2]] >= 1, r[[2, 2, 2]] > 0}"#,
+      r#"{True, List, 2, True, True, True}"#,
+    );
+  }
+  #[test]
   fn find_maximum_1() {
     assert_case(r#"FindMaximum[-(x-3)^2+2., {x, 1}]"#, r#"{2., {x -> 3.}}"#);
   }
