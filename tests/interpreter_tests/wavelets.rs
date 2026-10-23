@@ -1038,6 +1038,17 @@ mod wavelets {
   }
 
   #[test]
+  fn wavelet_matrix_plot_honors_color_function() {
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[WaveletMatrixPlot[DiscreteWaveletTransform[Table[N[i + j], {i, 8}, {j, 8}]], ColorFunction -> \"SolarColors\"], \"SVG\"], \"#780004\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn wavelet_image_plot_returns_image() {
     assert_eq!(
       interpret(
