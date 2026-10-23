@@ -1137,6 +1137,43 @@ mod bin_lists {
 mod histogram_list {
   use super::*;
 
+  // The third argument names the heights (values from wolframscript):
+  // probabilities and cumulative heights are machine numbers even for exact
+  // counts, densities stay exact, and totals are over the binned points.
+  #[test]
+  fn height_specifications() {
+    for (hspec, expected) in [
+      ("\"Count\"", "{{0, 1, 2, 3, 4}, {0, 1, 2, 2}}"),
+      ("\"Probability\"", "{{0, 1, 2, 3, 4}, {0., 0.2, 0.4, 0.4}}"),
+      ("\"PDF\"", "{{0, 1, 2, 3, 4}, {0, 1/5, 2/5, 2/5}}"),
+      (
+        "\"CDF\"",
+        "{{0, 1, 2, 3, 4}, {0., 0.2, 0.6000000000000001, 1.}}",
+      ),
+      ("\"Intensity\"", "{{0, 1, 2, 3, 4}, {0, 1, 2, 2}}"),
+      ("\"CumulativeCount\"", "{{0, 1, 2, 3, 4}, {0., 1., 3., 5.}}"),
+      ("f", "{{0, 1, 2, 3, 4}, f[{0, 1, 2, 3, 4}, {0, 1, 2, 2}]}"),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "HistogramList[{{1, 2, 2, 3, 3.5}}, {{0, 4, 1}}, {hspec}]"
+        ))
+        .unwrap(),
+        expected,
+        "{hspec}"
+      );
+    }
+    assert_eq!(
+      interpret("HistogramList[{1, 2, 10}, {0, 4, 2}, \"PDF\"]").unwrap(),
+      "{{0, 2, 4}, {1/4, 1/4}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[{1, 2, 2, 3}, Automatic, \"Probability\"]")
+        .unwrap(),
+      "{{0.5, 1.5, 2.5, 3.5}, {0.25, 0.5, 0.25}}"
+    );
+  }
+
   #[test]
   fn auto_binning_basic() {
     assert_eq!(

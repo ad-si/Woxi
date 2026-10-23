@@ -1154,4 +1154,20 @@ mod long_background_evolutions {
       "139"
     );
   }
+
+  // `{1}` is a one-dimensional list of radii, i.e. range 1.
+  #[test]
+  fn single_radius_list_neighborhood() {
+    assert_eq!(
+      interpret("CellularAutomaton[{30, 2, {1}}, {0, 0, 1, 0, 0}, 2]").unwrap(),
+      "{{0, 0, 1, 0, 0}, {0, 1, 1, 1, 0}, {1, 1, 0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{Function[If[#[[1]] + #[[3]] == 1, 1, 0]], {}, {1}}, {0, 0, 1, 0, 0}, 1]"
+      )
+      .unwrap(),
+      "{{0, 0, 1, 0, 0}, {0, 1, 0, 1, 0}}"
+    );
+  }
 }

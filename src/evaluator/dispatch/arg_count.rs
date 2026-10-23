@@ -669,7 +669,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ThermometerGauge" => Some((1, usize::MAX)),
     "HilbertMatrix" => Some((1, 1)),
     "HistogramDistribution" => Some((1, 2)),
-    "HistogramList" => Some((1, 2)),
+    "HistogramList" => Some((1, 3)),
     // `HypothesisTesting`MeanTest` / `…`MeanDifferenceTest` deliberately have
     // no arity entry: the legacy package reports every wrong call — including
     // the empty one — as `::badargs` rather than `::argm`, so the functions

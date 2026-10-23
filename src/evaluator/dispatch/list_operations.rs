@@ -2341,7 +2341,7 @@ pub fn dispatch_list_operations(
     "BinLists" if !args.is_empty() && args.len() <= 2 => {
       return Some(list_helpers_ast::bin_lists_ast(args));
     }
-    "HistogramList" if !args.is_empty() && args.len() <= 2 => {
+    "HistogramList" if !args.is_empty() && args.len() <= 3 => {
       return Some(list_helpers_ast::histogram_list_ast(args));
     }
     "DeleteDuplicates" if args.len() == 1 => {

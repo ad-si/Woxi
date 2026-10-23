@@ -35983,6 +35983,20 @@ mod display_wrapper_export {
 mod list_plot_markers_and_epilog {
   use super::*;
 
+  // A marker far outside the plot range overflowed plotters' pixel
+  // arithmetic and panicked; markers outside the range are not drawn.
+  #[test]
+  fn marker_far_outside_the_plot_range() {
+    assert_eq!(
+      interpret(
+        "StringQ[ExportString[ListPlot[{{1, 0.5}, {2, 1.*^300}}, PlotMarkers -> Style[\"\u{25CF}\", 14], \
+         Joined -> True, PlotRange -> {{-1, 50}, {-0.1, 1.1}}], \"SVG\"]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   /// The `<text>` glyphs a rendered plot draws, with their fill colour.
   fn marker_glyphs(svg: &str) -> Vec<(String, String)> {
     svg

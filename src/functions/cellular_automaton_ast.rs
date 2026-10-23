@@ -720,6 +720,10 @@ fn parse_neighborhood(
     });
   }
   match items.as_ref() {
+    // A one-dimensional list of radii: `{1}` is range 1.
+    [r] => parse_radius(r)
+      .map(|a| range_neighborhood(&[a]))
+      .ok_or_else(rspec),
     [r1, r2] => match (parse_radius(r1), parse_radius(r2)) {
       (Some(a), Some(b)) => Ok(range_neighborhood(&[a, b])),
       _ => Err(rspec()),
