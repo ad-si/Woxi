@@ -4988,6 +4988,7 @@ fn composed_layout_svg(expr: &syntax::Expr) -> Option<String> {
       | "Column"
       | "Row"
       | "Labeled"
+      | "Legended"
       | "Overlay"
       | "Pane"
       | "Item"
@@ -4996,6 +4997,20 @@ fn composed_layout_svg(expr: &syntax::Expr) -> Option<String> {
     return None;
   }
   if !evaluator::lays_out_a_graphic(expr) {
+    return None;
+  }
+  // A legend around a single picture is already one graphic: it keeps its
+  // own display (and its symbolic echo), only a legend around a *layout*
+  // of pictures needs composing.
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && name == "Legended"
+    && args.first().is_none_or(|g| {
+      matches!(
+        g,
+        syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
+      )
+    })
+  {
     return None;
   }
   let svg = evaluator::expr_to_svg(expr);

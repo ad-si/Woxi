@@ -5143,6 +5143,13 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     Expr::FunctionCall { name, args } if name == "Item" && !args.is_empty() => {
       lays_out_a_graphic(&args[0])
     }
+    // `Legended[expr, legend]` draws `expr` with the legend beside it, so it
+    // is a picture whenever `expr` is.
+    Expr::FunctionCall { name, args }
+      if name == "Legended" && !args.is_empty() =>
+    {
+      lays_out_a_graphic(&args[0])
+    }
     // `ClickPane[expr, …]` shows `expr`; clicking it is the affordance the
     // handler is for, and contributes nothing to the picture.
     Expr::FunctionCall { name, args }
@@ -6364,6 +6371,15 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           let height = crate::functions::graphics::svg_natural_size(&graphic)
             .map_or(225.0, |(_, h)| h * 0.625);
           crate::functions::field_plot::bar_legend_svg(bar_args, height)
+        }
+        // A swatch or line legend is typeset beside the graphics the same
+        // way a bare one is drawn on its own.
+        Some(
+          legend @ Expr::FunctionCall {
+            name: legend_name, ..
+          },
+        ) if legend_name == "SwatchLegend" || legend_name == "LineLegend" => {
+          Some(expr_to_svg(legend)).filter(|svg| svg.starts_with("<svg"))
         }
         _ => None,
       };
