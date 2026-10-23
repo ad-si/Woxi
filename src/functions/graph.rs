@@ -526,12 +526,6 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
         }
-        "VertexLabels" => match replacement {
-          Expr::String(s) if s == "Name" => vertex_labels = true,
-          Expr::Identifier(s) if s == "All" => vertex_labels = true,
-          _ => {}
-        },
-
         "VertexLabels" => {
           let specs: &[Expr] = match replacement {
             Expr::List(items) => items,
@@ -1107,6 +1101,14 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let vertex_colors: Vec<Option<Color>> =
     vertices.iter().map(|v| unwrap_vertex_style(v).1).collect();
 
+  let label_ctx = VertexLabelCtx {
+    rules: &vertex_label_rules,
+    default: vertex_label_default.as_ref(),
+    name_spec: &name_label_spec,
+    all_names: vertex_labels,
+    radius: vertex_radius,
+  };
+
   for node_idx in graph.node_indices() {
     let i = node_idx.index();
     let (x, y) = positions[i];
@@ -1150,9 +1152,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         )
       {
         primitives.push(Expr::List(vec![drawn].into()));
-        if vertex_labels {
-          push_vertex_label(&mut primitives, &vertices[i], x, y, vertex_radius);
-        }
+        push_vertex_label(&mut primitives, &vertices[i], &label_ctx, x, y);
         continue;
       }
     }
@@ -1283,42 +1283,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
 
-    if vertex_labels {
-      push_vertex_label(&mut primitives, &vertices[i], x, y, vertex_radius);
-
-    let label_spec = vertex_label_rules
-      .iter()
-      .find(|(target, _)| vertex_matches_rule(&vertices[i], target))
-      .map(|(_, l)| l)
-      .or(vertex_label_default.as_ref())
-      .or(if vertex_labels {
-        Some(&name_label_spec)
-      } else {
-        None
-      });
-    if let Some((label, placement)) = label_spec.and_then(|spec| {
-      resolve_vertex_label(spec, unwrap_vertex_style(&vertices[i]).0)
-    }) {
-      // The label keeps the vertex name as an expression (rather than
-      // pre-stringifying it) so a structured name like `Subscript[x, 1]`
-      // still typesets instead of showing its literal head name.
-      primitives.push(call(
-        "RGBColor",
-        vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
-      ));
-      let styled = call("Style", vec![label, Expr::Integer(10)]);
-      let gap = vertex_radius + 0.08;
-      let (dx, dy) = match placement.as_str() {
-        "Below" => (0.0, -gap),
-        "Left" => (-gap, 0.0),
-        "Right" => (gap, 0.0),
-        "Center" => (0.0, 0.0),
-        _ => (0.0, gap),
-      };
-      let point =
-        Expr::List(vec![Expr::Real(x + dx), Expr::Real(y + dy)].into());
-      primitives.push(call("Text", vec![styled, point]));
-    }
+    push_vertex_label(&mut primitives, &vertices[i], &label_ctx, x, y);
   }
 
   // --- PlotLabel: centered title above the graph ---
@@ -1525,28 +1490,56 @@ enum EdgeShape {
   Func(Expr),
 }
 
-/// Append the name label drawn above a vertex.
+/// Everything `push_vertex_label` needs to decide what label a vertex gets.
+struct VertexLabelCtx<'a> {
+  rules: &'a [(Expr, Expr)],
+  default: Option<&'a Expr>,
+  name_spec: &'a Expr,
+  all_names: bool,
+  radius: f64,
+}
+
+/// Append the label (if any) a vertex gets from `VertexLabels`.
 fn push_vertex_label(
   primitives: &mut Vec<Expr>,
   vertex: &Expr,
+  ctx: &VertexLabelCtx,
   x: f64,
   y: f64,
-  vertex_radius: f64,
 ) {
-  // Strip any Style wrapper so the label shows the underlying vertex
-  // name (e.g. `3`, not `Style[3, Red]`), keeping the name itself as an
-  // expression (rather than pre-stringifying it) so a structured name
-  // like `Subscript[x, 1]` still typesets instead of showing its
-  // literal head name.
-  let label_expr = unwrap_vertex_style(vertex).0;
+  let label_spec = ctx
+    .rules
+    .iter()
+    .find(|(target, _)| vertex_matches_rule(vertex, target))
+    .map(|(_, l)| l)
+    .or(ctx.default)
+    .or(if ctx.all_names {
+      Some(ctx.name_spec)
+    } else {
+      None
+    });
+  let Some((label, placement)) = label_spec
+    .and_then(|spec| resolve_vertex_label(spec, unwrap_vertex_style(vertex).0))
+  else {
+    return;
+  };
+  // The label keeps the vertex name as an expression (rather than
+  // pre-stringifying it) so a structured name like `Subscript[x, 1]`
+  // still typesets instead of showing its literal head name.
   primitives.push(call(
     "RGBColor",
     vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
   ));
-  let styled = call("Style", vec![label_expr.clone(), Expr::Integer(10)]);
-  let point = Expr::List(
-    vec![Expr::Real(x), Expr::Real(y + vertex_radius + 0.08)].into(),
-  );
+  let styled = call("Style", vec![label, Expr::Integer(10)]);
+  let gap = ctx.radius + 0.08;
+  let (dx, dy) = match placement.as_str() {
+    "Below" => (0.0, -gap),
+    "Left" => (-gap, 0.0),
+    "Right" => (gap, 0.0),
+    "Center" => (0.0, 0.0),
+    _ => (0.0, gap),
+  };
+  let point = Expr::List(vec![Expr::Real(x + dx), Expr::Real(y + dy)].into());
   primitives.push(call("Text", vec![styled, point]));
 }
 
@@ -3775,7 +3768,7 @@ fn resolve_vertex_label(spec: &Expr, vertex: &Expr) -> Option<(Expr, String)> {
   };
   match inner {
     Expr::Identifier(s) if s == "None" => None,
-    Expr::Identifier(s) if s == "Automatic" => {
+    Expr::Identifier(s) if s == "Automatic" || s == "All" => {
       Some((vertex.clone(), placement))
     }
     Expr::String(s) if s == "Name" => Some((vertex.clone(), placement)),
