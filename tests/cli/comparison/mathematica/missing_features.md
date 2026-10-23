@@ -567,8 +567,8 @@ Woxi does **not** support.
     `BottomHatTransform`, `GeodesicDilation`, `GeodesicErosion`,
     `MorphologicalPerimeter`, filters (
     `EntropyFilter`, `GeometricMeanFilter`)
-- Generalized linear models: `GeneralizedLinearModelFit`,
-    `ProbitModelFit`
+- Generalized linear models: non-Gaussian `GeneralizedLinearModelFit`
+    families, `ProbitModelFit`
 - Holonomic sequences: `DifferenceRoot`, `DifferentialRoot`,
     `FindGeneratingFunction`, `Casoratian`
 - q-analogs: `QHypergeometricPFQ`, `QPolyGamma`
