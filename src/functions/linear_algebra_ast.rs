@@ -6748,6 +6748,10 @@ fn find_fit_weighted(
         args: vec![model.clone(), Expr::Identifier(p.clone())].into(),
       })
       .ok()
+      // A derivative D could not take (a model defined only for numeric
+      // arguments) is differenced numerically instead: substituting the
+      // parameter values into an unevaluated `D[…, k]` makes `k` a number.
+      .filter(|d| !crate::functions::math_ast::expr_contains_head(d, "D"))
     })
     .collect();
 

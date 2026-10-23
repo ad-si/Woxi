@@ -22003,3 +22003,25 @@ mod pde_time_grid_ends_on_the_domain {
     );
   }
 }
+
+mod find_fit_numeric_only_model {
+  use super::*;
+
+  #[test]
+  fn a_model_defined_for_numbers_only_is_differenced_numerically() {
+    // EstimatingKineticParametersFromABatchReactorExperiment fits a
+    // ParametricNDSolve function: D cannot differentiate it symbolically,
+    // and substituting values into the unevaluated D made D::ivar.
+    assert_eq!(
+      interpret(
+        "data = Table[{t, Exp[-1.3 t^1.2]}, {t, 0, 3, 0.25}]; \
+         f[a_?NumericQ, b_?NumericQ][t_?NumericQ] := Exp[-a t^b]; \
+         {a, b} /. FindFit[data, f[a, b][t], {{a, 1.0, 2.0}, {b, 1.5, 2.0}}, t] \
+         // Chop[# - {1.3, 1.2}, 10^-6] &"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+    assert!(woxi::get_captured_messages_raw().is_empty());
+  }
+}
