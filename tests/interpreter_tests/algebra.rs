@@ -13883,6 +13883,36 @@ mod interpolating_polynomial {
   }
 
   #[test]
+  fn hermite_value_and_slope_at_both_ends() {
+    assert_eq!(
+      interpret("Expand[InterpolatingPolynomial[{{{0},1,2},{{1},3,0}}, {x}]]")
+        .unwrap(),
+      "1 + 2*x + 2*x^2 - 2*x^3"
+    );
+  }
+
+  #[test]
+  fn hermite_slope_at_one_end_only() {
+    assert_eq!(
+      interpret("Expand[InterpolatingPolynomial[{{{0},1,2},{{1},3}}, {x}]]")
+        .unwrap(),
+      "1 + 2*x"
+    );
+  }
+
+  #[test]
+  fn hermite_second_derivative_and_plain_variable() {
+    // f(2)=1, f'(2)=0, f''(2)=2 and f(3)=5
+    assert_eq!(
+      interpret(
+        "With[{p = InterpolatingPolynomial[{{{2},1,0,2},{{3},5}}, x]}, {p /. x -> 2, D[p, x] /. x -> 2, D[p, {x, 2}] /. x -> 2, p /. x -> 3}]"
+      )
+      .unwrap(),
+      "{1, 0, 2, 5}"
+    );
+  }
+
+  #[test]
   fn quadratic_implicit_points() {
     // {1,4,9} at x=1,2,3 → x^2
     assert_eq!(
