@@ -135,6 +135,32 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   };
 
+  // `{cells, {b1, b2, …}}`: a 1D seed on a background that repeats a block.
+  if !rule.two_d
+    && let Some((seed, block)) = parse_periodic_background_init(&args[1])
+  {
+    let window = match steps.windows.as_slice() {
+      [] => Window::Auto,
+      [x] => *x,
+      _ => return unevaluated(),
+    };
+    let Some(rows) =
+      evolve_on_periodic_background(&rule, &seed, &block, &steps.times, window)
+    else {
+      return unevaluated();
+    };
+    let mut exprs: Vec<Expr> = rows
+      .into_iter()
+      .map(|row| {
+        Expr::List(row.into_iter().map(|c| Expr::Integer(c as i128)).collect())
+      })
+      .collect();
+    if steps.single_state {
+      return Ok(exprs.remove(0));
+    }
+    return Ok(Expr::List(exprs.into()));
+  }
+
   let Some((init, background)) = parse_init(&args[1], rule.two_d) else {
     return unevaluated();
   };
@@ -1059,6 +1085,126 @@ fn parse_init(
     let row = parse_row(expr)?;
     Some((vec![row], None))
   }
+}
+
+/// `{{c1, c2, …}, {b1, …, bp}}`: the cells at offsets 0, 1, …
+/// on an infinite background repeating the block, aligned so that offset
+/// `x` holds `b[x mod p]`; a one-cell block `{b}` is the plain background `b`.
+fn parse_periodic_background_init(
+  expr: &Expr,
+) -> Option<(Vec<u128>, Vec<u128>)> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  let [Expr::List(cells), Expr::List(block)] = items.as_slice() else {
+    return None;
+  };
+  if cells.is_empty() || block.is_empty() {
+    return None;
+  }
+  let seed: Vec<u128> =
+    cells.iter().map(as_nonneg_int).collect::<Option<_>>()?;
+  let block: Vec<u128> =
+    block.iter().map(as_nonneg_int).collect::<Option<_>>()?;
+  Some((seed, block))
+}
+
+/// A 1D evolution of `seed` on a periodic background. The background on its
+/// own stays periodic, so it is evolved exactly on one period; the seeded
+/// configuration is evolved on a window wide enough that every cell asked
+/// for is still exact after `t_max` steps (it can only be influenced from
+/// `reach * t` cells away). With no window named, the result keeps the
+/// cells that ever differ from the bare background's evolution — none at
+/// all when the seed blends into the background.
+fn evolve_on_periodic_background(
+  rule: &RuleSpec,
+  seed: &[u128],
+  block: &[u128],
+  times: &[usize],
+  window: Window,
+) -> Option<Vec<Vec<u128>>> {
+  let t_max = *times.last()? as i64;
+  let reach = rule.neighbors.iter().map(|n| n.1.abs()).max().unwrap_or(0);
+  let p = block.len() as i64;
+  let seed_hi = seed.len() as i64 - 1;
+  let (want_lo, want_hi) = match window {
+    Window::Range(from, to, _) => (from, to),
+    Window::All | Window::Auto => (-reach * t_max, seed_hi + reach * t_max),
+  };
+  let lo = want_lo.min(0) - reach * t_max - 1;
+  let hi = want_hi.max(seed_hi) + reach * t_max + 1;
+  let len = usize::try_from(hi - lo + 1).ok()?;
+  if len > 50_000_000 / (t_max as usize + 1) {
+    return None;
+  }
+  let step = |cells: &[u128], cyclic: bool| -> Vec<u128> {
+    let n = cells.len() as i64;
+    (0..n)
+      .map(|x| {
+        let mut sum: u128 = 0;
+        for &(_, dc, w) in &rule.neighbors {
+          let j = x + dc;
+          let v = if cyclic {
+            cells[j.rem_euclid(n) as usize]
+          } else if (0..n).contains(&j) {
+            cells[j as usize]
+          } else {
+            // Out of range only at the stale edges, never read back.
+            0
+          };
+          sum = sum.saturating_add(w.saturating_mul(v));
+        }
+        rule_digit(rule, sum)
+      })
+      .collect()
+  };
+  let mut cells: Vec<u128> = (lo..=hi)
+    .map(|x| {
+      if (0..=seed_hi).contains(&x) {
+        seed[x as usize]
+      } else {
+        block[x.rem_euclid(p) as usize]
+      }
+    })
+    .collect();
+  let mut base = block.to_vec();
+  let mut snapshots = Vec::with_capacity(times.len());
+  let mut next_time = 0;
+  for t in 0..=t_max as usize {
+    if next_time < times.len() && times[next_time] == t {
+      snapshots.push((cells.clone(), base.clone()));
+      next_time += 1;
+    }
+    if t < t_max as usize {
+      cells = step(&cells, false);
+      base = step(&base, true);
+    }
+  }
+  let at = |cells: &[u128], x: i64| cells[(x - lo) as usize];
+  let background_at = |base: &[u128], x: i64| base[x.rem_euclid(p) as usize];
+  let offsets: Vec<i64> = match window {
+    Window::Range(from, to, step) => (from..=to).step_by(step.max(1)).collect(),
+    Window::All => (want_lo..=want_hi).collect(),
+    Window::Auto => {
+      let differs = |x: i64| {
+        snapshots
+          .iter()
+          .any(|(c, b)| at(c, x) != background_at(b, x))
+      };
+      let first = (want_lo..=want_hi).find(|&x| differs(x));
+      let last = (want_lo..=want_hi).rev().find(|&x| differs(x));
+      match (first, last) {
+        (Some(a), Some(b)) => (a..=b).collect(),
+        _ => Vec::new(),
+      }
+    }
+  };
+  Some(
+    snapshots
+      .iter()
+      .map(|(c, _)| offsets.iter().map(|&x| at(c, x)).collect())
+      .collect(),
+  )
 }
 
 /// Digit `s` (base `k`) of the rule number — the new value of a cell whose

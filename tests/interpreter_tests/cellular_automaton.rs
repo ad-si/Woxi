@@ -1171,3 +1171,56 @@ mod long_background_evolutions {
     );
   }
 }
+
+mod periodic_background {
+  use super::*;
+
+  #[test]
+  fn seed_on_a_repeating_block() {
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, {1, 0, 0, 0}}, {0, {-6, 6}}]")
+        .unwrap(),
+      "{{0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, {1, 0, 0, 0}}, {2, {-4, 4}}]")
+        .unwrap(),
+      "{{1, 0, 0, 0, 1, 0, 0, 0, 1}, {1, 1, 0, 1, 1, 1, 0, 1, 1}, {0, 0, 0, 1, 0, 0, 0, 1, 0}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, {0, 1, 1}}, {3, {-5, 5}}]")
+        .unwrap(),
+      "{{1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1}, {1, 1, 0, 1, 0, 0, 0, 1, 0, 1, 1}, {1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 1}, {1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1}}"
+    );
+  }
+
+  #[test]
+  fn automatic_width_keeps_cells_that_differ_from_the_background() {
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, {0, 0, 1}}, 2]").unwrap(),
+      "{{1, 0, 1}, {0, 0, 1}, {1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1, 1}, {0, 1}}, 3]").unwrap(),
+      "{{1, 1, 0, 1}, {0, 0, 0, 1}, {1, 0, 1, 1}, {0, 0, 1, 0}}"
+    );
+    // A seed that blends into the background leaves nothing.
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, {1, 0, 0, 0}}, 2]").unwrap(),
+      "{{}, {}, {}}"
+    );
+  }
+
+  #[test]
+  fn single_state_and_one_cell_block() {
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, {0, 0, 1}}, {{{2}}, {-3, 3}}]")
+        .unwrap(),
+      "{0, 0, 0, 1, 1, 1, 0}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, {0}}, {2, {-3, 3}}]").unwrap(),
+      "{{0, 0, 0, 1, 0, 0, 0}, {0, 0, 1, 1, 1, 0, 0}, {0, 1, 1, 0, 0, 1, 0}}"
+    );
+  }
+}
