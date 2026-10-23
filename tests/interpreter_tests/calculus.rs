@@ -21986,3 +21986,20 @@ mod when_event_on_highest_derivative {
     );
   }
 }
+
+mod pde_time_grid_ends_on_the_domain {
+  use super::*;
+
+  #[test]
+  fn last_time_row_is_the_domain_end() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[u[x, t], t] == D[u[x, t], x, x], u[x, 0] == 0, \
+         u[0, t] == Sin[t], u[1, t] == 0}, u, {x, 0, 1}, {t, 0, 60}]; \
+         Last[Last[u[\"Coordinates\"] /. s[[1]]]]"
+      )
+      .unwrap(),
+      "60."
+    );
+  }
+}

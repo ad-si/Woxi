@@ -2742,7 +2742,13 @@ fn try_solve_pde_system(
       state[idx] +=
         dt / 6.0 * (k1[idx] + 2.0 * k2[idx] + 2.0 * k3[idx] + k4[idx]);
     }
-    t += dt;
+    // From the step index, not by accumulating `dt`, which ends a few
+    // ulps short of the domain (59.9999999999998 instead of 60.).
+    t = if step + 1 == n_steps {
+      t_dom.max
+    } else {
+      t_dom.min + (step + 1) as f64 * dt
+    };
     let is_last = step + 1 == n_steps;
     if (step + 1) % stride == 0 || is_last {
       for (i, g) in grids.iter_mut().enumerate() {
@@ -3539,7 +3545,13 @@ fn try_solve_hyperbolic_pde(
       state[idx] +=
         dt / 6.0 * (k1[idx] + 2.0 * k2[idx] + 2.0 * k3[idx] + k4[idx]);
     }
-    t += dt;
+    // From the step index, not by accumulating `dt`, which ends a few
+    // ulps short of the domain (59.9999999999998 instead of 60.).
+    t = if step + 1 == n_steps {
+      t_dom.max
+    } else {
+      t_dom.min + (step + 1) as f64 * dt
+    };
     let is_last = step + 1 == n_steps;
     if (step + 1) % stride == 0 || is_last {
       grid.push(reconstruct_pde_profile(

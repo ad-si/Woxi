@@ -313,7 +313,13 @@ fn try_solve(
       wr[j] += dt / 6.0 * (k1r[j] + 2.0 * k2r[j] + 2.0 * k3r[j] + k4r[j]);
       wi[j] += dt / 6.0 * (k1i[j] + 2.0 * k2i[j] + 2.0 * k3i[j] + k4i[j]);
     }
-    t += dt;
+    // From the step index, not by accumulating `dt`, which ends a few
+    // ulps short of the domain (59.9999999999998 instead of 60.).
+    t = if step + 1 == n_steps {
+      t_dom.max
+    } else {
+      t_dom.min + (step + 1) as f64 * dt
+    };
     if wr.iter().chain(&wi).any(|v| !v.is_finite()) {
       return Ok(None);
     }
