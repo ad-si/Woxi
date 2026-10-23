@@ -10580,3 +10580,38 @@ mod machine_matrix_inverse_and_det {
     assert_eq!(interpret("Det[{{1., 2.}, {2., 4.}}]").unwrap(), "0.");
   }
 }
+
+mod machine_dot_fold_order {
+  use super::*;
+
+  #[test]
+  fn dot_folds_left_while_total_folds_as_a_tree() {
+    assert_eq!(
+      interpret(
+        "{Table[0.1, 10] . Table[1., 10], Table[0.1, 7] . Table[1., 7], \
+         Total[Table[0.1, 10]], {Table[0.1, 10]} . Table[1., 10]}"
+      )
+      .unwrap(),
+      "{0.9999999999999999, 0.7, 1., {0.9999999999999999}}"
+    );
+  }
+
+  #[test]
+  fn machine_matrices() {
+    assert_eq!(
+      interpret(
+        "m = {{1.5, 2.}, {0.1, 4.}}; v = {0.3, 0.7}; {m . m, m . v, v . m, v . v}"
+      )
+      .unwrap(),
+      "{{{2.45, 11.}, {0.55, 16.2}}, {1.8499999999999999, 2.8299999999999996}, \
+       {0.5199999999999999, 3.4}, 0.58}"
+    );
+    assert_eq!(
+      interpret(
+        "Dimensions[RandomReal[1, {60, 40}] . RandomReal[1, {40, 30}]]"
+      )
+      .unwrap(),
+      "{60, 30}"
+    );
+  }
+}

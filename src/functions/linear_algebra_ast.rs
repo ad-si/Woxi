@@ -1005,6 +1005,10 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ]);
   }
 
+  if let Some(product) = machine_dot(&args[0], &args[1]) {
+    return Ok(product);
+  }
+
   // Vector . Vector -> scalar
   if let (Some(va), Some(vb)) =
     (expr_to_vector(&args[0]), expr_to_vector(&args[1]))
@@ -1084,6 +1088,83 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Return unevaluated
   Ok(unevaluated("Dot", args))
+}
+
+/// `a . b` for vectors and matrices of machine reals, computed in `f64`
+/// with each sum folded left in index order — the order `Plus` folds the
+/// same products in. `None` when either operand holds anything but machine
+/// reals, or the shapes do not fit.
+fn machine_dot(a: &Expr, b: &Expr) -> Option<Expr> {
+  fn reals(e: &Expr) -> Option<Vec<f64>> {
+    match e {
+      Expr::List(items) => items
+        .iter()
+        .map(|x| match x {
+          Expr::Real(r) => Some(*r),
+          _ => None,
+        })
+        .collect(),
+      _ => None,
+    }
+  }
+  fn matrix(e: &Expr) -> Option<Vec<Vec<f64>>> {
+    let Expr::List(rows) = e else { return None };
+    let m: Vec<Vec<f64>> = rows.iter().map(reals).collect::<Option<_>>()?;
+    let width = m.first()?.len();
+    (width > 0 && m.iter().all(|r| r.len() == width)).then_some(m)
+  }
+  let dot = |x: &mut dyn Iterator<Item = f64>| -> f64 {
+    let first = x.next().unwrap_or(0.0);
+    x.fold(first, |acc, v| acc + v)
+  };
+  let reals_list = |v: Vec<f64>| {
+    Expr::List(v.into_iter().map(Expr::Real).collect::<Vec<_>>().into())
+  };
+  match (reals(a), reals(b)) {
+    (Some(u), Some(v)) if !u.is_empty() && u.len() == v.len() => {
+      return Some(Expr::Real(dot(&mut u.iter().zip(&v).map(|(x, y)| x * y))));
+    }
+    (Some(u), None) => {
+      let mb = matrix(b)?;
+      if mb.len() != u.len() || u.is_empty() {
+        return None;
+      }
+      return Some(reals_list(
+        (0..mb[0].len())
+          .map(|j| dot(&mut (0..u.len()).map(|i| u[i] * mb[i][j])))
+          .collect(),
+      ));
+    }
+    _ => {}
+  }
+  let ma = matrix(a)?;
+  if let Some(v) = reals(b) {
+    if ma[0].len() != v.len() {
+      return None;
+    }
+    return Some(reals_list(
+      ma.iter()
+        .map(|row| dot(&mut row.iter().zip(&v).map(|(x, y)| x * y)))
+        .collect(),
+    ));
+  }
+  let mb = matrix(b)?;
+  if ma[0].len() != mb.len() {
+    return None;
+  }
+  let cols = mb[0].len();
+  Some(Expr::List(
+    ma.iter()
+      .map(|row| {
+        reals_list(
+          (0..cols)
+            .map(|j| dot(&mut row.iter().zip(&mb).map(|(x, brow)| x * brow[j])))
+            .collect(),
+        )
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  ))
 }
 
 /// Dimensions of a rectangular tensor. Scalars have dimensions `[]`; a ragged

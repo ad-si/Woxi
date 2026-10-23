@@ -917,9 +917,31 @@ pub(crate) fn image_arithmetic_rounded(
   })
 }
 
+/// Wolfram's machine fold of `args` (see `machine_tree_fold`) when every
+/// one is a machine real and the sum is finite.
+fn machine_real_sum(args: &[Expr]) -> Option<f64> {
+  let reals: Vec<f64> = args
+    .iter()
+    .map(|a| match a {
+      Expr::Real(r) => Some(*r),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let sum = machine_tree_fold(&reals, |a, b| a + b);
+  sum.is_finite().then_some(sum)
+}
+
 pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(0));
+  }
+  // A sum of machine reals alone is folded directly, in the general machine
+  // path's tree order; a non-finite result takes that path for its overflow
+  // handling.
+  if args.len() >= 2
+    && let Some(sum) = machine_real_sum(args)
+  {
+    return Ok(Expr::Real(sum));
   }
   if let Some(image) = image_arithmetic(args, |a, b| a + b) {
     return Ok(image);
