@@ -4924,6 +4924,34 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // `MaxPoints` caps the samples of each dimension (the d-th root of the
+  // total for a d-dimensional integral) and keeps the best estimate so far,
+  // so a coarse request stays bounded yet close to the converged value.
+  #[test]
+  fn max_points_bounds_iterated_integral() {
+    assert_eq!(
+      interpret(
+        "Abs[NIntegrate[x y Exp[x + y], {x, 0, 1}, {y, 0, 1}, MaxPoints -> 50] - 1] < 0.2"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[NIntegrate[x y Exp[x + y], {x, 0, 1}, {y, 0, 1}, MaxPoints -> 1000] - 1] < 10^-3"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[NIntegrate[Sin[x]^2 Exp[x], {x, 0, 3}, MaxPoints -> 20] - 8.83666] < 10^-3"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // A complex-valued integrand over a real range used to integrate to 0.:
   // every complex sample was read as missing.
   #[test]
