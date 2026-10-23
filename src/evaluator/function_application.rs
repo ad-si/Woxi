@@ -2871,34 +2871,44 @@ pub fn apply_curried_call(
             });
           }
         }
-        // `Derivative[a, b][InterpolatingFunction[…]]` of a 2-D grid
+        // `Derivative[d1, …, dn][InterpolatingFunction[…]]` of an n-D grid
         // interpolation is the same interpolation tagged with its partial
         // derivative orders, which the evaluator differentiates exactly.
+        let orders: Option<Vec<i128>> = func_args
+          .iter()
+          .map(|d| match d {
+            Expr::Integer(k) if *k >= 0 => Some(*k),
+            _ => None,
+          })
+          .collect();
         if args.len() == 1
-          && func_args.len() == 2
-          && let (Expr::Integer(da), Expr::Integer(db)) =
-            (&func_args[0], &func_args[1])
-          && *da >= 0
-          && *db >= 0
+          && let Some(orders) = orders
           && let Expr::FunctionCall {
             name: interp_name,
             args: interp_args,
           } = &args[0]
           && interp_name == "InterpolatingFunction"
           && matches!(interp_args.len(), 4 | 5)
-          && matches!(&interp_args[2], Expr::List(o) if o.len() == 2)
-          && matches!(&interp_args[3], Expr::List(c) if c.len() == 2)
+          && matches!(&interp_args[2], Expr::List(o) if o.len() == orders.len())
+          && matches!(&interp_args[3], Expr::List(c) if c.len() == orders.len())
         {
-          let (pa, pb) = match interp_args.get(4) {
-            Some(Expr::List(prev)) => match prev.as_slice() {
-              [Expr::Integer(a), Expr::Integer(b)] => (*a, *b),
-              _ => (0, 0),
-            },
-            _ => (0, 0),
+          let previous: Vec<i128> = match interp_args.get(4) {
+            Some(Expr::List(prev)) if prev.len() == orders.len() => prev
+              .iter()
+              .map(|p| match p {
+                Expr::Integer(k) => *k,
+                _ => 0,
+              })
+              .collect(),
+            _ => vec![0; orders.len()],
           };
           let mut new_args: Vec<Expr> = interp_args[..4].to_vec();
           new_args.push(Expr::List(
-            vec![Expr::Integer(pa + da), Expr::Integer(pb + db)].into(),
+            orders
+              .iter()
+              .zip(&previous)
+              .map(|(a, b)| Expr::Integer(a + b))
+              .collect(),
           ));
           return Ok(call("InterpolatingFunction", new_args));
         }
@@ -2938,6 +2948,23 @@ pub fn apply_curried_call(
         // `Derivative[n][InterpolatingFunction[…]]` is another
         // InterpolatingFunction that carries the derivative order, so `f'`
         // stays an interpolating function the way wolframscript reports it.
+        // A kernel-layout one (as stored by wolframscript) is read into
+        // Woxi's own form first.
+        let native_interp = match &args[0] {
+          Expr::FunctionCall {
+            name: interp_name,
+            args: interp_args,
+          } if name == "Derivative"
+            && interp_name == "InterpolatingFunction"
+            && interp_args.len() == 5 =>
+          {
+            crate::functions::ode_ast::kernel_interpolating_function_to_native(
+              interp_args,
+            )
+            .map(|a| call("InterpolatingFunction", a))
+          }
+          _ => None,
+        };
         if name == "Derivative"
           && func_args.len() == 1
           && args.len() == 1
@@ -2946,7 +2973,7 @@ pub fn apply_curried_call(
           && let Expr::FunctionCall {
             name: interp_name,
             args: interp_args,
-          } = &args[0]
+          } = native_interp.as_ref().unwrap_or(&args[0])
           && interp_name == "InterpolatingFunction"
           && (2..=4).contains(&interp_args.len())
           && !matches!(interp_args.get(2), Some(Expr::List(_)))

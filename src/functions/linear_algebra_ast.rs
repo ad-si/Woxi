@@ -950,7 +950,17 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         structured_matrix_to_dense(e).unwrap_or_else(|| e.clone())
       }
     };
-    return dot_ast(&[densify(&args[0]), densify(&args[1])]);
+    let (a, b) = (densify(&args[0]), densify(&args[1]));
+    // An operand that could not be densified (too large to expand) would
+    // send this straight back here; leave the product unevaluated instead.
+    if is_sparse(&a)
+      || is_sparse(&b)
+      || structured_matrix_to_dense(&a).is_some()
+      || structured_matrix_to_dense(&b).is_some()
+    {
+      return Ok(unevaluated("Dot", args));
+    }
+    return dot_ast(&[a, b]);
   }
 
   // TransformationFunction[M1] . TransformationFunction[M2] →

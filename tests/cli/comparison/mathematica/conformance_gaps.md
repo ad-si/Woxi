@@ -5469,3 +5469,13 @@ there are several. Woxi uses a fixed 0.0975. Woxi also renders neither WL's
 hover tooltips nor the `"RoundingRadius"` option. `RectangleChart3D` stacks
 plain cuboids from y = 0 and leaves out WL's shaded base plate, face grids,
 `ViewPoint -> {2, -10, 2}` and box ratios.
+
+### Grid `Interpolation` in two or more dimensions differs in the last digit
+
+Woxi builds an n-D grid interpolation as a tensor product of the 1-D local
+Lagrange pieces, with the last axis innermost. wolframscript returns the same
+values but can round the last bit differently. For example, `x + y z` sampled
+on a 3×3×3 grid gives `0.6400000000000001` at `{0.3, 1.7, 0.2}` where WL
+gives `0.6399999999999999`. Partial derivatives (`Derivative[1, 0, 0][f]`)
+can come out a few ULP away from WL's value, so a mixed derivative that WL
+returns as exactly `0.` can be about `1*^-16` in Woxi.

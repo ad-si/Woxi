@@ -2145,24 +2145,33 @@ fn needs_early_initialization(spec: &Expr) -> bool {
   })
 }
 
-/// A `Style[expr, …]` directive list in the order Wolfram applies it: a
-/// named style ("Label", "Section", …) supplies the base appearance and the
-/// explicit directives sit on top of it, whichever side of it they were
-/// written. `Style["A", 20, "Label"]` is 20-point text, not the 9-point the
-/// "Label" stylesheet entry gives on its own.
-fn style_directives_in_application_order(directives: &[Expr]) -> Vec<&Expr> {
-  // `Style[x, {RGBColor[…], 15}]` — a list of directives is the same as the
-  // directives written out one by one, so splice (nested) lists in place.
+/// `Style[x, {RGBColor[…], 15}]` and `Style[x, Directive[Red, 15]]` — lists
+/// and `Directive`s of directives are the same as the directives written out
+/// one by one, so splice (nested) ones in place.
+fn splice_directives(directives: &[Expr]) -> Vec<&Expr> {
   fn flatten<'a>(ds: &'a [Expr], out: &mut Vec<&'a Expr>) {
     for d in ds {
       match d {
         Expr::List(items) => flatten(items, out),
+        Expr::FunctionCall { name, args } if name == "Directive" => {
+          flatten(args, out);
+        }
         other => out.push(other),
       }
     }
   }
   let mut flat = Vec::new();
   flatten(directives, &mut flat);
+  flat
+}
+
+/// A `Style[expr, …]` directive list in the order Wolfram applies it: a
+/// named style ("Label", "Section", …) supplies the base appearance and the
+/// explicit directives sit on top of it, whichever side of it they were
+/// written. `Style["A", 20, "Label"]` is 20-point text, not the 9-point the
+/// "Label" stylesheet entry gives on its own.
+fn style_directives_in_application_order(directives: &[Expr]) -> Vec<&Expr> {
+  let flat = splice_directives(directives);
   let (named, explicit): (Vec<&Expr>, Vec<&Expr>) = flat.into_iter().partition(
     |d| matches!(d, Expr::String(s) if named_style_appearance(s).is_some()),
   );
@@ -4251,6 +4260,13 @@ fn graphics_text_content(expr: &Expr) -> String {
       ) && args.len() == 1 =>
     {
       graphics_text_content(&args[0])
+    }
+    // An unevaluated `Integrate` is typeset as an integral, the same runs a
+    // widget label draws, so the measured width matches the drawing.
+    Expr::FunctionCall { name, args }
+      if name == "Integrate" && integral_label_runs(args, false).is_some() =>
+    {
+      flatten_label_runs(&integral_label_runs(args, false).unwrap_or_default())
     }
     // `HoldForm[expr]` shows `expr` unevaluated as it was written, so a held
     // assignment reads `θ = ω t`, not `Set[θ, ω t]` — the same box text a
@@ -16996,7 +17012,7 @@ fn extract_cell_style(cell: &Expr) -> CellTextStyle<'_> {
     let mut fst = "normal";
     let mut ff: Option<String> = None;
     let mut color: Option<Color> = None;
-    for directive in &args[1..] {
+    for directive in splice_directives(&args[1..]) {
       match directive {
         Expr::Identifier(s) if s == "Bold" => fw = "bold",
         Expr::Identifier(s) if s == "Italic" => fst = "italic",
@@ -31037,6 +31053,12 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // `m/\!\(\*SuperscriptBox[\(s\), \(2\)]\)`, and it must show as
       // `m/s²`, not `m/s^2`.
       "Power" if args.len() == 2 => script_runs(args, italic, true),
+      // An `Integrate` that stayed unevaluated typesets as the integral
+      // sign with its limits beside it, the integrand, and the ⅆ-prefixed
+      // variable: `∫₋₅⁵ √(1+Erf′(x)²) ⅆx`.
+      "Integrate" if integral_label_runs(args, italic).is_some() => {
+        integral_label_runs(args, italic).unwrap_or_default()
+      }
       // The evaluated shapes of the same arithmetic the `BinaryOp` arms
       // below handle: a quotient of typeset pieces reaches here as
       // `Times[a, b^-1]`. Only worth recursing into when there is something
@@ -31281,6 +31303,7 @@ fn contains_presentation_head(expr: &Expr) -> bool {
           | "StyleForm"
           | "Text"
           | "Tooltip"
+          | "HoldForm"
           | "DisplayForm"
           | "TraditionalForm"
           | "Subscript"
@@ -31313,6 +31336,54 @@ fn arithmetic_label_operator(
     Op::Divide => ("/", true),
     _ => return None,
   })
+}
+
+/// The typeset runs of an unevaluated `Integrate[f, {x, a, b}, …]` (or
+/// `Integrate[f, x]`): one `∫` per iterator with its limits as script
+/// characters, then the integrand and a `ⅆ` before each variable. `None`
+/// when the specs are not iterators or variables.
+fn integral_label_runs(args: &[Expr], italic: bool) -> Option<Vec<LabelRun>> {
+  let plain = |text: &str| LabelRun {
+    text: text.to_string(),
+    italic: false,
+    ..Default::default()
+  };
+  let script = |e: &Expr, superscript: bool| {
+    to_unicode_script(
+      &flatten_label_runs(&manipulate_label_runs(e, false)),
+      superscript,
+    )
+  };
+  if args.len() < 2 {
+    return None;
+  }
+  let mut signs = Vec::new();
+  let mut diffs = Vec::new();
+  for spec in &args[1..] {
+    let (var, limits) = match spec {
+      Expr::List(parts) if parts.len() == 3 => (
+        &parts[0],
+        Some((script(&parts[1], false), script(&parts[2], true))),
+      ),
+      Expr::List(parts) if parts.len() == 1 => (&parts[0], None),
+      Expr::Identifier(_) => (spec, None),
+      _ => return None,
+    };
+    let mut sign = String::from("\u{222B}");
+    if let Some((lo, hi)) = limits {
+      sign.push_str(&lo);
+      sign.push_str(&hi);
+    }
+    signs.push(sign);
+    diffs.push(var);
+  }
+  let mut runs = vec![plain(&signs.concat())];
+  runs.extend(grouped_label_runs(&args[0], italic));
+  for var in diffs {
+    runs.push(plain(" \u{2146}"));
+    runs.extend(manipulate_label_runs(var, true));
+  }
+  Some(runs)
 }
 
 /// Label runs for a piece sitting under a radical or on one side of a
@@ -36199,6 +36270,38 @@ mod manipulate_label_tests {
     let row = call1("Row", Expr::List(vec![italic_a, str_expr("b")].into()));
     assert_eq!(runs(&row), vec![run("a", true), run("b", false)]);
     assert_eq!(flatten_label_runs(&runs(&row)), "ab");
+  }
+
+  #[test]
+  fn unevaluated_integrate_label_is_typeset_with_limits() {
+    let integral = call(
+      "Integrate",
+      vec![
+        id_expr("f"),
+        Expr::List(
+          vec![id_expr("t"), Expr::Integer(-2), Expr::Integer(3)].into(),
+        ),
+      ],
+    );
+    assert_eq!(
+      flatten_label_runs(&runs(&integral)),
+      "\u{222B}\u{208B}\u{2082}\u{00B3}f \u{2146}t"
+    );
+    assert_eq!(
+      graphics_text_content(&integral),
+      "\u{222B}\u{208B}\u{2082}\u{00B3}f \u{2146}t"
+    );
+  }
+
+  #[test]
+  fn integrate_label_keeps_italic_parts_of_its_row() {
+    let svg = crate::interpret(
+      "ExportString[Graphics[Text[Row[{Style[\"S\", Italic], \" = \", \
+Integrate[HoldForm[g[x]], {x, a, b}]}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("<tspan font-style=\"italic\">S</tspan> = \u{222B}"));
+    assert!(!svg.contains("Integrate["));
   }
 
   /// `Derivative[n][f]` — a slider labelled `y'(0)` in a Demonstration.

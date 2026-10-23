@@ -6752,3 +6752,26 @@ mod head_and_derivative_patterns {
     );
   }
 }
+
+mod held_patterns_in_definitions {
+  use super::*;
+
+  #[test]
+  fn patterns_inside_holdform_match_held_input() {
+    // The ComparingResistancesOfWires Demonstration's AWG helper.
+    assert_eq!(
+      interpret("h[HoldForm[x_/0]] := x; {h[HoldForm[4/0]], HoldForm[3/0]}")
+        .unwrap(),
+      "{4, HoldForm[3/0]}"
+    );
+    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(
+      interpret("g[HoldForm[x_/2]] := x; g[HoldForm[6/2]]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("k[Hold[a_ + b_]] := {a, b}; k[Hold[1 + 2]]").unwrap(),
+      "{1, 2}"
+    );
+  }
+}
