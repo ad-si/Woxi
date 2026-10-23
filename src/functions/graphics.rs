@@ -6073,6 +6073,38 @@ fn default_locator_marker_svg() -> (String, f64) {
 
 // ── Bounding box computation ─────────────────────────────────────────────
 
+/// Grow `bb` to cover the elliptical arc from `a1` to `a2` (radians): both
+/// end points plus every axis extreme the arc sweeps through, and the centre
+/// when the arc is closed into a sector.
+#[allow(clippy::too_many_arguments)]
+fn include_arc_extent(
+  bb: &mut BBox,
+  cx: f64,
+  cy: f64,
+  rx: f64,
+  ry: f64,
+  a1: f64,
+  a2: f64,
+  include_center: bool,
+) {
+  use std::f64::consts::{FRAC_PI_2, PI};
+  if include_center {
+    bb.include_point(cx, cy);
+  }
+  let (a1, a2) = if a2 < a1 { (a2, a1) } else { (a1, a2) };
+  bb.include_point(cx + rx * a1.cos(), cy + ry * a1.sin());
+  bb.include_point(cx + rx * a2.cos(), cy + ry * a2.sin());
+  let start = a1.rem_euclid(2.0 * PI);
+  let span = a2 - a1;
+  for k in 0..4 {
+    let cardinal = k as f64 * FRAC_PI_2;
+    let diff = (cardinal - start).rem_euclid(2.0 * PI);
+    if diff < span {
+      bb.include_point(cx + rx * cardinal.cos(), cy + ry * cardinal.sin());
+    }
+  }
+}
+
 fn primitive_bbox(prim: &Primitive) -> BBox {
   let mut bb = BBox::empty();
   match prim {
@@ -6091,6 +6123,18 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
           bb.include_point(x, y);
         }
       }
+    }
+    // `Circle[c, r, {a1, a2}]` only occupies the swept arc, not the whole
+    // circle.
+    Primitive::CircleArc {
+      cx,
+      cy,
+      rx,
+      ry,
+      angles: Some((a1, a2)),
+      ..
+    } => {
+      include_arc_extent(&mut bb, *cx, *cy, *rx, *ry, *a1, *a2, false);
     }
     Primitive::CircleArc { cx, cy, rx, ry, .. }
     | Primitive::Disk { cx, cy, rx, ry, .. } => {
@@ -6114,28 +6158,7 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
       angle2,
       ..
     } => {
-      // Include center point (sector always connects to center)
-      bb.include_point(*cx, *cy);
-      // Include the two endpoint arcs
-      bb.include_point(cx + rx * angle1.cos(), cy + ry * angle1.sin());
-      bb.include_point(cx + rx * angle2.cos(), cy + ry * angle2.sin());
-      // Include axis-aligned extremes if the arc crosses them
-      let mut a = *angle1 % (2.0 * std::f64::consts::PI);
-      if a < 0.0 {
-        a += 2.0 * std::f64::consts::PI;
-      }
-      let span = angle2 - angle1;
-      // Check each cardinal direction: 0, PI/2, PI, 3PI/2
-      for k in 0..4 {
-        let cardinal = k as f64 * std::f64::consts::FRAC_PI_2;
-        let mut diff = cardinal - a;
-        if diff < 0.0 {
-          diff += 2.0 * std::f64::consts::PI;
-        }
-        if diff < span {
-          bb.include_point(cx + rx * cardinal.cos(), cy + ry * cardinal.sin());
-        }
-      }
+      include_arc_extent(&mut bb, *cx, *cy, *rx, *ry, *angle1, *angle2, true);
     }
     Primitive::RectPrim {
       x_min,
