@@ -3569,6 +3569,13 @@ pub fn evaluate_expr_to_expr_inner(
           });
         }
 
+        // Identical up to the display form and the identity of whatever it
+        // summarises (a Graph's `Graph[<v>, <e>]`, nested images).
+        let is_graph = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Graph");
+        let identical = |a: &Expr, b: &Expr| {
+          expr_to_string(a) + &crate::syntax::graphics_identity_suffix(a)
+            == expr_to_string(b) + &crate::syntax::graphics_identity_suffix(b)
+        };
         let result = match op {
           ComparisonOp::SameQ => {
             // SameQ tests structural identity, not numeric equality.
@@ -3586,7 +3593,7 @@ pub fn evaluate_expr_to_expr_inner(
             {
               crate::evaluator::pattern_matching::expr_equal(left, right)
             } else {
-              expr_to_string(left) == expr_to_string(right)
+              identical(left, right)
                 || crate::functions::boolean_ast::same_q_real_bigfloat(
                   left, right,
                 )
@@ -3615,8 +3622,11 @@ pub fn evaluate_expr_to_expr_inner(
                 crate::functions::boolean_ast::equal_ast(&pair)?,
                 Expr::Identifier(ref s) if s == "True"
               )
-            } else if expr_to_string(left) == expr_to_string(right) {
+            } else if identical(left, right) {
               true
+            } else if is_graph(left) && is_graph(right) {
+              // Two graphs are equal only when they are the same graph.
+              false
             } else if let Some(ord) =
               crate::functions::quantity_ast::try_quantity_compare(left, right)
             {
@@ -3655,7 +3665,7 @@ pub fn evaluate_expr_to_expr_inner(
             {
               !crate::evaluator::pattern_matching::expr_equal(left, right)
             } else {
-              expr_to_string(left) != expr_to_string(right)
+              !identical(left, right)
             }
           }
           ComparisonOp::NotEqual => {
@@ -3679,8 +3689,10 @@ pub fn evaluate_expr_to_expr_inner(
                   Expr::Identifier(ref s) if s == "True"
                 )
               }
-            } else if expr_to_string(left) == expr_to_string(right) {
+            } else if identical(left, right) {
               false
+            } else if is_graph(left) && is_graph(right) {
+              true
             } else if crate::functions::boolean_ast::all_components_equal(
               left, right,
             ) {

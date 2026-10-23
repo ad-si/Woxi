@@ -251,7 +251,11 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // arguments (e.g. comparing the steps of NestWhileList[f, x, UnsameQ, 2]),
   // turns each comparison into a costly re-traversal.
   let first = &args[0];
-  let first_str = expr_to_string(first);
+  // The display form plus the identity of anything it summarises (a
+  // Graph's `Graph[<v>, <e>]`, nested images and graphics).
+  let identity =
+    |e: &Expr| expr_to_string(e) + &crate::syntax::graphics_identity_suffix(e);
+  let first_str = identity(first);
 
   for arg in args.iter().skip(1) {
     // `expr_to_string` reports every `Image[…]` as the same `-Image-`
@@ -266,7 +270,7 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       continue;
     }
-    let val_str = expr_to_string(arg);
+    let val_str = identity(arg);
     if val_str != first_str && !same_q_real_bigfloat(first, arg) {
       return Ok(bool_expr(false));
     }
@@ -780,7 +784,11 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   use crate::functions::math_ast::try_eval_to_f64;
 
-  let first_str = expr_to_string(&args[0]);
+  // The display form plus the identity of anything it summarises (a
+  // Graph's `Graph[<v>, <e>]`, nested images and graphics).
+  let identity =
+    |e: &Expr| expr_to_string(e) + &crate::syntax::graphics_identity_suffix(e);
+  let first_str = identity(&args[0]);
   let mut all_identical = true;
 
   for arg in args.iter().skip(1) {
@@ -797,7 +805,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       continue;
     }
-    let val_str = expr_to_string(arg);
+    let val_str = identity(arg);
     if val_str != first_str {
       all_identical = false;
       break;
@@ -806,6 +814,13 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if all_identical {
     return Ok(bool_expr(true));
+  }
+
+  // Graphs are equal only when they are the same graph.
+  let is_graph =
+    |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Graph");
+  if args.iter().all(is_graph) {
+    return Ok(bool_expr(false));
   }
 
   // Any other equality touching a MusicPitch stays unevaluated, matching

@@ -9134,7 +9134,24 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // `2. + 3.14…*I`, not `2. + (0. + 3.14…*I)`). When re != 0 keep both
         // parts as machine reals, matching wolframscript's `6. + 8.*I` and
         // `-2. + 0.*I`.
-        if re != 0.0 {
+        // A factor that already is a machine complex with its own real part
+        // (`Complex[0., 1.3]`) makes the product one too: `4. (0. + 1.3 I)`
+        // is `0. + 5.2 I`.
+        let explicit_complex = args.iter().any(|a| match a {
+          Expr::FunctionCall { name, args: parts } if name == "Plus" => {
+            parts.iter().any(|p| matches!(p, Expr::Real(_)))
+          }
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left,
+            right,
+          } => {
+            matches!(left.as_ref(), Expr::Real(_))
+              || matches!(right.as_ref(), Expr::Real(_))
+          }
+          _ => false,
+        });
+        if re != 0.0 || explicit_complex {
           return Ok(build_complex_float_expr_keep_real(re, im));
         }
       }

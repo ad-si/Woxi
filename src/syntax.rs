@@ -13428,6 +13428,14 @@ pub fn graphics_identity_suffix(expr: &Expr) -> String {
         ));
       }
       Expr::List(items) => items.iter().for_each(|e| collect(e, out)),
+      // A Graph prints as its `Graph[<v>, <e>]` summary; its identity is its
+      // vertices, edges and options.
+      Expr::FunctionCall { name, args } if name == "Graph" => {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        format!("{args:?}").hash(&mut hasher);
+        out.push_str(&format!("\u{0}graph:{:x}", hasher.finish()));
+      }
       Expr::FunctionCall { args, .. } => {
         args.iter().for_each(|e| collect(e, out));
       }

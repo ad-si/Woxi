@@ -332,6 +332,34 @@ pub fn dispatch_polynomial_functions(
         args, true,
       ));
     }
+    // FindArgMin / FindArgMax: the position FindMinimum / FindMaximum finds,
+    // as the list of the variables' values.
+    "FindArgMin" | "FindArgMax" if args.len() >= 2 => {
+      let found = match crate::functions::polynomial_ast::find_minimum_ast(
+        args,
+        name == "FindArgMax",
+      ) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      if let Expr::List(parts) = &found
+        && let [_, Expr::List(rules)] = parts.as_slice()
+      {
+        let values: Option<Vec<Expr>> = rules
+          .iter()
+          .map(|r| match r {
+            Expr::Rule { replacement, .. } => {
+              Some(replacement.as_ref().clone())
+            }
+            _ => None,
+          })
+          .collect();
+        if let Some(values) = values {
+          return Some(Ok(Expr::List(values.into())));
+        }
+      }
+      return Some(Ok(unevaluated(name, args)));
+    }
     "Minimize" | "Maximize"
       if args.len() == 2
         && matches!(

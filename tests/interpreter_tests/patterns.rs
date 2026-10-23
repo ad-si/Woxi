@@ -6988,3 +6988,41 @@ mod replacement_inside_held_positions {
     );
   }
 }
+
+mod loops_that_never_ended {
+  use super::*;
+
+  // Values from wolframscript.
+  #[test]
+  fn different_graphs_are_not_equal() {
+    assert_eq!(
+      interpret(
+        "{Graph[{1 -> 2}] == Graph[{2 -> 1}], Graph[{1 -> 2}] === Graph[{2 -> 1}], \
+         Graph[{1 -> 2}] == Graph[{1 -> 2}], {Graph[{1 -> 2}]} === {Graph[{2 -> 1}]}, \
+         SameQ[Graph[{1 -> 2}], Graph[{2 -> 1}]], Graph[{1 -> 2}] != Graph[{2 -> 1}]}"
+      )
+      .unwrap(),
+      "{False, False, True, False, False, True}"
+    );
+  }
+
+  #[test]
+  fn machine_real_times_machine_complex() {
+    assert_eq!(
+      interpret("InputForm[{4.*Complex[0., 1.3], 2. + Pi I, 2.*I}]").unwrap(),
+      "InputForm[{0. + 5.2*I, 2. + 3.141592653589793*I, 0. + 2.*I}]"
+    );
+  }
+
+  #[test]
+  fn find_arg_min_and_max() {
+    assert_eq!(
+      interpret(
+        "{FindArgMax[-(x - 1)^2, {x, 0}], \
+         FindArgMin[(x - 1)^2 + (y - 2)^2, {{x, 0}, {y, 0}}]}"
+      )
+      .unwrap(),
+      "{{1.}, {1., 2.}}"
+    );
+  }
+}
