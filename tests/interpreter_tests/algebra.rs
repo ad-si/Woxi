@@ -20632,3 +20632,29 @@ mod option_value_with_head_in_definitions {
     );
   }
 }
+
+mod root_of_repeated_factors {
+  use super::*;
+
+  // Values from wolframscript; Root[(#1 - 1)^3 &, 1] recursed forever.
+  #[test]
+  fn repeated_linear_factors() {
+    assert_eq!(
+      interpret(
+        "{Root[-1 + 3 #1 - 3 #1^2 + #1^3 &, 1], Root[(#1 - 2)^2 (#1 + 1) &, 2], \
+         Root[(#1 - 2)^2 (#1 + 1) &, 3]}"
+      )
+      .unwrap(),
+      "{1, 2, 2}"
+    );
+  }
+
+  #[test]
+  fn huge_quadratic_coefficients_do_not_overflow() {
+    assert_eq!(
+      interpret("Length[Solve[10^20 x^2 + 3*10^19 x - 7*10^20 == 0, x]]")
+        .unwrap(),
+      "2"
+    );
+  }
+}

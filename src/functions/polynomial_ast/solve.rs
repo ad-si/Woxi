@@ -3715,13 +3715,26 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let two_a = multiply_exprs(&Expr::Integer(2), a);
 
       // For integer coefficients, use exact arithmetic with simplified Sqrt
-      if let (Expr::Integer(ai), Expr::Integer(bi), Expr::Integer(ci)) =
-        (a, b, c)
+      // (Coefficients too large for i128 arithmetic — e.g. a rationalized
+      // machine number — take the general path below.)
+      let int_disc = match (a, b, c) {
+        (Expr::Integer(ai), Expr::Integer(bi), Expr::Integer(ci)) => bi
+          .checked_mul(*bi)
+          .zip(ai.checked_mul(*ci).and_then(|p| p.checked_mul(4)))
+          .and_then(|(bb, fac)| bb.checked_sub(fac))
+          .filter(|_| ai.checked_mul(2).is_some()),
+        _ => None,
+      };
+      if let (
+        Expr::Integer(ai),
+        Expr::Integer(bi),
+        Expr::Integer(ci),
+        Some(disc_int),
+      ) = (a, b, c, int_disc)
       {
         let ai = *ai;
         let bi = *bi;
         let ci = *ci;
-        let disc_int = bi * bi - 4 * ai * ci;
 
         if disc_int >= 0 {
           let (sqrt_out, sqrt_in) = simplify_sqrt_parts(disc_int);
@@ -7529,8 +7542,30 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if factor_degree(factor).is_none_or(|d| d < 1) {
           continue;
         }
+        // A repeated factor `base^m` contributes the roots of `base`, each
+        // m times; solving the power itself would come back here as a Root
+        // of degree 3 or more (`Root[(#1 - 1)^3 &, 1]` recursed forever).
+        let (base, multiplicity) = match factor {
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } => match right.as_ref() {
+            Expr::Integer(m) if *m >= 1 => (left.as_ref().clone(), *m as usize),
+            _ => (factor.clone(), 1),
+          },
+          Expr::FunctionCall { name, args }
+            if name == "Power" && args.len() == 2 =>
+          {
+            match &args[1] {
+              Expr::Integer(m) if *m >= 1 => (args[0].clone(), *m as usize),
+              _ => (factor.clone(), 1),
+            }
+          }
+          _ => (factor.clone(), 1),
+        };
         let factor_eq = Expr::Comparison {
-          operands: vec![factor.clone(), Expr::Integer(0)],
+          operands: vec![base, Expr::Integer(0)],
           operators: vec![ComparisonOp::Equal],
         };
         let solved =
@@ -7540,7 +7575,9 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if let Expr::List(inner) = item {
               for rule in inner {
                 if let Expr::Rule { replacement, .. } = rule {
-                  collected.push((**replacement).clone());
+                  for _ in 0..multiplicity {
+                    collected.push((**replacement).clone());
+                  }
                 }
               }
             }
