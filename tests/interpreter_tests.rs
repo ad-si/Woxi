@@ -1512,6 +1512,27 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_text_stringform_and_nested_text_labels() {
+    // Regression: a `Text` primitive whose label is a styled `StringForm`
+    // (with a `NumberForm` argument and inline box notation in the template)
+    // or a nested `Text[Row[…]]` leaked its wrapper source into the picture.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Graphics[{Text[Style[StringForm[\"\\!\\(\\*OverscriptBox[\\(C\\), \\(^\\)]\\) = ``/`` = ``\", 93, 100, NumberForm[N[93/100], {5, 3}]], FontSize -> 10], {0, 0}], Text[Style[Text[Row[{\"p\", \"-values\"}]], Red], {0, 1}]}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Graphics should produce an SVG");
+    assert!(svg.contains(">C\u{302} = 93/100 = 0.930<"), "{svg}");
+    assert!(svg.contains(">p-values<"), "{svg}");
+    assert!(
+      !svg.contains("StringForm") && !svg.contains("NumberForm"),
+      "{svg}"
+    );
+    assert!(!svg.contains("Text["), "{svg}");
+  }
+
+  #[test]
   fn test_graphics_plotlabel_stringform_substitutes_placeholders() {
     // Regression: `PlotLabel -> StringForm["…", args]` (the "Paths inside a
     // Polygon" Demonstration's `PlotLabel -> StringForm["Path distance =
