@@ -20677,6 +20677,26 @@ mod inexact_systems_solved_exactly {
   }
 
   #[test]
+  fn nonlinear_inexact_system_numericizes_its_eliminant_roots() {
+    // The rationalized system's eliminant roots are found as numbers, in
+    // Solve's order (ascending; the negative imaginary part first).
+    assert_eq!(
+      interpret("Quiet[Solve[{x^2 + y^2 == 0.5, x + y == 3}, {x, y}]]")
+        .unwrap(),
+      "{{x -> 1.5 - 1.4142135623730951*I, y -> 1.5 + 1.4142135623730951*I}, \
+       {x -> 1.5 + 1.4142135623730951*I, y -> 1.5 - 1.4142135623730951*I}}"
+    );
+    assert_eq!(
+      interpret(
+        "Length[Quiet[Solve[{(x - 0.1234567)^2 + (y - 0.7654321)^2 == 0.9876543^2, \
+         (x + 0.3141592)^2 + (y - 0.2718281)^2 == 0.8^2}, {x, y}]]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
   fn linear_inexact_system_stays_direct() {
     let result =
       interpret_with_stdout("Solve[{x + y == 1.5, x - y == 0.3}, {x, y}]")

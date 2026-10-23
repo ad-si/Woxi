@@ -1899,7 +1899,10 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !nonlinear && found(&result) > 0 {
       return Ok(result);
     }
-    let exact_result = solve_ast_entry(&[exact, args[1].clone()])?;
+    let exact_result = {
+      let _numeric = NumericRootsScope::new();
+      solve_ast_entry(&[exact, args[1].clone()])?
+    };
     if found(&exact_result) > found(&result)
       || (nonlinear && found(&exact_result) > 0)
     {
@@ -2330,6 +2333,34 @@ impl Drop for NSolveScope {
 
 fn in_nsolve() -> bool {
   NSOLVE_DEPTH.with(std::cell::Cell::get) > 0
+}
+
+thread_local! {
+  static NUMERIC_ROOTS_DEPTH: std::cell::Cell<usize> =
+    const { std::cell::Cell::new(0) };
+}
+
+/// While alive, the polynomial system solver finds the roots of its
+/// eliminants as numbers: the caller numericizes the solutions anyway (an
+/// inexact system solved exactly), and radicals of rationalized machine
+/// numbers are costly to build and simplify.
+struct NumericRootsScope;
+
+impl NumericRootsScope {
+  fn new() -> Self {
+    NUMERIC_ROOTS_DEPTH.with(|d| d.set(d.get() + 1));
+    Self
+  }
+}
+
+impl Drop for NumericRootsScope {
+  fn drop(&mut self) {
+    NUMERIC_ROOTS_DEPTH.with(|d| d.set(d.get() - 1));
+  }
+}
+
+fn numeric_roots_wanted() -> bool {
+  in_nsolve() || NUMERIC_ROOTS_DEPTH.with(std::cell::Cell::get) > 0
 }
 
 /// Solve with the explicit variable list narrowed first when the system is
@@ -4910,7 +4941,24 @@ fn numeric_quadratic_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
           ],
         )?)
       };
-      Some(vec![root(-1)?, root(1)?])
+      // In Solve's order: ascending, the conjugate with the negative
+      // imaginary part first.
+      let mut roots = vec![root(-1)?, root(1)?];
+      let key = |e: &Expr| {
+        try_eval_to_f64(e)
+          .map(|re| (re, 0.0))
+          .or_else(|| try_extract_complex_float(e))
+      };
+      if let (Some(a), Some(b)) = (key(&roots[0]), key(&roots[1]))
+        && (if a.1 != 0.0 || b.1 != 0.0 {
+          b.1 < a.1
+        } else {
+          b.0 < a.0
+        })
+      {
+        roots.swap(0, 1);
+      }
+      Some(roots)
     }
     _ => None,
   }
@@ -4922,12 +4970,12 @@ fn univariate_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
   // system take seconds per intersection. A quadratic's closed form is
   // numericized directly, which rounds its roots correctly; higher degrees
   // go to the numeric root finder.
-  if in_nsolve()
+  if numeric_roots_wanted()
     && let Some(roots) = numeric_quadratic_roots(poly, var)
   {
     return Some(roots);
   }
-  let numeric = in_nsolve()
+  let numeric = numeric_roots_wanted()
     && !matches!(
       crate::evaluator::evaluate_function_call_ast(
         "Exponent",
