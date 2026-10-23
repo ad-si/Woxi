@@ -6360,6 +6360,7 @@ GraphUtilities`HamiltonianCycles,Hamiltonian cycle of a graph given as a list of
 MultivariateStatistics`EllipsoidQuantile,Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean; c Covariance],✅,pure,8.0,
 Combinatorica`FromUnorderedPairs,Builds a Combinatorica graph with one edge per distinct vertex pair on a circular embedding,✅,pure,6.0,
 Combinatorica`StableMarriage,Man-optimal stable matching from men's and women's preference lists (Gale-Shapley),✅,pure,6.0,
+Combinatorica`Josephus,Round in which each of n people in a circle is eliminated when every m-th one goes,✅,pure,6.0,
 Combinatorica`SymmetricGroup,All permutations of Range[n] as the elements of the symmetric group,✅,pure,6.0,
 Combinatorica`AlternatingGroup,The even permutations of Range[n] as the elements of the alternating group,✅,pure,6.0,
 Combinatorica`CyclicGroup,The n rotations of Range[n] as the elements of the cyclic group,✅,pure,6.0,

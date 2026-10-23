@@ -2910,6 +2910,9 @@ pub fn dispatch_list_operations(
     "Combinatorica`RandomKSubset" if args.len() == 2 => {
       return Some(list_helpers_ast::combinatorica_random_k_subset_ast(args));
     }
+    "Combinatorica`Josephus" if args.len() == 2 => {
+      return Some(list_helpers_ast::combinatorica_josephus_ast(args));
+    }
     "Combinatorica`Backtrack" if (1..=4).contains(&args.len()) => {
       return Some(list_helpers_ast::combinatorica_backtrack_ast(args));
     }

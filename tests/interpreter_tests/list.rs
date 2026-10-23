@@ -24158,3 +24158,30 @@ mod replace_part_position_patterns {
     );
   }
 }
+
+mod combinatorica_josephus {
+  use super::*;
+
+  #[test]
+  fn elimination_rounds() {
+    assert_eq!(
+      interpret(
+        "{Combinatorica`Josephus[5, 2], Combinatorica`Josephus[3, 5], \
+         Combinatorica`Josephus[7, 3], Combinatorica`Josephus[0, 2]}"
+      )
+      .unwrap(),
+      "{{3, 1, 5, 2, 4}, {3, 1, 2}, {6, 3, 1, 7, 5, 2, 4}, {}}"
+    );
+  }
+
+  #[test]
+  fn the_bare_name_once_the_package_is_loaded() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; InversePermutation[Josephus[5, 2]]"
+      )
+      .unwrap(),
+      "{2, 4, 1, 5, 3}"
+    );
+  }
+}

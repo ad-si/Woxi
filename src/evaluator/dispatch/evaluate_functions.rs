@@ -1067,6 +1067,7 @@ fn evaluate_function_call_ast_inner(
     "CyclicGroup" if combinatorica_active => "Combinatorica`CyclicGroup",
     "DihedralGroup" if combinatorica_active => "Combinatorica`DihedralGroup",
     "Backtrack" if combinatorica_active => "Combinatorica`Backtrack",
+    "Josephus" if combinatorica_active => "Combinatorica`Josephus",
     "FromUnorderedPairs" | "ToAdjacencyLists" | "BreadthFirstTraversal"
       if combinatorica_active =>
     {
