@@ -6764,7 +6764,7 @@ mod held_patterns_in_definitions {
         .unwrap(),
       "{4, HoldForm[3/0]}"
     );
-    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(woxi::get_captured_messages_raw(), Vec::<String>::new());
     assert_eq!(
       interpret("g[HoldForm[x_/2]] := x; g[HoldForm[6/2]]").unwrap(),
       "6"
