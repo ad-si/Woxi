@@ -13783,7 +13783,18 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 func: Box::new(cf.clone()),
                 args: args.iter().map(|a| Expr::Real(*a)).collect(),
               };
-              let value = evaluate_expr_to_expr(&call).ok()?;
+              let mut value = evaluate_expr_to_expr(&call).ok()?;
+              // A bare `{r, g, b}` list (a sampled texture) stands for the
+              // colour `RGBColor[r, g, b]`.
+              if let Expr::List(channels) = &value
+                && channels.len() == 3
+                && channels.iter().all(|c| try_eval_to_f64(c).is_some())
+              {
+                value = Expr::FunctionCall {
+                  name: "RGBColor".to_string(),
+                  args: channels.clone(),
+                };
+              }
               crate::functions::graphics::parse_color(&value).map(|c| {
                 (
                   (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,

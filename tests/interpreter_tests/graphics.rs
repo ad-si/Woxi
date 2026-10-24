@@ -4768,6 +4768,17 @@ mod plot3d {
       assert_eq!(result, "201");
     }
 
+    /// A `ColorFunction` returning a bare `{r, g, b}` list colours the facets
+    /// with that RGB value (a sampled texture) instead of being ignored.
+    #[test]
+    fn parametric_plot3d_surface_color_function_rgb_list() {
+      let svg = interpret(
+        "ExportString[ParametricPlot3D[{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}, {u, 0, 2 Pi}, {v, 0, Pi}, Mesh -> None, ColorFunction -> ({1, 0, 0} &)], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains(",0,0)\""));
+    }
+
     /// Regression: `ColorFunction` on a `ParametricPlot3D` curve was dropped,
     /// so the curve was always drawn in one flat color instead of being
     /// colored along its length.
