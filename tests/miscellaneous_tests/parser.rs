@@ -344,3 +344,29 @@ mod tests {
     assert_eq!(woxi::interpret("(3)! {1, 2}").unwrap(), "{6, 12}");
   }
 }
+
+mod large_numeric_literals {
+  use woxi::interpret;
+
+  // A large numeric list skips the grammar (it is read directly and put
+  // back as the same list); one inside a string, or used as a head, stays
+  // the grammar's.
+  #[test]
+  fn read_like_any_list() {
+    let big = format!(
+      "{{{}}}",
+      (0..600)
+        .map(|i| format!("{{{i}, {i}.5, -{i}}}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+    );
+    assert_eq!(
+      interpret(&format!(
+        "x = {big}; {{Length[x], Total[Flatten[x]], x[[7]], \
+         Head[x[[3, 2]]], StringLength[\"{big}\"], Length[{big}[[All, 1]]]}}"
+      ))
+      .unwrap(),
+      format!("{{600, 180000., {{6, 6.5, -6}}, Real, {}, 600}}", big.len())
+    );
+  }
+}

@@ -2843,6 +2843,13 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
     }
     // An omitted element or argument (`{a,,b}`, `f[a,]`) is `Null`.
     Rule::OmittedArg | Rule::OmittedTrailingArg => null_expr(),
+    Rule::Identifier
+      if pair.as_str().starts_with(HOISTED_PREFIX)
+        && let Some(literal) =
+          HOISTED_LITERALS.with(|m| m.borrow().get(pair.as_str()).cloned()) =>
+    {
+      literal
+    }
     Rule::Identifier => {
       // A leading backtick ` `x` ` is shorthand for the current context,
       // which is Global by default — collapse it to `x`. An explicit
@@ -18907,6 +18914,136 @@ pub fn parse_literal_data(src: &str) -> Option<Expr> {
   let value = p.value(0)?;
   p.ws();
   (p.i == p.s.len()).then_some(value)
+}
+
+const HOISTED_PREFIX: &str = "WoxiHoistedLiteral$";
+
+thread_local! {
+  /// Large numeric list literals taken out of a source before the grammar
+  /// reads it, by placeholder name (see [`hoist_large_literals`]).
+  static HOISTED_LITERALS: std::cell::RefCell<
+    std::collections::HashMap<String, Expr>,
+  > = std::cell::RefCell::new(std::collections::HashMap::new());
+  static HOISTED_COUNTER: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Replace every large numeric list literal in `src` (a raster's pixel
+/// array, a data table) by a placeholder symbol the grammar reads in one
+/// step, keeping the literal, already parsed, for [`pair_to_expr`] to put
+/// back. The grammar spends several rule calls per character on such data,
+/// which made a notebook full of saved rasters take minutes to read.
+/// Returns `None` when nothing is worth hoisting; otherwise the rewritten
+/// source and the placeholders, to be released with
+/// [`release_hoisted_literals`] once the parse is converted.
+pub fn hoist_large_literals(src: &str) -> Option<(String, Vec<String>)> {
+  const MIN_LEN: usize = 4096;
+  if src.len() < MIN_LEN {
+    return None;
+  }
+  let b = src.as_bytes();
+  let mut out = String::new();
+  let mut keys: Vec<String> = Vec::new();
+  let mut copied = 0;
+  let mut i = 0;
+  while i < b.len() {
+    match b[i] {
+      b'"' => {
+        // Skip a string literal.
+        i += 1;
+        while i < b.len() && b[i] != b'"' {
+          i += if b[i] == b'\\' { 2 } else { 1 };
+        }
+        i += 1;
+      }
+      b'(' if b.get(i + 1) == Some(&b'*') => {
+        // Skip a (possibly nested) comment.
+        let mut depth = 0usize;
+        while i < b.len() {
+          if b[i] == b'(' && b.get(i + 1) == Some(&b'*') {
+            depth += 1;
+            i += 2;
+          } else if b[i] == b'*' && b.get(i + 1) == Some(&b')') {
+            depth -= 1;
+            i += 2;
+            if depth == 0 {
+              break;
+            }
+          } else {
+            i += 1;
+          }
+        }
+      }
+      b'{' => {
+        // The extent of a list made of nothing but numbers and braces.
+        let mut depth = 0usize;
+        let mut j = i;
+        let mut end = None;
+        while j < b.len() {
+          match b[j] {
+            b'{' => depth += 1,
+            b'}' => {
+              depth -= 1;
+              if depth == 0 {
+                end = Some(j);
+                break;
+              }
+            }
+            b'0'..=b'9' | b'.' | b'-' | b',' | b' ' | b'\t' | b'\n' | b'\r' => {
+            }
+            _ => break,
+          }
+          j += 1;
+        }
+        let next = end.and_then(|e| {
+          b[e + 1..]
+            .iter()
+            .find(|c| !c.is_ascii_whitespace())
+            .copied()
+        });
+        // A list used as a head (`{f, g}[x]`) or with a prime stays put.
+        if let Some(e) = end
+          && e + 1 - i >= MIN_LEN
+          && !matches!(next, Some(b'[' | b'\''))
+          && let Some(literal) = parse_literal_data(&src[i..=e])
+        {
+          let n = HOISTED_COUNTER.with(|c| {
+            let n = c.get();
+            c.set(n + 1);
+            n
+          });
+          let key = format!("{HOISTED_PREFIX}{n}");
+          HOISTED_LITERALS
+            .with(|m| m.borrow_mut().insert(key.clone(), literal));
+          out.push_str(&src[copied..i]);
+          // Spaces around it keep it from fusing with a neighbour.
+          out.push(' ');
+          out.push_str(&key);
+          out.push(' ');
+          keys.push(key);
+          i = e + 1;
+          copied = i;
+        } else {
+          i += 1;
+        }
+      }
+      _ => i += 1,
+    }
+  }
+  if keys.is_empty() {
+    return None;
+  }
+  out.push_str(&src[copied..]);
+  Some((out, keys))
+}
+
+/// Drop the literals [`hoist_large_literals`] kept for `keys`.
+pub fn release_hoisted_literals(keys: &[String]) {
+  HOISTED_LITERALS.with(|m| {
+    let mut m = m.borrow_mut();
+    for k in keys {
+      m.remove(k);
+    }
+  });
 }
 
 /// A finished `BSplineFunction[dim, ranges, degrees, closed, {net, Automatic},

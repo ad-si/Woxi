@@ -2769,6 +2769,20 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
   // correctly separates statements like "fib[0] = 0\nfib[1] = 1" instead
   // of treating them as implicit multiplication.
   let preprocessed = insert_statement_separators(trimmed);
+  // Large numeric literals skip the grammar (see `hoist_large_literals`);
+  // their placeholders are resolved as the statements are converted, so
+  // they are released only when this input is done.
+  let hoisted = syntax::hoist_large_literals(&preprocessed);
+  struct HoistGuard(Vec<String>);
+  impl Drop for HoistGuard {
+    fn drop(&mut self) {
+      syntax::release_hoisted_literals(&self.0);
+    }
+  }
+  let (preprocessed, _hoist_guard) = match hoisted {
+    Some((src, keys)) => (src, HoistGuard(keys)),
+    None => (preprocessed, HoistGuard(Vec::new())),
+  };
 
   // Regular interpretation - use AST-based evaluation
   let pairs = parse(&preprocessed)?;
@@ -6878,23 +6892,32 @@ fn parse_statements(
   {
     return Ok(vec![expr]);
   }
-  let mut pairs = parse(&normalized).map_err(|e| {
-    InterpreterError::EvaluationError(format!("Parse error: {e}"))
-  })?;
-  let program = pairs.next().ok_or(InterpreterError::EmptyInput)?;
-  if program.as_rule() != Rule::Program {
-    return Err(InterpreterError::EvaluationError(format!(
-      "Expected Program, got {:?}",
-      program.as_rule()
-    )));
-  }
-  Ok(
-    program
-      .into_inner()
-      .filter(|node| is_statement_rule(node.as_rule()))
-      .map(syntax::pair_to_expr)
-      .collect(),
-  )
+  let (normalized, hoisted_keys) =
+    match syntax::hoist_large_literals(&normalized) {
+      Some((src, keys)) => (src, keys),
+      None => (normalized, Vec::new()),
+    };
+  let converted = (|| {
+    let mut pairs = parse(&normalized).map_err(|e| {
+      InterpreterError::EvaluationError(format!("Parse error: {e}"))
+    })?;
+    let program = pairs.next().ok_or(InterpreterError::EmptyInput)?;
+    if program.as_rule() != Rule::Program {
+      return Err(InterpreterError::EvaluationError(format!(
+        "Expected Program, got {:?}",
+        program.as_rule()
+      )));
+    }
+    Ok(
+      program
+        .into_inner()
+        .filter(|node| is_statement_rule(node.as_rule()))
+        .map(syntax::pair_to_expr)
+        .collect(),
+    )
+  })();
+  syntax::release_hoisted_literals(&hoisted_keys);
+  converted
 }
 
 /// Parse source text into a single expression *without* evaluating it, so
