@@ -4637,7 +4637,7 @@ pub fn fourier_result_to_expr(re: f64, im: f64, force_complex: bool) -> Expr {
   let re = fourier_round(re);
   let im = fourier_round(im);
 
-  if (force_complex || im != 0.0) && re != 0.0 && im != 0.0 {
+  if re != 0.0 && im != 0.0 {
     // The evaluated form of `Complex[re, im]`, built directly: a large
     // transform has one per element.
     Expr::FunctionCall {
