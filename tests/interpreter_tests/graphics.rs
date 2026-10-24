@@ -1229,6 +1229,33 @@ mod graphics {
       );
     }
 
+    /// `Inset[Rotate[plot, θ], pos]` turns the embedded picture and keeps
+    /// it a picture. It used to print `-Graphics-` as rotated text.
+    #[test]
+    fn a_rotated_plot_inset_is_embedded_turned() {
+      let svg = export_svg(
+        "Graphics[{Circle[]}, Epilog -> Inset[Rotate[Plot[Sin[x], {x, 0, 6}, \
+         Axes -> False, ImageSize -> {80, 20}], Pi/2], {0, 0}]]",
+      );
+      assert!(
+        !svg.contains("-Graphics-"),
+        "the inset must be drawn, not named: {svg}"
+      );
+      let nested = svg
+        .split("<svg ")
+        .nth(2)
+        .and_then(|s| s.split_once('>'))
+        .expect("a nested picture")
+        .0
+        .to_string();
+      assert!(
+        nested.contains("width=\"20.00\"")
+          && nested.contains("height=\"80.00\""),
+        "a quarter turn swaps the picture's sides: {nested}"
+      );
+      assert!(svg.contains("rotate(-90.0000)"), "{svg}");
+    }
+
     /// `Inset[Show[RegionPlot[…], Graphics[…]], pos, opos, size]` embeds the
     /// framed plot whole: folding its primitives into the enclosing picture
     /// used to drop the frame and strand a point drawn in the plot's
