@@ -10637,3 +10637,29 @@ mod generalized_eigenvalues {
     );
   }
 }
+
+mod machine_svd_any_shape {
+  use super::*;
+
+  #[test]
+  fn reconstructs_and_is_orthogonal() {
+    assert_eq!(
+      interpret(
+        "a = {{1., 2., 3.}, {4., 5., 6.}}; {u, s, v} = SingularValueDecomposition[a]; \
+         {Dimensions /@ {u, s, v}, Chop[u . s . Transpose[v] - a], \
+          Chop[Transpose[u] . u - IdentityMatrix[2]], Chop[Transpose[v] . v - IdentityMatrix[3]]}"
+      )
+      .unwrap(),
+      "{{{2, 2}, {2, 3}, {3, 3}}, {{0, 0, 0}, {0, 0, 0}}, {{0, 0}, {0, 0}}, \
+       {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}}"
+    );
+    assert_eq!(
+      interpret(
+        "a = {{1., 2.}, {3., 4.}, {5., 6.}, {7., 8.5}}; s = SingularValueDecomposition[a][[2]]; \
+         Chop[Diagonal[s] - {14.558962665927886, 0.5353560423848525}, 10^-10]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+}

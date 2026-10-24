@@ -8955,6 +8955,134 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(vec![qt_expr, r_expr].into()))
 }
 
+/// Full singular value decomposition `{U, Σ, V}` (`A = U.Σ.V'`, U m×m,
+/// Σ m×n, V n×n) of a machine-real matrix by one-sided Jacobi rotations,
+/// singular values descending. Each right singular vector's first nonzero
+/// component is made non-positive, as in the 2×2 case. `None` if it fails
+/// to converge.
+fn jacobi_svd(
+  a: &[Vec<f64>],
+) -> Option<(Vec<Vec<f64>>, Vec<Vec<f64>>, Vec<Vec<f64>>)> {
+  let m = a.len();
+  let n = a.first()?.len();
+  if n == 0 {
+    return None;
+  }
+  if m < n {
+    // A' = V Σ' U'.
+    let at: Vec<Vec<f64>> =
+      (0..n).map(|j| (0..m).map(|i| a[i][j]).collect()).collect();
+    let (u, sigma, v) = jacobi_svd(&at)?;
+    let sigma_t = (0..m)
+      .map(|i| (0..n).map(|j| sigma[j][i]).collect())
+      .collect();
+    return Some((v, sigma_t, u));
+  }
+  // Columns of `w` converge to U·Σ; `vt` accumulates the rotations.
+  let mut w: Vec<Vec<f64>> =
+    (0..n).map(|j| (0..m).map(|i| a[i][j]).collect()).collect();
+  let mut vcols: Vec<Vec<f64>> = (0..n)
+    .map(|j| (0..n).map(|i| if i == j { 1.0 } else { 0.0 }).collect())
+    .collect();
+  let dot =
+    |x: &[f64], y: &[f64]| x.iter().zip(y).map(|(p, q)| p * q).sum::<f64>();
+  let mut converged = false;
+  for _sweep in 0..60 {
+    let mut rotated = false;
+    for p in 0..n {
+      for q in p + 1..n {
+        let alpha = dot(&w[p], &w[p]);
+        let beta = dot(&w[q], &w[q]);
+        let gamma = dot(&w[p], &w[q]);
+        if gamma.abs() <= 1e-15 * (alpha * beta).sqrt() || gamma == 0.0 {
+          continue;
+        }
+        rotated = true;
+        let zeta = (beta - alpha) / (2.0 * gamma);
+        let sign = if zeta >= 0.0 { 1.0 } else { -1.0 };
+        let t = sign / (zeta.abs() + (1.0 + zeta * zeta).sqrt());
+        let c = 1.0 / (1.0 + t * t).sqrt();
+        let sn = c * t;
+        for k in 0..m {
+          let (x, y) = (w[p][k], w[q][k]);
+          w[p][k] = c * x - sn * y;
+          w[q][k] = sn * x + c * y;
+        }
+        for k in 0..n {
+          let (x, y) = (vcols[p][k], vcols[q][k]);
+          vcols[p][k] = c * x - sn * y;
+          vcols[q][k] = sn * x + c * y;
+        }
+      }
+    }
+    if !rotated {
+      converged = true;
+      break;
+    }
+  }
+  if !converged {
+    return None;
+  }
+  let mut order: Vec<usize> = (0..n).collect();
+  let norms: Vec<f64> = w.iter().map(|c| dot(c, c).sqrt()).collect();
+  order.sort_by(|&i, &j| norms[j].total_cmp(&norms[i]));
+  let tol =
+    norms.iter().copied().fold(0.0, f64::max) * 1e-12 * (m.max(n) as f64);
+  let mut ucols: Vec<Vec<f64>> = Vec::with_capacity(m);
+  let mut vout: Vec<Vec<f64>> = Vec::with_capacity(n);
+  let mut sig: Vec<f64> = Vec::with_capacity(n);
+  for &j in &order {
+    let mut v = vcols[j].clone();
+    let mut u = w[j].clone();
+    let lead = v.iter().find(|x| x.abs() > 1e-15).copied().unwrap_or(0.0);
+    if lead > 0.0 {
+      v.iter_mut().for_each(|x| *x = -*x);
+      u.iter_mut().for_each(|x| *x = -*x);
+    }
+    let s = norms[j];
+    if s > tol {
+      u.iter_mut().for_each(|x| *x /= s);
+      ucols.push(u);
+      sig.push(s);
+    } else {
+      sig.push(0.0);
+    }
+    vout.push(v);
+  }
+  // Complete U to an orthonormal basis of R^m (Gram-Schmidt on e_k).
+  let mut k = 0;
+  while ucols.len() < m && k < m {
+    let mut e: Vec<f64> =
+      (0..m).map(|i| if i == k { 1.0 } else { 0.0 }).collect();
+    for _ in 0..2 {
+      for u in &ucols {
+        let d = dot(&e, u);
+        e.iter_mut().zip(u).for_each(|(x, y)| *x -= d * y);
+      }
+    }
+    let nrm = dot(&e, &e).sqrt();
+    if nrm > 1e-8 {
+      e.iter_mut().for_each(|x| *x /= nrm);
+      let lead = e.iter().find(|x| x.abs() > 1e-15).copied().unwrap_or(0.0);
+      if lead > 0.0 {
+        e.iter_mut().for_each(|x| *x = -*x);
+      }
+      ucols.push(e);
+    }
+    k += 1;
+  }
+  let u = (0..m)
+    .map(|i| ucols.iter().map(|c| c[i]).collect())
+    .collect();
+  let v = (0..n)
+    .map(|i| vout.iter().map(|c| c[i]).collect())
+    .collect();
+  let sigma = (0..m)
+    .map(|i| (0..n).map(|j| if i == j { sig[j] } else { 0.0 }).collect())
+    .collect();
+  Some((u, sigma, v))
+}
+
 /// `SingularValueDecomposition[A]` — closed-form 2×2 SVD for a numeric
 /// matrix. Returns `{U, Σ, V}` with `A = U.Σ.V'`, matching wolframscript:
 /// V's columns are the right singular vectors of A^T A, U's columns are
@@ -8971,8 +9099,27 @@ pub fn singular_value_decomposition_ast(
   };
   let rows = matrix.len();
   if rows != 2 || matrix[0].len() != 2 {
-    // Only the 2×2 case has a clean closed form right now; fall back
-    // to unevaluated for everything else.
+    // Any other shape is decomposed numerically when it holds machine
+    // reals (one-sided Jacobi); exact matrices stay unevaluated.
+    if let Some(a) = machine_real_matrix(&matrix)
+      && let Some((u, sigma, v)) = jacobi_svd(&a)
+    {
+      let to_expr = |m: Vec<Vec<f64>>| {
+        Expr::List(
+          m.into_iter()
+            .map(|r| {
+              Expr::List(
+                r.into_iter().map(Expr::Real).collect::<Vec<_>>().into(),
+              )
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      };
+      return Ok(Expr::List(
+        vec![to_expr(u), to_expr(sigma), to_expr(v)].into(),
+      ));
+    }
     return Ok(unevaluated("SingularValueDecomposition", args));
   }
   let to_f64 = |e: &Expr| -> Option<f64> {
