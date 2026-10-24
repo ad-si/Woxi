@@ -252,7 +252,7 @@ fn tridiagonal_eigenvalue(d: &[f64], e2: &[f64], k: usize) -> f64 {
     .map(|i| d[i] + radius(i))
     .fold(f64::NEG_INFINITY, f64::max);
   for _ in 0..200 {
-    let mid = 0.5 * (lo + hi);
+    let mid = f64::midpoint(lo, hi);
     if mid == lo || mid == hi {
       break;
     }
@@ -262,7 +262,7 @@ fn tridiagonal_eigenvalue(d: &[f64], e2: &[f64], k: usize) -> f64 {
       lo = mid;
     }
   }
-  0.5 * (lo + hi)
+  f64::midpoint(lo, hi)
 }
 
 /// Characteristic value of the Mathieu equation for integer order `r`:
@@ -293,38 +293,42 @@ fn mathieu_characteristic(r: usize, q: f64, sine: bool) -> f64 {
   tridiagonal_eigenvalue(&d, &e2, index)
 }
 
-fn mathieu_characteristic_ast(
-  name: &str,
-  sine: bool,
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+fn mathieu_characteristic_ast(name: &str, sine: bool, args: &[Expr]) -> Expr {
   if args.len() != 2 {
-    return Ok(unevaluated(name, args));
+    return unevaluated(name, args);
   }
   let (Expr::Integer(r), Some(q)) = (&args[0], try_real_f64(&args[1])) else {
-    return Ok(unevaluated(name, args));
+    return unevaluated(name, args);
   };
   // Only machine-precision `q` is evaluated numerically; exact `q` stays
   // symbolic, except for the trivial q = 0 where a_r = r² (b_r likewise).
   if matches!(args[1], Expr::Integer(0)) && *r >= i128::from(sine) {
-    return Ok(Expr::Integer(r * r));
+    return Expr::Integer(r * r);
   }
   if !matches!(args[1], Expr::Real(_)) || *r < i128::from(sine) {
-    return Ok(unevaluated(name, args));
+    return unevaluated(name, args);
   }
-  Ok(Expr::Real(mathieu_characteristic(*r as usize, q, sine)))
+  Expr::Real(mathieu_characteristic(*r as usize, q, sine))
 }
 
 /// MathieuCharacteristicA[r, q] — characteristic value `a_r(q)`.
 pub fn mathieu_characteristic_a_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  mathieu_characteristic_ast("MathieuCharacteristicA", false, args)
+  Ok(mathieu_characteristic_ast(
+    "MathieuCharacteristicA",
+    false,
+    args,
+  ))
 }
 
 /// MathieuCharacteristicB[r, q] — characteristic value `b_r(q)`.
 pub fn mathieu_characteristic_b_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  mathieu_characteristic_ast("MathieuCharacteristicB", true, args)
+  Ok(mathieu_characteristic_ast(
+    "MathieuCharacteristicB",
+    true,
+    args,
+  ))
 }

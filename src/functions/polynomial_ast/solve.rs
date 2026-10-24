@@ -273,6 +273,15 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(unevaluated("NSolve", args));
   }
+  // The exact-residual checks of the symbolic elimination can discard every
+  // numeric candidate of a system; the numeric elimination then still finds
+  // its solutions.
+  if matches!(&symbolic, Expr::List(sols) if sols.is_empty())
+    && let Some(found) = try_nsolve_polynomial_pair(args)
+    && matches!(&found, Expr::List(sols) if !sols.is_empty())
+  {
+    return Ok(found);
+  }
   let numerized = nsolve_numerize(&symbolic)?;
   // A `Reals` domain keeps only the real solutions. It is the optional
   // third argument in the ordinary `NSolve[eqns, vars, Reals]` form, but
