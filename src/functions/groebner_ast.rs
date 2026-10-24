@@ -74,7 +74,7 @@ fn one() -> Frac {
   (BigInt::one(), BigInt::one())
 }
 
-fn norm(f: Frac) -> Option<Frac> {
+fn norm(f: &Frac) -> Option<Frac> {
   if f.1.is_zero() {
     return None;
   }
@@ -107,25 +107,25 @@ impl ModFloor for BigInt {
 }
 
 fn f_add(a: &Frac, b: &Frac) -> Option<Frac> {
-  norm((&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1))
+  norm(&(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1))
 }
 
 fn f_mul(a: &Frac, b: &Frac) -> Option<Frac> {
-  norm((&a.0 * &b.0, &a.1 * &b.1))
+  norm(&(&a.0 * &b.0, &a.1 * &b.1))
 }
 
 fn f_div(a: &Frac, b: &Frac) -> Option<Frac> {
   if b.0.is_zero() {
     return None;
   }
-  norm((&a.0 * &b.1, &a.1 * &b.0))
+  norm(&(&a.0 * &b.1, &a.1 * &b.0))
 }
 
 fn f_neg(a: &Frac) -> Option<Frac> {
-  norm((-&a.0, a.1.clone()))
+  norm(&(-&a.0, a.1.clone()))
 }
 
-fn poly_add_term(p: &mut Poly, m: Mono, c: Frac) -> Option<()> {
+fn poly_add_term(p: &mut Poly, m: Mono, c: &Frac) -> Option<()> {
   let key = std::cmp::Reverse(m);
   let existing = p
     .get(&key)
@@ -137,7 +137,7 @@ fn poly_add_term(p: &mut Poly, m: Mono, c: Frac) -> Option<()> {
   {
     (&existing.0 + &c.0, BigInt::one())
   } else {
-    f_add(&existing, &c)?
+    f_add(&existing, c)?
   };
   if sum.0.is_zero() {
     p.remove(&key);
@@ -168,12 +168,12 @@ fn mono_lcm(a: &Mono, b: &Mono) -> Mono {
 }
 
 /// p - c * m * q
-fn poly_sub_scaled(p: &Poly, q: &Poly, c: Frac, m: &Mono) -> Option<Poly> {
+fn poly_sub_scaled(p: &Poly, q: &Poly, c: &Frac, m: &Mono) -> Option<Poly> {
   let mut out = p.clone();
   for (key, qc) in q {
     let term_m = mono_mul(&key.0, m);
-    let term_c = f_neg(&f_mul(qc, &c)?)?;
-    poly_add_term(&mut out, term_m, term_c)?;
+    let term_c = f_neg(&f_mul(qc, c)?)?;
+    poly_add_term(&mut out, term_m, &term_c)?;
   }
   Some(out)
 }
@@ -200,7 +200,7 @@ fn reduce_field(p: &Poly, basis: &[Poly]) -> Option<Poly> {
       let shift = mono_div(&key.0, lm);
       for (bk, bc) in &basis[bi] {
         let term_c = f_neg(&f_mul(bc, &factor)?)?;
-        poly_add_term(&mut current, mono_mul(&bk.0, &shift), term_c)?;
+        poly_add_term(&mut current, mono_mul(&bk.0, &shift), &term_c)?;
       }
     } else {
       current.remove(&key);
@@ -243,7 +243,7 @@ fn reduce_integral(p: &Poly, basis: &[Poly]) -> Option<Poly> {
       let shift = mono_div(&key.0, lm);
       for (bk, bc) in &basis[bi] {
         let term = (-(&bc.0 * &mult_b), BigInt::one());
-        poly_add_term(&mut current, mono_mul(&bk.0, &shift), term)?;
+        poly_add_term(&mut current, mono_mul(&bk.0, &shift), &term)?;
       }
     } else {
       current.remove(&key);
@@ -257,7 +257,7 @@ fn reduce(p: &Poly, basis: &[Poly]) -> Option<Poly> {
   if GB_MODULUS.with(std::cell::Cell::get).is_some() {
     reduce_field(p, basis)
   } else {
-    reduce_integral(&primitive_part(p)?, basis)
+    reduce_integral(&primitive_part(p), basis)
   }
 }
 
@@ -355,16 +355,16 @@ pub fn polynomial_reduce_multivar(
       if mono_divides(&lm_i, &lm_p) {
         let factor = f_div(&lc_p, &lc_i)?;
         let shift = mono_div(&lm_p, &lm_i);
-        poly_add_term(&mut quotients[i], shift.clone(), factor.clone())?;
-        p = poly_sub_scaled(&p, &div_polys[i], factor, &shift)?;
+        poly_add_term(&mut quotients[i], shift.clone(), &factor)?;
+        p = poly_sub_scaled(&p, &div_polys[i], &factor, &shift)?;
         reduced = true;
         break;
       }
     }
     if !reduced {
       // The leading term is divisible by no divisor: move it to the remainder.
-      poly_add_term(&mut remainder, lm_p.clone(), lc_p.clone())?;
-      poly_add_term(&mut p, lm_p, f_neg(&lc_p)?)?;
+      poly_add_term(&mut remainder, lm_p.clone(), &lc_p)?;
+      poly_add_term(&mut p, lm_p, &f_neg(&lc_p)?)?;
     }
   }
 
@@ -376,7 +376,7 @@ pub fn polynomial_reduce_multivar(
 
 /// Scale a polynomial over Q to coprime integer coefficients, so repeated
 /// S-polynomial reduction does not accumulate ever larger denominators.
-fn primitive_part(p: &Poly) -> Option<Poly> {
+fn primitive_part(p: &Poly) -> Poly {
   let mut denom_lcm = BigInt::one();
   for c in p.values() {
     denom_lcm = &denom_lcm * (&c.1 / gcd_big(&denom_lcm, &c.1));
@@ -386,7 +386,7 @@ fn primitive_part(p: &Poly) -> Option<Poly> {
     content = gcd_big(&content, &(&c.0 * (&denom_lcm / &c.1)));
   }
   if content.is_zero() {
-    return Some(p.clone());
+    return p.clone();
   }
   let mut out = Poly::new();
   for (k, c) in p {
@@ -395,7 +395,7 @@ fn primitive_part(p: &Poly) -> Option<Poly> {
       (&c.0 * (&denom_lcm / &c.1) / &content, BigInt::one()),
     );
   }
-  Some(out)
+  out
 }
 
 fn s_poly(a: &Poly, b: &Poly) -> Option<Poly> {
@@ -407,11 +407,11 @@ fn s_poly(a: &Poly, b: &Poly) -> Option<Poly> {
   let sa = mono_div(&l, lma);
   let ca = f_div(&one(), &lca)?;
   for (key, c) in a {
-    poly_add_term(&mut left, mono_mul(&key.0, &sa), f_mul(c, &ca)?)?;
+    poly_add_term(&mut left, mono_mul(&key.0, &sa), &f_mul(c, &ca)?)?;
   }
   let sb = mono_div(&l, lmb);
   let cb = f_div(&one(), &lcb)?;
-  poly_sub_scaled(&left, b, cb, &sb)
+  poly_sub_scaled(&left, b, &cb, &sb)
 }
 
 /// Extract `Modulus -> m` (m >= 0) from an option argument.
@@ -479,7 +479,7 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::evaluator::evaluate_expr_to_expr(&call1("Expand", p.clone()))?;
     match expr_to_poly(&expanded, &vars) {
       Some(poly) if !poly.is_empty() => basis.push(if modulus.is_none() {
-        primitive_part(&poly).unwrap_or(poly)
+        primitive_part(&poly)
       } else {
         poly
       }),
@@ -536,7 +536,7 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let r = reduce(&s, &basis)?;
       if !r.is_empty() {
         let r = if modulus.is_none() {
-          primitive_part(&r)?
+          primitive_part(&r)
         } else {
           r
         };
@@ -718,7 +718,7 @@ fn expr_to_poly(expr: &Expr, vars: &[Expr]) -> Option<Poly> {
   let mut poly = Poly::new();
   for (term, sign) in terms {
     let (m, c) = term_to_mono(term, vars)?;
-    poly_add_term(&mut poly, m, f_mul(&c, &(big(sign), BigInt::one()))?)?;
+    poly_add_term(&mut poly, m, &f_mul(&c, &(big(sign), BigInt::one()))?)?;
   }
   Some(poly)
 }
