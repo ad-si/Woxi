@@ -2939,6 +2939,8 @@ pub fn dispatch_list_operations(
     | "Combinatorica`BreadthFirstTraversal"
     | "Combinatorica`ShortestPath"
     | "Combinatorica`RandomGraph"
+    | "Combinatorica`ShowGraph"
+    | "Combinatorica`ShowLabeledGraph"
     | "Combinatorica`ToAdjacencyMatrix"
     | "Combinatorica`Edges"
     | "Combinatorica`M" => {
