@@ -7417,7 +7417,16 @@ fn root_coeffs_and_seed(
 pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
   let (_, is_real, re, im) = root_coeffs_and_seed(poly_arg, k_arg)?;
   if is_real {
-    Some(Expr::Real(re))
+    // The machine seed can be an ulp off; Wolfram's is correctly rounded.
+    let refined = root_n_eval_arbitrary(
+      poly_arg,
+      k_arg,
+      128,
+      astro_float::RoundingMode::ToEven,
+    )
+    .and_then(|bf| bigfloat_to_f64_approx(&bf))
+    .filter(|v| v.is_finite() && (v - re).abs() <= 1e-9 * re.abs().max(1.0));
+    Some(Expr::Real(refined.unwrap_or(re)))
   } else {
     Some(plus(vec![
       Expr::Real(re),

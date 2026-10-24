@@ -13850,6 +13850,18 @@ mod root {
   use super::*;
 
   #[test]
+  fn machine_value_is_correctly_rounded() {
+    assert_eq!(
+      interpret(
+        "InputForm[N[{Root[2401 + 209916*#1^2 - 508032*#1^4 + 46656*#1^6 &, \
+         4], Root[1 - 36*#1^2 + 144*#1^4 &, 3]}]]"
+      )
+      .unwrap(),
+      "InputForm[{3.2339152928559787, 0.17841104488654497}]"
+    );
+  }
+
+  #[test]
   fn sqrt_2_first_root() {
     assert_eq!(interpret("Root[#^2 - 2 &, 1]").unwrap(), "-Sqrt[2]");
   }
