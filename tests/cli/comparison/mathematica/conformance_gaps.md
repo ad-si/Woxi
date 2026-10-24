@@ -3516,6 +3516,16 @@ The roots are found numerically at machine precision; Wolfram carries the
 coefficients' precision (and its loss) into them.
 
 
+### `SmoothKernelDistribution` stays symbolic and is evaluated exactly
+
+wolframscript turns `SmoothKernelDistribution[data, …]` into a binned
+`DataDistribution["SmoothKernel", …]` and interpolates its `PDF`/`CDF` from
+that grid; Woxi keeps the call and sums the kernels exactly, so values agree
+to about six digits (`PDF[SmoothKernelDistribution[{1., 2., 3.5}, 0.5], 1.5]`
+is `0.32271721782167967` there, `0.3227168528427011` here). A symbolic
+point stays unevaluated.
+
+
 ### `Flat` without `OneIdentity` binds singletons bare
 
 For a head that is `Flat` but not `OneIdentity`, Wolfram matches a blank that

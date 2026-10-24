@@ -1257,7 +1257,7 @@ Clock,cyclic time-dependent value,✅,contextual,6.0,1244
 SeriesData,Represents a power series expansion,✅,pure,1.0,1244
 GridBox,Low-level box construct for grid/table display,✅,pure,3.0,1245
 Write,Write expressions to an output stream in OutputForm,✅,effectful,1.0,1246
-SmoothKernelDistribution,,🚫,,8.0,1247
+SmoothKernelDistribution,Kernel density estimate of data,✅,pure,8.0,1247
 OceanData,,🚫,,10.0,1248
 MaximalBy,Returns elements that maximize a criterion,✅,pure,10.0,1249
 InverseCDF,Inverse cumulative distribution function (quantile) of a distribution,✅,pure,6.0,1251
