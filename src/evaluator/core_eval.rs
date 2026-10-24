@@ -245,6 +245,13 @@ pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
     // Interpolation result): re-evaluating it would walk every tabulated
     // point on each lookup of the symbol that holds it.
     Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => false,
+    // Likewise a structured `BSplineFunction[…]` (its control net can hold
+    // an image's worth of samples).
+    Expr::FunctionCall { name, args }
+      if crate::syntax::is_structured_bspline(name, args) =>
+    {
+      false
+    }
     Expr::FunctionCall { name, .. }
       if (name == "Rational" || name == "Complex") && is_inert_data(expr) =>
     {
@@ -1309,6 +1316,11 @@ pub fn evaluate_expr_to_expr_inner(
       if name == "InterpolatingFunction"
         && (2..=4).contains(&args.len())
         && matches!(args[0], Expr::List(_)) =>
+    {
+      Ok(expr.clone())
+    }
+    Expr::FunctionCall { name, args }
+      if crate::syntax::is_structured_bspline(name, args) =>
     {
       Ok(expr.clone())
     }
@@ -3074,6 +3086,12 @@ pub fn evaluate_expr_to_expr_inner(
                 {
                   stored_expr.clone()
                 }
+                Expr::FunctionCall {
+                  name: head,
+                  args: head_args,
+                } if crate::syntax::is_structured_bspline(head, head_args) => {
+                  stored_expr.clone()
+                }
                 Expr::FunctionCall { .. } => {
                   evaluate_expr_to_expr(&Expr::Identifier(name.clone()))?
                 }
@@ -4488,6 +4506,11 @@ pub fn evaluate_expr_to_expr_inner(
       }
       let evaluated_func = match &**func {
         Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => {
+          (**func).clone()
+        }
+        Expr::FunctionCall { name, args }
+          if crate::syntax::is_structured_bspline(name, args) =>
+        {
           (**func).clone()
         }
         _ => evaluate_expr_to_expr(func)?,

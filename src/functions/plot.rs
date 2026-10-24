@@ -101,6 +101,12 @@ pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
   let sub = |e: &Expr| substitute_var(e, var, value);
   match expr {
     Expr::Identifier(name) if name == var => value.clone(),
+    // Numeric data with nothing to substitute (see `is_structured_bspline`).
+    Expr::FunctionCall { name, args }
+      if crate::syntax::is_structured_bspline(name, args) =>
+    {
+      expr.clone()
+    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args.iter().map(sub).collect(),

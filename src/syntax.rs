@@ -16803,6 +16803,11 @@ fn substitute_variables_impl(
     Expr::FunctionCall { name, .. } if name == "ParametricFunction" => {
       expr.clone()
     }
+    // A finished `BSplineFunction[…]` is numeric data (knots and a control
+    // net that can be an image's worth of samples): nothing to substitute.
+    Expr::FunctionCall { name, args } if is_structured_bspline(name, args) => {
+      expr.clone()
+    }
     Expr::FunctionCall { name, args } if name == "Part" && args.len() == 2 => {
       match resolve_synthetic_list_part(expr, bindings) {
         Some(resolved) => resolved,
@@ -18898,4 +18903,14 @@ pub fn parse_literal_data(src: &str) -> Option<Expr> {
   let value = p.value(0)?;
   p.ws();
   (p.i == p.s.len()).then_some(value)
+}
+
+/// A finished `BSplineFunction[dim, ranges, degrees, closed, {net, Automatic},
+/// knots, …, "Unevaluated"]` object: inert data whose control net is already
+/// numeric, so re-evaluating it on every lookup or call would only walk the
+/// whole net again.
+pub(crate) fn is_structured_bspline(name: &str, args: &[Expr]) -> bool {
+  name == "BSplineFunction"
+    && args.len() == 9
+    && matches!(&args[8], Expr::String(s) if s == "Unevaluated")
 }
