@@ -982,6 +982,19 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // Any other known built-in defaults to Protected, matching Wolfram, which
     // protects every `System`` symbol except those in `UNPROTECTED_BUILTINS`.
     // Unknown symbols have no attributes.
+    // A standard package's symbol is protected only when the package
+    // protects it: Combinatorica does, PolyhedronOperations,
+    // ComputationalGeometry and GraphUtilities do not (a Demonstration that
+    // saved its own definition of `PolyhedronOperations\`Stellate` loads).
+    _ if name.contains('`') => {
+      if name.starts_with("Combinatorica`")
+        && crate::evaluator::is_builtin_symbol(name)
+      {
+        A::Protected
+      } else {
+        A::None
+      }
+    }
     _ => {
       if crate::evaluator::is_builtin_symbol(name)
         && !is_unprotected_builtin(name)
