@@ -4980,6 +4980,8 @@ fn univariate_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
   {
     return Some(roots);
   }
+  // Only a polynomial in `var` alone: one that still has another unknown
+  // in its coefficients is no numeric root-finding problem.
   let numeric = numeric_roots_wanted()
     && !matches!(
       crate::evaluator::evaluate_function_call_ast(
@@ -4987,6 +4989,13 @@ fn univariate_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
         &[poly.clone(), id_expr(var)],
       ),
       Ok(Expr::Integer(d)) if d <= 2
+    )
+    && matches!(
+      &crate::evaluator::evaluate_function_call_ast(
+        "Variables",
+        std::slice::from_ref(poly),
+      ),
+      Ok(Expr::List(vs)) if vs.len() == 1
     );
   let poly = if numeric {
     crate::evaluator::evaluate_function_call_ast(
