@@ -15469,3 +15469,19 @@ mod to_string_full_form_strings {
     );
   }
 }
+
+mod form_wrappers_take_extra_arguments_silently {
+  use super::*;
+
+  #[test]
+  fn no_argx_at_evaluation() {
+    // wolframscript only complains when such a form is turned into text.
+    let r = interpret_with_stdout(
+      "{Head[TraditionalForm[x^2, Null]], Head[TeXForm[x, 30]], \
+       Head[FullForm[x, 2]], Head[OutputForm[x, 2]]}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{TraditionalForm, TeXForm, FullForm, OutputForm}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+}

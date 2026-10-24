@@ -590,7 +590,6 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FromPolarCoordinates" => Some((1, 1)),
     "FromSphericalCoordinates" => Some((1, 1)),
     "FullDefinition" => Some((1, 1)),
-    "FullForm" => Some((1, 1)),
     "FullSimplify" => Some((1, 2)),
     // Function[body], Function[params, body], Function[params, body, attrs]
     "Function" => Some((1, 3)),
@@ -1062,7 +1061,6 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "OrderingBy" => Some((1, 4)),
     // Outer[f] is f[]; Outer[f, list] maps f over the list.
     "Outer" => Some((1, usize::MAX)),
-    "OutputForm" => Some((1, 1)),
     "PadLeft" => Some((1, 4)),
     "PadRight" => Some((1, 4)),
     "ParallelArray" => Some((2, 4)),
@@ -1564,7 +1562,6 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "TensorRank" => Some((1, 1)),
     "TensorSymmetry" => Some((1, 1)),
     "Tetrahedron" => Some((0, 2)),
-    "TeXForm" => Some((1, 1)),
     "Convert`TeX`ExpressionToTeX" => Some((1, 1)),
     "TextCases" => Some((2, 3)),
     "TextSentences" => Some((1, 2)),
@@ -1591,7 +1588,6 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ToString" => Some((1, 2)),
     "ToUpperCase" => Some((1, 1)),
     "Tr" => Some((1, 3)),
-    "TraditionalForm" => Some((1, 1)),
     "TransformationMatrix" => Some((1, 1)),
     "TranslationTransform" => Some((1, 1)),
     "Transpose" => Some((1, 2)),
