@@ -2128,6 +2128,33 @@ mod differentiate_nonconstants {
 mod derivative_prime_notation {
   use super::*;
 
+  // `Derivative[n][f]` differentiates what `f[x]` evaluates to, so a body
+  // like `InterpolatingPolynomial[data, x]` is computed before it is
+  // differentiated, and `f'` of a user function is a pure function.
+  #[test]
+  fn derivative_of_a_user_function_differentiates_its_value() {
+    assert_eq!(
+      interpret(
+        "f[x_] := InterpolatingPolynomial[{{-1., 1.}, {1., 1.}, {0, 0.2}}, \
+         x]; {Derivative[1][f], Derivative[1][f][x[t]]}"
+      )
+      .unwrap(),
+      "{0. + 0.8*(-1. + #1) + 0.8*(1. + #1) & , \
+       0. + 0.8*(-1. + x[t]) + 0.8*(1. + x[t])}"
+    );
+    assert_eq!(
+      interpret(
+        "g[x_] := Sin[x]^2; {Derivative[1][g], Derivative[1][g][x[t]]}"
+      )
+      .unwrap(),
+      "{2*Cos[#1]*Sin[#1] & , 2*Cos[x[t]]*Sin[x[t]]}"
+    );
+    assert_eq!(
+      interpret("h[x_?NumericQ] := x^2; {h'[u], h'[2]}").unwrap(),
+      "{Derivative[1][h][u], Derivative[1][h][2]}"
+    );
+  }
+
   #[test]
   fn derivative_simple_polynomial() {
     assert_eq!(interpret("f[x_] := x^2; f'[x]").unwrap(), "2*x");
@@ -6991,6 +7018,21 @@ mod find_minimum {
     )
     .unwrap();
     assert_eq!(result, "{0, {2, 3}}");
+  }
+
+  #[test]
+  fn numeric_only_objective_from_either_side_converges() {
+    // A simplex straddling the optimum symmetrically has equal values at
+    // both vertices; that alone must not stop the search.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[k_?NumericQ] := -((k - 4)^2); {FindMaximum[f[k], {k, 0}], \
+         FindMinimum[-f[k], {k, 0}], FindMaximum[f[k], {k, 0.5}]}"
+      )
+      .unwrap(),
+      "{{0., {k -> 4.}}, {0., {k -> 4.}}, {0., {k -> 4.}}}"
+    );
   }
 
   #[test]

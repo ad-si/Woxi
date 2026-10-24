@@ -214,6 +214,31 @@ fn apply_derivative_of_value(
   }))
 }
 
+/// The `n`-th derivative of `func_name` as an expression in the symbol
+/// `dummy`: `func_name[dummy]` is evaluated first, so a user definition
+/// (`f[x_] := InterpolatingPolynomial[data, x]`) is differentiated through
+/// what it computes. `None` when no symbolic derivative results (an
+/// undefined `f`, or one whose rules do not fire on a symbol).
+fn derivative_in_dummy(
+  func_name: &str,
+  n: usize,
+  dummy: &str,
+) -> Option<Result<Expr, InterpreterError>> {
+  let call = Expr::FunctionCall {
+    name: func_name.to_string(),
+    args: vec![id_expr(dummy)].into(),
+  };
+  let mut deriv = evaluate_expr_to_expr(&call).unwrap_or(call);
+  for _ in 0..n {
+    deriv =
+      crate::functions::calculus_ast::differentiate_expr(&deriv, dummy).ok()?;
+    if contains_unresolved_derivative(&deriv, func_name) {
+      return None;
+    }
+  }
+  Some(evaluate_expr_to_expr(&deriv))
+}
+
 pub fn dispatch_calculus_functions(
   name: &str,
   args: &[Expr],
@@ -241,73 +266,15 @@ pub fn dispatch_calculus_functions(
       if let (Expr::Integer(n), Expr::Identifier(func_name)) =
         (&args[0], &args[1])
       {
-        let n = *n as usize;
-        let overloads = crate::FUNC_DEFS.with(|m| {
-          let defs = m.borrow();
-          defs.get(func_name).cloned()
-        });
-        if let Some(overloads) = overloads {
-          for (
-            params,
-            _conditions,
-            _defaults,
-            _heads,
-            _blank_types,
-            body_expr,
-          ) in &overloads
-          {
-            if params.len() == 1 {
-              let param = &params[0];
-              let mut deriv = body_expr.clone();
-              for _ in 0..n {
-                deriv = match crate::functions::calculus_ast::differentiate_expr(
-                  &deriv, param,
-                ) {
-                  Ok(v) => v,
-                  Err(e) => return Some(Err(e)),
-                };
-              }
-              let substituted =
-                crate::syntax::substitute_variable(&deriv, param, &args[2]);
-              return Some(evaluate_expr_to_expr(&substituted));
-            }
+        let dummy = "__derivative_var__";
+        match derivative_in_dummy(func_name, *n as usize, dummy) {
+          Some(Ok(deriv)) => {
+            let substituted =
+              crate::syntax::substitute_variable(&deriv, dummy, &args[2]);
+            return Some(evaluate_expr_to_expr(&substituted));
           }
-        }
-      }
-      // For built-in functions (not in FUNC_DEFS), try symbolic differentiation
-      if let (Expr::Integer(n), Expr::Identifier(func_name)) =
-        (&args[0], &args[1])
-      {
-        let n = *n as usize;
-        let dummy_var = "__derivative_var__".to_string();
-        let dummy_ident = Expr::Identifier(dummy_var.clone());
-        let mut deriv = Expr::FunctionCall {
-          name: func_name.clone(),
-          args: vec![dummy_ident.clone()].into(),
-        };
-        let mut resolved = true;
-        for _ in 0..n {
-          deriv = if let Ok(v) =
-            crate::functions::calculus_ast::differentiate_expr(
-              &deriv, &dummy_var,
-            ) {
-            v
-          } else {
-            resolved = false;
-            break;
-          };
-          // If differentiation returned a Derivative[...][func][var] form,
-          // no actual symbolic derivative was computed (e.g. unknown function).
-          // In that case, return unevaluated to avoid corrupting DSolve inputs.
-          if contains_unresolved_derivative(&deriv, func_name) {
-            resolved = false;
-            break;
-          }
-        }
-        if resolved {
-          let substituted =
-            crate::syntax::substitute_variable(&deriv, &dummy_var, &args[2]);
-          return Some(evaluate_expr_to_expr(&substituted));
+          Some(Err(e)) => return Some(Err(e)),
+          None => {}
         }
       }
       return Some(Ok(unevaluated("Derivative", args)));
@@ -359,39 +326,21 @@ pub fn dispatch_calculus_functions(
       if let Expr::Integer(n) = &args[0] {
         let n = *n as usize;
         if let Expr::Identifier(func_name) = &args[1] {
-          // Use a dummy variable, differentiate, then replace with Slot[1]
+          // Differentiate in a dummy variable, then replace it with Slot[1].
           let dummy = "__d_slot__";
-          let dummy_expr = id_expr(dummy);
-          let mut deriv = Expr::FunctionCall {
-            name: func_name.clone(),
-            args: vec![dummy_expr.clone()].into(),
-          };
-          let mut resolved = true;
-          for _ in 0..n {
-            deriv = if let Ok(v) =
-              crate::functions::calculus_ast::differentiate_expr(&deriv, dummy)
-            {
-              v
-            } else {
-              resolved = false;
-              break;
-            };
-            if contains_unresolved_derivative(&deriv, func_name) {
-              resolved = false;
-              break;
+          match derivative_in_dummy(func_name, n, dummy) {
+            Some(Ok(deriv)) => {
+              let with_slot = crate::syntax::substitute_variable(
+                &deriv,
+                dummy,
+                &Expr::Slot(1),
+              );
+              return Some(Ok(Expr::Function {
+                body: Box::new(with_slot),
+              }));
             }
-          }
-          if resolved {
-            let simplified = crate::functions::calculus_ast::simplify(deriv);
-            // Replace dummy variable with Slot(1)
-            let with_slot = crate::syntax::substitute_variable(
-              &simplified,
-              dummy,
-              &Expr::Slot(1),
-            );
-            return Some(Ok(Expr::Function {
-              body: Box::new(with_slot),
-            }));
+            Some(Err(e)) => return Some(Err(e)),
+            None => {}
           }
         }
         // Handle pure function: Derivative[n][body&] — the one-slot case of

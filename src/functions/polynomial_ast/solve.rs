@@ -13523,7 +13523,16 @@ fn nelder_mead_minimize(
     simplex = order.iter().map(|&i| simplex[i].clone()).collect();
     fvals = order.iter().map(|&i| fvals[i]).collect();
 
-    if (fvals[n] - fvals[0]).abs() < 1e-14 * (1.0 + fvals[0].abs()) {
+    // Equal values alone are not convergence: a simplex straddling the
+    // minimum symmetrically (3.95 and 4.05 around 4) has them too.
+    let spread = simplex[1..]
+      .iter()
+      .flat_map(|p| p.iter().zip(simplex[0].iter()).map(|(a, b)| (a - b).abs()))
+      .fold(0.0_f64, f64::max);
+    let scale = simplex[0].iter().fold(1.0_f64, |m, v| m.max(v.abs()));
+    if (fvals[n] - fvals[0]).abs() < 1e-14 * (1.0 + fvals[0].abs())
+      && spread < 1e-8 * scale
+    {
       break;
     }
 
@@ -13592,7 +13601,34 @@ fn nelder_mead_minimize(
         .unwrap_or(std::cmp::Ordering::Equal)
     })
     .unwrap_or(0);
-  simplex[best_i].clone()
+  let mut best = simplex[best_i].clone();
+  let mut best_f = fvals[best_i];
+  // The simplex only brackets the minimum to its own tolerance; a few
+  // parabolic steps per coordinate (the vertex of the parabola through
+  // `x - h`, `x`, `x + h`) finish a smooth minimum to machine precision.
+  for _ in 0..3 {
+    for i in 0..n {
+      let h = 1e-4 * best[i].abs().max(1.0);
+      let probe = |delta: f64| {
+        let mut p = best.clone();
+        p[i] += delta;
+        clamp(&mut p);
+        (eval(&p), p)
+      };
+      let (f_minus, _) = probe(-h);
+      let (f_plus, _) = probe(h);
+      let curvature = f_plus - 2.0 * best_f + f_minus;
+      if !(curvature > 0.0 && curvature.is_finite()) {
+        continue;
+      }
+      let (f_new, p_new) = probe(-h * (f_plus - f_minus) / (2.0 * curvature));
+      if f_new <= best_f {
+        best = p_new;
+        best_f = f_new;
+      }
+    }
+  }
+  best
 }
 
 /// `FindMinimum`/`FindMaximum` over indexed variables (`{n[j], 0.15}`):
