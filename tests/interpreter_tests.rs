@@ -3319,6 +3319,21 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_framed_pane_text_and_defer_in_grid_cell() {
+    // Regression: a text `Framed[Pane[x, size]]` printed the literal
+    // `Pane[…]` source, and a `Defer[expr]` grid cell kept its wrapper
+    // instead of showing `expr` alone.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Grid[{{Framed[Pane[x, {Automatic, 40}]], Defer[1 + y]}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Pane["), "Pane source leaked: {svg}");
+    assert!(!svg.contains("Defer["), "Defer wrapper leaked: {svg}");
+    assert!(svg.contains(">x<") && svg.contains("1 + y"));
+  }
+
+  #[test]
   fn test_graphics_scaled_inset_anchor_does_not_stretch_range() {
     // Regression: an `ImageScaled` inset anchor (a fraction such as 0.5)
     // was taken for a data point, so the range grew to include it and a

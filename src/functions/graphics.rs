@@ -22406,6 +22406,12 @@ fn resolve_display_item(expr: &Expr) -> Expr {
       }
       // `Tooltip[expr, hint]` draws as `expr`; the hint shows only on hover.
       Some(("Tooltip", content)) => current = content.clone(),
+      // `Defer[expr]` is typeset as `expr` alone; the wrapper only keeps
+      // the content unevaluated.
+      Some(("Defer", content)) if matches!(&current, Expr::FunctionCall { args, .. } if args.len() == 1) =>
+      {
+        current = content.clone();
+      }
       // `SlideView[{s1, s2, …}]` starts on its first slide.
       Some(("SlideView", Expr::List(slides))) if !slides.is_empty() => {
         current = slides[0].clone();
@@ -23607,7 +23613,9 @@ fn framed_box_to_svg(
     svg.push_str("</svg>");
     Some(svg)
   } else {
-    // Text content — measure and render
+    // Text content — measure and render. A `Pane`/`Item` around the text
+    // only sizes it, so the frame holds the content itself.
+    let content = &unwrap_display_wrappers(content);
     let content_w = estimate_display_width(content) * char_width;
     let frac_extra = if has_fraction(content) { 10.0 } else { 0.0 };
     let content_h = font_size + frac_extra;
