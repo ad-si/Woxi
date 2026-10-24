@@ -24400,3 +24400,21 @@ mod combinatorica_show_graph {
     );
   }
 }
+
+mod sort_machine_numbers {
+  use super::*;
+
+  // All-real and all-integer lists sort by value on a fast path; equal
+  // values keep their order.
+  #[test]
+  fn reals_and_integers() {
+    assert_eq!(
+      interpret(
+        "{Sort[{3., -0., 0., 1.5, -2.}], Sort[{3, 1, 2, -5}], \
+         OrderedQ[Sort[RandomReal[1, 1000]]]}"
+      )
+      .unwrap(),
+      "{{-2., 0., 0., 1.5, 3.}, {-5, 1, 2, 3}, True}"
+    );
+  }
+}

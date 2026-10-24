@@ -1324,6 +1324,34 @@ pub fn lexicographic_sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 
 pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   match list {
+    // All machine reals, or all machine integers: canonical order is
+    // numeric order (stable for equal values), compared without the
+    // general comparator's dispatch.
+    Expr::List(items) if items.iter().all(|e| matches!(e, Expr::Real(_))) => {
+      let mut values: Vec<f64> = items
+        .iter()
+        .map(|e| match e {
+          Expr::Real(r) => *r,
+          _ => unreachable!(),
+        })
+        .collect();
+      values
+        .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+      Ok(Expr::List(values.into_iter().map(Expr::Real).collect()))
+    }
+    Expr::List(items)
+      if items.iter().all(|e| matches!(e, Expr::Integer(_))) =>
+    {
+      let mut values: Vec<i128> = items
+        .iter()
+        .map(|e| match e {
+          Expr::Integer(n) => *n,
+          _ => unreachable!(),
+        })
+        .collect();
+      values.sort_unstable();
+      Ok(Expr::List(values.into_iter().map(Expr::Integer).collect()))
+    }
     Expr::List(items) => {
       let mut sorted = items.clone();
       sorted.sort_by(canonical_cmp);
