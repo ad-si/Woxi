@@ -657,8 +657,17 @@ impl ManipulateState {
     // itself forward), freezing the simulation at its first step. Helper
     // definitions persist in the interpreter's global environment, so a
     // single run keeps them in scope for every later re-evaluation.
-    if let Some(init) = state.initialization.as_deref() {
-      let _ = woxi::interpret_with_stdout(init);
+    if let Some(init) = state.initialization.clone() {
+      // The controls already hold their initial values when Initialization
+      // runs (a DynamicModule's variables are set before its
+      // Initialization), so code that reads them — `SUITS[[i]]` for a
+      // `{SUITS, …, ControlType -> None}` list — sees them.
+      let names: Vec<String> =
+        state.state.iter().map(|(n, _)| n.clone()).collect();
+      let seeded = woxi::with_scoped_globals(&state.bindings(), || {
+        let _ = woxi::interpret_with_stdout(&init);
+        woxi::functions::graphics::read_manipulate_state(&names)
+      });
       // A hidden `ControlType -> None` variable the Initialization just
       // seeded (e.g. `Initialization :> (v = RandomReal[…])` filling the
       // noise list a Demonstration's body perturbs) must keep that value,
@@ -666,9 +675,7 @@ impl ManipulateState {
       // `{}`) — `reevaluate` below installs `state.state` as scoped
       // globals, which would otherwise immediately overwrite what
       // Initialization just wrote with the stale placeholder.
-      let names: Vec<String> =
-        state.state.iter().map(|(n, _)| n.clone()).collect();
-      for (name, value) in read_manipulate_state(&names) {
+      for (name, value) in seeded {
         if let Some(slot) = state.state.iter_mut().find(|(n, _)| *n == name) {
           slot.1 = value;
         }
