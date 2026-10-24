@@ -3012,6 +3012,41 @@ mod tests {
     assert!(!vis("w"), "`w` is hidden while mode is True");
   }
 
+  /// A `Dynamic@Column` control area whose second row is a nested
+  /// `If[mode == 1, Control[…], If[mode == 2, d = 2.5; Control[…],
+  /// d = 1; Control[…]]]`: each mode brings its own slider, and the
+  /// branches' assignments only seed the variable. All three sliders are
+  /// real controls (`d` is declared by two branches and registered once),
+  /// shown only in their own mode — before, the whole `If` was drawn as
+  /// inert `Control[…]` text and `p` stayed unbound.
+  #[test]
+  fn nested_if_with_compound_branches_holds_real_controls() {
+    let code = r#"Manipulate[
+      If[mode == 1, Text[p], Text[d]],
+      Dynamic@Column[{
+        Row[{Control[{{mode, 1, ""}, {1 -> "a", 2 -> "b", 3 -> "c"}, ControlType -> RadioButtonBar}], Spacer[40]}],
+        If[mode == 1, Control[{{p, 0.5, "directrix"}, 0.4, 1, 0.1}],
+          If[mode == 2, d = 2.5; Control[{{d, 3.5, "sum"}, 2.33, 3.6}],
+            d = 1; Control[{{d, 1, "difference"}, 0.7, 1.16}]]]}]
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the conditional controls should build a ManipulateState");
+    assert_eq!(state.error, None, "body must evaluate cleanly");
+    let names: Vec<_> = state.controls.iter().map(|c| c.name()).collect();
+    assert!(
+      names.contains(&"p") && names.contains(&"d") && names.contains(&"mode"),
+      "every branch's control must be a real control, got {names:?}"
+    );
+    let vis = |n: &str| {
+      let i = names.iter().position(|x| *x == n).unwrap();
+      state.control_is_visible[i]
+    };
+    assert!(vis("p"), "`p` is shown in mode 1");
+    assert!(!vis("d"), "`d` is hidden in mode 1");
+  }
+
   /// A `TabView` whose panes are `Grid`s with `SetterBar[Dynamic[var],
   /// choices] /. labels` cells (a key picker showing note names for numeric
   /// choices) and a `Sound[…]` row. The bars are lifted into the control

@@ -28680,6 +28680,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
           || args.iter().any(contains_control)
       }
       Expr::List(items) => items.iter().any(contains_control),
+      Expr::CompoundExpr(items) => items.iter().any(contains_control),
       Expr::Rule {
         pattern,
         replacement,
@@ -28718,6 +28719,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
         name == "Control" || args.iter().any(contains_explicit_control)
       }
       Expr::List(items) => items.iter().any(contains_explicit_control),
+      Expr::CompoundExpr(items) => items.iter().any(contains_explicit_control),
       Expr::Rule {
         pattern,
         replacement,
@@ -28786,6 +28788,33 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   // `Dynamic` wrapping anything other than a bare list (a live picture, a
   // `Panel[…]` of checkboxes, …) is a display element instead and falls
   // through via the `contains_control` guard below.
+  // `If[cond, Control[…], If[cond2, d = 2; Control[…], Control[…]]]`: a
+  // control row that swaps with other controls. Every branch's controls
+  // join the flat list (a `CompoundExpression` branch contributes the
+  // controls it ends in, not its assignments);
+  // `collect_pane_visibility` records which condition shows each one.
+  if name == "If" && args.len() >= 2 && contains_explicit_control(spec) {
+    let mut out = Vec::new();
+    for branch in &args[1..] {
+      if !contains_explicit_control(branch) {
+        continue;
+      }
+      let parts: Vec<&Expr> = match branch {
+        Expr::CompoundExpr(seq) => seq
+          .iter()
+          .filter(|e| contains_explicit_control(e))
+          .collect(),
+        _ => vec![branch],
+      };
+      for part in parts {
+        match control_group_items(part) {
+          Some(nested) => out.extend(nested),
+          None => out.push(layout_control_leaf(part)),
+        }
+      }
+    }
+    return Some(out);
+  }
   if !matches!(
     name.as_str(),
     "Row"
@@ -28820,26 +28849,10 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     && contains_explicit_control(&args[0])
   {
     // `Dynamic[If[cond, Control[…], Control[…]]]`: a control row that swaps
-    // with another control. Both branches' controls join the flat list;
-    // `collect_pane_visibility` records which condition shows each one.
-    if let Expr::FunctionCall {
-      name: head,
-      args: branches,
-    } = &args[0]
-      && head == "If"
-      && branches.len() >= 2
+    // with another control, flattened like any other conditional control.
+    if matches!(&args[0], Expr::FunctionCall { name: head, .. } if head == "If")
     {
-      let mut out = Vec::new();
-      for branch in &branches[1..] {
-        if !contains_explicit_control(branch) {
-          continue;
-        }
-        match control_group_items(branch) {
-          Some(nested) => out.extend(nested),
-          None => out.push(branch.clone()),
-        }
-      }
-      return Some(out);
+      return control_group_items(&args[0]);
     }
     // The `Dynamic` makes every non-literal caption piece live
     // (`Dynamic@Row[{"from ", n, " to ", n + 59, Control[…]}]` shows the
@@ -29599,6 +29612,12 @@ fn pane_control_variables(
         }
         for a in args {
           walk(a, place_map, out);
+        }
+      }
+      // `d = 2.5; Control[…]`: the controls a branch ends in.
+      Expr::CompoundExpr(items) => {
+        for it in items {
+          walk(it, place_map, out);
         }
       }
       Expr::List(items) => {
