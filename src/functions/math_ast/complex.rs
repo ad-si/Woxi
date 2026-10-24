@@ -75,6 +75,30 @@ fn distribute_re_im(
     let combined = plus(parts);
     return Some(crate::evaluator::evaluate_expr_to_expr(&combined));
   }
+  // Plus with a `(-1)^r` term (a root of unity): every term's part
+  // separately, when each one resolves.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Plus"
+    && args.len() >= 2
+    && args.iter().any(|a| {
+      minus_one_rational_power(a).is_some()
+        || matches!(a, Expr::FunctionCall { name, args }
+          if name == "Times" && args.iter().any(|f| minus_one_rational_power(f).is_some()))
+    })
+  {
+    let mut parts: Vec<Expr> = Vec::with_capacity(args.len());
+    for a in args {
+      let part = match crate::evaluator::evaluate_expr_to_expr(&apply(a.clone())) {
+        Ok(p) => p,
+        Err(e) => return Some(Err(e)),
+      };
+      if matches!(&part, Expr::FunctionCall { name, .. } if name == head) {
+        return None;
+      }
+      parts.push(part);
+    }
+    return Some(crate::evaluator::evaluate_expr_to_expr(&plus(parts)));
+  }
   None
 }
 
@@ -138,6 +162,26 @@ fn re_im_via_complex_expand(
   Some(result)
 }
 
+/// The exponent `r` of `(-1)^r` for a rational `r`: that number is
+/// `Cos[r Pi] + I Sin[r Pi]`.
+fn minus_one_rational_power(expr: &Expr) -> Option<Expr> {
+  let (base, exp) = match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => return None,
+  };
+  let is_minus_one = matches!(base, Expr::Integer(-1))
+    || matches!(base, Expr::UnaryOp { op: crate::syntax::UnaryOperator::Minus, operand } if matches!(operand.as_ref(), Expr::Integer(1)));
+  let rational = matches!(exp, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2);
+  (is_minus_one && rational).then(|| exp.clone())
+}
+
 pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -151,6 +195,13 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && ca.len() == 1
   {
     return re_ast(&[ca[0].clone()]);
+  }
+
+  if let Some(r) = minus_one_rational_power(&args[0]) {
+    return crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Cos",
+      times(vec![r, Expr::Constant("Pi".to_string())]),
+    ));
   }
 
   match &args[0] {
@@ -248,6 +299,13 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let inner = im_ast(&[ca[0].clone()])?;
     return times_ast(&[Expr::Integer(-1), inner]);
+  }
+
+  if let Some(r) = minus_one_rational_power(&args[0]) {
+    return crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Sin",
+      times(vec![r, Expr::Constant("Pi".to_string())]),
+    ));
   }
 
   match &args[0] {
