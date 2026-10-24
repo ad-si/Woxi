@@ -259,6 +259,15 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Fall back to symbolic solve + numerize
   let symbolic = solve_ast(args)?;
+  // An elimination whose numeric roots verify against no equation (their
+  // rounding leaves residuals the exact check rejects) finds nothing; the
+  // numeric pair solver below polishes such roots instead.
+  if matches!(&symbolic, Expr::List(sols) if sols.is_empty())
+    && let Some(result) = try_nsolve_polynomial_pair(args)
+    && matches!(&result, Expr::List(sols) if !sols.is_empty())
+  {
+    return Ok(result);
+  }
   // What Solve leaves unevaluated, NSolve leaves unevaluated too — under
   // its own head — unless a numeric multi-seed search below finds real
   // roots that no symbolic technique reached in closed form.
