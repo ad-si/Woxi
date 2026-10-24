@@ -467,7 +467,7 @@ mod polyhedron_data_tests {
        Icosidodecahedron, ObtuseGoldenRhombohedron, Octahedron, PentakisDodecahedron, \
        RhombicDodecahedron, RhombicHexecontahedron, RhombicIcosahedron, \
        RhombicTriacontahedron, SmallRhombicosidodecahedron, \
-       SmallRhombicuboctahedron, SmallStellatedDodecahedron, StellaOctangula, Tetrahedron, \
+       SmallRhombicuboctahedron, SmallStellatedDodecahedron, SnubCube, StellaOctangula, Tetrahedron, \
        TriangularOrthobicupola, TruncatedCube, TruncatedDodecahedron, TruncatedIcosahedron, \
        TruncatedOctahedron, TruncatedTetrahedron}"
     );
@@ -1438,6 +1438,48 @@ mod polyhedron_data_tests {
       )
       .unwrap(),
       "{True, True}"
+    );
+  }
+
+  // The snub cube: 24 vertices on a sphere, 6 squares + 32 triangles, unit
+  // edge length (checked from the coordinates, not just the stored counts).
+  #[test]
+  fn polyhedron_data_snub_cube() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["SnubCube", "VertexCount"],
+           PolyhedronData["SnubCube", "EdgeCount"],
+           PolyhedronData["SnubCube", "FaceCount"],
+           Sort[Length /@ PolyhedronData["SnubCube", "FaceIndices"]][[{1, -1}]],
+           Length[PolyhedronData["SnubCube", "VertexCoordinates"]],
+           PolyhedronData["SnubCube", "Name"]}"#
+      )
+      .unwrap(),
+      "{24, 60, 38, {3, 4}, 24, snub cube}"
+    );
+  }
+
+  #[test]
+  fn polyhedron_data_snub_cube_metrics_match_geometry() {
+    assert_eq!(
+      interpret(
+        r#"Module[{v = N[PolyhedronData["SnubCube", "VertexCoordinates"]],
+             e = PolyhedronData["SnubCube", "EdgeIndices"]},
+           {AllTrue[Norm[v[[#[[1]]]] - v[[#[[2]]]]] & /@ e, Abs[# - 1] < 10^-9 &],
+            Abs[Norm[v[[1]]] - N[PolyhedronData["SnubCube", "Circumradius"]]] < 10^-9,
+            Abs[N[PolyhedronData["SnubCube", "Volume"]] - 7.8894774] < 10^-6}]"#
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+  }
+
+  #[test]
+  fn polyhedron_data_snub_cube_in_archimedean_class() {
+    assert_eq!(
+      interpret(r#"MemberQ[PolyhedronData["Archimedean"], "SnubCube"]"#)
+        .unwrap(),
+      "True"
     );
   }
 }

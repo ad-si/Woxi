@@ -475,6 +475,48 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       \"Equilateral\", \"Rigid\", \"Rupert\", \"Simple\", \
       \"Uniform\", \"Zalgaller\"}",
   },
+  PolyhedronInfo {
+    name: "SnubCube",
+    vertex_count: 24,
+    edge_count: 60,
+    face_count: 38,
+    // With t the tribonacci constant (the real root of t^3 - t^2 - t - 1),
+    // the raw coordinates below have edge length Sqrt[2 + 2/t^2] and volume
+    // (4 + 28 t^2)/3; both are scaled to unit edge length.
+    volume: "(4 + 28*Root[-1 - #1 - #1^2 + #1^3 & , 1]^2)/(3*(2 + 2/Root[-1 - #1 - #1^2 + #1^3 & , 1]^2)^(3/2))",
+    surface_area: "6 + 8*Sqrt[3]",
+    circumradius: "Sqrt[(1 + Root[-1 - #1 - #1^2 + #1^3 & , 1]^-2 + Root[-1 - #1 - #1^2 + #1^3 & , 1]^2)/(2 + 2/Root[-1 - #1 - #1^2 + #1^3 & , 1]^2)]",
+    inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Missing[\"NotApplicable\"]",
+    // Even permutations of {+-1, +-1/t, +-t} with an even number of plus
+    // signs and odd permutations with an odd number, scaled to unit edge.
+    // The vertex and face order is not verified against wolframscript.
+    vertices_src: "With[{t = Root[-1 - #1 - #1^2 + #1^3 & , 1]}, With[{s = 1/Sqrt[2 + 2/t^2]}, {\
+      {s*1, s*1/t, -s*t}, {s*1, -s*1/t, s*t}, \
+      {-s*1, s*1/t, s*t}, {-s*1, -s*1/t, -s*t}, \
+      {s*1, s*t, s*1/t}, {s*1, -s*t, -s*1/t}, \
+      {-s*1, s*t, -s*1/t}, {-s*1, -s*t, s*1/t}, \
+      {s*1/t, s*1, s*t}, {s*1/t, -s*1, -s*t}, \
+      {-s*1/t, s*1, -s*t}, {-s*1/t, -s*1, s*t}, \
+      {s*1/t, s*t, -s*1}, {s*1/t, -s*t, s*1}, \
+      {-s*1/t, s*t, s*1}, {-s*1/t, -s*t, -s*1}, \
+      {s*t, s*1, -s*1/t}, {s*t, -s*1, s*1/t}, \
+      {-s*t, s*1, s*1/t}, {-s*t, -s*1, -s*1/t}, \
+      {s*t, s*1/t, s*1}, {s*t, -s*1/t, -s*1}, \
+      {-s*t, s*1/t, -s*1}, {-s*t, -s*1/t, s*1}}]]",
+    faces_src: "{{11, 1, 10, 4}, {12, 2, 9, 3}, {15, 5, 13, 7}, {16, 6, 14, 8}, {22, \
+      17, 21, 18}, {24, 19, 23, 20}, {9, 2, 21}, {9, 5, 15}, {10, 1, 22}, \
+      {10, 6, 16}, {11, 4, 23}, {11, 7, 13}, {12, 3, 24}, {12, 8, 14}, {13, \
+      1, 11}, {13, 5, 17}, {14, 2, 12}, {14, 6, 18}, {15, 3, 9}, {15, 7, \
+      19}, {16, 4, 10}, {16, 8, 20}, {17, 1, 13}, {17, 5, 21}, {18, 2, 14}, \
+      {18, 6, 22}, {19, 3, 15}, {19, 7, 23}, {20, 4, 16}, {20, 8, 24}, {21, \
+      2, 18}, {21, 5, 9}, {22, 1, 17}, {22, 6, 10}, {23, 4, 20}, {23, 7, \
+      11}, {24, 3, 19}, {24, 8, 12}}",
+    classes_src: "\
+      {\"Archimedean\", \"Canonical\", \"Chiral\", \"Convex\", \
+      \"Equilateral\", \"Rigid\", \"Rupert\", \"Simple\", \
+      \"Uniform\", \"Zalgaller\"}",
+  },
   // The rhombic dodecahedron is the one Catalan solid here: its faces are
   // rhombi, not regular polygons, so it has no circumradius (its vertices
   // are not all the same distance from the center).

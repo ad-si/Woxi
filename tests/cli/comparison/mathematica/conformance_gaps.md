@@ -5434,6 +5434,13 @@ Further entities (e.g. `"SquashedDodecahedron"`, the Johnson solids,
 give `PolyhedronData::notent`, so notebooks that offer them in a menu
 (such as polyhedron projection demonstrations) fail on those entries.
 
+`PolyhedronData["SnubCube", …]` was written from its geometry (tribonacci
+constant coordinates, unit edge length); its vertex order, face order and
+winding, and the `Root`-based form of `"Volume"`/`"Circumradius"` are
+unverified against wolframscript. `"SnubDodecahedron"`,
+`"GreatRhombicuboctahedron"` and the Kepler–Poinsot / Johnson menu entries are
+still unknown.
+
 ### EdgeDetect only implements `Method -> "Canny"`
 
 `EdgeDetect[image, r, t, Method -> m, "StraightEdges" -> s]` accepts the
