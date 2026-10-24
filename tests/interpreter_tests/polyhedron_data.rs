@@ -1371,6 +1371,68 @@ mod polyhedron_data_tests {
     );
   }
 
+  // `{"Antiprism", n}` is the unit-edge antiprism: 2n vertices, 4n edges and
+  // 2n + 2 faces.
+  #[test]
+  fn polyhedron_data_antiprism_counts() {
+    assert_eq!(
+      interpret(
+        r#"Table[{PolyhedronData[{"Antiprism", n}, "VertexCount"],
+           PolyhedronData[{"Antiprism", n}, "EdgeCount"],
+           PolyhedronData[{"Antiprism", n}, "FaceCount"],
+           Length[PolyhedronData[{"Antiprism", n}, "Faces"][[2, 1]]],
+           Length[PolyhedronData[{"Antiprism", n}, "Faces"][[1]]]}, {n, 3, 6}]"#
+      )
+      .unwrap(),
+      "{{6, 12, 8, 8, 6}, {8, 16, 10, 10, 8}, {10, 20, 12, 12, 10}, {12, 24, 14, 14, 12}}"
+    );
+    // The triangular antiprism is the octahedron.
+    assert_eq!(
+      interpret(
+        r#"Abs[N[PolyhedronData[{"Antiprism", 3}, "Volume"]] - Sqrt[2]/3] < 10^-9"#
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Every edge of the antiprism is one unit long: the base edges and the
+  // lateral edges (the triangle sides) alike.
+  #[test]
+  fn polyhedron_data_antiprism_unit_edges() {
+    assert_eq!(
+      interpret(
+        r#"Module[{v = N[PolyhedronData[{"Antiprism", 7}, "VertexCoordinates"]],
+              f = PolyhedronData[{"Antiprism", 7}, "FaceIndices"]},
+          Union[Flatten[Table[Round[Norm[v[[t[[i]]]] - v[[t[[Mod[i, Length[t]] + 1]]]]], 10^-9],
+            {t, f}, {i, Length[t]}]]]]"#
+      )
+      .unwrap(),
+      "{1}"
+    );
+  }
+
+  // Volume of the pentagonal antiprism.
+  #[test]
+  fn polyhedron_data_antiprism_volume() {
+    assert_eq!(
+      interpret(
+        r#"Abs[N[PolyhedronData[{"Antiprism", 5}, "Volume"]] - 1.5786893258] < 10^-9"#
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // An unknown family names itself, not "Prism", in the message.
+  #[test]
+  fn polyhedron_data_unknown_family_unevaluated() {
+    assert_eq!(
+      interpret(r#"PolyhedronData[{"Foo", 5}, "Volume"]"#).unwrap(),
+      "PolyhedronData[{Foo, 5}, Volume]"
+    );
+  }
+
   // Johnson solid J17: a square antiprism capped by two square pyramids.
   #[test]
   fn polyhedron_data_gyroelongated_square_dipyramid() {

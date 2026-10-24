@@ -24100,6 +24100,25 @@ fn shrink_grid_graphics(
   changed.then(|| rebuild_grid(opts, rows))
 }
 
+/// A `TreeForm[…]` sets its own picture width from its labels, which for a
+/// bushy tree runs past a narrower `Pane[…, {width, _}]`. The FrontEnd
+/// squeezes an automatically sized tree into the pane's width instead of
+/// clipping it, so redraw it at `width`. `None` when the content is not
+/// such a tree or already fits.
+pub(crate) fn fit_tree_to_pane_width(
+  content: &Expr,
+  width: f64,
+  content_width: &dyn Fn(&Expr) -> f64,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, .. } = content else {
+    return None;
+  };
+  if name != "TreeForm" || content_width(content) <= width + 0.5 {
+    return None;
+  }
+  Some(with_default_image_size(content, width as i128))
+}
+
 /// Fit `Pane[Grid[rows], {width, _}]`'s content into `width`: when the
 /// columns are wider than the pane, the FrontEnd squeezes the nested layouts
 /// holding automatically sized graphics (a plot's legend) instead of

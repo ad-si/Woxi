@@ -4422,6 +4422,15 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
       })
     })
     .unwrap_or(expr);
+  // An automatically sized tree wider than the box is squeezed to its width
+  // rather than clipped.
+  let expr = pane_box
+    .and_then(|(w, _, _)| {
+      functions::graphics::fit_tree_to_pane_width(&expr, w, &|c| {
+        functions::graphics::parse_svg_wh(&evaluator::expr_to_svg(c)).0
+      })
+    })
+    .unwrap_or(expr);
   // A picture the wrapper held (`Pane[Image[…], {w, h}]`) only becomes the
   // top-level Image now that the wrapper is gone, after the top-level
   // image pass has already run.
