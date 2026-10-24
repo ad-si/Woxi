@@ -5007,6 +5007,15 @@ fn is_inline_graphic(expr: &Expr) -> bool {
   }
 }
 
+/// Whether a `Button`'s options include `Appearance -> "Frameless"`.
+fn is_frameless_button(options: &[Expr]) -> bool {
+  options.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "Appearance")
+        && matches!(replacement.as_ref(), Expr::String(a) if a == "Frameless"))
+  })
+}
+
 /// The empty string a Studio-lifted control leaves in a body's layout.
 fn is_blank_string(expr: &Expr) -> bool {
   matches!(expr, Expr::String(s) if s.is_empty())
@@ -5040,6 +5049,15 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   // display wrapper like `Labeled` arrive in.
   if matches!(expr, Expr::FunctionCall { name, args }
     if (name == "Graphics" || name == "Graphics3D") && !args.is_empty())
+  {
+    return true;
+  }
+  // A `Frameless` `Button[picture, …]` shows just its picture.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Button"
+    && args.len() >= 2
+    && is_frameless_button(&args[2..])
+    && lays_out_a_graphic(&args[0])
   {
     return true;
   }
@@ -6149,6 +6167,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         && lays_out_a_graphic(&args[0]) =>
     {
       rotate_graphic_svg(&args[0], &args[1..])
+    }
+    // A `Frameless` `Button[picture, …]` is just its picture; the action is
+    // inert in a static rendering.
+    Expr::FunctionCall { name, args }
+      if name == "Button"
+        && args.len() >= 2
+        && is_frameless_button(&args[2..])
+        && lays_out_a_graphic(&args[0]) =>
+    {
+      expr_to_svg(&args[0])
     }
     // `Magnify[expr]` / `Magnify[expr, s]` shows `expr` scaled by `s` (1 by
     // default). Without this arm a Demonstration's caption such as

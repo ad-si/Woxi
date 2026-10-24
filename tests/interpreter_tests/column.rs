@@ -567,3 +567,25 @@ mod column_visual_mode {
     assert_eq!(interpret("Deploy[1 + 1]").unwrap(), "Deploy[2]");
   }
 }
+
+mod frameless_button_cells {
+  use super::*;
+
+  fn green_drawn(code: &str) -> bool {
+    clear_state();
+    let r = woxi::interpret_with_stdout(code).unwrap();
+    r.graphics.is_some_and(|svg| svg.contains("rgb(0,255,0)"))
+  }
+
+  // A `Frameless` button around a picture is drawn as that picture inside a
+  // layout, also when wrapped in `Dynamic`, `Pane` and `Labeled`.
+  #[test]
+  fn frameless_picture_button_in_grid() {
+    let button = r#"Button[Graphics[{Green, Rectangle[{0, 0}]}], Null, Appearance -> "Frameless"]"#;
+    assert!(green_drawn(&format!("Grid[{{{{{button}}}}}]")));
+    assert!(green_drawn(&format!("Grid[{{{{Dynamic[{button}]}}}}]")));
+    assert!(green_drawn(&format!(
+      "Labeled[Dynamic[Pane[Grid[{{{{{button}}}}}], ImageSize -> {{600, 414}}]], \"t\", Top]"
+    )));
+  }
+}

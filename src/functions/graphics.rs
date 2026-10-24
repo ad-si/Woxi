@@ -28626,7 +28626,8 @@ fn unwrap_dynamic_module_locals(
           } = opt
             && is_initialization_option(pattern, replacement)
           {
-            initializations.push(crate::syntax::expr_to_source_form(replacement));
+            initializations
+              .push(crate::syntax::expr_to_source_form(replacement));
           }
         }
         if let Expr::List(locals) = &args[0] {
