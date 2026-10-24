@@ -6071,8 +6071,8 @@ mod plot3d {
             .collect::<Vec<_>>()
         })
         .collect();
-      let width = xs.iter().cloned().fold(f64::MIN, f64::max)
-        - xs.iter().cloned().fold(f64::MAX, f64::min);
+      let width = xs.iter().copied().fold(f64::MIN, f64::max)
+        - xs.iter().copied().fold(f64::MAX, f64::min);
       assert!(width > 150.0, "scene collapsed to {width}px wide");
     }
 
