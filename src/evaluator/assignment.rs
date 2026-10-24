@@ -3676,17 +3676,17 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         // followed by NumericQ[a] = False) replaces the prior definition
         // rather than shadowing it — match Wolfram's "second Set wins"
         // semantics. Compare on params + conditions structurally.
-        let cond_strs: Vec<Option<String>> = conditions
-          .iter()
-          .map(|c| c.as_ref().map(expr_to_string))
-          .collect();
-        entry.retain(|(p, c, _, _, _, _)| {
-          if p != &params {
-            return true;
+        let same_condition = |a: &Option<Expr>, b: &Option<Expr>| match (a, b) {
+          (None, None) => true,
+          (Some(a), Some(b)) => {
+            crate::evaluator::pattern_matching::expr_equal(a, b)
           }
-          let other_strs: Vec<Option<String>> =
-            c.iter().map(|c| c.as_ref().map(expr_to_string)).collect();
-          other_strs != cond_strs
+          _ => false,
+        };
+        entry.retain(|(p, c, _, _, _, _)| {
+          p != &params
+            || c.len() != conditions.len()
+            || !c.iter().zip(&conditions).all(|(a, b)| same_condition(a, b))
         });
         let pos = entry
           .iter()
