@@ -4682,6 +4682,29 @@ mod graph_predicates {
   }
 
   #[test]
+  fn find_hamiltonian_cycle_large_polyhedra() {
+    // Dead-end branches are pruned, so graphs with dozens of vertices finish
+    // quickly. Every result must visit each vertex exactly once.
+    for name in [
+      "TruncatedIcosahedron",
+      "SnubDodecahedron",
+      "GreatRhombicosidodecahedron",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "With[{{e = PolyhedronData[\"{name}\", \"EdgeIndices\"]}}, \
+           With[{{c = First[GraphUtilities`HamiltonianCycles[Rule @@@ e]]}}, \
+           {{Sort[c] === Range[Max[e]], \
+           And @@ (MemberQ[e, {{#1, #2}} | {{#2, #1}}] & @@@ \
+             Partition[Append[c, First[c]], 2, 1])}}]]"
+        ))
+        .unwrap(),
+        "{True, True}"
+      );
+    }
+  }
+
+  #[test]
   fn find_hamiltonian_cycle_none() {
     // A path graph has no Hamiltonian cycle: wolframscript returns {}.
     assert_eq!(
