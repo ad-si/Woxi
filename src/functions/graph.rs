@@ -8870,3 +8870,157 @@ pub fn decode_graph6(text: &str) -> Option<Vec<(usize, Vec<(usize, usize)>)>> {
   }
   Some(graphs)
 }
+
+/// Fruchterman-Reingold layout of `n` vertices in `dim` dimensions, with a
+/// deterministic start so repeated runs give the same picture. Coordinates
+/// are centred and scaled to fit the cube [-1, 1]^dim.
+fn force_layout_nd(
+  n: usize,
+  edges: &[(usize, usize)],
+  dim: usize,
+) -> Vec<Vec<f64>> {
+  if n == 0 {
+    return vec![];
+  }
+  if n == 1 {
+    return vec![vec![0.0; dim]];
+  }
+  // Spread the start over a sphere/circle with the golden-angle spiral.
+  let golden_angle = PI * (3.0 - 5.0_f64.sqrt());
+  let mut pos: Vec<Vec<f64>> = (0..n)
+    .map(|i| {
+      let t = (i as f64 + 0.5) / n as f64;
+      let angle = i as f64 * golden_angle;
+      if dim == 2 {
+        let r = t.sqrt();
+        vec![r * angle.cos(), r * angle.sin()]
+      } else {
+        let z = 1.0 - 2.0 * t;
+        let r = (1.0 - z * z).sqrt();
+        vec![r * angle.cos(), r * angle.sin(), z]
+      }
+    })
+    .collect();
+
+  let k = (2.0_f64.powi(dim as i32) / n as f64).powf(1.0 / dim as f64);
+  let iterations = 150;
+  let mut temp = 0.2;
+  let cool = (0.005_f64 / temp).powf(1.0 / iterations as f64);
+  for _ in 0..iterations {
+    let mut disp = vec![vec![0.0; dim]; n];
+    for i in 0..n {
+      for j in (i + 1)..n {
+        let delta: Vec<f64> = (0..dim).map(|c| pos[i][c] - pos[j][c]).collect();
+        let d = delta.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-4);
+        let force = k * k / d;
+        for c in 0..dim {
+          disp[i][c] += delta[c] / d * force;
+          disp[j][c] -= delta[c] / d * force;
+        }
+      }
+    }
+    for &(a, b) in edges {
+      if a == b {
+        continue;
+      }
+      let delta: Vec<f64> = (0..dim).map(|c| pos[a][c] - pos[b][c]).collect();
+      let d = delta.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-4);
+      let force = d * d / k;
+      for c in 0..dim {
+        disp[a][c] -= delta[c] / d * force;
+        disp[b][c] += delta[c] / d * force;
+      }
+    }
+    for i in 0..n {
+      let len = disp[i].iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-9);
+      let step = len.min(temp);
+      for c in 0..dim {
+        pos[i][c] += disp[i][c] / len * step;
+      }
+    }
+    temp *= cool;
+  }
+
+  // Centre and scale into [-1, 1]^dim.
+  for c in 0..dim {
+    let mean = pos.iter().map(|p| p[c]).sum::<f64>() / n as f64;
+    for p in &mut pos {
+      p[c] -= mean;
+    }
+  }
+  let extent = pos
+    .iter()
+    .flat_map(|p| p.iter())
+    .fold(0.0_f64, |m, x| m.max(x.abs()))
+    .max(1e-9);
+  for p in &mut pos {
+    for x in p.iter_mut() {
+      *x /= extent;
+    }
+  }
+  pos
+}
+
+/// Vertex coordinates (in `VertexList` order) of the graph given as a list
+/// of edges or a `Graph`, laid out in `dim` dimensions. This is what
+/// `GraphUtilities\`GraphCoordinates[3D]` and `GraphPlot3D` draw from.
+pub(crate) fn graph_coordinates(
+  graph_input: &Expr,
+  dim: usize,
+) -> Result<
+  Option<(Vec<Expr>, Vec<(usize, usize)>, Vec<Vec<f64>>)>,
+  InterpreterError,
+> {
+  let graph = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: vec![graph_input.clone()].into(),
+  })?;
+  let Expr::FunctionCall { name, args } = &graph else {
+    return Ok(None);
+  };
+  let (Some(Expr::List(vertices)), Some(Expr::List(raw_edges)), "Graph") =
+    (args.first(), args.get(1), name.as_str())
+  else {
+    return Ok(None);
+  };
+  let (digraph, _) = build_digraph(vertices, raw_edges);
+  let edges: Vec<(usize, usize)> = digraph
+    .edge_references()
+    .map(|e| (e.source().index(), e.target().index()))
+    .collect();
+  let coords = force_layout_nd(vertices.len(), &edges, dim);
+  Ok(Some((vertices.to_vec(), edges, coords)))
+}
+
+/// `GraphPlot3D[edges]`: the graph drawn as a `Graphics3D` with one `Line`
+/// per edge and a `Point` per vertex.
+pub(crate) fn graph_plot3d_ast(
+  graph_input: &Expr,
+  options: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some((_, edges, coords)) = graph_coordinates(graph_input, 3)? else {
+    return Ok(None);
+  };
+  let point =
+    |i: usize| Expr::List(coords[i].iter().map(|&x| Expr::Real(x)).collect());
+  let lines: Vec<Expr> = edges
+    .iter()
+    .map(|&(a, b)| Expr::FunctionCall {
+      name: "Line".to_string(),
+      args: vec![Expr::List(vec![point(a), point(b)].into())].into(),
+    })
+    .collect();
+  let points = Expr::FunctionCall {
+    name: "Point".to_string(),
+    args: vec![Expr::List((0..coords.len()).map(point).collect())].into(),
+  };
+  let mut args =
+    vec![Expr::List(vec![Expr::List(lines.into()), points].into())];
+  args.extend(options.iter().cloned());
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(
+    &Expr::FunctionCall {
+      name: "Graphics3D".to_string(),
+      args: args.into(),
+    },
+  )?))
+}
