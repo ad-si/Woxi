@@ -5535,3 +5535,12 @@ on a 3×3×3 grid gives `0.6400000000000001` at `{0.3, 1.7, 0.2}` where WL
 gives `0.6399999999999999`. Partial derivatives (`Derivative[1, 0, 0][f]`)
 can come out a few ULP away from WL's value, so a mixed derivative that WL
 returns as exactly `0.` can be about `1*^-16` in Woxi.
+
+### `NDSolve` ignores the `"FixedStep"` sub-method
+
+`Method -> {"FixedStep", Method -> "ExplicitEuler"}` (or any other
+sub-method) is accepted but not honoured: Woxi integrates with its own
+accurate scheme. For `y'[t] == -y[t], y[0] == 1` on `{t, 0, 1}` with
+`StartingStepSize -> 0.1`, WL's explicit Euler gives `y[1] = 0.9^10 =
+0.348678`, while Woxi returns `0.367879`. Step-size stability demonstrations
+therefore do not show the instability WL does.
