@@ -584,6 +584,10 @@ mod frameless_button_cells {
     let button = r#"Button[Graphics[{Green, Rectangle[{0, 0}]}], Null, Appearance -> "Frameless"]"#;
     assert!(green_drawn(&format!("Grid[{{{{{button}}}}}]")));
     assert!(green_drawn(&format!("Grid[{{{{Dynamic[{button}]}}}}]")));
+    // The cells may be variables holding the buttons.
+    assert!(green_drawn(&format!(
+      "sq = Dynamic@{button}; Labeled[Dynamic[Pane[Grid[{{{{sq, sq}}}}]]], \"t\", Top]"
+    )));
     assert!(green_drawn(&format!(
       "Labeled[Dynamic[Pane[Grid[{{{{{button}}}}}], ImageSize -> {{600, 414}}]], \"t\", Top]"
     )));

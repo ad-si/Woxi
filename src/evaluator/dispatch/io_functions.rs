@@ -5188,7 +5188,12 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     Expr::FunctionCall { name, args }
       if name == "Dynamic" && args.len() == 1 =>
     {
+      // What it holds may only be a picture once evaluated — a layout whose
+      // cells are variables the module assigned (`Dynamic[Grid[{{sq1, sq2}}]]`).
       lays_out_a_graphic(&args[0])
+        || (matches!(&args[0], Expr::FunctionCall { .. })
+          && crate::evaluator::evaluate_expr_to_expr(&args[0])
+            .is_ok_and(|value| lays_out_a_graphic(&value)))
     }
     // `picture -> picture` is typeset as the pictures around an arrow.
     Expr::Rule {
