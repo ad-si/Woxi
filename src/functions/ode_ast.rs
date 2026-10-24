@@ -231,9 +231,59 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `DSolve[{…}, {y1[t], y2[t], …}, t]` — a coupled system of dependent
   // functions, handled by the operator-elimination solver above instead of
   // the single-variable machinery below.
+  // A bare function name (`{x, y}`) asks for `x -> Function[{t}, …]`.
   if let Expr::List(dep_items) = dep_arg {
-    let items: Vec<Expr> = dep_items.iter().cloned().collect();
-    return dsolve_linear_system(eqns_arg, &items, &x_name);
+    let function_names: Vec<String> = dep_items
+      .iter()
+      .filter_map(|item| match item {
+        Expr::Identifier(name) => Some(name.clone()),
+        _ => None,
+      })
+      .collect();
+    let items: Vec<Expr> = dep_items
+      .iter()
+      .map(|item| match item {
+        Expr::Identifier(name) => Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![Expr::Identifier(x_name.clone())].into(),
+        },
+        other => other.clone(),
+      })
+      .collect();
+    let solved = dsolve_linear_system(eqns_arg, &items, &x_name)?;
+    if function_names.is_empty() {
+      return Ok(solved);
+    }
+    let to_function_form = |rule: &Expr| -> Expr {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = rule
+        && let Expr::FunctionCall { name, .. } = pattern.as_ref()
+        && function_names.contains(name)
+      {
+        return function_form_rule(
+          name.clone(),
+          x_name.clone(),
+          replacement.as_ref().clone(),
+        );
+      }
+      rule.clone()
+    };
+    return Ok(match &solved {
+      Expr::List(solutions) => Expr::List(
+        solutions
+          .iter()
+          .map(|solution| match solution {
+            Expr::List(rules) => {
+              Expr::List(rules.iter().map(to_function_form).collect())
+            }
+            other => other.clone(),
+          })
+          .collect(),
+      ),
+      other => other.clone(),
+    });
   }
 
   // Determine dependent function name and whether Function form is requested
@@ -375,6 +425,18 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(build_dsolve_result(solution, y_name, x_name, function_form))
 }
 
+/// `y -> Function[{x}, sol]`.
+fn function_form_rule(y_name: String, x_name: String, solution: Expr) -> Expr {
+  rule_expr(
+    Expr::Identifier(y_name),
+    Expr::NamedFunction {
+      params: vec![x_name],
+      body: Box::new(solution),
+      bracketed: true,
+    },
+  )
+}
+
 /// Wrap a solved right-hand side as `{{y[x] -> sol}}`, or
 /// `{{y -> Function[{x}, sol]}}` when the caller asked for `y` rather than
 /// `y[x]`.
@@ -385,14 +447,7 @@ fn build_dsolve_result(
   function_form: bool,
 ) -> Expr {
   let rule = if function_form {
-    rule_expr(
-      Expr::Identifier(y_name),
-      Expr::NamedFunction {
-        params: vec![x_name],
-        body: Box::new(solution),
-        bracketed: true,
-      },
-    )
+    function_form_rule(y_name, x_name, solution)
   } else {
     rule_expr(
       Expr::FunctionCall {
@@ -12970,12 +13025,6 @@ fn eval_poly_c(p: &[f64], x: Cplx) -> Cplx {
   acc
 }
 
-fn eval_matrix_at(m: &[Vec<OpPoly>], lambda: Cplx) -> Vec<Vec<Cplx>> {
-  m.iter()
-    .map(|row| row.iter().map(|cell| eval_poly_c(cell, lambda)).collect())
-    .collect()
-}
-
 /// A basis of the null space of a (numerically) rank-deficient complex
 /// matrix with `cols` columns, via Gauss-Jordan elimination with partial
 /// pivoting to reduced row-echelon form. One basis vector per free column,
@@ -13361,6 +13410,87 @@ fn solve_real_linear_system(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
   Some(x)
 }
 
+/// A polynomial particular solution of `M(D)·Y = f` for a constant forcing
+/// `f`: each `Y_i` a polynomial of degree at most `zero_multiplicity` (the
+/// multiplicity of the characteristic root 0; degree 0 when `M(0)` is
+/// invertible). Matching the coefficients of every power of `x` gives a
+/// linear system in the polynomial coefficients; free unknowns are set to
+/// zero, since the homogeneous solution absorbs them.
+fn polynomial_particular_solution(
+  poly_matrix: &[Vec<OpPoly>],
+  f: &[f64],
+  zero_multiplicity: usize,
+) -> Option<Vec<Vec<f64>>> {
+  let n = f.len();
+  let degree = zero_multiplicity;
+  let unknowns = n * (degree + 1);
+  // Row (r, p): the coefficient of x^p in row r of M(D)·Y.
+  let mut rows: Vec<Vec<f64>> = Vec::new();
+  for (r, f_r) in f.iter().enumerate() {
+    for p in 0..=degree {
+      let mut row = vec![0.0; unknowns + 1];
+      for i in 0..n {
+        for (s, &c) in poly_matrix[r][i].iter().enumerate() {
+          // D^s x^j = j!/(j-s)! x^(j-s), which lands on x^p for j = p + s.
+          let j = p + s;
+          if c == 0.0 || j > degree {
+            continue;
+          }
+          let falling: f64 = ((p + 1)..=j).map(|v| v as f64).product();
+          row[i * (degree + 1) + j] += c * falling;
+        }
+      }
+      row[unknowns] = if p == 0 { *f_r } else { 0.0 };
+      rows.push(row);
+    }
+  }
+  // Gauss-Jordan elimination with partial pivoting; free unknowns stay 0.
+  let scale = rows
+    .iter()
+    .flat_map(|r| r.iter())
+    .fold(0.0_f64, |m, v| m.max(v.abs()))
+    .max(1.0);
+  let mut pivots: Vec<(usize, usize)> = Vec::new();
+  let mut next_row = 0;
+  for col in 0..unknowns {
+    let Some(best) = (next_row..rows.len())
+      .max_by(|&a, &b| rows[a][col].abs().total_cmp(&rows[b][col].abs()))
+    else {
+      break;
+    };
+    if rows[best][col].abs() <= 1e-10 * scale {
+      continue;
+    }
+    rows.swap(next_row, best);
+    let pivot = rows[next_row][col];
+    for v in &mut rows[next_row] {
+      *v /= pivot;
+    }
+    for r in 0..rows.len() {
+      if r != next_row && rows[r][col] != 0.0 {
+        let factor = rows[r][col];
+        for c in 0..=unknowns {
+          rows[r][c] -= factor * rows[next_row][c];
+        }
+      }
+    }
+    pivots.push((next_row, col));
+    next_row += 1;
+  }
+  // An inconsistent remaining row means no polynomial solution exists.
+  if rows[next_row..]
+    .iter()
+    .any(|r| r[unknowns].abs() > 1e-9 * scale)
+  {
+    return None;
+  }
+  let mut solution = vec![vec![0.0; degree + 1]; n];
+  for (r, col) in pivots {
+    solution[col / (degree + 1)][col % (degree + 1)] = rows[r][unknowns];
+  }
+  Some(solution)
+}
+
 /// Placeholder identifier standing in for the shared arbitrary constant
 /// `C[k]` while the general solution is still being solved against the
 /// initial conditions (mirrors [`apply_initial_conditions`]'s own `__Ci`
@@ -13452,20 +13582,53 @@ fn dsolve_linear_system(
 
   let delta = poly_trim(poly_det(&poly_matrix));
   let degree = delta.len() - 1;
-  if degree == 0 || delta.iter().all(|c| c.abs() < 1e-9) || degree > 4 {
+  if degree == 0 || delta.iter().all(|c| c.abs() < 1e-9) {
     return Err(bail());
   }
+  // The root 0 is factored out first (`s^4 (9 s^2 + 100)` for a system
+  // with a decoupled `z'' = c`), leaving at most a quartic to solve.
+  let zeros = delta.iter().take_while(|c| c.abs() < 1e-12).count();
+  let reduced = &delta[zeros..];
+  if reduced.len() - 1 > 4 {
+    return Err(bail());
+  }
+  let mut found: Vec<(f64, f64, usize)> = Vec::new();
+  if zeros > 0 {
+    found.push((0.0, 0.0, zeros));
+  }
+  if reduced.len() > 1 {
+    found.extend(find_characteristic_roots(reduced, reduced.len() - 1)?);
+  }
 
-  let roots = find_characteristic_roots(&delta, degree)?;
+  // The root finders can list a repeated root once per occurrence
+  // (`s^4 + s^2` gives 0 twice); the basis needs it once with its
+  // multiplicity.
+  let mut roots: Vec<(f64, f64, usize)> = Vec::new();
+  for (re, im, mult) in found {
+    match roots.iter_mut().find(|(r, i, _)| {
+      (r - re).abs() <= 1e-7 * re.abs().max(1.0)
+        && (i - im).abs() <= 1e-7 * im.abs().max(1.0)
+    }) {
+      Some(existing) => existing.2 += mult,
+      None => roots.push((if re == 0.0 { 0.0 } else { re }, im, mult)),
+    }
+  }
+
+  // The multiplicity of the root 0: a constant forcing needs a particular
+  // solution polynomial of that degree when M(0) is singular.
+  let zero_multiplicity = roots
+    .iter()
+    .find(|(re, im, _)| re.abs() <= 1e-9 && im.abs() <= 1e-9)
+    .map_or(0, |r| r.2);
 
   // Constant particular solution for nonzero constant forcing: M(0) Yp = f.
-  let particular: Vec<f64> = if f_vec.iter().any(|v| v.abs() > 1e-12) {
-    let m0 = eval_matrix_at(&poly_matrix, (0.0, 0.0));
-    let m0_real: Vec<Vec<f64>> =
-      m0.iter().map(|r| r.iter().map(|c| c.0).collect()).collect();
-    solve_real_linear_system(&m0_real, &f_vec).ok_or_else(bail)?
+  // With M(0) singular it is a polynomial in x instead: `particular[i][j]`
+  // is the coefficient of x^j in Yp_i.
+  let particular: Vec<Vec<f64>> = if f_vec.iter().any(|v| v.abs() > 1e-12) {
+    polynomial_particular_solution(&poly_matrix, &f_vec, zero_multiplicity)
+      .ok_or_else(bail)?
   } else {
-    vec![0.0; n]
+    vec![vec![0.0]; n]
   };
 
   // A fundamental basis of the homogeneous solution space: one entry per
@@ -13489,10 +13652,22 @@ fn dsolve_linear_system(
 
   let mut y_exprs: Vec<Expr> = (0..n)
     .map(|i| {
-      if particular[i].abs() > 1e-12 {
-        f64_to_nice_expr(particular[i])
-      } else {
+      let terms: Vec<SolTerm> = particular[i]
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.abs() > 1e-12)
+        .map(|(power, &coeff)| SolTerm {
+          rate: 0.0,
+          freq: 0.0,
+          power,
+          sine: false,
+          coeff,
+        })
+        .collect();
+      if terms.is_empty() {
         Expr::Integer(0)
+      } else {
+        sol_terms_expr(&terms, x_name)
       }
     })
     .collect();

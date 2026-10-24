@@ -1783,8 +1783,12 @@ initial value of the k-th variable — and matches it term for term, secular
   own is an unsimplified tangle of `4.4*^-17`-scale complex noise, so there
   is no form to match.
 - A system with nonzero constant forcing gets its constant particular
-  solution plus the eigenvector basis, where WL emits an unsimplified
-  variation-of-parameters expression in its `MatrixExp` basis.
+  solution (a polynomial one when the characteristic root 0 makes `M(0)`
+  singular, as for a charged particle in crossed fields) plus the
+  eigenvector basis, where WL emits an unsimplified variation-of-parameters
+  expression in its `MatrixExp` basis.
+- A higher-order homogeneous system uses the eigenvector basis too; WL's
+  constants are the initial values of `y1, y1', …, y2, …` in that order.
 
 ### Second-order PDEs with a lower-order term
 

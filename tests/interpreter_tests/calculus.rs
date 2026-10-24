@@ -8088,6 +8088,46 @@ FreeQ[sol, E]}"
   mod coupled_linear_ode_system {
     use super::*;
 
+    // A charged particle in crossed fields: the characteristic determinant
+    // s^4 (9 s^2 + 100) has the root 0 four times, M(0) is singular, so the
+    // constant forcing needs a polynomial particular solution.
+    #[test]
+    fn function_form_of_a_system() {
+      assert_eq!(
+        interpret(
+          "DSolve[{x'[t] == y[t], y'[t] == x[t], x[0] == 1, y[0] == 0}, \
+           {x, y}, t]"
+        )
+        .unwrap(),
+        "{{x -> Function[{t}, (1 + E^(2*t))/(2*E^t)], \
+         y -> Function[{t}, (-1 + E^(2*t))/(2*E^t)]}}"
+      );
+    }
+
+    #[test]
+    fn repeated_zero_root_and_polynomial_particular_solution() {
+      assert_eq!(
+        interpret(
+          "Simplify[{3 x''[t] + 10 + 10 y'[t], 3 y''[t] - 10 - 10 x'[t], \
+           3 z''[t] + 4, x'[0], x[0], y'[0], y[0], z'[0], z[0]} /. \
+           First[DSolve[{3 x''[t] == -10 - 10 y'[t], \
+           3 y''[t] == 10 + 10 x'[t], 3 z''[t] == -4, x'[0] == 5, \
+           x[0] == 0, y'[0] == 5, y[0] == 0, z'[0] == 3, z[0] == 0}, \
+           {x, y, z}, t]]]"
+        )
+        .unwrap(),
+        "{0, 0, 0, 5, 0, 5, 0, 3, 0}"
+      );
+      assert_eq!(
+        interpret(
+          "DSolve[{x''[t] == -y'[t], y''[t] == x'[t]}, {x[t], y[t]}, t] // \
+           Length"
+        )
+        .unwrap(),
+        "1"
+      );
+    }
+
     // x' == y, y' == x has real characteristic roots ±1: x = Cosh[t],
     // y = Sinh[t], written out as exponentials over a common denominator.
     #[test]
