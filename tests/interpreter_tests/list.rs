@@ -24364,3 +24364,39 @@ mod combinatorica_random_graph {
     );
   }
 }
+
+mod combinatorica_show_graph {
+  use super::*;
+
+  #[test]
+  fn show_graph_draws_edges_vertices_and_labels() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; g = FromUnorderedPairs[{{1,2},{2,3}}]; \
+         {Head[ShowGraph[g]], Head[ShowLabeledGraph[g]], \
+          Count[ShowGraph[g][[1]], _Line, Infinity], \
+          Count[ShowGraph[g][[1]], _Disk, Infinity], \
+          Count[ShowGraph[g][[1]], _Text, Infinity], \
+          Count[ShowLabeledGraph[g][[1]], _Text, Infinity]}"
+      )
+      .unwrap(),
+      "{Graphics, Graphics, 2, 3, 0, 3}"
+    );
+  }
+
+  #[test]
+  fn graph_with_options_and_colors_renders() {
+    assert_eq!(
+      interpret(
+        "g = Combinatorica`Graph[{{{1,2}, Combinatorica`EdgeColor -> Red}}, \
+         {{{0,0}, Combinatorica`VertexColor -> Blue}, {{1,1}}}, \
+         Combinatorica`VertexStyle -> Disk[1/20]]; \
+         {Combinatorica`V[g], \
+          Head[Combinatorica`ShowLabeledGraph[g, ImageSize -> {200, 100}]], \
+          MemberQ[Combinatorica`ShowGraph[g][[1]], {Red, _Line}, Infinity]}"
+      )
+      .unwrap(),
+      "{2, Graphics, True}"
+    );
+  }
+}

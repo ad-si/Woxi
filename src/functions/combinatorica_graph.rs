@@ -23,7 +23,7 @@ impl CGraph {
     let Expr::FunctionCall { name, args } = expr else {
       return None;
     };
-    if name != GRAPH || args.len() != 2 {
+    if name != GRAPH || args.len() < 2 {
       return None;
     }
     let (Expr::List(edges), Expr::List(vertices)) = (&args[0], &args[1]) else {
@@ -203,6 +203,12 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
   if name == "Combinatorica`RandomGraph" {
     return random_graph(args);
   }
+  if name == "Combinatorica`ShowGraph" {
+    return show_graph(args, false);
+  }
+  if name == "Combinatorica`ShowLabeledGraph" {
+    return show_graph(args, true);
+  }
   let g = CGraph::parse(args.first()?)?;
   match (name, args.len()) {
     ("Combinatorica`V", 1) => Some(Expr::Integer(g.n as i128)),
@@ -283,4 +289,151 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
     }
     _ => None,
   }
+}
+
+fn symbol_is(e: &Expr, name: &str) -> bool {
+  matches!(e, Expr::Identifier(n) if n == name || n.ends_with(&format!("`{name}")))
+}
+
+/// The value of the option `name` (in any context) among `opts`.
+fn option<'a>(opts: &'a [Expr], name: &str) -> Option<&'a Expr> {
+  opts.iter().find_map(|o| {
+    crate::evaluator::dispatch::list_operations::as_rule(o)
+      .filter(|(k, _)| symbol_is(k, name))
+      .map(|(_, v)| v)
+  })
+}
+
+fn real_pair(e: &Expr) -> Option<(f64, f64)> {
+  let Expr::List(items) = e else { return None };
+  match items.as_slice() {
+    [x, y] => Some((
+      crate::functions::math_ast::try_eval_to_f64(x)?,
+      crate::functions::math_ast::try_eval_to_f64(y)?,
+    )),
+    _ => None,
+  }
+}
+
+fn pt(x: f64, y: f64) -> Expr {
+  Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+}
+
+/// `ShowGraph[g, opts]` / `ShowLabeledGraph[g, opts]`: the graph drawn as
+/// `Graphics`: edges as lines, vertices as disks, and (for the labeled
+/// form) the vertex numbers. Per-edge `EdgeColor`, per-vertex `VertexColor`
+/// and the graph's `EdgeStyle`, `VertexStyle` and `VertexNumberPosition`
+/// options are honoured; the remaining options go to `Graphics`.
+fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
+  let (graph, extra) = args.split_first()?;
+  let Expr::FunctionCall { name, args: gargs } = graph else {
+    return None;
+  };
+  if name != GRAPH || gargs.len() < 2 {
+    return None;
+  }
+  let (Expr::List(edges), Expr::List(vertices)) = (&gargs[0], &gargs[1]) else {
+    return None;
+  };
+  let gopts = &gargs[2..];
+  let coords = vertices
+    .iter()
+    .map(|v| {
+      let Expr::List(parts) = v else { return None };
+      real_pair(parts.first()?)
+    })
+    .collect::<Option<Vec<_>>>()?;
+  let (mut x0, mut x1, mut y0, mut y1) =
+    (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+  for &(x, y) in &coords {
+    x0 = x0.min(x);
+    x1 = x1.max(x);
+    y0 = y0.min(y);
+    y1 = y1.max(y);
+  }
+  if coords.is_empty() {
+    (x0, x1, y0, y1) = (0.0, 1.0, 0.0, 1.0);
+  }
+  let span = (x1 - x0).max(y1 - y0).max(1e-9);
+  let pad = 0.1 * span;
+
+  let mut prims: Vec<Expr> = Vec::new();
+  let thin = option(gopts, "EdgeStyle")
+    .is_some_and(|s| matches!(s, Expr::Identifier(n) if n == "Thin"));
+  if thin {
+    prims.push(Expr::Identifier("Thin".to_string()));
+  }
+  for edge in edges {
+    let Expr::List(parts) = edge else { return None };
+    let Some(Expr::List(pair)) = parts.first() else {
+      return None;
+    };
+    let [Expr::Integer(u), Expr::Integer(v)] = pair.as_slice() else {
+      return None;
+    };
+    let (&(ux, uy), &(vx, vy)) = (
+      coords.get((*u as usize).checked_sub(1)?)?,
+      coords.get((*v as usize).checked_sub(1)?)?,
+    );
+    let line = crate::helpers::call(
+      "Line",
+      vec![Expr::List(vec![pt(ux, uy), pt(vx, vy)].into())],
+    );
+    match option(&parts[1..], "EdgeColor") {
+      Some(color) => prims.push(Expr::List(vec![color.clone(), line].into())),
+      None => prims.push(line),
+    }
+  }
+
+  let radius = match option(gopts, "VertexStyle") {
+    Some(Expr::FunctionCall { name, args }) if name == "Disk" => {
+      match args.as_slice() {
+        [r] => crate::functions::math_ast::try_eval_to_f64(r)? * span,
+        _ => 0.03 * span,
+      }
+    }
+    _ => 0.03 * span,
+  };
+  let (dx, dy) = option(gopts, "VertexNumberPosition")
+    .and_then(real_pair)
+    .unwrap_or((0.0, 0.0));
+  for (i, (v, &(x, y))) in vertices.iter().zip(&coords).enumerate() {
+    let Expr::List(parts) = v else { return None };
+    let disk = crate::helpers::call("Disk", vec![pt(x, y), Expr::Real(radius)]);
+    match option(&parts[1..], "VertexColor") {
+      Some(color) => prims.push(Expr::List(vec![color.clone(), disk].into())),
+      None => prims.push(disk),
+    }
+    if labeled {
+      prims.push(crate::helpers::call(
+        "Text",
+        vec![
+          Expr::Integer(i as i128 + 1),
+          pt(x + dx * span, y + dy * span + 2.0 * radius),
+        ],
+      ));
+    }
+  }
+
+  let rule = |k: &str, v: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(k.to_string())),
+    replacement: Box::new(v),
+  };
+  let mut out = vec![Expr::List(prims.into())];
+  out.push(rule(
+    "AspectRatio",
+    Expr::Identifier("Automatic".to_string()),
+  ));
+  out.push(rule(
+    "PlotRange",
+    Expr::List(
+      vec![
+        Expr::List(vec![Expr::Real(x0 - pad), Expr::Real(x1 + pad)].into()),
+        Expr::List(vec![Expr::Real(y0 - pad), Expr::Real(y1 + pad)].into()),
+      ]
+      .into(),
+    ),
+  ));
+  out.extend(extra.iter().cloned());
+  Some(crate::helpers::call("Graphics", out))
 }

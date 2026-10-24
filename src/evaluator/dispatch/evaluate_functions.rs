@@ -1092,7 +1092,11 @@ fn evaluate_function_call_ast_inner(
     {
       combinatorica_graph_name(name)
     }
-    "V" | "ConnectedComponents" | "ShortestPath"
+    "V"
+    | "ConnectedComponents"
+    | "ShortestPath"
+    | "ShowGraph"
+    | "ShowLabeledGraph"
       if combinatorica_active
         && matches!(
           args.first(),
@@ -14239,6 +14243,8 @@ fn combinatorica_graph_name(name: &str) -> &'static str {
     "ToAdjacencyMatrix" => "Combinatorica`ToAdjacencyMatrix",
     "Edges" => "Combinatorica`Edges",
     "M" => "Combinatorica`M",
+    "ShowGraph" => "Combinatorica`ShowGraph",
+    "ShowLabeledGraph" => "Combinatorica`ShowLabeledGraph",
     _ => "Combinatorica`ShortestPath",
   }
 }

@@ -6370,6 +6370,8 @@ Combinatorica`RandomGraph,Combinatorica graph with each vertex pair an edge with
 Combinatorica`KSubsets,The k-element subsets of a list (Subsets[l {k}]),✅,pure,6.0,
 Combinatorica`ToAdjacencyMatrix,Adjacency matrix of a Combinatorica graph,✅,pure,6.0,
 Combinatorica`Edges,Edges of a Combinatorica graph as vertex pairs,✅,pure,6.0,
+Combinatorica`ShowGraph,Draws a Combinatorica graph as Graphics with edges as lines and vertices as disks,✅,pure,6.0,
+Combinatorica`ShowLabeledGraph,Draws a Combinatorica graph as Graphics with its vertices numbered,✅,pure,6.0,
 Combinatorica`M,Number of edges of a Combinatorica graph,✅,pure,6.0,
 Combinatorica`ToAdjacencyLists,Sorted neighbour lists of a Combinatorica graph,✅,pure,6.0,
 Combinatorica`ConnectedComponents,Connected components of a Combinatorica graph as sorted vertex lists,✅,pure,6.0,
