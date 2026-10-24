@@ -740,6 +740,43 @@ fn exact_numbers_coincide(a: &Expr, b: &Expr, fa: f64, fb: f64) -> bool {
   magnitude.abs() <= scale * 1e-70
 }
 
+/// Verdict for `Equal` over numeric complex constants such as `1 + I`.
+/// `None` when an operand is not a plain complex number, or when two exact
+/// operands agree to within machine precision without being identical (left
+/// for the symbolic machinery rather than guessed).
+pub fn complex_constants_equal(args: &[Expr]) -> Option<bool> {
+  use crate::functions::math_ast::numeric_utils::try_extract_complex_f64;
+  let parts: Vec<(f64, f64)> = args
+    .iter()
+    .map(try_extract_complex_f64)
+    .collect::<Option<_>>()?;
+  if parts.iter().any(|(r, i)| !r.is_finite() || !i.is_finite()) {
+    return None;
+  }
+  let any_inexact = args.iter().any(|a| expr_to_string(a).contains('.'));
+  let (r0, i0) = parts[0];
+  let mut all_same = true;
+  for &(r, i) in parts.iter().skip(1) {
+    let scale = r0.abs().max(i0.abs()).max(r.abs()).max(i.abs());
+    let diff = (r - r0).abs().max((i - i0).abs());
+    let tol = scale
+      * if any_inexact {
+        2.0_f64.powi(-46)
+      } else {
+        1e-12
+      };
+    if diff > tol {
+      return Some(false);
+    }
+    all_same &= diff == 0.0;
+  }
+  if all_same || any_inexact {
+    Some(true)
+  } else {
+    None
+  }
+}
+
 pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Equal[] and Equal[x] return True (like wolframscript)
   if args.len() < 2 {
@@ -910,6 +947,12 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(bool_expr(true));
   }
 
+  // Numeric complex constants (`1 + I`, `2.5 - 3 I`) compare by their real and
+  // imaginary parts; the real-only path above cannot see them.
+  if let Some(verdict) = complex_constants_equal(args) {
+    return Ok(bool_expr(verdict));
+  }
+
   // Structured operands sharing head and arity are equal when every component
   // is determinably equal — e.g. `RGBColor[0., 0., 1.] == RGBColor[0, 0, 1]`.
   // Only ever concludes True here; mismatches fall through to the symbolic
@@ -1043,6 +1086,12 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     return Ok(bool_expr(true));
+  }
+
+  if args.len() == 2
+    && let Some(equal) = complex_constants_equal(args)
+  {
+    return Ok(bool_expr(!equal));
   }
 
   // For the common 2-argument form, a structural shape mismatch (different
