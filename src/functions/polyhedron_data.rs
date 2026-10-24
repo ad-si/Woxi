@@ -2336,60 +2336,116 @@ fn string_list(items: &[&str]) -> Expr {
   Expr::List(items.iter().map(|s| entity_expr(s)).collect())
 }
 
-/// The right `n`-gonal prism with unit edges, `{"Prism", n}` for `n >= 3`:
-/// the regular `n`-gon base at `z = -1/2` and its copy at `z = +1/2`
-/// (vertices `1..n` and `n+1..2n`), the two bases and `n` square sides, all
-/// wound outward. Built on demand and cached, since `PolyhedronInfo` holds
+/// Look up (or build once) the entry for a parametric family such as
+/// `{"Prism", n}`, caching it by family and `n`, since `PolyhedronInfo` holds
 /// `'static` source strings.
-fn prism_info(n: i128) -> &'static PolyhedronInfo {
+fn family_info(
+  family: &'static str,
+  n: i128,
+  build: fn(i128) -> PolyhedronInfo,
+) -> &'static PolyhedronInfo {
   use std::collections::HashMap;
   use std::sync::{Mutex, OnceLock};
-  static CACHE: OnceLock<Mutex<HashMap<i128, &'static PolyhedronInfo>>> =
-    OnceLock::new();
+  static CACHE: OnceLock<
+    Mutex<HashMap<(&'static str, i128), &'static PolyhedronInfo>>,
+  > = OnceLock::new();
   let mut cache = CACHE
     .get_or_init(|| Mutex::new(HashMap::new()))
     .lock()
     .unwrap();
-  if let Some(info) = cache.get(&n) {
-    return info;
-  }
-  let ring = |z: &str| -> Vec<String> {
-    (0..n)
-      .map(|k| {
-        format!(
-          "{{Cos[2 Pi {k}/{n}]/(2 Sin[Pi/{n}]), Sin[2 Pi {k}/{n}]/(2 Sin[Pi/{n}]), {z}}}"
-        )
-      })
-      .collect()
-  };
-  let vertices: Vec<String> =
-    ring("-1/2").into_iter().chain(ring("1/2")).collect();
-  let bottom: Vec<String> = (1..=n).rev().map(|i| i.to_string()).collect();
-  let top: Vec<String> = (n + 1..=2 * n).map(|i| i.to_string()).collect();
-  let mut faces = vec![
-    format!("{{{}}}", bottom.join(", ")),
-    format!("{{{}}}", top.join(", ")),
-  ];
-  for k in 1..=n {
-    let next = k % n + 1;
-    faces.push(format!("{{{k}, {next}, {}, {}}}", n + next, n + k));
-  }
-  let info = Box::leak(Box::new(PolyhedronInfo {
-    name: "Prism",
-    vertex_count: 2 * n,
-    edge_count: 3 * n,
-    face_count: n + 2,
-    volume: leak(format!("{n}/(4 Tan[Pi/{n}])")),
-    surface_area: leak(format!("{n} + {n}/(2 Tan[Pi/{n}])")),
-    circumradius: leak(format!("Sqrt[1/4 + 1/(4 Sin[Pi/{n}]^2)]")),
-    inradius: "Missing[\"NotApplicable\"]",
-    midradius: "Missing[\"NotApplicable\"]",
-    vertices_src: leak(format!("{{{}}}", vertices.join(", "))),
-    faces_src: leak(format!("{{{}}}", faces.join(", "))),
-    classes_src: "{\"Convex\", \"Prism\"}",
-  }));
-  cache.insert(n, info);
-  info
+  cache
+    .entry((family, n))
+    .or_insert_with(|| Box::leak(Box::new(build(n))))
+}
+
+/// The vertices of a regular `n`-gon ring with unit edges as source text,
+/// rotated by `phase` (in units of `2 Pi / n`) at height `z`.
+fn ring_vertices(n: i128, phase: &str, z: &str) -> Vec<String> {
+  (0..n)
+    .map(|k| {
+      format!(
+        "{{Cos[2 Pi ({k} + {phase})/{n}]/(2 Sin[Pi/{n}]), Sin[2 Pi ({k} + {phase})/{n}]/(2 Sin[Pi/{n}]), {z}}}"
+      )
+    })
+    .collect()
+}
+
+fn index_face(indices: impl Iterator<Item = i128>) -> String {
+  let items: Vec<String> = indices.map(|i| i.to_string()).collect();
+  format!("{{{}}}", items.join(", "))
+}
+
+/// The right `n`-gonal prism with unit edges, `{"Prism", n}` for `n >= 3`:
+/// the regular `n`-gon base at `z = -1/2` and its copy at `z = +1/2`
+/// (vertices `1..n` and `n+1..2n`), the two bases and `n` square sides, all
+/// wound outward.
+fn prism_info(n: i128) -> &'static PolyhedronInfo {
+  family_info("Prism", n, |n| {
+    let vertices: Vec<String> = ring_vertices(n, "0", "-1/2")
+      .into_iter()
+      .chain(ring_vertices(n, "0", "1/2"))
+      .collect();
+    let mut faces = vec![index_face((1..=n).rev()), index_face(n + 1..=2 * n)];
+    for k in 1..=n {
+      let next = k % n + 1;
+      faces.push(format!("{{{k}, {next}, {}, {}}}", n + next, n + k));
+    }
+    PolyhedronInfo {
+      name: "Prism",
+      vertex_count: 2 * n,
+      edge_count: 3 * n,
+      face_count: n + 2,
+      volume: leak(format!("{n}/(4 Tan[Pi/{n}])")),
+      surface_area: leak(format!("{n} + {n}/(2 Tan[Pi/{n}])")),
+      circumradius: leak(format!("Sqrt[1/4 + 1/(4 Sin[Pi/{n}]^2)]")),
+      inradius: "Missing[\"NotApplicable\"]",
+      midradius: "Missing[\"NotApplicable\"]",
+      vertices_src: leak(format!("{{{}}}", vertices.join(", "))),
+      faces_src: leak(format!("{{{}}}", faces.join(", "))),
+      classes_src: "{\"Convex\", \"Prism\"}",
+    }
+  })
+}
+
+/// The uniform `n`-gonal antiprism with unit edges, `{"Antiprism", n}` for
+/// `n >= 3`: the regular `n`-gon base at `z = -h/2` (vertices `1..n`) and
+/// its copy turned by `Pi/n` at `z = +h/2` (vertices `n+1..2n`), where
+/// `h = Sqrt[1 - 1/(4 Cos[Pi/(2 n)]^2)]` makes every lateral edge one unit
+/// long. The faces are the two bases and `2n` side triangles, all wound
+/// outward.
+fn antiprism_info(n: i128) -> &'static PolyhedronInfo {
+  family_info("Antiprism", n, |n| {
+    let height = format!("Sqrt[1 - 1/(4 Cos[Pi/(2 {n})]^2)]");
+    let vertices: Vec<String> = ring_vertices(n, "0", &format!("-{height}/2"))
+      .into_iter()
+      .chain(ring_vertices(n, "1/2", &format!("{height}/2")))
+      .collect();
+    let mut faces = vec![index_face((1..=n).rev()), index_face(n + 1..=2 * n)];
+    for k in 1..=n {
+      let next = k % n + 1;
+      // The triangle standing on the bottom edge `k -> next`, apex `n + k`
+      // (the top vertex lying between them), then the one hanging from the
+      // top edge `n + next -> n + k`, apex `next`.
+      faces.push(format!("{{{k}, {next}, {}}}", n + k));
+      faces.push(format!("{{{}, {}, {next}}}", n + next, n + k));
+    }
+    PolyhedronInfo {
+      name: "Antiprism",
+      vertex_count: 2 * n,
+      edge_count: 4 * n,
+      face_count: 2 * n + 2,
+      volume: leak(format!(
+        "{height} {n}/6 (1/(2 Tan[Pi/{n}]) + Cos[Pi/(2 {n})]^2/Sin[Pi/{n}])"
+      )),
+      surface_area: leak(format!("{n}/(2 Tan[Pi/{n}]) + {n} Sqrt[3]/2")),
+      circumradius: leak(format!("Sqrt[1/(4 Sin[Pi/{n}]^2) + ({height})^2/4]")),
+      inradius: "Missing[\"NotApplicable\"]",
+      midradius: "Missing[\"NotApplicable\"]",
+      vertices_src: leak(format!("{{{}}}", vertices.join(", "))),
+      faces_src: leak(format!("{{{}}}", faces.join(", "))),
+      classes_src: "{\"Antiprism\", \"Convex\"}",
+    }
+  })
 }
 
 fn leak(s: String) -> &'static str {
@@ -2432,6 +2488,11 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       [Expr::String(kind), Expr::Integer(n)] if kind == "Prism" && *n >= 3 => {
         Some(prism_info(*n))
       }
+      [Expr::String(kind), Expr::Integer(n)]
+        if kind == "Antiprism" && *n >= 3 =>
+      {
+        Some(antiprism_info(*n))
+      }
       // `{"Pyramid", 3}` is the tetrahedron and `{"Dipyramid", 4}` the
       // octahedron; the Johnson pyramids and dipyramids are generated
       // entries stored under their specification.
@@ -2454,6 +2515,10 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let name = match args.first() {
     Some(Expr::String(name)) => name.as_str(),
+    Some(Expr::List(spec)) => match spec.first() {
+      Some(Expr::String(kind)) => kind.as_str(),
+      _ => "Prism",
+    },
     _ => "Prism",
   };
   let Some(info) = info else {
