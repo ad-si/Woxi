@@ -485,6 +485,37 @@ fn adaptive_sample(
   points
 }
 
+/// Break a sampled curve at the `Exclusions` points: the curve runs up to
+/// each excluded x from both sides, with an empty sample at x itself, so no
+/// line is drawn across the gap.
+fn break_at_exclusions(
+  mut points: Vec<(f64, f64)>,
+  func_body: &Expr,
+  var_name: &str,
+  excluded: &[f64],
+  span: f64,
+) -> Vec<(f64, f64)> {
+  if excluded.is_empty() {
+    return points;
+  }
+  let eps = span * 1e-9;
+  for &x in excluded {
+    // Drop samples that sit on the excluded point itself.
+    points.retain(|&(px, _)| (px - x).abs() > eps);
+    for dx in [-eps, 0.0, eps] {
+      let y = if dx == 0.0 {
+        f64::NAN
+      } else {
+        evaluate_at_point(func_body, var_name, x + dx).unwrap_or(f64::NAN)
+      };
+      points.push((x + dx, y));
+    }
+  }
+  points
+    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+  points
+}
+
 /// True when a `PlotRange` value asks for the whole y extent: `All` itself, or
 /// `All` in the y slot of `{xrange, All}`.
 fn plot_range_requests_all_y(value: &Expr) -> bool {
@@ -10293,6 +10324,12 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let initial_samples = plot_opts.plot_points.clamp(2, 200);
   let max_total = plot_opts.plot_points.max(500);
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
+  let excluded = crate::functions::parametric_plot::exclusion_roots(
+    &args[2..],
+    &var_name,
+    x_min,
+    x_max,
+  );
 
   for func_body in &bodies {
     let points = adaptive_sample(
@@ -10304,7 +10341,13 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       max_total,
       monitor.as_ref(),
     );
-    all_points.push(points);
+    all_points.push(break_at_exclusions(
+      points,
+      func_body,
+      &var_name,
+      &excluded,
+      x_max - x_min,
+    ));
   }
 
   // A `PlotStyle` list applied to a single curve is one combined directive

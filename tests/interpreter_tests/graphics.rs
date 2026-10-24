@@ -290,6 +290,29 @@ mod graphics {
     }
 
     #[test]
+    fn plot_exclusions_break_curve_at_listed_points() {
+      // A jump at an excluded x is not bridged by a vertical line: the
+      // curve is split there, whether given as numbers or as equations.
+      let jump = "If[x <= 0.5, x/2, x + 0.3]";
+      for exclusions in ["{0.5}", "{x == 0.5}", "0.5"] {
+        let svg = export_svg(&format!(
+          "Plot[{jump}, {{x, 0.1, 0.7}}, Exclusions -> {exclusions}, \
+             Axes -> False]"
+        ));
+        assert_eq!(svg.matches("<polyline").count(), 2, "{exclusions}");
+      }
+      let svg = export_svg(&format!(
+        "Plot[{jump}, {{x, 0.1, 0.7}}, Exclusions -> None, Axes -> False]"
+      ));
+      assert_eq!(svg.matches("<polyline").count(), 1);
+      let svg = export_svg(&format!(
+        "Plot[{jump}, {{x, 0.1, 0.7}}, Exclusions -> {{0.3, 0.5}}, \
+           Axes -> False]"
+      ));
+      assert_eq!(svg.matches("<polyline").count(), 3);
+    }
+
+    #[test]
     fn parametric_plot_ignores_global_value_of_plot_variable() {
       // A stale global value for the plot variable (a notebook saved with
       // `SaveDefinitions -> True` carries one) must not freeze the curves:
