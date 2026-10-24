@@ -3668,6 +3668,12 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(result) = solve_linear_symbolic(eqs, &var_names) {
         return Ok(result);
       }
+      // A mostly linear system with a few nonlinear terms: unknowns that an
+      // equation fixes linearly with a numeric coefficient are substituted
+      // away first, leaving a small nonlinear core.
+      if let Some(result) = solve_after_linear_elimination(eqs, &var_names) {
+        return Ok(result);
+      }
       // Nonlinear polynomial systems are eliminated with resultants, which
       // keeps every intermediate a polynomial.
       if let Some(result) = try_solve_polynomial_system(eqs, &var_names) {
@@ -14268,6 +14274,206 @@ fn eval_entry(e: Expr) -> Expr {
 ///
 /// Returns `Some(Expr::List([Expr::List([rules...])]))` if the system is linear and consistent,
 /// `Some(Expr::List([]))` if inconsistent, or `None` if the system is not linear.
+/// Solve a polynomial system by first eliminating every unknown some
+/// equation determines linearly with a numeric coefficient
+/// (`m1 == m2 + m3`), substituting it into the rest, then solving what is
+/// left (the nonlinear core, `60 + 33/100 mr == m1 xk1`) and substituting
+/// back. Only used for five or more unknowns and when the elimination
+/// leaves a square or overdetermined core, so no choice of free variables
+/// is involved. `None` when nothing
+/// can be eliminated this way or the system is not polynomial.
+fn solve_after_linear_elimination(
+  eqs: &[Expr],
+  var_names: &[String],
+) -> Option<Expr> {
+  let eval = |name: &str, args: Vec<Expr>| {
+    crate::evaluator::evaluate_function_call_ast(name, &args).ok()
+  };
+  let var_list = Expr::List(
+    var_names
+      .iter()
+      .map(|v| id_expr(v))
+      .collect::<Vec<_>>()
+      .into(),
+  );
+  // Each equation as an expanded polynomial `lhs - rhs`.
+  let mut polys: Vec<Expr> = Vec::with_capacity(eqs.len());
+  for eq in eqs {
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = eq
+    else {
+      return None;
+    };
+    if operands.len() != 2 || operators[0] != ComparisonOp::Equal {
+      return None;
+    }
+    let poly = eval(
+      "Expand",
+      vec![minus2(operands[0].clone(), operands[1].clone())],
+    )?;
+    let polynomial = eval("PolynomialQ", vec![poly.clone(), var_list.clone()])?;
+    if !matches!(polynomial, Expr::Identifier(ref t) if t == "True") {
+      return None;
+    }
+    polys.push(poly);
+  }
+  // Only for larger systems: the general elimination below is what decides
+  // the order and multiplicity of a small system's solutions the way
+  // Wolfram lists them, and only grows too slow (tens of seconds for seven
+  // unknowns with one bilinear term) once there are many unknowns.
+  if var_names.len() < 5 {
+    return None;
+  }
+  let mut remaining: Vec<String> = var_names.to_vec();
+  let mut eliminated: Vec<(String, Expr)> = Vec::new();
+  'outer: loop {
+    for (pi, poly) in polys.iter().enumerate() {
+      for v in &remaining {
+        let degree = eval("Exponent", vec![poly.clone(), id_expr(v)])?;
+        if !matches!(degree, Expr::Integer(1)) {
+          continue;
+        }
+        let coeff = eval(
+          "Coefficient",
+          vec![poly.clone(), id_expr(v), Expr::Integer(1)],
+        )?;
+        let numeric = matches!(
+          coeff,
+          Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
+        ) || matches!(&coeff, Expr::FunctionCall { name, .. } if name == "Rational");
+        if !numeric || matches!(coeff, Expr::Integer(0)) {
+          continue;
+        }
+        // v == v - poly/c
+        let value = eval(
+          "Expand",
+          vec![minus2(id_expr(v), div2(poly.clone(), coeff))],
+        )?;
+        let v = v.clone();
+        let rule = rule_expr(id_expr(&v), value.clone());
+        let mut next: Vec<Expr> = Vec::with_capacity(polys.len() - 1);
+        for (pj, other) in polys.iter().enumerate() {
+          if pj != pi {
+            next.push(eval(
+              "Expand",
+              vec![eval("ReplaceAll", vec![other.clone(), rule.clone()])?],
+            )?);
+          }
+        }
+        // Earlier eliminations are written in terms of `v` too.
+        for (_, earlier) in &mut eliminated {
+          *earlier = eval(
+            "Expand",
+            vec![eval("ReplaceAll", vec![earlier.clone(), rule.clone()])?],
+          )?;
+        }
+        polys = next;
+        remaining.retain(|r| r != &v);
+        eliminated.push((v, value));
+        continue 'outer;
+      }
+    }
+    break;
+  }
+  if eliminated.is_empty() || polys.len() < remaining.len() {
+    return None;
+  }
+  // What the eliminated equations leave over: identities, contradictions,
+  // or the nonlinear core.
+  polys.retain(|p| !matches!(p, Expr::Integer(0)));
+  let core_solutions: Vec<Vec<Expr>> = if remaining.is_empty() {
+    if polys.iter().any(|p| {
+      matches!(p, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+        || matches!(p, Expr::FunctionCall { name, .. } if name == "Rational")
+    }) {
+      return Some(Expr::List(vec![].into()));
+    }
+    if !polys.is_empty() {
+      return None;
+    }
+    vec![Vec::new()]
+  } else {
+    // A linear-only remainder is not this function's case.
+    if polys.iter().all(|p| {
+      remaining.iter().all(|v| {
+        matches!(
+          eval("Exponent", vec![p.clone(), id_expr(v)]),
+          Some(Expr::Integer(0 | 1))
+        )
+      })
+    }) && polys.len() == eqs.len()
+    {
+      return None;
+    }
+    let core_eqs: Vec<Expr> = polys
+      .iter()
+      .map(|p| Expr::Comparison {
+        operands: vec![p.clone(), Expr::Integer(0)],
+        operators: vec![ComparisonOp::Equal],
+      })
+      .collect();
+    let solved = solve_ast(&[
+      Expr::List(core_eqs.into()),
+      Expr::List(
+        remaining
+          .iter()
+          .map(|v| id_expr(v))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+    ])
+    .ok()?;
+    let Expr::List(ref solutions) = solved else {
+      return None;
+    };
+    let mut out = Vec::with_capacity(solutions.len());
+    for sol in solutions {
+      let Expr::List(rules) = sol else {
+        return None;
+      };
+      out.push(rules.iter().cloned().collect());
+    }
+    out
+  };
+  let mut results: Vec<Expr> = Vec::with_capacity(core_solutions.len());
+  for core in core_solutions {
+    let core_rules = Expr::List(core.clone().into());
+    let mut values: Vec<(String, Expr)> = Vec::new();
+    for rule in &core {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = rule
+        && let Expr::Identifier(name) = pattern.as_ref()
+      {
+        values.push((name.clone(), replacement.as_ref().clone()));
+      }
+    }
+    for (v, value) in &eliminated {
+      let substituted =
+        eval("ReplaceAll", vec![value.clone(), core_rules.clone()])?;
+      let simplified = eval("Together", vec![substituted])?;
+      values.push((v.clone(), simplified));
+    }
+    let rules: Vec<Expr> = var_names
+      .iter()
+      .filter_map(|v| {
+        values
+          .iter()
+          .find(|(n, _)| n == v)
+          .map(|(_, value)| rule_expr(id_expr(v), value.clone()))
+      })
+      .collect();
+    if rules.len() != var_names.len() {
+      return None;
+    }
+    results.push(Expr::List(rules.into()));
+  }
+  Some(Expr::List(results.into()))
+}
+
 fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
   let n = var_names.len();
   let mut matrix: Vec<Vec<Expr>> = Vec::new();

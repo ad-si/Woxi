@@ -4895,6 +4895,25 @@ mod symbolic_equal {
 mod solve {
   use super::*;
 
+  // A mass balance: seven unknowns, all but one equation linear, one
+  // bilinear term. The linear unknowns are substituted away first, so it
+  // solves at once ("Evaporative Crystallization with Recycle").
+  #[test]
+  fn mostly_linear_system_with_a_bilinear_term() {
+    assert_eq!(
+      interpret(
+        "Solve[{400 == m2 + m4 + m5, 60 == m4 + 33/100 m5, \
+         340 == m2 + 67/100 m5, 60 + 33/100 mr == m1 xk1, \
+         m2 == m1 (1 - xk1) - m3 (1 - 35/100), m1 == m2 + m3, \
+         m3 35/100 == m4 + m5 33/100 + mr 33/100, m3 == m4 + m5 + mr, \
+         m5 33/100 == 3}, {m1, m2, m3, m4, m5, mr, xk1}]"
+      )
+      .unwrap(),
+      "{{m1 -> 49355/22, m2 -> 3673/11, m3 -> 3819/2, m4 -> 57, \
+       m5 -> 100/11, mr -> 40555/22, xk1 -> 294063/987100}}"
+    );
+  }
+
   // An exponential with a positive constant base never vanishes, so it
   // drops out of `product == 0`.
   #[test]
