@@ -9,6 +9,7 @@ use crate::functions::math_ast::{make_sqrt, rat_reduce};
 use crate::syntax::{expr_children, map_children};
 
 mod complex_pde;
+mod curve;
 mod dde;
 
 // ─── DSolve ────────────────────────────────────────────────────────────
@@ -732,7 +733,13 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   });
   let _step_hint = StepHintScope::new(step_hint);
-  match ndsolve_system(&positional, event.as_ref()) {
+  // A system of algebraic equations plus unit-speed conditions on the
+  // derivatives is an implicit curve rather than an initial value problem.
+  let solved = match ndsolve_system(&positional, event.as_ref()) {
+    Ok(None) if event.is_none() => curve::ndsolve_implicit_curve(&positional),
+    other => other,
+  };
+  match solved {
     Ok(Some(result)) => {
       let result = restore_compound_heads(&result, &renames);
       Ok(restore_indexed_vars(&result, &idx_renames))
