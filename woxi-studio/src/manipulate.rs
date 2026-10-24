@@ -2075,6 +2075,37 @@ mod tests {
     );
   }
 
+  /// `Button[Dynamic[caption], ImageSize -> n]` has an option where the
+  /// action would be: it is an inert caption that follows the live
+  /// bindings, not a pressable button whose "action" is `ImageSize -> n`.
+  #[test]
+  fn actionless_button_with_dynamic_label_is_a_live_display() {
+    let code = r#"Manipulate[
+      Graphics[{}],
+      {{step, 1}, ControlType -> None},
+      Button[Dynamic@Switch[step, 1, "first", 2, "second"], ImageSize -> 240]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "build must not report an error");
+    assert!(
+      !state
+        .controls
+        .iter()
+        .any(|c| matches!(c, ControlState::Button { .. })),
+      "no pressable button expected, got {:?}",
+      state.controls
+    );
+    assert_eq!(
+      state.displays.len(),
+      1,
+      "the caption must be one live display, got {:?}",
+      state.displays
+    );
+    assert!(state.displays[0].contains("Switch"), "{:?}", state.displays);
+  }
+
   /// A choice list `Dynamic[Range[top]]` that follows a free variable the
   /// body itself assigns (not a control): switching the mode makes the body
   /// assign a different `top`, and the offered choices must follow it.
