@@ -1447,6 +1447,11 @@ fn edge_to_f64(e: &Expr) -> Option<f64> {
   if let Some(v) = numeric_expr_to_f64(e) {
     return Some(v);
   }
+  // An exact numeric edge (`-(Sqrt[2] InverseErfc[1/10])` from an
+  // InverseCDF) is its numeric value.
+  if let Some(v) = crate::functions::math_ast::try_eval_to_f64(e) {
+    return Some(v);
+  }
   // Bare Infinity symbol → +∞.
   if matches!(e, Expr::Identifier(s) if s == "Infinity") {
     return Some(f64::INFINITY);

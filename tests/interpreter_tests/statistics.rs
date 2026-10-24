@@ -907,6 +907,14 @@ mod bin_counts {
   use super::*;
 
   #[test]
+  fn bin_counts_exact_numeric_edges() {
+    assert_eq!(
+      interpret("BinCounts[{0.1, 0.7, 0.8}, {{0, Sqrt[2]/2, 1}}]").unwrap(),
+      "{2, 1}"
+    );
+  }
+
+  #[test]
   fn bin_counts_explicit_bins() {
     assert_eq!(
       interpret("BinCounts[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, {0, 10, 2}]")
