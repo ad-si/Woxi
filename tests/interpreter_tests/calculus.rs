@@ -22022,7 +22022,7 @@ mod find_fit_numeric_only_model {
       .unwrap(),
       "{0, 0}"
     );
-    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(woxi::get_captured_messages_raw(), [] as [String; 0]);
   }
 }
 
