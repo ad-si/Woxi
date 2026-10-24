@@ -13828,3 +13828,13 @@ mod control_characters_in_symbols {
     );
   }
 }
+
+mod rule_delayed_function_rhs {
+  use super::*;
+
+  #[test]
+  fn pure_function_rhs_is_parenthesized() {
+    assert_eq!(interpret("a :> (b + 1 &)").unwrap(), "a :> (b + 1 & )");
+    assert_eq!(interpret("{x :> (#1^2 &)}").unwrap(), "{x :> (#1^2 & )}");
+  }
+}
