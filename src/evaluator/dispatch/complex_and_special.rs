@@ -841,16 +841,7 @@ pub fn dispatch_complex_and_special(
 
     // ReplaceAll and ReplaceRepeated function call forms
     "ReplaceAll" if args.len() == 2 => {
-      // Unwrap Dispatch[rules] → just use rules
-      let rules = if let Expr::FunctionCall { name: dn, args: da } = &args[1] {
-        if dn == "Dispatch" && da.len() == 1 {
-          &da[0]
-        } else {
-          &args[1]
-        }
-      } else {
-        &args[1]
-      };
+      let rules = unwrap_dispatch(&args[1]);
       // Same rules-shape validation as the `/.` operator form.
       if crate::evaluator::core_eval::reject_invalid_replace_rules(
         "ReplaceAll",
@@ -866,15 +857,7 @@ pub fn dispatch_complex_and_special(
       );
     }
     "ReplaceRepeated" if args.len() == 2 || args.len() == 3 => {
-      let rules = if let Expr::FunctionCall { name: dn, args: da } = &args[1] {
-        if dn == "Dispatch" && da.len() == 1 {
-          &da[0]
-        } else {
-          &args[1]
-        }
-      } else {
-        &args[1]
-      };
+      let rules = unwrap_dispatch(&args[1]);
       if crate::evaluator::core_eval::reject_invalid_replace_rules(
         "ReplaceRepeated",
         rules,
@@ -896,13 +879,14 @@ pub fn dispatch_complex_and_special(
       );
     }
     "Replace" if args.len() == 2 => {
+      let rules = unwrap_dispatch(&args[1]);
       if crate::evaluator::core_eval::reject_invalid_replace_rules(
-        "Replace", &args[1],
+        "Replace", rules,
       ) {
         return Some(Ok(unevaluated("Replace", args)));
       }
       return Some(
-        apply_replace_ast(&args[0], &args[1])
+        apply_replace_ast(&args[0], rules)
           .and_then(|r| evaluate_expr_to_expr(&r)),
       );
     }
@@ -922,6 +906,14 @@ pub fn dispatch_complex_and_special(
       };
       if max_matches == Some(0) {
         return Some(Ok(Expr::List(vec![].into())));
+      }
+
+      // ReplaceList[expr, Dispatch[rules], ...] behaves like the plain rules.
+      if matches!(unwrap_dispatch(&args[1]), r if !std::ptr::eq(r, &raw const args[1]))
+      {
+        let mut inner_args = args.to_vec();
+        inner_args[1] = unwrap_dispatch(&args[1]).clone();
+        return Some(evaluate_expr_to_expr(&call("ReplaceList", inner_args)));
       }
 
       // ReplaceList[expr, {{rules1}, {rules2}, ...}, n] form: when every
@@ -1981,6 +1973,19 @@ pub fn dispatch_complex_and_special(
 /// Parse a `MaxIterations -> n` option argument into an iteration count.
 /// Accepts a non-negative integer (clamped to >= 0) or `Infinity`, which maps
 /// to the default safety cap. Returns `None` for any other shape.
+/// `Dispatch[rules]` is a pre-compiled rule table; it applies exactly like
+/// the plain `rules` it wraps.
+fn unwrap_dispatch(rules: &Expr) -> &Expr {
+  match rules {
+    Expr::FunctionCall { name, args }
+      if name == "Dispatch" && args.len() == 1 =>
+    {
+      &args[0]
+    }
+    _ => rules,
+  }
+}
+
 fn extract_max_iterations(opt: &Expr) -> Option<usize> {
   let (lhs, rhs) = match opt {
     Expr::Rule {
