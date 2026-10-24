@@ -280,15 +280,40 @@ static LANGUAGE_COUNTRIES: &[(&str, &[&str])] = &[
   ("Spanish", &["Argentina", "Bolivia", "Chile", "Colombia", "Costa Rica", "Cuba", "Dominican Republic", "Ecuador", "El Salvador", "Equatorial Guinea", "Guatemala", "Honduras", "Mexico", "Nicaragua", "Panama", "Paraguay", "Peru", "Spain", "Uruguay", "Venezuela"]),
 ];
 
-/// Resolve a free-form country name to its dataset entry.
+/// Country classes accepted by `CountryData[class]`, listing member countries
+/// by canonical name.
+#[rustfmt::skip]
+static COUNTRY_CLASSES: &[(&str, &[&str])] = &[
+  ("EU", &["Austria", "Belgium", "Bulgaria", "Croatia", "Cyprus", "Czech Republic", "Denmark", "Estonia", "Finland", "France", "Germany", "Greece", "Hungary", "Ireland", "Italy", "Latvia", "Lithuania", "Luxembourg", "Malta", "Netherlands", "Poland", "Portugal", "Romania", "Slovakia", "Slovenia", "Spain", "Sweden"]),
+  ("Europe", &["Albania", "Andorra", "Austria", "Belarus", "Belgium", "Bosnia and Herzegovina", "Bulgaria", "Croatia", "Cyprus", "Czech Republic", "Denmark", "Estonia", "Finland", "France", "Germany", "Greece", "Hungary", "Iceland", "Ireland", "Italy", "Kosovo", "Latvia", "Liechtenstein", "Lithuania", "Luxembourg", "Malta", "Moldova", "Monaco", "Montenegro", "Netherlands", "North Macedonia", "Norway", "Poland", "Portugal", "Romania", "Russia", "San Marino", "Serbia", "Slovakia", "Slovenia", "Spain", "Sweden", "Switzerland", "Ukraine", "United Kingdom", "Vatican City"]),
+];
+
+/// The Wolfram-style standard name of a country: the canonical name with its
+/// spaces removed (`"UnitedKingdom"`), as returned for class members.
+fn standard_name(canonical: &str) -> String {
+  canonical.chars().filter(|c| *c != ' ').collect()
+}
+
+/// Resolve a free-form country name to its dataset entry. Names written
+/// without spaces (`"CzechRepublic"`) resolve like their spaced forms.
 fn lookup(name: &str) -> Option<&'static Country> {
   let key = normalize(name);
   if key.is_empty() {
     return None;
   }
-  COUNTRIES.iter().find(|c| {
+  let exact = COUNTRIES.iter().find(|c| {
     normalize(c.canonical) == key
       || c.aliases.iter().any(|a| normalize(a) == key)
+  });
+  exact.or_else(|| {
+    let squashed = key.replace(' ', "");
+    COUNTRIES.iter().find(|c| {
+      normalize(c.canonical).replace(' ', "") == squashed
+        || c
+          .aliases
+          .iter()
+          .any(|a| normalize(a).replace(' ', "") == squashed)
+    })
   })
 }
 
@@ -318,7 +343,7 @@ pub fn country_property(name: &str, property: &str) -> Option<Expr> {
       .to_string(),
     ));
   }
-  if property == "SchematicPolygon" {
+  if property == "SchematicPolygon" || property == "Polygon" {
     return Some(
       crate::functions::geographics::country_schematic_polygon(
         country.canonical,
@@ -331,11 +356,14 @@ pub fn country_property(name: &str, property: &str) -> Option<Expr> {
       make_quantity(Expr::Integer(country.population as i128), "People")
     }
     "Name" => str_expr(country.canonical),
+    "FullName" => str_expr(&standard_name(country.canonical)),
     _ => missing("NotAvailable", property),
   })
 }
 
-/// `CountryData[name, property]` — currently `"Population"` and `"Name"`.
+/// `CountryData[name, property]` — `"Population"`, `"Name"`, `"FullName"`,
+/// `"Polygon"` and the `"<Language>Speaking"` flags. `CountryData[class]`
+/// (`"EU"`, `"Europe"`) lists the member countries.
 /// `CountryData[name]` returns the canonical `Entity["Country", name]`.
 pub fn country_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Entity["Country", name] is accepted wherever a country name is.
@@ -356,6 +384,20 @@ pub fn country_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &normalized[..];
   match args {
     [] => Ok(Expr::List(country_entities().into())),
+    [Expr::String(class)]
+      if COUNTRY_CLASSES.iter().any(|(c, _)| c == class) =>
+    {
+      let members = COUNTRY_CLASSES
+        .iter()
+        .find_map(|(c, ms)| (c == class).then_some(ms))
+        .unwrap();
+      let mut names: Vec<String> =
+        members.iter().map(|m| standard_name(m)).collect();
+      names.sort();
+      Ok(Expr::List(
+        names.iter().map(|n| str_expr(n)).collect::<Vec<_>>().into(),
+      ))
+    }
     [Expr::String(name)] => Ok(match lookup(name) {
       Some(c) => entity(c.canonical),
       None => missing("UnknownCountry", name),
