@@ -8649,6 +8649,25 @@ mod ndsolve {
     );
   }
 
+  /// An equation already solved for an unknown (`F0[t] == … - τd h'[t]`)
+  /// is substituted even though its right side holds a derivative, so no
+  /// DAE (and no `NDSolve::pdord`) is involved; the unknown's values read
+  /// h' from the solve ("PID Control of a Tank Level").
+  /// wolframscript: h(5) = 2.0485836…, F0(5) = 1.3411121….
+  #[test]
+  fn explicit_unknown_with_a_derivative_is_substituted() {
+    let result = interpret_with_stdout(
+      "sol = NDSolve[{h'[t] == F0[t] - F1[t], F1[t] == Sqrt[h[t]], \
+       F0[t] == 1 + (2 - h[t]) + Int[t] + 0.1 D[2 - h[t], t], \
+       Int'[t] == 2 - h[t], h[0] == 0.1, Int[0] == 0}, \
+       {h[t], F1[t], F0[t], Int[t]}, {t, 0, 100}]; \
+       Round[10^4 {h[t], F0[t]} /. First[sol] /. t -> 5.]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{20486, 13411}");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+
   /// A constant mass matrix whose factorization interchanges rows after the
   /// first column ("Task Partitioning in Insect Societies"): every row
   /// interchange applies to the right-hand side before the forward
