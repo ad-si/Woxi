@@ -40151,4 +40151,34 @@ mod plots_with_nothing_to_draw {
       "{Graphics3D, Graphics3D, Graphics}"
     );
   }
+
+  /// `"Thermometer"` is the short spelling of `"ThermometerColors"` in a
+  /// `ColorFunction` option, for every plot kind that shades by gradient.
+  #[test]
+  fn thermometer_color_function_alias() {
+    clear_state();
+    for plot in [
+      "ListDensityPlot[Table[i + j, {i, 5}, {j, 5}], ColorFunction -> \"#\"]",
+      "ListContourPlot[Table[i + j, {i, 5}, {j, 5}], ColorFunction -> \"#\"]",
+      "ListLinePlot[{1, 3, 2, 5}, ColorFunction -> \"#\"]",
+      "ListPlot3D[Table[i + j, {i, 5}, {j, 5}], ColorFunction -> \"#\"]",
+    ] {
+      let short = plot.replace('#', "Thermometer");
+      let long = plot.replace('#', "ThermometerColors");
+      assert_eq!(
+        interpret(&format!("ExportString[{short}, \"SVG\"]")).unwrap(),
+        interpret(&format!("ExportString[{long}, \"SVG\"]")).unwrap(),
+        "{short}"
+      );
+    }
+    // The gradient is applied, not silently dropped to grayscale.
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[ListLinePlot[{1, 3, 2, 5}, \
+         ColorFunction -> \"Thermometer\"], \"SVG\"], \"#6C90F0\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
