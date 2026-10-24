@@ -9036,12 +9036,18 @@ fn jacobi_svd(
     let mut u = w[j].clone();
     let lead = v.iter().find(|x| x.abs() > 1e-15).copied().unwrap_or(0.0);
     if lead > 0.0 {
-      v.iter_mut().for_each(|x| *x = -*x);
-      u.iter_mut().for_each(|x| *x = -*x);
+      for x in &mut v {
+        *x = -*x;
+      }
+      for x in &mut u {
+        *x = -*x;
+      }
     }
     let s = norms[j];
     if s > tol {
-      u.iter_mut().for_each(|x| *x /= s);
+      for x in &mut u {
+        *x /= s;
+      }
       ucols.push(u);
       sig.push(s);
     } else {
@@ -9062,10 +9068,14 @@ fn jacobi_svd(
     }
     let nrm = dot(&e, &e).sqrt();
     if nrm > 1e-8 {
-      e.iter_mut().for_each(|x| *x /= nrm);
+      for x in &mut e {
+        *x /= nrm;
+      }
       let lead = e.iter().find(|x| x.abs() > 1e-15).copied().unwrap_or(0.0);
       if lead > 0.0 {
-        e.iter_mut().for_each(|x| *x = -*x);
+        for x in &mut e {
+          *x = -*x;
+        }
       }
       ucols.push(e);
     }
