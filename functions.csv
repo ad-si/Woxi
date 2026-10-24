@@ -974,7 +974,7 @@ NotebookRead,Requires external services or GUI infrastructure,🚫,io,3.0,948
 Level,Extracts subexpressions at a level specification where a negative level names parts of that depth,✅,pure,1.0,950
 StringDrop,Removes a substring from a string; only span specifications are accepted,✅,pure,2.0,950
 MeshCoordinates,Coordinates of a mesh region,✅,pure,10.0,951
-MousePosition,Requires external services or GUI infrastructure,🚫,io,6.0,952
+MousePosition,Pointer position over a graphic (None in a notebook without a pointer; notavail without a front end),✅,io,6.0,952
 Expectation,Compute expected value of a function of a random variable,✅,pure,8.0,954
 TrigReduce,Reduce products and powers of trig functions to sums,✅,pure,3.0,954
 PreIncrement,Increments a variable by 1 and returns the new value,✅,stateful,1.0,955

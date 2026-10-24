@@ -7234,3 +7234,19 @@ mod boolean_table_of_a_boolean_function {
     );
   }
 }
+
+mod mouse_position {
+  use super::*;
+
+  #[test]
+  fn without_a_front_end() {
+    assert_eq!(interpret("MousePosition[\"Graphics\"]").unwrap(), "$Failed");
+  }
+
+  #[test]
+  fn in_a_notebook_the_pointer_is_over_nothing() {
+    let r =
+      interpret_with_stdout("MousePosition[\"Graphics\"] === None").unwrap();
+    assert_eq!(r.result, "True");
+  }
+}

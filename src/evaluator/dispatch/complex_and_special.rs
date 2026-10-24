@@ -457,6 +457,19 @@ pub fn dispatch_complex_and_special(
       );
       return Some(crate::evaluator::evaluate_expr_to_expr(&args[0]));
     }
+    // MousePosition[…] — where the pointer is over a graphic. In a
+    // notebook the pointer is over nothing yet, which a front end reports
+    // as None; without one, wolframscript's notavail and $Failed.
+    "MousePosition" if args.len() <= 2 => {
+      if crate::is_visual_mode() {
+        return Some(Ok(id_expr("None")));
+      }
+      crate::emit_message(
+        "FrontEndObject::notavail: A front end is not available; certain \
+         operations require a front end.",
+      );
+      return Some(Ok(id_expr("$Failed")));
+    }
     "TimeConstrained" if args.len() == 2 || args.len() == 3 => {
       let limit_secs = match &args[1] {
         Expr::Real(f) => Some(*f),
