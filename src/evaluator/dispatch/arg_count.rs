@@ -109,6 +109,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MathieuS" => Some((3, 3)),
     "MathieuSPrime" => Some((3, 3)),
     "MathieuC" => Some((3, 3)),
+    "MathieuCharacteristicA" | "MathieuCharacteristicB" => Some((2, 2)),
     "MathieuCPrime" => Some((3, 3)),
     "BesselJZero" => Some((2, 3)),
     "BesselK" => Some((2, 2)),
