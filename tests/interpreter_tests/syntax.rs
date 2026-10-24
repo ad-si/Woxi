@@ -13810,3 +13810,21 @@ mod prefix_not_precedence {
     );
   }
 }
+
+mod control_characters_in_symbols {
+  use super::*;
+
+  #[test]
+  fn c0_controls_other_than_whitespace_are_letters() {
+    assert_eq!(
+      interpret("Head[ToExpression[\"a\" <> FromCharacterCode[28] <> \"b\"]]")
+        .unwrap(),
+      "Symbol"
+    );
+    assert_eq!(
+      interpret("Length[ToExpression[\"{1 -> \\\"a\\\"\" <> FromCharacterCode[28] <> \"}\"]]")
+        .unwrap(),
+      "1"
+    );
+  }
+}

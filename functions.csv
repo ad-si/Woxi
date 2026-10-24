@@ -638,7 +638,7 @@ PlotLabels,Option for labeling plot curves,✅,none,10.4,597
 Scale,Scales a graphics object,✅,pure,6.0,597
 Log10,Returns the base-10 logarithm of a number,✅,pure,7.0,598
 EndPackage,Ends a package and puts its context on $ContextPath so its exports become visible,✅,effectful,1.0,599
-PolyhedronData,Properties of named polyhedra including the vertex-edge skeleton graph and the unfolded planar net (NetFaces; NetCoordinates and NetFaceIndices) (Platonic solids; the golden rhombohedra and rhombic icosahedron; the Bilinski dodecahedron; the icosahedral and cubic Archimedean solids (including the cuboctahedron) and their duals; the great and small stellated dodecahedra and rhombic hexecontahedron stellations; the triangular orthobicupola; the gyroelongated square dipyramid; MathematicaSpikey also named Spikey; and the stella octangula; the right n-gonal prisms; the unit-edge square and pentagonal pyramids; and the triangular or square or pentagonal dipyramids),🚧,pure,6.0,601
+PolyhedronData,Properties of named polyhedra including the vertex-edge skeleton graph and the unfolded planar net (NetFaces; NetCoordinates and NetFaceIndices) (Platonic solids; the golden rhombohedra and rhombic icosahedron; the Bilinski dodecahedron; the icosahedral and cubic Archimedean solids (including the cuboctahedron) and their duals; the great and small stellated dodecahedra and rhombic hexecontahedron stellations; the triangular orthobicupola; the gyroelongated square dipyramid; MathematicaSpikey also named Spikey; and the stella octangula; the right n-gonal prisms and uniform n-gonal antiprisms; the unit-edge square and pentagonal pyramids; and the triangular or square or pentagonal dipyramids),🚧,pure,6.0,601
 PolyhedronOperations`Truncate,Corner-cuts each Polygon face of a graphics expression to a ratio (default 3/10) of its edge length; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
 PolyhedronOperations`Stellate,Replaces each Polygon face of a graphics expression with a pyramid to a ratio (default 2) of the face's centroid distance; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
 Nearest,Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance) — DistanceFunction supplies another metric; empty or non-list data reports ::near1,✅,pure,6.0,602
@@ -2597,7 +2597,7 @@ StarGraph,Star graph with n vertices,✅,1,8.0,2617
 Toggler,Toggler control element (stays symbolic in script mode),✅,unevaluated,6.0,2617
 GraphDiameter,Maximum shortest path distance,✅,1,8.0,2625
 ImageCorners,,🚫,,9.0,2625
-Inpaint,,🚫,,8.0,2625
+Inpaint,Fill masked image pixels from their surroundings by diffusion,✅,pure,8.0,2625
 KernelObject,,🚫,,7.0,2625
 ListVectorPlot3D,,🚫,,7.0,2625
 PairedHistogram,,🚫,,8.0,2625
@@ -4060,7 +4060,7 @@ CombinatorS,,,,12.2,4173
 FullDefinition,Shows the definition of a symbol and all its dependencies,✅,pure,1.0,4173
 FullInformationOutputRegulator,,,,10.0,4173
 GeoHemisphere,,🚫,,10.1,4173
-GeometricMeanFilter,,,,7.0,4173
+GeometricMeanFilter,Geometric mean over each neighborhood of a list or image,✅,pure,7.0,4173
 GroupElementQ,Tests if a permutation is an element of a group,✅,pure,8.0,4173
 GrowCutComponents,,,,10.0,4173
 HistogramTransformInterpolation,,🚫,,9.0,4173

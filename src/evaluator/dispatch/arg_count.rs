@@ -697,7 +697,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Im" => Some((1, 1)),
     "Image" => Some((1, usize::MAX)),
     "ImageAdd" => Some((2, usize::MAX)),
-    "ImageAdjust" => Some((1, 2)),
+    "ImageAdjust" => Some((1, 4)),
     "ImageApply" => Some((2, 3)),
     "ImageAssemble" => Some((1, 2)),
     "ImageChannels" => Some((1, 1)),

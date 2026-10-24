@@ -904,7 +904,7 @@ pub fn dispatch_image_functions(
     "ImageEffect" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_effect_ast(args));
     }
-    "ImageAdjust" if !args.is_empty() && args.len() <= 2 => {
+    "ImageAdjust" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::image_ast::image_adjust_ast(args));
     }
     "HistogramTransform" if !args.is_empty() => {
@@ -1053,6 +1053,31 @@ pub fn dispatch_image_functions(
     }
     "ImageDifference" => {
       return Some(crate::functions::image_ast::image_difference_ast(args));
+    }
+    // The geometric mean over each neighborhood is the exponential of the
+    // arithmetic mean of the logarithms, so it is MeanFilter's job.
+    "Inpaint" if args.len() >= 2 => {
+      return Some(crate::functions::image_ast::inpaint_ast(args));
+    }
+    "GeometricMeanFilter" if args.len() == 2 => {
+      let src = match &args[0] {
+        Expr::Image { .. } => {
+          "Image[Exp[MeanFilter[Log[ImageData[#1]], #2]]] &"
+        }
+        Expr::List(_) => "Exp[MeanFilter[Log[#1], #2]] &",
+        _ => {
+          return Some(Ok(crate::helpers::unevaluated(
+            "GeometricMeanFilter",
+            args,
+          )));
+        }
+      };
+      return Some(crate::interpret_to_expr(src).and_then(|f| {
+        crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
+          func: Box::new(f),
+          args: args.to_vec(),
+        })
+      }));
     }
     "MeanFilter" if args.len() == 2 => {
       return Some(crate::functions::image_ast::mean_filter_ast(args));

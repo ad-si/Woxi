@@ -1286,6 +1286,34 @@ mod dispatch {
   fn replace_repeated() {
     assert_eq!(interpret("a /. Dispatch[{a -> b, b -> c}]").unwrap(), "b");
   }
+
+  #[test]
+  fn replace_list() {
+    assert_eq!(
+      interpret("ReplaceList[1, Dispatch[{1 -> 2, 1 -> 3, x_ :> x}]]").unwrap(),
+      "{2, 3, 1}"
+    );
+  }
+
+  #[test]
+  fn replace_list_reachability_closure() {
+    assert_eq!(
+      interpret(
+        "rules = Dispatch[{1 -> 2, 2 -> 3, 1 -> 4, x_ :> x}]; \
+         FixedPoint[Union[Flatten[ReplaceList[#, rules] & /@ #]] &, {1}]"
+      )
+      .unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn replace() {
+    assert_eq!(
+      interpret("Replace[a, Dispatch[{a -> 1, b -> 2}]]").unwrap(),
+      "1"
+    );
+  }
 }
 
 mod messages {
