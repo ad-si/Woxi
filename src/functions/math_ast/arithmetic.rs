@@ -7420,8 +7420,8 @@ fn combine_like_bases_depth(
     return Ok(args);
   }
 
-  // Use string representation of base as grouping key
-  let mut groups: Vec<(String, Expr, Vec<Expr>)> = Vec::new(); // (base_key, base, exponents)
+  // (printed key of a raw operator base, base, exponents)
+  let mut groups: Vec<(String, Expr, Vec<Expr>)> = Vec::new();
   let mut non_combinable: Vec<Expr> = Vec::new();
 
   // I counts as (-1)^(1/2) while powers of one base are collected, which is
@@ -7465,8 +7465,35 @@ fn combine_like_bases_depth(
       non_combinable.push(arg.clone());
       continue;
     }
-    let base_key = expr_to_string(&base);
-    if let Some(group) = groups.iter_mut().find(|(k, _, _)| *k == base_key) {
+    // Evaluated bases (atoms and calls) are compared structurally; only a
+    // raw operator node, which may print the same as a call, needs its
+    // printed form. Printing every base was the cost of multiplying large
+    // numeric expressions.
+    let raw =
+      |e: &Expr| matches!(e, Expr::BinaryOp { .. } | Expr::UnaryOp { .. });
+    let base_key = if raw(&base) {
+      expr_to_string(&base)
+    } else {
+      String::new()
+    };
+    let found = groups.iter_mut().find(|(k, b, _)| {
+      if raw(&base) || raw(b) {
+        let other = if k.is_empty() {
+          expr_to_string(b)
+        } else {
+          k.clone()
+        };
+        let mine = if base_key.is_empty() {
+          expr_to_string(&base)
+        } else {
+          base_key.clone()
+        };
+        other == mine
+      } else {
+        crate::evaluator::pattern_matching::expr_equal(b, &base)
+      }
+    });
+    if let Some(group) = found {
       group.2.push(exp);
     } else {
       groups.push((base_key, base, vec![exp]));
