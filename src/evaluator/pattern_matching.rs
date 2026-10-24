@@ -3195,6 +3195,21 @@ pub fn apply_replace_repeated_ast_with_max(
   rules: &Expr,
   max_iterations: usize,
 ) -> Result<Expr, InterpreterError> {
+  // A list of rule lists (several solutions) is one replacement per list.
+  if let Expr::List(sets) = rules
+    && !sets.is_empty()
+    && sets.iter().all(|r| matches!(r, Expr::List(_)))
+  {
+    let mut results = Vec::with_capacity(sets.len());
+    for set in sets {
+      results.push(apply_replace_repeated_ast_with_max(
+        expr,
+        set,
+        max_iterations,
+      )?);
+    }
+    return Ok(Expr::List(results.into()));
+  }
   let mut current = expr.clone();
   let mut converged = false;
   for _ in 0..max_iterations {

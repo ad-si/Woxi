@@ -3380,6 +3380,48 @@ fn reduce_multi_var_and_inner(
     return Ok(bool_expr(false));
   }
 
+  // Polynomial equations that no single equation can be solved from: the
+  // Groebner basis of the system gives the unknowns as roots of one polynomial.
+  if vars.len() >= 2
+    && constraints
+      .iter()
+      .all(|c| matches!(extract_comparison(c), Some((_, _, CompOp::Equal))))
+  {
+    let var_exprs: Vec<Expr> =
+      vars.iter().map(|v| Expr::Identifier(v.clone())).collect();
+    let found = super::solve::solve_by_groebner_shape(
+      &Expr::List(constraints.to_vec().into()),
+      &var_exprs,
+      domain == Some("Reals"),
+    );
+    if let Some(Expr::List(solutions)) = &found {
+      let branches: Vec<Expr> = solutions
+        .iter()
+        .filter_map(|sol| {
+          let Expr::List(rules) = sol else {
+            return None;
+          };
+          let eqs: Vec<Expr> = rules
+            .iter()
+            .filter_map(|r| match r {
+              Expr::Rule {
+                pattern,
+                replacement,
+              } => Some(make_equality(pattern, replacement)),
+              _ => None,
+            })
+            .collect();
+          Some(and_chain(&eqs))
+        })
+        .collect();
+      return Ok(if branches.is_empty() {
+        bool_expr(false)
+      } else {
+        build_or(branches)
+      });
+    }
+  }
+
   // No equation found to solve — return unevaluated
   Ok(call("Reduce", {
     let combined = constraints

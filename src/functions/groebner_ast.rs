@@ -3,17 +3,18 @@
 //! wolframscript prints it: primitive integer coefficients, positive
 //! leading coefficient, basis sorted ascending by leading monomial.
 //!
-//! Exact i128 fraction arithmetic with checked operations; coefficient
-//! blowup or unrecognized (non-polynomial) input returns the call
+//! Exact arbitrary-precision fraction arithmetic; unrecognized
+//! (non-polynomial) input or an exhausted work cap returns the call
 //! unevaluated.
 
 #[allow(unused_imports)]
 use super::*;
 use crate::evaluator::pattern_matching::expr_equal;
-use crate::functions::math_ast::gcd_i128;
+use num_bigint::BigInt;
+use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::BTreeMap;
 
-type Frac = (i128, i128);
+type Frac = (BigInt, BigInt);
 type Mono = Vec<u32>;
 type Poly = BTreeMap<std::cmp::Reverse<Mono>, Frac>; // leading term first
 
@@ -55,50 +56,90 @@ fn mod_inverse(a: i128, p: i128) -> Option<i128> {
   Some(old_s.rem_euclid(p))
 }
 
+fn big(n: i128) -> BigInt {
+  BigInt::from(n)
+}
+
+fn gcd_big(a: &BigInt, b: &BigInt) -> BigInt {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while !b.is_zero() {
+    let r = &a % &b;
+    a = b;
+    b = r;
+  }
+  a
+}
+
+fn one() -> Frac {
+  (BigInt::one(), BigInt::one())
+}
+
 fn norm(f: Frac) -> Option<Frac> {
-  if f.1 == 0 {
+  if f.1.is_zero() {
     return None;
   }
   if let Some(p) = GB_MODULUS.with(std::cell::Cell::get) {
-    let inv = mod_inverse(f.1, p)?;
-    return Some(((f.0.rem_euclid(p) * inv).rem_euclid(p), 1));
+    let pb = big(p);
+    let den = f.1.mod_floor_i(&pb).to_i128()?;
+    let inv = mod_inverse(den, p)?;
+    let num = f.0.mod_floor_i(&pb);
+    return Some(((num * big(inv)).mod_floor_i(&pb), BigInt::one()));
   }
-  let g = gcd_i128(f.0, f.1).max(1);
-  let (mut n, mut d) = (f.0 / g, f.1 / g);
-  if d < 0 {
-    n = n.checked_neg()?;
-    d = d.checked_neg()?;
+  let g = gcd_big(&f.0, &f.1);
+  let g = if g.is_zero() { BigInt::one() } else { g };
+  let (mut n, mut d) = (&f.0 / &g, &f.1 / &g);
+  if d.is_negative() {
+    n = -n;
+    d = -d;
   }
   Some((n, d))
 }
 
-fn f_add(a: Frac, b: Frac) -> Option<Frac> {
-  norm((
-    a.0.checked_mul(b.1)?.checked_add(b.0.checked_mul(a.1)?)?,
-    a.1.checked_mul(b.1)?,
-  ))
+trait ModFloor {
+  fn mod_floor_i(&self, m: &BigInt) -> BigInt;
 }
 
-fn f_mul(a: Frac, b: Frac) -> Option<Frac> {
-  norm((a.0.checked_mul(b.0)?, a.1.checked_mul(b.1)?))
+impl ModFloor for BigInt {
+  fn mod_floor_i(&self, m: &BigInt) -> BigInt {
+    let r = self % m;
+    if r.is_negative() { r + m } else { r }
+  }
 }
 
-fn f_div(a: Frac, b: Frac) -> Option<Frac> {
-  if b.0 == 0 {
+fn f_add(a: &Frac, b: &Frac) -> Option<Frac> {
+  norm((&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1))
+}
+
+fn f_mul(a: &Frac, b: &Frac) -> Option<Frac> {
+  norm((&a.0 * &b.0, &a.1 * &b.1))
+}
+
+fn f_div(a: &Frac, b: &Frac) -> Option<Frac> {
+  if b.0.is_zero() {
     return None;
   }
-  norm((a.0.checked_mul(b.1)?, a.1.checked_mul(b.0)?))
+  norm((&a.0 * &b.1, &a.1 * &b.0))
 }
 
-fn f_neg(a: Frac) -> Option<Frac> {
-  norm((a.0.checked_neg()?, a.1))
+fn f_neg(a: &Frac) -> Option<Frac> {
+  norm((-&a.0, a.1.clone()))
 }
 
 fn poly_add_term(p: &mut Poly, m: Mono, c: Frac) -> Option<()> {
   let key = std::cmp::Reverse(m);
-  let existing = p.get(&key).copied().unwrap_or((0, 1));
-  let sum = f_add(existing, c)?;
-  if sum.0 == 0 {
+  let existing = p
+    .get(&key)
+    .cloned()
+    .unwrap_or((BigInt::zero(), BigInt::one()));
+  let sum = if existing.1.is_one()
+    && c.1.is_one()
+    && GB_MODULUS.with(std::cell::Cell::get).is_none()
+  {
+    (&existing.0 + &c.0, BigInt::one())
+  } else {
+    f_add(&existing, &c)?
+  };
+  if sum.0.is_zero() {
     p.remove(&key);
   } else {
     p.insert(key, sum);
@@ -107,7 +148,7 @@ fn poly_add_term(p: &mut Poly, m: Mono, c: Frac) -> Option<()> {
 }
 
 fn leading(p: &Poly) -> Option<(&Mono, Frac)> {
-  p.iter().next().map(|(k, &c)| (&k.0, c))
+  p.iter().next().map(|(k, c)| (&k.0, c.clone()))
 }
 
 fn mono_divides(a: &Mono, b: &Mono) -> bool {
@@ -129,31 +170,94 @@ fn mono_lcm(a: &Mono, b: &Mono) -> Mono {
 /// p - c * m * q
 fn poly_sub_scaled(p: &Poly, q: &Poly, c: Frac, m: &Mono) -> Option<Poly> {
   let mut out = p.clone();
-  for (key, &qc) in q {
+  for (key, qc) in q {
     let term_m = mono_mul(&key.0, m);
-    let term_c = f_neg(f_mul(qc, c)?)?;
+    let term_c = f_neg(&f_mul(qc, &c)?)?;
     poly_add_term(&mut out, term_m, term_c)?;
   }
   Some(out)
 }
 
-/// Fully reduce p modulo the basis (all terms, not just the leading one).
-fn reduce(p: &Poly, basis: &[Poly]) -> Option<Poly> {
+/// Fully reduce p modulo the basis (all terms, not just the leading one):
+/// terms no leading monomial divides are moved to the remainder, the rest are
+/// cancelled in place.
+fn reduce_field(p: &Poly, basis: &[Poly]) -> Option<Poly> {
+  let leads: Vec<Option<(Mono, Frac)>> = basis
+    .iter()
+    .map(|b| leading(b).map(|(m, c)| (m.clone(), c)))
+    .collect();
   let mut current = p.clone();
-  'outer: loop {
-    for (key, &c) in &current {
-      for b in basis {
-        if let Some((lm, lc)) = leading(b)
-          && mono_divides(lm, &key.0)
-        {
-          let factor = f_div(c, lc)?;
-          let shift = mono_div(&key.0, lm);
-          current = poly_sub_scaled(&current, b, factor, &shift)?;
-          continue 'outer;
-        }
+  let mut remainder = Poly::new();
+  while let Some((key, c)) =
+    current.iter().next().map(|(k, c)| (k.clone(), c.clone()))
+  {
+    let divisor = leads
+      .iter()
+      .position(|l| l.as_ref().is_some_and(|(lm, _)| mono_divides(lm, &key.0)));
+    if let Some(bi) = divisor {
+      let (lm, lc) = leads[bi].as_ref()?;
+      let factor = f_div(&c, lc)?;
+      let shift = mono_div(&key.0, lm);
+      for (bk, bc) in &basis[bi] {
+        let term_c = f_neg(&f_mul(bc, &factor)?)?;
+        poly_add_term(&mut current, mono_mul(&bk.0, &shift), term_c)?;
       }
+    } else {
+      current.remove(&key);
+      remainder.insert(key, c);
     }
-    return Some(current);
+  }
+  Some(remainder)
+}
+
+/// `reduce` for polynomials with integer coefficients (denominators 1) over
+/// Q: cancels leading terms without dividing, so no gcd runs per operation.
+/// The remainder is only determined up to a nonzero scalar, which every
+/// caller normalizes away.
+fn reduce_integral(p: &Poly, basis: &[Poly]) -> Option<Poly> {
+  let leads: Vec<Option<(Mono, BigInt)>> = basis
+    .iter()
+    .map(|b| leading(b).map(|(m, c)| (m.clone(), c.0)))
+    .collect();
+  let mut current = p.clone();
+  let mut remainder = Poly::new();
+  let scale = |poly: &mut Poly, k: &BigInt| {
+    for c in poly.values_mut() {
+      c.0 = &c.0 * k;
+    }
+  };
+  while let Some((key, c)) =
+    current.iter().next().map(|(k, c)| (k.clone(), c.0.clone()))
+  {
+    let divisor = leads
+      .iter()
+      .position(|l| l.as_ref().is_some_and(|(lm, _)| mono_divides(lm, &key.0)));
+    if let Some(bi) = divisor {
+      let (lm, lc) = leads[bi].as_ref()?;
+      let g = gcd_big(&c, lc);
+      let (mult_cur, mult_b) = (lc / &g, &c / &g);
+      if !mult_cur.is_one() {
+        scale(&mut current, &mult_cur);
+        scale(&mut remainder, &mult_cur);
+      }
+      let shift = mono_div(&key.0, lm);
+      for (bk, bc) in &basis[bi] {
+        let term = (-(&bc.0 * &mult_b), BigInt::one());
+        poly_add_term(&mut current, mono_mul(&bk.0, &shift), term)?;
+      }
+    } else {
+      current.remove(&key);
+      remainder.insert(key, (c, BigInt::one()));
+    }
+  }
+  Some(remainder)
+}
+
+fn reduce(p: &Poly, basis: &[Poly]) -> Option<Poly> {
+  if GB_MODULUS.with(std::cell::Cell::get).is_some() {
+    reduce_field(p, basis)
+  } else {
+    reduce_integral(&primitive_part(p)?, basis)
   }
 }
 
@@ -164,7 +268,8 @@ fn poly_to_expr(p: &Poly, vars: &[Expr]) -> Expr {
     return Expr::Integer(0);
   }
   let mut terms: Vec<Expr> = Vec::new();
-  for (key, &(n, d)) in p {
+  for (key, (n, d)) in p {
+    let (n, d) = (n.clone(), d.clone());
     let mono = &key.0;
     let mut factors: Vec<Expr> = Vec::new();
     for (j, &e) in mono.iter().enumerate() {
@@ -174,16 +279,20 @@ fn poly_to_expr(p: &Poly, vars: &[Expr]) -> Expr {
         factors.push(pow2(vars[j].clone(), Expr::Integer(e as i128)));
       }
     }
-    let coeff = if d == 1 {
-      Expr::Integer(n)
+    let (n_expr, d_expr) = (
+      crate::functions::math_ast::bigint_to_expr(n.clone()),
+      crate::functions::math_ast::bigint_to_expr(d.clone()),
+    );
+    let coeff = if d.is_one() {
+      n_expr
     } else {
-      call("Rational", vec![Expr::Integer(n), Expr::Integer(d)])
+      call("Rational", vec![n_expr, d_expr])
     };
     let term = if factors.is_empty() {
       coeff
     } else {
       let mono_expr = factors.into_iter().reduce(times2).unwrap();
-      if n == 1 && d == 1 {
+      if n.is_one() && d.is_one() {
         mono_expr
       } else {
         times2(coeff, mono_expr)
@@ -244,9 +353,9 @@ pub fn polynomial_reduce_multivar(
         continue;
       };
       if mono_divides(&lm_i, &lm_p) {
-        let factor = f_div(lc_p, lc_i)?;
+        let factor = f_div(&lc_p, &lc_i)?;
         let shift = mono_div(&lm_p, &lm_i);
-        poly_add_term(&mut quotients[i], shift.clone(), factor)?;
+        poly_add_term(&mut quotients[i], shift.clone(), factor.clone())?;
         p = poly_sub_scaled(&p, &div_polys[i], factor, &shift)?;
         reduced = true;
         break;
@@ -254,8 +363,8 @@ pub fn polynomial_reduce_multivar(
     }
     if !reduced {
       // The leading term is divisible by no divisor: move it to the remainder.
-      poly_add_term(&mut remainder, lm_p.clone(), lc_p)?;
-      poly_add_term(&mut p, lm_p, f_neg(lc_p)?)?;
+      poly_add_term(&mut remainder, lm_p.clone(), lc_p.clone())?;
+      poly_add_term(&mut p, lm_p, f_neg(&lc_p)?)?;
     }
   }
 
@@ -265,6 +374,30 @@ pub fn polynomial_reduce_multivar(
   Some(Expr::List(vec![Expr::List(q_exprs.into()), r_expr].into()))
 }
 
+/// Scale a polynomial over Q to coprime integer coefficients, so repeated
+/// S-polynomial reduction does not accumulate ever larger denominators.
+fn primitive_part(p: &Poly) -> Option<Poly> {
+  let mut denom_lcm = BigInt::one();
+  for c in p.values() {
+    denom_lcm = &denom_lcm * (&c.1 / gcd_big(&denom_lcm, &c.1));
+  }
+  let mut content = BigInt::zero();
+  for c in p.values() {
+    content = gcd_big(&content, &(&c.0 * (&denom_lcm / &c.1)));
+  }
+  if content.is_zero() {
+    return Some(p.clone());
+  }
+  let mut out = Poly::new();
+  for (k, c) in p {
+    out.insert(
+      k.clone(),
+      (&c.0 * (&denom_lcm / &c.1) / &content, BigInt::one()),
+    );
+  }
+  Some(out)
+}
+
 fn s_poly(a: &Poly, b: &Poly) -> Option<Poly> {
   let (lma, lca) = leading(a)?;
   let (lmb, lcb) = leading(b)?;
@@ -272,12 +405,12 @@ fn s_poly(a: &Poly, b: &Poly) -> Option<Poly> {
   // a * (l/lma)/lca - b * (l/lmb)/lcb
   let mut left = Poly::new();
   let sa = mono_div(&l, lma);
-  let ca = f_div((1, 1), lca)?;
-  for (key, &c) in a {
-    poly_add_term(&mut left, mono_mul(&key.0, &sa), f_mul(c, ca)?)?;
+  let ca = f_div(&one(), &lca)?;
+  for (key, c) in a {
+    poly_add_term(&mut left, mono_mul(&key.0, &sa), f_mul(c, &ca)?)?;
   }
   let sb = mono_div(&l, lmb);
-  let cb = f_div((1, 1), lcb)?;
+  let cb = f_div(&one(), &lcb)?;
   poly_sub_scaled(&left, b, cb, &sb)
 }
 
@@ -345,7 +478,11 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let expanded =
       crate::evaluator::evaluate_expr_to_expr(&call1("Expand", p.clone()))?;
     match expr_to_poly(&expanded, &vars) {
-      Some(poly) if !poly.is_empty() => basis.push(poly),
+      Some(poly) if !poly.is_empty() => basis.push(if modulus.is_none() {
+        primitive_part(&poly).unwrap_or(poly)
+      } else {
+        poly
+      }),
       Some(_) => {} // zero polynomial contributes nothing
       None => return Ok(uneval()),
     }
@@ -369,7 +506,28 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     let mut steps = 0usize;
-    while let Some((i, j)) = pairs.pop() {
+    // Normal selection strategy: the pair whose leading monomials have the
+    // lowest-degree lcm goes first, which keeps intermediate polynomials
+    // small. Pairs with coprime leading monomials reduce to zero (product
+    // criterion) and are skipped.
+    while !pairs.is_empty() {
+      let mut best = 0;
+      let mut best_degree = u32::MAX;
+      for (idx, &(i, j)) in pairs.iter().enumerate() {
+        let (lma, _) = leading(&basis[i])?;
+        let (lmb, _) = leading(&basis[j])?;
+        let d: u32 = mono_lcm(lma, lmb).iter().sum();
+        if d < best_degree {
+          best_degree = d;
+          best = idx;
+        }
+      }
+      let (i, j) = pairs.swap_remove(best);
+      let (lma, _) = leading(&basis[i])?;
+      let (lmb, _) = leading(&basis[j])?;
+      if lma.iter().zip(lmb.iter()).all(|(a, b)| *a == 0 || *b == 0) {
+        continue;
+      }
       steps += 1;
       if steps > 2000 {
         return None;
@@ -377,6 +535,11 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let s = s_poly(&basis[i], &basis[j])?;
       let r = reduce(&s, &basis)?;
       if !r.is_empty() {
+        let r = if modulus.is_none() {
+          primitive_part(&r)?
+        } else {
+          r
+        };
         let new_idx = basis.len();
         for k in 0..new_idx {
           pairs.push((k, new_idx));
@@ -449,39 +612,46 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let Some((_, lc)) = leading(p) else {
         return Ok(uneval());
       };
-      let Some(inv) = mod_inverse(lc.0, pm) else {
+      let Some(inv) = lc.0.to_i128().and_then(|l| mod_inverse(l, pm)) else {
         return Ok(uneval());
       };
       let mut q = Poly::new();
-      for (k, &c) in p {
-        q.insert(k.clone(), ((c.0 * inv).rem_euclid(pm), 1));
+      for (k, c) in p {
+        q.insert(
+          k.clone(),
+          ((&c.0 * big(inv)).mod_floor_i(&big(pm)), BigInt::one()),
+        );
       }
       monic = q;
       &monic
     } else {
       p
     };
-    let rendered = (|| -> Option<Expr> {
-      let mut denom_lcm: i128 = 1;
-      for &c in p.values() {
-        denom_lcm = denom_lcm.checked_mul(c.1 / gcd_i128(denom_lcm, c.1))?;
+    let rendered = {
+      let mut denom_lcm = BigInt::one();
+      for c in p.values() {
+        denom_lcm = &denom_lcm * (&c.1 / gcd_big(&denom_lcm, &c.1));
       }
-      let mut nums: Vec<(Mono, i128)> = Vec::new();
-      let mut content: i128 = 0;
-      for (key, &c) in p {
-        let scaled = c.0.checked_mul(denom_lcm / c.1)?;
-        content = gcd_i128(content, scaled);
+      let mut nums: Vec<(Mono, BigInt)> = Vec::new();
+      let mut content = BigInt::zero();
+      for (key, c) in p {
+        let scaled = &c.0 * (&denom_lcm / &c.1);
+        content = gcd_big(&content, &scaled);
         nums.push((key.0.clone(), scaled));
       }
-      let content = content.max(1);
-      let lead_sign = nums.first().is_some_and(|(_, c)| *c < 0);
-      let sign = if lead_sign { -1 } else { 1 };
+      let content = if content.is_zero() {
+        BigInt::one()
+      } else {
+        content
+      };
+      let lead_sign = nums.first().is_some_and(|(_, c)| c.is_negative());
+      let sign = BigInt::from(if lead_sign { -1 } else { 1 });
       let mut terms: Vec<Expr> = Vec::new();
       for (m, c) in &nums {
-        let c = sign * c / content;
+        let c = &sign * c / &content;
         let mut factors: Vec<Expr> = Vec::new();
-        if c != 1 || m.iter().all(|&e| e == 0) {
-          factors.push(Expr::Integer(c));
+        if !c.is_one() || m.iter().all(|&e| e == 0) {
+          factors.push(crate::functions::math_ast::bigint_to_expr(c));
         }
         for (vi, &e) in m.iter().enumerate() {
           if e == 1 {
@@ -501,7 +671,7 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         plus(terms)
       };
       crate::evaluator::evaluate_expr_to_expr(&sum).ok()
-    })();
+    };
     match rendered {
       Some(e) => out.push(e),
       None => return Ok(uneval()),
@@ -548,14 +718,14 @@ fn expr_to_poly(expr: &Expr, vars: &[Expr]) -> Option<Poly> {
   let mut poly = Poly::new();
   for (term, sign) in terms {
     let (m, c) = term_to_mono(term, vars)?;
-    poly_add_term(&mut poly, m, f_mul(c, (sign, 1))?)?;
+    poly_add_term(&mut poly, m, f_mul(&c, &(big(sign), BigInt::one()))?)?;
   }
   Some(poly)
 }
 
 fn term_to_mono(term: &Expr, vars: &[Expr]) -> Option<(Mono, Frac)> {
   let mut mono = vec![0u32; vars.len()];
-  let mut coef: Frac = (1, 1);
+  let mut coef: Frac = one();
   fn flatten<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
     match e {
       Expr::FunctionCall { name, args } if name == "Times" => {
@@ -578,15 +748,17 @@ fn term_to_mono(term: &Expr, vars: &[Expr]) -> Option<(Mono, Frac)> {
   flatten(term, &mut factors);
   for f in factors {
     match f {
-      Expr::Integer(n) => coef = f_mul(coef, (*n, 1))?,
+      Expr::Integer(n) => coef = f_mul(&coef, &(big(*n), BigInt::one()))?,
+      Expr::BigInteger(n) => coef = f_mul(&coef, &(n.clone(), BigInt::one()))?,
       Expr::FunctionCall { name, args }
         if name == "Rational" && args.len() == 2 =>
       {
-        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
-          coef = f_mul(coef, (*n, *d))?;
-        } else {
-          return None;
-        }
+        let as_big = |e: &Expr| match e {
+          Expr::Integer(n) => Some(big(*n)),
+          Expr::BigInteger(n) => Some(n.clone()),
+          _ => None,
+        };
+        coef = f_mul(&coef, &(as_big(&args[0])?, as_big(&args[1])?))?;
       }
       // A bare variable — not necessarily an `Identifier`: as in real
       // Mathematica, a function application like `p[a]` may itself be one

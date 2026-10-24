@@ -4767,6 +4767,20 @@ mod replace_repeated {
   fn replace_repeated_simple() {
     assert_eq!(interpret("f[f[2]] //. f[2] -> 2").unwrap(), "2");
   }
+
+  // A list of rule lists (several solutions) gives one result per list
+  // instead of rescanning the list of results forever.
+  #[test]
+  fn replace_repeated_with_several_rule_lists() {
+    assert_eq!(
+      interpret("{x, y} //. {{x -> 1, y -> 2}, {x -> 3, y -> 4}}").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret("x //. {{x -> y, y -> 2}, {x -> 5}}").unwrap(),
+      "{2, 5}"
+    );
+  }
 }
 
 mod replace_repeated_operator_form {
@@ -20665,6 +20679,70 @@ mod root_of_repeated_factors {
       interpret("Length[Solve[10^20 x^2 + 3*10^19 x - 7*10^20 == 0, x]]")
         .unwrap(),
       "2"
+    );
+  }
+}
+
+mod polynomial_system_with_large_coefficients {
+  use super::*;
+
+  // A Lagrange-multiplier condition `grad f x grad g == 0` together with
+  // `g == 1/3`: no equation can be solved for either unknown in closed form,
+  // and eliminating one needs coefficients far beyond 128 bits.
+  const SYSTEM: &str = "f = x^2 + x y^2 - 2 y; \
+     g = ((x^2 + y^2)^2 - 8 x y)/8; \
+     cond = D[f, x] D[g, y] - D[f, y] D[g, x]; \
+     eqs = {cond == 0, g == 1/3};";
+
+  #[test]
+  fn groebner_basis_beyond_machine_integers() {
+    assert_eq!(
+      interpret(&format!(
+        "{SYSTEM} gb = GroebnerBasis[Numerator[Together[#[[1]] - #[[2]]]] & /@ \
+         eqs, {{y, x}}]; {{Length[gb], Exponent[First[gb], x]}}"
+      ))
+      .unwrap(),
+      "{2, 16}"
+    );
+  }
+
+  #[test]
+  fn solve_over_reals_drops_complex_root_objects() {
+    assert_eq!(
+      interpret(&format!(
+        "{SYSTEM} {{Length[Solve[eqs, {{x, y}}]], \
+         Length[Solve[eqs, {{x, y}}, Reals]]}}"
+      ))
+      .unwrap(),
+      "{16, 6}"
+    );
+  }
+
+  #[test]
+  fn reduce_over_reals_gives_the_real_points() {
+    assert_eq!(
+      interpret(&format!(
+        "{SYSTEM} r = Reduce[eqs, {{x, y}}, Reals]; \
+         pts = {{x, y}} //. {{ToRules[N[r]]}}; \
+         {{Head[r], Length[r], Round[pts, 1/1000], \
+         Max[Abs[Table[{{cond, g - 1/3}} /. {{x -> p[[1]], y -> p[[2]]}}, \
+         {{p, pts}}]]] < 10^-6}}"
+      ))
+      .unwrap(),
+      "{Or, 6, {{-437/250, -91/125}, {-1167/1000, -1723/1000}, \
+       {-53/500, -1397/1000}, {69/1000, 1357/1000}, {201/250, -327/1000}, \
+       {337/200, 1267/1000}}, True}"
+    );
+  }
+
+  #[test]
+  fn solve_over_reals_keeps_only_real_root_values() {
+    assert_eq!(
+      interpret(
+        "Length[Solve[{x^3 + y^3 + x y == 3, x^2 + x y^2 == 2}, {x, y}, Reals]]"
+      )
+      .unwrap(),
+      "3"
     );
   }
 }
