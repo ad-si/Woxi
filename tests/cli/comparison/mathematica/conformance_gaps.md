@@ -1842,6 +1842,23 @@ wolframscript adapts. `Length[(y /. s[[1]])[[2]]]` is 1001 against 13. Note
 that stock wolframscript's *default* tolerances can be **less** accurate than
 Woxi's here — get a converged reference before treating a difference as a bug.
 
+### Zero-dimensional polynomial systems are expressed through one `Root`
+
+When no equation of a polynomial system can be solved for an unknown in
+closed form, `Solve` and `Reduce` take a lexicographic Groebner basis and
+return `x == Root[R & , k, 0]` with every other unknown as a polynomial in that
+root. The solutions are right (they satisfy the system to machine precision
+once numericized), but wolframscript gives each unknown its own `Root` of a
+univariate polynomial, so the exact printed form differs. Systems whose basis is
+not in this shape (repeated roots, positive dimension) stay unevaluated. Machine
+precision `N` of the polynomial-in-`Root` values loses about 7 digits to
+cancellation (residuals around `1e-9`), where wolframscript raises its working
+precision.
+
+`Reduce[{x^3 + y^3 + x y == 3, x^2 + x y^2 == 2}, {x, y}, Reals]` returns a
+single branch with a `Sqrt` that is not real for that root, although three real
+solutions exist (`Solve[..., Reals]` finds them).
+
 ### `Reduce` does not eliminate quantifiers
 
 ```sh

@@ -9864,7 +9864,14 @@ fn format_map_apply_shorthand(
 /// for a multi-statement body would lose everything after the first
 /// statement. Applies equally to `=`, `:=`, `^=` and `^:=`.
 pub(crate) fn assignment_rhs_needs_parens(rhs: &Expr) -> bool {
-  matches!(rhs, Expr::CompoundExpr(_))
+  match rhs {
+    Expr::CompoundExpr(_) => true,
+    // `CompoundExpression[a, b]` written out prints as `a; b` too.
+    Expr::FunctionCall { name, args } => {
+      name == "CompoundExpression" && args.len() >= 2
+    }
+    _ => false,
+  }
 }
 
 fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
@@ -13133,7 +13140,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         {
           format!("({rhs_str})")
         }
-        Expr::CompoundExpr(_) => format!("({rhs_str})"),
+        r if assignment_rhs_needs_parens(r) => format!("({rhs_str})"),
         r if is_replace_operator(r) => format!("({rhs_str})"),
         _ => rhs_str,
       };
@@ -13692,6 +13699,9 @@ fn input_form_rule_rhs(e: &Expr) -> String {
 /// function, a `;`-sequence, or an assignment all bind looser than a rule, so
 /// `a -> (b = c)` written without them re-reads as `(a -> b) = c`.
 fn binds_looser_than_rule(e: &Expr) -> bool {
+  if assignment_rhs_needs_parens(e) {
+    return true;
+  }
   match e {
     Expr::Function { .. } | Expr::CompoundExpr(_) => true,
     Expr::FunctionCall { name, args } => {
@@ -16793,6 +16803,11 @@ fn substitute_variables_impl(
     Expr::FunctionCall { name, .. } if name == "ParametricFunction" => {
       expr.clone()
     }
+    // A finished `BSplineFunction[…]` is numeric data (knots and a control
+    // net that can be an image's worth of samples): nothing to substitute.
+    Expr::FunctionCall { name, args } if is_structured_bspline(name, args) => {
+      expr.clone()
+    }
     Expr::FunctionCall { name, args } if name == "Part" && args.len() == 2 => {
       match resolve_synthetic_list_part(expr, bindings) {
         Some(resolved) => resolved,
@@ -18888,4 +18903,14 @@ pub fn parse_literal_data(src: &str) -> Option<Expr> {
   let value = p.value(0)?;
   p.ws();
   (p.i == p.s.len()).then_some(value)
+}
+
+/// A finished `BSplineFunction[dim, ranges, degrees, closed, {net, Automatic},
+/// knots, …, "Unevaluated"]` object: inert data whose control net is already
+/// numeric, so re-evaluating it on every lookup or call would only walk the
+/// whole net again.
+pub(crate) fn is_structured_bspline(name: &str, args: &[Expr]) -> bool {
+  name == "BSplineFunction"
+    && args.len() == 9
+    && matches!(&args[8], Expr::String(s) if s == "Unevaluated")
 }

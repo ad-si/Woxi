@@ -194,6 +194,37 @@ pub(crate) fn stored_value_for_lookup(name: &str) -> Option<StoredValue> {
   })
 }
 
+/// `AppendTo[x, e]` / `PrependTo[x, e]` for the assignment `x = Append[x, e]`
+/// / `x = Prepend[x, e]`, when `x` is a plain unprotected symbol that
+/// currently holds a list and carries no upvalues.
+fn self_append_as_append_to(lhs: &Expr, rhs: &Expr) -> Option<Expr> {
+  let Expr::Identifier(var) = lhs else {
+    return None;
+  };
+  let Expr::FunctionCall { name, args } = rhs else {
+    return None;
+  };
+  let in_place = match name.as_str() {
+    "Append" => "AppendTo",
+    "Prepend" => "PrependTo",
+    _ => return None,
+  };
+  if args.len() != 2
+    || !matches!(&args[0], Expr::Identifier(v) if v == var)
+    || var.starts_with('$')
+    || crate::evaluator::pattern_matching::is_symbol_protected(var)
+    || crate::UPVALUES.with(|m| m.borrow().contains_key(var))
+  {
+    return None;
+  }
+  let holds_list = ENV.with(|e| {
+    e.try_borrow().is_ok_and(|env| {
+      matches!(env.get(var), Some(StoredValue::ExprVal(Expr::List(_))))
+    })
+  });
+  holds_list.then(|| call(in_place, args.to_vec()))
+}
+
 pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
   match expr {
     Expr::Identifier(n) => {
@@ -214,6 +245,13 @@ pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
     // Interpolation result): re-evaluating it would walk every tabulated
     // point on each lookup of the symbol that holds it.
     Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => false,
+    // Likewise a structured `BSplineFunction[…]` (its control net can hold
+    // an image's worth of samples).
+    Expr::FunctionCall { name, args }
+      if crate::syntax::is_structured_bspline(name, args) =>
+    {
+      false
+    }
     Expr::FunctionCall { name, .. }
       if (name == "Rational" || name == "Complex") && is_inert_data(expr) =>
     {
@@ -226,6 +264,14 @@ pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
     // `line := lines[[i]]` reads the part afresh each time, like a call.
     Expr::Part { .. } => true,
     Expr::Comparison { .. } => true,
+    // Operator forms (`x := f /@ list`, `x := expr /. rules`) are calls too.
+    Expr::Map { .. }
+    | Expr::Apply { .. }
+    | Expr::MapApply { .. }
+    | Expr::ReplaceAll { .. }
+    | Expr::ReplaceRepeated { .. }
+    | Expr::PrefixApply { .. }
+    | Expr::Postfix { .. } => true,
     Expr::Rule {
       pattern,
       replacement,
@@ -1273,6 +1319,11 @@ pub fn evaluate_expr_to_expr_inner(
     {
       Ok(expr.clone())
     }
+    Expr::FunctionCall { name, args }
+      if crate::syntax::is_structured_bspline(name, args) =>
+    {
+      Ok(expr.clone())
+    }
     Expr::FunctionCall { name, args } => {
       // A machine-complex value (`Plus[0.3, Times[0.2, I]]`) is already
       // fully evaluated; re-evaluating it each time a variable holding it
@@ -1377,6 +1428,11 @@ pub fn evaluate_expr_to_expr_inner(
           // assigning to a programmatically-built symbol, e.g.
           // `Evaluate[Symbol["p" <> ToString[i]]] = value`.
           let lhs = unwrap_top_level_evaluate(&args[0])?;
+          // `x = Append[x, e]` grows a stored list: run it as the in-place
+          // `AppendTo[x, e]` instead of copying the array on every pass.
+          if let Some(grow) = self_append_as_append_to(&lhs, &args[1]) {
+            return evaluate_expr_to_expr(&grow);
+          }
           return set_ast(&lhs, &args[1]);
         }
         // Special handling for SetDelayed - stores function definitions
@@ -1987,6 +2043,9 @@ pub fn evaluate_expr_to_expr_inner(
                   } else {
                     items.push_front(elem.clone());
                   }
+                  // Share a large list first so the clone returned to the
+                  // caller is O(1) instead of a copy of the whole array.
+                  share_large_lists(stored, 0);
                   Some(stored.clone())
                 }
                 Expr::FunctionCall {
@@ -2814,6 +2873,7 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "StreamPlot"
         || name == "VectorPlot"
         || name == "StreamDensityPlot"
+        || name == "VectorDensityPlot"
         || name == "DiscretePlot"
         || name == "DiscretePlot3D"
         || name == "Show"
@@ -2923,6 +2983,7 @@ pub fn evaluate_expr_to_expr_inner(
               | "StreamPlot"
               | "VectorPlot"
               | "StreamDensityPlot"
+              | "VectorDensityPlot"
               | "DiscretePlot"
               | "DiscretePlot3D"
           ) {
@@ -3023,6 +3084,12 @@ pub fn evaluate_expr_to_expr_inner(
                 Expr::FunctionCall { name: head, .. }
                   if head == "InterpolatingFunction" =>
                 {
+                  stored_expr.clone()
+                }
+                Expr::FunctionCall {
+                  name: head,
+                  args: head_args,
+                } if crate::syntax::is_structured_bspline(head, head_args) => {
                   stored_expr.clone()
                 }
                 Expr::FunctionCall { .. } => {
@@ -4441,6 +4508,11 @@ pub fn evaluate_expr_to_expr_inner(
         Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => {
           (**func).clone()
         }
+        Expr::FunctionCall { name, args }
+          if crate::syntax::is_structured_bspline(name, args) =>
+        {
+          (**func).clone()
+        }
         _ => evaluate_expr_to_expr(func)?,
       };
       let hold_attrs = function_hold_attributes(&evaluated_func);
@@ -4970,10 +5042,10 @@ pub fn has_free_symbols(expr: &Expr) -> bool {
       has_free_symbols(left) || has_free_symbols(right)
     }
     Expr::UnaryOp { operand, .. } => has_free_symbols(operand),
-    Expr::FunctionCall { name, args } => {
-      has_free_symbols(&Expr::Identifier(name.clone()))
-        || args.iter().any(has_free_symbols)
-    }
+    // An applied head is symbolic whatever its name: `Null[0]` is as open as
+    // `f[0]` (`NDSolveValue` can solve for a function named `Null`), so
+    // `Null[0] == 1` stays unevaluated instead of collapsing to False.
+    Expr::FunctionCall { .. } => true,
     Expr::Comparison { operands, .. } => operands.iter().any(has_free_symbols),
     Expr::Rule {
       pattern,

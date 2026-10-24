@@ -994,7 +994,7 @@ pub fn dispatch_image_functions(
     "FillingTransform" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::image_ast::filling_transform_ast(args));
     }
-    "DistanceTransform" if args.len() == 1 || args.len() == 2 => {
+    "DistanceTransform" if (1..=3).contains(&args.len()) => {
       return Some(crate::functions::image_ast::distance_transform_ast(args));
     }
     "ColorCombine" if args.len() == 1 || args.len() == 2 => {

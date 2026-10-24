@@ -58,6 +58,39 @@ fn evaluate_vector(
   None
 }
 
+/// Evaluate the scalar `body` at (x, y).
+fn evaluate_scalar(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  xval: f64,
+  yval: f64,
+) -> Option<f64> {
+  let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
+  let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
+  try_eval_to_f64(&evaluate_expr_to_expr(&sub2).ok()?)
+}
+
+/// Split a stream-density field into its vector part and, for the
+/// `{{vx, vy}, s}` form, the scalar `s` that shades the background. The form
+/// is recognised by a first element that evaluates to a two-component
+/// vector at the corner of the plot range.
+fn split_vector_and_density<'a>(
+  spec: &'a Expr,
+  xvar: &str,
+  yvar: &str,
+  x_val: f64,
+  y_val: f64,
+) -> (&'a Expr, Option<&'a Expr>) {
+  if let Expr::List(items) = spec
+    && items.len() == 2
+    && evaluate_vector(&items[0], xvar, yvar, x_val, y_val).is_some()
+  {
+    return (&items[0], Some(&items[1]));
+  }
+  (spec, None)
+}
+
 /// Parse ImageSize from options
 /// The `PlotLabel` of a field plot, rendered as SVG markup. Field plots draw
 /// their own axes, so the label is injected above the plot area rather than
@@ -700,25 +733,36 @@ fn push_field_plot_overlays(
   if let Some(label) = &opts.plot_label {
     inject_field_plot_label(svg, area, label);
   }
-  if !opts.epilog.is_empty() {
-    let epilog_area = crate::functions::plot_epilog::PlotArea {
-      x0: area.plot_x0,
-      y0: area.plot_y0,
-      w: area.plot_w,
-      h: area.plot_h,
-      x_min: area.x_min,
-      x_max: area.x_max,
-      y_min: area.y_min,
-      y_max: area.y_max,
-      scale: RESOLUTION_SCALE as f64,
-    };
-    svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
-      &opts.epilog,
-      &epilog_area,
-      "epilog",
-    ));
-  }
+  push_epilog_primitives(svg, area, &opts.epilog);
   push_frame_labels(svg, area, &opts.frame_labels);
+}
+
+/// Draw a field plot's `Epilog` primitives over everything drawn so far
+/// (the closing `</svg>` must already be stripped from `svg`).
+fn push_epilog_primitives(
+  svg: &mut String,
+  area: &crate::functions::plot::PlotArea,
+  epilog: &[Expr],
+) {
+  if epilog.is_empty() {
+    return;
+  }
+  let epilog_area = crate::functions::plot_epilog::PlotArea {
+    x0: area.plot_x0,
+    y0: area.plot_y0,
+    w: area.plot_w,
+    h: area.plot_h,
+    x_min: area.x_min,
+    x_max: area.x_max,
+    y_min: area.y_min,
+    y_max: area.y_max,
+    scale: f64::from(RESOLUTION_SCALE),
+  };
+  svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
+    epilog,
+    &epilog_area,
+    "epilog",
+  ));
 }
 
 /// `ContourLabels -> True`: write each contour's level on its longest
@@ -3659,24 +3703,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &mut svg,
   );
 
-  if !epilog.is_empty() {
-    let epilog_area = crate::functions::plot_epilog::PlotArea {
-      x0: area.plot_x0,
-      y0: area.plot_y0,
-      w: area.plot_w,
-      h: area.plot_h,
-      x_min: area.x_min,
-      x_max: area.x_max,
-      y_min: area.y_min,
-      y_max: area.y_max,
-      scale: f64::from(RESOLUTION_SCALE),
-    };
-    svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
-      &epilog,
-      &epilog_area,
-      "epilog",
-    ));
-  }
+  push_epilog_primitives(&mut svg, &area, &epilog);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result_with_structure(
@@ -3836,24 +3863,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     stream_primitives(body, &xvar, &yvar, (x_min, x_max), (y_min, y_max), args);
   push_stream_svg(&mut svg, &primitives, &area);
 
-  if !epilog.is_empty() {
-    let epilog_area = crate::functions::plot_epilog::PlotArea {
-      x0: area.plot_x0,
-      y0: area.plot_y0,
-      w: area.plot_w,
-      h: area.plot_h,
-      x_min: area.x_min,
-      x_max: area.x_max,
-      y_min: area.y_min,
-      y_max: area.y_max,
-      scale: f64::from(RESOLUTION_SCALE),
-    };
-    svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
-      &epilog,
-      &epilog_area,
-      "epilog",
-    ));
-  }
+  push_epilog_primitives(&mut svg, &area, &epilog);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result_with_structure(
@@ -4105,9 +4115,15 @@ pub fn stream_density_plot_ast(
     &args[0],
     &[xvar.as_str(), yvar.as_str()],
   );
-  let body = resolved.as_ref().unwrap_or(&args[0]);
+  let spec = resolved.as_ref().unwrap_or(&args[0]);
+  // `{{vx, vy}, s}` takes the streamlines from `{vx, vy}` and shades the
+  // background by the scalar `s` instead of by the flow speed.
+  let (body, density) =
+    split_vector_and_density(spec, &xvar, &yvar, x_min, y_min);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
   let plot_label = parse_field_plot_label(args, 3);
+  let prolog = parse_overlay_primitives(args, 3, "Prolog");
+  let epilog = parse_overlay_primitives(args, 3, "Epilog");
 
   let grid_n = 60;
 
@@ -4119,12 +4135,16 @@ pub fn stream_density_plot_ast(
     let x = x_min + (i as f64 + 0.5) / grid_n as f64 * (x_max - x_min);
     for j in 0..grid_n {
       let y = y_min + (j as f64 + 0.5) / grid_n as f64 * (y_max - y_min);
-      if let Some((vx, vy)) = evaluate_vector(body, &xvar, &yvar, x, y) {
-        let mag = (vx * vx + vy * vy).sqrt();
-        if mag.is_finite() {
-          mag_grid[i][j] = mag;
-          mag_samples.push(mag);
-        }
+      let value = match density {
+        Some(scalar) => evaluate_scalar(scalar, &xvar, &yvar, x, y),
+        None => evaluate_vector(body, &xvar, &yvar, x, y)
+          .map(|(vx, vy)| (vx * vx + vy * vy).sqrt()),
+      };
+      if let Some(value) = value
+        && value.is_finite()
+      {
+        mag_grid[i][j] = value;
+        mag_samples.push(value);
       }
     }
   }
@@ -4151,6 +4171,7 @@ pub fn stream_density_plot_ast(
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
+  splice_field_plot_prolog(&mut svg, &area, &prolog);
   if let Some(label) = &plot_label {
     inject_field_plot_label(&mut svg, &area, label);
   }
@@ -4189,9 +4210,131 @@ pub fn stream_density_plot_ast(
   push_stream_svg(&mut svg, &primitives, &area);
 
   push_frame(&mut svg, plot_x0, plot_y0, plot_w, plot_h);
+  push_epilog_primitives(&mut svg, &area, &epilog);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
+}
+
+/// VectorDensityPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
+/// The vector field's arrows over a density background of its magnitude.
+/// `ColorFunction` shades the background, so the arrows keep the default
+/// style.
+pub fn vector_density_plot_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let (xvar, x_min, x_max) = parse_iterator(&args[1], "VectorDensityPlot")?;
+  let (yvar, y_min, y_max) = parse_iterator(&args[2], "VectorDensityPlot")?;
+  let resolved = crate::functions::plot::resolve_indirect_plot_body(
+    &args[0],
+    &[xvar.as_str(), yvar.as_str()],
+  );
+  let body = resolved.as_ref().unwrap_or(&args[0]);
+  let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
+  let plot_label = parse_field_plot_label(args, 3);
+
+  let grid_n = 60;
+  let mut mag_grid = vec![vec![f64::NAN; grid_n]; grid_n];
+  let mut mag_samples = Vec::with_capacity(grid_n * grid_n);
+  for i in 0..grid_n {
+    let x = x_min + (i as f64 + 0.5) / grid_n as f64 * (x_max - x_min);
+    for j in 0..grid_n {
+      let y = y_min + (j as f64 + 0.5) / grid_n as f64 * (y_max - y_min);
+      if let Some((vx, vy)) = evaluate_vector(body, &xvar, &yvar, x, y) {
+        let mag = vx.hypot(vy);
+        if mag.is_finite() {
+          mag_grid[i][j] = mag;
+          mag_samples.push(mag);
+        }
+      }
+    }
+  }
+  let (v_min, v_max) = robust_value_range(&mag_samples);
+
+  let grid = parse_vector_points(args, 3).map_or(VECTOR_GRID, |n| n - 1);
+  let x_step = (x_max - x_min) / grid as f64;
+  let y_step = (y_max - y_min) / grid as f64;
+  let mut vectors = Vec::new();
+  let mut max_mag = 0.0_f64;
+  for i in 0..=grid {
+    let x = x_min + i as f64 * x_step;
+    for j in 0..=grid {
+      let y = y_min + j as f64 * y_step;
+      if let Some((vx, vy)) = evaluate_vector(body, &xvar, &yvar, x, y) {
+        let mag = vx.hypot(vy);
+        max_mag = max_mag.max(mag);
+        vectors.push((x, y, vx, vy, mag));
+      }
+    }
+  }
+
+  let margins = field_plot_label_margins(plot_label.as_ref());
+  let mut area = crate::functions::plot::generate_axes_only_opts(
+    (x_min, x_max),
+    (y_min, y_max),
+    svg_width,
+    svg_height,
+    full_width,
+    None,
+    margins.as_ref(),
+  )?;
+  let mut svg = std::mem::take(&mut area.svg);
+  if let Some(pos) = svg.rfind("</svg>") {
+    svg.truncate(pos);
+  }
+  if let Some(label) = &plot_label {
+    inject_field_plot_label(&mut svg, &area, label);
+  }
+
+  let density_opts = parse_density_contour_options(args, 3);
+  let (color_function, cf_expr) = match density_opts.cf_expr() {
+    Some(cf) => (density_opts.color_function.as_deref(), Some(cf)),
+    None => (
+      Some(
+        density_opts
+          .color_function
+          .as_deref()
+          .unwrap_or("WL12DefaultVectorDensityGradient"),
+      ),
+      None,
+    ),
+  };
+  embed_grid_image(
+    &mut svg,
+    &mag_grid,
+    v_min,
+    v_max,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+    color_function,
+    cf_expr,
+  );
+
+  let cell_size = (area.plot_w / grid as f64).min(area.plot_h / grid as f64);
+  let arrow_style = VectorArrowStyle::default();
+  let primitives = render_vector_arrows(
+    &vectors,
+    max_mag,
+    cell_size,
+    &area,
+    &arrow_style,
+    &mut svg,
+  );
+  push_frame(
+    &mut svg,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+  );
+
+  svg.push_str("</svg>");
+  Ok(crate::graphics_result_with_structure(
+    svg,
+    call1("Graphics", Expr::List(primitives.into())),
+  ))
 }
 
 /// ListDensityPlot[data] - density plot from data
@@ -4259,6 +4402,170 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   push_field_plot_overlays(&mut svg, &area, &opts);
 
+  svg.push_str("</svg>");
+  Ok(crate::graphics_result(svg))
+}
+
+/// ReliefPlot[array] - shaded relief of a matrix of heights: each cell is
+/// coloured by its height and darkened or lightened by how its slope
+/// faces the light (`LightingAngle`). The first matrix row is at the top
+/// unless `DataReversed -> True`; `DataRange` places the matrix.
+pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let rows = match &data {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ReliefPlot".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+  let opts = parse_density_contour_options(args, 1);
+  let (mut grid, _, _, _, _, v_min, v_max, n_rows, n_cols) =
+    parse_matrix_to_grid(rows, "ReliefPlot");
+  if grid.is_empty() || !v_min.is_finite() || !v_max.is_finite() {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+
+  let mut data_range = ((1.0, n_cols as f64), (1.0, n_rows as f64));
+  let mut reversed = false;
+  let mut lighting = Some(std::f64::consts::FRAC_PI_4 * 3.0);
+  for opt in &args[1..] {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      continue;
+    };
+    let Expr::Identifier(name) = pattern.as_ref() else {
+      continue;
+    };
+    let value = evaluate_expr_to_expr(replacement)
+      .unwrap_or_else(|_| replacement.as_ref().clone());
+    match (name.as_str(), &value) {
+      ("DataRange", Expr::List(axes)) if axes.len() == 2 => {
+        if let (Expr::List(xs), Expr::List(ys)) = (&axes[0], &axes[1])
+          && xs.len() == 2
+          && ys.len() == 2
+          && let (Some(x0), Some(x1), Some(y0), Some(y1)) = (
+            try_eval_to_f64(&xs[0]),
+            try_eval_to_f64(&xs[1]),
+            try_eval_to_f64(&ys[0]),
+            try_eval_to_f64(&ys[1]),
+          )
+        {
+          data_range = ((x0, x1), (y0, y1));
+        }
+      }
+      ("DataReversed", Expr::Identifier(v)) => reversed = v == "True",
+      ("LightingAngle", Expr::Identifier(v)) if v == "None" => lighting = None,
+      ("LightingAngle", v) => {
+        if let Some(a) = try_eval_to_f64(v) {
+          lighting = Some(a);
+        }
+      }
+      _ => {}
+    }
+  }
+  // `parse_matrix_to_grid` puts the first matrix row at the bottom.
+  if !reversed {
+    for col in &mut grid {
+      col.reverse();
+    }
+  }
+
+  let mut area = field_plot_axes(data_range.0, data_range.1, &opts)?;
+  let mut svg = std::mem::take(&mut area.svg);
+  if let Some(pos) = svg.rfind("</svg>") {
+    svg.truncate(pos);
+  }
+
+  let orig_cols = grid.len();
+  let orig_rows = grid[0].len();
+  let grid = if orig_cols < 256 || orig_rows < 256 {
+    resample_node_grid(&grid, 256.max(orig_cols), 256.max(orig_rows))
+  } else {
+    grid
+  };
+  // Distance between neighbouring samples in units of original cells, so
+  // slopes do not depend on how finely the grid was resampled.
+  let step_x = (orig_cols.max(2) - 1) as f64 / grid.len() as f64;
+  let step_y = (orig_rows.max(2) - 1) as f64 / grid[0].len() as f64;
+
+  let mut colors = cell_colors(
+    &grid,
+    (v_min, v_max),
+    opts.color_function.as_deref(),
+    opts.cf_expr(),
+    Clipping::Saturate,
+  );
+  let plain = opts.color_function.is_none() && opts.cf_expr().is_none();
+  if let Some(azimuth) = lighting {
+    let elevation = std::f64::consts::FRAC_PI_4;
+    let light = (
+      elevation.cos() * azimuth.cos(),
+      elevation.cos() * azimuth.sin(),
+      elevation.sin(),
+    );
+    let (nc, nr) = (grid.len(), grid[0].len());
+    for i in 0..nc {
+      for j in 0..nr {
+        let at = |a: usize, b: usize| grid[a][b];
+        let (i0, i1) = (i.saturating_sub(1), (i + 1).min(nc - 1));
+        let (j0, j1) = (j.saturating_sub(1), (j + 1).min(nr - 1));
+        let dzdx = (at(i1, j) - at(i0, j)) / ((i1 - i0).max(1) as f64 * step_x);
+        let dzdy = (at(i, j1) - at(i, j0)) / ((j1 - j0).max(1) as f64 * step_y);
+        if !(dzdx.is_finite() && dzdy.is_finite()) {
+          continue;
+        }
+        let norm = (dzdx * dzdx + dzdy * dzdy + 1.0).sqrt();
+        let lit = (-dzdx * light.0 - dzdy * light.1 + light.2) / norm;
+        let factor = (0.45 + 0.55 * lit / light.2).clamp(0.0, 1.5);
+        if let Some(c) = &mut colors[i][j] {
+          let shade = |ch: u8| {
+            let v = ch as f64;
+            if factor <= 1.0 {
+              v * factor
+            } else {
+              v + (255.0 - v) * (factor - 1.0)
+            }
+            .round()
+            .clamp(0.0, 255.0) as u8
+          };
+          *c = (shade(c.0), shade(c.1), shade(c.2));
+        }
+      }
+    }
+  }
+  if plain && lighting.is_none() {
+    for col in &mut colors {
+      for c in col.iter_mut().flatten() {
+        *c = (235, 235, 235);
+      }
+    }
+  }
+  embed_color_image(
+    &mut svg,
+    &colors,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+  );
+  if opts.frame {
+    push_frame(
+      &mut svg,
+      area.plot_x0,
+      area.plot_y0,
+      area.plot_w,
+      area.plot_h,
+    );
+  }
+  push_field_plot_overlays(&mut svg, &area, &opts);
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
 }
@@ -4597,6 +4904,9 @@ enum ArrayCell {
 /// own `ColorFunction` option the same way rather than re-parsing it.
 pub(crate) fn color_function_scheme_name(val: &Expr) -> Option<String> {
   match val {
+    // `"Thermometer"` is the short spelling Wolfram accepts for
+    // `"ThermometerColors"` in a `ColorFunction` option.
+    Expr::String(s) if s == "Thermometer" => Some("ThermometerColors".into()),
     Expr::String(s) => Some(s.clone()),
     // Only the plain gradient: a ranged or reversed `ColorDataFunction`
     // (`ColorData[{"Rainbow", "Reverse"}]`) carries a different blend and

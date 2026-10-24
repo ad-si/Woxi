@@ -2075,6 +2075,37 @@ mod tests {
     );
   }
 
+  /// `Button[Dynamic[caption], ImageSize -> n]` has an option where the
+  /// action would be: it is an inert caption that follows the live
+  /// bindings, not a pressable button whose "action" is `ImageSize -> n`.
+  #[test]
+  fn actionless_button_with_dynamic_label_is_a_live_display() {
+    let code = r#"Manipulate[
+      Graphics[{}],
+      {{step, 1}, ControlType -> None},
+      Button[Dynamic@Switch[step, 1, "first", 2, "second"], ImageSize -> 240]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "build must not report an error");
+    assert!(
+      !state
+        .controls
+        .iter()
+        .any(|c| matches!(c, ControlState::Button { .. })),
+      "no pressable button expected, got {:?}",
+      state.controls
+    );
+    assert_eq!(
+      state.displays.len(),
+      1,
+      "the caption must be one live display, got {:?}",
+      state.displays
+    );
+    assert!(state.displays[0].contains("Switch"), "{:?}", state.displays);
+  }
+
   /// A choice list `Dynamic[Range[top]]` that follows a free variable the
   /// body itself assigns (not a control): switching the mode makes the body
   /// assign a different `top`, and the offered choices must follow it.
@@ -3825,6 +3856,38 @@ mod tests {
     }
   }
 
+  /// A Manipulate whose body applies a plot head chosen by a `PopupMenu`
+  /// (`kind[field @@ {x, y}, …]`) to a field picked from a menu of pure
+  /// functions labelled with `TraditionalForm` rules; the choice list also
+  /// carries a `FieldSize` option. `VectorDensityPlot` used to be missing,
+  /// so selecting it left the body unevaluated.
+  #[test]
+  fn popup_menu_of_plot_heads_and_pure_function_fields_draws_vector_density() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[
+        kind[Apply[field, {x, y}], {x, -2, 2}, {y, -2, 2},
+          ColorFunction -> palette, ImageSize -> {200, 200}],
+        {{field, {#2, -#}&, \"field\"},
+         {({#2, -#}&) -> TraditionalForm[{y, -x}],
+          ({Sin[#], Cos[#2]}&) -> TraditionalForm[{Sin[x], Cos[y]}]},
+         PopupMenu, FieldSize -> {Automatic, 2.5}},
+        {{kind, VectorDensityPlot, \"plot type\"},
+         {VectorPlot -> \"vector\", VectorDensityPlot -> \"vector density\"}},
+        {{palette, \"SunsetColors\", \"palette\"},
+         {\"SunsetColors\", \"LakeColors\"}}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "body must evaluate: {:?}", state.error);
+    assert!(
+      state.graphics_handle.is_some(),
+      "the default VectorDensityPlot must draw"
+    );
+    assert_eq!(state.controls.len(), 3);
+  }
+
   /// A Manipulate output saved by the FrontEnd names its controls with the
   /// `DynamicModule` `$$` suffix and no explicit label ("Ecosystem
   /// Dynamics"); the slider must read `amp`, not `amp$$`, while the variable
@@ -4118,6 +4181,34 @@ mod tests {
     assert!(state.select_discrete(a_idx, "4"));
     state.reevaluate();
     assert_eq!(labels(&state), vec!["0", "1", "2", "3"]);
+  }
+  /// A slider whose upper bound is `Dynamic[var]` of a hidden state variable
+  /// that is still 0 when the spec is parsed (`{{n, 1}, 1, Dynamic[total],
+  /// 1}` next to `{{total, 0}, ControlType -> None}`) is not a reversed
+  /// slider: it keeps its static lower bound and opens up to the variable's
+  /// live value once the body has set it.
+  #[test]
+  fn slider_with_unsettled_dynamic_max_keeps_static_min() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[(total = 5; n),
+        {{n, 1}, 1, Dynamic[total], 1},
+        {{total, 0}, ControlType -> None}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let bounds = state.controls.iter().find_map(|c| match c {
+      ControlState::Continuous {
+        name,
+        min,
+        max,
+        current,
+        ..
+      } if name == "n" => Some((*min, *max, *current)),
+      _ => None,
+    });
+    assert_eq!(bounds, Some((1.0, 5.0, 1.0)));
   }
   /// A slider bound that wraps `Dynamic` *inside* a larger expression
   /// (`k*If[Dynamic[big], 1, 100]`) still makes a control, and follows the
@@ -4475,6 +4566,48 @@ mod textcell_tests {
       .expect("idx slider");
     // Two appends: the Dynamic upper bound follows `Length[frames]`.
     assert_eq!((min, max, current), (1.0, 3.0, 3.0));
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// (a lease calculator) whose `Pane`d body is a user-defined function
+  /// returning `Style[Grid[{{label, StringForm["$``", NumberForm[x,
+  /// {Infinity, 2}, DigitBlock -> 3]]}, …}, Alignment -> "Left"], "Label",
+  /// 14]`, with the sign prepended inside the `StringForm` template.
+  /// Independently written: a different (loan) domain, names and labels.
+  #[test]
+  fn pane_body_with_stringform_numberform_digit_block_grid() {
+    let code = r#"Manipulate[
+      Pane[loanSummary[price, rate, years], ImageSize -> {400, 80},
+        Alignment -> {Left, Center}],
+      {{price, 250000, "price ($)"}, 50000, 900000, 5000,
+        Appearance -> "Labeled"},
+      {{rate, 0.05, "rate"}, 0.01, 0.1, 0.005, Appearance -> "Labeled"},
+      {{years, 30, "years"}, 5, 40, 1, Appearance -> "Labeled"},
+      SaveDefinitions -> True,
+      Initialization :> (loanSummary[p_, r_, n_] := Module[{m, tot},
+        m = p r/12/(1 - (1 + r/12)^(-12 n));
+        tot = m*12*n - 2*p;
+        Style[Grid[{
+          {"monthly", StringForm["$``",
+            NumberForm[m, {Infinity, 2}, DigitBlock -> 3]]},
+          {"net", StringForm[If[tot < 0, "-", ""] <> "$``",
+            NumberForm[If[tot < 0, -1, 1] tot, {Infinity, 2},
+              DigitBlock -> 3]]},
+          {"years", n}}, Alignment -> "Left"], "Label", 14]])
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the Grid readout should render with the default control values"
+    );
   }
 }
 

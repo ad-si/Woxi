@@ -105,6 +105,25 @@ fn equations_from_bare_polynomials(expr: &Expr) -> Option<Expr> {
     operands: vec![e.clone(), Expr::Integer(0)],
     operators: vec![ComparisonOp::Equal],
   };
+  // `{p, q} == 0` (a list against a scalar) is the system `{p == 0, q == 0}`.
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = expr
+    && let [Expr::List(items), rhs] = operands.as_slice()
+    && !matches!(rhs, Expr::List(_))
+    && matches!(operators.as_slice(), [ComparisonOp::Equal])
+  {
+    return Some(Expr::List(
+      items
+        .iter()
+        .map(|it| Expr::Comparison {
+          operands: vec![it.clone(), rhs.clone()],
+          operators: vec![ComparisonOp::Equal],
+        })
+        .collect(),
+    ));
+  }
   match expr {
     Expr::List(items) => {
       if items.iter().all(is_relational_expr) {
@@ -247,6 +266,11 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(result) = try_nsolve_numeric_search(args) {
       return Ok(sort_nsolve_solutions(result));
     }
+    // A two-variable polynomial system whose exact elimination ends in roots
+    // with no radical form: eliminate numerically.
+    if let Some(result) = try_nsolve_polynomial_pair(args) {
+      return Ok(result);
+    }
     return Ok(unevaluated("NSolve", args));
   }
   let numerized = nsolve_numerize(&symbolic)?;
@@ -267,6 +291,280 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     numerized
   };
   Ok(sort_nsolve_solutions(filtered))
+}
+
+/// Complex coefficients of `poly` in `var`, ascending, once every other
+/// symbol has been replaced by a number.
+fn numeric_complex_coefficients(
+  poly: &Expr,
+  var: &str,
+) -> Option<Vec<(f64, f64)>> {
+  let expanded = expand_and_combine(poly);
+  let degree = max_power_int(&expanded, var)?.max(0) as usize;
+  let terms = collect_additive_terms(&expanded);
+  let mut coeffs = vec![(0.0f64, 0.0f64); degree + 1];
+  for (d, slot) in coeffs.iter_mut().enumerate() {
+    for term in &terms {
+      if let Some(c) = extract_coefficient_of_power(term, var, d as i128) {
+        let c = simplify(c);
+        let (re, im) = try_eval_to_f64(&c)
+          .map(|v| (v, 0.0))
+          .or_else(|| try_extract_complex_float(&c))?;
+        slot.0 += re;
+        slot.1 += im;
+      }
+    }
+  }
+  Some(coeffs)
+}
+
+fn complex_number_expr(re: f64, im: f64) -> Expr {
+  if im == 0.0 {
+    Expr::Real(re)
+  } else {
+    crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
+  }
+}
+
+/// Newton iterations on `{p, q} == 0` from an approximate common root, in
+/// complex arithmetic. Repeated roots of the elimination polynomial only
+/// give a few digits; the system itself is usually regular there. `None`
+/// when the Jacobian is singular or the iteration leaves the neighbourhood.
+fn polish_pair_root(
+  polys: &[Expr],
+  vars: &[String],
+  x0: (f64, f64),
+  y0: (f64, f64),
+) -> Option<((f64, f64), (f64, f64))> {
+  type C = (f64, f64);
+  let mul = |a: C, b: C| (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0);
+  let sub = |a: C, b: C| (a.0 - b.0, a.1 - b.1);
+  let div = |a: C, b: C| {
+    let d = b.0 * b.0 + b.1 * b.1;
+    ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+  };
+  let mut derivatives = Vec::new();
+  for poly in polys {
+    derivatives.push([
+      differentiate_expr(poly, &vars[0]).ok()?,
+      differentiate_expr(poly, &vars[1]).ok()?,
+    ]);
+  }
+  let eval_at = |e: &Expr, p: (C, C)| -> Option<C> {
+    let value = substitute_values(
+      e,
+      vars,
+      &[
+        complex_number_expr(p.0.0, p.0.1),
+        complex_number_expr(p.1.0, p.1.1),
+      ],
+    );
+    try_extract_complex_f64(&value)
+  };
+  let mut point = (x0, y0);
+  for _ in 0..20 {
+    let f = [eval_at(&polys[0], point)?, eval_at(&polys[1], point)?];
+    let j = [
+      [
+        eval_at(&derivatives[0][0], point)?,
+        eval_at(&derivatives[0][1], point)?,
+      ],
+      [
+        eval_at(&derivatives[1][0], point)?,
+        eval_at(&derivatives[1][1], point)?,
+      ],
+    ];
+    let det = sub(mul(j[0][0], j[1][1]), mul(j[0][1], j[1][0]));
+    let norm = |c: C| c.0.hypot(c.1);
+    let bound =
+      (norm(j[0][0]) + norm(j[0][1])) * (norm(j[1][0]) + norm(j[1][1]));
+    if norm(det) <= 1e-10 * bound {
+      return None;
+    }
+    let dx = div(sub(mul(f[0], j[1][1]), mul(f[1], j[0][1])), det);
+    let dy = div(sub(mul(j[0][0], f[1]), mul(j[1][0], f[0])), det);
+    point = (sub(point.0, dx), sub(point.1, dy));
+    if norm(dx) + norm(dy) <= 1e-15 * (1.0 + norm(point.0) + norm(point.1)) {
+      break;
+    }
+  }
+  if (point.0.0 - x0.0).hypot(point.0.1 - x0.1) > 1e-3
+    || (point.1.0 - y0.0).hypot(point.1.1 - y0.1) > 1e-3
+  {
+    return None;
+  }
+  // Components that are rounding noise next to the point's size go.
+  let size = 1.0 + point.0.0.hypot(point.0.1) + point.1.0.hypot(point.1.1);
+  let snap = |c: C| {
+    (
+      if c.0.abs() <= 1e-14 * size { 0.0 } else { c.0 },
+      if c.1.abs() <= 1e-12 * size { 0.0 } else { c.1 },
+    )
+  };
+  Some((snap(point.0), snap(point.1)))
+}
+
+/// `NSolve[{p == 0, q == 0}, {x, y}]` for two polynomials with exact
+/// coefficients whose elimination polynomial has no closed-form roots.
+///
+/// `y` is eliminated with a resultant, the roots of that polynomial in `x`
+/// come from Durand-Kerner, and each (clustered) `x` is paired with the `y`
+/// roots of the lower-degree equation that also satisfy the other one.
+fn try_nsolve_polynomial_pair(args: &[Expr]) -> Option<Expr> {
+  if args.len() != 2 {
+    return None;
+  }
+  let (Expr::List(eqs), Expr::List(var_list)) = (&args[0], &args[1]) else {
+    return None;
+  };
+  let (x, y) = match var_list.as_slice() {
+    [Expr::Identifier(x), Expr::Identifier(y)] => (x.as_str(), y.as_str()),
+    _ => return None,
+  };
+  if eqs.len() != 2 {
+    return None;
+  }
+  let vars = [x.to_string(), y.to_string()];
+  let mut polys = Vec::with_capacity(2);
+  for eq in eqs {
+    let (lhs, rhs, op) =
+      crate::functions::polynomial_ast::reduce::extract_comparison(eq)?;
+    if op != crate::functions::polynomial_ast::reduce::CompOp::Equal {
+      return None;
+    }
+    let poly = expand_and_combine(&minus2(lhs, rhs));
+    let mut free = Vec::new();
+    collect_solve_vars(&poly, &mut free);
+    if free.iter().any(|f| !vars.contains(f))
+      || !vars
+        .iter()
+        .all(|v| crate::functions::polynomial_ast::is_polynomial(&poly, v))
+    {
+      return None;
+    }
+    polys.push(poly);
+  }
+  let resultant = crate::functions::polynomial_ast::resultant_ast(&[
+    polys[0].clone(),
+    polys[1].clone(),
+    id_expr(y),
+  ])
+  .ok()?;
+  let resultant = expand_and_combine(&resultant);
+  if is_zero_expr(&resultant) {
+    return None;
+  }
+  let x_coeffs = numeric_complex_coefficients(&resultant, x)?;
+  if x_coeffs.len() < 2 || x_coeffs.iter().any(|c| c.1 != 0.0) {
+    return None;
+  }
+  let real_coeffs: Vec<f64> = x_coeffs.iter().map(|c| c.0).collect();
+  let x_roots = durand_kerner_roots(&real_coeffs);
+
+  // Roots of a repeated factor come out as a loose cluster; their mean is
+  // the better estimate.
+  let mut clusters: Vec<((f64, f64), usize)> = Vec::new();
+  for (re, im) in x_roots {
+    match clusters.iter_mut().find(|((cre, cim), _)| {
+      (cre - re).hypot(cim - im) <= 1e-5 * (1.0 + re.hypot(im))
+    }) {
+      Some(((cre, cim), n)) => {
+        *cre = (*cre * *n as f64 + re) / (*n as f64 + 1.0);
+        *cim = (*cim * *n as f64 + im) / (*n as f64 + 1.0);
+        *n += 1;
+      }
+      None => clusters.push(((re, im), 1)),
+    }
+  }
+
+  let residual = |poly: &Expr, xv: (f64, f64), yv: (f64, f64)| -> Option<f64> {
+    let value = substitute_values(
+      poly,
+      &vars,
+      &[
+        complex_number_expr(xv.0, xv.1),
+        complex_number_expr(yv.0, yv.1),
+      ],
+    );
+    let (re, im) = try_extract_complex_f64(&value)?;
+    Some(re.hypot(im))
+  };
+
+  let mut points: Vec<((f64, f64), (f64, f64))> = Vec::new();
+  for ((xre, xim), _) in clusters {
+    let xv = complex_number_expr(xre, xim);
+    let mut y_polys = Vec::new();
+    for poly in &polys {
+      let at_x =
+        substitute_values(poly, &[x.to_string()], std::slice::from_ref(&xv));
+      let mut coeffs = numeric_complex_coefficients(&at_x, y)?;
+      let scale = coeffs
+        .iter()
+        .map(|c| c.0.hypot(c.1))
+        .fold(0.0_f64, f64::max);
+      while coeffs.len() > 1
+        && coeffs
+          .last()
+          .is_some_and(|c| c.0.hypot(c.1) <= 1e-9 * scale)
+      {
+        coeffs.pop();
+      }
+      if coeffs.len() > 1 {
+        y_polys.push(coeffs);
+      }
+    }
+    y_polys.sort_by_key(Vec::len);
+    let Some(pivot) = y_polys.first() else {
+      continue;
+    };
+    for yv in durand_kerner_complex_roots(pivot) {
+      let magnitude = 1.0 + xre.hypot(xim) + yv.0.hypot(yv.1);
+      let fits = polys.iter().all(|p| {
+        let degree =
+          max_power_int(p, x).unwrap_or(0) + max_power_int(p, y).unwrap_or(0);
+        residual(p, (xre, xim), yv)
+          .is_some_and(|r| r <= 1e-6 * magnitude.powi(degree as i32))
+      });
+      if fits {
+        let polished = polish_pair_root(&polys, &vars, (xre, xim), yv);
+        let (px, py) = polished.unwrap_or(((xre, xim), yv));
+        if !points.iter().any(|(ox, oy)| {
+          (ox.0 - px.0).hypot(ox.1 - px.1) < 1e-8
+            && (oy.0 - py.0).hypot(oy.1 - py.1) < 1e-8
+        }) {
+          points.push((px, py));
+        }
+      }
+    }
+  }
+  if points.is_empty() {
+    return None;
+  }
+  points.sort_by(|a, b| {
+    b.0
+      .0
+      .partial_cmp(&a.0.0)
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then(
+        b.0
+          .1
+          .partial_cmp(&a.0.1)
+          .unwrap_or(std::cmp::Ordering::Equal),
+      )
+  });
+  let solutions = points
+    .into_iter()
+    .map(|((xre, xim), (yre, yim))| {
+      Expr::List(
+        vec![
+          rule_expr(id_expr(x), complex_number_expr(xre, xim)),
+          rule_expr(id_expr(y), complex_number_expr(yre, yim)),
+        ]
+        .into(),
+      )
+    })
+    .collect::<Vec<_>>();
+  Some(Expr::List(solutions.into()))
 }
 
 /// Keep only the solutions whose every `var -> value` replacement is real, for
@@ -2025,6 +2323,20 @@ fn solve_ast_entry(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     solutions = solved;
   }
+  if matches!(&solutions, Expr::FunctionCall { name, .. } if name == "Solve")
+    && let Some(Expr::List(var_list)) = positional.get(1)
+    && let Some(domain) = match positional.len() {
+      2 => Some(false),
+      3 if matches!(&positional[2], Expr::Identifier(d) | Expr::Constant(d) if d == "Reals") => {
+        Some(true)
+      }
+      _ => None,
+    }
+    && let Some(solved) =
+      solve_by_groebner_shape(&positional[0], var_list, domain)
+  {
+    solutions = solved;
+  }
   // `Abs[u]^2` was solved as `u^2`, which also has the complex roots no
   // real `u` can reach.
   if squared_abs && let Expr::List(sols) = &solutions {
@@ -2121,6 +2433,172 @@ fn collect_denominator_sums(expr: &Expr, var: &str, out: &mut Vec<Expr>) {
     }
     _ => {}
   }
+}
+
+/// Solve a zero-dimensional polynomial system with rational coefficients whose
+/// lexicographic Groebner basis is in shape position: one polynomial `R` in
+/// the first unknown alone, and for every other unknown a polynomial linear in
+/// it (with a constant leading coefficient) and otherwise free of the rest.
+/// The first unknown then runs over the roots of `R` as `Root` objects and the
+/// others follow as polynomials in it. A fallback for systems in which no
+/// single equation can be solved for one of the unknowns.
+pub(crate) fn solve_by_groebner_shape(
+  eqs: &Expr,
+  var_list: &[Expr],
+  reals_only: bool,
+) -> Option<Expr> {
+  if var_list.len() < 2
+    || !var_list.iter().all(|v| matches!(v, Expr::Identifier(_)))
+  {
+    return None;
+  }
+  let mut conjuncts = Vec::new();
+  crate::functions::polynomial_ast::reduce::collect_and_constraints(
+    eqs,
+    &mut conjuncts,
+  );
+  let eqs: Vec<Expr> = match eqs {
+    Expr::List(items) => items.to_vec(),
+    _ => conjuncts,
+  };
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let eval_call = |name: &str, args: Vec<Expr>| {
+    crate::evaluator::evaluate_function_call_ast(name, &args).ok()
+  };
+  let mut polys = Vec::new();
+  for eq in &eqs {
+    let (lhs, rhs, CompOp::Equal) =
+      crate::functions::polynomial_ast::reduce::extract_comparison(eq)?
+    else {
+      return None;
+    };
+    let diff = eval(plus(vec![lhs, times(vec![Expr::Integer(-1), rhs])]))?;
+    let numer =
+      eval_call("Numerator", vec![eval_call("Together", vec![diff])?])?;
+    polys.push(eval_call("Expand", vec![numer])?);
+  }
+  let reversed: Vec<Expr> = var_list.iter().rev().cloned().collect();
+  let basis = eval_call(
+    "GroebnerBasis",
+    vec![Expr::List(polys.into()), Expr::List(reversed.into())],
+  )?;
+  let Expr::List(basis) = &basis else {
+    return None;
+  };
+  if basis.len() != var_list.len() {
+    return None;
+  }
+  let is_rational = |c: &Expr| match c {
+    Expr::Integer(_) => true,
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      args.len() == 2 && args.iter().all(|a| matches!(a, Expr::Integer(_)))
+    }
+    _ => false,
+  };
+  let x = &var_list[0];
+  let Expr::Identifier(x_name) = x else {
+    return None;
+  };
+  // R: the basis element free of every other unknown.
+  let univariate = basis.iter().find(|b| {
+    var_list[1..]
+      .iter()
+      .all(|v| matches!(&v, Expr::Identifier(n) if !contains_var(b, n)))
+  })?;
+  let coeff_list =
+    eval_call("CoefficientList", vec![univariate.clone(), x.clone()])?;
+  let Expr::List(coeffs) = &coeff_list else {
+    return None;
+  };
+  let coeffs: Vec<Expr> = coeffs.to_vec();
+  if coeffs.len() < 4 || !coeffs.iter().all(is_rational) {
+    return None;
+  }
+  // Repeated roots would need multiplicities Solve reports differently.
+  let gcd = eval_call(
+    "PolynomialGCD",
+    vec![
+      univariate.clone(),
+      eval_call("D", vec![univariate.clone(), x.clone()])?,
+    ],
+  )?;
+  if !matches!(
+    eval_call("Exponent", vec![gcd, x.clone()])?,
+    Expr::Integer(0)
+  ) {
+    return None;
+  }
+  // For each other unknown: v = -c0(x)/c1.
+  let mut others: Vec<(Expr, Expr)> = Vec::new();
+  for v in &var_list[1..] {
+    let Expr::Identifier(v_name) = v else {
+      return None;
+    };
+    let element = basis.iter().find(|b| {
+      contains_var(b, v_name)
+        && var_list[1..].iter().all(|w| {
+          matches!(w, Expr::Identifier(n) if n == v_name || !contains_var(b, n))
+        })
+    })?;
+    if !matches!(
+      eval_call("Exponent", vec![element.clone(), v.clone()])?,
+      Expr::Integer(1)
+    ) {
+      return None;
+    }
+    let c1 = eval_call(
+      "Coefficient",
+      vec![element.clone(), v.clone(), Expr::Integer(1)],
+    )?;
+    let c0 = eval_call(
+      "Coefficient",
+      vec![element.clone(), v.clone(), Expr::Integer(0)],
+    )?;
+    if !is_rational(&c1) || matches!(c1, Expr::Integer(0)) {
+      return None;
+    }
+    let value = eval(times(vec![
+      Expr::Integer(-1),
+      c0,
+      pow(c1, Expr::Integer(-1)),
+    ]))?;
+    others.push((v.clone(), value));
+  }
+  let root_solutions = make_root_solutions(&coeffs, x_name)?;
+  let Expr::List(root_sols) = &root_solutions else {
+    return None;
+  };
+  let mut out = Vec::with_capacity(root_sols.len());
+  for sol in root_sols {
+    let Expr::List(rules) = sol else {
+      return None;
+    };
+    // Over the reals only the roots of `R` that are real count, and each is
+    // real exactly when its `Root` evaluates to a real number.
+    if reals_only {
+      let Expr::Rule { replacement, .. } = rules.first()? else {
+        return None;
+      };
+      let im =
+        eval_call("N", vec![eval_call("Im", vec![(**replacement).clone()])?])?;
+      if !matches!(&im, Expr::Integer(0))
+        && !matches!(expr_to_f64(&im), Ok(v) if v.abs() < 1e-9)
+      {
+        continue;
+      }
+    }
+    let Expr::Rule { replacement, .. } = rules.first()? else {
+      return None;
+    };
+    let mut row = vec![rule_expr(x.clone(), (**replacement).clone())];
+    for (v, value) in &others {
+      let at_root =
+        crate::syntax::substitute_variable(value, x_name, replacement);
+      row.push(rule_expr(v.clone(), eval(at_root)?));
+    }
+    out.push(Expr::List(row.into()));
+  }
+  Some(Expr::List(out.into()))
 }
 
 /// Solve a single equation whose only dependence on `var` runs through one
@@ -3079,7 +3557,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::List(solutions) = &base_solutions {
         let filtered: Vec<Expr> = solutions
           .iter()
-          .filter(|sol| !contains_complex(sol))
+          .filter(|sol| !contains_complex(sol) && !has_nonreal_root_value(sol))
           .cloned()
           .collect();
         return Ok(Expr::List(filtered.into()));
@@ -5236,6 +5714,32 @@ fn sort_solutions(solutions: &mut [Expr]) {
     };
     solve_order(val_a, val_b)
   });
+}
+
+/// Whether a solution `{v -> value, …}` assigns a non-real number to some
+/// unknown through a `Root` object, which hides its complex roots from the
+/// syntactic `contains_complex` check.
+fn has_nonreal_root_value(sol: &Expr) -> bool {
+  let Expr::List(rules) = sol else {
+    return false;
+  };
+  rules.iter().any(|rule| {
+    let Expr::Rule { replacement, .. } = rule else {
+      return false;
+    };
+    if !expr_to_string(replacement).contains("Root[") {
+      return false;
+    }
+    let im = crate::evaluator::evaluate_function_call_ast(
+      "Im",
+      &[(**replacement).clone()],
+    )
+    .and_then(|v| crate::evaluator::evaluate_function_call_ast("N", &[v]));
+    match im {
+      Ok(v) => !matches!(expr_to_f64(&v), Ok(x) if x.abs() < 1e-9),
+      Err(_) => false,
+    }
+  })
 }
 
 /// Check if an expression contains complex elements (I, (-1)^(p/q) with q>1, etc.)
@@ -8026,7 +8530,12 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(v) => v.unwrap_or(FIND_ROOT_DEFAULT_MAX_ITERATIONS),
       Err(()) => return Ok(unevaluated("FindRoot", args)),
     };
-    return find_root_multivariate(&args[0], specs, max_iter);
+    return find_root_multivariate(
+      &args[0],
+      specs,
+      max_iter,
+      find_option(&args[2..], "StepMonitor"),
+    );
   }
 
   // Multivariate form: FindRoot[{eqns}, {x, x0}, {y, y0}, ...] — the
@@ -8051,7 +8560,12 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(v) => v.unwrap_or(FIND_ROOT_DEFAULT_MAX_ITERATIONS),
         Err(()) => return Ok(unevaluated("FindRoot", args)),
       };
-      return find_root_multivariate(&args[0], &candidate_specs, max_iter);
+      return find_root_multivariate(
+        &args[0],
+        &candidate_specs,
+        max_iter,
+        find_option(opts, "StepMonitor"),
+      );
     }
   }
 
@@ -8090,6 +8604,8 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       use_secant = true;
     }
   }
+
+  let step_monitor = find_option(&args[2..], "StepMonitor");
 
   // Parse second argument: {var, x0} or {var, x0, x1}
   // First peek at the variable name and start point; if the start point
@@ -8269,6 +8785,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       f_prev = f_curr;
       x_curr = x_next;
       f_curr = f_next_val;
+      fire_step_monitor(step_monitor, std::slice::from_ref(&var), &[x_curr]);
     }
 
     let result_val = Expr::Real(x_curr);
@@ -8368,6 +8885,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       converged = true;
     }
     x = trial;
+    fire_step_monitor(step_monitor, std::slice::from_ref(&var), &[x]);
   }
   if !converged {
     crate::emit_message(&format!(
@@ -9226,6 +9744,7 @@ fn find_root_multivariate(
   eqns_arg: &Expr,
   specs: &[Expr],
   max_iter: usize,
+  step_monitor: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   // Variables and starting points. A spec's variable is either a plain
   // symbol or an indexed variable like `u[1]` — see `is_findroot_var_expr`.
@@ -9274,6 +9793,26 @@ fn find_root_multivariate(
       .collect()
   };
   let mut x = clamp_to_bounds(x);
+
+  // `StepMonitor :> expr` fires after every accepted step with the plain
+  // search variables bound to the new point. An indexed variable like
+  // `u[1]` has no symbol to bind, so it is left out.
+  let monitor_names: Vec<(usize, String)> = raw_vars
+    .iter()
+    .enumerate()
+    .filter_map(|(i, v)| match v {
+      Expr::Identifier(name) => Some((i, name.clone())),
+      _ => None,
+    })
+    .collect();
+  let fire_monitor = |x: &[f64]| {
+    if step_monitor.is_some() {
+      let names: Vec<String> =
+        monitor_names.iter().map(|(_, n)| n.clone()).collect();
+      let vals: Vec<f64> = monitor_names.iter().map(|(i, _)| x[*i]).collect();
+      fire_step_monitor(step_monitor, &names, &vals);
+    }
+  };
 
   // Only plain-symbol variables can carry a stale global binding under a
   // literal name — an indexed variable like `u[1]` has no such binding to
@@ -9564,6 +10103,7 @@ fn find_root_multivariate(
         }
         x = x_new;
         fv = fv_new;
+        fire_monitor(&x);
         progressed = true;
         let resid = residual_norm(&fv);
         if resid < best_resid {
@@ -9661,6 +10201,7 @@ fn find_root_multivariate(
       x = x_new;
       fv = fv_new;
       resid = resid_new;
+      fire_monitor(&x);
       if resid < best_resid {
         best_resid = resid;
         best_x.clone_from(&x);

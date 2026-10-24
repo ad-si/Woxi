@@ -8520,6 +8520,46 @@ fn solve_linear_system(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
   Some(x)
 }
 
+/// `fit["ParameterTable"]`: the estimates table as a styled `Grid` whose
+/// first row holds the column headings and whose later rows hold a basis
+/// function label followed by the entries of `"ParameterTableEntries"`.
+fn parameter_table(assoc: &[(Expr, Expr)]) -> Option<Expr> {
+  let get = |name: &str| {
+    assoc.iter().find_map(|(k, v)| match k {
+      Expr::String(k) if k == name => Some(v),
+      _ => None,
+    })
+  };
+  let Expr::List(entries) = get("ParameterTableEntries")? else {
+    return None;
+  };
+  let Expr::List(basis) = get("BasisFunctions")? else {
+    return None;
+  };
+  let heading = [
+    "",
+    "Estimate",
+    "Standard Error",
+    "t\u{2010}Statistic",
+    "P\u{2010}Value",
+  ];
+  let mut rows = vec![Expr::List(
+    heading
+      .iter()
+      .map(|h| Expr::String((*h).to_string()))
+      .collect(),
+  )];
+  for (b, entry) in basis.iter().zip(entries.iter()) {
+    let Expr::List(values) = entry else {
+      return None;
+    };
+    let mut row = vec![Expr::String(expr_to_string(b))];
+    row.extend(values.iter().cloned());
+    rows.push(Expr::List(row.into()));
+  }
+  Some(call1("Style", call1("Grid", Expr::List(rows.into()))))
+}
+
 /// Look up a single named property on a `FittedModel` association.
 fn lookup_fitted_model_property(
   assoc: &[(Expr, Expr)],
@@ -8528,6 +8568,13 @@ fn lookup_fitted_model_property(
   // `"BestFit"` is wolframscript's name for the fitted expression itself
   // (mathematically: the polynomial of the basis terms with their best
   // coefficients). Internally we store that under `"FittedExpression"`.
+  if prop == "ParameterTable" {
+    return parameter_table(assoc).ok_or_else(|| {
+      InterpreterError::EvaluationError(format!(
+        "FittedModel: unknown property \"{prop}\""
+      ))
+    });
+  }
   let lookup_key = if prop == "BestFit" {
     "FittedExpression"
   } else {

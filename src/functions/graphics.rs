@@ -20993,6 +20993,7 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
       | "StackedListPlot"
       | "ListContourPlot"
       | "ListDensityPlot"
+      | "ReliefPlot"
       | "ListPolarPlot"
       | "TernaryListPlot"
       | "ListStreamPlot"
@@ -26136,6 +26137,23 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         displays.push(crate::syntax::expr_to_source_form(spec));
         continue;
       }
+      // `Button[Dynamic[label], opts…]`: with an option where the action
+      // would be, the button does nothing — it is a caption that follows the
+      // live bindings (a step title), so it is shown as a live display of
+      // its label rather than as a pressable control with the option as its
+      // "action".
+      Expr::FunctionCall { name, args }
+        if name == "Button"
+          && args.len() >= 2
+          && matches!(
+            &args[1],
+            Expr::Rule { .. } | Expr::RuleDelayed { .. }
+          )
+          && annotation_contains_dynamic(&args[0]) =>
+      {
+        displays.push(crate::syntax::expr_to_source_form(&args[0]));
+        continue;
+      }
       // `Button[label, action, opts…]`: a pressable control row whose
       // action code runs against the live bindings (e.g. a reset button).
       Expr::FunctionCall { name, args }
@@ -26598,6 +26616,20 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             continue;
           }
         }
+        // `{v, {c1, c2, …}, ControlType -> None}` normally starts `v` at the
+        // first choice, but a Manipulate that reads `v[[k]]` for some k > 1
+        // treats the list as the variable's value (a hidden table of rows).
+        let value = match &spec {
+          Expr::List(items)
+            if items.len() >= 2
+              && matches!(&items[1], Expr::List(choices) if choices.len() > 1)
+              && matches!(&items[0], Expr::Identifier(_))
+              && args.iter().any(|a| indexes_past_first(a, &name)) =>
+          {
+            manipulate_value_to_input_form(&items[1])
+          }
+          _ => value,
+        };
         state.push((name, value));
       }
       ParsedControl::StateWithControl {
@@ -28605,6 +28637,24 @@ fn make_live_caption(item: Expr) -> Expr {
     other if needs_wrapping(other) => call1("Dynamic", item),
     _ => item,
   }
+}
+
+/// Whether `e` reads `name[[k]]` for a literal `k` other than 1, i.e. uses
+/// the variable as a list with several entries.
+fn indexes_past_first(e: &Expr, name: &str) -> bool {
+  let src = crate::syntax::expr_to_source_form(e);
+  let needle = format!("{name}[[");
+  src.match_indices(&needle).any(|(i, _)| {
+    let boundary = src[..i]
+      .chars()
+      .next_back()
+      .is_none_or(|c| !(c.is_alphanumeric() || c == '$' || c == '`'));
+    let digits: String = src[i + needle.len()..]
+      .chars()
+      .take_while(char::is_ascii_digit)
+      .collect();
+    boundary && digits.parse::<u32>().is_ok_and(|k| k > 1)
+  })
 }
 
 fn expr_contains_call(e: &Expr, heads: &[&str]) -> bool {
@@ -33229,9 +33279,29 @@ fn parse_manipulate_control(
   // travels with the end it was written for, so the swap carries it along:
   // `{xLeft, Dynamic[wd - xRight], 25, -1}` counts down from the dynamic
   // bound, which must keep driving the *upper* end of the sorted range.
+  //
+  // A single dynamic bound whose not-yet-settled value lands on the wrong
+  // side of the static one is not a reversed slider unless the step counts
+  // down: `{{n, 1}, 1, Dynamic[total], 1}` with `total` still 0 when the
+  // spec is parsed. That bound keeps its end and starts out collapsed onto
+  // the static one; re-resolving it against the live bindings opens the
+  // range up, instead of sorting the unsettled value into the *lower* end.
+  let counts_down = step.is_some_and(|s| s < 0.0);
   let (min_code, max_code) = if min > max {
-    std::mem::swap(&mut min, &mut max);
-    (max_code, min_code)
+    match (min_code.is_some(), max_code.is_some()) {
+      (false, true) if !counts_down => {
+        max = min;
+        (min_code, max_code)
+      }
+      (true, false) if !counts_down => {
+        min = max;
+        (min_code, max_code)
+      }
+      _ => {
+        std::mem::swap(&mut min, &mut max);
+        (max_code, min_code)
+      }
+    }
   } else {
     (min_code, max_code)
   };

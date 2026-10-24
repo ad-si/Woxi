@@ -1064,6 +1064,9 @@ pub fn dispatch_math_functions(
     "KendallTau" if args.len() == 2 => {
       return Some(crate::functions::math_ast::kendall_tau_ast(args));
     }
+    "KendallTauTest" if args.len() >= 2 && args.len() <= 3 => {
+      return Some(crate::functions::math_ast::kendall_tau_test_ast(args));
+    }
     "CentralMoment" if args.len() == 2 => {
       return Some(crate::functions::math_ast::central_moment_ast(args));
     }
@@ -1169,6 +1172,16 @@ pub fn dispatch_math_functions(
     }
     "MathieuSPrime" if args.len() == 3 => {
       return Some(crate::functions::math_ast::mathieu_s_prime_ast(args));
+    }
+    "MathieuCharacteristicA" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::mathieu_characteristic_a_ast(
+        args,
+      ));
+    }
+    "MathieuCharacteristicB" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::mathieu_characteristic_b_ast(
+        args,
+      ));
     }
     "MathieuC" if args.len() == 3 => {
       return Some(crate::functions::math_ast::mathieu_c_ast(args));

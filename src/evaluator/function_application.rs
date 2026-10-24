@@ -3329,14 +3329,20 @@ fn bspline_find_span(n: usize, p: usize, u: f64, knots: &[f64]) -> usize {
   mid
 }
 
-/// Evaluate a B-spline of degree `p` with the given `knots` and `ctrl` points
-/// at parameter `u`, using de Boor's algorithm.
-fn de_boor(p: usize, knots: &[f64], ctrl: &[Vec<f64>], u: f64) -> Vec<f64> {
-  let n = ctrl.len() - 1;
-  let dim = ctrl[0].len();
+/// Evaluate a B-spline of degree `p` with the given `knots` and `n + 1`
+/// control points at parameter `u`, using de Boor's algorithm. Control points
+/// are fetched on demand through `ctrl`, so only the `p + 1` points that
+/// influence `u` are ever touched (large control nets stay cheap to sample).
+fn de_boor(
+  p: usize,
+  knots: &[f64],
+  n: usize,
+  ctrl: &dyn Fn(usize) -> Vec<f64>,
+  u: f64,
+) -> Vec<f64> {
   let span = bspline_find_span(n, p, u, knots);
-  let mut d: Vec<Vec<f64>> =
-    (0..=p).map(|j| ctrl[span - p + j].clone()).collect();
+  let mut d: Vec<Vec<f64>> = (0..=p).map(|j| ctrl(span - p + j)).collect();
+  let dim = d[0].len();
   for r in 1..=p {
     for j in (r..=p).rev() {
       let i = j + span - p;
@@ -3354,14 +3360,15 @@ fn de_boor(p: usize, knots: &[f64], ctrl: &[Vec<f64>], u: f64) -> Vec<f64> {
   d[p].clone()
 }
 
-/// Extract a numeric coordinate vector from a list expression.
+/// Extract a numeric coordinate vector from a control point: a list of
+/// numbers, or a bare number (a scalar-valued spline).
 fn bspline_point_coords(e: &Expr) -> Option<Vec<f64>> {
   match e {
     Expr::List(coords) => coords
       .iter()
       .map(crate::functions::math_ast::try_eval_to_f64)
       .collect(),
-    _ => None,
+    _ => crate::functions::math_ast::try_eval_to_f64(e).map(|v| vec![v]),
   }
 }
 
@@ -3427,47 +3434,85 @@ fn evaluate_bspline_function(func_args: &[Expr], args: &[Expr]) -> Expr {
   if degrees.len() != dim || knot_sets.len() != dim {
     return unevaluated();
   }
+  let Expr::List(net_rows) = net else {
+    return unevaluated();
+  };
+  if net_rows.is_empty() {
+    return unevaluated();
+  }
 
-  let result = match dim {
+  // Control points are converted lazily; a malformed one sets `bad`.
+  let bad = std::cell::Cell::new(false);
+  let point = |e: &Expr| {
+    bspline_point_coords(e).unwrap_or_else(|| {
+      bad.set(true);
+      vec![0.0]
+    })
+  };
+  // A net of bare numbers is a scalar-valued spline.
+  let scalar_valued = |e: &Expr| !matches!(e, Expr::List(_));
+
+  let (result, scalar) = match dim {
     1 => {
-      let ctrl: Option<Vec<Vec<f64>>> = match net {
-        Expr::List(pts) => pts.iter().map(bspline_point_coords).collect(),
-        _ => None,
-      };
-      let ctrl = match ctrl {
-        Some(c) if !c.is_empty() => c,
-        _ => return unevaluated(),
-      };
-      de_boor(degrees[0], &knot_sets[0], &ctrl, params[0])
+      let scalar = scalar_valued(&net_rows[0]);
+      let ctrl = |i: usize| point(&net_rows[i]);
+      (
+        de_boor(
+          degrees[0],
+          &knot_sets[0],
+          net_rows.len() - 1,
+          &ctrl,
+          params[0],
+        ),
+        scalar,
+      )
     }
     2 => {
-      // Tensor-product surface: collapse the v-direction per row, then the
-      // u-direction across the resulting points.
-      let rows: Option<Vec<Vec<Vec<f64>>>> = match net {
-        Expr::List(rows) => rows
-          .iter()
-          .map(|row| match row {
-            Expr::List(pts) => {
-              pts.iter().map(bspline_point_coords).collect::<Option<_>>()
-            }
-            _ => None,
-          })
-          .collect(),
-        _ => None,
+      // Tensor-product surface: collapse the v-direction of each row that
+      // influences `u`, then the u-direction across the resulting points.
+      let Expr::List(first) = &net_rows[0] else {
+        return unevaluated();
       };
-      let rows = match rows {
-        Some(r) if !r.is_empty() && r.iter().all(|row| !row.is_empty()) => r,
-        _ => return unevaluated(),
+      if first.is_empty() {
+        return unevaluated();
+      }
+      let scalar = scalar_valued(&first[0]);
+      let row_at = |i: usize| -> Vec<f64> {
+        let Expr::List(row) = &net_rows[i] else {
+          bad.set(true);
+          return vec![0.0];
+        };
+        let ctrl = |j: usize| {
+          row.get(j).map_or_else(
+            || {
+              bad.set(true);
+              vec![0.0]
+            },
+            point,
+          )
+        };
+        de_boor(degrees[1], &knot_sets[1], row.len() - 1, &ctrl, params[1])
       };
-      let collapsed: Vec<Vec<f64>> = rows
-        .iter()
-        .map(|row| de_boor(degrees[1], &knot_sets[1], row, params[1]))
-        .collect();
-      de_boor(degrees[0], &knot_sets[0], &collapsed, params[0])
+      (
+        de_boor(
+          degrees[0],
+          &knot_sets[0],
+          net_rows.len() - 1,
+          &row_at,
+          params[0],
+        ),
+        scalar,
+      )
     }
     _ => return unevaluated(),
   };
 
+  if bad.get() {
+    return unevaluated();
+  }
+  if scalar {
+    return Expr::Real(result[0]);
+  }
   Expr::List(result.into_iter().map(Expr::Real).collect())
 }
 

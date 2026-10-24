@@ -4108,7 +4108,9 @@ pub(crate) fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "MatrixForm" && args.len() == 1 =>
     {
-      let data = &args[0];
+      // A SparseArray is drawn as the dense matrix it stands for.
+      let dense = functions::list_helpers_ast::densify_sparse_array(&args[0]);
+      let data = dense.as_ref().unwrap_or(&args[0]);
       if contains_graphics_placeholder(data) {
         return expr;
       }
@@ -7339,6 +7341,11 @@ fn store_function_definition(
   let raw_body_expr = syntax::pair_to_expr(body_pair.ok_or_else(|| {
     InterpreterError::EvaluationError("Missing function body".into())
   })?);
+
+  // `f[x_] := Evaluate[body]` evaluates `body` once, when the definition is
+  // made, and stores the result.
+  let raw_body_expr =
+    evaluator::assignment::evaluate_forced_body(raw_body_expr)?;
 
   // f[x_] := body /; test parses as `body = Condition[actual_body, test]`.
   // Keep the Condition wrapper on the stored body so DownValues can show

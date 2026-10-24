@@ -12038,6 +12038,22 @@ abb""#,
     assert_case("ToString[NumberForm[3.14159, {5, 2}]]", "3.14");
     assert_case("ToString[NumberForm[1234.5678, {6, 2}]]", "1234.57");
   }
+  // `Infinity` as the digit budget keeps every integer digit (no switch to
+  // scientific notation) while still fixing the decimals.
+  #[test]
+  fn to_string_number_form_infinite_digits_fixed_decimals() {
+    assert_case(
+      "ToString[NumberForm[1234567.5, {Infinity, 2}]]",
+      "1234567.50",
+    );
+    assert_case(
+      "ToString[NumberForm[1234567.5, {Infinity, 2}, DigitBlock -> 3]]",
+      "1,234,567.50",
+    );
+    assert_case("ToString[NumberForm[0.5, {Infinity, 2}]]", "0.50");
+    assert_case("ToString[NumberForm[-1234.567, {Infinity, 1}]]", "-1234.6");
+    assert_case("ToString[NumberForm[12, {Infinity, 2}]]", "12");
+  }
   #[test]
   fn to_string_number_form_fixed_pads_zeros() {
     assert_case("ToString[NumberForm[3.0, {5, 2}]]", "3.00");

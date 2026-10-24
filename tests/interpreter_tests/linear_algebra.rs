@@ -4288,6 +4288,22 @@ mod linear_model_fit {
   }
 
   #[test]
+  fn parameter_table_is_a_grid_of_headings_and_entries() {
+    // The table is a styled grid: a heading row, then one row per basis
+    // function holding its label and the `"ParameterTableEntries"` values.
+    assert_eq!(
+      interpret(
+        "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; \
+         t = lm[\"ParameterTable\"]; \
+         {Head[t], t[[1, 1, 1, 2]], t[[1, 1, 2, 1]], t[[1, 1, 3, 1]], \
+          Rest[t[[1, 1, 3]]] == lm[\"ParameterTableEntries\"][[2]]}"
+      )
+      .unwrap(),
+      "{Style, Estimate, 1, x, True}"
+    );
+  }
+
+  #[test]
   fn parameter_table_entries() {
     // Each row is {Estimate, StandardError, TStatistic, PValue} for one
     // basis function (the constant intercept, then `x`), matching

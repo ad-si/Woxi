@@ -2166,6 +2166,71 @@ mod bspline_function {
   }
 
   #[test]
+  fn spline_degree_option() {
+    assert_eq!(
+      interpret("BSplineFunction[{{1,2},{3,4},{5,7}}, SplineDegree->1][0.5]")
+        .unwrap(),
+      "{3., 4.}"
+    );
+  }
+
+  #[test]
+  fn scalar_valued_curve() {
+    assert_eq!(
+      interpret("BSplineFunction[{0,1,4,9}, SplineDegree->1][1/3]").unwrap(),
+      "1."
+    );
+  }
+
+  #[test]
+  fn scalar_valued_surface() {
+    // Two parameter dimensions over a matrix of numbers (value i + j at row
+    // i, column j): u = 1/4 is row index 1/2, v = 3/4 is column index 3/2.
+    assert_eq!(
+      interpret(
+        "BSplineFunction[{{0,1,2},{1,2,3},{2,3,4}}, 2, SplineDegree->1][0.25, 0.75]"
+      )
+      .unwrap(),
+      "2."
+    );
+  }
+
+  #[test]
+  fn closed_curve_wraps_around() {
+    assert_eq!(
+      interpret(
+        "BSplineFunction[{{0,0},{1,0},{1,1},{0,1}}, SplineDegree->1, SplineClosed->True][7/8]"
+      )
+      .unwrap(),
+      "{0., 0.5}"
+    );
+  }
+
+  #[test]
+  fn closed_in_one_direction_only() {
+    assert_eq!(
+      interpret(
+        "BSplineFunction[{{0,1,2},{1,2,3},{2,3,4}}, 2, SplineDegree->1, SplineClosed->{False,True}, Method->{\"Extrapolation\"->\"Clamp\"}][0.5, 1/2]"
+      )
+      .unwrap(),
+      "2.5"
+    );
+  }
+
+  #[test]
+  fn large_net_sampled_through_a_variable() {
+    // A function held in a variable is applied without re-walking its net,
+    // including when it sits inside a plot body that is substituted into.
+    assert_eq!(
+      interpret(
+        "f = BSplineFunction[Table[i + j, {i, 0, 50}, {j, 0, 50}], 2, SplineDegree->1]; ParametricPlot3D[{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v] + 0 f[u/6, v/4]}, {u, 0, 1}, {v, 0, 1}, PlotPoints->4]; f[0.5, 0.25]"
+      )
+      .unwrap(),
+      "37.5"
+    );
+  }
+
+  #[test]
   fn saved_binding() {
     assert_eq!(
       interpret(

@@ -3195,6 +3195,21 @@ pub fn apply_replace_repeated_ast_with_max(
   rules: &Expr,
   max_iterations: usize,
 ) -> Result<Expr, InterpreterError> {
+  // A list of rule lists (several solutions) is one replacement per list.
+  if let Expr::List(sets) = rules
+    && !sets.is_empty()
+    && sets.iter().all(|r| matches!(r, Expr::List(_)))
+  {
+    let mut results = Vec::with_capacity(sets.len());
+    for set in sets {
+      results.push(apply_replace_repeated_ast_with_max(
+        expr,
+        set,
+        max_iterations,
+      )?);
+    }
+    return Ok(Expr::List(results.into()));
+  }
   let mut current = expr.clone();
   let mut converged = false;
   for _ in 0..max_iterations {
@@ -5727,7 +5742,7 @@ pub fn get_expr_head(expr: &Expr) -> String {
     Expr::Apply { .. } => "Apply",
     Expr::ReplaceAll { .. } => "ReplaceAll",
     Expr::ReplaceRepeated { .. } => "ReplaceRepeated",
-    Expr::Function { .. } => "Function",
+    Expr::Function { .. } | Expr::NamedFunction { .. } => "Function",
     Expr::Part { .. } => "Part",
     // The head of a curried call `h[a][b]` is the compound `h[a]`, not a
     // symbol — return its rendered form so typed blanks like `_Symbol` or

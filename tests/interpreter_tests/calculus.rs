@@ -6814,6 +6814,36 @@ mod find_minimum {
   }
 
   #[test]
+  fn find_root_fires_step_monitor_per_iteration() {
+    // One firing per Newton step; the last step is the reported root.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "r = Reap[FindRoot[Cos[x] - x, {x, 1}, StepMonitor :> Sow[x]]]; \
+         {Length[r[[2, 1]]] > 1, Last[r[[2, 1]]] == (x /. r[[1]])}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
+  fn multivariate_find_root_step_monitor_sees_variables_through_a_list() {
+    // The monitor reaches the variables via `vars`; each firing sees the
+    // iterate as a point, and the last one is the solution.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "vars = {x, y}; r = Reap[FindRoot[{Sin[x] == y, x^2 + y^2 == 1}, \
+         Transpose[{vars, {3.7, 5.7}}], StepMonitor :> Sow[vars]]]; \
+         {Length[r[[2, 1]]] > 1, Last[r[[2, 1]]] == (vars /. r[[1]])}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
   fn find_minimum_step_monitor_sees_variables_through_a_list() {
     // The monitor reaches the variables indirectly via `vars`; they must be
     // bound to the current point while it runs.
@@ -22022,7 +22052,7 @@ mod find_fit_numeric_only_model {
       .unwrap(),
       "{0, 0}"
     );
-    assert_eq!(woxi::get_captured_messages_raw(), [] as [String; 0]);
+    assert_eq!(woxi::get_captured_messages_raw(), Vec::<String>::new());
   }
 }
 
@@ -22130,6 +22160,59 @@ mod recurrence_table_scaled_leading_term {
       )
       .unwrap(),
       "{1, 2, 7/2, 25/4, 89/8}"
+    );
+  }
+}
+
+mod ndsolve_for_a_function_named_null {
+  use super::*;
+
+  #[test]
+  fn applied_null_stays_symbolic_in_an_equation() {
+    assert_eq!(interpret("Null[0] == 1").unwrap(), "Null[0] == 1");
+    assert_eq!(interpret("True[0] == 1").unwrap(), "True[0] == 1");
+  }
+
+  #[test]
+  fn initial_condition_on_null_function_is_kept() {
+    assert_eq!(
+      interpret(
+        "f = NDSolveValue[{Null''[t] + Null[t] == 0, Null[0] == 1, \
+         Null'[0] == 0}, Null, {t, 0, 2}]; Head[f]"
+      )
+      .unwrap(),
+      "InterpolatingFunction"
+    );
+  }
+}
+
+mod ndsolve_derivative_unknowns_of_indexed_functions {
+  use super::*;
+
+  #[test]
+  fn derivatives_of_indexed_functions_as_unknowns() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{a[1]'[t] == 1 + 0.5 Sin[a[2][t] - a[1][t]], \
+         a[2]'[t] == 2 - 0.5 Sin[a[2][t] - a[1][t]], a[1][0] == 0, \
+         a[2][0] == 0}, {a[1]'[t], a[2]'[t]}, {t, 0, 2}]; \
+         Length[s[[1]]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn derivative_values_follow_the_equations() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{a[1]'[t] == 3, a[2]'[t] == 2 t, a[1][0] == 0, \
+         a[2][0] == 0}, {a[1]'[t], a[2]'[t]}, {t, 0, 2}]; \
+         Chop[({a[1]'[t], a[2]'[t]} /. s[[1]] /. t -> 1.5) - {3., 3.}, 10^-4]"
+      )
+      .unwrap(),
+      "{0, 0}"
     );
   }
 }

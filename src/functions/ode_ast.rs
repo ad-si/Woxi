@@ -554,23 +554,25 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .any(|u| derivative_unknown_base(u).is_some())
   {
-    let mut bases: Vec<String> = Vec::new();
+    let mut bases: Vec<Expr> = Vec::new();
     for u in unknowns {
       let base = derivative_unknown_base(u).or_else(|| match u {
-        Expr::Identifier(name) => Some(name.clone()),
-        Expr::FunctionCall { name, .. } => Some(name.clone()),
+        Expr::Identifier(_) => Some(u.clone()),
+        Expr::FunctionCall { name, .. } => Some(Expr::Identifier(name.clone())),
         _ => None,
       });
       let Some(base) = base else {
         return Ok(unevaluated("NDSolve", args));
       };
-      if !bases.contains(&base) {
+      if !bases
+        .iter()
+        .any(|b| expr_to_string(b) == expr_to_string(&base))
+      {
         bases.push(base);
       }
     }
     let mut reduced = args.to_vec();
-    reduced[1] =
-      Expr::List(bases.iter().map(|b| Expr::Identifier(b.clone())).collect());
+    reduced[1] = Expr::List(bases.into());
     let solved = ndsolve_ast_inner(&reduced)?;
     let Expr::List(solutions) = &solved else {
       return Ok(solved);
@@ -2950,7 +2952,7 @@ fn rewrite_pde_rhs_hyperbolic(
 /// check).
 /// The function a derivative unknown differentiates: `x` for `x'[t]` or
 /// `x''`, which evaluate to `Derivative[n, x, t]` and `Derivative[n, x]`.
-fn derivative_unknown_base(u: &Expr) -> Option<String> {
+fn derivative_unknown_base(u: &Expr) -> Option<Expr> {
   match u {
     Expr::FunctionCall { name, args }
       if name == "Derivative"
@@ -2958,7 +2960,29 @@ fn derivative_unknown_base(u: &Expr) -> Option<String> {
         && matches!(&args[0], Expr::Integer(_)) =>
     {
       match &args[1] {
-        Expr::Identifier(f) => Some(f.clone()),
+        f @ (Expr::Identifier(_) | Expr::FunctionCall { .. }) => {
+          Some(f.clone())
+        }
+        _ => None,
+      }
+    }
+    // The parsed form `Derivative[k][f]` / `Derivative[k][f][x]`, whose
+    // `f` may be a compound head such as `θ[1]`.
+    Expr::CurriedCall { func, args } if args.len() == 1 => {
+      match func.as_ref() {
+        Expr::FunctionCall { name, args: orders }
+          if name == "Derivative"
+            && orders.len() == 1
+            && matches!(&orders[0], Expr::Integer(_)) =>
+        {
+          match &args[0] {
+            f @ (Expr::Identifier(_) | Expr::FunctionCall { .. }) => {
+              Some(f.clone())
+            }
+            _ => None,
+          }
+        }
+        inner @ Expr::CurriedCall { .. } => derivative_unknown_base(inner),
         _ => None,
       }
     }
