@@ -9670,6 +9670,20 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   /// by many single-parameter Wolfram Demonstrations Project notebooks
   /// (independently written, not copied from any specific one).
   #[test]
+  fn manipulate_initialization_pattern_variable_named_like_a_control() {
+    // RelatedRatesClock: `rateRR[t_] = D[distRR[t], t]` with a control `t`;
+    // that `t` is the pattern variable, not the control's value.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[rateRR[t], {{t, 5}, 0, 12}, \
+       Initialization :> (distRR[t_] := t^2; rateRR[t_] = D[distRR[t], t])]",
+    )
+    .expect("Manipulate should parse and hold");
+    let _state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("should build a ManipulateState");
+    assert_eq!(woxi::interpret("rateRR[3]").unwrap(), "6");
+  }
+
+  #[test]
   fn manipulate_initialization_sees_the_controls_initial_values() {
     // A DynamicModule's variables hold their values before its
     // Initialization runs (TexasHoldEmPossibleOutcomesAfterTheFlop builds

@@ -664,7 +664,19 @@ impl ManipulateState {
       // `{SUITS, …, ControlType -> None}` list — sees them.
       let names: Vec<String> =
         state.state.iter().map(|(n, _)| n.clone()).collect();
-      let seeded = woxi::with_scoped_globals(&state.bindings(), || {
+      // A control name the code uses as a pattern variable
+      // (`rate[t_] = D[dist[t], t]`) is a different, local `t` there, so it
+      // is left unbound (Wolfram's DynamicModule renames only the free
+      // occurrences).
+      let pattern_names = woxi::syntax::string_to_expr(&init)
+        .map(|e| woxi::evaluator::scoping::pattern_variable_names(&e))
+        .unwrap_or_default();
+      let bindings: Vec<(String, String)> = state
+        .bindings()
+        .into_iter()
+        .filter(|(n, _)| !pattern_names.contains(n))
+        .collect();
+      let seeded = woxi::with_scoped_globals(&bindings, || {
         let _ = woxi::interpret_with_stdout(&init);
         woxi::functions::graphics::read_manipulate_state(&names)
       });
