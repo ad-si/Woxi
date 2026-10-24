@@ -3086,10 +3086,11 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
             && let Some(ch) = char::from_u32(code)
           {
             // `\.00` (character 0) is an invisible spacer some authors
-            // leave after a number (`RowBox[{"1", "\.00"}]`). A raw NUL is
-            // not valid in Wolfram source, so it must vanish rather than
+            // leave after a number (`RowBox[{"1", "\.00"}]`); other
+            // control codes (`\.08`, …) turn up the same way. None of them
+            // is valid in Wolfram source, so they must vanish rather than
             // break the cell's code.
-            if code != 0 {
+            if !ch.is_control() || matches!(ch, '\t' | '\n' | '\r') {
               result.push(ch);
             }
           } else {
@@ -5940,6 +5941,9 @@ Cell["Chapter 2", "Chapter"]
     // `\.00` is character 0, an invisible spacer: it must not leave a NUL
     // byte behind in the cell's code.
     assert_eq!(unescape_string("1\\.00"), "1");
+    // Other control codes (e.g. backspace) are invisible spacers too.
+    assert_eq!(unescape_string("0\\.08"), "0");
+    assert_eq!(unescape_code_string("{0, 0\\.08, 1}"), "{0, 0, 1}");
     assert_eq!(unescape_code_string("caf\\.e9"), "caf\u{E9}");
     // An incomplete/invalid escape is left untouched rather than eating
     // following characters.
