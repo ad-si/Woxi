@@ -11037,8 +11037,10 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       return Ok(id_expr("Indeterminate"));
     }
 
-    // x / x → 1 for identical symbolic expressions
-    if expr_to_string(a) == expr_to_string(b) {
+    // x / x → 1 for identical symbolic expressions (compared structurally:
+    // printing both on every division was the cost of dividing big
+    // symbolic matrices).
+    if crate::evaluator::pattern_matching::expr_equal(a, b) {
       return Ok(Expr::Integer(1));
     }
 

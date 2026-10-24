@@ -3503,6 +3503,19 @@ increasing real part, then decreasing imaginary part); `Eigenvalues` of the
 `{{0, 0, 0, -1}, …}` shift matrix in wolframscript is in neither order.
 
 
+### `Solve` of an arbitrary-precision polynomial answers at machine precision
+
+```sh
+wolframscript -code 'Solve[N[z^3 - 2 z + 1/3, 10] == 0, z]'
+# {{z -> -1.4911540841057329132`9.544…}, …}
+woxi eval 'Solve[N[z^3 - 2 z + 1/3, 10] == 0, z]'
+# {{z -> -1.491154084105733}, …}
+```
+
+The roots are found numerically at machine precision; Wolfram carries the
+coefficients' precision (and its loss) into them.
+
+
 ### `Flat` without `OneIdentity` binds singletons bare
 
 For a head that is `Flat` but not `OneIdentity`, Wolfram matches a blank that

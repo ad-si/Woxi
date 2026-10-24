@@ -4764,10 +4764,16 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
 
-      // Higher degree: try Factor-based solving
-      if let Ok(factored) = crate::functions::polynomial_ast::factor_ast(
-        std::slice::from_ref(&expanded),
-      ) {
+      // Higher degree: try Factor-based solving. Arbitrary-precision
+      // coefficients are left to the numeric solver below: factoring their
+      // exact rational images (`N[BernoulliB[20, z], 10]`) runs a GCD on
+      // enormous rationals for nothing.
+      let has_bigfloat = coeffs.iter().any(contains_bigfloat);
+      if !has_bigfloat
+        && let Ok(factored) = crate::functions::polynomial_ast::factor_ast(
+          std::slice::from_ref(&expanded),
+        )
+      {
         let factors = extract_times_factors(&factored);
         if factors.len() > 1 {
           // Solve each factor separately
@@ -5366,6 +5372,19 @@ fn term_magnitude(term: &Expr) -> f64 {
 }
 
 /// Whether any number in `expr` is a machine-precision one.
+fn contains_bigfloat(expr: &Expr) -> bool {
+  match expr {
+    Expr::BigFloat(..) => true,
+    Expr::List(items) => items.iter().any(contains_bigfloat),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_bigfloat),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_bigfloat(left) || contains_bigfloat(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_bigfloat(operand),
+    _ => false,
+  }
+}
+
 fn contains_inexact_number(expr: &Expr) -> bool {
   match expr {
     Expr::Real(_) => true,

@@ -4895,6 +4895,20 @@ mod symbolic_equal {
 mod solve {
   use super::*;
 
+  // A polynomial with arbitrary-precision coefficients is solved
+  // numerically rather than factored over its exact rational image.
+  #[test]
+  fn arbitrary_precision_polynomial_of_high_degree() {
+    assert_eq!(
+      interpret(
+        "sol = Solve[N[BernoulliB[20, z], 10] == 0, z]; \
+         {Length[sol], Round[10^6 Max[Abs[BernoulliB[20, z] /. sol]]]}"
+      )
+      .unwrap(),
+      "{20, 0}"
+    );
+  }
+
   // A mass balance: seven unknowns, all but one equation linear, one
   // bilinear term. The linear unknowns are substituted away first, so it
   // solves at once ("Evaporative Crystallization with Recycle").
