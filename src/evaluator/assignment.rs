@@ -3018,6 +3018,71 @@ fn assign_part(
   Ok(rhs_value)
 }
 
+/// The symbol whose NValues hold `N[target, …]`: a bare symbol, or the
+/// head of a call (`N[f[1]] = v` is an NValue of `f`).
+fn n_value_tag(lhs_args: &[Expr]) -> Option<String> {
+  if lhs_args.is_empty() || lhs_args.len() > 2 {
+    return None;
+  }
+  match &lhs_args[0] {
+    Expr::Identifier(name) => Some(name.clone()),
+    Expr::FunctionCall { name, .. } => Some(name.clone()),
+    _ => None,
+  }
+}
+
+/// Store `N[target] → rhs` (or `N[target, p] → rhs`) under the target's
+/// NValues with the canonical left side Wolfram reports: `N[target]` is
+/// `N[target, {MachinePrecision, MachinePrecision}]` and a numeric `p`
+/// becomes `N[target, {p., Infinity}]`. A same-LHS rule is replaced.
+fn store_n_value(lhs_args: &[Expr], rhs: Expr) -> Result<(), InterpreterError> {
+  // `N` holds nothing, so the target evaluates first: with `F[x_] = G[x]`
+  // in effect, `N[F[x_]] = v` is an NValue of `G`.
+  let target = match &lhs_args[0] {
+    call @ Expr::FunctionCall { .. }
+      if crate::evaluator::pattern_matching::contains_pattern(call) =>
+    {
+      normalize_structural_pattern(call)
+    }
+    call @ Expr::FunctionCall { .. } => evaluate_expr_to_expr(call)?,
+    other => other.clone(),
+  };
+  let mut lhs_args = lhs_args.to_vec();
+  lhs_args[0] = target;
+  let lhs_args = &lhs_args[..];
+  let Some(tag) = n_value_tag(lhs_args) else {
+    return Ok(());
+  };
+  let prec_part = if lhs_args.len() == 2 {
+    let prec_eval = evaluate_expr_to_expr(&lhs_args[1])?;
+    match &prec_eval {
+      Expr::Integer(n) => {
+        Expr::List(vec![Expr::Real(*n as f64), id_expr("Infinity")].into())
+      }
+      Expr::Real(_) => {
+        Expr::List(vec![prec_eval.clone(), id_expr("Infinity")].into())
+      }
+      // A non-numeric precision (`N[a, p_?test] := …`) is kept verbatim,
+      // mirroring Wolfram's HoldPattern round-trip.
+      _ => prec_eval,
+    }
+  } else {
+    Expr::List(
+      vec![id_expr("MachinePrecision"), id_expr("MachinePrecision")].into(),
+    )
+  };
+  let canonical_lhs = call("N", vec![lhs_args[0].clone(), prec_part]);
+  N_VALUES.with(|m| {
+    let mut map = m.borrow_mut();
+    let entries = map.entry(tag).or_default();
+    entries.retain(|(lhs_p, _)| {
+      !crate::evaluator::pattern_matching::expr_equal(lhs_p, &canonical_lhs)
+    });
+    entries.push((canonical_lhs, rhs));
+  });
+  Ok(())
+}
+
 pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   let lhs = &normalize_symbol_lhs(lhs);
   // `Evaluate[target] = value` (also written `target // Evaluate = value`)
@@ -3244,50 +3309,17 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
-  // Handle `N[sym, …] = value` (and `N[sym] = value`): store under
-  // the symbol's NValues with the canonical LHS Wolfram reports.
-  // `N[sym] = v` uses `N[sym, {MachinePrecision, MachinePrecision}]`,
-  // `N[sym, p] = v` (numeric p) uses `N[sym, {p., Infinity}]`. Falls
-  // through if sym isn't a bare Identifier.
+  // `N[target, …] = value`: stored under the NValues of the target's
+  // symbol, not as a DownValue of `N`.
   if let Expr::FunctionCall {
     name: func_name,
     args: lhs_args,
   } = lhs
     && func_name == "N"
-    && (lhs_args.len() == 1 || lhs_args.len() == 2)
-    && let Expr::Identifier(sym_name) = &lhs_args[0]
+    && n_value_tag(lhs_args).is_some()
   {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
-    let prec_part = if lhs_args.len() == 2 {
-      let prec_eval = evaluate_expr_to_expr(&lhs_args[1])?;
-      let as_real = match &prec_eval {
-        Expr::Integer(n) => Some(Expr::Real(*n as f64)),
-        Expr::Real(_) => Some(prec_eval.clone()),
-        _ => None,
-      };
-      if let Some(prec_real) = as_real {
-        Expr::List(vec![prec_real, id_expr("Infinity")].into())
-      } else {
-        // Non-numeric precision (`N[a, p_?test] := …` style) — keep
-        // the user's spec verbatim, mirroring Wolfram's HoldPattern
-        // round-trip.
-        prec_eval
-      }
-    } else {
-      Expr::List(
-        vec![id_expr("MachinePrecision"), id_expr("MachinePrecision")].into(),
-      )
-    };
-    let canonical_lhs =
-      call("N", vec![Expr::Identifier(sym_name.clone()), prec_part]);
-    N_VALUES.with(|m| {
-      let mut map = m.borrow_mut();
-      let entries = map.entry(sym_name.clone()).or_default();
-      entries.retain(|(lhs_p, _)| {
-        !crate::evaluator::pattern_matching::expr_equal(lhs_p, &canonical_lhs)
-      });
-      entries.push((canonical_lhs, rhs_value.clone()));
-    });
+    store_n_value(lhs_args, rhs_value.clone())?;
     return Ok(rhs_value);
   }
 
@@ -3996,6 +4028,18 @@ pub fn set_delayed_ast(
     try_assignment_upvalue("SetDelayed", lhs, body)
   {
     return result;
+  }
+  // `N[target, …] := body` is an NValue of the target's symbol; the body
+  // is evaluated each time the rule fires.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "N"
+    && n_value_tag(lhs_args).is_some()
+  {
+    store_n_value(lhs_args, body.clone())?;
+    return Ok(null_expr());
   }
 
   // Single-bracket part assignment on an existing Association:
@@ -5896,8 +5940,9 @@ fn normalize_lhs_for_upset(lhs: &Expr) -> Expr {
 /// The symbols an `UpSet`/`UpSetDelayed` left-hand side attaches its rule
 /// to: every argument that is a symbol, a call headed by one, or a pattern
 /// restricted to a head (`_Q`, or `Pattern[c, Blank[Q]]` written in
-/// FullForm). Unrestricted patterns (`r_`, `Pattern[r, Blank[]]`,
-/// `opts:OptionsPattern[]`) name no symbol and are skipped.
+/// FullForm), and the head of any other atom or list. Unrestricted
+/// patterns (`r_`, `Pattern[r, Blank[]]`, `opts:OptionsPattern[]`) name no
+/// symbol and are skipped.
 fn upvalue_tags(lhs_args: &[Expr]) -> Vec<String> {
   let mut tags: Vec<String> = Vec::new();
   for arg in lhs_args {
@@ -5920,6 +5965,17 @@ fn upvalue_tags(lhs_args: &[Expr]) -> Vec<String> {
         {
           Some(name.clone())
         }
+        Expr::FunctionCall { .. } => None,
+        // An atom or a list names its (protected) head: `k[1] ^= v`
+        // tries the tag Integer.
+        atom @ (Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+        | Expr::String(_)
+        | Expr::List(_)) => {
+          Some(crate::evaluator::pattern_matching::get_expr_head(atom))
+        }
         _ => None,
       });
     if let Some(tag) = tag
@@ -5929,6 +5985,37 @@ fn upvalue_tags(lhs_args: &[Expr]) -> Vec<String> {
     }
   }
   tags
+}
+
+/// The tags of `lhs`'s upvalue that can take the rule. A protected tag
+/// (`Integer` in `k[1]`, `Sin` in `k[Sin[x]]`) gets `head::write`, and a
+/// left side with no tag at all `head::nosym`.
+fn writable_upvalue_tags(
+  head: &str,
+  lhs: &Expr,
+  lhs_args: &[Expr],
+) -> Vec<String> {
+  let tags = upvalue_tags(lhs_args);
+  if tags.is_empty() {
+    crate::emit_message(&format!(
+      "{head}::nosym: {} does not contain a symbol to attach a rule to.",
+      crate::syntax::expr_to_output(lhs)
+    ));
+  }
+  tags
+    .into_iter()
+    .filter(|tag| {
+      let protected =
+        crate::evaluator::pattern_matching::is_symbol_protected(tag);
+      if protected {
+        crate::emit_message(&format!(
+          "{head}::write: Tag {tag} in {} is Protected.",
+          crate::syntax::expr_to_output(lhs)
+        ));
+      }
+      !protected
+    })
+    .collect()
 }
 
 /// UpSet[lhs, rhs] — automatically assigns upvalues to all symbols in the arguments of lhs.
@@ -5964,56 +6051,16 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(eval_rhs);
   }
 
-  // `N[sym, …] ^= value` goes to NValues (under sym), not UpValues
-  // — Wolfram redirects these the same way `N[sym, …] = value`
-  // does. Mirror the `set_ast` N-handler so `UpValues[sym]` stays
-  // empty and `NValues[sym]` reflects the rule.
-  if lhs_head == "N"
-    && (lhs_args.len() == 1 || lhs_args.len() == 2)
-    && let Expr::Identifier(sym_name) = &lhs_args[0]
-  {
-    let prec_part = if lhs_args.len() == 2 {
-      let prec_eval = evaluate_expr_to_expr(&lhs_args[1])?;
-      let as_real = match &prec_eval {
-        Expr::Integer(n) => Some(Expr::Real(*n as f64)),
-        Expr::Real(_) => Some(prec_eval.clone()),
-        _ => None,
-      };
-      if let Some(prec_real) = as_real {
-        Expr::List(vec![prec_real, id_expr("Infinity")].into())
-      } else {
-        prec_eval
-      }
-    } else {
-      Expr::List(
-        vec![id_expr("MachinePrecision"), id_expr("MachinePrecision")].into(),
-      )
-    };
-    let canonical_lhs =
-      call("N", vec![Expr::Identifier(sym_name.clone()), prec_part]);
-    N_VALUES.with(|m| {
-      let mut map = m.borrow_mut();
-      let entries = map.entry(sym_name.clone()).or_default();
-      entries.retain(|(lhs_p, _)| {
-        !crate::evaluator::pattern_matching::expr_equal(lhs_p, &canonical_lhs)
-      });
-      entries.push((canonical_lhs, eval_rhs.clone()));
-    });
+  // `N[target, …] ^= value` goes to NValues, not UpValues — the same
+  // store as `N[target, …] = value`.
+  if lhs_head == "N" && n_value_tag(&lhs_args).is_some() {
+    store_n_value(&lhs_args, eval_rhs.clone())?;
     return Ok(eval_rhs);
   }
 
-  let tags = upvalue_tags(&lhs_args);
-
-  if tags.is_empty() {
-    return Err(InterpreterError::EvaluationError(format!(
-      "UpSet::nosym: {} does not contain a symbol to attach a rule to.",
-      expr_to_string(lhs)
-    )));
-  }
-
-  // Store upvalue for each tag
-  for tag in &tags {
-    tag_set_delayed_ast(&Expr::Identifier(tag.clone()), lhs, &eval_rhs, true)?;
+  // Store upvalue for each writable tag; a protected one is reported.
+  for tag in writable_upvalue_tags("UpSet", lhs, &lhs_args) {
+    tag_set_delayed_ast(&Expr::Identifier(tag), lhs, &eval_rhs, true)?;
   }
 
   // UpSet returns the evaluated RHS
@@ -6039,21 +6086,17 @@ pub fn upset_delayed_ast(
   };
   let lhs = &normalized_lhs;
 
-  let tags = upvalue_tags(&lhs_args);
-
-  if tags.is_empty() {
-    return Err(InterpreterError::EvaluationError(format!(
-      "UpSetDelayed::nosym: {} does not contain a symbol to attach a rule to.",
-      expr_to_string(lhs)
-    )));
-  }
-
+  let all_tags = upvalue_tags(&lhs_args).len();
+  let tags = writable_upvalue_tags("UpSetDelayed", lhs, &lhs_args);
   // Store delayed upvalue for each tag (evaluate_rhs=false for delayed)
   for tag in &tags {
     tag_set_delayed_ast(&Expr::Identifier(tag.clone()), lhs, rhs, false)?;
   }
 
-  // UpSetDelayed returns Null
+  // UpSetDelayed returns Null, or $Failed when a tag could not be written.
+  if tags.is_empty() || tags.len() < all_tags {
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  }
   Ok(null_expr())
 }
 

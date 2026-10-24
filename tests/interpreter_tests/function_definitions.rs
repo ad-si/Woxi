@@ -1420,6 +1420,39 @@ mod messages {
 mod nvalues {
   use super::*;
 
+  // `N[f[1]] = v` and `N[f[x_]] := body` are NValues of `f`, matched
+  // against the call as written; the value is then numericized.
+  #[test]
+  fn nvalues_of_a_call() {
+    assert_eq!(
+      interpret(
+        "N[f[1]] = {{1, 2}}; N[g[1, R]] = {{3, 4}}; \
+         {N[f[1]], N[{f[1], g[1, R]}], Join @@ N[{f[1]}], N[f[2]]}"
+      )
+      .unwrap(),
+      "{{{1., 2.}}, {{{1., 2.}}, {{3., 4.}}}, {{1., 2.}}, f[2.]}"
+    );
+    assert_eq!(
+      interpret(
+        "N[a] := 2 + 1; N[h[x_]] := x^2; {N[a], NValues[a], N[h[3]], \
+         NValues[h], N[h[3], 20], N[{h[2], h[x], 1/3}], DownValues[N]}"
+      )
+      .unwrap(),
+      "{3., {HoldPattern[N[a, {MachinePrecision, MachinePrecision}]] :> \
+       2 + 1}, 9., {HoldPattern[N[h[x_], {MachinePrecision, \
+       MachinePrecision}]] :> x^2}, h[3.`20.], {4., x^2, \
+       0.3333333333333333}, {}}"
+    );
+    assert_eq!(
+      interpret(
+        "N[k[1], 30] = 2; N[k[_], 10] := 5; N[p[x_]] ^= x + 1; \
+         {N[k[1], 30], N[k[1]], N[p[2]], UpValues[p]}"
+      )
+      .unwrap(),
+      "{2.`30., k[1.], 3., {}}"
+    );
+  }
+
   #[test]
   fn nvalues_of_undefined_symbol_is_empty_list() {
     assert_eq!(interpret("NValues[d]").unwrap(), "{}");
@@ -4261,18 +4294,13 @@ f[x_] := x^2"#,
   #[test]
   fn list_literal_51() {
     // Same family as case 4652. `N[F[x_]] = x^2` evaluates its LHS at Set
-    // time: with `F[x_] = G[x]` in effect, `F[x_]` resolves to `G[x_]`
-    // (the same Set-time resolution as `list_literal_50`'s `H[A[y_]]`, now
-    // shared between `=` and `:=`). `ClearAll[F]` doesn't touch the
-    // resolved rule, so `N[F[2]]` (no rule on `F`) falls back to plain
-    // numericization, `F[2.]`, while `N[G[2]]` matches and gives `4`.
-    // wolframscript instead installs the resolved rule as an `NValues[G]`
-    // entry, so `N[G[2]]` returns the machine-real `4.` — Woxi's version
-    // stores it as an ordinary DownValue on `N` itself, so the body's
-    // exact result comes back uncoerced; see conformance_gaps.md.
+    // time: with `F[x_] = G[x]` in effect, `F[x_]` resolves to `G[x_]`, and
+    // the rule becomes an NValue of `G`. `ClearAll[F]` doesn't touch it, so
+    // `N[F[2]]` falls back to plain numericization, `F[2.]`, while
+    // `N[G[2]]` matches and its result is numericized to `4.`.
     assert_case(
       r#"a=b; a=4; {a, b}; a=b; b=4;  {a,b}; a=b; b=4; Clear[a]; {a,b}; a=b; b=4; Clear[b]; {a, b}; F[x_]:=x^2; G[x_]:=F[x]; ClearAll[F]; G[u]; F[x_]:=G[x]; G[x_]:=x^2; ClearAll[G]; F[u]; F[x_]:=G[x]; H[F[y_]]:=Q[y]; ClearAll[F]; {H[G[5]],H[F[5]]}; F[x_]:=G[x]; H[F[y_]]^:=Q[y]; ClearAll[F]; {H[G[5]],H[F[5]]}; F[x_]:=G[x]; H[F[y_]]:=Q[y]; ClearAll[G]; {H[G[5]],H[F[5]]}; F[x_]=G[x]; H[F[y_]]^=Q[y]; ClearAll[G]; {H[G[5]],H[F[5]]}; A[x_]=B[x];B[x_]=F[x];F[x_]=G[x];H[A[y_]]=Q[y]; ClearAll[F];{H[A[5]],H[B[5]],H[F[5]],H[G[5]]}; F[x_]=G[x];N[F[x_]]=x^2;ClearAll[F];{N[F[2]],N[G[2]]}"#,
-      r#"{F[2.], 4}"#,
+      r#"{F[2.], 4.}"#,
     );
   }
   #[test]

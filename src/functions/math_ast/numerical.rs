@@ -121,6 +121,9 @@ fn is_exact_rational(expr: &Expr) -> bool {
   }
 }
 
+/// `$MachinePrecision`: the decimal digits of a machine real.
+pub(crate) const MACHINE_PRECISION_DIGITS: f64 = 15.954589770191003;
+
 /// Recursively convert an expression to numeric (Real) form
 pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
@@ -144,6 +147,9 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       n.to_string().parse::<f64>().unwrap_or(f64::INFINITY),
     )),
     Expr::FunctionCall { name, args } => {
+      if let Some(value) = user_n_value(expr, None)? {
+        return n_eval(&value);
+      }
       // First try to evaluate the whole expression to a number
       if let Some(v) = try_eval_to_f64(expr) {
         return Ok(Expr::Real(v));
@@ -335,50 +341,8 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       if let Some(v) = try_eval_to_f64(expr) {
         return Ok(Expr::Real(v));
       }
-      // Look up user-installed `N[sym, …] = value` rules registered
-      // under the symbol's NValues. Wolfram stores these per-symbol
-      // (not as a DownValue of `N`), so this lookup is needed before
-      // falling back to the generic `N` dispatch. `n_eval` is the
-      // machine-precision path, so prefer the
-      // `N[sym, {MachinePrecision, MachinePrecision}]` entry.
-      if let Expr::Identifier(name) = expr {
-        let nval = crate::evaluator::assignment::N_VALUES
-          .with(|m| m.borrow().get(name).cloned());
-        if let Some(entries) = nval {
-          // The canonical Wolfram form is
-          // `N[sym, {MachinePrecision, MachinePrecision}]`, but
-          // user-supplied `NValues[sym] := {N[sym, MachinePrecision]
-          // :> v}` rules also need to fire here. Accept both shapes:
-          //   N[sym, {MachinePrecision, MachinePrecision}]
-          //   N[sym, MachinePrecision]
-          // wolframscript does NOT fire a bare `N[sym]` LHS — that
-          // pattern doesn't match the internal `N[sym, prec]` call —
-          // so a user-supplied `NValues[sym] := {N[sym] :> v}` is
-          // silently ignored at lookup. Mirror that.
-          let is_machine_precision_lhs = |lhs_p: &Expr| -> bool {
-            let Expr::FunctionCall { name: ln, args: la } = lhs_p else {
-              return false;
-            };
-            if ln != "N" || la.len() != 2 {
-              return false;
-            }
-            match &la[1] {
-              Expr::Identifier(s) if s == "MachinePrecision" => true,
-              Expr::List(prec) => {
-                prec.len() == 2
-                  && matches!(&prec[0],
-                    Expr::Identifier(s) if s == "MachinePrecision")
-              }
-              _ => false,
-            }
-          };
-          for (lhs_p, rhs) in &entries {
-            if is_machine_precision_lhs(lhs_p) || is_blank_precision_lhs(lhs_p)
-            {
-              return n_eval(rhs);
-            }
-          }
-        }
+      if let Some(value) = user_n_value(expr, None)? {
+        return n_eval(&value);
       }
       // No built-in numeric value for this symbol — try to invoke
       // `N[expr]` so any user-installed `N[a] = 10.9` style DownValue
@@ -522,15 +486,15 @@ pub fn machine_power_out_of_range(
   if !(a > 0.0 && a.is_finite() && b.is_finite()) {
     return None;
   }
-  const MACHINE_PREC: f64 = 15.954589770191003;
   // The promoted number stores every decimal digit, so a result with an
   // absurd magnitude stays a machine overflow (`Infinity`).
   if (b * a.log10()).abs() > MAX_PROMOTED_DECIMAL_EXPONENT {
     return None;
   }
   let rm = RoundingMode::ToEven;
-  let result_prec = MACHINE_PREC - (b * a.ln()).abs().max(1.0).log10();
-  let bits = nominal_bits(MACHINE_PREC.ceil() as usize);
+  let result_prec =
+    MACHINE_PRECISION_DIGITS - (b * a.ln()).abs().max(1.0).log10();
+  let bits = nominal_bits(MACHINE_PRECISION_DIGITS.ceil() as usize);
   let mut cc = match Consts::new() {
     Ok(c) => c,
     Err(e) => {
@@ -1720,6 +1684,11 @@ fn n_eval_arbitrary_partial(
   }
 
   match expr {
+    Expr::FunctionCall { .. }
+      if let Some(value) = user_n_value(expr, Some(precision))? =>
+    {
+      n_eval_arbitrary(&value, precision)
+    }
     Expr::FunctionCall { name, args } => {
       // Honour NHoldAll / NHoldFirst / NHoldRest so e.g. `N[Out[0], 50]`
       // doesn't recurse into Out's slot and rewrite the index as a
@@ -1807,89 +1776,102 @@ fn n_eval_arbitrary_partial(
     // the requested precision. Also fire for "any-precision" LHS shapes
     // like `N[sym, _]` (Blank[]) or `N[sym, x_]` (Pattern[x, Blank[]]),
     // which match every requested precision.
-    Expr::Identifier(name) => {
-      let nval = crate::evaluator::assignment::N_VALUES
-        .with(|m| m.borrow().get(name).cloned());
-      if let Some(entries) = nval {
-        for (lhs_p, rhs) in &entries {
-          if let Some(p) = arbitrary_precision_lhs(lhs_p)
-            && (p as usize) == (precision.floor() as usize)
-          {
-            return n_eval_arbitrary(rhs, precision);
-          }
-          if is_blank_precision_lhs(lhs_p) {
-            return n_eval_arbitrary(rhs, precision);
-          }
-        }
-      }
-      Ok(expr.clone())
-    }
+    Expr::Identifier(_) => match user_n_value(expr, Some(precision))? {
+      Some(value) => n_eval_arbitrary(&value, precision),
+      None => Ok(expr.clone()),
+    },
     // Other non-numeric expressions: leave as-is
     _ => Ok(expr.clone()),
   }
 }
 
-/// Does `lhs` have shape `N[sym, _]` (Blank[]) or `N[sym, x_]`
-/// (Pattern[name, Blank[]])? Such an LHS pattern matches *any*
-/// precision, so the corresponding NValue rule should fire on every
-/// `N[sym, p]` lookup regardless of `p`.
-fn is_blank_precision_lhs(lhs: &Expr) -> bool {
-  let Expr::FunctionCall { name, args } = lhs else {
-    return false;
+/// The value of a user NValue rule for `expr` — `N[a] = v`, `N[f[1]] = v`,
+/// `N[f[x_]] := body`, stored under the NValues of `a` or `f` — at machine
+/// precision (`precision` None) or at `precision` digits. The rule's
+/// target is matched against `expr` as written, before its arguments are
+/// numericized, as Wolfram does (`N[f[1]] = v` does not fire for `f[1.]`).
+pub(crate) fn user_n_value(
+  expr: &Expr,
+  precision: Option<f64>,
+) -> Result<Option<Expr>, InterpreterError> {
+  let tag = match expr {
+    Expr::Identifier(name) => name,
+    Expr::FunctionCall { name, .. } => name,
+    _ => return Ok(None),
   };
-  if name != "N" || args.len() != 2 {
-    return false;
-  }
-  is_blank_pattern_expr(&args[1])
-}
-
-/// Recognise any of the Blank-style pattern shapes that match every
-/// concrete argument: `Blank[]` / `Blank[h]`, `Pattern[…, Blank[…]]`,
-/// or the AST-level `Expr::PatternSimple` / `Expr::PatternTest` etc.
-/// Plus a string-level fallback against the FullForm rendering for
-/// shapes Woxi displays as `Pattern[, Blank[]]` but stores under a
-/// different Expr variant.
-fn is_blank_pattern_expr(e: &Expr) -> bool {
-  match e {
-    Expr::FunctionCall { name: n2, .. } if n2 == "Blank" => true,
-    Expr::FunctionCall { name: n2, args: pa }
-      if n2 == "Pattern" && pa.len() == 2 =>
-    {
-      is_blank_pattern_expr(&pa[1])
+  let Some(entries) = crate::evaluator::assignment::N_VALUES
+    .with(|m| m.borrow().get(tag).cloned())
+  else {
+    return Ok(None);
+  };
+  // Wolfram asks for the value at machine precision as
+  // `N[expr, {$MachinePrecision, $MachinePrecision}]` and then
+  // `N[expr, $MachinePrecision]`, and at `p` digits as `N[expr, p.]` and
+  // then `N[expr, {p., Infinity}]`; each rule's left side is matched
+  // against those calls in turn (so `N[c, p_?(# > 10 &)] := p` gives
+  // `11.` for `N[c, 11]`). A literal `MachinePrecision` on a stored left
+  // side stands for its value.
+  let machine = Expr::Real(MACHINE_PRECISION_DIGITS);
+  let candidates: Vec<Expr> = match precision {
+    None => vec![
+      Expr::List(vec![machine.clone(), machine.clone()].into()),
+      machine,
+    ],
+    Some(p) => {
+      let p = Expr::Real(p);
+      vec![
+        p.clone(),
+        Expr::List(vec![p, Expr::Identifier("Infinity".to_string())].into()),
+      ]
     }
-    _ => {
-      let rendered = expr_to_string(e);
-      rendered == "_"
-        || rendered.starts_with("Blank[")
-        || rendered.contains("Pattern[")
+  };
+  let machine_symbol_to_value = |e: &Expr| -> Expr {
+    match e {
+      Expr::Identifier(s) if s == "MachinePrecision" => {
+        Expr::Real(MACHINE_PRECISION_DIGITS)
+      }
+      Expr::List(items) => Expr::List(
+        items
+          .iter()
+          .map(|i| match i {
+            Expr::Identifier(s) if s == "MachinePrecision" => {
+              Expr::Real(MACHINE_PRECISION_DIGITS)
+            }
+            other => other.clone(),
+          })
+          .collect(),
+      ),
+      other => other.clone(),
+    }
+  };
+  for candidate in &candidates {
+    let call = Expr::FunctionCall {
+      name: "N".to_string(),
+      args: vec![expr.clone(), candidate.clone()].into(),
+    };
+    for (lhs, rhs) in &entries {
+      let Expr::FunctionCall { name, args } = lhs else {
+        continue;
+      };
+      if name != "N" || args.len() != 2 {
+        continue;
+      }
+      let pattern = Expr::FunctionCall {
+        name: "N".to_string(),
+        args: vec![args[0].clone(), machine_symbol_to_value(&args[1])].into(),
+      };
+      if let Some(bindings) =
+        crate::evaluator::pattern_matching::match_pattern(&call, &pattern)
+        && let Some(value) =
+          crate::evaluator::pattern_matching::instantiate_replacement(
+            rhs, &bindings,
+          )?
+      {
+        return Ok(Some(value));
+      }
     }
   }
-}
-
-/// If `lhs` has shape `N[sym, {p_real, Infinity}]` (canonical Wolfram
-/// form for `N[sym, p] = value` rules), return `p`. Otherwise None.
-fn arbitrary_precision_lhs(lhs: &Expr) -> Option<f64> {
-  let Expr::FunctionCall { name, args } = lhs else {
-    return None;
-  };
-  if name != "N" || args.len() != 2 {
-    return None;
-  }
-  let Expr::List(prec) = &args[1] else {
-    return None;
-  };
-  if prec.len() != 2 {
-    return None;
-  }
-  let p = match &prec[0] {
-    Expr::Real(v) => *v,
-    Expr::Integer(n) => *n as f64,
-    _ => return None,
-  };
-  if !matches!(&prec[1], Expr::Identifier(s) if s == "Infinity") {
-    return None;
-  }
-  Some(p)
+  Ok(None)
 }
 
 /// Recursively convert an Expr to a BigFloat with the given precision.

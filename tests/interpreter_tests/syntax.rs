@@ -7305,6 +7305,40 @@ mod tag_unset {
 mod upset {
   use super::*;
 
+  // A protected tag (an atom's head, or a protected symbol) is reported
+  // and skipped; the other tags still take the rule.
+  #[test]
+  fn protected_tags_are_reported() {
+    clear_state();
+    let result =
+      interpret_with_stdout("k[1, a] ^= 3; {UpValues[a], k[1, a]}").unwrap();
+    assert_eq!(result.result, "{{HoldPattern[k[1, a]] :> 3}, 3}");
+    assert_eq!(
+      result.warnings,
+      vec!["UpSet::write: Tag Integer in k[1, a] is Protected."]
+    );
+    let result = interpret_with_stdout("k[Sin[x]] ^= 3").unwrap();
+    assert_eq!(result.result, "3");
+    assert_eq!(
+      result.warnings,
+      vec!["UpSet::write: Tag Sin in k[Sin[x]] is Protected."]
+    );
+    let result = interpret_with_stdout("k[x_] ^= 3").unwrap();
+    assert_eq!(result.result, "3");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "UpSet::nosym: k[x_] does not contain a symbol to attach a rule to."
+      ]
+    );
+    let result = interpret_with_stdout("k[{1}] ^:= 3").unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert_eq!(
+      result.warnings,
+      vec!["UpSetDelayed::write: Tag List in k[{1}] is Protected."]
+    );
+  }
+
   #[test]
   fn basic_upset() {
     clear_state();
