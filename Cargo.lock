@@ -7025,6 +7025,7 @@ dependencies = [
  "ripemd",
  "runtimelib",
  "rust_xlsxwriter",
+ "rustc-hash 2.1.1",
  "rustyline",
  "serde",
  "serde_json",

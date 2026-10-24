@@ -1309,10 +1309,10 @@ pub fn dispatch_predicate_functions(
       };
       // Check user-defined attributes first, then combine with built-in
       let user_attrs =
-        crate::FUNC_ATTRS.with(|m| m.borrow().get(sym_name).cloned());
+        crate::FUNC_ATTRS.with(|m| m.borrow().get(sym_name).copied());
       let builtin = get_builtin_attributes(sym_name);
       let removed = crate::FUNC_ATTRS_REMOVED
-        .with(|m| m.borrow().get(sym_name).cloned())
+        .with(|m| m.borrow().get(sym_name).copied())
         .unwrap_or_default();
       let mut all_attrs = builtin;
       all_attrs.remove(removed.to_u32());

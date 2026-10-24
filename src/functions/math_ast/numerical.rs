@@ -213,7 +213,7 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       let attrs = {
         let builtin = crate::evaluator::get_builtin_attributes(name);
         let user = crate::FUNC_ATTRS
-          .with(|m| m.borrow().get(name).cloned().unwrap_or_default());
+          .with(|m| m.borrow().get(name).copied().unwrap_or_default());
         let mut combined = builtin;
         combined.add(user.to_u32());
         combined
@@ -1727,7 +1727,7 @@ fn n_eval_arbitrary_partial(
       let attrs = {
         let builtin = crate::evaluator::get_builtin_attributes(name);
         let user = crate::FUNC_ATTRS
-          .with(|m| m.borrow().get(name).cloned().unwrap_or_default());
+          .with(|m| m.borrow().get(name).copied().unwrap_or_default());
         let mut combined = builtin;
         combined.add(user.to_u32());
         combined

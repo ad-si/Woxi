@@ -923,6 +923,40 @@ mod outer_extended {
     );
   }
 
+  // Pattern rules and Band rules can share one rule list.
+  #[test]
+  fn sparse_array_pattern_and_band_rules_mixed() {
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{{i_, i_} -> i, Band[{1, 2}] -> r, \
+         Band[{2, 1}] -> r}, {4, 4}]]"
+      )
+      .unwrap(),
+      "{{1, r, 0, 0}, {r, 2, r, 0}, {0, r, 3, r}, {0, 0, r, 4}}"
+    );
+  }
+
+  // MatrixForm of a SparseArray is drawn as the dense matrix.
+  #[test]
+  fn matrix_form_of_sparse_array_draws_dense_matrix() {
+    let svg = interpret(
+      "ExportString[MatrixForm[SparseArray[{{1, 1} -> a, {2, 2} -> b}, \
+       {2, 2}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("SparseArray"), "{svg}");
+    assert!(
+      svg.contains(">a</text>") && svg.contains(">b</text>"),
+      "{svg}"
+    );
+    let tf = interpret(
+      "ExportString[TraditionalForm[MatrixForm[SparseArray[{{1, 1} -> a, \
+       {2, 2} -> b}, {2, 2}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!tf.contains("SparseArray"), "{tf}");
+  }
+
   // First/Last/Part on a 1-D SparseArray return the scalar entry (or the
   // default value) at that position, like a dense vector.
   #[test]
@@ -23848,6 +23882,67 @@ mod shared_own_value_lists {
   }
 
   #[test]
+  fn append_to_shared_list_returns_the_grown_list() {
+    assert_eq!(
+      interpret("T = Range[20]; Length[T]; Length[AppendTo[T, 21]]").unwrap(),
+      "21"
+    );
+    assert_eq!(
+      interpret(
+        "T = Range[20]; Length[T]; PrependTo[T, 0]; {T[[1]], Length[T]}"
+      )
+      .unwrap(),
+      "{0, 21}"
+    );
+  }
+
+  #[test]
+  fn self_append_assignment_grows_a_list_in_a_loop() {
+    assert_eq!(
+      interpret(
+        "xs = {{1., 2.}}; i = 0; \
+         While[i < 2000, xs = Append[xs, {i, 2. i}]; i++]; \
+         {Length[xs], Last[xs], xs[[1]]}"
+      )
+      .unwrap(),
+      "{2001, {1999, 3998.}, {1., 2.}}"
+    );
+    assert_eq!(
+      interpret("xs = {3}; xs = Prepend[xs, 1]; xs = Append[xs, xs]; xs")
+        .unwrap(),
+      "{1, 3, {1, 3}}"
+    );
+    // The assignment's value is the grown list.
+    assert_eq!(
+      interpret("xs = {1, 2}; Length[xs = Append[xs, 3]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn self_append_assignment_leaves_other_targets_alone() {
+    // Not a list yet: `Append` reports its own error.
+    assert_eq!(interpret("ys = Append[ys, 1]; Head[ys]").unwrap(), "Append");
+    // Appending a different symbol is an ordinary assignment.
+    assert_eq!(
+      interpret("a = {1}; b = {2}; a = Append[b, 3]; {a, b}").unwrap(),
+      "{{2, 3}, {2}}"
+    );
+  }
+
+  #[test]
+  fn part_assigned_list_is_read_back_by_part() {
+    assert_eq!(
+      interpret(
+        "xs = Table[{i, 2 i}, {i, 1, 1500}]; xs[[1500, 2]] = 7.; \
+         s = 0; Do[s += xs[[i, 1]], {i, 1500}]; {s, xs[[1500]]}"
+      )
+      .unwrap(),
+      "{1125750, {1500, 7.}}"
+    );
+  }
+
+  #[test]
   fn rational_and_complex_elements_stay_numbers() {
     assert_eq!(
       interpret("a = Table[i/2, {i, 20}]; Length[a]; {a[[3]], Head[a[[3]]]}")
@@ -24104,5 +24199,146 @@ mod small_gaps_from_notebooks {
         .unwrap(),
       "ColorConvert"
     );
+  }
+}
+
+mod replace_part_position_patterns {
+  use super::*;
+
+  #[test]
+  fn a_condition_on_the_whole_position_list() {
+    assert_eq!(
+      interpret("ReplacePart[{{1, 2}, {3, 4}}, {i_, j_} /; i == j :> i]")
+        .unwrap(),
+      "{{1, 2}, {3, 2}}"
+    );
+    assert_eq!(
+      interpret("ReplacePart[{{1, 2}, {3, 4}}, {i_} /; i > 1 -> x]").unwrap(),
+      "{{1, 2}, x}"
+    );
+    assert_eq!(
+      interpret(
+        "ReplacePart[{{1, 2}, {3, 4}}, {i__} /; Length[{i}] == 2 && First[{i}] == 2 -> x]"
+      )
+      .unwrap(),
+      "{{1, 2}, {x, x}}"
+    );
+  }
+
+  #[test]
+  fn anonymous_blanks_are_independent() {
+    assert_eq!(
+      interpret("ReplacePart[{{1, 2}, {3, 4}}, {_, _} -> x]").unwrap(),
+      "{{x, x}, {x, x}}"
+    );
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c, d}, _?EvenQ -> x]").unwrap(),
+      "{a, x, c, x}"
+    );
+  }
+
+  #[test]
+  fn a_sparse_array_is_replaced_as_its_array() {
+    assert_eq!(
+      interpret(
+        "Normal[ReplacePart[SparseArray[{}, {3, 3}], {r_, c_} /; r + c < 4 -> 5]]"
+      )
+      .unwrap(),
+      "{{5, 5, 0}, {5, 0, 0}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("Head[ReplacePart[SparseArray[{}, {2, 2}], {1, 1} -> 5]]")
+        .unwrap(),
+      "SparseArray"
+    );
+  }
+}
+
+mod combinatorica_josephus {
+  use super::*;
+
+  #[test]
+  fn elimination_rounds() {
+    assert_eq!(
+      interpret(
+        "{Combinatorica`Josephus[5, 2], Combinatorica`Josephus[3, 5], \
+         Combinatorica`Josephus[7, 3], Combinatorica`Josephus[0, 2]}"
+      )
+      .unwrap(),
+      "{{3, 1, 5, 2, 4}, {3, 1, 2}, {6, 3, 1, 7, 5, 2, 4}, {}}"
+    );
+  }
+
+  #[test]
+  fn the_bare_name_once_the_package_is_loaded() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; InversePermutation[Josephus[5, 2]]"
+      )
+      .unwrap(),
+      "{2, 4, 1, 5, 3}"
+    );
+  }
+}
+
+mod set_delayed_part {
+  use super::*;
+
+  #[test]
+  fn stores_the_right_hand_side_unevaluated() {
+    assert_eq!(
+      interpret("oc = Table[{}, {4}]; oc[[1]] := x; x = 5; oc").unwrap(),
+      "{5, {}, {}, {}}"
+    );
+    assert_eq!(
+      interpret("Module[{oc = {1, 2}}, oc[[1]] := y; y = 3; oc]").unwrap(),
+      "{3, 2}"
+    );
+  }
+
+  #[test]
+  fn failures_are_set_delayed_messages_and_failed() {
+    let r = interpret_with_stdout("z = 3; z[[1]] := 4").unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "SetDelayed::partd: Part specification z[[1]] is longer than depth of object."
+      ]
+    );
+    let r = interpret_with_stdout("q = {1, 2}; q[[5]] := 3").unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert_eq!(
+      r.warnings,
+      vec!["SetDelayed::partw: Part 5 of {1, 2} does not exist."]
+    );
+  }
+}
+
+mod find_clusters_vectors {
+  use super::*;
+
+  #[test]
+  fn groups_points_geometrically() {
+    let d = "{{1, 2}, {1.1, 2}, {5, 5}, {5.2, 5.1}, {9, 1}, {9.1, 1.2}}";
+    assert_eq!(
+      interpret(&format!("Sort[Sort /@ FindClusters[{d}]]")).unwrap(),
+      "{{{1, 2}, {1.1, 2}}, {{5, 5}, {5.2, 5.1}}, {{9, 1}, {9.1, 1.2}}}"
+    );
+    assert_eq!(
+      interpret(&format!("Sort[Sort /@ FindClusters[{d}, 2]]")).unwrap(),
+      "{{{9, 1}, {9.1, 1.2}}, {{1, 2}, {1.1, 2}, {5, 5}, {5.2, 5.1}}}"
+    );
+  }
+
+  #[test]
+  fn options_are_not_counted_as_arguments() {
+    let d = "{{1, 2}, {1.1, 2}, {5, 5}, {5.2, 5.1}, {9, 1}, {9.1, 1.2}}";
+    let r = interpret_with_stdout(&format!(
+      "Length[FindClusters[{d}, 2, Method -> \"Optimize\", DistanceFunction -> EuclideanDistance]]"
+    ))
+    .unwrap();
+    assert_eq!(r.result, "2");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
   }
 }

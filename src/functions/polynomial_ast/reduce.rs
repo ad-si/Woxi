@@ -50,14 +50,30 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Over the integers, a condition that bounds every variable has finitely
   // many solutions, which are listed outright.
+  // A symbol of the condition that is not among the variables is an
+  // integer too, and listed first (`Reduce[x^2 + y^2 + z^2 == 1, {x, y},
+  // Integers]` enumerates z as well).
   if args.len() == 3
     && matches!(&args[2], Expr::Identifier(d) if d == "Integers")
-    && let Some(result) = super::reduce_integer_box::reduce_bounded_integer_box(
-      &args[0],
-      &extract_reduce_vars(&args[1]),
-    )
   {
-    return result;
+    let named = extract_reduce_vars(&args[1]);
+    let mut all = Vec::new();
+    constraint_variables(&args[0], &mut all);
+    let mut extra: Vec<String> =
+      all.into_iter().filter(|v| !named.contains(v)).collect();
+    extra.sort_by(|a, b| {
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(
+        &Expr::Identifier(a.clone()),
+        &Expr::Identifier(b.clone()),
+      )
+    });
+    extra.dedup();
+    let vars: Vec<String> = extra.into_iter().chain(named).collect();
+    if let Some(result) =
+      super::reduce_integer_box::reduce_bounded_integer_box(&args[0], &vars)
+    {
+      return result;
+    }
   }
   if let Some(result) = try_linear_integer_reduce(args) {
     return Ok(result);
@@ -2244,6 +2260,17 @@ fn reduce_and(
               crate::syntax::substitute_variable(&other_eq.0, var, &rhs_val);
             let subst_rhs =
               crate::syntax::substitute_variable(&other_eq.1, var, &rhs_val);
+            // Evaluated first: an unfolded `1 + 1 - 3` has no number for
+            // the check below and would pass any equation.
+            let holds =
+              crate::evaluator::evaluate_expr_to_expr(&Expr::Comparison {
+                operands: vec![subst_lhs.clone(), subst_rhs.clone()],
+                operators: vec![crate::syntax::ComparisonOp::Equal],
+              });
+            if matches!(&holds, Ok(Expr::Identifier(b)) if b == "False") {
+              satisfies = false;
+              break;
+            }
             let diff =
               simplify(minus2(simplify(subst_lhs), simplify(subst_rhs)));
             if !matches!(diff, Expr::Integer(0))
