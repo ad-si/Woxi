@@ -4060,7 +4060,7 @@ CombinatorS,,,,12.2,4173
 FullDefinition,Shows the definition of a symbol and all its dependencies,✅,pure,1.0,4173
 FullInformationOutputRegulator,,,,10.0,4173
 GeoHemisphere,,🚫,,10.1,4173
-GeometricMeanFilter,,,,7.0,4173
+GeometricMeanFilter,Geometric mean over each neighborhood of a list or image,✅,pure,7.0,4173
 GroupElementQ,Tests if a permutation is an element of a group,✅,pure,8.0,4173
 GrowCutComponents,,,,10.0,4173
 HistogramTransformInterpolation,,🚫,,9.0,4173

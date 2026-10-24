@@ -40602,3 +40602,22 @@ mod image_adjust_ranges_and_compose_graphics {
     );
   }
 }
+
+mod geometric_mean_filter {
+  use super::*;
+
+  #[test]
+  fn lists_and_images() {
+    assert_eq!(
+      interpret("Chop[GeometricMeanFilter[{1., 2., 4., 8.}, 1] - {Sqrt[2.], 2., 4., Sqrt[32.]}]")
+        .unwrap(),
+      "{0, 0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("ImageData[GeometricMeanFilter[Image[{{0.1, 0.5, 0.9}, {0.2, 0.4, 0.8}}], 1]]")
+        .unwrap(),
+      "{{0.2514866888523102, 0.3771945536136627, 0.6160140633583069}, \
+       {0.2514866888523102, 0.3771945536136627, 0.6160140633583069}}"
+    );
+  }
+}
