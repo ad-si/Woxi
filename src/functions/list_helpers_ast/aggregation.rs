@@ -3042,7 +3042,7 @@ fn agglomerative_clusters(
     if let Some(i) = cut
       && history[i].1 > 2.0 * history[i - 1].1.max(f64::MIN_POSITIVE)
     {
-      groups = history[i].0.clone();
+      groups.clone_from(&history[i].0);
     }
   }
   groups.sort_by_key(|g| g[0]);
