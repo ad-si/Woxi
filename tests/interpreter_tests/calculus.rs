@@ -8602,6 +8602,22 @@ mod ndsolve {
     );
   }
 
+  // Total derivatives `Dt[x[t], {t, n}]` of a function of the independent
+  // variable stand for its ordinary derivatives, including the
+  // `Dt[x[t], t] /. t -> 0` form of an initial velocity.
+  #[test]
+  fn total_derivative_equations() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{Dt[x[t], {t, 2}] == -x[t], x[0] == 1, \
+         (Dt[x[t], t] /. t -> 0) == 0}, {x[t]}, {t, 0, 1}]; \
+         Round[(x[t] /. First[s]) /. t -> 1., 0.0001]"
+      )
+      .unwrap(),
+      "0.5403"
+    );
+  }
+
   // Algebraic equations that leave one degree of freedom, closed by a
   // unit-speed condition on the derivatives, trace an implicit curve; the
   // stated slope at the start picks the orientation.
