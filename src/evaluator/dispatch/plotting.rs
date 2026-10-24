@@ -73,6 +73,7 @@ const PLLD_HEADS: &[&str] = &[
   "VectorPlot3D",
   "StreamPlot",
   "StreamDensityPlot",
+  "VectorDensityPlot",
   "DensityPlot",
   "ReImPlot",
   "LogPlot",
@@ -595,6 +596,9 @@ pub fn dispatch_plotting(
     })),
     "StreamDensityPlot" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::field_plot::stream_density_plot_ast(args)
+    })),
+    "VectorDensityPlot" if args.len() >= 3 => Some(quiet_plot(|| {
+      crate::functions::field_plot::vector_density_plot_ast(args)
     })),
     "ListDensityPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::list_density_plot_ast(args)

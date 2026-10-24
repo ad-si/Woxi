@@ -4194,6 +4194,127 @@ pub fn stream_density_plot_ast(
   Ok(crate::graphics_result(svg))
 }
 
+/// VectorDensityPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
+/// The vector field's arrows over a density background of its magnitude.
+/// `ColorFunction` shades the background, so the arrows keep the default
+/// style.
+pub fn vector_density_plot_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let (xvar, x_min, x_max) = parse_iterator(&args[1], "VectorDensityPlot")?;
+  let (yvar, y_min, y_max) = parse_iterator(&args[2], "VectorDensityPlot")?;
+  let resolved = crate::functions::plot::resolve_indirect_plot_body(
+    &args[0],
+    &[xvar.as_str(), yvar.as_str()],
+  );
+  let body = resolved.as_ref().unwrap_or(&args[0]);
+  let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
+  let plot_label = parse_field_plot_label(args, 3);
+
+  let grid_n = 60;
+  let mut mag_grid = vec![vec![f64::NAN; grid_n]; grid_n];
+  let mut mag_samples = Vec::with_capacity(grid_n * grid_n);
+  for i in 0..grid_n {
+    let x = x_min + (i as f64 + 0.5) / grid_n as f64 * (x_max - x_min);
+    for j in 0..grid_n {
+      let y = y_min + (j as f64 + 0.5) / grid_n as f64 * (y_max - y_min);
+      if let Some((vx, vy)) = evaluate_vector(body, &xvar, &yvar, x, y) {
+        let mag = vx.hypot(vy);
+        if mag.is_finite() {
+          mag_grid[i][j] = mag;
+          mag_samples.push(mag);
+        }
+      }
+    }
+  }
+  let (v_min, v_max) = robust_value_range(&mag_samples);
+
+  let grid = parse_vector_points(args, 3).map_or(VECTOR_GRID, |n| n - 1);
+  let x_step = (x_max - x_min) / grid as f64;
+  let y_step = (y_max - y_min) / grid as f64;
+  let mut vectors = Vec::new();
+  let mut max_mag = 0.0_f64;
+  for i in 0..=grid {
+    let x = x_min + i as f64 * x_step;
+    for j in 0..=grid {
+      let y = y_min + j as f64 * y_step;
+      if let Some((vx, vy)) = evaluate_vector(body, &xvar, &yvar, x, y) {
+        let mag = vx.hypot(vy);
+        max_mag = max_mag.max(mag);
+        vectors.push((x, y, vx, vy, mag));
+      }
+    }
+  }
+
+  let margins = field_plot_label_margins(plot_label.as_ref());
+  let mut area = crate::functions::plot::generate_axes_only_opts(
+    (x_min, x_max),
+    (y_min, y_max),
+    svg_width,
+    svg_height,
+    full_width,
+    None,
+    margins.as_ref(),
+  )?;
+  let mut svg = std::mem::take(&mut area.svg);
+  if let Some(pos) = svg.rfind("</svg>") {
+    svg.truncate(pos);
+  }
+  if let Some(label) = &plot_label {
+    inject_field_plot_label(&mut svg, &area, label);
+  }
+
+  let density_opts = parse_density_contour_options(args, 3);
+  let (color_function, cf_expr) = match density_opts.cf_expr() {
+    Some(cf) => (density_opts.color_function.as_deref(), Some(cf)),
+    None => (
+      Some(
+        density_opts
+          .color_function
+          .as_deref()
+          .unwrap_or("WL12DefaultVectorDensityGradient"),
+      ),
+      None,
+    ),
+  };
+  embed_grid_image(
+    &mut svg,
+    &mag_grid,
+    v_min,
+    v_max,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+    color_function,
+    cf_expr,
+  );
+
+  let cell_size = (area.plot_w / grid as f64).min(area.plot_h / grid as f64);
+  let arrow_style = VectorArrowStyle::default();
+  let primitives = render_vector_arrows(
+    &vectors,
+    max_mag,
+    cell_size,
+    &area,
+    &arrow_style,
+    &mut svg,
+  );
+  push_frame(
+    &mut svg,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+  );
+
+  svg.push_str("</svg>");
+  Ok(crate::graphics_result_with_structure(
+    svg,
+    call1("Graphics", Expr::List(primitives.into())),
+  ))
+}
+
 /// ListDensityPlot[data] - density plot from data
 /// Accepts either:
 ///   - a matrix {{z11, z12, ...}, {z21, z22, ...}, ...}

@@ -2822,6 +2822,7 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "StreamPlot"
         || name == "VectorPlot"
         || name == "StreamDensityPlot"
+        || name == "VectorDensityPlot"
         || name == "DiscretePlot"
         || name == "DiscretePlot3D"
         || name == "Show"
@@ -2931,6 +2932,7 @@ pub fn evaluate_expr_to_expr_inner(
               | "StreamPlot"
               | "VectorPlot"
               | "StreamDensityPlot"
+              | "VectorDensityPlot"
               | "DiscretePlot"
               | "DiscretePlot3D"
           ) {

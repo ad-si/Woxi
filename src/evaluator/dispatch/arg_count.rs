@@ -1389,6 +1389,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "StandardDeviation" => Some((1, 1)),
     "Standardize" => Some((1, 3)),
     "StreamDensityPlot" => Some((3, usize::MAX)),
+    "VectorDensityPlot" => Some((3, usize::MAX)),
     "StreamPlot" => Some((3, usize::MAX)),
     "StreamPosition" => Some((1, 1)),
     "Streams" => Some((0, 1)),
