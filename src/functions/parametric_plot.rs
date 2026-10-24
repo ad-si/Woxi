@@ -421,20 +421,29 @@ fn is_iterator_spec(arg: &Expr) -> bool {
     if items.len() == 3 && matches!(items[0], Expr::Identifier(_)))
 }
 
-/// Parameter values at which an `Exclusions` equation (`lhs == rhs`) holds.
+/// Parameter values at which an `Exclusions` equation (`lhs == rhs`) holds,
+/// or that `Exclusions` lists as plain numbers.
 /// Wolfram removes these points from the curve, so the plotted line breaks
 /// there instead of being drawn straight across the gap. Roots are located
 /// as sign changes of `lhs - rhs` on a fine grid and pinned down by
 /// bisection; sign changes through a pole (where the difference does not
 /// actually vanish) are not exclusions and are left to the discontinuity
 /// handling of the sampler.
-fn exclusion_roots(
+pub(crate) fn exclusion_roots(
   options: &[Expr],
   var: &str,
   t_min: f64,
   t_max: f64,
 ) -> Vec<f64> {
+  // `option_name_value` evaluates a delayed value, so only look at the
+  // `Exclusions` rule itself — not at e.g. an `EvaluationMonitor :> …`.
   let Some(spec) = options.iter().find_map(|opt| {
+    let names_exclusions = matches!(opt,
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Exclusions"));
+    if !names_exclusions {
+      return None;
+    }
     match crate::functions::graphics::option_name_value(opt) {
       Some(("Exclusions", value)) => Some(value.into_owned()),
       _ => None,
@@ -462,7 +471,16 @@ fn exclusion_roots(
       {
         (&args[0], &args[1])
       }
-      _ => continue,
+      // A bare number `c` is shorthand for `var == c`.
+      other => {
+        if let Some(c) = try_eval_to_f64(other)
+          && c >= t_min
+          && c <= t_max
+        {
+          roots.push(c);
+        }
+        continue;
+      }
     };
     let diff = |t: f64| -> Option<f64> {
       Some(evaluate_at_point(lhs, var, t)? - evaluate_at_point(rhs, var, t)?)
