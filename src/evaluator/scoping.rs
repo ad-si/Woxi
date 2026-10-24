@@ -1561,6 +1561,12 @@ fn resolve_span(args: &[Expr], len: i64) -> Result<Vec<i64>, InterpreterError> {
 pub(crate) fn shield_nested_scopes(expr: &Expr, locals: &[String]) -> Expr {
   // An inner Module/With/Block counts as reached only through its body:
   // a local in an initializer is substituted outside the inner scope.
+  // A rule or definition is reached through its right side or a condition
+  // or test in its pattern — not through a plain left-hand side:
+  // `Module[{h}, h[y_] = y]` keeps `y`, `f[y_ /; y > h] := y` renames it.
+  let rule_reached = |lhs: &Expr, rhs: &Expr| {
+    mentions_any_symbol(rhs, locals) || pattern_tests_mention(lhs, locals)
+  };
   let reached = match expr {
     Expr::FunctionCall { name, args }
       if matches!(name.as_str(), "Module" | "With" | "Block")
@@ -1568,6 +1574,27 @@ pub(crate) fn shield_nested_scopes(expr: &Expr, locals: &[String]) -> Expr {
     {
       args[1..].iter().any(|a| mentions_any_symbol(a, locals))
     }
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Set"
+          | "SetDelayed"
+          | "UpSet"
+          | "UpSetDelayed"
+          | "Rule"
+          | "RuleDelayed"
+      ) && args.len() == 2 =>
+    {
+      rule_reached(&args[0], &args[1])
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => rule_reached(pattern, replacement),
     _ => mentions_any_symbol(expr, locals),
   };
   if let Some(bound) = scope_bound_names(expr)
@@ -1624,6 +1651,29 @@ pub(crate) fn shield_nested_scopes(expr: &Expr, locals: &[String]) -> Expr {
 }
 
 /// The variables a scoping construct binds, or None for anything else.
+/// Whether a condition (`/;`) or pattern test (`?`) inside the pattern
+/// `lhs` mentions one of `locals`.
+fn pattern_tests_mention(lhs: &Expr, locals: &[String]) -> bool {
+  match lhs {
+    Expr::PatternTest { test, .. } => mentions_any_symbol(test, locals),
+    Expr::FunctionCall { name, args }
+      if (name == "Condition" || name == "PatternTest") && args.len() == 2 =>
+    {
+      mentions_any_symbol(&args[1], locals)
+        || pattern_tests_mention(&args[0], locals)
+    }
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| pattern_tests_mention(a, locals))
+    }
+    Expr::List(items) => items.iter().any(|a| pattern_tests_mention(a, locals)),
+    Expr::BinaryOp { left, right, .. } => {
+      pattern_tests_mention(left, locals)
+        || pattern_tests_mention(right, locals)
+    }
+    _ => false,
+  }
+}
+
 fn scope_bound_names(expr: &Expr) -> Option<Vec<String>> {
   let mut names = Vec::new();
   match expr {

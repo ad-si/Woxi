@@ -5035,6 +5035,23 @@ mod nested_scope_renaming {
     assert!(out.starts_with("Hold[Function[{x$1$}, x$1$ + a$"), "{out}");
   }
 
+  // A definition or rule is reached through its right side or a pattern
+  // condition, not through its left-hand head: `h[y_] = z` keeps `y`, so a
+  // `y` the right side evaluates to is still the pattern variable.
+  #[test]
+  fn rule_reached_only_through_right_side_or_condition() {
+    assert_eq!(
+      interpret("Module[{h}, z = 2 y; h[y_] = z; h[3]]").unwrap(),
+      "6"
+    );
+    let out = interpret(
+      "{Module[{h}, Hold[f[y_, h] := y]], Module[{h}, Hold[f[y_ /; y > h] := y]]}",
+    )
+    .unwrap();
+    assert!(out.contains("[y_, h$"), "{out}");
+    assert!(out.contains("f[y$_ /; y$ > h$"), "{out}");
+  }
+
   #[test]
   fn inner_with_initializer_is_not_renamed() {
     // `With[{i = i}, …]`: the initializer's `i` is the Table iterator.
