@@ -923,6 +923,40 @@ mod outer_extended {
     );
   }
 
+  // Pattern rules and Band rules can share one rule list.
+  #[test]
+  fn sparse_array_pattern_and_band_rules_mixed() {
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{{i_, i_} -> i, Band[{1, 2}] -> r, \
+         Band[{2, 1}] -> r}, {4, 4}]]"
+      )
+      .unwrap(),
+      "{{1, r, 0, 0}, {r, 2, r, 0}, {0, r, 3, r}, {0, 0, r, 4}}"
+    );
+  }
+
+  // MatrixForm of a SparseArray is drawn as the dense matrix.
+  #[test]
+  fn matrix_form_of_sparse_array_draws_dense_matrix() {
+    let svg = interpret(
+      "ExportString[MatrixForm[SparseArray[{{1, 1} -> a, {2, 2} -> b}, \
+       {2, 2}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("SparseArray"), "{svg}");
+    assert!(
+      svg.contains(">a</text>") && svg.contains(">b</text>"),
+      "{svg}"
+    );
+    let tf = interpret(
+      "ExportString[TraditionalForm[MatrixForm[SparseArray[{{1, 1} -> a, \
+       {2, 2} -> b}, {2, 2}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!tf.contains("SparseArray"), "{tf}");
+  }
+
   // First/Last/Part on a 1-D SparseArray return the scalar entry (or the
   // default value) at that position, like a dense vector.
   #[test]
