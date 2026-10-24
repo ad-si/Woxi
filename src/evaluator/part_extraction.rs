@@ -344,9 +344,9 @@ pub fn eval_part_base(e: &Expr) -> Result<Expr, InterpreterError> {
       // here on every access would only pay an O(n) needs_reevaluation scan
       // for no benefit — the table-filling cost this shortcut exists to
       // avoid (see module docs above).
-      let needs_eval = was_part_assigned(var_name)
-        || (!matches!(stored, Expr::List(_))
-          && crate::evaluator::core_eval::needs_reevaluation(
+      let needs_eval = !matches!(stored, Expr::List(_))
+        && (was_part_assigned(var_name)
+          || crate::evaluator::core_eval::needs_reevaluation(
             &stored, var_name,
           ));
       return if needs_eval {

@@ -58,6 +58,39 @@ fn evaluate_vector(
   None
 }
 
+/// Evaluate the scalar `body` at (x, y).
+fn evaluate_scalar(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  xval: f64,
+  yval: f64,
+) -> Option<f64> {
+  let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
+  let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
+  try_eval_to_f64(&evaluate_expr_to_expr(&sub2).ok()?)
+}
+
+/// Split a stream-density field into its vector part and, for the
+/// `{{vx, vy}, s}` form, the scalar `s` that shades the background. The form
+/// is recognised by a first element that evaluates to a two-component
+/// vector at the corner of the plot range.
+fn split_vector_and_density<'a>(
+  spec: &'a Expr,
+  xvar: &str,
+  yvar: &str,
+  x_val: f64,
+  y_val: f64,
+) -> (&'a Expr, Option<&'a Expr>) {
+  if let Expr::List(items) = spec
+    && items.len() == 2
+    && evaluate_vector(&items[0], xvar, yvar, x_val, y_val).is_some()
+  {
+    return (&items[0], Some(&items[1]));
+  }
+  (spec, None)
+}
+
 /// Parse ImageSize from options
 /// The `PlotLabel` of a field plot, rendered as SVG markup. Field plots draw
 /// their own axes, so the label is injected above the plot area rather than
@@ -700,25 +733,36 @@ fn push_field_plot_overlays(
   if let Some(label) = &opts.plot_label {
     inject_field_plot_label(svg, area, label);
   }
-  if !opts.epilog.is_empty() {
-    let epilog_area = crate::functions::plot_epilog::PlotArea {
-      x0: area.plot_x0,
-      y0: area.plot_y0,
-      w: area.plot_w,
-      h: area.plot_h,
-      x_min: area.x_min,
-      x_max: area.x_max,
-      y_min: area.y_min,
-      y_max: area.y_max,
-      scale: RESOLUTION_SCALE as f64,
-    };
-    svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
-      &opts.epilog,
-      &epilog_area,
-      "epilog",
-    ));
-  }
+  push_epilog_primitives(svg, area, &opts.epilog);
   push_frame_labels(svg, area, &opts.frame_labels);
+}
+
+/// Draw a field plot's `Epilog` primitives over everything drawn so far
+/// (the closing `</svg>` must already be stripped from `svg`).
+fn push_epilog_primitives(
+  svg: &mut String,
+  area: &crate::functions::plot::PlotArea,
+  epilog: &[Expr],
+) {
+  if epilog.is_empty() {
+    return;
+  }
+  let epilog_area = crate::functions::plot_epilog::PlotArea {
+    x0: area.plot_x0,
+    y0: area.plot_y0,
+    w: area.plot_w,
+    h: area.plot_h,
+    x_min: area.x_min,
+    x_max: area.x_max,
+    y_min: area.y_min,
+    y_max: area.y_max,
+    scale: f64::from(RESOLUTION_SCALE),
+  };
+  svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
+    epilog,
+    &epilog_area,
+    "epilog",
+  ));
 }
 
 /// `ContourLabels -> True`: write each contour's level on its longest
@@ -3659,24 +3703,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &mut svg,
   );
 
-  if !epilog.is_empty() {
-    let epilog_area = crate::functions::plot_epilog::PlotArea {
-      x0: area.plot_x0,
-      y0: area.plot_y0,
-      w: area.plot_w,
-      h: area.plot_h,
-      x_min: area.x_min,
-      x_max: area.x_max,
-      y_min: area.y_min,
-      y_max: area.y_max,
-      scale: f64::from(RESOLUTION_SCALE),
-    };
-    svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
-      &epilog,
-      &epilog_area,
-      "epilog",
-    ));
-  }
+  push_epilog_primitives(&mut svg, &area, &epilog);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result_with_structure(
@@ -3836,24 +3863,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     stream_primitives(body, &xvar, &yvar, (x_min, x_max), (y_min, y_max), args);
   push_stream_svg(&mut svg, &primitives, &area);
 
-  if !epilog.is_empty() {
-    let epilog_area = crate::functions::plot_epilog::PlotArea {
-      x0: area.plot_x0,
-      y0: area.plot_y0,
-      w: area.plot_w,
-      h: area.plot_h,
-      x_min: area.x_min,
-      x_max: area.x_max,
-      y_min: area.y_min,
-      y_max: area.y_max,
-      scale: f64::from(RESOLUTION_SCALE),
-    };
-    svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
-      &epilog,
-      &epilog_area,
-      "epilog",
-    ));
-  }
+  push_epilog_primitives(&mut svg, &area, &epilog);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result_with_structure(
@@ -4105,9 +4115,15 @@ pub fn stream_density_plot_ast(
     &args[0],
     &[xvar.as_str(), yvar.as_str()],
   );
-  let body = resolved.as_ref().unwrap_or(&args[0]);
+  let spec = resolved.as_ref().unwrap_or(&args[0]);
+  // `{{vx, vy}, s}` takes the streamlines from `{vx, vy}` and shades the
+  // background by the scalar `s` instead of by the flow speed.
+  let (body, density) =
+    split_vector_and_density(spec, &xvar, &yvar, x_min, y_min);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
   let plot_label = parse_field_plot_label(args, 3);
+  let prolog = parse_overlay_primitives(args, 3, "Prolog");
+  let epilog = parse_overlay_primitives(args, 3, "Epilog");
 
   let grid_n = 60;
 
@@ -4119,12 +4135,16 @@ pub fn stream_density_plot_ast(
     let x = x_min + (i as f64 + 0.5) / grid_n as f64 * (x_max - x_min);
     for j in 0..grid_n {
       let y = y_min + (j as f64 + 0.5) / grid_n as f64 * (y_max - y_min);
-      if let Some((vx, vy)) = evaluate_vector(body, &xvar, &yvar, x, y) {
-        let mag = (vx * vx + vy * vy).sqrt();
-        if mag.is_finite() {
-          mag_grid[i][j] = mag;
-          mag_samples.push(mag);
-        }
+      let value = match density {
+        Some(scalar) => evaluate_scalar(scalar, &xvar, &yvar, x, y),
+        None => evaluate_vector(body, &xvar, &yvar, x, y)
+          .map(|(vx, vy)| (vx * vx + vy * vy).sqrt()),
+      };
+      if let Some(value) = value
+        && value.is_finite()
+      {
+        mag_grid[i][j] = value;
+        mag_samples.push(value);
       }
     }
   }
@@ -4151,6 +4171,7 @@ pub fn stream_density_plot_ast(
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
+  splice_field_plot_prolog(&mut svg, &area, &prolog);
   if let Some(label) = &plot_label {
     inject_field_plot_label(&mut svg, &area, label);
   }
@@ -4189,6 +4210,7 @@ pub fn stream_density_plot_ast(
   push_stream_svg(&mut svg, &primitives, &area);
 
   push_frame(&mut svg, plot_x0, plot_y0, plot_w, plot_h);
+  push_epilog_primitives(&mut svg, &area, &epilog);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))

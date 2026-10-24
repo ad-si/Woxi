@@ -16582,6 +16582,35 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">flow<"), "{svg}");
     }
 
+    #[test]
+    fn stream_density_plot_scalar_form_shades_by_the_scalar() {
+      // `{{vx, vy}, s}` used to draw an empty frame because the pair was
+      // read as one two-component vector field.
+      let by_scalar = export_svg(
+        "StreamDensityPlot[{{-y, x}, x^2 - y^2}, {x, -2, 2}, {y, -2, 2}]",
+      );
+      assert!(by_scalar.contains("<image"), "{by_scalar}");
+      assert!(by_scalar.contains("<path") || by_scalar.contains("<polyline"));
+      assert_ne!(
+        by_scalar,
+        export_svg("StreamDensityPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}]")
+      );
+    }
+
+    #[test]
+    fn stream_density_plot_draws_prolog_and_epilog() {
+      let svg = export_svg(
+        "StreamDensityPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}, \
+           Prolog -> {Orange, Disk[{0, 0}, 1]}, \
+           Epilog -> {Blue, Disk[{1, 1}, 0.5]}]",
+      );
+      let disks: Vec<_> = svg.match_indices("<ellipse").collect();
+      assert_eq!(disks.len(), 2, "{svg}");
+      let image = svg.find("<image").expect(&svg);
+      assert!(disks[0].0 < image, "prolog must sit under the density");
+      assert!(disks[1].0 > image, "epilog must sit over the density");
+    }
+
     // Regression: `Prolog` (and `Epilog` on StreamPlot) was silently dropped
     // by the field plots, so a disk marking an obstacle never appeared.
     #[test]
