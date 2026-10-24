@@ -275,9 +275,13 @@ NamedCharIdentifier = @{ NamedCharBase ~ (NamedCharBase | ASCII_ALPHANUMERIC | L
 // with a letter/_/$ so numeric precision tags like `1`30`/`Pi`30` aren't
 // accidentally absorbed. A segment may also start with a `\[Name]` named
 // character (`Global`\[Omega]g`), as in a saved Manipulate's stored context symbols.
+// The C0 control characters the Wolfram reader takes as letters (all but
+// BEL, TAB, LF, FF and CR): a notebook can carry a stray `\.1c` after a
+// string, which reads as a symbol.
+ControlLetter = _{ '\u{00}'..'\u{06}' | "\u{08}" | "\u{0B}" | '\u{0E}'..'\u{1F}' }
 Identifier = @{
   ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
-  | ((ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
+  | ((ASCII_ALPHA | LETTER | PrivateUseLetter | ControlLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | ControlLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
 }
 String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ ANY) | ("\\" ~ ANY))* ~ "\"" }
 
