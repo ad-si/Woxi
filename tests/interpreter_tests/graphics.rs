@@ -28891,6 +28891,28 @@ mod manipulate {
     );
   }
 
+  /// A hidden `{v, {c1, c2, …}, ControlType -> None}` that the Manipulate
+  /// reads as `v[[k]]` with k > 1 is a table, not a menu of alternatives, so
+  /// it starts as the whole list (otherwise `v[[2]]` indexes into the first
+  /// entry and fails with `Part::partw`).
+  #[test]
+  fn spec_hidden_variable_indexed_as_list_keeps_whole_list() {
+    let expr = interpret_to_expr(
+      "Manipulate[Column[{Dynamic[rows[[1]]], Dynamic[rows[[2]]]}], \
+       {rows, {\"a\", \"b\", \"c\"}, ControlType -> None}, \
+       {other, {7, 8, 9}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("hidden variables");
+    assert_eq!(
+      spec.state,
+      vec![
+        ("rows".to_string(), "{\"a\", \"b\", \"c\"}".to_string()),
+        ("other".to_string(), "7".to_string()),
+      ]
+    );
+  }
+
   /// A control row wrapped in `Pane[Control@{…}, width]` (a fixed-width
   /// control area) is a valid Manipulate argument: no vsform message, and
   /// the checkbox bar inside is still the control.
