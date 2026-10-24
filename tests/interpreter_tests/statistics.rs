@@ -11478,4 +11478,30 @@ mod count_level_pruning {
       "3"
     );
   }
+
+  #[test]
+  fn kendall_tau_test_p_value_matches_normal_approximation() {
+    // Without ties the statistic is z = 3 tau Sqrt[n (n - 1)] / Sqrt[2 (2 n + 5)].
+    assert_eq!(
+      interpret(
+        "x = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10.}; y = {2, 1, 4, 3, 6, 5, 8, 7, 10, 9.}; \
+         z = 3 KendallTau[x, y] Sqrt[10 9]/Sqrt[2 (2 10 + 5)]; \
+         Abs[KendallTauTest[x, y] - Erfc[Abs[z]/Sqrt[2]]] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn kendall_tau_test_p_value_property() {
+    assert_eq!(
+      interpret(
+        "x = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10.}; y = {2, 1, 4, 3, 6, 5, 8, 7, 10, 9.}; \
+         KendallTauTest[x, y, \"PValue\"] == KendallTauTest[x, y, PValue]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }

@@ -4767,6 +4767,20 @@ mod replace_repeated {
   fn replace_repeated_simple() {
     assert_eq!(interpret("f[f[2]] //. f[2] -> 2").unwrap(), "2");
   }
+
+  // A list of rule lists (several solutions) gives one result per list
+  // instead of rescanning the list of results forever.
+  #[test]
+  fn replace_repeated_with_several_rule_lists() {
+    assert_eq!(
+      interpret("{x, y} //. {{x -> 1, y -> 2}, {x -> 3, y -> 4}}").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret("x //. {{x -> y, y -> 2}, {x -> 5}}").unwrap(),
+      "{2, 5}"
+    );
+  }
 }
 
 mod replace_repeated_operator_form {
@@ -8899,6 +8913,32 @@ mod nsolve {
   // Freese-dissection Demonstration notebook, whose `p8 = sol[[2]]` is the
   // smaller root {-0.16669911088252198, -0.8090169943749475}.
   #[test]
+  fn nsolve_never_reports_ratnz() {
+    let r = interpret_with_stdout(
+      "Length[NSolve[{u Cos[0.5], u Sin[0.5]} == (1-t)^2 {-2.8,-1.} + \
+       2(1-t)t {0.,1.} + t^2 {2.8,-1.}]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "2");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  #[test]
+  fn line_circle_with_simple_decimals_numericizes_the_closed_form() {
+    // The rationalized system's quadratic is numericized from its closed
+    // form instead of being solved and simplified in radicals, which cost
+    // seconds per intersection (AConcurrencyOfLinesJoiningOrthocenters).
+    assert_eq!(
+      interpret(
+        "Round[{x, y} /. NSolve[{(y - 0.2) 1.5 == 0.5 (x - 0.1), \
+         (x - 0.3)^2 + (y - 0.4)^2 == 1.2^2}, {x, y}], 10.^-12]"
+      )
+      .unwrap(),
+      "{{1.472077735847, 0.657359245282}, {-0.792077735847, -0.097359245282}}"
+    );
+  }
+
+  #[test]
   fn system_solutions_larger_root_first() {
     assert_eq!(
       interpret(
@@ -9093,6 +9133,49 @@ mod nsolve {
     assert_eq!(
       interpret("NSolve[{x + y == 3, x - y == 1}, {x, y}, Reals]").unwrap(),
       "{{x -> 2., y -> 1.}}"
+    );
+  }
+
+  // A polynomial system whose elimination polynomial has no closed-form
+  // roots is solved numerically, and `{p, q} == 0` is the system
+  // `{p == 0, q == 0}`.
+  #[test]
+  fn polynomial_system_without_radical_roots() {
+    assert_eq!(
+      interpret("Length[NSolve[{x^2 + y^2 == 1, x^3 - y == 1/5}, {x, y}]]")
+        .unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret(
+        "Round[Sort[Select[{x, y} /. NSolve[{x^2 + y^2 == 3, x^3 - x y == \
+         1/7}, {x, y}], Element[Alternatives @@ #, Reals] &]], 0.01]"
+      )
+      .unwrap(),
+      "{{-1.1, 1.34}, {-0.08, 1.73}, {0.08, -1.73}, {1.18, 1.27}}"
+    );
+    // The roots of z^3 + z + 1 split into real and imaginary parts: nine
+    // complex points, three of them with real coordinates.
+    assert_eq!(
+      interpret(
+        "Length[NSolve[{1 + x + x^3 - 3 x y^2, y + 3 x^2 y - y^3} == 0, \
+         {x, y}]]"
+      )
+      .unwrap(),
+      "9"
+    );
+    assert_eq!(
+      interpret(
+        "Length[Select[{x, y} /. NSolve[{1 + x + x^3 - 3 x y^2, \
+         y + 3 x^2 y - y^3} == 0, {x, y}], Element[Alternatives @@ #, \
+         Reals] &]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("NSolve[{x - 1, y - 2} == 0, {x, y}]").unwrap(),
+      "{{x -> 1., y -> 2.}}"
     );
   }
 
@@ -20551,6 +20634,55 @@ mod solve_with_max_min {
       "{msgs:?}"
     );
   }
+
+  #[test]
+  fn inexact_quartic_system_does_not_overflow() {
+    // CentreDunTriangleequilateralCirconscritaUneParaboleFrench: solving the
+    // rationalized system multiplied two machine-size integers past i128.
+    let v = interpret(
+      r#"eq1[a_,b_,x_,y_] :=(((a)^(2)) (1+Sqrt[3] y)==((1)/(2)) (Sqrt[3]-2 b) b x+a (x+Sqrt[3] b x-((Sqrt[3] y)/(2))+b y));eq2[a_,b_,x_,y_] :=(a ((2-2 Sqrt[3] b) x+(Sqrt[3]+2 b) y+2 a (-1+Sqrt[3] y))==b (Sqrt[3]+2 b) x); eq3[a_,b_,x_,y_] :=(27 ((a)^(2))+36 ((a)^(3))+12 ((a)^(4))-18 Sqrt[3] a b-36 Sqrt[3] ((a)^(2)) b-16 Sqrt[3] ((a)^(3)) b+9 ((b)^(2))-12 a ((b)^(2))-8 ((a)^(2)) ((b)^(2))+12 Sqrt[3] ((b)^(3))+16 Sqrt[3] a ((b)^(3))+12 ((b)^(4))+(2 ((a)^(2))+24 ((a)^(3))+72 ((a)^(4))+4 Sqrt[3] a b+40 Sqrt[3] ((a)^(2)) b+96 Sqrt[3] ((a)^(3)) b+6 ((b)^(2))+56 a ((b)^(2))+144 ((a)^(2)) ((b)^(2))+8 Sqrt[3] ((b)^(3))+32 Sqrt[3] a ((b)^(3))+8 ((b)^(4))) x+(-6 Sqrt[3] ((a)^(2))-40 Sqrt[3] ((a)^(3))-24 Sqrt[3] ((a)^(4))-12 a b-40 ((a)^(2)) b+6 Sqrt[3] ((b)^(2))+24 Sqrt[3] a ((b)^(2))+48 Sqrt[3] ((a)^(2)) ((b)^(2))+24 ((b)^(3))+64 a ((b)^(3))+8 Sqrt[3] ((b)^(4))) y==0); g[al_] := Module[{x,y},(Plus @@ Map[({x,y}/.First[Solve[#]]&), {{eq1[al,Sqrt[3al^2+5al+3/4],x,y], eq2[al,Sqrt[3al^2+5al+3/4],x,y]}, {eq2[al,Sqrt[3al^2+5al+3/4],x,y], eq3[al,Sqrt[3al^2+5al+3/4],x,y]}, {eq3[al,Sqrt[3al^2+5al+3/4],x,y], eq1[al,Sqrt[3al^2+5al+3/4],x,y]}}])/3]; g[-0.16]"#,
+    )
+    .unwrap();
+    assert!(v.contains(", -2.61931288699918"), "{v}");
+  }
+
+  #[test]
+  fn inexact_vector_line_plane_intersection_is_solved_directly() {
+    // A vector equation is linear when its second derivatives are all lists
+    // of zeros (BezdeksUnistablePolyhedronWith18Faces).
+    assert_eq!(
+      interpret(
+        "Length[Solve[{({x,y,z}-{0.1,0.2,0.3}).{1.,2.,0.5}==0, \
+         {x,y,z}=={1.,0.,0.}+t{0.3,0.2,0.1}}, {x,y,z,t}]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      !msgs.iter().any(|m| m.starts_with("Solve::ratnz")),
+      "{msgs:?}"
+    );
+  }
+
+  #[test]
+  fn inexact_linear_system_with_alternatives_is_solved_directly() {
+    // An `Or` of linear equations is no nonlinear system, so wolframscript
+    // solves it without Solve::ratnz (BilliardsInRegularPolygons).
+    assert_eq!(
+      interpret(
+        "Length[Solve[{y - 0.1 == 0.3*(x - 0.2), Or[y - 0.5 == 0.3 (x - 1.5), \
+         y == 2. x + 0.7]}, {x, y}]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      !msgs.iter().any(|m| m.starts_with("Solve::ratnz")),
+      "{msgs:?}"
+    );
+  }
 }
 
 mod rationalize_structural {
@@ -20613,6 +20745,26 @@ mod inexact_systems_solved_exactly {
   }
 
   #[test]
+  fn nonlinear_inexact_system_numericizes_its_eliminant_roots() {
+    // The rationalized system's eliminant roots are found as numbers, in
+    // Solve's order (ascending; the negative imaginary part first).
+    assert_eq!(
+      interpret("Quiet[Solve[{x^2 + y^2 == 0.5, x + y == 3}, {x, y}]]")
+        .unwrap(),
+      "{{x -> 1.5 - 1.4142135623730951*I, y -> 1.5 + 1.4142135623730951*I}, \
+       {x -> 1.5 + 1.4142135623730951*I, y -> 1.5 - 1.4142135623730951*I}}"
+    );
+    assert_eq!(
+      interpret(
+        "Length[Quiet[Solve[{(x - 0.1234567)^2 + (y - 0.7654321)^2 == 0.9876543^2, \
+         (x + 0.3141592)^2 + (y - 0.2718281)^2 == 0.8^2}, {x, y}]]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
   fn linear_inexact_system_stays_direct() {
     let result =
       interpret_with_stdout("Solve[{x + y == 1.5, x - y == 0.3}, {x, y}]")
@@ -20665,6 +20817,126 @@ mod root_of_repeated_factors {
       interpret("Length[Solve[10^20 x^2 + 3*10^19 x - 7*10^20 == 0, x]]")
         .unwrap(),
       "2"
+    );
+  }
+
+  #[test]
+  fn symbolic_sum_keeps_evaluated_summand_for_later_replacement() {
+    // The inner `/.` must evaluate before the outer rules reach into the Sum.
+    assert_eq!(
+      interpret(
+        "g = Cos[3*Pi*x]; Sum[(g /. x -> k/n)*Binomial[n, k]*x^k, {k, 0, n}] /. {x -> 3/10, n -> 3}"
+      )
+      .unwrap(),
+      "343/1000"
+    );
+    assert_eq!(
+      interpret("Sum[a[k] + a[k], {k, 1, n}]").unwrap(),
+      "Sum[2*a[k], {k, 1, n}]"
+    );
+  }
+}
+
+mod reduce_overdetermined {
+  use super::*;
+
+  #[test]
+  fn an_extra_equation_the_solution_violates_gives_false() {
+    assert_eq!(
+      interpret("Reduce[{x == 1, x + 1 == 3}, x]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Reduce[2 x == 2 && x + 1 == 2, x]").unwrap(),
+      "x == 1"
+    );
+    assert_eq!(
+      interpret(
+        "Reduce[{x - 4 z == -16, -x + 8 z == 27, 2 x + 4 z == 7}, {x, y, z}]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+}
+
+mod reduce_integers_free_symbols {
+  use super::*;
+
+  #[test]
+  fn symbols_outside_the_variable_list_are_integers_listed_first() {
+    assert_eq!(
+      interpret("Reduce[x^2 + y^2 == 1, {x}, Integers]").unwrap(),
+      "(y == -1 && x == 0) || (y == 0 && x == -1) || (y == 0 && x == 1) || (y == 1 && x == 0)"
+    );
+    assert_eq!(
+      interpret("Length[Reduce[x^2 + y^2 + z^2 == 1, {x, y}, Integers]]")
+        .unwrap(),
+      "6"
+    );
+  }
+}
+
+mod polynomial_system_with_large_coefficients {
+  use super::*;
+
+  // A Lagrange-multiplier condition `grad f x grad g == 0` together with
+  // `g == 1/3`: no equation can be solved for either unknown in closed form,
+  // and eliminating one needs coefficients far beyond 128 bits.
+  const SYSTEM: &str = "f = x^2 + x y^2 - 2 y; \
+     g = ((x^2 + y^2)^2 - 8 x y)/8; \
+     cond = D[f, x] D[g, y] - D[f, y] D[g, x]; \
+     eqs = {cond == 0, g == 1/3};";
+
+  #[test]
+  fn groebner_basis_beyond_machine_integers() {
+    assert_eq!(
+      interpret(&format!(
+        "{SYSTEM} gb = GroebnerBasis[Numerator[Together[#[[1]] - #[[2]]]] & /@ \
+         eqs, {{y, x}}]; {{Length[gb], Exponent[First[gb], x]}}"
+      ))
+      .unwrap(),
+      "{2, 16}"
+    );
+  }
+
+  #[test]
+  fn solve_over_reals_drops_complex_root_objects() {
+    assert_eq!(
+      interpret(&format!(
+        "{SYSTEM} {{Length[Solve[eqs, {{x, y}}]], \
+         Length[Solve[eqs, {{x, y}}, Reals]]}}"
+      ))
+      .unwrap(),
+      "{16, 6}"
+    );
+  }
+
+  #[test]
+  fn reduce_over_reals_gives_the_real_points() {
+    assert_eq!(
+      interpret(&format!(
+        "{SYSTEM} r = Reduce[eqs, {{x, y}}, Reals]; \
+         pts = {{x, y}} //. {{ToRules[N[r]]}}; \
+         {{Head[r], Length[r], Round[pts, 1/1000], \
+         Max[Abs[Table[{{cond, g - 1/3}} /. {{x -> p[[1]], y -> p[[2]]}}, \
+         {{p, pts}}]]] < 10^-6}}"
+      ))
+      .unwrap(),
+      "{Or, 6, {{-437/250, -91/125}, {-1167/1000, -1723/1000}, \
+       {-53/500, -1397/1000}, {69/1000, 1357/1000}, {201/250, -327/1000}, \
+       {337/200, 1267/1000}}, True}"
+    );
+  }
+
+  #[test]
+  fn solve_over_reals_keeps_only_real_root_values() {
+    assert_eq!(
+      interpret(
+        "Length[Solve[{x^3 + y^3 + x y == 3, x^2 + x y^2 == 2}, {x, y}, Reals]]"
+      )
+      .unwrap(),
+      "3"
     );
   }
 }

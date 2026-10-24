@@ -11523,7 +11523,7 @@ abb""#,
   fn to_string_6() {
     assert_case(
       r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]"#,
-      r#""G[F[1.`, \"l\"], 0.2`]""#,
+      r#"G[F[1.`, "l"], 0.2`]"#,
     );
   }
   #[test]
@@ -11595,7 +11595,7 @@ abb""#,
   fn to_string_10() {
     assert_case(
       r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]"#,
-      r#""G[F[1.`, \"l\"], 0.2`]""#,
+      r#"G[F[1.`, "l"], 0.2`]"#,
     );
   }
   #[test]
@@ -11702,7 +11702,7 @@ abb""#,
   fn to_string_16() {
     assert_case(
       r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]"#,
-      r#""G[F[1.`, \"l\"], 0.2`]""#,
+      r#"G[F[1.`, "l"], 0.2`]"#,
     );
   }
   #[test]
@@ -11759,7 +11759,7 @@ abb""#,
   fn to_string_20() {
     assert_case(
       r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[F[x__], fmt_]=.; MakeBoxes[G[x___], fmt_]=.; MakeBoxes[GG[x___], fmt_]=.; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]"#,
-      r#""G[F[1.`, \"l\"], 0.2`]""#,
+      r#"G[F[1.`, "l"], 0.2`]"#,
     );
   }
   #[test]
@@ -12037,6 +12037,22 @@ abb""#,
   fn to_string_number_form_fixed_decimals() {
     assert_case("ToString[NumberForm[3.14159, {5, 2}]]", "3.14");
     assert_case("ToString[NumberForm[1234.5678, {6, 2}]]", "1234.57");
+  }
+  // `Infinity` as the digit budget keeps every integer digit (no switch to
+  // scientific notation) while still fixing the decimals.
+  #[test]
+  fn to_string_number_form_infinite_digits_fixed_decimals() {
+    assert_case(
+      "ToString[NumberForm[1234567.5, {Infinity, 2}]]",
+      "1234567.50",
+    );
+    assert_case(
+      "ToString[NumberForm[1234567.5, {Infinity, 2}, DigitBlock -> 3]]",
+      "1,234,567.50",
+    );
+    assert_case("ToString[NumberForm[0.5, {Infinity, 2}]]", "0.50");
+    assert_case("ToString[NumberForm[-1234.567, {Infinity, 1}]]", "-1234.6");
+    assert_case("ToString[NumberForm[12, {Infinity, 2}]]", "12");
   }
   #[test]
   fn to_string_number_form_fixed_pads_zeros() {
@@ -15291,6 +15307,17 @@ mod to_expression_keeps_a_trailing_semicolon {
   use super::*;
 
   #[test]
+  fn evaluating_one_returns_null() {
+    // The last statement is the empty one after the `;`, so the value is
+    // `Null`, not the value of the assignment.
+    assert_eq!(
+      interpret("ToString[ToExpression[\"a = 1;\"], InputForm]").unwrap(),
+      "Null"
+    );
+    assert_eq!(interpret("ToExpression[\"a = 1; b = 2\"]").unwrap(), "2");
+  }
+
+  #[test]
   fn a_trailing_semicolon_adds_a_null() {
     assert_eq!(
       interpret(
@@ -15423,5 +15450,54 @@ mod number_form_base_form_identity_format {
       .unwrap(),
       "-|-"
     );
+  }
+}
+
+mod to_string_full_form_strings {
+  use super::*;
+
+  #[test]
+  fn a_string_is_its_quoted_literal() {
+    assert_eq!(
+      interpret(r#"ToString[FullForm[f["a\"b", "c\nd", "e\\f"]]]"#).unwrap(),
+      r#"f["a\"b", "c\nd", "e\\f"]"#
+    );
+    assert_eq!(
+      interpret(r#"StringLength[ToString[FullForm["s"]]]"#).unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(r#"ToString[FullForm[G[F[1., "l"], .2]]]"#).unwrap(),
+      r#"G[F[1.`, "l"], 0.2`]"#
+    );
+  }
+
+  #[test]
+  fn non_ascii_characters_are_escaped() {
+    assert_eq!(
+      interpret(
+        "ToString[FullForm[{FromCharacterCode[20013], \
+         FromCharacterCode[128512], FromCharacterCode[233], \
+         FromCharacterCode[960], \\[Alpha]}]]"
+      )
+      .unwrap(),
+      r#"List["\:4e2d", "\|01f600", "\[EAcute]", "\[Pi]", \[Alpha]]"#
+    );
+  }
+}
+
+mod form_wrappers_take_extra_arguments_silently {
+  use super::*;
+
+  #[test]
+  fn no_argx_at_evaluation() {
+    // wolframscript only complains when such a form is turned into text.
+    let r = interpret_with_stdout(
+      "{Head[TraditionalForm[x^2, Null]], Head[TeXForm[x, 30]], \
+       Head[FullForm[x, 2]], Head[OutputForm[x, 2]]}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{TraditionalForm, TeXForm, FullForm, OutputForm}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
   }
 }

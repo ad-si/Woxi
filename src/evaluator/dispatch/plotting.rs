@@ -73,6 +73,7 @@ const PLLD_HEADS: &[&str] = &[
   "VectorPlot3D",
   "StreamPlot",
   "StreamDensityPlot",
+  "VectorDensityPlot",
   "DensityPlot",
   "ReImPlot",
   "LogPlot",
@@ -596,15 +597,26 @@ pub fn dispatch_plotting(
     "StreamDensityPlot" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::field_plot::stream_density_plot_ast(args)
     })),
+    "VectorDensityPlot" if args.len() >= 3 => Some(quiet_plot(|| {
+      crate::functions::field_plot::vector_density_plot_ast(args)
+    })),
     "ListDensityPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::list_density_plot_ast(args)
+    })),
+    "ReliefPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::field_plot::relief_plot_ast(args)
     })),
     "ListContourPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::list_contour_plot_ast(args)
     })),
-    "ArrayPlot" if !args.is_empty() => Some(quiet_plot(|| {
-      crate::functions::field_plot::array_plot_ast(args)
-    })),
+    "ArrayPlot" if !args.is_empty() => Some(
+      match crate::functions::field_plot::array_plot_argument_error(args) {
+        Some(unevaluated) => Ok(unevaluated),
+        None => {
+          quiet_plot(|| crate::functions::field_plot::array_plot_ast(args))
+        }
+      },
+    ),
     "MatrixPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::matrix_plot_ast(args)
     })),

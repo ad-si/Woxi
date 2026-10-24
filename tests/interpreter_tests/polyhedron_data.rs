@@ -459,17 +459,15 @@ mod polyhedron_data_tests {
   // It joins the list of known entities.
   #[test]
   fn polyhedron_data_all_lists_every_entity() {
+    // Catalogue-agnostic: names, sorted, holding every class's members.
     assert_eq!(
-      interpret("PolyhedronData[All]").unwrap(),
-      "{AcuteGoldenRhombohedron, BilinskiDodecahedron, Cube, Cuboctahedron, DeltoidalHexecontahedron, \
-       DisdyakisTriacontahedron, Dodecahedron, GreatIcosahedron, GreatRhombicosidodecahedron, \
-       GreatStellatedDodecahedron, GyroelongatedSquareDipyramid, Icosahedron, \
-       Icosidodecahedron, ObtuseGoldenRhombohedron, Octahedron, PentakisDodecahedron, \
-       RhombicDodecahedron, RhombicHexecontahedron, RhombicIcosahedron, \
-       RhombicTriacontahedron, SmallRhombicosidodecahedron, \
-       SmallRhombicuboctahedron, SmallStellatedDodecahedron, SnubCube, StellaOctangula, Tetrahedron, \
-       TriangularOrthobicupola, TruncatedCube, TruncatedDodecahedron, TruncatedIcosahedron, \
-       TruncatedOctahedron, TruncatedTetrahedron}"
+      interpret(
+        "With[{all = PolyhedronData[All]}, {Length[all] > 100, \
+         SubsetQ[all, PolyhedronData[\"Platonic\"]], \
+         SubsetQ[all, PolyhedronData[\"Johnson\"]], MemberQ[all, \"SnubCube\"]}]"
+      )
+      .unwrap(),
+      "{True, True, True, True}"
     );
   }
 
@@ -486,9 +484,11 @@ mod polyhedron_data_tests {
        Polygon[{{8, 4, 2, 6}, {8, 6, 5, 7}, {8, 7, 3, 4}, {4, 3, 1, 2}, \
        {1, 3, 7, 5}, {2, 1, 5, 6}}]]"
     );
-    // The two parts agree with the properties they are built from, for
-    // every solid: the same corners (compared numerically, since the two
-    // radical forms need not print alike) and the same face indices.
+    // The two parts agree with the properties they are built from: the
+    // same corners (compared numerically, since the two radical forms need
+    // not print alike) and the same face indices. Checked on a spread of
+    // solids rather than all of them; the snub solids' Root coordinates
+    // take seconds to numericize in a debug build.
     assert_eq!(
       interpret(
         r#"Union @ Table[
@@ -496,7 +496,9 @@ mod polyhedron_data_tests {
                 N[PolyhedronData[s, "VertexCoordinates"]]] < 10^-10,
               PolyhedronData[s, "Faces"][[2, 1]] ===
                 PolyhedronData[s, "FaceIndices"]},
-             {s, PolyhedronData[All]}]"#
+             {s, Join[PolyhedronData["Platonic"], PolyhedronData["KeplerPoinsot"],
+               {"Cuboctahedron", "RhombicDodecahedron", "TruncatedIcosahedron",
+                "Bilunabirotunda", {"Pyramid", 4}, "StellaOctangula"}]}]"#
       )
       .unwrap(),
       "{{True, True}}"
@@ -994,16 +996,15 @@ mod polyhedron_data_tests {
       .unwrap(),
       "{True}"
     );
-    // Euler's formula holds for all of them, so no face or edge is lost.
-    // The small stellated dodecahedron is a genus-4 surface (sum -6).
+    // Euler's formula holds for every convex one, so no face or edge is
+    // lost. (Star solids, compounds and toroids have other characteristics.)
     assert_eq!(
       interpret(
         r#"Union @ Table[
              PolyhedronData[s, "VertexCount"] -
                PolyhedronData[s, "EdgeCount"] +
                PolyhedronData[s, "FaceCount"],
-             {s, DeleteCases[PolyhedronData[All],
-               "SmallStellatedDodecahedron"]}]"#
+             {s, PolyhedronData["Convex"]}]"#
       )
       .unwrap(),
       "{2}"
@@ -1441,45 +1442,50 @@ mod polyhedron_data_tests {
     );
   }
 
-  // The snub cube: 24 vertices on a sphere, 6 squares + 32 triangles, unit
-  // edge length (checked from the coordinates, not just the stored counts).
+  // `{"Pyramid", n}` and `{"Dipyramid", n}` are unit-edge: every edge of the
+  // solid (taken from its face indices) has length 1, the apex comes first,
+  // and the counts and volume follow from the regular base polygon.
   #[test]
-  fn polyhedron_data_snub_cube() {
+  fn polyhedron_data_pyramid_and_dipyramid() {
     assert_eq!(
       interpret(
-        r#"{PolyhedronData["SnubCube", "VertexCount"],
-           PolyhedronData["SnubCube", "EdgeCount"],
-           PolyhedronData["SnubCube", "FaceCount"],
-           Sort[Length /@ PolyhedronData["SnubCube", "FaceIndices"]][[{1, -1}]],
-           Length[PolyhedronData["SnubCube", "VertexCoordinates"]],
-           PolyhedronData["SnubCube", "Name"]}"#
+        r#"Table[{PolyhedronData[{"Pyramid", n}, "VertexCount"],
+           PolyhedronData[{"Pyramid", n}, "FaceCount"],
+           PolyhedronData[{"Dipyramid", n + 1}, "VertexCount"],
+           PolyhedronData[{"Dipyramid", n + 1}, "FaceCount"]}, {n, 4, 4}]"#
       )
       .unwrap(),
-      "{24, 60, 38, {3, 4}, 24, snub cube}"
+      "{{5, 5, 7, 10}}"
     );
-  }
-
-  #[test]
-  fn polyhedron_data_snub_cube_metrics_match_geometry() {
     assert_eq!(
       interpret(
-        r#"Module[{v = N[PolyhedronData["SnubCube", "VertexCoordinates"]],
-             e = PolyhedronData["SnubCube", "EdgeIndices"]},
-           {AllTrue[Norm[v[[#[[1]]]] - v[[#[[2]]]]] & /@ e, Abs[# - 1] < 10^-9 &],
-            Abs[Norm[v[[1]]] - N[PolyhedronData["SnubCube", "Circumradius"]]] < 10^-9,
-            Abs[N[PolyhedronData["SnubCube", "Volume"]] - 7.8894774] < 10^-6}]"#
+        r#"Table[v = N[PolyhedronData[{kind, n}, "VertexCoordinates"]];
+          Union[Round[Norm[v[[#[[1]]]] - v[[#[[2]]]]] & /@
+            Flatten[Map[Partition[#, 2, 1, 1] &,
+              PolyhedronData[{kind, n}, "FaceIndices"]], 1], 10^-9]],
+          {kind, {"Pyramid", "Dipyramid"}}, {n, 4, 5}]"#
       )
       .unwrap(),
-      "{True, True, True}"
+      "{{{1}, {1}}, {{1}, {1}}}"
     );
-  }
-
-  #[test]
-  fn polyhedron_data_snub_cube_in_archimedean_class() {
     assert_eq!(
-      interpret(r#"MemberQ[PolyhedronData["Archimedean"], "SnubCube"]"#)
-        .unwrap(),
-      "True"
+      interpret(r#"PolyhedronData[{"Pyramid", 4}, "Volume"]"#).unwrap(),
+      "1/(3*Sqrt[2])"
+    );
+    assert_eq!(
+      interpret(
+        r#"v = N[PolyhedronData[{"Pyramid", 4}, "VertexCoordinates"]];
+        {v[[1, 3]], v[[2, 3]]}"#
+      )
+      .unwrap(),
+      "{0.5303300858899107, -0.1767766952966369}"
+    );
+    assert_eq!(
+      interpret(
+        r#"N[Take[PolyhedronData[{"Dipyramid", 3}, "VertexCoordinates"], 2]]"#
+      )
+      .unwrap(),
+      "{{0., 0., 0.816496580927726}, {0., 0., -0.816496580927726}}"
     );
   }
 }

@@ -7506,6 +7506,28 @@ mod tests {
       .expect("the Manipulate must instantiate");
     assert_eq!(state.error, None, "{:?}", state.error);
   }
+  /// A coordination-geometry Manipulate builds its ligand polyhedra from
+  /// `PolyhedronData[{"Pyramid", 4}, …]` and `{"Dipyramid", 3}` vertex
+  /// coordinates (initialization cells) and draws them as 3D balls and
+  /// faces. The families were unknown, leaving empty coordinate lists.
+  #[test]
+  fn polyhedron_family_geometry_manipulate_renders() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData["geo[poly_] := Graphics3D[{Sphere[N[PolyhedronData[poly, \"VertexCoordinates\"]], .1], Opacity[.4], PolyhedronData[poly, \"Faces\"]}];"], "Input", InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[geo[If[k == 1, {\"Pyramid\", 4}, {\"Dipyramid\", 3}]], {{k, 1}, {1, 2}}, SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some(), "the solid must render");
+  }
   /// A random-walk Manipulate whose plot pins `AxesOrigin -> {0, 0}` and
   /// titles itself with a `Framed` message opens with the plot rendered
   /// (the walk's helper is an initialization cell).
@@ -9647,6 +9669,27 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   /// widget ever renders. This mirrors the general construct category used
   /// by many single-parameter Wolfram Demonstrations Project notebooks
   /// (independently written, not copied from any specific one).
+  #[test]
+  fn manipulate_initialization_sees_the_controls_initial_values() {
+    // A DynamicModule's variables hold their values before its
+    // Initialization runs (TexasHoldEmPossibleOutcomesAfterTheFlop builds
+    // its deck from a `ControlType -> None` list).
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Length[deckSI], \
+       {{suitsSI, {\"a\", \"b\"}}, ControlType -> None}, \
+       {{n, 1}, 1, 3, 1}, \
+       Initialization :> (deckSI = Table[suitsSI[[i]], {i, 2}])]",
+    )
+    .expect("Manipulate should parse and hold");
+    let _state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("should build a ManipulateState");
+    assert_eq!(
+      woxi::interpret("deckSI").unwrap(),
+      "{a, b}",
+      "Initialization read the control's initial value"
+    );
+  }
+
   #[test]
   fn manipulate_multi_statement_body_with_initialization_builds_one_slider() {
     let expr = woxi::interpret_to_expr(

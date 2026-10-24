@@ -6352,6 +6352,34 @@ mod distance_transform {
        represent a real number."
     ));
   }
+
+  #[test]
+  fn manhattan_and_chessboard_metrics() {
+    clear_state();
+    let img = "Image[{{0, 1, 1}, {1, 1, 1}, {1, 1, 1}}]";
+    assert_eq!(
+      interpret(&format!(
+        "ImageData[DistanceTransform[{img}, DistanceFunction -> ManhattanDistance]]"
+      ))
+      .unwrap(),
+      "{{0., 1., 2.}, {1., 2., 3.}, {2., 3., 4.}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "ImageData[DistanceTransform[{img}, DistanceFunction -> ChessboardDistance]]"
+      ))
+      .unwrap(),
+      "{{0., 1., 2.}, {1., 1., 2.}, {2., 2., 2.}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "ImageData[DistanceTransform[{img}, 0, DistanceFunction -> EuclideanDistance]] \
+         == ImageData[DistanceTransform[{img}]]"
+      ))
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 // FillingTransform semantics decoded from wolframscript probes: the plain

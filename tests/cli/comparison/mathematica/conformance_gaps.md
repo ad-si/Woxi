@@ -194,6 +194,18 @@ though its total degree is lower — so this needs WL's actual lexicographic
 monomial comparison. Everything else in a 211-expression TeXForm sweep
 agrees.
 
+`TraditionalForm` boxes share the order, and a Demonstration that keys a
+lookup table on `ToString[f, TraditionalForm]` (NewtonsMethod) then misses
+the saved control value:
+
+```sh
+wolframscript -code 'ToString[Sin[x] + 3 Cos[x], TraditionalForm]'  # sin(x) + 3 cos(x) boxes
+woxi eval 'ToString[Sin[x] + 3 Cos[x], TraditionalForm]'            # 3 cos(x) + sin(x) boxes
+```
+
+More samples of the order: `a + b + Sin[a]` is `a+sin(a)+b`, `3 + a + Cos[b]`
+is `a+cos(b)+3`, and `Cos[x] + Sin[x] + Tan[x]` is `sin(x)+cos(x)+tan(x)`.
+
 ### TeXForm writes a rational exponent's quotient with a `\left.` bar
 
 ```sh
@@ -1829,6 +1841,23 @@ Woxi integrates on 1000 nominal RK4 steps with bisection refinement;
 wolframscript adapts. `Length[(y /. s[[1]])[[2]]]` is 1001 against 13. Note
 that stock wolframscript's *default* tolerances can be **less** accurate than
 Woxi's here — get a converged reference before treating a difference as a bug.
+
+### Zero-dimensional polynomial systems are expressed through one `Root`
+
+When no equation of a polynomial system can be solved for an unknown in
+closed form, `Solve` and `Reduce` take a lexicographic Groebner basis and
+return `x == Root[R & , k, 0]` with every other unknown as a polynomial in that
+root. The solutions are right (they satisfy the system to machine precision
+once numericized), but wolframscript gives each unknown its own `Root` of a
+univariate polynomial, so the exact printed form differs. Systems whose basis is
+not in this shape (repeated roots, positive dimension) stay unevaluated. Machine
+precision `N` of the polynomial-in-`Root` values loses about 7 digits to
+cancellation (residuals around `1e-9`), where wolframscript raises its working
+precision.
+
+`Reduce[{x^3 + y^3 + x y == 3, x^2 + x y^2 == 2}, {x, y}, Reals]` returns a
+single branch with a `Sqrt` that is not real for that root, although three real
+solutions exist (`Solve[..., Reals]` finds them).
 
 ### `Reduce` does not eliminate quantifiers
 
@@ -5433,13 +5462,6 @@ Further entities (e.g. `"SquashedDodecahedron"`, the Johnson solids,
 `"Antiprism"` / `"Dipyramid"` / `"Pyramid"` families, `"TriakisTetrahedron"`)
 give `PolyhedronData::notent`, so notebooks that offer them in a menu
 (such as polyhedron projection demonstrations) fail on those entries.
-
-`PolyhedronData["SnubCube", …]` was written from its geometry (tribonacci
-constant coordinates, unit edge length); its vertex order, face order and
-winding, and the `Root`-based form of `"Volume"`/`"Circumradius"` are
-unverified against wolframscript. `"SnubDodecahedron"`,
-`"GreatRhombicuboctahedron"` and the Kepler–Poinsot / Johnson menu entries are
-still unknown.
 
 ### EdgeDetect only implements `Method -> "Canny"`
 

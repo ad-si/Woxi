@@ -554,23 +554,25 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .any(|u| derivative_unknown_base(u).is_some())
   {
-    let mut bases: Vec<String> = Vec::new();
+    let mut bases: Vec<Expr> = Vec::new();
     for u in unknowns {
       let base = derivative_unknown_base(u).or_else(|| match u {
-        Expr::Identifier(name) => Some(name.clone()),
-        Expr::FunctionCall { name, .. } => Some(name.clone()),
+        Expr::Identifier(_) => Some(u.clone()),
+        Expr::FunctionCall { name, .. } => Some(Expr::Identifier(name.clone())),
         _ => None,
       });
       let Some(base) = base else {
         return Ok(unevaluated("NDSolve", args));
       };
-      if !bases.contains(&base) {
+      if !bases
+        .iter()
+        .any(|b| expr_to_string(b) == expr_to_string(&base))
+      {
         bases.push(base);
       }
     }
     let mut reduced = args.to_vec();
-    reduced[1] =
-      Expr::List(bases.iter().map(|b| Expr::Identifier(b.clone())).collect());
+    reduced[1] = Expr::List(bases.into());
     let solved = ndsolve_ast_inner(&reduced)?;
     let Expr::List(solutions) = &solved else {
       return Ok(solved);
@@ -2950,7 +2952,7 @@ fn rewrite_pde_rhs_hyperbolic(
 /// check).
 /// The function a derivative unknown differentiates: `x` for `x'[t]` or
 /// `x''`, which evaluate to `Derivative[n, x, t]` and `Derivative[n, x]`.
-fn derivative_unknown_base(u: &Expr) -> Option<String> {
+fn derivative_unknown_base(u: &Expr) -> Option<Expr> {
   match u {
     Expr::FunctionCall { name, args }
       if name == "Derivative"
@@ -2958,7 +2960,29 @@ fn derivative_unknown_base(u: &Expr) -> Option<String> {
         && matches!(&args[0], Expr::Integer(_)) =>
     {
       match &args[1] {
-        Expr::Identifier(f) => Some(f.clone()),
+        f @ (Expr::Identifier(_) | Expr::FunctionCall { .. }) => {
+          Some(f.clone())
+        }
+        _ => None,
+      }
+    }
+    // The parsed form `Derivative[k][f]` / `Derivative[k][f][x]`, whose
+    // `f` may be a compound head such as `θ[1]`.
+    Expr::CurriedCall { func, args } if args.len() == 1 => {
+      match func.as_ref() {
+        Expr::FunctionCall { name, args: orders }
+          if name == "Derivative"
+            && orders.len() == 1
+            && matches!(&orders[0], Expr::Integer(_)) =>
+        {
+          match &args[0] {
+            f @ (Expr::Identifier(_) | Expr::FunctionCall { .. }) => {
+              Some(f.clone())
+            }
+            _ => None,
+          }
+        }
+        inner @ Expr::CurriedCall { .. } => derivative_unknown_base(inner),
         _ => None,
       }
     }
@@ -4948,7 +4972,7 @@ fn ndsolve_system(
             &time_events,
             event_ctx,
             x_name,
-            cached_mass_matrix.as_deref(),
+            cached_mass_matrix.as_ref(),
           )?
         } else {
           integrate_leg_until_event(
@@ -4961,7 +4985,7 @@ fn ndsolve_system(
             event.and_then(|e| e.action.as_ref()),
             event_ctx,
             x_name,
-            cached_mass_matrix.as_deref(),
+            cached_mass_matrix.as_ref(),
           )?
         };
         let Some(forward) = forward else {
@@ -4991,7 +5015,7 @@ fn ndsolve_system(
             &[],
             StateEventCtx::none(),
             x_name,
-            cached_mass_matrix.as_deref(),
+            cached_mass_matrix.as_ref(),
           )?;
           let Some(leg) = leg else {
             return Ok(None);
@@ -5300,7 +5324,7 @@ fn integrate_leg_until_event(
   event_action: Option<&Expr>,
   state_events: StateEventCtx,
   x_name: &str,
-  cached_m: Option<&[Vec<f64>]>,
+  cached_m: Option<&MassLu>,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
   let mut window = 1.0f64;
   for attempt in 0..MAX_UNBOUNDED_DOUBLINGS {
@@ -5414,7 +5438,7 @@ fn solve_bvp_shooting(
       &[],
       StateEventCtx::none(),
       x_name,
-      cached_mass_matrix.as_deref(),
+      cached_mass_matrix.as_ref(),
     )?;
     let Some(pts) = pts else {
       return Ok(None);
@@ -5841,7 +5865,7 @@ fn integrate_leg(
   time_events: &[TimeEvent],
   state_events: StateEventCtx,
   x_name: &str,
-  cached_m: Option<&[Vec<f64>]>,
+  cached_m: Option<&MassLu>,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
   // At least one step for a leg of any length: an initial point just inside
   // the domain leaves a backward leg shorter than half a step, which would
@@ -5879,7 +5903,10 @@ fn integrate_leg(
   let eval_event = |x: f64, state: &[f64]| -> Option<f64> {
     event_fn.and_then(|f| f.eval_state(x, state, funcs.len()).ok())
   };
-  let mut prev_event = eval_event(x, &state);
+  // An event function that starts at zero (to within roundoff — a bounce
+  // restarted on the surface it bounced off) has no side yet, so the
+  // first step cannot cross it; its sign is taken after that step.
+  let mut prev_event = eval_event(x, &state).filter(|g| g.abs() > 1e-8);
   let state_value = |ev: &StateEvent, x: f64, state: &[f64]| {
     ev.value(x, state, funcs, state_events.var_names)
   };
@@ -6152,7 +6179,7 @@ fn rk4_step_refined(
   h: f64,
   depth: u32,
   out: &mut Vec<(f64, Vec<f64>)>,
-  cached_m: Option<&[Vec<f64>]>,
+  cached_m: Option<&MassLu>,
 ) -> Result<Option<Vec<f64>>, InterpreterError> {
   let Some(full) =
     rk4_system_step(residuals, funcs, state_offset, state, x, h, cached_m)?
@@ -6242,7 +6269,7 @@ fn rk4_system_step(
   state: &[f64],
   x: f64,
   h: f64,
-  cached_m: Option<&[Vec<f64>]>,
+  cached_m: Option<&MassLu>,
 ) -> Result<Option<Vec<f64>>, InterpreterError> {
   let deriv = |s: &[f64],
                xv: f64|
@@ -6409,12 +6436,12 @@ fn solve_highest_derivatives_cached(
   n_funcs: usize,
   x: f64,
   state: &[f64],
-  cached_m: Option<&[Vec<f64>]>,
+  cached_m: Option<&MassLu>,
 ) -> Option<Vec<f64>> {
   let n = n_funcs;
   let c = residual_constant_term(residuals, n, x, state)?;
-  if let Some(m) = cached_m {
-    solve_mass_matrix_system(m.to_vec(), &c)
+  if let Some(lu) = cached_m {
+    Some(lu.solve(&c))
   } else {
     let m = mass_matrix(residuals, n, x, state, &c)?;
     solve_mass_matrix_system(m, &c)
@@ -6464,7 +6491,7 @@ fn probe_constant_mass_matrix(
   state0: &[f64],
   x_min: f64,
   x_max: f64,
-) -> Option<Vec<Vec<f64>>> {
+) -> Option<MassLu> {
   // The probe points are the solver's own, not the user's: a singular
   // right-hand side there (`1/(x - x0)` guarded by `If[t == 0, …]`) must
   // not print messages for evaluations the kernel would never make.
@@ -6474,7 +6501,65 @@ fn probe_constant_mass_matrix(
     probe_constant_mass_matrix_inner(residuals, n, x0, state0, x_min, x_max);
   crate::pop_quiet();
   crate::restore_warnings(snapshot);
-  result
+  result.and_then(MassLu::factor)
+}
+
+/// A constant mass matrix factored once: the elimination
+/// `solve_mass_matrix_system` performs, with each row's multipliers kept
+/// below the diagonal and the pivot row of each column, so every stage
+/// solve costs O(n²) instead of O(n³) — and gives bit-for-bit the same
+/// answer, since the pivots depend on the matrix alone and the right-hand
+/// side sees the very same operations in the same order.
+pub(crate) struct MassLu {
+  lu: Vec<Vec<f64>>,
+  pivots: Vec<usize>,
+}
+
+impl MassLu {
+  fn factor(mut m: Vec<Vec<f64>>) -> Option<Self> {
+    let n = m.len();
+    let mut pivots = Vec::with_capacity(n);
+    for col in 0..n {
+      let (pivot_row, pivot_abs) = (col..n)
+        .map(|r| (r, m[r][col].abs()))
+        .max_by(|a, b| a.1.total_cmp(&b.1))?;
+      if pivot_abs < 1e-14 {
+        return None;
+      }
+      m.swap(col, pivot_row);
+      pivots.push(pivot_row);
+      for row in col + 1..n {
+        let factor = m[row][col] / m[col][col];
+        for k in col + 1..n {
+          m[row][k] -= factor * m[col][k];
+        }
+        m[row][col] = factor;
+      }
+    }
+    Some(Self { lu: m, pivots })
+  }
+
+  /// `hvec` with `M·hvec = -c`.
+  fn solve(&self, c: &[f64]) -> Vec<f64> {
+    let n = c.len();
+    let m = &self.lu;
+    let mut rhs: Vec<f64> = c.iter().map(|v| -v).collect();
+    for col in 0..n {
+      rhs.swap(col, self.pivots[col]);
+      for row in col + 1..n {
+        rhs[row] -= m[row][col] * rhs[col];
+      }
+    }
+    let mut sol = vec![0.0; n];
+    for row in (0..n).rev() {
+      let mut acc = rhs[row];
+      for k in row + 1..n {
+        acc -= m[row][k] * sol[k];
+      }
+      sol[row] = acc / m[row][row];
+    }
+    sol
+  }
 }
 
 fn probe_constant_mass_matrix_inner(
@@ -10224,7 +10309,7 @@ fn evaluate_grid_interpolating_function(
       axis[0].min(axis[axis.len() - 1]),
       axis[0].max(axis[axis.len() - 1]),
     );
-    v < lo || v > hi
+    outside_interpolation_domain(v, lo, hi)
   }) {
     emit_dmval(&query);
   }
@@ -10302,6 +10387,16 @@ fn evaluate_grid_interpolating_function(
   };
   let comps = along(0, &mut Vec::new(), &(&leaf, &windows, &axes, &x, &deriv))?;
   Ok(grid_rebuild(&template, &mut comps.into_iter()))
+}
+
+/// Whether `x` lies outside `[lo, hi]` by more than wolframscript lets
+/// pass without `InterpolatingFunction::dmval`: a query a few millionths
+/// of the domain's width past an end (a grid built by repeated `t += dt`
+/// overshoots by rounding) is silent; from about 10^-5 of the width on it
+/// warns.
+pub(crate) fn outside_interpolation_domain(x: f64, lo: f64, hi: f64) -> bool {
+  let slack = 7.5e-6 * (hi - lo).abs();
+  x < lo - slack || x > hi + slack
 }
 
 /// `InterpolatingFunction::dmval` for a query point outside the data.
@@ -10999,7 +11094,7 @@ pub fn evaluate_interpolating_function(
     } else {
       let x_expr = crate::evaluator::evaluate_expr_to_expr(&call_args[0])?;
       if let Ok(x) = interp_value_to_f64(&x_expr) {
-        if x < sp.xs[0] || x > sp.xs[sp.xs.len() - 1] {
+        if outside_interpolation_domain(x, sp.xs[0], sp.xs[sp.xs.len() - 1]) {
           emit_dmval(std::slice::from_ref(&x_expr));
         }
         return Ok(Expr::Real(sp.eval(x, derivative_order)));
@@ -11071,7 +11166,7 @@ pub fn evaluate_interpolating_function(
   if let (Ok((x_lo, _)), Ok((x_hi, _))) = (
     extract_point(&data_points[0]),
     extract_point(&data_points[n - 1]),
-  ) && (x_val < x_lo || x_val > x_hi)
+  ) && outside_interpolation_domain(x_val, x_lo, x_hi)
   {
     emit_dmval(std::slice::from_ref(&x_val_expr));
   }

@@ -4168,6 +4168,18 @@ pub(crate) fn number_form_fixed_parts(
   Some((number_form_fixed_to_string(x, n, f)?, None))
 }
 
+/// The significant-digit budget `n` of a `NumberForm[x, {n, f}]` spec:
+/// an integer, or `Infinity` for "every digit of the integer part".
+pub(crate) fn number_form_digit_budget(n: &Expr) -> Option<i64> {
+  match n {
+    Expr::Integer(n) => i64::try_from(*n).ok(),
+    Expr::Identifier(id) | Expr::Constant(id) if id == "Infinity" => {
+      Some(i64::MAX)
+    }
+    _ => None,
+  }
+}
+
 /// Group a digit string into blocks of `block`, counting from the RIGHT (used
 /// for the integer part), joined by `sep`. E.g. ("1234567", 3, ",") -> "1,234,567".
 fn group_digits_from_right(digits: &str, block: usize, sep: &str) -> String {
@@ -5657,7 +5669,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "FullForm"
     && inner_args.len() == 1
   {
-    return Ok(Expr::String(crate::functions::expr_form::render_full_form(
+    return Ok(Expr::String(crate::functions::expr_form::full_form_text(
       &inner_args[0],
     )));
   }
@@ -9895,9 +9907,14 @@ pub fn to_expression_ast_as(
   if s.trim().is_empty() {
     return Ok(null_expr());
   }
+  // The input is parsed once and the statements reused below; a long data
+  // literal costs far more to parse than to evaluate.
+  let statements = parse_program_statements(&s);
   // Syntactically invalid input yields $Failed with a Wolfram syntax message
   // (sntxi/sntx), rather than leaking the internal parser error.
-  if let Some(msg) = to_expression_syntax_error(&s, message_symbol) {
+  if let Some(msg) =
+    to_expression_syntax_error(&s, message_symbol, statements.is_some())
+  {
     crate::emit_message(&msg);
     return Ok(fail_expr());
   }
@@ -9909,8 +9926,10 @@ pub fn to_expression_ast_as(
     // The parse is read like any other input: its symbols resolve against
     // the contexts open now (`MakeExpression["Int[u]"]` with `Rubi\`` on
     // `$ContextPath` names `Rubi\`Int`, not a fresh `Global\`Int`).
-    let parsed =
-      crate::evaluator::contexts::rewrite(&parse_program_to_expr(&s)?);
+    let parsed = crate::evaluator::contexts::rewrite(&match statements {
+      Some(statements) => statements_to_expr(statements),
+      None => parse_program_to_expr(&s)?,
+    });
     // The head need not be a symbol: WLX wraps its interpolations with
     // `FakeHold @* ToString`, and `Composition[…][parsed]` is a call of a
     // compound head, not of a symbol spelled `"FakeHold @* ToString"`.
@@ -9922,7 +9941,19 @@ pub fn to_expression_ast_as(
   }
   // Multi-statement input (e.g. "2\n3" or "2; 3") evaluates each statement
   // in order and returns the last result, matching Wolfram semantics.
-  parse_and_evaluate_program(&s)
+  match statements {
+    Some(statements) => {
+      let mut last = null_expr();
+      for statement in statements {
+        // Text turned into an expression is read now, so its symbols
+        // resolve against the contexts open now.
+        let expr = crate::evaluator::contexts::rewrite(&statement);
+        last = crate::evaluator::evaluate_expr_to_expr(&expr)?;
+      }
+      Ok(last)
+    }
+    None => parse_and_evaluate_program(&s),
+  }
 }
 
 /// Parse `src` as a Wolfram program and return the (unevaluated) expression
@@ -9932,40 +9963,59 @@ pub fn to_expression_ast_as(
 pub(crate) fn parse_program_to_expr(
   src: &str,
 ) -> Result<Expr, InterpreterError> {
-  use crate::Rule;
-  let normalized = if src.contains('\r') {
+  match parse_program_statements(src) {
+    Some(statements) => Ok(statements_to_expr(statements)),
+    None => crate::syntax::string_to_expr(&normalize_line_ends(src)),
+  }
+}
+
+/// `src` with `\r\n` and lone `\r` line ends read as `\n`.
+fn normalize_line_ends(src: &str) -> String {
+  if src.contains('\r') {
     src.replace("\r\n", "\n").replace('\r', "\n")
   } else {
     src.to_string()
-  };
-  let preprocessed = crate::insert_statement_separators(normalized.trim());
-  if let Ok(mut pairs) = crate::parse(&preprocessed)
-    && let Some(program) = pairs.next()
-    && program.as_rule() == Rule::Program
-  {
-    let mut exprs: Vec<Expr> = Vec::new();
-    for node in program.into_inner() {
-      if crate::is_statement_rule(node.as_rule()) {
-        exprs.push(pair_to_expr(node));
-      }
-    }
-    // A trailing `;` ends an empty statement, so the program is a
-    // `CompoundExpression` whose last part is `Null` — `ToExpression["a :=
-    // 1;", InputForm, Hold]` is `Hold[a := 1; ]`, not `Hold[a := 1]`. WLX
-    // reads a `.wlx` file statement by statement this way and matches on the
-    // trailing `Null` to find the names to localise.
-    if normalized.trim_end().ends_with(';') && !exprs.is_empty() {
-      exprs.push(null_expr());
-    }
-    match exprs.len() {
-      0 => {}
-      1 => return Ok(exprs.into_iter().next().unwrap()),
-      _ => {
-        return Ok(call("CompoundExpression", exprs));
-      }
-    }
   }
-  crate::syntax::string_to_expr(&normalized)
+}
+
+/// The unevaluated top-level statements of `src` when the program grammar
+/// accepts it and it has at least one. A trailing `;` ends an empty
+/// statement, so the program is a `CompoundExpression` whose last part is
+/// `Null` — `ToExpression["a := 1;", InputForm, Hold]` is `Hold[a := 1; ]`,
+/// not `Hold[a := 1]`. WLX reads a `.wlx` file statement by statement this
+/// way and matches on the trailing `Null` to find the names to localise.
+fn parse_program_statements(src: &str) -> Option<Vec<Expr>> {
+  use crate::Rule;
+  let normalized = normalize_line_ends(src);
+  let preprocessed = crate::insert_statement_separators(normalized.trim());
+  let program = crate::parse(&preprocessed).ok()?.next()?;
+  if program.as_rule() != Rule::Program {
+    return None;
+  }
+  // Every alternative of the grammar's `Statement` rule must be kept, not
+  // just `Expression`. A definition whose left side carries a pattern
+  // (`f[x_] := …`) parses as `FunctionDefinition`.
+  let mut exprs: Vec<Expr> = program
+    .into_inner()
+    .filter(|node| crate::is_statement_rule(node.as_rule()))
+    .map(pair_to_expr)
+    .collect();
+  if exprs.is_empty() {
+    return None;
+  }
+  if normalized.trim_end().ends_with(';') {
+    exprs.push(null_expr());
+  }
+  Some(exprs)
+}
+
+/// One statement as itself; several as their `CompoundExpression`.
+fn statements_to_expr(mut statements: Vec<Expr>) -> Expr {
+  if statements.len() == 1 {
+    statements.pop().unwrap()
+  } else {
+    call("CompoundExpression", statements)
+  }
 }
 
 /// If `src` is not syntactically valid Wolfram input, return the message
@@ -9973,13 +10023,14 @@ pub(crate) fn parse_program_to_expr(
 /// parse failed at end of input) or `sntx` for invalid syntax elsewhere.
 /// Returns `None` when the input parses — it may still fail at evaluation
 /// time, which is handled by the normal evaluation path.
-fn to_expression_syntax_error(src: &str, symbol: &str) -> Option<String> {
+/// `program_parsed` says the program grammar already accepted `src`.
+fn to_expression_syntax_error(
+  src: &str,
+  symbol: &str,
+  program_parsed: bool,
+) -> Option<String> {
   use crate::Rule;
-  let normalized = if src.contains('\r') {
-    src.replace("\r\n", "\n").replace('\r', "\n")
-  } else {
-    src.to_string()
-  };
+  let normalized = normalize_line_ends(src);
   let preprocessed = crate::insert_statement_separators(normalized.trim());
   // A `\!\(\*boxes\)` escape is read along with the source around it, so box
   // source the reader rejects is a syntax error even though the grammar
@@ -9990,6 +10041,9 @@ fn to_expression_syntax_error(src: &str, symbol: &str) -> Option<String> {
     ));
   }
   // The program grammar accepts it -> syntactically valid.
+  if program_parsed {
+    return None;
+  }
   if let Ok(mut pairs) = crate::parse(&preprocessed)
     && pairs.next().is_some_and(|p| p.as_rule() == Rule::Program)
   {
@@ -16035,8 +16089,8 @@ fn number_form_family_scalar(
   let fixed = match spec {
     Some(Expr::List(parts)) if parts.len() == 2 => {
       match (&parts[0], &parts[1]) {
-        (Expr::Integer(n), Expr::Integer(f)) if *n >= 0 && *f >= 0 => {
-          Some((*n as i64, *f as i64))
+        (n, Expr::Integer(f)) if *f >= 0 => {
+          Some((number_form_digit_budget(n).filter(|n| *n >= 0)?, *f as i64))
         }
         _ => return None,
       }

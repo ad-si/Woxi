@@ -475,48 +475,6 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       \"Equilateral\", \"Rigid\", \"Rupert\", \"Simple\", \
       \"Uniform\", \"Zalgaller\"}",
   },
-  PolyhedronInfo {
-    name: "SnubCube",
-    vertex_count: 24,
-    edge_count: 60,
-    face_count: 38,
-    // With t the tribonacci constant (the real root of t^3 - t^2 - t - 1),
-    // the raw coordinates below have edge length Sqrt[2 + 2/t^2] and volume
-    // (4 + 28 t^2)/3; both are scaled to unit edge length.
-    volume: "(4 + 28*Root[-1 - #1 - #1^2 + #1^3 & , 1]^2)/(3*(2 + 2/Root[-1 - #1 - #1^2 + #1^3 & , 1]^2)^(3/2))",
-    surface_area: "6 + 8*Sqrt[3]",
-    circumradius: "Sqrt[(1 + Root[-1 - #1 - #1^2 + #1^3 & , 1]^-2 + Root[-1 - #1 - #1^2 + #1^3 & , 1]^2)/(2 + 2/Root[-1 - #1 - #1^2 + #1^3 & , 1]^2)]",
-    inradius: "Missing[\"NotApplicable\"]",
-    midradius: "Missing[\"NotApplicable\"]",
-    // Even permutations of {+-1, +-1/t, +-t} with an even number of plus
-    // signs and odd permutations with an odd number, scaled to unit edge.
-    // The vertex and face order is not verified against wolframscript.
-    vertices_src: "With[{t = Root[-1 - #1 - #1^2 + #1^3 & , 1]}, With[{s = 1/Sqrt[2 + 2/t^2]}, {\
-      {s*1, s*1/t, -s*t}, {s*1, -s*1/t, s*t}, \
-      {-s*1, s*1/t, s*t}, {-s*1, -s*1/t, -s*t}, \
-      {s*1, s*t, s*1/t}, {s*1, -s*t, -s*1/t}, \
-      {-s*1, s*t, -s*1/t}, {-s*1, -s*t, s*1/t}, \
-      {s*1/t, s*1, s*t}, {s*1/t, -s*1, -s*t}, \
-      {-s*1/t, s*1, -s*t}, {-s*1/t, -s*1, s*t}, \
-      {s*1/t, s*t, -s*1}, {s*1/t, -s*t, s*1}, \
-      {-s*1/t, s*t, s*1}, {-s*1/t, -s*t, -s*1}, \
-      {s*t, s*1, -s*1/t}, {s*t, -s*1, s*1/t}, \
-      {-s*t, s*1, s*1/t}, {-s*t, -s*1, -s*1/t}, \
-      {s*t, s*1/t, s*1}, {s*t, -s*1/t, -s*1}, \
-      {-s*t, s*1/t, -s*1}, {-s*t, -s*1/t, s*1}}]]",
-    faces_src: "{{11, 1, 10, 4}, {12, 2, 9, 3}, {15, 5, 13, 7}, {16, 6, 14, 8}, {22, \
-      17, 21, 18}, {24, 19, 23, 20}, {9, 2, 21}, {9, 5, 15}, {10, 1, 22}, \
-      {10, 6, 16}, {11, 4, 23}, {11, 7, 13}, {12, 3, 24}, {12, 8, 14}, {13, \
-      1, 11}, {13, 5, 17}, {14, 2, 12}, {14, 6, 18}, {15, 3, 9}, {15, 7, \
-      19}, {16, 4, 10}, {16, 8, 20}, {17, 1, 13}, {17, 5, 21}, {18, 2, 14}, \
-      {18, 6, 22}, {19, 3, 15}, {19, 7, 23}, {20, 4, 16}, {20, 8, 24}, {21, \
-      2, 18}, {21, 5, 9}, {22, 1, 17}, {22, 6, 10}, {23, 4, 20}, {23, 7, \
-      11}, {24, 3, 19}, {24, 8, 12}}",
-    classes_src: "\
-      {\"Archimedean\", \"Canonical\", \"Chiral\", \"Convex\", \
-      \"Equilateral\", \"Rigid\", \"Rupert\", \"Simple\", \
-      \"Uniform\", \"Zalgaller\"}",
-  },
   // The rhombic dodecahedron is the one Catalan solid here: its faces are
   // rhombi, not regular polygons, so it has no circumradius (its vertices
   // are not all the same distance from the center).
@@ -1800,6 +1758,13 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
   },
 ];
 
+include!("polyhedron_data_generated.rs");
+
+/// Every built-in solid: the hand-written table, then the generated one.
+fn all_polyhedra() -> impl Iterator<Item = &'static PolyhedronInfo> {
+  POLYHEDRA.iter().chain(GENERATED_POLYHEDRA.iter())
+}
+
 fn find_polyhedron(name: &str) -> Option<&'static PolyhedronInfo> {
   // "Hexahedron" is the standard alternative name for the cube.
   // "MathematicaSpikey" (the Mathematica/Wolfram|Alpha logo) is a rhombic
@@ -1812,7 +1777,27 @@ fn find_polyhedron(name: &str) -> Option<&'static PolyhedronInfo> {
     "MathematicaSpikey" | "Spikey" => "RhombicHexecontahedron",
     _ => name,
   };
-  POLYHEDRA.iter().find(|p| p.name == name)
+  all_polyhedra().find(|p| p.name == name).or_else(|| {
+    let (_, canonical) =
+      GENERATED_ALIASES.iter().find(|(alias, _)| *alias == name)?;
+    all_polyhedra().find(|p| p.name == *canonical)
+  })
+}
+
+/// An entity as Wolfram names it: a string, or the specification list a
+/// solid like `{"Pyramid", 4}` is stored under.
+fn entity_expr(name: &str) -> Expr {
+  if name.starts_with('{') {
+    eval_wl(name).unwrap_or_else(|_| str_expr(name))
+  } else {
+    str_expr(name)
+  }
+}
+
+/// Entity names in Wolfram's listing order: alphabetical, a specification
+/// sorting by its words (`{"Dipyramid", 3}` among the D's).
+fn sort_entity_names(names: &mut [&str]) {
+  names.sort_by_key(|n| n.replace(['{', '"'], ""));
 }
 
 /// The exact unit-edge volume of a Platonic solid, as WL source.
@@ -2274,7 +2259,7 @@ static PROPERTIES: &[&str] = &[
 /// Disjoint from `PROPERTIES`.
 fn classes() -> Result<Expr, InterpreterError> {
   let mut names: Vec<String> = Vec::new();
-  for info in POLYHEDRA {
+  for info in all_polyhedra() {
     let evaluated = eval_wl(info.classes_src)?;
     let Expr::List(items) = &evaluated else {
       continue;
@@ -2301,7 +2286,7 @@ fn classes() -> Result<Expr, InterpreterError> {
 /// solid is in that class.
 fn class_members(class: &str) -> Result<Option<Expr>, InterpreterError> {
   let mut names: Vec<&str> = Vec::new();
-  for info in POLYHEDRA {
+  for info in all_polyhedra() {
     if let Expr::List(items) = &eval_wl(info.classes_src)?
       && items
         .iter()
@@ -2313,7 +2298,7 @@ fn class_members(class: &str) -> Result<Option<Expr>, InterpreterError> {
   if names.is_empty() {
     return Ok(None);
   }
-  names.sort_unstable();
+  sort_entity_names(&mut names);
   // Wolfram lists the five Platonic solids by face count, every other class
   // alphabetically.
   if class == "Platonic" {
@@ -2348,7 +2333,7 @@ fn display_name(name: &str) -> String {
 
 /// Build a `List` of string entries.
 fn string_list(items: &[&str]) -> Expr {
-  Expr::List(items.iter().map(|s| str_expr(s)).collect())
+  Expr::List(items.iter().map(|s| entity_expr(s)).collect())
 }
 
 /// The right `n`-gonal prism with unit edges, `{"Prism", n}` for `n >= 3`:
@@ -2407,6 +2392,101 @@ fn prism_info(n: i128) -> &'static PolyhedronInfo {
   info
 }
 
+/// The unit-edge pyramid over a regular `n`-gon, `{"Pyramid", n}` for
+/// `n = 4, 5` (the base polygon must be small enough for the lateral edges
+/// to reach unit length; `n = 3` is the tetrahedron), or the unit-edge
+/// dipyramid `{"Dipyramid", n}` for `n = 3, 4, 5`. The z axis is the
+/// symmetry axis; a pyramid's apex is vertex 1 and the base ring follows
+/// counterclockwise seen from +z, a dipyramid's two apexes (+z, then -z)
+/// are vertices 1 and 2 followed by the equatorial ring. A pyramid is
+/// centered on its center of mass (as the tetrahedron is), so its base lies
+/// at `z = -h/4`. Faces are wound outward. Built on demand and cached.
+fn cone_info(dipyramid: bool, n: i128) -> &'static PolyhedronInfo {
+  use std::collections::HashMap;
+  use std::sync::{Mutex, OnceLock};
+  static CACHE: OnceLock<
+    Mutex<HashMap<(bool, i128), &'static PolyhedronInfo>>,
+  > = OnceLock::new();
+  let mut cache = CACHE
+    .get_or_init(|| Mutex::new(HashMap::new()))
+    .lock()
+    .unwrap();
+  if let Some(info) = cache.get(&(dipyramid, n)) {
+    return info;
+  }
+  // Height of an apex above the base plane for unit lateral edges.
+  let h = format!("Sqrt[1 - 1/(4 Sin[Pi/{n}]^2)]");
+  let (base_z, apex_z) = if dipyramid {
+    ("0".to_string(), h.clone())
+  } else {
+    (format!("-({h})/4"), format!("3 ({h})/4"))
+  };
+  let ring: Vec<String> = (0..n)
+    .map(|k| {
+      format!(
+        "{{Cos[2 Pi {k}/{n}]/(2 Sin[Pi/{n}]), Sin[2 Pi {k}/{n}]/(2 Sin[Pi/{n}]), {base_z}}}"
+      )
+    })
+    .collect();
+  let mut vertices = vec![format!("{{0, 0, {apex_z}}}")];
+  if dipyramid {
+    vertices.push(format!("{{0, 0, -({apex_z})}}"));
+  }
+  vertices.extend(ring);
+  let first = if dipyramid { 3 } else { 2 };
+  let last = first + n - 1;
+  let mut faces = Vec::new();
+  if !dipyramid {
+    let base: Vec<String> =
+      (first..=last).rev().map(|i| i.to_string()).collect();
+    faces.push(format!("{{{}}}", base.join(", ")));
+  }
+  for k in 0..n {
+    let (a, b) = (first + k, first + (k + 1) % n);
+    faces.push(format!("{{1, {a}, {b}}}"));
+    if dipyramid {
+      faces.push(format!("{{2, {b}, {a}}}"));
+    }
+  }
+  let base_area = format!("{n}/(4 Tan[Pi/{n}])");
+  let (volume, surface_area, vertex_count, face_count, circumradius, classes) =
+    if dipyramid {
+      (
+        format!("2/3 ({base_area}) ({h})"),
+        format!("{n} Sqrt[3]/2"),
+        n + 2,
+        2 * n,
+        "Missing[\"NotApplicable\"]".to_string(),
+        "{\"Convex\", \"Dipyramid\"}",
+      )
+    } else {
+      (
+        format!("1/3 ({base_area}) ({h})"),
+        format!("{base_area} + {n} Sqrt[3]/4"),
+        n + 1,
+        n + 1,
+        format!("1/(2 ({h}))"),
+        "{\"Convex\", \"Pyramid\"}",
+      )
+    };
+  let info = Box::leak(Box::new(PolyhedronInfo {
+    name: if dipyramid { "Dipyramid" } else { "Pyramid" },
+    vertex_count,
+    edge_count: if dipyramid { 3 * n } else { 2 * n },
+    face_count,
+    volume: leak(volume),
+    surface_area: leak(surface_area),
+    circumradius: leak(circumradius),
+    inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Missing[\"NotApplicable\"]",
+    vertices_src: leak(format!("{{{}}}", vertices.join(", "))),
+    faces_src: leak(format!("{{{}}}", faces.join(", "))),
+    classes_src: classes,
+  }));
+  cache.insert((dipyramid, n), info);
+  info
+}
+
 fn leak(s: String) -> &'static str {
   Box::leak(s.into_boxed_str())
 }
@@ -2419,8 +2499,8 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && sym == "All"
     && args.len() == 1
   {
-    let mut names: Vec<&str> = POLYHEDRA.iter().map(|p| p.name).collect();
-    names.sort_unstable();
+    let mut names: Vec<&str> = all_polyhedra().map(|p| p.name).collect();
+    sort_entity_names(&mut names);
     return Ok(string_list(&names));
   }
 
@@ -2446,6 +2526,22 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(Expr::List(spec)) => match spec.as_slice() {
       [Expr::String(kind), Expr::Integer(n)] if kind == "Prism" && *n >= 3 => {
         Some(prism_info(*n))
+      }
+      [Expr::String(kind), Expr::Integer(n)]
+        if kind == "Pyramid" && (4..=5).contains(n) =>
+      {
+        Some(cone_info(false, *n))
+      }
+      [Expr::String(kind), Expr::Integer(n)]
+        if kind == "Dipyramid" && (3..=5).contains(n) =>
+      {
+        Some(cone_info(true, *n))
+      }
+      [Expr::String(kind), Expr::Integer(n)] if kind == "Johnson" => {
+        find_polyhedron(&format!("J{n}"))
+      }
+      [Expr::String(kind), Expr::Integer(n)] => {
+        find_polyhedron(&format!("{{\"{kind}\", {n}}}"))
       }
       _ => return unevaluated(),
     },

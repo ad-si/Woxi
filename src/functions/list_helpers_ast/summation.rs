@@ -2155,6 +2155,36 @@ fn plus_all(terms: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let result = sum_ast_unevaluated_body(args)?;
+  // A sum that stays symbolic (e.g. a symbolic upper bound) is returned with
+  // its summand evaluated, so later rules such as `x -> 0.3` act on the
+  // evaluated terms rather than on the held input.
+  if let Expr::FunctionCall { name, args: held } = &result
+    && name == "Sum"
+    && held.len() == 2
+    && let Expr::List(spec) = &held[1]
+    && let Some(Expr::Identifier(var)) = spec.first()
+    && !matches!(spec.last(), Some(Expr::Identifier(b)) if b == "Infinity")
+  {
+    let fresh_name = format!("$sum_body_{var}_$");
+    let fresh = Expr::Identifier(fresh_name.clone());
+    let body = crate::syntax::substitute_variable(&held[0], var, &fresh);
+    if let Ok(evaluated) = crate::evaluator::evaluate_expr_to_expr(&body) {
+      let restored = crate::syntax::substitute_variable(
+        &evaluated,
+        &fresh_name,
+        &Expr::Identifier(var.clone()),
+      );
+      return Ok(Expr::FunctionCall {
+        name: "Sum".to_string(),
+        args: vec![restored, held[1].clone()].into(),
+      });
+    }
+  }
+  Ok(result)
+}
+
+fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     // Sum requires at least 2 arguments
     return Ok(unevaluated("Sum", args));

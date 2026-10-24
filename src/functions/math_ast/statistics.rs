@@ -2482,6 +2482,89 @@ pub fn spearman_rho_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   )
 }
 
+/// Sizes of the groups of equal values in `vals`.
+fn tie_group_sizes(vals: &[f64]) -> Vec<i128> {
+  let mut sorted = vals.to_vec();
+  sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+  let mut sizes = Vec::new();
+  let mut i = 0;
+  while i < sorted.len() {
+    let mut j = i;
+    while j + 1 < sorted.len() && sorted[j + 1] == sorted[i] {
+      j += 1;
+    }
+    sizes.push((j - i + 1) as i128);
+    i = j + 1;
+  }
+  sizes
+}
+
+/// KendallTauTest[v1, v2] and KendallTauTest[v1, v2, "PValue"] — two-sided
+/// p-value of the hypothesis that the paired samples are uncorrelated, from
+/// the normal approximation of the concordance statistic C - D with the usual
+/// correction for ties.
+pub fn kendall_tau_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("KendallTauTest", args));
+  if args.len() < 2 || args.len() > 3 {
+    return unevaluated();
+  }
+  if let Some(prop) = args.get(2) {
+    let name = match prop {
+      Expr::String(s) => s.as_str(),
+      Expr::Identifier(s) => s.as_str(),
+      _ => return unevaluated(),
+    };
+    if name != "PValue" {
+      return unevaluated();
+    }
+  }
+  let (Expr::List(x), Expr::List(y)) = (&args[0], &args[1]) else {
+    return unevaluated();
+  };
+  if x.len() != y.len() || x.len() < 2 {
+    return unevaluated();
+  }
+  let (Some(xf), Some(yf)) = (
+    x.iter().map(try_eval_to_f64).collect::<Option<Vec<f64>>>(),
+    y.iter().map(try_eval_to_f64).collect::<Option<Vec<f64>>>(),
+  ) else {
+    return unevaluated();
+  };
+  let n = xf.len() as f64;
+  let mut s = 0i64;
+  for i in 0..xf.len() {
+    for j in (i + 1)..xf.len() {
+      let sx = (xf[j] - xf[i]).partial_cmp(&0.0);
+      let sy = (yf[j] - yf[i]).partial_cmp(&0.0);
+      if let (Some(sx), Some(sy)) = (sx, sy) {
+        s += sx as i64 * sy as i64;
+      }
+    }
+  }
+  let moment = |sizes: &[i128], f: &dyn Fn(f64) -> f64| -> f64 {
+    sizes.iter().map(|&t| f(t as f64)).sum()
+  };
+  let (tx, ty) = (tie_group_sizes(&xf), tie_group_sizes(&yf));
+  let v0 = n * (n - 1.0) * (2.0 * n + 5.0);
+  let vt = moment(&tx, &|t| t * (t - 1.0) * (2.0 * t + 5.0));
+  let vu = moment(&ty, &|t| t * (t - 1.0) * (2.0 * t + 5.0));
+  let t1 = moment(&tx, &|t| t * (t - 1.0));
+  let u1 = moment(&ty, &|t| t * (t - 1.0));
+  let t2 = moment(&tx, &|t| t * (t - 1.0) * (t - 2.0));
+  let u2 = moment(&ty, &|t| t * (t - 1.0) * (t - 2.0));
+  let mut var = (v0 - vt - vu) / 18.0 + t1 * u1 / (2.0 * n * (n - 1.0));
+  if n > 2.0 {
+    var += t2 * u2 / (9.0 * n * (n - 1.0) * (n - 2.0));
+  }
+  if var <= 0.0 {
+    return unevaluated();
+  }
+  let z = s as f64 / var.sqrt();
+  Ok(Expr::Real(super::numeric_utils::erfc_f64(
+    z.abs() / std::f64::consts::SQRT_2,
+  )))
+}
+
 /// KendallTau[v1, v2] — Kendall's rank-correlation coefficient τ_b for two
 /// equal-length numeric vectors. Defined as
 ///   τ_b = (C - D) / Sqrt[(n0 - n1)(n0 - n2)]
@@ -2539,21 +2622,7 @@ pub fn kendall_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Tie correction Σ t(t-1)/2 over groups of equal values.
   let tie_sum = |vals: &[f64]| -> i128 {
-    let mut sorted = vals.to_vec();
-    sorted
-      .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let mut total: i128 = 0;
-    let mut i = 0;
-    while i < sorted.len() {
-      let mut j = i;
-      while j + 1 < sorted.len() && sorted[j + 1] == sorted[i] {
-        j += 1;
-      }
-      let t = (j - i + 1) as i128;
-      total += t * (t - 1) / 2;
-      i = j + 1;
-    }
-    total
+    tie_group_sizes(vals).iter().map(|t| t * (t - 1) / 2).sum()
   };
   let n0 = (n as i128) * (n as i128 - 1) / 2;
   let n1 = tie_sum(&xf);

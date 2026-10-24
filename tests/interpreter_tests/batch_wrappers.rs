@@ -2725,6 +2725,44 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn mathieu_characteristic_values() {
+    // Tabulated values at q = 1 (Abramowitz & Stegun 20.1).
+    for (code, expected) in [
+      ("MathieuCharacteristicA[0, 1.]", -0.4551386041),
+      ("MathieuCharacteristicA[1, 1.]", 1.8591080725),
+      ("MathieuCharacteristicA[2, 1.]", 4.3713009827),
+      ("MathieuCharacteristicB[1, 1.]", -0.1102488170),
+      ("MathieuCharacteristicB[2, 1.]", 3.9170247730),
+      // a_r(-q) = a_r(q) for even r, and swaps a_r with b_r for odd r.
+      ("MathieuCharacteristicA[1, -1.]", -0.1102488170),
+    ] {
+      let got: f64 = interpret(code).unwrap().parse().unwrap();
+      assert!((got - expected).abs() < 1e-8, "{code}: {got}");
+    }
+    assert_eq!(interpret("MathieuCharacteristicA[4, 0]").unwrap(), "16");
+    assert_eq!(interpret("MathieuCharacteristicB[3, 0]").unwrap(), "9");
+    assert_eq!(
+      interpret("MathieuCharacteristicB[0, 1.]").unwrap(),
+      "MathieuCharacteristicB[0, 1.]"
+    );
+  }
+  #[test]
+  fn mathieu_functions_of_imaginary_argument() {
+    // At q = 0, MathieuC[a, 0, I t] = Cosh[Sqrt[a] t] and
+    // MathieuS[a, 0, I t] = I Sinh[Sqrt[a] t].
+    let c: f64 = interpret("MathieuC[2., 0., 0.5 I]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((c - (2f64.sqrt() * 0.5).cosh()).abs() < 1e-9);
+    assert_eq!(interpret("Chop[Re[MathieuS[2., 0., 0.5 I]]]").unwrap(), "0");
+    let s: f64 = interpret("Im[MathieuS[2., 0., 0.5 I]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((s - (2f64.sqrt() * 0.5).sinh()).abs() < 1e-9);
+  }
+  #[test]
   fn file_type() {
     assert_eq!(interpret("FileType[x]").unwrap(), "FileType[x]");
   }

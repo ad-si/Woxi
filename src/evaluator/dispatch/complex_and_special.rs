@@ -457,6 +457,19 @@ pub fn dispatch_complex_and_special(
       );
       return Some(crate::evaluator::evaluate_expr_to_expr(&args[0]));
     }
+    // MousePosition[…] — where the pointer is over a graphic. In a
+    // notebook the pointer is over nothing yet, which a front end reports
+    // as None; without one, wolframscript's notavail and $Failed.
+    "MousePosition" if args.len() <= 2 => {
+      if crate::is_visual_mode() {
+        return Some(Ok(id_expr("None")));
+      }
+      crate::emit_message(
+        "FrontEndObject::notavail: A front end is not available; certain \
+         operations require a front end.",
+      );
+      return Some(Ok(id_expr("$Failed")));
+    }
     "TimeConstrained" if args.len() == 2 || args.len() == 3 => {
       let limit_secs = match &args[1] {
         Expr::Real(f) => Some(*f),
@@ -548,7 +561,7 @@ pub fn dispatch_complex_and_special(
         });
         let down_values = crate::down_values_with_memo(sym);
         let user_attrs =
-          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied());
 
         let has_own = own_value.is_some();
         let has_down = down_values.is_some();
@@ -586,7 +599,7 @@ pub fn dispatch_complex_and_special(
         let own_value = crate::ENV.with(|e| e.borrow().get(sym).cloned());
         let down_values = crate::down_values_with_memo(sym);
         let user_attrs =
-          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied());
         return Some(Ok(format_user_information(
           sym,
           own_value,
@@ -2196,7 +2209,7 @@ fn format_builtin_information(
   is_full: bool,
 ) -> Expr {
   // Collect user-set attributes (merged with built-in)
-  let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+  let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied());
   let mut all_attrs = builtin_attrs;
   if let Some(ua) = user_attrs {
     all_attrs.add(ua.to_u32());
@@ -3043,9 +3056,11 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
       "NumberForm" if args.len() == 2 => match &args[1] {
         Expr::Integer(n) => string_ast::number_form_parts(val, *n as i64)?,
         Expr::List(spec) if spec.len() == 2 => match (&spec[0], &spec[1]) {
-          (Expr::Integer(n), Expr::Integer(f)) => {
-            string_ast::number_form_fixed_parts(val, *n as i64, *f as i64)?
-          }
+          (n, Expr::Integer(f)) => string_ast::number_form_fixed_parts(
+            val,
+            string_ast::number_form_digit_budget(n)?,
+            *f as i64,
+          )?,
           _ => return None,
         },
         _ => return None,
@@ -3315,6 +3330,12 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     && args.len() == 1
     && !matches!(&args[0], Expr::List(_))
   {
+    // A SparseArray typesets as the dense matrix it stands for.
+    if let Some(dense) =
+      crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+    {
+      return expr_to_box_form(&call1("MatrixForm", dense));
+    }
     return expr_to_box_form(&args[0]);
   }
   // `f'[x]` is held as `Derivative[1][f][x]`, and no notebook shows that
@@ -5454,7 +5475,9 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     // bracketed grid with its spacing options, word joiners inside the
     // parentheses, tagged with the function that reads it back.
     "MatrixForm" if args.len() == 1 && TF_BOX_TEXT.get() => {
-      if let Expr::List(rows) = &args[0]
+      let dense =
+        crate::functions::list_helpers_ast::densify_sparse_array(&args[0]);
+      if let Expr::List(rows) = dense.as_ref().unwrap_or(&args[0])
         && tf_is_matrix(rows)
       {
         let mut grid = tf_matrix_grid(rows);
@@ -5494,7 +5517,9 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       }
     }
     "MatrixForm" | "TableForm" if args.len() == 1 => {
-      if let Expr::List(rows) = &args[0]
+      let dense =
+        crate::functions::list_helpers_ast::densify_sparse_array(&args[0]);
+      if let Expr::List(rows) = dense.as_ref().unwrap_or(&args[0])
         && tf_is_matrix(rows)
       {
         tf_row(vec![tf_string("("), tf_matrix_grid(rows), tf_string(")")])
@@ -15544,9 +15569,9 @@ pub fn definition_text(sym: &str) -> Option<String> {
   // built-in attributes — `Definition[In]` should print
   // `Attributes[In] = {Listable, NHoldFirst, Protected}` even with no
   // user-installed attrs, matching wolframscript.
-  let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+  let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied());
   let attrs_to_show: Attributes = match &user_attrs {
-    Some(a) if !a.is_empty() => a.clone(),
+    Some(a) if !a.is_empty() => *a,
     _ => get_builtin_attributes(sym),
   };
   if !attrs_to_show.is_empty() {
@@ -15941,7 +15966,7 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
   fn get_definition_lines(sym: &str) -> Vec<String> {
     let mut lines = Vec::new();
 
-    let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+    let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied());
     if let Some(attrs) = &user_attrs
       && !attrs.is_empty()
     {
@@ -16169,7 +16194,7 @@ fn information_property(sym: &str, property: &str) -> Expr {
     sym,
     crate::ENV.with(|e| e.borrow().get(sym).cloned()),
     crate::down_values_with_memo(sym),
-    crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned()),
+    crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied()),
     true,
   );
   let rendered = expr_to_string(&record);

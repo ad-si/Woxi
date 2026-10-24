@@ -3663,7 +3663,7 @@ pub fn dispatch_io_functions(
 
         // 1. Attributes (user-set only)
         let user_attrs =
-          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied());
         if let Some(attrs) = user_attrs
           && !attrs.is_empty()
         {
@@ -6104,11 +6104,13 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     {
       expr_to_svg(&args[0])
     }
-    // `TabView[{…}, sel]` displays only the pane `sel` selects.
+    // `TabView[{…}, sel]` displays only the pane `sel` selects. Reaching
+    // here means the `TabView` sits inside a layout that is being drawn, so
+    // a pane of plain text or numbers is set as a cell too instead of
+    // leaving the symbolic `TabView[…]` source in the picture.
     Expr::FunctionCall { name, args }
       if name == "TabView"
-        && let Some(content) = crate::tabview_selected_content(args)
-        && (lays_out_a_graphic(&content) || is_tabular_layout(&content)) =>
+        && let Some(content) = crate::tabview_selected_content(args) =>
     {
       expr_to_svg(&content)
     }
