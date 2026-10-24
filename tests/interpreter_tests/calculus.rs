@@ -22111,3 +22111,25 @@ mod inverse_function_of_a_definition {
     );
   }
 }
+
+mod recurrence_table_scaled_leading_term {
+  use super::*;
+
+  #[test]
+  fn the_equation_is_solved_for_its_leading_term() {
+    assert_eq!(
+      interpret(
+        "RecurrenceTable[{3 a[k] == a[k - 1] + 1, a[0] == 1}, a, {k, 0, 4}]"
+      )
+      .unwrap(),
+      "{1, 2/3, 5/9, 14/27, 41/81}"
+    );
+    assert_eq!(
+      interpret(
+        "RecurrenceTable[{2 y[n + 1] == y[n - 1] + 3 y[n], y[1] == 1, y[2] == 2}, y, {n, 1, 5}]"
+      )
+      .unwrap(),
+      "{1, 2, 7/2, 25/4, 89/8}"
+    );
+  }
+}
