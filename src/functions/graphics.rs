@@ -26575,6 +26575,20 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             continue;
           }
         }
+        // `{v, {c1, c2, …}, ControlType -> None}` normally starts `v` at the
+        // first choice, but a Manipulate that reads `v[[k]]` for some k > 1
+        // treats the list as the variable's value (a hidden table of rows).
+        let value = match &spec {
+          Expr::List(items)
+            if items.len() >= 2
+              && matches!(&items[1], Expr::List(choices) if choices.len() > 1)
+              && matches!(&items[0], Expr::Identifier(_))
+              && args.iter().any(|a| indexes_past_first(a, &name)) =>
+          {
+            manipulate_value_to_input_form(&items[1])
+          }
+          _ => value,
+        };
         state.push((name, value));
       }
       ParsedControl::StateWithControl {
@@ -28582,6 +28596,24 @@ fn make_live_caption(item: Expr) -> Expr {
     other if needs_wrapping(other) => call1("Dynamic", item),
     _ => item,
   }
+}
+
+/// Whether `e` reads `name[[k]]` for a literal `k` other than 1, i.e. uses
+/// the variable as a list with several entries.
+fn indexes_past_first(e: &Expr, name: &str) -> bool {
+  let src = crate::syntax::expr_to_source_form(e);
+  let needle = format!("{name}[[");
+  src.match_indices(&needle).any(|(i, _)| {
+    let boundary = src[..i]
+      .chars()
+      .next_back()
+      .is_none_or(|c| !(c.is_alphanumeric() || c == '$' || c == '`'));
+    let digits: String = src[i + needle.len()..]
+      .chars()
+      .take_while(char::is_ascii_digit)
+      .collect();
+    boundary && digits.parse::<u32>().is_ok_and(|k| k > 1)
+  })
 }
 
 fn expr_contains_call(e: &Expr, heads: &[&str]) -> bool {
