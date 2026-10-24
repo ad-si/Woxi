@@ -5879,7 +5879,10 @@ fn integrate_leg(
   let eval_event = |x: f64, state: &[f64]| -> Option<f64> {
     event_fn.and_then(|f| f.eval_state(x, state, funcs.len()).ok())
   };
-  let mut prev_event = eval_event(x, &state);
+  // An event function that starts at zero (to within roundoff — a bounce
+  // restarted on the surface it bounced off) has no side yet, so the
+  // first step cannot cross it; its sign is taken after that step.
+  let mut prev_event = eval_event(x, &state).filter(|g| g.abs() > 1e-8);
   let state_value = |ev: &StateEvent, x: f64, state: &[f64]| {
     ev.value(x, state, funcs, state_events.var_names)
   };

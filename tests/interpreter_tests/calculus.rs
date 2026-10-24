@@ -22063,3 +22063,29 @@ mod interpolation_domain_slack {
     assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
   }
 }
+
+mod event_locator_start_on_the_surface {
+  use super::*;
+
+  #[test]
+  fn an_event_that_starts_at_zero_does_not_fire_at_once() {
+    assert_eq!(
+      interpret(
+        "x[\"Domain\"] /. First[NDSolve[{x'[t] == 1., x[1] == 0., y'[t] == 1., \
+         y[1] == -1.*^-9}, {x, y}, {t, 1, 5}, \
+         Method -> {\"EventLocator\", \"Event\" :> y[t] - 0.5 x[t]}]]"
+      )
+      .unwrap(),
+      "{{1., 5.}}"
+    );
+    assert_eq!(
+      interpret(
+        "x[\"Domain\"] /. First[NDSolve[{x'[t] == 1., x[1] == 0., y'[t] == 1., \
+         y[1] == -1.*^-4}, {x, y}, {t, 1, 5}, \
+         Method -> {\"EventLocator\", \"Event\" :> y[t] - 0.5 x[t]}]]"
+      )
+      .unwrap(),
+      "{{1., 1.0002}}"
+    );
+  }
+}
