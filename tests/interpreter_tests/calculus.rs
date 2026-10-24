@@ -8649,6 +8649,30 @@ mod ndsolve {
     );
   }
 
+  /// A constant mass matrix whose factorization interchanges rows after the
+  /// first column ("Task Partitioning in Insect Societies"): every row
+  /// interchange applies to the right-hand side before the forward
+  /// substitution. wolframscript: WF(5) = 0.1325799…, CS(5) = 0.0171385….
+  #[test]
+  fn constant_mass_matrix_with_late_row_interchanges() {
+    assert_eq!(
+      interpret(
+        "eqs = {CS''[t] == 5 (0.1 P''[t] - 0.1 WF''[t] - CS[t]/14 - CS'[t]) \
+           + Abs[WF[t] - 0.1] + P[t], \
+         P''[t] == 5 (0.1 CS''[t] + 0.1 Br''[t] - P[t]/40 - P[t]) + CS[t] \
+           + Br[t], \
+         WF''[t] == -0.1 CS''[t] - WF[t]/3. - WF'[t] + 0.05 - CS'[t], \
+         Br''[t] == 10 (0.1 P''[t] - Br[t]/18 - Br'[t]) + P[t], \
+         CS[0] == 0, CS'[0] == 0, Br[0] == 0, Br'[0] == 0, WF[0] == 0.1, \
+         WF'[0] == 0, P[0] == 0, P'[0] == 0}; \
+         Round[10^5 {WF[5], CS[5]} /. First[NDSolve[eqs, {CS, Br, P, WF}, \
+         {t, 0, 5}]]]"
+      )
+      .unwrap(),
+      "{13258, 1714}"
+    );
+  }
+
   /// An algebraic unknown coupled with the highest derivatives (a Lagrange
   /// multiplier, "Sliding Along a Curved Track") is solved for with them at
   /// every step, after `NDSolve::pdord`. Left out of the unknowns it is

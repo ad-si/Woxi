@@ -6775,9 +6775,7 @@ fn probe_constant_mass_matrix(
 /// A constant mass matrix factored once: the elimination
 /// `solve_mass_matrix_system` performs, with each row's multipliers kept
 /// below the diagonal and the pivot row of each column, so every stage
-/// solve costs O(n²) instead of O(n³) — and gives bit-for-bit the same
-/// answer, since the pivots depend on the matrix alone and the right-hand
-/// side sees the very same operations in the same order.
+/// solve costs O(n²) instead of O(n³).
 pub(crate) struct MassLu {
   lu: Vec<Vec<f64>>,
   pivots: Vec<usize>,
@@ -6812,8 +6810,13 @@ impl MassLu {
     let n = c.len();
     let m = &self.lu;
     let mut rhs: Vec<f64> = c.iter().map(|v| -v).collect();
+    // The factorization swapped whole rows, multipliers included, so `L`
+    // is in the final row order: every interchange applies to the
+    // right-hand side before the forward substitution.
+    for (col, &pivot) in self.pivots.iter().enumerate() {
+      rhs.swap(col, pivot);
+    }
     for col in 0..n {
-      rhs.swap(col, self.pivots[col]);
       for row in col + 1..n {
         rhs[row] -= m[row][col] * rhs[col];
       }
