@@ -1795,9 +1795,18 @@ fn entity_expr(name: &str) -> Expr {
 }
 
 /// Entity names in Wolfram's listing order: alphabetical, a specification
-/// sorting by its words (`{"Dipyramid", 3}` among the D's).
+/// sorting by its words (`{"Dipyramid", 3}` among the D's)
+/// and its number numerically (`{"Prism", 9}` before `{"Prism", 10}`).
 fn sort_entity_names(names: &mut [&str]) {
-  names.sort_by_key(|n| n.replace(['{', '"'], ""));
+  names.sort_by_key(|n| {
+    let key = n.replace(['{', '}', '"'], "");
+    match key.split_once(", ") {
+      Some((words, num)) => {
+        (words.to_string(), num.parse::<i64>().unwrap_or(i64::MAX))
+      }
+      None => (key, -1),
+    }
+  });
 }
 
 /// The exact unit-edge volume of a Platonic solid, as WL source.
@@ -2336,122 +2345,6 @@ fn string_list(items: &[&str]) -> Expr {
   Expr::List(items.iter().map(|s| entity_expr(s)).collect())
 }
 
-/// Look up (or build once) the entry for a parametric family such as
-/// `{"Prism", n}`, caching it by family and `n`, since `PolyhedronInfo` holds
-/// `'static` source strings.
-fn family_info(
-  family: &'static str,
-  n: i128,
-  build: fn(i128) -> PolyhedronInfo,
-) -> &'static PolyhedronInfo {
-  use std::collections::HashMap;
-  use std::sync::{Mutex, OnceLock};
-  static CACHE: OnceLock<
-    Mutex<HashMap<(&'static str, i128), &'static PolyhedronInfo>>,
-  > = OnceLock::new();
-  let mut cache = CACHE
-    .get_or_init(|| Mutex::new(HashMap::new()))
-    .lock()
-    .unwrap();
-  cache
-    .entry((family, n))
-    .or_insert_with(|| Box::leak(Box::new(build(n))))
-}
-
-/// The vertices of a regular `n`-gon ring with unit edges as source text,
-/// rotated by `phase` (in units of `2 Pi / n`) at height `z`.
-fn ring_vertices(n: i128, phase: &str, z: &str) -> Vec<String> {
-  (0..n)
-    .map(|k| {
-      format!(
-        "{{Cos[2 Pi ({k} + {phase})/{n}]/(2 Sin[Pi/{n}]), Sin[2 Pi ({k} + {phase})/{n}]/(2 Sin[Pi/{n}]), {z}}}"
-      )
-    })
-    .collect()
-}
-
-fn index_face(indices: impl Iterator<Item = i128>) -> String {
-  let items: Vec<String> = indices.map(|i| i.to_string()).collect();
-  format!("{{{}}}", items.join(", "))
-}
-
-/// The right `n`-gonal prism with unit edges, `{"Prism", n}` for `n >= 3`:
-/// the regular `n`-gon base at `z = -1/2` and its copy at `z = +1/2`
-/// (vertices `1..n` and `n+1..2n`), the two bases and `n` square sides, all
-/// wound outward.
-fn prism_info(n: i128) -> &'static PolyhedronInfo {
-  family_info("Prism", n, |n| {
-    let vertices: Vec<String> = ring_vertices(n, "0", "-1/2")
-      .into_iter()
-      .chain(ring_vertices(n, "0", "1/2"))
-      .collect();
-    let mut faces = vec![index_face((1..=n).rev()), index_face(n + 1..=2 * n)];
-    for k in 1..=n {
-      let next = k % n + 1;
-      faces.push(format!("{{{k}, {next}, {}, {}}}", n + next, n + k));
-    }
-    PolyhedronInfo {
-      name: "Prism",
-      vertex_count: 2 * n,
-      edge_count: 3 * n,
-      face_count: n + 2,
-      volume: leak(format!("{n}/(4 Tan[Pi/{n}])")),
-      surface_area: leak(format!("{n} + {n}/(2 Tan[Pi/{n}])")),
-      circumradius: leak(format!("Sqrt[1/4 + 1/(4 Sin[Pi/{n}]^2)]")),
-      inradius: "Missing[\"NotApplicable\"]",
-      midradius: "Missing[\"NotApplicable\"]",
-      vertices_src: leak(format!("{{{}}}", vertices.join(", "))),
-      faces_src: leak(format!("{{{}}}", faces.join(", "))),
-      classes_src: "{\"Convex\", \"Prism\"}",
-    }
-  })
-}
-
-/// The uniform `n`-gonal antiprism with unit edges, `{"Antiprism", n}` for
-/// `n >= 3`: the regular `n`-gon base at `z = -h/2` (vertices `1..n`) and
-/// its copy turned by `Pi/n` at `z = +h/2` (vertices `n+1..2n`), where
-/// `h = Sqrt[1 - 1/(4 Cos[Pi/(2 n)]^2)]` makes every lateral edge one unit
-/// long. The faces are the two bases and `2n` side triangles, all wound
-/// outward.
-fn antiprism_info(n: i128) -> &'static PolyhedronInfo {
-  family_info("Antiprism", n, |n| {
-    let height = format!("Sqrt[1 - 1/(4 Cos[Pi/(2 {n})]^2)]");
-    let vertices: Vec<String> = ring_vertices(n, "0", &format!("-{height}/2"))
-      .into_iter()
-      .chain(ring_vertices(n, "1/2", &format!("{height}/2")))
-      .collect();
-    let mut faces = vec![index_face((1..=n).rev()), index_face(n + 1..=2 * n)];
-    for k in 1..=n {
-      let next = k % n + 1;
-      // The triangle standing on the bottom edge `k -> next`, apex `n + k`
-      // (the top vertex lying between them), then the one hanging from the
-      // top edge `n + next -> n + k`, apex `next`.
-      faces.push(format!("{{{k}, {next}, {}}}", n + k));
-      faces.push(format!("{{{}, {}, {next}}}", n + next, n + k));
-    }
-    PolyhedronInfo {
-      name: "Antiprism",
-      vertex_count: 2 * n,
-      edge_count: 4 * n,
-      face_count: 2 * n + 2,
-      volume: leak(format!(
-        "{height} {n}/6 (1/(2 Tan[Pi/{n}]) + Cos[Pi/(2 {n})]^2/Sin[Pi/{n}])"
-      )),
-      surface_area: leak(format!("{n}/(2 Tan[Pi/{n}]) + {n} Sqrt[3]/2")),
-      circumradius: leak(format!("Sqrt[1/(4 Sin[Pi/{n}]^2) + ({height})^2/4]")),
-      inradius: "Missing[\"NotApplicable\"]",
-      midradius: "Missing[\"NotApplicable\"]",
-      vertices_src: leak(format!("{{{}}}", vertices.join(", "))),
-      faces_src: leak(format!("{{{}}}", faces.join(", "))),
-      classes_src: "{\"Antiprism\", \"Convex\"}",
-    }
-  })
-}
-
-fn leak(s: String) -> &'static str {
-  Box::leak(s.into_boxed_str())
-}
-
 pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("PolyhedronData", args));
 
@@ -2485,43 +2378,24 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let info = match args.first() {
     Some(Expr::List(spec)) => match spec.as_slice() {
-      [Expr::String(kind), Expr::Integer(n)] if kind == "Prism" && *n >= 3 => {
-        Some(prism_info(*n))
-      }
-      [Expr::String(kind), Expr::Integer(n)]
-        if kind == "Antiprism" && *n >= 3 =>
-      {
-        Some(antiprism_info(*n))
-      }
-      // `{"Pyramid", 3}` is the tetrahedron and `{"Dipyramid", 4}` the
-      // octahedron; the Johnson pyramids and dipyramids are generated
-      // entries stored under their specification.
-      [Expr::String(kind), Expr::Integer(3)] if kind == "Pyramid" => {
-        find_polyhedron("Tetrahedron")
-      }
-      [Expr::String(kind), Expr::Integer(4)] if kind == "Dipyramid" => {
-        find_polyhedron("Octahedron")
-      }
-      [Expr::String(kind), Expr::Integer(n)] if kind == "Johnson" => {
-        find_polyhedron(&format!("J{n}"))
-      }
-      [Expr::String(kind), Expr::Integer(n)] => {
-        find_polyhedron(&format!("{{\"{kind}\", {n}}}"))
-      }
+      // The degenerate members of a family are the Platonic solids:
+      // `{"Pyramid", 3}` the tetrahedron, `{"Prism", 4}` the cube and
+      // `{"Dipyramid", 4}` and `{"Antiprism", 3}` the octahedron. The
+      // others are generated entries stored under their specification.
+      [Expr::String(kind), Expr::Integer(n)] => match (kind.as_str(), *n) {
+        ("Pyramid", 3) => find_polyhedron("Tetrahedron"),
+        ("Prism", 4) => find_polyhedron("Cube"),
+        ("Dipyramid", 4) | ("Antiprism", 3) => find_polyhedron("Octahedron"),
+        ("Johnson", n) => find_polyhedron(&format!("J{n}")),
+        _ => find_polyhedron(&format!("{{\"{kind}\", {n}}}")),
+      },
       _ => return unevaluated(),
     },
     Some(Expr::String(name)) => find_polyhedron(name),
     _ => return unevaluated(),
   };
-  let name = match args.first() {
-    Some(Expr::String(name)) => name.as_str(),
-    Some(Expr::List(spec)) => match spec.first() {
-      Some(Expr::String(kind)) => kind.as_str(),
-      _ => "Prism",
-    },
-    _ => "Prism",
-  };
   let Some(info) = info else {
+    let name = crate::syntax::expr_to_output(&args[0]);
     crate::emit_message(&format!(
       "PolyhedronData::notent: {name} is not a known entity, class or tag for PolyhedronData. Use PolyhedronData[] for a list of entities."
     ));
@@ -2536,7 +2410,13 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       match property.as_str() {
         "Classes" => eval_wl(info.classes_src),
-        "Name" => Ok(Expr::String(display_name(info.name))),
+        "Name" => Ok(Expr::String(
+          GENERATED_NAMES
+            .iter()
+            .find(|(spec, _)| *spec == info.name)
+            .map_or_else(|| display_name(info.name), |(_, n)| n.to_string()),
+        )),
+        "StandardName" => Ok(entity_expr(info.name)),
         "VertexCount" => Ok(Expr::Integer(info.vertex_count)),
         "EdgeCount" => Ok(Expr::Integer(info.edge_count)),
         "FaceCount" => Ok(Expr::Integer(info.face_count)),

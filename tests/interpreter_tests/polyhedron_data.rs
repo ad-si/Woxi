@@ -1354,20 +1354,60 @@ mod polyhedron_data_tests {
     );
     assert_eq!(
       interpret(r#"PolyhedronData[{"Prism", 3}, "FaceIndices"]"#).unwrap(),
-      "{{3, 2, 1}, {4, 5, 6}, {1, 2, 5, 4}, {2, 3, 6, 5}, {3, 1, 4, 6}}"
+      "{{1, 3, 5}, {6, 4, 2}, {5, 3, 4, 6}, {3, 1, 2, 4}, {1, 5, 6, 2}}"
     );
   }
 
-  // Prism edges are unit length, so adjacent base vertices are 1 apart.
+  // Prisms and antiprisms have unit edges.
   #[test]
   fn polyhedron_data_prism_unit_edges() {
     assert_eq!(
       interpret(
-        r#"v = N[PolyhedronData[{"Prism", 5}, "VertexCoordinates"]];
-        {Round[Norm[v[[1]] - v[[2]]], 10^-9], Round[Norm[v[[1]] - v[[6]]], 10^-9]}"#
+        r#"Union @@ Table[
+          With[{v = N[PolyhedronData[p, "VertexCoordinates"]]},
+            Round[Norm[v[[#1]] - v[[#2]]] & @@@
+              PolyhedronData[p, "EdgeIndices"], 10^-9]],
+          {p, Join[PolyhedronData["Prism"], PolyhedronData["Antiprism"]]}]"#
       )
       .unwrap(),
-      "{1, 1}"
+      "{1}"
+    );
+  }
+
+  // Wolfram knows the prisms and antiprisms up to n = 10; the degenerate
+  // members are the cube and the octahedron.
+  #[test]
+  fn polyhedron_data_prism_and_antiprism_families() {
+    assert_eq!(
+      interpret(r#"PolyhedronData["Prism"]"#).unwrap(),
+      "{Cube, {Prism, 3}, {Prism, 5}, {Prism, 6}, {Prism, 7}, {Prism, 8}, \
+       {Prism, 9}, {Prism, 10}}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Antiprism"]"#).unwrap(),
+      "{{Antiprism, 4}, {Antiprism, 5}, {Antiprism, 6}, {Antiprism, 7}, \
+       {Antiprism, 8}, {Antiprism, 9}, {Antiprism, 10}, Octahedron}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData[{"Antiprism", 4}, "FaceIndices"]"#).unwrap(),
+      "{{5, 1, 2, 6}, {8, 4, 7, 3}, {6, 4, 8}, {2, 7, 4}, {1, 3, 7}, \
+       {5, 8, 3}, {6, 2, 4}, {2, 1, 7}, {1, 5, 3}, {5, 6, 8}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData[{"Antiprism", 6}, "Name"],
+           PolyhedronData[{"Dipyramid", 3}, "Name"],
+           PolyhedronData[{"Antiprism", 3}, "StandardName"],
+           PolyhedronData[{"Prism", 4}, "StandardName"],
+           PolyhedronData[{"Prism", 7}, "StandardName"]}"#
+      )
+      .unwrap(),
+      "{hexagonal antiprism, equilateral triangular dipyramid, Octahedron, \
+       Cube, {Prism, 7}}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData[{"Prism", 11}]"#).unwrap(),
+      "PolyhedronData[{Prism, 11}]"
     );
   }
 
