@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::sync::LazyLock;
 
 // Wolfram attributes
-#[derive(Clone, Default)]
+#[derive(Clone, Copy, Default)]
 pub struct Attributes(u32); // bitmask
 #[allow(non_upper_case_globals)]
 impl Attributes {
@@ -462,6 +462,21 @@ fn is_unprotected_builtin(name: &str) -> bool {
 /// Returns the built-in attributes for a given symbol name.
 /// Attributes are returned in alphabetical order, matching wolframscript output.
 pub fn get_builtin_attributes(name: &str) -> Attributes {
+  // The table is fixed, and asked for on every call that is evaluated, so
+  // each name's answer is computed once.
+  thread_local! {
+    static CACHE: std::cell::RefCell<rustc_hash::FxHashMap<String, Attributes>> =
+      std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+  }
+  if let Some(hit) = CACHE.with(|c| c.borrow().get(name).copied()) {
+    return hit;
+  }
+  let attrs = compute_builtin_attributes(name);
+  CACHE.with(|c| c.borrow_mut().insert(name.to_string(), attrs));
+  attrs
+}
+
+fn compute_builtin_attributes(name: &str) -> Attributes {
   use Attributes as A;
   let mask = match name {
     // Arithmetic operators
