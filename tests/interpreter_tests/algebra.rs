@@ -5214,6 +5214,22 @@ mod solve {
   }
 
   #[test]
+  fn nsolve_large_dense_machine_linear_system() {
+    // A 16x16 system of machine numbers must be solved by pivoting; the
+    // first-nonzero pivot lost the solution to rounding noise.
+    assert_eq!(
+      interpret(
+        "SeedRandom[1]; n = 16; v = Table[Subscript[z, i], {i, n}]; \
+         M = RandomReal[{-1, 1}, {n, n}]; b = RandomReal[{-1, 1}, n]; \
+         s = NSolve[Thread[M . v == b], v]; \
+         {Length[s], Max[Abs[M . (v /. s[[1]]) - b]] < 10^-9}"
+      )
+      .unwrap(),
+      "{1, True}"
+    );
+  }
+
+  #[test]
   fn nsolve_underdetermined_linear_solves_for_first_variables() {
     // NSolve, unlike Solve, solves a linear underdetermined system for its
     // first variables and reports no `svars`.
