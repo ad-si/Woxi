@@ -2106,6 +2106,36 @@ mod tests {
     assert!(state.displays[0].contains("Switch"), "{:?}", state.displays);
   }
 
+  /// A key-number Manipulate: a `Pane` around a `Grid` with `SpanFromLeft`,
+  /// a `Setter` control whose choices are a `Dynamic[…]` list of numbers
+  /// computed from a helper function defined in `Initialization`, a note
+  /// name written as inline `\!\(\*…\)` box notation, and a `Play` cell next
+  /// to the `Plot`.
+  #[test]
+  fn pane_grid_span_from_left_with_dynamic_setter_and_play() {
+    let code = r#"Manipulate[
+      Pane[Grid[{
+        {Text@Style[TraditionalForm[y == Sin[2 Pi f[n] t]], 20], SpanFromLeft},
+        {Text@Style[TraditionalForm[note == "\!\(\*SuperscriptBox[\(A\), \(#\)]\)"], 20],
+         Text@Style[TraditionalForm[frequency == f[n] " Hz"], 20]},
+        {Plot[Sin[f[n] 2 Pi t], {t, 0, w}, ImageSize -> {250, 175}],
+         Play[Sin[f[n] 2 Pi t], {t, 0, 1}]}},
+        ItemSize -> {Automatic, {4, 4, 10}}], {525, 250}],
+      {{w, 0.05, "width"}, Dynamic[{0.05, 1/f[n], 2/f[n]}], ControlType -> Setter},
+      {{n, 49, "key"}, 1, 88, 1, ControlType -> PopupMenu},
+      Initialization :> (f[m_] := 440. 2^(Quotient[m, 12] - 4 + (Mod[m, 12] - 1)/12))]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "the body must draw a picture"
+    );
+    state.reevaluate();
+    assert_eq!(state.error, None);
+  }
+
   /// A choice list `Dynamic[Range[top]]` that follows a free variable the
   /// body itself assigns (not a control): switching the mode makes the body
   /// assign a different `top`, and the offered choices must follow it.

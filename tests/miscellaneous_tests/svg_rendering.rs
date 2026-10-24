@@ -3837,6 +3837,20 @@ mod tests {
       );
     }
 
+    /// A grid cell `Text@Style[TraditionalForm[note == "…"], size]` whose
+    /// string holds `\!\(\*…\)` linear syntax is typeset (a superscript is
+    /// drawn), not printed as the escape source.
+    #[test]
+    fn grid_cell_traditional_form_typesets_inline_box_string() {
+      let svg = woxi::interpret(
+        r#"ExportString[Grid[{{Text@Style[TraditionalForm[note == "\!\(\*SuperscriptBox[\(A\), \(#\)]\)/\!\(\*SuperscriptBox[\(B\), \(b\)]\)"], 20]}}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg.contains("<svg"), "{svg}");
+      assert!(!svg.contains("SuperscriptBox"), "box source leaked: {svg}");
+      assert!(!svg.contains("\\!"), "escape source leaked: {svg}");
+    }
+
     /// A layout of plain text is left to the text renderer — composing it
     /// as a picture would be a regression, not an improvement.
     #[test]
