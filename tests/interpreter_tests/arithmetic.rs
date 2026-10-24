@@ -3178,6 +3178,22 @@ mod infinity_comparisons {
     assert_eq!(interpret("1 < DirectedInfinity[-1]").unwrap(), "False");
   }
 
+  // Numeric complex constants compare by real and imaginary part; a symbol
+  // anywhere keeps the comparison open.
+  #[test]
+  fn complex_constant_equality() {
+    assert_eq!(interpret("1 + I == 0").unwrap(), "False");
+    assert_eq!(interpret("-6/17 - 24 I/17 == 0").unwrap(), "False");
+    assert_eq!(interpret("Sqrt[2] + I == 0").unwrap(), "False");
+    assert_eq!(interpret("1 + I == 1 - I").unwrap(), "False");
+    assert_eq!(interpret("1.5 + I == 2").unwrap(), "False");
+    assert_eq!(interpret("1 + I != 0").unwrap(), "True");
+    assert_eq!(interpret("1 + I == 1 + I").unwrap(), "True");
+    assert_eq!(interpret("1/2 + I == 0.5 + I").unwrap(), "True");
+    assert_eq!(interpret("If[1 + I == 0, a, b]").unwrap(), "b");
+    assert_eq!(interpret("x + I == 0").unwrap(), "I + x == 0");
+  }
+
   // Equal/Unequal between two complex infinities is indeterminate and
   // stays unevaluated without a message; against a number it decides.
   #[test]

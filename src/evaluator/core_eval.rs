@@ -3725,6 +3725,13 @@ pub fn evaluate_expr_to_expr_inner(
                 crate::functions::boolean_ast::equal_ast(&pair)?,
                 Expr::Identifier(ref s) if s == "True"
               )
+            } else if let Some(equal) =
+              crate::functions::boolean_ast::complex_constants_equal(&[
+                left.clone(),
+                right.clone(),
+              ])
+            {
+              equal
             } else if identical(left, right) {
               true
             } else if is_graph(left) && is_graph(right) {
@@ -3792,6 +3799,13 @@ pub fn evaluate_expr_to_expr_inner(
                   Expr::Identifier(ref s) if s == "True"
                 )
               }
+            } else if let Some(equal) =
+              crate::functions::boolean_ast::complex_constants_equal(&[
+                left.clone(),
+                right.clone(),
+              ])
+            {
+              !equal
             } else if identical(left, right) {
               false
             } else if is_graph(left) && is_graph(right) {
