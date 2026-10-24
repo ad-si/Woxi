@@ -3783,6 +3783,38 @@ mod tests {
     }
   }
 
+  /// A Manipulate whose body applies a plot head chosen by a `PopupMenu`
+  /// (`kind[field @@ {x, y}, …]`) to a field picked from a menu of pure
+  /// functions labelled with `TraditionalForm` rules; the choice list also
+  /// carries a `FieldSize` option. `VectorDensityPlot` used to be missing,
+  /// so selecting it left the body unevaluated.
+  #[test]
+  fn popup_menu_of_plot_heads_and_pure_function_fields_draws_vector_density() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[
+        kind[Apply[field, {x, y}], {x, -2, 2}, {y, -2, 2},
+          ColorFunction -> palette, ImageSize -> {200, 200}],
+        {{field, {#2, -#}&, \"field\"},
+         {({#2, -#}&) -> TraditionalForm[{y, -x}],
+          ({Sin[#], Cos[#2]}&) -> TraditionalForm[{Sin[x], Cos[y]}]},
+         PopupMenu, FieldSize -> {Automatic, 2.5}},
+        {{kind, VectorDensityPlot, \"plot type\"},
+         {VectorPlot -> \"vector\", VectorDensityPlot -> \"vector density\"}},
+        {{palette, \"SunsetColors\", \"palette\"},
+         {\"SunsetColors\", \"LakeColors\"}}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "body must evaluate: {:?}", state.error);
+    assert!(
+      state.graphics_handle.is_some(),
+      "the default VectorDensityPlot must draw"
+    );
+    assert_eq!(state.controls.len(), 3);
+  }
+
   /// A Manipulate output saved by the FrontEnd names its controls with the
   /// `DynamicModule` `$$` suffix and no explicit label ("Ecosystem
   /// Dynamics"); the slider must read `amp`, not `amp$$`, while the variable

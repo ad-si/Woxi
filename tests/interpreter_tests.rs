@@ -3018,6 +3018,24 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_vector_density_plot_draws_density_and_arrows() {
+    // Regression: VectorDensityPlot was reported as not implemented.
+    clear_state();
+    let svg = interpret(
+      "ExportString[VectorDensityPlot[{y, -x}, {x, -2, 2}, {y, -2, 2}, \
+       ColorFunction -> \"SunsetColors\"], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("<image"), "density background missing");
+    assert!(svg.contains("<polygon"), "arrowheads missing");
+    assert_eq!(
+      interpret("Head[VectorDensityPlot[{y, -x}, {x, -1, 1}, {y, -1, 1}]]")
+        .unwrap(),
+      "Graphics"
+    );
+  }
+
+  #[test]
   fn test_plot_epilog_rotate_wraps_content_in_svg_rotation() {
     // Regression: `Rotate[Text[…], θ]` inside a Plot's Epilog was dropped
     // entirely, so rotated labels (e.g. a vertical "therapeutic window"
