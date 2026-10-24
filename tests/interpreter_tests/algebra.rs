@@ -8899,6 +8899,17 @@ mod nsolve {
   // Freese-dissection Demonstration notebook, whose `p8 = sol[[2]]` is the
   // smaller root {-0.16669911088252198, -0.8090169943749475}.
   #[test]
+  fn nsolve_never_reports_ratnz() {
+    let r = interpret_with_stdout(
+      "Length[NSolve[{u Cos[0.5], u Sin[0.5]} == (1-t)^2 {-2.8,-1.} + \
+       2(1-t)t {0.,1.} + t^2 {2.8,-1.}]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "2");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  #[test]
   fn line_circle_with_simple_decimals_numericizes_the_closed_form() {
     // The rationalized system's quadratic is numericized from its closed
     // form instead of being solved and simplified in radicals, which cost

@@ -1722,11 +1722,13 @@ fn solve_piecewise_max_min(
     exact_args[0] = exact;
     let result = solve_piecewise_max_min(&exact_args)?;
     return Some(result.and_then(|sols| {
-      crate::emit_message(
-        "Solve::ratnz: Solve was unable to solve the system with inexact \
-         coefficients. The answer was obtained by solving a corresponding \
-         exact system and numericizing the result.",
-      );
+      if !in_nsolve() {
+        crate::emit_message(
+          "Solve::ratnz: Solve was unable to solve the system with inexact \
+           coefficients. The answer was obtained by solving a corresponding \
+           exact system and numericizing the result.",
+        );
+      }
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "N".into(),
         args: vec![sols].into(),
@@ -1906,9 +1908,12 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if found(&exact_result) > found(&result)
       || (nonlinear && found(&exact_result) > 0)
     {
-      crate::emit_message(
-        "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
-      );
+      // NSolve answers numerically by design and says nothing about it.
+      if !in_nsolve() {
+        crate::emit_message(
+          "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
+        );
+      }
       // In the exact solution's order, as wolframscript numericizes it.
       return crate::evaluator::evaluate_function_call_ast(
         "N",
