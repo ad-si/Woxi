@@ -22089,3 +22089,25 @@ mod event_locator_start_on_the_surface {
     );
   }
 }
+
+mod inverse_function_of_a_definition {
+  use super::*;
+
+  #[test]
+  fn a_single_rule_definition_inverts() {
+    assert_eq!(
+      interpret("g[x_] := 3 x + 1; InverseFunction[g]").unwrap(),
+      "(-1 + #1)/3 & "
+    );
+    assert_eq!(
+      interpret("f[r_] := 3/8 - r/2; Simplify[f[InverseFunction[f][r]]]")
+        .unwrap(),
+      "r"
+    );
+    // Two rules: no single formula to invert.
+    assert_eq!(
+      interpret("h[0] = 1; h[x_] := 2 x; InverseFunction[h]").unwrap(),
+      "InverseFunction[h]"
+    );
+  }
+}
