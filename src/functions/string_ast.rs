@@ -4168,6 +4168,18 @@ pub(crate) fn number_form_fixed_parts(
   Some((number_form_fixed_to_string(x, n, f)?, None))
 }
 
+/// The significant-digit budget `n` of a `NumberForm[x, {n, f}]` spec:
+/// an integer, or `Infinity` for "every digit of the integer part".
+pub(crate) fn number_form_digit_budget(n: &Expr) -> Option<i64> {
+  match n {
+    Expr::Integer(n) => i64::try_from(*n).ok(),
+    Expr::Identifier(id) | Expr::Constant(id) if id == "Infinity" => {
+      Some(i64::MAX)
+    }
+    _ => None,
+  }
+}
+
 /// Group a digit string into blocks of `block`, counting from the RIGHT (used
 /// for the integer part), joined by `sep`. E.g. ("1234567", 3, ",") -> "1,234,567".
 fn group_digits_from_right(digits: &str, block: usize, sep: &str) -> String {
@@ -16035,8 +16047,8 @@ fn number_form_family_scalar(
   let fixed = match spec {
     Some(Expr::List(parts)) if parts.len() == 2 => {
       match (&parts[0], &parts[1]) {
-        (Expr::Integer(n), Expr::Integer(f)) if *n >= 0 && *f >= 0 => {
-          Some((*n as i64, *f as i64))
+        (n, Expr::Integer(f)) if *f >= 0 => {
+          Some((number_form_digit_budget(n).filter(|n| *n >= 0)?, *f as i64))
         }
         _ => return None,
       }

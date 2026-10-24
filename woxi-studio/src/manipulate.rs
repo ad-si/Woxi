@@ -4434,6 +4434,48 @@ mod textcell_tests {
     // Two appends: the Dynamic upper bound follows `Length[frames]`.
     assert_eq!((min, max, current), (1.0, 3.0, 3.0));
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// (a lease calculator) whose `Pane`d body is a user-defined function
+  /// returning `Style[Grid[{{label, StringForm["$``", NumberForm[x,
+  /// {Infinity, 2}, DigitBlock -> 3]]}, …}, Alignment -> "Left"], "Label",
+  /// 14]`, with the sign prepended inside the `StringForm` template.
+  /// Independently written: a different (loan) domain, names and labels.
+  #[test]
+  fn pane_body_with_stringform_numberform_digit_block_grid() {
+    let code = r#"Manipulate[
+      Pane[loanSummary[price, rate, years], ImageSize -> {400, 80},
+        Alignment -> {Left, Center}],
+      {{price, 250000, "price ($)"}, 50000, 900000, 5000,
+        Appearance -> "Labeled"},
+      {{rate, 0.05, "rate"}, 0.01, 0.1, 0.005, Appearance -> "Labeled"},
+      {{years, 30, "years"}, 5, 40, 1, Appearance -> "Labeled"},
+      SaveDefinitions -> True,
+      Initialization :> (loanSummary[p_, r_, n_] := Module[{m, tot},
+        m = p r/12/(1 - (1 + r/12)^(-12 n));
+        tot = m*12*n - 2*p;
+        Style[Grid[{
+          {"monthly", StringForm["$``",
+            NumberForm[m, {Infinity, 2}, DigitBlock -> 3]]},
+          {"net", StringForm[If[tot < 0, "-", ""] <> "$``",
+            NumberForm[If[tot < 0, -1, 1] tot, {Infinity, 2},
+              DigitBlock -> 3]]},
+          {"years", n}}, Alignment -> "Left"], "Label", 14]])
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the Grid readout should render with the default control values"
+    );
+  }
 }
 
 /// With `WOXI_STUDIO_TRACE` set, print every piece of code the notebook
