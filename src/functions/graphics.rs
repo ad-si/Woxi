@@ -9903,7 +9903,9 @@ fn parse_range_spec(expr: &Expr) -> Option<(f64, f64)> {
     Expr::List(items) if items.len() == 2 => {
       let lo = expr_to_f64(&items[0])?;
       let hi = expr_to_f64(&items[1])?;
-      Some((lo, hi))
+      // A reversed pair (`{0.4, -8.25}`) spans the same interval; keeping
+      // it unsorted gave the picture a negative extent and blanked it.
+      Some((lo.min(hi), lo.max(hi)))
     }
     Expr::Identifier(s) if s == "All" || s == "Automatic" => None,
     _ => {
