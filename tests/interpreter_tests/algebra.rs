@@ -7248,6 +7248,16 @@ mod simplify_assumptions {
     );
   }
 
+  // A list integrand integrates element-wise, at every nesting depth.
+  #[test]
+  fn integrate_threads_over_list_integrand() {
+    assert_eq!(interpret("Integrate[{1, x}, x]").unwrap(), "{x, x^2/2}");
+    assert_eq!(
+      interpret("Integrate[{{1, x, x^2}}, {x, 1, 2}]").unwrap(),
+      "{{1, 3/2, 7/3}}"
+    );
+  }
+
   // Regression (mathics test_assumptions.py:22): `Assuming[var == value,
   // Integrate[...]]` substitutes `var → value` in the Integrate body
   // before evaluating, so the definite integral specialises to the
