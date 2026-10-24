@@ -1127,6 +1127,22 @@ mod interpreter_tests {
     );
   }
 
+  /// A `TabView` whose pane is plain data (a list of numbers, a string),
+  /// laid out in a `Column` beside a picture, draws that pane rather than
+  /// the symbolic `TabView[…]` call.
+  #[test]
+  fn test_tabview_text_pane_inside_picture_layout() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Column[{TabView[{\"codes\" -> {7, 8}, \"word\" -> \"zq\"}], \
+       ArrayPlot[{{1, 0}, {0, 1}}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("TabView"), "TabView source leaked into SVG");
+    assert!(svg.contains(">7</text>"), "first tab's content is drawn");
+    assert!(!svg.contains(">zq</text>"), "only the first tab is drawn");
+  }
+
   /// `TabView[<|label1 -> pane1, …|>]` (tabs given as an Association) is
   /// the same view as the list-of-rules form and shows its first tab.
   #[test]
