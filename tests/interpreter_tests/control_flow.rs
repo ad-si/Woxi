@@ -5017,6 +5017,24 @@ mod nested_scope_renaming {
     );
   }
 
+  // A name that already ends in `$` is not renamed, which a Demonstration
+  // relies on to build `Function[{step, id$}, …]` bodies that mention
+  // `step$` and `id$` ("Automata Generative Networks").
+  #[test]
+  fn names_ending_in_dollar_are_not_renamed() {
+    assert_eq!(
+      interpret(
+        "g[x_] := Module[{graph = {step$, id$}}, \
+         Function[{step, startpos, id$}, Evaluate[graph]]]; \
+         {g[1], g[1][a, b, c]}"
+      )
+      .unwrap(),
+      "{Function[{step$, startpos$, id$}, {step$, id$}], {a, c}}"
+    );
+    let out = interpret("Module[{a}, Hold[Function[{x$1}, x$1 + a]]]").unwrap();
+    assert!(out.starts_with("Hold[Function[{x$1$}, x$1$ + a$"), "{out}");
+  }
+
   #[test]
   fn inner_with_initializer_is_not_renamed() {
     // `With[{i = i}, …]`: the initializer's `i` is the Table iterator.

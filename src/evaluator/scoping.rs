@@ -1576,7 +1576,9 @@ pub(crate) fn shield_nested_scopes(expr: &Expr, locals: &[String]) -> Expr {
     let rename_all = |e: &Expr| {
       let mut e = e.clone();
       for name in &bound {
-        if !locals.contains(name) {
+        // A name that already ends in `$` is left alone (`x$1` still
+        // becomes `x$1$`).
+        if !locals.contains(name) && !name.ends_with('$') {
           e = crate::syntax::rename_symbol(&e, name, &format!("{name}$"));
         }
       }
