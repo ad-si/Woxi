@@ -22003,3 +22003,34 @@ mod pde_time_grid_ends_on_the_domain {
     );
   }
 }
+
+mod ndsolve_derivative_unknowns_of_indexed_functions {
+  use super::*;
+
+  #[test]
+  fn derivatives_of_indexed_functions_as_unknowns() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{a[1]'[t] == 1 + 0.5 Sin[a[2][t] - a[1][t]], \
+         a[2]'[t] == 2 - 0.5 Sin[a[2][t] - a[1][t]], a[1][0] == 0, \
+         a[2][0] == 0}, {a[1]'[t], a[2]'[t]}, {t, 0, 2}]; \
+         Length[s[[1]]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn derivative_values_follow_the_equations() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{a[1]'[t] == 3, a[2]'[t] == 2 t, a[1][0] == 0, \
+         a[2][0] == 0}, {a[1]'[t], a[2]'[t]}, {t, 0, 2}]; \
+         Chop[({a[1]'[t], a[2]'[t]} /. s[[1]] /. t -> 1.5) - {3., 3.}, 10^-4]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+}
