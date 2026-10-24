@@ -412,6 +412,34 @@ mod det {
   use super::super::case_helpers::assert_case;
   use super::*;
 
+  // A polynomial matrix's determinant is the expanded polynomial (over one
+  // denominator for rational coefficients). Cofactor expansion skips zero
+  // entries, and a matrix whose symbols all sit in one row (an
+  // interpolation matrix) is expanded along that row with exact numeric
+  // minors.
+  #[test]
+  fn polynomial_and_interpolation_matrices() {
+    assert_eq!(
+      interpret(
+        "{Det[{{1, 2, a}, {3, 4, b}, {5, 6, c}}], Det[{{2, 4}, {6, 2 x}}], \
+         Det[{{1/2, x}, {x, 1}}]}"
+      )
+      .unwrap(),
+      "{-2*a + 4*b - 2*c, -24 + 4*x, (1 - 2*x^2)/2}"
+    );
+    assert_eq!(
+      interpret(
+        "kk = {{0, 0}, {1, 0}, {2, 1}, {-1, 2}, {3, 3}, {1, 4}, {-2, 1}, \
+         {4, -1}, {2, 3}}; f[{a_, b_}] := {1, a, a^2, a^3, b, b a, b a^2, \
+         b^2, b^2 a, b^3}; Det[Append[f /@ kk, {1, x, x^2, x^3, y, y x, \
+         y x^2, y^2, y^2 x, y^3}]]"
+      )
+      .unwrap(),
+      "-1928448*x + 2280960*x^2 - 352512*x^3 - 21648384*y + 6283008*x*y + \
+       324864*x^2*y + 12731904*y^2 - 2944512*x*y^2 - 1506816*y^3"
+    );
+  }
+
   // Cofactor expansion skips zero entries, so a banded symbolic matrix
   // stays cheap.
   #[test]
@@ -507,7 +535,8 @@ mod det {
   fn det_polynomial() {
     assert_case(
       r#"m = Table[1 / (i + j + 1), {i, 3}, {j, 3}]; Det[m - x IdentityMatrix[3]]"#,
-      r#"-((-1 + 4755*x - 255600*x^2 + 378000*x^3)/378000)"#,
+      // wolframscript leaves the common factor 2 in: (2 - 9510 x + …)/756000.
+      r#"(1 - 4755*x + 255600*x^2 - 378000*x^3)/378000"#,
     );
   }
 }

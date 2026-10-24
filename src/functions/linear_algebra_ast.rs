@@ -1325,8 +1325,76 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(machine_determinant(&m)));
   }
   let det = determinant(&matrix);
+  // Wolfram's determinant of a polynomial matrix is the expanded
+  // polynomial (`Det[{{2, 4}, {6, 2 x}}]` is `-24 + 4 x`), not a factored
+  // simplification of it.
+  // With rational coefficients it is brought over one denominator
+  // (`Det[{{1/2, x}, {x, 1}}]` is `(1 - 2 x^2)/2`).
+  if is_polynomial_matrix(&matrix) {
+    fn has_rational(e: &Expr) -> bool {
+      match e {
+        Expr::FunctionCall { name, args } => {
+          name == "Rational" || args.iter().any(has_rational)
+        }
+        Expr::List(items) => items.iter().any(has_rational),
+        Expr::BinaryOp { left, right, .. } => {
+          has_rational(left) || has_rational(right)
+        }
+        Expr::UnaryOp { operand, .. } => has_rational(operand),
+        _ => false,
+      }
+    }
+    let combine = if matrix.iter().flatten().any(has_rational) {
+      "Together"
+    } else {
+      "Expand"
+    };
+    return Ok(
+      crate::evaluator::evaluate_function_call_ast(
+        combine,
+        std::slice::from_ref(&det),
+      )
+      .unwrap_or(det),
+    );
+  }
   let r = crate::functions::expand_and_combine(&det);
   Ok(simplify_expr(&r))
+}
+
+/// Whether every entry is a polynomial in its symbols with exact rational
+/// coefficients (no division by a symbol, no radicals of symbols).
+fn is_polynomial_matrix(matrix: &[Vec<Expr>]) -> bool {
+  let mut symbols: Vec<Expr> = Vec::new();
+  for e in matrix.iter().flatten() {
+    if crate::functions::math_ast::numeric_utils::contains_inexact_real(e) {
+      return false;
+    }
+    if let Ok(Expr::List(ref vs)) = crate::evaluator::evaluate_function_call_ast(
+      "Variables",
+      std::slice::from_ref(e),
+    ) {
+      for v in vs {
+        if !symbols
+          .iter()
+          .any(|s| crate::evaluator::pattern_matching::expr_equal(s, v))
+        {
+          symbols.push(v.clone());
+        }
+      }
+    } else {
+      return false;
+    }
+  }
+  let vars = Expr::List(symbols.into());
+  matrix.iter().flatten().all(|e| {
+    matches!(
+      crate::evaluator::evaluate_function_call_ast(
+        "PolynomialQ",
+        &[e.clone(), vars.clone()]
+      ),
+      Ok(Expr::Identifier(ref t)) if t == "True"
+    )
+  })
 }
 
 /// The matrix as machine reals when it holds a machine real and every
@@ -1484,6 +1552,44 @@ fn determinant(matrix: &[Vec<Expr>]) -> Expr {
     .all(|row| row.iter().all(is_exact_rational_entry))
   {
     return determinant_bareiss(matrix);
+  }
+  // A single row (or column) holding all the symbols — an interpolation
+  // matrix whose last row is the monomials — is expanded along that line,
+  // every minor then being an exact numeric determinant.
+  let exact_row = |row: &[Expr]| row.iter().all(is_exact_rational_entry);
+  let symbolic_rows: Vec<usize> =
+    (0..n).filter(|&i| !exact_row(&matrix[i])).collect();
+  if symbolic_rows.len() == 1 && symbolic_rows[0] != 0 {
+    let r = symbolic_rows[0];
+    let mut reordered = matrix.to_vec();
+    let row = reordered.remove(r);
+    reordered.insert(0, row);
+    // Moving row r to the top is r adjacent swaps.
+    let det = determinant(&reordered);
+    let det = if r % 2 == 1 {
+      eval_sub(&Expr::Integer(0), &det)
+    } else {
+      det
+    };
+    return crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      std::slice::from_ref(&det),
+    )
+    .unwrap_or(det);
+  }
+  if symbolic_rows.len() > 1 {
+    let transposed: Vec<Vec<Expr>> = (0..n)
+      .map(|j| (0..n).map(|i| matrix[i][j].clone()).collect())
+      .collect();
+    let symbolic_cols = (0..n).filter(|&j| !exact_row(&transposed[j])).count();
+    if symbolic_cols == 1 {
+      let det = determinant(&transposed);
+      return crate::evaluator::evaluate_function_call_ast(
+        "Expand",
+        std::slice::from_ref(&det),
+      )
+      .unwrap_or(det);
+    }
   }
   let mut det = Expr::Integer(0);
   for j in 0..n {

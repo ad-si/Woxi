@@ -3526,6 +3526,19 @@ is `0.32271721782167967` there, `0.3227168528427011` here). A symbolic
 point stays unevaluated.
 
 
+### `Det` of a rational-coefficient matrix keeps a common factor in Wolfram
+
+```sh
+wolframscript -code 'Det[Table[1/(i + j + 1), {i, 3}, {j, 3}] - x IdentityMatrix[3]]'
+# (2 - 9510*x + 511200*x^2 - 756000*x^3)/756000
+woxi eval 'Det[Table[1/(i + j + 1), {i, 3}, {j, 3}] - x IdentityMatrix[3]]'
+# (1 - 4755*x + 255600*x^2 - 378000*x^3)/378000
+```
+
+The value is the same; Wolfram's elimination leaves the numerator and
+denominator with a common factor that `Together` removes.
+
+
 ### `Flat` without `OneIdentity` binds singletons bare
 
 For a head that is `Flat` but not `OneIdentity`, Wolfram matches a blank that
