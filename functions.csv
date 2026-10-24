@@ -1834,7 +1834,7 @@ WatershedComponents,Watershed components,,unevaluated,8.0,1836
 ViewCenter,Option specifying the point of the displayed box a 3D camera looks at,✅,pure,2.0,1838
 FileType,Returns the type of a file (File Directory or None),✅,filesystem,2.0,1842
 FourierSinSeries,Fourier sine series,,unevaluated,7.0,1842
-MathieuCharacteristicA,Mathieu characteristic A,,unevaluated,3.0,1842
+MathieuCharacteristicA,"Characteristic value a_r(q) of the Mathieu equation for integer r (machine-precision q)",✅,pure,3.0,1842
 QuantilePlot,Plots dataset quantiles against standard normal quantiles (or against a second dataset) with a reference line,✅,pure,8.0,1842
 ResourceObject,Resource object,,unevaluated,11.0,1844
 StieltjesGamma,Stieltjes constants (gamma_0 is EulerGamma; generalized order-0 is -PolyGamma; N gives machine values up to order 10),✅,pure,3.0,1844
@@ -1844,7 +1844,7 @@ BeckmannDistribution,Beckmann distribution,,unevaluated,8.0,1849
 CoordinateTransformData,,🚫,,9.0,1849
 FirstCase,First element matching a pattern,✅,pure,10.0,1849
 EndOfFile,Symbol returned by Read at end of file,✅,pure,1.0,1852
-MathieuC,Even Mathieu function (Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1852
+MathieuC,Even Mathieu function (also for imaginary z; Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1852
 WeierstrassSigma,Weierstrass sigma function,,unevaluated,3.0,1852
 StringReplacePart,Replace a span of a string — a bare index means the span from the start and an unavailable span reports ::repart,✅,pure,3.0,1853
 KeyMap,Maps a function over the keys of an association; supports the operator form KeyMap[f][assoc],✅,pure,10.0,1855
@@ -1956,7 +1956,7 @@ MultinomialDistribution,Multivariate discrete distribution for modeling outcomes
 NonConstants,Option for Simplify specifying which symbols are not constants,✅,pure,1.0,1954
 BooleanFunction,Integer-indexed Boolean function; BooleanFunction[k n] is the opaque BooleanFunction["BDD" -> ...] object and BooleanFunction[k n vars] writes it out in those variables,✅,pure,7.0,1956
 ViewVector,3D graphics option for specifying the view direction,🚫,,6.0,1956
-MathieuS,Odd Mathieu function (Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1960
+MathieuS,Odd Mathieu function (also for imaginary z; Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1960
 NumberFormat,Option for NumberForm specifying how mantissa/base/exponent are assembled,🚫,,2.0,1960
 OneIdentity,Attribute indicating f[x] is identical to x for matching,✅,pure,1.0,1960
 Subfactorial,Returns the subfactorial (number of derangements),✅,pure,6.0,1960
@@ -2121,7 +2121,7 @@ GroupOrder,Order of a group,✅,pure,8.0,2129
 QueueingProcess,Queueing theory process,🚫,,9.0,2129
 RegionProduct,Cartesian product of regions — named as a box cylinder prism or parallelotope where one exists,✅,pure,10.0,2129
 TrackingFunction,Tracking callback option,✅,none,10.0,2129
-MathieuCharacteristicB,Mathieu characteristic value,🚫,,3.0,2131
+MathieuCharacteristicB,"Characteristic value b_r(q) of the Mathieu equation for integer r (machine-precision q)",✅,pure,3.0,2131
 PowerRange,List of values from xmin by successive multiplication while their magnitude stays within xmax,✅,pure,10.0,2131
 ParentDirectory,Parent directory path,✅,none,2.0,2132
 MatrixFunction,Apply a scalar function to a square matrix via its eigenvalues,✅,pure,9.0,2134

@@ -1170,6 +1170,16 @@ pub fn dispatch_math_functions(
     "MathieuSPrime" if args.len() == 3 => {
       return Some(crate::functions::math_ast::mathieu_s_prime_ast(args));
     }
+    "MathieuCharacteristicA" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::mathieu_characteristic_a_ast(
+        args,
+      ));
+    }
+    "MathieuCharacteristicB" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::mathieu_characteristic_b_ast(
+        args,
+      ));
+    }
     "MathieuC" if args.len() == 3 => {
       return Some(crate::functions::math_ast::mathieu_c_ast(args));
     }
