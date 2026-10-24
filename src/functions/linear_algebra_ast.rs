@@ -1487,6 +1487,10 @@ fn determinant(matrix: &[Vec<Expr>]) -> Expr {
   }
   let mut det = Expr::Integer(0);
   for j in 0..n {
+    // A zero entry's cofactor contributes nothing.
+    if is_zero_expr(&matrix[0][j]) {
+      continue;
+    }
     let mut minor = Vec::new();
     for i in 1..n {
       let mut row = Vec::new();

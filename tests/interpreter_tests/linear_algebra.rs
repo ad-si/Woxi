@@ -412,6 +412,21 @@ mod det {
   use super::super::case_helpers::assert_case;
   use super::*;
 
+  // Cofactor expansion skips zero entries, so a banded symbolic matrix
+  // stays cheap.
+  #[test]
+  fn banded_symbolic_matrix() {
+    assert_eq!(
+      interpret(
+        "m = Table[Which[i == j, a + i, Abs[i - j] == 1, b, True, 0], \
+         {i, 9}, {j, 9}]; {LeafCount[Det[m]], Expand[Det[m]] /. \
+         {a -> 1, b -> 2}}"
+      )
+      .unwrap(),
+      "{183, -180480}"
+    );
+  }
+
   #[test]
   fn det_2x2() {
     assert_eq!(interpret("Det[{{1, 2}, {3, 4}}]").unwrap(), "-2");
