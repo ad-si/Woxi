@@ -1441,4 +1441,51 @@ mod polyhedron_data_tests {
       "{True, True}"
     );
   }
+
+  // `{"Pyramid", n}` and `{"Dipyramid", n}` are unit-edge: every edge of the
+  // solid (taken from its face indices) has length 1, the apex comes first,
+  // and the counts and volume follow from the regular base polygon.
+  #[test]
+  fn polyhedron_data_pyramid_and_dipyramid() {
+    assert_eq!(
+      interpret(
+        r#"Table[{PolyhedronData[{"Pyramid", n}, "VertexCount"],
+           PolyhedronData[{"Pyramid", n}, "FaceCount"],
+           PolyhedronData[{"Dipyramid", n + 1}, "VertexCount"],
+           PolyhedronData[{"Dipyramid", n + 1}, "FaceCount"]}, {n, 4, 4}]"#
+      )
+      .unwrap(),
+      "{{5, 5, 7, 10}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Table[v = N[PolyhedronData[{kind, n}, "VertexCoordinates"]];
+          Union[Round[Norm[v[[#[[1]]]] - v[[#[[2]]]]] & /@
+            Flatten[Map[Partition[#, 2, 1, 1] &,
+              PolyhedronData[{kind, n}, "FaceIndices"]], 1], 10^-9]],
+          {kind, {"Pyramid", "Dipyramid"}}, {n, 4, 5}]"#
+      )
+      .unwrap(),
+      "{{{1}, {1}}, {{1}, {1}}}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData[{"Pyramid", 4}, "Volume"]"#).unwrap(),
+      "1/(3*Sqrt[2])"
+    );
+    assert_eq!(
+      interpret(
+        r#"v = N[PolyhedronData[{"Pyramid", 4}, "VertexCoordinates"]];
+        {v[[1, 3]], v[[2, 3]]}"#
+      )
+      .unwrap(),
+      "{0.5303300858899107, -0.1767766952966369}"
+    );
+    assert_eq!(
+      interpret(
+        r#"N[Take[PolyhedronData[{"Dipyramid", 3}, "VertexCoordinates"], 2]]"#
+      )
+      .unwrap(),
+      "{{0., 0., 0.816496580927726}, {0., 0., -0.816496580927726}}"
+    );
+  }
 }
