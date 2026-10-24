@@ -2410,3 +2410,20 @@ mod package_symbol_protection {
     );
   }
 }
+
+mod control_active_holds_its_forms {
+  use super::*;
+
+  // Only the form ControlActive shows is evaluated: outside an actively
+  // manipulated control that is the second one.
+  #[test]
+  fn only_the_inactive_form_is_evaluated() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "{Attributes[ControlActive], ControlActive[Print[1]; 1, Print[2]; 2]}",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{{HoldAll, Protected, ReadProtected}, 2}");
+    assert_eq!(result.stdout, "2\n");
+  }
+}

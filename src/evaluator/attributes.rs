@@ -918,8 +918,8 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // variable is not substituted by an OwnValue before the sum starts.
     "Sum" | "Product"
     | "Piecewise" | "ValueQ"
-    // ControlActive has HoldAll in wolframscript, fixing breaks tests.
-    // | "ControlActive"
+    // ControlActive evaluates only the form it shows.
+    | "ControlActive"
     // ForAll and Exists have HoldAll in wolframscript, fixing breaks tests.
     // | "ForAll" | "Exists"
     | "ContinuedFractionK" | "GraphPropertyDistribution"
