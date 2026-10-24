@@ -20966,4 +20966,49 @@ mod reduce_vanishing_coefficient_branch {
       "1"
     );
   }
+
+  mod solve_eliminating {
+    use super::*;
+
+    #[test]
+    fn chain_of_equations() {
+      assert_eq!(
+        interpret("Solve[{x == y + k, y == 3, z == x}, {x, z}, {y}]").unwrap(),
+        "{{x -> 3 + k, z -> 3 + k}}"
+      );
+    }
+
+    #[test]
+    fn coupled_linear_system() {
+      assert_eq!(
+        interpret(
+          "Solve[{a == 2 b, p == a + q, q == b r}, {p}, {a, b, q}] // Length"
+        )
+        .unwrap(),
+        "1"
+      );
+      assert_eq!(
+        interpret(
+          "Expand[u /. First[Solve[{u == w s, w == 2 z, z == t + 1}, {u}, {w, z}]]]"
+        )
+        .unwrap(),
+        "2*s + 2*s*t"
+      );
+    }
+
+    #[test]
+    fn result_satisfies_equations() {
+      assert_eq!(
+        interpret(
+          "eqs = {av == v ((m - dt)/m), ni == i + l (nv - av), nv == v + k np, \
+           np == dt (v/m) (r - i) + av (ni - i), \
+           nm == (av (m - dt) + (nv - av) t)/nv, nc == c + np, v == c k}; \
+           sol = Solve[eqs, {nc, nm, ni, np}, {nv, av, v}]; \
+           Length[sol] == 1 && Keys[First[sol]] === {nc, nm, ni, np}"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+  }
 }

@@ -2285,6 +2285,21 @@ fn solve_ast_entry(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // `Solve[eqns, vars, elims]` solves for `vars` with the `elims` eliminated.
+  if positional.len() == 3
+    && let (Expr::List(vars), Expr::List(elims)) =
+      (&positional[1], &positional[2])
+    && !elims.is_empty()
+    && vars
+      .iter()
+      .chain(elims.iter())
+      .all(|v| matches!(v, Expr::Identifier(_)))
+    && let Some(solved) =
+      solve_with_eliminated(&positional[0], vars.as_slice(), elims.as_slice())
+  {
+    return solved;
+  }
+
   let mut squared_abs = false;
   // An unknown written as a curried call (`c[1][t]`, a method-of-lines
   // grid value) is solved for as a fresh symbol and put back afterwards.
@@ -16749,4 +16764,163 @@ fn solution_is_real(sol: &Expr) -> bool {
   } else {
     true
   }
+}
+
+/// `Solve[eqns, vars, elims]`: the unknowns are taken one at a time, the
+/// eliminated ones first, each from an equation linear in it, and substituted
+/// into the remaining equations; whatever is left is handed to `Solve`. The
+/// rules for `vars` are then resolved back through the eliminated unknowns.
+/// `None` when the equations are not plain equalities.
+fn solve_with_eliminated(
+  eqns: &Expr,
+  vars: &[Expr],
+  elims: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let same = crate::evaluator::pattern_matching::expr_equal;
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let numerator_of = |e: Expr| {
+    let together = eval(call("Together", vec![e]))?;
+    eval(call("Numerator", vec![together]))
+  };
+  let eq_list = solve_equalities(eqns);
+  if eq_list.is_empty()
+    || eq_list.len()
+      != flatten_and_constraints(std::slice::from_ref(eqns)).len()
+  {
+    return None;
+  }
+  let mut polys: Vec<Expr> = Vec::new();
+  for eq in &eq_list {
+    let Expr::Comparison { operands, .. } = eq else {
+      return None;
+    };
+    polys.push(numerator_of(minus2(
+      operands[0].clone(),
+      operands[1].clone(),
+    ))?);
+  }
+  let order: Vec<Expr> = elims
+    .iter()
+    .chain(vars.iter().filter(|v| !elims.iter().any(|e| same(e, v))))
+    .cloned()
+    .collect();
+  let mut steps: Vec<(Expr, Expr)> = Vec::new();
+  for var in &order {
+    let Expr::Identifier(name) = var else {
+      continue;
+    };
+    let mut chosen = None;
+    for (i, g) in polys.iter().enumerate() {
+      let Some(slope) = eval(call("D", vec![g.clone(), var.clone()])) else {
+        continue;
+      };
+      if is_zero_expr(&slope) || super::eliminate::contains_var(&slope, name) {
+        continue;
+      }
+      let offset = eval(crate::syntax::substitute_variable(
+        g,
+        name,
+        &Expr::Integer(0),
+      ))?;
+      let size = match eval(call("LeafCount", vec![g.clone()])) {
+        Some(Expr::Integer(n)) => n,
+        _ => i128::MAX,
+      };
+      if chosen.as_ref().is_none_or(|(_, _, _, best)| size < *best) {
+        chosen = Some((i, slope, offset, size));
+      }
+    }
+    let Some((i, slope, offset, _)) = chosen else {
+      continue;
+    };
+    let value = eval(call(
+      "Together",
+      vec![div2(minus2(Expr::Integer(0), offset), slope)],
+    ))?;
+    polys.remove(i);
+    for g in &mut polys {
+      if super::eliminate::contains_var(g, name) {
+        *g = numerator_of(crate::syntax::substitute_variable(g, name, &value))?;
+      }
+    }
+    steps.push((var.clone(), value));
+  }
+  // What the substitution could not settle.
+  polys.retain(|g| !is_zero_expr(g));
+  if polys
+    .iter()
+    .any(|g| matches!(g, Expr::Integer(_) | Expr::Real(_)))
+  {
+    return Some(Ok(Expr::List(vec![].into())));
+  }
+  let unsolved: Vec<Expr> = order
+    .iter()
+    .filter(|v| !steps.iter().any(|(s, _)| same(s, v)))
+    .cloned()
+    .collect();
+  let tails: Vec<Vec<(Expr, Expr)>> = if polys.is_empty() {
+    vec![vec![]]
+  } else {
+    let rest = Expr::List(
+      polys
+        .iter()
+        .map(|g| Expr::Comparison {
+          operands: vec![g.clone(), Expr::Integer(0)],
+          operators: vec![ComparisonOp::Equal],
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    );
+    let solved = match solve_ast(&[rest, Expr::List(unsolved.into())]) {
+      Ok(s) => s,
+      Err(e) => return Some(Err(e)),
+    };
+    let Expr::List(ref sols) = solved else {
+      return None;
+    };
+    let mut tails = Vec::new();
+    for sol in sols {
+      let Expr::List(rules) = sol else {
+        return None;
+      };
+      let mut tail = Vec::new();
+      for r in rules {
+        let Expr::Rule {
+          pattern,
+          replacement,
+        } = r
+        else {
+          return None;
+        };
+        tail.push((pattern.as_ref().clone(), replacement.as_ref().clone()));
+      }
+      tails.push(tail);
+    }
+    tails
+  };
+  let mut out = Vec::new();
+  for tail in tails {
+    let mut known: Vec<(Expr, Expr)> = tail;
+    for (var, value) in steps.iter().rev() {
+      let mut v = value.clone();
+      for (k, kv) in &known {
+        if let Expr::Identifier(kn) = k {
+          v = crate::syntax::substitute_variable(&v, kn, kv);
+        }
+      }
+      let v = eval(call("Together", vec![v]))?;
+      known.push((
+        var.clone(),
+        eval(call("Cancel", vec![v.clone()])).unwrap_or(v),
+      ));
+    }
+    let mut rules = Vec::new();
+    for var in vars {
+      if let Some((_, val)) = known.iter().find(|(k, _)| same(k, var)) {
+        rules.push(rule_expr(var.clone(), val.clone()));
+      }
+    }
+    out.push(Expr::List(rules.into()));
+  }
+  Some(Ok(Expr::List(out.into())))
 }
