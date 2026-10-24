@@ -37483,6 +37483,22 @@ mod manipulate_named_control_group_tests {
     assert_eq!(names(&s), vec!["x"]);
     assert_eq!(s.initialization.as_deref(), Some("x = 3"));
   }
+
+  /// A `DynamicModule` whose body is a layout holding a `Dynamic` (not a
+  /// bare `Dynamic`) still keeps its locals as widget state and runs its own
+  /// `Initialization` — a Manipulate with only a trailing `Button` row is
+  /// then still a widget.
+  #[test]
+  fn dynamic_module_with_layout_body_keeps_locals_and_initialization() {
+    let s = spec(
+      r#"Manipulate[DynamicModule[{a, n = 0},
+        Labeled[Dynamic[a], Dynamic[n], Top], Initialization :> (n = 3)],
+        Row[{Button["Reset", n = 0]}]]"#,
+    );
+    let state: Vec<&str> = s.state.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(state, vec!["a", "n"]);
+    assert_eq!(s.initialization.as_deref(), Some("n = 3"));
+  }
 }
 
 #[cfg(test)]
