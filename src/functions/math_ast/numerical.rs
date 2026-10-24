@@ -4637,7 +4637,21 @@ pub fn fourier_result_to_expr(re: f64, im: f64, force_complex: bool) -> Expr {
   let re = fourier_round(re);
   let im = fourier_round(im);
 
-  if force_complex || im != 0.0 {
+  if (force_complex || im != 0.0) && re != 0.0 && im != 0.0 {
+    // The evaluated form of `Complex[re, im]`, built directly: a large
+    // transform has one per element.
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Real(re),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Real(im), Expr::Identifier("I".to_string())].into(),
+        },
+      ]
+      .into(),
+    }
+  } else if force_complex || im != 0.0 {
     // Build via Complex[re, im] which the evaluator will format as a + b*I
     crate::evaluator::evaluate_function_call_ast(
       "Complex",
@@ -8273,4 +8287,26 @@ pub fn parametric_window_ast(
   };
   let _ = alpha;
   eval(&expr)
+}
+
+#[cfg(test)]
+mod fourier_result_tests {
+  use super::*;
+
+  #[test]
+  fn direct_complex_matches_the_evaluated_form() {
+    for (re, im) in [(1.5, 2.5), (-1.5, 2.5), (1.5, -2.5), (-3.0, -0.25)] {
+      let direct = fourier_result_to_expr(re, im, false);
+      let evaluated = crate::evaluator::evaluate_function_call_ast(
+        "Complex",
+        &[Expr::Real(re), Expr::Real(im)],
+      )
+      .unwrap();
+      assert_eq!(
+        format!("{direct:?}"),
+        format!("{evaluated:?}"),
+        "{re} + {im} I"
+      );
+    }
+  }
 }

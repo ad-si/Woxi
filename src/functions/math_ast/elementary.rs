@@ -3352,51 +3352,86 @@ pub fn chop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn chop_expr(expr: &Expr, tolerance: f64) -> Result<Expr, InterpreterError> {
+  Ok(chop_changed(expr, tolerance)?.unwrap_or_else(|| expr.clone()))
+}
+
+/// `chop_expr`, returning `None` when nothing in `expr` is chopped, so an
+/// untouched subterm (a large array of complex numbers, say) is neither
+/// rebuilt nor evaluated again.
+fn chop_changed(
+  expr: &Expr,
+  tolerance: f64,
+) -> Result<Option<Expr>, InterpreterError> {
   match expr {
-    Expr::Real(f) => {
-      if f.abs() < tolerance {
-        Ok(Expr::Integer(0))
-      } else {
-        Ok(expr.clone())
-      }
-    }
+    Expr::Real(f) => Ok((f.abs() < tolerance).then_some(Expr::Integer(0))),
     // An arbitrary-precision number, including the zero `0``30` an exact
     // cancellation leaves.
-    Expr::BigFloat(digits, _) => match digits.parse::<f64>() {
-      Ok(f) if f.abs() < tolerance => Ok(Expr::Integer(0)),
-      _ => Ok(expr.clone()),
-    },
+    Expr::BigFloat(digits, _) => Ok(match digits.parse::<f64>() {
+      Ok(f) if f.abs() < tolerance => Some(Expr::Integer(0)),
+      _ => None,
+    }),
     Expr::List(items) => {
-      let chopped: Result<Vec<Expr>, _> =
-        items.iter().map(|e| chop_expr(e, tolerance)).collect();
-      Ok(Expr::List(chopped?.into()))
+      let mut out: Option<Vec<Expr>> = None;
+      for (i, item) in items.iter().enumerate() {
+        if let Some(c) = chop_changed(item, tolerance)? {
+          out.get_or_insert_with(|| items.iter().take(i).cloned().collect());
+          out.as_mut().unwrap().push(c);
+        } else if let Some(v) = out.as_mut() {
+          v.push(item.clone());
+        }
+      }
+      Ok(out.map(|v| Expr::List(v.into())))
     }
     // Recursively chop into function calls (Plus, Times, Complex, …) and
     // re-evaluate so that chopped subterms like `Complex[0, 0]` collapse
     // to 0 and additive identities are simplified.
     Expr::FunctionCall { name, args } => {
-      let chopped_args: Vec<Expr> = args
-        .iter()
-        .map(|a| chop_expr(a, tolerance))
-        .collect::<Result<_, _>>()?;
+      let mut changed = false;
+      let mut chopped_args: Vec<Expr> = Vec::with_capacity(args.len());
+      for a in args {
+        match chop_changed(a, tolerance)? {
+          Some(c) => {
+            changed = true;
+            chopped_args.push(c);
+          }
+          None => chopped_args.push(a.clone()),
+        }
+      }
+      if !changed {
+        return Ok(None);
+      }
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: name.clone(),
         args: chopped_args.into(),
       })
+      .map(Some)
     }
     Expr::BinaryOp { op, left, right } => {
-      let new_left = chop_expr(left, tolerance)?;
-      let new_right = chop_expr(right, tolerance)?;
-      crate::evaluator::evaluate_expr_to_expr(&binop(*op, new_left, new_right))
+      let (l, r) = (
+        chop_changed(left, tolerance)?,
+        chop_changed(right, tolerance)?,
+      );
+      if l.is_none() && r.is_none() {
+        return Ok(None);
+      }
+      crate::evaluator::evaluate_expr_to_expr(&binop(
+        *op,
+        l.unwrap_or_else(|| left.as_ref().clone()),
+        r.unwrap_or_else(|| right.as_ref().clone()),
+      ))
+      .map(Some)
     }
     Expr::UnaryOp { op, operand } => {
-      let new_operand = chop_expr(operand, tolerance)?;
+      let Some(new_operand) = chop_changed(operand, tolerance)? else {
+        return Ok(None);
+      };
       crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
         op: *op,
         operand: Box::new(new_operand),
       })
+      .map(Some)
     }
-    _ => Ok(expr.clone()),
+    _ => Ok(None),
   }
 }
 
