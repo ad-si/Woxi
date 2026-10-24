@@ -9948,20 +9948,31 @@ fn parse_plot_pad_amount(expr: &Expr) -> PlotPadAmount {
   }
 }
 
-struct AxisPadding {
+pub(crate) struct AxisPadding {
   lo: PlotPadAmount,
   hi: PlotPadAmount,
 }
 
-struct PlotRangePaddingSpec {
-  x: AxisPadding,
-  y: AxisPadding,
+impl AxisPadding {
+  /// The `(low, high)` padding in data units for an axis of the given
+  /// (unpadded) span, with `Automatic` resolving to `automatic_frac` of it.
+  pub(crate) fn resolve(&self, span: f64, automatic_frac: f64) -> (f64, f64) {
+    (
+      self.lo.resolve(span, automatic_frac),
+      self.hi.resolve(span, automatic_frac),
+    )
+  }
+}
+
+pub(crate) struct PlotRangePaddingSpec {
+  pub(crate) x: AxisPadding,
+  pub(crate) y: AxisPadding,
 }
 
 /// Parse a `PlotRangePadding` option value: a single spec (applied to both
 /// sides of both axes), `{xSpec, ySpec}`, or the full per-side form
 /// `{{xMinPad, xMaxPad}, {yMinPad, yMaxPad}}`.
-fn parse_plot_range_padding(expr: &Expr) -> PlotRangePaddingSpec {
+pub(crate) fn parse_plot_range_padding(expr: &Expr) -> PlotRangePaddingSpec {
   fn symmetric(amt: PlotPadAmount) -> AxisPadding {
     AxisPadding { lo: amt, hi: amt }
   }
