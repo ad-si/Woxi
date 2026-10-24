@@ -40340,7 +40340,6 @@ mod plots_with_nothing_to_draw {
       "True"
     );
   }
- }
 }
 
 mod array_plot_argument_errors {
