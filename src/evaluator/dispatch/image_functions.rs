@@ -1009,6 +1009,30 @@ pub fn dispatch_image_functions(
     "GaussianFilter" if args.len() == 2 => {
       return Some(crate::functions::image_ast::gaussian_filter_ast(args));
     }
+    // `{{r}}` / `{{r}, σ}` ask for the one-dimensional kernel, which is
+    // the margin of the matrix: the matrix is the kernel's outer product.
+    "GaussianMatrix"
+      if args.len() == 1
+        && let Expr::List(spec) = &args[0]
+        && let Some(Expr::List(radius)) = spec.first()
+        && radius.len() == 1
+        && spec.len() <= 2 =>
+    {
+      let mut flat = vec![radius[0].clone()];
+      flat.extend(spec[1..].iter().cloned());
+      let spec2d = if flat.len() == 1 {
+        flat.remove(0)
+      } else {
+        Expr::List(flat.into())
+      };
+      let matrix = crate::functions::image_ast::gaussian_matrix_ast(&[spec2d]);
+      return Some(matrix.and_then(|m| match &m {
+        Expr::List(_) => {
+          crate::evaluator::evaluate_function_call_ast("Total", &[m])
+        }
+        _ => Ok(crate::helpers::unevaluated("GaussianMatrix", args)),
+      }));
+    }
     "GaussianMatrix" if args.len() == 1 => {
       return Some(crate::functions::image_ast::gaussian_matrix_ast(args));
     }

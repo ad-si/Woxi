@@ -40245,3 +40245,23 @@ mod polyhedron_data_generated_solids {
     );
   }
 }
+
+mod gaussian_matrix_vector_form {
+  use super::*;
+
+  #[test]
+  fn double_braces_give_the_one_dimensional_kernel() {
+    assert_eq!(
+      interpret(
+        "Chop[GaussianMatrix[{{2}}] - {0.05088223571170066, 0.21183832321622456, \
+         0.47455888214414965, 0.21183832321622456, 0.05088223571170066}, 10^-12]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("Length[GaussianMatrix[{{2}, 1.5}]]").unwrap(),
+      "5"
+    );
+  }
+}
