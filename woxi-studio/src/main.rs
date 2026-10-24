@@ -9662,6 +9662,24 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     );
   }
 
+  /// A `DynamicModule` local whose initializer reads a control keeps its
+  /// code through the Initialization, so it is sized by the saved control
+  /// value applied afterwards ("A Finite Automaton Editor": `finals` has
+  /// one row per state).
+  #[test]
+  fn dynamic_module_local_follows_saved_control_value() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[DynamicModule[{v = Table[0, {n}]}, Dynamic[Length[v]]], \
+       {{n, 3}, 1, 9, 1}, Initialization :> (helperDefined = 1)]",
+    )
+    .expect("Manipulate should parse and hold");
+    // A notebook widget is built unrendered, then gets its saved values.
+    let mut state = manipulate::ManipulateState::from_expr_unrendered(&expr)
+      .expect("should build a ManipulateState");
+    state.apply_saved_variables(&[("n".to_string(), "5".to_string())]);
+    assert_eq!(state.check_render().unwrap().result, "5");
+  }
+
   /// A physics-style Demonstration shape: a single labeled slider driving a
   /// multi-statement body that stacks several precomputed `Show`/`Plot`
   /// panels into a `GraphicsRow`, with a large `Initialization :>` block

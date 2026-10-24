@@ -676,9 +676,18 @@ impl ManipulateState {
         .into_iter()
         .filter(|(n, _)| !pattern_names.contains(n))
         .collect();
+      // Only what the Initialization itself assigns is kept: a hidden
+      // variable whose initializer depends on a control (a `DynamicModule`
+      // local sized by one) stays code, so it follows saved control
+      // values applied later.
       let seeded = woxi::with_scoped_globals(&bindings, || {
+        let before = woxi::functions::graphics::read_manipulate_state(&names);
         let _ = woxi::interpret_with_stdout(&init);
-        woxi::functions::graphics::read_manipulate_state(&names)
+        let after = woxi::functions::graphics::read_manipulate_state(&names);
+        after
+          .into_iter()
+          .filter(|entry| !before.contains(entry))
+          .collect::<Vec<_>>()
       });
       // A hidden `ControlType -> None` variable the Initialization just
       // seeded (e.g. `Initialization :> (v = RandomReal[…])` filling the
