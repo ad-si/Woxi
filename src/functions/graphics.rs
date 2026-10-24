@@ -5020,6 +5020,45 @@ fn inset_primitives(
     }
     return Some(prims);
   }
+  // `Inset[Rotate[g, θ], …]` turns the whole embedded picture by θ
+  // (counterclockwise) about its centre; the inset then occupies the
+  // bounding box of the turned picture, still centred on the anchor.
+  if let Expr::FunctionCall {
+    name: rotate,
+    args: rargs,
+  } = &args[0]
+    && rotate == "Rotate"
+    && rargs.len() == 2
+    && let Some(angle) = rotation_angle(&rargs[1])
+  {
+    let mut inner_args = args.to_vec();
+    inner_args[0] = rargs[0].clone();
+    if let Some(mut prims) = inset_primitives(&inner_args, errors) {
+      if let [
+        Primitive::InsetGraphic {
+          svg, w, h, size, ..
+        },
+      ] = prims.as_mut_slice()
+      {
+        let (sin, cos) = (angle.sin().abs(), angle.cos().abs());
+        let (rw, rh) = (*w * cos + *h * sin, *w * sin + *h * cos);
+        *svg = format!(
+          "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{rw:.2}\" \
+           height=\"{rh:.2}\" viewBox=\"0 0 {rw:.2} {rh:.2}\">\
+           <g transform=\"translate({:.2},{:.2}) rotate({:.4}) \
+           translate({:.2},{:.2})\">{svg}</g></svg>",
+          rw / 2.0,
+          rh / 2.0,
+          -angle.to_degrees(),
+          -*w / 2.0,
+          -*h / 2.0
+        );
+        *size = size.map(|(sw, sh)| (sw * cos + sh * sin, sw * sin + sh * cos));
+        (*w, *h) = (rw, rh);
+      }
+      return Some(prims);
+    }
+  }
   // An `Automatic` position is the plot's origin, the same point a missing
   // one falls back to when the object is folded in below.
   let anchor = match args.get(1) {
