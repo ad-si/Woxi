@@ -4340,7 +4340,7 @@ fn rotation_transform_3d_axis(
   if axis
     .iter()
     .chain(point.into_iter().flatten())
-    .any(crate::evaluator::core_eval::has_free_symbols)
+    .any(|e| crate::functions::math_ast::try_eval_to_f64(e).is_none())
   {
     return None;
   }

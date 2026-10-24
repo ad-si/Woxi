@@ -8972,6 +8972,32 @@ mod rotation_matrix {
     );
   }
 
+  // An axis of exact numeric expressions (`Sqrt[2]`, `Sin[1]`) is as concrete
+  // as an integer one; only a truly symbolic axis stays unevaluated.
+  #[test]
+  fn axis_of_exact_numeric_expressions_evaluates() {
+    assert_eq!(
+      interpret("RotationMatrix[t, {Sqrt[2], 1, 0}]").unwrap(),
+      "{{(2 + Cos[t])/3, (Sqrt[2]*(1 - Cos[t]))/3, Sin[t]/Sqrt[3]}, {(Sqrt[2]*(1 - Cos[t]))/3, (1 + 2*Cos[t])/3, -(Sqrt[2/3]*Sin[t])}, {-(Sin[t]/Sqrt[3]), Sqrt[2/3]*Sin[t], Cos[t]}}"
+    );
+    assert_eq!(
+      interpret("RotationMatrix[t, {a, 1, 0}]").unwrap(),
+      "RotationMatrix[t, {a, 1, 0}]"
+    );
+  }
+
+  // A one-curve list `{r}` whose `r` is a rotated vector must plot.
+  #[test]
+  fn parametric_plot3d_of_a_rotated_vector_curve() {
+    assert_eq!(
+      interpret(
+        "u = 1; v = 1; r = RotationMatrix[tx, {Sin[u] Cos[v], Sin[u] Sin[v], Cos[u]}] . {Sin[1], 0, Cos[1]}; Head[ParametricPlot3D[{r}, {tx, 0, 2 Pi}]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+  }
+
   // RotationTransform[t, {u, v}] rotates in the plane of u and v in any
   // dimension; it used to read {u, v} as a 2D centre.
   #[test]
