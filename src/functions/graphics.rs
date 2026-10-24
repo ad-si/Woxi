@@ -15359,6 +15359,10 @@ pub fn estimate_box_display_width(expr: &Expr) -> f64 {
       "InterpretationBox" if args.len() >= 2 => {
         estimate_box_display_width(&args[0])
       }
+      // A presentation expression embedded in a box (`Style["L", Italic]`
+      // inside a `SuperscriptBox`) displays as what it types out, not as its
+      // `Head[…]` source.
+      _ if !name.ends_with("Box") => estimate_display_width(expr),
       _ => {
         let args_width: f64 = args.iter().map(estimate_box_display_width).sum();
         let seps = if args.len() > 1 {

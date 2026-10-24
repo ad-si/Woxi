@@ -40647,3 +40647,31 @@ mod inpaint_diffusion {
     );
   }
 }
+
+mod box_width_with_embedded_style {
+  use super::*;
+
+  /// The widest nested `<svg>` (a laid-out grid cell) in the markup.
+  fn widest_cell_width(svg: &str) -> u32 {
+    svg
+      .split("<svg x=")
+      .skip(1)
+      .filter_map(|part| {
+        let rest = part.split("width=\"").nth(1)?;
+        rest.split('"').next()?.parse::<u32>().ok()
+      })
+      .max()
+      .unwrap_or(0)
+  }
+
+  #[test]
+  fn styled_box_content_is_measured_by_its_glyphs() {
+    // `Style["L", Italic]` inside a SuperscriptBox types out as one glyph;
+    // measuring its `Style[L, Italic]` source made the cell ~2x too wide.
+    let svg = interpret(
+      r#"ExportString[Pane[Grid[{{Graphics[Rectangle[], ImageSize -> {50, 50}], "\n"}, {Text@Style[Row[{DisplayForm@SqrtBox[RowBox[{SuperscriptBox[Style["L", Italic], 2], " + ", SuperscriptBox[Style["B", Italic], 2]}]], " = ", DisplayForm@SqrtBox[RowBox[{SuperscriptBox[10, 2], " + ", SuperscriptBox[5, 2]}]]}], 20], "\n"}, {""}}], {400, 400}, Alignment -> {Center, Center}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(widest_cell_width(&svg) < 400, "cell too wide: {svg}");
+  }
+}
