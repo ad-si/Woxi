@@ -10282,7 +10282,7 @@ fn evaluate_grid_interpolating_function(
       axis[0].min(axis[axis.len() - 1]),
       axis[0].max(axis[axis.len() - 1]),
     );
-    v < lo || v > hi
+    outside_interpolation_domain(v, lo, hi)
   }) {
     emit_dmval(&query);
   }
@@ -10360,6 +10360,16 @@ fn evaluate_grid_interpolating_function(
   };
   let comps = along(0, &mut Vec::new(), &(&leaf, &windows, &axes, &x, &deriv))?;
   Ok(grid_rebuild(&template, &mut comps.into_iter()))
+}
+
+/// Whether `x` lies outside `[lo, hi]` by more than wolframscript lets
+/// pass without `InterpolatingFunction::dmval`: a query a few millionths
+/// of the domain's width past an end (a grid built by repeated `t += dt`
+/// overshoots by rounding) is silent; from about 10^-5 of the width on it
+/// warns.
+pub(crate) fn outside_interpolation_domain(x: f64, lo: f64, hi: f64) -> bool {
+  let slack = 7.5e-6 * (hi - lo).abs();
+  x < lo - slack || x > hi + slack
 }
 
 /// `InterpolatingFunction::dmval` for a query point outside the data.
@@ -11057,7 +11067,7 @@ pub fn evaluate_interpolating_function(
     } else {
       let x_expr = crate::evaluator::evaluate_expr_to_expr(&call_args[0])?;
       if let Ok(x) = interp_value_to_f64(&x_expr) {
-        if x < sp.xs[0] || x > sp.xs[sp.xs.len() - 1] {
+        if outside_interpolation_domain(x, sp.xs[0], sp.xs[sp.xs.len() - 1]) {
           emit_dmval(std::slice::from_ref(&x_expr));
         }
         return Ok(Expr::Real(sp.eval(x, derivative_order)));
@@ -11129,7 +11139,7 @@ pub fn evaluate_interpolating_function(
   if let (Ok((x_lo, _)), Ok((x_hi, _))) = (
     extract_point(&data_points[0]),
     extract_point(&data_points[n - 1]),
-  ) && (x_val < x_lo || x_val > x_hi)
+  ) && outside_interpolation_domain(x_val, x_lo, x_hi)
   {
     emit_dmval(std::slice::from_ref(&x_val_expr));
   }

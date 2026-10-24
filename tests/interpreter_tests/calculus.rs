@@ -22044,3 +22044,22 @@ mod ndsolve_constant_mass_matrix {
     );
   }
 }
+
+mod interpolation_domain_slack {
+  use super::*;
+
+  #[test]
+  fn a_query_a_hair_past_the_end_is_silent() {
+    let r = interpret_with_stdout(
+      "f = Interpolation[{{0., 0.}, {1., 1.}}, InterpolationOrder -> 1]; f[1.000001]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "1.000001");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    let r = interpret_with_stdout(
+      "f = Interpolation[{{0., 0.}, {1., 1.}}, InterpolationOrder -> 1]; f[1.00002]",
+    )
+    .unwrap();
+    assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
+  }
+}
