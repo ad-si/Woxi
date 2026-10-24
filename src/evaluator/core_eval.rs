@@ -172,6 +172,37 @@ pub(crate) fn stored_value_for_lookup(name: &str) -> Option<StoredValue> {
   })
 }
 
+/// `AppendTo[x, e]` / `PrependTo[x, e]` for the assignment `x = Append[x, e]`
+/// / `x = Prepend[x, e]`, when `x` is a plain unprotected symbol that
+/// currently holds a list and carries no upvalues.
+fn self_append_as_append_to(lhs: &Expr, rhs: &Expr) -> Option<Expr> {
+  let Expr::Identifier(var) = lhs else {
+    return None;
+  };
+  let Expr::FunctionCall { name, args } = rhs else {
+    return None;
+  };
+  let in_place = match name.as_str() {
+    "Append" => "AppendTo",
+    "Prepend" => "PrependTo",
+    _ => return None,
+  };
+  if args.len() != 2
+    || !matches!(&args[0], Expr::Identifier(v) if v == var)
+    || var.starts_with('$')
+    || crate::evaluator::pattern_matching::is_symbol_protected(var)
+    || crate::UPVALUES.with(|m| m.borrow().contains_key(var))
+  {
+    return None;
+  }
+  let holds_list = ENV.with(|e| {
+    e.try_borrow().is_ok_and(|env| {
+      matches!(env.get(var), Some(StoredValue::ExprVal(Expr::List(_))))
+    })
+  });
+  holds_list.then(|| call(in_place, args.to_vec()))
+}
+
 pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
   match expr {
     Expr::Identifier(n) => {
@@ -1341,6 +1372,11 @@ pub fn evaluate_expr_to_expr_inner(
           // assigning to a programmatically-built symbol, e.g.
           // `Evaluate[Symbol["p" <> ToString[i]]] = value`.
           let lhs = unwrap_top_level_evaluate(&args[0])?;
+          // `x = Append[x, e]` grows a stored list: run it as the in-place
+          // `AppendTo[x, e]` instead of copying the array on every pass.
+          if let Some(grow) = self_append_as_append_to(&lhs, &args[1]) {
+            return evaluate_expr_to_expr(&grow);
+          }
           return set_ast(&lhs, &args[1]);
         }
         // Special handling for SetDelayed - stores function definitions
@@ -1951,6 +1987,9 @@ pub fn evaluate_expr_to_expr_inner(
                   } else {
                     items.push_front(elem.clone());
                   }
+                  // Share a large list first so the clone returned to the
+                  // caller is O(1) instead of a copy of the whole array.
+                  share_large_lists(stored, 0);
                   Some(stored.clone())
                 }
                 Expr::FunctionCall {
