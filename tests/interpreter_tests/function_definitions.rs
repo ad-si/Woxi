@@ -6211,4 +6211,104 @@ mod nested_part_parsing {
       "{2, 2, 3}"
     );
   }
+
+  #[test]
+  fn set_delayed_evaluate_evaluates_body_at_definition_time() {
+    // The body is evaluated once, when the definition is made, so the
+    // side effect runs once and the result is stored.
+    assert_eq!(
+      interpret("n = 0; f[x_] := Evaluate[n++; x + 1]; f[1]; f[2]; n").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("g[x_] := Evaluate[Expand[(x + 1)^2]]; g[a]").unwrap(),
+      "1 + 2*a + a^2"
+    );
+  }
+}
+
+mod delayed_own_values_with_operator_forms {
+  use super::*;
+
+  // `x := f /@ list` stored the unevaluated `Map` form and returned it as
+  // is on lookup, so `x[[2]]` stayed a held `(f /@ list)[[2]]`.
+  #[test]
+  fn own_value_is_reevaluated_on_lookup() {
+    clear_state();
+    assert_eq!(
+      interpret("fn := Range /@ {1, 2}; fn").unwrap(),
+      "{{1}, {1, 2}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("fn := Range /@ {1, 2}; fn[[2]]").unwrap(),
+      "{1, 2}"
+    );
+    clear_state();
+    assert_eq!(interpret("a := Plus @@ {1, 2}; a").unwrap(), "3");
+    clear_state();
+    assert_eq!(interpret("a := x /. x -> 3; a").unwrap(), "3");
+    clear_state();
+    assert_eq!(
+      interpret("a := Range @@@ {{1}, {2}}; a").unwrap(),
+      "{{1}, {1, 2}}"
+    );
+    clear_state();
+    assert_eq!(interpret("a := Sqrt @ 4; a").unwrap(), "2");
+  }
+}
+
+mod function_head_and_compound_printing {
+  use super::*;
+
+  // `Function[params, body]` has head `Function` just like `body &`, so a
+  // `_Function` blank (in a definition, `MatchQ`, `Cases`) must match it.
+  #[test]
+  fn blank_function_matches_named_function() {
+    clear_state();
+    assert_eq!(
+      interpret("MatchQ[Function[x, x], _Function]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Cases[{Function[{x}, x], 2, #&}, _Function]").unwrap(),
+      "{Function[{x}, x], #1 & }"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("h[g_Function, n_] := g[n]; h[Function[{p}, p + 1], 2]")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  // A written-out `CompoundExpression[a, b]` prints as `a; b`, so as the
+  // right-hand side of an assignment or rule it needs parentheses or it
+  // re-parses as `(lhs := a); b`.
+  #[test]
+  fn written_out_compound_expression_is_parenthesized() {
+    clear_state();
+    assert_eq!(
+      interpret("Hold[x = CompoundExpression[a, b]]").unwrap(),
+      "Hold[x = (a; b)]"
+    );
+    assert_eq!(
+      interpret("Hold[g[x_] := CompoundExpression[a, b]]").unwrap(),
+      "Hold[g[x_] := (a; b)]"
+    );
+    assert_eq!(
+      interpret("Hold[k :> CompoundExpression[a, b]]").unwrap(),
+      "Hold[k :> (a; b)]"
+    );
+    assert_eq!(
+      interpret("Hold[k -> CompoundExpression[a, b]]").unwrap(),
+      "Hold[k -> (a; b)]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("f[x_] := CompoundExpression[y = x, y + 1]; DownValues[f]")
+        .unwrap(),
+      "{HoldPattern[f[x_]] :> (y = x; y + 1)}"
+    );
+  }
 }

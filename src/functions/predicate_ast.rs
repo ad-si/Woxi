@@ -2712,7 +2712,7 @@ pub fn byte_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Helper to format a real number
 /// Helper to convert Expr to its FullForm string representation
 pub fn expr_to_full_form(expr: &Expr) -> String {
-  crate::functions::expr_form::render_full_form(expr)
+  crate::functions::expr_form::full_form_text(expr)
 }
 
 /// FullForm[expr] - Returns a symbolic FullForm wrapper (like wolframscript).

@@ -288,15 +288,17 @@ pub(crate) fn evaluate_function_call_ast(
   })
 }
 
-/// Promote any large `Expr::List` value in `values` from the Vec-backed
-/// representation to the Tree-backed (imbl::Vector) representation.
+/// Switch any large `Expr::List` value in `values` to the shared
+/// (copy-on-write) representation.
 ///
 /// Used before substituting function-call args into a user-defined body:
 /// `substitute_variables` clones the bound value at every position the
 /// parameter is referenced, so a 1500-element Vec list referenced twice
-/// would otherwise cost two full O(N) clones. The Tree variant clones
-/// in O(1) (Arc::clone of the imbl backbone), turning the substitution
-/// cost from O(N × occurrences) into O(N + occurrences) for that arg.
+/// would otherwise cost two full O(N) clones. A shared list clones in O(1),
+/// turning the substitution cost from O(N × occurrences) into
+/// O(N + occurrences) for that arg — and a list that already is shared (a
+/// symbol's value) costs nothing at all, where rebuilding it as a tree
+/// copied it on every call.
 ///
 /// Threshold of 16 keeps the Vec path for small argument lists where the
 /// one-time conversion would dominate.
@@ -304,9 +306,8 @@ fn promote_lists_for_substitution(values: &mut [Expr]) {
   for v in values {
     if let Expr::List(items) = v
       && items.len() > 16
-      && !items.is_tree()
     {
-      items.upgrade_to_tree();
+      items.share();
     }
   }
 }
@@ -1067,6 +1068,7 @@ fn evaluate_function_call_ast_inner(
     "CyclicGroup" if combinatorica_active => "Combinatorica`CyclicGroup",
     "DihedralGroup" if combinatorica_active => "Combinatorica`DihedralGroup",
     "Backtrack" if combinatorica_active => "Combinatorica`Backtrack",
+    "Josephus" if combinatorica_active => "Combinatorica`Josephus",
     "FromUnorderedPairs" | "ToAdjacencyLists" | "BreadthFirstTraversal"
       if combinatorica_active =>
     {
@@ -1403,7 +1405,14 @@ fn evaluate_function_call_ast_inner(
       .join("\u{1}");
     cache.get(&key).map(|(_, v)| v.clone())
   }) {
-    return Ok(v);
+    // The stored value is evaluated like any rule's right-hand side: it
+    // may mention symbols that have values by now (`f[1] = g + 1; g = 5;
+    // f[1]` is 6). Numbers, strings and lists of them are their own value.
+    return if crate::evaluator::core_eval::is_evaluated_data(&v) {
+      Ok(v)
+    } else {
+      evaluate_expr_to_expr(&v)
+    };
   }
 
   // Check for user-defined functions (before built-in dispatch, so user
@@ -3217,10 +3226,9 @@ fn evaluate_function_call_ast_inner(
   // Already-structured (9-arg) calls and `BSplineFunction[pts][t]` (handled at
   // function-application time) fall through unchanged.
   if name == "BSplineFunction"
-    && args.len() == 1
-    && let Expr::List(top) = &args[0]
+    && let Some(Expr::List(top)) = args.first()
     && !top.is_empty()
-    && let Some(structured) = build_bspline_function(top)
+    && let Some(structured) = build_bspline_function(top, &args[1..])
   {
     return Ok(structured);
   }
@@ -13782,63 +13790,200 @@ fn bspline_real_list(values: &[f64]) -> Expr {
   Expr::List(values.iter().map(|&v| Expr::Real(v)).collect())
 }
 
-/// Build the structured form for `BSplineFunction[top]`, detecting whether
-/// `top` is a list of control points (curve) or a grid of points (surface).
-/// Returns `None` if `top` is neither, so the caller leaves the call symbolic.
-fn build_bspline_function(top: &[Expr]) -> Option<Expr> {
-  // Curve: every element is a control point.
-  if top.iter().all(bspline_is_point) {
-    let n = top.len();
-    let p = std::cmp::min(3, n - 1);
-    let knots = bspline_clamped_knots(n, p);
-    let points: Expr =
-      Expr::List(top.iter().map(bspline_point_to_real).collect());
-    return Some(bspline_structured(1, &[p], &[points], &[knots]));
+/// Is `e` a numeric scalar control value?
+fn bspline_is_scalar(e: &Expr) -> bool {
+  crate::functions::math_ast::try_eval_to_f64(e).is_some()
+}
+
+/// Convert a control value (a point or a bare number) to `Real`s.
+fn bspline_value_to_real(e: &Expr) -> Expr {
+  if bspline_is_scalar(e) {
+    return crate::functions::math_ast::try_eval_to_f64(e)
+      .map_or_else(|| e.clone(), Expr::Real);
+  }
+  bspline_point_to_real(e)
+}
+
+/// Per-dimension option value: a single value applies to every dimension, a
+/// list gives one value per dimension.
+fn bspline_per_dim<T: Clone>(
+  value: &Expr,
+  dim: usize,
+  parse: impl Fn(&Expr) -> Option<T>,
+) -> Option<Vec<T>> {
+  match value {
+    Expr::List(items) if items.len() == dim => {
+      items.iter().map(&parse).collect()
+    }
+    Expr::List(_) => None,
+    single => parse(single).map(|v| vec![v; dim]),
+  }
+}
+
+/// Clamped, uniform knots for `n` control points of degree `p`, or the
+/// periodic uniform knots of a closed spline whose `n` control points have
+/// been wrapped by `p` extra points (`n` here is the wrapped count).
+fn bspline_knots(n: usize, p: usize, closed: bool) -> Vec<f64> {
+  if closed {
+    let base = (n - p) as f64;
+    (0..=(n + p))
+      .map(|i| (i as f64 - p as f64) / base)
+      .collect()
+  } else {
+    bspline_clamped_knots(n, p)
+  }
+}
+
+/// Append the first `p` entries so the spline wraps around.
+fn bspline_wrap(items: &[Expr], p: usize) -> Vec<Expr> {
+  let mut out = items.to_vec();
+  out.extend((0..p).map(|i| items[i % items.len()].clone()));
+  out
+}
+
+/// Build the structured form for `BSplineFunction[top, d, opts]`. `top` is a
+/// list of control values (a curve) or a grid of them (a surface); the values
+/// are points or bare numbers (scalar-valued splines). `rest` holds an
+/// optional leading parameter-dimension integer `d`, then options
+/// (`SplineDegree`, `SplineClosed`; other options are accepted and ignored).
+/// Returns `None` if the input is not understood, so the caller leaves the
+/// call symbolic.
+fn build_bspline_function(top: &[Expr], rest: &[Expr]) -> Option<Expr> {
+  let (explicit_dim, opts) = match rest.first() {
+    Some(Expr::Integer(d)) => (Some(*d as usize), &rest[1..]),
+    _ => (None, rest),
+  };
+  let mut degree_opt: Option<&Expr> = None;
+  let mut closed_opt: Option<&Expr> = None;
+  for opt in opts {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      return None;
+    };
+    match pattern.as_ref() {
+      Expr::Identifier(n) if n == "SplineDegree" => {
+        degree_opt = Some(replacement);
+      }
+      Expr::Identifier(n) if n == "SplineClosed" => {
+        closed_opt = Some(replacement);
+      }
+      Expr::Identifier(n) if n == "Method" => {}
+      _ => return None,
+    }
   }
 
-  // Surface: every element is a row of control points, all rows equal length.
-  if top.iter().all(|row| {
-    matches!(row, Expr::List(pts)
-    if !pts.is_empty() && pts.iter().all(bspline_is_point))
-  }) {
-    let rows: Vec<&[Expr]> = top
-      .iter()
-      .filter_map(|row| match row {
-        Expr::List(pts) => Some(pts.as_slice()),
-        _ => None,
-      })
-      .collect();
-    let n_u = rows.len();
-    let n_v = rows[0].len();
-    if rows.iter().any(|r| r.len() != n_v) {
+  let is_value = |e: &Expr| bspline_is_scalar(e) || bspline_is_point(e);
+  let dim = match explicit_dim {
+    Some(d @ (1 | 2)) => d,
+    Some(_) => return None,
+    None if top.iter().all(is_value) => 1,
+    None => 2,
+  };
+
+  let degrees = match degree_opt {
+    Some(v) => bspline_per_dim(v, dim, |e| match e {
+      Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+      _ => None,
+    })?,
+    None => vec![3; dim],
+  };
+  let closed = match closed_opt {
+    Some(v) => bspline_per_dim(v, dim, |e| match e {
+      Expr::Identifier(n) if n == "True" => Some(true),
+      Expr::Identifier(n) if n == "False" => Some(false),
+      _ => None,
+    })?,
+    None => vec![false; dim],
+  };
+
+  if dim == 1 {
+    if !top.iter().all(is_value) {
       return None;
     }
-    let p_u = std::cmp::min(3, n_u - 1);
-    let p_v = std::cmp::min(3, n_v - 1);
-    let grid: Expr = Expr::List(
-      rows
-        .iter()
-        .map(|r| Expr::List(r.iter().map(bspline_point_to_real).collect()))
-        .collect(),
-    );
+    let n = top.len();
+    let p = if closed[0] {
+      degrees[0].min(n)
+    } else {
+      degrees[0].min(n - 1)
+    };
+    let values: Vec<Expr> = top.iter().map(bspline_value_to_real).collect();
+    let net = if closed[0] {
+      bspline_wrap(&values, p)
+    } else {
+      values
+    };
+    let knots = bspline_knots(net.len(), p, closed[0]);
     return Some(bspline_structured(
-      2,
-      &[p_u, p_v],
-      &[grid],
-      &[
-        bspline_clamped_knots(n_u, p_u),
-        bspline_clamped_knots(n_v, p_v),
-      ],
+      1,
+      &[p],
+      &closed,
+      &[Expr::List(net.into())],
+      &[knots],
     ));
   }
 
-  None
+  // Surface: every element is a row of control values, all rows equal length.
+  let rows: Vec<&[Expr]> = top
+    .iter()
+    .map(|row| match row {
+      Expr::List(vals) if !vals.is_empty() && vals.iter().all(is_value) => {
+        Some(vals.as_slice())
+      }
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let n_u = rows.len();
+  let n_v = rows[0].len();
+  if rows.iter().any(|r| r.len() != n_v) {
+    return None;
+  }
+  let p_u = if closed[0] {
+    degrees[0].min(n_u)
+  } else {
+    degrees[0].min(n_u - 1)
+  };
+  let p_v = if closed[1] {
+    degrees[1].min(n_v)
+  } else {
+    degrees[1].min(n_v - 1)
+  };
+  let mut grid: Vec<Expr> = rows
+    .iter()
+    .map(|r| {
+      let row: Vec<Expr> = r.iter().map(bspline_value_to_real).collect();
+      Expr::List(
+        if closed[1] {
+          bspline_wrap(&row, p_v)
+        } else {
+          row
+        }
+        .into(),
+      )
+    })
+    .collect();
+  if closed[0] {
+    grid = bspline_wrap(&grid, p_u);
+  }
+  let knots_u = bspline_knots(grid.len(), p_u, closed[0]);
+  let knots_v =
+    bspline_knots(n_v + if closed[1] { p_v } else { 0 }, p_v, closed[1]);
+  Some(bspline_structured(
+    2,
+    &[p_u, p_v],
+    &closed,
+    &[Expr::List(grid.into())],
+    &[knots_u, knots_v],
+  ))
 }
 
 /// Assemble the 9-argument structured `BSplineFunction[...]` expression.
 fn bspline_structured(
   dim: usize,
   degrees: &[usize],
+  closed: &[bool],
   net: &[Expr],
   knots: &[Vec<f64>],
 ) -> Expr {
@@ -13849,8 +13994,20 @@ fn bspline_structured(
   );
   let degree_list: Expr =
     Expr::List(degrees.iter().map(|&d| Expr::Integer(d as i128)).collect());
-  let closed: Expr = Expr::List((0..dim).map(|_| bool_expr(false)).collect());
+  let closed: Expr = Expr::List(closed.iter().map(|&c| bool_expr(c)).collect());
+  // Control nets can hold an image's worth of samples; shared lists make the
+  // copies taken whenever the spline is applied or substituted into O(1).
   let mut net_slot: Vec<Expr> = net.to_vec();
+  for slot in &mut net_slot {
+    if let Expr::List(rows) = slot {
+      for row in rows.iter_mut() {
+        if let Expr::List(vals) = row {
+          vals.share();
+        }
+      }
+      rows.share();
+    }
+  }
   net_slot.push(id_expr("Automatic"));
   let knot_lists: Expr =
     Expr::List(knots.iter().map(|k| bspline_real_list(k)).collect());

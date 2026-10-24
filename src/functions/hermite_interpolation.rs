@@ -274,7 +274,11 @@ pub fn evaluate(
     .iter()
     .map(|r| to_f64(&r.x).unwrap_or(f64::NAN))
     .collect();
-  if x < xs[0] || x > xs[xs.len() - 1] {
+  if crate::functions::ode_ast::outside_interpolation_domain(
+    x,
+    xs[0],
+    xs[xs.len() - 1],
+  ) {
     crate::functions::ode_ast::emit_dmval(std::slice::from_ref(x_expr));
   }
   let piece = &rows[stencil(rows, &xs, x, order)];

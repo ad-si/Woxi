@@ -151,7 +151,10 @@ impl ExprList {
   pub fn into_unique_elements(self) -> Option<Vec<Expr>> {
     match self.inner {
       Inner::Shared(s) => Arc::try_unwrap(s).ok().map(|s| s.items),
-      _ => Some(self.into_inner()),
+      // A tree's chunks may be shared with other trees; consuming it would
+      // copy them, so it is left to drop itself.
+      Inner::Tree(_) => None,
+      Inner::Vec(v) => Some(v),
     }
   }
 

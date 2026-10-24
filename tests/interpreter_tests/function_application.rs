@@ -3909,3 +3909,64 @@ mod postfix_with_curried_call {
     assert_eq!(interpret("x // g[a][b]").unwrap(), "g[a][b][x]");
   }
 }
+
+mod literal_definition_value_is_evaluated {
+  use super::*;
+
+  #[test]
+  fn sees_values_assigned_later() {
+    assert_eq!(interpret("f[1] = g + 1; g = 5; f[1]").unwrap(), "6");
+    assert_eq!(
+      interpret(
+        "y[1] = 1 - y[2] - y[3]; y[3] = xs/(2 - xs); \
+         y[2] = (1 - xs)/(2 - xs); Together[y[1]]"
+      )
+      .unwrap(),
+      "(-1 + xs)/(-2 + xs)"
+    );
+  }
+
+  #[test]
+  fn memoized_numbers_still_work() {
+    assert_eq!(
+      interpret("fib[0] = 0; fib[1] = 1; fib[n_] := fib[n] = fib[n - 1] + fib[n - 2]; fib[80]")
+        .unwrap(),
+      "23416728348467685"
+    );
+  }
+}
+
+mod large_list_arguments {
+  use super::*;
+
+  #[test]
+  fn a_large_argument_is_shared_not_copied_into_the_caller() {
+    // The argument is passed as a shared list; changing the copy inside the
+    // function leaves the caller's list alone.
+    assert_eq!(
+      interpret(
+        "l = Range[100]; f[x_] := Module[{y = x}, y[[1]] = 0; y]; \
+         {f[l][[1]], l[[1]], Total[f[l]], Total[l]}"
+      )
+      .unwrap(),
+      "{0, 1, 5049, 5050}"
+    );
+    assert_eq!(
+      interpret("l = Range[100]; g[v_, i_] := v[[i]] + Length[v]; g[l, 7]")
+        .unwrap(),
+      "107"
+    );
+  }
+
+  #[test]
+  fn sub_value_rule_over_a_data_list() {
+    assert_eq!(
+      interpret(
+        "lis = Range[50]; adj[l_][x_, y_] := Abs[l[[x]] - l[[y]]] == 1; \
+         Length[Cases[Subsets[Range[50], {2}], {x_, y_} /; adj[lis][x, y]]]"
+      )
+      .unwrap(),
+      "49"
+    );
+  }
+}

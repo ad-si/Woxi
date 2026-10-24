@@ -2889,10 +2889,8 @@ fn cluster_keys_emit_values(
 /// accepts a `DistanceFunction -> fn` option, which switches to a
 /// distance-based equivalence-class clustering.
 pub fn find_clusters_ast_n(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 3 {
-    return Err(InterpreterError::EvaluationError(
-      "FindClusters expects 1 to 3 arguments".into(),
-    ));
+  if args.is_empty() {
+    return Ok(unevaluated("FindClusters", args));
   }
   // Pull out a DistanceFunction option from any trailing arg. Other
   // recognised options (Method, CriterionFunction, …) are accepted
@@ -2908,6 +2906,45 @@ pub fn find_clusters_ast_n(args: &[Expr]) -> Result<Expr, InterpreterError> {
       k_arg = Some(arg);
     }
   }
+  // Numeric vectors are clustered geometrically (agglomerative, average
+  // linkage) under a standard metric.
+  if let Expr::List(items) = &args[0]
+    && let Some(points) = numeric_vectors(items)
+  {
+    let metric = match &distance_fn {
+      None => Some(VectorMetric::Euclidean),
+      Some(Expr::Identifier(f)) => match f.as_str() {
+        "EuclideanDistance" => Some(VectorMetric::Euclidean),
+        "SquaredEuclideanDistance" => Some(VectorMetric::SquaredEuclidean),
+        "ManhattanDistance" => Some(VectorMetric::Manhattan),
+        "ChessboardDistance" => Some(VectorMetric::Chessboard),
+        _ => None,
+      },
+      _ => None,
+    };
+    let k = match k_arg {
+      None => Some(None),
+      Some(Expr::Integer(n)) if *n >= 1 => Some(Some(*n as usize)),
+      _ => None,
+    };
+    if let (Some(metric), Some(k)) = (metric, k) {
+      let groups = agglomerative_clusters(&points, k, metric);
+      return Ok(Expr::List(
+        groups
+          .into_iter()
+          .map(|g| {
+            Expr::List(
+              g.into_iter()
+                .map(|i| items[i].clone())
+                .collect::<Vec<_>>()
+                .into(),
+            )
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      ));
+    }
+  }
   if let Some(fnexpr) = distance_fn {
     return find_clusters_distance_fn(&args[0], &fnexpr, args);
   }
@@ -2921,6 +2958,95 @@ pub fn find_clusters_ast_n(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(find_clusters_with_k(&args[0], k, args));
   }
   find_clusters_ast(&args[0])
+}
+
+#[derive(Clone, Copy)]
+enum VectorMetric {
+  Euclidean,
+  SquaredEuclidean,
+  Manhattan,
+  Chessboard,
+}
+
+/// The items as numeric vectors of one common length (at least 2).
+fn numeric_vectors(items: &[Expr]) -> Option<Vec<Vec<f64>>> {
+  let points: Vec<Vec<f64>> = items
+    .iter()
+    .map(|it| match it {
+      Expr::List(xs) => {
+        xs.iter().map(try_eval_to_f64).collect::<Option<Vec<f64>>>()
+      }
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let dim = points.first()?.len();
+  (dim >= 2 && points.iter().all(|p| p.len() == dim)).then_some(points)
+}
+
+/// Average-linkage agglomerative clustering into `k` groups, or — with no
+/// `k` — cut where the merge distance jumps the most. Groups, and the
+/// points within them, are in order of first appearance.
+fn agglomerative_clusters(
+  points: &[Vec<f64>],
+  k: Option<usize>,
+  metric: VectorMetric,
+) -> Vec<Vec<usize>> {
+  let n = points.len();
+  let dist = |a: &[f64], b: &[f64]| -> f64 {
+    let it = a.iter().zip(b).map(|(x, y)| (x - y).abs());
+    match metric {
+      VectorMetric::Euclidean => it.map(|d| d * d).sum::<f64>().sqrt(),
+      VectorMetric::SquaredEuclidean => it.map(|d| d * d).sum(),
+      VectorMetric::Manhattan => it.sum(),
+      VectorMetric::Chessboard => it.fold(0.0, f64::max),
+    }
+  };
+  let d: Vec<Vec<f64>> = (0..n)
+    .map(|i| (0..n).map(|j| dist(&points[i], &points[j])).collect())
+    .collect();
+  let mut groups: Vec<Vec<usize>> = (0..n).map(|i| vec![i]).collect();
+  let mut history: Vec<(Vec<Vec<usize>>, f64)> = Vec::new();
+  let target = k.unwrap_or(1).max(1);
+  while groups.len() > target {
+    let mut best = (0, 1, f64::INFINITY);
+    for a in 0..groups.len() {
+      for b in a + 1..groups.len() {
+        let total: f64 = groups[a]
+          .iter()
+          .flat_map(|&i| groups[b].iter().map(move |&j| (i, j)))
+          .map(|(i, j)| d[i][j])
+          .sum();
+        let avg = total / (groups[a].len() * groups[b].len()) as f64;
+        if avg < best.2 {
+          best = (a, b, avg);
+        }
+      }
+    }
+    history.push((groups.clone(), best.2));
+    let merged = groups.remove(best.1);
+    groups[best.0].extend(merged);
+    groups[best.0].sort_unstable();
+  }
+  if k.is_none() && history.len() >= 2 {
+    // history[i] holds the grouping before the i-th merge at height h_i;
+    // stop before the merge whose height jumps most above the previous one.
+    let mut cut = None;
+    let mut biggest = 0.0;
+    for i in 1..history.len() {
+      let jump = history[i].1 - history[i - 1].1;
+      if jump > biggest {
+        biggest = jump;
+        cut = Some(i);
+      }
+    }
+    if let Some(i) = cut
+      && history[i].1 > 2.0 * history[i - 1].1.max(f64::MIN_POSITIVE)
+    {
+      groups.clone_from(&history[i].0);
+    }
+  }
+  groups.sort_by_key(|g| g[0]);
+  groups
 }
 
 /// Recognise `Method`, `CriterionFunction`, `PerformanceGoal`,

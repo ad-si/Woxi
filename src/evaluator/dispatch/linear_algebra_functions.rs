@@ -742,6 +742,36 @@ pub fn dispatch_linear_algebra_functions(
         );
       }
     }
+    // The generalized problem `a v == λ b v`: with `b` invertible its
+    // eigenvalues are those of `Inverse[b] . a`, in the same order.
+    "Eigenvalues"
+      if (1..=2).contains(&args.len())
+        && let Some((a, b)) = matrix_pencil(&args[0]) =>
+    {
+      let reduced = Expr::FunctionCall {
+        name: "Dot".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Inverse".to_string(),
+            args: vec![b].into(),
+          },
+          a,
+        ]
+        .into(),
+      };
+      let reduced = match crate::evaluator::evaluate_expr_to_expr(&reduced) {
+        Ok(r) if !matches!(&r, Expr::FunctionCall { name, .. } if name == "Dot") => {
+          r
+        }
+        _ => return Some(Ok(crate::helpers::unevaluated("Eigenvalues", args))),
+      };
+      let mut new_args = vec![reduced];
+      new_args.extend(args[1..].iter().cloned());
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "Eigenvalues",
+        &new_args,
+      ));
+    }
     "Eigenvalues" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::eigenvalues_ast(args));
     }
@@ -5004,4 +5034,21 @@ fn homogeneous_transformation(
     "TransformationFunction",
     Expr::List(rows.into()),
   ))
+}
+
+/// `{a, b}`: two square matrices of the same size (a matrix pencil).
+fn matrix_pencil(e: &Expr) -> Option<(Expr, Expr)> {
+  let Expr::List(pair) = e else { return None };
+  let [a, b] = pair.as_slice() else { return None };
+  let square = |m: &Expr| -> Option<usize> {
+    let Expr::List(rows) = m else { return None };
+    let n = rows.len();
+    (n > 0
+      && rows.iter().all(|r| {
+        matches!(r, Expr::List(cols) if cols.len() == n
+          && cols.iter().all(|c| !matches!(c, Expr::List(_))))
+      }))
+    .then_some(n)
+  };
+  (square(a)? == square(b)?).then(|| (a.clone(), b.clone()))
 }

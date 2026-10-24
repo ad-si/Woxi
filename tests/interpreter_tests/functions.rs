@@ -7221,3 +7221,32 @@ mod list_literal_part_then_call {
     assert_eq!(interpret("{{Sin, Cos}}[[1]][[2]][0]").unwrap(), "1");
   }
 }
+
+mod boolean_table_of_a_boolean_function {
+  use super::*;
+
+  #[test]
+  fn runs_over_every_tuple() {
+    assert_eq!(
+      interpret("{BooleanTable[BooleanFunction[2, 2]], BooleanTable[BooleanFunction[30, 3]]}")
+        .unwrap(),
+      "{{False, False, True, False}, {False, False, False, True, True, True, True, False}}"
+    );
+  }
+}
+
+mod mouse_position {
+  use super::*;
+
+  #[test]
+  fn without_a_front_end() {
+    assert_eq!(interpret("MousePosition[\"Graphics\"]").unwrap(), "$Failed");
+  }
+
+  #[test]
+  fn in_a_notebook_the_pointer_is_over_nothing() {
+    let r =
+      interpret_with_stdout("MousePosition[\"Graphics\"] === None").unwrap();
+    assert_eq!(r.result, "True");
+  }
+}

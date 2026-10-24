@@ -1443,6 +1443,38 @@ pub fn combinatorica_random_k_subset_ast(
   ))
 }
 
+/// `Combinatorica\`Josephus[n, m]`: for `n` people in a circle with every
+/// `m`-th one eliminated, the round in which each person goes (the inverse
+/// of the elimination order).
+pub fn combinatorica_josephus_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let (Expr::Integer(n), Expr::Integer(m)) = (&args[0], &args[1]) else {
+    return Ok(unevaluated("Combinatorica`Josephus", args));
+  };
+  if *n < 0 || *m < 1 || *n > 1_000_000 {
+    return Ok(unevaluated("Combinatorica`Josephus", args));
+  }
+  let n = *n as usize;
+  let mut circle: Vec<usize> = (0..n).collect();
+  let mut round = vec![0i128; n];
+  let mut at = 0usize;
+  for k in 1..=n {
+    at = ((at as i128 + m - 1) % circle.len() as i128) as usize;
+    round[circle.remove(at)] = k as i128;
+    if !circle.is_empty() {
+      at %= circle.len();
+    }
+  }
+  Ok(Expr::List(
+    round
+      .into_iter()
+      .map(Expr::Integer)
+      .collect::<Vec<_>>()
+      .into(),
+  ))
+}
+
 /// `Combinatorica\`Backtrack[space, partialQ, solutionQ, flag]` — the legacy
 /// package's depth-first search over `space`, a list of candidate lists (one
 /// per position). `partialQ` prunes partial solutions, `solutionQ` accepts

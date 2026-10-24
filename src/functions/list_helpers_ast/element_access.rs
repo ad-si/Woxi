@@ -1851,6 +1851,24 @@ pub fn replace_part_ast(
     }
   };
 
+  // A SparseArray's positions are those of the array it stands for:
+  // densify, replace, and re-sparsify against the same background.
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "SparseArray")
+    && let (Some(dense), Some(background)) = (
+      super::densify_sparse_array(expr),
+      crate::functions::sparse_array_background(expr),
+    )
+  {
+    let replaced = replace_part_ast(&dense, rule)?;
+    return Ok(
+      crate::evaluator::dispatch::list_operations::dense_to_sparse_array_with_default(
+        &replaced,
+        &background,
+      )
+      .unwrap_or(replaced),
+    );
+  }
+
   // Association subject: positions are integer indices, `Key[k]`, bare keys,
   // or single-element wrappers thereof. Apply each rule's RHS to the value at
   // the resolved position.
@@ -1877,8 +1895,30 @@ pub fn replace_part_ast(
       other => Comp::Pattern(other.clone()),
     }
   };
-  // matcher -> (path components, rule index)
+  // A pattern for the whole position list, such as `{i_, j_} /; i == j`,
+  // is matched against `{i, j, …}` at every depth; a bare pattern such as
+  // `_?EvenQ` is the one-component path `{_?EvenQ}`.
+  fn whole_position_pattern(lhs: &Expr) -> bool {
+    match lhs {
+      Expr::List(_) => true,
+      Expr::FunctionCall { name, args }
+        if (name == "Condition" || name == "PatternTest")
+          && args.len() == 2 =>
+      {
+        whole_position_pattern(&args[0])
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Pattern" && args.len() == 2 =>
+      {
+        whole_position_pattern(&args[1])
+      }
+      _ => false,
+    }
+  }
+  // matcher -> (path components, rule index); `Whole` paths match the
+  // position list as a whole
   let mut matchers: Vec<(Vec<Comp>, usize)> = Vec::new();
+  let mut whole: Vec<(Expr, usize)> = Vec::new();
   for (ri, (lhs, _, _)) in rules.iter().enumerate() {
     match lhs {
       Expr::List(items)
@@ -1895,10 +1935,15 @@ pub fn replace_part_ast(
       Expr::List(items) if !items.is_empty() => {
         matchers.push((items.iter().map(to_comp).collect(), ri));
       }
+      other if whole_position_pattern(other) => whole.push((other.clone(), ri)),
       other => matchers.push((vec![to_comp(other)], ri)),
     }
   }
-  let max_depth = matchers.iter().map(|(m, _)| m.len()).max().unwrap_or(0);
+  let max_depth = if whole.is_empty() {
+    matchers.iter().map(|(m, _)| m.len()).max().unwrap_or(0)
+  } else {
+    usize::MAX
+  };
 
   // Walk the expression; at each child position try the matchers in rule
   // order against the full path so far
@@ -1906,6 +1951,7 @@ pub fn replace_part_ast(
     expr: &Expr,
     path: &mut Vec<(i128, i128)>, // (1-based index, level length)
     matchers: &[(Vec<Comp>, usize)],
+    whole: &[(Expr, usize)],
     rules: &[(Expr, Expr, bool)],
     max_depth: usize,
   ) -> Result<Expr, InterpreterError> {
@@ -1948,10 +1994,25 @@ pub fn replace_part_ast(
     'next_item: for (i0, item) in items.iter().enumerate() {
       let idx = (i0 + 1) as i128;
       path.push((idx, len));
+      // The first rule (in rule order) whose position pattern matches
+      let position = Expr::List(
+        path
+          .iter()
+          .map(|&(i, _)| Expr::Integer(i))
+          .collect::<Vec<_>>()
+          .into(),
+      );
+      let whole_match = whole.iter().find_map(|(pat, ri)| {
+        crate::evaluator::pattern_matching::match_pattern(&position, pat)
+          .map(|bs| (*ri, bs))
+      });
       // Try each matcher whose depth equals the current path length
       for (comps, ri) in matchers {
         if comps.len() != path.len() {
           continue;
+        }
+        if whole_match.as_ref().is_some_and(|(wri, _)| wri < ri) {
+          break;
         }
         let mut bindings: Vec<(String, Expr)> = Vec::new();
         let mut ok = true;
@@ -1972,7 +2033,9 @@ pub fn replace_part_ast(
                 )
               {
                 // Repeated pattern variables must bind consistently
-                for (name, val) in bs {
+                // (anonymous blanks bind nothing)
+                for (name, val) in bs.into_iter().filter(|(n, _)| !n.is_empty())
+                {
                   match bindings.iter().find(|(n, _)| *n == name) {
                     Some((_, prev))
                       if !crate::evaluator::pattern_matching::expr_equal(
@@ -2008,9 +2071,18 @@ pub fn replace_part_ast(
           continue 'next_item;
         }
       }
+      if let Some((ri, bindings)) = whole_match {
+        let mut value = rules[ri].1.clone();
+        for (name, bound) in &bindings {
+          value = crate::syntax::substitute_variable(&value, name, bound);
+        }
+        out.push(crate::evaluator::evaluate_expr_to_expr(&value)?);
+        path.pop();
+        continue 'next_item;
+      }
       // No rule applies here: recurse if deeper matchers exist
       if path.len() < max_depth {
-        let replaced = walk(item, path, matchers, rules, max_depth)?;
+        let replaced = walk(item, path, matchers, whole, rules, max_depth)?;
         out.push(replaced);
       } else {
         out.push(item.clone());
@@ -2030,7 +2102,7 @@ pub fn replace_part_ast(
     // Atomic subjects come back unchanged
     return Ok(expr.clone());
   }
-  walk(expr, &mut Vec::new(), &matchers, &rules, max_depth)
+  walk(expr, &mut Vec::new(), &matchers, &whole, &rules, max_depth)
 }
 
 pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

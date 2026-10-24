@@ -20993,6 +20993,7 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
       | "StackedListPlot"
       | "ListContourPlot"
       | "ListDensityPlot"
+      | "ReliefPlot"
       | "ListPolarPlot"
       | "TernaryListPlot"
       | "ListStreamPlot"
@@ -24531,9 +24532,15 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the speculative bound evaluation below sees `func` already defined
   // instead of evaluating `Length[func]` against an undefined symbol.
   let already_initialized = args.iter().skip(1).any(|spec| {
-    if let Expr::Rule { pattern, replacement } | Expr::RuleDelayed { pattern, replacement } =
-      spec
-      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } = spec
+      && is_initialization_option(pattern, replacement)
     {
       let _ = evaluate_expr_to_expr(replacement);
       true
@@ -24586,7 +24593,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // variable spec bound was resolved) when `already_initialized` is
         // set, so it isn't re-run here.
         if !already_initialized
-          && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
+          && is_initialization_option(pattern, replacement)
         {
           let _ = evaluate_expr_to_expr(replacement);
         }
@@ -25602,10 +25609,24 @@ pub fn manipulate_has_own_initialization(expr: &Expr) -> bool {
   args.iter().skip(1).any(|spec| {
     matches!(
       spec,
-      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
-        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
+      Expr::Rule { pattern, replacement } | Expr::RuleDelayed { pattern, replacement }
+        if is_initialization_option(pattern, replacement)
     )
   })
+}
+
+/// `Initialization :> code`, or `SynchronousInitialization :> code` with
+/// code rather than the Boolean switch: both are run when the Manipulate
+/// is set up (NonadiabaticTubularReactorWithNegligibleMassDispersion keeps
+/// all its setup in the latter).
+fn is_initialization_option(pattern: &Expr, replacement: &Expr) -> bool {
+  match pattern {
+    Expr::Identifier(s) if s == "Initialization" => true,
+    Expr::Identifier(s) if s == "SynchronousInitialization" => {
+      !matches!(replacement, Expr::Identifier(b) if b == "True" || b == "False")
+    }
+    _ => false,
+  }
 }
 
 /// Attempt to extract a `ManipulateSpec` from a held `Manipulate[…]` or
@@ -25948,7 +25969,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         pattern,
         replacement,
       } = spec
-        && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
+        && is_initialization_option(pattern, replacement)
       {
         let _ = evaluate_expr_to_expr(replacement);
       }
@@ -25967,9 +25988,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       replacement,
     } = spec
     {
-      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
-      {
-        initialization = Some(crate::syntax::expr_to_source_form(replacement));
+      if is_initialization_option(pattern, replacement) {
+        let code = crate::syntax::expr_to_source_form(replacement);
+        initialization = Some(match initialization.take() {
+          Some(earlier) => format!("{earlier};\n{code}"),
+          None => code,
+        });
       }
       // `Appearance -> None` hides the control rows; the animation just
       // runs (an animated widget keeps its play/pause toggle).
@@ -33187,9 +33211,29 @@ fn parse_manipulate_control(
   // travels with the end it was written for, so the swap carries it along:
   // `{xLeft, Dynamic[wd - xRight], 25, -1}` counts down from the dynamic
   // bound, which must keep driving the *upper* end of the sorted range.
+  //
+  // A single dynamic bound whose not-yet-settled value lands on the wrong
+  // side of the static one is not a reversed slider unless the step counts
+  // down: `{{n, 1}, 1, Dynamic[total], 1}` with `total` still 0 when the
+  // spec is parsed. That bound keeps its end and starts out collapsed onto
+  // the static one; re-resolving it against the live bindings opens the
+  // range up, instead of sorting the unsettled value into the *lower* end.
+  let counts_down = step.is_some_and(|s| s < 0.0);
   let (min_code, max_code) = if min > max {
-    std::mem::swap(&mut min, &mut max);
-    (max_code, min_code)
+    match (min_code.is_some(), max_code.is_some()) {
+      (false, true) if !counts_down => {
+        max = min;
+        (min_code, max_code)
+      }
+      (true, false) if !counts_down => {
+        min = max;
+        (min_code, max_code)
+      }
+      _ => {
+        std::mem::swap(&mut min, &mut max);
+        (max_code, min_code)
+      }
+    }
   } else {
     (min_code, max_code)
   };

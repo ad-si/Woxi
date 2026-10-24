@@ -1224,3 +1224,42 @@ mod periodic_background {
     );
   }
 }
+
+mod cellular_automaton_background_blocks_and_automatic {
+  use super::*;
+
+  #[test]
+  fn a_one_cell_background_block() {
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{Mod[Total[#], 2] &, {}, 1}, {{1}, {0}}, 2]"
+      )
+      .unwrap(),
+      "{{0, 0, 1, 0, 0}, {0, 1, 1, 1, 0}, {1, 0, 1, 0, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{Mod[Total[Flatten[#]], 2] &, {}, {1, 1}}, \
+         {{{1}}, {{0}}}, {{{2}}}]"
+      )
+      .unwrap(),
+      "{{1, 0, 1, 0, 1}, {0, 0, 0, 0, 0}, {1, 0, 1, 0, 1}, {0, 0, 0, 0, 0}, \
+       {1, 0, 1, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn automatic_window_keeps_the_cells_that_differ_from_the_background() {
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{{_, 1, _} -> 1, {_, _, _} -> 0}, {{1}, 0}, {3, Automatic}]"
+      )
+      .unwrap(),
+      "{{1}, {1}, {1}, {1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, 0}, {2, Automatic}]").unwrap(),
+      "{{0, 0, 1, 0, 0}, {0, 1, 1, 1, 0}, {1, 1, 0, 0, 1}}"
+    );
+  }
+}
