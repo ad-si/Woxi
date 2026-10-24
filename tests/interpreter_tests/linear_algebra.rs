@@ -5493,6 +5493,22 @@ mod find_integer_null_vector {
 mod root_approximant {
   use super::*;
 
+  // Exact algebraic input: a real one is recognized from its value, a
+  // complex one comes back in canonical form; lists are mapped over.
+  #[test]
+  fn exact_algebraic_input_and_lists() {
+    assert_eq!(
+      interpret(
+        "{RootApproximant[Root[1 + #1^4 &, 3] + Root[1 + #1^4 &, 4]], \
+         RootApproximant[{1/2, Root[1 + #1^4 &, 1]}], \
+         RootApproximant[(Root[1 + #1^4 &, 3] + Root[1 + #1^4 &, 4])/ \
+         Sqrt[4 + Abs[Root[1 + #1^4 &, 1] + Root[1 + #1^4 &, 2]]^2]]}"
+      )
+      .unwrap(),
+      "{Sqrt[2], {1/2, Root[1 + #1^4 & , 1, 0]}, 1/Sqrt[3]}"
+    );
+  }
+
   // Full-precision machine reals of algebraic numbers are recovered as the
   // minimal polynomial's root. Degree-2 cases render as radicals, higher
   // degrees stay as Root[...], matching wolframscript. Inputs are the exact

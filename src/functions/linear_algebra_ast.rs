@@ -6668,6 +6668,19 @@ fn lll_integer_relation(vals: &[f64], scale: f64) -> Option<(Vec<i128>, f64)> {
 /// closest to `x`; the evaluator's `Root` machinery renders low-degree cases as
 /// radicals or rationals, matching wolframscript (`Sqrt[2]`, `(1 + Sqrt[5])/2`,
 /// `Root[-2 + #1^3 &, 1, 0]`, `1/2`).
+fn contains_inexact(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) | Expr::BigFloat(..) => true,
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact),
+    Expr::List(items) => items.iter().any(contains_inexact),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_inexact(left) || contains_inexact(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_inexact(operand),
+    _ => false,
+  }
+}
+
 pub fn root_approximant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Ok(unevaluated("RootApproximant", args));
@@ -6680,12 +6693,47 @@ pub fn root_approximant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(args[0].clone());
   }
 
+  // Listable.
+  if let Expr::List(items) = &args[0] {
+    return items
+      .iter()
+      .map(|item| {
+        let mut call_args = vec![item.clone()];
+        call_args.extend(args[1..].iter().cloned());
+        root_approximant_ast(&call_args)
+      })
+      .collect::<Result<Vec<_>, _>>()
+      .map(|v| Expr::List(v.into()));
+  }
+
   let x = match &args[0] {
     Expr::Real(v) => *v,
-    _ => match try_eval_to_f64(&args[0]) {
-      Some(v) => v,
-      None => return Ok(unevaluated("RootApproximant", args)),
-    },
+    other => {
+      if let Some(v) = try_eval_to_f64(other) {
+        v
+      } else {
+        // An exact complex algebraic number (`Root[1 + #^4 &, 1]`) is
+        // already what it approximates, in canonical form; one whose
+        // imaginary part cancels (`Root[…, 3] + Root[…, 4]`) is real.
+        if !crate::functions::predicate_ast::is_numeric_q(other) {
+          return Ok(unevaluated("RootApproximant", args));
+        }
+        let value =
+          crate::evaluator::evaluate_expr_to_expr(&call1("N", other.clone()))?;
+        match crate::functions::math_ast::numeric_utils::try_extract_complex_float(
+        &value,
+      ) {
+        Some((re, im)) if im.abs() <= 1e-13 * re.abs().max(1.0) => re,
+        Some(_) if !contains_inexact(other) => {
+          return crate::evaluator::evaluate_expr_to_expr(&call1(
+            "RootReduce",
+            other.clone(),
+          ));
+        }
+        _ => return Ok(unevaluated("RootApproximant", args)),
+      }
+      }
+    }
   };
   if !x.is_finite() {
     return Ok(unevaluated("RootApproximant", args));
