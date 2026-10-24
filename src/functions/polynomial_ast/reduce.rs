@@ -2244,6 +2244,17 @@ fn reduce_and(
               crate::syntax::substitute_variable(&other_eq.0, var, &rhs_val);
             let subst_rhs =
               crate::syntax::substitute_variable(&other_eq.1, var, &rhs_val);
+            // Evaluated first: an unfolded `1 + 1 - 3` has no number for
+            // the check below and would pass any equation.
+            let holds =
+              crate::evaluator::evaluate_expr_to_expr(&Expr::Comparison {
+                operands: vec![subst_lhs.clone(), subst_rhs.clone()],
+                operators: vec![crate::syntax::ComparisonOp::Equal],
+              });
+            if matches!(&holds, Ok(Expr::Identifier(b)) if b == "False") {
+              satisfies = false;
+              break;
+            }
             let diff =
               simplify(minus2(simplify(subst_lhs), simplify(subst_rhs)));
             if !matches!(diff, Expr::Integer(0))

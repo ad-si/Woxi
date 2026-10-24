@@ -20763,3 +20763,26 @@ mod root_of_repeated_factors {
     );
   }
 }
+
+mod reduce_overdetermined {
+  use super::*;
+
+  #[test]
+  fn an_extra_equation_the_solution_violates_gives_false() {
+    assert_eq!(
+      interpret("Reduce[{x == 1, x + 1 == 3}, x]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Reduce[2 x == 2 && x + 1 == 2, x]").unwrap(),
+      "x == 1"
+    );
+    assert_eq!(
+      interpret(
+        "Reduce[{x - 4 z == -16, -x + 8 z == 27, 2 x + 4 z == 7}, {x, y, z}]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+}
