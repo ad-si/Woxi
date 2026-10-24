@@ -2046,6 +2046,32 @@ fn extract_rowbox_content(s: &str) -> String {
       } else {
         format!("({piece})")
       }
+    } else if part.trim().starts_with("RowBox[")
+      && piece
+        .trim_end()
+        .chars()
+        .rev()
+        .take_while(|&c| c == ';')
+        .count()
+        % 2
+        == 1
+      && parts[i + 1..]
+        .iter()
+        .find(|p| !is_soft_whitespace_box_token(p))
+        .is_some_and(|next| {
+          // The next token is an operator applied to this whole row.
+          let t = next.trim().trim_matches('"');
+          next.trim().starts_with('"')
+            && t.starts_with([
+              '/', '@', '+', '*', '^', '.', '~', '=', '>', '<', '|', '&', '?',
+              ':',
+            ])
+        })
+    {
+      // A nested row that ends in a statement `;` and is followed by an
+      // operator (`RowBox[{RowBox[{x = …, ";"}], "/.", rules}]`) is the
+      // operand `(x = …;)`: the box tree groups it, flat text would not.
+      format!("({piece})")
     } else if part.starts_with("RowBox[")
       && i + 1 < parts.len()
       && piece.ends_with('&')
@@ -9024,5 +9050,13 @@ Cell[BoxData[
       panic!("expected a single cell");
     };
     assert_eq!(cell.content, "Integrate[(2-x), {x, 0, 1}]");
+  }
+
+  /// A row that ends in a statement `;` and is the operand of a following
+  /// operator keeps its grouping: `(s = expr;) /. para`.
+  #[test]
+  fn semicolon_terminated_row_before_an_operator_is_parenthesized() {
+    let s = r#"BoxData[RowBox[{RowBox[{RowBox[{"s", "=", "x"}], ";"}], "/.", "para"}]]"#;
+    assert_eq!(extract_cell_content(s), "(s=x;)/.para");
   }
 }
