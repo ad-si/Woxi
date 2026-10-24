@@ -1475,17 +1475,17 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(
         r#"v = N[PolyhedronData[{"Pyramid", 4}, "VertexCoordinates"]];
-        {v[[1, 3]], v[[2, 3]]}"#
+        Chop[{v[[1, 3]], v[[2, 3]]} - {0.7071067811865475, 0.}]"#
       )
       .unwrap(),
-      "{0.5303300858899107, -0.1767766952966369}"
+      "{0, 0}"
     );
     assert_eq!(
       interpret(
         r#"N[Take[PolyhedronData[{"Dipyramid", 3}, "VertexCoordinates"], 2]]"#
       )
       .unwrap(),
-      "{{0., 0., 0.816496580927726}, {0., 0., -0.816496580927726}}"
+      "{{0., 0., -0.816496580927726}, {0., 0., 0.816496580927726}}"
     );
   }
 }

@@ -2392,101 +2392,6 @@ fn prism_info(n: i128) -> &'static PolyhedronInfo {
   info
 }
 
-/// The unit-edge pyramid over a regular `n`-gon, `{"Pyramid", n}` for
-/// `n = 4, 5` (the base polygon must be small enough for the lateral edges
-/// to reach unit length; `n = 3` is the tetrahedron), or the unit-edge
-/// dipyramid `{"Dipyramid", n}` for `n = 3, 4, 5`. The z axis is the
-/// symmetry axis; a pyramid's apex is vertex 1 and the base ring follows
-/// counterclockwise seen from +z, a dipyramid's two apexes (+z, then -z)
-/// are vertices 1 and 2 followed by the equatorial ring. A pyramid is
-/// centered on its center of mass (as the tetrahedron is), so its base lies
-/// at `z = -h/4`. Faces are wound outward. Built on demand and cached.
-fn cone_info(dipyramid: bool, n: i128) -> &'static PolyhedronInfo {
-  use std::collections::HashMap;
-  use std::sync::{Mutex, OnceLock};
-  static CACHE: OnceLock<
-    Mutex<HashMap<(bool, i128), &'static PolyhedronInfo>>,
-  > = OnceLock::new();
-  let mut cache = CACHE
-    .get_or_init(|| Mutex::new(HashMap::new()))
-    .lock()
-    .unwrap();
-  if let Some(info) = cache.get(&(dipyramid, n)) {
-    return info;
-  }
-  // Height of an apex above the base plane for unit lateral edges.
-  let h = format!("Sqrt[1 - 1/(4 Sin[Pi/{n}]^2)]");
-  let (base_z, apex_z) = if dipyramid {
-    ("0".to_string(), h.clone())
-  } else {
-    (format!("-({h})/4"), format!("3 ({h})/4"))
-  };
-  let ring: Vec<String> = (0..n)
-    .map(|k| {
-      format!(
-        "{{Cos[2 Pi {k}/{n}]/(2 Sin[Pi/{n}]), Sin[2 Pi {k}/{n}]/(2 Sin[Pi/{n}]), {base_z}}}"
-      )
-    })
-    .collect();
-  let mut vertices = vec![format!("{{0, 0, {apex_z}}}")];
-  if dipyramid {
-    vertices.push(format!("{{0, 0, -({apex_z})}}"));
-  }
-  vertices.extend(ring);
-  let first = if dipyramid { 3 } else { 2 };
-  let last = first + n - 1;
-  let mut faces = Vec::new();
-  if !dipyramid {
-    let base: Vec<String> =
-      (first..=last).rev().map(|i| i.to_string()).collect();
-    faces.push(format!("{{{}}}", base.join(", ")));
-  }
-  for k in 0..n {
-    let (a, b) = (first + k, first + (k + 1) % n);
-    faces.push(format!("{{1, {a}, {b}}}"));
-    if dipyramid {
-      faces.push(format!("{{2, {b}, {a}}}"));
-    }
-  }
-  let base_area = format!("{n}/(4 Tan[Pi/{n}])");
-  let (volume, surface_area, vertex_count, face_count, circumradius, classes) =
-    if dipyramid {
-      (
-        format!("2/3 ({base_area}) ({h})"),
-        format!("{n} Sqrt[3]/2"),
-        n + 2,
-        2 * n,
-        "Missing[\"NotApplicable\"]".to_string(),
-        "{\"Convex\", \"Dipyramid\"}",
-      )
-    } else {
-      (
-        format!("1/3 ({base_area}) ({h})"),
-        format!("{base_area} + {n} Sqrt[3]/4"),
-        n + 1,
-        n + 1,
-        format!("1/(2 ({h}))"),
-        "{\"Convex\", \"Pyramid\"}",
-      )
-    };
-  let info = Box::leak(Box::new(PolyhedronInfo {
-    name: if dipyramid { "Dipyramid" } else { "Pyramid" },
-    vertex_count,
-    edge_count: if dipyramid { 3 * n } else { 2 * n },
-    face_count,
-    volume: leak(volume),
-    surface_area: leak(surface_area),
-    circumradius: leak(circumradius),
-    inradius: "Missing[\"NotApplicable\"]",
-    midradius: "Missing[\"NotApplicable\"]",
-    vertices_src: leak(format!("{{{}}}", vertices.join(", "))),
-    faces_src: leak(format!("{{{}}}", faces.join(", "))),
-    classes_src: classes,
-  }));
-  cache.insert((dipyramid, n), info);
-  info
-}
-
 fn leak(s: String) -> &'static str {
   Box::leak(s.into_boxed_str())
 }
@@ -2527,15 +2432,14 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       [Expr::String(kind), Expr::Integer(n)] if kind == "Prism" && *n >= 3 => {
         Some(prism_info(*n))
       }
-      [Expr::String(kind), Expr::Integer(n)]
-        if kind == "Pyramid" && (4..=5).contains(n) =>
-      {
-        Some(cone_info(false, *n))
+      // `{"Pyramid", 3}` is the tetrahedron and `{"Dipyramid", 4}` the
+      // octahedron; the Johnson pyramids and dipyramids are generated
+      // entries stored under their specification.
+      [Expr::String(kind), Expr::Integer(3)] if kind == "Pyramid" => {
+        find_polyhedron("Tetrahedron")
       }
-      [Expr::String(kind), Expr::Integer(n)]
-        if kind == "Dipyramid" && (3..=5).contains(n) =>
-      {
-        Some(cone_info(true, *n))
+      [Expr::String(kind), Expr::Integer(4)] if kind == "Dipyramid" => {
+        find_polyhedron("Octahedron")
       }
       [Expr::String(kind), Expr::Integer(n)] if kind == "Johnson" => {
         find_polyhedron(&format!("J{n}"))
