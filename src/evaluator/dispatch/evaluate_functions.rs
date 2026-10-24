@@ -11990,6 +11990,8 @@ fn evaluate_function_call_ast_inner(
         // domain specifications, like `Reals` itself.
         | "Vectors"
         | "Matrices"
+        // A sound primitive: inert data that `Sound` plays.
+        | "SampledSoundList"
     )
   {
     let args_str = args
