@@ -22782,6 +22782,23 @@ mod grid_rasterize {
   }
 
   #[test]
+  fn framed_pane_cell_takes_the_pane_size_and_honours_frame_style_none() {
+    // Regression: a `Framed[Pane[Text[…], {w, h}], FrameStyle -> None]`
+    // grid cell shrank to the text and always drew a gray border, so a
+    // coloured-square table collapsed to a few clipped pixels.
+    clear_state();
+    let svg = woxi::interpret_with_stdout(
+      "Text[Grid[{{Framed[Pane[Text[Style[1, 20]], {100, 60}], \
+       Background -> Red, FrameStyle -> None]}}]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("grid of framed panes should draw");
+    assert!(svg.contains("width=\"112\" height=\"72\""), "{svg}");
+    assert!(!svg.contains("stroke=\"rgb(190,190,190)\""), "{svg}");
+  }
+
+  #[test]
   fn panel_in_a_column_keeps_its_background_option() {
     clear_state();
     let svg = woxi::interpret_with_stdout(

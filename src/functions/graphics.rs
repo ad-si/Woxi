@@ -23521,6 +23521,27 @@ pub fn panel_to_svg(args: &[Expr]) -> Option<String> {
   framed_box_to_svg(&box_args, Some(Color::new(0.95, 0.95, 0.95)))
 }
 
+/// The `{width, height}` a `Pane[content, {w, h}]` (possibly under `Text`/
+/// `Style`/`Deploy`/`Item`) gives its content; a single number is a width
+/// with the usual one-line height. `None` when no pane sets a size.
+fn pane_content_size(expr: &Expr) -> Option<(f64, f64)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  match name.as_str() {
+    "Pane" if args.len() >= 2 => match &args[1] {
+      Expr::List(dims) if dims.len() == 2 => {
+        Some((expr_to_f64(&dims[0])?, expr_to_f64(&dims[1])?))
+      }
+      _ => pane_content_size(&args[0]),
+    },
+    "Pane" | "Text" | "Style" | "Deploy" | "Item" if !args.is_empty() => {
+      pane_content_size(&args[0])
+    }
+    _ => None,
+  }
+}
+
 fn framed_box_to_svg(
   args: &[Expr],
   default_background: Option<Color>,
@@ -23540,6 +23561,10 @@ fn framed_box_to_svg(
     .or(default_background)
     .map(Color::to_svg_rgb);
   let rect_fill = bg_fill.as_deref().unwrap_or("none");
+  // `FrameStyle -> None` draws the box without a border.
+  let frame_is_none = args[1..].iter().filter_map(option_kv).any(|(k, v)| {
+    k == "FrameStyle" && matches!(v, Expr::Identifier(n) if n == "None")
+  });
 
   // Layout constants
   let char_width: f64 = 8.4;
@@ -23654,10 +23679,15 @@ fn framed_box_to_svg(
   } else {
     // Text content — measure and render. A `Pane`/`Item` around the text
     // only sizes it, so the frame holds the content itself.
+    let pane_size = pane_content_size(content);
     let content = &unwrap_display_wrappers(content);
-    let content_w = estimate_display_width(content) * char_width;
-    let frac_extra = if has_fraction(content) { 10.0 } else { 0.0 };
-    let content_h = font_size + frac_extra;
+    let (content_w, content_h) = pane_size.unwrap_or_else(|| {
+      let frac_extra = if has_fraction(content) { 10.0 } else { 0.0 };
+      (
+        estimate_display_width(content) * char_width,
+        font_size + frac_extra,
+      )
+    });
 
     let total_w = content_w + 2.0 * margin;
     let total_h = content_h + 2.0 * margin;
@@ -23669,9 +23699,16 @@ fn framed_box_to_svg(
       "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
     // Border rectangle
-    let framed_border = theme().framed_border;
+    let border_attrs = if frame_is_none {
+      String::new()
+    } else {
+      format!(
+        "stroke=\"{}\" stroke-width=\"{stroke_width}\"",
+        theme().framed_border
+      )
+    };
     svg.push_str(&format!(
-      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" stroke=\"{framed_border}\" stroke-width=\"{stroke_width}\"/>\n",
+      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" {border_attrs}/>\n",
       stroke_width / 2.0, stroke_width / 2.0,
       total_w - stroke_width, total_h - stroke_width,
     ));
