@@ -202,6 +202,7 @@ fn polylog_s0(z_expr: &Expr) -> Result<Expr, InterpreterError> {
         div2(z_expr.clone(), minus2(Expr::Integer(1), z_expr.clone()));
       // Fold an exact rational z (PolyLog[0, 1/2] = 1); keep symbolic z.
       if matches!(z_expr, Expr::FunctionCall { name, .. } if name == "Rational")
+        || try_extract_complex_exact(z_expr).is_some()
       {
         crate::evaluator::evaluate_expr_to_expr(&result)
       } else {
@@ -228,8 +229,10 @@ fn polylog_negative_s(
   // Exact numeric z (integer or rational) folds via the rational closed form
   // below — the analytic continuation is valid for any z != 1, unlike the
   // numeric series which diverges for |z| >= 1.
+  // An exact Gaussian rational (`I`, `2 + I`) folds the same way.
   let exact_numeric = matches!(z_expr, Expr::Integer(_))
-    || matches!(z_expr, Expr::FunctionCall { name, .. } if name == "Rational");
+    || matches!(z_expr, Expr::FunctionCall { name, .. } if name == "Rational")
+    || try_extract_complex_exact(z_expr).is_some();
 
   // Compute Eulerian numbers A(n, k) for k = 0..n-1
   let eulerian = eulerian_numbers(n);

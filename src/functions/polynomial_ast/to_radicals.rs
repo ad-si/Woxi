@@ -25,6 +25,9 @@ fn to_radicals_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
       if let Expr::FunctionCall { name: rn, .. } = &result
         && rn == "Root"
       {
+        if let Some(unity) = root_of_unity_radical(expr, &args[0]) {
+          return Ok(unity);
+        }
         return Ok(root_to_radical(&args[0], &args[1]));
       }
       Ok(result)
@@ -64,6 +67,81 @@ fn to_radicals_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(expr.clone()),
   }
+}
+
+/// A root of a factor of `x^N - 1` (a cyclotomic polynomial such as
+/// `1 + x + x^2 + x^3 + x^4`) is a root of unity `E^(2 Pi I m/N)`, written
+/// as Wolfram does: `(-1)^(2 m/N)`, which evaluates to forms like
+/// `-(-1)^(1/5)`.
+fn root_of_unity_radical(root: &Expr, func: &Expr) -> Option<Expr> {
+  let body = match func {
+    Expr::Function { body } => body.as_ref(),
+    _ => return None,
+  };
+  let coeffs: Vec<i128> = extract_poly_coefficients(body)?
+    .iter()
+    .map(|c| match c {
+      Expr::Integer(n) => Some(*n),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let degree = coeffs.len().checked_sub(1)?;
+  if degree < 2 || coeffs[degree] != 1 || coeffs[0].abs() != 1 {
+    return None;
+  }
+  let value = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![root.clone()].into(),
+  })
+  .ok()?;
+  let (re, im) =
+    crate::functions::math_ast::numeric_utils::try_extract_complex_float(
+      &value,
+    )
+    .or_else(|| {
+      crate::functions::math_ast::try_eval_to_f64(&value).map(|v| (v, 0.0))
+    })?;
+  if (re.hypot(im) - 1.0).abs() > 1e-9 {
+    return None;
+  }
+  // The order N: the smallest one for which the polynomial divides
+  // x^N - 1, i.e. x^N leaves remainder 1 modulo it.
+  let divides = |n: usize| -> bool {
+    // Remainder of x^n modulo the monic polynomial, as coefficients.
+    let mut rem = vec![0i128; degree];
+    rem[0] = 1;
+    for _ in 0..n {
+      // rem *= x
+      let top = rem[degree - 1];
+      for i in (1..degree).rev() {
+        rem[i] = rem[i - 1];
+      }
+      rem[0] = 0;
+      for i in 0..degree {
+        rem[i] -= top * coeffs[i];
+        if rem[i].abs() > 1 << 60 {
+          return false;
+        }
+      }
+    }
+    rem[0] == 1 && rem[1..].iter().all(|&c| c == 0)
+  };
+  let order =
+    (degree + 1..=8 * degree.max(4) * degree).find(|&n| divides(n))?;
+  let turns = im.atan2(re) / std::f64::consts::TAU;
+  let m = ((turns * order as f64).round() as i128).rem_euclid(order as i128);
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![
+      Expr::Integer(-1),
+      crate::functions::math_ast::numeric_utils::make_rational(
+        2 * m,
+        order as i128,
+      ),
+    ]
+    .into(),
+  })
+  .ok()
 }
 
 fn mk_plus(args: Vec<Expr>) -> Expr {

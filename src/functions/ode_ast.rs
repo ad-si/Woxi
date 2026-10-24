@@ -4328,6 +4328,21 @@ fn find_algebraic_constraint(
   funcs: &[SysFunc],
 ) -> Option<(usize, usize, Expr)> {
   for (ei, eq) in odes.iter().enumerate() {
+    // An equation already solved for an unknown no equation differentiates
+    // (`F0[t] == 1 + Kp (2 - h[t]) - Kp τd h'[t]`) is substituted as it
+    // stands, even when its right side holds other unknowns' derivatives.
+    if let Some((a, b)) = as_equal_pair(eq) {
+      for (lhs, rhs) in [(a, b), (b, a)] {
+        if let Expr::FunctionCall { name, args } = lhs
+          && args.len() == 1
+          && let Some(fi) = funcs.iter().position(|f| &f.name == name)
+          && !expr_mentions_function(rhs, name)
+          && odes.iter().all(|o| max_derivative_order(o, name) == 0)
+        {
+          return Some((ei, fi, rhs.clone()));
+        }
+      }
+    }
     if funcs.iter().any(|f| max_derivative_order(eq, &f.name) > 0) {
       continue;
     }
@@ -5456,6 +5471,17 @@ fn ndsolve_system(
         .map(|(x, state)| {
           vars[0] = *x;
           vars[1..=n_state].copy_from_slice(&state[..n_state]);
+          // A solution written with a highest derivative (`F0 == … - h'`)
+          // reads it from the solve for the highest derivatives.
+          if let Some(high) = solve_highest_derivatives_cached(
+            &residuals,
+            funcs.len(),
+            *x,
+            &state[..n_state],
+            None,
+          ) {
+            vars[1 + n_state..1 + n_state + high.len()].copy_from_slice(&high);
+          }
           Expr::List(
             vec![
               Expr::Real(*x),

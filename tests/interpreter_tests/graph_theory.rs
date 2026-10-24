@@ -8346,3 +8346,59 @@ mod find_shortest_tour {
     }
   }
 }
+
+mod graph_coordinates_3d {
+  use super::*;
+
+  #[test]
+  fn one_position_per_vertex() {
+    assert_eq!(
+      interpret(
+        "Dimensions[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}]]"
+      )
+      .unwrap(),
+      "{4, 3}"
+    );
+  }
+
+  #[test]
+  fn planar_coordinates_are_pairs() {
+    assert_eq!(
+      interpret(
+        "Dimensions[GraphUtilities`GraphCoordinates[{a -> b, b -> c, c -> a}]]"
+      )
+      .unwrap(),
+      "{3, 2}"
+    );
+  }
+
+  #[test]
+  fn coordinates_fit_the_unit_cube() {
+    assert_eq!(
+      interpret(
+        "Max[Abs[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}]]]"
+      )
+      .unwrap(),
+      "1."
+    );
+  }
+
+  #[test]
+  fn graph_plot_3d_is_graphics3d() {
+    assert_eq!(
+      interpret("Head[GraphPlot3D[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}]]").unwrap(),
+      "Graphics3D"
+    );
+  }
+
+  #[test]
+  fn graph_plot_3d_draws_every_edge() {
+    assert_eq!(
+      interpret(
+        "Length[Cases[GraphPlot3D[{1 -> 2, 2 -> 3, 3 -> 1}][[1]], _Line, Infinity]]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+}

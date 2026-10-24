@@ -927,6 +927,25 @@ fn evaluate_function_call_ast_inner(
     return Ok(unevaluated(name, args));
   }
 
+  // `GraphUtilities\`GraphCoordinates[rules]` / `GraphCoordinates3D[rules]`:
+  // one position per vertex, in `VertexList` order.
+  if let Some(short) = name.strip_prefix("GraphUtilities`")
+    && matches!(short, "GraphCoordinates" | "GraphCoordinates3D")
+    && args.len() == 1
+    && matches!(&args[0], Expr::List(_))
+  {
+    let dim = if short == "GraphCoordinates3D" { 3 } else { 2 };
+    return match crate::functions::graph::graph_coordinates(&args[0], dim)? {
+      Some((_, _, coords)) => Ok(Expr::List(
+        coords
+          .into_iter()
+          .map(|p| Expr::List(p.into_iter().map(Expr::Real).collect()))
+          .collect(),
+      )),
+      None => Ok(unevaluated(name, args)),
+    };
+  }
+
   // `GraphUtilities\`` works on a graph given as a plain list of rules
   // (`{1 -> 2, 2 -> 3}`). Build the equivalent `Graph` and delegate to the
   // built-in graph functions instead of reimplementing them.
@@ -1092,7 +1111,11 @@ fn evaluate_function_call_ast_inner(
     {
       combinatorica_graph_name(name)
     }
-    "V" | "ConnectedComponents" | "ShortestPath"
+    "V"
+    | "ConnectedComponents"
+    | "ShortestPath"
+    | "ShowGraph"
+    | "ShowLabeledGraph"
       if combinatorica_active
         && matches!(
           args.first(),
@@ -5137,6 +5160,19 @@ fn evaluate_function_call_ast_inner(
   {
     // Options may arrive as one list of rules, which is not a position.
     let args = &crate::functions::graphics::splice_option_lists(args)[..];
+    if name == "GraphPlot3D"
+      && matches!(&args[0], Expr::List(_))
+      && let Some(plot) = crate::functions::graph::graph_plot3d_ast(
+        &args[0],
+        &args[1..]
+          .iter()
+          .filter(|a| matches!(a, Expr::Rule { .. }))
+          .cloned()
+          .collect::<Vec<_>>(),
+      )?
+    {
+      return Ok(plot);
+    }
     // Only forward when args[0] is a list of edges or an already-built
     // Graph[…]; otherwise keep the symbolic head (matches Woxi's
     // long-standing "stay unevaluated" wrapper behaviour for opaque
@@ -11990,6 +12026,8 @@ fn evaluate_function_call_ast_inner(
         // domain specifications, like `Reals` itself.
         | "Vectors"
         | "Matrices"
+        // A sound primitive: inert data that `Sound` plays.
+        | "SampledSoundList"
     )
   {
     let args_str = args
@@ -14239,6 +14277,8 @@ fn combinatorica_graph_name(name: &str) -> &'static str {
     "ToAdjacencyMatrix" => "Combinatorica`ToAdjacencyMatrix",
     "Edges" => "Combinatorica`Edges",
     "M" => "Combinatorica`M",
+    "ShowGraph" => "Combinatorica`ShowGraph",
+    "ShowLabeledGraph" => "Combinatorica`ShowLabeledGraph",
     _ => "Combinatorica`ShortestPath",
   }
 }

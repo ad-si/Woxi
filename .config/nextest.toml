@@ -21,6 +21,15 @@ slow-timeout = { period = "60s", terminate-after = 1 }
 filter = 'test(sheet_thinner_than_a_cell_is_found_with_vertex_normals)'
 slow-timeout = { period = "60s", terminate-after = 1 }
 
+# `reduce_over_reals_gives_the_real_points` reduces a polynomial system with
+# large coefficients over the reals through a Gröbner basis and checks every
+# real point numerically: ~14s standalone in debug builds, close enough to the
+# default 20s timeout to time out on a CI runner under parallel load. Give it
+# a wider window.
+[[profile.default.overrides]]
+filter = 'test(reduce_over_reals_gives_the_real_points)'
+slow-timeout = { period = "60s", terminate-after = 1 }
+
 # `demonstration_three_phase_field_manipulate_opens_with_its_widget` builds
 # its widget from a stored `SaveDefinitions -> True` Manipulate and renders
 # a `ParametricPlot`/`Show`/`GraphicsRow` twice (initial render plus one

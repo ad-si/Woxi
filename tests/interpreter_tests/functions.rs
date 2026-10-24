@@ -3942,6 +3942,16 @@ mod geo_projection {
 mod sound {
   use super::*;
 
+  // A SampledSoundList is inert data, evaluated without any warning (a
+  // stored Sound read back with `sounds[[i]]` is evaluated again).
+  #[test]
+  fn sampled_sound_list_is_inert() {
+    let result =
+      interpret_with_stdout("SampledSoundList[{{0.1, 0.2}}, 8000]").unwrap();
+    assert_eq!(result.result, "SampledSoundList[{{0.1, 0.2}}, 8000]");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+
   #[test]
   fn renders_as_minus_sound_minus() {
     // Sound[primitives] formats as -Sound- in the REPL, like Graphics

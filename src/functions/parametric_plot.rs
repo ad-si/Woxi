@@ -913,6 +913,25 @@ fn parametric_region_ast(
     }
     _ => body,
   };
+  // The body is held, so a generator such as `Table[{fx, fy}, {j, n}]` only
+  // takes the shape of a list of regions once evaluated (with `u` and `v`
+  // staying symbolic).
+  let generated;
+  let body = match (body, var_of(u_spec), var_of(v_spec)) {
+    (Expr::FunctionCall { .. }, Some(u), Some(v)) => {
+      match crate::functions::plot::eval_body_vars_symbolic(
+        body,
+        &[u.as_str(), v.as_str()],
+      ) {
+        evaluated @ Expr::List(_) => {
+          generated = evaluated;
+          &generated
+        }
+        _ => body,
+      }
+    }
+    _ => body,
+  };
   // `{{fx1, fy1}, {fx2, fy2}, …}` is several regions drawn in one plot, each
   // in the next colour of the cycle.
   // A one-element list `{{fx, fy}}` is a single region.
@@ -948,6 +967,108 @@ fn parametric_region_ast(
     *structure = Some(Box::new(call("Graphics", graphics_args)));
   }
   Ok(result)
+}
+
+/// `Mesh -> {m, n}`, `MeshStyle` and `MeshShading` of a two-parameter
+/// `ParametricPlot`: how many mesh lines cut each parameter range, how they
+/// are drawn, and the colours of the cells between them.
+struct RegionMesh {
+  lines_u: usize,
+  lines_v: usize,
+  style_u: Expr,
+  style_v: Expr,
+  /// `MeshShading` colours, rows following `u` and columns `v`.
+  shading: Vec<Vec<Option<Expr>>>,
+}
+
+impl RegionMesh {
+  fn shading_at(&self, i: usize, j: usize) -> Option<Expr> {
+    let row = self.shading.get(i % self.shading.len().max(1))?;
+    row.get(j % row.len().max(1))?.clone()
+  }
+}
+
+fn region_mesh_spec(opt_args: &[Expr]) -> Option<RegionMesh> {
+  let option = |wanted: &str| {
+    opt_args.iter().find_map(|opt| {
+      let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+      (name == wanted).then(|| {
+        let value = value.into_owned();
+        evaluate_expr_to_expr(&value).unwrap_or(value)
+      })
+    })
+  };
+  let count = |e: &Expr| match e {
+    Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+    _ => None,
+  };
+  let (mut lines_u, mut lines_v) = (None, None);
+  match option("Mesh").as_ref() {
+    Some(Expr::List(items)) if items.len() == 2 => {
+      lines_u = count(&items[0]);
+      lines_v = count(&items[1]);
+    }
+    Some(e) => {
+      lines_u = count(e);
+      lines_v = lines_u;
+    }
+    None => {}
+  }
+  let color_of = |e: &Expr| {
+    let c = crate::functions::graphics::parse_color(e)?;
+    Some(call(
+      "RGBColor",
+      vec![Expr::Real(c.r), Expr::Real(c.g), Expr::Real(c.b)],
+    ))
+  };
+  // A list of rows is a 2D array of colours; a flat list of colours is a
+  // single row.
+  let shading: Vec<Vec<Option<Expr>>> = match option("MeshShading").as_ref() {
+    Some(Expr::List(rows))
+      if rows.iter().all(|r| matches!(r, Expr::List(_))) =>
+    {
+      rows
+        .iter()
+        .map(|r| match r {
+          Expr::List(cells) => cells.iter().map(&color_of).collect(),
+          _ => Vec::new(),
+        })
+        .collect()
+    }
+    Some(Expr::List(cells)) => vec![cells.iter().map(&color_of).collect()],
+    _ => Vec::new(),
+  };
+  if lines_u.is_none() && lines_v.is_none() && shading.is_empty() {
+    return None;
+  }
+  // Without a `Mesh` count, shading alone still splits the picture along
+  // the shading array.
+  let lines_u = lines_u.unwrap_or_else(|| shading.len().saturating_sub(1));
+  let lines_v = lines_v.unwrap_or_else(|| {
+    shading.first().map_or(0, |r| r.len().saturating_sub(1))
+  });
+  let style = |k: usize| match option("MeshStyle").as_ref() {
+    Some(Expr::List(items)) if !items.is_empty() => {
+      let item = &items[k % items.len()];
+      vec![item.clone()]
+    }
+    Some(e) => vec![e.clone()],
+    None => Vec::new(),
+  };
+  let group = |k: usize| {
+    let mut directives = style(k);
+    if directives.is_empty() {
+      directives.push(call1("GrayLevel", Expr::Real(0.4)));
+    }
+    Expr::List(directives.into())
+  };
+  Some(RegionMesh {
+    lines_u,
+    lines_v,
+    style_u: group(0),
+    style_v: group(1),
+    shading,
+  })
 }
 
 /// The colour cycle `Plot`-family functions assign to successive curves.
@@ -1125,39 +1246,131 @@ fn parametric_region_layer(
   }
   let tolerance = 0.005 * ((hi.0 - lo.0).hypot(hi.1 - lo.1));
 
-  // One quad per (possibly refined) cell; a cell with a point the body could
-  // not be evaluated at (a singularity, a complex value) is left out.
-  let mut quads = Vec::new();
-  let mut emit = |corners: [(f64, f64); 4]| {
-    quads.push(call1(
-      "Polygon",
-      Expr::List(corners.iter().map(|c| pt_expr(*c)).collect()),
-    ));
-  };
-  for i in 0..grid - 1 {
-    for j in 0..grid - 1 {
-      let corners = [
-        points[i][j],
-        points[i + 1][j],
-        points[i + 1][j + 1],
-        points[i][j + 1],
-      ];
-      let Some(c) = corners.map(finite).into_iter().collect::<Option<Vec<_>>>()
-      else {
-        continue;
+  // One quad per (possibly refined) cell of the `g`-point grid over
+  // `[ua, ub] x [va, vb]`; a cell with a point the body could not be
+  // evaluated at (a singularity, a complex value) is left out.
+  let quads_over =
+    |(ua, ub): (f64, f64), (va, vb): (f64, f64), g: usize| -> Vec<Expr> {
+      let (dg_u, dg_v) =
+        ((ub - ua) / (g - 1) as f64, (vb - va) / (g - 1) as f64);
+      let grid_points: Vec<Vec<Option<(f64, f64)>>> = (0..g)
+        .map(|i| {
+          (0..g)
+            .map(|j| finite(sample(ua + i as f64 * dg_u, va + j as f64 * dg_v)))
+            .collect()
+        })
+        .collect();
+      let mut quads = Vec::new();
+      let mut emit = |corners: [(f64, f64); 4]| {
+        quads.push(call1(
+          "Polygon",
+          Expr::List(corners.iter().map(|c| pt_expr(*c)).collect()),
+        ));
       };
-      refine_region_cell(
-        [c[0], c[1], c[2], c[3]],
-        (u_min + i as f64 * du, v_min + j as f64 * dv),
-        (du, dv),
-        max_recursion,
-        tolerance,
-        &sample,
-        &mut emit,
-      );
+      for i in 0..g - 1 {
+        for j in 0..g - 1 {
+          let corners = [
+            grid_points[i][j],
+            grid_points[i + 1][j],
+            grid_points[i + 1][j + 1],
+            grid_points[i][j + 1],
+          ];
+          let Some(c) =
+            corners.map(finite).into_iter().collect::<Option<Vec<_>>>()
+          else {
+            continue;
+          };
+          refine_region_cell(
+            [c[0], c[1], c[2], c[3]],
+            (ua + i as f64 * dg_u, va + j as f64 * dg_v),
+            (dg_u, dg_v),
+            max_recursion,
+            tolerance,
+            &sample,
+            &mut emit,
+          );
+        }
+      }
+      quads
+    };
+  let mesh = region_mesh_spec(opt_args);
+  let mut quads = Vec::new();
+  let mut mesh_cells: Vec<Expr> = Vec::new();
+  let mut mesh_lines: Vec<Expr> = Vec::new();
+  if let Some(mesh) = &mesh {
+    // Every cell between consecutive mesh lines is filled on its own, in the
+    // colour `MeshShading` assigns it (cycling through the array), and the
+    // mesh lines themselves are the images of the iso-`u` / iso-`v` lines.
+    let (cells_u, cells_v) = (mesh.lines_u + 1, mesh.lines_v + 1);
+    let cell_grid = (grid / cells_u.max(cells_v)).max(4);
+    let edge = |k: usize, n: usize, lo: f64, hi: f64| {
+      lo + (hi - lo) * k as f64 / n as f64
+    };
+    for i in 0..cells_u {
+      for j in 0..cells_v {
+        let polys = quads_over(
+          (
+            edge(i, cells_u, u_min, u_max),
+            edge(i + 1, cells_u, u_min, u_max),
+          ),
+          (
+            edge(j, cells_v, v_min, v_max),
+            edge(j + 1, cells_v, v_min, v_max),
+          ),
+          cell_grid,
+        );
+        if polys.is_empty() {
+          continue;
+        }
+        let mut group = vec![call0("EdgeForm")];
+        if let Some(shade) = mesh.shading_at(i, j) {
+          group.push(shade);
+          group.push(call1("Opacity", Expr::Real(1.0)));
+        } else {
+          let (r, g, b) = REGION_COLORS[layer % REGION_COLORS.len()];
+          group.push(call(
+            "RGBColor",
+            vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+          ));
+          group.push(call1("Opacity", Expr::Real(0.3)));
+        }
+        group.extend(polys);
+        mesh_cells.push(Expr::List(group.into()));
+      }
     }
+    let per_line = grid * 4;
+    for k in 1..cells_u {
+      let u = edge(k, cells_u, u_min, u_max);
+      let line: Vec<Expr> = (0..=per_line)
+        .filter_map(|m| {
+          finite(sample(u, edge(m, per_line, v_min, v_max))).map(pt_expr)
+        })
+        .collect();
+      if line.len() > 1 {
+        mesh_lines.push(Expr::List(
+          vec![mesh.style_u.clone(), call1("Line", Expr::List(line.into()))]
+            .into(),
+        ));
+      }
+    }
+    for k in 1..cells_v {
+      let v = edge(k, cells_v, v_min, v_max);
+      let line: Vec<Expr> = (0..=per_line)
+        .filter_map(|m| {
+          finite(sample(edge(m, per_line, u_min, u_max), v)).map(pt_expr)
+        })
+        .collect();
+      if line.len() > 1 {
+        mesh_lines.push(Expr::List(
+          vec![mesh.style_v.clone(), call1("Line", Expr::List(line.into()))]
+            .into(),
+        ));
+      }
+    }
+  } else {
+    quads = quads_over((u_min, u_max), (v_min, v_max), grid);
   }
-  if quads.is_empty() {
+  if quads.is_empty() && mesh_cells.is_empty() {
     return Err(InterpreterError::EvaluationError(
       "ParametricPlot: the body evaluates to no points over that region".into(),
     ));
@@ -1208,9 +1421,14 @@ fn parametric_region_layer(
   let opacity = call1("Opacity", Expr::Real(fill_opacity));
   let no_edges = call0("EdgeForm");
 
-  let mut face_group = vec![no_edges, color.clone(), opacity];
-  face_group.append(&mut quads);
-  let mut items = vec![Expr::List(face_group.into())];
+  let mut items = if mesh_cells.is_empty() {
+    let mut face_group = vec![no_edges, color.clone(), opacity];
+    face_group.append(&mut quads);
+    vec![Expr::List(face_group.into())]
+  } else {
+    mesh_cells
+  };
+  items.append(&mut mesh_lines);
   if border.len() > 1 {
     items.push(Expr::List(
       vec![

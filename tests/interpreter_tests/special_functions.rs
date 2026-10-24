@@ -5556,3 +5556,31 @@ mod erfc_machine_tail {
     );
   }
 }
+
+mod poly_log_gaussian_rational_argument {
+  use super::*;
+
+  // PolyLog of a non-positive integer order at an exact Gaussian rational
+  // folds to a number; at a radical it keeps the closed form.
+  #[test]
+  fn folds_at_gaussian_rationals() {
+    assert_eq!(
+      interpret(
+        "{PolyLog[-7, I], PolyLog[-2, I], PolyLog[0, I], PolyLog[-1, 2 + I], \
+         PolyLog[-1, Sqrt[2]]}"
+      )
+      .unwrap(),
+      "{136, -1/2*I, -1/2 + I/2, 1/2 - I, Sqrt[2]/(1 - Sqrt[2])^2}"
+    );
+  }
+
+  // Chop leaves a term with nothing to chop as it is.
+  #[test]
+  fn chop_keeps_unchopped_terms() {
+    assert_eq!(
+      interpret("Chop[{1.5 + 1.*^-12 I, 2. + 3. I, 1.*^-14, x + 1.*^-11}]")
+        .unwrap(),
+      "{1.5, 2. + 3.*I, 0, x}"
+    );
+  }
+}

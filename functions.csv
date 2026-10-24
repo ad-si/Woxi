@@ -1857,7 +1857,7 @@ AngularGauge,Display a value on a circular dial as a Graphics gauge,✅,pure,9.0
 CopyToClipboard,Copy to clipboard,,unevaluated,8.0,1861
 ColorReplace,Replace colors in image,,unevaluated,9.0,1864
 Format,Display wrapper that formats an expression in a given form,✅,pure,1.0,1864
-GraphPlot3D,3D graph plot,,unevaluated,6.0,1864
+GraphPlot3D,3D graph plot,✅,pure,6.0,1864
 InverseJacobiCN,Inverse Jacobi elliptic function cn,✅,pure,1.0,1865
 InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1.0,1905
 InverseJacobiCD,Inverse Jacobi elliptic function cd,✅,pure,1.0,4006
@@ -2076,7 +2076,7 @@ NeighborhoodGraph,Induced subgraph within distance r (default 1) of the given ce
 ValidationSet,Validation dataset for ML,🚫,,10.0,2079
 EulerMatrix,Rotation matrix from Euler angles using the default {3 2 3} (ZYZ) convention or an explicit axis sequence,✅,pure,10.2,2082
 MouseAppearance,Custom mouse cursor appearance wrapper (stays symbolic),✅,unevaluated,8.0,2082
-SampledSoundList,Sampled sound representation,🚫,,2.0,2082
+SampledSoundList,Sampled sound representation,✅,none,2.0,2082
 CatenateLayer,Neural network concatenation layer,🚫,,11.0,2084
 CurveClosed,Check if curve is closed,🚫,,8.0,2084
 FactorialPower,Falling factorial n*(n-1)*...*(n-k+1) (Listable),✅,pure,7.0,2085
@@ -6355,6 +6355,8 @@ GraphUtilities`ExpressionTreePlot,Plots an expression tree as Graphics with one 
 GraphUtilities`PageRanks,PageRank of every vertex of a graph given as a list of rules as vertex -> rank rules,✅,pure,8.0,
 GraphUtilities`VertexList,Vertices of a graph given as a list of rules,✅,pure,6.0,
 GraphUtilities`ClosenessCentrality,Closeness centrality of every vertex of a graph given as a list of rules,✅,pure,8.0,
+GraphUtilities`GraphCoordinates,Vertex coordinates of a graph given as a list of rules in a 2D force-directed layout,✅,pure,8.0,
+GraphUtilities`GraphCoordinates3D,Vertex coordinates of a graph given as a list of rules in a 3D force-directed layout,✅,pure,8.0,
 GraphUtilities`GraphPath,Shortest path between two vertices of a graph given as a list of rules,✅,pure,8.0,
 GraphUtilities`HamiltonianCycles,Hamiltonian cycle of a graph given as a list of rules as a vertex list (only one cycle is reported),🚧,pure,8.0,
 MultivariateStatistics`EllipsoidQuantile,Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean; c Covariance],✅,pure,8.0,
@@ -6370,6 +6372,8 @@ Combinatorica`RandomGraph,Combinatorica graph with each vertex pair an edge with
 Combinatorica`KSubsets,The k-element subsets of a list (Subsets[l {k}]),✅,pure,6.0,
 Combinatorica`ToAdjacencyMatrix,Adjacency matrix of a Combinatorica graph,✅,pure,6.0,
 Combinatorica`Edges,Edges of a Combinatorica graph as vertex pairs,✅,pure,6.0,
+Combinatorica`ShowGraph,Draws a Combinatorica graph as Graphics with edges as lines and vertices as disks,✅,pure,6.0,
+Combinatorica`ShowLabeledGraph,Draws a Combinatorica graph as Graphics with its vertices numbered,✅,pure,6.0,
 Combinatorica`M,Number of edges of a Combinatorica graph,✅,pure,6.0,
 Combinatorica`ToAdjacencyLists,Sorted neighbour lists of a Combinatorica graph,✅,pure,6.0,
 Combinatorica`ConnectedComponents,Connected components of a Combinatorica graph as sorted vertex lists,✅,pure,6.0,

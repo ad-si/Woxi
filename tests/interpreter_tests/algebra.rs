@@ -15695,6 +15695,30 @@ mod root_objects_are_numeric {
 mod to_radicals {
   use super::*;
 
+  // A root of a cyclotomic polynomial is a root of unity, written as a
+  // power of -1; its real and imaginary parts are the cosine and sine.
+  #[test]
+  fn roots_of_unity() {
+    assert_eq!(
+      interpret(
+        "{Table[ToRadicals[Root[1 + #1 + #1^2 + #1^3 + #1^4 &, k]], {k, 4}], \
+         Table[ToRadicals[Root[1 - #1^2 + #1^4 &, k]], {k, 4}]}"
+      )
+      .unwrap(),
+      "{{-(-1)^(1/5), (-1)^(4/5), -(-1)^(3/5), (-1)^(2/5)}, \
+       {-(-1)^(1/6), (-1)^(5/6), -(-1)^(5/6), (-1)^(1/6)}}"
+    );
+    assert_eq!(
+      interpret(
+        "{Re[(-1)^(2/5)], Im[(-1)^(2/5)], Re[(-1)^(2/5) - (-1)^(3/5)], \
+         Im[-(-1)^(1/4)]}"
+      )
+      .unwrap(),
+      "{(-1 + Sqrt[5])/4, Sqrt[5/8 + Sqrt[5]/8], (-1 + Sqrt[5])/2, \
+       -(1/Sqrt[2])}"
+    );
+  }
+
   #[test]
   fn quadratic() {
     assert_eq!(

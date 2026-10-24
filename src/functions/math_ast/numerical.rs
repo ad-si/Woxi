@@ -206,6 +206,18 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       {
         return Ok(r);
       }
+      // `Derivative[n][f][x]` (stored flat as `Derivative[n, f, x]`): the
+      // order and the function are held, only the point is numericized.
+      if name == "Derivative"
+        && args.len() == 3
+        && matches!(&args[1], Expr::Identifier(_))
+      {
+        let point = n_eval(&args[2])?;
+        return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![args[0].clone(), args[1].clone(), point].into(),
+        });
+      }
       // Root[poly &, k] / Root[poly &, k, 0] — the k-th root numerically.
       if name == "Root"
         && (args.len() == 2 || args.len() == 3)
@@ -2364,6 +2376,16 @@ fn expr_to_complex_bigfloat(
     }
     // Function calls
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // A complex `Root[f, k]`: the real case is `expr_to_bigfloat`'s.
+      "Root" if args.len() == 2 || args.len() == 3 => {
+        root_n_eval_arbitrary_complex(&args[0], &args[1], bits, rm).ok_or_else(
+          || {
+            InterpreterError::EvaluationError(
+              "N: cannot evaluate Root[…] to arbitrary precision".into(),
+            )
+          },
+        )
+      }
       "Times" => {
         let mut result =
           (BigFloat::from_i32(1, bits), BigFloat::from_i32(0, bits));
@@ -4615,7 +4637,21 @@ pub fn fourier_result_to_expr(re: f64, im: f64, force_complex: bool) -> Expr {
   let re = fourier_round(re);
   let im = fourier_round(im);
 
-  if force_complex || im != 0.0 {
+  if (force_complex || im != 0.0) && re != 0.0 && im != 0.0 {
+    // The evaluated form of `Complex[re, im]`, built directly: a large
+    // transform has one per element.
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Real(re),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Real(im), Expr::Identifier("I".to_string())].into(),
+        },
+      ]
+      .into(),
+    }
+  } else if force_complex || im != 0.0 {
     // Build via Complex[re, im] which the evaluator will format as a + b*I
     crate::evaluator::evaluate_function_call_ast(
       "Complex",
@@ -7472,6 +7508,62 @@ pub(crate) fn root_n_eval_arbitrary(
   Some(x)
 }
 
+/// Arbitrary-precision complex `Root[f, k]`: Newton's method on the
+/// complex plane from the machine-precision seed, in `astro_float`
+/// arithmetic, the complex counterpart of [`root_n_eval_arbitrary`].
+pub(crate) fn root_n_eval_arbitrary_complex(
+  poly_arg: &Expr,
+  k_arg: &Expr,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+) -> Option<(astro_float::BigFloat, astro_float::BigFloat)> {
+  use astro_float::BigFloat;
+  let (coeffs_i, _, re0, im0) = root_coeffs_and_seed(poly_arg, k_arg)?;
+  let wbits = bits + 64;
+  let coeffs: Vec<BigFloat> = coeffs_i
+    .iter()
+    .map(|&c| BigFloat::from_i128(c, wbits))
+    .collect();
+  let n = coeffs.len() - 1;
+  let zero = || BigFloat::from_i32(0, wbits);
+  let mul = |(a, b): (&BigFloat, &BigFloat), (c, d): (&BigFloat, &BigFloat)| {
+    (
+      a.mul(c, wbits, rm).sub(&b.mul(d, wbits, rm), wbits, rm),
+      a.mul(d, wbits, rm).add(&b.mul(c, wbits, rm), wbits, rm),
+    )
+  };
+  let mut x = (
+    BigFloat::from_f64(re0, wbits),
+    BigFloat::from_f64(im0, wbits),
+  );
+  let iterations = (wbits as f64 / 40.0).log2().ceil().max(1.0) as usize + 4;
+  for _ in 0..iterations {
+    // Horner for p(x) and p'(x) together.
+    let mut p = (coeffs[n].clone(), zero());
+    let mut dp = (zero(), zero());
+    for k in (0..n).rev() {
+      let t = mul((&dp.0, &dp.1), (&x.0, &x.1));
+      dp = (t.0.add(&p.0, wbits, rm), t.1.add(&p.1, wbits, rm));
+      let t = mul((&p.0, &p.1), (&x.0, &x.1));
+      p = (t.0.add(&coeffs[k], wbits, rm), t.1);
+    }
+    let denom =
+      dp.0
+        .mul(&dp.0, wbits, rm)
+        .add(&dp.1.mul(&dp.1, wbits, rm), wbits, rm);
+    if denom.is_zero() {
+      break;
+    }
+    // p / p' = p · conj(p') / |p'|²
+    let q = mul((&p.0, &p.1), (&dp.0, &dp.1.neg()));
+    x = (
+      x.0.sub(&q.0.div(&denom, wbits, rm), wbits, rm),
+      x.1.sub(&q.1.div(&denom, wbits, rm), wbits, rm),
+    );
+  }
+  Some(x)
+}
+
 /// Collect the free symbol names in `expr` (skipping the boolean/null
 /// literals). Used to infer the root variable of an expression-form
 /// `Root[x^3 - 2, k]`.
@@ -8195,4 +8287,26 @@ pub fn parametric_window_ast(
   };
   let _ = alpha;
   eval(&expr)
+}
+
+#[cfg(test)]
+mod fourier_result_tests {
+  use super::*;
+
+  #[test]
+  fn direct_complex_matches_the_evaluated_form() {
+    for (re, im) in [(1.5, 2.5), (-1.5, 2.5), (1.5, -2.5), (-3.0, -0.25)] {
+      let direct = fourier_result_to_expr(re, im, false);
+      let evaluated = crate::evaluator::evaluate_function_call_ast(
+        "Complex",
+        &[Expr::Real(re), Expr::Real(im)],
+      )
+      .unwrap();
+      assert_eq!(
+        format!("{direct:?}"),
+        format!("{evaluated:?}"),
+        "{re} + {im} I"
+      );
+    }
+  }
 }

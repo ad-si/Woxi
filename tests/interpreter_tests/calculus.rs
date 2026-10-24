@@ -2128,6 +2128,21 @@ mod differentiate_nonconstants {
 mod derivative_prime_notation {
   use super::*;
 
+  // A `_?NumericQ` function has no symbolic derivative; at an inexact
+  // point (or under N) it is differentiated numerically.
+  #[test]
+  fn numeric_derivative_of_a_numeric_only_function() {
+    assert_eq!(
+      interpret(
+        "q[x_?NumericQ] := x^3; \
+         {Round[10^10 Derivative[1][q][2.]], Round[10^8 N[q''[2]]], \
+          q'[2], Round[10^8 y /. FindRoot[q'[y] == 12, {y, 1}]]}"
+      )
+      .unwrap(),
+      "{120000000000, 1200000000, Derivative[1][q][2], 200000000}"
+    );
+  }
+
   // `Derivative[n][f]` differentiates what `f[x]` evaluates to, so a body
   // like `InterpolatingPolynomial[data, x]` is computed before it is
   // differentiated, and `f'` of a user function is a pure function.
@@ -8647,6 +8662,25 @@ mod ndsolve {
       .unwrap(),
       "{w, 0.368}"
     );
+  }
+
+  /// An equation already solved for an unknown (`F0[t] == … - τd h'[t]`)
+  /// is substituted even though its right side holds a derivative, so no
+  /// DAE (and no `NDSolve::pdord`) is involved; the unknown's values read
+  /// h' from the solve ("PID Control of a Tank Level").
+  /// wolframscript: h(5) = 2.0485836…, F0(5) = 1.3411121….
+  #[test]
+  fn explicit_unknown_with_a_derivative_is_substituted() {
+    let result = interpret_with_stdout(
+      "sol = NDSolve[{h'[t] == F0[t] - F1[t], F1[t] == Sqrt[h[t]], \
+       F0[t] == 1 + (2 - h[t]) + Int[t] + 0.1 D[2 - h[t], t], \
+       Int'[t] == 2 - h[t], h[0] == 0.1, Int[0] == 0}, \
+       {h[t], F1[t], F0[t], Int[t]}, {t, 0, 100}]; \
+       Round[10^4 {h[t], F0[t]} /. First[sol] /. t -> 5.]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{20486, 13411}");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
   }
 
   /// A constant mass matrix whose factorization interchanges rows after the
