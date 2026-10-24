@@ -13793,3 +13793,20 @@ mod numeric_list_literals {
     );
   }
 }
+
+mod prefix_not_precedence {
+  use super::*;
+
+  #[test]
+  fn not_reaches_over_tighter_operators_anywhere_in_a_chain() {
+    assert_eq!(
+      interpret(
+        "ToString[FullForm[Hold[{!a==0&&!b==0, a&&!b==0, !a+b==c||d, a == !b, !a b == c, x = !a == b}]]]"
+      )
+      .unwrap(),
+      "Hold[List[And[Not[Equal[a, 0]], Not[Equal[b, 0]]], And[a, Not[Equal[b, 0]]], \
+       Or[Not[Equal[Plus[a, b], c]], d], Equal[a, Not[b]], Not[Equal[Times[a, b], c]], \
+       Set[x, Not[Equal[a, b]]]]]"
+    );
+  }
+}

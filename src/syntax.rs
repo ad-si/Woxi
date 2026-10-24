@@ -4115,6 +4115,107 @@ fn splits_implicit_product(op: &str) -> bool {
   operator_precedence(op) > operator_precedence("*")
 }
 
+/// Marks a term written with a prefix `!` until `apply_prefix_nots` knows
+/// how far the `Not` reaches.
+const PREFIX_NOT_MARK: &str = "\u{1}PrefixNot";
+
+/// Wrap each `!`-prefixed term in `Not` together with everything after it
+/// that binds tighter than `!` (Wolfram's `Not`, precedence 230, is looser
+/// than `==`, `+`, `@@`, … but tighter than `&&` and `||`): `!a == 0 && !b`
+/// is `And[Not[a == 0], Not[b]]`, wherever in the chain the `!` stands.
+/// Processed right to left, so a `!` inside another's reach is resolved
+/// first.
+fn apply_prefix_nots(terms: &mut Vec<Expr>, operators: &mut Vec<String>) {
+  let mut i = terms.len();
+  while i > 0 {
+    i -= 1;
+    let marked = matches!(&terms[i], Expr::FunctionCall { name, args }
+      if name == PREFIX_NOT_MARK && args.len() == 1);
+    if !marked {
+      continue;
+    }
+    let Expr::FunctionCall { args, .. } = &terms[i] else {
+      unreachable!()
+    };
+    let inner = args[0].clone();
+    let mut j = i;
+    while j < operators.len() && operator_precedence(&operators[j]) > 180 {
+      j += 1;
+    }
+    let mut group_terms: Vec<Expr> = terms.drain(i..=j).collect();
+    group_terms[0] = inner;
+    let group_ops: Vec<String> = operators.drain(i..j).collect();
+    terms.insert(
+      i,
+      call1("Not", build_operator_chain(group_terms, &group_ops)),
+    );
+  }
+}
+
+/// The expression a chain of terms joined by infix operators stands for.
+fn build_operator_chain(mut terms: Vec<Expr>, operators: &[String]) -> Expr {
+  if terms.len() == 1 {
+    return terms.remove(0);
+  }
+  // Check if all operators are comparison operators
+  let all_comparisons = operators.iter().all(|op| {
+    matches!(
+      op.as_str(),
+      "=="
+        | "\u{2A75}"
+        | "\\[Equal]"
+        | "\u{F431}"
+        | "\\[LongEqual]"
+        | "\u{F7D9}"
+        | "!="
+        | "\u{2260}"
+        | "\\[NotEqual]"
+        | "<"
+        | "<="
+        | "\u{2264}"
+        | "\u{2A7D}"
+        | "\\[LessEqual]"
+        | ">"
+        | ">="
+        | "\u{2265}"
+        | "\u{2A7E}"
+        | "\\[GreaterEqual]"
+        | "==="
+        | "=!="
+    )
+  });
+
+  if all_comparisons && !operators.is_empty() {
+    // Build comparison chain
+    let comp_ops: Vec<ComparisonOp> = operators
+      .iter()
+      .map(|op| match op.as_str() {
+        "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "\\[LongEqual]"
+        | "\u{F7D9}" => ComparisonOp::Equal,
+        "!=" | "\u{2260}" | "\\[NotEqual]" => ComparisonOp::NotEqual,
+        "<" => ComparisonOp::Less,
+        "<=" | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" => {
+          ComparisonOp::LessEqual
+        }
+        ">" => ComparisonOp::Greater,
+        ">=" | "\u{2265}" | "\u{2A7E}" | "\\[GreaterEqual]" => {
+          ComparisonOp::GreaterEqual
+        }
+        "===" => ComparisonOp::SameQ,
+        "=!=" => ComparisonOp::UnsameQ,
+        _ => ComparisonOp::Equal,
+      })
+      .collect();
+    Expr::Comparison {
+      operands: terms,
+      operators: comp_ops,
+    }
+  } else {
+    // Build binary operation tree (left-to-right for same precedence)
+    build_binary_tree(terms, operators)
+  }
+}
+
 /// An implicit product (`2 x`) is `Times` at ordinary multiplicative
 /// precedence, but the grammar hands it to the tree builder as a single
 /// term. When a neighbouring operator binds tighter than `Times` that
@@ -4686,7 +4787,7 @@ fn parse_expression_inner(
     if *pending {
       if let Some(last) = terms.pop() {
         origins.pop();
-        terms.push(call1("Not", last));
+        terms.push(call1(PREFIX_NOT_MARK, last));
         origins.push(false);
       }
       *pending = false;
@@ -4968,100 +5069,21 @@ fn parse_expression_inner(
   // the whole tree after it is built. We only suppress when the *first*
   // infix operator binds tighter than `!`; otherwise the local wrap is
   // already correct (e.g. `!a && b` → `And[Not[a], b]`).
-  let leading_not_on_first = leading_not_at_start && !operators.is_empty() && {
-    let first_op_prec = operator_precedence(&operators[0]);
-    first_op_prec > 180
-  };
-  if leading_not_on_first {
-    // Undo the term-level wrap: terms[0] was set to Not[orig]; unwrap it.
-    if let Expr::FunctionCall { name, args } = &terms[0]
-      && name == "Not"
-      && args.len() == 1
-    {
-      terms[0] = args[0].clone();
-    }
-    pending_not_on_last = false;
-  }
+  let _ = leading_not_at_start;
   flush_pending_not(
     &mut pending_not_on_last,
     &mut terms,
     &mut term_was_implicit_times,
   );
   split_implicit_products(&mut terms, &mut operators, &term_was_implicit_times);
+  apply_prefix_nots(&mut terms, &mut operators);
   // How many assignments this chain itself writes (see `in_assignment_rhs`).
   let assign_depth = operators
     .iter()
     .filter(|op| is_assignment_operator(op))
     .count();
 
-  let mut result = if terms.len() == 1 {
-    terms.remove(0)
-  } else {
-    // Check if all operators are comparison operators
-    let all_comparisons = operators.iter().all(|op| {
-      matches!(
-        op.as_str(),
-        "=="
-          | "\u{2A75}"
-          | "\\[Equal]"
-          | "\u{F431}"
-          | "\\[LongEqual]"
-          | "\u{F7D9}"
-          | "!="
-          | "\u{2260}"
-          | "\\[NotEqual]"
-          | "<"
-          | "<="
-          | "\u{2264}"
-          | "\u{2A7D}"
-          | "\\[LessEqual]"
-          | ">"
-          | ">="
-          | "\u{2265}"
-          | "\u{2A7E}"
-          | "\\[GreaterEqual]"
-          | "==="
-          | "=!="
-      )
-    });
-
-    if all_comparisons && !operators.is_empty() {
-      // Build comparison chain
-      let comp_ops: Vec<ComparisonOp> = operators
-        .iter()
-        .map(|op| match op.as_str() {
-          "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "\\[LongEqual]"
-          | "\u{F7D9}" => ComparisonOp::Equal,
-          "!=" | "\u{2260}" | "\\[NotEqual]" => ComparisonOp::NotEqual,
-          "<" => ComparisonOp::Less,
-          "<=" | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" => {
-            ComparisonOp::LessEqual
-          }
-          ">" => ComparisonOp::Greater,
-          ">=" | "\u{2265}" | "\u{2A7E}" | "\\[GreaterEqual]" => {
-            ComparisonOp::GreaterEqual
-          }
-          "===" => ComparisonOp::SameQ,
-          "=!=" => ComparisonOp::UnsameQ,
-          _ => ComparisonOp::Equal,
-        })
-        .collect();
-      Expr::Comparison {
-        operands: terms,
-        operators: comp_ops,
-      }
-    } else {
-      // Build binary operation tree (left-to-right for same precedence)
-      build_binary_tree(terms, &operators)
-    }
-  };
-
-  // If we deferred the leading `!` past tighter-binding operators, wrap
-  // the (now-complete) sub-tree in Not now. For `! Or @@ {…}` this yields
-  // `Not[Or @@ {…}]` rather than the wrong `(Not[Or]) @@ {…}`.
-  if leading_not_on_first {
-    result = call1("Not", result);
-  }
+  let mut result = build_operator_chain(terms, &operators);
 
   // Apply ReplaceAll/ReplaceRepeated suffixes, folding a chain like
   // `a /. b /. c` left-to-right into `ReplaceAll[ReplaceAll[a, b], c]`.
