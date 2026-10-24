@@ -459,17 +459,15 @@ mod polyhedron_data_tests {
   // It joins the list of known entities.
   #[test]
   fn polyhedron_data_all_lists_every_entity() {
+    // Catalogue-agnostic: names, sorted, holding every class's members.
     assert_eq!(
-      interpret("PolyhedronData[All]").unwrap(),
-      "{AcuteGoldenRhombohedron, BilinskiDodecahedron, Cube, Cuboctahedron, DeltoidalHexecontahedron, \
-       DisdyakisTriacontahedron, Dodecahedron, GreatIcosahedron, GreatRhombicosidodecahedron, \
-       GreatStellatedDodecahedron, GyroelongatedSquareDipyramid, Icosahedron, \
-       Icosidodecahedron, ObtuseGoldenRhombohedron, Octahedron, PentakisDodecahedron, \
-       RhombicDodecahedron, RhombicHexecontahedron, RhombicIcosahedron, \
-       RhombicTriacontahedron, SmallRhombicosidodecahedron, \
-       SmallRhombicuboctahedron, SmallStellatedDodecahedron, StellaOctangula, Tetrahedron, \
-       TriangularOrthobicupola, TruncatedCube, TruncatedDodecahedron, TruncatedIcosahedron, \
-       TruncatedOctahedron, TruncatedTetrahedron}"
+      interpret(
+        "With[{all = PolyhedronData[All]}, {Length[all] > 100, \
+         SubsetQ[all, PolyhedronData[\"Platonic\"]], \
+         SubsetQ[all, PolyhedronData[\"Johnson\"]], MemberQ[all, \"SnubCube\"]}]"
+      )
+      .unwrap(),
+      "{True, True, True, True}"
     );
   }
 
@@ -994,16 +992,15 @@ mod polyhedron_data_tests {
       .unwrap(),
       "{True}"
     );
-    // Euler's formula holds for all of them, so no face or edge is lost.
-    // The small stellated dodecahedron is a genus-4 surface (sum -6).
+    // Euler's formula holds for every convex one, so no face or edge is
+    // lost. (Star solids, compounds and toroids have other characteristics.)
     assert_eq!(
       interpret(
         r#"Union @ Table[
              PolyhedronData[s, "VertexCount"] -
                PolyhedronData[s, "EdgeCount"] +
                PolyhedronData[s, "FaceCount"],
-             {s, DeleteCases[PolyhedronData[All],
-               "SmallStellatedDodecahedron"]}]"#
+             {s, PolyhedronData["Convex"]}]"#
       )
       .unwrap(),
       "{2}"

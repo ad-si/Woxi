@@ -31324,7 +31324,7 @@ mod manipulate {
         // dodecahedron, the stella octangula, the golden rhombohedra,
         // rhombic icosahedron, the cuboctahedron, and the gyroelongated
         // square dipyramid and the truncated cube.
-        assert_eq!(values.len(), 31, "every known solid");
+        assert!(values.len() > 100, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }
@@ -40201,6 +40201,47 @@ mod manipulate_synchronous_initialization {
       )
       .unwrap(),
       "1"
+    );
+  }
+}
+
+mod polyhedron_data_generated_solids {
+  use super::*;
+
+  #[test]
+  fn johnson_archimedean_and_named_solids() {
+    assert_eq!(
+      interpret("Length[PolyhedronData[\"Johnson\"]]").unwrap(),
+      "92"
+    );
+    assert_eq!(
+      interpret("Length[PolyhedronData[\"Archimedean\"]]").unwrap(),
+      "13"
+    );
+    assert_eq!(
+      interpret(
+        "{PolyhedronData[\"Bilunabirotunda\", \"VertexCount\"], \
+         PolyhedronData[\"SnubCube\", \"FaceCount\"], \
+         PolyhedronData[\"SquarePyramid\", \"VertexCount\"], \
+         PolyhedronData[{\"Johnson\", 12}, \"VertexCount\"], \
+         PolyhedronData[\"Gyrobifastigium\", \"EdgeCount\"]}"
+      )
+      .unwrap(),
+      "{14, 38, 5, 5, 14}"
+    );
+  }
+
+  #[test]
+  fn generated_coordinates_close_up() {
+    // Every face index refers to a vertex, and the vertices are numeric.
+    assert_eq!(
+      interpret(
+        "And @@ Table[With[{v = N[PolyhedronData[n, \"VertexCoordinates\"]], \
+         f = PolyhedronData[n, \"FaceIndices\"]}, MatrixQ[v, NumberQ] && \
+         Max[Flatten[f]] == Length[v]], {n, PolyhedronData[\"Johnson\"]}]"
+      )
+      .unwrap(),
+      "True"
     );
   }
 }
