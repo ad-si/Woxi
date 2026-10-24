@@ -9096,6 +9096,49 @@ mod nsolve {
     );
   }
 
+  // A polynomial system whose elimination polynomial has no closed-form
+  // roots is solved numerically, and `{p, q} == 0` is the system
+  // `{p == 0, q == 0}`.
+  #[test]
+  fn polynomial_system_without_radical_roots() {
+    assert_eq!(
+      interpret("Length[NSolve[{x^2 + y^2 == 1, x^3 - y == 1/5}, {x, y}]]")
+        .unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret(
+        "Round[Sort[Select[{x, y} /. NSolve[{x^2 + y^2 == 3, x^3 - x y == \
+         1/7}, {x, y}], Element[Alternatives @@ #, Reals] &]], 0.01]"
+      )
+      .unwrap(),
+      "{{-1.1, 1.34}, {-0.08, 1.73}, {0.08, -1.73}, {1.18, 1.27}}"
+    );
+    // The roots of z^3 + z + 1 split into real and imaginary parts: nine
+    // complex points, three of them with real coordinates.
+    assert_eq!(
+      interpret(
+        "Length[NSolve[{1 + x + x^3 - 3 x y^2, y + 3 x^2 y - y^3} == 0, \
+         {x, y}]]"
+      )
+      .unwrap(),
+      "9"
+    );
+    assert_eq!(
+      interpret(
+        "Length[Select[{x, y} /. NSolve[{1 + x + x^3 - 3 x y^2, \
+         y + 3 x^2 y - y^3} == 0, {x, y}], Element[Alternatives @@ #, \
+         Reals] &]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("NSolve[{x - 1, y - 2} == 0, {x, y}]").unwrap(),
+      "{{x -> 1., y -> 2.}}"
+    );
+  }
+
   // A rational equation (one side divided by an expression that contains
   // the variable) inside a multi-variable system must not be mistaken for
   // a constant. The variable-power/coefficient extractor reports a factor
