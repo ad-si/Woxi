@@ -12976,6 +12976,37 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(half > 0 && half < all, "{half} of {all}");
     }
 
+    /// The body is held, so a generated list of maps (`Table[…]`) must be
+    /// evaluated into several regions instead of leaving the plot empty.
+    #[test]
+    fn parametric_plot_two_parameters_generated_regions() {
+      let svg = export_svg(
+        "ParametricPlot[Table[{u + 2 j, v}, {j, 0, 2}], {u, 0, 1}, {v, 0, 1}]",
+      );
+      let generated = svg.matches("<polygon").count();
+      let single = export_svg("ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}]")
+        .matches("<polygon")
+        .count();
+      assert_eq!(generated, 3 * single, "{svg}");
+    }
+
+    /// `Mesh -> {m, n}` with a 2D `MeshShading` array fills the cells
+    /// between the iso-parameter lines like a chessboard and strokes the
+    /// mesh lines.
+    #[test]
+    fn parametric_plot_two_parameters_mesh_shading() {
+      let svg = export_svg(
+        "ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}, Mesh -> {3, 1}, \
+         MeshStyle -> Black, \
+         MeshShading -> {{RGBColor[1, 0, 0], RGBColor[0, 0, 1]}, \
+         {RGBColor[0, 0, 1], RGBColor[1, 0, 0]}}]",
+      );
+      assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+      assert!(svg.contains("rgb(0,0,255)"), "{svg}");
+      // Three iso-u lines and one iso-v line.
+      assert!(svg.matches("<polyline").count() >= 4, "{svg}");
+    }
+
     /// A strongly curved parametrization (`u^2`) on a coarse `PlotPoints`
     /// grid used to give jagged quads spanning several wing lobes;
     /// `MaxRecursion` now refines the bent cells, while a linear map and
