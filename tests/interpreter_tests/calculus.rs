@@ -22133,3 +22133,25 @@ mod recurrence_table_scaled_leading_term {
     );
   }
 }
+
+mod ndsolve_for_a_function_named_null {
+  use super::*;
+
+  #[test]
+  fn applied_null_stays_symbolic_in_an_equation() {
+    assert_eq!(interpret("Null[0] == 1").unwrap(), "Null[0] == 1");
+    assert_eq!(interpret("True[0] == 1").unwrap(), "True[0] == 1");
+  }
+
+  #[test]
+  fn initial_condition_on_null_function_is_kept() {
+    assert_eq!(
+      interpret(
+        "f = NDSolveValue[{Null''[t] + Null[t] == 0, Null[0] == 1, \
+         Null'[0] == 0}, Null, {t, 0, 2}]; Head[f]"
+      )
+      .unwrap(),
+      "InterpolatingFunction"
+    );
+  }
+}

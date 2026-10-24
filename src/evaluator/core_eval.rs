@@ -4978,10 +4978,10 @@ pub fn has_free_symbols(expr: &Expr) -> bool {
       has_free_symbols(left) || has_free_symbols(right)
     }
     Expr::UnaryOp { operand, .. } => has_free_symbols(operand),
-    Expr::FunctionCall { name, args } => {
-      has_free_symbols(&Expr::Identifier(name.clone()))
-        || args.iter().any(has_free_symbols)
-    }
+    // An applied head is symbolic whatever its name: `Null[0]` is as open as
+    // `f[0]` (`NDSolveValue` can solve for a function named `Null`), so
+    // `Null[0] == 1` stays unevaluated instead of collapsing to False.
+    Expr::FunctionCall { .. } => true,
     Expr::Comparison { operands, .. } => operands.iter().any(has_free_symbols),
     Expr::Rule {
       pattern,
