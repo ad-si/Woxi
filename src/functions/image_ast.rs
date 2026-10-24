@@ -8202,6 +8202,58 @@ fn edt_pass_1d(f: &[f64], d: &mut [f64]) {
 /// squared pixel distance, small enough to stay exact through the passes.
 const EDT_FAR: f64 = 1e18;
 
+/// The metric a `DistanceTransform` measures distances in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EdtMetric {
+  Euclidean,
+  Manhattan,
+  Chessboard,
+}
+
+/// Exact city-block (4-neighbour) or chessboard (8-neighbour) distance to
+/// the nearest zero-cost pixel, by a forward and a backward sweep.
+fn chamfer_distance(
+  cost: &[f64],
+  w: usize,
+  h: usize,
+  diagonal: bool,
+) -> Vec<f64> {
+  let mut d: Vec<f64> = cost
+    .iter()
+    .map(|&c| if c > 0.0 { f64::INFINITY } else { 0.0 })
+    .collect();
+  let relax = |d: &mut [f64], x: usize, y: usize, dx: isize, dy: isize| {
+    let (nx, ny) = (x as isize + dx, y as isize + dy);
+    if nx >= 0 && ny >= 0 && (nx as usize) < w && (ny as usize) < h {
+      let cand = d[ny as usize * w + nx as usize] + 1.0;
+      if cand < d[y * w + x] {
+        d[y * w + x] = cand;
+      }
+    }
+  };
+  for y in 0..h {
+    for x in 0..w {
+      relax(&mut d, x, y, -1, 0);
+      relax(&mut d, x, y, 0, -1);
+      if diagonal {
+        relax(&mut d, x, y, -1, -1);
+        relax(&mut d, x, y, 1, -1);
+      }
+    }
+  }
+  for y in (0..h).rev() {
+    for x in (0..w).rev() {
+      relax(&mut d, x, y, 1, 0);
+      relax(&mut d, x, y, 0, 1);
+      if diagonal {
+        relax(&mut d, x, y, 1, 1);
+        relax(&mut d, x, y, -1, 1);
+      }
+    }
+  }
+  d
+}
+
 /// DistanceTransform[img] / [img, t] — each foreground pixel becomes its
 /// Euclidean distance to the nearest background pixel (the image border
 /// does not count as background). Foreground is luminance strictly above
@@ -8212,6 +8264,35 @@ const EDT_FAR: f64 = 1e18;
 /// semantics here instead.
 pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("DistanceTransform", args);
+  // `DistanceFunction -> f` picks the metric; the remaining arguments are
+  // the image and the optional threshold.
+  let mut metric = EdtMetric::Euclidean;
+  let mut positional: Vec<Expr> = Vec::new();
+  for arg in args {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "DistanceFunction")
+    {
+      let value = crate::evaluator::evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.as_ref().clone());
+      metric = match &value {
+        Expr::Identifier(n) if n == "EuclideanDistance" => EdtMetric::Euclidean,
+        Expr::Identifier(n) if n == "ManhattanDistance" => EdtMetric::Manhattan,
+        Expr::Identifier(n) if n == "ChessboardDistance" => {
+          EdtMetric::Chessboard
+        }
+        _ => return Ok(unevaluated()),
+      };
+    } else {
+      positional.push(arg.clone());
+    }
+  }
+  if positional.is_empty() || positional.len() > 2 {
+    return Ok(unevaluated());
+  }
+  let args: &[Expr] = &positional;
   // Graphics are rasterized, like wolframscript does for any image argument.
   let coerced;
   let args: &[Expr] = if !matches!(&args[0], Expr::Image { .. })
@@ -8281,6 +8362,19 @@ pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       height,
       channels: 1,
       data: Arc::new(vec![1.0; n]),
+      image_type: ImageType::Real32,
+    });
+  }
+
+  if metric != EdtMetric::Euclidean {
+    let dist = chamfer_distance(&cost, w, h, metric == EdtMetric::Chessboard);
+    return Ok(Expr::Image {
+      color_space: None,
+      display_size: None,
+      width,
+      height,
+      channels: 1,
+      data: Arc::new(dist),
       image_type: ImageType::Real32,
     });
   }

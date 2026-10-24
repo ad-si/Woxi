@@ -20993,6 +20993,7 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
       | "StackedListPlot"
       | "ListContourPlot"
       | "ListDensityPlot"
+      | "ReliefPlot"
       | "ListPolarPlot"
       | "TernaryListPlot"
       | "ListStreamPlot"
