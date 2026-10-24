@@ -20667,4 +20667,20 @@ mod root_of_repeated_factors {
       "2"
     );
   }
+
+  #[test]
+  fn symbolic_sum_keeps_evaluated_summand_for_later_replacement() {
+    // The inner `/.` must evaluate before the outer rules reach into the Sum.
+    assert_eq!(
+      interpret(
+        "g = Cos[3*Pi*x]; Sum[(g /. x -> k/n)*Binomial[n, k]*x^k, {k, 0, n}] /. {x -> 3/10, n -> 3}"
+      )
+      .unwrap(),
+      "343/1000"
+    );
+    assert_eq!(
+      interpret("Sum[a[k] + a[k], {k, 1, n}]").unwrap(),
+      "Sum[2*a[k], {k, 1, n}]"
+    );
+  }
 }
