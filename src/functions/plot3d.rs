@@ -7702,7 +7702,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Include box corners in the projected bounding box — always when the
   // box is drawn, and also for a fixed PlotRange so the zoom level does
-  // not follow the contents.
+  // not follow the contents. A pinned region is framed by its box alone:
+  // content reaching beyond it (a long axis cylinder, a big sphere) is
+  // cut off by the picture rather than shrinking it.
+  if plot_range.is_some() {
+    px_min = f64::INFINITY;
+    px_max = f64::NEG_INFINITY;
+    py_min = f64::INFINITY;
+    py_max = f64::NEG_INFINITY;
+  }
   if show_box || plot_range.is_some() {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
