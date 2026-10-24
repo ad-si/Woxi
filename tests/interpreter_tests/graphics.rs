@@ -6048,6 +6048,34 @@ mod plot3d {
       );
     }
 
+    /// An explicit `PlotRange` frames the picture by itself: a primitive
+    /// reaching far beyond it (a long axis cylinder) is cut off rather than
+    /// shrinking the rest of the scene to a speck.
+    #[test]
+    fn plot_range_framing_ignores_content_beyond_the_box() {
+      let svg = export_svg(
+        "Graphics3D[{Cylinder[{{0, -100, 0}, {0, 100, 0}}, 0.03], \
+         Sphere[{0, 0, 0}, 2]}, PlotRange -> {{-4, 4}, {-4, 4}, {-4, 4}}, \
+         Boxed -> False, Axes -> None]",
+      );
+      let xs: Vec<f64> = svg
+        .split("points=\"")
+        .skip(1)
+        .flat_map(|chunk| {
+          chunk
+            .split('"')
+            .next()
+            .unwrap_or("")
+            .split_whitespace()
+            .filter_map(|pt| pt.split(',').next()?.parse::<f64>().ok())
+            .collect::<Vec<_>>()
+        })
+        .collect();
+      let width = xs.iter().cloned().fold(f64::MIN, f64::max)
+        - xs.iter().cloned().fold(f64::MAX, f64::min);
+      assert!(width > 150.0, "scene collapsed to {width}px wide");
+    }
+
     /// `Sphere[{p1, p2, …}, r]` is a set of spheres of that radius, one per
     /// centre — how a scene marks several points at once. The list of
     /// centres used to fail to parse as a point, leaving a single stray
