@@ -226,6 +226,9 @@ num-bigint = "0.4.6"
 num-prime = "0.5"
 plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series", "area_series"] }
 num-traits = "0.2.19"
+# Fast non-cryptographic hashing for the interpreter's hot symbol tables
+# (built-in names, attributes), already in the dependency graph.
+rustc-hash = "2"
 woxi-reduce = { version = "0.1.0", path = "crates/woxi-reduce" }
 pest = "2.5"
 # The pest grammar and its generated parser (`WolframParser`, `Rule`), kept

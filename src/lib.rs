@@ -2141,7 +2141,7 @@ pub fn with_scoped_globals<R>(
     Vec::with_capacity(bindings.len());
   for (name, value) in bindings {
     let evaluated = thaw_graphic(name, value)
-      .or_else(|| interpret_to_expr(value).ok())
+      .or_else(|| scoped_binding_value(value))
       .unwrap_or_else(|| syntax::Expr::Identifier(name.clone()));
     let prev = ENV.with(|e| {
       e.borrow_mut()
@@ -2151,6 +2151,41 @@ pub fn with_scoped_globals<R>(
   }
   let _guard = ScopedGlobals { saved };
   f()
+}
+
+thread_local! {
+  /// Parsed statements of large binding sources (data literals such as an
+  /// `Image[…]` or a long list), keyed by the source text: a Manipulate
+  /// installs its bindings for every frame and every control, and re-reading
+  /// a 200 KB image literal each time cost seconds per frame. Only the parse
+  /// is cached; the statements are still evaluated on every install.
+  static BINDING_PARSE_CACHE: std::cell::RefCell<
+    std::collections::HashMap<String, std::rc::Rc<Vec<syntax::Expr>>>,
+  > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// The value a binding's source text evaluates to, reusing the parse of a
+/// long source.
+fn scoped_binding_value(source: &str) -> Option<syntax::Expr> {
+  const CACHED_SOURCE_LEN: usize = 2000;
+  if source.len() < CACHED_SOURCE_LEN {
+    return interpret_to_expr(source).ok();
+  }
+  let cached = BINDING_PARSE_CACHE.with(|c| c.borrow().get(source).cloned());
+  let statements = if let Some(statements) = cached {
+    statements
+  } else {
+    let statements = std::rc::Rc::new(parse_statements(source).ok()?);
+    BINDING_PARSE_CACHE.with(|c| {
+      let mut cache = c.borrow_mut();
+      if cache.len() >= 64 {
+        cache.clear();
+      }
+      cache.insert(source.to_string(), statements.clone());
+    });
+    statements
+  };
+  evaluate_statements(&statements).ok()
 }
 
 thread_local! {
@@ -6870,10 +6905,17 @@ pub fn interpret_to_expr(
   // Returning at the first `Expression` made `"a = 1; {a}"` come back as `1`,
   // and skipping the other `Statement` alternatives dropped a definition
   // whose left side carries a pattern (`f[x_] := …`) on the floor.
+  evaluate_statements(&parse_statements(input)?)
+}
+
+/// Evaluate parsed statements in order and return the last value.
+fn evaluate_statements(
+  statements: &[syntax::Expr],
+) -> Result<syntax::Expr, InterpreterError> {
   with_entry_stack(|| {
     let mut last: Option<syntax::Expr> = None;
-    for expr in parse_statements(input)? {
-      last = Some(settle_termination(evaluator::evaluate_expr_to_expr(&expr))?);
+    for expr in statements {
+      last = Some(settle_termination(evaluator::evaluate_expr_to_expr(expr))?);
     }
     last.ok_or(InterpreterError::EmptyInput)
   })
@@ -7001,7 +7043,7 @@ fn store_function_definition(
     )
   };
   let mut inner = pair.into_inner();
-  let func_name = inner.next().unwrap().as_str().to_owned(); // Identifier
+  let func_name = syntax::resolve_head_name(&inner.next().unwrap()); // Identifier
 
   // A symbol holding an association gains a key rather than a DownValue:
   // `s = <|"a" -> 1|>; s[n_Integer] := n + 100` writes the entry

@@ -247,6 +247,44 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     .map(|index| table[index].1)
 }
 
+/// `s` written in ASCII the way `FullForm` writes it: a named character as
+/// `\\[Name]`, any other non-ASCII character as `\\:xxxx` (or `\\|xxxxxx`
+/// beyond the Basic Multilingual Plane).
+pub fn ascii_character_escapes(s: &str) -> std::borrow::Cow<'_, str> {
+  use std::collections::HashMap;
+  use std::fmt::Write;
+  use std::sync::OnceLock;
+  if s.is_ascii() {
+    return std::borrow::Cow::Borrowed(s);
+  }
+  static NAMES: OnceLock<HashMap<char, &'static str>> = OnceLock::new();
+  let names = NAMES.get_or_init(|| {
+    crate::named_characters::NAMED_CHARACTERS
+      .iter()
+      .filter_map(|(name, text)| {
+        let mut chars = text.chars();
+        match (chars.next(), chars.next()) {
+          (Some(c), None) => Some((c, *name)),
+          _ => None,
+        }
+      })
+      .collect()
+  });
+  let mut out = String::with_capacity(s.len() + 16);
+  for c in s.chars() {
+    if c.is_ascii() {
+      out.push(c);
+    } else if let Some(name) = names.get(&c) {
+      let _ = write!(out, "\\[{name}]");
+    } else if (c as u32) <= 0xFFFF {
+      let _ = write!(out, "\\:{:04x}", c as u32);
+    } else {
+      let _ = write!(out, "\\|{:06x}", c as u32);
+    }
+  }
+  std::borrow::Cow::Owned(out)
+}
+
 /// Wolfram keeps a large part of its character set in the Unicode private use
 /// area — `\[Rule]` is U+F522, `\[WarningSign]` is U+F725 — and only its own
 /// fonts draw those code points, so a label written with one comes out as a
@@ -2293,7 +2331,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     // when evaluated.
     Rule::FunctionDefinition => {
       let mut inner = pair.into_inner();
-      let name = inner.next().map(|p| p.as_str().to_string());
+      let name = inner.next().map(|p| resolve_head_name(&p));
       let mut parts: Vec<Expr> = inner.map(pair_to_expr).collect();
       match (name, parts.pop()) {
         (Some(name), Some(rhs)) => Expr::FunctionCall {
@@ -2324,7 +2362,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       let args: Vec<Expr> = pair.into_inner().map(pair_to_expr).collect();
       call(name, args)
     }
-    Rule::List => parse_list(pair),
+    Rule::List | Rule::NumericList => parse_list(pair),
     Rule::ListExtended => parse_list_extended(&pair),
     Rule::FunctionCallExtended => {
       let mut result = parse_function_call_extended(&pair);
@@ -4077,6 +4115,107 @@ fn splits_implicit_product(op: &str) -> bool {
   operator_precedence(op) > operator_precedence("*")
 }
 
+/// Marks a term written with a prefix `!` until `apply_prefix_nots` knows
+/// how far the `Not` reaches.
+const PREFIX_NOT_MARK: &str = "\u{1}PrefixNot";
+
+/// Wrap each `!`-prefixed term in `Not` together with everything after it
+/// that binds tighter than `!` (Wolfram's `Not`, precedence 230, is looser
+/// than `==`, `+`, `@@`, … but tighter than `&&` and `||`): `!a == 0 && !b`
+/// is `And[Not[a == 0], Not[b]]`, wherever in the chain the `!` stands.
+/// Processed right to left, so a `!` inside another's reach is resolved
+/// first.
+fn apply_prefix_nots(terms: &mut Vec<Expr>, operators: &mut Vec<String>) {
+  let mut i = terms.len();
+  while i > 0 {
+    i -= 1;
+    let marked = matches!(&terms[i], Expr::FunctionCall { name, args }
+      if name == PREFIX_NOT_MARK && args.len() == 1);
+    if !marked {
+      continue;
+    }
+    let Expr::FunctionCall { args, .. } = &terms[i] else {
+      unreachable!()
+    };
+    let inner = args[0].clone();
+    let mut j = i;
+    while j < operators.len() && operator_precedence(&operators[j]) > 180 {
+      j += 1;
+    }
+    let mut group_terms: Vec<Expr> = terms.drain(i..=j).collect();
+    group_terms[0] = inner;
+    let group_ops: Vec<String> = operators.drain(i..j).collect();
+    terms.insert(
+      i,
+      call1("Not", build_operator_chain(group_terms, &group_ops)),
+    );
+  }
+}
+
+/// The expression a chain of terms joined by infix operators stands for.
+fn build_operator_chain(mut terms: Vec<Expr>, operators: &[String]) -> Expr {
+  if terms.len() == 1 {
+    return terms.remove(0);
+  }
+  // Check if all operators are comparison operators
+  let all_comparisons = operators.iter().all(|op| {
+    matches!(
+      op.as_str(),
+      "=="
+        | "\u{2A75}"
+        | "\\[Equal]"
+        | "\u{F431}"
+        | "\\[LongEqual]"
+        | "\u{F7D9}"
+        | "!="
+        | "\u{2260}"
+        | "\\[NotEqual]"
+        | "<"
+        | "<="
+        | "\u{2264}"
+        | "\u{2A7D}"
+        | "\\[LessEqual]"
+        | ">"
+        | ">="
+        | "\u{2265}"
+        | "\u{2A7E}"
+        | "\\[GreaterEqual]"
+        | "==="
+        | "=!="
+    )
+  });
+
+  if all_comparisons && !operators.is_empty() {
+    // Build comparison chain
+    let comp_ops: Vec<ComparisonOp> = operators
+      .iter()
+      .map(|op| match op.as_str() {
+        "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "\\[LongEqual]"
+        | "\u{F7D9}" => ComparisonOp::Equal,
+        "!=" | "\u{2260}" | "\\[NotEqual]" => ComparisonOp::NotEqual,
+        "<" => ComparisonOp::Less,
+        "<=" | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" => {
+          ComparisonOp::LessEqual
+        }
+        ">" => ComparisonOp::Greater,
+        ">=" | "\u{2265}" | "\u{2A7E}" | "\\[GreaterEqual]" => {
+          ComparisonOp::GreaterEqual
+        }
+        "===" => ComparisonOp::SameQ,
+        "=!=" => ComparisonOp::UnsameQ,
+        _ => ComparisonOp::Equal,
+      })
+      .collect();
+    Expr::Comparison {
+      operands: terms,
+      operators: comp_ops,
+    }
+  } else {
+    // Build binary operation tree (left-to-right for same precedence)
+    build_binary_tree(terms, operators)
+  }
+}
+
 /// An implicit product (`2 x`) is `Times` at ordinary multiplicative
 /// precedence, but the grammar hands it to the tree builder as a single
 /// term. When a neighbouring operator binds tighter than `Times` that
@@ -4434,8 +4573,13 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
 /// `Identifier` head uses its raw text; a `NamedCharIdentifier` head (e.g.
 /// `\[Psi]`) is decoded to its Unicode symbol (`ψ`) so `\[Psi][x, t]` calls
 /// the same symbol that `\[Psi]` denotes on its own.
-fn resolve_head_name(name_pair: &Pair<Rule>) -> String {
-  if matches!(name_pair.as_rule(), Rule::NamedCharIdentifier) {
+pub(crate) fn resolve_head_name(name_pair: &Pair<Rule>) -> String {
+  // A named character inside a symbol (`d\[Theta][t]`) is the same
+  // character as in the bare symbol `d\[Theta]`, which reads as `dθ`.
+  if matches!(name_pair.as_rule(), Rule::NamedCharIdentifier)
+    || (matches!(name_pair.as_rule(), Rule::Identifier)
+      && name_pair.as_str().contains("\\["))
+  {
     let decoded = pair_to_expr(name_pair.clone());
     if let Expr::Identifier(s) | Expr::Constant(s) = &decoded {
       return s.clone();
@@ -4643,7 +4787,7 @@ fn parse_expression_inner(
     if *pending {
       if let Some(last) = terms.pop() {
         origins.pop();
-        terms.push(call1("Not", last));
+        terms.push(call1(PREFIX_NOT_MARK, last));
         origins.push(false);
       }
       *pending = false;
@@ -4925,100 +5069,21 @@ fn parse_expression_inner(
   // the whole tree after it is built. We only suppress when the *first*
   // infix operator binds tighter than `!`; otherwise the local wrap is
   // already correct (e.g. `!a && b` → `And[Not[a], b]`).
-  let leading_not_on_first = leading_not_at_start && !operators.is_empty() && {
-    let first_op_prec = operator_precedence(&operators[0]);
-    first_op_prec > 180
-  };
-  if leading_not_on_first {
-    // Undo the term-level wrap: terms[0] was set to Not[orig]; unwrap it.
-    if let Expr::FunctionCall { name, args } = &terms[0]
-      && name == "Not"
-      && args.len() == 1
-    {
-      terms[0] = args[0].clone();
-    }
-    pending_not_on_last = false;
-  }
+  let _ = leading_not_at_start;
   flush_pending_not(
     &mut pending_not_on_last,
     &mut terms,
     &mut term_was_implicit_times,
   );
   split_implicit_products(&mut terms, &mut operators, &term_was_implicit_times);
+  apply_prefix_nots(&mut terms, &mut operators);
   // How many assignments this chain itself writes (see `in_assignment_rhs`).
   let assign_depth = operators
     .iter()
     .filter(|op| is_assignment_operator(op))
     .count();
 
-  let mut result = if terms.len() == 1 {
-    terms.remove(0)
-  } else {
-    // Check if all operators are comparison operators
-    let all_comparisons = operators.iter().all(|op| {
-      matches!(
-        op.as_str(),
-        "=="
-          | "\u{2A75}"
-          | "\\[Equal]"
-          | "\u{F431}"
-          | "\\[LongEqual]"
-          | "\u{F7D9}"
-          | "!="
-          | "\u{2260}"
-          | "\\[NotEqual]"
-          | "<"
-          | "<="
-          | "\u{2264}"
-          | "\u{2A7D}"
-          | "\\[LessEqual]"
-          | ">"
-          | ">="
-          | "\u{2265}"
-          | "\u{2A7E}"
-          | "\\[GreaterEqual]"
-          | "==="
-          | "=!="
-      )
-    });
-
-    if all_comparisons && !operators.is_empty() {
-      // Build comparison chain
-      let comp_ops: Vec<ComparisonOp> = operators
-        .iter()
-        .map(|op| match op.as_str() {
-          "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "\\[LongEqual]"
-          | "\u{F7D9}" => ComparisonOp::Equal,
-          "!=" | "\u{2260}" | "\\[NotEqual]" => ComparisonOp::NotEqual,
-          "<" => ComparisonOp::Less,
-          "<=" | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" => {
-            ComparisonOp::LessEqual
-          }
-          ">" => ComparisonOp::Greater,
-          ">=" | "\u{2265}" | "\u{2A7E}" | "\\[GreaterEqual]" => {
-            ComparisonOp::GreaterEqual
-          }
-          "===" => ComparisonOp::SameQ,
-          "=!=" => ComparisonOp::UnsameQ,
-          _ => ComparisonOp::Equal,
-        })
-        .collect();
-      Expr::Comparison {
-        operands: terms,
-        operators: comp_ops,
-      }
-    } else {
-      // Build binary operation tree (left-to-right for same precedence)
-      build_binary_tree(terms, &operators)
-    }
-  };
-
-  // If we deferred the leading `!` past tighter-binding operators, wrap
-  // the (now-complete) sub-tree in Not now. For `! Or @@ {…}` this yields
-  // `Not[Or @@ {…}]` rather than the wrong `(Not[Or]) @@ {…}`.
-  if leading_not_on_first {
-    result = call1("Not", result);
-  }
+  let mut result = build_operator_chain(terms, &operators);
 
   // Apply ReplaceAll/ReplaceRepeated suffixes, folding a chain like
   // `a /. b /. c` left-to-right into `ReplaceAll[ReplaceAll[a, b], c]`.
@@ -13544,7 +13609,7 @@ fn contains_string(expr: &Expr) -> bool {
 /// escape-sequence equivalents (`\!`, `\(`, `\)`, `\*`).
 /// Named-character sequences (`\[Name]`) are preserved as-is, while
 /// other backslashes are doubled.
-fn escape_string_for_input_form(s: &str) -> String {
+pub(crate) fn escape_string_for_input_form(s: &str) -> String {
   use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START};
   let mut escaped = String::with_capacity(s.len() + 10);
   let chars: Vec<char> = s.chars().collect();

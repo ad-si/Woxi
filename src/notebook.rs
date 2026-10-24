@@ -500,6 +500,14 @@ fn super_operator_head(op: &str) -> Option<&'static str> {
   match op.trim_matches('"') {
     "*" => Some("SuperStar"),
     "\u{2020}" => Some("SuperDagger"),
+    // The postfix operator characters typeset as a superscript:
+    // `SuperscriptBox["A", "\[Transpose]"]` is `Transpose[A]`.
+    "\\[Transpose]" | "\u{F3C7}" => Some("Transpose"),
+    "\\[Conjugate]" | "\u{F3C8}" => Some("Conjugate"),
+    "\\[ConjugateTranspose]"
+    | "\u{F3C9}"
+    | "\\[HermitianConjugate]"
+    | "\u{F3CE}" => Some("ConjugateTranspose"),
     _ => None,
   }
 }
@@ -7087,6 +7095,21 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "SuperStar[A]=3");
     let s = r#"BoxData[SuperscriptBox["M", "\[Dagger]"]]"#;
     assert_eq!(extract_cell_content(s), "SuperDagger[M]");
+  }
+
+  #[test]
+  fn test_extract_cell_content_postfix_operator_superscripts() {
+    // `SuperscriptBox["A", "\[ConjugateTranspose]"]` is the typeset form of
+    // `ConjugateTranspose[A]` (NumericalRangeForSomeComplexUpper…).
+    for (op, head) in [
+      ("\\[Transpose]", "Transpose"),
+      ("\\[Conjugate]", "Conjugate"),
+      ("\\[ConjugateTranspose]", "ConjugateTranspose"),
+      ("\\[HermitianConjugate]", "ConjugateTranspose"),
+    ] {
+      let s = format!(r#"BoxData[SuperscriptBox["A", "{op}"]]"#);
+      assert_eq!(extract_cell_content(&s), format!("{head}[A]"));
+    }
   }
 
   /// A mixed or higher-order partial derivative — more than one argument,

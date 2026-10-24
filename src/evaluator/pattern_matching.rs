@@ -3440,7 +3440,39 @@ pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
         ..
       },
     ) => d1 == d2 && h1 == h2 && s1 == s2,
+    // Two shapes whose heads plainly differ are unequal without rendering
+    // them (a SubValue body compared against its call would otherwise
+    // format every argument, a whole data list included, per call).
+    _ if matches!(
+      (cheap_head(a), cheap_head(b)),
+      (Some(x), Some(y)) if x != y
+    ) =>
+    {
+      false
+    }
     _ => expr_to_string(a) == expr_to_string(b),
+  }
+}
+
+/// The head of `e` when it is cheap to tell and is the same however `e` is
+/// represented: a call's name, a single comparison's operator, `List`, a
+/// rule, or a compound head (`f[a][b]`, written here as the empty name).
+fn cheap_head(e: &Expr) -> Option<&str> {
+  match e {
+    Expr::FunctionCall { name, .. } => Some(name),
+    Expr::List(_) => Some("List"),
+    Expr::Rule { .. } => Some("Rule"),
+    Expr::RuleDelayed { .. } => Some("RuleDelayed"),
+    Expr::Comparison { operators, .. } if operators.len() == 1 => {
+      Some(operators[0].head_name())
+    }
+    // `CurriedCall` with a symbol head prints like the plain call.
+    Expr::CurriedCall { func, .. } => match func.as_ref() {
+      Expr::Identifier(name) => Some(name),
+      Expr::Constant(_) => None,
+      _ => Some(""),
+    },
+    _ => None,
   }
 }
 
@@ -5788,6 +5820,29 @@ fn apply_bindings_with(
       continue;
     }
     filtered_refs.push((name.as_str(), value));
+  }
+  // A large list is shared before it is substituted: every occurrence of
+  // its name then costs a pointer copy instead of a deep copy, and so does
+  // every later evaluation that copies it (`pove[[k]]` in a loop).
+  let shared: Vec<Expr>;
+  if filtered_refs.iter().any(|(_, v)| {
+    matches!(v, Expr::List(items) if items.len() >= 16 && !items.is_shared())
+  }) {
+    shared = filtered_refs
+      .iter()
+      .map(|(_, v)| {
+        let mut v = (*v).clone();
+        if let Expr::List(items) = &mut v
+          && items.len() >= 16
+        {
+          items.share();
+        }
+        v
+      })
+      .collect();
+    for (slot, value) in filtered_refs.iter_mut().zip(&shared) {
+      slot.1 = value;
+    }
   }
   let result =
     crate::syntax::substitute_pattern_bindings(replacement, &filtered_refs);

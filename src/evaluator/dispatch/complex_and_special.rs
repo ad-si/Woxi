@@ -457,6 +457,19 @@ pub fn dispatch_complex_and_special(
       );
       return Some(crate::evaluator::evaluate_expr_to_expr(&args[0]));
     }
+    // MousePosition[…] — where the pointer is over a graphic. In a
+    // notebook the pointer is over nothing yet, which a front end reports
+    // as None; without one, wolframscript's notavail and $Failed.
+    "MousePosition" if args.len() <= 2 => {
+      if crate::is_visual_mode() {
+        return Some(Ok(id_expr("None")));
+      }
+      crate::emit_message(
+        "FrontEndObject::notavail: A front end is not available; certain \
+         operations require a front end.",
+      );
+      return Some(Ok(id_expr("$Failed")));
+    }
     "TimeConstrained" if args.len() == 2 || args.len() == 3 => {
       let limit_secs = match &args[1] {
         Expr::Real(f) => Some(*f),
@@ -548,7 +561,7 @@ pub fn dispatch_complex_and_special(
         });
         let down_values = crate::down_values_with_memo(sym);
         let user_attrs =
-          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied());
 
         let has_own = own_value.is_some();
         let has_down = down_values.is_some();
@@ -586,7 +599,7 @@ pub fn dispatch_complex_and_special(
         let own_value = crate::ENV.with(|e| e.borrow().get(sym).cloned());
         let down_values = crate::down_values_with_memo(sym);
         let user_attrs =
-          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied());
         return Some(Ok(format_user_information(
           sym,
           own_value,
@@ -2196,7 +2209,7 @@ fn format_builtin_information(
   is_full: bool,
 ) -> Expr {
   // Collect user-set attributes (merged with built-in)
-  let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+  let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied());
   let mut all_attrs = builtin_attrs;
   if let Some(ua) = user_attrs {
     all_attrs.add(ua.to_u32());
@@ -15544,9 +15557,9 @@ pub fn definition_text(sym: &str) -> Option<String> {
   // built-in attributes — `Definition[In]` should print
   // `Attributes[In] = {Listable, NHoldFirst, Protected}` even with no
   // user-installed attrs, matching wolframscript.
-  let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+  let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied());
   let attrs_to_show: Attributes = match &user_attrs {
-    Some(a) if !a.is_empty() => a.clone(),
+    Some(a) if !a.is_empty() => *a,
     _ => get_builtin_attributes(sym),
   };
   if !attrs_to_show.is_empty() {
@@ -15941,7 +15954,7 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
   fn get_definition_lines(sym: &str) -> Vec<String> {
     let mut lines = Vec::new();
 
-    let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+    let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied());
     if let Some(attrs) = &user_attrs
       && !attrs.is_empty()
     {
@@ -16169,7 +16182,7 @@ fn information_property(sym: &str, property: &str) -> Expr {
     sym,
     crate::ENV.with(|e| e.borrow().get(sym).cloned()),
     crate::down_values_with_memo(sym),
-    crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned()),
+    crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied()),
     true,
   );
   let rendered = expr_to_string(&record);

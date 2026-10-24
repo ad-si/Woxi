@@ -22003,3 +22003,133 @@ mod pde_time_grid_ends_on_the_domain {
     );
   }
 }
+
+mod find_fit_numeric_only_model {
+  use super::*;
+
+  #[test]
+  fn a_model_defined_for_numbers_only_is_differenced_numerically() {
+    // EstimatingKineticParametersFromABatchReactorExperiment fits a
+    // ParametricNDSolve function: D cannot differentiate it symbolically,
+    // and substituting values into the unevaluated D made D::ivar.
+    assert_eq!(
+      interpret(
+        "data = Table[{t, Exp[-1.3 t^1.2]}, {t, 0, 3, 0.25}]; \
+         f[a_?NumericQ, b_?NumericQ][t_?NumericQ] := Exp[-a t^b]; \
+         {a, b} /. FindFit[data, f[a, b][t], {{a, 1.0, 2.0}, {b, 1.5, 2.0}}, t] \
+         // Chop[# - {1.3, 1.2}, 10^-6] &"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+    assert!(woxi::get_captured_messages_raw().is_empty());
+  }
+}
+
+mod ndsolve_constant_mass_matrix {
+  use super::*;
+
+  #[test]
+  fn coupled_derivatives_with_a_constant_mass_matrix() {
+    // The mass matrix is factored once and reused at every stage.
+    assert_eq!(
+      interpret(
+        "n = 40; eqs = Table[2 u[i]'[t] + u[Mod[i, n] + 1]'[t] == -u[i][t] + Sin[t], {i, n}]; \
+         ics = Table[u[i][0] == 0, {i, n}]; \
+         s = NDSolve[Join[eqs, ics], Table[u[i], {i, n}], {t, 0, 5}]; \
+         Abs[(u[1][5] /. First[s]) + 0.124328389] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod interpolation_domain_slack {
+  use super::*;
+
+  #[test]
+  fn a_query_a_hair_past_the_end_is_silent() {
+    let r = interpret_with_stdout(
+      "f = Interpolation[{{0., 0.}, {1., 1.}}, InterpolationOrder -> 1]; f[1.000001]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "1.000001");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    let r = interpret_with_stdout(
+      "f = Interpolation[{{0., 0.}, {1., 1.}}, InterpolationOrder -> 1]; f[1.00002]",
+    )
+    .unwrap();
+    assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
+  }
+}
+
+mod event_locator_start_on_the_surface {
+  use super::*;
+
+  #[test]
+  fn an_event_that_starts_at_zero_does_not_fire_at_once() {
+    assert_eq!(
+      interpret(
+        "x[\"Domain\"] /. First[NDSolve[{x'[t] == 1., x[1] == 0., y'[t] == 1., \
+         y[1] == -1.*^-9}, {x, y}, {t, 1, 5}, \
+         Method -> {\"EventLocator\", \"Event\" :> y[t] - 0.5 x[t]}]]"
+      )
+      .unwrap(),
+      "{{1., 5.}}"
+    );
+    assert_eq!(
+      interpret(
+        "x[\"Domain\"] /. First[NDSolve[{x'[t] == 1., x[1] == 0., y'[t] == 1., \
+         y[1] == -1.*^-4}, {x, y}, {t, 1, 5}, \
+         Method -> {\"EventLocator\", \"Event\" :> y[t] - 0.5 x[t]}]]"
+      )
+      .unwrap(),
+      "{{1., 1.0002}}"
+    );
+  }
+}
+
+mod inverse_function_of_a_definition {
+  use super::*;
+
+  #[test]
+  fn a_single_rule_definition_inverts() {
+    assert_eq!(
+      interpret("g[x_] := 3 x + 1; InverseFunction[g]").unwrap(),
+      "(-1 + #1)/3 & "
+    );
+    assert_eq!(
+      interpret("f[r_] := 3/8 - r/2; Simplify[f[InverseFunction[f][r]]]")
+        .unwrap(),
+      "r"
+    );
+    // Two rules: no single formula to invert.
+    assert_eq!(
+      interpret("h[0] = 1; h[x_] := 2 x; InverseFunction[h]").unwrap(),
+      "InverseFunction[h]"
+    );
+  }
+}
+
+mod recurrence_table_scaled_leading_term {
+  use super::*;
+
+  #[test]
+  fn the_equation_is_solved_for_its_leading_term() {
+    assert_eq!(
+      interpret(
+        "RecurrenceTable[{3 a[k] == a[k - 1] + 1, a[0] == 1}, a, {k, 0, 4}]"
+      )
+      .unwrap(),
+      "{1, 2/3, 5/9, 14/27, 41/81}"
+    );
+    assert_eq!(
+      interpret(
+        "RecurrenceTable[{2 y[n + 1] == y[n - 1] + 3 y[n], y[1] == 1, y[2] == 2}, y, {n, 1, 5}]"
+      )
+      .unwrap(),
+      "{1, 2, 7/2, 25/4, 89/8}"
+    );
+  }
+}

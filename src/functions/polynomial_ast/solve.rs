@@ -176,13 +176,16 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // way wolframscript does it: rationalize, solve exactly, numericize. The
   // inexact elimination drops branches — a factor `x1` that a machine
   // coefficient keeps from cancelling cleanly loses the `x1 -> 0` family
-  // (PhasePlaneAnalysisOfABiochemicalReactor).
+  // (PhasePlaneAnalysisOfABiochemicalReactor). Only coefficients that are
+  // close to simple rationals are taken this way: a machine number such as a
+  // computed coordinate rationalizes to a 53-bit fraction whose radicals
+  // made a line-circle intersection cost seconds.
   if let Expr::List(eqs) = &args[0]
     && eqs.len() >= 2
     && crate::functions::math_ast::contains_inexact_real(&args[0])
     && let Ok(exact) = crate::evaluator::evaluate_function_call_ast(
       "Rationalize",
-      &[args[0].clone(), Expr::Integer(0)],
+      &[args[0].clone()],
     )
     && !crate::functions::math_ast::contains_inexact_real(&exact)
   {
@@ -1719,11 +1722,13 @@ fn solve_piecewise_max_min(
     exact_args[0] = exact;
     let result = solve_piecewise_max_min(&exact_args)?;
     return Some(result.and_then(|sols| {
-      crate::emit_message(
-        "Solve::ratnz: Solve was unable to solve the system with inexact \
-         coefficients. The answer was obtained by solving a corresponding \
-         exact system and numericizing the result.",
-      );
+      if !in_nsolve() {
+        crate::emit_message(
+          "Solve::ratnz: Solve was unable to solve the system with inexact \
+           coefficients. The answer was obtained by solving a corresponding \
+           exact system and numericizing the result.",
+        );
+      }
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "N".into(),
         args: vec![sols].into(),
@@ -1840,7 +1845,28 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(vs) => vs.to_vec(),
       v => vec![v.clone()],
     };
-    let nonlinear = eqs.iter().any(|eq| {
+    // `Or[eq1, eq2]` and `And[…]` are read through to their equations: a
+    // logical head is not itself nonlinear.
+    fn equations(e: &Expr, out: &mut Vec<Expr>) {
+      match e {
+        Expr::FunctionCall { name, args } if name == "Or" || name == "And" => {
+          args.iter().for_each(|a| equations(a, out));
+        }
+        Expr::BinaryOp {
+          op:
+            crate::syntax::BinaryOperator::And | crate::syntax::BinaryOperator::Or,
+          left,
+          right,
+        } => {
+          equations(left, out);
+          equations(right, out);
+        }
+        other => out.push(other.clone()),
+      }
+    }
+    let mut parts = Vec::new();
+    eqs.iter().for_each(|eq| equations(eq, &mut parts));
+    let nonlinear = parts.iter().any(|eq| {
       let g = match eq {
         Expr::Comparison { operands, .. } if operands.len() == 2 => call(
           "Plus",
@@ -1851,25 +1877,43 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ),
         other => other.clone(),
       };
+      // A vector equation differentiates to a list of zeros.
+      fn is_zero(e: &Expr) -> bool {
+        match e {
+          Expr::Integer(0) => true,
+          Expr::Real(r) => *r == 0.0,
+          Expr::List(items) => items.iter().all(is_zero),
+          _ => false,
+        }
+      }
       vars.iter().any(|a| {
         vars.iter().any(|b| {
-          !matches!(
-            crate::evaluator::evaluate_function_call_ast(
-              "D",
-              &[g.clone(), a.clone(), b.clone()]
-            ),
-            Ok(Expr::Integer(0))
+          !crate::evaluator::evaluate_function_call_ast(
+            "D",
+            &[g.clone(), a.clone(), b.clone()],
           )
+          .is_ok_and(|d| is_zero(&d))
         })
       })
     });
-    let exact_result = solve_ast_entry(&[exact, args[1].clone()])?;
+    // A linear system is re-solved only when the inexact elimination found
+    // nothing; the exact route is costly for large systems.
+    if !nonlinear && found(&result) > 0 {
+      return Ok(result);
+    }
+    let exact_result = {
+      let _numeric = NumericRootsScope::new();
+      solve_ast_entry(&[exact, args[1].clone()])?
+    };
     if found(&exact_result) > found(&result)
       || (nonlinear && found(&exact_result) > 0)
     {
-      crate::emit_message(
-        "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
-      );
+      // NSolve answers numerically by design and says nothing about it.
+      if !in_nsolve() {
+        crate::emit_message(
+          "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
+        );
+      }
       // In the exact solution's order, as wolframscript numericizes it.
       return crate::evaluator::evaluate_function_call_ast(
         "N",
@@ -2294,6 +2338,34 @@ impl Drop for NSolveScope {
 
 fn in_nsolve() -> bool {
   NSOLVE_DEPTH.with(std::cell::Cell::get) > 0
+}
+
+thread_local! {
+  static NUMERIC_ROOTS_DEPTH: std::cell::Cell<usize> =
+    const { std::cell::Cell::new(0) };
+}
+
+/// While alive, the polynomial system solver finds the roots of its
+/// eliminants as numbers: the caller numericizes the solutions anyway (an
+/// inexact system solved exactly), and radicals of rationalized machine
+/// numbers are costly to build and simplify.
+struct NumericRootsScope;
+
+impl NumericRootsScope {
+  fn new() -> Self {
+    NUMERIC_ROOTS_DEPTH.with(|d| d.set(d.get() + 1));
+    Self
+  }
+}
+
+impl Drop for NumericRootsScope {
+  fn drop(&mut self) {
+    NUMERIC_ROOTS_DEPTH.with(|d| d.set(d.get() - 1));
+  }
+}
+
+fn numeric_roots_wanted() -> bool {
+  in_nsolve() || NUMERIC_ROOTS_DEPTH.with(std::cell::Cell::get) > 0
 }
 
 /// Solve with the explicit variable list narrowed first when the system is
@@ -4814,12 +4886,135 @@ fn leading_coefficient_is_numeric(poly: &Expr, var: &str) -> bool {
 
 /// The roots of `poly` (as `poly == 0`) in `var`, with multiplicity, or
 /// `None` when Solve cannot report them explicitly.
+/// The roots of `poly` in `var`, numericized from the closed form, when it is
+/// at most quadratic with exact numeric coefficients.
+fn numeric_quadratic_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
+  let eval = |name: &str, args: Vec<Expr>| {
+    crate::evaluator::evaluate_function_call_ast(name, &args).ok()
+  };
+  let list = eval("CoefficientList", vec![poly.clone(), id_expr(var)])?;
+  let Expr::List(coeffs) = &list else {
+    return None;
+  };
+  let exact = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  if !coeffs.iter().all(exact) {
+    return None;
+  }
+  let n = |e: Expr| eval("N", vec![e]);
+  match coeffs.as_slice() {
+    [c, b] if !matches!(b, Expr::Integer(0)) => Some(vec![n(eval(
+      "Times",
+      vec![
+        Expr::Integer(-1),
+        c.clone(),
+        eval("Power", vec![b.clone(), Expr::Integer(-1)])?,
+      ],
+    )?)?]),
+    [c, b, a] => {
+      let disc = eval(
+        "Plus",
+        vec![
+          eval("Power", vec![b.clone(), Expr::Integer(2)])?,
+          eval("Times", vec![Expr::Integer(-4), a.clone(), c.clone()])?,
+        ],
+      )?;
+      let root = |sign: i128| -> Option<Expr> {
+        let numerator = eval(
+          "Plus",
+          vec![
+            eval("Times", vec![Expr::Integer(-1), b.clone()])?,
+            eval(
+              "Times",
+              vec![Expr::Integer(sign), eval("Sqrt", vec![disc.clone()])?],
+            )?,
+          ],
+        )?;
+        n(eval(
+          "Times",
+          vec![
+            numerator,
+            eval(
+              "Power",
+              vec![
+                eval("Times", vec![Expr::Integer(2), a.clone()])?,
+                Expr::Integer(-1),
+              ],
+            )?,
+          ],
+        )?)
+      };
+      // In Solve's order: ascending, the conjugate with the negative
+      // imaginary part first.
+      let mut roots = vec![root(-1)?, root(1)?];
+      let key = |e: &Expr| {
+        try_eval_to_f64(e)
+          .map(|re| (re, 0.0))
+          .or_else(|| try_extract_complex_float(e))
+      };
+      if let (Some(a), Some(b)) = (key(&roots[0]), key(&roots[1]))
+        && (if a.1 != 0.0 || b.1 != 0.0 {
+          b.1 < a.1
+        } else {
+          b.0 < a.0
+        })
+      {
+        roots.swap(0, 1);
+      }
+      Some(roots)
+    }
+    _ => None,
+  }
+}
+
 fn univariate_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
+  // Under NSolve the roots are wanted as numbers: solving an eliminant in
+  // radicals (and simplifying them) is what made a rationalized geometry
+  // system take seconds per intersection. A quadratic's closed form is
+  // numericized directly, which rounds its roots correctly; higher degrees
+  // go to the numeric root finder.
+  if numeric_roots_wanted()
+    && let Some(roots) = numeric_quadratic_roots(poly, var)
+  {
+    return Some(roots);
+  }
+  // Only a polynomial in `var` alone: one that still has another unknown
+  // in its coefficients is no numeric root-finding problem.
+  let numeric = numeric_roots_wanted()
+    && !matches!(
+      crate::evaluator::evaluate_function_call_ast(
+        "Exponent",
+        &[poly.clone(), id_expr(var)],
+      ),
+      Ok(Expr::Integer(d)) if d <= 2
+    )
+    && matches!(
+      &crate::evaluator::evaluate_function_call_ast(
+        "Variables",
+        std::slice::from_ref(poly),
+      ),
+      Ok(Expr::List(vs)) if vs.len() == 1
+    );
+  let poly = if numeric {
+    crate::evaluator::evaluate_function_call_ast(
+      "N",
+      std::slice::from_ref(poly),
+    )
+    .ok()?
+  } else {
+    poly.clone()
+  };
   let equation = Expr::Comparison {
-    operands: vec![poly.clone(), Expr::Integer(0)],
+    operands: vec![poly, Expr::Integer(0)],
     operators: vec![ComparisonOp::Equal],
   };
-  let solved = solve_ast(&[equation, id_expr(var)]).ok()?;
+  let solved = if numeric {
+    nsolve_ast(&[equation, id_expr(var)]).ok()?
+  } else {
+    solve_ast(&[equation, id_expr(var)]).ok()?
+  };
   let Expr::List(ref solutions) = solved else {
     return None;
   };

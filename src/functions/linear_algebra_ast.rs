@@ -1005,6 +1005,10 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ]);
   }
 
+  if let Some(product) = machine_dot(&args[0], &args[1]) {
+    return Ok(product);
+  }
+
   // Vector . Vector -> scalar
   if let (Some(va), Some(vb)) =
     (expr_to_vector(&args[0]), expr_to_vector(&args[1]))
@@ -1084,6 +1088,83 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Return unevaluated
   Ok(unevaluated("Dot", args))
+}
+
+/// `a . b` for vectors and matrices of machine reals, computed in `f64`
+/// with each sum folded left in index order — the order `Plus` folds the
+/// same products in. `None` when either operand holds anything but machine
+/// reals, or the shapes do not fit.
+fn machine_dot(a: &Expr, b: &Expr) -> Option<Expr> {
+  fn reals(e: &Expr) -> Option<Vec<f64>> {
+    match e {
+      Expr::List(items) => items
+        .iter()
+        .map(|x| match x {
+          Expr::Real(r) => Some(*r),
+          _ => None,
+        })
+        .collect(),
+      _ => None,
+    }
+  }
+  fn matrix(e: &Expr) -> Option<Vec<Vec<f64>>> {
+    let Expr::List(rows) = e else { return None };
+    let m: Vec<Vec<f64>> = rows.iter().map(reals).collect::<Option<_>>()?;
+    let width = m.first()?.len();
+    (width > 0 && m.iter().all(|r| r.len() == width)).then_some(m)
+  }
+  let dot = |x: &mut dyn Iterator<Item = f64>| -> f64 {
+    let first = x.next().unwrap_or(0.0);
+    x.fold(first, |acc, v| acc + v)
+  };
+  let reals_list = |v: Vec<f64>| {
+    Expr::List(v.into_iter().map(Expr::Real).collect::<Vec<_>>().into())
+  };
+  match (reals(a), reals(b)) {
+    (Some(u), Some(v)) if !u.is_empty() && u.len() == v.len() => {
+      return Some(Expr::Real(dot(&mut u.iter().zip(&v).map(|(x, y)| x * y))));
+    }
+    (Some(u), None) => {
+      let mb = matrix(b)?;
+      if mb.len() != u.len() || u.is_empty() {
+        return None;
+      }
+      return Some(reals_list(
+        (0..mb[0].len())
+          .map(|j| dot(&mut (0..u.len()).map(|i| u[i] * mb[i][j])))
+          .collect(),
+      ));
+    }
+    _ => {}
+  }
+  let ma = matrix(a)?;
+  if let Some(v) = reals(b) {
+    if ma[0].len() != v.len() {
+      return None;
+    }
+    return Some(reals_list(
+      ma.iter()
+        .map(|row| dot(&mut row.iter().zip(&v).map(|(x, y)| x * y)))
+        .collect(),
+    ));
+  }
+  let mb = matrix(b)?;
+  if ma[0].len() != mb.len() {
+    return None;
+  }
+  let cols = mb[0].len();
+  Some(Expr::List(
+    ma.iter()
+      .map(|row| {
+        reals_list(
+          (0..cols)
+            .map(|j| dot(&mut row.iter().zip(&mb).map(|(x, brow)| x * brow[j])))
+            .collect(),
+        )
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  ))
 }
 
 /// Dimensions of a rectangular tensor. Scalars have dimensions `[]`; a ragged
@@ -1240,9 +1321,92 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(m) if is_nonempty_square(&m) => m,
     _ => return Ok(matsq_unevaluated("Det", args)),
   };
+  if let Some(m) = machine_real_matrix(&matrix) {
+    return Ok(Expr::Real(machine_determinant(&m)));
+  }
   let det = determinant(&matrix);
   let r = crate::functions::expand_and_combine(&det);
   Ok(simplify_expr(&r))
+}
+
+/// The matrix as machine reals when it holds a machine real and every
+/// entry is a real number — the matrices Wolfram inverts and factors
+/// numerically (LU with partial pivoting) instead of symbolically.
+fn machine_real_matrix(matrix: &[Vec<Expr>]) -> Option<Vec<Vec<f64>>> {
+  if !matrix.iter().flatten().any(|e| matches!(e, Expr::Real(_))) {
+    return None;
+  }
+  matrix
+    .iter()
+    .map(|row| row.iter().map(try_eval_to_f64).collect::<Option<Vec<_>>>())
+    .collect()
+}
+
+/// LU factorization with partial pivoting, in place: `a` becomes `L\U`
+/// (unit lower triangle implied). Returns the row permutation and its sign,
+/// or `None` when a pivot column is entirely zero (an exactly singular
+/// matrix).
+fn lu_partial_pivot(a: &mut [Vec<f64>]) -> Option<(Vec<usize>, f64)> {
+  let n = a.len();
+  let mut perm: Vec<usize> = (0..n).collect();
+  let mut sign = 1.0;
+  for k in 0..n {
+    let p = (k..n).max_by(|&i, &j| a[i][k].abs().total_cmp(&a[j][k].abs()))?;
+    if a[p][k] == 0.0 {
+      return None;
+    }
+    if p != k {
+      a.swap(p, k);
+      perm.swap(p, k);
+      sign = -sign;
+    }
+    for i in k + 1..n {
+      let factor = a[i][k] / a[k][k];
+      a[i][k] = factor;
+      for j in k + 1..n {
+        a[i][j] -= factor * a[k][j];
+      }
+    }
+  }
+  Some((perm, sign))
+}
+
+/// `Det` of a machine-real matrix: the product of the LU pivots.
+fn machine_determinant(m: &[Vec<f64>]) -> f64 {
+  let mut a = m.to_vec();
+  match lu_partial_pivot(&mut a) {
+    Some((_, sign)) => (0..a.len()).fold(sign, |acc, i| acc * a[i][i]),
+    None => 0.0,
+  }
+}
+
+/// `Inverse` of a machine-real matrix by LU, or `None` when singular.
+fn machine_inverse(m: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
+  let n = m.len();
+  let mut a = m.to_vec();
+  let (perm, _) = lu_partial_pivot(&mut a)?;
+  let mut inv = vec![vec![0.0; n]; n];
+  for col in 0..n {
+    // Solve L y = P e_col, then U x = y.
+    let mut x: Vec<f64> = (0..n)
+      .map(|i| if perm[i] == col { 1.0 } else { 0.0 })
+      .collect();
+    for i in 0..n {
+      for k in 0..i {
+        x[i] -= a[i][k] * x[k];
+      }
+    }
+    for i in (0..n).rev() {
+      for k in i + 1..n {
+        x[i] -= a[i][k] * x[k];
+      }
+      x[i] /= a[i][i];
+    }
+    for i in 0..n {
+      inv[i][col] = x[i];
+    }
+  }
+  Some(inv)
 }
 
 /// True for an exact rational scalar (Integer, BigInteger, or literal
@@ -1528,6 +1692,28 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(matsq_unevaluated("Inverse", args)),
   };
   let n = matrix.len();
+
+  if let Some(m) = machine_real_matrix(&matrix) {
+    return Ok(if let Some(inv) = machine_inverse(&m) {
+      Expr::List(
+        inv
+          .into_iter()
+          .map(|row| {
+            Expr::List(
+              row.into_iter().map(Expr::Real).collect::<Vec<_>>().into(),
+            )
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    } else {
+      crate::emit_message(&format!(
+        "Inverse::sing: Matrix {} is singular.",
+        expr_to_string(&args[0])
+      ));
+      unevaluated("Inverse", args)
+    });
+  }
 
   // Try integer matrix inverse via adjugate method
   let det = determinant(&matrix);
@@ -6748,6 +6934,10 @@ fn find_fit_weighted(
         args: vec![model.clone(), Expr::Identifier(p.clone())].into(),
       })
       .ok()
+      // A derivative D could not take (a model defined only for numeric
+      // arguments) is differenced numerically instead: substituting the
+      // parameter values into an unevaluated `D[…, k]` makes `k` a number.
+      .filter(|d| !crate::functions::math_ast::expr_contains_head(d, "D"))
     })
     .collect();
 
@@ -8765,6 +8955,134 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(vec![qt_expr, r_expr].into()))
 }
 
+/// Full singular value decomposition `{U, Σ, V}` (`A = U.Σ.V'`, U m×m,
+/// Σ m×n, V n×n) of a machine-real matrix by one-sided Jacobi rotations,
+/// singular values descending. Each right singular vector's first nonzero
+/// component is made non-positive, as in the 2×2 case. `None` if it fails
+/// to converge.
+fn jacobi_svd(
+  a: &[Vec<f64>],
+) -> Option<(Vec<Vec<f64>>, Vec<Vec<f64>>, Vec<Vec<f64>>)> {
+  let m = a.len();
+  let n = a.first()?.len();
+  if n == 0 {
+    return None;
+  }
+  if m < n {
+    // A' = V Σ' U'.
+    let at: Vec<Vec<f64>> =
+      (0..n).map(|j| (0..m).map(|i| a[i][j]).collect()).collect();
+    let (u, sigma, v) = jacobi_svd(&at)?;
+    let sigma_t = (0..m)
+      .map(|i| (0..n).map(|j| sigma[j][i]).collect())
+      .collect();
+    return Some((v, sigma_t, u));
+  }
+  // Columns of `w` converge to U·Σ; `vt` accumulates the rotations.
+  let mut w: Vec<Vec<f64>> =
+    (0..n).map(|j| (0..m).map(|i| a[i][j]).collect()).collect();
+  let mut vcols: Vec<Vec<f64>> = (0..n)
+    .map(|j| (0..n).map(|i| if i == j { 1.0 } else { 0.0 }).collect())
+    .collect();
+  let dot =
+    |x: &[f64], y: &[f64]| x.iter().zip(y).map(|(p, q)| p * q).sum::<f64>();
+  let mut converged = false;
+  for _sweep in 0..60 {
+    let mut rotated = false;
+    for p in 0..n {
+      for q in p + 1..n {
+        let alpha = dot(&w[p], &w[p]);
+        let beta = dot(&w[q], &w[q]);
+        let gamma = dot(&w[p], &w[q]);
+        if gamma.abs() <= 1e-15 * (alpha * beta).sqrt() || gamma == 0.0 {
+          continue;
+        }
+        rotated = true;
+        let zeta = (beta - alpha) / (2.0 * gamma);
+        let sign = if zeta >= 0.0 { 1.0 } else { -1.0 };
+        let t = sign / (zeta.abs() + (1.0 + zeta * zeta).sqrt());
+        let c = 1.0 / (1.0 + t * t).sqrt();
+        let sn = c * t;
+        for k in 0..m {
+          let (x, y) = (w[p][k], w[q][k]);
+          w[p][k] = c * x - sn * y;
+          w[q][k] = sn * x + c * y;
+        }
+        for k in 0..n {
+          let (x, y) = (vcols[p][k], vcols[q][k]);
+          vcols[p][k] = c * x - sn * y;
+          vcols[q][k] = sn * x + c * y;
+        }
+      }
+    }
+    if !rotated {
+      converged = true;
+      break;
+    }
+  }
+  if !converged {
+    return None;
+  }
+  let mut order: Vec<usize> = (0..n).collect();
+  let norms: Vec<f64> = w.iter().map(|c| dot(c, c).sqrt()).collect();
+  order.sort_by(|&i, &j| norms[j].total_cmp(&norms[i]));
+  let tol =
+    norms.iter().copied().fold(0.0, f64::max) * 1e-12 * (m.max(n) as f64);
+  let mut ucols: Vec<Vec<f64>> = Vec::with_capacity(m);
+  let mut vout: Vec<Vec<f64>> = Vec::with_capacity(n);
+  let mut sig: Vec<f64> = Vec::with_capacity(n);
+  for &j in &order {
+    let mut v = vcols[j].clone();
+    let mut u = w[j].clone();
+    let lead = v.iter().find(|x| x.abs() > 1e-15).copied().unwrap_or(0.0);
+    if lead > 0.0 {
+      v.iter_mut().for_each(|x| *x = -*x);
+      u.iter_mut().for_each(|x| *x = -*x);
+    }
+    let s = norms[j];
+    if s > tol {
+      u.iter_mut().for_each(|x| *x /= s);
+      ucols.push(u);
+      sig.push(s);
+    } else {
+      sig.push(0.0);
+    }
+    vout.push(v);
+  }
+  // Complete U to an orthonormal basis of R^m (Gram-Schmidt on e_k).
+  let mut k = 0;
+  while ucols.len() < m && k < m {
+    let mut e: Vec<f64> =
+      (0..m).map(|i| if i == k { 1.0 } else { 0.0 }).collect();
+    for _ in 0..2 {
+      for u in &ucols {
+        let d = dot(&e, u);
+        e.iter_mut().zip(u).for_each(|(x, y)| *x -= d * y);
+      }
+    }
+    let nrm = dot(&e, &e).sqrt();
+    if nrm > 1e-8 {
+      e.iter_mut().for_each(|x| *x /= nrm);
+      let lead = e.iter().find(|x| x.abs() > 1e-15).copied().unwrap_or(0.0);
+      if lead > 0.0 {
+        e.iter_mut().for_each(|x| *x = -*x);
+      }
+      ucols.push(e);
+    }
+    k += 1;
+  }
+  let u = (0..m)
+    .map(|i| ucols.iter().map(|c| c[i]).collect())
+    .collect();
+  let v = (0..n)
+    .map(|i| vout.iter().map(|c| c[i]).collect())
+    .collect();
+  let sigma = (0..m)
+    .map(|i| (0..n).map(|j| if i == j { sig[j] } else { 0.0 }).collect())
+    .collect();
+  Some((u, sigma, v))
+}
+
 /// `SingularValueDecomposition[A]` — closed-form 2×2 SVD for a numeric
 /// matrix. Returns `{U, Σ, V}` with `A = U.Σ.V'`, matching wolframscript:
 /// V's columns are the right singular vectors of A^T A, U's columns are
@@ -8781,8 +9099,27 @@ pub fn singular_value_decomposition_ast(
   };
   let rows = matrix.len();
   if rows != 2 || matrix[0].len() != 2 {
-    // Only the 2×2 case has a clean closed form right now; fall back
-    // to unevaluated for everything else.
+    // Any other shape is decomposed numerically when it holds machine
+    // reals (one-sided Jacobi); exact matrices stay unevaluated.
+    if let Some(a) = machine_real_matrix(&matrix)
+      && let Some((u, sigma, v)) = jacobi_svd(&a)
+    {
+      let to_expr = |m: Vec<Vec<f64>>| {
+        Expr::List(
+          m.into_iter()
+            .map(|r| {
+              Expr::List(
+                r.into_iter().map(Expr::Real).collect::<Vec<_>>().into(),
+              )
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      };
+      return Ok(Expr::List(
+        vec![to_expr(u), to_expr(sigma), to_expr(v)].into(),
+      ));
+    }
     return Ok(unevaluated("SingularValueDecomposition", args));
   }
   let to_f64 = |e: &Expr| -> Option<f64> {

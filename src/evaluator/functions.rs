@@ -73,7 +73,7 @@ pub fn is_known_wolfram_function(name: &str) -> bool {
 /// it or whether its row carries a description. `BUILTIN_FUNCTION_INFO` skips
 /// rows without a description or effect level, which is the wrong question to
 /// ask about a symbol's attributes.
-static ALL_BUILTIN_NAMES: LazyLock<HashSet<&'static str>> =
+static ALL_BUILTIN_NAMES: LazyLock<rustc_hash::FxHashSet<&'static str>> =
   LazyLock::new(|| {
     FUNCTIONS_CSV
       .lines()
@@ -93,13 +93,14 @@ static ALL_BUILTIN_NAMES: LazyLock<HashSet<&'static str>> =
 /// `\[FormalScriptX]`, …: single private-use glyphs that live in `System``
 /// and are `Protected`, so they can serve as bound variables that user code
 /// cannot accidentally assign to.
-static FORMAL_SYMBOLS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-  crate::named_characters::NAMED_CHARACTERS
-    .iter()
-    .filter(|(name, _)| name.starts_with("Formal"))
-    .map(|(_, glyph)| *glyph)
-    .collect()
-});
+static FORMAL_SYMBOLS: LazyLock<rustc_hash::FxHashSet<&'static str>> =
+  LazyLock::new(|| {
+    crate::named_characters::NAMED_CHARACTERS
+      .iter()
+      .filter(|(name, _)| name.starts_with("Formal"))
+      .map(|(_, glyph)| *glyph)
+      .collect()
+  });
 
 /// True if `name` is a `System`` symbol, i.e. listed in functions.csv or
 /// one of the formal symbols.

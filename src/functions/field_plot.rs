@@ -4731,6 +4731,41 @@ pub(crate) fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
   }
 }
 
+/// The rows `ArrayPlot` draws from `data`: SparseArrays (the whole array
+/// or its rows) densified. `None` when `data` is not a list of lists.
+fn array_plot_matrix(data: &Expr) -> Option<Vec<Expr>> {
+  let densify = |e: &Expr| {
+    crate::functions::list_helpers_ast::densify_sparse_array(e)
+      .unwrap_or_else(|| e.clone())
+  };
+  let dense = densify(data);
+  let Expr::List(rows) = &dense else {
+    return None;
+  };
+  // A list of SparseArray rows (possibly of differing lengths) plots as the
+  // ragged list of their dense forms.
+  let rows: Vec<Expr> = rows.iter().map(densify).collect();
+  rows
+    .iter()
+    .all(|r| matches!(r, Expr::List(_)))
+    .then_some(rows)
+}
+
+/// `ArrayPlot::mat` for a first argument that is not a list of lists, which
+/// leaves the call unevaluated. Checked outside the plot's quiet scope so
+/// the message is seen.
+pub fn array_plot_argument_error(args: &[Expr]) -> Option<Expr> {
+  let data = args.first()?;
+  if array_plot_matrix(data).is_some() {
+    return None;
+  }
+  crate::emit_message(&format!(
+    "ArrayPlot::mat: Argument {} at position 1 is not a list of lists.",
+    crate::syntax::format_expr(data, crate::syntax::ExprForm::Output)
+  ));
+  Some(crate::helpers::unevaluated("ArrayPlot", args))
+}
+
 /// ArrayPlot[{{v11, ...}, ...}] - grayscale grid from matrix values
 /// 0 is always white; the maximum value is black.
 /// Supports options: ColorRules, Mesh, ColorFunction, ImageSize, FrameLabel,
@@ -4739,27 +4774,8 @@ pub(crate) fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &crate::functions::graphics::splice_option_lists(args)[..];
   let data = evaluate_expr_to_expr(&args[0])?;
-  let data = crate::functions::list_helpers_ast::densify_sparse_array(&data)
-    .unwrap_or(data);
-  // A list of SparseArray rows (possibly of differing lengths) plots as the
-  // ragged list of their dense forms.
-  let data = match &data {
-    Expr::List(rows) => Expr::List(
-      rows
-        .iter()
-        .map(|r| {
-          crate::functions::list_helpers_ast::densify_sparse_array(r)
-            .unwrap_or_else(|| r.clone())
-        })
-        .collect::<Vec<_>>()
-        .into(),
-    ),
-    _ => data,
-  };
-  let Expr::List(rows) = &data else {
-    return Err(InterpreterError::EvaluationError(
-      "ArrayPlot: first argument must be a matrix (list of lists)".into(),
-    ));
+  let Some(rows) = array_plot_matrix(&data) else {
+    return Ok(crate::helpers::unevaluated("ArrayPlot", args));
   };
 
   // Parse options
@@ -4892,7 +4908,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut v_min = f64::INFINITY;
   let mut v_max = f64::NEG_INFINITY;
 
-  for row in rows {
+  for row in &rows {
     if let Expr::List(items) = row {
       let cells: Vec<ArrayCell> = items
         .iter()

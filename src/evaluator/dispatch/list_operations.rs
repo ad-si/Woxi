@@ -2515,7 +2515,16 @@ pub fn dispatch_list_operations(
         &args[0], &args[1],
       ));
     }
-    "FindClusters" if !args.is_empty() && args.len() <= 3 => {
+    "FindClusters"
+      if !args.is_empty()
+        && args[1..]
+          .iter()
+          .filter(|a| {
+            !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+          })
+          .count()
+          <= 1 =>
+    {
       return Some(list_helpers_ast::find_clusters_ast_n(args));
     }
     "ComposeList" if args.len() == 2 => {
@@ -2909,6 +2918,9 @@ pub fn dispatch_list_operations(
     }
     "Combinatorica`RandomKSubset" if args.len() == 2 => {
       return Some(list_helpers_ast::combinatorica_random_k_subset_ast(args));
+    }
+    "Combinatorica`Josephus" if args.len() == 2 => {
+      return Some(list_helpers_ast::combinatorica_josephus_ast(args));
     }
     "Combinatorica`Backtrack" if (1..=4).contains(&args.len()) => {
       return Some(list_helpers_ast::combinatorica_backtrack_ast(args));

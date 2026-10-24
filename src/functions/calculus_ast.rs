@@ -9348,14 +9348,21 @@ pub fn simplify(mut expr: Expr) -> Expr {
         }
         // 1^n = 1
         (B::Power, Expr::Integer(1), _) => return Expr::Integer(1),
-        // Numeric simplification
-        (B::Plus, Expr::Integer(a), Expr::Integer(b)) => {
+        // Numeric simplification (an overflowing one is left to the
+        // general path below, which works in big integers)
+        (B::Plus, Expr::Integer(a), Expr::Integer(b))
+          if a.checked_add(*b).is_some() =>
+        {
           return Expr::Integer(a + b);
         }
-        (B::Minus, Expr::Integer(a), Expr::Integer(b)) => {
+        (B::Minus, Expr::Integer(a), Expr::Integer(b))
+          if a.checked_sub(*b).is_some() =>
+        {
           return Expr::Integer(a - b);
         }
-        (B::Times, Expr::Integer(a), Expr::Integer(b)) => {
+        (B::Times, Expr::Integer(a), Expr::Integer(b))
+          if a.checked_mul(*b).is_some() =>
+        {
           return Expr::Integer(a * b);
         }
         _ => {}
