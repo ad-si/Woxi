@@ -8505,6 +8505,47 @@ mod ndsolve {
     );
   }
 
+  // Algebraic equations that leave one degree of freedom, closed by a
+  // unit-speed condition on the derivatives, trace an implicit curve; the
+  // stated slope at the start picks the orientation.
+  #[test]
+  fn implicit_curve_with_unit_speed() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x[u]^2 + y[u]^2 == 1, x'[u]^2 + y'[u]^2 == 1, \
+         x[0] == 1, y[0] == 0, x'[0] == 0, y'[0] == 1}, {x, y}, {u, -1, 2}]; \
+         Round[{x[1.], y[1.], x[-1.], y[2.]} /. First[s], 0.0001]"
+      )
+      .unwrap(),
+      "{0.5403, 0.8415, 0.5403, 0.9093}"
+    );
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x[u]^2 + y[u]^2 == 1, x'[u]^2 + y'[u]^2 == 1, \
+         x[0] == 1, y[0] == 0, x'[0] == 0, y'[0] == -1}, {x, y}, {u, 0, 1}]; \
+         Round[{x[1.], y[1.]} /. First[s], 0.0001]"
+      )
+      .unwrap(),
+      "{0.5403, -0.8415}"
+    );
+  }
+
+  // Three unknowns: a curve on a cylinder whose height is tied to the
+  // other two by a second algebraic equation.
+  #[test]
+  fn implicit_curve_in_three_unknowns() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x[u]^2 + y[u]^2 == 4, z[u] == x[u] y[u], \
+         x'[u]^2 + y'[u]^2 + z'[u]^2 == 1, x[0] == 2, y[0] == 0, z[0] == 0, \
+         x'[0] == 0, y'[0] == 0.5, z'[0] == 0.5}, {x, y, z}, {u, 0, 0.5}]; \
+         Round[(x[u]^2 + y[u]^2 /. u -> 0.4 /. First[s]), 0.0001]"
+      )
+      .unwrap(),
+      "4."
+    );
+  }
+
   // An unknown no equation mentions comes back as itself, in the requested
   // position.
   #[test]
