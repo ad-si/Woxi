@@ -4911,6 +4911,18 @@ mod number_form {
   use super::*;
 
   #[test]
+  fn unlimited_digits_with_fixed_places() {
+    assert_eq!(
+      interpret(
+        "ToString[NumberForm[{0.05, 0.001234, 1.2345, -0.5 + 0.25 I, 3, \
+         123456.789}, {Infinity, 2}]]"
+      )
+      .unwrap(),
+      "{0.05, 0.00, 1.23, -0.50 + 0.25 I, 3, 123456.79}"
+    );
+  }
+
+  #[test]
   fn number_form_is_inert() {
     assert_eq!(
       interpret("NumberForm[3.14159, 4]").unwrap(),

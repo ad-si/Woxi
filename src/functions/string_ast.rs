@@ -4472,7 +4472,10 @@ fn number_form_fixed_to_string(x: &Expr, n: i64, f: i64) -> Option<String> {
     if v == 0.0 {
       f as i64
     } else {
-      (n - 1 - v.abs().log10().floor() as i64).min(f as i64)
+      // `n` is i64::MAX for `{Infinity, f}`.
+      (n - 1)
+        .saturating_sub(v.abs().log10().floor() as i64)
+        .min(f as i64)
     }
   };
   // `v` is a magnitude, rounded half up on its shortest decimal digits the
