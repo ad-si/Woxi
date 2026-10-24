@@ -2277,6 +2277,9 @@ pub(crate) struct PlotOptions {
   pub log_y: bool,
   /// Callout labels for each series (None = no callout for that series)
   pub callout_labels: Vec<Option<String>>,
+  /// `PlotLabels -> {l1, l2, …}`: a label drawn after the right-hand end of
+  /// each curve (None = that curve is unlabeled).
+  pub plot_labels: Vec<Option<String>>,
   /// Per-point labels from `Labeled[y, label]` data entries, parallel to
   /// each series' points (None = no label for that point). Empty when no
   /// point is labeled.
@@ -2437,6 +2440,7 @@ impl Default for PlotOptions {
       frame_label_bottom_graphic: None,
       date_axis: false,
       callout_labels: Vec::new(),
+      plot_labels: Vec::new(),
       point_labels: Vec::new(),
       log_x: false,
       log_y: false,
@@ -3294,6 +3298,21 @@ fn generate_svg_with_options(
   } else {
     10 * s as u32
   };
+  // `PlotLabels` sit just past the right-hand end of each curve.
+  let margin_right = margin_right.max(
+    if opts.plot_labels.iter().any(std::option::Option::is_some) {
+      let widest = opts
+        .plot_labels
+        .iter()
+        .flatten()
+        .map(|l| crate::functions::graphics::box_string_visible_len(l))
+        .max()
+        .unwrap_or(0);
+      (10.0 * sf + 8.0 * sf + widest as f64 * 0.62 * sf * 14.0).round() as u32
+    } else {
+      0
+    },
+  );
   // A rough estimate of the plot frame's width, used only to scale a
   // `frame_label_bottom_graphic` (a `Grid[…]` FrameLabel) to fit under it;
   // the exact frame width, known once labels are actually drawn, may differ
@@ -4302,6 +4321,14 @@ fn generate_svg_with_options(
       (y_min, y_max),
       (plot_x0, margin_top_f, plot_w, plot_h),
     );
+    inject_plot_labels(
+      &mut buf,
+      opts,
+      all_points,
+      (x_min, x_max),
+      (y_min, y_max),
+      (plot_x0, margin_top_f, plot_w, plot_h),
+    );
     inject_point_labels(
       &mut buf,
       opts,
@@ -4395,6 +4422,59 @@ fn inject_callout_labels(
   }
 
   buf.insert_str(insert_pos, &callout_svg);
+}
+
+/// Inject `PlotLabels` into a finished SVG buffer: each label sits just past
+/// the right-hand end of its curve. `plot_area` is the drawing region in
+/// render-space pixels: (left, top, width, height).
+fn inject_plot_labels(
+  buf: &mut String,
+  opts: &PlotOptions,
+  all_points: &[Vec<(f64, f64)>],
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  plot_area: (f64, f64, f64, f64),
+) {
+  if !opts.plot_labels.iter().any(std::option::Option::is_some) {
+    return;
+  }
+  let (x_min, x_max) = x_range;
+  let (y_min, y_max) = y_range;
+  let (plot_x0, plot_top, plot_w, plot_h) = plot_area;
+  let sf = RESOLUTION_SCALE as f64;
+  let font_size = sf * 11.0;
+  let (_, _, _, _, text_fill) = plot_theme();
+
+  let Some(insert_pos) = buf.rfind("</svg>") else {
+    return;
+  };
+  let mut label_svg = String::new();
+
+  for (series_idx, label) in opts.plot_labels.iter().enumerate() {
+    let Some(label_text) = label else { continue };
+    let Some(points) = all_points.get(series_idx) else {
+      continue;
+    };
+    // The curve's right-hand end: the last point inside the plotted range.
+    let Some(&(data_x, data_y)) = points.iter().rev().find(|(x, y)| {
+      x.is_finite() && y.is_finite() && *x <= x_max && *x >= x_min
+    }) else {
+      continue;
+    };
+    let frac_x = (data_x - x_min) / (x_max - x_min);
+    let frac_y = ((data_y - y_min) / (y_max - y_min)).clamp(0.0, 1.0);
+    let px = plot_x0 + frac_x * plot_w;
+    let py = plot_top + plot_h * (1.0 - frac_y);
+    label_svg.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"{py:.1}\" font-family=\"sans-serif\" \
+       font-size=\"{font_size:.0}\" fill=\"{text_fill}\" \
+       dominant-baseline=\"central\">{}</text>\n",
+      px + sf * 6.0,
+      crate::functions::graphics::box_string_to_svg(label_text)
+    ));
+  }
+
+  buf.insert_str(insert_pos, &label_svg);
 }
 
 /// Inject per-point labels (from `Labeled[y, label]` data entries) into a
@@ -5286,6 +5366,14 @@ pub(crate) fn generate_scatter_svg_with_options(
   // Callout/Labeled series labels (same plot area as the tick pass above).
   {
     inject_callout_labels(
+      &mut buf,
+      opts,
+      all_series,
+      (x_min, x_max),
+      (y_min, y_max),
+      (plot_x0, plot_y0, plot_w, plot_h),
+    );
+    inject_plot_labels(
       &mut buf,
       opts,
       all_series,
@@ -9681,6 +9769,24 @@ pub(crate) fn parse_plot_legends(
   }
 }
 
+/// Parse a `PlotLabels -> {l1, l2, …}` value into one optional label per
+/// curve; `None` and `Automatic` entries leave their curve unlabeled.
+fn parse_plot_labels(value: &Expr) -> Vec<Option<String>> {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let label = |item: &Expr| match item {
+    Expr::Identifier(s) if s == "None" || s == "Automatic" => None,
+    other => Some(
+      crate::functions::graphics::styled_axis_label(other)
+        .unwrap_or_else(|| expr_to_string(other)),
+    ),
+  };
+  match &val {
+    Expr::List(items) => items.iter().map(label).collect(),
+    Expr::Identifier(s) if s == "None" || s == "Automatic" => Vec::new(),
+    other => vec![label(other)],
+  }
+}
+
 /// Parse a `Background -> color` option value into a plotters fill color.
 /// Returns `None` for `Background -> None` and unrecognized values, which
 /// keep the theme default.
@@ -10143,6 +10249,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ) {
         continue;
       }
+      if name == "PlotLabels" {
+        plot_opts.plot_labels = parse_plot_labels(replacement);
+      }
       if name == "PlotLegends" {
         let (labels, auto, expressions, position) =
           parse_plot_legends(replacement);
@@ -10538,6 +10647,9 @@ fn log_scale_plot_ast(
         &mut overrides,
       ) {
         continue;
+      }
+      if name == "PlotLabels" {
+        plot_opts.plot_labels = parse_plot_labels(replacement);
       }
       if name == "PlotLegends" {
         let (labels, auto, expressions, position) =

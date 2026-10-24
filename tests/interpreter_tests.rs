@@ -1287,6 +1287,23 @@ mod interpreter_tests {
     );
   }
 
+  /// `PlotLabels` draws each label after its curve's right-hand end and
+  /// widens the picture to make room; `None` leaves a curve unlabeled.
+  #[test]
+  fn test_plot_labels_drawn_after_curve_ends() {
+    clear_state();
+    let plain =
+      interpret("ExportString[Plot[{x, x^2}, {x, 0, 2}], \"SVG\"]").unwrap();
+    let labeled = interpret(
+      "ExportString[Plot[{x, x^2}, {x, 0, 2}, \
+         PlotLabels -> {\"alpha\", None}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(labeled.contains(">alpha</text>"), "label missing");
+    assert!(!plain.contains(">alpha</text>"));
+    assert_eq!(labeled.matches("dominant-baseline=\"central\"").count(), 1);
+  }
+
   /// Extract the outermost `<svg width="…" height="…"` pair as an `f64`.
   fn svg_root_height(svg: &str) -> f64 {
     let after = svg.split("height=\"").nth(1).expect("no height attribute");
