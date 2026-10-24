@@ -40181,3 +40181,26 @@ mod array_plot_argument_errors {
     );
   }
 }
+
+mod manipulate_synchronous_initialization {
+  use super::*;
+
+  #[test]
+  fn code_in_synchronous_initialization_runs() {
+    assert_eq!(
+      interpret(
+        "Manipulate[x + q, {x, 0, 1}, SynchronousInitialization :> {q = 5}]; q"
+      )
+      .unwrap(),
+      "5"
+    );
+    // The Boolean switch is no code.
+    assert_eq!(
+      interpret(
+        "Manipulate[x, {x, 0, 1}, SynchronousInitialization -> False]; 1"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+}
