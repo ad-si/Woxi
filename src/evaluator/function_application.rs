@@ -3466,7 +3466,7 @@ fn evaluate_bspline_function(func_args: &[Expr], args: &[Expr]) -> Expr {
               bad.set(true);
               vec![0.0]
             },
-            &point,
+            point,
           )
         };
         de_boor(degrees[1], &knot_sets[1], row.len() - 1, &ctrl, params[1])
