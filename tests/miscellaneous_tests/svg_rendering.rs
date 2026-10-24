@@ -3837,6 +3837,29 @@ mod tests {
       );
     }
 
+    /// A bushy tree sets its own picture width from its labels; in a
+    /// narrower fixed-size pane it is squeezed to the pane's width rather
+    /// than clipped.
+    #[test]
+    fn a_wide_tree_in_a_fixed_pane_is_squeezed_to_fit() {
+      let result = woxi::interpret_with_stdout(
+        r#"Pane[TreeForm[g[g[a1, b1, c1], g[a2, b2, c2], g[a3, b3, c3], g[a4, b4, c4], g[a5, b5, c5]]], {300, 300}]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("a tree composes a picture");
+      assert!(svg.starts_with("<svg width=\"300\""), "{svg:.200}");
+      let clip_width = svg
+        .split("plotClip_")
+        .nth(1)
+        .and_then(|rest| rest.split('x').next())
+        .and_then(|w| w.parse::<f64>().ok())
+        .expect("the tree has a plot clip");
+      assert!(
+        clip_width <= 300.0,
+        "tree is {clip_width} wide in a 300 pane"
+      );
+    }
+
     /// A layout of plain text is left to the text renderer — composing it
     /// as a picture would be a regression, not an improvement.
     #[test]
