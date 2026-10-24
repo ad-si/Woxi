@@ -13721,3 +13721,92 @@ mod prefix_apply_takes_part_of_its_argument {
     );
   }
 }
+
+mod plain_number_list_items {
+  use super::*;
+
+  #[test]
+  fn numbers_ending_an_item_read_as_literals() {
+    assert_eq!(
+      interpret(
+        "ToString[FullForm[Hold[{1 (* c *), -2, .5, 3.25`, 2*^2, -1.5, 7}]]]"
+      )
+      .unwrap(),
+      "Hold[List[1, -2, 0.5`, 3.25`, 200, -1.5`, 7]]"
+    );
+  }
+
+  #[test]
+  fn numbers_followed_by_an_operator_still_group() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[{-3^2, 2.^2, 4!, 1;2, x -> 1, 5 x}]]]")
+        .unwrap(),
+      "Hold[List[Times[-1, Power[3, 2]], Power[2.`, 2], Factorial[4], \
+       CompoundExpression[1, 2], Rule[x, 1], Times[5, x]]]"
+    );
+  }
+
+  #[test]
+  fn nested_numeric_lists() {
+    assert_eq!(
+      interpret("Dimensions[{{{1, 2.5}, {3, 4}}, {{5, 6}, {7, -8}}}]").unwrap(),
+      "{2, 2, 2}"
+    );
+  }
+}
+
+mod named_character_inside_a_call_head {
+  use super::*;
+
+  #[test]
+  fn names_the_same_symbol_as_the_bare_name() {
+    assert_eq!(
+      interpret("d\\[Theta][t_] := t^2; {d\\[Theta][3], dθ[4]}").unwrap(),
+      "{9, 16}"
+    );
+    assert_eq!(
+      interpret("SameQ[Head[Unevaluated[d\\[Theta][t]]], d\\[Theta]]").unwrap(),
+      "True"
+    );
+  }
+}
+
+mod numeric_list_literals {
+  use super::*;
+
+  #[test]
+  fn nested_numeric_lists_read_as_lists() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[f[{{1, -2}, {3.5, 4}}, {}, {{}}]]]]")
+        .unwrap(),
+      "Hold[f[List[List[1, -2], List[3.5`, 4]], List[], List[List[]]]]"
+    );
+  }
+
+  #[test]
+  fn a_numeric_list_followed_by_an_operator_still_groups() {
+    assert_eq!(
+      interpret("Hold[{{{1, 2}}[[1]], {1, 2} x, {1, 2} . {3, 4}, f[{1} + 1]}] // FullForm // ToString")
+        .unwrap(),
+      "Hold[List[Part[List[List[1, 2]], 1], Times[List[1, 2], x], \
+       Dot[List[1, 2], List[3, 4]], f[Plus[List[1], 1]]]]"
+    );
+  }
+}
+
+mod prefix_not_precedence {
+  use super::*;
+
+  #[test]
+  fn not_reaches_over_tighter_operators_anywhere_in_a_chain() {
+    assert_eq!(
+      interpret(
+        "ToString[FullForm[Hold[{!a==0&&!b==0, a&&!b==0, !a+b==c||d, a == !b, !a b == c, x = !a == b}]]]"
+      )
+      .unwrap(),
+      "Hold[List[And[Not[Equal[a, 0]], Not[Equal[b, 0]]], And[a, Not[Equal[b, 0]]], \
+       Or[Not[Equal[Plus[a, b], c]], d], Equal[a, Not[b]], Not[Equal[Times[a, b], c]], \
+       Set[x, Not[Equal[a, b]]]]]"
+    );
+  }
+}

@@ -4768,6 +4768,17 @@ mod plot3d {
       assert_eq!(result, "201");
     }
 
+    /// A `ColorFunction` returning a bare `{r, g, b}` list colours the facets
+    /// with that RGB value (a sampled texture) instead of being ignored.
+    #[test]
+    fn parametric_plot3d_surface_color_function_rgb_list() {
+      let svg = interpret(
+        "ExportString[ParametricPlot3D[{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}, {u, 0, 2 Pi}, {v, 0, Pi}, Mesh -> None, ColorFunction -> ({1, 0, 0} &)], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains(",0,0)\""));
+    }
+
     /// Regression: `ColorFunction` on a `ParametricPlot3D` curve was dropped,
     /// so the curve was always drawn in one flat color instead of being
     /// colored along its length.
@@ -6048,6 +6059,34 @@ mod plot3d {
       );
     }
 
+    /// An explicit `PlotRange` frames the picture by itself: a primitive
+    /// reaching far beyond it (a long axis cylinder) is cut off rather than
+    /// shrinking the rest of the scene to a speck.
+    #[test]
+    fn plot_range_framing_ignores_content_beyond_the_box() {
+      let svg = export_svg(
+        "Graphics3D[{Cylinder[{{0, -100, 0}, {0, 100, 0}}, 0.03], \
+         Sphere[{0, 0, 0}, 2]}, PlotRange -> {{-4, 4}, {-4, 4}, {-4, 4}}, \
+         Boxed -> False, Axes -> None]",
+      );
+      let xs: Vec<f64> = svg
+        .split("points=\"")
+        .skip(1)
+        .flat_map(|chunk| {
+          chunk
+            .split('"')
+            .next()
+            .unwrap_or("")
+            .split_whitespace()
+            .filter_map(|pt| pt.split(',').next()?.parse::<f64>().ok())
+            .collect::<Vec<_>>()
+        })
+        .collect();
+      let width = xs.iter().copied().fold(f64::MIN, f64::max)
+        - xs.iter().copied().fold(f64::MAX, f64::min);
+      assert!(width > 150.0, "scene collapsed to {width}px wide");
+    }
+
     /// `Sphere[{p1, p2, …}, r]` is a set of spheres of that radius, one per
     /// centre — how a scene marks several points at once. The list of
     /// centres used to fail to parse as a point, leaving a single stray
@@ -6071,6 +6110,31 @@ mod plot3d {
       assert_eq!(
         export_svg("Graphics3D[{Sphere[]}, PlotRange -> 3]"),
         export_svg("Graphics3D[{Sphere[{0, 0, 0}, 1]}, PlotRange -> 3]")
+      );
+    }
+
+    /// `Sphere[c, Scaled[r]]` takes its radius as the fraction `r` of the
+    /// plot range. `Scaled[r]` used to fail to parse as a number and fall
+    /// back to radius 1, swamping the picture.
+    #[test]
+    fn sphere_radius_can_be_a_fraction_of_the_plot_range() {
+      // With `PlotRange -> 3` (width 6), `Scaled[0.05]` is a radius of 0.3.
+      assert_eq!(
+        export_svg(
+          "Graphics3D[{Sphere[{0, 0, 0}, Scaled[0.05]]}, PlotRange -> 3]"
+        ),
+        export_svg("Graphics3D[{Sphere[{0, 0, 0}, 0.3]}, PlotRange -> 3]")
+      );
+      // Without an explicit range, the fraction applies to the extent of
+      // the rest of the scene.
+      assert_eq!(
+        export_svg(
+          "Graphics3D[{Sphere[{0, 0, 0}, Scaled[0.1]], \
+           Line[{{-5, 0, 0}, {5, 0, 0}}]}]"
+        ),
+        export_svg(
+          "Graphics3D[{Sphere[{0, 0, 0}, 1], Line[{{-5, 0, 0}, {5, 0, 0}}]}]"
+        )
       );
     }
 
@@ -16555,6 +16619,35 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "StreamPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}, PlotLabel -> \"flow\"]",
       );
       assert!(svg.contains(">flow<"), "{svg}");
+    }
+
+    #[test]
+    fn stream_density_plot_scalar_form_shades_by_the_scalar() {
+      // `{{vx, vy}, s}` used to draw an empty frame because the pair was
+      // read as one two-component vector field.
+      let by_scalar = export_svg(
+        "StreamDensityPlot[{{-y, x}, x^2 - y^2}, {x, -2, 2}, {y, -2, 2}]",
+      );
+      assert!(by_scalar.contains("<image"), "{by_scalar}");
+      assert!(by_scalar.contains("<path") || by_scalar.contains("<polyline"));
+      assert_ne!(
+        by_scalar,
+        export_svg("StreamDensityPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}]")
+      );
+    }
+
+    #[test]
+    fn stream_density_plot_draws_prolog_and_epilog() {
+      let svg = export_svg(
+        "StreamDensityPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}, \
+           Prolog -> {Orange, Disk[{0, 0}, 1]}, \
+           Epilog -> {Blue, Disk[{1, 1}, 0.5]}]",
+      );
+      let disks: Vec<_> = svg.match_indices("<ellipse").collect();
+      assert_eq!(disks.len(), 2, "{svg}");
+      let image = svg.find("<image").expect(&svg);
+      assert!(disks[0].0 < image, "prolog must sit under the density");
+      assert!(disks[1].0 > image, "epilog must sit over the density");
     }
 
     // Regression: `Prolog` (and `Epilog` on StreamPlot) was silently dropped
@@ -31324,7 +31417,7 @@ mod manipulate {
         // dodecahedron, the stella octangula, the golden rhombohedra,
         // rhombic icosahedron, the cuboctahedron, and the gyroelongated
         // square dipyramid and the truncated cube.
-        assert_eq!(values.len(), 31, "every known solid");
+        assert!(values.len() > 100, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }
@@ -35908,6 +36001,54 @@ mod graphics3d_painters_algorithm_face_subdivision {
 mod revolution_plot3d_part_extraction {
   use super::*;
 
+  /// `RevolutionAxis -> {1, 0, 0}` sweeps the profile about the x axis, so
+  /// the abscissa keeps its range and the radius shows up in y and z.
+  #[test]
+  fn revolution_plot3d_revolution_axis_x() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "pts = First[RevolutionPlot3D[2, {t, 1, 3}, \
+         RevolutionAxis -> {1, 0, 0}]][[1]]; \
+         {Round[Min[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 1]]], 0.01], \
+         Round[Max[pts[[All, 2]]], 0.01], Round[Max[pts[[All, 3]]], 0.01]}"
+      )
+      .unwrap(),
+      "{1., 3., 2., 2.}"
+    );
+  }
+
+  /// A scalar body that does not mention the θ iterator is still the
+  /// profile `z = f(t)`, so an explicit θ range changes only the sweep.
+  #[test]
+  fn revolution_plot3d_scalar_profile_with_theta_iterator() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "pts = First[RevolutionPlot3D[2, {t, 1, 3}, {th, 0, 2 Pi}, \
+         RevolutionAxis -> {1, 0, 0}]][[1]]; \
+         {Round[Min[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 1]]], 0.01], \
+         Round[Max[pts[[All, 2]]], 0.01]}"
+      )
+      .unwrap(),
+      "{1., 3., 2.}"
+    );
+  }
+
+  /// Naming the z axis explicitly is the same as the default sweep.
+  #[test]
+  fn revolution_plot3d_revolution_axis_z_is_default() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "First[RevolutionPlot3D[t, {t, 1, 3}, RevolutionAxis -> {0, 0, 1}]] \
+         === First[RevolutionPlot3D[t, {t, 1, 3}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   /// A list of profile curves revolves each curve into its own surface
   /// instead of failing with "function produced no finite values".
   #[test]
@@ -40149,6 +40290,167 @@ mod plots_with_nothing_to_draw {
       )
       .unwrap(),
       "{Graphics3D, Graphics3D, Graphics}"
+    );
+  }
+
+  // ReliefPlot shades a matrix of heights: it is a framed raster, the first
+  // row sits at the top unless DataReversed is set, and the lighting
+  // changes the pixels but not the layout.
+  #[test]
+  fn relief_plot() {
+    let plot = "ReliefPlot[{{1, 2, 3}, {2, 5, 2}, {3, 2, 1}}";
+    let lit = export_svg(&format!("{plot}]"));
+    assert!(lit.contains("<image"), "{lit}");
+    assert_eq!(interpret(&format!("Head[{plot}]]")).unwrap(), "Graphics");
+    let flat = export_svg(&format!("{plot}, LightingAngle -> None]"));
+    assert_ne!(lit, flat);
+    let reversed = export_svg(&format!("{plot}, DataReversed -> True]"));
+    assert_ne!(lit, reversed);
+    let ranged =
+      export_svg(&format!("{plot}, DataRange -> {{{{-1, 1}}, {{-1, 1}}}}]"));
+    assert!(ranged.contains("-1"), "{ranged}");
+  }
+
+  /// `"Thermometer"` is the short spelling of `"ThermometerColors"` in a
+  /// `ColorFunction` option, for every plot kind that shades by gradient.
+  #[test]
+  fn thermometer_color_function_alias() {
+    clear_state();
+    for plot in [
+      "ListDensityPlot[Table[i + j, {i, 5}, {j, 5}], ColorFunction -> \"#\"]",
+      "ListContourPlot[Table[i + j, {i, 5}, {j, 5}], ColorFunction -> \"#\"]",
+      "ListLinePlot[{1, 3, 2, 5}, ColorFunction -> \"#\"]",
+      "ListPlot3D[Table[i + j, {i, 5}, {j, 5}], ColorFunction -> \"#\"]",
+    ] {
+      let short = plot.replace('#', "Thermometer");
+      let long = plot.replace('#', "ThermometerColors");
+      assert_eq!(
+        interpret(&format!("ExportString[{short}, \"SVG\"]")).unwrap(),
+        interpret(&format!("ExportString[{long}, \"SVG\"]")).unwrap(),
+        "{short}"
+      );
+    }
+    // The gradient is applied, not silently dropped to grayscale.
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[ListLinePlot[{1, 3, 2, 5}, \
+         ColorFunction -> \"Thermometer\"], \"SVG\"], \"#6C90F0\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod array_plot_argument_errors {
+  use super::*;
+
+  #[test]
+  fn not_a_list_of_lists_reports_mat_and_stays_unevaluated() {
+    let r = interpret_with_stdout("ArrayPlot[{1, 2}]").unwrap();
+    assert_eq!(r.result, "ArrayPlot[{1, 2}]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "ArrayPlot::mat: Argument {1, 2} at position 1 is not a list of lists."
+      ]
+    );
+    assert_eq!(interpret("ArrayPlot[a]").unwrap(), "ArrayPlot[a]");
+  }
+
+  #[test]
+  fn ragged_rows_and_sparse_arrays_still_plot() {
+    assert_eq!(
+      interpret("Head[ArrayPlot[{{1, 2}, {3}}]]").unwrap(),
+      "Graphics"
+    );
+    assert_eq!(
+      interpret("Head[ArrayPlot[SparseArray[{{1, 1} -> 1}, {3, 3}]]]").unwrap(),
+      "Graphics"
+    );
+  }
+}
+
+mod manipulate_synchronous_initialization {
+  use super::*;
+
+  #[test]
+  fn code_in_synchronous_initialization_runs() {
+    assert_eq!(
+      interpret(
+        "Manipulate[x + q, {x, 0, 1}, SynchronousInitialization :> {q = 5}]; q"
+      )
+      .unwrap(),
+      "5"
+    );
+    // The Boolean switch is no code.
+    assert_eq!(
+      interpret(
+        "Manipulate[x, {x, 0, 1}, SynchronousInitialization -> False]; 1"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+}
+
+mod polyhedron_data_generated_solids {
+  use super::*;
+
+  #[test]
+  fn johnson_archimedean_and_named_solids() {
+    assert_eq!(
+      interpret("Length[PolyhedronData[\"Johnson\"]]").unwrap(),
+      "92"
+    );
+    assert_eq!(
+      interpret("Length[PolyhedronData[\"Archimedean\"]]").unwrap(),
+      "13"
+    );
+    assert_eq!(
+      interpret(
+        "{PolyhedronData[\"Bilunabirotunda\", \"VertexCount\"], \
+         PolyhedronData[\"SnubCube\", \"FaceCount\"], \
+         PolyhedronData[\"SquarePyramid\", \"VertexCount\"], \
+         PolyhedronData[{\"Johnson\", 12}, \"VertexCount\"], \
+         PolyhedronData[\"Gyrobifastigium\", \"EdgeCount\"]}"
+      )
+      .unwrap(),
+      "{14, 38, 5, 5, 14}"
+    );
+  }
+
+  #[test]
+  fn generated_coordinates_close_up() {
+    // Every face index refers to a vertex, and the vertices are numeric.
+    assert_eq!(
+      interpret(
+        "And @@ Table[With[{v = N[PolyhedronData[n, \"VertexCoordinates\"]], \
+         f = PolyhedronData[n, \"FaceIndices\"]}, MatrixQ[v, NumberQ] && \
+         Max[Flatten[f]] == Length[v]], {n, PolyhedronData[\"Johnson\"]}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod gaussian_matrix_vector_form {
+  use super::*;
+
+  #[test]
+  fn double_braces_give_the_one_dimensional_kernel() {
+    assert_eq!(
+      interpret(
+        "Chop[GaussianMatrix[{{2}}] - {0.05088223571170066, 0.21183832321622456, \
+         0.47455888214414965, 0.21183832321622456, 0.05088223571170066}, 10^-12]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("Length[GaussianMatrix[{{2}, 1.5}]]").unwrap(),
+      "5"
     );
   }
 }

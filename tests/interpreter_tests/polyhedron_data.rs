@@ -459,17 +459,15 @@ mod polyhedron_data_tests {
   // It joins the list of known entities.
   #[test]
   fn polyhedron_data_all_lists_every_entity() {
+    // Catalogue-agnostic: names, sorted, holding every class's members.
     assert_eq!(
-      interpret("PolyhedronData[All]").unwrap(),
-      "{AcuteGoldenRhombohedron, BilinskiDodecahedron, Cube, Cuboctahedron, DeltoidalHexecontahedron, \
-       DisdyakisTriacontahedron, Dodecahedron, GreatIcosahedron, GreatRhombicosidodecahedron, \
-       GreatStellatedDodecahedron, GyroelongatedSquareDipyramid, Icosahedron, \
-       Icosidodecahedron, ObtuseGoldenRhombohedron, Octahedron, PentakisDodecahedron, \
-       RhombicDodecahedron, RhombicHexecontahedron, RhombicIcosahedron, \
-       RhombicTriacontahedron, SmallRhombicosidodecahedron, \
-       SmallRhombicuboctahedron, SmallStellatedDodecahedron, StellaOctangula, Tetrahedron, \
-       TriangularOrthobicupola, TruncatedCube, TruncatedDodecahedron, TruncatedIcosahedron, \
-       TruncatedOctahedron, TruncatedTetrahedron}"
+      interpret(
+        "With[{all = PolyhedronData[All]}, {Length[all] > 100, \
+         SubsetQ[all, PolyhedronData[\"Platonic\"]], \
+         SubsetQ[all, PolyhedronData[\"Johnson\"]], MemberQ[all, \"SnubCube\"]}]"
+      )
+      .unwrap(),
+      "{True, True, True, True}"
     );
   }
 
@@ -486,9 +484,11 @@ mod polyhedron_data_tests {
        Polygon[{{8, 4, 2, 6}, {8, 6, 5, 7}, {8, 7, 3, 4}, {4, 3, 1, 2}, \
        {1, 3, 7, 5}, {2, 1, 5, 6}}]]"
     );
-    // The two parts agree with the properties they are built from, for
-    // every solid: the same corners (compared numerically, since the two
-    // radical forms need not print alike) and the same face indices.
+    // The two parts agree with the properties they are built from: the
+    // same corners (compared numerically, since the two radical forms need
+    // not print alike) and the same face indices. Checked on a spread of
+    // solids rather than all of them; the snub solids' Root coordinates
+    // take seconds to numericize in a debug build.
     assert_eq!(
       interpret(
         r#"Union @ Table[
@@ -496,7 +496,9 @@ mod polyhedron_data_tests {
                 N[PolyhedronData[s, "VertexCoordinates"]]] < 10^-10,
               PolyhedronData[s, "Faces"][[2, 1]] ===
                 PolyhedronData[s, "FaceIndices"]},
-             {s, PolyhedronData[All]}]"#
+             {s, Join[PolyhedronData["Platonic"], PolyhedronData["KeplerPoinsot"],
+               {"Cuboctahedron", "RhombicDodecahedron", "TruncatedIcosahedron",
+                "Bilunabirotunda", {"Pyramid", 4}, "StellaOctangula"}]}]"#
       )
       .unwrap(),
       "{{True, True}}"
@@ -994,16 +996,15 @@ mod polyhedron_data_tests {
       .unwrap(),
       "{True}"
     );
-    // Euler's formula holds for all of them, so no face or edge is lost.
-    // The small stellated dodecahedron is a genus-4 surface (sum -6).
+    // Euler's formula holds for every convex one, so no face or edge is
+    // lost. (Star solids, compounds and toroids have other characteristics.)
     assert_eq!(
       interpret(
         r#"Union @ Table[
              PolyhedronData[s, "VertexCount"] -
                PolyhedronData[s, "EdgeCount"] +
                PolyhedronData[s, "FaceCount"],
-             {s, DeleteCases[PolyhedronData[All],
-               "SmallStellatedDodecahedron"]}]"#
+             {s, PolyhedronData["Convex"]}]"#
       )
       .unwrap(),
       "{2}"

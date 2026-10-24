@@ -825,6 +825,15 @@ pub fn dispatch_calculus_functions(
         }
       }
 
+      // A symbol defined by one rule `f[x_] := body` inverts as the pure
+      // function `body` of `#`.
+      if let Expr::Identifier(func_name) = &args[0]
+        && let Some(body) = single_argument_definition(func_name)
+        && let Some(inverted) = invert_pure_function(&body)
+      {
+        return Some(Ok(inverted));
+      }
+
       if let Expr::Identifier(func_name) = &args[0] {
         let inverse = match func_name.as_str() {
           // Trig -> ArcTrig
@@ -6733,4 +6742,33 @@ fn parametric_ndsolve(name: &str, args: &[Expr]) -> Option<Expr> {
     })
     .collect();
   Some(Expr::List(rules.into()))
+}
+
+/// The body of `name`'s definition, in terms of `#`, when it has exactly
+/// one: `f[x_] := 3/8 - x/2` gives `3/8 - #/2`.
+fn single_argument_definition(name: &str) -> Option<Expr> {
+  let has_values = crate::MEMO_VALUES
+    .with(|m| m.borrow().get(name).is_some_and(|v| !v.is_empty()));
+  if has_values {
+    return None;
+  }
+  let defs = crate::FUNC_DEFS.with(|m| m.borrow().get(name).cloned())?;
+  let [(params, conditions, defaults, heads, blank_types, body)] =
+    defs.as_slice()
+  else {
+    return None;
+  };
+  if params.len() != 1
+    || conditions.iter().any(Option::is_some)
+    || defaults.iter().any(Option::is_some)
+    || heads.iter().any(Option::is_some)
+    || blank_types.first() != Some(&1)
+  {
+    return None;
+  }
+  Some(crate::syntax::substitute_variable(
+    body,
+    &params[0],
+    &Expr::Slot(1),
+  ))
 }

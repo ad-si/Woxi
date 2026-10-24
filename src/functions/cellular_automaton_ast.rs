@@ -301,13 +301,32 @@ fn function_rule_automaton(
     return keep();
   };
   // `{cells, bg}` — the cells sit on an infinite background that evolves
-  // too (every background cell sees an all-background neighborhood).
+  // too (every background cell sees an all-background neighborhood). The
+  // background may be written as the one-cell block it repeats: `{0}` in
+  // 1D, `{{0}}` in 2D.
+  let is_matrix = |e: &Expr| {
+    matches!(e, Expr::List(rows) if !rows.is_empty()
+      && rows.iter().all(|r| matches!(r, Expr::List(_))))
+  };
+  let single_cell = |bg: &Expr| -> Option<Expr> {
+    match bg {
+      Expr::List(block) if block.len() == 1 => match &block[0] {
+        Expr::List(row) if nbhd.two_d && row.len() == 1 => Some(row[0].clone()),
+        Expr::List(_) => None,
+        cell if !nbhd.two_d => Some(cell.clone()),
+        _ => None,
+      },
+      Expr::List(_) => None,
+      cell => Some(cell.clone()),
+    }
+  };
   let (cells_in, background): (&[Expr], Option<Expr>) = match rows_in.as_ref() {
-    [cells @ Expr::List(_), bg] if !matches!(bg, Expr::List(_)) => {
-      let Expr::List(cells) = cells else {
-        unreachable!()
-      };
-      (cells.as_ref(), Some(bg.clone()))
+    [cells @ Expr::List(inner), bg]
+      if (nbhd.two_d == is_matrix(cells))
+        && (!matches!(bg, Expr::List(_)) || !nbhd.two_d || is_matrix(bg))
+        && let Some(bg) = single_cell(bg) =>
+    {
+      (inner.as_ref(), Some(bg))
     }
     _ => (rows_in.as_ref(), None),
   };
@@ -1001,6 +1020,9 @@ fn parse_cell_spec(expr: &Expr) -> Option<Window> {
   };
   match expr {
     Expr::Identifier(s) if s == "All" => Some(Window::All),
+    // `Automatic` is the window left unnamed: the cells that ever differ
+    // from the background.
+    Expr::Identifier(s) if s == "Automatic" => Some(Window::Auto),
     // A bare `n` runs from the origin out to offset n (either direction).
     Expr::Integer(_) => {
       let n = as_int(expr)?;

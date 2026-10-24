@@ -272,7 +272,7 @@ Position,Finds all positions of a pattern in a list,✅,pure,1.0,218
 Union,Returns sorted union of lists or a key-merge of associations,✅,pure,1.0,219
 While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,220
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
-FindRoot,Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honours MaxIterations and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored); a {var; x0; xmin; xmax} spec confines the search to the given bounds,✅,pure,1.0,222
+FindRoot,Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honours MaxIterations and StepMonitor (fired after each accepted step) and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored); a {var; x0; xmin; xmax} spec confines the search to the given bounds,✅,pure,1.0,222
 Image,Constructs an image from pixel data,✅,pure,7.0,223
 ColorData,Named color data: every indexed scheme 0-119 from its Wolfram definition (ColorData[n] ColorData[n; k] and the ColorList/ColorFunction/Range properties); the HTML CSS colours; the WebSafe hex codes (ColorData["WebSafe"]["#99CC00"]) and the pre-v6 Legacy palette; the VisibleSpectrum wavelength scheme and the BlackBodySpectrum temperature scheme (approximations); named gradients as a ColorDataFunction (optionally over a custom range or reversed) sampled via ColorData[name; t] with ColorFunction/Range/Image properties,✅,pure,6.0,224
 Binomial,Returns the binomial coefficient,✅,pure,1.0,225
@@ -551,7 +551,7 @@ Remove,Removes a symbol entirely so its context no longer has it,✅,effectful,1
 LegendreP,Legendre polynomial of the first kind,✅,pure,1.0,515
 MakeBoxes,Construct box form of an expression,✅,pure,3.0,516
 TableHeadings,Option specifying headings for table rows and columns,✅,none,2.0,517
-RevolutionPlot3D,creates a surface of revolution by rotating a curve around the z-axis,✅,pure,6.0,518
+RevolutionPlot3D,creates a surface of revolution by rotating a curve around the z-axis or a given RevolutionAxis,✅,pure,6.0,518
 ResourceFunction,Accesses a function from the Wolfram Function Repository,✅,pure,12.0,519
 Fibonacci,Returns the nth Fibonacci number or Fibonacci polynomial,✅,pure,3.0,520
 Tally,Counts occurrences of each distinct element (on an association tallies the values),✅,pure,6.0,521
@@ -974,7 +974,7 @@ NotebookRead,Requires external services or GUI infrastructure,🚫,io,3.0,948
 Level,Extracts subexpressions at a level specification where a negative level names parts of that depth,✅,pure,1.0,950
 StringDrop,Removes a substring from a string; only span specifications are accepted,✅,pure,2.0,950
 MeshCoordinates,Coordinates of a mesh region,✅,pure,10.0,951
-MousePosition,Requires external services or GUI infrastructure,🚫,io,6.0,952
+MousePosition,Pointer position over a graphic (None in a notebook without a pointer; notavail without a front end),✅,io,6.0,952
 Expectation,Compute expected value of a function of a random variable,✅,pure,8.0,954
 TrigReduce,Reduce products and powers of trig functions to sums,✅,pure,3.0,954
 PreIncrement,Increments a variable by 1 and returns the new value,✅,stateful,1.0,955
@@ -1190,7 +1190,7 @@ IgnoreCase,,🚫,,2.0,1172
 GaussianFilter,Gaussian filter for images and arrays,✅,pure,7.0,1173
 FixedPointList,Returns the list of results from applying a function repeatedly until fixed point,✅,pure,2.0,1174
 EdgeShapeFunction,Option giving the function that draws each edge of a graph plot,✅,none,8.0,1175
-BSplineFunction,Evaluate B-spline curves and surfaces from control points using de Boor algorithm,✅,pure,7.0,1176
+BSplineFunction,Evaluate B-spline curves and surfaces from control points (points or bare numbers) using de Boor algorithm; SplineDegree and SplineClosed options and an explicit parameter-dimension argument,✅,pure,7.0,1176
 VertexShapeFunction,Option naming the shape each vertex of a graph is drawn as,✅,none,8.0,1177
 CosIntegral,Cosine integral Ci(z),✅,pure,2.0,1178
 VertexRenderingFunction,Option giving the function that draws each vertex of a graph plot,✅,none,6.0,1179
@@ -1301,7 +1301,7 @@ ImageTake,Takes a rectangular region from an image,✅,pure,7.0,1285
 CanonicalName,,🚫,,10.0,1286
 VertexDegree,Returns the degree of vertices in a graph,✅,1,8.0,1287
 OverTilde,Displays expression with tilde above,✅,1,6.0,1288
-ReliefPlot,,🚫,,6.0,1289
+ReliefPlot,Shaded relief plot of a matrix of heights,✅,pure,6.0,1289
 TableSpacing,,🚫,,2.0,1290
 FindDivisions,Finds nice numbers dividing an interval into about n equal parts,✅,pure,7.0,1291
 FileExistsQ,Tests whether a file or directory exists,✅,2,7.0,1293
@@ -1834,7 +1834,7 @@ WatershedComponents,Watershed components,,unevaluated,8.0,1836
 ViewCenter,Option specifying the point of the displayed box a 3D camera looks at,✅,pure,2.0,1838
 FileType,Returns the type of a file (File Directory or None),✅,filesystem,2.0,1842
 FourierSinSeries,Fourier sine series,,unevaluated,7.0,1842
-MathieuCharacteristicA,Mathieu characteristic A,,unevaluated,3.0,1842
+MathieuCharacteristicA,"Characteristic value a_r(q) of the Mathieu equation for integer r (machine-precision q)",✅,pure,3.0,1842
 QuantilePlot,Plots dataset quantiles against standard normal quantiles (or against a second dataset) with a reference line,✅,pure,8.0,1842
 ResourceObject,Resource object,,unevaluated,11.0,1844
 StieltjesGamma,Stieltjes constants (gamma_0 is EulerGamma; generalized order-0 is -PolyGamma; N gives machine values up to order 10),✅,pure,3.0,1844
@@ -1844,7 +1844,7 @@ BeckmannDistribution,Beckmann distribution,,unevaluated,8.0,1849
 CoordinateTransformData,,🚫,,9.0,1849
 FirstCase,First element matching a pattern,✅,pure,10.0,1849
 EndOfFile,Symbol returned by Read at end of file,✅,pure,1.0,1852
-MathieuC,Even Mathieu function (Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1852
+MathieuC,Even Mathieu function (also for imaginary z; Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1852
 WeierstrassSigma,Weierstrass sigma function,,unevaluated,3.0,1852
 StringReplacePart,Replace a span of a string — a bare index means the span from the start and an unavailable span reports ::repart,✅,pure,3.0,1853
 KeyMap,Maps a function over the keys of an association; supports the operator form KeyMap[f][assoc],✅,pure,10.0,1855
@@ -1956,7 +1956,7 @@ MultinomialDistribution,Multivariate discrete distribution for modeling outcomes
 NonConstants,Option for Simplify specifying which symbols are not constants,✅,pure,1.0,1954
 BooleanFunction,Integer-indexed Boolean function; BooleanFunction[k n] is the opaque BooleanFunction["BDD" -> ...] object and BooleanFunction[k n vars] writes it out in those variables,✅,pure,7.0,1956
 ViewVector,3D graphics option for specifying the view direction,🚫,,6.0,1956
-MathieuS,Odd Mathieu function (Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1960
+MathieuS,Odd Mathieu function (also for imaginary z; Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1960
 NumberFormat,Option for NumberForm specifying how mantissa/base/exponent are assembled,🚫,,2.0,1960
 OneIdentity,Attribute indicating f[x] is identical to x for matching,✅,pure,1.0,1960
 Subfactorial,Returns the subfactorial (number of derangements),✅,pure,6.0,1960
@@ -2121,7 +2121,7 @@ GroupOrder,Order of a group,✅,pure,8.0,2129
 QueueingProcess,Queueing theory process,🚫,,9.0,2129
 RegionProduct,Cartesian product of regions — named as a box cylinder prism or parallelotope where one exists,✅,pure,10.0,2129
 TrackingFunction,Tracking callback option,✅,none,10.0,2129
-MathieuCharacteristicB,Mathieu characteristic value,🚫,,3.0,2131
+MathieuCharacteristicB,"Characteristic value b_r(q) of the Mathieu equation for integer r (machine-precision q)",✅,pure,3.0,2131
 PowerRange,List of values from xmin by successive multiplication while their magnitude stays within xmax,✅,pure,10.0,2131
 ParentDirectory,Parent directory path,✅,none,2.0,2132
 MatrixFunction,Apply a scalar function to a square matrix via its eigenvalues,✅,pure,9.0,2134
@@ -2264,7 +2264,7 @@ LimitsPositioning,Typesetting option,🚫,None,3.0,2276
 PrimeNu,Count distinct prime factors of an integer (Listable),✅,pure,7.0,2276
 SyntaxForm,Typesetting,🚫,None,3.0,2276
 ProbabilityScalePlot,Statistical visualization,🚫,None,8.0,2278
-VectorDensityPlot,Visualization,🚫,None,7.0,2278
+VectorDensityPlot,Creates a density plot of a vector field's magnitude with its arrows,✅,pure,7.0,2278
 GeoProjectionData,,🚫,,7.0,2282
 KeyExistsQ,Checks if a key exists in an association,✅,pure,10.0,2282
 ReadString,Read a file or stream as a string up to an optional terminator,✅,effectful,10.0,2282
@@ -4035,7 +4035,7 @@ FractionBoxOptions,,🚫,,4.0,4138
 FrontEndEventActions,,🚫,,6.0,4138
 HannPoissonWindow,,,,9.0,4138
 JordanModelDecomposition,,,,8.0,4138
-KendallTauTest,,,,9.0,4138
+KendallTauTest,"Two-sided p-value of Kendall's tau for two paired samples (normal approximation with tie correction)",✅,pure,9.0,4138
 KeypointStrength,,,,10.0,4138
 NetPairEmbeddingOperator,,🚫,,11.1,4138
 ParametricFunction,Represents a function of numeric parameters returned by ParametricNDSolve (inert until all parameters are numeric),✅,none,9.0,4138
@@ -6360,6 +6360,7 @@ GraphUtilities`HamiltonianCycles,Hamiltonian cycle of a graph given as a list of
 MultivariateStatistics`EllipsoidQuantile,Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean; c Covariance],✅,pure,8.0,
 Combinatorica`FromUnorderedPairs,Builds a Combinatorica graph with one edge per distinct vertex pair on a circular embedding,✅,pure,6.0,
 Combinatorica`StableMarriage,Man-optimal stable matching from men's and women's preference lists (Gale-Shapley),✅,pure,6.0,
+Combinatorica`Josephus,Round in which each of n people in a circle is eliminated when every m-th one goes,✅,pure,6.0,
 Combinatorica`SymmetricGroup,All permutations of Range[n] as the elements of the symmetric group,✅,pure,6.0,
 Combinatorica`AlternatingGroup,The even permutations of Range[n] as the elements of the alternating group,✅,pure,6.0,
 Combinatorica`CyclicGroup,The n rotations of Range[n] as the elements of the cyclic group,✅,pure,6.0,

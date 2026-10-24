@@ -4983,3 +4983,37 @@ mod quiet_named_messages_are_not_printed {
     assert!(!shown.contains("Infinity::indet"), "{shown}");
   }
 }
+
+mod nested_scope_renaming {
+  use super::*;
+
+  #[test]
+  fn inner_scopes_that_mention_a_local_rename_their_variables() {
+    assert_eq!(
+      interpret("ToString[Module[{a}, Hold[f[t_] = D[a[t], t]]] /. a_Symbol /; StringStartsQ[SymbolName[a], \"a$\"] -> A]")
+        .unwrap(),
+      "Hold[f[t$_] = D[A[t$], t$]]"
+    );
+    assert_eq!(
+      interpret("Module[{a}, Hold[f[t_] = D[t^2, t]]]").unwrap(),
+      "Hold[f[t_] = D[t^2, t]]"
+    );
+    assert_eq!(
+      interpret("With[{a = 1}, Hold[f[t_] := t + a]]").unwrap(),
+      "Hold[f[t$_] := t$ + 1]"
+    );
+    assert_eq!(
+      interpret("With[{a = 1}, Hold[Function[x, a x]]]").unwrap(),
+      "Hold[Function[x$, 1*x$]]"
+    );
+  }
+
+  #[test]
+  fn an_outer_block_value_does_not_leak_in() {
+    assert_eq!(
+      interpret("Block[{t = 4.}, Module[{a = 2}, f[t_] = D[a t^2, t]; f[3]]]")
+        .unwrap(),
+      "12"
+    );
+  }
+}

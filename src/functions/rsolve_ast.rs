@@ -1745,7 +1745,16 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ]
       })
       .flatten()
-      .max_by_key(|(_, off, _, side)| (*off, std::cmp::Reverse(*side)));
+      .max_by_key(|(_, off, _, side)| (*off, std::cmp::Reverse(*side)))
+      .or_else(|| {
+        // Neither side is the bare term (`2 y[n + 1] == y[n - 1] + y[n]`):
+        // solve the equation for its furthest-forward term, which it has to
+        // be linear in.
+        func_names.iter().find_map(|name| {
+          solve_for_leading_term(&lhs, &rhs, name, &var_name)
+            .map(|(off, expr)| (name.clone(), off, expr, 0u8))
+        })
+      });
     let Some((name, offset, expr, _)) = solved else {
       return Ok(unevaluated());
     };
@@ -1804,6 +1813,82 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Extract the offset from an expression like a[n+k] or a[n] or a[n-1]
 /// Returns Some(k) if the expression is func_name[var_name + k]
+/// `lhs == rhs` solved for `name[var + k]` with the largest `k` that
+/// occurs in it, as `(k, solution)`, when the equation is linear in that
+/// term.
+fn solve_for_leading_term(
+  lhs: &Expr,
+  rhs: &Expr,
+  name: &str,
+  var: &str,
+) -> Option<(i128, Expr)> {
+  fn offsets(e: &Expr, name: &str, var: &str, out: &mut Vec<i128>) {
+    if let Some(k) = extract_single_func_offset(e, name, var) {
+      out.push(k);
+    }
+    for child in crate::syntax::expr_children(e) {
+      offsets(child, name, var, out);
+    }
+  }
+  let mut found = Vec::new();
+  offsets(lhs, name, var, &mut found);
+  offsets(rhs, name, var, &mut found);
+  let k = *found.iter().max()?;
+  let shift = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![Expr::Identifier(var.to_string()), Expr::Integer(k)].into(),
+  };
+  let term = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: name.to_string(),
+    args: vec![shift].into(),
+  })
+  .ok()?;
+  let marker = Expr::Identifier("RecurrenceTable$lead".to_string());
+  let ev = |src: Expr| crate::evaluator::evaluate_expr_to_expr(&src).ok();
+  let call = |head: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: head.to_string(),
+    args: args.into(),
+  };
+  let difference = ev(call("Subtract", vec![lhs.clone(), rhs.clone()]))?;
+  let poly = ev(call(
+    "ReplaceAll",
+    vec![difference, call("Rule", vec![term, marker.clone()])],
+  ))?;
+  let poly = ev(call("Expand", vec![poly]))?;
+  if !matches!(
+    ev(call(
+      "Coefficient",
+      vec![poly.clone(), marker.clone(), Expr::Integer(2)]
+    ))?,
+    Expr::Integer(0)
+  ) {
+    return None;
+  }
+  let a = ev(call(
+    "Coefficient",
+    vec![poly.clone(), marker.clone(), Expr::Integer(1)],
+  ))?;
+  if matches!(a, Expr::Integer(0)) {
+    return None;
+  }
+  let b = ev(call(
+    "ReplaceAll",
+    vec![poly, call("Rule", vec![marker, Expr::Integer(0)])],
+  ))?;
+  let solution = ev(call(
+    "Together",
+    vec![call(
+      "Times",
+      vec![
+        Expr::Integer(-1),
+        b,
+        call("Power", vec![a, Expr::Integer(-1)]),
+      ],
+    )],
+  ))?;
+  Some((k, solution))
+}
+
 fn extract_single_func_offset(
   expr: &Expr,
   func_name: &str,

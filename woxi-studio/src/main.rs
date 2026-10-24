@@ -9670,6 +9670,27 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   /// by many single-parameter Wolfram Demonstrations Project notebooks
   /// (independently written, not copied from any specific one).
   #[test]
+  fn manipulate_initialization_sees_the_controls_initial_values() {
+    // A DynamicModule's variables hold their values before its
+    // Initialization runs (TexasHoldEmPossibleOutcomesAfterTheFlop builds
+    // its deck from a `ControlType -> None` list).
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Length[deckSI], \
+       {{suitsSI, {\"a\", \"b\"}}, ControlType -> None}, \
+       {{n, 1}, 1, 3, 1}, \
+       Initialization :> (deckSI = Table[suitsSI[[i]], {i, 2}])]",
+    )
+    .expect("Manipulate should parse and hold");
+    let _state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("should build a ManipulateState");
+    assert_eq!(
+      woxi::interpret("deckSI").unwrap(),
+      "{a, b}",
+      "Initialization read the control's initial value"
+    );
+  }
+
+  #[test]
   fn manipulate_multi_statement_body_with_initialization_builds_one_slider() {
     let expr = woxi::interpret_to_expr(
       "Manipulate[\

@@ -1758,6 +1758,13 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
   },
 ];
 
+include!("polyhedron_data_generated.rs");
+
+/// Every built-in solid: the hand-written table, then the generated one.
+fn all_polyhedra() -> impl Iterator<Item = &'static PolyhedronInfo> {
+  POLYHEDRA.iter().chain(GENERATED_POLYHEDRA.iter())
+}
+
 fn find_polyhedron(name: &str) -> Option<&'static PolyhedronInfo> {
   // "Hexahedron" is the standard alternative name for the cube.
   // "MathematicaSpikey" (the Mathematica/Wolfram|Alpha logo) is a rhombic
@@ -1770,7 +1777,27 @@ fn find_polyhedron(name: &str) -> Option<&'static PolyhedronInfo> {
     "MathematicaSpikey" | "Spikey" => "RhombicHexecontahedron",
     _ => name,
   };
-  POLYHEDRA.iter().find(|p| p.name == name)
+  all_polyhedra().find(|p| p.name == name).or_else(|| {
+    let (_, canonical) =
+      GENERATED_ALIASES.iter().find(|(alias, _)| *alias == name)?;
+    all_polyhedra().find(|p| p.name == *canonical)
+  })
+}
+
+/// An entity as Wolfram names it: a string, or the specification list a
+/// solid like `{"Pyramid", 4}` is stored under.
+fn entity_expr(name: &str) -> Expr {
+  if name.starts_with('{') {
+    eval_wl(name).unwrap_or_else(|_| str_expr(name))
+  } else {
+    str_expr(name)
+  }
+}
+
+/// Entity names in Wolfram's listing order: alphabetical, a specification
+/// sorting by its words (`{"Dipyramid", 3}` among the D's).
+fn sort_entity_names(names: &mut [&str]) {
+  names.sort_by_key(|n| n.replace(['{', '"'], ""));
 }
 
 /// The exact unit-edge volume of a Platonic solid, as WL source.
@@ -2232,7 +2259,7 @@ static PROPERTIES: &[&str] = &[
 /// Disjoint from `PROPERTIES`.
 fn classes() -> Result<Expr, InterpreterError> {
   let mut names: Vec<String> = Vec::new();
-  for info in POLYHEDRA {
+  for info in all_polyhedra() {
     let evaluated = eval_wl(info.classes_src)?;
     let Expr::List(items) = &evaluated else {
       continue;
@@ -2259,7 +2286,7 @@ fn classes() -> Result<Expr, InterpreterError> {
 /// solid is in that class.
 fn class_members(class: &str) -> Result<Option<Expr>, InterpreterError> {
   let mut names: Vec<&str> = Vec::new();
-  for info in POLYHEDRA {
+  for info in all_polyhedra() {
     if let Expr::List(items) = &eval_wl(info.classes_src)?
       && items
         .iter()
@@ -2271,7 +2298,7 @@ fn class_members(class: &str) -> Result<Option<Expr>, InterpreterError> {
   if names.is_empty() {
     return Ok(None);
   }
-  names.sort_unstable();
+  sort_entity_names(&mut names);
   // Wolfram lists the five Platonic solids by face count, every other class
   // alphabetically.
   if class == "Platonic" {
@@ -2306,7 +2333,7 @@ fn display_name(name: &str) -> String {
 
 /// Build a `List` of string entries.
 fn string_list(items: &[&str]) -> Expr {
-  Expr::List(items.iter().map(|s| str_expr(s)).collect())
+  Expr::List(items.iter().map(|s| entity_expr(s)).collect())
 }
 
 /// The right `n`-gonal prism with unit edges, `{"Prism", n}` for `n >= 3`:
@@ -2472,8 +2499,8 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && sym == "All"
     && args.len() == 1
   {
-    let mut names: Vec<&str> = POLYHEDRA.iter().map(|p| p.name).collect();
-    names.sort_unstable();
+    let mut names: Vec<&str> = all_polyhedra().map(|p| p.name).collect();
+    sort_entity_names(&mut names);
     return Ok(string_list(&names));
   }
 
@@ -2509,6 +2536,12 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if kind == "Dipyramid" && (3..=5).contains(n) =>
       {
         Some(cone_info(true, *n))
+      }
+      [Expr::String(kind), Expr::Integer(n)] if kind == "Johnson" => {
+        find_polyhedron(&format!("J{n}"))
+      }
+      [Expr::String(kind), Expr::Integer(n)] => {
+        find_polyhedron(&format!("{{\"{kind}\", {n}}}"))
       }
       _ => return unevaluated(),
     },
