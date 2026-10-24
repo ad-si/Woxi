@@ -6814,6 +6814,36 @@ mod find_minimum {
   }
 
   #[test]
+  fn find_root_fires_step_monitor_per_iteration() {
+    // One firing per Newton step; the last step is the reported root.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "r = Reap[FindRoot[Cos[x] - x, {x, 1}, StepMonitor :> Sow[x]]]; \
+         {Length[r[[2, 1]]] > 1, Last[r[[2, 1]]] == (x /. r[[1]])}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
+  fn multivariate_find_root_step_monitor_sees_variables_through_a_list() {
+    // The monitor reaches the variables via `vars`; each firing sees the
+    // iterate as a point, and the last one is the solution.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "vars = {x, y}; r = Reap[FindRoot[{Sin[x] == y, x^2 + y^2 == 1}, \
+         Transpose[{vars, {3.7, 5.7}}], StepMonitor :> Sow[vars]]]; \
+         {Length[r[[2, 1]]] > 1, Last[r[[2, 1]]] == (vars /. r[[1]])}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
   fn find_minimum_step_monitor_sees_variables_through_a_list() {
     // The monitor reaches the variables indirectly via `vars`; they must be
     // bound to the current point while it runs.
