@@ -11722,6 +11722,26 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
   let ch = font_size * MONO_ADVANCE;
 
   match expr {
+    // A string carrying inline `\!\(\*…\)` linear syntax (a note name
+    // inside `TraditionalForm[note == "…"]`, whose box is the quoted
+    // source) typesets as the boxes it spells, not as its escape source.
+    Expr::String(s)
+      if inline_box_string_to_box_expr(
+        s.strip_prefix('"')
+          .and_then(|t| t.strip_suffix('"'))
+          .unwrap_or(s),
+      )
+      .is_some() =>
+    {
+      let text = s
+        .strip_prefix('"')
+        .and_then(|t| t.strip_suffix('"'))
+        .unwrap_or(s);
+      layout_box(
+        &inline_box_string_to_box_expr(text).expect("checked by the guard"),
+        font_size,
+      )
+    }
     Expr::String(s) => BoxLayout::text(strip_precision_marker(s), font_size),
     Expr::Identifier(s) => {
       BoxLayout::text(strip_precision_marker(s), font_size)
@@ -15120,7 +15140,11 @@ pub fn box_string_to_svg(s: &str) -> String {
 /// typesets to (`RowBox[{"sweep", SubscriptBox[…], …}]`), for renderers that
 /// lay out boxes rather than SVG label runs. `None` for a plain string.
 pub fn inline_box_string_to_box_expr(s: &str) -> Option<Expr> {
-  if !s.contains(crate::functions::string_ast::BOX_START) {
+  // The box source is either the parser's private-use markers or, once a
+  // string has been round-tripped through box text, the literal escapes.
+  if !s.contains(crate::functions::string_ast::BOX_START)
+    && !s.contains("\\!\\(")
+  {
     return None;
   }
   let norm = normalize_box_markers(s);
@@ -17334,10 +17358,63 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
   gs
 }
 
+/// A `Text@Style[TraditionalForm[expr], size]` cell whose expression holds a
+/// string with inline `\!\(\*…\)` linear syntax (`note == "A\!\(\*…\)"`),
+/// typeset through the box layout at the style's size, so the typeset
+/// sub-expression is drawn instead of its escape source. `None` for any
+/// other cell.
+fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
+  let mut content = cell;
+  let mut size = 14.0;
+  loop {
+    match content {
+      Expr::FunctionCall { name, args }
+        if name == "Text" && args.len() == 1 =>
+      {
+        content = &args[0];
+      }
+      Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
+        let style = extract_cell_style(content);
+        size = style.font_size.unwrap_or(size);
+        content = style.content;
+      }
+      _ => break,
+    }
+  }
+  let Expr::FunctionCall { name, args } = content else {
+    return None;
+  };
+  if name != "TraditionalForm"
+    || args.len() != 1
+    || matches!(args[0], Expr::String(_))
+  {
+    return None;
+  }
+  let boxes =
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
+      &args[0],
+    );
+  let source = crate::syntax::expr_to_string(&boxes);
+  if !source.contains(crate::functions::string_ast::BOX_START)
+    && !source.contains("\\!\\(")
+  {
+    return None;
+  }
+  let boxes = crate::strip_number_precision_markers(&boxes);
+  let layout = layout_box(&boxes, size);
+  if layout.width <= 0.0 || layout.height <= 0.0 {
+    return None;
+  }
+  Some(layout_to_svg(&layout, theme().text_primary))
+}
+
 /// The rendered SVG of a grid cell that is a graphic, and its natural
 /// size. `Grid` lays such a cell out as a picture instead of printing the
 /// expression's text form.
 fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
+  if let Some(svg) = traditional_inline_box_cell_svg(cell) {
+    return parse_svg_dimensions(&svg).map(|d| (svg, d.nat_w, d.nat_h));
+  }
   let svg = match cell {
     // `"label" -> Graphics[…]` is the idiom Wolfram demonstrations use for
     // a caption row with an inline swatch (e.g. a color-preview disk next
