@@ -20208,6 +20208,22 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     }
   }
 
+  /// A Manipulate whose body plots a rotating particle: the helper in the
+  /// initialization code draws `ParametricPlot3D[{r}, …]`, a one-curve list
+  /// whose `r` is a rotation about an axis built from exact trig values.
+  #[test]
+  fn rotating_particle_manipulate_renders() {
+    let out = woxi::interpret_with_stdout(
+      "u = 1; v = 1; th = 1; t = 1;\n\
+       w = {Sin[u] Cos[v], Sin[u] Sin[v], Cos[u]};\n\
+       r = RotationMatrix[tx, w] . {Sin[th], 0, Cos[th]};\n\
+       p1 = ParametricPlot3D[{r}, {tx, 0, 2 Pi}, PlotRange -> 1.5, Axes -> False];\n\
+       Show[p1, Graphics3D[{Black, Sphere[r /. tx -> t, 0.1]}]]",
+    )
+    .expect("the rotating-particle scene must evaluate");
+    assert!(out.graphics.is_some(), "expected a 3D graphic");
+  }
+
   /// End-to-end regression for the "Chaos and Order in the Damped Forced
   /// Pendulum in a Plane" Demonstration: it integrates the damped driven
   /// pendulum `θ'' == -(g/l) Sin[θ] - γ θ' + a Cos[ω t]` from a grid of
