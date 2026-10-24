@@ -6061,6 +6061,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           }
           _ => None,
         });
+      // An automatically sized tree wider than the pane is squeezed to fit.
+      let wrapped =
+        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
+          ("Pane", Some(size)) => {
+            let w = pane_size_component(&size[0])?;
+            crate::functions::graphics::fit_tree_to_pane_width(
+              &args[0],
+              w,
+              &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
+            )
+          }
+          _ => None,
+        });
       let inner_svg = expr_to_svg(wrapped.as_ref().unwrap_or(&args[0]));
       match (name.as_str(), pane_size.as_ref()) {
         ("Pane", Some(size)) => {
