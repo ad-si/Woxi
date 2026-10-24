@@ -10506,6 +10506,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           {
             format!("({rhs_str})")
           }
+          // `&` binds looser than `:>`, so a pure function needs parens.
+          Expr::Function { .. } => format!("({rhs_str})"),
           _ => rhs_str,
         };
         return format!("{} :> {}", fmt(&args[0]), rhs_final);
@@ -13142,6 +13144,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         }
         r if assignment_rhs_needs_parens(r) => format!("({rhs_str})"),
         r if is_replace_operator(r) => format!("({rhs_str})"),
+        // `&` binds looser than `:>`.
+        Expr::Function { .. } => format!("({rhs_str})"),
         _ => rhs_str,
       };
       format!("{lhs} :> {rhs_final}")
