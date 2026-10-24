@@ -3173,8 +3173,23 @@ pub fn dispatch_list_operations(
         }
         return Some(Ok(tab_args[0].clone()));
       }
+      // Every series inside an expression becomes its polynomial:
+      // `E^SeriesData[…] * SeriesData[…]` (Stirling's series for Gamma).
+      if !matches!(&args[0], Expr::FunctionCall { name, .. } if name == "SeriesData")
+        && contains_series_data(&args[0])
+      {
+        fn normalize(e: &Expr) -> Expr {
+          if matches!(e, Expr::FunctionCall { name, args } if name == "SeriesData" && args.len() == 6)
+          {
+            return evaluate_expr_to_expr(&call1("Normal", e.clone()))
+              .unwrap_or_else(|_| e.clone());
+          }
+          crate::syntax::map_children(e, &normalize)
+        }
+        return Some(evaluate_expr_to_expr(&normalize(&args[0])));
+      }
       // Normal[SeriesData[x, x0, {c0, c1, ...}, nmin, nmax, den]]
-      // => sum(c_i * (x - x0)^(nmin + i), i=0..len-1) when den=1
+      // => sum(c_i * (x - x0)^((nmin + i)/den), i=0..len-1)
       if let Expr::FunctionCall {
         name,
         args: sd_args,
@@ -3232,13 +3247,24 @@ pub fn dispatch_list_operations(
           };
           let raw_power = nmin + i as i128;
           let power = if is_infinity { -raw_power } else { raw_power };
+          // Exponents are in units of 1/den: `{…}, 1, 5, 2` is a series in
+          // half powers.
+          let den = match &sd_args[5] {
+            Expr::Integer(d) if *d > 1 => *d,
+            _ => 1,
+          };
+          let exponent = if den == 1 {
+            Expr::Integer(power)
+          } else {
+            crate::functions::math_ast::make_rational(power, den)
+          };
           // base^power
           let base_pow = if power == 0 {
             None
-          } else if power == 1 {
+          } else if power == den {
             Some(base.clone())
           } else {
-            Some(pow2(base.clone(), Expr::Integer(power)))
+            Some(pow2(base.clone(), exponent))
           };
 
           // Build c * x^n in Mathematica's canonical form:
@@ -10259,4 +10285,11 @@ pub fn permutation_list_indices(
     return None;
   }
   Some(values.iter().map(|&value| (value - 1) as usize).collect())
+}
+
+fn contains_series_data(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. } if name == "SeriesData")
+    || crate::syntax::expr_children(e)
+      .into_iter()
+      .any(contains_series_data)
 }

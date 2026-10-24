@@ -194,8 +194,9 @@ mod tests {
     let cases = [
       // unclosed nested brackets
       format!("{}x", "f[".repeat(30)),
-      // balanced nesting around a token that is invalid everywhere
-      format!("{}\u{0}{}", "f[".repeat(30), "]".repeat(30)),
+      // balanced nesting around a token that is invalid everywhere (BEL;
+      // the other C0 controls read as letters, as in Wolfram)
+      format!("{}\u{7}{}", "f[".repeat(30), "]".repeat(30)),
     ];
     for input in &cases {
       let start = std::time::Instant::now();

@@ -8505,6 +8505,47 @@ mod ndsolve {
     );
   }
 
+  // Algebraic equations that leave one degree of freedom, closed by a
+  // unit-speed condition on the derivatives, trace an implicit curve; the
+  // stated slope at the start picks the orientation.
+  #[test]
+  fn implicit_curve_with_unit_speed() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x[u]^2 + y[u]^2 == 1, x'[u]^2 + y'[u]^2 == 1, \
+         x[0] == 1, y[0] == 0, x'[0] == 0, y'[0] == 1}, {x, y}, {u, -1, 2}]; \
+         Round[{x[1.], y[1.], x[-1.], y[2.]} /. First[s], 0.0001]"
+      )
+      .unwrap(),
+      "{0.5403, 0.8415, 0.5403, 0.9093}"
+    );
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x[u]^2 + y[u]^2 == 1, x'[u]^2 + y'[u]^2 == 1, \
+         x[0] == 1, y[0] == 0, x'[0] == 0, y'[0] == -1}, {x, y}, {u, 0, 1}]; \
+         Round[{x[1.], y[1.]} /. First[s], 0.0001]"
+      )
+      .unwrap(),
+      "{0.5403, -0.8415}"
+    );
+  }
+
+  // Three unknowns: a curve on a cylinder whose height is tied to the
+  // other two by a second algebraic equation.
+  #[test]
+  fn implicit_curve_in_three_unknowns() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x[u]^2 + y[u]^2 == 4, z[u] == x[u] y[u], \
+         x'[u]^2 + y'[u]^2 + z'[u]^2 == 1, x[0] == 2, y[0] == 0, z[0] == 0, \
+         x'[0] == 0, y'[0] == 0.5, z'[0] == 0.5}, {x, y, z}, {u, 0, 0.5}]; \
+         Round[(x[u]^2 + y[u]^2 /. u -> 0.4 /. First[s]), 0.0001]"
+      )
+      .unwrap(),
+      "4."
+    );
+  }
+
   // An unknown no equation mentions comes back as itself, in the requested
   // position.
   #[test]
@@ -22213,6 +22254,73 @@ mod ndsolve_derivative_unknowns_of_indexed_functions {
       )
       .unwrap(),
       "{0, 0}"
+    );
+  }
+}
+
+mod asymptotic_special_series {
+  use super::*;
+
+  #[test]
+  fn stirling_and_relatives_at_infinity() {
+    assert_eq!(
+      interpret("ToString[Series[Gamma[x], {x, Infinity, 4}], InputForm]")
+        .unwrap(),
+      "E^SeriesData[x, Infinity, {-1 + Log[x]}, -1, 5, 1]*SeriesData[x, Infinity, \
+       {Sqrt[2*Pi], 0, Sqrt[Pi/2]/6, 0, Sqrt[Pi/2]/144, 0, (-139*Sqrt[Pi/2])/25920}, 1, 9, 2]"
+    );
+    assert_eq!(
+      interpret("ToString[Series[Erfc[x], {x, Infinity, 6}], InputForm]")
+        .unwrap(),
+      "SeriesData[x, Infinity, {1/Sqrt[Pi], 0, -1/2*1/Sqrt[Pi], 0, 3/(4*Sqrt[Pi])}, 1, 7, 1]/E^x^2"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[Series[PolyGamma[0, x], {x, Infinity, 5}], InputForm]"
+      )
+      .unwrap(),
+      "SeriesData[x, Infinity, {Log[x], -1/2, -1/12, 0, 1/120}, 0, 6, 1]"
+    );
+    assert_eq!(
+      interpret("ToString[Series[LogGamma[x], {x, Infinity, 3}], InputForm]")
+        .unwrap(),
+      "SeriesData[x, Infinity, {-1 + Log[x], (Log[2*Pi] - Log[x])/2, 1/12, 0, -1/360}, -1, 4, 1]"
+    );
+  }
+
+  #[test]
+  fn normal_handles_half_powers_and_nested_series() {
+    assert_eq!(
+      interpret("Normal[Series[Gamma[x], {x, Infinity, 2}]]").unwrap(),
+      "E^(x*(-1 + Log[x]))*(Sqrt[Pi/2]/(6*x^(3/2)) + Sqrt[2*Pi]/Sqrt[x])"
+    );
+    assert_eq!(
+      interpret("Normal[SeriesData[x, 0, {a, b, c}, 1, 5, 2]]").unwrap(),
+      "a*Sqrt[x] + b*x + c*x^(3/2)"
+    );
+  }
+}
+
+mod ndsolve_starting_step_size {
+  use super::*;
+
+  #[test]
+  fn a_requested_step_size_refines_the_grid() {
+    // NeuronalBursting: {t, 0, 1000} with the default 1000 steps (h = 1)
+    // diverges; StartingStepSize -> 0.1 keeps the bursting model stable.
+    assert_eq!(
+      interpret(
+        "i = 0.5; tauC = 116.; soln = NDSolve[{v'[t] == -(17.81 + 47.58*v[t] + 33.8*v[t]^2)*(v[t] - 0.48) \
+         - 26*r[t]*(v[t] + 0.95) - 1.93*x[t]*(1 - 0.5*c[t])*(v[t] - 1.4) - 3.25*c[t]*(v[t] + 0.95) + i, \
+         r'[t] == 1/5.6*(-r[t] + 1.29*v[t] + 0.79 + 3.3*(v[t] + 0.38)^2), \
+         x'[t] == 1/30*(-x[t] + 7.33*(v[t] + 0.86)*(v[t] + 0.84)), c'[t] == 1/tauC*(-c[t] + 3*x[t]), \
+         v[0] == 0, r[0] == 0, x[0] == 0, c[0] == 1.5}, {v, r, x, c}, {t, 0, 1000}, \
+         MaxSteps -> Infinity, StartingStepSize -> 0.1, \
+         Method -> {\"FixedStep\", Method -> {\"ExplicitRungeKutta\", \"DifferenceOrder\" -> 4}}]; \
+         Round[1000 (v[{100, 500, 1000}] /. soln[[1]])]"
+      )
+      .unwrap(),
+      "{-733, -739, -742}"
     );
   }
 }

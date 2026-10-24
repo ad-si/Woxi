@@ -1833,7 +1833,11 @@ among them.
 
 `NDSolve`'s DAE support handles an index-1 constraint that solves explicitly
 for one unknown; quadratic, coupled or index ≥ 2 constraints, and constraints
-whose unknown is also differentiated, are not covered.
+whose unknown is also differentiated, are not covered. The one exception is a
+system whose algebraic equations leave a single degree of freedom, closed by
+first-order derivative equations (a unit-speed condition): it is traced as an
+implicit curve by arclength continuation, and ends early where the curve
+leaves the region the equations are defined on.
 
 ### `NDSolve` uses a fixed grid
 

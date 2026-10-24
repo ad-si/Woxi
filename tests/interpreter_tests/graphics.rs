@@ -40563,3 +40563,87 @@ mod gaussian_matrix_vector_form {
     );
   }
 }
+
+mod image_adjust_ranges_and_compose_graphics {
+  use super::*;
+
+  #[test]
+  fn image_adjust_input_and_output_ranges() {
+    assert_eq!(
+      interpret("ImageData[ImageAdjust[Image[{{0.2, 0.5}, {0.6, 0.8}}], {0, 0}, {0.2, 0.8}]]")
+        .unwrap(),
+      "{{4.967053879312289*^-9, 0.5}, {0.6666666865348816, 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAdjust[Image[{{0.2, 0.5}, {0.6, 0.8}}], {0, 0}, {0.2, 0.8}, {0.1, 0.9}]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.5}, {0.6333333849906921, 0.8999999761581421}}"
+    );
+  }
+
+  #[test]
+  fn image_compose_rasterizes_graphics_and_reports_non_images() {
+    assert_eq!(
+      interpret(
+        "Head[ImageCompose[Graphics[Disk[]], {Graphics[Circle[]], 0.5}]]"
+      )
+      .unwrap(),
+      "Image"
+    );
+    let r = interpret_with_stdout("ImageCompose[a, b]").unwrap();
+    assert_eq!(r.result, "ImageCompose[a, b]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "ImageCompose::imginv: Expecting an image or graphics instead of a."
+      ]
+    );
+  }
+}
+
+mod geometric_mean_filter {
+  use super::*;
+
+  #[test]
+  fn lists_and_images() {
+    assert_eq!(
+      interpret("Chop[GeometricMeanFilter[{1., 2., 4., 8.}, 1] - {Sqrt[2.], 2., 4., Sqrt[32.]}]")
+        .unwrap(),
+      "{0, 0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("ImageData[GeometricMeanFilter[Image[{{0.1, 0.5, 0.9}, {0.2, 0.4, 0.8}}], 1]]")
+        .unwrap(),
+      "{{0.2514866888523102, 0.3771945536136627, 0.6160140633583069}, \
+       {0.2514866888523102, 0.3771945536136627, 0.6160140633583069}}"
+    );
+  }
+}
+
+mod inpaint_diffusion {
+  use super::*;
+
+  #[test]
+  fn masked_pixels_diffuse_from_their_neighbors() {
+    assert_eq!(
+      interpret(
+        "img = Image[{{0., 0., 0.}, {1., 0.5, 1.}, {1., 1., 1.}}]; \
+         m = Image[{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}]; \
+         ImageData[Inpaint[img, m, Method -> \"Diffusion\"]][[2, 2]]"
+      )
+      .unwrap(),
+      "0.625"
+    );
+    assert_eq!(
+      interpret(
+        "img = Image[Table[N[Sin[i/3] Cos[j/4]]^2, {i, 6}, {j, 6}]]; \
+         m = Image[Table[Boole[2 < i < 5 && 2 < j < 5], {i, 6}, {j, 6}]]; \
+         Round[1000 ImageData[Inpaint[img, m, Method -> \"Diffusion\"]][[3 ;; 4, 3 ;; 4]]]"
+      )
+      .unwrap(),
+      "{{350, 199}, {458, 261}}"
+    );
+  }
+}
