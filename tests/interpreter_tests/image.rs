@@ -1187,6 +1187,26 @@ mod image_processing {
     );
   }
 
+  // `{{wmax}, {hmax}}` fits the image inside a box, keeping its aspect ratio.
+  #[test]
+  fn image_resize_fits_within_box() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageResize[Image[Table[0.5, {20}, {40}]], {{10}, {10}}]]"
+      )
+      .unwrap(),
+      "{10, 5}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageResize[Image[Table[0.5, {20}, {40}]], {{100}, {8}}]]"
+      )
+      .unwrap(),
+      "{16, 8}"
+    );
+  }
+
   #[test]
   fn image_data_accepts_graphics() {
     clear_state();

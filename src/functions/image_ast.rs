@@ -3039,6 +3039,32 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args
   };
 
+  // `{{wmax}, {hmax}}` fits the image inside a wmax x hmax box, keeping its
+  // aspect ratio: restate it as the pixel dimensions it stands for.
+  let boxed;
+  let args: &[Expr] = if let Expr::List(dims) = &args[1]
+    && dims.len() == 2
+    && let Expr::Image { width, height, .. } = &args[0]
+    && let (Expr::List(w), Expr::List(h)) = (&dims[0], &dims[1])
+    && w.len() == 1
+    && h.len() == 1
+    && let Ok(wmax) = expr_to_f64(&w[0])
+    && let Ok(hmax) = expr_to_f64(&h[0])
+    && wmax > 0.0
+    && hmax > 0.0
+  {
+    let k = (wmax / *width as f64).min(hmax / *height as f64);
+    let px =
+      |side: u32| Expr::Integer((k * side as f64).round().max(1.0) as i128);
+    boxed = vec![
+      args[0].clone(),
+      Expr::List(vec![px(*width), px(*height)].into()),
+    ];
+    &boxed
+  } else {
+    args
+  };
+
   // Validate the size specification against the form as written, so the message
   // names what the caller passed. A size that is present but not positive is
   // reported; a bare specification that is not a number at all is left alone
