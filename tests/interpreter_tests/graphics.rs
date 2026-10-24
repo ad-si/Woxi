@@ -3096,6 +3096,21 @@ mod graphics {
         );
       }
 
+      // `ArrayPlot` ignored `PlotRangePadding`, so the grid always filled the
+      // whole frame. A 2x2 array padded by 1 cell per side spans 4x4 cells,
+      // leaving the grid centered with a quarter-width margin.
+      #[test]
+      fn array_plot_insets_the_grid() {
+        let svg = export_svg(
+          "ArrayPlot[{{1, 0}, {0, 1}}, PlotRangePadding -> 1, \
+           ImageSize -> {100, 100}]",
+        );
+        assert!(
+          svg.contains(r#"<rect x="250" y="250" width="250" height="250""#),
+          "expected the first cell inset by one padded cell: {svg}"
+        );
+      }
+
       // `None` explicitly asks for zero padding — same as leaving the
       // option unset.
       #[test]

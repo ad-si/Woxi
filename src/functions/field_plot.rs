@@ -4808,6 +4808,11 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `AspectRatio -> r` (height / width) overrides the default of matching
   // the matrix shape.
   let mut aspect_ratio: Option<f64> = None;
+  // `PlotRangePadding -> …`: extra room (in cell units) around the grid;
+  // `None` by default, unlike other plots.
+  let mut range_padding: Option<
+    crate::functions::graphics::PlotRangePaddingSpec,
+  > = None;
   // `FrameTicks -> {{left, right}, {bottom, top}}` with explicit
   // `{position, label}` ticks, and the `FrameTicksStyle` they default to.
   let mut frame_ticks = FrameTickLabels::default();
@@ -4889,6 +4894,12 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .unwrap_or_else(|_| (**replacement).clone());
           tick_style = parse_tick_style(&val, TickStyle::default());
         }
+        "PlotRangePadding" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          range_padding =
+            Some(crate::functions::graphics::parse_plot_range_padding(&val));
+        }
         "Epilog" => {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| (**replacement).clone());
@@ -4945,8 +4956,19 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n_rows = matrix.len();
   let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
 
+  // Padding in cell units; `Automatic` means none for an array plot.
+  let ((pad_l, pad_r), (pad_b, pad_t)) = match &range_padding {
+    Some(spec) => (
+      spec.x.resolve(n_cols as f64, 0.0),
+      spec.y.resolve(n_rows as f64, 0.0),
+    ),
+    None => ((0.0, 0.0), (0.0, 0.0)),
+  };
+  let total_cols = n_cols as f64 + pad_l + pad_r;
+  let total_rows = n_rows as f64 + pad_b + pad_t;
+
   // Aspect ratio: match the matrix shape (wider if more cols, taller if more rows)
-  let aspect = aspect_ratio.unwrap_or(n_rows as f64 / n_cols as f64);
+  let aspect = aspect_ratio.unwrap_or(total_rows / total_cols);
   let (svg_width, svg_height) = if aspect <= 1.0 {
     (
       svg_width,
@@ -4975,8 +4997,10 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
     })?;
 
-    let cell_w = render_width as f64 / n_cols as f64;
-    let cell_h = render_height as f64 / n_rows as f64;
+    let cell_w = render_width as f64 / total_cols;
+    let cell_h = render_height as f64 / total_rows;
+    let off_x = pad_l * cell_w;
+    let off_y = pad_t * cell_h;
 
     for (i, row) in matrix.iter().enumerate() {
       let mut rgb_row = Vec::with_capacity(row.len());
@@ -5058,10 +5082,10 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
         rgb_row.push((r, g, b));
         let vi = if data_reversed { n_rows - 1 - i } else { i };
-        let x0 = (j as f64 * cell_w).round() as i32;
-        let y0 = (vi as f64 * cell_h).round() as i32;
-        let x1 = ((j + 1) as f64 * cell_w).round() as i32;
-        let y1 = ((vi + 1) as f64 * cell_h).round() as i32;
+        let x0 = (off_x + j as f64 * cell_w).round() as i32;
+        let y0 = (off_y + vi as f64 * cell_h).round() as i32;
+        let x1 = (off_x + (j + 1) as f64 * cell_w).round() as i32;
+        let y1 = (off_y + (vi + 1) as f64 * cell_h).round() as i32;
 
         root
           .draw(&Rectangle::new(
@@ -5081,12 +5105,15 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let line_w = (s as i32).max(1);
       // Vertical lines
       for j in 1..n_cols {
-        let x = (j as f64 * cell_w).round() as i32;
+        let x = (off_x + j as f64 * cell_w).round() as i32;
         root
           .draw(&Rectangle::new(
             [
-              (x - line_w / 2, 0),
-              (x + (line_w + 1) / 2, render_height as i32),
+              (x - line_w / 2, off_y.round() as i32),
+              (
+                x + (line_w + 1) / 2,
+                (off_y + n_rows as f64 * cell_h).round() as i32,
+              ),
             ],
             mesh_color.filled(),
           ))
@@ -5096,12 +5123,15 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // Horizontal lines
       for i in 1..n_rows {
-        let y = (i as f64 * cell_h).round() as i32;
+        let y = (off_y + i as f64 * cell_h).round() as i32;
         root
           .draw(&Rectangle::new(
             [
-              (0, y - line_w / 2),
-              (render_width as i32, y + (line_w + 1) / 2),
+              (off_x.round() as i32, y - line_w / 2),
+              (
+                (off_x + n_cols as f64 * cell_w).round() as i32,
+                y + (line_w + 1) / 2,
+              ),
             ],
             mesh_color.filled(),
           ))
@@ -5142,10 +5172,10 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       y0: 0.0,
       w: render_width as f64,
       h: render_height as f64,
-      x_min: 0.0,
-      x_max: n_cols as f64,
-      y_min: 0.0,
-      y_max: n_rows as f64,
+      x_min: -pad_l,
+      x_max: n_cols as f64 + pad_r,
+      y_min: -pad_b,
+      y_max: n_rows as f64 + pad_t,
       scale: RESOLUTION_SCALE as f64,
     };
     buf.push_str(&crate::functions::plot_epilog::render_epilog_svg(
