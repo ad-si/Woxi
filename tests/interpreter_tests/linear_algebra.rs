@@ -10615,3 +10615,25 @@ mod machine_dot_fold_order {
     );
   }
 }
+
+mod generalized_eigenvalues {
+  use super::*;
+
+  #[test]
+  fn a_matrix_pencil() {
+    assert_eq!(
+      interpret("Eigenvalues[{{{2, 1}, {1, 3}}, {{1, 0}, {0, 2}}}]").unwrap(),
+      "{5/2, 1}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{{2, 1}, {1, 3}}, {{1, 0}, {0, 2}}}, 1]")
+        .unwrap(),
+      "{5/2}"
+    );
+    assert_eq!(
+      interpret("Chop[Eigenvalues[{{{2., 1.}, {1., 3.}}, {{1., 0.}, {0., 2.}}}] - {2.5, 1.}]")
+        .unwrap(),
+      "{0, 0}"
+    );
+  }
+}
