@@ -128,6 +128,12 @@ fn from_unordered_pairs(args: &[Expr]) -> Option<Expr> {
   edges.sort_unstable();
   edges.dedup();
   let n = edges.iter().map(|&(_, b)| b).max().unwrap_or(0);
+  Some(circular_graph(n, edges))
+}
+
+/// The Combinatorica graph on vertices `1..n`, drawn on a circle, with the
+/// given (1-based, ordered) edges.
+fn circular_graph(n: i128, edges: Vec<(i128, i128)>) -> Expr {
   let edge_list = edges
     .into_iter()
     .map(|(a, b)| {
@@ -148,10 +154,34 @@ fn from_unordered_pairs(args: &[Expr]) -> Option<Expr> {
       )
     })
     .collect::<Vec<_>>();
-  Some(crate::helpers::call(
+  crate::helpers::call(
     GRAPH,
     vec![Expr::List(edge_list.into()), Expr::List(vertex_list.into())],
-  ))
+  )
+}
+
+/// `RandomGraph[n, p]`: each of the `n (n - 1)/2` vertex pairs is an edge
+/// with probability `p`.
+fn random_graph(args: &[Expr]) -> Option<Expr> {
+  let [Expr::Integer(n), p] = args else {
+    return None;
+  };
+  let p = crate::functions::math_ast::try_eval_to_f64(p)?;
+  if *n < 0 || *n > 2000 || !(0.0..=1.0).contains(&p) {
+    return None;
+  }
+  let mut edges = Vec::new();
+  crate::with_rng(|rng| {
+    for a in 1..=*n {
+      for b in a + 1..=*n {
+        let u = (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
+        if u < p {
+          edges.push((a, b));
+        }
+      }
+    }
+  });
+  Some(circular_graph(*n, edges))
 }
 
 /// Dispatches the `Combinatorica\`` graph functions. `None` leaves the call
@@ -170,9 +200,43 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
   if name == "Combinatorica`FromUnorderedPairs" {
     return from_unordered_pairs(args);
   }
+  if name == "Combinatorica`RandomGraph" {
+    return random_graph(args);
+  }
   let g = CGraph::parse(args.first()?)?;
   match (name, args.len()) {
     ("Combinatorica`V", 1) => Some(Expr::Integer(g.n as i128)),
+    ("Combinatorica`M", 1) => Some(Expr::Integer(g.edges.len() as i128)),
+    ("Combinatorica`Edges", 1) => Some(Expr::List(
+      g.edges
+        .iter()
+        .map(|&(a, b)| int_list([a, b]))
+        .collect::<Vec<_>>()
+        .into(),
+    )),
+    ("Combinatorica`ToAdjacencyMatrix", 1) => {
+      let mut m = vec![vec![0i128; g.n]; g.n];
+      for &(a, b) in &g.edges {
+        m[a][b] += 1;
+        if a != b {
+          m[b][a] += 1;
+        }
+      }
+      Some(Expr::List(
+        m.into_iter()
+          .map(|row| {
+            Expr::List(
+              row
+                .into_iter()
+                .map(Expr::Integer)
+                .collect::<Vec<_>>()
+                .into(),
+            )
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      ))
+    }
     ("Combinatorica`ToAdjacencyLists", 1) => Some(Expr::List(
       g.adjacency()
         .into_iter()

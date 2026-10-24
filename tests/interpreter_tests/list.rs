@@ -24342,3 +24342,25 @@ mod find_clusters_vectors {
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
   }
 }
+
+mod combinatorica_random_graph {
+  use super::*;
+
+  #[test]
+  fn random_graph_and_its_matrices() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; g = RandomGraph[10, 0.4]; \
+         {V[g], Dimensions[ToAdjacencyMatrix[g]], M[g] == Length[Edges[g]], \
+          Total[Flatten[ToAdjacencyMatrix[g]]] == 2 M[g], \
+          M[RandomGraph[6, 1]], M[RandomGraph[6, 0]]}"
+      )
+      .unwrap(),
+      "{10, {10, 10}, True, True, 15, 0}"
+    );
+    assert_eq!(
+      interpret("Combinatorica`KSubsets[Range[4], 2]").unwrap(),
+      "{{1, 2}, {1, 3}, {1, 4}, {2, 3}, {2, 4}, {3, 4}}"
+    );
+  }
+}

@@ -1074,6 +1074,24 @@ fn evaluate_function_call_ast_inner(
     {
       combinatorica_graph_name(name)
     }
+    "RandomGraph"
+      if combinatorica_active
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(_)) =>
+    {
+      "Combinatorica`RandomGraph"
+    }
+    "KSubsets" if combinatorica_active => "Combinatorica`KSubsets",
+    "ToAdjacencyMatrix" | "Edges" | "M"
+      if combinatorica_active
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: head, .. })
+            if head == "Combinatorica`Graph"
+        ) =>
+    {
+      combinatorica_graph_name(name)
+    }
     "V" | "ConnectedComponents" | "ShortestPath"
       if combinatorica_active
         && matches!(
@@ -14218,6 +14236,9 @@ fn combinatorica_graph_name(name: &str) -> &'static str {
     "BreadthFirstTraversal" => "Combinatorica`BreadthFirstTraversal",
     "V" => "Combinatorica`V",
     "ConnectedComponents" => "Combinatorica`ConnectedComponents",
+    "ToAdjacencyMatrix" => "Combinatorica`ToAdjacencyMatrix",
+    "Edges" => "Combinatorica`Edges",
+    "M" => "Combinatorica`M",
     _ => "Combinatorica`ShortestPath",
   }
 }

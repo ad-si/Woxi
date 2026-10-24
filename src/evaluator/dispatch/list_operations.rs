@@ -2919,6 +2919,13 @@ pub fn dispatch_list_operations(
     "Combinatorica`RandomKSubset" if args.len() == 2 => {
       return Some(list_helpers_ast::combinatorica_random_k_subset_ast(args));
     }
+    // `KSubsets[l, k]`: the k-element subsets, in Subsets' order.
+    "Combinatorica`KSubsets" if args.len() == 2 => {
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "Subsets",
+        &[args[0].clone(), Expr::List(vec![args[1].clone()].into())],
+      ));
+    }
     "Combinatorica`Josephus" if args.len() == 2 => {
       return Some(list_helpers_ast::combinatorica_josephus_ast(args));
     }
@@ -2930,7 +2937,11 @@ pub fn dispatch_list_operations(
     | "Combinatorica`ToAdjacencyLists"
     | "Combinatorica`ConnectedComponents"
     | "Combinatorica`BreadthFirstTraversal"
-    | "Combinatorica`ShortestPath" => {
+    | "Combinatorica`ShortestPath"
+    | "Combinatorica`RandomGraph"
+    | "Combinatorica`ToAdjacencyMatrix"
+    | "Combinatorica`Edges"
+    | "Combinatorica`M" => {
       return Some(
         crate::functions::combinatorica_graph::combinatorica_graph_ast(
           name, args,
