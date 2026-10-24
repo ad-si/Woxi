@@ -2041,6 +2041,11 @@ fn tick_values(val_min: f64, val_max: f64) -> Vec<f64> {
   let mut tick_val = (val_min / step).ceil() * step;
   while tick_val <= val_max + step * 0.01 {
     ticks.push(tick_val);
+    // A span far below the values' precision (a float-noise extent) has a
+    // step that no longer advances the tick; stop instead of looping.
+    if tick_val + step == tick_val {
+      break;
+    }
     tick_val += step;
   }
   ticks
@@ -9061,6 +9066,56 @@ fn evaluate_at_t_theta(
   try_eval_to_f64_lenient(&result)
 }
 
+/// `RevolutionAxis -> {x, y, z}` (or `"X"`, `"Y"`, `"Z"`) as a unit vector.
+fn parse_revolution_axis(spec: &Expr) -> Option<[f64; 3]> {
+  let v: [f64; 3] = match spec {
+    Expr::String(s) | Expr::Identifier(s) => match s.as_str() {
+      "X" => [1.0, 0.0, 0.0],
+      "Y" => [0.0, 1.0, 0.0],
+      "Z" => [0.0, 0.0, 1.0],
+      _ => return None,
+    },
+    Expr::List(items) if items.len() == 3 => {
+      let mut v = [0.0; 3];
+      for (slot, item) in v.iter_mut().zip(items.iter()) {
+        *slot = try_eval_to_f64(&evaluate_expr_to_expr(item).ok()?)?;
+      }
+      v
+    }
+    _ => return None,
+  };
+  let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+  if len < 1e-12 || !len.is_finite() {
+    return None;
+  }
+  Some([v[0] / len, v[1] / len, v[2] / len])
+}
+
+/// Rotate `p` by `theta` about the unit vector `k` (Rodrigues' formula).
+fn rotate_about_axis(p: [f64; 3], k: [f64; 3], theta: f64) -> [f64; 3] {
+  let (s, c) = theta.sin_cos();
+  let dot = k[0] * p[0] + k[1] * p[1] + k[2] * p[2];
+  let cross = [
+    k[1] * p[2] - k[2] * p[1],
+    k[2] * p[0] - k[0] * p[2],
+    k[0] * p[1] - k[1] * p[0],
+  ];
+  [
+    p[0] * c + cross[0] * s + k[0] * dot * (1.0 - c),
+    p[1] * c + cross[1] * s + k[1] * dot * (1.0 - c),
+    p[2] * c + cross[2] * s + k[2] * dot * (1.0 - c),
+  ]
+}
+
+/// Map `v` from `[lo, hi]` onto `[-1, 1]` (0 for a degenerate extent).
+fn norm_extent(v: f64, lo: f64, hi: f64) -> f64 {
+  if (hi - lo).abs() < 1e-15 {
+    0.0
+  } else {
+    (v - lo) / (hi - lo) * 2.0 - 1.0
+  }
+}
+
 /// RevolutionPlot3D[f, {t, tmin, tmax}]
 /// RevolutionPlot3D[{r, z}, {t, tmin, tmax}]
 /// RevolutionPlot3D[f, {t, tmin, tmax}, {θ, θmin, θmax}]
@@ -9114,6 +9169,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut show_axes = true;
   let mut z_clip: Option<(f64, f64)> = None;
   let mut plot_style: Option<Expr> = None;
+  let mut axis: [f64; 3] = [0.0, 0.0, 1.0];
 
   for opt in &args[opt_start..] {
     if let Expr::Rule {
@@ -9124,6 +9180,11 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "PlotStyle" => {
           plot_style = Some(replacement.as_ref().clone());
+        }
+        Expr::Identifier(name) if name == "RevolutionAxis" => {
+          if let Some(a) = parse_revolution_axis(replacement) {
+            axis = a;
+          }
         }
         Expr::Identifier(name) if name == "ImageSize" => {
           if let Some((w, h, fw)) =
@@ -9181,6 +9242,11 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut global_z_min = f64::INFINITY;
   let mut global_z_max = f64::NEG_INFINITY;
   let mut global_r_max: f64 = 0.0;
+  let (mut global_x_min, mut global_x_max) = (f64::INFINITY, f64::NEG_INFINITY);
+  let (mut global_y_min, mut global_y_max) = (f64::INFINITY, f64::NEG_INFINITY);
+  // The sweep is about the z axis unless `RevolutionAxis` says otherwise;
+  // only then do x and y need their own extents when normalizing.
+  let axis_is_z = axis[0] == 0.0 && axis[1] == 0.0;
 
   for body in &bodies {
     let parametric_len: Option<usize> = match body {
@@ -9188,6 +9254,17 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(items.len())
       }
       _ => None,
+    };
+    // A scalar body that ignores θ is the plain profile `z = f(t)` (the θ
+    // iterator only sets the sweep angle); one that varies with θ gives the
+    // radius as a function of both variables.
+    let scalar_is_profile = match (&theta_var, parametric_len) {
+      (Some(theta_v), None) => {
+        let tmid = f64::midpoint(t_min, t_max);
+        evaluate_at_t_theta(body, &tvar, tmid, theta_v, theta_min)
+          == evaluate_at_t_theta(body, &tvar, tmid, theta_v, theta_max)
+      }
+      _ => false,
     };
     let mut grid: Vec<Vec<Option<Point3D>>> =
       vec![vec![None; n_theta + 1]; n_t + 1];
@@ -9221,8 +9298,9 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               continue;
             }
           } else {
-            // Scalar: r = f(t, θ), z = t
             match evaluate_at_t_theta(body, &tvar, tval, theta_v, theta) {
+              Some(z) if z.is_finite() && scalar_is_profile => (tval, 0.0, z),
+              // Scalar: r = f(t, θ), z = t
               Some(r) if r.is_finite() => (r, 0.0, tval),
               _ => continue,
             }
@@ -9258,11 +9336,14 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Rotate the (fx, fy) vector by theta around the z axis; fy = 0
         // reduces to the plain r·cos/r·sin sweep the 2-coordinate and scalar
         // forms already used.
-        let x = fx * theta.cos() - fy * theta.sin();
-        let y = fx * theta.sin() + fy * theta.cos();
+        let [x, y, z] = rotate_about_axis([fx, fy, z], axis, theta);
 
         grid[i][j] = Some(Point3D { x, y, z });
 
+        global_x_min = global_x_min.min(x);
+        global_x_max = global_x_max.max(x);
+        global_y_min = global_y_min.min(y);
+        global_y_max = global_y_max.max(y);
         global_z_min = global_z_min.min(z);
         global_z_max = global_z_max.max(z);
         global_r_max = global_r_max.max((x * x + y * y).sqrt());
@@ -9393,10 +9474,18 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let p11 = grid[i + 1][j + 1];
 
         let normalize = |p: Point3D| -> Point3D {
-          Point3D {
-            x: p.x / r_scale,
-            y: p.y / r_scale,
-            z: nz(p.z),
+          if axis_is_z {
+            Point3D {
+              x: p.x / r_scale,
+              y: p.y / r_scale,
+              z: nz(p.z),
+            }
+          } else {
+            Point3D {
+              x: norm_extent(p.x, global_x_min, global_x_max),
+              y: norm_extent(p.y, global_y_min, global_y_max),
+              z: nz(p.z),
+            }
           }
         };
 
@@ -9499,8 +9588,16 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &all_triangles,
     &[],
     &camera,
-    (-global_r_max, global_r_max),
-    (-global_r_max, global_r_max),
+    if axis_is_z {
+      (-global_r_max, global_r_max)
+    } else {
+      (global_x_min, global_x_max)
+    },
+    if axis_is_z {
+      (-global_r_max, global_r_max)
+    } else {
+      (global_y_min, global_y_max)
+    },
     (z_axis_min, z_axis_max),
     svg_width,
     svg_height,
@@ -14515,5 +14612,21 @@ mod painter_order_tests {
     let order = painter_order(&verts, &projected, &depths, &camera);
     assert_eq!(order.len(), verts.len());
     assert_eq!(order[0], 0, "the large back face is drawn first");
+  }
+}
+
+#[cfg(test)]
+mod tick_values_tests {
+  use super::*;
+
+  #[test]
+  fn float_noise_extent_terminates() {
+    let ticks = tick_values(1.9999999999999998, 2.0);
+    assert!(ticks.len() <= 2);
+  }
+
+  #[test]
+  fn regular_extent_has_ticks() {
+    assert_eq!(tick_values(0.0, 10.0), vec![0.0, 2.5, 5.0, 7.5, 10.0]);
   }
 }

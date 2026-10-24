@@ -35908,6 +35908,54 @@ mod graphics3d_painters_algorithm_face_subdivision {
 mod revolution_plot3d_part_extraction {
   use super::*;
 
+  /// `RevolutionAxis -> {1, 0, 0}` sweeps the profile about the x axis, so
+  /// the abscissa keeps its range and the radius shows up in y and z.
+  #[test]
+  fn revolution_plot3d_revolution_axis_x() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "pts = First[RevolutionPlot3D[2, {t, 1, 3}, \
+         RevolutionAxis -> {1, 0, 0}]][[1]]; \
+         {Round[Min[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 1]]], 0.01], \
+         Round[Max[pts[[All, 2]]], 0.01], Round[Max[pts[[All, 3]]], 0.01]}"
+      )
+      .unwrap(),
+      "{1., 3., 2., 2.}"
+    );
+  }
+
+  /// A scalar body that does not mention the θ iterator is still the
+  /// profile `z = f(t)`, so an explicit θ range changes only the sweep.
+  #[test]
+  fn revolution_plot3d_scalar_profile_with_theta_iterator() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "pts = First[RevolutionPlot3D[2, {t, 1, 3}, {th, 0, 2 Pi}, \
+         RevolutionAxis -> {1, 0, 0}]][[1]]; \
+         {Round[Min[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 1]]], 0.01], \
+         Round[Max[pts[[All, 2]]], 0.01]}"
+      )
+      .unwrap(),
+      "{1., 3., 2.}"
+    );
+  }
+
+  /// Naming the z axis explicitly is the same as the default sweep.
+  #[test]
+  fn revolution_plot3d_revolution_axis_z_is_default() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "First[RevolutionPlot3D[t, {t, 1, 3}, RevolutionAxis -> {0, 0, 1}]] \
+         === First[RevolutionPlot3D[t, {t, 1, 3}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   /// A list of profile curves revolves each curve into its own surface
   /// instead of failing with "function produced no finite values".
   #[test]
