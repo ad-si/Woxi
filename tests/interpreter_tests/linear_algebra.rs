@@ -555,6 +555,24 @@ mod permanent {
 mod inverse {
   use super::*;
 
+  // An inexact number inside an entry makes the matrix a machine one,
+  // inverted numerically rather than by cofactors.
+  #[test]
+  fn inexact_inside_an_entry_is_machine() {
+    assert_eq!(
+      interpret("Round[10^6 Inverse[{{0.5 Sqrt[2], 1}, {2, 3}}]]").unwrap(),
+      "{{24727922, -8242641}, {-16485281, 5828427}}"
+    );
+    assert_eq!(
+      interpret(
+        "m = Table[If[i == j, 2. + Sqrt[i], If[Abs[i - j] == 1, -1, 0]], \
+         {i, 12}, {j, 12}]; Round[10^6 Total[Flatten[Inverse[m] . m]]]"
+      )
+      .unwrap(),
+      "12000000"
+    );
+  }
+
   #[test]
   fn inverse_2x2() {
     assert_eq!(

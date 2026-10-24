@@ -1333,7 +1333,13 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// entry is a real number — the matrices Wolfram inverts and factors
 /// numerically (LU with partial pivoting) instead of symbolically.
 fn machine_real_matrix(matrix: &[Vec<Expr>]) -> Option<Vec<Vec<f64>>> {
-  if !matrix.iter().flatten().any(|e| matches!(e, Expr::Real(_))) {
+  // An inexact number anywhere in an entry (`0.5 Sqrt[2]`) makes the
+  // matrix a machine-precision one.
+  if !matrix
+    .iter()
+    .flatten()
+    .any(crate::functions::math_ast::numeric_utils::contains_inexact_real)
+  {
     return None;
   }
   matrix
