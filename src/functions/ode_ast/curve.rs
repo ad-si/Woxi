@@ -248,7 +248,7 @@ pub(super) fn ndsolve_implicit_curve(
   else {
     return Ok(None);
   };
-  if !(hi > lo) {
+  if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) {
     return Ok(None);
   }
 
