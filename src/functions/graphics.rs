@@ -26113,6 +26113,23 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         displays.push(crate::syntax::expr_to_source_form(spec));
         continue;
       }
+      // `Button[Dynamic[label], opts…]`: with an option where the action
+      // would be, the button does nothing — it is a caption that follows the
+      // live bindings (a step title), so it is shown as a live display of
+      // its label rather than as a pressable control with the option as its
+      // "action".
+      Expr::FunctionCall { name, args }
+        if name == "Button"
+          && args.len() >= 2
+          && matches!(
+            &args[1],
+            Expr::Rule { .. } | Expr::RuleDelayed { .. }
+          )
+          && annotation_contains_dynamic(&args[0]) =>
+      {
+        displays.push(crate::syntax::expr_to_source_form(&args[0]));
+        continue;
+      }
       // `Button[label, action, opts…]`: a pressable control row whose
       // action code runs against the live bindings (e.g. a reset button).
       Expr::FunctionCall { name, args }
