@@ -4373,6 +4373,67 @@ fn eval_vec3(expr: &Expr) -> Option<[f64; 3]> {
   Some(v)
 }
 
+/// The affine transforms a 3D `GeometricTransformation` second argument
+/// names: the `{matrix, vector}` pair a `TransformationFunction` normalizes
+/// to, a bare 3×3 matrix, the homogeneous 4×4 `TransformationFunction[…]`,
+/// or a list of any of those (one transformed copy per entry).
+fn parse_3d_affine_transforms(expr: &Expr) -> Vec<Affine3> {
+  fn matrix3(expr: &Expr) -> Option<[[f64; 3]; 3]> {
+    let Expr::List(rows) = expr else { return None };
+    if rows.len() != 3 {
+      return None;
+    }
+    let mut m = [[0.0; 3]; 3];
+    for (row, slot) in rows.iter().zip(m.iter_mut()) {
+      *slot = eval_vec3(row)?;
+    }
+    Some(m)
+  }
+  fn homogeneous(expr: &Expr) -> Option<Affine3> {
+    let Expr::List(rows) = expr else { return None };
+    if rows.len() != 4 {
+      return None;
+    }
+    let mut m = [[0.0; 3]; 3];
+    let mut t = [0.0; 3];
+    for (i, row) in rows.iter().take(3).enumerate() {
+      let Expr::List(cells) = row else { return None };
+      if cells.len() != 4 {
+        return None;
+      }
+      for j in 0..3 {
+        m[i][j] = try_eval_to_f64(&cells[j])?;
+      }
+      t[i] = try_eval_to_f64(&cells[3])?;
+    }
+    Some(Affine3 { m, t })
+  }
+  fn single(expr: &Expr) -> Option<Affine3> {
+    if let Expr::FunctionCall { name, args } = expr
+      && name == "TransformationFunction"
+      && args.len() == 1
+    {
+      return homogeneous(&args[0]);
+    }
+    if let Expr::List(items) = expr
+      && items.len() == 2
+      && let Some(m) = matrix3(&items[0])
+      && let Some(t) = eval_vec3(&items[1])
+    {
+      return Some(Affine3 { m, t });
+    }
+    matrix3(expr).map(|m| Affine3 { m, t: [0.0; 3] })
+  }
+  let expr = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  if let Some(one) = single(&expr) {
+    return vec![one];
+  }
+  match &expr {
+    Expr::List(items) => items.iter().filter_map(single).collect(),
+    _ => Vec::new(),
+  }
+}
+
 /// Build the transform list for a `Translate`/`Rotate`/`Scale` wrapper from
 /// its arguments (past the wrapped graphics). `Translate` with a list of
 /// offset vectors produces one transform per copy; the others produce one.
@@ -5384,6 +5445,27 @@ fn collect_3d_primitives(
             // Unrecognized transform spec: keep the primitives untransformed
             // rather than dropping them.
             None => prims.extend(sub),
+          }
+        }
+        // `GeometricTransformation[g, t]` maps the wrapped primitives
+        // through the affine map `t` (a list of maps draws one copy each).
+        "GeometricTransformation" if args.len() == 2 => {
+          let mut sub = Vec::new();
+          let saved = style.clone();
+          collect_3d_primitives(&args[0], style, &mut sub);
+          *style = saved;
+          let transforms = parse_3d_affine_transforms(&args[1]);
+          if transforms.is_empty() {
+            // Unrecognized transform spec: keep the primitives untransformed.
+            prims.extend(sub);
+          } else {
+            for xf in &transforms {
+              for prim in &sub {
+                let mut copy = prim.clone();
+                transform_primitive3d(&mut copy, xf);
+                prims.push(copy);
+              }
+            }
           }
         }
         // `Style[prims, directives…]` applies its directives (colours, a

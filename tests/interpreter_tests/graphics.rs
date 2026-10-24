@@ -6505,6 +6505,48 @@ mod plot3d {
       );
     }
 
+    /// `GeometricTransformation[g, t]` in 3D maps the wrapped primitives
+    /// through `t`. Regression: the head was ignored, so a mirrored wing
+    /// was drawn on top of the original instead of on the other side.
+    #[test]
+    fn graphics3d_geometric_transformation_maps_primitives() {
+      let mirror = |wrapped: &str| {
+        export_svg(&format!(
+          "Graphics3D[{{GeometricTransformation[{wrapped}, \
+           ReflectionTransform[{{1,0,0}},{{0,0,0}}]]}}]"
+        ))
+      };
+      assert_eq!(
+        mirror("Polygon[{{1,0,0},{2,0,0},{1,1,1}}]"),
+        export_svg("Graphics3D[{Polygon[{{-1,0,0},{-2,0,0},{-1,1,1}}]}]")
+      );
+      let tube = "Tube[BSplineCurve[{{1,0,0},{2,0,0},{3,1,0}}], 0.05]";
+      assert_ne!(
+        mirror(tube),
+        export_svg(&format!("Graphics3D[{{{tube}}}]")),
+        "the mirrored tube must not be drawn where the original is"
+      );
+
+      // A {matrix, vector} pair translates; a list of pairs draws one copy each.
+      let tri = "Polygon[{{0,0,0},{1,0,0},{0,1,0}}]";
+      let id = "{{1,0,0},{0,1,0},{0,0,1}}";
+      assert_eq!(
+        export_svg(&format!(
+          "Graphics3D[{{GeometricTransformation[{tri}, {{{id}, {{0,0,2}}}}]}}]"
+        )),
+        export_svg(&format!("Graphics3D[{{Translate[{tri}, {{0,0,2}}]}}]"))
+      );
+      assert_eq!(
+        export_svg(&format!(
+          "Graphics3D[{{GeometricTransformation[{tri}, \
+           {{{{{id}, {{0,0,0}}}}, {{{id}, {{0,0,2}}}}}}]}}]"
+        )),
+        export_svg(&format!(
+          "Graphics3D[{{Translate[{tri}, {{{{0,0,0}},{{0,0,2}}}}]}}]"
+        ))
+      );
+    }
+
     /// `Scale[g, s]` without a centre scales `g` about the centre of its
     /// own bounding box, so the content stays where it is and only changes
     /// size. Regression: the 3D path scaled about the origin, which
