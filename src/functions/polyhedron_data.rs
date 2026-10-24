@@ -2390,7 +2390,7 @@ fn cone_info(dipyramid: bool, n: i128) -> &'static PolyhedronInfo {
   // Height of an apex above the base plane for unit lateral edges.
   let h = format!("Sqrt[1 - 1/(4 Sin[Pi/{n}]^2)]");
   let (base_z, apex_z) = if dipyramid {
-    ("0".to_string(), h.to_string())
+    ("0".to_string(), h.clone())
   } else {
     (format!("-({h})/4"), format!("3 ({h})/4"))
   };
