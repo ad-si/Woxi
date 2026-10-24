@@ -8649,6 +8649,38 @@ mod ndsolve {
     );
   }
 
+  /// An algebraic unknown coupled with the highest derivatives (a Lagrange
+  /// multiplier, "Sliding Along a Curved Track") is solved for with them at
+  /// every step, after `NDSolve::pdord`. Left out of the unknowns it is
+  /// still solved for, and only the listed functions are reported.
+  /// wolframscript: x(1) = 0.5711855246097466, l(1) = -x(1).
+  #[test]
+  fn algebraic_unknown_coupled_with_highest_derivatives() {
+    let system = "{l[t] x[t] == x''[t], l[t] + y''[t] == 0, y''[t] == x[t], \
+       x[0] == 1, x'[0] == 0, y[0] == 0, y'[0] == 0}";
+    let result = interpret_with_stdout(&format!(
+      "Round[10^5 {{x[1], l[1]}} /. First[NDSolve[{system}, {{x, y, l}}, \
+       {{t, 0, 1}}]]]"
+    ))
+    .unwrap();
+    assert_eq!(result.result, "{57119, -57119}");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "NDSolve::pdord: Some of the functions have zero differential \
+         order, so the equations will be solved as a system of \
+         differential-algebraic equations."
+      ]
+    );
+    assert_eq!(
+      interpret(&format!(
+        "Quiet[Keys[First[NDSolve[{system}, {{x, y}}, {{t, 0, 1}}]]]]"
+      ))
+      .unwrap(),
+      "{x, y}"
+    );
+  }
+
   /// An algebraic constraint that determines one unknown explicitly is
   /// eliminated — the constraint is solved for it, substituted into the
   /// remaining equations, and the unknown rebuilt from the solution

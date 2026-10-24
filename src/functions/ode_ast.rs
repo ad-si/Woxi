@@ -4227,6 +4227,98 @@ fn rule_target_name(rule: &Expr) -> Option<&str> {
   }
 }
 
+/// Functions applied to the independent variable in `expr` — `g[x]` or a
+/// derivative `g'[x]` — that are not among `funcs` and have no definition
+/// of their own (a built-in like `Sin[x]` or a user function evaluates
+/// away or is known), in order of first appearance.
+fn collect_unlisted_unknowns(
+  expr: &Expr,
+  x_name: &str,
+  funcs: &[SysFunc],
+  out: &mut Vec<String>,
+) {
+  let is_x = |e: &Expr| matches!(e, Expr::Identifier(a) if a == x_name);
+  let mut consider = |name: &str| {
+    if !funcs.iter().any(|f| f.name == name)
+      && !out.iter().any(|n| n == name)
+      && !crate::evaluator::functions::is_builtin_symbol(name)
+      && crate::FUNC_DEFS.with(|m| m.borrow().get(name).is_none())
+    {
+      out.push(name.to_string());
+    }
+  };
+  match expr {
+    Expr::FunctionCall { name, args } if args.len() == 1 && is_x(&args[0]) => {
+      consider(name);
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Derivative"
+        && args.len() == 3
+        && is_x(&args[2])
+        && let Expr::Identifier(g) = &args[1] =>
+    {
+      consider(g);
+    }
+    _ => {}
+  }
+  // `Derivative[n][g][x]` in either curried shape.
+  if let Expr::CurriedCall { func, args } = expr
+    && args.len() == 1
+    && is_x(&args[0])
+  {
+    match func.as_ref() {
+      Expr::FunctionCall { name, args: d }
+        if name == "Derivative"
+          && d.len() == 2
+          && let Expr::Identifier(g) = &d[1] =>
+      {
+        consider(g);
+      }
+      Expr::CurriedCall {
+        func: inner,
+        args: g,
+      } if g.len() == 1
+        && matches!(inner.as_ref(), Expr::FunctionCall { name, .. } if name == "Derivative")
+        && let Expr::Identifier(g) = &g[0] =>
+      {
+        consider(g);
+      }
+      _ => {}
+    }
+  }
+  match expr {
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_unlisted_unknowns(a, x_name, funcs, out);
+      }
+    }
+    Expr::List(items) => {
+      for a in items {
+        collect_unlisted_unknowns(a, x_name, funcs, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_unlisted_unknowns(left, x_name, funcs, out);
+      collect_unlisted_unknowns(right, x_name, funcs, out);
+    }
+    Expr::UnaryOp { operand, .. } => {
+      collect_unlisted_unknowns(operand, x_name, funcs, out);
+    }
+    Expr::Comparison { operands, .. } => {
+      for a in operands {
+        collect_unlisted_unknowns(a, x_name, funcs, out);
+      }
+    }
+    Expr::CurriedCall { func, args } => {
+      collect_unlisted_unknowns(func, x_name, funcs, out);
+      for a in args {
+        collect_unlisted_unknowns(a, x_name, funcs, out);
+      }
+    }
+    _ => {}
+  }
+}
+
 /// Find an algebraic constraint among `odes` that determines one of `funcs`
 /// explicitly: an equation with no derivative of any unknown, in which
 /// exactly one unknown appears and appears nowhere differentiated elsewhere.
@@ -4649,6 +4741,29 @@ fn ndsolve_system(
     }
     pending = still;
   }
+  // An unknown the equations use but the caller did not list (a Lagrange
+  // multiplier `λ[t]` in a constrained-motion model) is solved for with
+  // the others when the system would otherwise be short of unknowns;
+  // Wolfram does the same and reports only the functions it was asked for.
+  let mut hidden: Vec<String> = Vec::new();
+  if odes.len() > funcs.len() {
+    let mut extra: Vec<String> = Vec::new();
+    for ode in &odes {
+      collect_unlisted_unknowns(ode, x_name, &funcs, &mut extra);
+    }
+    if funcs.len() + extra.len() == odes.len() {
+      for name in extra {
+        funcs.push(SysFunc {
+          name: name.clone(),
+          order: 0,
+          function_form: true,
+          ics: Vec::new(),
+        });
+        hidden.push(name);
+      }
+    }
+  }
+
   // An algebraic constraint — an equation with no derivative in it — that
   // determines one unknown explicitly is eliminated: the constraint is
   // solved for that unknown, the solution substituted into the remaining
@@ -4706,9 +4821,14 @@ fn ndsolve_system(
       f.order = f.order.max(order);
     }
   }
-  if funcs.iter().any(|f| f.order == 0) {
+  // An unknown that is never differentiated is algebraic: it has no state
+  // of its own and is solved for at every step together with the highest
+  // derivatives it is coupled with (`λ[t] f'[x[t]] == m x''[t]`). A system
+  // of nothing but such unknowns is no differential equation at all.
+  if funcs.iter().all(|f| f.order == 0) {
     return Ok(None);
   }
+  let algebraic_unknowns = funcs.iter().any(|f| f.order == 0);
   // Every requested derivative must be of a function actually being
   // solved for, and of an order already carried in its state vector
   // (0..order-1); the highest derivative itself isn't stored there.
@@ -4941,7 +5061,9 @@ fn ndsolve_system(
     }
     let mut past = vec![0.0; var_names.len()];
     for (fi, f) in funcs.iter().enumerate() {
-      past[1 + state_offset[fi]] = f.ics[0].unwrap_or(0.0);
+      if f.order > 0 {
+        past[1 + state_offset[fi]] = f.ics[0].unwrap_or(0.0);
+      }
     }
     DDE_HISTORY.with(|h| {
       *h.borrow_mut() = Some(DdeHistory {
@@ -5036,6 +5158,13 @@ fn ndsolve_system(
     }
     None => 1000usize,
   };
+  if algebraic_unknowns {
+    crate::emit_message(
+      "NDSolve::pdord: Some of the functions have zero differential order, \
+       so the equations will be solved as a system of differential-algebraic \
+       equations.",
+    );
+  }
   let mut points: Vec<(f64, Vec<f64>)> = match kind {
     ProblemKind::Initial { .. } => {
       // Initial state.
@@ -5221,16 +5350,32 @@ fn ndsolve_system(
   // Build one InterpolatingFunction rule per dependent function.
   let mut rules: Vec<Expr> = Vec::with_capacity(funcs.len() + eliminated.len());
   for (fi, f) in funcs.iter().enumerate() {
+    if hidden.contains(&f.name) {
+      continue;
+    }
     let domain = Expr::List(
       vec![Expr::List(vec![Expr::Real(x_lo), Expr::Real(x_hi)].into())].into(),
     );
+    // An algebraic unknown is read from the highest-derivative solve at
+    // each point; every other function from its state.
+    let value_at = |x: f64, s: &[f64]| -> f64 {
+      if f.order > 0 {
+        return s[state_offset[fi]];
+      }
+      solve_highest_derivatives_cached(
+        &residuals,
+        funcs.len(),
+        x,
+        &s[..n_state],
+        None,
+      )
+      .map_or(f64::NAN, |h| h[fi])
+    };
     let data = Expr::List(
       points
         .iter()
         .map(|(x, s)| {
-          Expr::List(
-            vec![Expr::Real(*x), Expr::Real(s[state_offset[fi]])].into(),
-          )
+          Expr::List(vec![Expr::Real(*x), Expr::Real(value_at(*x, s))].into())
         })
         .collect(),
     );
@@ -6400,6 +6545,10 @@ fn rk4_system_step(
     };
     let mut d = vec![0.0; s.len()];
     for (fi, f) in funcs.iter().enumerate() {
+      // An algebraic unknown (order 0) carries no state.
+      if f.order == 0 {
+        continue;
+      }
       let off = state_offset[fi];
       for k in 0..f.order - 1 {
         d[off + k] = s[off + k + 1];
