@@ -6211,4 +6211,18 @@ mod nested_part_parsing {
       "{2, 2, 3}"
     );
   }
+
+  #[test]
+  fn set_delayed_evaluate_evaluates_body_at_definition_time() {
+    // The body is evaluated once, when the definition is made, so the
+    // side effect runs once and the result is stored.
+    assert_eq!(
+      interpret("n = 0; f[x_] := Evaluate[n++; x + 1]; f[1]; f[2]; n").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("g[x_] := Evaluate[Expand[(x + 1)^2]]; g[a]").unwrap(),
+      "1 + 2*a + a^2"
+    );
+  }
 }
