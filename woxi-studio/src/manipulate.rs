@@ -3977,6 +3977,20 @@ mod tests {
     assert!(!dump.contains("StringJoin"), "{dump}");
   }
 
+  /// A 2D slider captioned with a `GraphicsRow` of text and a small picture
+  /// shows the text; the picture and the layout head's source drop out.
+  #[test]
+  fn control_label_graphics_row_keeps_text_only() {
+    let code = r#"Manipulate[v, {{v, {1, 2}, GraphicsRow[{Style["vector (" <> ToString[v[[1]]] <> ")", 10], Framed[Graphics[Circle[]]]}]}, {-5, -5}, {5, 5}}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls[0]);
+    assert!(!dump.contains("GraphicsRow"), "{dump}");
+    assert!(!dump.contains("Graphics"), "{dump}");
+    assert!(dump.contains("vector ("), "{dump}");
+  }
+
   /// A heading `Row[{"parameter ", Style[a, Italic], Spacer[10], }]` ends in
   /// a trailing comma, i.e. a `Null` item; it is drawn as nothing, so the
   /// heading reads "parameter a" rather than "parameter a Null".

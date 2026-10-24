@@ -31407,7 +31407,8 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // Row[{a, b, …}] — concatenate the (recursively rendered) parts. A
       // typeset `RowBox[{…}]` (what `ToString[f[x], TraditionalForm]`
       // holds, e.g. `{sin, (, x, )}`) reads the same way.
-      "Row" | "RowBox" => match layout_parts(args.first()) {
+      // `GraphicsRow` lays its items out the same way; its pictures drop out.
+      "Row" | "RowBox" | "GraphicsRow" => match layout_parts(args.first()) {
         Some(parts) => parts
           .iter()
           .flat_map(|p| manipulate_label_runs(p, italic))
@@ -31416,7 +31417,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       },
       // Column[{a, b, …}] — the same, but one part per line. Demonstrations
       // label a hypothesis-test setter with a two-line column.
-      "Column" => match layout_parts(args.first()) {
+      "Column" | "GraphicsColumn" => match layout_parts(args.first()) {
         Some(parts) => parts
           .iter()
           .enumerate()
@@ -31441,10 +31442,12 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // their own label runs, joined by a space within a row and by a
       // newline between rows; blank cells (Grid pads a ragged table with
       // `""`) drop out rather than leaving stray spaces.
-      "Grid" | "TableForm" | "TextGrid" => match layout_parts(args.first()) {
-        Some(rows) => grid_label_runs(&rows, italic),
-        _ => output_run(italic),
-      },
+      "Grid" | "TableForm" | "TextGrid" | "GraphicsGrid" => {
+        match layout_parts(args.first()) {
+          Some(rows) => grid_label_runs(&rows, italic),
+          _ => output_run(italic),
+        }
+      }
       // `FormBox[boxes, form]` only records how its boxes were formatted.
       "FormBox" if !args.is_empty() => manipulate_label_runs(&args[0], italic),
       "Subscript" | "SubscriptBox" => script_runs(args, italic, false),
@@ -31729,6 +31732,9 @@ fn contains_presentation_head(expr: &Expr) -> bool {
         "Row"
           | "Column"
           | "Grid"
+          | "GraphicsRow"
+          | "GraphicsColumn"
+          | "GraphicsGrid"
           | "Style"
           | "StyleForm"
           | "Text"
@@ -31852,7 +31858,7 @@ fn label_is_compound(expr: &Expr) -> bool {
       "Style" | "StyleForm" | "Text" | "DisplayForm" | "TraditionalForm"
       | "Tooltip" => args.first().is_some_and(label_is_compound),
       // A layout of several items reads as several terms.
-      "Row" | "Column" => {
+      "Row" | "Column" | "GraphicsRow" | "GraphicsColumn" => {
         matches!(args.first(), Some(Expr::List(parts)) if parts.len() > 1)
       }
       "Plus" | "Subtract" | "Times" | "Divide" => args.len() > 1,
