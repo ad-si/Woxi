@@ -5727,7 +5727,7 @@ pub fn get_expr_head(expr: &Expr) -> String {
     Expr::Apply { .. } => "Apply",
     Expr::ReplaceAll { .. } => "ReplaceAll",
     Expr::ReplaceRepeated { .. } => "ReplaceRepeated",
-    Expr::Function { .. } => "Function",
+    Expr::Function { .. } | Expr::NamedFunction { .. } => "Function",
     Expr::Part { .. } => "Part",
     // The head of a curried call `h[a][b]` is the compound `h[a]`, not a
     // symbol — return its rendered form so typed blanks like `_Symbol` or

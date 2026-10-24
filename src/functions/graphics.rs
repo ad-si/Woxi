@@ -33211,9 +33211,29 @@ fn parse_manipulate_control(
   // travels with the end it was written for, so the swap carries it along:
   // `{xLeft, Dynamic[wd - xRight], 25, -1}` counts down from the dynamic
   // bound, which must keep driving the *upper* end of the sorted range.
+  //
+  // A single dynamic bound whose not-yet-settled value lands on the wrong
+  // side of the static one is not a reversed slider unless the step counts
+  // down: `{{n, 1}, 1, Dynamic[total], 1}` with `total` still 0 when the
+  // spec is parsed. That bound keeps its end and starts out collapsed onto
+  // the static one; re-resolving it against the live bindings opens the
+  // range up, instead of sorting the unsettled value into the *lower* end.
+  let counts_down = step.is_some_and(|s| s < 0.0);
   let (min_code, max_code) = if min > max {
-    std::mem::swap(&mut min, &mut max);
-    (max_code, min_code)
+    match (min_code.is_some(), max_code.is_some()) {
+      (false, true) if !counts_down => {
+        max = min;
+        (min_code, max_code)
+      }
+      (true, false) if !counts_down => {
+        min = max;
+        (min_code, max_code)
+      }
+      _ => {
+        std::mem::swap(&mut min, &mut max);
+        (max_code, min_code)
+      }
+    }
   } else {
     (min_code, max_code)
   };

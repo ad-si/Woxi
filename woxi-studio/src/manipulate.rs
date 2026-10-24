@@ -4084,6 +4084,34 @@ mod tests {
     state.reevaluate();
     assert_eq!(labels(&state), vec!["0", "1", "2", "3"]);
   }
+  /// A slider whose upper bound is `Dynamic[var]` of a hidden state variable
+  /// that is still 0 when the spec is parsed (`{{n, 1}, 1, Dynamic[total],
+  /// 1}` next to `{{total, 0}, ControlType -> None}`) is not a reversed
+  /// slider: it keeps its static lower bound and opens up to the variable's
+  /// live value once the body has set it.
+  #[test]
+  fn slider_with_unsettled_dynamic_max_keeps_static_min() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[(total = 5; n),
+        {{n, 1}, 1, Dynamic[total], 1},
+        {{total, 0}, ControlType -> None}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let bounds = state.controls.iter().find_map(|c| match c {
+      ControlState::Continuous {
+        name,
+        min,
+        max,
+        current,
+        ..
+      } if name == "n" => Some((*min, *max, *current)),
+      _ => None,
+    });
+    assert_eq!(bounds, Some((1.0, 5.0, 1.0)));
+  }
   /// A slider bound that wraps `Dynamic` *inside* a larger expression
   /// (`k*If[Dynamic[big], 1, 100]`) still makes a control, and follows the
   /// other control when that one changes.

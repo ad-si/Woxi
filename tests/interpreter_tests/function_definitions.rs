@@ -6257,3 +6257,58 @@ mod delayed_own_values_with_operator_forms {
     assert_eq!(interpret("a := Sqrt @ 4; a").unwrap(), "2");
   }
 }
+
+mod function_head_and_compound_printing {
+  use super::*;
+
+  // `Function[params, body]` has head `Function` just like `body &`, so a
+  // `_Function` blank (in a definition, `MatchQ`, `Cases`) must match it.
+  #[test]
+  fn blank_function_matches_named_function() {
+    clear_state();
+    assert_eq!(
+      interpret("MatchQ[Function[x, x], _Function]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Cases[{Function[{x}, x], 2, #&}, _Function]").unwrap(),
+      "{Function[{x}, x], #1 & }"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("h[g_Function, n_] := g[n]; h[Function[{p}, p + 1], 2]")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  // A written-out `CompoundExpression[a, b]` prints as `a; b`, so as the
+  // right-hand side of an assignment or rule it needs parentheses or it
+  // re-parses as `(lhs := a); b`.
+  #[test]
+  fn written_out_compound_expression_is_parenthesized() {
+    clear_state();
+    assert_eq!(
+      interpret("Hold[x = CompoundExpression[a, b]]").unwrap(),
+      "Hold[x = (a; b)]"
+    );
+    assert_eq!(
+      interpret("Hold[g[x_] := CompoundExpression[a, b]]").unwrap(),
+      "Hold[g[x_] := (a; b)]"
+    );
+    assert_eq!(
+      interpret("Hold[k :> CompoundExpression[a, b]]").unwrap(),
+      "Hold[k :> (a; b)]"
+    );
+    assert_eq!(
+      interpret("Hold[k -> CompoundExpression[a, b]]").unwrap(),
+      "Hold[k -> (a; b)]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("f[x_] := CompoundExpression[y = x, y + 1]; DownValues[f]")
+        .unwrap(),
+      "{HoldPattern[f[x_]] :> (y = x; y + 1)}"
+    );
+  }
+}
