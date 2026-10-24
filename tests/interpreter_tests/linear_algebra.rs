@@ -2820,6 +2820,41 @@ mod linear_solve {
 mod eigenvectors {
   use super::*;
 
+  // Eigenvalues that are `Root` objects: each vector is the null space of
+  // m - λ I with its entries RootReduced, in Wolfram's eigenvalue order.
+  #[test]
+  fn algebraic_eigenvalues_beyond_3x3() {
+    assert_eq!(
+      interpret(
+        "Eigenvectors[{{0, 0, 0, -1}, {1, 0, 0, 0}, {0, 1, 0, 0}, \
+         {0, 0, 1, 0}}]"
+      )
+      .unwrap(),
+      "{{Root[1 + #1^4 & , 4, 0], -I, Root[1 + #1^4 & , 2, 0], 1}, \
+       {Root[1 + #1^4 & , 3, 0], I, Root[1 + #1^4 & , 1, 0], 1}, \
+       {Root[1 + #1^4 & , 2, 0], I, Root[1 + #1^4 & , 4, 0], 1}, \
+       {Root[1 + #1^4 & , 1, 0], -I, Root[1 + #1^4 & , 3, 0], 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "Eigenvectors[{{0, 0, 0, 2}, {1, 0, 0, 0}, {0, 1, 0, 0}, \
+         {0, 0, 1, 1}}][[4]]"
+      )
+      .unwrap(),
+      "{-2, 2, -2, 1}"
+    );
+  }
+
+  // The complex arbitrary-precision value of a Root object.
+  #[test]
+  fn complex_root_to_arbitrary_precision() {
+    assert_eq!(
+      interpret("N[Root[1 + #1^4 &, 1] Root[1 + #1^4 &, 2] - 1, 50] == 0")
+        .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn matrix_1x1() {
     assert_eq!(interpret("Eigenvectors[{{5}}]").unwrap(), "{{1}}");

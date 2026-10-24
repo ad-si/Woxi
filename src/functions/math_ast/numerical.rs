@@ -2364,6 +2364,16 @@ fn expr_to_complex_bigfloat(
     }
     // Function calls
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // A complex `Root[f, k]`: the real case is `expr_to_bigfloat`'s.
+      "Root" if args.len() == 2 || args.len() == 3 => {
+        root_n_eval_arbitrary_complex(&args[0], &args[1], bits, rm).ok_or_else(
+          || {
+            InterpreterError::EvaluationError(
+              "N: cannot evaluate Root[…] to arbitrary precision".into(),
+            )
+          },
+        )
+      }
       "Times" => {
         let mut result =
           (BigFloat::from_i32(1, bits), BigFloat::from_i32(0, bits));
@@ -7468,6 +7478,62 @@ pub(crate) fn root_n_eval_arbitrary(
       break;
     }
     x = x.sub(&p.div(&dp, wbits, rm), wbits, rm);
+  }
+  Some(x)
+}
+
+/// Arbitrary-precision complex `Root[f, k]`: Newton's method on the
+/// complex plane from the machine-precision seed, in `astro_float`
+/// arithmetic, the complex counterpart of [`root_n_eval_arbitrary`].
+pub(crate) fn root_n_eval_arbitrary_complex(
+  poly_arg: &Expr,
+  k_arg: &Expr,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+) -> Option<(astro_float::BigFloat, astro_float::BigFloat)> {
+  use astro_float::BigFloat;
+  let (coeffs_i, _, re0, im0) = root_coeffs_and_seed(poly_arg, k_arg)?;
+  let wbits = bits + 64;
+  let coeffs: Vec<BigFloat> = coeffs_i
+    .iter()
+    .map(|&c| BigFloat::from_i128(c, wbits))
+    .collect();
+  let n = coeffs.len() - 1;
+  let zero = || BigFloat::from_i32(0, wbits);
+  let mul = |(a, b): (&BigFloat, &BigFloat), (c, d): (&BigFloat, &BigFloat)| {
+    (
+      a.mul(c, wbits, rm).sub(&b.mul(d, wbits, rm), wbits, rm),
+      a.mul(d, wbits, rm).add(&b.mul(c, wbits, rm), wbits, rm),
+    )
+  };
+  let mut x = (
+    BigFloat::from_f64(re0, wbits),
+    BigFloat::from_f64(im0, wbits),
+  );
+  let iterations = (wbits as f64 / 40.0).log2().ceil().max(1.0) as usize + 4;
+  for _ in 0..iterations {
+    // Horner for p(x) and p'(x) together.
+    let mut p = (coeffs[n].clone(), zero());
+    let mut dp = (zero(), zero());
+    for k in (0..n).rev() {
+      let t = mul((&dp.0, &dp.1), (&x.0, &x.1));
+      dp = (t.0.add(&p.0, wbits, rm), t.1.add(&p.1, wbits, rm));
+      let t = mul((&p.0, &p.1), (&x.0, &x.1));
+      p = (t.0.add(&coeffs[k], wbits, rm), t.1);
+    }
+    let denom =
+      dp.0
+        .mul(&dp.0, wbits, rm)
+        .add(&dp.1.mul(&dp.1, wbits, rm), wbits, rm);
+    if denom.is_zero() {
+      break;
+    }
+    // p / p' = p · conj(p') / |p'|²
+    let q = mul((&p.0, &p.1), (&dp.0, &dp.1.neg()));
+    x = (
+      x.0.sub(&q.0.div(&denom, wbits, rm), wbits, rm),
+      x.1.sub(&q.1.div(&denom, wbits, rm), wbits, rm),
+    );
   }
   Some(x)
 }

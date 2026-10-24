@@ -4351,8 +4351,9 @@ fn integer_eigenvectors(
   }
 
   if !all_integer {
-    // Can't handle symbolic eigenvalues for n > 3
-    return call1("Eigenvectors", matrix_to_expr(matrix.to_vec()));
+    return algebraic_eigenvectors(matrix, n).unwrap_or_else(|| {
+      call1("Eigenvectors", matrix_to_expr(matrix.to_vec()))
+    });
   }
 
   // All integer eigenvalues: compute null spaces
@@ -4380,6 +4381,98 @@ fn integer_eigenvectors(
   }
 
   Expr::List(eigenvectors.into())
+}
+
+/// Eigenvectors of an exact matrix whose eigenvalues are algebraic numbers
+/// (radicals or `Root` objects): the null space of `m - λ I` for each
+/// eigenvalue in `Eigenvalues` order, a repeated eigenvalue taking its
+/// vectors in turn and a defective one padded with zero vectors.
+fn algebraic_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> Option<Expr> {
+  let eigen = eigenvalues_ast(&[matrix_to_expr(matrix.to_vec())]).ok()?;
+  let Expr::List(eigenvalues) = &eigen else {
+    return None;
+  };
+  if eigenvalues.len() != n {
+    return None;
+  }
+  // Wolfram takes the eigenvalues as `Root` objects here, ordered by
+  // decreasing absolute value, then increasing real part, then decreasing
+  // imaginary part (so a conjugate pair lists `a + b I` first).
+  let mut keyed: Vec<((f64, f64), Expr)> = Vec::with_capacity(n);
+  for lambda in eigenvalues {
+    let value = evaluate_expr_to_expr(&call1("N", lambda.clone())).ok()?;
+    let parts =
+      crate::functions::math_ast::numeric_utils::try_extract_complex_float(
+        &value,
+      )
+      .or_else(|| try_eval_to_f64(&value).map(|re| (re, 0.0)))?;
+    keyed.push((parts, lambda.clone()));
+  }
+  keyed.sort_by(|((ar, ai), _), ((br, bi), _)| {
+    let (abs_a, abs_b) = (ar.hypot(*ai), br.hypot(*bi));
+    let close = |x: f64, y: f64| (x - y).abs() <= 1e-10 * x.abs().max(1.0);
+    if !close(abs_a, abs_b) {
+      abs_b.total_cmp(&abs_a)
+    } else if !close(*ar, *br) {
+      ar.total_cmp(br)
+    } else {
+      bi.total_cmp(ai)
+    }
+  });
+  let eigenvalues: Vec<Expr> = keyed.into_iter().map(|(_, l)| l).collect();
+  let mut groups: Vec<(Expr, Vec<Expr>)> = Vec::new();
+  let mut rows: Vec<Expr> = Vec::with_capacity(n);
+  for lambda in &eigenvalues {
+    let pos = if let Some(pos) = groups
+      .iter()
+      .position(|(l, _)| expr_to_string(l) == expr_to_string(lambda))
+    {
+      pos
+    } else {
+      let shifted: Vec<Vec<Expr>> = (0..n)
+        .map(|i| {
+          (0..n)
+            .map(|j| {
+              if i == j {
+                simplify_expr(&plus(vec![
+                  matrix[i][j].clone(),
+                  neg(lambda.clone()),
+                ]))
+              } else {
+                matrix[i][j].clone()
+              }
+            })
+            .collect()
+        })
+        .collect();
+      let space = null_space_ast(&[matrix_to_expr(shifted)]).ok()?;
+      let Expr::List(space) = &space else {
+        return None;
+      };
+      if space.is_empty() {
+        return None;
+      }
+      // Each entry in canonical form: `-Root[f, 2]` is `Root[g, k]`.
+      let space: Vec<Expr> = space
+        .iter()
+        .map(|v| match v {
+          Expr::List(items) => {
+            Expr::List(items.iter().map(simplify_expr).collect())
+          }
+          other => other.clone(),
+        })
+        .collect();
+      groups.push((lambda.clone(), space));
+      groups.len() - 1
+    };
+    let vecs = &mut groups[pos].1;
+    rows.push(if vecs.is_empty() {
+      Expr::List(vec![Expr::Integer(0); n].into())
+    } else {
+      vecs.remove(0)
+    });
+  }
+  Some(Expr::List(rows.into()))
 }
 
 /// Compute null space vectors for a specific integer eigenvalue.
@@ -5396,6 +5489,19 @@ pub fn drazin_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Simplify expression via the evaluator (with Simplify for symbolic)
+fn contains_root_object(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      name == "Root" || args.iter().any(contains_root_object)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_root_object(left) || contains_root_object(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_root_object(operand),
+    _ => false,
+  }
+}
+
 fn simplify_expr(e: &Expr) -> Expr {
   let Ok(evaluated) = evaluate_expr_to_expr(e) else {
     return e.clone();
@@ -5406,6 +5512,26 @@ fn simplify_expr(e: &Expr) -> Expr {
     | Expr::Real(_)
     | Expr::BigInteger(_)
     | Expr::Identifier(_) => evaluated,
+    // An algebraic number written with `Root` objects (an eigenvalue of a
+    // matrix with no radical roots) is zero when it vanishes to 50 digits
+    // (a nonzero one this small would need an enormous minimal polynomial),
+    // and otherwise canonicalized by RootReduce.
+    _ if contains_root_object(&evaluated)
+      && crate::functions::predicate_ast::is_numeric_q(&evaluated) =>
+    {
+      let vanishes = evaluate_expr_to_expr(&call(
+        "Less",
+        vec![
+          call1("Abs", call("N", vec![evaluated.clone(), Expr::Integer(50)])),
+          pow2(Expr::Integer(10), Expr::Integer(-40)),
+        ],
+      ));
+      if matches!(vanishes, Ok(Expr::Identifier(ref t)) if t == "True") {
+        return Expr::Integer(0);
+      }
+      evaluate_expr_to_expr(&call1("RootReduce", evaluated.clone()))
+        .unwrap_or(evaluated)
+    }
     _ => match evaluate_expr_to_expr(&call1("Simplify", evaluated.clone())) {
       Ok(r) => r,
       Err(_) => evaluated,

@@ -3486,6 +3486,23 @@ answer. These do not:
   (`OptionValue[Plot, Axes, Hold]` reports it, `OptionValue[Plot, 5, Frame]`
   does not).
 
+### `Eigenvalues` of a matrix without radical roots
+
+Woxi lists the eigenvalues as `Root` objects in `Root` order; wolframscript
+writes them as radicals when it can and orders those its own way:
+
+```sh
+wolframscript -code 'Eigenvalues[{{0, 0, 0, 2}, {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 1}}]'
+# {Root[-2 + 2*#1 - 2*#1^2 + #1^3 & , 1, 0], Root[… , 3, 0], Root[… , 2, 0], -1}
+woxi eval 'Eigenvalues[{{0, 0, 0, 2}, {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 1}}]'
+# {Root[-2 + 2*#1 - 2*#1^2 + #1^3 & , 1, 0], -1, Root[… , 2, 0], Root[… , 3, 0]}
+```
+
+`Eigenvectors` does follow Wolfram's order (decreasing absolute value, then
+increasing real part, then decreasing imaginary part); `Eigenvalues` of the
+`{{0, 0, 0, -1}, …}` shift matrix in wolframscript is in neither order.
+
+
 ### `Flat` without `OneIdentity` binds singletons bare
 
 For a head that is `Flat` but not `OneIdentity`, Wolfram matches a blank that
