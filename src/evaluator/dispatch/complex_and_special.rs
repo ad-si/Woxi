@@ -3056,9 +3056,11 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
       "NumberForm" if args.len() == 2 => match &args[1] {
         Expr::Integer(n) => string_ast::number_form_parts(val, *n as i64)?,
         Expr::List(spec) if spec.len() == 2 => match (&spec[0], &spec[1]) {
-          (Expr::Integer(n), Expr::Integer(f)) => {
-            string_ast::number_form_fixed_parts(val, *n as i64, *f as i64)?
-          }
+          (n, Expr::Integer(f)) => string_ast::number_form_fixed_parts(
+            val,
+            string_ast::number_form_digit_budget(n)?,
+            *f as i64,
+          )?,
           _ => return None,
         },
         _ => return None,
