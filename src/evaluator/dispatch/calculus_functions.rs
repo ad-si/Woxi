@@ -239,6 +239,59 @@ fn derivative_in_dummy(
   Some(evaluate_expr_to_expr(&deriv))
 }
 
+/// The `n`-th derivative of the function `func_name` at `x0` from its
+/// values alone: the central difference of order `n` with step `h`,
+/// extrapolated to `h -> 0` (Ridders' method — the error is a series in
+/// `h^2`, so each halving of `h` removes one more term).
+fn numeric_derivative(func_name: &str, n: usize, x0: f64) -> Option<f64> {
+  let f = |x: f64| -> Option<f64> {
+    let v =
+      crate::evaluator::evaluate_function_call_ast(func_name, &[Expr::Real(x)])
+        .ok()?;
+    crate::functions::math_ast::try_eval_to_f64(&v).filter(|v| v.is_finite())
+  };
+  let binom = |n: usize, k: usize| -> f64 {
+    (0..k).fold(1.0, |acc, i| acc * (n - i) as f64 / (i + 1) as f64)
+  };
+  let difference = |h: f64| -> Option<f64> {
+    let mut sum = 0.0;
+    for k in 0..=n {
+      let offset = (n as f64 / 2.0 - k as f64) * h;
+      let sign = if k % 2 == 0 { 1.0 } else { -1.0 };
+      sum += sign * binom(n, k) * f(x0 + offset)?;
+    }
+    Some(sum / h.powi(n as i32))
+  };
+  const STEPS: usize = 10;
+  let mut h = 0.1 * x0.abs().max(1.0);
+  let mut table: Vec<Vec<f64>> = Vec::with_capacity(STEPS);
+  let mut best = f64::NAN;
+  let mut best_err = f64::INFINITY;
+  for i in 0..STEPS {
+    let mut row = vec![difference(h)?];
+    let mut factor = 1.0;
+    for j in 1..=i {
+      factor *= 4.0;
+      let value = (factor * row[j - 1] - table[i - 1][j - 1]) / (factor - 1.0);
+      let err = (value - row[j - 1])
+        .abs()
+        .max((value - table[i - 1][j - 1]).abs());
+      if err <= best_err {
+        best_err = err;
+        best = value;
+      }
+      row.push(value);
+    }
+    // Stop once the extrapolation starts to lose accuracy.
+    if i > 0 && (row[i] - table[i - 1][i - 1]).abs() >= 2.0 * best_err {
+      break;
+    }
+    table.push(row);
+    h /= 2.0;
+  }
+  best.is_finite().then_some(best)
+}
+
 pub fn dispatch_calculus_functions(
   name: &str,
   args: &[Expr],
@@ -275,6 +328,14 @@ pub fn dispatch_calculus_functions(
           }
           Some(Err(e)) => return Some(Err(e)),
           None => {}
+        }
+        // No symbolic derivative (a `_?NumericQ` rule): at an inexact
+        // point it is computed numerically, as Wolfram does.
+        if let Expr::Real(x0) = &args[2]
+          && *n >= 1
+          && let Some(v) = numeric_derivative(func_name, *n as usize, *x0)
+        {
+          return Some(Ok(Expr::Real(v)));
         }
       }
       return Some(Ok(unevaluated("Derivative", args)));

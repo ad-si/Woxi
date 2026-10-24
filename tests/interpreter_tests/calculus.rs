@@ -2128,6 +2128,21 @@ mod differentiate_nonconstants {
 mod derivative_prime_notation {
   use super::*;
 
+  // A `_?NumericQ` function has no symbolic derivative; at an inexact
+  // point (or under N) it is differentiated numerically.
+  #[test]
+  fn numeric_derivative_of_a_numeric_only_function() {
+    assert_eq!(
+      interpret(
+        "q[x_?NumericQ] := x^3; \
+         {Round[10^10 Derivative[1][q][2.]], Round[10^8 N[q''[2]]], \
+          q'[2], Round[10^8 y /. FindRoot[q'[y] == 12, {y, 1}]]}"
+      )
+      .unwrap(),
+      "{120000000000, 1200000000, Derivative[1][q][2], 200000000}"
+    );
+  }
+
   // `Derivative[n][f]` differentiates what `f[x]` evaluates to, so a body
   // like `InterpolatingPolynomial[data, x]` is computed before it is
   // differentiated, and `f'` of a user function is a pure function.

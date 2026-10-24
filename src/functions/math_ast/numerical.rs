@@ -206,6 +206,18 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       {
         return Ok(r);
       }
+      // `Derivative[n][f][x]` (stored flat as `Derivative[n, f, x]`): the
+      // order and the function are held, only the point is numericized.
+      if name == "Derivative"
+        && args.len() == 3
+        && matches!(&args[1], Expr::Identifier(_))
+      {
+        let point = n_eval(&args[2])?;
+        return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![args[0].clone(), args[1].clone(), point].into(),
+        });
+      }
       // Root[poly &, k] / Root[poly &, k, 0] — the k-th root numerically.
       if name == "Root"
         && (args.len() == 2 || args.len() == 3)
