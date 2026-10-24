@@ -4035,7 +4035,7 @@ FractionBoxOptions,,🚫,,4.0,4138
 FrontEndEventActions,,🚫,,6.0,4138
 HannPoissonWindow,,,,9.0,4138
 JordanModelDecomposition,,,,8.0,4138
-KendallTauTest,,,,9.0,4138
+KendallTauTest,"Two-sided p-value of Kendall's tau for two paired samples (normal approximation with tie correction)",✅,pure,9.0,4138
 KeypointStrength,,,,10.0,4138
 NetPairEmbeddingOperator,,🚫,,11.1,4138
 ParametricFunction,Represents a function of numeric parameters returned by ParametricNDSolve (inert until all parameters are numeric),✅,none,9.0,4138
