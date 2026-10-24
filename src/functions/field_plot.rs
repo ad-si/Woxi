@@ -4904,6 +4904,9 @@ enum ArrayCell {
 /// own `ColorFunction` option the same way rather than re-parsing it.
 pub(crate) fn color_function_scheme_name(val: &Expr) -> Option<String> {
   match val {
+    // `"Thermometer"` is the short spelling Wolfram accepts for
+    // `"ThermometerColors"` in a `ColorFunction` option.
+    Expr::String(s) if s == "Thermometer" => Some("ThermometerColors".into()),
     Expr::String(s) => Some(s.clone()),
     // Only the plain gradient: a ranged or reversed `ColorDataFunction`
     // (`ColorData[{"Rainbow", "Reverse"}]`) carries a different blend and
