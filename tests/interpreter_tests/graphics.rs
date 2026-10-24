@@ -1106,6 +1106,28 @@ mod graphics {
       assert!(prolog < point, "prolog must sit under the points: {svg}");
     }
 
+    /// Regression: a `PlotRange` whose vertical pair is given high-to-low
+    /// (`{0.4, -8.25}`) produced a clip rectangle of negative width and
+    /// pushed every primitive off the canvas, leaving a blank picture.
+    #[test]
+    fn a_reversed_plot_range_pair_still_draws_the_picture() {
+      let svg = export_svg(
+        "Graphics[{Disk[{1, -1}, 0.5]}, \
+         PlotRange -> {{-0.5, 11}, {0.4, -8.25}}, PlotRangePadding -> 0, \
+         ImageSize -> {450, 400}]",
+      );
+      assert!(!svg.contains("width=\"-"), "{svg}");
+      assert!(!svg.contains("rx=\"-"), "{svg}");
+      assert_eq!(
+        svg,
+        export_svg(
+          "Graphics[{Disk[{1, -1}, 0.5]}, \
+           PlotRange -> {{-0.5, 11}, {-8.25, 0.4}}, PlotRangePadding -> 0, \
+           ImageSize -> {450, 400}]",
+        )
+      );
+    }
+
     /// A `Tooltip` around a primitive in a plot's `Epilog` draws the
     /// primitive; the tip only shows on hover.
     #[test]
