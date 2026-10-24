@@ -93,7 +93,7 @@ fn exact_integer_ord(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
 
 /// Whether `expr` is finished data — numbers, strings, and lists of them —
 /// whose evaluation is itself whatever the environment holds.
-fn is_inert_data(expr: &Expr) -> bool {
+pub(crate) fn is_inert_data(expr: &Expr) -> bool {
   match expr {
     Expr::Integer(_)
     | Expr::BigInteger(_)

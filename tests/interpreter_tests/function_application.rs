@@ -2399,6 +2399,21 @@ mod named_slots {
 mod part_of_atoms {
   use super::*;
 
+  // A symbolic piece of a stored list evaluates in the current
+  // environment, as the whole value does: rules stored with `t` free read
+  // back with `t`'s current value.
+  #[test]
+  fn stored_part_evaluates_in_current_environment() {
+    assert_eq!(
+      interpret(
+        "r = {{f[t] -> g[t]}}; Table[{r[[1]], r[[1, 1]], f[t] /. r[[1]]}, \
+         {t, {1}}]"
+      )
+      .unwrap(),
+      "{{{f[1] -> g[1]}, f[1] -> g[1], g[1]}}"
+    );
+  }
+
   #[test]
   fn part_of_number_parses_and_warns() {
     // 5[["a"]] must parse (number base) and emit Part::pspec1

@@ -297,14 +297,21 @@ pub fn forget_part_assigned(var_name: &str) {
   });
 }
 
-/// Evaluate what was read out of `var_name` if a Part assignment could have
-/// left it unevaluated. `eval_part_base` covers the value itself; this covers
-/// a piece taken out of a stored list, which is handed over as it stands.
+/// Evaluate what was read out of `var_name` unless it is finished data: a
+/// Part assignment can have left it unevaluated, and a symbolic piece
+/// evaluates in the current environment (`r = {f[t] -> g[t]}` read as
+/// `r[[1]]` inside `Table[…, {t, 1, 2}]` is `f[1] -> g[1]`). A piece
+/// taken out of a stored list is otherwise handed over as it stands.
 pub fn evaluate_if_part_assigned(
   var_name: &str,
   part: Expr,
 ) -> Result<Expr, InterpreterError> {
-  if was_part_assigned(var_name) {
+  // An unevaluated `Part` (the stored value had no such part) is the
+  // answer itself; evaluating it would only extract it again.
+  if was_part_assigned(var_name)
+    || !(crate::evaluator::core_eval::is_inert_data(&part)
+      || matches!(part, Expr::Part { .. }))
+  {
     evaluate_expr_to_expr(&part)
   } else {
     Ok(part)
