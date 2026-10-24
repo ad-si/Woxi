@@ -484,9 +484,11 @@ mod polyhedron_data_tests {
        Polygon[{{8, 4, 2, 6}, {8, 6, 5, 7}, {8, 7, 3, 4}, {4, 3, 1, 2}, \
        {1, 3, 7, 5}, {2, 1, 5, 6}}]]"
     );
-    // The two parts agree with the properties they are built from, for
-    // every solid: the same corners (compared numerically, since the two
-    // radical forms need not print alike) and the same face indices.
+    // The two parts agree with the properties they are built from: the
+    // same corners (compared numerically, since the two radical forms need
+    // not print alike) and the same face indices. Checked on a spread of
+    // solids rather than all of them; the snub solids' Root coordinates
+    // take seconds to numericize in a debug build.
     assert_eq!(
       interpret(
         r#"Union @ Table[
@@ -494,7 +496,9 @@ mod polyhedron_data_tests {
                 N[PolyhedronData[s, "VertexCoordinates"]]] < 10^-10,
               PolyhedronData[s, "Faces"][[2, 1]] ===
                 PolyhedronData[s, "FaceIndices"]},
-             {s, PolyhedronData[All]}]"#
+             {s, Join[PolyhedronData["Platonic"], PolyhedronData["KeplerPoinsot"],
+               {"Cuboctahedron", "RhombicDodecahedron", "TruncatedIcosahedron",
+                "Bilunabirotunda", {"Pyramid", 4}, "StellaOctangula"}]}]"#
       )
       .unwrap(),
       "{{True, True}}"

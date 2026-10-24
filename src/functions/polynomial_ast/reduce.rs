@@ -50,14 +50,30 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Over the integers, a condition that bounds every variable has finitely
   // many solutions, which are listed outright.
+  // A symbol of the condition that is not among the variables is an
+  // integer too, and listed first (`Reduce[x^2 + y^2 + z^2 == 1, {x, y},
+  // Integers]` enumerates z as well).
   if args.len() == 3
     && matches!(&args[2], Expr::Identifier(d) if d == "Integers")
-    && let Some(result) = super::reduce_integer_box::reduce_bounded_integer_box(
-      &args[0],
-      &extract_reduce_vars(&args[1]),
-    )
   {
-    return result;
+    let named = extract_reduce_vars(&args[1]);
+    let mut all = Vec::new();
+    constraint_variables(&args[0], &mut all);
+    let mut extra: Vec<String> =
+      all.into_iter().filter(|v| !named.contains(v)).collect();
+    extra.sort_by(|a, b| {
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(
+        &Expr::Identifier(a.clone()),
+        &Expr::Identifier(b.clone()),
+      )
+    });
+    extra.dedup();
+    let vars: Vec<String> = extra.into_iter().chain(named).collect();
+    if let Some(result) =
+      super::reduce_integer_box::reduce_bounded_integer_box(&args[0], &vars)
+    {
+      return result;
+    }
   }
   if let Some(result) = try_linear_integer_reduce(args) {
     return Ok(result);

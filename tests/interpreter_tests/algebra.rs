@@ -20786,3 +20786,20 @@ mod reduce_overdetermined {
     );
   }
 }
+
+mod reduce_integers_free_symbols {
+  use super::*;
+
+  #[test]
+  fn symbols_outside_the_variable_list_are_integers_listed_first() {
+    assert_eq!(
+      interpret("Reduce[x^2 + y^2 == 1, {x}, Integers]").unwrap(),
+      "(y == -1 && x == 0) || (y == 0 && x == -1) || (y == 0 && x == 1) || (y == 1 && x == 0)"
+    );
+    assert_eq!(
+      interpret("Length[Reduce[x^2 + y^2 + z^2 == 1, {x, y}, Integers]]")
+        .unwrap(),
+      "6"
+    );
+  }
+}
