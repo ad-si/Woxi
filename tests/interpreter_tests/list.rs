@@ -24219,3 +24219,31 @@ mod set_delayed_part {
     );
   }
 }
+
+mod find_clusters_vectors {
+  use super::*;
+
+  #[test]
+  fn groups_points_geometrically() {
+    let d = "{{1, 2}, {1.1, 2}, {5, 5}, {5.2, 5.1}, {9, 1}, {9.1, 1.2}}";
+    assert_eq!(
+      interpret(&format!("Sort[Sort /@ FindClusters[{d}]]")).unwrap(),
+      "{{{1, 2}, {1.1, 2}}, {{5, 5}, {5.2, 5.1}}, {{9, 1}, {9.1, 1.2}}}"
+    );
+    assert_eq!(
+      interpret(&format!("Sort[Sort /@ FindClusters[{d}, 2]]")).unwrap(),
+      "{{{9, 1}, {9.1, 1.2}}, {{1, 2}, {1.1, 2}, {5, 5}, {5.2, 5.1}}}"
+    );
+  }
+
+  #[test]
+  fn options_are_not_counted_as_arguments() {
+    let d = "{{1, 2}, {1.1, 2}, {5, 5}, {5.2, 5.1}, {9, 1}, {9.1, 1.2}}";
+    let r = interpret_with_stdout(&format!(
+      "Length[FindClusters[{d}, 2, Method -> \"Optimize\", DistanceFunction -> EuclideanDistance]]"
+    ))
+    .unwrap();
+    assert_eq!(r.result, "2");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+}
