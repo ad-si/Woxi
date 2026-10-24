@@ -2202,9 +2202,9 @@ fn image3d_from_volume(
 }
 
 pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 4 {
     return Err(InterpreterError::EvaluationError(
-      "ImageAdjust expects 1 or 2 arguments".into(),
+      "ImageAdjust expects 1 to 4 arguments".into(),
     ));
   }
   // A scalar volume is stretched to the full [0, 1] range, like a 2D image.
@@ -2287,8 +2287,25 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // image arithmetic.
   let is_real32 = matches!(image_type, ImageType::Real32);
   let snap = |v: f64| -> f64 { if is_real32 { (v as f32) as f64 } else { v } };
+  // `{imin, imax}` (third argument) maps that input range onto [0, 1]
+  // before the correction; `{omin, omax}` (fourth) maps the result onto
+  // that output range.
+  let range_arg = |i: usize| -> Result<Option<(f64, f64)>, InterpreterError> {
+    match args.get(i) {
+      Some(Expr::List(r)) if r.len() == 2 => {
+        Ok(Some((expr_to_f64(&r[0])?, expr_to_f64(&r[1])?)))
+      }
+      _ => Ok(None),
+    }
+  };
+  let input_range = range_arg(2)?;
+  let output_range = range_arg(3)?;
   let apply = |v: f64| -> f64 {
     let v = snap(v);
+    let v = match input_range {
+      Some((lo, hi)) if hi != lo => ((v - lo) / (hi - lo)).clamp(0.0, 1.0),
+      _ => v,
+    };
     let r = match mode {
       Adjust::Rescale => unreachable!(),
       Adjust::Curve(c, b, gamma) => {
@@ -2300,6 +2317,10 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let after_b = (after_g * (1.0 + b)).clamp(0.0, 1.0);
         (0.5 + (1.0 + c) * (after_b - 0.5)).clamp(0.0, 1.0)
       }
+    };
+    let r = match output_range {
+      Some((lo, hi)) => lo + r * (hi - lo),
+      None => r,
     };
     snap(r)
   };
@@ -4827,6 +4848,43 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => (&args[1], None),
   };
+  // A graphic on either side is rasterized first, as wolframscript does.
+  let base_raster;
+  let base: &Expr = match &args[0] {
+    Expr::Image { .. } => &args[0],
+    other => match coerce_graphics_to_image(other) {
+      Some(img) => {
+        base_raster = img;
+        &base_raster
+      }
+      None => &args[0],
+    },
+  };
+  let overlay_raster;
+  let overlay_expr: &Expr = match overlay_expr {
+    Expr::Image { .. } => overlay_expr,
+    other => match coerce_graphics_to_image(other) {
+      Some(img) => {
+        overlay_raster = img;
+        &overlay_raster
+      }
+      None => overlay_expr,
+    },
+  };
+  if !matches!(base, Expr::Image { .. })
+    || !matches!(overlay_expr, Expr::Image { .. })
+  {
+    let bad = if matches!(base, Expr::Image { .. }) {
+      overlay_expr
+    } else {
+      base
+    };
+    crate::emit_message(&format!(
+      "ImageCompose::imginv: Expecting an image or graphics instead of {}.",
+      expr_to_string(bad)
+    ));
+    return Ok(unevaluated("ImageCompose", args));
+  }
 
   let (
     Expr::Image {
@@ -4845,11 +4903,9 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       data: data2,
       ..
     },
-  ) = (&args[0], overlay_expr)
+  ) = (base, overlay_expr)
   else {
-    return Err(InterpreterError::EvaluationError(
-      "ImageCompose: both arguments must be Images".into(),
-    ));
+    return Ok(unevaluated("ImageCompose", args));
   };
 
   let bw = *w1 as i64;

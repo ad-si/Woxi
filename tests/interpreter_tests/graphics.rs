@@ -40563,3 +40563,42 @@ mod gaussian_matrix_vector_form {
     );
   }
 }
+
+mod image_adjust_ranges_and_compose_graphics {
+  use super::*;
+
+  #[test]
+  fn image_adjust_input_and_output_ranges() {
+    assert_eq!(
+      interpret("ImageData[ImageAdjust[Image[{{0.2, 0.5}, {0.6, 0.8}}], {0, 0}, {0.2, 0.8}]]")
+        .unwrap(),
+      "{{4.967053879312289*^-9, 0.5}, {0.6666666865348816, 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAdjust[Image[{{0.2, 0.5}, {0.6, 0.8}}], {0, 0}, {0.2, 0.8}, {0.1, 0.9}]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.5}, {0.6333333849906921, 0.8999999761581421}}"
+    );
+  }
+
+  #[test]
+  fn image_compose_rasterizes_graphics_and_reports_non_images() {
+    assert_eq!(
+      interpret(
+        "Head[ImageCompose[Graphics[Disk[]], {Graphics[Circle[]], 0.5}]]"
+      )
+      .unwrap(),
+      "Image"
+    );
+    let r = interpret_with_stdout("ImageCompose[a, b]").unwrap();
+    assert_eq!(r.result, "ImageCompose[a, b]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "ImageCompose::imginv: Expecting an image or graphics instead of a."
+      ]
+    );
+  }
+}

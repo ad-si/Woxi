@@ -904,7 +904,7 @@ pub fn dispatch_image_functions(
     "ImageEffect" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_effect_ast(args));
     }
-    "ImageAdjust" if !args.is_empty() && args.len() <= 2 => {
+    "ImageAdjust" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::image_ast::image_adjust_ast(args));
     }
     "HistogramTransform" if !args.is_empty() => {
