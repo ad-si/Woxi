@@ -4948,7 +4948,7 @@ fn ndsolve_system(
             &time_events,
             event_ctx,
             x_name,
-            cached_mass_matrix.as_deref(),
+            cached_mass_matrix.as_ref(),
           )?
         } else {
           integrate_leg_until_event(
@@ -4961,7 +4961,7 @@ fn ndsolve_system(
             event.and_then(|e| e.action.as_ref()),
             event_ctx,
             x_name,
-            cached_mass_matrix.as_deref(),
+            cached_mass_matrix.as_ref(),
           )?
         };
         let Some(forward) = forward else {
@@ -4991,7 +4991,7 @@ fn ndsolve_system(
             &[],
             StateEventCtx::none(),
             x_name,
-            cached_mass_matrix.as_deref(),
+            cached_mass_matrix.as_ref(),
           )?;
           let Some(leg) = leg else {
             return Ok(None);
@@ -5300,7 +5300,7 @@ fn integrate_leg_until_event(
   event_action: Option<&Expr>,
   state_events: StateEventCtx,
   x_name: &str,
-  cached_m: Option<&[Vec<f64>]>,
+  cached_m: Option<&MassLu>,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
   let mut window = 1.0f64;
   for attempt in 0..MAX_UNBOUNDED_DOUBLINGS {
@@ -5414,7 +5414,7 @@ fn solve_bvp_shooting(
       &[],
       StateEventCtx::none(),
       x_name,
-      cached_mass_matrix.as_deref(),
+      cached_mass_matrix.as_ref(),
     )?;
     let Some(pts) = pts else {
       return Ok(None);
@@ -5841,7 +5841,7 @@ fn integrate_leg(
   time_events: &[TimeEvent],
   state_events: StateEventCtx,
   x_name: &str,
-  cached_m: Option<&[Vec<f64>]>,
+  cached_m: Option<&MassLu>,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
   // At least one step for a leg of any length: an initial point just inside
   // the domain leaves a backward leg shorter than half a step, which would
@@ -6152,7 +6152,7 @@ fn rk4_step_refined(
   h: f64,
   depth: u32,
   out: &mut Vec<(f64, Vec<f64>)>,
-  cached_m: Option<&[Vec<f64>]>,
+  cached_m: Option<&MassLu>,
 ) -> Result<Option<Vec<f64>>, InterpreterError> {
   let Some(full) =
     rk4_system_step(residuals, funcs, state_offset, state, x, h, cached_m)?
@@ -6242,7 +6242,7 @@ fn rk4_system_step(
   state: &[f64],
   x: f64,
   h: f64,
-  cached_m: Option<&[Vec<f64>]>,
+  cached_m: Option<&MassLu>,
 ) -> Result<Option<Vec<f64>>, InterpreterError> {
   let deriv = |s: &[f64],
                xv: f64|
@@ -6409,12 +6409,12 @@ fn solve_highest_derivatives_cached(
   n_funcs: usize,
   x: f64,
   state: &[f64],
-  cached_m: Option<&[Vec<f64>]>,
+  cached_m: Option<&MassLu>,
 ) -> Option<Vec<f64>> {
   let n = n_funcs;
   let c = residual_constant_term(residuals, n, x, state)?;
-  if let Some(m) = cached_m {
-    solve_mass_matrix_system(m.to_vec(), &c)
+  if let Some(lu) = cached_m {
+    Some(lu.solve(&c))
   } else {
     let m = mass_matrix(residuals, n, x, state, &c)?;
     solve_mass_matrix_system(m, &c)
@@ -6464,7 +6464,7 @@ fn probe_constant_mass_matrix(
   state0: &[f64],
   x_min: f64,
   x_max: f64,
-) -> Option<Vec<Vec<f64>>> {
+) -> Option<MassLu> {
   // The probe points are the solver's own, not the user's: a singular
   // right-hand side there (`1/(x - x0)` guarded by `If[t == 0, …]`) must
   // not print messages for evaluations the kernel would never make.
@@ -6474,7 +6474,65 @@ fn probe_constant_mass_matrix(
     probe_constant_mass_matrix_inner(residuals, n, x0, state0, x_min, x_max);
   crate::pop_quiet();
   crate::restore_warnings(snapshot);
-  result
+  result.and_then(MassLu::factor)
+}
+
+/// A constant mass matrix factored once: the elimination
+/// `solve_mass_matrix_system` performs, with each row's multipliers kept
+/// below the diagonal and the pivot row of each column, so every stage
+/// solve costs O(n²) instead of O(n³) — and gives bit-for-bit the same
+/// answer, since the pivots depend on the matrix alone and the right-hand
+/// side sees the very same operations in the same order.
+pub(crate) struct MassLu {
+  lu: Vec<Vec<f64>>,
+  pivots: Vec<usize>,
+}
+
+impl MassLu {
+  fn factor(mut m: Vec<Vec<f64>>) -> Option<Self> {
+    let n = m.len();
+    let mut pivots = Vec::with_capacity(n);
+    for col in 0..n {
+      let (pivot_row, pivot_abs) = (col..n)
+        .map(|r| (r, m[r][col].abs()))
+        .max_by(|a, b| a.1.total_cmp(&b.1))?;
+      if pivot_abs < 1e-14 {
+        return None;
+      }
+      m.swap(col, pivot_row);
+      pivots.push(pivot_row);
+      for row in col + 1..n {
+        let factor = m[row][col] / m[col][col];
+        for k in col + 1..n {
+          m[row][k] -= factor * m[col][k];
+        }
+        m[row][col] = factor;
+      }
+    }
+    Some(Self { lu: m, pivots })
+  }
+
+  /// `hvec` with `M·hvec = -c`.
+  fn solve(&self, c: &[f64]) -> Vec<f64> {
+    let n = c.len();
+    let m = &self.lu;
+    let mut rhs: Vec<f64> = c.iter().map(|v| -v).collect();
+    for col in 0..n {
+      rhs.swap(col, self.pivots[col]);
+      for row in col + 1..n {
+        rhs[row] -= m[row][col] * rhs[col];
+      }
+    }
+    let mut sol = vec![0.0; n];
+    for row in (0..n).rev() {
+      let mut acc = rhs[row];
+      for k in row + 1..n {
+        acc -= m[row][k] * sol[k];
+      }
+      sol[row] = acc / m[row][row];
+    }
+    sol
+  }
 }
 
 fn probe_constant_mass_matrix_inner(

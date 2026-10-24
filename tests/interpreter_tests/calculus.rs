@@ -22025,3 +22025,22 @@ mod find_fit_numeric_only_model {
     assert!(woxi::get_captured_messages_raw().is_empty());
   }
 }
+
+mod ndsolve_constant_mass_matrix {
+  use super::*;
+
+  #[test]
+  fn coupled_derivatives_with_a_constant_mass_matrix() {
+    // The mass matrix is factored once and reused at every stage.
+    assert_eq!(
+      interpret(
+        "n = 40; eqs = Table[2 u[i]'[t] + u[Mod[i, n] + 1]'[t] == -u[i][t] + Sin[t], {i, n}]; \
+         ics = Table[u[i][0] == 0, {i, n}]; \
+         s = NDSolve[Join[eqs, ics], Table[u[i], {i, n}], {t, 0, 5}]; \
+         Abs[(u[1][5] /. First[s]) + 0.124328389] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
