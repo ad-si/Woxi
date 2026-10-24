@@ -2597,7 +2597,7 @@ StarGraph,Star graph with n vertices,✅,1,8.0,2617
 Toggler,Toggler control element (stays symbolic in script mode),✅,unevaluated,6.0,2617
 GraphDiameter,Maximum shortest path distance,✅,1,8.0,2625
 ImageCorners,,🚫,,9.0,2625
-Inpaint,,🚫,,8.0,2625
+Inpaint,Fill masked image pixels from their surroundings by diffusion,✅,pure,8.0,2625
 KernelObject,,🚫,,7.0,2625
 ListVectorPlot3D,,🚫,,7.0,2625
 PairedHistogram,,🚫,,8.0,2625

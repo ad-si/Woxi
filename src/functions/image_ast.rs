@@ -12306,3 +12306,119 @@ pub fn highlight_image_ast(
   );
   eval_fn(&call("Rasterize", vec![graphics]))
 }
+
+/// `Inpaint[image, mask]` — fills the pixels the mask marks (nonzero) from
+/// their surroundings by diffusion: each masked pixel repeatedly becomes the
+/// mean of its eight neighbors (Method -> "Diffusion", the heat-equation
+/// fill) for `MaxIterations` sweeps (default 200). The mask is an image or
+/// a matrix of the image's size.
+pub fn inpaint_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let Some(Expr::Image {
+    color_space,
+    display_size,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  }) = args.first()
+  else {
+    return Ok(unevaluated("Inpaint", args));
+  };
+  let (w, h, ch) = (*width as usize, *height as usize, *channels as usize);
+  let mask: Vec<bool> = match args.get(1) {
+    Some(Expr::Image {
+      width: mw,
+      height: mh,
+      channels: mch,
+      data: md,
+      ..
+    }) if *mw as usize == w && *mh as usize == h => {
+      let mch = *mch as usize;
+      (0..w * h)
+        .map(|i| (0..mch).any(|c| md[i * mch + c] > 0.0))
+        .collect()
+    }
+    Some(Expr::List(rows)) if rows.len() == h => {
+      let mut m = Vec::with_capacity(w * h);
+      for row in rows {
+        let Expr::List(cells) = row else {
+          return Ok(unevaluated("Inpaint", args));
+        };
+        if cells.len() != w {
+          return Ok(unevaluated("Inpaint", args));
+        }
+        for c in cells {
+          m.push(
+            crate::functions::math_ast::try_eval_to_f64(c)
+              .is_some_and(|v| v != 0.0),
+          );
+        }
+      }
+      m
+    }
+    _ => return Ok(unevaluated("Inpaint", args)),
+  };
+  let iterations = args[2..]
+    .iter()
+    .find_map(|o| match o {
+      Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "MaxIterations") =>
+      {
+        match replacement.as_ref() {
+          Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+          _ => None,
+        }
+      }
+      _ => None,
+    })
+    .unwrap_or(200);
+  let mut out: Vec<f64> = data.as_ref().clone();
+  // Masked pixels start from the mean of the known ones, so the diffusion
+  // has a neutral starting point.
+  for c in 0..ch {
+    let (sum, count) = (0..w * h)
+      .filter(|&i| !mask[i])
+      .fold((0.0, 0usize), |(s, n), i| (s + data[i * ch + c], n + 1));
+    let mean = if count > 0 { sum / count as f64 } else { 0.0 };
+    for i in 0..w * h {
+      if mask[i] {
+        out[i * ch + c] = mean;
+      }
+    }
+  }
+  let masked: Vec<usize> = (0..w * h).filter(|&i| mask[i]).collect();
+  for _ in 0..iterations {
+    let prev = out.clone();
+    for &i in &masked {
+      let (x, y) = (i % w, i / w);
+      let mut neighbors = Vec::with_capacity(8);
+      for dy in -1i64..=1 {
+        for dx in -1i64..=1 {
+          let (nx, ny) = (x as i64 + dx, y as i64 + dy);
+          if (dx, dy) != (0, 0)
+            && nx >= 0
+            && ny >= 0
+            && (nx as usize) < w
+            && (ny as usize) < h
+          {
+            neighbors.push(ny as usize * w + nx as usize);
+          }
+        }
+      }
+      for c in 0..ch {
+        let s: f64 = neighbors.iter().map(|&j| prev[j * ch + c]).sum();
+        out[i * ch + c] = s / neighbors.len().max(1) as f64;
+      }
+    }
+  }
+  Ok(Expr::Image {
+    color_space: *color_space,
+    display_size: *display_size,
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(out),
+    image_type: *image_type,
+  })
+}

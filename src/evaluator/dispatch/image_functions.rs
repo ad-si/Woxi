@@ -1056,6 +1056,9 @@ pub fn dispatch_image_functions(
     }
     // The geometric mean over each neighborhood is the exponential of the
     // arithmetic mean of the logarithms, so it is MeanFilter's job.
+    "Inpaint" if args.len() >= 2 => {
+      return Some(crate::functions::image_ast::inpaint_ast(args));
+    }
     "GeometricMeanFilter" if args.len() == 2 => {
       let src = match &args[0] {
         Expr::Image { .. } => {

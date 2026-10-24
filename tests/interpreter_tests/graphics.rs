@@ -40621,3 +40621,29 @@ mod geometric_mean_filter {
     );
   }
 }
+
+mod inpaint_diffusion {
+  use super::*;
+
+  #[test]
+  fn masked_pixels_diffuse_from_their_neighbors() {
+    assert_eq!(
+      interpret(
+        "img = Image[{{0., 0., 0.}, {1., 0.5, 1.}, {1., 1., 1.}}]; \
+         m = Image[{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}]; \
+         ImageData[Inpaint[img, m, Method -> \"Diffusion\"]][[2, 2]]"
+      )
+      .unwrap(),
+      "0.625"
+    );
+    assert_eq!(
+      interpret(
+        "img = Image[Table[N[Sin[i/3] Cos[j/4]]^2, {i, 6}, {j, 6}]]; \
+         m = Image[Table[Boole[2 < i < 5 && 2 < j < 5], {i, 6}, {j, 6}]]; \
+         Round[1000 ImageData[Inpaint[img, m, Method -> \"Diffusion\"]][[3 ;; 4, 3 ;; 4]]]"
+      )
+      .unwrap(),
+      "{{350, 199}, {458, 261}}"
+    );
+  }
+}
