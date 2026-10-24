@@ -2317,16 +2317,38 @@ fn emit_part_set_failure(
       .map(|i| crate::syntax::format_expr(i, crate::syntax::ExprForm::Output))
       .collect::<Vec<_>>()
       .join(",");
-    crate::emit_message(&format!(
+    emit_part_message(&format!(
       "Set::partd: Part specification {var_name}[[{spec}]] is longer than depth of object."
     ));
     return true;
   }
   if message.starts_with("Set::partw:") {
-    crate::emit_message(message);
+    emit_part_message(message);
     return true;
   }
   false
+}
+
+thread_local! {
+  /// Set while `assign_part` serves a `:=`: its messages are
+  /// `SetDelayed::…`, and whether one was given decides its `$Failed`.
+  static DELAYED_PART_ASSIGNMENT: std::cell::Cell<(bool, bool)> =
+    const { std::cell::Cell::new((false, false)) };
+}
+
+/// Emit a `Set::…` part-assignment message, as `SetDelayed::…` under `:=`.
+fn emit_part_message(message: &str) {
+  let (delayed, _) = DELAYED_PART_ASSIGNMENT.with(std::cell::Cell::get);
+  if delayed {
+    DELAYED_PART_ASSIGNMENT.with(|c| c.set((true, true)));
+    let renamed = message.strip_prefix("Set::").map_or_else(
+      || message.to_string(),
+      |rest| format!("SetDelayed::{rest}"),
+    );
+    crate::emit_message(&renamed);
+  } else {
+    crate::emit_message(message);
+  }
 }
 
 /// Per-argument pattern analysis shared by `Set` (`f[patt…] = rhs`) and
@@ -2791,6 +2813,211 @@ fn downvalue_arg_info(
   ))
 }
 
+/// The value a part assignment stores: the evaluated right-hand side for
+/// `=`, the right-hand side as written for `:=`.
+fn part_assignment_rhs(
+  rhs: &Expr,
+  delayed: bool,
+) -> Result<Expr, InterpreterError> {
+  if delayed {
+    Ok(rhs.clone())
+  } else {
+    evaluate_expr_to_expr(rhs)
+  }
+}
+
+/// `var[[indices]] = rhs`, or `var[[indices]] := rhs` with `delayed`.
+fn assign_part(
+  lhs: &Expr,
+  rhs: &Expr,
+  delayed: bool,
+) -> Result<Expr, InterpreterError> {
+  // Flatten nested Part to get base variable and list of indices. A
+  // bracket group followed by another parses as the `Part[base, …]` call
+  // form (see `apply_part_group`), so `m[[1]][[2]] = v` reaches here with
+  // a call at its base; the two readings agree for the single positions
+  // an assignment target names, so walk through it as well.
+  let mut indices = Vec::new();
+  let mut current = lhs;
+  loop {
+    match current {
+      Expr::Part { expr, index } => {
+        indices.push(index.as_ref().clone());
+        current = expr.as_ref();
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Part" && args.len() >= 2 =>
+      {
+        for idx in args[1..].iter().rev() {
+          indices.push(idx.clone());
+        }
+        current = &args[0];
+      }
+      _ => break,
+    }
+  }
+  indices.reverse();
+
+  let var_name = match current {
+    Expr::Identifier(name) => name.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Part assignment requires a variable name".into(),
+      ));
+    }
+  };
+
+  // Check Protected attribute
+  if is_symbol_protected(&var_name) {
+    let rhs_value = part_assignment_rhs(rhs, delayed)?;
+    emit_part_message(&format!("Part::wrsym: Symbol {var_name} is Protected."));
+    return Ok(rhs_value);
+  }
+
+  seed_system_variable(&var_name);
+
+  // Evaluate indices
+  let mut eval_indices = Vec::new();
+  for idx in &indices {
+    crate::evaluator::part_extraction::push_part_index(
+      &mut eval_indices,
+      evaluate_expr_to_expr(idx)?,
+    );
+  }
+
+  // Evaluate the RHS
+  let rhs_value = part_assignment_rhs(rhs, delayed)?;
+
+  // A machine real with an integral value is a valid position in a part
+  // assignment (`u[[2., 1.]] = 1`, as wolframscript accepts); any other
+  // real is rejected with Set::pkspec1 and leaves the target unchanged.
+  for idx in &mut eval_indices {
+    if let Expr::Real(r) = idx {
+      if r.fract() == 0.0 && r.abs() < 1e15 {
+        *idx = Expr::Integer(*r as i128);
+      } else {
+        emit_part_message(&format!(
+          "Set::pkspec1: The expression {} cannot be used as a part specification.",
+          crate::syntax::expr_to_string(idx)
+        ));
+        return Ok(rhs_value);
+      }
+    }
+  }
+
+  // Part assignment into a variable bound to an Association (stored in the
+  // string-keyed `StoredValue::Association` form). Convert it to an
+  // `Expr::Association`, apply the assignment via `set_part_deep` — which
+  // handles integer positions, keys, and deeply-nested targets uniformly —
+  // then store the result back. This covers `myHash[["key"]] = v`,
+  // `myHash[[1]] = v` (n-th value by position), and deep paths such as
+  // `a[["x", "n"]] = v`.
+  let is_assoc = crate::ENV.with(|e| {
+    let env = e.borrow();
+    matches!(env.get(&var_name), Some(StoredValue::Association(_)))
+  });
+  if is_assoc {
+    let mut assoc_expr = crate::ENV.with(|e| {
+      let env = e.borrow();
+      match env.get(&var_name) {
+        Some(StoredValue::Association(items)) => {
+          let pairs: Vec<(Expr, Expr)> = items
+            .iter()
+            .map(|(k, v)| {
+              (
+                string_to_expr(k).unwrap_or_else(|_| Expr::String(k.clone())),
+                v.clone(),
+              )
+            })
+            .collect();
+          Expr::Association(pairs)
+        }
+        _ => unreachable!("is_assoc guarantees a stored Association"),
+      }
+    });
+    if let Err(err) = set_part_deep(&mut assoc_expr, &eval_indices, &rhs_value)
+    {
+      if emit_part_set_failure(&err, &var_name, &eval_indices) {
+        return Ok(rhs_value);
+      }
+      return Err(err);
+    }
+    let new_value = match &assoc_expr {
+      Expr::Association(items) => StoredValue::Association(
+        items
+          .iter()
+          .map(|(k, v)| (expr_to_string(k), v.clone()))
+          .collect(),
+      ),
+      // The whole association was replaced by a non-association value.
+      other => StoredValue::ExprVal(other.clone()),
+    };
+    crate::ENV.with(|e| e.borrow_mut().insert(var_name.clone(), new_value));
+    crate::evaluator::part_extraction::note_part_assigned(&var_name);
+    return Ok(rhs_value);
+  }
+
+  // General Part assignment: modify in-place if ExprVal, otherwise parse/modify/store
+  let modified_in_place = crate::ENV.with(|e| {
+    let mut env = e.borrow_mut();
+    if let Some(StoredValue::ExprVal(expr)) = env.get_mut(&var_name) {
+      if is_sparse_array(expr) {
+        return set_part_sparse(expr, &eval_indices, &rhs_value);
+      }
+      // Modify directly in place — no clone needed
+      set_part_deep(expr, &eval_indices, &rhs_value)
+    } else {
+      Err(InterpreterError::EvaluationError("not ExprVal".into()))
+    }
+  });
+  match &modified_in_place {
+    Ok(()) => {
+      crate::evaluator::part_extraction::note_part_assigned(&var_name);
+      return Ok(rhs_value);
+    }
+    // A value that is there but has no such part reports its own message
+    // and stays as it was; anything else falls through to the paths below.
+    Err(err) => {
+      if emit_part_set_failure(err, &var_name, &eval_indices) {
+        return Ok(rhs_value);
+      }
+    }
+  }
+
+  // Fallback: parse stored string, modify, store back as ExprVal
+  let stored_str = crate::ENV.with(|e| {
+    let env = e.borrow();
+    match env.get(&var_name) {
+      Some(StoredValue::Raw(s)) => Some(s.clone()),
+      _ => None,
+    }
+  });
+  if let Some(stored_str) = stored_str {
+    let mut stored_expr =
+      string_to_expr(&stored_str).unwrap_or(Expr::Raw(stored_str));
+    if let Err(err) = set_part_deep(&mut stored_expr, &eval_indices, &rhs_value)
+    {
+      if emit_part_set_failure(&err, &var_name, &eval_indices) {
+        return Ok(rhs_value);
+      }
+      return Err(err);
+    }
+    crate::ENV.with(|e| {
+      e.borrow_mut()
+        .insert(var_name.clone(), StoredValue::ExprVal(stored_expr))
+    });
+    crate::evaluator::part_extraction::note_part_assigned(&var_name);
+    return Ok(rhs_value);
+  }
+
+  // Matching wolframscript: if the target has no value at all, emit a
+  // 'Set::noval' warning and return the RHS (the assignment is a no-op).
+  emit_part_message(&format!(
+    "Set::noval: Symbol {var_name} in part assignment does not have an immediate value."
+  ));
+  Ok(rhs_value)
+}
+
 pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   let lhs = &normalize_symbol_lhs(lhs);
   // `Evaluate[target] = value` (also written `target // Evaluate = value`)
@@ -2876,194 +3103,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   if matches!(lhs, Expr::Part { .. })
     || matches!(lhs, Expr::FunctionCall { name, args } if name == "Part" && args.len() >= 2)
   {
-    // Flatten nested Part to get base variable and list of indices. A
-    // bracket group followed by another parses as the `Part[base, …]` call
-    // form (see `apply_part_group`), so `m[[1]][[2]] = v` reaches here with
-    // a call at its base; the two readings agree for the single positions
-    // an assignment target names, so walk through it as well.
-    let mut indices = Vec::new();
-    let mut current = lhs;
-    loop {
-      match current {
-        Expr::Part { expr, index } => {
-          indices.push(index.as_ref().clone());
-          current = expr.as_ref();
-        }
-        Expr::FunctionCall { name, args }
-          if name == "Part" && args.len() >= 2 =>
-        {
-          for idx in args[1..].iter().rev() {
-            indices.push(idx.clone());
-          }
-          current = &args[0];
-        }
-        _ => break,
-      }
-    }
-    indices.reverse();
-
-    let var_name = match current {
-      Expr::Identifier(name) => name.clone(),
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Part assignment requires a variable name".into(),
-        ));
-      }
-    };
-
-    // Check Protected attribute
-    if is_symbol_protected(&var_name) {
-      let rhs_value = evaluate_expr_to_expr(rhs)?;
-      crate::emit_message(&format!(
-        "Part::wrsym: Symbol {var_name} is Protected."
-      ));
-      return Ok(rhs_value);
-    }
-
-    seed_system_variable(&var_name);
-
-    // Evaluate indices
-    let mut eval_indices = Vec::new();
-    for idx in &indices {
-      crate::evaluator::part_extraction::push_part_index(
-        &mut eval_indices,
-        evaluate_expr_to_expr(idx)?,
-      );
-    }
-
-    // Evaluate the RHS
-    let rhs_value = evaluate_expr_to_expr(rhs)?;
-
-    // A machine real with an integral value is a valid position in a part
-    // assignment (`u[[2., 1.]] = 1`, as wolframscript accepts); any other
-    // real is rejected with Set::pkspec1 and leaves the target unchanged.
-    for idx in &mut eval_indices {
-      if let Expr::Real(r) = idx {
-        if r.fract() == 0.0 && r.abs() < 1e15 {
-          *idx = Expr::Integer(*r as i128);
-        } else {
-          crate::emit_message(&format!(
-            "Set::pkspec1: The expression {} cannot be used as a part specification.",
-            crate::syntax::expr_to_string(idx)
-          ));
-          return Ok(rhs_value);
-        }
-      }
-    }
-
-    // Part assignment into a variable bound to an Association (stored in the
-    // string-keyed `StoredValue::Association` form). Convert it to an
-    // `Expr::Association`, apply the assignment via `set_part_deep` — which
-    // handles integer positions, keys, and deeply-nested targets uniformly —
-    // then store the result back. This covers `myHash[["key"]] = v`,
-    // `myHash[[1]] = v` (n-th value by position), and deep paths such as
-    // `a[["x", "n"]] = v`.
-    let is_assoc = crate::ENV.with(|e| {
-      let env = e.borrow();
-      matches!(env.get(&var_name), Some(StoredValue::Association(_)))
-    });
-    if is_assoc {
-      let mut assoc_expr = crate::ENV.with(|e| {
-        let env = e.borrow();
-        match env.get(&var_name) {
-          Some(StoredValue::Association(items)) => {
-            let pairs: Vec<(Expr, Expr)> = items
-              .iter()
-              .map(|(k, v)| {
-                (
-                  string_to_expr(k).unwrap_or_else(|_| Expr::String(k.clone())),
-                  v.clone(),
-                )
-              })
-              .collect();
-            Expr::Association(pairs)
-          }
-          _ => unreachable!("is_assoc guarantees a stored Association"),
-        }
-      });
-      if let Err(err) =
-        set_part_deep(&mut assoc_expr, &eval_indices, &rhs_value)
-      {
-        if emit_part_set_failure(&err, &var_name, &eval_indices) {
-          return Ok(rhs_value);
-        }
-        return Err(err);
-      }
-      let new_value = match &assoc_expr {
-        Expr::Association(items) => StoredValue::Association(
-          items
-            .iter()
-            .map(|(k, v)| (expr_to_string(k), v.clone()))
-            .collect(),
-        ),
-        // The whole association was replaced by a non-association value.
-        other => StoredValue::ExprVal(other.clone()),
-      };
-      crate::ENV.with(|e| e.borrow_mut().insert(var_name.clone(), new_value));
-      crate::evaluator::part_extraction::note_part_assigned(&var_name);
-      return Ok(rhs_value);
-    }
-
-    // General Part assignment: modify in-place if ExprVal, otherwise parse/modify/store
-    let modified_in_place = crate::ENV.with(|e| {
-      let mut env = e.borrow_mut();
-      if let Some(StoredValue::ExprVal(expr)) = env.get_mut(&var_name) {
-        if is_sparse_array(expr) {
-          return set_part_sparse(expr, &eval_indices, &rhs_value);
-        }
-        // Modify directly in place — no clone needed
-        set_part_deep(expr, &eval_indices, &rhs_value)
-      } else {
-        Err(InterpreterError::EvaluationError("not ExprVal".into()))
-      }
-    });
-    match &modified_in_place {
-      Ok(()) => {
-        crate::evaluator::part_extraction::note_part_assigned(&var_name);
-        return Ok(rhs_value);
-      }
-      // A value that is there but has no such part reports its own message
-      // and stays as it was; anything else falls through to the paths below.
-      Err(err) => {
-        if emit_part_set_failure(err, &var_name, &eval_indices) {
-          return Ok(rhs_value);
-        }
-      }
-    }
-
-    // Fallback: parse stored string, modify, store back as ExprVal
-    let stored_str = crate::ENV.with(|e| {
-      let env = e.borrow();
-      match env.get(&var_name) {
-        Some(StoredValue::Raw(s)) => Some(s.clone()),
-        _ => None,
-      }
-    });
-    if let Some(stored_str) = stored_str {
-      let mut stored_expr =
-        string_to_expr(&stored_str).unwrap_or(Expr::Raw(stored_str));
-      if let Err(err) =
-        set_part_deep(&mut stored_expr, &eval_indices, &rhs_value)
-      {
-        if emit_part_set_failure(&err, &var_name, &eval_indices) {
-          return Ok(rhs_value);
-        }
-        return Err(err);
-      }
-      crate::ENV.with(|e| {
-        e.borrow_mut()
-          .insert(var_name.clone(), StoredValue::ExprVal(stored_expr))
-      });
-      crate::evaluator::part_extraction::note_part_assigned(&var_name);
-      return Ok(rhs_value);
-    }
-
-    // Matching wolframscript: if the target has no value at all, emit a
-    // 'Set::noval' warning and return the RHS (the assignment is a no-op).
-    crate::emit_message(&format!(
-      "Set::noval: Symbol {var_name} in part assignment does not have an immediate value."
-    ));
-    return Ok(rhs_value);
+    return assign_part(lhs, rhs, false);
   }
 
   // Handle simple identifier assignment: x = value
@@ -3113,7 +3153,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
 
     // Check Protected attribute
     if is_symbol_protected(var_name) {
-      crate::emit_message(&format!(
+      emit_part_message(&format!(
         "Set::wrsym: Symbol {var_name} is Protected."
       ));
       return Ok(rhs_value);
@@ -3483,7 +3523,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // returns the right-hand side without storing anything.
     if is_downvalue_head_protected(func_name) {
       let rhs_value = evaluate_expr_to_expr(rhs)?;
-      crate::emit_message(&format!(
+      emit_part_message(&format!(
         "Set::write: Tag {} in {} is Protected.",
         func_name,
         expr_to_string(lhs)
@@ -3710,13 +3750,13 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         // bound to 1).
         return evaluate_expr_to_expr(&rhs_value);
       }
-      crate::emit_message(&format!(
+      emit_part_message(&format!(
         "Set::shape: Lists {} and {} are not the same shape.",
         expr_to_string(lhs),
         expr_to_string(&rhs_value)
       ));
     } else {
-      crate::emit_message(&format!(
+      emit_part_message(&format!(
         "Set::shape: Lists {} and {} are not the same shape.",
         expr_to_string(lhs),
         expr_to_string(&rhs_value)
@@ -3796,7 +3836,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     }
     let shown = times(evaluated);
     let shown = evaluate_expr_to_expr(&shown).unwrap_or(shown);
-    crate::emit_message(&format!(
+    emit_part_message(&format!(
       "Set::write: Tag Times in {} is Protected.",
       expr_to_string(&shown)
     ));
@@ -3825,7 +3865,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       && get_builtin_attributes(t).contains(Attributes::Protected)
     {
       let rhs_value = evaluate_expr_to_expr(rhs)?;
-      crate::emit_message(&format!(
+      emit_part_message(&format!(
         "Set::write: Tag {} in {} is Protected.",
         t,
         expr_to_string(lhs)
@@ -3921,6 +3961,20 @@ pub fn set_delayed_ast(
   body: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let lhs = &normalize_symbol_lhs(lhs);
+  // `s[[i]] := rhs` puts `rhs` unevaluated into that position; the symbol's
+  // value evaluates it whenever it is used.
+  if matches!(lhs, Expr::Part { .. })
+    || matches!(lhs, Expr::FunctionCall { name, args } if name == "Part" && args.len() >= 2)
+  {
+    DELAYED_PART_ASSIGNMENT.with(|c| c.set((true, false)));
+    let result = assign_part(lhs, body, true);
+    let (_, failed) = DELAYED_PART_ASSIGNMENT.with(std::cell::Cell::get);
+    DELAYED_PART_ASSIGNMENT.with(|c| c.set((false, false)));
+    result?;
+    return Ok(Expr::Identifier(
+      if failed { "$Failed" } else { "Null" }.to_string(),
+    ));
+  }
   // An upvalue on `SetDelayed` claims the definition before it is stored —
   // the delayed counterpart of the `Set` check in `set_ast`.
   if let UpvalueOutcome::Claimed(result) =

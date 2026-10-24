@@ -24185,3 +24185,37 @@ mod combinatorica_josephus {
     );
   }
 }
+
+mod set_delayed_part {
+  use super::*;
+
+  #[test]
+  fn stores_the_right_hand_side_unevaluated() {
+    assert_eq!(
+      interpret("oc = Table[{}, {4}]; oc[[1]] := x; x = 5; oc").unwrap(),
+      "{5, {}, {}, {}}"
+    );
+    assert_eq!(
+      interpret("Module[{oc = {1, 2}}, oc[[1]] := y; y = 3; oc]").unwrap(),
+      "{3, 2}"
+    );
+  }
+
+  #[test]
+  fn failures_are_set_delayed_messages_and_failed() {
+    let r = interpret_with_stdout("z = 3; z[[1]] := 4").unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "SetDelayed::partd: Part specification z[[1]] is longer than depth of object."
+      ]
+    );
+    let r = interpret_with_stdout("q = {1, 2}; q[[5]] := 3").unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert_eq!(
+      r.warnings,
+      vec!["SetDelayed::partw: Part 5 of {1, 2} does not exist."]
+    );
+  }
+}
