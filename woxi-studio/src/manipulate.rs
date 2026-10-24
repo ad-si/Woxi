@@ -657,8 +657,17 @@ impl ManipulateState {
     // itself forward), freezing the simulation at its first step. Helper
     // definitions persist in the interpreter's global environment, so a
     // single run keeps them in scope for every later re-evaluation.
-    if let Some(init) = state.initialization.as_deref() {
-      let _ = woxi::interpret_with_stdout(init);
+    if let Some(init) = state.initialization.clone() {
+      // The controls already hold their initial values when Initialization
+      // runs (a DynamicModule's variables are set before its
+      // Initialization), so code that reads them — `SUITS[[i]]` for a
+      // `{SUITS, …, ControlType -> None}` list — sees them.
+      let names: Vec<String> =
+        state.state.iter().map(|(n, _)| n.clone()).collect();
+      let seeded = woxi::with_scoped_globals(&state.bindings(), || {
+        let _ = woxi::interpret_with_stdout(&init);
+        woxi::functions::graphics::read_manipulate_state(&names)
+      });
       // A hidden `ControlType -> None` variable the Initialization just
       // seeded (e.g. `Initialization :> (v = RandomReal[…])` filling the
       // noise list a Demonstration's body perturbs) must keep that value,
@@ -666,9 +675,7 @@ impl ManipulateState {
       // `{}`) — `reevaluate` below installs `state.state` as scoped
       // globals, which would otherwise immediately overwrite what
       // Initialization just wrote with the stale placeholder.
-      let names: Vec<String> =
-        state.state.iter().map(|(n, _)| n.clone()).collect();
-      for (name, value) in read_manipulate_state(&names) {
+      for (name, value) in seeded {
         if let Some(slot) = state.state.iter_mut().find(|(n, _)| *n == name) {
           slot.1 = value;
         }
@@ -4076,6 +4083,34 @@ mod tests {
     assert!(state.select_discrete(a_idx, "4"));
     state.reevaluate();
     assert_eq!(labels(&state), vec!["0", "1", "2", "3"]);
+  }
+  /// A slider whose upper bound is `Dynamic[var]` of a hidden state variable
+  /// that is still 0 when the spec is parsed (`{{n, 1}, 1, Dynamic[total],
+  /// 1}` next to `{{total, 0}, ControlType -> None}`) is not a reversed
+  /// slider: it keeps its static lower bound and opens up to the variable's
+  /// live value once the body has set it.
+  #[test]
+  fn slider_with_unsettled_dynamic_max_keeps_static_min() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[(total = 5; n),
+        {{n, 1}, 1, Dynamic[total], 1},
+        {{total, 0}, ControlType -> None}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let bounds = state.controls.iter().find_map(|c| match c {
+      ControlState::Continuous {
+        name,
+        min,
+        max,
+        current,
+        ..
+      } if name == "n" => Some((*min, *max, *current)),
+      _ => None,
+    });
+    assert_eq!(bounds, Some((1.0, 5.0, 1.0)));
   }
   /// A slider bound that wraps `Dynamic` *inside* a larger expression
   /// (`k*If[Dynamic[big], 1, 100]`) still makes a control, and follows the

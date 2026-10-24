@@ -599,12 +599,20 @@ pub fn dispatch_plotting(
     "ListDensityPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::list_density_plot_ast(args)
     })),
+    "ReliefPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::field_plot::relief_plot_ast(args)
+    })),
     "ListContourPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::list_contour_plot_ast(args)
     })),
-    "ArrayPlot" if !args.is_empty() => Some(quiet_plot(|| {
-      crate::functions::field_plot::array_plot_ast(args)
-    })),
+    "ArrayPlot" if !args.is_empty() => Some(
+      match crate::functions::field_plot::array_plot_argument_error(args) {
+        Some(unevaluated) => Ok(unevaluated),
+        None => {
+          quiet_plot(|| crate::functions::field_plot::array_plot_ast(args))
+        }
+      },
+    ),
     "MatrixPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::matrix_plot_ast(args)
     })),

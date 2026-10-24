@@ -1336,6 +1336,27 @@ pub fn boolean_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // expression here, or substituting the variables would never reach it.
   let body = &evaluate_expr_to_expr(body)?;
 
+  // A `BooleanFunction` object of n variables is a function, not an
+  // expression in variables: its table runs over every n-tuple.
+  if args.len() == 1
+    && let Some((arity, _)) = bdd_from_object(body)
+  {
+    let mut values = Vec::with_capacity(1 << arity.min(20));
+    let count = 1usize << arity;
+    for row in 0..count {
+      let tuple: Vec<Expr> = (0..arity)
+        .map(|i| bool_expr(row >> (arity - 1 - i) & 1 == 0))
+        .collect();
+      values.push(crate::evaluator::evaluate_expr_to_expr(
+        &Expr::CurriedCall {
+          func: Box::new(body.clone()),
+          args: tuple,
+        },
+      )?);
+    }
+    return Ok(Expr::List(values.into()));
+  }
+
   let groups: Vec<Vec<String>> = if args.len() == 1 {
     // BooleanTable[bf] varies every variable of bf, in BooleanVariables order.
     let mut vars = Vec::new();

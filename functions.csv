@@ -974,7 +974,7 @@ NotebookRead,Requires external services or GUI infrastructure,🚫,io,3.0,948
 Level,Extracts subexpressions at a level specification where a negative level names parts of that depth,✅,pure,1.0,950
 StringDrop,Removes a substring from a string; only span specifications are accepted,✅,pure,2.0,950
 MeshCoordinates,Coordinates of a mesh region,✅,pure,10.0,951
-MousePosition,Requires external services or GUI infrastructure,🚫,io,6.0,952
+MousePosition,Pointer position over a graphic (None in a notebook without a pointer; notavail without a front end),✅,io,6.0,952
 Expectation,Compute expected value of a function of a random variable,✅,pure,8.0,954
 TrigReduce,Reduce products and powers of trig functions to sums,✅,pure,3.0,954
 PreIncrement,Increments a variable by 1 and returns the new value,✅,stateful,1.0,955
@@ -1301,7 +1301,7 @@ ImageTake,Takes a rectangular region from an image,✅,pure,7.0,1285
 CanonicalName,,🚫,,10.0,1286
 VertexDegree,Returns the degree of vertices in a graph,✅,1,8.0,1287
 OverTilde,Displays expression with tilde above,✅,1,6.0,1288
-ReliefPlot,,🚫,,6.0,1289
+ReliefPlot,Shaded relief plot of a matrix of heights,✅,pure,6.0,1289
 TableSpacing,,🚫,,2.0,1290
 FindDivisions,Finds nice numbers dividing an interval into about n equal parts,✅,pure,7.0,1291
 FileExistsQ,Tests whether a file or directory exists,✅,2,7.0,1293
@@ -4035,7 +4035,7 @@ FractionBoxOptions,,🚫,,4.0,4138
 FrontEndEventActions,,🚫,,6.0,4138
 HannPoissonWindow,,,,9.0,4138
 JordanModelDecomposition,,,,8.0,4138
-KendallTauTest,,,,9.0,4138
+KendallTauTest,"Two-sided p-value of Kendall's tau for two paired samples (normal approximation with tie correction)",✅,pure,9.0,4138
 KeypointStrength,,,,10.0,4138
 NetPairEmbeddingOperator,,🚫,,11.1,4138
 ParametricFunction,Represents a function of numeric parameters returned by ParametricNDSolve (inert until all parameters are numeric),✅,none,9.0,4138
@@ -6360,6 +6360,7 @@ GraphUtilities`HamiltonianCycles,Hamiltonian cycle of a graph given as a list of
 MultivariateStatistics`EllipsoidQuantile,Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean; c Covariance],✅,pure,8.0,
 Combinatorica`FromUnorderedPairs,Builds a Combinatorica graph with one edge per distinct vertex pair on a circular embedding,✅,pure,6.0,
 Combinatorica`StableMarriage,Man-optimal stable matching from men's and women's preference lists (Gale-Shapley),✅,pure,6.0,
+Combinatorica`Josephus,Round in which each of n people in a circle is eliminated when every m-th one goes,✅,pure,6.0,
 Combinatorica`SymmetricGroup,All permutations of Range[n] as the elements of the symmetric group,✅,pure,6.0,
 Combinatorica`AlternatingGroup,The even permutations of Range[n] as the elements of the alternating group,✅,pure,6.0,
 Combinatorica`CyclicGroup,The n rotations of Range[n] as the elements of the cyclic group,✅,pure,6.0,

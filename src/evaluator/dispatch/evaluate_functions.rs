@@ -288,15 +288,17 @@ pub(crate) fn evaluate_function_call_ast(
   })
 }
 
-/// Promote any large `Expr::List` value in `values` from the Vec-backed
-/// representation to the Tree-backed (imbl::Vector) representation.
+/// Switch any large `Expr::List` value in `values` to the shared
+/// (copy-on-write) representation.
 ///
 /// Used before substituting function-call args into a user-defined body:
 /// `substitute_variables` clones the bound value at every position the
 /// parameter is referenced, so a 1500-element Vec list referenced twice
-/// would otherwise cost two full O(N) clones. The Tree variant clones
-/// in O(1) (Arc::clone of the imbl backbone), turning the substitution
-/// cost from O(N × occurrences) into O(N + occurrences) for that arg.
+/// would otherwise cost two full O(N) clones. A shared list clones in O(1),
+/// turning the substitution cost from O(N × occurrences) into
+/// O(N + occurrences) for that arg — and a list that already is shared (a
+/// symbol's value) costs nothing at all, where rebuilding it as a tree
+/// copied it on every call.
 ///
 /// Threshold of 16 keeps the Vec path for small argument lists where the
 /// one-time conversion would dominate.
@@ -304,9 +306,8 @@ fn promote_lists_for_substitution(values: &mut [Expr]) {
   for v in values {
     if let Expr::List(items) = v
       && items.len() > 16
-      && !items.is_tree()
     {
-      items.upgrade_to_tree();
+      items.share();
     }
   }
 }
@@ -1067,6 +1068,7 @@ fn evaluate_function_call_ast_inner(
     "CyclicGroup" if combinatorica_active => "Combinatorica`CyclicGroup",
     "DihedralGroup" if combinatorica_active => "Combinatorica`DihedralGroup",
     "Backtrack" if combinatorica_active => "Combinatorica`Backtrack",
+    "Josephus" if combinatorica_active => "Combinatorica`Josephus",
     "FromUnorderedPairs" | "ToAdjacencyLists" | "BreadthFirstTraversal"
       if combinatorica_active =>
     {
@@ -1403,7 +1405,14 @@ fn evaluate_function_call_ast_inner(
       .join("\u{1}");
     cache.get(&key).map(|(_, v)| v.clone())
   }) {
-    return Ok(v);
+    // The stored value is evaluated like any rule's right-hand side: it
+    // may mention symbols that have values by now (`f[1] = g + 1; g = 5;
+    // f[1]` is 6). Numbers, strings and lists of them are their own value.
+    return if crate::evaluator::core_eval::is_evaluated_data(&v) {
+      Ok(v)
+    } else {
+      evaluate_expr_to_expr(&v)
+    };
   }
 
   // Check for user-defined functions (before built-in dispatch, so user

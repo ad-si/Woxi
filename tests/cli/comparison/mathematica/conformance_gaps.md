@@ -194,6 +194,18 @@ though its total degree is lower — so this needs WL's actual lexicographic
 monomial comparison. Everything else in a 211-expression TeXForm sweep
 agrees.
 
+`TraditionalForm` boxes share the order, and a Demonstration that keys a
+lookup table on `ToString[f, TraditionalForm]` (NewtonsMethod) then misses
+the saved control value:
+
+```sh
+wolframscript -code 'ToString[Sin[x] + 3 Cos[x], TraditionalForm]'  # sin(x) + 3 cos(x) boxes
+woxi eval 'ToString[Sin[x] + 3 Cos[x], TraditionalForm]'            # 3 cos(x) + sin(x) boxes
+```
+
+More samples of the order: `a + b + Sin[a]` is `a+sin(a)+b`, `3 + a + Cos[b]`
+is `a+cos(b)+3`, and `Cos[x] + Sin[x] + Tan[x]` is `sin(x)+cos(x)+tan(x)`.
+
 ### TeXForm writes a rational exponent's quotient with a `\left.` bar
 
 ```sh

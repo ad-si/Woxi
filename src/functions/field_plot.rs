@@ -4263,6 +4263,170 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
+/// ReliefPlot[array] - shaded relief of a matrix of heights: each cell is
+/// coloured by its height and darkened or lightened by how its slope
+/// faces the light (`LightingAngle`). The first matrix row is at the top
+/// unless `DataReversed -> True`; `DataRange` places the matrix.
+pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let rows = match &data {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ReliefPlot".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+  let opts = parse_density_contour_options(args, 1);
+  let (mut grid, _, _, _, _, v_min, v_max, n_rows, n_cols) =
+    parse_matrix_to_grid(rows, "ReliefPlot");
+  if grid.is_empty() || !v_min.is_finite() || !v_max.is_finite() {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+
+  let mut data_range = ((1.0, n_cols as f64), (1.0, n_rows as f64));
+  let mut reversed = false;
+  let mut lighting = Some(std::f64::consts::FRAC_PI_4 * 3.0);
+  for opt in &args[1..] {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      continue;
+    };
+    let Expr::Identifier(name) = pattern.as_ref() else {
+      continue;
+    };
+    let value = evaluate_expr_to_expr(replacement)
+      .unwrap_or_else(|_| replacement.as_ref().clone());
+    match (name.as_str(), &value) {
+      ("DataRange", Expr::List(axes)) if axes.len() == 2 => {
+        if let (Expr::List(xs), Expr::List(ys)) = (&axes[0], &axes[1])
+          && xs.len() == 2
+          && ys.len() == 2
+          && let (Some(x0), Some(x1), Some(y0), Some(y1)) = (
+            try_eval_to_f64(&xs[0]),
+            try_eval_to_f64(&xs[1]),
+            try_eval_to_f64(&ys[0]),
+            try_eval_to_f64(&ys[1]),
+          )
+        {
+          data_range = ((x0, x1), (y0, y1));
+        }
+      }
+      ("DataReversed", Expr::Identifier(v)) => reversed = v == "True",
+      ("LightingAngle", Expr::Identifier(v)) if v == "None" => lighting = None,
+      ("LightingAngle", v) => {
+        if let Some(a) = try_eval_to_f64(v) {
+          lighting = Some(a);
+        }
+      }
+      _ => {}
+    }
+  }
+  // `parse_matrix_to_grid` puts the first matrix row at the bottom.
+  if !reversed {
+    for col in &mut grid {
+      col.reverse();
+    }
+  }
+
+  let mut area = field_plot_axes(data_range.0, data_range.1, &opts)?;
+  let mut svg = std::mem::take(&mut area.svg);
+  if let Some(pos) = svg.rfind("</svg>") {
+    svg.truncate(pos);
+  }
+
+  let orig_cols = grid.len();
+  let orig_rows = grid[0].len();
+  let grid = if orig_cols < 256 || orig_rows < 256 {
+    resample_node_grid(&grid, 256.max(orig_cols), 256.max(orig_rows))
+  } else {
+    grid
+  };
+  // Distance between neighbouring samples in units of original cells, so
+  // slopes do not depend on how finely the grid was resampled.
+  let step_x = (orig_cols.max(2) - 1) as f64 / grid.len() as f64;
+  let step_y = (orig_rows.max(2) - 1) as f64 / grid[0].len() as f64;
+
+  let mut colors = cell_colors(
+    &grid,
+    (v_min, v_max),
+    opts.color_function.as_deref(),
+    opts.cf_expr(),
+    Clipping::Saturate,
+  );
+  let plain = opts.color_function.is_none() && opts.cf_expr().is_none();
+  if let Some(azimuth) = lighting {
+    let elevation = std::f64::consts::FRAC_PI_4;
+    let light = (
+      elevation.cos() * azimuth.cos(),
+      elevation.cos() * azimuth.sin(),
+      elevation.sin(),
+    );
+    let (nc, nr) = (grid.len(), grid[0].len());
+    for i in 0..nc {
+      for j in 0..nr {
+        let at = |a: usize, b: usize| grid[a][b];
+        let (i0, i1) = (i.saturating_sub(1), (i + 1).min(nc - 1));
+        let (j0, j1) = (j.saturating_sub(1), (j + 1).min(nr - 1));
+        let dzdx = (at(i1, j) - at(i0, j)) / ((i1 - i0).max(1) as f64 * step_x);
+        let dzdy = (at(i, j1) - at(i, j0)) / ((j1 - j0).max(1) as f64 * step_y);
+        if !(dzdx.is_finite() && dzdy.is_finite()) {
+          continue;
+        }
+        let norm = (dzdx * dzdx + dzdy * dzdy + 1.0).sqrt();
+        let lit = (-dzdx * light.0 - dzdy * light.1 + light.2) / norm;
+        let factor = (0.45 + 0.55 * lit / light.2).clamp(0.0, 1.5);
+        if let Some(c) = &mut colors[i][j] {
+          let shade = |ch: u8| {
+            let v = ch as f64;
+            if factor <= 1.0 {
+              v * factor
+            } else {
+              v + (255.0 - v) * (factor - 1.0)
+            }
+            .round()
+            .clamp(0.0, 255.0) as u8
+          };
+          *c = (shade(c.0), shade(c.1), shade(c.2));
+        }
+      }
+    }
+  }
+  if plain && lighting.is_none() {
+    for col in &mut colors {
+      for c in col.iter_mut().flatten() {
+        *c = (235, 235, 235);
+      }
+    }
+  }
+  embed_color_image(
+    &mut svg,
+    &colors,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+  );
+  if opts.frame {
+    push_frame(
+      &mut svg,
+      area.plot_x0,
+      area.plot_y0,
+      area.plot_w,
+      area.plot_h,
+    );
+  }
+  push_field_plot_overlays(&mut svg, &area, &opts);
+  svg.push_str("</svg>");
+  Ok(crate::graphics_result(svg))
+}
+
 /// Parse list data and return a grid of z-values with axis ranges.
 /// Returns (grid, x_min, x_max, y_min, y_max, v_min, v_max, n_rows, n_cols).
 /// Grid is stored as grid[col][row] for marching squares compatibility.
@@ -4731,6 +4895,41 @@ pub(crate) fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
   }
 }
 
+/// The rows `ArrayPlot` draws from `data`: SparseArrays (the whole array
+/// or its rows) densified. `None` when `data` is not a list of lists.
+fn array_plot_matrix(data: &Expr) -> Option<Vec<Expr>> {
+  let densify = |e: &Expr| {
+    crate::functions::list_helpers_ast::densify_sparse_array(e)
+      .unwrap_or_else(|| e.clone())
+  };
+  let dense = densify(data);
+  let Expr::List(rows) = &dense else {
+    return None;
+  };
+  // A list of SparseArray rows (possibly of differing lengths) plots as the
+  // ragged list of their dense forms.
+  let rows: Vec<Expr> = rows.iter().map(densify).collect();
+  rows
+    .iter()
+    .all(|r| matches!(r, Expr::List(_)))
+    .then_some(rows)
+}
+
+/// `ArrayPlot::mat` for a first argument that is not a list of lists, which
+/// leaves the call unevaluated. Checked outside the plot's quiet scope so
+/// the message is seen.
+pub fn array_plot_argument_error(args: &[Expr]) -> Option<Expr> {
+  let data = args.first()?;
+  if array_plot_matrix(data).is_some() {
+    return None;
+  }
+  crate::emit_message(&format!(
+    "ArrayPlot::mat: Argument {} at position 1 is not a list of lists.",
+    crate::syntax::format_expr(data, crate::syntax::ExprForm::Output)
+  ));
+  Some(crate::helpers::unevaluated("ArrayPlot", args))
+}
+
 /// ArrayPlot[{{v11, ...}, ...}] - grayscale grid from matrix values
 /// 0 is always white; the maximum value is black.
 /// Supports options: ColorRules, Mesh, ColorFunction, ImageSize, FrameLabel,
@@ -4739,27 +4938,8 @@ pub(crate) fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &crate::functions::graphics::splice_option_lists(args)[..];
   let data = evaluate_expr_to_expr(&args[0])?;
-  let data = crate::functions::list_helpers_ast::densify_sparse_array(&data)
-    .unwrap_or(data);
-  // A list of SparseArray rows (possibly of differing lengths) plots as the
-  // ragged list of their dense forms.
-  let data = match &data {
-    Expr::List(rows) => Expr::List(
-      rows
-        .iter()
-        .map(|r| {
-          crate::functions::list_helpers_ast::densify_sparse_array(r)
-            .unwrap_or_else(|| r.clone())
-        })
-        .collect::<Vec<_>>()
-        .into(),
-    ),
-    _ => data,
-  };
-  let Expr::List(rows) = &data else {
-    return Err(InterpreterError::EvaluationError(
-      "ArrayPlot: first argument must be a matrix (list of lists)".into(),
-    ));
+  let Some(rows) = array_plot_matrix(&data) else {
+    return Ok(crate::helpers::unevaluated("ArrayPlot", args));
   };
 
   // Parse options
@@ -4892,7 +5072,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut v_min = f64::INFINITY;
   let mut v_max = f64::NEG_INFINITY;
 
-  for row in rows {
+  for row in &rows {
     if let Expr::List(items) = row {
       let cells: Vec<ArrayCell> = items
         .iter()

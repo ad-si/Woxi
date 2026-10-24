@@ -1287,6 +1287,28 @@ fn date_object_tag_property(
   components.get(index).cloned()
 }
 
+/// Whether a SubValue rule's instantiated body is the call it matched.
+/// Structural comparison first; the rendered form decides only between two
+/// curried calls with the same head (a held operator node and its call form
+/// print alike), so a body that plainly differs costs no formatting — the
+/// common case, and a hot one in recursive SubValue code.
+fn rewrites_to_itself(raw: &Expr, actual: &Expr) -> bool {
+  if crate::evaluator::pattern_matching::expr_equal(raw, actual) {
+    return true;
+  }
+  match (raw, actual) {
+    (
+      Expr::CurriedCall { func: f1, args: a1 },
+      Expr::CurriedCall { func: f2, args: a2 },
+    ) if a1.len() == a2.len()
+      && crate::evaluator::pattern_matching::expr_equal(f1, f2) =>
+    {
+      expr_to_string(raw) == expr_to_string(actual)
+    }
+    _ => false,
+  }
+}
+
 /// Try to match `func[args...]` against a SubValue rule registered via
 /// `f[a][b] := …` (also deeper curried nestings like `f[a][b][c] := …`).
 /// Reconstructs the full curried call and matches it against each rule
@@ -1326,7 +1348,7 @@ fn try_sub_value_curried_match(
         crate::evaluator::pattern_matching::substitute_bindings_unevaluated(
           body, &bindings,
         )
-        && expr_to_string(&raw) == expr_to_string(&actual)
+        && rewrites_to_itself(&raw, &actual)
       {
         if crate::evaluator::pattern_matching::contains_pattern(lhs) {
           return Some(Ok(

@@ -2871,14 +2871,27 @@ pub fn sparse_array_normalize_ast(
   let arg0: &Expr = resolved_arg0.as_ref().unwrap_or(&args[0]);
   let expanded_data: Expr;
   let data: &Expr = if let Some(ref dims) = explicit_dims {
-    if let Some(expanded) = expand_pattern_rule(arg0, dims)
-      .or_else(|| expand_band_rules(arg0, dims))
-      .or_else(|| expand_pattern_rule_list(arg0, dims))
-    {
+    if let Some(expanded) = expand_pattern_rule(arg0, dims) {
       expanded_data = expanded;
       &expanded_data
     } else {
-      arg0
+      // Band and pattern rules can be mixed in one rule list
+      // (`{{i_, i_} -> i, Band[{1, 2}] -> r}`), so expand both in turn.
+      let banded = expand_band_rules(arg0, dims);
+      let after_band = banded.as_ref().unwrap_or(arg0);
+      match expand_pattern_rule_list(after_band, dims) {
+        Some(expanded) => {
+          expanded_data = expanded;
+          &expanded_data
+        }
+        None => match banded {
+          Some(expanded) => {
+            expanded_data = expanded;
+            &expanded_data
+          }
+          None => arg0,
+        },
+      }
     }
   } else if let Some(ref dims) = band_inferred_dims {
     if let Some(expanded) = expand_band_rules(&args[0], dims) {

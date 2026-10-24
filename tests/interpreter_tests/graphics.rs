@@ -6074,6 +6074,31 @@ mod plot3d {
       );
     }
 
+    /// `Sphere[c, Scaled[r]]` takes its radius as the fraction `r` of the
+    /// plot range. `Scaled[r]` used to fail to parse as a number and fall
+    /// back to radius 1, swamping the picture.
+    #[test]
+    fn sphere_radius_can_be_a_fraction_of_the_plot_range() {
+      // With `PlotRange -> 3` (width 6), `Scaled[0.05]` is a radius of 0.3.
+      assert_eq!(
+        export_svg(
+          "Graphics3D[{Sphere[{0, 0, 0}, Scaled[0.05]]}, PlotRange -> 3]"
+        ),
+        export_svg("Graphics3D[{Sphere[{0, 0, 0}, 0.3]}, PlotRange -> 3]")
+      );
+      // Without an explicit range, the fraction applies to the extent of
+      // the rest of the scene.
+      assert_eq!(
+        export_svg(
+          "Graphics3D[{Sphere[{0, 0, 0}, Scaled[0.1]], \
+           Line[{{-5, 0, 0}, {5, 0, 0}}]}]"
+        ),
+        export_svg(
+          "Graphics3D[{Sphere[{0, 0, 0}, 1], Line[{{-5, 0, 0}, {5, 0, 0}}]}]"
+        )
+      );
+    }
+
     /// `Sphere[{p1, p2, …}, {r1, r2, …}]` gives each centre its own radius,
     /// rather than one shared radius for the whole set — how a particle
     /// system with varying particle sizes is drawn in one call. A radius
@@ -31324,7 +31349,7 @@ mod manipulate {
         // dodecahedron, the stella octangula, the golden rhombohedra,
         // rhombic icosahedron, the cuboctahedron, and the gyroelongated
         // square dipyramid and the truncated cube.
-        assert_eq!(values.len(), 31, "every known solid");
+        assert!(values.len() > 100, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }
@@ -40149,6 +40174,137 @@ mod plots_with_nothing_to_draw {
       )
       .unwrap(),
       "{Graphics3D, Graphics3D, Graphics}"
+    );
+  }
+
+  // ReliefPlot shades a matrix of heights: it is a framed raster, the first
+  // row sits at the top unless DataReversed is set, and the lighting
+  // changes the pixels but not the layout.
+  #[test]
+  fn relief_plot() {
+    let plot = "ReliefPlot[{{1, 2, 3}, {2, 5, 2}, {3, 2, 1}}";
+    let lit = export_svg(&format!("{plot}]"));
+    assert!(lit.contains("<image"), "{lit}");
+    assert_eq!(interpret(&format!("Head[{plot}]]")).unwrap(), "Graphics");
+    let flat = export_svg(&format!("{plot}, LightingAngle -> None]"));
+    assert_ne!(lit, flat);
+    let reversed = export_svg(&format!("{plot}, DataReversed -> True]"));
+    assert_ne!(lit, reversed);
+    let ranged =
+      export_svg(&format!("{plot}, DataRange -> {{{{-1, 1}}, {{-1, 1}}}}]"));
+    assert!(ranged.contains("-1"), "{ranged}");
+  }
+}
+
+mod array_plot_argument_errors {
+  use super::*;
+
+  #[test]
+  fn not_a_list_of_lists_reports_mat_and_stays_unevaluated() {
+    let r = interpret_with_stdout("ArrayPlot[{1, 2}]").unwrap();
+    assert_eq!(r.result, "ArrayPlot[{1, 2}]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "ArrayPlot::mat: Argument {1, 2} at position 1 is not a list of lists."
+      ]
+    );
+    assert_eq!(interpret("ArrayPlot[a]").unwrap(), "ArrayPlot[a]");
+  }
+
+  #[test]
+  fn ragged_rows_and_sparse_arrays_still_plot() {
+    assert_eq!(
+      interpret("Head[ArrayPlot[{{1, 2}, {3}}]]").unwrap(),
+      "Graphics"
+    );
+    assert_eq!(
+      interpret("Head[ArrayPlot[SparseArray[{{1, 1} -> 1}, {3, 3}]]]").unwrap(),
+      "Graphics"
+    );
+  }
+}
+
+mod manipulate_synchronous_initialization {
+  use super::*;
+
+  #[test]
+  fn code_in_synchronous_initialization_runs() {
+    assert_eq!(
+      interpret(
+        "Manipulate[x + q, {x, 0, 1}, SynchronousInitialization :> {q = 5}]; q"
+      )
+      .unwrap(),
+      "5"
+    );
+    // The Boolean switch is no code.
+    assert_eq!(
+      interpret(
+        "Manipulate[x, {x, 0, 1}, SynchronousInitialization -> False]; 1"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+}
+
+mod polyhedron_data_generated_solids {
+  use super::*;
+
+  #[test]
+  fn johnson_archimedean_and_named_solids() {
+    assert_eq!(
+      interpret("Length[PolyhedronData[\"Johnson\"]]").unwrap(),
+      "92"
+    );
+    assert_eq!(
+      interpret("Length[PolyhedronData[\"Archimedean\"]]").unwrap(),
+      "13"
+    );
+    assert_eq!(
+      interpret(
+        "{PolyhedronData[\"Bilunabirotunda\", \"VertexCount\"], \
+         PolyhedronData[\"SnubCube\", \"FaceCount\"], \
+         PolyhedronData[\"SquarePyramid\", \"VertexCount\"], \
+         PolyhedronData[{\"Johnson\", 12}, \"VertexCount\"], \
+         PolyhedronData[\"Gyrobifastigium\", \"EdgeCount\"]}"
+      )
+      .unwrap(),
+      "{14, 38, 5, 5, 14}"
+    );
+  }
+
+  #[test]
+  fn generated_coordinates_close_up() {
+    // Every face index refers to a vertex, and the vertices are numeric.
+    assert_eq!(
+      interpret(
+        "And @@ Table[With[{v = N[PolyhedronData[n, \"VertexCoordinates\"]], \
+         f = PolyhedronData[n, \"FaceIndices\"]}, MatrixQ[v, NumberQ] && \
+         Max[Flatten[f]] == Length[v]], {n, PolyhedronData[\"Johnson\"]}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod gaussian_matrix_vector_form {
+  use super::*;
+
+  #[test]
+  fn double_braces_give_the_one_dimensional_kernel() {
+    assert_eq!(
+      interpret(
+        "Chop[GaussianMatrix[{{2}}] - {0.05088223571170066, 0.21183832321622456, \
+         0.47455888214414965, 0.21183832321622456, 0.05088223571170066}, 10^-12]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("Length[GaussianMatrix[{{2}, 1.5}]]").unwrap(),
+      "5"
     );
   }
 }

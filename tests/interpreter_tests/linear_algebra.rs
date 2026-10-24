@@ -4288,6 +4288,22 @@ mod linear_model_fit {
   }
 
   #[test]
+  fn parameter_table_is_a_grid_of_headings_and_entries() {
+    // The table is a styled grid: a heading row, then one row per basis
+    // function holding its label and the `"ParameterTableEntries"` values.
+    assert_eq!(
+      interpret(
+        "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; \
+         t = lm[\"ParameterTable\"]; \
+         {Head[t], t[[1, 1, 1, 2]], t[[1, 1, 2, 1]], t[[1, 1, 3, 1]], \
+          Rest[t[[1, 1, 3]]] == lm[\"ParameterTableEntries\"][[2]]}"
+      )
+      .unwrap(),
+      "{Style, Estimate, 1, x, True}"
+    );
+  }
+
+  #[test]
   fn parameter_table_entries() {
     // Each row is {Estimate, StandardError, TStatistic, PValue} for one
     // basis function (the constant intercept, then `x`), matching
@@ -10541,6 +10557,125 @@ mod dot_of_higher_rank_tensors {
     assert_eq!(
       interpret("Quiet[Dimensions[Array[a, {2, 2, 2}] . {1, 2, 3}]]").unwrap(),
       "{2}"
+    );
+  }
+}
+
+mod machine_matrix_inverse_and_det {
+  use super::*;
+
+  #[test]
+  fn a_machine_real_matrix_is_factored_numerically() {
+    // LU with partial pivoting: a 40x40 machine matrix inverts quickly
+    // (cofactor expansion never finished).
+    assert_eq!(
+      interpret(
+        "m = Table[N[1/(i + j - 1)] + If[i == j, 1., 0.], {i, 40}, {j, 40}]; \
+         Max[Abs[Flatten[Inverse[m] . m - IdentityMatrix[40]]]] < 10.^-10"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Chop[Det[{{1.5, 2., 0.3}, {0.1, 4., 2.}, {3., 1., 1.}}] - 11.23]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn an_exactly_singular_machine_matrix() {
+    let r = interpret_with_stdout("Inverse[{{1., 2.}, {2., 4.}}]").unwrap();
+    assert_eq!(r.result, "Inverse[{{1., 2.}, {2., 4.}}]");
+    assert_eq!(
+      r.warnings,
+      vec!["Inverse::sing: Matrix {{1., 2.}, {2., 4.}} is singular."]
+    );
+    assert_eq!(interpret("Det[{{1., 2.}, {2., 4.}}]").unwrap(), "0.");
+  }
+}
+
+mod machine_dot_fold_order {
+  use super::*;
+
+  #[test]
+  fn dot_folds_left_while_total_folds_as_a_tree() {
+    assert_eq!(
+      interpret(
+        "{Table[0.1, 10] . Table[1., 10], Table[0.1, 7] . Table[1., 7], \
+         Total[Table[0.1, 10]], {Table[0.1, 10]} . Table[1., 10]}"
+      )
+      .unwrap(),
+      "{0.9999999999999999, 0.7, 1., {0.9999999999999999}}"
+    );
+  }
+
+  #[test]
+  fn machine_matrices() {
+    assert_eq!(
+      interpret(
+        "m = {{1.5, 2.}, {0.1, 4.}}; v = {0.3, 0.7}; {m . m, m . v, v . m, v . v}"
+      )
+      .unwrap(),
+      "{{{2.45, 11.}, {0.55, 16.2}}, {1.8499999999999999, 2.8299999999999996}, \
+       {0.5199999999999999, 3.4}, 0.58}"
+    );
+    assert_eq!(
+      interpret(
+        "Dimensions[RandomReal[1, {60, 40}] . RandomReal[1, {40, 30}]]"
+      )
+      .unwrap(),
+      "{60, 30}"
+    );
+  }
+}
+
+mod generalized_eigenvalues {
+  use super::*;
+
+  #[test]
+  fn a_matrix_pencil() {
+    assert_eq!(
+      interpret("Eigenvalues[{{{2, 1}, {1, 3}}, {{1, 0}, {0, 2}}}]").unwrap(),
+      "{5/2, 1}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{{2, 1}, {1, 3}}, {{1, 0}, {0, 2}}}, 1]")
+        .unwrap(),
+      "{5/2}"
+    );
+    assert_eq!(
+      interpret("Chop[Eigenvalues[{{{2., 1.}, {1., 3.}}, {{1., 0.}, {0., 2.}}}] - {2.5, 1.}]")
+        .unwrap(),
+      "{0, 0}"
+    );
+  }
+}
+
+mod machine_svd_any_shape {
+  use super::*;
+
+  #[test]
+  fn reconstructs_and_is_orthogonal() {
+    assert_eq!(
+      interpret(
+        "a = {{1., 2., 3.}, {4., 5., 6.}}; {u, s, v} = SingularValueDecomposition[a]; \
+         {Dimensions /@ {u, s, v}, Chop[u . s . Transpose[v] - a], \
+          Chop[Transpose[u] . u - IdentityMatrix[2]], Chop[Transpose[v] . v - IdentityMatrix[3]]}"
+      )
+      .unwrap(),
+      "{{{2, 2}, {2, 3}, {3, 3}}, {{0, 0, 0}, {0, 0, 0}}, {{0, 0}, {0, 0}}, \
+       {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}}"
+    );
+    assert_eq!(
+      interpret(
+        "a = {{1., 2.}, {3., 4.}, {5., 6.}, {7., 8.5}}; s = SingularValueDecomposition[a][[2]]; \
+         Chop[Diagonal[s] - {14.558962665927886, 0.5353560423848525}, 10^-10]"
+      )
+      .unwrap(),
+      "{0, 0}"
     );
   }
 }

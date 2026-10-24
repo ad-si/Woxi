@@ -3663,7 +3663,7 @@ pub fn dispatch_io_functions(
 
         // 1. Attributes (user-set only)
         let user_attrs =
-          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).copied());
         if let Some(attrs) = user_attrs
           && !attrs.is_empty()
         {

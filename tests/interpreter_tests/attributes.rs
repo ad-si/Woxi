@@ -2394,3 +2394,19 @@ mod default_protection {
     clear_state();
   }
 }
+
+mod package_symbol_protection {
+  use super::*;
+
+  #[test]
+  fn only_packages_that_protect_their_symbols() {
+    assert_eq!(
+      interpret(
+        "{Attributes[Combinatorica`Josephus], Attributes[PolyhedronOperations`Stellate], \
+         Attributes[ComputationalGeometry`ConvexHull]}"
+      )
+      .unwrap(),
+      "{{Protected}, {}, {}}"
+    );
+  }
+}

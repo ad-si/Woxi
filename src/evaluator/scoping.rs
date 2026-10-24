@@ -220,7 +220,9 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (None, _) => None,
     });
   }
-  let mut body_owned = body_expr.clone();
+  let local_names: Vec<String> =
+    local_vars.iter().map(|v| v.name.clone()).collect();
+  let mut body_owned = shield_nested_scopes(body_expr, &local_names);
   for (var, init) in local_vars.iter().zip(init_values) {
     let var_name = &var.name;
     let fresh = crate::functions::scoping::unique_symbol(var_name);
@@ -1180,8 +1182,11 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .iter()
     .map(|(name, val)| (name.as_str(), val))
     .collect();
+  let local_names: Vec<String> =
+    bindings.iter().map(|(name, _)| name.clone()).collect();
+  let shielded = shield_nested_scopes(body_expr, &local_names);
   let substituted =
-    crate::syntax::substitute_variables(body_expr, &binding_refs);
+    crate::syntax::substitute_variables(&shielded, &binding_refs);
 
   // Evaluate the substituted body. Like Module and Block, With leaves a
   // Return that reaches its boundary standing as `Return[val]`.
@@ -1543,4 +1548,120 @@ fn resolve_span(args: &[Expr], len: i64) -> Result<Vec<i64>, InterpreterError> {
     }
   }
   Ok(positions)
+}
+
+/// Wolfram's renaming of nested scopes: before the locals of a Module or
+/// With are substituted into its body, every scoping construct inside the
+/// body that mentions one of them — a `Function`, a definition or rule
+/// with patterns, an inner Module/With/Block — gets its own variables
+/// renamed `x` → `x$`, so a value the variable has outside (a Manipulate
+/// control, a Block) cannot leak in: `Module[{a}, Hold[f[t_] = D[a[t], t]]]`
+/// is `Hold[f[t$_] = D[a$n[t$], t$]]`. Constructs that mention no local
+/// are left as written.
+pub(crate) fn shield_nested_scopes(expr: &Expr, locals: &[String]) -> Expr {
+  if let Some(bound) = scope_bound_names(expr)
+    && mentions_any_symbol(expr, locals)
+  {
+    let mut renamed = expr.clone();
+    for name in bound {
+      if !locals.contains(&name) {
+        renamed =
+          crate::syntax::rename_symbol(&renamed, &name, &format!("{name}$"));
+      }
+    }
+    return crate::syntax::map_children(&renamed, &|c| {
+      shield_nested_scopes(c, locals)
+    });
+  }
+  crate::syntax::map_children(expr, &|c| shield_nested_scopes(c, locals))
+}
+
+/// The variables a scoping construct binds, or None for anything else.
+fn scope_bound_names(expr: &Expr) -> Option<Vec<String>> {
+  let mut names = Vec::new();
+  match expr {
+    Expr::NamedFunction { params, .. } => names.extend(params.iter().cloned()),
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      collect_pattern_names(pattern, &mut names);
+    }
+    Expr::FunctionCall { name, args } if args.len() >= 2 => match name.as_str()
+    {
+      "Function" => match &args[0] {
+        // `Function[Null, body]` names no variable (its slots are `#`).
+        Expr::Identifier(x) if x == "Null" => return None,
+        Expr::Identifier(x) => names.push(x.clone()),
+        Expr::List(xs) => names.extend(xs.iter().filter_map(|x| match x {
+          Expr::Identifier(n) => Some(n.clone()),
+          _ => None,
+        })),
+        _ => return None,
+      },
+      "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed" | "Rule"
+      | "RuleDelayed" => {
+        collect_pattern_names(&args[0], &mut names);
+      }
+      "Module" | "With" | "Block" => {
+        let Expr::List(vars) = &args[0] else {
+          return None;
+        };
+        for v in vars {
+          match v {
+            Expr::Identifier(n) => names.push(n.clone()),
+            Expr::FunctionCall { name, args }
+              if (name == "Set" || name == "SetDelayed")
+                && !args.is_empty() =>
+            {
+              if let Expr::Identifier(n) = &args[0] {
+                names.push(n.clone());
+              }
+            }
+            _ => {}
+          }
+        }
+      }
+      _ => return None,
+    },
+    _ => return None,
+  }
+  names.dedup();
+  (!names.is_empty()).then_some(names)
+}
+
+fn collect_pattern_names(expr: &Expr, out: &mut Vec<String>) {
+  match expr {
+    Expr::Pattern { name, .. }
+    | Expr::PatternTest { name, .. }
+    | Expr::PatternOptional { name, .. }
+      if !name.is_empty() =>
+    {
+      if !out.contains(name) {
+        out.push(name.clone());
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      if let Expr::Identifier(n) = &args[0]
+        && !out.contains(n)
+      {
+        out.push(n.clone());
+      }
+      collect_pattern_names(&args[1], out);
+    }
+    _ => {
+      for child in crate::syntax::expr_children(expr) {
+        collect_pattern_names(child, out);
+      }
+    }
+  }
+}
+
+fn mentions_any_symbol(expr: &Expr, names: &[String]) -> bool {
+  match expr {
+    Expr::Identifier(n) => names.contains(n),
+    Expr::FunctionCall { name, .. } if names.contains(name) => true,
+    _ => crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(|c| mentions_any_symbol(c, names)),
+  }
 }

@@ -119,6 +119,28 @@ fn is_inert_data(expr: &Expr) -> bool {
   }
 }
 
+/// Whether evaluating `expr` returns it unchanged: a number, a string, a
+/// rational in lowest terms, or a list of those. Unlike `is_inert_data` this
+/// rejects a `Rational[2, 4]` that still has to be reduced.
+pub(crate) fn is_evaluated_data(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _)
+    | Expr::String(_) => true,
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      matches!(
+        args.as_slice(),
+        [Expr::Integer(n), Expr::Integer(d)]
+          if *d > 1 && crate::functions::math_ast::gcd_i128(*n, *d) == 1
+      )
+    }
+    Expr::List(items) => items.iter().all(is_evaluated_data),
+    _ => false,
+  }
+}
+
 /// `is_inert_data` of a list's elements, memoized on shared lists so a
 /// symbol holding a large array answers in O(1) on every lookup.
 fn is_inert_list(items: &crate::ExprList) -> bool {
@@ -204,6 +226,14 @@ pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
     // `line := lines[[i]]` reads the part afresh each time, like a call.
     Expr::Part { .. } => true,
     Expr::Comparison { .. } => true,
+    // Operator forms (`x := f /@ list`, `x := expr /. rules`) are calls too.
+    Expr::Map { .. }
+    | Expr::Apply { .. }
+    | Expr::MapApply { .. }
+    | Expr::ReplaceAll { .. }
+    | Expr::ReplaceRepeated { .. }
+    | Expr::PrefixApply { .. }
+    | Expr::Postfix { .. } => true,
     Expr::Rule {
       pattern,
       replacement,
@@ -1183,6 +1213,20 @@ pub fn evaluate_expr_to_expr_inner(
         }
       }
       Ok(Expr::Constant(name.clone()))
+    }
+    // A list of numbers and strings is already its own value; a shared one
+    // (a symbol's array, substituted into a function body) is returned as
+    // the pointer it is instead of being rebuilt element by element.
+    // A shared list answers from its cached inert flag in O(1), the same
+    // test a symbol's stored value is given (`needs_reevaluation`).
+    Expr::List(items)
+      if (if items.is_shared() {
+        is_inert_list(items)
+      } else {
+        items.iter().all(is_evaluated_data)
+      }) && !arith_rules_may_apply("List", items) =>
+    {
+      Ok(expr.clone())
     }
     Expr::List(items) => {
       let mut evaluated: Vec<Expr> = Vec::with_capacity(items.len());
