@@ -8324,7 +8324,12 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(v) => v.unwrap_or(FIND_ROOT_DEFAULT_MAX_ITERATIONS),
       Err(()) => return Ok(unevaluated("FindRoot", args)),
     };
-    return find_root_multivariate(&args[0], specs, max_iter);
+    return find_root_multivariate(
+      &args[0],
+      specs,
+      max_iter,
+      find_option(&args[2..], "StepMonitor"),
+    );
   }
 
   // Multivariate form: FindRoot[{eqns}, {x, x0}, {y, y0}, ...] — the
@@ -8349,7 +8354,12 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(v) => v.unwrap_or(FIND_ROOT_DEFAULT_MAX_ITERATIONS),
         Err(()) => return Ok(unevaluated("FindRoot", args)),
       };
-      return find_root_multivariate(&args[0], &candidate_specs, max_iter);
+      return find_root_multivariate(
+        &args[0],
+        &candidate_specs,
+        max_iter,
+        find_option(opts, "StepMonitor"),
+      );
     }
   }
 
@@ -8388,6 +8398,8 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       use_secant = true;
     }
   }
+
+  let step_monitor = find_option(&args[2..], "StepMonitor");
 
   // Parse second argument: {var, x0} or {var, x0, x1}
   // First peek at the variable name and start point; if the start point
@@ -8567,6 +8579,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       f_prev = f_curr;
       x_curr = x_next;
       f_curr = f_next_val;
+      fire_step_monitor(step_monitor, std::slice::from_ref(&var), &[x_curr]);
     }
 
     let result_val = Expr::Real(x_curr);
@@ -8666,6 +8679,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       converged = true;
     }
     x = trial;
+    fire_step_monitor(step_monitor, std::slice::from_ref(&var), &[x]);
   }
   if !converged {
     crate::emit_message(&format!(
@@ -9524,6 +9538,7 @@ fn find_root_multivariate(
   eqns_arg: &Expr,
   specs: &[Expr],
   max_iter: usize,
+  step_monitor: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   // Variables and starting points. A spec's variable is either a plain
   // symbol or an indexed variable like `u[1]` — see `is_findroot_var_expr`.
@@ -9572,6 +9587,26 @@ fn find_root_multivariate(
       .collect()
   };
   let mut x = clamp_to_bounds(x);
+
+  // `StepMonitor :> expr` fires after every accepted step with the plain
+  // search variables bound to the new point. An indexed variable like
+  // `u[1]` has no symbol to bind, so it is left out.
+  let monitor_names: Vec<(usize, String)> = raw_vars
+    .iter()
+    .enumerate()
+    .filter_map(|(i, v)| match v {
+      Expr::Identifier(name) => Some((i, name.clone())),
+      _ => None,
+    })
+    .collect();
+  let fire_monitor = |x: &[f64]| {
+    if step_monitor.is_some() {
+      let names: Vec<String> =
+        monitor_names.iter().map(|(_, n)| n.clone()).collect();
+      let vals: Vec<f64> = monitor_names.iter().map(|(i, _)| x[*i]).collect();
+      fire_step_monitor(step_monitor, &names, &vals);
+    }
+  };
 
   // Only plain-symbol variables can carry a stale global binding under a
   // literal name — an indexed variable like `u[1]` has no such binding to
@@ -9862,6 +9897,7 @@ fn find_root_multivariate(
         }
         x = x_new;
         fv = fv_new;
+        fire_monitor(&x);
         progressed = true;
         let resid = residual_norm(&fv);
         if resid < best_resid {
@@ -9959,6 +9995,7 @@ fn find_root_multivariate(
       x = x_new;
       fv = fv_new;
       resid = resid_new;
+      fire_monitor(&x);
       if resid < best_resid {
         best_resid = resid;
         best_x.clone_from(&x);
