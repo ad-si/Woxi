@@ -24779,6 +24779,42 @@ mod log_log_plot {
       "LogLogPlot[{x, x^2, x^3}, {x, 1, 100}]"
     ));
   }
+
+  /// Explicit x `FrameTicks` on a log axis sit at their logarithmic
+  /// positions (equal decades are equally spaced) and replace the
+  /// automatic decade labels instead of doubling them.
+  #[test]
+  fn explicit_frame_ticks_use_log_positions() {
+    let svg = export_svg(
+      "LogLogPlot[Exp[-x], {x, 0.1, 10}, Frame -> True, \
+       FrameTicks -> {{Automatic, Automatic}, \
+       {{{0.1, \"lo\"}, {1, \"mid\"}, {10, \"hi\"}}, Automatic}}]",
+    );
+    let x_of = |label: &str| -> f64 {
+      let end = svg.find(&format!(">{label}</text>")).unwrap();
+      let start = svg[..end].rfind("<text x=\"").unwrap() + "<text x=\"".len();
+      svg[start..start + svg[start..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    let (lo, mid, hi) = (x_of("lo"), x_of("mid"), x_of("hi"));
+    assert!(lo < mid && mid < hi);
+    assert!(((mid - lo) - (hi - mid)).abs() < 1.0, "{lo} {mid} {hi}");
+  }
+
+  /// A range bounded by powers of ten labels both bounding decades.
+  #[test]
+  fn decade_bounds_are_labelled() {
+    let svg = export_svg("LogLogPlot[Exp[-x], {x, 0.1, 10}, Frame -> True]");
+    // Bottom-edge labels: 10^-1, 1, 10 (the left edge has its own).
+    let bottom = svg
+      .lines()
+      .filter(|l| {
+        l.contains("text-anchor=\"middle\"") && l.contains("y=\"1938")
+      })
+      .count();
+    assert_eq!(bottom, 3, "{svg}");
+  }
 }
 
 mod log_plot {
