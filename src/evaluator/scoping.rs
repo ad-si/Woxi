@@ -1559,16 +1559,61 @@ fn resolve_span(args: &[Expr], len: i64) -> Result<Vec<i64>, InterpreterError> {
 /// is `Hold[f[t$_] = D[a$n[t$], t$]]`. Constructs that mention no local
 /// are left as written.
 pub(crate) fn shield_nested_scopes(expr: &Expr, locals: &[String]) -> Expr {
-  if let Some(bound) = scope_bound_names(expr)
-    && mentions_any_symbol(expr, locals)
-  {
-    let mut renamed = expr.clone();
-    for name in bound {
-      if !locals.contains(&name) {
-        renamed =
-          crate::syntax::rename_symbol(&renamed, &name, &format!("{name}$"));
-      }
+  // An inner Module/With/Block counts as reached only through its body:
+  // a local in an initializer is substituted outside the inner scope.
+  let reached = match expr {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Module" | "With" | "Block")
+        && !args.is_empty() =>
+    {
+      args[1..].iter().any(|a| mentions_any_symbol(a, locals))
     }
+    _ => mentions_any_symbol(expr, locals),
+  };
+  if let Some(bound) = scope_bound_names(expr)
+    && reached
+  {
+    let rename_all = |e: &Expr| {
+      let mut e = e.clone();
+      for name in &bound {
+        if !locals.contains(name) {
+          e = crate::syntax::rename_symbol(&e, name, &format!("{name}$"));
+        }
+      }
+      e
+    };
+    // An inner Module/With/Block's initializers belong to the enclosing
+    // scope (`Table[With[{i = i}, …], {i, 4}]` reads the table's `i`), so
+    // only the declared names and the body are renamed.
+    let renamed = match expr {
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Module" | "With" | "Block")
+          && let Some(Expr::List(vars)) = args.first() =>
+      {
+        let new_vars: Vec<Expr> = vars
+          .iter()
+          .map(|v| match v {
+            Expr::FunctionCall {
+              name: set,
+              args: sa,
+            } if (set == "Set" || set == "SetDelayed") && sa.len() == 2 => {
+              Expr::FunctionCall {
+                name: set.clone(),
+                args: vec![rename_all(&sa[0]), sa[1].clone()].into(),
+              }
+            }
+            other => rename_all(other),
+          })
+          .collect();
+        let mut new_args = vec![Expr::List(new_vars.into())];
+        new_args.extend(args[1..].iter().map(&rename_all));
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: new_args.into(),
+        }
+      }
+      _ => rename_all(expr),
+    };
     return crate::syntax::map_children(&renamed, &|c| {
       shield_nested_scopes(c, locals)
     });
@@ -1625,6 +1670,13 @@ fn scope_bound_names(expr: &Expr) -> Option<Vec<String>> {
   }
   names.dedup();
   (!names.is_empty()).then_some(names)
+}
+
+/// Every pattern variable name (`x` of `x_`) anywhere in `expr`.
+pub fn pattern_variable_names(expr: &Expr) -> Vec<String> {
+  let mut out = Vec::new();
+  collect_pattern_names(expr, &mut out);
+  out
 }
 
 fn collect_pattern_names(expr: &Expr, out: &mut Vec<String>) {

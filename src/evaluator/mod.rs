@@ -22,7 +22,7 @@ pub(crate) mod listable;
 pub(crate) mod part_extraction;
 mod pattern_functions;
 pub(crate) mod pattern_matching;
-mod scoping;
+pub mod scoping;
 mod string_replace;
 pub(crate) mod symbol_values;
 mod type_helpers;

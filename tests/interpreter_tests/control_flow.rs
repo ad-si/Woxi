@@ -5016,4 +5016,23 @@ mod nested_scope_renaming {
       "12"
     );
   }
+
+  #[test]
+  fn inner_with_initializer_is_not_renamed() {
+    // `With[{i = i}, …]`: the initializer's `i` is the Table iterator.
+    assert_eq!(
+      interpret(
+        "Module[{f = {10, 20, 30}}, Table[With[{i = i}, f[[i]]], {i, 3}]]"
+      )
+      .unwrap(),
+      "{10, 20, 30}"
+    );
+  }
+
+  #[test]
+  fn inner_with_reached_only_through_initializer_keeps_names() {
+    let out = interpret("Module[{a}, Hold[With[{x = a}, x + y]]]").unwrap();
+    assert!(out.starts_with("Hold[With[{x = a$"), "{out}");
+    assert!(out.ends_with("}, x + y]]"), "{out}");
+  }
 }
