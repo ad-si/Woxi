@@ -22259,3 +22259,27 @@ mod asymptotic_special_series {
     );
   }
 }
+
+mod ndsolve_starting_step_size {
+  use super::*;
+
+  #[test]
+  fn a_requested_step_size_refines_the_grid() {
+    // NeuronalBursting: {t, 0, 1000} with the default 1000 steps (h = 1)
+    // diverges; StartingStepSize -> 0.1 keeps the bursting model stable.
+    assert_eq!(
+      interpret(
+        "i = 0.5; tauC = 116.; soln = NDSolve[{v'[t] == -(17.81 + 47.58*v[t] + 33.8*v[t]^2)*(v[t] - 0.48) \
+         - 26*r[t]*(v[t] + 0.95) - 1.93*x[t]*(1 - 0.5*c[t])*(v[t] - 1.4) - 3.25*c[t]*(v[t] + 0.95) + i, \
+         r'[t] == 1/5.6*(-r[t] + 1.29*v[t] + 0.79 + 3.3*(v[t] + 0.38)^2), \
+         x'[t] == 1/30*(-x[t] + 7.33*(v[t] + 0.86)*(v[t] + 0.84)), c'[t] == 1/tauC*(-c[t] + 3*x[t]), \
+         v[0] == 0, r[0] == 0, x[0] == 0, c[0] == 1.5}, {v, r, x, c}, {t, 0, 1000}, \
+         MaxSteps -> Infinity, StartingStepSize -> 0.1, \
+         Method -> {\"FixedStep\", Method -> {\"ExplicitRungeKutta\", \"DifferenceOrder\" -> 4}}]; \
+         Round[1000 (v[{100, 500, 1000}] /. soln[[1]])]"
+      )
+      .unwrap(),
+      "{-733, -739, -742}"
+    );
+  }
+}

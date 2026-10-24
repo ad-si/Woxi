@@ -497,6 +497,27 @@ fn evaluate_ndsolve_args(args: &[Expr]) -> Result<Vec<Expr>, InterpreterError> {
   result
 }
 
+thread_local! {
+  /// The step size `StartingStepSize`/`MaxStepSize` asked for, while the
+  /// NDSolve call that gave it runs.
+  static STEP_HINT: std::cell::Cell<Option<f64>> =
+    const { std::cell::Cell::new(None) };
+}
+
+struct StepHintScope(Option<f64>);
+
+impl StepHintScope {
+  fn new(hint: Option<f64>) -> Self {
+    Self(STEP_HINT.with(|c| c.replace(hint)))
+  }
+}
+
+impl Drop for StepHintScope {
+  fn drop(&mut self) {
+    STEP_HINT.with(|c| c.set(self.0));
+  }
+}
+
 fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Split trailing option rules (`Method -> …`, `MaxSteps -> …`, …) from
   // the positional arguments: three for an ODE/DAE system in one
@@ -688,6 +709,29 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // refused anything nonlinear in the dependent variable (the pendulum's
   // `Sin[θ[t]]`) even though nothing about integrating it numerically
   // needs the equation to be linear.
+  // `StartingStepSize -> h` (with or without a fixed-step method) or
+  // `MaxStepSize -> h` asks for steps no longer than h: the nominal grid is
+  // refined to it.
+  let step_hint = opts.iter().find_map(|o| {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = o
+    else {
+      return None;
+    };
+    match pattern.as_ref() {
+      Expr::Identifier(n) if n == "StartingStepSize" || n == "MaxStepSize" => {
+        nval_to_f64(replacement).filter(|h| *h > 0.0 && h.is_finite())
+      }
+      _ => None,
+    }
+  });
+  let _step_hint = StepHintScope::new(step_hint);
   match ndsolve_system(&positional, event.as_ref()) {
     Ok(Some(result)) => {
       let result = restore_compound_heads(&result, &renames);
@@ -4916,7 +4960,20 @@ fn ndsolve_system(
     var_names: &var_names,
   };
 
-  let n_steps = 1000usize;
+  // 1000 nominal steps, or more when the caller asked for a step size
+  // smaller than that grid's.
+  let n_steps = match STEP_HINT.with(std::cell::Cell::get) {
+    Some(h) => {
+      let span = (x_max_resolved - x_min).abs();
+      let wanted = if span.is_finite() {
+        (span / h).ceil()
+      } else {
+        0.0
+      };
+      (wanted.min(2_000_000.0) as usize).max(1000)
+    }
+    None => 1000usize,
+  };
   let mut points: Vec<(f64, Vec<f64>)> = match kind {
     ProblemKind::Initial { .. } => {
       // Initial state.
