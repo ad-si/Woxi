@@ -2843,6 +2843,15 @@ mod eigenvectors {
       .unwrap(),
       "{-2, 2, -2, 1}"
     );
+    // Among equal magnitudes the real eigenvalue -1 comes last.
+    assert_eq!(
+      interpret(
+        "Last[Eigenvectors[{{0, 0, 0, 0, -1}, {1, 0, 0, 0, 0}, \
+         {0, 1, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 0, 1, 0}}]]"
+      )
+      .unwrap(),
+      "{1, -1, 1, -1, 1}"
+    );
   }
 
   // The complex arbitrary-precision value of a Root object.

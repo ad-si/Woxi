@@ -4396,8 +4396,9 @@ fn algebraic_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> Option<Expr> {
     return None;
   }
   // Wolfram takes the eigenvalues as `Root` objects here, ordered by
-  // decreasing absolute value, then increasing real part, then decreasing
-  // imaginary part (so a conjugate pair lists `a + b I` first).
+  // decreasing absolute value, complex before real, then increasing real
+  // part, then decreasing imaginary part (a conjugate pair lists `a + b I`
+  // first).
   let mut keyed: Vec<((f64, f64), Expr)> = Vec::with_capacity(n);
   for lambda in eigenvalues {
     let value = evaluate_expr_to_expr(&call1("N", lambda.clone())).ok()?;
@@ -4411,8 +4412,12 @@ fn algebraic_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> Option<Expr> {
   keyed.sort_by(|((ar, ai), _), ((br, bi), _)| {
     let (abs_a, abs_b) = (ar.hypot(*ai), br.hypot(*bi));
     let close = |x: f64, y: f64| (x - y).abs() <= 1e-10 * x.abs().max(1.0);
+    let (real_a, real_b) = (ai.abs() <= 1e-12, bi.abs() <= 1e-12);
     if !close(abs_a, abs_b) {
       abs_b.total_cmp(&abs_a)
+    } else if real_a != real_b {
+      // Among equal magnitudes the complex eigenvalues come first.
+      real_a.cmp(&real_b)
     } else if !close(*ar, *br) {
       ar.total_cmp(br)
     } else {
