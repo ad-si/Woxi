@@ -2267,7 +2267,20 @@ fn reduce_and(
                 operands: vec![subst_lhs.clone(), subst_rhs.clone()],
                 operators: vec![crate::syntax::ComparisonOp::Equal],
               });
-            if matches!(&holds, Ok(Expr::Identifier(b)) if b == "False") {
+            // `Equal` of two unsimplified radical forms can say False for
+            // equal values, so a False is confirmed numerically.
+            let numerically_unequal = || {
+              crate::evaluator::evaluate_function_call_ast(
+                "N",
+                &[minus2(subst_lhs.clone(), subst_rhs.clone())],
+              )
+              .ok()
+              .and_then(|d| expr_to_number(&d))
+              .is_some_and(|d| d.abs() > 1e-9)
+            };
+            if matches!(&holds, Ok(Expr::Identifier(b)) if b == "False")
+              && numerically_unequal()
+            {
               satisfies = false;
               break;
             }
@@ -3062,6 +3075,85 @@ fn normalize_solution_branches(expr: &Expr, vars: &[String]) -> Expr {
   build_or(branches)
 }
 
+/// `constraints && d == 0`. When `d` holds a single unknown, `d == 0` is
+/// solved for it first and its values are substituted: the other equations
+/// then lose that unknown instead of being re-solved through the value
+/// that `d` is the denominator of.
+fn reduce_with_vanishing(
+  constraints: &[Expr],
+  d: &Expr,
+  vars: &[String],
+  domain: Option<&str>,
+) -> Result<Expr, InterpreterError> {
+  let mut in_d = Vec::new();
+  constraint_variables(d, &mut in_d);
+  in_d.retain(|v| vars.contains(v));
+  in_d.dedup();
+  if let [v] = in_d.as_slice()
+    && let Ok(Expr::List(sols)) = &solve_ast(&[
+      make_equality(d, &Expr::Integer(0)),
+      Expr::Identifier(v.clone()),
+    ])
+  {
+    let rest: Vec<String> = vars.iter().filter(|x| *x != v).cloned().collect();
+    let mut branches = Vec::new();
+    for sol in sols {
+      let Expr::List(rules) = sol else { continue };
+      let Some(Expr::Rule { replacement, .. }) = rules.first() else {
+        continue;
+      };
+      let substituted: Vec<Expr> = constraints
+        .iter()
+        .map(|c| {
+          let c = crate::syntax::substitute_variable(c, v, replacement);
+          crate::evaluator::evaluate_expr_to_expr(&c).unwrap_or(c)
+        })
+        .collect();
+      if substituted
+        .iter()
+        .any(|c| matches!(c, Expr::Identifier(b) if b == "False"))
+      {
+        continue;
+      }
+      let live: Vec<Expr> = substituted
+        .into_iter()
+        .filter(|c| !matches!(c, Expr::Identifier(b) if b == "True"))
+        .collect();
+      let reduced = if rest.is_empty() || live.is_empty() {
+        if live.is_empty() {
+          bool_expr(true)
+        } else {
+          reduce_expr(&and_chain(&live), &rest, domain)?
+        }
+      } else {
+        reduce_multi_var_and_inner(&live, &rest, domain)?
+      };
+      if matches!(&reduced, Expr::Identifier(b) if b == "False") {
+        continue;
+      }
+      let pin = make_equality(&Expr::Identifier(v.clone()), replacement);
+      branches.push(
+        if matches!(&reduced, Expr::Identifier(b) if b == "True") {
+          pin
+        } else {
+          and2(pin, reduced)
+        },
+      );
+    }
+    return Ok(match branches.len() {
+      0 => bool_expr(false),
+      1 => branches.remove(0),
+      _ => Expr::FunctionCall {
+        name: "Or".to_string(),
+        args: branches.into(),
+      },
+    });
+  }
+  let mut degenerate = constraints.to_vec();
+  degenerate.push(make_equality(d, &Expr::Integer(0)));
+  reduce_multi_var_and_inner(&degenerate, vars, domain)
+}
+
 fn reduce_multi_var_and_inner(
   constraints: &[Expr],
   vars: &[String],
@@ -3275,10 +3367,8 @@ fn reduce_multi_var_and_inner(
                   continue;
                 }
                 ASSUMED_ZERO_DENOMINATORS.with(|z| z.borrow_mut().push(key));
-                let mut degenerate = constraints.to_vec();
-                degenerate.push(make_equality(d, &Expr::Integer(0)));
                 let branch =
-                  reduce_multi_var_and_inner(&degenerate, vars, domain);
+                  reduce_with_vanishing(constraints, d, vars, domain);
                 ASSUMED_ZERO_DENOMINATORS.with(|z| z.borrow_mut().pop());
                 let branch = branch?;
                 if !matches!(&branch, Expr::Identifier(s) if s == "False") {

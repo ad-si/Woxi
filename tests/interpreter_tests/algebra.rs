@@ -20940,3 +20940,30 @@ mod polynomial_system_with_large_coefficients {
     );
   }
 }
+
+mod reduce_vanishing_coefficient_branch {
+  use super::*;
+
+  #[test]
+  fn the_degenerate_branch_pins_the_unknown_first() {
+    // Solving the first equation for y divides by 1 - x; the x == 1 branch
+    // must not re-solve through that value (it gave x == f[x] solutions).
+    assert_eq!(
+      interpret(
+        "Round[Sort[N[{x, y} /. {ToRules[Reduce[{(1 - x) (x + y) - 4 x == 0, \
+         (1 - y) (x + y) - y == 0}, {x, y}]]}] 10^6]]"
+      )
+      .unwrap(),
+      "{{-4737034, 1434259}, {0, 0}, {70368, 232408}}"
+    );
+    assert_eq!(
+      interpret(
+        "NSolve[{(1 - v1) 0.5 (0.5 v2 + 0.5 v1) - v1 == 0, \
+         (1 - v2) 2 (0.5 v1 + 0.5 v2) - v2 == 0, 0 < v1 < 1, 0 < v2 < 1}, {v1, v2}, Reals] \
+         // Length"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+}
