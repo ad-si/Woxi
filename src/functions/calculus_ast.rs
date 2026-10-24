@@ -14592,6 +14592,11 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // resulting SeriesData carries straight over: the exponents are already
   // recorded as powers of 1/x once the base is Infinity.
   if matches!(&x0, Expr::Identifier(s) if s == "Infinity")
+    && let Some(series) = special_asymptotic_series(&args[0], &var_name, order)?
+  {
+    return Ok(series);
+  }
+  if matches!(&x0, Expr::Identifier(s) if s == "Infinity")
     && let Some(series) = series_at_infinity(&args[0], &var_name, order)?
   {
     return Ok(series);
@@ -19534,6 +19539,134 @@ fn signed_stirling_numbers(n: usize) -> Vec<i128> {
     (row, next) = (next, row);
   }
   row
+}
+
+/// The asymptotic expansions at Infinity of the special functions whose
+/// expansion is not a Taylor series in `1/x` (Stirling's series and its
+/// relatives), written the way Wolfram writes them: an essential factor
+/// (`E^(…)`, `E^-x^2`) times a series in powers of `1/x`. Only for the plain
+/// variable as argument.
+fn special_asymptotic_series(
+  expr: &Expr,
+  var: &str,
+  order: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return Ok(None);
+  };
+  let is_var = |e: &Expr| matches!(e, Expr::Identifier(v) if v == var);
+  let which = match (name.as_str(), args.as_slice()) {
+    ("Gamma", [a]) if is_var(a) => "Gamma",
+    ("LogGamma", [a]) if is_var(a) => "LogGamma",
+    ("PolyGamma", [a]) if is_var(a) => "PolyGamma",
+    ("PolyGamma", [Expr::Integer(0), a]) if is_var(a) => "PolyGamma",
+    ("Erfc", [a]) if is_var(a) => "Erfc",
+    _ => return Ok(None),
+  };
+  if !(0..=40).contains(&order) {
+    return Ok(None);
+  }
+  let ev = |src: String| crate::interpret_to_expr(&src);
+  let x = var;
+  // `SeriesData[x, Infinity, coeffs, nmin, nmax, den]` with trailing zero
+  // coefficients dropped.
+  let series = |mut coeffs: Vec<Expr>, nmin: i128, nmax: i128, den: i128| {
+    while matches!(coeffs.last(), Some(Expr::Integer(0))) {
+      coeffs.pop();
+    }
+    call(
+      "SeriesData",
+      vec![
+        id_expr(x),
+        id_expr("Infinity"),
+        Expr::List(coeffs.into()),
+        Expr::Integer(nmin),
+        Expr::Integer(nmax),
+        Expr::Integer(den),
+      ],
+    )
+  };
+  let result = match which {
+    "LogGamma" => {
+      let mut c = vec![
+        ev(format!("-1 + Log[{x}]"))?,
+        ev(format!("(Log[2 Pi] - Log[{x}])/2"))?,
+      ];
+      for k in 1..=order {
+        c.push(if k % 2 == 1 {
+          ev(format!("BernoulliB[{}]/({k} ({}))", k + 1, k + 1))?
+        } else {
+          Expr::Integer(0)
+        });
+      }
+      series(c, -1, order + 1, 1)
+    }
+    "PolyGamma" => {
+      let mut c = vec![ev(format!("Log[{x}]"))?];
+      for k in 1..=order {
+        c.push(if k == 1 {
+          ev("-1/2".to_string())?
+        } else if k % 2 == 0 {
+          ev(format!("-BernoulliB[{k}]/{k}"))?
+        } else {
+          Expr::Integer(0)
+        });
+      }
+      series(c, 0, order + 1, 1)
+    }
+    "Erfc" => {
+      // erfc(x) ~ e^-x^2/(Sqrt[Pi] x) Σ (-1)^j (2j-1)!!/(2x^2)^j
+      let mut c = Vec::new();
+      for k in 1..=order {
+        c.push(if k % 2 == 1 {
+          let j = (k - 1) / 2;
+          ev(format!("(-1)^{j} Factorial2[2 {j} - 1]/(2^{j} Sqrt[Pi])"))?
+        } else {
+          Expr::Integer(0)
+        });
+      }
+      let s = series(c, 1, order + 1, 1);
+      call(
+        "Times",
+        vec![call("Power", vec![id_expr("E"), ev(format!("-{x}^2"))?]), s],
+      )
+    }
+    _ => {
+      // Stirling: Gamma[x] ~ E^(x (Log[x] - 1)) Sqrt[2 Pi/x] Σ g_k/x^k.
+      const STIRLING: [&str; 10] = [
+        "1",
+        "1/12",
+        "1/288",
+        "-139/51840",
+        "-571/2488320",
+        "163879/209018880",
+        "5246819/75246796800",
+        "-534703531/902961561600",
+        "-4483131259/86684309913600",
+        "432261921612371/514904800886784000",
+      ];
+      if order as usize > STIRLING.len() {
+        return Ok(None);
+      }
+      let mut c = Vec::new();
+      for k in 0..order.max(1) as usize {
+        if k > 0 {
+          c.push(Expr::Integer(0));
+        }
+        c.push(ev(format!("({}) Sqrt[2 Pi]", STIRLING[k]))?);
+      }
+      let exponent =
+        series(vec![ev(format!("-1 + Log[{x}]"))?], -1, order + 1, 1);
+      call(
+        "Times",
+        vec![
+          call("Power", vec![id_expr("E"), exponent]),
+          series(c, 1, 2 * order + 1, 2),
+        ],
+      )
+    }
+  };
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?))
 }
 
 /// `Series[f, {x, Infinity, n}]` — expand `f` in powers of `1/x`.
