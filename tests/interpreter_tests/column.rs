@@ -625,3 +625,24 @@ mod dynamic_layout_probe {
     );
   }
 }
+
+mod traditional_form_layout {
+  use super::*;
+
+  #[test]
+  fn svg_typesets_each_item_of_a_column() {
+    clear_state();
+    // `TraditionalForm[Column[…]]` is a layout whose items are typeset one
+    // by one; it must not print the `Column(…)` call itself.
+    for code in [
+      r#"ExportString[TraditionalForm[Column[{HoldForm[Integrate[Sin[x]^3, x]], HoldForm[Integrate[u^2, u]]}]], "SVG"]"#,
+      r#"ExportString[TraditionalForm[Text[Style[Column[{HoldForm[Integrate[Sin[x]^3, x]], HoldForm[Integrate[u^2, u]]}, ItemSize -> 28], 18]]], "SVG"]"#,
+    ] {
+      let svg = interpret(code).unwrap();
+      assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+      assert!(!svg.contains(">Column<"), "Column call leaked: {svg}");
+      assert!(!svg.contains("TemplateBox"), "box source leaked: {svg}");
+      assert!(svg.contains('∫'), "integral sign missing: {svg}");
+    }
+  }
+}

@@ -9476,6 +9476,21 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // evaluates to a complex number we route to a complex Newton iteration
   // before the real-only path below.
   let (var_name, x_start_expr) = match arg1 {
+    // An indexed variable (`{T[1], 350}`) goes through the multivariate
+    // solver, which renames such variables to plain symbols.
+    Expr::List(items)
+      if (2..=4).contains(&items.len())
+        && !matches!(&items[0], Expr::Identifier(_))
+        && is_findroot_var_expr(&items[0]) =>
+    {
+      return find_root_multivariate(
+        &args[0],
+        std::slice::from_ref(arg1),
+        max_iter,
+        step_monitor,
+        args,
+      );
+    }
     Expr::List(items) if (2..=5).contains(&items.len()) => {
       let name = match &items[0] {
         Expr::Identifier(n) => n.clone(),
@@ -15228,6 +15243,12 @@ fn eliminate_machine_numbers(
           r.push(*x);
         }
         Expr::Integer(i) => r.push(*i as f64),
+        // Exact rationals beside the machine numbers (`-1/4`) are numbers
+        // too.
+        Expr::BigInteger(_) => r.push(try_eval_to_f64(e)?),
+        Expr::FunctionCall { name, .. } if name == "Rational" => {
+          r.push(try_eval_to_f64(e)?);
+        }
         _ => return None,
       }
     }
@@ -15690,6 +15711,30 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
   }
 
   Some(Expr::List(vec![Expr::List(rules.into())].into()))
+}
+
+/// The first `n` primes, the bases of a Halton sequence.
+fn first_primes(n: usize) -> Vec<usize> {
+  let mut primes = Vec::with_capacity(n);
+  let mut candidate = 2;
+  while primes.len() < n {
+    if primes.iter().all(|p| candidate % p != 0) {
+      primes.push(candidate);
+    }
+    candidate += 1;
+  }
+  primes
+}
+
+/// The van der Corput radical inverse of `k` in base `b`, in [0, 1).
+fn radical_inverse(mut k: usize, b: usize) -> f64 {
+  let (mut value, mut scale) = (0.0, 1.0 / b as f64);
+  while k > 0 {
+    value += (k % b) as f64 * scale;
+    k /= b;
+    scale /= b as f64;
+  }
+  value
 }
 
 /// Convert an evaluated expression to f64
@@ -16340,27 +16385,59 @@ fn nminimize_ast_impl(
     .min_by(|a, b| range_sum(a.1).total_cmp(&range_sum(b.1)))
     .map_or(0, |(i, _)| i);
 
+  // A full grid has (samples + 1)^n points: it stays at 51 per dimension
+  // up to three variables, thins out above that to keep about
+  // MAX_GRID_POINTS, and gives way to a Halton sequence once even a
+  // two-point grid would be larger (a support-vector QP in 40 unknowns
+  // tried to build 51^40 points).
+  const MAX_GRID_POINTS: f64 = 200_000.0;
+  const HALTON_POINTS: usize = 4000;
+  let per_dim =
+    if ((samples_per_dim + 1) as f64).powi(n as i32) <= MAX_GRID_POINTS {
+      Some(samples_per_dim)
+    } else {
+      let k = MAX_GRID_POINTS.powf(1.0 / n as f64).floor() as usize;
+      (k >= 2).then(|| k - 1)
+    };
   for (si, sb) in scale_bounds.iter().enumerate() {
-    let mut sample_points: Vec<Vec<f64>> = vec![vec![]];
-    for i in 0..n {
-      let (lo, hi) = sb[i];
-      let mut new_points = Vec::new();
-      for pt in &sample_points {
-        for j in 0..=samples_per_dim {
-          let t = j as f64 / samples_per_dim as f64;
-          let val = lo + t * (hi - lo);
-          let mut new_pt = pt.clone();
-          new_pt.push(val);
-          new_points.push(new_pt);
-        }
-      }
-      sample_points = new_points;
-    }
-
-    for pt in &sample_points {
+    let mut visit = |pt: &[f64]| {
       update_best(pt, &mut best_x, &mut best_f, &eval_at);
       if si == tight_idx {
         update_best(pt, &mut tight_x, &mut tight_f, &eval_at);
+      }
+    };
+    if let Some(per_dim) = per_dim {
+      // Odometer over the grid indices: no point list is materialized.
+      let mut index = vec![0usize; n];
+      let mut pt = vec![0.0; n];
+      'grid: loop {
+        for i in 0..n {
+          let (lo, hi) = sb[i];
+          pt[i] = lo + index[i] as f64 / per_dim as f64 * (hi - lo);
+        }
+        visit(&pt);
+        for i in (0..n).rev() {
+          if index[i] < per_dim {
+            index[i] += 1;
+            continue 'grid;
+          }
+          index[i] = 0;
+        }
+        break;
+      }
+    } else {
+      // The centre, then a Halton sequence over the box.
+      let centre: Vec<f64> =
+        sb.iter().map(|&(lo, hi)| f64::midpoint(lo, hi)).collect();
+      visit(&centre);
+      let primes = first_primes(n);
+      for k in 1..=HALTON_POINTS {
+        let pt: Vec<f64> = sb
+          .iter()
+          .zip(&primes)
+          .map(|(&(lo, hi), &p)| lo + radical_inverse(k, p) * (hi - lo))
+          .collect();
+        visit(&pt);
       }
     }
   }
@@ -17435,22 +17512,44 @@ fn nminimize_penalty(
     3 => 7,
     _ => 4,
   };
+  // The full grid has per_dim^n points; past 50 000 (more than seven
+  // variables) the starts are a Halton sequence over the region instead.
+  const MAX_STARTS: f64 = 50_000.0;
+  const HALTON_STARTS: usize = 2000;
   let mut starts: Vec<Vec<f64>> = vec![vec![]];
-  for (lo, hi) in &start_region {
-    let mut next = Vec::new();
-    for pt in &starts {
-      for j in 0..per_dim {
-        let t = if per_dim == 1 {
-          0.5
-        } else {
-          j as f64 / (per_dim - 1) as f64
-        };
-        let mut np = pt.clone();
-        np.push(lo + t * (hi - lo));
-        next.push(np);
+  if (per_dim as f64).powi(n as i32) <= MAX_STARTS {
+    for (lo, hi) in &start_region {
+      let mut next = Vec::new();
+      for pt in &starts {
+        for j in 0..per_dim {
+          let t = if per_dim == 1 {
+            0.5
+          } else {
+            j as f64 / (per_dim - 1) as f64
+          };
+          let mut np = pt.clone();
+          np.push(lo + t * (hi - lo));
+          next.push(np);
+        }
       }
+      starts = next;
     }
-    starts = next;
+  } else {
+    let primes = first_primes(n);
+    starts = std::iter::once(
+      start_region
+        .iter()
+        .map(|&(lo, hi)| f64::midpoint(lo, hi))
+        .collect(),
+    )
+    .chain((1..=HALTON_STARTS).map(|k| {
+      start_region
+        .iter()
+        .zip(&primes)
+        .map(|(&(lo, hi), &p)| lo + radical_inverse(k, p) * (hi - lo))
+        .collect()
+    }))
+    .collect();
   }
 
   // Rank starts by penalized value (high penalty) and refine the best few.

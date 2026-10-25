@@ -5863,6 +5863,28 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
     Expr::FunctionCall { name, .. } if name == "Rational" => {
       Some((expr.clone(), Expr::Integer(0)))
     }
+    // A function the language does not define is real like every symbol
+    // (`a[t]`, `Subscript[c, 1][t]`, even `f[x + I y]`), and so is its
+    // derivative (`a'[t]`): wolframscript's ComplexExpand[Re[I a'[t]]] is 0.
+    Expr::FunctionCall { name, .. }
+      if !crate::evaluator::functions::is_builtin_symbol(name) =>
+    {
+      Some((expr.clone(), Expr::Integer(0)))
+    }
+    Expr::CurriedCall { func, .. }
+      if is_undefined_function_or_derivative(func) =>
+    {
+      Some((expr.clone(), Expr::Integer(0)))
+    }
+    // `f'[x]` stored flat as `Derivative[1, f, x]`.
+    Expr::FunctionCall { name, args }
+      if name == "Derivative"
+        && args.len() == 3
+        && matches!(&args[0], Expr::Integer(_))
+        && is_undefined_function_or_derivative(&args[1]) =>
+    {
+      Some((expr.clone(), Expr::Integer(0)))
+    }
     // Numeric atoms and plain symbols: treat as real-valued.
     Expr::Integer(_)
     | Expr::Real(_)
@@ -5879,6 +5901,26 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
       Some((other.clone(), Expr::Integer(0)))
     }
     _ => None,
+  }
+}
+
+/// `f`, `Subscript[c, 1]` or `Derivative[n…][f]` for a function the
+/// language does not define — the head of a real-valued application under
+/// ComplexExpand.
+fn is_undefined_function_or_derivative(head: &Expr) -> bool {
+  match head {
+    Expr::Identifier(name) => {
+      !crate::evaluator::functions::is_builtin_symbol(name)
+    }
+    Expr::FunctionCall { name, .. } => {
+      !crate::evaluator::functions::is_builtin_symbol(name)
+        || name == "Subscript"
+    }
+    Expr::CurriedCall { func, args } => {
+      matches!(func.as_ref(), Expr::FunctionCall { name, .. } if name == "Derivative")
+        && matches!(args.as_slice(), [f] if is_undefined_function_or_derivative(f))
+    }
+    _ => false,
   }
 }
 

@@ -1587,14 +1587,23 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     Expr::FunctionCall { name, args: dargs }
-      if (name == "GammaDistribution" || name == "WeibullDistribution")
-        && dargs.len() == 2 =>
+      if (name == "GammaDistribution" && dargs.len() == 2)
+        || (name == "WeibullDistribution"
+          && (dargs.len() == 2 || dargs.len() == 3)) =>
     {
-      // Both take a shape α and a scale β, and both need them positive.
+      // Both take a shape α and a scale β, and both need them positive;
+      // WeibullDistribution[α, β, μ] is shifted by its location μ.
       let (Some(alpha), Some(beta)) =
         (try_eval_to_f64(&dargs[0]), try_eval_to_f64(&dargs[1]))
       else {
         return Ok(unevaluated("RandomVariate", args));
+      };
+      let location = match dargs.get(2) {
+        None => 0.0,
+        Some(mu) => match try_eval_to_f64(mu) {
+          Some(mu) => mu,
+          None => return Ok(unevaluated("RandomVariate", args)),
+        },
       };
       if !(alpha > 0.0 && beta > 0.0) {
         return Ok(unevaluated("RandomVariate", args));
@@ -1614,9 +1623,12 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(unevaluated("RandomVariate", args));
         };
         Box::new(move || {
-          Expr::Real(crate::with_rng(|rng| {
-            rand_distr::Distribution::sample(&weibull, rng)
-          }))
+          Expr::Real(
+            location
+              + crate::with_rng(|rng| {
+                rand_distr::Distribution::sample(&weibull, rng)
+              }),
+          )
         })
       };
       match n {
@@ -1739,53 +1751,6 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match n {
         None => Ok(out.remove(0)),
         Some(_) => Ok(Expr::List(out.into())),
-      }
-    }
-    Expr::FunctionCall { name, args: dargs }
-      if name == "WeibullDistribution" && dargs.len() == 2 =>
-    {
-      // Inverse-transform sampling: the CDF is 1 - exp(-(x/beta)^alpha), so
-      // x = beta * (-ln u)^(1/alpha) for u uniform on (0, 1].
-      let (Some(alpha), Some(beta)) =
-        (try_eval_to_f64(&dargs[0]), try_eval_to_f64(&dargs[1]))
-      else {
-        return Ok(unevaluated("RandomVariate", args));
-      };
-      if alpha <= 0.0 || beta <= 0.0 {
-        return Ok(unevaluated("RandomVariate", args));
-      }
-      let sample = || -> Expr {
-        let u: f64 = crate::with_rng(|rng| 1.0 - rng.gen_range(0.0..1.0_f64));
-        Expr::Real(beta * (-u.ln()).powf(1.0 / alpha))
-      };
-      match n {
-        None => Ok(sample()),
-        Some(count) => Ok(Expr::List(
-          (0..count).map(|_| sample()).collect::<Vec<_>>().into(),
-        )),
-      }
-    }
-    Expr::FunctionCall { name, args: dargs }
-      if name == "GammaDistribution" && dargs.len() == 2 =>
-    {
-      let (Some(alpha), Some(beta)) =
-        (try_eval_to_f64(&dargs[0]), try_eval_to_f64(&dargs[1]))
-      else {
-        return Ok(unevaluated("RandomVariate", args));
-      };
-      if alpha <= 0.0 || beta <= 0.0 {
-        return Ok(unevaluated("RandomVariate", args));
-      }
-      let Ok(gamma) = rand_distr::Gamma::new(alpha, beta) else {
-        return Ok(unevaluated("RandomVariate", args));
-      };
-      let sample =
-        || -> Expr { Expr::Real(crate::with_rng(|rng| gamma.sample(rng))) };
-      match n {
-        None => Ok(sample()),
-        Some(count) => Ok(Expr::List(
-          (0..count).map(|_| sample()).collect::<Vec<_>>().into(),
-        )),
       }
     }
     Expr::FunctionCall { name, args: dargs }

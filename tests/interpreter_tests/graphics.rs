@@ -2350,6 +2350,18 @@ mod graphics {
       assert!(svg.contains("dy=\"-10\">a</tspan>"), "{svg}");
     }
 
+    /// A `Framed` item stacked in a label's `Column` sets its content
+    /// instead of printing as `Framed[...]` source.
+    #[test]
+    fn text_column_with_framed_item() {
+      let svg = export_svg(
+        "Graphics[{Text[Column[{\"head\", Framed[Row[{\"x = \", NumberForm[0.1234, {2, 2}]}], FrameStyle -> Red], \"tail\"}, Center], {0, 0}]}]",
+      );
+      assert!(svg.contains(">x = 0.12</tspan>"), "{svg}");
+      assert!(!svg.contains("Framed["), "{svg}");
+      assert!(!svg.contains("FrameStyle"), "{svg}");
+    }
+
     /// `Overscript[y, ".."]` in a label draws as the accented letter.
     #[test]
     fn text_overscript_accent() {
@@ -3252,6 +3264,24 @@ mod graphics {
           (28.0..39.0).contains(&cx),
           "expected the point ~1/3 into the image (padded {{-1,2}} span), \
            cx={cx}"
+        );
+      }
+
+      // Each axis entry may independently be a single amount or a
+      // `{low, high}` pair: `{None, {Scaled[1], Scaled[1]}}` leaves x
+      // unpadded and pads y to `{-1, 2}`.
+      #[test]
+      fn axes_may_mix_single_and_per_side_specs() {
+        let svg = export_svg(
+          "Graphics[{Point[{0, 0}]}, PlotRange -> {{0, 1}, {0, 1}}, \
+           PlotRangePadding -> {None, {Scaled[1], Scaled[1]}}, \
+           AspectRatio -> Full, ImageSize -> {100, 100}, Axes -> False]",
+        );
+        let (cx, cy) = point_px(&svg);
+        assert!(cx < 5.0, "expected x unpadded, cx={cx}");
+        assert!(
+          (62.0..72.0).contains(&cy),
+          "expected y padded to {{-1,2}} (point 2/3 down), cy={cy}"
         );
       }
 
@@ -9993,6 +10023,40 @@ mod plot3d {
         "Graphics[{Line[{{0, 0}, {1, 1}}]}, Axes -> True, AxesLabel -> None]",
       );
       assert!(!svg.contains("</tspan>"), "{svg}");
+    }
+
+    /// An `AxesLabel` written as a stacked fraction (`FractionBox`) is drawn
+    /// as numerator over denominator, not flattened to a wide `a/b` line
+    /// that squeezes the plotting area; a `PlotLabel` sits above the
+    /// y-axis label instead of on top of it.
+    #[test]
+    fn graphics_axes_label_stacks_fraction_boxes() {
+      let svg = export_svg(
+        r#"Graphics[{Line[{{0, 0}, {1, 1}}]}, Axes -> True,
+          AxesLabel -> {"\!\(\*FractionBox[\(moles\), \(water\)]\)",
+            "\!\(\*FractionBox[\(moles\), \(air\)]\)"},
+          PlotLabel -> "Title", ImageSize -> 300]"#,
+      );
+      assert!(!svg.contains("moles/water"), "flattened: {svg}");
+      assert!(svg.contains(">water<") && svg.contains(">moles<"), "{svg}");
+      let title_y: f64 = svg
+        .lines()
+        .find(|l| l.contains(">Title<"))
+        .and_then(|l| l.split("y=\"").nth(1))
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      // The y-axis label picture is placed below the title strip.
+      let margin_top: f64 = svg
+        .lines()
+        .find(|l| l.contains("<g transform=\"translate("))
+        .and_then(|l| l.split("translate(").nth(1))
+        .and_then(|v| v.split(')').next())
+        .and_then(|v| v.split(',').nth(1))
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      assert!(margin_top > 26.0 + 20.0, "top margin {margin_top}");
+      assert!(title_y < 26.0, "title at {title_y}");
     }
 
     /// A multi-character `AxesLabel` on a plain `Graphics[]` (not a `Plot`,
@@ -41171,5 +41235,46 @@ mod highlighted_list_plot {
       "{:?}",
       r.warnings
     );
+  }
+}
+
+mod list_plot_far_points {
+  use super::*;
+
+  // A point far outside a fixed PlotRange is invisible; mapping it to a
+  // pixel used to overflow and panic (ADomainDecompositionMethod...).
+  #[test]
+  fn far_outside_point_is_skipped() {
+    assert_eq!(
+      interpret(
+        "Head[ListPlot[{{0, 1.*^300}, {1, 0.5}}, PlotRange -> {{-2, 2}, {-0.05, 1.05}}, \
+         PlotMarkers -> Style[\"x\", 14]]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+}
+
+mod plot_non_numeric_limit {
+  use super::*;
+
+  // A limit that is no number is head::plln with the call unevaluated, as
+  // in wolframscript.
+  #[test]
+  fn plln() {
+    clear_state();
+    let r = woxi::interpret_with_stdout("Plot[x, {x, a, 1}]").unwrap();
+    assert_eq!(r.result, "Plot[x, {x, a, 1}]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "Plot::plln: Limiting value a in {x, a, 1} is not a machine-sized real number."),
+      "{:?}",
+      r.warnings
+    );
+    clear_state();
+    let r =
+      woxi::interpret_with_stdout("ParametricPlot[{t, t}, {t, a, 1}]").unwrap();
+    assert_eq!(r.result, "ParametricPlot[{t, t}, {t, a, 1}]");
   }
 }

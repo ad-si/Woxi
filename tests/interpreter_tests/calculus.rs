@@ -6750,6 +6750,20 @@ mod mixed_partial_derivatives {
 mod find_minimum {
   use super::*;
 
+  // Many variables with a coupling constraint: the starting points and the
+  // sampling grid stay bounded instead of growing exponentially
+  // (MethodOfSupportVectorRegression reached 14 GB).
+  #[test]
+  fn many_variables_stay_bounded() {
+    assert_eq!(
+      interpret(
+        "x = Array[a, 8]; Round[10^4 First[NMinimize[{Total[x^2], Total[x] == 1}, x]]]"
+      )
+      .unwrap(),
+      "1250"
+    );
+  }
+
   // Variables may be listed bare, indexed, or through a symbol holding the
   // list (OptimalTransportScheduling).
   #[test]
@@ -8725,6 +8739,37 @@ Round[N[closed] - N[numeric], 10^-6]"
 
 mod ndsolve {
   use super::*;
+
+  // A complex-valued system is solved as the real system of its parts
+  // (HarmonicElectricFieldAppliedToAParticleInAnInfiniteSquareWell).
+  #[test]
+  fn complex_valued_system() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 (c1[1] /. First[NDSolve[{c1'[t] == -I c1[t], c1[0] == 1}, \
+         {c1}, {t, 0, 1}]])]"
+      )
+      .unwrap(),
+      "540302 - 841471*I"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^4 (Abs[{a[2.], b[2.]}]^2 /. First[NDSolve[{a'[t] == -I b[t], \
+         b'[t] == -I a[t], a[0] == 1, b[0] == 0}, {a, b}, {t, 0, 3}]])]"
+      )
+      .unwrap(),
+      "{1732, 8268}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^6 (Subscript[c, 1][1] /. First[NDSolve[{Subscript[c, 1]'[t] == \
+         -I Subscript[c, 1][t], Subscript[c, 1][0] == 1}, {Subscript[c, 1]}, \
+         {t, 0, 1}]])]"
+      )
+      .unwrap(),
+      "540302 - 841471*I"
+    );
+  }
 
   // A WhenEvent on an implicit curve stops it where the condition turns
   // True, located within the step, and runs its action there
@@ -21189,12 +21234,17 @@ mod ndsolve_complex_rhs_real_valued {
     );
   }
 
+  // A genuinely complex right-hand side is integrated as the real system of
+  // its parts, as wolframscript integrates it.
   #[test]
-  fn genuinely_complex_rhs_stays_unevaluated() {
+  fn genuinely_complex_rhs_is_integrated() {
     assert_eq!(
-      interpret("NDSolve[{x'[t] == I x[t], x[0] == 1}, x[t], {t, 0, 1}]")
-        .unwrap(),
-      "NDSolve[{Derivative[1][x][t] == I*x[t], x[0] == 1}, x[t], {t, 0, 1}]"
+      interpret(
+        "sol = NDSolve[{x'[t] == I x[t], x[0] == 1}, x[t], {t, 0, 1}]; \
+         Round[10^6 (x[t] /. First[sol] /. t -> 1)]"
+      )
+      .unwrap(),
+      "540302 + 841471*I"
     );
   }
 }
@@ -22854,6 +22904,34 @@ mod ndsolve_vector_unknown_with_matrix_product {
       )
       .unwrap(),
       "{2000000, 1000000}"
+    );
+  }
+}
+
+mod integrate_interpolating_function {
+  use super::*;
+
+  #[test]
+  fn definite_integral_is_numeric() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
+         Integrate[f[x], {x, 0, 2}]"
+      )
+      .unwrap(),
+      "3."
+    );
+  }
+
+  #[test]
+  fn sum_of_piecewise_integrals_is_numeric() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
+         Integrate[f[x], {x, 0, 1}] + Integrate[f[x], {x, 1, 2}]"
+      )
+      .unwrap(),
+      "3."
     );
   }
 }

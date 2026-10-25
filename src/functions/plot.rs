@@ -3820,6 +3820,7 @@ fn generate_svg_with_options(
               opts,
               (r, g, b),
               marker_size,
+              (x_min, x_max),
               y_min,
               y_max,
             )?;
@@ -5295,6 +5296,7 @@ pub(crate) fn generate_scatter_svg_with_options(
         opts,
         (r, g, b),
         marker_size,
+        (x_min, x_max),
         y_min,
         y_max,
       )?;
@@ -9054,6 +9056,7 @@ fn draw_scatter_series<DB, CT>(
   opts: &PlotOptions,
   rgb: (u8, u8, u8),
   marker_size: u32,
+  (x_min, x_max): (f64, f64),
   y_min: f64,
   y_max: f64,
 ) -> Result<(), InterpreterError>
@@ -9064,10 +9067,22 @@ where
   let (r, g, b) = rgb;
   let color = RGBColor(r, g, b);
   let points = &all_series[series_idx];
+  // A point far outside the plot range is never visible, and mapping it to
+  // a pixel overflows the backend's integer coordinates (an extrapolated
+  // 10^300 against PlotRange -> {-0.05, 1.05} panicked).
+  let near = |v: f64, lo: f64, hi: f64| {
+    let span = (hi - lo).abs().max(f64::MIN_POSITIVE);
+    v >= lo - 1e5 * span && v <= hi + 1e5 * span
+  };
   let finite_pts: Vec<(f64, f64)> = points
     .iter()
     .copied()
-    .filter(|(x, y)| x.is_finite() && y.is_finite())
+    .filter(|(x, y)| {
+      x.is_finite()
+        && y.is_finite()
+        && near(*x, x_min, x_max)
+        && near(*y, y_min, y_max)
+    })
     .collect();
 
   // Draw stem lines from each point to the fill reference: a constant
