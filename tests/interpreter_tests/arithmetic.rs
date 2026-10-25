@@ -3421,6 +3421,44 @@ mod negative_symbolic {
   }
 }
 
+mod n_beyond_machine_range {
+  use super::*;
+
+  // Exact parts too large for a machine number no longer turn the value
+  // into Infinity (TheFuhrmannCircle: NSolve's exact re-solve).
+  #[test]
+  fn overflowing_parts_of_a_machine_sized_value() {
+    assert_eq!(
+      interpret("N[(10^230 + 10^70 Sqrt[10^320])/10^229]").unwrap(),
+      "20."
+    );
+    assert_eq!(
+      interpret("N[10^400]").unwrap(),
+      "1.`15.954589770191003*^400"
+    );
+    assert_eq!(
+      interpret(
+        "Length[NSolve[{-2.789999999999999 (7.062291470709586 - qx) + \
+         11.86 (1.7656866107318427 - qy) == 0, 3.0380178905140145 - \
+         Sqrt[(qx - 4.105000000000002)^2 + (qy - 1.069999999999993)^2] == 0}, \
+         {qx, qy}] /. Infinity -> Nothing]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "Max[Abs[{qx, qy} /. NSolve[{-2.789999999999999 (7.062291470709586 - qx) + \
+         11.86 (1.7656866107318427 - qy) == 0, 3.0380178905140145 - \
+         Sqrt[(qx - 4.105000000000002)^2 + (qy - 1.069999999999993)^2] == 0}, \
+         {qx, qy}]]] < 8"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
 mod n_constants {
   use super::*;
 

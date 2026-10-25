@@ -126,6 +126,19 @@ pub(crate) const MACHINE_PRECISION_DIGITS: f64 = 15.954589770191003;
 
 /// Recursively convert an expression to numeric (Real) form
 pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let value = n_eval_machine(expr)?;
+  // An exact quantity whose parts overflow a machine number (a solution
+  // formula with `Sqrt[10^400]` inside) is evaluated at higher precision.
+  if matches!(value, Expr::Real(v) if !v.is_finite())
+    && !matches!(expr, Expr::Real(_))
+    && let Some(beyond) = n_eval_beyond_machine_range(expr)
+  {
+    return Ok(beyond);
+  }
+  Ok(value)
+}
+
+fn n_eval_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(Expr::Real(*n as f64)),
     Expr::Real(_) => Ok(expr.clone()),
@@ -1561,6 +1574,22 @@ fn set_precision_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
       })
     }
     _ => Ok(expr.clone()),
+  }
+}
+
+/// N of an exact number whose machine evaluation overflows: evaluated with
+/// 30 digits, a value inside the machine range comes back as a machine
+/// real; a value outside it stays a big number at machine precision, as
+/// in wolframscript (`N[10^400]` is `1.`15.95*^400`).
+fn n_eval_beyond_machine_range(expr: &Expr) -> Option<Expr> {
+  let value = n_eval_arbitrary(expr, 30.0).ok()?;
+  match &value {
+    Expr::BigFloat(digits, _) => match digits.parse::<f64>() {
+      Ok(f) if f.is_finite() => Some(Expr::Real(f)),
+      _ => n_eval_arbitrary(expr, MACHINE_PRECISION_DIGITS).ok(),
+    },
+    Expr::Real(f) if f.is_finite() => Some(value),
+    _ => None,
   }
 }
 

@@ -2025,6 +2025,20 @@ and `Sort[{1 + 2 I Pi x, 2 I Pi x}]` put the product first in both. It
 shows in the order of `Solve`'s solution families
 (`Solve[9^x - 4 3^x + 3 == 0, x]`).
 
+### `N` of an overflowing exact expression comes back at machine precision
+
+```sh
+wolframscript -code 'N[Sqrt[10^400 + 1]]'
+# 1.`16.255619765854984*^200
+woxi eval 'N[Sqrt[10^400 + 1]]'
+# 1.*^200
+```
+
+When a part of an exact expression overflows a machine number, Woxi
+evaluates the whole expression with 30 digits and returns a machine real if
+the value fits. wolframscript carries the overflowed part as a big number
+of machine precision, so the result is a big number too.
+
 ### `Root` of a reducible polynomial keeps the whole polynomial
 
 ```sh
