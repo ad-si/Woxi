@@ -28708,6 +28708,20 @@ fn unwrap_dynamic_body(body: &Expr) -> &Expr {
 /// free: `reevaluate` installs `state` as scoped globals before every
 /// render, and writes the body (or a button action) makes to any of those
 /// names get read back afterwards.
+/// Whether a DynamicModule local list initializes some local to a bare
+/// symbol (`{a = startA, …}`).
+fn has_proxy_local(locals: &Expr) -> bool {
+  let Expr::List(items) = locals else {
+    return false;
+  };
+  items.iter().any(|local| match local {
+    Expr::FunctionCall { name, args } if name == "Set" && args.len() == 2 => {
+      matches!(&args[1], Expr::Identifier(_))
+    }
+    _ => false,
+  })
+}
+
 fn unwrap_dynamic_module_locals(
   body: &Expr,
   state: &mut Vec<(String, String)>,
@@ -28733,10 +28747,16 @@ fn unwrap_dynamic_module_locals(
       // `DynamicModule` — including the local's initializer — on every
       // control change, so `p` must keep tracking `a`/`b`/`c` fresh each
       // frame rather than freezing at its first value.
+      // A layout body whose locals proxy other symbols (`a = startA`, a
+      // copy the body drags and writes back) is not hoisted: the proxies
+      // must start again from their sources whenever the body is rebuilt,
+      // and the locator resolution reads them through these initializers.
       Expr::FunctionCall { name, args }
         if name == "DynamicModule"
           && args.len() >= 2
-          && expr_contains_call(&args[1], &["Dynamic"]) =>
+          && expr_contains_call(&args[1], &["Dynamic"])
+          && (matches!(&args[1], Expr::FunctionCall { name: inner, .. } if inner == "Dynamic")
+            || !has_proxy_local(&args[0])) =>
       {
         // The module's own `Initialization :> …` option sets up the helpers
         // its body draws with; it runs once, like the Manipulate's.
