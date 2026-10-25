@@ -6301,13 +6301,27 @@ thread_local! {
   static SCENE_TUBE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// Count the `Tube` primitives in a 3D scene.
+/// Count the tubes in a 3D scene: one per curve, so `Tube[{curve1, curve2,
+/// …}]` counts each of its curves (343 of them in one Demonstration, which
+/// the lone-tube budget tessellated into gigabytes of polygons).
 fn count_tubes(expr: &Expr) -> usize {
   match expr {
     Expr::List(items) => items.iter().map(count_tubes).sum(),
-    Expr::FunctionCall { name, args } => {
-      usize::from(name == "Tube") + args.iter().map(count_tubes).sum::<usize>()
+    Expr::FunctionCall { name, args } if name == "Tube" => {
+      match args.first() {
+        // A list of curves, each a list of points.
+        Some(Expr::List(curves))
+          if curves.iter().all(|c| {
+            matches!(c, Expr::List(pts)
+              if pts.iter().all(|p| matches!(p, Expr::List(_))))
+          }) =>
+        {
+          curves.len().max(1)
+        }
+        _ => 1,
+      }
     }
+    Expr::FunctionCall { args, .. } => args.iter().map(count_tubes).sum(),
     _ => 0,
   }
 }

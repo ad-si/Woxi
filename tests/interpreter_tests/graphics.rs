@@ -5700,6 +5700,19 @@ mod plot3d {
       assert_ne!(with_default, with_degree_2);
     }
 
+    // A Tube of many curves is as crowded as as many Tubes: it used to get
+    // the lone-tube tessellation budget for every curve (gigabytes for 343).
+    #[test]
+    fn graphics3d_tube_of_many_curves_counts_each_curve() {
+      let curves = "Table[{{i, 0, 0}, {i, 1, 0}}, {i, 12}]";
+      let one = export_svg(&format!("Graphics3D[Tube[{curves}]]"));
+      let many = export_svg(&format!("Graphics3D[Tube /@ {curves}]"));
+      assert_eq!(
+        one.matches("<polygon").count(),
+        many.matches("<polygon").count()
+      );
+    }
+
     #[test]
     fn graphics3d_tubebox_draws_like_tube() {
       let tube = export_svg(
