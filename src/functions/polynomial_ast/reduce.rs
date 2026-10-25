@@ -3598,8 +3598,10 @@ fn reduce_multi_var_and_inner(
               if remaining.is_empty() {
                 // No remaining constraints — var is expressed in terms of
                 // remaining variables (if any) or is a constant solution.
-                let var_eq =
-                  make_equality(&Expr::Identifier(var.clone()), value);
+                let var_eq = make_equality(
+                  &Expr::Identifier(var.clone()),
+                  &expanded_if_polynomial(value, vars),
+                );
                 let mut parts = nonzero.clone();
                 parts.push(var_eq);
                 all_results.push(and_chain(&parts));
@@ -3635,7 +3637,25 @@ fn reduce_multi_var_and_inner(
                     // Handle Or branches: each branch is a separate solution
                     let or_branches = collect_or_terms(&sub_result);
                     for branch in &or_branches {
-                      // Back-substitute solved values into the var expression
+                      // Under inequalities the answer is cylindrical: the
+                      // variable stays expressed in the earlier ones
+                      // (`x > 0 && y == (-2 + x)/3 && z == (1 - x - 2*y)/3`).
+                      let mut parts = Vec::new();
+                      collect_and_constraints(branch, &mut parts);
+                      if parts.iter().any(|p| {
+                        !matches!(
+                          extract_comparison(p),
+                          Some((_, _, CompOp::Equal))
+                        )
+                      }) {
+                        let var_eq =
+                          make_equality(&Expr::Identifier(var.clone()), value);
+                        all_results.push(and2(branch.clone(), var_eq));
+                        continue;
+                      }
+                      // Otherwise every variable is solved for the free
+                      // ones: back-substitute the solved values, expanded
+                      // (`y == -2 + x && z == 5/3 - x`).
                       let mut final_value = value.clone();
                       let sub_equalities = collect_and_equalities(branch);
                       for (sv, sval) in &sub_equalities {
@@ -3648,17 +3668,8 @@ fn reduce_multi_var_and_inner(
                       let final_value =
                         crate::evaluator::evaluate_expr_to_expr(&final_value)
                           .unwrap_or(simplify(final_value));
-                      // A value free of every unknown is a plain number such
-                      // as `(2 - 2*Sqrt[3])/2`; Solve reports it expanded
-                      // (`1 - Sqrt[3]`).
-                      let final_value = if vars
-                        .iter()
-                        .all(|v| is_constant_wrt(&final_value, v))
-                      {
-                        expand_and_combine(&final_value)
-                      } else {
-                        final_value
-                      };
+                      let final_value =
+                        expanded_if_polynomial(&final_value, vars);
                       let var_eq = make_equality(
                         &Expr::Identifier(var.clone()),
                         &final_value,
@@ -3745,6 +3756,20 @@ fn reduce_multi_var_and_inner(
       vec![combined, vars_expr]
     }
   }))
+}
+
+/// A solved value the way `Reduce` reports it once every variable is solved
+/// for the free ones: expanded when it is a polynomial in them — a plain
+/// number such as `(2 - 2*Sqrt[3])/2` as `1 - Sqrt[3]`, `(-2 + x)/3` as
+/// `-2/3 + x/3` — while a quotient by one of them stays a quotient
+/// (`(3 + x^2)/(1 + x)`).
+fn expanded_if_polynomial(value: &Expr, vars: &[String]) -> Expr {
+  if vanishing_denominators(value, vars).is_empty() {
+    crate::evaluator::evaluate_expr_to_expr(&call1("Expand", value.clone()))
+      .unwrap_or_else(|_| value.clone())
+  } else {
+    value.clone()
+  }
 }
 
 thread_local! {

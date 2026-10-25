@@ -7847,6 +7847,49 @@ mod to_rules {
 
 mod reduce {
   #[test]
+  fn linear_equations_back_substitute_expanded() {
+    assert_eq!(
+      interpret("Reduce[{a + 2 b + c == 10, a - b == 1}, {a, b, c}]").unwrap(),
+      "b == -1 + a && c == 12 - 3*a"
+    );
+    assert_eq!(
+      interpret("Reduce[{x + 2 y + 3 z == 1, x - 3 y == 2}, {x, y, z}]")
+        .unwrap(),
+      "y == -2/3 + x/3 && z == 7/9 - (5*x)/9"
+    );
+    assert_eq!(
+      interpret("Reduce[x - 3 y == 2, {x, y}]").unwrap(),
+      "y == -2/3 + x/3"
+    );
+    // A quotient by a variable stays a quotient.
+    assert_eq!(
+      interpret("Reduce[(x + 1) y == x^2 + 3, {x, y}]").unwrap(),
+      "1 + x != 0 && y == (3 + x^2)/(1 + x)"
+    );
+  }
+
+  #[test]
+  fn linear_equations_under_inequalities_stay_cylindrical() {
+    // With inequalities each variable stays expressed in the earlier ones.
+    assert_eq!(
+      interpret(
+        "ToString[Reduce[{a + 2 b + c == 10, a - b == 1, a > 0, b > 0, \
+         c > 0}, {a, b, c}, Reals], InputForm]"
+      )
+      .unwrap(),
+      "Inequality[1, Less, a, Less, 4] && b == -1 + a && c == 10 - a - 2*b"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[Reduce[{x + 2 y + 3 z == 1, x - 3 y == 2, x > 0}, \
+         {x, y, z}, Reals], InputForm]"
+      )
+      .unwrap(),
+      "x > 0 && y == (-2 + x)/3 && z == (1 - x - 2*y)/3"
+    );
+  }
+
+  #[test]
   fn zero_product_equation_keeps_every_factor_branch() {
     // `a c == 0` also holds for `a == 0`; solving it only for `c` used to
     // lose that branch and report `False` here.
