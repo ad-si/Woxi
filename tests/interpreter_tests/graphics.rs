@@ -393,6 +393,16 @@ mod graphics {
     }
 
     #[test]
+    fn point_multi_vertex_colors() {
+      let svg = export_svg(
+        "Graphics[{PointSize[0.03], Point[{{0, 0}, {1, 1}}, \
+         VertexColors -> {Red, Blue}]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""));
+    }
+
+    #[test]
     fn line() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Line[{{0, 0}, {1, 1}, {2, 0}}]}]"
@@ -2340,6 +2350,18 @@ mod graphics {
       assert!(svg.contains("dy=\"-10\">a</tspan>"), "{svg}");
     }
 
+    /// A `Framed` item stacked in a label's `Column` sets its content
+    /// instead of printing as `Framed[...]` source.
+    #[test]
+    fn text_column_with_framed_item() {
+      let svg = export_svg(
+        "Graphics[{Text[Column[{\"head\", Framed[Row[{\"x = \", NumberForm[0.1234, {2, 2}]}], FrameStyle -> Red], \"tail\"}, Center], {0, 0}]}]",
+      );
+      assert!(svg.contains(">x = 0.12</tspan>"), "{svg}");
+      assert!(!svg.contains("Framed["), "{svg}");
+      assert!(!svg.contains("FrameStyle"), "{svg}");
+    }
+
     /// `Overscript[y, ".."]` in a label draws as the accented letter.
     #[test]
     fn text_overscript_accent() {
@@ -3242,6 +3264,24 @@ mod graphics {
           (28.0..39.0).contains(&cx),
           "expected the point ~1/3 into the image (padded {{-1,2}} span), \
            cx={cx}"
+        );
+      }
+
+      // Each axis entry may independently be a single amount or a
+      // `{low, high}` pair: `{None, {Scaled[1], Scaled[1]}}` leaves x
+      // unpadded and pads y to `{-1, 2}`.
+      #[test]
+      fn axes_may_mix_single_and_per_side_specs() {
+        let svg = export_svg(
+          "Graphics[{Point[{0, 0}]}, PlotRange -> {{0, 1}, {0, 1}}, \
+           PlotRangePadding -> {None, {Scaled[1], Scaled[1]}}, \
+           AspectRatio -> Full, ImageSize -> {100, 100}, Axes -> False]",
+        );
+        let (cx, cy) = point_px(&svg);
+        assert!(cx < 5.0, "expected x unpadded, cx={cx}");
+        assert!(
+          (62.0..72.0).contains(&cy),
+          "expected y padded to {{-1,2}} (point 2/3 down), cy={cy}"
         );
       }
 
@@ -9965,6 +10005,40 @@ mod plot3d {
         "Graphics[{Line[{{0, 0}, {1, 1}}]}, Axes -> True, AxesLabel -> None]",
       );
       assert!(!svg.contains("</tspan>"), "{svg}");
+    }
+
+    /// An `AxesLabel` written as a stacked fraction (`FractionBox`) is drawn
+    /// as numerator over denominator, not flattened to a wide `a/b` line
+    /// that squeezes the plotting area; a `PlotLabel` sits above the
+    /// y-axis label instead of on top of it.
+    #[test]
+    fn graphics_axes_label_stacks_fraction_boxes() {
+      let svg = export_svg(
+        r#"Graphics[{Line[{{0, 0}, {1, 1}}]}, Axes -> True,
+          AxesLabel -> {"\!\(\*FractionBox[\(moles\), \(water\)]\)",
+            "\!\(\*FractionBox[\(moles\), \(air\)]\)"},
+          PlotLabel -> "Title", ImageSize -> 300]"#,
+      );
+      assert!(!svg.contains("moles/water"), "flattened: {svg}");
+      assert!(svg.contains(">water<") && svg.contains(">moles<"), "{svg}");
+      let title_y: f64 = svg
+        .lines()
+        .find(|l| l.contains(">Title<"))
+        .and_then(|l| l.split("y=\"").nth(1))
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      // The y-axis label picture is placed below the title strip.
+      let margin_top: f64 = svg
+        .lines()
+        .find(|l| l.contains("<g transform=\"translate("))
+        .and_then(|l| l.split("translate(").nth(1))
+        .and_then(|v| v.split(')').next())
+        .and_then(|v| v.split(',').nth(1))
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      assert!(margin_top > 26.0 + 20.0, "top margin {margin_top}");
+      assert!(title_y < 26.0, "title at {title_y}");
     }
 
     /// A multi-character `AxesLabel` on a plain `Graphics[]` (not a `Plot`,
@@ -38018,6 +38092,20 @@ mod grid_text_in_graphics {
   }
 
   #[test]
+  fn text_quotient_with_string_operand_is_one_line() {
+    let svg = interpret(
+      r#"ExportString[Graphics[Text[Style[ToString[x]/y, 20], {0, 0}]], "SVG"] /. {x -> 0, y -> 100}"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("---"), "{svg}");
+    let svg =
+      interpret(r#"ExportString[Graphics[Text["7"/100, {0, 0}]], "SVG"]"#)
+        .unwrap();
+    assert!(svg.contains(">7/100</text>"), "{svg}");
+    assert!(!svg.contains("---"), "{svg}");
+  }
+
+  #[test]
   fn escaped_spaces_in_box_text_are_not_products() {
     // `\ ` between words inside a box group is a literal space; it must not
     // be read as implicit multiplication (`my*height`).
@@ -41063,5 +41151,112 @@ mod text_wider_than_canvas {
     let xs = text_xs(&svg);
     assert_eq!(xs.len(), 3, "{svg}");
     assert!(xs[2] - xs[1] > 400.0, "labels collapsed: {xs:?}");
+  }
+}
+
+mod self_intersecting_tube {
+  use super::*;
+
+  // A tube much thicker than the curve it follows crosses itself
+  // everywhere; cutting each face by every face it crosses produced a scene
+  // of gigabytes (GravitationalWavesEmittedByCollidingBlackHoles).
+  #[test]
+  fn splitting_stays_bounded() {
+    assert_eq!(
+      interpret(
+        "StringLength[ExportString[Graphics3D[Tube[Table[{Cos[t], Sin[t], 0}, \
+         {t, 0, 2, 0.01}], 2]], \"SVG\"]] < 10^7"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod highlighted_list_plot {
+  use super::*;
+
+  // `Highlighted[data, Placed["XSlice", {{i}}]]` plots the data and marks
+  // the i-th point with a vertical line (SphericalShellAndLatticePoints).
+  #[test]
+  fn x_slice_is_drawn() {
+    assert_eq!(
+      interpret(
+        "g = ListPlot[Highlighted[{1, 4, 9, 16}, Placed[\"XSlice\", {{2}}]]]; \
+         {Head[g], Length[Cases[g, InfiniteLine[{2, 4}, {0, 1}], Infinity]]}"
+      )
+      .unwrap(),
+      "{Graphics, 1}"
+    );
+    assert_eq!(
+      interpret("Head[ListPlot[Highlighted[{1, 2, 3}]]]").unwrap(),
+      "Graphics"
+    );
+  }
+
+  // An InfiniteLine in a plot's Epilog is drawn across the plot range.
+  #[test]
+  fn infinite_line_in_epilog() {
+    let svg = interpret(
+      "ExportString[ListPlot[{1, 2, 3}, Epilog -> {Red, InfiniteLine[{2, 1}, {0, 1}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("<polyline"), "no line drawn");
+  }
+
+  // Data that is no list is ListPlot::lpn and leaves the call unevaluated.
+  #[test]
+  fn non_list_data_is_lpn() {
+    clear_state();
+    let r = woxi::interpret_with_stdout("ListPlot[x]").unwrap();
+    assert_eq!(r.result, "ListPlot[x]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "ListPlot::lpn: x is not a list of numbers or pairs of numbers."
+      )),
+      "{:?}",
+      r.warnings
+    );
+  }
+}
+
+mod list_plot_far_points {
+  use super::*;
+
+  // A point far outside a fixed PlotRange is invisible; mapping it to a
+  // pixel used to overflow and panic (ADomainDecompositionMethod...).
+  #[test]
+  fn far_outside_point_is_skipped() {
+    assert_eq!(
+      interpret(
+        "Head[ListPlot[{{0, 1.*^300}, {1, 0.5}}, PlotRange -> {{-2, 2}, {-0.05, 1.05}}, \
+         PlotMarkers -> Style[\"x\", 14]]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+}
+
+mod plot_non_numeric_limit {
+  use super::*;
+
+  // A limit that is no number is head::plln with the call unevaluated, as
+  // in wolframscript.
+  #[test]
+  fn plln() {
+    clear_state();
+    let r = woxi::interpret_with_stdout("Plot[x, {x, a, 1}]").unwrap();
+    assert_eq!(r.result, "Plot[x, {x, a, 1}]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "Plot::plln: Limiting value a in {x, a, 1} is not a machine-sized real number."),
+      "{:?}",
+      r.warnings
+    );
+    clear_state();
+    let r =
+      woxi::interpret_with_stdout("ParametricPlot[{t, t}, {t, a, 1}]").unwrap();
+    assert_eq!(r.result, "ParametricPlot[{t, t}, {t, a, 1}]");
   }
 }

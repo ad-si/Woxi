@@ -9221,3 +9221,125 @@ mod quantile_by_cdf_bisection {
     );
   }
 }
+
+mod random_variate_infinite_support {
+  use super::*;
+
+  // A density on an infinite range is sampled over where its tail is not
+  // negligible (TheMeixnerProcess).
+  #[test]
+  fn samples_match_the_moments() {
+    assert_eq!(
+      interpret(
+        "SeedRandom[1]; s = RandomVariate[ProbabilityDistribution[\
+         Exp[-x^2/2]/Sqrt[2 Pi], {x, -Infinity, Infinity}], 20000]; \
+         {Abs[Mean[s]] < 0.05, Abs[Variance[s] - 1] < 0.05}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+    assert_eq!(
+      interpret(
+        "SeedRandom[2]; s = RandomVariate[ProbabilityDistribution[\
+         Exp[-x], {x, 0, Infinity}], 20000]; \
+         {Min[s] >= 0, Abs[Mean[s] - 1] < 0.05}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+}
+
+mod empirical_distribution_weighted {
+  use super::*;
+
+  // Weighted data merges equal values and normalizes the weights; inexact
+  // data gives machine weights.
+  #[test]
+  fn construction() {
+    assert_eq!(
+      interpret("EmpiricalDistribution[{2, 1, 1} -> {3, 1, 3}]").unwrap(),
+      "DataDistribution[Empirical, {{1/4, 3/4}, {1, 3}, False}, 1, 3]"
+    );
+    assert_eq!(
+      interpret("EmpiricalDistribution[{1.5, 2, 1.5}]").unwrap(),
+      "DataDistribution[Empirical, {{0.6666666666666666, 0.3333333333333333}, {1.5, 2}, False}, 1, 3]"
+    );
+    assert_eq!(
+      interpret("Mean[EmpiricalDistribution[{0.9, 0.04, 0.06} -> {1, 2, 3}]]")
+        .unwrap(),
+      "1.16"
+    );
+    assert_eq!(
+      interpret("Variance[EmpiricalDistribution[{2, 1, 1} -> {3, 1, 3}]]")
+        .unwrap(),
+      "3/4"
+    );
+  }
+
+  // Expectation weighs the expression at each value (Subrogation).
+  #[test]
+  fn expectation() {
+    assert_eq!(
+      interpret(
+        "Expectation[Switch[s, 1, c, 2, 2 c], Distributed[s, \
+         EmpiricalDistribution[{0.5, 0.5} -> {1, 2}]]]"
+      )
+      .unwrap(),
+      "1.5*c"
+    );
+    assert_eq!(
+      interpret(
+        "Expectation[s^2, Distributed[s, EmpiricalDistribution[{1, 2, 3}]]]"
+      )
+      .unwrap(),
+      "14/3"
+    );
+  }
+}
+
+mod weibull_location_sampling {
+  use super::*;
+
+  // WeibullDistribution[α, β, μ] samples are shifted by the location μ.
+  #[test]
+  fn three_parameter_weibull() {
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; s = RandomVariate[WeibullDistribution[2., 2., 1.], {20000}]; \
+         {Length[s], Min[s] >= 1, Abs[Mean[s] - 2.7725] < 0.05}"
+      )
+      .unwrap(),
+      "{20000, True, True}"
+    );
+  }
+}
+
+mod zipf_quantile {
+  use super::*;
+
+  // A machine-real probability gives the smallest k whose cumulative mass
+  // reaches it; an exact one stays unevaluated, as in wolframscript.
+  #[test]
+  fn inverse_cdf() {
+    assert_eq!(
+      interpret("InverseCDF[ZipfDistribution[1.5], 0.99]").unwrap(),
+      "14"
+    );
+    assert_eq!(
+      interpret("InverseCDF[ZipfDistribution[10, 1.2], 0.9]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("InverseCDF[ZipfDistribution[2], 1/2]").unwrap(),
+      "InverseCDF[ZipfDistribution[2], 1/2]"
+    );
+    assert_eq!(
+      interpret(
+        "InverseCDF[EmpiricalDistribution[{0.9, 0.04, 0.06} -> {1, 2, 3}], 0.95]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+}

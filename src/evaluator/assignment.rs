@@ -11,22 +11,22 @@ thread_local! {
   /// Names of forms registered via `Format[expr, FORM] := …` that should
   /// appear in `$PrintForms` (and `$OutputForms`) in addition to the
   /// builtin defaults. Insertion order is preserved.
-  pub static USER_PRINT_FORMS: std::cell::RefCell<Vec<String>> =
-    const { std::cell::RefCell::new(Vec::new()) };
+  pub static USER_PRINT_FORMS: crate::epoch::EpochCell<Vec<String>> =
+    const { crate::epoch::EpochCell::new(Vec::new()) };
 
   /// Format rules registered via `Format[pat, FORM] := body`, keyed by the
   /// head symbol of `pat`. Stored as `(form_name, lhs_pattern, rhs_body)`
   /// triples in source order.
-  pub static FORMAT_VALUES: std::cell::RefCell<
+  pub static FORMAT_VALUES: crate::epoch::EpochCell<
     std::collections::HashMap<String, Vec<(String, Expr, Expr)>>,
-  > = std::cell::RefCell::new(std::collections::HashMap::new());
+  > = crate::epoch::EpochCell::new(std::collections::HashMap::new());
 
   /// SubValue rules registered via `f[a][b] := …` (and deeper curried
   /// forms), keyed by the outermost head symbol `f`. Stored as
   /// `(lhs_curried_call, rhs_body)` pairs in source order.
-  pub static SUB_VALUES: std::cell::RefCell<
+  pub static SUB_VALUES: crate::epoch::EpochCell<
     std::collections::HashMap<String, Vec<(Expr, Expr)>>,
-  > = std::cell::RefCell::new(std::collections::HashMap::new());
+  > = crate::epoch::EpochCell::new(std::collections::HashMap::new());
 
   /// NValue rules registered via `N[sym, …] := …` / `N[sym, …] = …`,
   /// keyed by the symbol that the `N` head wraps. Stored as
@@ -34,9 +34,9 @@ thread_local! {
   /// `lhs_pattern` is the canonical
   /// `N[sym, {MachinePrecision, MachinePrecision}]` form Wolfram
   /// reports under `NValues`.
-  pub static N_VALUES: std::cell::RefCell<
+  pub static N_VALUES: crate::epoch::EpochCell<
     std::collections::HashMap<String, Vec<(Expr, Expr)>>,
-  > = std::cell::RefCell::new(std::collections::HashMap::new());
+  > = crate::epoch::EpochCell::new(std::collections::HashMap::new());
 }
 
 /// If `expr` is a pattern with a head constraint (e.g. `_Q`, `x_Q`, `Blank[Q]`,
@@ -3659,6 +3659,10 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
           .map(expr_to_string)
           .collect::<Vec<_>>()
           .join("\u{1}");
+        // Shared, so every read of `f[lit]` copies a pointer and sees the
+        // mark of an earlier read that found the value fully evaluated.
+        let mut rhs_value = rhs_value;
+        crate::evaluator::core_eval::share_large_lists(&mut rhs_value, 0);
         crate::MEMO_VALUES.with(|m| {
           m.borrow_mut()
             .entry(func_name.clone())

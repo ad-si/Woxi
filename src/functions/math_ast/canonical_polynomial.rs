@@ -410,7 +410,7 @@ mod tests {
     ];
     for a in names {
       for b in names {
-        let (ea, eb) = (Expr::Identifier(a.into()), Expr::Identifier(b.into()));
+        let (ea, eb) = (id_expr(a), id_expr(b));
         let canonical =
           crate::functions::list_helpers_ast::compare_exprs(&ea, &eb);
         assert_eq!(

@@ -449,7 +449,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // vertices; a bare spec (`"Name"`, `Placed[…]`) applies to all of them.
   let mut vertex_label_rules: Vec<(Expr, Expr)> = Vec::new();
   let mut vertex_label_default: Option<Expr> = None;
-  let name_label_spec = Expr::String("Name".to_string());
+  let name_label_spec = str_expr("Name");
   // `EdgeLabeling -> False` (GraphPlot's legacy switch) hides the labels.
   let mut edge_labeling = true;
   let mut vertex_shape: Option<String> = None;
@@ -2706,10 +2706,7 @@ pub fn contract_vertices_in_graph(
     }
     new_edges.push(match e {
       Expr::Rule { .. } => rule_expr(na, nb),
-      _ => Expr::FunctionCall {
-        name: head.clone(),
-        args: vec![na, nb].into(),
-      },
+      _ => call(head.as_str(), vec![na, nb]),
     });
   }
   // Re-canonicalize the edge order by endpoints.
@@ -8092,10 +8089,9 @@ pub fn vertex_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let new_edges: Vec<Expr> = edges
     .iter()
     .map(|edge| match edge {
-      Expr::FunctionCall { name, args } => Expr::FunctionCall {
-        name: name.clone(),
-        args: args.iter().map(rename).collect::<Vec<_>>().into(),
-      },
+      Expr::FunctionCall { name, args } => {
+        call(name.as_str(), args.iter().map(rename).collect())
+      }
       other => other.clone(),
     })
     .collect();
@@ -8844,10 +8840,7 @@ pub fn edge_tagged_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // endpoint reader does not take.
     let plain = match edge {
       Expr::FunctionCall { name, args } if args.len() == 3 => {
-        Expr::FunctionCall {
-          name: name.clone(),
-          args: vec![args[0].clone(), args[1].clone()].into(),
-        }
+        call(name.as_str(), vec![args[0].clone(), args[1].clone()])
       }
       other => other.clone(),
     };
@@ -9070,10 +9063,10 @@ pub(crate) fn graph_coordinates(
   Option<(Vec<Expr>, Vec<(usize, usize)>, Vec<Vec<f64>>)>,
   InterpreterError,
 > {
-  let graph = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: vec![graph_input.clone()].into(),
-  })?;
+  let graph = crate::evaluator::evaluate_expr_to_expr(&call1(
+    "Graph",
+    graph_input.clone(),
+  ))?;
   let Expr::FunctionCall { name, args } = &graph else {
     return Ok(None);
   };
@@ -9104,22 +9097,17 @@ pub(crate) fn graph_plot3d_ast(
     |i: usize| Expr::List(coords[i].iter().map(|&x| Expr::Real(x)).collect());
   let lines: Vec<Expr> = edges
     .iter()
-    .map(|&(a, b)| Expr::FunctionCall {
-      name: "Line".to_string(),
-      args: vec![Expr::List(vec![point(a), point(b)].into())].into(),
+    .map(|&(a, b)| {
+      call("Line", vec![Expr::List(vec![point(a), point(b)].into())])
     })
     .collect();
-  let points = Expr::FunctionCall {
-    name: "Point".to_string(),
-    args: vec![Expr::List((0..coords.len()).map(point).collect())].into(),
-  };
+  let points =
+    call1("Point", Expr::List((0..coords.len()).map(point).collect()));
   let mut args =
     vec![Expr::List(vec![Expr::List(lines.into()), points].into())];
   args.extend(options.iter().cloned());
-  Ok(Some(crate::evaluator::evaluate_expr_to_expr(
-    &Expr::FunctionCall {
-      name: "Graphics3D".to_string(),
-      args: args.into(),
-    },
-  )?))
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&call(
+    "Graphics3D",
+    args,
+  ))?))
 }

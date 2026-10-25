@@ -934,26 +934,49 @@ pub fn quantile_distribution_closed_form(
     // Empirical DataDistribution: the smallest support value whose
     // cumulative weight reaches q (inclusive)
     "DataDistribution" => {
-      let (weights, values) = data_distribution_parts(dargs)?;
-      let target = q_num;
+      let (weights, values) = empirical_points(dargs)?;
       let mut cum = 0.0;
       for (w, v) in weights.iter().zip(values.iter()) {
-        cum += w.0 as f64 / w.1 as f64;
-        if cum >= target - 1e-12 {
-          return Some(if v.1 == 1 {
-            Expr::Integer(v.0)
-          } else {
-            make_rational(v.0, v.1)
-          });
+        cum += try_eval_to_f64(w)?;
+        if cum >= q_num - 1e-12 {
+          return Some(v.clone());
         }
       }
-      values.last().map(|v| {
-        if v.1 == 1 {
-          Expr::Integer(v.0)
-        } else {
-          make_rational(v.0, v.1)
+      values.last().cloned()
+    }
+    // ZipfDistribution at a machine-real probability: the smallest k whose
+    // cumulative mass reaches q, summed term by term (wolframscript leaves
+    // an exact q unevaluated).
+    "ZipfDistribution" if !is_exact_q => {
+      let (n, rho) = match dargs {
+        [rho] => (None, try_eval_to_f64(rho)?),
+        [n, rho] => (Some(try_eval_to_f64(n)?), try_eval_to_f64(rho)?),
+        _ => return None,
+      };
+      if rho <= 0.0 {
+        return None;
+      }
+      if q_num >= 1.0 {
+        return Some(match n {
+          Some(n) => Expr::Integer(n as i128),
+          None => Expr::Identifier("Infinity".to_string()),
+        });
+      }
+      let norm = match n {
+        Some(n) => (1..=n as u64).map(|k| (k as f64).powf(-rho - 1.0)).sum(),
+        None => {
+          try_eval_to_f64(&eval(&call1("Zeta", Expr::Real(rho + 1.0))).ok()?)?
         }
-      })
+      };
+      let limit = n.map_or(10_000_000, |n| n as u64);
+      let mut cum = 0.0;
+      for k in 1..=limit {
+        cum += (k as f64).powf(-rho - 1.0) / norm;
+        if cum >= q_num - 1e-15 {
+          return Some(Expr::Integer(k as i128));
+        }
+      }
+      None
     }
     // Quantile[ExponentialDistribution[lambda], q] = -Log[1 - q] / lambda
     "ExponentialDistribution" if dargs.len() == 1 => {
@@ -3926,6 +3949,33 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return unevaluated();
     }
   };
+
+  // An empirical distribution (EmpiricalDistribution[…], weighted or not)
+  // weighs `expr` at each of its values.
+  if vars.len() == 1
+    && let Expr::FunctionCall { name, args: dargs } = dist
+    && name == "DataDistribution"
+    && let Some((weights, values)) = empirical_points(dargs)
+  {
+    let var = &vars[0];
+    let terms: Vec<Expr> = weights
+      .into_iter()
+      .zip(values)
+      .map(|(w, v)| {
+        times2(
+          w,
+          call(
+            "ReplaceAll",
+            vec![expr.clone(), rule_expr(Expr::Identifier(var.clone()), v)],
+          ),
+        )
+      })
+      .collect();
+    return eval(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    });
+  }
 
   // Empirical (data-list) distribution:
   //   Expectation[expr, x \[Distributed] {d1, …, dn}]
@@ -12840,8 +12890,11 @@ fn frac_cmp(a: (i128, i128), b: (i128, i128)) -> std::cmp::Ordering {
   (a.0 * b.1).cmp(&(b.0 * a.1))
 }
 
-/// EmpiricalDistribution[{data}] — wolframscript's container:
-/// DataDistribution["Empirical", {weights, sorted values, False}, 1, n]
+/// EmpiricalDistribution[{data}] / EmpiricalDistribution[{w…} -> {data…}]
+/// — wolframscript's container
+/// DataDistribution["Empirical", {weights, sorted values, False}, 1, n]:
+/// equal values merge, their weights add up, and the weights are
+/// normalized to sum to 1 (exactly for exact weights).
 pub fn empirical_distribution_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -12849,35 +12902,57 @@ pub fn empirical_distribution_ast(
   if args.len() != 1 {
     return Ok(unevaluated(args));
   }
-  let data = match &args[0] {
-    Expr::List(items) if !items.is_empty() => items,
+  let (weights, data): (Vec<Expr>, &[Expr]) = match &args[0] {
+    Expr::List(items) if !items.is_empty() => {
+      (vec![Expr::Integer(1); items.len()], items.as_slice())
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => match (pattern.as_ref(), replacement.as_ref()) {
+      (Expr::List(w), Expr::List(d)) if !d.is_empty() && w.len() == d.len() => {
+        (w.to_vec(), d.as_slice())
+      }
+      _ => return Ok(unevaluated(args)),
+    },
     _ => return Ok(unevaluated(args)),
   };
-  let mut values: Vec<(i128, i128)> = Vec::with_capacity(data.len());
-  for e in data {
-    match as_exact_frac(e) {
-      Some(f) => values.push(f),
-      None => return Ok(unevaluated(args)),
+  // (numeric key for ordering, value as given, weight)
+  let mut entries: Vec<(f64, Expr, Expr)> = Vec::with_capacity(data.len());
+  for (value, weight) in data.iter().zip(weights) {
+    let Some(key) = try_eval_to_f64(value) else {
+      return Ok(unevaluated(args));
+    };
+    if try_eval_to_f64(&weight).is_none_or(|w| w < 0.0) {
+      return Ok(unevaluated(args));
+    }
+    entries.push((key, value.clone(), weight));
+  }
+  entries
+    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+  let mut merged: Vec<(f64, Expr, Expr)> = Vec::new();
+  for (key, value, weight) in entries {
+    match merged.last_mut() {
+      Some((k, _, w)) if *k == key => *w = eval(&plus2(w.clone(), weight))?,
+      _ => merged.push((key, value, weight)),
     }
   }
-  values.sort_by(|a, b| frac_cmp(*a, *b));
-  let n = values.len() as i128;
-  let mut weights: Vec<Expr> = Vec::new();
-  let mut uniques: Vec<Expr> = Vec::new();
-  let mut i = 0usize;
-  while i < values.len() {
-    let v = values[i];
-    let mut count = 0i128;
-    while i < values.len() && values[i] == v {
-      count += 1;
-      i += 1;
-    }
-    weights.push(eval(&div2(int(count), int(n)))?);
-    uniques.push(if v.1 == 1 {
-      Expr::Integer(v.0)
+  let total = eval(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: merged.iter().map(|(_, _, w)| w.clone()).collect(),
+  })?;
+  // Inexact data makes the weights machine numbers too.
+  let inexact = merged
+    .iter()
+    .any(|(_, v, _)| crate::functions::math_ast::contains_inexact_real(v));
+  let mut normalized = Vec::with_capacity(merged.len());
+  for (_, _, w) in &merged {
+    let weight = div2(w.clone(), total.clone());
+    normalized.push(eval(&if inexact {
+      call("N", vec![weight])
     } else {
-      make_rational(v.0, v.1)
-    });
+      weight
+    })?);
   }
   Ok(call(
     "DataDistribution",
@@ -12885,14 +12960,14 @@ pub fn empirical_distribution_ast(
       str_expr("Empirical"),
       Expr::List(
         vec![
-          Expr::List(weights.into()),
-          Expr::List(uniques.into()),
+          Expr::List(normalized.into()),
+          Expr::List(merged.into_iter().map(|(_, v, _)| v).collect()),
           bool_expr(false),
         ]
         .into(),
       ),
       Expr::Integer(1),
-      Expr::Integer(n),
+      Expr::Integer(data.len() as i128),
     ],
   ))
 }
@@ -13281,32 +13356,38 @@ pub fn data_distribution_moment(dargs: &[Expr], k: u32) -> Option<Expr> {
   if let Some(m) = histogram_moment(dargs, k) {
     return Some(m);
   }
-  let (weights, values) = data_distribution_parts(dargs)?;
-  let mut num: i128 = 0;
-  let mut den: i128 = 1;
-  for (w, v) in weights.iter().zip(values.iter()) {
-    // w * v^k
-    let (vn, vd) = (v.0.checked_pow(k)?, v.1.checked_pow(k)?);
-    let tn = w.0.checked_mul(vn)?;
-    let td = w.1.checked_mul(vd)?;
-    num = num.checked_mul(td)?.checked_add(tn.checked_mul(den)?)?;
-    den = den.checked_mul(td)?;
-  }
-  let g = {
-    let (mut a, mut b) = (num.abs().max(1), den.abs());
-    while b != 0 {
-      let t = b;
-      b = a % b;
-      a = t;
-    }
-    a.max(1)
-  };
-  let (num, den) = (num / g, den / g);
-  Some(if den == 1 {
-    Expr::Integer(num)
-  } else {
-    make_rational(num, den)
+  let (weights, values) = empirical_points(dargs)?;
+  let terms: Vec<Expr> = weights
+    .into_iter()
+    .zip(values)
+    .map(|(w, v)| times2(w, pow2(v, Expr::Integer(k as i128))))
+    .collect();
+  eval(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
   })
+  .ok()
+}
+
+/// The (weights, values) of an empirical DataDistribution as given —
+/// exact or machine numbers alike.
+pub(crate) fn empirical_points(
+  dargs: &[Expr],
+) -> Option<(Vec<Expr>, Vec<Expr>)> {
+  if dargs.len() != 4
+    || !matches!(&dargs[0], Expr::String(s) if s == "Empirical")
+  {
+    return None;
+  }
+  let Expr::List(inner) = &dargs[1] else {
+    return None;
+  };
+  match inner.as_slice() {
+    [Expr::List(w), Expr::List(v), _] if w.len() == v.len() => {
+      Some((w.to_vec(), v.to_vec()))
+    }
+    _ => None,
+  }
 }
 
 /// PDF (point mass) and CDF (left-closed step sum) at a numeric point.

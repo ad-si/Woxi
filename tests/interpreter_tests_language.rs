@@ -24,6 +24,7 @@ mod interpreter_tests {
   mod code_parser;
   mod contexts;
   mod control_flow;
+  mod evaluation_reuse;
   mod function_application;
   mod function_definitions;
   mod interpret_to_expr_api;

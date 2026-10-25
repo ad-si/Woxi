@@ -2381,6 +2381,7 @@ fn evaluate_function_call_ast_inner(
     return result;
   }
   if let Some(result) = plotting::dispatch_plotting(name, args) {
+    let result = plotting::non_numeric_limit_is_plln(name, args, result);
     return plotting::empty_plot_for_nothing_to_draw(name, args, result);
   }
   if let Some(result) =

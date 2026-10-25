@@ -3544,6 +3544,12 @@ fn try_complex_inverse_trig(
       let s = csqrt(z2.0 + 1.0, z2.1);
       cln(x + s.0, y + s.1)
     }
+    // ArcCosh[z] = Log[z + Sqrt[z + 1] Sqrt[z - 1]], the principal branch
+    // (the product of the two roots, not Sqrt[z^2 - 1]).
+    "ArcCosh" => {
+      let p = cmul(csqrt(x + 1.0, y), csqrt(x - 1.0, y));
+      cln(x + p.0, y + p.1)
+    }
     _ => return None,
   };
   // A non-finite component means the argument hit a pole (e.g. ArcTan[±I]);
@@ -4886,6 +4892,9 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ArcCosh expects 1 argument".into(),
     ));
+  }
+  if let Some(r) = try_complex_inverse_trig("ArcCosh", &args[0]) {
+    return r;
   }
   // ArcCosh is monotonic increasing on [1, ∞): map over interval spans.
   // (Out-of-domain endpoints give complex images and leave it unevaluated.)

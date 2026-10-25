@@ -218,7 +218,7 @@ pub(crate) fn restore_symbol_values(saved: SymbolValues) {
 /// Reinstate (or clear) a symbol's entry in one of the definition maps.
 fn restore_map<V: 'static>(
   store: &'static std::thread::LocalKey<
-    std::cell::RefCell<std::collections::HashMap<String, V>>,
+    crate::epoch::EpochCell<std::collections::HashMap<String, V>>,
   >,
   sym: &str,
   value: Option<V>,

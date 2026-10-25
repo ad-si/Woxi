@@ -6750,6 +6750,63 @@ mod mixed_partial_derivatives {
 mod find_minimum {
   use super::*;
 
+  // Many variables with a coupling constraint: the starting points and the
+  // sampling grid stay bounded instead of growing exponentially
+  // (MethodOfSupportVectorRegression reached 14 GB).
+  #[test]
+  fn many_variables_stay_bounded() {
+    assert_eq!(
+      interpret(
+        "x = Array[a, 8]; Round[10^4 First[NMinimize[{Total[x^2], Total[x] == 1}, x]]]"
+      )
+      .unwrap(),
+      "1250"
+    );
+  }
+
+  // Variables may be listed bare, indexed, or through a symbol holding the
+  // list (OptimalTransportScheduling).
+  #[test]
+  fn variable_lists() {
+    assert_eq!(
+      interpret(
+        "FindMinimum[{c[1] + 2 c[2], c[1] + c[2] == 1, c[1] >= 0, c[2] >= 0}, {c[1], c[2]}]"
+      )
+      .unwrap(),
+      "{1., {c[1] -> 1., c[2] -> 0.}}"
+    );
+    assert_eq!(
+      interpret(
+        "vars = {c[1, 1], c[1, 2]}; FindMinimum[{3 c[1, 1] + 2 c[1, 2], \
+         c[1, 1] + c[1, 2] == 1, Thread[vars >= 0]}, vars]"
+      )
+      .unwrap(),
+      "{2., {c[1, 1] -> 0., c[1, 2] -> 1.}}"
+    );
+    assert_eq!(
+      interpret("vv = {x, y}; FindMinimum[(x - 1)^2 + (y - 2)^2, vv]").unwrap(),
+      "{0., {x -> 1., y -> 2.}}"
+    );
+  }
+
+  // A trial point where the objective is not real ends the search with
+  // FindMaximum::nrnum and the last point reached, instead of aborting.
+  #[test]
+  fn non_real_trial_point_is_nrnum() {
+    clear_state();
+    let r =
+      woxi::interpret_with_stdout("FindMaximum[Log[x] - x, {x, 3}]").unwrap();
+    assert!(r.result.starts_with("{-1."), "{}", r.result);
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.starts_with("FindMaximum::nrnum: The function value")
+          && w.contains("is not a real number at {x} = ")),
+      "{:?}",
+      r.warnings
+    );
+  }
+
   #[test]
   fn quadratic_minimum() {
     clear_state();
@@ -8682,6 +8739,74 @@ Round[N[closed] - N[numeric], 10^-6]"
 
 mod ndsolve {
   use super::*;
+
+  // A complex-valued system is solved as the real system of its parts
+  // (HarmonicElectricFieldAppliedToAParticleInAnInfiniteSquareWell).
+  #[test]
+  fn complex_valued_system() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 (c1[1] /. First[NDSolve[{c1'[t] == -I c1[t], c1[0] == 1}, \
+         {c1}, {t, 0, 1}]])]"
+      )
+      .unwrap(),
+      "540302 - 841471*I"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^4 (Abs[{a[2.], b[2.]}]^2 /. First[NDSolve[{a'[t] == -I b[t], \
+         b'[t] == -I a[t], a[0] == 1, b[0] == 0}, {a, b}, {t, 0, 3}]])]"
+      )
+      .unwrap(),
+      "{1732, 8268}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^6 (Subscript[c, 1][1] /. First[NDSolve[{Subscript[c, 1]'[t] == \
+         -I Subscript[c, 1][t], Subscript[c, 1][0] == 1}, {Subscript[c, 1]}, \
+         {t, 0, 1}]])]"
+      )
+      .unwrap(),
+      "540302 - 841471*I"
+    );
+  }
+
+  // A WhenEvent on an implicit curve stops it where the condition turns
+  // True, located within the step, and runs its action there
+  // (TheFrankKamenetskiiProblemUsingArcLengthContinuation).
+  #[test]
+  fn implicit_curve_when_event_stops() {
+    assert_eq!(
+      interpret(
+        "r = Reap[NDSolve[{y[s] == Sqrt[1 - x[s]^2], x'[s]^2 + y'[s]^2 == 1, \
+         x[0] == 0, y[0] == 1, x'[0] == 1, \
+         WhenEvent[y[s] < 0.5, {Sow[s], \"StopIntegration\"}]}, {x, y}, \
+         {s, -1000, 1000}]]; {Round[100 x[\"Domain\"] /. First[r[[1]]]], \
+         Round[10^6 r[[2]]]}"
+      )
+      .unwrap(),
+      "{{{-105, 105}}, {{-1047198, 1047198}}}"
+    );
+  }
+
+  // An arclength-parametrised curve that ends well inside a wide domain
+  // (the quarter circle y == Sqrt[1 - x^2] ends at x == ±1) is traced with
+  // steps that shrink near the end instead of failing at the first nominal
+  // step (the arc-length continuation Demonstrations integrate over
+  // {s, -20000, 20000}).
+  #[test]
+  fn implicit_curve_ends_inside_a_wide_domain() {
+    assert_eq!(
+      interpret(
+        "sol = Quiet[NDSolve[{y[s] == Sqrt[1 - x[s]^2], x'[s]^2 + y'[s]^2 == 1, \
+         x[0] == 0, y[0] == 1, x'[0] == 1, y'[0] == 0}, {x, y}, \
+         {s, -1000, 1000}]]; {Round[100 x[\"Domain\"] /. First[sol]], \
+         Round[1000 {x[1.], y[1.]} /. First[sol]]}"
+      )
+      .unwrap(),
+      "{{{-157, 157}}, {841, 540}}"
+    );
+  }
 
   // Dry friction that sticks at the belt speed puts a jump of the right-hand
   // side inside every step; refinement stops once halving no longer pays
@@ -21109,12 +21234,17 @@ mod ndsolve_complex_rhs_real_valued {
     );
   }
 
+  // A genuinely complex right-hand side is integrated as the real system of
+  // its parts, as wolframscript integrates it.
   #[test]
-  fn genuinely_complex_rhs_stays_unevaluated() {
+  fn genuinely_complex_rhs_is_integrated() {
     assert_eq!(
-      interpret("NDSolve[{x'[t] == I x[t], x[0] == 1}, x[t], {t, 0, 1}]")
-        .unwrap(),
-      "NDSolve[{Derivative[1][x][t] == I*x[t], x[0] == 1}, x[t], {t, 0, 1}]"
+      interpret(
+        "sol = NDSolve[{x'[t] == I x[t], x[0] == 1}, x[t], {t, 0, 1}]; \
+         Round[10^6 (x[t] /. First[sol] /. t -> 1)]"
+      )
+      .unwrap(),
+      "540302 + 841471*I"
     );
   }
 }
@@ -22774,6 +22904,34 @@ mod ndsolve_vector_unknown_with_matrix_product {
       )
       .unwrap(),
       "{2000000, 1000000}"
+    );
+  }
+}
+
+mod integrate_interpolating_function {
+  use super::*;
+
+  #[test]
+  fn definite_integral_is_numeric() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
+         Integrate[f[x], {x, 0, 2}]"
+      )
+      .unwrap(),
+      "3."
+    );
+  }
+
+  #[test]
+  fn sum_of_piecewise_integrals_is_numeric() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
+         Integrate[f[x], {x, 0, 1}] + Integrate[f[x], {x, 1, 2}]"
+      )
+      .unwrap(),
+      "3."
     );
   }
 }

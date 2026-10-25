@@ -9409,6 +9409,36 @@ mod reim {
 mod complex_expand {
   use super::*;
 
+  // A function the language does not define is real, like every symbol,
+  // and so is its derivative.
+  #[test]
+  fn undefined_functions_are_real() {
+    assert_eq!(interpret("ComplexExpand[Re[a[t]]]").unwrap(), "a[t]");
+    assert_eq!(interpret("ComplexExpand[Re[I a[t]]]").unwrap(), "0");
+    assert_eq!(
+      interpret("ComplexExpand[Im[(a[t] + I b[t]) Exp[I t]]]").unwrap(),
+      "b[t]*Cos[t] + a[t]*Sin[t]"
+    );
+    assert_eq!(interpret("ComplexExpand[Re[I a'[t]]]").unwrap(), "0");
+    assert_eq!(
+      interpret("ComplexExpand[Re[I Subscript[c, 1][t]]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Re[f[x + I y]]]").unwrap(),
+      "f[x + I*y]"
+    );
+    // Built-in functions keep their own rules.
+    assert_eq!(
+      interpret("ComplexExpand[Im[Log[-2 + I y]]]").unwrap(),
+      "Arg[-2 + I*y]"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Re[Log[x] + I Tan[y]]]").unwrap(),
+      "Log[x^2]/2"
+    );
+  }
+
   // The quotient trig and hyperbolic functions expand for real arguments
   // too (differential fuzzer, seed 20261011; wolframscript-verified).
   #[test]

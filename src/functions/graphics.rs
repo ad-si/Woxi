@@ -1985,13 +1985,7 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       let Expr::Identifier(k) = pattern.as_ref() else {
         return false;
       };
-      apply_directive(
-        &Expr::FunctionCall {
-          name: k.clone(),
-          args: vec![replacement.as_ref().clone()].into(),
-        },
-        style,
-      )
+      apply_directive(&call1(k.as_str(), replacement.as_ref().clone()), style)
     }
     // A directive list nested one level down (`Directive[{Thick, Blue}]`,
     // `Style[expr, {Thick, Blue}]`) is equivalent to its items given
@@ -2358,15 +2352,7 @@ fn collect_primitives(
           other => other.clone(),
         })
         .collect();
-      collect_primitives(
-        &Expr::FunctionCall {
-          name: name.clone(),
-          args: released.into(),
-        },
-        style,
-        prims,
-        errors,
-      );
+      collect_primitives(&call(name.as_str(), released), style, prims, errors);
     }
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
@@ -2944,19 +2930,15 @@ fn substitute_complex_indices(
           }
         })
         .collect();
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      }
+      call(name.as_str(), new_args)
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
         .iter()
         .map(|a| substitute_complex_indices(pts, a, vertex_data))
-        .collect::<Vec<_>>()
-        .into(),
-    },
+        .collect(),
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -3027,13 +3009,13 @@ fn resolve_graphics_complex_indices(
       // For primitives that take point arguments, resolve integer indices
       match name.as_str() {
         "Point" | "Line" | "Polygon" | "Triangle" | "Arrow" | "BezierCurve"
-        | "BSplineCurve" => Expr::FunctionCall {
-          name: name.clone(),
-          args: args
+        | "BSplineCurve" => call(
+          name.as_str(),
+          args
             .iter()
             .map(|a| resolve_primitive_arg(a, coords))
             .collect(),
-        },
+        ),
         "Circle" | "Disk" | "Rectangle" => {
           // First arg is center/position (single index), rest stay
           let mut new_args = Vec::with_capacity(args.len());
@@ -3048,10 +3030,7 @@ fn resolve_graphics_complex_indices(
               new_args.push(a.clone());
             }
           }
-          Expr::FunctionCall {
-            name: name.clone(),
-            args: new_args.into(),
-          }
+          call(name.as_str(), new_args)
         }
         "Text" | "Inset" => {
           // Second arg (if present) is position
@@ -3068,13 +3047,13 @@ fn resolve_graphics_complex_indices(
         }
         _ => {
           // For everything else (Style, directives, etc.), recurse
-          Expr::FunctionCall {
-            name: name.clone(),
-            args: args
+          call(
+            name.as_str(),
+            args
               .iter()
               .map(|a| resolve_graphics_complex_indices(a, coords))
               .collect(),
-          }
+          )
         }
       }
     }
@@ -3141,10 +3120,27 @@ fn parse_point(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       style: style.clone(),
     });
   } else if let Some(pts) = expr_to_point_list(&args[0]) {
-    prims.push(Primitive::PointMulti {
-      points: pts,
-      style: style.clone(),
-    });
+    // `VertexColors -> {c1, c2, …}` colors each point on its own; a count
+    // that doesn't match the points leaves the ordinary single color.
+    if let Some(colors) =
+      parse_vertex_colors(&args[1..]).filter(|c| c.len() == pts.len())
+    {
+      for ((x, y), color) in pts.into_iter().zip(colors) {
+        prims.push(Primitive::PointSingle {
+          x,
+          y,
+          style: StyleState {
+            color,
+            ..style.clone()
+          },
+        });
+      }
+    } else {
+      prims.push(Primitive::PointMulti {
+        points: pts,
+        style: style.clone(),
+      });
+    }
   }
 }
 
@@ -3548,18 +3544,17 @@ fn rectangle_picture(args: &[Expr]) -> Option<Expr> {
   let (x0, y0) = expr_to_point(p1)?;
   let (x1, y1) = expr_to_point(p2)?;
   let num = |v: f64| Expr::Real(v);
-  Some(Expr::FunctionCall {
-    name: "Inset".to_string(),
-    args: vec![
+  Some(call(
+    "Inset",
+    vec![
       picture.clone(),
       Expr::List(
         vec![num(f64::midpoint(x0, x1)), num(f64::midpoint(y0, y1))].into(),
       ),
-      Expr::Identifier("Center".to_string()),
+      id_expr("Center"),
       Expr::List(vec![num((x1 - x0).abs()), num((y1 - y0).abs())].into()),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 fn parse_rectangle(
@@ -4261,6 +4256,14 @@ fn graphics_text_content(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
       graphics_text_content(&args[0])
     }
+    // A `Framed`/`Highlighted` item inside a label sets its content; like
+    // `expr_to_svg_markup_lines`, a running line of text draws no box.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Framed" | "Highlighted")
+        && !args.is_empty() =>
+    {
+      graphics_text_content(&args[0])
+    }
     // A `Tooltip` shows its content; the hint appears only on hover.
     Expr::FunctionCall { name, args }
       if (is_style_wrapper(name) || name == "Tooltip") && !args.is_empty() =>
@@ -4277,9 +4280,7 @@ fn graphics_text_content(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
         && args.len() == 1
-        && matches!(&args[0], Expr::FunctionCall { name: inner, args: inner_args }
-          if matches!(inner.as_str(), "Row" | "Column")
-            && matches!(inner_args.first(), Some(Expr::List(_)))) =>
+        && is_traditional_layout(&args[0]) =>
     {
       graphics_text_content(&traditionalize_layout_items(&args[0]))
     }
@@ -4527,11 +4528,36 @@ fn graphics_text_content(expr: &Expr) -> String {
       if name == "Times"
         && args.iter().any(|a| matches!(a, Expr::String(_))) =>
     {
-      args
-        .iter()
-        .map(graphics_text_content)
-        .collect::<Vec<_>>()
-        .join(" ")
+      // A fractional factor (`"7"/100` is `Times[1/100, "7"]`) moves its
+      // denominator under the rest, so the label reads `7/100` on one line.
+      let mut numerator: Vec<String> = Vec::new();
+      let mut denominator: Vec<String> = Vec::new();
+      for a in args {
+        match a {
+          Expr::FunctionCall { name: rn, args: ra }
+            if rn == "Rational" && ra.len() == 2 =>
+          {
+            if !matches!(&ra[0], Expr::Integer(1)) {
+              numerator.push(graphics_text_content(&ra[0]));
+            }
+            denominator.push(graphics_text_content(&ra[1]));
+          }
+          Expr::FunctionCall { name: pn, args: pa }
+            if pn == "Power"
+              && pa.len() == 2
+              && matches!(&pa[1], Expr::Integer(-1)) =>
+          {
+            denominator.push(graphics_text_content(&pa[0]));
+          }
+          other => numerator.push(graphics_text_content(other)),
+        }
+      }
+      let num = numerator.join(" ");
+      match denominator.as_slice() {
+        [] => num,
+        [d] => format!("{num}/{d}"),
+        ds => format!("{num}/({})", ds.join(" ")),
+      }
     }
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -4545,6 +4571,27 @@ fn graphics_text_content(expr: &Expr) -> String {
         graphics_text_content(left),
         graphics_text_content(right)
       )
+    }
+    // A quotient with a string operand (`ToString[x]/y`) is set on one line
+    // as `numerator/denominator`, not as the stacked two-line OutputForm
+    // fraction, which a label cannot lay out.
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::String(_))
+      || matches!(right.as_ref(), Expr::String(_)) =>
+    {
+      let den = graphics_text_content(right);
+      let den = if matches!(
+        right.as_ref(),
+        Expr::BinaryOp { .. } | Expr::FunctionCall { .. }
+      ) {
+        format!("({den})")
+      } else {
+        den
+      };
+      format!("{}/{den}", graphics_text_content(left))
     }
     _ => {
       let text = match crate::functions::string_ast::to_string_ast(
@@ -5018,10 +5065,7 @@ pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
     && name == "Text"
     && targs.len() == 1
   {
-    return Some(Expr::FunctionCall {
-      name: "Text".to_string(),
-      args: vec![targs[0].clone(), pos.clone()].into(),
-    });
+    return Some(call("Text", vec![targs[0].clone(), pos.clone()]));
   }
   None
 }
@@ -8196,16 +8240,32 @@ fn render_axes(
   // top of the vertical axis.
   if let Some((x_label, y_label)) = axes_label {
     if axes.0 && !x_label.is_empty() {
-      svg.push_str(&format!(
-        "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"start\" dominant-baseline=\"middle\">{x_label}</text>\n",
-        svg_w + 8.0,
-        axis_y_px,
-      ));
+      if let Some((_, h)) = axes_label_picture_size(x_label) {
+        svg.push_str(&format!(
+          "<g transform=\"translate({:.2},{:.2})\">{x_label}</g>\n",
+          svg_w + 8.0,
+          axis_y_px - h / 2.0,
+        ));
+      } else {
+        svg.push_str(&format!(
+          "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"start\" dominant-baseline=\"middle\">{x_label}</text>\n",
+          svg_w + 8.0,
+          axis_y_px,
+        ));
+      }
     }
     if axes.1 && !y_label.is_empty() {
-      svg.push_str(&format!(
-        "<text x=\"{axis_x_px:.2}\" y=\"-8.00\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
-      ));
+      if let Some((w, h)) = axes_label_picture_size(y_label) {
+        svg.push_str(&format!(
+          "<g transform=\"translate({:.2},{:.2})\">{y_label}</g>\n",
+          axis_x_px - w / 2.0,
+          -8.0 - h,
+        ));
+      } else {
+        svg.push_str(&format!(
+          "<text x=\"{axis_x_px:.2}\" y=\"-8.00\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
+        ));
+      }
     }
   }
 }
@@ -10113,38 +10173,32 @@ pub(crate) struct PlotRangePaddingSpec {
 
 /// Parse a `PlotRangePadding` option value: a single spec (applied to both
 /// sides of both axes), `{xSpec, ySpec}`, or the full per-side form
-/// `{{xMinPad, xMaxPad}, {yMinPad, yMaxPad}}`.
+/// `{{xMinPad, xMaxPad}, {yMinPad, yMaxPad}}`. Each axis entry may be given
+/// in either form independently, e.g. `{None, {Scaled[0.2], Scaled[0.1]}}`.
 pub(crate) fn parse_plot_range_padding(expr: &Expr) -> PlotRangePaddingSpec {
-  fn symmetric(amt: PlotPadAmount) -> AxisPadding {
+  fn axis(item: &Expr) -> AxisPadding {
+    if let Expr::List(sides) = item
+      && sides.len() == 2
+    {
+      return AxisPadding {
+        lo: parse_plot_pad_amount(&sides[0]),
+        hi: parse_plot_pad_amount(&sides[1]),
+      };
+    }
+    let amt = parse_plot_pad_amount(item);
     AxisPadding { lo: amt, hi: amt }
   }
   if let Expr::List(items) = expr
     && items.len() == 2
   {
-    if let (Expr::List(x_sides), Expr::List(y_sides)) = (&items[0], &items[1])
-      && x_sides.len() == 2
-      && y_sides.len() == 2
-    {
-      return PlotRangePaddingSpec {
-        x: AxisPadding {
-          lo: parse_plot_pad_amount(&x_sides[0]),
-          hi: parse_plot_pad_amount(&x_sides[1]),
-        },
-        y: AxisPadding {
-          lo: parse_plot_pad_amount(&y_sides[0]),
-          hi: parse_plot_pad_amount(&y_sides[1]),
-        },
-      };
-    }
     return PlotRangePaddingSpec {
-      x: symmetric(parse_plot_pad_amount(&items[0])),
-      y: symmetric(parse_plot_pad_amount(&items[1])),
+      x: axis(&items[0]),
+      y: axis(&items[1]),
     };
   }
-  let amt = parse_plot_pad_amount(expr);
   PlotRangePaddingSpec {
-    x: symmetric(amt),
-    y: symmetric(amt),
+    x: axis(expr),
+    y: axis(expr),
   }
 }
 
@@ -10544,13 +10598,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::List(items) if items.len() == 2 => {
             let label = |e: &Expr| match e {
               Expr::Identifier(s) if s == "None" => String::new(),
-              other => expr_to_svg_markup(other),
+              other => axes_label_markup(other),
             };
             axes_label = Some((label(&items[0]), label(&items[1])));
           }
           Expr::Identifier(s) if s == "None" => axes_label = None,
           other => {
-            axes_label = Some((expr_to_svg_markup(other), String::new()));
+            axes_label = Some((axes_label_markup(other), String::new()));
           }
         },
         // `FrameLabel -> {bottom, left}` / `{{left, right}, {bottom, top}}`
@@ -10857,6 +10911,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // with, so a longer label reserves more room instead of overflowing a
   // fixed gutter and getting clipped by the canvas edge.
   fn axis_label_width(markup: &str) -> f64 {
+    if let Some((w, _)) = axes_label_picture_size(markup) {
+      return w;
+    }
     let mut visible_chars = 0usize;
     let mut in_tag = false;
     for c in markup.chars() {
@@ -10879,6 +10936,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let y_axis_label_width = axes_label
     .as_ref()
     .map_or(0.0, |(_, y)| axis_label_width(y));
+  let y_axis_label_height = axes_label
+    .as_ref()
+    .and_then(|(_, y)| axes_label_picture_size(y))
+    .map_or(0.0, |(_, h)| h + 8.0);
   let margin_left: f64 = if frame_gutter_left || (axes.1 && !y_axis_interior) {
     50.0
   } else if frame {
@@ -10928,8 +10989,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let margin_top: f64 = if frame { 10.0 } else { 0.0 }
     + label_strip
-    + if has_y_axis_label && label_strip == 0.0 {
-      20.0
+    + if has_y_axis_label {
+      y_axis_label_height.max(20.0)
     } else {
       0.0
     }
@@ -11342,11 +11403,7 @@ fn rational_coefficient_markup(
   let scaled = if n.abs() == 1 {
     factor.clone()
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(n.abs())),
-      right: Box::new(factor.clone()),
-    }
+    times2(Expr::Integer(n.abs()), factor.clone())
   };
   // `stacked_fraction_svg` joins its arguments with a literal `/`, not a
   // vinculum, so a `Plus`/`Minus` numerator needs its own parens here —
@@ -13779,6 +13836,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // notation, so typeset the expression instead of printing its
         // InputForm: `Sum[…, {n, 0, ∞}]` becomes a ∑ with limits and
         // `LegendreP[n, x]` becomes `Pₙ(x)`.
+        "TraditionalForm"
+          if args.len() == 1 && is_traditional_layout(&args[0]) =>
+        {
+          expr_to_svg_markup(&traditionalize_layout_items(&args[0]))
+        }
         "TraditionalForm"
           if args.len() == 1 && !matches!(args[0], Expr::String(_)) =>
         {
@@ -16655,16 +16717,15 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         first_graphic_is_plot.get_or_insert(false);
         let (w, h) = (*width as f64, *height as f64);
         layers.push(Layer::Prims(merged_primitives.len()));
-        merged_primitives.push(Expr::FunctionCall {
-          name: "Inset".to_string(),
-          args: vec![
+        merged_primitives.push(call(
+          "Inset",
+          vec![
             expr_ref.clone(),
             Expr::List(vec![Expr::Real(w / 2.0), Expr::Real(h / 2.0)].into()),
             id_expr("Center"),
             Expr::List(vec![Expr::Real(w), Expr::Real(h)].into()),
-          ]
-          .into(),
-        });
+          ],
+        ));
         if graphic_count == 1 {
           let range =
             |hi: f64| Expr::List(vec![Expr::Integer(0), Expr::Real(hi)].into());
@@ -17713,7 +17774,7 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
           };
           column_to_svg(&[
             list(vec![first.clone(), second.clone()]),
-            Expr::Identifier("Center".to_string()),
+            id_expr("Center"),
           ])?
         }
         "Left" | "Right" => {
@@ -18086,10 +18147,10 @@ fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   }
   let mut directives: Vec<Expr> = Vec::new();
   if style.font_weight == Some("bold") {
-    directives.push(Expr::Identifier("Bold".to_string()));
+    directives.push(id_expr("Bold"));
   }
   if style.font_style == Some("italic") {
-    directives.push(Expr::Identifier("Italic".to_string()));
+    directives.push(id_expr("Italic"));
   }
   if let Some(size) = style.font_size {
     directives.push(Expr::Real(size));
@@ -18101,10 +18162,7 @@ fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
     .font_family
     .clone()
     .unwrap_or_else(|| "Atkinson Hyperlegible Next, sans-serif".to_string());
-  directives.push(Expr::Rule {
-    pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
-    replacement: Box::new(Expr::String(family)),
-  });
+  directives.push(rule_expr(id_expr("FontFamily"), Expr::String(family)));
   // A column of plain text lines sets as one text run, the way a `Row` cell
   // does: a line break between the items, with no per-item boxes whose
   // widths are only estimated.
@@ -18117,7 +18175,7 @@ fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
     let mut parts: Vec<Expr> = Vec::with_capacity(items.len() * 2);
     for (i, item) in items.iter().enumerate() {
       if i > 0 {
-        parts.push(Expr::String("\n".to_string()));
+        parts.push(str_expr("\n"));
       }
       parts.push(item.clone());
     }
@@ -18637,10 +18695,7 @@ fn grid_svg_styled_internal(
         if !directives.is_empty() {
           let mut style_args = vec![cell.clone()];
           style_args.extend(directives);
-          *cell = Expr::FunctionCall {
-            name: "Style".to_string(),
-            args: style_args.into(),
-          };
+          *cell = call("Style", style_args);
         }
       }
     }
@@ -21456,10 +21511,7 @@ fn with_cell_image_size(expr: &Expr, size: i128) -> Expr {
       let mut new_args: Vec<Expr> =
         args.iter().filter(|a| !is_size_rule(a)).cloned().collect();
       new_args.push(rule_expr(id_expr("ImageSize"), new_size));
-      return Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      };
+      return call(name.as_str(), new_args);
     }
   }
   with_default_image_size(expr, size)
@@ -21493,10 +21545,7 @@ fn with_fixed_image_size(expr: &Expr, w: i128, h: i128) -> Expr {
     id_expr("ImageSize"),
     Expr::List(vec![Expr::Integer(w), Expr::Integer(h)].into()),
   ));
-  Expr::FunctionCall {
-    name: name.clone(),
-    args: new_args.into(),
-  }
+  call(name.as_str(), new_args)
 }
 
 /// If `expr` is a top-level list that looks like a list of graphics
@@ -22600,7 +22649,26 @@ fn number_form_layout_items(head: &str, spec: &[Expr], expr: &Expr) -> Expr {
 /// down through `Row`/`Column`/`Style` onto the leaf expressions. Strings
 /// and `Null` stay as they are; anything else that is not a layout or a
 /// picture is wrapped in `TraditionalForm`.
-fn traditionalize_layout_items(expr: &Expr) -> Expr {
+/// Whether `expr` is a `Row`/`Column` (possibly under `Style`/`Text`
+/// wrappers) whose items `traditionalize_layout_items` can typeset one by
+/// one, instead of the whole layout being boxed as a single expression.
+pub(crate) fn is_traditional_layout(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Row" | "Column") =>
+    {
+      matches!(args.first(), Some(Expr::List(_)))
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Style" | "Text") && !args.is_empty() =>
+    {
+      is_traditional_layout(&args[0])
+    }
+    _ => false,
+  }
+}
+
+pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
       if matches!(name.as_str(), "Row" | "Column")
@@ -22619,7 +22687,7 @@ fn traditionalize_layout_items(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args }
       if matches!(
         name.as_str(),
-        "Style" | "Item" | "Pane" | "Invisible" | "Framed"
+        "Style" | "Item" | "Pane" | "Invisible" | "Framed" | "Text"
       ) && !args.is_empty() =>
     {
       let mut new_args = args.clone();
@@ -22711,10 +22779,7 @@ fn resolve_display_item(expr: &Expr) -> Expr {
   {
     let mut restyled: Vec<Expr> = args.to_vec();
     restyled[0] = resolve_display_item(&args[0]);
-    current = Expr::FunctionCall {
-      name: name.clone(),
-      args: restyled.into(),
-    };
+    current = call(name.as_str(), restyled);
   }
   // `Style[Pane[content, …], directives…]` only sizes `content`, so the
   // directives style the content rather than the source text of the `Pane`.
@@ -22768,10 +22833,7 @@ fn resolve_display_item(expr: &Expr) -> Expr {
         })
         .collect(),
     );
-    current = Expr::FunctionCall {
-      name: name.clone(),
-      args: peeled.into(),
-    };
+    current = call(name.as_str(), peeled);
   }
   // A `Dynamic[…]` inside running text — a readout in a `Row`, or in the
   // `HoldForm` a `With` fills — shows the value it currently has.
@@ -22836,10 +22898,7 @@ pub(crate) fn style_pushed_into_layout(
           .chain(directives.iter().cloned())
           .collect(),
       );
-      return Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      };
+      return call(name.as_str(), new_args);
     }
     call(
       "Style",
@@ -22860,10 +22919,7 @@ pub(crate) fn style_pushed_into_layout(
     .collect();
   let mut new_args = vec![Expr::List(styled.into())];
   new_args.extend(args[1..].iter().cloned());
-  Some(Expr::FunctionCall {
-    name: name.clone(),
-    args: new_args.into(),
-  })
+  Some(call(name.as_str(), new_args))
 }
 
 /// Typeset `expr` in TraditionalForm as a standalone SVG, through the same
@@ -22880,6 +22936,28 @@ fn form_box_svg(expr: &Expr) -> Option<String> {
     return None;
   }
   Some(layout_to_svg(&layout, theme().text_primary))
+}
+
+/// The markup an `AxesLabel` entry draws as: a label whose inline box
+/// notation holds a fraction is a stacked-fraction picture (a nested `<svg>`),
+/// anything else the usual text markup.
+pub(crate) fn axes_label_markup(expr: &Expr) -> String {
+  inline_fraction_string_svg(expr).unwrap_or_else(|| expr_to_svg_markup(expr))
+}
+
+/// Width and height of an axes label that [`axes_label_markup`] typeset as a
+/// picture; `None` for a text label.
+pub(crate) fn axes_label_picture_size(markup: &str) -> Option<(f64, f64)> {
+  if !markup.starts_with("<svg ") {
+    return None;
+  }
+  let attr = |name: &str| -> Option<f64> {
+    let key = format!(" {name}=\"");
+    let start = markup.find(&key)? + key.len();
+    let len = markup[start..].find('"')?;
+    markup[start..start + len].parse().ok()
+  };
+  Some((attr("width")?, attr("height")?))
 }
 
 /// A (possibly `Style`d) string whose inline box notation holds a fraction,
@@ -23735,10 +23813,7 @@ fn unwrap_framed_layout(expr: &Expr) -> Expr {
       let inner = unwrap_framed_layout(&args[0]);
       let mut new_args = args.to_vec();
       new_args[0] = inner;
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      }
+      call(name.as_str(), new_args)
     }
     _ => unwrap_display_wrappers(expr),
   }
@@ -25064,7 +25139,7 @@ fn manipulate_spec_var_name(items: &[Expr]) -> Option<String> {
 /// (`{x, 0, 1, ControlType -> Slider}`).
 fn default_control_values(control_type: &str) -> Option<Vec<Expr>> {
   let list = |items: Vec<Expr>| Expr::List(items.into());
-  let booleans = || vec![id_expr("True"), id_expr("False")];
+  let booleans = || vec![bool_expr(true), bool_expr(false)];
   Some(match control_type {
     "Slider" | "VerticalSlider" | "Manipulator" | "Animator" | "Trigger"
     | "IntervalSlider" => vec![Expr::Integer(0), Expr::Integer(1)],
@@ -27533,20 +27608,15 @@ fn custom_locator_pane_options(items: &[Expr]) -> Option<Vec<Expr>> {
     // Apply the function to `Dynamic[var]` the way Manipulate does and look
     // for the pane in what it returns.
     find(body, &var).or_else(|| {
-      let applied = Expr::FunctionCall {
-        name: "Apply".to_string(),
-        args: vec![
+      let applied = call(
+        "Apply",
+        vec![
           it.clone(),
           Expr::List(
-            vec![Expr::FunctionCall {
-              name: "Dynamic".to_string(),
-              args: vec![Expr::Identifier(var.clone())].into(),
-            }]
-            .into(),
+            vec![call("Dynamic", vec![Expr::Identifier(var.clone())])].into(),
           ),
-        ]
-        .into(),
-      };
+        ],
+      );
       let built = crate::evaluator::evaluate_expr_to_expr(&applied).ok()?;
       // `Dynamic[helper[##]] &` leaves the helper call held inside the
       // `Dynamic`; the pane only appears once that call is evaluated.
@@ -27972,14 +28042,13 @@ fn strip_body_locator_resets(expr: &Expr, vars: &[String]) -> Expr {
     {
       null_expr()
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
         .iter()
         .map(|a| strip_body_locator_resets(a, vars))
-        .collect::<Vec<_>>()
-        .into(),
-    },
+        .collect(),
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -28329,13 +28398,13 @@ fn strip_bound_dynamic_modules(
       {
         return strip_bound_dynamic_modules(&args[1], bindings);
       }
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: args
+      call(
+        name.as_str(),
+        args
           .iter()
           .map(|a| strip_bound_dynamic_modules(a, bindings))
           .collect(),
-      }
+      )
     }
     Expr::List(items) => Expr::List(
       items
@@ -28481,10 +28550,9 @@ fn strip_body_setter_bars(expr: &Expr, promoted: &[String]) -> Expr {
   }
   let rec = |e: &Expr| strip_body_setter_bars(e, promoted);
   match expr {
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(rec).collect::<Vec<_>>().into(),
-    },
+    Expr::FunctionCall { name, args } => {
+      call(name.as_str(), args.iter().map(rec).collect())
+    }
     Expr::List(items) => {
       Expr::List(items.iter().map(rec).collect::<Vec<_>>().into())
     }
@@ -28540,14 +28608,13 @@ fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
     return Expr::Identifier(v.clone());
   }
   match expr {
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
         .iter()
         .map(|a| strip_body_popup_menus(a, promoted))
-        .collect::<Vec<_>>()
-        .into(),
-    },
+        .collect(),
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -28655,10 +28722,7 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
       for a in new_args.iter_mut().skip(1) {
         *a = extract_body_togglerbars(a, displays);
       }
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      }
+      call(name.as_str(), new_args)
     }
     // A `Button` under a scoping construct (`Module`/`With`/`Block`/
     // `DynamicModule`) may use that construct's local variables, and one
@@ -28681,14 +28745,13 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
     {
       expr.clone()
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
         .iter()
         .map(|a| extract_body_togglerbars(a, displays))
-        .collect::<Vec<_>>()
-        .into(),
-    },
+        .collect(),
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -28914,10 +28977,16 @@ fn named_control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   // like a control's variable head (a plain symbol, or a list starting
   // with one): in the single-spec shape it is instead a bound, a bare
   // type marker, or an option rule, never another variable head.
+  // A built-in symbol (`False`, `Automatic`) is a value, never a control's
+  // variable: `"Button 1" -> {b1, {False, True}}` is one spec.
+  fn is_variable(e: &Expr) -> bool {
+    matches!(e, Expr::Identifier(name)
+      if !crate::evaluator::functions::is_builtin_symbol(name))
+  }
   fn is_control_var_head(e: &Expr) -> bool {
     match e {
-      Expr::Identifier(_) => true,
-      Expr::List(items) => matches!(items.first(), Some(Expr::Identifier(_))),
+      Expr::Identifier(_) => is_variable(e),
+      Expr::List(items) => items.first().is_some_and(is_variable),
       _ => false,
     }
   }
@@ -28979,7 +29048,7 @@ fn dynamic_control_spec(e: &Expr) -> Option<Expr> {
     "Checkbox" if args.get(1).is_none_or(rule_opt) => {
       vec![
         var,
-        Expr::List(vec![id_expr("True"), id_expr("False")].into()),
+        Expr::List(vec![bool_expr(true), bool_expr(false)].into()),
         control_type("Checkbox"),
       ]
     }
@@ -29583,10 +29652,7 @@ fn switch_as_pane_selector(spec: &Expr) -> Option<Expr> {
   }
   let panes = cases[1..]
     .chunks(2)
-    .map(|pair| Expr::Rule {
-      pattern: Box::new(pair[0].clone()),
-      replacement: Box::new(pair[1].clone()),
-    })
+    .map(|pair| rule_expr(pair[0].clone(), pair[1].clone()))
     .collect::<Vec<_>>();
   Some(call(
     "PaneSelector",
@@ -29638,7 +29704,7 @@ fn visibility_switched_control(spec: &Expr) -> Option<(Expr, Expr)> {
   {
     return None;
   }
-  let null = id_expr("Null");
+  let null = null_expr();
   let (then_branch, else_branch) = if shown_when_true == "Identity" {
     (target.clone(), null)
   } else {
@@ -29842,10 +29908,9 @@ fn splice_sequence_applies(expr: &Expr) -> Expr {
     {
       expr.clone()
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: splice_items(args).into(),
-    },
+    Expr::FunctionCall { name, args } => {
+      call(name.as_str(), splice_items(args))
+    }
     Expr::Rule {
       pattern,
       replacement,
@@ -30222,10 +30287,9 @@ fn manipulate_bound_expr_deep(expr: &Expr) -> (Expr, bool) {
         *found = true;
         strip(&args[0], found)
       }
-      Expr::FunctionCall { name, args } => Expr::FunctionCall {
-        name: name.clone(),
-        args: list(args, found).into(),
-      },
+      Expr::FunctionCall { name, args } => {
+        call(name.as_str(), list(args, found))
+      }
       Expr::List(items) => Expr::List(list(items, found).into()),
       Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
         op: *op,
@@ -31329,10 +31393,10 @@ fn linearize_fraction_boxes(e: &Expr) -> Expr {
         Expr::List(vec![side(&args[0]), str_expr("/"), side(&args[1])].into()),
       )
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(linearize_fraction_boxes).collect(),
-    },
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args.iter().map(linearize_fraction_boxes).collect(),
+    ),
     Expr::List(items) => {
       Expr::List(items.iter().map(linearize_fraction_boxes).collect())
     }
@@ -32549,10 +32613,9 @@ fn strip_ncache(expr: &Expr) -> Expr {
     {
       strip_ncache(&args[0])
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(strip_ncache).collect::<Vec<_>>().into(),
-    },
+    Expr::FunctionCall { name, args } => {
+      call(name.as_str(), args.iter().map(strip_ncache).collect())
+    }
     Expr::List(items) => {
       Expr::List(items.iter().map(strip_ncache).collect::<Vec<_>>().into())
     }
@@ -34307,10 +34370,18 @@ pub fn manipulate_block_code(
   if bindings.is_empty() {
     return body_code.to_string();
   }
-  // A frozen graphic has no source form; it stays a global.
+  // A frozen graphic has no source form; it stays a global. A variable
+  // that several controls share is bound once (its first control), and a
+  // built-in symbol (`False` from `"Button 1" -> {b1, {False, True}}`) is
+  // never a variable to bind.
+  let mut seen = std::collections::HashSet::new();
   let binding_parts: Vec<String> = bindings
     .iter()
     .filter(|(_, value)| !crate::is_frozen_graphic(value))
+    .filter(|(name, _)| {
+      !crate::evaluator::functions::is_builtin_symbol(name)
+        && seen.insert(name.clone())
+    })
     .map(|(name, value)| format!("{name} = {value}"))
     .collect();
   if binding_parts.is_empty() {
@@ -35765,13 +35836,13 @@ fn resolve_display_dynamics(
           .collect(),
       )
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
         .iter()
         .map(|a| resolve_display_dynamics(a, bindings))
         .collect(),
-    },
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -36528,10 +36599,7 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
           other => other.clone(),
         }
       }
-      released = Expr::FunctionCall {
-        name: name.clone(),
-        args: args.iter().map(release).collect(),
-      };
+      released = call(name.as_str(), args.iter().map(release).collect());
       &released
     }
     other => other,
@@ -37732,6 +37800,30 @@ mod manipulate_wrapper_tests {
 #[cfg(test)]
 mod manipulate_named_control_group_tests {
   use super::*;
+
+  /// `"Button 1" -> {b1, {False, True}}` (a game-controller button mapping)
+  /// is one control spec: `False` is a value, not a second control's
+  /// variable (IdealizedController bound `False = True`).
+  #[test]
+  fn labelled_spec_with_builtin_values_is_one_control() {
+    let s = spec(r#"Manipulate[b1, "Button 1" -> {b1, {False, True}}]"#);
+    assert_eq!(names(&s), vec!["b1"]);
+  }
+
+  /// A variable several controls share is bound once, and a built-in
+  /// symbol is never bound: `Block` rejects duplicate local variables.
+  #[test]
+  fn block_binds_each_variable_once() {
+    let bindings = vec![
+      ("scheme".to_string(), "12".to_string()),
+      ("scheme".to_string(), "\"Crayola\"".to_string()),
+      ("False".to_string(), "True".to_string()),
+    ];
+    assert_eq!(
+      manipulate_block_code("scheme", &bindings),
+      "Block[{scheme = 12}, scheme]"
+    );
+  }
 
   fn spec(code: &str) -> ManipulateSpec {
     let expr = crate::parse_to_expr(code).expect("parse");

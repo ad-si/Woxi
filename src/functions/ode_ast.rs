@@ -8,6 +8,7 @@ use crate::functions::calculus_ast::differentiate_expr;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
 use crate::syntax::{expr_children, map_children};
 
+mod complex_ode;
 mod complex_pde;
 mod curve;
 mod dde;
@@ -849,7 +850,13 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A system of algebraic equations plus unit-speed conditions on the
   // derivatives is an implicit curve rather than an initial value problem.
   let solved = match ndsolve_system(&positional, event.as_ref()) {
-    Ok(None) if event.is_none() => curve::ndsolve_implicit_curve(&positional),
+    Ok(None) if event.is_none() => {
+      match curve::ndsolve_implicit_curve(&positional) {
+        // A complex-valued system is solved as the real system of its parts.
+        Ok(None) => complex_ode::ndsolve_complex_split(&positional),
+        other => other,
+      }
+    }
     other => other,
   };
   match solved {

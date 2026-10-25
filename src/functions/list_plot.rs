@@ -197,6 +197,109 @@ pub const PLOT_DATA_DISPLAY_WRAPPER_HEADS: [&str; 8] = [
   "Button",
 ];
 
+/// `ListPlot[Highlighted[data, Placed["XSlice", {{i}, …}]], opts]`: the
+/// data is plotted as is, and each highlighted point gets what
+/// wolframscript draws for an x slice — a gray vertical line through it, the
+/// point enlarged on a white halo and its value beside it — as `Epilog`.
+/// `None` when the data is not `Highlighted`.
+pub fn expand_highlighted_data(args: &[Expr]) -> Option<Vec<Expr>> {
+  let Expr::FunctionCall { name, args: hargs } = &args[0] else {
+    return None;
+  };
+  if name != "Highlighted" || hargs.is_empty() {
+    return None;
+  }
+  let data = crate::evaluator::evaluate_expr_to_expr(&hargs[0]).ok()?;
+  let mut extras: Vec<Expr> = Vec::new();
+  if let Some(Expr::FunctionCall {
+    name: placed,
+    args: pargs,
+  }) = hargs.get(1)
+    && placed == "Placed"
+    && pargs.len() == 2
+    && matches!(&pargs[0], Expr::String(k) if k == "XSlice")
+    && let Expr::List(positions) = &pargs[1]
+    && let Expr::List(items) = &data
+  {
+    for pos in positions {
+      let Expr::List(index) = pos else { continue };
+      let Some(Expr::Integer(i)) = index.first() else {
+        continue;
+      };
+      let Some(item) = usize::try_from(*i)
+        .ok()
+        .and_then(|i| i.checked_sub(1))
+        .and_then(|i| items.get(i))
+      else {
+        continue;
+      };
+      let (x, y) = match item {
+        Expr::List(xy) if xy.len() == 2 => (xy[0].clone(), xy[1].clone()),
+        y => (Expr::Integer(*i), y.clone()),
+      };
+      let point = Expr::List(vec![x, y.clone()].into());
+      extras.push(Expr::List(
+        vec![
+          call("GrayLevel", vec![Expr::Real(0.7)]),
+          call("AbsoluteThickness", vec![Expr::Integer(1)]),
+          call(
+            "InfiniteLine",
+            vec![
+              point.clone(),
+              Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
+            ],
+          ),
+          call("PointSize", vec![Expr::Real(0.028875)]),
+          call("GrayLevel", vec![Expr::Integer(1)]),
+          call("Point", vec![point.clone()]),
+          call(
+            "RGBColor",
+            vec![Expr::Real(0.24), Expr::Real(0.6), Expr::Real(0.8)],
+          ),
+          call("PointSize", vec![Expr::Real(0.01925)]),
+          call("Point", vec![point.clone()]),
+          call("GrayLevel", vec![Expr::Integer(0)]),
+          call(
+            "Text",
+            vec![
+              y,
+              point,
+              Expr::List(vec![Expr::Integer(-2), Expr::Integer(-2)].into()),
+            ],
+          ),
+        ]
+        .into(),
+      ));
+    }
+  }
+  let mut rewritten = vec![data];
+  let mut epilog_done = false;
+  for opt in &args[1..] {
+    match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Epilog") => {
+        let mut combined = vec![replacement.as_ref().clone()];
+        combined.extend(extras.iter().cloned());
+        rewritten.push(crate::helpers::rule_expr(
+          Expr::Identifier("Epilog".into()),
+          Expr::List(combined.into()),
+        ));
+        epilog_done = true;
+      }
+      other => rewritten.push(other.clone()),
+    }
+  }
+  if !epilog_done && !extras.is_empty() {
+    rewritten.push(crate::helpers::rule_expr(
+      Expr::Identifier("Epilog".into()),
+      Expr::List(extras.into()),
+    ));
+  }
+  Some(rewritten)
+}
+
 /// Peel a chain of [`PLOT_DATA_DISPLAY_WRAPPER_HEADS`] wrappers to expose
 /// the data expression underneath, e.g. `Tooltip[{1, 2, 3}, "cost"]` ->
 /// `{1, 2, 3}`. Used both to validate a data argument (is it a wrapper

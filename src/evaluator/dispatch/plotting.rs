@@ -15,6 +15,48 @@ fn quiet_plot(
   result
 }
 
+/// A plot range limit that is not a number (`Plot[f, {x, a, 1}]` with `a`
+/// unset) is `head::plln` with the call left unevaluated, as in
+/// wolframscript, not an aborted evaluation.
+pub fn non_numeric_limit_is_plln(
+  name: &str,
+  args: &[Expr],
+  result: Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  let Err(InterpreterError::EvaluationError(msg)) = &result else {
+    return result;
+  };
+  let limit_error = msg.contains("cannot evaluate")
+    && ["xmin", "xmax", "iterator min", "iterator max"]
+      .iter()
+      .any(|w| msg.contains(w));
+  if !limit_error {
+    return result;
+  }
+  // The first iterator `{var, min, max}` with a limit that is no number.
+  for spec in args.iter().skip(1) {
+    let Expr::List(items) = spec else { continue };
+    if items.len() < 3 {
+      continue;
+    }
+    for limit in &items[1..3] {
+      let value = crate::evaluator::evaluate_expr_to_expr(limit)
+        .unwrap_or_else(|_| limit.clone());
+      if crate::functions::math_ast::try_eval_to_f64(&value).is_none() {
+        let spec_shown = crate::evaluator::evaluate_expr_to_expr(spec)
+          .unwrap_or_else(|_| spec.clone());
+        crate::emit_message(&format!(
+          "{name}::plln: Limiting value {} in {} is not a machine-sized real number.",
+          expr_to_string(&value),
+          expr_to_string(&spec_shown)
+        ));
+        return Ok(unevaluated(name, args));
+      }
+    }
+  }
+  result
+}
+
 /// A function plot whose function never evaluates to a number draws
 /// nothing: wolframscript returns the empty picture (`Graphics3D[{{}, {}}]`
 /// for `ParametricPlot3D[pos[t], {t, 0, 5}]` with `pos` undefined), not an
@@ -313,9 +355,34 @@ pub fn dispatch_plotting(
     "SphericalPlot3D" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::plot3d::spherical_plot3d_ast(args)
     })),
-    "ListPlot" if !args.is_empty() => Some(quiet_plot(|| {
-      crate::functions::list_plot::list_plot_ast(args)
-    })),
+    "ListPlot" | "ListLinePlot"
+      if !args.is_empty()
+        && let Some(rewritten) =
+          crate::functions::list_plot::expand_highlighted_data(args) =>
+    {
+      Some(crate::evaluator::evaluate_function_call_ast(
+        name, &rewritten,
+      ))
+    }
+    "ListPlot" if !args.is_empty() => {
+      // Data that is no list (once every data form ListPlot accepts has been
+      // tried) leaves the call unevaluated with ListPlot::lpn, as in
+      // wolframscript.
+      match quiet_plot(|| crate::functions::list_plot::list_plot_ast(args)) {
+        Err(InterpreterError::EvaluationError(msg))
+          if msg == "ListPlot: first argument must be a list" =>
+        {
+          let shown = crate::evaluator::evaluate_expr_to_expr(&args[0])
+            .unwrap_or_else(|_| args[0].clone());
+          crate::emit_message(&format!(
+            "ListPlot::lpn: {} is not a list of numbers or pairs of numbers.",
+            expr_to_string(&shown)
+          ));
+          Some(Ok(unevaluated("ListPlot", args)))
+        }
+        other => Some(other),
+      }
+    }
     "DiscretePlot" if args.len() >= 2 => Some(quiet_plot(|| {
       crate::functions::list_plot::discrete_plot_ast(args)
     })),

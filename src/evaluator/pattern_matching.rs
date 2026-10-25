@@ -807,6 +807,47 @@ fn try_ast_pattern_replace_impl(
         Ok(None)
       }
     }
+    // A symbolic comparison stays unevaluated: it is the call
+    // `Equal[a, b]` / `Inequality[a, Less, b, …]`, and `/.` descends into it
+    // like into any call, its head included
+    // (`{x[s] == 1} /. f_[s] :> f`, `(a == b) /. x_Symbol :> g[x]`).
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let (head, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      let call_form = Expr::FunctionCall {
+        name: head,
+        args: args.into(),
+      };
+      try_ast_pattern_replace_impl(&call_form, pattern, replacement, condition)
+    }
+    Expr::Part { expr: part, index } => {
+      let mut any = false;
+      let ne = recurse(part, &mut any)?;
+      let ni = recurse(index, &mut any)?;
+      if any {
+        Ok(Some(Expr::Part {
+          expr: Box::new(ne),
+          index: Box::new(ni),
+        }))
+      } else {
+        Ok(None)
+      }
+    }
+    Expr::CompoundExpr(stmts) => {
+      let mut any = false;
+      let mut new_stmts = Vec::with_capacity(stmts.len());
+      for st in stmts {
+        new_stmts.push(recurse(st, &mut any)?);
+      }
+      if any {
+        Ok(Some(Expr::CompoundExpr(new_stmts)))
+      } else {
+        Ok(None)
+      }
+    }
     _ => Ok(None),
   }
 }
@@ -2012,6 +2053,49 @@ fn constrained_first_order(pat_args: &[Expr]) -> Vec<usize> {
 /// Handles cases like `List -> Sequence` where `Expr::List` has head "List"
 /// but doesn't contain the literal string "List" in its printed form `{...}`.
 /// Returns `Some(new_expr)` if any replacement was made, `None` otherwise.
+/// Whether the symbol `sym` might occur in `expr`, as a symbol or as the head
+/// of a call. Shapes that hide names of their own (patterns, parameter
+/// lists, unparsed text, rendered output) answer yes. Operator nodes are
+/// only looked into, so for a built-in operator's name the answer means
+/// nothing.
+fn may_mention_symbol(expr: &Expr, sym: &str) -> bool {
+  match expr {
+    Expr::Identifier(name) => name == sym,
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _)
+    | Expr::String(_)
+    | Expr::Slot(_)
+    | Expr::SlotSequence(_)
+    | Expr::Constant(_) => false,
+    Expr::FunctionCall { name, args } => {
+      name == sym || args.iter().any(|a| may_mention_symbol(a, sym))
+    }
+    Expr::List(_)
+    | Expr::BinaryOp { .. }
+    | Expr::UnaryOp { .. }
+    | Expr::Comparison { .. }
+    | Expr::CurriedCall { .. }
+    | Expr::Rule { .. }
+    | Expr::RuleDelayed { .. }
+    | Expr::CompoundExpr(_)
+    | Expr::Association(_)
+    | Expr::ReplaceAll { .. }
+    | Expr::ReplaceRepeated { .. }
+    | Expr::Map { .. }
+    | Expr::Apply { .. }
+    | Expr::MapApply { .. }
+    | Expr::PrefixApply { .. }
+    | Expr::Postfix { .. }
+    | Expr::Part { .. }
+    | Expr::Function { .. } => crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(|c| may_mention_symbol(c, sym)),
+    _ => true,
+  }
+}
+
 fn try_symbol_replace_all(
   expr: &Expr,
   pattern_sym: &str,
@@ -3116,10 +3200,19 @@ fn apply_replace_all_ast_impl(
   } = rules
   {
     let stripped = strip_hold_pattern(pattern);
-    if let Expr::Identifier(pat_sym) = &stripped
-      && let Some(result) = try_symbol_replace_all(expr, pat_sym, replacement)
-    {
-      return Ok(result);
+    if let Expr::Identifier(pat_sym) = &stripped {
+      if let Some(result) = try_symbol_replace_all(expr, pat_sym, replacement) {
+        return Ok(result);
+      }
+      // A user symbol that occurs nowhere has nothing to replace. Saying so
+      // here spares the textual fallback below, which prints and reparses
+      // the whole expression (half a second for `r /. q -> 1` on a
+      // 455-term sum) only to rebuild it unchanged.
+      if !crate::evaluator::functions::is_builtin_symbol(pat_sym)
+        && !may_mention_symbol(expr, pat_sym)
+      {
+        return Ok(expr.clone());
+      }
     }
     // A rule whose left side is a literal expression rather than a pattern
     // (`r[t] -> h[t]/2`, the substitution a related-rates problem writes)
@@ -6364,20 +6457,23 @@ fn apply_replace_all_multi_ast_impl(
         .collect();
       Ok(Expr::Association(new_pairs?))
     }
-    // Symbolic comparisons (`y == x`, `a < b < c`) stay unevaluated, so
-    // `y == x /. {x -> 2, y -> 3}` must descend into every operand.
+    // Symbolic comparisons (`y == x`, `a < b < c`) stay unevaluated: each
+    // is its call form (`Equal[y, x]`, `Inequality[a, Less, b, Less, c]`),
+    // which `/.` descends into, head included.
     Expr::Comparison {
       operands,
       operators,
     } => {
-      let new_operands: Result<Vec<Expr>, _> = operands
-        .iter()
-        .map(|o| apply_replace_all_multi_ast_impl(o, rules, held))
-        .collect();
-      Ok(Expr::Comparison {
-        operands: new_operands?,
-        operators: operators.clone(),
-      })
+      let (head, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      apply_replace_all_multi_ast_impl(
+        &Expr::FunctionCall {
+          name: head,
+          args: args.into(),
+        },
+        rules,
+        held,
+      )
     }
     // A symbolic part extraction (`m[[1]]` with `m` undefined) keeps its
     // expression and index as ordinary subexpressions.

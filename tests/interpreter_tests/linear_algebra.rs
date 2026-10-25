@@ -4460,11 +4460,19 @@ mod linear_model_fit {
   // existed.
   #[test]
   fn parameter_table_entries_absent_with_zero_degrees_of_freedom() {
-    let err = interpret(
-      "lm = LinearModelFit[{{0, 1}, {1, 0}}, x, x]; lm[\"ParameterTableEntries\"]",
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "lm = LinearModelFit[{{0, 1}, {1, 0}}, x, x]; lm[\"ParameterTableEntries\"] =!= lm",
     )
-    .unwrap_err();
-    assert!(err.to_string().contains("unknown property"), "got: {err}");
+    .unwrap();
+    assert_eq!(r.result, "True");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.starts_with("FittedModel::elmntav")),
+      "{:?}",
+      r.warnings
+    );
   }
 
   #[test]
@@ -10893,6 +10901,42 @@ mod complex_machine_eigenvalues {
       )
       .unwrap(),
       "{Complex, True}"
+    );
+  }
+}
+
+mod fitted_model_diagnostics {
+  use super::*;
+
+  // Diagnostics derived from the design matrix and the residuals.
+  #[test]
+  fn variance_leverages_and_cook_distances() {
+    assert_eq!(
+      interpret(
+        "lm = LinearModelFit[{1, 2, 4, 3}, x, x]; \
+         Round[10^6 {lm[\"EstimatedVariance\"], lm[\"HatDiagonal\"], lm[\"CookDistances\"]}]"
+      )
+      .unwrap(),
+      "{900000, {700000, 300000, 300000, 700000}, {388889, 3401, 411565, 2117284}}"
+    );
+  }
+
+  // A property the model does not have is FittedModel::elmntav, not an
+  // abort.
+  #[test]
+  fn unknown_property_is_elmntav() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "lm = LinearModelFit[{1, 2, 4, 3}, x, x]; Head[lm[\"Foo\"]] === lm",
+    )
+    .unwrap();
+    assert_eq!(r.result, "True");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "FittedModel::elmntav: \"Foo\" is not an available property."
+      )),
+      "{:?}",
+      r.warnings
     );
   }
 }
