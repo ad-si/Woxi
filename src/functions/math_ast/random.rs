@@ -193,43 +193,35 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // `{min, max}` or `max`; anything not real valued is reported (unifr)
+  // and leaves the call unevaluated, as in wolframscript.
+  let range = |spec: &Expr| -> Option<(f64, f64)> {
+    let bounds = match spec {
+      Expr::List(items) if items.len() == 2 => {
+        try_eval_to_f64(&items[0]).zip(try_eval_to_f64(&items[1]))
+      }
+      other => try_eval_to_f64(other).map(|max| (0.0, max)),
+    };
+    if bounds.is_none() {
+      crate::emit_message(&format!(
+        "RandomReal::unifr: The endpoints specified by {} for the endpoints \
+         of the uniform distribution range are not real valued.",
+        crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+      ));
+    }
+    bounds
+  };
+
   match args.len() {
     0 => Ok(Expr::Real(crate::with_rng(|rng| rng.gen_range(0.0..1.0)))),
-    1 => match &args[0] {
-      Expr::Integer(max) => {
-        let max = *max as f64;
-        Ok(Expr::Real(crate::with_rng(|rng| {
-          rng.gen_range(0.0..1.0) * max
-        })))
-      }
-      Expr::Real(max) => {
-        let max = *max;
-        Ok(Expr::Real(crate::with_rng(|rng| {
-          rng.gen_range(0.0..1.0) * max
-        })))
-      }
-      Expr::List(items) if items.len() == 2 => {
-        let min = try_eval_to_f64(&items[0]).ok_or_else(|| {
-          InterpreterError::EvaluationError("RandomReal: invalid min".into())
-        })?;
-        let max = try_eval_to_f64(&items[1]).ok_or_else(|| {
-          InterpreterError::EvaluationError("RandomReal: invalid max".into())
-        })?;
-        Ok(Expr::Real(crate::with_rng(|rng| {
-          min + rng.gen_range(0.0..1.0) * (max - min)
-        })))
-      }
-      // Any numeric bound, not just a literal: `RandomReal[2 Pi]` draws
-      // from 0 to 2π.
-      other => match try_eval_to_f64(other) {
-        Some(max) => Ok(Expr::Real(crate::with_rng(|rng| {
-          rng.gen_range(0.0..1.0) * max
-        }))),
-        None => Err(InterpreterError::EvaluationError(
-          "RandomReal: invalid argument".into(),
-        )),
-      },
-    },
+    1 => {
+      let Some((min, max)) = range(&args[0]) else {
+        return Ok(unevaluated("RandomReal", args));
+      };
+      Ok(Expr::Real(crate::with_rng(|rng| {
+        min + rng.gen_range(0.0..1.0) * (max - min)
+      })))
+    }
     2 => {
       // RandomReal[range, n] or RandomReal[range, {n}] or RandomReal[range, {n, m, ...}]
       // Wolframscript accepts non-negative dimensions; `n == 0` yields an
@@ -249,26 +241,8 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => return Ok(random_array_dims_error("RandomReal", args)),
       };
 
-      let (min, max) = match &args[0] {
-        Expr::Integer(m) => (0.0, *m as f64),
-        Expr::Real(m) => (0.0, *m),
-        Expr::List(items) if items.len() == 2 => {
-          let lo = try_eval_to_f64(&items[0]).ok_or_else(|| {
-            InterpreterError::EvaluationError("RandomReal: invalid min".into())
-          })?;
-          let hi = try_eval_to_f64(&items[1]).ok_or_else(|| {
-            InterpreterError::EvaluationError("RandomReal: invalid max".into())
-          })?;
-          (lo, hi)
-        }
-        other => match try_eval_to_f64(other) {
-          Some(max) => (0.0, max),
-          None => {
-            return Err(InterpreterError::EvaluationError(
-              "RandomReal: invalid range".into(),
-            ));
-          }
-        },
+      let Some((min, max)) = range(&args[0]) else {
+        return Ok(unevaluated("RandomReal", args));
       };
 
       fn make_random_array(dims: &[usize], min: f64, max: f64) -> Expr {
