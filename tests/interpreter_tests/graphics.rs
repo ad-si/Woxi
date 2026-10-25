@@ -41155,3 +41155,21 @@ mod highlighted_list_plot {
     );
   }
 }
+
+mod list_plot_far_points {
+  use super::*;
+
+  // A point far outside a fixed PlotRange is invisible; mapping it to a
+  // pixel used to overflow and panic (ADomainDecompositionMethod...).
+  #[test]
+  fn far_outside_point_is_skipped() {
+    assert_eq!(
+      interpret(
+        "Head[ListPlot[{{0, 1.*^300}, {1, 0.5}}, PlotRange -> {{-2, 2}, {-0.05, 1.05}}, \
+         PlotMarkers -> Style[\"x\", 14]]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+}
