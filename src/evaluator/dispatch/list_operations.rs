@@ -2950,6 +2950,7 @@ pub fn dispatch_list_operations(
     | "Combinatorica`ConnectedComponents"
     | "Combinatorica`BreadthFirstTraversal"
     | "Combinatorica`ShortestPath"
+    | "Combinatorica`GraphDistanceMatrix"
     | "Combinatorica`RandomGraph"
     | "Combinatorica`ShowGraph"
     | "Combinatorica`ShowLabeledGraph"

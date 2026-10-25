@@ -1070,8 +1070,25 @@ fn evaluate_function_call_ast_inner(
   let computational_geometry_active = crate::current_context_path()
     .iter()
     .any(|c| c == "ComputationalGeometry`");
+  let graph_utilities_active = crate::current_context_path()
+    .iter()
+    .any(|c| c == "GraphUtilities`");
+  let combinatorica_graph_first = matches!(
+    args.first(),
+    Some(Expr::FunctionCall { name: head, .. }) if head == "Combinatorica`Graph"
+  );
   let original_name = name;
   let name = match name {
+    // The legacy graph packages read a Combinatorica graph too.
+    "GraphDistanceMatrix" if combinatorica_graph_first && args.len() == 1 => {
+      "Combinatorica`GraphDistanceMatrix"
+    }
+    "GraphPath" | "GraphUtilities`GraphPath"
+      if combinatorica_graph_first && args.len() == 3 =>
+    {
+      "Combinatorica`ShortestPath"
+    }
+    "GraphPath" if graph_utilities_active => "GraphUtilities`GraphPath",
     "ConvexHull" if computational_geometry_active => {
       "ComputationalGeometry`ConvexHull"
     }

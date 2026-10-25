@@ -273,6 +273,26 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
       let start = vertex_arg(&g, &args[1])?;
       Some(int_list(g.bfs(start).0))
     }
+    // Edge-count distances between all vertex pairs, Infinity where no
+    // path joins them (GraphUtilities` reading a Combinatorica graph).
+    ("Combinatorica`GraphDistanceMatrix", 1) => Some(Expr::List(
+      (0..g.n)
+        .map(|start| {
+          let (_, level, _) = g.bfs(start);
+          Expr::List(
+            level
+              .into_iter()
+              .map(|d| match d {
+                Some(d) => Expr::Integer(d as i128),
+                None => Expr::Identifier("Infinity".to_string()),
+              })
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    )),
     ("Combinatorica`ShortestPath", 3) => {
       let start = vertex_arg(&g, &args[1])?;
       let end = vertex_arg(&g, &args[2])?;

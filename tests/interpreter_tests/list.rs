@@ -24480,6 +24480,21 @@ mod find_clusters_vectors {
 mod combinatorica_random_graph {
   use super::*;
 
+  // GraphUtilities` reads a Combinatorica graph: distances (Infinity
+  // between components) and a shortest path (CoveringMaze).
+  #[test]
+  fn graph_utilities_on_a_combinatorica_graph() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; Needs[\"GraphUtilities`\"]; \
+         g = FromUnorderedPairs[{{1, 2}, {2, 3}, {4, 5}}]; \
+         {GraphDistanceMatrix[g][[1]], GraphPath[g, 1, 3]}"
+      )
+      .unwrap(),
+      "{{0, 1, 2, Infinity, Infinity}, {1, 2, 3}}"
+    );
+  }
+
   #[test]
   fn random_graph_and_its_matrices() {
     assert_eq!(
