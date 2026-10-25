@@ -566,4 +566,15 @@ mod column_visual_mode {
     // wolframscript does.
     assert_eq!(interpret("Deploy[1 + 1]").unwrap(), "Deploy[2]");
   }
+
+  // ExpressionCell[expr, style] is a cell showing `expr`: a display shows
+  // the expression, with no "not yet implemented" warning (six
+  // demonstrations used it).
+  #[test]
+  fn expression_cell_is_a_known_wrapper() {
+    clear_state();
+    let r = interpret_with_stdout("ExpressionCell[1 + 1, \"Output\"]").unwrap();
+    assert_eq!(r.result, "2");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
 }

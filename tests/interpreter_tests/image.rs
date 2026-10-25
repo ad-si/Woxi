@@ -8876,6 +8876,37 @@ mod demonstration_image_filters {
   }
 
   #[test]
+  fn image_effect_motion_blur_smears_along_the_angle() {
+    clear_state();
+    let img = "Image[{{0., 0., 0., 0., 0.}, {0., 0., 1., 0., 0.}, \
+               {0., 0., 0., 0., 0.}}]";
+    // Horizontal: the dot spreads over its row only.
+    assert_eq!(
+      interpret(&format!(
+        "Round[3 ImageData[ImageEffect[{img}, {{\"MotionBlur\", 1, 0}}]]]"
+      ))
+      .unwrap(),
+      "{{0, 0, 0, 0, 0}, {0, 1, 1, 1, 0}, {0, 0, 0, 0, 0}}"
+    );
+    // At 90 degrees it spreads over its column instead.
+    assert_eq!(
+      interpret(&format!(
+        "Round[3 ImageData[ImageEffect[{img}, {{\"MotionBlur\", 1, 90}}]]]"
+      ))
+      .unwrap(),
+      "{{0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "ImageData[ImageEffect[Image[Table[0.25, {{4}}, {{6}}]], \
+         {{\"MotionBlur\", 3, 30}}]] == Table[0.25, {{4}}, {{6}}]"
+      ))
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn image_effect_charcoal_draws_edges_on_white() {
     clear_state();
     // A flat image has no edges: pure white.
@@ -9078,6 +9109,30 @@ mod image_arithmetic_and_identity {
       )
       .unwrap(),
       "{{2, 2}, 3, {0.5, 1., 0.20000000298023224}}"
+    );
+  }
+
+  // Saved notebooks store channel-first data inside a NumericArray; the
+  // option used to be ignored there, reading 3 rows of 2-channel pixels.
+  #[test]
+  fn channel_first_numeric_array() {
+    assert_eq!(
+      interpret(
+        "i = Image[NumericArray[{{{1, 0.5}, {0, 0.25}}, {{1, 1}, {0, 0}}, \
+         {{0.2, 0.2}, {0.3, 0.3}}}, \"Real32\"], \"Real32\", \
+         ColorSpace -> \"RGB\", Interleaving -> False]; \
+         {ImageDimensions[i], ImageChannels[i], ImageData[i][[1, 2]]}"
+      )
+      .unwrap(),
+      "{{2, 2}, 3, {0.5, 1., 0.20000000298023224}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[Image[NumericArray[{{{1, 0}}, {{2, 0}}, {{3, 0}}}, \
+         \"UnsignedInteger8\"], Interleaving -> False], \"Byte\"]"
+      )
+      .unwrap(),
+      "{{{1, 2, 3}, {0, 0, 0}}}"
     );
   }
 

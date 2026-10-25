@@ -4902,6 +4902,39 @@ mod symbolic_equal {
 mod solve {
   use super::*;
 
+  // A polynomial with arbitrary-precision coefficients is solved
+  // numerically rather than factored over its exact rational image.
+  #[test]
+  fn arbitrary_precision_polynomial_of_high_degree() {
+    assert_eq!(
+      interpret(
+        "sol = Solve[N[BernoulliB[20, z], 10] == 0, z]; \
+         {Length[sol], Round[10^6 Max[Abs[BernoulliB[20, z] /. sol]]]}"
+      )
+      .unwrap(),
+      "{20, 0}"
+    );
+  }
+
+  // A mass balance: seven unknowns, all but one equation linear, one
+  // bilinear term. The linear unknowns are substituted away first, so it
+  // solves at once ("Evaporative Crystallization with Recycle").
+  #[test]
+  fn mostly_linear_system_with_a_bilinear_term() {
+    assert_eq!(
+      interpret(
+        "Solve[{400 == m2 + m4 + m5, 60 == m4 + 33/100 m5, \
+         340 == m2 + 67/100 m5, 60 + 33/100 mr == m1 xk1, \
+         m2 == m1 (1 - xk1) - m3 (1 - 35/100), m1 == m2 + m3, \
+         m3 35/100 == m4 + m5 33/100 + mr 33/100, m3 == m4 + m5 + mr, \
+         m5 33/100 == 3}, {m1, m2, m3, m4, m5, mr, xk1}]"
+      )
+      .unwrap(),
+      "{{m1 -> 49355/22, m2 -> 3673/11, m3 -> 3819/2, m4 -> 57, \
+       m5 -> 100/11, mr -> 40555/22, xk1 -> 294063/987100}}"
+    );
+  }
+
   // An exponential with a positive constant base never vanishes, so it
   // drops out of `product == 0`.
   #[test]
@@ -13853,6 +13886,21 @@ mod expand_fraction_power {
   }
 }
 
+mod factor_terms_big_content {
+  use super::*;
+
+  // Dividing out a content whose product with a coefficient passes i128
+  // goes through big integers instead of overflowing.
+  #[test]
+  fn content_beyond_i128() {
+    assert_eq!(
+      interpret("FactorTerms[10^30/7^20 x + 10^28/11^18 y]").unwrap(),
+      "(10000000000000000000000000000*(555991731349223148100*x + \
+       79792266297612001*y))/443638402870875640328493255015603481"
+    );
+  }
+}
+
 mod root {
   use super::*;
 
@@ -21053,5 +21101,97 @@ mod reduce_vanishing_coefficient_branch {
         "True"
       );
     }
+  }
+}
+
+// A variable occurring once, inside a power of a linear expression, is
+// isolated instead of expanding a polynomial with symbolic coefficients
+// (which left these unevaluated).
+mod solve_isolated_power {
+  use super::*;
+
+  #[test]
+  fn shifted_cube() {
+    assert_eq!(
+      interpret("Solve[(1 + y)^3 == c, y]").unwrap(),
+      "{{y -> -1 + c^(1/3)}, {y -> -1 - (-1)^(1/3)*c^(1/3)}, \
+       {y -> -1 + (-1)^(2/3)*c^(1/3)}}"
+    );
+  }
+
+  #[test]
+  fn scaled_and_shifted_quartic() {
+    assert_eq!(
+      interpret(
+        "sols = Solve[2 (y + 1/3)^4 + a == 0, y]; \
+         {Length[sols], Simplify[(2 (y + 1/3)^4 + a) /. sols]}"
+      )
+      .unwrap(),
+      "{4, {0, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("Length[Solve[(-1 + (-1/2 + x)^2 + 2*(1/3 + y)^4)/3 == 0, y]]")
+        .unwrap(),
+      "4"
+    );
+  }
+}
+
+// A requested variable that no equation mentions is dropped before solving.
+// svars is reported only when a solution leaves it free: an inconsistent
+// system has none, and NSolve said nothing either way but answered {}.
+mod solve_unused_variable {
+  use super::*;
+
+  #[test]
+  fn nsolve_ignores_an_absent_variable() {
+    assert_eq!(interpret("NSolve[x == 1, {x, y}]").unwrap(), "{{x -> 1.}}");
+    let r = interpret_with_stdout(
+      "NSolve[{-0.1 == 1.*^-6 u, 0 == 1.*^-6 - 1.*^-6 u}, {t, u}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  #[test]
+  fn inconsistent_system_reports_nothing() {
+    let r = interpret_with_stdout("Solve[{x == 1, x == 2}, {x, y}]").unwrap();
+    assert_eq!(r.result, "{}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+}
+
+// Equations in exponentials of the variable.
+mod solve_exponentials {
+  use super::*;
+
+  // `a b^t == c d^t` was read as a degree-0 polynomial with constant 0, so
+  // every t was reported a solution ({{}}); the powers now combine.
+  #[test]
+  fn two_exponentials() {
+    assert_eq!(
+      interpret("Solve[a b^t == c d^t, t]").unwrap(),
+      "{{t -> Log[c/a]/Log[b/d]}}"
+    );
+    assert_eq!(
+      interpret("Solve[a b^t - c d^t == 0, t]").unwrap(),
+      "{{t -> Log[c/a]/Log[b/d]}}"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[Re[t /. First[Solve[560000*1.12^t == 865000*0.95^t, t]] \
+         /. C[1] -> 0] - 2.641158392150406] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Lambert W for a base other than E (it used to give ComplexInfinity).
+  #[test]
+  fn lambert_with_any_base() {
+    let r = interpret_with_stdout("Solve[x 2^x == 3, x]").unwrap();
+    assert_eq!(r.result, "{{x -> ProductLog[3*Log[2]]/Log[2]}}");
   }
 }

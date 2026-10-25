@@ -17529,8 +17529,9 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     // `Text` only says how to set what it holds, so look through it for a
     // nested layout or picture.
     Expr::FunctionCall { name, args }
-      if matches!(name.as_str(), "Text" | "Pane" | "Item" | "Deploy")
-        && args.len() == 1 =>
+      if (matches!(name.as_str(), "Text" | "Pane" | "Item" | "Deploy")
+        && args.len() == 1)
+        || (name == "ExpressionCell" && !args.is_empty()) =>
     {
       return grid_cell_graphic(&unwrap_display_wrappers(cell));
     }
@@ -21144,6 +21145,7 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
       | "Histogram"
       | "Histogram3D"
       | "DensityHistogram"
+      | "SmoothDensityHistogram"
       | "DateHistogram"
       | "BubbleChart"
       | "BubbleChart3D"
@@ -22337,7 +22339,8 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       // `Deploy[expr]` only makes its content non-selectable; it draws
       // exactly as the content does.
       "Deploy" => args.len() == 1,
-      "Item" | "Pane" => !args.is_empty(),
+      // `ExpressionCell[expr, style, opts]` is a cell that shows `expr`.
+      "Item" | "Pane" | "ExpressionCell" => !args.is_empty(),
       // A blank-string factor (`"\n" * cell`, a newline typed into a layout
       // by mistake) only adds invisible space; the cell draws as the
       // single other factor.
@@ -23616,7 +23619,9 @@ fn pane_content_size(expr: &Expr) -> Option<(f64, f64)> {
       }
       _ => pane_content_size(&args[0]),
     },
-    "Pane" | "Text" | "Style" | "Deploy" | "Item" if !args.is_empty() => {
+    "Pane" | "Text" | "Style" | "Deploy" | "Item" | "ExpressionCell"
+      if !args.is_empty() =>
+    {
       pane_content_size(&args[0])
     }
     _ => None,
@@ -35163,6 +35168,10 @@ fn display_expr_to_node(
           unreachable!()
         };
         display_expr_to_node(&slides[0], bindings, probes, ons)
+      }
+      // A cell around an expression shows just the expression.
+      "ExpressionCell" if !args.is_empty() => {
+        display_expr_to_node(&args[0], bindings, probes, ons)
       }
       "Panel" | "Framed" | "Deploy" | "Item" | "Pane" | "Labeled"
         if !args.is_empty() =>

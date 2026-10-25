@@ -2075,6 +2075,48 @@ mod quantile_distribution_extended {
     );
   }
 
+  // Parameters that are numeric expressions (Log[5], Sqrt[2]) are
+  // numericized; they used to leave a machine quantile unevaluated.
+  #[test]
+  fn quantile_numeric_expression_parameters() {
+    assert_eq!(
+      interpret(
+        "Round[Quantile[LogNormalDistribution[(-Log[5] + 2 Log[4000])/2, \
+         Sqrt[Log[5]]], 0.7], 0.001]"
+      )
+      .unwrap(),
+      "3479.362"
+    );
+    assert_eq!(
+      interpret(
+        "Round[Quantile[NormalDistribution[Log[2], Sqrt[2]], 0.7], 0.001]"
+      )
+      .unwrap(),
+      "1.435"
+    );
+  }
+
+  // An exact probability gives the exponential of the normal quantile.
+  #[test]
+  fn quantile_lognormal_exact() {
+    assert_eq!(
+      interpret("Quantile[LogNormalDistribution[1, 2], 1/2]").unwrap(),
+      "E"
+    );
+    assert_eq!(
+      interpret("Quantile[LogNormalDistribution[m, s], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "N[Quantile[LogNormalDistribution[1, 2], 7/10]] - \
+         Quantile[LogNormalDistribution[1, 2], 0.7] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn quantile_matches_inverse_cdf() {
     // Quantile gained the same closed forms

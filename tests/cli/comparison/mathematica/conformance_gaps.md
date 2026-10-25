@@ -2108,6 +2108,14 @@ arguments case: `BooleanFunction[7, 2][True]` and `BooleanFunction[7, 2, {a}]`
 both emit `::argr`, but WL then leaks its internal `BooleanConvert[…]` wrapper
 into the returned expression where Woxi leaves the call as it stands.
 
+### `LogicalExpand` repeated literals (unverified)
+
+`LogicalExpand` drops a conjunction holding `x && !x` and keeps a repeated
+literal once while it expands, so `(a || b) && (a || c)` gives
+`a || (a && c) || (b && a) || (b && c)`. This was written while the engine
+was unactivated, so it is unverified: WL may write `a && a`, or absorb terms
+further (`a || (b && c)`).
+
 ### `SatisfiabilityInstances` ordering
 
 The default single instance (greedy True-first DFS) matches, and an
@@ -3486,6 +3494,16 @@ answer. These do not:
   (`OptionValue[Plot, Axes, Hold]` reports it, `OptionValue[Plot, 5, Frame]`
   does not).
 
+### Exact `Eigenvectors` with `Root` eigenvalues stop at 5x5
+
+Beyond 5x5, an exact integer matrix whose eigenvalues are not integers keeps
+`Eigenvectors`/`Eigensystem` unevaluated: the elimination over algebraic
+numbers is too slow in Woxi, while Wolfram returns `Root`-object vectors.
+`Eigensystem[m, k]` with k ≤ 2 computes just those vectors, up to 8x8; their
+entries are nested `Root` expressions, not Wolfram's reduced form (equal
+under `N`).
+
+
 ### `Eigenvalues` of a matrix without radical roots
 
 Woxi lists the eigenvalues as `Root` objects in `Root` order; wolframscript
@@ -3501,6 +3519,42 @@ woxi eval 'Eigenvalues[{{0, 0, 0, 2}, {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 1}}]
 `Eigenvectors` does follow Wolfram's order (decreasing absolute value, then
 increasing real part, then decreasing imaginary part); `Eigenvalues` of the
 `{{0, 0, 0, -1}, …}` shift matrix in wolframscript is in neither order.
+
+
+### `Solve` of an arbitrary-precision polynomial answers at machine precision
+
+```sh
+wolframscript -code 'Solve[N[z^3 - 2 z + 1/3, 10] == 0, z]'
+# {{z -> -1.4911540841057329132`9.544…}, …}
+woxi eval 'Solve[N[z^3 - 2 z + 1/3, 10] == 0, z]'
+# {{z -> -1.491154084105733}, …}
+```
+
+The roots are found numerically at machine precision; Wolfram carries the
+coefficients' precision (and its loss) into them.
+
+
+### `SmoothKernelDistribution` stays symbolic and is evaluated exactly
+
+wolframscript turns `SmoothKernelDistribution[data, …]` into a binned
+`DataDistribution["SmoothKernel", …]` and interpolates its `PDF`/`CDF` from
+that grid; Woxi keeps the call and sums the kernels exactly, so values agree
+to about six digits (`PDF[SmoothKernelDistribution[{1., 2., 3.5}, 0.5], 1.5]`
+is `0.32271721782167967` there, `0.3227168528427011` here). A symbolic
+point stays unevaluated.
+
+
+### `Det` of a rational-coefficient matrix keeps a common factor in Wolfram
+
+```sh
+wolframscript -code 'Det[Table[1/(i + j + 1), {i, 3}, {j, 3}] - x IdentityMatrix[3]]'
+# (2 - 9510*x + 511200*x^2 - 756000*x^3)/756000
+woxi eval 'Det[Table[1/(i + j + 1), {i, 3}, {j, 3}] - x IdentityMatrix[3]]'
+# (1 - 4755*x + 255600*x^2 - 378000*x^3)/378000
+```
+
+The value is the same; Wolfram's elimination leaves the numerator and
+denominator with a common factor that `Together` removes.
 
 
 ### `Flat` without `OneIdentity` binds singletons bare
@@ -3816,6 +3870,13 @@ into script mode; Woxi prints the expression and renders `["Message"]` cleanly.
 
 
 ## Graphics and plotting
+
+### `Attributes[GraphicsComplex]` (unverified)
+
+Woxi gives `GraphicsComplex` `NHoldRest`, so `N` leaves the primitives'
+point indices integers (a demonstration takes `Normal[N@PolyhedronData[…,
+"Faces"]]`). The exact attribute list (`ReadProtected`?) was not checked
+against wolframscript.
 
 Woxi renders its own SVG; `wolframscript` prints `-Graphics-` and exports
 cairo-rendered SVG, so pixel or markup equality is never the goal. What follows
@@ -4335,6 +4396,13 @@ Differs in the last digits because wolframscript rounds its **intermediates**
 to f32 while Woxi rounds only at the boundaries. `wolframscript` is also
 inconsistent with itself here, giving `0.80123907` and `0.80123901` for the
 same kernel tap across evaluation orders.
+
+### `ImageEffect[img, {"MotionBlur", r, θ}]` kernel (unverified)
+
+Woxi averages `2r + 1` bilinear samples on a symmetric line at `θ` degrees.
+Not checked against wolframscript (engine unactivated when it was
+written); WL's kernel shape, its direction convention and its edge handling
+may differ.
 
 ### `AudioTrim` on tiny objects
 

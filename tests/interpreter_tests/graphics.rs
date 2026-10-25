@@ -5700,6 +5700,19 @@ mod plot3d {
       assert_ne!(with_default, with_degree_2);
     }
 
+    // A Tube of many curves is as crowded as as many Tubes: it used to get
+    // the lone-tube tessellation budget for every curve (gigabytes for 343).
+    #[test]
+    fn graphics3d_tube_of_many_curves_counts_each_curve() {
+      let curves = "Table[{{i, 0, 0}, {i, 1, 0}}, {i, 12}]";
+      let one = export_svg(&format!("Graphics3D[Tube[{curves}]]"));
+      let many = export_svg(&format!("Graphics3D[Tube /@ {curves}]"));
+      assert_eq!(
+        one.matches("<polygon").count(),
+        many.matches("<polygon").count()
+      );
+    }
+
     #[test]
     fn graphics3d_tubebox_draws_like_tube() {
       let tube = export_svg(
@@ -17365,6 +17378,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn smooth_density_histogram() {
+      assert_eq!(
+        interpret(
+          "Head[SmoothDensityHistogram[{{1, 2}, {2, 3}, {3, 1}, {2, 2}}]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+      assert_eq!(
+        interpret(
+          "Head[SmoothDensityHistogram[{{1, 2}, {2, 3}, {3, 1}}, {0.3, 0.5}, \
+           ColorFunction -> \"SunsetColors\", Frame -> False]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+      // Not a list of points: left alone.
+      assert_eq!(
+        interpret("SmoothDensityHistogram[{1, 2, 3}]").unwrap(),
+        "SmoothDensityHistogram[{1, 2, 3}]"
+      );
+    }
+
+    #[test]
     fn list_density_plot_matrix() {
       insta::assert_snapshot!(export_svg(
         "ListDensityPlot[{{1, 1, 1, 1}, {1, 2, 1, 2}, {1, 1, 3, 1}, {1, 2, 1, 4}}]"
@@ -24474,6 +24511,22 @@ mod graphics_complex {
 // becomes one primitive each, and a `Point` a list of single points.
 mod graphics_complex_normal {
   use super::*;
+
+  // GraphicsComplex holds its primitives from N, so their point indices
+  // stay integers and Normal can still look them up
+  // (AnimationOfFreeKicksInSoccer).
+  #[test]
+  fn n_keeps_point_indices() {
+    assert_eq!(
+      interpret("N[GraphicsComplex[{{0, 0}, {1, 0}}, Line[{1, 2}]]]").unwrap(),
+      "GraphicsComplex[{{0., 0.}, {1., 0.}}, Line[{1, 2}]]"
+    );
+    assert_eq!(
+      interpret("Normal[N[GraphicsComplex[{{0, 0}, {1, 0}}, Line[{1, 2}]]]]")
+        .unwrap(),
+      "{Line[{{0., 0.}, {1., 0.}}]}"
+    );
+  }
 
   #[test]
   fn point_and_line() {

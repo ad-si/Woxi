@@ -7936,9 +7936,41 @@ fn same_edge(a: &Expr, b: &Expr) -> bool {
   let Some((b1, b2, b_directed)) = edge_endpoints(b) else {
     return false;
   };
-  let eq = |x: &Expr, y: &Expr| expr_to_string(x) == expr_to_string(y);
-  (eq(&a1, &b1) && eq(&a2, &b2))
-    || (!a_directed && !b_directed && eq(&a1, &b2) && eq(&a2, &b1))
+  (same_vertex(&a1, &b1) && same_vertex(&a2, &b2))
+    || (!a_directed
+      && !b_directed
+      && same_vertex(&a1, &b2)
+      && same_vertex(&a2, &b1))
+}
+
+/// Whether two vertex names are the same vertex: equal as printed (a
+/// symbol `x` names the same vertex as the string "x"), decided without
+/// printing when both are atoms of one kind, as most vertex names are.
+fn same_vertex(x: &Expr, y: &Expr) -> bool {
+  match (x, y) {
+    (Expr::Integer(a), Expr::Integer(b)) => a == b,
+    (Expr::String(a), Expr::String(b))
+    | (Expr::Identifier(a), Expr::Identifier(b)) => a == b,
+    _ if crate::evaluator::pattern_matching::expr_equal(x, y) => true,
+    // Two lists or calls (a permutation, `{1, 2}`) that differ
+    // structurally differ as printed too, unless one is a string or holds
+    // a raw operator node.
+    (
+      Expr::List(_) | Expr::FunctionCall { .. },
+      Expr::List(_) | Expr::FunctionCall { .. },
+    ) if !has_raw_or_string(x) && !has_raw_or_string(y) => false,
+    _ => expr_to_string(x) == expr_to_string(y),
+  }
+}
+
+fn has_raw_or_string(e: &Expr) -> bool {
+  match e {
+    Expr::String(_) | Expr::BinaryOp { .. } | Expr::UnaryOp { .. } => true,
+    Expr::List(items) => items.iter().any(has_raw_or_string),
+    Expr::FunctionCall { args, .. } => args.iter().any(has_raw_or_string),
+    Expr::Integer(_) | Expr::Real(_) | Expr::Identifier(_) => false,
+    _ => true,
+  }
 }
 
 /// `VertexReplace[graph, rules]` — rename vertices, in the vertex list and in

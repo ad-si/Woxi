@@ -2276,6 +2276,21 @@ mod power_with_negative_exponent {
 mod machine_complex_power_zero_imaginary {
   use super::*;
 
+  // A machine complex base raised to an integer stays a machine complex
+  // number when the imaginary part comes out zero, so a Newton iteration
+  // on the real axis does not turn exact (Flower Fractals).
+  #[test]
+  fn integer_power_stays_inexact() {
+    assert_eq!(
+      interpret(
+        "{InputForm[(-1. + 0.*I)^4], InputForm[(0. + 1. I)^2], \
+         InputForm[(1. + 1. I)^4]}"
+      )
+      .unwrap(),
+      "{InputForm[1. + 0.*I], InputForm[-1. + 0.*I], InputForm[-4. + 0.*I]}"
+    );
+  }
+
   #[test]
   fn e_to_complex_with_zero_imaginary() {
     // Regression: a structurally complex exponent whose imaginary part
@@ -11820,6 +11835,20 @@ mod bigfloat_exp_log {
     assert_eq!(
       interpret("Log[N[2, 30]]").unwrap(),
       "0.6931471805599453094172321214581765680755001343602552541208`29.84082546104514"
+    );
+  }
+
+  // An argument past the machine range read as Infinity when the result's
+  // precision was computed, and the digit count overflowed (a panic).
+  #[test]
+  fn log_past_the_machine_range() {
+    assert_eq!(
+      interpret("Round[Log[1.*^308 * 10.], 10^-6]").unwrap(),
+      "355749397/500000"
+    );
+    assert_eq!(
+      interpret("Round[Log[2, 1.*^308 * 10.], 10^-6]").unwrap(),
+      "1026475781/1000000"
     );
   }
 

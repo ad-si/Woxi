@@ -228,6 +228,19 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // A list naming one function is that function: the single-equation
+  // solver below covers far more than the linear-system one.
+  if let Expr::List(dep_items) = dep_arg
+    && let [single] = dep_items.as_slice()
+  {
+    let mut unwrapped = args.to_vec();
+    unwrapped[1] = single.clone();
+    let solved = dsolve_ast_inner(&unwrapped)?;
+    if !matches!(&solved, Expr::FunctionCall { name, .. } if name == "DSolve") {
+      return Ok(solved);
+    }
+  }
+
   // `DSolve[{…}, {y1[t], y2[t], …}, t]` — a coupled system of dependent
   // functions, handled by the operator-elimination solver above instead of
   // the single-variable machinery below.

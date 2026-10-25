@@ -7420,8 +7420,8 @@ fn combine_like_bases_depth(
     return Ok(args);
   }
 
-  // Use string representation of base as grouping key
-  let mut groups: Vec<(String, Expr, Vec<Expr>)> = Vec::new(); // (base_key, base, exponents)
+  // (printed key of a raw operator base, base, exponents)
+  let mut groups: Vec<(String, Expr, Vec<Expr>)> = Vec::new();
   let mut non_combinable: Vec<Expr> = Vec::new();
 
   // I counts as (-1)^(1/2) while powers of one base are collected, which is
@@ -7465,8 +7465,35 @@ fn combine_like_bases_depth(
       non_combinable.push(arg.clone());
       continue;
     }
-    let base_key = expr_to_string(&base);
-    if let Some(group) = groups.iter_mut().find(|(k, _, _)| *k == base_key) {
+    // Evaluated bases (atoms and calls) are compared structurally; only a
+    // raw operator node, which may print the same as a call, needs its
+    // printed form. Printing every base was the cost of multiplying large
+    // numeric expressions.
+    let raw =
+      |e: &Expr| matches!(e, Expr::BinaryOp { .. } | Expr::UnaryOp { .. });
+    let base_key = if raw(&base) {
+      expr_to_string(&base)
+    } else {
+      String::new()
+    };
+    let found = groups.iter_mut().find(|(k, b, _)| {
+      if raw(&base) || raw(b) {
+        let other = if k.is_empty() {
+          expr_to_string(b)
+        } else {
+          k.clone()
+        };
+        let mine = if base_key.is_empty() {
+          expr_to_string(&base)
+        } else {
+          base_key.clone()
+        };
+        other == mine
+      } else {
+        crate::evaluator::pattern_matching::expr_equal(b, &base)
+      }
+    });
+    if let Some(group) = found {
       group.2.push(exp);
     } else {
       groups.push((base_key, base, vec![exp]));
@@ -11037,8 +11064,10 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       return Ok(id_expr("Indeterminate"));
     }
 
-    // x / x → 1 for identical symbolic expressions
-    if expr_to_string(a) == expr_to_string(b) {
+    // x / x → 1 for identical symbolic expressions (compared structurally:
+    // printing both on every division was the cost of dividing big
+    // symbolic matrices).
+    if crate::evaluator::pattern_matching::expr_equal(a, b) {
       return Ok(Expr::Integer(1));
     }
 
@@ -11479,6 +11508,20 @@ fn try_power_overflow(base: &Expr, exp: &Expr) -> Option<Expr> {
 }
 
 /// Helper for Power of two arguments
+/// A machine complex power's value: a zero imaginary part stays as
+/// `0.*I` (`(-1. + 0. I)^4` is `1. + 0.*I`), never an exact integer.
+fn machine_complex_result(re: f64, im: f64) -> Expr {
+  if im == 0.0 {
+    crate::evaluator::evaluate_function_call_ast(
+      "Complex",
+      &[Expr::Real(re), Expr::Real(0.0)],
+    )
+    .unwrap_or(Expr::Real(re))
+  } else {
+    build_complex_float_expr(re, im)
+  }
+}
+
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   if let Some(image) =
     image_arithmetic_rounded(&[base.clone(), exp.clone()], f64::powf, false)
@@ -13210,15 +13253,18 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // same multiplication chains as for real bases (and a scaled fused
     // reciprocal for negative exponents), which the log/exp path below
     // misses by a ULP.
+    // A machine complex base whose imaginary part is `0.` stays complex:
+    // `(-1. + 0. I)^4` is `1. + 0.*I`, never the exact `1` a log/exp
+    // round trip would give.
     if let Expr::Integer(n) = exp
       && *n != 0
       && *n != 1
       && let Some((a, b)) = try_extract_complex_float(base)
-      && b != 0.0
+      && (b != 0.0 || contains_imaginary_unit(base))
       && contains_real(base)
     {
       let (re, im) = wolfram_powi_complex(a, b, *n);
-      return Ok(build_complex_float_expr(re, im));
+      return Ok(machine_complex_result(re, im));
     }
     // Try complex float evaluation: z^w = exp(w * log(z))
     // Only apply when at least one operand contains an actual Real (float),
