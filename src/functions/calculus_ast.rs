@@ -454,6 +454,27 @@ fn differentiate_wrt_expr(
 }
 
 /// Integrate[expr, var] or Integrate[expr, {var, lo, hi}] - Symbolic integration
+/// Whether `expr` applies an `InterpolatingFunction` object anywhere.
+fn contains_interpolating_function(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "InterpolatingFunction"
+        || args.iter().any(contains_interpolating_function)
+    }
+    Expr::CurriedCall { func, args } => {
+      contains_interpolating_function(func)
+        || args.iter().any(contains_interpolating_function)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_interpolating_function(left)
+        || contains_interpolating_function(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_interpolating_function(operand),
+    Expr::List(items) => items.iter().any(contains_interpolating_function),
+    _ => false,
+  }
+}
+
 pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -535,6 +556,15 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let lo = &items[1];
     let hi = &items[2];
+
+    // An `InterpolatingFunction` has no closed-form antiderivative, so over
+    // numeric limits it integrates numerically (as `NIntegrate` would).
+    if contains_interpolating_function(&args[0])
+      && crate::functions::math_ast::try_eval_to_f64(lo).is_some()
+      && crate::functions::math_ast::try_eval_to_f64(hi).is_some()
+    {
+      return nintegrate_ast(args);
+    }
 
     // Constant integrand with an infinite value: the general result is
     // sign(c)·Infinity whenever the integration interval is non-empty. The

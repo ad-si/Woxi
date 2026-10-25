@@ -22907,3 +22907,31 @@ mod ndsolve_vector_unknown_with_matrix_product {
     );
   }
 }
+
+mod integrate_interpolating_function {
+  use super::*;
+
+  #[test]
+  fn definite_integral_is_numeric() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
+         Integrate[f[x], {x, 0, 2}]"
+      )
+      .unwrap(),
+      "3."
+    );
+  }
+
+  #[test]
+  fn sum_of_piecewise_integrals_is_numeric() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
+         Integrate[f[x], {x, 0, 1}] + Integrate[f[x], {x, 1, 2}]"
+      )
+      .unwrap(),
+      "3."
+    );
+  }
+}
