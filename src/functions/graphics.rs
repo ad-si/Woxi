@@ -10159,38 +10159,32 @@ pub(crate) struct PlotRangePaddingSpec {
 
 /// Parse a `PlotRangePadding` option value: a single spec (applied to both
 /// sides of both axes), `{xSpec, ySpec}`, or the full per-side form
-/// `{{xMinPad, xMaxPad}, {yMinPad, yMaxPad}}`.
+/// `{{xMinPad, xMaxPad}, {yMinPad, yMaxPad}}`. Each axis entry may be given
+/// in either form independently, e.g. `{None, {Scaled[0.2], Scaled[0.1]}}`.
 pub(crate) fn parse_plot_range_padding(expr: &Expr) -> PlotRangePaddingSpec {
-  fn symmetric(amt: PlotPadAmount) -> AxisPadding {
+  fn axis(item: &Expr) -> AxisPadding {
+    if let Expr::List(sides) = item
+      && sides.len() == 2
+    {
+      return AxisPadding {
+        lo: parse_plot_pad_amount(&sides[0]),
+        hi: parse_plot_pad_amount(&sides[1]),
+      };
+    }
+    let amt = parse_plot_pad_amount(item);
     AxisPadding { lo: amt, hi: amt }
   }
   if let Expr::List(items) = expr
     && items.len() == 2
   {
-    if let (Expr::List(x_sides), Expr::List(y_sides)) = (&items[0], &items[1])
-      && x_sides.len() == 2
-      && y_sides.len() == 2
-    {
-      return PlotRangePaddingSpec {
-        x: AxisPadding {
-          lo: parse_plot_pad_amount(&x_sides[0]),
-          hi: parse_plot_pad_amount(&x_sides[1]),
-        },
-        y: AxisPadding {
-          lo: parse_plot_pad_amount(&y_sides[0]),
-          hi: parse_plot_pad_amount(&y_sides[1]),
-        },
-      };
-    }
     return PlotRangePaddingSpec {
-      x: symmetric(parse_plot_pad_amount(&items[0])),
-      y: symmetric(parse_plot_pad_amount(&items[1])),
+      x: axis(&items[0]),
+      y: axis(&items[1]),
     };
   }
-  let amt = parse_plot_pad_amount(expr);
   PlotRangePaddingSpec {
-    x: symmetric(amt),
-    y: symmetric(amt),
+    x: axis(expr),
+    y: axis(expr),
   }
 }
 

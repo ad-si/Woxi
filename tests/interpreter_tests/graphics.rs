@@ -3267,6 +3267,24 @@ mod graphics {
         );
       }
 
+      // Each axis entry may independently be a single amount or a
+      // `{low, high}` pair: `{None, {Scaled[1], Scaled[1]}}` leaves x
+      // unpadded and pads y to `{-1, 2}`.
+      #[test]
+      fn axes_may_mix_single_and_per_side_specs() {
+        let svg = export_svg(
+          "Graphics[{Point[{0, 0}]}, PlotRange -> {{0, 1}, {0, 1}}, \
+           PlotRangePadding -> {None, {Scaled[1], Scaled[1]}}, \
+           AspectRatio -> Full, ImageSize -> {100, 100}, Axes -> False]",
+        );
+        let (cx, cy) = point_px(&svg);
+        assert!(cx < 5.0, "expected x unpadded, cx={cx}");
+        assert!(
+          (62.0..72.0).contains(&cy),
+          "expected y padded to {{-1,2}} (point 2/3 down), cy={cy}"
+        );
+      }
+
       // `Disk[c, Scaled[r]]` has a radius of `r` times the plot width, not
       // the default unit radius.
       #[test]
