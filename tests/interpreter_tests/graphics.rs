@@ -17806,6 +17806,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "expected a dark pixel at the bottom left, got {bottom_left:?}"
       );
     }
+
+    /// `InterpolationOrder -> 0` shades scattered data by the nearest
+    /// sample, giving flat Voronoi cells with sharp borders.
+    #[test]
+    fn list_density_plot_interpolation_order_zero_is_nearest() {
+      let svg = export_svg(
+        "ListDensityPlot[{{0, 0, 0}, {4, 0, 1}, {0, 4, 0}, {4, 4, 1}}, InterpolationOrder -> 0]",
+      );
+      let b64 = svg
+        .split("data:image/png;base64,")
+        .nth(1)
+        .expect("embedded image")
+        .split('"')
+        .next()
+        .unwrap();
+      use base64::Engine as _;
+      let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+      let img = ::image::load_from_memory(&bytes).unwrap().to_rgba8();
+      let (w, h) = img.dimensions();
+      let left = img.get_pixel(w * 45 / 100, h / 2);
+      let right = img.get_pixel(w * 55 / 100, h / 2);
+      assert!(left[0] < 100, "expected a dark cell left of the border");
+      assert!(right[0] > 200, "expected a bright cell right of the border");
+    }
   }
 
   mod complex_plot {
