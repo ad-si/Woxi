@@ -4851,6 +4851,27 @@ mod replace_repeated {
   use super::*;
 
   #[test]
+  fn untouched_comparison_is_a_fixed_point() {
+    // A rule list leaves `x <= 2` alone; it used to come back as the call
+    // `LessEqual[x, 2]`, which never compared equal to the comparison it
+    // evaluates back to, so `//.` ran into its iteration limit.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "dr = {False -> None, And[a_, b_] -> g[a, b]}; \
+         (x <= 2 - y && x >= 1) //. dr"
+      )
+      .unwrap(),
+      "g[x <= 2 - y, x >= 1]"
+    );
+    assert!(
+      !woxi::get_captured_warnings()
+        .iter()
+        .any(|w| w.contains("rrlim"))
+    );
+  }
+
+  #[test]
   fn replace_repeated_applies_multiple_times() {
     assert_eq!(interpret("f[f[f[f[2]]]] //. f[2] -> 2").unwrap(), "2");
   }

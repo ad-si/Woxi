@@ -6466,14 +6466,18 @@ fn apply_replace_all_multi_ast_impl(
     } => {
       let (head, args) =
         crate::syntax::comparison_head_and_args(operands, operators);
-      apply_replace_all_multi_ast_impl(
-        &Expr::FunctionCall {
-          name: head,
-          args: args.into(),
-        },
-        rules,
-        held,
-      )
+      let call_form = Expr::FunctionCall {
+        name: head,
+        args: args.into(),
+      };
+      let replaced = apply_replace_all_multi_ast_impl(&call_form, rules, held)?;
+      // Untouched, it stays the comparison it was, so `//.` sees its fixed
+      // point instead of a call form that evaluates back to the comparison.
+      Ok(if expr_equal(&replaced, &call_form) {
+        expr.clone()
+      } else {
+        replaced
+      })
     }
     // A symbolic part extraction (`m[[1]]` with `m` undefined) keeps its
     // expression and index as ordinary subexpressions.
