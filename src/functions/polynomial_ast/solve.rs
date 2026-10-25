@@ -2237,7 +2237,165 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
     }
   }
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "Solve")
+    && let [eq, Expr::Identifier(var)] = args
+    && let Some(isolated) = solve_by_isolating_power(eq, var)
+  {
+    return Ok(isolated);
+  }
   Ok(result)
+}
+
+/// `g(var) == 0` where `var` occurs only inside one power `(p var + q)^n` of
+/// a linear expression, which the rest of `g` multiplies and shifts:
+/// `2 (y + 1/3)^4 + a == 0`. The equation is a pure power in `z = p var +
+/// q`, solved as such, and each root gives `var = (z - q)/p` — the way
+/// wolframscript inverts the single occurrence instead of expanding a
+/// quartic with symbolic coefficients.
+fn solve_by_isolating_power(eq: &Expr, var: &str) -> Option<Expr> {
+  let Expr::Comparison {
+    operands,
+    operators,
+  } = eq
+  else {
+    return None;
+  };
+  if operands.len() != 2
+    || operators.as_slice() != [crate::syntax::ComparisonOp::Equal]
+  {
+    return None;
+  }
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let g = eval(minus2(operands[0].clone(), operands[1].clone()))?;
+  let mentions = |e: &Expr| !is_constant_wrt(e, var);
+  // The powers of an expression in `var`.
+  fn powers<'a>(
+    e: &'a Expr,
+    var: &str,
+    out: &mut Vec<(&'a Expr, &'a Expr, i128)>,
+  ) {
+    let pow_parts = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        Some((&args[0], &args[1]))
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref(), right.as_ref())),
+      _ => None,
+    };
+    if let Some((base, Expr::Integer(n))) = pow_parts
+      && *n >= 2
+      && !is_constant_wrt(base, var)
+    {
+      out.push((e, base, *n));
+      return;
+    }
+    for child in crate::syntax::expr_children(e) {
+      powers(child, var, out);
+    }
+  }
+  let mut found = Vec::new();
+  powers(&g, var, &mut found);
+  let (power, base, n) = found.first().copied()?;
+  let u = Expr::Identifier("Woxi`IsolatedPower".to_string());
+  let replaced = eval(call(
+    "ReplaceAll",
+    vec![
+      g.clone(),
+      Expr::Rule {
+        pattern: Box::new(power.clone()),
+        replacement: Box::new(u.clone()),
+      },
+    ],
+  ))?;
+  if mentions(&replaced) {
+    return None;
+  }
+  // `replaced` is A u + B with A, B free of var.
+  let a = eval(call(
+    "Coefficient",
+    vec![replaced.clone(), u.clone(), Expr::Integer(1)],
+  ))?;
+  let b = eval(call(
+    "ReplaceAll",
+    vec![
+      replaced.clone(),
+      Expr::Rule {
+        pattern: Box::new(u.clone()),
+        replacement: Box::new(Expr::Integer(0)),
+      },
+    ],
+  ))?;
+  let check = eval(call(
+    "Expand",
+    vec![minus2(
+      replaced.clone(),
+      plus2(times2(a.clone(), u.clone()), b.clone()),
+    )],
+  ))?;
+  if !matches!(check, Expr::Integer(0)) || matches!(a, Expr::Integer(0)) {
+    return None;
+  }
+  // The base is p var + q.
+  let p = eval(call(
+    "D",
+    vec![base.clone(), Expr::Identifier(var.to_string())],
+  ))?;
+  if mentions(&p) || matches!(p, Expr::Integer(0)) {
+    return None;
+  }
+  let q = eval(call(
+    "ReplaceAll",
+    vec![
+      base.clone(),
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier(var.to_string())),
+        replacement: Box::new(Expr::Integer(0)),
+      },
+    ],
+  ))?;
+  let z = Expr::Identifier("Woxi`IsolatedBase".to_string());
+  let roots = eval(call(
+    "Solve",
+    vec![
+      Expr::Comparison {
+        operands: vec![
+          plus2(times2(a, pow(z.clone(), Expr::Integer(n))), b),
+          Expr::Integer(0),
+        ],
+        operators: vec![crate::syntax::ComparisonOp::Equal],
+      },
+      z.clone(),
+    ],
+  ))?;
+  let Expr::List(solutions) = &roots else {
+    return None;
+  };
+  let mut out = Vec::with_capacity(solutions.len());
+  for sol in solutions {
+    let Expr::List(rules) = sol else {
+      return None;
+    };
+    let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
+      return None;
+    };
+    let value = eval(solve_divide(
+      &minus2(replacement.as_ref().clone(), q.clone()),
+      &p,
+    ))?;
+    out.push(Expr::List(
+      vec![Expr::Rule {
+        pattern: Box::new(Expr::Identifier(var.to_string())),
+        replacement: Box::new(value),
+      }]
+      .into(),
+    ));
+  }
+  Some(Expr::List(out.into()))
 }
 
 fn solve_ast_entry(args: &[Expr]) -> Result<Expr, InterpreterError> {

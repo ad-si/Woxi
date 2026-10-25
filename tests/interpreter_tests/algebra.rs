@@ -21096,3 +21096,36 @@ mod reduce_vanishing_coefficient_branch {
     }
   }
 }
+
+// A variable occurring once, inside a power of a linear expression, is
+// isolated instead of expanding a polynomial with symbolic coefficients
+// (which left these unevaluated).
+mod solve_isolated_power {
+  use super::*;
+
+  #[test]
+  fn shifted_cube() {
+    assert_eq!(
+      interpret("Solve[(1 + y)^3 == c, y]").unwrap(),
+      "{{y -> -1 + c^(1/3)}, {y -> -1 - (-1)^(1/3)*c^(1/3)}, \
+       {y -> -1 + (-1)^(2/3)*c^(1/3)}}"
+    );
+  }
+
+  #[test]
+  fn scaled_and_shifted_quartic() {
+    assert_eq!(
+      interpret(
+        "sols = Solve[2 (y + 1/3)^4 + a == 0, y]; \
+         {Length[sols], Simplify[(2 (y + 1/3)^4 + a) /. sols]}"
+      )
+      .unwrap(),
+      "{4, {0, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("Length[Solve[(-1 + (-1/2 + x)^2 + 2*(1/3 + y)^4)/3 == 0, y]]")
+        .unwrap(),
+      "4"
+    );
+  }
+}
