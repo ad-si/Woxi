@@ -2311,7 +2311,19 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       "NearestFunction"
     }
+    // A number applied like a head (`10[2, 5]`) is stored as a call named
+    // after the number; its head is that number, not a symbol.
     Expr::FunctionCall { name, .. } => {
+      if let Ok(n) = name.parse::<num_bigint::BigInt>() {
+        return Ok(crate::functions::math_ast::numeric_utils::bigint_to_expr(
+          n,
+        ));
+      }
+      if let Ok(r) = name.parse::<f64>()
+        && name.contains('.')
+      {
+        return Ok(Expr::Real(r));
+      }
       return Ok(Expr::Identifier(name.clone()));
     }
     // f[a][b] — the head is the inner call expression itself, not a symbol.
