@@ -1394,6 +1394,23 @@ mod cases {
       r#"{Listable, NumericFunction, Protected}"#,
     );
   }
+  // NumericQ reads the NumericFunction attribute itself: the special-function
+  // zeros carry it, so a FindRoot started at one is numeric.
+  #[test]
+  fn numeric_q_of_function_zeros() {
+    assert_case(
+      r#"{Attributes[BesselJZero], Attributes[AiryAiZero]}"#,
+      r#"{{Listable, NumericFunction, Protected, ReadProtected}, {Listable, NHoldFirst, NumericFunction, Protected, ReadProtected}}"#,
+    );
+    assert_case(
+      r#"{NumericQ[BesselJZero[1, 2]], NumericQ[BesselYZero[1, 1]], NumericQ[AiryBiZero[2]]}"#,
+      r#"{True, True, True}"#,
+    );
+    assert_case(
+      r#"FindRoot[BesselJ[1, r] == 0, {r, BesselJZero[1, 2]}]"#,
+      r#"{r -> 7.015586669815619}"#,
+    );
+  }
   #[test]
   fn numeric_q_1() {
     assert_case(r#"Attributes[Sqrt]; NumericQ[Sqrt[1]]"#, r#"True"#);

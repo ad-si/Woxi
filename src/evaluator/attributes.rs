@@ -641,7 +641,8 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
 
     // Listable + NumericFunction + Protected + ReadProtected
     "Exp"
-    | "AiryAi" | "AiryBi" | "AiryAiZero" | "AiryBiZero"
+    | "AiryAi" | "AiryBi"
+    | "BesselJZero" | "BesselYZero"
     | "ArcSin" | "ArcCos" | "ArcTan"
     | "ArcCot" | "ArcSec" | "ArcCsc"
     | "JacobiAmplitude" | "JacobiEpsilon"
@@ -890,7 +891,7 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     "EllipticTheta" => A::Listable | A::NHoldFirst | A::NumericFunction | A::Protected,
 
     // Listable + NHoldFirst + NumericFunction + Protected + ReadProtected
-    "ZetaZero" => {
+    "ZetaZero" | "AiryAiZero" | "AiryBiZero" => {
       A::Listable
         | A::NHoldFirst
         | A::NumericFunction
