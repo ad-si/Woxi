@@ -3664,6 +3664,12 @@ as `Dot[a, -b]`.
 
 ## Messages and error handling
 
+### `RealDigits` in a non-integer base stays unevaluated
+
+`RealDigits[1/7, 2.5]` lists 39 digits of the greedy expansion in base 2.5 in
+wolframscript; Woxi only implements integer bases and leaves the call
+unevaluated.
+
 ### `RealDigits` of an arbitrary-precision number: the last digit
 
 `RealDigits[N[Pi, 30]]` ends in `…3, 2, 8` in wolframscript, `…3, 2, 7` in
