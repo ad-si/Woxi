@@ -10822,6 +10822,26 @@ mod plot3d {
     }
 
     #[test]
+    fn plot_legends_line_legend_names_the_series() {
+      // `LineLegend[{labels}, opts]` labels the curves like a plain list.
+      let plain = export_svg(
+        r#"ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {"a", "b"}]"#,
+      );
+      for legend in [
+        r#"LineLegend[{"a", "b"}]"#,
+        r#"LineLegend[{"a", "b"}, LegendFunction -> (Framed[#1] &)]"#,
+        r#"LineLegend[{Red, Blue}, {"a", "b"}]"#,
+      ] {
+        let svg = export_svg(&format!(
+          "ListPlot[{{{{1, 2, 3}}, {{3, 2, 1}}}}, PlotLegends -> {legend}]"
+        ));
+        assert!(svg.contains(">a</text"), "{legend}: {svg}");
+        assert!(svg.contains(">b</text"), "{legend}: {svg}");
+      }
+      assert!(plain.contains(">a</text"));
+    }
+
+    #[test]
     fn plot_legends_above_wrap_when_wider_than_the_plot() {
       let svg = export_svg(
         r#"Plot[{x, 2 x, 3 x}, {x, 0, 1}, ImageSize -> {350, 200},

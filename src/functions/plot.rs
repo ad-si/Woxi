@@ -9796,6 +9796,22 @@ pub(crate) fn parse_plot_legends(
     return (labels, auto, expressions, pos);
   }
 
+  // `LineLegend[{labels}, opts]` / `SwatchLegend[{labels}, opts]` /
+  // `PointLegend[{labels}, opts]` name the series just like a plain list of
+  // labels; the explicit `{styles}, {labels}` form carries them second.
+  if let Expr::FunctionCall { name, args } = &val
+    && matches!(name.as_str(), "LineLegend" | "SwatchLegend" | "PointLegend")
+    && let Some(first) = args.first()
+  {
+    let labels = match args.get(1) {
+      Some(second @ Expr::List(_)) => second,
+      _ => first,
+    };
+    if matches!(labels, Expr::List(_)) {
+      return parse_plot_legends(labels);
+    }
+  }
+
   match &val {
     Expr::Identifier(s) if s == "Automatic" => {
       (Vec::new(), true, false, LegendPosition::Right)
