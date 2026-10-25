@@ -6750,6 +6750,20 @@ mod mixed_partial_derivatives {
 mod find_minimum {
   use super::*;
 
+  // Many variables with a coupling constraint: the starting points and the
+  // sampling grid stay bounded instead of growing exponentially
+  // (MethodOfSupportVectorRegression reached 14 GB).
+  #[test]
+  fn many_variables_stay_bounded() {
+    assert_eq!(
+      interpret(
+        "x = Array[a, 8]; Round[10^4 First[NMinimize[{Total[x^2], Total[x] == 1}, x]]]"
+      )
+      .unwrap(),
+      "1250"
+    );
+  }
+
   // Variables may be listed bare, indexed, or through a symbol holding the
   // list (OptimalTransportScheduling).
   #[test]
