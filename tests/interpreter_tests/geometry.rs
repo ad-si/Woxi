@@ -1961,6 +1961,22 @@ mod circle_points {
   use super::*;
 
   #[test]
+  fn whole_number_real_gives_machine_points() {
+    assert_eq!(
+      interpret("CirclePoints[4.]").unwrap(),
+      "{{0.7071067811865476, -0.7071067811865476}, \
+       {0.7071067811865476, 0.7071067811865476}, \
+       {-0.7071067811865476, 0.7071067811865476}, \
+       {-0.7071067811865476, -0.7071067811865476}}"
+    );
+  }
+
+  #[test]
+  fn fractional_real_stays_unevaluated() {
+    assert_eq!(interpret("CirclePoints[4.5]").unwrap(), "CirclePoints[4.5]");
+  }
+
+  #[test]
   fn single_point() {
     assert_eq!(interpret("CirclePoints[1]").unwrap(), "{{0, 1}}");
   }

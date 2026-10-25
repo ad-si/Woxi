@@ -5497,7 +5497,7 @@ fn evaluate_function_call_ast_inner(
   if name == "DelaunayMesh" && args.len() == 1 {
     return crate::functions::delaunay::delaunay_mesh_ast(args);
   }
-  if name == "VoronoiMesh" && args.len() == 1 {
+  if name == "VoronoiMesh" && (1..=2).contains(&args.len()) {
     return crate::functions::voronoi::voronoi_mesh_ast(args);
   }
 
@@ -11416,9 +11416,13 @@ fn evaluate_function_call_ast_inner(
   //   CirclePoints[{cx, cy}, ..., n]  — the above translated to a center
   if name == "CirclePoints" && (1..=3).contains(&args.len()) {
     let unevaluated = || Ok(unevaluated("CirclePoints", args));
-    // n is always the last argument and must be a positive integer.
-    let n = match args.last() {
-      Some(Expr::Integer(n)) if *n >= 1 => *n as usize,
+    // n is always the last argument and must be a positive integer; a
+    // whole-number real asks for the machine-precision points.
+    let (n, numeric) = match args.last() {
+      Some(Expr::Integer(n)) if *n >= 1 => (*n as usize, false),
+      Some(Expr::Real(r)) if *r >= 1.0 && r.fract() == 0.0 => {
+        (*r as usize, true)
+      }
       _ => return unevaluated(),
     };
     // Center (defaults to the origin) when the first arg is a coordinate pair
@@ -11481,7 +11485,11 @@ fn evaluate_function_call_ast_inner(
       let y = evaluate_expr_to_expr(&coord("Sin", &center_y))?;
       points.push(Expr::List(vec![x, y].into()));
     }
-    return Ok(Expr::List(points.into()));
+    let points = Expr::List(points.into());
+    if numeric {
+      return evaluate_expr_to_expr(&call1("N", points));
+    }
+    return Ok(points);
   }
 
   // Key[k] is an operator form — return unevaluated (applied via CurriedCall)
