@@ -25914,8 +25914,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // `reevaluate` installs them as ordinary globals instead of Module
     // re-creating fresh ones every frame.
     let mut dynamic_module_state = Vec::new();
-    let unwrapped =
-      unwrap_dynamic_module_locals(&args[0], &mut dynamic_module_state);
+    let mut module_initializations = Vec::new();
+    let unwrapped = unwrap_dynamic_module_locals(
+      &args[0],
+      &mut dynamic_module_state,
+      &mut module_initializations,
+    );
     // `TogglerBar[Dynamic[var], …]` and a bare `Button[label, action]`
     // inside the body move into the display list (replaced by `Nothing` in
     // the body): a front-end renders displays as live widgets, whereas
@@ -25929,7 +25933,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Vec::with_capacity(args.len() - 1),
       dynamic_module_state,
       body_displays,
-      None,
+      (!module_initializations.is_empty())
+        .then(|| module_initializations.join(";\n")),
       Vec::new(),
       Vec::new(),
       Vec::new(),
@@ -28586,6 +28591,7 @@ fn unwrap_dynamic_body(body: &Expr) -> &Expr {
 fn unwrap_dynamic_module_locals(
   body: &Expr,
   state: &mut Vec<(String, String)>,
+  initializations: &mut Vec<String>,
 ) -> Expr {
   let mut cur = body;
   loop {
@@ -28596,7 +28602,8 @@ fn unwrap_dynamic_module_locals(
         cur = &args[0];
       }
       // Only a `DynamicModule` whose own body is *itself* an explicit
-      // `Dynamic[…]` gets its locals hoisted: that inner `Dynamic` is the
+      // `Dynamic[…]` — or a layout (`Labeled`, `Column`, …) holding one —
+      // gets its locals hoisted: that inner `Dynamic` is the
       // author's own re-render boundary, marking everything outside it —
       // the locals — as evaluated once and persisted, exactly what
       // `DynamicModule` (vs. `Module`) is for. A `DynamicModule` whose body
@@ -28609,12 +28616,25 @@ fn unwrap_dynamic_module_locals(
       Expr::FunctionCall { name, args }
         if name == "DynamicModule"
           && args.len() >= 2
-          && matches!(
-            &args[1],
-            Expr::FunctionCall { name: inner, args: iargs }
-              if inner == "Dynamic" && !iargs.is_empty()
-          ) =>
+          && expr_contains_call(&args[1], &["Dynamic"]) =>
       {
+        // The module's own `Initialization :> …` option sets up the helpers
+        // its body draws with; it runs once, like the Manipulate's.
+        for opt in &args[2..] {
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } = opt
+            && is_initialization_option(pattern, replacement)
+          {
+            initializations
+              .push(crate::syntax::expr_to_source_form(replacement));
+          }
+        }
         if let Expr::List(locals) = &args[0] {
           for local in locals {
             match local {
@@ -37523,6 +37543,22 @@ mod manipulate_named_control_group_tests {
     let s = spec(r#"Manipulate[x, {x, 0, 10}, Initialization :> (x = 3)]"#);
     assert_eq!(names(&s), vec!["x"]);
     assert_eq!(s.initialization.as_deref(), Some("x = 3"));
+  }
+
+  /// A `DynamicModule` whose body is a layout holding a `Dynamic` (not a
+  /// bare `Dynamic`) still keeps its locals as widget state and runs its own
+  /// `Initialization` — a Manipulate with only a trailing `Button` row is
+  /// then still a widget.
+  #[test]
+  fn dynamic_module_with_layout_body_keeps_locals_and_initialization() {
+    let s = spec(
+      r#"Manipulate[DynamicModule[{a, n = 0},
+        Labeled[Dynamic[a], Dynamic[n], Top], Initialization :> (n = 3)],
+        Row[{Button["Reset", n = 0]}]]"#,
+    );
+    let state: Vec<&str> = s.state.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(state, vec!["a", "n"]);
+    assert_eq!(s.initialization.as_deref(), Some("n = 3"));
   }
 }
 
