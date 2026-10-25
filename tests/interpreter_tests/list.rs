@@ -23982,6 +23982,22 @@ mod shared_own_value_lists {
     );
   }
 
+  // Every kept AppendTo result was a full copy of the list (the
+  // `AppendTo[l, #] & /@ big` idiom: 4.8 GB in RauzyFractalsAsSteppedSurfaces).
+  // The versions now share their storage.
+  #[test]
+  fn kept_append_to_results_share_storage() {
+    assert_eq!(
+      interpret(
+        "um = {}; m0 = MemoryInUse[]; r = Table[AppendTo[um, i], {i, 5000}]; \
+         {Length[r], Length[r[[2500]]], r[[2500, -1]], Total[um], \
+          MemoryInUse[] - m0 < 2*10^8}"
+      )
+      .unwrap(),
+      "{5000, 2500, 2500, 12502500, True}"
+    );
+  }
+
   #[test]
   fn append_to_shared_list_returns_the_grown_list() {
     assert_eq!(
