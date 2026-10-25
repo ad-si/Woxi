@@ -15644,6 +15644,81 @@ fn integrand_numeric_somewhere(
   })
 }
 
+/// The points where a `Piecewise` in `integrand` switches pieces: the
+/// numeric sides of the comparisons with `var` in its conditions. The
+/// integrand is evaluated with `var` symbolic first, so a piecewise
+/// function defined elsewhere (`f[x_] := Piecewise[…]`) is seen too.
+fn piecewise_breakpoints(integrand: &Expr, var: &str) -> Vec<f64> {
+  fn comparison_points(cond: &Expr, var: &str, out: &mut Vec<f64>) {
+    let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var);
+    let mut chain = |operands: &[Expr]| {
+      for pair in operands.windows(2) {
+        let other = if is_var(&pair[0]) {
+          &pair[1]
+        } else if is_var(&pair[1]) {
+          &pair[0]
+        } else {
+          continue;
+        };
+        if let Some(v) = crate::functions::math_ast::try_eval_to_f64(other) {
+          out.push(v);
+        }
+      }
+    };
+    match cond {
+      Expr::Comparison { operands, .. } => chain(operands),
+      Expr::FunctionCall { name, args } => match name.as_str() {
+        "Inequality" => {
+          let operands: Vec<Expr> = args.iter().step_by(2).cloned().collect();
+          chain(&operands);
+        }
+        "Less" | "LessEqual" | "Greater" | "GreaterEqual" | "Equal"
+        | "Unequal" => chain(args),
+        "And" | "Or" | "Not" => {
+          for a in args {
+            comparison_points(a, var, out);
+          }
+        }
+        _ => {}
+      },
+      Expr::BinaryOp { left, right, .. } => {
+        comparison_points(left, var, out);
+        comparison_points(right, var, out);
+      }
+      Expr::UnaryOp { operand, .. } => comparison_points(operand, var, out),
+      _ => {}
+    }
+  }
+  fn walk(e: &Expr, var: &str, out: &mut Vec<f64>) {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Piecewise"
+      && let Some(Expr::List(cases)) = args.first()
+    {
+      for case in cases {
+        if let Expr::List(pair) = case
+          && pair.len() == 2
+        {
+          comparison_points(&pair[1], var, out);
+        }
+      }
+    }
+    for child in crate::syntax::expr_children(e) {
+      walk(child, var, out);
+    }
+  }
+  let snapshot = crate::snapshot_warnings();
+  crate::push_quiet();
+  let symbolic = crate::evaluator::evaluate_expr_to_expr(integrand);
+  crate::pop_quiet();
+  crate::restore_warnings(snapshot);
+  let mut out = Vec::new();
+  if let Ok(symbolic) = symbolic {
+    walk(&symbolic, var, &mut out);
+  }
+  out.retain(|v| v.is_finite());
+  out
+}
+
 /// A limit of integration that is not a number: wolframscript reports
 /// `NIntegrate::nlim` for the first such limit and leaves the call
 /// unevaluated.
@@ -16214,6 +16289,37 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::syntax::expr_to_output(evaluated_bounds.last().unwrap()),
     ));
     return Ok(unevaluated_nintegrate(args));
+  }
+
+  // The integral is split where a Piecewise in the integrand switches
+  // pieces, so the quadrature never straddles a kink or jump (which made
+  // it refine to its point limit on every such call).
+  if bounds.iter().all(|b| b.is_finite()) {
+    let breaks = piecewise_breakpoints(integrand, &var_name);
+    if !breaks.is_empty() {
+      let ascending = bounds[0] <= *bounds.last().unwrap();
+      let mut refined = bounds.clone();
+      for b in breaks {
+        let inside = refined.windows(2).any(|w| {
+          let (lo, hi) = (w[0].min(w[1]), w[0].max(w[1]));
+          lo < b && b < hi
+        });
+        if inside {
+          refined.push(b);
+        }
+      }
+      refined.sort_by(|a, b| {
+        if ascending {
+          a.total_cmp(b)
+        } else {
+          b.total_cmp(a)
+        }
+      });
+      refined.dedup();
+      if bounds.len() == 2 {
+        bounds = refined;
+      }
+    }
   }
 
   // A complex-valued integrand over a real range: its real and imaginary

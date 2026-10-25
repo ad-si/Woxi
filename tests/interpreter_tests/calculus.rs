@@ -4997,6 +4997,22 @@ mod nintegrate {
     assert!(result.warnings.is_empty(), "{:?}", result.warnings);
   }
 
+  // The range is split where a Piecewise switches pieces (also one hidden
+  // behind a definition), so the quadrature does not refine to its point
+  // limit at the kink — a Plot of such integrals timed out.
+  #[test]
+  fn splits_at_piecewise_breakpoints() {
+    assert_eq!(
+      interpret(
+        "f[x_] := Piecewise[{{Sqrt[1 - x^2], x < 3/10}, {x - 1, True}}]; \
+         TimeConstrained[Abs[NIntegrate[f[x], {x, -1, 1}] - \
+         N[(3/10 Sqrt[91/100] + ArcSin[3/10])/2 + Pi/4 - 49/200]] < 10^-10, 2]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // `MaxPoints` caps the samples of each dimension (the d-th root of the
   // total for a d-dimensional integral) and keeps the best estimate so far,
   // so a coarse request stays bounded yet close to the converged value.
