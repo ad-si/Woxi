@@ -209,6 +209,42 @@ fn parse_range_spec(times: &[&Expr]) -> Option<([f64; 6], f64, String)> {
   Some((start, amount, unit))
 }
 
+/// Pair a value path with the regular numeric times `t0, t0 + dt, …` given by
+/// the `{{t0, t1, dt}}` specification of an `EventSeries` field list, whose
+/// values come as `{{v1, v2, …}}` (a list holding the one path).
+fn build_pairs_from_event_spec(fields: &[Expr]) -> Option<Vec<Expr>> {
+  let Expr::List(paths) = fields.first()? else {
+    return None;
+  };
+  // The internal form holds a list of paths; only a single path is a series.
+  let values = match paths.iter().collect::<Vec<_>>()[..] {
+    [Expr::List(path)] => path,
+    _ => return None,
+  };
+  let Expr::List(specs) = fields.get(1)? else {
+    return None;
+  };
+  let Some(Expr::List(spec)) = specs.iter().next() else {
+    return None;
+  };
+  let [t0, _, dt] = spec.iter().collect::<Vec<_>>()[..] else {
+    return None;
+  };
+  let time_at = |i: usize| -> Option<Expr> {
+    match (t0, dt) {
+      (Expr::Integer(a), Expr::Integer(d)) => {
+        Some(Expr::Integer(a + d * i as i128))
+      }
+      _ => Some(Expr::Real(as_f64(t0)? + as_f64(dt)? * i as f64)),
+    }
+  };
+  values
+    .iter()
+    .enumerate()
+    .map(|(i, v)| Some(Expr::List(vec![time_at(i)?, v.clone()].into())))
+    .collect()
+}
+
 /// Build canonical `{{date, value}, ...}` pairs from a value path and the date
 /// specification embedded in `TemporalData`'s field list.
 fn build_pairs_from_temporal(fields: &[Expr]) -> Option<Vec<Expr>> {
@@ -856,6 +892,16 @@ pub fn temporal_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(pairs) = build_pairs_from_temporal(&fields) {
       return Ok(time_series(pairs));
     }
+  }
+
+  // `TemporalData[EventSeries, {values, {{t0, t1, dt}}, …}]`: a value path
+  // sampled at the regular numeric times t0, t0 + dt, …
+  if let (Some(Expr::Identifier(tag)), Some(Expr::List(fields))) =
+    (args.first(), args.get(1))
+    && tag == "EventSeries"
+    && let Some(pairs) = build_pairs_from_event_spec(fields)
+  {
+    return Ok(time_series(pairs));
   }
 
   // Constructor form `TemporalData[values, times, …]`.

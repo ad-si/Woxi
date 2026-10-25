@@ -1377,6 +1377,101 @@ fn probability_distribution_table(dargs: &[Expr]) -> Option<SamplingTable> {
   })
 }
 
+/// A closure drawing one matrix from a Gaussian random-matrix ensemble, or
+/// (for `MatrixPropertyDistribution[prop, Distributed[x, ensemble]]`) one
+/// matrix of the underlying ensemble. `None` when `name`/`dargs` is not such
+/// a distribution with numeric parameters.
+fn matrix_ensemble_sampler<'a>(
+  name: &str,
+  dargs: &'a [Expr],
+) -> Option<Box<dyn Fn() -> Expr + 'a>> {
+  if name == "MatrixPropertyDistribution" {
+    let [
+      _,
+      Expr::FunctionCall {
+        name: dname,
+        args: dspec,
+      },
+    ] = dargs
+    else {
+      return None;
+    };
+    if dname != "Distributed"
+      || dspec.len() != 2
+      || !matches!(dspec[0], Expr::Identifier(_))
+    {
+      return None;
+    }
+    let Expr::FunctionCall {
+      name: ename,
+      args: eargs,
+    } = &dspec[1]
+    else {
+      return None;
+    };
+    return matrix_ensemble_sampler(ename, eargs);
+  }
+  let unitary = match name {
+    "GaussianOrthogonalMatrixDistribution" => false,
+    "GaussianUnitaryMatrixDistribution" => true,
+    _ => return None,
+  };
+  let (sigma, size) = match dargs {
+    [size] => (1.0, size),
+    [sigma, size] => (try_eval_to_f64(sigma)?, size),
+    _ => return None,
+  };
+  if sigma <= 0.0 {
+    return None;
+  }
+  let size = match size {
+    Expr::Integer(k) if *k > 0 => *k as usize,
+    _ => return None,
+  };
+  Some(Box::new(move || {
+    use rand_distr::{Distribution, Normal};
+    // Density ∝ exp(-Tr(m²) / (2σ²)): real diagonal with variance σ², and
+    // off-diagonal entries (each real/imaginary part) with variance σ²/2.
+    let diag = Normal::new(0.0, sigma).unwrap();
+    let off = Normal::new(0.0, sigma / std::f64::consts::SQRT_2).unwrap();
+    let mut entries = vec![vec![(0.0f64, 0.0f64); size]; size];
+    crate::with_rng(|rng| {
+      for i in 0..size {
+        entries[i][i] = (diag.sample(rng), 0.0);
+        for j in i + 1..size {
+          let re = off.sample(rng);
+          let im = if unitary { off.sample(rng) } else { 0.0 };
+          entries[i][j] = (re, im);
+          entries[j][i] = (re, -im);
+        }
+      }
+    });
+    Expr::List(
+      entries
+        .into_iter()
+        .map(|row| {
+          Expr::List(
+            row
+              .into_iter()
+              .map(|(re, im)| {
+                if im == 0.0 {
+                  Expr::Real(re)
+                } else {
+                  crate::functions::math_ast::build_complex_float_expr_keep_real(
+                    re, im,
+                  )
+                }
+              })
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    )
+  }))
+}
+
 /// RandomVariate[dist] or RandomVariate[dist, n]
 /// Supports UniformDistribution[{min, max}] and NormalDistribution[mu, sigma]
 pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1457,6 +1552,35 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     None
   };
+
+  // Random-matrix ensembles and properties derived from them.
+  if let Expr::FunctionCall { name, args: dargs } = dist
+    && let Some(draw) = matrix_ensemble_sampler(name, dargs)
+  {
+    let sample = || -> Result<Expr, InterpreterError> {
+      let matrix = draw();
+      // MatrixPropertyDistribution[prop, Distributed[x, ensemble]]: bind the
+      // sampled matrix to x and evaluate the property.
+      if let [property, Expr::FunctionCall { args: spec, .. }] =
+        dargs.as_slice()
+        && name == "MatrixPropertyDistribution"
+        && let Expr::Identifier(var) = &spec[0]
+      {
+        let bound = crate::syntax::substitute_variable(property, var, &matrix);
+        return crate::evaluator::evaluate_expr_to_expr(&bound);
+      }
+      Ok(matrix)
+    };
+    return match n {
+      None => sample(),
+      Some(count) => Ok(Expr::List(
+        (0..count)
+          .map(|_| sample())
+          .collect::<Result<Vec<_>, _>>()?
+          .into(),
+      )),
+    };
+  }
 
   // Local helpers for the distributions added below.
   fn sample_poisson(lambda: f64) -> Result<i128, InterpreterError> {
