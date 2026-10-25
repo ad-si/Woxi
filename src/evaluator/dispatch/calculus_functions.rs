@@ -5079,8 +5079,10 @@ fn gf_n_power_k(k: i128, x: &Expr) -> Expr {
   let eulerian = compute_eulerian_numbers(k_usize);
 
   // Build numerator polynomial: Sum[A(k,j) * x^(j+1), j=0..k-1]
-  // Using (1-x)^(k+1) as denominator for consistency with GF[n] = x/(1-x)^2
-  let sign = 1i128;
+  // over the denominator (-1+x)^(k+1), the canonical Wolfram form. Since
+  // (1-x) = -(-1+x), (1-x)^(k+1) = (-1)^(k+1) * (-1+x)^(k+1): for an odd
+  // power the numerator's terms are negated to compensate.
+  let sign = if (k + 1) % 2 != 0 { -1i128 } else { 1 };
   let mut num_terms: Vec<Expr> = Vec::new();
   for (j, &coeff) in eulerian.iter().enumerate() {
     let signed_coeff = sign * coeff;
@@ -5108,20 +5110,10 @@ fn gf_n_power_k(k: i128, x: &Expr) -> Expr {
     num_terms.into_iter().reduce(plus2).unwrap()
   };
 
-  // Denominator: (-1+x)^(k+1) — canonical Wolfram form.
-  // Since (1-x) = -(-1+x), we have (1-x)^(k+1) = (-1)^(k+1) * (-1+x)^(k+1).
-  // When (k+1) is odd, the numerator must be negated to compensate.
   let denominator =
     pow2(plus2(Expr::Integer(-1), x.clone()), Expr::Integer(k + 1));
 
-  let final_numerator = if (k + 1) % 2 != 0 {
-    // Odd power: negate numerator
-    times2(Expr::Integer(-1), numerator)
-  } else {
-    numerator
-  };
-
-  div2(final_numerator, denominator)
+  div2(numerator, denominator)
 }
 
 /// Compute Eulerian numbers A(k, j) for j = 0..k-1

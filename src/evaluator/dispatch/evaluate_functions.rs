@@ -1064,15 +1064,10 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
-  let combinatorica_active = crate::current_context_path()
-    .iter()
-    .any(|c| c == "Combinatorica`");
-  let computational_geometry_active = crate::current_context_path()
-    .iter()
-    .any(|c| c == "ComputationalGeometry`");
-  let graph_utilities_active = crate::current_context_path()
-    .iter()
-    .any(|c| c == "GraphUtilities`");
+  let combinatorica_active = crate::context_path_contains("Combinatorica`");
+  let computational_geometry_active =
+    crate::context_path_contains("ComputationalGeometry`");
+  let graph_utilities_active = crate::context_path_contains("GraphUtilities`");
   let combinatorica_graph_first = matches!(
     args.first(),
     Some(Expr::FunctionCall { name: head, .. }) if head == "Combinatorica`Graph"

@@ -96,6 +96,90 @@ pub(super) fn canonical_monomial_product(args: &[Expr]) -> Option<Expr> {
   Some(times(args.to_vec()))
 }
 
+/// A symbol, or a call of a head, without built-in meaning: `Times` only
+/// orders it among the other factors (`a`, `g[x[1], x[2]]`).
+fn is_plain_factor(e: &Expr) -> bool {
+  match e {
+    Expr::Identifier(name) | Expr::FunctionCall { name, .. } => {
+      is_plain_symbol(name)
+    }
+    _ => false,
+  }
+}
+
+/// A term of a plain sum: an exact number, a plain factor, or a product of
+/// an optional exact coefficient and plain factors.
+fn is_plain_term(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let factors = match args.first() {
+        Some(c) if super::arithmetic::expr_to_coeff(c).is_some() => &args[1..],
+        _ => &args[..],
+      };
+      !factors.is_empty() && factors.iter().all(is_plain_factor)
+    }
+    _ => is_plain_factor(e) || super::arithmetic::expr_to_coeff(e).is_some(),
+  }
+}
+
+/// A sum of plain terms, not all of them numbers, which as a factor of a
+/// product is kept whole and only ordered.
+fn is_plain_sum(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args } if name == "Plus"
+    && args.iter().all(is_plain_term)
+    && args.iter().any(|t| super::arithmetic::expr_to_coeff(t).is_none()))
+}
+
+/// `Times[args]` (already flattened) when, besides exact numbers, the
+/// factors are distinct plain factors and plain sums: nothing combines, so the product is the
+/// coefficient times the factors in canonical order. A sum with a
+/// coefficient other than 1 is left to the general code, which distributes
+/// `-1` over it. Products of function calls (the terms of an expanded trace
+/// of `g[a, b]` metric tensors) otherwise went through every rewrite the
+/// general `Times` knows.
+pub(super) fn plain_factor_product(args: &[Expr]) -> Option<Expr> {
+  #[cfg(test)]
+  if tests::GENERIC_ONLY.get() {
+    return None;
+  }
+  let mut coeff = super::arithmetic::Coeff::Exact(1, 1);
+  let mut factors: Vec<&Expr> = Vec::with_capacity(args.len());
+  let mut has_sum = false;
+  for arg in args {
+    if let Some(c) = super::arithmetic::expr_to_coeff(arg) {
+      coeff = coeff.mul(&c);
+    } else if is_plain_factor(arg) {
+      factors.push(arg);
+    } else if is_plain_sum(arg) {
+      has_sum = true;
+      factors.push(arg);
+    } else {
+      return None;
+    }
+  }
+  if factors.is_empty() || coeff.is_zero() || (has_sum && !coeff.is_one()) {
+    return None;
+  }
+  factors.sort_by(|a, b| super::arithmetic::times_factor_order(a, b));
+  // Equal neighbours would merge into a power.
+  if !factors
+    .windows(2)
+    .all(|w| super::arithmetic::times_factor_order(w[0], w[1]).is_lt())
+  {
+    return None;
+  }
+  let mut out: Vec<Expr> = Vec::with_capacity(factors.len() + 1);
+  if !coeff.is_one() {
+    out.push(coeff.to_expr());
+  }
+  out.extend(factors.into_iter().cloned());
+  Some(if out.len() == 1 {
+    out.pop().unwrap()
+  } else {
+    times(out)
+  })
+}
+
 fn is_sum(e: &Expr) -> bool {
   matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
     || matches!(
@@ -107,6 +191,94 @@ fn is_sum(e: &Expr) -> bool {
     )
 }
 
+/// The terms of a sum whose arguments may themselves be sums.
+fn flatten_sum(args: &[Expr]) -> Vec<Expr> {
+  let mut flat: Vec<Expr> = Vec::with_capacity(args.len() + 1);
+  let mut stack: Vec<&Expr> = args.iter().rev().collect();
+  while let Some(arg) = stack.pop() {
+    match arg {
+      Expr::FunctionCall { name, args } if name == "Plus" => {
+        stack.extend(args.iter().rev());
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        right,
+      } => {
+        stack.push(right);
+        stack.push(left);
+      }
+      other => flat.push(other.clone()),
+    }
+  }
+  flat
+}
+
+/// The factors of a canonical product of calls of heads without built-in
+/// meaning, with an optional exact coefficient (`4*g[a, b]*g[c, d]`, or a
+/// single call): the factors sorted the way `Plus` compares them.
+fn call_product_key(term: &Expr) -> Option<Vec<&Expr>> {
+  let factors: &[Expr] = match term {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      match args.first() {
+        Some(c) if super::arithmetic::expr_to_coeff(c).is_some() => &args[1..],
+        _ => &args[..],
+      }
+    }
+    _ => std::slice::from_ref(term),
+  };
+  let is_call = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if is_plain_symbol(name));
+  if factors.is_empty()
+    || !factors.iter().all(is_call)
+    || !factors
+      .windows(2)
+      .all(|w| super::arithmetic::times_factor_order(&w[0], &w[1]).is_lt())
+  {
+    return None;
+  }
+  let mut key: Vec<&Expr> = factors.iter().collect();
+  key.sort_by(|a, b| super::arithmetic::wl_arg_order(a, b));
+  Some(key)
+}
+
+/// `Plus[args]` when every term is a canonical product of calls of heads
+/// without built-in meaning and no two terms combine. `Plus` orders such
+/// terms from their last factor back, the factors taken in `wl_arg_order`
+/// (see `call_led_order`), and a term whose factors are the other's last
+/// ones first. Comparing the terms that way directly avoids building the
+/// rest of each product on every comparison, which made sorting the terms
+/// of an expanded trace of `g[a, b]` metric tensors crawl.
+pub(super) fn plain_call_sum(args: &[Expr]) -> Option<Expr> {
+  #[cfg(test)]
+  if tests::GENERIC_ONLY.get() {
+    return None;
+  }
+  if args.iter().any(is_sum) {
+    return plain_call_sum(&flatten_sum(args));
+  }
+  if args.len() < 2 {
+    return None;
+  }
+  let mut keyed: Vec<(Vec<&Expr>, &Expr)> = args
+    .iter()
+    .map(|term| Some((call_product_key(term)?, term)))
+    .collect::<Option<_>>()?;
+  let order = |a: &[&Expr], b: &[&Expr]| {
+    a.iter()
+      .rev()
+      .zip(b.iter().rev())
+      .map(|(x, y)| super::arithmetic::wl_arg_order(x, y))
+      .find(|o| o.is_ne())
+      .unwrap_or_else(|| a.len().cmp(&b.len()))
+  };
+  keyed.sort_by(|(a, _), (b, _)| order(a, b));
+  // Equal neighbours are like terms, which combine.
+  if keyed.windows(2).any(|w| order(&w[0].0, &w[1].0).is_eq()) {
+    return None;
+  }
+  Some(plus(keyed.into_iter().map(|(_, t)| t.clone()).collect()))
+}
+
 /// `Plus[args]` when every term is a canonical monomial (or one exact
 /// constant) and no two terms combine.
 pub(super) fn canonical_polynomial_sum(args: &[Expr]) -> Option<Expr> {
@@ -116,25 +288,7 @@ pub(super) fn canonical_polynomial_sum(args: &[Expr]) -> Option<Expr> {
   }
   // `Plus` is Flat: sums arrive nested whenever a chain is evaluated pairwise.
   if args.iter().any(is_sum) {
-    let mut flat: Vec<Expr> = Vec::with_capacity(args.len() + 1);
-    let mut stack: Vec<&Expr> = args.iter().rev().collect();
-    while let Some(arg) = stack.pop() {
-      match arg {
-        Expr::FunctionCall { name, args } if name == "Plus" => {
-          stack.extend(args.iter().rev());
-        }
-        Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left,
-          right,
-        } => {
-          stack.push(right);
-          stack.push(left);
-        }
-        other => flat.push(other.clone()),
-      }
-    }
-    return canonical_polynomial_sum(&flat);
+    return canonical_polynomial_sum(&flatten_sum(args));
   }
   if args.len() < 2 {
     return None;
@@ -312,6 +466,73 @@ mod tests {
         terms.push(eval(["7", "-1/3", "2^60", "0"][rng.next(4)]));
       }
       // A nested sum, as pairwise evaluation of a `Plus` chain passes it.
+      if terms.len() > 3 && rng.next(2) == 0 {
+        let tail = terms.split_off(2);
+        terms.push(plus(tail));
+      }
+      let fast = plus_ast(&terms).unwrap();
+      let general = generic(|| plus_ast(&terms)).unwrap();
+      assert_eq!(format!("{fast:?}"), format!("{general:?}"), "{terms:?}");
+    }
+  }
+
+  const CALLS: [&str; 8] = [
+    "g[x[1], x[2]]",
+    "g[x[2], x[1]]",
+    "g[x[1], x[10]]",
+    "g[a]",
+    "f[a, b]",
+    "h[]",
+    "a",
+    "zz",
+  ];
+
+  fn random_call_term(rng: &mut Rng) -> String {
+    let mut factors = vec![COEFFS[rng.next(COEFFS.len())].to_string()];
+    for _ in 0..rng.next(4) {
+      factors.push(CALLS[rng.next(CALLS.len())].to_string());
+    }
+    match factors.join(" ").trim() {
+      "" | "-" => "1".to_string(),
+      t => format!("({t})"),
+    }
+  }
+
+  /// Products of calls of undefined heads, of sums of those, and of
+  /// coefficients, with repeated and out-of-order factors.
+  #[test]
+  fn call_products_match_the_general_times() {
+    let mut rng = Rng(0x0123_4567_89ab_cdef);
+    for _ in 0..2000 {
+      let factors: Vec<Expr> = (0..=rng.next(4))
+        .map(|_| match rng.next(4) {
+          0 => eval(&format!(
+            "{} + {}",
+            random_call_term(&mut rng),
+            random_call_term(&mut rng)
+          )),
+          _ => eval(&random_call_term(&mut rng)),
+        })
+        .flat_map(|e| match &e {
+          Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+          _ => vec![e],
+        })
+        .collect();
+      let fast = times_ast(&factors).unwrap();
+      let general = generic(|| times_ast(&factors)).unwrap();
+      assert_eq!(format!("{fast:?}"), format!("{general:?}"), "{factors:?}");
+    }
+  }
+
+  /// Sums of products of calls, with like terms, repeated factors and
+  /// symbols mixed in to exercise the fallbacks too.
+  #[test]
+  fn call_sums_match_the_general_plus() {
+    let mut rng = Rng(0x3c6e_f372_fe94_f82b);
+    for _ in 0..2000 {
+      let mut terms: Vec<Expr> = (0..2 + rng.next(8))
+        .map(|_| eval(&random_call_term(&mut rng)))
+        .collect();
       if terms.len() > 3 && rng.next(2) == 0 {
         let tail = terms.split_off(2);
         terms.push(plus(tail));

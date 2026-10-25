@@ -1797,6 +1797,16 @@ pub fn current_context_path() -> Vec<String> {
     .unwrap_or_else(|| vec!["System`".to_string(), "Global`".to_string()])
 }
 
+/// Whether `context` is on the current `$ContextPath`, without copying it.
+pub fn context_path_contains(context: &str) -> bool {
+  absorb_assigned_context_path();
+  let on = |path: &[String]| path.iter().any(|c| c == context);
+  CONTEXT_PATH_STACK
+    .with(|s| s.borrow().last().map(|p| on(p)))
+    .or_else(|| CONTEXT_PATH_BASE.with(|b| b.borrow().as_deref().map(on)))
+    .unwrap_or(matches!(context, "System`" | "Global`"))
+}
+
 /// Put `context` at the front of `$ContextPath`, as loading a package that
 /// provides it does. A context already on the path stays where it is.
 pub fn prepend_to_context_path(context: &str) {

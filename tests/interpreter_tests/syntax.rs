@@ -13940,3 +13940,62 @@ mod not_of_unary_minus {
     );
   }
 }
+
+/// Long `+`, `-` and `*` chains, as `Put` writes an expanded result: the
+/// parser copied the partial tree at every operator, and the evaluator added
+/// the terms pairwise, re-sorting the growing sum at every step — both
+/// quadratic in the length of the chain (issue #1772).
+mod long_operator_chains {
+  use super::*;
+
+  #[test]
+  fn long_sum_is_one_flat_plus() {
+    let terms: Vec<String> = (1..=4000).map(|i| format!("x{i} y")).collect();
+    let code = format!(
+      "s = {}; {{Length[s], Coefficient[s, x2]}}",
+      terms.join(" - ")
+    );
+    let start = std::time::Instant::now();
+    assert_eq!(interpret(&code).unwrap(), "{4000, -y}");
+    assert!(start.elapsed().as_secs() < 20, "took {:?}", start.elapsed());
+  }
+
+  #[test]
+  fn long_product_is_one_flat_times() {
+    let factors: Vec<String> = (1..=4000).map(|i| format!("a{i}")).collect();
+    let code = format!("Length[{}]", factors.join("*"));
+    let start = std::time::Instant::now();
+    assert_eq!(interpret(&code).unwrap(), "4000");
+    assert!(start.elapsed().as_secs() < 20, "took {:?}", start.elapsed());
+  }
+
+  // `a - b + c` is `Plus[a, Times[-1, b], c]`, evaluated as one call.
+  #[test]
+  fn chain_is_evaluated_as_one_call() {
+    assert_eq!(interpret("1 - Sequence[3, 4]").unwrap(), "-11");
+    clear_state();
+    assert_eq!(
+      interpret("Unprotect[Plus]; Plus = Q; r = a - b + c; Plus =.; r")
+        .unwrap(),
+      "Q[a, -b, c]"
+    );
+    clear_state();
+  }
+}
+
+/// Printing re-scanned every subtree at every level of a nested call.
+mod deeply_nested_output {
+  use super::*;
+
+  #[test]
+  fn nested_calls_print_on_one_line() {
+    assert_eq!(
+      interpret("StringLength[ToString[Nest[f, x, 1000]]]").unwrap(),
+      "3001"
+    );
+    assert_eq!(
+      interpret("ToString[f[g[1, -2], h[]]]").unwrap(),
+      "f[g[1, -2], h[]]"
+    );
+  }
+}

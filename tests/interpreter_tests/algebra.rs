@@ -530,6 +530,25 @@ mod expand {
     );
   }
 
+  // Ten indices: 945 products of five metric tensors each (issue #1772).
+  #[test]
+  fn dirac_trace_recursion_ten_indices() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "diracTr[] := 4; diracTr[a_, b_] := 4 g[a, b]; \
+         diracTr[a_, rest___] := Module[{list = {rest}}, \
+           Sum[(-1)^(m + 1) Expand[g[a, list[[m]]] diracTr @@ Delete[list, m]], \
+             {m, 1, Length[list]}]]; \
+         t = diracTr @@ Array[x, 10]; \
+         {Length[t], Length[Union[Cases[t, _g, Infinity]]], t /. g[_, _] -> 1}"
+      )
+      .unwrap(),
+      "{945, 45, 4}"
+    );
+    assert!(start.elapsed().as_secs() < 30, "took {:?}", start.elapsed());
+  }
+
   #[test]
   fn rational_coefficients() {
     assert_eq!(

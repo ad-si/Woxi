@@ -3271,15 +3271,11 @@ pub fn evaluate_expr_to_expr_inner(
           }
           return crate::functions::string_ast::string_join_ast(&evaled);
         }
-        BinaryOperator::Plus | BinaryOperator::Minus => {
-          return evaluate_binary_op_chain(*op, left, right, |o| {
-            matches!(o, BinaryOperator::Plus | BinaryOperator::Minus)
-          });
-        }
-        BinaryOperator::Times | BinaryOperator::Divide => {
-          return evaluate_binary_op_chain(*op, left, right, |o| {
-            matches!(o, BinaryOperator::Times | BinaryOperator::Divide)
-          });
+        BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide => {
+          return evaluate_flat_chain(*op, left, right);
         }
         _ => {}
       }
@@ -4552,66 +4548,168 @@ pub fn evaluate_expr_to_expr_inner(
   }
 }
 
-/// Evaluate a chain of `Plus`/`Minus` or `Times`/`Divide` `BinaryOp` nodes
-/// iteratively instead of recursing into `evaluate_expr_to_expr` once per
-/// nesting level.
-///
-/// `a*b*c*...` (common in generated code, e.g. a word list built as
-/// `list = w1*w2*...*w1400`) parses as an O(n)-deep nested `BinaryOp` chain.
-/// Naively recursing into `evaluate_expr_to_expr(left)` for each level burns
-/// one `$RecursionLimit` slot per term and terminates the whole evaluation
-/// past ~1024 terms — even though Wolfram evaluates a flat Plus/Times chain
-/// of any length without spending any recursion budget at all (`Times` and
-/// `Plus` are `Flat`: the whole chain is one n-ary expression, not nested
-/// binary calls). Walking the chain with an explicit stack instead of Rust
-/// recursion evaluates each leaf/combine step at constant depth while
-/// reproducing the exact same left-to-right, depth-first evaluation order
-/// (and hence the exact same `evaluate_binary_op_pair` semantics) as the
-/// naive recursive version.
-fn evaluate_binary_op_chain(
+/// Evaluate a parsed chain of `+`/`-` or `*`/`/` the way Wolfram reads it:
+/// as one flat `Plus` (`Times`) of the operands, each subtrahend negated
+/// (divisor inverted) — `a - b + c` is `Plus[a, Times[-1, b], c]` and
+/// `a / b * c` is `Times[a, Power[b, -1], c]`. Folding the operands pairwise
+/// instead re-sorted and re-collected the growing sum or product at every
+/// step, which made a long one quadratic to evaluate. The chain is walked
+/// with an explicit stack, so a long one (a word list built as
+/// `w1*w2*...*w1400`) spends no `$RecursionLimit` budget either.
+fn evaluate_flat_chain(
   root_op: BinaryOperator,
   root_left: &Expr,
   root_right: &Expr,
-  in_family: impl Fn(BinaryOperator) -> bool,
+) -> Result<Expr, InterpreterError> {
+  let (head, plain, inverse) = match root_op {
+    BinaryOperator::Plus | BinaryOperator::Minus => {
+      ("Plus", BinaryOperator::Plus, BinaryOperator::Minus)
+    }
+    _ => ("Times", BinaryOperator::Times, BinaryOperator::Divide),
+  };
+  // Operands with whether they are inverted, left to right. The tree is
+  // left-deep for a parsed chain, so walk it with an explicit stack rather
+  // than recursion.
+  let mut operands: Vec<(&Expr, bool)> = Vec::new();
+  let mut work: Vec<(&Expr, bool)> =
+    vec![(root_right, root_op == inverse), (root_left, false)];
+  while let Some((e, inverted)) = work.pop() {
+    match e {
+      // An inverted `(a + b)` / `(a b)` stays one operand, inverted whole.
+      Expr::BinaryOp { op, left, right }
+        if !inverted && (*op == plain || *op == inverse) =>
+      {
+        work.push((right, *op == inverse));
+        work.push((left, false));
+      }
+      _ => operands.push((e, inverted)),
+    }
+  }
+  let mut values = Vec::with_capacity(operands.len());
+  for (e, inverted) in &operands {
+    values.push((strip_unevaluated(&evaluate_expr_to_expr(e)?), *inverted));
+  }
+  // A chain of numbers alone is folded pairwise along the tree, as each
+  // operator is applied in turn: machine and arbitrary-precision results
+  // round per operation (`x/5` divides rather than multiplying by `0.2`).
+  let is_number = |e: &Expr| match e {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..) => true,
+    Expr::FunctionCall { name, args } => {
+      (name == "Rational" || name == "Complex") && args.len() == 2
+    }
+    _ => false,
+  };
+  if values.iter().all(|(v, _)| is_number(v)) {
+    return fold_chain_pairwise(
+      root_op,
+      root_left,
+      root_right,
+      (plain, inverse),
+      values.into_iter().map(|(v, _)| v),
+    );
+  }
+  // An inverted operand is `Times[-1, b]` / `Power[b, -1]`, evaluated with
+  // the user's rules for that head (`mytag[3] - mytag[3]`).
+  let invert = |v: Expr| {
+    if head == "Plus" {
+      evaluate_function_call_ast("Times", &[Expr::Integer(-1), v])
+    } else {
+      evaluate_function_call_ast("Power", &[v, Expr::Integer(-1)])
+    }
+  };
+  let has_sequence = values.iter().any(
+    |(v, _)| matches!(v, Expr::FunctionCall { name, .. } if name == "Sequence"),
+  );
+  if has_sequence {
+    // Re-evaluating the call form splices the Sequence operands:
+    // `1 - Sequence[3, 4]` is `Plus[1, Times[-1, 3, 4]]`.
+    let terms = values
+      .into_iter()
+      .map(|(v, inverted)| match (inverted, head) {
+        (false, _) => v,
+        (true, "Plus") => neg(v),
+        (true, _) => pow(v, Expr::Integer(-1)),
+      })
+      .collect();
+    return evaluate_expr_to_expr(&call(head, terms));
+  }
+  let terms = values
+    .into_iter()
+    .map(|(v, inverted)| if inverted { invert(v) } else { Ok(v) })
+    .collect::<Result<Vec<_>, _>>()?;
+  // `Unprotect[Plus]; Plus = Q; a + b` is `Q[a, b]`.
+  match head_own_value(head) {
+    Some(new_head) => evaluate_function_call_ast(&new_head, &terms),
+    None => evaluate_function_call_ast(head, &terms),
+  }
+}
+
+/// Fold the already-evaluated operands of a `+`/`-` or `*`/`/` chain
+/// pairwise along the chain's tree, in the order `evaluate_flat_chain`
+/// collected them.
+fn fold_chain_pairwise(
+  root_op: BinaryOperator,
+  root_left: &Expr,
+  root_right: &Expr,
+  (plain, inverse): (BinaryOperator, BinaryOperator),
+  mut values: impl Iterator<Item = Expr>,
 ) -> Result<Expr, InterpreterError> {
   enum Work<'a> {
-    Node(&'a Expr),
+    Node(&'a Expr, bool),
     Combine(BinaryOperator),
   }
-  // `work` is a LIFO stack, so operands must be pushed in reverse of the
-  // order they should be popped/processed: `Combine` goes in first (popped
-  // last, once both operands are ready), then the right operand, then the
-  // left operand last (popped first) — giving the same left-to-right,
-  // depth-first evaluation order as the naive recursive version.
   let mut work = vec![
     Work::Combine(root_op),
-    Work::Node(root_right),
-    Work::Node(root_left),
+    Work::Node(root_right, root_op == inverse),
+    Work::Node(root_left, false),
   ];
-  let mut values: Vec<Expr> = Vec::new();
+  let mut results: Vec<Expr> = Vec::new();
   while let Some(item) = work.pop() {
     match item {
-      Work::Node(e) => {
-        if let Expr::BinaryOp { op, left, right } = e
-          && in_family(*op)
-        {
-          work.push(Work::Combine(*op));
-          work.push(Work::Node(right));
-          work.push(Work::Node(left));
-          continue;
-        }
-        values.push(strip_unevaluated(&evaluate_expr_to_expr(e)?));
+      Work::Node(Expr::BinaryOp { op, left, right }, false)
+        if *op == plain || *op == inverse =>
+      {
+        work.push(Work::Combine(*op));
+        work.push(Work::Node(right, *op == inverse));
+        work.push(Work::Node(left, false));
+      }
+      Work::Node(..) => {
+        results.push(values.next().expect("chain: missing operand"));
       }
       Work::Combine(op) => {
-        let right_val = values.pop().expect("chain: missing right operand");
-        let left_val = values.pop().expect("chain: missing left operand");
-        values.push(strip_unevaluated(&evaluate_binary_op_pair(
-          op, left_val, right_val,
+        let right = results.pop().expect("chain: missing right operand");
+        let left = results.pop().expect("chain: missing left operand");
+        results.push(strip_unevaluated(&evaluate_binary_op_pair(
+          op, left, right,
         )?));
       }
     }
   }
-  Ok(values.pop().expect("chain: missing result"))
+  Ok(results.pop().expect("chain: missing result"))
+}
+
+/// The symbol a built-in arithmetic head has been assigned as its own value
+/// (`Unprotect[Plus]; Plus = Q`), which then stands in for it.
+fn head_own_value(name: &str) -> Option<String> {
+  let new_head = ENV.with(|e| {
+    let env = e.borrow();
+    match env.get(name) {
+      Some(StoredValue::ExprVal(Expr::Identifier(s))) => Some(s.clone()),
+      // OwnValues set via `Sym = simple_identifier` are stored as Raw
+      // text (the assignment shortcut). Treat a single-identifier
+      // textual value the same as a head substitution.
+      Some(StoredValue::Raw(s))
+        if s.chars().all(|c| c.is_alphanumeric() || c == '$') =>
+      {
+        Some(s.clone())
+      }
+      _ => None,
+    }
+  })?;
+  (new_head != name).then_some(new_head)
 }
 
 /// Combine two already-evaluated operands of a `BinaryOp` (`Plus`, `Minus`,
@@ -4676,24 +4774,7 @@ fn evaluate_binary_op_pair(
     // If the head symbol has an OwnValue (e.g. `Unprotect[Plus]; Plus=Q`),
     // substitute the head and re-evaluate as `Q[a, b]` rather than the
     // built-in plus_ast path. Matches Wolfram: `Plus = Q; a + b` → `Q[a, b]`.
-    let own_value_head: Option<String> = ENV.with(|e| {
-      let env = e.borrow();
-      match env.get(name) {
-        Some(StoredValue::ExprVal(Expr::Identifier(s))) => Some(s.clone()),
-        // OwnValues set via `Sym = simple_identifier` are stored as Raw
-        // text (the assignment shortcut). Treat a single-identifier
-        // textual value the same as a head substitution.
-        Some(StoredValue::Raw(s))
-          if s.chars().all(|c| c.is_alphanumeric() || c == '$') =>
-        {
-          Some(s.clone())
-        }
-        _ => None,
-      }
-    });
-    if let Some(new_head) = own_value_head
-      && new_head != name
-    {
+    if let Some(new_head) = head_own_value(name) {
       return evaluate_function_call_ast(&new_head, &[left_val, right_val]);
     }
   }

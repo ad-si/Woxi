@@ -951,6 +951,9 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(sum);
   }
+  if let Some(sum) = super::canonical_polynomial::plain_call_sum(args) {
+    return Ok(sum);
+  }
 
   // Sums of plain numbers (the hot path of numeric loops) can never involve
   // Threaded, dates, series, quantities, intervals, music objects or Around,
@@ -1779,14 +1782,14 @@ pub enum Coeff {
 }
 
 impl Coeff {
-  fn is_zero(&self) -> bool {
+  pub(super) fn is_zero(&self) -> bool {
     match self {
       Self::Exact(n, _) => *n == 0,
       Self::BigExact(n, _) => n.sign() == Sign::NoSign,
       Self::Real(f) => *f == 0.0,
     }
   }
-  fn is_one(&self) -> bool {
+  pub(super) fn is_one(&self) -> bool {
     match self {
       Self::Exact(n, d) => *n == 1 && *d == 1,
       Self::BigExact(n, d) => {
@@ -1860,7 +1863,7 @@ impl Coeff {
       _ => Self::Real(self.to_f64() + other.to_f64()),
     }
   }
-  fn mul(&self, other: &Self) -> Self {
+  pub(super) fn mul(&self, other: &Self) -> Self {
     match (self, other) {
       (Self::Exact(n1, d1), Self::Exact(n2, d2)) => {
         if let (Some(sn), Some(sd)) = (n1.checked_mul(*n2), d1.checked_mul(*d2))
@@ -1903,7 +1906,7 @@ impl Coeff {
       Self::Real(f) => Self::Real(-f),
     }
   }
-  fn to_expr(&self) -> Expr {
+  pub(super) fn to_expr(&self) -> Expr {
     match self {
       Self::Exact(n, d) => make_rational(*n, *d),
       Self::BigExact(n, d) => {
@@ -1929,7 +1932,7 @@ impl Coeff {
 /// BigInteger. Unlike `expr_to_rational` (which is limited to i128) this
 /// preserves rationals whose numerator/denominator exceed i128, so Plus and
 /// friends can combine them instead of leaving them as symbolic summands.
-fn expr_to_coeff(arg: &Expr) -> Option<Coeff> {
+pub(super) fn expr_to_coeff(arg: &Expr) -> Option<Coeff> {
   match arg {
     Expr::Integer(n) => Some(Coeff::Exact(*n, 1)),
     Expr::BigInteger(n) => Some(Coeff::BigExact(n.clone(), BigInt::from(1))),
@@ -3894,7 +3897,7 @@ fn wl_base_exp(f: &Expr) -> (&Expr, Cow<'_, Expr>) {
 /// arity, then arguments left to right (`f[x] < f[y] < f[x, x]`). All
 /// wolframscript-verified (`h[a*b] + h[c]`, `Log[-1 + x] + Log[x]`,
 /// `f[2*x] + f[1 + x]`, `Conjugate[a*b] + 2*Conjugate[c]`).
-fn wl_arg_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+pub(super) fn wl_arg_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   wl_arg_order_pass(a, b, false)
 }
 
@@ -6350,6 +6353,12 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
 }
 
 fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
+  symbolic_args.sort_by(times_factor_order);
+}
+
+/// Canonical order of two symbolic factors of a product, the order
+/// `Times` sorts them into.
+pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // Radicals of integer bases where at least one base is negative — the
   // shape left behind by `(-2)^(1/3) (-1)^(2/3)`, which wolframscript keeps
   // unmerged. They order by base ascending, then exponent ascending, the
@@ -6403,54 +6412,339 @@ fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
     ) || matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "I")
       || try_extract_complex_exact(e).is_some()
   };
-  symbolic_args.sort_by(|a, b| {
-    match (is_complex_number(a), is_complex_number(b)) {
-      (true, false) => return std::cmp::Ordering::Less,
-      (false, true) => return std::cmp::Ordering::Greater,
-      _ => {}
-    }
-    match (is_number_base_power(a), is_number_base_power(b)) {
-      (true, false) if !is_number(b) => return std::cmp::Ordering::Less,
-      (false, true) if !is_number(a) => return std::cmp::Ordering::Greater,
-      // Two radicals of numbers order by base, then exponent, as in Sort:
-      // `(3/5)^(1/3)*2^(2/3)`, `(-1/2)^(1/3)*3^(2/3)`.
-      (true, true) => {
-        if let Some(ord) =
-          crate::functions::list_helpers_ast::sorting::numeric_base_power_cmp(
-            a, b,
-          )
-          && ord != std::cmp::Ordering::Equal
-        {
-          return ord;
-        }
-      }
-      _ => {}
-    }
-    if let (Some((ba, (pa, qa))), Some((bb, (pb, qb)))) =
-      (signed_radical_parts(a), signed_radical_parts(b))
-      && (ba < 0 || bb < 0)
-    {
-      if ba != bb {
-        return ba.cmp(&bb);
-      }
-      let left = pa as f64 / qa as f64;
-      let right = pb as f64 / qb as f64;
-      if let Some(ord) = left.partial_cmp(&right)
+  match (is_complex_number(a), is_complex_number(b)) {
+    (true, false) => return std::cmp::Ordering::Less,
+    (false, true) => return std::cmp::Ordering::Greater,
+    _ => {}
+  }
+  match (is_number_base_power(a), is_number_base_power(b)) {
+    (true, false) if !is_number(b) => return std::cmp::Ordering::Less,
+    (false, true) if !is_number(a) => return std::cmp::Ordering::Greater,
+    // Two radicals of numbers order by base, then exponent, as in Sort:
+    // `(3/5)^(1/3)*2^(2/3)`, `(-1/2)^(1/3)*3^(2/3)`.
+    (true, true) => {
+      if let Some(ord) =
+        crate::functions::list_helpers_ast::sorting::numeric_base_power_cmp(
+          a, b,
+        )
         && ord != std::cmp::Ordering::Equal
       {
         return ord;
       }
     }
-    // Two plain function calls with different heads are ordered by those
-    // heads, the way canonical order does: `Gamma[x]*Zeta[x]`, `f[x]*Zeta[x]`,
-    // `Erf[x]*LogGamma[x]`. Without this they fall into the priority buckets
-    // below, which only coincidentally agree with the head order — every head
-    // outside the transcendental list sorted first, however late its name.
-    if let (Some(na), Some(nb)) = (plain_call_head(a), plain_call_head(b))
-      && na != nb
+    _ => {}
+  }
+  if let (Some((ba, (pa, qa))), Some((bb, (pb, qb)))) =
+    (signed_radical_parts(a), signed_radical_parts(b))
+    && (ba < 0 || bb < 0)
+  {
+    if ba != bb {
+      return ba.cmp(&bb);
+    }
+    let left = pa as f64 / qa as f64;
+    let right = pb as f64 / qb as f64;
+    if let Some(ord) = left.partial_cmp(&right)
+      && ord != std::cmp::Ordering::Equal
     {
-      // wolfram_string_order returns 1 when the first name comes first.
-      let ord = crate::functions::list_helpers_ast::wolfram_string_order(na, nb);
+      return ord;
+    }
+  }
+  // Two plain function calls with different heads are ordered by those
+  // heads, the way canonical order does: `Gamma[x]*Zeta[x]`, `f[x]*Zeta[x]`,
+  // `Erf[x]*LogGamma[x]`. Without this they fall into the priority buckets
+  // below, which only coincidentally agree with the head order — every head
+  // outside the transcendental list sorted first, however late its name.
+  if let (Some(na), Some(nb)) = (plain_call_head(a), plain_call_head(b))
+    && na != nb
+  {
+    // wolfram_string_order returns 1 when the first name comes first.
+    let ord = crate::functions::list_helpers_ast::wolfram_string_order(na, nb);
+    if ord > 0 {
+      return std::cmp::Ordering::Less;
+    }
+    if ord < 0 {
+      return std::cmp::Ordering::Greater;
+    }
+  }
+  // A Plus factor takes the max priority of its terms (like Times) so a
+  // transcendental sum such as (Cos[x]+Sin[x]) shares the bucket with
+  // Sin[x] and gets ordered by the top-term rule below. term_priority
+  // itself keeps Plus at 0 because other callers rely on that.
+  let eff_priority = |e: &Expr| match plus_call_args(e) {
+    Some(args) => args.iter().map(term_priority).max().unwrap_or(0),
+    None => term_priority(e),
+  };
+  let pa = eff_priority(a);
+  let pb = eff_priority(b);
+  if pa != pb {
+    return pa.cmp(&pb);
+  }
+  // Within same priority, identifiers before function calls
+  let sa = times_factor_subpriority(a);
+  let sb = times_factor_subpriority(b);
+  if sa != sb {
+    // Special case: an additive expression sorts BEFORE an identifier when:
+    // 1. The identifier appears with a negative coefficient: (x-y)*y not y*(x-y)
+    // 2. The additive is Plus[n, var] where n < 0 and var is the same identifier:
+    //    (-3+x)*x not x*(-3+x)   (monic linear factor with negative constant)
+    // This matches Wolfram's canonical ordering.
+    let is_bare_identifier =
+      |e: &Expr| matches!(e, Expr::Identifier(_) | Expr::Constant(_));
+    // An identifier (or power of one) vs a canonical Plus: order by the
+    // Plus's top term. This takes precedence over the negated-containment
+    // checks below because Wolfram gives `x*(-x + f[x])` — the negated -x
+    // inside the sum doesn't matter when the top term is a function call.
+    // Powers with a constant base (E^a) keep their dedicated sort-key
+    // comparison below.
+    let ident_base_factor = |e: &Expr| {
+      power_const_base(e).is_none()
+        && matches!(
+          times_term_base_exp(e).0,
+          Expr::Identifier(_) | Expr::Constant(_)
+        )
+    };
+    // A positive power of a sum against a bare sum orders by the two sums,
+    // the power's exponent breaking a tie: `(-1 + x)*(1 + x)^2` and
+    // `(1 + x)*(2 + x)^2` (wolframscript-verified).
+    if sa == 0
+      && sb == 1
+      && plus_call_args(b).is_some()
+      && let Some(base) = power_additive_base(a)
+    {
+      let ord =
+        crate::functions::list_helpers_ast::sorting::canonical_cmp(base, b);
+      if ord != std::cmp::Ordering::Equal {
+        return ord;
+      }
+    }
+    if sa == 1
+      && sb == 0
+      && plus_call_args(a).is_some()
+      && let Some(base) = power_additive_base(b)
+    {
+      let ord =
+        crate::functions::list_helpers_ast::sorting::canonical_cmp(a, base);
+      if ord != std::cmp::Ordering::Equal {
+        return ord;
+      }
+    }
+    if sa == 0
+      && sb == 1
+      && let Some(pargs) = plus_call_args(b)
+      && ident_base_factor(a)
+    {
+      return order_factor_vs_additive(a, pargs);
+    }
+    if sa == 1
+      && sb == 0
+      && let Some(pargs) = plus_call_args(a)
+      && ident_base_factor(b)
+    {
+      return order_factor_vs_additive(b, pargs).reverse();
+    }
+    // Plain function-call factors (and their powers / curried calls) vs a
+    // canonical Plus: same top-term rule, so `f[x]*(1 + f[x])` keeps f[x]
+    // first while `(1 + f[x])*g[x]` stays additive-first.
+    if (sa == 2 || sa == 3)
+      && sb == 1
+      && let Some(pargs) = plus_call_args(b)
+    {
+      return order_factor_vs_additive(a, pargs);
+    }
+    if sa == 1
+      && (sb == 2 || sb == 3)
+      && let Some(pargs) = plus_call_args(a)
+    {
+      return order_factor_vs_additive(b, pargs).reverse();
+    }
+    if sa == 0 && sb == 1 {
+      // a is Identifier, b is additive
+      if additive_contains_negated(b, a)
+        || additive_is_neg_const_plus_ident(b, a)
+      {
+        return std::cmp::Ordering::Greater; // b (additive) before a (identifier)
+      }
+      // Power with constant base (e.g. E^a) vs additive polynomial:
+      // compare by sort key so polynomial sorts before E^a when its
+      // variable comes before 'E' alphabetically (case-insensitive).
+      // Only applies when the Power base is a constant (E, Pi, etc.)
+      // and the additive has free variables (is a polynomial, not numeric).
+      if let Some(base) = power_const_base(a)
+        && has_free_variables(b)
+      {
+        let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
+        let ord =
+          crate::functions::list_helpers_ast::wolfram_string_order(&base, &bk);
+        if ord != 0 {
+          return if ord > 0 {
+            std::cmp::Ordering::Less
+          } else {
+            std::cmp::Ordering::Greater
+          };
+        }
+      }
+      // Bare identifier vs additive: the additive sorts BEFORE the
+      // identifier when its highest-key arg is alphabetically smaller
+      // (matches Wolfram `Order[Plus[2,a,b], z] = 1`). Only applies
+      // for true bare identifiers — Power[x, n] keeps its existing
+      // comparison behaviour against additives.
+      if is_bare_identifier(a) {
+        let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
+        let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
+        let ord =
+          crate::functions::list_helpers_ast::wolfram_string_order(&bk, &ak);
+        if ord > 0 {
+          return std::cmp::Ordering::Greater; // additive first
+        }
+        if ord < 0 {
+          return std::cmp::Ordering::Less; // identifier first
+        }
+      }
+    } else if sa == 1 && sb == 0 {
+      // a is additive, b is Identifier
+      if additive_contains_negated(a, b)
+        || additive_is_neg_const_plus_ident(a, b)
+      {
+        return std::cmp::Ordering::Less; // a (additive) before b (identifier)
+      }
+      // Additive polynomial vs Power with constant base (e.g. E^a):
+      // compare by sort key.
+      if let Some(base) = power_const_base(b)
+        && has_free_variables(a)
+      {
+        let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
+        let ord =
+          crate::functions::list_helpers_ast::wolfram_string_order(&ak, &base);
+        if ord != 0 {
+          return if ord > 0 {
+            std::cmp::Ordering::Less
+          } else {
+            std::cmp::Ordering::Greater
+          };
+        }
+      }
+      // Mirror of the (identifier, additive) case above — only applies
+      // when b is a bare identifier so Power factors keep their
+      // existing comparison behaviour.
+      if is_bare_identifier(b) {
+        let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
+        let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
+        let ord =
+          crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
+        if ord > 0 {
+          return std::cmp::Ordering::Less; // additive first
+        }
+        if ord < 0 {
+          return std::cmp::Ordering::Greater; // identifier first
+        }
+      }
+    }
+    return sa.cmp(&sb);
+  }
+  // A power of a sum (`Sqrt[1 + x]`, `(1 + x)^2`) deliberately shares the
+  // identifier sub-priority, so the additive top-term rule above never sees
+  // it. Apply that same rule here, against the sum inside the power:
+  // `x*Sqrt[1 + x]` and `x*(1 + x)^2`, but `Sqrt[1 - x]*x` and `(1 + x)^2*y`.
+  if sa == 0 && sb == 0 {
+    // A sum holding the negation of the other factor's base (`(x - y)^-1`
+    // against `y^-1`) has its own rule further down; leave it to that.
+    let applies = |factor: &Expr, base: &Expr| {
+      power_const_base(factor).is_none()
+        && matches!(
+          times_term_base_exp(factor).0,
+          Expr::Identifier(_) | Expr::Constant(_)
+        )
+        && !additive_contains_negated(base, &times_term_base_exp(factor).0)
+    };
+    match (power_additive_base(a), power_additive_base(b)) {
+      (None, Some(base)) if applies(a, base) => {
+        if let Some(pargs) = plus_call_args(base) {
+          return order_factor_vs_additive(a, pargs);
+        }
+      }
+      (Some(base), None) if applies(b, base) => {
+        if let Some(pargs) = plus_call_args(base) {
+          return order_factor_vs_additive(b, pargs).reverse();
+        }
+      }
+      _ => {}
+    }
+  }
+  // For FunctionCall with same head, compare arguments structurally
+  if let (
+    Expr::FunctionCall { name: na, args: aa },
+    Expr::FunctionCall { name: nb, args: ab },
+  ) = (a, b)
+    && na == nb
+  {
+    // For Power, use sort-key comparison on bases to match Wolfram's
+    // Times ordering (e.g. Power[Plus[a,b],-2] before Power[s,-1]
+    // because sort key "b" < "s")
+    if na == "Power" && aa.len() == 2 && ab.len() == 2 {
+      let ak =
+        crate::functions::list_helpers_ast::sorting::expr_sort_key(&aa[0]);
+      let bk =
+        crate::functions::list_helpers_ast::sorting::expr_sort_key(&ab[0]);
+      let ord =
+        crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
+      if ord > 0 {
+        return std::cmp::Ordering::Less;
+      }
+      if ord < 0 {
+        return std::cmp::Ordering::Greater;
+      }
+      // Equal sort keys: tie-break with full base string comparison
+      // e.g. Plus[-1, x] vs Plus[1, x] both have sort key "x"
+      // but "-1 + x" < "1 + x" lexicographically
+      let full_a = expr_to_string(&aa[0]);
+      let full_b = expr_to_string(&ab[0]);
+      let full_ord = crate::functions::list_helpers_ast::wolfram_string_order(
+        &full_a, &full_b,
+      );
+      if full_ord > 0 {
+        return std::cmp::Ordering::Less;
+      }
+      if full_ord < 0 {
+        return std::cmp::Ordering::Greater;
+      }
+      // Equal bases: compare exponents
+      let exp_ord =
+        crate::functions::list_helpers_ast::compare_exprs(&aa[1], &ab[1]);
+      if exp_ord > 0 {
+        return std::cmp::Ordering::Less;
+      }
+      if exp_ord < 0 {
+        return std::cmp::Ordering::Greater;
+      }
+      return std::cmp::Ordering::Equal;
+    }
+    // Same head: compare arguments using Wolfram canonical ordering.
+    // For Plus (Orderless), Wolfram compares the highest-degree term first.
+    // Since Plus args are stored in ascending-degree order, we iterate in
+    // reverse. When one Plus runs out of terms, it sorts AFTER (the Plus
+    // with more terms comes first).
+    if na == "Plus" {
+      let mut ia = aa.iter().rev();
+      let mut ib = ab.iter().rev();
+      loop {
+        match (ia.next(), ib.next()) {
+          (Some(x), Some(y)) => {
+            let ord = crate::functions::list_helpers_ast::compare_exprs(x, y);
+            if ord > 0 {
+              return std::cmp::Ordering::Less;
+            }
+            if ord < 0 {
+              return std::cmp::Ordering::Greater;
+            }
+          }
+          (Some(_), None) => return std::cmp::Ordering::Less,
+          (None, Some(_)) => return std::cmp::Ordering::Greater,
+          (None, None) => return std::cmp::Ordering::Equal,
+        }
+      }
+    }
+    for (arg_a, arg_b) in aa.iter().zip(ab.iter()) {
+      let ord = crate::functions::list_helpers_ast::compare_exprs(arg_a, arg_b);
       if ord > 0 {
         return std::cmp::Ordering::Less;
       }
@@ -6458,420 +6752,164 @@ fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
         return std::cmp::Ordering::Greater;
       }
     }
-    // A Plus factor takes the max priority of its terms (like Times) so a
-    // transcendental sum such as (Cos[x]+Sin[x]) shares the bucket with
-    // Sin[x] and gets ordered by the top-term rule below. term_priority
-    // itself keeps Plus at 0 because other callers rely on that.
-    let eff_priority = |e: &Expr| match plus_call_args(e) {
-      Some(args) => args.iter().map(term_priority).max().unwrap_or(0),
-      None => term_priority(e),
+    return aa.len().cmp(&ab.len());
+  }
+  // For power-like expressions, use sort-key comparison on bases
+  // to match Wolfram's Times ordering. This handles both same-variant
+  // (e.g. both BinaryOp::Power) and cross-variant (BinaryOp vs FunctionCall) cases.
+  let is_power_like = |e: &Expr| -> bool {
+    matches!(
+      e,
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        ..
+      }
+    ) || matches!(e, Expr::FunctionCall { name, args } if (name == "Power" && args.len() == 2))
+      || is_sqrt(e).is_some()
+  };
+  if is_power_like(a) && is_power_like(b) {
+    // If both bases are integers, compare them numerically (not lexically).
+    // Wolfram orders Power[2, 1/4] before Power[15, 1/2], but lex string
+    // order treats "2" > "15" because '2' > '1'.
+    let (base_a_pre, _) = extract_base_exponent_ref(a);
+    let base_a_pre = base_a_pre.as_ref();
+    let (base_b_pre, _) = extract_base_exponent_ref(b);
+    let base_b_pre = base_b_pre.as_ref();
+    if let (Expr::Integer(ia), Expr::Integer(ib)) = (&base_a_pre, &base_b_pre) {
+      match ia.cmp(ib) {
+        std::cmp::Ordering::Less => return std::cmp::Ordering::Less,
+        std::cmp::Ordering::Greater => return std::cmp::Ordering::Greater,
+        std::cmp::Ordering::Equal => {}
+      }
+    }
+    let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
+    let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
+    let ord =
+      crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
+    if ord > 0 {
+      return std::cmp::Ordering::Less;
+    } else if ord < 0 {
+      return std::cmp::Ordering::Greater;
+    }
+    // Equal sort keys: when both bases are function calls with the same head
+    // (e.g. f[1] vs f[2]), compare structurally to disambiguate.
+    // This matches Wolfram's ordering where Power[f[1], -2] sorts before
+    // Power[f[2], 2] (base argument 1 < 2).
+    let (base_a, exp_a) = extract_base_exponent(a);
+    let (base_b, exp_b) = extract_base_exponent(b);
+    let same_fn_base = matches!(
+      (&base_a, &base_b),
+      (Expr::FunctionCall { name: na, .. }, Expr::FunctionCall { name: nb, .. })
+        if na == nb && na != "Plus" && na != "Times"
+    );
+    // For Plus bases with the same arity, compare structurally.
+    // e.g. Plus[-1, x] vs Plus[1, x]: both have sort key "x" and same
+    // arg count, but -1 < 1 so (-1+x)^(-1/2) should sort before (1+x)^(-1/2).
+    // Don't do this for different arities — let string-length fallback handle
+    // e.g. Plus[a, b] vs Plus[1, a, b] where shorter is "simpler".
+    let same_arity_plus_base = matches!(
+      (&base_a, &base_b),
+      (Expr::FunctionCall { name: na, args: aa }, Expr::FunctionCall { name: nb, args: ab })
+        if na == "Plus" && nb == "Plus" && aa.len() == ab.len()
+    ) || matches!(
+      (&base_a, &base_b),
+      (
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          ..
+        },
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          ..
+        }
+      )
+    );
+    if same_fn_base || same_arity_plus_base {
+      let base_cmp = compare_expr_canonical(&base_a, &base_b);
+      if base_cmp != std::cmp::Ordering::Equal {
+        return base_cmp;
+      }
+      // Same base: compare exponents
+      let exp_ord =
+        crate::functions::list_helpers_ast::compare_exprs(&exp_a, &exp_b);
+      if exp_ord > 0 {
+        return std::cmp::Ordering::Less;
+      } else if exp_ord < 0 {
+        return std::cmp::Ordering::Greater;
+      }
+    }
+    // Tiebreak when one Power-like factor's base is an Identifier and the
+    // other's base is an additive expression that contains the negation of
+    // that identifier (or has the form Plus[neg_const, ident]). Wolfram
+    // sorts the additive base FIRST so e.g. `(x-y)^-1 * y^-1` displays as
+    // `1/((x-y)*y)`, not `1/(y*(x-y))`. Without this rule, the two factors
+    // share sort key "y" and string-length fallback puts the shorter one
+    // (y^-1) first, which is wrong.
+    let base_a_is_ident =
+      matches!(&base_a, Expr::Identifier(_) | Expr::Constant(_));
+    let base_b_is_ident =
+      matches!(&base_b, Expr::Identifier(_) | Expr::Constant(_));
+    let is_additive = |e: &Expr| -> bool {
+      matches!(
+        e,
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
+          ..
+        }
+      ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
     };
-    let pa = eff_priority(a);
-    let pb = eff_priority(b);
-    if pa != pb {
-      return pa.cmp(&pb);
-    }
-    // Within same priority, identifiers before function calls
-    let sa = times_factor_subpriority(a);
-    let sb = times_factor_subpriority(b);
-    if sa != sb {
-      // Special case: an additive expression sorts BEFORE an identifier when:
-      // 1. The identifier appears with a negative coefficient: (x-y)*y not y*(x-y)
-      // 2. The additive is Plus[n, var] where n < 0 and var is the same identifier:
-      //    (-3+x)*x not x*(-3+x)   (monic linear factor with negative constant)
-      // This matches Wolfram's canonical ordering.
-      let is_bare_identifier =
-        |e: &Expr| matches!(e, Expr::Identifier(_) | Expr::Constant(_));
-      // An identifier (or power of one) vs a canonical Plus: order by the
-      // Plus's top term. This takes precedence over the negated-containment
-      // checks below because Wolfram gives `x*(-x + f[x])` — the negated -x
-      // inside the sum doesn't matter when the top term is a function call.
-      // Powers with a constant base (E^a) keep their dedicated sort-key
-      // comparison below.
-      let ident_base_factor = |e: &Expr| {
-        power_const_base(e).is_none()
-          && matches!(
-            times_term_base_exp(e).0,
-            Expr::Identifier(_) | Expr::Constant(_)
-          )
-      };
-      // A positive power of a sum against a bare sum orders by the two sums,
-      // the power's exponent breaking a tie: `(-1 + x)*(1 + x)^2` and
-      // `(1 + x)*(2 + x)^2` (wolframscript-verified).
-      if sa == 0 && sb == 1 && plus_call_args(b).is_some()
-        && let Some(base) = power_additive_base(a)
-      {
-        let ord =
-          crate::functions::list_helpers_ast::sorting::canonical_cmp(base, b);
-        if ord != std::cmp::Ordering::Equal {
-          return ord;
-        }
-      }
-      if sa == 1 && sb == 0 && plus_call_args(a).is_some()
-        && let Some(base) = power_additive_base(b)
-      {
-        let ord =
-          crate::functions::list_helpers_ast::sorting::canonical_cmp(a, base);
-        if ord != std::cmp::Ordering::Equal {
-          return ord;
-        }
-      }
-      if sa == 0 && sb == 1
-        && let Some(pargs) = plus_call_args(b)
-        && ident_base_factor(a)
-      {
-        return order_factor_vs_additive(a, pargs);
-      }
-      if sa == 1 && sb == 0
-        && let Some(pargs) = plus_call_args(a)
-        && ident_base_factor(b)
-      {
-        return order_factor_vs_additive(b, pargs).reverse();
-      }
-      // Plain function-call factors (and their powers / curried calls) vs a
-      // canonical Plus: same top-term rule, so `f[x]*(1 + f[x])` keeps f[x]
-      // first while `(1 + f[x])*g[x]` stays additive-first.
-      if (sa == 2 || sa == 3) && sb == 1
-        && let Some(pargs) = plus_call_args(b)
-      {
-        return order_factor_vs_additive(a, pargs);
-      }
-      if sa == 1 && (sb == 2 || sb == 3)
-        && let Some(pargs) = plus_call_args(a)
-      {
-        return order_factor_vs_additive(b, pargs).reverse();
-      }
-      if sa == 0 && sb == 1 {
-        // a is Identifier, b is additive
-        if additive_contains_negated(b, a) || additive_is_neg_const_plus_ident(b, a) {
-          return std::cmp::Ordering::Greater; // b (additive) before a (identifier)
-        }
-        // Power with constant base (e.g. E^a) vs additive polynomial:
-        // compare by sort key so polynomial sorts before E^a when its
-        // variable comes before 'E' alphabetically (case-insensitive).
-        // Only applies when the Power base is a constant (E, Pi, etc.)
-        // and the additive has free variables (is a polynomial, not numeric).
-        if let Some(base) = power_const_base(a)
-          && has_free_variables(b)
-        {
-          let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
-          let ord = crate::functions::list_helpers_ast::wolfram_string_order(&base, &bk);
-          if ord != 0 {
-            return if ord > 0 {
-              std::cmp::Ordering::Less
-            } else {
-              std::cmp::Ordering::Greater
-            };
-          }
-        }
-        // Bare identifier vs additive: the additive sorts BEFORE the
-        // identifier when its highest-key arg is alphabetically smaller
-        // (matches Wolfram `Order[Plus[2,a,b], z] = 1`). Only applies
-        // for true bare identifiers — Power[x, n] keeps its existing
-        // comparison behaviour against additives.
-        if is_bare_identifier(a) {
-          let ak =
-            crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
-          let bk =
-            crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
-          let ord =
-            crate::functions::list_helpers_ast::wolfram_string_order(&bk, &ak);
-          if ord > 0 {
-            return std::cmp::Ordering::Greater; // additive first
-          }
-          if ord < 0 {
-            return std::cmp::Ordering::Less; // identifier first
-          }
-        }
-      } else if sa == 1 && sb == 0 {
-        // a is additive, b is Identifier
-        if additive_contains_negated(a, b) || additive_is_neg_const_plus_ident(a, b) {
-          return std::cmp::Ordering::Less; // a (additive) before b (identifier)
-        }
-        // Additive polynomial vs Power with constant base (e.g. E^a):
-        // compare by sort key.
-        if let Some(base) = power_const_base(b)
-          && has_free_variables(a)
-        {
-          let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
-          let ord = crate::functions::list_helpers_ast::wolfram_string_order(&ak, &base);
-          if ord != 0 {
-            return if ord > 0 {
-              std::cmp::Ordering::Less
-            } else {
-              std::cmp::Ordering::Greater
-            };
-          }
-        }
-        // Mirror of the (identifier, additive) case above — only applies
-        // when b is a bare identifier so Power factors keep their
-        // existing comparison behaviour.
-        if is_bare_identifier(b) {
-          let ak =
-            crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
-          let bk =
-            crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
-          let ord =
-            crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
-          if ord > 0 {
-            return std::cmp::Ordering::Less; // additive first
-          }
-          if ord < 0 {
-            return std::cmp::Ordering::Greater; // identifier first
-          }
-        }
-      }
-      return sa.cmp(&sb);
-    }
-    // A power of a sum (`Sqrt[1 + x]`, `(1 + x)^2`) deliberately shares the
-    // identifier sub-priority, so the additive top-term rule above never sees
-    // it. Apply that same rule here, against the sum inside the power:
-    // `x*Sqrt[1 + x]` and `x*(1 + x)^2`, but `Sqrt[1 - x]*x` and `(1 + x)^2*y`.
-    if sa == 0 && sb == 0 {
-      // A sum holding the negation of the other factor's base (`(x - y)^-1`
-      // against `y^-1`) has its own rule further down; leave it to that.
-      let applies = |factor: &Expr, base: &Expr| {
-        power_const_base(factor).is_none()
-          && matches!(
-            times_term_base_exp(factor).0,
-            Expr::Identifier(_) | Expr::Constant(_)
-          )
-          && !additive_contains_negated(base, &times_term_base_exp(factor).0)
-      };
-      match (power_additive_base(a), power_additive_base(b)) {
-        (None, Some(base)) if applies(a, base) => {
-          if let Some(pargs) = plus_call_args(base) {
-            return order_factor_vs_additive(a, pargs);
-          }
-        }
-        (Some(base), None) if applies(b, base) => {
-          if let Some(pargs) = plus_call_args(base) {
-            return order_factor_vs_additive(b, pargs).reverse();
-          }
-        }
-        _ => {}
-      }
-    }
-    // For FunctionCall with same head, compare arguments structurally
-    if let (
-      Expr::FunctionCall { name: na, args: aa },
-      Expr::FunctionCall { name: nb, args: ab },
-    ) = (a, b)
-      && na == nb
+    let base_a_is_additive = is_additive(&base_a);
+    let base_b_is_additive = is_additive(&base_b);
+    if base_a_is_ident
+      && base_b_is_additive
+      && (additive_contains_negated(&base_b, &base_a)
+        || additive_is_neg_const_plus_ident(&base_b, &base_a))
     {
-      // For Power, use sort-key comparison on bases to match Wolfram's
-      // Times ordering (e.g. Power[Plus[a,b],-2] before Power[s,-1]
-      // because sort key "b" < "s")
-      if na == "Power" && aa.len() == 2 && ab.len() == 2 {
-        let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(&aa[0]);
-        let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(&ab[0]);
-        let ord = crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
-        if ord > 0 {
-          return std::cmp::Ordering::Less;
-        }
-        if ord < 0 {
-          return std::cmp::Ordering::Greater;
-        }
-        // Equal sort keys: tie-break with full base string comparison
-        // e.g. Plus[-1, x] vs Plus[1, x] both have sort key "x"
-        // but "-1 + x" < "1 + x" lexicographically
-        let full_a = expr_to_string(&aa[0]);
-        let full_b = expr_to_string(&ab[0]);
-        let full_ord = crate::functions::list_helpers_ast::wolfram_string_order(&full_a, &full_b);
-        if full_ord > 0 {
-          return std::cmp::Ordering::Less;
-        }
-        if full_ord < 0 {
-          return std::cmp::Ordering::Greater;
-        }
-        // Equal bases: compare exponents
-        let exp_ord = crate::functions::list_helpers_ast::compare_exprs(&aa[1], &ab[1]);
-        if exp_ord > 0 {
-          return std::cmp::Ordering::Less;
-        }
-        if exp_ord < 0 {
-          return std::cmp::Ordering::Greater;
-        }
-        return std::cmp::Ordering::Equal;
-      }
-      // Same head: compare arguments using Wolfram canonical ordering.
-      // For Plus (Orderless), Wolfram compares the highest-degree term first.
-      // Since Plus args are stored in ascending-degree order, we iterate in
-      // reverse. When one Plus runs out of terms, it sorts AFTER (the Plus
-      // with more terms comes first).
-      if na == "Plus" {
-        let mut ia = aa.iter().rev();
-        let mut ib = ab.iter().rev();
-        loop {
-          match (ia.next(), ib.next()) {
-            (Some(x), Some(y)) => {
-              let ord = crate::functions::list_helpers_ast::compare_exprs(x, y);
-              if ord > 0 {
-                return std::cmp::Ordering::Less;
-              }
-              if ord < 0 {
-                return std::cmp::Ordering::Greater;
-              }
-            }
-            (Some(_), None) => return std::cmp::Ordering::Less,
-            (None, Some(_)) => return std::cmp::Ordering::Greater,
-            (None, None) => return std::cmp::Ordering::Equal,
-          }
-        }
-      }
-      for (arg_a, arg_b) in aa.iter().zip(ab.iter()) {
-        let ord =
-          crate::functions::list_helpers_ast::compare_exprs(arg_a, arg_b);
-        if ord > 0 {
-          return std::cmp::Ordering::Less;
-        }
-        if ord < 0 {
-          return std::cmp::Ordering::Greater;
-        }
-      }
-      return aa.len().cmp(&ab.len());
+      return std::cmp::Ordering::Greater; // additive base first
     }
-    // For power-like expressions, use sort-key comparison on bases
-    // to match Wolfram's Times ordering. This handles both same-variant
-    // (e.g. both BinaryOp::Power) and cross-variant (BinaryOp vs FunctionCall) cases.
-    let is_power_like = |e: &Expr| -> bool {
-      matches!(e, Expr::BinaryOp { op: BinaryOperator::Power, .. })
-        || matches!(e, Expr::FunctionCall { name, args } if (name == "Power" && args.len() == 2))
-        || is_sqrt(e).is_some()
-    };
-    if is_power_like(a) && is_power_like(b) {
-      // If both bases are integers, compare them numerically (not lexically).
-      // Wolfram orders Power[2, 1/4] before Power[15, 1/2], but lex string
-      // order treats "2" > "15" because '2' > '1'.
-      let (base_a_pre, _) = extract_base_exponent_ref(a);
-      let base_a_pre = base_a_pre.as_ref();
-      let (base_b_pre, _) = extract_base_exponent_ref(b);
-      let base_b_pre = base_b_pre.as_ref();
-      if let (Expr::Integer(ia), Expr::Integer(ib)) = (&base_a_pre, &base_b_pre)
-      {
-        match ia.cmp(ib) {
-          std::cmp::Ordering::Less => return std::cmp::Ordering::Less,
-          std::cmp::Ordering::Greater => return std::cmp::Ordering::Greater,
-          std::cmp::Ordering::Equal => {}
-        }
-      }
-      let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
-      let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
-      let ord = crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
-      if ord > 0 {
-        return std::cmp::Ordering::Less;
-      } else if ord < 0 {
-        return std::cmp::Ordering::Greater;
-      }
-      // Equal sort keys: when both bases are function calls with the same head
-      // (e.g. f[1] vs f[2]), compare structurally to disambiguate.
-      // This matches Wolfram's ordering where Power[f[1], -2] sorts before
-      // Power[f[2], 2] (base argument 1 < 2).
-      let (base_a, exp_a) = extract_base_exponent(a);
-      let (base_b, exp_b) = extract_base_exponent(b);
-      let same_fn_base = matches!(
-        (&base_a, &base_b),
-        (Expr::FunctionCall { name: na, .. }, Expr::FunctionCall { name: nb, .. })
-          if na == nb && na != "Plus" && na != "Times"
-      );
-      // For Plus bases with the same arity, compare structurally.
-      // e.g. Plus[-1, x] vs Plus[1, x]: both have sort key "x" and same
-      // arg count, but -1 < 1 so (-1+x)^(-1/2) should sort before (1+x)^(-1/2).
-      // Don't do this for different arities — let string-length fallback handle
-      // e.g. Plus[a, b] vs Plus[1, a, b] where shorter is "simpler".
-      let same_arity_plus_base = matches!(
-        (&base_a, &base_b),
-        (Expr::FunctionCall { name: na, args: aa }, Expr::FunctionCall { name: nb, args: ab })
-          if na == "Plus" && nb == "Plus" && aa.len() == ab.len()
-      ) || matches!(
-        (&base_a, &base_b),
-        (Expr::BinaryOp { op: BinaryOperator::Plus, .. },
-         Expr::BinaryOp { op: BinaryOperator::Plus, .. })
-      );
-      if same_fn_base || same_arity_plus_base {
-        let base_cmp = compare_expr_canonical(&base_a, &base_b);
-        if base_cmp != std::cmp::Ordering::Equal {
-          return base_cmp;
-        }
-        // Same base: compare exponents
-        let exp_ord = crate::functions::list_helpers_ast::compare_exprs(&exp_a, &exp_b);
-        if exp_ord > 0 {
-          return std::cmp::Ordering::Less;
-        } else if exp_ord < 0 {
-          return std::cmp::Ordering::Greater;
-        }
-      }
-      // Tiebreak when one Power-like factor's base is an Identifier and the
-      // other's base is an additive expression that contains the negation of
-      // that identifier (or has the form Plus[neg_const, ident]). Wolfram
-      // sorts the additive base FIRST so e.g. `(x-y)^-1 * y^-1` displays as
-      // `1/((x-y)*y)`, not `1/(y*(x-y))`. Without this rule, the two factors
-      // share sort key "y" and string-length fallback puts the shorter one
-      // (y^-1) first, which is wrong.
-      let base_a_is_ident =
-        matches!(&base_a, Expr::Identifier(_) | Expr::Constant(_));
-      let base_b_is_ident =
-        matches!(&base_b, Expr::Identifier(_) | Expr::Constant(_));
-      let is_additive = |e: &Expr| -> bool {
-        matches!(
-          e,
-          Expr::BinaryOp {
-            op: BinaryOperator::Plus
-              | BinaryOperator::Minus,
-            ..
-          }
-        ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
-      };
-      let base_a_is_additive = is_additive(&base_a);
-      let base_b_is_additive = is_additive(&base_b);
-      if base_a_is_ident
-        && base_b_is_additive
-        && (additive_contains_negated(&base_b, &base_a)
-          || additive_is_neg_const_plus_ident(&base_b, &base_a))
-      {
-        return std::cmp::Ordering::Greater; // additive base first
-      }
-      if base_b_is_ident
-        && base_a_is_additive
-        && (additive_contains_negated(&base_a, &base_b)
-          || additive_is_neg_const_plus_ident(&base_a, &base_b))
-      {
-        return std::cmp::Ordering::Less; // additive base first
-      }
-      // Fall back to string length then alphabetical
-      let as_str = expr_to_string(a);
-      let bs_str = expr_to_string(b);
-      let len_cmp = as_str.len().cmp(&bs_str.len());
-      if len_cmp != std::cmp::Ordering::Equal {
-        return len_cmp;
-      }
-      let str_ord = crate::functions::list_helpers_ast::wolfram_string_order(&as_str, &bs_str);
-      if str_ord > 0 {
-        return std::cmp::Ordering::Less;
-      } else if str_ord < 0 {
-        return std::cmp::Ordering::Greater;
-      }
-      // Exactly equal: fall through
+    if base_b_is_ident
+      && base_a_is_additive
+      && (additive_contains_negated(&base_a, &base_b)
+        || additive_is_neg_const_plus_ident(&base_a, &base_b))
+    {
+      return std::cmp::Ordering::Less; // additive base first
     }
-    if std::mem::discriminant(a) == std::mem::discriminant(b) {
-      compare_expr_canonical(a, b)
+    // Fall back to string length then alphabetical
+    let as_str = expr_to_string(a);
+    let bs_str = expr_to_string(b);
+    let len_cmp = as_str.len().cmp(&bs_str.len());
+    if len_cmp != std::cmp::Ordering::Equal {
+      return len_cmp;
+    }
+    let str_ord = crate::functions::list_helpers_ast::wolfram_string_order(
+      &as_str, &bs_str,
+    );
+    if str_ord > 0 {
+      return std::cmp::Ordering::Less;
+    } else if str_ord < 0 {
+      return std::cmp::Ordering::Greater;
+    }
+    // Exactly equal: fall through
+  }
+  if std::mem::discriminant(a) == std::mem::discriminant(b) {
+    compare_expr_canonical(a, b)
+  } else {
+    // Use sort-key based comparison with wolfram_string_order (case-insensitive)
+    // to avoid ASCII case artifacts (e.g. 'S' < 'a' in ASCII would incorrectly
+    // put Sqrt[x] before identifier a).
+    let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
+    let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
+    let ord =
+      crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
+    if ord > 0 {
+      std::cmp::Ordering::Less
+    } else if ord < 0 {
+      std::cmp::Ordering::Greater
     } else {
-      // Use sort-key based comparison with wolfram_string_order (case-insensitive)
-      // to avoid ASCII case artifacts (e.g. 'S' < 'a' in ASCII would incorrectly
-      // put Sqrt[x] before identifier a).
-      let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
-      let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
-      let ord = crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
-      if ord > 0 {
-        std::cmp::Ordering::Less
-      } else if ord < 0 {
-        std::cmp::Ordering::Greater
-      } else {
-        // Equal sort keys: fall back to full string comparison
-        expr_to_string(a).cmp(&expr_to_string(b))
-      }
+      // Equal sort keys: fall back to full string comparison
+      expr_to_string(a).cmp(&expr_to_string(b))
     }
-  });
+  }
 }
 
 /// If the expression is a Power with a constant base (e.g. E^a, Pi^x, 2^n),
@@ -8254,13 +8292,14 @@ pub fn nested_exact_const_machine_times(args: &[Expr]) -> Option<Expr> {
     let n = a.0.checked_mul(b.0)?;
     let d = a.1.checked_mul(b.1)?;
     let g = {
-      let (mut x, mut y) = (n.abs(), d.abs());
+      // `unsigned_abs`: `-2^127` is an i128 whose negation is not.
+      let (mut x, mut y) = (n.unsigned_abs(), d.unsigned_abs());
       while y != 0 {
         let t = x % y;
         x = y;
         y = t;
       }
-      x.max(1)
+      i128::try_from(x.max(1)).ok()?
     };
     Some((n / g, d / g))
   };
@@ -8697,6 +8736,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       splice(a, &mut flat);
     }
     return times_ast(&flat);
+  }
+
+  if let Some(product) = super::canonical_polynomial::plain_factor_product(args)
+  {
+    return Ok(product);
   }
 
   // An exact zero times a machine number is the machine zero: `0*1.5` and
@@ -14356,12 +14400,25 @@ fn flatten_lists(args: &[Expr]) -> Vec<&Expr> {
 
 /// Like try_eval_to_f64 but also handles Infinity/-Infinity (for Max/Min)
 pub fn try_eval_to_f64_with_infinity(expr: &Expr) -> Option<f64> {
-  // Check by string representation for Infinity forms
-  let s = expr_to_string(expr);
-  if s == "Infinity" {
+  // `Infinity` and `-Infinity` in the forms they are stored in. Matching
+  // the structure rather than the printed form keeps this O(1): sorting
+  // compares numbers through here, and rendering every operand made a sort
+  // of large expressions crawl.
+  let infinity = |e: &Expr| matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity");
+  if infinity(expr) {
     return Some(f64::INFINITY);
   }
-  if s == "-Infinity" {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "DirectedInfinity"
+    && let [Expr::Integer(d @ (1 | -1))] = args.as_slice()
+  {
+    return Some(if *d == 1 {
+      f64::INFINITY
+    } else {
+      f64::NEG_INFINITY
+    });
+  }
+  if is_neg_infinity(expr) {
     return Some(f64::NEG_INFINITY);
   }
   try_eval_to_f64(expr)

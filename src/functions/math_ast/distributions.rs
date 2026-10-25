@@ -2092,8 +2092,9 @@ fn pdf_binormal(dargs: &[Expr], xy: Expr) -> Result<Expr, InterpreterError> {
   // exponent = -Q / (2 (1 - rho^2))
   let one_minus_rho_sq = minus2(int(1), pow2(rho.clone(), int(2)));
   let _ = &rho;
-  let exponent =
-    div2(times2(int(-1), q), times2(int(2), one_minus_rho_sq.clone()));
+  // -Q on its own first, so the sign spreads over Q's terms.
+  let neg_q = eval(&times2(int(-1), q))?;
+  let exponent = div2(neg_q, times2(int(2), one_minus_rho_sq.clone()));
   // PDF = E^exponent / (2 Pi Sqrt[1 - rho^2] sigma1 sigma2)
   let denom = times2(
     times2(int(2), pi()),
