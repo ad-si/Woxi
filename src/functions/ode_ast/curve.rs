@@ -190,45 +190,88 @@ impl Curve {
     if span == 0.0 {
       return Ok(points);
     }
-    let steps =
-      ((NOMINAL_STEPS * span.abs() / total_span).ceil() as usize).max(1);
-    let h = span / steps as f64;
+    // The nominal step, as for the ordinary integrator; a step that fails
+    // (the curve leaves the region where the equations are real, or a
+    // Newton solve does not converge) or turns the tangent too sharply is
+    // halved and retried, and the step grows back after successes. Where
+    // even a tiny step fails, the curve ends, like an `NDSolve` solution
+    // cut short at a singularity.
+    let nominal =
+      span / (NOMINAL_STEPS * span.abs() / total_span).ceil().max(1.0);
+    let min_step = nominal.abs() * 1e-9;
+    let mut h = nominal;
+    let mut x = x0;
     let mut y = y0.to_vec();
     let mut guess = p0.to_vec();
-    for step in 1..=steps {
-      let x = x0 + h * (step - 1) as f64;
-      let Some(k1) = self.tangent(x, &y, &guess)? else {
-        return Ok(points);
-      };
-      let stage = |scale: f64, k: &[f64]| -> Vec<f64> {
-        y.iter().zip(k).map(|(a, b)| a + scale * b).collect()
-      };
-      let Some(k2) = self.tangent(x + h / 2.0, &stage(h / 2.0, &k1), &k1)?
-      else {
-        return Ok(points);
-      };
-      let Some(k3) = self.tangent(x + h / 2.0, &stage(h / 2.0, &k2), &k2)?
-      else {
-        return Ok(points);
-      };
-      let Some(k4) = self.tangent(x + h, &stage(h, &k3), &k3)? else {
-        return Ok(points);
-      };
-      for j in 0..self.n {
-        y[j] += h / 6.0 * (k1[j] + 2.0 * k2[j] + 2.0 * k3[j] + k4[j]);
-      }
-      let x_new = if step == steps {
-        x_end
+    let mut successes = 0u32;
+    while (x_end - x) * span.signum() > 0.0 {
+      let step = if (x + h - x_end) * span.signum() > 0.0 {
+        x_end - x
       } else {
-        x0 + h * step as f64
+        h
       };
-      if !self.project(x_new, &mut y)? {
-        return Ok(points);
+      if let Some((y_new, tangent)) = self.rk4_step(x, &y, &guess, step)? {
+        x = if step == x_end - x { x_end } else { x + step };
+        y = y_new;
+        guess = tangent;
+        points.push((x, y.clone()));
+        successes += 1;
+        if successes >= 2 && h.abs() < nominal.abs() {
+          h = (h * 2.0).abs().min(nominal.abs()) * span.signum();
+          successes = 0;
+        }
+      } else {
+        successes = 0;
+        h /= 2.0;
+        if h.abs() < min_step {
+          return Ok(points);
+        }
       }
-      guess = k4;
-      points.push((x_new, y.clone()));
     }
     Ok(points)
+  }
+
+  /// One RK4 step of length `h` along the curve, projected back onto it.
+  /// `None` when a stage fails or the tangent turns by more than ~25°
+  /// across the step (too long a step to follow the curve faithfully).
+  fn rk4_step(
+    &self,
+    x: f64,
+    y: &[f64],
+    guess: &[f64],
+    h: f64,
+  ) -> Result<Option<(Vec<f64>, Vec<f64>)>, InterpreterError> {
+    let Some(k1) = self.tangent(x, y, guess)? else {
+      return Ok(None);
+    };
+    let stage = |scale: f64, k: &[f64]| -> Vec<f64> {
+      y.iter().zip(k).map(|(a, b)| a + scale * b).collect()
+    };
+    let Some(k2) = self.tangent(x + h / 2.0, &stage(h / 2.0, &k1), &k1)? else {
+      return Ok(None);
+    };
+    let Some(k3) = self.tangent(x + h / 2.0, &stage(h / 2.0, &k2), &k2)? else {
+      return Ok(None);
+    };
+    let Some(k4) = self.tangent(x + h, &stage(h, &k3), &k3)? else {
+      return Ok(None);
+    };
+    let cosine = |a: &[f64], b: &[f64]| {
+      let dot: f64 = a.iter().zip(b).map(|(u, v)| u * v).sum();
+      let na: f64 = a.iter().map(|u| u * u).sum::<f64>().sqrt();
+      let nb: f64 = b.iter().map(|u| u * u).sum::<f64>().sqrt();
+      dot / (na * nb)
+    };
+    if !(cosine(&k1, &k4) > 0.9) {
+      return Ok(None);
+    }
+    let mut y_new: Vec<f64> = (0..self.n)
+      .map(|j| y[j] + h / 6.0 * (k1[j] + 2.0 * k2[j] + 2.0 * k3[j] + k4[j]))
+      .collect();
+    if !self.project(x + h, &mut y_new)? {
+      return Ok(None);
+    }
+    Ok(Some((y_new, k4)))
   }
 }
 

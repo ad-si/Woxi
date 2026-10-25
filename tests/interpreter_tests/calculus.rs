@@ -8683,6 +8683,25 @@ Round[N[closed] - N[numeric], 10^-6]"
 mod ndsolve {
   use super::*;
 
+  // An arclength-parametrised curve that ends well inside a wide domain
+  // (the quarter circle y == Sqrt[1 - x^2] ends at x == ±1) is traced with
+  // steps that shrink near the end instead of failing at the first nominal
+  // step (the arc-length continuation Demonstrations integrate over
+  // {s, -20000, 20000}).
+  #[test]
+  fn implicit_curve_ends_inside_a_wide_domain() {
+    assert_eq!(
+      interpret(
+        "sol = Quiet[NDSolve[{y[s] == Sqrt[1 - x[s]^2], x'[s]^2 + y'[s]^2 == 1, \
+         x[0] == 0, y[0] == 1, x'[0] == 1, y'[0] == 0}, {x, y}, \
+         {s, -1000, 1000}]]; {Round[100 x[\"Domain\"] /. First[sol]], \
+         Round[1000 {x[1.], y[1.]} /. First[sol]]}"
+      )
+      .unwrap(),
+      "{{{-157, 157}}, {841, 540}}"
+    );
+  }
+
   // Dry friction that sticks at the belt speed puts a jump of the right-hand
   // side inside every step; refinement stops once halving no longer pays
   // instead of bisecting to the limit (DryFriction: 717185 grid points).
