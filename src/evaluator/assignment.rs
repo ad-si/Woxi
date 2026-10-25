@@ -4554,6 +4554,12 @@ pub fn set_delayed_ast(
       None
     };
     if let Some(head) = outer_head {
+      // The `/;` guard (from either side) wraps the stored body, which the
+      // lookup checks with the bindings in place.
+      let stored_body = match body_condition {
+        Some(cond) => call("Condition", vec![body.clone(), cond.clone()]),
+        None => body.clone(),
+      };
       SUB_VALUES.with(|m| {
         let mut m = m.borrow_mut();
         let rules = m.entry(head).or_default();
@@ -4561,10 +4567,15 @@ pub fn set_delayed_ast(
         // matching `DownValues`, and how a Demonstration's Manipulate body
         // re-evaluates on every control change, redefining each SubValue
         // with an identical LHS on every one of those re-evaluations.
+        // A condition makes a rule of its own: `f[a_][t_] := 1 /; a > 0`
+        // and `f[a_][t_] := -1` both stay.
         let lhs_str = expr_to_string(&evaluated_lhs);
-        match rules.iter().position(|(l, _)| expr_to_string(l) == lhs_str) {
-          Some(idx) => rules[idx] = (evaluated_lhs, body.clone()),
-          None => rules.push((evaluated_lhs, body.clone())),
+        let condition = rhs_condition(&stored_body);
+        match rules.iter().position(|(l, b)| {
+          expr_to_string(l) == lhs_str && rhs_condition(b) == condition
+        }) {
+          Some(idx) => rules[idx] = (evaluated_lhs, stored_body),
+          None => rules.push((evaluated_lhs, stored_body)),
         }
       });
       return Ok(null_expr());
@@ -4573,6 +4584,18 @@ pub fn set_delayed_ast(
 
   // Fallback: return symbolic form
   Ok(call("SetDelayed", vec![lhs.clone(), body.clone()]))
+}
+
+/// The test of a right-hand side written `rhs /; test`, rendered.
+fn rhs_condition(body: &Expr) -> Option<String> {
+  match body {
+    Expr::FunctionCall { name, args }
+      if name == "Condition" && args.len() == 2 =>
+    {
+      Some(expr_to_string(&args[1]))
+    }
+    _ => None,
+  }
 }
 
 /// Whether a list-pattern element needs an explicit `MatchQ` guard at
