@@ -4436,6 +4436,24 @@ mod plot3d {
       );
     }
 
+    /// `Lighting -> "Neutral"` uses colourless lights, so a surface with no
+    /// colour directive is grey-white instead of the default blue.
+    #[test]
+    fn neutral_lighting_leaves_uncoloured_surfaces_grey() {
+      let default = export_svg("Graphics3D[Cuboid[]]");
+      let neutral = export_svg("Graphics3D[Cuboid[], Lighting -> \"Neutral\"]");
+      assert!(
+        fill_colors(&default).iter().any(|c| c.2 > c.0 + 20),
+        "default surface should be blue-tinted"
+      );
+      let faces = fill_colors(&neutral);
+      assert!(!faces.is_empty());
+      assert!(
+        faces.iter().all(|c| c.0 == c.1 && c.1 == c.2),
+        "neutral lighting should stay grey, got {faces:?}"
+      );
+    }
+
     /// No `PlotStyle` must render byte-identically to before it was
     /// supported at all — the height-based rainbow default is load-bearing
     /// for every other Plot3D snapshot test. (The axis grid legitimately
