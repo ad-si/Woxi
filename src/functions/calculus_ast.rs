@@ -5865,7 +5865,7 @@ fn try_integrate_inverse_sqrt(base: &Expr, var: &str) -> Option<Expr> {
 
 /// Build a *continuous* antiderivative of `Sqrt[a + b*x^2]` for a positive
 /// numeric constant term `a` and any non-zero numeric quadratic coefficient
-/// `b` (with no linear term):
+/// `b`; a linear term is removed by completing the square (u = x + c1/(2b)):
 ///   b < 0:  (x*Sqrt[a + b*x^2])/2 + (a*ArcSin[x*Sqrt[-b/a]])/(2*Sqrt[-b])
 ///   b > 0:  (x*Sqrt[a + b*x^2])/2 + (a*ArcSinh[x*Sqrt[b/a]])/(2*Sqrt[b])
 /// Unlike wolframscript's displayed indefinite forms (which use ArcTan/ArcTanh
@@ -5883,13 +5883,8 @@ fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
   let Expr::List(coeffs) = &coeff_result else {
     return None;
   };
-  // Need exactly a degree-2 polynomial: a + (linear)*x + b*x^2.
+  // Need exactly a degree-2 polynomial: c0 + c1*x + b*x^2.
   if coeffs.len() != 3 {
-    return None;
-  }
-  // Linear coefficient must be zero.
-  let c1_val = crate::functions::math_ast::try_eval_to_f64(&coeffs[1])?;
-  if c1_val.abs() > 1e-15 {
     return None;
   }
   // The x^2 coefficient `b` must be a non-zero numeric constant.
@@ -5899,31 +5894,48 @@ fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
     return None;
   }
   let b_neg = b_val < 0.0;
-  let a = &coeffs[0]; // constant term
-  // The constant term must be a positive numeric constant so the ArcSin/ArcSinh
-  // form is real-valued and the square roots are well defined.
-  let a_val = crate::functions::math_ast::try_eval_to_f64(a)?;
+  let c1_val = crate::functions::math_ast::try_eval_to_f64(&coeffs[1])?;
+  let x = id_expr(var);
+  // Complete the square: c0 + c1*x + b*x^2 = a + b*u^2 with
+  // u = x + c1/(2b) and a = c0 - c1^2/(4b).
+  let (u, a) = if c1_val.abs() > 1e-15 {
+    let shift =
+      simplify(div2(coeffs[1].clone(), times2(Expr::Integer(2), b.clone())));
+    let a = crate::evaluator::evaluate_expr_to_expr(&minus2(
+      coeffs[0].clone(),
+      div2(
+        pow2(coeffs[1].clone(), Expr::Integer(2)),
+        times2(Expr::Integer(4), b.clone()),
+      ),
+    ))
+    .ok()?;
+    (plus2(x, shift), a)
+  } else {
+    (x, coeffs[0].clone())
+  };
+  // The reduced constant term must be a positive numeric constant so the
+  // ArcSin/ArcSinh form is real-valued and the square roots are well defined.
+  let a_val = crate::functions::math_ast::try_eval_to_f64(&a)?;
   if a_val <= 0.0 {
     return None;
   }
 
   let sqrt_base = make_sqrt(base.clone());
-  let x = id_expr(var);
-  // First term: (x*Sqrt[base])/2.
-  let first = div2(times2(x.clone(), sqrt_base), Expr::Integer(2));
+  // First term: (u*Sqrt[base])/2.
+  let first = div2(times2(u.clone(), sqrt_base), Expr::Integer(2));
   // |b| for the b < 0 branch (ArcSin needs the positive coefficient).
   let abs_b = if b_neg {
     simplify(neg1(b.clone()))
   } else {
     b.clone()
   };
-  // arc_arg = x * Sqrt[|b|/a]
+  // arc_arg = u * Sqrt[|b|/a]
   let ratio = simplify(div2(abs_b.clone(), a.clone()));
-  let arc_arg = simplify(times2(x, make_sqrt(ratio)));
+  let arc_arg = simplify(times2(u, make_sqrt(ratio)));
   let arc = call1(if b_neg { "ArcSin" } else { "ArcSinh" }, arc_arg);
   // Second term: (a*arc) / (2*Sqrt[|b|]).
   let denom = simplify(times2(Expr::Integer(2), make_sqrt(abs_b)));
-  let second = make_divided(times2(a.clone(), arc), denom);
+  let second = make_divided(times2(a, arc), denom);
   Some(plus2(first, second))
 }
 
