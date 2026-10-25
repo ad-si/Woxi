@@ -3724,6 +3724,69 @@ mod tests {
     );
   }
 
+  /// `RadioButton[Dynamic[{a, b}], {True, False}]` in a hand-built control
+  /// panel is a live radio button: selected while the list matches, and a
+  /// click assigns the whole list, so a group of them selects one of several
+  /// exclusive flags.
+  #[test]
+  fn dynamic_list_radio_buttons_select_one_flag() {
+    use woxi::functions::graphics::DisplayNode;
+
+    let code = r#"Manipulate[
+      Graphics[Text[If[a, "A", "B"]]],
+      ExpressionCell[Grid[{
+        {RadioButton[Dynamic[{a, b}], {True, False}], "a"},
+        {RadioButton[Dynamic[{a, b}], {False, True}], "b"}}]],
+      {{a, True}, ControlType -> None},
+      {{b, False}, ControlType -> None}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("state should build");
+    assert_eq!(state.error, None);
+
+    fn radios(node: &DisplayNode, out: &mut Vec<(String, bool, String)>) {
+      match node {
+        DisplayNode::Checkbox {
+          target: Some(t),
+          checked,
+          on,
+          ..
+        } => out.push((t.clone(), *checked, on.clone())),
+        DisplayNode::Grid(rows) => {
+          rows.iter().flatten().for_each(|c| radios(c, out))
+        }
+        DisplayNode::Row(cs) | DisplayNode::Column(cs) => {
+          cs.iter().for_each(|c| radios(c, out))
+        }
+        DisplayNode::Panel(c) => radios(c, out),
+        _ => {}
+      }
+    }
+    let collect = |state: &ManipulateState| {
+      let mut out = Vec::new();
+      state.display_trees.iter().for_each(|t| radios(t, &mut out));
+      out
+    };
+    let before = collect(&state);
+    assert_eq!(
+      before.iter().map(|r| r.1).collect::<Vec<_>>(),
+      [true, false],
+      "{before:?}"
+    );
+    assert_eq!(before[0].0, "{a, b}");
+
+    state.apply_display_mutation(&format!("{} = {}", before[1].0, before[1].2));
+    assert_eq!(state.error, None);
+    let after = collect(&state);
+    assert_eq!(
+      after.iter().map(|r| r.1).collect::<Vec<_>>(),
+      [false, true],
+      "{after:?}"
+    );
+  }
+
   /// A `Dynamic[…]` caption that reads a control (`Row[{"x", " " <>
   /// unit[lookup[sel, …]]}]`) was evaluated once while the widget was being
   /// built, before `sel` held its choice. `lookup` then returned `None` and
