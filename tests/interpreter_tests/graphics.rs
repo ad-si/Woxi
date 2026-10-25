@@ -17378,6 +17378,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn smooth_density_histogram() {
+      assert_eq!(
+        interpret(
+          "Head[SmoothDensityHistogram[{{1, 2}, {2, 3}, {3, 1}, {2, 2}}]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+      assert_eq!(
+        interpret(
+          "Head[SmoothDensityHistogram[{{1, 2}, {2, 3}, {3, 1}}, {0.3, 0.5}, \
+           ColorFunction -> \"SunsetColors\", Frame -> False]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+      // Not a list of points: left alone.
+      assert_eq!(
+        interpret("SmoothDensityHistogram[{1, 2, 3}]").unwrap(),
+        "SmoothDensityHistogram[{1, 2, 3}]"
+      );
+    }
+
+    #[test]
     fn list_density_plot_matrix() {
       insta::assert_snapshot!(export_svg(
         "ListDensityPlot[{{1, 1, 1, 1}, {1, 2, 1, 2}, {1, 1, 3, 1}, {1, 2, 1, 4}}]"

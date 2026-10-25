@@ -21144,6 +21144,7 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
       | "Histogram"
       | "Histogram3D"
       | "DensityHistogram"
+      | "SmoothDensityHistogram"
       | "DateHistogram"
       | "BubbleChart"
       | "BubbleChart3D"

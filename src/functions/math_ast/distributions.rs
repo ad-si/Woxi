@@ -18156,27 +18156,13 @@ fn smooth_kernel_parts(
   if data.len() < 2 {
     return None;
   }
-  let n = data.len() as f64;
   let bandwidth = match dargs.get(1) {
     None => None,
     Some(Expr::Identifier(s)) if s == "Automatic" => None,
     Some(Expr::String(s)) if s == "Silverman" => None,
     Some(other) => Some(try_eval_to_f64(other).filter(|h| *h > 0.0)?),
   };
-  let bandwidth = if let Some(h) = bandwidth {
-    h
-  } else {
-    let mean = data.iter().sum::<f64>() / n;
-    let sd =
-      (data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)).sqrt();
-    let mut sorted = data.clone();
-    sorted.sort_by(f64::total_cmp);
-    let quantile =
-      |p: f64| sorted[((n * p).ceil() as usize).clamp(1, sorted.len()) - 1];
-    let iqr = quantile(0.75) - quantile(0.25);
-    let spread = if iqr > 0.0 { sd.min(iqr / 1.34) } else { sd };
-    0.9 * spread * n.powf(-0.2)
-  };
+  let bandwidth = bandwidth.unwrap_or_else(|| silverman_bandwidth(&data));
   let kernel = match dargs.get(2) {
     None => SmoothKernel::Gaussian,
     Some(Expr::String(s)) => match s.as_str() {
@@ -18191,6 +18177,22 @@ fn smooth_kernel_parts(
   };
   (bandwidth > 0.0 && bandwidth.is_finite())
     .then_some((data, bandwidth, kernel))
+}
+
+/// Silverman's rule of thumb, `0.9 Min[σ, IQR/1.34] n^(-1/5)`, with the
+/// sample standard deviation and Wolfram's default interquartile range.
+pub(crate) fn silverman_bandwidth(data: &[f64]) -> f64 {
+  let n = data.len() as f64;
+  let mean = data.iter().sum::<f64>() / n;
+  let sd =
+    (data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)).sqrt();
+  let mut sorted = data.to_vec();
+  sorted.sort_by(f64::total_cmp);
+  let quantile =
+    |p: f64| sorted[((n * p).ceil() as usize).clamp(1, sorted.len()) - 1];
+  let iqr = quantile(0.75) - quantile(0.25);
+  let spread = if iqr > 0.0 { sd.min(iqr / 1.34) } else { sd };
+  0.9 * spread * n.powf(-0.2)
 }
 
 /// PDF or CDF of a `SmoothKernelDistribution` at a numeric point: the

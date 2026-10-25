@@ -1908,7 +1908,7 @@ Databin,Databin cloud storage,,unevaluated,10.0,1905
 Interpretation,Interpretation display wrapper (stays symbolic),✅,unevaluated,6.0,1905
 SymmetricGroup,Symbolic symmetric group S_n of degree n; stays unevaluated and is consumed by GroupOrder/GroupGenerators,✅,unevaluated,8.0,1905
 InverseErf,Inverse error function,✅,pure,3.0,1906
-SmoothDensityHistogram,Smooth density histogram,,unevaluated,8.0,1907
+SmoothDensityHistogram,Density plot of a 2D Gaussian kernel density estimate of data,✅,pure,8.0,1907
 NetExtract,Extract net components,,unevaluated,11.0,1908
 Friday,Day of the week symbol,✅,unevaluated,9.0,1910
 HankelH1,Hankel function of the first kind,✅,pure,6.0,1910
