@@ -4447,7 +4447,7 @@ mod plot3d {
         "default surface should be blue-tinted"
       );
       let faces = fill_colors(&neutral);
-      assert!(!faces.is_empty());
+      assert_eq!(faces.len(), 12, "a cuboid is twelve triangles");
       assert!(
         faces.iter().all(|c| c.0 == c.1 && c.1 == c.2),
         "neutral lighting should stay grey, got {faces:?}"
