@@ -208,14 +208,26 @@ fn dims_product(dims: &[usize]) -> Option<usize> {
 /// `SaveDefinitions` capture with such an array anywhere in it silently
 /// lost its whole `Initialization`, leaving every symbol it defines
 /// undefined and any `Graphics3D`/`Manipulate` built from them blank.
+///
+/// An empty reading (some dimension 0) loses to a type-less reading that
+/// has data: misaligned type-field dims are small integers from the data
+/// itself, and with a 0 among them the remaining-bytes check cannot reject
+/// them, so `{20, 4, 4}` read as rank 20 built ~10^9 empty lists.
 fn read_integer_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
-  if let Some((expr, end)) = try_read_integer_array(data, *pos, true) {
-    *pos = end;
-    return Some(expr);
-  }
-  let (expr, end) = try_read_integer_array(data, *pos, false)?;
+  let typed = try_read_integer_array(data, *pos, true);
+  let chosen = match typed {
+    Some((ref dims, ..)) if dims.contains(&0) => {
+      match try_read_integer_array(data, *pos, false) {
+        Some(untyped) if !untyped.0.contains(&0) => Some(untyped),
+        _ => typed,
+      }
+    }
+    Some(_) => typed,
+    None => try_read_integer_array(data, *pos, false),
+  };
+  let (dims, values, end) = chosen?;
   *pos = end;
-  Some(expr)
+  Some(nest(&dims, &mut values.into_iter()))
 }
 
 /// One attempt at reading the `n` token's rank/dims/data, optionally
@@ -227,7 +239,7 @@ fn try_read_integer_array(
   data: &[u8],
   start: usize,
   with_type_field: bool,
-) -> Option<(Expr, usize)> {
+) -> Option<(Vec<usize>, Vec<Expr>, usize)> {
   let mut pos = start;
   if with_type_field {
     let _typ = read_i32(data, &mut pos)?;
@@ -271,7 +283,7 @@ fn try_read_integer_array(
     }
     vals
   };
-  Some((nest(&dims, &mut values.into_iter()), pos))
+  Some((dims, values, pos))
 }
 
 /// `b` token — packed unsigned byte array: `<i32 rank><i32 dims><raw u8>`.
