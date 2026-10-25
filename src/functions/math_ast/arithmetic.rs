@@ -2914,8 +2914,20 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   }
   // Two real numeric terms (`E`, `Sqrt[8 + E^2]`) are in canonical order:
   // `-E + Sqrt[8 + E^2]`, `Pi + Sqrt[2 + Pi]`, `Sqrt[2] + Pi`.
+  // Kept to small terms: canonical_cmp of two large numeric sums (the
+  // radicals of a triangle-centre formula) made every Plus sort crawl.
+  fn small(e: &Expr, budget: &mut usize) -> bool {
+    if *budget == 0 {
+      return false;
+    }
+    *budget -= 1;
+    crate::syntax::expr_children(e)
+      .into_iter()
+      .all(|c| small(c, budget))
+  }
   let real_numeric = |e: &Expr| {
-    crate::functions::predicate_ast::is_numeric_q(e)
+    small(e, &mut 24)
+      && crate::functions::predicate_ast::is_numeric_q(e)
       && !matches!(
         e,
         Expr::Integer(_)

@@ -124,16 +124,37 @@ pub fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
 /// Check if an expression is Infinity or -Infinity (DirectedInfinity).
 /// In Wolfram's canonical ordering, these sort after all finite numbers.
 fn is_infinity_expr(e: &Expr) -> Option<i8> {
-  let s = expr_to_string(e);
-  if s == "Infinity" {
-    Some(1)
-  } else if s == "-Infinity" {
-    Some(-1)
-  } else if s == "ComplexInfinity" {
-    Some(0)
-  } else {
-    None
+  let symbol = |e: &Expr, wanted: &str| matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == wanted);
+  if symbol(e, "Infinity") {
+    return Some(1);
   }
+  // ComplexInfinity < -Infinity < Infinity, as wolframscript sorts them.
+  if symbol(e, "ComplexInfinity") {
+    return Some(-2);
+  }
+  let negated_infinity = match e {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => symbol(operand, "Infinity"),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      matches!(left.as_ref(), Expr::Integer(-1)) && symbol(right, "Infinity")
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      matches!(&args[0], Expr::Integer(-1)) && symbol(&args[1], "Infinity")
+    }
+    Expr::FunctionCall { name, args }
+      if name == "DirectedInfinity" && args.len() == 1 =>
+    {
+      matches!(&args[0], Expr::Integer(-1))
+    }
+    _ => false,
+  };
+  negated_infinity.then_some(-1)
 }
 
 /// Exact ordering for real exact numbers (`Integer`, `BigInteger`, and
@@ -225,7 +246,7 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   let b_inf = is_infinity_expr(b);
   match (a_inf, b_inf) {
     (Some(ai), Some(bi)) => {
-      // Both infinity: -Infinity < ComplexInfinity < Infinity
+      // Both infinity: ComplexInfinity < -Infinity < Infinity
       return ai.cmp(&bi);
     }
     (Some(_), None) => return std::cmp::Ordering::Greater, // Infinity after everything

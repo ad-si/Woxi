@@ -19699,6 +19699,19 @@ mod fuzz_diff_round_2026_07_17 {
     );
   }
 
+  // The infinities sort after everything else, ComplexInfinity first.
+  #[test]
+  fn sort_infinities() {
+    assert_case(
+      "Sort[{Infinity, 3, -Infinity, ComplexInfinity, x}]",
+      "{3, x, ComplexInfinity, -Infinity, Infinity}",
+    );
+    assert_case(
+      "Sort[{ComplexInfinity, -Infinity, Infinity, Indeterminate}]",
+      "{Indeterminate, ComplexInfinity, -Infinity, Infinity}",
+    );
+  }
+
   // A power orders by its base, then its exponent.
   #[test]
   fn sort_power_by_base() {
