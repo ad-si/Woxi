@@ -1120,6 +1120,7 @@ fn evaluate_function_call_ast_inner(
       "Combinatorica`RandomGraph"
     }
     "KSubsets" if combinatorica_active => "Combinatorica`KSubsets",
+    "KSetPartitions" if combinatorica_active => "Combinatorica`KSetPartitions",
     "ToAdjacencyMatrix" | "Edges" | "M"
       if combinatorica_active
         && matches!(

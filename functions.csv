@@ -6370,6 +6370,7 @@ Combinatorica`DihedralGroup,The rotations of Range[n] and their reversals as the
 Combinatorica`V,Number of vertices of a Combinatorica graph,✅,pure,6.0,
 Combinatorica`RandomGraph,Combinatorica graph with each vertex pair an edge with probability p,✅,contextual,6.0,
 Combinatorica`KSubsets,The k-element subsets of a list (Subsets[l {k}]),✅,pure,6.0,
+Combinatorica`KSetPartitions,The partitions of a list (or Range[n]) into k nonempty blocks,✅,pure,6.0,
 Combinatorica`ToAdjacencyMatrix,Adjacency matrix of a Combinatorica graph,✅,pure,6.0,
 Combinatorica`Edges,Edges of a Combinatorica graph as vertex pairs,✅,pure,6.0,
 Combinatorica`ShowGraph,Draws a Combinatorica graph as Graphics with edges as lines and vertices as disks,✅,pure,6.0,

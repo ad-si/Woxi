@@ -24562,6 +24562,19 @@ mod combinatorica_random_graph {
       interpret("Combinatorica`KSubsets[Range[4], 2]").unwrap(),
       "{{1, 2}, {1, 3}, {1, 4}, {2, 3}, {2, 4}, {3, 4}}"
     );
+    assert_eq!(
+      interpret("Combinatorica`KSetPartitions[4, 2]").unwrap(),
+      "{{{1, 2, 3}, {4}}, {{1, 2, 4}, {3}}, {{1, 2}, {3, 4}}, {{1, 3, 4}, {2}}, {{1, 3}, {2, 4}}, {{1, 4}, {2, 3}}, {{1}, {2, 3, 4}}}"
+    );
+    assert_eq!(
+      interpret("Combinatorica`KSetPartitions[{a, b, c}, 2]").unwrap(),
+      "{{{a, b}, {c}}, {{a, c}, {b}}, {{a}, {b, c}}}"
+    );
+    assert_eq!(
+      interpret("Table[Length[Combinatorica`KSetPartitions[5, k]], {k, 0, 6}]")
+        .unwrap(),
+      "{0, 1, 15, 25, 10, 1, 0}"
+    );
   }
 }
 

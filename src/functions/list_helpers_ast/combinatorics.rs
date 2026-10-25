@@ -1443,6 +1443,63 @@ pub fn combinatorica_random_k_subset_ast(
   ))
 }
 
+/// `Combinatorica\`KSetPartitions[l, k]` — the partitions of `l` (or of
+/// `Range[l]` for an integer) into `k` nonempty blocks. Partitions with the
+/// last element alone come first, then those with it added to each block of
+/// a partition of the remaining elements.
+pub fn combinatorica_k_set_partitions_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  fn partitions(n: usize, k: usize) -> Vec<Vec<Vec<usize>>> {
+    if n == 0 {
+      return if k == 0 { vec![vec![]] } else { vec![] };
+    }
+    if k == 0 || k > n {
+      return vec![];
+    }
+    let mut out = Vec::new();
+    for mut p in partitions(n - 1, k - 1) {
+      p.push(vec![n - 1]);
+      out.push(p);
+    }
+    for p in partitions(n - 1, k) {
+      for i in 0..p.len() {
+        let mut q = p.clone();
+        q[i].push(n - 1);
+        out.push(q);
+      }
+    }
+    out
+  }
+
+  let original = || unevaluated("Combinatorica`KSetPartitions", args);
+  let items: Vec<Expr> = match &args[0] {
+    Expr::List(items) => items.to_vec(),
+    Expr::Integer(n) if (0..=20).contains(n) => {
+      (1..=*n).map(Expr::Integer).collect()
+    }
+    _ => return Ok(original()),
+  };
+  let k = match &args[1] {
+    Expr::Integer(k) if *k >= 0 => *k as usize,
+    _ => return Ok(original()),
+  };
+  Ok(Expr::List(
+    partitions(items.len(), k)
+      .into_iter()
+      .map(|p| {
+        Expr::List(
+          p.into_iter()
+            .map(|b| {
+              Expr::List(b.into_iter().map(|i| items[i].clone()).collect())
+            })
+            .collect(),
+        )
+      })
+      .collect(),
+  ))
+}
+
 /// `Combinatorica\`Josephus[n, m]`: for `n` people in a circle with every
 /// `m`-th one eliminated, the round in which each person goes (the inverse
 /// of the elimination order).
