@@ -1832,6 +1832,20 @@ mod graphics {
       assert!(!plain.contains("<tspan"), "{plain}");
     }
 
+    /// `Null` typesets as nothing inside a `Row` — a Manipulate readout
+    /// like `Row[{"rate ", If[cond, "x"], "%"}]` must not print "Null".
+    #[test]
+    fn row_null_part_renders_nothing() {
+      let svg =
+        export_svg("Graphics[{Text[Row[{\"a \", Null, \"b\"}], {0, 0}]}]");
+      assert!(svg.contains(">a b</text>"), "{svg}");
+      assert!(!svg.contains("Null"), "{svg}");
+      let sep = export_svg(
+        "Graphics[{Text[Row[{\"a\", Null, \"b\"}, \",\"], {0, 0}]}]",
+      );
+      assert!(sep.contains(">a,,b</text>"), "{sep}");
+    }
+
     /// What an `EdgeForm` leaves unsaid comes from Wolfram's defaults: a
     /// width alone strokes black, a colour alone strokes at width 1, and
     /// an `EdgeForm` that names neither draws no edge at all — which is
