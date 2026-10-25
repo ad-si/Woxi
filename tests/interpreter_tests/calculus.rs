@@ -1489,6 +1489,37 @@ mod definite_integrals {
   }
 
   #[test]
+  fn definite_sqrt_quadratic_with_linear_term_half_disk() {
+    // 3 - 2x - x^2 = 4 - (x + 1)^2, so [-1, 1] covers a half disk of
+    // radius 2 shifted to the left, whose area minus the left quarter is Pi.
+    assert_eq!(
+      interpret("Integrate[Sqrt[3 - 2x - x^2], {x, -1, 1}]").unwrap(),
+      "Pi"
+    );
+  }
+
+  #[test]
+  fn definite_sqrt_quadratic_with_linear_term_hyperbolic() {
+    // x^2 + 2x + 2 = (x + 1)^2 + 1; the exact form must agree with the
+    // numeric integral 1.8100921403928758.
+    assert_eq!(
+      interpret("N[Integrate[Sqrt[x^2 + 2x + 2], {x, 0, 1}]]").unwrap(),
+      "1.810092140392876"
+    );
+  }
+
+  #[test]
+  fn definite_sqrt_quadratic_with_linear_term_real_coefficients() {
+    assert_eq!(
+      interpret(
+        "Chop[Integrate[Sqrt[6.5 - 0.18*h + 0.002*h^2], {h, 0, 40}] - 78.81253032630696]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
   fn definite_sqrt_partial_interval() {
     // ∫_{-1/2}^{1/2} Sqrt[1 - x^2] dx = Sqrt[3]/4 + Pi/6.
     assert_eq!(
