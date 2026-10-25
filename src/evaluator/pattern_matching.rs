@@ -3091,6 +3091,19 @@ fn apply_replace_all_ast_impl(
     // (`-3 /. 3 -> 2` came out as `-2`).
     if !matches!(stripped, Expr::Identifier(_)) && !contains_pattern(&stripped)
     {
+      // `lit :> value /; test` applies only when the test holds (there are
+      // no pattern variables to bind, so it is decided once).
+      let replacement: &Expr = match replacement.as_ref() {
+        Expr::FunctionCall { name, args }
+          if name == "Condition" && args.len() == 2 =>
+        {
+          match evaluate_expr_to_expr(&args[1])? {
+            Expr::Identifier(ref t) if t == "True" => &args[0],
+            _ => return Ok(expr.clone()),
+          }
+        }
+        other => other,
+      };
       return Ok(
         replace_literal_subexpr(expr, &stripped, replacement)
           .unwrap_or_else(|| expr.clone()),

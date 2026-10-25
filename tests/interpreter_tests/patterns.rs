@@ -7026,3 +7026,24 @@ mod loops_that_never_ended {
     );
   }
 }
+
+mod literal_rule_with_condition {
+  use super::*;
+
+  // A literal left side with a `/;` guard on its right side replaces only
+  // when the guard holds (a cellular-automaton step in "Collatz Problem as
+  // a Cellular Automaton" relies on it).
+  #[test]
+  fn guard_decides() {
+    assert_eq!(
+      interpret(
+        "{0 /. 0 :> 6 /; 1 == 2, 0 /. 0 :> 6 /; 1 == 1, \
+         {1, 0} /. 0 :> 6 /; 1 == 2, \
+         {2} /. {a_} -> (0 /. 0 :> 6 /; a == 6), \
+         {6} /. {a_} :> (0 /. 0 :> 6 /; a == 6)}"
+      )
+      .unwrap(),
+      "{0, 6, {1, 0}, 0, 6}"
+    );
+  }
+}
