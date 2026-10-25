@@ -1812,6 +1812,31 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_show_keeps_contour_labels_of_contour_plot() {
+    // The level labels of `ContourLabels -> True` are part of the plot, so
+    // layering other graphics over it with `Show` must not lose them.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Show[ContourPlot[x y, {x, 0, 3}, {y, 0, 3}, ContourLabels -> True], \
+       Graphics[{Red, Rectangle[{0, 0}, {1, 1}]}]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Show should produce a graphics SVG");
+    let plain = interpret_with_stdout(
+      "Show[ContourPlot[x y, {x, 0, 3}, {y, 0, 3}], \
+       Graphics[{Red, Rectangle[{0, 0}, {1, 1}]}]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Show should produce a graphics SVG");
+    assert!(
+      svg.matches("<text").count() > plain.matches("<text").count(),
+      "contour labels must survive Show:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_show_contour_plot_with_directive_list_contour_style() {
     // Regression: `Show[ContourPlot[…], Graphics[…]]` where the
     // ContourPlot's `ContourStyle` is a `Directive[{…}]` (single List

@@ -789,6 +789,33 @@ fn push_epilog_primitives(
   ));
 }
 
+/// Where `ContourLabels -> True` writes each level: the middle of the
+/// level's longest contour line, in the coordinates `marching_squares_segments`
+/// was given. Levels whose lines are too short to carry a label are skipped.
+fn contour_label_points(
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  x0: f64,
+  y0: f64,
+  cell_w: f64,
+  cell_h: f64,
+) -> Vec<(f64, (f64, f64))> {
+  let mut points = Vec::new();
+  for &level in levels {
+    let segments =
+      marching_squares_segments(grid, level, x0, y0, cell_w, cell_h);
+    let chains = chain_segments(&segments);
+    let Some(chain) = chains.iter().max_by_key(|c| c.len()) else {
+      continue;
+    };
+    if chain.len() < 4 {
+      continue;
+    }
+    points.push((level, chain[chain.len() / 2]));
+  }
+  points
+}
+
 /// `ContourLabels -> True`: write each contour's level on its longest
 /// line, centred on the line with a light halo so it stays legible over
 /// the shading.
@@ -802,23 +829,14 @@ fn push_contour_labels(
   let cell_w = area.plot_w / FIELD_GRID as f64;
   let cell_h = area.plot_h / FIELD_GRID as f64;
   let font = 11.0 * RESOLUTION_SCALE as f64;
-  for &level in levels {
-    let segments = marching_squares_segments(
-      grid,
-      level,
-      area.plot_x0,
-      area.plot_y0,
-      cell_w,
-      cell_h,
-    );
-    let chains = chain_segments(&segments);
-    let Some(chain) = chains.iter().max_by_key(|c| c.len()) else {
-      continue;
-    };
-    if chain.len() < 4 {
-      continue;
-    }
-    let (x, y) = chain[chain.len() / 2];
+  for (level, (x, y)) in contour_label_points(
+    grid,
+    levels,
+    area.plot_x0,
+    area.plot_y0,
+    cell_w,
+    cell_h,
+  ) {
     svg.push_str(&format!(
       "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\" stroke=\"white\" stroke-width=\"{:.1}\" stroke-opacity=\"0.8\" paint-order=\"stroke\">{}</text>\n",
       3.0 * RESOLUTION_SCALE as f64,
@@ -2520,6 +2538,26 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
           .collect();
         structure_items.push(call1("Line", Expr::List(points.into())));
+      }
+    }
+    // The level labels travel with the plot, so a `Show` that layers
+    // other graphics over it keeps them.
+    if opts.contour_labels {
+      let labels: Vec<Expr> =
+        contour_label_points(&grid, &levels, x_min, y_max, step_x, -step_y)
+          .into_iter()
+          .map(|(level, (x, y))| {
+            call(
+              "Text",
+              vec![
+                Expr::String(crate::functions::plot::format_tick(level)),
+                Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+              ],
+            )
+          })
+          .collect();
+      if !labels.is_empty() {
+        structure_items.push(Expr::List(labels.into()));
       }
     }
   }
