@@ -3348,7 +3348,34 @@ fn solve_with_var_selection(
   modulus: Option<i128>,
   original: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  let over_integers = matches!(
+    positional.get(2),
+    Some(Expr::Identifier(d)) if d == "Integers"
+  );
+  // Over the integers, a system of linear equations has a lattice of
+  // solutions, parametrized the way Reduce does it.
+  if over_integers
+    && modulus.is_none()
+    && let Some(vars) = match &positional[1] {
+      Expr::Identifier(name) => Some(vec![name.clone()]),
+      Expr::List(items) => items
+        .iter()
+        .map(|item| match item {
+          Expr::Identifier(name) => Some(name.clone()),
+          _ => None,
+        })
+        .collect::<Option<Vec<_>>>(),
+      _ => None,
+    }
+    && let Some(solutions) =
+      super::reduce::solve_linear_diophantine_rules(&positional[0], &vars)?
+  {
+    return Ok(solutions);
+  }
+  // The real parametrization of an underdetermined system is no integer
+  // solution.
   if modulus.is_none()
+    && !over_integers
     && !in_nsolve()
     && positional.len() >= 2
     && let Expr::List(var_exprs) = &positional[1]

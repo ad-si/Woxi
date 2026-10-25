@@ -1990,23 +1990,38 @@ woxi eval 'Solve[{x^2 + y^2 == 1, y == 0}, {x, y}]'
 The single-variable case agrees (`Solve[x^2 == 4, x]` is `{{x -> -2}, {x -> 2}}`
 in both), so the system path sorts where wolframscript does not.
 
-### `Solve` does not parametrize an unbounded integer congruence
+### Integer lattices with congruences are printed in canonical form
+
+`Reduce`/`Solve` over `Integers` parametrize a linear system with congruences
+(`Mod[e, m] == r`) as one lattice in Hermite normal form. wolframscript
+substitutes its way through the system and leaves the substitution visible:
 
 ```sh
-wolframscript -code 'Solve[Mod[x, 3] == 1, x, Integers]'
-# {{x -> ConditionalExpression[1 + 3*C[1], Element[C[1], Integers]]}}
-woxi eval 'Solve[Mod[x, 3] == 1, x, Integers]'
-# Solve[Mod[x, 3] == 1, x, Integers]
+wolframscript -code 'Reduce[Mod[x, 6] == 1 && x + y == 0, {x, y}, Integers]'
+# Element[C[1], Integers] && x == 1 + 6*C[1] && y == 5 + 6*(-1 - C[1])
+woxi eval 'Reduce[Mod[x, 6] == 1 && x + y == 0, {x, y}, Integers]'
+# Element[C[1], Integers] && x == 1 + 6*C[1] && y == -1 - 6*C[1]
 ```
 
-`Reduce` has the answer — it reports the class as
-`Element[C[1], Integers] && x == 1 + 3*C[1]` — so what is missing is `Solve`
-turning that into a rule with the parameter's membership as the
-`ConditionalExpression` condition.
+The sets agree, and so does the form whenever wolframscript's substitution
+already ends in canonical form
+(`Reduce[Mod[x + 2 y, 4] == 1 && x == 3 y + 1, {x, y}, Integers]`).
+When the congruence leaves more than one parameter free, wolframscript
+enumerates residue classes as a disjunction
+(`Reduce[Mod[x + y + z, 5] == 2 && x == y, {x, y, z}, Integers]`); Woxi
+has no such form and does not reduce these.
 
-The *bounded* case agrees:
-`Solve[Mod[x, 3] == 1 && 0 <= x < 10, x, Integers]` is `{{x -> 1}, {x -> 4},
-{x -> 7}}` in both (rechecked 2026-09-10).
+### `Solve` over `Integers` does not parametrize nonlinear equations
+
+```sh
+wolframscript -code 'Solve[x^2 == 4 y, {x, y}, Integers]'
+# {{x -> ConditionalExpression[4*C[1], Element[C[1], Integers]], y -> ConditionalExpression[4*C[1]^2, Element[C[1], Integers]]}, {x -> ConditionalExpression[2 + 4*C[1], Element[C[1], Integers]], y -> ConditionalExpression[1 + 4*C[1] + 4*C[1]^2, Element[C[1], Integers]]}}
+woxi eval 'Solve[x^2 == 4 y, {x, y}, Integers]'
+# {}
+```
+
+`Reduce` gives the real solution `y == x^2/4` here, and `Solve` keeps only
+integer-valued rules of the real solution, which this one is not.
 
 ### Solving for a variable divided by a symbol keeps a negated sum split
 

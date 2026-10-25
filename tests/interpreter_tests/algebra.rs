@@ -8784,6 +8784,138 @@ mod reduce {
     );
   }
 
+  // A system of linear equations is one lattice, parametrized jointly.
+  #[test]
+  fn diophantine_system() {
+    assert_eq!(
+      interpret("Reduce[{2 x == y, 3 y == 2 z}, {x, y, z}, Integers]").unwrap(),
+      "Element[C[1], Integers] && x == C[1] && y == 2*C[1] && z == 3*C[1]"
+    );
+    assert_eq!(
+      interpret("Reduce[2 x == y && 3 y == 2 z, {x, y, z}, Integers]").unwrap(),
+      "Element[C[1], Integers] && x == C[1] && y == 2*C[1] && z == 3*C[1]"
+    );
+    assert_eq!(
+      interpret("Reduce[{a + b == c + d, a - b == 1}, {a, b, c, d}, Integers]")
+        .unwrap(),
+      "Element[C[1] | C[2], Integers] && a == C[1] && b == -1 + C[1] \
+       && c == C[2] && d == -1 + 2*C[1] - C[2]"
+    );
+    assert_eq!(
+      interpret(
+        "Reduce[{x + 2 y + 3 z == 6, 4 x + 5 y + 6 z == 15}, {x, y, z}, \
+         Integers]"
+      )
+      .unwrap(),
+      "Element[C[1], Integers] && x == C[1] && y == 3 - 2*C[1] && z == C[1]"
+    );
+    assert_eq!(
+      interpret("Reduce[x == 2 y && z == 3, {x, y, z}, Integers]").unwrap(),
+      "Element[C[1], Integers] && x == 2*C[1] && y == C[1] && z == 3"
+    );
+    assert_eq!(
+      interpret("Reduce[{x + y == 2, x - y == 2}, {x, y}, Integers]").unwrap(),
+      "x == 2 && y == 0"
+    );
+    assert_eq!(
+      interpret("Reduce[{x + y == 1, x - y == 2}, {x, y}, Integers]").unwrap(),
+      "False"
+    );
+  }
+
+  // A congruence in a system of equations restricts the lattice.
+  #[test]
+  fn diophantine_system_with_congruence() {
+    assert_eq!(
+      interpret(
+        "Reduce[Mod[x + 2 y, 4] == 1 && x == 3 y + 1, {x, y}, Integers]"
+      )
+      .unwrap(),
+      "Element[C[1], Integers] && x == 1 + 12*C[1] && y == 4*C[1]"
+    );
+    assert_eq!(
+      interpret("Reduce[Mod[x + y, 3] == 1 && x == 2 y, {x, y}, Integers]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Reduce[Mod[x + y, 3] == 4 && x == 2 y, {x, y}, Integers]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "Solve[Mod[x + 2 y, 4] == 1 && x == 3 y + 1, {x, y}, Integers]"
+      )
+      .unwrap(),
+      "{{x -> ConditionalExpression[1 + 12*C[1], Element[C[1], Integers]], \
+       y -> ConditionalExpression[4*C[1], Element[C[1], Integers]]}}"
+    );
+  }
+
+  // Solve takes a congruence's residue class from Reduce.
+  #[test]
+  fn solve_congruence_over_integers() {
+    assert_eq!(
+      interpret("Solve[Mod[x, 3] == 1, x, Integers]").unwrap(),
+      "{{x -> ConditionalExpression[1 + 3*C[1], Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[Mod[x, 3] == 1 && Mod[x, 2] == 0, x, Integers]")
+        .unwrap(),
+      "{{x -> ConditionalExpression[4 + 6*C[1], Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[Mod[x, 3] == 1 && 0 <= x < 10, x, Integers]").unwrap(),
+      "{{x -> 1}, {x -> 4}, {x -> 7}}"
+    );
+  }
+
+  // A coefficient of -1 is read as the integer it is.
+  #[test]
+  fn diophantine_negative_unit_coefficient() {
+    assert_eq!(
+      interpret("Reduce[x - y == 3, {x, y}, Integers]").unwrap(),
+      "Element[C[1], Integers] && x == C[1] && y == -3 + C[1]"
+    );
+  }
+
+  // Solve over the integers gives the same lattice as rules, the parametric
+  // values under the membership conditions.
+  #[test]
+  fn diophantine_solve_rules() {
+    assert_eq!(
+      interpret("Solve[3 x + 5 y == 7, {x, y}, Integers]").unwrap(),
+      "{{x -> ConditionalExpression[4 + 5*C[1], Element[C[1], Integers]], \
+       y -> ConditionalExpression[-1 - 3*C[1], Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[{2 x == y, 3 y == 2 z}, {x, y, z}, Integers]").unwrap(),
+      "{{x -> ConditionalExpression[C[1], Element[C[1], Integers]], \
+       y -> ConditionalExpression[2*C[1], Element[C[1], Integers]], \
+       z -> ConditionalExpression[3*C[1], Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[x == 2 y && z == 3, {x, y, z}, Integers]").unwrap(),
+      "{{x -> ConditionalExpression[2*C[1], Element[C[1], Integers]], \
+       y -> ConditionalExpression[C[1], Element[C[1], Integers]], z -> 3}}"
+    );
+    assert_eq!(
+      interpret("Solve[x == 2 y, {x, y, z}, Integers]").unwrap(),
+      "{{x -> ConditionalExpression[2*C[1], Element[z, Integers] && \
+       Element[C[1], Integers]], y -> ConditionalExpression[C[1], \
+       Element[z, Integers] && Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x + y == 2, x - y == 2}, {x, y}, Integers]").unwrap(),
+      "{{x -> 2, y -> 0}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x + y == 1, x - y == 2}, {x, y}, Integers]").unwrap(),
+      "{}"
+    );
+  }
+
   #[test]
   fn diophantine_no_solution_when_gcd_does_not_divide_target() {
     // gcd(2, 4) = 2 does not divide 5, so no integer x, y satisfy this.
