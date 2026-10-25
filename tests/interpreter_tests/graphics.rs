@@ -5700,6 +5700,19 @@ mod plot3d {
       assert_ne!(with_default, with_degree_2);
     }
 
+    // A Tube of many curves is as crowded as as many Tubes: it used to get
+    // the lone-tube tessellation budget for every curve (gigabytes for 343).
+    #[test]
+    fn graphics3d_tube_of_many_curves_counts_each_curve() {
+      let curves = "Table[{{i, 0, 0}, {i, 1, 0}}, {i, 12}]";
+      let one = export_svg(&format!("Graphics3D[Tube[{curves}]]"));
+      let many = export_svg(&format!("Graphics3D[Tube /@ {curves}]"));
+      assert_eq!(
+        one.matches("<polygon").count(),
+        many.matches("<polygon").count()
+      );
+    }
+
     #[test]
     fn graphics3d_tubebox_draws_like_tube() {
       let tube = export_svg(
@@ -17365,6 +17378,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn smooth_density_histogram() {
+      assert_eq!(
+        interpret(
+          "Head[SmoothDensityHistogram[{{1, 2}, {2, 3}, {3, 1}, {2, 2}}]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+      assert_eq!(
+        interpret(
+          "Head[SmoothDensityHistogram[{{1, 2}, {2, 3}, {3, 1}}, {0.3, 0.5}, \
+           ColorFunction -> \"SunsetColors\", Frame -> False]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+      // Not a list of points: left alone.
+      assert_eq!(
+        interpret("SmoothDensityHistogram[{1, 2, 3}]").unwrap(),
+        "SmoothDensityHistogram[{1, 2, 3}]"
+      );
+    }
+
+    #[test]
     fn list_density_plot_matrix() {
       insta::assert_snapshot!(export_svg(
         "ListDensityPlot[{{1, 1, 1, 1}, {1, 2, 1, 2}, {1, 1, 3, 1}, {1, 2, 1, 4}}]"
@@ -24475,6 +24512,22 @@ mod graphics_complex {
 mod graphics_complex_normal {
   use super::*;
 
+  // GraphicsComplex holds its primitives from N, so their point indices
+  // stay integers and Normal can still look them up
+  // (AnimationOfFreeKicksInSoccer).
+  #[test]
+  fn n_keeps_point_indices() {
+    assert_eq!(
+      interpret("N[GraphicsComplex[{{0, 0}, {1, 0}}, Line[{1, 2}]]]").unwrap(),
+      "GraphicsComplex[{{0., 0.}, {1., 0.}}, Line[{1, 2}]]"
+    );
+    assert_eq!(
+      interpret("Normal[N[GraphicsComplex[{{0, 0}, {1, 0}}, Line[{1, 2}]]]]")
+        .unwrap(),
+      "{Line[{{0., 0.}, {1., 0.}}]}"
+    );
+  }
+
   #[test]
   fn point_and_line() {
     // The documentation's own example for `Normal[GraphicsComplex[…]]`.
@@ -24778,6 +24831,42 @@ mod log_log_plot {
     insta::assert_snapshot!(export_svg(
       "LogLogPlot[{x, x^2, x^3}, {x, 1, 100}]"
     ));
+  }
+
+  /// Explicit x `FrameTicks` on a log axis sit at their logarithmic
+  /// positions (equal decades are equally spaced) and replace the
+  /// automatic decade labels instead of doubling them.
+  #[test]
+  fn explicit_frame_ticks_use_log_positions() {
+    let svg = export_svg(
+      "LogLogPlot[Exp[-x], {x, 0.1, 10}, Frame -> True, \
+       FrameTicks -> {{Automatic, Automatic}, \
+       {{{0.1, \"lo\"}, {1, \"mid\"}, {10, \"hi\"}}, Automatic}}]",
+    );
+    let x_of = |label: &str| -> f64 {
+      let end = svg.find(&format!(">{label}</text>")).unwrap();
+      let start = svg[..end].rfind("<text x=\"").unwrap() + "<text x=\"".len();
+      svg[start..start + svg[start..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    let (lo, mid, hi) = (x_of("lo"), x_of("mid"), x_of("hi"));
+    assert!(lo < mid && mid < hi);
+    assert!(((mid - lo) - (hi - mid)).abs() < 1.0, "{lo} {mid} {hi}");
+  }
+
+  /// A range bounded by powers of ten labels both bounding decades.
+  #[test]
+  fn decade_bounds_are_labelled() {
+    let svg = export_svg("LogLogPlot[Exp[-x], {x, 0.1, 10}, Frame -> True]");
+    // Bottom-edge labels: 10^-1, 1, 10 (the left edge has its own).
+    let bottom = svg
+      .lines()
+      .filter(|l| {
+        l.contains("text-anchor=\"middle\"") && l.contains("y=\"1938")
+      })
+      .count();
+    assert_eq!(bottom, 3, "{svg}");
   }
 }
 

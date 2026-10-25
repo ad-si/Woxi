@@ -713,6 +713,23 @@ mod subsequences {
 mod tuples {
   use super::*;
 
+  // Tuples built every prefix level and cloned each tuple from the previous
+  // one, and `x = …` kept the value twice: Tuples[{-1, 0, 1}, 12] took
+  // 2.6 GB (CompetingCellularAutomata). One copy of the 59049 10-tuples
+  // below is about 60 MB.
+  #[test]
+  fn assigned_tuples_are_held_once() {
+    assert_eq!(
+      interpret(
+        "m0 = MemoryInUse[]; t = Tuples[{-1, 0, 1}, 10]; \
+         {Length[t], t[[1]], t[[-1]], MemoryInUse[] - m0 < 10^8}"
+      )
+      .unwrap(),
+      "{59049, {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, \
+       {1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, True}"
+    );
+  }
+
   #[test]
   fn pairs() {
     assert_eq!(
@@ -14221,6 +14238,59 @@ mod array_reshape {
 mod sparse_array_list_ops {
   use super::*;
 
+  // A single dimension n for rank-r positions means {n, n, …}.
+  #[test]
+  fn scalar_dimension_for_matrix_positions() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{{1, 2} -> 1, {3, 1} -> 2}, 3]]").unwrap(),
+      "{{0, 1, 0}, {0, 0, 0}, {2, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{i_, i_} -> 1, 2]]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("Dimensions[SparseArray[{{1, 1, 1} -> 1}, 4]]").unwrap(),
+      "{4, 4, 4}"
+    );
+  }
+
+  // Take works on the stored rules, so a huge array is never densified.
+  #[test]
+  fn take_stays_sparse() {
+    let a = "SparseArray[{{1, 2} -> 1, {5, 5} -> 3, {2, 3} -> 7}, {6, 6}]";
+    for spec in ["2, 3", "{2, 6, 3}, -2", "-3", "All, {3}", "UpTo[9], {2, 5}"] {
+      assert_eq!(
+        interpret(&format!(
+          "Normal[Take[{a}, {spec}]] == Take[Normal[{a}], {spec}]"
+        ))
+        .unwrap(),
+        "True",
+        "Take[a, {spec}]"
+      );
+    }
+    assert_eq!(
+      interpret(&format!("Head[Take[{a}, 2, 3]]")).unwrap(),
+      "SparseArray"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[Take[SparseArray[{{1, 1} -> 1, {10^6, 10^6} -> 2}, \
+         {10^6, 10^6}], 2, 2]]"
+      )
+      .unwrap(),
+      "{{1, 0}, {0, 0}}"
+    );
+  }
+
+  #[test]
+  fn take_beyond_a_sparse_array() {
+    assert_eq!(
+      interpret("Take[SparseArray[{1, 0, 2}], 5]").unwrap(),
+      "Take[SparseArray[Automatic, {3}, 0, {1, {{0, 2}, {{1}, {3}}}, {1, 2}}], 5]"
+    );
+  }
+
   // `{pos1, pos2, …} -> v` gives every position v; with explicit
   // dimensions the position-list forms used to stay unevaluated.
   #[test]
@@ -14634,6 +14704,54 @@ mod position_index {
 
 mod list_convolve {
   use super::*;
+
+  // A normalized SparseArray kernel (MotionBlur) stayed unevaluated.
+  #[test]
+  fn sparse_array_kernel() {
+    assert_eq!(
+      interpret(
+        "k = SparseArray[{{2, i_} -> 1.}, {3, 3}, 0.]; \
+         ListConvolve[k/Total[k, 2], IdentityMatrix[4]]"
+      )
+      .unwrap(),
+      "{{0.3333333333333333, 0.3333333333333333}, \
+       {0.3333333333333333, 0.3333333333333333}}"
+    );
+    assert_eq!(
+      interpret(
+        "ListCorrelate[SparseArray[{1 -> 1, 3 -> 2}], {1, 2, 3, 4, 5}]"
+      )
+      .unwrap(),
+      "{7, 10, 13}"
+    );
+  }
+
+  // Machine numbers take a direct path with the evaluator's exactness:
+  // 0 times a real is an exact 0, and an all-exact window stays exact.
+  #[test]
+  fn machine_entries_keep_exact_terms() {
+    assert_eq!(
+      interpret("ListConvolve[{1, 2}, {0., 0, 1}]").unwrap(),
+      "{0., 1}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{0, 0.5}, {1, 2, 3}]").unwrap(),
+      "{1., 1.5}"
+    );
+    assert_eq!(
+      interpret("ListConvolve[{{1, 0.5}, {0, 0}}, {{1, 2, 3}, {4, 5, 6}}]")
+        .unwrap(),
+      "{{7., 8.5}}"
+    );
+    assert_eq!(
+      interpret(
+        "TimeConstrained[Dimensions[ListConvolve[ConstantArray[1./225, \
+         {15, 15}], RandomInteger[255, {200, 200}]]], 5]"
+      )
+      .unwrap(),
+      "{186, 186}"
+    );
+  }
 
   #[test]
   fn two_dimensional_padding_array() {
@@ -23881,6 +23999,22 @@ mod shared_own_value_lists {
     );
   }
 
+  // Every kept AppendTo result was a full copy of the list (the
+  // `AppendTo[l, #] & /@ big` idiom: 4.8 GB in RauzyFractalsAsSteppedSurfaces).
+  // The versions now share their storage.
+  #[test]
+  fn kept_append_to_results_share_storage() {
+    assert_eq!(
+      interpret(
+        "um = {}; m0 = MemoryInUse[]; r = Table[AppendTo[um, i], {i, 5000}]; \
+         {Length[r], Length[r[[2500]]], r[[2500, -1]], Total[um], \
+          MemoryInUse[] - m0 < 2*10^8}"
+      )
+      .unwrap(),
+      "{5000, 2500, 2500, 12502500, True}"
+    );
+  }
+
   #[test]
   fn append_to_shared_list_returns_the_grown_list() {
     assert_eq!(
@@ -24397,6 +24531,55 @@ mod combinatorica_show_graph {
       )
       .unwrap(),
       "{2, Graphics, True}"
+    );
+  }
+}
+
+mod sort_machine_numbers {
+  use super::*;
+
+  // All-real and all-integer lists sort by value on a fast path; equal
+  // values keep their order.
+  #[test]
+  fn reals_and_integers() {
+    assert_eq!(
+      interpret(
+        "{Sort[{3., -0., 0., 1.5, -2.}], Sort[{3, 1, 2, -5}], \
+         OrderedQ[Sort[RandomReal[1, 1000]]]}"
+      )
+      .unwrap(),
+      "{{-2., 0., 0., 1.5, 3.}, {-5, 1, 2, 3}, True}"
+    );
+  }
+}
+
+// DeleteCases rebuilt kept compound elements as plain calls, so its rules
+// came back as Rule[x, 1] calls that ReplaceAll did not apply
+// (the PaperFolding demonstrations).
+mod delete_cases_keeps_forms {
+  use super::*;
+
+  #[test]
+  fn kept_rules_still_replace() {
+    assert_eq!(interpret("x /. DeleteCases[{x -> 1}, 5]").unwrap(), "1");
+    assert_eq!(
+      interpret("Replace[x, DeleteCases[{x -> 1, y -> 2}, y -> 2]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "{1 + t, t} /. Flatten[DeleteCases[{{{t -> 1}}, {}, {{t -> 2}}}, {}], 1]"
+      )
+      .unwrap(),
+      "{{2, 1}, {3, 2}}"
+    );
+  }
+
+  #[test]
+  fn deletes_inside_level_two() {
+    assert_eq!(
+      interpret("DeleteCases[{a + b + 1, c}, 1, 2]").unwrap(),
+      "{a + b, c}"
     );
   }
 }

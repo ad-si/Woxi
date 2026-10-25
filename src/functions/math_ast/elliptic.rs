@@ -259,7 +259,8 @@ pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// phi = Pi/2, which stays accurate for any m < 1.
 fn elliptic_e(m: f64) -> f64 {
   if m < 0.0 {
-    return elliptic_e_incomplete(std::f64::consts::FRAC_PI_2, m);
+    let delta = 1.0 - m;
+    return carlson_rf(0.0, delta, 1.0) - m / 3.0 * carlson_rd(0.0, delta, 1.0);
   }
   elliptic_e_series(m)
 }
@@ -342,25 +343,47 @@ pub fn jacobi_zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("JacobiZeta", args))
 }
 
-/// Compute incomplete elliptic integral E(phi, m) via Simpson's rule
-/// E(phi, m) = integral from 0 to phi of sqrt(1 - m*sin^2(theta)) dtheta
+/// Splits an amplitude into `phi = r + k Pi` with `r` in (-Pi/2, Pi/2], the
+/// range where the Carlson forms below hold. F and E grow by twice the
+/// complete integral per period.
+fn reduce_amplitude(phi: f64) -> (f64, f64) {
+  let k = ((phi - std::f64::consts::FRAC_PI_2) / std::f64::consts::PI).ceil();
+  (phi - k * std::f64::consts::PI, k)
+}
+
+/// `1 - m Sin[r]^2`, with rounding noise around the branch point
+/// (`m Sin[r]^2` within a few ulps of 1, e.g. EllipticF[x, Csc[x]^2]) set to 0.
+fn elliptic_delta(s: f64, m: f64) -> f64 {
+  let ms2 = m * s * s;
+  let delta = 1.0 - ms2;
+  if delta.abs() <= 8.0 * f64::EPSILON * ms2.abs() {
+    0.0
+  } else {
+    delta
+  }
+}
+
+/// E(phi, m) = Sin[r] R_F(Cos[r]^2, 1 - m Sin[r]^2, 1)
+///   - m Sin[r]^3 / 3 R_D(Cos[r]^2, 1 - m Sin[r]^2, 1) + 2 k E(m).
+/// NaN where the result is complex (1 - m Sin[r]^2 < 0).
 pub fn elliptic_e_incomplete(phi: f64, m: f64) -> f64 {
   if phi == 0.0 {
     return 0.0;
   }
-  let n = 1000;
-  let h = phi / n as f64;
-  let f = |theta: f64| (1.0 - m * theta.sin().powi(2)).sqrt();
-  let mut sum = f(0.0) + f(phi);
-  for i in 1..n {
-    let theta = i as f64 * h;
-    if i % 2 == 0 {
-      sum += 2.0 * f(theta);
-    } else {
-      sum += 4.0 * f(theta);
-    }
+  let (r, k) = reduce_amplitude(phi);
+  let (s, c) = r.sin_cos();
+  let delta = elliptic_delta(s, m);
+  if delta < 0.0 || (k != 0.0 && m > 1.0) {
+    return f64::NAN;
   }
-  sum * h / 3.0
+  let c2 = c * c;
+  let e = s * carlson_rf(c2, delta, 1.0)
+    - m * s * s * s / 3.0 * carlson_rd(c2, delta, 1.0);
+  if k == 0.0 {
+    e
+  } else {
+    e + 2.0 * k * elliptic_e(m)
+  }
 }
 
 /// EllipticF[phi, m] - Incomplete elliptic integral of the first kind
@@ -398,7 +421,15 @@ pub fn elliptic_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_numeric_eval {
     let phi = phi_val.unwrap();
     let m = m_val.unwrap();
-    return Ok(Expr::Real(elliptic_f(phi, m)));
+    let f = elliptic_f(phi, m);
+    if !f.is_nan() {
+      return Ok(Expr::Real(f));
+    }
+    if let Some((re, im)) = elliptic_f_past_branch_point(phi, m) {
+      return Ok(build_complex_float_expr(re, im));
+    }
+    let (re, im) = elliptic_f_complex((phi, 0.0), (m, 0.0));
+    return Ok(build_complex_float_expr(re, im));
   }
 
   // Machine-complex amplitude and/or parameter, e.g. the argument produced
@@ -505,27 +536,40 @@ fn elliptic_f_complex(phi: C64, m: C64) -> C64 {
   c_mul((sum.0 * scale, sum.1 * scale), phi)
 }
 
-/// Compute incomplete elliptic integral F(phi, m) via Gauss-Legendre quadrature
+/// F(phi, m) = Sin[r] R_F(Cos[r]^2, 1 - m Sin[r]^2, 1) + 2 k K(m).
+/// NaN where the result is complex (1 - m Sin[r]^2 < 0).
 pub fn elliptic_f(phi: f64, m: f64) -> f64 {
   if phi == 0.0 {
     return 0.0;
   }
-  // For phi = pi/2, this is the complete integral K(m)
-  // Use numerical integration with adaptive Simpson's rule
-  let n = 1000;
-  let h = phi / n as f64;
-  // Simpson's 1/3 rule
-  let f = |theta: f64| 1.0 / (1.0 - m * theta.sin().powi(2)).sqrt();
-  let mut sum = f(0.0) + f(phi);
-  for i in 1..n {
-    let theta = i as f64 * h;
-    if i % 2 == 0 {
-      sum += 2.0 * f(theta);
-    } else {
-      sum += 4.0 * f(theta);
-    }
+  let (r, k) = reduce_amplitude(phi);
+  let (s, c) = r.sin_cos();
+  let delta = elliptic_delta(s, m);
+  if delta < 0.0 || (k != 0.0 && m >= 1.0) {
+    return f64::NAN;
   }
-  sum * h / 3.0
+  if delta == 0.0 && c == 0.0 {
+    return f64::INFINITY;
+  }
+  let f = s * carlson_rf(c * c, delta, 1.0);
+  if k == 0.0 {
+    f
+  } else {
+    f + 2.0 * k * elliptic_k(m)
+  }
+}
+
+/// F(phi, m) for real phi and m whose value is complex: past the branch
+/// point 1 - m Sin[phi]^2 = 0 the Carlson form takes R_F's principal branch.
+fn elliptic_f_past_branch_point(phi: f64, m: f64) -> Option<C64> {
+  let (r, k) = reduce_amplitude(phi);
+  if k != 0.0 {
+    return None;
+  }
+  let (s, c) = r.sin_cos();
+  let (re, im) =
+    carlson_rf_complex((c * c, 0.0), (1.0 - m * s * s, 0.0), (1.0, 0.0));
+  Some((s * re, s * im))
 }
 
 /// EllipticPi[n, m] - Complete elliptic integral of the third kind

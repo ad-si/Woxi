@@ -2730,7 +2730,11 @@ fn contains_interpolating_function(e: &Expr) -> bool {
 fn shield_interpolating_functions(e: &Expr, held: &RefCell<Vec<Expr>>) -> Expr {
   if is_interpolating_function(e) {
     let mut held = held.borrow_mut();
-    held.push(e.clone());
+    // Restoring copies it once per placeholder (`v[#] & /@ Range[0, 1000,
+    // 0.1] /. sol`); shared, each copy is a pointer copy.
+    let mut shared = e.clone();
+    crate::evaluator::core_eval::share_large_lists(&mut shared, 0);
+    held.push(shared);
     return Expr::Identifier(format!(
       "$InterpolatingFunctionHold{}$",
       held.len()
@@ -2851,6 +2855,37 @@ fn rules_reach_interpolation_data(rules: &Expr) -> bool {
   }
 }
 
+/// A `Rule[a, b]` call left in call form (some list functions hand back
+/// their elements unevaluated) is a rule all the same.
+fn has_rule_call(rules: &Expr) -> bool {
+  match rules {
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      true
+    }
+    Expr::List(items) => items.iter().any(has_rule_call),
+    _ => false,
+  }
+}
+
+fn rule_calls_to_rules(rules: &Expr) -> Expr {
+  match rules {
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      rule_expr(args[0].clone(), args[1].clone())
+    }
+    Expr::FunctionCall { name, args }
+      if name == "RuleDelayed" && args.len() == 2 =>
+    {
+      rule_delayed_expr(args[0].clone(), args[1].clone())
+    }
+    Expr::List(items) => {
+      Expr::List(items.iter().map(rule_calls_to_rules).collect())
+    }
+    other => other.clone(),
+  }
+}
+
 /// `expr /. rules`. A rule that can only match symbols or calls with a
 /// concrete head finds nothing inside an `InterpolatingFunction`'s
 /// tabulated data, so each one is set aside as a placeholder while such
@@ -2862,6 +2897,13 @@ pub fn apply_replace_all_ast(
   expr: &Expr,
   rules: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  let normalized;
+  let rules = if has_rule_call(rules) {
+    normalized = rule_calls_to_rules(rules);
+    &normalized
+  } else {
+    rules
+  };
   if !contains_interpolating_function(expr)
     && !contains_interpolating_function(rules)
   {
@@ -3091,6 +3133,19 @@ fn apply_replace_all_ast_impl(
     // (`-3 /. 3 -> 2` came out as `-2`).
     if !matches!(stripped, Expr::Identifier(_)) && !contains_pattern(&stripped)
     {
+      // `lit :> value /; test` applies only when the test holds (there are
+      // no pattern variables to bind, so it is decided once).
+      let replacement: &Expr = match replacement.as_ref() {
+        Expr::FunctionCall { name, args }
+          if name == "Condition" && args.len() == 2 =>
+        {
+          match evaluate_expr_to_expr(&args[1])? {
+            Expr::Identifier(ref t) if t == "True" => &args[0],
+            _ => return Ok(expr.clone()),
+          }
+        }
+        other => other,
+      };
       return Ok(
         replace_literal_subexpr(expr, &stripped, replacement)
           .unwrap_or_else(|| expr.clone()),

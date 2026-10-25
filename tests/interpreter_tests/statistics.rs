@@ -11513,3 +11513,24 @@ mod count_level_pruning {
     );
   }
 }
+
+mod smooth_kernel_distribution {
+  use super::*;
+
+  // The kernel density estimate itself (wolframscript bins it, so its
+  // values agree to about six digits): Gaussian by default, other kernels
+  // scaled to unit variance, Silverman's bandwidth when none is given.
+  #[test]
+  fn density_distribution_and_moments() {
+    assert_eq!(
+      interpret(
+        "d = SmoothKernelDistribution[{1., 2., 3.5}, 0.5]; \
+         Round[10^5 {PDF[d, 1.5], CDF[d, 1.5], Mean[d], Variance[d], \
+         PDF[SmoothKernelDistribution[{1., 2., 3.5}, 0.5, \"Epanechnikov\"], \
+         1.5], PDF[SmoothKernelDistribution[{1., 2., 3.5, 4.2, 7.}], 1.5]}]"
+      )
+      .unwrap(),
+      "{32272, 33334, 216667, 130556, 35777, 14975}"
+    );
+  }
+}

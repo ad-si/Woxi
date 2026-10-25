@@ -358,6 +358,16 @@ fn coerce_to_real(expr: &Expr) -> Expr {
       }
     }
     Expr::List(items) => Expr::List(items.iter().map(coerce_to_real).collect()),
+    // Any other exact number — a complex `2 + I`, a radical — is a machine
+    // number in compiled code too.
+    other
+      if crate::functions::predicate_ast::is_numeric_q(other)
+        && !crate::functions::math_ast::numeric_utils::contains_inexact_real(
+          other,
+        ) =>
+    {
+      crate::functions::math_ast::n_eval(other).unwrap_or_else(|_| other.clone())
+    }
     other => other.clone(),
   }
 }

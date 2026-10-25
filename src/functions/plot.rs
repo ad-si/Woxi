@@ -984,8 +984,11 @@ fn inject_log_axis_labels(
     3
   };
 
-  let exp_start = log_min.ceil() as i64;
-  let exp_end = log_max.floor() as i64;
+  // A bound that is a power of ten up to rounding (`exp(ln(0.1))` is not
+  // exactly 0.1) still gets its decade labelled.
+  const DECADE_EPS: f64 = 1e-9;
+  let exp_start = (log_min - DECADE_EPS).ceil() as i64;
+  let exp_end = (log_max + DECADE_EPS).floor() as i64;
 
   // Align to step grid
   let first = if exp_start % step as i64 == 0 {
@@ -3064,6 +3067,26 @@ fn log_overlay_ranges(
   (x_min, x_max, y_min, y_max)
 }
 
+/// Explicit ticks of an axis, expressed in the natural-log coordinates the
+/// axis is drawn in when it is logarithmic (ticks at non-positive positions
+/// cannot be placed and are dropped).
+fn explicit_ticks_in_axis_space(
+  ticks: Option<&Vec<(f64, String)>>,
+  log: bool,
+) -> Option<Vec<(f64, String)>> {
+  let ticks = ticks?;
+  if !log {
+    return Some(ticks.clone());
+  }
+  Some(
+    ticks
+      .iter()
+      .filter(|(pos, _)| *pos > 0.0)
+      .map(|(pos, label)| (pos.ln(), label.clone()))
+      .collect(),
+  )
+}
+
 /// Draw an `Epilog`'s primitives over a finished plot. Both renderers (the
 /// line one below and the scatter one) inject them the same way, so a plot
 /// keeps its epilog whichever of the two drew it.
@@ -4211,10 +4234,18 @@ fn generate_svg_with_options(
     if let Some(insert_pos) = buf.rfind("</svg>") {
       // The origin axes already carry any explicit ticks.
       let mut labels_svg = explicit_ticks_svg(
-        opts.ticks_x.as_ref().filter(|_| !origin_axes),
-        opts.ticks_y.as_ref().filter(|_| !origin_axes),
+        explicit_ticks_in_axis_space(
+          opts.ticks_x.as_ref().filter(|_| !origin_axes),
+          opts.log_x,
+        )
+        .as_ref(),
+        explicit_ticks_in_axis_space(
+          opts.ticks_y.as_ref().filter(|_| !origin_axes),
+          opts.log_y,
+        )
+        .as_ref(),
         (plot_x0, margin_top, plot_w, plot_h),
-        (x_min, x_max, y_min, y_max),
+        log_overlay_ranges(opts, (x_min, x_max, y_min, y_max)),
         sf,
         label_fill,
       );
@@ -4237,8 +4268,8 @@ fn generate_svg_with_options(
   // Inject logarithmic axis labels with superscript formatting on a frame
   // (the origin axes label their own decades).
   if !origin_axes
-    && ((opts.log_y && show_y_axis && show_ticks)
-      || (opts.log_x && show_x_axis && show_ticks))
+    && ((opts.log_y && show_y_axis && show_ticks && opts.ticks_y.is_none())
+      || (opts.log_x && show_x_axis && show_ticks && opts.ticks_x.is_none()))
   {
     let margin_left_f = margin_left as f64;
     let margin_right_f = margin_right as f64;
@@ -4264,7 +4295,7 @@ fn generate_svg_with_options(
     if let Some(insert_pos) = buf.rfind("</svg>") {
       let mut log_labels = String::new();
 
-      if opts.log_y && show_y_axis {
+      if opts.log_y && show_y_axis && opts.ticks_y.is_none() {
         inject_log_axis_labels(
           &mut log_labels,
           y_min,
@@ -4279,7 +4310,7 @@ fn generate_svg_with_options(
         );
       }
 
-      if opts.log_x && show_x_axis {
+      if opts.log_x && show_x_axis && opts.ticks_x.is_none() {
         inject_log_axis_labels(
           &mut log_labels,
           x_min,

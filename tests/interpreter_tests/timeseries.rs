@@ -24,6 +24,20 @@ TemporalData`DateSpecification[{2013, 4, 1, 0, 0, 0.}, {2013, 9, 1, 0, 0, 0.}, {
 mod compressed_data {
   use super::*;
 
+  // A 20x4x4 integer array whose rank/dims read as a type field gave rank
+  // 20 with a 0 among the dims; nesting that ran out of memory (ElimPuzzle).
+  #[test]
+  fn integer_array_not_misread_as_an_empty_high_rank_array() {
+    assert_eq!(
+      interpret(
+        "x = CompressedData[\"1:eJyt0QEOwiAMBdAWJuwAXsAreQQPoOcfMyIkbdL8jNWpSxpS2KMULrfH9R6J6NxiMpFaBBlziyg5yxhlnuX/2az3nMAH8AF8Bl9qrdYzeAafzPws9XXfo57BJ3AMPu74BH5tfVlP4F+yrj6AX8D33Pqn4wv4Al572PO9h75+2jj/lsd6n3q8U3b8BD6Dx/MT+Pyl1zvSD73OjXx/s188O/WrvPnIr0599GTGf3nsx/py0FfJR/fn+TcmMq70\"]; \
+         {Dimensions[x], x[[1]]}"
+      )
+      .unwrap(),
+      "{{20, 4, 4}, {{4, 6, 2, 6}, {7, 3, 2, 1}, {2, 3, 7, 1}, {4, 8, 2, 1}}}"
+    );
+  }
+
   #[test]
   fn decodes_wl_binary_packed_array() {
     // First five daily step counts of the embedded packed Integer32 array.

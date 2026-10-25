@@ -4966,6 +4966,53 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // A non-numeric integrand is reported and left unevaluated, not
+  // integrated as zero.
+  #[test]
+  fn non_numeric_integrand() {
+    let result =
+      interpret_with_stdout("NIntegrate[Abs[g[x] - 1], {x, -10, 10}]").unwrap();
+    assert_eq!(result.result, "NIntegrate[Abs[-1 + g[x]], {x, -10, 10}]");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "NIntegrate::inumr: The integrand Abs[-1 + g[x]] has evaluated to \
+         non-numerical values for all sampling points in the region with \
+         boundaries {{-10, 10}}."
+      ]
+    );
+  }
+
+  // An inner Integrate without a closed form is a number under N, so it is
+  // integrated as an iterated integral — it was reported as non-numeric,
+  // and before that silently integrated as 0.
+  #[test]
+  fn inner_integrate_without_closed_form() {
+    let result = interpret_with_stdout(
+      "Abs[NIntegrate[Integrate[2 - 2 Sin[x^2 + y^2], {y, -1, 1}], \
+       {x, -1, 1}] - 3.52996] < 10^-4",
+    )
+    .unwrap();
+    assert_eq!(result.result, "True");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+
+  // The range is split where a Piecewise switches pieces (also one hidden
+  // behind a definition), so the quadrature does not refine to its point
+  // limit at the kink — a Plot of such integrals timed out.
+  #[test]
+  fn splits_at_piecewise_breakpoints() {
+    assert_eq!(
+      interpret(
+        "f[x_] := Piecewise[{{Sqrt[1 - x^2], x < 3/10}, {x - 1, True}}]; \
+         TimeConstrained[Abs[NIntegrate[f[x], {x, -1, 1}] - \
+         N[(3/10 Sqrt[91/100] + ArcSin[3/10])/2 + Pi/4 - 49/200]] < 10^-10, 2]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // `MaxPoints` caps the samples of each dimension (the d-th root of the
   // total for a d-dimensional integral) and keeps the best estimate so far,
   // so a coarse request stays bounded yet close to the converged value.
@@ -8004,6 +8051,27 @@ mod quadratic_denominator {
 mod dsolve {
   use super::*;
 
+  // A list naming a single function goes to the single-equation solver;
+  // the linear-system solver it went to left these unevaluated.
+  #[test]
+  fn single_function_in_a_list() {
+    assert_eq!(
+      interpret("DSolve[{y'[t] == -y[t], y[0] == 1}, {y[t]}, t]").unwrap(),
+      "{{y[t] -> E^(-t)}}"
+    );
+    assert_eq!(
+      interpret(
+        "DSolve[{-0.00023 T[s] == 0.0048618 T'[s], T[0] == 100}, {T[s]}, s]"
+      )
+      .unwrap(),
+      "{{T[s] -> 100./E^(0.047307581554156895*s)}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[t] == t y[t]}, {y}, t]").unwrap(),
+      interpret("DSolve[{y'[t] == t y[t]}, y, t]").unwrap()
+    );
+  }
+
   #[test]
   fn first_order_constant_rhs() {
     // y'[x] == 0 → y[x] -> C[1]
@@ -9135,6 +9203,23 @@ mod ndsolve {
     assert!(
       (val - expected).abs() < 0.001,
       "Expected {expected}, got {val}"
+    );
+  }
+
+  // Replacing into thousands of calls copied the whole solution grid into
+  // each one (quadratic time, gigabytes of memory).
+  #[test]
+  fn replacing_into_many_calls_shares_the_solution() {
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[{y'[x] == 1, y[0] == 0}, y, {x, 0, 500}, \
+         StartingStepSize -> 0.1, Method -> {\"FixedStep\", Method -> \
+         {\"ExplicitRungeKutta\", \"DifferenceOrder\" -> 4}}]; \
+         TimeConstrained[Round[Total[Flatten[(y[#] & /@ Range[0, 500, 0.1]) \
+         /. sol]]], 3]"
+      )
+      .unwrap(),
+      "1250250"
     );
   }
 
@@ -22543,6 +22628,25 @@ mod dsolve_sinusoidal_forcing_sum {
       interpret("DSolve[y''[x] + y[x] == 3 Sin[2 x] + Cos[2 x], y[x], x]")
         .unwrap(),
       "{{y[x] -> (-Cos[2*x] - 3*Sin[2*x])/3 + C[1]*Cos[x] + C[2]*Sin[x]}}"
+
+mod ndsolve_vector_unknown_with_matrix_product {
+  use super::*;
+
+  /// `y'[t] == A . y[t]` for a many-component `y` evaluates the product
+  /// once rather than once per component, so a 40-component system
+  /// finishes instantly.
+  #[test]
+  fn matrix_times_vector_right_hand_side() {
+    assert_eq!(
+      interpret(
+        "n = 40; A = SparseArray[{{1, 2} -> 1}, {n, n}]; \
+         sol = NDSolve[{y'[t] == A . y[t], y[0] == Table[1, {n}]}, y, {t, 0, 1}, \
+         StartingStepSize -> 0.1, MaxStepSize -> 0.1, \
+         Method -> {\"FixedStep\", Method -> \"ExplicitEuler\"}]; \
+         Round[10^6 (y[1] /. First[sol])[[{1, 40}]]]"
+      )
+      .unwrap(),
+      "{2000000, 1000000}"
     );
   }
 }

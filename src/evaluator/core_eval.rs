@@ -157,13 +157,15 @@ const SHARE_MIN_LEN: usize = 16;
 
 /// Switch `expr`'s large lists (and large argument lists) to the shared
 /// representation, stopping at lists that already are shared.
-fn share_large_lists(expr: &mut Expr, depth: usize) {
+pub(crate) fn share_large_lists(expr: &mut Expr, depth: usize) {
   let list = match expr {
     Expr::List(items) => items,
     Expr::FunctionCall { args, .. } => args,
     _ => return,
   };
-  if list.is_shared() {
+  // A tree is already O(1) to clone, and walking it mutably would copy
+  // every chunk it shares with its other clones.
+  if list.is_shared() || list.is_tree() {
     return;
   }
   if depth < 64 {

@@ -3738,6 +3738,28 @@ mod tests {
     );
   }
 
+  /// A caption `Dynamic[msg]` whose variable holds `Dynamic[a] Dynamic[b]`
+  /// (text times a formatted number) shows both pieces, typeset side by
+  /// side, instead of the raw `Dynamic[…]*Dynamic[…]` source.
+  #[test]
+  fn dynamic_caption_releases_dynamics_nested_in_a_variable() {
+    let code = r#"Manipulate[
+      (msg = Dynamic[lead[k]] Dynamic[PaddedForm[Round[k/3., 0.01], 4]];
+        Graphics[Disk[]]),
+      Row[{"= ", Style[Dynamic[msg], 14]}],
+      {{k, 1}, 1, 3, 1}
+    ]"#;
+    woxi::interpret("lead[n_] := \"v \"").unwrap();
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+    assert_eq!(state.error, None);
+    let text = format!("{:?}", state.display_trees);
+    assert!(!text.contains("Dynamic["), "unreleased Dynamic: {text}");
+    assert!(text.contains("v "), "missing text part: {text}");
+    assert!(text.contains("0.33"), "missing number part: {text}");
+  }
+
   #[test]
   fn demonstration_polyhedrondata_overlay_checkboxes_toggle_live() {
     let code = r#"Manipulate[
@@ -3975,6 +3997,20 @@ mod tests {
     let dump = format!("{:?}", state.controls);
     assert!(dump.contains("label: \"pairs (0 to 5)\""), "{dump}");
     assert!(!dump.contains("StringJoin"), "{dump}");
+  }
+
+  /// A 2D slider captioned with a `GraphicsRow` of text and a small picture
+  /// shows the text; the picture and the layout head's source drop out.
+  #[test]
+  fn control_label_graphics_row_keeps_text_only() {
+    let code = r#"Manipulate[v, {{v, {1, 2}, GraphicsRow[{Style["vector (" <> ToString[v[[1]]] <> ")", 10], Framed[Graphics[Circle[]]]}]}, {-5, -5}, {5, 5}}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls[0]);
+    assert!(!dump.contains("GraphicsRow"), "{dump}");
+    assert!(!dump.contains("Graphics"), "{dump}");
+    assert!(dump.contains("vector ("), "{dump}");
   }
 
   /// A heading `Row[{"parameter ", Style[a, Italic], Spacer[10], }]` ends in

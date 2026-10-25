@@ -274,6 +274,15 @@ impl ExprList {
   }
 
   pub fn push_back(&mut self, e: Expr) {
+    // A shared list another clone still holds would be copied whole by
+    // `Arc::make_mut`; as a tree the push copies only the path it touches,
+    // so repeated `AppendTo`s whose results are kept (`AppendTo[l, #] & /@
+    // big`) cost O(log N) each instead of O(N).
+    if let Inner::Shared(s) = &self.inner
+      && Arc::strong_count(s) > 1
+    {
+      self.upgrade_to_tree();
+    }
     self.invalidate_tree_cache();
     match self.repr_mut() {
       ReprMut::Vec(v) => v.push(e),

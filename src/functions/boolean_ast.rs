@@ -1873,55 +1873,73 @@ fn push_not_inward(expr: &Expr) -> Expr {
 
 /// Step 3: Distribute And over Or to achieve DNF.
 /// The result is an Or of Ands (or simpler expressions).
+/// Add a literal to a conjunction under construction. A repeated literal
+/// is dropped; `false` when the literal contradicts one already there
+/// (`x && !x`), so the whole conjunction is False.
+fn add_dnf_literal(group: &mut Vec<Expr>, lit: &Expr) -> bool {
+  let (key, positive, _) = dnf_literal(lit);
+  for existing in group.iter() {
+    let (k, p, _) = dnf_literal(existing);
+    if k == key {
+      if p != positive {
+        return false;
+      }
+      return true;
+    }
+  }
+  group.push(lit.clone());
+  true
+}
+
 fn distribute_and_over_or(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } if name == "And" => {
       // First recursively convert all sub-expressions
       let sub: Vec<Expr> = args.iter().map(distribute_and_over_or).collect();
 
-      // Flatten nested Ands
+      // The conjunctions of the expansion, built literal by literal so a
+      // contradictory one is dropped as soon as it appears instead of being
+      // multiplied out further.
       let mut and_groups: Vec<Vec<Expr>> = vec![vec![]];
 
       for term in &sub {
-        match term {
+        let alternatives: Vec<Expr> = match term {
           Expr::FunctionCall {
             name: tn,
             args: targs,
-          } if tn == "Or" => {
-            // For each existing group, cross-product with Or alternatives
-            // (Wolfram order: iterate existing groups first, then alternatives)
-            let mut new_groups = Vec::new();
-            for existing in &and_groups {
-              for alt in targs {
-                let alt_literals = match alt {
-                  Expr::FunctionCall {
-                    name: an,
-                    args: aargs,
-                  } if an == "And" => aargs.clone(),
-                  _ => vec![alt.clone()].into(),
-                };
-                let mut group = existing.clone();
-                group.extend(alt_literals.clone());
-                new_groups.push(group);
-              }
-            }
-            and_groups = new_groups;
-          }
-          Expr::FunctionCall {
-            name: an,
-            args: aargs,
-          } if an == "And" => {
-            // Flatten nested And
-            for group in &mut and_groups {
-              group.extend(aargs.clone());
-            }
-          }
-          _ => {
-            for group in &mut and_groups {
-              group.push(term.clone());
+          } if tn == "Or" => targs.to_vec(),
+          other => vec![other.clone()],
+        };
+        // For each existing group, cross-product with the alternatives
+        // (Wolfram order: iterate existing groups first, then alternatives)
+        let mut new_groups: Vec<Vec<Expr>> = Vec::new();
+        for existing in &and_groups {
+          for alt in &alternatives {
+            let alt_literals: Vec<Expr> = match alt {
+              Expr::FunctionCall {
+                name: an,
+                args: aargs,
+              } if an == "And" => aargs.to_vec(),
+              _ => vec![alt.clone()],
+            };
+            let mut group = existing.clone();
+            if alt_literals.iter().all(|l| add_dnf_literal(&mut group, l))
+              && !new_groups.iter().any(|g| {
+                g.len() == group.len()
+                  && g.iter().zip(&group).all(|(a, b)| {
+                    crate::evaluator::pattern_matching::expr_equal(a, b)
+                  })
+              })
+            {
+              new_groups.push(group);
             }
           }
         }
+        and_groups = new_groups;
+      }
+
+      if and_groups.is_empty() {
+        return bool_expr(false);
       }
 
       // Build result
@@ -2245,24 +2263,19 @@ fn bc_to_sheffer(
 /// to enumerate.
 fn bc_truth_table(
   expr: &Expr,
-  variables: &[String],
+  variables: &[Expr],
 ) -> Result<Option<Vec<bool>>, InterpreterError> {
   let n = variables.len();
   if n > 16 {
     return Ok(None);
   }
+  let compiled = BoolNode::compile(expr, variables);
   let mut table = Vec::with_capacity(1usize << n);
   for bits in 0..(1usize << n) {
-    let mut substituted = expr.clone();
-    for (i, name) in variables.iter().enumerate() {
-      let set = (bits >> (n - 1 - i)) & 1 == 1;
-      substituted =
-        crate::syntax::substitute_variable(&substituted, name, &bool_expr(set));
-    }
-    match &evaluate_expr_to_expr(&substituted)? {
-      Expr::Identifier(s) if s == "True" => table.push(true),
-      Expr::Identifier(s) if s == "False" => table.push(false),
-      _ => return Ok(None),
+    let values = |i: usize| (bits >> (n - 1 - i)) & 1 == 1;
+    match boolean_value_under(expr, compiled.as_ref(), variables, &values)? {
+      Some(v) => table.push(v),
+      None => return Ok(None),
     }
   }
   Ok(Some(table))
@@ -2270,12 +2283,12 @@ fn bc_truth_table(
 
 /// The conjunction of the named variables, which is the variable itself when
 /// only one is named and `True` when none are.
-fn bc_conjunction(variables: &[String], mask: usize) -> Expr {
+fn bc_conjunction(variables: &[Expr], mask: usize) -> Expr {
   let chosen: Vec<Expr> = variables
     .iter()
     .enumerate()
     .filter(|(i, _)| (mask >> i) & 1 == 1)
-    .map(|(_, name)| Expr::Identifier(name.clone()))
+    .map(|(_, var)| var.clone())
     .collect();
   match chosen.len() {
     0 => bool_expr(true),
@@ -2288,7 +2301,7 @@ fn bc_conjunction(variables: &[String], mask: usize) -> Expr {
 /// which is the Möbius transform of the truth table over GF(2). A leading
 /// constant `True` is written as a `Not` around the rest, the way
 /// wolframscript writes it.
-fn bc_algebraic_normal_form(variables: &[String], table: &[bool]) -> Expr {
+fn bc_algebraic_normal_form(variables: &[Expr], table: &[bool]) -> Expr {
   let n = variables.len();
   // `table` counts the first variable in the highest bit; the transform is
   // easier with each variable owning its own bit from the bottom up.
@@ -2335,7 +2348,7 @@ fn bc_algebraic_normal_form(variables: &[String], table: &[bool]) -> Expr {
 
 /// The nested `If` a Shannon decomposition gives: each variable in turn splits
 /// the truth table, and a variable both halves agree on is skipped.
-fn bc_decision_tree(variables: &[String], table: &[bool]) -> Expr {
+fn bc_decision_tree(variables: &[Expr], table: &[bool]) -> Expr {
   let Some((first, rest)) = variables.split_first() else {
     return bool_expr(table[0]);
   };
@@ -2346,7 +2359,7 @@ fn bc_decision_tree(variables: &[String], table: &[bool]) -> Expr {
   call(
     "If",
     vec![
-      Expr::Identifier(first.clone()),
+      first.clone(),
       bc_decision_tree(rest, high),
       bc_decision_tree(rest, low),
     ],
@@ -2361,7 +2374,7 @@ fn bc_decision_tree(variables: &[String], table: &[bool]) -> Expr {
 fn bc_drop_redundant_clauses(
   nf: &Expr,
   top: &str,
-  variables: &[String],
+  variables: &[Expr],
   table: &[bool],
 ) -> Result<Expr, InterpreterError> {
   let Expr::FunctionCall { name, args } = nf else {
@@ -2460,9 +2473,7 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // An expression true (or false) under every assignment has no normal form
   // to write out, whichever one was asked for.
-  let mut names = BTreeSet::new();
-  collect_boolean_variables(expr, &mut names);
-  let variables: Vec<String> = names.into_iter().collect();
+  let variables = boolean_variable_list(expr);
   let table = bc_truth_table(expr, &variables)?;
   if let Some(table) = &table {
     if table.iter().all(|v| *v) {
@@ -2604,41 +2615,6 @@ fn reduce_cnf_clauses(expr: &Expr) -> Expr {
   }
 }
 
-/// Extract free boolean variables (identifiers) from a boolean expression.
-fn collect_boolean_variables(expr: &Expr, vars: &mut BTreeSet<String>) {
-  match expr {
-    Expr::Identifier(name) if name != "True" && name != "False" => {
-      vars.insert(name.clone());
-    }
-    Expr::FunctionCall { name, args }
-      if matches!(
-        name.as_str(),
-        "And"
-          | "Or"
-          | "Not"
-          | "Xor"
-          | "Nand"
-          | "Nor"
-          | "Implies"
-          | "Equivalent"
-          | "Majority"
-      ) =>
-    {
-      for arg in args {
-        collect_boolean_variables(arg, vars);
-      }
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      collect_boolean_variables(left, vars);
-      collect_boolean_variables(right, vars);
-    }
-    Expr::UnaryOp { operand, .. } => {
-      collect_boolean_variables(operand, vars);
-    }
-    _ => {}
-  }
-}
-
 /// TautologyQ[expr] - True if the boolean expression is true for all variable
 /// assignments. TautologyQ[expr, {vars}] tests over the explicitly given
 /// variables; if a variable of `expr` is missing from the list the expression
@@ -2653,22 +2629,16 @@ pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let explicit_vars = args.len() == 2;
 
   // Determine the variables to enumerate over.
-  let var_list: Vec<String> = if explicit_vars {
+  let var_list: Vec<Expr> = if explicit_vars {
     let Expr::List(items) = &args[1] else {
       return unevaluated();
     };
-    let mut v = Vec::with_capacity(items.len());
-    for item in items {
-      match item {
-        Expr::Identifier(name) => v.push(name.clone()),
-        _ => return unevaluated(),
-      }
+    if !items.iter().all(|item| matches!(item, Expr::Identifier(_))) {
+      return unevaluated();
     }
-    v
+    items.to_vec()
   } else {
-    let mut vars = BTreeSet::new();
-    collect_boolean_variables(expr, &mut vars);
-    vars.into_iter().collect()
+    boolean_variable_list(expr)
   };
   let n = var_list.len();
 
@@ -2677,23 +2647,14 @@ pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
 
+  let compiled = BoolNode::compile(expr, &var_list);
   let mut has_false = false;
   for bits in 0..(1u64 << n) {
-    let mut substituted = expr.clone();
-    for (i, var_name) in var_list.iter().enumerate() {
-      let val = if (bits >> i) & 1 == 1 {
-        bool_expr(true)
-      } else {
-        bool_expr(false)
-      };
-      substituted =
-        crate::syntax::substitute_variable(&substituted, var_name, &val);
-    }
-    let result = evaluate_expr_to_expr(&substituted)?;
-    match &result {
-      Expr::Identifier(s) if s == "True" => {}
-      Expr::Identifier(s) if s == "False" => has_false = true,
-      _ => {
+    let values = |i: usize| (bits >> i) & 1 == 1;
+    match boolean_value_under(expr, compiled.as_ref(), &var_list, &values)? {
+      Some(true) => {}
+      Some(false) => has_false = true,
+      None => {
         // A non-Boolean result means a free variable remained. With an explicit
         // variable list this is the wolframscript `boolv` error → unevaluated;
         // for the auto-detected form it cannot happen, but treat it as not-True.
@@ -3088,10 +3049,7 @@ fn minimize_dnf(expr: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(bool_expr(false));
   }
 
-  // Collect all boolean variables
-  let mut vars_set = BTreeSet::new();
-  collect_boolean_variables(expr, &mut vars_set);
-  let var_list: Vec<String> = vars_set.into_iter().collect();
+  let var_list = boolean_variable_list(expr);
   let n = var_list.len();
 
   // Limit to 20 variables
@@ -3105,19 +3063,12 @@ fn minimize_dnf(expr: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build truth table: collect minterms (variable assignments that give True)
   let mut minterms: Vec<u64> = Vec::new();
+  let compiled = BoolNode::compile(expr, &var_list);
   for bits in 0..(1u64 << n) {
-    let mut substituted = expr.clone();
-    for (i, var_name) in var_list.iter().enumerate() {
-      let val = if (bits >> i) & 1 == 1 {
-        bool_expr(true)
-      } else {
-        bool_expr(false)
-      };
-      substituted =
-        crate::syntax::substitute_variable(&substituted, var_name, &val);
-    }
-    let result = evaluate_expr_to_expr(&substituted)?;
-    if matches!(&result, Expr::Identifier(s) if s == "True") {
+    let values = |i: usize| (bits >> i) & 1 == 1;
+    if boolean_value_under(expr, compiled.as_ref(), &var_list, &values)?
+      == Some(true)
+    {
       minterms.push(bits);
     }
   }
@@ -3136,9 +3087,7 @@ fn minimize_dnf(expr: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
   let cover = greedy_cover(&prime_implicants, &minterms);
 
   // Convert to Boolean expression
-  let var_exprs: Vec<Expr> =
-    var_list.into_iter().map(Expr::Identifier).collect();
-  Ok(implicants_to_expr(&cover, &var_exprs))
+  Ok(implicants_to_expr(&cover, &var_list))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -3814,6 +3763,132 @@ fn collect_boolean_variable_exprs(expr: &Expr, out: &mut Vec<Expr>) {
   }
 }
 
+/// A Boolean expression over numbered variables, for truth tables that
+/// would otherwise substitute and evaluate the whole expression once per
+/// assignment (2^n evaluations of a large DNF).
+enum BoolNode {
+  Const(bool),
+  Var(usize),
+  Not(Box<BoolNode>),
+  And(Vec<BoolNode>),
+  Or(Vec<BoolNode>),
+  Xor(Vec<BoolNode>),
+  Nand(Vec<BoolNode>),
+  Nor(Vec<BoolNode>),
+  Implies(Box<BoolNode>, Box<BoolNode>),
+  Equivalent(Vec<BoolNode>),
+}
+
+impl BoolNode {
+  /// `None` when `expr` holds anything but the plain connectives over
+  /// `vars`, which the caller then evaluates the general way.
+  fn compile(expr: &Expr, vars: &[Expr]) -> Option<BoolNode> {
+    if let Some(i) = vars
+      .iter()
+      .position(|v| crate::evaluator::pattern_matching::expr_equal(v, expr))
+    {
+      return Some(BoolNode::Var(i));
+    }
+    let all = |args: &[Expr]| -> Option<Vec<BoolNode>> {
+      args.iter().map(|a| BoolNode::compile(a, vars)).collect()
+    };
+    Some(match expr {
+      Expr::Identifier(s) if s == "True" => BoolNode::Const(true),
+      Expr::Identifier(s) if s == "False" => BoolNode::Const(false),
+      Expr::UnaryOp {
+        op: UnaryOperator::Not,
+        operand,
+      } => BoolNode::Not(Box::new(BoolNode::compile(operand, vars)?)),
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left,
+        right,
+      } => BoolNode::And(all(&[(**left).clone(), (**right).clone()])?),
+      Expr::BinaryOp {
+        op: BinaryOperator::Or,
+        left,
+        right,
+      } => BoolNode::Or(all(&[(**left).clone(), (**right).clone()])?),
+      Expr::FunctionCall { name, args } => match name.as_str() {
+        "Not" if args.len() == 1 => {
+          BoolNode::Not(Box::new(BoolNode::compile(&args[0], vars)?))
+        }
+        "And" => BoolNode::And(all(args)?),
+        "Or" => BoolNode::Or(all(args)?),
+        "Xor" => BoolNode::Xor(all(args)?),
+        "Nand" => BoolNode::Nand(all(args)?),
+        "Nor" => BoolNode::Nor(all(args)?),
+        "Equivalent" => BoolNode::Equivalent(all(args)?),
+        "Implies" if args.len() == 2 => BoolNode::Implies(
+          Box::new(BoolNode::compile(&args[0], vars)?),
+          Box::new(BoolNode::compile(&args[1], vars)?),
+        ),
+        _ => return None,
+      },
+      _ => return None,
+    })
+  }
+
+  fn eval(&self, values: &dyn Fn(usize) -> bool) -> bool {
+    match self {
+      BoolNode::Const(b) => *b,
+      BoolNode::Var(i) => values(*i),
+      BoolNode::Not(a) => !a.eval(values),
+      BoolNode::And(xs) => xs.iter().all(|x| x.eval(values)),
+      BoolNode::Or(xs) => xs.iter().any(|x| x.eval(values)),
+      BoolNode::Xor(xs) => {
+        xs.iter().filter(|x| x.eval(values)).count() % 2 == 1
+      }
+      BoolNode::Nand(xs) => !xs.iter().all(|x| x.eval(values)),
+      BoolNode::Nor(xs) => !xs.iter().any(|x| x.eval(values)),
+      BoolNode::Implies(a, b) => !a.eval(values) || b.eval(values),
+      BoolNode::Equivalent(xs) => {
+        let mut it = xs.iter().map(|x| x.eval(values));
+        match it.next() {
+          Some(first) => it.all(|v| v == first),
+          None => true,
+        }
+      }
+    }
+  }
+}
+
+/// The truth value of `expr` when `vars[i]` is `values(i)`: natively for
+/// the plain connectives, otherwise by substituting and evaluating. `None`
+/// when the result is not True or False.
+fn boolean_value_under(
+  expr: &Expr,
+  compiled: Option<&BoolNode>,
+  vars: &[Expr],
+  values: &dyn Fn(usize) -> bool,
+) -> Result<Option<bool>, InterpreterError> {
+  if let Some(node) = compiled {
+    return Ok(Some(node.eval(values)));
+  }
+  let mut substituted = expr.clone();
+  for (i, var) in vars.iter().enumerate() {
+    substituted =
+      substitute_boolean_var(&substituted, var, &bool_expr(values(i)));
+  }
+  Ok(match &evaluate_expr_to_expr(&substituted)? {
+    Expr::Identifier(s) if s == "True" => Some(true),
+    Expr::Identifier(s) if s == "False" => Some(false),
+    _ => None,
+  })
+}
+
+/// The variables of a Boolean expression in canonical order, the way
+/// `BooleanVariables` lists them: every maximal subexpression that is not a
+/// connective (a symbol, a string, `x > 0`, …).
+fn boolean_variable_list(expr: &Expr) -> Vec<Expr> {
+  let mut vars = Vec::new();
+  collect_boolean_variable_exprs(expr, &mut vars);
+  vars.sort_by(|a, b| {
+    (-crate::functions::list_helpers_ast::compare_exprs(a, b)).cmp(&0)
+  });
+  vars
+}
+
 /// Replace every occurrence of the subexpression `var` in `expr` by `val`.
 fn substitute_boolean_var(expr: &Expr, var: &Expr, val: &Expr) -> Expr {
   if crate::evaluator::pattern_matching::expr_equal(expr, var) {
@@ -3853,13 +3928,7 @@ pub fn boolean_variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(unevaluated("BooleanVariables", args));
   }
-  let mut vars = Vec::new();
-  collect_boolean_variable_exprs(&args[0], &mut vars);
-  // compare_exprs follows Wolfram's Order convention: 1 means a sorts first
-  vars.sort_by(|a, b| {
-    (-crate::functions::list_helpers_ast::compare_exprs(a, b)).cmp(&0)
-  });
-  Ok(Expr::List(vars.into()))
+  Ok(Expr::List(boolean_variable_list(&args[0]).into()))
 }
 
 /// Resolve the variable list for the 1- or 2-argument satisfiability forms.
@@ -3870,12 +3939,7 @@ fn satisfiability_vars(args: &[Expr]) -> std::vec::Vec<Expr> {
       single => vec![single.clone()],
     }
   } else {
-    let mut vars = Vec::new();
-    collect_boolean_variable_exprs(&args[0], &mut vars);
-    vars.sort_by(|a, b| {
-      (-crate::functions::list_helpers_ast::compare_exprs(a, b)).cmp(&0)
-    });
-    vars
+    boolean_variable_list(&args[0])
   }
 }
 

@@ -2566,6 +2566,26 @@ mod return_in_loops {
 mod logical_expand {
   use super::*;
 
+  // A conjunction holding a literal and its negation is dropped while the
+  // expansion is built, and a repeated literal is kept once — expanding the
+  // negation of a large DNF used to multiply out every contradiction.
+  #[test]
+  fn contradictions_drop_out_during_expansion() {
+    assert_eq!(interpret("LogicalExpand[a && !a]").unwrap(), "False");
+    assert_eq!(
+      interpret("LogicalExpand[(a || b) && !a]").unwrap(),
+      "b &&  !a"
+    );
+    assert_eq!(
+      interpret(
+        "TimeConstrained[LeafCount[LogicalExpand[Not[Or @@ Table[And[x[i], \
+         y[i], !z[i], z[Mod[i + 1, 6]]], {i, 6}]]]] > 0, 10]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn distribute_and_over_or() {
     assert_eq!(
@@ -5033,6 +5053,23 @@ mod nested_scope_renaming {
     );
     let out = interpret("Module[{a}, Hold[Function[{x$1}, x$1 + a]]]").unwrap();
     assert!(out.starts_with("Hold[Function[{x$1$}, x$1$ + a$"), "{out}");
+  }
+
+  // A definition or rule is reached through its right side or a pattern
+  // condition, not through its left-hand head: `h[y_] = z` keeps `y`, so a
+  // `y` the right side evaluates to is still the pattern variable.
+  #[test]
+  fn rule_reached_only_through_right_side_or_condition() {
+    assert_eq!(
+      interpret("Module[{h}, z = 2 y; h[y_] = z; h[3]]").unwrap(),
+      "6"
+    );
+    let out = interpret(
+      "{Module[{h}, Hold[f[y_, h] := y]], Module[{h}, Hold[f[y_ /; y > h] := y]]}",
+    )
+    .unwrap();
+    assert!(out.contains("[y_, h$"), "{out}");
+    assert!(out.contains("f[y$_ /; y$ > h$"), "{out}");
   }
 
   #[test]

@@ -412,6 +412,49 @@ mod det {
   use super::super::case_helpers::assert_case;
   use super::*;
 
+  // A polynomial matrix's determinant is the expanded polynomial (over one
+  // denominator for rational coefficients). Cofactor expansion skips zero
+  // entries, and a matrix whose symbols all sit in one row (an
+  // interpolation matrix) is expanded along that row with exact numeric
+  // minors.
+  #[test]
+  fn polynomial_and_interpolation_matrices() {
+    assert_eq!(
+      interpret(
+        "{Det[{{1, 2, a}, {3, 4, b}, {5, 6, c}}], Det[{{2, 4}, {6, 2 x}}], \
+         Det[{{1/2, x}, {x, 1}}]}"
+      )
+      .unwrap(),
+      "{-2*a + 4*b - 2*c, -24 + 4*x, (1 - 2*x^2)/2}"
+    );
+    assert_eq!(
+      interpret(
+        "kk = {{0, 0}, {1, 0}, {2, 1}, {-1, 2}, {3, 3}, {1, 4}, {-2, 1}, \
+         {4, -1}, {2, 3}}; f[{a_, b_}] := {1, a, a^2, a^3, b, b a, b a^2, \
+         b^2, b^2 a, b^3}; Det[Append[f /@ kk, {1, x, x^2, x^3, y, y x, \
+         y x^2, y^2, y^2 x, y^3}]]"
+      )
+      .unwrap(),
+      "-1928448*x + 2280960*x^2 - 352512*x^3 - 21648384*y + 6283008*x*y + \
+       324864*x^2*y + 12731904*y^2 - 2944512*x*y^2 - 1506816*y^3"
+    );
+  }
+
+  // Cofactor expansion skips zero entries, so a banded symbolic matrix
+  // stays cheap.
+  #[test]
+  fn banded_symbolic_matrix() {
+    assert_eq!(
+      interpret(
+        "m = Table[Which[i == j, a + i, Abs[i - j] == 1, b, True, 0], \
+         {i, 9}, {j, 9}]; {LeafCount[Det[m]], Expand[Det[m]] /. \
+         {a -> 1, b -> 2}}"
+      )
+      .unwrap(),
+      "{183, -180480}"
+    );
+  }
+
   #[test]
   fn det_2x2() {
     assert_eq!(interpret("Det[{{1, 2}, {3, 4}}]").unwrap(), "-2");
@@ -492,7 +535,8 @@ mod det {
   fn det_polynomial() {
     assert_case(
       r#"m = Table[1 / (i + j + 1), {i, 3}, {j, 3}]; Det[m - x IdentityMatrix[3]]"#,
-      r#"-((-1 + 4755*x - 255600*x^2 + 378000*x^3)/378000)"#,
+      // wolframscript leaves the common factor 2 in: (2 - 9510 x + …)/756000.
+      r#"(1 - 4755*x + 255600*x^2 - 378000*x^3)/378000"#,
     );
   }
 }
@@ -554,6 +598,24 @@ mod permanent {
 
 mod inverse {
   use super::*;
+
+  // An inexact number inside an entry makes the matrix a machine one,
+  // inverted numerically rather than by cofactors.
+  #[test]
+  fn inexact_inside_an_entry_is_machine() {
+    assert_eq!(
+      interpret("Round[10^6 Inverse[{{0.5 Sqrt[2], 1}, {2, 3}}]]").unwrap(),
+      "{{24727922, -8242641}, {-16485281, 5828427}}"
+    );
+    assert_eq!(
+      interpret(
+        "m = Table[If[i == j, 2. + Sqrt[i], If[Abs[i - j] == 1, -1, 0]], \
+         {i, 12}, {j, 12}]; Round[10^6 Total[Flatten[Inverse[m] . m]]]"
+      )
+      .unwrap(),
+      "12000000"
+    );
+  }
 
   #[test]
   fn inverse_2x2() {
@@ -3064,6 +3126,23 @@ mod eigenvectors {
 
 mod eigensystem {
   use super::*;
+
+  // Eigensystem[m, k] of an exact 6x6 matrix with Root eigenvalues computes
+  // just the k vectors asked for; all of them were too costly, so it stayed
+  // unevaluated and N then turned k into 1. (TheBoundaryOfPeriodicIterated
+  // FunctionSystems).
+  #[test]
+  fn exact_first_eigenvector_of_a_6x6() {
+    assert_eq!(
+      interpret(
+        "m = {{1,0,0,1,0,0},{1,0,1,1,0,1},{1,0,0,0,1,1},{1,0,1,0,0,0},\
+         {0,1,0,0,0,0},{0,0,0,1,1,0}}; {{lam}, {v}} = N[Eigensystem[m, 1]]; \
+         {Abs[lam - 2.1303954347672787] < 10^-12, Norm[m . v - lam v] < 10^-9}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
 
   #[test]
   fn cyclic_3x3() {

@@ -3316,11 +3316,74 @@ pub fn find_hamiltonian_cycle_ast(
   let mut path: Vec<(usize, usize, bool)> = Vec::new(); // (from, to, directed)
   visited[0] = true;
 
+  // For all-undirected graphs, branches that provably cannot be completed are
+  // cut before descending (see `hamiltonian_cycle_completable`). Pruning only
+  // removes failing subtrees, so the first cycle found is unchanged.
+  let neighbors: Option<Vec<Vec<usize>>> =
+    if adj.iter().all(|a| a.iter().all(|&(_, d)| !d)) {
+      Some(
+        adj
+          .iter()
+          .map(|a| {
+            let mut v: Vec<usize> = a.iter().map(|&(d, _)| d).collect();
+            v.dedup();
+            v
+          })
+          .collect(),
+      )
+    } else {
+      None
+    };
+
+  /// Whether the unvisited vertices can still be threaded into a Hamiltonian
+  /// cycle that goes on from `cur` and closes at vertex 0: every unvisited
+  /// vertex needs two usable neighbours, and the unvisited vertices must be
+  /// connected to each other, to `cur` and to vertex 0.
+  fn hamiltonian_cycle_completable(
+    cur: usize,
+    nb: &[Vec<usize>],
+    visited: &[bool],
+  ) -> bool {
+    let mut remaining = 0usize;
+    for (v, ns) in nb.iter().enumerate() {
+      if visited[v] {
+        continue;
+      }
+      remaining += 1;
+      let usable = ns.iter().filter(|&&u| !visited[u] || u == cur || u == 0);
+      if usable.take(2).count() < 2 {
+        return false;
+      }
+    }
+    if remaining == 0 {
+      return true;
+    }
+    let mut seen = vec![false; nb.len()];
+    let mut stack = vec![cur];
+    seen[cur] = true;
+    let mut reached = 0usize;
+    let mut closes = false;
+    while let Some(v) = stack.pop() {
+      for &u in &nb[v] {
+        if u == 0 && v != cur {
+          closes = true;
+        }
+        if !visited[u] && !seen[u] {
+          seen[u] = true;
+          reached += 1;
+          stack.push(u);
+        }
+      }
+    }
+    reached == remaining && closes
+  }
+
   fn dfs(
     cur: usize,
     depth: usize,
     n: usize,
     adj: &[Vec<(usize, bool)>],
+    neighbors: Option<&[Vec<usize>]>,
     visited: &mut [bool],
     path: &mut Vec<(usize, usize, bool)>,
   ) -> bool {
@@ -3338,17 +3401,21 @@ pub fn find_hamiltonian_cycle_ast(
         continue;
       }
       visited[dst] = true;
-      path.push((cur, dst, directed));
-      if dfs(dst, depth + 1, n, adj, visited, path) {
-        return true;
+      if neighbors
+        .is_none_or(|nb| hamiltonian_cycle_completable(dst, nb, visited))
+      {
+        path.push((cur, dst, directed));
+        if dfs(dst, depth + 1, n, adj, neighbors, visited, path) {
+          return true;
+        }
+        path.pop();
       }
-      path.pop();
       visited[dst] = false;
     }
     false
   }
 
-  if !dfs(0, 1, n, &adj, &mut visited, &mut path) {
+  if !dfs(0, 1, n, &adj, neighbors.as_deref(), &mut visited, &mut path) {
     return Ok(empty);
   }
 
@@ -7936,9 +8003,41 @@ fn same_edge(a: &Expr, b: &Expr) -> bool {
   let Some((b1, b2, b_directed)) = edge_endpoints(b) else {
     return false;
   };
-  let eq = |x: &Expr, y: &Expr| expr_to_string(x) == expr_to_string(y);
-  (eq(&a1, &b1) && eq(&a2, &b2))
-    || (!a_directed && !b_directed && eq(&a1, &b2) && eq(&a2, &b1))
+  (same_vertex(&a1, &b1) && same_vertex(&a2, &b2))
+    || (!a_directed
+      && !b_directed
+      && same_vertex(&a1, &b2)
+      && same_vertex(&a2, &b1))
+}
+
+/// Whether two vertex names are the same vertex: equal as printed (a
+/// symbol `x` names the same vertex as the string "x"), decided without
+/// printing when both are atoms of one kind, as most vertex names are.
+fn same_vertex(x: &Expr, y: &Expr) -> bool {
+  match (x, y) {
+    (Expr::Integer(a), Expr::Integer(b)) => a == b,
+    (Expr::String(a), Expr::String(b))
+    | (Expr::Identifier(a), Expr::Identifier(b)) => a == b,
+    _ if crate::evaluator::pattern_matching::expr_equal(x, y) => true,
+    // Two lists or calls (a permutation, `{1, 2}`) that differ
+    // structurally differ as printed too, unless one is a string or holds
+    // a raw operator node.
+    (
+      Expr::List(_) | Expr::FunctionCall { .. },
+      Expr::List(_) | Expr::FunctionCall { .. },
+    ) if !has_raw_or_string(x) && !has_raw_or_string(y) => false,
+    _ => expr_to_string(x) == expr_to_string(y),
+  }
+}
+
+fn has_raw_or_string(e: &Expr) -> bool {
+  match e {
+    Expr::String(_) | Expr::BinaryOp { .. } | Expr::UnaryOp { .. } => true,
+    Expr::List(items) => items.iter().any(has_raw_or_string),
+    Expr::FunctionCall { args, .. } => args.iter().any(has_raw_or_string),
+    Expr::Integer(_) | Expr::Real(_) | Expr::Identifier(_) => false,
+    _ => true,
+  }
 }
 
 /// `VertexReplace[graph, rules]` — rename vertices, in the vertex list and in
