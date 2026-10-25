@@ -268,6 +268,34 @@ fn collect_point_lists(arg: &Expr) -> Vec<Vec<(f64, f64)>> {
   }
 }
 
+/// The parameter range `t` for which `p + t d` lies in the box
+/// `(x_min, x_max, y_min, y_max)` (Liang–Barsky), from `t = 0` on for a half
+/// line. `None` when the line misses the box.
+fn clip_line_to_box(
+  p: (f64, f64),
+  d: (f64, f64),
+  (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
+  half: bool,
+) -> Option<(f64, f64)> {
+  if d.0 == 0.0 && d.1 == 0.0 {
+    return None;
+  }
+  let mut t0 = if half { 0.0 } else { f64::NEG_INFINITY };
+  let mut t1 = f64::INFINITY;
+  for (pi, di, lo, hi) in [(p.0, d.0, x_min, x_max), (p.1, d.1, y_min, y_max)] {
+    if di == 0.0 {
+      if pi < lo || pi > hi {
+        return None;
+      }
+      continue;
+    }
+    let (a, b) = ((lo - pi) / di, (hi - pi) / di);
+    t0 = t0.max(a.min(b));
+    t1 = t1.min(a.max(b));
+  }
+  (t0 <= t1 && t0.is_finite() && t1.is_finite()).then_some((t0, t1))
+}
+
 fn polyline_points(pts: &[(f64, f64)], area: &PlotArea) -> String {
   pts
     .iter()
@@ -535,6 +563,37 @@ fn render_item(
       }
       "Line" if !args.is_empty() => {
         for pts in collect_point_lists(&args[0]) {
+          out.push_str(&format!(
+            "<polyline fill=\"none\" {} stroke-linecap=\"round\" \
+             stroke-linejoin=\"round\" points=\"{}\"/>\n",
+            style.stroke_attrs(area),
+            polyline_points(&pts, area),
+          ));
+        }
+      }
+      // InfiniteLine[p, v] / InfiniteLine[{p1, p2}] and HalfLine (from the
+      // point on) are drawn across the visible plot range.
+      "InfiniteLine" | "HalfLine" if !args.is_empty() => {
+        let (point, direction) = match args.as_slice() {
+          [p, v] => (point2(p), point2(v)),
+          [Expr::List(pts)] if pts.len() == 2 => {
+            match (point2(&pts[0]), point2(&pts[1])) {
+              (Some(a), Some(b)) => (Some(a), Some((b.0 - a.0, b.1 - a.1))),
+              _ => (None, None),
+            }
+          }
+          _ => (None, None),
+        };
+        if let (Some((px, py)), Some((dx, dy))) = (point, direction)
+          && let Some((t0, t1)) = clip_line_to_box(
+            (px, py),
+            (dx, dy),
+            (area.x_min, area.x_max, area.y_min, area.y_max),
+            name == "HalfLine",
+          )
+        {
+          let pts =
+            [(px + t0 * dx, py + t0 * dy), (px + t1 * dx, py + t1 * dy)];
           out.push_str(&format!(
             "<polyline fill=\"none\" {} stroke-linecap=\"round\" \
              stroke-linejoin=\"round\" points=\"{}\"/>\n",

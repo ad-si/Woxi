@@ -9221,3 +9221,31 @@ mod quantile_by_cdf_bisection {
     );
   }
 }
+
+mod random_variate_infinite_support {
+  use super::*;
+
+  // A density on an infinite range is sampled over where its tail is not
+  // negligible (TheMeixnerProcess).
+  #[test]
+  fn samples_match_the_moments() {
+    assert_eq!(
+      interpret(
+        "SeedRandom[1]; s = RandomVariate[ProbabilityDistribution[\
+         Exp[-x^2/2]/Sqrt[2 Pi], {x, -Infinity, Infinity}], 20000]; \
+         {Abs[Mean[s]] < 0.05, Abs[Variance[s] - 1] < 0.05}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+    assert_eq!(
+      interpret(
+        "SeedRandom[2]; s = RandomVariate[ProbabilityDistribution[\
+         Exp[-x], {x, 0, Infinity}], 20000]; \
+         {Min[s] >= 0, Abs[Mean[s] - 1] < 0.05}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+}
