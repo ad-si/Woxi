@@ -8897,10 +8897,10 @@ mod demonstration_image_filters {
       "{{0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}}"
     );
     assert_eq!(
-      interpret(&format!(
-        "ImageData[ImageEffect[Image[Table[0.25, {{4}}, {{6}}]], \
-         {{\"MotionBlur\", 3, 30}}]] == Table[0.25, {{4}}, {{6}}]"
-      ))
+      interpret(
+        "ImageData[ImageEffect[Image[Table[0.25, {4}, {6}]], \
+         {\"MotionBlur\", 3, 30}]] == Table[0.25, {4}, {6}]"
+      )
       .unwrap(),
       "True"
     );

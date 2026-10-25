@@ -364,7 +364,7 @@ fn elliptic_delta(s: f64, m: f64) -> f64 {
 }
 
 /// E(phi, m) = Sin[r] R_F(Cos[r]^2, 1 - m Sin[r]^2, 1)
-///   - m Sin[r]^3 / 3 R_D(Cos[r]^2, 1 - m Sin[r]^2, 1) + 2 k E(m).
+///   minus m Sin[r]^3 / 3 R_D(Cos[r]^2, 1 - m Sin[r]^2, 1) + 2 k E(m).
 /// NaN where the result is complex (1 - m Sin[r]^2 < 0).
 pub fn elliptic_e_incomplete(phi: f64, m: f64) -> f64 {
   if phi == 0.0 {
