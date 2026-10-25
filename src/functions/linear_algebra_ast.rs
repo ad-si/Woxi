@@ -9176,9 +9176,111 @@ fn lookup_fitted_model_property(
       return Ok(val.clone());
     }
   }
+  if let Some(value) = derived_fit_property(assoc, prop) {
+    return Ok(value);
+  }
   Err(InterpreterError::EvaluationError(format!(
     "FittedModel: unknown property \"{prop}\""
   )))
+}
+
+/// Diagnostics computed from the stored design matrix and residuals:
+/// `EstimatedVariance` (residual sum of squares over the residual degrees
+/// of freedom), `HatDiagonal` (leverages, the diagonal of
+/// X (XᵀX)⁻¹ Xᵀ) and `CookDistances`.
+fn derived_fit_property(assoc: &[(Expr, Expr)], prop: &str) -> Option<Expr> {
+  let get = |name: &str| {
+    assoc.iter().find_map(|(k, v)| match k {
+      Expr::String(k) if k == name => Some(v),
+      _ => None,
+    })
+  };
+  let numbers = |e: &Expr| -> Option<Vec<f64>> {
+    match e {
+      Expr::List(items) => items
+        .iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect(),
+      _ => None,
+    }
+  };
+  let residuals = numbers(get("FitResiduals")?)?;
+  let p = match get("BestFitParameters")? {
+    Expr::List(items) => items.len(),
+    _ => return None,
+  };
+  let n = residuals.len();
+  if n <= p {
+    return None;
+  }
+  let variance = residuals.iter().map(|r| r * r).sum::<f64>() / (n - p) as f64;
+  let leverages = || -> Option<Vec<f64>> {
+    let Expr::List(rows) = get("DesignMatrix")? else {
+      return None;
+    };
+    let x: Vec<Vec<f64>> = rows.iter().map(numbers).collect::<Option<_>>()?;
+    if x.len() != n || x.iter().any(|row| row.len() != p) {
+      return None;
+    }
+    // (XᵀX)⁻¹ by Gauss–Jordan.
+    let mut a: Vec<Vec<f64>> = (0..p)
+      .map(|i| {
+        let mut row: Vec<f64> = (0..p)
+          .map(|j| x.iter().map(|r| r[i] * r[j]).sum())
+          .collect();
+        row.extend((0..p).map(|j| if i == j { 1.0 } else { 0.0 }));
+        row
+      })
+      .collect();
+    for col in 0..p {
+      let pivot = (col..p).max_by(|&i, &j| {
+        a[i][col].abs().partial_cmp(&a[j][col].abs()).unwrap()
+      })?;
+      if a[pivot][col].abs() < 1e-300 {
+        return None;
+      }
+      a.swap(col, pivot);
+      let d = a[col][col];
+      for v in &mut a[col] {
+        *v /= d;
+      }
+      for r in 0..p {
+        if r != col {
+          let f = a[r][col];
+          for c in 0..2 * p {
+            a[r][c] -= f * a[col][c];
+          }
+        }
+      }
+    }
+    Some(
+      x.iter()
+        .map(|row| {
+          (0..p)
+            .map(|i| (0..p).map(|j| row[i] * a[i][p + j] * row[j]).sum::<f64>())
+            .sum()
+        })
+        .collect(),
+    )
+  };
+  let reals = |v: Vec<f64>| Expr::List(v.into_iter().map(Expr::Real).collect());
+  match prop {
+    "EstimatedVariance" => Some(Expr::Real(variance)),
+    "HatDiagonal" => leverages().map(reals),
+    "CookDistances" => {
+      let h = leverages()?;
+      Some(reals(
+        residuals
+          .iter()
+          .zip(&h)
+          .map(|(r, h)| {
+            r * r / (p as f64 * variance) * h / ((1.0 - h) * (1.0 - h))
+          })
+          .collect(),
+      ))
+    }
+    _ => None,
+  }
 }
 
 /// Evaluate a FittedModel at a point or query a property.
@@ -9199,9 +9301,23 @@ pub fn evaluate_fitted_model(
     ));
   };
 
-  // Check if the argument is a string (property query)
+  // Check if the argument is a string (property query). A property the
+  // model does not have is FittedModel::elmntav, as in wolframscript.
   if let Expr::String(prop) = &call_args[0] {
-    return lookup_fitted_model_property(assoc, prop);
+    return match lookup_fitted_model_property(assoc, prop) {
+      Err(InterpreterError::EvaluationError(msg))
+        if msg.starts_with("FittedModel: unknown property") =>
+      {
+        crate::emit_message(&format!(
+          "FittedModel::elmntav: \"{prop}\" is not an available property."
+        ));
+        Ok(Expr::CurriedCall {
+          func: Box::new(call("FittedModel", model_args.to_vec())),
+          args: call_args.to_vec(),
+        })
+      }
+      other => other,
+    };
   }
 
   // `fit[{prop1, prop2, ...}]` looks up each property and returns the list

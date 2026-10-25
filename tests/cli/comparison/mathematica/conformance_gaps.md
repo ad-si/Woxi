@@ -5687,3 +5687,16 @@ steps use a secant estimate of the curvature; Woxi's damped Newton uses the
 exact second derivative from the start, so the two visit different points
 and stop at different ones when a trial point leaves the real domain. Both
 end with the same message.
+
+### A fit with zero residual degrees of freedom has no parameter table
+
+```sh
+wolframscript -code 'lm = LinearModelFit[{{0, 1}, {1, 0}}, x, x]; Quiet[lm["ParameterTableEntries"]]'
+# {{1., Indeterminate, Indeterminate, Indeterminate}, {-1., Indeterminate, Indeterminate, Indeterminate}}
+woxi eval 'lm = LinearModelFit[{{0, 1}, {1, 0}}, x, x]; lm["ParameterTableEntries"]'
+# FittedModel::elmntav: "ParameterTableEntries" is not an available property.
+```
+
+wolframscript divides by the zero degrees of freedom (with `Power::infy`
+messages) and reports `Indeterminate` standard errors and statistics; Woxi
+does not store the table for such a fit.
