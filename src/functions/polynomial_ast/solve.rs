@@ -905,19 +905,28 @@ fn try_nsolve_complex_coefficients(
     return None;
   }
   let mut coeffs = vec![(0.0f64, 0.0f64); degree + 1];
+  // A coefficient such as `-4. + 0.*I` is a complex number with an inexact
+  // zero imaginary part: the real-coefficient solvers cannot read it, so it
+  // is solved here even though every imaginary part is zero.
+  let mut has_complex_coefficient = false;
   for (d, slot) in coeffs.iter_mut().enumerate() {
     for term in &terms {
       if let Some(c) = extract_coefficient_of_power(term, var, d as i128) {
         let c = simplify(c);
-        let (re, im) = try_eval_to_f64(&c)
-          .map(|v| (v, 0.0))
-          .or_else(|| try_extract_complex_float(&c))?;
+        let (re, im) = if let Some(v) = try_eval_to_f64(&c) {
+          (v, 0.0)
+        } else {
+          has_complex_coefficient = true;
+          try_extract_complex_float(&c)?
+        };
         slot.0 += re;
         slot.1 += im;
       }
     }
   }
-  if coeffs.iter().all(|c| c.1 == 0.0) || coeffs[degree] == (0.0, 0.0) {
+  if (!has_complex_coefficient && coeffs.iter().all(|c| c.1 == 0.0))
+    || coeffs[degree] == (0.0, 0.0)
+  {
     return None;
   }
   let mut roots = durand_kerner_complex_roots(&coeffs);

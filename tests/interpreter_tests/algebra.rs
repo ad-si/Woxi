@@ -5347,6 +5347,28 @@ mod solve {
   }
 
   #[test]
+  fn nsolve_coefficient_with_inexact_zero_imaginary_part() {
+    // `c + 0.*I` is a complex coefficient, not a real one; the polynomial
+    // is still solved, for every degree.
+    assert_eq!(
+      interpret(
+        "r = NSolve[x^8 + 3.*x^4 + (-4. + 0.*I) == 0, x]; \
+         {Length[r], Max[Abs[(x^8 + 3.*x^4 - 4.) /. r]] < 10^-9}"
+      )
+      .unwrap(),
+      "{8, True}"
+    );
+    assert_eq!(
+      interpret(
+        "r = NSolve[x^3 + (2. + 0.*I)*x - 5. == 0, x]; \
+         {Length[r], Max[Abs[(x^3 + 2.*x - 5.) /. r]] < 10^-9}"
+      )
+      .unwrap(),
+      "{3, True}"
+    );
+  }
+
+  #[test]
   fn quadratic_symmetric() {
     assert_eq!(
       interpret("Solve[x^2 - 4 == 0, x]").unwrap(),
