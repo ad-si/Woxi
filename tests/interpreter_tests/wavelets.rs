@@ -1135,4 +1135,33 @@ mod wavelets {
       "Image"
     );
   }
+
+  #[test]
+  fn reverse_biorthogonal_psi_stays_bounded() {
+    for w in [
+      "ReverseBiorthogonalSplineWavelet[]",
+      "ReverseBiorthogonalSplineWavelet[2, 2]",
+      "ReverseBiorthogonalSplineWavelet[3, 5]",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "Max[Abs[Table[N[WaveletPsi[{w}, x]], {{x, -4, 4, 1/8}}]]] < 10"
+        ))
+        .unwrap(),
+        "True"
+      );
+    }
+  }
+
+  #[test]
+  fn scaling_function_translates_sum_to_one() {
+    assert_eq!(
+      interpret(
+        "Chop[N[Total[Table[WaveletPhi[SymletWavelet[4], 0.37 - k], \
+         {k, -8, 8}]] - 1], 10^-6]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
 }
