@@ -10682,11 +10682,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let text_h = text.split('\n').count() as f64 * fs;
       let cx = x - offset.0 * text_w / 2.0 / kx;
       let cy = y - offset.1 * text_h / 2.0 / ky;
-      if plot_range_x.is_none() {
+      // A label as wide as the picture (a long `Row` in a `Pane`) cannot be
+      // made to fit by widening the range — its size scales with the
+      // canvas, so the growth would diverge and squash every other
+      // primitive onto one point. Such a label overflows instead.
+      if plot_range_x.is_none() && text_w < svg_width as f64 {
         grown.x_min = grown.x_min.min(cx - text_w / 2.0 / kx);
         grown.x_max = grown.x_max.max(cx + text_w / 2.0 / kx);
       }
-      if plot_range_y.is_none() {
+      if plot_range_y.is_none() && text_h < svg_height as f64 {
         grown.y_min = grown.y_min.min(cy - text_h / 2.0 / ky);
         grown.y_max = grown.y_max.max(cy + text_h / 2.0 / ky);
       }
