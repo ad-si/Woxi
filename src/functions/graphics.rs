@@ -31226,12 +31226,15 @@ fn grid_label_runs(rows: &[Expr], italic: bool) -> Vec<LabelRun> {
 
 /// The label a control shows when its spec carries none: the variable name,
 /// minus the `$$` suffix a saved `DynamicModule` appends to its variables
-/// (the FrontEnd shows `α`, not `α$$`).
+/// (the FrontEnd shows `α`, not `α$$`). The name may be a symbol written
+/// with a private-use named character (`\[DoubleStruckCapitalC]`), which a
+/// label draws as the glyph a normal font has (`ℂ`).
 fn default_control_label(name: &str) -> String {
-  match name.strip_suffix("$$") {
-    Some(base) if !base.is_empty() => base.to_string(),
-    _ => name.to_string(),
-  }
+  let base = match name.strip_suffix("$$") {
+    Some(base) if !base.is_empty() => base,
+    _ => name,
+  };
+  crate::syntax::substitute_private_use_glyphs(base).into_owned()
 }
 
 /// Rewrite every `FractionBox[n, d]` in a box tree as the in-line
