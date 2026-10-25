@@ -1114,17 +1114,29 @@ pub fn quantile_distribution_closed_form(
         };
         return eval(&result).ok();
       }
-      // Machine-precision q: numeric inverse CDF (requires numeric m, s)
-      let m_num = expr_to_num(&m)?;
-      let s_num = expr_to_num(&s)?;
+      // Machine-precision q: numeric inverse CDF (requires numeric m, s;
+      // a numeric expression such as Log[2] is numericized)
+      let m_num = try_eval_to_f64(&m)?;
+      let s_num = try_eval_to_f64(&s)?;
       let z = inverse_erf_f64(2.0 * q_num - 1.0);
       Some(Expr::Real(m_num + s_num * std::f64::consts::SQRT_2 * z))
     }
-    // Quantile[LogNormalDistribution[m, s], q] = E^(m + Sqrt[2] s InverseErf[2q - 1]).
-    // Only the machine-precision form is handled; exact q stays symbolic.
-    "LogNormalDistribution" if dargs.len() == 2 && !is_exact_q => {
-      let m_num = expr_to_num(&dargs[0])?;
-      let s_num = expr_to_num(&dargs[1])?;
+    // Quantile[LogNormalDistribution[m, s], q] = E^(m + Sqrt[2] s InverseErf[2q - 1]),
+    // the exponential of the NormalDistribution[m, s] quantile.
+    "LogNormalDistribution" if dargs.len() == 2 && is_exact_q => {
+      if q_num == 0.0 {
+        return Some(Expr::Integer(0));
+      }
+      if q_num == 1.0 {
+        return Some(infinity());
+      }
+      let normal =
+        quantile_distribution_closed_form("NormalDistribution", dargs, q)?;
+      eval(&pow(Expr::Constant("E".to_string()), normal)).ok()
+    }
+    "LogNormalDistribution" if dargs.len() == 2 => {
+      let m_num = try_eval_to_f64(&dargs[0])?;
+      let s_num = try_eval_to_f64(&dargs[1])?;
       if q_num == 0.0 {
         return Some(Expr::Integer(0));
       }
