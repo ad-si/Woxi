@@ -38018,6 +38018,20 @@ mod grid_text_in_graphics {
   }
 
   #[test]
+  fn text_quotient_with_string_operand_is_one_line() {
+    let svg = interpret(
+      r#"ExportString[Graphics[Text[Style[ToString[x]/y, 20], {0, 0}]], "SVG"] /. {x -> 0, y -> 100}"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("---"), "{svg}");
+    let svg =
+      interpret(r#"ExportString[Graphics[Text["7"/100, {0, 0}]], "SVG"]"#)
+        .unwrap();
+    assert!(svg.contains(">7/100</text>"), "{svg}");
+    assert!(!svg.contains("---"), "{svg}");
+  }
+
+  #[test]
   fn escaped_spaces_in_box_text_are_not_products() {
     // `\ ` between words inside a box group is a literal space; it must not
     // be read as implicit multiplication (`my*height`).

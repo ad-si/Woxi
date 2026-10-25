@@ -4505,11 +4505,36 @@ fn graphics_text_content(expr: &Expr) -> String {
       if name == "Times"
         && args.iter().any(|a| matches!(a, Expr::String(_))) =>
     {
-      args
-        .iter()
-        .map(graphics_text_content)
-        .collect::<Vec<_>>()
-        .join(" ")
+      // A fractional factor (`"7"/100` is `Times[1/100, "7"]`) moves its
+      // denominator under the rest, so the label reads `7/100` on one line.
+      let mut numerator: Vec<String> = Vec::new();
+      let mut denominator: Vec<String> = Vec::new();
+      for a in args {
+        match a {
+          Expr::FunctionCall { name: rn, args: ra }
+            if rn == "Rational" && ra.len() == 2 =>
+          {
+            if !matches!(&ra[0], Expr::Integer(1)) {
+              numerator.push(graphics_text_content(&ra[0]));
+            }
+            denominator.push(graphics_text_content(&ra[1]));
+          }
+          Expr::FunctionCall { name: pn, args: pa }
+            if pn == "Power"
+              && pa.len() == 2
+              && matches!(&pa[1], Expr::Integer(-1)) =>
+          {
+            denominator.push(graphics_text_content(&pa[0]));
+          }
+          other => numerator.push(graphics_text_content(other)),
+        }
+      }
+      let num = numerator.join(" ");
+      match denominator.as_slice() {
+        [] => num,
+        [d] => format!("{num}/{d}"),
+        ds => format!("{num}/({})", ds.join(" ")),
+      }
     }
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -4523,6 +4548,27 @@ fn graphics_text_content(expr: &Expr) -> String {
         graphics_text_content(left),
         graphics_text_content(right)
       )
+    }
+    // A quotient with a string operand (`ToString[x]/y`) is set on one line
+    // as `numerator/denominator`, not as the stacked two-line OutputForm
+    // fraction, which a label cannot lay out.
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::String(_))
+      || matches!(right.as_ref(), Expr::String(_)) =>
+    {
+      let den = graphics_text_content(right);
+      let den = if matches!(
+        right.as_ref(),
+        Expr::BinaryOp { .. } | Expr::FunctionCall { .. }
+      ) {
+        format!("({den})")
+      } else {
+        den
+      };
+      format!("{}/{den}", graphics_text_content(left))
     }
     _ => {
       let text = match crate::functions::string_ast::to_string_ast(
