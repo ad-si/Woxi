@@ -11965,6 +11965,7 @@ fn evaluate_function_call_ast_inner(
         | "Button"
         | "ActionMenu"
         | "Deploy"
+        | "ExpressionCell"
         | "Dynamic"
         | "DynamicWrapper"
         | "Setter"

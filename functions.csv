@@ -1041,7 +1041,7 @@ CircleTimes,Symbolic tensor product operator with Unicode display,✅,pure,3.0,1
 VectorPlot3D,Creates a 3D vector field plot,✅,pure,7.0,1018
 RandomPoint,Uniformly distributed random points in a region (points lines polygons boxes disks balls spheres intervals and Boolean regions),✅,contextual,10.2,1020
 TemplateBox,Front-end display template box such as the RowDefault template of a Row,✅,pure,7.0,1020
-ExpressionCell,Requires external services or GUI infrastructure,🚫,io,6.0,1021
+ExpressionCell,Cell showing an expression (symbolic display wrapper),✅,unevaluated,6.0,1021
 StartOfString,Represents the start of a string in string patterns,✅,1,5.1,1022
 SameTest,,🚫,,2.0,1024
 Below,Symbol for below alignment,✅,pure,1.0,1025
