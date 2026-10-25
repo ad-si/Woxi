@@ -17663,9 +17663,13 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Try Solve first (suppress warnings from Solve)
   let mut solutions: Vec<Expr> = {
+    // Messages Solve raises about a condition it cannot handle (an
+    // inequality, say) belong to its internal attempt, not to FindInstance.
+    let saved = crate::snapshot_warnings();
     crate::push_quiet();
     let solve_result = solve_ast(&[cond.clone(), vars.clone()]);
     crate::pop_quiet();
+    crate::restore_warnings(saved);
     match &solve_result {
       Ok(Expr::List(sols)) if sols.is_empty() => {
         // Solve proved the solution set empty.
@@ -17799,6 +17803,50 @@ fn find_instance_numerical(
         ));
       }
       val += step;
+    }
+    // Nothing inside the scan window: the solution set may be a ray or an
+    // interval far from the origin (e.g. `x > 1000`). Probe growing
+    // magnitudes, then bisect back towards the origin to land on the
+    // integer closest to it.
+    if results.is_empty() {
+      let holds = |v: i128| {
+        let subst = substitute_var(cond, var, &Expr::Integer(v));
+        matches!(
+          evaluate_expr_to_expr(&subst),
+          Ok(Expr::Identifier(ref s)) if s == "True"
+        )
+      };
+      let mut found: Option<(i128, i128)> = None;
+      let mut near: i128 = range_hi as i128;
+      for _ in 0..30 {
+        let far = near * 10;
+        if let Some(&hi) = [-far, far].iter().find(|&&v| holds(v)) {
+          found = Some((hi, if hi < 0 { -near } else { near }));
+          break;
+        }
+        near = far;
+      }
+      if let Some((mut hi, mut lo)) = found {
+        while (hi - lo).abs() > 1 {
+          let mid = lo + (hi - lo) / 2;
+          if holds(mid) {
+            hi = mid;
+          } else {
+            lo = mid;
+          }
+        }
+        let dir = if hi < 0 { -1 } else { 1 };
+        let mut v = hi;
+        while results.len() < n && v.abs() <= hi.abs() + n as i128 * 4 {
+          if holds(v) {
+            results.push(Expr::List(
+              vec![rule_expr(Expr::Identifier(var.clone()), Expr::Integer(v))]
+                .into(),
+            ));
+          }
+          v += dir;
+        }
+      }
     }
   } else if var_names.len() == 2 {
     // For two variables, scan a grid
