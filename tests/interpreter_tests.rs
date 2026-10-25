@@ -1600,6 +1600,22 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_text_traditionalform_of_row_and_column_layouts() {
+    // Regression: `Text[TraditionalForm[Column[{Row[…], …}]]]` drew the
+    // layout's call source (`Column({…})`) instead of its typeset lines.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Graphics[Text[Style[Text[TraditionalForm[Column[{Row[{\"\u{2203}\", y, \" such that \", y >= 0}], Row[{\"done\"}]}]]], 18]]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Graphics should produce an SVG");
+    assert!(svg.contains("\u{2203}y such that y \u{2265} 0"), "{svg}");
+    assert!(svg.contains(">done<"), "{svg}");
+    assert!(!svg.contains("Column") && !svg.contains("Row"), "{svg}");
+  }
+
+  #[test]
   fn test_graphics_plotlabel_stringform_substitutes_placeholders() {
     // Regression: `PlotLabel -> StringForm["…", args]` (the "Paths inside a
     // Polygon" Demonstration's `PlotLabel -> StringForm["Path distance =
