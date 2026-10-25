@@ -6898,3 +6898,34 @@ mod number_field_class_number {
     assert_eq!(interpret("NumberFieldClassNumber[3]").unwrap(), "1");
   }
 }
+
+// ContinuedFraction of an arbitrary-precision number gives the terms its
+// precision determines (it stayed unevaluated), and Convergents carries
+// them in big integers (it overflowed i128 and panicked) — FundamentalUnit.
+mod continued_fraction_big_float {
+  use super::*;
+
+  #[test]
+  fn terms_justified_by_precision() {
+    assert_eq!(
+      interpret("ContinuedFraction[N[Pi, 30]]").unwrap(),
+      "{3, 7, 15, 1, 292, 1, 1, 1, 2, 1, 3, 1, 14, 2, 1, 1, 2, 2, 2, 2, 1, 84, 2, 1, 1, 15, 3}"
+    );
+    assert_eq!(
+      interpret("Take[ContinuedFraction[N[Sqrt[13], 80]], 12]").unwrap(),
+      "{3, 1, 1, 1, 1, 6, 1, 1, 1, 1, 6, 1}"
+    );
+  }
+
+  #[test]
+  fn long_convergents() {
+    assert_eq!(
+      interpret(
+        "c = Convergents[ContinuedFraction[N[Sqrt[13], 80]]]; \
+         {Take[c, 3], Abs[N[Last[c] - Sqrt[13], 20]] < 10^-70}"
+      )
+      .unwrap(),
+      "{{3, 4, 7/2}, True}"
+    );
+  }
+}

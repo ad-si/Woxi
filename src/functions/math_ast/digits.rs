@@ -800,6 +800,50 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
 
+  // An arbitrary-precision number: the terms its precision determines, i.e.
+  // the common prefix of the expansions of the ends of its uncertainty
+  // interval x (1 ± 10^-precision).
+  if let Expr::BigFloat(digits, precision) = &args[0] {
+    let unevaluated = || Ok(unevaluated("ContinuedFraction", args));
+    let n_cap: Option<usize> = match args.get(1) {
+      None => None,
+      Some(Expr::Integer(n)) if *n > 0 => Some(*n as usize),
+      Some(_) => return unevaluated(),
+    };
+    let Some((num, den)) = decimal_to_big_rational(digits) else {
+      return unevaluated();
+    };
+    let Ok(scale_digits) = u32::try_from(precision.ceil().max(1.0) as i64)
+    else {
+      return unevaluated();
+    };
+    use num_bigint::BigInt;
+    let scale = BigInt::from(10).pow(scale_digits);
+    // x (1 ± 1/scale) = num (scale ± 1) / (den scale)
+    let lower = (&num * (&scale - 1), &den * &scale);
+    let upper = (&num * (&scale + 1), &den * &scale);
+    let (lo_terms, hi_terms) = (big_cf_terms(lower), big_cf_terms(upper));
+    let mut terms: Vec<Expr> = lo_terms
+      .iter()
+      .zip(&hi_terms)
+      .take_while(|(a, b)| a == b)
+      .map(|(a, _)| crate::functions::math_ast::bigint_to_expr(a.clone()))
+      .collect();
+    if terms.is_empty() {
+      return unevaluated();
+    }
+    if let Some(n) = n_cap {
+      if terms.len() > n {
+        terms.truncate(n);
+      } else if terms.len() < n {
+        crate::emit_message(&format!(
+          "ContinuedFraction::incomp: Warning: ContinuedFraction terminated before {n} terms."
+        ));
+      }
+    }
+    return Ok(Expr::List(terms.into()));
+  }
+
   // ContinuedFraction[Sqrt[D]] — periodic CF for non-square positive integers.
   // Note: Sqrt[n] is canonicalized internally to Power[n, Rational[1, 2]], so
   // this matcher reaches for the Power shape.
@@ -890,6 +934,55 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(unevaluated("ContinuedFraction", args))
+}
+
+/// The exact value of a decimal digit string (`-12.345`, `1.5*^-20`) as a
+/// numerator and positive denominator.
+fn decimal_to_big_rational(
+  digits: &str,
+) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
+  use num_bigint::BigInt;
+  let (mantissa, exponent) = match digits.split_once("*^") {
+    Some((m, e)) => (m, e.parse::<i64>().ok()?),
+    None => match digits.split_once(['e', 'E']) {
+      Some((m, e)) => (m, e.parse::<i64>().ok()?),
+      None => (digits, 0),
+    },
+  };
+  let (int_part, frac_part) =
+    mantissa.split_once('.').unwrap_or((mantissa, ""));
+  let all: String = format!("{int_part}{frac_part}");
+  let mut num: BigInt = all.parse().ok()?;
+  let mut den = BigInt::from(1);
+  let shift = exponent - frac_part.len() as i64;
+  let ten = BigInt::from(10);
+  if shift >= 0 {
+    num *= ten.pow(u32::try_from(shift).ok()?);
+  } else {
+    den = ten.pow(u32::try_from(-shift).ok()?);
+  }
+  Some((num, den))
+}
+
+/// The continued-fraction terms of the rational `num/den` (den > 0), floor
+/// based. Capped so a huge denominator cannot run away.
+fn big_cf_terms(
+  (mut num, mut den): (num_bigint::BigInt, num_bigint::BigInt),
+) -> Vec<num_bigint::BigInt> {
+  let mut out = Vec::new();
+  while !den.is_zero() && out.len() < 100_000 {
+    // Floor division (the denominator stays positive).
+    let mut q = &num / &den;
+    let mut r = &num - &q * &den;
+    if r.is_negative() {
+      q -= 1;
+      r += &den;
+    }
+    out.push(q);
+    num = den;
+    den = r;
+  }
+  out
 }
 
 /// Exact rational with i128 numerator/denominator, kept reduced with a
@@ -3058,38 +3151,40 @@ pub fn convergents_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Collect all integers
-  let mut ints: Vec<i128> = Vec::new();
+  let mut ints: Vec<num_bigint::BigInt> = Vec::new();
   for elem in elements {
     match elem {
-      Expr::Integer(n) => ints.push(*n),
+      Expr::Integer(n) => ints.push(num_bigint::BigInt::from(*n)),
+      Expr::BigInteger(n) => ints.push(n.clone()),
       _ => {
         return Ok(unevaluated("Convergents", args));
       }
     }
   }
 
-  // Use the recurrence relation:
-  // h[-1] = 1, h[0] = a0
-  // k[-1] = 0, k[0] = 1
-  // h[n] = a[n] * h[n-1] + h[n-2]
-  // k[n] = a[n] * k[n-1] + k[n-2]
-  let mut result = Vec::new();
-  let mut h_prev2: i128 = 1;
-  let mut h_prev1: i128 = ints[0];
-  let mut k_prev2: i128 = 0;
-  let mut k_prev1: i128 = 1;
-
-  result.push(make_rational_expr(h_prev1, k_prev1));
-
-  for i in 1..ints.len() {
-    let a = ints[i];
-    let h = a * h_prev1 + h_prev2;
-    let k = a * k_prev1 + k_prev2;
-    result.push(make_rational_expr(h, k));
-    h_prev2 = h_prev1;
-    h_prev1 = h;
-    k_prev2 = k_prev1;
-    k_prev1 = k;
+  // The recurrence h[n] = a[n] h[n-1] + h[n-2], k[n] = a[n] k[n-1] + k[n-2]
+  // (h[-1] = 1, k[-1] = 0), in big integers: a long expansion outgrows i128.
+  let to_expr = |h: &num_bigint::BigInt, k: &num_bigint::BigInt| {
+    crate::evaluator::evaluate_function_call_ast(
+      "Rational",
+      &[
+        crate::functions::math_ast::bigint_to_expr(h.clone()),
+        crate::functions::math_ast::bigint_to_expr(k.clone()),
+      ],
+    )
+  };
+  let mut result = Vec::with_capacity(ints.len());
+  let (mut h_prev2, mut h_prev1) =
+    (num_bigint::BigInt::from(1), ints[0].clone());
+  let (mut k_prev2, mut k_prev1) =
+    (num_bigint::BigInt::from(0), num_bigint::BigInt::from(1));
+  result.push(to_expr(&h_prev1, &k_prev1)?);
+  for a in &ints[1..] {
+    let h = a * &h_prev1 + &h_prev2;
+    let k = a * &k_prev1 + &k_prev2;
+    result.push(to_expr(&h, &k)?);
+    h_prev2 = std::mem::replace(&mut h_prev1, h);
+    k_prev2 = std::mem::replace(&mut k_prev1, k);
   }
 
   Ok(Expr::List(result.into()))
