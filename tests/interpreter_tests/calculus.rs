@@ -22581,3 +22581,25 @@ mod ndsolve_starting_step_size {
     );
   }
 }
+
+mod ndsolve_vector_unknown_with_matrix_product {
+  use super::*;
+
+  /// `y'[t] == A . y[t]` for a many-component `y` evaluates the product
+  /// once rather than once per component, so a 40-component system
+  /// finishes instantly.
+  #[test]
+  fn matrix_times_vector_right_hand_side() {
+    assert_eq!(
+      interpret(
+        "n = 40; A = SparseArray[{{1, 2} -> 1}, {n, n}]; \
+         sol = NDSolve[{y'[t] == A . y[t], y[0] == Table[1, {n}]}, y, {t, 0, 1}, \
+         StartingStepSize -> 0.1, MaxStepSize -> 0.1, \
+         Method -> {\"FixedStep\", Method -> \"ExplicitEuler\"}]; \
+         Round[10^6 (y[1] /. First[sol])[[{1, 40}]]]"
+      )
+      .unwrap(),
+      "{2000000, 1000000}"
+    );
+  }
+}

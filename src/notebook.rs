@@ -2543,6 +2543,9 @@ fn render_linear_syntax_escapes(s: &str) -> String {
 /// not read as `e^-b e^-c t`. Single words, numbers and lone symbols
 /// (`*`, `†`) stay bare, and an already parenthesized script is kept as is.
 fn group_script(script: &str) -> String {
+  // Padding spaces inside a script (`SubscriptBox["a", "1 "]`) draw
+  // nothing and must not force parentheses around a one-token script.
+  let script = script.trim();
   let encloses_all = script.starts_with('(') && {
     let mut depth = 0usize;
     let mut closes_at_end = false;
@@ -8271,6 +8274,12 @@ Cell[TextData[{
       CellEntry::Single(cell) => cell.content.clone(),
       CellEntry::Group(_) => panic!("Expected single cell"),
     }
+  }
+
+  #[test]
+  fn test_padded_script_needs_no_parentheses() {
+    assert_eq!(inline_math_text(r#"SubscriptBox["a", "1 "]"#), "a_1");
+    assert_eq!(inline_math_text(r#"SuperscriptBox["x", "n "]"#), "x^n");
   }
 
   #[test]

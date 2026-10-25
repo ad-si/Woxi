@@ -31412,7 +31412,8 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // Row[{a, b, …}] — concatenate the (recursively rendered) parts. A
       // typeset `RowBox[{…}]` (what `ToString[f[x], TraditionalForm]`
       // holds, e.g. `{sin, (, x, )}`) reads the same way.
-      "Row" | "RowBox" => match layout_parts(args.first()) {
+      // `GraphicsRow` lays its items out the same way; its pictures drop out.
+      "Row" | "RowBox" | "GraphicsRow" => match layout_parts(args.first()) {
         Some(parts) => parts
           .iter()
           .flat_map(|p| manipulate_label_runs(p, italic))
@@ -31421,7 +31422,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       },
       // Column[{a, b, …}] — the same, but one part per line. Demonstrations
       // label a hypothesis-test setter with a two-line column.
-      "Column" => match layout_parts(args.first()) {
+      "Column" | "GraphicsColumn" => match layout_parts(args.first()) {
         Some(parts) => parts
           .iter()
           .enumerate()
@@ -31446,10 +31447,12 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // their own label runs, joined by a space within a row and by a
       // newline between rows; blank cells (Grid pads a ragged table with
       // `""`) drop out rather than leaving stray spaces.
-      "Grid" | "TableForm" | "TextGrid" => match layout_parts(args.first()) {
-        Some(rows) => grid_label_runs(&rows, italic),
-        _ => output_run(italic),
-      },
+      "Grid" | "TableForm" | "TextGrid" | "GraphicsGrid" => {
+        match layout_parts(args.first()) {
+          Some(rows) => grid_label_runs(&rows, italic),
+          _ => output_run(italic),
+        }
+      }
       // `FormBox[boxes, form]` only records how its boxes were formatted.
       "FormBox" if !args.is_empty() => manipulate_label_runs(&args[0], italic),
       "Subscript" | "SubscriptBox" => script_runs(args, italic, false),
@@ -31734,6 +31737,9 @@ fn contains_presentation_head(expr: &Expr) -> bool {
         "Row"
           | "Column"
           | "Grid"
+          | "GraphicsRow"
+          | "GraphicsColumn"
+          | "GraphicsGrid"
           | "Style"
           | "StyleForm"
           | "Text"
@@ -31857,7 +31863,7 @@ fn label_is_compound(expr: &Expr) -> bool {
       "Style" | "StyleForm" | "Text" | "DisplayForm" | "TraditionalForm"
       | "Tooltip" => args.first().is_some_and(label_is_compound),
       // A layout of several items reads as several terms.
-      "Row" | "Column" => {
+      "Row" | "Column" | "GraphicsRow" | "GraphicsColumn" => {
         matches!(args.first(), Some(Expr::List(parts)) if parts.len() > 1)
       }
       "Plus" | "Subtract" | "Times" | "Divide" => args.len() > 1,
@@ -35463,6 +35469,26 @@ fn styled_text_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
   }
 }
 
+/// Typeset one operand of a caption. `NumberForm[x, {3, 1}]` stays an
+/// unevaluated wrapper; typeset the number it formats, as a Dynamic caption
+/// displays it.
+fn typeset_caption_operand(resolved: &Expr) -> String {
+  let formatted = match resolved {
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "NumberForm" | "PaddedForm" | "AccountingForm"
+      ) && !args.is_empty() =>
+    {
+      crate::functions::string_ast::number_form_family_to_string(name, args)
+    }
+    _ => None,
+  };
+  formatted.unwrap_or_else(|| {
+    flatten_label_runs(&manipulate_label_runs(resolved, false))
+  })
+}
+
 /// Replace every `Dynamic[inner]` found anywhere inside `expr` with `inner`
 /// evaluated against `bindings` (falling back to the untouched `Dynamic[…]`
 /// wrapper when that fails), leaving everything else — style directives,
@@ -35476,7 +35502,48 @@ fn resolve_display_dynamics(
     Expr::FunctionCall { name, args }
       if name == "Dynamic" && !args.is_empty() =>
     {
-      eval_display_in_scope(&args[0], bindings).unwrap_or_else(|| expr.clone())
+      match eval_display_in_scope(&args[0], bindings) {
+        // A variable can itself hold `Dynamic[…]` pieces (a message built
+        // as `Dynamic[a] Dynamic[b]` and shown through `Dynamic[msg]`);
+        // the front end redraws those too. The nesting is finite because
+        // each pass strips one `Dynamic` layer from what it substitutes.
+        Some(inner)
+          if annotation_contains_dynamic(&inner)
+            && crate::syntax::expr_to_string(&inner)
+              != crate::syntax::expr_to_string(expr) =>
+        {
+          resolve_display_dynamics(&inner, bindings)
+        }
+        Some(inner) => inner,
+        None => expr.clone(),
+      }
+    }
+    // `Dynamic[a] Dynamic[b]` with a text operand is a caption built by
+    // juxtaposition: it shows the typeset pieces side by side.
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && annotation_contains_dynamic(expr)
+        && args.iter().any(|a| match a {
+          Expr::String(_) => true,
+          Expr::FunctionCall { name, args } if name == "Dynamic" => {
+            matches!(
+              args
+                .first()
+                .and_then(|d| eval_display_in_scope(d, bindings)),
+              Some(Expr::String(_))
+            )
+          }
+          _ => false,
+        }) =>
+    {
+      Expr::String(
+        args
+          .iter()
+          .map(|a| {
+            typeset_caption_operand(&resolve_display_dynamics(a, bindings))
+          })
+          .collect(),
+      )
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -35514,25 +35581,9 @@ fn resolve_display_dynamics(
             None => " ",
           });
         }
-        let resolved = resolve_display_dynamics(operand, bindings);
-        // `NumberForm[x, {3, 1}]` stays an unevaluated wrapper; typeset
-        // the number it formats, as a Dynamic caption displays it.
-        let formatted = match &resolved {
-          Expr::FunctionCall { name, args }
-            if matches!(
-              name.as_str(),
-              "NumberForm" | "PaddedForm" | "AccountingForm"
-            ) && !args.is_empty() =>
-          {
-            crate::functions::string_ast::number_form_family_to_string(
-              name, args,
-            )
-          }
-          _ => None,
-        };
-        text.push_str(&formatted.unwrap_or_else(|| {
-          flatten_label_runs(&manipulate_label_runs(&resolved, false))
-        }));
+        text.push_str(&typeset_caption_operand(&resolve_display_dynamics(
+          operand, bindings,
+        )));
       }
       Expr::String(text)
     }

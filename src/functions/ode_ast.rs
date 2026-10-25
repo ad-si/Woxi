@@ -961,13 +961,31 @@ fn ndsolve_vector_unknowns(
     // A right-hand side already written (or threaded) as one list element
     // per component is read element-wise; anything else is a vector-valued
     // expression whose components are picked out of it.
+    // Evaluated once: a product like `A . y[t]` would otherwise be
+    // recomputed in full for every component picked out of it. A
+    // user-defined function is left alone: it may only accept numeric
+    // vectors, so it has to be evaluated per step.
     let whole = expand_vector_unknowns(rhs, &vecs, None);
+    let whole = match crate::evaluator::evaluate_expr_to_expr(&whole) {
+      Ok(evaluated)
+        if !calls_user_function(rhs)
+          && matches!(&evaluated, Expr::List(items) if items.len() == lhs_items.len()) =>
+      {
+        evaluated
+      }
+      _ => whole,
+    };
     for (i, l) in lhs_items.iter().enumerate() {
       let r = match rhs {
         Expr::List(items) if items.len() == lhs_items.len() => {
           expand_vector_unknowns(&items[i], &vecs, Some(i))
         }
-        _ => call("Part", vec![whole.clone(), Expr::Integer(i as i128 + 1)]),
+        _ => match &whole {
+          Expr::List(items) if items.len() == lhs_items.len() => {
+            items[i].clone()
+          }
+          _ => call("Part", vec![whole.clone(), Expr::Integer(i as i128 + 1)]),
+        },
       };
       scalar_eqs.push(Expr::Comparison {
         operands: vec![l.clone(), r],
@@ -9402,6 +9420,16 @@ fn closed_form_integral(integrand: &Expr, var: &str) -> Option<Expr> {
   ])
   .ok()?;
   (!mentions_head(&result, "Integrate")).then_some(result)
+}
+
+/// Whether `expr` calls a function the user defined (has `DownValues`).
+fn calls_user_function(expr: &Expr) -> bool {
+  if let Expr::FunctionCall { name, .. } = expr
+    && crate::FUNC_DEFS.with(|m| m.borrow().get(name).is_some())
+  {
+    return true;
+  }
+  expr_children(expr).iter().any(|c| calls_user_function(c))
 }
 
 fn mentions_head(expr: &Expr, head: &str) -> bool {

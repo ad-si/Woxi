@@ -461,6 +461,23 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A list integrand integrates element-wise (`Integrate[{f, g}, x]` is
+  // `{Integrate[f, x], Integrate[g, x]}`), at every nesting depth.
+  if let Expr::List(items) = &args[0] {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+      let mut sub = args.to_vec();
+      sub[0] = item.clone();
+      out.push(crate::evaluator::evaluate_expr_to_expr(
+        &Expr::FunctionCall {
+          name: "Integrate".to_string(),
+          args: sub.into(),
+        },
+      )?);
+    }
+    return Ok(Expr::List(out.into()));
+  }
+
   // Separate trailing option rules (`Assumptions -> …`, `GenerateConditions ->
   // …`, etc.) from the integration specs so they are not mistaken for extra
   // integration variables by the multivariate path below. An `Assumptions`
