@@ -4687,6 +4687,14 @@ fn collect_element_bindings(
     // `j` of the matched expression. The element's `MatchQ` guard has already
     // established that the shapes agree by the time the body reads these.
     Expr::FunctionCall { name, args } if !is_pattern_construct_head(name) => {
+      // A head pattern (`p_[n_]`) binds `p` to the head of the element.
+      if name.contains('_') {
+        let (head_name, _, _) =
+          extract_pattern_info(&Expr::Identifier(name.clone()));
+        if !head_name.is_empty() {
+          out.push((head_name, call("Head", vec![accessor.clone()])));
+        }
+      }
       let n = args.len();
       // A sequence pattern (`__`/`___`) absorbs an unknown number of
       // arguments: everything before it still counts from the front, and

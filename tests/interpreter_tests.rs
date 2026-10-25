@@ -499,6 +499,22 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_list_pattern_binds_head_pattern() {
+    // A head pattern inside a list argument (`{h_[n_], rest___}`) binds the
+    // head variable as well as the arguments.
+    clear_state();
+    interpret("hp[{h_[n_]}] := {h, n}").unwrap();
+    assert_eq!(interpret("hp[{over[2]}]").unwrap(), "{over, 2}");
+    clear_state();
+    interpret("hq[{h_[n_], rest___}] := {h, n, {rest}}").unwrap();
+    assert_eq!(
+      interpret("hq[{under[5], 7, 8}]").unwrap(),
+      "{under, 5, {7, 8}}"
+    );
+    clear_state();
+  }
+
+  #[test]
   fn test_nested_list_pattern_binding_with_immediate_set() {
     // A pattern nested inside a list argument must bind under immediate
     // `Set` (`=`) exactly as it does under `SetDelayed` (`:=`) above —
@@ -1125,6 +1141,24 @@ mod interpreter_tests {
       "expected the first tab's plot (320 wide), got: {}",
       &svg[..svg.len().min(80)]
     );
+  }
+
+  /// A tab whose pane is a `Graphics` assembled from `With`/`MapIndexed`
+  /// pieces reaches the result as an unrendered `Graphics[…]` call; the
+  /// tab's picture must still be drawn rather than left as source text.
+  #[test]
+  fn test_tabview_graphics_pane_assembled_from_pieces() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "n = 3; TabView[{\"visual\" -> Graphics[{Black, \
+       MapIndexed[With[{i = First[#2]}, {If[!MemberQ[{}, i], \
+       {Red, Disk[#1, 0.1]}]}] &, Table[{i, 0}, {i, n}]], \
+       Text[Style[\"hi\", FontSize -> Scaled[0.1]], {1, 1}]}, \
+       ImageSize -> Large], \"other\" -> 2}, Dynamic[tv]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected the first tab's picture");
+    assert!(svg.contains("<ellipse"), "the disks must be drawn: {svg}");
   }
 
   /// A `TabView` whose pane is plain data (a list of numbers, a string),

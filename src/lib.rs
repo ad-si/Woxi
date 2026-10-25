@@ -1398,7 +1398,7 @@ fn promote_result_graphics(expr: &syntax::Expr) {
       layout = &args[0];
     }
     if let syntax::Expr::FunctionCall { name, args } = layout
-      && matches!(name.as_str(), "Grid" | "Column" | "Row")
+      && matches!(name.as_str(), "Grid" | "Column" | "Row" | "Graphics")
       && !args.is_empty()
     {
       let svg = evaluator::expr_to_svg(layout);
