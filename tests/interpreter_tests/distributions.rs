@@ -9297,3 +9297,20 @@ mod empirical_distribution_weighted {
     );
   }
 }
+
+mod weibull_location_sampling {
+  use super::*;
+
+  // WeibullDistribution[α, β, μ] samples are shifted by the location μ.
+  #[test]
+  fn three_parameter_weibull() {
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; s = RandomVariate[WeibullDistribution[2., 2., 1.], {20000}]; \
+         {Length[s], Min[s] >= 1, Abs[Mean[s] - 2.7725] < 0.05}"
+      )
+      .unwrap(),
+      "{20000, True, True}"
+    );
+  }
+}
