@@ -4272,6 +4272,17 @@ fn graphics_text_content(expr: &Expr) -> String {
     // `expr_to_svg_markup` draws — rather than `expr`'s InputForm. Keeping
     // the two in step is what makes the measured width match the drawing.
     // (A string is its own text in any form, so it skips this.)
+    // A `Row`/`Column` inside it is a layout, not an expression to print:
+    // the form is pushed onto its items and the layout is flattened as usual.
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && matches!(&args[0], Expr::FunctionCall { name: inner, args: inner_args }
+          if matches!(inner.as_str(), "Row" | "Column")
+            && matches!(inner_args.first(), Some(Expr::List(_)))) =>
+    {
+      graphics_text_content(&traditionalize_layout_items(&args[0]))
+    }
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
         && args.len() == 1
