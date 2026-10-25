@@ -8180,6 +8180,23 @@ mod quadratic_denominator {
 mod dsolve {
   use super::*;
 
+  // `{{eqns…}, {conditions…}}` is one system of equations.
+  #[test]
+  fn nested_equation_lists() {
+    assert_eq!(
+      interpret(
+        "DSolve[{{a'[t] == b[t], b'[t] == -a[t]}, {a[0] == 1, b[0] == 0}}, \
+         {a[t], b[t]}, t]"
+      )
+      .unwrap(),
+      "{{a[t] -> Cos[t], b[t] -> -Sin[t]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{{y'[t] == y[t]}, {y[0] == 1}}, y[t], t]").unwrap(),
+      "{{y[t] -> E^t}}"
+    );
+  }
+
   // A list naming a single function goes to the single-equation solver;
   // the linear-system solver it went to left these unevaluated.
   #[test]

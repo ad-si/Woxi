@@ -32,10 +32,35 @@ pub fn dsolve_ast_with_head(
   // An ODE Woxi can't classify/solve should stay unevaluated (like
   // wolframscript for genuinely unsolvable equations) rather than leaking an
   // internal "DSolve: …" error to the user.
-  let result = match dsolve_ast_inner(args) {
+  // Nested lists of equations (`{{eqns…}, {conditions…}}`) are one system.
+  let flat_args;
+  let solved_args = match args.first() {
+    Some(Expr::List(items))
+      if items.iter().any(|i| matches!(i, Expr::List(_))) =>
+    {
+      fn flatten(e: &Expr, out: &mut Vec<Expr>) {
+        match e {
+          Expr::List(items) => items.iter().for_each(|i| flatten(i, out)),
+          other => out.push(other.clone()),
+        }
+      }
+      let mut eqns = Vec::new();
+      flatten(&args[0], &mut eqns);
+      flat_args = std::iter::once(Expr::List(eqns.into()))
+        .chain(args[1..].iter().cloned())
+        .collect::<Vec<_>>();
+      &flat_args[..]
+    }
+    _ => args,
+  };
+  let result = match dsolve_ast_inner(solved_args) {
     Err(InterpreterError::EvaluationError(msg))
       if msg.starts_with("DSolve:") =>
     {
+      Ok(unevaluated("DSolve", args))
+    }
+    // Left unevaluated, the call keeps the equations as written.
+    Ok(Expr::FunctionCall { ref name, .. }) if name == "DSolve" => {
       Ok(unevaluated("DSolve", args))
     }
     other => other,
