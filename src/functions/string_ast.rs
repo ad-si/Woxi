@@ -13631,6 +13631,18 @@ fn decompress_to_expr(s: &str) -> Result<Expr, InterpreterError> {
   let bytes = inflate_compressed(s)?;
 
   if let Some(expr) = crate::functions::wl_serialize::deserialize(&bytes) {
+    // A packed pixel payload `RawArray[type, data]` holds nothing to
+    // evaluate: it is the `NumericArray` it stands for, built without
+    // copying a megapixel image through the evaluator.
+    let mut expr = expr;
+    if let Expr::FunctionCall { name, args } = &mut expr
+      && name == "RawArray"
+      && matches!(args.as_slice(), [Expr::String(_), Expr::List(_)])
+    {
+      let data = args.pop_back().unwrap_or(Expr::Integer(0));
+      let dtype = args.pop_back().unwrap_or(Expr::Integer(0));
+      return Ok(crate::helpers::call("NumericArray", vec![data, dtype]));
+    }
     // The payload is an ordinary expression and evaluates like one — a
     // Demonstrations texture arrives as `Image[CompressedData[…]]` whose
     // payload is `RawArray[type, data]`, and `Image` needs the

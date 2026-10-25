@@ -145,7 +145,7 @@ fn parse_integer(s: &str) -> Expr {
 }
 
 /// Build a (possibly nested) list of `count` leaves over the given dimensions.
-fn nest(dims: &[usize], leaves: &mut std::vec::IntoIter<Expr>) -> Expr {
+fn nest(dims: &[usize], leaves: &mut impl Iterator<Item = Expr>) -> Expr {
   match dims.split_first() {
     None => leaves.next().unwrap_or(Expr::Integer(0)),
     Some((&first, rest)) => Expr::List(
@@ -298,12 +298,13 @@ fn read_byte_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   if end > data.len() {
     return None;
   }
-  let vals: Vec<Expr> = data[*pos..end]
+  // Leaves are made as the nesting consumes them: a Vec of all of them
+  // first doubled the peak memory of a megapixel image.
+  let mut leaves = data[*pos..end]
     .iter()
-    .map(|&byte| Expr::Integer(byte as i128))
-    .collect();
+    .map(|&byte| Expr::Integer(byte as i128));
   *pos = end;
-  Some(nest(&dims, &mut vals.into_iter()))
+  Some(nest(&dims, &mut leaves))
 }
 
 /// `h` token — packed signed 16-bit integer array:
@@ -318,14 +319,13 @@ fn read_int16_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   if end > data.len() {
     return None;
   }
-  let vals: Vec<Expr> = (0..count)
-    .map(|i| {
-      let at = *pos + 2 * i;
-      Expr::Integer(i16::from_le_bytes([data[at], data[at + 1]]) as i128)
-    })
-    .collect();
+  let start = *pos;
+  let mut leaves = (0..count).map(|i| {
+    let at = start + 2 * i;
+    Expr::Integer(i16::from_le_bytes([data[at], data[at + 1]]) as i128)
+  });
   *pos = end;
-  Some(nest(&dims, &mut vals.into_iter()))
+  Some(nest(&dims, &mut leaves))
 }
 
 /// `e` token — packed real (f64) array.
@@ -350,15 +350,14 @@ fn read_real32_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   if end > data.len() {
     return None;
   }
-  let vals: Vec<Expr> = (0..count)
-    .map(|i| {
-      let at = *pos + 4 * i;
-      let b = [data[at], data[at + 1], data[at + 2], data[at + 3]];
-      Expr::Real(f32::from_le_bytes(b) as f64)
-    })
-    .collect();
+  let start = *pos;
+  let mut leaves = (0..count).map(|i| {
+    let at = start + 4 * i;
+    let b = [data[at], data[at + 1], data[at + 2], data[at + 3]];
+    Expr::Real(f32::from_le_bytes(b) as f64)
+  });
   *pos = end;
-  Some(nest(&dims, &mut vals.into_iter()))
+  Some(nest(&dims, &mut leaves))
 }
 
 #[cfg(test)]

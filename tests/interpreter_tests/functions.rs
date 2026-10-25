@@ -1589,6 +1589,25 @@ mod first_last_extended {
   // the other way round. A Demonstrations texture stored as
   // `Image[CompressedData[…]]` decompresses to this head, so without it the
   // notebook died with `Image::imgarray`.
+  // A compressed `RawArray` pixel payload decodes straight to its
+  // `NumericArray` (a megapixel texture went through the evaluator and
+  // peaked at 3.5 GB: LearningTurtleTaxonomyWithWolframAlpha).
+  #[test]
+  fn compressed_raw_array_payload_is_a_numeric_array() {
+    let data = r#"CompressedData["1:eJxTTMoPSmNiYGAo5gASQYnljkVFiZXBAkBOaF5xZnpeaopnXklqemqRRRJIGQyf4GL4DwC5VA4w"]"#;
+    assert_eq!(
+      interpret(&format!(
+        r#"{data} === NumericArray[{{{{200, 10}}, {{0, 255}}}}, "UnsignedInteger8"]"#
+      ))
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(&format!(r#"ImageDimensions[Image[{data}, "Byte"]]"#)).unwrap(),
+      "{2, 2}"
+    );
+  }
+
   #[test]
   fn raw_array_is_numeric_array_with_swapped_arguments() {
     assert_eq!(

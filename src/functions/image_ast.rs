@@ -476,7 +476,6 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // RawArray (the legacy spelling embedded in `CompressedData` payloads,
   // e.g. from `Image[CompressedData["…"]]` in saved notebooks) puts the
   // type string first and the data second.
-  let unwrapped: Expr;
   let raw_arg = match &args[0] {
     Expr::FunctionCall {
       name: ra_name,
@@ -496,8 +495,7 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => None,
         };
       }
-      unwrapped = ra_args[1].clone();
-      &unwrapped
+      &ra_args[1]
     }
     Expr::FunctionCall {
       name: na_name,
@@ -519,8 +517,7 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => None,
         };
       }
-      unwrapped = na_args[0].clone();
-      &unwrapped
+      &na_args[0]
     }
     other => other,
   };
