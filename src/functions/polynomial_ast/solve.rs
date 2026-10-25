@@ -14602,7 +14602,20 @@ fn find_minimum_indexed_variables(
   args: &[Expr],
   maximize: bool,
 ) -> Option<Result<Expr, InterpreterError>> {
-  let specs: Vec<Expr> = match &args[1] {
+  let spec_arg_in = &args[1];
+  let is_var = |e: &Expr| {
+    matches!(
+      e,
+      Expr::Identifier(_)
+        | Expr::FunctionCall { .. }
+        | Expr::CurriedCall { .. }
+    )
+  };
+  // `{c[1], c[2]}`: bare variables, no starting values.
+  let bare = matches!(spec_arg_in, Expr::List(items)
+    if items.len() > 1 && items.iter().all(is_var));
+  let specs: Vec<Expr> = match spec_arg_in {
+    Expr::List(items) if bare => items.to_vec(),
     Expr::List(items) if items.iter().all(|i| matches!(i, Expr::List(_))) => {
       items.to_vec()
     }
@@ -14612,7 +14625,8 @@ fn find_minimum_indexed_variables(
   let vars: Vec<Expr> = specs
     .iter()
     .map(|spec| match spec {
-      Expr::List(parts) => parts.first().cloned(),
+      Expr::List(parts) if !bare => parts.first().cloned(),
+      v if bare => Some(v.clone()),
       _ => None,
     })
     .collect::<Option<_>>()?;
@@ -14632,15 +14646,17 @@ fn find_minimum_indexed_variables(
     .iter()
     .zip(&fresh)
     .map(|(spec, name)| match spec {
-      Expr::List(parts) => {
+      Expr::List(parts) if !bare => {
         let mut parts = parts.to_vec();
         parts[0] = name.clone();
         Expr::List(parts.into())
       }
+      _ if bare => name.clone(),
       other => other.clone(),
     })
     .collect();
-  let spec_arg = if matches!(&args[1], Expr::List(items) if items.iter().all(|i| matches!(i, Expr::List(_))))
+  let spec_arg = if bare
+    || matches!(spec_arg_in, Expr::List(items) if items.iter().all(|i| matches!(i, Expr::List(_))))
   {
     Expr::List(new_specs.into())
   } else {
@@ -14667,6 +14683,16 @@ pub fn find_minimum_ast(
     return Err(InterpreterError::EvaluationError(format!(
       "{func_name} expects at least 2 arguments"
     )));
+  }
+  // The variables may be named by a symbol holding their list
+  // (`vars = {x, y}; FindMinimum[f, vars]`).
+  if let Expr::Identifier(_) = &args[1]
+    && let Ok(value @ Expr::List(_)) =
+      crate::evaluator::evaluate_expr_to_expr(&args[1])
+  {
+    let mut resolved = args.to_vec();
+    resolved[1] = value;
+    return find_minimum_ast(&resolved, maximize);
   }
   if let Some(result) = find_minimum_indexed_variables(args, maximize) {
     return result;

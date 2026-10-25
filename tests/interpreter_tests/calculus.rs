@@ -6750,6 +6750,31 @@ mod mixed_partial_derivatives {
 mod find_minimum {
   use super::*;
 
+  // Variables may be listed bare, indexed, or through a symbol holding the
+  // list (OptimalTransportScheduling).
+  #[test]
+  fn variable_lists() {
+    assert_eq!(
+      interpret(
+        "FindMinimum[{c[1] + 2 c[2], c[1] + c[2] == 1, c[1] >= 0, c[2] >= 0}, {c[1], c[2]}]"
+      )
+      .unwrap(),
+      "{1., {c[1] -> 1., c[2] -> 0.}}"
+    );
+    assert_eq!(
+      interpret(
+        "vars = {c[1, 1], c[1, 2]}; FindMinimum[{3 c[1, 1] + 2 c[1, 2], \
+         c[1, 1] + c[1, 2] == 1, Thread[vars >= 0]}, vars]"
+      )
+      .unwrap(),
+      "{2., {c[1, 1] -> 0., c[1, 2] -> 1.}}"
+    );
+    assert_eq!(
+      interpret("vv = {x, y}; FindMinimum[(x - 1)^2 + (y - 2)^2, vv]").unwrap(),
+      "{0., {x -> 1., y -> 2.}}"
+    );
+  }
+
   // A trial point where the objective is not real ends the search with
   // FindMaximum::nrnum and the last point reached, instead of aborting.
   #[test]
