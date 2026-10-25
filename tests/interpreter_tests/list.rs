@@ -24552,3 +24552,34 @@ mod sort_machine_numbers {
     );
   }
 }
+
+// DeleteCases rebuilt kept compound elements as plain calls, so its rules
+// came back as Rule[x, 1] calls that ReplaceAll did not apply
+// (the PaperFolding demonstrations).
+mod delete_cases_keeps_forms {
+  use super::*;
+
+  #[test]
+  fn kept_rules_still_replace() {
+    assert_eq!(interpret("x /. DeleteCases[{x -> 1}, 5]").unwrap(), "1");
+    assert_eq!(
+      interpret("Replace[x, DeleteCases[{x -> 1, y -> 2}, y -> 2]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "{1 + t, t} /. Flatten[DeleteCases[{{{t -> 1}}, {}, {{t -> 2}}}, {}], 1]"
+      )
+      .unwrap(),
+      "{{2, 1}, {3, 2}}"
+    );
+  }
+
+  #[test]
+  fn deletes_inside_level_two() {
+    assert_eq!(
+      interpret("DeleteCases[{a + b + 1, c}, 1, 2]").unwrap(),
+      "{a + b, c}"
+    );
+  }
+}
