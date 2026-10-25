@@ -10106,6 +10106,22 @@ mod linear_programming {
 mod find_root {
   use super::*;
 
+  // A large linear system mixing exact rationals with machine numbers goes
+  // through the machine elimination with pivoting (CliffWalkingProblem lost
+  // two unknowns to the fraction-free route).
+  #[test]
+  fn large_mixed_exact_inexact_linear_system() {
+    assert_eq!(
+      interpret(
+        "n = 38; eqs = Table[v[i] == 1/4 (-2 + 0.99 v[Max[i - 1, 1]] + 0.99 v[i] + \
+         0.99 v[Min[i + 1, n]] + If[i == 5, -98, 0]), {i, n}]; \
+         sol = Solve[eqs, Array[v, n]]; {Length[sol[[1]]], Round[10^6 v[5] /. sol[[1]]]}"
+      )
+      .unwrap(),
+      "{38, -45175327}"
+    );
+  }
+
   // A single indexed variable is solved for like a plain one
   // (DistillationColumnCalculationIncorporatingPressureDropEffect).
   #[test]

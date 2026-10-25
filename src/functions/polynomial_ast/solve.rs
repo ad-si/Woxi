@@ -15243,6 +15243,12 @@ fn eliminate_machine_numbers(
           r.push(*x);
         }
         Expr::Integer(i) => r.push(*i as f64),
+        // Exact rationals beside the machine numbers (`-1/4`) are numbers
+        // too.
+        Expr::BigInteger(_) => r.push(try_eval_to_f64(e)?),
+        Expr::FunctionCall { name, .. } if name == "Rational" => {
+          r.push(try_eval_to_f64(e)?);
+        }
         _ => return None,
       }
     }
