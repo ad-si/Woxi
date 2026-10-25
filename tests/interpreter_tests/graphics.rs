@@ -8869,6 +8869,27 @@ mod plot3d {
       }
     }
 
+    // A density plot of a body with no numeric values (an equation) is blank
+    // but still merges under `Show`: options given to `Show` apply and the
+    // primitives of the other graphics land on the plotted domain.
+    #[test]
+    fn show_blank_density_plot_with_graphics() {
+      let svg = export_svg(
+        "Show[{DensityPlot[y^2 - x^2 == -4, {x, -5, 5}, {y, -5, 5}], \
+         Graphics[Circle[{0, 0}, 2]]}, PlotRange -> 5, Frame -> False]",
+      );
+      assert!(!svg.contains("<text"), "no frame ticks expected: {svg}");
+      assert!(svg.contains("<ellipse"), "circle expected: {svg}");
+      assert_eq!(
+        interpret(
+          "Options[Show[{DensityPlot[y^2 - x^2 == -4, {x, -1, 1}, {y, -1, 1}], \
+           Graphics[Circle[]]}, Frame -> False], Frame]"
+        )
+        .unwrap(),
+        "{Frame -> False}"
+      );
+    }
+
     // `FrameTicks -> None` on a field plot keeps the frame box but draws
     // neither tick marks nor tick labels.
     #[test]

@@ -2194,37 +2194,39 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the bottom up), so `Show` can lay other graphics over the density
   // instead of setting the two pictures side by side. Cells without a
   // colour stay transparent.
-  let Some(colors) = colors else {
-    return Ok(crate::graphics_result(svg));
-  };
-  let channel = |c: u8| Expr::Real(c as f64 / 255.0);
-  let rows: Vec<Expr> = (0..FIELD_GRID)
-    .map(|j| {
-      let row: Vec<Expr> = colors
-        .iter()
-        .map(|col| {
-          let ((r, g, b), alpha) = match col[j] {
-            Some(rgb) => (rgb, 1.0),
-            None => ((0, 0, 0), 0.0),
-          };
-          Expr::List(
-            vec![channel(r), channel(g), channel(b), Expr::Real(alpha)].into(),
-          )
-        })
-        .collect();
-      Expr::List(row.into())
-    })
-    .collect();
-  let corner =
-    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
-  let raster = call(
-    "Raster",
-    vec![
-      Expr::List(rows.into()),
-      Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
-    ],
-  );
-  let mut structure_items = vec![raster];
+  // A body with no numeric values (an equation, say) leaves the plot blank:
+  // no raster, but the empty frame still merges under `Show`.
+  let raster = colors.as_ref().map(|colors| {
+    let channel = |c: u8| Expr::Real(c as f64 / 255.0);
+    let rows: Vec<Expr> = (0..FIELD_GRID)
+      .map(|j| {
+        let row: Vec<Expr> = colors
+          .iter()
+          .map(|col| {
+            let ((r, g, b), alpha) = match col[j] {
+              Some(rgb) => (rgb, 1.0),
+              None => ((0, 0, 0), 0.0),
+            };
+            Expr::List(
+              vec![channel(r), channel(g), channel(b), Expr::Real(alpha)]
+                .into(),
+            )
+          })
+          .collect();
+        Expr::List(row.into())
+      })
+      .collect();
+    let corner =
+      |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+    call(
+      "Raster",
+      vec![
+        Expr::List(rows.into()),
+        Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
+      ],
+    )
+  });
+  let mut structure_items: Vec<Expr> = raster.into_iter().collect();
   structure_items.extend(mesh_structure_items(
     &mesh_grids,
     (x_min, x_max),
