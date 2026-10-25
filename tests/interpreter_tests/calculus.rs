@@ -22628,6 +22628,9 @@ mod dsolve_sinusoidal_forcing_sum {
       interpret("DSolve[y''[x] + y[x] == 3 Sin[2 x] + Cos[2 x], y[x], x]")
         .unwrap(),
       "{{y[x] -> (-Cos[2*x] - 3*Sin[2*x])/3 + C[1]*Cos[x] + C[2]*Sin[x]}}"
+    );
+  }
+}
 
 mod ndsolve_vector_unknown_with_matrix_product {
   use super::*;
