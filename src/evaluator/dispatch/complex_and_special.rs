@@ -14912,6 +14912,7 @@ fn compute_region_set_op(
       },
       "RegionIntersection" => match region_box_intersection(&acc, next)
         .or_else(|| region_line_intersection(&acc, next))
+        .or_else(|| region_polygon_intersection(&acc, next))
       {
         Some(region) => region,
         None => match boolean_region(name, &acc, next) {
@@ -14979,6 +14980,115 @@ fn boolean_region(name: &str, a: &Expr, b: &Expr) -> Option<Expr> {
 
 /// Intersect two axis-aligned boxes (`Rectangle`/`Cuboid`) or two `Point`s.
 /// Returns `EmptyRegion` when they do not meet, and `None` for anything else.
+/// Numeric 2D vertices of `Polygon[{{x, y}, …}]` and whether any coordinate
+/// is a machine real, or `None` for anything else.
+fn polygon_vertices(r: &Expr) -> Option<(Vec<(f64, f64)>, bool)> {
+  let Expr::FunctionCall { name, args } = r else {
+    return None;
+  };
+  if name != "Polygon" || args.len() != 1 {
+    return None;
+  }
+  let Expr::List(points) = &args[0] else {
+    return None;
+  };
+  let mut any_real = false;
+  let mut out = Vec::with_capacity(points.len());
+  for p in points {
+    let Expr::List(xy) = p else { return None };
+    if xy.len() != 2 {
+      return None;
+    }
+    any_real |= xy.iter().any(|c| matches!(c, Expr::Real(_)));
+    out.push((
+      crate::functions::math_ast::try_eval_to_f64(&xy[0])?,
+      crate::functions::math_ast::try_eval_to_f64(&xy[1])?,
+    ));
+  }
+  (out.len() >= 3).then_some((out, any_real))
+}
+
+/// `RegionIntersection` of two machine-precision polygons when at least one
+/// of them is convex: the other is clipped against it (Sutherland–Hodgman).
+/// A result without area is `EmptyRegion[2]`.
+fn region_polygon_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
+  let (pa, real_a) = polygon_vertices(a)?;
+  let (pb, real_b) = polygon_vertices(b)?;
+  // Exact coordinates stay symbolic.
+  if !(real_a || real_b) {
+    return None;
+  }
+
+  let signed_area = |p: &[(f64, f64)]| -> f64 {
+    (0..p.len())
+      .map(|i| {
+        let (x0, y0) = p[i];
+        let (x1, y1) = p[(i + 1) % p.len()];
+        x0 * y1 - x1 * y0
+      })
+      .sum::<f64>()
+      / 2.0
+  };
+  let is_convex = |p: &[(f64, f64)]| -> bool {
+    let sign = signed_area(p).signum();
+    (0..p.len()).all(|i| {
+      let (x0, y0) = p[i];
+      let (x1, y1) = p[(i + 1) % p.len()];
+      let (x2, y2) = p[(i + 2) % p.len()];
+      (x1 - x0) * (y2 - y1) * sign - (y1 - y0) * (x2 - x1) * sign >= -1e-12
+    })
+  };
+
+  let (subject, clip) = if is_convex(&pb) {
+    (pa, pb)
+  } else if is_convex(&pa) {
+    (pb, pa)
+  } else {
+    return None;
+  };
+  let orient = signed_area(&clip).signum();
+  if orient == 0.0 {
+    return None;
+  }
+
+  let mut poly = subject;
+  for i in 0..clip.len() {
+    if poly.is_empty() {
+      break;
+    }
+    let (cx0, cy0) = clip[i];
+    let (cx1, cy1) = clip[(i + 1) % clip.len()];
+    // Positive when the point lies on the inner side of the clip edge.
+    let side = |p: (f64, f64)| -> f64 {
+      ((cx1 - cx0) * (p.1 - cy0) - (cy1 - cy0) * (p.0 - cx0)) * orient
+    };
+    let mut next = Vec::with_capacity(poly.len() + 1);
+    for j in 0..poly.len() {
+      let cur = poly[j];
+      let prev = poly[(j + poly.len() - 1) % poly.len()];
+      let (sc, sp) = (side(cur), side(prev));
+      if (sc >= 0.0) != (sp >= 0.0) {
+        let t = sp / (sp - sc);
+        next
+          .push((prev.0 + t * (cur.0 - prev.0), prev.1 + t * (cur.1 - prev.1)));
+      }
+      if sc >= 0.0 {
+        next.push(cur);
+      }
+    }
+    poly = next;
+  }
+
+  if poly.len() < 3 || signed_area(&poly).abs() < 1e-12 {
+    return Some(call1("EmptyRegion", Expr::Integer(2)));
+  }
+  let points = poly
+    .into_iter()
+    .map(|(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+    .collect::<Vec<_>>();
+  Some(call1("Polygon", Expr::List(points.into())))
+}
+
 fn region_box_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
   let corners = |r: &Expr| -> Option<(String, Vec<f64>, Vec<f64>)> {
     let Expr::FunctionCall { name, args } = r else {

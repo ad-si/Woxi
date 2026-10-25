@@ -3,9 +3,18 @@ use super::*;
 use crate::functions::graphics::Color;
 
 pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Ok(unevaluated("VoronoiMesh", args));
   }
+
+  // Optional second argument: the region to clip to, {{xmin, xmax}, {ymin, ymax}}.
+  let bounds = match args.get(1) {
+    None => None,
+    Some(spec) => match parse_bounds(spec) {
+      Some(b) => Some(b),
+      None => return Ok(unevaluated("VoronoiMesh", args)),
+    },
+  };
 
   let Expr::List(pts_expr) = &args[0] else {
     return Ok(unevaluated("VoronoiMesh", args));
@@ -40,12 +49,12 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Special case: 2 points — split bounding box by the perpendicular bisector
   if n == 2 {
-    return Ok(voronoi_2_sites(&sites));
+    return Ok(voronoi_2_sites(&sites, bounds));
   }
 
   // Check for collinear points
   if are_collinear(&sites) {
-    return Ok(voronoi_collinear(&sites));
+    return Ok(voronoi_collinear(&sites, bounds));
   }
 
   // Compute bounding box with 25% padding
@@ -70,10 +79,8 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let dx = xmax - xmin;
   let dy = ymax - ymin;
   let pad = dx.max(dy) * 0.25;
-  let bb_xmin = xmin - pad;
-  let bb_xmax = xmax + pad;
-  let bb_ymin = ymin - pad;
-  let bb_ymax = ymax + pad;
+  let [bb_xmin, bb_xmax, bb_ymin, bb_ymax] =
+    bounds.unwrap_or([xmin - pad, xmax + pad, ymin - pad, ymax + pad]);
 
   // --- Bowyer-Watson Delaunay triangulation ---
   let margin = dx.max(dy).max(1.0) * 10.0;
@@ -262,7 +269,7 @@ fn are_collinear(sites: &[(f64, f64)]) -> bool {
   true
 }
 
-fn voronoi_collinear(sites: &[(f64, f64)]) -> Expr {
+fn voronoi_collinear(sites: &[(f64, f64)], bounds: Option<[f64; 4]>) -> Expr {
   // Sort sites along their collinear direction
   let (x0, y0) = sites[0];
   let (x1, y1) = sites[1];
@@ -310,10 +317,8 @@ fn voronoi_collinear(sites: &[(f64, f64)]) -> Expr {
   let dx = xmax - xmin;
   let dy = ymax - ymin;
   let pad = dx.max(dy) * 0.25;
-  let bb_xmin = xmin - pad;
-  let bb_xmax = xmax + pad;
-  let bb_ymin = ymin - pad;
-  let bb_ymax = ymax + pad;
+  let [bb_xmin, bb_xmax, bb_ymin, bb_ymax] =
+    bounds.unwrap_or([xmin - pad, xmax + pad, ymin - pad, ymax + pad]);
 
   let far = dx.max(dy).max(1.0) * 100.0;
   let perp = (-dir_norm.1, dir_norm.0);
@@ -394,7 +399,7 @@ fn voronoi_collinear(sites: &[(f64, f64)]) -> Expr {
   build_mesh_region(&all_verts, &cells)
 }
 
-fn voronoi_2_sites(sites: &[(f64, f64)]) -> Expr {
+fn voronoi_2_sites(sites: &[(f64, f64)], bounds: Option<[f64; 4]>) -> Expr {
   let (x0, y0) = sites[0];
   let (x1, y1) = sites[1];
 
@@ -406,10 +411,8 @@ fn voronoi_2_sites(sites: &[(f64, f64)]) -> Expr {
   let dx = xmax - xmin;
   let dy = ymax - ymin;
   let pad = dx.max(dy) * 0.25;
-  let bb_xmin = xmin - pad;
-  let bb_xmax = xmax + pad;
-  let bb_ymin = ymin - pad;
-  let bb_ymax = ymax + pad;
+  let [bb_xmin, bb_xmax, bb_ymin, bb_ymax] =
+    bounds.unwrap_or([xmin - pad, xmax + pad, ymin - pad, ymax + pad]);
 
   // Perpendicular bisector splits the bbox into two half-planes
   let mid = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
@@ -959,4 +962,31 @@ pub fn mesh_region_to_svg(
 
   svg.push_str("</svg>");
   Some(svg)
+}
+
+/// Parse `{{xmin, xmax}, {ymin, ymax}}` into `[xmin, xmax, ymin, ymax]`.
+fn parse_bounds(spec: &Expr) -> Option<[f64; 4]> {
+  let Expr::List(ranges) = spec else {
+    return None;
+  };
+  if ranges.len() != 2 {
+    return None;
+  }
+  let mut out = [0.0; 4];
+  for (i, range) in ranges.iter().enumerate() {
+    let Expr::List(lohi) = range else {
+      return None;
+    };
+    if lohi.len() != 2 {
+      return None;
+    }
+    let lo = crate::functions::math_ast::try_eval_to_f64(&lohi[0])?;
+    let hi = crate::functions::math_ast::try_eval_to_f64(&lohi[1])?;
+    if lo >= hi {
+      return None;
+    }
+    out[2 * i] = lo;
+    out[2 * i + 1] = hi;
+  }
+  Some(out)
 }

@@ -1233,7 +1233,7 @@ SixJSymbol,Wigner 6-j symbol,✅,pure,2.0,1217
 LinearLayer,,🚫,,11.0,1218
 CellMargins,,🚫,,3.0,1219
 Minors,Matrix minors (determinants of submatrices),✅,pure,1.0,1221
-VoronoiMesh,Voronoi tessellation mesh from 2D points,✅,pure,10.0,1221
+VoronoiMesh,Voronoi tessellation mesh from 2D points (optionally clipped to given region bounds),✅,pure,10.0,1221
 UpTo,Represents a limit specification,✅,1,10.3,1222
 ChartLayout,Grouped vs Stacked layout for multi-dataset SectorChart3D,✅,none,7.0,1223
 BinCounts,Counts data points in equal-width bins; one bin spec per coordinate bins multidimensional data into nested counts,✅,pure,6.0,1225

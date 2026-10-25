@@ -1034,6 +1034,28 @@ mod voronoi_mesh {
   use super::*;
 
   #[test]
+  fn region_bounds_clip_the_cells() {
+    assert_eq!(
+      interpret(
+        "MeshPrimitives[VoronoiMesh[{{0., 0}, {1, 0}, {0, 1}}, \
+         {{-1, 2}, {-1, 2}}], 2]"
+      )
+      .unwrap(),
+      "{Polygon[{{0.5, -1.}, {0.5, 0.5}, {-1., 0.5}, {-1., -1.}}], \
+       Polygon[{{2., -1.}, {2., 2.}, {0.5, 0.5}, {0.5, -1.}}], \
+       Polygon[{{-1., 0.5}, {0.5, 0.5}, {2., 2.}, {-1., 2.}}]}"
+    );
+  }
+
+  #[test]
+  fn malformed_region_bounds_stay_unevaluated() {
+    assert_eq!(
+      interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}}, x]").unwrap(),
+      "VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}}, x]"
+    );
+  }
+
+  #[test]
   fn unevaluated_non_list() {
     assert_eq!(interpret("VoronoiMesh[x]").unwrap(), "VoronoiMesh[x]");
   }
