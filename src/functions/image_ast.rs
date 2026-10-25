@@ -16,10 +16,7 @@ pub fn texture_source_image(arg: &Expr) -> Option<Expr> {
   if matches!(value, Expr::Image { .. }) {
     return Some(value);
   }
-  let call = Expr::FunctionCall {
-    name: "Rasterize".to_string(),
-    args: vec![value].into(),
-  };
+  let call = call1("Rasterize", value);
   crate::evaluator::evaluate_expr_to_expr(&call)
     .ok()
     .filter(|v| matches!(v, Expr::Image { .. }))
@@ -2271,10 +2268,7 @@ fn image3d_from_volume(
   );
   let mut args = vec![volume];
   args.extend(opts);
-  Expr::FunctionCall {
-    name: "Image3D".to_string(),
-    args: args.into(),
-  }
+  call("Image3D", args)
 }
 
 pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -12476,16 +12470,15 @@ fn highlight_primitives(mark: &Expr, out: &mut Vec<Expr>) {
         ) else {
           continue;
         };
-        out.push(Expr::FunctionCall {
-          name: "Translate".into(),
-          args: vec![
+        out.push(call(
+          "Translate",
+          vec![
             prims.clone(),
             Expr::List(
               vec![Expr::Real(x - centre.0), Expr::Real(y - centre.1)].into(),
             ),
-          ]
-          .into(),
-        });
+          ],
+        ));
       }
     }
     other => out.push(other.clone()),
@@ -12514,7 +12507,7 @@ pub fn highlight_image_ast(
   let call = |name: &str, args: Vec<Expr>| call(name, args);
   let pair =
     |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
-  let rule = |k: &str, v: Expr| rule_expr(Expr::Identifier(k.into()), v);
+  let rule = |k: &str, v: Expr| rule_expr(id_expr(k), v);
   let mut content = vec![call(
     "Raster",
     vec![

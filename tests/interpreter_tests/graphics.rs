@@ -41096,3 +41096,50 @@ mod self_intersecting_tube {
     );
   }
 }
+
+mod highlighted_list_plot {
+  use super::*;
+
+  // `Highlighted[data, Placed["XSlice", {{i}}]]` plots the data and marks
+  // the i-th point with a vertical line (SphericalShellAndLatticePoints).
+  #[test]
+  fn x_slice_is_drawn() {
+    assert_eq!(
+      interpret(
+        "g = ListPlot[Highlighted[{1, 4, 9, 16}, Placed[\"XSlice\", {{2}}]]]; \
+         {Head[g], Length[Cases[g, InfiniteLine[{2, 4}, {0, 1}], Infinity]]}"
+      )
+      .unwrap(),
+      "{Graphics, 1}"
+    );
+    assert_eq!(
+      interpret("Head[ListPlot[Highlighted[{1, 2, 3}]]]").unwrap(),
+      "Graphics"
+    );
+  }
+
+  // An InfiniteLine in a plot's Epilog is drawn across the plot range.
+  #[test]
+  fn infinite_line_in_epilog() {
+    let svg = interpret(
+      "ExportString[ListPlot[{1, 2, 3}, Epilog -> {Red, InfiniteLine[{2, 1}, {0, 1}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("<polyline"), "no line drawn");
+  }
+
+  // Data that is no list is ListPlot::lpn and leaves the call unevaluated.
+  #[test]
+  fn non_list_data_is_lpn() {
+    clear_state();
+    let r = woxi::interpret_with_stdout("ListPlot[x]").unwrap();
+    assert_eq!(r.result, "ListPlot[x]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "ListPlot::lpn: x is not a list of numbers or pairs of numbers."
+      )),
+      "{:?}",
+      r.warnings
+    );
+  }
+}
