@@ -334,13 +334,13 @@ fn substitute_identifier(expr: &Expr, name: &str, replacement: &Expr) -> Expr {
       op: *op,
       operand: Box::new(substitute_identifier(operand, name, replacement)),
     },
-    Expr::FunctionCall { name: fname, args } => Expr::FunctionCall {
-      name: fname.clone(),
-      args: args
+    Expr::FunctionCall { name: fname, args } => call(
+      fname.as_str(),
+      args
         .iter()
         .map(|a| substitute_identifier(a, name, replacement))
         .collect(),
-    },
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -403,13 +403,13 @@ fn replace_identifier_with_slot1(expr: &Expr, name: &str) -> Expr {
       op: *op,
       operand: Box::new(replace_identifier_with_slot1(operand, name)),
     },
-    Expr::FunctionCall { name: fname, args } => Expr::FunctionCall {
-      name: fname.clone(),
-      args: args
+    Expr::FunctionCall { name: fname, args } => call(
+      fname.as_str(),
+      args
         .iter()
         .map(|a| replace_identifier_with_slot1(a, name))
         .collect(),
-    },
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -572,8 +572,7 @@ fn compute_minpoly_coeffs(
         return Ok(None);
       };
       let var = "\u{2620}mp\u{2620}";
-      let poly =
-        crate::syntax::substitute_slots(body, &[Expr::Identifier(var.into())]);
+      let poly = crate::syntax::substitute_slots(body, &[id_expr(var)]);
       let expanded = crate::evaluator::evaluate_expr_to_expr(&poly)?;
       match crate::functions::polynomial_ast::extract_poly_coeffs(
         &expanded, var,

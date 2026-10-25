@@ -2075,10 +2075,7 @@ fn harmonic_antidifference_as_polygamma(expr: &Expr, var_name: &str) -> Expr {
     // number that did not come from this antidifference.
     let shifted = crate::helpers::plus2(
       args.first()?.clone(),
-      crate::helpers::minus2(
-        Expr::Integer(1),
-        Expr::Identifier(var_name.into()),
-      ),
+      crate::helpers::minus2(Expr::Integer(1), id_expr(var_name)),
     );
     if !matches!(
       crate::evaluator::evaluate_expr_to_expr(&shifted),
@@ -2116,13 +2113,13 @@ fn harmonic_antidifference_as_polygamma(expr: &Expr, var_name: &str) -> Expr {
     Expr::FunctionCall { name, args } if name == "HarmonicNumber" => {
       rewrite(args).unwrap_or_else(|| expr.clone())
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
         .iter()
         .map(|a| harmonic_antidifference_as_polygamma(a, var_name))
         .collect(),
-    },
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -2175,10 +2172,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &fresh_name,
         &Expr::Identifier(var.clone()),
       );
-      return Ok(Expr::FunctionCall {
-        name: "Sum".to_string(),
-        args: vec![restored, held[1].clone()].into(),
-      });
+      return Ok(call("Sum", vec![restored, held[1].clone()]));
     }
   }
   Ok(result)
