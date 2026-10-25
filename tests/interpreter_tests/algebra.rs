@@ -4656,6 +4656,32 @@ mod replace_all_held_operator_head {
 mod replace_all_head_constraint {
   use super::*;
 
+  // A comparison is its call form to /.: rules reach its operands and its
+  // head, with one rule as with a list of them.
+  #[test]
+  fn comparison_is_a_call() {
+    assert_eq!(
+      interpret("{x[s] == 1, y[s] < 2} /. f_Symbol[s] :> f").unwrap(),
+      "{x == 1, y < 2}"
+    );
+    assert_eq!(
+      interpret("{a == b} /. x_Symbol :> g[x]").unwrap(),
+      "g[List][g[Equal][g[a], g[b]]]"
+    );
+    assert_eq!(
+      interpret("{a < b <= c} /. x_Symbol :> g[x]").unwrap(),
+      "g[List][g[Inequality][g[a], g[Less], g[b], g[LessEqual], g[c]]]"
+    );
+    assert_eq!(
+      interpret("{a == b} /. {x_Symbol :> g[x], z -> 1}").unwrap(),
+      "g[List][g[Equal][g[a], g[b]]]"
+    );
+    assert_eq!(
+      interpret("Hold[a; x[s]] /. f_Symbol[s] :> f").unwrap(),
+      "Hold[a; x]"
+    );
+  }
+
   #[test]
   fn integer_head_matches() {
     assert_eq!(
@@ -10079,6 +10105,81 @@ mod linear_programming {
 
 mod find_root {
   use super::*;
+
+  // A vector function that only evaluates at numbers stands for as many
+  // equations as its value at the starting point has components.
+  #[test]
+  fn numeric_black_box_vector_function() {
+    assert_eq!(
+      interpret(
+        "g[a_?NumericQ, b_?NumericQ] := {a^2 + b - 3, a - b + 1}; \
+         Round[10^8 ({a, b} /. FindRoot[g[a, b], {{a, 1}, {b, 1}}])]"
+      )
+      .unwrap(),
+      "{100000000, 200000000}"
+    );
+  }
+
+  // Newton uses the derivative of an interpolating function instead of
+  // differencing past the end of its domain.
+  #[test]
+  fn interpolating_function_root_at_domain_end() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "f = Interpolation[{{0, 0}, {1, 1}, {2, 4}, {3, 9}}]; FindRoot[f[a] == 4, {a, 3}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{a -> 1.9999999999999998}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  // A starting value that is no number leaves the call unevaluated with
+  // FindRoot::srect instead of aborting the evaluation.
+  #[test]
+  fn non_numeric_start_is_srect() {
+    clear_state();
+    let r = interpret_with_stdout("FindRoot[x^2 == 2, {x, a}]").unwrap();
+    assert_eq!(r.result, "FindRoot[x^2 == 2, {x, a}]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "FindRoot::srect: Value a in search specification {x, a} is not a number or array of numbers."
+      )),
+      "{:?}",
+      r.warnings
+    );
+    assert_eq!(
+      interpret("Quiet[FindRoot[{x^2 == 2, y == 1}, {{x, a}, {y, 1}}]]")
+        .unwrap(),
+      "FindRoot[{x^2 == 2, y == 1}, {{x, a}, {y, 1}}]"
+    );
+  }
+
+  // More variables than equations is FindRoot::nveq, not an abort.
+  #[test]
+  fn equation_count_mismatch_is_nveq() {
+    clear_state();
+    let r = interpret_with_stdout("FindRoot[{x + y == 1}, {{x, 0}, {y, 0}}]")
+      .unwrap();
+    assert_eq!(r.result, "FindRoot[{x + y == 1}, {{x, 0}, {y, 0}}]");
+    assert!(
+      r.warnings.iter().any(|w| w.starts_with("FindRoot::nveq")),
+      "{:?}",
+      r.warnings
+    );
+  }
+
+  // The held equations are evaluated before the search point is put in, so
+  // a rule that strips the argument of `x[s]` sees `x[s]`, not a number.
+  #[test]
+  fn held_equations_evaluate_symbolically_first() {
+    assert_eq!(
+      interpret(
+        "FindRoot[{x[s]^2 == 2, y[s] == 1} /. f_Symbol[s] :> f, {{x, 1}, {y, 0}}]"
+      )
+      .unwrap(),
+      "{x -> 1.4142135623730951, y -> 1.}"
+    );
+  }
 
   // An equation between lists is one equation per component.
   #[test]

@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::utilities::*;
-#[allow(unused_imports)]
 use super::*;
 
 /// Unified Permutations: `Permutations[list]` (full-length only),
@@ -846,10 +845,7 @@ struct GroupingOp {
 impl GroupingOp {
   fn wrap(&self, children: Vec<Expr>) -> Expr {
     match &self.head {
-      Some(name) => Expr::FunctionCall {
-        name: name.clone(),
-        args: children.into(),
-      },
+      Some(name) => call(name.as_str(), children),
       None => Expr::List(children.into()),
     }
   }

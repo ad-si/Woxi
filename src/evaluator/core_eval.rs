@@ -5263,6 +5263,23 @@ pub fn has_free_symbols(expr: &Expr) -> bool {
 fn local_iterator_names(name: &str, args: &[Expr]) -> Vec<String> {
   let mut names: Vec<String> = Vec::new();
   let add_spec = |spec: &Expr, names: &mut Vec<String>| match spec {
+    // A symbol holding the variable list (`vars = {x, y}; FindMinimum[f,
+    // vars]`) names those variables, not itself.
+    Expr::Identifier(_)
+      if let Ok(Expr::List(ref items)) = evaluate_expr_to_expr(spec) =>
+    {
+      for item in items {
+        match item {
+          Expr::Identifier(w) => names.push(w.clone()),
+          Expr::List(inner) => {
+            if let Some(Expr::Identifier(w)) = inner.first() {
+              names.push(w.clone());
+            }
+          }
+          _ => {}
+        }
+      }
+    }
     Expr::Identifier(v) => names.push(v.clone()),
     // `{x, x0, …}`: the variable is the first element (the start `x0` may
     // itself be a symbol with a value); `{{x, x0}, {y, y0}}`: each first.

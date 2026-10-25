@@ -1271,9 +1271,24 @@ fn probability_distribution_table(dargs: &[Expr]) -> Option<SamplingTable> {
   let Expr::Identifier(var) = range.first()? else {
     return None;
   };
-  let lo = try_eval_to_f64(range.get(1)?)?;
-  let hi = try_eval_to_f64(range.get(2)?)?;
-  if !lo.is_finite() || !hi.is_finite() || hi < lo {
+  let bound = |e: &Expr| -> Option<f64> {
+    match e {
+      Expr::Identifier(s) if s == "Infinity" => Some(f64::INFINITY),
+      _ => {
+        let v = crate::evaluator::evaluate_expr_to_expr(e).ok()?;
+        if matches!(&v, Expr::Identifier(s) if s == "Infinity") {
+          Some(f64::INFINITY)
+        } else if crate::functions::math_ast::is_neg_infinity(&v) {
+          Some(f64::NEG_INFINITY)
+        } else {
+          try_eval_to_f64(&v)
+        }
+      }
+    }
+  };
+  let mut lo = bound(range.get(1)?)?;
+  let mut hi = bound(range.get(2)?)?;
+  if lo.is_nan() || hi.is_nan() || hi < lo {
     return None;
   }
   let weight_at = |x: f64| -> f64 {
@@ -1284,6 +1299,45 @@ fn probability_distribution_table(dargs: &[Expr]) -> Option<SamplingTable> {
       .filter(|w| w.is_finite() && *w > 0.0)
       .unwrap_or(0.0)
   };
+  // An infinite bound of a continuous density is replaced by where its
+  // tail becomes negligible: the density is scanned on a log-spaced grid
+  // (±10^-3 … ±10^7 around 0, inside the finite bound if any) and cut where
+  // it falls below 10^-14 of its peak.
+  if range.len() == 3 && !(lo.is_finite() && hi.is_finite()) {
+    let mut scan: Vec<f64> = vec![0.0];
+    for k in 0..=40 {
+      let r = 10f64.powf(-3.0 + 0.25 * k as f64);
+      scan.push(r);
+      scan.push(-r);
+    }
+    if lo.is_finite() {
+      scan.push(lo);
+    }
+    if hi.is_finite() {
+      scan.push(hi);
+    }
+    scan.retain(|x| *x >= lo && *x <= hi);
+    scan.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let weights: Vec<f64> = scan.iter().map(|&x| weight_at(x)).collect();
+    let peak = weights.iter().copied().fold(0.0_f64, f64::max);
+    if peak <= 0.0 {
+      return None;
+    }
+    let first = weights.iter().position(|w| *w > peak * 1e-14)?;
+    let last = weights.iter().rposition(|w| *w > peak * 1e-14)?;
+    if !lo.is_finite() {
+      lo = scan[first.saturating_sub(1)];
+    }
+    if !hi.is_finite() {
+      hi = scan[(last + 1).min(scan.len() - 1)];
+    }
+    if !(hi > lo) {
+      return None;
+    }
+  }
+  if !lo.is_finite() || !hi.is_finite() {
+    return None;
+  }
   let (points, weights, width) = match range.len() {
     3 => {
       let w = (hi - lo) / CELLS as f64;

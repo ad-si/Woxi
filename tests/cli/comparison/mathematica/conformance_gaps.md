@@ -5670,3 +5670,20 @@ accurate scheme. For `y'[t] == -y[t], y[0] == 1` on `{t, 0, 1}` with
 `StartingStepSize -> 0.1`, WL's explicit Euler gives `y[1] = 0.9^10 =
 0.348678`, while Woxi returns `0.367879`. Step-size stability demonstrations
 therefore do not show the instability WL does.
+
+### `FindMinimum`/`FindMaximum` take Newton steps, wolframscript quasi-Newton
+
+```sh
+wolframscript -code 'FindMaximum[Log[x] - x, {x, 3}]'
+# FindMaximum::nrnum: The function value -1. - 3.14159 I is not a real number at {x} = {-1.}.
+# {-1.3068528194400546, {x -> 2.}}
+woxi eval 'FindMaximum[Log[x] - x, {x, 3}]'
+# FindMaximum::nrnum: The function value 4.09861 + 3.14159 I is not a real number at {x} = {-3.}.
+# {-1.9013877113318902, {x -> 3.}}
+```
+
+wolframscript's first step is a unit step along the gradient and later
+steps use a secant estimate of the curvature; Woxi's damped Newton uses the
+exact second derivative from the start, so the two visit different points
+and stop at different ones when a trial point leaves the real domain. Both
+end with the same message.

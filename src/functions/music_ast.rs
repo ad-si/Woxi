@@ -23,7 +23,6 @@
 //! all give `MusicPitch["G3"]`. The conversions use the standard convention
 //! where middle C is MIDI 60 / C4 and A4 (MIDI 69) is 440 Hz.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{make_rational, rat_reduce};
 
@@ -920,14 +919,13 @@ fn transpose_music(expr: &Expr, span: (i128, i128), chromatic: bool) -> Expr {
         None => expr.clone(),
       }
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
         .iter()
         .map(|a| transpose_music(a, span, chromatic))
-        .collect::<Vec<_>>()
-        .into(),
-    },
+        .collect(),
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -2342,10 +2340,9 @@ fn message_form(expr: &Expr) -> String {
       {
         Expr::Identifier(format!("-{name}-"))
       }
-      Expr::FunctionCall { name, args } => Expr::FunctionCall {
-        name: name.clone(),
-        args: args.iter().map(summarize).collect::<Vec<_>>().into(),
-      },
+      Expr::FunctionCall { name, args } => {
+        call(name.as_str(), args.iter().map(summarize).collect())
+      }
       Expr::List(items) => {
         Expr::List(items.iter().map(summarize).collect::<Vec<_>>().into())
       }

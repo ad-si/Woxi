@@ -1985,13 +1985,7 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       let Expr::Identifier(k) = pattern.as_ref() else {
         return false;
       };
-      apply_directive(
-        &Expr::FunctionCall {
-          name: k.clone(),
-          args: vec![replacement.as_ref().clone()].into(),
-        },
-        style,
-      )
+      apply_directive(&call1(k.as_str(), replacement.as_ref().clone()), style)
     }
     // A directive list nested one level down (`Directive[{Thick, Blue}]`,
     // `Style[expr, {Thick, Blue}]`) is equivalent to its items given
@@ -2358,15 +2352,7 @@ fn collect_primitives(
           other => other.clone(),
         })
         .collect();
-      collect_primitives(
-        &Expr::FunctionCall {
-          name: name.clone(),
-          args: released.into(),
-        },
-        style,
-        prims,
-        errors,
-      );
+      collect_primitives(&call(name.as_str(), released), style, prims, errors);
     }
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
@@ -2944,19 +2930,15 @@ fn substitute_complex_indices(
           }
         })
         .collect();
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      }
+      call(name.as_str(), new_args)
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
         .iter()
         .map(|a| substitute_complex_indices(pts, a, vertex_data))
-        .collect::<Vec<_>>()
-        .into(),
-    },
+        .collect(),
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -3027,13 +3009,13 @@ fn resolve_graphics_complex_indices(
       // For primitives that take point arguments, resolve integer indices
       match name.as_str() {
         "Point" | "Line" | "Polygon" | "Triangle" | "Arrow" | "BezierCurve"
-        | "BSplineCurve" => Expr::FunctionCall {
-          name: name.clone(),
-          args: args
+        | "BSplineCurve" => call(
+          name.as_str(),
+          args
             .iter()
             .map(|a| resolve_primitive_arg(a, coords))
             .collect(),
-        },
+        ),
         "Circle" | "Disk" | "Rectangle" => {
           // First arg is center/position (single index), rest stay
           let mut new_args = Vec::with_capacity(args.len());
@@ -3048,10 +3030,7 @@ fn resolve_graphics_complex_indices(
               new_args.push(a.clone());
             }
           }
-          Expr::FunctionCall {
-            name: name.clone(),
-            args: new_args.into(),
-          }
+          call(name.as_str(), new_args)
         }
         "Text" | "Inset" => {
           // Second arg (if present) is position
@@ -3068,13 +3047,13 @@ fn resolve_graphics_complex_indices(
         }
         _ => {
           // For everything else (Style, directives, etc.), recurse
-          Expr::FunctionCall {
-            name: name.clone(),
-            args: args
+          call(
+            name.as_str(),
+            args
               .iter()
               .map(|a| resolve_graphics_complex_indices(a, coords))
               .collect(),
-          }
+          )
         }
       }
     }
@@ -3548,18 +3527,17 @@ fn rectangle_picture(args: &[Expr]) -> Option<Expr> {
   let (x0, y0) = expr_to_point(p1)?;
   let (x1, y1) = expr_to_point(p2)?;
   let num = |v: f64| Expr::Real(v);
-  Some(Expr::FunctionCall {
-    name: "Inset".to_string(),
-    args: vec![
+  Some(call(
+    "Inset",
+    vec![
       picture.clone(),
       Expr::List(
         vec![num(f64::midpoint(x0, x1)), num(f64::midpoint(y0, y1))].into(),
       ),
-      Expr::Identifier("Center".to_string()),
+      id_expr("Center"),
       Expr::List(vec![num((x1 - x0).abs()), num((y1 - y0).abs())].into()),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 fn parse_rectangle(
@@ -5018,10 +4996,7 @@ pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
     && name == "Text"
     && targs.len() == 1
   {
-    return Some(Expr::FunctionCall {
-      name: "Text".to_string(),
-      args: vec![targs[0].clone(), pos.clone()].into(),
-    });
+    return Some(call("Text", vec![targs[0].clone(), pos.clone()]));
   }
   None
 }
@@ -11336,11 +11311,7 @@ fn rational_coefficient_markup(
   let scaled = if n.abs() == 1 {
     factor.clone()
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(n.abs())),
-      right: Box::new(factor.clone()),
-    }
+    times2(Expr::Integer(n.abs()), factor.clone())
   };
   // `stacked_fraction_svg` joins its arguments with a literal `/`, not a
   // vinculum, so a `Plus`/`Minus` numerator needs its own parens here —
@@ -16649,16 +16620,15 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         first_graphic_is_plot.get_or_insert(false);
         let (w, h) = (*width as f64, *height as f64);
         layers.push(Layer::Prims(merged_primitives.len()));
-        merged_primitives.push(Expr::FunctionCall {
-          name: "Inset".to_string(),
-          args: vec![
+        merged_primitives.push(call(
+          "Inset",
+          vec![
             expr_ref.clone(),
             Expr::List(vec![Expr::Real(w / 2.0), Expr::Real(h / 2.0)].into()),
             id_expr("Center"),
             Expr::List(vec![Expr::Real(w), Expr::Real(h)].into()),
-          ]
-          .into(),
-        });
+          ],
+        ));
         if graphic_count == 1 {
           let range =
             |hi: f64| Expr::List(vec![Expr::Integer(0), Expr::Real(hi)].into());
@@ -17707,7 +17677,7 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
           };
           column_to_svg(&[
             list(vec![first.clone(), second.clone()]),
-            Expr::Identifier("Center".to_string()),
+            id_expr("Center"),
           ])?
         }
         "Left" | "Right" => {
@@ -18080,10 +18050,10 @@ fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   }
   let mut directives: Vec<Expr> = Vec::new();
   if style.font_weight == Some("bold") {
-    directives.push(Expr::Identifier("Bold".to_string()));
+    directives.push(id_expr("Bold"));
   }
   if style.font_style == Some("italic") {
-    directives.push(Expr::Identifier("Italic".to_string()));
+    directives.push(id_expr("Italic"));
   }
   if let Some(size) = style.font_size {
     directives.push(Expr::Real(size));
@@ -18095,10 +18065,7 @@ fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
     .font_family
     .clone()
     .unwrap_or_else(|| "Atkinson Hyperlegible Next, sans-serif".to_string());
-  directives.push(Expr::Rule {
-    pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
-    replacement: Box::new(Expr::String(family)),
-  });
+  directives.push(rule_expr(id_expr("FontFamily"), Expr::String(family)));
   // A column of plain text lines sets as one text run, the way a `Row` cell
   // does: a line break between the items, with no per-item boxes whose
   // widths are only estimated.
@@ -18111,7 +18078,7 @@ fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
     let mut parts: Vec<Expr> = Vec::with_capacity(items.len() * 2);
     for (i, item) in items.iter().enumerate() {
       if i > 0 {
-        parts.push(Expr::String("\n".to_string()));
+        parts.push(str_expr("\n"));
       }
       parts.push(item.clone());
     }
@@ -18631,10 +18598,7 @@ fn grid_svg_styled_internal(
         if !directives.is_empty() {
           let mut style_args = vec![cell.clone()];
           style_args.extend(directives);
-          *cell = Expr::FunctionCall {
-            name: "Style".to_string(),
-            args: style_args.into(),
-          };
+          *cell = call("Style", style_args);
         }
       }
     }
@@ -21450,10 +21414,7 @@ fn with_cell_image_size(expr: &Expr, size: i128) -> Expr {
       let mut new_args: Vec<Expr> =
         args.iter().filter(|a| !is_size_rule(a)).cloned().collect();
       new_args.push(rule_expr(id_expr("ImageSize"), new_size));
-      return Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      };
+      return call(name.as_str(), new_args);
     }
   }
   with_default_image_size(expr, size)
@@ -21487,10 +21448,7 @@ fn with_fixed_image_size(expr: &Expr, w: i128, h: i128) -> Expr {
     id_expr("ImageSize"),
     Expr::List(vec![Expr::Integer(w), Expr::Integer(h)].into()),
   ));
-  Expr::FunctionCall {
-    name: name.clone(),
-    args: new_args.into(),
-  }
+  call(name.as_str(), new_args)
 }
 
 /// If `expr` is a top-level list that looks like a list of graphics
@@ -22705,10 +22663,7 @@ fn resolve_display_item(expr: &Expr) -> Expr {
   {
     let mut restyled: Vec<Expr> = args.to_vec();
     restyled[0] = resolve_display_item(&args[0]);
-    current = Expr::FunctionCall {
-      name: name.clone(),
-      args: restyled.into(),
-    };
+    current = call(name.as_str(), restyled);
   }
   // `Style[Pane[content, …], directives…]` only sizes `content`, so the
   // directives style the content rather than the source text of the `Pane`.
@@ -22762,10 +22717,7 @@ fn resolve_display_item(expr: &Expr) -> Expr {
         })
         .collect(),
     );
-    current = Expr::FunctionCall {
-      name: name.clone(),
-      args: peeled.into(),
-    };
+    current = call(name.as_str(), peeled);
   }
   // A `Dynamic[…]` inside running text — a readout in a `Row`, or in the
   // `HoldForm` a `With` fills — shows the value it currently has.
@@ -22830,10 +22782,7 @@ pub(crate) fn style_pushed_into_layout(
           .chain(directives.iter().cloned())
           .collect(),
       );
-      return Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      };
+      return call(name.as_str(), new_args);
     }
     call(
       "Style",
@@ -22854,10 +22803,7 @@ pub(crate) fn style_pushed_into_layout(
     .collect();
   let mut new_args = vec![Expr::List(styled.into())];
   new_args.extend(args[1..].iter().cloned());
-  Some(Expr::FunctionCall {
-    name: name.clone(),
-    args: new_args.into(),
-  })
+  Some(call(name.as_str(), new_args))
 }
 
 /// Typeset `expr` in TraditionalForm as a standalone SVG, through the same
@@ -23729,10 +23675,7 @@ fn unwrap_framed_layout(expr: &Expr) -> Expr {
       let inner = unwrap_framed_layout(&args[0]);
       let mut new_args = args.to_vec();
       new_args[0] = inner;
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      }
+      call(name.as_str(), new_args)
     }
     _ => unwrap_display_wrappers(expr),
   }
@@ -25058,7 +25001,7 @@ fn manipulate_spec_var_name(items: &[Expr]) -> Option<String> {
 /// (`{x, 0, 1, ControlType -> Slider}`).
 fn default_control_values(control_type: &str) -> Option<Vec<Expr>> {
   let list = |items: Vec<Expr>| Expr::List(items.into());
-  let booleans = || vec![id_expr("True"), id_expr("False")];
+  let booleans = || vec![bool_expr(true), bool_expr(false)];
   Some(match control_type {
     "Slider" | "VerticalSlider" | "Manipulator" | "Animator" | "Trigger"
     | "IntervalSlider" => vec![Expr::Integer(0), Expr::Integer(1)],
@@ -27527,20 +27470,15 @@ fn custom_locator_pane_options(items: &[Expr]) -> Option<Vec<Expr>> {
     // Apply the function to `Dynamic[var]` the way Manipulate does and look
     // for the pane in what it returns.
     find(body, &var).or_else(|| {
-      let applied = Expr::FunctionCall {
-        name: "Apply".to_string(),
-        args: vec![
+      let applied = call(
+        "Apply",
+        vec![
           it.clone(),
           Expr::List(
-            vec![Expr::FunctionCall {
-              name: "Dynamic".to_string(),
-              args: vec![Expr::Identifier(var.clone())].into(),
-            }]
-            .into(),
+            vec![call("Dynamic", vec![Expr::Identifier(var.clone())])].into(),
           ),
-        ]
-        .into(),
-      };
+        ],
+      );
       let built = crate::evaluator::evaluate_expr_to_expr(&applied).ok()?;
       // `Dynamic[helper[##]] &` leaves the helper call held inside the
       // `Dynamic`; the pane only appears once that call is evaluated.
@@ -27966,14 +27904,13 @@ fn strip_body_locator_resets(expr: &Expr, vars: &[String]) -> Expr {
     {
       null_expr()
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
         .iter()
         .map(|a| strip_body_locator_resets(a, vars))
-        .collect::<Vec<_>>()
-        .into(),
-    },
+        .collect(),
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -28323,13 +28260,13 @@ fn strip_bound_dynamic_modules(
       {
         return strip_bound_dynamic_modules(&args[1], bindings);
       }
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: args
+      call(
+        name.as_str(),
+        args
           .iter()
           .map(|a| strip_bound_dynamic_modules(a, bindings))
           .collect(),
-      }
+      )
     }
     Expr::List(items) => Expr::List(
       items
@@ -28475,10 +28412,9 @@ fn strip_body_setter_bars(expr: &Expr, promoted: &[String]) -> Expr {
   }
   let rec = |e: &Expr| strip_body_setter_bars(e, promoted);
   match expr {
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(rec).collect::<Vec<_>>().into(),
-    },
+    Expr::FunctionCall { name, args } => {
+      call(name.as_str(), args.iter().map(rec).collect())
+    }
     Expr::List(items) => {
       Expr::List(items.iter().map(rec).collect::<Vec<_>>().into())
     }
@@ -28534,14 +28470,13 @@ fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
     return Expr::Identifier(v.clone());
   }
   match expr {
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
         .iter()
         .map(|a| strip_body_popup_menus(a, promoted))
-        .collect::<Vec<_>>()
-        .into(),
-    },
+        .collect(),
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -28649,10 +28584,7 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
       for a in new_args.iter_mut().skip(1) {
         *a = extract_body_togglerbars(a, displays);
       }
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      }
+      call(name.as_str(), new_args)
     }
     // A `Button` under a scoping construct (`Module`/`With`/`Block`/
     // `DynamicModule`) may use that construct's local variables, and one
@@ -28675,14 +28607,13 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
     {
       expr.clone()
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
         .iter()
         .map(|a| extract_body_togglerbars(a, displays))
-        .collect::<Vec<_>>()
-        .into(),
-    },
+        .collect(),
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -28973,7 +28904,7 @@ fn dynamic_control_spec(e: &Expr) -> Option<Expr> {
     "Checkbox" if args.get(1).is_none_or(rule_opt) => {
       vec![
         var,
-        Expr::List(vec![id_expr("True"), id_expr("False")].into()),
+        Expr::List(vec![bool_expr(true), bool_expr(false)].into()),
         control_type("Checkbox"),
       ]
     }
@@ -29577,10 +29508,7 @@ fn switch_as_pane_selector(spec: &Expr) -> Option<Expr> {
   }
   let panes = cases[1..]
     .chunks(2)
-    .map(|pair| Expr::Rule {
-      pattern: Box::new(pair[0].clone()),
-      replacement: Box::new(pair[1].clone()),
-    })
+    .map(|pair| rule_expr(pair[0].clone(), pair[1].clone()))
     .collect::<Vec<_>>();
   Some(call(
     "PaneSelector",
@@ -29632,7 +29560,7 @@ fn visibility_switched_control(spec: &Expr) -> Option<(Expr, Expr)> {
   {
     return None;
   }
-  let null = id_expr("Null");
+  let null = null_expr();
   let (then_branch, else_branch) = if shown_when_true == "Identity" {
     (target.clone(), null)
   } else {
@@ -29836,10 +29764,9 @@ fn splice_sequence_applies(expr: &Expr) -> Expr {
     {
       expr.clone()
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: splice_items(args).into(),
-    },
+    Expr::FunctionCall { name, args } => {
+      call(name.as_str(), splice_items(args))
+    }
     Expr::Rule {
       pattern,
       replacement,
@@ -30216,10 +30143,9 @@ fn manipulate_bound_expr_deep(expr: &Expr) -> (Expr, bool) {
         *found = true;
         strip(&args[0], found)
       }
-      Expr::FunctionCall { name, args } => Expr::FunctionCall {
-        name: name.clone(),
-        args: list(args, found).into(),
-      },
+      Expr::FunctionCall { name, args } => {
+        call(name.as_str(), list(args, found))
+      }
       Expr::List(items) => Expr::List(list(items, found).into()),
       Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
         op: *op,
@@ -31323,10 +31249,10 @@ fn linearize_fraction_boxes(e: &Expr) -> Expr {
         Expr::List(vec![side(&args[0]), str_expr("/"), side(&args[1])].into()),
       )
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(linearize_fraction_boxes).collect(),
-    },
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args.iter().map(linearize_fraction_boxes).collect(),
+    ),
     Expr::List(items) => {
       Expr::List(items.iter().map(linearize_fraction_boxes).collect())
     }
@@ -32543,10 +32469,9 @@ fn strip_ncache(expr: &Expr) -> Expr {
     {
       strip_ncache(&args[0])
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(strip_ncache).collect::<Vec<_>>().into(),
-    },
+    Expr::FunctionCall { name, args } => {
+      call(name.as_str(), args.iter().map(strip_ncache).collect())
+    }
     Expr::List(items) => {
       Expr::List(items.iter().map(strip_ncache).collect::<Vec<_>>().into())
     }
@@ -35759,13 +35684,13 @@ fn resolve_display_dynamics(
           .collect(),
       )
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
         .iter()
         .map(|a| resolve_display_dynamics(a, bindings))
         .collect(),
-    },
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -36522,10 +36447,7 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
           other => other.clone(),
         }
       }
-      released = Expr::FunctionCall {
-        name: name.clone(),
-        args: args.iter().map(release).collect(),
-      };
+      released = call(name.as_str(), args.iter().map(release).collect());
       &released
     }
     other => other,
