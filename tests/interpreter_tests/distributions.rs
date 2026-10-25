@@ -9249,3 +9249,51 @@ mod random_variate_infinite_support {
     );
   }
 }
+
+mod empirical_distribution_weighted {
+  use super::*;
+
+  // Weighted data merges equal values and normalizes the weights; inexact
+  // data gives machine weights.
+  #[test]
+  fn construction() {
+    assert_eq!(
+      interpret("EmpiricalDistribution[{2, 1, 1} -> {3, 1, 3}]").unwrap(),
+      "DataDistribution[Empirical, {{1/4, 3/4}, {1, 3}, False}, 1, 3]"
+    );
+    assert_eq!(
+      interpret("EmpiricalDistribution[{1.5, 2, 1.5}]").unwrap(),
+      "DataDistribution[Empirical, {{0.6666666666666666, 0.3333333333333333}, {1.5, 2}, False}, 1, 3]"
+    );
+    assert_eq!(
+      interpret("Mean[EmpiricalDistribution[{0.9, 0.04, 0.06} -> {1, 2, 3}]]")
+        .unwrap(),
+      "1.16"
+    );
+    assert_eq!(
+      interpret("Variance[EmpiricalDistribution[{2, 1, 1} -> {3, 1, 3}]]")
+        .unwrap(),
+      "3/4"
+    );
+  }
+
+  // Expectation weighs the expression at each value (Subrogation).
+  #[test]
+  fn expectation() {
+    assert_eq!(
+      interpret(
+        "Expectation[Switch[s, 1, c, 2, 2 c], Distributed[s, \
+         EmpiricalDistribution[{0.5, 0.5} -> {1, 2}]]]"
+      )
+      .unwrap(),
+      "1.5*c"
+    );
+    assert_eq!(
+      interpret(
+        "Expectation[s^2, Distributed[s, EmpiricalDistribution[{1, 2, 3}]]]"
+      )
+      .unwrap(),
+      "14/3"
+    );
+  }
+}
