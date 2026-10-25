@@ -19438,8 +19438,13 @@ fn grid_svg_styled_internal(
           (cy, markup)
         };
         let text_elem = format!(
-          "<text x=\"{cx:.1}\" y=\"{text_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{text_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\"{hidden_attr} text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
           ff = svg_escape(ff),
+          hidden_attr = if cell_hidden {
+            " fill-opacity=\"0\""
+          } else {
+            ""
+          },
         );
         if let Some(href) = link_href {
           svg.push_str(&format!(
@@ -22546,8 +22551,8 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       // `Deploy[expr]` only makes its content non-selectable; it draws
       // exactly as the content does.
       "Deploy" => args.len() == 1,
-      // `ExpressionCell[expr, style, opts]` is a cell that shows `expr`.
-      "Item" | "Pane" | "ExpressionCell" => !args.is_empty(),
+      // `ExpressionCell[expr, style, opts]` (and `TextCell[expr, …]`) is a cell that shows `expr`.
+      "Item" | "Pane" | "ExpressionCell" | "TextCell" => !args.is_empty(),
       // A blank-string factor (`"\n" * cell`, a newline typed into a layout
       // by mistake) only adds invisible space; the cell draws as the
       // single other factor.
@@ -23273,8 +23278,11 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
         // column keeps its monospace default.
         let ff = style.font_family.as_deref().unwrap_or("monospace");
         svg.push_str(&format!(
-          "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\" fill=\"{fill}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{content}</text>\n",
+          "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\" fill=\"{fill}\"{hidden_attr} text-anchor=\"{alignment}\" dominant-baseline=\"central\">{content}</text>\n",
           ff = svg_escape(ff),
+          // Spans inside the run carry their own `Style` colors; the
+          // opacity (inherited by them) is what keeps those unpainted too.
+          hidden_attr = if style.hidden { " fill-opacity=\"0\"" } else { "" },
           content = expr_to_svg_markup(style.content),
         ));
       }

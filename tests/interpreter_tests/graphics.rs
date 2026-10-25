@@ -41278,3 +41278,25 @@ mod plot_non_numeric_limit {
     assert_eq!(r.result, "ParametricPlot[{t, t}, {t, a, 1}]");
   }
 }
+
+mod invisible_and_text_cells {
+  use super::*;
+
+  #[test]
+  fn invisible_column_item_hides_nested_style_colors() {
+    clear_state();
+    let svg = export_svg(
+      "Column[{\"x\", Invisible[Row[{\"a\", Style[\"b\", Blue]}]]}]",
+    );
+    assert!(svg.contains("fill-opacity=\"0\""), "not hidden: {svg}");
+    assert!(!svg.contains("Invisible"), "wrapper leaked: {svg}");
+  }
+
+  #[test]
+  fn text_cell_in_a_grid_shows_its_content() {
+    clear_state();
+    let svg = export_svg("Grid[{{TextCell[\"abc\"], \"z\"}}]");
+    assert!(svg.contains(">abc<"), "content missing: {svg}");
+    assert!(!svg.contains("TextCell"), "wrapper leaked: {svg}");
+  }
+}

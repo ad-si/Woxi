@@ -24690,3 +24690,37 @@ mod delete_cases_keeps_forms {
     );
   }
 }
+
+mod part_of_held_pieces {
+  use super::*;
+
+  #[test]
+  fn held_part_expression_is_evaluated_once_lifted_out() {
+    clear_state();
+    assert_eq!(interpret("x = {1, 2}; Hold[x[[2]]][[1]]").unwrap(), "2");
+    assert_eq!(interpret("x = {1, 2}; Dynamic[x[[2]]][[1]]").unwrap(), "2");
+  }
+
+  #[test]
+  fn multi_index_reaches_part_held_inside_a_wrapper() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "nl = {{\"a\", \"b\"}, {\"c\", \"d\"}}; \
+         pm = Table[With[{j = j}, PopupMenu[Dynamic[nl[[j, j]]], {\"x\"}]], {j, 2}]; \
+         {pm[[1, 1, 1]], pm[[2, 1, 1]]}"
+      )
+      .unwrap(),
+      "{a, d}"
+    );
+  }
+
+  #[test]
+  fn failed_multi_index_part_stays_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("{{1, 2}}[[1, 1, 1]]").unwrap(),
+      "{{1, 2}}[[1,1,1]]"
+    );
+  }
+}
