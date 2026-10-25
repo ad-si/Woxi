@@ -3738,6 +3738,28 @@ mod tests {
     );
   }
 
+  /// A caption `Dynamic[msg]` whose variable holds `Dynamic[a] Dynamic[b]`
+  /// (text times a formatted number) shows both pieces, typeset side by
+  /// side, instead of the raw `Dynamic[…]*Dynamic[…]` source.
+  #[test]
+  fn dynamic_caption_releases_dynamics_nested_in_a_variable() {
+    let code = r#"Manipulate[
+      (msg = Dynamic[lead[k]] Dynamic[PaddedForm[Round[k/3., 0.01], 4]];
+        Graphics[Disk[]]),
+      Row[{"= ", Style[Dynamic[msg], 14]}],
+      {{k, 1}, 1, 3, 1}
+    ]"#;
+    woxi::interpret("lead[n_] := \"v \"").unwrap();
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+    assert_eq!(state.error, None);
+    let text = format!("{:?}", state.display_trees);
+    assert!(!text.contains("Dynamic["), "unreleased Dynamic: {text}");
+    assert!(text.contains("v "), "missing text part: {text}");
+    assert!(text.contains("0.33"), "missing number part: {text}");
+  }
+
   #[test]
   fn demonstration_polyhedrondata_overlay_checkboxes_toggle_live() {
     let code = r#"Manipulate[
