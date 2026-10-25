@@ -3871,6 +3871,13 @@ into script mode; Woxi prints the expression and renders `["Message"]` cleanly.
 
 ## Graphics and plotting
 
+### `Attributes[GraphicsComplex]` (unverified)
+
+Woxi gives `GraphicsComplex` `NHoldRest`, so `N` leaves the primitives'
+point indices integers (a demonstration takes `Normal[N@PolyhedronData[…,
+"Faces"]]`). The exact attribute list (`ReadProtected`?) was not checked
+against wolframscript.
+
 Woxi renders its own SVG; `wolframscript` prints `-Graphics-` and exports
 cairo-rendered SVG, so pixel or markup equality is never the goal. What follows
 is where the *drawn* result differs.

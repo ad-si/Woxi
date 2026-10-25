@@ -24512,6 +24512,22 @@ mod graphics_complex {
 mod graphics_complex_normal {
   use super::*;
 
+  // GraphicsComplex holds its primitives from N, so their point indices
+  // stay integers and Normal can still look them up
+  // (AnimationOfFreeKicksInSoccer).
+  #[test]
+  fn n_keeps_point_indices() {
+    assert_eq!(
+      interpret("N[GraphicsComplex[{{0, 0}, {1, 0}}, Line[{1, 2}]]]").unwrap(),
+      "GraphicsComplex[{{0., 0.}, {1., 0.}}, Line[{1, 2}]]"
+    );
+    assert_eq!(
+      interpret("Normal[N[GraphicsComplex[{{0, 0}, {1, 0}}, Line[{1, 2}]]]]")
+        .unwrap(),
+      "{Line[{{0., 0.}, {1., 0.}}]}"
+    );
+  }
+
   #[test]
   fn point_and_line() {
     // The documentation's own example for `Normal[GraphicsComplex[…]]`.
