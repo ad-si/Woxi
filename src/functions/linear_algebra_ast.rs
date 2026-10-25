@@ -3583,7 +3583,7 @@ fn split_symbolic_scale(
       if args.len() == 2 {
         args[1].clone()
       } else {
-        call("Times", args[1..].to_vec())
+        times(args[1..].to_vec())
       }
     }
     other => other.clone(),
@@ -3592,9 +3592,7 @@ fn split_symbolic_scale(
   for row in matrix {
     let mut out = Vec::with_capacity(row.len());
     for e in row {
-      let q =
-        evaluate_expr_to_expr(&call("Divide", vec![e.clone(), scale.clone()]))
-          .ok()?;
+      let q = evaluate_expr_to_expr(&div(e.clone(), scale.clone())).ok()?;
       if !crate::functions::predicate_ast::is_numeric_q(&q) {
         return None;
       }
@@ -3630,9 +3628,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let scaled = vals
       .iter()
-      .map(|l| {
-        evaluate_expr_to_expr(&call("Times", vec![scale.clone(), l.clone()]))
-      })
+      .map(|l| evaluate_expr_to_expr(&times(vec![scale.clone(), l.clone()])))
       .collect::<Result<Vec<_>, _>>()?;
     return Ok(Expr::List(scaled.into()));
   }
@@ -6715,13 +6711,13 @@ pub fn minors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .map(|v| Expr::List(v.into()))
             .collect(),
         );
-        let f_call = Expr::FunctionCall {
-          name: match &args[2] {
-            Expr::Identifier(name) => name.clone(),
-            _ => "Det".to_string(),
+        let f_call = call1(
+          match &args[2] {
+            Expr::Identifier(name) => name.as_str(),
+            _ => "Det",
           },
-          args: vec![sub_expr].into(),
-        };
+          sub_expr,
+        );
         result_row.push(crate::evaluator::evaluate_expr_to_expr(&f_call)?);
       } else {
         result_row.push(determinant(&submatrix));
@@ -7522,10 +7518,10 @@ fn find_fit_weighted(
   let partials: Vec<Option<Expr>> = param_names
     .iter()
     .map(|p| {
-      evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "D".to_string(),
-        args: vec![model.clone(), Expr::Identifier(p.clone())].into(),
-      })
+      evaluate_expr_to_expr(&call(
+        "D",
+        vec![model.clone(), Expr::Identifier(p.clone())],
+      ))
       .ok()
       // A derivative D could not take (a model defined only for numeric
       // arguments) is differenced numerically instead: substituting the
@@ -11445,10 +11441,9 @@ fn replace_constant_i(e: &Expr) -> Expr {
   match e {
     Expr::Constant(c) if c == "I" => complex_i(),
     Expr::Identifier(c) if c == "I" => complex_i(),
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(replace_constant_i).collect(),
-    },
+    Expr::FunctionCall { name, args } => {
+      call(name.as_str(), args.iter().map(replace_constant_i).collect())
+    }
     Expr::BinaryOp { op, left, right } => {
       binop(*op, replace_constant_i(left), replace_constant_i(right))
     }
@@ -13674,13 +13669,10 @@ fn symmetry_tag(kind: SymmetryKind, slots: &[usize]) -> Expr {
   if slots.len() < 2 || kind == SymmetryKind::ZeroSymmetric {
     return Expr::List(vec![].into());
   }
-  Expr::FunctionCall {
-    name: kind.head().to_string(),
-    args: vec![Expr::List(
-      slots.iter().map(|&s| Expr::Integer(s as i128)).collect(),
-    )]
-    .into(),
-  }
+  call1(
+    kind.head(),
+    Expr::List(slots.iter().map(|&s| Expr::Integer(s as i128)).collect()),
+  )
 }
 
 /// Every permutation of `0..n` in lexicographic order, paired with whether it
@@ -13778,13 +13770,10 @@ pub fn symmetrize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "Symmetrize::symmcomp: Symmetry specification {} is incompatible with \
        expression {}.",
-      render(&Expr::FunctionCall {
-        name: kind.head().to_string(),
-        args: vec![Expr::List(
-          slots.iter().map(|&s| Expr::Integer(s as i128)).collect()
-        )]
-        .into(),
-      }),
+      render(&call1(
+        kind.head(),
+        Expr::List(slots.iter().map(|&s| Expr::Integer(s as i128)).collect()),
+      )),
       render(&Expr::List(
         dims.iter().map(|&d| Expr::Integer(d as i128)).collect()
       ))

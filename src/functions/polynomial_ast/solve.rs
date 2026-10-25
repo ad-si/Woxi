@@ -2036,10 +2036,10 @@ fn solve_piecewise_max_min(
   let inexact =
     crate::functions::predicate_ast::contains_real_literal(&args[0]);
   if inexact {
-    let exact = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Rationalize".into(),
-      args: vec![args[0].clone(), Expr::Integer(0)].into(),
-    })
+    let exact = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Rationalize",
+      vec![args[0].clone(), Expr::Integer(0)],
+    ))
     .ok()?;
     if crate::functions::predicate_ast::contains_real_literal(&exact) {
       return None;
@@ -2055,10 +2055,7 @@ fn solve_piecewise_max_min(
            exact system and numericizing the result.",
         );
       }
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "N".into(),
-        args: vec![sols].into(),
-      })
+      crate::evaluator::evaluate_expr_to_expr(&call1("N", sols))
     }));
   }
   let choices: Vec<usize> = extrema
@@ -2109,10 +2106,7 @@ fn solve_piecewise_max_min(
       Expr::List(sols) => {
         for sol in sols {
           let holds = conditions.iter().all(|c| {
-            let test = Expr::FunctionCall {
-              name: "ReplaceAll".into(),
-              args: vec![c.clone(), sol.clone()].into(),
-            };
+            let test = call("ReplaceAll", vec![c.clone(), sol.clone()]);
             matches!(
               crate::evaluator::evaluate_expr_to_expr(&test),
               Ok(Expr::Identifier(ref t)) if t == "True"
@@ -2262,13 +2256,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     eqs.iter().for_each(|eq| equations(eq, &mut parts));
     let nonlinear = parts.iter().any(|eq| {
       let g = match eq {
-        Expr::Comparison { operands, .. } if operands.len() == 2 => call(
-          "Plus",
-          vec![
-            operands[0].clone(),
-            call("Times", vec![Expr::Integer(-1), operands[1].clone()]),
-          ],
-        ),
+        Expr::Comparison { operands, .. } if operands.len() == 2 => {
+          plus(vec![operands[0].clone(), neg(operands[1].clone())])
+        }
         other => other.clone(),
       };
       // A vector equation differentiates to a list of zeros.
@@ -2397,13 +2387,7 @@ fn combine_exponential_factors(expr: &Expr, var: &str) -> Option<Expr> {
     }
     let d = eval(call(
       "ReplaceAll",
-      vec![
-        exponent.clone(),
-        Expr::Rule {
-          pattern: Box::new(id_expr(var)),
-          replacement: Box::new(Expr::Integer(0)),
-        },
-      ],
+      vec![exponent.clone(), rule_expr(id_expr(var), Expr::Integer(0))],
     ))?;
     Some((c, d))
   }
@@ -2613,16 +2597,10 @@ fn solve_by_isolating_power(eq: &Expr, var: &str) -> Option<Expr> {
   let mut found = Vec::new();
   powers(&g, var, &mut found);
   let (power, base, n) = found.first().copied()?;
-  let u = Expr::Identifier("Woxi`IsolatedPower".to_string());
+  let u = id_expr("Woxi`IsolatedPower");
   let replaced = eval(call(
     "ReplaceAll",
-    vec![
-      g.clone(),
-      Expr::Rule {
-        pattern: Box::new(power.clone()),
-        replacement: Box::new(u.clone()),
-      },
-    ],
+    vec![g.clone(), rule_expr(power.clone(), u.clone())],
   ))?;
   if mentions(&replaced) {
     return None;
@@ -2634,13 +2612,7 @@ fn solve_by_isolating_power(eq: &Expr, var: &str) -> Option<Expr> {
   ))?;
   let b = eval(call(
     "ReplaceAll",
-    vec![
-      replaced.clone(),
-      Expr::Rule {
-        pattern: Box::new(u.clone()),
-        replacement: Box::new(Expr::Integer(0)),
-      },
-    ],
+    vec![replaced.clone(), rule_expr(u.clone(), Expr::Integer(0))],
   ))?;
   let check = eval(call(
     "Expand",
@@ -2653,24 +2625,15 @@ fn solve_by_isolating_power(eq: &Expr, var: &str) -> Option<Expr> {
     return None;
   }
   // The base is p var + q.
-  let p = eval(call(
-    "D",
-    vec![base.clone(), Expr::Identifier(var.to_string())],
-  ))?;
+  let p = eval(call("D", vec![base.clone(), id_expr(var)]))?;
   if mentions(&p) || matches!(p, Expr::Integer(0)) {
     return None;
   }
   let q = eval(call(
     "ReplaceAll",
-    vec![
-      base.clone(),
-      Expr::Rule {
-        pattern: Box::new(Expr::Identifier(var.to_string())),
-        replacement: Box::new(Expr::Integer(0)),
-      },
-    ],
+    vec![base.clone(), rule_expr(id_expr(var), Expr::Integer(0))],
   ))?;
-  let z = Expr::Identifier("Woxi`IsolatedBase".to_string());
+  let z = id_expr("Woxi`IsolatedBase");
   let roots = eval(call(
     "Solve",
     vec![
@@ -2699,13 +2662,7 @@ fn solve_by_isolating_power(eq: &Expr, var: &str) -> Option<Expr> {
       &minus2(replacement.as_ref().clone(), q.clone()),
       &p,
     ))?;
-    out.push(Expr::List(
-      vec![Expr::Rule {
-        pattern: Box::new(Expr::Identifier(var.to_string())),
-        replacement: Box::new(value),
-      }]
-      .into(),
-    ));
+    out.push(Expr::List(vec![rule_expr(id_expr(var), value)].into()));
   }
   Some(Expr::List(out.into()))
 }
@@ -2975,7 +2932,7 @@ pub(crate) fn solve_by_groebner_shape(
     else {
       return None;
     };
-    let diff = eval(plus(vec![lhs, times(vec![Expr::Integer(-1), rhs])]))?;
+    let diff = eval(plus(vec![lhs, neg(rhs)]))?;
     let numer =
       eval_call("Numerator", vec![eval_call("Together", vec![diff])?])?;
     polys.push(eval_call("Expand", vec![numer])?);
@@ -3221,10 +3178,10 @@ fn square_radical_equations(eqns: &Expr) -> Expr {
     Expr::List(items) => {
       Expr::List(items.iter().map(square_radical_equations).collect())
     }
-    Expr::FunctionCall { name, args } if name == "And" => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(square_radical_equations).collect(),
-    },
+    Expr::FunctionCall { name, args } if name == "And" => call(
+      name.as_str(),
+      args.iter().map(square_radical_equations).collect(),
+    ),
     Expr::Comparison {
       operands,
       operators,
@@ -3283,10 +3240,10 @@ pub(crate) fn expand_chained_equalities(eqns: &Expr) -> Expr {
     Expr::List(items) => {
       Expr::List(items.iter().map(expand_chained_equalities).collect())
     }
-    Expr::FunctionCall { name, args } if name == "And" => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(expand_chained_equalities).collect(),
-    },
+    Expr::FunctionCall { name, args } if name == "And" => call(
+      name.as_str(),
+      args.iter().map(expand_chained_equalities).collect(),
+    ),
     _ => eqns.clone(),
   }
 }
@@ -7572,12 +7529,12 @@ fn try_solve_lambert(
     return Ok(None);
   }
   let ev = crate::evaluator::evaluate_expr_to_expr;
-  let x = Expr::Identifier(var.to_string());
+  let x = id_expr(var);
   let free = |e: &Expr| !contains_var(e, var);
   let expanded = ev(&call("Expand", vec![g.clone()]))?;
   let terms: Vec<Expr> = match ev(&call(
     "Apply",
-    vec![Expr::Identifier("List".into()), expanded.clone()],
+    vec![id_expr("List"), expanded.clone()],
   ))? {
     Expr::List(ref items)
       if matches!(&expanded, Expr::FunctionCall { name, .. } if name == "Plus")
@@ -7595,29 +7552,27 @@ fn try_solve_lambert(
   };
   let (var_terms, const_terms): (Vec<Expr>, Vec<Expr>) =
     terms.into_iter().partition(|t| !free(t));
-  let d = ev(&call("Plus", const_terms))?;
+  let d = ev(&plus(const_terms))?;
 
   // `t` as `a x^p E^(b x + c)`: (a, p, b, c).
   let split_exp_term =
     |t: &Expr| -> Result<Option<(Expr, i128, Expr, Expr)>, InterpreterError> {
-      let factors: Vec<Expr> = match ev(&call(
-        "Apply",
-        vec![Expr::Identifier("List".into()), t.clone()],
-      ))? {
-        Expr::List(ref items)
-          if matches!(t, Expr::FunctionCall { name, .. } if name == "Times")
-            || matches!(
-              t,
-              Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                ..
-              }
-            ) =>
-        {
-          items.to_vec()
-        }
-        _ => vec![t.clone()],
-      };
+      let factors: Vec<Expr> =
+        match ev(&call("Apply", vec![id_expr("List"), t.clone()]))? {
+          Expr::List(ref items)
+            if matches!(t, Expr::FunctionCall { name, .. } if name == "Times")
+              || matches!(
+                t,
+                Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  ..
+                }
+              ) =>
+          {
+            items.to_vec()
+          }
+          _ => vec![t.clone()],
+        };
       let mut exponent: Option<Expr> = None;
       let mut rest: Vec<Expr> = Vec::new();
       for f in factors {
@@ -7659,26 +7614,20 @@ fn try_solve_lambert(
       ))?;
       let c = ev(&call(
         "Expand",
-        vec![call(
-          "Plus",
-          vec![
-            e.clone(),
-            call("Times", vec![Expr::Integer(-1), b.clone(), x.clone()]),
-          ],
-        )],
+        vec![plus(vec![
+          e.clone(),
+          times(vec![Expr::Integer(-1), b.clone(), x.clone()]),
+        ])],
       ))?;
       if !free(&b) || !free(&c) || matches!(b, Expr::Integer(0)) {
         return Ok(None);
       }
-      let rest = ev(&call("Times", rest))?;
+      let rest = ev(&times(rest))?;
       let p = match ev(&call("Exponent", vec![rest.clone(), x.clone()]))? {
         Expr::Integer(p) if p >= 0 => p,
         _ => return Ok(None),
       };
-      let a = ev(&call(
-        "Times",
-        vec![rest, call("Power", vec![x.clone(), Expr::Integer(-p)])],
-      ))?;
+      let a = ev(&times(vec![rest, pow(x.clone(), Expr::Integer(-p))]))?;
       if !free(&a) {
         return Ok(None);
       }
@@ -7697,33 +7646,21 @@ fn try_solve_lambert(
       if p == 0 {
         return Ok(None);
       }
-      let k = ev(&call(
-        "Times",
-        vec![
-          Expr::Integer(-1),
-          d.clone(),
-          call("Power", vec![a, Expr::Integer(-1)]),
-          call(
-            "Power",
-            vec![
-              Expr::Constant("E".into()),
-              call("Times", vec![Expr::Integer(-1), c]),
-            ],
-          ),
-        ],
-      ))?;
+      let k = ev(&times(vec![
+        Expr::Integer(-1),
+        d.clone(),
+        pow(a, Expr::Integer(-1)),
+        pow(const_expr("E"), neg(c)),
+      ]))?;
       let rs: Vec<Expr> = if p == 1 {
         vec![k]
       } else {
-        let y = Expr::Identifier("Solve$lambertRoot".into());
+        let y = id_expr("Solve$lambertRoot");
         match ev(&call(
           "Solve",
           vec![
             Expr::Comparison {
-              operands: vec![
-                call("Power", vec![y.clone(), Expr::Integer(p)]),
-                k,
-              ],
+              operands: vec![pow(y.clone(), Expr::Integer(p)), k],
               operators: vec![ComparisonOp::Equal],
             },
             y.clone(),
@@ -7744,22 +7681,16 @@ fn try_solve_lambert(
           _ => return Ok(None),
         }
       };
-      let pb = ev(&call(
-        "Times",
-        vec![
-          Expr::Integer(p),
-          call("Power", vec![b.clone(), Expr::Integer(-1)]),
-        ],
-      ))?;
+      let pb = ev(&times(vec![
+        Expr::Integer(p),
+        pow(b.clone(), Expr::Integer(-1)),
+      ]))?;
       for r in rs {
-        let z = ev(&call(
-          "Times",
-          vec![
-            b.clone(),
-            call("Power", vec![Expr::Integer(p), Expr::Integer(-1)]),
-            r,
-          ],
-        ))?;
+        let z = ev(&times(vec![
+          b.clone(),
+          pow(Expr::Integer(p), Expr::Integer(-1)),
+          r,
+        ]))?;
         roots.push((pb.clone(), z, Expr::Integer(0)));
       }
     }
@@ -7782,13 +7713,10 @@ fn try_solve_lambert(
       ))?;
       let check = ev(&call(
         "Expand",
-        vec![call(
-          "Plus",
-          vec![
-            lin_term.clone(),
-            call("Times", vec![Expr::Integer(-1), alpha.clone(), x.clone()]),
-          ],
-        )],
+        vec![plus(vec![
+          lin_term.clone(),
+          times(vec![Expr::Integer(-1), alpha.clone(), x.clone()]),
+        ])],
       ))?;
       if !free(&alpha)
         || matches!(alpha, Expr::Integer(0))
@@ -7796,37 +7724,26 @@ fn try_solve_lambert(
       {
         return Ok(None);
       }
-      let shift = ev(&call(
-        "Times",
-        vec![
-          Expr::Integer(-1),
-          d.clone(),
-          call("Power", vec![alpha.clone(), Expr::Integer(-1)]),
-        ],
-      ))?;
-      let k = ev(&call(
-        "Times",
-        vec![
-          Expr::Integer(-1),
-          beta,
-          call("Power", vec![alpha, Expr::Integer(-1)]),
-          call(
-            "Power",
-            vec![
-              Expr::Constant("E".into()),
-              call(
-                "Plus",
-                vec![c, call("Times", vec![b.clone(), shift.clone()])],
-              ),
-            ],
-          ),
-        ],
-      ))?;
-      let z = ev(&call("Times", vec![Expr::Integer(-1), b.clone(), k]))?;
-      let scale = ev(&call(
-        "Times",
-        vec![Expr::Integer(-1), call("Power", vec![b, Expr::Integer(-1)])],
-      ))?;
+      let shift = ev(&times(vec![
+        Expr::Integer(-1),
+        d.clone(),
+        pow(alpha.clone(), Expr::Integer(-1)),
+      ]))?;
+      let k = ev(&times(vec![
+        Expr::Integer(-1),
+        beta,
+        pow(alpha, Expr::Integer(-1)),
+        call(
+          "Power",
+          vec![
+            const_expr("E"),
+            plus(vec![c, times(vec![b.clone(), shift.clone()])]),
+          ],
+        ),
+      ]))?;
+      let z = ev(&times(vec![Expr::Integer(-1), b.clone(), k]))?;
+      let scale =
+        ev(&times(vec![Expr::Integer(-1), pow(b, Expr::Integer(-1))]))?;
       roots.push((scale, z, shift));
     }
     _ => return Ok(None),
@@ -7845,10 +7762,8 @@ fn try_solve_lambert(
       branches.push(call("ProductLog", vec![Expr::Integer(-1), z.clone()]));
     }
     for w in branches {
-      let mut sol = ev(&call(
-        "Plus",
-        vec![call("Times", vec![scale.clone(), w]), shift.clone()],
-      ))?;
+      let mut sol =
+        ev(&plus(vec![times(vec![scale.clone(), w]), shift.clone()]))?;
       if !matches!(shift, Expr::Integer(0)) {
         sol = ev(&call("Together", vec![sol]))?;
       }
@@ -8825,10 +8740,10 @@ fn rs_subst_slot(expr: &Expr, k: usize, name: &str) -> Expr {
     Expr::List(items) => {
       Expr::List(items.iter().map(|e| rs_subst_slot(e, k, name)).collect())
     }
-    Expr::FunctionCall { name: fname, args } => Expr::FunctionCall {
-      name: fname.clone(),
-      args: args.iter().map(|e| rs_subst_slot(e, k, name)).collect(),
-    },
+    Expr::FunctionCall { name: fname, args } => call(
+      fname.as_str(),
+      args.iter().map(|e| rs_subst_slot(e, k, name)).collect(),
+    ),
     Expr::BinaryOp { op, left, right } => binop(
       *op,
       rs_subst_slot(left, k, name),
@@ -8988,7 +8903,7 @@ pub fn root_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn primitive_root_polynomial(poly: &Expr, var: &str) -> Option<Expr> {
   let coefficients = crate::evaluator::evaluate_function_call_ast(
     "CoefficientList",
-    &[poly.clone(), Expr::Identifier(var.into())],
+    &[poly.clone(), id_expr(var)],
   )
   .ok()?;
   let Expr::List(ref coefficients) = coefficients else {
@@ -9034,7 +8949,7 @@ fn primitive_root_polynomial(poly: &Expr, var: &str) -> Option<Expr> {
     .map(|(i, n)| {
       times2(
         crate::functions::math_ast::bigint_to_expr(n / &gcd),
-        pow2(Expr::Identifier(var.into()), Expr::Integer(i as i128)),
+        pow2(id_expr(var), Expr::Integer(i as i128)),
       )
     })
     .collect();
@@ -9096,8 +9011,7 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Substitute Slot(1) with a temporary variable
   let var_name = "\u{2620}root\u{2620}"; // unique internal variable
-  let poly =
-    crate::syntax::substitute_slots(body, &[Expr::Identifier(var_name.into())]);
+  let poly = crate::syntax::substitute_slots(body, &[id_expr(var_name)]);
 
   // wolframscript reports an explicit value only when the polynomial factors
   // over the rationals into pieces of degree at most 2, and then in the
@@ -9167,8 +9081,7 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           operands: vec![base, Expr::Integer(0)],
           operators: vec![ComparisonOp::Equal],
         };
-        let solved =
-          solve_ast(&[factor_eq, Expr::Identifier(var_name.into())])?;
+        let solved = solve_ast(&[factor_eq, id_expr(var_name)])?;
         if let Expr::List(outer) = &solved {
           for item in outer {
             if let Expr::List(inner) = item {
@@ -9216,7 +9129,7 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let solutions = match &factored_roots {
     Some(_) => Expr::List(Vec::new().into()),
-    None => solve_ast(&[eq, Expr::Identifier(var_name.into())])?,
+    None => solve_ast(&[eq, id_expr(var_name)])?,
   };
 
   // Extract root values from {{var -> val1}, {var -> val2}, ...}
@@ -10479,13 +10392,13 @@ fn find_root_rename_walk(
       {
         return (*r).clone();
       }
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: args
+      call(
+        name.as_str(),
+        args
           .iter()
           .map(|a| find_root_rename_walk(a, id_map, idx_map))
           .collect(),
-      }
+      )
     }
     Expr::CurriedCall { func, args } => {
       if let Some((flat_name, keys)) = flatten_findroot_var(expr)
@@ -11607,10 +11520,10 @@ pub(crate) fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
     Expr::List(items) => {
       Expr::List(items.iter().map(|e| substitute_expr(e, from, to)).collect())
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(|e| substitute_expr(e, from, to)).collect(),
-    },
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args.iter().map(|e| substitute_expr(e, from, to)).collect(),
+    ),
     Expr::BinaryOp { op, left, right } => binop(
       *op,
       substitute_expr(left, from, to),
@@ -12993,9 +12906,9 @@ fn minimize_linear_program(
   };
   let bound = |x: f64| {
     if x == f64::INFINITY {
-      Expr::Identifier("Infinity".into())
+      id_expr("Infinity")
     } else if x == f64::NEG_INFINITY {
-      negate_expr(&Expr::Identifier("Infinity".into()))
+      negate_expr(&id_expr("Infinity"))
     } else {
       num(x)
     }
@@ -13074,17 +12987,10 @@ fn minimize_linear_program(
     .collect();
   let mut value = num(obj_const);
   for &(i, c) in &obj_terms {
-    value = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Plus".into(),
-      args: vec![
-        value,
-        Expr::FunctionCall {
-          name: "Times".into(),
-          args: vec![num(c), values[i].clone()].into(),
-        },
-      ]
-      .into(),
-    })
+    value = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+      value,
+      times(vec![num(c), values[i].clone()]),
+    ]))
     .ok()?;
   }
   if numeric {
@@ -13093,10 +12999,7 @@ fn minimize_linear_program(
   let rules: Vec<Expr> = vars
     .iter()
     .zip(values)
-    .map(|(v, x)| Expr::Rule {
-      pattern: Box::new(Expr::Identifier(v.clone())),
-      replacement: Box::new(x),
-    })
+    .map(|(v, x)| rule_expr(Expr::Identifier(v.clone()), x))
     .collect();
   Some(Expr::List(vec![value, Expr::List(rules.into())].into()))
 }

@@ -1489,10 +1489,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       };
       match verdict {
         Some(b) => bool_expr(b),
-        None => Expr::FunctionCall {
-          name: name.clone(),
-          args: vec![a].into(),
-        },
+        None => call1(name.as_str(), a),
       }
     }
 
