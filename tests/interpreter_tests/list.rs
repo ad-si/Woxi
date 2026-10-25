@@ -24400,3 +24400,31 @@ mod combinatorica_show_graph {
     );
   }
 }
+
+mod part_without_index {
+  use super::*;
+
+  #[test]
+  fn empty_part_brackets_return_the_expression() {
+    assert_eq!(interpret("x[[]]").unwrap(), "x");
+    assert_eq!(interpret("{1, 2, 3}[[]]").unwrap(), "{1, 2, 3}");
+    assert_eq!(interpret("f[a][[]]").unwrap(), "f[a]");
+  }
+
+  #[test]
+  fn part_with_one_argument_returns_the_expression() {
+    assert_eq!(interpret("Part[{1, 2}]").unwrap(), "{1, 2}");
+    assert_eq!(interpret("Part[g[x, y]]").unwrap(), "g[x, y]");
+  }
+
+  #[test]
+  fn empty_part_brackets_chain_with_further_indices() {
+    assert_eq!(interpret("{{1, 2}, {3, 4}}[[]][[2, 1]]").unwrap(), "3");
+    assert_eq!(interpret("Part[{{1, 2}, {3, 4}}][[1]]").unwrap(), "{1, 2}");
+  }
+
+  #[test]
+  fn held_part_prints_with_empty_brackets() {
+    assert_eq!(interpret("Hold[Part[x]]").unwrap(), "Hold[x[[]]]");
+  }
+}

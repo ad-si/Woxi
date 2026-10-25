@@ -55,7 +55,8 @@ PartClose = _{ "]" ~ "]" | "\u{27E7}" | "\u{301B}" }
 // group, two specs — the second applies inside each part the first picks)
 // from `m[[a]][[b]]` (two groups, applied one after the other). Flattening
 // every group's specs into one list made those two the same expression.
-PartIndexGroup = { PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose }
+// An empty group, `x[[]]`, is `Part[x]` and picks nothing out of `x`.
+PartIndexGroup = { PartOpen ~ (PartIndex ~ ("," ~ PartIndex)*)? ~ PartClose }
 PartIndexSuffix = { PartIndexGroup+ }
 
 // PartExtract for non-FunctionCall bases only (Slot, Identifier, number)

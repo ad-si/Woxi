@@ -5245,6 +5245,10 @@ pub fn dispatch_list_operations(
       }
       return Some(Ok(current));
     }
+    // `Part[expr]` (written `expr[[]]`) has no index to apply.
+    "Part" if args.len() == 1 => {
+      return Some(Ok(args[0].clone()));
+    }
     "Part" if args.len() >= 2 => {
       let mut part_expr = Expr::Part {
         expr: Box::new(args[0].clone()),
