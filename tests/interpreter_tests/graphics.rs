@@ -40175,6 +40175,15 @@ mod grid_cell_labeled_layout {
       );
     }
 
+    // The options a plot shares with Graphics survive editing the plot.
+    #[test]
+    fn append_option_to_plot_keeps_its_epilog() {
+      assert_case(
+        r#"Cases[Append[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 1}, Epilog -> {Red, Point[{0, 0}]}], PlotLabel -> "a"], _Rule]"#,
+        "{Epilog -> {RGBColor[1, 0, 0], Point[{0, 0}]}, PlotLabel -> a}",
+      );
+    }
+
     #[test]
     fn append_option_to_plot() {
       assert_case(

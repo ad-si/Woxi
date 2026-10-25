@@ -601,10 +601,51 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         prims
       })
       .collect();
-    return Some(call1("Graphics", Expr::List(series.into())));
+    // The options a plot shares with `Graphics` (an `Epilog`, a
+    // `Background`, a `PlotRange`, …) stay with the drawing, so editing it —
+    // `Append[plot, PlotLabel -> …]` — and redrawing keeps them. Options that
+    // only steer sampling or styling (`MaxRecursion`, `PlotStyle`, …) were
+    // already applied to the curves.
+    let mut args = vec![Expr::List(series.into())];
+    args.extend(
+      source
+        .options
+        .iter()
+        .filter(|opt| {
+          crate::functions::graphics::option_name_value(opt)
+            .is_some_and(|(name, _)| GRAPHICS_PLOT_OPTIONS.contains(&name))
+        })
+        .cloned(),
+    );
+    return Some(call("Graphics", args));
   }
   None
 }
+
+/// Plot options that mean the same thing on the `Graphics` a plot is
+/// redrawn as.
+const GRAPHICS_PLOT_OPTIONS: &[&str] = &[
+  "AspectRatio",
+  "Axes",
+  "AxesLabel",
+  "AxesOrigin",
+  "AxesStyle",
+  "Background",
+  "Epilog",
+  "Frame",
+  "FrameLabel",
+  "FrameStyle",
+  "FrameTicks",
+  "GridLines",
+  "ImageSize",
+  "LabelStyle",
+  "PlotLabel",
+  "PlotRange",
+  "PlotRangePadding",
+  "Prolog",
+  "Ticks",
+  "TicksStyle",
+];
 
 /// The polygon points for a `PlotSeriesData`'s `Filling` level: the curve's
 /// points followed by the same x-values back along the reference level, so
