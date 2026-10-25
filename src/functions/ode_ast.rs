@@ -6368,7 +6368,7 @@ fn integrate_leg(
       &state,
       x,
       h,
-      0,
+      Refinement::START,
       &mut refined,
       cached_m,
     )?
@@ -6598,6 +6598,28 @@ const STEP_REFINE_ATOL: f64 = 1e-9;
 /// seen at all, and another dozen for its edges to stop costing accuracy.
 const MAX_STEP_BISECTIONS: u32 = 32;
 
+/// How many successive bisections may fail to shrink the error estimate
+/// at RK4's rate before the step is taken as it is.
+const MAX_STALLED_BISECTIONS: u32 = 4;
+
+/// Where a step-doubling refinement stands: its bisection depth, the error
+/// estimate of the enclosing step (relative to the tolerance) and how many
+/// bisections in a row barely reduced it.
+#[derive(Clone, Copy)]
+struct Refinement {
+  depth: u32,
+  error: f64,
+  stalls: u32,
+}
+
+impl Refinement {
+  const START: Self = Self {
+    depth: 0,
+    error: f64::INFINITY,
+    stalls: 0,
+  };
+}
+
 /// Upper bound on the points one leg may accumulate, so a pathological
 /// right-hand side cannot make the refinement run away.
 const MAX_REFINED_POINTS: usize = 200_000;
@@ -6619,7 +6641,7 @@ fn rk4_step_refined(
   state: &[f64],
   x: f64,
   h: f64,
-  depth: u32,
+  level: Refinement,
   out: &mut Vec<(f64, Vec<f64>)>,
   cached_m: Option<&MassLu>,
 ) -> Result<Option<Vec<f64>>, InterpreterError> {
@@ -6632,7 +6654,7 @@ fn rk4_step_refined(
     out.push((x + h, s.clone()));
     Ok(Some(s))
   };
-  if depth >= MAX_STEP_BISECTIONS || out.len() >= MAX_REFINED_POINTS {
+  if level.depth >= MAX_STEP_BISECTIONS || out.len() >= MAX_REFINED_POINTS {
     return accept(full, out);
   }
 
@@ -6663,14 +6685,34 @@ fn rk4_step_refined(
 
   // A non-finite difference means the problem is singular here, not that a
   // smaller step would help, so it counts as converged.
-  let converged = full.iter().zip(&two).all(|(a, b)| {
-    let diff = (a - b).abs() / 15.0;
-    let scale = STEP_REFINE_ATOL + STEP_REFINE_RTOL * a.abs().max(b.abs());
-    !diff.is_finite() || diff <= scale
-  });
-  if converged {
+  let error = full
+    .iter()
+    .zip(&two)
+    .map(|(a, b)| {
+      let diff = (a - b).abs() / 15.0;
+      let scale = STEP_REFINE_ATOL + STEP_REFINE_RTOL * a.abs().max(b.abs());
+      if diff.is_finite() { diff / scale } else { 0.0 }
+    })
+    .fold(0.0_f64, f64::max);
+  if error <= 1.0 {
     return accept(full, out);
   }
+  // RK4's local error falls 32-fold per halving on a smooth stretch; where
+  // it barely falls the right-hand side jumps inside the step (a friction
+  // `Sign[v0 - x'[t]]` sticking at v0) and bisecting only piles up points.
+  let stalls = if error > level.error / 4.0 {
+    level.stalls + 1
+  } else {
+    0
+  };
+  if stalls >= MAX_STALLED_BISECTIONS {
+    return accept(full, out);
+  }
+  let next = Refinement {
+    depth: level.depth + 1,
+    error,
+    stalls,
+  };
 
   let Some(mid) = rk4_step_refined(
     residuals,
@@ -6679,7 +6721,7 @@ fn rk4_step_refined(
     state,
     x,
     half,
-    depth + 1,
+    next,
     out,
     cached_m,
   )?
@@ -6693,7 +6735,7 @@ fn rk4_step_refined(
     &mid,
     x + half,
     half,
-    depth + 1,
+    next,
     out,
     cached_m,
   )

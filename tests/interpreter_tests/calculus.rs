@@ -8683,6 +8683,22 @@ Round[N[closed] - N[numeric], 10^-6]"
 mod ndsolve {
   use super::*;
 
+  // Dry friction that sticks at the belt speed puts a jump of the right-hand
+  // side inside every step; refinement stops once halving no longer pays
+  // instead of bisecting to the limit (DryFriction: 717185 grid points).
+  #[test]
+  fn sticking_friction_keeps_a_small_grid() {
+    assert_eq!(
+      interpret(
+        "f = x /. First[NDSolve[{x''[t] + x[t] == Sign[0.5 - x'[t]], \
+         x[0] == 0., x'[0] == 0.5}, x, {t, 0, 30.}]]; \
+         {Length[f[\"Grid\"]] < 20000, Round[100 {f[30.], f'[30.]}]}"
+      )
+      .unwrap(),
+      "{True, {114, -48}}"
+    );
+  }
+
   // A highly eccentric Kepler orbit passes close to the centre once per
   // period; the integration must stay accurate there, so that the orbit
   // closes again after exactly one period.
