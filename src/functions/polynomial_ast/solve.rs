@@ -2138,6 +2138,67 @@ fn solve_piecewise_max_min(
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A disjunction (also one inside a conjunction) is solved branch by
+  // branch: `x == 1 || x == 2`, `(x == -1 || x == 2) && x + 1 != 0`.
+  if args.len() == 2
+    && contains_or(&args[0])
+    && let Ok(expanded) = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "LogicalExpand",
+      args[0].clone(),
+    ))
+    && let Some(branches) = or_operands(&expanded)
+  {
+    let mut solutions: Vec<Expr> = Vec::new();
+    // The branches report no svars of their own; the disjunction does, once.
+    let depth = SOLVE_DEPTH.with(|d| {
+      let v = d.get();
+      d.set(v + 1);
+      v
+    });
+    let solved: Result<Vec<Expr>, InterpreterError> = branches
+      .into_iter()
+      .map(|branch| {
+        let mut branch_args = args.to_vec();
+        branch_args[0] = branch;
+        solve_ast(&branch_args)
+      })
+      .collect();
+    SOLVE_DEPTH.with(|d| d.set(depth));
+    for result in solved? {
+      match &result {
+        Expr::List(found) => {
+          for sol in found {
+            if !solutions
+              .iter()
+              .any(|s| crate::evaluator::pattern_matching::expr_equal(s, sol))
+            {
+              solutions.push(sol.clone());
+            }
+          }
+        }
+        _ => return Ok(unevaluated("Solve", args)),
+      }
+    }
+    sort_solutions(&mut solutions);
+    if depth == 0
+      && !in_nsolve()
+      && let Expr::List(requested) = &args[1]
+      && solutions.iter().any(|sol| {
+        let Expr::List(rules) = sol else { return false };
+        requested.iter().any(|v| {
+          !rules.iter().any(|r| {
+            matches!(r, Expr::Rule { pattern, .. }
+              if crate::evaluator::pattern_matching::expr_equal(pattern, v))
+          })
+        })
+      })
+    {
+      crate::emit_message(
+        "Solve::svars: Equations may not give solutions for all \"solve\" variables.",
+      );
+    }
+    return Ok(Expr::List(solutions.into()));
+  }
   // `a b^t == c d^t`: the exponentials of one product combine into a single
   // power, `(b/d)^t`, which the exponential solver inverts.
   if let [eq, Expr::Identifier(var)] = args
@@ -2272,6 +2333,43 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(isolated);
   }
   Ok(result)
+}
+
+/// Whether a logical combination holds an `Or` (at the top or under `And`).
+fn contains_or(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Or" => args.len() >= 2,
+    Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      ..
+    } => true,
+    Expr::FunctionCall { name, args } if name == "And" => {
+      args.iter().any(contains_or)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => contains_or(left) || contains_or(right),
+    _ => false,
+  }
+}
+
+/// The disjuncts of an `Or`.
+fn or_operands(e: &Expr) -> Option<Vec<Expr>> {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Or" => Some(args.to_vec()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      left,
+      right,
+    } => {
+      let mut out = or_operands(left).unwrap_or_else(|| vec![(**left).clone()]);
+      out.extend(or_operands(right).unwrap_or_else(|| vec![(**right).clone()]));
+      Some(out)
+    }
+    _ => None,
+  }
 }
 
 /// Rewrites every product holding two or more powers `b^(c var)` (bases

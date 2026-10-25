@@ -21235,3 +21235,32 @@ mod reduce_chained_equality {
     );
   }
 }
+
+// A disjunction, also one inside a conjunction, is solved branch by branch
+// (it was reported as Solve::naqs).
+mod solve_disjunction {
+  use super::*;
+
+  #[test]
+  fn branches_are_united() {
+    assert_eq!(
+      interpret("Solve[x == 1 || x == 2, x]").unwrap(),
+      "{{x -> 1}, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 == 1 || x == 5, x]").unwrap(),
+      "{{x -> -1}, {x -> 1}, {x -> 5}}"
+    );
+    assert_eq!(
+      interpret("Solve[(x == -1 || x == 2) && 1 + x != 0, x]").unwrap(),
+      "{{x -> 2}}"
+    );
+  }
+
+  #[test]
+  fn svars_reported_once() {
+    let r = interpret_with_stdout("Solve[i == 1 || j == 30, {i, j}]").unwrap();
+    assert_eq!(r.result, "{{i -> 1}, {j -> 30}}");
+    assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
+  }
+}
