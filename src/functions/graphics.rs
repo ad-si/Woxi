@@ -4190,6 +4190,8 @@ fn graphics_text_content(expr: &Expr) -> String {
       runs.map_or_else(|| s.clone(), |runs| flatten_label_runs(&runs))
     }
     Expr::String(s) => s.clone(),
+    // `Null` typesets as nothing (a `Row` part, a Manipulate readout).
+    Expr::Identifier(n) if n == "Null" => String::new(),
     // Text inside a picture is typeset, not printed: a mathematical
     // constant shows as its glyph there, the way it does in a notebook.
     // (Script-mode output still writes the name, which is what
@@ -13869,7 +13871,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
                   out.push_str(m);
                 }
               }
-              let markup = expr_to_svg_markup(part);
+              // `Null` typesets as nothing inside a `Row`.
+              let markup = if matches!(part, Expr::Identifier(n) if n == "Null")
+              {
+                String::new()
+              } else {
+                expr_to_svg_markup(part)
+              };
               if pending_gap > 0.0 {
                 out.push_str(&format!(
                   "<tspan dx=\"{pending_gap:.2}\">{markup}</tspan>"
@@ -14211,7 +14219,11 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
               }
               other => estimate_display_width(other),
             });
-          let inner: f64 = parts.iter().map(estimate_display_width).sum();
+          let inner: f64 = parts
+            .iter()
+            .filter(|p| !matches!(p, Expr::Identifier(n) if n == "Null"))
+            .map(estimate_display_width)
+            .sum();
           inner + sep * parts.len().saturating_sub(1) as f64
         }
         other => estimate_display_width(other),
