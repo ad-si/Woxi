@@ -22976,3 +22976,48 @@ mod integrate_interpolating_function {
     );
   }
 }
+
+mod ndsolve_stiff_system {
+  use super::*;
+
+  #[test]
+  fn oregonator_is_integrated_with_a_stiff_method() {
+    // The Belousov–Zhabotinsky Oregonator: rate constants 2500 apart make
+    // RK4 diverge, so the leg falls back to a Rosenbrock method.
+    // wolframscript (StiffnessSwitching) gives
+    // {0.0015164491772817774, 2.062699017831478, 0.0019126537680043626}.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t]/25 == (1 - x[t]) x[t] + y[t]/1250 - x[t] y[t], \
+         y'[t]/2500 == -y[t]/1250 - x[t] y[t] + 2.2 z[t], \
+         z'[t] == x[t] - z[t], x[0] == 1, y[0] == 1, z[0] == 1}, \
+         {x[t], y[t], z[t]}, {t, 0, 100}]; \
+         v = First[{x[t], y[t], z[t]} /. s /. t -> 50]; \
+         Max[Abs[v/{0.0015164491772817774, 2.062699017831478, \
+         0.0019126537680043626} - 1]] < 10^-4"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert!(
+      !woxi::get_captured_warnings()
+        .iter()
+        .any(|w| w.contains("NDSolve::"))
+    );
+  }
+
+  #[test]
+  fn stiff_linear_decay() {
+    // y' = -10^5 (y - Cos[t]) tracks Cos[t] once the transient dies out.
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y'[t] == -10^5 (y[t] - Cos[t]), y[0] == 0}, y, \
+         {t, 0, 10}]; Abs[y[10] /. First[s]] - Abs[Cos[10.]] // Abs // \
+         # < 10^-4 &"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
