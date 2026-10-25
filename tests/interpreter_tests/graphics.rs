@@ -5980,6 +5980,25 @@ mod plot3d {
         .collect()
     }
 
+    /// A `Plot3D` with `PlotRange -> {zmin, zmax}` shown together with
+    /// other 3D graphics keeps that vertical range: the z axis spans it
+    /// instead of shrinking to the data, while x and y keep their extent.
+    #[test]
+    fn show_keeps_plot3d_vertical_plot_range() {
+      let alone = export_svg(
+        "Plot3D[Sin[x y] + 5, {x, 0, 2}, {y, 0, 2}, PlotRange -> {0, 10}]",
+      );
+      let shown = export_svg(
+        "Show[{Plot3D[Sin[x y] + 5, {x, 0, 2}, {y, 0, 2}, \
+         PlotRange -> {0, 10}], Graphics3D[{Red, Sphere[{1, 1, 5}, 0.2]}]}]",
+      );
+      for label in [">0</text>", ">5</text>", ">10</text>"] {
+        assert!(alone.contains(label), "standalone plot lacks {label}");
+        assert!(shown.contains(label), "shown plot lacks {label}");
+      }
+      assert!(!shown.contains(">4.5</text>"));
+    }
+
     /// `Specularity[colour, n]` describes a surface's *highlight*, not its
     /// body colour: a sphere given `{GrayLevel[.25], Specularity[White, 10]}`
     /// (the Kepler's-conjecture cannonball stack) stays dark grey and gains a

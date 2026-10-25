@@ -7061,6 +7061,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Manipulate re-render). `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`
   // pins each axis separately.
   let mut plot_range: Option<[(f64, f64); 3]> = None;
+  // `PlotRange -> {zmin, zmax}`: pins the vertical axis only, the other two
+  // keep the extent of the contents (what a `Plot3D` carries into `Show`).
+  let mut z_only_range: Option<(f64, f64)> = None;
   // `BoxRatios -> {rx, ry, rz}`; `None` is Wolfram's `Automatic`, where the
   // box simply has the proportions of the data.
   let mut box_ratios: Option<[f64; 3]> = None;
@@ -7191,6 +7194,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           } else if let Some(ranges) = parse_axis_ranges(&value) {
             plot_range = Some(ranges);
+          } else if let Some((lo, hi)) = parse_z_only_range(&value)
+            && hi > lo
+          {
+            z_only_range = Some((lo, hi));
           }
         }
         // `BoxRatios -> {rx, ry, rz}` fixes the *shape* of the bounding
@@ -7272,6 +7279,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut style3d = StyleState3D::default();
   SCENE_TUBE_COUNT.set(count_tubes(&content));
   collect_3d_primitives(&content, &mut style3d, &mut prims);
+
+  if plot_range.is_none()
+    && let Some(z) = z_only_range
+  {
+    let [x, y, _] = primitives_bounds(&prims);
+    if x.0.is_finite() && x.1.is_finite() && y.0.is_finite() && y.1.is_finite()
+    {
+      plot_range = Some([x, y, z]);
+    }
+  }
 
   // Unbounded primitives (`InfiniteLine`, `InfinitePlane`, …) show only the
   // part of themselves that falls inside the picture's box, so they are
