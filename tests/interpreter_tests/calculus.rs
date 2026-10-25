@@ -8051,6 +8051,27 @@ mod quadratic_denominator {
 mod dsolve {
   use super::*;
 
+  // A list naming a single function goes to the single-equation solver;
+  // the linear-system solver it went to left these unevaluated.
+  #[test]
+  fn single_function_in_a_list() {
+    assert_eq!(
+      interpret("DSolve[{y'[t] == -y[t], y[0] == 1}, {y[t]}, t]").unwrap(),
+      "{{y[t] -> E^(-t)}}"
+    );
+    assert_eq!(
+      interpret(
+        "DSolve[{-0.00023 T[s] == 0.0048618 T'[s], T[0] == 100}, {T[s]}, s]"
+      )
+      .unwrap(),
+      "{{T[s] -> 100./E^(0.047307581554156895*s)}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[t] == t y[t]}, {y}, t]").unwrap(),
+      interpret("DSolve[{y'[t] == t y[t]}, y, t]").unwrap()
+    );
+  }
+
   #[test]
   fn first_order_constant_rhs() {
     // y'[x] == 0 → y[x] -> C[1]
