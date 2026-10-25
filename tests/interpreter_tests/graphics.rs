@@ -17930,6 +17930,41 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
   }
 
+  mod field_plot_aspect_ratio {
+    use super::*;
+
+    /// `AspectRatio -> r` sets the picture's height / width for every
+    /// contour and density plot; it used to be ignored, leaving them square.
+    #[test]
+    fn aspect_ratio_reshapes_field_plots() {
+      for (plot, height) in [
+        (
+          "ListContourPlot[{{0, 1}, {1, 0}}, AspectRatio -> 2, ImageSize -> 250]",
+          500,
+        ),
+        (
+          "ListDensityPlot[{{0, 1}, {1, 0}}, AspectRatio -> 1/2, ImageSize -> 250]",
+          125,
+        ),
+        (
+          "ContourPlot[x y, {x, 0, 1}, {y, 0, 1}, AspectRatio -> 2, ImageSize -> 250]",
+          500,
+        ),
+        (
+          "DensityPlot[x y, {x, 0, 1}, {y, 0, 1}, AspectRatio -> 1/2, ImageSize -> 250]",
+          125,
+        ),
+      ] {
+        let svg = export_svg(plot);
+        assert!(
+          svg.contains(&format!("width=\"250\" height=\"{height}\"")),
+          "{plot}: {}",
+          &svg[..svg.len().min(200)]
+        );
+      }
+    }
+  }
+
   mod graphics3d_primitives {
     use super::*;
 
