@@ -6750,6 +6750,24 @@ mod mixed_partial_derivatives {
 mod find_minimum {
   use super::*;
 
+  // A trial point where the objective is not real ends the search with
+  // FindMaximum::nrnum and the last point reached, instead of aborting.
+  #[test]
+  fn non_real_trial_point_is_nrnum() {
+    clear_state();
+    let r =
+      woxi::interpret_with_stdout("FindMaximum[Log[x] - x, {x, 3}]").unwrap();
+    assert!(r.result.starts_with("{-1."), "{}", r.result);
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.starts_with("FindMaximum::nrnum: The function value")
+          && w.contains("is not a real number at {x} = ")),
+      "{:?}",
+      r.warnings
+    );
+  }
+
   #[test]
   fn quadratic_minimum() {
     clear_state();

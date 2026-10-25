@@ -14938,6 +14938,39 @@ pub fn find_minimum_ast(
   let max_iter = 200;
   let tol = 1e-15;
 
+  // Like wolframscript, a trial point where the objective is not a real
+  // number ends the search with FindMinimum::nrnum / FindMaximum::nrnum
+  // and the last point reached.
+  let head = if maximize {
+    "FindMaximum"
+  } else {
+    "FindMinimum"
+  };
+  let report_nonreal = |point: &[f64]| {
+    let mut e = f.clone();
+    for (i, var) in vars.iter().enumerate() {
+      e = crate::syntax::substitute_variable(&e, var, &Expr::Real(point[i]));
+    }
+    let value = crate::evaluator::evaluate_expr_to_expr(&call1("N", e))
+      .unwrap_or(Expr::Identifier("Indeterminate".into()));
+    // Message arguments read as ToString renders them (6 digits).
+    let fmt = |e: &Expr| match crate::evaluator::evaluate_expr_to_expr(&call1(
+      "ToString",
+      e.clone(),
+    )) {
+      Ok(Expr::String(ref text)) => text.clone(),
+      _ => crate::syntax::format_expr(e, crate::syntax::ExprForm::Output),
+    };
+    crate::emit_message(&format!(
+      "{head}::nrnum: The function value {} is not a real number at {} = {}.",
+      fmt(&value),
+      fmt(&Expr::List(
+        vars.iter().map(|v| Expr::Identifier(v.clone())).collect()
+      )),
+      fmt(&Expr::List(point.iter().map(|v| Expr::Real(*v)).collect()))
+    ));
+  };
+
   if !symbolic_works {
     // `f` isn't symbolically differentiable — most commonly a call to a
     // `_?NumericQ`-guarded user function, the standard idiom for a
@@ -14961,9 +14994,13 @@ pub fn find_minimum_ast(
   } else if n == 1 {
     // Single variable: damped Newton's method on the derivative
     // Uses line search to ensure we actually decrease/increase the function
-    for _ in 0..max_iter {
-      let gval = eval_at(&grad_exprs[0], &x)?;
-      let hval = eval_at(&hess_exprs[0][0], &x)?;
+    'newton: for _ in 0..max_iter {
+      let (Ok(gval), Ok(hval)) =
+        (eval_at(&grad_exprs[0], &x), eval_at(&hess_exprs[0][0], &x))
+      else {
+        report_nonreal(&x);
+        break 'newton;
+      };
 
       // Compute Newton direction. For a quadratic this gives the exact
       // minimum in one step regardless of overall scale, so we converge
@@ -14995,7 +15032,10 @@ pub fn find_minimum_ast(
       let mut alpha = 1.0;
       let mut best_x = x[0] - step;
       clamp(std::slice::from_mut(&mut best_x));
-      let mut best_f = eval_at(f, &[best_x])? * sign;
+      let Ok(mut best_f) = eval_at(f, &[best_x]).map(|v| v * sign) else {
+        report_nonreal(&[best_x]);
+        break 'newton;
+      };
 
       // Backtracking: reduce step only if it strictly worsens the value.
       for _ in 0..30 {
@@ -15005,7 +15045,11 @@ pub fn find_minimum_ast(
         alpha *= 0.5;
         best_x = x[0] - alpha * step;
         clamp(std::slice::from_mut(&mut best_x));
-        best_f = eval_at(f, &[best_x])? * sign;
+        let Ok(v) = eval_at(f, &[best_x]) else {
+          report_nonreal(&[best_x]);
+          break 'newton;
+        };
+        best_f = v * sign;
       }
       x[0] = best_x;
       fire_step_monitor(step_monitor, &vars, &x);
@@ -15016,11 +15060,15 @@ pub fn find_minimum_ast(
     // or its direction is not a descent direction (e.g. near a saddle).
     // Plain gradient descent only converges linearly and used to stall
     // short of the optimum within the iteration budget.
-    for _ in 0..max_iter {
+    'newton: for _ in 0..max_iter {
       // Signed gradient (of sign*f, so "descent" always means improvement)
       let mut grad = vec![0.0; n];
       for i in 0..n {
-        grad[i] = eval_at(&grad_exprs[i], &x)? * sign;
+        let Ok(g) = eval_at(&grad_exprs[i], &x) else {
+          report_nonreal(&x);
+          break 'newton;
+        };
+        grad[i] = g * sign;
       }
 
       let grad_norm: f64 = grad.iter().map(|g| g * g).sum::<f64>().sqrt();
@@ -15067,7 +15115,10 @@ pub fn find_minimum_ast(
           .map(|(xi, di)| xi + alpha * di)
           .collect();
         clamp(&mut x_new);
-        let new_f = eval_at(f, &x_new)? * sign;
+        let Ok(new_f) = eval_at(f, &x_new).map(|v| v * sign) else {
+          report_nonreal(&x_new);
+          break 'newton;
+        };
         if new_f <= current_f + c * alpha * decrease || alpha < 1e-15 {
           x = x_new;
           fire_step_monitor(step_monitor, &vars, &x);
