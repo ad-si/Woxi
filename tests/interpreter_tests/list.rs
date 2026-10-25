@@ -14221,6 +14221,59 @@ mod array_reshape {
 mod sparse_array_list_ops {
   use super::*;
 
+  // A single dimension n for rank-r positions means {n, n, …}.
+  #[test]
+  fn scalar_dimension_for_matrix_positions() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{{1, 2} -> 1, {3, 1} -> 2}, 3]]").unwrap(),
+      "{{0, 1, 0}, {0, 0, 0}, {2, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{i_, i_} -> 1, 2]]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("Dimensions[SparseArray[{{1, 1, 1} -> 1}, 4]]").unwrap(),
+      "{4, 4, 4}"
+    );
+  }
+
+  // Take works on the stored rules, so a huge array is never densified.
+  #[test]
+  fn take_stays_sparse() {
+    let a = "SparseArray[{{1, 2} -> 1, {5, 5} -> 3, {2, 3} -> 7}, {6, 6}]";
+    for spec in ["2, 3", "{2, 6, 3}, -2", "-3", "All, {3}", "UpTo[9], {2, 5}"] {
+      assert_eq!(
+        interpret(&format!(
+          "Normal[Take[{a}, {spec}]] == Take[Normal[{a}], {spec}]"
+        ))
+        .unwrap(),
+        "True",
+        "Take[a, {spec}]"
+      );
+    }
+    assert_eq!(
+      interpret(&format!("Head[Take[{a}, 2, 3]]")).unwrap(),
+      "SparseArray"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[Take[SparseArray[{{1, 1} -> 1, {10^6, 10^6} -> 2}, \
+         {10^6, 10^6}], 2, 2]]"
+      )
+      .unwrap(),
+      "{{1, 0}, {0, 0}}"
+    );
+  }
+
+  #[test]
+  fn take_beyond_a_sparse_array() {
+    assert_eq!(
+      interpret("Take[SparseArray[{1, 0, 2}], 5]").unwrap(),
+      "Take[SparseArray[Automatic, {3}, 0, {1, {{0, 2}, {{1}, {3}}}, {1, 2}}], 5]"
+    );
+  }
+
   // `{pos1, pos2, …} -> v` gives every position v; with explicit
   // dimensions the position-list forms used to stay unevaluated.
   #[test]

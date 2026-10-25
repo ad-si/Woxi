@@ -1694,6 +1694,18 @@ pub fn dispatch_list_operations(
     return dispatch_list_operations(name, &converted);
   }
 
+  if name == "Take"
+    && let Some(Expr::FunctionCall {
+      name: h,
+      args: sa_args,
+    }) = args.first()
+    && h == "SparseArray"
+    && let Some(result) =
+      list_helpers_ast::sparse_array_take(sa_args, &args[1..])
+  {
+    return Some(result);
+  }
+
   // Shape-preserving list operations that take a SparseArray as their first
   // argument return a SparseArray in wolframscript. Densify it via Normal, run
   // the operation on the dense elements, then re-wrap the list result as a

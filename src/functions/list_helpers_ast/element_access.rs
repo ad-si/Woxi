@@ -505,7 +505,12 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// Emit the Take::take / Drop::drop message for an invalid position range.
-fn take_drop_message(fname: &str, from: i128, to: i128, list: &Expr) {
+pub(crate) fn take_drop_message(
+  fname: &str,
+  from: i128,
+  to: i128,
+  list: &Expr,
+) {
   let (tag, verb) = if fname == "Take" {
     ("take", "take")
   } else {
