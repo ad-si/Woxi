@@ -3486,6 +3486,13 @@ answer. These do not:
   (`OptionValue[Plot, Axes, Hold]` reports it, `OptionValue[Plot, 5, Frame]`
   does not).
 
+### Exact `Eigenvectors` with `Root` eigenvalues stop at 5x5
+
+Beyond 5x5, an exact integer matrix whose eigenvalues are not integers keeps
+`Eigenvectors`/`Eigensystem` unevaluated: the elimination over algebraic
+numbers is too slow in Woxi, while Wolfram returns `Root`-object vectors.
+
+
 ### `Eigenvalues` of a matrix without radical roots
 
 Woxi lists the eigenvalues as `Root` objects in `Root` order; wolframscript

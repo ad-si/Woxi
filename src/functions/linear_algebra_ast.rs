@@ -4504,6 +4504,12 @@ fn integer_eigenvectors(
 /// eigenvalue in `Eigenvalues` order, a repeated eigenvalue taking its
 /// vectors in turn and a defective one padded with zero vectors.
 fn algebraic_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> Option<Expr> {
+  // The elimination canonicalizes algebraic numbers of degree up to n at
+  // every step; past 5x5 that is too slow to be worth it here (see
+  // conformance_gaps.md).
+  if n > 5 {
+    return None;
+  }
   let eigen = eigenvalues_ast(&[matrix_to_expr(matrix.to_vec())]).ok()?;
   let Expr::List(eigenvalues) = &eigen else {
     return None;
