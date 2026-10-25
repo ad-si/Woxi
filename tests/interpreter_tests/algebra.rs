@@ -15101,6 +15101,35 @@ mod find_instance {
   }
 
   #[test]
+  fn inequality_far_from_the_origin() {
+    assert_eq!(
+      interpret("FindInstance[x > 1000, x]").unwrap(),
+      "{{x -> 1001}}"
+    );
+    assert_eq!(
+      interpret("FindInstance[x < -1000, x]").unwrap(),
+      "{{x -> -1001}}"
+    );
+    assert_eq!(
+      interpret("FindInstance[2574.175 - 96.95 x >= 10711.575 - 41 x, x]")
+        .unwrap(),
+      "{{x -> -146}}"
+    );
+  }
+
+  #[test]
+  fn inequality_raises_no_solve_message() {
+    clear_state();
+    interpret("FindInstance[2574.175 - 96.95 x >= 10711.575 - 41 x, x]")
+      .unwrap();
+    assert!(
+      !woxi::get_captured_warnings()
+        .iter()
+        .any(|w| w.contains("Solve::naqs"))
+    );
+  }
+
+  #[test]
   fn no_solution() {
     assert_eq!(
       interpret("FindInstance[x^2 == -1, x, Reals]").unwrap(),
