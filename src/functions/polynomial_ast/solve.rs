@@ -11177,6 +11177,14 @@ fn find_root_multivariate(
 /// Check if an expression contains an unevaluated D[...] or Dt[...] call.
 fn contains_unevaluated_d(expr: &Expr) -> bool {
   match expr {
+    // The derivative of an interpolating function evaluates at any point.
+    Expr::CurriedCall { func, args }
+      if matches!(func.as_ref(), Expr::CurriedCall { func: d, args: f }
+        if matches!(d.as_ref(), Expr::FunctionCall { name, .. } if name == "Derivative")
+          && matches!(f.as_slice(), [Expr::FunctionCall { name, .. }] if name == "InterpolatingFunction")) =>
+    {
+      args.iter().any(contains_unevaluated_d)
+    }
     // "D"/"Dt" catches an unevaluated D[...] left as-is; "Derivative" catches
     // the `Derivative[n1, n2, ...][f][args]` form a partial derivative of a
     // function with no symbolic derivative rule (e.g. CDF of a distribution

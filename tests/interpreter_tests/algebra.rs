@@ -10106,6 +10106,19 @@ mod linear_programming {
 mod find_root {
   use super::*;
 
+  // Newton uses the derivative of an interpolating function instead of
+  // differencing past the end of its domain.
+  #[test]
+  fn interpolating_function_root_at_domain_end() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "f = Interpolation[{{0, 0}, {1, 1}, {2, 4}, {3, 9}}]; FindRoot[f[a] == 4, {a, 3}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{a -> 1.9999999999999998}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
   // A starting value that is no number leaves the call unevaluated with
   // FindRoot::srect instead of aborting the evaluation.
   #[test]

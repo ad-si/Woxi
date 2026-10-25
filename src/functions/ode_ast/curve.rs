@@ -29,6 +29,11 @@ struct Curve {
   /// Residuals of the derivative equations over `[x, y…, y'…]`.
   derivative: Vec<NumFn>,
   n: usize,
+  /// `WhenEvent`s on the curve, with what they need to be evaluated.
+  events: Vec<StateEvent>,
+  funcs: Vec<SysFunc>,
+  var_names: Vec<String>,
+  x_name: String,
 }
 
 impl Curve {
@@ -210,7 +215,17 @@ impl Curve {
       } else {
         h
       };
-      if let Some((y_new, tangent)) = self.rk4_step(x, &y, &guess, step)? {
+      if let Some((y_new, tangent)) =
+        self.controlled_step(x, &y, &guess, step)?
+      {
+        if let Some((x_ev, y_ev, stop)) =
+          self.event_on_step(x, &y, &guess, step, &y_new)?
+        {
+          points.push((x_ev, y_ev.clone()));
+          if stop {
+            return Ok(points);
+          }
+        }
         x = if step == x_end - x { x_end } else { x + step };
         y = y_new;
         guess = tangent;
@@ -229,6 +244,90 @@ impl Curve {
       }
     }
     Ok(points)
+  }
+
+  /// The first active `WhenEvent` that fires on the step of length `h`
+  /// from `(x, y)` (ending at `y_new`): its point, located by bisecting the
+  /// step, after its action has run, and whether the action stops the
+  /// integration.
+  fn event_on_step(
+    &self,
+    x: f64,
+    y: &[f64],
+    guess: &[f64],
+    h: f64,
+    y_new: &[f64],
+  ) -> Result<Option<(f64, Vec<f64>, bool)>, InterpreterError> {
+    for ev in self.events.iter().filter(|e| e.active.get()) {
+      let value =
+        |x: f64, y: &[f64]| ev.value(x, y, &self.funcs, &self.var_names);
+      let (Some(before), Some(after)) = (value(x, y), value(x + h, y_new))
+      else {
+        continue;
+      };
+      if !ev.fires(before, after) {
+        continue;
+      }
+      // Bisect the step length for the firing point.
+      let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+      let mut at = (x + h, y_new.to_vec());
+      for _ in 0..50 {
+        let mid = f64::midpoint(lo, hi);
+        let Some((y_mid, _)) = self.rk4_step(x, y, guess, h * mid)? else {
+          break;
+        };
+        match value(x + h * mid, &y_mid) {
+          Some(v) if ev.fires(before, v) => {
+            hi = mid;
+            at = (x + h * mid, y_mid);
+          }
+          Some(_) => lo = mid,
+          None => break,
+        }
+      }
+      let offsets: Vec<usize> = (0..self.n).collect();
+      let outcome = ev.run(
+        at.0,
+        &at.1,
+        &self.funcs,
+        &offsets,
+        &self.var_names,
+        &self.x_name,
+      )?;
+      return Ok(Some((at.0, outcome.state, outcome.stop)));
+    }
+    Ok(None)
+  }
+
+  /// A step of length `h` whose local error is within tolerance: two half
+  /// steps, accepted when they agree with the whole step to the Richardson
+  /// estimate `|whole - halves| / 15 <= atol + rtol |y|`. `None` asks the
+  /// caller for a shorter step.
+  fn controlled_step(
+    &self,
+    x: f64,
+    y: &[f64],
+    guess: &[f64],
+    h: f64,
+  ) -> Result<Option<(Vec<f64>, Vec<f64>)>, InterpreterError> {
+    const RTOL: f64 = 1e-8;
+    const ATOL: f64 = 1e-10;
+    let Some((whole, _)) = self.rk4_step(x, y, guess, h)? else {
+      return Ok(None);
+    };
+    let Some((mid, t_mid)) = self.rk4_step(x, y, guess, h / 2.0)? else {
+      return Ok(None);
+    };
+    let Some((halves, tangent)) =
+      self.rk4_step(x + h / 2.0, &mid, &t_mid, h / 2.0)?
+    else {
+      return Ok(None);
+    };
+    let within = whole
+      .iter()
+      .zip(&halves)
+      .all(|(a, b)| (a - b).abs() / 15.0 <= ATOL + RTOL * a.abs().max(b.abs()));
+    Ok(within.then_some((halves, tangent)))
   }
 
   /// One RK4 step of length `h` along the curve, projected back onto it.
@@ -335,7 +434,18 @@ pub(super) fn ndsolve_implicit_curve(
   // Initial `[value, slope]` per function and the point they are given at.
   let mut start: Vec<[Option<f64>; 2]> = vec![[None, None]; n];
   let mut x0: Option<f64> = None;
+  let mut raw_events = Vec::new();
   for eq in &eq_items {
+    if let Expr::FunctionCall { name, args: wargs } = eq
+      && name == "WhenEvent"
+      && wargs.len() == 2
+    {
+      raw_events.push(RawStateEvent {
+        condition: wargs[0].clone(),
+        action: wargs[1].clone(),
+      });
+      continue;
+    }
     if let Some(fi) = funcs
       .iter()
       .position(|f| is_initial_condition(eq, &f.name, x_name))
@@ -375,12 +485,17 @@ pub(super) fn ndsolve_implicit_curve(
   if x0 < lo || x0 > hi {
     return Ok(None);
   }
-  let (Some(y0), Some(p0)) = (
-    start.iter().map(|s| s[0]).collect::<Option<Vec<f64>>>(),
-    start.iter().map(|s| s[1]).collect::<Option<Vec<f64>>>(),
-  ) else {
+  // Every value has to be given; a slope may be left out (it only seeds the
+  // tangent's Newton iteration, which the given slopes orient), but not all
+  // of them.
+  let Some(y0) = start.iter().map(|s| s[0]).collect::<Option<Vec<f64>>>()
+  else {
     return Ok(None);
   };
+  if start.iter().all(|s| s[1].is_none()) {
+    return Ok(None);
+  }
+  let p0: Vec<f64> = start.iter().map(|s| s[1].unwrap_or(0.0)).collect();
 
   let mut var_names = vec![x_name.clone()];
   var_names.extend(funcs.iter().map(|f| placeholder_name(&f.name, 0)));
@@ -395,11 +510,22 @@ pub(super) fn ndsolve_implicit_curve(
       })
       .collect()
   };
+  let events = raw_events
+    .into_iter()
+    .map(|raw| StateEvent::new(raw, &funcs, x_name, &var_names))
+    .collect();
+  let algebraic = compile(&algebraic_eqs)?;
+  let derivative = compile(&derivative_eqs)?;
   let curve = Curve {
-    algebraic: compile(&algebraic_eqs)?,
-    derivative: compile(&derivative_eqs)?,
+    algebraic,
+    derivative,
     n,
+    events,
+    funcs,
+    var_names: var_names.clone(),
+    x_name: x_name.clone(),
   };
+  let funcs = &curve.funcs;
 
   let mut y_start = y0;
   if !curve.project(x0, &mut y_start)? {

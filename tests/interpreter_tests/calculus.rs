@@ -8683,6 +8683,24 @@ Round[N[closed] - N[numeric], 10^-6]"
 mod ndsolve {
   use super::*;
 
+  // A WhenEvent on an implicit curve stops it where the condition turns
+  // True, located within the step, and runs its action there
+  // (TheFrankKamenetskiiProblemUsingArcLengthContinuation).
+  #[test]
+  fn implicit_curve_when_event_stops() {
+    assert_eq!(
+      interpret(
+        "r = Reap[NDSolve[{y[s] == Sqrt[1 - x[s]^2], x'[s]^2 + y'[s]^2 == 1, \
+         x[0] == 0, y[0] == 1, x'[0] == 1, \
+         WhenEvent[y[s] < 0.5, {Sow[s], \"StopIntegration\"}]}, {x, y}, \
+         {s, -1000, 1000}]]; {Round[100 x[\"Domain\"] /. First[r[[1]]]], \
+         Round[10^6 r[[2]]]}"
+      )
+      .unwrap(),
+      "{{{-105, 105}}, {{-1047198, 1047198}}}"
+    );
+  }
+
   // An arclength-parametrised curve that ends well inside a wide domain
   // (the quarter circle y == Sqrt[1 - x^2] ends at x == ±1) is traced with
   // steps that shrink near the end instead of failing at the first nominal
