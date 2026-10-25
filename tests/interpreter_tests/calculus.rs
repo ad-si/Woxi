@@ -4997,6 +4997,47 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  #[test]
+  fn gauss_rule_data() {
+    assert_eq!(
+      interpret("NIntegrate`GaussRuleData[2, MachinePrecision]").unwrap(),
+      "{{0.21132486540518713, 0.7886751345948129}, \
+{0.5000000000000001, 0.5000000000000001}, {}}"
+    );
+    // The 3-point rule on [0, 1]: (1 -+ Sqrt[3/5])/2 and 1/2, weighted
+    // 5/18, 4/9, 5/18.
+    assert_eq!(
+      interpret(
+        "{x, w, e} = NIntegrate`GaussRuleData[3, MachinePrecision]; \
+         {Max[Abs[x - {(1 - Sqrt[3/5])/2, 1/2, (1 + Sqrt[3/5])/2}]] < 10^-14, \
+         Max[Abs[w - {5/18, 4/9, 5/18}]] < 10^-14, e}"
+      )
+      .unwrap(),
+      "{True, True, {}}"
+    );
+    assert_eq!(
+      interpret(
+        "Total[#2 Exp[#1]] & @@ Most[NIntegrate`GaussRuleData[12, \
+         MachinePrecision]] - (E - 1) // Abs // # < 10^-14 &"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn gauss_rule_data_needs_a_positive_integer() {
+    clear_state();
+    assert_eq!(
+      interpret("NIntegrate`GaussRuleData[x, MachinePrecision]").unwrap(),
+      "$Failed"
+    );
+    assert!(woxi::get_captured_warnings().iter().any(|w| w
+      == "NIntegrate`GaussRuleData::intpm: Positive machine-sized integer \
+          expected at position 1 in NIntegrate`GaussRuleData[x, \
+          MachinePrecision]."));
+  }
+
   // A non-numeric integrand is reported and left unevaluated, not
   // integrated as zero.
   #[test]

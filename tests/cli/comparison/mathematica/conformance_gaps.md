@@ -647,6 +647,15 @@ in WL, which keeps integer coefficients.
 
 ## Numeric precision and floating point
 
+### `` NIntegrate`GaussRuleData `` differs in the last digits
+
+Woxi finds the Gauss–Legendre nodes by Newton iteration in machine
+arithmetic; wolframscript's own computation rounds differently from 3 points
+on (`5/18` is `0.2777777777777776` there, `0.27777777777777635` in Woxi).
+Only `MachinePrecision` is implemented — a numeric precision leaves the call
+unevaluated — and the 1-point rule gives the weight `1.` where wolframscript
+divides by zero (`{{0.5}, {ComplexInfinity}, {}}`).
+
 ### `FindMinimum`/`FindMaximum` with two starting values stop at a different last digit
 
 ```sh
