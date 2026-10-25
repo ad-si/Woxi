@@ -6178,7 +6178,11 @@ fn build_expr_with_precedence(
       });
       result
     } else {
-      make_binary_op(&result, op_str, &right)
+      make_binary_op_owned(
+        std::mem::replace(&mut result, Expr::Raw(String::new())),
+        op_str,
+        right,
+      )
     };
     in_cross_chain = is_cross_op(op_str);
     flat_chain_op = is_flat_chain_op.then_some(assoc_op_str);
@@ -6283,6 +6287,31 @@ fn build_flat_op(head: &str, left: &Expr, right: &Expr) -> Expr {
     }
   }
   call(head, parts)
+}
+
+/// `make_binary_op` for operands the caller no longer needs. The common
+/// arithmetic and logical operators move them into the node instead of
+/// cloning: the precedence climb hands each operator the whole tree built so
+/// far as its left operand, so cloning it made a long `a + b + c + …` chain
+/// quadratic to parse.
+fn make_binary_op_owned(left: Expr, op_str: &str, right: Expr) -> Expr {
+  if is_span_omitted(&left) || is_span_omitted(&right) {
+    return make_binary_op(&left, op_str, &right);
+  }
+  match op_str {
+    "+" => plus2(left, right),
+    "-" => minus2(left, right),
+    "*" | "\\[Times]" | "\u{00D7}" => times2(left, right),
+    "/" | "\\[Divide]" | "\u{00F7}" => div2(left, right),
+    "^" => pow2(left, right),
+    "&&" | "\\[And]" | "\u{2227}" => binop(BinaryOperator::And, left, right),
+    "||" | "\\[Or]" | "\u{2228}" => binop(BinaryOperator::Or, left, right),
+    "<>" => binop(BinaryOperator::StringJoin, left, right),
+    "+_NEG" => plus2(left, neg1(right)),
+    "-_NEG" => minus2(left, neg1(right)),
+    "*_NEG" => times2(left, neg1(right)),
+    _ => make_binary_op(&left, op_str, &right),
+  }
 }
 
 fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
@@ -9290,13 +9319,7 @@ pub(crate) fn with_display_names<T>(
   expr: &Expr,
   render: impl FnOnce(&Expr) -> T,
 ) -> T {
-  if DISPLAY_PASS.with(std::cell::Cell::get)
-    // With the default contexts every symbol is already stored under the
-    // name it reads back as — except one written out in System`
-    // (`System`NotABuiltin`), which still displays bare.
-    || (!crate::evaluator::contexts::contexts_active()
-      && !mentions_system_context(expr))
-  {
+  if DISPLAY_PASS.with(std::cell::Cell::get) {
     return render(expr);
   }
   struct DisplayPass;
@@ -9305,7 +9328,18 @@ pub(crate) fn with_display_names<T>(
       DISPLAY_PASS.with(|p| p.set(false));
     }
   }
-  let displayed = crate::evaluator::contexts::to_display(expr);
+  // With the default contexts every symbol is already stored under the
+  // name it reads back as — except one written out in System`
+  // (`System`NotABuiltin`), which still displays bare. The pass is entered
+  // either way, so the nested calls don't each scan their subtree again,
+  // which made printing a deep expression quadratic.
+  let displayed = if !crate::evaluator::contexts::contexts_active()
+    && !mentions_system_context(expr)
+  {
+    std::borrow::Cow::Borrowed(expr)
+  } else {
+    std::borrow::Cow::Owned(crate::evaluator::contexts::to_display(expr))
+  };
   DISPLAY_PASS.with(|p| p.set(true));
   let _guard = DisplayPass;
   render(&displayed)
@@ -9324,7 +9358,7 @@ thread_local! {
 /// number as one unit: `0. + 1.5*I`, `(0. + 1.5*I)*x`, `(2 + 3*I) + x`. The
 /// rewrite runs once, at the outermost call, like `with_display_names`.
 fn with_complex_display<T>(expr: &Expr, render: impl FnOnce(&Expr) -> T) -> T {
-  if COMPLEX_DISPLAY_PASS.with(std::cell::Cell::get) || !contains_imag_i(expr) {
+  if COMPLEX_DISPLAY_PASS.with(std::cell::Cell::get) {
     return render(expr);
   }
   struct Pass;
@@ -9333,7 +9367,13 @@ fn with_complex_display<T>(expr: &Expr, render: impl FnOnce(&Expr) -> T) -> T {
       COMPLEX_DISPLAY_PASS.with(|p| p.set(false));
     }
   }
-  let shaped = complex_display_shape(expr);
+  // Entered even when there is nothing to reshape, so the nested calls
+  // don't each search their subtree for `I` again.
+  let shaped = if contains_imag_i(expr) {
+    std::borrow::Cow::Owned(complex_display_shape(expr))
+  } else {
+    std::borrow::Cow::Borrowed(expr)
+  };
   COMPLEX_DISPLAY_PASS.with(|p| p.set(true));
   let _guard = Pass;
   render(&shaped)
@@ -18079,6 +18119,29 @@ fn render_times_textbox(args: &[Expr]) -> TextBox {
 
 /// Render an expression in 2D OutputForm.
 pub fn expr_to_output_form_2d(expr: &Expr) -> String {
+  // Symbols, integers and calls of heads without built-in meaning lay out
+  // on one line, as their 1D form. Taking that directly saves the layout's
+  // per-call check against the flat rendering of the whole subtree, which
+  // made a deeply nested `f[f[…]]` quadratic to print.
+  let one_line = |e: &Expr| {
+    let plain =
+      crate::functions::math_ast::canonical_polynomial::is_plain_symbol;
+    let mut stack = vec![e];
+    while let Some(e) = stack.pop() {
+      match e {
+        Expr::Integer(_) => {}
+        Expr::Identifier(name) if plain(name) => {}
+        Expr::FunctionCall { name, args } if plain(name) => {
+          stack.extend(args.iter());
+        }
+        _ => return false,
+      }
+    }
+    true
+  };
+  if one_line(expr) {
+    return expr_to_output(expr);
+  }
   with_display_names(expr, |e| {
     with_complex_display(e, |e| expr_to_textbox(e).to_string())
   })

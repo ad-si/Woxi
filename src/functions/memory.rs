@@ -85,7 +85,11 @@ pub fn max_memory_used() -> i128 {
       .ok()
       .and_then(|s| {
         s.lines()
-          .find(|l| l.starts_with("VmPeak:"))
+          // The resident high-water mark, like `ru_maxrss` on macOS and
+          // `PeakWorkingSetSize` on Windows. `VmPeak` is the peak *virtual*
+          // size, which counts the evaluator thread's reserved but unused
+          // stack and so read hundreds of megabytes for any session.
+          .find(|l| l.starts_with("VmHWM:"))
           .and_then(|l| l.split_whitespace().nth(1))
           .and_then(|v| v.parse::<i128>().ok())
           .map(|kb| kb * 1024)

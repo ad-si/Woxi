@@ -1064,15 +1064,13 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
-  let combinatorica_active = crate::current_context_path()
-    .iter()
-    .any(|c| c == "Combinatorica`");
-  let computational_geometry_active = crate::current_context_path()
-    .iter()
-    .any(|c| c == "ComputationalGeometry`");
-  let graph_utilities_active = crate::current_context_path()
-    .iter()
-    .any(|c| c == "GraphUtilities`");
+  // Read only by the arms below that need them, so other calls skip the
+  // `$ContextPath` lookups.
+  let combinatorica_active = || crate::context_path_contains("Combinatorica`");
+  let computational_geometry_active =
+    || crate::context_path_contains("ComputationalGeometry`");
+  let graph_utilities_active =
+    || crate::context_path_contains("GraphUtilities`");
   let combinatorica_graph_first = matches!(
     args.first(),
     Some(Expr::FunctionCall { name: head, .. }) if head == "Combinatorica`Graph"
@@ -1088,41 +1086,47 @@ fn evaluate_function_call_ast_inner(
     {
       "Combinatorica`ShortestPath"
     }
-    "GraphPath" if graph_utilities_active => "GraphUtilities`GraphPath",
-    "ConvexHull" if computational_geometry_active => {
+    "GraphPath" if graph_utilities_active() => "GraphUtilities`GraphPath",
+    "ConvexHull" if computational_geometry_active() => {
       "ComputationalGeometry`ConvexHull"
     }
     "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
     // Combinatorica's permutation inverse is the built-in one.
     "Combinatorica`InversePermutation" => "InversePermutation",
     "PieCharts`PieChart" => "PieChart",
-    "Derangements" if combinatorica_active => "Combinatorica`Derangements",
-    "RandomKSubset" if combinatorica_active => "Combinatorica`RandomKSubset",
-    "StableMarriage" if combinatorica_active => "Combinatorica`StableMarriage",
-    "SymmetricGroup" if combinatorica_active => "Combinatorica`SymmetricGroup",
-    "AlternatingGroup" if combinatorica_active => {
+    "Derangements" if combinatorica_active() => "Combinatorica`Derangements",
+    "RandomKSubset" if combinatorica_active() => "Combinatorica`RandomKSubset",
+    "StableMarriage" if combinatorica_active() => {
+      "Combinatorica`StableMarriage"
+    }
+    "SymmetricGroup" if combinatorica_active() => {
+      "Combinatorica`SymmetricGroup"
+    }
+    "AlternatingGroup" if combinatorica_active() => {
       "Combinatorica`AlternatingGroup"
     }
-    "CyclicGroup" if combinatorica_active => "Combinatorica`CyclicGroup",
-    "DihedralGroup" if combinatorica_active => "Combinatorica`DihedralGroup",
-    "Backtrack" if combinatorica_active => "Combinatorica`Backtrack",
-    "Josephus" if combinatorica_active => "Combinatorica`Josephus",
+    "CyclicGroup" if combinatorica_active() => "Combinatorica`CyclicGroup",
+    "DihedralGroup" if combinatorica_active() => "Combinatorica`DihedralGroup",
+    "Backtrack" if combinatorica_active() => "Combinatorica`Backtrack",
+    "Josephus" if combinatorica_active() => "Combinatorica`Josephus",
     "FromUnorderedPairs" | "ToAdjacencyLists" | "BreadthFirstTraversal"
-      if combinatorica_active =>
+      if combinatorica_active() =>
     {
       combinatorica_graph_name(name)
     }
     "RandomGraph"
-      if combinatorica_active
+      if combinatorica_active()
         && args.len() == 2
         && matches!(&args[0], Expr::Integer(_)) =>
     {
       "Combinatorica`RandomGraph"
     }
-    "KSubsets" if combinatorica_active => "Combinatorica`KSubsets",
-    "KSetPartitions" if combinatorica_active => "Combinatorica`KSetPartitions",
+    "KSubsets" if combinatorica_active() => "Combinatorica`KSubsets",
+    "KSetPartitions" if combinatorica_active() => {
+      "Combinatorica`KSetPartitions"
+    }
     "ToAdjacencyMatrix" | "Edges" | "M"
-      if combinatorica_active
+      if combinatorica_active()
         && matches!(
           args.first(),
           Some(Expr::FunctionCall { name: head, .. })
@@ -1136,7 +1140,7 @@ fn evaluate_function_call_ast_inner(
     | "ShortestPath"
     | "ShowGraph"
     | "ShowLabeledGraph"
-      if combinatorica_active
+      if combinatorica_active()
         && matches!(
           args.first(),
           Some(Expr::FunctionCall { name: head, .. })
@@ -1146,14 +1150,14 @@ fn evaluate_function_call_ast_inner(
       combinatorica_graph_name(name)
     }
     "RandomPermutation"
-      if combinatorica_active
+      if combinatorica_active()
         && args.len() == 1
         && matches!(&args[0], Expr::Integer(n) if *n >= 0) =>
     {
       "Combinatorica`RandomPermutation"
     }
     "Permutations"
-      if combinatorica_active
+      if combinatorica_active()
         && args.len() == 1
         && matches!(&args[0], Expr::Integer(n) if *n >= 0) =>
     {
@@ -1293,7 +1297,18 @@ fn evaluate_function_call_ast_inner(
   let has_flat =
     is_builtin_flat(name) || crate::func_attrs_contains(name, Attributes::Flat);
   let args_after_flat;
-  let args = if has_flat {
+  // Only copy the arguments when one of them actually splices in.
+  let nested = |arg: &Expr| match arg {
+    Expr::FunctionCall { name: inner, args } => {
+      inner == name
+        || (inner == "Unevaluated"
+          && args.len() == 1
+          && matches!(&args[0],
+            Expr::FunctionCall { name: inner, .. } if inner == name))
+    }
+    _ => false,
+  };
+  let args = if has_flat && args.iter().any(nested) {
     let mut flat_args: Vec<Expr> = Vec::new();
     for arg in args {
       match arg {
