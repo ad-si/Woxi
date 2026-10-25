@@ -506,9 +506,54 @@ pub fn ndsolve_ast_with_head(
     }
   }
   let args = &spliced[..];
-  let evaluated = evaluate_ndsolve_args(args)?;
+  let evaluated: Vec<Expr> = evaluate_ndsolve_args(args)?
+    .iter()
+    .map(total_derivative_to_derivative)
+    .collect();
   ndsolve_ast_inner(&evaluated)
     .map(|expr| retag_unevaluated(expr, "NDSolve", head))
+}
+
+/// Rewrite `Dt[f[v], v]` / `Dt[f[v], {v, n}]` — a total derivative of a
+/// function of its own differentiation variable, the way ODEs are often
+/// written, and the shape `Dt[x[t], t] /. t -> 0` leaves behind in an
+/// initial condition (`Dt[x[0], 0]`) — into `Derivative[n][f][v]`.
+fn total_derivative_to_derivative(expr: &Expr) -> Expr {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Dt"
+    && args.len() == 2
+    && let Expr::FunctionCall {
+      name: fname,
+      args: fargs,
+    } = &args[0]
+    && let [arg] = fargs.as_slice()
+  {
+    let order = match &args[1] {
+      Expr::List(items) => match items.as_slice() {
+        [v, Expr::Integer(n)]
+          if *n >= 1 && expr_to_string(v) == expr_to_string(arg) =>
+        {
+          Some(*n)
+        }
+        _ => None,
+      },
+      v if expr_to_string(v) == expr_to_string(arg) => Some(1),
+      _ => None,
+    };
+    if let Some(n) = order {
+      return Expr::CurriedCall {
+        func: Box::new(Expr::CurriedCall {
+          func: Box::new(Expr::FunctionCall {
+            name: "Derivative".to_string(),
+            args: vec![Expr::Integer(n)].into(),
+          }),
+          args: vec![Expr::Identifier(fname.clone())],
+        }),
+        args: vec![arg.clone()],
+      };
+    }
+  }
+  map_children(expr, &total_derivative_to_derivative)
 }
 
 /// NDSolve holds its arguments (matching Wolfram — see the `NDSolve`/
