@@ -9422,6 +9422,48 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &arg1_owned
   };
 
+  // A starting value that is not a number leaves the call unevaluated with
+  // FindRoot::srect, as in wolframscript — never a hard error.
+  {
+    let specs: Vec<&Expr> = match arg1 {
+      Expr::List(items) if items.iter().all(|s| matches!(s, Expr::List(_))) => {
+        items.iter().collect()
+      }
+      _ => args[1..]
+        .iter()
+        .take_while(|s| matches!(s, Expr::List(_)))
+        .collect(),
+    };
+    for spec in specs {
+      let Expr::List(items) = spec else { continue };
+      if !(2..=4).contains(&items.len()) || !is_findroot_var_expr(&items[0]) {
+        continue;
+      }
+      for value in items.iter().skip(1) {
+        let numeric = crate::evaluator::evaluate_expr_to_expr(&call(
+          "AllTrue",
+          vec![
+            call1("Flatten", Expr::List(vec![value.clone()].into())),
+            id_expr("NumericQ"),
+          ],
+        ))
+        .is_ok_and(|q| matches!(q, Expr::Identifier(ref t) if t == "True"));
+        if !numeric {
+          let shown = crate::evaluator::evaluate_expr_to_expr(value)
+            .unwrap_or_else(|_| value.clone());
+          let spec_shown = crate::evaluator::evaluate_expr_to_expr(spec)
+            .unwrap_or_else(|_| spec.clone());
+          crate::emit_message(&format!(
+            "FindRoot::srect: Value {} in search specification {} is not a number or array of numbers.",
+            expr_to_string(&shown),
+            expr_to_string(&spec_shown)
+          ));
+          return Ok(unevaluated("FindRoot", args));
+        }
+      }
+    }
+  }
+
   // Multivariate form: FindRoot[{eqns}, {{x, x0}, {y, y0}, ...}] — every
   // variable spec is itself a {var, start} list, optionally {var, x0, x1}
   // for a per-variable secant hint. Solved with multidimensional Newton
@@ -9442,6 +9484,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       specs,
       max_iter,
       find_option(&args[2..], "StepMonitor"),
+      args,
     );
   }
 
@@ -9472,6 +9515,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &candidate_specs,
         max_iter,
         find_option(opts, "StepMonitor"),
+        args,
       );
     }
   }
@@ -10652,6 +10696,7 @@ fn find_root_multivariate(
   specs: &[Expr],
   max_iter: usize,
   step_monitor: Option<&Expr>,
+  call_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   // Variables and starting points. A spec's variable is either a plain
   // symbol or an indexed variable like `u[1]` — see `is_findroot_var_expr`.
@@ -10796,9 +10841,11 @@ fn find_root_multivariate(
     .map(|e| find_root_rename_vars(e, &raw_vars, &syn_idents))
     .collect();
   if eqns.len() != n {
-    return Err(InterpreterError::EvaluationError(
-      "FindRoot: number of equations must match number of variables".into(),
+    crate::emit_message(&format!(
+      "FindRoot::nveq: The number of equations does not match the number of variables in {}.",
+      expr_to_string(&unevaluated("FindRoot", call_args))
     ));
+    return Ok(unevaluated("FindRoot", call_args));
   }
 
   // Jacobian J[i][j] = d f_i / d x_j (symbolic where possible — every

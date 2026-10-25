@@ -807,6 +807,47 @@ fn try_ast_pattern_replace_impl(
         Ok(None)
       }
     }
+    // A symbolic comparison stays unevaluated: it is the call
+    // `Equal[a, b]` / `Inequality[a, Less, b, …]`, and `/.` descends into it
+    // like into any call, its head included
+    // (`{x[s] == 1} /. f_[s] :> f`, `(a == b) /. x_Symbol :> g[x]`).
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let (head, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      let call_form = Expr::FunctionCall {
+        name: head,
+        args: args.into(),
+      };
+      try_ast_pattern_replace_impl(&call_form, pattern, replacement, condition)
+    }
+    Expr::Part { expr: part, index } => {
+      let mut any = false;
+      let ne = recurse(part, &mut any)?;
+      let ni = recurse(index, &mut any)?;
+      if any {
+        Ok(Some(Expr::Part {
+          expr: Box::new(ne),
+          index: Box::new(ni),
+        }))
+      } else {
+        Ok(None)
+      }
+    }
+    Expr::CompoundExpr(stmts) => {
+      let mut any = false;
+      let mut new_stmts = Vec::with_capacity(stmts.len());
+      for st in stmts {
+        new_stmts.push(recurse(st, &mut any)?);
+      }
+      if any {
+        Ok(Some(Expr::CompoundExpr(new_stmts)))
+      } else {
+        Ok(None)
+      }
+    }
     _ => Ok(None),
   }
 }
@@ -6416,20 +6457,23 @@ fn apply_replace_all_multi_ast_impl(
         .collect();
       Ok(Expr::Association(new_pairs?))
     }
-    // Symbolic comparisons (`y == x`, `a < b < c`) stay unevaluated, so
-    // `y == x /. {x -> 2, y -> 3}` must descend into every operand.
+    // Symbolic comparisons (`y == x`, `a < b < c`) stay unevaluated: each
+    // is its call form (`Equal[y, x]`, `Inequality[a, Less, b, Less, c]`),
+    // which `/.` descends into, head included.
     Expr::Comparison {
       operands,
       operators,
     } => {
-      let new_operands: Result<Vec<Expr>, _> = operands
-        .iter()
-        .map(|o| apply_replace_all_multi_ast_impl(o, rules, held))
-        .collect();
-      Ok(Expr::Comparison {
-        operands: new_operands?,
-        operators: operators.clone(),
-      })
+      let (head, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      apply_replace_all_multi_ast_impl(
+        &Expr::FunctionCall {
+          name: head,
+          args: args.into(),
+        },
+        rules,
+        held,
+      )
     }
     // A symbolic part extraction (`m[[1]]` with `m` undefined) keeps its
     // expression and index as ordinary subexpressions.
