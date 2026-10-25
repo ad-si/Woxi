@@ -7540,7 +7540,7 @@ impl NExpr {
           let Some(root) = root else {
             return f64::NAN;
           };
-          *guess.borrow_mut() = root.clone();
+          guess.borrow_mut().clone_from(&root);
           *memo.borrow_mut() = Some((key.to_vec(), root.clone()));
           root
         };
