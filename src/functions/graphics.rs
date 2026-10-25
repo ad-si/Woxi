@@ -34112,9 +34112,8 @@ pub fn format_f64_exact(v: f64) -> String {
   if !v.is_finite() || v.fract() == 0.0 || v.abs() >= 1e9 {
     return format_f64_input(v);
   }
-  if let Some(s) = rational_form(v, 10_000, 1e-9) {
-    return s;
-  }
+  // A multiple of `Pi` (e.g. a slider's `4 Pi`) is tried first: a loose
+  // rational fit would otherwise swallow it as `103283/8219`.
   // An angle written as a degree conversion (`Pi/180 60`) is a small
   // rational multiple of `Pi`; keep it exact so the body's trigonometry
   // stays symbolic, as in Wolfram.
@@ -34131,6 +34130,9 @@ pub fn format_f64_exact(v: f64) -> String {
         _ => format!("{s}*Pi"),
       },
     };
+  }
+  if let Some(s) = rational_form(v, 10_000, 1e-9) {
+    return s;
   }
   format_f64_input(v)
 }
@@ -38578,6 +38580,16 @@ mod format_f64_exact_tests {
     );
     // A rational multiple of `Pi` stays exact.
     assert_eq!(format_f64_exact(std::f64::consts::PI), "Pi");
+  }
+
+  #[test]
+  fn large_pi_multiples_are_not_fitted_as_loose_rationals() {
+    // `4 Pi` sits within 1e-9 of `103283/8219`; it must stay `4*Pi`.
+    assert_eq!(format_f64_exact(4.0 * std::f64::consts::PI), "4*Pi");
+    assert_eq!(
+      format_f64_exact(5.0 * std::f64::consts::PI / 16.0),
+      "5*Pi/16"
+    );
   }
 }
 
