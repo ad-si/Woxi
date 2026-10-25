@@ -40765,3 +40765,29 @@ mod box_width_with_embedded_style {
     assert!(widest_cell_width(&svg) < 400, "cell too wide: {svg}");
   }
 }
+
+mod text_wider_than_canvas {
+  use super::*;
+
+  /// The x coordinates of every `<text>` element in the markup.
+  fn text_xs(svg: &str) -> Vec<f64> {
+    svg
+      .split("<text x=\"")
+      .skip(1)
+      .filter_map(|part| part.split('"').next()?.parse::<f64>().ok())
+      .collect()
+  }
+
+  #[test]
+  fn overlong_label_does_not_collapse_the_plot_range() {
+    // A label wider than the picture cannot be fitted by widening the
+    // range; trying anyway squashed every other label onto the centre.
+    let svg = interpret(
+      r#"ExportString[Graphics[{Text[Row[Table["H  ", 100]]], Text["b", {-550, -450}], Text["c", {540, -450}]}, ImageSize -> {600, 400}], "SVG"]"#,
+    )
+    .unwrap();
+    let xs = text_xs(&svg);
+    assert_eq!(xs.len(), 3, "{svg}");
+    assert!(xs[2] - xs[1] > 400.0, "labels collapsed: {xs:?}");
+  }
+}
