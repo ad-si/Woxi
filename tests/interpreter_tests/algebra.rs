@@ -21154,3 +21154,37 @@ mod solve_unused_variable {
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
   }
 }
+
+// Equations in exponentials of the variable.
+mod solve_exponentials {
+  use super::*;
+
+  // `a b^t == c d^t` was read as a degree-0 polynomial with constant 0, so
+  // every t was reported a solution ({{}}); the powers now combine.
+  #[test]
+  fn two_exponentials() {
+    assert_eq!(
+      interpret("Solve[a b^t == c d^t, t]").unwrap(),
+      "{{t -> Log[c/a]/Log[b/d]}}"
+    );
+    assert_eq!(
+      interpret("Solve[a b^t - c d^t == 0, t]").unwrap(),
+      "{{t -> Log[c/a]/Log[b/d]}}"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[Re[t /. First[Solve[560000*1.12^t == 865000*0.95^t, t]] \
+         /. C[1] -> 0] - 2.641158392150406] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Lambert W for a base other than E (it used to give ComplexInfinity).
+  #[test]
+  fn lambert_with_any_base() {
+    let r = interpret_with_stdout("Solve[x 2^x == 3, x]").unwrap();
+    assert_eq!(r.result, "{{x -> ProductLog[3*Log[2]]/Log[2]}}");
+  }
+}

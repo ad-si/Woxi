@@ -2138,6 +2138,13 @@ fn solve_piecewise_max_min(
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // `a b^t == c d^t`: the exponentials of one product combine into a single
+  // power, `(b/d)^t`, which the exponential solver inverts.
+  if let [eq, Expr::Identifier(var)] = args
+    && let Some(combined) = combine_exponential_factors(eq, var)
+  {
+    return solve_ast(&[combined, args[1].clone()]);
+  }
   let result = solve_ast_entry(args)?;
   // A system with machine coefficients whose inexact elimination lost
   // solutions is re-solved exactly and numericized, with Solve::ratnz, as
@@ -2245,6 +2252,183 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(isolated);
   }
   Ok(result)
+}
+
+/// Rewrites every product holding two or more powers `b^(c var)` (bases
+/// free of `var`, exponents proportional to it) into one power
+/// `(b1^c1 b2^c2 …)^var`, evaluated. `None` when no product has two.
+fn combine_exponential_factors(expr: &Expr, var: &str) -> Option<Expr> {
+  // `exponent = c var + d` with `c`, `d` free of `var`: `(c, d)`.
+  fn affine(exponent: &Expr, var: &str) -> Option<(Expr, Expr)> {
+    if is_constant_wrt(exponent, var) {
+      return None;
+    }
+    let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+    let c = eval(call("D", vec![exponent.clone(), id_expr(var)]))?;
+    if !is_constant_wrt(&c, var) {
+      return None;
+    }
+    let d = eval(call(
+      "ReplaceAll",
+      vec![
+        exponent.clone(),
+        Expr::Rule {
+          pattern: Box::new(id_expr(var)),
+          replacement: Box::new(Expr::Integer(0)),
+        },
+      ],
+    ))?;
+    Some((c, d))
+  }
+  // `(b, exponent)` of a power, `(b^e)^k` read as `b^(e k)`.
+  fn power_parts(e: &Expr) -> Option<(Expr, Expr)> {
+    let (base, exponent) = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (left.as_ref(), right.as_ref()),
+      _ => return None,
+    };
+    match power_parts(base) {
+      Some((inner_base, inner_exp)) => {
+        Some((inner_base, times2(inner_exp, exponent.clone())))
+      }
+      None => Some((base.clone(), exponent.clone())),
+    }
+  }
+  fn walk(e: &Expr, var: &str, changed: &mut bool) -> Expr {
+    let rebuilt = crate::syntax::map_children(e, &|c| {
+      let mut inner = false;
+      let r = walk(c, var, &mut inner);
+      if inner {
+        CHANGED.with(|f| f.set(true));
+      }
+      r
+    });
+    if let Expr::FunctionCall { name, args } = &rebuilt
+      && name == "Times"
+    {
+      let mut combined_base: Vec<Expr> = Vec::new();
+      let mut rest: Vec<Expr> = Vec::new();
+      for f in args {
+        match power_parts(f) {
+          Some((base, exponent))
+            if is_constant_wrt(&base, var)
+              && let Some((c, d)) = affine(&exponent, var) =>
+          {
+            combined_base.push(pow(base.clone(), c));
+            if !matches!(d, Expr::Integer(0)) {
+              rest.push(pow(base, d));
+            }
+          }
+          _ => rest.push(f.clone()),
+        }
+      }
+      if combined_base.len() >= 2 {
+        *changed = true;
+        let base =
+          crate::evaluator::evaluate_expr_to_expr(&times(combined_base))
+            .ok()
+            .unwrap_or(Expr::Integer(1));
+        rest.push(pow(base, id_expr(var)));
+        return times(rest);
+      }
+    }
+    rebuilt
+  }
+  thread_local! {
+    static CHANGED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  }
+  // `p == q` (or `p + q == 0`) with both sides single products whose `var`
+  // sits only in such exponents is `p/q == 1` (`-p/q == 1`), one product.
+  let exponential_term = |t: &Expr| -> bool {
+    if is_constant_wrt(t, var) {
+      return false;
+    }
+    extract_times_factors(t).iter().all(|f| {
+      is_constant_wrt(f, var)
+        || power_parts(f).is_some_and(|(b, e)| {
+          is_constant_wrt(&b, var) && affine(&e, var).is_some()
+        })
+    })
+  };
+  let as_ratio = |p: &Expr, q: &Expr| -> Option<Expr> {
+    if !(exponential_term(p) && exponential_term(q)) {
+      return None;
+    }
+    let ratio = crate::evaluator::evaluate_expr_to_expr(&times2(
+      p.clone(),
+      pow(q.clone(), Expr::Integer(-1)),
+    ))
+    .ok()?;
+    Some(Expr::Comparison {
+      operands: vec![ratio, Expr::Integer(1)],
+      operators: vec![ComparisonOp::Equal],
+    })
+  };
+  let ratio_form = match expr {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.as_slice() == [ComparisonOp::Equal] =>
+    {
+      let difference = crate::evaluator::evaluate_expr_to_expr(&minus2(
+        operands[0].clone(),
+        operands[1].clone(),
+      ))
+      .ok();
+      match &difference {
+        Some(Expr::FunctionCall { name, args })
+          if name == "Plus" && args.len() == 2 =>
+        {
+          let negated =
+            crate::evaluator::evaluate_expr_to_expr(&negate_expr(&args[1]))
+              .ok()?;
+          as_ratio(&args[0], &negated)
+        }
+        _ => as_ratio(&operands[0], &operands[1]),
+      }
+    }
+    _ => None,
+  };
+  // A single product `K b1^(c1 var + d1) … == 1` becomes `B^var == 1/K`
+  // with `B = b1^c1 …`, the shape the exponential solver inverts.
+  if let Some(Expr::Comparison { operands, .. }) = &ratio_form {
+    let mut bases = Vec::new();
+    let mut constant = Vec::new();
+    for f in extract_times_factors(&operands[0]) {
+      match power_parts(&f) {
+        Some((base, exponent))
+          if is_constant_wrt(&base, var)
+            && let Some((c, d)) = affine(&exponent, var) =>
+        {
+          bases.push(pow(base.clone(), c));
+          constant.push(pow(base, d));
+        }
+        _ if is_constant_wrt(&f, var) => constant.push(f),
+        _ => return None,
+      }
+    }
+    let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+    let base = eval(times(bases))?;
+    let rhs = eval(pow(times(constant), Expr::Integer(-1)))?;
+    return Some(Expr::Comparison {
+      operands: vec![pow(base, id_expr(var)), rhs],
+      operators: vec![ComparisonOp::Equal],
+    });
+  }
+  CHANGED.with(|f| f.set(false));
+  let mut top = false;
+  let out = walk(expr, var, &mut top);
+  let any = top || CHANGED.with(std::cell::Cell::get);
+  any.then_some(out)
 }
 
 /// `g(var) == 0` where `var` occurs only inside one power `(p var + q)^n` of
@@ -4362,6 +4546,15 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if degree < 0 {
     return Ok(unevaluated("Solve", args));
   }
+  // Degree 0 with the variable still present (only inside exponents or
+  // other functions) is no polynomial; reading it as the constant 0 claimed
+  // every value a solution (`Solve[a b^t - c d^t == 0, t]` gave {{}}).
+  if degree == 0 && !is_constant_wrt(&expanded, var) {
+    if let Some(result) = try_solve_factoring_powers(&expanded, var, args) {
+      return result;
+    }
+    return Ok(unevaluated("Solve", args));
+  }
 
   // Extract coefficients for each power of var
   let mut coeffs: Vec<Expr> = Vec::new();
@@ -4383,6 +4576,15 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       coeffs.push(simplify(result));
     }
+  }
+
+  // A coefficient that still holds the variable (`x 2^x` read as degree 1
+  // with coefficient 2^x) means this is no polynomial in it.
+  if coeffs.iter().any(|c| !is_constant_wrt(c, var)) {
+    if let Some(result) = try_solve_factoring_powers(&expanded, var, args) {
+      return result;
+    }
+    return Ok(unevaluated("Solve", args));
   }
 
   let make_rule = |solution: Expr| -> Expr {
@@ -6934,15 +7136,11 @@ fn try_solve_lambert(
         op: BinaryOperator::Power,
         left,
         right,
-      } => {
-        matches!(left.as_ref(), Expr::Constant(c) | Expr::Identifier(c) if c == "E")
-          && contains_var(right, var)
-      }
+      } => !contains_var(left, var) && contains_var(right, var),
       Expr::FunctionCall { name, args }
         if name == "Power" && args.len() == 2 =>
       {
-        matches!(&args[0], Expr::Constant(c) | Expr::Identifier(c) if c == "E")
-          && contains_var(&args[1], var)
+        !contains_var(&args[0], var) && contains_var(&args[1], var)
       }
       Expr::FunctionCall { name, args } if name == "Exp" && args.len() == 1 => {
         contains_var(&args[0], var)
@@ -6984,89 +7182,92 @@ fn try_solve_lambert(
   let d = ev(&call("Plus", const_terms))?;
 
   // `t` as `a x^p E^(b x + c)`: (a, p, b, c).
-  let split_exp_term = |t: &Expr| -> Result<
-    Option<(Expr, i128, Expr, Expr)>,
-    InterpreterError,
-  > {
-    let factors: Vec<Expr> = match ev(&call(
-      "Apply",
-      vec![Expr::Identifier("List".into()), t.clone()],
-    ))? {
-      Expr::List(ref items)
-        if matches!(t, Expr::FunctionCall { name, .. } if name == "Times")
-          || matches!(
-            t,
-            Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              ..
-            }
-          ) =>
-      {
-        items.to_vec()
-      }
-      _ => vec![t.clone()],
-    };
-    let mut exponent: Option<Expr> = None;
-    let mut rest: Vec<Expr> = Vec::new();
-    for f in factors {
-      let e = match &f {
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left,
-          right,
-        } if matches!(left.as_ref(), Expr::Constant(c) | Expr::Identifier(c) if c == "E")
-          && contains_var(right, var) =>
+  let split_exp_term =
+    |t: &Expr| -> Result<Option<(Expr, i128, Expr, Expr)>, InterpreterError> {
+      let factors: Vec<Expr> = match ev(&call(
+        "Apply",
+        vec![Expr::Identifier("List".into()), t.clone()],
+      ))? {
+        Expr::List(ref items)
+          if matches!(t, Expr::FunctionCall { name, .. } if name == "Times")
+            || matches!(
+              t,
+              Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                ..
+              }
+            ) =>
         {
-          Some(right.as_ref().clone())
+          items.to_vec()
         }
-        Expr::FunctionCall { name, args }
-          if name == "Power"
-            && args.len() == 2
-            && matches!(&args[0], Expr::Constant(c) | Expr::Identifier(c) if c == "E")
-            && contains_var(&args[1], var) =>
-        {
-          Some(args[1].clone())
-        }
-        _ => None,
+        _ => vec![t.clone()],
       };
-      match e {
-        Some(e) if exponent.is_none() => exponent = Some(e),
-        Some(_) => return Ok(None),
-        None => rest.push(f),
+      let mut exponent: Option<Expr> = None;
+      let mut rest: Vec<Expr> = Vec::new();
+      for f in factors {
+        // `b^e` is `E^(e Log[b])`; the exponent is that of base E.
+        let in_base_e = |base: &Expr, exponent: &Expr| -> Option<Expr> {
+          if contains_var(base, var) || !contains_var(exponent, var) {
+            return None;
+          }
+          if matches!(base, Expr::Constant(c) | Expr::Identifier(c) if c == "E")
+          {
+            Some(exponent.clone())
+          } else {
+            Some(times2(exponent.clone(), call1("Log", base.clone())))
+          }
+        };
+        let e = match &f {
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } => in_base_e(left, right),
+          Expr::FunctionCall { name, args }
+            if name == "Power" && args.len() == 2 =>
+          {
+            in_base_e(&args[0], &args[1])
+          }
+          _ => None,
+        };
+        match e {
+          Some(e) if exponent.is_none() => exponent = Some(e),
+          Some(_) => return Ok(None),
+          None => rest.push(f),
+        }
       }
-    }
-    let Some(e) = exponent else { return Ok(None) };
-    let b = ev(&call(
-      "Coefficient",
-      vec![e.clone(), x.clone(), Expr::Integer(1)],
-    ))?;
-    let c = ev(&call(
-      "Expand",
-      vec![call(
-        "Plus",
-        vec![
-          e.clone(),
-          call("Times", vec![Expr::Integer(-1), b.clone(), x.clone()]),
-        ],
-      )],
-    ))?;
-    if !free(&b) || !free(&c) || matches!(b, Expr::Integer(0)) {
-      return Ok(None);
-    }
-    let rest = ev(&call("Times", rest))?;
-    let p = match ev(&call("Exponent", vec![rest.clone(), x.clone()]))? {
-      Expr::Integer(p) if p >= 0 => p,
-      _ => return Ok(None),
+      let Some(e) = exponent else { return Ok(None) };
+      let b = ev(&call(
+        "Coefficient",
+        vec![e.clone(), x.clone(), Expr::Integer(1)],
+      ))?;
+      let c = ev(&call(
+        "Expand",
+        vec![call(
+          "Plus",
+          vec![
+            e.clone(),
+            call("Times", vec![Expr::Integer(-1), b.clone(), x.clone()]),
+          ],
+        )],
+      ))?;
+      if !free(&b) || !free(&c) || matches!(b, Expr::Integer(0)) {
+        return Ok(None);
+      }
+      let rest = ev(&call("Times", rest))?;
+      let p = match ev(&call("Exponent", vec![rest.clone(), x.clone()]))? {
+        Expr::Integer(p) if p >= 0 => p,
+        _ => return Ok(None),
+      };
+      let a = ev(&call(
+        "Times",
+        vec![rest, call("Power", vec![x.clone(), Expr::Integer(-p)])],
+      ))?;
+      if !free(&a) {
+        return Ok(None);
+      }
+      Ok(Some((a, p, b, c)))
     };
-    let a = ev(&call(
-      "Times",
-      vec![rest, call("Power", vec![x.clone(), Expr::Integer(-p)])],
-    ))?;
-    if !free(&a) {
-      return Ok(None);
-    }
-    Ok(Some((a, p, b, c)))
-  };
 
   // The roots `(scale, z, shift)`: solutions `scale W(z) + shift`.
   let mut roots: Vec<(Expr, Expr, Expr)> = Vec::new();
