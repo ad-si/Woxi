@@ -3659,6 +3659,52 @@ mod kronecker_product {
 mod find_fit {
   use super::*;
 
+  // Any non-numeric expression can be the variable: the model is written in
+  // it and the data abscissas replace it wherever it occurs.
+  #[test]
+  fn expression_as_variable() {
+    assert_eq!(
+      interpret(
+        "g = Interpolation[{{0, 0}, {1, 1}, {2, 4}, {3, 9}}]; \
+         FindFit[{{1, 2}, {2, 4.1}, {3, 6}}, a g, {a}, g]"
+      )
+      .unwrap(),
+      "{a -> 2.0142857142857142}"
+    );
+    assert_eq!(
+      interpret("FindFit[{{1, 2}, {2, 4.1}, {3, 6}}, a f[1], {a}, f[1]]")
+        .unwrap(),
+      "{a -> 2.0142857142857142}"
+    );
+  }
+
+  // Indexed parameters are fitted like symbols and named as given.
+  #[test]
+  fn indexed_parameters() {
+    assert_eq!(
+      interpret(
+        "FindFit[{{1, 2}, {2, 4.1}, {3, 6.2}}, s[1] x + s[2], \
+         {{s[1], 1}, {s[2], 0}}, x]"
+      )
+      .unwrap(),
+      "{s[1] -> 2.1, s[2] -> -0.1000000000000004}"
+    );
+  }
+
+  #[test]
+  fn numeric_variable_is_invalid() {
+    clear_state();
+    assert_eq!(
+      interpret("FindFit[{{1, 2}, {2, 4.1}, {3, 6}}, a x, {a}, 5]").unwrap(),
+      "FindFit[{{1, 2}, {2, 4.1}, {3, 6}}, a*x, {a}, 5]"
+    );
+    assert!(
+      woxi::get_captured_warnings()
+        .iter()
+        .any(|w| w == "General::ivar: 5 is not a valid variable.")
+    );
+  }
+
   #[test]
   fn quadratic() {
     let result =

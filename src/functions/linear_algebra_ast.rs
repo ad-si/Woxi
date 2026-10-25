@@ -7413,12 +7413,52 @@ fn find_fit_weighted(
   weights: Option<&[f64]>,
   caller: &str,
 ) -> Result<Expr, InterpreterError> {
-  let args = [
-    data_expr.clone(),
-    model.clone(),
-    params_expr.clone(),
-    var_expr.clone(),
-  ];
+  // A parameter may be any expression (`sigma[1]`): each one that is not a
+  // symbol stands in the model, the constraints and the parameter list as a
+  // fresh symbol, and the fitted rules name it again at the end.
+  let param_head = |item: &Expr| match item {
+    Expr::List(inner) if !inner.is_empty() => inner[0].clone(),
+    other => other.clone(),
+  };
+  let param_items: Vec<Expr> = match params_expr {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  let mut originals: Vec<(String, Expr)> = Vec::new();
+  let mut model = model.clone();
+  let mut constraints = constraints.to_vec();
+  let mut renamed_items = Vec::with_capacity(param_items.len());
+  for item in &param_items {
+    let head = param_head(item);
+    if matches!(head, Expr::Identifier(_))
+      || crate::functions::predicate_ast::is_numeric_q(&head)
+    {
+      renamed_items.push(item.clone());
+      continue;
+    }
+    let fresh = format!("FindFit$param{}", originals.len());
+    let symbol = Expr::Identifier(fresh.clone());
+    model =
+      crate::functions::polynomial_ast::substitute_expr(&model, &head, &symbol);
+    for c in &mut constraints {
+      *c = crate::functions::polynomial_ast::substitute_expr(c, &head, &symbol);
+    }
+    renamed_items.push(match item {
+      Expr::List(inner) => {
+        let mut inner = inner.to_vec();
+        inner[0] = symbol;
+        Expr::List(inner.into())
+      }
+      _ => symbol,
+    });
+    originals.push((fresh, head));
+  }
+  let params_expr = match params_expr {
+    Expr::List(_) => Expr::List(renamed_items.into()),
+    _ => renamed_items.remove(0),
+  };
+  let constraints = &constraints[..];
+  let args = [data_expr.clone(), model, params_expr, var_expr.clone()];
   let args = &args[..];
   let data_expr = &args[0];
   let model = &args[1];
@@ -7426,25 +7466,39 @@ fn find_fit_weighted(
   let var_expr = &args[3];
 
   // The independent variable, or a list of them (`{x}`, `{x, y}`) for data
-  // rows `{x1, …, xn, f}`.
-  let var_names: Vec<String> = match var_expr {
-    Expr::Identifier(name) => vec![name.clone()],
-    Expr::List(items)
-      if !items.is_empty()
-        && items.iter().all(|v| matches!(v, Expr::Identifier(_))) =>
-    {
-      items
-        .iter()
-        .filter_map(|v| match v {
-          Expr::Identifier(name) => Some(name.clone()),
-          _ => None,
-        })
-        .collect()
-    }
-    _ => {
-      return Err(InterpreterError::EvaluationError(format!(
-        "{caller}: fourth argument must be a variable"
-      )));
+  // rows `{x1, …, xn, f}`. Any expression that is not a number can stand
+  // for a variable — an `InterpolatingFunction` the model is written in,
+  // say — and is replaced wherever it occurs.
+  let vars: Vec<Expr> = match var_expr {
+    Expr::List(items) if !items.is_empty() => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  if let Some(bad) = vars
+    .iter()
+    .find(|v| crate::functions::predicate_ast::is_numeric_q(v))
+  {
+    crate::emit_message(&format!(
+      "General::ivar: {} is not a valid variable.",
+      crate::syntax::format_expr(bad, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(unevaluated(
+      caller,
+      &[
+        data_expr.clone(),
+        model.clone(),
+        params_expr.clone(),
+        var_expr.clone(),
+      ],
+    ));
+  }
+  let replace_var = |e: &Expr, var: &Expr, value: &Expr| -> Expr {
+    match var {
+      Expr::Identifier(name) => {
+        crate::syntax::substitute_variable(e, name, value)
+      }
+      other => {
+        crate::functions::polynomial_ast::substitute_expr(e, other, value)
+      }
     }
   };
 
@@ -7485,8 +7539,9 @@ fn find_fit_weighted(
       if let Expr::List(inner) = item
         && inner.len() >= 2
         && let Some(v) = try_eval_to_f64(&inner[1])
+        && let Some(slot) = param_values.get_mut(i)
       {
-        param_values[i] = v;
+        *slot = v;
       }
     }
   }
@@ -7499,12 +7554,11 @@ fn find_fit_weighted(
     )));
   };
 
-  let (x_vals, y_vals) =
-    extract_fit_data_multi(data_list, var_names.len(), caller)?;
+  let (x_vals, y_vals) = extract_fit_data_multi(data_list, vars.len(), caller)?;
   let at_point = |x: &[f64]| -> Expr {
     let mut e = model.clone();
-    for (name, v) in var_names.iter().zip(x) {
-      e = crate::syntax::substitute_variable(&e, name, &Expr::Real(*v));
+    for (var, v) in vars.iter().zip(x) {
+      e = replace_var(&e, var, &Expr::Real(*v));
     }
     e
   };
@@ -7512,8 +7566,8 @@ fn find_fit_weighted(
   let n_params = param_names.len();
   let at_point_of = |e: &Expr, x: &[f64]| -> Expr {
     let mut e = e.clone();
-    for (name, v) in var_names.iter().zip(x) {
-      e = crate::syntax::substitute_variable(&e, name, &Expr::Real(*v));
+    for (var, v) in vars.iter().zip(x) {
+      e = replace_var(&e, var, &Expr::Real(*v));
     }
     e
   };
@@ -7699,7 +7753,11 @@ fn find_fit_weighted(
     .iter()
     .zip(param_values.iter())
     .map(|(name, val)| {
-      rule_expr(Expr::Identifier(name.clone()), Expr::Real(*val))
+      let param = originals
+        .iter()
+        .find(|(fresh, _)| fresh == name)
+        .map_or_else(|| Expr::Identifier(name.clone()), |(_, e)| e.clone());
+      rule_expr(param, Expr::Real(*val))
     })
     .collect();
 
