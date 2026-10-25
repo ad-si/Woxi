@@ -5367,6 +5367,20 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         vec![call("List", elements), str_expr(template)],
       )
     }
+    // `Column[{a, b, …}]` stacks its items, each typeset on its own line
+    // (a string item contributes its text), instead of printing the call.
+    "Column"
+      if !TF_BOX_TEXT.get() && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      let Some(Expr::List(items)) = args.first() else {
+        unreachable!("guarded by the match arm")
+      };
+      let rows: Vec<Expr> = items
+        .iter()
+        .map(|item| Expr::List(vec![tf_display(item)].into()))
+        .collect();
+      tf_box("GridBox", vec![Expr::List(rows.into())])
+    }
     // `Row[{a, b, …}]` concatenates its parts; `Row[{…}, sep]` joins them
     // with the separator. A row *displays* its parts, so a string item
     // contributes its text — that is what makes
