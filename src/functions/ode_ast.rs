@@ -6529,13 +6529,14 @@ fn integrate_leg(
   Ok(Some(points))
 }
 
-/// Local-error tolerances for the step-doubling refinement below. They are
-/// deliberately loose: RK4's local error at the nominal step size is orders
-/// of magnitude smaller for any smooth problem, so an ordinary integration
-/// never subdivides and keeps exactly the grid — and the values — the
-/// fixed-step integrator produced.
-const STEP_REFINE_RTOL: f64 = 1e-9;
-const STEP_REFINE_ATOL: f64 = 1e-11;
+/// Local-error tolerances for the step-doubling refinement below, applied
+/// to the Richardson estimate `|full - two halves| / 15` of the two-half-step
+/// result. RK4's local error at the nominal step size is far below them for
+/// a smooth problem, so an ordinary integration keeps exactly the grid — and
+/// the values — the fixed-step integrator produced, while a close encounter
+/// (an eccentric orbit's pericentre) is still subdivided.
+const STEP_REFINE_RTOL: f64 = 1e-7;
+const STEP_REFINE_ATOL: f64 = 1e-9;
 
 /// How far one nominal step may be bisected. A tracer pulse 10^-6 wide in a
 /// domain of length 20 needs ~15 bisections of the 1/1000 nominal step to be
@@ -6608,7 +6609,7 @@ fn rk4_step_refined(
   // A non-finite difference means the problem is singular here, not that a
   // smaller step would help, so it counts as converged.
   let converged = full.iter().zip(&two).all(|(a, b)| {
-    let diff = (a - b).abs();
+    let diff = (a - b).abs() / 15.0;
     let scale = STEP_REFINE_ATOL + STEP_REFINE_RTOL * a.abs().max(b.abs());
     !diff.is_finite() || diff <= scale
   });
