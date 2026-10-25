@@ -3303,6 +3303,24 @@ mod graphics {
         assert!(!svg.contains("Grid["), "{svg}");
       }
 
+      // A framed plot with `AspectRatio -> Full` fills the whole
+      // `ImageSize` (less `ImagePadding`) instead of hugging the shape of
+      // a tall, narrow plot range.
+      #[test]
+      fn framed_aspect_ratio_full_fills_image_size() {
+        let svg = export_svg(
+          "Graphics[{Line[{{0, 0}, {1, 5}}]}, PlotRange -> {{0, 1}, {0, 7.5}}, \
+           Frame -> True, ImageSize -> {600, 420}, AspectRatio -> Full, \
+           ImagePadding -> {{40, 25}, {70, 30}}]",
+        );
+        assert!(
+          svg.contains(
+            "<rect x=\"0\" y=\"0\" width=\"535.00\" height=\"320.00\"/>"
+          ),
+          "{svg}"
+        );
+      }
+
       // `{xSpec, ySpec}` pads each axis independently: no room on x, a full
       // unit on y, so the corner point stays flush on x but moves inward
       // on y. `AspectRatio -> Full` keeps the two axes independently
