@@ -279,6 +279,41 @@ mod batch_unevaluated_wrappers {
   }
 
   #[test]
+  fn bspline_basis_explicit_knots() {
+    // Quadratic Bezier knots give the Bernstein polynomials.
+    assert_eq!(
+      interpret("BSplineBasis[{2, {0, 0, 0, 1, 1, 1}}, 1, 1/4]").unwrap(),
+      "3/8"
+    );
+    assert_eq!(
+      interpret("BSplineBasis[{2, {0, 0, 0, 1, 1, 1}}, 0, 1/2]").unwrap(),
+      "1/4"
+    );
+    // The final span is closed on the right.
+    assert_eq!(
+      interpret("BSplineBasis[{2, {0, 0, 0, 1, 1, 1}}, 2, 1]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("BSplineBasis[{2, {0, 0, 0, 1, 1, 1}}, 2, 2]").unwrap(),
+      "0"
+    );
+    // Partition of unity on non-uniform interior knots.
+    assert_eq!(
+      interpret(
+        "Sum[BSplineBasis[{3, {0, 0, 0, 0, 1/5, 2/5, 3/5, 4/5, 1, 1, 1, 1}}, j, 3/10], {j, 0, 7}]"
+      )
+      .unwrap(),
+      "1"
+    );
+    // Symbolic parameter stays unevaluated.
+    assert_eq!(
+      interpret("BSplineBasis[{2, {0, 0, 0, 1, 1, 1}}, 1, x]").unwrap(),
+      "BSplineBasis[{2, {0, 0, 0, 1, 1, 1}}, 1, x]"
+    );
+  }
+
+  #[test]
   fn bspline_basis_cubic_at_half() {
     // BSplineBasis[d, x] evaluates the zeroth uniform B-spline of
     // degree d at x ∈ [0, 1]. For d = 3 the peak is at x = 1/2 with
