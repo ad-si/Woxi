@@ -29266,6 +29266,33 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
   /// variable names, layout and picture) — not the Demonstration's own
   /// code, which is copyrighted.
   #[test]
+  fn dynamic_module_local_defined_as_a_function_keeps_its_definitions() {
+    // FlashDistillationOfABenzeneToluenePXyleneMixture: an uninitialized
+    // local the body defines and calls (`PS1[T_] := …; PS1[Ta]`) must not
+    // be seeded as `Null`, which would shadow its definitions.
+    let code = "Manipulate[\
+      DynamicModule[{f, v}, \
+        Column[{Dynamic[f[t_] := t^2 + a; v = f[3]; Text[v]]}]], \
+      {{a, 1}, 0, 2}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert!(
+      !state.state.iter().any(|(name, _)| name == "f"),
+      "{:?}",
+      state.state
+    );
+    assert!(
+      state
+        .state
+        .iter()
+        .any(|(name, value)| name == "v" && value == "10"),
+      "{:?}",
+      state.state
+    );
+  }
+
+  #[test]
   fn dynamic_module_proxy_locator_pair_gets_draggable_stand_ins() {
     let code = "Manipulate[\
       DynamicModule[{a = startA, b = startB}, \
