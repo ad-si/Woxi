@@ -5788,6 +5788,50 @@ mod boolean_satisfiability {
   }
 
   #[test]
+  fn satisfiability_instances() {
+    // Round-robin over the BDD paths, free variables counting True-first.
+    assert_eq!(
+      interpret("SatisfiabilityInstances[p || q || r, {p, q, r}, 7]").unwrap(),
+      "{{True, True, True}, {False, True, True}, {False, False, True}, \
+{True, False, True}, {False, True, False}, {True, True, False}, \
+{True, False, False}}"
+    );
+    assert_eq!(
+      interpret("SatisfiabilityInstances[Xor[p, q, r], {r, q, p}, 4]").unwrap(),
+      "{{True, True, True}, {True, False, False}, {False, True, False}, \
+{False, False, True}}"
+    );
+    assert_eq!(
+      interpret("SatisfiabilityInstances[p || q, {p, q, r}, 5]").unwrap(),
+      "{{True, True, True}, {False, True, True}, {True, False, True}, \
+{False, True, False}, {True, True, False}}"
+    );
+    assert_eq!(
+      interpret("SatisfiabilityInstances[p || q, {p, q}, All]").unwrap(),
+      "{{True, True}, {False, True}, {True, False}}"
+    );
+    assert_eq!(
+      interpret("SatisfiabilityInstances[p == q, {p, q}, 4]").unwrap(),
+      "{{True, True}, {False, False}}"
+    );
+    assert_eq!(
+      interpret("SatisfiabilityInstances[p && !p, {p}, 3]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn satisfiability_instances_not_boolean() {
+    clear_state();
+    assert_eq!(
+      interpret("SatisfiabilityInstances[p || q, {p}, 2]").unwrap(),
+      "SatisfiabilityInstances[p || q, {p}, 2]"
+    );
+    assert!(woxi::get_captured_warnings().iter().any(|w| w
+      == "SatisfiabilityInstances::boolv: p || q is not Boolean valued at {False}."));
+  }
+
+  #[test]
   fn boolean_variables() {
     // Canonically sorted, deduplicated
     assert_eq!(

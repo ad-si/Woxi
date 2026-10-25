@@ -3809,6 +3809,20 @@ impl BoolNode {
         left,
         right,
       } => BoolNode::Or(all(&[(**left).clone(), (**right).clone()])?),
+      // Between truth values, `a == b` is `Equivalent[a, b]` and `a != b`
+      // is `Xor[a, b]`.
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operators.iter().all(|op| *op == ComparisonOp::Equal) => {
+        BoolNode::Equivalent(all(operands)?)
+      }
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operands.len() == 2 && operators[0] == ComparisonOp::NotEqual => {
+        BoolNode::Xor(all(operands)?)
+      }
       Expr::FunctionCall { name, args } => match name.as_str() {
         "Not" if args.len() == 1 => {
           BoolNode::Not(Box::new(BoolNode::compile(&args[0], vars)?))
@@ -3933,7 +3947,7 @@ pub fn boolean_variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Resolve the variable list for the 1- or 2-argument satisfiability forms.
 fn satisfiability_vars(args: &[Expr]) -> std::vec::Vec<Expr> {
-  if args.len() == 2 {
+  if args.len() >= 2 {
     match &args[1] {
       Expr::List(items) => items.iter().cloned().collect(),
       single => vec![single.clone()],
@@ -4011,6 +4025,149 @@ pub fn satisfiable_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   Ok(bool_expr(false))
+}
+
+/// The satisfying assignments of `expr` over `vars`, at most `limit` of
+/// them, in the order `SatisfiabilityInstances` lists them. `Ok(None)` when
+/// there are too many variables to tabulate, and `Some(Err(a))` when
+/// `expr` is not Boolean valued at the assignment `a` (the first such one,
+/// counting from all-True).
+///
+/// The order follows the reduced ordered BDD of the function with the
+/// variables in the given order: its paths to True, walked then-branch
+/// first, are visited round-robin — the first assignment of every path,
+/// then the second of every path that has one, and so on. A path fixes the
+/// variables it branches on; the ones it skips are free and count through
+/// their values True-first, the first free variable changing fastest. So
+/// `p || q || r` gives `{T,T,T}, {F,T,T}, {F,F,T}, {T,F,T}, {F,T,F}, …`.
+///
+/// wolframscript answers a request for a single instance with a different
+/// solver, whose choice among several solutions is not reproduced here.
+pub fn satisfying_assignments(
+  expr: &Expr,
+  vars: &[Expr],
+  limit: usize,
+) -> Result<Option<Result<Vec<Vec<bool>>, Vec<bool>>>, InterpreterError> {
+  let n = vars.len();
+  if n > 20 {
+    return Ok(None);
+  }
+  // Indexed by the assignment read as a binary number, the first variable
+  // most significant and True as 1 — the layout of `bdd_encoding`.
+  let compiled = BoolNode::compile(expr, vars);
+  let size = 1usize << n;
+  let mut table = vec![false; size];
+  for idx in (0..size).rev() {
+    let values = |i: usize| (idx >> (n - 1 - i)) & 1 == 1;
+    match boolean_value_under(expr, compiled.as_ref(), vars, &values)? {
+      Some(b) => table[idx] = b,
+      None => return Ok(Some(Err((0..n).map(values).collect()))),
+    }
+  }
+
+  // The BDD paths to True: `Some(b)` for a variable the path branches on,
+  // `None` for one it skips.
+  fn paths(
+    table: &[bool],
+    var: usize,
+    prefix: &mut Vec<Option<bool>>,
+    out: &mut Vec<Vec<Option<bool>>>,
+  ) {
+    if !table.contains(&true) {
+      return;
+    }
+    if table.len() == 1 {
+      out.push(prefix.clone());
+      return;
+    }
+    let (low, high) = table.split_at(table.len() / 2);
+    if low == high {
+      prefix.push(None);
+      paths(low, var + 1, prefix, out);
+    } else {
+      prefix.push(Some(true));
+      paths(high, var + 1, prefix, out);
+      prefix.pop();
+      prefix.push(Some(false));
+      paths(low, var + 1, prefix, out);
+    }
+    prefix.pop();
+  }
+  let mut found = Vec::new();
+  paths(&table, 0, &mut Vec::with_capacity(n), &mut found);
+
+  let mut instances = Vec::new();
+  let mut round = 0u64;
+  while instances.len() < limit {
+    let mut any = false;
+    for path in &found {
+      let free = path.iter().filter(|v| v.is_none()).count();
+      if round >= 1u64 << free {
+        continue;
+      }
+      any = true;
+      let mut j = 0;
+      instances.push(
+        path
+          .iter()
+          .map(|v| {
+            v.unwrap_or_else(|| {
+              j += 1;
+              (round >> (j - 1)) & 1 == 0
+            })
+          })
+          .collect(),
+      );
+      if instances.len() == limit {
+        break;
+      }
+    }
+    if !any {
+      break;
+    }
+    round += 1;
+  }
+  Ok(Some(Ok(instances)))
+}
+
+/// Whether `expr` is built from the plain connectives over `vars` alone.
+pub fn is_connective_formula(expr: &Expr, vars: &[Expr]) -> bool {
+  BoolNode::compile(expr, vars).is_some()
+}
+
+/// SatisfiabilityInstances[expr, vars] / SatisfiabilityInstances[expr, vars, n]
+pub fn satisfiability_instances_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("SatisfiabilityInstances", args);
+  if args.len() < 2 || args.len() > 3 {
+    return Ok(unevaluated());
+  }
+  let limit = match args.get(2) {
+    None => 1,
+    Some(Expr::Integer(k)) if *k >= 0 => *k as usize,
+    Some(Expr::Identifier(s)) if s == "All" => usize::MAX,
+    Some(_) => return Ok(unevaluated()),
+  };
+  let vars = satisfiability_vars(args);
+  match satisfying_assignments(&args[0], &vars, limit)? {
+    None => Ok(unevaluated()),
+    Some(Ok(instances)) => Ok(Expr::List(
+      instances
+        .into_iter()
+        .map(|a| Expr::List(a.into_iter().map(bool_expr).collect()))
+        .collect(),
+    )),
+    Some(Err(assignment)) => {
+      let shown = Expr::List(assignment.into_iter().map(bool_expr).collect());
+      crate::emit_message(&format!(
+        "SatisfiabilityInstances::boolv: {} is not Boolean valued at {}.",
+        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output),
+        crate::syntax::format_expr(&shown, crate::syntax::ExprForm::Output)
+      ));
+      Ok(unevaluated())
+    }
+  }
 }
 
 /// SatisfiabilityCount[expr] / SatisfiabilityCount[expr, vars]
