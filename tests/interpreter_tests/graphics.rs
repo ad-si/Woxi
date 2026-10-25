@@ -393,6 +393,16 @@ mod graphics {
     }
 
     #[test]
+    fn point_multi_vertex_colors() {
+      let svg = export_svg(
+        "Graphics[{PointSize[0.03], Point[{{0, 0}, {1, 1}}, \
+         VertexColors -> {Red, Blue}]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""));
+    }
+
+    #[test]
     fn line() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Line[{{0, 0}, {1, 1}, {2, 0}}]}]"
