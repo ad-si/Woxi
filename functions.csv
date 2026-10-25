@@ -216,7 +216,7 @@ NDSolve,Solves ordinary differential equations numerically (including vector-val
 Integers,Domain symbol representing the set of integers,✅,pure,4.0,158
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6.0,159
 Limit,Computes the limit of an expression,✅,pure,1.0,160
-CountryData,Returns properties (e.g. Population or language flags) or the list of countries from a bundled static dataset,✅,pure,6.0,161
+CountryData,Returns properties (e.g. Population or FullName or Polygon or language flags) or the list of countries or the members of a class (EU or Europe) from a bundled static dataset,✅,pure,6.0,161
 AstronomicalData,"Classic (pre-Entity) solar-system data: an index 1-9 names a major body Mercury..Pluto; the ""Position"" property (with an optional date) gives its heliocentric position from two-body Keplerian elements",✅,pure,6.0,161
 Sequence,Represents a sequence of arguments that are automatically spliced into any function,✅,pure,3.0,162
 Optional,Represents a pattern with an optional default value — present arguments fill the slots from the left,✅,pure,1.0,164
@@ -1041,7 +1041,7 @@ CircleTimes,Symbolic tensor product operator with Unicode display,✅,pure,3.0,1
 VectorPlot3D,Creates a 3D vector field plot,✅,pure,7.0,1018
 RandomPoint,Uniformly distributed random points in a region (points lines polygons boxes disks balls spheres intervals and Boolean regions),✅,contextual,10.2,1020
 TemplateBox,Front-end display template box such as the RowDefault template of a Row,✅,pure,7.0,1020
-ExpressionCell,Requires external services or GUI infrastructure,🚫,io,6.0,1021
+ExpressionCell,Cell showing an expression (symbolic display wrapper),✅,unevaluated,6.0,1021
 StartOfString,Represents the start of a string in string patterns,✅,1,5.1,1022
 SameTest,,🚫,,2.0,1024
 Below,Symbol for below alignment,✅,pure,1.0,1025
@@ -1233,7 +1233,7 @@ SixJSymbol,Wigner 6-j symbol,✅,pure,2.0,1217
 LinearLayer,,🚫,,11.0,1218
 CellMargins,,🚫,,3.0,1219
 Minors,Matrix minors (determinants of submatrices),✅,pure,1.0,1221
-VoronoiMesh,Voronoi tessellation mesh from 2D points,✅,pure,10.0,1221
+VoronoiMesh,Voronoi tessellation mesh from 2D points (optionally clipped to given region bounds),✅,pure,10.0,1221
 UpTo,Represents a limit specification,✅,1,10.3,1222
 ChartLayout,Grouped vs Stacked layout for multi-dataset SectorChart3D,✅,none,7.0,1223
 BinCounts,Counts data points in equal-width bins; one bin spec per coordinate bins multidimensional data into nested counts,✅,pure,6.0,1225
@@ -1257,7 +1257,7 @@ Clock,cyclic time-dependent value,✅,contextual,6.0,1244
 SeriesData,Represents a power series expansion,✅,pure,1.0,1244
 GridBox,Low-level box construct for grid/table display,✅,pure,3.0,1245
 Write,Write expressions to an output stream in OutputForm,✅,effectful,1.0,1246
-SmoothKernelDistribution,,🚫,,8.0,1247
+SmoothKernelDistribution,Kernel density estimate of data,✅,pure,8.0,1247
 OceanData,,🚫,,10.0,1248
 MaximalBy,Returns elements that maximize a criterion,✅,pure,10.0,1249
 InverseCDF,Inverse cumulative distribution function (quantile) of a distribution,✅,pure,6.0,1251
@@ -1472,7 +1472,7 @@ BellB,Returns the Bell number or Bell polynomial,✅,pure,6.0,1463
 LongRightArrow,Long right arrow notation for infix display,✅,pure,3.0,1463
 Rationals,Symbol representing the set of rational numbers,✅,pure,4.0,1463
 BooleanTable,Truth table for a boolean expression over all variable combinations,✅,pure,7.0,1464
-BSplineBasis,The i-th uniform B-spline basis function of a given degree,✅,pure,7.0,1466
+BSplineBasis,The i-th B-spline basis function of a given degree (uniform or on an explicit knot vector),✅,pure,7.0,1466
 ComplexRegionPlot,Plot regions in the complex plane,✅,pure,12.1,1468
 StreamDensityPlot,Creates a stream density plot of a vector field,✅,pure,7.0,1468
 File,Symbolic file reference wrapper,✅,pure,11.0,1469
@@ -1908,7 +1908,7 @@ Databin,Databin cloud storage,,unevaluated,10.0,1905
 Interpretation,Interpretation display wrapper (stays symbolic),✅,unevaluated,6.0,1905
 SymmetricGroup,Symbolic symmetric group S_n of degree n; stays unevaluated and is consumed by GroupOrder/GroupGenerators,✅,unevaluated,8.0,1905
 InverseErf,Inverse error function,✅,pure,3.0,1906
-SmoothDensityHistogram,Smooth density histogram,,unevaluated,8.0,1907
+SmoothDensityHistogram,Density plot of a 2D Gaussian kernel density estimate of data,✅,pure,8.0,1907
 NetExtract,Extract net components,,unevaluated,11.0,1908
 Friday,Day of the week symbol,✅,unevaluated,9.0,1910
 HankelH1,Hankel function of the first kind,✅,pure,6.0,1910
@@ -1934,7 +1934,7 @@ IsomorphicGraphQ,Test whether two graphs are isomorphic,✅,pure,8.0,1930
 Resampling,Signal processing option for resampling methods,🚫,,8.0,1930
 DumpSave,Serialization of definitions to a binary file,🚫,,3.0,1932
 RecordLists,Data import option for structuring records as lists,🚫,,2.0,1932
-ImageEffect,Applies an effect to an image (SaltPepperNoise GaussianNoise Noise Solarization OilPainting and Charcoal),✅,contextual,7.0,1935
+ImageEffect,Applies an effect to an image (SaltPepperNoise GaussianNoise Noise Solarization OilPainting Charcoal and MotionBlur),✅,contextual,7.0,1935
 VertexDelete,Delete one or more vertices from a graph along with their incident edges,✅,pure,8.0,1935
 FileNameSplit,Splits a file name into a list of path components,✅,pure,7.0,1938
 SmallCircle,Symbolic small-circle operator with Unicode display,✅,pure,3.0,1938

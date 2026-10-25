@@ -541,6 +541,13 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("PDF", args));
   }
 
+  if dist_name == "SmoothKernelDistribution" {
+    return Ok(
+      smooth_kernel_value(dargs, &args[1], false)
+        .unwrap_or_else(|| unevaluated("PDF", args)),
+    );
+  }
+
   // PDF of a ReliabilityDistribution is -d/dx of its own survival function.
   if dist_name == "ReliabilityDistribution"
     && let Some(value) = reliability_distribution_pdf(dargs, &args[1])?
@@ -1107,17 +1114,29 @@ pub fn quantile_distribution_closed_form(
         };
         return eval(&result).ok();
       }
-      // Machine-precision q: numeric inverse CDF (requires numeric m, s)
-      let m_num = expr_to_num(&m)?;
-      let s_num = expr_to_num(&s)?;
+      // Machine-precision q: numeric inverse CDF (requires numeric m, s;
+      // a numeric expression such as Log[2] is numericized)
+      let m_num = try_eval_to_f64(&m)?;
+      let s_num = try_eval_to_f64(&s)?;
       let z = inverse_erf_f64(2.0 * q_num - 1.0);
       Some(Expr::Real(m_num + s_num * std::f64::consts::SQRT_2 * z))
     }
-    // Quantile[LogNormalDistribution[m, s], q] = E^(m + Sqrt[2] s InverseErf[2q - 1]).
-    // Only the machine-precision form is handled; exact q stays symbolic.
-    "LogNormalDistribution" if dargs.len() == 2 && !is_exact_q => {
-      let m_num = expr_to_num(&dargs[0])?;
-      let s_num = expr_to_num(&dargs[1])?;
+    // Quantile[LogNormalDistribution[m, s], q] = E^(m + Sqrt[2] s InverseErf[2q - 1]),
+    // the exponential of the NormalDistribution[m, s] quantile.
+    "LogNormalDistribution" if dargs.len() == 2 && is_exact_q => {
+      if q_num == 0.0 {
+        return Some(Expr::Integer(0));
+      }
+      if q_num == 1.0 {
+        return Some(infinity());
+      }
+      let normal =
+        quantile_distribution_closed_form("NormalDistribution", dargs, q)?;
+      eval(&pow(Expr::Constant("E".to_string()), normal)).ok()
+    }
+    "LogNormalDistribution" if dargs.len() == 2 => {
+      let m_num = try_eval_to_f64(&dargs[0])?;
+      let s_num = try_eval_to_f64(&dargs[1])?;
       if q_num == 0.0 {
         return Some(Expr::Integer(0));
       }
@@ -2297,6 +2316,13 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if args.len() == 1 {
     return Ok(unevaluated("CDF", args));
+  }
+
+  if dist_name == "SmoothKernelDistribution" {
+    return Ok(
+      smooth_kernel_value(dargs, &args[1], true)
+        .unwrap_or_else(|| unevaluated("CDF", args)),
+    );
   }
 
   // CDF[ReliabilityDistribution[…], t] = 1 - SurvivalFunction[…, t].
@@ -4582,6 +4608,12 @@ pub fn distribution_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   match dist_name {
+    "SmoothKernelDistribution" => smooth_kernel_mean_variance(dargs)
+      .ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "SmoothKernelDistribution: unsupported specification".into(),
+        )
+      }),
     "ErlangDistribution" if dargs.len() == 2 => distribution_mean_variance(
       "GammaDistribution",
       &erlang_gamma_dargs(dargs)?,
@@ -18032,4 +18064,182 @@ fn pdf_noncentral_student_t(dargs: &[Expr], x: Expr) -> Expr {
       vec![unevaluated("NoncentralStudentTDistribution", dargs), x],
     ),
   }
+}
+
+// ─── SmoothKernelDistribution ───────────────────────────────────────
+
+/// The kernels of `SmoothKernelDistribution`, each scaled to unit variance
+/// so the bandwidth is the kernel's standard deviation, as Wolfram does.
+#[derive(Clone, Copy)]
+enum SmoothKernel {
+  Gaussian,
+  Epanechnikov,
+  Rectangular,
+  Triangular,
+  Biweight,
+}
+
+impl SmoothKernel {
+  fn density(self, u: f64) -> f64 {
+    match self {
+      Self::Gaussian => {
+        (-u * u / 2.0).exp() / (2.0 * std::f64::consts::PI).sqrt()
+      }
+      Self::Epanechnikov => {
+        let r = 5f64.sqrt();
+        if u.abs() < r {
+          3.0 / (4.0 * r) * (1.0 - u * u / 5.0)
+        } else {
+          0.0
+        }
+      }
+      Self::Rectangular => {
+        let r = 3f64.sqrt();
+        if u.abs() < r { 1.0 / (2.0 * r) } else { 0.0 }
+      }
+      Self::Triangular => {
+        let r = 6f64.sqrt();
+        if u.abs() < r {
+          (1.0 - u.abs() / r) / r
+        } else {
+          0.0
+        }
+      }
+      Self::Biweight => {
+        let r = 7f64.sqrt();
+        if u.abs() < r {
+          15.0 / (16.0 * r) * (1.0 - u * u / 7.0).powi(2)
+        } else {
+          0.0
+        }
+      }
+    }
+  }
+
+  /// The kernel's cumulative distribution, where it has a closed form.
+  fn cumulative(self, u: f64) -> Option<f64> {
+    Some(match self {
+      Self::Gaussian => 0.5 * erfc_f64(-u / 2f64.sqrt()),
+      Self::Epanechnikov => {
+        let t = (u / 5f64.sqrt()).clamp(-1.0, 1.0);
+        0.5 + 0.75 * t - 0.25 * t * t * t
+      }
+      Self::Rectangular => {
+        let r = 3f64.sqrt();
+        ((u + r) / (2.0 * r)).clamp(0.0, 1.0)
+      }
+      Self::Triangular => {
+        let t = (u / 6f64.sqrt()).clamp(-1.0, 1.0);
+        if t < 0.0 {
+          (1.0 + t).powi(2) / 2.0
+        } else {
+          1.0 - (1.0 - t).powi(2) / 2.0
+        }
+      }
+      Self::Biweight => return None,
+    })
+  }
+}
+
+fn erfc_f64(x: f64) -> f64 {
+  let v =
+    crate::evaluator::evaluate_function_call_ast("Erfc", &[Expr::Real(x)]);
+  match v {
+    Ok(Expr::Real(r)) => r,
+    _ => f64::NAN,
+  }
+}
+
+/// The data, bandwidth and kernel of `SmoothKernelDistribution[data, bw,
+/// kernel]`. A bandwidth of `Automatic` or `"Silverman"` follows
+/// Silverman's rule, `0.9 Min[σ, IQR/1.34] n^(-1/5)`, with the sample
+/// standard deviation and Wolfram's default interquartile range.
+fn smooth_kernel_parts(
+  dargs: &[Expr],
+) -> Option<(Vec<f64>, f64, SmoothKernel)> {
+  if dargs.is_empty() || dargs.len() > 3 {
+    return None;
+  }
+  let Expr::List(items) = &dargs[0] else {
+    return None;
+  };
+  let data: Vec<f64> =
+    items.iter().map(try_eval_to_f64).collect::<Option<_>>()?;
+  if data.len() < 2 {
+    return None;
+  }
+  let bandwidth = match dargs.get(1) {
+    None => None,
+    Some(Expr::Identifier(s)) if s == "Automatic" => None,
+    Some(Expr::String(s)) if s == "Silverman" => None,
+    Some(other) => Some(try_eval_to_f64(other).filter(|h| *h > 0.0)?),
+  };
+  let bandwidth = bandwidth.unwrap_or_else(|| silverman_bandwidth(&data));
+  let kernel = match dargs.get(2) {
+    None => SmoothKernel::Gaussian,
+    Some(Expr::String(s)) => match s.as_str() {
+      "Gaussian" => SmoothKernel::Gaussian,
+      "Epanechnikov" => SmoothKernel::Epanechnikov,
+      "Rectangular" => SmoothKernel::Rectangular,
+      "Triangular" => SmoothKernel::Triangular,
+      "Biweight" => SmoothKernel::Biweight,
+      _ => return None,
+    },
+    Some(_) => return None,
+  };
+  (bandwidth > 0.0 && bandwidth.is_finite())
+    .then_some((data, bandwidth, kernel))
+}
+
+/// Silverman's rule of thumb, `0.9 Min[σ, IQR/1.34] n^(-1/5)`, with the
+/// sample standard deviation and Wolfram's default interquartile range.
+pub(crate) fn silverman_bandwidth(data: &[f64]) -> f64 {
+  let n = data.len() as f64;
+  let mean = data.iter().sum::<f64>() / n;
+  let sd =
+    (data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)).sqrt();
+  let mut sorted = data.to_vec();
+  sorted.sort_by(f64::total_cmp);
+  let quantile =
+    |p: f64| sorted[((n * p).ceil() as usize).clamp(1, sorted.len()) - 1];
+  let iqr = quantile(0.75) - quantile(0.25);
+  let spread = if iqr > 0.0 { sd.min(iqr / 1.34) } else { sd };
+  0.9 * spread * n.powf(-0.2)
+}
+
+/// PDF or CDF of a `SmoothKernelDistribution` at a numeric point: the
+/// average of the kernels centred on the data, scaled by the bandwidth.
+/// `None` for a symbolic point or an unsupported specification.
+pub(crate) fn smooth_kernel_value(
+  dargs: &[Expr],
+  x: &Expr,
+  cumulative: bool,
+) -> Option<Expr> {
+  let (data, h, kernel) = smooth_kernel_parts(dargs)?;
+  let x = try_eval_to_f64(x)?;
+  let n = data.len() as f64;
+  let value = if cumulative {
+    let mut sum = 0.0;
+    for xi in &data {
+      sum += kernel.cumulative((x - xi) / h)?;
+    }
+    sum / n
+  } else {
+    data
+      .iter()
+      .map(|xi| kernel.density((x - xi) / h))
+      .sum::<f64>()
+      / (n * h)
+  };
+  Some(Expr::Real(value))
+}
+
+/// Mean and variance of a `SmoothKernelDistribution`: the data's mean, and
+/// its population variance plus the kernel's (the bandwidth squared).
+fn smooth_kernel_mean_variance(dargs: &[Expr]) -> Option<(Expr, Expr)> {
+  let (data, h, _) = smooth_kernel_parts(dargs)?;
+  let n = data.len() as f64;
+  let mean = data.iter().sum::<f64>() / n;
+  let var = data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n + h * h;
+  Some((Expr::Real(mean), Expr::Real(var)))
 }

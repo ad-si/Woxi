@@ -6814,6 +6814,44 @@ mod boolean_counting_function_operator {
 mod boolean_minimize_forms {
   use super::*;
 
+  // Strings (and any other non-connective subexpression) are variables, as
+  // BooleanVariables lists them; only symbols used to count.
+  #[test]
+  fn string_variables() {
+    assert_eq!(
+      interpret("BooleanMinimize[\"a\" && !\"a\"]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("Simplify[\"a\" && !\"a\"]").unwrap(), "False");
+    assert_eq!(
+      interpret(
+        "ToString[BooleanMinimize[(\"a\" && \"b\") || (\"a\" && \"b\" && \"c\")], InputForm]"
+      )
+      .unwrap(),
+      "\"a\" && \"b\""
+    );
+    assert_eq!(interpret("TautologyQ[\"x\" || !\"x\"]").unwrap(), "True");
+    assert_eq!(
+      interpret("BooleanMinimize[x > 0 && (x > 0 || y)]").unwrap(),
+      "x > 0"
+    );
+  }
+
+  // The truth table of plain connectives is computed directly instead of
+  // evaluating the expression once per assignment.
+  #[test]
+  fn large_dnf_minimizes_quickly() {
+    assert_eq!(
+      interpret(
+        "TimeConstrained[BooleanMinimize[LogicalExpand[Not[Or @@ \
+         Table[And[v[i], !v[Mod[i, 10] + 1]], {i, 10}]]]], 10]"
+      )
+      .unwrap(),
+      "(v[1] && v[2] && v[3] && v[4] && v[5] && v[6] && v[7] && v[8] && v[9] && v[10]) || \
+       ( !v[1] &&  !v[2] &&  !v[3] &&  !v[4] &&  !v[5] &&  !v[6] &&  !v[7] &&  !v[8] &&  !v[9] &&  !v[10])"
+    );
+  }
+
   #[test]
   fn dnf_and_cnf_forms() {
     clear_state();

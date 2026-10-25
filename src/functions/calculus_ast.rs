@@ -461,6 +461,23 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A list integrand integrates element-wise (`Integrate[{f, g}, x]` is
+  // `{Integrate[f, x], Integrate[g, x]}`), at every nesting depth.
+  if let Expr::List(items) = &args[0] {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+      let mut sub = args.to_vec();
+      sub[0] = item.clone();
+      out.push(crate::evaluator::evaluate_expr_to_expr(
+        &Expr::FunctionCall {
+          name: "Integrate".to_string(),
+          args: sub.into(),
+        },
+      )?);
+    }
+    return Ok(Expr::List(out.into()));
+  }
+
   // Separate trailing option rules (`Assumptions -> …`, `GenerateConditions ->
   // …`, etc.) from the integration specs so they are not mistaken for extra
   // integration variables by the multivariate path below. An `Assumptions`
@@ -728,8 +745,23 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Integrate the expression
-  match integrate(&args[0], &var_name) {
+  // Integrate the expression; a product of a sum (`Sin[x] (Cos[x] + Sin[x])`)
+  // that no rule matches directly is retried with the integrand distributed
+  // into a sum of terms.
+  let integral = integrate(&args[0], &var_name).or_else(|| {
+    let expanded = crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      std::slice::from_ref(&args[0]),
+    )
+    .ok()?;
+    if crate::syntax::expr_to_string(&expanded)
+      == crate::syntax::expr_to_string(&args[0])
+    {
+      return None;
+    }
+    integrate(&expanded, &var_name)
+  });
+  match integral {
     Some(result) => {
       let simplified = simplify(result);
       let evaluated = crate::evaluator::evaluate_expr_to_expr(&simplified)
@@ -5833,7 +5865,7 @@ fn try_integrate_inverse_sqrt(base: &Expr, var: &str) -> Option<Expr> {
 
 /// Build a *continuous* antiderivative of `Sqrt[a + b*x^2]` for a positive
 /// numeric constant term `a` and any non-zero numeric quadratic coefficient
-/// `b` (with no linear term):
+/// `b`; a linear term is removed by completing the square (u = x + c1/(2b)):
 ///   b < 0:  (x*Sqrt[a + b*x^2])/2 + (a*ArcSin[x*Sqrt[-b/a]])/(2*Sqrt[-b])
 ///   b > 0:  (x*Sqrt[a + b*x^2])/2 + (a*ArcSinh[x*Sqrt[b/a]])/(2*Sqrt[b])
 /// Unlike wolframscript's displayed indefinite forms (which use ArcTan/ArcTanh
@@ -5851,13 +5883,8 @@ fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
   let Expr::List(coeffs) = &coeff_result else {
     return None;
   };
-  // Need exactly a degree-2 polynomial: a + (linear)*x + b*x^2.
+  // Need exactly a degree-2 polynomial: c0 + c1*x + b*x^2.
   if coeffs.len() != 3 {
-    return None;
-  }
-  // Linear coefficient must be zero.
-  let c1_val = crate::functions::math_ast::try_eval_to_f64(&coeffs[1])?;
-  if c1_val.abs() > 1e-15 {
     return None;
   }
   // The x^2 coefficient `b` must be a non-zero numeric constant.
@@ -5867,31 +5894,48 @@ fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
     return None;
   }
   let b_neg = b_val < 0.0;
-  let a = &coeffs[0]; // constant term
-  // The constant term must be a positive numeric constant so the ArcSin/ArcSinh
-  // form is real-valued and the square roots are well defined.
-  let a_val = crate::functions::math_ast::try_eval_to_f64(a)?;
+  let c1_val = crate::functions::math_ast::try_eval_to_f64(&coeffs[1])?;
+  let x = id_expr(var);
+  // Complete the square: c0 + c1*x + b*x^2 = a + b*u^2 with
+  // u = x + c1/(2b) and a = c0 - c1^2/(4b).
+  let (u, a) = if c1_val.abs() > 1e-15 {
+    let shift =
+      simplify(div2(coeffs[1].clone(), times2(Expr::Integer(2), b.clone())));
+    let a = crate::evaluator::evaluate_expr_to_expr(&minus2(
+      coeffs[0].clone(),
+      div2(
+        pow2(coeffs[1].clone(), Expr::Integer(2)),
+        times2(Expr::Integer(4), b.clone()),
+      ),
+    ))
+    .ok()?;
+    (plus2(x, shift), a)
+  } else {
+    (x, coeffs[0].clone())
+  };
+  // The reduced constant term must be a positive numeric constant so the
+  // ArcSin/ArcSinh form is real-valued and the square roots are well defined.
+  let a_val = crate::functions::math_ast::try_eval_to_f64(&a)?;
   if a_val <= 0.0 {
     return None;
   }
 
   let sqrt_base = make_sqrt(base.clone());
-  let x = id_expr(var);
-  // First term: (x*Sqrt[base])/2.
-  let first = div2(times2(x.clone(), sqrt_base), Expr::Integer(2));
+  // First term: (u*Sqrt[base])/2.
+  let first = div2(times2(u.clone(), sqrt_base), Expr::Integer(2));
   // |b| for the b < 0 branch (ArcSin needs the positive coefficient).
   let abs_b = if b_neg {
     simplify(neg1(b.clone()))
   } else {
     b.clone()
   };
-  // arc_arg = x * Sqrt[|b|/a]
+  // arc_arg = u * Sqrt[|b|/a]
   let ratio = simplify(div2(abs_b.clone(), a.clone()));
-  let arc_arg = simplify(times2(x, make_sqrt(ratio)));
+  let arc_arg = simplify(times2(u, make_sqrt(ratio)));
   let arc = call1(if b_neg { "ArcSin" } else { "ArcSinh" }, arc_arg);
   // Second term: (a*arc) / (2*Sqrt[|b|]).
   let denom = simplify(times2(Expr::Integer(2), make_sqrt(abs_b)));
-  let second = make_divided(times2(a.clone(), arc), denom);
+  let second = make_divided(times2(a, arc), denom);
   Some(plus2(first, second))
 }
 
@@ -15609,6 +15653,116 @@ fn integrand_is_complex_on(
   points.into_iter().any(probe)
 }
 
+/// Whether `integrand` evaluates to a (real or complex) number at any of a
+/// few interior points of the range.
+fn integrand_numeric_somewhere(
+  integrand: &Expr,
+  var: &str,
+  lo: f64,
+  hi: f64,
+) -> bool {
+  let points: Vec<f64> = match (lo.is_finite(), hi.is_finite()) {
+    (true, true) => [0.27, 0.5, 0.61, 0.83]
+      .iter()
+      .map(|t| lo + (hi - lo) * t)
+      .collect(),
+    (true, false) => [0.7, 2.3, 5.1].iter().map(|d| lo + d).collect(),
+    (false, true) => [0.7, 2.3, 5.1].iter().map(|d| hi - d).collect(),
+    (false, false) => vec![-1.3, 0.4, 2.1],
+  };
+  points.into_iter().any(|x| {
+    let substituted =
+      crate::syntax::substitute_variable(integrand, var, &Expr::Real(x));
+    let snapshot = crate::snapshot_warnings();
+    crate::push_quiet();
+    // Numericized as the sampler numericizes it: an inner Integrate with no
+    // closed form is a number once N turns it into an NIntegrate.
+    let value = crate::evaluator::evaluate_expr_to_expr(&call1("N", substituted));
+    crate::pop_quiet();
+    crate::restore_warnings(snapshot);
+    value.is_ok_and(|v| {
+      crate::functions::math_ast::try_eval_to_f64(&v).is_some()
+        || crate::functions::math_ast::try_extract_complex_float(&v).is_some()
+        || matches!(&v, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
+    })
+  })
+}
+
+/// The points where a `Piecewise` in `integrand` switches pieces: the
+/// numeric sides of the comparisons with `var` in its conditions. The
+/// integrand is evaluated with `var` symbolic first, so a piecewise
+/// function defined elsewhere (`f[x_] := Piecewise[…]`) is seen too.
+fn piecewise_breakpoints(integrand: &Expr, var: &str) -> Vec<f64> {
+  fn comparison_points(cond: &Expr, var: &str, out: &mut Vec<f64>) {
+    let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var);
+    let mut chain = |operands: &[Expr]| {
+      for pair in operands.windows(2) {
+        let other = if is_var(&pair[0]) {
+          &pair[1]
+        } else if is_var(&pair[1]) {
+          &pair[0]
+        } else {
+          continue;
+        };
+        if let Some(v) = crate::functions::math_ast::try_eval_to_f64(other) {
+          out.push(v);
+        }
+      }
+    };
+    match cond {
+      Expr::Comparison { operands, .. } => chain(operands),
+      Expr::FunctionCall { name, args } => match name.as_str() {
+        "Inequality" => {
+          let operands: Vec<Expr> = args.iter().step_by(2).cloned().collect();
+          chain(&operands);
+        }
+        "Less" | "LessEqual" | "Greater" | "GreaterEqual" | "Equal"
+        | "Unequal" => chain(args),
+        "And" | "Or" | "Not" => {
+          for a in args {
+            comparison_points(a, var, out);
+          }
+        }
+        _ => {}
+      },
+      Expr::BinaryOp { left, right, .. } => {
+        comparison_points(left, var, out);
+        comparison_points(right, var, out);
+      }
+      Expr::UnaryOp { operand, .. } => comparison_points(operand, var, out),
+      _ => {}
+    }
+  }
+  fn walk(e: &Expr, var: &str, out: &mut Vec<f64>) {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Piecewise"
+      && let Some(Expr::List(cases)) = args.first()
+    {
+      for case in cases {
+        if let Expr::List(pair) = case
+          && pair.len() == 2
+        {
+          comparison_points(&pair[1], var, out);
+        }
+      }
+    }
+    for child in crate::syntax::expr_children(e) {
+      walk(child, var, out);
+    }
+  }
+  let snapshot = crate::snapshot_warnings();
+  crate::push_quiet();
+  let symbolic = crate::evaluator::evaluate_expr_to_expr(integrand);
+  crate::pop_quiet();
+  crate::restore_warnings(snapshot);
+  let mut out = Vec::new();
+  if let Ok(symbolic) = symbolic {
+    walk(&symbolic, var, &mut out);
+  }
+  out.retain(|v| v.is_finite());
+  out
+}
+
 /// A limit of integration that is not a number: wolframscript reports
 /// `NIntegrate::nlim` for the first such limit and leaves the call
 /// unevaluated.
@@ -16167,6 +16321,51 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let integrand = &args[0];
 
+  // An integrand that is not a number anywhere in the range (it still
+  // holds an unknown function or symbol) is reported, as Wolfram does,
+  // and the call left unevaluated.
+  if !integrand_numeric_somewhere(integrand, &var_name, lo, hi) {
+    crate::emit_message(&format!(
+      "NIntegrate::inumr: The integrand {} has evaluated to non-numerical \
+       values for all sampling points in the region with boundaries {{{{{}, {}}}}}.",
+      crate::syntax::expr_to_output(integrand),
+      crate::syntax::expr_to_output(&evaluated_bounds[0]),
+      crate::syntax::expr_to_output(evaluated_bounds.last().unwrap()),
+    ));
+    return Ok(unevaluated_nintegrate(args));
+  }
+
+  // The integral is split where a Piecewise in the integrand switches
+  // pieces, so the quadrature never straddles a kink or jump (which made
+  // it refine to its point limit on every such call).
+  if bounds.iter().all(|b| b.is_finite()) {
+    let breaks = piecewise_breakpoints(integrand, &var_name);
+    if !breaks.is_empty() {
+      let ascending = bounds[0] <= *bounds.last().unwrap();
+      let mut refined = bounds.clone();
+      for b in breaks {
+        let inside = refined.windows(2).any(|w| {
+          let (lo, hi) = (w[0].min(w[1]), w[0].max(w[1]));
+          lo < b && b < hi
+        });
+        if inside {
+          refined.push(b);
+        }
+      }
+      refined.sort_by(|a, b| {
+        if ascending {
+          a.total_cmp(b)
+        } else {
+          b.total_cmp(a)
+        }
+      });
+      refined.dedup();
+      if bounds.len() == 2 {
+        bounds = refined;
+      }
+    }
+  }
+
   // A complex-valued integrand over a real range: its real and imaginary
   // parts are integrated separately (the real-valued quadrature below would
   // read every complex sample as missing). Detected by probing a few
@@ -16244,7 +16443,15 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
       let evaluated =
         crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?;
+      // An inner Integrate with no closed form becomes a number under N
+      // (an iterated NIntegrate), as in the inumr check above.
       crate::functions::math_ast::try_eval_to_f64(&evaluated)
+        .or_else(|| {
+          let numeric =
+            crate::evaluator::evaluate_expr_to_expr(&call1("N", evaluated))
+              .ok()?;
+          crate::functions::math_ast::try_eval_to_f64(&numeric)
+        })
         .filter(|v| v.is_finite())
     };
     // Evaluate the literal point quietly: a removable singularity there (e.g.

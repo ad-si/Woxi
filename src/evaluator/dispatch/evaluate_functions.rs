@@ -5497,7 +5497,7 @@ fn evaluate_function_call_ast_inner(
   if name == "DelaunayMesh" && args.len() == 1 {
     return crate::functions::delaunay::delaunay_mesh_ast(args);
   }
-  if name == "VoronoiMesh" && args.len() == 1 {
+  if name == "VoronoiMesh" && (1..=2).contains(&args.len()) {
     return crate::functions::voronoi::voronoi_mesh_ast(args);
   }
 
@@ -10882,6 +10882,48 @@ fn evaluate_function_call_ast_inner(
     return Ok(Expr::List(result.into()));
   }
 
+  // BSplineBasis[{d, {u0, ..., um}}, i, x] — the i-th B-spline basis function
+  // of degree d on an explicit knot vector (Cox-de Boor recursion, exact for
+  // exact input). The last non-empty knot span is closed on the right.
+  if name == "BSplineBasis"
+    && (args.len() == 2 || args.len() == 3)
+    && let Expr::List(spec) = &args[0]
+    && spec.len() == 2
+    && let Expr::Integer(d) = &spec[0]
+    && *d >= 0
+    && let Expr::List(knots) = &spec[1]
+  {
+    let x_arg = args.last().unwrap();
+    let i = if args.len() == 3 {
+      crate::functions::math_ast::expr_to_i128(&args[1])
+    } else {
+      Some(0)
+    };
+    let knots_f: Option<Vec<f64>> = knots
+      .iter()
+      .map(crate::functions::math_ast::try_eval_to_f64)
+      .collect();
+    if let (Some(i), Some(knots_f), Some(xf)) = (
+      i,
+      knots_f,
+      crate::functions::math_ast::try_eval_to_f64(x_arg),
+    ) && i >= 0
+      && knots_f.windows(2).all(|w| w[0] <= w[1])
+      && (i as usize) + (*d as usize) + 1 < knots.len()
+    {
+      let result = bspline_basis_exact(
+        i as usize,
+        *d as usize,
+        x_arg,
+        xf,
+        knots,
+        &knots_f,
+      )?;
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+    return Ok(unevaluated("BSplineBasis", args));
+  }
+
   // BSplineBasis[d, i, x] — the i-th uniform B-spline basis function of degree
   // d, and its 2-argument shorthand BSplineBasis[d, x] (i = 0). On the default
   // uniform knots this equals a shifted centered cardinal B-spline:
@@ -11416,9 +11458,13 @@ fn evaluate_function_call_ast_inner(
   //   CirclePoints[{cx, cy}, ..., n]  — the above translated to a center
   if name == "CirclePoints" && (1..=3).contains(&args.len()) {
     let unevaluated = || Ok(unevaluated("CirclePoints", args));
-    // n is always the last argument and must be a positive integer.
-    let n = match args.last() {
-      Some(Expr::Integer(n)) if *n >= 1 => *n as usize,
+    // n is always the last argument and must be a positive integer; a
+    // whole-number real asks for the machine-precision points.
+    let (n, numeric) = match args.last() {
+      Some(Expr::Integer(n)) if *n >= 1 => (*n as usize, false),
+      Some(Expr::Real(r)) if *r >= 1.0 && r.fract() == 0.0 => {
+        (*r as usize, true)
+      }
       _ => return unevaluated(),
     };
     // Center (defaults to the origin) when the first arg is a coordinate pair
@@ -11481,7 +11527,11 @@ fn evaluate_function_call_ast_inner(
       let y = evaluate_expr_to_expr(&coord("Sin", &center_y))?;
       points.push(Expr::List(vec![x, y].into()));
     }
-    return Ok(Expr::List(points.into()));
+    let points = Expr::List(points.into());
+    if numeric {
+      return evaluate_expr_to_expr(&call1("N", points));
+    }
+    return Ok(points);
   }
 
   // Key[k] is an operator form — return unevaluated (applied via CurriedCall)
@@ -11965,6 +12015,7 @@ fn evaluate_function_call_ast_inner(
         | "Button"
         | "ActionMenu"
         | "Deploy"
+        | "ExpressionCell"
         | "Dynamic"
         | "DynamicWrapper"
         | "Setter"
@@ -12028,6 +12079,8 @@ fn evaluate_function_call_ast_inner(
         | "Matrices"
         // A sound primitive: inert data that `Sound` plays.
         | "SampledSoundList"
+        // A kernel density estimate: PDF, CDF, Mean and Variance read it.
+        | "SmoothKernelDistribution"
     )
   {
     let args_str = args
@@ -14307,4 +14360,57 @@ fn push_tree_layout(graph_args: &mut Vec<Expr>, options: &[Expr]) {
       .into(),
     )),
   });
+}
+
+/// Cox-de Boor recursion on `Expr` knots, so exact knots and an exact
+/// parameter give an exact basis value. Span membership is decided on the
+/// numeric values; the final non-empty span includes its right end.
+fn bspline_basis_exact(
+  i: usize,
+  k: usize,
+  x: &Expr,
+  xf: f64,
+  knots: &[Expr],
+  kf: &[f64],
+) -> Result<Expr, InterpreterError> {
+  use crate::functions::math_ast::{plus_ast, times_ast};
+  if k == 0 {
+    let last = kf[kf.len() - 1];
+    let inside = kf[i] <= xf && xf < kf[i + 1];
+    let at_end = xf == last && kf[i] < kf[i + 1] && kf[i + 1] == last;
+    return Ok(Expr::Integer(i128::from(inside || at_end)));
+  }
+  let mut terms = Vec::new();
+  for (lo, hi, shift) in [(i, i + k, 0usize), (i + 1, i + k + 1, 1usize)] {
+    let denom = kf[hi] - kf[lo];
+    if denom <= 0.0 {
+      continue;
+    }
+    let basis = bspline_basis_exact(i + shift, k - 1, x, xf, knots, kf)?;
+    if matches!(basis, Expr::Integer(0)) {
+      continue;
+    }
+    // Rising edge: (x - u_lo) / (u_hi - u_lo); falling edge: (u_hi - x) / (...)
+    let numer = if shift == 0 {
+      plus_ast(&[
+        x.clone(),
+        times_ast(&[Expr::Integer(-1), knots[lo].clone()])?,
+      ])?
+    } else {
+      plus_ast(&[
+        knots[hi].clone(),
+        times_ast(&[Expr::Integer(-1), x.clone()])?,
+      ])?
+    };
+    let span = plus_ast(&[
+      knots[hi].clone(),
+      times_ast(&[Expr::Integer(-1), knots[lo].clone()])?,
+    ])?;
+    let inv = call("Power", vec![span, Expr::Integer(-1)]);
+    terms.push(times_ast(&[numer, inv, basis])?);
+  }
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  plus_ast(&terms)
 }

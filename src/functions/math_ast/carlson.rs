@@ -38,7 +38,7 @@ fn carlson_rc(x: f64, y: f64) -> f64 {
 }
 
 /// R_F(x, y, z) — symmetric elliptic integral of the first kind.
-fn carlson_rf(x: f64, y: f64, z: f64) -> f64 {
+pub(crate) fn carlson_rf(x: f64, y: f64, z: f64) -> f64 {
   const ERRTOL: f64 = 0.0025;
   const C1: f64 = 1.0 / 24.0;
   const C2: f64 = 0.1;
@@ -111,7 +111,7 @@ fn csqrt(a: C) -> C {
 /// as the real kernel, carried out in complex arithmetic with the principal
 /// square-root branch). Handles arguments with nonzero imaginary part, which
 /// the real kernel cannot.
-fn carlson_rf_complex(x: C, y: C, z: C) -> C {
+pub(crate) fn carlson_rf_complex(x: C, y: C, z: C) -> C {
   // A tighter tolerance than the real kernel: the extra duplication steps drive
   // the del variables smaller so the fifth-order polynomial correction reaches
   // full double precision (the complex regime is less forgiving than the real).
@@ -158,7 +158,7 @@ fn carlson_rf_complex(x: C, y: C, z: C) -> C {
 
 /// R_D(x, y, z) — symmetric elliptic integral of the second kind (R_J with the
 /// last two arguments equal: R_D(x, y, z) = R_J(x, y, z, z)).
-fn carlson_rd(x: f64, y: f64, z: f64) -> f64 {
+pub(crate) fn carlson_rd(x: f64, y: f64, z: f64) -> f64 {
   const ERRTOL: f64 = 0.0015;
   const C1: f64 = 3.0 / 14.0;
   const C2: f64 = 1.0 / 6.0;

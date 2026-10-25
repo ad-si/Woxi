@@ -228,6 +228,19 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // A list naming one function is that function: the single-equation
+  // solver below covers far more than the linear-system one.
+  if let Expr::List(dep_items) = dep_arg
+    && let [single] = dep_items.as_slice()
+  {
+    let mut unwrapped = args.to_vec();
+    unwrapped[1] = single.clone();
+    let solved = dsolve_ast_inner(&unwrapped)?;
+    if !matches!(&solved, Expr::FunctionCall { name, .. } if name == "DSolve") {
+      return Ok(solved);
+    }
+  }
+
   // `DSolve[{…}, {y1[t], y2[t], …}, t]` — a coupled system of dependent
   // functions, handled by the operator-elimination solver above instead of
   // the single-variable machinery below.
@@ -493,9 +506,54 @@ pub fn ndsolve_ast_with_head(
     }
   }
   let args = &spliced[..];
-  let evaluated = evaluate_ndsolve_args(args)?;
+  let evaluated: Vec<Expr> = evaluate_ndsolve_args(args)?
+    .iter()
+    .map(total_derivative_to_derivative)
+    .collect();
   ndsolve_ast_inner(&evaluated)
     .map(|expr| retag_unevaluated(expr, "NDSolve", head))
+}
+
+/// Rewrite `Dt[f[v], v]` / `Dt[f[v], {v, n}]` — a total derivative of a
+/// function of its own differentiation variable, the way ODEs are often
+/// written, and the shape `Dt[x[t], t] /. t -> 0` leaves behind in an
+/// initial condition (`Dt[x[0], 0]`) — into `Derivative[n][f][v]`.
+fn total_derivative_to_derivative(expr: &Expr) -> Expr {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Dt"
+    && args.len() == 2
+    && let Expr::FunctionCall {
+      name: fname,
+      args: fargs,
+    } = &args[0]
+    && let [arg] = fargs.as_slice()
+  {
+    let order = match &args[1] {
+      Expr::List(items) => match items.as_slice() {
+        [v, Expr::Integer(n)]
+          if *n >= 1 && expr_to_string(v) == expr_to_string(arg) =>
+        {
+          Some(*n)
+        }
+        _ => None,
+      },
+      v if expr_to_string(v) == expr_to_string(arg) => Some(1),
+      _ => None,
+    };
+    if let Some(n) = order {
+      return Expr::CurriedCall {
+        func: Box::new(Expr::CurriedCall {
+          func: Box::new(Expr::FunctionCall {
+            name: "Derivative".to_string(),
+            args: vec![Expr::Integer(n)].into(),
+          }),
+          args: vec![Expr::Identifier(fname.clone())],
+        }),
+        args: vec![arg.clone()],
+      };
+    }
+  }
+  map_children(expr, &total_derivative_to_derivative)
 }
 
 /// NDSolve holds its arguments (matching Wolfram — see the `NDSolve`/
@@ -948,13 +1006,31 @@ fn ndsolve_vector_unknowns(
     // A right-hand side already written (or threaded) as one list element
     // per component is read element-wise; anything else is a vector-valued
     // expression whose components are picked out of it.
+    // Evaluated once: a product like `A . y[t]` would otherwise be
+    // recomputed in full for every component picked out of it. A
+    // user-defined function is left alone: it may only accept numeric
+    // vectors, so it has to be evaluated per step.
     let whole = expand_vector_unknowns(rhs, &vecs, None);
+    let whole = match crate::evaluator::evaluate_expr_to_expr(&whole) {
+      Ok(evaluated)
+        if !calls_user_function(rhs)
+          && matches!(&evaluated, Expr::List(items) if items.len() == lhs_items.len()) =>
+      {
+        evaluated
+      }
+      _ => whole,
+    };
     for (i, l) in lhs_items.iter().enumerate() {
       let r = match rhs {
         Expr::List(items) if items.len() == lhs_items.len() => {
           expand_vector_unknowns(&items[i], &vecs, Some(i))
         }
-        _ => call("Part", vec![whole.clone(), Expr::Integer(i as i128 + 1)]),
+        _ => match &whole {
+          Expr::List(items) if items.len() == lhs_items.len() => {
+            items[i].clone()
+          }
+          _ => call("Part", vec![whole.clone(), Expr::Integer(i as i128 + 1)]),
+        },
       };
       scalar_eqs.push(Expr::Comparison {
         operands: vec![l.clone(), r],
@@ -8593,12 +8669,20 @@ fn variation_of_parameters(
     std::slice::from_ref(&y_p),
   )
   .unwrap_or(y_p);
-  let y_p = crate::evaluator::evaluate_function_call_ast(
-    "Simplify",
-    std::slice::from_ref(&y_p),
-  )
-  .unwrap_or(y_p);
-  Some(y_p)
+  // Sums of sinusoidal forcing terms leave products of trig functions behind;
+  // keep whichever of the plain, simplified and trig-reduced forms is shortest.
+  let candidates = [y_p.clone(), call1("TrigReduce", y_p.clone())]
+    .into_iter()
+    .filter_map(|e| crate::evaluator::evaluate_expr_to_expr(&e).ok())
+    .flat_map(|e| {
+      let simplified = crate::evaluator::evaluate_function_call_ast(
+        "Simplify",
+        std::slice::from_ref(&e),
+      )
+      .unwrap_or_else(|_| e.clone());
+      [e, simplified]
+    });
+  candidates.min_by_key(|e| expr_to_string(e).len())
 }
 
 /// Whether the expression contains a call to the named function anywhere.
@@ -9389,6 +9473,16 @@ fn closed_form_integral(integrand: &Expr, var: &str) -> Option<Expr> {
   ])
   .ok()?;
   (!mentions_head(&result, "Integrate")).then_some(result)
+}
+
+/// Whether `expr` calls a function the user defined (has `DownValues`).
+fn calls_user_function(expr: &Expr) -> bool {
+  if let Expr::FunctionCall { name, .. } = expr
+    && crate::FUNC_DEFS.with(|m| m.borrow().get(name).is_some())
+  {
+    return true;
+  }
+  expr_children(expr).iter().any(|c| calls_user_function(c))
 }
 
 fn mentions_head(expr: &Expr, head: &str) -> bool {

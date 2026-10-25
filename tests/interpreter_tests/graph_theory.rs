@@ -1034,6 +1034,28 @@ mod voronoi_mesh {
   use super::*;
 
   #[test]
+  fn region_bounds_clip_the_cells() {
+    assert_eq!(
+      interpret(
+        "MeshPrimitives[VoronoiMesh[{{0., 0}, {1, 0}, {0, 1}}, \
+         {{-1, 2}, {-1, 2}}], 2]"
+      )
+      .unwrap(),
+      "{Polygon[{{0.5, -1.}, {0.5, 0.5}, {-1., 0.5}, {-1., -1.}}], \
+       Polygon[{{2., -1.}, {2., 2.}, {0.5, 0.5}, {0.5, -1.}}], \
+       Polygon[{{-1., 0.5}, {0.5, 0.5}, {2., 2.}, {-1., 2.}}]}"
+    );
+  }
+
+  #[test]
+  fn malformed_region_bounds_stay_unevaluated() {
+    assert_eq!(
+      interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}}, x]").unwrap(),
+      "VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}}, x]"
+    );
+  }
+
+  #[test]
   fn unevaluated_non_list() {
     assert_eq!(interpret("VoronoiMesh[x]").unwrap(), "VoronoiMesh[x]");
   }
@@ -4679,6 +4701,29 @@ mod graph_predicates {
       "{{1 \u{f3d4} 2, 2 \u{f3d4} 4, 4 \u{f3d4} 6, 6 \u{f3d4} 5, \
        5 \u{f3d4} 3, 3 \u{f3d4} 1}}"
     );
+  }
+
+  #[test]
+  fn find_hamiltonian_cycle_large_polyhedra() {
+    // Dead-end branches are pruned, so graphs with dozens of vertices finish
+    // quickly. Every result must visit each vertex exactly once.
+    for name in [
+      "TruncatedIcosahedron",
+      "SnubDodecahedron",
+      "GreatRhombicosidodecahedron",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "With[{{e = PolyhedronData[\"{name}\", \"EdgeIndices\"]}}, \
+           With[{{c = First[GraphUtilities`HamiltonianCycles[Rule @@@ e]]}}, \
+           {{Sort[c] === Range[Max[e]], \
+           And @@ (MemberQ[e, {{#1, #2}} | {{#2, #1}}] & @@@ \
+             Partition[Append[c, First[c]], 2, 1])}}]]"
+        ))
+        .unwrap(),
+        "{True, True}"
+      );
+    }
   }
 
   #[test]

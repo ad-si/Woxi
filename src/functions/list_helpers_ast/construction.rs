@@ -1902,6 +1902,30 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Parse a dimension specification into a list of sizes. Accepts a List of
 /// non-negative integers, or a single non-negative integer for 1D.
+/// Rank of the positions in a rule list (`{i, j} -> v`, `Band[{i, j}] -> v`).
+fn sparse_rule_rank(data: &Expr) -> Option<usize> {
+  let first = match data {
+    Expr::List(items) => items.first()?,
+    rule => rule,
+  };
+  let (Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }) = first
+  else {
+    return None;
+  };
+  match pattern.as_ref() {
+    Expr::List(p) if !p.iter().any(|x| matches!(x, Expr::List(_))) => {
+      Some(p.len())
+    }
+    Expr::FunctionCall { name, args } if name == "Band" => {
+      match args.first()? {
+        Expr::List(p) => Some(p.len()),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 fn parse_sparse_dims(expr: &Expr) -> Option<Vec<usize>> {
   if let Expr::List(items) = expr {
     let mut result = Vec::with_capacity(items.len());
@@ -2795,6 +2819,17 @@ pub fn sparse_array_normalize_ast(
     return Ok(unevaluated("SparseArray", args));
   }
 
+  // A single dimension `n` for rank-r positions means `{n, n, …}`.
+  if args.len() >= 2
+    && matches!(&args[1], Expr::Integer(_))
+    && let Some(rank) = sparse_rule_rank(&args[0])
+    && rank > 1
+  {
+    let mut rewritten = args.to_vec();
+    rewritten[1] = Expr::List(vec![args[1].clone(); rank].into());
+    return sparse_array_normalize_ast(&rewritten);
+  }
+
   // With explicit dimensions, a `{pos1, pos2, …} -> values` rule expands
   // into its rule list the same way.
   if args.len() >= 2
@@ -3383,6 +3418,121 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(build_dense_from_rules(&dims, default, &rules_list))
 }
 
+/// `Take[SparseArray[…], spec1, spec2, …]` on the stored rules, so a large
+/// array is never densified. Returns None for specs this does not cover
+/// (and for out-of-range ones, whose message the dense path emits).
+pub fn sparse_array_take(
+  sa_args: &[Expr],
+  specs: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if sa_args.len() != 4
+    || !matches!(&sa_args[0], Expr::Identifier(s) if s == "Automatic")
+  {
+    return None;
+  }
+  let Expr::List(dim_items) = &sa_args[1] else {
+    return None;
+  };
+  let dims: Vec<usize> = dim_items
+    .iter()
+    .map(|d| match d {
+      Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  if specs.is_empty() || specs.len() > dims.len() {
+    return None;
+  }
+  // Each spec as an inclusive 1-based range with a positive step.
+  let resolve = |i: i128, len: i128| if i < 0 { len + i + 1 } else { i };
+  let mut ranges: Vec<(i128, i128, i128)> = Vec::with_capacity(specs.len());
+  for (spec, &len) in specs.iter().zip(&dims) {
+    let len = len as i128;
+    let (start, end, step) = match spec {
+      Expr::Integer(n) if *n >= 0 => (1, *n, 1),
+      Expr::Integer(n) => (len + n + 1, len, 1),
+      Expr::Identifier(a) if a == "All" => (1, len, 1),
+      Expr::FunctionCall { name, args }
+        if name == "UpTo" && args.len() == 1 =>
+      {
+        match &args[0] {
+          Expr::Integer(n) if *n >= 0 => (1, (*n).min(len), 1),
+          _ => return None,
+        }
+      }
+      Expr::List(items) => match items.as_slice() {
+        [Expr::Integer(m)] => (resolve(*m, len), resolve(*m, len), 1),
+        [Expr::Integer(m), Expr::Integer(n)] => {
+          (resolve(*m, len), resolve(*n, len), 1)
+        }
+        [Expr::Integer(m), Expr::Integer(n), Expr::Integer(k)] if *k > 0 => {
+          (resolve(*m, len), resolve(*n, len), *k)
+        }
+        _ => return None,
+      },
+      _ => return None,
+    };
+    if start < 1 || end > len || end < start - 1 {
+      if !ranges.is_empty() {
+        return None;
+      }
+      let (from, to) = match spec {
+        Expr::Integer(n) if *n >= 0 => (1, *n),
+        Expr::Integer(n) => (*n, -1),
+        Expr::List(items) => match items.as_slice() {
+          [Expr::Integer(m)] => (*m, *m),
+          [Expr::Integer(m), Expr::Integer(n), ..] => (*m, *n),
+          _ => return None,
+        },
+        _ => return None,
+      };
+      let sa = Expr::FunctionCall {
+        name: "SparseArray".to_string(),
+        args: sa_args.to_vec().into(),
+      };
+      super::take_drop_message("Take", from, to, &sa);
+      let mut take_args = vec![sa];
+      take_args.extend_from_slice(specs);
+      return Some(Ok(crate::helpers::call("Take", take_args)));
+    }
+    ranges.push((start, end, step));
+  }
+
+  let mut new_dims = dims.clone();
+  for (d, &(start, end, step)) in new_dims.iter_mut().zip(&ranges) {
+    *d = if end < start {
+      0
+    } else {
+      ((end - start) / step + 1) as usize
+    };
+  }
+  let rules: Vec<Expr> = sparse_array_extract_rules(&dims, &sa_args[3])
+    .into_iter()
+    .filter_map(|(mut pos, val)| {
+      for (p, &(start, end, step)) in pos.iter_mut().zip(&ranges) {
+        if *p < start || *p > end || (*p - start) % step != 0 {
+          return None;
+        }
+        *p = (*p - start) / step + 1;
+      }
+      Some(Expr::Rule {
+        pattern: Box::new(Expr::List(
+          pos.into_iter().map(Expr::Integer).collect(),
+        )),
+        replacement: Box::new(val),
+      })
+    })
+    .collect();
+  Some(crate::evaluator::evaluate_function_call_ast(
+    "SparseArray",
+    &[
+      Expr::List(rules.into()),
+      Expr::List(new_dims.iter().map(|&n| Expr::Integer(n as i128)).collect()),
+      sa_args[2].clone(),
+    ],
+  ))
+}
+
 /// Unified Tuples: `Tuples[{list1, list2, …}]` (one element from each
 /// list, tuples take the outer head), `Tuples[list, n]` (all n-tuples,
 /// tuples take list's head) and `Tuples[list, {n1, n2, …}]` (all
@@ -3480,21 +3630,6 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(original());
   };
 
-  // All flat tuples of length n1*n2*..., in lexicographic order.
-  let total: usize = dims.iter().product();
-  let mut flat_tuples: Vec<Vec<Expr>> = vec![vec![]];
-  for _ in 0..total {
-    let mut new_result = Vec::new();
-    for tuple in &flat_tuples {
-      for item in items {
-        let mut new_tuple = tuple.clone();
-        new_tuple.push(item.clone());
-        new_result.push(new_tuple);
-      }
-    }
-    flat_tuples = new_result;
-  }
-
   // Reshape a flat tuple into nested arrays of the given shape, applying
   // the subject's head at every level. An empty shape yields the bare
   // element (so a scalar n behaves identically to the shape {n}).
@@ -3516,13 +3651,34 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     wrap(head, elems)
   }
 
-  Ok(Expr::List(
-    flat_tuples
-      .into_iter()
-      .map(|t| reshape(&t, &dims, &wrap, head))
-      .collect::<Vec<_>>()
-      .into(),
-  ))
+  // All flat tuples of length n1*n2*..., in lexicographic order, generated
+  // one at a time from a mixed-radix counter (building every prefix level
+  // first held several copies of the result: 2.6 GB for
+  // Tuples[{-1, 0, 1}, 12]).
+  let total: usize = dims.iter().product();
+  let k = items.len();
+  let Some(count) = u32::try_from(total).ok().and_then(|t| k.checked_pow(t))
+  else {
+    return Ok(original());
+  };
+  let mut digits = vec![0usize; total];
+  let mut tuples = Vec::with_capacity(count);
+  for _ in 0..count {
+    let flat: Vec<Expr> = digits.iter().map(|&d| items[d].clone()).collect();
+    tuples.push(if dims.len() == 1 {
+      wrap(head, flat)
+    } else {
+      reshape(&flat, &dims, &wrap, head)
+    });
+    for digit in digits.iter_mut().rev() {
+      *digit += 1;
+      if *digit < k {
+        break;
+      }
+      *digit = 0;
+    }
+  }
+  Ok(Expr::List(tuples.into()))
 }
 
 /// DistanceMatrix[{v1, v2, ...}] - matrix of pairwise distances.

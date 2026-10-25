@@ -1350,6 +1350,57 @@ mod elliptic_f {
   fn symbolic_unevaluated() {
     assert_eq!(interpret("EllipticF[phi, m]").unwrap(), "EllipticF[phi, m]");
   }
+
+  fn close(code: &str, expected: &str) {
+    let diff = format!("Abs[({code}) - ({expected})]");
+    assert_eq!(
+      interpret(&format!("{diff} < 10^-12")).unwrap(),
+      "True",
+      "{code}: off by {}",
+      interpret(&diff).unwrap()
+    );
+  }
+
+  // m Sin[phi]^2 == 1 is the integrand's singular point; the quadrature
+  // used to blow up there (5521.69 instead of 0.274858).
+  #[test]
+  fn at_the_branch_point() {
+    for x in ["Pi/18", "1/3", "1"] {
+      close(
+        &format!("N[EllipticF[{x}, Csc[{x}]^2]]"),
+        &format!("N[Sin[{x}] EllipticK[Sin[{x}]^2]]"),
+      );
+    }
+  }
+
+  #[test]
+  fn past_the_branch_point_is_complex() {
+    // The real part is the integral up to the branch point.
+    close("Re[EllipticF[0.5, 10.]]", "EllipticK[0.1]/Sqrt[10.]");
+    close("EllipticF[N[Pi/2], 2.]", "(1 - I) EllipticK[0.5]/Sqrt[2.]");
+  }
+
+  #[test]
+  fn amplitude_beyond_a_half_period() {
+    close(
+      "EllipticF[3., 0.7]",
+      "EllipticF[3. - Pi, 0.7] + 2 EllipticK[0.7]",
+    );
+    close(
+      "EllipticF[-5., 0.3]",
+      "EllipticF[2 Pi - 5., 0.3] - 4 EllipticK[0.3]",
+    );
+    close(
+      "EllipticE[3., 0.7]",
+      "EllipticE[3. - Pi, 0.7] + 2 EllipticE[0.7]",
+    );
+  }
+
+  #[test]
+  fn incomplete_e_at_half_period_is_complete() {
+    close("EllipticE[N[Pi/2], -0.5]", "EllipticE[-0.5]");
+    close("EllipticE[N[Pi/2], 0.6]", "EllipticE[0.6]");
+  }
 }
 
 mod elliptic_pi {

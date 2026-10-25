@@ -4190,6 +4190,8 @@ fn graphics_text_content(expr: &Expr) -> String {
       runs.map_or_else(|| s.clone(), |runs| flatten_label_runs(&runs))
     }
     Expr::String(s) => s.clone(),
+    // `Null` typesets as nothing (a `Row` part, a Manipulate readout).
+    Expr::Identifier(n) if n == "Null" => String::new(),
     // Text inside a picture is typeset, not printed: a mathematical
     // constant shows as its glyph there, the way it does in a notebook.
     // (Script-mode output still writes the name, which is what
@@ -5811,13 +5813,45 @@ fn parse_bspline(
     };
     let clamped = !closed && !spline_knots_unclamped(&args[1..]);
 
-    let sampled = evaluate_bspline(&control, degree, 200, clamped);
+    // An explicit numeric knot vector (`SplineKnots -> {u0, ..., um}`) fixes
+    // the basis; it needs exactly n + degree + 1 non-decreasing knots.
+    let sampled = match spline_knots_list(&args[1..]) {
+      Some(knots) if !closed && knots.len() == control.len() + degree + 1 => {
+        evaluate_bspline_with_knots(&control, degree, 200, &knots)
+      }
+      _ => evaluate_bspline(&control, degree, 200, clamped),
+    };
     prims.push(Primitive::Line {
       segments: vec![sampled],
       vertex_colors: None,
       style: style.clone(),
     });
   }
+}
+
+/// Evaluate a B-spline curve of the given `degree` on an explicit knot
+/// vector at `num_samples` evenly spaced parameters over its valid domain.
+fn evaluate_bspline_with_knots(
+  control_points: &[(f64, f64)],
+  degree: usize,
+  num_samples: usize,
+  knots: &[f64],
+) -> Vec<(f64, f64)> {
+  let n = control_points.len();
+  let t_min = knots[degree];
+  let t_max = knots[n];
+  (0..num_samples)
+    .map(|s| {
+      let t = t_min + (t_max - t_min) * s as f64 / (num_samples - 1) as f64;
+      let (mut x, mut y) = (0.0, 0.0);
+      for (j, p) in control_points.iter().enumerate() {
+        let b = bspline_basis(j, degree, t, knots);
+        x += b * p.0;
+        y += b * p.1;
+      }
+      (x, y)
+    })
+    .collect()
 }
 
 /// Evaluate a uniform B-spline curve of the given `degree` at `num_samples`
@@ -5942,6 +5976,23 @@ pub(crate) fn spline_degree_from_args(
     Some(n) if n >= 1.0 => (n.round() as usize).clamp(1, max_degree.max(1)),
     _ => max_degree,
   }
+}
+
+/// The numeric knot vector an option list gives via `SplineKnots -> {...}`.
+pub(crate) fn spline_knots_list(args: &[Expr]) -> Option<Vec<f64>> {
+  args.iter().find_map(|arg| match arg {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SplineKnots") =>
+    {
+      match replacement.as_ref() {
+        Expr::List(items) => items.iter().map(try_eval_to_f64).collect(),
+        _ => None,
+      }
+    }
+    _ => None,
+  })
 }
 
 /// Whether an option list asks for `SplineKnots -> "Unclamped"`.
@@ -10631,11 +10682,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let text_h = text.split('\n').count() as f64 * fs;
       let cx = x - offset.0 * text_w / 2.0 / kx;
       let cy = y - offset.1 * text_h / 2.0 / ky;
-      if plot_range_x.is_none() {
+      // A label as wide as the picture (a long `Row` in a `Pane`) cannot be
+      // made to fit by widening the range — its size scales with the
+      // canvas, so the growth would diverge and squash every other
+      // primitive onto one point. Such a label overflows instead.
+      if plot_range_x.is_none() && text_w < svg_width as f64 {
         grown.x_min = grown.x_min.min(cx - text_w / 2.0 / kx);
         grown.x_max = grown.x_max.max(cx + text_w / 2.0 / kx);
       }
-      if plot_range_y.is_none() {
+      if plot_range_y.is_none() && text_h < svg_height as f64 {
         grown.y_min = grown.y_min.min(cy - text_h / 2.0 / ky);
         grown.y_max = grown.y_max.max(cy + text_h / 2.0 / ky);
       }
@@ -13869,7 +13924,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
                   out.push_str(m);
                 }
               }
-              let markup = expr_to_svg_markup(part);
+              // `Null` typesets as nothing inside a `Row`.
+              let markup = if matches!(part, Expr::Identifier(n) if n == "Null")
+              {
+                String::new()
+              } else {
+                expr_to_svg_markup(part)
+              };
               if pending_gap > 0.0 {
                 out.push_str(&format!(
                   "<tspan dx=\"{pending_gap:.2}\">{markup}</tspan>"
@@ -14211,7 +14272,11 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
               }
               other => estimate_display_width(other),
             });
-          let inner: f64 = parts.iter().map(estimate_display_width).sum();
+          let inner: f64 = parts
+            .iter()
+            .filter(|p| !matches!(p, Expr::Identifier(n) if n == "Null"))
+            .map(estimate_display_width)
+            .sum();
           inner + sep * parts.len().saturating_sub(1) as f64
         }
         other => estimate_display_width(other),
@@ -17529,8 +17594,9 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     // `Text` only says how to set what it holds, so look through it for a
     // nested layout or picture.
     Expr::FunctionCall { name, args }
-      if matches!(name.as_str(), "Text" | "Pane" | "Item" | "Deploy")
-        && args.len() == 1 =>
+      if (matches!(name.as_str(), "Text" | "Pane" | "Item" | "Deploy")
+        && args.len() == 1)
+        || (name == "ExpressionCell" && !args.is_empty()) =>
     {
       return grid_cell_graphic(&unwrap_display_wrappers(cell));
     }
@@ -21144,6 +21210,7 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
       | "Histogram"
       | "Histogram3D"
       | "DensityHistogram"
+      | "SmoothDensityHistogram"
       | "DateHistogram"
       | "BubbleChart"
       | "BubbleChart3D"
@@ -22337,7 +22404,8 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       // `Deploy[expr]` only makes its content non-selectable; it draws
       // exactly as the content does.
       "Deploy" => args.len() == 1,
-      "Item" | "Pane" => !args.is_empty(),
+      // `ExpressionCell[expr, style, opts]` is a cell that shows `expr`.
+      "Item" | "Pane" | "ExpressionCell" => !args.is_empty(),
       // A blank-string factor (`"\n" * cell`, a newline typed into a layout
       // by mistake) only adds invisible space; the cell draws as the
       // single other factor.
@@ -23616,7 +23684,9 @@ fn pane_content_size(expr: &Expr) -> Option<(f64, f64)> {
       }
       _ => pane_content_size(&args[0]),
     },
-    "Pane" | "Text" | "Style" | "Deploy" | "Item" if !args.is_empty() => {
+    "Pane" | "Text" | "Style" | "Deploy" | "Item" | "ExpressionCell"
+      if !args.is_empty() =>
+    {
       pane_content_size(&args[0])
     }
     _ => None,
@@ -25909,8 +25979,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // `reevaluate` installs them as ordinary globals instead of Module
     // re-creating fresh ones every frame.
     let mut dynamic_module_state = Vec::new();
-    let unwrapped =
-      unwrap_dynamic_module_locals(&args[0], &mut dynamic_module_state);
+    let mut module_initializations = Vec::new();
+    let unwrapped = unwrap_dynamic_module_locals(
+      &args[0],
+      &mut dynamic_module_state,
+      &mut module_initializations,
+    );
     // `TogglerBar[Dynamic[var], …]` and a bare `Button[label, action]`
     // inside the body move into the display list (replaced by `Nothing` in
     // the body): a front-end renders displays as live widgets, whereas
@@ -25924,7 +25998,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Vec::with_capacity(args.len() - 1),
       dynamic_module_state,
       body_displays,
-      None,
+      (!module_initializations.is_empty())
+        .then(|| module_initializations.join(";\n")),
       Vec::new(),
       Vec::new(),
       Vec::new(),
@@ -27619,10 +27694,26 @@ fn collect_body_locator_pane_vars(
             args: dargs,
           } = &args[0]
           && dname == "Dynamic"
-          && let Some(Expr::Identifier(var)) = dargs.first()
-          && !found.iter().any(|(n, _, _)| n == var)
         {
-          found.push((var.clone(), args.get(2).cloned(), args[1].clone()));
+          // `LocatorPane[Dynamic[{p1, p2, …}], graphic]` drags several
+          // points over one picture: each variable gets its own entry
+          // sharing the pane's range and graphic.
+          let vars: Vec<&String> = match dargs.first() {
+            Some(Expr::Identifier(var)) => vec![var],
+            Some(Expr::List(items)) => items
+              .iter()
+              .filter_map(|it| match it {
+                Expr::Identifier(v) => Some(v),
+                _ => None,
+              })
+              .collect(),
+            _ => Vec::new(),
+          };
+          for var in vars {
+            if !found.iter().any(|(n, _, _)| n == var) {
+              found.push((var.clone(), args.get(2).cloned(), args[1].clone()));
+            }
+          }
         }
         for a in args {
           walk(a, found);
@@ -28581,6 +28672,7 @@ fn unwrap_dynamic_body(body: &Expr) -> &Expr {
 fn unwrap_dynamic_module_locals(
   body: &Expr,
   state: &mut Vec<(String, String)>,
+  initializations: &mut Vec<String>,
 ) -> Expr {
   let mut cur = body;
   loop {
@@ -28591,7 +28683,8 @@ fn unwrap_dynamic_module_locals(
         cur = &args[0];
       }
       // Only a `DynamicModule` whose own body is *itself* an explicit
-      // `Dynamic[…]` gets its locals hoisted: that inner `Dynamic` is the
+      // `Dynamic[…]` — or a layout (`Labeled`, `Column`, …) holding one —
+      // gets its locals hoisted: that inner `Dynamic` is the
       // author's own re-render boundary, marking everything outside it —
       // the locals — as evaluated once and persisted, exactly what
       // `DynamicModule` (vs. `Module`) is for. A `DynamicModule` whose body
@@ -28604,12 +28697,25 @@ fn unwrap_dynamic_module_locals(
       Expr::FunctionCall { name, args }
         if name == "DynamicModule"
           && args.len() >= 2
-          && matches!(
-            &args[1],
-            Expr::FunctionCall { name: inner, args: iargs }
-              if inner == "Dynamic" && !iargs.is_empty()
-          ) =>
+          && expr_contains_call(&args[1], &["Dynamic"]) =>
       {
+        // The module's own `Initialization :> …` option sets up the helpers
+        // its body draws with; it runs once, like the Manipulate's.
+        for opt in &args[2..] {
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } = opt
+            && is_initialization_option(pattern, replacement)
+          {
+            initializations
+              .push(crate::syntax::expr_to_source_form(replacement));
+          }
+        }
         if let Expr::List(locals) = &args[0] {
           for local in locals {
             match local {
@@ -31407,7 +31513,8 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // Row[{a, b, …}] — concatenate the (recursively rendered) parts. A
       // typeset `RowBox[{…}]` (what `ToString[f[x], TraditionalForm]`
       // holds, e.g. `{sin, (, x, )}`) reads the same way.
-      "Row" | "RowBox" => match layout_parts(args.first()) {
+      // `GraphicsRow` lays its items out the same way; its pictures drop out.
+      "Row" | "RowBox" | "GraphicsRow" => match layout_parts(args.first()) {
         Some(parts) => parts
           .iter()
           .flat_map(|p| manipulate_label_runs(p, italic))
@@ -31416,7 +31523,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       },
       // Column[{a, b, …}] — the same, but one part per line. Demonstrations
       // label a hypothesis-test setter with a two-line column.
-      "Column" => match layout_parts(args.first()) {
+      "Column" | "GraphicsColumn" => match layout_parts(args.first()) {
         Some(parts) => parts
           .iter()
           .enumerate()
@@ -31441,10 +31548,12 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // their own label runs, joined by a space within a row and by a
       // newline between rows; blank cells (Grid pads a ragged table with
       // `""`) drop out rather than leaving stray spaces.
-      "Grid" | "TableForm" | "TextGrid" => match layout_parts(args.first()) {
-        Some(rows) => grid_label_runs(&rows, italic),
-        _ => output_run(italic),
-      },
+      "Grid" | "TableForm" | "TextGrid" | "GraphicsGrid" => {
+        match layout_parts(args.first()) {
+          Some(rows) => grid_label_runs(&rows, italic),
+          _ => output_run(italic),
+        }
+      }
       // `FormBox[boxes, form]` only records how its boxes were formatted.
       "FormBox" if !args.is_empty() => manipulate_label_runs(&args[0], italic),
       "Subscript" | "SubscriptBox" => script_runs(args, italic, false),
@@ -31729,6 +31838,9 @@ fn contains_presentation_head(expr: &Expr) -> bool {
         "Row"
           | "Column"
           | "Grid"
+          | "GraphicsRow"
+          | "GraphicsColumn"
+          | "GraphicsGrid"
           | "Style"
           | "StyleForm"
           | "Text"
@@ -31852,7 +31964,7 @@ fn label_is_compound(expr: &Expr) -> bool {
       "Style" | "StyleForm" | "Text" | "DisplayForm" | "TraditionalForm"
       | "Tooltip" => args.first().is_some_and(label_is_compound),
       // A layout of several items reads as several terms.
-      "Row" | "Column" => {
+      "Row" | "Column" | "GraphicsRow" | "GraphicsColumn" => {
         matches!(args.first(), Some(Expr::List(parts)) if parts.len() > 1)
       }
       "Plus" | "Subtract" | "Times" | "Divide" => args.len() > 1,
@@ -34020,9 +34132,8 @@ pub fn format_f64_exact(v: f64) -> String {
   if !v.is_finite() || v.fract() == 0.0 || v.abs() >= 1e9 {
     return format_f64_input(v);
   }
-  if let Some(s) = rational_form(v, 10_000, 1e-9) {
-    return s;
-  }
+  // A multiple of `Pi` (e.g. a slider's `4 Pi`) is tried first: a loose
+  // rational fit would otherwise swallow it as `103283/8219`.
   // An angle written as a degree conversion (`Pi/180 60`) is a small
   // rational multiple of `Pi`; keep it exact so the body's trigonometry
   // stays symbolic, as in Wolfram.
@@ -34039,6 +34150,9 @@ pub fn format_f64_exact(v: f64) -> String {
         _ => format!("{s}*Pi"),
       },
     };
+  }
+  if let Some(s) = rational_form(v, 10_000, 1e-9) {
+    return s;
   }
   format_f64_input(v)
 }
@@ -35164,6 +35278,10 @@ fn display_expr_to_node(
         };
         display_expr_to_node(&slides[0], bindings, probes, ons)
       }
+      // A cell around an expression shows just the expression.
+      "ExpressionCell" if !args.is_empty() => {
+        display_expr_to_node(&args[0], bindings, probes, ons)
+      }
       "Panel" | "Framed" | "Deploy" | "Item" | "Pane" | "Labeled"
         if !args.is_empty() =>
       {
@@ -35454,6 +35572,26 @@ fn styled_text_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
   }
 }
 
+/// Typeset one operand of a caption. `NumberForm[x, {3, 1}]` stays an
+/// unevaluated wrapper; typeset the number it formats, as a Dynamic caption
+/// displays it.
+fn typeset_caption_operand(resolved: &Expr) -> String {
+  let formatted = match resolved {
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "NumberForm" | "PaddedForm" | "AccountingForm"
+      ) && !args.is_empty() =>
+    {
+      crate::functions::string_ast::number_form_family_to_string(name, args)
+    }
+    _ => None,
+  };
+  formatted.unwrap_or_else(|| {
+    flatten_label_runs(&manipulate_label_runs(resolved, false))
+  })
+}
+
 /// Replace every `Dynamic[inner]` found anywhere inside `expr` with `inner`
 /// evaluated against `bindings` (falling back to the untouched `Dynamic[…]`
 /// wrapper when that fails), leaving everything else — style directives,
@@ -35467,7 +35605,48 @@ fn resolve_display_dynamics(
     Expr::FunctionCall { name, args }
       if name == "Dynamic" && !args.is_empty() =>
     {
-      eval_display_in_scope(&args[0], bindings).unwrap_or_else(|| expr.clone())
+      match eval_display_in_scope(&args[0], bindings) {
+        // A variable can itself hold `Dynamic[…]` pieces (a message built
+        // as `Dynamic[a] Dynamic[b]` and shown through `Dynamic[msg]`);
+        // the front end redraws those too. The nesting is finite because
+        // each pass strips one `Dynamic` layer from what it substitutes.
+        Some(inner)
+          if annotation_contains_dynamic(&inner)
+            && crate::syntax::expr_to_string(&inner)
+              != crate::syntax::expr_to_string(expr) =>
+        {
+          resolve_display_dynamics(&inner, bindings)
+        }
+        Some(inner) => inner,
+        None => expr.clone(),
+      }
+    }
+    // `Dynamic[a] Dynamic[b]` with a text operand is a caption built by
+    // juxtaposition: it shows the typeset pieces side by side.
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && annotation_contains_dynamic(expr)
+        && args.iter().any(|a| match a {
+          Expr::String(_) => true,
+          Expr::FunctionCall { name, args } if name == "Dynamic" => {
+            matches!(
+              args
+                .first()
+                .and_then(|d| eval_display_in_scope(d, bindings)),
+              Some(Expr::String(_))
+            )
+          }
+          _ => false,
+        }) =>
+    {
+      Expr::String(
+        args
+          .iter()
+          .map(|a| {
+            typeset_caption_operand(&resolve_display_dynamics(a, bindings))
+          })
+          .collect(),
+      )
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -35505,25 +35684,9 @@ fn resolve_display_dynamics(
             None => " ",
           });
         }
-        let resolved = resolve_display_dynamics(operand, bindings);
-        // `NumberForm[x, {3, 1}]` stays an unevaluated wrapper; typeset
-        // the number it formats, as a Dynamic caption displays it.
-        let formatted = match &resolved {
-          Expr::FunctionCall { name, args }
-            if matches!(
-              name.as_str(),
-              "NumberForm" | "PaddedForm" | "AccountingForm"
-            ) && !args.is_empty() =>
-          {
-            crate::functions::string_ast::number_form_family_to_string(
-              name, args,
-            )
-          }
-          _ => None,
-        };
-        text.push_str(&formatted.unwrap_or_else(|| {
-          flatten_label_runs(&manipulate_label_runs(&resolved, false))
-        }));
+        text.push_str(&typeset_caption_operand(&resolve_display_dynamics(
+          operand, bindings,
+        )));
       }
       Expr::String(text)
     }
@@ -37173,6 +37336,36 @@ mod manipulate_dynamic_control_list_tests {
     }
   }
 
+  /// A `Dynamic[Panel[LocatorPane[Dynamic[{a, b, c}], Dynamic[Graphics[…]]]]]`
+  /// row (`ControlType -> None` points dragged over one picture) gives each
+  /// variable its own draggable control, ranged by the picture's PlotRange.
+  #[test]
+  fn display_locator_pane_over_a_point_list_promotes_each_point() {
+    let s = spec(
+      "Manipulate[{a, b, c}, \
+       Dynamic[Panel[LocatorPane[Dynamic[{a, b, c}], \
+       Dynamic[Graphics[Line[{a, b, c}], PlotRange -> {{0, 4}, {-2, 2}}], \
+       TrackedSymbols :> {a, b, c}]]]], \
+       {{a, {3, 1}}, {0, -2}, {4, 2}, ControlType -> None}, \
+       {{b, {2, -1}}, {0, -2}, {4, 2}, ControlType -> None}, \
+       {{c, {1, 0}}, {0, -2}, {4, 2}, ControlType -> None}]",
+    );
+    for name in ["a", "b", "c"] {
+      match s.controls.iter().find(|c| c.name() == name) {
+        Some(ManipulateControl::Slider2D {
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          ..
+        }) => {
+          assert_eq!((*x_min, *x_max, *y_min, *y_max), (0.0, 4.0, -2.0, 2.0));
+        }
+        other => panic!("expected a Slider2D for {name}, got {other:?}"),
+      }
+    }
+  }
+
   #[test]
   fn locator_pane_on_local_with_callback_derives_the_variable() {
     // Evaluating the Manipulate runs its Initialization (defining `sl`).
@@ -37463,6 +37656,22 @@ mod manipulate_named_control_group_tests {
     let s = spec(r#"Manipulate[x, {x, 0, 10}, Initialization :> (x = 3)]"#);
     assert_eq!(names(&s), vec!["x"]);
     assert_eq!(s.initialization.as_deref(), Some("x = 3"));
+  }
+
+  /// A `DynamicModule` whose body is a layout holding a `Dynamic` (not a
+  /// bare `Dynamic`) still keeps its locals as widget state and runs its own
+  /// `Initialization` — a Manipulate with only a trailing `Button` row is
+  /// then still a widget.
+  #[test]
+  fn dynamic_module_with_layout_body_keeps_locals_and_initialization() {
+    let s = spec(
+      r#"Manipulate[DynamicModule[{a, n = 0},
+        Labeled[Dynamic[a], Dynamic[n], Top], Initialization :> (n = 3)],
+        Row[{Button["Reset", n = 0]}]]"#,
+    );
+    let state: Vec<&str> = s.state.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(state, vec!["a", "n"]);
+    assert_eq!(s.initialization.as_deref(), Some("n = 3"));
   }
 }
 
@@ -38421,6 +38630,16 @@ mod format_f64_exact_tests {
     );
     // A rational multiple of `Pi` stays exact.
     assert_eq!(format_f64_exact(std::f64::consts::PI), "Pi");
+  }
+
+  #[test]
+  fn large_pi_multiples_are_not_fitted_as_loose_rationals() {
+    // `4 Pi` sits within 1e-9 of `103283/8219`; it must stay `4*Pi`.
+    assert_eq!(format_f64_exact(4.0 * std::f64::consts::PI), "4*Pi");
+    assert_eq!(
+      format_f64_exact(5.0 * std::f64::consts::PI / 16.0),
+      "5*Pi/16"
+    );
   }
 }
 

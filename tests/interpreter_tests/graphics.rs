@@ -821,6 +821,25 @@ mod graphics {
     }
 
     #[test]
+    fn bspline_curve_explicit_knots() {
+      // Clamped uniform knots reproduce the default curve; skewed interior
+      // knots change it.
+      let pts = "{{0, 0}, {1, 2}, {2, 0}, {3, 1}}";
+      let default = export_svg(&format!("Graphics[{{BSplineCurve[{pts}]}}]"));
+      let same = export_svg(&format!(
+        "Graphics[{{BSplineCurve[{pts}, SplineKnots -> {{0, 0, 0, 0, 1, 1, 1, 1}}]}}]"
+      ));
+      assert_eq!(default, same);
+      let skewed = export_svg(&format!(
+        "Graphics[{{BSplineCurve[{pts}, SplineDegree -> 2, SplineKnots -> {{0, 0, 0, 1/5, 1, 1, 1}}]}}]"
+      ));
+      let uniform = export_svg(&format!(
+        "Graphics[{{BSplineCurve[{pts}, SplineDegree -> 2]}}]"
+      ));
+      assert_ne!(skewed, uniform);
+    }
+
+    #[test]
     fn bspline_curve_closed() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{BSplineCurve[{{0, 0}, {1, 2}, {2, 0}, {3, 1}}, SplineClosed -> True]}]"
@@ -1830,6 +1849,20 @@ mod graphics {
       let plain =
         export_svg("Graphics[{Text[Row[{\"y\", \" = 1\"}], {0, 0}]}]");
       assert!(!plain.contains("<tspan"), "{plain}");
+    }
+
+    /// `Null` typesets as nothing inside a `Row` — a Manipulate readout
+    /// like `Row[{"rate ", If[cond, "x"], "%"}]` must not print "Null".
+    #[test]
+    fn row_null_part_renders_nothing() {
+      let svg =
+        export_svg("Graphics[{Text[Row[{\"a \", Null, \"b\"}], {0, 0}]}]");
+      assert!(svg.contains(">a b</text>"), "{svg}");
+      assert!(!svg.contains("Null"), "{svg}");
+      let sep = export_svg(
+        "Graphics[{Text[Row[{\"a\", Null, \"b\"}, \",\"], {0, 0}]}]",
+      );
+      assert!(sep.contains(">a,,b</text>"), "{sep}");
     }
 
     /// What an `EdgeForm` leaves unsaid comes from Wolfram's defaults: a
@@ -4436,6 +4469,24 @@ mod plot3d {
       );
     }
 
+    /// `Lighting -> "Neutral"` uses colourless lights, so a surface with no
+    /// colour directive is grey-white instead of the default blue.
+    #[test]
+    fn neutral_lighting_leaves_uncoloured_surfaces_grey() {
+      let default = export_svg("Graphics3D[Cuboid[]]");
+      let neutral = export_svg("Graphics3D[Cuboid[], Lighting -> \"Neutral\"]");
+      assert!(
+        fill_colors(&default).iter().any(|c| c.2 > c.0 + 20),
+        "default surface should be blue-tinted"
+      );
+      let faces = fill_colors(&neutral);
+      assert_eq!(faces.len(), 12, "a cuboid is twelve triangles");
+      assert!(
+        faces.iter().all(|c| c.0 == c.1 && c.1 == c.2),
+        "neutral lighting should stay grey, got {faces:?}"
+      );
+    }
+
     /// No `PlotStyle` must render byte-identically to before it was
     /// supported at all — the height-based rainbow default is load-bearing
     /// for every other Plot3D snapshot test. (The axis grid legitimately
@@ -5698,6 +5749,19 @@ mod plot3d {
         {3, 1, 0}, {4, 0, 0}}, SplineDegree -> 2], 0.1]}]",
       );
       assert_ne!(with_default, with_degree_2);
+    }
+
+    // A Tube of many curves is as crowded as as many Tubes: it used to get
+    // the lone-tube tessellation budget for every curve (gigabytes for 343).
+    #[test]
+    fn graphics3d_tube_of_many_curves_counts_each_curve() {
+      let curves = "Table[{{i, 0, 0}, {i, 1, 0}}, {i, 12}]";
+      let one = export_svg(&format!("Graphics3D[Tube[{curves}]]"));
+      let many = export_svg(&format!("Graphics3D[Tube /@ {curves}]"));
+      assert_eq!(
+        one.matches("<polygon").count(),
+        many.matches("<polygon").count()
+      );
     }
 
     #[test]
@@ -10755,6 +10819,48 @@ mod plot3d {
       insta::assert_snapshot!(export_svg(
         r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> {"Sin", "Cos"}]"#
       ));
+    }
+
+    #[test]
+    fn plot_legends_above_wrap_when_wider_than_the_plot() {
+      let svg = export_svg(
+        r#"Plot[{x, 2 x, 3 x}, {x, 0, 1}, ImageSize -> {350, 200},
+          PlotLegends -> Placed[{"CI lower bound", "point estimation",
+            "CI upper bound"}, Above]]"#,
+      );
+      let width: f64 = svg
+        .split("viewBox=\"0 0 ")
+        .nth(1)
+        .and_then(|r| r.split(' ').next())
+        .and_then(|w| w.parse().ok())
+        .expect("viewBox width");
+      let label_ys: std::collections::BTreeSet<String> =
+        ["CI lower bound", "point estimation", "CI upper bound"]
+          .iter()
+          .map(|l| {
+            let at = svg.find(&format!(">{l}</text>")).expect(l);
+            let tag = &svg[svg[..at].rfind("<text").unwrap()..at];
+            let x: f64 = tag
+              .split("x=\"")
+              .nth(1)
+              .unwrap()
+              .split('"')
+              .next()
+              .unwrap()
+              .parse()
+              .unwrap();
+            assert!(x < width, "label `{l}` starts inside the picture: {svg}");
+            tag
+              .split("y=\"")
+              .nth(1)
+              .unwrap()
+              .split('"')
+              .next()
+              .unwrap()
+              .to_string()
+          })
+          .collect();
+      assert!(label_ys.len() > 1, "entries wrap onto several rows: {svg}");
     }
 
     #[test]
@@ -17365,6 +17471,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn smooth_density_histogram() {
+      assert_eq!(
+        interpret(
+          "Head[SmoothDensityHistogram[{{1, 2}, {2, 3}, {3, 1}, {2, 2}}]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+      assert_eq!(
+        interpret(
+          "Head[SmoothDensityHistogram[{{1, 2}, {2, 3}, {3, 1}}, {0.3, 0.5}, \
+           ColorFunction -> \"SunsetColors\", Frame -> False]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+      // Not a list of points: left alone.
+      assert_eq!(
+        interpret("SmoothDensityHistogram[{1, 2, 3}]").unwrap(),
+        "SmoothDensityHistogram[{1, 2, 3}]"
+      );
+    }
+
+    #[test]
     fn list_density_plot_matrix() {
       insta::assert_snapshot!(export_svg(
         "ListDensityPlot[{{1, 1, 1, 1}, {1, 2, 1, 2}, {1, 1, 3, 1}, {1, 2, 1, 4}}]"
@@ -17876,6 +18006,41 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg(
         "ListContourPlot[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}}, ImageSize -> 200]"
       ));
+    }
+  }
+
+  mod field_plot_aspect_ratio {
+    use super::*;
+
+    /// `AspectRatio -> r` sets the picture's height / width for every
+    /// contour and density plot; it used to be ignored, leaving them square.
+    #[test]
+    fn aspect_ratio_reshapes_field_plots() {
+      for (plot, height) in [
+        (
+          "ListContourPlot[{{0, 1}, {1, 0}}, AspectRatio -> 2, ImageSize -> 250]",
+          500,
+        ),
+        (
+          "ListDensityPlot[{{0, 1}, {1, 0}}, AspectRatio -> 1/2, ImageSize -> 250]",
+          125,
+        ),
+        (
+          "ContourPlot[x y, {x, 0, 1}, {y, 0, 1}, AspectRatio -> 2, ImageSize -> 250]",
+          500,
+        ),
+        (
+          "DensityPlot[x y, {x, 0, 1}, {y, 0, 1}, AspectRatio -> 1/2, ImageSize -> 250]",
+          125,
+        ),
+      ] {
+        let svg = export_svg(plot);
+        assert!(
+          svg.contains(&format!("width=\"250\" height=\"{height}\"")),
+          "{plot}: {}",
+          &svg[..svg.len().min(200)]
+        );
+      }
     }
   }
 
@@ -24475,6 +24640,22 @@ mod graphics_complex {
 mod graphics_complex_normal {
   use super::*;
 
+  // GraphicsComplex holds its primitives from N, so their point indices
+  // stay integers and Normal can still look them up
+  // (AnimationOfFreeKicksInSoccer).
+  #[test]
+  fn n_keeps_point_indices() {
+    assert_eq!(
+      interpret("N[GraphicsComplex[{{0, 0}, {1, 0}}, Line[{1, 2}]]]").unwrap(),
+      "GraphicsComplex[{{0., 0.}, {1., 0.}}, Line[{1, 2}]]"
+    );
+    assert_eq!(
+      interpret("Normal[N[GraphicsComplex[{{0, 0}, {1, 0}}, Line[{1, 2}]]]]")
+        .unwrap(),
+      "{Line[{{0., 0.}, {1., 0.}}]}"
+    );
+  }
+
   #[test]
   fn point_and_line() {
     // The documentation's own example for `Normal[GraphicsComplex[…]]`.
@@ -24778,6 +24959,42 @@ mod log_log_plot {
     insta::assert_snapshot!(export_svg(
       "LogLogPlot[{x, x^2, x^3}, {x, 1, 100}]"
     ));
+  }
+
+  /// Explicit x `FrameTicks` on a log axis sit at their logarithmic
+  /// positions (equal decades are equally spaced) and replace the
+  /// automatic decade labels instead of doubling them.
+  #[test]
+  fn explicit_frame_ticks_use_log_positions() {
+    let svg = export_svg(
+      "LogLogPlot[Exp[-x], {x, 0.1, 10}, Frame -> True, \
+       FrameTicks -> {{Automatic, Automatic}, \
+       {{{0.1, \"lo\"}, {1, \"mid\"}, {10, \"hi\"}}, Automatic}}]",
+    );
+    let x_of = |label: &str| -> f64 {
+      let end = svg.find(&format!(">{label}</text>")).unwrap();
+      let start = svg[..end].rfind("<text x=\"").unwrap() + "<text x=\"".len();
+      svg[start..start + svg[start..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    let (lo, mid, hi) = (x_of("lo"), x_of("mid"), x_of("hi"));
+    assert!(lo < mid && mid < hi);
+    assert!(((mid - lo) - (hi - mid)).abs() < 1.0, "{lo} {mid} {hi}");
+  }
+
+  /// A range bounded by powers of ten labels both bounding decades.
+  #[test]
+  fn decade_bounds_are_labelled() {
+    let svg = export_svg("LogLogPlot[Exp[-x], {x, 0.1, 10}, Frame -> True]");
+    // Bottom-edge labels: 10^-1, 1, 10 (the left edge has its own).
+    let bottom = svg
+      .lines()
+      .filter(|l| {
+        l.contains("text-anchor=\"middle\"") && l.contains("y=\"1938")
+      })
+      .count();
+    assert_eq!(bottom, 3, "{svg}");
   }
 }
 
@@ -40763,5 +40980,31 @@ mod box_width_with_embedded_style {
     )
     .unwrap();
     assert!(widest_cell_width(&svg) < 400, "cell too wide: {svg}");
+  }
+}
+
+mod text_wider_than_canvas {
+  use super::*;
+
+  /// The x coordinates of every `<text>` element in the markup.
+  fn text_xs(svg: &str) -> Vec<f64> {
+    svg
+      .split("<text x=\"")
+      .skip(1)
+      .filter_map(|part| part.split('"').next()?.parse::<f64>().ok())
+      .collect()
+  }
+
+  #[test]
+  fn overlong_label_does_not_collapse_the_plot_range() {
+    // A label wider than the picture cannot be fitted by widening the
+    // range; trying anyway squashed every other label onto the centre.
+    let svg = interpret(
+      r#"ExportString[Graphics[{Text[Row[Table["H  ", 100]]], Text["b", {-550, -450}], Text["c", {540, -450}]}, ImageSize -> {600, 400}], "SVG"]"#,
+    )
+    .unwrap();
+    let xs = text_xs(&svg);
+    assert_eq!(xs.len(), 3, "{svg}");
+    assert!(xs[2] - xs[1] > 400.0, "labels collapsed: {xs:?}");
   }
 }

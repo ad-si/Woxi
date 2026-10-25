@@ -467,6 +467,52 @@ mod country_data_tests {
       "True"
     );
   }
+
+  #[test]
+  fn number_interpreter_threads_over_a_list() {
+    assert_eq!(
+      interpret("Interpreter[\"Number\"][{\"12.5\", \"3\"}]").unwrap(),
+      "{12.5, 3}"
+    );
+    assert_eq!(interpret("Interpreter[\"Number\"][{}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn country_data_classes_full_name_and_polygon() {
+    clear_state();
+    assert_eq!(interpret("Length[CountryData[\"EU\"]]").unwrap(), "27");
+    assert_eq!(
+      interpret("MemberQ[CountryData[\"EU\"], \"CzechRepublic\"]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Complement[CountryData[\"EU\"], CountryData[\"Europe\"]] === {}"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("CountryData[\"UnitedKingdom\", \"Population\"] === CountryData[\"United Kingdom\", \"Population\"]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("CountryData[\"Italy\", \"FullName\"]").unwrap(),
+      "Italy"
+    );
+    assert_eq!(
+      interpret("CountryData[\"CzechRepublic\", \"FullName\"]").unwrap(),
+      "CzechRepublic"
+    );
+    assert_eq!(
+      interpret(
+        "CountryData[\"Italy\", \"Polygon\"] === CountryData[\"Italy\", \"SchematicPolygon\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod interpreter_scalar_tests {
@@ -539,13 +585,4 @@ mod interpreter_scalar_tests {
 
 mod interpreter_over_lists {
   use super::*;
-
-  #[test]
-  fn number_interpreter_threads_over_a_list() {
-    assert_eq!(
-      interpret("Interpreter[\"Number\"][{\"12.5\", \"3\"}]").unwrap(),
-      "{12.5, 3}"
-    );
-    assert_eq!(interpret("Interpreter[\"Number\"][{}]").unwrap(), "{}");
-  }
 }

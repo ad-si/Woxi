@@ -27,6 +27,16 @@ pub(crate) fn trace_evaluation(code: &str) {
 
 use woxi::notebook::{CellEntry, CellStyle, parse_notebook};
 
+/// Mirror the Studio: names the dump kept in the private `$CellContext``
+/// may shadow built-ins, so unprotect them before running the saved
+/// `Initialization`.
+fn unprotect_context_symbols(box_dump: &str) {
+  let names = woxi::notebook::saved_initialization_context_symbols(box_dump);
+  if !names.is_empty() {
+    let _ = woxi::interpret(&format!("Unprotect[{}]", names.join(", ")));
+  }
+}
+
 fn main() {
   let path: PathBuf = std::env::args()
     .nth(1)
@@ -93,6 +103,7 @@ fn main() {
       && let Some(init) =
         woxi::notebook::extract_saved_initialization(&cell.content)
     {
+      unprotect_context_symbols(&cell.content);
       let _ = woxi::interpret(&init);
     }
     let code = woxi::notebook::strip_cell_context_prefix(
@@ -122,6 +133,7 @@ fn main() {
         && let Some(init) =
           woxi::notebook::extract_saved_initialization(&next.content)
       {
+        unprotect_context_symbols(&next.content);
         let _ = woxi::interpret(&init);
       }
       let Some(state) = manipulate::ManipulateState::from_expr(&expr) else {

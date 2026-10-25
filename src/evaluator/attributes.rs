@@ -872,6 +872,9 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
 
     // NHoldRest
     "Subscript" => A::NHoldRest,
+    // N leaves the point indices of the primitives integers
+    // (`Normal[N[PolyhedronData["Cube", "Faces"]]]`).
+    "GraphicsComplex" => A::NHoldRest | A::Protected,
     "Superscript" => A::NHoldRest | A::ReadProtected,
     "EngineeringForm" | "NumberForm" | "AccountingForm" | "PercentForm" => {
       A::NHoldRest | A::Protected

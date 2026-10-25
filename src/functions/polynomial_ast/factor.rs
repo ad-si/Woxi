@@ -2005,7 +2005,13 @@ fn divide_terms_by(
   let mut new_terms: Vec<Expr> = Vec::new();
   for (term, (n, d)) in terms.iter().zip(coeffs.iter()) {
     // New coefficient: (n/d) / (num_gcd/den_lcm) = (n * den_lcm) / (d * num_gcd)
-    let new_n = n * den_lcm / (d * num_gcd);
+    let new_n_big = num_bigint::BigInt::from(*n) * den_lcm
+      / (num_bigint::BigInt::from(*d) * num_gcd);
+    let new_coeff = crate::functions::math_ast::bigint_to_expr(new_n_big);
+    let new_n = match new_coeff {
+      Expr::Integer(k) => k,
+      _ => 0,
+    };
     let var_factors = extract_non_numeric_factors(term);
 
     let var_part = if var_factors.is_empty() {
@@ -2024,11 +2030,11 @@ fn divide_terms_by(
     // one) and negative coefficients keep their sign inside the Times so a
     // leading term renders `-2*x`, not `-(2*x)`.
     let final_term = match var_part {
-      None => Expr::Integer(new_n),
-      Some(v) => match new_n {
-        1 => v,
-        -1 => neg1(v),
-        _ => times2(Expr::Integer(new_n), v),
+      None => new_coeff,
+      Some(v) => match (&new_coeff, new_n) {
+        (Expr::Integer(_), 1) => v,
+        (Expr::Integer(_), -1) => neg1(v),
+        _ => times2(new_coeff, v),
       },
     };
 

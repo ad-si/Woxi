@@ -1482,14 +1482,8 @@ fn delete_cases_walk(
             delete_cases_walk(c, match_pat, level + 1, min, max, remaining)
           })
           .collect();
-        if head == "List" {
-          Some(Expr::List(kept.into()))
-        } else {
-          Some(Expr::FunctionCall {
-            name: head,
-            args: kept.into(),
-          })
-        }
+        // Rebuilt in its own form: a rule stays a rule.
+        Some(crate::functions::expr_form::compose_expr(&head, &kept))
       }
     },
   }

@@ -262,7 +262,10 @@ LetterlikeSymbolChar = _{ "\u{2026}" | "\u{22EF}" | "\u{22EE}" | "\u{22F0}" | "\
 // handling in notebook.rs and the glyph list in graphics.rs.
 BigOperatorChar = _{ "\u{2211}" | "\u{220F}" }
 
-NamedCharBase = _{ !(GenericInfixOperatorName | "\\[LeftBracketingBar]" | "\\[RightBracketingBar]" | "\\[LeftDoubleBracketingBar]" | "\\[RightDoubleBracketingBar]" | "\\[Minus]" | TightPrefixOp | LoosePrefixOp | "\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Piecewise]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[Conjugate]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Intersection]" | "\\[Union]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[LongEqual]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]" | "\\[TildeTilde]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
+// Every alternative starts with `\[` or a non-ASCII character; checking
+// that first keeps the long exclusion list below off the path of every
+// plain identifier's end.
+NamedCharBase = _{ &InfixNameStart ~ !(GenericInfixOperatorName | "\\[LeftBracketingBar]" | "\\[RightBracketingBar]" | "\\[LeftDoubleBracketingBar]" | "\\[RightDoubleBracketingBar]" | "\\[Minus]" | TightPrefixOp | LoosePrefixOp | "\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Piecewise]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[Conjugate]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Intersection]" | "\\[Union]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[LongEqual]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]" | "\\[TildeTilde]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
 // Adjacent `\[Name]` segments (or named char + identifier chars)
 // concatenate into a single identifier — `\[CapitalGamma]\[Beta]` → `Γβ`,
 // `\[Angle]XYZ` → `∠XYZ`, `i\[Ellipsis]j` (when `i` then `\[Ellipsis]j`
@@ -1258,7 +1261,7 @@ PlainNumberItem = _{ (Real | Integer) ~ &("," | "}") }
 // AST builder.
 NumericList = { "{" ~ (NumericListElement ~ ("," ~ NumericListElement)*)? ~ "}" }
 NumericListElement = _{ (Real | Integer) ~ &("," | "}") | NumericList ~ &("," | "}") }
-ListItem = _{ PlainNumberItem | NumericList ~ &("," | "}") | &HasSemicolon ~ CompoundExpression | &HasLeadingRuleOperator ~ ListItemRule | Expression }
+ListItem = _{ PlainNumberItem | NumericList ~ &("," | "}") | Expression ~ &("," | "}") | &HasSemicolon ~ CompoundExpression | &HasLeadingRuleOperator ~ ListItemRule | Expression }
 
 AssociationItem = { RuleOperand ~ ("->" | "\u{2192}" | ":>") ~ RuleOperand }
 // Non-rule items inside <|...|> are rare but legal — Wolfram parses <|a, b|>
@@ -1292,7 +1295,12 @@ FunctionArgRule = { ReplacementRule ~ RuleReplaceSuffix* ~ ("//" ~ PostfixFuncti
 // A `;`-sequence is tried before a rule so that `f[a -> 1; b]` — a rule
 // followed by more statements in one argument — is one CompoundExpression
 // rather than a rule that leaves `; b` unparsed.
-FunctionArg = _{ NumericList ~ &("," | "]") | &HasSemicolon ~ CompoundExpression | &HasLeadingRuleOperator ~ FunctionArgRule | Expression }
+// A plain argument (by far the most common kind) is read once, directly:
+// an `Expression` that reaches the argument's end. Only when it stops short
+// (a `;` sequence or a rule follows) are the lookahead-guarded forms
+// tried; scanning every argument for those first made each nesting level
+// rescan everything inside it.
+FunctionArg = _{ NumericList ~ &("," | "]") | Expression ~ &("," | "]") | &HasSemicolon ~ CompoundExpression | &HasLeadingRuleOperator ~ FunctionArgRule | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 FunctionArgOrOmitted = _{ FunctionArg | OmittedArg }
 FunctionArgOrOmittedLast = _{ FunctionArg | OmittedArg | OmittedTrailingArg }

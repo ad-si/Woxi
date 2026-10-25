@@ -6301,13 +6301,27 @@ thread_local! {
   static SCENE_TUBE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// Count the `Tube` primitives in a 3D scene.
+/// Count the tubes in a 3D scene: one per curve, so `Tube[{curve1, curve2,
+/// …}]` counts each of its curves (343 of them in one Demonstration, which
+/// the lone-tube budget tessellated into gigabytes of polygons).
 fn count_tubes(expr: &Expr) -> usize {
   match expr {
     Expr::List(items) => items.iter().map(count_tubes).sum(),
-    Expr::FunctionCall { name, args } => {
-      usize::from(name == "Tube") + args.iter().map(count_tubes).sum::<usize>()
+    Expr::FunctionCall { name, args } if name == "Tube" => {
+      match args.first() {
+        // A list of curves, each a list of points.
+        Some(Expr::List(curves))
+          if curves.iter().all(|c| {
+            matches!(c, Expr::List(pts)
+              if pts.iter().all(|p| matches!(p, Expr::List(_))))
+          }) =>
+        {
+          curves.len().max(1)
+        }
+        _ => 1,
+      }
     }
+    Expr::FunctionCall { args, .. } => args.iter().map(count_tubes).sum(),
     _ => 0,
   }
 }
@@ -7058,6 +7072,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut tick_spec: [Option<Vec<f64>>; 3] = [None, None, None];
   // `AspectRatio -> r`: the picture is `r` times as tall as it is wide.
   let mut aspect_ratio: Option<f64> = None;
+  // `Lighting -> "Neutral"`: colourless lights, so a surface without a
+  // colour directive shows its own white rather than the default blue.
+  let mut neutral_lighting = false;
   for opt in &args[1..] {
     let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
@@ -7081,6 +7098,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Identifier(s) if s == "True" => show_box = true,
           _ => {}
         },
+        "Lighting" => {
+          neutral_lighting =
+            matches!(replacement.as_ref(), Expr::String(s) if s == "Neutral");
+        }
         "SphericalRegion" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "False" => spherical_region = false,
           Expr::Identifier(s) if s == "True" => spherical_region = true,
@@ -7365,7 +7386,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Tessellate all primitives into triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
   let mut triangle_vertices: Vec<[Point3D; 3]> = Vec::new();
-  let base_color = (0x5E_u8, 0x81_u8, 0xB5_u8); // Default blue
+  let base_color = if neutral_lighting {
+    (0xFF_u8, 0xFF_u8, 0xFF_u8)
+  } else {
+    (0x5E_u8, 0x81_u8, 0xB5_u8) // Default blue
+  };
 
   // Sphere-scene statistics for adaptive tessellation (see
   // `sphere_detail`): how many spheres there are and how large the

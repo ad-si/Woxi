@@ -1325,15 +1325,89 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(machine_determinant(&m)));
   }
   let det = determinant(&matrix);
+  // Wolfram's determinant of a polynomial matrix is the expanded
+  // polynomial (`Det[{{2, 4}, {6, 2 x}}]` is `-24 + 4 x`), not a factored
+  // simplification of it.
+  // With rational coefficients it is brought over one denominator
+  // (`Det[{{1/2, x}, {x, 1}}]` is `(1 - 2 x^2)/2`).
+  if is_polynomial_matrix(&matrix) {
+    fn has_rational(e: &Expr) -> bool {
+      match e {
+        Expr::FunctionCall { name, args } => {
+          name == "Rational" || args.iter().any(has_rational)
+        }
+        Expr::List(items) => items.iter().any(has_rational),
+        Expr::BinaryOp { left, right, .. } => {
+          has_rational(left) || has_rational(right)
+        }
+        Expr::UnaryOp { operand, .. } => has_rational(operand),
+        _ => false,
+      }
+    }
+    let combine = if matrix.iter().flatten().any(has_rational) {
+      "Together"
+    } else {
+      "Expand"
+    };
+    return Ok(
+      crate::evaluator::evaluate_function_call_ast(
+        combine,
+        std::slice::from_ref(&det),
+      )
+      .unwrap_or(det),
+    );
+  }
   let r = crate::functions::expand_and_combine(&det);
   Ok(simplify_expr(&r))
+}
+
+/// Whether every entry is a polynomial in its symbols with exact rational
+/// coefficients (no division by a symbol, no radicals of symbols).
+fn is_polynomial_matrix(matrix: &[Vec<Expr>]) -> bool {
+  let mut symbols: Vec<Expr> = Vec::new();
+  for e in matrix.iter().flatten() {
+    if crate::functions::math_ast::numeric_utils::contains_inexact_real(e) {
+      return false;
+    }
+    if let Ok(Expr::List(ref vs)) = crate::evaluator::evaluate_function_call_ast(
+      "Variables",
+      std::slice::from_ref(e),
+    ) {
+      for v in vs {
+        if !symbols
+          .iter()
+          .any(|s| crate::evaluator::pattern_matching::expr_equal(s, v))
+        {
+          symbols.push(v.clone());
+        }
+      }
+    } else {
+      return false;
+    }
+  }
+  let vars = Expr::List(symbols.into());
+  matrix.iter().flatten().all(|e| {
+    matches!(
+      crate::evaluator::evaluate_function_call_ast(
+        "PolynomialQ",
+        &[e.clone(), vars.clone()]
+      ),
+      Ok(Expr::Identifier(ref t)) if t == "True"
+    )
+  })
 }
 
 /// The matrix as machine reals when it holds a machine real and every
 /// entry is a real number — the matrices Wolfram inverts and factors
 /// numerically (LU with partial pivoting) instead of symbolically.
 fn machine_real_matrix(matrix: &[Vec<Expr>]) -> Option<Vec<Vec<f64>>> {
-  if !matrix.iter().flatten().any(|e| matches!(e, Expr::Real(_))) {
+  // An inexact number anywhere in an entry (`0.5 Sqrt[2]`) makes the
+  // matrix a machine-precision one.
+  if !matrix
+    .iter()
+    .flatten()
+    .any(crate::functions::math_ast::numeric_utils::contains_inexact_real)
+  {
     return None;
   }
   matrix
@@ -1479,8 +1553,50 @@ fn determinant(matrix: &[Vec<Expr>]) -> Expr {
   {
     return determinant_bareiss(matrix);
   }
+  // A single row (or column) holding all the symbols — an interpolation
+  // matrix whose last row is the monomials — is expanded along that line,
+  // every minor then being an exact numeric determinant.
+  let exact_row = |row: &[Expr]| row.iter().all(is_exact_rational_entry);
+  let symbolic_rows: Vec<usize> =
+    (0..n).filter(|&i| !exact_row(&matrix[i])).collect();
+  if symbolic_rows.len() == 1 && symbolic_rows[0] != 0 {
+    let r = symbolic_rows[0];
+    let mut reordered = matrix.to_vec();
+    let row = reordered.remove(r);
+    reordered.insert(0, row);
+    // Moving row r to the top is r adjacent swaps.
+    let det = determinant(&reordered);
+    let det = if r % 2 == 1 {
+      eval_sub(&Expr::Integer(0), &det)
+    } else {
+      det
+    };
+    return crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      std::slice::from_ref(&det),
+    )
+    .unwrap_or(det);
+  }
+  if symbolic_rows.len() > 1 {
+    let transposed: Vec<Vec<Expr>> = (0..n)
+      .map(|j| (0..n).map(|i| matrix[i][j].clone()).collect())
+      .collect();
+    let symbolic_cols = (0..n).filter(|&j| !exact_row(&transposed[j])).count();
+    if symbolic_cols == 1 {
+      let det = determinant(&transposed);
+      return crate::evaluator::evaluate_function_call_ast(
+        "Expand",
+        std::slice::from_ref(&det),
+      )
+      .unwrap_or(det);
+    }
+  }
   let mut det = Expr::Integer(0);
   for j in 0..n {
+    // A zero entry's cofactor contributes nothing.
+    if is_zero_expr(&matrix[0][j]) {
+      continue;
+    }
     let mut minor = Vec::new();
     for i in 1..n {
       let mut row = Vec::new();
@@ -3440,6 +3556,55 @@ fn simplify_sqrt(n: u128) -> (u128, u128) {
   (outer, inner)
 }
 
+/// Split a matrix with symbolic entries into `scale * B` where `B` is
+/// purely numeric (`{{4c, -8c}, {5c, -9c}}` -> `c * {{4, -8}, {5, -9}}`).
+/// The scale is the symbolic part of the first nonzero entry; `None` when the
+/// matrix is already numeric or no such numeric `B` exists. Eigenvectors are
+/// those of `B` and eigenvalues are `scale` times those of `B`.
+fn split_symbolic_scale(
+  matrix: &[Vec<Expr>],
+) -> Option<(Expr, Vec<Vec<Expr>>)> {
+  if matrix
+    .iter()
+    .flatten()
+    .all(crate::functions::predicate_ast::is_numeric_q)
+  {
+    return None;
+  }
+  let first = matrix.iter().flatten().find(|e| {
+    !matches!(e, Expr::Integer(0)) && !matches!(e, Expr::Real(z) if *z == 0.0)
+  })?;
+  let scale = match first {
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() >= 2
+        && crate::functions::predicate_ast::is_numeric_q(&args[0]) =>
+    {
+      if args.len() == 2 {
+        args[1].clone()
+      } else {
+        call("Times", args[1..].to_vec())
+      }
+    }
+    other => other.clone(),
+  };
+  let mut numeric = Vec::with_capacity(matrix.len());
+  for row in matrix {
+    let mut out = Vec::with_capacity(row.len());
+    for e in row {
+      let q =
+        evaluate_expr_to_expr(&call("Divide", vec![e.clone(), scale.clone()]))
+          .ok()?;
+      if !crate::functions::predicate_ast::is_numeric_q(&q) {
+        return None;
+      }
+      out.push(q);
+    }
+    numeric.push(out);
+  }
+  Some((scale, numeric))
+}
+
 /// Eigenvalues[matrix] - eigenvalues of a square matrix, sorted descending.
 pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -3456,6 +3621,20 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 1x1
   if n == 1 {
     return Ok(Expr::List(vec![matrix[0][0].clone()].into()));
+  }
+
+  if let Some((scale, numeric)) = split_symbolic_scale(&matrix) {
+    let Expr::List(ref vals) = eigenvalues_ast(&[matrix_to_expr(numeric)])?
+    else {
+      return Ok(unevaluated("Eigenvalues", args));
+    };
+    let scaled = vals
+      .iter()
+      .map(|l| {
+        evaluate_expr_to_expr(&call("Times", vec![scale.clone(), l.clone()]))
+      })
+      .collect::<Result<Vec<_>, _>>()?;
+    return Ok(Expr::List(scaled.into()));
   }
 
   // Try integer matrix path
@@ -4064,6 +4243,22 @@ pub fn eigensystem_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(k) => *k,
     _ => return unevaluated(),
   };
+  // The first k only: the exact path computes no more vectors than asked.
+  if k > 0
+    && let Ok(Expr::List(vals)) = &eigenvalues_ast(&args[0..1])
+    && k as usize <= vals.len()
+    && let Ok(Expr::List(vecs)) =
+      &eigenvectors_impl(&args[0..1], Some(k as usize))
+    && vecs.len() == k as usize
+  {
+    return Ok(Expr::List(
+      vec![
+        Expr::List(eigen_take_slice(vals, k).into()),
+        Expr::List(vecs.clone()),
+      ]
+      .into(),
+    ));
+  }
   let all = eigensystem_ast(&args[0..1])?;
   let (vals, vecs) = match &all {
     Expr::List(parts)
@@ -4099,6 +4294,15 @@ pub fn eigensystem_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Eigenvectors[matrix] - eigenvectors of a square matrix
 pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  eigenvectors_impl(args, None)
+}
+
+/// Eigenvectors, or with `wanted` = Some(k) possibly just the first k of
+/// them (only the exact algebraic path, the costly one, stops early).
+fn eigenvectors_impl(
+  args: &[Expr],
+  wanted: Option<usize>,
+) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Eigenvectors expects exactly 1 argument".into(),
@@ -4115,6 +4319,11 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(
       vec![Expr::List(vec![Expr::Integer(1)].into())].into(),
     ));
+  }
+
+  // A common symbolic factor doesn't change the eigenvectors.
+  if let Some((_, numeric)) = split_symbolic_scale(&matrix) {
+    return eigenvectors_ast(&[matrix_to_expr(numeric)]);
   }
 
   // Check if matrix is numeric (at least one Real entry)
@@ -4158,7 +4367,7 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Try integer matrix path
   if let Some(int_matrix) = matrix_to_i128(&matrix) {
-    let result = integer_eigenvectors(&matrix, &int_matrix, n);
+    let result = integer_eigenvectors(&matrix, &int_matrix, n, wanted);
     // Real 2×2 matrices with complex eigenvalues (e.g. rotations) fall
     // through to the exact complex path below instead of staying
     // unevaluated.
@@ -4321,6 +4530,7 @@ fn integer_eigenvectors(
   matrix: &[Vec<Expr>],
   int_matrix: &[Vec<i128>],
   n: usize,
+  wanted: Option<usize>,
 ) -> Expr {
   let coeffs = char_poly_coefficients(int_matrix);
   let mut eigenvalues = find_polynomial_roots(&coeffs);
@@ -4351,7 +4561,7 @@ fn integer_eigenvectors(
   }
 
   if !all_integer {
-    return algebraic_eigenvectors(matrix, n).unwrap_or_else(|| {
+    return algebraic_eigenvectors(matrix, n, wanted).unwrap_or_else(|| {
       call1("Eigenvectors", matrix_to_expr(matrix.to_vec()))
     });
   }
@@ -4387,7 +4597,22 @@ fn integer_eigenvectors(
 /// (radicals or `Root` objects): the null space of `m - λ I` for each
 /// eigenvalue in `Eigenvalues` order, a repeated eigenvalue taking its
 /// vectors in turn and a defective one padded with zero vectors.
-fn algebraic_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> Option<Expr> {
+fn algebraic_eigenvectors(
+  matrix: &[Vec<Expr>],
+  n: usize,
+  wanted: Option<usize>,
+) -> Option<Expr> {
+  // The elimination canonicalizes algebraic numbers of degree up to n at
+  // every step; past 5x5 computing all of them is too slow to be worth it
+  // here (see conformance_gaps.md). One or two of them (Eigensystem[m, k])
+  // stay affordable a little further.
+  let limit = match wanted {
+    Some(k) if k <= 2 => 8,
+    _ => 5,
+  };
+  if n > limit {
+    return None;
+  }
   let eigen = eigenvalues_ast(&[matrix_to_expr(matrix.to_vec())]).ok()?;
   let Expr::List(eigenvalues) = &eigen else {
     return None;
@@ -4424,7 +4649,10 @@ fn algebraic_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> Option<Expr> {
       bi.total_cmp(ai)
     }
   });
-  let eigenvalues: Vec<Expr> = keyed.into_iter().map(|(_, l)| l).collect();
+  let mut eigenvalues: Vec<Expr> = keyed.into_iter().map(|(_, l)| l).collect();
+  if let Some(k) = wanted {
+    eigenvalues.truncate(k);
+  }
   let mut groups: Vec<(Expr, Vec<Expr>)> = Vec::new();
   let mut rows: Vec<Expr> = Vec::with_capacity(n);
   for lambda in &eigenvalues {
@@ -10359,6 +10587,47 @@ pub fn singular_value_list_ast(
 /// which keeps Wolfram-canonical factorings like `2*(-1 + E)` intact.
 /// A repeated eigenvalue uses the Jordan form `f(M) = f'(λ)·M +
 /// (f(λ) − λ·f'(λ))·I` — the same α·M + β·I assembly with α = f'(λ).
+/// `f(A) = V.f(D).V^-1` for an exact n x n matrix with n independent
+/// eigenvectors; `None` when the matrix is defective, an eigenvalue is
+/// outside `f`'s domain (`Log` at 0), or the eigen-decomposition is not exact.
+fn diagonalizable_matrix_function(
+  mat: &Expr,
+  n: usize,
+  func: &str,
+  make: &dyn Fn(&str, Vec<Expr>) -> Result<Expr, InterpreterError>,
+) -> Result<Option<Expr>, InterpreterError> {
+  let evals = match &make("Eigenvalues", vec![mat.clone()])? {
+    Expr::List(xs) if xs.len() == n => xs.clone(),
+    _ => return Ok(None),
+  };
+  let vecs = match &make("Eigenvectors", vec![mat.clone()])? {
+    Expr::List(xs) if xs.len() == n => xs.clone(),
+    _ => return Ok(None),
+  };
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(z) if *z == 0.0)
+  };
+  if func == "Log" && evals.iter().any(is_zero) {
+    return Ok(None);
+  }
+  // Defective matrices get zero-padded eigenvectors; the determinant of the
+  // eigenvector matrix (vectors as columns) is nonzero exactly when they are
+  // independent.
+  let v = make("Transpose", vec![Expr::List(vecs)])?;
+  let det = make("Simplify", vec![make("Det", vec![v.clone()])?])?;
+  if is_zero(&det) {
+    return Ok(None);
+  }
+  let mut f_evals = Vec::with_capacity(n);
+  for l in &evals {
+    f_evals.push(make(func, vec![l.clone()])?);
+  }
+  let d = make("DiagonalMatrix", vec![Expr::List(f_evals.into())])?;
+  let vinv = make("Inverse", vec![v.clone()])?;
+  let prod = make("Dot", vec![v, d, vinv])?;
+  Ok(Some(make("Simplify", vec![prod])?))
+}
+
 pub fn matrix_function_ast(
   args: &[Expr],
   head: &str,
@@ -10434,13 +10703,17 @@ pub fn matrix_function_ast(
   {
     return Ok(result);
   }
-  if n != 2 {
-    return Ok(unevaluated(args));
-  }
-
   let make = |head: &str, args: Vec<Expr>| -> Result<Expr, InterpreterError> {
     evaluate_expr_to_expr(&call(head, args))
   };
+  if n != 2 {
+    // Larger exact matrices: f(A) = V.f(D).V^-1 whenever A has a full set of
+    // independent eigenvectors. Defective matrices stay unevaluated.
+    return Ok(
+      diagonalizable_matrix_function(&mat, n, func, &make)?
+        .unwrap_or_else(|| unevaluated(args)),
+    );
+  }
 
   let evals = make("Eigenvalues", vec![mat.clone()])?;
   let evals_list = match &evals {

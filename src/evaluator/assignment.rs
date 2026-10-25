@@ -3214,7 +3214,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       }
     }
 
-    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    let mut rhs_value = evaluate_expr_to_expr(rhs)?;
 
     // Check Protected attribute
     if is_symbol_protected(var_name) {
@@ -3268,6 +3268,9 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       // would reparse as `Condition[p, RuleDelayed[c, b]]`), and a rendered
       // graphic inside an unevaluated `Part` prints as `-Graphics-`, which
       // does not parse at all.
+      // Shared first, so the stored value and the one returned are a
+      // single copy of a large array instead of two.
+      crate::evaluator::core_eval::share_large_lists(&mut rhs_value, 0);
       let stored = own_value_expr(&rhs_value);
       ENV.with(|e| {
         e.borrow_mut()
@@ -3676,17 +3679,17 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         // followed by NumericQ[a] = False) replaces the prior definition
         // rather than shadowing it — match Wolfram's "second Set wins"
         // semantics. Compare on params + conditions structurally.
-        let cond_strs: Vec<Option<String>> = conditions
-          .iter()
-          .map(|c| c.as_ref().map(expr_to_string))
-          .collect();
-        entry.retain(|(p, c, _, _, _, _)| {
-          if p != &params {
-            return true;
+        let same_condition = |a: &Option<Expr>, b: &Option<Expr>| match (a, b) {
+          (None, None) => true,
+          (Some(a), Some(b)) => {
+            crate::evaluator::pattern_matching::expr_equal(a, b)
           }
-          let other_strs: Vec<Option<String>> =
-            c.iter().map(|c| c.as_ref().map(expr_to_string)).collect();
-          other_strs != cond_strs
+          _ => false,
+        };
+        entry.retain(|(p, c, _, _, _, _)| {
+          p != &params
+            || c.len() != conditions.len()
+            || !c.iter().zip(&conditions).all(|(a, b)| same_condition(a, b))
         });
         let pos = entry
           .iter()
@@ -4684,6 +4687,14 @@ fn collect_element_bindings(
     // `j` of the matched expression. The element's `MatchQ` guard has already
     // established that the shapes agree by the time the body reads these.
     Expr::FunctionCall { name, args } if !is_pattern_construct_head(name) => {
+      // A head pattern (`p_[n_]`) binds `p` to the head of the element.
+      if name.contains('_') {
+        let (head_name, _, _) =
+          extract_pattern_info(&Expr::Identifier(name.clone()));
+        if !head_name.is_empty() {
+          out.push((head_name, call("Head", vec![accessor.clone()])));
+        }
+      }
       let n = args.len();
       // A sequence pattern (`__`/`___`) absorbs an unknown number of
       // arguments: everything before it still counts from the front, and

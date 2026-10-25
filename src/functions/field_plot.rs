@@ -447,7 +447,31 @@ fn parse_density_contour_options(
   args: &[Expr],
   start: usize,
 ) -> DensityContourOptions {
-  let (svg_width, svg_height, full_width) = parse_field_options(args, start);
+  let (svg_width, mut svg_height, full_width) =
+    parse_field_options(args, start);
+  // `AspectRatio -> r` (height / width) reshapes the picture; an
+  // `ImageSize -> {w, h}` pair already fixes both sides and wins.
+  let explicit_size_pair = args[start..].iter().any(|opt| {
+    matches!(opt, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize")
+        && matches!(replacement.as_ref(), Expr::List(_)))
+  });
+  if !explicit_size_pair {
+    for opt in &args[start..] {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = opt
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "AspectRatio")
+      {
+        let value = evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone());
+        if let Some(r) = try_eval_to_f64(&value).filter(|r| *r > 0.0) {
+          svg_height = ((svg_width as f64 * r).round() as u32).max(1);
+        }
+      }
+    }
+  }
   let mut color_function = None;
   let mut contours = ContourSpec::Automatic;
   let mut contour_shading = true;
@@ -4404,6 +4428,114 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
+}
+
+/// SmoothDensityHistogram[{{x1, y1}, …}, bspec, "PDF", opts] — a density
+/// plot of the data's Gaussian kernel density estimate. The bandwidth is
+/// Silverman's rule in each coordinate unless `bspec` gives one bandwidth
+/// or `{hx, hy}`; the estimate is shaded over the data range widened by
+/// three bandwidths, through ListDensityPlot with the remaining options.
+pub fn smooth_density_histogram_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "SmoothDensityHistogram".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let is_option =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let positional: Vec<&Expr> =
+    args.iter().take_while(|a| !is_option(a)).collect();
+  let options: Vec<Expr> =
+    args.iter().filter(|a| is_option(a)).cloned().collect();
+  if positional.is_empty() || positional.len() > 3 {
+    return unevaluated();
+  }
+  if let Some(dfun) = positional.get(2)
+    && !matches!(dfun, Expr::String(s) if s == "PDF")
+  {
+    return unevaluated();
+  }
+  let data = evaluate_expr_to_expr(positional[0])?;
+  let Expr::List(points) = &data else {
+    return unevaluated();
+  };
+  let mut xs = Vec::with_capacity(points.len());
+  let mut ys = Vec::with_capacity(points.len());
+  for p in points {
+    let Expr::List(c) = p else {
+      return unevaluated();
+    };
+    let (Some(x), Some(y)) = (
+      c.first().and_then(try_eval_to_f64),
+      c.get(1).and_then(try_eval_to_f64),
+    ) else {
+      return unevaluated();
+    };
+    if c.len() != 2 {
+      return unevaluated();
+    }
+    xs.push(x);
+    ys.push(y);
+  }
+  if xs.len() < 2 {
+    return unevaluated();
+  }
+  let silverman = |v: &[f64]| {
+    let h = crate::functions::math_ast::silverman_bandwidth(v);
+    if h > 0.0 && h.is_finite() { h } else { 1.0 }
+  };
+  let (hx, hy) = match positional.get(1).map(|b| evaluate_expr_to_expr(b)) {
+    None => (silverman(&xs), silverman(&ys)),
+    Some(b) => match &b? {
+      Expr::Identifier(a) if a == "Automatic" => {
+        (silverman(&xs), silverman(&ys))
+      }
+      Expr::String(a) if a == "Silverman" => (silverman(&xs), silverman(&ys)),
+      Expr::List(hs) if hs.len() == 2 => {
+        match (try_eval_to_f64(&hs[0]), try_eval_to_f64(&hs[1])) {
+          (Some(a), Some(b)) if a > 0.0 && b > 0.0 => (a, b),
+          _ => return unevaluated(),
+        }
+      }
+      other => match try_eval_to_f64(other) {
+        Some(h) if h > 0.0 => (h, h),
+        _ => return unevaluated(),
+      },
+    },
+  };
+  let range = |v: &[f64], h: f64| {
+    let lo = v.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    (lo - 3.0 * h, hi + 3.0 * h)
+  };
+  let ((x0, x1), (y0, y1)) = (range(&xs, hx), range(&ys, hy));
+  const SAMPLES: usize = 40;
+  let norm = 1.0 / (xs.len() as f64 * 2.0 * std::f64::consts::PI * hx * hy);
+  let mut triples = Vec::with_capacity(SAMPLES * SAMPLES);
+  for i in 0..SAMPLES {
+    let y = y0 + (y1 - y0) * i as f64 / (SAMPLES - 1) as f64;
+    for j in 0..SAMPLES {
+      let x = x0 + (x1 - x0) * j as f64 / (SAMPLES - 1) as f64;
+      let density: f64 = xs
+        .iter()
+        .zip(&ys)
+        .map(|(xi, yi)| {
+          let (u, v) = ((x - xi) / hx, (y - yi) / hy);
+          (-0.5 * (u * u + v * v)).exp()
+        })
+        .sum::<f64>()
+        * norm;
+      triples.push(Expr::List(
+        vec![Expr::Real(x), Expr::Real(y), Expr::Real(density)].into(),
+      ));
+    }
+  }
+  let mut plot_args = vec![Expr::List(triples.into())];
+  plot_args.extend(options);
+  list_density_plot_ast(&plot_args)
 }
 
 /// ReliefPlot[array] - shaded relief of a matrix of heights: each cell is

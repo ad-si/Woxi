@@ -566,4 +566,41 @@ mod column_visual_mode {
     // wolframscript does.
     assert_eq!(interpret("Deploy[1 + 1]").unwrap(), "Deploy[2]");
   }
+
+  // ExpressionCell[expr, style] is a cell showing `expr`: a display shows
+  // the expression, with no "not yet implemented" warning (six
+  // demonstrations used it).
+  #[test]
+  fn expression_cell_is_a_known_wrapper() {
+    clear_state();
+    let r = interpret_with_stdout("ExpressionCell[1 + 1, \"Output\"]").unwrap();
+    assert_eq!(r.result, "2");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+}
+
+mod frameless_button_cells {
+  use super::*;
+
+  fn green_drawn(code: &str) -> bool {
+    clear_state();
+    let r = woxi::interpret_with_stdout(code).unwrap();
+    r.graphics.is_some_and(|svg| svg.contains("rgb(0,255,0)"))
+  }
+
+  // A `Frameless` button around a picture is drawn as that picture inside a
+  // layout, also when wrapped in `Dynamic`, `Pane` and `Labeled`.
+  #[test]
+  fn frameless_picture_button_in_grid() {
+    let button = r#"Button[Graphics[{Green, Rectangle[{0, 0}]}], Null, Appearance -> "Frameless"]"#;
+    assert!(green_drawn(&format!("Grid[{{{{{button}}}}}]")));
+    assert!(green_drawn(&format!("Grid[{{{{Dynamic[{button}]}}}}]")));
+    // The cells may be variables holding the buttons.
+    assert!(green_drawn(&format!(
+      "sq = Dynamic@{button}; Labeled[Dynamic[Pane[Grid[{{{{sq, sq}}}}]]], \"t\", Top]"
+    )));
+    assert!(green_drawn(&format!(
+      "Labeled[Dynamic[Pane[Grid[{{{{{button}}}}}], ImageSize -> {{600, 414}}]], \"t\", Top]"
+    )));
+  }
 }

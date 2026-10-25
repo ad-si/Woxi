@@ -1489,6 +1489,37 @@ mod definite_integrals {
   }
 
   #[test]
+  fn definite_sqrt_quadratic_with_linear_term_half_disk() {
+    // 3 - 2x - x^2 = 4 - (x + 1)^2, so [-1, 1] covers a half disk of
+    // radius 2 shifted to the left, whose area minus the left quarter is Pi.
+    assert_eq!(
+      interpret("Integrate[Sqrt[3 - 2x - x^2], {x, -1, 1}]").unwrap(),
+      "Pi"
+    );
+  }
+
+  #[test]
+  fn definite_sqrt_quadratic_with_linear_term_hyperbolic() {
+    // x^2 + 2x + 2 = (x + 1)^2 + 1; the exact form must agree with the
+    // numeric integral 1.8100921403928758.
+    assert_eq!(
+      interpret("N[Integrate[Sqrt[x^2 + 2x + 2], {x, 0, 1}]]").unwrap(),
+      "1.810092140392876"
+    );
+  }
+
+  #[test]
+  fn definite_sqrt_quadratic_with_linear_term_real_coefficients() {
+    assert_eq!(
+      interpret(
+        "Chop[Integrate[Sqrt[6.5 - 0.18*h + 0.002*h^2], {h, 0, 40}] - 78.81253032630696]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
   fn definite_sqrt_partial_interval() {
     // ∫_{-1/2}^{1/2} Sqrt[1 - x^2] dx = Sqrt[3]/4 + Pi/6.
     assert_eq!(
@@ -4966,6 +4997,53 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // A non-numeric integrand is reported and left unevaluated, not
+  // integrated as zero.
+  #[test]
+  fn non_numeric_integrand() {
+    let result =
+      interpret_with_stdout("NIntegrate[Abs[g[x] - 1], {x, -10, 10}]").unwrap();
+    assert_eq!(result.result, "NIntegrate[Abs[-1 + g[x]], {x, -10, 10}]");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "NIntegrate::inumr: The integrand Abs[-1 + g[x]] has evaluated to \
+         non-numerical values for all sampling points in the region with \
+         boundaries {{-10, 10}}."
+      ]
+    );
+  }
+
+  // An inner Integrate without a closed form is a number under N, so it is
+  // integrated as an iterated integral — it was reported as non-numeric,
+  // and before that silently integrated as 0.
+  #[test]
+  fn inner_integrate_without_closed_form() {
+    let result = interpret_with_stdout(
+      "Abs[NIntegrate[Integrate[2 - 2 Sin[x^2 + y^2], {y, -1, 1}], \
+       {x, -1, 1}] - 3.52996] < 10^-4",
+    )
+    .unwrap();
+    assert_eq!(result.result, "True");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+
+  // The range is split where a Piecewise switches pieces (also one hidden
+  // behind a definition), so the quadrature does not refine to its point
+  // limit at the kink — a Plot of such integrals timed out.
+  #[test]
+  fn splits_at_piecewise_breakpoints() {
+    assert_eq!(
+      interpret(
+        "f[x_] := Piecewise[{{Sqrt[1 - x^2], x < 3/10}, {x - 1, True}}]; \
+         TimeConstrained[Abs[NIntegrate[f[x], {x, -1, 1}] - \
+         N[(3/10 Sqrt[91/100] + ArcSin[3/10])/2 + Pi/4 - 49/200]] < 10^-10, 2]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // `MaxPoints` caps the samples of each dimension (the d-th root of the
   // total for a d-dimensional integral) and keeps the best estimate so far,
   // so a coarse request stays bounded yet close to the converged value.
@@ -8004,6 +8082,27 @@ mod quadratic_denominator {
 mod dsolve {
   use super::*;
 
+  // A list naming a single function goes to the single-equation solver;
+  // the linear-system solver it went to left these unevaluated.
+  #[test]
+  fn single_function_in_a_list() {
+    assert_eq!(
+      interpret("DSolve[{y'[t] == -y[t], y[0] == 1}, {y[t]}, t]").unwrap(),
+      "{{y[t] -> E^(-t)}}"
+    );
+    assert_eq!(
+      interpret(
+        "DSolve[{-0.00023 T[s] == 0.0048618 T'[s], T[0] == 100}, {T[s]}, s]"
+      )
+      .unwrap(),
+      "{{T[s] -> 100./E^(0.047307581554156895*s)}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[t] == t y[t]}, {y}, t]").unwrap(),
+      interpret("DSolve[{y'[t] == t y[t]}, y, t]").unwrap()
+    );
+  }
+
   #[test]
   fn first_order_constant_rhs() {
     // y'[x] == 0 → y[x] -> C[1]
@@ -8602,6 +8701,22 @@ mod ndsolve {
     );
   }
 
+  // Total derivatives `Dt[x[t], {t, n}]` of a function of the independent
+  // variable stand for its ordinary derivatives, including the
+  // `Dt[x[t], t] /. t -> 0` form of an initial velocity.
+  #[test]
+  fn total_derivative_equations() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{Dt[x[t], {t, 2}] == -x[t], x[0] == 1, \
+         (Dt[x[t], t] /. t -> 0) == 0}, {x[t]}, {t, 0, 1}]; \
+         Round[(x[t] /. First[s]) /. t -> 1., 0.0001]"
+      )
+      .unwrap(),
+      "0.5403"
+    );
+  }
+
   // Algebraic equations that leave one degree of freedom, closed by a
   // unit-speed condition on the derivatives, trace an implicit curve; the
   // stated slope at the start picks the orientation.
@@ -9135,6 +9250,23 @@ mod ndsolve {
     assert!(
       (val - expected).abs() < 0.001,
       "Expected {expected}, got {val}"
+    );
+  }
+
+  // Replacing into thousands of calls copied the whole solution grid into
+  // each one (quadratic time, gigabytes of memory).
+  #[test]
+  fn replacing_into_many_calls_shares_the_solution() {
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[{y'[x] == 1, y[0] == 0}, y, {x, 0, 500}, \
+         StartingStepSize -> 0.1, Method -> {\"FixedStep\", Method -> \
+         {\"ExplicitRungeKutta\", \"DifferenceOrder\" -> 4}}]; \
+         TimeConstrained[Round[Total[Flatten[(y[#] & /@ Range[0, 500, 0.1]) \
+         /. sol]]], 3]"
+      )
+      .unwrap(),
+      "1250250"
     );
   }
 
@@ -22493,6 +22625,78 @@ mod ndsolve_starting_step_size {
       )
       .unwrap(),
       "{-733, -739, -742}"
+    );
+  }
+}
+
+mod integrate_product_with_sum_factor {
+  use super::*;
+
+  #[test]
+  fn distributes_trig_over_sum() {
+    assert_eq!(
+      interpret("Integrate[Sin[x] (Cos[x] + Sin[x]), x]").unwrap(),
+      "x/2 - Cos[x]^2/2 - Sin[2*x]/4"
+    );
+  }
+
+  #[test]
+  fn distributes_exp_over_sum() {
+    assert_eq!(
+      interpret("D[Integrate[E^x (Cos[2 x] + Sin[2 x]), x], x] - E^x (Cos[2 x] + Sin[2 x]) // Simplify")
+        .unwrap(),
+      "0"
+    );
+  }
+}
+
+mod dsolve_sinusoidal_forcing_sum {
+  use super::*;
+
+  #[test]
+  fn first_order_part_missing() {
+    assert_eq!(
+      interpret("DSolve[y''[x] + y'[x] == Cos[x] + Sin[x], y[x], x]").unwrap(),
+      "{{y[x] -> C[1]/E^x + C[2] - Cos[x]}}"
+    );
+  }
+
+  #[test]
+  fn resonant_sum() {
+    assert_eq!(
+      interpret("DSolve[y''[x] + y[x] == Cos[x] + Sin[x], y[x], x]").unwrap(),
+      "{{y[x] -> (Cos[x] - x*Cos[x] + x*Sin[x])/2 + C[1]*Cos[x] + C[2]*Sin[x]}}"
+    );
+  }
+
+  #[test]
+  fn nonresonant_sum() {
+    assert_eq!(
+      interpret("DSolve[y''[x] + y[x] == 3 Sin[2 x] + Cos[2 x], y[x], x]")
+        .unwrap(),
+      "{{y[x] -> (-Cos[2*x] - 3*Sin[2*x])/3 + C[1]*Cos[x] + C[2]*Sin[x]}}"
+    );
+  }
+}
+
+mod ndsolve_vector_unknown_with_matrix_product {
+  use super::*;
+
+  /// `y'[t] == A . y[t]` for a many-component `y` evaluates the product
+  /// once rather than once per component, so a 40-component system
+  /// finishes instantly.
+  #[test]
+  fn matrix_times_vector_right_hand_side() {
+    assert_eq!(
+      interpret(
+        "n = 40; A = SparseArray[{{1, 2} -> 1}, {n, n}]; \
+         sol = NDSolve[{y'[t] == A . y[t], y[0] == Table[1, {n}]}, y, {t, 0, 1}, \
+         StartingStepSize -> 0.1, MaxStepSize -> 0.1, \
+         Method -> {\"FixedStep\", Method -> \"ExplicitEuler\"}]; \
+         Round[10^6 (y[1] /. First[sol])[[{1, 40}]]]"
+      )
+      .unwrap(),
+      "{2000000, 1000000}"
     );
   }
 }
