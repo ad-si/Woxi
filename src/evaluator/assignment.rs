@@ -3214,7 +3214,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       }
     }
 
-    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    let mut rhs_value = evaluate_expr_to_expr(rhs)?;
 
     // Check Protected attribute
     if is_symbol_protected(var_name) {
@@ -3268,6 +3268,9 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       // would reparse as `Condition[p, RuleDelayed[c, b]]`), and a rendered
       // graphic inside an unevaluated `Part` prints as `-Graphics-`, which
       // does not parse at all.
+      // Shared first, so the stored value and the one returned are a
+      // single copy of a large array instead of two.
+      crate::evaluator::core_eval::share_large_lists(&mut rhs_value, 0);
       let stored = own_value_expr(&rhs_value);
       ENV.with(|e| {
         e.borrow_mut()

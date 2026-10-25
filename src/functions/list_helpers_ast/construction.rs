@@ -3630,21 +3630,6 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(original());
   };
 
-  // All flat tuples of length n1*n2*..., in lexicographic order.
-  let total: usize = dims.iter().product();
-  let mut flat_tuples: Vec<Vec<Expr>> = vec![vec![]];
-  for _ in 0..total {
-    let mut new_result = Vec::new();
-    for tuple in &flat_tuples {
-      for item in items {
-        let mut new_tuple = tuple.clone();
-        new_tuple.push(item.clone());
-        new_result.push(new_tuple);
-      }
-    }
-    flat_tuples = new_result;
-  }
-
   // Reshape a flat tuple into nested arrays of the given shape, applying
   // the subject's head at every level. An empty shape yields the bare
   // element (so a scalar n behaves identically to the shape {n}).
@@ -3666,13 +3651,34 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     wrap(head, elems)
   }
 
-  Ok(Expr::List(
-    flat_tuples
-      .into_iter()
-      .map(|t| reshape(&t, &dims, &wrap, head))
-      .collect::<Vec<_>>()
-      .into(),
-  ))
+  // All flat tuples of length n1*n2*..., in lexicographic order, generated
+  // one at a time from a mixed-radix counter (building every prefix level
+  // first held several copies of the result: 2.6 GB for
+  // Tuples[{-1, 0, 1}, 12]).
+  let total: usize = dims.iter().product();
+  let k = items.len();
+  let Some(count) = u32::try_from(total).ok().and_then(|t| k.checked_pow(t))
+  else {
+    return Ok(original());
+  };
+  let mut digits = vec![0usize; total];
+  let mut tuples = Vec::with_capacity(count);
+  for _ in 0..count {
+    let flat: Vec<Expr> = digits.iter().map(|&d| items[d].clone()).collect();
+    tuples.push(if dims.len() == 1 {
+      wrap(head, flat)
+    } else {
+      reshape(&flat, &dims, &wrap, head)
+    });
+    for digit in digits.iter_mut().rev() {
+      *digit += 1;
+      if *digit < k {
+        break;
+      }
+      *digit = 0;
+    }
+  }
+  Ok(Expr::List(tuples.into()))
 }
 
 /// DistanceMatrix[{v1, v2, ...}] - matrix of pairwise distances.

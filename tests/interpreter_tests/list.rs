@@ -713,6 +713,23 @@ mod subsequences {
 mod tuples {
   use super::*;
 
+  // Tuples built every prefix level and cloned each tuple from the previous
+  // one, and `x = …` kept the value twice: Tuples[{-1, 0, 1}, 12] took
+  // 2.6 GB (CompetingCellularAutomata). One copy of the 59049 10-tuples
+  // below is about 60 MB.
+  #[test]
+  fn assigned_tuples_are_held_once() {
+    assert_eq!(
+      interpret(
+        "m0 = MemoryInUse[]; t = Tuples[{-1, 0, 1}, 10]; \
+         {Length[t], t[[1]], t[[-1]], MemoryInUse[] - m0 < 10^8}"
+      )
+      .unwrap(),
+      "{59049, {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, \
+       {1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, True}"
+    );
+  }
+
   #[test]
   fn pairs() {
     assert_eq!(
