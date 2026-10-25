@@ -41065,3 +41065,22 @@ mod text_wider_than_canvas {
     assert!(xs[2] - xs[1] > 400.0, "labels collapsed: {xs:?}");
   }
 }
+
+mod self_intersecting_tube {
+  use super::*;
+
+  // A tube much thicker than the curve it follows crosses itself
+  // everywhere; cutting each face by every face it crosses produced a scene
+  // of gigabytes (GravitationalWavesEmittedByCollidingBlackHoles).
+  #[test]
+  fn splitting_stays_bounded() {
+    assert_eq!(
+      interpret(
+        "StringLength[ExportString[Graphics3D[Tube[Table[{Cos[t], Sin[t], 0}, \
+         {t, 0, 2, 0.01}], 2]], \"SVG\"]] < 10^7"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}

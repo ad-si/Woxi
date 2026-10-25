@@ -233,6 +233,9 @@ fn depth_gradient(camera: &Camera) -> [f64; 3] {
 /// a scene whose surfaces cross each other heavily.
 const MAX_SPLIT_PLANES: usize = 256;
 
+/// Most pieces one triangle is cut into.
+const MAX_PIECES_PER_TRIANGLE: usize = 64;
+
 /// Cuts a convex polygon (corner, flag of the edge to the next corner) by
 /// the plane through `plane`, returning the parts on its near and far side.
 /// Edges created by the cut carry a `false` flag.
@@ -315,7 +318,14 @@ fn split_interpenetrating(
   let mut new_verts = Vec::with_capacity(n);
   let mut new_tris = Vec::with_capacity(n);
   for (k, tri) in triangles.drain(..).enumerate() {
-    if planes[k].is_empty() || tri.texture.is_some() {
+    // The split scene has to stay within what `painter_order` sorts: once
+    // the triangles still to come would only just fit, they stay whole.
+    let remaining = n - k;
+    if planes[k].is_empty()
+      || tri.texture.is_some()
+      || new_tris.len() + remaining * MAX_PIECES_PER_TRIANGLE
+        > PAINTER_ORDER_MAX_TRIANGLES
+    {
       new_verts.push(original[k]);
       new_tris.push(tri);
       continue;
@@ -326,6 +336,11 @@ fn split_interpenetrating(
         .collect::<Vec<_>>(),
     ];
     for &other in &planes[k] {
+      // A triangle that many surfaces cross (a thick tube wound tighter
+      // than its radius) would split into thousands of slivers.
+      if pieces.len() >= MAX_PIECES_PER_TRIANGLE {
+        break;
+      }
       let mut next = Vec::with_capacity(pieces.len() + 1);
       for piece in pieces {
         let (a, b) = clip_polygon_by_plane(&piece, &original[other]);
