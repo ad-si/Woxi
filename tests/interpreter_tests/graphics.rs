@@ -17285,6 +17285,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_mesh_style_and_frame_style_colors() {
+      let plain = export_svg("ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> True]");
+      assert!(plain.contains("#666666"));
+      let svg = export_svg(
+        "ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> True, MeshStyle -> Red, \
+         FrameStyle -> {Blue, Thick}]",
+      );
+      assert!(svg.contains("#FF0000"), "mesh lines take MeshStyle: {svg}");
+      assert!(svg.contains("#0000FF"), "border takes FrameStyle: {svg}");
+      assert!(!svg.contains("#666666"));
+    }
+
+    #[test]
     fn array_plot_plot_label_is_drawn_above() {
       let svg =
         export_svg("ArrayPlot[{{0, 1}, {1, 0}}, PlotLabel -> \"Caption\"]");
