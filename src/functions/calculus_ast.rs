@@ -15631,7 +15631,9 @@ fn integrand_numeric_somewhere(
       crate::syntax::substitute_variable(integrand, var, &Expr::Real(x));
     let snapshot = crate::snapshot_warnings();
     crate::push_quiet();
-    let value = crate::evaluator::evaluate_expr_to_expr(&substituted);
+    // Numericized as the sampler numericizes it: an inner Integrate with no
+    // closed form is a number once N turns it into an NIntegrate.
+    let value = crate::evaluator::evaluate_expr_to_expr(&call1("N", substituted));
     crate::pop_quiet();
     crate::restore_warnings(snapshot);
     value.is_ok_and(|v| {
@@ -16291,7 +16293,15 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
       let evaluated =
         crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?;
+      // An inner Integrate with no closed form becomes a number under N
+      // (an iterated NIntegrate), as in the inumr check above.
       crate::functions::math_ast::try_eval_to_f64(&evaluated)
+        .or_else(|| {
+          let numeric =
+            crate::evaluator::evaluate_expr_to_expr(&call1("N", evaluated))
+              .ok()?;
+          crate::functions::math_ast::try_eval_to_f64(&numeric)
+        })
         .filter(|v| v.is_finite())
     };
     // Evaluate the literal point quietly: a removable singularity there (e.g.

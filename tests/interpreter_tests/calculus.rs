@@ -4983,6 +4983,20 @@ mod nintegrate {
     );
   }
 
+  // An inner Integrate without a closed form is a number under N, so it is
+  // integrated as an iterated integral — it was reported as non-numeric,
+  // and before that silently integrated as 0.
+  #[test]
+  fn inner_integrate_without_closed_form() {
+    let result = interpret_with_stdout(
+      "Abs[NIntegrate[Integrate[2 - 2 Sin[x^2 + y^2], {y, -1, 1}], \
+       {x, -1, 1}] - 3.52996] < 10^-4",
+    )
+    .unwrap();
+    assert_eq!(result.result, "True");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+
   // `MaxPoints` caps the samples of each dimension (the d-th root of the
   // total for a d-dimensional integral) and keeps the best estimate so far,
   // so a coarse request stays bounded yet close to the converged value.
