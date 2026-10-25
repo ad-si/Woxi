@@ -9170,3 +9170,35 @@ mod image_arithmetic_and_identity {
     );
   }
 }
+
+// MorphologicalComponents and ComponentMeasurements read rank-3 arrays
+// (ColorizeMorphologicalComponentsInThreeDimensionalTotalisticC...).
+mod morphology_3d {
+  use super::*;
+
+  #[test]
+  fn components_of_a_volume() {
+    assert_eq!(
+      interpret(
+        "MorphologicalComponents[{{{1, 0}, {0, 1}}, {{0, 0}, {1, 1}}}]"
+      )
+      .unwrap(),
+      "{{{1, 0}, {0, 1}}, {{0, 0}, {1, 1}}}"
+    );
+    assert_eq!(
+      interpret(
+        "MorphologicalComponents[{{{1, 0}, {0, 1}}, {{0, 0}, {1, 1}}}, \
+         CornerNeighbors -> False]"
+      )
+      .unwrap(),
+      "{{{1, 0}, {0, 2}}, {{0, 0}, {2, 2}}}"
+    );
+    assert_eq!(
+      interpret(
+        "ComponentMeasurements[{{{1, 0}, {0, 2}}, {{0, 0}, {2, 2}}}, \"Count\"]"
+      )
+      .unwrap(),
+      "{1 -> 1, 2 -> 3}"
+    );
+  }
+}

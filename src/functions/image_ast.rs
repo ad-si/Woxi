@@ -7841,26 +7841,45 @@ pub fn component_measurements_ast(
   let Expr::List(rows) = &args[0] else {
     return unevaluated();
   };
-  // Parse the label matrix and collect pixel counts per nonzero label, keyed
-  // by the label's rounded-integer value (component labels are integers).
+  // Parse the label array (a matrix, or a rank-3 array of voxels) and collect
+  // cell counts per nonzero label, keyed by the label's integer value
+  // (component labels are integers).
   let mut counts: std::collections::BTreeMap<i128, usize> =
     std::collections::BTreeMap::new();
-  for r in rows {
-    let Expr::List(cells) = r else {
+  fn leaves<'a>(e: &'a Expr, depth: usize, out: &mut Vec<&'a Expr>) -> bool {
+    match e {
+      Expr::List(items) if depth > 0 => {
+        items.iter().all(|i| leaves(i, depth - 1, out))
+      }
+      Expr::List(_) => false,
+      other if depth == 0 => {
+        out.push(other);
+        true
+      }
+      _ => false,
+    }
+  }
+  let rank = if matches!(rows.first(), Some(Expr::List(r)) if matches!(r.first(), Some(Expr::List(_))))
+  {
+    3
+  } else {
+    2
+  };
+  let mut cells = Vec::new();
+  if !leaves(&args[0], rank, &mut cells) {
+    return unevaluated();
+  }
+  for c in cells {
+    let Some(v) = crate::functions::math_ast::try_eval_to_f64(c) else {
       return unevaluated();
     };
-    for c in cells {
-      let Some(v) = crate::functions::math_ast::try_eval_to_f64(c) else {
-        return unevaluated();
-      };
-      if v == 0.0 {
-        continue;
-      }
-      if v.fract() != 0.0 {
-        return unevaluated(); // non-integer labels are not supported
-      }
-      *counts.entry(v as i128).or_insert(0) += 1;
+    if v == 0.0 {
+      continue;
     }
+    if v.fract() != 0.0 {
+      return unevaluated(); // non-integer labels are not supported
+    }
+    *counts.entry(v as i128).or_insert(0) += 1;
   }
 
   // Which properties to report (a single property or a list of them).
@@ -8002,12 +8021,124 @@ pub fn morphological_perimeter_ast(
 /// foreground components (values above the threshold `t`, default 0) with
 /// consecutive integers assigned in raster order of first appearance.
 /// Connectivity is 8-way by default; `CornerNeighbors -> False` selects 4-way.
+/// `MorphologicalComponents` of a rank-3 array: voxels above the threshold
+/// labelled by connected component in scan order, 26-connected (6 with
+/// `CornerNeighbors -> False`). `None` for anything but a numeric rank-3
+/// array.
+fn morphological_components_3d(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::List(planes) = args.first()? else {
+    return None;
+  };
+  let Expr::List(first_plane) = planes.first()? else {
+    return None;
+  };
+  let Expr::List(first_row) = first_plane.first()? else {
+    return None;
+  };
+  let dims = [planes.len(), first_plane.len(), first_row.len()];
+  let mut values = Vec::with_capacity(dims.iter().product());
+  for plane in planes {
+    let Expr::List(rows) = plane else { return None };
+    if rows.len() != dims[1] {
+      return None;
+    }
+    for row in rows {
+      let Expr::List(cells) = row else { return None };
+      if cells.len() != dims[2] {
+        return None;
+      }
+      for c in cells {
+        values.push(crate::functions::math_ast::try_eval_to_f64(c)?);
+      }
+    }
+  }
+  let mut threshold = 0.0f64;
+  let mut corner = true;
+  for a in &args[1..] {
+    match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "CornerNeighbors") =>
+      {
+        corner =
+          matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True");
+      }
+      _ => threshold = crate::functions::math_ast::try_eval_to_f64(a)?,
+    }
+  }
+  let offsets: Vec<[i64; 3]> = (-1..=1)
+    .flat_map(|a| (-1..=1).flat_map(move |b| (-1..=1).map(move |c| [a, b, c])))
+    .filter(|o| *o != [0, 0, 0])
+    .filter(|o| corner || o.iter().filter(|v| **v != 0).count() == 1)
+    .collect();
+  let index = |p: [usize; 3]| (p[0] * dims[1] + p[1]) * dims[2] + p[2];
+  let mut labels = vec![0i64; values.len()];
+  let mut next = 1i64;
+  for i in 0..dims[0] {
+    for j in 0..dims[1] {
+      for l in 0..dims[2] {
+        let start = [i, j, l];
+        if values[index(start)] <= threshold || labels[index(start)] != 0 {
+          continue;
+        }
+        labels[index(start)] = next;
+        let mut queue = std::collections::VecDeque::from([start]);
+        while let Some(p) = queue.pop_front() {
+          for o in &offsets {
+            let q =
+              [p[0] as i64 + o[0], p[1] as i64 + o[1], p[2] as i64 + o[2]];
+            if q.iter().zip(&dims).any(|(v, d)| *v < 0 || *v >= *d as i64) {
+              continue;
+            }
+            let q = [q[0] as usize, q[1] as usize, q[2] as usize];
+            if values[index(q)] > threshold && labels[index(q)] == 0 {
+              labels[index(q)] = next;
+              queue.push_back(q);
+            }
+          }
+        }
+        next += 1;
+      }
+    }
+  }
+  Some(Ok(Expr::List(
+    (0..dims[0])
+      .map(|i| {
+        Expr::List(
+          (0..dims[1])
+            .map(|j| {
+              Expr::List(
+                (0..dims[2])
+                  .map(|l| Expr::Integer(labels[index([i, j, l])] as i128))
+                  .collect::<Vec<_>>()
+                  .into(),
+              )
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  )))
+}
+
 pub fn morphological_components_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("MorphologicalComponents", args));
   if args.is_empty() {
     return unevaluated();
+  }
+  if let Some(result) = morphological_components_3d(args) {
+    return result;
   }
   // Parse a rectangular numeric matrix, or take the gray levels of an image.
   let mut mat: Vec<Vec<f64>> = Vec::new();
