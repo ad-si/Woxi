@@ -311,7 +311,9 @@ impl ControlState {
         overflow,
         ..
       } => {
-        let form = woxi::syntax::expr_to_input_form(&expr);
+        // Source form, like the choices: a `TraditionalForm[…]` value has
+        // to stay that, not turn into its box rendering.
+        let form = woxi::syntax::expr_to_source_form(&expr);
         if let Some(i) = values.iter().position(|v| *v == form) {
           *current_index = i;
           *overflow = None;
@@ -2400,6 +2402,32 @@ mod tests {
       .expect("pts state variable");
     assert!(!value.contains("-Graphics-"), "got {value}");
     assert!(value.starts_with("helper[Graphics["), "got {value}");
+  }
+
+  /// A saved `TraditionalForm[…]` menu value selects that entry: it is
+  /// compared in source form like the choices, not as its box rendering
+  /// (NewtonCotesQuadrature bound `f = FormBox[…]`).
+  #[test]
+  fn saved_traditional_form_value_selects_its_entry() {
+    let code = r#"Manipulate[f,
+      {{f, TraditionalForm[x^2]}, {TraditionalForm[x^2], TraditionalForm[x^3]}}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.apply_saved_variables(&[(
+      "f".to_string(),
+      "TraditionalForm[x^3]".to_string(),
+    )]);
+    let selected = state.controls.iter().find_map(|c| match c {
+      ControlState::Discrete {
+        current_index,
+        overflow,
+        ..
+      } => Some((*current_index, overflow.clone())),
+      _ => None,
+    });
+    assert_eq!(selected, Some((1, None)));
   }
 
   /// A hidden `ControlType -> None` variable whose default needs helper code
