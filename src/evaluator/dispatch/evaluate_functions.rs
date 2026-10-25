@@ -1093,6 +1093,8 @@ fn evaluate_function_call_ast_inner(
       "ComputationalGeometry`ConvexHull"
     }
     "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
+    // Combinatorica's permutation inverse is the built-in one.
+    "Combinatorica`InversePermutation" => "InversePermutation",
     "PieCharts`PieChart" => "PieChart",
     "Derangements" if combinatorica_active => "Combinatorica`Derangements",
     "RandomKSubset" if combinatorica_active => "Combinatorica`RandomKSubset",

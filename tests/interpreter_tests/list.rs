@@ -24405,6 +24405,16 @@ mod replace_part_position_patterns {
 mod combinatorica_josephus {
   use super::*;
 
+  // Combinatorica's InversePermutation is the built-in one (JosephusProblem
+  // calls it with the context written out).
+  #[test]
+  fn qualified_inverse_permutation() {
+    assert_eq!(
+      interpret("Combinatorica`InversePermutation[{3, 1, 5, 2, 4}]").unwrap(),
+      "{2, 4, 1, 5, 3}"
+    );
+  }
+
   #[test]
   fn elimination_rounds() {
     assert_eq!(
