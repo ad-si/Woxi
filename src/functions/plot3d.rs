@@ -7072,6 +7072,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut tick_spec: [Option<Vec<f64>>; 3] = [None, None, None];
   // `AspectRatio -> r`: the picture is `r` times as tall as it is wide.
   let mut aspect_ratio: Option<f64> = None;
+  // `Lighting -> "Neutral"`: colourless lights, so a surface without a
+  // colour directive shows its own white rather than the default blue.
+  let mut neutral_lighting = false;
   for opt in &args[1..] {
     let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
@@ -7095,6 +7098,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Identifier(s) if s == "True" => show_box = true,
           _ => {}
         },
+        "Lighting" => {
+          neutral_lighting =
+            matches!(replacement.as_ref(), Expr::String(s) if s == "Neutral");
+        }
         "SphericalRegion" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "False" => spherical_region = false,
           Expr::Identifier(s) if s == "True" => spherical_region = true,
@@ -7379,7 +7386,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Tessellate all primitives into triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
   let mut triangle_vertices: Vec<[Point3D; 3]> = Vec::new();
-  let base_color = (0x5E_u8, 0x81_u8, 0xB5_u8); // Default blue
+  let base_color = if neutral_lighting {
+    (0xFF_u8, 0xFF_u8, 0xFF_u8)
+  } else {
+    (0x5E_u8, 0x81_u8, 0xB5_u8) // Default blue
+  };
 
   // Sphere-scene statistics for adaptive tessellation (see
   // `sphere_detail`): how many spheres there are and how large the
