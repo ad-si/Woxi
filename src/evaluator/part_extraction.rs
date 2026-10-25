@@ -277,8 +277,8 @@ thread_local! {
   /// Every other stored value came from evaluating a right-hand side and is
   /// already in evaluated form, so the far more common `bigTable[[i]]` never
   /// pays for a re-evaluation it cannot need.
-  static PART_ASSIGNED: std::cell::RefCell<std::collections::HashSet<String>> =
-    std::cell::RefCell::new(std::collections::HashSet::new());
+  static PART_ASSIGNED: crate::epoch::EpochCell<std::collections::HashSet<String>> =
+    crate::epoch::EpochCell::new(std::collections::HashSet::new());
 }
 
 /// Remember that `var_name`'s value was rebuilt by a Part assignment.

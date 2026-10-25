@@ -2012,6 +2012,49 @@ fn constrained_first_order(pat_args: &[Expr]) -> Vec<usize> {
 /// Handles cases like `List -> Sequence` where `Expr::List` has head "List"
 /// but doesn't contain the literal string "List" in its printed form `{...}`.
 /// Returns `Some(new_expr)` if any replacement was made, `None` otherwise.
+/// Whether the symbol `sym` might occur in `expr`, as a symbol or as the head
+/// of a call. Shapes that hide names of their own (patterns, parameter
+/// lists, unparsed text, rendered output) answer yes. Operator nodes are
+/// only looked into, so for a built-in operator's name the answer means
+/// nothing.
+fn may_mention_symbol(expr: &Expr, sym: &str) -> bool {
+  match expr {
+    Expr::Identifier(name) => name == sym,
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _)
+    | Expr::String(_)
+    | Expr::Slot(_)
+    | Expr::SlotSequence(_)
+    | Expr::Constant(_) => false,
+    Expr::FunctionCall { name, args } => {
+      name == sym || args.iter().any(|a| may_mention_symbol(a, sym))
+    }
+    Expr::List(_)
+    | Expr::BinaryOp { .. }
+    | Expr::UnaryOp { .. }
+    | Expr::Comparison { .. }
+    | Expr::CurriedCall { .. }
+    | Expr::Rule { .. }
+    | Expr::RuleDelayed { .. }
+    | Expr::CompoundExpr(_)
+    | Expr::Association(_)
+    | Expr::ReplaceAll { .. }
+    | Expr::ReplaceRepeated { .. }
+    | Expr::Map { .. }
+    | Expr::Apply { .. }
+    | Expr::MapApply { .. }
+    | Expr::PrefixApply { .. }
+    | Expr::Postfix { .. }
+    | Expr::Part { .. }
+    | Expr::Function { .. } => crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(|c| may_mention_symbol(c, sym)),
+    _ => true,
+  }
+}
+
 fn try_symbol_replace_all(
   expr: &Expr,
   pattern_sym: &str,
@@ -3116,10 +3159,19 @@ fn apply_replace_all_ast_impl(
   } = rules
   {
     let stripped = strip_hold_pattern(pattern);
-    if let Expr::Identifier(pat_sym) = &stripped
-      && let Some(result) = try_symbol_replace_all(expr, pat_sym, replacement)
-    {
-      return Ok(result);
+    if let Expr::Identifier(pat_sym) = &stripped {
+      if let Some(result) = try_symbol_replace_all(expr, pat_sym, replacement) {
+        return Ok(result);
+      }
+      // A user symbol that occurs nowhere has nothing to replace. Saying so
+      // here spares the textual fallback below, which prints and reparses
+      // the whole expression (half a second for `r /. q -> 1` on a
+      // 455-term sum) only to rebuild it unchanged.
+      if !crate::evaluator::functions::is_builtin_symbol(pat_sym)
+        && !may_mention_symbol(expr, pat_sym)
+      {
+        return Ok(expr.clone());
+      }
     }
     // A rule whose left side is a literal expression rather than a pattern
     // (`r[t] -> h[t]/2`, the substitution a related-rates problem writes)

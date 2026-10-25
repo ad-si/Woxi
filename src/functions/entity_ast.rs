@@ -4,7 +4,6 @@
 //! EntityList, EntityProperties, EntityStores, EntityClassList, and Entity property access.
 
 use super::*;
-use std::cell::RefCell;
 
 /// Registered entity stores: each store maps type_name -> EntityTypeData
 #[derive(Clone, Debug)]
@@ -22,7 +21,7 @@ pub struct EntityTypeData {
 thread_local! {
     /// Stack of registered entity stores.
     /// Each store is a Vec of (type_name, EntityTypeData).
-    pub static ENTITY_STORES: RefCell<Vec<Vec<(String, EntityTypeData)>>> = const { RefCell::new(Vec::new()) };
+    pub static ENTITY_STORES: crate::epoch::EpochCell<Vec<Vec<(String, EntityTypeData)>>> = const { crate::epoch::EpochCell::new(Vec::new()) };
 }
 
 /// Parse an EntityStore expression and return the internal representation.

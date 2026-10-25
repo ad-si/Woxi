@@ -44,6 +44,7 @@
 
 use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut, Index, IndexMut, RangeBounds};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use crate::syntax::Expr;
@@ -55,12 +56,25 @@ struct TreeData {
 }
 
 /// Payload of the shared representation: the elements plus a lazily computed
-/// flag that callers cache per list (see `cached_flag`). Both are reset when
-/// a mutation goes through `Arc::make_mut`.
-#[derive(Debug, Clone)]
+/// flag that callers cache per list (see `cached_flag`) and the epoch at
+/// which the expression owning the list was last verified to evaluate to
+/// itself (see `evaluated_at`). Both are reset when a mutation goes through
+/// `Arc::make_mut`.
+#[derive(Debug)]
 struct SharedList {
   items: Vec<Expr>,
   flag: OnceLock<bool>,
+  evaluated_at: AtomicU64,
+}
+
+impl Clone for SharedList {
+  fn clone(&self) -> Self {
+    Self {
+      items: self.items.clone(),
+      flag: self.flag.clone(),
+      evaluated_at: AtomicU64::new(0),
+    }
+  }
 }
 
 #[derive(Debug)]
@@ -113,6 +127,7 @@ impl ExprList {
       Inner::Shared(s) => {
         let s = Arc::make_mut(s);
         s.flag = OnceLock::new();
+        *s.evaluated_at.get_mut() = 0;
         ReprMut::Vec(&mut s.items)
       }
       Inner::Tree(t) => ReprMut::Tree(t),
@@ -127,6 +142,7 @@ impl ExprList {
       self.inner = Inner::Shared(Arc::new(SharedList {
         items,
         flag: OnceLock::new(),
+        evaluated_at: AtomicU64::new(0),
       }));
     }
   }
@@ -142,6 +158,33 @@ impl ExprList {
     match &self.inner {
       Inner::Shared(s) => *s.flag.get_or_init(|| compute(&s.items)),
       _ => compute(self.as_slice_internal()),
+    }
+  }
+
+  /// The epoch (see `crate::epoch`) at which the expression holding this
+  /// list as its elements or arguments was last found to evaluate to
+  /// itself; 0 when it never was, or the list is not shared.
+  pub fn evaluated_at(&self) -> u64 {
+    match &self.inner {
+      Inner::Shared(s) => s.evaluated_at.load(Ordering::Relaxed),
+      _ => 0,
+    }
+  }
+
+  /// Record that the expression holding this list evaluated to itself at
+  /// `epoch`. Every clone of a shared list sees the mark; it is dropped by
+  /// the next mutation. No-op for an unshared list.
+  pub fn mark_evaluated(&self, epoch: u64) {
+    if let Inner::Shared(s) = &self.inner {
+      s.evaluated_at.store(epoch, Ordering::Relaxed);
+    }
+  }
+
+  /// Whether `self` and `other` are clones of one shared list.
+  pub fn same_shared(&self, other: &Self) -> bool {
+    match (&self.inner, &other.inner) {
+      (Inner::Shared(a), Inner::Shared(b)) => Arc::ptr_eq(a, b),
+      _ => false,
     }
   }
 
