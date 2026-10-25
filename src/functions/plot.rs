@@ -7370,9 +7370,8 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
 
   match opts.legend_position {
     LegendPosition::Top | LegendPosition::Bottom => {
-      // Horizontal legend: all entries in one row
-      let legend_height = line_height + legend_padding;
-
+      // Horizontal legend: entries share a row and wrap onto further rows
+      // once they no longer fit the plot width.
       // Calculate per-entry widths for horizontal layout
       let entry_widths: Vec<f64> = opts
         .plot_legends
@@ -7386,6 +7385,22 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
         })
         .collect();
       let entry_spacing = legend_padding;
+
+      let mut rows: Vec<Vec<usize>> = Vec::new();
+      let mut row_w = 0.0;
+      for (i, w) in entry_widths.iter().enumerate() {
+        let needed = if row_w > 0.0 { entry_spacing + w } else { *w };
+        if row_w > 0.0 && row_w + needed > vb_w {
+          rows.push(Vec::new());
+          row_w = 0.0;
+        }
+        if rows.is_empty() {
+          rows.push(Vec::new());
+        }
+        row_w += if row_w > 0.0 { entry_spacing + w } else { *w };
+        rows.last_mut().unwrap().push(i);
+      }
+      let legend_height = rows.len() as f64 * line_height + legend_padding;
 
       let new_vb_h = vb_h + legend_height;
 
@@ -7431,56 +7446,62 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
       // Draw legend entries horizontally
       if let Some(insert_pos) = buf.rfind("</svg>") {
         let mut legend_svg = String::new();
-        // Center the legend row within the viewBox width
-        let total_w: f64 = entry_widths.iter().sum::<f64>()
-          + entry_spacing * (entry_widths.len().max(1) - 1) as f64;
-        let mut cursor_x = (vb_w - total_w).max(0.0) / 2.0;
+        let first_row_y = legend_y;
 
-        for (i, label) in opts.plot_legends.iter().enumerate() {
-          let (r, g, b) = series_color(&opts.plot_style, i);
-          let thickness = series_thickness(&opts.plot_style, i);
-          let dashing = series_dashing(&opts.plot_style, i);
-          let sw = (thickness as f64 / RESOLUTION_SCALE as f64 * sf).max(sf);
+        for (row_idx, row) in rows.iter().enumerate() {
+          let legend_y = first_row_y + row_idx as f64 * line_height;
+          // Center each legend row within the viewBox width
+          let total_w: f64 = row.iter().map(|&i| entry_widths[i]).sum::<f64>()
+            + entry_spacing * (row.len().max(1) - 1) as f64;
+          let mut cursor_x = (vb_w - total_w).max(0.0) / 2.0;
 
-          let mut dash_attr = String::new();
-          if let Some(ref pattern) = dashing {
-            let dash_vals: Vec<String> = pattern
-              .iter()
-              .map(|d| format!("{:.1}", dash_len(*d, dash_scale, sf)))
-              .collect();
-            dash_attr =
-              format!(" stroke-dasharray=\"{}\"", dash_vals.join(","));
-          }
+          for &i in row {
+            let label = &opts.plot_legends[i];
+            let (r, g, b) = series_color(&opts.plot_style, i);
+            let thickness = series_thickness(&opts.plot_style, i);
+            let dashing = series_dashing(&opts.plot_style, i);
+            let sw = (thickness as f64 / RESOLUTION_SCALE as f64 * sf).max(sf);
 
-          // Swatch line
-          legend_svg.push_str(&format!(
-            "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
+            let mut dash_attr = String::new();
+            if let Some(ref pattern) = dashing {
+              let dash_vals: Vec<String> = pattern
+                .iter()
+                .map(|d| format!("{:.1}", dash_len(*d, dash_scale, sf)))
+                .collect();
+              dash_attr =
+                format!(" stroke-dasharray=\"{}\"", dash_vals.join(","));
+            }
+
+            // Swatch line
+            legend_svg.push_str(&format!(
+              "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
              stroke=\"rgb({},{},{})\" stroke-width=\"{}\"{}/>\n",
-            cursor_x,
-            legend_y,
-            cursor_x + swatch_len,
-            legend_y,
-            r,
-            g,
-            b,
-            sw as u32,
-            dash_attr,
-          ));
+              cursor_x,
+              legend_y,
+              cursor_x + swatch_len,
+              legend_y,
+              r,
+              g,
+              b,
+              sw as u32,
+              dash_attr,
+            ));
 
-          // Text label
-          let text_x = cursor_x + swatch_len + swatch_gap;
-          let text_y = legend_y + font_size * 0.35;
-          legend_svg.push_str(&format!(
-            "<text x=\"{text_x:.1}\" y=\"{text_y:.1}\" \
+            // Text label
+            let text_x = cursor_x + swatch_len + swatch_gap;
+            let text_y = legend_y + font_size * 0.35;
+            legend_svg.push_str(&format!(
+              "<text x=\"{text_x:.1}\" y=\"{text_y:.1}\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
              fill=\"{label_fill}\">{}</text>\n",
-            crate::functions::graphics::box_string_to_svg_scaled(
-              label,
-              RESOLUTION_SCALE as f64
-            ),
-          ));
+              crate::functions::graphics::box_string_to_svg_scaled(
+                label,
+                RESOLUTION_SCALE as f64
+              ),
+            ));
 
-          cursor_x += entry_widths[i] + entry_spacing;
+            cursor_x += entry_widths[i] + entry_spacing;
+          }
         }
 
         buf.insert_str(insert_pos, &legend_svg);
