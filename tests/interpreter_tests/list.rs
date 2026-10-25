@@ -14688,6 +14688,54 @@ mod position_index {
 mod list_convolve {
   use super::*;
 
+  // A normalized SparseArray kernel (MotionBlur) stayed unevaluated.
+  #[test]
+  fn sparse_array_kernel() {
+    assert_eq!(
+      interpret(
+        "k = SparseArray[{{2, i_} -> 1.}, {3, 3}, 0.]; \
+         ListConvolve[k/Total[k, 2], IdentityMatrix[4]]"
+      )
+      .unwrap(),
+      "{{0.3333333333333333, 0.3333333333333333}, \
+       {0.3333333333333333, 0.3333333333333333}}"
+    );
+    assert_eq!(
+      interpret(
+        "ListCorrelate[SparseArray[{1 -> 1, 3 -> 2}], {1, 2, 3, 4, 5}]"
+      )
+      .unwrap(),
+      "{7, 10, 13}"
+    );
+  }
+
+  // Machine numbers take a direct path with the evaluator's exactness:
+  // 0 times a real is an exact 0, and an all-exact window stays exact.
+  #[test]
+  fn machine_entries_keep_exact_terms() {
+    assert_eq!(
+      interpret("ListConvolve[{1, 2}, {0., 0, 1}]").unwrap(),
+      "{0., 1}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{0, 0.5}, {1, 2, 3}]").unwrap(),
+      "{1., 1.5}"
+    );
+    assert_eq!(
+      interpret("ListConvolve[{{1, 0.5}, {0, 0}}, {{1, 2, 3}, {4, 5, 6}}]")
+        .unwrap(),
+      "{{7., 8.5}}"
+    );
+    assert_eq!(
+      interpret(
+        "TimeConstrained[Dimensions[ListConvolve[ConstantArray[1./225, \
+         {15, 15}], RandomInteger[255, {200, 200}]]], 5]"
+      )
+      .unwrap(),
+      "{186, 186}"
+    );
+  }
+
   #[test]
   fn two_dimensional_padding_array() {
     // A padding array tiles outwards from the data edges.

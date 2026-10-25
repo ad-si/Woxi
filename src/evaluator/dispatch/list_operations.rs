@@ -5659,6 +5659,26 @@ pub fn dispatch_list_operations(
     "PositionIndex" if args.len() == 1 => {
       return Some(Ok(position_index_ast(&args[0])));
     }
+    // A SparseArray kernel or list (`m/Total[m, 2]` of a SparseArray stays
+    // sparse) is convolved as the array it stands for.
+    "ListConvolve" | "ListCorrelate"
+      if args.len() >= 2
+        && args[..2].iter().any(|a| {
+          matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray")
+        }) =>
+    {
+      let mut dense = args.to_vec();
+      let mut changed = false;
+      for a in dense.iter_mut().take(2) {
+        if let Some(d) = list_helpers_ast::densify_sparse_array(a) {
+          *a = d;
+          changed = true;
+        }
+      }
+      if changed {
+        return dispatch_list_operations(name, &dense);
+      }
+    }
     // ListConvolve[kernel, list] — discrete convolution
     "ListConvolve" if args.len() == 2 => {
       return Some(list_convolve_ast(&args[0], &args[1]));
@@ -9154,6 +9174,56 @@ fn position_index_ast(expr: &Expr) -> Expr {
 /// `None` when either argument is not a rectangular matrix (so the caller falls
 /// back to the 1-D path). For convolution the kernel is reversed in both
 /// dimensions; the output has shape `(dr - kr + 1) × (dc - kc + 1)`.
+/// `Plus @@ (Times @@@ pairs)` for machine reals and integers, evaluated
+/// the way those calls would be, without building them: `0 x` is an exact
+/// 0, integer products stay exact, and the exact part seeds the real fold
+/// when the first term is exact (else it is added after the reals). `None`
+/// for any other entry (or an integer overflow), which takes the symbolic
+/// path.
+fn machine_dot<'a>(
+  pairs: impl Iterator<Item = (&'a Expr, &'a Expr)>,
+) -> Option<Expr> {
+  let mut exact: i128 = 0;
+  let mut reals: Vec<f64> = Vec::new();
+  let mut first_exact: Option<bool> = None;
+  for (a, b) in pairs {
+    let term_exact = match (a, b) {
+      (Expr::Integer(0), Expr::Integer(_) | Expr::Real(_))
+      | (Expr::Integer(_) | Expr::Real(_), Expr::Integer(0)) => true,
+      (Expr::Integer(x), Expr::Integer(y)) => {
+        exact = exact.checked_add(x.checked_mul(*y)?)?;
+        true
+      }
+      (Expr::Real(x), Expr::Real(y)) => {
+        reals.push(x * y);
+        false
+      }
+      (Expr::Real(x), Expr::Integer(i)) | (Expr::Integer(i), Expr::Real(x)) => {
+        reals.push(x * (*i as f64));
+        false
+      }
+      _ => return None,
+    };
+    first_exact.get_or_insert(term_exact);
+  }
+  if reals.is_empty() {
+    return Some(Expr::Integer(exact));
+  }
+  let seeded = first_exact == Some(true);
+  let mut sum = if seeded { exact as f64 } else { 0.0 };
+  let mut iter = reals.into_iter();
+  if !seeded {
+    sum = iter.next()?;
+  }
+  for r in iter {
+    sum += r;
+  }
+  if !seeded && exact != 0 {
+    sum += exact as f64;
+  }
+  Some(Expr::Real(sum))
+}
+
 fn try_2d_conv_corr(
   ker: &[Expr],
   data: &[Expr],
@@ -9189,15 +9259,27 @@ fn try_2d_conv_corr(
   for i in 0..out_r {
     let mut row = Vec::with_capacity(out_c);
     for j in 0..out_c {
+      let kernel_at = |a: usize, b: usize| {
+        if flip {
+          &km[kr - 1 - a][kc - 1 - b]
+        } else {
+          &km[a][b]
+        }
+      };
+      let (dm_ref, kernel_ref) = (&dm, &kernel_at);
+      if let Some(v) = machine_dot((0..kr).flat_map(|a| {
+        (0..kc).map(move |b| (kernel_ref(a, b), &dm_ref[i + a][j + b]))
+      })) {
+        row.push(v);
+        continue;
+      }
       let mut terms = Vec::with_capacity(kr * kc);
       for a in 0..kr {
         for b in 0..kc {
-          let ke = if flip {
-            &km[kr - 1 - a][kc - 1 - b]
-          } else {
-            &km[a][b]
-          };
-          terms.push(times(vec![ke.clone(), dm[i + a][j + b].clone()]));
+          terms.push(times(vec![
+            kernel_at(a, b).clone(),
+            dm[i + a][j + b].clone(),
+          ]));
         }
       }
       let sum = plus(terms);
@@ -9238,6 +9320,12 @@ fn list_convolve_ast(
 
   for i in 0..out_len {
     // Sum kernel[k-1-j] * data[i+j] for j in 0..k (kernel is reversed for convolution)
+    if let Some(v) =
+      machine_dot((0..k).map(|j| (&ker[k - 1 - j], &data[i + j])))
+    {
+      result.push(v);
+      continue;
+    }
     let mut terms = Vec::with_capacity(k);
     for j in 0..k {
       let product = times(vec![ker[k - 1 - j].clone(), data[i + j].clone()]);
@@ -9448,11 +9536,9 @@ fn nd_correlate_element(
   data_flat[flat].clone()
 }
 
-/// Fast path for the default `Plus[Times[k, d], …]` combination when every
-/// term is a machine number (at least one a real): the sum is formed
-/// directly instead of building and evaluating a symbolic expression, which
-/// dominates the cost on image-sized arrays. `None` when any term is
-/// something else, or integers only, so the evaluator keeps exact arithmetic.
+/// Fast path for the default `Plus[Times[k, d], …]` combination (see
+/// [`machine_dot`]): building and evaluating a symbolic expression per
+/// element dominates the cost on image-sized arrays.
 fn nd_numeric_dot(
   terms: &[(Expr, Expr)],
   g: Option<&Expr>,
@@ -9461,18 +9547,7 @@ fn nd_numeric_dot(
   if g.is_some() || h.is_some() {
     return None;
   }
-  let as_f64 = |e: &Expr| match e {
-    Expr::Real(x) => Some(*x),
-    Expr::Integer(n) => Some(*n as f64),
-    _ => None,
-  };
-  let mut any_real = false;
-  let mut sum = 0.0;
-  for (k, d) in terms {
-    any_real |= matches!(k, Expr::Real(_)) || matches!(d, Expr::Real(_));
-    sum += as_f64(k)? * as_f64(d)?;
-  }
-  any_real.then_some(Expr::Real(sum))
+  machine_dot(terms.iter().map(|(k, d)| (k, d)))
 }
 
 /// General N-dimensional `ListCorrelate`/`ListConvolve` overhang form
@@ -9775,33 +9850,6 @@ fn list_correlate_overhang(
   Ok(Expr::List(result.into()))
 }
 
-/// Fast path for the plain 1-D `ListCorrelate[ker, list]` when every entry
-/// is a machine number and at least one is a real: each output is formed
-/// directly (as in `nd_numeric_dot`) instead of building and evaluating a
-/// symbolic `Plus[Times[…]]` per element, which is quadratic-slow on long
-/// lists. `None` otherwise, so exact arithmetic stays with the evaluator.
-fn numeric_correlate_1d(ker: &[Expr], data: &[Expr]) -> Option<Vec<Expr>> {
-  let as_f64 = |e: &Expr| match e {
-    Expr::Real(x) => Some(*x),
-    Expr::Integer(n) => Some(*n as f64),
-    _ => None,
-  };
-  let kf: Vec<f64> = ker.iter().map(as_f64).collect::<Option<_>>()?;
-  let df: Vec<f64> = data.iter().map(as_f64).collect::<Option<_>>()?;
-  let any_real = ker
-    .iter()
-    .chain(data.iter())
-    .any(|e| matches!(e, Expr::Real(_)));
-  if !any_real {
-    return None;
-  }
-  Some(
-    df.windows(kf.len())
-      .map(|w| Expr::Real(kf.iter().zip(w).map(|(a, b)| a * b).sum()))
-      .collect(),
-  )
-}
-
 fn list_correlate_ast(
   kernel: &Expr,
   list: &Expr,
@@ -9827,12 +9875,12 @@ fn list_correlate_ast(
   let out_len = n - k + 1;
   let mut result = Vec::with_capacity(out_len);
 
-  if let Some(fast) = numeric_correlate_1d(ker, data) {
-    return Ok(Expr::List(fast.into()));
-  }
-
   for i in 0..out_len {
     // Sum kernel[j] * data[i+j] for j in 0..k (no reversal)
+    if let Some(v) = machine_dot((0..k).map(|j| (&ker[j], &data[i + j]))) {
+      result.push(v);
+      continue;
+    }
     let mut terms = Vec::with_capacity(k);
     for j in 0..k {
       let product = times(vec![ker[j].clone(), data[i + j].clone()]);
