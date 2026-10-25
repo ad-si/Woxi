@@ -2011,6 +2011,33 @@ enumerates residue classes as a disjunction
 (`Reduce[Mod[x + y + z, 5] == 2 && x == y, {x, y, z}, Integers]`); Woxi
 has no such form and does not reduce these.
 
+### `Sort` of a sum against a product with an imaginary or reciprocal factor
+
+```sh
+wolframscript -code 'Sort[{1 + I x, I x}]'
+# {1 + I*x, I*x}
+woxi eval 'Sort[{1 + I x, I x}]'
+# {I*x, 1 + I*x}
+```
+
+Same for `1 + x/Log[3]` against `x/Log[3]`, but `Sort[{1 + 2 x, 2 x}]`
+and `Sort[{1 + 2 I Pi x, 2 I Pi x}]` put the product first in both. It
+shows in the order of `Solve`'s solution families
+(`Solve[9^x - 4 3^x + 3 == 0, x]`).
+
+### `Root` of a reducible polynomial keeps the whole polynomial
+
+```sh
+wolframscript -code 'Root[2 #^5 - 4 # - 2 &, 1]'
+# -1
+woxi eval 'Root[2 #^5 - 4 # - 2 &, 1]'
+# Root[-1 - 2*#1 + #1^5 & , 1, 0]
+```
+
+The polynomial is `2 (1 + #) (#^4 - #^3 + #^2 - # - 1)`; wolframscript
+reduces to the factor the `k`-th root belongs to. Woxi only does that when
+every factor has degree 2 or less.
+
 ### `Solve` over `Integers` does not parametrize nonlinear equations
 
 ```sh

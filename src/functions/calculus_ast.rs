@@ -2128,6 +2128,13 @@ pub fn is_constant_wrt(expr: &Expr, var: &str) -> bool {
     Expr::Part { expr, index } => {
       is_constant_wrt(expr, var) && is_constant_wrt(index, var)
     }
+    // A slot is no variable, and a pure function (the polynomial of a
+    // `Root[f, k]`) is a constant unless its body names `var` freely.
+    Expr::Slot(_) | Expr::SlotSequence(_) => true,
+    Expr::Function { body } => is_constant_wrt(body, var),
+    Expr::NamedFunction { params, body, .. } => {
+      params.iter().any(|p| p == var) || is_constant_wrt(body, var)
+    }
     _ => false,
   }
 }

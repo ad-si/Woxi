@@ -181,10 +181,35 @@ pub(crate) fn slot_as_call(e: &Expr) -> Option<Expr> {
   }
 }
 
+/// `a -> b` and `a :> b` order as the `Rule`/`RuleDelayed` calls they are.
+fn rule_as_call(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Some(call(
+      "Rule",
+      vec![pattern.as_ref().clone(), replacement.as_ref().clone()],
+    )),
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Some(call(
+      "RuleDelayed",
+      vec![pattern.as_ref().clone(), replacement.as_ref().clone()],
+    )),
+    _ => None,
+  }
+}
+
 pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   let (sa, sb) = (slot_as_call(a), slot_as_call(b));
   if sa.is_some() || sb.is_some() {
     return canonical_cmp(sa.as_ref().unwrap_or(a), sb.as_ref().unwrap_or(b));
+  }
+  let (ra, rb) = (rule_as_call(a), rule_as_call(b));
+  if ra.is_some() || rb.is_some() {
+    return canonical_cmp(ra.as_ref().unwrap_or(a), rb.as_ref().unwrap_or(b));
   }
   // Two compatible Quantities sort by their physical value (converted to a
   // common unit): Sort[{3 m, 100 cm, 2 m}] -> {100 cm, 2 m, 3 m}. A tie in
@@ -397,6 +422,28 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           };
         }
       }
+      // Any other power orders by its base, then by its exponent (a bare
+      // expression counting as its first power): Sort[{z, f[x]^2}] and
+      // Sort[{Pi, 1/Log[3]}] put the symbol first. Sums keep their own
+      // class rules below.
+      {
+        let (pa, pb) = (power_parts(a), power_parts(b));
+        if (pa.is_some() || pb.is_some())
+          && sum_terms_list(a).is_none()
+          && sum_terms_list(b).is_none()
+        {
+          let (ba, ea) = pa.unwrap_or_else(|| (a.clone(), Expr::Integer(1)));
+          let (bb, eb) = pb.unwrap_or_else(|| (b.clone(), Expr::Integer(1)));
+          let ord = canonical_cmp(&ba, &bb);
+          if ord != std::cmp::Ordering::Equal {
+            return ord;
+          }
+          let ord = canonical_cmp(&ea, &eb);
+          if ord != std::cmp::Ordering::Equal {
+            return ord;
+          }
+        }
+      }
       // Additive expressions (sums) hold a class-based place in canonical
       // order (wolframscript-verified probe families in Pi and x):
       //   {1, 1+x^(-1), 1+Sqrt[x], x^(-2), x^(-1), 93/x, Sqrt[x], x, 2*x,
@@ -435,14 +482,14 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
               return ord.reverse();
             }
             (Some(ta), None) => {
-              return if sum_sorts_early(ta) || is_plain_call_non_power(b) {
+              return if sum_sorts_early(ta) || sum_precedes_call(ta, b) {
                 std::cmp::Ordering::Less
               } else {
                 std::cmp::Ordering::Greater
               };
             }
             (None, Some(tb)) => {
-              return if sum_sorts_early(tb) || is_plain_call_non_power(a) {
+              return if sum_sorts_early(tb) || sum_precedes_call(tb, a) {
                 std::cmp::Ordering::Greater
               } else {
                 std::cmp::Ordering::Less
@@ -498,7 +545,25 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           }
           return std::cmp::Ordering::Equal;
         }
-        // Lists sort after non-lists
+        // Against a plain call a list is the call `List[…]`, ordered by
+        // head name (Sort[{Li[a], {a}, Lz[a]}] keeps that order); it sorts
+        // after every other expression.
+        (Expr::List(items), call @ Expr::FunctionCall { .. })
+          if is_plain_func_call(call) =>
+        {
+          return canonical_cmp(
+            &crate::helpers::call("List", items.to_vec()),
+            call,
+          );
+        }
+        (call @ Expr::FunctionCall { .. }, Expr::List(items))
+          if is_plain_func_call(call) =>
+        {
+          return canonical_cmp(
+            call,
+            &crate::helpers::call("List", items.to_vec()),
+          );
+        }
         (Expr::List(_), _) => return std::cmp::Ordering::Greater,
         (_, Expr::List(_)) => return std::cmp::Ordering::Less,
         // Function calls sort after atoms but before lists
@@ -2177,6 +2242,19 @@ fn cmp_sum_terms(ta: &[Expr], tb: &[Expr]) -> std::cmp::Ordering {
       }
     }
   }
+}
+
+/// A sum sorts before a plain call when its greatest term does:
+/// Sort[{Cos[x], 1 + x}] = {1 + x, Cos[x]}, but
+/// Sort[{C[1] + Log[2], C[1]}] = {C[1], C[1] + Log[2]}.
+fn sum_precedes_call(terms: &[Expr], call: &Expr) -> bool {
+  is_plain_call_non_power(call)
+    && terms
+      .iter()
+      .max_by(|x, y| canonical_cmp(x, y))
+      .is_some_and(|greatest| {
+        canonical_cmp(greatest, call) == std::cmp::Ordering::Less
+      })
 }
 
 /// A plain function call that is not itself a power (Sqrt/Power) — sums

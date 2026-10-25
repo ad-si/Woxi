@@ -3255,45 +3255,29 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &[i_pi, log_n],
         );
       }
-      // Log[-expr] → I Pi + Log[expr], but only where the principal branch
-      // says so: `expr` has to be a positive real number, so `Log[-Sqrt[2]]`
-      // splits while symbolic arguments stay put — `Log[-x]` and `Log[-x^2]`
-      // are `Log[-x]` and `Log[-x^2]` in wolframscript, since nothing says
-      // `x` is positive.
+      // Log[x] → I Pi + Log[-x] for an exact numeric x on the negative real
+      // axis, the principal branch: `Log[-Sqrt[2]]`, `Log[1 - Sqrt[5]]`
+      // (`I Pi + Log[-1 + Sqrt[5]]`), a negative `Root`. Symbolic arguments
+      // stay put — `Log[-x]` and `Log[-x^2]` are `Log[-x]` and `Log[-x^2]`
+      // in wolframscript, since nothing says `x` is positive.
+      if crate::functions::predicate_ast::is_numeric_q(&args[0])
+        && !crate::functions::math_ast::contains_inexact_real(&args[0])
+        && matches!(
+          crate::evaluator::evaluate_function_call_ast("N", std::slice::from_ref(&args[0])),
+          Ok(Expr::Real(v)) if v < 0.0
+        )
       {
-        let inner = match &args[0] {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left,
-            right,
-          } if matches!(left.as_ref(), Expr::Integer(-1)) => {
-            Some(*right.clone())
-          }
-          Expr::FunctionCall { name, args: targs }
-            if name == "Times"
-              && targs.len() == 2
-              && matches!(&targs[0], Expr::Integer(-1)) =>
-          {
-            Some(targs[1].clone())
-          }
-          _ => None,
-        };
-        let inner = inner.filter(|e| {
-          crate::functions::predicate_ast::is_numeric_q(e)
-            && matches!(
-              crate::evaluator::evaluate_function_call_ast("N", std::slice::from_ref(e)),
-              Ok(Expr::Real(v)) if v > 0.0
-            )
-        });
-        if let Some(inner_expr) = inner {
-          let i_pi = times2(id_expr("I"), const_expr("Pi"));
-          let log_x =
-            crate::evaluator::evaluate_function_call_ast("Log", &[inner_expr])?;
-          return crate::evaluator::evaluate_function_call_ast(
-            "Plus",
-            &[i_pi, log_x],
-          );
-        }
+        let negated = crate::evaluator::evaluate_function_call_ast(
+          "Times",
+          &[Expr::Integer(-1), args[0].clone()],
+        )?;
+        let i_pi = times2(id_expr("I"), const_expr("Pi"));
+        let log_x =
+          crate::evaluator::evaluate_function_call_ast("Log", &[negated])?;
+        return crate::evaluator::evaluate_function_call_ast(
+          "Plus",
+          &[i_pi, log_x],
+        );
       }
       // Log[Infinity] = Infinity
       if matches!(&args[0], Expr::Identifier(s) if s == "Infinity") {

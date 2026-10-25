@@ -4081,13 +4081,17 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Non-affine integer equations also use this established algebraic path.
   if let Some(ref dom) = domain {
     let base_solutions = solve_ast(&args[..2])?;
+    if matches!(&base_solutions, Expr::FunctionCall { name, .. } if name == "Solve")
+    {
+      return Ok(unevaluated("Solve", args));
+    }
     if dom == "Reals" {
       // Filter out complex solutions
       if let Expr::List(solutions) = &base_solutions {
         let filtered: Vec<Expr> = solutions
           .iter()
+          .map(real_member_of_imaginary_family)
           .filter(|sol| !contains_complex(sol) && !has_nonreal_root_value(sol))
-          .cloned()
           .collect();
         return Ok(Expr::List(filtered.into()));
       }
@@ -4696,6 +4700,9 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // every value a solution (`Solve[a b^t - c d^t == 0, t]` gave {{}}).
   if degree == 0 && !is_constant_wrt(&expanded, var) {
     if let Some(result) = try_solve_factoring_powers(&expanded, var, args) {
+      return result;
+    }
+    if let Some(result) = try_solve_exponential_polynomial(&expanded, var) {
       return result;
     }
     return Ok(unevaluated("Solve", args));
@@ -7266,6 +7273,261 @@ fn try_solve_isolated_invertible_atom(
   None
 }
 
+/// Over the reals, a family `v + (i·p) C[k]` with a purely imaginary period
+/// (the logarithms of `E^x == r`) has only its `C[k] = 0` member:
+/// `Solve[E^(5 b) == 2, b, Reals]` is `{{b -> Log[2]/5}}`. A family with a
+/// real period (`2 Pi C[1]` of a trigonometric equation) stays a family.
+fn real_member_of_imaginary_family(solution: &Expr) -> Expr {
+  let Expr::List(rules) = solution else {
+    return solution.clone();
+  };
+  let member = |value: &Expr| -> Option<Expr> {
+    let Expr::FunctionCall { name, args } = value else {
+      return None;
+    };
+    if name != "ConditionalExpression" || args.len() != 2 {
+      return None;
+    }
+    let Expr::FunctionCall {
+      name: element,
+      args: element_args,
+    } = &args[1]
+    else {
+      return None;
+    };
+    if element != "Element" || element_args.len() != 2 {
+      return None;
+    }
+    let parameter = &element_args[0];
+    let at = |k: i128| {
+      crate::evaluator::evaluate_expr_to_expr(&substitute_expr(
+        &args[0],
+        parameter,
+        &Expr::Integer(k),
+      ))
+      .ok()
+    };
+    let (zero, one) = (at(0)?, at(1)?);
+    let period = crate::evaluator::evaluate_function_call_ast(
+      "N",
+      &[minus2(one, zero.clone())],
+    )
+    .ok()?;
+    let (re, im) = try_extract_complex_f64(&period)?;
+    (re == 0.0 && im != 0.0).then_some(zero)
+  };
+  Expr::List(
+    rules
+      .iter()
+      .map(|rule| match rule {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => match member(replacement) {
+          Some(value) => rule_expr(pattern.as_ref().clone(), value),
+          None => rule.clone(),
+        },
+        other => other.clone(),
+      })
+      .collect(),
+  )
+}
+
+/// `n` as `r^m` with the smallest base `r`: `8` is `2^3`, `12` is `12^1`.
+fn smallest_integer_root(n: i128) -> (Expr, i128) {
+  for m in (2..=127).rev() {
+    let r = (n as f64).powf(1.0 / m as f64).round() as i128;
+    for candidate in [r - 1, r, r + 1] {
+      if candidate >= 2
+        && candidate
+          .checked_pow(m as u32)
+          .is_some_and(|power| power == n)
+      {
+        return (Expr::Integer(candidate), m);
+      }
+    }
+  }
+  (Expr::Integer(n), 1)
+}
+
+/// Solve `Σ c_i B^(k_i var + d_i) == 0` with a constant base `B` and
+/// rational `k_i`: a polynomial in `t = B^(g var)`, `g` the gcd of the
+/// `k_i`. Each nonzero root `r` of the polynomial gives the solutions of
+/// `B^(g var) == r`:
+///   Solve[2^b + 4^b == 6, b]
+///     → 1 + (2 I Pi C[1])/Log[2], (2 I Pi C[1])/Log[2] + (I Pi + Log[3])/Log[2]
+fn try_solve_exponential_polynomial(
+  expanded: &Expr,
+  var: &str,
+) -> Option<Result<Expr, InterpreterError>> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let rational = |e: &Expr| -> Option<(i128, i128)> {
+    match e {
+      Expr::Integer(n) => Some((*n, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(p), Expr::Integer(q)) => Some((*p, *q)),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
+  let mut base: Option<Expr> = None;
+  // (coefficient, exponent slope as p/q) per term.
+  let mut terms: Vec<(Expr, (i128, i128))> = Vec::new();
+  for term in collect_additive_terms(expanded) {
+    let mut coefficient = Vec::new();
+    let mut slope = (0i128, 1i128);
+    let factors = match &term {
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => std::iter::once(Expr::Integer(-1))
+        .chain(extract_times_factors(operand))
+        .collect(),
+      _ => extract_times_factors(&term),
+    };
+    for factor in factors {
+      if is_constant_wrt(&factor, var) {
+        coefficient.push(factor);
+        continue;
+      }
+      let (b, exponent) = match &factor {
+        Expr::FunctionCall { name, args }
+          if name == "Power" && args.len() == 2 =>
+        {
+          (args[0].clone(), args[1].clone())
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } => (left.as_ref().clone(), right.as_ref().clone()),
+        _ => return None,
+      };
+      if !is_constant_wrt(&b, var) {
+        return None;
+      }
+      // An integer base is written as a power of its smallest root, so
+      // `2^b + 4^b` is a polynomial in `2^b`.
+      let (root, multiplicity) = match &b {
+        Expr::Integer(n) if *n >= 2 => smallest_integer_root(*n),
+        _ => (b.clone(), 1),
+      };
+      match &base {
+        Some(known)
+          if !crate::evaluator::pattern_matching::expr_equal(known, &root) =>
+        {
+          return None;
+        }
+        Some(_) => {}
+        None => base = Some(root.clone()),
+      }
+      let k = eval(call("D", vec![exponent.clone(), id_expr(var)]))?;
+      let (p, q) = rational(&k)?;
+      let p = p * multiplicity;
+      let offset =
+        eval(substitute_expr(&exponent, &id_expr(var), &Expr::Integer(0)))?;
+      // The exponent has to be affine in `var`.
+      let rebuilt = eval(minus2(
+        exponent,
+        plus2(times2(k.clone(), id_expr(var)), offset.clone()),
+      ))?;
+      if !matches!(rebuilt, Expr::Integer(0)) {
+        return None;
+      }
+      if !matches!(offset, Expr::Integer(0)) {
+        coefficient.push(pow2(b, offset));
+      }
+      slope = (slope.0 * q + p * slope.1, slope.1 * q);
+    }
+    terms.push((times(coefficient), slope));
+  }
+  let base = base?;
+  // Common denominator, then the gcd of the numerators.
+  let gcd = |mut a: i128, mut b: i128| {
+    while b != 0 {
+      (a, b) = (b, a % b);
+    }
+    a.abs()
+  };
+  let lcd = terms
+    .iter()
+    .fold(1i128, |l, (_, (_, q))| l / gcd(l, *q) * q.abs());
+  let scaled: Vec<i128> =
+    terms.iter().map(|(_, (p, q))| p * (lcd / q)).collect();
+  let g = scaled.iter().fold(0i128, |acc, k| gcd(acc, *k));
+  let distinct: std::collections::BTreeSet<i128> =
+    scaled.iter().filter(|k| **k != 0).copied().collect();
+  if g == 0 || distinct.len() < 2 {
+    return None;
+  }
+  let powers: Vec<i128> = scaled.iter().map(|k| k / g).collect();
+  let shift = powers.iter().copied().min().unwrap_or(0).min(0);
+  let t = id_expr("Woxi`ExponentialBase");
+  let polynomial = plus(
+    terms
+      .iter()
+      .zip(&powers)
+      .map(|((c, _), e)| {
+        times2(c.clone(), pow2(t.clone(), Expr::Integer(e - shift)))
+      })
+      .collect(),
+  );
+  let polynomial = eval(polynomial)?;
+  let roots = solve_ast(&[
+    Expr::Comparison {
+      operands: vec![polynomial, Expr::Integer(0)],
+      operators: vec![ComparisonOp::Equal],
+    },
+    t.clone(),
+  ]);
+  let Ok(Expr::List(ref roots)) = roots else {
+    return None;
+  };
+  let slope = eval(div2(Expr::Integer(g), Expr::Integer(lcd)))?;
+  let power = pow2(base, times2(slope, id_expr(var)));
+  let mut solutions: Vec<Expr> = Vec::new();
+  for root in roots {
+    let Expr::List(rules) = root else { return None };
+    let [Expr::Rule { replacement, .. }] = &rules[..] else {
+      return None;
+    };
+    if matches!(replacement.as_ref(), Expr::Integer(0)) {
+      continue;
+    }
+    let solved = match solve_ast(&[
+      Expr::Comparison {
+        operands: vec![power.clone(), replacement.as_ref().clone()],
+        operators: vec![ComparisonOp::Equal],
+      },
+      id_expr(var),
+    ]) {
+      Ok(found) => found,
+      Err(e) => return Some(Err(e)),
+    };
+    let Expr::List(ref solved) = solved else {
+      return None;
+    };
+    for solution in solved {
+      if !solutions
+        .iter()
+        .any(|s| crate::evaluator::pattern_matching::expr_equal(s, solution))
+      {
+        solutions.push(solution.clone());
+      }
+    }
+  }
+  // wolframscript lists the families in canonical order.
+  Some(crate::evaluator::evaluate_function_call_ast(
+    "Sort",
+    &[Expr::List(solutions.into())],
+  ))
+}
+
 /// Solve `g == 0` for `var` with the Lambert W function when `g` is
 /// `a x^p E^(b x + c) + d` (p a positive integer) or
 /// `β E^(b x + c) + α x + d`, the shapes wolframscript answers with
@@ -7706,11 +7968,8 @@ fn try_solve_inverse_function(
           log_base,
         ))
         .ok()?;
-        // Keep the periodic term first without re-canonicalizing the sum:
-        // wolframscript lists `(2*I*Pi*C[1])/Log[b] + Log[val]/Log[b]` in that
-        // order, whereas Woxi's Plus ordering would otherwise float the
-        // principal Log term to the front. A zero principal (val == 1) drops
-        // out entirely, matching `Solve[E^x == 1, x] -> 2*I*Pi*C[1]`.
+        // A zero principal (val == 1) drops out entirely, matching
+        // `Solve[E^x == 1, x] -> 2*I*Pi*C[1]`.
         let principal_is_zero = matches!(&principal, Expr::Integer(0))
           || matches!(&principal, Expr::Real(r) if *r == 0.0);
         let condition = call("Element", vec![c1, id_expr("Integers")]);
@@ -7721,7 +7980,8 @@ fn try_solve_inverse_function(
           if principal_is_zero {
             periodic
           } else {
-            plus(vec![periodic, principal.clone()])
+            let sum = plus(vec![periodic, principal.clone()]);
+            crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum)
           }
         };
         if matches!(&exp, Expr::Identifier(n) if n == var) {
@@ -8712,6 +8972,66 @@ pub fn root_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(result)
 }
 
+/// The polynomial of a `Root` the way wolframscript keeps it: integer
+/// coefficients without a common factor and a positive leading one
+/// (`Root[10 + 99 #1 - 4 #1^7 &, 1]` is `Root[-10 - 99 #1 + 4 #1^7 &, 1]`).
+/// `None` for coefficients that are not all rational.
+fn primitive_root_polynomial(poly: &Expr, var: &str) -> Option<Expr> {
+  let coefficients = crate::evaluator::evaluate_function_call_ast(
+    "CoefficientList",
+    &[poly.clone(), Expr::Identifier(var.into())],
+  )
+  .ok()?;
+  let Expr::List(ref coefficients) = coefficients else {
+    return None;
+  };
+  let mut parts: Vec<(num_bigint::BigInt, num_bigint::BigInt)> = Vec::new();
+  for c in coefficients {
+    parts.push(match c {
+      Expr::Integer(n) => ((*n).into(), 1.into()),
+      Expr::BigInteger(n) => (n.clone(), 1.into()),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        let big = |e: &Expr| match e {
+          Expr::Integer(n) => Some(num_bigint::BigInt::from(*n)),
+          Expr::BigInteger(n) => Some(n.clone()),
+          _ => None,
+        };
+        (big(&args[0])?, big(&args[1])?)
+      }
+      _ => return None,
+    });
+  }
+  use crate::functions::math_ast::gcd_bigint;
+  use num_traits::{Signed, Zero};
+  let lcm = parts.iter().fold(num_bigint::BigInt::from(1), |l, (_, d)| {
+    &l / gcd_bigint(&l, d) * d.abs()
+  });
+  let numerators: Vec<num_bigint::BigInt> =
+    parts.iter().map(|(n, d)| n * (&lcm / d)).collect();
+  let gcd = numerators
+    .iter()
+    .fold(num_bigint::BigInt::zero(), |g, n| gcd_bigint(&g, n).abs());
+  let leading = numerators.iter().rev().find(|n| !n.is_zero())?;
+  if gcd.is_zero() {
+    return None;
+  }
+  let gcd = if leading.is_negative() { -gcd } else { gcd };
+  let terms: Vec<Expr> = numerators
+    .iter()
+    .enumerate()
+    .filter(|(_, n)| !n.is_zero())
+    .map(|(i, n)| {
+      times2(
+        crate::functions::math_ast::bigint_to_expr(n / &gcd),
+        pow2(Expr::Identifier(var.into()), Expr::Integer(i as i128)),
+      )
+    })
+    .collect();
+  Some(plus(terms))
+}
+
 pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 && args.len() != 3 {
     return Ok(unevaluated("Root", args));
@@ -8861,7 +9181,14 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if irreducible {
       let canonical_body = match &args[0] {
         Expr::Function { body } => Expr::Function {
-          body: Box::new(crate::evaluator::evaluate_expr_to_expr(body)?),
+          body: Box::new(crate::evaluator::evaluate_expr_to_expr(
+            &primitive_root_polynomial(&expanded_poly, var_name).map_or_else(
+              || body.as_ref().clone(),
+              |p| {
+                crate::syntax::substitute_variable(&p, var_name, &Expr::Slot(1))
+              },
+            ),
+          )?),
         },
         _ => args[0].clone(),
       };

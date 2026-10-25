@@ -14062,6 +14062,36 @@ mod factor_terms_big_content {
 mod root {
   use super::*;
 
+  // The polynomial is kept primitive with a positive leading coefficient.
+  #[test]
+  fn polynomial_is_normalized() {
+    assert_eq!(
+      interpret("Root[10 + 99*#1 - 4*#1^7 &, 1]").unwrap(),
+      "Root[-10 - 99*#1 + 4*#1^7 & , 1, 0]"
+    );
+    assert_eq!(
+      interpret("Root[-#^5 + # + 1 &, 1]").unwrap(),
+      "Root[-1 - #1 + #1^5 & , 1, 0]"
+    );
+    assert_eq!(
+      interpret("Root[#^5/2 - # - 1 &, 1]").unwrap(),
+      "Root[-2 - 2*#1 + #1^5 & , 1, 0]"
+    );
+  }
+
+  // A Root is a constant to the polynomial machinery.
+  #[test]
+  fn root_is_a_constant() {
+    assert_eq!(
+      interpret("Exponent[b - Root[#^5 - # - 1 &, 1], b]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("PolynomialQ[b - Root[#^5 - # - 1 &, 1], b]").unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn machine_value_is_correctly_rounded() {
     assert_eq!(
@@ -19629,6 +19659,38 @@ mod fuzz_diff_round_2026_07_17 {
     );
   }
 
+  // A power orders by its base, then its exponent.
+  #[test]
+  fn sort_power_by_base() {
+    assert_case("Sort[{Pi, 1/f[x]}]", "{Pi, f[x]^(-1)}");
+    assert_case("Sort[{z, f[x]^2}]", "{z, f[x]^2}");
+    assert_case("Sort[{Pi, Log[2]/Log[3]}]", "{Pi, Log[2]/Log[3]}");
+    assert_case("Sort[{g[x]^2, f[x]^3, f[x]}]", "{f[x], f[x]^3, g[x]^2}");
+    assert_case("Sort[{a^b, a^c, b^a, a}]", "{a, a^b, a^c, b^a}");
+  }
+
+  // Rules order as the Rule/RuleDelayed calls, lists as List calls
+  // among plain calls.
+  #[test]
+  fn sort_rules_and_lists_as_calls() {
+    assert_case(
+      "Sort[{b -> x + Log[2], b -> x}]",
+      "{b -> x, b -> x + Log[2]}",
+    );
+    assert_case(
+      "Sort[{a -> 2, a :> 1, b -> 0, f[a], a, {a}}]",
+      "{a, f[a], {a}, a -> 2, b -> 0, a :> 1}",
+    );
+    assert_case(
+      "Sort[{g[a], {a}, z[a], m[a], k[a], Li[a], Lz[a]}]",
+      "{g[a], k[a], Li[a], {a}, Lz[a], m[a], z[a]}",
+    );
+    assert_case(
+      "Sort[{{a}, x + y, x y, x^2, \"s\", 1, a}]",
+      "{1, s, a, x^2, x*y, x + y, {a}}",
+    );
+  }
+
   #[test]
   fn sort_union_same_base_powers_and_sums() {
     // case seed 16300912233182470467 (Union canonical order)
@@ -19642,6 +19704,9 @@ mod fuzz_diff_round_2026_07_17 {
     assert_case("Sort[{x, -3 + x}]", "{-3 + x, x}");
     assert_case("Sort[{1/x, x - x^2}]", "{x^(-1), x - x^2}");
     assert_case("Sort[{Cos[x], 1 + x}]", "{1 + x, Cos[x]}");
+    // A sum precedes a call only when its greatest term does.
+    assert_case("Sort[{C[1] + Log[2], C[1]}]", "{C[1], C[1] + Log[2]}");
+    assert_case("Sort[{g[x], a + f[x]}]", "{a + f[x], g[x]}");
     assert_case(
       "Union[{27, 5.7, Pi}, {Plus[Divide[18, 3], Times[81, Divide[-17, 3]]], Subtract[Times[85, -46], Divide[-93, Pi]], Divide[Subtract[8, Divide[6, 2]], Divide[17, 5]]}]",
       "{-453, 25/17, 5.7, 27, -3910 + 93/Pi, Pi}",
@@ -21323,6 +21388,104 @@ mod solve_unused_variable {
 // Equations in exponentials of the variable.
 mod solve_exponentials {
   use super::*;
+
+  // A polynomial in one exponential is solved for it, each root giving
+  // its own family; the families are listed in canonical order.
+  #[test]
+  fn polynomial_in_an_exponential() {
+    assert_eq!(
+      interpret("Solve[E^(5 b) + E^(10 b) == 2, b]").unwrap(),
+      "{{b -> ConditionalExpression[(2*I)/5*Pi*C[1], Element[C[1], Integers]]}, \
+       {b -> ConditionalExpression[(I*Pi + (2*I)*Pi*C[1] + Log[2])/5, \
+       Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[E^b - 3 E^(-b) == 2, b]").unwrap(),
+      "{{b -> ConditionalExpression[I*Pi + (2*I)*Pi*C[1], Element[C[1], Integers]]}, \
+       {b -> ConditionalExpression[(2*I)*Pi*C[1] + Log[3], Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[E^(2 b) - 2 E^b + 1 == 0, b]").unwrap(),
+      "{{b -> ConditionalExpression[(2*I)*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[E^(3 b) - 6 E^(2 b) + 11 E^b == 6, b]").unwrap(),
+      "{{b -> ConditionalExpression[(2*I)*Pi*C[1], Element[C[1], Integers]]}, \
+       {b -> ConditionalExpression[(2*I)*Pi*C[1] + Log[2], Element[C[1], Integers]]}, \
+       {b -> ConditionalExpression[(2*I)*Pi*C[1] + Log[3], Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[E^(b/2) + E^b == 6, b]").unwrap(),
+      "{{b -> ConditionalExpression[2*((2*I)*Pi*C[1] + Log[2]), Element[C[1], Integers]]}, \
+       {b -> ConditionalExpression[2*(I*Pi + (2*I)*Pi*C[1] + Log[3]), \
+       Element[C[1], Integers]]}}"
+    );
+  }
+
+  // Integer bases are powers of one smallest root.
+  #[test]
+  fn polynomial_in_a_common_integer_base() {
+    assert_eq!(
+      interpret("Solve[2^b + 4^b == 6, b]").unwrap(),
+      "{{b -> ConditionalExpression[1 + ((2*I)*Pi*C[1])/Log[2], Element[C[1], Integers]]}, \
+       {b -> ConditionalExpression[((2*I)*Pi*C[1])/Log[2] + (I*Pi + Log[3])/Log[2], \
+       Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[4^x - 2^(x + 1) == 3, x, Reals]").unwrap(),
+      "{{x -> Log[3]/Log[2]}}"
+    );
+    assert_eq!(
+      interpret("Solve[8^x + 2^x == 10, x, Reals]").unwrap(),
+      "{{x -> 1}}"
+    );
+  }
+
+  // Over the reals an exponential family keeps its real member only.
+  #[test]
+  fn real_member_of_an_exponential_family() {
+    assert_eq!(
+      interpret("Solve[E^(5 b) == 2, b, Reals]").unwrap(),
+      "{{b -> Log[2]/5}}"
+    );
+    assert_eq!(
+      interpret("Solve[E^(2 b) - 3 E^b + 2 == 0, b, Reals]").unwrap(),
+      "{{b -> 0}, {b -> Log[2]}}"
+    );
+    assert_eq!(interpret("Solve[E^b == -1, b, Reals]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Solve[Sin[x] == 0, x, Reals]").unwrap(),
+      "{{x -> ConditionalExpression[2*Pi*C[1], Element[C[1], Integers]]}, \
+       {x -> ConditionalExpression[Pi + 2*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+  }
+
+  // The real roots of a degree-7 polynomial in E^(5 b) stay Root objects
+  // (ComparingRegressionModelsWithAndWithoutDataTransformation).
+  #[test]
+  fn root_valued_exponential() {
+    assert_eq!(
+      interpret(
+        "Solve[50 E^(5 b) + 500 E^(10 b) + 900 E^(15 b) + 2000 E^(20 b) == \
+         5 E^(10 b) + 10 E^(20 b) + 15 E^(30 b) + 20 E^(40 b), b, Reals]"
+      )
+      .unwrap(),
+      "{{b -> Log[Root[-10 - 99*#1 - 180*#1^2 - 398*#1^3 + 3*#1^5 + 4*#1^7 & , 3, 0]]/5}}"
+    );
+    assert_eq!(
+      interpret("Solve[b == Root[#^5 - # - 1 &, 1], b]").unwrap(),
+      "{{b -> Root[-1 - #1 + #1^5 & , 1, 0]}}"
+    );
+  }
+
+  // An unsolvable equation over a domain stays the three-argument call.
+  #[test]
+  fn unsolved_keeps_its_domain() {
+    assert_eq!(
+      interpret("Quiet[Solve[2^x + 3^x == 5, x, Reals]]").unwrap(),
+      "Solve[2^x + 3^x == 5, x, Reals]"
+    );
+  }
 
   // `a b^t == c d^t` was read as a degree-0 polynomial with constant 0, so
   // every t was reported a solution ({{}}); the powers now combine.

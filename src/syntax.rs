@@ -11689,8 +11689,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                       }
                     } else if *num == -1 {
                       Some(format!("(-1/{den}*I)"))
-                    } else {
+                    } else if in_true_input_form() {
                       Some(format!("(({num}*I)/{den})"))
+                    } else {
+                      Some(format!("({num}*I)/{den}"))
                     }
                   } else {
                     None
@@ -12443,7 +12445,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           if symbolic.is_empty() {
             return format!("({num}*I)/{den}");
           }
-          let i_part = format!("(({num}*I)/{den})");
+          let i_part = if in_true_input_form() {
+            format!("(({num}*I)/{den})")
+          } else {
+            format!("({num}*I)/{den}")
+          };
           let rest: Vec<String> =
             symbolic.iter().map(|a| expr_to_string(a)).collect();
           return format!("{}*{}", i_part, rest.join("*"));

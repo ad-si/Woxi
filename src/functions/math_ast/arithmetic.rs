@@ -2796,6 +2796,32 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     (false, true) => return std::cmp::Ordering::Greater,
     _ => {}
   }
+  // Two real numeric terms (`E`, `Sqrt[8 + E^2]`) are in canonical order:
+  // `-E + Sqrt[8 + E^2]`, `Pi + Sqrt[2 + Pi]`, `Sqrt[2] + Pi`.
+  let real_numeric = |e: &Expr| {
+    crate::functions::predicate_ast::is_numeric_q(e)
+      && !matches!(
+        e,
+        Expr::Integer(_)
+          | Expr::Real(_)
+          | Expr::BigInteger(_)
+          | Expr::BigFloat(..)
+      )
+      && !contains_imaginary_unit(e)
+      && !has_complex_literal(e)
+  };
+  fn has_complex_literal(e: &Expr) -> bool {
+    crate::functions::predicate_ast::is_complex_number(e)
+      || crate::syntax::expr_children(e)
+        .into_iter()
+        .any(has_complex_literal)
+  }
+  if real_numeric(a) && real_numeric(b) {
+    let ord = crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b);
+    if ord != std::cmp::Ordering::Equal {
+      return ord;
+    }
+  }
 
   // Pure-imaginary symbolic Times terms sort to the END of a Plus when both
   // terms have the same `term_priority` — Wolfram's
