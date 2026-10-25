@@ -235,6 +235,14 @@ fn meyer_phi_psi_numeric(order: u32, t: f64, phi: bool) -> f64 {
   }
 }
 
+thread_local! {
+  /// Dyadic phi grids per lowpass filter, so plotting many points of one
+  /// wavelet builds the grid once.
+  static GRID_CACHE: std::cell::RefCell<
+    std::collections::HashMap<Vec<(i64, u64)>, std::rc::Rc<Vec<f64>>>,
+  > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
 /// Evaluate phi (or psi) at a numeric point via the cascade algorithm on a
 /// dyadic grid of spacing 2^-8 (the documented MaxRecursion default).
 fn cascade_eval(
@@ -261,15 +269,15 @@ fn cascade_eval(
   if len == 0 {
     return 0.0;
   }
-  // phi values on the grid imin + k*step, k = 0..len
-  let mut phi_vals = vec![0.0f64; len + 1];
-  // Start from the box function on [imin, imin+1).
-  for (k, v) in phi_vals.iter_mut().enumerate() {
-    let x = imin as f64 + k as f64 * step;
-    if (imin as f64..imin as f64 + 1.0).contains(&x) {
-      *v = 1.0;
-    }
-  }
+  let key: Vec<(i64, u64)> =
+    lo.iter().map(|&(i, c)| (i, c.to_bits())).collect();
+  let phi_vals = GRID_CACHE.with(|cache| {
+    cache
+      .borrow_mut()
+      .entry(key)
+      .or_insert_with(|| std::rc::Rc::new(cascade_grid(&lo, imin, imax, j)))
+      .clone()
+  });
   fn grid_of(vals: &[f64], imin: i64, step: f64, x: f64) -> f64 {
     // Linear interpolation of the grid values at point x.
     let len = vals.len() - 1;
@@ -284,18 +292,6 @@ fn cascade_eval(
     }
     vals[k] * (1.0 - frac) + vals[k + 1] * frac
   }
-  for _ in 0..40 {
-    let mut next = vec![0.0f64; len + 1];
-    for (k, nv) in next.iter_mut().enumerate() {
-      let x = imin as f64 + k as f64 * step;
-      let mut acc = 0.0;
-      for &(i, c) in &lo {
-        acc += c * grid_of(&phi_vals, imin, step, 2.0 * x - i as f64);
-      }
-      *nv = 2.0 * acc;
-    }
-    phi_vals = next;
-  }
   if phi {
     return grid_of(&phi_vals, imin, step, t);
   }
@@ -305,4 +301,84 @@ fn cascade_eval(
     acc += c * grid_of(&phi_vals, imin, step, 2.0 * t - i as f64);
   }
   2.0 * acc
+}
+
+/// Values of phi on the dyadic grid imin + k 2^-j (k = 0..=(imax-imin) 2^j).
+/// The values at the integers are the eigenvalue-1 eigenvector of the
+/// refinement matrix (normalized to sum 1); finer levels follow from the
+/// two-scale relation. Unlike iterating the cascade from a box function,
+/// this stays bounded for rough scaling functions whose cascade diverges.
+fn cascade_grid(lo: &[(i64, f64)], imin: i64, imax: i64, j: u32) -> Vec<f64> {
+  let n = (imax - imin + 1) as usize;
+  let coef =
+    |i: i64| -> f64 { lo.iter().find(|p| p.0 == i).map_or(0.0, |p| p.1) };
+  // Rows: (M - I) phi = 0 for every integer node, plus the sum constraint;
+  // solved in the least-squares sense through the normal equations.
+  let mut rows: Vec<Vec<f64>> = Vec::with_capacity(n + 1);
+  for k in 0..n {
+    let mut row = vec![0.0; n];
+    for (l, r) in row.iter_mut().enumerate() {
+      *r = 2.0 * coef(2 * (imin + k as i64) - (imin + l as i64));
+    }
+    row[k] -= 1.0;
+    rows.push(row);
+  }
+  rows.push(vec![1.0; n]);
+  let mut ata = vec![vec![0.0; n + 1]; n];
+  for (a, arow) in ata.iter_mut().enumerate() {
+    for b in 0..n {
+      arow[b] = rows.iter().map(|r| r[a] * r[b]).sum();
+    }
+    arow[n] = rows[n][a];
+  }
+  for col in 0..n {
+    let piv = (col..n)
+      .max_by(|&x, &y| ata[x][col].abs().total_cmp(&ata[y][col].abs()))
+      .unwrap_or(col);
+    ata.swap(col, piv);
+    let d = ata[col][col];
+    if d.abs() < 1e-14 {
+      continue;
+    }
+    for r in 0..n {
+      if r != col {
+        let f = ata[r][col] / d;
+        for c in col..=n {
+          ata[r][c] -= f * ata[col][c];
+        }
+      }
+    }
+  }
+  let mut cur: Vec<f64> = (0..n)
+    .map(|k| {
+      if ata[k][k].abs() < 1e-14 {
+        0.0
+      } else {
+        ata[k][n] / ata[k][k]
+      }
+    })
+    .collect();
+  // Refine: level r holds phi at imin + k 2^-r.
+  for r in 1..=j {
+    let len = ((imax - imin) as usize) << r;
+    let prev = cur;
+    let at = |idx: i64| -> f64 {
+      if idx < 0 || idx as usize >= prev.len() {
+        0.0
+      } else {
+        prev[idx as usize]
+      }
+    };
+    let mut next = vec![0.0; len + 1];
+    for (k, nv) in next.iter_mut().enumerate() {
+      // 2x - i lies on the coarser grid at index k + (imin - i) 2^(r-1).
+      let acc: f64 = lo
+        .iter()
+        .map(|&(i, c)| c * at(k as i64 + ((imin - i) << (r - 1))))
+        .sum();
+      *nv = 2.0 * acc;
+    }
+    cur = next;
+  }
+  cur
 }
