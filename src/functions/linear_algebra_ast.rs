@@ -4180,6 +4180,22 @@ pub fn eigensystem_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(k) => *k,
     _ => return unevaluated(),
   };
+  // The first k only: the exact path computes no more vectors than asked.
+  if k > 0
+    && let Ok(Expr::List(vals)) = &eigenvalues_ast(&args[0..1])
+    && k as usize <= vals.len()
+    && let Ok(Expr::List(vecs)) =
+      &eigenvectors_impl(&args[0..1], Some(k as usize))
+    && vecs.len() == k as usize
+  {
+    return Ok(Expr::List(
+      vec![
+        Expr::List(eigen_take_slice(vals, k).into()),
+        Expr::List(vecs.clone()),
+      ]
+      .into(),
+    ));
+  }
   let all = eigensystem_ast(&args[0..1])?;
   let (vals, vecs) = match &all {
     Expr::List(parts)
@@ -4215,6 +4231,15 @@ pub fn eigensystem_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Eigenvectors[matrix] - eigenvectors of a square matrix
 pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  eigenvectors_impl(args, None)
+}
+
+/// Eigenvectors, or with `wanted` = Some(k) possibly just the first k of
+/// them (only the exact algebraic path, the costly one, stops early).
+fn eigenvectors_impl(
+  args: &[Expr],
+  wanted: Option<usize>,
+) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Eigenvectors expects exactly 1 argument".into(),
@@ -4274,7 +4299,7 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Try integer matrix path
   if let Some(int_matrix) = matrix_to_i128(&matrix) {
-    let result = integer_eigenvectors(&matrix, &int_matrix, n);
+    let result = integer_eigenvectors(&matrix, &int_matrix, n, wanted);
     // Real 2×2 matrices with complex eigenvalues (e.g. rotations) fall
     // through to the exact complex path below instead of staying
     // unevaluated.
@@ -4437,6 +4462,7 @@ fn integer_eigenvectors(
   matrix: &[Vec<Expr>],
   int_matrix: &[Vec<i128>],
   n: usize,
+  wanted: Option<usize>,
 ) -> Expr {
   let coeffs = char_poly_coefficients(int_matrix);
   let mut eigenvalues = find_polynomial_roots(&coeffs);
@@ -4467,7 +4493,7 @@ fn integer_eigenvectors(
   }
 
   if !all_integer {
-    return algebraic_eigenvectors(matrix, n).unwrap_or_else(|| {
+    return algebraic_eigenvectors(matrix, n, wanted).unwrap_or_else(|| {
       call1("Eigenvectors", matrix_to_expr(matrix.to_vec()))
     });
   }
@@ -4503,11 +4529,20 @@ fn integer_eigenvectors(
 /// (radicals or `Root` objects): the null space of `m - λ I` for each
 /// eigenvalue in `Eigenvalues` order, a repeated eigenvalue taking its
 /// vectors in turn and a defective one padded with zero vectors.
-fn algebraic_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> Option<Expr> {
+fn algebraic_eigenvectors(
+  matrix: &[Vec<Expr>],
+  n: usize,
+  wanted: Option<usize>,
+) -> Option<Expr> {
   // The elimination canonicalizes algebraic numbers of degree up to n at
-  // every step; past 5x5 that is too slow to be worth it here (see
-  // conformance_gaps.md).
-  if n > 5 {
+  // every step; past 5x5 computing all of them is too slow to be worth it
+  // here (see conformance_gaps.md). One or two of them (Eigensystem[m, k])
+  // stay affordable a little further.
+  let limit = match wanted {
+    Some(k) if k <= 2 => 8,
+    _ => 5,
+  };
+  if n > limit {
     return None;
   }
   let eigen = eigenvalues_ast(&[matrix_to_expr(matrix.to_vec())]).ok()?;
@@ -4546,7 +4581,10 @@ fn algebraic_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> Option<Expr> {
       bi.total_cmp(ai)
     }
   });
-  let eigenvalues: Vec<Expr> = keyed.into_iter().map(|(_, l)| l).collect();
+  let mut eigenvalues: Vec<Expr> = keyed.into_iter().map(|(_, l)| l).collect();
+  if let Some(k) = wanted {
+    eigenvalues.truncate(k);
+  }
   let mut groups: Vec<(Expr, Vec<Expr>)> = Vec::new();
   let mut rows: Vec<Expr> = Vec::with_capacity(n);
   for lambda in &eigenvalues {

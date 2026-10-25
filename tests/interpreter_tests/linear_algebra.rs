@@ -3127,6 +3127,23 @@ mod eigenvectors {
 mod eigensystem {
   use super::*;
 
+  // Eigensystem[m, k] of an exact 6x6 matrix with Root eigenvalues computes
+  // just the k vectors asked for; all of them were too costly, so it stayed
+  // unevaluated and N then turned k into 1. (TheBoundaryOfPeriodicIterated
+  // FunctionSystems).
+  #[test]
+  fn exact_first_eigenvector_of_a_6x6() {
+    assert_eq!(
+      interpret(
+        "m = {{1,0,0,1,0,0},{1,0,1,1,0,1},{1,0,0,0,1,1},{1,0,1,0,0,0},\
+         {0,1,0,0,0,0},{0,0,0,1,1,0}}; {{lam}, {v}} = N[Eigensystem[m, 1]]; \
+         {Abs[lam - 2.1303954347672787] < 10^-12, Norm[m . v - lam v] < 10^-9}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
   #[test]
   fn cyclic_3x3() {
     // Eigensystem returns {eigenvalues, eigenvectors} in aligned order.

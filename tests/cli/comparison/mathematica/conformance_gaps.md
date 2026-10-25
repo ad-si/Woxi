@@ -3499,6 +3499,9 @@ answer. These do not:
 Beyond 5x5, an exact integer matrix whose eigenvalues are not integers keeps
 `Eigenvectors`/`Eigensystem` unevaluated: the elimination over algebraic
 numbers is too slow in Woxi, while Wolfram returns `Root`-object vectors.
+`Eigensystem[m, k]` with k ≤ 2 computes just those vectors, up to 8x8; their
+entries are nested `Root` expressions, not Wolfram's reduced form (equal
+under `N`).
 
 
 ### `Eigenvalues` of a matrix without radical roots
