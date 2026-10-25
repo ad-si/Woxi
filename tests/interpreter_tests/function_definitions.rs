@@ -824,6 +824,21 @@ mod default_values {
 mod compile {
   use super::*;
 
+  // An exact argument at a machine-number position becomes a machine
+  // number, complex ones included, so a compiled Newton iteration started
+  // at an exact grid point does not build up huge exact rationals.
+  #[test]
+  fn exact_arguments_become_machine_numbers() {
+    assert_eq!(
+      interpret(
+        "f = Compile[{{z, _Complex}}, z^2]; \
+         {f[2 + I], Compile[{x}, Sqrt[x]][2]}"
+      )
+      .unwrap(),
+      "{3. + 4.*I, 1.4142135623730951}"
+    );
+  }
+
   // A serialized `CompiledFunction` (as saved in a notebook) with a Listable
   // pure-function fallback threads only over the excess rank, so a
   // `{Blank[Real], 1}` vector argument of the same length as the batch is
