@@ -1556,6 +1556,16 @@ mod memory {
     assert_eq!(result, "True");
   }
 
+  // The peak is resident memory, not the reserved virtual size, which
+  // counted the evaluator thread's unused stack (issue #1772).
+  #[cfg(target_os = "linux")]
+  #[test]
+  fn max_memory_used_is_resident_memory() {
+    let result = interpret("MaxMemoryUsed[]").unwrap();
+    let val: i128 = result.parse().expect("should be an integer");
+    assert!(val < 400 * 1024 * 1024, "MaxMemoryUsed: {val}");
+  }
+
   #[test]
   fn memory_available_returns_positive_integer() {
     let result = interpret("MemoryAvailable[]").unwrap();
