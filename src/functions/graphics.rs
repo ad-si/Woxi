@@ -27619,10 +27619,26 @@ fn collect_body_locator_pane_vars(
             args: dargs,
           } = &args[0]
           && dname == "Dynamic"
-          && let Some(Expr::Identifier(var)) = dargs.first()
-          && !found.iter().any(|(n, _, _)| n == var)
         {
-          found.push((var.clone(), args.get(2).cloned(), args[1].clone()));
+          // `LocatorPane[Dynamic[{p1, p2, …}], graphic]` drags several
+          // points over one picture: each variable gets its own entry
+          // sharing the pane's range and graphic.
+          let vars: Vec<&String> = match dargs.first() {
+            Some(Expr::Identifier(var)) => vec![var],
+            Some(Expr::List(items)) => items
+              .iter()
+              .filter_map(|it| match it {
+                Expr::Identifier(v) => Some(v),
+                _ => None,
+              })
+              .collect(),
+            _ => Vec::new(),
+          };
+          for var in vars {
+            if !found.iter().any(|(n, _, _)| n == var) {
+              found.push((var.clone(), args.get(2).cloned(), args[1].clone()));
+            }
+          }
         }
         for a in args {
           walk(a, found);
@@ -37167,6 +37183,36 @@ mod manipulate_dynamic_control_list_tests {
       match found {
         Some(ManipulateControl::Slider2D { x_max, y_max, .. }) => {
           assert_eq!((*x_max, *y_max), (hi, hi), "range of {name}");
+        }
+        other => panic!("expected a Slider2D for {name}, got {other:?}"),
+      }
+    }
+  }
+
+  /// A `Dynamic[Panel[LocatorPane[Dynamic[{a, b, c}], Dynamic[Graphics[…]]]]]`
+  /// row (`ControlType -> None` points dragged over one picture) gives each
+  /// variable its own draggable control, ranged by the picture's PlotRange.
+  #[test]
+  fn display_locator_pane_over_a_point_list_promotes_each_point() {
+    let s = spec(
+      "Manipulate[{a, b, c}, \
+       Dynamic[Panel[LocatorPane[Dynamic[{a, b, c}], \
+       Dynamic[Graphics[Line[{a, b, c}], PlotRange -> {{0, 4}, {-2, 2}}], \
+       TrackedSymbols :> {a, b, c}]]]], \
+       {{a, {3, 1}}, {0, -2}, {4, 2}, ControlType -> None}, \
+       {{b, {2, -1}}, {0, -2}, {4, 2}, ControlType -> None}, \
+       {{c, {1, 0}}, {0, -2}, {4, 2}, ControlType -> None}]",
+    );
+    for name in ["a", "b", "c"] {
+      match s.controls.iter().find(|c| c.name() == name) {
+        Some(ManipulateControl::Slider2D {
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          ..
+        }) => {
+          assert_eq!((*x_min, *x_max, *y_min, *y_max), (0.0, 4.0, -2.0, 2.0));
         }
         other => panic!("expected a Slider2D for {name}, got {other:?}"),
       }
