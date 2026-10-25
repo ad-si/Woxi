@@ -3556,6 +3556,55 @@ fn simplify_sqrt(n: u128) -> (u128, u128) {
   (outer, inner)
 }
 
+/// Split a matrix with symbolic entries into `scale * B` where `B` is
+/// purely numeric (`{{4c, -8c}, {5c, -9c}}` -> `c * {{4, -8}, {5, -9}}`).
+/// The scale is the symbolic part of the first nonzero entry; `None` when the
+/// matrix is already numeric or no such numeric `B` exists. Eigenvectors are
+/// those of `B` and eigenvalues are `scale` times those of `B`.
+fn split_symbolic_scale(
+  matrix: &[Vec<Expr>],
+) -> Option<(Expr, Vec<Vec<Expr>>)> {
+  if matrix
+    .iter()
+    .flatten()
+    .all(crate::functions::predicate_ast::is_numeric_q)
+  {
+    return None;
+  }
+  let first = matrix.iter().flatten().find(|e| {
+    !matches!(e, Expr::Integer(0)) && !matches!(e, Expr::Real(z) if *z == 0.0)
+  })?;
+  let scale = match first {
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() >= 2
+        && crate::functions::predicate_ast::is_numeric_q(&args[0]) =>
+    {
+      if args.len() == 2 {
+        args[1].clone()
+      } else {
+        call("Times", args[1..].to_vec())
+      }
+    }
+    other => other.clone(),
+  };
+  let mut numeric = Vec::with_capacity(matrix.len());
+  for row in matrix {
+    let mut out = Vec::with_capacity(row.len());
+    for e in row {
+      let q =
+        evaluate_expr_to_expr(&call("Divide", vec![e.clone(), scale.clone()]))
+          .ok()?;
+      if !crate::functions::predicate_ast::is_numeric_q(&q) {
+        return None;
+      }
+      out.push(q);
+    }
+    numeric.push(out);
+  }
+  Some((scale, numeric))
+}
+
 /// Eigenvalues[matrix] - eigenvalues of a square matrix, sorted descending.
 pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -3572,6 +3621,20 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 1x1
   if n == 1 {
     return Ok(Expr::List(vec![matrix[0][0].clone()].into()));
+  }
+
+  if let Some((scale, numeric)) = split_symbolic_scale(&matrix) {
+    let Expr::List(ref vals) = eigenvalues_ast(&[matrix_to_expr(numeric)])?
+    else {
+      return Ok(unevaluated("Eigenvalues", args));
+    };
+    let scaled = vals
+      .iter()
+      .map(|l| {
+        evaluate_expr_to_expr(&call("Times", vec![scale.clone(), l.clone()]))
+      })
+      .collect::<Result<Vec<_>, _>>()?;
+    return Ok(Expr::List(scaled.into()));
   }
 
   // Try integer matrix path
@@ -4256,6 +4319,11 @@ fn eigenvectors_impl(
     return Ok(Expr::List(
       vec![Expr::List(vec![Expr::Integer(1)].into())].into(),
     ));
+  }
+
+  // A common symbolic factor doesn't change the eigenvectors.
+  if let Some((_, numeric)) = split_symbolic_scale(&matrix) {
+    return eigenvectors_ast(&[matrix_to_expr(numeric)]);
   }
 
   // Check if matrix is numeric (at least one Real entry)
@@ -10519,6 +10587,47 @@ pub fn singular_value_list_ast(
 /// which keeps Wolfram-canonical factorings like `2*(-1 + E)` intact.
 /// A repeated eigenvalue uses the Jordan form `f(M) = f'(λ)·M +
 /// (f(λ) − λ·f'(λ))·I` — the same α·M + β·I assembly with α = f'(λ).
+/// `f(A) = V.f(D).V^-1` for an exact n x n matrix with n independent
+/// eigenvectors; `None` when the matrix is defective, an eigenvalue is
+/// outside `f`'s domain (`Log` at 0), or the eigen-decomposition is not exact.
+fn diagonalizable_matrix_function(
+  mat: &Expr,
+  n: usize,
+  func: &str,
+  make: &dyn Fn(&str, Vec<Expr>) -> Result<Expr, InterpreterError>,
+) -> Result<Option<Expr>, InterpreterError> {
+  let evals = match &make("Eigenvalues", vec![mat.clone()])? {
+    Expr::List(xs) if xs.len() == n => xs.clone(),
+    _ => return Ok(None),
+  };
+  let vecs = match &make("Eigenvectors", vec![mat.clone()])? {
+    Expr::List(xs) if xs.len() == n => xs.clone(),
+    _ => return Ok(None),
+  };
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(z) if *z == 0.0)
+  };
+  if func == "Log" && evals.iter().any(is_zero) {
+    return Ok(None);
+  }
+  // Defective matrices get zero-padded eigenvectors; the determinant of the
+  // eigenvector matrix (vectors as columns) is nonzero exactly when they are
+  // independent.
+  let v = make("Transpose", vec![Expr::List(vecs)])?;
+  let det = make("Simplify", vec![make("Det", vec![v.clone()])?])?;
+  if is_zero(&det) {
+    return Ok(None);
+  }
+  let mut f_evals = Vec::with_capacity(n);
+  for l in &evals {
+    f_evals.push(make(func, vec![l.clone()])?);
+  }
+  let d = make("DiagonalMatrix", vec![Expr::List(f_evals.into())])?;
+  let vinv = make("Inverse", vec![v.clone()])?;
+  let prod = make("Dot", vec![v, d, vinv])?;
+  Ok(Some(make("Simplify", vec![prod])?))
+}
+
 pub fn matrix_function_ast(
   args: &[Expr],
   head: &str,
@@ -10594,13 +10703,17 @@ pub fn matrix_function_ast(
   {
     return Ok(result);
   }
-  if n != 2 {
-    return Ok(unevaluated(args));
-  }
-
   let make = |head: &str, args: Vec<Expr>| -> Result<Expr, InterpreterError> {
     evaluate_expr_to_expr(&call(head, args))
   };
+  if n != 2 {
+    // Larger exact matrices: f(A) = V.f(D).V^-1 whenever A has a full set of
+    // independent eigenvectors. Defective matrices stay unevaluated.
+    return Ok(
+      diagonalizable_matrix_function(&mat, n, func, &make)?
+        .unwrap_or_else(|| unevaluated(args)),
+    );
+  }
 
   let evals = make("Eigenvalues", vec![mat.clone()])?;
   let evals_list = match &evals {
