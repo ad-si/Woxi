@@ -632,7 +632,8 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
       if (name == "Style"
         || name == "Text"
         || name == "Tooltip"
-        || name == "Annotation")
+        || name == "Annotation"
+        || name == "Pane")
         && !args.is_empty() =>
     {
       expr_to_label(&args[0])

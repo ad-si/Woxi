@@ -8809,6 +8809,25 @@ mod plot3d {
       assert!(nested.contains("text-anchor=\"start\""), "{nested}");
     }
 
+    // A `Pane[Column[{a, b}], size]` tick label reads as its content, set on
+    // one line per `Column` item, and a `Column` bottom `FrameLabel` stacks
+    // the same way instead of leaking the `Pane[…]` text or joining lines.
+    #[test]
+    fn frame_ticks_pane_column_labels_stack_lines() {
+      let svg = export_svg(
+        r#"ListLinePlot[{{1, 2}, {2, 3}, {3, 5}}, Frame -> True,
+          FrameTicks -> {{Automatic, None},
+            {Map[{#, Pane[Column[{#, #^2}], {35, 35}]} &, {1, 2, 3}], None}},
+          FrameLabel -> {Column[{"first", "second"}], "y"}]"#,
+      );
+      assert!(!svg.contains("Pane["), "Pane leaked into the SVG: {svg}");
+      assert!(svg.contains(">9</tspan>"), "tick line 2 missing: {svg}");
+      assert!(
+        svg.contains(">second</tspan>"),
+        "label line 2 missing: {svg}"
+      );
+    }
+
     // `FrameTicks` with explicit tick positions on a framed `Graphics` (and a
     // `Show` that overlays one on a `ListPlot`) labels exactly those ticks.
     #[test]
