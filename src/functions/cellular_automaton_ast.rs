@@ -73,6 +73,12 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  if args.len() == 3
+    && let Some(result) = cellular_automaton_3d(args)
+  {
+    return result;
+  }
+
   // CellularAutomaton[rule, init] — one step. The result is the new state on
   // its own: a bare list for a cyclic init, or the `{cells, {background}}`
   // pair that can be fed straight back in for a background init.
@@ -1231,6 +1237,270 @@ fn evolve_on_periodic_background(
 
 /// Digit `s` (base `k`) of the rule number — the new value of a cell whose
 /// neighborhood has weighted sum `s`.
+/// A three-dimensional weighted rule `{n, {k, w}, {r1, r2, r3}}` (`w` a
+/// uniform weight or a weight array over the neighborhood) on a rank-3
+/// init: cyclic, or `{cells, background}` growing by the radius each step
+/// and cut to the cells that ever differ from the background. Step specs
+/// `t`, `{t}` and `{{t}}`. `None` for anything else.
+fn cellular_automaton_3d(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::List(rule) = &args[0] else {
+    return None;
+  };
+  let [n_expr, kw, Expr::List(radii)] = rule.as_slice() else {
+    return None;
+  };
+  if radii.len() != 3 {
+    return None;
+  }
+  let radius: Vec<usize> = radii
+    .iter()
+    .map(|r| match r {
+      Expr::Integer(r) if (0..=8).contains(r) => Some(*r as usize),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let n = match n_expr {
+    Expr::Integer(n) if *n >= 0 => BigInt::from(*n),
+    Expr::BigInteger(n) if n.sign() != num_bigint::Sign::Minus => n.clone(),
+    _ => return None,
+  };
+  let Expr::List(kw) = kw else { return None };
+  let [k_expr, w_expr] = kw.as_slice() else {
+    return None;
+  };
+  let k = as_nonneg_int(k_expr).filter(|&k| k >= 1)? as u64;
+  let dims = [2 * radius[0] + 1, 2 * radius[1] + 1, 2 * radius[2] + 1];
+  // Weights in row-major order over offsets -r..r on each axis.
+  let weights: Vec<u64> = match w_expr {
+    Expr::Integer(w) if *w >= 0 => vec![*w as u64; dims[0] * dims[1] * dims[2]],
+    Expr::List(planes) if planes.len() == dims[0] => {
+      let mut out = Vec::new();
+      for plane in planes {
+        let Expr::List(rows) = plane else { return None };
+        if rows.len() != dims[1] {
+          return None;
+        }
+        for row in rows {
+          let Expr::List(cells) = row else { return None };
+          if cells.len() != dims[2] {
+            return None;
+          }
+          for c in cells {
+            out.push(as_nonneg_int(c)? as u64);
+          }
+        }
+      }
+      out
+    }
+    _ => return None,
+  };
+  // A rank-3 array of integer cells.
+  let array3 = |e: &Expr| -> Option<Vec<Vec<Vec<u64>>>> {
+    let Expr::List(planes) = e else { return None };
+    let out: Vec<Vec<Vec<u64>>> = planes
+      .iter()
+      .map(|p| {
+        let Expr::List(rows) = p else { return None };
+        rows
+          .iter()
+          .map(|r| {
+            let Expr::List(cells) = r else { return None };
+            cells
+              .iter()
+              .map(|c| as_nonneg_int(c).map(|v| v as u64))
+              .collect()
+          })
+          .collect()
+      })
+      .collect::<Option<_>>()?;
+    let (a, b, c) =
+      (out.len(), out.first()?.len(), out.first()?.first()?.len());
+    (a > 0
+      && b > 0
+      && c > 0
+      && out
+        .iter()
+        .all(|p| p.len() == b && p.iter().all(|r| r.len() == c)))
+    .then_some(out)
+  };
+  let (cells, background) = match &args[1] {
+    Expr::List(items)
+      if items.len() == 2 && matches!(&items[1], Expr::Integer(_)) =>
+    {
+      (array3(&items[0])?, Some(as_nonneg_int(&items[1])? as u64))
+    }
+    other => (array3(other)?, None),
+  };
+  // The step argument is `t` or `{tspec}`; tspec `t` is steps 0..t, `{t}`
+  // step t in a list and `{{t}}` step t alone.
+  let as_t = |e: &Expr| match e {
+    Expr::Integer(t) if (0..=10_000).contains(t) => Some(*t as usize),
+    _ => None,
+  };
+  let tspec = match &args[2] {
+    e @ Expr::Integer(_) => e,
+    Expr::List(items) if items.len() == 1 => &items[0],
+    _ => return None,
+  };
+  let (t_max, single, bare) = match tspec {
+    e @ Expr::Integer(_) => (as_t(e)?, false, false),
+    Expr::List(items) if items.len() == 1 => match &items[0] {
+      e @ Expr::Integer(_) => (as_t(e)?, true, false),
+      Expr::List(inner) if inner.len() == 1 => (as_t(&inner[0])?, true, true),
+      _ => return None,
+    },
+    _ => return None,
+  };
+  // The rule's digits, least significant first, for every reachable sum.
+  let max_sum = weights.iter().sum::<u64>().checked_mul(k - 1)? as usize;
+  if max_sum > 1 << 20 {
+    return None;
+  }
+  let mut digits = Vec::with_capacity(max_sum + 1);
+  let mut rest = n;
+  let base = BigInt::from(k);
+  for _ in 0..=max_sum {
+    let digit = &rest % &base;
+    digits.push(u64::try_from(digit).ok()?);
+    rest /= &base;
+  }
+  // The grid: padded by radius * t_max on each side for a background init.
+  let pad: Vec<usize> = match background {
+    Some(_) => radius.iter().map(|r| r * t_max).collect(),
+    None => vec![0, 0, 0],
+  };
+  let size = [
+    cells.len() + 2 * pad[0],
+    cells[0].len() + 2 * pad[1],
+    cells[0][0].len() + 2 * pad[2],
+  ];
+  if size.iter().product::<usize>().checked_mul(t_max + 1)? > 50_000_000 {
+    return None;
+  }
+  let bg0 = background.unwrap_or(0);
+  let idx = |i: usize, j: usize, l: usize| (i * size[1] + j) * size[2] + l;
+  let mut grid = vec![bg0; size[0] * size[1] * size[2]];
+  for (i, plane) in cells.iter().enumerate() {
+    for (j, row) in plane.iter().enumerate() {
+      for (l, &v) in row.iter().enumerate() {
+        grid[idx(i + pad[0], j + pad[1], l + pad[2])] = v;
+      }
+    }
+  }
+  let digit = |s: u64| digits.get(s as usize).copied().unwrap_or(0);
+  let mut steps = vec![grid.clone()];
+  let mut bg = bg0;
+  for _ in 0..t_max {
+    let mut next = vec![0u64; grid.len()];
+    for i in 0..size[0] {
+      for j in 0..size[1] {
+        for l in 0..size[2] {
+          let mut sum = 0u64;
+          let mut w = 0;
+          for di in 0..dims[0] {
+            for dj in 0..dims[1] {
+              for dl in 0..dims[2] {
+                let weight = weights[w];
+                w += 1;
+                if weight == 0 {
+                  continue;
+                }
+                let at =
+                  |p: usize, d: usize, r: usize, len: usize| -> Option<usize> {
+                    let q = p as i64 + d as i64 - r as i64;
+                    if background.is_none() {
+                      Some(q.rem_euclid(len as i64) as usize)
+                    } else if (0..len as i64).contains(&q) {
+                      Some(q as usize)
+                    } else {
+                      None
+                    }
+                  };
+                let value = match (
+                  at(i, di, radius[0], size[0]),
+                  at(j, dj, radius[1], size[1]),
+                  at(l, dl, radius[2], size[2]),
+                ) {
+                  (Some(a), Some(b), Some(c)) => grid[idx(a, b, c)],
+                  _ => bg,
+                };
+                sum += weight * value;
+              }
+            }
+          }
+          next[idx(i, j, l)] = digit(sum);
+        }
+      }
+    }
+    if background.is_some() {
+      bg = digit(weights.iter().sum::<u64>() * bg);
+    }
+    grid = next;
+    steps.push(grid.clone());
+  }
+  // A background init keeps only the cells that ever differ from it.
+  let (lo, hi) = if background.is_some() {
+    let mut lo = size;
+    let mut hi = [0usize; 3];
+    let mut any = false;
+    for step in &steps {
+      for i in 0..size[0] {
+        for j in 0..size[1] {
+          for l in 0..size[2] {
+            if step[idx(i, j, l)] != bg0 {
+              any = true;
+              for (d, v) in [i, j, l].into_iter().enumerate() {
+                lo[d] = lo[d].min(v);
+                hi[d] = hi[d].max(v + 1);
+              }
+            }
+          }
+        }
+      }
+    }
+    if !any {
+      return None;
+    }
+    (lo, hi)
+  } else {
+    ([0, 0, 0], size)
+  };
+  let to_expr = |g: &Vec<u64>| -> Expr {
+    Expr::List(
+      (lo[0]..hi[0])
+        .map(|i| {
+          Expr::List(
+            (lo[1]..hi[1])
+              .map(|j| {
+                Expr::List(
+                  (lo[2]..hi[2])
+                    .map(|l| Expr::Integer(g[idx(i, j, l)] as i128))
+                    .collect::<Vec<_>>()
+                    .into(),
+                )
+              })
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    )
+  };
+  Some(Ok(if single {
+    let last = to_expr(steps.last()?);
+    if bare {
+      last
+    } else {
+      Expr::List(vec![last].into())
+    }
+  } else {
+    Expr::List(steps.iter().map(to_expr).collect::<Vec<_>>().into())
+  }))
+}
+
 fn rule_digit(rule: &RuleSpec, s: u128) -> u128 {
   usize::try_from(s)
     .ok()

@@ -1263,3 +1263,44 @@ mod cellular_automaton_background_blocks_and_automatic {
     );
   }
 }
+
+// Three-dimensional weighted rules {n, {k, w}, {r1, r2, r3}} (the 3D
+// totalistic demonstrations reported nspecnl). A rule that spans only two
+// of the axes evolves a single plane exactly as the 2D rule does.
+mod cellular_automaton_3d {
+  use super::*;
+
+  #[test]
+  fn flat_rule_matches_2d() {
+    assert_eq!(
+      interpret(
+        "a = CellularAutomaton[{462, {2, 1}, {1, 1}}, {{{1}}, 0}, 3]; \
+         b = CellularAutomaton[{462, {2, 1}, {0, 1, 1}}, {{{{1}}}, 0}, 3]; \
+         {Dimensions[b], a == b[[All, 1]]}"
+      )
+      .unwrap(),
+      "{{4, 1, 7, 7}, True}"
+    );
+    assert_eq!(
+      interpret(
+        "SeedRandom[2]; m = RandomInteger[1, {6, 7}]; \
+         CellularAutomaton[{30, {2, 1}, {1, 1}}, m, 3] == \
+         CellularAutomaton[{30, {2, 1}, {0, 1, 1}}, {m}, 3][[All, 1]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn step_specs() {
+    assert_eq!(
+      interpret(
+        "{Dimensions[CellularAutomaton[{14, {2, 1}, {1, 1, 1}}, {{{{1}}}, 0}, {{{3}}}]], \
+          Dimensions[CellularAutomaton[{14, {2, 1}, {1, 1, 1}}, {{{{1}}}, 0}, {{3}}]]}"
+      )
+      .unwrap(),
+      "{{7, 7, 7}, {1, 7, 7, 7}}"
+    );
+  }
+}
