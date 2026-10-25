@@ -217,9 +217,8 @@ fn build_pairs_from_event_spec(fields: &[Expr]) -> Option<Vec<Expr>> {
     return None;
   };
   // The internal form holds a list of paths; only a single path is a series.
-  let values = match paths.iter().collect::<Vec<_>>()[..] {
-    [Expr::List(path)] => path,
-    _ => return None,
+  let [Expr::List(values)] = paths.iter().collect::<Vec<_>>()[..] else {
+    return None;
   };
   let Expr::List(specs) = fields.get(1)? else {
     return None;
