@@ -12900,6 +12900,22 @@ fn negated_markup_term(arg: &Expr) -> Option<String> {
   Some(expr_to_svg_markup(&unevaluated("Times", &factors)))
 }
 
+/// Whether `expr` is a `Column`/`Grid`/`TableForm`, possibly behind the
+/// transparent `Text`/`Framed`/`Highlighted` wrappers a label peels off
+/// (`Style[Text[Grid[…]], 11]`).
+fn is_stacked_block(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Column" | "Grid" | "TableForm" => true,
+      "Text" | "Framed" | "Highlighted" => {
+        args.len() == 1 && is_stacked_block(&args[0])
+      }
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
 /// Typeset a label that may occupy several lines, one entry per line.
 /// `Grid[{{a}, {b}}]` and `Column[{a, b}]` stack their items — Demonstrations
 /// build multi-line plot titles that way — and any line that itself carries
@@ -12926,8 +12942,7 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
   if let Expr::FunctionCall { name, args } = expr
     && name == "Style"
     && args.len() >= 2
-    && matches!(&args[0], Expr::FunctionCall { name: inner, .. }
-      if matches!(inner.as_str(), "Column" | "Grid" | "TableForm"))
+    && is_stacked_block(&args[0])
   {
     let attrs = style_directives_to_svg_attrs(&args[1..]);
     let lines = expr_to_svg_markup_lines(&args[0]);
@@ -13012,13 +13027,20 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
       match &args[0] {
         Expr::List(rows) => rows
           .iter()
-          .map(|row| match row {
-            Expr::List(cells) => cells
-              .iter()
-              .map(expr_to_svg_markup)
-              .collect::<Vec<_>>()
-              .join(" "),
-            cell => expr_to_svg_markup(cell),
+          .flat_map(|row| match row {
+            // A row holding one stacked block (`{{Style[Text[Grid[…]], 11]}}`
+            // under a title row) contributes that block's own lines.
+            Expr::List(cells) if cells.len() == 1 => {
+              expr_to_svg_markup_lines(&cells[0])
+            }
+            Expr::List(cells) => vec![
+              cells
+                .iter()
+                .map(expr_to_svg_markup)
+                .collect::<Vec<_>>()
+                .join(" "),
+            ],
+            cell => expr_to_svg_markup_lines(cell),
           })
           .collect(),
         other => vec![expr_to_svg_markup(other)],
@@ -34474,10 +34496,10 @@ pub fn apply_manipulate_mutations(
     mutations.iter().flat_map(|m| split_statements(m)).collect();
   let mut vars: Vec<String> = Vec::new();
   for m in &statements {
-    if let Some(v) = mutation_target_symbol(m)
-      && !vars.contains(&v)
-    {
-      vars.push(v);
+    for v in mutation_target_symbols_of(m) {
+      if !vars.contains(&v) {
+        vars.push(v);
+      }
     }
   }
   if vars.is_empty() {
@@ -34604,13 +34626,41 @@ fn split_statements(code: &str) -> Vec<String> {
 pub fn mutation_target_symbols(mutations: &[String]) -> Vec<String> {
   let mut vars: Vec<String> = Vec::new();
   for m in mutations.iter().flat_map(|m| split_statements(m)) {
-    if let Some(v) = mutation_target_symbol(&m)
-      && !vars.contains(&v)
-    {
-      vars.push(v);
+    for v in mutation_target_symbols_of(&m) {
+      if !vars.contains(&v) {
+        vars.push(v);
+      }
     }
   }
   vars
+}
+
+/// The target variables of a write-back assignment. A list left-hand side
+/// (`{a, b} = {…}`, how a group of radio buttons sets several flags at once)
+/// targets each of its elements; anything else targets one symbol.
+fn mutation_target_symbols_of(m: &str) -> Vec<String> {
+  let Some(lhs) = m.trim_start().strip_prefix('{') else {
+    return mutation_target_symbol(m).into_iter().collect();
+  };
+  let mut depth = 0usize;
+  let mut elements = vec![String::new()];
+  for c in lhs.chars() {
+    match c {
+      '{' | '[' => depth += 1,
+      '}' | ']' if depth == 0 => break,
+      '}' | ']' => depth -= 1,
+      ',' if depth == 0 => {
+        elements.push(String::new());
+        continue;
+      }
+      _ => {}
+    }
+    elements.last_mut().unwrap().push(c);
+  }
+  elements
+    .iter()
+    .filter_map(|e| mutation_target_symbol(&format!("{} =", e.trim())))
+    .collect()
 }
 
 /// The target variable of a write-back assignment: the leading identifier of
@@ -35363,6 +35413,12 @@ fn display_expr_to_node(
         DisplayNode::Row(list_children(&args[0], bindings, probes, ons))
       }
       "Checkbox" => checkbox_node(args, probes, ons),
+      "RadioButton"
+        if args.len() >= 2
+          && matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Dynamic") =>
+      {
+        radio_button_node(args, probes, ons)
+      }
       // `HoldForm[m]` draws as `m` itself — the symbol, not its value — so a
       // caption naming a variable (`Row[{HoldForm[m], ", the rate"}]`) must
       // not surface as the literal `HoldForm[…]` source.
@@ -35904,6 +35960,32 @@ fn checkbox_node(
     target: dynamic_lval.map(crate::syntax::expr_to_source_form),
     on,
     off,
+  }
+}
+
+/// A `RadioButton[Dynamic[lval], value]` display: selected while `lval`
+/// equals `value`, and clicking it assigns `value` to `lval`. `lval` may be a
+/// list of symbols (`Dynamic[{a, b, c}]` with `value` a list), which assigns
+/// them all at once, so several radio buttons can drive one exclusive group of
+/// flags. Selecting the already-selected button is a no-op, so the write-back
+/// value is the same in both states.
+fn radio_button_node(
+  args: &[Expr],
+  probes: &mut Vec<String>,
+  ons: &mut Vec<String>,
+) -> DisplayNode {
+  let Expr::FunctionCall { args: dargs, .. } = &args[0] else {
+    unreachable!("caller checked for Dynamic");
+  };
+  let lval = crate::syntax::expr_to_source_form(&dargs[0]);
+  let value = crate::syntax::expr_to_source_form(&args[1]);
+  probes.push(lval.clone());
+  ons.push(value.clone());
+  DisplayNode::Checkbox {
+    target: Some(lval),
+    checked: false,
+    on: value.clone(),
+    off: value,
   }
 }
 

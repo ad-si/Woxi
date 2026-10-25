@@ -2239,6 +2239,26 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plotlabel_grid_of_style_text_grid_stacks_lines() {
+    // Regression: a title `Grid[{{title}, {Style[Text[Grid[…]], 11]}}]`
+    // printed the inner `Grid[…]` source instead of typesetting it.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Graphics[{Circle[]}, PlotLabel -> Grid[{{\"title\"}, {Style[Text[Grid[{{\"a =\", 1, \"b =\", 2}}]], 11]}}]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected Graphics SVG output");
+    assert!(
+      !svg.contains("Grid["),
+      "PlotLabel must not print the Grid wrapper:\n{svg}"
+    );
+    assert!(
+      svg.contains("title") && svg.contains("a = 1 b = 2"),
+      "PlotLabel must typeset the inner grid on its own line:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_manipulate_row_style_symbolic_reciprocal_product_svg() {
     // Same renderer, a product of two reciprocals (`Times[a, Power[b, -1],
     // Power[c, -1]]`, i.e. `a/(b c)`): every reciprocal factor must move
