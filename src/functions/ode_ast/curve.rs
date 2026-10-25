@@ -361,7 +361,7 @@ impl Curve {
       let nb: f64 = b.iter().map(|u| u * u).sum::<f64>().sqrt();
       dot / (na * nb)
     };
-    if !(cosine(&k1, &k4) > 0.9) {
+    if cosine(&k1, &k4).partial_cmp(&0.9) != Some(std::cmp::Ordering::Greater) {
       return Ok(None);
     }
     let mut y_new: Vec<f64> = (0..self.n)
