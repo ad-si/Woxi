@@ -4205,6 +4205,39 @@ pub(crate) fn strip_style_wrappers(expr: &Expr) -> &Expr {
   }
 }
 
+/// Does `e` hold a `Subscript`/`Superscript`/`Subsuperscript` somewhere?
+fn has_script_head(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Subscript" | "Superscript" | "Subsuperscript"
+      ) || args.iter().any(has_script_head)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      has_script_head(left) || has_script_head(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_script_head(operand),
+    _ => false,
+  }
+}
+
+/// Is `expr` arithmetic (`Times`/`Plus`/`Power` or an operator form of
+/// them) with a `Subscript`/`Superscript`/`Subsuperscript` somewhere inside?
+fn is_arithmetic_with_scripts(expr: &Expr) -> bool {
+  let arithmetic = match expr {
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "Times" | "Plus" | "Power")
+    }
+    Expr::BinaryOp { op, .. } => {
+      arithmetic_label_operator(*op).is_some()
+        || matches!(op, BinaryOperator::Power)
+    }
+    _ => false,
+  };
+  arithmetic && has_script_head(expr)
+}
+
 fn graphics_text_content(expr: &Expr) -> String {
   match expr {
     // A `Dynamic[x]` inside text reads as the value `x` currently has.
@@ -4496,6 +4529,21 @@ fn graphics_text_content(expr: &Expr) -> String {
       if text.is_empty() {
         crate::functions::chart::expr_to_label(expr)
           .unwrap_or_else(|| expr_to_string(expr))
+      } else {
+        text
+      }
+    }
+    // A product, sum or power with a `Subscript`/`Superscript` factor
+    // (`Subscript[t, 1] Subscript[t, 2] x^2`) is set on one line with its
+    // scripts shifted — the same runs a widget label gets — not as the
+    // two-line OutputForm box, which would print `Subscript[t, 1]` literally.
+    Expr::FunctionCall { .. } | Expr::BinaryOp { .. }
+      if is_arithmetic_with_scripts(expr) =>
+    {
+      let runs = with_marked_subscripts(|| manipulate_label_runs(expr, false));
+      let text = flatten_label_runs(&runs);
+      if text.is_empty() {
+        expr_to_string(expr)
       } else {
         text
       }
@@ -31969,7 +32017,9 @@ fn product_label_runs(factors: &[Expr], italic: bool) -> Vec<LabelRun> {
   let numerators: Vec<Expr> = numerators.into_iter().cloned().collect();
   // Typeset pieces (`Style[…] Text[…]`) set side by side, as the front end
   // shows them; a product of plain symbols keeps its `*`.
-  let sep = if numerators.iter().all(contains_presentation_head) {
+  let sep = if numerators.iter().all(contains_presentation_head)
+    || numerators.iter().any(has_script_head)
+  {
     " "
   } else {
     "*"
@@ -32281,11 +32331,18 @@ fn script_runs(
   italic: bool,
   superscript: bool,
 ) -> Vec<LabelRun> {
-  let mark =
-    !superscript && MARK_UNMAPPED_SUBSCRIPTS.with(std::cell::Cell::get);
+  let marking = MARK_UNMAPPED_SUBSCRIPTS.with(std::cell::Cell::get);
+  let mark = !superscript && marking;
+  // A compound base (`(r₁ r₂)^n`) keeps its parentheses.
   let mut runs = args
     .first()
-    .map(|a| manipulate_label_runs(a, italic))
+    .map(|a| {
+      if superscript {
+        grouped_label_runs(a, italic)
+      } else {
+        manipulate_label_runs(a, italic)
+      }
+    })
     .unwrap_or_default();
   let script: String = args
     .iter()
@@ -32298,6 +32355,19 @@ fn script_runs(
           .any(|c| unicode_script_char(c, false).is_none())
       {
         format!("{SUBSCRIPT_START}{text}{SUBSCRIPT_END}")
+      } else if superscript
+        && marking
+        && text.chars().any(|c| unicode_script_char(c, true).is_none())
+      {
+        // No superscript glyphs for this exponent (`e^(j k L)`): write it
+        // out after a caret rather than as a garble of half-mapped letters.
+        if text.chars().count() > 1
+          && !args[1..].iter().all(|a| !label_is_compound(a))
+        {
+          format!("^({text})")
+        } else {
+          format!("^{text}")
+        }
       } else {
         to_unicode_script(&text, superscript)
       }

@@ -2769,6 +2769,20 @@ mod graphics {
       );
     }
 
+    /// A product or power holding scripted symbols inside a `Text` is set on
+    /// one line with the scripts shifted, not as the two-line OutputForm box
+    /// that printed `Subscript[t, 1]` literally.
+    #[test]
+    fn text_typesets_products_of_subscripts() {
+      let svg = export_svg(
+        "Graphics[{Text[Subscript[t, 1] Subscript[t, 2] x^2, {0, 0}], \
+         Text[(Subscript[r, 1] Subscript[r, 2])^n, {1, 0}]}]",
+      );
+      assert!(svg.contains(">x\u{00B2} t\u{2081} t\u{2082}<"), "{svg}");
+      assert!(svg.contains(">(r\u{2081} r\u{2082})\u{207F}<"), "{svg}");
+      assert!(!svg.contains("Subscript["), "{svg}");
+    }
+
     /// `Framed[…]` around a label draws a box: a border, and a panel when
     /// the label asks for a `Background`. `FrameStyle -> None` keeps the
     /// panel but drops the border.
