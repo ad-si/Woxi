@@ -447,7 +447,31 @@ fn parse_density_contour_options(
   args: &[Expr],
   start: usize,
 ) -> DensityContourOptions {
-  let (svg_width, svg_height, full_width) = parse_field_options(args, start);
+  let (svg_width, mut svg_height, full_width) =
+    parse_field_options(args, start);
+  // `AspectRatio -> r` (height / width) reshapes the picture; an
+  // `ImageSize -> {w, h}` pair already fixes both sides and wins.
+  let explicit_size_pair = args[start..].iter().any(|opt| {
+    matches!(opt, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize")
+        && matches!(replacement.as_ref(), Expr::List(_)))
+  });
+  if !explicit_size_pair {
+    for opt in &args[start..] {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = opt
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "AspectRatio")
+      {
+        let value = evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone());
+        if let Some(r) = try_eval_to_f64(&value).filter(|r| *r > 0.0) {
+          svg_height = ((svg_width as f64 * r).round() as u32).max(1);
+        }
+      }
+    }
+  }
   let mut color_function = None;
   let mut contours = ContourSpec::Automatic;
   let mut contour_shading = true;
