@@ -41173,3 +41173,26 @@ mod list_plot_far_points {
     );
   }
 }
+
+mod plot_non_numeric_limit {
+  use super::*;
+
+  // A limit that is no number is head::plln with the call unevaluated, as
+  // in wolframscript.
+  #[test]
+  fn plln() {
+    clear_state();
+    let r = woxi::interpret_with_stdout("Plot[x, {x, a, 1}]").unwrap();
+    assert_eq!(r.result, "Plot[x, {x, a, 1}]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "Plot::plln: Limiting value a in {x, a, 1} is not a machine-sized real number."),
+      "{:?}",
+      r.warnings
+    );
+    clear_state();
+    let r =
+      woxi::interpret_with_stdout("ParametricPlot[{t, t}, {t, a, 1}]").unwrap();
+    assert_eq!(r.result, "ParametricPlot[{t, t}, {t, a, 1}]");
+  }
+}
