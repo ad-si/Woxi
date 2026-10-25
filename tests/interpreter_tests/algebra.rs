@@ -10106,6 +10106,20 @@ mod linear_programming {
 mod find_root {
   use super::*;
 
+  // A single indexed variable is solved for like a plain one
+  // (DistillationColumnCalculationIncorporatingPressureDropEffect).
+  #[test]
+  fn single_indexed_variable() {
+    assert_eq!(
+      interpret("FindRoot[T[1]^2 == 2, {T[1], 1}]").unwrap(),
+      "{T[1] -> 1.4142135623730951}"
+    );
+    assert_eq!(
+      interpret("FindRoot[x[1][0]^2 == 2, {x[1][0], 1}]").unwrap(),
+      "{x[1][0] -> 1.4142135623730951}"
+    );
+  }
+
   // A vector function that only evaluates at numbers stands for as many
   // equations as its value at the starting point has components.
   #[test]

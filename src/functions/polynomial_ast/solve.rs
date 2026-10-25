@@ -9476,6 +9476,21 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // evaluates to a complex number we route to a complex Newton iteration
   // before the real-only path below.
   let (var_name, x_start_expr) = match arg1 {
+    // An indexed variable (`{T[1], 350}`) goes through the multivariate
+    // solver, which renames such variables to plain symbols.
+    Expr::List(items)
+      if (2..=4).contains(&items.len())
+        && !matches!(&items[0], Expr::Identifier(_))
+        && is_findroot_var_expr(&items[0]) =>
+    {
+      return find_root_multivariate(
+        &args[0],
+        std::slice::from_ref(arg1),
+        max_iter,
+        step_monitor,
+        args,
+      );
+    }
     Expr::List(items) if (2..=5).contains(&items.len()) => {
       let name = match &items[0] {
         Expr::Identifier(n) => n.clone(),
