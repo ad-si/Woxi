@@ -9428,6 +9428,15 @@ mod complex_expand {
       interpret("ComplexExpand[Re[f[x + I y]]]").unwrap(),
       "f[x + I*y]"
     );
+    // Built-in functions keep their own rules.
+    assert_eq!(
+      interpret("ComplexExpand[Im[Log[-2 + I y]]]").unwrap(),
+      "Arg[-2 + I*y]"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Re[Log[x] + I Tan[y]]]").unwrap(),
+      "Log[x^2]/2"
+    );
   }
 
   // The quotient trig and hyperbolic functions expand for real arguments

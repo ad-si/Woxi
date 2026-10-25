@@ -5867,12 +5867,21 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
     // (`a[t]`, `Subscript[c, 1][t]`, even `f[x + I y]`), and so is its
     // derivative (`a'[t]`): wolframscript's ComplexExpand[Re[I a'[t]]] is 0.
     Expr::FunctionCall { name, .. }
-      if !crate::evaluator::functions::is_known_wolfram_function(name) =>
+      if !crate::evaluator::functions::is_builtin_symbol(name) =>
     {
       Some((expr.clone(), Expr::Integer(0)))
     }
     Expr::CurriedCall { func, .. }
       if is_undefined_function_or_derivative(func) =>
+    {
+      Some((expr.clone(), Expr::Integer(0)))
+    }
+    // `f'[x]` stored flat as `Derivative[1, f, x]`.
+    Expr::FunctionCall { name, args }
+      if name == "Derivative"
+        && args.len() == 3
+        && matches!(&args[0], Expr::Integer(_))
+        && is_undefined_function_or_derivative(&args[1]) =>
     {
       Some((expr.clone(), Expr::Integer(0)))
     }
@@ -5901,10 +5910,10 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
 fn is_undefined_function_or_derivative(head: &Expr) -> bool {
   match head {
     Expr::Identifier(name) => {
-      !crate::evaluator::functions::is_known_wolfram_function(name)
+      !crate::evaluator::functions::is_builtin_symbol(name)
     }
     Expr::FunctionCall { name, .. } => {
-      !crate::evaluator::functions::is_known_wolfram_function(name)
+      !crate::evaluator::functions::is_builtin_symbol(name)
         || name == "Subscript"
     }
     Expr::CurriedCall { func, args } => {
