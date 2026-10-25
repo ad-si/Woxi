@@ -157,7 +157,7 @@ const SHARE_MIN_LEN: usize = 16;
 
 /// Switch `expr`'s large lists (and large argument lists) to the shared
 /// representation, stopping at lists that already are shared.
-fn share_large_lists(expr: &mut Expr, depth: usize) {
+pub(crate) fn share_large_lists(expr: &mut Expr, depth: usize) {
   let list = match expr {
     Expr::List(items) => items,
     Expr::FunctionCall { args, .. } => args,

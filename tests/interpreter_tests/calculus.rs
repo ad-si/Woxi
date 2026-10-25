@@ -9155,6 +9155,23 @@ mod ndsolve {
     );
   }
 
+  // Replacing into thousands of calls copied the whole solution grid into
+  // each one (quadratic time, gigabytes of memory).
+  #[test]
+  fn replacing_into_many_calls_shares_the_solution() {
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[{y'[x] == 1, y[0] == 0}, y, {x, 0, 500}, \
+         StartingStepSize -> 0.1, Method -> {\"FixedStep\", Method -> \
+         {\"ExplicitRungeKutta\", \"DifferenceOrder\" -> 4}}]; \
+         TimeConstrained[Round[Total[Flatten[(y[#] & /@ Range[0, 500, 0.1]) \
+         /. sol]]], 3]"
+      )
+      .unwrap(),
+      "1250250"
+    );
+  }
+
   #[test]
   fn linear_growth() {
     // NDSolve y'=1, y(0)=0, check y(0.5) ≈ 0.5

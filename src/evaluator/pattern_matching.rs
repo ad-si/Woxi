@@ -2730,7 +2730,11 @@ fn contains_interpolating_function(e: &Expr) -> bool {
 fn shield_interpolating_functions(e: &Expr, held: &RefCell<Vec<Expr>>) -> Expr {
   if is_interpolating_function(e) {
     let mut held = held.borrow_mut();
-    held.push(e.clone());
+    // Restoring copies it once per placeholder (`v[#] & /@ Range[0, 1000,
+    // 0.1] /. sol`); shared, each copy is a pointer copy.
+    let mut shared = e.clone();
+    crate::evaluator::core_eval::share_large_lists(&mut shared, 0);
+    held.push(shared);
     return Expr::Identifier(format!(
       "$InterpolatingFunctionHold{}$",
       held.len()
