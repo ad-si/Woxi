@@ -10815,7 +10815,7 @@ fn find_root_multivariate(
   };
   // An equation between lists (`{a, b} == {c, d}`) is one equation per
   // component, as Equal threads over lists.
-  let evaluated_eqns: Vec<Expr> = raw_eq_list
+  let mut evaluated_eqns: Vec<Expr> = raw_eq_list
     .iter()
     .map(|e| build_find_root_func(e, &raw_var_refs))
     .flat_map(|f| match &f {
@@ -10823,6 +10823,30 @@ fn find_root_multivariate(
       _ => vec![f],
     })
     .collect();
+  // A function that only evaluates at numbers (`eqns[x_?NumericQ, …] :=
+  // {…}`) stays one unevaluated call here; its value at the starting point
+  // shows how many equations it stands for, and each is a component of it.
+  if let [black_box] = evaluated_eqns.as_slice()
+    && n > 1
+  {
+    let at_start = raw_vars
+      .iter()
+      .zip(&x)
+      .fold(black_box.clone(), |e, (v, x0)| {
+        substitute_expr(&e, v, &Expr::Real(*x0))
+      });
+    if let Ok(Expr::List(ref values)) =
+      quietly(|| crate::evaluator::evaluate_expr_to_expr(&at_start))
+      && values.len() == n
+    {
+      let black_box = black_box.clone();
+      evaluated_eqns = (1..=n)
+        .map(|i| {
+          call("Part", vec![black_box.clone(), Expr::Integer(i as i128)])
+        })
+        .collect();
+    }
+  }
 
   // Every search variable — plain or indexed — is then renamed to a fresh
   // plain symbol. Collocation methods can name hundreds of `u[i]`

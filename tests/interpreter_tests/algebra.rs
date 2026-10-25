@@ -10106,6 +10106,20 @@ mod linear_programming {
 mod find_root {
   use super::*;
 
+  // A vector function that only evaluates at numbers stands for as many
+  // equations as its value at the starting point has components.
+  #[test]
+  fn numeric_black_box_vector_function() {
+    assert_eq!(
+      interpret(
+        "g[a_?NumericQ, b_?NumericQ] := {a^2 + b - 3, a - b + 1}; \
+         Round[10^8 ({a, b} /. FindRoot[g[a, b], {{a, 1}, {b, 1}}])]"
+      )
+      .unwrap(),
+      "{100000000, 200000000}"
+    );
+  }
+
   // Newton uses the derivative of an interpolating function instead of
   // differencing past the end of its domain.
   #[test]
