@@ -680,6 +680,21 @@ fn sign_via_numeric(expr: &Expr, cmp: impl Fn(f64) -> bool) -> Option<bool> {
   if !is_numeric_q(expr) {
     return None;
   }
+  // An arbitrary-precision number outside the machine range keeps its sign
+  // in its digits even where the f64 overflows or underflows.
+  if let Expr::BigFloat(digits, _) = expr {
+    let negative = digits.starts_with('-');
+    let mantissa = digits.split(['e', 'E', '*']).next().unwrap_or("");
+    let zero = !mantissa.chars().any(|c| c.is_ascii_digit() && c != '0');
+    let sign = if zero {
+      0.0
+    } else if negative {
+      -1.0
+    } else {
+      1.0
+    };
+    return Some(cmp(sign));
+  }
   let val = super::math_ast::try_eval_to_f64(expr)?;
   if !val.is_finite() {
     return None;
