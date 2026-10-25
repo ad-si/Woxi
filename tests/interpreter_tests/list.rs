@@ -2902,6 +2902,20 @@ mod map_all {
 mod map_at {
   use super::*;
 
+  // A rendered graphic is mapped through its symbolic form, the one Part
+  // reads (MapAt::partw on -Graphics3D- in the ColorCube puzzles).
+  #[test]
+  fn into_a_rendered_graphic() {
+    assert_eq!(
+      interpret(
+        "g = Graphics3D[{Red, Sphere[{0, 0, 0}], Cuboid[{0, 0, 0}]}]; \
+         m = MapAt[f, g, {{1, 2}, {1, 3}}]; {Head[m], m[[1]]}"
+      )
+      .unwrap(),
+      "{Graphics3D, {RGBColor[1, 0, 0], f[Sphere[{0, 0, 0}]], f[Cuboid[{0, 0, 0}]]}}"
+    );
+  }
+
   #[test]
   fn single_position() {
     assert_eq!(

@@ -489,6 +489,14 @@ pub fn map_at_ast_named(
   list: &Expr,
   pos_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // A rendered graphic is mapped through its symbolic form
+  // (`Graphics3D[{…}, opts]`, as Part reads it) and drawn again.
+  if matches!(list, Expr::Graphics { .. })
+    && let Some(symbolic) =
+      crate::evaluator::part_extraction::graphics_symbolic_form(list)
+  {
+    return map_at_ast_named(caller, func, &symbolic, pos_spec);
+  }
   let result = map_at_rebuilt(caller, func, list, pos_spec)?;
   // The rebuilt expression is handed back evaluated, so a head that has an
   // operator form (Equal, Plus, …) prints the way wolframscript reports it:
