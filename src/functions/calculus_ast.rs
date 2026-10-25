@@ -15609,6 +15609,39 @@ fn integrand_is_complex_on(
   points.into_iter().any(probe)
 }
 
+/// Whether `integrand` evaluates to a (real or complex) number at any of a
+/// few interior points of the range.
+fn integrand_numeric_somewhere(
+  integrand: &Expr,
+  var: &str,
+  lo: f64,
+  hi: f64,
+) -> bool {
+  let points: Vec<f64> = match (lo.is_finite(), hi.is_finite()) {
+    (true, true) => [0.27, 0.5, 0.61, 0.83]
+      .iter()
+      .map(|t| lo + (hi - lo) * t)
+      .collect(),
+    (true, false) => [0.7, 2.3, 5.1].iter().map(|d| lo + d).collect(),
+    (false, true) => [0.7, 2.3, 5.1].iter().map(|d| hi - d).collect(),
+    (false, false) => vec![-1.3, 0.4, 2.1],
+  };
+  points.into_iter().any(|x| {
+    let substituted =
+      crate::syntax::substitute_variable(integrand, var, &Expr::Real(x));
+    let snapshot = crate::snapshot_warnings();
+    crate::push_quiet();
+    let value = crate::evaluator::evaluate_expr_to_expr(&substituted);
+    crate::pop_quiet();
+    crate::restore_warnings(snapshot);
+    value.is_ok_and(|v| {
+      crate::functions::math_ast::try_eval_to_f64(&v).is_some()
+        || crate::functions::math_ast::try_extract_complex_float(&v).is_some()
+        || matches!(&v, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
+    })
+  })
+}
+
 /// A limit of integration that is not a number: wolframscript reports
 /// `NIntegrate::nlim` for the first such limit and leaves the call
 /// unevaluated.
@@ -16166,6 +16199,20 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let hi = *bounds.last().unwrap();
 
   let integrand = &args[0];
+
+  // An integrand that is not a number anywhere in the range (it still
+  // holds an unknown function or symbol) is reported, as Wolfram does,
+  // and the call left unevaluated.
+  if !integrand_numeric_somewhere(integrand, &var_name, lo, hi) {
+    crate::emit_message(&format!(
+      "NIntegrate::inumr: The integrand {} has evaluated to non-numerical \
+       values for all sampling points in the region with boundaries {{{{{}, {}}}}}.",
+      crate::syntax::expr_to_output(integrand),
+      crate::syntax::expr_to_output(&evaluated_bounds[0]),
+      crate::syntax::expr_to_output(evaluated_bounds.last().unwrap()),
+    ));
+    return Ok(unevaluated_nintegrate(args));
+  }
 
   // A complex-valued integrand over a real range: its real and imaginary
   // parts are integrated separately (the real-valued quadrature below would

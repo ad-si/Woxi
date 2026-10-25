@@ -4966,6 +4966,23 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // A non-numeric integrand is reported and left unevaluated, not
+  // integrated as zero.
+  #[test]
+  fn non_numeric_integrand() {
+    let result =
+      interpret_with_stdout("NIntegrate[Abs[g[x] - 1], {x, -10, 10}]").unwrap();
+    assert_eq!(result.result, "NIntegrate[Abs[-1 + g[x]], {x, -10, 10}]");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "NIntegrate::inumr: The integrand Abs[-1 + g[x]] has evaluated to \
+         non-numerical values for all sampling points in the region with \
+         boundaries {{-10, 10}}."
+      ]
+    );
+  }
+
   // `MaxPoints` caps the samples of each dimension (the d-th root of the
   // total for a d-dimensional integral) and keeps the best estimate so far,
   // so a coarse request stays bounded yet close to the converged value.
