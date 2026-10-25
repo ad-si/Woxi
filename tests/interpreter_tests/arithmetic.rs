@@ -13373,15 +13373,19 @@ mod arccosh_complex {
 
   // ArcCosh of a complex machine number on the principal branch
   // Log[z + Sqrt[z + 1] Sqrt[z - 1]] (SpheroidalProtrusionInAUniformElectricField).
+  // Rounded because the last digit of libm's results differs per platform.
   #[test]
   fn principal_branch() {
     assert_eq!(
-      interpret("ArcCosh[3.0618621784789726 + 1.5309310892394863*I]").unwrap(),
-      "1.9111652116735969 + 0.48137993760498937*I"
+      interpret(
+        "Round[10^12 ArcCosh[3.0618621784789726 + 1.5309310892394863*I]]"
+      )
+      .unwrap(),
+      "1911165211674 + 481379937605*I"
     );
     assert_eq!(
-      interpret("ArcCosh[0.5 - 2. I]").unwrap(),
-      "1.4657153519472905 - 1.3497776911720127*I"
+      interpret("Round[10^12 ArcCosh[0.5 - 2. I]]").unwrap(),
+      "1465715351947 - 1349777691172*I"
     );
     assert_eq!(
       interpret("Round[10^12 ArcCosh[-2. + 0.5 I]]").unwrap(),
