@@ -6245,6 +6245,38 @@ mod cases {
     );
   }
   #[test]
+  fn matrix_function_diagonalizable_3x3() {
+    // f(A) = V.f(D).V^-1 for exact matrices with a full eigenbasis
+    assert_case(
+      r#"MatrixFunction[Sin, {{4, -8, 1}, {5, -9, 1}, {4, -6, -1}}][[1, 3]]"#,
+      r#"-Sin[2] + Sin[3]"#,
+    );
+    assert_case(
+      r#"MatrixLog[{{2, 0, 0}, {1, 3, 0}, {0, 0, 1}}]"#,
+      r#"{{Log[2], 0, 0}, {-Log[2] + Log[3], Log[3], 0}, {0, 0, 0}}"#,
+    );
+    // a defective matrix stays unevaluated
+    assert_case(
+      r#"MatrixExp[{{2, 1, 0}, {0, 2, 0}, {0, 0, 3}}]"#,
+      r#"MatrixExp[{{2, 1, 0}, {0, 2, 0}, {0, 0, 3}}]"#,
+    );
+  }
+  #[test]
+  fn matrix_exp_symbolic_scale() {
+    assert_case(
+      r#"Eigenvalues[{{4, -8, 1}, {5, -9, 1}, {4, -6, -1}} c]"#,
+      r#"{-3*c, -2*c, -c}"#,
+    );
+    assert_case(
+      r#"Eigenvectors[{{4, -8, 1}, {5, -9, 1}, {4, -6, -1}} c]"#,
+      r#"{{1, 1, 1}, {1, 1, 2}, {3, 2, 1}}"#,
+    );
+    assert_case(
+      r#"MatrixExp[{{4, -8, 1}, {5, -9, 1}, {4, -6, -1}} c][[1, 3]]"#,
+      r#"(-1 + E^c)/E^(3*c)"#,
+    );
+  }
+  #[test]
   fn matrix_exp_repeated_eigenvalue() {
     // Jordan form f(M) = f'(λ)·M + (f(λ) − λ·f'(λ))·I; previously stayed
     // unevaluated for defective matrices
