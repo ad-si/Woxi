@@ -1993,7 +1993,9 @@ fn try_factor_integer_poly(coeffs: &[i128]) -> Vec<Vec<i128>> {
           let root_num = sign * p;
           let root_den = q;
           // Check if root_num/root_den is a root
-          if eval_poly_rational(&remaining, root_num, root_den) == 0 {
+          if eval_poly_rational(&remaining, root_num, root_den)
+            == num_bigint::BigInt::from(0)
+          {
             // Divide by (root_den * x - root_num)
             let divisor = vec![-root_num, root_den];
             if let Some(quotient) = poly_exact_divide(&remaining, &divisor) {
@@ -2088,16 +2090,23 @@ fn eval_poly_f64(coeffs: &[i128], x: f64) -> f64 {
 }
 
 /// Evaluate polynomial with rational root: p(num/den) * den^degree
-fn eval_poly_rational(coeffs: &[i128], num: i128, den: i128) -> i128 {
+/// (In big integers: the powers outgrow i128 for high degrees.)
+fn eval_poly_rational(
+  coeffs: &[i128],
+  num: i128,
+  den: i128,
+) -> num_bigint::BigInt {
+  use num_bigint::BigInt;
   let n = coeffs.len() - 1;
-  let mut result = 0i128;
-  let mut num_pow = 1i128;
-  let mut den_pow = den.pow(n as u32);
+  let (num, den) = (BigInt::from(num), BigInt::from(den));
+  let mut result = BigInt::from(0);
+  let mut num_pow = BigInt::from(1);
+  let mut den_pow = num_traits::pow(den.clone(), n);
   for &c in coeffs {
-    result += c * num_pow * den_pow;
-    num_pow *= num;
-    if den_pow != 0 {
-      den_pow /= den;
+    result += BigInt::from(c) * &num_pow * &den_pow;
+    num_pow *= &num;
+    if den_pow != BigInt::from(0) {
+      den_pow /= &den;
     }
   }
   result
@@ -2939,5 +2948,25 @@ fn quadratic_class_number(d: i128) -> i128 {
     cycles
   } else {
     cycles / 2
+  }
+}
+
+#[cfg(test)]
+mod eval_poly_rational_tests {
+  use super::*;
+
+  // A high-degree candidate root no longer overflows i128.
+  #[test]
+  fn high_degree_does_not_overflow() {
+    let coeffs = vec![1i128; 61];
+    assert_ne!(
+      eval_poly_rational(&coeffs, 7, 3),
+      num_bigint::BigInt::from(0)
+    );
+    // x - 1/2 at 1/2 is a root.
+    assert_eq!(
+      eval_poly_rational(&[-1, 2], 1, 2),
+      num_bigint::BigInt::from(0)
+    );
   }
 }

@@ -13879,6 +13879,21 @@ mod expand_fraction_power {
   }
 }
 
+mod factor_terms_big_content {
+  use super::*;
+
+  // Dividing out a content whose product with a coefficient passes i128
+  // goes through big integers instead of overflowing.
+  #[test]
+  fn content_beyond_i128() {
+    assert_eq!(
+      interpret("FactorTerms[10^30/7^20 x + 10^28/11^18 y]").unwrap(),
+      "(10000000000000000000000000000*(555991731349223148100*x + \
+       79792266297612001*y))/443638402870875640328493255015603481"
+    );
+  }
+}
+
 mod root {
   use super::*;
 
