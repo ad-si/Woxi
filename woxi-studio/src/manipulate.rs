@@ -2157,6 +2157,27 @@ mod tests {
     assert_eq!(state.error, None);
   }
 
+  /// A body that is `Text@Style[TraditionalForm[Column[…]]]` of held
+  /// `Integrate` calls draws the typeset stack, not the `Column(…)` call
+  /// as text.
+  #[test]
+  fn traditional_form_column_body_draws_a_picture() {
+    let code = r#"Manipulate[
+      Text@Style[TraditionalForm[Column[{
+        HoldForm[Integrate[Sin[x]^n, x]],
+        Row[{" = ", HoldForm[Integrate[Cos[x]^n, x]]}]}, ItemSize -> 28]], 18],
+      {{n, 3}, 1, 9, 2}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "the body must draw a picture, got text {:?}",
+      state.text_output
+    );
+  }
+
   /// A choice list `Dynamic[Range[top]]` that follows a free variable the
   /// body itself assigns (not a control): switching the mode makes the body
   /// assign a different `top`, and the offered choices must follow it.

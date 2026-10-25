@@ -4425,6 +4425,9 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // Graphics[…]}]] renders the column with its embedded graphic). CLI
   // mode keeps the symbolic Pane[…] echo to match wolframscript.
   let expr = unwrap_display_pass_through(expr);
+  // `TraditionalForm[Column[…]]` is a layout whose items are each typeset
+  // in traditional notation, not one expression to print.
+  let expr = push_traditional_form_into_layout(expr);
   // `Tooltip[expr, tip]` only adds a hover label; the notebook shows `expr`.
   let expr = unwrap_tooltips(expr);
   // Prose built from a `Row` of strings re-flows to the box width rather
@@ -4486,6 +4489,32 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
       clipped_result
     }
     _ => result,
+  }
+}
+
+/// Rewrite `TraditionalForm[Row[…]]` / `TraditionalForm[Column[…]]` (looking
+/// through `Style`/`Text`) as the layout of `TraditionalForm`-wrapped items,
+/// which the layout renderers below draw item by item.
+fn push_traditional_form_into_layout(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && functions::graphics::is_traditional_layout(&args[0]) =>
+    {
+      functions::graphics::traditionalize_layout_items(&args[0])
+    }
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Style" | "Text") && !args.is_empty() =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = push_traditional_form_into_layout(args[0].clone());
+      syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    _ => expr,
   }
 }
 

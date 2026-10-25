@@ -6857,6 +6857,17 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         expr_text_svg(expr)
       }
     }
+    // TraditionalForm[Column[…]] / TraditionalForm[Row[…]] (possibly under
+    // Style/Text) — the form applies to each item of the layout.
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && crate::functions::graphics::is_traditional_layout(&args[0]) =>
+    {
+      expr_to_svg(&crate::functions::graphics::traditionalize_layout_items(
+        &args[0],
+      ))
+    }
     // TraditionalForm[list] — render the list as a parenthesized matrix.
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm"

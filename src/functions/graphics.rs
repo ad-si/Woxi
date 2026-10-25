@@ -4272,9 +4272,7 @@ fn graphics_text_content(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
         && args.len() == 1
-        && matches!(&args[0], Expr::FunctionCall { name: inner, args: inner_args }
-          if matches!(inner.as_str(), "Row" | "Column")
-            && matches!(inner_args.first(), Some(Expr::List(_)))) =>
+        && is_traditional_layout(&args[0]) =>
     {
       graphics_text_content(&traditionalize_layout_items(&args[0]))
     }
@@ -13814,6 +13812,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // InputForm: `Sum[…, {n, 0, ∞}]` becomes a ∑ with limits and
         // `LegendreP[n, x]` becomes `Pₙ(x)`.
         "TraditionalForm"
+          if args.len() == 1 && is_traditional_layout(&args[0]) =>
+        {
+          expr_to_svg_markup(&traditionalize_layout_items(&args[0]))
+        }
+        "TraditionalForm"
           if args.len() == 1 && !matches!(args[0], Expr::String(_)) =>
         {
           boxes_to_svg(&crate::strip_number_precision_markers(
@@ -22621,7 +22624,26 @@ fn number_form_layout_items(head: &str, spec: &[Expr], expr: &Expr) -> Expr {
 /// down through `Row`/`Column`/`Style` onto the leaf expressions. Strings
 /// and `Null` stay as they are; anything else that is not a layout or a
 /// picture is wrapped in `TraditionalForm`.
-fn traditionalize_layout_items(expr: &Expr) -> Expr {
+/// Whether `expr` is a `Row`/`Column` (possibly under `Style`/`Text`
+/// wrappers) whose items `traditionalize_layout_items` can typeset one by
+/// one, instead of the whole layout being boxed as a single expression.
+pub(crate) fn is_traditional_layout(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Row" | "Column") =>
+    {
+      matches!(args.first(), Some(Expr::List(_)))
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Style" | "Text") && !args.is_empty() =>
+    {
+      is_traditional_layout(&args[0])
+    }
+    _ => false,
+  }
+}
+
+pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
       if matches!(name.as_str(), "Row" | "Column")
@@ -22640,7 +22662,7 @@ fn traditionalize_layout_items(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args }
       if matches!(
         name.as_str(),
-        "Style" | "Item" | "Pane" | "Invisible" | "Framed"
+        "Style" | "Item" | "Pane" | "Invisible" | "Framed" | "Text"
       ) && !args.is_empty() =>
     {
       let mut new_args = args.clone();
