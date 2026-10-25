@@ -21221,3 +21221,17 @@ mod solve_exponentials {
     assert_eq!(r.result, "{{x -> ProductLog[3*Log[2]]/Log[2]}}");
   }
 }
+
+// Reduce reads a chained equality as the conjunction it stands for, as
+// Solve does; it stayed unevaluated (FairEquitableCompensationArrangements).
+mod reduce_chained_equality {
+  use super::*;
+
+  #[test]
+  fn chain_of_three() {
+    assert_eq!(
+      interpret("Reduce[{3 - b - c == 6 b/5 == 2 c}]").unwrap(),
+      "b == 15/14 && c == 9/14"
+    );
+  }
+}

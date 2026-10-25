@@ -3152,9 +3152,9 @@ fn square_radical_equations(eqns: &Expr) -> Expr {
 }
 
 /// Rewrites a chained equality `a == b == c` as the conjunction
-/// `a == b && b == c` it stands for, in the equation argument of `Solve` —
-/// at the top level, inside lists and inside `And`.
-fn expand_chained_equalities(eqns: &Expr) -> Expr {
+/// `a == b && b == c` it stands for, in the equation argument of `Solve`
+/// and `Reduce` — at the top level, inside lists and inside `And`.
+pub(crate) fn expand_chained_equalities(eqns: &Expr) -> Expr {
   match eqns {
     Expr::Comparison {
       operands,

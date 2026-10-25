@@ -22,6 +22,17 @@ pub fn or2(a: Expr, b: Expr) -> Expr {
 ///
 /// Reduces equations and inequalities to a canonical disjunctive form.
 pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // `a == b == c` is `a == b && b == c`.
+  if let Some(first) = args.first() {
+    let expanded = super::solve::expand_chained_equalities(first);
+    if crate::syntax::expr_to_string(&expanded)
+      != crate::syntax::expr_to_string(first)
+    {
+      let mut rewritten = args.to_vec();
+      rewritten[0] = expanded;
+      return reduce_ast(&rewritten);
+    }
+  }
   // Reduce[expr, dom]: a domain in the variable slot reduces over every
   // variable of `expr`, listed in canonical order.
   if args.len() == 2
