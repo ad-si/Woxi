@@ -2409,6 +2409,14 @@ fn collect_primitives(
         "Ellipsoid" if args.len() == 2 || args.len() == 3 => {
           parse_ellipsoid(args, style, prims);
         }
+        // `Rectangle[p1, p2, g]` stretches the picture `g` over the
+        // rectangle instead of filling it, i.e. `Inset[g, center, Center,
+        // {w, h}]`.
+        "Rectangle" if rectangle_picture(args).is_some() => {
+          if let Some(inset) = rectangle_picture(args) {
+            collect_primitives(&inset, style, prims, errors);
+          }
+        }
         "Rectangle" => {
           parse_rectangle(args, style, prims);
         }
@@ -3521,6 +3529,37 @@ fn emit_sphere(
       style: style.clone(),
     }
   });
+}
+
+/// The `Inset` equivalent of `Rectangle[p1, p2, g]` when `g` is a picture.
+fn rectangle_picture(args: &[Expr]) -> Option<Expr> {
+  let [p1, p2, picture] = args else {
+    return None;
+  };
+  if !matches!(
+    peel_style_wrapper(picture),
+    Expr::Graphics { .. } | Expr::Image { .. }
+  ) && !matches!(
+    peel_style_wrapper(picture),
+    Expr::FunctionCall { name, .. } if name == "Graphics"
+  ) {
+    return None;
+  }
+  let (x0, y0) = expr_to_point(p1)?;
+  let (x1, y1) = expr_to_point(p2)?;
+  let num = |v: f64| Expr::Real(v);
+  Some(Expr::FunctionCall {
+    name: "Inset".to_string(),
+    args: vec![
+      picture.clone(),
+      Expr::List(
+        vec![num(f64::midpoint(x0, x1)), num(f64::midpoint(y0, y1))].into(),
+      ),
+      Expr::Identifier("Center".to_string()),
+      Expr::List(vec![num((x1 - x0).abs()), num((y1 - y0).abs())].into()),
+    ]
+    .into(),
+  })
 }
 
 fn parse_rectangle(

@@ -40981,6 +40981,19 @@ mod box_width_with_embedded_style {
     .unwrap();
     assert!(widest_cell_width(&svg) < 400, "cell too wide: {svg}");
   }
+
+  #[test]
+  fn rectangle_with_picture_stretches_it_over_the_rectangle() {
+    // `Rectangle[p1, p2, g]` draws `g` inside the rectangle instead of
+    // filling the rectangle itself (no black `<rect>` behind the picture).
+    let svg = interpret(
+      r#"ExportString[Graphics[Rectangle[{0, 0}, {2, 1}, Graphics[{Red, Disk[]}]]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("<ellipse"), "picture missing: {svg}");
+    assert!(svg.contains("rgb(255,0,0)"), "picture colour lost: {svg}");
+    assert!(!svg.contains("<rect x=\"13"), "rectangle was filled: {svg}");
+  }
 }
 
 mod text_wider_than_canvas {
