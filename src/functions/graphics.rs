@@ -4256,6 +4256,14 @@ fn graphics_text_content(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
       graphics_text_content(&args[0])
     }
+    // A `Framed`/`Highlighted` item inside a label sets its content; like
+    // `expr_to_svg_markup_lines`, a running line of text draws no box.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Framed" | "Highlighted")
+        && !args.is_empty() =>
+    {
+      graphics_text_content(&args[0])
+    }
     // A `Tooltip` shows its content; the hint appears only on hover.
     Expr::FunctionCall { name, args }
       if (is_style_wrapper(name) || name == "Tooltip") && !args.is_empty() =>
