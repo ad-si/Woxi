@@ -28908,10 +28908,16 @@ fn named_control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   // like a control's variable head (a plain symbol, or a list starting
   // with one): in the single-spec shape it is instead a bound, a bare
   // type marker, or an option rule, never another variable head.
+  // A built-in symbol (`False`, `Automatic`) is a value, never a control's
+  // variable: `"Button 1" -> {b1, {False, True}}` is one spec.
+  fn is_variable(e: &Expr) -> bool {
+    matches!(e, Expr::Identifier(name)
+      if !crate::evaluator::functions::is_builtin_symbol(name))
+  }
   fn is_control_var_head(e: &Expr) -> bool {
     match e {
-      Expr::Identifier(_) => true,
-      Expr::List(items) => matches!(items.first(), Some(Expr::Identifier(_))),
+      Expr::Identifier(_) => is_variable(e),
+      Expr::List(items) => items.first().is_some_and(is_variable),
       _ => false,
     }
   }
@@ -34295,10 +34301,18 @@ pub fn manipulate_block_code(
   if bindings.is_empty() {
     return body_code.to_string();
   }
-  // A frozen graphic has no source form; it stays a global.
+  // A frozen graphic has no source form; it stays a global. A variable
+  // that several controls share is bound once (its first control), and a
+  // built-in symbol (`False` from `"Button 1" -> {b1, {False, True}}`) is
+  // never a variable to bind.
+  let mut seen = std::collections::HashSet::new();
   let binding_parts: Vec<String> = bindings
     .iter()
     .filter(|(_, value)| !crate::is_frozen_graphic(value))
+    .filter(|(name, _)| {
+      !crate::evaluator::functions::is_builtin_symbol(name)
+        && seen.insert(name.clone())
+    })
     .map(|(name, value)| format!("{name} = {value}"))
     .collect();
   if binding_parts.is_empty() {
@@ -37717,6 +37731,30 @@ mod manipulate_wrapper_tests {
 #[cfg(test)]
 mod manipulate_named_control_group_tests {
   use super::*;
+
+  /// `"Button 1" -> {b1, {False, True}}` (a game-controller button mapping)
+  /// is one control spec: `False` is a value, not a second control's
+  /// variable (IdealizedController bound `False = True`).
+  #[test]
+  fn labelled_spec_with_builtin_values_is_one_control() {
+    let s = spec(r#"Manipulate[b1, "Button 1" -> {b1, {False, True}}]"#);
+    assert_eq!(names(&s), vec!["b1"]);
+  }
+
+  /// A variable several controls share is bound once, and a built-in
+  /// symbol is never bound: `Block` rejects duplicate local variables.
+  #[test]
+  fn block_binds_each_variable_once() {
+    let bindings = vec![
+      ("scheme".to_string(), "12".to_string()),
+      ("scheme".to_string(), "\"Crayola\"".to_string()),
+      ("False".to_string(), "True".to_string()),
+    ];
+    assert_eq!(
+      manipulate_block_code("scheme", &bindings),
+      "Block[{scheme = 12}, scheme]"
+    );
+  }
 
   fn spec(code: &str) -> ManipulateSpec {
     let expr = crate::parse_to_expr(code).expect("parse");
