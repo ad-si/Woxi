@@ -9977,6 +9977,40 @@ mod plot3d {
       assert!(!svg.contains("</tspan>"), "{svg}");
     }
 
+    /// An `AxesLabel` written as a stacked fraction (`FractionBox`) is drawn
+    /// as numerator over denominator, not flattened to a wide `a/b` line
+    /// that squeezes the plotting area; a `PlotLabel` sits above the
+    /// y-axis label instead of on top of it.
+    #[test]
+    fn graphics_axes_label_stacks_fraction_boxes() {
+      let svg = export_svg(
+        r#"Graphics[{Line[{{0, 0}, {1, 1}}]}, Axes -> True,
+          AxesLabel -> {"\!\(\*FractionBox[\(moles\), \(water\)]\)",
+            "\!\(\*FractionBox[\(moles\), \(air\)]\)"},
+          PlotLabel -> "Title", ImageSize -> 300]"#,
+      );
+      assert!(!svg.contains("moles/water"), "flattened: {svg}");
+      assert!(svg.contains(">water<") && svg.contains(">moles<"), "{svg}");
+      let title_y: f64 = svg
+        .lines()
+        .find(|l| l.contains(">Title<"))
+        .and_then(|l| l.split("y=\"").nth(1))
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      // The y-axis label picture is placed below the title strip.
+      let margin_top: f64 = svg
+        .lines()
+        .find(|l| l.contains("<g transform=\"translate("))
+        .and_then(|l| l.split("translate(").nth(1))
+        .and_then(|v| v.split(')').next())
+        .and_then(|v| v.split(',').nth(1))
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      assert!(margin_top > 26.0 + 20.0, "top margin {margin_top}");
+      assert!(title_y < 26.0, "title at {title_y}");
+    }
+
     /// A multi-character `AxesLabel` on a plain `Graphics[]` (not a `Plot`,
     /// which sizes its own margins separately) used to reserve a fixed,
     /// too-small gutter for the label text, so the outer word ran past the

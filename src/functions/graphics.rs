@@ -8234,16 +8234,32 @@ fn render_axes(
   // top of the vertical axis.
   if let Some((x_label, y_label)) = axes_label {
     if axes.0 && !x_label.is_empty() {
-      svg.push_str(&format!(
-        "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"start\" dominant-baseline=\"middle\">{x_label}</text>\n",
-        svg_w + 8.0,
-        axis_y_px,
-      ));
+      if let Some((_, h)) = axes_label_picture_size(x_label) {
+        svg.push_str(&format!(
+          "<g transform=\"translate({:.2},{:.2})\">{x_label}</g>\n",
+          svg_w + 8.0,
+          axis_y_px - h / 2.0,
+        ));
+      } else {
+        svg.push_str(&format!(
+          "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"start\" dominant-baseline=\"middle\">{x_label}</text>\n",
+          svg_w + 8.0,
+          axis_y_px,
+        ));
+      }
     }
     if axes.1 && !y_label.is_empty() {
-      svg.push_str(&format!(
-        "<text x=\"{axis_x_px:.2}\" y=\"-8.00\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
-      ));
+      if let Some((w, h)) = axes_label_picture_size(y_label) {
+        svg.push_str(&format!(
+          "<g transform=\"translate({:.2},{:.2})\">{y_label}</g>\n",
+          axis_x_px - w / 2.0,
+          -8.0 - h,
+        ));
+      } else {
+        svg.push_str(&format!(
+          "<text x=\"{axis_x_px:.2}\" y=\"-8.00\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
+        ));
+      }
     }
   }
 }
@@ -10582,13 +10598,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::List(items) if items.len() == 2 => {
             let label = |e: &Expr| match e {
               Expr::Identifier(s) if s == "None" => String::new(),
-              other => expr_to_svg_markup(other),
+              other => axes_label_markup(other),
             };
             axes_label = Some((label(&items[0]), label(&items[1])));
           }
           Expr::Identifier(s) if s == "None" => axes_label = None,
           other => {
-            axes_label = Some((expr_to_svg_markup(other), String::new()));
+            axes_label = Some((axes_label_markup(other), String::new()));
           }
         },
         // `FrameLabel -> {bottom, left}` / `{{left, right}, {bottom, top}}`
@@ -10895,6 +10911,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // with, so a longer label reserves more room instead of overflowing a
   // fixed gutter and getting clipped by the canvas edge.
   fn axis_label_width(markup: &str) -> f64 {
+    if let Some((w, _)) = axes_label_picture_size(markup) {
+      return w;
+    }
     let mut visible_chars = 0usize;
     let mut in_tag = false;
     for c in markup.chars() {
@@ -10917,6 +10936,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let y_axis_label_width = axes_label
     .as_ref()
     .map_or(0.0, |(_, y)| axis_label_width(y));
+  let y_axis_label_height = axes_label
+    .as_ref()
+    .and_then(|(_, y)| axes_label_picture_size(y))
+    .map_or(0.0, |(_, h)| h + 8.0);
   let margin_left: f64 = if frame_gutter_left || (axes.1 && !y_axis_interior) {
     50.0
   } else if frame {
@@ -10966,8 +10989,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let margin_top: f64 = if frame { 10.0 } else { 0.0 }
     + label_strip
-    + if has_y_axis_label && label_strip == 0.0 {
-      20.0
+    + if has_y_axis_label {
+      y_axis_label_height.max(20.0)
     } else {
       0.0
     }
@@ -22889,6 +22912,28 @@ fn form_box_svg(expr: &Expr) -> Option<String> {
     return None;
   }
   Some(layout_to_svg(&layout, theme().text_primary))
+}
+
+/// The markup an `AxesLabel` entry draws as: a label whose inline box
+/// notation holds a fraction is a stacked-fraction picture (a nested `<svg>`),
+/// anything else the usual text markup.
+pub(crate) fn axes_label_markup(expr: &Expr) -> String {
+  inline_fraction_string_svg(expr).unwrap_or_else(|| expr_to_svg_markup(expr))
+}
+
+/// Width and height of an axes label that [`axes_label_markup`] typeset as a
+/// picture; `None` for a text label.
+pub(crate) fn axes_label_picture_size(markup: &str) -> Option<(f64, f64)> {
+  if !markup.starts_with("<svg ") {
+    return None;
+  }
+  let attr = |name: &str| -> Option<f64> {
+    let key = format!(" {name}=\"");
+    let start = markup.find(&key)? + key.len();
+    let len = markup[start..].find('"')?;
+    markup[start..start + len].parse().ok()
+  };
+  Some((attr("width")?, attr("height")?))
 }
 
 /// A (possibly `Style`d) string whose inline box notation holds a fraction,
