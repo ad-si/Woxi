@@ -14252,6 +14252,15 @@ mod array_reshape {
 mod sparse_array_list_ops {
   use super::*;
 
+  // `{} -> v` names no positions (IntegerTorusMapsAppliedToLetterforms).
+  #[test]
+  fn empty_position_list() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{} -> 1, {2, 3}]]").unwrap(),
+      "{{0, 0, 0}, {0, 0, 0}}"
+    );
+  }
+
   // A single dimension n for rank-r positions means {n, n, …}.
   #[test]
   fn scalar_dimension_for_matrix_positions() {
