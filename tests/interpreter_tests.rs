@@ -4499,6 +4499,21 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_axes_label_builtin_head_application_is_drawn() {
+    // An `AxesLabel` entry that applies a built-in function (`Re[Z]`,
+    // `-Im[Z]`) vanished: `applied_label` only kept a built-in head when
+    // one of its arguments was a script call.
+    clear_state();
+    let svg = interpret(
+      "ExportString[ListPlot[{{1, 2}, {3, 4}}, \
+         AxesLabel -> {Re[Z], -Im[Z]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">Re[Z]</text>"), "missing x label: {svg}");
+    assert!(svg.contains(">-Im[Z]</text>"), "missing y label: {svg}");
+  }
+
+  #[test]
   fn test_frame_label_power_renders_as_unicode_superscript() {
     // A `FrameLabel`/`AxesLabel` entry built from `base^exp` (a Demonstration
     // typesets `e^(iΩ)` as `Style["e", Italic]^Row[{Style["i", Italic],

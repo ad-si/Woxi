@@ -1004,24 +1004,6 @@ fn arithmetic_label(e: &Expr) -> Option<String> {
 /// A label for a function application of an unknown head: `y[t]` → `y(t)`,
 /// `y'[t]` → `y′(t)`, `y''` → `y″`. `None` for anything else, including
 /// applications of built-in functions, whose own formatting rules apply.
-/// Whether `e` contains a `Subscript`/`Superscript` call, whose typeset form
-/// differs from the raw `expr_to_string` text.
-fn contains_script_call(e: &Expr) -> bool {
-  match e {
-    Expr::FunctionCall { name, args } => {
-      matches!(
-        name.as_str(),
-        "Subscript" | "Superscript" | "Subsuperscript"
-      ) || args.iter().any(contains_script_call)
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      contains_script_call(left) || contains_script_call(right)
-    }
-    Expr::List(items) => items.iter().any(contains_script_call),
-    _ => false,
-  }
-}
-
 fn applied_label(e: &Expr) -> Option<String> {
   use crate::functions::graphics::{as_derivative_of, derivative_prime_marks};
   // `Derivative[n][f]`, with or without an argument applied to it.
@@ -1058,12 +1040,11 @@ fn applied_label(e: &Expr) -> Option<String> {
     {
       (name.clone(), &args[..])
     }
-    // A built-in head stays in StandardForm bracket notation (`Sin[x]`), with
-    // its arguments set as labels so `Sin[Subscript[k, 1] x]` reads
-    // `Sin[k₁ x]`.
+    // A built-in head stays in StandardForm bracket notation (`Re[Z]`,
+    // `Sin[x]`), with its arguments set as labels so
+    // `Sin[Subscript[k, 1] x]` reads `Sin[k₁ x]`.
     Expr::FunctionCall { name, args }
       if !args.is_empty()
-        && args.iter().any(contains_script_call)
         && args.iter().all(|a| expr_to_label(a).is_some()) =>
     {
       let parts: Vec<String> = args.iter().filter_map(expr_to_label).collect();
