@@ -604,3 +604,24 @@ mod frameless_button_cells {
     )));
   }
 }
+
+mod dynamic_layout_probe {
+  use super::*;
+
+  // Whether a Dynamic layout holds a picture is probed by evaluating it;
+  // the probe must not report messages of its own
+  // (StockMarketReturnsByParty: a plot read data another Dynamic sets).
+  #[test]
+  fn probe_is_quiet() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      r#"g::w = "warn"; g[] := (Message[g::w]; Grid[{{1}}]); Labeled[Dynamic[Pane[g[]]], "t", Top]"#,
+    )
+    .unwrap();
+    assert!(
+      !r.warnings.iter().any(|w| w.contains("g::w")),
+      "{:?}",
+      r.warnings
+    );
+  }
+}

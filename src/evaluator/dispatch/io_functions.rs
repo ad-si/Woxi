@@ -5190,10 +5190,15 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     {
       // What it holds may only be a picture once evaluated — a layout whose
       // cells are variables the module assigned (`Dynamic[Grid[{{sq1, sq2}}]]`).
+      // The probe is quiet: messages belong to the real evaluation, which
+      // may run after other Dynamics have set what this one reads.
       lays_out_a_graphic(&args[0])
         || (matches!(&args[0], Expr::FunctionCall { .. })
-          && crate::evaluator::evaluate_expr_to_expr(&args[0])
-            .is_ok_and(|value| lays_out_a_graphic(&value)))
+          && crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call(
+            "Quiet",
+            vec![args[0].clone()],
+          ))
+          .is_ok_and(|value| lays_out_a_graphic(&value)))
     }
     // `picture -> picture` is typeset as the pictures around an arrow.
     Expr::Rule {
