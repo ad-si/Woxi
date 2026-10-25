@@ -688,6 +688,7 @@ pub fn dispatch_complex_and_special(
         Some(t) => vec![t.clone()],
         None => vec![id_expr("None")],
       };
+      crate::epoch::note_side_effect();
       crate::SOW_STACK.with(|stack| {
         let mut stack = stack.borrow_mut();
         if let Some(last) = stack.last_mut() {

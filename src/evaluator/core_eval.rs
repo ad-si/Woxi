@@ -185,7 +185,9 @@ pub(crate) fn stored_value_for_lookup(name: &str) -> Option<StoredValue> {
   ENV.with(|e| {
     // Some callers evaluate while still holding a shared borrow of ENV;
     // they get a plain copy, and the sharing happens on a later lookup.
-    let Ok(mut env) = e.try_borrow_mut() else {
+    // Sharing changes how the value is stored, not what it is, so the
+    // epoch stays put.
+    let Ok(mut env) = e.try_borrow_mut_unversioned() else {
       return e.borrow().get(name).cloned();
     };
     let value = env.get_mut(name)?;
@@ -992,6 +994,148 @@ fn evaluate_expr_to_expr_impl(expr: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 pub fn evaluate_expr_to_expr_inner(
+  expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::List(items) | Expr::FunctionCall { args: items, .. }
+      if items.is_shared() =>
+    {
+      evaluate_reusing_fixed_point(expr, items)
+    }
+    _ => evaluate_expr_to_expr_uncached(expr),
+  }
+}
+
+/// Evaluate an expression whose elements or arguments are a shared list
+/// (a large stored value, or one substituted out of a definition).
+///
+/// Wolfram re-evaluates a stored value on every read but skips the work
+/// when nothing it could depend on changed since it was last found to be
+/// fully evaluated. The same here: once evaluating `expr` returned `expr`
+/// itself, with no definition changing (see `crate::epoch`) and no message
+/// or output produced along the way, the shared list is marked with the
+/// current epoch, and until the epoch moves on, evaluating any clone of it
+/// returns it as is.
+fn evaluate_reusing_fixed_point(
+  expr: &Expr,
+  items: &crate::ExprList,
+) -> Result<Expr, InterpreterError> {
+  let epoch = crate::epoch::current_epoch();
+  if items.evaluated_at() == epoch {
+    return Ok(expr.clone());
+  }
+  let effects = crate::epoch::side_effect_count();
+  let result = evaluate_expr_to_expr_uncached(expr)?;
+  if crate::epoch::current_epoch() == epoch
+    && crate::epoch::side_effect_count() == effects
+    && identical_exprs(&result, expr)
+  {
+    items.mark_evaluated(epoch);
+    // The input, not the equal result, so the mark travels with it.
+    return Ok(expr.clone());
+  }
+  Ok(result)
+}
+
+/// Whether `a` and `b` are the same expression in every detail that could
+/// show in output or steer evaluation. Variants it does not know are never
+/// identical, which only costs a missed reuse.
+fn identical_exprs(a: &Expr, b: &Expr) -> bool {
+  fn same_lists(x: &crate::ExprList, y: &crate::ExprList) -> bool {
+    x.same_shared(y)
+      || x.len() == y.len()
+        && x.iter().zip(y.iter()).all(|(p, q)| identical_exprs(p, q))
+  }
+  match (a, b) {
+    (Expr::Integer(x), Expr::Integer(y)) => x == y,
+    (Expr::BigInteger(x), Expr::BigInteger(y)) => x == y,
+    (Expr::Real(x), Expr::Real(y)) => x.to_bits() == y.to_bits(),
+    (Expr::BigFloat(x, p), Expr::BigFloat(y, q)) => {
+      x == y && p.to_bits() == q.to_bits()
+    }
+    (Expr::String(x), Expr::String(y))
+    | (Expr::Identifier(x), Expr::Identifier(y))
+    | (Expr::Constant(x), Expr::Constant(y)) => x == y,
+    (Expr::List(x), Expr::List(y)) => same_lists(x, y),
+    (
+      Expr::FunctionCall { name: m, args: x },
+      Expr::FunctionCall { name: n, args: y },
+    ) => m == n && same_lists(x, y),
+    (
+      Expr::Rule {
+        pattern: p1,
+        replacement: r1,
+      },
+      Expr::Rule {
+        pattern: p2,
+        replacement: r2,
+      },
+    )
+    | (
+      Expr::RuleDelayed {
+        pattern: p1,
+        replacement: r1,
+      },
+      Expr::RuleDelayed {
+        pattern: p2,
+        replacement: r2,
+      },
+    ) => identical_exprs(p1, p2) && identical_exprs(r1, r2),
+    (
+      Expr::BinaryOp {
+        op: o1,
+        left: l1,
+        right: r1,
+      },
+      Expr::BinaryOp {
+        op: o2,
+        left: l2,
+        right: r2,
+      },
+    ) => o1 == o2 && identical_exprs(l1, l2) && identical_exprs(r1, r2),
+    (
+      Expr::UnaryOp {
+        op: o1,
+        operand: x1,
+      },
+      Expr::UnaryOp {
+        op: o2,
+        operand: x2,
+      },
+    ) => o1 == o2 && identical_exprs(x1, x2),
+    (
+      Expr::Comparison {
+        operands: x1,
+        operators: p1,
+      },
+      Expr::Comparison {
+        operands: x2,
+        operators: p2,
+      },
+    ) => {
+      p1 == p2
+        && x1.len() == x2.len()
+        && x1.iter().zip(x2.iter()).all(|(p, q)| identical_exprs(p, q))
+    }
+    (
+      Expr::CurriedCall { func: f1, args: a1 },
+      Expr::CurriedCall { func: f2, args: a2 },
+    ) => {
+      identical_exprs(f1, f2)
+        && a1.len() == a2.len()
+        && a1.iter().zip(a2.iter()).all(|(p, q)| identical_exprs(p, q))
+    }
+    (Expr::Association(x), Expr::Association(y)) => {
+      x.len() == y.len()
+        && x.iter().zip(y.iter()).all(|((k1, v1), (k2, v2))| {
+          identical_exprs(k1, k2) && identical_exprs(v1, v2)
+        })
+    }
+    _ => false,
+  }
+}
+
+fn evaluate_expr_to_expr_uncached(
   expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
   match expr {

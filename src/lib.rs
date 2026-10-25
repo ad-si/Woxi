@@ -5,6 +5,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use thiserror::Error;
 
+pub mod epoch;
 pub mod evaluator;
 pub mod expr_list;
 pub mod functions;
@@ -32,32 +33,32 @@ enum StoredValue {
   ExprVal(syntax::Expr), // keep as structured AST for fast Part access
 }
 thread_local! {
-    static ENV: RefCell<HashMap<String, StoredValue>> = RefCell::new(HashMap::new());
+    static ENV: crate::epoch::EpochCell<HashMap<String, StoredValue>> = crate::epoch::EpochCell::new(HashMap::new());
     //            name         Vec of (param_names, conditions, defaults, head_constraints, blank_types, body_AST) for multi-arity + condition + optional support
     //            blank_types: 1=Blank, 2=BlankSequence, 3=BlankNullSequence
-    static FUNC_DEFS: RefCell<HashMap<String, Vec<(Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, Vec<u8>, syntax::Expr)>>> = RefCell::new(HashMap::new());
+    static FUNC_DEFS: crate::epoch::EpochCell<HashMap<String, Vec<(Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, Vec<u8>, syntax::Expr)>>> = crate::epoch::EpochCell::new(HashMap::new());
     // Memoized literal-argument definitions (the `f[x_] := f[x] = …` idiom):
     // function name -> (joined argument key -> (arg Exprs, stored value)).
     // Kept separate from FUNC_DEFS so dispatch is O(1) per memoized value
     // instead of linearly scanning thousands of accumulated literal DownValues
     // (which made memoization O(n²)). The arg Exprs are retained so the
     // entries can be reconstructed as rules for DownValues introspection.
-    pub static MEMO_VALUES: RefCell<HashMap<String, HashMap<String, (Vec<syntax::Expr>, syntax::Expr)>>> = RefCell::new(HashMap::new());
+    pub static MEMO_VALUES: crate::epoch::EpochCell<HashMap<String, HashMap<String, (Vec<syntax::Expr>, syntax::Expr)>>> = crate::epoch::EpochCell::new(HashMap::new());
     // Function attributes (e.g., Listable, Flat, etc.)
-    static FUNC_ATTRS: RefCell<HashMap<String, evaluator::Attributes>> = RefCell::new(HashMap::new());
+    static FUNC_ATTRS: crate::epoch::EpochCell<HashMap<String, evaluator::Attributes>> = crate::epoch::EpochCell::new(HashMap::new());
     // Builtin attributes that have been explicitly removed (via Unprotect,
     // ClearAttributes, or ClearAll). Subtracted from `Attributes[sym]` so
     // that e.g. `Unprotect[Pi]; Attributes[Pi]` no longer contains
     // `Protected`. Re-adding via SetAttributes/Protect prunes the entry.
-    pub static FUNC_ATTRS_REMOVED: RefCell<HashMap<String, evaluator::Attributes>> = RefCell::new(HashMap::new());
+    pub static FUNC_ATTRS_REMOVED: crate::epoch::EpochCell<HashMap<String, evaluator::Attributes>> = crate::epoch::EpochCell::new(HashMap::new());
     // Function options (e.g., Options[f] = {a -> 1})
-    pub static FUNC_OPTIONS: RefCell<HashMap<String, Vec<syntax::Expr>>> = RefCell::new(HashMap::new());
+    pub static FUNC_OPTIONS: crate::epoch::EpochCell<HashMap<String, Vec<syntax::Expr>>> = crate::epoch::EpochCell::new(HashMap::new());
     // Track whether Options[f] was set with `:=` (SetDelayed) so Definition can
     // re-emit the matching operator. Symbols set with plain `=` are absent.
-    pub static FUNC_OPTIONS_DELAYED: RefCell<std::collections::HashSet<String>> = RefCell::new(std::collections::HashSet::new());
+    pub static FUNC_OPTIONS_DELAYED: crate::epoch::EpochCell<std::collections::HashSet<String>> = crate::epoch::EpochCell::new(std::collections::HashSet::new());
     // UpValues: tag symbol -> Vec of (outer_func_name, params, conditions, defaults, heads, body, original_lhs, original_body)
     // Stored by tag symbol; checked during evaluation when a function's arguments contain the tag as head
-    pub static UPVALUES: RefCell<HashMap<String, Vec<(String, Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, syntax::Expr, syntax::Expr, syntax::Expr)>>> = RefCell::new(HashMap::new());
+    pub static UPVALUES: crate::epoch::EpochCell<HashMap<String, Vec<(String, Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, syntax::Expr, syntax::Expr, syntax::Expr)>>> = crate::epoch::EpochCell::new(HashMap::new());
     // Track Part evaluation nesting depth for Part::partd warnings
     static PART_DEPTH: RefCell<usize> = const { RefCell::new(0) };
     // Track evaluation recursion depth for $RecursionLimit enforcement
@@ -68,26 +69,26 @@ thread_local! {
     // Reap/Sow stack: each Reap call pushes a Vec to collect (value, tag) pairs
     pub static SOW_STACK: RefCell<Vec<Vec<(syntax::Expr, syntax::Expr)>>> = const { RefCell::new(Vec::new()) };
     // Context stack for Begin/End: stores the context strings pushed by Begin[]
-    static CONTEXT_STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static CONTEXT_STACK: crate::epoch::EpochCell<Vec<String>> = const { crate::epoch::EpochCell::new(Vec::new()) };
     // Stack of saved $ContextPath values, pushed by BeginPackage[] and
     // popped by EndPackage[]. The top entry (when present) is the
     // currently-active path; an empty stack falls back to the System`/Global`
     // default.
-    static CONTEXT_PATH_STACK: RefCell<Vec<Vec<String>>> = const { RefCell::new(Vec::new()) };
+    static CONTEXT_PATH_STACK: crate::epoch::EpochCell<Vec<Vec<String>>> = const { crate::epoch::EpochCell::new(Vec::new()) };
     // `$ContextPath` while no `BeginPackage[]` is open. The stack is empty
     // then, so an assignment made at top level needs somewhere of its own to
     // live; `EndPackage[]` falls back to it once the stack drains.
-    static CONTEXT_PATH_BASE: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
+    static CONTEXT_PATH_BASE: crate::epoch::EpochCell<Option<Vec<String>>> = const { crate::epoch::EpochCell::new(None) };
     // Extra packages registered by `BeginPackage[]` (and the explicit second
     // argument). `$Packages` returns these prepended to the canonical
     // `{"System`", "Global`"}` baseline.
-    pub static PACKAGES_EXTRA: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    pub static PACKAGES_EXTRA: crate::epoch::EpochCell<Vec<String>> = const { crate::epoch::EpochCell::new(Vec::new()) };
     // Current option bindings for OptionValue during function evaluation
     // Stack of (function_name, Vec<(option_name, option_value)>)
-    pub static OPTION_VALUE_CONTEXT: RefCell<Vec<(String, Vec<(String, syntax::Expr)>)>> = const { RefCell::new(Vec::new()) };
+    pub static OPTION_VALUE_CONTEXT: crate::epoch::EpochCell<Vec<(String, Vec<(String, syntax::Expr)>)>> = const { crate::epoch::EpochCell::new(Vec::new()) };
     // Inline OptionsPattern defaults: func_name -> Vec of Option<Vec<Expr>> per overload
     // When OptionsPattern[{a -> a0, ...}] is used, stores the inline defaults for that overload
-    pub static FUNC_OPTS_INLINE: RefCell<HashMap<String, Vec<Option<Vec<syntax::Expr>>>>> = RefCell::new(HashMap::new());
+    pub static FUNC_OPTS_INLINE: crate::epoch::EpochCell<HashMap<String, Vec<Option<Vec<syntax::Expr>>>>> = crate::epoch::EpochCell::new(HashMap::new());
     // Evaluation stack: tracks the chain of function calls currently being evaluated.
     // Used to produce stack traces when evaluation errors/messages occur.
     pub static EVAL_STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -169,7 +170,7 @@ pub fn parse(
 
 // Global RNG state: None = use thread_rng(), Some = use seeded ChaCha8Rng
 thread_local! {
-    static SEEDED_RNG: RefCell<Option<ChaCha8Rng>> = const { RefCell::new(None) };
+    static SEEDED_RNG: crate::epoch::EpochCell<Option<ChaCha8Rng>> = const { crate::epoch::EpochCell::new(None) };
 }
 
 /// Seed the global RNG with a specific seed value (SeedRandom[n]).
@@ -372,8 +373,8 @@ thread_local! {
 // values in a session that numbers its input lines (the terminal REPL and
 // the Jupyter kernel).
 thread_local! {
-    static OUTPUT_HISTORY: RefCell<std::collections::HashMap<i128, syntax::Expr>> =
-      RefCell::new(std::collections::HashMap::new());
+    static OUTPUT_HISTORY: crate::epoch::EpochCell<std::collections::HashMap<i128, syntax::Expr>> =
+      crate::epoch::EpochCell::new(std::collections::HashMap::new());
 }
 
 /// Stash an evaluated expression so subsequent `%` / `Out[]` references
@@ -434,8 +435,8 @@ pub fn clear_last_output() {
 // hand us their input line by line (the terminal REPL, the Jupyter kernel)
 // record here; script mode keeps no input history at all.
 thread_local! {
-    static INPUT_HISTORY: RefCell<std::collections::HashMap<i128, String>> =
-      RefCell::new(std::collections::HashMap::new());
+    static INPUT_HISTORY: crate::epoch::EpochCell<std::collections::HashMap<i128, String>> =
+      crate::epoch::EpochCell::new(std::collections::HashMap::new());
     // Lines whose input is currently being re-evaluated, so a self-
     // referential `In[k]` cannot recurse forever.
     static INPUT_EXPANDING: RefCell<std::collections::HashSet<i128>> =
@@ -678,8 +679,8 @@ fn note_generated_message(msg: &str) {
 // "Head::tag" (e.g. "Power::indet"). When a message about to be emitted starts
 // with one of these tags, it is silently dropped instead of being printed.
 thread_local! {
-    static OFF_MESSAGES: RefCell<std::collections::HashSet<String>> =
-        RefCell::new(std::collections::HashSet::new());
+    static OFF_MESSAGES: crate::epoch::EpochCell<std::collections::HashSet<String>> =
+        crate::epoch::EpochCell::new(std::collections::HashSet::new());
 }
 
 /// Mark a message tag as off, so future `emit_message` calls whose text starts
@@ -772,6 +773,7 @@ fn clear_captured_stdout() {
 
 /// Appends to the captured stdout buffer
 fn capture_stdout(text: &str) {
+  epoch::note_side_effect();
   CAPTURED_STDOUT.with(|buffer| {
     buffer.borrow_mut().push_str(text);
     buffer.borrow_mut().push('\n');
@@ -780,6 +782,7 @@ fn capture_stdout(text: &str) {
 
 /// Appends to the captured stdout buffer without a trailing newline.
 pub fn capture_stdout_raw(text: &str) {
+  epoch::note_side_effect();
   CAPTURED_STDOUT.with(|buffer| {
     buffer.borrow_mut().push_str(text);
   });
@@ -1044,6 +1047,7 @@ pub fn emit_message(msg: &str) {
 /// `name` is the `Head::tag` the built message will carry; `build` must
 /// produce a message that starts with it.
 pub fn emit_message_with(name: &str, build: impl FnOnce() -> String) {
+  epoch::note_side_effect();
   if message_name_is_off(name) || message_stop_count(name) >= 3 {
     return;
   }
@@ -1105,6 +1109,9 @@ fn message_name(msg: &str) -> Option<String> {
 /// Returns whether the message was displayed and the General::stop line
 /// when one was announced, so `emit_message_to_stdout` can mirror both.
 fn emit_message_core(msg: &str) -> (bool, Option<String>) {
+  // Counted even when the message goes nowhere (`Off`, `Quiet`, past
+  // `General::stop`): it is generated each time the expression is evaluated.
+  epoch::note_side_effect();
   if message_is_off(msg) {
     return (false, None);
   }

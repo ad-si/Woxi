@@ -107,8 +107,8 @@ thread_local! {
   /// from the ones open right now — everything on one line resolves against
   /// the state at the start of the line, even the statements that a
   /// `BeginPackage` earlier on the same line has since changed.
-  static READ_CONTEXT: RefCell<Vec<(String, Vec<String>)>> =
-    const { RefCell::new(Vec::new()) };
+  static READ_CONTEXT: crate::epoch::EpochCell<Vec<(String, Vec<String>)>> =
+    const { crate::epoch::EpochCell::new(Vec::new()) };
 }
 
 /// The contexts to resolve against: the ones the current input unit is being
