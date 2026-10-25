@@ -1835,9 +1835,11 @@ On the symbolic side `DSolve` recognises three first-order two-variable PDE
 shapes; Laplace, which WL solves as `C[1][I x + y] + C[2][-I x + y]`, is not
 among them.
 
-`NDSolve`'s DAE support handles an index-1 constraint that solves explicitly
-for one unknown; quadratic, coupled or index ≥ 2 constraints, and constraints
-whose unknown is also differentiated, are not covered. The one exception is a
+`NDSolve`'s DAE support handles index-1 constraints: those that solve
+explicitly for an unknown are eliminated, and the remaining derivative-free
+equations are solved together by Newton iteration when they are as many as
+the never-differentiated unknowns they mention. Index ≥ 2 constraints, and
+constraints whose unknown is also differentiated, are not covered. The one exception is a
 system whose algebraic equations leave a single degree of freedom, closed by
 first-order derivative equations (a unit-speed condition): it is traced as an
 implicit curve by arclength continuation, and ends early where the curve
