@@ -4531,6 +4531,26 @@ mod linear_model_fit {
 mod nonlinear_model_fit {
   use super::*;
 
+  // `{form}` is the model without constraints.
+  #[test]
+  fn single_element_model_list() {
+    assert_eq!(
+      interpret(
+        "NonlinearModelFit[{{0, 1}, {1, 3}, {2, 5}, {3, 7.1}}, {a x + b}, \
+         {a, b}, x][\"BestFitParameters\"]"
+      )
+      .unwrap(),
+      "{a -> 2.03, b -> 0.9800000000000002}"
+    );
+    assert_eq!(
+      interpret(
+        "FindFit[{{0, 1}, {1, 3}, {2, 5}, {3, 7.1}}, {a x + b}, {a, b}, x]"
+      )
+      .unwrap(),
+      "{a -> 2.03, b -> 0.9800000000000002}"
+    );
+  }
+
   // For a model linear in its parameters the asymptotic statistics must
   // agree with those of LinearModelFit.
   #[test]

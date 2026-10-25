@@ -7286,6 +7286,8 @@ fn split_fit_model_spec(spec: &Expr) -> (Expr, Vec<Expr>) {
     {
       (items[0].clone(), items[1..].to_vec())
     }
+    // `{form}` is a model with no constraints.
+    Expr::List(items) if items.len() == 1 => (items[0].clone(), Vec::new()),
     other => (other.clone(), Vec::new()),
   }
 }
