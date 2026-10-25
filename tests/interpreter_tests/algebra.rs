@@ -21129,3 +21129,28 @@ mod solve_isolated_power {
     );
   }
 }
+
+// A requested variable that no equation mentions is dropped before solving.
+// svars is reported only when a solution leaves it free: an inconsistent
+// system has none, and NSolve said nothing either way but answered {}.
+mod solve_unused_variable {
+  use super::*;
+
+  #[test]
+  fn nsolve_ignores_an_absent_variable() {
+    assert_eq!(interpret("NSolve[x == 1, {x, y}]").unwrap(), "{{x -> 1.}}");
+    let r = interpret_with_stdout(
+      "NSolve[{-0.1 == 1.*^-6 u, 0 == 1.*^-6 - 1.*^-6 u}, {t, u}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  #[test]
+  fn inconsistent_system_reports_nothing() {
+    let r = interpret_with_stdout("Solve[{x == 1, x == 2}, {x, y}]").unwrap();
+    assert_eq!(r.result, "{}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+}

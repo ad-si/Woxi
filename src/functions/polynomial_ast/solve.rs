@@ -259,6 +259,7 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Fall back to symbolic solve + numerize
   let symbolic = solve_ast(args)?;
+
   // An elimination whose numeric roots verify against no equation (their
   // rounding leaves residuals the exact check rejects) finds nothing; the
   // numeric pair solver below polishes such roots instead.
@@ -3605,8 +3606,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Pre-pass: drop variables from the var list that don't appear in any
-  // equation. Wolfram emits Solve::svars and continues with the
-  // remaining variables. Without this, an extra var like `y` in
+  // equation, and continue with the remaining variables. Without this, an extra var like `y` in
   // `Solve[x^2 == 1 && z^2 == -1, {x, y, z}]` would block the solver.
   // We can't reuse calculus_ast::is_constant_wrt because it doesn't
   // recurse into Comparison nodes — the equations here are
@@ -3632,7 +3632,16 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let svars_args_owned: Vec<Expr>;
-  let args = if let (Expr::List(eqs), Expr::List(vars)) = (&args[0], &args[1]) {
+  let single_eq;
+  let eqs_view: Option<&[Expr]> = match &args[0] {
+    Expr::List(eqs) => Some(eqs.as_slice()),
+    eq @ Expr::Comparison { .. } => {
+      single_eq = [eq.clone()];
+      Some(&single_eq[..])
+    }
+    _ => None,
+  };
+  let args = if let (Some(eqs), Expr::List(vars)) = (eqs_view, &args[1]) {
     let used: Vec<usize> = vars
       .iter()
       .enumerate()
@@ -3650,9 +3659,9 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
       .collect();
     if used.len() < vars.len() {
-      crate::emit_message(
-        "Solve::svars: Equations may not give solutions for all \"solve\" variables.",
-      );
+      // The svars message is the outermost call's to report, once it knows
+      // a solution leaves a requested variable free (an inconsistent
+      // system has none to report).
       let kept: Vec<Expr> = used.into_iter().map(|i| vars[i].clone()).collect();
       let mut new_args = args.to_vec();
       new_args[1] = Expr::List(kept.into());
