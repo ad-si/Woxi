@@ -10758,6 +10758,48 @@ mod plot3d {
     }
 
     #[test]
+    fn plot_legends_above_wrap_when_wider_than_the_plot() {
+      let svg = export_svg(
+        r#"Plot[{x, 2 x, 3 x}, {x, 0, 1}, ImageSize -> {350, 200},
+          PlotLegends -> Placed[{"CI lower bound", "point estimation",
+            "CI upper bound"}, Above]]"#,
+      );
+      let width: f64 = svg
+        .split("viewBox=\"0 0 ")
+        .nth(1)
+        .and_then(|r| r.split(' ').next())
+        .and_then(|w| w.parse().ok())
+        .expect("viewBox width");
+      let label_ys: std::collections::BTreeSet<String> =
+        ["CI lower bound", "point estimation", "CI upper bound"]
+          .iter()
+          .map(|l| {
+            let at = svg.find(&format!(">{l}</text>")).expect(l);
+            let tag = &svg[svg[..at].rfind("<text").unwrap()..at];
+            let x: f64 = tag
+              .split("x=\"")
+              .nth(1)
+              .unwrap()
+              .split('"')
+              .next()
+              .unwrap()
+              .parse()
+              .unwrap();
+            assert!(x < width, "label `{l}` starts inside the picture: {svg}");
+            tag
+              .split("y=\"")
+              .nth(1)
+              .unwrap()
+              .split('"')
+              .next()
+              .unwrap()
+              .to_string()
+          })
+          .collect();
+      assert!(label_ys.len() > 1, "entries wrap onto several rows: {svg}");
+    }
+
+    #[test]
     fn plot_legends_typeset_expressions() {
       let svg = export_svg(
         "ListPlot[{{1, 2}, {2, 3}}, PlotLegends -> \
