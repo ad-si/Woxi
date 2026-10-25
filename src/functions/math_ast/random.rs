@@ -1331,7 +1331,7 @@ fn probability_distribution_table(dargs: &[Expr]) -> Option<SamplingTable> {
     if !hi.is_finite() {
       hi = scan[(last + 1).min(scan.len() - 1)];
     }
-    if !(hi > lo) {
+    if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) {
       return None;
     }
   }
