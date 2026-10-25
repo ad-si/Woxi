@@ -6514,8 +6514,8 @@ fn integrate_leg(
 /// of magnitude smaller for any smooth problem, so an ordinary integration
 /// never subdivides and keeps exactly the grid — and the values — the
 /// fixed-step integrator produced.
-const STEP_REFINE_RTOL: f64 = 1e-4;
-const STEP_REFINE_ATOL: f64 = 1e-8;
+const STEP_REFINE_RTOL: f64 = 1e-9;
+const STEP_REFINE_ATOL: f64 = 1e-11;
 
 /// How far one nominal step may be bisected. A tracer pulse 10^-6 wide in a
 /// domain of length 20 needs ~15 bisections of the 1/1000 nominal step to be

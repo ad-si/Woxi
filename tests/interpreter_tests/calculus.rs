@@ -8683,6 +8683,24 @@ Round[N[closed] - N[numeric], 10^-6]"
 mod ndsolve {
   use super::*;
 
+  // A highly eccentric Kepler orbit passes close to the centre once per
+  // period; the integration must stay accurate there, so that the orbit
+  // closes again after exactly one period.
+  #[test]
+  fn eccentric_orbit_closes_after_one_period() {
+    assert_eq!(
+      interpret(
+        "T0 = 2 Pi (1/(2 (1 - 0.09/2)))^(3/2); \
+         s = NDSolve[{x''[t] == -x[t]/(x[t]^2 + y[t]^2)^(3/2), \
+         y''[t] == -y[t]/(x[t]^2 + y[t]^2)^(3/2), \
+         x[0] == 1, y[0] == 0, x'[0] == 0, y'[0] == 0.3}, {x, y}, {t, 0, T0}]; \
+         Round[{x[T0], y[T0]} /. First[s], 0.0001]"
+      )
+      .unwrap(),
+      "{1., 0.}"
+    );
+  }
+
   // Derivatives can be asked for as unknowns; each gets its own rule.
   #[test]
   fn derivative_unknowns() {
