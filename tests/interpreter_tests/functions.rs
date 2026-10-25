@@ -5682,6 +5682,19 @@ mod boolean_terms_with_a_variable_count {
 mod boolean_table_evaluates_its_arguments {
   use super::*;
 
+  // Any expression can be a variable, strings included.
+  #[test]
+  fn string_variables() {
+    assert_eq!(
+      interpret("BooleanTable[\"A\" && \"B\", {\"A\", \"B\"}]").unwrap(),
+      "{True, False, False, False}"
+    );
+    assert_eq!(
+      interpret("BooleanTable[{{\"A\", \"B\"}}, {\"A\", \"B\"}]").unwrap(),
+      "{{{True, True}}, {{True, False}}, {{False, True}}, {{False, False}}}"
+    );
+  }
+
   // A variable group given as an expression is the list it evaluates to.
   #[test]
   fn computed_variable_groups() {

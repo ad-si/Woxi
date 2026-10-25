@@ -1340,29 +1340,20 @@ fn boolean_table_levels(
   Ok(Expr::List(results.into()))
 }
 
-/// Read one variable-group argument: a list of variables, or a bare symbol
-/// standing for a one-element group. A variable may be indexed (`x[1]`).
+/// Read one variable-group argument: a list of variables, or a bare
+/// variable standing for a one-element group.
 fn boolean_table_group(spec: &Expr) -> Result<Vec<Expr>, InterpreterError> {
   // BooleanTable holds nothing, so a group given as an expression
   // (`Take[vars, 2]`, a symbol bound to a list, `Array[x, 3]`, …) is the list
   // it evaluates to. A symbol with no value evaluates to itself and stays a
   // bare group.
-  let spec = &evaluate_expr_to_expr(spec)?;
-  match spec {
-    Expr::List(items) => items
-      .iter()
-      .map(|item| match item {
-        Expr::Identifier(_) | Expr::FunctionCall { .. } => Ok(item.clone()),
-        _ => Err(InterpreterError::EvaluationError(
-          "BooleanTable: variables must be symbols".into(),
-        )),
-      })
-      .collect(),
-    Expr::Identifier(_) => Ok(vec![spec.clone()]),
-    _ => Err(InterpreterError::EvaluationError(
-      "BooleanTable: variable arguments must be lists of symbols".into(),
-    )),
-  }
+  // Any expression can stand for a truth value — a symbol, `x[1]`, even a
+  // string (`{"A", "B"}`).
+  let spec = evaluate_expr_to_expr(spec)?;
+  Ok(match &spec {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  })
 }
 
 /// BooleanTable[bf] - truth table over the expression's own variables
