@@ -3316,11 +3316,74 @@ pub fn find_hamiltonian_cycle_ast(
   let mut path: Vec<(usize, usize, bool)> = Vec::new(); // (from, to, directed)
   visited[0] = true;
 
+  // For all-undirected graphs, branches that provably cannot be completed are
+  // cut before descending (see `hamiltonian_cycle_completable`). Pruning only
+  // removes failing subtrees, so the first cycle found is unchanged.
+  let neighbors: Option<Vec<Vec<usize>>> =
+    if adj.iter().all(|a| a.iter().all(|&(_, d)| !d)) {
+      Some(
+        adj
+          .iter()
+          .map(|a| {
+            let mut v: Vec<usize> = a.iter().map(|&(d, _)| d).collect();
+            v.dedup();
+            v
+          })
+          .collect(),
+      )
+    } else {
+      None
+    };
+
+  /// Whether the unvisited vertices can still be threaded into a Hamiltonian
+  /// cycle that goes on from `cur` and closes at vertex 0: every unvisited
+  /// vertex needs two usable neighbours, and the unvisited vertices must be
+  /// connected to each other, to `cur` and to vertex 0.
+  fn hamiltonian_cycle_completable(
+    cur: usize,
+    nb: &[Vec<usize>],
+    visited: &[bool],
+  ) -> bool {
+    let mut remaining = 0usize;
+    for (v, ns) in nb.iter().enumerate() {
+      if visited[v] {
+        continue;
+      }
+      remaining += 1;
+      let usable = ns.iter().filter(|&&u| !visited[u] || u == cur || u == 0);
+      if usable.take(2).count() < 2 {
+        return false;
+      }
+    }
+    if remaining == 0 {
+      return true;
+    }
+    let mut seen = vec![false; nb.len()];
+    let mut stack = vec![cur];
+    seen[cur] = true;
+    let mut reached = 0usize;
+    let mut closes = false;
+    while let Some(v) = stack.pop() {
+      for &u in &nb[v] {
+        if u == 0 && v != cur {
+          closes = true;
+        }
+        if !visited[u] && !seen[u] {
+          seen[u] = true;
+          reached += 1;
+          stack.push(u);
+        }
+      }
+    }
+    reached == remaining && closes
+  }
+
   fn dfs(
     cur: usize,
     depth: usize,
     n: usize,
     adj: &[Vec<(usize, bool)>],
+    neighbors: Option<&[Vec<usize>]>,
     visited: &mut [bool],
     path: &mut Vec<(usize, usize, bool)>,
   ) -> bool {
@@ -3338,17 +3401,21 @@ pub fn find_hamiltonian_cycle_ast(
         continue;
       }
       visited[dst] = true;
-      path.push((cur, dst, directed));
-      if dfs(dst, depth + 1, n, adj, visited, path) {
-        return true;
+      if neighbors
+        .is_none_or(|nb| hamiltonian_cycle_completable(dst, nb, visited))
+      {
+        path.push((cur, dst, directed));
+        if dfs(dst, depth + 1, n, adj, neighbors, visited, path) {
+          return true;
+        }
+        path.pop();
       }
-      path.pop();
       visited[dst] = false;
     }
     false
   }
 
-  if !dfs(0, 1, n, &adj, &mut visited, &mut path) {
+  if !dfs(0, 1, n, &adj, neighbors.as_deref(), &mut visited, &mut path) {
     return Ok(empty);
   }
 
