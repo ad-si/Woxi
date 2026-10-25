@@ -5811,13 +5811,45 @@ fn parse_bspline(
     };
     let clamped = !closed && !spline_knots_unclamped(&args[1..]);
 
-    let sampled = evaluate_bspline(&control, degree, 200, clamped);
+    // An explicit numeric knot vector (`SplineKnots -> {u0, ..., um}`) fixes
+    // the basis; it needs exactly n + degree + 1 non-decreasing knots.
+    let sampled = match spline_knots_list(&args[1..]) {
+      Some(knots) if !closed && knots.len() == control.len() + degree + 1 => {
+        evaluate_bspline_with_knots(&control, degree, 200, &knots)
+      }
+      _ => evaluate_bspline(&control, degree, 200, clamped),
+    };
     prims.push(Primitive::Line {
       segments: vec![sampled],
       vertex_colors: None,
       style: style.clone(),
     });
   }
+}
+
+/// Evaluate a B-spline curve of the given `degree` on an explicit knot
+/// vector at `num_samples` evenly spaced parameters over its valid domain.
+fn evaluate_bspline_with_knots(
+  control_points: &[(f64, f64)],
+  degree: usize,
+  num_samples: usize,
+  knots: &[f64],
+) -> Vec<(f64, f64)> {
+  let n = control_points.len();
+  let t_min = knots[degree];
+  let t_max = knots[n];
+  (0..num_samples)
+    .map(|s| {
+      let t = t_min + (t_max - t_min) * s as f64 / (num_samples - 1) as f64;
+      let (mut x, mut y) = (0.0, 0.0);
+      for (j, p) in control_points.iter().enumerate() {
+        let b = bspline_basis(j, degree, t, knots);
+        x += b * p.0;
+        y += b * p.1;
+      }
+      (x, y)
+    })
+    .collect()
 }
 
 /// Evaluate a uniform B-spline curve of the given `degree` at `num_samples`
@@ -5942,6 +5974,23 @@ pub(crate) fn spline_degree_from_args(
     Some(n) if n >= 1.0 => (n.round() as usize).clamp(1, max_degree.max(1)),
     _ => max_degree,
   }
+}
+
+/// The numeric knot vector an option list gives via `SplineKnots -> {...}`.
+pub(crate) fn spline_knots_list(args: &[Expr]) -> Option<Vec<f64>> {
+  args.iter().find_map(|arg| match arg {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SplineKnots") =>
+    {
+      match replacement.as_ref() {
+        Expr::List(items) => items.iter().map(try_eval_to_f64).collect(),
+        _ => None,
+      }
+    }
+    _ => None,
+  })
 }
 
 /// Whether an option list asks for `SplineKnots -> "Unclamped"`.

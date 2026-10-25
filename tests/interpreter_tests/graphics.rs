@@ -821,6 +821,25 @@ mod graphics {
     }
 
     #[test]
+    fn bspline_curve_explicit_knots() {
+      // Clamped uniform knots reproduce the default curve; skewed interior
+      // knots change it.
+      let pts = "{{0, 0}, {1, 2}, {2, 0}, {3, 1}}";
+      let default = export_svg(&format!("Graphics[{{BSplineCurve[{pts}]}}]"));
+      let same = export_svg(&format!(
+        "Graphics[{{BSplineCurve[{pts}, SplineKnots -> {{0, 0, 0, 0, 1, 1, 1, 1}}]}}]"
+      ));
+      assert_eq!(default, same);
+      let skewed = export_svg(&format!(
+        "Graphics[{{BSplineCurve[{pts}, SplineDegree -> 2, SplineKnots -> {{0, 0, 0, 1/5, 1, 1, 1}}]}}]"
+      ));
+      let uniform = export_svg(&format!(
+        "Graphics[{{BSplineCurve[{pts}, SplineDegree -> 2]}}]"
+      ));
+      assert_ne!(skewed, uniform);
+    }
+
+    #[test]
     fn bspline_curve_closed() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{BSplineCurve[{{0, 0}, {1, 2}, {2, 0}, {3, 1}}, SplineClosed -> True]}]"
