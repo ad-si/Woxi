@@ -6356,9 +6356,36 @@ fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
   symbolic_args.sort_by(times_factor_order);
 }
 
+/// `times_factor_order` of two calls of the same head: by their arguments
+/// in canonical order, then the shorter one first.
+fn same_head_args_order(aa: &[Expr], ab: &[Expr]) -> std::cmp::Ordering {
+  for (arg_a, arg_b) in aa.iter().zip(ab.iter()) {
+    let ord = crate::functions::list_helpers_ast::compare_exprs(arg_a, arg_b);
+    if ord > 0 {
+      return std::cmp::Ordering::Less;
+    }
+    if ord < 0 {
+      return std::cmp::Ordering::Greater;
+    }
+  }
+  aa.len().cmp(&ab.len())
+}
+
 /// Canonical order of two symbolic factors of a product, the order
 /// `Times` sorts them into.
 pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  // Two calls of the same head without built-in meaning: none of the
+  // special cases below concern them, and they end up comparing argument
+  // by argument.
+  if let (
+    Expr::FunctionCall { name: na, args: aa },
+    Expr::FunctionCall { name: nb, args: ab },
+  ) = (a, b)
+    && na == nb
+    && super::canonical_polynomial::is_plain_symbol(na)
+  {
+    return same_head_args_order(aa, ab);
+  }
   // Radicals of integer bases where at least one base is negative — the
   // shape left behind by `(-2)^(1/3) (-1)^(2/3)`, which wolframscript keeps
   // unmerged. They order by base ascending, then exponent ascending, the
@@ -6743,16 +6770,7 @@ pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         }
       }
     }
-    for (arg_a, arg_b) in aa.iter().zip(ab.iter()) {
-      let ord = crate::functions::list_helpers_ast::compare_exprs(arg_a, arg_b);
-      if ord > 0 {
-        return std::cmp::Ordering::Less;
-      }
-      if ord < 0 {
-        return std::cmp::Ordering::Greater;
-      }
-    }
-    return aa.len().cmp(&ab.len());
+    return same_head_args_order(aa, ab);
   }
   // For power-like expressions, use sort-key comparison on bases
   // to match Wolfram's Times ordering. This handles both same-variant

@@ -180,20 +180,10 @@ pub(super) fn plain_factor_product(args: &[Expr]) -> Option<Expr> {
   })
 }
 
-fn is_sum(e: &Expr) -> bool {
-  matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
-    || matches!(
-      e,
-      Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        ..
-      }
-    )
-}
-
-/// The terms of a sum whose arguments may themselves be sums.
-fn flatten_sum(args: &[Expr]) -> Vec<Expr> {
-  let mut flat: Vec<Expr> = Vec::with_capacity(args.len() + 1);
+/// The terms of a sum whose arguments may themselves be sums (`Plus` is
+/// Flat: sums arrive nested whenever a chain is evaluated pairwise).
+fn sum_terms(args: &[Expr]) -> Vec<&Expr> {
+  let mut flat: Vec<&Expr> = Vec::with_capacity(args.len());
   let mut stack: Vec<&Expr> = args.iter().rev().collect();
   while let Some(arg) = stack.pop() {
     match arg {
@@ -208,7 +198,7 @@ fn flatten_sum(args: &[Expr]) -> Vec<Expr> {
         stack.push(right);
         stack.push(left);
       }
-      other => flat.push(other.clone()),
+      other => flat.push(other),
     }
   }
   flat
@@ -253,14 +243,12 @@ pub(super) fn plain_call_sum(args: &[Expr]) -> Option<Expr> {
   if tests::GENERIC_ONLY.get() {
     return None;
   }
-  if args.iter().any(is_sum) {
-    return plain_call_sum(&flatten_sum(args));
-  }
-  if args.len() < 2 {
+  let terms = sum_terms(args);
+  if terms.len() < 2 {
     return None;
   }
-  let mut keyed: Vec<(Vec<&Expr>, &Expr)> = args
-    .iter()
+  let mut keyed: Vec<(Vec<&Expr>, &Expr)> = terms
+    .into_iter()
     .map(|term| Some((call_product_key(term)?, term)))
     .collect::<Option<_>>()?;
   let order = |a: &[&Expr], b: &[&Expr]| {
@@ -286,10 +274,7 @@ pub(super) fn canonical_polynomial_sum(args: &[Expr]) -> Option<Expr> {
   if tests::GENERIC_ONLY.get() {
     return None;
   }
-  // `Plus` is Flat: sums arrive nested whenever a chain is evaluated pairwise.
-  if args.iter().any(is_sum) {
-    return canonical_polynomial_sum(&flatten_sum(args));
-  }
+  let args = sum_terms(args);
   if args.len() < 2 {
     return None;
   }

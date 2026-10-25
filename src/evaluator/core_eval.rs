@@ -4587,7 +4587,13 @@ fn evaluate_flat_chain(
   }
   let mut values = Vec::with_capacity(operands.len());
   for (e, inverted) in &operands {
-    values.push((strip_unevaluated(&evaluate_expr_to_expr(e)?), *inverted));
+    let value = evaluate_expr_to_expr(e)?;
+    // Copy only an `Unevaluated` wrapper's content, not every operand.
+    let value = match strip_unevaluated_ref(&value) {
+      inner if std::ptr::eq(inner, &raw const value) => value,
+      inner => inner.clone(),
+    };
+    values.push((value, *inverted));
   }
   // A chain of numbers alone is folded pairwise along the tree, as each
   // operator is applied in turn: machine and arbitrary-precision results

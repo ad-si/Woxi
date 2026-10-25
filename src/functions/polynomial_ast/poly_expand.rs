@@ -46,8 +46,11 @@ pub(super) fn expand_polynomial(expr: &Expr) -> Option<Expr> {
 
 /// `expand_polynomial` that also takes calls with a plain symbol head —
 /// `f[x]`, `g[a, b]`, `x[1]` — as generators, opaque like Expand treats
-/// them. The terms are neither combined across calls that only print alike
-/// nor put in canonical order, so the result still needs to be evaluated.
+/// them; None when there are none. The result is evaluated: each generator
+/// once, and every term and the sum through `Power`, `Times` and `Plus`,
+/// which put them in canonical order and apply the rules defined for them.
+/// Evaluating the assembled sum instead re-evaluated every call in every
+/// term it appears in.
 ///
 /// The generic expander combines like terms by their printed form after
 /// every multiplication, so expanding a product of sums of such calls (the
@@ -63,7 +66,7 @@ pub(super) fn expand_polynomial_with_kernels(expr: &Expr) -> Option<Expr> {
     return None;
   }
   if kernels.list.is_empty() {
-    return expand_polynomial(expr);
+    return None;
   }
   let symbols: Vec<String> = names.into_iter().collect();
   let lookup = |e: &Expr| match e {
@@ -71,12 +74,39 @@ pub(super) fn expand_polynomial_with_kernels(expr: &Expr) -> Option<Expr> {
     _ => symbol_index(e, &symbols),
   };
   let p = to_poly(expr, symbols.len() + kernels.list.len(), &lookup)?;
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let call = crate::evaluator::evaluate_function_call_ast;
   let gens: Vec<Expr> = symbols
     .into_iter()
     .map(Expr::Identifier)
     .chain(kernels.list)
-    .collect();
-  Some(poly_to_canonical_expr(&p, &gens))
+    .map(|g| eval(&g).ok())
+    .collect::<Option<_>>()?;
+  let mut terms: Vec<Expr> = Vec::with_capacity(p.t.len());
+  for (m, c) in &p.t {
+    let mut factors: Vec<Expr> = Vec::new();
+    if !(c.d.is_one() && c.n.is_one()) {
+      factors.push(q_to_expr(c));
+    }
+    for (&e, g) in m.iter().zip(&gens) {
+      match e {
+        0 => {}
+        1 => factors.push(g.clone()),
+        _ => factors
+          .push(call("Power", &[g.clone(), Expr::Integer(e as i128)]).ok()?),
+      }
+    }
+    terms.push(match factors.len() {
+      0 => q_to_expr(c),
+      1 => factors.pop().unwrap(),
+      _ => call("Times", &factors).ok()?,
+    });
+  }
+  match terms.len() {
+    0 => Some(Expr::Integer(0)),
+    1 => terms.pop(),
+    _ => call("Plus", &terms).ok(),
+  }
 }
 
 /// The index of the plain symbol `e` among `names`.
@@ -546,13 +576,10 @@ mod tests {
         continue;
       };
       expanded += 1;
-      let evaluated = |e: &Expr| {
-        let e = crate::evaluator::evaluate_expr_to_expr(e).unwrap();
-        crate::syntax::expr_to_string(&e)
-      };
+      let generic = crate::evaluator::evaluate_expr_to_expr(&generic(&expr));
       assert_eq!(
-        evaluated(&fast),
-        evaluated(&generic(&expr)),
+        crate::syntax::expr_to_string(&fast),
+        crate::syntax::expr_to_string(&generic.unwrap()),
         "Expand[{source}]"
       );
     }
