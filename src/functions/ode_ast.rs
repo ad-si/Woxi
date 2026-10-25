@@ -8624,12 +8624,20 @@ fn variation_of_parameters(
     std::slice::from_ref(&y_p),
   )
   .unwrap_or(y_p);
-  let y_p = crate::evaluator::evaluate_function_call_ast(
-    "Simplify",
-    std::slice::from_ref(&y_p),
-  )
-  .unwrap_or(y_p);
-  Some(y_p)
+  // Sums of sinusoidal forcing terms leave products of trig functions behind;
+  // keep whichever of the plain, simplified and trig-reduced forms is shortest.
+  let candidates = [y_p.clone(), call1("TrigReduce", y_p.clone())]
+    .into_iter()
+    .filter_map(|e| crate::evaluator::evaluate_expr_to_expr(&e).ok())
+    .flat_map(|e| {
+      let simplified = crate::evaluator::evaluate_function_call_ast(
+        "Simplify",
+        std::slice::from_ref(&e),
+      )
+      .unwrap_or_else(|_| e.clone());
+      [e, simplified]
+    });
+  candidates.min_by_key(|e| expr_to_string(e).len())
 }
 
 /// Whether the expression contains a call to the named function anywhere.

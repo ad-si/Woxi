@@ -22582,6 +22582,56 @@ mod ndsolve_starting_step_size {
   }
 }
 
+mod integrate_product_with_sum_factor {
+  use super::*;
+
+  #[test]
+  fn distributes_trig_over_sum() {
+    assert_eq!(
+      interpret("Integrate[Sin[x] (Cos[x] + Sin[x]), x]").unwrap(),
+      "x/2 - Cos[x]^2/2 - Sin[2*x]/4"
+    );
+  }
+
+  #[test]
+  fn distributes_exp_over_sum() {
+    assert_eq!(
+      interpret("D[Integrate[E^x (Cos[2 x] + Sin[2 x]), x], x] - E^x (Cos[2 x] + Sin[2 x]) // Simplify")
+        .unwrap(),
+      "0"
+    );
+  }
+}
+
+mod dsolve_sinusoidal_forcing_sum {
+  use super::*;
+
+  #[test]
+  fn first_order_part_missing() {
+    assert_eq!(
+      interpret("DSolve[y''[x] + y'[x] == Cos[x] + Sin[x], y[x], x]").unwrap(),
+      "{{y[x] -> C[1]/E^x + C[2] - Cos[x]}}"
+    );
+  }
+
+  #[test]
+  fn resonant_sum() {
+    assert_eq!(
+      interpret("DSolve[y''[x] + y[x] == Cos[x] + Sin[x], y[x], x]").unwrap(),
+      "{{y[x] -> (Cos[x] - x*Cos[x] + x*Sin[x])/2 + C[1]*Cos[x] + C[2]*Sin[x]}}"
+    );
+  }
+
+  #[test]
+  fn nonresonant_sum() {
+    assert_eq!(
+      interpret("DSolve[y''[x] + y[x] == 3 Sin[2 x] + Cos[2 x], y[x], x]")
+        .unwrap(),
+      "{{y[x] -> (-Cos[2*x] - 3*Sin[2*x])/3 + C[1]*Cos[x] + C[2]*Sin[x]}}"
+    );
+  }
+}
+
 mod ndsolve_vector_unknown_with_matrix_product {
   use super::*;
 

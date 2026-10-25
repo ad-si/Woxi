@@ -745,8 +745,23 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Integrate the expression
-  match integrate(&args[0], &var_name) {
+  // Integrate the expression; a product of a sum (`Sin[x] (Cos[x] + Sin[x])`)
+  // that no rule matches directly is retried with the integrand distributed
+  // into a sum of terms.
+  let integral = integrate(&args[0], &var_name).or_else(|| {
+    let expanded = crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      std::slice::from_ref(&args[0]),
+    )
+    .ok()?;
+    if crate::syntax::expr_to_string(&expanded)
+      == crate::syntax::expr_to_string(&args[0])
+    {
+      return None;
+    }
+    integrate(&expanded, &var_name)
+  });
+  match integral {
     Some(result) => {
       let simplified = simplify(result);
       let evaluated = crate::evaluator::evaluate_expr_to_expr(&simplified)
