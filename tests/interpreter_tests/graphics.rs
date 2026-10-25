@@ -2340,6 +2340,18 @@ mod graphics {
       assert!(svg.contains("dy=\"-10\">a</tspan>"), "{svg}");
     }
 
+    /// A `Framed` item stacked in a label's `Column` sets its content
+    /// instead of printing as `Framed[...]` source.
+    #[test]
+    fn text_column_with_framed_item() {
+      let svg = export_svg(
+        "Graphics[{Text[Column[{\"head\", Framed[Row[{\"x = \", NumberForm[0.1234, {2, 2}]}], FrameStyle -> Red], \"tail\"}, Center], {0, 0}]}]",
+      );
+      assert!(svg.contains(">x = 0.12</tspan>"), "{svg}");
+      assert!(!svg.contains("Framed["), "{svg}");
+      assert!(!svg.contains("FrameStyle"), "{svg}");
+    }
+
     /// `Overscript[y, ".."]` in a label draws as the accented letter.
     #[test]
     fn text_overscript_accent() {
