@@ -1826,9 +1826,15 @@ fn merge_double_bracket_parts(parts: &[&str]) -> Vec<String> {
     is_bare_named_char(&out[k], "LeftDoubleBracket")
       && is_bare_named_char(&out[k + 2], "RightDoubleBracket")
   }) {
-    let base = box_part_source(&out[k - 1]);
+    // Layout whitespace between the base and `[[` (a line break after a
+    // closing `]`) doesn't detach the index from its base.
+    let mut b = k - 1;
+    while b > 0 && is_soft_whitespace_box_token(&out[b]) {
+      b -= 1;
+    }
+    let base = box_part_source(&out[b]);
     let spec = box_part_source(&out[k + 1]);
-    out.splice(k - 1..=k + 2, [format_part_access(&base, &spec)]);
+    out.splice(b..=k + 2, [format_part_access(&base, &spec)]);
   }
   out
 }
@@ -6108,6 +6114,10 @@ Cell["Chapter 2", "Chapter"]
     // Demonstrations code (`list = listi[[RandomInteger[{1, n}]]]`).
     let s = r#"BoxData[RowBox[{"list", "=", RowBox[{"listi", "\[LeftDoubleBracket]", RowBox[{"RandomInteger", "[", "n", "]"}], "\[RightDoubleBracket]"}]}]]"#;
     assert_eq!(extract_cell_content(s), "list=listi[[RandomInteger[n]]]");
+    // A line break between the base and `[[` must not turn the index into
+    // an implicit product with a stray `Null`.
+    let s = r#"BoxData[RowBox[{RowBox[{"f", "[", "x", "]"}], "\[IndentingNewLine]", "\[LeftDoubleBracket]", "1", "\[RightDoubleBracket]"}]]"#;
+    assert_eq!(extract_cell_content(s), "Part[f[x], 1]");
   }
 
   /// A bare string operand of a `FractionBox` is a symbol name, so

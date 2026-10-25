@@ -13910,3 +13910,33 @@ mod rule_delayed_function_rhs {
     assert_eq!(interpret("{x :> (#1^2 &)}").unwrap(), "{x :> (#1^2 & )}");
   }
 }
+
+mod not_of_unary_minus {
+  use super::*;
+
+  #[test]
+  fn not_applies_to_a_negated_operand() {
+    assert_eq!(interpret("With[{a = 2}, !-a == 3]").unwrap(), "True");
+    assert_eq!(
+      interpret("Select[{-1, -0.2, 0.5, -3}, !-(3/10) > #1 > -2 &]").unwrap(),
+      "{-0.2, 0.5, -3}"
+    );
+  }
+
+  #[test]
+  fn not_of_negated_operand_round_trips_through_input_form() {
+    // Printing `Not[-3/10 > # > -2]` yields `!-(3/10) > …`, which has to
+    // parse back to the same expression.
+    assert_eq!(
+      interpret(
+        "ToExpression[ToString[Hold[!(-x > y)], InputForm]] === Hold[!(-x > y)]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Hold[!-a && b] === Hold[!(-a) && b]").unwrap(),
+      "True"
+    );
+  }
+}

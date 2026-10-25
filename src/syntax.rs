@@ -4992,6 +4992,16 @@ fn parse_expression_inner(
           term_was_implicit_times.push(false);
         }
       }
+      _ if leading_not && leading_minus => {
+        // `!-x`: the Not reaches over the negated operand, so negate it
+        // directly rather than splicing in the synthetic `0 NEGATE` pair
+        // (which would leave the Not wrapping only `x`).
+        terms.push(neg1(pair_to_expr(item)));
+        term_was_implicit_times.push(false);
+        pending_not_on_last = true;
+        leading_minus = false;
+        leading_not = false;
+      }
       _ => {
         if leading_minus {
           // When the operator just pushed binds *tighter* than the

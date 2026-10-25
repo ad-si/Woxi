@@ -628,6 +628,10 @@ LeadingMinus = @{ "-" ~ !"-" ~ ((!ASCII_DIGIT) | &(RealBody ~ NegLiteralTail) | 
 // Only matches when NOT followed by a digit or "+" (so +3 parses as positive Integer,
 // ++ would be Increment). Semantically +expr is just expr.
 LeadingPlus = { "+" ~ !"+" ~ !"=" }
+// An operator or suffix that binds tighter than a unary minus (`-a^2` is
+// `-(a^2)`). `!-x` negates `x` directly, which is only right when nothing
+// like this follows `x`.
+TighterThanMinus = _{ "^" | "!" ~ !"=" | "'" | "." ~ !ASCII_DIGIT | "**" | "@" | "/@" | "//@" | "<>" | "~" | "/*" }
 // LeadingNot marks prefix "!" as Not[expr]: !True, !x, !(a && b), etc.
 // Must not be followed by "=" (which would be != operator)
 LeadingNot = { "!" ~ !"=" ~ !"!" | "\\[Not]" | "\u{00AC}" }
@@ -654,12 +658,12 @@ TermSuffix = _{ TransposeSuffix | ConjugateSuffix | ConjugateTransposeSuffix | P
 // the suffixes that bind to it. Spelled out as one alternative per prefix
 // rather than `(LeadingNot | LeadingPlus | LeadingMinus)? ~ Term ~ …` because
 // a PEG never backtracks into a `?` it has already matched.
-ExprOperand = _{ LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? }
+ExprOperand = _{ LeadingNot ~ LeadingMinus ~ Term ~ !TighterThanMinus ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? }
 // The same operand with `;;`'s omitted left one allowed in front of it, so
 // `x = ;; 3` reads as `Set[x, Span[1, 3]]`.
 SpanOrExprOperand = _{ SpanNoLhsSep ~ ExprOperand | SpanNoOperandSep | ExprOperand }
 // `ExpressionNoImplicit`'s operand: as above, over `TermNoImplicit`.
-ExprOperandNoImplicit = _{ LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? }
+ExprOperandNoImplicit = _{ LeadingNot ~ LeadingMinus ~ TermNoImplicit ~ !TighterThanMinus ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? }
 SpanOrExprOperandNoImplicit = _{ SpanNoLhsSep ~ ExprOperandNoImplicit | SpanNoOperandSep | ExprOperandNoImplicit }
 
 Expression = {
@@ -1026,7 +1030,7 @@ PatternTestHead = { !("_") ~ Identifier }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
 // `ConditionExpr`'s operand: as `ExprOperand`, without the `..`/`...` suffixes.
-CondOperand = _{ LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* | Term ~ FactorialSuffix? ~ TermSuffix* }
+CondOperand = _{ LeadingNot ~ LeadingMinus ~ Term ~ !TighterThanMinus ~ FactorialSuffix? ~ TermSuffix* | LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* | Term ~ FactorialSuffix? ~ TermSuffix* }
 SpanOrCondOperand = _{ SpanNoLhsSep ~ CondOperand | SpanNoOperandSep | CondOperand }
 ConditionExpr = {
     SpanOrCondOperand ~ ((ConditionOp | TildeInfix) ~ SpanOrCondOperand | SpanNoRhsSep)*
@@ -1177,7 +1181,8 @@ ScanString = @{ "\"" ~ ("\\" ~ ANY | !"\"" ~ ANY)* ~ "\"" }
 // further operator (`/@`, `@@`, …), matching how a plain Expression
 // continues after its own trailing `&`.
 RuleOperatorTerm = _{
-    LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?
+    LeadingNot ~ LeadingMinus ~ Term ~ !TighterThanMinus ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?
+  | LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?
   | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?
   | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?
   | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?
