@@ -12921,6 +12921,25 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
   {
     return expr_to_svg_markup_lines(&args[0]);
   }
+  // `Style[Column[…], directives…]` styles every line of the stacked block
+  // it wraps (`PlotLabel -> Style[Column[{…}], 12]` is a common title).
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Style"
+    && args.len() >= 2
+    && matches!(&args[0], Expr::FunctionCall { name: inner, .. }
+      if matches!(inner.as_str(), "Column" | "Grid" | "TableForm"))
+  {
+    let attrs = style_directives_to_svg_attrs(&args[1..]);
+    let lines = expr_to_svg_markup_lines(&args[0]);
+    return if attrs.is_empty() {
+      lines
+    } else {
+      lines
+        .into_iter()
+        .map(|l| format!("<tspan{attrs}>{l}</tspan>"))
+        .collect()
+    };
+  }
   // `Labeled[content, label]` / `Labeled[content, label, Top]` stacks the
   // label's lines above (`Top`) or below (the default, `Bottom`) the
   // content's lines. Side positions have no line-based layout and fall

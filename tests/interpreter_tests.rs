@@ -2217,6 +2217,28 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plotlabel_style_wrapped_column_stacks_lines() {
+    // Regression: `PlotLabel -> Style[Column[{…}], size]` printed the literal
+    // `Column[{…}]` source on one line instead of stacking the items.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Graphics[{Circle[]}, PlotLabel -> Style[Column[{\"first\", \"second\"}], 12]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected Graphics SVG output");
+    assert!(
+      !svg.contains("Column["),
+      "PlotLabel must not print the Column wrapper:\n{svg}"
+    );
+    assert!(
+      svg.contains("first")
+        && svg.contains("dy=\"18\">")
+        && svg.contains("second"),
+      "PlotLabel must stack the Column items on separate lines:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_manipulate_row_style_symbolic_reciprocal_product_svg() {
     // Same renderer, a product of two reciprocals (`Times[a, Power[b, -1],
     // Power[c, -1]]`, i.e. `a/(b c)`): every reciprocal factor must move
