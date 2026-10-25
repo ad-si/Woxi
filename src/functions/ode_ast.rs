@@ -4475,22 +4475,44 @@ fn function_in_transcendental_context(
     .any(|c| function_in_transcendental_context(c, fname, now_inside))
 }
 
-/// Like [`find_algebraic_constraint`], but for a constraint that cannot be
-/// solved in closed form: returns the equation's and the unknown's indices,
-/// leaving the unknown to be found numerically at every evaluation.
-fn find_numeric_constraint(
+/// Like [`find_algebraic_constraint`], but for constraints that cannot be
+/// solved in closed form: returns the equations' and the unknowns' indices,
+/// leaving the unknowns to be found numerically at every evaluation. When
+/// the derivative-free equations and the never-differentiated unknowns they
+/// mention are equally many they form one coupled system; otherwise the
+/// first such equation is paired with the first such unknown.
+fn find_numeric_constraints(
   odes: &[Expr],
   funcs: &[SysFunc],
-) -> Option<(usize, usize)> {
-  for (ei, eq) in odes.iter().enumerate() {
-    if funcs.iter().any(|f| max_derivative_order(eq, &f.name) > 0) {
-      continue;
-    }
-    if let Some(fi) = funcs.iter().position(|f| {
-      expr_mentions_function(eq, &f.name)
-        && odes.iter().all(|o| max_derivative_order(o, &f.name) == 0)
-    }) {
-      return Some((ei, fi));
+) -> Option<(Vec<usize>, Vec<usize>)> {
+  let algebraic: Vec<usize> = odes
+    .iter()
+    .enumerate()
+    .filter(|(_, eq)| {
+      !funcs.iter().any(|f| max_derivative_order(eq, &f.name) > 0)
+    })
+    .map(|(i, _)| i)
+    .collect();
+  let free: Vec<usize> = funcs
+    .iter()
+    .enumerate()
+    .filter(|(_, f)| {
+      odes.iter().all(|o| max_derivative_order(o, &f.name) == 0)
+        && algebraic
+          .iter()
+          .any(|&ei| expr_mentions_function(&odes[ei], &f.name))
+    })
+    .map(|(i, _)| i)
+    .collect();
+  if !algebraic.is_empty() && algebraic.len() == free.len() {
+    return Some((algebraic, free));
+  }
+  for &ei in &algebraic {
+    if let Some(&fi) = free
+      .iter()
+      .find(|&&fi| expr_mentions_function(&odes[ei], &funcs[fi].name))
+    {
+      return Some((vec![ei], vec![fi]));
     }
   }
   None
@@ -4890,14 +4912,18 @@ fn ndsolve_system(
 
   // A constraint with no closed-form solution (index-1 DAE): its unknown is
   // found by Newton iteration whenever the residuals are evaluated.
-  let mut implicit: Option<(SysFunc, Expr)> = None;
-  if let Some((eq_idx, fi)) = find_numeric_constraint(&odes, &funcs) {
-    if event.is_some() || !eliminated.is_empty() {
+  let mut implicit: Vec<(SysFunc, Expr)> = Vec::new();
+  if let Some((mut eq_idxs, mut fis)) = find_numeric_constraints(&odes, &funcs)
+  {
+    if event.is_some() {
       return Ok(None);
     }
-    let f = funcs.remove(fi);
-    let eq = odes.remove(eq_idx);
-    implicit = Some((f, eq));
+    eq_idxs.sort_unstable_by(|a, b| b.cmp(a));
+    fis.sort_unstable_by(|a, b| b.cmp(a));
+    let eqs: Vec<Expr> = eq_idxs.iter().map(|&i| odes.remove(i)).collect();
+    let fs: Vec<SysFunc> = fis.iter().map(|&i| funcs.remove(i)).collect();
+    // Back in the order they were given, each paired with its equation.
+    implicit = fs.into_iter().rev().zip(eqs.into_iter().rev()).collect();
   }
 
   if odes.len() != funcs.len() {
@@ -4957,7 +4983,7 @@ fn ndsolve_system(
       x0: distinct_points[0],
     },
     2 if eliminated.is_empty()
-      && implicit.is_none()
+      && implicit.is_empty()
       && raw_ics.len() == funcs.iter().map(|f| f.order).sum::<usize>()
       && raw_ics.iter().all(|(name, order, _, _)| {
         funcs.iter().any(|f| &f.name == name && *order < f.order)
@@ -5067,43 +5093,47 @@ fn ndsolve_system(
   // numeric residual functions.
   let mut residuals: Vec<NumFn> = Vec::with_capacity(odes.len());
   let delay_found = std::cell::Cell::new(false);
-  // The numerically-eliminated unknown lives in one extra slot past the
-  // placeholders; each residual solves its constraint for that slot first.
+  // The numerically-eliminated unknowns live in extra slots past the
+  // placeholders; each residual solves their constraints for those first.
   let implicit_slot = var_names.len();
   let mut ext_names = var_names.clone();
-  let mut implicit_constraint: Option<(NExpr, f64)> = None;
-  let mut ext_funcs: Vec<SysFunc> = Vec::new();
-  let mut implicit_funcs: Vec<SysFunc> = Vec::new();
-  if let Some((zf, eq)) = &implicit {
+  let mut implicit_guess: Vec<f64> = Vec::new();
+  for (zf, _) in &implicit {
     ext_names.push(placeholder_name(&zf.name, 0));
-    ext_funcs.push(SysFunc {
-      name: zf.name.clone(),
-      order: 0,
-      function_form: zf.function_form,
+    implicit_guess.push(
+      raw_ics
+        .iter()
+        .find(|(n, o, _, _)| n == &zf.name && *o == 0)
+        .map_or(1.0, |(_, _, _, v)| *v),
+    );
+  }
+  // Every function the residuals read, the numerically-eliminated unknowns
+  // (order 0, in their extra slots) first.
+  let implicit_funcs: Vec<SysFunc> = implicit
+    .iter()
+    .map(|(f, _)| f)
+    .chain(funcs.iter())
+    .map(|f| SysFunc {
+      name: f.name.clone(),
+      order: f.order,
+      function_form: f.function_form,
       ics: Vec::new(),
-    });
-    implicit_funcs = ext_funcs
+    })
+    .collect();
+  // The compiled constraints of the numerically-eliminated unknowns.
+  let implicit_memo = std::rc::Rc::new(std::cell::RefCell::new(None));
+  let compile_implicit = || -> Option<Vec<NExpr>> {
+    implicit
       .iter()
-      .chain(funcs.iter())
-      .map(|f| SysFunc {
-        name: f.name.clone(),
-        order: f.order,
-        function_form: f.function_form,
-        ics: Vec::new(),
+      .map(|(_, eq)| {
+        let norm = normalize_equation(eq).ok()?;
+        let r = substitute_function_values(&norm, &implicit_funcs, x_name);
+        compile_numeric(&r, &ext_names)
       })
-      .collect();
-    let Ok(norm) = normalize_equation(eq) else {
-      return Ok(None);
-    };
-    let rewritten = substitute_function_values(&norm, &implicit_funcs, x_name);
-    let Some(c) = compile_numeric(&rewritten, &ext_names) else {
-      return Ok(None);
-    };
-    let guess = raw_ics
-      .iter()
-      .find(|(n, o, _, _)| n == &zf.name && *o == 0)
-      .map_or(1.0, |(_, _, _, v)| *v);
-    implicit_constraint = Some((c, guess));
+      .collect()
+  };
+  if !implicit.is_empty() && compile_implicit().is_none() {
+    return Ok(None);
   }
   for ode in &odes {
     let normalized = normalize_equation(ode).ok();
@@ -5117,24 +5147,21 @@ fn ndsolve_system(
       x_name,
       &delay_found,
     );
-    if let Some((_, guess)) = &implicit_constraint {
+    if !implicit.is_empty() {
       let rewritten =
         substitute_function_values(&normalized, &implicit_funcs, x_name);
-      let (Some(body), Some(constraint)) = (
-        compile_numeric(&rewritten, &ext_names),
-        implicit.as_ref().and_then(|(_, eq)| {
-          let norm = normalize_equation(eq).ok()?;
-          let r = substitute_function_values(&norm, &implicit_funcs, x_name);
-          compile_numeric(&r, &ext_names)
-        }),
-      ) else {
+      let (Some(body), Some(constraints)) =
+        (compile_numeric(&rewritten, &ext_names), compile_implicit())
+      else {
         return Ok(None);
       };
       residuals.push(NumFn::Compiled(NExpr::Implicit {
-        constraint: Box::new(constraint),
+        constraints,
         slot: implicit_slot,
-        guess: std::cell::Cell::new(*guess),
-        init: *guess,
+        guess: std::cell::RefCell::new(implicit_guess.clone()),
+        init: implicit_guess.clone(),
+        memo: implicit_memo.clone(),
+        key_len: 1 + n_state,
         body: Box::new(body),
       }));
       continue;
@@ -5538,15 +5565,47 @@ fn ndsolve_system(
   // An eliminated function is sampled from its constraint solution at the
   // same grid, so it comes back as an InterpolatingFunction like the rest.
   for (f, solved) in &eliminated {
-    let rewritten = substitute_function_values(solved, &funcs, x_name);
-    let value_fn = NumFn::new(rewritten, &var_names);
-    let mut vars = vec![0.0; var_names.len()];
+    // The solution may be written with the numerically-eliminated unknowns,
+    // which are read from the extra slots past the placeholders.
+    let rewritten = substitute_function_values(solved, &implicit_funcs, x_name);
+    let value_fn = NumFn::new(rewritten, &ext_names);
+    let mut vars = vec![0.0; ext_names.len()];
+    let root_fn = (!implicit.is_empty()).then(|| {
+      compile_implicit().map(|constraints| NExpr::Implicit {
+        constraints,
+        slot: implicit_slot,
+        guess: std::cell::RefCell::new(implicit_guess.clone()),
+        init: implicit_guess.clone(),
+        memo: implicit_memo.clone(),
+        key_len: 1 + n_state,
+        body: Box::new(NExpr::Const(0.0)),
+      })
+    });
     let data = Expr::List(
       points
         .iter()
         .map(|(x, state)| {
           vars[0] = *x;
           vars[1..=n_state].copy_from_slice(&state[..n_state]);
+          if let Some(Some(NExpr::Implicit {
+            constraints,
+            guess,
+            init,
+            ..
+          })) = &root_fn
+          {
+            let start = guess.borrow().clone();
+            if let Some(root) =
+              newton_system(constraints, &mut vars, implicit_slot, &start)
+                .or_else(|| {
+                  newton_system(constraints, &mut vars, implicit_slot, init)
+                })
+            {
+              vars[implicit_slot..implicit_slot + root.len()]
+                .copy_from_slice(&root);
+              *guess.borrow_mut() = root;
+            }
+          }
           // A solution written with a highest derivative (`F0 == … - h'`)
           // reads it from the solve for the highest derivatives.
           if let Some(high) = solve_highest_derivatives_cached(
@@ -5590,23 +5649,19 @@ fn ndsolve_system(
       )
     });
   }
-  // The numerically-eliminated unknown is recovered at the same grid.
-  if let Some((zf, eq)) = &implicit {
-    let norm = normalize_equation(eq).ok();
-    let guess = implicit_constraint.as_ref().map_or(1.0, |(_, g)| *g);
-    let value_fn = norm.and_then(|norm| {
-      let r = substitute_function_values(&norm, &implicit_funcs, x_name);
-      let c = compile_numeric(&r, &ext_names)?;
-      Some(NExpr::Implicit {
-        constraint: Box::new(c),
-        slot: implicit_slot,
-        guess: std::cell::Cell::new(guess),
-        init: guess,
-        body: Box::new(NExpr::Var(implicit_slot)),
-      })
-    });
-    let Some(value_fn) = value_fn else {
+  // The numerically-eliminated unknowns are recovered at the same grid.
+  for (k, (zf, _)) in implicit.iter().enumerate() {
+    let Some(constraints) = compile_implicit() else {
       return Ok(None);
+    };
+    let value_fn = NExpr::Implicit {
+      constraints,
+      slot: implicit_slot,
+      guess: std::cell::RefCell::new(implicit_guess.clone()),
+      init: implicit_guess.clone(),
+      memo: implicit_memo.clone(),
+      key_len: 1 + n_state,
+      body: Box::new(NExpr::Var(implicit_slot + k)),
     };
     let mut vars = vec![0.0; var_names.len()];
     let data = Expr::List(
@@ -7329,55 +7384,74 @@ enum NExpr {
     idx: usize,
     lag: f64,
   },
-  /// `body`, evaluated with `vars[slot]` set to the root of
-  /// `constraint == 0` — the unknown of an algebraic equation that has no
-  /// closed-form solution (index-1 DAE). `slot` is the first index past
-  /// the caller's variable vector. Newton iteration starts from the last
-  /// root found (`guess`) and falls back to the initial value (`init`).
+  /// `body`, evaluated with `vars[slot..slot + n]` set to the root of the
+  /// square system `constraints == 0` — the unknowns of algebraic equations
+  /// that have no closed-form solution (index-1 DAE). `slot` is the first
+  /// index past the caller's variable vector. Newton iteration starts from
+  /// the last root found (`guess`) and falls back to the initial values
+  /// (`init`).
   Implicit {
-    constraint: Box<Self>,
+    constraints: Vec<Self>,
     slot: usize,
-    guess: std::cell::Cell<f64>,
-    init: f64,
+    guess: std::cell::RefCell<Vec<f64>>,
+    init: Vec<f64>,
+    /// The last solve: the first `key_len` variables it was solved at and
+    /// the root found. Shared by every residual of a system, which are
+    /// evaluated at the same point one after another.
+    memo: std::rc::Rc<std::cell::RefCell<Option<(Vec<f64>, Vec<f64>)>>>,
+    key_len: usize,
     body: Box<Self>,
   },
 }
 
-/// Root of `constraint(vars with vars[slot] = z)` near `z0` by damped Newton
-/// iteration with a finite-difference slope; `None` when it fails to
-/// converge.
-fn newton_root(
-  constraint: &NExpr,
+/// Root of the square system `constraints(vars with vars[slot..] = z)` near
+/// `z0` by damped Newton iteration with a finite-difference Jacobian; `None`
+/// when it fails to converge.
+fn newton_system(
+  constraints: &[NExpr],
   vars: &mut [f64],
   slot: usize,
-  z0: f64,
-) -> Option<f64> {
-  let mut z = z0;
-  let mut f = {
-    vars[slot] = z;
-    constraint.eval(vars)
+  z0: &[f64],
+) -> Option<Vec<f64>> {
+  let n = constraints.len();
+  let mut z = z0.to_vec();
+  let residual = |z: &[f64], vars: &mut [f64]| -> Vec<f64> {
+    vars[slot..slot + n].copy_from_slice(z);
+    constraints.iter().map(|c| c.eval(vars)).collect()
   };
+  let norm = |f: &[f64]| f.iter().map(|v| v * v).sum::<f64>().sqrt();
+  let mut f = residual(&z, vars);
+  let mut last_step = f64::INFINITY;
   for _ in 0..100 {
-    if !f.is_finite() {
+    if f.iter().any(|v| !v.is_finite()) {
       return None;
     }
-    if f == 0.0 {
+    let fnorm = norm(&f);
+    if fnorm == 0.0 {
       return Some(z);
     }
-    let h = 1e-7 * z.abs().max(1.0);
-    vars[slot] = z + h;
-    let d = (constraint.eval(vars) - f) / h;
-    if !d.is_finite() || d == 0.0 {
-      return None;
+    // Jacobian by forward differences, one column per unknown.
+    let mut jac = vec![vec![0.0; n]; n];
+    for j in 0..n {
+      let h = 1e-7 * z[j].abs().max(1e-3);
+      let mut zp = z.clone();
+      zp[j] += h;
+      let fp = residual(&zp, vars);
+      for i in 0..n {
+        jac[i][j] = (fp[i] - f[i]) / h;
+      }
     }
-    let step = f / d;
+    let step = solve_dense(jac, f.clone())?;
     let mut lambda = 1.0;
     let mut accepted = false;
     for _ in 0..40 {
-      let zn = z - lambda * step;
-      vars[slot] = zn;
-      let fnew = constraint.eval(vars);
-      if fnew.is_finite() && fnew.abs() < f.abs() {
+      let zn: Vec<f64> = z
+        .iter()
+        .zip(&step)
+        .map(|(zi, di)| zi - lambda * di)
+        .collect();
+      let fnew = residual(&zn, vars);
+      if fnew.iter().all(|v| v.is_finite()) && norm(&fnew) < fnorm {
         z = zn;
         f = fnew;
         accepted = true;
@@ -7386,34 +7460,91 @@ fn newton_root(
       lambda *= 0.5;
     }
     if !accepted {
-      return None;
+      // At the noise floor no step lowers the residual any further.
+      return (last_step <= 1e-8).then_some(z);
     }
-    if lambda * step.abs() <= 1e-13 * z.abs().max(1.0) {
+    let rel_step = z
+      .iter()
+      .zip(&step)
+      .map(|(zi, di)| lambda * di.abs() / zi.abs().max(1e-3))
+      .fold(0.0, f64::max);
+    last_step = rel_step;
+    if rel_step <= 1e-13 {
       return Some(z);
     }
   }
   Some(z)
 }
 
+/// Solution of the dense linear system `a x = b` by Gaussian elimination
+/// with partial pivoting; `None` when `a` is singular.
+fn solve_dense(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
+  let n = b.len();
+  for col in 0..n {
+    let pivot = (col..n).max_by(|&i, &j| {
+      a[i][col]
+        .abs()
+        .partial_cmp(&a[j][col].abs())
+        .unwrap_or(std::cmp::Ordering::Equal)
+    })?;
+    if !a[pivot][col].is_finite() || a[pivot][col] == 0.0 {
+      return None;
+    }
+    a.swap(col, pivot);
+    b.swap(col, pivot);
+    for row in col + 1..n {
+      let factor = a[row][col] / a[col][col];
+      for k in col..n {
+        a[row][k] -= factor * a[col][k];
+      }
+      b[row] -= factor * b[col];
+    }
+  }
+  let mut x = vec![0.0; n];
+  for row in (0..n).rev() {
+    let tail: f64 = (row + 1..n).map(|k| a[row][k] * x[k]).sum();
+    x[row] = (b[row] - tail) / a[row][row];
+    if !x[row].is_finite() {
+      return None;
+    }
+  }
+  Some(x)
+}
+
 impl NExpr {
   fn eval(&self, vars: &[f64]) -> f64 {
     match self {
       Self::Implicit {
-        constraint,
+        constraints,
         slot,
         guess,
         init,
+        memo,
+        key_len,
         body,
       } => {
         let mut local = vars.to_vec();
-        local.resize(slot + 1, 0.0);
-        let root = newton_root(constraint, &mut local, *slot, guess.get())
-          .or_else(|| newton_root(constraint, &mut local, *slot, *init));
-        let Some(root) = root else {
-          return f64::NAN;
+        local.resize(slot + constraints.len(), 0.0);
+        let key = &vars[..(*key_len).min(vars.len())];
+        let cached = memo
+          .borrow()
+          .as_ref()
+          .filter(|(k, _)| k.as_slice() == key)
+          .map(|(_, root)| root.clone());
+        let root = if let Some(root) = cached {
+          root
+        } else {
+          let start = guess.borrow().clone();
+          let root = newton_system(constraints, &mut local, *slot, &start)
+            .or_else(|| newton_system(constraints, &mut local, *slot, init));
+          let Some(root) = root else {
+            return f64::NAN;
+          };
+          *guess.borrow_mut() = root.clone();
+          *memo.borrow_mut() = Some((key.to_vec(), root.clone()));
+          root
         };
-        guess.set(root);
-        local[*slot] = root;
+        local[*slot..*slot + root.len()].copy_from_slice(&root);
         body.eval(&local)
       }
       Self::Const(v) => *v,

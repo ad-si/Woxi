@@ -8882,6 +8882,31 @@ mod ndsolve {
     );
   }
 
+  /// Algebraic equations that no closed form solves for — here two cubic
+  /// equations coupling `u` and `v` — are solved together by Newton
+  /// iteration at every step, alongside a constraint (`a + u == 2 X`) that
+  /// is eliminated explicitly and rebuilt from them afterwards. Both
+  /// unknowns equal the state, so the state follows `X' = -0.9 X`.
+  #[test]
+  fn coupled_numeric_constraints_with_explicit_elimination() {
+    let code = "sol = NDSolve[{X'[t] == -X[t] + u[t]/10, \
+       u[t]^3 + v[t] == X[t]^3 + X[t], u[t] + v[t]^3 == X[t] + X[t]^3, \
+       a[t] + u[t] == 2 X[t], X[0] == 0.4, u[0] == 0.4, v[0] == 0.4}, \
+       {X, u, v, a}, {t, 0, 1}][[1]]; \
+       {X[t], u[t], v[t], a[t]} /. sol /. t -> 1.";
+    let expected = 0.4 * (-0.9f64).exp();
+    let result = interpret(code).unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split(", ")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    assert_eq!(nums.len(), 4, "all four functions come back: {result}");
+    for n in nums {
+      assert!((n - expected).abs() < 1e-6, "{result} vs {expected}");
+    }
+  }
+
   /// A constraint already written as `f[x] == rhs` (or the mirror image) is
   /// its own solution — no need to hand it to the general `Solve[]`. A
   /// second constraint in a form `Solve[]` genuinely has to work for
