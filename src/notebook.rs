@@ -1403,6 +1403,17 @@ fn piecewise_from_grid_box(grid: &str) -> Option<String> {
 /// `Binomial[n, k]` from the `GridBox[{{n}, {k}}]` a stacked binomial
 /// coefficient is typeset as; `None` for any other grid shape.
 fn binomial_from_grid_box(grid: &str) -> Option<String> {
+  let (top, bottom) = stacked_pair_of_grid_box(grid)?;
+  Some(format!(
+    "Binomial[{}, {}]",
+    extract_cell_content(&top),
+    extract_cell_content(&bottom)
+  ))
+}
+
+/// The two entries of a two-row, one-column `GridBox[{{top}, {bottom}}]`;
+/// `None` for any other grid shape.
+fn stacked_pair_of_grid_box(grid: &str) -> Option<(String, String)> {
   let inner = positional_box_args("GridBox", grid)?;
   let rows = braced_list_items(inner.first()?)?;
   let [top, bottom] = rows[..] else {
@@ -1414,11 +1425,7 @@ fn binomial_from_grid_box(grid: &str) -> Option<String> {
   let [bottom] = braced_list_items(bottom)?[..] else {
     return None;
   };
-  Some(format!(
-    "Binomial[{}, {}]",
-    extract_cell_content(top),
-    extract_cell_content(bottom)
-  ))
+  Some((top.to_string(), bottom.to_string()))
 }
 
 /// Is this box the typeset integral sign?
@@ -2596,10 +2603,33 @@ pub(crate) fn render_boxes_text(s: &str) -> String {
 
   // A bare `{…}` list of inline items.
   if s.starts_with('{') && s.ends_with('}') {
-    return split_top_level_commas(&s[1..s.len() - 1])
-      .iter()
-      .map(|p| render_boxes_text(p.trim()))
-      .collect::<String>();
+    let items: Vec<&str> = split_top_level_commas(&s[1..s.len() - 1])
+      .into_iter()
+      .map(str::trim)
+      .collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < items.len() {
+      // `( GridBox[{{n}, {k}}] )` is the stacked binomial coefficient. On
+      // one line of prose the grid would break across lines, so read it
+      // as `C(n, k)`.
+      if i + 2 < items.len()
+        && is_bare_char(items[i], '(')
+        && is_bare_char(items[i + 2], ')')
+        && let Some((top, bottom)) = stacked_pair_of_grid_box(items[i + 1])
+      {
+        out.push_str(&format!(
+          "C({}, {})",
+          render_boxes_text(&top),
+          render_boxes_text(&bottom)
+        ));
+        i += 3;
+        continue;
+      }
+      out.push_str(&render_boxes_text(items[i]));
+      i += 1;
+    }
+    return out;
   }
 
   // A `TextData[...]` run inside a box tree (e.g. one inline-math cell's
@@ -7096,6 +7126,25 @@ Cell["Chapter 2", "Chapter"]
       "If you provide initialization code, include a SaveDefinitions->True \
        option in the Manipulate."
     );
+  }
+
+  /// A stacked binomial coefficient inside prose math must stay on one
+  /// line instead of spilling its grid rows across a line break.
+  #[test]
+  fn test_textdata_inline_math_stacked_binomial_stays_on_one_line() {
+    let s = r#"TextData[Cell[BoxData[
+ FormBox[
+  RowBox[{
+   RowBox[{"(", GridBox[{
+      {"n"},
+      {"k"}
+     }], ")"}],
+   RowBox[{"a", "+", "b"}]}], TraditionalForm]], "InlineMath"]]"#;
+    assert_eq!(extract_cell_content(s), "C(n, k)a+b");
+    let s = r#"TextData[{"so ", Cell[BoxData[
+ FormBox[RowBox[{"(", GridBox[{{SubscriptBox["m", "1"]}, {"2"}}], ")"}],
+  TraditionalForm]], "InlineMath"], " follows"}]"#;
+    assert_eq!(extract_cell_content(s), "so C(m_1, 2) follows");
   }
 
   #[test]
