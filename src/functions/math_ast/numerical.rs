@@ -587,7 +587,16 @@ pub fn bigfloat_log(
   };
   let x = BigFloat::parse(digits, Radix::Dec, bits, rm, &mut cc);
   let result = x.ln(bits, rm, &mut cc);
-  let result_prec = prec + x_val.ln().abs().log10();
+  // ln x itself, not ln of x read as a machine number: x may lie past the
+  // machine range (1.*^308 * 10. is 1.*^309), where that reads as Infinity.
+  let ln_val: f64 = bigfloat_to_string(&result, Some(17), rm, &mut cc)
+    .ok()
+    .and_then(|s| s.replace("*^", "e").parse().ok())
+    .unwrap_or_else(|| x_val.ln());
+  if !ln_val.is_finite() {
+    return None;
+  }
+  let result_prec = prec + ln_val.abs().log10();
   let digits = wl_fraction_digits(&result, result_prec);
   match bigfloat_to_string(&result, Some(digits), rm, &mut cc) {
     Ok(s) => Some(Ok(Expr::BigFloat(s, result_prec))),

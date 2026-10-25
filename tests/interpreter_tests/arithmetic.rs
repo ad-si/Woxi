@@ -11838,6 +11838,20 @@ mod bigfloat_exp_log {
     );
   }
 
+  // An argument past the machine range read as Infinity when the result's
+  // precision was computed, and the digit count overflowed (a panic).
+  #[test]
+  fn log_past_the_machine_range() {
+    assert_eq!(
+      interpret("Round[Log[1.*^308 * 10.], 10^-6]").unwrap(),
+      "355749397/500000"
+    );
+    assert_eq!(
+      interpret("Round[Log[2, 1.*^308 * 10.], 10^-6]").unwrap(),
+      "1026475781/1000000"
+    );
+  }
+
   #[test]
   fn exp_tracks_precision() {
     // Exp[N[10,30]] precision drops to 30 - log10(10) = 29.
