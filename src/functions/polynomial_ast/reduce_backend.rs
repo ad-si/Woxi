@@ -85,7 +85,8 @@ pub(super) fn try_linear_integer_reduce(args: &[Expr]) -> Option<Expr> {
   Some(expression)
 }
 
-/// A lone linear equation in several integer unknowns, e.g.
+/// A linear equation (or a system of them, possibly with congruences) in
+/// several integer unknowns, e.g.
 /// `Reduce[2 x == 4 y, {x, y}, Integers]`. Its solution set is an unbounded
 /// lattice that wolframscript reports parametrized with fresh integer
 /// parameters (`C[1] ∈ Integers && x == 2 C[1] && y == C[1]`). Cooper
@@ -96,11 +97,22 @@ pub(super) fn try_linear_integer_reduce(args: &[Expr]) -> Option<Expr> {
 fn is_underdetermined_linear_equation(
   request: &lower::LinearReduceRequest,
 ) -> bool {
+  fn is_equation(formula: &Formula) -> bool {
+    matches!(formula, Formula::Atom(Atom::Relation(Relation::Equal, _)))
+  }
+  // A congruence `Mod[e, m] == r` joins a system of equations; on their own,
+  // congruences are residue classes, reported as such below.
+  fn is_congruence(formula: &Formula) -> bool {
+    matches!(formula, Formula::Atom(Atom::Divides { negated: false, .. }))
+  }
   request.targets.len() >= 2
-    && matches!(
-      request.formula,
-      Formula::Atom(Atom::Relation(Relation::Equal, _))
-    )
+    && match &request.formula {
+      Formula::And(parts) => {
+        parts.iter().any(is_equation)
+          && parts.iter().all(|p| is_equation(p) || is_congruence(p))
+      }
+      formula => is_equation(formula),
+    }
 }
 
 pub(crate) fn try_linear_rational_resolve(args: &[Expr]) -> Option<Expr> {

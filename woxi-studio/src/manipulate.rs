@@ -2524,6 +2524,22 @@ mod tests {
     assert!(!dump.contains("Pi"), "{dump}");
   }
 
+  /// A slider over a variable written with a private-use named character
+  /// (`\\[DoubleStruckCapitalC]`, U+F7A6) is labelled with the glyph a
+  /// normal font has (`ℂ`), not the blank box of the raw code point.
+  #[test]
+  fn default_control_label_draws_private_use_symbol_as_glyph() {
+    let code = "Manipulate[\\[DoubleStruckCapitalC] + \\[DoubleStruckCapitalR], \
+      {\\[DoubleStruckCapitalC], 1, 5}, {\\[DoubleStruckCapitalR], 0, 1}]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let dump = format!("{:?}", state.controls);
+    assert!(dump.contains("label: \"ℂ\""), "{dump}");
+    assert!(dump.contains("label: \"ℝ\""), "{dump}");
+    assert!(!dump.contains("label: \"\u{f7a6}\""), "{dump}");
+  }
+
   /// A choice label whose box code typesets a lone closing parenthesis
   /// (`\!\(\*SubscriptBox[\()\), \(4\)]\)`, as in a chemical formula
   /// `C(CH3)4`) must fold into a subscript like any other script, not leak

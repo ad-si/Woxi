@@ -28697,7 +28697,8 @@ fn unwrap_dynamic_body(body: &Expr) -> &Expr {
 /// Peel `Dynamic[…]` wrappers and any top-level `DynamicModule[{locals…},
 /// …]` off a Manipulate body, pushing each local's `(name, initial value)`
 /// onto `state`. A `DynamicModule` local without an initializer (`{tf,
-/// soln}`, computed fresh each frame) is seeded as `Null`.
+/// soln}`, computed fresh each frame) is seeded as `Null`, unless the body
+/// calls it as a function.
 ///
 /// Wolfram keeps a `DynamicModule`'s locals alive for the widget's whole
 /// lifetime — that is the entire point of `DynamicModule` over `Module` —
@@ -28708,6 +28709,20 @@ fn unwrap_dynamic_body(body: &Expr) -> &Expr {
 /// free: `reevaluate` installs `state` as scoped globals before every
 /// render, and writes the body (or a button action) makes to any of those
 /// names get read back afterwards.
+/// Whether a DynamicModule local list initializes some local to a bare
+/// symbol (`{a = startA, …}`).
+fn has_proxy_local(locals: &Expr) -> bool {
+  let Expr::List(items) = locals else {
+    return false;
+  };
+  items.iter().any(|local| match local {
+    Expr::FunctionCall { name, args } if name == "Set" && args.len() == 2 => {
+      matches!(&args[1], Expr::Identifier(_))
+    }
+    _ => false,
+  })
+}
+
 fn unwrap_dynamic_module_locals(
   body: &Expr,
   state: &mut Vec<(String, String)>,
@@ -28733,10 +28748,16 @@ fn unwrap_dynamic_module_locals(
       // `DynamicModule` — including the local's initializer — on every
       // control change, so `p` must keep tracking `a`/`b`/`c` fresh each
       // frame rather than freezing at its first value.
+      // A layout body whose locals proxy other symbols (`a = startA`, a
+      // copy the body drags and writes back) is not hoisted: the proxies
+      // must start again from their sources whenever the body is rebuilt,
+      // and the locator resolution reads them through these initializers.
       Expr::FunctionCall { name, args }
         if name == "DynamicModule"
           && args.len() >= 2
-          && expr_contains_call(&args[1], &["Dynamic"]) =>
+          && expr_contains_call(&args[1], &["Dynamic"])
+          && (matches!(&args[1], Expr::FunctionCall { name: inner, .. } if inner == "Dynamic")
+            || !has_proxy_local(&args[0])) =>
       {
         // The module's own `Initialization :> …` option sets up the helpers
         // its body draws with; it runs once, like the Manipulate's.
@@ -28780,7 +28801,9 @@ fn unwrap_dynamic_module_locals(
                   ));
                 }
               }
-              Expr::Identifier(var_name) => {
+              // A local the body calls (`PS1[T_] := …; PS1[Ta]`) is a
+              // function: a `Null` value would shadow its definitions.
+              Expr::Identifier(var_name) if !calls_head(&args[1], var_name) => {
                 state.push((var_name.clone(), "Null".to_string()));
               }
               _ => {}
@@ -28997,6 +29020,14 @@ fn indexes_past_first(e: &Expr, name: &str) -> bool {
       .collect();
     boundary && digits.parse::<u32>().is_ok_and(|k| k > 1)
   })
+}
+
+/// Whether `e` anywhere calls `head` (`head[…]`).
+fn calls_head(e: &Expr, head: &str) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. } if name == head)
+    || crate::syntax::expr_children(e)
+      .into_iter()
+      .any(|child| calls_head(child, head))
 }
 
 fn expr_contains_call(e: &Expr, heads: &[&str]) -> bool {
@@ -31206,12 +31237,15 @@ fn grid_label_runs(rows: &[Expr], italic: bool) -> Vec<LabelRun> {
 
 /// The label a control shows when its spec carries none: the variable name,
 /// minus the `$$` suffix a saved `DynamicModule` appends to its variables
-/// (the FrontEnd shows `α`, not `α$$`).
+/// (the FrontEnd shows `α`, not `α$$`). The name may be a symbol written
+/// with a private-use named character (`\[DoubleStruckCapitalC]`), which a
+/// label draws as the glyph a normal font has (`ℂ`).
 fn default_control_label(name: &str) -> String {
-  match name.strip_suffix("$$") {
-    Some(base) if !base.is_empty() => base.to_string(),
-    _ => name.to_string(),
-  }
+  let base = match name.strip_suffix("$$") {
+    Some(base) if !base.is_empty() => base,
+    _ => name,
+  };
+  crate::syntax::substitute_private_use_glyphs(base).into_owned()
 }
 
 /// Rewrite every `FractionBox[n, d]` in a box tree as the in-line

@@ -1720,6 +1720,20 @@ fn pde_space_position(
     .find_map(|c| pde_space_position(c, u_name, x_name))
 }
 
+/// Replace every `If[cond, a, a]` whose two branches are identical by `a`.
+fn collapse_identical_if_branches(expr: &Expr) -> Expr {
+  let mapped = map_children(expr, &collapse_identical_if_branches);
+  if let Expr::FunctionCall { name, args } = &mapped
+    && name == "If"
+    && args.len() == 3
+    && crate::syntax::expr_to_string(&args[1])
+      == crate::syntax::expr_to_string(&args[2])
+  {
+    return args[1].clone();
+  }
+  mapped
+}
+
 /// Lower `NeumannValue[g, x == x0]` terms in PDE equations to explicit
 /// Neumann boundary equations. A term `NeumannValue[g, x == x0]` on the
 /// right-hand side of `… - c u_xx … == rest + NeumannValue[…]` is the
@@ -1821,6 +1835,12 @@ fn lower_neumann_values(
             args: vec![replaced, sym.clone()].into(),
           })
           .ok()?;
+        // `D` of a piecewise coefficient leaves `sym*If[cond, 0, 0]`
+        // behind; collapse such branches so linearity can be recognised.
+        let coef = crate::evaluator::evaluate_expr_to_expr(
+          &collapse_identical_if_branches(&coef),
+        )
+        .ok()?;
         if !matches!(&coef, Expr::Integer(0))
           && !expr_contains_ident(&coef, "NDSolve$Uxx")
         {
@@ -6514,8 +6534,8 @@ fn integrate_leg(
 /// of magnitude smaller for any smooth problem, so an ordinary integration
 /// never subdivides and keeps exactly the grid — and the values — the
 /// fixed-step integrator produced.
-const STEP_REFINE_RTOL: f64 = 1e-4;
-const STEP_REFINE_ATOL: f64 = 1e-8;
+const STEP_REFINE_RTOL: f64 = 1e-9;
+const STEP_REFINE_ATOL: f64 = 1e-11;
 
 /// How far one nominal step may be bisected. A tracer pulse 10^-6 wide in a
 /// domain of length 20 needs ~15 bisections of the 1/1000 nominal step to be

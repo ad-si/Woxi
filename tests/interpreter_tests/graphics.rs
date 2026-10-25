@@ -10822,6 +10822,26 @@ mod plot3d {
     }
 
     #[test]
+    fn plot_legends_line_legend_names_the_series() {
+      // `LineLegend[{labels}, opts]` labels the curves like a plain list.
+      let plain = export_svg(
+        r#"ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {"a", "b"}]"#,
+      );
+      for legend in [
+        r#"LineLegend[{"a", "b"}]"#,
+        r#"LineLegend[{"a", "b"}, LegendFunction -> (Framed[#1] &)]"#,
+        r#"LineLegend[{Red, Blue}, {"a", "b"}]"#,
+      ] {
+        let svg = export_svg(&format!(
+          "ListPlot[{{{{1, 2, 3}}, {{3, 2, 1}}}}, PlotLegends -> {legend}]"
+        ));
+        assert!(svg.contains(">a</text"), "{legend}: {svg}");
+        assert!(svg.contains(">b</text"), "{legend}: {svg}");
+      }
+      assert!(plain.contains(">a</text"));
+    }
+
+    #[test]
     fn plot_legends_above_wrap_when_wider_than_the_plot() {
       let svg = export_svg(
         r#"Plot[{x, 2 x, 3 x}, {x, 0, 1}, ImageSize -> {350, 200},
@@ -17898,6 +17918,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         bottom_left[0] < 100,
         "expected a dark pixel at the bottom left, got {bottom_left:?}"
       );
+    }
+
+    /// `InterpolationOrder -> 0` shades scattered data by the nearest
+    /// sample, giving flat Voronoi cells with sharp borders.
+    #[test]
+    fn list_density_plot_interpolation_order_zero_is_nearest() {
+      let svg = export_svg(
+        "ListDensityPlot[{{0, 0, 0}, {4, 0, 1}, {0, 4, 0}, {4, 4, 1}}, InterpolationOrder -> 0]",
+      );
+      let b64 = svg
+        .split("data:image/png;base64,")
+        .nth(1)
+        .expect("embedded image")
+        .split('"')
+        .next()
+        .unwrap();
+      use base64::Engine as _;
+      let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+      let img = ::image::load_from_memory(&bytes).unwrap().to_rgba8();
+      let (w, h) = img.dimensions();
+      let left = img.get_pixel(w * 45 / 100, h / 2);
+      let right = img.get_pixel(w * 55 / 100, h / 2);
+      assert!(left[0] < 100, "expected a dark cell left of the border");
+      assert!(right[0] > 200, "expected a bright cell right of the border");
     }
   }
 
@@ -40146,6 +40192,15 @@ mod grid_cell_labeled_layout {
       assert_case(
         r#"Length[Fold[Append, Graphics3D[{Cuboid[]}], {Axes -> True, Boxed -> False}]]"#,
         "3",
+      );
+    }
+
+    // The options a plot shares with Graphics survive editing the plot.
+    #[test]
+    fn append_option_to_plot_keeps_its_epilog() {
+      assert_case(
+        r#"Cases[Append[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 1}, Epilog -> {Red, Point[{0, 0}]}], PlotLabel -> "a"], _Rule]"#,
+        "{Epilog -> {RGBColor[1, 0, 0], Point[{0, 0}]}, PlotLabel -> a}",
       );
     }
 

@@ -5558,6 +5558,29 @@ mod expand_threading {
     assert_eq!(interpret("Log[-E]").unwrap(), "1 + I*Pi");
     assert_eq!(interpret("Log[-Pi]").unwrap(), "I*Pi + Log[Pi]");
     assert_eq!(interpret("Log[-Sqrt[2]]").unwrap(), "I*Pi + Log[2]/2");
+    // Any exact number on the negative real axis.
+    assert_eq!(
+      interpret("Log[1 - Sqrt[5]]").unwrap(),
+      "I*Pi + Log[-1 + Sqrt[5]]"
+    );
+    assert_eq!(interpret("Log[1 - Pi]").unwrap(), "I*Pi + Log[-1 + Pi]");
+    assert_eq!(
+      interpret("Log[Root[#^5 - # + 3 &, 1]]").unwrap(),
+      "I*Pi + Log[-Root[3 - #1 + #1^5 & , 1, 0]]"
+    );
+    assert_eq!(interpret("Log[I - 3]").unwrap(), "Log[-3 + I]");
+  }
+
+  // An imaginary rational coefficient is bracketed only in InputForm.
+  #[test]
+  fn imaginary_rational_coefficient_display() {
+    assert_eq!(interpret("(2 I/5) x").unwrap(), "(2*I)/5*x");
+    assert_eq!(interpret("(-2 I/5) x").unwrap(), "(-2*I)/5*x");
+    assert_eq!(interpret("(2 I/5) Pi C[1]").unwrap(), "(2*I)/5*Pi*C[1]");
+    assert_eq!(
+      interpret("ToString[(2 I/5) x, InputForm]").unwrap(),
+      "((2*I)/5)*x"
+    );
   }
 
   // Splitting `Log[-x]` into `I Pi + Log[x]` needs `x` to be a positive real:

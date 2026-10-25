@@ -2176,6 +2176,14 @@ fn reduce_and(
     return Ok(bool_expr(true));
   }
 
+  // A system of linear equations over the integers is solved as a whole:
+  // its solution set is one lattice, parametrized jointly.
+  if let Some(result) =
+    try_reduce_linear_diophantine(&and_chain(&constraints), vars, domain)?
+  {
+    return Ok(result);
+  }
+
   // Constraints that share no variable are independent, so each is reduced
   // over its own variables. Ones that *do* share a variable have to be
   // reduced together — `a^2 < 4 && a > 0` is `0 < a < 2`, not the two bounds
@@ -2664,26 +2672,6 @@ struct Affine {
 }
 
 impl Affine {
-  fn constant(c: i128, nparams: usize) -> Self {
-    Affine {
-      const_term: c,
-      coeffs: vec![0; nparams],
-    }
-  }
-
-  fn scale(&self, k: i128) -> Self {
-    Affine {
-      const_term: self.const_term * k,
-      coeffs: self.coeffs.iter().map(|c| c * k).collect(),
-    }
-  }
-
-  fn with_param(&self, slot: usize, k: i128) -> Self {
-    let mut out = self.clone();
-    out.coeffs[slot] += k;
-    out
-  }
-
   fn to_expr(&self) -> Expr {
     let mut result = Expr::Integer(self.const_term);
     for (slot, coeff) in self.coeffs.iter().enumerate() {
@@ -2734,55 +2722,98 @@ fn extended_gcd_i128(a: i128, b: i128) -> (i128, i128, i128) {
 /// Standard successive-elimination construction: track the running gcd
 /// `g[j]` of `coeffs[0..=j]` together with Bezout coefficients, then
 /// back-substitute from the top, introducing one fresh parameter per step.
-fn solve_linear_diophantine(
-  coeffs: &[i128],
-  target: i128,
+/// All integer solutions of `A v == b` as an affine parametrization: a
+/// particular solution plus a basis of the kernel lattice, from column
+/// operations that bring `A` to echelon form (`A U = [L | 0]` with `U`
+/// unimodular). `None` when there is no integer solution (or an i128
+/// overflow).
+fn solve_linear_diophantine_system(
+  a: &[Vec<i128>],
+  b: &[i128],
 ) -> Option<Vec<Affine>> {
-  let n = coeffs.len();
-  debug_assert!(coeffs.iter().all(|c| *c != 0));
-  if n == 0 {
-    return None;
+  let m = a.len();
+  let n = a.first()?.len();
+  let mut mat: Vec<Vec<i128>> = a.to_vec();
+  let mut u: Vec<Vec<i128>> = (0..n)
+    .map(|i| (0..n).map(|j| i128::from(i == j)).collect())
+    .collect();
+  // Column operation on both `mat` and `u`: (col_p, col_q) <- (s p + t q,
+  // x p + y q).
+  let combine = |mat: &mut Vec<Vec<i128>>,
+                 u: &mut Vec<Vec<i128>>,
+                 p: usize,
+                 q: usize,
+                 (s, t, x, y): (i128, i128, i128, i128)|
+   -> Option<()> {
+    for row in mat.iter_mut().chain(u.iter_mut()) {
+      let (vp, vq) = (row[p], row[q]);
+      row[p] = s.checked_mul(vp)?.checked_add(t.checked_mul(vq)?)?;
+      row[q] = x.checked_mul(vp)?.checked_add(y.checked_mul(vq)?)?;
+    }
+    Some(())
+  };
+  let mut pivots: Vec<(usize, usize)> = Vec::new(); // (row, col)
+  let mut k = 0usize;
+  for i in 0..m {
+    if k >= n {
+      break;
+    }
+    for j in k + 1..n {
+      if mat[i][j] == 0 {
+        continue;
+      }
+      if mat[i][k] == 0 {
+        combine(&mut mat, &mut u, k, j, (0, 1, 1, 0))?;
+        continue;
+      }
+      let (g, s, t) = extended_gcd_i128(mat[i][k], mat[i][j]);
+      let (p, q) = (mat[i][k] / g, mat[i][j] / g);
+      combine(&mut mat, &mut u, k, j, (s, t, -q, p))?;
+    }
+    if mat[i][k] != 0 {
+      pivots.push((i, k));
+      k += 1;
+    }
   }
-  if n == 1 {
-    return if target % coeffs[0] == 0 {
-      Some(vec![Affine::constant(target / coeffs[0], 0)])
-    } else {
-      None
-    };
+  // Solve the echelon system for the pivot coordinates w.
+  let mut w = vec![0i128; n];
+  let mut next_pivot = 0usize;
+  for i in 0..m {
+    let known: i128 = (0..next_pivot.min(k))
+      .map(|c| mat[i][c].checked_mul(w[c]))
+      .try_fold(0i128, |acc, v| acc.checked_add(v?))?;
+    let residual = b[i].checked_sub(known)?;
+    if next_pivot < pivots.len() && pivots[next_pivot].0 == i {
+      let c = pivots[next_pivot].1;
+      if residual % mat[i][c] != 0 {
+        return None;
+      }
+      w[c] = residual / mat[i][c];
+      next_pivot += 1;
+    } else if residual != 0 {
+      return None;
+    }
   }
-
-  let nparams = n - 1;
-  let mut g = vec![0i128; n];
-  let mut u = vec![0i128; n];
-  let mut v = vec![0i128; n];
-  g[0] = coeffs[0];
-  for j in 1..n {
-    let (gg, uu, vv) = extended_gcd_i128(g[j - 1], coeffs[j]);
-    g[j] = gg;
-    u[j] = uu;
-    v[j] = vv;
-  }
-
-  let gn = g[n - 1];
-  if gn == 0 || target % gn != 0 {
-    return None;
-  }
-
-  let mut m = Affine::constant(target / gn, nparams);
-  let mut x: Vec<Affine> = vec![Affine::constant(0, nparams); n];
-  for j in (1..n).rev() {
-    let slot = j - 1;
-    x[j] = m.scale(v[j]).with_param(slot, -(g[j - 1] / g[j]));
-    m = m.scale(u[j]).with_param(slot, coeffs[j] / g[j]);
-  }
-  x[0] = m;
-  Some(x)
+  // v = U w (particular) + U[:, k..] t.
+  Some(
+    (0..n)
+      .map(|r| {
+        let const_term = (0..k)
+          .map(|c| u[r][c].checked_mul(w[c]))
+          .try_fold(0i128, |acc, v| acc.checked_add(v?));
+        Affine {
+          const_term: const_term.unwrap_or(0),
+          coeffs: (k..n).map(|c| u[r][c]).collect(),
+        }
+      })
+      .collect(),
+  )
 }
 
 /// Put a parametrized integer solution into the shape wolframscript prints.
 ///
 /// The solution set is a coset `p + L` of a lattice `L`, and the successive
-/// elimination in `solve_linear_diophantine` lands on an arbitrary `p` and an
+/// elimination in `solve_linear_diophantine_system` lands on an arbitrary `p` and an
 /// arbitrary basis of `L` — for `3 x + 5 y == 7` it finds `x == 14 + 5 C[1]`
 /// where wolframscript writes `x == 4 + 5 C[1]`. Both name the same set, so
 /// canonicalize: the basis becomes the Hermite normal form (echelon by
@@ -2861,9 +2892,110 @@ fn canonicalize_lattice(solution: &[Affine]) -> (Vec<i128>, Vec<Vec<i128>>) {
   (offset, rows)
 }
 
-/// Reduce[eq, {vars}, Integers] where `eq` (after collecting `&&` conjuncts)
-/// is a single linear equation with integer coefficients in some or all of
-/// `vars`. Produces the general parametrized integer solution, e.g.
+/// Solve[eqs, vars, Integers] for a system of linear equations with integer
+/// coefficients: the lattice `Reduce` finds, as rules. A value that involves
+/// the parameters is a `ConditionalExpression` under every `Element`
+/// conjunct of the reduced form; a variable no equation mentions gets no
+/// rule (the caller reports `Solve::svars`):
+/// `Solve[x == 2 y, {x, y, z}, Integers]` ->
+/// `{{x -> ConditionalExpression[2 C[1], z ∈ Integers && C[1] ∈ Integers],
+///    y -> ConditionalExpression[C[1], z ∈ Integers && C[1] ∈ Integers]}}`.
+pub(crate) fn solve_linear_diophantine_rules(
+  eqs: &Expr,
+  vars: &[String],
+) -> Result<Option<Expr>, InterpreterError> {
+  let threaded = thread_reduce_list_equations(eqs);
+  let system = match &threaded {
+    Expr::List(items) => and_chain(items),
+    other => other.clone(),
+  };
+  let reduced = if let Some(reduced) =
+    try_reduce_linear_diophantine(&system, vars, Some("Integers"))?
+  {
+    reduced
+  } else {
+    // Other equations (a congruence `Mod[x, 3] == 1`) are taken from
+    // Reduce when it parametrizes them; anything else is left to Solve.
+    let mut constraints = Vec::new();
+    collect_and_constraints(&system, &mut constraints);
+    if !constraints
+      .iter()
+      .all(|c| matches!(extract_comparison(c), Some((_, _, CompOp::Equal))))
+    {
+      return Ok(None);
+    }
+    let var_list =
+      Expr::List(vars.iter().cloned().map(Expr::Identifier).collect());
+    let reduced = reduce_ast(&[system.clone(), var_list, id_expr("Integers")])?;
+    if !collect_or_terms(&reduced)
+      .iter()
+      .all(|branch| integer_branch_parts(branch, vars).is_some())
+      || !crate::syntax::expr_to_string(&reduced).contains("C[")
+    {
+      return Ok(None);
+    }
+    reduced
+  };
+  if matches!(&reduced, Expr::Identifier(s) if s == "False") {
+    return Ok(Some(Expr::List(Vec::new().into())));
+  }
+  let mut solutions = Vec::new();
+  for branch in collect_or_terms(&reduced) {
+    let Some((condition, values)) = integer_branch_parts(&branch, vars) else {
+      return Ok(None);
+    };
+    let rules = values
+      .into_iter()
+      .map(|(var, value)| {
+        // A value is parametric unless it is a plain integer.
+        let value = match &condition {
+          Some(condition) if !matches!(value, Expr::Integer(_)) => {
+            call("ConditionalExpression", vec![value, condition.clone()])
+          }
+          _ => value,
+        };
+        crate::helpers::rule_expr(Expr::Identifier(var), value)
+      })
+      .collect::<Vec<_>>();
+    solutions.push(Expr::List(rules.into()));
+  }
+  Ok(Some(Expr::List(solutions.into())))
+}
+
+/// One conjunction of a reduced integer solution: its `Element` conditions
+/// (joined) and the value of each variable given as `var == value`, in the
+/// order of `vars`. `None` when it has any other kind of conjunct.
+fn integer_branch_parts(
+  branch: &Expr,
+  vars: &[String],
+) -> Option<(Option<Expr>, Vec<(String, Expr)>)> {
+  let mut conjuncts = Vec::new();
+  collect_and_constraints(branch, &mut conjuncts);
+  let mut conditions = Vec::new();
+  let mut values = Vec::new();
+  for conjunct in conjuncts {
+    if matches!(&conjunct, Expr::FunctionCall { name, .. } if name == "Element")
+    {
+      conditions.push(conjunct);
+      continue;
+    }
+    match extract_comparison(&conjunct) {
+      Some((Expr::Identifier(ref var), value, CompOp::Equal))
+        if vars.contains(var) =>
+      {
+        values.push((var.clone(), value));
+      }
+      _ => return None,
+    }
+  }
+  values.sort_by_key(|(var, _)| vars.iter().position(|v| v == var));
+  let condition = (!conditions.is_empty()).then(|| and_chain(&conditions));
+  Some((condition, values))
+}
+
+/// Reduce[eqs, {vars}, Integers] where `eqs` (after collecting `&&`
+/// conjuncts) are linear equations with integer coefficients in some or all
+/// of `vars`. Produces the general parametrized integer solution, e.g.
 /// `Reduce[2 x == 4 y, {x, y}, Integers]` ->
 /// `C[1] \[Element] Integers && x == 2*C[1] && y == C[1]`.
 /// Returns `None` when the shape doesn't apply, so the caller falls back to
@@ -2879,65 +3011,94 @@ fn try_reduce_linear_diophantine(
 
   let mut constraints = Vec::new();
   collect_and_constraints(expr, &mut constraints);
-  if constraints.len() != 1 {
+  if constraints.is_empty() {
     return Ok(None);
   }
-  let Some((lhs, rhs, CompOp::Equal)) = extract_comparison(&constraints[0])
-  else {
-    return Ok(None);
-  };
-  let poly = expand_and_combine(&minus2(lhs, rhs));
 
-  // Extract an integer linear coefficient for every var; bail on anything
-  // nonlinear so the general elimination path handles it instead.
-  let mut coeffs: Vec<i128> = Vec::with_capacity(vars.len());
-  for v in vars {
-    match max_power_int(&poly, v) {
-      None | Some(0) => coeffs.push(0),
-      Some(1) => {
-        let c = coefficient_ast(&[
-          poly.clone(),
-          Expr::Identifier(v.clone()),
-          Expr::Integer(1),
-        ])?;
-        match c {
-          Expr::Integer(n) => coeffs.push(n),
+  // Every constraint must be a linear equation with integer coefficients:
+  // a row of `A v == b`. Anything else goes to the general elimination path.
+  // A congruence `Mod[e, m] == r` is the equation `e - r == m k` in a fresh
+  // integer unknown `k`, which is projected away once the system is solved.
+  let mut matrix: Vec<Vec<i128>> = Vec::with_capacity(constraints.len());
+  let mut rhs: Vec<i128> = Vec::with_capacity(constraints.len());
+  let mut moduli: Vec<(usize, i128)> = Vec::new();
+  for constraint in &constraints {
+    let Some((lhs, rhs_side, CompOp::Equal)) = extract_comparison(constraint)
+    else {
+      return Ok(None);
+    };
+    let congruence = match (&lhs, &rhs_side) {
+      (Expr::FunctionCall { name, args }, Expr::Integer(r))
+      | (Expr::Integer(r), Expr::FunctionCall { name, args })
+        if name == "Mod" && args.len() == 2 =>
+      {
+        match &args[1] {
+          Expr::Integer(m) if *m > 0 => Some((args[0].clone(), *m, *r)),
           _ => return Ok(None),
         }
       }
-      _ => return Ok(None),
+      _ => None,
+    };
+    let poly = match congruence {
+      Some((_, m, r)) if r < 0 || r >= m => return Ok(Some(bool_expr(false))),
+      Some((e, m, r)) => {
+        moduli.push((matrix.len(), m));
+        expand_and_combine(&minus2(e, Expr::Integer(r)))
+      }
+      None => expand_and_combine(&minus2(lhs, rhs_side)),
+    };
+    let mut row: Vec<i128> = Vec::with_capacity(vars.len());
+    for v in vars {
+      match max_power_int(&poly, v) {
+        None | Some(0) => row.push(0),
+        Some(1) => {
+          // Evaluated: the coefficient can come back as an unfolded `-1`.
+          let c =
+            crate::evaluator::evaluate_expr_to_expr(&coefficient_ast(&[
+              poly.clone(),
+              Expr::Identifier(v.clone()),
+              Expr::Integer(1),
+            ])?)?;
+          match c {
+            Expr::Integer(n) => row.push(n),
+            _ => return Ok(None),
+          }
+        }
+        _ => return Ok(None),
+      }
     }
+    // `poly` must be exactly `const + Σ row[i] vars[i]`: no cross terms.
+    let const_term = {
+      let zeroed = vars.iter().fold(poly.clone(), |acc, v| {
+        crate::syntax::substitute_variable(&acc, v, &Expr::Integer(0))
+      });
+      match crate::evaluator::evaluate_expr_to_expr(&zeroed)? {
+        Expr::Integer(n) => n,
+        _ => return Ok(None),
+      }
+    };
+    let mut reconstructed = Expr::Integer(const_term);
+    for (v, c) in vars.iter().zip(&row) {
+      if *c != 0 {
+        reconstructed = plus2(
+          reconstructed,
+          times2(Expr::Integer(*c), Expr::Identifier(v.clone())),
+        );
+      }
+    }
+    let diff = simplify(expand_and_combine(&minus2(poly, reconstructed)));
+    if !matches!(diff, Expr::Integer(0)) {
+      return Ok(None);
+    }
+    matrix.push(row);
+    rhs.push(-const_term);
   }
+  let coeffs: Vec<i128> = (0..vars.len())
+    .map(|j| i128::from(matrix.iter().any(|r| r[j] != 0)))
+    .collect();
   if coeffs.iter().all(|c| *c == 0) {
     return Ok(None);
   }
-
-  // Verify `poly` really is `const + Σ coeffs[i]*vars[i]` with no cross
-  // terms, by zeroing every variable to read off the constant and comparing
-  // the reconstruction against the original.
-  let const_term = {
-    let zeroed = vars.iter().fold(poly.clone(), |acc, v| {
-      crate::syntax::substitute_variable(&acc, v, &Expr::Integer(0))
-    });
-    match crate::evaluator::evaluate_expr_to_expr(&zeroed)? {
-      Expr::Integer(n) => n,
-      _ => return Ok(None),
-    }
-  };
-  let mut reconstructed = Expr::Integer(const_term);
-  for (v, c) in vars.iter().zip(&coeffs) {
-    if *c != 0 {
-      reconstructed = plus2(
-        reconstructed,
-        times2(Expr::Integer(*c), Expr::Identifier(v.clone())),
-      );
-    }
-  }
-  let diff = simplify(expand_and_combine(&minus2(poly, reconstructed)));
-  if !matches!(diff, Expr::Integer(0)) {
-    return Ok(None);
-  }
-
   let present: Vec<(usize, i128)> = coeffs
     .iter()
     .enumerate()
@@ -2945,18 +3106,35 @@ fn try_reduce_linear_diophantine(
     .map(|(i, c)| (i, *c))
     .collect();
   let present_coeffs: Vec<i128> = present.iter().map(|(_, c)| *c).collect();
-  let target = -const_term;
+  let present_matrix: Vec<Vec<i128>> = matrix
+    .iter()
+    .enumerate()
+    .map(|(i, r)| {
+      present
+        .iter()
+        .map(|(j, _)| r[*j])
+        .chain(moduli.iter().map(|&(row, m)| if row == i { -m } else { 0 }))
+        .collect()
+    })
+    .collect();
 
-  let Some(present_solution) =
-    solve_linear_diophantine(&present_coeffs, target)
+  let Some(mut present_solution) =
+    solve_linear_diophantine_system(&present_matrix, &rhs)
   else {
     return Ok(Some(bool_expr(false)));
   };
+  // The congruences' own unknowns are not reported.
+  present_solution.truncate(present.len());
 
   // Any basis of the solution lattice, and any point on it, describes the
   // same solution set; canonicalize both the way wolframscript reports them
   // (see `canonicalize_lattice`).
   let (particular, basis) = canonicalize_lattice(&present_solution);
+  // A congruence that leaves several parameters free is reported by
+  // wolframscript as a disjunction of residue classes, not as one lattice.
+  if !moduli.is_empty() && basis.len() > 1 {
+    return Ok(None);
+  }
   let total_params = basis.len();
   let solution: Vec<Affine> = (0..present_coeffs.len())
     .map(|i| Affine {

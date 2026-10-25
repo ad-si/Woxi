@@ -14252,6 +14252,15 @@ mod array_reshape {
 mod sparse_array_list_ops {
   use super::*;
 
+  // `{} -> v` names no positions (IntegerTorusMapsAppliedToLetterforms).
+  #[test]
+  fn empty_position_list() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{} -> 1, {2, 3}]]").unwrap(),
+      "{{0, 0, 0}, {0, 0, 0}}"
+    );
+  }
+
   // A single dimension n for rank-r positions means {n, n, …}.
   #[test]
   fn scalar_dimension_for_matrix_positions() {
@@ -24422,6 +24431,16 @@ mod replace_part_position_patterns {
 
 mod combinatorica_josephus {
   use super::*;
+
+  // Combinatorica's InversePermutation is the built-in one (JosephusProblem
+  // calls it with the context written out).
+  #[test]
+  fn qualified_inverse_permutation() {
+    assert_eq!(
+      interpret("Combinatorica`InversePermutation[{3, 1, 5, 2, 4}]").unwrap(),
+      "{2, 4, 1, 5, 3}"
+    );
+  }
 
   #[test]
   fn elimination_rounds() {

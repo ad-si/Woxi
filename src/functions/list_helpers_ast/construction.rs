@@ -2819,6 +2819,16 @@ pub fn sparse_array_normalize_ast(
     return Ok(unevaluated("SparseArray", args));
   }
 
+  // `{} -> v` names no positions: no rules at all.
+  if args.len() >= 2
+    && matches!(&args[0], Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::List(keys) if keys.is_empty()))
+  {
+    let mut rewritten = args.to_vec();
+    rewritten[0] = Expr::List(Vec::new().into());
+    return sparse_array_normalize_ast(&rewritten);
+  }
+
   // A single dimension `n` for rank-r positions means `{n, n, …}`.
   if args.len() >= 2
     && matches!(&args[1], Expr::Integer(_))
