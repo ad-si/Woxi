@@ -4377,8 +4377,9 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let opts = parse_density_contour_options(args, 1);
+  let nearest = interpolation_order_is_zero(&args[1..]);
   let (grid, x_min, x_max, y_min, y_max, v_min, v_max, _n_rows, _n_cols) =
-    parse_list_data_to_grid(rows, "ListDensityPlot");
+    parse_list_data_to_grid(rows, "ListDensityPlot", nearest);
 
   if grid.is_empty() || !v_min.is_finite() || !v_max.is_finite() {
     return Ok(crate::graphics_result(
@@ -4397,8 +4398,13 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Coarse data grids are upsampled in-process so the shading interpolates
   // smoothly between the data points instead of showing blocky pixels.
+  // `InterpolationOrder -> 0` keeps the data's cells as flat blocks.
   let grid = if grid.len() < 64 || grid[0].len() < 64 {
-    resample_node_grid(&grid, 256, 256)
+    if nearest {
+      nearest_node_grid(&grid, 256, 256)
+    } else {
+      resample_node_grid(&grid, 256, 256)
+    }
   } else {
     grid
   };
@@ -4428,6 +4434,44 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
+}
+
+/// Whether the options hold `InterpolationOrder -> 0`.
+fn interpolation_order_is_zero(opts: &[Expr]) -> bool {
+  opts.iter().any(|opt| {
+    matches!(
+      opt,
+      Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "InterpolationOrder")
+          && matches!(replacement.as_ref(), Expr::Integer(0))
+    )
+  })
+}
+
+/// Upsample a node grid by taking the nearest node, so every data cell
+/// stays one flat block.
+fn nearest_node_grid(
+  grid: &[Vec<f64>],
+  out_cols: usize,
+  out_rows: usize,
+) -> Vec<Vec<f64>> {
+  let cols = grid.len();
+  let rows = if cols > 0 { grid[0].len() } else { 0 };
+  if cols < 2 || rows < 2 {
+    return grid.to_vec();
+  }
+  (0..out_cols)
+    .map(|i| {
+      let x = (i as f64 + 0.5) / out_cols as f64 * (cols - 1) as f64;
+      let i0 = (x.round() as usize).min(cols - 1);
+      (0..out_rows)
+        .map(|j| {
+          let y = (j as f64 + 0.5) / out_rows as f64 * (rows - 1) as f64;
+          grid[i0][(y.round() as usize).min(rows - 1)]
+        })
+        .collect()
+    })
+    .collect()
 }
 
 /// SmoothDensityHistogram[{{x1, y1}, …}, bspec, "PDF", opts] — a density
@@ -4708,6 +4752,7 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn parse_list_data_to_grid(
   rows: &[Expr],
   func_name: &str,
+  nearest: bool,
 ) -> (
   std::vec::Vec<std::vec::Vec<f64>>,
   f64,
@@ -4723,7 +4768,7 @@ fn parse_list_data_to_grid(
   let is_triples = is_triples_data(rows);
 
   if is_triples {
-    parse_triples_to_grid(rows, func_name)
+    parse_triples_to_grid(rows, func_name, nearest)
   } else {
     parse_matrix_to_grid(rows, func_name)
   }
@@ -4850,6 +4895,7 @@ fn parse_matrix_to_grid(
 fn parse_triples_to_grid(
   rows: &[Expr],
   _func_name: &str,
+  nearest: bool,
 ) -> (
   std::vec::Vec<std::vec::Vec<f64>>,
   f64,
@@ -4897,7 +4943,8 @@ fn parse_triples_to_grid(
   let z_min = points.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
   let z_max = points.iter().map(|p| p.2).fold(f64::NEG_INFINITY, f64::max);
 
-  let grid_n = FIELD_GRID;
+  // Nearest-sample shading needs a finer grid for sharp cell borders.
+  let grid_n = if nearest { 256 } else { FIELD_GRID };
   let x_range = x_max - x_min;
   let y_range = y_max - y_min;
 
@@ -4908,6 +4955,18 @@ fn parse_triples_to_grid(
     let gx = x_min + i as f64 / (grid_n - 1) as f64 * x_range;
     for j in 0..grid_n {
       let gy = y_min + j as f64 / (grid_n - 1) as f64 * y_range;
+
+      if nearest {
+        let mut best = (f64::INFINITY, f64::NAN);
+        for &(px, py, pz) in &points {
+          let d = (gx - px).powi(2) + (gy - py).powi(2);
+          if d < best.0 {
+            best = (d, pz);
+          }
+        }
+        grid[i][j] = best.1;
+        continue;
+      }
 
       let mut w_sum = 0.0;
       let mut z_sum = 0.0;
@@ -4950,7 +5009,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let opts = parse_density_contour_options(args, 1);
   let (grid, x_min, x_max, y_min, y_max, v_min, v_max, _n_rows, _n_cols) =
-    parse_list_data_to_grid(rows, "ListContourPlot");
+    parse_list_data_to_grid(rows, "ListContourPlot", false);
 
   if grid.is_empty() || !v_min.is_finite() || !v_max.is_finite() {
     return Ok(crate::graphics_result(
