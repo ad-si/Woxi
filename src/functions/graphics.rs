@@ -5213,13 +5213,16 @@ fn inset_primitives(
       channels,
       data,
       display_size,
+      color_space,
       ..
     } => {
+      let (ch, px) =
+        crate::functions::image_ast::rgb_pixels(*color_space, *channels, data);
       image_svg = crate::functions::image_ast::image_to_html_img(
         *width,
         *height,
-        *channels,
-        data,
+        ch,
+        &px,
         *display_size,
       );
       Some(&image_svg)
@@ -34102,14 +34105,19 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
       channels,
       data,
       display_size,
+      color_space,
       ..
-    } => Some(crate::functions::image_ast::image_to_svg_document(
-      *width,
-      *height,
-      *channels,
-      data,
-      *display_size,
-    )),
+    } => {
+      let (ch, px) =
+        crate::functions::image_ast::rgb_pixels(*color_space, *channels, data);
+      Some(crate::functions::image_ast::image_to_svg_document(
+        *width,
+        *height,
+        ch,
+        &px,
+        *display_size,
+      ))
+    }
     // Evaluating through the interpreter (not `evaluate_expr_to_expr`)
     // is what renders a held `Graphics[…]` call — or a user-defined icon
     // function like `myIcon[2]` — to SVG. A call producing an `Image`
