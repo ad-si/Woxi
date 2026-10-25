@@ -3800,6 +3800,53 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(result.into()));
   }
 
+  // A machine matrix with complex entries (n ≥ 3): Hessenberg reduction and
+  // shifted complex QR, the eigenvalues by decreasing absolute value.
+  if n >= 3
+    && matrix.iter().flatten().any(|c| {
+      crate::functions::math_ast::try_extract_complex_float(c)
+        .is_some_and(|(_, im)| im != 0.0)
+    })
+    && matrix
+      .iter()
+      .flatten()
+      .any(crate::functions::math_ast::contains_inexact_real)
+    && let Some(entries) = matrix
+      .iter()
+      .map(|row| {
+        row
+          .iter()
+          .map(|c| {
+            crate::functions::math_ast::try_extract_complex_float(c)
+              .or_else(|| try_eval_to_f64(c).map(|re| (re, 0.0)))
+          })
+          .collect::<Option<Vec<_>>>()
+      })
+      .collect::<Option<Vec<_>>>()
+    && let hermitian = (0..n).all(|i| {
+      (0..n).all(|j| entries[i][j] == (entries[j][i].0, -entries[j][i].1))
+    })
+    && let Some(mut values) = complex_matrix_eigenvalues(entries)
+  {
+    values.sort_by(|a, b| b.0.hypot(b.1).total_cmp(&a.0.hypot(a.1)));
+    return Ok(Expr::List(
+      values
+        .into_iter()
+        .map(|(re, im)| {
+          // A Hermitian matrix has real eigenvalues.
+          if hermitian {
+            Expr::Real(re)
+          } else {
+            crate::functions::math_ast::build_complex_float_expr_keep_real(
+              re, im,
+            )
+          }
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    ));
+  }
+
   // Float-valued n×n matrix (n ≥ 3): compute eigenvalues numerically
   // via Faddeev–LeVerrier + QR on the companion matrix.
   if n >= 3 {
@@ -5242,6 +5289,145 @@ fn numeric_eigenvalues_complex(
       .then(b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal))
   });
   roots
+}
+
+/// Eigenvalues of a complex matrix: reduction to Hessenberg form by
+/// stabilized elimination, then single-shift QR with Givens rotations and a
+/// Wilkinson shift. `None` if the iteration does not converge.
+fn complex_matrix_eigenvalues(
+  mut h: Vec<Vec<(f64, f64)>>,
+) -> Option<Vec<(f64, f64)>> {
+  type C = (f64, f64);
+  let add = |a: C, b: C| (a.0 + b.0, a.1 + b.1);
+  let sub = |a: C, b: C| (a.0 - b.0, a.1 - b.1);
+  let mul = |a: C, b: C| (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0);
+  let div = |a: C, b: C| {
+    let d = b.0 * b.0 + b.1 * b.1;
+    ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+  };
+  let abs = |a: C| a.0.hypot(a.1);
+  let conj = |a: C| (a.0, -a.1);
+  let sqrt = |a: C| {
+    let r = abs(a);
+    let re = f64::midpoint(r, a.0).max(0.0).sqrt();
+    let im = ((r - a.0) / 2.0).max(0.0).sqrt();
+    (re, if a.1 < 0.0 { -im } else { im })
+  };
+  let n = h.len();
+  // Hessenberg form: eliminate below the subdiagonal, pivoting on the
+  // largest entry of each column (a similarity transform throughout).
+  for k in 0..n.saturating_sub(2) {
+    let pivot =
+      (k + 1..n).max_by(|&i, &j| abs(h[i][k]).total_cmp(&abs(h[j][k])))?;
+    if abs(h[pivot][k]) == 0.0 {
+      continue;
+    }
+    if pivot != k + 1 {
+      h.swap(pivot, k + 1);
+      for row in &mut h {
+        row.swap(pivot, k + 1);
+      }
+    }
+    for i in k + 2..n {
+      let m = div(h[i][k], h[k + 1][k]);
+      if m == (0.0, 0.0) {
+        continue;
+      }
+      for j in 0..n {
+        let t = mul(m, h[k + 1][j]);
+        h[i][j] = sub(h[i][j], t);
+      }
+      for row in &mut h {
+        let t = mul(m, row[i]);
+        row[k + 1] = add(row[k + 1], t);
+      }
+    }
+  }
+  let mut values = Vec::with_capacity(n);
+  let mut hi = n;
+  let mut iterations = 0usize;
+  while hi > 0 {
+    if hi == 1 {
+      values.push(h[0][0]);
+      break;
+    }
+    // Deflate at the lowest negligible subdiagonal entry.
+    let mut lo = hi - 1;
+    while lo > 0 {
+      let scale = abs(h[lo][lo]) + abs(h[lo - 1][lo - 1]);
+      if abs(h[lo][lo - 1]) <= 1e-15 * scale.max(1e-300) {
+        h[lo][lo - 1] = (0.0, 0.0);
+        break;
+      }
+      lo -= 1;
+    }
+    if lo == hi - 1 {
+      values.push(h[hi - 1][hi - 1]);
+      hi -= 1;
+      iterations = 0;
+      continue;
+    }
+    iterations += 1;
+    if iterations > 60 * n {
+      return None;
+    }
+    // Wilkinson shift: the eigenvalue of the trailing 2x2 block nearer its
+    // last diagonal entry (an exceptional shift now and then).
+    let (a, b, c, d) = (
+      h[hi - 2][hi - 2],
+      h[hi - 2][hi - 1],
+      h[hi - 1][hi - 2],
+      h[hi - 1][hi - 1],
+    );
+    let shift = if iterations % 11 == 10 {
+      add(d, (abs(c), 0.0))
+    } else {
+      let tr_half = mul(add(a, d), (0.5, 0.0));
+      let det = sub(mul(a, d), mul(b, c));
+      let disc = sqrt(sub(mul(tr_half, tr_half), det));
+      let (l1, l2) = (add(tr_half, disc), sub(tr_half, disc));
+      if abs(sub(l1, d)) <= abs(sub(l2, d)) {
+        l1
+      } else {
+        l2
+      }
+    };
+    for i in lo..hi {
+      h[i][i] = sub(h[i][i], shift);
+    }
+    // QR of the active block by Givens rotations, then RQ.
+    let mut rotations = Vec::with_capacity(hi - lo);
+    for k in lo..hi - 1 {
+      let (x, y) = (h[k][k], h[k + 1][k]);
+      let r = abs(x).hypot(abs(y));
+      if r == 0.0 {
+        rotations.push(((1.0, 0.0), (0.0, 0.0)));
+        continue;
+      }
+      let (cg, sg) = (div(x, (r, 0.0)), div(y, (r, 0.0)));
+      for j in k..n {
+        let (u, v) = (h[k][j], h[k + 1][j]);
+        h[k][j] = add(mul(conj(cg), u), mul(conj(sg), v));
+        h[k + 1][j] = sub(mul(cg, v), mul(sg, u));
+      }
+      rotations.push((cg, sg));
+    }
+    for (offset, &(cg, sg)) in rotations.iter().enumerate() {
+      let k = lo + offset;
+      for row in h.iter_mut().take((k + 2).min(hi)) {
+        let (u, v) = (row[k], row[k + 1]);
+        row[k] = add(mul(u, cg), mul(v, sg));
+        row[k + 1] = sub(mul(v, conj(cg)), mul(u, conj(sg)));
+      }
+    }
+    for i in lo..hi {
+      h[i][i] = add(h[i][i], shift);
+    }
+  }
+  values
+    .iter()
+    .all(|v| v.0.is_finite() && v.1.is_finite())
+    .then_some(values)
 }
 
 /// In-place Householder reduction to upper Hessenberg form. Columns whose

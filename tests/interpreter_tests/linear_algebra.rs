@@ -10850,3 +10850,49 @@ mod machine_svd_any_shape {
     );
   }
 }
+
+// Machine matrices with complex entries (3x3 and up) were left unevaluated
+// (GershgorinCircleTheorem).
+mod complex_machine_eigenvalues {
+  use super::*;
+
+  #[test]
+  fn values_by_decreasing_magnitude() {
+    assert_eq!(
+      interpret(
+        "m = {{1. + 2. I, 2., 0.5 I}, {3., 4. - I, 1.}, {0., 1. I, 2.}}; \
+         ev = Eigenvalues[m]; \
+         {Length[ev], Abs[Total[ev] - Tr[m]] < 10^-12, \
+          Max[Abs[Det[m - # IdentityMatrix[3]] & /@ ev]] < 10^-10, \
+          OrderedQ[Reverse[Abs[ev]]]}"
+      )
+      .unwrap(),
+      "{3, True, True, True}"
+    );
+  }
+
+  #[test]
+  fn hermitian_values_are_real() {
+    assert_eq!(
+      interpret(
+        "Head /@ Eigenvalues[{{2., 1. - I, 0.}, {1. + I, 3., 0.5 I}, \
+         {0., -0.5 I, 1.}}]"
+      )
+      .unwrap(),
+      "{Real, Real, Real}"
+    );
+  }
+
+  // RandomComplex read a bound like -1 - I as invalid.
+  #[test]
+  fn random_complex_negative_corner() {
+    assert_eq!(
+      interpret(
+        "SeedRandom[1]; z = RandomComplex[{-1 - I, 1 + I}, 50]; \
+         {Head[z[[1]]], And @@ (-1 <= Re[#] <= 1 && -1 <= Im[#] <= 1 & /@ z)}"
+      )
+      .unwrap(),
+      "{Complex, True}"
+    );
+  }
+}

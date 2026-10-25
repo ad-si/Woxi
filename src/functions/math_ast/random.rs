@@ -347,73 +347,14 @@ fn distribution_vector_draw(dist: &Expr, n: i128) -> Option<Expr> {
 pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
 
+  // `(re, im)` of a numeric bound (`-1 - I` is `Complex[-1, -1]`, but a
+  // bound may also arrive as an unevaluated sum or product).
   fn complex_parts(expr: &Expr) -> Option<(f64, f64)> {
-    // Extract (re, im) from an Expr that evaluates to a number.
-    match expr {
-      Expr::Integer(n) => Some((*n as f64, 0.0)),
-      Expr::Real(r) => Some((*r, 0.0)),
-      Expr::Identifier(s) if s == "I" => Some((0.0, 1.0)),
-      Expr::FunctionCall { name, args }
-        if name == "Complex" && args.len() == 2 =>
-      {
-        let re = match &args[0] {
-          Expr::Integer(n) => *n as f64,
-          Expr::Real(r) => *r,
-          _ => return None,
-        };
-        let im = match &args[1] {
-          Expr::Integer(n) => *n as f64,
-          Expr::Real(r) => *r,
-          _ => return None,
-        };
-        Some((re, im))
-      }
-      Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left,
-        right,
-      } => {
-        let (re1, im1) = complex_parts(left)?;
-        let (re2, im2) = complex_parts(right)?;
-        Some((re1 + re2, im1 + im2))
-      }
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left,
-        right,
-      } => {
-        let (re1, im1) = complex_parts(left)?;
-        let (re2, im2) = complex_parts(right)?;
-        Some((re1 * re2 - im1 * im2, re1 * im2 + im1 * re2))
-      }
-      Expr::FunctionCall { name, args } if name == "Plus" => {
-        let mut re = 0.0;
-        let mut im = 0.0;
-        for a in args {
-          let (r, i) = complex_parts(a)?;
-          re += r;
-          im += i;
-        }
-        Some((re, im))
-      }
-      Expr::FunctionCall { name, args } if name == "Times" => {
-        let mut re = 1.0;
-        let mut im = 0.0;
-        for a in args {
-          let (r, i) = complex_parts(a)?;
-          let nr = re * r - im * i;
-          let ni = re * i + im * r;
-          re = nr;
-          im = ni;
-        }
-        Some((re, im))
-      }
-      _ => None,
-    }
+    crate::functions::list_helpers_ast::expr_to_complex_parts(expr)
   }
 
   fn make_complex(re: f64, im: f64) -> Expr {
-    plus2(Expr::Real(re), times2(Expr::Real(im), id_expr("I")))
+    crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
   }
 
   // Parse the range from the first argument (default: 0 to 1+I).
@@ -460,10 +401,8 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       rng.gen_range(im_lo..im_hi)
     };
-    plus2(Expr::Real(re), times2(Expr::Real(im), id_expr("I")))
+    make_complex(re, im)
   }
-
-  let _ = make_complex; // silence unused warning if code paths change
 
   match args.len() {
     0 | 1 => Ok(crate::with_rng(|rng| {
