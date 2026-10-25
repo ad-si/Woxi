@@ -934,26 +934,49 @@ pub fn quantile_distribution_closed_form(
     // Empirical DataDistribution: the smallest support value whose
     // cumulative weight reaches q (inclusive)
     "DataDistribution" => {
-      let (weights, values) = data_distribution_parts(dargs)?;
-      let target = q_num;
+      let (weights, values) = empirical_points(dargs)?;
       let mut cum = 0.0;
       for (w, v) in weights.iter().zip(values.iter()) {
-        cum += w.0 as f64 / w.1 as f64;
-        if cum >= target - 1e-12 {
-          return Some(if v.1 == 1 {
-            Expr::Integer(v.0)
-          } else {
-            make_rational(v.0, v.1)
-          });
+        cum += try_eval_to_f64(w)?;
+        if cum >= q_num - 1e-12 {
+          return Some(v.clone());
         }
       }
-      values.last().map(|v| {
-        if v.1 == 1 {
-          Expr::Integer(v.0)
-        } else {
-          make_rational(v.0, v.1)
+      values.last().cloned()
+    }
+    // ZipfDistribution at a machine-real probability: the smallest k whose
+    // cumulative mass reaches q, summed term by term (wolframscript leaves
+    // an exact q unevaluated).
+    "ZipfDistribution" if !is_exact_q => {
+      let (n, rho) = match dargs {
+        [rho] => (None, try_eval_to_f64(rho)?),
+        [n, rho] => (Some(try_eval_to_f64(n)?), try_eval_to_f64(rho)?),
+        _ => return None,
+      };
+      if rho <= 0.0 {
+        return None;
+      }
+      if q_num >= 1.0 {
+        return Some(match n {
+          Some(n) => Expr::Integer(n as i128),
+          None => Expr::Identifier("Infinity".to_string()),
+        });
+      }
+      let norm = match n {
+        Some(n) => (1..=n as u64).map(|k| (k as f64).powf(-rho - 1.0)).sum(),
+        None => {
+          try_eval_to_f64(&eval(&call1("Zeta", Expr::Real(rho + 1.0))).ok()?)?
         }
-      })
+      };
+      let limit = n.map_or(10_000_000, |n| n as u64);
+      let mut cum = 0.0;
+      for k in 1..=limit {
+        cum += (k as f64).powf(-rho - 1.0) / norm;
+        if cum >= q_num - 1e-15 {
+          return Some(Expr::Integer(k as i128));
+        }
+      }
+      None
     }
     // Quantile[ExponentialDistribution[lambda], q] = -Log[1 - q] / lambda
     "ExponentialDistribution" if dargs.len() == 1 => {

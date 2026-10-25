@@ -9314,3 +9314,32 @@ mod weibull_location_sampling {
     );
   }
 }
+
+mod zipf_quantile {
+  use super::*;
+
+  // A machine-real probability gives the smallest k whose cumulative mass
+  // reaches it; an exact one stays unevaluated, as in wolframscript.
+  #[test]
+  fn inverse_cdf() {
+    assert_eq!(
+      interpret("InverseCDF[ZipfDistribution[1.5], 0.99]").unwrap(),
+      "14"
+    );
+    assert_eq!(
+      interpret("InverseCDF[ZipfDistribution[10, 1.2], 0.9]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("InverseCDF[ZipfDistribution[2], 1/2]").unwrap(),
+      "InverseCDF[ZipfDistribution[2], 1/2]"
+    );
+    assert_eq!(
+      interpret(
+        "InverseCDF[EmpiricalDistribution[{0.9, 0.04, 0.06} -> {1, 2, 3}], 0.95]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+}
