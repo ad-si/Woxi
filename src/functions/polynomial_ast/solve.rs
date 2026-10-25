@@ -2210,14 +2210,34 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => false,
         }
       }
+      // The first derivatives settle a linear system with one `D` per
+      // variable: when none of them mentions a variable any more, every
+      // second derivative vanishes.
       vars.iter().any(|a| {
-        vars.iter().any(|b| {
-          !crate::evaluator::evaluate_function_call_ast(
-            "D",
-            &[g.clone(), a.clone(), b.clone()],
+        let Ok(first) = crate::evaluator::evaluate_function_call_ast(
+          "D",
+          &[g.clone(), a.clone()],
+        ) else {
+          return true;
+        };
+        let free_of_vars = vars.iter().all(|b| match b {
+          Expr::Identifier(name) => {
+            crate::functions::calculus_ast::is_constant_wrt(&first, name)
+          }
+          _ => crate::evaluator::evaluate_function_call_ast(
+            "FreeQ",
+            &[first.clone(), b.clone()],
           )
-          .is_ok_and(|d| is_zero(&d))
-        })
+          .is_ok_and(|r| matches!(&r, Expr::Identifier(t) if t == "True")),
+        });
+        !free_of_vars
+          && vars.iter().any(|b| {
+            !crate::evaluator::evaluate_function_call_ast(
+              "D",
+              &[first.clone(), b.clone()],
+            )
+            .is_ok_and(|d| is_zero(&d))
+          })
       })
     });
     // A linear system is re-solved only when the inexact elimination found
@@ -11110,7 +11130,16 @@ fn minimize_parse_vars_full(
 
 /// Recursively replace every occurrence of `from` with `to` in `expr`.
 pub(crate) fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
-  if expr_to_string(expr) == expr_to_string(from) {
+  // Only a node shaped like `from` can equal it; spelling every node out as
+  // a string made the walk quadratic for large systems.
+  let may_match = match (expr, from) {
+    (
+      Expr::FunctionCall { name: a, args: x },
+      Expr::FunctionCall { name: b, args: y },
+    ) => a == b && x.len() == y.len(),
+    _ => true,
+  };
+  if may_match && expr_to_string(expr) == expr_to_string(from) {
     return to.clone();
   }
   match expr {
@@ -14657,6 +14686,96 @@ fn eval_entry(e: Expr) -> Expr {
   simplify(r2)
 }
 
+/// Gauss-Jordan elimination of an augmented matrix whose entries are all
+/// machine numbers (at least one inexact), with partial pivoting.
+///
+/// The symbolic elimination takes the first non-zero entry as pivot and tests
+/// for zero exactly, so rounding noise in a larger inexact system leaves
+/// phantom pivots and loses the solution. Entries below a relative tolerance
+/// count as zero here. Returns `None` for any other matrix.
+fn eliminate_machine_numbers(
+  matrix: &[Vec<Expr>],
+  col_order: &mut dyn Iterator<Item = usize>,
+) -> Option<(Vec<Vec<Expr>>, Vec<(usize, usize)>)> {
+  let mut inexact = false;
+  let mut m: Vec<Vec<f64>> = Vec::with_capacity(matrix.len());
+  for row in matrix {
+    let mut r = Vec::with_capacity(row.len());
+    for e in row {
+      match e {
+        Expr::Real(x) => {
+          inexact = true;
+          r.push(*x);
+        }
+        Expr::Integer(i) => r.push(*i as f64),
+        _ => return None,
+      }
+    }
+    m.push(r);
+  }
+  if !inexact {
+    return None;
+  }
+  let nrows = m.len();
+  let scale = m
+    .iter()
+    .flatten()
+    .fold(0.0f64, |acc, v| acc.max(v.abs()))
+    .max(f64::MIN_POSITIVE);
+  let tol = scale * 1e-12;
+
+  let mut pivot_row = 0;
+  let mut pivot_cols: Vec<(usize, usize)> = Vec::new();
+  for col in col_order {
+    if pivot_row >= nrows {
+      break;
+    }
+    let (best, best_abs) = (pivot_row..nrows)
+      .map(|r| (r, m[r][col].abs()))
+      .fold((pivot_row, 0.0), |acc, c| if c.1 > acc.1 { c } else { acc });
+    if best_abs <= tol {
+      continue;
+    }
+    m.swap(pivot_row, best);
+    let pivot = m[pivot_row][col];
+    for v in &mut m[pivot_row] {
+      *v /= pivot;
+    }
+    m[pivot_row][col] = 1.0;
+    let pivot_values = m[pivot_row].clone();
+    for (row, values) in m.iter_mut().enumerate() {
+      if row == pivot_row {
+        continue;
+      }
+      let factor = values[col];
+      if factor != 0.0 {
+        for (v, p) in values.iter_mut().zip(&pivot_values) {
+          *v -= factor * p;
+        }
+      }
+      values[col] = 0.0;
+    }
+    pivot_cols.push((pivot_row, col));
+    pivot_row += 1;
+  }
+  let reduced = m
+    .into_iter()
+    .map(|row| {
+      row
+        .into_iter()
+        .map(|v| {
+          if v.abs() <= tol {
+            Expr::Integer(0)
+          } else {
+            Expr::Real(v)
+          }
+        })
+        .collect()
+    })
+    .collect();
+  Some((reduced, pivot_cols))
+}
+
 /// Solve a system of linear equations using symbolic Gaussian elimination.
 ///
 /// Returns `Some(Expr::List([Expr::List([rules...])]))` if the system is linear and consistent,
@@ -14945,6 +15064,9 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
   let eliminate = |mut matrix: Vec<Vec<Expr>>,
                    col_order: &mut dyn Iterator<Item = usize>|
    -> (Vec<Vec<Expr>>, Vec<(usize, usize)>) {
+    if let Some(result) = eliminate_machine_numbers(&matrix, col_order) {
+      return result;
+    }
     let mut pivot_row = 0;
     let mut pivot_cols: Vec<(usize, usize)> = Vec::new();
     for col in col_order {
@@ -15034,7 +15156,9 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
     // (`3/2 - x/2`, `c/b - (a*x)/b`), as Wolfram's does. A unique one runs
     // through the user-level Simplify so the RHS collapses forms like
     // -1*(1 - E^3)/2 into (-1 + E^3)/2 (matching wolframscript).
-    let rhs = if underdetermined {
+    let rhs = if underdetermined
+      || matches!(intermediate, Expr::Integer(_) | Expr::Real(_))
+    {
       intermediate
     } else {
       crate::functions::polynomial_ast::simplify_ast(std::slice::from_ref(
