@@ -28357,63 +28357,31 @@ mod manipulate {
     }
   }
 
-  /// `{{u, uinit}, colour}` — the Demonstrations idiom for a two-swatch
-  /// colour toggle (`ColorSetter`) — becomes a real discrete control whose
-  /// two choices are the initial colour and the listed one, each rendered
-  /// as a colour swatch icon rather than its `RGBColor[…]` InputForm.
+  /// `{{u, uinit, ulbl}, colour, opts…}` — a colour bound names no choice
+  /// list, so Wolfram draws the full swatch-plus-picker `ColorSlider`
+  /// opened on the explicit initial colour (not a two-swatch toggle between
+  /// it and the listed colour), whatever the option tail or labelling.
   #[test]
-  fn spec_two_color_swatch_form_becomes_a_discrete_control() {
-    let expr = interpret_to_expr(
-      "Manipulate[ringColor, \
-       {{ringColor, RGBColor[0.88, 0.63, 0.23]}, RGBColor[0.49, 0, 0]}]",
-    )
-    .unwrap();
-    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
-    match &spec.controls[0] {
-      ManipulateControl::Discrete {
-        name,
-        values,
-        initial_index,
-        value_label_svgs,
-        setter_bar,
-        ..
-      } => {
-        assert_eq!(name, "ringColor");
-        assert_eq!(
-          values,
-          &["RGBColor[0.88, 0.63, 0.23]", "RGBColor[0.49, 0, 0]"]
-        );
-        assert_eq!(*initial_index, 0);
-        assert!(
-          value_label_svgs.iter().all(Option::is_some),
-          "both swatches should render as colour icons: {value_label_svgs:?}"
-        );
-        assert!(*setter_bar, "a colour toggle always shows its swatches");
+  fn spec_color_bound_with_explicit_initial_is_a_color_control() {
+    for spec_src in [
+      "{{ringColor, RGBColor[0.88, 0.63, 0.23]}, RGBColor[0.49, 0, 0]}",
+      "{{ringColor, RGBColor[0.88, 0.63, 0.23], \"lines\"}, \
+       RGBColor[1, 0, 0], ImageSize -> Tiny}",
+      "{{ringColor, RGBColor[0.88, 0.63, 0.23]}, RGBColor[0.49, 0, 0], \
+       Appearance -> \"Vertical\"}",
+    ] {
+      let expr =
+        interpret_to_expr(&format!("Manipulate[ringColor, {spec_src}]"))
+          .unwrap();
+      let spec =
+        extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+      match &spec.controls[..] {
+        [ManipulateControl::Color { name, initial, .. }] => {
+          assert_eq!(name, "ringColor");
+          assert_eq!(initial, "RGBColor[0.88, 0.63, 0.23]");
+        }
+        other => panic!("expected a color control for {spec_src}: {other:?}"),
       }
-      other => panic!("expected a discrete control, got {other:?}"),
-    }
-  }
-
-  /// A two-swatch colour toggle honors `Appearance -> "Vertical"` the same
-  /// way a `SetterBar`/`RadioButtonBar` does, stacking its swatches in a
-  /// column instead of Wolfram's default horizontal row.
-  #[test]
-  fn spec_two_color_swatch_form_honors_vertical_appearance() {
-    let expr = interpret_to_expr(
-      "Manipulate[ringColor, \
-       {{ringColor, RGBColor[0.88, 0.63, 0.23]}, RGBColor[0.49, 0, 0], \
-       Appearance -> \"Vertical\"}]",
-    )
-    .unwrap();
-    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
-    match &spec.controls[0] {
-      ManipulateControl::Discrete { vertical, .. } => {
-        assert!(
-          *vertical,
-          "Appearance -> \"Vertical\" must stack the colour swatches"
-        );
-      }
-      other => panic!("expected a discrete control, got {other:?}"),
     }
   }
 

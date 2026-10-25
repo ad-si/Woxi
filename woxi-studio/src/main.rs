@@ -10700,6 +10700,26 @@ Manipulate[
     assert_eq!(labels, vec!["sin(x)", "|sin(x)|", "x\u{00B2}"]);
   }
 
+  /// A labelled `{{c, init, "lbl"}, colour, ImageSize -> Tiny}` spec is a
+  /// full colour picker on the initial colour, not a two-swatch toggle.
+  #[test]
+  fn color_bound_with_initial_builds_a_color_picker() {
+    let state = instantiate_stored_manipulate(
+      "Manipulate[Graphics[{c, Disk[]}], \
+       {{c, RGBColor[0, 0.5, 0], \"fill\"}, RGBColor[1, 0, 0], \
+       ImageSize -> Tiny}]",
+      "",
+    )
+    .expect("Manipulate must build a widget");
+    match &state.controls[..] {
+      [manipulate::ControlState::Color { name, current, .. }] => {
+        assert_eq!(name, "c");
+        assert_eq!(current, "RGBColor[0, 0.5, 0]");
+      }
+      other => panic!("expected one colour control, got {other:?}"),
+    }
+  }
+
   #[test]
   fn stored_manipulate_is_instantiated_on_load() {
     let state =

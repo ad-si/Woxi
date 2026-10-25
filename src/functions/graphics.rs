@@ -33270,59 +33270,17 @@ fn parse_manipulate_control(
     });
   }
 
-  // Colour form: `{{u, uinit, ulbl}, colour}` — wolframscript renders a
-  // ColorSetter whose swatches are the initial colour and the listed
-  // alternate(s), matching the Demonstrations idiom of toggling between a
-  // couple of fixed colours. With an explicit initial colour that differs
-  // from `colour`, the two form a real 2-swatch choice; without one there is
-  // only a single possible value to alternate with, and wolframscript draws
-  // a full `ColorSlider` over the whole hue gradient instead (the same
-  // widget the explicit `ColorSlider`/`ColorSetter` marker produces above) —
-  // there being nothing to swatch-toggle between is exactly what makes the
-  // domain "any colour" rather than "one of these two". The bare
-  // `{u, colour}` form names no domain at all: there the colour is the
-  // *initial value* of `u` (`{u, uinit}` picks the widget from the type of
-  // `uinit`), which for a colour is again that full-gradient control.
+  // Colour form: `{{u, uinit, ulbl}, colour}` or the bare `{u, colour}` —
+  // a colour names no domain to choose from (`{u, uinit}` picks the widget
+  // from the type of `uinit`), so Wolfram draws the same full `ColorSlider`
+  // (swatch plus hue/saturation picker) the explicit marker produces above,
+  // opened on the explicit initial colour. The listed colour is only the
+  // initial value when no explicit initial is given.
   if bounds.len() == 1
     && crate::functions::graphics::parse_color(bounds[0]).is_some()
   {
-    let alt_code = crate::syntax::expr_to_source_form(bounds[0]);
-    if let Some(init) = explicit_initial.as_ref().filter(|init| {
-      parse_color(init).is_some()
-        && crate::syntax::expr_to_source_form(init) != alt_code
-    }) {
-      let value_items = vec![init.clone(), bounds[0].clone()];
-      let (values, value_labels, value_label_svgs, value_label_runs) =
-        discrete_choice_columns(&value_items);
-      return Some(ParsedControl::Visible {
-        control: ManipulateControl::Discrete {
-          name,
-          values,
-          value_labels,
-          value_label_svgs,
-          value_label_runs,
-          initial_index: 0,
-          initial_overflow: None,
-          label,
-          label_runs,
-          popup: false,
-          // A ColorSetter always shows its swatches as a row of buttons,
-          // never a dropdown, and that row is always horizontal.
-          setter_bar: true,
-          slider: false,
-          vertical: appearance_vertical,
-        },
-        enabled,
-        min_code: None,
-        max_code: None,
-        values_code: None,
-        animate: None,
-        tracking: tracking.clone(),
-      });
-    }
-    // With no explicit initial at all — the bare `{u, colour}` form, not the
-    // labelled triple — the lone colour is what `u` starts on, so the widget
-    // is the same full-gradient colour control opened on that colour.
+    // With no explicit initial at all — the bare `{u, colour}` form — the
+    // lone colour is what `u` starts on.
     let initial = match explicit_initial.as_ref() {
       Some(init) => manipulate_value_to_input_form(init),
       None => manipulate_value_to_input_form(bounds[0]),
