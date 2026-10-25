@@ -23,7 +23,8 @@ use crate::functions::math_ast::canonical_polynomial::is_plain_symbol;
 use crate::helpers::plus;
 use num_bigint::BigInt;
 use num_traits::{One, Signed};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
+use std::hash::{Hash, Hasher};
 
 /// Expand and combine `expr` when it is a polynomial with rational
 /// coefficients in plain (non-system) symbols; None otherwise.
@@ -33,13 +34,122 @@ pub(super) fn expand_polynomial(expr: &Expr) -> Option<Expr> {
     return None;
   }
   let mut names = BTreeSet::new();
-  if !collect_generators(expr, &mut names) || names.is_empty() {
+  if !collect_generators(expr, &mut names, None) || names.is_empty() {
     return None;
   }
   let mut gens: Vec<String> = names.into_iter().collect();
   gens.sort_by(|a, b| wolfram_string_order(a, b).cmp(&0).reverse());
-  let p = to_poly(expr, &gens)?;
+  let p = to_poly(expr, gens.len(), &|e| symbol_index(e, &gens))?;
+  let gens: Vec<Expr> = gens.into_iter().map(Expr::Identifier).collect();
   Some(poly_to_canonical_expr(&p, &gens))
+}
+
+/// `expand_polynomial` that also takes calls with a plain symbol head —
+/// `f[x]`, `g[a, b]`, `x[1]` — as generators, opaque like Expand treats
+/// them. The terms are neither combined across calls that only print alike
+/// nor put in canonical order, so the result still needs to be evaluated.
+///
+/// The generic expander combines like terms by their printed form after
+/// every multiplication, so expanding a product of sums of such calls (the
+/// Dirac trace recursion of issue #1772) spent most of its time printing.
+pub(super) fn expand_polynomial_with_kernels(expr: &Expr) -> Option<Expr> {
+  #[cfg(test)]
+  if tests::GENERIC_ONLY.get() {
+    return None;
+  }
+  let mut names = BTreeSet::new();
+  let mut kernels = Kernels::default();
+  if !collect_generators(expr, &mut names, Some(&mut kernels)) {
+    return None;
+  }
+  if kernels.list.is_empty() {
+    return expand_polynomial(expr);
+  }
+  let symbols: Vec<String> = names.into_iter().collect();
+  let lookup = |e: &Expr| match e {
+    Expr::FunctionCall { .. } => kernels.index(e).map(|i| symbols.len() + i),
+    _ => symbol_index(e, &symbols),
+  };
+  let p = to_poly(expr, symbols.len() + kernels.list.len(), &lookup)?;
+  let gens: Vec<Expr> = symbols
+    .into_iter()
+    .map(Expr::Identifier)
+    .chain(kernels.list)
+    .collect();
+  Some(poly_to_canonical_expr(&p, &gens))
+}
+
+/// The index of the plain symbol `e` among `names`.
+fn symbol_index(e: &Expr, names: &[String]) -> Option<usize> {
+  match e {
+    Expr::Identifier(name) => names.iter().position(|g| g == name),
+    _ => None,
+  }
+}
+
+/// A call `expand_polynomial_with_kernels` treats as a generator.
+fn is_kernel(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. } if is_plain_symbol(name))
+}
+
+/// The distinct opaque calls of a polynomial, in order of appearance.
+#[derive(Default)]
+struct Kernels {
+  list: Vec<Expr>,
+  by_hash: HashMap<u64, Vec<usize>>,
+}
+
+impl Kernels {
+  fn index(&self, e: &Expr) -> Option<usize> {
+    self
+      .by_hash
+      .get(&structural_hash(e))?
+      .iter()
+      .copied()
+      .find(|&i| {
+        crate::evaluator::pattern_matching::expr_equal(&self.list[i], e)
+      })
+  }
+
+  fn insert(&mut self, e: &Expr) {
+    if self.index(e).is_none() {
+      self
+        .by_hash
+        .entry(structural_hash(e))
+        .or_default()
+        .push(self.list.len());
+      self.list.push(e.clone());
+    }
+  }
+}
+
+/// A hash consistent with `expr_equal`: structurally equal expressions hash
+/// alike.
+fn structural_hash(e: &Expr) -> u64 {
+  fn go(e: &Expr, h: &mut std::collections::hash_map::DefaultHasher) {
+    match e {
+      Expr::Integer(n) => (0u8, n).hash(h),
+      Expr::Identifier(s) => (1u8, s).hash(h),
+      Expr::String(s) => (2u8, s).hash(h),
+      Expr::FunctionCall { name, args } => {
+        (3u8, name, args.len()).hash(h);
+        for a in args {
+          go(a, h);
+        }
+      }
+      Expr::List(items) => {
+        (4u8, items.len()).hash(h);
+        for a in items {
+          go(a, h);
+        }
+      }
+      // Rarer shapes only need to land in a consistent bucket.
+      _ => 5u8.hash(h),
+    }
+  }
+  let mut h = std::collections::hash_map::DefaultHasher::new();
+  go(e, &mut h);
+  h.finish()
 }
 
 /// `expr` as a polynomial over its symbols, which are returned sorted by
@@ -49,16 +159,24 @@ pub(super) fn polynomial_in_symbols(
   expr: &Expr,
 ) -> Option<(Poly, Vec<String>)> {
   let mut names = BTreeSet::new();
-  if !collect_generators(expr, &mut names) {
+  if !collect_generators(expr, &mut names, None) {
     return None;
   }
   let gens: Vec<String> = names.into_iter().collect();
-  Some((to_poly(expr, &gens)?, gens))
+  Some((
+    to_poly(expr, gens.len(), &|e| symbol_index(e, &gens))?,
+    gens,
+  ))
 }
 
 /// Check that `expr` is a polynomial the fast path handles, collecting the
-/// names of its symbols.
-fn collect_generators(expr: &Expr, names: &mut BTreeSet<String>) -> bool {
+/// names of its symbols and, when `kernels` is given, its opaque calls.
+fn collect_generators(
+  expr: &Expr,
+  names: &mut BTreeSet<String>,
+  mut kernels: Option<&mut Kernels>,
+) -> bool {
+  let mut go = |e: &Expr| collect_generators(e, names, kernels.as_deref_mut());
   match expr {
     Expr::Integer(_) | Expr::BigInteger(_) => true,
     Expr::Identifier(name) => {
@@ -72,30 +190,32 @@ fn collect_generators(expr: &Expr, names: &mut BTreeSet<String>) -> bool {
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Rational" => rational_literal(expr).is_some(),
-      "Plus" | "Times" => args.iter().all(|a| collect_generators(a, names)),
+      "Plus" | "Times" => args.iter().all(go),
       "Power" if args.len() == 2 => {
-        power_exponent(&args[1]).is_some()
-          && collect_generators(&args[0], names)
+        power_exponent(&args[1]).is_some() && go(&args[0])
       }
-      _ => false,
+      _ => match kernels {
+        Some(kernels) if is_kernel(expr) => {
+          kernels.insert(expr);
+          true
+        }
+        _ => false,
+      },
     },
     Expr::BinaryOp { op, left, right } => match op {
       BinaryOperator::Plus | BinaryOperator::Minus | BinaryOperator::Times => {
-        collect_generators(left, names) && collect_generators(right, names)
+        go(left) && go(right)
       }
-      BinaryOperator::Power => {
-        power_exponent(right).is_some() && collect_generators(left, names)
-      }
+      BinaryOperator::Power => power_exponent(right).is_some() && go(left),
       BinaryOperator::Divide => {
-        rational_literal(right).is_some_and(|q| !q.is_zero())
-          && collect_generators(left, names)
+        rational_literal(right).is_some_and(|q| !q.is_zero()) && go(left)
       }
       _ => false,
     },
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
-    } => collect_generators(operand, names),
+    } => go(operand),
     _ => false,
   }
 }
@@ -124,19 +244,19 @@ fn rational_literal(e: &Expr) -> Option<Q> {
   }
 }
 
+/// The index of a generator, None for any other expression.
+type GenLookup<'a> = dyn Fn(&Expr) -> Option<usize> + 'a;
+
 /// A single term `c * x^i * y^j * …` straight to its exponent vector, without
 /// building and multiplying one-term polynomials. False when `expr` is not a
 /// product of rational numbers and powers of the generators.
-fn monomial(expr: &Expr, gens: &[String], m: &mut Mono, c: &mut Q) -> bool {
-  let mut symbol_power = |base: &Expr, k: u32| match base {
-    Expr::Identifier(name) => match gens.iter().position(|g| g == name) {
-      Some(i) => {
-        m[i] += k;
-        true
-      }
-      None => false,
-    },
-    _ => false,
+fn monomial(expr: &Expr, gens: &GenLookup, m: &mut Mono, c: &mut Q) -> bool {
+  let mut symbol_power = |base: &Expr, k: u32| match gens(base) {
+    Some(i) => {
+      m[i] += k;
+      true
+    }
+    None => false,
   };
   match expr {
     Expr::Identifier(_) => symbol_power(expr, 1),
@@ -168,13 +288,12 @@ fn monomial(expr: &Expr, gens: &[String], m: &mut Mono, c: &mut Q) -> bool {
         *c = c.mul(&q);
         true
       }
-      None => false,
+      None => symbol_power(expr, 1),
     },
   }
 }
 
-fn to_poly(expr: &Expr, gens: &[String]) -> Option<Poly> {
-  let nv = gens.len();
+fn to_poly(expr: &Expr, nv: usize, gens: &GenLookup) -> Option<Poly> {
   let mut m: Mono = vec![0; nv];
   let mut c = Q::one();
   if monomial(expr, gens, &mut m, &mut c) {
@@ -191,7 +310,7 @@ fn to_poly(expr: &Expr, gens: &[String]) -> Option<Poly> {
         acc.add_term(m, c);
         continue;
       }
-      for (m, c) in to_poly(item, gens)?.t {
+      for (m, c) in to_poly(item, nv, gens)?.t {
         acc.add_term(m, c);
       }
     }
@@ -200,7 +319,7 @@ fn to_poly(expr: &Expr, gens: &[String]) -> Option<Poly> {
   let product = |items: &mut dyn Iterator<Item = &Expr>| -> Option<Poly> {
     let mut acc = Poly::one(nv);
     for item in items {
-      acc = acc.mul(&to_poly(item, gens)?);
+      acc = acc.mul(&to_poly(item, nv, gens)?);
     }
     Some(acc)
   };
@@ -208,16 +327,17 @@ fn to_poly(expr: &Expr, gens: &[String]) -> Option<Poly> {
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Plus" => sum(&mut args.iter()),
       "Times" => product(&mut args.iter()),
-      "Power" => {
-        Some(pow(&to_poly(&args[0], gens)?, power_exponent(&args[1])?))
-      }
+      "Power" => Some(pow(
+        &to_poly(&args[0], nv, gens)?,
+        power_exponent(&args[1])?,
+      )),
       _ => None,
     },
     Expr::BinaryOp { op, left, right } => match op {
       BinaryOperator::Plus => sum(&mut [left, right].into_iter().map(|b| &**b)),
       BinaryOperator::Minus => {
-        let r = to_poly(right, gens)?.scale(&Q::one().neg());
-        let mut l = to_poly(left, gens)?;
+        let r = to_poly(right, nv, gens)?.scale(&Q::one().neg());
+        let mut l = to_poly(left, nv, gens)?;
         for (m, c) in r.t {
           l.add_term(m, c);
         }
@@ -227,17 +347,18 @@ fn to_poly(expr: &Expr, gens: &[String]) -> Option<Poly> {
         product(&mut [left, right].into_iter().map(|b| &**b))
       }
       BinaryOperator::Power => {
-        Some(pow(&to_poly(left, gens)?, power_exponent(right)?))
+        Some(pow(&to_poly(left, nv, gens)?, power_exponent(right)?))
       }
       BinaryOperator::Divide => Some(
-        to_poly(left, gens)?.scale(&Q::one().div(&rational_literal(right)?)),
+        to_poly(left, nv, gens)?
+          .scale(&Q::one().div(&rational_literal(right)?)),
       ),
       _ => None,
     },
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
-    } => Some(to_poly(operand, gens)?.scale(&Q::one().neg())),
+    } => Some(to_poly(operand, nv, gens)?.scale(&Q::one().neg())),
     _ => None,
   }
 }
@@ -252,8 +373,8 @@ fn pow(p: &Poly, n: u32) -> Poly {
   acc
 }
 
-/// Build the canonical expanded form of `p` over the generator symbols.
-fn poly_to_canonical_expr(p: &Poly, gens: &[String]) -> Expr {
+/// Build the canonical expanded form of `p` over the generators.
+fn poly_to_canonical_expr(p: &Poly, gens: &[Expr]) -> Expr {
   let mut monos: Vec<(&Mono, &Q)> = p.t.iter().collect();
   // Ascending from the last generator to the first; the zero vector (the
   // constant term) sorts first.
@@ -266,7 +387,7 @@ fn poly_to_canonical_expr(p: &Poly, gens: &[String]) -> Expr {
         .zip(gens)
         .filter(|(e, _)| **e > 0)
         .map(|(&e, g)| {
-          let v = Expr::Identifier(g.clone());
+          let v = g.clone();
           if e == 1 {
             v
           } else {
@@ -404,6 +525,47 @@ mod tests {
         crate::syntax::expr_to_string(&eval(&format!("({e}) /. {values}")))
       };
       assert_eq!(at(&printed), at(&source), "Expand[{source}]");
+    }
+  }
+
+  /// With calls of undefined functions among the atoms: once evaluated, the
+  /// kernel path gives exactly what the generic expander gives.
+  #[test]
+  fn kernel_path_matches_the_generic_expander() {
+    let mut rng = Rng(0x0123_4567_89ab_cdef);
+    let mut expanded = 0;
+    for _ in 0..500 {
+      let source = random_polynomial(
+        &mut rng,
+        4,
+        &["a", "x", "f[x]", "g[a, b]", "x[1]", "x[2]", "f[x + 1]"],
+        &["2", "-1", "-3", "1/2", "7"],
+      );
+      let expr = eval(&source);
+      let Some(fast) = expand_polynomial_with_kernels(&expr) else {
+        continue;
+      };
+      expanded += 1;
+      let evaluated = |e: &Expr| {
+        let e = crate::evaluator::evaluate_expr_to_expr(e).unwrap();
+        crate::syntax::expr_to_string(&e)
+      };
+      assert_eq!(
+        evaluated(&fast),
+        evaluated(&generic(&expr)),
+        "Expand[{source}]"
+      );
+    }
+    assert!(expanded > 400);
+  }
+
+  #[test]
+  fn kernel_path_declines_other_calls() {
+    for source in ["Sin[x] (1 + f[x])^2", "(1 + f[x])^(1/2)", "1/(1 + f[x])"] {
+      assert!(
+        expand_polynomial_with_kernels(&eval(source)).is_none(),
+        "{source}"
+      );
     }
   }
 

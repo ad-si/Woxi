@@ -1473,6 +1473,17 @@ pub fn ordered_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Returns 1 if a < b, -1 if a > b, 0 if equal (Wolfram Order convention).
 pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   use crate::functions::math_ast::try_eval_to_f64_with_infinity;
+  // Two calls of the same non-built-in head: none of the special cases
+  // below concern them, and they end up comparing argument by argument.
+  if let (
+    Expr::FunctionCall { name: na, args: aa },
+    Expr::FunctionCall { name: nb, args: ab },
+  ) = (a, b)
+    && na == nb
+    && crate::functions::math_ast::canonical_polynomial::is_plain_symbol(na)
+  {
+    return compare_same_head_args(aa, ab);
+  }
   let (sa, sb) = (slot_as_call(a), slot_as_call(b));
   if sa.is_some() || sb.is_some() {
     return compare_exprs(sa.as_ref().unwrap_or(a), sb.as_ref().unwrap_or(b));
@@ -1813,20 +1824,7 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
           && a_is_func_call
           && b_is_func_call
         {
-          // Same head: order by argument count first, then argument by
-          // argument (Wolfram: f[3] precedes f[1, 2]).
-          match aa.len().cmp(&ab.len()) {
-            std::cmp::Ordering::Less => return 1,
-            std::cmp::Ordering::Greater => return -1,
-            std::cmp::Ordering::Equal => {}
-          }
-          for (ai, bi) in aa.iter().zip(ab.iter()) {
-            let ord = compare_exprs(ai, bi);
-            if ord != 0 {
-              return ord;
-            }
-          }
-          return 0;
+          return compare_same_head_args(aa, ab);
         }
         // Both compounds: compare sort keys, then by full string
         let a_key = expr_sort_key(a);
@@ -1841,6 +1839,23 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
       }
     }
   }
+}
+
+/// Two calls with the same head order by argument count first, then argument
+/// by argument (Wolfram: f[3] precedes f[1, 2]).
+fn compare_same_head_args(aa: &[Expr], ab: &[Expr]) -> i64 {
+  match aa.len().cmp(&ab.len()) {
+    std::cmp::Ordering::Less => return 1,
+    std::cmp::Ordering::Greater => return -1,
+    std::cmp::Ordering::Equal => {}
+  }
+  for (ai, bi) in aa.iter().zip(ab.iter()) {
+    let ord = compare_exprs(ai, bi);
+    if ord != 0 {
+      return ord;
+    }
+  }
+  0
 }
 
 /// The full string two otherwise tied compound expressions are ordered by.
@@ -2446,28 +2461,31 @@ pub fn wolfram_string_order(a: &str, b: &str) -> i64 {
       other => other as u32,
     }
   }
-  let a_chars: Vec<char> = a.chars().collect();
-  let b_chars: Vec<char> = b.chars().collect();
+  // Equal strings tie in both passes below. Ordering compares a string
+  // with itself often (a head against the same head), so skip the walk.
+  if a == b {
+    return 0;
+  }
 
   // Pass 1: case-insensitive comparison over the whole strings, with a
   // shorter string sorting first on a prefix match. wolframscript:
   // Sort[{"MathML", "MAT"}] = {MAT, MathML} — the case difference at
   // the second letter must not outrank the length/letter comparison.
-  for (ac, bc) in a_chars.iter().zip(b_chars.iter()) {
-    let al = ac.to_lowercase().next().unwrap_or(*ac);
-    let bl = bc.to_lowercase().next().unwrap_or(*bc);
+  for (ac, bc) in a.chars().zip(b.chars()) {
+    let al = ac.to_lowercase().next().unwrap_or(ac);
+    let bl = bc.to_lowercase().next().unwrap_or(bc);
     if collate(al) != collate(bl) {
       return if collate(al) < collate(bl) { 1 } else { -1 };
     }
   }
-  match a_chars.len().cmp(&b_chars.len()) {
+  match a.chars().count().cmp(&b.chars().count()) {
     std::cmp::Ordering::Less => return 1,
     std::cmp::Ordering::Greater => return -1,
     std::cmp::Ordering::Equal => {}
   }
   // Pass 2: case-insensitively equal strings tie-break at the first
   // case difference, lowercase first: Sort[{"Ab", "aB"}] = {aB, Ab}.
-  for (ac, bc) in a_chars.iter().zip(b_chars.iter()) {
+  for (ac, bc) in a.chars().zip(b.chars()) {
     if ac != bc {
       if ac.is_lowercase() && bc.is_uppercase() {
         return 1;
