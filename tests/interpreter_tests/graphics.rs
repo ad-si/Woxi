@@ -39619,6 +39619,29 @@ fn explicit_plot_range_clips_content_in_widened_drawing_area() {
 }
 
 #[test]
+fn full_aspect_ratio_frame_fills_the_requested_image_size() {
+  // Regression: with `ImageSize -> {w, h}` a framed `AspectRatio -> Full`
+  // picture stretches the plot range over the whole drawing area instead of
+  // hugging the data's shape (a 1 x 5 range gave a 77 pixel wide sliver).
+  let svg = export_svg(
+    "Graphics[{Line[{{0, 0}, {1, 1}}]}, PlotRange -> {{0, 1}, {0, 5}}, \
+     Frame -> True, ImageSize -> {600, 420}, AspectRatio -> Full]",
+  );
+  let (w, _) = plot_clip_size(&svg);
+  assert!(w > 400.0, "{svg}");
+}
+
+fn plot_clip_size(svg: &str) -> (f64, f64) {
+  let start = svg.find("<clipPath id=\"plotClip_").expect("clip path");
+  let rest = &svg[start..];
+  let num = |key: &str| -> f64 {
+    let at = rest.find(key).expect(key) + key.len();
+    rest[at..].split('"').next().unwrap().parse().unwrap()
+  };
+  (num("width=\""), num("height=\""))
+}
+
+#[test]
 fn pane_pads_small_content_to_its_fixed_box() {
   // Regression: `Pane[content, {w, h}]` reserves the whole box, so content
   // smaller than it is placed by an explicit `Alignment`, not left in the

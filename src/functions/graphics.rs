@@ -10857,6 +10857,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let fit_frame_to_data = explicit_size
     && size_names_height
     && aspect_ratio.is_none()
+    && !aspect_ratio_full
     && frame_edges.iter().any(|&e| e);
   if !aspect_ratio_full && !fit_frame_to_data {
     expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
