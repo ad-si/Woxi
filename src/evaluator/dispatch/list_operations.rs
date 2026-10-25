@@ -2938,6 +2938,9 @@ pub fn dispatch_list_operations(
         &[args[0].clone(), Expr::List(vec![args[1].clone()].into())],
       ));
     }
+    "Combinatorica`KSetPartitions" if args.len() == 2 => {
+      return Some(list_helpers_ast::combinatorica_k_set_partitions_ast(args));
+    }
     "Combinatorica`Josephus" if args.len() == 2 => {
       return Some(list_helpers_ast::combinatorica_josephus_ast(args));
     }
