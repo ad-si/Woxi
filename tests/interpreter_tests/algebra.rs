@@ -4248,6 +4248,13 @@ mod switch {
   }
 
   #[test]
+  fn head_of_number_applied_as_head() {
+    assert_eq!(interpret("IntegerQ[Head[10[2, 5]]]").unwrap(), "True");
+    assert_eq!(interpret("Head[(2*10)[2, 3]] + 1").unwrap(), "21");
+    assert_eq!(interpret("Head[f[x]]").unwrap(), "f");
+  }
+
+  #[test]
   fn head_constrained_blank_integer() {
     assert_eq!(
       interpret("Switch[42, _Integer, num, _String, str]").unwrap(),

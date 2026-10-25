@@ -582,7 +582,3 @@ mod interpreter_scalar_tests {
     assert_eq!(interpret(r#"Interpreter["Integer"][42]"#).unwrap(), "42");
   }
 }
-
-mod interpreter_over_lists {
-  use super::*;
-}
