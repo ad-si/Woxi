@@ -852,6 +852,26 @@ mod plus_call_led_ordering {
     }
   }
 
+  // Like terms over products and powers of calls combine (grouped
+  // structurally rather than by printed form, issue #1772), and the factors
+  // of each product come out in canonical order.
+  #[test]
+  fn like_terms_of_call_products_combine() {
+    assert_eq!(
+      interpret("g[a] g[b] + 2 g[b] g[a] - g[a] g[b]").unwrap(),
+      "2*g[a]*g[b]"
+    );
+    assert_eq!(
+      interpret("x[1] x[2] - x[2] x[1] + x[1]^2 + 3 x[1]^2").unwrap(),
+      "4*x[1]^2"
+    );
+    assert_eq!(
+      interpret("f[1] + f[-1] + f[-1] + f[2]").unwrap(),
+      "2*f[-1] + f[1] + f[2]"
+    );
+    assert_eq!(interpret("g[b] g[a] g[c, 1]").unwrap(), "g[a]*g[b]*g[c, 1]");
+  }
+
   #[test]
   fn calls_sort_after_symbols_powers_and_products() {
     check(&[

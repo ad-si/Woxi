@@ -15854,6 +15854,24 @@ mod cases_count_level_spec {
     );
   }
 
+  // Negative level bounds count from the leaves, at every depth of a deeply
+  // nested expression; Position walks it the same way.
+  #[test]
+  fn negative_levels_on_nested_lists() {
+    assert_eq!(
+      interpret("Cases[{1, {2, {3, {4}}}}, _, {2, -2}]").unwrap(),
+      "{{4}, {3, {4}}}"
+    );
+    assert_eq!(
+      interpret("Position[{1, {2, {3, {4}}}}, _, {-2}]").unwrap(),
+      "{{2, 2, 2}}"
+    );
+    assert_eq!(
+      interpret("Cases[{-Infinity, f[2]}, _Integer, Infinity]").unwrap(),
+      "{-1, 2}"
+    );
+  }
+
   // Cases[expr, pattern, Heads -> True] includes the head symbol in the
   // candidate pool.
   #[test]

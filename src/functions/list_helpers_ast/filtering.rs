@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use std::borrow::Cow;
 
 /// The optional count of `Select[list, crit, n]` / `Discard[list, crit, n]`:
 /// `Ok(None)` when absent or `Infinity`, `Ok(Some(n))` for a non-negative
@@ -833,10 +834,6 @@ fn is_atomic_number(expr: &Expr) -> bool {
 }
 
 fn position_depth(expr: &Expr) -> i64 {
-  use crate::functions::expr_form::{ExprForm, decompose_expr};
-  if is_atomic_number(expr) {
-    return 1;
-  }
   match expr {
     Expr::Association(pairs) => {
       1 + pairs
@@ -845,12 +842,50 @@ fn position_depth(expr: &Expr) -> i64 {
         .max()
         .unwrap_or(0)
     }
-    _ => match decompose_expr(expr) {
-      ExprForm::Atom(_) => 1,
-      ExprForm::Composite { children, .. } => {
-        // An empty `f[]` is as deep as `Depth[f[]]` says (2): the empty
-        // maximum is the depth of an atom, not 0.
+    _ => match walk_parts(expr, true) {
+      (None, _) => 1,
+      // An empty `f[]` is as deep as `Depth[f[]]` says (2): the empty
+      // maximum is the depth of an atom, not 0.
+      (Some(_), children) => {
         1 + children.iter().map(position_depth).max().unwrap_or(1)
+      }
+    },
+  }
+}
+
+/// The head (when `want_head`; always `Some` for a compound, so `None`
+/// means an atom) and the indexed children of a non-association `expr`, as
+/// the Cases/Position walks see them. A list's or call's arguments are lent
+/// rather than copied: copying every subtree at every level made the walks
+/// quadratic in the depth.
+fn walk_parts(expr: &Expr, want_head: bool) -> (Option<Expr>, Cow<'_, [Expr]>) {
+  use crate::functions::expr_form::{ExprForm, decompose_expr};
+  let head = |name: &str| {
+    Some(Expr::Identifier(
+      if want_head { name } else { "" }.to_string(),
+    ))
+  };
+  match expr {
+    // Rational / Complex are atoms: do not descend into their parts.
+    _ if is_atomic_number(expr) => (None, Cow::Borrowed(&[])),
+    Expr::CurriedCall { func, args } => {
+      (Some((**func).clone()), Cow::Owned(args.clone()))
+    }
+    Expr::List(items) => (head("List"), Cow::Borrowed(&items[..])),
+    // `-Infinity`, stored as `Times[-1, Infinity]`, is the atom-like
+    // `DirectedInfinity[-1]` to `decompose_expr`.
+    Expr::FunctionCall { name, args }
+      if !(name == "Times"
+        && args.len() == 2
+        && matches!(args[0], Expr::Integer(-1))
+        && matches!(&args[1], Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")) =>
+    {
+      (head(name), Cow::Borrowed(&args[..]))
+    }
+    _ => match decompose_expr(expr) {
+      ExprForm::Atom(_) => (None, Cow::Borrowed(&[])),
+      ExprForm::Composite { head, children } => {
+        (Some(Expr::Identifier(head)), Cow::Owned(children))
       }
     },
   }
@@ -880,31 +915,20 @@ fn position_visit(
   heads: bool,
   limit: Option<usize>,
 ) -> bool {
-  use crate::functions::expr_form::{ExprForm, decompose_expr};
   let full = |out: &Vec<Expr>| limit.is_some_and(|n| out.len() >= n);
 
   // Decompose into head + children; associations key their children.
-  enum Kids {
-    None,
-    Indexed(Vec<Expr>),
-    Keyed(Vec<(Expr, Expr)>),
+  enum Kids<'a> {
+    Indexed(Cow<'a, [Expr]>),
+    Keyed(&'a [(Expr, Expr)]),
   }
-  let (head, kids): (Option<Expr>, Kids) = match expr {
-    // Rational / Complex are atoms: do not descend into their parts.
-    _ if is_atomic_number(expr) => (None, Kids::None),
-    Expr::Association(pairs) => {
-      (Some(id_expr("Association")), Kids::Keyed(pairs.clone()))
-    }
-    Expr::CurriedCall { func, args } => {
-      (Some((**func).clone()), Kids::Indexed(args.clone()))
-    }
-    _ => match decompose_expr(expr) {
-      ExprForm::Atom(_) => (None, Kids::None),
-      ExprForm::Composite { head, children } => {
-        (Some(Expr::Identifier(head)), Kids::Indexed(children))
-      }
-    },
-  };
+  let (head, kids): (Option<Expr>, Kids) =
+    if let Expr::Association(pairs) = expr {
+      (Some(id_expr("Association")), Kids::Keyed(pairs))
+    } else {
+      let (head, children) = walk_parts(expr, heads);
+      (head, Kids::Indexed(children))
+    };
 
   if heads && let Some(h) = &head {
     path.push(Expr::Integer(0));
@@ -916,7 +940,6 @@ fn position_visit(
   }
 
   match kids {
-    Kids::None => {}
     Kids::Indexed(children) => {
       for (i, child) in children.iter().enumerate() {
         path.push(Expr::Integer((i + 1) as i128));
@@ -929,7 +952,7 @@ fn position_visit(
       }
     }
     Kids::Keyed(pairs) => {
-      for (key, value) in &pairs {
+      for (key, value) in pairs {
         path.push(call1("Key", key.clone()));
         let go =
           position_visit(value, pattern, path, out, min, max, heads, limit);
@@ -941,7 +964,13 @@ fn position_visit(
     }
   }
 
-  if position_level_match(path.len(), position_depth(expr), min, max)
+  // The depth (a walk of the whole subtree) only matters to a negative bound.
+  let depth = if min < 0 || max < 0 {
+    position_depth(expr)
+  } else {
+    0
+  };
+  if position_level_match(path.len(), depth, min, max)
     && crate::evaluator::pattern_matching::match_pattern(expr, pattern)
       .is_some()
   {
@@ -969,27 +998,17 @@ fn cases_visit(
   heads: bool,
   limit: Option<usize>,
 ) -> Result<bool, InterpreterError> {
-  use crate::functions::expr_form::{ExprForm, decompose_expr};
-
   // Parts deeper than a non-negative `max` level can never match, so don't
   // even decompose (clone) them. Negative bounds count from the leaves and
   // need the full walk.
   let too_deep = max >= 0 && level as i64 >= max;
-  let (head, kids): (Option<Expr>, Vec<Expr>) = match expr {
-    _ if too_deep => (None, Vec::new()),
-    // Rational / Complex are atoms: do not descend into their parts.
-    _ if is_atomic_number(expr) => (None, Vec::new()),
+  let (head, kids): (Option<Expr>, Cow<[Expr]>) = match expr {
+    _ if too_deep => (None, Cow::Borrowed(&[])),
     Expr::Association(pairs) => (
       Some(id_expr("Association")),
       pairs.iter().map(|(_, v)| v.clone()).collect(),
     ),
-    Expr::CurriedCall { func, args } => (Some((**func).clone()), args.clone()),
-    _ => match decompose_expr(expr) {
-      ExprForm::Atom(_) => (None, Vec::new()),
-      ExprForm::Composite { head, children } => {
-        (Some(Expr::Identifier(head)), children)
-      }
-    },
+    _ => walk_parts(expr, heads),
   };
 
   if heads && let Some(h) = &head {
@@ -1008,7 +1027,7 @@ fn cases_visit(
       return Ok(false);
     }
   }
-  for child in &kids {
+  for child in kids.iter() {
     let go = cases_visit(
       child,
       match_pat,
@@ -1025,7 +1044,13 @@ fn cases_visit(
     }
   }
 
-  if position_level_match(level, position_depth(expr), min, max)
+  // The depth (a walk of the whole subtree) only matters to a negative bound.
+  let depth = if min < 0 || max < 0 {
+    position_depth(expr)
+  } else {
+    0
+  };
+  if position_level_match(level, depth, min, max)
     && let Some(bindings) =
       crate::evaluator::pattern_matching::match_pattern(expr, match_pat)
   {

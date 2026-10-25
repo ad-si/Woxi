@@ -490,6 +490,46 @@ mod expand {
     );
   }
 
+  // Calls of undefined functions multiply out as opaque generators, like
+  // symbols (issue #1772).
+  #[test]
+  fn calls_as_generators() {
+    assert_eq!(
+      interpret("Expand[(x[1] + x[2])^2]").unwrap(),
+      "x[1]^2 + 2*x[1]*x[2] + x[2]^2"
+    );
+    assert_eq!(
+      interpret("Expand[(f[x] + 1)^2 - f[x]^2]").unwrap(),
+      "1 + 2*f[x]"
+    );
+    assert_eq!(
+      interpret("Expand[g[a] (g[b] - g[a])]").unwrap(),
+      "-g[a]^2 + g[a]*g[b]"
+    );
+    assert_eq!(
+      interpret("Expand[(f[x] + 1)^2/2]").unwrap(),
+      "1/2 + f[x] + f[x]^2/2"
+    );
+  }
+
+  // The Dirac trace recursion of issue #1772: every pairing of the indices
+  // appears once, and with all metric entries 1 the trace is 4.
+  #[test]
+  fn dirac_trace_recursion() {
+    assert_eq!(
+      interpret(
+        "diracTr[] := 4; diracTr[a_, b_] := 4 g[a, b]; \
+         diracTr[a_, rest___] := Module[{list = {rest}}, \
+           Sum[(-1)^(m + 1) Expand[g[a, list[[m]]] diracTr @@ Delete[list, m]], \
+             {m, 1, Length[list]}]]; \
+         t = diracTr @@ Array[x, 8]; \
+         {Length[t], Length[Union[Cases[t, _g, Infinity]]], t /. g[_, _] -> 1}"
+      )
+      .unwrap(),
+      "{105, 28, 4}"
+    );
+  }
+
   #[test]
   fn rational_coefficients() {
     assert_eq!(

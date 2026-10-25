@@ -69,7 +69,14 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
-  let mut expanded = match super::poly_expand::expand_polynomial(&args[0]) {
+  // Calls of undefined functions are opaque generators too, unless the
+  // result is reduced modulo n below without being evaluated again.
+  let polynomial = if modulus.is_none() && !trig {
+    super::poly_expand::expand_polynomial_with_kernels(&args[0])
+  } else {
+    super::poly_expand::expand_polynomial(&args[0])
+  };
+  let mut expanded = match polynomial {
     // Exact rational coefficients only: no radicals or numeric factors to fold.
     Some(polynomial) => polynomial,
     None => fold_term_numerics(&expand_and_combine(&args[0])),

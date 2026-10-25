@@ -1,5 +1,6 @@
 use super::*;
 use contains_inexact_real as contains_real;
+use std::borrow::Cow;
 
 /// Combine `SeriesData[var, x0, coeffs, nmin, nmax, denom]` summands that
 /// share the same `(var, x0, denom)` into a single SeriesData. The result
@@ -1951,32 +1952,19 @@ fn expr_to_coeff(arg: &Expr) -> Option<Coeff> {
 /// E.g. `3*x` → (Exact(3,1), x), `x` → (Exact(1,1), x), `-x` → (Exact(-1,1), x),
 /// `1.5*x` → (Real(1.5), x), `Rational[3,4]*x` → (Exact(3,4), x).
 fn decompose_term(e: &Expr) -> (Coeff, Expr) {
+  let (coeff, base) = decompose_term_ref(e);
+  (coeff, term_base_expr(base))
+}
+
+/// `decompose_term` without building the base: it is returned as the factors
+/// it is the product of, borrowed from `e` — a single expression, or the
+/// arguments of a `Times` after its numeric coefficient. Ordering a sum calls
+/// this for every comparison, and cloning the base each time dominated it.
+fn decompose_term_ref(e: &Expr) -> (Coeff, &[Expr]) {
   match e {
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
-      let base_from = |args: &[Expr]| -> Expr {
-        if args.len() == 2 {
-          args[1].clone()
-        } else {
-          times(args[1..].to_vec())
-        }
-      };
-      // Check if first arg is a numeric coefficient (integer/rational)
-      if let Some((n, d)) = expr_to_rational(&args[0]) {
-        let (inner_c, inner_base) = decompose_term(&base_from(args));
-        let outer_c = Coeff::Exact(n, d);
-        return (outer_c.mul(&inner_c), inner_base);
-      }
-      // Check if first arg is a BigInteger coefficient
-      if let Expr::BigInteger(n) = &args[0] {
-        let (inner_c, inner_base) = decompose_term(&base_from(args));
-        let outer_c = Coeff::BigExact(n.clone(), BigInt::from(1));
-        return (outer_c.mul(&inner_c), inner_base);
-      }
-      // Check if first arg is a Real coefficient
-      if let Expr::Real(f) = &args[0] {
-        let (inner_c, inner_base) = decompose_term(&base_from(args));
-        let outer_c = Coeff::Real(*f);
-        return (outer_c.mul(&inner_c), inner_base);
+      if let Some(outer) = leading_coeff(&args[0]) {
+        return decompose_factor_tail(&outer, &args[1..]);
       }
     }
     Expr::BinaryOp {
@@ -1984,20 +1972,9 @@ fn decompose_term(e: &Expr) -> (Coeff, Expr) {
       left,
       right,
     } => {
-      if let Some((n, d)) = expr_to_rational(left) {
-        let (inner_c, inner_base) = decompose_term(right);
-        let outer_c = Coeff::Exact(n, d);
-        return (outer_c.mul(&inner_c), inner_base);
-      }
-      if let Expr::BigInteger(n) = left.as_ref() {
-        let (inner_c, inner_base) = decompose_term(right);
-        let outer_c = Coeff::BigExact(n.clone(), BigInt::from(1));
-        return (outer_c.mul(&inner_c), inner_base);
-      }
-      if let Expr::Real(f) = left.as_ref() {
-        let (inner_c, inner_base) = decompose_term(right);
-        let outer_c = Coeff::Real(*f);
-        return (outer_c.mul(&inner_c), inner_base);
+      if let Some(outer) = leading_coeff(left) {
+        let (inner, base) = decompose_term_ref(right);
+        return (outer.mul(&inner), base);
       }
     }
     Expr::BinaryOp {
@@ -2009,22 +1986,57 @@ fn decompose_term(e: &Expr) -> (Coeff, Expr) {
       if let Some((n, d)) = expr_to_rational(right)
         && n != 0
       {
-        let (inner_c, inner_base) = decompose_term(left);
+        let (inner, base) = decompose_term_ref(left);
         // Multiply inner coefficient by (d/n) since we're dividing by (n/d)
-        let divisor = Coeff::Exact(d, n);
-        return (inner_c.mul(&divisor), inner_base);
+        return (inner.mul(&Coeff::Exact(d, n)), base);
       }
     }
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
     } => {
-      let (c, base) = decompose_term(operand);
+      let (c, base) = decompose_term_ref(operand);
       return (c.negate(), base);
     }
     _ => {}
   }
-  (Coeff::Exact(1, 1), e.clone())
+  (Coeff::Exact(1, 1), std::slice::from_ref(e))
+}
+
+/// The remaining factors `rest` of a product whose numeric coefficient so
+/// far is `outer`.
+fn decompose_factor_tail<'a>(
+  outer: &Coeff,
+  rest: &'a [Expr],
+) -> (Coeff, &'a [Expr]) {
+  let (inner, base) = if rest.len() == 1 {
+    decompose_term_ref(&rest[0])
+  } else if let Some(c) = leading_coeff(&rest[0]) {
+    decompose_factor_tail(&c, &rest[1..])
+  } else {
+    (Coeff::Exact(1, 1), rest)
+  };
+  (outer.mul(&inner), base)
+}
+
+/// A numeric factor `decompose_term` splits off as a coefficient.
+fn leading_coeff(e: &Expr) -> Option<Coeff> {
+  if let Some((n, d)) = expr_to_rational(e) {
+    return Some(Coeff::Exact(n, d));
+  }
+  match e {
+    Expr::BigInteger(n) => Some(Coeff::BigExact(n.clone(), BigInt::from(1))),
+    Expr::Real(f) => Some(Coeff::Real(*f)),
+    _ => None,
+  }
+}
+
+/// The base `decompose_term_ref` returns as an expression.
+fn term_base_expr(base: &[Expr]) -> Expr {
+  match base {
+    [single] => single.clone(),
+    factors => times(factors.to_vec()),
+  }
 }
 
 /// Collect like terms: group symbolic terms by their base expression
@@ -2115,29 +2127,60 @@ fn combine_bigfloat_coefficients(terms: Vec<Expr>) -> Vec<Expr> {
 }
 
 fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
-  use std::collections::BTreeMap;
+  use std::collections::{BTreeMap, HashMap};
 
-  // Group by string representation of base → sum of coefficients
-  // Also track the original expression and count for groups with a single term
-  let mut groups: Vec<(String, Expr, Coeff, Option<Expr>, usize)> = Vec::new();
-  let mut index: BTreeMap<String, usize> = BTreeMap::new();
-
-  for term in terms {
-    let (c, base) = decompose_term(term);
-    let key = expr_to_string(&base);
-    if let Some(&idx) = index.get(&key) {
-      let entry = &mut groups[idx];
-      entry.2 = entry.2.add(&c);
-      entry.3 = None; // Multiple terms combined, can't preserve original
-      entry.4 += 1;
-    } else {
-      index.insert(key.clone(), groups.len());
-      groups.push((key, base, c, Some(term.clone()), 1));
+  // Group by base → sum of coefficients. Also track the original expression
+  // and count for groups with a single term.
+  let mut groups: Vec<(Expr, Coeff, Option<Expr>, usize)> = Vec::new();
+  let mut add_term =
+    |group: Option<usize>, c: Coeff, base: &[Expr], term: &Expr| {
+      if let Some(idx) = group {
+        let entry = &mut groups[idx];
+        entry.1 = entry.1.add(&c);
+        entry.2 = None; // Multiple terms combined, can't preserve original
+        entry.3 += 1;
+        idx
+      } else {
+        groups.push((term_base_expr(base), c, Some(term.clone()), 1));
+        groups.len() - 1
+      }
+    };
+  let decomposed: Vec<(Coeff, &[Expr])> =
+    terms.iter().map(decompose_term_ref).collect();
+  if decomposed
+    .iter()
+    .all(|(_, base)| product_factors(base).iter().all(prints_injectively))
+    && !crate::evaluator::contexts::contexts_active()
+  {
+    // Bases that print alike only when they are structurally equal group
+    // without being printed: on a large sum, printing every base was most of
+    // the cost of adding it up.
+    let mut index: HashMap<u64, Vec<(usize, &[Expr])>> = HashMap::new();
+    for (term, (c, base)) in terms.iter().zip(decomposed) {
+      let factors = product_factors(base);
+      let bucket = index.entry(factors_hash(factors)).or_default();
+      let found = bucket
+        .iter()
+        .find(|(_, other)| factors_equal(other, factors))
+        .map(|(idx, _)| *idx);
+      let idx = add_term(found, c, base, term);
+      if found.is_none() {
+        bucket.push((idx, factors));
+      }
+    }
+  } else {
+    // Group by string representation of base
+    let mut index: BTreeMap<String, usize> = BTreeMap::new();
+    for (term, (c, base)) in terms.iter().zip(decomposed) {
+      let key = expr_to_string(&term_base_expr(base));
+      let found = index.get(&key).copied();
+      let idx = add_term(found, c, base, term);
+      index.insert(key, idx);
     }
   }
 
   let mut result = Vec::new();
-  for (_, base, c, original, count) in groups {
+  for (base, c, original, count) in groups {
     if c.is_zero() {
       // Preserve `Real(0.0) * I` as the imaginary marker of an inexact
       // Complex form. Wolfram's `1. + 0. I` evaluates to `Complex[1., 0.]`
@@ -2194,6 +2237,79 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
     }
   }
   result
+}
+
+/// The factors of a `decompose_term_ref` base: a product stands for its
+/// factors, so `Times[a, b]` and the factor list `[a, b]` read alike.
+fn product_factors(base: &[Expr]) -> &[Expr] {
+  match base {
+    [Expr::FunctionCall { name, args }]
+      if name == "Times" && args.len() >= 2 =>
+    {
+      args
+    }
+    _ => base,
+  }
+}
+
+/// A factor from the class of expressions whose printed forms differ
+/// whenever they differ structurally: symbols outside any context,
+/// non-negative integers, calls with a plain (non-built-in) head of such
+/// arguments, and integer powers of symbols and such calls. Like terms over
+/// these bases can be grouped structurally instead of by printed form.
+fn prints_injectively(e: &Expr) -> bool {
+  fn atom_or_call(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(name) => !name.contains('`') && name != "I",
+      Expr::Integer(n) => *n >= 0,
+      Expr::FunctionCall { name, args } => {
+        crate::functions::math_ast::canonical_polynomial::is_plain_symbol(name)
+          && args.iter().all(atom_or_call)
+      }
+      _ => false,
+    }
+  }
+  match e {
+    Expr::Identifier(_) | Expr::FunctionCall { .. } if atom_or_call(e) => true,
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      !matches!(&args[0], Expr::Integer(_))
+        && atom_or_call(&args[0])
+        && matches!(&args[1], Expr::Integer(n) if *n >= 2)
+    }
+    _ => false,
+  }
+}
+
+/// A hash of a factor list consistent with `factors_equal`.
+fn factors_hash(factors: &[Expr]) -> u64 {
+  use std::hash::{Hash, Hasher};
+  fn go(e: &Expr, h: &mut std::collections::hash_map::DefaultHasher) {
+    match e {
+      Expr::Integer(n) => (0u8, n).hash(h),
+      Expr::Identifier(s) => (1u8, s).hash(h),
+      Expr::FunctionCall { name, args } => {
+        (2u8, name, args.len()).hash(h);
+        for a in args {
+          go(a, h);
+        }
+      }
+      _ => 3u8.hash(h),
+    }
+  }
+  let mut h = std::collections::hash_map::DefaultHasher::new();
+  factors.len().hash(&mut h);
+  for f in factors {
+    go(f, &mut h);
+  }
+  h.finish()
+}
+
+fn factors_equal(a: &[Expr], b: &[Expr]) -> bool {
+  a.len() == b.len()
+    && a
+      .iter()
+      .zip(b)
+      .all(|(x, y)| crate::evaluator::pattern_matching::expr_equal(x, y))
 }
 
 /// Extract the earliest (alphabetically first) variable name from an expression.
@@ -2707,8 +2823,8 @@ fn constant_symbol_name(base: &Expr) -> Option<&str> {
 /// Wolfram floats to the front of any Plus regardless of the other terms'
 /// shape (e.g. `1 - Underflow[]` prints as `Underflow[] + 1`).
 fn is_underflow_term(e: &Expr) -> bool {
-  let (_, base) = decompose_term(e);
-  matches!(&base, Expr::FunctionCall { name, args } if name == "Underflow" && args.is_empty())
+  let (_, base) = decompose_term_ref(e);
+  matches!(base, [Expr::FunctionCall { name, args }] if name == "Underflow" && args.is_empty())
 }
 
 /// Drop a pure-imaginary literal factor (`I` or `Complex[0, n]`) from a `Times`
@@ -2731,7 +2847,7 @@ fn strip_imaginary_literal_coeff(e: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = e else {
     return None;
   };
-  if name != "Times" {
+  if name != "Times" || !args.iter().any(is_imaginary_literal) {
     return None;
   }
   let mut rest: Vec<Expr> = Vec::with_capacity(args.len());
@@ -3544,10 +3660,10 @@ fn is_numeric_base_symbolic_power(e: &Expr) -> bool {
     && expr_to_f64(exp).is_none()
 }
 
-/// A product's factors, with `a/b` read as `a*b^-1`; a non-product is its
-/// own single factor.
-fn plus_term_factors(e: &Expr) -> Vec<Expr> {
-  fn go(e: &Expr, out: &mut Vec<Expr>) {
+/// The factors of the product of `parts`, with `a/b` read as `a*b^-1`; a
+/// non-product is its own single factor. Borrowed where they already exist.
+fn plus_term_factors(parts: &[Expr]) -> Vec<Cow<'_, Expr>> {
+  fn go<'a>(e: &'a Expr, out: &mut Vec<Cow<'a, Expr>>) {
     match e {
       Expr::FunctionCall { name, args } if name == "Times" => {
         for a in args {
@@ -3568,13 +3684,15 @@ fn plus_term_factors(e: &Expr) -> Vec<Expr> {
         right,
       } => {
         go(left, out);
-        out.push(pow(right.as_ref().clone(), Expr::Integer(-1)));
+        out.push(Cow::Owned(pow(right.as_ref().clone(), Expr::Integer(-1))));
       }
-      other => out.push(other.clone()),
+      other => out.push(Cow::Borrowed(other)),
     }
   }
   let mut out = Vec::new();
-  go(e, &mut out);
+  for part in parts {
+    go(part, &mut out);
+  }
   out
 }
 
@@ -3593,21 +3711,20 @@ fn is_curried_derivative(e: &Expr) -> bool {
 
 /// Split a factor into its call and exponent: `Sin[x]` → (`Sin[x]`, 1),
 /// `Sin[x]^n` → (`Sin[x]`, `n`); `None` for factors that are not calls.
-fn call_factor_parts(f: &Expr) -> Option<(Expr, Expr)> {
+fn call_factor_parts(f: &Expr) -> Option<(&Expr, Cow<'_, Expr>)> {
   match f {
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
       right,
-    } => is_bare_call(left)
-      .then(|| (left.as_ref().clone(), right.as_ref().clone())),
+    } => is_bare_call(left).then(|| (left.as_ref(), Cow::Borrowed(&**right))),
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      is_bare_call(&args[0]).then(|| (args[0].clone(), args[1].clone()))
+      is_bare_call(&args[0]).then(|| (&args[0], Cow::Borrowed(&args[1])))
     }
     Expr::FunctionCall { name, .. } if !is_arithmetic_head(name) => {
-      Some((f.clone(), Expr::Integer(1)))
+      Some((f, Cow::Owned(Expr::Integer(1))))
     }
-    Expr::CurriedCall { .. } => Some((f.clone(), Expr::Integer(1))),
+    Expr::CurriedCall { .. } => Some((f, Cow::Owned(Expr::Integer(1)))),
     _ => None,
   }
 }
@@ -3662,8 +3779,8 @@ fn wl_poly_like(e: &Expr) -> bool {
 }
 
 /// The summands of a sum (a non-sum is its own single summand).
-fn wl_summands(e: &Expr) -> Vec<Expr> {
-  fn go(e: &Expr, out: &mut Vec<Expr>) {
+fn wl_summands(e: &Expr) -> Vec<Cow<'_, Expr>> {
+  fn go<'a>(e: &'a Expr, out: &mut Vec<Cow<'a, Expr>>) {
     match e {
       Expr::FunctionCall { name, args } if name == "Plus" => {
         for a in args {
@@ -3684,9 +3801,12 @@ fn wl_summands(e: &Expr) -> Vec<Expr> {
         right,
       } => {
         go(left, out);
-        out.push(times2(Expr::Integer(-1), right.as_ref().clone()));
+        out.push(Cow::Owned(times2(
+          Expr::Integer(-1),
+          right.as_ref().clone(),
+        )));
       }
-      other => out.push(other.clone()),
+      other => out.push(Cow::Borrowed(other)),
     }
   }
   let mut out = Vec::new();
@@ -3699,32 +3819,32 @@ fn wl_summands(e: &Expr) -> Vec<Expr> {
 /// number has no factors at all. The factors are re-sorted here rather than
 /// taken as stored, so "the last factor" means the same thing on both sides
 /// of a comparison even where Woxi's own `Times` order strays from Wolfram's.
-fn wl_coeff_and_factors(e: &Expr) -> (f64, Vec<Expr>) {
-  let (coeff, base) = decompose_term(e);
+fn wl_coeff_and_factors(e: &Expr) -> (f64, Vec<Cow<'_, Expr>>) {
+  let (coeff, base) = decompose_term_ref(e);
   let mut c = coeff.to_f64();
   let mut factors = Vec::new();
-  for f in plus_term_factors(&base) {
+  for f in plus_term_factors(base) {
     match expr_to_f64(&f) {
       Some(v) => c *= v,
       None => factors.push(f),
     }
   }
-  factors.sort_by(wl_arg_order);
+  factors.sort_by(|a, b| wl_arg_order(a, b));
   (c, factors)
 }
 
 /// Base and exponent of a factor (`x` → (`x`, 1)).
-fn wl_base_exp(f: &Expr) -> (Expr, Expr) {
+fn wl_base_exp(f: &Expr) -> (&Expr, Cow<'_, Expr>) {
   match f {
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
       right,
-    } => (left.as_ref().clone(), right.as_ref().clone()),
+    } => (left, Cow::Borrowed(right)),
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      (args[0].clone(), args[1].clone())
+      (&args[0], Cow::Borrowed(&args[1]))
     }
-    other => (other.clone(), Expr::Integer(1)),
+    other => (other, Cow::Owned(Expr::Integer(1))),
   }
 }
 
@@ -3783,7 +3903,15 @@ fn wl_arg_order_pass(
       };
       x.partial_cmp(&y).unwrap_or(Ordering::Equal)
     }
-    1 | 2 => by_name(&expr_to_string(a), &expr_to_string(b)),
+    1 | 2 => match (a, b) {
+      // A symbol outside any context prints as its name; skip rendering it.
+      (Expr::Identifier(x), Expr::Identifier(y))
+        if !x.contains('`') && !y.contains('`') =>
+      {
+        by_name(x, y)
+      }
+      _ => by_name(&expr_to_string(a), &expr_to_string(b)),
+    },
     _ => match (a, b) {
       (
         Expr::FunctionCall { name: na, args: xa },
@@ -3806,7 +3934,7 @@ fn wl_arg_order_pass(
 }
 
 /// Numeric exponent of a factor's base, if concrete.
-fn wl_poly_exponent(f: &Expr) -> Expr {
+fn wl_poly_exponent(f: &Expr) -> Cow<'_, Expr> {
   wl_base_exp(f).1
 }
 
@@ -3823,7 +3951,7 @@ fn wl_shape_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   if sa.len() > 1 || sb.len() > 1 {
     // A product whose factors are exactly the other side's summands sorts
     // first: `a*b < a + b`, `a*x < a + x`.
-    let product_of_summands = |prod: &Expr, terms: &[Expr]| -> bool {
+    let product_of_summands = |prod: &Expr, terms: &[Cow<Expr>]| -> bool {
       let (coeff, factors) = wl_coeff_and_factors(prod);
       coeff == 1.0
         && factors.len() == terms.len()
@@ -3869,7 +3997,7 @@ fn wl_shape_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   for (x, y) in fa.iter().rev().zip(fb.iter().rev()) {
     let (base_x, _) = wl_base_exp(x);
     let (base_y, _) = wl_base_exp(y);
-    let o = wl_base_order(&base_x, &base_y, wl_shape_order);
+    let o = wl_base_order(base_x, base_y, wl_shape_order);
     if o != Ordering::Equal {
       return o;
     }
@@ -3903,7 +4031,7 @@ fn wl_full_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   for (x, y) in fa.iter().rev().zip(fb.iter().rev()) {
     let (base_x, _) = wl_base_exp(x);
     let (base_y, _) = wl_base_exp(y);
-    let o = wl_base_order(&base_x, &base_y, wl_full_order);
+    let o = wl_base_order(base_x, base_y, wl_full_order);
     if o != Ordering::Equal {
       return o;
     }
@@ -3949,21 +4077,20 @@ fn compare_call_exponents(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 /// Order two call factors as Wolfram's canonical `Times` does: by head,
 /// then by the call itself (its arguments), then by exponent.
 fn compare_call_factors(
-  (ca, ea): &(Expr, Expr),
-  (cb, eb): &(Expr, Expr),
+  (ca, ea): &(&Expr, Cow<Expr>),
+  (cb, eb): &(&Expr, Cow<Expr>),
 ) -> std::cmp::Ordering {
   let ha = plus_term_call_head(ca).unwrap_or_default();
   let hb = plus_term_call_head(cb).unwrap_or_default();
-  call_head_cmp(&ha, &hb)
+  call_head_cmp(ha, hb)
     .then_with(|| wl_arg_order(ca, cb))
     .then_with(|| compare_call_exponents(ea, eb))
 }
 
-/// Split a call-led term base into its last call factor (call, exponent)
-/// and the product of the remaining factors, if any.
-fn split_last_call_factor(base: &Expr) -> Option<((Expr, Expr), Option<Expr>)> {
-  let factors = plus_term_factors(base);
-  let mut last: Option<(usize, (Expr, Expr))> = None;
+/// The index of the last call factor of a call-led term base, given as its
+/// factors.
+fn last_call_factor(factors: &[Cow<Expr>]) -> Option<usize> {
+  let mut last: Option<(usize, (&Expr, Cow<Expr>))> = None;
   for (i, f) in factors.iter().enumerate() {
     if let Some(parts) = call_factor_parts(f)
       && !last
@@ -3973,18 +4100,22 @@ fn split_last_call_factor(base: &Expr) -> Option<((Expr, Expr), Option<Expr>)> {
       last = Some((i, parts));
     }
   }
-  let (idx, parts) = last?;
-  let rest: Vec<Expr> = factors
-    .into_iter()
+  last.map(|(i, _)| i)
+}
+
+/// The product of `factors` other than the one at `skip`, if any.
+fn product_without(factors: &[Cow<Expr>], skip: usize) -> Option<Expr> {
+  let mut rest: Vec<Expr> = factors
+    .iter()
     .enumerate()
-    .filter_map(|(i, f)| (i != idx).then_some(f))
+    .filter(|&(i, _)| i != skip)
+    .map(|(_, f)| f.as_ref().clone())
     .collect();
-  let rest = match rest.len() {
+  match rest.len() {
     0 => None,
-    1 => rest.into_iter().next(),
+    1 => rest.pop(),
     _ => Some(times(rest)),
-  };
-  Some((parts, rest))
+  }
 }
 
 /// Wolfram orders two call-led Plus terms (`Sin[x]`, `x*Log[x]`,
@@ -3994,21 +4125,29 @@ fn split_last_call_factor(base: &Expr) -> Option<((Expr, Expr), Option<Expr>)> {
 /// `Sin[a] + x*Sin[b]`, `x*Sin[a] + y*Sin[a]`, `Sin[x] + Sin[x]/x`.
 /// `None` when either term is not call-led or the two are tied.
 fn call_led_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
-  let (_, base_a) = decompose_term(a);
-  let (_, base_b) = decompose_term(b);
-  let ha = plus_term_call_head(&base_a)?;
-  let hb = plus_term_call_head(&base_b)?;
-  let ord = call_head_cmp(&ha, &hb);
+  let (_, base_a) = decompose_term_ref(a);
+  let (_, base_b) = decompose_term_ref(b);
+  let ha = plus_term_call_head_of(base_a)?;
+  let hb = plus_term_call_head_of(base_b)?;
+  let ord = call_head_cmp(ha, hb);
   if ord != std::cmp::Ordering::Equal {
     return Some(ord);
   }
-  let (fa, rest_a) = split_last_call_factor(&base_a)?;
-  let (fb, rest_b) = split_last_call_factor(&base_b)?;
-  let ord = compare_call_factors(&fa, &fb);
+  let factors_a = plus_term_factors(base_a);
+  let factors_b = plus_term_factors(base_b);
+  let ia = last_call_factor(&factors_a)?;
+  let ib = last_call_factor(&factors_b)?;
+  let ord = compare_call_factors(
+    &call_factor_parts(&factors_a[ia])?,
+    &call_factor_parts(&factors_b[ib])?,
+  );
   if ord != std::cmp::Ordering::Equal {
     return Some(ord);
   }
-  match (rest_a, rest_b) {
+  match (
+    product_without(&factors_a, ia),
+    product_without(&factors_b, ib),
+  ) {
     (None, None) => None,
     (None, Some(_)) => Some(std::cmp::Ordering::Less),
     (Some(_), None) => Some(std::cmp::Ordering::Greater),
@@ -4028,40 +4167,48 @@ fn call_led_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
 /// Wolfram sorts every such term after the symbols, powers and products
 /// (`z^2 + ArcTanh[y]`, `x + C[1]`) and orders the calls among themselves
 /// by head name in symbol order (`Log[c] + Subst[a, b]`, `f[c] + Gamma[y]`).
-fn plus_term_call_head(e: &Expr) -> Option<String> {
-  fn later(a: Option<String>, b: Option<String>) -> Option<String> {
-    match (a, b) {
-      (Some(a), Some(b)) => {
-        Some(if call_head_cmp(&a, &b).is_gt() { a } else { b })
-      }
-      (a, None) => a,
-      (None, b) => b,
-    }
-  }
+fn plus_term_call_head(e: &Expr) -> Option<&str> {
   match e {
-    Expr::FunctionCall { name, args } if name == "Times" => args
-      .iter()
-      .fold(None, |acc, arg| later(acc, plus_term_call_head(arg))),
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      plus_term_call_head_of(args)
+    }
     Expr::FunctionCall { name, args }
       if name == "Power" && !args.is_empty() =>
     {
       plus_term_call_head(&args[0])
     }
-    e if is_curried_derivative(e) => Some(CURRIED_HEAD_KEY.to_string()),
-    Expr::FunctionCall { name, .. } if !is_arithmetic_head(name) => {
-      Some(name.clone())
-    }
+    e if is_curried_derivative(e) => Some(CURRIED_HEAD_KEY),
+    Expr::FunctionCall { name, .. } if !is_arithmetic_head(name) => Some(name),
     Expr::BinaryOp {
       op: BinaryOperator::Times | BinaryOperator::Divide,
       left,
       right,
-    } => later(plus_term_call_head(left), plus_term_call_head(right)),
+    } => later_call_head(plus_term_call_head(left), plus_term_call_head(right)),
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
       ..
     } => plus_term_call_head(left),
     _ => None,
+  }
+}
+
+/// `plus_term_call_head` of the product of `factors`.
+fn plus_term_call_head_of(factors: &[Expr]) -> Option<&str> {
+  factors
+    .iter()
+    .fold(None, |acc, f| later_call_head(acc, plus_term_call_head(f)))
+}
+
+/// The head that sorts later of two (optional) call heads.
+fn later_call_head<'a>(
+  a: Option<&'a str>,
+  b: Option<&'a str>,
+) -> Option<&'a str> {
+  match (a, b) {
+    (Some(a), Some(b)) => Some(if call_head_cmp(a, b).is_gt() { a } else { b }),
+    (a, None) => a,
+    (None, b) => b,
   }
 }
 
@@ -5901,7 +6048,8 @@ fn times_term_base_exp(e: &Expr) -> (Expr, Option<f64>) {
       ..
     } => times_term_base_exp(right),
     _ => {
-      let (base, exp) = extract_base_exponent(e);
+      let (base, exp) = extract_base_exponent_ref(e);
+      let (base, exp) = (base.as_ref(), exp.as_ref());
       let exp_num = match &exp {
         Expr::Integer(n) => Some(*n as f64),
         Expr::Real(r) => Some(*r),
@@ -5916,7 +6064,7 @@ fn times_term_base_exp(e: &Expr) -> (Expr, Option<f64>) {
         }
         _ => None,
       };
-      (base, exp_num)
+      (base.clone(), exp_num)
     }
   }
 }
@@ -6202,10 +6350,10 @@ fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
   // every symbolic factor: `Sqrt[3/2]*E^x`, `(3/2)^x*E^y`. Only the numbers
   // themselves (the imaginary unit, a BigFloat) come first.
   let is_number_base_power = |e: &Expr| {
-    let (base, exp) = extract_base_exponent(e);
-    !matches!(exp, Expr::Integer(1))
-      && (matches!(base, Expr::Integer(_))
-        || matches!(&base, Expr::FunctionCall { name, .. } if name == "Rational"))
+    let (base, exp) = extract_base_exponent_ref(e);
+    !matches!(exp.as_ref(), Expr::Integer(1))
+      && (matches!(base.as_ref(), Expr::Integer(_))
+        || matches!(base.as_ref(), Expr::FunctionCall { name, .. } if name == "Rational"))
   };
   let is_number = |e: &Expr| {
     matches!(
@@ -6557,8 +6705,10 @@ fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
       // If both bases are integers, compare them numerically (not lexically).
       // Wolfram orders Power[2, 1/4] before Power[15, 1/2], but lex string
       // order treats "2" > "15" because '2' > '1'.
-      let (base_a_pre, _) = extract_base_exponent(a);
-      let (base_b_pre, _) = extract_base_exponent(b);
+      let (base_a_pre, _) = extract_base_exponent_ref(a);
+      let base_a_pre = base_a_pre.as_ref();
+      let (base_b_pre, _) = extract_base_exponent_ref(b);
+      let base_b_pre = base_b_pre.as_ref();
       if let (Expr::Integer(ia), Expr::Integer(ib)) = (&base_a_pre, &base_b_pre)
       {
         match ia.cmp(ib) {
@@ -6881,6 +7031,14 @@ fn is_numeric_like(expr: &Expr) -> bool {
 /// x → (x, 1), x^n → (x, n), Sqrt[x] → (x, 1/2)
 /// Power[Sqrt[x], n] → (x, n/2), Power[x^a, b] → (x, a*b)
 fn extract_base_exponent(expr: &Expr) -> (Expr, Expr) {
+  let (base, exp) = extract_base_exponent_ref(expr);
+  (base.into_owned(), exp.into_owned())
+}
+
+/// `extract_base_exponent`, borrowing the parts of `expr` it returns as they
+/// are: `Times` splits every factor this way, and copying each base was a
+/// large part of multiplying products of calls.
+fn extract_base_exponent_ref(expr: &Expr) -> (Cow<'_, Expr>, Cow<'_, Expr>) {
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Power,
@@ -6891,33 +7049,40 @@ fn extract_base_exponent(expr: &Expr) -> (Expr, Expr) {
       // For symbolic exponents like (x^(-1))^(1+n/2), keep the inner Power
       // as the base to match Wolfram's canonical form.
       if matches!(right.as_ref(), Expr::Integer(_)) {
-        let (inner_base, inner_exp) = extract_base_exponent(left);
-        if matches!(inner_exp, Expr::Integer(1)) {
-          (*left.clone(), *right.clone())
+        let (inner_base, inner_exp) = extract_base_exponent_ref(left);
+        if matches!(inner_exp.as_ref(), Expr::Integer(1)) {
+          (Cow::Borrowed(&**left), Cow::Borrowed(&**right))
         } else {
-          (inner_base, multiply_exponents(&inner_exp, right))
+          (
+            inner_base,
+            Cow::Owned(multiply_exponents(&inner_exp, right)),
+          )
         }
       } else {
-        (*left.clone(), *right.clone())
+        (Cow::Borrowed(&**left), Cow::Borrowed(&**right))
       }
     }
-    expr if is_sqrt(expr).is_some() => {
-      (is_sqrt(expr).unwrap().clone(), make_rational(1, 2))
-    }
+    expr if is_sqrt(expr).is_some() => (
+      Cow::Borrowed(is_sqrt(expr).unwrap()),
+      Cow::Owned(make_rational(1, 2)),
+    ),
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       // Only recurse when outer exponent is integer
       if matches!(&args[1], Expr::Integer(_)) {
-        let (inner_base, inner_exp) = extract_base_exponent(&args[0]);
-        if matches!(inner_exp, Expr::Integer(1)) {
-          (args[0].clone(), args[1].clone())
+        let (inner_base, inner_exp) = extract_base_exponent_ref(&args[0]);
+        if matches!(inner_exp.as_ref(), Expr::Integer(1)) {
+          (Cow::Borrowed(&args[0]), Cow::Borrowed(&args[1]))
         } else {
-          (inner_base, multiply_exponents(&inner_exp, &args[1]))
+          (
+            inner_base,
+            Cow::Owned(multiply_exponents(&inner_exp, &args[1])),
+          )
         }
       } else {
-        (args[0].clone(), args[1].clone())
+        (Cow::Borrowed(&args[0]), Cow::Borrowed(&args[1]))
       }
     }
-    _ => (expr.clone(), Expr::Integer(1)),
+    _ => (Cow::Borrowed(expr), Cow::Owned(Expr::Integer(1))),
   }
 }
 
@@ -6989,10 +7154,10 @@ fn combine_trig_pairs(args: Vec<Expr>) -> Vec<Expr> {
   ];
   // (argument key, argument, head → exponent)
   let mut groups: Vec<(String, Expr, Vec<(&'static str, i128)>)> = Vec::new();
-  let mut passthrough: Vec<Expr> = Vec::new();
-  for arg in &args {
-    let (base, exp) = extract_base_exponent(arg);
-    let entry = match (&base, &exp) {
+  let mut passthrough: Vec<usize> = Vec::new();
+  for (i, arg) in args.iter().enumerate() {
+    let (base, exp) = extract_base_exponent_ref(arg);
+    let entry = match (base.as_ref(), exp.as_ref()) {
       (Expr::FunctionCall { name, args: fa }, Expr::Integer(n))
         if fa.len() == 1 && *n > 0 =>
       {
@@ -7004,7 +7169,7 @@ fn combine_trig_pairs(args: Vec<Expr>) -> Vec<Expr> {
       _ => None,
     };
     let Some((head, farg, n)) = entry else {
-      passthrough.push(arg.clone());
+      passthrough.push(i);
       continue;
     };
     let key = expr_to_string(&farg);
@@ -7022,7 +7187,8 @@ fn combine_trig_pairs(args: Vec<Expr>) -> Vec<Expr> {
   if groups.iter().all(|g| g.2.len() < 2) {
     return args;
   }
-  let mut out = passthrough;
+  let mut out: Vec<Expr> =
+    passthrough.into_iter().map(|i| args[i].clone()).collect();
   for (_, farg, mut heads) in groups {
     let mut changed = true;
     while changed {
@@ -7104,8 +7270,8 @@ fn combine_reciprocal_trig(
   let mut groups: Vec<Grp> = Vec::new();
   let mut group_of: Vec<Option<usize>> = vec![None; args.len()];
   for (i, arg) in args.iter().enumerate() {
-    let (base, exp) = extract_base_exponent(arg);
-    let (head, farg) = match &base {
+    let (base, exp) = extract_base_exponent_ref(arg);
+    let (head, farg) = match base.as_ref() {
       Expr::FunctionCall { name, args: fargs } if fargs.len() == 1 => {
         (name.as_str(), &fargs[0])
       }
@@ -7118,7 +7284,11 @@ fn combine_reciprocal_trig(
     } else {
       continue;
     };
-    let signed = if is_recip { negate_exp(&exp) } else { exp };
+    let signed = if is_recip {
+      negate_exp(&exp)
+    } else {
+      exp.into_owned()
+    };
     let key = format!("{}|{}", primary, expr_to_string(farg));
     if let Some(gi) = groups.iter().position(|g| g.key == key) {
       groups[gi].count += 1;
@@ -7429,24 +7599,24 @@ fn combine_like_bases_depth(
   // another power of -1 though: I I^n stays I^(1 + n), not (-1)^(1/2 + n/2).
   let rational_exponent = |exp: &Expr| matches!(exp, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2);
   let merges_with_neg_one = args.iter().any(|arg| {
-    let (base, exp) = extract_base_exponent(arg);
-    matches!(&base, Expr::Integer(-1)) && rational_exponent(&exp)
+    let (base, exp) = extract_base_exponent_ref(arg);
+    matches!(base.as_ref(), Expr::Integer(-1)) && rational_exponent(&exp)
   });
   for arg in &args {
     // Don't combine Plus, Times, or complex expressions - only identifiers, constants, and powers thereof
-    let (base, exp) = extract_base_exponent(arg);
+    let (base, exp) = extract_base_exponent_ref(arg);
     let (base, exp) = if merges_with_neg_one
-      && matches!(&base, Expr::Identifier(s) | Expr::Constant(s) if s == "I")
-      && (matches!(&exp, Expr::Integer(_)) || rational_exponent(&exp))
+      && matches!(base.as_ref(), Expr::Identifier(s) | Expr::Constant(s) if s == "I")
+      && (matches!(exp.as_ref(), Expr::Integer(_)) || rational_exponent(&exp))
     {
       (
-        Expr::Integer(-1),
-        multiply_exponents(&exp, &make_rational(1, 2)),
+        Cow::Owned(Expr::Integer(-1)),
+        Cow::Owned(multiply_exponents(&exp, &make_rational(1, 2))),
       )
     } else {
       (base, exp)
     };
-    let combinable = match &base {
+    let combinable = match base.as_ref() {
       Expr::Identifier(_) | Expr::Constant(_) => true,
       // Exact numbers too: b^r b^s = b^(r+s) holds for a fixed base whatever
       // its sign, so (-1)^(1/3) (-1)^(2/3) folds to -1 and 2^(1/3) 2^(1/2)
@@ -7494,9 +7664,9 @@ fn combine_like_bases_depth(
       }
     });
     if let Some(group) = found {
-      group.2.push(exp);
+      group.2.push(exp.into_owned());
     } else {
-      groups.push((base_key, base, vec![exp]));
+      groups.push((base_key, base.into_owned(), vec![exp.into_owned()]));
     }
   }
 
@@ -7559,9 +7729,9 @@ fn combine_like_bases_depth(
     if used[i] {
       continue;
     }
-    let (base_i, exp_i) = extract_base_exponent(&result[i]);
+    let (base_i, exp_i) = extract_base_exponent_ref(&result[i]);
     let is_negative_exp = matches!(
-      &exp_i,
+      exp_i.as_ref(),
       Expr::FunctionCall { name, args }
         if name == "Rational" && args.len() == 2
           && matches!(&args[0], Expr::Integer(n) if *n < 0)
@@ -7595,7 +7765,7 @@ fn combine_like_bases_depth(
     let is_combinable_base = is_numeric_like(&base_i)
       || (is_negative_exp && numeric_like_with_idents(&base_i));
     let is_rational_exp = matches!(
-      &exp_i,
+      exp_i.as_ref(),
       Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
     );
     if !is_combinable_base || !is_rational_exp {
@@ -7608,7 +7778,8 @@ fn combine_like_bases_depth(
     // be negative. (-1)^(1/3) (-1)^(1/3) is (-1)^(2/3), not 1^(1/3).
     let mut negative_bases =
       usize::from(negative_number_magnitude(&base_i).is_some());
-    let mut bases_to_multiply = vec![base_i];
+    let exp_i = exp_i.into_owned();
+    let mut bases_to_multiply = vec![base_i.into_owned()];
     for j in (i + 1)..result.len() {
       if used[j] {
         continue;
@@ -7773,13 +7944,14 @@ fn combine_like_bases_depth(
     if consumed[i] {
       continue;
     }
-    let (base_i, exp_i) = extract_base_exponent(&combined[i]);
+    let (base_i, exp_i) = extract_base_exponent_ref(&combined[i]);
+    let (base_i, exp_i) = (base_i.as_ref(), exp_i.as_ref());
     let exp_i_is_pos_rat = matches!(
       &exp_i,
       Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
         && matches!(&args[0], Expr::Integer(n) if *n > 0)
     );
-    if !is_pos_numeric(&base_i) || !exp_i_is_pos_rat {
+    if !is_pos_numeric(base_i) || !exp_i_is_pos_rat {
       continue;
     }
     let neg_exp_i = times_ast(&[Expr::Integer(-1), exp_i.clone()])?;
@@ -9256,21 +9428,35 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // exact/symbolic paths below rely on canonically sorted input. This
   // runs AFTER the container handlers above (Quantity, SeriesData, …),
   // which pick their result forms from the original order.
+  let canonical = |a: &Expr, b: &Expr| {
+    let ord = crate::functions::list_helpers_ast::compare_exprs(a, b);
+    if ord > 0 {
+      std::cmp::Ordering::Less
+    } else if ord < 0 {
+      std::cmp::Ordering::Greater
+    } else {
+      std::cmp::Ordering::Equal
+    }
+  };
   let sorted_storage;
   let args: &[Expr] = if args.iter().any(|a| matches!(a, Expr::Real(_))) {
     args
+  } else if let [a, b] = args.as_slice() {
+    // One comparison decides a pair; the sorts below would make two.
+    if canonical(b, a).is_lt() {
+      sorted_storage = vec![b.clone(), a.clone()];
+      &sorted_storage
+    } else {
+      args
+    }
+  } else if args.windows(2).all(|w| !canonical(&w[1], &w[0]).is_lt()) {
+    // Arguments already in order (as evaluated products mostly are) need no
+    // copy: a stable sort leaves them as they are. The test is the sort's
+    // own — no element less than the one before it.
+    args
   } else {
     let mut sorted = args.clone();
-    sorted.sort_by(|a, b| {
-      let ord = crate::functions::list_helpers_ast::compare_exprs(a, b);
-      if ord > 0 {
-        std::cmp::Ordering::Less
-      } else if ord < 0 {
-        std::cmp::Ordering::Greater
-      } else {
-        std::cmp::Ordering::Equal
-      }
-    });
+    sorted.sort_by(canonical);
     sorted_storage = sorted;
     &sorted_storage
   };
@@ -9933,7 +10119,8 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let abs_cv = cv.unsigned_abs();
     if abs_cv > 1 {
       for i in 0..symbolic_args.len() {
-        let (base, exp) = extract_base_exponent(&symbolic_args[i]);
+        let (base, exp) = extract_base_exponent_ref(&symbolic_args[i]);
+        let (base, exp) = (base.as_ref(), exp.as_ref());
         if let Expr::Integer(b) = &base {
           let bv = *b;
           // Only absorb when exponent is negative — this converts e.g.
@@ -9950,16 +10137,16 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
           if bv > 1 && abs_cv % (bv as u128) == 0 && exp_is_negative {
             // Only absorb one factor of base into the power
-            let new_exp = plus_ast(&[Expr::Integer(1), exp])?;
+            let new_exp = plus_ast(&[Expr::Integer(1), exp.clone()])?;
             if matches!(&new_exp, Expr::Integer(0)) {
               symbolic_args.remove(i);
             } else if matches!(&new_exp, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 && matches!((&args[0], &args[1]), (Expr::Integer(1), Expr::Integer(2))))
             {
-              symbolic_args[i] = sqrt_ast(&[base])?;
+              symbolic_args[i] = sqrt_ast(std::slice::from_ref(base))?;
             } else if matches!(&new_exp, Expr::Integer(1)) {
-              symbolic_args[i] = base;
+              symbolic_args[i] = base.clone();
             } else {
-              symbolic_args[i] = pow2(base, new_exp);
+              symbolic_args[i] = pow2(base.clone(), new_exp);
             }
             let sign = if cv < 0 { -1i128 } else { 1i128 };
             let remainder = (abs_cv / bv as u128) as i128;
@@ -10078,13 +10265,14 @@ fn merge_coefficient_into_radical(
     .iter()
     .enumerate()
     .filter(|(_, f)| {
-      let (base, exp) = extract_base_exponent(f);
+      let (base, exp) = extract_base_exponent_ref(f);
+      let (base, exp) = (base.as_ref(), exp.as_ref());
       matches!(&exp, Expr::FunctionCall { name, args }
         if name == "Rational"
           && args.len() == 2
           && matches!(&args[0], Expr::Integer(1 | -1))
           && matches!(&args[1], Expr::Integer(2)))
-        && split_positive_rational_and_constants(&base).is_some()
+        && split_positive_rational_and_constants(base).is_some()
     })
     .map(|(i, _)| i)
     .collect();
