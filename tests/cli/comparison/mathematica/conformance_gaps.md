@@ -4379,6 +4379,13 @@ to f32 while Woxi rounds only at the boundaries. `wolframscript` is also
 inconsistent with itself here, giving `0.80123907` and `0.80123901` for the
 same kernel tap across evaluation orders.
 
+### `ImageEffect[img, {"MotionBlur", r, θ}]` kernel (unverified)
+
+Woxi averages `2r + 1` bilinear samples on a symmetric line at `θ` degrees.
+Not checked against wolframscript (engine unactivated when it was
+written); WL's kernel shape, its direction convention and its edge handling
+may differ.
+
 ### `AudioTrim` on tiny objects
 
 wolframscript gives `{{1., 0.}}` for `{0., 1., 0.}` but `{{1.}}` for

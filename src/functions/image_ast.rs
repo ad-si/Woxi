@@ -324,20 +324,54 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Interleaving")
         && matches!(replacement.as_ref(), Expr::Identifier(b) if b == "False"))
   };
+  // The planes may sit inside a NumericArray / RawArray wrapper, which is
+  // kept around the transposed data.
+  let planes = match &args[0] {
+    Expr::FunctionCall { name, args: na }
+      if name == "NumericArray" && !na.is_empty() =>
+    {
+      &na[0]
+    }
+    Expr::FunctionCall { name, args: ra }
+      if name == "RawArray" && ra.len() >= 2 =>
+    {
+      &ra[1]
+    }
+    other => other,
+  };
   if args[opt_start..].iter().any(interleaving_false)
-    && matches!(&args[0], Expr::List(planes)
+    && matches!(planes, Expr::List(planes)
       if planes.iter().all(|p| matches!(p, Expr::List(rows)
         if rows.iter().all(|r| matches!(r, Expr::List(_))))))
   {
-    let interleaved = crate::evaluator::evaluate_expr_to_expr(&call(
+    let transposed = crate::evaluator::evaluate_expr_to_expr(&call(
       "Transpose",
       vec![
-        args[0].clone(),
+        planes.clone(),
         Expr::List(
           vec![Expr::Integer(3), Expr::Integer(1), Expr::Integer(2)].into(),
         ),
       ],
     ))?;
+    let interleaved = match &args[0] {
+      Expr::FunctionCall {
+        name,
+        args: wrapper,
+      } if name == "NumericArray" => {
+        let mut wrapper = wrapper.to_vec();
+        wrapper[0] = transposed;
+        call("NumericArray", wrapper)
+      }
+      Expr::FunctionCall {
+        name,
+        args: wrapper,
+      } if name == "RawArray" => {
+        let mut wrapper = wrapper.to_vec();
+        wrapper[1] = transposed;
+        call("RawArray", wrapper)
+      }
+      _ => transposed,
+    };
     let mut new_args = vec![interleaved];
     new_args
       .extend(args[1..].iter().filter(|o| !interleaving_false(o)).cloned());
@@ -1828,6 +1862,8 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 ///   color of the most frequent intensity level in its `(2r+1)²` window.
 /// - `"Charcoal"` (radius `r`, default 1): dark strokes on a white ground,
 ///   drawn where the intensity changes over a distance of `r` pixels.
+/// - `"MotionBlur"` (radius `r`, default 5; angle `θ` in degrees, default
+///   0): averages along a line of length `2r + 1` in direction `θ`.
 ///
 /// Other effects are not implemented and return the call unevaluated.
 pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1998,6 +2034,49 @@ pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               out[base..base + color_channels].iter_mut().zip(&sums[best])
             {
               *channel = sum / count[best] as f64;
+            }
+          }
+        }
+      }
+      out
+    }
+    // `{"MotionBlur", r, θ}`: the mean of 2r + 1 bilinear samples, one
+    // pixel apart, on the line through the pixel at θ degrees from the
+    // horizontal (counterclockwise, y pointing up); edges are clamped.
+    "MotionBlur" => {
+      let (Some(radius), Some(angle)) =
+        (numeric_param(0, 5.0), numeric_param(1, 0.0))
+      else {
+        return Ok(unevaluated("ImageEffect", args));
+      };
+      let radius = radius.round().max(0.0) as i64;
+      let (dy, dx) = angle.to_radians().sin_cos();
+      let (w, h) = (*width as usize, *height as usize);
+      let at = |x: usize, y: usize, c: usize| data[(y * w + x) * ch + c];
+      let sample = |fx: f64, fy: f64, c: usize| -> f64 {
+        let fx = fx.clamp(0.0, (w - 1) as f64);
+        let fy = fy.clamp(0.0, (h - 1) as f64);
+        let (x0, y0) = (fx.floor() as usize, fy.floor() as usize);
+        let (x1, y1) = ((x0 + 1).min(w - 1), (y0 + 1).min(h - 1));
+        let (tx, ty) = (fx - x0 as f64, fy - y0 as f64);
+        let top = at(x0, y0, c) * (1.0 - tx) + at(x1, y0, c) * tx;
+        let bottom = at(x0, y1, c) * (1.0 - tx) + at(x1, y1, c) * tx;
+        top * (1.0 - ty) + bottom * ty
+      };
+      let taps = (2 * radius + 1) as f64;
+      let mut out = data.as_ref().clone();
+      if w > 0 && h > 0 {
+        for y in 0..h {
+          for x in 0..w {
+            let base = (y * w + x) * ch;
+            for c in 0..color_channels {
+              let sum: f64 = (-radius..=radius)
+                .map(|t| {
+                  let t = t as f64;
+                  sample(x as f64 + t * dx, y as f64 - t * dy, c)
+                })
+                .sum();
+              out[base + c] = sum / taps;
             }
           }
         }
