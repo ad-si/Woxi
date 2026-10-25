@@ -11508,6 +11508,20 @@ fn try_power_overflow(base: &Expr, exp: &Expr) -> Option<Expr> {
 }
 
 /// Helper for Power of two arguments
+/// A machine complex power's value: a zero imaginary part stays as
+/// `0.*I` (`(-1. + 0. I)^4` is `1. + 0.*I`), never an exact integer.
+fn machine_complex_result(re: f64, im: f64) -> Expr {
+  if im == 0.0 {
+    crate::evaluator::evaluate_function_call_ast(
+      "Complex",
+      &[Expr::Real(re), Expr::Real(0.0)],
+    )
+    .unwrap_or(Expr::Real(re))
+  } else {
+    build_complex_float_expr(re, im)
+  }
+}
+
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   if let Some(image) =
     image_arithmetic_rounded(&[base.clone(), exp.clone()], f64::powf, false)
@@ -13239,15 +13253,18 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // same multiplication chains as for real bases (and a scaled fused
     // reciprocal for negative exponents), which the log/exp path below
     // misses by a ULP.
+    // A machine complex base whose imaginary part is `0.` stays complex:
+    // `(-1. + 0. I)^4` is `1. + 0.*I`, never the exact `1` a log/exp
+    // round trip would give.
     if let Expr::Integer(n) = exp
       && *n != 0
       && *n != 1
       && let Some((a, b)) = try_extract_complex_float(base)
-      && b != 0.0
+      && (b != 0.0 || contains_imaginary_unit(base))
       && contains_real(base)
     {
       let (re, im) = wolfram_powi_complex(a, b, *n);
-      return Ok(build_complex_float_expr(re, im));
+      return Ok(machine_complex_result(re, im));
     }
     // Try complex float evaluation: z^w = exp(w * log(z))
     // Only apply when at least one operand contains an actual Real (float),

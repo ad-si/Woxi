@@ -2276,6 +2276,21 @@ mod power_with_negative_exponent {
 mod machine_complex_power_zero_imaginary {
   use super::*;
 
+  // A machine complex base raised to an integer stays a machine complex
+  // number when the imaginary part comes out zero, so a Newton iteration
+  // on the real axis does not turn exact (Flower Fractals).
+  #[test]
+  fn integer_power_stays_inexact() {
+    assert_eq!(
+      interpret(
+        "{InputForm[(-1. + 0.*I)^4], InputForm[(0. + 1. I)^2], \
+         InputForm[(1. + 1. I)^4]}"
+      )
+      .unwrap(),
+      "{InputForm[1. + 0.*I], InputForm[-1. + 0.*I], InputForm[-4. + 0.*I]}"
+    );
+  }
+
   #[test]
   fn e_to_complex_with_zero_imaginary() {
     // Regression: a structurally complex exponent whose imaginary part
