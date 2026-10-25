@@ -2108,6 +2108,14 @@ arguments case: `BooleanFunction[7, 2][True]` and `BooleanFunction[7, 2, {a}]`
 both emit `::argr`, but WL then leaks its internal `BooleanConvert[…]` wrapper
 into the returned expression where Woxi leaves the call as it stands.
 
+### `LogicalExpand` repeated literals (unverified)
+
+`LogicalExpand` drops a conjunction holding `x && !x` and keeps a repeated
+literal once while it expands, so `(a || b) && (a || c)` gives
+`a || (a && c) || (b && a) || (b && c)`. This was written while the engine
+was unactivated, so it is unverified: WL may write `a && a`, or absorb terms
+further (`a || (b && c)`).
+
 ### `SatisfiabilityInstances` ordering
 
 The default single instance (greedy True-first DFS) matches, and an

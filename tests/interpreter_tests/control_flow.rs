@@ -2566,6 +2566,26 @@ mod return_in_loops {
 mod logical_expand {
   use super::*;
 
+  // A conjunction holding a literal and its negation is dropped while the
+  // expansion is built, and a repeated literal is kept once — expanding the
+  // negation of a large DNF used to multiply out every contradiction.
+  #[test]
+  fn contradictions_drop_out_during_expansion() {
+    assert_eq!(interpret("LogicalExpand[a && !a]").unwrap(), "False");
+    assert_eq!(
+      interpret("LogicalExpand[(a || b) && !a]").unwrap(),
+      "b &&  !a"
+    );
+    assert_eq!(
+      interpret(
+        "TimeConstrained[LeafCount[LogicalExpand[Not[Or @@ Table[And[x[i], \
+         y[i], !z[i], z[Mod[i + 1, 6]]], {i, 6}]]]] > 0, 10]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn distribute_and_over_or() {
     assert_eq!(
