@@ -2838,6 +2838,38 @@ fn solve_ast_entry(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect(),
     );
   }
+  // Solve gives the generic solutions: a branch that only holds for special
+  // parameter values (`{…, a -> 0}` from a coefficient vanishing) is no
+  // solution for the variables asked for, and a rule for anything but one
+  // of them is no part of an answer.
+  if let Some(spec) = positional.get(1)
+    // `Solve[eqns, Reals]` names a domain, not the variables.
+    && !matches!(spec, Expr::Identifier(d)
+      if matches!(d.as_str(), "Reals" | "Integers" | "Complexes" | "Rationals"
+        | "Booleans" | "Algebraics" | "Primes"))
+    && let Expr::List(sols) = &solutions
+  {
+    let requested: Vec<Expr> = match spec {
+      Expr::List(items) => items.to_vec(),
+      single => vec![single.clone()],
+    };
+    let kept: Vec<Expr> = sols
+      .iter()
+      .filter(|sol| match sol {
+        Expr::List(rules) => rules.iter().all(|r| match r {
+          Expr::Rule { pattern, .. } => requested.iter().any(|v| {
+            crate::evaluator::pattern_matching::expr_equal(pattern, v)
+          }),
+          _ => true,
+        }),
+        _ => true,
+      })
+      .cloned()
+      .collect();
+    if kept.len() != sols.len() {
+      solutions = Expr::List(kept.into());
+    }
+  }
   // The outermost call reports when the equations left some of the
   // explicitly requested variables free.
   if depth == 0

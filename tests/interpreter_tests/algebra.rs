@@ -5137,6 +5137,32 @@ mod solve {
     );
   }
 
+  // A system with a parameter: the solution is back-substituted and
+  // simplified, branches that hold only for special parameter values are
+  // no solutions, and an equation linear in one variable is solved first.
+  #[test]
+  fn parametric_system_back_substitution() {
+    assert_eq!(
+      interpret("Solve[{8 == p/a + p/b, 3 == p}, {b, p}]").unwrap(),
+      "{{b -> (3*a)/(-3 + 8*a), p -> 3}}"
+    );
+    assert_eq!(
+      interpret("Solve[{a TA == (b Pfi)^(2/7), c == d Pfi}, {TA, Pfi}]")
+        .unwrap(),
+      "{{TA -> ((b*c)/d)^(2/7)/a, Pfi -> c/d}}"
+    );
+    assert_eq!(
+      interpret(
+        "{TA, TB, Pfi} /. First[Solve[{8.314 == (22.4*Pfi)/TA + \
+         (22.4*Pfi)/TB, 0.0036639754618530535*TA == \
+         (0.009871668311944718*Pfi)^(2/7), 2269.12 == 44.8*Pfi}, \
+         {TA, TB, Pfi}]] // Round"
+      )
+      .unwrap(),
+      "{224, 349, 51}"
+    );
+  }
+
   // Roots nested in roots are eliminated through norms, outermost first.
   #[test]
   fn nested_radical_equations() {
