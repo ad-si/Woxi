@@ -29981,6 +29981,33 @@ mod manipulate {
     );
   }
 
+  /// A `ButtonBar[{label :> action, …}]` inside a display `Grid` cell (a
+  /// caption next to a row of preset buttons) builds one pressable `Button`
+  /// per rule, each keeping its action held — not the frozen source text.
+  #[test]
+  fn display_button_bar_in_grid_cell_builds_buttons() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    let node = build_manipulate_display(
+      "Grid[{{\"pick \", ButtonBar[{\"a\" :> (n = 1), \"b\" :> (n = 2), \
+       Row[{\"c\", \"!\"}] :> (n = 3)}]}}]",
+      &[],
+    );
+    let DisplayNode::Grid(rows) = node else {
+      panic!("expected a grid, got {node:?}");
+    };
+    let DisplayNode::Row(buttons) = &rows[0][1] else {
+      panic!("expected a row of buttons, got {:?}", rows[0][1]);
+    };
+    let actions: Vec<&str> = buttons
+      .iter()
+      .map(|b| match b {
+        DisplayNode::Button { action, .. } => action.as_str(),
+        other => panic!("expected a button, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(actions, ["n = 1", "n = 2", "n = 3"]);
+  }
+
   /// A bare `None` in the control-type slot after the bounds says the
   /// variable has no widget — how a puzzle Demonstration declares the state
   /// its buttons drive. It used to be read as a bound, so the variable
