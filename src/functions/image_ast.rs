@@ -12547,6 +12547,151 @@ pub fn image_forward_transformation_ast(
   })
 }
 
+/// ImageTransformation[img, f] — build an image whose every pixel takes the
+/// colour `img` has at the point `f` maps that pixel's position to.
+///
+/// `f` receives an `{x, y}` point of the output (in `PlotRange` coordinates,
+/// y pointing up) and returns a point of the input (in `DataRange`
+/// coordinates); both ranges default to the pixel extent of `img`. The
+/// result is `img`-sized unless a size is given. Positions that land
+/// outside the input take the `Padding` value (black by default;
+/// `"Fixed"` repeats the nearest edge pixel).
+pub fn image_transformation_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("ImageTransformation", args));
+  if args.len() < 2 {
+    return echo();
+  }
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+    ..
+  } = &args[0]
+  else {
+    return echo();
+  };
+  let (sw, sh, ch) = (*width as usize, *height as usize, *channels as usize);
+
+  let mut rest = &args[2..];
+  let mut size = (sw, sh);
+  if let Some(first) = rest.first()
+    && !matches!(first, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+  {
+    size = match first {
+      Expr::List(v) if v.len() == 2 => {
+        match (pixel_extent(&v[0]), pixel_extent(&v[1])) {
+          (Some(w), Some(h)) => (w, h),
+          _ => return echo(),
+        }
+      }
+      other => match pixel_extent(other) {
+        Some(w) => (
+          w,
+          ((w as f64 * sh as f64 / sw as f64).round() as usize).max(1),
+        ),
+        _ => return echo(),
+      },
+    };
+    rest = &rest[1..];
+  }
+  let (ow, oh) = size;
+  if ow.saturating_mul(oh) > 4_000_000 {
+    return echo();
+  }
+  let data_range = option_value(rest, "DataRange")
+    .and_then(range_pair_of_pairs)
+    .unwrap_or([0.0, sw as f64, 0.0, sh as f64]);
+  let plot_range = option_value(rest, "PlotRange")
+    .and_then(range_pair_of_pairs)
+    .unwrap_or(data_range);
+  let (dw, dh) = (data_range[1] - data_range[0], data_range[3] - data_range[2]);
+  let (pw, ph) = (plot_range[1] - plot_range[0], plot_range[3] - plot_range[2]);
+  if dw <= 0.0 || dh <= 0.0 || pw <= 0.0 || ph <= 0.0 {
+    return echo();
+  }
+
+  // `None` clamps to the nearest edge pixel; otherwise the fill value.
+  let padding: Option<Vec<f64>> = match option_value(rest, "Padding") {
+    Some(Expr::String(s)) if s == "Fixed" => None,
+    Some(value) => {
+      Some(if let Some((r, g, b, a)) = color_directive_to_rgb(value) {
+        match ch {
+          1 => vec![(r + g + b) / 3.0],
+          2 => vec![(r + g + b) / 3.0, a.unwrap_or(1.0)],
+          3 => vec![r, g, b],
+          _ => vec![r, g, b, a.unwrap_or(1.0)],
+        }
+      } else {
+        let v =
+          crate::functions::math_ast::try_eval_to_f64(value).unwrap_or(0.0);
+        vec![v; ch]
+      })
+    }
+    None => Some(vec![0.0; ch]),
+  };
+
+  let mut out = Vec::with_capacity(ow * oh * ch);
+  for iy in 0..oh {
+    let y = plot_range[3] - ph * (iy as f64 + 0.5) / oh as f64;
+    for ix in 0..ow {
+      let x = plot_range[0] + pw * (ix as f64 + 0.5) / ow as f64;
+      let point = Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+      let source = crate::evaluator::apply_function_to_arg(&args[1], &point)
+        .ok()
+        .and_then(|r| match &r {
+          Expr::List(p) if p.len() == 2 => Some((
+            crate::functions::math_ast::try_eval_to_f64(&p[0])?,
+            crate::functions::math_ast::try_eval_to_f64(&p[1])?,
+          )),
+          _ => None,
+        })
+        .filter(|(sx, sy)| sx.is_finite() && sy.is_finite());
+      // Continuous source pixel position (pixel centres at +½, y down).
+      let uv = source.map(|(sx, sy)| {
+        (
+          (sx - data_range[0]) / dw * sw as f64,
+          (data_range[3] - sy) / dh * sh as f64,
+        )
+      });
+      let inside = uv.filter(|(u, v)| {
+        (0.0..=sw as f64).contains(u) && (0.0..=sh as f64).contains(v)
+      });
+      match (inside, uv, &padding) {
+        (Some((u, v)), _, _) | (None, Some((u, v)), None) => {
+          let fx = (u - 0.5).clamp(0.0, sw as f64 - 1.0);
+          let fy = (v - 0.5).clamp(0.0, sh as f64 - 1.0);
+          let (x0, y0) = (fx.floor() as usize, fy.floor() as usize);
+          let (x1, y1) = ((x0 + 1).min(sw - 1), (y0 + 1).min(sh - 1));
+          let (tx, ty) = (fx - x0 as f64, fy - y0 as f64);
+          for c in 0..ch {
+            let at = |x: usize, y: usize| data[(y * sw + x) * ch + c];
+            out.push(
+              (at(x0, y0) * (1.0 - tx) + at(x1, y0) * tx) * (1.0 - ty)
+                + (at(x0, y1) * (1.0 - tx) + at(x1, y1) * tx) * ty,
+            );
+          }
+        }
+        (_, _, Some(fill)) => out.extend_from_slice(fill),
+        _ => out.extend(std::iter::repeat_n(0.0, ch)),
+      }
+    }
+  }
+
+  Ok(Expr::Image {
+    color_space: None,
+    display_size: None,
+    width: ow as u32,
+    height: oh as u32,
+    channels: *channels,
+    data: Arc::new(out),
+    image_type: *image_type,
+  })
+}
+
 /// Bounding box `[xmin, xmax, ymin, ymax]` of the 2D points in a graphics
 /// primitive tree (circle and disk radii included).
 fn primitive_bounds(e: &Expr, bounds: &mut Option<[f64; 4]>) {
