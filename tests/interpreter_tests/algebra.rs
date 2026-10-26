@@ -6839,6 +6839,34 @@ mod solve_system_rejects_invalid_candidates {
   }
 }
 
+mod nsolve_drops_extraneous_radical_solutions {
+  use super::*;
+
+  // The Malfatti circles of a triangle: squaring the radicals away gave an
+  // answer whose `Sqrt` terms have the wrong sign. NSolve checks its numeric
+  // solutions against the equations as written and searches numerically
+  // when none holds. wolframscript: h -> 1.150959189917622 (one solution).
+  #[test]
+  fn malfatti_system() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "a = {-1., -1.}; b = {1., 0.}; c = {0., 1.}; \
+         {ab, ac, bc} = Norm /@ {a - b, a - c, b - c}; \
+         al = VectorAngle[b - a, c - a]; be = VectorAngle[c - b, a - b]; \
+         ga = VectorAngle[a - c, b - c]; \
+         sol = NSolve[{h + 2 Sqrt[r1 r2] + k == ab, \
+         h + 2 Sqrt[r1 r3] + l == ac, k + 2 Sqrt[r2 r3] + l == bc, \
+         r1 == Tan[al/2] h, r2 == Tan[be/2] k, r3 == Tan[ga/2] l}, \
+         {h, k, l, r1, r2, r3}]; \
+         {Length[sol], Abs[(h /. First[sol]) - 1.150959189917622] < 10^-9}"
+      )
+      .unwrap(),
+      "{1, True}"
+    );
+  }
+}
+
 mod reduce_generalized_variables {
   use super::*;
 

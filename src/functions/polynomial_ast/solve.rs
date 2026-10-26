@@ -333,6 +333,26 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     other => other,
   };
+  // A solution an elimination picked up by squaring a radical away (the
+  // sign of a `Sqrt` flipped) does not satisfy the equations as written:
+  // drop it, and with none left search numerically.
+  let numerized = match numerized {
+    Expr::List(ref sols) => {
+      let holding: Vec<Expr> = sols
+        .iter()
+        .filter(|s| !numerically_violates(&args[0], s))
+        .cloned()
+        .collect();
+      if holding.is_empty()
+        && !sols.is_empty()
+        && let Some(found) = try_nsolve_numeric_system(args)
+      {
+        return Ok(sort_nsolve_solutions(found));
+      }
+      Expr::List(holding.into())
+    }
+    other => other,
+  };
   // A `Reals` domain keeps only the real solutions. It is the optional
   // third argument in the ordinary `NSolve[eqns, vars, Reals]` form, but
   // the *last* argument either way — the domain-only two-argument form
@@ -350,6 +370,56 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     numerized
   };
   Ok(sort_nsolve_solutions(filtered))
+}
+
+/// Whether the numeric solution `{v -> value, …}` clearly fails one of the
+/// equations of `eqns` (a list or a single equation): both sides evaluate
+/// to numbers further apart than rounding explains. Anything that does not
+/// evaluate to numbers (a symbolic value, an inequality) does not count.
+fn numerically_violates(eqns: &Expr, solution: &Expr) -> bool {
+  let Expr::List(rules) = solution else {
+    return false;
+  };
+  let mut point = Vec::new();
+  for rule in rules {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = rule
+    else {
+      return false;
+    };
+    if try_extract_complex_f64(replacement).is_none() {
+      return false;
+    }
+    point.push((pattern.as_ref().clone(), replacement.as_ref().clone()));
+  }
+  let equations: Vec<Expr> = match eqns {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  equations.iter().any(|eq| {
+    let Some((lhs, rhs, CompOp::Equal)) =
+      crate::functions::polynomial_ast::reduce::extract_comparison(eq)
+    else {
+      return false;
+    };
+    let value = |side: &Expr| {
+      let substituted = point
+        .iter()
+        .fold(side.clone(), |e, (var, v)| substitute_expr(&e, var, v));
+      quietly(|| {
+        crate::evaluator::evaluate_function_call_ast("N", &[substituted])
+      })
+      .ok()
+      .and_then(|v| try_extract_complex_f64(&v))
+    };
+    let (Some(l), Some(r)) = (value(&lhs), value(&rhs)) else {
+      return false;
+    };
+    let scale = 1.0 + l.0.hypot(l.1).max(r.0.hypot(r.1));
+    (l.0 - r.0).hypot(l.1 - r.1) > 1e-6 * scale
+  })
 }
 
 /// Complex coefficients of `poly` in `var`, ascending, once every other
@@ -8901,7 +8971,7 @@ fn try_nsolve_numeric_system(args: &[Expr]) -> Option<Expr> {
     return None;
   };
   let k = vars.len();
-  if !(2..=3).contains(&k) || eqs.len() != k {
+  if !(2..=8).contains(&k) || eqs.len() != k {
     return None;
   }
   let residuals: Vec<Expr> = eqs
@@ -8913,10 +8983,35 @@ fn try_nsolve_numeric_system(args: &[Expr]) -> Option<Expr> {
         .then(|| minus2(lhs, rhs))
     })
     .collect::<Option<_>>()?;
-  let eval_at = |point: &[f64]| -> Option<Vec<f64>> {
+  // Residuals over plain symbols compile to machine code; the rest are
+  // evaluated symbolically at each point.
+  let var_names: Option<Vec<String>> = vars
+    .iter()
+    .map(|v| match v {
+      Expr::Identifier(n) => Some(n.clone()),
+      _ => None,
+    })
+    .collect();
+  let compiled: Vec<Option<crate::functions::ode_ast::CompiledReal>> =
     residuals
       .iter()
       .map(|r| {
+        var_names.as_ref().and_then(|names| {
+          crate::functions::ode_ast::CompiledReal::new(r, names)
+        })
+      })
+      .collect();
+  let eval_at = |point: &[f64]| -> Option<Vec<f64>> {
+    residuals
+      .iter()
+      .zip(&compiled)
+      .map(|(r, c)| {
+        if let Some(c) = c {
+          let v = c.eval(point);
+          if v.is_finite() {
+            return Some(v);
+          }
+        }
         let mut e = r.clone();
         for (v, x) in vars.iter().zip(point) {
           e = substitute_expr(&e, v, &Expr::Real(*x));
@@ -8929,10 +9024,38 @@ fn try_nsolve_numeric_system(args: &[Expr]) -> Option<Expr> {
   };
   let norm = |f: &[f64]| f.iter().map(|v| v * v).sum::<f64>().sqrt();
   const STARTS: [f64; 7] = [-10.0, -3.0, -1.0, 0.0, 1.0, 3.0, 10.0];
+  // Up to three unknowns every combination of the start values is tried;
+  // beyond that the grid is too large, so the diagonal starts and a fixed
+  // pseudo-random scatter in [-3, 3]^k are used instead.
+  let starts: Vec<Vec<f64>> = if k <= 3 {
+    (0..STARTS.len().pow(k as u32))
+      .map(|mut n| {
+        (0..k)
+          .map(|_| {
+            let v = STARTS[n % STARTS.len()];
+            n /= STARTS.len();
+            v + 0.1234
+          })
+          .collect()
+      })
+      .collect()
+  } else {
+    let mut seed: u64 = 0x2545_F491_4F6C_DD1D;
+    let mut next = || {
+      seed ^= seed << 13;
+      seed ^= seed >> 7;
+      seed ^= seed << 17;
+      (seed >> 11) as f64 / (1u64 << 53) as f64 * 6.0 - 3.0
+    };
+    STARTS
+      .iter()
+      .map(|&c| vec![c + 0.1234; k])
+      .chain((0..40).map(|_| (0..k).map(|_| next()).collect()))
+      .collect()
+  };
   let mut found: Vec<Vec<f64>> = Vec::new();
-  let mut idx = vec![0usize; k];
-  'starts: loop {
-    let mut x: Vec<f64> = idx.iter().map(|&i| STARTS[i] + 0.1234).collect();
+  for start in starts {
+    let mut x = start;
     if let Some(mut fx) = eval_at(&x) {
       for _ in 0..60 {
         let size = norm(&fx);
@@ -8987,18 +9110,6 @@ fn try_nsolve_numeric_system(args: &[Expr]) -> Option<Expr> {
       {
         found.push(x);
       }
-    }
-    let mut pos = k;
-    loop {
-      if pos == 0 {
-        break 'starts;
-      }
-      pos -= 1;
-      idx[pos] += 1;
-      if idx[pos] < STARTS.len() {
-        break;
-      }
-      idx[pos] = 0;
     }
   }
   if found.is_empty() {
