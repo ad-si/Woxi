@@ -1007,6 +1007,14 @@ fn evaluate_function_call_ast_inner(
     };
   }
 
+  // `LinearRegression`Regress` (also bare `Regress` once the package is on
+  // `$ContextPath`) is the legacy spelling of a least-squares fit.
+  if name == "LinearRegression`Regress"
+    || (name == "Regress" && crate::context_path_contains("LinearRegression`"))
+  {
+    return crate::functions::linear_algebra_ast::regress_ast(args);
+  }
+
   // `GraphUtilities`GraphPath[rules, a, b]` is the shortest path from `a` to
   // `b` in a graph given as a list of rules, i.e. `FindShortestPath`.
   if name == "GraphUtilities`GraphPath"

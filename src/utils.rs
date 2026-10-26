@@ -233,6 +233,7 @@ const STANDARD_DISTRIBUTION_CONTEXTS: &[&str] = &[
   "Internal",
   "JLink",
   "LinearAlgebra",
+  "LinearRegression",
   "MultivariateStatistics",
   "NETLink",
   "Notation",

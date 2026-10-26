@@ -177,6 +177,24 @@ mod font_size {
   }
 
   #[test]
+  fn tostring_standard_form_keeps_style_box() {
+    // An explicit StandardForm typesets into boxes, so the size, weight and
+    // color of a Style survive in a StyleBox; a plain ToString still drops
+    // them.
+    assert_eq!(
+      interpret(
+        "ToString[ToString[Style[\"ab\", Red, 12, Bold], StandardForm], InputForm]"
+      )
+      .unwrap(),
+      r#""\!\(\*StyleBox[\"\\\"ab\\\"\", RGBColor[1, 0, 0], 12, Bold]\)""#
+    );
+    assert_eq!(
+      interpret("ToString[Style[\"ab\", Red, 12, Bold]]").unwrap(),
+      "ab"
+    );
+  }
+
+  #[test]
   fn tostring_style_resolves_nested_number_form() {
     // Regression: under ToString a Style wrapper is display-only, so a nested
     // display wrapper such as NumberForm must still resolve to its formatted

@@ -666,6 +666,85 @@ impl Drop for StepHintScope {
   }
 }
 
+/// The unknowns of a PDE `NDSolve` written as applied functions of the two
+/// domain variables (`u[x, t]`, or a list of them) as `(name, arguments)`.
+/// `None` if any unknown is a bare symbol or applied to anything else.
+fn pde_applied_unknowns(
+  spec: &Expr,
+  dom_a: &Expr,
+  dom_b: &Expr,
+) -> Option<Vec<(String, Vec<Expr>)>> {
+  let var_of = |d: &Expr| match d {
+    Expr::List(items) => items.first().map(expr_to_string),
+    _ => None,
+  };
+  let (va, vb) = (var_of(dom_a)?, var_of(dom_b)?);
+  let single = std::slice::from_ref(spec);
+  let items: &[Expr] = match spec {
+    Expr::List(items) => items,
+    _ => single,
+  };
+  let mut out = Vec::with_capacity(items.len());
+  for item in items {
+    let Expr::FunctionCall { name, args } = item else {
+      return None;
+    };
+    let vars: Vec<String> = args.iter().map(expr_to_string).collect();
+    let is_pair = vars.len() == 2
+      && ((vars[0] == va && vars[1] == vb) || (vars[0] == vb && vars[1] == va));
+    if !is_pair {
+      return None;
+    }
+    out.push((name.clone(), args.to_vec()));
+  }
+  (!out.is_empty()).then_some(out)
+}
+
+/// Rewrite `{{u -> f}}` into `{{u[x, t] -> f[x, t]}}` for the unknowns
+/// asked for in applied form.
+fn apply_pde_unknown_rules(
+  solved: &Expr,
+  applied: &[(String, Vec<Expr>)],
+) -> Expr {
+  let Expr::List(solutions) = solved else {
+    return solved.clone();
+  };
+  let mut out = Vec::with_capacity(solutions.len());
+  for sol in solutions {
+    let Expr::List(rules) = sol else {
+      return solved.clone();
+    };
+    let mut new_rules = Vec::with_capacity(rules.len());
+    for rule in rules {
+      let Expr::Rule {
+        pattern,
+        replacement,
+      } = rule
+      else {
+        return solved.clone();
+      };
+      let Expr::Identifier(name) = pattern.as_ref() else {
+        return solved.clone();
+      };
+      let Some((_, call_args)) = applied.iter().find(|(n, _)| n == name) else {
+        return solved.clone();
+      };
+      new_rules.push(Expr::Rule {
+        pattern: Box::new(Expr::FunctionCall {
+          name: name.clone(),
+          args: call_args.clone().into(),
+        }),
+        replacement: Box::new(Expr::CurriedCall {
+          func: replacement.clone(),
+          args: call_args.clone(),
+        }),
+      });
+    }
+    out.push(Expr::List(new_rules.into()));
+  }
+  Expr::List(out.into())
+}
+
 fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Split trailing option rules (`Method -> …`, `MaxSteps -> …`, …) from
   // the positional arguments: three for an ODE/DAE system in one
@@ -682,6 +761,22 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     flatten_eq_list(&args[0], &mut flat_eqs);
     let mut args = args.to_vec();
     args[0] = Expr::List(flat_eqs.into());
+    // Unknowns written with their arguments (`u[x, t]`) are solved as the
+    // bare functions, then the result rules are keyed by the same forms.
+    if let Some(applied) = pde_applied_unknowns(&args[1], &args[2], &args[3]) {
+      let mut bare = args.clone();
+      bare[1] = match &args[1] {
+        Expr::List(_) => Expr::List(
+          applied
+            .iter()
+            .map(|(n, _)| Expr::Identifier(n.clone()))
+            .collect(),
+        ),
+        _ => Expr::Identifier(applied[0].0.clone()),
+      };
+      let solved = ndsolve_ast_inner(&bare)?;
+      return Ok(apply_pde_unknown_rules(&solved, &applied));
+    }
     let args = &args[..];
     // Unknowns written as compound expressions (`Subscript[c, A]`) are keyed
     // by a fresh symbol while integrating, then restored in the result —
@@ -5292,6 +5387,44 @@ fn ndsolve_system(
         }
       }
     }
+    // An equation that holds the highest derivative only implicitly
+    // (`5 g Sin[θ[t]] + 7 r θ''[t] == 0`) is solved for it.
+    if !highest.iter().any(|(name, _, _)| *name == f.name) {
+      for ode in &odes {
+        fn find_node(
+          e: &Expr,
+          name: &str,
+          order: usize,
+          x: &str,
+        ) -> Option<Expr> {
+          if let Some((k, Expr::Identifier(ref p))) =
+            extract_derivative_order_and_point(e, name)
+            && k == order
+            && p == x
+          {
+            return Some(e.clone());
+          }
+          expr_children(e)
+            .into_iter()
+            .find_map(|c| find_node(c, name, order, x))
+        }
+        let Some(node) = find_node(ode, &f.name, f.order, x_name) else {
+          continue;
+        };
+        let solved = crate::functions::polynomial_ast::solve_ast(&[
+          ode.clone(),
+          node.clone(),
+        ]);
+        if let Ok(Expr::List(ref sols)) = solved
+          && let [Expr::List(rules)] = sols.as_slice()
+          && let [Expr::Rule { replacement, .. }] = rules.as_slice()
+          && max_derivative_order(replacement, &f.name) < f.order
+        {
+          highest.push((f.name.clone(), f.order, (**replacement).clone()));
+          break;
+        }
+      }
+    }
   }
   let explicit_highest = |e: &Expr| -> Expr {
     crate::functions::string_ast::map_expr_tree(e, &|node: &Expr| {
@@ -6426,8 +6559,9 @@ fn integrate_leg(
       // returns an `InterpolatingFunction` valid up to where it could
       // integrate instead of failing the whole call (alongside the
       // `NDSolve::ndsz` message it prints at the point stepping stalled).
-      // A stiff system makes RK4 diverge too: without events to locate,
-      // the whole leg is integrated again with a stiff method.
+      // A stiff system or a transient faster than the grid makes RK4
+      // diverge: without events to locate, the whole leg is integrated
+      // again with adaptive steps.
       if event_fn.is_none()
         && time_events.is_empty()
         && state_events.events.is_empty()
@@ -6444,6 +6578,13 @@ fn integrate_leg(
             cached_m,
           ))
         };
+        // An adaptive explicit step first (a fast transient the grid
+        // missed), then the stiff method.
+        if let Some(adaptive_points) =
+          stiff::dormand_prince_leg(&rhs, &points[0].1, x_from, x_to)?
+        {
+          return Ok(Some(adaptive_points));
+        }
         if let Some(stiff_points) =
           stiff::rosenbrock_leg(&rhs, &points[0].1, x_from, x_to)?
         {
@@ -7842,6 +7983,22 @@ fn compile_interp1d_call(
     func_args: func_args.to_vec(),
     arg: Box::new(arg),
   })
+}
+
+/// A real-valued expression in some variables compiled once for repeated
+/// numeric evaluation — the closure tree NDSolve evaluates its residuals
+/// with, also used to sample plots. `eval` gives NaN where the value is not
+/// a real number.
+pub(crate) struct CompiledReal(NExpr);
+
+impl CompiledReal {
+  pub(crate) fn new(expr: &Expr, var_names: &[String]) -> Option<Self> {
+    compile_numeric(expr, var_names).map(Self)
+  }
+
+  pub(crate) fn eval(&self, values: &[f64]) -> f64 {
+    self.0.eval(values)
+  }
 }
 
 /// Compile an expression over the given variable names to an `NExpr`.
@@ -10095,10 +10252,14 @@ fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
       }
       Ok(result)
     }
-    _ => Err(InterpreterError::EvaluationError(format!(
-      "cannot convert {} to a numeric value",
-      expr_to_string(expr)
-    ))),
+    // Any other real numeric value — `-Sin[2]` from a `Piecewise` branch,
+    // say — through the general numericization.
+    _ => crate::functions::math_ast::try_eval_to_f64(expr).ok_or_else(|| {
+      InterpreterError::EvaluationError(format!(
+        "cannot convert {} to a numeric value",
+        expr_to_string(expr)
+      ))
+    }),
   }
 }
 

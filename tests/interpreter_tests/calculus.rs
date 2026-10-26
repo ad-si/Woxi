@@ -10510,6 +10510,22 @@ mod ndsolve {
     );
   }
 
+  /// A PDE unknown written with its arguments (`u[x, t]`) is solved like the
+  /// bare `u`, and the rule is keyed by the applied form with an
+  /// `InterpolatingFunction[...][x, t]` value.
+  #[test]
+  fn ndsolve_pde_unknown_given_as_applied_function() {
+    let result = interpret(
+      "sol = NDSolve[{D[u[x, t], t] == D[u[x, t], {x, 2}], \
+       u[x, 0] == Sin[Pi x], u[0, t] == 0, u[1, t] == 0}, u[x, t], \
+       {x, 0, 1}, {t, 0, 1}]; \
+       {Length[sol], sol[[1, 1, 1]], \
+       Round[u[x, t] /. sol /. {x -> 0.5, t -> 0.1}, 0.01]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{1, u[x, t], {0.37}}");
+  }
+
   /// A piecewise (`If`) diffusion coefficient next to a `NeumannValue`
   /// boundary term still lowers to a flux condition: the unit-source bar
   /// with insulated ends gains heat at the source rate whichever region the
@@ -22327,6 +22343,22 @@ mod interpolation_spline_method {
 mod ndsolve_state_events {
   use super::*;
 
+  // An event on the highest derivative reads it from an equation that
+  // holds it only implicitly. wolframscript: {3.3867047933779557,
+  // 9.92978013087389}.
+  #[test]
+  fn event_on_implicit_highest_derivative() {
+    assert_eq!(
+      interpret(
+        "Round[Reap[NDSolve[{5 Piecewise[{{-Sin[0.5], t <= 1}}, \
+         -Sin[0.5 + y[t]]] + 7 y''[t] == 0, y[0] == 0, y'[0] == 0, \
+         WhenEvent[y''[t] == 0, Sow[t]]}, y, {t, 0, 10}]][[-1, 1]], 0.001]"
+      )
+      .unwrap(),
+      "{3.387, 9.93}"
+    );
+  }
+
   #[test]
   fn stop_integration_with_side_effect() {
     // The integration ends where the condition turns true; the action's
@@ -23107,6 +23139,46 @@ mod nintegrate_limits_numeric_after_n {
 
 mod ndsolve_stiff_system {
   use super::*;
+
+  // The Chay–Keizer beta-cell model spikes faster than the nominal grid
+  // follows; the leg falls back to adaptive Dormand–Prince steps.
+  // wolframscript: V[5000] = -58.01807302788192.
+  #[test]
+  fn spiking_model_falls_back_to_adaptive_steps() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{V'[t] == (0.09*Ca[t]*(-75 - V[t]))/(1 + Ca[t]) + \
+         13.*hca[t]*mca[t]^3*(100 - V[t]) + 12*n[t]^4*(-75 - V[t]) + \
+         0.04*(-40 - V[t]), V[0] == -54.774, Ca'[t] == 0.004*(-0.04*Ca[t] + \
+         0.22707838734286032*hca[t]*mca[t]^3*(100 - V[t])), Ca[0] == 0.10749, \
+         mca'[t] == 4.504598822453431*((-0.1*(1 - mca[t])*(25 + V[t]))/\
+         (-1 + E^((-25 - V[t])/10)) - 4*E^((-50 - V[t])/18)*mca[t]), \
+         mca[0] == 0.02753, hca'[t] == 4.504598822453431*(0.07*\
+         E^((-50 - V[t])/20)*(1 - hca[t]) - hca[t]/(1 + E^((-20 - V[t])/10))), \
+         hca[0] == 0.08632, n'[t] == 4.504598822453431*((-0.01*(1 - n[t])*\
+         (20 + V[t]))/(-1 + E^((-20 - V[t])/10)) - 0.125*E^((-30 - V[t])/80)*\
+         n[t]), n[0] == 0.00044035}, {V, Ca, mca, hca, n}, {t, 0, 5000}]; \
+         Abs[(V[5000] /. First[s]) + 58.01807302788192] < 10^-4"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A Piecewise branch with an exact non-rational value (`-Sin[2]`) is a
+  // number like any other. Exact: Sin[2] (1.87^2/2 + 1.87 (3 - 1.87)).
+  #[test]
+  fn piecewise_with_exact_numeric_branch() {
+    assert_eq!(
+      interpret(
+        "v = y[3] /. First[NDSolve[{Piecewise[{{-Sin[2], t <= 1.87}}, 0] + \
+         y''[t] == 0, y[0] == 0, y'[0] == 0}, y, {t, 0, 20}]]; \
+         Abs[v - Sin[2] (1.87^2/2 + 1.87 (3 - 1.87))] < 10^-3"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 
   #[test]
   fn oregonator_is_integrated_with_a_stiff_method() {

@@ -12057,7 +12057,15 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         font_size,
       )
     }
-    Expr::String(s) => BoxLayout::text(strip_precision_marker(s), font_size),
+    // A string box is stored as its quoted source but drawn without quotes.
+    Expr::String(s) => {
+      let s = strip_precision_marker(s);
+      let unquoted = s
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or(s);
+      BoxLayout::text(unquoted, font_size)
+    }
     Expr::Identifier(s) => {
       BoxLayout::text(strip_precision_marker(s), font_size)
     }
@@ -23225,6 +23233,145 @@ fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
   Some(layout_to_svg(&layout, theme().text_primary))
 }
 
+/// A word of a paragraph set from inline `StyleBox` notation.
+struct StyledWord {
+  text: String,
+  size: f64,
+  bold: bool,
+  fill: String,
+}
+
+/// The paragraph a string of inline `\!\(\*StyleBox[…]\)` notation spells —
+/// what `ToString[Style[word, color, size, Bold], StandardForm]` joins into
+/// when words are sized by a weight (a term-weighting word cloud). Each styled
+/// box becomes a word at its own size, weight and color; the plain text
+/// between boxes keeps the default size. Words wrap at `max_width`, each line
+/// as tall as its largest word. `None` when the string holds no `StyleBox`,
+/// which keeps its ordinary text rendering.
+pub fn styled_inline_text_svg(text: &str, max_width: f64) -> Option<String> {
+  const BASE_SIZE: f64 = 14.0;
+  let segments =
+    crate::functions::string_ast::split_inline_boxes_keeping_punctuation(text);
+  let fill = theme().text_primary;
+  let mut words: Vec<StyledWord> = Vec::new();
+  let mut any_styled = false;
+  let plain = |text: &str, words: &mut Vec<StyledWord>| {
+    words.extend(text.split_whitespace().map(|w| StyledWord {
+      text: w.to_string(),
+      size: BASE_SIZE,
+      bold: false,
+      fill: fill.to_string(),
+    }));
+  };
+  for seg in &segments {
+    if !seg.is_box {
+      plain(&seg.text, &mut words);
+      continue;
+    }
+    let styled = crate::parse_to_expr(&seg.text).ok().and_then(|boxes| {
+      let Expr::FunctionCall { name, args } = &boxes else {
+        return None;
+      };
+      if name != "StyleBox" || args.is_empty() {
+        return None;
+      }
+      // A string atom's box carries its quotes; the text is drawn without.
+      let Expr::String(content) = &args[0] else {
+        return None;
+      };
+      let content = content
+        .strip_prefix('"')
+        .and_then(|t| t.strip_suffix('"'))
+        .unwrap_or(content)
+        .to_string();
+      let mut word = StyledWord {
+        text: content,
+        size: BASE_SIZE,
+        bold: false,
+        fill: fill.to_string(),
+      };
+      for directive in &args[1..] {
+        match directive {
+          Expr::Identifier(d) if d == "Bold" => word.bold = true,
+          _ => {
+            if let Some(size) = expr_to_f64(directive).filter(|s| *s > 0.0) {
+              word.size = size;
+            } else if let Some(color) = parse_color(directive) {
+              word.fill = color.to_svg_rgb();
+            }
+          }
+        }
+      }
+      Some(word)
+    });
+    match styled {
+      Some(word) => {
+        any_styled = true;
+        words.push(word);
+      }
+      None => {
+        plain(&crate::notebook::render_boxes_text(&seg.text), &mut words);
+      }
+    }
+  }
+  if !any_styled || words.is_empty() {
+    return None;
+  }
+
+  // Greedy line breaking with a proportional-font width estimate.
+  let advance = |w: &StyledWord| {
+    w.text.chars().count() as f64 * w.size * if w.bold { 0.6 } else { 0.55 }
+  };
+  let space = |size: f64| size * 0.3;
+  let margin = 4.0;
+  let mut lines: Vec<Vec<(f64, &StyledWord)>> = vec![Vec::new()];
+  let mut x = margin;
+  for word in &words {
+    let w = advance(word);
+    let line = lines.last_mut().expect("at least one line");
+    if !line.is_empty() && x + w > max_width - margin {
+      lines.push(Vec::new());
+      x = margin;
+    }
+    lines.last_mut().expect("at least one line").push((x, word));
+    x += w + space(word.size);
+  }
+  let mut body = String::new();
+  let mut y = margin;
+  let mut total_width: f64 = 0.0;
+  for line in &lines {
+    let height =
+      line.iter().map(|(_, w)| w.size).fold(BASE_SIZE, f64::max) * 1.25;
+    let baseline = y + height * 0.8;
+    for (x, word) in line {
+      total_width = total_width.max(x + advance(word));
+      body.push_str(&format!(
+        "<text x=\"{x:.1}\" y=\"{baseline:.1}\" font-size=\"{:.1}\" \
+         fill=\"{}\"{} xml:space=\"preserve\">{}</text>",
+        word.size,
+        word.fill,
+        if word.bold {
+          " font-weight=\"bold\""
+        } else {
+          ""
+        },
+        word
+          .text
+          .replace('&', "&amp;")
+          .replace('<', "&lt;")
+          .replace('>', "&gt;"),
+      ));
+    }
+    y += height;
+  }
+  let width = (total_width + margin).ceil();
+  let height = (y + margin).ceil();
+  Some(format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" \
+     height=\"{height}\"><g font-family=\"sans-serif\">{body}</g></svg>"
+  ))
+}
+
 /// Render a resolved `Column`/`Row` item that is itself a layout construct
 /// (`Row[…]` / `Column[…]`) to a nested SVG, so mixed text/graphics rows
 /// compose instead of printing as raw InputForm text. `None` for other
@@ -32000,7 +32147,10 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       "Subsuperscript" | "SubsuperscriptBox" if args.len() == 3 => {
         let mut runs = script_runs(&args[..2], italic, false);
         let sup = to_unicode_script(
-          &flatten_label_runs(&manipulate_label_runs(&args[2], false)),
+          &flatten_label_runs(&manipulate_label_runs(
+            &unquote_box_string(&args[2]),
+            false,
+          )),
           true,
         );
         if !sup.is_empty() {
@@ -32520,6 +32670,23 @@ fn with_marked_subscripts<T>(f: impl FnOnce() -> T) -> T {
 const SUBSCRIPT_START: char = '\u{E0F2}';
 const SUBSCRIPT_END: char = '\u{E0F3}';
 
+/// A string box is stored as its quoted source (`"\"*\""`) but drawn without
+/// the quotes; a script made of one (`Subsuperscript[q, 1, "*"]` typeset
+/// through TraditionalForm) must not show them.
+fn unquote_box_string(e: &Expr) -> Expr {
+  match e {
+    Expr::String(s)
+      if s.len() >= 2
+        && s.starts_with('"')
+        && s.ends_with('"')
+        && !s[1..s.len() - 1].contains('"') =>
+    {
+      Expr::String(s[1..s.len() - 1].to_string())
+    }
+    other => other.clone(),
+  }
+}
+
 /// Build the runs for a `Subscript`/`Superscript`: the base rendered in the
 /// inherited style, followed by each remaining argument folded into Unicode
 /// sub-/superscript glyphs (which have no italic variant, so they stay
@@ -32546,7 +32713,10 @@ fn script_runs(
     .iter()
     .skip(1)
     .map(|a| {
-      let text = flatten_label_runs(&manipulate_label_runs(a, false));
+      let text = flatten_label_runs(&manipulate_label_runs(
+        &unquote_box_string(a),
+        false,
+      ));
       if mark
         && text
           .chars()
@@ -36223,8 +36393,10 @@ fn list_children(
   ons: &mut Vec<String>,
 ) -> Vec<DisplayNode> {
   match list {
+    // `Null` (e.g. from an empty `Row[{a, , b}]` slot) is drawn as nothing.
     Expr::List(items) => items
       .iter()
+      .filter(|c| !matches!(c, Expr::Identifier(n) if n == "Null"))
       .map(|c| display_expr_to_node(c, bindings, probes, ons))
       .collect(),
     other => vec![display_expr_to_node(other, bindings, probes, ons)],
@@ -38245,6 +38417,18 @@ mod manipulate_display_pane_selector_tests {
   fn renders_matching_pane_as_row() {
     let code = r#"PaneSelector[{1 -> Row[{Style["a"], Style["b"]}], 2 -> Style["c"]}, mode]"#;
     let node = build_manipulate_display(code, &[("mode".into(), "1".into())]);
+    match node {
+      DisplayNode::Row(children) => assert_eq!(children.len(), 2),
+      other => panic!("expected a row node, got {other:?}"),
+    }
+  }
+
+  /// An empty slot in a `Row` (`Row[{a, , b}]` holds `Null`) is invisible
+  /// in the front end; it must not show up as the text "Null".
+  #[test]
+  fn null_entries_in_row_are_skipped() {
+    let code = r#"Row[{Style["a"], , Style["b"]}]"#;
+    let node = build_manipulate_display(code, &[]);
     match node {
       DisplayNode::Row(children) => assert_eq!(children.len(), 2),
       other => panic!("expected a row node, got {other:?}"),

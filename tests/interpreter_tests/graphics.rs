@@ -1103,6 +1103,22 @@ mod graphics {
       assert!(!svg.contains("&quot;"), "no quoted strings: {svg}");
     }
 
+    /// Inline `\!\(\*SubscriptBox[...]\)` box notation in a plot's text
+    /// (an `Epilog` `Text`, styled or not, or a `PlotLabel`) typesets to
+    /// real sub/superscripts instead of dropping the script.
+    #[test]
+    fn plot_text_with_inline_box_notation_keeps_scripts() {
+      let sub = "\"\\!\\(\\*SubscriptBox[\\(x\\), \\(1\\)]\\)\"";
+      let sup = "\"\\!\\(\\*SuperscriptBox[\\(x\\), \\(2\\)]\\)\"";
+      let svg = export_svg(&format!(
+        "Plot[x, {{x, 0, 1}}, Epilog -> {{Text[{sub}, {{0.5, 0.5}}], \
+         Text[Style[{sub}, Red], {{0.2, 0.8}}]}}, PlotLabel -> {sup}]"
+      ));
+      assert_eq!(svg.matches("baseline-shift=\"sub\"").count(), 2, "{svg}");
+      assert!(svg.contains("baseline-shift=\"super\""), "{svg}");
+      assert!(!svg.contains("SubscriptBox"), "{svg}");
+    }
+
     /// A `Dynamic[...]` item in a plot's `Epilog` list draws its current
     /// value (here a label chosen by `If`) rather than being dropped.
     #[test]
@@ -14356,6 +14372,24 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn traditional_form_subsuperscript_label_in_graphics() {
+      // `Subsuperscript[q, 1, "*"]` inside a TraditionalForm Text label
+      // typesets as base, subscript and superscript, without the quotes of
+      // the string script and without the raw head.
+      let svg = export_svg(
+        r#"Graphics[Text[Row[{TraditionalForm[HoldForm[Subsuperscript[q, 1, "*"] == b/a]]}], {0, 0}]]"#,
+      );
+      assert!(
+        !svg.contains("Subsuperscript"),
+        "raw Subsuperscript leaked into SVG: {svg}"
+      );
+      assert!(
+        !svg.contains("&quot;*&quot;") && !svg.contains("\"*\""),
+        "string script drawn with quotes: {svg}"
+      );
+    }
+
+    #[test]
     fn bar_chart_horizontal_plot_label_box_syntax() {
       // Same via the horizontal (BarOrigin -> Left) generator.
       let svg = export_svg(
@@ -26474,6 +26508,45 @@ mod find_spanning_tree {
 
 mod parametric_plot3d {
   use super::*;
+
+  // A 1-D plot body is compiled once too; side effects in it still run
+  // per sample, through the evaluator leaves.
+  #[test]
+  fn compiled_curve_sampling_keeps_side_effects() {
+    assert_eq!(
+      interpret(
+        "n = 0; Plot[(n++; Sin[x]), {x, 0, 1}, PlotPoints -> 10, \
+         MaxRecursion -> 0]; n > 0"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A surface body is compiled once and sampled numerically; a body the
+  // compiler cannot reduce still samples through the evaluator.
+  #[test]
+  fn compiled_surface_sampling() {
+    assert_eq!(
+      interpret(
+        "leaf[t_, x_, y_] := {Sin[t], Cos[t], 0} + \
+         Dot[{x, y, Abs[x]}, RotationMatrix[t, {0, 0, 1}]]; \
+         g = ParametricPlot3D[Evaluate[leaf[0.3, r Cos[u], r Sin[u]]], \
+         {u, 0, Pi/2}, {r, 0, 1}, Mesh -> False]; \
+         Head[g]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+    assert_eq!(
+      interpret(
+        "f[u_?NumericQ, v_?NumericQ] := u v; \
+         Head[ParametricPlot3D[{u, v, f[u, v]}, {u, 0, 1}, {v, 0, 1}]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+  }
 
   // A surface winding many times around over a long parameter span is
   // sampled more finely than a single-turn one, instead of the fixed grid

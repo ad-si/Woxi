@@ -1718,6 +1718,38 @@ mod projection {
 mod eigenvalues {
   use super::*;
 
+  // A real machine matrix lists a conjugate pair upper half first.
+  #[test]
+  fn machine_conjugate_pair_order() {
+    assert_eq!(
+      interpret("Eigenvalues[{{0., 1.}, {-1., 0.}}]").unwrap(),
+      "{0. + 1.*I, 0. - 1.*I}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[N[{{1, 2}, {-3, 1}}]]").unwrap(),
+      "{1. + 2.449489742783178*I, 1. - 2.449489742783178*I}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{a, b}, {-b, a}}]").unwrap(),
+      "{a - I*b, a + I*b}"
+    );
+  }
+
+  // Francis double-shift QR: a random real matrix's complex pairs converge
+  // quickly, and the eigenvalues sum to the trace.
+  #[test]
+  fn large_random_real_matrix() {
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; m = RandomReal[{-1, 1}, {150, 150}]; \
+         e = Eigenvalues[m]; {Length[e], Abs[Total[e] - Tr[m]] < 10^-9, \
+         Max[Abs[Im[e]]] > 0}"
+      )
+      .unwrap(),
+      "{150, True, True}"
+    );
+  }
+
   /// Regression: float matrices (n ≥ 3) with complex-conjugate eigenvalues
   /// stayed unevaluated, and `Eigenvectors[…][[1]]` then failed.
   #[test]
@@ -11049,5 +11081,42 @@ mod fitted_model_diagnostics {
       interpret("SquareMatrixQ[SparseArray[{{1, 1} -> 1}, {2, 3}]]").unwrap(),
       "False"
     );
+  }
+}
+
+mod legacy_regress {
+  use super::*;
+
+  const DATA: &str = "{{1, 2, 3, 5.1}, {2, 1, 4, 6.3}, {3, 5, 1, 7.2}, \
+{4, 3, 2, 9.9}, {5, 7, 6, 10.4}, {6, 2, 2, 13.3}}";
+
+  #[test]
+  fn parameter_table_estimates_match_linear_model_fit() {
+    let code = format!(
+      "Get[\"LinearRegression`\"]; \
+r = LinearRegression`Regress[{DATA}, {{1, x, y, z}}, {{x, y, z}}]; \
+Transpose[First[RegressionCommon`ParameterTable /. r]][[1]] == \
+LinearModelFit[{DATA}, {{x, y, z}}, {{x, y, z}}][\"BestFitParameters\"]"
+    );
+    assert_eq!(interpret(&code).unwrap(), "True");
+  }
+
+  #[test]
+  fn r_squared_matches_linear_model_fit() {
+    let code = format!(
+      "Get[\"LinearRegression`\"]; \
+r = LinearRegression`Regress[{DATA}, {{1, x, y, z}}, {{x, y, z}}]; \
+(RegressionCommon`RSquared /. r) == \
+LinearModelFit[{DATA}, {{x, y, z}}, {{x, y, z}}][\"RSquared\"]"
+    );
+    assert_eq!(interpret(&code).unwrap(), "True");
+  }
+
+  #[test]
+  fn basis_without_constant_has_no_intercept() {
+    let code = "Get[\"LinearRegression`\"]; \
+r = LinearRegression`Regress[{{1, 2}, {2, 4}, {3, 6.}}, {x}, {x}]; \
+Length[First[RegressionCommon`ParameterTable /. r]]";
+    assert_eq!(interpret(code).unwrap(), "1");
   }
 }

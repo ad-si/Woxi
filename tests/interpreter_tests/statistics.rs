@@ -776,6 +776,25 @@ mod rescale {
   use super::*;
 
   #[test]
+  fn rescale_exact_constant_bounds_evaluates() {
+    // Bounds that are exact numeric constants (`Log[…]` weights) rescale like
+    // literal ones, so a following Floor sees an integer.
+    assert_eq!(
+      interpret(
+        "e = {2, 3, 1}*Log[912/{5, 10, 900}]; \
+         Floor[Rescale[e, {Min[e], Max[e]}, {8, 24}]]"
+      )
+      .unwrap(),
+      "{20, 24, 8}"
+    );
+    // A symbolic value or bound stays unevaluated.
+    assert_eq!(
+      interpret("Rescale[x, {Log[2], Log[4]}]").unwrap(),
+      "Rescale[x, {Log[2], Log[4]}]"
+    );
+  }
+
+  #[test]
   fn rescale_basic() {
     assert_eq!(interpret("Rescale[5, {0, 10}]").unwrap(), "1/2");
     assert_eq!(interpret("Rescale[0, {0, 10}]").unwrap(), "0");

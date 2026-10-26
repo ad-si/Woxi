@@ -5038,6 +5038,11 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && matches!(&args[1], Expr::Identifier(f) if
       f == "TeXForm" || f == "TraditionalForm");
 
+  // `StandardForm` typesets into boxes, so a `Style` keeps its `StyleBox`
+  // (the size, weight and color) instead of being flattened to its content.
+  let is_standard_form = args.len() == 2
+    && matches!(&args[1], Expr::Identifier(f) if f == "StandardForm");
+
   // TableForm[matrix] — render as an aligned text grid (left-aligned columns
   // padded to the widest cell, three-space separators, blank line between rows).
   if let Expr::FunctionCall {
@@ -5164,6 +5169,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "Style"
     && !is_input_form
     && !is_tex_form
+    && !is_standard_form
     && !inner_args.is_empty()
   {
     let mut recursed = args.to_vec();
