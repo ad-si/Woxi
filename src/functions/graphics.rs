@@ -2313,6 +2313,62 @@ fn is_empty_list(e: &Expr) -> bool {
 
 // ── AST walker ───────────────────────────────────────────────────────────
 
+/// Turn the primitives a `FilledCurve` component produced (from index
+/// `start`) into filled shapes. With `joined`, consecutive polyline pieces
+/// are chained into a single closed path instead of each being filled
+/// separately.
+fn fill_curve_prims(prims: &mut Vec<Primitive>, start: usize, joined: bool) {
+  let pieces: Vec<Primitive> = prims.drain(start..).collect();
+  let mut path: Vec<(f64, f64)> = Vec::new();
+  let mut path_style: Option<StyleState> = None;
+  let flush = |path: &mut Vec<(f64, f64)>,
+               path_style: &mut Option<StyleState>,
+               prims: &mut Vec<Primitive>| {
+    if let Some(style) = path_style.take() {
+      prims.push(Primitive::PolygonPrim {
+        points: std::mem::take(path),
+        holes: Vec::new(),
+        vertex_colors: None,
+        style,
+      });
+    }
+  };
+  for mut prim in pieces {
+    match &mut prim {
+      Primitive::Line {
+        segments, style, ..
+      } if segments.len() == 1 => {
+        let pts = segments.remove(0);
+        if joined {
+          for pt in pts {
+            if path.last() != Some(&pt) {
+              path.push(pt);
+            }
+          }
+          path_style.get_or_insert_with(|| style.clone());
+        } else {
+          prims.push(Primitive::PolygonPrim {
+            points: pts,
+            holes: Vec::new(),
+            vertex_colors: None,
+            style: style.clone(),
+          });
+        }
+      }
+      Primitive::BezierCurvePrim { filled, .. } => {
+        flush(&mut path, &mut path_style, prims);
+        *filled = true;
+        prims.push(prim);
+      }
+      _ => {
+        flush(&mut path, &mut path_style, prims);
+        prims.push(prim);
+      }
+    }
+  }
+  flush(&mut path, &mut path_style, prims);
+}
+
 fn collect_primitives(
   expr: &Expr,
   style: &mut StyleState,
@@ -2464,23 +2520,22 @@ fn collect_primitives(
         // `FilledCurve[BezierCurve[…]]` (or a list of curves) fills the
         // region each Bezier path encloses.
         "FilledCurve" if !args.is_empty() => {
-          let before = prims.len();
-          collect_primitives(&args[0], style, prims, errors);
-          for prim in &mut prims[before..] {
-            match prim {
-              Primitive::BezierCurvePrim { filled, .. } => *filled = true,
-              Primitive::Line {
-                segments, style, ..
-              } if segments.len() == 1 => {
-                *prim = Primitive::PolygonPrim {
-                  points: segments.remove(0),
-                  holes: Vec::new(),
-                  vertex_colors: None,
-                  style: style.clone(),
-                };
-              }
-              _ => {}
+          // A flat list of curve pieces is one joined path (the pieces
+          // are chained end to end and filled together); a list of lists
+          // holds several such paths, each filled on its own.
+          let components: Vec<&Expr> = match &args[0] {
+            Expr::List(items)
+              if items.iter().all(|i| matches!(i, Expr::List(_))) =>
+            {
+              items.iter().collect()
             }
+            other => vec![other],
+          };
+          for component in components {
+            let before = prims.len();
+            collect_primitives(component, style, prims, errors);
+            let joined = matches!(component, Expr::List(_));
+            fill_curve_prims(prims, before, joined);
           }
         }
         "PolarCurve" if args.len() >= 2 => {

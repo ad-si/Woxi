@@ -817,6 +817,24 @@ mod graphics {
     }
 
     #[test]
+    fn filled_curve_list_of_pieces_is_one_joined_path() {
+      let svg = export_svg(
+        "Graphics[{Green, FilledCurve[{Line[{{0, 0}, {1, 0}, {1, 1}}], \
+         Line[{{1, 1}, {0, 1}, {0, 0}}]}]}]",
+      );
+      assert_eq!(svg.matches("<polygon").count(), 1, "{svg}");
+    }
+
+    #[test]
+    fn filled_curve_list_of_lists_fills_each_path() {
+      let svg = export_svg(
+        "Graphics[{Green, FilledCurve[{{Line[{{0, 0}, {1, 0}}], \
+         Line[{{1, 0}, {1, 1}}]}, {Line[{{2, 2}, {3, 2}, {3, 3}}]}}]}]",
+      );
+      assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
+    }
+
+    #[test]
     fn stroked_bezier_curve_stays_unfilled() {
       let svg =
         export_svg("Graphics[{BezierCurve[{{0, 0}, {0.5, 1}, {1, 0}}]}]");
