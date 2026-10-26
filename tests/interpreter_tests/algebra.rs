@@ -5113,6 +5113,30 @@ mod solve {
     );
   }
 
+  // Undoing a square root with a symbolic other side keeps the candidates
+  // that hold for some parameter values, with nongen — also the ones that
+  // fail for positive values (`x == -Sqrt[4 - y^2]`).
+  #[test]
+  fn inverse_square_root_with_parameters() {
+    clear_state();
+    assert_eq!(
+      interpret("Solve[x == -Sqrt[4 - y^2], y]").unwrap(),
+      "{{y -> -Sqrt[4 - x^2]}, {y -> Sqrt[4 - x^2]}}"
+    );
+    assert!(
+      woxi::get_captured_warnings()
+        .iter()
+        .any(|w| w.starts_with("Solve::nongen"))
+    );
+    clear_state();
+    assert_eq!(interpret("Solve[x == Sqrt[y], y]").unwrap(), "{{y -> x^2}}");
+    assert!(
+      woxi::get_captured_warnings()
+        .iter()
+        .any(|w| w.starts_with("Solve::nongen"))
+    );
+  }
+
   // Roots nested in roots are eliminated through norms, outermost first.
   #[test]
   fn nested_radical_equations() {

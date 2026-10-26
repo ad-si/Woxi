@@ -8233,6 +8233,7 @@ fn keep_solutions_satisfying(
     return Ok(solved);
   };
   let mut kept: Vec<Expr> = Vec::new();
+  let mut undecided = false;
   for solution in solutions {
     let value = match solution {
       Expr::List(rules) => match rules.as_slice() {
@@ -8241,11 +8242,30 @@ fn keep_solutions_satisfying(
       },
       _ => None,
     };
-    if value.and_then(|value| equation_holds_at(equation, var, value))
-      != Some(false)
+    if let Some(value) = value {
+      match equation_holds_at(equation, var, value) {
+        Some(true) => {}
+        Some(false) => continue,
+        // With other symbols in the equation the check cannot decide; it
+        // is decided at sample values of them instead. A candidate that
+        // holds for only some (`y -> x^2` of `Sqrt[y] == x`) is kept with
+        // the warning wolframscript gives for it.
+        None => match holds_generically(equation, var, value) {
+          Some(GenericValidity::Fails) => continue,
+          Some(GenericValidity::Always) => {}
+          _ => undecided = true,
+        },
+      }
+    }
+    if !kept
+      .iter()
+      .any(|k| crate::evaluator::pattern_matching::expr_equal(k, solution))
     {
       kept.push(solution.clone());
     }
+  }
+  if undecided {
+    report_nongen();
   }
   Ok(Expr::List(kept.into()))
 }
@@ -8323,42 +8343,12 @@ fn try_solve_radical_equation(
   let Expr::List(ref candidates) = solved else {
     return None;
   };
-  let mut kept: Vec<Expr> = Vec::new();
-  let mut undecided = false;
-  for candidate in candidates {
-    let Expr::List(rules) = candidate else {
-      return None;
-    };
-    let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
-      return None;
-    };
-    // With other symbols in the equation the check cannot decide; the
-    // candidate is kept, with the warning wolframscript gives for it.
-    match equation_holds_at(equation, var, replacement) {
-      Some(true) => {}
-      Some(false) => continue,
-      None => {
-        // Decided at a generic point instead: every other symbol set to a
-        // positive number of its own. A candidate failing there (`x ->
-        // Sqrt[-a^2]/2` from squaring) is no solution for most parameters.
-        match holds_generically(equation, var, replacement) {
-          Some(GenericValidity::Fails) => continue,
-          Some(GenericValidity::Always) => {}
-          _ => undecided = true,
-        }
-      }
-    }
-    if !kept
-      .iter()
-      .any(|k| crate::evaluator::pattern_matching::expr_equal(k, candidate))
-    {
-      kept.push(candidate.clone());
-    }
+  if !candidates.iter().all(|c| {
+    matches!(c, Expr::List(rules) if matches!(rules.as_slice(), [Expr::Rule { .. }]))
+  }) {
+    return None;
   }
-  if undecided {
-    report_nongen();
-  }
-  Some(Ok(Expr::List(kept.into())))
+  Some(keep_solutions_satisfying(Ok(solved), equation, var))
 }
 
 /// `p^(n/2)` with odd `n`, in any of its spellings, as `(p, n)`.
@@ -8523,35 +8513,12 @@ fn try_solve_by_radical_norms(
   let Expr::List(ref candidates) = solved else {
     return None;
   };
-  let mut kept: Vec<Expr> = Vec::new();
-  let mut undecided = false;
-  for candidate in candidates {
-    let Expr::List(rules) = candidate else {
-      return None;
-    };
-    let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
-      return None;
-    };
-    match equation_holds_at(equation, var, replacement) {
-      Some(true) => {}
-      Some(false) => continue,
-      None => match holds_generically(equation, var, replacement) {
-        Some(GenericValidity::Fails) => continue,
-        Some(GenericValidity::Always) => {}
-        _ => undecided = true,
-      },
-    }
-    if !kept
-      .iter()
-      .any(|k| crate::evaluator::pattern_matching::expr_equal(k, candidate))
-    {
-      kept.push(candidate.clone());
-    }
+  if !candidates.iter().all(|c| {
+    matches!(c, Expr::List(rules) if matches!(rules.as_slice(), [Expr::Rule { .. }]))
+  }) {
+    return None;
   }
-  if undecided {
-    report_nongen();
-  }
-  Some(Ok(Expr::List(kept.into())))
+  Some(keep_solutions_satisfying(Ok(solved), equation, var))
 }
 
 /// Numeric last resort for `NSolve[eqn, var]` when neither the quadratic /
@@ -8955,11 +8922,10 @@ fn rational_parts(exponent: &Expr) -> Option<(i128, i128)> {
 /// Whether `equation` holds with `value` put in for `var`, or `None` when
 /// that cannot be decided.
 /// Whether a candidate solves an equation with other symbols in it, judged
-/// at sample points where each of those symbols takes a number: `None`
-/// when the first (positive) point does not decide, `Fails` when the
-/// equation fails there, and otherwise whether it also holds at negative,
-/// larger and complex points — valid for every parameter value as far as
-/// the samples tell — or only for some.
+/// at sample points where each of those symbols takes a number (positive,
+/// negative, larger, complex): valid at all of them, at some (valid for
+/// some parameter values, as `x == -Sqrt[4 - y^2]` for x <= 0), or at none.
+/// `None` when no sample point decides.
 fn holds_generically(
   equation: &Expr,
   var: &str,
@@ -8994,10 +8960,8 @@ fn holds_generically(
     equation_holds_at(&equation, var, &value)
   };
   let shift = |k: usize| 0.3127 * k as f64;
-  if !at(&|k| Expr::Real(0.7349 + shift(k)))? {
-    return Some(GenericValidity::Fails);
-  }
-  let others: [&dyn Fn(usize) -> Expr; 3] = [
+  let points: [&dyn Fn(usize) -> Expr; 4] = [
+    &|k| Expr::Real(0.7349 + shift(k)),
     &|k| Expr::Real(-1.3127 - shift(k)),
     &|k| Expr::Real(7.3149 + shift(k)),
     &|k| {
@@ -9007,10 +8971,16 @@ fn holds_generically(
       )
     },
   ];
-  Some(if others.iter().all(|p| at(*p) == Some(true)) {
+  let verdicts: Vec<Option<bool>> = points.iter().map(|p| at(*p)).collect();
+  if verdicts.iter().all(Option::is_none) {
+    return None;
+  }
+  Some(if verdicts.iter().all(|v| *v == Some(true)) {
     GenericValidity::Always
-  } else {
+  } else if verdicts.contains(&Some(true)) {
     GenericValidity::Partly
+  } else {
+    GenericValidity::Fails
   })
 }
 
