@@ -5521,18 +5521,18 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let total_cols = n_cols as f64 + pad_l + pad_r;
   let total_rows = n_rows as f64 + pad_b + pad_t;
 
-  // Aspect ratio: match the matrix shape (wider if more cols, taller if more rows)
+  // Aspect ratio: match the matrix shape (wider if more cols, taller if more
+  // rows), fitted inside the `ImageSize` box — an explicit `{w, h}` is a
+  // bounding box, not the picture's own size.
   let aspect = aspect_ratio.unwrap_or(total_rows / total_cols);
-  let (svg_width, svg_height) = if aspect <= 1.0 {
-    (
-      svg_width,
-      ((svg_width as f64 * aspect).round() as u32).max(1),
-    )
-  } else {
-    (
-      ((svg_height as f64 / aspect).round() as u32).max(1),
-      svg_height,
-    )
+  let (svg_width, svg_height) = {
+    let (w, h) = (svg_width as f64, svg_height as f64);
+    let (fit_w, fit_h) = if h / w <= aspect {
+      (h / aspect, h)
+    } else {
+      (w, w * aspect)
+    };
+    ((fit_w.round() as u32).max(1), (fit_h.round() as u32).max(1))
   };
 
   let s = RESOLUTION_SCALE;
