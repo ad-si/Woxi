@@ -669,6 +669,21 @@ mod return_value {
   }
 
   #[test]
+  fn return_in_curried_definition() {
+    clear_state();
+    // A SubValue definition body consumes a `Return` like any other
+    // definition body, also when the head is applied through `Map`.
+    assert_eq!(
+      interpret(
+        "g[a_][x_] := Module[{y}, If[x > 1, Return[{}]]; {x}]; g[1][2]"
+      )
+      .unwrap(),
+      "{}"
+    );
+    assert_eq!(interpret("Map[g[1], {1, 2, 3}]").unwrap(), "{{1}, {}, {}}");
+  }
+
+  #[test]
   fn return_in_block_inside_function() {
     clear_state();
     assert_eq!(

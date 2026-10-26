@@ -1383,9 +1383,23 @@ fn try_sub_value_curried_match(
         }
         return Some(Ok(raw));
       }
-      return Some(crate::evaluator::pattern_matching::apply_bindings(
-        body, &bindings,
-      ));
+      // The rule body is a definition body, so a `Return` raised inside it
+      // (directly or through Block/Module/While/For) ends the call with its
+      // value instead of escaping to the caller.
+      return Some(
+        match crate::evaluator::pattern_matching::apply_bindings(
+          body, &bindings,
+        ) {
+          Err(InterpreterError::ReturnValue(val)) => Ok(*val),
+          Ok(ref ret) if crate::evaluator::is_literal_return(ret) => {
+            let Expr::FunctionCall { args, .. } = ret else {
+              unreachable!();
+            };
+            Ok(args[0].clone())
+          }
+          other => other,
+        },
+      );
     }
   }
   None
