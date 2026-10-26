@@ -7528,6 +7528,28 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1}, \"…\"]"], "Output"]
     assert!(widget.error.is_none(), "{:?}", widget.error);
     assert!(widget.graphics_handle.is_some(), "the solid must render");
   }
+  /// A convex-hull / Delaunay / Voronoi demonstration loads the legacy
+  /// `ComputationalGeometry`` package in its initialization and draws the
+  /// diagrams from `DelaunayTriangulation` and `DiagramPlot`; both were
+  /// missing, so only the hull appeared.
+  #[test]
+  fn legacy_computational_geometry_manipulate_draws_delaunay_and_voronoi() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData["Needs[\"ComputationalGeometry`\"]; edges[p_] := Flatten[Table[If[i < j, {p[[i]], p[[j]]}, Nothing], {i, Length[p]}, {j, DelaunayTriangulation[p][[i, 2]]}], 1];"], "Input", InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Show[ListPlot[pts, PlotRange -> 5], Graphics[{Red, Line /@ edges[pts]}], DiagramPlot[pts, LabelPoints -> True], PlotRange -> 5], {{pts, {{-3, -3}, {2, -2}, {4, 2}, {1, 3}}}, Locator}, SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`pts$$ = {{-3, -3}, {2, -2}, {4, 2}, {1, 3}}}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some(), "the diagrams must render");
+  }
   /// A random-walk Manipulate whose plot pins `AxesOrigin -> {0, 0}` and
   /// titles itself with a `Framed` message opens with the plot rendered
   /// (the walk's helper is an initialization cell).
