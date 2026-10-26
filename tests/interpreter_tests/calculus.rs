@@ -23249,4 +23249,17 @@ mod differentiate_wrt_derivative {
       "InterpolatingFunction"
     );
   }
+
+  // The derivative of an indexed helper function (`g[i_][t_] := …`) in an
+  // NDSolve equation is the derivative of its defined value.
+  #[test]
+  fn ndsolve_derivative_of_defined_indexed_function() {
+    assert_eq!(
+      interpret(
+        "g[i_][t_] := 2 x[i][t]; sol = NDSolve[{Derivative[1][g[1]][t] == -x[1][t], x[1][0] == 1}, x[1], {t, 0, 1}]; Round[10^4 (x[1][1] /. First[sol])]"
+      )
+      .unwrap(),
+      "6065"
+    );
+  }
 }
