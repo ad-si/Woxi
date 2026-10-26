@@ -18494,6 +18494,21 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // A string cell with a nested `FractionBox` is a stacked fraction, not
+    // its linear `a/b/c` reading, which cannot tell `(a/b)/c` from
+    // `a/(b/c)`. The grid's own font size applies to the typeset cell.
+    #[test]
+    fn a_nested_fraction_string_cell_is_typeset_not_flattened() {
+      let svg = export_svg(
+        "Text@Style[Grid[{{\"\\!\\(\\*FractionBox[FractionBox[\\(a\\), \\(b\\)], \\(c\\)]\\)\", \"x\"}}, Frame -> All], 18]",
+      );
+      assert!(!svg.contains("a/b/c"), "fraction must not be linear: {svg}");
+      assert!(svg.contains("font-size=\"18\""), "grid size kept: {svg}");
+      for part in [">a<", ">b<", ">c<"] {
+        assert!(svg.contains(part), "{part} must be typeset: {svg}");
+      }
+    }
+
     // A named style supplies the base appearance and the explicit directives
     // sit on top of it, whichever side of it they were written:
     // `Style["A", 20, "Label"]` is 20-point text, not the 9-point the
