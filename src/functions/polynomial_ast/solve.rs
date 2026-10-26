@@ -257,8 +257,19 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(result) = try_nsolve_complex_coefficients(args) {
     return result;
   }
-  // Fall back to symbolic solve + numerize
-  let symbolic = solve_ast(args)?;
+  // Fall back to symbolic solve + numerize. An infinity the exact
+  // elimination runs into is its own business (the solutions it spoils are
+  // dropped below); NSolve reports none.
+  crate::push_quiet_filter(
+    Some(vec![
+      "Power::infy".to_string(),
+      "Infinity::indet".to_string(),
+    ]),
+    vec![],
+  );
+  let symbolic = solve_ast(args);
+  crate::pop_quiet_filter();
+  let symbolic = symbolic?;
 
   // An elimination whose numeric roots verify against no equation (their
   // rounding leaves residuals the exact check rejects) finds nothing; the
@@ -293,6 +304,25 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(found);
   }
   let numerized = nsolve_numerize(&symbolic)?;
+  // An elimination that ran into an infinity (radicals of machine numbers
+  // squared into huge cancelling terms) proves nothing: drop such
+  // solutions, and with none left search numerically.
+  let numerized = match numerized {
+    Expr::List(ref sols) if sols.iter().any(has_non_finite_value) => {
+      let finite: Vec<Expr> = sols
+        .iter()
+        .filter(|s| !has_non_finite_value(s))
+        .cloned()
+        .collect();
+      if finite.is_empty()
+        && let Some(found) = try_nsolve_numeric_system(args)
+      {
+        return Ok(sort_nsolve_solutions(found));
+      }
+      Expr::List(finite.into())
+    }
+    other => other,
+  };
   // A `Reals` domain keeps only the real solutions. It is the optional
   // third argument in the ordinary `NSolve[eqns, vars, Reals]` form, but
   // the *last* argument either way — the domain-only two-argument form
@@ -4594,7 +4624,17 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Equations carrying a root of the unknown: raise them away and keep the
   // roots that survive the original equation.
+  // Roots nested in roots are eliminated through norms; isolating one root
+  // and squaring only shuffles them around.
+  if has_nested_square_radical(&poly, var)
+    && let Some(result) = try_solve_by_radical_norms(&poly, &args[0], var)
+  {
+    return result;
+  }
   if let Some(result) = try_solve_radical_equation(&poly, &args[0], var) {
+    return result;
+  }
+  if let Some(result) = try_solve_by_radical_norms(&poly, &args[0], var) {
     return result;
   }
 
@@ -8316,10 +8356,200 @@ fn try_solve_radical_equation(
     }
   }
   if undecided {
+    report_nongen();
+  }
+  Some(Ok(Expr::List(kept.into())))
+}
+
+/// `p^(n/2)` with odd `n`, in any of its spellings, as `(p, n)`.
+fn as_half_power(expr: &Expr) -> Option<(&Expr, i128)> {
+  let half = |e: &Expr| match e {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(2)) if n % 2 != 0 => Some(*n),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      Some((&args[0], 1))
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      half(&args[1]).map(|n| (&args[0], n))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => half(right).map(|n| (left.as_ref(), n)),
+    _ => None,
+  }
+}
+
+/// A square root of an expression in `var` inside `expr` — `Sqrt[p]` or
+/// `p^(n/2)` with odd `n` — as its radicand `p`; one that no other root's
+/// radicand contains, so that eliminating it leaves the others intact.
+fn find_square_radical(expr: &Expr, var: &str) -> Option<Expr> {
+  fn collect(e: &Expr, var: &str, out: &mut Vec<Expr>) {
+    if let Some((p, _)) = as_half_power(e)
+      && !is_constant_wrt(p, var)
+    {
+      out.push(p.clone());
+    }
+    for child in crate::syntax::expr_children(e) {
+      collect(child, var, out);
+    }
+  }
+  let mut radicands = Vec::new();
+  collect(expr, var, &mut radicands);
+  let inside = |inner: &Expr, outer: &Expr| -> bool {
+    fn occurs(e: &Expr, target: &Expr) -> bool {
+      as_half_power(e).is_some_and(|(p, _)| {
+        crate::evaluator::pattern_matching::expr_equal(p, target)
+      }) || crate::syntax::expr_children(e)
+        .into_iter()
+        .any(|c| occurs(c, target))
+    }
+    occurs(outer, inner)
+  };
+  radicands
+    .iter()
+    .find(|p| !radicands.iter().any(|q| inside(p, q)))
+    .cloned()
+}
+
+/// Warn that a solution's validity depends on the parameters — from the
+/// Solve the user called only, not from the equations a system's
+/// elimination solves along the way, and not under NSolve.
+fn report_nongen() {
+  if SOLVE_DEPTH.with(std::cell::Cell::get) <= 1 && !in_nsolve() {
     crate::emit_message(
       "Solve::nongen: There may be values of the parameters for which some \
        or all solutions are not valid.",
     );
+  }
+}
+
+/// Whether `expr` takes a square root of something that itself holds a
+/// square root of `var`.
+fn has_nested_square_radical(expr: &Expr, var: &str) -> bool {
+  if let Some((r, _)) = as_half_power(expr)
+    && find_square_radical(r, var).is_some()
+  {
+    return true;
+  }
+  crate::syntax::expr_children(expr)
+    .into_iter()
+    .any(|child| has_nested_square_radical(child, var))
+}
+
+/// Solve an equation in square roots of `var` that isolating one root and
+/// squaring does not clear (roots nested in roots, several in one term):
+/// each root `s = Sqrt[p]` is eliminated in turn by writing the equation as
+/// `A + B s == 0` (with `s^2 = p`) and passing to its norm `A^2 - p B^2 ==
+/// 0`, which every solution of the original also solves. The resulting
+/// polynomial is solved and its roots checked against the original
+/// equation, numerically or, with parameters, at sample points.
+fn try_solve_by_radical_norms(
+  poly: &Expr,
+  equation: &Expr,
+  var: &str,
+) -> Option<Result<Expr, InterpreterError>> {
+  use crate::evaluator::evaluate_expr_to_expr as eval;
+  find_square_radical(poly, var)?;
+  if has_inequality(equation) {
+    return None;
+  }
+  let numerator = |e: Expr| -> Option<Expr> {
+    eval(&call("Numerator", vec![call("Together", vec![e])])).ok()
+  };
+  let mut f = numerator(poly.clone())?;
+  let s = Expr::Identifier("Solve$radical".to_string());
+  for _ in 0..8 {
+    let Some(p) = find_square_radical(&f, var) else {
+      break;
+    };
+    let same = |e: &Expr| crate::evaluator::pattern_matching::expr_equal(e, &p);
+    let replaced =
+      crate::functions::string_ast::map_expr_tree(&f, &|node: &Expr| {
+        match as_half_power(node) {
+          Some((base, n)) if same(base) => {
+            Some(pow(s.clone(), Expr::Integer(n)))
+          }
+          _ => None,
+        }
+      });
+    let replaced = numerator(replaced)?;
+    let coefficients =
+      match &eval(&call("CoefficientList", vec![replaced, s.clone()])).ok()? {
+        Expr::List(items) => items.to_vec(),
+        _ => return None,
+      };
+    if coefficients
+      .iter()
+      .any(|c| expr_to_string(c).contains("Solve$radical"))
+    {
+      return None;
+    }
+    let (mut even, mut odd) = (Vec::new(), Vec::new());
+    for (k, c) in coefficients.into_iter().enumerate() {
+      let power = pow(p.clone(), Expr::Integer((k / 2) as i128));
+      if k % 2 == 0 {
+        even.push(times2(c, power));
+      } else {
+        odd.push(times2(c, power));
+      }
+    }
+    let a = plus(even);
+    let b = plus(odd);
+    let norm = minus2(
+      pow(a, Expr::Integer(2)),
+      times2(p.clone(), pow(b, Expr::Integer(2))),
+    );
+    f = numerator(eval(&call("Expand", vec![norm])).ok()?)?;
+  }
+  if find_square_radical(&f, var).is_some() || is_constant_wrt(&f, var) {
+    return None;
+  }
+  let reduced = Expr::Comparison {
+    operands: vec![f, Expr::Integer(0)],
+    operators: vec![ComparisonOp::Equal],
+  };
+  let solved = quietly(|| solve_ast(&[reduced, id_expr(var)])).ok()?;
+  let Expr::List(ref candidates) = solved else {
+    return None;
+  };
+  let mut kept: Vec<Expr> = Vec::new();
+  let mut undecided = false;
+  for candidate in candidates {
+    let Expr::List(rules) = candidate else {
+      return None;
+    };
+    let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
+      return None;
+    };
+    match equation_holds_at(equation, var, replacement) {
+      Some(true) => {}
+      Some(false) => continue,
+      None => match holds_generically(equation, var, replacement) {
+        Some(GenericValidity::Fails) => continue,
+        Some(GenericValidity::Always) => {}
+        _ => undecided = true,
+      },
+    }
+    if !kept
+      .iter()
+      .any(|k| crate::evaluator::pattern_matching::expr_equal(k, candidate))
+    {
+      kept.push(candidate.clone());
+    }
+  }
+  if undecided {
+    report_nongen();
   }
   Some(Ok(Expr::List(kept.into())))
 }
@@ -8438,6 +8668,181 @@ fn try_nsolve_numeric_search(args: &[Expr]) -> Option<Expr> {
       .map(|r| Expr::List(vec![rule_expr(var.clone(), Expr::Real(r))].into()))
       .collect(),
   ))
+}
+
+/// Whether a solution `{v -> value, …}` has an infinite or indeterminate
+/// value.
+fn has_non_finite_value(solution: &Expr) -> bool {
+  fn bad(e: &Expr) -> bool {
+    matches!(e, Expr::Identifier(s) | Expr::Constant(s)
+      if matches!(s.as_str(), "ComplexInfinity" | "Indeterminate" | "Infinity"))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "DirectedInfinity")
+      || crate::syntax::expr_children(e).into_iter().any(bad)
+  }
+  bad(solution)
+}
+
+/// Numeric last resort for `NSolve[{eqns}, {vars}]` with as many equations
+/// as unknowns that no elimination solves: damped Newton iteration with a
+/// central-difference Jacobian from a grid of real starting points, keeping
+/// the distinct points where every equation holds.
+fn try_nsolve_numeric_system(args: &[Expr]) -> Option<Expr> {
+  let Expr::List(eqs) = args.first()? else {
+    return None;
+  };
+  let Expr::List(vars) = args.get(1)? else {
+    return None;
+  };
+  let k = vars.len();
+  if !(2..=3).contains(&k) || eqs.len() != k {
+    return None;
+  }
+  let residuals: Vec<Expr> = eqs
+    .iter()
+    .map(|eq| {
+      let (lhs, rhs, op) =
+        crate::functions::polynomial_ast::reduce::extract_comparison(eq)?;
+      (op == crate::functions::polynomial_ast::reduce::CompOp::Equal)
+        .then(|| minus2(lhs, rhs))
+    })
+    .collect::<Option<_>>()?;
+  let eval_at = |point: &[f64]| -> Option<Vec<f64>> {
+    residuals
+      .iter()
+      .map(|r| {
+        let mut e = r.clone();
+        for (v, x) in vars.iter().zip(point) {
+          e = substitute_expr(&e, v, &Expr::Real(*x));
+        }
+        let value =
+          quietly(|| crate::evaluator::evaluate_expr_to_expr(&e)).ok()?;
+        try_eval_to_f64(&value).filter(|v| v.is_finite())
+      })
+      .collect()
+  };
+  let norm = |f: &[f64]| f.iter().map(|v| v * v).sum::<f64>().sqrt();
+  const STARTS: [f64; 7] = [-10.0, -3.0, -1.0, 0.0, 1.0, 3.0, 10.0];
+  let mut found: Vec<Vec<f64>> = Vec::new();
+  let mut idx = vec![0usize; k];
+  'starts: loop {
+    let mut x: Vec<f64> = idx.iter().map(|&i| STARTS[i] + 0.1234).collect();
+    if let Some(mut fx) = eval_at(&x) {
+      for _ in 0..60 {
+        let size = norm(&fx);
+        if size < 1e-12 {
+          break;
+        }
+        // Jacobian by central differences.
+        let mut jac = vec![vec![0.0; k]; k];
+        let mut ok = true;
+        for j in 0..k {
+          let h = 1e-6 * x[j].abs().max(1.0);
+          let mut up = x.clone();
+          up[j] += h;
+          let mut down = x.clone();
+          down[j] -= h;
+          let (Some(fu), Some(fd)) = (eval_at(&up), eval_at(&down)) else {
+            ok = false;
+            break;
+          };
+          for i in 0..k {
+            jac[i][j] = (fu[i] - fd[i]) / (2.0 * h);
+          }
+        }
+        if !ok {
+          break;
+        }
+        let Some(step) = solve_mass_like(&jac, &fx) else {
+          break;
+        };
+        let mut t = 1.0;
+        let mut next = None;
+        for _ in 0..30 {
+          let trial: Vec<f64> =
+            x.iter().zip(&step).map(|(a, d)| a - t * d).collect();
+          if let Some(ft) = eval_at(&trial)
+            && norm(&ft) < size
+          {
+            next = Some((trial, ft));
+            break;
+          }
+          t /= 2.0;
+        }
+        let Some((nx, nf)) = next else { break };
+        x = nx;
+        fx = nf;
+      }
+      let scale = 1.0 + x.iter().map(|v| v.abs()).fold(0.0, f64::max);
+      if norm(&fx) < 1e-9 * scale
+        && !found
+          .iter()
+          .any(|y| y.iter().zip(&x).all(|(a, b)| (a - b).abs() < 1e-6 * scale))
+      {
+        found.push(x);
+      }
+    }
+    let mut pos = k;
+    loop {
+      if pos == 0 {
+        break 'starts;
+      }
+      pos -= 1;
+      idx[pos] += 1;
+      if idx[pos] < STARTS.len() {
+        break;
+      }
+      idx[pos] = 0;
+    }
+  }
+  if found.is_empty() {
+    return None;
+  }
+  Some(Expr::List(
+    found
+      .into_iter()
+      .map(|point| {
+        Expr::List(
+          vars
+            .iter()
+            .zip(point)
+            .map(|(v, x)| rule_expr(v.clone(), Expr::Real(x)))
+            .collect(),
+        )
+      })
+      .collect(),
+  ))
+}
+
+/// Solve the small dense system `a·d = b` by Gaussian elimination.
+fn solve_mass_like(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
+  let n = b.len();
+  let mut m: Vec<Vec<f64>> = a.to_vec();
+  let mut r = b.to_vec();
+  for col in 0..n {
+    let piv =
+      (col..n).max_by(|&i, &j| m[i][col].abs().total_cmp(&m[j][col].abs()))?;
+    if m[piv][col].abs() < 1e-300 {
+      return None;
+    }
+    m.swap(col, piv);
+    r.swap(col, piv);
+    for row in col + 1..n {
+      let f = m[row][col] / m[col][col];
+      for c in col..n {
+        m[row][c] -= f * m[col][c];
+      }
+      r[row] -= f * r[col];
+    }
+  }
+  let mut d = vec![0.0; n];
+  for row in (0..n).rev() {
+    let mut acc = r[row];
+    for c in row + 1..n {
+      acc -= m[row][c] * d[c];
+    }
+    d[row] = acc / m[row][row];
+  }
+  Some(d)
 }
 
 /// True when `target` occurs (structurally, via string comparison like
