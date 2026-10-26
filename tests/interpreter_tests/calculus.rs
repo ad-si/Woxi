@@ -10510,6 +10510,22 @@ mod ndsolve {
     );
   }
 
+  /// A PDE unknown written with its arguments (`u[x, t]`) is solved like the
+  /// bare `u`, and the rule is keyed by the applied form with an
+  /// `InterpolatingFunction[...][x, t]` value.
+  #[test]
+  fn ndsolve_pde_unknown_given_as_applied_function() {
+    let result = interpret(
+      "sol = NDSolve[{D[u[x, t], t] == D[u[x, t], {x, 2}], \
+       u[x, 0] == Sin[Pi x], u[0, t] == 0, u[1, t] == 0}, u[x, t], \
+       {x, 0, 1}, {t, 0, 1}]; \
+       {Length[sol], sol[[1, 1, 1]], \
+       Round[u[x, t] /. sol /. {x -> 0.5, t -> 0.1}, 0.01]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{1, u[x, t], {0.37}}");
+  }
+
   /// A piecewise (`If`) diffusion coefficient next to a `NeumannValue`
   /// boundary term still lowers to a flux condition: the unit-source bar
   /// with insulated ends gains heat at the source rate whichever region the
