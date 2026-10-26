@@ -346,3 +346,61 @@ pub fn rectangle_chart_ast(
   };
   evaluate_expr_to_expr(&graphics)
 }
+
+/// `` BarCharts`GeneralizedBarChart[{{x1, h1, w1}, …}] `` — the legacy
+/// package chart: a bar of height `h` and width `w` centred at `x`, drawn
+/// as plain `Rectangle` primitives in a `Graphics` with axes. `` BarCharts`BarStyle ``
+/// holds the directive applied to every bar; other options pass straight
+/// through to `Graphics`.
+pub fn generalized_bar_chart_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  const HEAD: &str = "BarCharts`GeneralizedBarChart";
+  let Some(Expr::List(bars)) = args.first() else {
+    return Ok(unevaluated(HEAD, args));
+  };
+  let mut rects = Vec::new();
+  for bar in bars {
+    let Some(Item { sizes, .. }) = parse_item(bar, 3) else {
+      return Ok(unevaluated(HEAD, args));
+    };
+    let (x, h, w) = (sizes[0], sizes[1], sizes[2]);
+    let pt =
+      |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+    rects.push(call(
+      "Rectangle",
+      vec![pt(x - w / 2.0, 0.0), pt(x + w / 2.0, h)],
+    ));
+  }
+  let mut style = None;
+  let mut options = Vec::new();
+  let mut has_axes = false;
+  for opt in &args[1..] {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      return Ok(unevaluated(HEAD, args));
+    };
+    match pattern.as_ref() {
+      Expr::Identifier(n) if n == "BarCharts`BarStyle" || n == "BarStyle" => {
+        style = Some(replacement.as_ref().clone());
+      }
+      Expr::Identifier(n) => {
+        has_axes |= n == "Axes";
+        options.push(opt.clone());
+      }
+      _ => options.push(opt.clone()),
+    }
+  }
+  if !has_axes {
+    options.push(rule("Axes", Expr::Identifier("True".into())));
+  }
+  let mut prims = Vec::new();
+  prims.extend(style);
+  prims.extend(rects);
+  let mut graphics_args = vec![Expr::List(prims.into())];
+  graphics_args.extend(options);
+  evaluate_expr_to_expr(&call("Graphics", graphics_args))
+}
