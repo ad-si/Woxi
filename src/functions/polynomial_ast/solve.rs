@@ -17812,6 +17812,74 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => vec![],
   };
 
+  // A Boolean system — over `Booleans`, or a formula of plain connectives
+  // in every variable — has its instances read off its truth table. (A
+  // variable the formula does not mention is complex then, not Boolean.)
+  let var_exprs: Vec<Expr> = match vars {
+    Expr::List(items) => items.to_vec(),
+    single => vec![single.clone()],
+  };
+  // Equations between truth values only count over `Booleans`.
+  fn has_comparison(e: &Expr) -> bool {
+    matches!(e, Expr::Comparison { .. })
+      || crate::syntax::expr_children(e)
+        .into_iter()
+        .any(has_comparison)
+  }
+  if domain.as_deref() == Some("Booleans")
+    || (domain.is_none()
+      && !var_exprs.is_empty()
+      && var_names.len() == var_exprs.len()
+      && var_names.iter().all(|v| !is_constant_wrt(cond, v))
+      && !has_comparison(cond)
+      && crate::functions::boolean_ast::is_connective_formula(cond, &var_exprs))
+  {
+    // A list of conditions must hold together.
+    let conjunction;
+    let cond = match cond {
+      Expr::List(items) => {
+        conjunction = call("And", items.to_vec());
+        &conjunction
+      }
+      other => other,
+    };
+    let rules = |assignment: Vec<bool>| {
+      Expr::List(
+        var_exprs
+          .iter()
+          .zip(assignment)
+          .map(|(v, b)| rule_expr(v.clone(), bool_expr(b)))
+          .collect(),
+      )
+    };
+    match crate::functions::boolean_ast::satisfying_assignments(
+      cond, &var_exprs, n,
+    )? {
+      Some(Ok(instances)) => {
+        return Ok(Expr::List(instances.into_iter().map(rules).collect()));
+      }
+      Some(Err(assignment)) => {
+        crate::emit_message(&format!(
+          "FindInstance::boolv: The system is not Boolean valued at {}.",
+          crate::syntax::format_expr(
+            &rules(assignment),
+            crate::syntax::ExprForm::Output
+          )
+        ));
+        return Ok(call("FindInstance", args.to_vec()));
+      }
+      None => {}
+    }
+  }
+
+  // Linear inequalities (and equations) over the reals.
+  if matches!(domain.as_deref(), None | Some("Reals"))
+    && var_names.len() == var_exprs.len()
+    && let Some(instances) = find_instance_linear(cond, &var_names, n)?
+  {
+    return Ok(Expr::List(instances.into()));
+  }
+
   // Whether the solution set below is provably complete: Solve returned the
   // full (finite) solution set and the concreteness filter dropped nothing.
   // Only then may an empty result become `{}` ("no instance exists");
@@ -17929,6 +17997,281 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     filtered.into_iter().skip(len - n).collect()
   };
   Ok(Expr::List(result.into()))
+}
+
+/// The atoms of a conjunction of conditions: the members of lists and
+/// `And`s, with a comparison chain `a < x <= b` split into its links.
+fn condition_atoms(
+  cond: &Expr,
+  out: &mut Vec<(Expr, ComparisonOp, Expr)>,
+) -> bool {
+  match cond {
+    Expr::List(items) => items.iter().all(|c| condition_atoms(c, out)),
+    Expr::FunctionCall { name, args } if name == "And" => {
+      args.iter().all(|c| condition_atoms(c, out))
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::And,
+      left,
+      right,
+    } => condition_atoms(left, out) && condition_atoms(right, out),
+    Expr::Identifier(s) if s == "True" => true,
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() + 1 == operands.len() => {
+      for (i, op) in operators.iter().enumerate() {
+        out.push((operands[i].clone(), *op, operands[i + 1].clone()));
+      }
+      true
+    }
+    _ => false,
+  }
+}
+
+/// `FindInstance` for a conjunction of linear equations and inequalities
+/// over the reals: an exact linear program finds a point, maximizing the
+/// slack `t` of the strict inequalities (`a.x + c > 0` becomes
+/// `a.x + c >= t`; capped at 1 where it is unbounded) so that a positive
+/// optimum proves them satisfiable and a zero optimum, like an infeasible
+/// program, proves there is no instance. The largest slack centres a
+/// bounded interval: `3 < x < 10` gives `x -> 13/2`. Further instances are
+/// the extreme points of the same system with the slack fixed at half its
+/// optimum, which keeps them strictly inside, and then midpoints of those.
+/// `None` when the condition is not of that shape.
+fn find_instance_linear(
+  cond: &Expr,
+  var_names: &[String],
+  n: usize,
+) -> Result<Option<Vec<Expr>>, InterpreterError> {
+  use crate::evaluator::evaluate_expr_to_expr as eval;
+  let mut atoms = Vec::new();
+  if var_names.is_empty() || !condition_atoms(cond, &mut atoms) {
+    return Ok(None);
+  }
+  let vars: Vec<Expr> = var_names
+    .iter()
+    .map(|v| Expr::Identifier(v.clone()))
+    .collect();
+  let zero_rules = Expr::List(
+    vars
+      .iter()
+      .map(|v| rule_expr(v.clone(), Expr::Integer(0)))
+      .collect(),
+  );
+  let is_real_number = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+
+  // Each atom as `a.x + c  rel  0` with rel `>`, `>=` or `==`.
+  let mut rows: Vec<(Vec<Expr>, Expr, ComparisonOp)> = Vec::new();
+  let mut inexact = false;
+  let mut has_inequality = false;
+  for (lhs, op, rhs) in &atoms {
+    let (difference, op) = match op {
+      ComparisonOp::Equal => (minus2(lhs.clone(), rhs.clone()), *op),
+      ComparisonOp::Greater | ComparisonOp::GreaterEqual => {
+        (minus2(lhs.clone(), rhs.clone()), *op)
+      }
+      ComparisonOp::Less => {
+        (minus2(rhs.clone(), lhs.clone()), ComparisonOp::Greater)
+      }
+      ComparisonOp::LessEqual => {
+        (minus2(rhs.clone(), lhs.clone()), ComparisonOp::GreaterEqual)
+      }
+      _ => return Ok(None),
+    };
+    has_inequality |= op != ComparisonOp::Equal;
+    let difference = eval(&call("Expand", vec![difference]))?;
+    let mut coefficients = Vec::with_capacity(vars.len());
+    for v in &vars {
+      let a = eval(&call("Coefficient", vec![difference.clone(), v.clone()]))?;
+      if !is_real_number(&a) {
+        return Ok(None);
+      }
+      coefficients.push(a);
+    }
+    let constant = eval(&call(
+      "ReplaceAll",
+      vec![difference.clone(), zero_rules.clone()],
+    ))?;
+    if !is_real_number(&constant) {
+      return Ok(None);
+    }
+    // Linear: nothing is left once the linear part is taken off.
+    let mut linear = constant.clone();
+    for (a, v) in coefficients.iter().zip(&vars) {
+      linear = plus2(linear, times2(a.clone(), v.clone()));
+    }
+    let rest = eval(&call("Expand", vec![minus2(difference.clone(), linear)]))?;
+    if !matches!(rest, Expr::Integer(0))
+      && !matches!(rest, Expr::Real(r) if r == 0.0)
+    {
+      return Ok(None);
+    }
+    inexact |= coefficients
+      .iter()
+      .chain(std::iter::once(&constant))
+      .any(|e| matches!(e, Expr::Real(_)));
+    rows.push((coefficients, constant, op));
+  }
+  if !has_inequality {
+    return Ok(None);
+  }
+  let strict = rows.iter().any(|(_, _, op)| *op == ComparisonOp::Greater);
+
+  // `LinearProgramming[c, m, b, bounds]` over the variables and the slack
+  // `t` every strict inequality must clear (`a.x + c >= t`); the solution
+  // values, or None when infeasible or unbounded. A non-strict inequality
+  // may hold with equality, and wolframscript, too, likes to pick such a
+  // boundary point: `x >= 3` gives `x -> 3`.
+  let k = vars.len();
+  let solve = |objective: &[Expr],
+               slack: &Expr|
+   -> Result<Option<Vec<Expr>>, InterpreterError> {
+    let mut m = Vec::with_capacity(rows.len());
+    let mut b = Vec::with_capacity(rows.len());
+    for (coefficients, constant, op) in &rows {
+      let mut row = coefficients.clone();
+      row.push(Expr::Integer(if *op == ComparisonOp::Greater {
+        -1
+      } else {
+        0
+      }));
+      m.push(Expr::List(row.into()));
+      b.push(Expr::List(
+        vec![
+          eval(&negate_expr(constant))?,
+          Expr::Integer(i128::from(*op != ComparisonOp::Equal)),
+        ]
+        .into(),
+      ));
+    }
+    let infinity = Expr::Identifier("Infinity".to_string());
+    let mut bounds: Vec<Expr> = (0..k)
+      .map(|_| {
+        Expr::List(vec![negate_expr(&infinity), infinity.clone()].into())
+      })
+      .collect();
+    bounds.push(slack.clone());
+    let program = call(
+      "LinearProgramming",
+      vec![
+        Expr::List(objective.to_vec().into()),
+        Expr::List(m.into()),
+        Expr::List(b.into()),
+        Expr::List(bounds.into()),
+      ],
+    );
+    let saved = crate::snapshot_warnings();
+    crate::push_quiet();
+    let result = eval(&program);
+    crate::pop_quiet();
+    crate::restore_warnings(saved);
+    Ok(match &result? {
+      Expr::List(values)
+        if values.len() == k + 1 && values.iter().all(is_real_number) =>
+      {
+        Some(values.to_vec())
+      }
+      _ => None,
+    })
+  };
+  let slack_between = |lo: Expr, hi: Expr| Expr::List(vec![lo, hi].into());
+
+  // The largest slack, which centres a bounded interval; where it can grow
+  // without bound it is capped at 1.
+  let mut objective = vec![Expr::Integer(0); k + 1];
+  objective[k] = Expr::Integer(-1);
+  let first = match solve(
+    &objective,
+    &slack_between(Expr::Integer(0), Expr::Identifier("Infinity".to_string())),
+  )? {
+    Some(p) => Some(p),
+    None => solve(
+      &objective,
+      &slack_between(Expr::Integer(0), Expr::Integer(1)),
+    )?,
+  };
+  let Some(first) = first else {
+    // An exact system without a solution has no instance.
+    return Ok(if inexact { None } else { Some(Vec::new()) });
+  };
+  let t = eval(&first[k])?;
+  // No room at all: the strict inequalities cannot hold.
+  if strict && matches!(t, Expr::Integer(0)) {
+    return Ok(if inexact { None } else { Some(Vec::new()) });
+  }
+  let half = eval(&call(
+    "Times",
+    vec![
+      t,
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+    ],
+  ))?;
+  let slack = slack_between(half.clone(), half);
+  let same = |p: &[Expr], q: &[Expr]| {
+    p.iter()
+      .zip(q)
+      .all(|(a, b)| crate::evaluator::pattern_matching::expr_equal(a, b))
+  };
+  let mut points: Vec<Vec<Expr>> = vec![first[..k].to_vec()];
+  'more: for j in 0..k {
+    for sign in [1, -1] {
+      if points.len() >= n {
+        break 'more;
+      }
+      let mut objective = vec![Expr::Integer(0); k + 1];
+      objective[j] = Expr::Integer(sign);
+      if let Some(p) = solve(&objective, &slack)?
+        && !points.iter().any(|q| same(q, &p[..k]))
+      {
+        points.push(p[..k].to_vec());
+      }
+    }
+  }
+  // Still short (a ray has a single extreme point): midpoints between
+  // found points, which the convexity of the system keeps inside it.
+  let mut i = 0;
+  while points.len() < n && points.len() >= 2 && i + 1 < points.len() {
+    let mid: Vec<Expr> = points[i]
+      .iter()
+      .zip(&points[i + 1])
+      .map(|(a, b)| {
+        eval(&call(
+          "Times",
+          vec![
+            plus2(a.clone(), b.clone()),
+            call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+          ],
+        ))
+      })
+      .collect::<Result<_, _>>()?;
+    if !points.iter().any(|q| same(q, &mid)) {
+      points.insert(i + 1, mid);
+    }
+    i += 2;
+    if i + 1 >= points.len() {
+      i = 0;
+    }
+  }
+  points.truncate(n);
+
+  let mut instances = Vec::with_capacity(points.len());
+  for point in points {
+    let mut rules = Vec::with_capacity(k);
+    for (v, value) in vars.iter().zip(point) {
+      let value = if inexact {
+        eval(&call("N", vec![value]))?
+      } else {
+        value
+      };
+      rules.push(rule_expr(v.clone(), value));
+    }
+    instances.push(Expr::List(rules.into()));
+  }
+  Ok(Some(instances))
 }
 
 /// Try to find instances numerically by evaluating the condition at sample points.

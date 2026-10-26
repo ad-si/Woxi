@@ -647,6 +647,15 @@ in WL, which keeps integer coefficients.
 
 ## Numeric precision and floating point
 
+### `` NIntegrate`GaussRuleData `` differs in the last digits
+
+Woxi finds the Gauss–Legendre nodes by Newton iteration in machine
+arithmetic; wolframscript's own computation rounds differently from 3 points
+on (`5/18` is `0.2777777777777776` there, `0.27777777777777635` in Woxi).
+Only `MachinePrecision` is implemented — a numeric precision leaves the call
+unevaluated — and the 1-point rule gives the weight `1.` where wolframscript
+divides by zero (`{{0.5}, {ComplexInfinity}, {}}`).
+
 ### `FindMinimum`/`FindMaximum` with two starting values stop at a different last digit
 
 ```sh
@@ -1904,6 +1913,19 @@ echo path.
   `Sqrt[2]` against WL's `-Sqrt[2]`; `x^2 + y^2 == 1` over the reals gives
   `{x -> -1, y -> 0}` against `{x -> 1, y -> 0}`; `x^2 > 4` gives `-100`
   against `-4`. **Not reproducible.**
+- `FindInstance` for linear inequalities over the reals solves a linear
+  program that maximizes the slack of the strict inequalities, so a bounded
+  interval gives its midpoint (`3 < x < 10` → `13/2`, as in WL) and a
+  non-strict bound its endpoint (`x >= 3` → `3`, as in WL). WL samples other
+  regions pseudo-randomly: `x > 3` gives `30` (Woxi `4`), `1/3 < x < 1/2`
+  gives `229/607` (Woxi `5/12`), and the extra instances of
+  `FindInstance[…, n]` differ. **Not reproducible.**
+- A single Boolean instance (`FindInstance[…, Booleans]`,
+  `SatisfiabilityInstances[…, vars]` or `…, 1]`) comes from a different
+  solver in WL than the instance lists: with several solutions, Woxi returns
+  the first of the list for 2 or more (`Xor[p, q, r]` → `{True, True, True}`)
+  where WL returns `{False, True, False}`. Lists of 2 or more instances, and
+  any unique solution, match.
 - `FindInstance` over the integers falls back to a bounded search when `Solve`
   cannot decide: every variable is walked outwards from zero (0, 1, −1, 2, −2,
   …) within a fixed evaluation budget. That reproduces wolframscript's answer
@@ -3641,6 +3663,12 @@ Wolfram rejects `a . -b` (and `a . b . -c`) as a syntax error; Woxi reads it
 as `Dot[a, -b]`.
 
 ## Messages and error handling
+
+### `RealDigits` in a non-integer base stays unevaluated
+
+`RealDigits[1/7, 2.5]` lists 39 digits of the greedy expansion in base 2.5 in
+wolframscript; Woxi only implements integer bases and leaves the call
+unevaluated.
 
 ### `RealDigits` of an arbitrary-precision number: the last digit
 
@@ -5700,3 +5728,13 @@ woxi eval 'lm = LinearModelFit[{{0, 1}, {1, 0}}, x, x]; lm["ParameterTableEntrie
 wolframscript divides by the zero degrees of freedom (with `Power::infy`
 messages) and reports `Indeterminate` standard errors and statistics; Woxi
 does not store the table for such a fit.
+
+### `Style[Column[{Style[…, color], …}], size]` inside `Text` loses the per-item colors
+
+```sh
+wolframscript -code 'ExportString[Graphics[Text[Column[{Style["a", Blue], Style["b", Red]}], {0, 0}]], "SVG"]'
+woxi eval 'ExportString[Graphics[Text[Column[{Style["a", Blue], Style["b", Red]}], {0, 0}]], "SVG"]'
+```
+
+wolframscript draws each line in its own color; Woxi flattens the `Column`
+to one multi-line text label, which carries a single fill color.

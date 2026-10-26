@@ -1204,6 +1204,20 @@ mod interpreter_tests {
     assert!(svg.starts_with("<svg"));
   }
 
+  /// A `LocatorPane` over `Show[plot, …]` keeps the `Epilog` of the first
+  /// plot: the locator markers are appended to it instead of replacing it.
+  #[test]
+  fn test_locator_pane_over_show_keeps_first_plot_epilog() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "ExportString[LocatorPane[{0.2, 0.2}, \
+       Show[Plot[0, {t, 0, 1}, Epilog -> {Text[\"readout\", {0.5, 0.5}]}], \
+       Plot[x, {x, 0, 1}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(r.result.contains("readout"), "Epilog text was dropped");
+  }
+
   /// A `TabView` tab that is a `Dynamic[Module[…, plot]]` (held, so it only
   /// *computes* a picture) shows that picture, not the symbolic call.
   #[test]

@@ -3817,7 +3817,7 @@ mod cases {
     );
     assert_case(
       r#"Attributes[AiryAiZero]"#,
-      r#"{Listable, NumericFunction, Protected, ReadProtected}"#,
+      r#"{Listable, NHoldFirst, NumericFunction, Protected, ReadProtected}"#,
     );
   }
   #[test]

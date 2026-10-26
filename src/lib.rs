@@ -3801,14 +3801,17 @@ fn render_image_if_needed(expr: syntax::Expr) -> syntax::Expr {
     channels,
     ref data,
     display_size,
+    color_space,
     ..
   } = expr
   {
+    let (channels, data) =
+      functions::image_ast::rgb_pixels(color_space, channels, data);
     let html = functions::image_ast::image_to_html_img(
       width,
       height,
       channels,
-      data,
+      &data,
       display_size,
     );
     capture_graphics(&html);

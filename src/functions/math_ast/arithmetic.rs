@@ -1343,6 +1343,45 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if all_numeric && has_bigfloat {
     return Ok(bigfloat_plus(&flat_args));
   }
+  // An exact numeric term (`Sqrt[5]`, `Pi`) joins an arbitrary-precision
+  // sum as a number: numericized with guard digits it carries no error of
+  // its own, so `3.5`50 + Sqrt[5]` is one number of about 50 digits.
+  if has_bigfloat
+    && !has_real
+    && let Some(precision) = flat_args
+      .iter()
+      .filter_map(|a| match a {
+        Expr::BigFloat(_, p) => Some(*p),
+        _ => None,
+      })
+      .reduce(f64::min)
+    && flat_args.iter().all(|a| {
+      matches!(a, Expr::BigFloat(..))
+        || expr_to_coeff(a).is_some()
+        || (crate::functions::predicate_ast::is_numeric_q(a)
+          && !contains_imaginary_unit(a))
+    })
+  {
+    let numericized: Vec<Expr> = flat_args
+      .iter()
+      .map(|a| {
+        if matches!(a, Expr::BigFloat(..)) || expr_to_coeff(a).is_some() {
+          Ok(a.clone())
+        } else {
+          crate::functions::math_ast::n_ast(&[
+            a.clone(),
+            Expr::Real(precision + 20.0),
+          ])
+        }
+      })
+      .collect::<Result<_, _>>()?;
+    if numericized
+      .iter()
+      .all(|a| matches!(a, Expr::BigFloat(..)) || expr_to_coeff(a).is_some())
+    {
+      return Ok(bigfloat_plus(&numericized));
+    }
+  }
 
   // If all numeric but has Reals, fold to f64 as the balanced machine
   // tree over the terms in input order (see machine_sum).
@@ -9561,6 +9600,28 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &sorted_storage
   };
 
+  // A machine number makes the whole product machine precision: an
+  // arbitrary-precision factor joins it as the f64 it rounds to
+  // (`2.5`50 * 0.5` is `1.25`), as in Plus.
+  if args.iter().any(|a| matches!(a, Expr::Real(_)))
+    && args.iter().any(|a| matches!(a, Expr::BigFloat(..)))
+  {
+    let demoted: Vec<Expr> = args
+      .iter()
+      .map(|a| match a {
+        Expr::BigFloat(digits, _) => digits
+          .parse::<f64>()
+          .ok()
+          .filter(|v| v.is_finite())
+          .map_or_else(|| a.clone(), Expr::Real),
+        other => other.clone(),
+      })
+      .collect();
+    if demoted.iter().all(|a| !matches!(a, Expr::BigFloat(..))) {
+      return times_ast(&demoted);
+    }
+  }
+
   // BigFloat-aware product. When any factor is a precision-tagged
   // BigFloat and every factor evaluates to a BigFloat (via expr_to_bigfloat
   // — Integer, Rational, BigFloat, or one of the math constants E / Pi /
@@ -14700,9 +14761,7 @@ fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// `$MachinePrecision` in digits: the precision a machine real carries when
-/// it takes part in an arbitrary-precision computation.
-const MACHINE_PRECISION_DIGITS: f64 = 15.954589770191003;
+use super::numerical::MACHINE_PRECISION_DIGITS;
 
 /// Split a numeric expression into `(m, k)` with value `m·10^k`, so that
 /// arbitrary-precision numbers beyond the f64 range (whose digit strings

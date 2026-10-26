@@ -3659,6 +3659,52 @@ mod kronecker_product {
 mod find_fit {
   use super::*;
 
+  // Any non-numeric expression can be the variable: the model is written in
+  // it and the data abscissas replace it wherever it occurs.
+  #[test]
+  fn expression_as_variable() {
+    assert_eq!(
+      interpret(
+        "g = Interpolation[{{0, 0}, {1, 1}, {2, 4}, {3, 9}}]; \
+         FindFit[{{1, 2}, {2, 4.1}, {3, 6}}, a g, {a}, g]"
+      )
+      .unwrap(),
+      "{a -> 2.0142857142857142}"
+    );
+    assert_eq!(
+      interpret("FindFit[{{1, 2}, {2, 4.1}, {3, 6}}, a f[1], {a}, f[1]]")
+        .unwrap(),
+      "{a -> 2.0142857142857142}"
+    );
+  }
+
+  // Indexed parameters are fitted like symbols and named as given.
+  #[test]
+  fn indexed_parameters() {
+    assert_eq!(
+      interpret(
+        "FindFit[{{1, 2}, {2, 4.1}, {3, 6.2}}, s[1] x + s[2], \
+         {{s[1], 1}, {s[2], 0}}, x]"
+      )
+      .unwrap(),
+      "{s[1] -> 2.1, s[2] -> -0.1000000000000004}"
+    );
+  }
+
+  #[test]
+  fn numeric_variable_is_invalid() {
+    clear_state();
+    assert_eq!(
+      interpret("FindFit[{{1, 2}, {2, 4.1}, {3, 6}}, a x, {a}, 5]").unwrap(),
+      "FindFit[{{1, 2}, {2, 4.1}, {3, 6}}, a*x, {a}, 5]"
+    );
+    assert!(
+      woxi::get_captured_warnings()
+        .iter()
+        .any(|w| w == "General::ivar: 5 is not a valid variable.")
+    );
+  }
+
   #[test]
   fn quadratic() {
     let result =
@@ -4530,6 +4576,26 @@ mod linear_model_fit {
 // function. Verified against wolframscript.
 mod nonlinear_model_fit {
   use super::*;
+
+  // `{form}` is the model without constraints.
+  #[test]
+  fn single_element_model_list() {
+    assert_eq!(
+      interpret(
+        "NonlinearModelFit[{{0, 1}, {1, 3}, {2, 5}, {3, 7.1}}, {a x + b}, \
+         {a, b}, x][\"BestFitParameters\"]"
+      )
+      .unwrap(),
+      "{a -> 2.03, b -> 0.9800000000000002}"
+    );
+    assert_eq!(
+      interpret(
+        "FindFit[{{0, 1}, {1, 3}, {2, 5}, {3, 7.1}}, {a x + b}, {a, b}, x]"
+      )
+      .unwrap(),
+      "{a -> 2.03, b -> 0.9800000000000002}"
+    );
+  }
 
   // For a model linear in its parameters the asymptotic statistics must
   // agree with those of LinearModelFit.

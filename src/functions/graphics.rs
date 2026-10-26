@@ -4205,6 +4205,39 @@ pub(crate) fn strip_style_wrappers(expr: &Expr) -> &Expr {
   }
 }
 
+/// Does `e` hold a `Subscript`/`Superscript`/`Subsuperscript` somewhere?
+fn has_script_head(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Subscript" | "Superscript" | "Subsuperscript"
+      ) || args.iter().any(has_script_head)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      has_script_head(left) || has_script_head(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_script_head(operand),
+    _ => false,
+  }
+}
+
+/// Is `expr` arithmetic (`Times`/`Plus`/`Power` or an operator form of
+/// them) with a `Subscript`/`Superscript`/`Subsuperscript` somewhere inside?
+fn is_arithmetic_with_scripts(expr: &Expr) -> bool {
+  let arithmetic = match expr {
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "Times" | "Plus" | "Power")
+    }
+    Expr::BinaryOp { op, .. } => {
+      arithmetic_label_operator(*op).is_some()
+        || matches!(op, BinaryOperator::Power)
+    }
+    _ => false,
+  };
+  arithmetic && has_script_head(expr)
+}
+
 fn graphics_text_content(expr: &Expr) -> String {
   match expr {
     // A `Dynamic[x]` inside text reads as the value `x` currently has.
@@ -4496,6 +4529,21 @@ fn graphics_text_content(expr: &Expr) -> String {
       if text.is_empty() {
         crate::functions::chart::expr_to_label(expr)
           .unwrap_or_else(|| expr_to_string(expr))
+      } else {
+        text
+      }
+    }
+    // A product, sum or power with a `Subscript`/`Superscript` factor
+    // (`Subscript[t, 1] Subscript[t, 2] x^2`) is set on one line with its
+    // scripts shifted — the same runs a widget label gets — not as the
+    // two-line OutputForm box, which would print `Subscript[t, 1]` literally.
+    Expr::FunctionCall { .. } | Expr::BinaryOp { .. }
+      if is_arithmetic_with_scripts(expr) =>
+    {
+      let runs = with_marked_subscripts(|| manipulate_label_runs(expr, false));
+      let text = flatten_label_runs(&runs);
+      if text.is_empty() {
+        expr_to_string(expr)
       } else {
         text
       }
@@ -5213,13 +5261,16 @@ fn inset_primitives(
       channels,
       data,
       display_size,
+      color_space,
       ..
     } => {
+      let (ch, px) =
+        crate::functions::image_ast::rgb_pixels(*color_space, *channels, data);
       image_svg = crate::functions::image_ast::image_to_html_img(
         *width,
         *height,
-        *channels,
-        data,
+        ch,
+        &px,
         *display_size,
       );
       Some(&image_svg)
@@ -19438,8 +19489,13 @@ fn grid_svg_styled_internal(
           (cy, markup)
         };
         let text_elem = format!(
-          "<text x=\"{cx:.1}\" y=\"{text_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{text_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\"{hidden_attr} text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
           ff = svg_escape(ff),
+          hidden_attr = if cell_hidden {
+            " fill-opacity=\"0\""
+          } else {
+            ""
+          },
         );
         if let Some(href) = link_href {
           svg.push_str(&format!(
@@ -22546,8 +22602,8 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       // `Deploy[expr]` only makes its content non-selectable; it draws
       // exactly as the content does.
       "Deploy" => args.len() == 1,
-      // `ExpressionCell[expr, style, opts]` is a cell that shows `expr`.
-      "Item" | "Pane" | "ExpressionCell" => !args.is_empty(),
+      // `ExpressionCell[expr, style, opts]` (and `TextCell[expr, …]`) is a cell that shows `expr`.
+      "Item" | "Pane" | "ExpressionCell" | "TextCell" => !args.is_empty(),
       // A blank-string factor (`"\n" * cell`, a newline typed into a layout
       // by mistake) only adds invisible space; the cell draws as the
       // single other factor.
@@ -23273,8 +23329,11 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
         // column keeps its monospace default.
         let ff = style.font_family.as_deref().unwrap_or("monospace");
         svg.push_str(&format!(
-          "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\" fill=\"{fill}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{content}</text>\n",
+          "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\" fill=\"{fill}\"{hidden_attr} text-anchor=\"{alignment}\" dominant-baseline=\"central\">{content}</text>\n",
           ff = svg_escape(ff),
+          // Spans inside the run carry their own `Style` colors; the
+          // opacity (inherited by them) is what keeps those unpainted too.
+          hidden_attr = if style.hidden { " fill-opacity=\"0\"" } else { "" },
           content = expr_to_svg_markup(style.content),
         ));
       }
@@ -31969,7 +32028,9 @@ fn product_label_runs(factors: &[Expr], italic: bool) -> Vec<LabelRun> {
   let numerators: Vec<Expr> = numerators.into_iter().cloned().collect();
   // Typeset pieces (`Style[…] Text[…]`) set side by side, as the front end
   // shows them; a product of plain symbols keeps its `*`.
-  let sep = if numerators.iter().all(contains_presentation_head) {
+  let sep = if numerators.iter().all(contains_presentation_head)
+    || numerators.iter().any(has_script_head)
+  {
     " "
   } else {
     "*"
@@ -32281,11 +32342,18 @@ fn script_runs(
   italic: bool,
   superscript: bool,
 ) -> Vec<LabelRun> {
-  let mark =
-    !superscript && MARK_UNMAPPED_SUBSCRIPTS.with(std::cell::Cell::get);
+  let marking = MARK_UNMAPPED_SUBSCRIPTS.with(std::cell::Cell::get);
+  let mark = !superscript && marking;
+  // A compound base (`(r₁ r₂)^n`) keeps its parentheses.
   let mut runs = args
     .first()
-    .map(|a| manipulate_label_runs(a, italic))
+    .map(|a| {
+      if superscript {
+        grouped_label_runs(a, italic)
+      } else {
+        manipulate_label_runs(a, italic)
+      }
+    })
     .unwrap_or_default();
   let script: String = args
     .iter()
@@ -32298,6 +32366,19 @@ fn script_runs(
           .any(|c| unicode_script_char(c, false).is_none())
       {
         format!("{SUBSCRIPT_START}{text}{SUBSCRIPT_END}")
+      } else if superscript
+        && marking
+        && text.chars().any(|c| unicode_script_char(c, true).is_none())
+      {
+        // No superscript glyphs for this exponent (`e^(j k L)`): write it
+        // out after a caret rather than as a garble of half-mapped letters.
+        if text.chars().count() > 1
+          && !args[1..].iter().all(|a| !label_is_compound(a))
+        {
+          format!("^({text})")
+        } else {
+          format!("^{text}")
+        }
       } else {
         to_unicode_script(&text, superscript)
       }
@@ -34102,14 +34183,19 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
       channels,
       data,
       display_size,
+      color_space,
       ..
-    } => Some(crate::functions::image_ast::image_to_svg_document(
-      *width,
-      *height,
-      *channels,
-      data,
-      *display_size,
-    )),
+    } => {
+      let (ch, px) =
+        crate::functions::image_ast::rgb_pixels(*color_space, *channels, data);
+      Some(crate::functions::image_ast::image_to_svg_document(
+        *width,
+        *height,
+        ch,
+        &px,
+        *display_size,
+      ))
+    }
     // Evaluating through the interpreter (not `evaluate_expr_to_expr`)
     // is what renders a held `Graphics[…]` call — or a user-defined icon
     // function like `myIcon[2]` — to SVG. A call producing an `Image`

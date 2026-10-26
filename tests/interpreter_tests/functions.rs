@@ -5682,6 +5682,19 @@ mod boolean_terms_with_a_variable_count {
 mod boolean_table_evaluates_its_arguments {
   use super::*;
 
+  // Any expression can be a variable, strings included.
+  #[test]
+  fn string_variables() {
+    assert_eq!(
+      interpret("BooleanTable[\"A\" && \"B\", {\"A\", \"B\"}]").unwrap(),
+      "{True, False, False, False}"
+    );
+    assert_eq!(
+      interpret("BooleanTable[{{\"A\", \"B\"}}, {\"A\", \"B\"}]").unwrap(),
+      "{{{True, True}}, {{True, False}}, {{False, True}}, {{False, False}}}"
+    );
+  }
+
   // A variable group given as an expression is the list it evaluates to.
   #[test]
   fn computed_variable_groups() {
@@ -5785,6 +5798,50 @@ mod boolean_satisfiability {
     );
     let msgs = woxi::get_captured_messages_raw();
     assert!(msgs.is_empty(), "expected no messages, got {msgs:?}");
+  }
+
+  #[test]
+  fn satisfiability_instances() {
+    // Round-robin over the BDD paths, free variables counting True-first.
+    assert_eq!(
+      interpret("SatisfiabilityInstances[p || q || r, {p, q, r}, 7]").unwrap(),
+      "{{True, True, True}, {False, True, True}, {False, False, True}, \
+{True, False, True}, {False, True, False}, {True, True, False}, \
+{True, False, False}}"
+    );
+    assert_eq!(
+      interpret("SatisfiabilityInstances[Xor[p, q, r], {r, q, p}, 4]").unwrap(),
+      "{{True, True, True}, {True, False, False}, {False, True, False}, \
+{False, False, True}}"
+    );
+    assert_eq!(
+      interpret("SatisfiabilityInstances[p || q, {p, q, r}, 5]").unwrap(),
+      "{{True, True, True}, {False, True, True}, {True, False, True}, \
+{False, True, False}, {True, True, False}}"
+    );
+    assert_eq!(
+      interpret("SatisfiabilityInstances[p || q, {p, q}, All]").unwrap(),
+      "{{True, True}, {False, True}, {True, False}}"
+    );
+    assert_eq!(
+      interpret("SatisfiabilityInstances[p == q, {p, q}, 4]").unwrap(),
+      "{{True, True}, {False, False}}"
+    );
+    assert_eq!(
+      interpret("SatisfiabilityInstances[p && !p, {p}, 3]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn satisfiability_instances_not_boolean() {
+    clear_state();
+    assert_eq!(
+      interpret("SatisfiabilityInstances[p || q, {p}, 2]").unwrap(),
+      "SatisfiabilityInstances[p || q, {p}, 2]"
+    );
+    assert!(woxi::get_captured_warnings().iter().any(|w| w
+      == "SatisfiabilityInstances::boolv: p || q is not Boolean valued at {False}."));
   }
 
   #[test]

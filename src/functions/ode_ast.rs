@@ -12,6 +12,7 @@ mod complex_ode;
 mod complex_pde;
 mod curve;
 mod dde;
+mod stiff;
 
 // ─── DSolve ────────────────────────────────────────────────────────────
 
@@ -31,10 +32,35 @@ pub fn dsolve_ast_with_head(
   // An ODE Woxi can't classify/solve should stay unevaluated (like
   // wolframscript for genuinely unsolvable equations) rather than leaking an
   // internal "DSolve: …" error to the user.
-  let result = match dsolve_ast_inner(args) {
+  // Nested lists of equations (`{{eqns…}, {conditions…}}`) are one system.
+  let flat_args;
+  let solved_args = match args.first() {
+    Some(Expr::List(items))
+      if items.iter().any(|i| matches!(i, Expr::List(_))) =>
+    {
+      fn flatten(e: &Expr, out: &mut Vec<Expr>) {
+        match e {
+          Expr::List(items) => items.iter().for_each(|i| flatten(i, out)),
+          other => out.push(other.clone()),
+        }
+      }
+      let mut eqns = Vec::new();
+      flatten(&args[0], &mut eqns);
+      flat_args = std::iter::once(Expr::List(eqns.into()))
+        .chain(args[1..].iter().cloned())
+        .collect::<Vec<_>>();
+      &flat_args[..]
+    }
+    _ => args,
+  };
+  let result = match dsolve_ast_inner(solved_args) {
     Err(InterpreterError::EvaluationError(msg))
       if msg.starts_with("DSolve:") =>
     {
+      Ok(unevaluated("DSolve", args))
+    }
+    // Left unevaluated, the call keeps the equations as written.
+    Ok(Expr::FunctionCall { ref name, .. }) if name == "DSolve" => {
       Ok(unevaluated("DSolve", args))
     }
     other => other,
@@ -6393,6 +6419,30 @@ fn integrate_leg(
       // returns an `InterpolatingFunction` valid up to where it could
       // integrate instead of failing the whole call (alongside the
       // `NDSolve::ndsz` message it prints at the point stepping stalled).
+      // A stiff system makes RK4 diverge too: without events to locate,
+      // the whole leg is integrated again with a stiff method.
+      if event_fn.is_none()
+        && time_events.is_empty()
+        && state_events.events.is_empty()
+        && !dde_active()
+        && !funcs.iter().any(|f| f.order == 0)
+      {
+        let rhs = |xv: f64, s: &[f64]| {
+          Ok(system_derivative(
+            residuals,
+            funcs,
+            state_offset,
+            s,
+            xv,
+            cached_m,
+          ))
+        };
+        if let Some(stiff_points) =
+          stiff::rosenbrock_leg(&rhs, &points[0].1, x_from, x_to)?
+        {
+          return Ok(Some(stiff_points));
+        }
+      }
       if points.len() > 1 {
         crate::emit_message(&format!(
           "NDSolve::ndsz: At x == {x}, step size is effectively zero; \
@@ -6748,6 +6798,40 @@ fn rk4_step_refined(
   )
 }
 
+/// The derivative of the first-order system's state at `x`: each unknown's
+/// lower derivatives shift down and its highest one is solved for. `None`
+/// when a residual can't be evaluated numerically or the linear system for
+/// the highest derivatives is singular.
+fn system_derivative(
+  residuals: &[NumFn],
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  state: &[f64],
+  x: f64,
+  cached_m: Option<&MassLu>,
+) -> Option<Vec<f64>> {
+  let high = solve_highest_derivatives_cached(
+    residuals,
+    funcs.len(),
+    x,
+    state,
+    cached_m,
+  )?;
+  let mut d = vec![0.0; state.len()];
+  for (fi, f) in funcs.iter().enumerate() {
+    // An algebraic unknown (order 0) carries no state.
+    if f.order == 0 {
+      continue;
+    }
+    let off = state_offset[fi];
+    for k in 0..f.order - 1 {
+      d[off + k] = state[off + k + 1];
+    }
+    d[off + f.order - 1] = high[fi];
+  }
+  Some(d)
+}
+
 /// One RK4 step of the first-order system equivalent. Returns `None`
 /// when a residual can't be evaluated numerically or the linear system
 /// for the highest derivatives is singular. `cached_m` is the mass matrix
@@ -6762,28 +6846,17 @@ fn rk4_system_step(
   h: f64,
   cached_m: Option<&MassLu>,
 ) -> Result<Option<Vec<f64>>, InterpreterError> {
-  let deriv = |s: &[f64],
-               xv: f64|
-   -> Result<Option<Vec<f64>>, InterpreterError> {
-    let Some(high) =
-      solve_highest_derivatives_cached(residuals, funcs.len(), xv, s, cached_m)
-    else {
-      return Ok(None);
+  let deriv =
+    |s: &[f64], xv: f64| -> Result<Option<Vec<f64>>, InterpreterError> {
+      Ok(system_derivative(
+        residuals,
+        funcs,
+        state_offset,
+        s,
+        xv,
+        cached_m,
+      ))
     };
-    let mut d = vec![0.0; s.len()];
-    for (fi, f) in funcs.iter().enumerate() {
-      // An algebraic unknown (order 0) carries no state.
-      if f.order == 0 {
-        continue;
-      }
-      let off = state_offset[fi];
-      for k in 0..f.order - 1 {
-        d[off + k] = s[off + k + 1];
-      }
-      d[off + f.order - 1] = high[fi];
-    }
-    Ok(Some(d))
-  };
 
   let add_scaled = |s: &[f64], d: &[f64], c: f64| -> Vec<f64> {
     s.iter().zip(d).map(|(a, b)| a + b * c).collect()
