@@ -1988,6 +1988,22 @@ woxi eval 'Reduce[a x > 0, x]'              # Reduce[a*x + 0 > 0, x]
 Independent constraints *are* separated and reduced one group at a time, so
 `Reduce[x > 1 && a^2 < 4 && b^2 < 9, x]` matches.
 
+### Solve of a system eliminated through a fractional power finds nothing
+
+```sh
+wolframscript -code 'Length[Solve[{1 == u*t/p, 1000*(t - 400) == (10000 - u^2)/2, t == p^(-2/7)}, {p, u, t}]]'
+# 10
+woxi eval 'Length[Solve[{1 == u*t/p, 1000*(t - 400) == (10000 - u^2)/2, t == p^(-2/7)}, {p, u, t}]]'
+# 0
+```
+
+The kernel solves `t == p^(-2/7)` for `p`, substitutes, and reduces the system
+to a degree-10 polynomial in `t`. Woxi's elimination does not invert the
+fractional power. Written as `p == t^(-7/2)`, the system is solved, but through
+a degree-20 polynomial in `Sqrt[t]` whose wrong-branch roots are not all
+discarded (17 solutions instead of 10). This blocks the Demonstration
+"Compressible Flow Through a Nozzle/Diffuser".
+
 ### Solve over a system of two Abs equations gives no solutions
 
 ```sh
@@ -5566,10 +5582,18 @@ clips its right-hand column, where the FrontEnd fits it.
 
 ## Machine complex numbers with a `0.` imaginary part
 
-`Sinh`, `Sqrt`, `Log` and the other elementary functions still leave an
-argument like `2. + 0.*I` unevaluated, where the kernel returns a complex
-machine number. Arithmetic, `Sin`, `Cos`, `Tan` and the inverse circular
-functions keep the `0.` imaginary part correctly.
+```sh
+wolframscript -code '{LogGamma[2. + 0. I], Erf[0.5 + 0. I], Zeta[2. + 0. I], BesselJ[0, 2. + 0. I]}'
+# {3.552713678800501*^-15 + 0.*I, 0.5204998778130466 + 0.*I, 1.6449340668482264 + 0.*I, 0.22389077914123562 + 0.*I}
+woxi eval '{LogGamma[2. + 0. I], Erf[0.5 + 0. I], Zeta[2. + 0. I], BesselJ[0, 2. + 0. I]}'
+# {LogGamma[2. + 0.*I], 0.5204998778130465, 1.6449340668482264, BesselJ[0, 2. + 0.*I]}
+```
+
+Arithmetic, `Power`, `Sqrt`, `Exp`, `Log`, `Sign`, `Gamma` and the circular
+and hyperbolic functions keep the `0.` imaginary part (they read the argument
+through `machine_complex_parts`). Special functions such as `LogGamma`,
+`PolyGamma`, `Zeta`, `Erf` and the Bessel family still either drop it or stay
+unevaluated.
 
 
 ## `Sum` over symbolic bounds with a step stays unreduced

@@ -2305,7 +2305,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return solve_ast(&[combined, args[1].clone()]);
   }
-  let result = solve_ast_entry(args)?;
+  let result = drop_failing_system_solutions(args, solve_ast_entry(args)?);
   // A system with machine coefficients whose inexact elimination lost
   // solutions is re-solved exactly and numericized, with Solve::ratnz, as
   // wolframscript does (PhasePlaneAnalysisOfABiochemicalReactor).
@@ -9230,6 +9230,86 @@ enum GenericValidity {
   Always,
   Partly,
   Fails,
+}
+
+/// Drop the solutions of an equation system that cannot be right: one with
+/// an infinite or indeterminate value, or one that turns an equation into
+/// `False` once its exact values are put in (an elimination can leave a
+/// stray candidate such as `p -> 0` of `p == t^(-7/2)`). Anything the exact
+/// substitution cannot decide is kept.
+fn drop_failing_system_solutions(args: &[Expr], result: Expr) -> Expr {
+  let (Some(Expr::List(eqs)), Expr::List(solutions)) = (args.first(), &result)
+  else {
+    return result;
+  };
+  // Modular and domain-restricted systems are decided by their own rules.
+  if eqs.len() < 2 || args.len() != 2 {
+    return result;
+  }
+  let kept: Vec<Expr> = solutions
+    .iter()
+    .filter(|solution| {
+      if has_non_finite_value(solution) {
+        return false;
+      }
+      let Expr::List(rules) = solution else {
+        return true;
+      };
+      let mut point = Vec::new();
+      for rule in rules {
+        let Expr::Rule {
+          pattern,
+          replacement,
+        } = rule
+        else {
+          return true;
+        };
+        let Expr::Identifier(var) = pattern.as_ref() else {
+          return true;
+        };
+        // A `Root[…]` value only compares numerically, which is not
+        // reliable enough to reject a solution on.
+        if crate::functions::math_ast::contains_inexact_real(replacement)
+          || !is_exact_number(replacement)
+          || contains_head(replacement, "Root")
+        {
+          return true;
+        }
+        point.push((var.clone(), replacement.as_ref().clone()));
+      }
+      !eqs.iter().any(|eq| {
+        let substituted = point.iter().fold(eq.clone(), |e, (var, value)| {
+          crate::syntax::substitute_variable(&e, var, value)
+        });
+        matches!(
+          quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)),
+          Ok(Expr::Identifier(ref f)) if f == "False"
+        )
+      })
+    })
+    .cloned()
+    .collect();
+  Expr::List(kept.into())
+}
+
+/// Whether `e` contains a call with head `head`.
+fn contains_head(e: &Expr, head: &str) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. } if name == head)
+    || crate::syntax::expr_children(e)
+      .into_iter()
+      .any(|c| contains_head(c, head))
+}
+
+/// An exact number without symbols: integers, rationals and their
+/// arithmetic with radicals (`405`, `1/2`, `Sqrt[2]`).
+fn is_exact_number(e: &Expr) -> bool {
+  matches!(
+    crate::evaluator::evaluate_function_call_ast(
+      "NumericQ",
+      std::slice::from_ref(e)
+    ),
+    Ok(Expr::Identifier(ref t)) if t == "True"
+  )
 }
 
 fn equation_holds_at(equation: &Expr, var: &str, value: &Expr) -> Option<bool> {

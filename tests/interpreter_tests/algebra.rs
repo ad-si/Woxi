@@ -6818,6 +6818,27 @@ mod solve {
   }
 }
 
+mod solve_system_rejects_invalid_candidates {
+  use super::*;
+
+  // An elimination through a fractional power must not report an infinite
+  // candidate, nor one (`p -> 0`, `t -> 405`) that fails `p == t^(-7/2)`.
+  #[test]
+  fn no_infinite_or_failing_candidates() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{FreeQ[Solve[{1 == u*t/p, 1000*(t - 400) == (10000 - u^2)/2, \
+         t == p^(-2/7)}, {p, u, t}], ComplexInfinity], \
+         MemberQ[Solve[{u == p/t, 1000*(t - 400) == (10000 - u^2)/2, \
+         p == t^(-7/2)}, {p, u, t}], {p -> 0, __}]}"
+      )
+      .unwrap(),
+      "{True, False}"
+    );
+  }
+}
+
 mod reduce_generalized_variables {
   use super::*;
 
@@ -14692,6 +14713,22 @@ mod root {
     assert!(
       (val + std::f64::consts::SQRT_2).abs() < 1e-10,
       "Expected -1.414..., got {val}"
+    );
+  }
+
+  // Coefficients beyond 128 bits (from eliminating a system) still give a
+  // numeric value; N leaves the index of `Root[f, k, 0]` alone (NHoldAll).
+  #[test]
+  fn numerical_value_with_huge_coefficients() {
+    assert_eq!(
+      interpret(
+        "{N[Root[-2*10^40 + #^3 + # &, 1]], N[Root[-2*10^40 + #^3 + # &, 2]], \
+         N[RootSum[-2*10^40 + #^3 + # &, #^2 &]], Attributes[Root]}"
+      )
+      .unwrap(),
+      "{2.7144176165949066*^13, \
+       -1.3572088082974533*^13 - 2.3507546124511977*^13*I, -2., \
+       {NHoldAll, Protected, ReadProtected}}"
     );
   }
 
