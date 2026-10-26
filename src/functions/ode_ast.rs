@@ -5422,26 +5422,27 @@ fn ndsolve_system(
       }
     }
     // An equation that holds the highest derivative only implicitly
-    // (`5 g Sin[θ[t]] + 7 r θ''[t] == 0`) is solved for it.
-    if !highest.iter().any(|(name, _, _)| *name == f.name) {
+    // (`5 g Sin[θ[t]] + 7 r θ''[t] == 0`) is solved for it — only when an
+    // event asks for that derivative, since solving a large equation is
+    // costly.
+    fn find_node(e: &Expr, name: &str, order: usize, x: &str) -> Option<Expr> {
+      if let Some((k, Expr::Identifier(ref p))) =
+        extract_derivative_order_and_point(e, name)
+        && k == order
+        && p == x
+      {
+        return Some(e.clone());
+      }
+      expr_children(e)
+        .into_iter()
+        .find_map(|c| find_node(c, name, order, x))
+    }
+    if !highest.iter().any(|(name, _, _)| *name == f.name)
+      && raw_state_events
+        .iter()
+        .any(|ev| find_node(&ev.condition, &f.name, f.order, x_name).is_some())
+    {
       for ode in &odes {
-        fn find_node(
-          e: &Expr,
-          name: &str,
-          order: usize,
-          x: &str,
-        ) -> Option<Expr> {
-          if let Some((k, Expr::Identifier(ref p))) =
-            extract_derivative_order_and_point(e, name)
-            && k == order
-            && p == x
-          {
-            return Some(e.clone());
-          }
-          expr_children(e)
-            .into_iter()
-            .find_map(|c| find_node(c, name, order, x))
-        }
         let Some(node) = find_node(ode, &f.name, f.order, x_name) else {
           continue;
         };

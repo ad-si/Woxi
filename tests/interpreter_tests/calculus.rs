@@ -23140,6 +23140,45 @@ mod nintegrate_limits_numeric_after_n {
 mod ndsolve_stiff_system {
   use super::*;
 
+  // Without a WhenEvent nothing needs the highest derivative of an implicit
+  // equation solved for: solving this geodesic equation for `u''[s]` (from
+  // the Conjugate Locus Demonstration) took minutes.
+  #[test]
+  fn implicit_equation_without_events_is_not_solved() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{T''[s] == -T[s], T[0] == 1, T'[0] == 0, P''[s] == 0, \
+         P[0] == 0.1, P'[0] == 0.2, \
+         -(((0. + (3.9999999999999996*Cos[P[s]]^2)/(8.454545454545455 + \
+         1.*Cos[2*P[s]] - 0.5*Cos[2*(P[s] - T[s])] - \
+         2.6363636363636362*Cos[2*T[s]] - 0.5*Cos[2*(P[s] + T[s])]) + \
+         0.9999999999999993*Cot[T[s]]^2 - 0.9999999999999997*Csc[T[s]]^2 - \
+         (3.9999999999999996*Sin[P[s]]^2)/(8.454545454545455 + 1.*Cos[2*P[s]] \
+         - 0.5*Cos[2*(P[s] - T[s])] - 2.6363636363636362*Cos[2*T[s]] - \
+         0.5*Cos[2*(P[s] + T[s])]) - \
+         (0.9999999999999997*Cos[T[s]]^2*(0.9062499999999999 + \
+         0.34374999999999983*Cos[P[s]]^2 - \
+         0.34374999999999983*Sin[P[s]]^2))/(1.453125 + 0.171875*Cos[2*P[s]] - \
+         0.0859375*Cos[2*(P[s] - T[s])] - 0.453125*Cos[2*T[s]] - \
+         0.0859375*Cos[2*(P[s] + T[s])]) - \
+         (15.999999999999996*Cos[P[s]]^2*Sin[P[s]]^2*Sin[T[s]]^2)/(8.454545454545455 \
+         + 1.*Cos[2*P[s]] - 0.5*Cos[2*(P[s] - T[s])] - \
+         2.6363636363636362*Cos[2*T[s]] - 0.5*Cos[2*(P[s] + T[s])])^2 - \
+         (3.9999999999999996*Cos[P[s]]*Sin[P[s]]*(-2.*Sin[2*P[s]] + \
+         1.*Sin[2*(P[s] - T[s])] + 1.*Sin[2*(P[s] + \
+         T[s])]))/(8.454545454545455 + 1.*Cos[2*P[s]] - 0.5*Cos[2*(P[s] - \
+         T[s])] - 2.6363636363636362*Cos[2*T[s]] - 0.5*Cos[2*(P[s] + \
+         T[s])])^2)*u[s])/(Cos[P[s]]^2*Cos[T[s]]^2 + \
+         1.44*Cos[T[s]]^2*Sin[P[s]]^2 + 2.25*Sin[T[s]]^2)) + \
+         Derivative[2][u][s] == 0, \
+         u[0] == 0, u'[0] == 1}, {T, P, u}, {s, 0, 1}]; \
+         NumericQ[u[1] /. First[s]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // Robertson's chemical kinetics: the adaptive explicit steps detect the
   // stiffness and hand the leg to the Rosenbrock method instead of crawling
   // through millions of steps. wolframscript: y1[40] = 0.7158270453506574.
