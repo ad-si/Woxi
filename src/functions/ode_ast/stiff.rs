@@ -287,7 +287,7 @@ pub(super) fn dormand_prince_leg(
         })
         .collect();
       if stage == 5 {
-        y_stage6 = ys.clone();
+        y_stage6.clone_from(&ys);
       }
       match f(x + C[stage] * hs, &ys)? {
         Some(ks) if ks.iter().all(|v| v.is_finite()) => k.push(ks),
