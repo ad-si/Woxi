@@ -2698,6 +2698,24 @@ mod grid_graphics {
   }
 
   #[test]
+  fn grid_background_bare_index_rules() {
+    clear_state();
+    // A bare `n -> color` stands for `{n -> color}` in either position.
+    let result = interpret_with_stdout(
+      "Grid[{{1, 2}, {3, 4}}, Background -> {None, 2 -> LightGreen}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert_eq!(svg.matches("<rect").count(), 1, "only row 2 is painted");
+    let result = interpret_with_stdout(
+      "Grid[{{1, 2}, {3, 4}}, Background -> {1 -> LightBlue, None}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert_eq!(svg.matches("<rect").count(), 2, "only column 1 is painted");
+  }
+
+  #[test]
   fn grid_alignment_left() {
     clear_state();
     let result =
