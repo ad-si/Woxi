@@ -4488,6 +4488,18 @@ fn evaluate_expr_to_expr_uncached(
       // time just to ask what its head is doubled the cost of every failing
       // Part on a large list.
       let base_holds = head_holds_arguments(&base_val);
+      let held_head = |e: &Expr| match e {
+        Expr::FunctionCall { name, .. } => Some(name.clone()),
+        Expr::Function { .. } | Expr::NamedFunction { .. } => {
+          Some("Function".to_string())
+        }
+        _ => None,
+      };
+      let base_head = if base_holds {
+        held_head(&base_val)
+      } else {
+        None
+      };
       // An index that cannot address any part fails the whole spec before
       // the object is looked at. Returning here also keeps a held base
       // (`Hold[a][[x]]`) from re-evaluating the unevaluated Part below.
@@ -4499,6 +4511,7 @@ fn evaluate_expr_to_expr_uncached(
           index: Box::new(idx),
         }));
       }
+      let mut lifted_piece = false;
       let result = if needs_mapping {
         // All requires collecting indices and mapping — must clone base
         apply_part_indices(&base_val, &indices)?
@@ -4517,7 +4530,16 @@ fn evaluate_expr_to_expr_uncached(
           // any level, the spec is deeper than the object — return the full
           // Part expression unevaluated (matching wolframscript Part::partd).
           let mut part_too_deep = false;
+          // A first extraction that fails hands back the Part it could not
+          // take; one that succeeds on a held piece (`Dynamic[x[[2]]][[1]]`)
+          // hands back that piece, which is a Part expression of its own.
+          if part_extraction::part_failed(&base_val, &result, &indices[0]) {
+            part_too_deep = true;
+          }
           for idx in &indices[1..] {
+            if part_too_deep {
+              break;
+            }
             if let Expr::Part { .. } = &result {
               part_too_deep = true;
               break;
@@ -4539,10 +4561,16 @@ fn evaluate_expr_to_expr_uncached(
               hit_atom_mid = true;
               break;
             }
-            result = extract_part_ast(&result, idx)?;
+            let taken = extract_part_ast(&result, idx)?;
+            if part_extraction::part_failed(&result, &taken, idx) {
+              part_too_deep = true;
+            }
+            result = taken;
           }
-          if let Expr::Part { .. } = &result {
-            part_too_deep = true;
+          if let Expr::Part { .. } = &result
+            && !part_too_deep
+          {
+            lifted_piece = true;
           }
           if part_too_deep {
             result = base_val;
@@ -4566,7 +4594,18 @@ fn evaluate_expr_to_expr_uncached(
       // just re-applies the same hold. A failed extraction comes back as the
       // unevaluated Part itself, which must not be evaluated again: that
       // would retry the same extraction forever.
-      let result = if base_holds && !matches!(result, Expr::Part { .. }) {
+      //
+      // A piece that is itself a `Part` (`Hold[x[[2]]][[1]]`) is such a lift
+      // too, unlike a failed extraction, whose `Part` still wraps the held
+      // object it could not index.
+      let piece_is_part = lifted_piece
+        || (base_holds
+          && matches!(&result, Expr::Part { .. })
+          && base_head.is_some()
+          && held_head(get_part_base(&result)) != base_head);
+      let result = if piece_is_part
+        || (base_holds && !matches!(result, Expr::Part { .. }))
+      {
         evaluate_expr_to_expr(&result)?
       } else {
         result
@@ -4585,7 +4624,10 @@ fn evaluate_expr_to_expr_uncached(
 
       // Part::partd / Part::pspec1: warn only at the outermost Part level
       let at_outermost = PART_DEPTH.with(|d| *d.borrow() == 0);
-      if at_outermost && let Expr::Part { .. } = &result {
+      if at_outermost
+        && !piece_is_part
+        && let Expr::Part { .. } = &result
+      {
         // A string part spec on a non-association is never applicable,
         // regardless of the base (wolframscript: Part::pspec1).
         if let Some(Expr::String(s)) =
