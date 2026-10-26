@@ -414,6 +414,13 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Constant-coefficient with non-constant forcing — solve homogeneous part
     // TODO: add variation of parameters for non-constant forcing
     solve_constant_coefficient_ode(&terms, max_order as usize, &x_name)?
+  } else if max_order == 2 && !terms.iter().any(|t| t.order == 0) {
+    // The unknown itself is absent (`x y'' + k y' == 0`): with v = y' the
+    // equation is first order linear in v, and y is the integral of v.
+    match solve_second_order_without_unknown(&terms, &x_name)? {
+      Some(solution) => solution,
+      None => return Ok(unevaluated("DSolve", args)),
+    }
   } else {
     // Unsupported
     return Ok(unevaluated("DSolve", args));
@@ -9456,6 +9463,30 @@ fn solve_first_order_linear(
   let homogeneous =
     crate::functions::calculus_ast::simplify(times2(inv_mu, make_c(1)));
   Ok(plus2(particular, homogeneous))
+}
+
+/// Reduction of order for `a2(x) y'' + a1(x) y' + f(x) == 0`: solve the first
+/// order linear equation for `v = y'` (introducing `C[1]`), then integrate
+/// (introducing `C[2]`). `None` when the integral stays unevaluated.
+fn solve_second_order_without_unknown(
+  terms: &[OdeTerm],
+  x_name: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let reduced: Vec<OdeTerm> = terms
+    .iter()
+    .map(|t| OdeTerm {
+      order: if t.order >= 1 { t.order - 1 } else { t.order },
+      coefficient: t.coefficient.clone(),
+    })
+    .collect();
+  let v = solve_first_order_linear(&reduced, x_name)?;
+  let integral =
+    crate::functions::calculus_ast::integrate_ast(&[v, id_expr(x_name)])?;
+  if matches!(&integral, Expr::FunctionCall { name, .. } if name == "Integrate")
+  {
+    return Ok(None);
+  }
+  Ok(Some(plus2(integral, make_c(2))))
 }
 
 // ─── Separable First-Order ODEs ────────────────────────────────────────
