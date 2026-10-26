@@ -20853,6 +20853,25 @@ fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
   let mut opts = default_layout_options();
 
   for arg in args {
+    // The layout heads are held, so an option value such as
+    // `Background -> If[cond, a, b]` arrives unevaluated.
+    let evaluated;
+    let arg = match arg {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => match evaluate_expr_to_expr(replacement) {
+        Ok(value) => {
+          evaluated = Expr::Rule {
+            pattern: pattern.clone(),
+            replacement: Box::new(value),
+          };
+          &evaluated
+        }
+        Err(_) => arg,
+      },
+      _ => arg,
+    };
     if let Expr::Rule {
       pattern,
       replacement,

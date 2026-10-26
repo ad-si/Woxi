@@ -6289,12 +6289,22 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           if matches!(name.as_str(), "Grid" | "TextGrid" | "TableForm" | "MatrixForm")
             && !args.is_empty()) =>
     {
-      let inner = crate::functions::graphics::style_pushed_into_layout(
+      let pushed = crate::functions::graphics::style_pushed_into_layout(
         &args[0],
         &args[1..],
-      )
-      .unwrap_or_else(|| args[0].clone());
-      expr_to_svg(&inner)
+      );
+      // Styled text (`Style[5, 16, Red]`) keeps its size and colour: the
+      // row renderer applies the directives to the text it sets.
+      if pushed.is_none()
+        && !matches!(&args[0], Expr::Graphics { .. })
+        && !lays_out_a_graphic(&args[0])
+        && let Some(svg) = crate::row_svg_with_rendered_items(&[Expr::List(
+          vec![expr.clone()].into(),
+        )])
+      {
+        return svg;
+      }
+      expr_to_svg(&pushed.unwrap_or_else(|| args[0].clone()))
     }
     // `Labeled[content, label]` (and `…, pos]`) puts the label beside the
     // content — below it by default. With a picture as the content the
