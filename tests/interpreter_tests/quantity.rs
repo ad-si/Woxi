@@ -463,6 +463,18 @@ fn quantity_magnitude_with_conversion() {
   );
 }
 
+#[test]
+fn quantity_magnitude_of_plain_number() {
+  assert_eq!(interpret("QuantityMagnitude[0.1]").unwrap(), "0.1");
+  assert_eq!(interpret("QuantityMagnitude[7]").unwrap(), "7");
+  assert_eq!(interpret("QuantityMagnitude[3/4]").unwrap(), "3/4");
+  assert_eq!(interpret("QuantityMagnitude[1.0] - 0.05").unwrap(), "0.95");
+  assert_eq!(
+    interpret("QuantityMagnitude[{1, 2.5}]").unwrap(),
+    "{1, 2.5}"
+  );
+}
+
 // ─── QuantityUnit ───────────────────────────────────────────────────────────
 
 #[test]

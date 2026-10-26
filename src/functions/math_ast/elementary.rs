@@ -735,6 +735,61 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Sqrt[x] - Square root
+/// `-x` with the sign taken into the sum, when `x` is an exact numeric sum
+/// (or a positive rational times one) whose value is a negative real.
+fn negated_negative_exact_sum(x: &Expr) -> Option<Expr> {
+  let is_sum = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+      || matches!(
+        e,
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
+          ..
+        }
+      )
+  };
+  let (coefficient, sum) = match x {
+    e if is_sum(e) => (None, e),
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && (matches!(&args[0], Expr::Integer(n) if *n > 0)
+          || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Rational"))
+        && is_sum(&args[1]) =>
+    {
+      (Some(args[0].clone()), &args[1])
+    }
+    _ => return None,
+  };
+  if let Some(c) = &coefficient
+    && try_eval_to_f64(c).is_none_or(|v| v <= 0.0)
+  {
+    return None;
+  }
+  if !crate::functions::predicate_ast::is_numeric_q(sum)
+    || crate::functions::math_ast::contains_imaginary_unit(sum)
+    || !try_eval_to_f64(sum).is_some_and(|v| v < 0.0)
+  {
+    return None;
+  }
+  let terms = match &crate::evaluator::evaluate_expr_to_expr(sum).ok()? {
+    Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
+    _ => return None,
+  };
+  let negated_sum = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Plus",
+    terms
+      .into_iter()
+      .map(|t| call("Times", vec![Expr::Integer(-1), t]))
+      .collect(),
+  ))
+  .ok()?;
+  Some(match coefficient {
+    Some(c) => call("Times", vec![c, negated_sum]),
+    None => negated_sum,
+  })
+}
+
 pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -770,6 +825,18 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Sqrt[ComplexInfinity] = ComplexInfinity
   if matches!(&args[0], Expr::Identifier(s) if s == "ComplexInfinity") {
     return Ok(id_expr("ComplexInfinity"));
+  }
+  // An exact sum that is a negative real number is `I` times the root of
+  // its negation: `Sqrt[-3 - Sqrt[17]]` is `I Sqrt[3 + Sqrt[17]]`, and the
+  // negation goes into the sum (`Sqrt[(-3 - Sqrt[17])/2]` is
+  // `I Sqrt[(3 + Sqrt[17])/2]`).
+  if let Some(negated) = negated_negative_exact_sum(&args[0]) {
+    let root =
+      crate::evaluator::evaluate_expr_to_expr(&call("Sqrt", vec![negated]))?;
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Times",
+      vec![Expr::Identifier("I".to_string()), root],
+    ));
   }
   // Sqrt of an arbitrary-precision BigFloat: delegate to Power[base, 1/2] so
   // the precision-tracked bigfloat path computes it (rather than leaving

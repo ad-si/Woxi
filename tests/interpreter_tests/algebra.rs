@@ -5043,6 +5043,76 @@ mod solve {
 
   // An exponential with a positive constant base never vanishes, so it
   // drops out of `product == 0`.
+  // A content the two terms share stays a factor of the root.
+  #[test]
+  fn quadratic_roots_keep_shared_content() {
+    assert_eq!(
+      interpret("Solve[x^2 + 6 x - 9 == 0, x]").unwrap(),
+      "{{x -> 3*(-1 - Sqrt[2])}, {x -> 3*(-1 + Sqrt[2])}}"
+    );
+    assert_eq!(
+      interpret("InputForm[Solve[16 x^2 + 270 x - 315 == 0, x]]").unwrap(),
+      "InputForm[{{x -> (3*(-45 - Sqrt[2585]))/16}, {x -> (3*(-45 + Sqrt[2585]))/16}}]"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 + 6 x + 27 == 0, x]").unwrap(),
+      "{{x -> 3*(-1 - I*Sqrt[2])}, {x -> 3*(-1 + I*Sqrt[2])}}"
+    );
+  }
+
+  // An irreducible quartic in x^2 is solved in radicals, the roots with
+  // real square roots first.
+  #[test]
+  fn biquadratic_in_radicals() {
+    assert_eq!(
+      interpret("Solve[x^4 - 10 x^2 + 1 == 0, x]").unwrap(),
+      "{{x -> -Sqrt[5 - 2*Sqrt[6]]}, {x -> Sqrt[5 - 2*Sqrt[6]]}, \
+{x -> -Sqrt[5 + 2*Sqrt[6]]}, {x -> Sqrt[5 + 2*Sqrt[6]]}}"
+    );
+    assert_eq!(
+      interpret("InputForm[Solve[x^4 + 3 x^2 - 2 == 0, x]]").unwrap(),
+      "InputForm[{{x -> -Sqrt[(-3 + Sqrt[17])/2]}, {x -> Sqrt[(-3 + Sqrt[17])/2]}, \
+{x -> -I*Sqrt[(3 + Sqrt[17])/2]}, {x -> I*Sqrt[(3 + Sqrt[17])/2]}}]"
+    );
+    assert_eq!(
+      interpret("InputForm[Solve[x^4 - 2 x^2 + 7 == 0, x]]").unwrap(),
+      "InputForm[{{x -> -Sqrt[1 - I*Sqrt[6]]}, {x -> Sqrt[1 - I*Sqrt[6]]}, \
+{x -> -Sqrt[1 + I*Sqrt[6]]}, {x -> Sqrt[1 + I*Sqrt[6]]}}]"
+    );
+    assert_eq!(
+      interpret("InputForm[Solve[x^4 + a x^2 + b == 0, x]]").unwrap(),
+      "InputForm[{{x -> -(Sqrt[-a - Sqrt[a^2 - 4*b]]/Sqrt[2])}, \
+{x -> Sqrt[-a - Sqrt[a^2 - 4*b]]/Sqrt[2]}, {x -> -(Sqrt[-a + Sqrt[a^2 - 4*b]]/Sqrt[2])}, \
+{x -> Sqrt[-a + Sqrt[a^2 - 4*b]]/Sqrt[2]}}]"
+    );
+  }
+
+  // Radical equations with parameters: candidates the generic check
+  // confirms are kept (with nongen when only some parameter values work),
+  // the ones it refutes dropped.
+  #[test]
+  fn radical_equations_with_parameters() {
+    clear_state();
+    assert_eq!(
+      interpret("Solve[Sqrt[x + a] + Sqrt[x - a] == 3, x]").unwrap(),
+      "{{x -> (81 + 4*a^2)/36}}"
+    );
+    assert!(
+      woxi::get_captured_warnings()
+        .iter()
+        .any(|w| w.starts_with("Solve::nongen"))
+    );
+    assert_eq!(
+      interpret("Solve[Sqrt[(x-1)^2 + y^2] + Sqrt[(x+1)^2 + y^2] == 3, y]")
+        .unwrap(),
+      "{{y -> -1/6*Sqrt[45 - 20*x^2]}, {y -> Sqrt[45 - 20*x^2]/6}}"
+    );
+    assert_eq!(
+      interpret("Solve[Sqrt[x^2 + 1] + Sqrt[x^2 + 4] == 3, x]").unwrap(),
+      "{{x -> 0}}"
+    );
+  }
+
   #[test]
   fn nonvanishing_exponential_factors() {
     assert_eq!(interpret("Solve[E^x == 0, x]").unwrap(), "{}");
@@ -5060,7 +5130,7 @@ mod solve {
     );
     assert_eq!(
       interpret("Solve[D[x^2 E^(1 - x/3), {x, 2}] == 0, x]").unwrap(),
-      "{{x -> 6 - 3*Sqrt[2]}, {x -> 6 + 3*Sqrt[2]}}"
+      "{{x -> 3*(2 - Sqrt[2])}, {x -> 3*(2 + Sqrt[2])}}"
     );
   }
 

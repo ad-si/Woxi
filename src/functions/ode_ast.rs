@@ -440,6 +440,13 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Constant-coefficient with non-constant forcing — solve homogeneous part
     // TODO: add variation of parameters for non-constant forcing
     solve_constant_coefficient_ode(&terms, max_order as usize, &x_name)?
+  } else if max_order == 2 && !terms.iter().any(|t| t.order == 0) {
+    // The unknown itself is absent (`x y'' + k y' == 0`): with v = y' the
+    // equation is first order linear in v, and y is the integral of v.
+    match solve_second_order_without_unknown(&terms, &x_name)? {
+      Some(solution) => solution,
+      None => return Ok(unevaluated("DSolve", args)),
+    }
   } else {
     // Unsupported
     return Ok(unevaluated("DSolve", args));
@@ -9531,6 +9538,30 @@ fn solve_first_order_linear(
   Ok(plus2(particular, homogeneous))
 }
 
+/// Reduction of order for `a2(x) y'' + a1(x) y' + f(x) == 0`: solve the first
+/// order linear equation for `v = y'` (introducing `C[1]`), then integrate
+/// (introducing `C[2]`). `None` when the integral stays unevaluated.
+fn solve_second_order_without_unknown(
+  terms: &[OdeTerm],
+  x_name: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let reduced: Vec<OdeTerm> = terms
+    .iter()
+    .map(|t| OdeTerm {
+      order: if t.order >= 1 { t.order - 1 } else { t.order },
+      coefficient: t.coefficient.clone(),
+    })
+    .collect();
+  let v = solve_first_order_linear(&reduced, x_name)?;
+  let integral =
+    crate::functions::calculus_ast::integrate_ast(&[v, id_expr(x_name)])?;
+  if matches!(&integral, Expr::FunctionCall { name, .. } if name == "Integrate")
+  {
+    return Ok(None);
+  }
+  Ok(Some(plus2(integral, make_c(2))))
+}
+
 // ─── Separable First-Order ODEs ────────────────────────────────────────
 
 /// Solve a separable first-order ODE `y'[x] == g(x) h(y[x])` by quadrature.
@@ -11493,6 +11524,16 @@ pub(crate) fn kernel_interpolating_function_to_native(
   Some(vec![func_args[0].clone(), Expr::List(pairs.into()), order])
 }
 
+/// A kernel InterpolatingFunction fitted to complex data stores every value
+/// as `x + 0. I` when the data is in fact real; those entries read as the
+/// machine real `x`, anything with a non-zero imaginary part is kept.
+fn demote_zero_imaginary(e: &Expr) -> Expr {
+  match crate::functions::math_ast::numeric_utils::machine_complex_shape(e) {
+    Some((re, im)) if im == 0.0 => Expr::Real(re),
+    _ => e.clone(),
+  }
+}
+
 fn kernel_interpolating_function_to_pairs(
   func_args: &[Expr],
 ) -> Option<Vec<Expr>> {
@@ -11535,7 +11576,7 @@ fn kernel_interpolating_function_to_pairs(
             let width = w[1].checked_sub(w[0])?;
             let dim = (width / stored).max(1);
             let part: Vec<Expr> = (0..dim)
-              .map(|j| flat.get(w[0] + j).cloned())
+              .map(|j| flat.get(w[0] + j).map(demote_zero_imaginary))
               .collect::<Option<_>>()?;
             Some(if dim == 1 {
               part[0].clone()
@@ -11548,8 +11589,8 @@ fn kernel_interpolating_function_to_pairs(
       _ => items
         .iter()
         .map(|item| match item {
-          Expr::List(per_point) => per_point.first().cloned(),
-          other => Some(other.clone()),
+          Expr::List(per_point) => per_point.first().map(demote_zero_imaginary),
+          other => Some(demote_zero_imaginary(other)),
         })
         .collect::<Option<_>>()?,
     },
@@ -11616,7 +11657,12 @@ fn hermite_blocks(
         .windows(2)
         .map(|w| {
           (w[0] <= w[1] && w[1] <= flat.len()).then(|| {
-            flat.iter().skip(w[0]).take(w[1] - w[0]).cloned().collect()
+            flat
+              .iter()
+              .skip(w[0])
+              .take(w[1] - w[0])
+              .map(demote_zero_imaginary)
+              .collect()
           })
         })
         .collect::<Option<_>>()?

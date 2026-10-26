@@ -1562,6 +1562,16 @@ mod batch_unevaluated_wrappers_2 {
     assert!(!full.contains("cx=\"180.00\" cy=\"180.00\""), "{full}");
   }
   #[test]
+  fn graph_plot_edge_rendering_arrow_setback_uses_caller_units() {
+    // The first edge is only 2 units long in the caller's coordinates, so
+    // an absolute `Arrow` setback of 0.5 must not swallow it.
+    let svg = interpret(
+      "ExportString[GraphPlot[{1 -> 2, 2 -> 3, 3 -> 1}, VertexCoordinateRules -> {3 -> {20, 0}, 1 -> {0, 0}, 2 -> {2, 0}}, EdgeRenderingFunction -> ({Blue, Arrow[#1, 0.5]} &)], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("<polyline").count(), 3, "{svg}");
+  }
+  #[test]
   fn graph_plot_forwards_to_graph() {
     assert_eq!(
       interpret(

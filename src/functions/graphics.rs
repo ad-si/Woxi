@@ -2531,6 +2531,9 @@ fn collect_primitives(
         "Parallelogram" => {
           parse_parallelogram(args, style, prims);
         }
+        "StadiumShape" => {
+          parse_stadium_shape(args, style, prims);
+        }
         // JoinedCurve[{c1, c2, …}] draws its curve components as one path;
         // stroke-rendering each component in order is visually equivalent.
         "JoinedCurve" if !args.is_empty() => {
@@ -3717,6 +3720,48 @@ fn parse_parallelogram(
   });
 }
 
+/// StadiumShape[{p1, p2}, r] — all points within distance r of the segment
+/// p1–p2, drawn as a polygon with semicircular caps.
+fn parse_stadium_shape(
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) {
+  let [Expr::List(ends), r] = args else {
+    return;
+  };
+  if ends.len() != 2 {
+    return;
+  }
+  let (Some(p1), Some(p2), Some(r)) = (
+    expr_to_point(&ends[0]),
+    expr_to_point(&ends[1]),
+    expr_to_f64(r),
+  ) else {
+    return;
+  };
+  let theta = (p2.1 - p1.1).atan2(p2.0 - p1.0);
+  const CAP_STEPS: usize = 32;
+  let mut points = Vec::with_capacity(2 * CAP_STEPS + 2);
+  // The cap around p2 sweeps -90° to +90° relative to the axis, then the
+  // cap around p1 sweeps +90° to +270°.
+  for (center, start) in [
+    (p2, theta - std::f64::consts::FRAC_PI_2),
+    (p1, theta + std::f64::consts::FRAC_PI_2),
+  ] {
+    for k in 0..=CAP_STEPS {
+      let a = start + std::f64::consts::PI * (k as f64) / (CAP_STEPS as f64);
+      points.push((center.0 + r * a.cos(), center.1 + r * a.sin()));
+    }
+  }
+  prims.push(Primitive::PolygonPrim {
+    points,
+    holes: Vec::new(),
+    vertex_colors: None,
+    style: style.clone(),
+  });
+}
+
 /// HalfPlane[{p1, p2}, w] — the half plane swept by translating the line
 /// through p1 and p2 along w. HalfPlane[p, v, w] — the same with the line
 /// given as point p and direction v.
@@ -4205,6 +4250,39 @@ pub(crate) fn strip_style_wrappers(expr: &Expr) -> &Expr {
   }
 }
 
+/// Does `e` hold a `Subscript`/`Superscript`/`Subsuperscript` somewhere?
+fn has_script_head(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Subscript" | "Superscript" | "Subsuperscript"
+      ) || args.iter().any(has_script_head)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      has_script_head(left) || has_script_head(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_script_head(operand),
+    _ => false,
+  }
+}
+
+/// Is `expr` arithmetic (`Times`/`Plus`/`Power` or an operator form of
+/// them) with a `Subscript`/`Superscript`/`Subsuperscript` somewhere inside?
+fn is_arithmetic_with_scripts(expr: &Expr) -> bool {
+  let arithmetic = match expr {
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "Times" | "Plus" | "Power")
+    }
+    Expr::BinaryOp { op, .. } => {
+      arithmetic_label_operator(*op).is_some()
+        || matches!(op, BinaryOperator::Power)
+    }
+    _ => false,
+  };
+  arithmetic && has_script_head(expr)
+}
+
 fn graphics_text_content(expr: &Expr) -> String {
   match expr {
     // A `Dynamic[x]` inside text reads as the value `x` currently has.
@@ -4496,6 +4574,21 @@ fn graphics_text_content(expr: &Expr) -> String {
       if text.is_empty() {
         crate::functions::chart::expr_to_label(expr)
           .unwrap_or_else(|| expr_to_string(expr))
+      } else {
+        text
+      }
+    }
+    // A product, sum or power with a `Subscript`/`Superscript` factor
+    // (`Subscript[t, 1] Subscript[t, 2] x^2`) is set on one line with its
+    // scripts shifted — the same runs a widget label gets — not as the
+    // two-line OutputForm box, which would print `Subscript[t, 1]` literally.
+    Expr::FunctionCall { .. } | Expr::BinaryOp { .. }
+      if is_arithmetic_with_scripts(expr) =>
+    {
+      let runs = with_marked_subscripts(|| manipulate_label_runs(expr, false));
+      let text = flatten_label_runs(&runs);
+      if text.is_empty() {
+        expr_to_string(expr)
       } else {
         text
       }
@@ -15315,9 +15408,19 @@ fn contains_visible_style(e: &Expr) -> bool {
       ) =>
     {
       args.iter().any(contains_visible_style)
+        || args[1..].iter().any(script_needs_typesetting)
     }
     _ => false,
   }
+}
+
+/// Whether a script argument holds letters. The Unicode script characters a
+/// plain-text label falls back to exist for digits and signs only, so
+/// `Subscript[x, n]` would flatten to a flat `xn`; it has to be typeset as a
+/// shifted `<tspan>` instead.
+fn script_needs_typesetting(script: &Expr) -> bool {
+  crate::functions::chart::expr_to_label(script)
+    .is_none_or(|s| s.chars().any(char::is_alphabetic))
 }
 
 /// [`box_string_to_svg`] for a label drawn in a graphic whose user space is
@@ -17584,6 +17687,24 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
   gs
 }
 
+/// Whether a string's inline box notation stacks material vertically
+/// (a fraction, root, or over/underscript). Such a string cannot be set as
+/// a line of text with sub/superscript runs, so it goes through the box
+/// layout; scripts and other inline-only boxes keep the text path.
+fn has_stacked_inline_box(s: &str) -> bool {
+  inline_box_string_to_box_expr(s).is_some()
+    && [
+      "FractionBox",
+      "SqrtBox",
+      "RadicalBox",
+      "OverscriptBox",
+      "UnderscriptBox",
+      "UnderoverscriptBox",
+    ]
+    .iter()
+    .any(|head| s.contains(head))
+}
+
 /// A `Text@Style[TraditionalForm[expr], size]` cell whose expression holds a
 /// string with inline `\!\(\*…\)` linear syntax (`note == "A\!\(\*…\)"`),
 /// typeset through the box layout at the style's size, so the typeset
@@ -17606,6 +17727,20 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
       }
       _ => break,
     }
+  }
+  // A plain string holding inline `\!\(\*…\)` box notation is typeset the
+  // same way: `"\!\(\*FractionBox[\(a\), \(b\)]\)"` is a fraction, not its
+  // linear `a/b` reading, which loses the grouping of nested fractions.
+  if let Expr::String(s) = content {
+    if !has_stacked_inline_box(s) {
+      return None;
+    }
+    let boxes = inline_box_string_to_box_expr(s)?;
+    let layout = layout_box(&boxes, size);
+    if layout.width <= 0.0 || layout.height <= 0.0 {
+      return None;
+    }
+    return Some(layout_to_svg(&layout, theme().text_primary));
   }
   let Expr::FunctionCall { name, args } = content else {
     return None;
@@ -18267,6 +18402,13 @@ fn grid_svg_styled_internal(
     for cell in row.iter_mut() {
       *cell = resolve_display_item(cell);
       *cell = column_cell_in_grid_style(cell, default_style);
+      // A string with inline box notation is typeset at the grid's size.
+      if let Expr::String(text) = &*cell
+        && let Some(size) = default_style.font_size
+        && has_stacked_inline_box(text)
+      {
+        *cell = call("Style", vec![cell.clone(), Expr::Real(size)]);
+      }
     }
   }
 
@@ -19441,8 +19583,13 @@ fn grid_svg_styled_internal(
           (cy, markup)
         };
         let text_elem = format!(
-          "<text x=\"{cx:.1}\" y=\"{text_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{text_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\"{hidden_attr} text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
           ff = svg_escape(ff),
+          hidden_attr = if cell_hidden {
+            " fill-opacity=\"0\""
+          } else {
+            ""
+          },
         );
         if let Some(href) = link_href {
           svg.push_str(&format!(
@@ -22549,8 +22696,8 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       // `Deploy[expr]` only makes its content non-selectable; it draws
       // exactly as the content does.
       "Deploy" => args.len() == 1,
-      // `ExpressionCell[expr, style, opts]` is a cell that shows `expr`.
-      "Item" | "Pane" | "ExpressionCell" => !args.is_empty(),
+      // `ExpressionCell[expr, style, opts]` (and `TextCell[expr, …]`) is a cell that shows `expr`.
+      "Item" | "Pane" | "ExpressionCell" | "TextCell" => !args.is_empty(),
       // A blank-string factor (`"\n" * cell`, a newline typed into a layout
       // by mistake) only adds invisible space; the cell draws as the
       // single other factor.
@@ -23276,8 +23423,11 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
         // column keeps its monospace default.
         let ff = style.font_family.as_deref().unwrap_or("monospace");
         svg.push_str(&format!(
-          "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\" fill=\"{fill}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{content}</text>\n",
+          "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\" fill=\"{fill}\"{hidden_attr} text-anchor=\"{alignment}\" dominant-baseline=\"central\">{content}</text>\n",
           ff = svg_escape(ff),
+          // Spans inside the run carry their own `Style` colors; the
+          // opacity (inherited by them) is what keeps those unpainted too.
+          hidden_attr = if style.hidden { " fill-opacity=\"0\"" } else { "" },
           content = expr_to_svg_markup(style.content),
         ));
       }
@@ -30494,6 +30644,10 @@ fn resolve_choice_label(label: &Expr) -> Option<Expr> {
     match e {
       Expr::Identifier(s) => !crate::evaluator::is_builtin_symbol(s),
       Expr::List(items) => items.iter().any(has_user_symbol),
+      // `names[[3]]` — a part of a user list.
+      Expr::Part { expr, index } => {
+        has_user_symbol(expr) || has_user_symbol(index)
+      }
       // A call to a user-defined function (`reactionNames[1]`) also needs
       // resolving, not just calls whose arguments mention a user symbol.
       Expr::FunctionCall { name, args } => {
@@ -31972,7 +32126,9 @@ fn product_label_runs(factors: &[Expr], italic: bool) -> Vec<LabelRun> {
   let numerators: Vec<Expr> = numerators.into_iter().cloned().collect();
   // Typeset pieces (`Style[…] Text[…]`) set side by side, as the front end
   // shows them; a product of plain symbols keeps its `*`.
-  let sep = if numerators.iter().all(contains_presentation_head) {
+  let sep = if numerators.iter().all(contains_presentation_head)
+    || numerators.iter().any(has_script_head)
+  {
     " "
   } else {
     "*"
@@ -32284,11 +32440,18 @@ fn script_runs(
   italic: bool,
   superscript: bool,
 ) -> Vec<LabelRun> {
-  let mark =
-    !superscript && MARK_UNMAPPED_SUBSCRIPTS.with(std::cell::Cell::get);
+  let marking = MARK_UNMAPPED_SUBSCRIPTS.with(std::cell::Cell::get);
+  let mark = !superscript && marking;
+  // A compound base (`(r₁ r₂)^n`) keeps its parentheses.
   let mut runs = args
     .first()
-    .map(|a| manipulate_label_runs(a, italic))
+    .map(|a| {
+      if superscript {
+        grouped_label_runs(a, italic)
+      } else {
+        manipulate_label_runs(a, italic)
+      }
+    })
     .unwrap_or_default();
   let script: String = args
     .iter()
@@ -32301,6 +32464,19 @@ fn script_runs(
           .any(|c| unicode_script_char(c, false).is_none())
       {
         format!("{SUBSCRIPT_START}{text}{SUBSCRIPT_END}")
+      } else if superscript
+        && marking
+        && text.chars().any(|c| unicode_script_char(c, true).is_none())
+      {
+        // No superscript glyphs for this exponent (`e^(j k L)`): write it
+        // out after a caret rather than as a garble of half-mapped letters.
+        if text.chars().count() > 1
+          && !args[1..].iter().all(|a| !label_is_compound(a))
+        {
+          format!("^({text})")
+        } else {
+          format!("^{text}")
+        }
       } else {
         to_unicode_script(&text, superscript)
       }
@@ -32658,8 +32834,15 @@ fn parse_manipulate_control(
       let init = head_items.get(1).cloned();
       // A string label still goes through the label renderer: it may carry
       // inline `\!\(\*SubscriptBox[…]\)` typesetting.
+      // A caption indexing a notebook list (`names[[3]]`) shows the element,
+      // so it is resolved against the current definitions first.
       let lbl = match head_items.get(2) {
-        Some(other) => manipulate_label_runs(other, false),
+        Some(other) => match resolve_choice_label(other) {
+          Some(resolved @ Expr::String(_)) => {
+            manipulate_label_runs(&resolved, false)
+          }
+          _ => manipulate_label_runs(other, false),
+        },
         None => plain_run(default_control_label(&n)),
       };
       (n, init, lbl)

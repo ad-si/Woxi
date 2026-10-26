@@ -2209,6 +2209,11 @@ fn box_part_source(part: &str) -> String {
     }
   } else if part.starts_with("RowBox[") {
     extract_rowbox_content(&part[7..part.len().saturating_sub(1)])
+  } else if part.starts_with("Cell[") {
+    // An inline cell embedded in a row (a display equation stored as
+    // `RowBox[{Cell[…, "InlineMath"], ","}]`) stands for its typeset
+    // content, not for its own `Cell[…]` source.
+    render_text_element(part)
   } else if let Some(converted) = extract_typeset_box(part) {
     converted
   } else {
@@ -6619,6 +6624,29 @@ Cell["Chapter 2", "Chapter"]
       extract_cell_content(s),
       "Rules with k=3 colors and radius r=1 are counted."
     );
+  }
+
+  #[test]
+  fn test_extract_display_formula_wrapping_inline_math_cell() {
+    // A Text cell whose BoxData is a display `FormBox[RowBox[{Cell[…,
+    // "InlineMath"], ","}]]`: the equation sits in an inline cell followed by
+    // trailing punctuation. The cell must render as its typeset content
+    // instead of leaking its raw `Cell[TextData[…` source into the prose.
+    let s = r#"BoxData[
+ FormBox[
+  RowBox[{Cell[TextData[Cell[BoxData[
+    FormBox[
+     RowBox[{
+      RowBox[{"Q", "(", "u", ")"}], "=", 
+      FractionBox["a", "b"]}], TraditionalForm]],
+    ExpressionUUID->"11111111-1111-1111-1111-111111111111"]], "InlineMath",
+    ExpressionUUID->"22222222-2222-2222-2222-222222222222"], ","}], 
+  TraditionalForm]]"#;
+    let out = extract_cell_content(s);
+    assert!(!out.contains("Cell["), "raw cell source leaked: {out}");
+    assert!(!out.contains("TextData"), "raw cell source leaked: {out}");
+    assert!(out.contains("Q(u)"), "{out}");
+    assert!(out.trim_end().ends_with(','), "{out}");
   }
 
   #[test]

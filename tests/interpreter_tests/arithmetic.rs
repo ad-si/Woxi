@@ -3863,6 +3863,31 @@ mod power_combining {
 mod sqrt_negative {
   use super::*;
 
+  // An exact sum with a negative value is I times the root of its negation;
+  // a rational factor of a numeric sum stays inside the radical.
+  #[test]
+  fn negative_exact_sum() {
+    assert_eq!(
+      interpret(
+        "InputForm[{Sqrt[-3 - Sqrt[17]], Sqrt[(-3 - Sqrt[17])/2], \
+         Sqrt[9/16 (-15 - 2 Sqrt[70])], Sqrt[1 - Sqrt[3]], Sqrt[-1 + x]}]"
+      )
+      .unwrap(),
+      "InputForm[{I*Sqrt[3 + Sqrt[17]], I*Sqrt[(3 + Sqrt[17])/2], \
+(3*I)/4*Sqrt[15 + 2*Sqrt[70]], I*Sqrt[-1 + Sqrt[3]], Sqrt[-1 + x]}]"
+    );
+    assert_eq!(
+      interpret(
+        "InputForm[{Power[Times[1/2, 3 + Sqrt[17]], 1/3], \
+         Sqrt[3/8 (1 + Sqrt[2])], (16 (2 + Sqrt[3]))^(1/3), \
+         x = Sqrt[(3 + Sqrt[17])/2]; I x}]"
+      )
+      .unwrap(),
+      "InputForm[{((3 + Sqrt[17])/2)^(1/3), Sqrt[(3*(1 + Sqrt[2]))/2]/2, \
+2*(2*(2 + Sqrt[3]))^(1/3), I*Sqrt[(3 + Sqrt[17])/2]}]"
+    );
+  }
+
   #[test]
   fn sqrt_neg_1() {
     assert_eq!(interpret("Sqrt[-1]").unwrap(), "I");

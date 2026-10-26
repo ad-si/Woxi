@@ -2684,6 +2684,30 @@ mod tests {
     );
   }
 
+  /// An interval control whose bounds are wrapped in `QuantityMagnitude`
+  /// (a plain number is its own magnitude) must still be a real
+  /// `IntervalSlider`; it used to vanish because the bounds stayed symbolic.
+  #[test]
+  fn interval_slider_with_quantity_magnitude_bounds() {
+    let code = r#"Manipulate[
+      {lam},
+      Row[{Control[{{lam, {0.2, 0.3}, "volume"}, QuantityMagnitude[0.1],
+        QuantityMagnitude[1.0] - 0.05, ControlType -> IntervalSlider}]}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(
+      state.controls.iter().any(|c| matches!(
+        c,
+        ControlState::IntervalSlider { min, max, .. }
+          if (*min - 0.1).abs() < 1e-9 && (*max - 0.95).abs() < 1e-9
+      )),
+      "expected an IntervalSlider over 0.1..0.95: {:?}",
+      state.controls.iter().map(|c| c.name()).collect::<Vec<_>>()
+    );
+  }
+
   /// A slider whose whole range is one `Dynamic[Switch[…]]` handing back
   /// both ends as a spliced `Apply[Sequence, {lo, hi}]` pair must be a real
   /// slider over the active branch's range that follows the other control
@@ -4159,6 +4183,23 @@ mod tests {
     let dump = format!("{:?}", state.controls);
     assert!(dump.contains("label: \"pairs (0 to 5)\""), "{dump}");
     assert!(!dump.contains("StringJoin"), "{dump}");
+  }
+
+  /// A slider caption that indexes a notebook list (`names[[2]]`) shows the
+  /// element, not the source of the `Part` call.
+  #[test]
+  fn control_label_indexing_a_notebook_list_shows_the_element() {
+    let code = r#"Manipulate[Plot[a x + b, {x, 0, 1}],
+      {{a, 1, geneNames[[1]]}, 0, 2, 0.5},
+      {{b, 1, geneNames[[2]]}, 0, 2, 0.5},
+      Initialization :> (geneNames = {"AOAH", "CBLL1"})]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(dump.contains("label: \"AOAH\""), "{dump}");
+    assert!(dump.contains("label: \"CBLL1\""), "{dump}");
+    assert!(!dump.contains("geneNames"), "{dump}");
   }
 
   /// A 2D slider captioned with a `GraphicsRow` of text and a small picture

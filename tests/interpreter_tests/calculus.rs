@@ -6855,6 +6855,42 @@ mod find_minimum {
     assert_eq!(result, "{1., {x -> 2.}}");
   }
 
+  // The Newton iteration used to keep going once it sat at the rounding
+  // floor of a large-magnitude root (the line search could no longer move,
+  // so every remaining iteration repeated the last one), which made
+  // squared-residual objectives built from `CDF` terms take minutes.
+  #[test]
+  fn stops_when_line_search_cannot_move() {
+    clear_state();
+    let result = interpret(
+      "d1[z_, t_] = (Log[x/z] + (0.005 - 0.06 + 0.26^2/2) t)/(Sqrt[t]*0.26); \
+       d2[z_, t_] = d1[z, t] - Sqrt[t]*0.26; \
+       gk[z_, t_] = -0.005 Exp[-0.005 t] CDF[NormalDistribution[], d2[z, t]]*50 \
+         + 0.06 Exp[-0.06 t] CDF[NormalDistribution[], d1[z, t]]*x; \
+       vs[x_] = Exp[-0.03] CDF[NormalDistribution[], d1[50., 0.5]] x \
+         - Exp[-0.0025] CDF[NormalDistribution[], d2[50., 0.5]]*50 \
+         + 0.125 (gk[x, 0.0001] + gk[60.7, 0.25])/2 \
+         + 0.125 (gk[60.7, 0.125] + gk[58.4, 0.375])/2; \
+       cnt = 0; \
+       sol = FindMinimum[(vs[x] - x + 50.)^2, {x, 60.7}, \
+         MaxIterations -> 1000, StepMonitor :> (cnt++)]; \
+       {cnt < 30, Abs[vs[x] - x + 50.] < 10^-6 /. sol[[2]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, True}");
+  }
+
+  #[test]
+  fn large_root_uses_relative_step_tolerance() {
+    clear_state();
+    let result = interpret(
+      "sol = FindMinimum[(x*Erfc[-Log[0.02*x]/2.5] - 30)^2, {x, 60.}]; \
+       Abs[x*Erfc[-Log[0.02*x]/2.5] - 30] < 10^-6 /. sol[[2]]",
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
   #[test]
   fn sin_minimum() {
     clear_state();
@@ -21783,6 +21819,35 @@ mod kernel_format_interpolating_function {
   }
 
   #[test]
+  fn zero_imaginary_values_read_as_real() {
+    // Data fitted as complex is saved as `x + 0. I`; it applies like the
+    // real data it is.
+    assert_eq!(
+      interpret(
+        "InterpolatingFunction[{{0., 4.}}, {3, 3, 0, {4}, {2}, 0, 0, 0, 0}, \
+         {{0., 1., 2., 4.}}, {Developer`PackedArrayForm, {0, 1, 2, 3, 4}, \
+         {1. + 0. I, 3. + 0. I, 2. + 0. I, 6. + 0. I}}, {Automatic}][3]"
+      )
+      .unwrap(),
+      "4."
+    );
+  }
+
+  #[test]
+  fn compressed_grid_applies_when_called_inline() {
+    // The grid and the packed offsets are stored as `CompressedData[…]`; a
+    // call on the literal function (not one held in a symbol) must decode
+    // them first, and a symbolic argument leaves the call unevaluated.
+    let f = "InterpolatingFunction[{{0., 4.}}, {3, 3, 0, {4}, {2}, 0, 0, 0, 0}, \
+             CompressedData[\"1:eJxTTMoPSmViYGBgBGIWBnTwwR7KcIBQAg4AZn8DcA==\"], \
+             {Developer`PackedArrayForm, \
+             CompressedData[\"1:eJxTTMoPymNkYGBgZYAAEJsJiJmBmAWIATUJAcM=\"], \
+             {1., 3., 2., 6.}}, {Automatic}]";
+    assert_eq!(interpret(&format!("{f}[3]")).unwrap(), "4.");
+    assert_eq!(interpret(&format!("g[t_] = {f}[t]; g[3]")).unwrap(), "4.");
+  }
+
+  #[test]
   fn stored_form_matches_interpolation() {
     assert_eq!(
       interpret(
@@ -22990,6 +23055,52 @@ mod integrate_interpolating_function {
       )
       .unwrap(),
       "3."
+    );
+  }
+
+  #[test]
+  fn dsolve_second_order_without_unknown_reduces_order() {
+    assert_eq!(
+      interpret("DSolve[y''[x] == -y'[x]/x, y[x], x]").unwrap(),
+      "{{y[x] -> C[2] + C[1]*Log[x]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[y''[x] == x, y[x], x]").unwrap(),
+      "{{y[x] -> x^3/6 + C[1] + x*C[2]}}"
+    );
+    assert!(
+      interpret(
+        "u /. First[DSolve[{u[1] == 1, u[2] == 2, -3 u'[x]/u''[x] == x}, u, x]]"
+      )
+      .unwrap()
+      .contains("Function")
+    );
+    assert_eq!(
+      interpret(
+        "f = u /. First@First@FullSimplify[DSolve[{u[1] == 1, u[2] == 2, -2 u'[x]/u''[x] == x}, u, x]]; f[x]"
+      )
+      .unwrap(),
+      "3 - 2/x"
+    );
+  }
+}
+
+mod nintegrate_limits_numeric_after_n {
+  use super::*;
+
+  #[test]
+  fn limit_that_is_numeric_only_after_n() {
+    assert_eq!(
+      interpret("NIntegrate[x^2, {x, 0, Re[EllipticTheta[4, I/4*Pi, E^(-5*Pi/2)]]}] == NIntegrate[x^2, {x, 0, N[Re[EllipticTheta[4, I/4*Pi, E^(-5*Pi/2)]]]}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn nested_limit_that_is_numeric_only_after_n() {
+    assert_eq!(
+      interpret("Abs[NIntegrate[x*y, {x, 0, Re[EllipticTheta[4, I/4*Pi, E^(-5*Pi/2)]]}, {y, 0, 1}] - N[Re[EllipticTheta[4, I/4*Pi, E^(-5*Pi/2)]]^2/4]] < 10^-6").unwrap(),
+      "True"
     );
   }
 }
