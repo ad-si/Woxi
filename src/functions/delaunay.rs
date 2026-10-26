@@ -217,7 +217,7 @@ pub fn delaunay_triangulation_ast(
     return Ok(original());
   };
   let mut neighbours: Vec<std::collections::BTreeSet<usize>> =
-    vec![Default::default(); points.len()];
+    vec![std::collections::BTreeSet::new(); points.len()];
   for t in &triangles {
     for k in 0..3 {
       let (a, b) = (t[k], t[(k + 1) % 3]);
@@ -334,7 +334,7 @@ pub fn diagram_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Each undirected Delaunay edge with the triangles (and opposite vertices)
   // on its sides.
   let mut edges: std::collections::BTreeMap<[usize; 2], Vec<(usize, usize)>> =
-    Default::default();
+    std::collections::BTreeMap::new();
   for (ti, t) in triangles.iter().enumerate() {
     for k in 0..3 {
       let (a, b, opposite) = (t[k], t[(k + 1) % 3], t[(k + 2) % 3]);
