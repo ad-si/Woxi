@@ -4710,6 +4710,26 @@ fn evaluate_expr_to_expr_uncached(
         }
         let prepared =
           crate::evaluator::listable::flatten_sequences("Function", &prepared);
+        // A kernel-layout function saved in a notebook keeps its grid and
+        // values as `CompressedData[…]`, which only becomes the numbers
+        // once evaluated.
+        if func_args.len() == 5
+          && func_args.iter().any(|a| match a {
+            Expr::FunctionCall { name, .. } => name == "CompressedData",
+            Expr::List(items) => items.iter().any(|i| {
+              matches!(i, Expr::FunctionCall { name, .. } if name == "CompressedData")
+            }),
+            _ => false,
+          })
+        {
+          let decoded = func_args
+            .iter()
+            .map(evaluate_expr_to_expr)
+            .collect::<Result<Vec<_>, _>>()?;
+          return crate::functions::ode_ast::evaluate_interpolating_function(
+            &decoded, &prepared,
+          );
+        }
         return crate::functions::ode_ast::evaluate_interpolating_function(
           func_args, &prepared,
         );

@@ -21783,6 +21783,35 @@ mod kernel_format_interpolating_function {
   }
 
   #[test]
+  fn zero_imaginary_values_read_as_real() {
+    // Data fitted as complex is saved as `x + 0. I`; it applies like the
+    // real data it is.
+    assert_eq!(
+      interpret(
+        "InterpolatingFunction[{{0., 4.}}, {3, 3, 0, {4}, {2}, 0, 0, 0, 0}, \
+         {{0., 1., 2., 4.}}, {Developer`PackedArrayForm, {0, 1, 2, 3, 4}, \
+         {1. + 0. I, 3. + 0. I, 2. + 0. I, 6. + 0. I}}, {Automatic}][3]"
+      )
+      .unwrap(),
+      "4."
+    );
+  }
+
+  #[test]
+  fn compressed_grid_applies_when_called_inline() {
+    // The grid and the packed offsets are stored as `CompressedData[…]`; a
+    // call on the literal function (not one held in a symbol) must decode
+    // them first, and a symbolic argument leaves the call unevaluated.
+    let f = "InterpolatingFunction[{{0., 4.}}, {3, 3, 0, {4}, {2}, 0, 0, 0, 0}, \
+             CompressedData[\"1:eJxTTMoPSmViYGBgBGIWBnTwwR7KcIBQAg4AZn8DcA==\"], \
+             {Developer`PackedArrayForm, \
+             CompressedData[\"1:eJxTTMoPymNkYGBgZYAAEJsJiJmBmAWIATUJAcM=\"], \
+             {1., 3., 2., 6.}}, {Automatic}]";
+    assert_eq!(interpret(&format!("{f}[3]")).unwrap(), "4.");
+    assert_eq!(interpret(&format!("g[t_] = {f}[t]; g[3]")).unwrap(), "4.");
+  }
+
+  #[test]
   fn stored_form_matches_interpolation() {
     assert_eq!(
       interpret(

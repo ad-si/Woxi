@@ -11493,6 +11493,16 @@ pub(crate) fn kernel_interpolating_function_to_native(
   Some(vec![func_args[0].clone(), Expr::List(pairs.into()), order])
 }
 
+/// A kernel InterpolatingFunction fitted to complex data stores every value
+/// as `x + 0. I` when the data is in fact real; those entries read as the
+/// machine real `x`, anything with a non-zero imaginary part is kept.
+fn demote_zero_imaginary(e: &Expr) -> Expr {
+  match crate::functions::math_ast::numeric_utils::machine_complex_shape(e) {
+    Some((re, im)) if im == 0.0 => Expr::Real(re),
+    _ => e.clone(),
+  }
+}
+
 fn kernel_interpolating_function_to_pairs(
   func_args: &[Expr],
 ) -> Option<Vec<Expr>> {
@@ -11535,7 +11545,7 @@ fn kernel_interpolating_function_to_pairs(
             let width = w[1].checked_sub(w[0])?;
             let dim = (width / stored).max(1);
             let part: Vec<Expr> = (0..dim)
-              .map(|j| flat.get(w[0] + j).cloned())
+              .map(|j| flat.get(w[0] + j).map(demote_zero_imaginary))
               .collect::<Option<_>>()?;
             Some(if dim == 1 {
               part[0].clone()
@@ -11548,8 +11558,8 @@ fn kernel_interpolating_function_to_pairs(
       _ => items
         .iter()
         .map(|item| match item {
-          Expr::List(per_point) => per_point.first().cloned(),
-          other => Some(other.clone()),
+          Expr::List(per_point) => per_point.first().map(demote_zero_imaginary),
+          other => Some(demote_zero_imaginary(other)),
         })
         .collect::<Option<_>>()?,
     },
@@ -11616,7 +11626,12 @@ fn hermite_blocks(
         .windows(2)
         .map(|w| {
           (w[0] <= w[1] && w[1] <= flat.len()).then(|| {
-            flat.iter().skip(w[0]).take(w[1] - w[0]).cloned().collect()
+            flat
+              .iter()
+              .skip(w[0])
+              .take(w[1] - w[0])
+              .map(demote_zero_imaginary)
+              .collect()
           })
         })
         .collect::<Option<_>>()?
