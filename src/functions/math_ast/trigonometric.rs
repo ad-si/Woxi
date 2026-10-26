@@ -2514,7 +2514,7 @@ fn inexact_complex_argument(arg: &Expr) -> Option<(f64, f64)> {
   if !contains_inexact_real(arg) {
     return None;
   }
-  try_extract_complex_float(arg).filter(|(_, im)| *im != 0.0)
+  machine_complex_parts(arg)
 }
 
 pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -3336,6 +3336,12 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let re = 0.5 * (a * a + b * b).ln();
         let im = b.atan2(a);
         return Ok(build_complex_float_expr(re, im));
+      }
+      // A machine complex number with a zero imaginary part
+      // (`Complex[-1., 0.]`) gives a machine complex logarithm.
+      if let Some((a, b)) = machine_complex_parts(&args[0]) {
+        let re = 0.5 * (a * a + b * b).ln();
+        return Ok(build_complex_float_expr_keep_real(re, b.atan2(a)));
       }
       Ok(unevaluated("Log", args))
     }
@@ -4522,8 +4528,7 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Complex float: sinh(a+bi) = sinh(a)*cos(b) + i*cosh(a)*sin(b)
   if contains_float(&args[0])
-    && let Some((re, im)) = try_extract_complex_float(&args[0])
-    && im != 0.0
+    && let Some((re, im)) = machine_complex_parts(&args[0])
   {
     let sinh_re = re.sinh() * im.cos();
     let cosh_re = re.cosh() * im.sin();
@@ -4586,8 +4591,7 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Complex float: cosh(a+bi) = cosh(a)*cos(b) + i*sinh(a)*sin(b)
   if contains_float(&args[0])
-    && let Some((re, im)) = try_extract_complex_float(&args[0])
-    && im != 0.0
+    && let Some((re, im)) = machine_complex_parts(&args[0])
   {
     let cosh_re = re.cosh() * im.cos();
     let sinh_re = re.sinh() * im.sin();

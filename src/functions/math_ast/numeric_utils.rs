@@ -1563,6 +1563,30 @@ pub fn has_inexact_imag_term(e: &Expr) -> bool {
   }
 }
 
+/// The parts of a machine complex number: an inexact value with an
+/// imaginary term, including a zero one (`Complex[1., 0.]`, which is
+/// `1. + 0.*I`). `None` for real and exact values.
+pub fn machine_complex_parts(expr: &Expr) -> Option<(f64, f64)> {
+  if !contains_inexact_real(expr) {
+    return None;
+  }
+  let (re, im) = try_extract_complex_float(expr)?;
+  (im != 0.0 || has_inexact_imag_term(expr)).then_some((re, im))
+}
+
+/// A machine complex result: a zero imaginary part stays as `re + 0.*I`.
+pub fn machine_complex_result(re: f64, im: f64) -> Expr {
+  if im == 0.0 {
+    crate::evaluator::evaluate_function_call_ast(
+      "Complex",
+      &[Expr::Real(re), Expr::Real(0.0)],
+    )
+    .unwrap_or(Expr::Real(re))
+  } else {
+    build_complex_float_expr(re, im)
+  }
+}
+
 /// Try to extract float complex parts (re, im) from an expression.
 /// Returns Some((re, im)) if the expression contains float components with I.
 pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
