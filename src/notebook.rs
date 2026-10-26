@@ -2469,6 +2469,27 @@ fn linear_syntax_group_to_box_source(inner: &str) -> String {
       let code: String = chars[i + 2..j].iter().collect();
       pieces.push(linear_syntax_code_to_box_source(&code));
       i = j;
+    } else if chars[i] == '\\' && chars.get(i + 1) == Some(&'(') {
+      // A nested `\(…\)` group (`\(\(12\)\( \)\)`) is one box piece in its
+      // own right; quoting it into a text run would print the markers.
+      flush_text(&mut text, &mut pieces);
+      let mut depth = 1;
+      let mut j = i + 2;
+      while j < chars.len() && depth > 0 {
+        if chars[j] == '\\' && chars.get(j + 1) == Some(&'(') {
+          depth += 1;
+          j += 2;
+        } else if chars[j] == '\\' && chars.get(j + 1) == Some(&')') {
+          depth -= 1;
+          j += 2;
+        } else {
+          j += 1;
+        }
+      }
+      let end = if depth == 0 { j - 2 } else { j };
+      let nested: String = chars[i + 2..end].iter().collect();
+      pieces.push(linear_syntax_group_to_box_source(&nested));
+      i = j;
     } else {
       text.push(chars[i]);
       i += 1;
@@ -8211,6 +8232,20 @@ yf4GL4DwC5VA4w
     assert!(!out.contains("Box"), "{out}");
     assert!(!out.contains('\\'), "{out}");
     assert!(out.starts_with("A: p_asym e"), "{out}");
+  }
+
+  #[test]
+  fn test_linear_syntax_nested_group_script() {
+    // A script written as nested groups (`\(\(12\)\( \)\)`, what the
+    // FrontEnd saves for a padded index) must render like a plain script.
+    let nested = render_linear_syntax_escapes(
+      r"\!\(\*SubscriptBox[\(\[Sigma]\), \(\(12\)\( \)\)]\)= ",
+    );
+    let plain = render_linear_syntax_escapes(
+      r"\!\(\*SubscriptBox[\(\[Sigma]\), \(12\)]\)= ",
+    );
+    assert!(!nested.contains('\\') && !nested.contains('"'), "{nested}");
+    assert_eq!(nested.trim(), plain.trim());
   }
 
   #[test]
