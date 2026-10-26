@@ -23140,6 +23140,24 @@ mod nintegrate_limits_numeric_after_n {
 mod ndsolve_stiff_system {
   use super::*;
 
+  // Robertson's chemical kinetics: the adaptive explicit steps detect the
+  // stiffness and hand the leg to the Rosenbrock method instead of crawling
+  // through millions of steps. wolframscript: y1[40] = 0.7158270453506574.
+  #[test]
+  fn robertson_problem_switches_to_stiff_method() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y1'[t] == -0.04 y1[t] + 10^4 y2[t] y3[t], \
+         y2'[t] == 0.04 y1[t] - 10^4 y2[t] y3[t] - 3*10^7 y2[t]^2, \
+         y3'[t] == 3*10^7 y2[t]^2, y1[0] == 1, y2[0] == 0, y3[0] == 0}, \
+         {y1, y2, y3}, {t, 0, 40}]; \
+         Abs[(y1[40] /. First[s]) - 0.7158270453506574] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // The Chay–Keizer beta-cell model spikes faster than the nominal grid
   // follows; the leg falls back to adaptive Dormand–Prince steps.
   // wolframscript: V[5000] = -58.01807302788192.

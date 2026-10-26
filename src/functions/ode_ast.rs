@@ -6613,9 +6613,12 @@ fn integrate_leg(
           ))
         };
         // An adaptive explicit step first (a fast transient the grid
-        // missed), then the stiff method.
+        // missed), handing a stiff system to the stiff method as soon as
+        // the explicit steps detect it; when the stiff method fails too
+        // (fast spikes rather than stiffness), the explicit steps run to
+        // the end after all.
         if let Some(adaptive_points) =
-          stiff::dormand_prince_leg(&rhs, &points[0].1, x_from, x_to)?
+          stiff::dormand_prince_leg(&rhs, &points[0].1, x_from, x_to, true)?
         {
           return Ok(Some(adaptive_points));
         }
@@ -6623,6 +6626,11 @@ fn integrate_leg(
           stiff::rosenbrock_leg(&rhs, &points[0].1, x_from, x_to)?
         {
           return Ok(Some(stiff_points));
+        }
+        if let Some(adaptive_points) =
+          stiff::dormand_prince_leg(&rhs, &points[0].1, x_from, x_to, false)?
+        {
+          return Ok(Some(adaptive_points));
         }
       }
       if points.len() > 1 {

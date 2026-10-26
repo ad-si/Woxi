@@ -196,6 +196,7 @@ pub(super) fn dormand_prince_leg(
   init: &[f64],
   x_from: f64,
   x_to: f64,
+  detect_stiffness: bool,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
   const C: [f64; 7] =
     [0.0, 1.0 / 5.0, 3.0 / 10.0, 4.0 / 5.0, 8.0 / 9.0, 1.0, 1.0];
@@ -263,6 +264,7 @@ pub(super) fn dormand_prince_leg(
     span.abs() / 100.0
   };
   let h_min = 16.0 * f64::EPSILON * x_from.abs().max(x_to.abs()).max(1.0);
+  let mut stiff_steps = 0;
 
   for _ in 0..MAX_EXPLICIT_STEPS {
     if (x_to - x) * dir <= h_min {
@@ -276,12 +278,17 @@ pub(super) fn dormand_prince_leg(
     let mut k: Vec<Vec<f64>> = Vec::with_capacity(7);
     k.push(k0.clone());
     let mut failed = false;
+    // The sixth stage's argument, for the stiffness estimate below.
+    let mut y_stage6 = Vec::new();
     for stage in 1..7 {
       let ys: Vec<f64> = (0..n)
         .map(|i| {
           y[i] + hs * (0..stage).map(|j| A[stage][j] * k[j][i]).sum::<f64>()
         })
         .collect();
+      if stage == 5 {
+        y_stage6 = ys.clone();
+      }
       match f(x + C[stage] * hs, &ys)? {
         Some(ks) if ks.iter().all(|v| v.is_finite()) => k.push(ks),
         _ => {
@@ -312,6 +319,20 @@ pub(super) fn dormand_prince_leg(
     if error > 1.0 {
       h *= factor;
       continue;
+    }
+    // Hairer's stiffness detection: the last two stages share the abscissa
+    // x + h, so |k7 - k6| / |y7 - y6| estimates the Jacobian's dominant
+    // eigenvalue. When h |λ| keeps exceeding the stability boundary the
+    // explicit method only crawls on, so the leg is left to the stiff one.
+    let num: f64 = (0..n).map(|i| (k[6][i] - k[5][i]).powi(2)).sum();
+    let den: f64 = (0..n).map(|i| (y_new[i] - y_stage6[i]).powi(2)).sum();
+    if detect_stiffness && den > 0.0 && h * h * num > 3.25 * 3.25 * den {
+      stiff_steps += 1;
+      if stiff_steps >= 15 {
+        return Ok(None);
+      }
+    } else {
+      stiff_steps = 0;
     }
     x += hs;
     if (x_to - x) * dir <= h_min {
