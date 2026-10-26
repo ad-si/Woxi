@@ -767,6 +767,54 @@ mod example_data_tests {
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
   }
 
+  /// Retired entries are no longer listed but still served, with a warning.
+  #[test]
+  fn obsolete_entries_are_served_with_a_warning() {
+    clear_state();
+    for (name, size, space) in [
+      ("Lena", "{512, 512}", "RGB"),
+      ("TestPattern", "{1024, 1024}", "Grayscale"),
+    ] {
+      let code = format!(
+        "With[{{i = ExampleData[{{\"TestImage\", {name:?}}}]}}, \
+         {{ImageDimensions[i], ImageColorSpace[i]}}]"
+      );
+      let r = interpret_with_stdout(&code).unwrap();
+      assert_eq!(r.result, format!("{{{size}, {space}}}"), "{name}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains(&format!(
+          "ExampleData::obsolete: {{\"TestImage\", {name:?}}} is being \
+           deprecated, and may not be available in future versions of the \
+           Wolfram Language."
+        ))),
+        "{name}: {:?}",
+        r.warnings
+      );
+      assert_eq!(
+        interpret(&format!(
+          "MemberQ[ExampleData[\"TestImage\"], {{\"TestImage\", {name:?}}}]"
+        ))
+        .unwrap(),
+        "False",
+        "{name}"
+      );
+      assert_eq!(
+        interpret(&format!(
+          "ExampleData[{{\"TestImage\", {name:?}}}, \"Name\"]"
+        ))
+        .unwrap(),
+        name,
+      );
+    }
+    // Listed entries are served without one.
+    let r = interpret_with_stdout(
+      "ExampleData[{\"TestImage\", \"Mandrill\"}, \"Name\"]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "Mandrill");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
   /// The real classic networks are bundled with their published sizes.
   #[test]
   fn real_networks_have_their_published_size() {

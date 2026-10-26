@@ -4,7 +4,8 @@
 //! alarm clock on a pile of books, a lake framed by pines with a sailboat).
 //! The synthetic charts are drawn as such: `"Gray21"` is the 3 × 7 grid of
 //! the 21 gray levels, `"Ruler"` a millimetre grid with a scale,
-//! `"ResolutionChart"` groups of bars at decreasing sizes.
+//! `"ResolutionChart"` groups of bars at decreasing sizes, the retired
+//! `"TestPattern"` a zone plate, bar sweep, gray wedge and sector star.
 
 use std::f64::consts::{PI, TAU};
 
@@ -385,6 +386,7 @@ pub fn draw(name: &str, w: usize, h: usize, seed: u64) -> Option<Canvas> {
     "Gray21" => return Some(gray21(w, h)),
     "Ruler" => return Some(ruler(w, h)),
     "ResolutionChart" => return Some(resolution_chart(w, h)),
+    "TestPattern" => return Some(test_pattern(w, h)),
     "APC" => {
       scrub(&mut s, 0.35, rgb8(170, 160, 140));
       tank(&mut s, 0.45, 0.52, 0.11, 0.0, false);
@@ -695,6 +697,48 @@ pub fn draw(name: &str, w: usize, h: usize, seed: u64) -> Option<Canvas> {
           ]);
           s.ellipse(0.3 + du, 0.9 + dv, 0.035, 0.035, c);
         }
+      }
+    }
+    "Lena" => {
+      // A woman in a wide-brimmed hat with a feather boa, looking over her
+      // shoulder, in front of a mirror's frame on a warm wall.
+      s.rect(0.0, 0.0, 1.0, 1.0, rgb8(200, 110, 105));
+      s.rect(0.0, 0.0, 0.14, 1.0, rgb8(230, 185, 150));
+      s.rect(0.14, 0.0, 0.18, 1.0, rgb8(120, 60, 50));
+      s.rect(0.78, 0.0, 1.0, 0.45, rgb8(150, 80, 80));
+      let (u, v, size) = (0.5, 0.48, 0.22);
+      portrait(
+        &mut s,
+        u,
+        v,
+        size,
+        rgb8(230, 155, 135),
+        rgb8(110, 50, 40),
+        true,
+        rgb8(205, 125, 115),
+      );
+      // The hat: a broad brim tilted across the forehead, crown, band.
+      s.ellipse(u - 0.04, v - size * 0.95, 0.4, 0.1, rgb8(205, 155, 105));
+      s.ellipse(u, v - size * 1.25, 0.2, 0.1, rgb8(185, 135, 95));
+      s.rect(
+        u - 0.2,
+        v - size * 1.1,
+        u + 0.2,
+        v - size * 0.98,
+        rgb8(140, 70, 90),
+      );
+      // The boa hangs from the hat down the right side.
+      for k in 0..28 {
+        let t = k as f64 / 27.0;
+        let (du, dv) = (s.rng.range(-0.02, 0.02), s.rng.range(-0.01, 0.01));
+        let tone = shade(rgb8(120, 70, 125), s.rng.range(0.7, 1.2));
+        s.ellipse(
+          u + 0.2 + 0.08 * t + du,
+          v - size * 0.9 + 0.75 * t + dv,
+          0.045,
+          0.03,
+          tone,
+        );
       }
     }
     "Flower" => {
@@ -1201,6 +1245,43 @@ fn ruler(w: usize, h: usize) -> Canvas {
   }
   c.line((cx, 0.0), (cx, hf), 1.0, &ink);
   c.line((0.0, cy), (wf, cy), 1.0, &ink);
+  c
+}
+
+/// `"TestPattern"`: a chart in four quadrants — a zone plate of concentric
+/// rings, bars sweeping from coarse to fine, a 16-step gray wedge over a
+/// smooth ramp, and a sector star.
+fn test_pattern(w: usize, h: usize) -> Canvas {
+  let (wf, hf) = (w as f64, h as f64);
+  let mut c = Canvas::new(w, h, BLACK);
+  c.map(|x, y, _| {
+    // Coordinates within the quadrant, each in [0, 1).
+    let (qx, qy) = ((x * 2.0 / wf).fract(), (y * 2.0 / hf).fract());
+    let g = match (x < wf / 2.0, y < hf / 2.0) {
+      (true, true) => {
+        let r2 = (qx - 0.5).powi(2) + (qy - 0.5).powi(2);
+        0.5 + 0.5 * (PI * 0.25 * wf * r2).cos()
+      }
+      (false, true) => {
+        let phase = TAU * (2.0 * qx + 30.0 * qx * qx);
+        if phase.sin() >= 0.0 { 1.0 } else { 0.0 }
+      }
+      (true, false) if qy < 0.5 => (qx * 16.0).floor() / 15.0,
+      (true, false) => qx,
+      (false, false) => {
+        let a = (qy - 0.5).atan2(qx - 0.5);
+        let r = ((qx - 0.5).powi(2) + (qy - 0.5).powi(2)).sqrt();
+        if r > 0.45 {
+          0.5
+        } else if ((a + PI) / TAU * 36.0).floor() as i64 % 2 == 0 {
+          1.0
+        } else {
+          0.0
+        }
+      }
+    };
+    [g; 3]
+  });
   c
 }
 
