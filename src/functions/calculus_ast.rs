@@ -15649,6 +15649,39 @@ fn gaussian_closed_form_integral(
   crate::evaluator::evaluate_expr_to_expr(&n_call)
 }
 
+/// `` NIntegrate`GaussRuleData[n, MachinePrecision] ``: the `n`-point
+/// Gauss–Legendre rule on `[0, 1]` as `{abscissas, weights, {}}`, the
+/// abscissas ascending (the empty third list holds the error weights, which
+/// a plain Gauss rule has none of).
+pub fn gauss_rule_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("NIntegrate`GaussRuleData", args);
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 1 && *n <= 100_000 => *n as usize,
+    _ => {
+      crate::emit_message(&format!(
+        "NIntegrate`GaussRuleData::intpm: Positive machine-sized integer \
+         expected at position 1 in {}.",
+        crate::syntax::format_expr(
+          &unevaluated(),
+          crate::syntax::ExprForm::Output
+        )
+      ));
+      return Ok(Expr::Identifier("$Failed".to_string()));
+    }
+  };
+  if !matches!(&args[1], Expr::Identifier(s) if s == "MachinePrecision") {
+    return Ok(unevaluated());
+  }
+  let mut rule = crate::functions::mesh_region::gauss_legendre_unit(n);
+  rule.sort_by(|a, b| a.0.total_cmp(&b.0));
+  let column = |f: fn(&(f64, f64)) -> f64| {
+    Expr::List(rule.iter().map(|p| Expr::Real(f(p))).collect())
+  };
+  Ok(Expr::List(
+    vec![column(|p| p.0), column(|p| p.1), Expr::List(vec![].into())].into(),
+  ))
+}
+
 pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   with_nintegrate_budget(|| nintegrate_ast_impl(args))
 }

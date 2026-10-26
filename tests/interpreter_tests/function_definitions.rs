@@ -2271,6 +2271,23 @@ mod cases {
       r#"d"#,
     );
   }
+  // A `/;` guard on a SubValue applies with the bindings in place; where
+  // it fails the next rule is tried, and the call otherwise stays as is.
+  #[test]
+  fn sub_values_with_condition() {
+    assert_case(
+      r#"g[a_, b_][t_] := a + b + t /; NumericQ[a]; {g[p, 1][2], g[3, 1][2]}"#,
+      r#"{g[p, 1][2], 6}"#,
+    );
+    assert_case(
+      r#"h[a_][t_] := 1 /; a > 0; h[a_][t_] := -1; {h[2][0], h[-2][0], SubValues[h]}"#,
+      r#"{1, -1, {HoldPattern[h[a_][t_]] :> 1 /; a > 0, HoldPattern[h[a_][t_]] :> -1}}"#,
+    );
+    assert_case(
+      r#"k[a_][t_] /; a > 0 := 1; {k[2][0], k[-2][0]}"#,
+      r#"{1, k[-2][0]}"#,
+    );
+  }
   #[test]
   fn sub_values() {
     assert_case(

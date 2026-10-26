@@ -2494,7 +2494,18 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       // the exact nearest f64, 1090000000000.0).
       if let Some(idx) = s.find("*^") {
         let with_e = format!("{}e{}", &s[..idx], &s[idx + 2..]);
-        Expr::Real(with_e.parse().unwrap_or(0.0))
+        let value: f64 = with_e.parse().unwrap_or(0.0);
+        // Past the machine range the literal is an arbitrary-precision
+        // number of machine precision (`1.*^400` is ``1.`15.95*^400``).
+        if value.is_infinite()
+          && let Ok(exponent) = s[idx + 2..].parse::<i32>()
+        {
+          return Expr::BigFloat(
+            shift_decimal_point(&s[..idx], exponent),
+            crate::functions::math_ast::numerical::MACHINE_PRECISION_DIGITS,
+          );
+        }
+        Expr::Real(value)
       } else {
         // Wolfram switches a Real literal to a BigFloat once the total
         // digit count reaches 18.
@@ -2587,8 +2598,10 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         // Bare backtick = machine precision, just parse as Real
         Expr::Real(scale(value_str.parse().unwrap_or(0.0)))
       } else {
-        let value_f64: f64 = scale(value_str.parse().unwrap_or(0.0));
-        if value_f64 == 0.0 {
+        // Zero is decided on the mantissa: a tiny value such as
+        // `1.5`20*^-400` underflows the machine range but is no zero.
+        let mantissa: f64 = value_str.parse().unwrap_or(0.0);
+        if mantissa == 0.0 {
           // For accuracy form `0.``α`, preserve the accuracy as a BigFloat
           // with value "0" and the parsed accuracy. The display path
           // formats BigFloat("0", α) as `0``α.`. For precision form
@@ -2605,10 +2618,14 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           let raw_prec: f64 = prec_str.parse().unwrap_or(0.0);
           // Accuracy form: precision = accuracy + log10(|value|).
           let prec = if double {
-            raw_prec + value_f64.abs().log10()
+            raw_prec + mantissa.abs().log10() + f64::from(exponent)
           } else {
             raw_prec
           };
+          if double && prec <= 0.0 {
+            // An accuracy coarser than the value: a zero of that accuracy.
+            return Expr::BigFloat("0".to_string(), raw_prec.max(1.0));
+          }
           let prec = prec.max(1.0);
           Expr::BigFloat(scaled_str, prec)
         }

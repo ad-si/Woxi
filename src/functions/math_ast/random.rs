@@ -193,43 +193,35 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // `{min, max}` or `max`; anything not real valued is reported (unifr)
+  // and leaves the call unevaluated, as in wolframscript.
+  let range = |spec: &Expr| -> Option<(f64, f64)> {
+    let bounds = match spec {
+      Expr::List(items) if items.len() == 2 => {
+        try_eval_to_f64(&items[0]).zip(try_eval_to_f64(&items[1]))
+      }
+      other => try_eval_to_f64(other).map(|max| (0.0, max)),
+    };
+    if bounds.is_none() {
+      crate::emit_message(&format!(
+        "RandomReal::unifr: The endpoints specified by {} for the endpoints \
+         of the uniform distribution range are not real valued.",
+        crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+      ));
+    }
+    bounds
+  };
+
   match args.len() {
     0 => Ok(Expr::Real(crate::with_rng(|rng| rng.gen_range(0.0..1.0)))),
-    1 => match &args[0] {
-      Expr::Integer(max) => {
-        let max = *max as f64;
-        Ok(Expr::Real(crate::with_rng(|rng| {
-          rng.gen_range(0.0..1.0) * max
-        })))
-      }
-      Expr::Real(max) => {
-        let max = *max;
-        Ok(Expr::Real(crate::with_rng(|rng| {
-          rng.gen_range(0.0..1.0) * max
-        })))
-      }
-      Expr::List(items) if items.len() == 2 => {
-        let min = try_eval_to_f64(&items[0]).ok_or_else(|| {
-          InterpreterError::EvaluationError("RandomReal: invalid min".into())
-        })?;
-        let max = try_eval_to_f64(&items[1]).ok_or_else(|| {
-          InterpreterError::EvaluationError("RandomReal: invalid max".into())
-        })?;
-        Ok(Expr::Real(crate::with_rng(|rng| {
-          min + rng.gen_range(0.0..1.0) * (max - min)
-        })))
-      }
-      // Any numeric bound, not just a literal: `RandomReal[2 Pi]` draws
-      // from 0 to 2π.
-      other => match try_eval_to_f64(other) {
-        Some(max) => Ok(Expr::Real(crate::with_rng(|rng| {
-          rng.gen_range(0.0..1.0) * max
-        }))),
-        None => Err(InterpreterError::EvaluationError(
-          "RandomReal: invalid argument".into(),
-        )),
-      },
-    },
+    1 => {
+      let Some((min, max)) = range(&args[0]) else {
+        return Ok(unevaluated("RandomReal", args));
+      };
+      Ok(Expr::Real(crate::with_rng(|rng| {
+        min + rng.gen_range(0.0..1.0) * (max - min)
+      })))
+    }
     2 => {
       // RandomReal[range, n] or RandomReal[range, {n}] or RandomReal[range, {n, m, ...}]
       // Wolframscript accepts non-negative dimensions; `n == 0` yields an
@@ -249,26 +241,8 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => return Ok(random_array_dims_error("RandomReal", args)),
       };
 
-      let (min, max) = match &args[0] {
-        Expr::Integer(m) => (0.0, *m as f64),
-        Expr::Real(m) => (0.0, *m),
-        Expr::List(items) if items.len() == 2 => {
-          let lo = try_eval_to_f64(&items[0]).ok_or_else(|| {
-            InterpreterError::EvaluationError("RandomReal: invalid min".into())
-          })?;
-          let hi = try_eval_to_f64(&items[1]).ok_or_else(|| {
-            InterpreterError::EvaluationError("RandomReal: invalid max".into())
-          })?;
-          (lo, hi)
-        }
-        other => match try_eval_to_f64(other) {
-          Some(max) => (0.0, max),
-          None => {
-            return Err(InterpreterError::EvaluationError(
-              "RandomReal: invalid range".into(),
-            ));
-          }
-        },
+      let Some((min, max)) = range(&args[0]) else {
+        return Ok(unevaluated("RandomReal", args));
       };
 
       fn make_random_array(dims: &[usize], min: f64, max: f64) -> Expr {
@@ -1377,6 +1351,101 @@ fn probability_distribution_table(dargs: &[Expr]) -> Option<SamplingTable> {
   })
 }
 
+/// A closure drawing one matrix from a Gaussian random-matrix ensemble, or
+/// (for `MatrixPropertyDistribution[prop, Distributed[x, ensemble]]`) one
+/// matrix of the underlying ensemble. `None` when `name`/`dargs` is not such
+/// a distribution with numeric parameters.
+fn matrix_ensemble_sampler<'a>(
+  name: &str,
+  dargs: &'a [Expr],
+) -> Option<Box<dyn Fn() -> Expr + 'a>> {
+  if name == "MatrixPropertyDistribution" {
+    let [
+      _,
+      Expr::FunctionCall {
+        name: dname,
+        args: dspec,
+      },
+    ] = dargs
+    else {
+      return None;
+    };
+    if dname != "Distributed"
+      || dspec.len() != 2
+      || !matches!(dspec[0], Expr::Identifier(_))
+    {
+      return None;
+    }
+    let Expr::FunctionCall {
+      name: ename,
+      args: eargs,
+    } = &dspec[1]
+    else {
+      return None;
+    };
+    return matrix_ensemble_sampler(ename, eargs);
+  }
+  let unitary = match name {
+    "GaussianOrthogonalMatrixDistribution" => false,
+    "GaussianUnitaryMatrixDistribution" => true,
+    _ => return None,
+  };
+  let (sigma, size) = match dargs {
+    [size] => (1.0, size),
+    [sigma, size] => (try_eval_to_f64(sigma)?, size),
+    _ => return None,
+  };
+  if sigma <= 0.0 {
+    return None;
+  }
+  let size = match size {
+    Expr::Integer(k) if *k > 0 => *k as usize,
+    _ => return None,
+  };
+  Some(Box::new(move || {
+    use rand_distr::{Distribution, Normal};
+    // Density ∝ exp(-Tr(m²) / (2σ²)): real diagonal with variance σ², and
+    // off-diagonal entries (each real/imaginary part) with variance σ²/2.
+    let diag = Normal::new(0.0, sigma).unwrap();
+    let off = Normal::new(0.0, sigma / std::f64::consts::SQRT_2).unwrap();
+    let mut entries = vec![vec![(0.0f64, 0.0f64); size]; size];
+    crate::with_rng(|rng| {
+      for i in 0..size {
+        entries[i][i] = (diag.sample(rng), 0.0);
+        for j in i + 1..size {
+          let re = off.sample(rng);
+          let im = if unitary { off.sample(rng) } else { 0.0 };
+          entries[i][j] = (re, im);
+          entries[j][i] = (re, -im);
+        }
+      }
+    });
+    Expr::List(
+      entries
+        .into_iter()
+        .map(|row| {
+          Expr::List(
+            row
+              .into_iter()
+              .map(|(re, im)| {
+                if im == 0.0 {
+                  Expr::Real(re)
+                } else {
+                  crate::functions::math_ast::build_complex_float_expr_keep_real(
+                    re, im,
+                  )
+                }
+              })
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    )
+  }))
+}
+
 /// RandomVariate[dist] or RandomVariate[dist, n]
 /// Supports UniformDistribution[{min, max}] and NormalDistribution[mu, sigma]
 pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1457,6 +1526,35 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     None
   };
+
+  // Random-matrix ensembles and properties derived from them.
+  if let Expr::FunctionCall { name, args: dargs } = dist
+    && let Some(draw) = matrix_ensemble_sampler(name, dargs)
+  {
+    let sample = || -> Result<Expr, InterpreterError> {
+      let matrix = draw();
+      // MatrixPropertyDistribution[prop, Distributed[x, ensemble]]: bind the
+      // sampled matrix to x and evaluate the property.
+      if let [property, Expr::FunctionCall { args: spec, .. }] =
+        dargs.as_slice()
+        && name == "MatrixPropertyDistribution"
+        && let Expr::Identifier(var) = &spec[0]
+      {
+        let bound = crate::syntax::substitute_variable(property, var, &matrix);
+        return crate::evaluator::evaluate_expr_to_expr(&bound);
+      }
+      Ok(matrix)
+    };
+    return match n {
+      None => sample(),
+      Some(count) => Ok(Expr::List(
+        (0..count)
+          .map(|_| sample())
+          .collect::<Result<Vec<_>, _>>()?
+          .into(),
+      )),
+    };
+  }
 
   // Local helpers for the distributions added below.
   fn sample_poisson(lambda: f64) -> Result<i128, InterpreterError> {

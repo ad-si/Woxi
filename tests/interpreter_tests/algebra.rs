@@ -4851,6 +4851,27 @@ mod replace_repeated {
   use super::*;
 
   #[test]
+  fn untouched_comparison_is_a_fixed_point() {
+    // A rule list leaves `x <= 2` alone; it used to come back as the call
+    // `LessEqual[x, 2]`, which never compared equal to the comparison it
+    // evaluates back to, so `//.` ran into its iteration limit.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "dr = {False -> None, And[a_, b_] -> g[a, b]}; \
+         (x <= 2 - y && x >= 1) //. dr"
+      )
+      .unwrap(),
+      "g[x <= 2 - y, x >= 1]"
+    );
+    assert!(
+      !woxi::get_captured_warnings()
+        .iter()
+        .any(|w| w.contains("rrlim"))
+    );
+  }
+
+  #[test]
   fn replace_repeated_applies_multiple_times() {
     assert_eq!(interpret("f[f[f[f[2]]]] //. f[2] -> 2").unwrap(), "2");
   }
@@ -7846,6 +7867,49 @@ mod to_rules {
 }
 
 mod reduce {
+  #[test]
+  fn linear_equations_back_substitute_expanded() {
+    assert_eq!(
+      interpret("Reduce[{a + 2 b + c == 10, a - b == 1}, {a, b, c}]").unwrap(),
+      "b == -1 + a && c == 12 - 3*a"
+    );
+    assert_eq!(
+      interpret("Reduce[{x + 2 y + 3 z == 1, x - 3 y == 2}, {x, y, z}]")
+        .unwrap(),
+      "y == -2/3 + x/3 && z == 7/9 - (5*x)/9"
+    );
+    assert_eq!(
+      interpret("Reduce[x - 3 y == 2, {x, y}]").unwrap(),
+      "y == -2/3 + x/3"
+    );
+    // A quotient by a variable stays a quotient.
+    assert_eq!(
+      interpret("Reduce[(x + 1) y == x^2 + 3, {x, y}]").unwrap(),
+      "1 + x != 0 && y == (3 + x^2)/(1 + x)"
+    );
+  }
+
+  #[test]
+  fn linear_equations_under_inequalities_stay_cylindrical() {
+    // With inequalities each variable stays expressed in the earlier ones.
+    assert_eq!(
+      interpret(
+        "ToString[Reduce[{a + 2 b + c == 10, a - b == 1, a > 0, b > 0, \
+         c > 0}, {a, b, c}, Reals], InputForm]"
+      )
+      .unwrap(),
+      "Inequality[1, Less, a, Less, 4] && b == -1 + a && c == 10 - a - 2*b"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[Reduce[{x + 2 y + 3 z == 1, x - 3 y == 2, x > 0}, \
+         {x, y, z}, Reals], InputForm]"
+      )
+      .unwrap(),
+      "x > 0 && y == (-2 + x)/3 && z == (1 - x - 2*y)/3"
+    );
+  }
+
   #[test]
   fn zero_product_equation_keeps_every_factor_branch() {
     // `a c == 0` also holds for `a == 0`; solving it only for `c` used to
@@ -15162,8 +15226,115 @@ mod find_instance {
     assert_eq!(
       interpret("FindInstance[2574.175 - 96.95 x >= 10711.575 - 41 x, x]")
         .unwrap(),
-      "{{x -> -146}}"
+      "{{x -> -145.44057193923146}}"
     );
+  }
+
+  #[test]
+  fn linear_system_over_the_reals() {
+    // Equations eliminate variables; the largest slack of the strict
+    // inequalities centres the instance.
+    assert_eq!(
+      interpret(
+        "FindInstance[{x + y == 2, x > 0, y > 0, x < 1}, {x, y}, Reals]"
+      )
+      .unwrap(),
+      "{{x -> 1/2, y -> 3/2}}"
+    );
+    assert_eq!(
+      interpret("FindInstance[x > 3 && x < 10, x]").unwrap(),
+      "{{x -> 13/2}}"
+    );
+    // A non-strict bound may be met with equality.
+    assert_eq!(interpret("FindInstance[x >= 3, x]").unwrap(), "{{x -> 3}}");
+    assert_eq!(
+      interpret("FindInstance[x >= 2.5, x]").unwrap(),
+      "{{x -> 2.5}}"
+    );
+  }
+
+  #[test]
+  fn linear_system_instances_satisfy_it() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "cs = {a + 2 b + c == 10, a - b == 1, a > 0, b > 0, c > 0}; \
+         s = FindInstance[cs, {a, b, c}, Reals, 4]; \
+         {Length[s], And @@ (And @@ cs /. s)}"
+      )
+      .unwrap(),
+      "{4, True}"
+    );
+    assert_eq!(
+      interpret(
+        "cs = {0.5 x + y < 1, x > 0.1, y > 0}; \
+         s = FindInstance[cs, {x, y}, 3]; \
+         {Length[s], And @@ (And @@ cs /. s)}"
+      )
+      .unwrap(),
+      "{3, True}"
+    );
+  }
+
+  #[test]
+  fn infeasible_linear_system_has_no_instance() {
+    assert_eq!(interpret("FindInstance[x > 1 && x < 1, x]").unwrap(), "{}");
+    assert_eq!(
+      interpret("FindInstance[{x + y < 1, x + y > 2}, {x, y}]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn boolean_instances() {
+    assert_eq!(
+      interpret(
+        "FindInstance[Xor[p, q] && Implies[p, r], {p, q, r}, Booleans, 3]"
+      )
+      .unwrap(),
+      "{{p -> True, q -> False, r -> True}, \
+{p -> False, q -> True, r -> True}, {p -> False, q -> True, r -> False}}"
+    );
+    assert_eq!(
+      interpret("FindInstance[(p || q) && !p, {p, q}]").unwrap(),
+      "{{p -> False, q -> True}}"
+    );
+    assert_eq!(
+      interpret("FindInstance[p && !p, {p}, Booleans]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn boolean_equations_over_booleans() {
+    // A list of equations between truth values, on indexed variables.
+    assert_eq!(
+      interpret(
+        "FindInstance[{q[1] == (q[2] && !q[3]), q[2] == (q[1] || q[3]), \
+         q[3] == Implies[q[1], q[2]]}, {q[1], q[2], q[3]}, Booleans]"
+      )
+      .unwrap(),
+      "{{q[1] -> False, q[2] -> True, q[3] -> True}}"
+    );
+    assert_eq!(
+      interpret(
+        "FindInstance[{a == (b || c), b == !a, c == (a && b)}, {a, b, c}, \
+         Booleans, 3]"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn non_boolean_system_over_booleans() {
+    clear_state();
+    assert_eq!(
+      interpret("FindInstance[p || q, p, Booleans, 2]").unwrap(),
+      "FindInstance[p || q, p, Booleans, 2]"
+    );
+    assert!(woxi::get_captured_warnings().iter().any(|w| w
+      == "FindInstance::boolv: The system is not Boolean valued at {p -> False}."));
   }
 
   #[test]

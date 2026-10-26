@@ -8809,6 +8809,25 @@ mod plot3d {
       assert!(nested.contains("text-anchor=\"start\""), "{nested}");
     }
 
+    // A `Pane[Column[{a, b}], size]` tick label reads as its content, set on
+    // one line per `Column` item, and a `Column` bottom `FrameLabel` stacks
+    // the same way instead of leaking the `Pane[…]` text or joining lines.
+    #[test]
+    fn frame_ticks_pane_column_labels_stack_lines() {
+      let svg = export_svg(
+        r#"ListLinePlot[{{1, 2}, {2, 3}, {3, 5}}, Frame -> True,
+          FrameTicks -> {{Automatic, None},
+            {Map[{#, Pane[Column[{#, #^2}], {35, 35}]} &, {1, 2, 3}], None}},
+          FrameLabel -> {Column[{"first", "second"}], "y"}]"#,
+      );
+      assert!(!svg.contains("Pane["), "Pane leaked into the SVG: {svg}");
+      assert!(svg.contains(">9</tspan>"), "tick line 2 missing: {svg}");
+      assert!(
+        svg.contains(">second</tspan>"),
+        "label line 2 missing: {svg}"
+      );
+    }
+
     // `FrameTicks` with explicit tick positions on a framed `Graphics` (and a
     // `Show` that overlays one on a `ListPlot`) labels exactly those ticks.
     #[test]
@@ -17282,6 +17301,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg(
         "ArrayPlot[{{0, 0.5, 1}, {1, 0.5, 0}, {0.5, 1, 0.5}}]"
       ));
+    }
+
+    #[test]
+    fn array_plot_mesh_style_and_frame_style_colors() {
+      let plain = export_svg("ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> True]");
+      assert!(plain.contains("#666666"));
+      let svg = export_svg(
+        "ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> True, MeshStyle -> Red, \
+         FrameStyle -> {Blue, Thick}]",
+      );
+      assert!(svg.contains("#FF0000"), "mesh lines take MeshStyle: {svg}");
+      assert!(svg.contains("#0000FF"), "border takes FrameStyle: {svg}");
+      assert!(!svg.contains("#666666"));
     }
 
     #[test]
@@ -35772,6 +35804,28 @@ mod input_form_reciprocal_sqrt {
 mod plot_body_resolution {
   use super::*;
 
+  // A compound variable (`Subscript[w, f]`, `x[1]`) is localized like a
+  // symbol.
+  #[test]
+  fn compound_iterator_variable() {
+    assert_eq!(
+      interpret(
+        "{Head[Plot[Subscript[w, f]^2, {Subscript[w, f], 0, 1}]], \
+         Head[Plot3D[x[1] y, {x[1], 0, 1}, {y, 0, 1}]]}"
+      )
+      .unwrap(),
+      "{Graphics, Graphics3D}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[Plot[x[1]^2, {x[1], 0, 2}], Line[p_] :> Max[p[[All, 2]]], \
+         Infinity] // Max // Round"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+
   fn assert_has_curve(expr: &str) {
     clear_state();
     let svg = export_svg(expr);
@@ -39637,6 +39691,29 @@ fn explicit_plot_range_clips_content_in_widened_drawing_area() {
 }
 
 #[test]
+fn full_aspect_ratio_frame_fills_the_requested_image_size() {
+  // Regression: with `ImageSize -> {w, h}` a framed `AspectRatio -> Full`
+  // picture stretches the plot range over the whole drawing area instead of
+  // hugging the data's shape (a 1 x 5 range gave a 77 pixel wide sliver).
+  let svg = export_svg(
+    "Graphics[{Line[{{0, 0}, {1, 1}}]}, PlotRange -> {{0, 1}, {0, 5}}, \
+     Frame -> True, ImageSize -> {600, 420}, AspectRatio -> Full]",
+  );
+  let (w, _) = plot_clip_size(&svg);
+  assert!(w > 400.0, "{svg}");
+}
+
+fn plot_clip_size(svg: &str) -> (f64, f64) {
+  let start = svg.find("<clipPath id=\"plotClip_").expect("clip path");
+  let rest = &svg[start..];
+  let num = |key: &str| -> f64 {
+    let at = rest.find(key).expect(key) + key.len();
+    rest[at..].split('"').next().unwrap().parse().unwrap()
+  };
+  (num("width=\""), num("height=\""))
+}
+
+#[test]
 fn pane_pads_small_content_to_its_fixed_box() {
   // Regression: `Pane[content, {w, h}]` reserves the whole box, so content
   // smaller than it is placed by an explicit `Alignment`, not left in the
@@ -41298,5 +41375,21 @@ mod invisible_and_text_cells {
     let svg = export_svg("Grid[{{TextCell[\"abc\"], \"z\"}}]");
     assert!(svg.contains(">abc<"), "content missing: {svg}");
     assert!(!svg.contains("TextCell"), "wrapper leaked: {svg}");
+  }
+}
+
+mod list_plot_scalar_data_range {
+  use super::*;
+
+  #[test]
+  fn bare_number_spans_zero_to_that_value() {
+    assert_eq!(
+      interpret(
+        "ExportString[ListPlot[{1, 2, 3}, DataRange -> 2], \"SVG\"] === \
+         ExportString[ListPlot[{1, 2, 3}, DataRange -> {0, 2}], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
   }
 }

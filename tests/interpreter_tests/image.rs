@@ -8273,6 +8273,39 @@ mod demonstration_image_filters {
     );
   }
 
+  // ImageApply keeps the source's colour space, so shifting the hue channel
+  // of an HSB image yields an HSB image that converts back to RGB correctly.
+  #[test]
+  fn image_apply_keeps_hsb_space_and_converts_back() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageColorSpace[ImageApply[#&, ColorConvert[Image[{{{1., 0., 0.}}}], \"HSB\"]]]"
+      )
+      .unwrap(),
+      "HSB"
+    );
+    assert_eq!(
+      form(
+        "Round[ImageData[ColorConvert[ImageApply[{Mod[#[[1]] + 1/3, 1], #[[2]], #[[3]]} &, ColorConvert[Image[{{{1., 0., 0.}}}], \"HSB\"]], \"RGB\"]], 0.001]"
+      ),
+      "{{{0., 1., 0.}}}"
+    );
+  }
+
+  // An HSB image is displayed as the colours it encodes, not as raw RGB.
+  #[test]
+  fn hsb_image_exports_same_pixels_as_rgb_original() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ExportString[ColorConvert[Image[{{{1., 0., 0.}}}], \"HSB\"], \"SVG\"] === ExportString[Image[{{{1., 0., 0.}}}], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // A grayscale source is read as the gray RGB it stands for, so the
   // converted image gains the extra channels.
   #[test]

@@ -1350,6 +1350,22 @@ fn try_sub_value_curried_match(
     if let Some(bindings) =
       crate::evaluator::pattern_matching::match_pattern(&actual, lhs)
     {
+      // `f[a_][t_] := rhs /; test` applies only where the test, with the
+      // bindings in place, comes out True; otherwise the next rule is tried.
+      let body = match body {
+        Expr::FunctionCall { name, args: cargs }
+          if name == "Condition" && cargs.len() == 2 =>
+        {
+          match crate::evaluator::pattern_matching::apply_bindings(
+            &cargs[1], &bindings,
+          ) {
+            Ok(Expr::Identifier(ref t)) if t == "True" => &cargs[0],
+            Ok(_) => continue,
+            Err(e) => return Some(Err(e)),
+          }
+        }
+        _ => body,
+      };
       // A rule that rewrites the call to itself is a fixed point when it is
       // literal (`Subscript[l, a][x] = Subscript[l, a][x]`); one with
       // patterns (`Subscript[l, a][x_] := Subscript[l, a][x]`) is applied
