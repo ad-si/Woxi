@@ -26509,6 +26509,31 @@ mod find_spanning_tree {
 mod parametric_plot3d {
   use super::*;
 
+  // A surface body is compiled once and sampled numerically; a body the
+  // compiler cannot reduce still samples through the evaluator.
+  #[test]
+  fn compiled_surface_sampling() {
+    assert_eq!(
+      interpret(
+        "leaf[t_, x_, y_] := {Sin[t], Cos[t], 0} + \
+         Dot[{x, y, Abs[x]}, RotationMatrix[t, {0, 0, 1}]]; \
+         g = ParametricPlot3D[Evaluate[leaf[0.3, r Cos[u], r Sin[u]]], \
+         {u, 0, Pi/2}, {r, 0, 1}, Mesh -> False]; \
+         Head[g]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+    assert_eq!(
+      interpret(
+        "f[u_?NumericQ, v_?NumericQ] := u v; \
+         Head[ParametricPlot3D[{u, v, f[u, v]}, {u, 0, 1}, {v, 0, 1}]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+  }
+
   // A surface winding many times around over a long parameter span is
   // sampled more finely than a single-turn one, instead of the fixed grid
   // leaving a few coarse facets per turn.

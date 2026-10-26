@@ -2,8 +2,7 @@ use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::{try_eval_to_f64, try_eval_to_f64_lenient};
 use crate::functions::plot::{
-  PLOT_COLORS, evaluate_at_xy, format_tick, nice_step, parse_image_size,
-  substitute_var,
+  PLOT_COLORS, format_tick, nice_step, parse_image_size, substitute_var,
 };
 
 const DEFAULT_SIZE: u32 = 360;
@@ -931,11 +930,13 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for func_body in &bodies {
     let mut grid = vec![vec![f64::NAN; GRID_N + 1]; GRID_N + 1];
+    let compiled =
+      crate::functions::plot::PlotBody2::new(func_body, &xvar, &yvar);
     for i in 0..=GRID_N {
       let xval = x_min + i as f64 * x_step;
       for j in 0..=GRID_N {
         let yval = y_min + j as f64 * y_step;
-        if let Some(z) = evaluate_at_xy(func_body, &xvar, &yvar, xval, yval)
+        if let Some(z) = compiled.at(xval, yval)
           && z.is_finite()
         {
           grid[i][j] = z;
@@ -13667,20 +13668,15 @@ fn part_of(body: &Expr, index: i128) -> Expr {
 
 /// Evaluate a parametric triple {fx(u,v), fy(u,v), fz(u,v)} at given u, v values.
 fn evaluate_parametric_at_uv(
-  fx: &Expr,
-  fy: &Expr,
-  fz: &Expr,
-  uvar: &str,
-  vvar: &str,
+  fx: &crate::functions::plot::PlotBody2,
+  fy: &crate::functions::plot::PlotBody2,
+  fz: &crate::functions::plot::PlotBody2,
   uval: f64,
   vval: f64,
 ) -> Option<(f64, f64, f64)> {
-  let eval_one = |body: &Expr| -> Option<f64> {
-    crate::functions::plot::evaluate_at_xy(body, uvar, vvar, uval, vval)
-  };
-  let x = eval_one(fx)?;
-  let y = eval_one(fy)?;
-  let z = eval_one(fz)?;
+  let x = fx.at(uval, vval)?;
+  let y = fy.at(uval, vval)?;
+  let z = fz.at(uval, vval)?;
   if x.is_finite() && y.is_finite() && z.is_finite() {
     Some((x, y, z))
   } else {
@@ -13998,19 +13994,18 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for surface in &surfaces {
     let mut points = vec![vec![None; grid_v + 1]; grid_u + 1];
+    let (fx, fy, fz) = (
+      crate::functions::plot::PlotBody2::new(&surface.fx, &uvar, &vvar),
+      crate::functions::plot::PlotBody2::new(&surface.fy, &uvar, &vvar),
+      crate::functions::plot::PlotBody2::new(&surface.fz, &uvar, &vvar),
+    );
     for i in 0..=grid_u {
       let uval = u_min + i as f64 * u_step;
       for j in 0..=grid_v {
         let vval = v_ranges[i].0 + j as f64 * v_step_at(i);
-        if let Some((x, y, z)) = evaluate_parametric_at_uv(
-          &surface.fx,
-          &surface.fy,
-          &surface.fz,
-          &uvar,
-          &vvar,
-          uval,
-          vval,
-        ) {
+        if let Some((x, y, z)) =
+          evaluate_parametric_at_uv(&fx, &fy, &fz, uval, vval)
+        {
           if let Some(region) = &region_fn {
             let call = Expr::CurriedCall {
               func: Box::new(region.clone()),

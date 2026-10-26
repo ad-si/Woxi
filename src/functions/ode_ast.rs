@@ -7985,6 +7985,22 @@ fn compile_interp1d_call(
   })
 }
 
+/// A real-valued expression in some variables compiled once for repeated
+/// numeric evaluation — the closure tree NDSolve evaluates its residuals
+/// with, also used to sample plots. `eval` gives NaN where the value is not
+/// a real number.
+pub(crate) struct CompiledReal(NExpr);
+
+impl CompiledReal {
+  pub(crate) fn new(expr: &Expr, var_names: &[String]) -> Option<Self> {
+    compile_numeric(expr, var_names).map(Self)
+  }
+
+  pub(crate) fn eval(&self, values: &[f64]) -> f64 {
+    self.0.eval(values)
+  }
+}
+
 /// Compile an expression over the given variable names to an `NExpr`.
 /// Returns `None` for any construct outside the supported numeric subset
 /// (the caller then falls back to symbolic evaluation).

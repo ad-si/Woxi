@@ -311,6 +311,41 @@ pub(crate) fn parse_iterator(
 }
 
 /// Evaluate the function body at given (x, y) values.
+/// A plot body in two variables, compiled once and sampled many times;
+/// where the compiled value is not a finite real the point is evaluated
+/// symbolically the way [`evaluate_at_xy`] does.
+pub(crate) struct PlotBody2<'a> {
+  body: &'a Expr,
+  xvar: &'a str,
+  yvar: &'a str,
+  compiled: Option<crate::functions::ode_ast::CompiledReal>,
+}
+
+impl<'a> PlotBody2<'a> {
+  pub(crate) fn new(body: &'a Expr, xvar: &'a str, yvar: &'a str) -> Self {
+    let compiled = crate::functions::ode_ast::CompiledReal::new(
+      body,
+      &[xvar.to_string(), yvar.to_string()],
+    );
+    Self {
+      body,
+      xvar,
+      yvar,
+      compiled,
+    }
+  }
+
+  pub(crate) fn at(&self, x: f64, y: f64) -> Option<f64> {
+    if let Some(c) = &self.compiled {
+      let v = c.eval(&[x, y]);
+      if v.is_finite() {
+        return Some(v);
+      }
+    }
+    evaluate_at_xy(self.body, self.xvar, self.yvar, x, y)
+  }
+}
+
 pub(crate) fn evaluate_at_xy(
   body: &Expr,
   xvar: &str,
