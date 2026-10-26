@@ -8525,6 +8525,78 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call1("FittedModel", Expr::Association(assoc)))
 }
 
+/// The legacy `LinearRegression\`Regress[data, basis, vars]`: an ordinary
+/// least-squares fit whose basis is taken literally (no implicit constant
+/// term) and whose result is a list of `RegressionCommon\`` rules.
+/// `ParameterTable` holds a `TableForm` of the estimate / standard error /
+/// t-statistic / p-value rows labelled by the basis functions.
+pub fn regress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 3 {
+    return Ok(unevaluated("LinearRegression`Regress", args));
+  }
+  let mut fit_args = args[..3].to_vec();
+  fit_args.push(rule_expr(id_expr("IncludeConstantBasis"), id_expr("False")));
+  let fit = linear_model_fit_ast(&fit_args)?;
+  let Expr::FunctionCall {
+    name,
+    args: fit_parts,
+  } = &fit
+  else {
+    return Ok(unevaluated("LinearRegression`Regress", args));
+  };
+  let (true, [Expr::Association(assoc)]) =
+    (name == "FittedModel", &fit_parts[..])
+  else {
+    return Ok(unevaluated("LinearRegression`Regress", args));
+  };
+  let get = |key: &str| {
+    assoc.iter().find_map(|(k, v)| match k {
+      Expr::String(k) if k == key => Some(v.clone()),
+      _ => None,
+    })
+  };
+  let (Some(entries), Some(basis)) =
+    (get("ParameterTableEntries"), get("BasisFunctions"))
+  else {
+    // Too few observations for parameter statistics.
+    return Ok(unevaluated("LinearRegression`Regress", args));
+  };
+  let headings = Expr::List(
+    ["Estimate", "SE", "TStat", "PValue"]
+      .iter()
+      .map(|h| str_expr(h))
+      .collect(),
+  );
+  let table = call(
+    "TableForm",
+    vec![
+      entries,
+      rule_expr(
+        id_expr("TableHeadings"),
+        Expr::List(vec![basis, headings].into()),
+      ),
+    ],
+  );
+  let mut rules =
+    vec![rule_expr(id_expr("RegressionCommon`ParameterTable"), table)];
+  for (symbol, value) in [
+    ("RSquared", get("RSquared")),
+    ("AdjustedRSquared", get("AdjustedRSquared")),
+    (
+      "EstimatedVariance",
+      derived_fit_property(assoc, "EstimatedVariance"),
+    ),
+  ] {
+    if let Some(value) = value {
+      rules.push(rule_expr(
+        id_expr(&format!("RegressionCommon`{symbol}")),
+        value,
+      ));
+    }
+  }
+  Ok(Expr::List(rules.into()))
+}
+
 /// The overall-significance ANOVA decomposition of a linear least-squares
 /// fit: model/error/total degrees of freedom and sums of squares, the
 /// model/error mean squares, and the F statistic with its p-value.
