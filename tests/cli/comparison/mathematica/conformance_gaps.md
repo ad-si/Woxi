@@ -4978,8 +4978,9 @@ Known structural gaps:
 - The retired `"TestImage"` entries `"Lena"` and `"TestPattern"` (no longer
   listed, still served with `ExampleData::obsolete`) were added to the table
   by hand from the USC-SIPI originals they came from (4.2.04, 512 × 512 RGB;
-  testpat.1k, 1024 × 1024 gray). They were not recorded from wolframscript,
-  so their histogram statistics are estimates.
+  testpat.1k, 1024 × 1024 gray; both sizes and colour types confirmed
+  against wolframscript). Their histogram statistics are estimates, not
+  recorded from wolframscript.
 
 ### `ShortTimeFourier` partitions differently
 

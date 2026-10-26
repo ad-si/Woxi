@@ -257,8 +257,8 @@ pub fn example_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if entry.obsolete() {
     crate::emit_message(&format!(
-      "ExampleData::obsolete: {{{collection:?}, {name:?}}} is being \
-       deprecated, and may not be available in future versions of the \
+      "ExampleData::obsolete: {{{collection}, {name}}} is being \
+       deprecated, and may not be available in future versions of \
        Wolfram Language."
     ));
   }

@@ -783,8 +783,8 @@ mod example_data_tests {
       assert_eq!(r.result, format!("{{{size}, {space}}}"), "{name}");
       assert!(
         r.warnings.iter().any(|w| w.contains(&format!(
-          "ExampleData::obsolete: {{\"TestImage\", {name:?}}} is being \
-           deprecated, and may not be available in future versions of the \
+          "ExampleData::obsolete: {{TestImage, {name}}} is being \
+           deprecated, and may not be available in future versions of \
            Wolfram Language."
         ))),
         "{name}: {:?}",

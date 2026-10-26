@@ -158,6 +158,6 @@ with a warning.
 ```scrut
 $ wo 'ExampleData[{"TestImage", "Lena"}, "ImageSize"]'
 
-ExampleData::obsolete: {"TestImage", "Lena"} is being deprecated, and may not be available in future versions of the Wolfram Language.
+ExampleData::obsolete: {TestImage, Lena} is being deprecated, and may not be available in future versions of Wolfram Language.
 {512, 512}
 ```
