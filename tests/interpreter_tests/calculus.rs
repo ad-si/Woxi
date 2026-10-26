@@ -6814,6 +6814,42 @@ mod find_minimum {
     assert_eq!(result, "{1., {x -> 2.}}");
   }
 
+  // The Newton iteration used to keep going once it sat at the rounding
+  // floor of a large-magnitude root (the line search could no longer move,
+  // so every remaining iteration repeated the last one), which made
+  // squared-residual objectives built from `CDF` terms take minutes.
+  #[test]
+  fn stops_when_line_search_cannot_move() {
+    clear_state();
+    let result = interpret(
+      "d1[z_, t_] = (Log[x/z] + (0.005 - 0.06 + 0.26^2/2) t)/(Sqrt[t]*0.26); \
+       d2[z_, t_] = d1[z, t] - Sqrt[t]*0.26; \
+       gk[z_, t_] = -0.005 Exp[-0.005 t] CDF[NormalDistribution[], d2[z, t]]*50 \
+         + 0.06 Exp[-0.06 t] CDF[NormalDistribution[], d1[z, t]]*x; \
+       vs[x_] = Exp[-0.03] CDF[NormalDistribution[], d1[50., 0.5]] x \
+         - Exp[-0.0025] CDF[NormalDistribution[], d2[50., 0.5]]*50 \
+         + 0.125 (gk[x, 0.0001] + gk[60.7, 0.25])/2 \
+         + 0.125 (gk[60.7, 0.125] + gk[58.4, 0.375])/2; \
+       cnt = 0; \
+       sol = FindMinimum[(vs[x] - x + 50.)^2, {x, 60.7}, \
+         MaxIterations -> 1000, StepMonitor :> (cnt++)]; \
+       {cnt < 30, Abs[vs[x] - x + 50.] < 10^-6 /. sol[[2]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, True}");
+  }
+
+  #[test]
+  fn large_root_uses_relative_step_tolerance() {
+    clear_state();
+    let result = interpret(
+      "sol = FindMinimum[(x*Erfc[-Log[0.02*x]/2.5] - 30)^2, {x, 60.}]; \
+       Abs[x*Erfc[-Log[0.02*x]/2.5] - 30] < 10^-6 /. sol[[2]]",
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
   #[test]
   fn sin_minimum() {
     clear_state();
