@@ -17511,6 +17511,28 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_image_size_pair_is_a_bounding_box() {
+      // Regression: `ImageSize -> {w, h}` bounds the picture; a nearly
+      // square grid used to overflow the height.
+      let square = export_svg(
+        "ArrayPlot[{{1, 0}, {0, 1}}, Frame -> False, ImageSize -> {500, 325}]",
+      );
+      assert!(
+        square.starts_with("<svg width=\"325\" height=\"325\""),
+        "unexpected header: {}",
+        square.lines().next().unwrap_or("")
+      );
+      let wide = export_svg(
+        "ArrayPlot[{{1, 0, 1, 1}}, Frame -> False, ImageSize -> {500, 325}]",
+      );
+      assert!(wide.starts_with("<svg width=\"500\" height=\"125\""));
+      let tall = export_svg(
+        "ArrayPlot[{{1}, {0}, {1}, {1}}, Frame -> False, ImageSize -> {500, 200}]",
+      );
+      assert!(tall.starts_with("<svg width=\"50\" height=\"200\""));
+    }
+
+    #[test]
     fn array_plot_integer_scaling() {
       // Regression: values > 1 must be auto-scaled, not clamped to [0,1]
       let svg = export_svg("ArrayPlot[{{1, 2, 3, 4}, {5, 6, 7, 8}}]");
