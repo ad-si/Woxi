@@ -157,11 +157,12 @@ slow-timeout = { period = "120s", terminate-after = 1 }
 filter = 'test(unsolved_search_stays_unevaluated)'
 slow-timeout = { period = "120s", terminate-after = 1 }
 
-# `byte_images_are_quantized` decodes the full-size Peppers test image and
-# flattens its pixel data, which brushes past the default 20s timeout on a CI
-# runner under full parallel load. Give it a wider window.
+# The ExampleData image tests (`example_data::example_data_tests`) generate
+# and rasterize full-size images, which takes many seconds each and passes the
+# default 20s timeout on a CI runner under full parallel load. Give them a
+# wider window.
 [[profile.default.overrides]]
-filter = 'test(byte_images_are_quantized)'
+filter = 'test(/example_data::example_data_tests/)'
 slow-timeout = { period = "120s", terminate-after = 1 }
 
 # The remaining (non-`#[ignore]`d) RosettaCode script snapshots run a few
