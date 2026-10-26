@@ -32414,7 +32414,9 @@ fn label_is_compound(expr: &Expr) -> bool {
 /// Whether a box tree holds a literal text atom that contains a space.
 fn box_has_spaced_text(e: &Expr) -> bool {
   match e {
-    Expr::String(s) => s.contains(' '),
+    // Padding around an atom (`"12 "`) draws nothing; only a gap between
+    // words makes it spaced text.
+    Expr::String(s) => s.trim().contains(' '),
     Expr::List(items) => items.iter().any(box_has_spaced_text),
     Expr::FunctionCall { args, .. } => args.iter().any(box_has_spaced_text),
     _ => false,

@@ -4247,6 +4247,19 @@ mod tests {
     assert!(dump.contains("-2"), "{dump}");
   }
 
+  /// A subscript saved as nested groups with a padding space
+  /// (`\(\(12\)\( \)\)`, how the FrontEnd keeps `σ12 `) typesets as a
+  /// real subscript, the same as the unpadded `\(12\)`, not as `σ_12`.
+  #[test]
+  fn control_label_typesets_padded_subscript_index() {
+    let code = r#"Manipulate[s, {{s, 0, "\!\(\*SubscriptBox[\(σ\), \(\(12\)\( \)\)]\)= "}, 0, 1, 0.1}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls[0]);
+    assert!(dump.contains("label: \"σ₁₂= \""), "{dump}");
+  }
+
   /// A caption can apply a compound head to an argument —
   /// `TraditionalForm[Subscript[f, a][x]]` — which must typeset as the head's
   /// script followed by `(x)`, not leak the raw `Subscript[f, a][x]` source.
